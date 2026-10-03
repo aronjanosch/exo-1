@@ -8,8 +8,8 @@ Run: `godot --path .` from the repo root (agents: see `WORKSPACE.md` if present)
 
 - Mouse: look. Esc frees the mouse, click captures it again.
 - Walker: WASD walk, Shift run, Space jump. V: debug fly mode (no gravity, no collision; Space/Ctrl up/down, Shift x4, mouse wheel speed).
-- F: enter the ship (within 8 m) / exit it.
-- Ship: mouse pitch/yaw, W/S thrust, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost (x5). H: hover assist (default on: cancels gravity, brakes axes without input, caps sink rate near the ground). L: horizon follow (default on: the ship's frame turns with the local up while moving, so "straight" means along the horizon and pitch relative to the horizon stays constant).
+- F at the seat inside the cabin: sit down / stand up. Walk in and out over the ramp at the back.
+- Ship: mouse pitch/yaw, W/S thrust, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost (x5). H: hover assist (default off: cancels gravity, brakes axes without input, caps sink rate near the ground). Without it the ship has inertia, gravity and quadratic air drag, and glides in space. L: horizon follow (default on: the ship's frame turns with the local up while moving, so "straight" means along the horizon and pitch relative to the horizon stays constant).
 - F3: toggle debug overlay. F12: screenshot to `user://screenshots/`.
 - Terrain debug: 1 LOD colours, 2 skirts on/off, 3 freeze LOD, 4 reset max stats, 5 flat-shading strength (1, 0.6, 0.3, 0; facets also fade to smooth between 80 and 400 m).
 
@@ -26,6 +26,7 @@ Command-line options (after `--`):
 - Step 2: cube-sphere terrain (spherified cube), quadtree LOD per face (about 37 m leaf chunks, 32x32 quads), chunks built on `WorkerThreadPool`, skirts, flat shading via derivatives plus smooth normals for colour blending, world triplanar detail.
 - Step 3: collision ring. `HeightMapShape3D` patches (32x32, 1 m spacing) per cube-face cell (about 18 m at R = 3 km), each in its own tangent frame with curvature baked into the heights, overlapping neighbours. Ring radius 100 m around the active body (plus 0.5 s look-ahead), only when it is within 100 m of the ground. Built on worker threads, at most 16 new bodies per frame. The CPU height function stays as a safety net and counts real fall-throughs as `rescues`.
 - Step 4: ship (`RigidBody3D`, Jolt, engine gravity off). Gravity 9.81 * (R/r)^2, atmosphere density 1 at the surface to 0 at 1200 m, drag scaled by density. Planet-aware sky shader (up and horizon dip from the camera position, blue to black with stars), fog and ambient light follow the density. Boarding without reparenting: the walker is disabled and placed next to the ship on exit; a parked ship is frozen.
+- Spike 3 (branch `spike/leave-ship`): walkable greybox cabin, sit/stand with F at the seat, walker in the ship's frame. Results and open points: exo-1-concept `docs/SPIKE-3-REPORT.md`. `--auto-test --board-only` logs a ramp boarding attempt.
 - Step 5 (partly): radius option, precision phases in the auto-test, depth-buffer test, Forward+ run.
 
 ## Measurements (dev machine: RTX 5070 Ti, 240 Hz vsync)
@@ -75,6 +76,6 @@ Jolt height maps (verified in the 4.7.2-stable source, `modules/jolt_physics/sha
 ## Open tuning values (by feel, later)
 
 - Walk 5 m/s and run 12 m/s are placeholders and fast (real walking is about 1.4 m/s).
-- Ship: thrust 20 m/s^2, boost x5, turn rate cap 2.5 rad/s, assist damping 1.2/s, drag 0.25/s, landing sink factor 0.5.
+- Ship: thrust 20 m/s^2, boost x5, turn rate cap 2.5 rad/s, assist damping 1.2/s, quadratic drag k 0.0005 (terminal about 200 m/s, boost about 450 m/s), landing sink factor 0.5.
 - Gravity 9.81 at the surface, atmosphere top 1200 m, terrain amplitude 150 m.
 - Planet radius: 1.5, 3 and 5 km all run; which one feels right is the initiator's call.

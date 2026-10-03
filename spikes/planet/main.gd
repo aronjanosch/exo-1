@@ -65,12 +65,19 @@ func _ready() -> void:
 	ship = ShipScript.new()
 	ship.planet = self
 	add_child(ship)
+	# Parked 15 m ahead, ramp towards the walker, floor resting on the highest
+	# terrain point under the hull. Frozen until someone first sits down.
 	var ship_dir := (up * planet_radius + Vector3(0, 0, -15)).normalized()
-	ship.global_transform = Transform3D(_basis_for_up(ship_dir), ship_dir * (planet_radius + height_at(ship_dir) + 3.0))
-	ship.freeze = true  # parked ships stay put, no collision needed under them
+	var ship_basis := _basis_for_up(ship_dir)
+	var ground := -INF
+	for corner in [Vector3.ZERO, Vector3(2, 0, 4), Vector3(-2, 0, 4), Vector3(2, 0, -4), Vector3(-2, 0, -4)]:
+		var d: Vector3 = (ship_dir * planet_radius + ship_basis * corner).normalized()
+		ground = maxf(ground, height_at(d))
+	ship.global_transform = Transform3D(ship_basis, ship_dir * (planet_radius + ground + 0.05))
+	ship.freeze = true
 
 	active = player
-	ring.set_anchors([player])
+	ring.set_anchors([player, ship])
 	stats.rescues = 0
 
 	var overlay := OverlayScript.new()
@@ -111,49 +118,59 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.physical_keycode == KEY_ESCAPE:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		elif event.physical_keycode == KEY_F:
-			if active == player and player.global_position.distance_to(ship.global_position) < 8.0:
-				_enter_ship()
-			elif active == ship:
-				_exit_ship()
+			if active == ship:
+				stand_up()
+			elif near_seat():
+				sit_down()
 
 
 ## Short status for the overlay.
 func mode_text() -> String:
 	if active == ship:
-		return "SHIP (F exit)  hover assist %s (H)  horizon follow %s (L)" % [
+		return "SHIP (F stand up)  hover assist %s (H)  horizon follow %s (L)" % [
 			"on" if ship.hover_assist else "off", "on" if ship.horizon_follow else "off"]
 	if player.fly_mode:
 		return "FLY (V)"
-	var near := player.global_position.distance_to(ship.global_position) < 8.0
-	return "walk" + ("  [F] enter ship" if near else "")
+	if player.ship_frame:
+		return "in cabin" + ("  [F] sit" if near_seat() else "")
+	return "walk"
 
 
-func _enter_ship() -> void:
+func near_seat() -> bool:
+	return player.ship_frame == ship and player.position.distance_to(ShipScript.SEAT_POS) < 1.8
+
+
+## Spike 3: the walker stays a child of the ship while seated.
+func sit_down() -> void:
 	player.process_mode = Node.PROCESS_MODE_DISABLED
-	player.visible = false
+	player.transform = Transform3D(Basis(), ShipScript.SEAT_POS - Vector3(0, 0.3, 0))
 	ship.freeze = false
 	ship.piloted = true
 	ship.camera.make_current()
 	active = ship
-	ring.set_anchors([ship])
+	ring.set_anchors([player, ship])
 
 
-## No reparenting yet (spike 3): the player is simply put next to the ship.
-func _exit_ship() -> void:
-	var b := ship.global_transform.basis
-	var up := ship.global_position.normalized()
-	player.global_position = ship.global_position + b.x * 4.0 + up * 1.0
-	player.velocity = ship.linear_velocity
-	player.fly_mode = false
+func stand_up() -> void:
+	ship.piloted = false  # hover assist now holds the ship
+	player.transform = Transform3D(Basis(), Vector3(0, 0.32, ShipScript.SEAT_POS.z + 1.0))
+	player.velocity = Vector3.ZERO
 	player.process_mode = Node.PROCESS_MODE_INHERIT
-	player.visible = true
 	player.get_camera().make_current()
-	ship.piloted = false
-	ship.linear_velocity = Vector3.ZERO
-	ship.angular_velocity = Vector3.ZERO
-	ship.freeze = true
 	active = player
-	ring.set_anchors([player])
+	ring.set_anchors([player, ship])
+
+
+## Moves the walker into or out of the ship's frame. A plain box test instead
+## of Area3D signals: reparenting re-fires area signals, and a deferred call
+## from that handler crashed Godot 4.7.2 (segfault in CallQueue).
+func _physics_process(_delta: float) -> void:
+	if player.process_mode == Node.PROCESS_MODE_DISABLED or player.fly_mode:
+		return
+	if player.ship_frame == null and ship.cabin_contains(player.global_position, -0.2):
+		player.enter_ship_frame(ship)
+	elif player.ship_frame == ship and not ship.cabin_contains(player.global_position, 0.3):
+		player.leave_ship_frame(self)
 
 
 func _process(_delta: float) -> void:

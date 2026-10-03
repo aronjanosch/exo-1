@@ -1,0 +1,80 @@
+# Spike 1: planet (throwaway)
+
+Prototype to test whether a small seamless planet works in Godot 4.7.2. Not final structure. Results go into the spike report. Low-spec hardware is not measured in this spike by the initiator's decision (optimise later); numbers are from the dev machine.
+
+Run: `godot --path .` from the repo root (agents: see `WORKSPACE.md` if present).
+
+## Controls
+
+- Mouse: look. Esc frees the mouse, click captures it again.
+- Walker: WASD walk, Shift run, Space jump. V: debug fly mode (no gravity, no collision; Space/Ctrl up/down, Shift x4, mouse wheel speed).
+- F: enter the ship (within 8 m) / exit it.
+- Ship: mouse pitch/yaw, W/S thrust, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost (x5). H: hover assist (default on: cancels gravity, brakes axes without input, caps sink rate near the ground). L: horizon follow (default on: the ship's frame turns with the local up while moving, so "straight" means along the horizon and pitch relative to the horizon stays constant).
+- F3: toggle debug overlay. F12: screenshot to `user://screenshots/`.
+- Terrain debug: 1 LOD colours, 2 skirts on/off, 3 freeze LOD, 4 reset max stats, 5 flat-shading strength (1, 0.6, 0.3, 0; facets also fade to smooth between 80 and 400 m).
+
+Command-line options (after `--`):
+
+- `--radius=<m>`: planet radius (default 5000, the first guide value in DECISIONS.md). LOD depth and collision cell depth follow it (leaf chunks about 31-37 m, collision cells at most about 20 m).
+- `--auto-shot`: scripted screenshots (ground, ship, low flight over a cube corner, orbit), then quit.
+- `--auto-test`: scripted run (stand still, walk, board, climb to 2000 m, descend, cruise low with a bot altitude hold, land, idle) with frame-time and precision stats per phase; writes `user://spike_results.txt`. Held keys go through `SpikeInput`, so the run does not depend on window focus.
+- Depth-buffer test: `godot --path . res://spikes/planet/depth_test.tscn [--rendering-method forward_plus]`.
+
+## State
+
+- Step 1: placeholder UV sphere, radial gravity walker, debug overlay.
+- Step 2: cube-sphere terrain (spherified cube), quadtree LOD per face (about 37 m leaf chunks, 32x32 quads), chunks built on `WorkerThreadPool`, skirts, flat shading via derivatives plus smooth normals for colour blending, world triplanar detail.
+- Step 3: collision ring. `HeightMapShape3D` patches (32x32, 1 m spacing) per cube-face cell (about 18 m at R = 3 km), each in its own tangent frame with curvature baked into the heights, overlapping neighbours. Ring radius 100 m around the active body (plus 0.5 s look-ahead), only when it is within 100 m of the ground. Built on worker threads, at most 16 new bodies per frame. The CPU height function stays as a safety net and counts real fall-throughs as `rescues`.
+- Step 4: ship (`RigidBody3D`, Jolt, engine gravity off). Gravity 9.81 * (R/r)^2, atmosphere density 1 at the surface to 0 at 1200 m, drag scaled by density. Planet-aware sky shader (up and horizon dip from the camera position, blue to black with stars), fog and ambient light follow the density. Boarding without reparenting: the walker is disabled and placed next to the ship on exit; a parked ship is frozen.
+- Step 5 (partly): radius option, precision phases in the auto-test, depth-buffer test, Forward+ run.
+
+## Measurements (dev machine: RTX 5070 Ti, 240 Hz vsync)
+
+`--auto-test`, frames right after a test screenshot excluded. Runs at R = 3 km Compatibility, R = 3 km Forward+, R = 1.5 km and R = 5 km Compatibility:
+
+- Frames > 33 ms: 0 in walk, climb, descend, cruise and land in all clean runs; worst single frames 8-29 ms. (Runs with the window on a hidden workspace are throttled to about 8 FPS and are not valid measurements.)
+- Rescues (fall-throughs caught by the safety net): 0 in every run.
+- Precision, standing still for 5 s: walker 0.0000 mm frame-to-frame movement at 1463 m, 2932 m, 5001 m, 7928 m and 16031 m from the centre; landed ship at most 0.001 mm per frame, at most 0.04 mm drift. No physics jitter up to R = 16 km.
+- Radius limit: R = 8 km passes every phase. At R = 16 km everything passes except walking: the walker hits a "wall" after 13 m on ground that does not rise (checked with the CPU height function). Likely cause, not verified: at 16 km from the origin positions are only good to about 1-2 mm, so overlapping collision patches are slightly offset and the capsule catches on an edge. Practical limit without origin shifting: about 8 km (measured). Larger planets need an origin shift (spike 5).
+- Chunk build (worker): 2.2-2.7 ms average, 6 ms max. Collision patch build (worker): about 1 ms average, 3.6 ms max.
+- Main thread per frame: terrain at most about 5.5 ms (LOD traversal is most of it), collision ring at most about 4.5 ms.
+- About 400-550 visible chunks near the ground, 100-200 draw calls; 25-30 chunks from orbit. Radius made no visible difference to frame times.
+
+Depth buffer (near 0.05 m, far 50 km, camera 3000 m from the origin, red/green quad pairs):
+
+| Renderer | Result |
+|---|---|
+| Forward+ (Vulkan) | No z-fighting at any tested distance (10 m-40 km) and gap (1 cm-1 m): reverse-Z with a float depth buffer works |
+| Compatibility (OpenGL) | Z-fighting from about 500 m at 1-10 cm gaps and from 2 km at 1 m gaps. Matches a classic 24-bit depth buffer (calculated resolution 0.3 m at 500 m, 4.8 m at 2 km), so no reverse-Z gain there |
+
+Jolt height maps (verified in the 4.7.2-stable source, `modules/jolt_physics/shapes/jolt_height_map_shape_3d.cpp`): square maps with at least 4 samples per side use Jolt's native height field; only non-square maps fall back to a polygon mesh. The 32x32 patches are on the native path.
+
+## Notes
+
+- Skirts with the flat face normal look like dark lines at chunk borders; giving skirts the smooth normal fixes it.
+- Derivative flat normals gave single dark (unlit) pixels next to skirt slivers: on sub-pixel triangles `dFdx`/`dFdy` are zero, `normalize()` returns NaN and NaN survives `mix(..., 0)`. Guarding the cross-product length fixes it. Diagnosed by colouring skirts red and the background white.
+- Hairline cracks between chunks of the same LOD exist because every chunk has its own origin (float32 rounding); the skirts fill them as intended.
+- Full flat shading reads as pixel noise from a few hundred metres on. Facets now fade to smooth normals with distance.
+- Horizon dip on a 3 km planet is large: about 18 degrees at 150 m altitude (calculated).
+- The first ring version included terrain amplitude in the distance test and built about 740 patches instead of about 150, with an 84 ms frame; fixed by comparing on the base sphere.
+- Flying straight at speed on a 3 km planet leaves the planet within seconds (the ground curves away). Decision (initiator): straight means along the horizon. Implemented as horizon follow, an extra angular rate w = up x v / r; a levelling force was tried first but would fight intended climbs.
+- A blind bot cruising at boost speed hit a hill, tumbled and could not land (Ctrl is "down" in ship space). The test bot now holds 80-150 m above ground. A real player can do the same; whether the ship needs a self-righting aid is open.
+- Screenshot readback plus PNG save costs 50-140 ms per shot; never measure frames that contain one.
+- Godot releases all pressed keys when its window loses focus; tests that press keys through `Input.parse_input_event` then silently stop walking. Fixed with `SpikeInput`.
+- Teleporting causes 60-140 ms frames from the burst of new chunks; normal flight does not.
+
+## Open
+
+- Compatibility renderer and z-fighting: fine for terrain alone (no coplanar surfaces), but decals, roads or building bases far away will flicker. Options: Forward+/Mobile (reverse-Z), larger near plane (0.05 to 0.2 gives 4x), or a near plane that grows with altitude. Decision for the initiator.
+- Visual jitter at 3-5 km from the origin is not measured, only calculated: float32 steps of 0.24 mm (2-4 km) and 0.5 mm (4-8 km) are below a pixel unless the camera is closer than about 1 m to a surface.
+- No LOD fade or geomorphing yet; whether popping is visible needs the initiator's eyes.
+- Climb phase showed 3 frames of 33-40 ms in one run (many chunks merging at once); not reproducible so far.
+- Normal maps with triplanar (the "hairy ball" question) are not tested; triplanar colour without normal maps needs no tangents.
+- The faceted look came from the brief (an assumption) and does not match the look in `DECISIONS.md` (smooth shading). Key 5 down to 0 shows smooth terrain.
+
+## Open tuning values (by feel, later)
+
+- Walk 5 m/s and run 12 m/s are placeholders and fast (real walking is about 1.4 m/s).
+- Ship: thrust 20 m/s^2, boost x5, turn rate cap 2.5 rad/s, assist damping 1.2/s, drag 0.25/s, landing sink factor 0.5.
+- Gravity 9.81 at the surface, atmosphere top 1200 m, terrain amplitude 150 m.
+- Planet radius: 1.5, 3 and 5 km all run; which one feels right is the initiator's call.

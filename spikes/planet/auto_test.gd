@@ -355,6 +355,8 @@ func _contacts(body: CharacterBody3D, up: Vector3) -> String:
 
 func _begin(name: String) -> void:
 	_phase = name
+	# Frame number of each phase start, to cut movie-maker clips (30 fps).
+	print("PHASE '%s' frame %d" % [name, Engine.get_frames_drawn()])
 	_frames = PackedFloat32Array()
 	_rescues_at_start = main.stats.get("rescues", 0)
 	if _probe:

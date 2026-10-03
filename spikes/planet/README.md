@@ -20,6 +20,17 @@ Command-line options (after `--`):
 - `--auto-test`: scripted run (stand still, walk, board, climb to 2000 m, descend, cruise low with a bot altitude hold, land, idle) with frame-time and precision stats per phase; writes `user://spike_results.txt`. Held keys go through `SpikeInput`, so the run does not depend on window focus.
 - Depth-buffer test: `godot --path . res://spikes/planet/depth_test.tscn [--rendering-method forward_plus]`.
 
+Spike 5 options (float limit and origin shift, branch `spike/origin-shift`, results in the concept repo's `SPIKE-5-REPORT.md`):
+
+- `--planet-offset=x,y,z`: put the planet centre there instead of the origin.
+- `--origin-shift=<m>`: when the active body is farther than `<m>` from the origin, move everything back by its position (whole metres). Runs in `_process`, see `main.gd`.
+- `--second-planet=x,y,z,radius`: a second planet relative to the first. Gravity and atmosphere come only from the nearest planet (test assumption).
+- `--recenter`: when the nearest planet changes, shift so its centre is the origin.
+- `--auto-test --walk-only`: stop after the walk phase. `--fly-out`: climb to 10, 25, 50, 100 km from the origin and measure there. `--fly-to-second`: take off, fly to the second planet with a test autopilot, land, walk.
+- Scripted runs (`--auto-test`, `--auto-shot`) never capture the mouse, so they do not pull focus. Results go to `user://spike5_results.txt`, screenshots get an `s5-` prefix.
+- Diagnostics: `--safe-margin=<m>` (walker), `--shift-in-physics` (old, broken shift timing), `--trace` (walk and ring trace).
+- `jitter_probe.gd` reports, per phase, how far (in pixels at 1080 lines) the GPU's float32 `view * model` puts a point 2 m ahead and the ship's nose, compared with double precision. Calculated on the CPU, not read back.
+
 ## State
 
 - Step 1: placeholder UV sphere, radial gravity walker, debug overlay.

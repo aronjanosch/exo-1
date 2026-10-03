@@ -6,6 +6,12 @@ extends RefCounted
 static var held := {}  # Key -> true, set by auto_test.gd
 
 
+## True for scripted runs (auto-test, auto-shot): no mouse capture there.
+static func scripted() -> bool:
+	var args := OS.get_cmdline_user_args()
+	return "--auto-test" in args or "--auto-shot" in args
+
+
 static func pressed(key: Key) -> bool:
 	return held.has(key) or Input.is_physical_key_pressed(key)
 

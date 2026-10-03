@@ -3,6 +3,14 @@ extends Node3D
 ## Holds the planet model (gravity and atmosphere by altitude), switches between
 ## walker and ship (F), and keeps sky, fog and ambient light in step with the
 ## active camera.
+## Spike 5: the planet centre is a variable (planet_center), not the origin.
+## --planet-offset=x,y,z moves it; --origin-shift=<m> moves the whole world back
+## whenever the active body is farther than <m> from the origin.
+## --second-planet=x,y,z,radius adds a planet relative to the first one.
+## planet_center, planet_radius, terrain and ring always describe the current
+## planet (nearest surface, 500 m hysteresis). Gravity and atmosphere come only
+## from the current planet: a test assumption, not designed.
+## --recenter: when the current planet changes, shift so its centre is the origin.
 
 const PlayerScript := preload("res://spikes/planet/player.gd")
 const ShipScript := preload("res://spikes/planet/ship.gd")
@@ -10,6 +18,7 @@ const OverlayScript := preload("res://spikes/planet/debug_overlay.gd")
 const TerrainScript := preload("res://spikes/planet/terrain.gd")
 const RingScript := preload("res://spikes/planet/collision_ring.gd")
 const AutoTestScript := preload("res://spikes/planet/auto_test.gd")
+const SpikeInput := preload("res://spikes/planet/spike_input.gd")
 
 ## Planet radius in metres. 5 km is the first guide value (DECISIONS.md); --radius=<m> overrides.
 @export var planet_radius := 5000.0
@@ -19,6 +28,31 @@ const AutoTestScript := preload("res://spikes/planet/auto_test.gd")
 
 ## Read by the overlay; filled by the terrain and later systems.
 var stats := {}
+
+## World position of the planet centre. Changes with every origin shift.
+var planet_center := Vector3.ZERO
+## Shift when the active body is farther than this from the origin (0 = off).
+var origin_shift_distance := 0.0
+## Sum of all shifts in double precision (GDScript floats are 64 bit), so the
+## true position stays known: true = world + shifted_total.
+var shifted_total := [0.0, 0.0, 0.0]
+var shift_count := 0
+var shift_ms_max := 0.0
+var _shift_in_physics := "--shift-in-physics" in OS.get_cmdline_user_args()
+var recenter := "--recenter" in OS.get_cmdline_user_args()
+var planet_switches := 0
+
+
+class PlanetBody:
+	extends RefCounted
+	var center: Vector3
+	var radius: float
+	var terrain: Node3D
+	var ring: Node3D
+
+
+var planets: Array[PlanetBody] = []
+var current: PlanetBody
 
 var player: CharacterBody3D
 var ship: RigidBody3D
@@ -35,42 +69,37 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--radius="):
 			planet_radius = arg.trim_prefix("--radius=").to_float()
+		elif arg.begins_with("--planet-offset="):
+			var c := arg.trim_prefix("--planet-offset=").split_floats(",")
+			planet_center = Vector3(c[0], c[1], c[2])
+		elif arg.begins_with("--origin-shift="):
+			origin_shift_distance = arg.trim_prefix("--origin-shift=").to_float()
 	stats.radius = planet_radius
 	_build_environment()
 
-	# Depths follow the radius so chunk and cell sizes stay about the same:
-	# leaf chunks about 37 m, collision cells at most about 20 m.
-	var face_edge := planet_radius * PI * 0.5
-	terrain = TerrainScript.new()
-	terrain.radius = planet_radius
-	terrain.max_depth = maxi(1, roundi(log(face_edge / 37.0) / log(2.0)))
-	terrain.stats = stats
-	add_child(terrain)
-
-	ring = RingScript.new()
-	ring.terrain = terrain
-	ring.patch_depth = ceili(log(face_edge / 20.0) / log(2.0))
-	ring.stats = stats
-	add_child(ring)
+	_add_planet(planet_center, planet_radius, 1, stats)
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--second-planet="):
+			var c := arg.trim_prefix("--second-planet=").split_floats(",")
+			_add_planet(planet_center + Vector3(c[0], c[1], c[2]), c[3], 2, {})
 
 	player = PlayerScript.new()
-	player.planet_center = Vector3.ZERO
-	player.terrain = terrain
 	player.planet = self
-	player.ring = ring
 	add_child(player)
+	_use_planet(planets[0])
 	var up := Vector3.UP
-	player.global_position = up * (planet_radius + height_at(up) + 2.0)
+	player.global_position = planet_center + up * (planet_radius + height_at(up) + 2.0)
 
 	ship = ShipScript.new()
 	ship.planet = self
 	add_child(ship)
 	var ship_dir := (up * planet_radius + Vector3(0, 0, -15)).normalized()
-	ship.global_transform = Transform3D(_basis_for_up(ship_dir), ship_dir * (planet_radius + height_at(ship_dir) + 3.0))
+	ship.global_transform = Transform3D(_basis_for_up(ship_dir), planet_center + ship_dir * (planet_radius + height_at(ship_dir) + 3.0))
 	ship.freeze = true  # parked ships stay put, no collision needed under them
 
 	active = player
 	ring.set_anchors([player])
+	stats.planet = 0
 	stats.rescues = 0
 
 	var overlay := OverlayScript.new()
@@ -92,20 +121,140 @@ func height_at(dir: Vector3) -> float:
 	return terrain.height_at(dir)
 
 
-## Radial gravity, falls off with 1/r^2 above the surface.
+## Distance from the true origin (before any shift), in double precision.
+func true_distance(pos: Vector3) -> float:
+	var s := 0.0
+	for i in 3:
+		var c: float = pos[i] + shifted_total[i]
+		s += c * c
+	return sqrt(s)
+
+
+## World position -> position relative to the planet centre.
+func to_planet(pos: Vector3) -> Vector3:
+	return pos - planet_center
+
+
+## Radial gravity, falls off with 1/r^2 above the surface. Takes world positions.
 func gravity_at(pos: Vector3) -> Vector3:
-	var r := maxf(pos.length(), planet_radius)
-	return -pos.normalized() * surface_gravity * pow(planet_radius / r, 2.0)
+	var p := to_planet(pos)
+	var r := maxf(p.length(), planet_radius)
+	return -p.normalized() * surface_gravity * pow(planet_radius / r, 2.0)
 
 
 ## Atmosphere density 0..1: full at the surface, gone at atmosphere_height.
 func density_at(pos: Vector3) -> float:
-	var alt := pos.length() - planet_radius
+	var alt := to_planet(pos).length() - planet_radius
 	return 1.0 - smoothstep(0.0, atmosphere_height, alt)
 
 
+## Keeps the active body near the origin by moving everything else back.
+## Offsets are whole metres: subtracting them is exact for positions whose float
+## step is at most 1 m, unless the result lands in a coarser range.
+## Runs in _process, not _physics_process: Godot hands moved bodies to the
+## physics server only when it flushes transform notifications, and there is no
+## flush between two _physics_process calls of the same tick. A shift there let
+## the walker's move_and_slide run against stale collision patches (rescues).
+## --shift-in-physics keeps the old behaviour for comparison.
+func _process_shift(in_physics: bool) -> void:
+	if in_physics != _shift_in_physics:
+		return
+	if origin_shift_distance > 0.0 and active.global_position.length() > origin_shift_distance:
+		shift_origin(active.global_position.round())
+
+
+func _physics_process(_delta: float) -> void:
+	_process_shift(true)
+
+
+## Terrain and collision ring for one planet. Depths follow the radius so chunk
+## and cell sizes stay about the same: leaf chunks about 37 m, cells at most 20 m.
+func _add_planet(center: Vector3, radius: float, noise_seed: int, planet_stats: Dictionary) -> void:
+	var pb := PlanetBody.new()
+	pb.center = center
+	pb.radius = radius
+	var face_edge := radius * PI * 0.5
+	pb.terrain = TerrainScript.new()
+	pb.terrain.radius = radius
+	pb.terrain.noise_seed = noise_seed
+	pb.terrain.max_depth = maxi(1, roundi(log(face_edge / 37.0) / log(2.0)))
+	pb.terrain.stats = planet_stats
+	pb.terrain.position = center
+	add_child(pb.terrain)
+	pb.terrain.material.set_shader_parameter("planet_center", center)
+	pb.ring = RingScript.new()
+	pb.ring.terrain = pb.terrain
+	pb.ring.patch_depth = ceili(log(face_edge / 20.0) / log(2.0))
+	pb.ring.stats = planet_stats
+	pb.ring.position = center
+	add_child(pb.ring)
+	planets.append(pb)
+
+
+func _use_planet(pb: PlanetBody) -> void:
+	if current and current != pb:
+		current.ring.set_anchors([])
+	current = pb
+	planet_center = pb.center
+	planet_radius = pb.radius
+	terrain = pb.terrain
+	ring = pb.ring
+	player.planet_center = pb.center
+	player.terrain = pb.terrain
+	player.ring = pb.ring
+	if active:
+		ring.set_anchors([active])
+
+
+## Nearest surface wins, with 500 m hysteresis so it does not flip-flop.
+func _update_current_planet() -> void:
+	if planets.size() < 2:
+		return
+	var p := active.global_position
+	var best := current
+	var best_alt := p.distance_to(current.center) - current.radius - 500.0
+	for pb in planets:
+		var alt := p.distance_to(pb.center) - pb.radius
+		if alt < best_alt:
+			best = pb
+			best_alt = alt
+	if best != current:
+		_use_planet(best)
+		planet_switches += 1
+		stats.planet = planets.find(best)
+		stats.planet_switches = planet_switches
+		if recenter:
+			shift_origin(best.center.round())
+
+
+func shift_origin(offset: Vector3) -> void:
+	var t0 := Time.get_ticks_usec()
+	var before := to_planet(active.global_position)
+	var v_before: Vector3 = ship.linear_velocity
+	for pb in planets:
+		pb.terrain.global_position -= offset
+		pb.ring.global_position -= offset
+		pb.center -= offset
+		pb.terrain.material.set_shader_parameter("planet_center", pb.center)
+	for n: Node3D in [player, ship]:
+		n.global_position -= offset
+	planet_center = current.center
+	player.planet_center = planet_center
+	for i in 3:
+		shifted_total[i] += offset[i]
+	shift_count += 1
+	shift_ms_max = maxf(shift_ms_max, (Time.get_ticks_usec() - t0) / 1000.0)
+	stats.shifts = shift_count
+	# Did the active body move relative to the planet, or the ship lose speed?
+	stats.shift_jump_mm_max = maxf(stats.get("shift_jump_mm_max", 0.0),
+		before.distance_to(to_planet(active.global_position)) * 1000.0)
+	stats.shift_dv_max = maxf(stats.get("shift_dv_max", 0.0), v_before.distance_to(ship.linear_velocity))
+	stats.shift_ms_max = shift_ms_max
+
+
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED \
+			and not SpikeInput.scripted():
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.physical_keycode == KEY_ESCAPE:
@@ -141,7 +290,7 @@ func _enter_ship() -> void:
 ## No reparenting yet (spike 3): the player is simply put next to the ship.
 func _exit_ship() -> void:
 	var b := ship.global_transform.basis
-	var up := ship.global_position.normalized()
+	var up := to_planet(ship.global_position).normalized()
 	player.global_position = ship.global_position + b.x * 4.0 + up * 1.0
 	player.velocity = ship.linear_velocity
 	player.fly_mode = false
@@ -157,12 +306,14 @@ func _exit_ship() -> void:
 
 
 func _process(_delta: float) -> void:
+	_update_current_planet()
+	_process_shift(false)
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
 		return
-	var pos := cam.global_position
+	var pos := to_planet(cam.global_position)
 	var r := maxf(pos.length(), planet_radius)
-	var density := density_at(pos)
+	var density := density_at(cam.global_position)  # takes world positions
 	_sky_mat.set_shader_parameter("planet_up", pos.normalized())
 	_sky_mat.set_shader_parameter("atmosphere", density)
 	_sky_mat.set_shader_parameter("horizon_sin", sqrt(maxf(0.0, 1.0 - pow(planet_radius / r, 2.0))))
@@ -215,11 +366,11 @@ func _auto_shot(overlay: CanvasLayer) -> void:
 	overlay.save_screenshot("ship")
 	player.fly_mode = true
 	var dir := Vector3(1, 1, 1).normalized()
-	player.global_position = dir * (planet_radius + height_at(dir) + 150.0)
+	player.global_position = planet_center + dir * (planet_radius + height_at(dir) + 150.0)
 	player.look_at_planet(-0.35)
 	await get_tree().create_timer(3.0).timeout
 	overlay.save_screenshot("low")
-	player.global_position = Vector3(0.3, 0.4, 1).normalized() * (planet_radius * 2.5)
+	player.global_position = planet_center + Vector3(0.3, 0.4, 1).normalized() * (planet_radius * 2.5)
 	player.look_at_planet()
 	await get_tree().create_timer(3.0).timeout
 	overlay.save_screenshot("orbit")

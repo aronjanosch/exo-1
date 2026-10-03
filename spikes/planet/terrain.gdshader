@@ -1,9 +1,11 @@
 shader_type spatial;
 // Flat-shaded terrain: face normal (from screen-space derivatives) for lighting,
-// smooth vertex normal for slope-based colour blending. World-space triplanar
+// smooth vertex normal for slope-based colour blending. Planet-space triplanar
 // detail, so no tangents are needed anywhere on the sphere.
 
 uniform float planet_radius = 3000.0;
+// World position of the planet centre (moves with origin shifts).
+uniform vec3 planet_center = vec3(0.0);
 uniform bool show_lod = false;
 uniform bool show_skirts = true;
 uniform float detail_scale = 0.5; // checker cells per metre
@@ -13,12 +15,12 @@ uniform float flat_strength = 1.0;
 uniform float flat_fade_start = 80.0;
 uniform float flat_fade_end = 400.0;
 
-varying vec3 world_pos;
+varying vec3 planet_pos; // relative to the planet centre
 varying vec3 world_normal;
 varying float skirt;
 
 void vertex() {
-	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	planet_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz - planet_center;
 	world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	skirt = UV.x;
 }
@@ -34,10 +36,10 @@ void fragment() {
 	if (!show_skirts && on_skirt) {
 		discard;
 	}
-	vec3 up = normalize(world_pos);
+	vec3 up = normalize(planet_pos);
 	vec3 sn = normalize(world_normal);
 	float slope = 1.0 - clamp(dot(sn, up), 0.0, 1.0);
-	float h = length(world_pos) - planet_radius;
+	float h = length(planet_pos) - planet_radius;
 
 	vec3 sand = vec3(0.76, 0.70, 0.50);
 	vec3 grass = vec3(0.42, 0.60, 0.33);
@@ -50,7 +52,7 @@ void fragment() {
 	// Triplanar checker as a motion cue, faded out with distance against aliasing.
 	vec3 w = abs(sn);
 	w /= (w.x + w.y + w.z);
-	vec3 q = world_pos * detail_scale;
+	vec3 q = planet_pos * detail_scale;
 	float c = checker(q.yz) * w.x + checker(q.zx) * w.y + checker(q.xy) * w.z;
 	float fade = clamp(length(VERTEX) / 60.0, 0.0, 1.0);
 	col *= mix(mix(0.93, 1.0, c), 0.965, fade);

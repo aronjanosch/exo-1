@@ -47,7 +47,7 @@ func _process(delta: float) -> void:
 		return
 
 	var body: Node3D = main.active
-	var p: Vector3 = body.global_position
+	var p: Vector3 = main.to_planet(body.global_position)
 	var v: Vector3 = body.linear_velocity if body is RigidBody3D else body.velocity
 	var dist := p.length()
 	var dir := p / dist

@@ -101,10 +101,16 @@ func _update_ring() -> void:
 	for face in 6:
 		_collect(face, -1.0, -1.0, 2.0, 0, points, want)
 
+	var started := 0
+	var min_d := INF
 	for key in want:
 		var cell: Array = want[key]
+		min_d = minf(min_d, cell[4])
 		if cell[4] < ring_radius and not _patches.has(key) and not _pending.has(key):
 			_start_job(key, cell)
+			started += 1
+	if OS.get_cmdline_user_args().has("--trace"):
+		print("RING points %d want %d min_d %.1f started %d  p %s" % [points.size(), want.size(), min_d, started, str(points[0] if points else Vector3.ZERO)])
 	for key in _patches.keys():
 		if not want.has(key):  # want uses 1.3 x radius: hysteresis
 			_patches[key].queue_free()
@@ -114,8 +120,11 @@ func _update_ring() -> void:
 func _collect(face: int, a0: float, b0: float, size: float, depth: int, points: Array[Vector3], out: Dictionary) -> void:
 	var r: float = terrain.radius
 	var center := TerrainScript.cube_to_sphere(face, a0 + size * 0.5, b0 + size * 0.5) * r
-	var edge := (TerrainScript.cube_to_sphere(face, a0, b0) - TerrainScript.cube_to_sphere(face, a0 + size, b0)).length() * r
-	var bound := edge * 0.75
+	# Bound = farthest corner. Spike 1 used 0.75 x edge, which is too small for
+	# large cells on the curved face and pruned whole quadrants (spike 5 fix).
+	var bound := 0.0
+	for corner in [Vector2(a0, b0), Vector2(a0 + size, b0), Vector2(a0, b0 + size), Vector2(a0 + size, b0 + size)]:
+		bound = maxf(bound, center.distance_to(TerrainScript.cube_to_sphere(face, corner.x, corner.y) * r))
 	var best := INF
 	for p in points:
 		best = minf(best, maxf(0.0, p.distance_to(center) - bound))

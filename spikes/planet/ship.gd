@@ -21,7 +21,7 @@ const SpikeInput := preload("res://spikes/planet/spike_input.gd")
 ## above ground per second (but never below 2 m/s).
 @export var landing_sink_factor := 0.5
 
-var planet: Node  # gravity_at(pos), density_at(pos), height_at(dir), planet_radius
+var planet: Node  # gravity_at(pos), density_at(pos), height_at(dir), planet_radius, to_planet(pos)
 var piloted := false
 var hover_assist := true
 var horizon_follow := true
@@ -108,7 +108,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 			if input[axis] == 0.0:
 				local_v[axis] -= local_v[axis] * minf(1.0, assist_damping * dt)
 		v = b * local_v
-		var pos := state.transform.origin
+		var pos: Vector3 = planet.to_planet(state.transform.origin)
 		var up := pos.normalized()
 		var agl: float = pos.length() - planet.planet_radius - planet.height_at(up)
 		var sink := -v.dot(up)
@@ -129,7 +129,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	if horizon_follow:
 		# Rate at which the local up turns while moving over the sphere:
 		# d(up)/dt = v_tangential / r  =>  w = up x v / r.
-		var pos := state.transform.origin
+		var pos: Vector3 = planet.to_planet(state.transform.origin)
 		target_w += pos.normalized().cross(state.linear_velocity) / pos.length()
 	state.angular_velocity = state.angular_velocity.lerp(target_w, minf(1.0, 12.0 * dt))
 

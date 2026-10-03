@@ -51,7 +51,13 @@ func _ready() -> void:
 
 	floor_max_angle = deg_to_rad(50.0)
 	floor_snap_length = 0.5
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--safe-margin="):  # spike 5 diagnostic, default 0.001
+			safe_margin = arg.trim_prefix("--safe-margin=").to_float()
+	# Scripted runs never grab the mouse: capturing pulls the pointer and focus
+	# to the game window, even when it starts unfocused on another workspace.
+	if not SpikeInput.scripted():
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 func _unhandled_input(event: InputEvent) -> void:

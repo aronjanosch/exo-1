@@ -1,0 +1,20 @@
+# Godot 4
+.godot/
+/android/
+.import/
+
+# Exports
+/build/
+export.cfg
+export_presets.cfg
+
+# Imported translations
+*.translation
+
+# Mono/C# (if ever used)
+.mono/
+data_*/
+mono_crash.*.json
+
+# Personal dev environment notes, see AGENTS.md
+WORKSPACE.md

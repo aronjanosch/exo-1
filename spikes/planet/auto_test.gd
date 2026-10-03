@@ -33,13 +33,37 @@ func _ready() -> void:
 		_run()
 
 
+## Steps in world coordinates: a planet-relative difference has the float
+## resolution of the planet distance (7.8 mm at 100 km), not of the body.
+## Ticks with an origin shift are skipped.
+var _last_tick_shifts := 0
+var _last_tick_vel := Vector3.ZERO
+var _tick_count := 0
+
+
 func _physics_process(_delta: float) -> void:
-	var p: Vector3 = main.to_planet(main.active.global_position)
-	if _record_ticks:
-		var step := p.distance_to(_last_tick_pos)
-		if step > 0.0:
-			_tick_steps.append(step)
+	var p: Vector3 = main.active.global_position
+	if _record_ticks and main.shift_count == _last_tick_shifts:
+		_tick_count += 1
+		# Deviation of the actual step from velocity * dt (velocity of the step
+		# just taken), after the first ticks of the drift.
+		var expected: Vector3 = _last_tick_vel * _delta
+		if _tick_count > 10:
+			_tick_steps.append((p - _last_tick_pos - expected).length())
 	_last_tick_pos = p
+	_last_tick_vel = main.ship.linear_velocity
+	_last_tick_shifts = main.shift_count
+
+
+## Spike 5 runs board directly at the seat (spike 3 cabin) and fly with the
+## hover assist on, which spike 3 made optional (off by default).
+func _board_at_seat(ship: RigidBody3D) -> void:
+	main.player.enter_ship_frame(ship)
+	main.player.position = Vector3(0, 0.32, -2.5)
+	await _wait(0.3)
+	_tap(KEY_F)
+	await _wait(0.5)
+	ship.hover_assist = true
 
 
 ## Spike 5, question 4: take off, fly to the second planet, land, walk.
@@ -50,10 +74,7 @@ func _physics_process(_delta: float) -> void:
 func _run_second() -> void:
 	await _wait(3.0)
 	var ship: RigidBody3D = main.ship
-	main.player.global_position = ship.global_position + ship.global_transform.basis.x * 5.0
-	await _wait(0.5)
-	_tap(KEY_F)
-	await _wait(0.5)
+	await _board_at_seat(ship)
 
 	_begin("lift off to 2000 m")
 	_keys([KEY_SPACE, KEY_SHIFT], true)
@@ -100,7 +121,12 @@ func _run_second() -> void:
 	_end("%.1f s, %.2f m above ground" % [t, _above_ground()])
 	await _stand_still("idle 5 s (landed on planet 2)", ship)
 
-	_tap(KEY_F)
+	_tap(KEY_F)  # stand up in the cabin, then down the ramp (spike 3)
+	await _wait(0.5)
+	main.player.look_at_point(ship.to_global(Vector3(0, 1.0, 12)))
+	_keys([KEY_W], true)
+	await _wait(4.0)
+	_keys([KEY_W], false)
 	await _wait(1.0)
 	await _stand_still("stand still 5 s (walker, planet 2)", main.player)
 	var p_start: Vector3 = main.player.global_position
@@ -115,8 +141,8 @@ func _run_second() -> void:
 		if not main.ring.has_patch_near(main.player.global_position):
 			uncovered += 1
 	_keys([KEY_W, KEY_SHIFT], false)
-	_end("walked %.0f m, frames without patch %d, dist origin %.0f m" % [
-		start.distance_to(main.to_planet(main.player.global_position)), uncovered,
+	_end("walked %.0f m, outside ship %s, frames without patch %d, dist origin %.0f m" % [
+		start.distance_to(main.to_planet(main.player.global_position)), main.player.ship_frame == null, uncovered,
 		main.player.global_position.length()])
 	_shot("second-walk")
 	_finish()
@@ -127,10 +153,7 @@ func _run_second() -> void:
 func _run_fly() -> void:
 	await _wait(3.0)
 	var ship: RigidBody3D = main.ship
-	main.player.global_position = ship.global_position + ship.global_transform.basis.x * 5.0
-	await _wait(0.5)
-	_tap(KEY_F)
-	await _wait(0.5)
+	await _board_at_seat(ship)
 	for mark in [10000.0, 25000.0, 50000.0, 100000.0]:
 		_begin("climb to %d km" % int(mark / 1000.0))
 		_keys([KEY_SPACE, KEY_SHIFT], true)
@@ -147,6 +170,7 @@ func _run_fly() -> void:
 		ship.hover_assist = false
 		ship.linear_velocity = -ship.global_transform.basis.z * 2.0
 		_tick_steps = PackedFloat32Array()
+		_tick_count = 0
 		_record_ticks = true
 		await _wait(3.0)
 		_record_ticks = false
@@ -154,8 +178,8 @@ func _run_fly() -> void:
 		var steps := _tick_steps.duplicate()
 		steps.sort()
 		var n := steps.size()
-		_end("ticks %d, step per tick min %.2f mm max %.2f mm (ideal %.2f mm), dist origin %.0f m" % [
-			n, steps[0] * 1000.0 if n else 0.0, steps[n - 1] * 1000.0 if n else 0.0,
+		_end("ticks %d, step deviation from v*dt median %.3f mm max %.3f mm (step about %.1f mm), dist origin %.0f m" % [
+			n, steps[n / 2] * 1000.0 if n else 0.0, steps[n - 1] * 1000.0 if n else 0.0,
 			2000.0 / Engine.physics_ticks_per_second, main.true_distance(ship.global_position)])
 		_shot("fly-%dkm" % int(mark / 1000.0))
 	_finish()
@@ -174,6 +198,10 @@ func _process(delta: float) -> void:
 
 
 func _run() -> void:
+	if "--board-only" in OS.get_cmdline_user_args():
+		await _board_debug()
+		get_tree().quit()
+		return
 	await _wait(3.0)  # initial chunk burst, measured separately below
 	_begin("startup-settle")
 	await _wait(2.0)
@@ -185,6 +213,13 @@ func _run() -> void:
 	# radii, which looked like a precision wall.
 	var p0: Vector3 = main.player.global_position
 	main.player.look_at_point(p0 + (p0 - main.ship.global_position))
+	if OS.get_cmdline_user_args().has("--trace"):
+		for c in main.ship.get_children():
+			if c is AnimatableBody3D:
+				print("IDS ship %d ramp %d ramp->ship local %s ramp physics origin %s ramp node origin %s" % [
+					main.ship.get_instance_id() % 100000, c.get_instance_id() % 100000,
+					main.ship.to_local(c.global_position),
+					PhysicsServer3D.body_get_state(c.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM).origin, c.global_position])
 	_begin("walk 20 s (run)")
 	var start: Vector3 = main.to_planet(main.player.global_position)
 	_keys([KEY_W, KEY_SHIFT], true)
@@ -216,12 +251,26 @@ func _run() -> void:
 		_finish()
 		return
 
-	# Back to the ship and board it.
+	# Spike 3: walk up the ramp into the parked ship and sit down.
 	var ship: RigidBody3D = main.ship
-	main.player.global_position = ship.global_position + ship.global_transform.basis.x * 5.0
-	await _wait(0.5)
+	_begin("walk into parked ship")
+	var behind: Vector3 = main.to_planet(ship.to_global(Vector3(0, 0, 12))).normalized()
+	main.player.global_position = main.planet_center + behind * (main.planet_radius + main.height_at(behind) + 0.1)
+	main.player.look_at_point(ship.to_global(Vector3(0, 1.5, 0)))
+	_keys([KEY_W], true)
+	await _wait(5.0)
+	_keys([KEY_W], false)
+	await _wait(0.3)
+	var entered: bool = main.player.ship_frame == ship
+	var could_sit: bool = main.near_seat()
+	_end("in cabin %s, at seat %s" % [entered, could_sit])
+	if not could_sit:  # keep the rest of the run going
+		main.player.enter_ship_frame(ship)
+		main.player.position = Vector3(0, 0.32, -2.5)
+		await _wait(0.3)
 	_tap(KEY_F)
 	await _wait(0.5)
+	ship.hover_assist = true  # the flight phases below were built around the assist
 
 	_begin("climb to 2000 m")
 	_keys([KEY_SPACE, KEY_SHIFT], true)
@@ -235,6 +284,8 @@ func _run() -> void:
 	_keys([KEY_SPACE, KEY_SHIFT], false)
 	_shot("space-2000m")
 	_end("reached %.0f m in %.1f s" % [_altitude(), t])
+
+	await _glide_in_space()
 
 	_begin("descend to 120 m above ground")
 	_keys([KEY_CTRL, KEY_SHIFT], true)
@@ -276,6 +327,7 @@ func _run() -> void:
 
 	await _stand_still("idle 5 s (landed ship)", main.ship)
 
+	await _ship_interior_tests()
 	_finish()
 
 
@@ -335,6 +387,174 @@ func _end(note := "") -> void:
 	_phase = ""
 	main.terrain.reset_max_stats()
 	main.ring.reset_max_stats()
+
+
+## Physics check: in space (no drag) with the assist off, the ship keeps its
+## momentum. The walker stands up and walks while it glides.
+func _glide_in_space() -> void:
+	var ship: RigidBody3D = main.ship
+	var player: CharacterBody3D = main.player
+	_begin("glide in space (assist off)")
+	ship.hover_assist = false
+	_keys([KEY_W, KEY_SHIFT], true)
+	await _wait(2.0)
+	_keys([KEY_W, KEY_SHIFT], false)
+	var v0: float = ship.linear_velocity.length()
+	var alt0 := _altitude()
+	_tap(KEY_F)  # stand up
+	await _wait(0.3)
+	var floor_frames := 0
+	var frames := 0
+	var left_ship := false
+	_keys([KEY_W], true)
+	var t := 0.0
+	while t < 5.0:
+		if t > 1.5 and SpikeInput.held.has(KEY_W):
+			_keys([KEY_W], false)
+			_keys([KEY_S], true)
+		elif t > 2.5 and SpikeInput.held.has(KEY_S):
+			_keys([KEY_S], false)
+		t += await _frame()
+		frames += 1
+		if player.is_on_floor():
+			floor_frames += 1
+		if player.ship_frame != ship:
+			left_ship = true
+	_keys([KEY_W, KEY_S], false)
+	var v1: float = ship.linear_velocity.length()
+	_end("ship %.1f -> %.1f m/s in 5 s, altitude %.0f -> %.0f m, walker on floor %d%%, left ship %s" % [
+		v0, v1, alt0, _altitude(), 100 * floor_frames / maxi(frames, 1), left_ship])
+	player.position = Vector3(0, 0.32, -2.5)  # back to the seat (test shortcut)
+	await _wait(0.3)
+	_tap(KEY_F)
+	await _wait(0.3)
+	ship.hover_assist = true
+
+
+## Debug: walk from behind into the parked ship and log what happens.
+func _board_debug() -> void:
+	await _wait(3.0)
+	var ship: RigidBody3D = main.ship
+	var player: CharacterBody3D = main.player
+	var behind: Vector3 = main.to_planet(ship.to_global(Vector3(0, 0, 12))).normalized()
+	player.global_position = main.planet_center + behind * (main.planet_radius + main.height_at(behind) + 0.1)
+	player.look_at_point(ship.to_global(Vector3(0, 1.5, 0)))
+	for c in ship.get_children():
+		if c is AnimatableBody3D:
+			print("RAMP global origin local-to-ship %s layer %d inside_tree %s rid_space %s" % [ship.to_local(c.global_position), c.collision_layer, c.is_inside_tree(), PhysicsServer3D.body_get_space(c.get_rid())])
+	print("PLAYER layer %d mask %d" % [player.collision_layer, player.collision_mask])
+	_keys([KEY_W], true)
+	var t := 0.0
+	var next := 0.0
+	while t < 5.0:
+		if t >= next:
+			next += 0.25
+			print("BOARD t %.2f local %s floor %s wall %s in_frame %s" % [
+				t, ship.to_local(player.global_position), player.is_on_floor(), player.is_on_wall(), player.ship_frame != null])
+		t += await _frame()
+	_keys([KEY_W], false)
+
+
+## Spike 3: leave and re-enter the landed ship on foot, then stand and walk in
+## a ship that accelerates and rolls (driven by the test, nobody at the seat).
+func _ship_interior_tests() -> void:
+	var ship: RigidBody3D = main.ship
+	var player: CharacterBody3D = main.player
+
+	_begin("walk out of landed ship")
+	_tap(KEY_F)  # stand up
+	await _wait(0.5)
+	player.look_at_point(ship.to_global(Vector3(0, 1.0, 12)))
+	_keys([KEY_W], true)
+	await _wait(4.0)
+	_keys([KEY_W], false)
+	await _wait(0.5)
+	_end("outside %s, %.2f m above ground" % [player.ship_frame == null and player.get_parent() == main, _above_ground()])
+
+	_begin("walk back in to the seat")
+	player.look_at_point(ship.to_global(ship.SEAT_POS))
+	_keys([KEY_W], true)
+	await _wait(5.0)
+	_keys([KEY_W], false)
+	await _wait(0.3)
+	var ramp_end: Vector3 = main.to_planet(ship.to_global(Vector3(0, 0, 5.8)))
+	var ramp_gap: float = ramp_end.length() - main.planet_radius - main.height_at(ramp_end.normalized())
+	_end("in cabin %s, at seat %s, ramp end %.2f m above ground, ship tilt %.0f deg" % [
+		player.ship_frame == ship, main.near_seat(), ramp_gap,
+		rad_to_deg(ship.global_basis.y.angle_to(main.to_planet(ship.global_position).normalized()))])
+	if not main.near_seat():  # keep the run going: put the walker at the seat
+		player.enter_ship_frame(ship)
+		player.position = Vector3(0, 0.32, -2.5)
+		await _wait(0.3)
+
+	_tap(KEY_F)  # sit, climb well clear of the hills, stand up while hovering
+	await _wait(0.3)
+	_keys([KEY_SPACE, KEY_SHIFT], true)
+	var climb_t := 0.0
+	while _above_ground() < 400.0 and climb_t < 20.0:
+		climb_t += await _frame()
+	_keys([KEY_SPACE, KEY_SHIFT], false)
+	await _wait(3.0)
+	_tap(KEY_F)
+	await _wait(1.0)
+
+	_begin("stand in ship: boost + roll 6 s")
+	var start_local: Vector3 = player.position
+	var max_off := 0.0
+	var floor_frames := 0
+	var frames := 0
+	var left_ship := false
+	ship.test_input = Vector3(0, 0, -1)
+	ship.test_boost = 5.0
+	ship.test_roll = 0.3
+	var t := 0.0
+	while t < 6.0:
+		t += await _frame()
+		frames += 1
+		max_off = maxf(max_off, player.position.distance_to(start_local))
+		if player.is_on_floor():
+			floor_frames += 1
+		if player.ship_frame != ship:
+			left_ship = true
+	var top_speed: float = ship.linear_velocity.length()
+	ship.test_input = Vector3.ZERO
+	ship.test_roll = 0.0
+	ship.test_boost = 1.0
+	_end("ship %.0f m/s, %.0f m above ground, walker drift in cabin %.3f m, on floor %d%%, left ship %s" % [
+		top_speed, _above_ground(), max_off, 100 * floor_frames / maxi(frames, 1), left_ship])
+	await _wait(3.0)
+
+	_begin("walk in moving ship 6 s")
+	ship.test_input = Vector3(0, 0, -1)
+	floor_frames = 0
+	frames = 0
+	left_ship = false
+	var min_y := INF
+	var max_y := -INF
+	var min_agl := INF
+	t = 0.0
+	# Forward into the front wall for 2 s, back 1 s (stays inside: the back is open).
+	_keys([KEY_W], true)
+	while t < 6.0:
+		if t > 2.0 and SpikeInput.held.has(KEY_W):
+			_keys([KEY_W], false)
+			_keys([KEY_S], true)
+		elif t > 3.0 and SpikeInput.held.has(KEY_S):
+			_keys([KEY_S], false)
+		t += await _frame()
+		frames += 1
+		min_agl = minf(min_agl, _above_ground())
+		if player.ship_frame == ship:
+			min_y = minf(min_y, player.position.y)
+			max_y = maxf(max_y, player.position.y)
+		if player.is_on_floor():
+			floor_frames += 1
+		if player.ship_frame != ship:
+			left_ship = true
+	_keys([KEY_W, KEY_S], false)
+	ship.test_input = Vector3.ZERO
+	_end("ship %.0f m/s, lowest %.0f m above ground, walker height in cabin %.3f-%.3f m, on floor %d%%, left ship %s" % [
+		ship.linear_velocity.length(), min_agl, min_y, max_y, 100 * floor_frames / maxi(frames, 1), left_ship])
 
 
 ## Precision check: nothing should move. Reports the largest frame-to-frame

@@ -2,6 +2,9 @@ extends CharacterBody3D
 ## First-person walker with radial gravity. "Up" is away from the planet centre.
 ## V toggles a debug fly mode (no gravity, no collision) to inspect the planet.
 ## Mouse wheel changes fly speed.
+## Inside a ship cabin the walker is a child of the ship and walks in the ship's
+## frame: the parent transform carries it along, velocity is relative to the
+## ship, gravity points to the cabin floor (spike 3 assumption).
 
 const SpikeInput := preload("res://spikes/planet/spike_input.gd")
 
@@ -21,6 +24,8 @@ var fly_mode := false
 var _grounded := false
 var _was_grounded_last := false
 var fly_speed := 50.0
+## The ship whose cabin the walker is in, or null.
+var ship_frame: Node3D
 
 var _head: Node3D
 var _camera: Camera3D
@@ -49,6 +54,9 @@ func _ready() -> void:
 	_head.add_child(_camera)
 	_camera.make_current()
 
+	collision_layer = 2  # ships ignore this layer, so walking inside never pushes them
+	collision_mask = 1 | 4  # world and ships, plus ship ramps (layer 4)
+	platform_floor_layers = 0  # the parent transform already carries us; no platform velocity on top
 	floor_max_angle = deg_to_rad(50.0)
 	floor_snap_length = 0.5
 	for arg in OS.get_cmdline_user_args():
@@ -78,7 +86,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _physics_process(delta: float) -> void:
-	var up := (global_position - planet_center).normalized()
+	var up := ship_frame.global_basis.y if ship_frame else (global_position - planet_center).normalized()
 	_align_to_up(up)
 
 	var b := global_transform.basis
@@ -103,14 +111,35 @@ func _physics_process(delta: float) -> void:
 		jumping = SpikeInput.pressed(KEY_SPACE)
 		vertical = jump_speed if jumping else 0.0
 	else:
-		var g: float = planet.gravity_at(global_position).length() if planet else gravity
+		var g: float = gravity
+		if planet and not ship_frame:
+			g = planet.gravity_at(global_position).length()
 		vertical -= g * delta
 	velocity = horizontal + up * vertical
 	up_direction = up
 	move_and_slide()
 	_grounded = is_on_floor()
-	if terrain:
+	if terrain and not ship_frame:
 		_ground_safety(jumping)
+
+
+## Called deferred by main when the walker enters or leaves a cabin. Keeps the
+## world position; converts between world and ship-relative velocity.
+func enter_ship_frame(ship: RigidBody3D) -> void:
+	if ship_frame == ship:
+		return
+	velocity -= ship.linear_velocity
+	reparent(ship, true)
+	ship_frame = ship
+
+
+func leave_ship_frame(world: Node3D) -> void:
+	if ship_frame == null:
+		return
+	var ship := ship_frame as RigidBody3D
+	ship_frame = null
+	reparent(world, true)
+	velocity += ship.linear_velocity
 
 
 ## Where a collision patch exists, only catch real fall-throughs (and count

@@ -58,10 +58,15 @@ func _check(condition: bool, note: String) -> void:
 func _run() -> void:
 	await _spawn(15.0, true)
 	SpikeInput.held[KEY_W] = true
-	await _ticks(240)
-	_check(absf(ship.linear_velocity.length() - 25.0) < 1.0, "low flight %.2f m/s (target 25)" % ship.linear_velocity.length())
+	await _ticks(2)
+	_check(ship.linear_velocity.length() > 0.0 and ship.linear_velocity.length() < 0.2,
+		"takeoff builds thrust instead of applying full acceleration (%.3f m/s after two ticks)" % ship.linear_velocity.length())
+	await _ticks(238)
+	_check(absf(ship.linear_velocity.length() - 45.0) < 1.0, "low flight %.2f m/s (target 45)" % ship.linear_velocity.length())
 	SpikeInput.held.clear()
-	await _ticks(120)
+	await _ticks(30)
+	_check(ship.linear_velocity.length() > 20.0, "ground stop retains movement after 0.5 s (%.2f m/s)" % ship.linear_velocity.length())
+	await _ticks(90)
 	_check(ship.linear_velocity.length() < 0.5, "neutral stops in atmosphere")
 	_check(absf(ship.clearance_at(ship.global_position) - 15.0) < 2.0, "hover/curvature clearance %.2f m" % ship.clearance_at(ship.global_position))
 
@@ -109,6 +114,33 @@ func _run() -> void:
 	await _ticks(1500)
 	_check(absf(ship.linear_velocity.length() - 350.0) < 3.0, "high flight %.2f m/s (target 350)" % ship.linear_velocity.length())
 	_check(absf(ship.clearance_at(ship.global_position) - 2000.0) < 20.0, "curved high flight clearance %.2f m" % ship.clearance_at(ship.global_position))
+	var high_distance := 0.0
+	previous = ship.global_position
+	SpikeInput.held.clear()
+	var stop_ticks := 0
+	while ship.linear_velocity.length() > 0.5 and stop_ticks < 240:
+		await physics_frame
+		high_distance += previous.distance_to(ship.global_position)
+		previous = ship.global_position
+		stop_ticks += 1
+	_check(stop_ticks <= 210 and ship.linear_velocity.length() < 0.5 and high_distance < 650.0,
+		"350 m/s stop %.2f s / %.1f m / residual %.3f m/s" % [stop_ticks / 60.0, high_distance, ship.linear_velocity.length()])
+
+	# A heading change must redirect trajectory, not just the model. Measure
+	# remaining side-slip after the mouse stops moving, at travel speed.
+	SpikeInput.held[KEY_W] = true
+	await _ticks(480)
+	for i in 30:
+		ship._mouse = Vector2(0.008, 0.0)
+		await physics_frame
+	await _ticks(150)
+	local_v = ship.global_basis.inverse() * ship.linear_velocity
+	_check(local_v.z < -330.0 and absf(local_v.x) < 5.0,
+		"high-speed turn catches heading within 2.5 s; local velocity %s" % local_v)
+
+	await _spawn(2000.0)
+	SpikeInput.held[KEY_W] = true
+	await _ticks(600)
 	SpikeInput.held.clear()
 	var v0 := ship.linear_velocity
 	ship.hover_assist = false
@@ -117,8 +149,8 @@ func _run() -> void:
 	await _ticks(120)
 	_check(ship.linear_velocity.length() > 340.0, "unassisted vacuum coasts %.2f m/s" % ship.linear_velocity.length())
 	ship.hover_assist = true
-	await _ticks(900)
-	_check(ship.linear_velocity.length() < 0.5, "assist arrests high-speed drift in 15 s (%.3f m/s)" % ship.linear_velocity.length())
+	await _ticks(240)
+	_check(ship.linear_velocity.length() < 0.5, "assist arrests high-speed drift in 4 s (%.3f m/s)" % ship.linear_velocity.length())
 
 	await _spawn(700.0)
 	SpikeInput.held[KEY_W] = true
@@ -131,7 +163,7 @@ func _run() -> void:
 	planet.terrain_height = 570.0
 	SpikeInput.held[KEY_W] = true
 	await _ticks(240)
-	_check(ship.linear_velocity.length() < 27.0, "mountain clearance governs speed %.2f" % ship.linear_velocity.length())
+	_check(absf(ship.linear_velocity.length() - 45.0) < 2.0, "mountain clearance governs speed %.2f" % ship.linear_velocity.length())
 	var before := ship.linear_velocity
 	var offset := Vector3(10000, 0, 0)
 	planet.centre -= offset

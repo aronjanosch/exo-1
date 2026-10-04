@@ -286,7 +286,7 @@ func _unhandled_input(event: InputEvent) -> void:
 ## Short status for the overlay.
 func mode_text() -> String:
 	if active == ship:
-		return "SHIP (F stand up)  hover assist %s (H)  horizon follow %s (L)" % [
+		return "SHIP (F stand up)  flight assist %s (H)  planet follow %s (L)" % [
 			"on" if ship.hover_assist else "off", "on" if ship.horizon_follow else "off"]
 	if player.fly_mode:
 		return "FLY (V)"

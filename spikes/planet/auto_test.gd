@@ -27,6 +27,8 @@ func _ready() -> void:
 	add_child(_probe)
 	if "--start-at=cruise" in OS.get_cmdline_user_args():
 		_run_cruise_only()
+	elif "--start-at=climb" in OS.get_cmdline_user_args():
+		_run_from_climb()
 	elif "--fly-out" in OS.get_cmdline_user_args():
 		_run_fly()
 	elif "--fly-to-second" in OS.get_cmdline_user_args():
@@ -84,6 +86,13 @@ func _cruise_and_land() -> void:
 	_keys([KEY_CTRL], false)
 	_shot("landed")
 	_end("%.1f s, %.2f m above ground, rescues so far %d" % [t, _above_ground(), main.stats.rescues])
+
+
+## --start-at=climb: skip standing, walking and boarding (for filming).
+func _run_from_climb() -> void:
+	await _wait(3.0)
+	await _board_at_seat(main.ship)
+	await _run_flight()
 
 
 ## --start-at=cruise: skip to the low cruise (for filming). Walker at the seat,
@@ -323,6 +332,14 @@ func _run() -> void:
 	await _wait(0.5)
 	ship.hover_assist = true  # the flight phases below were built around the assist
 
+	await _run_flight()
+
+
+
+## From the climb on (also --start-at=climb, for filming): climb, glide,
+## descend, low cruise, land, then the spike 3 cabin tests.
+func _run_flight() -> void:
+	var ship: RigidBody3D = main.ship
 	_begin("climb to 2000 m")
 	_keys([KEY_SPACE, KEY_SHIFT], true)
 	var shot_500 := false

@@ -34,9 +34,11 @@ func _process(delta: float) -> void:
 	var planet_pos: Vector3 = ship.planet.to_planet(ship.global_position)
 	var up := planet_pos.normalized()
 	var altitude: float = planet_pos.length() - ship.planet.planet_radius
+	var nose_pitch := rad_to_deg(asin(clampf((-ship.global_basis.z).dot(up), -1.0, 1.0)))
+	var view_pitch := rad_to_deg(asin(clampf((-ship.camera.global_basis.z).dot(up), -1.0, 1.0)))
 	var limit := "%.0f m/s" % ship.forward_speed_limit if ship.hover_assist else "manual"
-	_label.text = "SPEED  %5.1f m/s     FORWARD LIMIT  %s\nALTITUDE  %5.0f m     BRAKE [X]  %s\nGROUND  %5.0f m      VERTICAL  %+.1f m/s\nFLIGHT ASSIST [H]  %s     PLANET FOLLOW [L]  %s" % [
+	_label.text = "SPEED  %5.1f m/s     FORWARD LIMIT  %s\nALTITUDE  %5.0f m     BRAKE [X]  %s\nGROUND  %5.0f m      VERTICAL  %+.1f m/s\nNOSE  %+.1f°     VIEW  %+.1f°\nFLIGHT ASSIST [H]  %s     PLANET FOLLOW [L]  %s" % [
 		ship.linear_velocity.length(), limit, altitude, "ACTIVE" if ship.brake_active else "READY",
 		ship.clearance_at(ship.global_position),
-		ship.linear_velocity.dot(up), "ON" if ship.hover_assist else "OFF",
+		ship.linear_velocity.dot(up), nose_pitch, view_pitch, "ON" if ship.hover_assist else "OFF",
 		"ON" if ship.horizon_follow else "OFF"]

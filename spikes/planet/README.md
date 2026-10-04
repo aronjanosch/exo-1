@@ -19,6 +19,11 @@ Run: `godot --path .` from the repo root (agents: see `WORKSPACE.md` if present)
   speed, Flight Assist (H), and Planet Follow (L). It stays
   visible when F3 diagnostics are hidden. Planet Follow follows the planet's
   curved horizon; it is separate from gravity and atmospheric drag.
+- NOSE and VIEW show the ship/camera elevation relative to the local horizontal
+  plane. Positive points up; zero is level. The chase camera looks 10 degrees
+  below the nose, so a level view can mean a climbing ship. The visible distant
+  horizon dips below local horizontal with altitude. Planet Follow preserves
+  existing pitch; it does not automatically level the nose or lock altitude.
 - Terrain debug: 1 LOD colours, 2 skirts on/off, 3 freeze LOD, 4 reset max stats, 5 flat-shading strength (1, 0.6, 0.3, 0; facets also fade to smooth between 80 and 400 m).
 
 Command-line options (after `--`):

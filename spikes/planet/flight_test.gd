@@ -55,6 +55,43 @@ func _check(condition: bool, note: String) -> void:
 	if not condition:
 		failures += 1
 
+
+## Elevation of a direction above the local horizontal plane at the ship.
+func _elevation(direction: Vector3) -> float:
+	var up := planet.to_planet(ship.global_position).normalized()
+	return rad_to_deg(asin(clampf(direction.dot(up), -1.0, 1.0)))
+
+
+func _horizon_comparison() -> void:
+	for setup in [["level nose", 0.0, true, 60], ["level view", 10.0, true, 30], ["follow off", 0.0, false, 30]]:
+		await _spawn(2000.0)
+		# Initial orientation only; the controller supplies all subsequent motion.
+		ship.global_basis = Basis(Vector3.RIGHT, deg_to_rad(setup[1]))
+		ship.horizon_follow = setup[2]
+		await _ticks(2)
+		var starting_view := _elevation(-ship.camera.global_basis.z)
+		var start_altitude: float = ship.clearance_at(ship.global_position)
+		var max_change := 0.0
+		SpikeInput.held[KEY_W] = true
+		for tick in int(setup[3]) * 60:
+			await physics_frame
+			max_change = maxf(max_change, absf(ship.clearance_at(ship.global_position) - start_altitude))
+		var altitude_change: float = ship.clearance_at(ship.global_position) - start_altitude
+		var up := planet.to_planet(ship.global_position).normalized()
+		var nose := _elevation(-ship.global_basis.z)
+		var view := _elevation(-ship.camera.global_basis.z)
+		print("HORIZON %s: %d s, altitude change %+.2f m, max %.2f m, vertical %+.2f m/s, nose %+.2f°, view %+.2f° (initial view %+.2f°)" % [
+			setup[0], setup[3], altitude_change, max_change, ship.linear_velocity.dot(up), nose, view, starting_view])
+		if setup[0] == "level nose":
+			_check(max_change < 20.0 and absf(nose) < 0.2,
+				"level nose/follow retains reference altitude over 60 s")
+		elif setup[0] == "level view":
+			_check(absf(starting_view) < 0.1, "camera-level setup is initially horizontal")
+			_check(altitude_change > 1000.0 and absf(nose - 10.0) < 0.2,
+				"camera-level aim climbs with a preserved upward nose angle")
+		else:
+			_check(altitude_change > 1000.0, "assist without planet follow leaves the sphere along a straight path")
+
 func _run() -> void:
 	await _spawn(15.0, true)
 	SpikeInput.held[KEY_W] = true
@@ -226,6 +263,7 @@ func _run() -> void:
 	await _ticks(3)
 	_check(absf(ship.clearance_at(ship.global_position) - 30.0) < 2.0 and (ship.linear_velocity - before).length() < 1.0,
 		"origin shift preserves flight frame")
+	await _horizon_comparison()
 	SpikeInput.held.clear()
 	print("FLIGHT TEST: %d failures" % failures)
 	quit(0 if failures == 0 else 1)

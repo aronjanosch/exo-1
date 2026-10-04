@@ -56,6 +56,22 @@ or held assisted input without velocity snaps. Preserve heading correction and
 origin/terrain/boarding/cabin checks. Bot uses X before starting its landing.
 This supersedes the first slice's release-stop timing; X retains the firm profile.
 
+## Accepted diagnostic: apparent climbing with planet follow
+
+The initiator answered "okay gut dann weiter" after the proposed nose-angle and
+height-gain check. Add NOSE and VIEW elevation angles to the piloting HUD, relative
+to the local horizontal plane perpendicular to gravity. Positive means pointing
+upward. This is not the visible distant horizon, which dips below that plane.
+
+Measure the existing controller with real scripted W input: level nose with
+assist/follow on for 60 s; camera-level initial aim (nose +10 degrees) for 30 s;
+and level initial nose with assist on/follow off for 30 s. Log reference-altitude
+change, vertical velocity and nose/view angles. Level follow should remain within
+20 m of initial altitude; camera-level should climb while retaining its pitch;
+follow-off should leave the spherical surface on a straight trajectory. Repeat
+the existing flight checks and visually verify the HUD. No gravity, mass, camera,
+steering or thrust changes in this diagnostic slice.
+
 Regression repair: the full test exposed a shutdown abort from unreaped terrain
 and collision WorkerThreadPool tasks. Scene exit now waits for those tasks while
 the scripts are alive. This is a separate small correctness fix/commit, not a new

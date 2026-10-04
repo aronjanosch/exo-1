@@ -93,3 +93,26 @@ Rendered Vulkan cruise/landing exited zero with zero rescues. Screenshot inspect
 BRAKE [X] ACTIVE is readable alongside ALTITUDE. Bot brake before landing uses
 real input; this is still not a collision-avoidance system. Human feel judgment,
 production MCP coverage and runtime performance benchmarks remain outstanding.
+
+## Follow-up: planet-follow attitude diagnostic
+
+Initiator accepted the nose-angle/altitude comparison with "okay gut dann weiter".
+HUD now shows NOSE and VIEW elevation above local horizontal, updated at the
+existing 10 Hz. Controller, camera, gravity and mass are unchanged. Risk: yellow.
+Vision: fits. No red paths, dependencies, risky APIs or imported implementation.
+
+All 36 fixture checks passed at 60 physics ticks/s. From 2000 m reference altitude:
+level nose with assist/follow lost 12.91 m over 60 s (final radial speed -0.53 m/s);
+initially level camera view, nose +10 degrees, gained 1700.33 m in 30 s;
+level initial nose with follow off gained 5071.91 m in 30 s. The latter two
+demonstrate preserved upward pitch and departure from the sphere respectively.
+Small sinking remains measurable; planet follow is not an exact altitude lock.
+The camera offset is a supported explanation, not proof of the user's specific
+playtest cause. Fixture has a spherical surface, without terrain or atmosphere
+at these altitudes; no claim of general terrain-clearance preservation.
+
+Forward+/Vulkan cruise/landing exited zero with zero rescues and two origin shifts
+with zero speed discontinuity. Inspected screenshot shows readable NOSE -0.0
+degrees / VIEW -10.0 degrees. Scripted input exercises the existing bot interface;
+production MCP coverage and human interpretation of the display remain untested.
+This review reports evidence and does not approve a PR.

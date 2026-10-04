@@ -30,7 +30,8 @@ Skip a step only if its output already exists in the repo or the issue.
 - Never touch red-class paths (CI, `project.godot`, autoloads, networking, addons) unless the task is explicitly about them and flagged for the initiator.
 - Avoid risky APIs: `OS.execute`, shell, file access outside `user://`, GDExtension. Ask first.
 - Every feature must be reachable by the bot/agent interface (MCP) so CI can play it.
-- Must run on weak hardware. Simple lighting, simple assets, original or CC0 only.
+- Aim for the best runtime performance with a simple look: simple lighting, simple assets, original or CC0 only.
+- Current renderer baseline: Forward+ with Vulkan. Revisit based on measured performance and visual correctness.
 - No personal data, no real names in content, tests or issues.
 - AI output summarizes and labels. It never approves a PR.
 

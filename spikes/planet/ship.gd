@@ -190,11 +190,11 @@ func forward_speed_at(clearance: float) -> float:
 
 ## Preview terrain over the braking horizon. This lowers the requested speed;
 ## it does not snap velocity or promise collision avoidance on every approach.
-func _flight_clearance(world_pos: Vector3, v: Vector3) -> float:
+func _flight_clearance(world_pos: Vector3, v: Vector3, current_clearance: float) -> float:
 	var p: Vector3 = planet.to_planet(world_pos)
 	var up := p.normalized()
 	var sink := maxf(0.0, -v.dot(up))
-	var clearance := clearance_at(world_pos) - sink * 0.5 - sink * sink / (2.0 * assisted_braking)
+	var clearance := current_clearance - sink * 0.5 - sink * sink / (2.0 * assisted_braking)
 	var preview_time := 0.5 + v.length() / assisted_braking
 	var horizon_w := up.cross(v) / p.length()
 	for i in range(1, 4):
@@ -231,7 +231,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		var pos: Vector3 = planet.to_planet(state.transform.origin)
 		var up := pos.normalized()
 		terrain_clearance = clearance_at(state.transform.origin)
-		var clearance := _flight_clearance(state.transform.origin, v)
+		var clearance := _flight_clearance(state.transform.origin, v, terrain_clearance)
 		forward_speed_limit = forward_speed_at(clearance)
 		if boost > 1.0:
 			# Boost stays gentle near terrain and cannot exceed high-altitude cruise.
@@ -256,7 +256,10 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 			curve_accel = (up.cross(v) / pos.length()).cross(v)
 		# Gravity cancellation is the existing arcade hover assumption. Drag,
 		# turning and velocity correction compete within one thrust budget.
-		var thrust := (correction + curve_accel - drag).limit_length(budget)
+		# Reserve thrust for the curved path/drag first. Otherwise a large speed
+		# error consumes the entire budget and the ship climbs while accelerating.
+		var support := (curve_accel - drag).limit_length(budget)
+		var thrust := support + correction.limit_length(maxf(0.0, budget - support.length()))
 		v += (thrust + drag) * dt
 	else:
 		commanded_speed = 0.0

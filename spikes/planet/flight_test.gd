@@ -27,6 +27,7 @@ var ship: RigidBody3D
 var failures := 0
 
 func _initialize() -> void:
+	Engine.physics_ticks_per_second = 60
 	_run.call_deferred()
 
 func _spawn(height: float, atmosphere := false) -> void:
@@ -105,7 +106,7 @@ func _run() -> void:
 
 	await _spawn(2000.0)
 	SpikeInput.held[KEY_W] = true
-	await _ticks(900)
+	await _ticks(1500)
 	_check(absf(ship.linear_velocity.length() - 350.0) < 3.0, "high flight %.2f m/s (target 350)" % ship.linear_velocity.length())
 	_check(absf(ship.clearance_at(ship.global_position) - 2000.0) < 20.0, "curved high flight clearance %.2f m" % ship.clearance_at(ship.global_position))
 	SpikeInput.held.clear()
@@ -116,8 +117,8 @@ func _run() -> void:
 	await _ticks(120)
 	_check(ship.linear_velocity.length() > 340.0, "unassisted vacuum coasts %.2f m/s" % ship.linear_velocity.length())
 	ship.hover_assist = true
-	await _ticks(600)
-	_check(ship.linear_velocity.length() < 0.5, "assist arrests high-speed drift")
+	await _ticks(900)
+	_check(ship.linear_velocity.length() < 0.5, "assist arrests high-speed drift in 15 s (%.3f m/s)" % ship.linear_velocity.length())
 
 	await _spawn(700.0)
 	SpikeInput.held[KEY_W] = true

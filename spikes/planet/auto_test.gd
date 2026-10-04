@@ -116,7 +116,7 @@ func _run_cruise_only() -> void:
 
 
 ## Spike 5 runs board directly at the seat (spike 3 cabin) and fly with the
-## hover assist on, which spike 3 made optional (off by default).
+## flight assist on (also the assisted-flight spike's player default).
 func _board_at_seat(ship: RigidBody3D) -> void:
 	main.player.enter_ship_frame(ship)
 	main.player.position = Vector3(0, 0.32, -2.5)
@@ -139,7 +139,7 @@ func _run_second() -> void:
 	_begin("lift off to 2000 m")
 	_keys([KEY_SPACE, KEY_SHIFT], true)
 	var t := 0.0
-	while _altitude() < 2000.0 and t < 40.0:
+	while _altitude() < 2000.0 and t < 180.0:
 		t += await _frame()
 	_keys([KEY_SPACE, KEY_SHIFT], false)
 	_end("%.1f s" % t)
@@ -216,11 +216,14 @@ func _run_fly() -> void:
 	await _board_at_seat(ship)
 	for mark in [10000.0, 25000.0, 50000.0, 100000.0]:
 		_begin("climb to %d km" % int(mark / 1000.0))
+		# This is a precision probe, not the assisted vertical-speed playtest.
+		ship.hover_assist = false
 		_keys([KEY_SPACE, KEY_SHIFT], true)
 		var t := 0.0
 		while main.true_distance(ship.global_position) < mark and t < 120.0:
 			t += await _frame()
 		_keys([KEY_SPACE, KEY_SHIFT], false)
+		ship.hover_assist = true
 		while ship.linear_velocity.length() > 0.5 and t < 180.0:
 			t += await _frame()  # hover assist brakes
 		_end("%.1f s, max speed reached on the way" % t)
@@ -344,7 +347,7 @@ func _run_flight() -> void:
 	_keys([KEY_SPACE, KEY_SHIFT], true)
 	var shot_500 := false
 	var t := 0.0
-	while _altitude() < 2000.0 and t < 40.0:
+	while _altitude() < 2000.0 and t < 180.0:
 		if not shot_500 and _altitude() > 500.0:
 			shot_500 = true
 			_shot("climb-500m")
@@ -359,7 +362,7 @@ func _run_flight() -> void:
 	_keys([KEY_CTRL, KEY_SHIFT], true)
 	var shot_300 := false
 	t = 0.0
-	while _above_ground() > 120.0 and t < 60.0:
+	while _above_ground() > 120.0 and t < 180.0:
 		if not shot_300 and _above_ground() < 300.0:
 			shot_300 = true
 			_shot("descend-300m")
@@ -538,7 +541,7 @@ func _ship_interior_tests() -> void:
 	await _wait(0.3)
 	_keys([KEY_SPACE, KEY_SHIFT], true)
 	var climb_t := 0.0
-	while _above_ground() < 400.0 and climb_t < 20.0:
+	while _above_ground() < 400.0 and climb_t < 40.0:
 		climb_t += await _frame()
 	_keys([KEY_SPACE, KEY_SHIFT], false)
 	await _wait(3.0)
@@ -634,6 +637,8 @@ func _stand_still(name: String, body: Node3D) -> void:
 
 
 func _shot(tag: String) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
 	overlay.save_screenshot("s5-" + tag)
 	_skip_frames = 2
 

@@ -9,7 +9,7 @@ Run: `godot --path .` from the repo root (agents: see `WORKSPACE.md` if present)
 - Mouse: look. Esc frees the mouse, click captures it again.
 - Walker: WASD walk, Shift run, Space jump. V: debug fly mode (no gravity, no collision; Space/Ctrl up/down, Shift x4, mouse wheel speed).
 - F at the seat inside the cabin: sit down / stand up. Walk in and out over the ramp at the back.
-- Ship: mouse pitch/yaw, W/S thrust, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost (x5). H: hover assist (default off: cancels gravity, brakes axes without input, caps sink rate near the ground). Without it the ship has inertia, gravity and quadratic air drag, and glides in space. L: horizon follow (default on: the ship's frame turns with the local up while moving, so "straight" means along the horizon and pitch relative to the horizon stays constant).
+- Ship: mouse pitch/yaw, W/S forward/reverse, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost. H: flight assist (default on: holds requested velocity, cancels gravity, brakes on release, slows requested descent near terrain). Forward speed grows with terrain clearance; boost raises forward speed away from the ground and acceleration. Without assist the original thrust, x5 boost, gravity and quadratic air drag remain, with coasting in space. L: horizon follow (default on: the ship's frame turns with the local up while moving, so "straight" means along the horizon and pitch relative to the horizon stays constant).
 - F3: toggle debug overlay. F12: screenshot to `user://screenshots/`.
 - Terrain debug: 1 LOD colours, 2 skirts on/off, 3 freeze LOD, 4 reset max stats, 5 flat-shading strength (1, 0.6, 0.3, 0; facets also fade to smooth between 80 and 400 m).
 
@@ -86,7 +86,29 @@ Jolt height maps (verified in the 4.7.2-stable source, `modules/jolt_physics/sha
 
 ## Open tuning values (by feel, later)
 
+Assisted-flight experiment (initiator agreed the behavior on 2026-10-04; exact
+numbers below are provisional spike tuning, not final design):
+
+- Forward target: 25 m/s through 30 m terrain clearance, 60 m/s at 150 m,
+  150 m/s at 600 m, 350 m/s at 1200 m and above. Smooth blends between them.
+- Reverse 25 m/s, strafe 20 m/s, vertical 15 m/s. Combined input is normalized.
+- Acceleration budget 30 m/s², braking 40 m/s², boosted acceleration 60 m/s².
+  Horizon curvature and drag compensation reserve some of that budget; gravity
+  cancellation retains the existing arcade assumption.
+- Shift progressively raises the forward target to x2.5 between 30 and 150 m
+  clearance, with a ceiling of 350 m/s. It does not boost reverse/sideways/vertical
+  speed. Near-ground flight stays slow even with Shift held.
+- Speed requests anticipate descending and sample the upcoming terrain over a
+  braking horizon. This is a governor, not a collision-avoidance autopilot;
+  sharp approaches and terrain between samples can still be dangerous.
+- F3 shows actual speed, commanded speed, and the current forward limit.
+- Controller checks: `GODOT_AGENT_WORKSPACE=7 godot-agent --headless --path .
+  --fixed-fps 60 --script res://spikes/planet/flight_test.gd`. Tests use the actual
+  ship controller and scripted movement input on a spherical fixture. Terrain,
+  boarding and cabin regression: `--auto-test` (headless supported). Fixed-FPS
+  accelerated runs verify behavior; their frame-time numbers are not benchmarks.
+
 - Walk 5 m/s and run 12 m/s are placeholders and fast (real walking is about 1.4 m/s).
-- Ship: thrust 20 m/s^2, boost x5, turn rate cap 2.5 rad/s, assist damping 1.2/s, quadratic drag k 0.0005 (terminal about 200 m/s, boost about 450 m/s), landing sink factor 0.5.
+- Unassisted ship: thrust 20 m/s^2, boost x5, turn rate cap 2.5 rad/s, quadratic drag k 0.0005 (terminal about 200 m/s, boost about 450 m/s), assisted landing sink factor 0.5.
 - Gravity 9.81 at the surface, atmosphere top 1200 m, terrain amplitude 150 m.
 - Planet radius: 1.5, 3 and 5 km all run; which one feels right is the initiator's call.

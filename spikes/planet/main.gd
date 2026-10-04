@@ -41,6 +41,7 @@ var shift_ms_max := 0.0
 var _shift_in_physics := "--shift-in-physics" in OS.get_cmdline_user_args()
 var recenter := "--recenter" in OS.get_cmdline_user_args()
 var planet_switches := 0
+var _mouse_released := false  # Escape pressed: do not re-grab on focus
 
 
 class PlanetBody:
@@ -258,12 +259,22 @@ func shift_origin(offset: Vector3) -> void:
 	stats.shift_ms_max = shift_ms_max
 
 
+## The window may get focus only after _ready set CAPTURED, then Godot thinks
+## the mouse is grabbed while the compositor never locked it. Grab again on
+## focus, unless the player released the mouse with Escape.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_IN and not _mouse_released and not SpikeInput.scripted():
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED \
-			and not SpikeInput.scripted():
+	# Always set, not only when != CAPTURED: Godot's idea of the mode can be stale.
+	if event is InputEventMouseButton and event.pressed and not SpikeInput.scripted():
+		_mouse_released = false
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.physical_keycode == KEY_ESCAPE:
+			_mouse_released = true
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		elif event.physical_keycode == KEY_F:
 			if active == ship:

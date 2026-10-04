@@ -4,7 +4,7 @@ extends RigidBody3D
 ## in space. Engine gravity is off; gravity comes from the planet model.
 ## Rotation is still rate-controlled (like a flight computer): an assumption.
 ## Mouse: pitch and yaw. W/S thrust, A/D strafe, Space/Ctrl up/down, Q/E roll,
-## Shift boost, H flight assist on/off (default on), L horizon follow on/off.
+## Shift boost, X firm brake (hold), H flight assist, L horizon follow.
 ## Horizon follow (default on, initiator's decision): "straight" means along the
 ## horizon, not off the planet. The ship's frame turns with the local up as it
 ## moves over the sphere, so its pitch relative to the horizon stays constant.
@@ -28,6 +28,8 @@ const FlightHud := preload("res://spikes/planet/flight_hud.gd")
 ## Cruise-scaled authority keeps fast flight from inheriting the ground budget.
 @export var assisted_acceleration_time := 3.5  # s; authority scale, not a guaranteed arrival time
 @export var assisted_braking_time := 2.25  # s; before support and settling
+@export var release_braking := 14.0  # m/s^2; gentle neutral input while piloted
+@export var release_braking_time := 6.0  # s; cruise-scaled neutral authority
 @export var velocity_response_time := 0.35  # s; ease into the requested velocity
 @export var thrust_response_time := 0.15  # s; full thrust builds over several ticks
 @export var assisted_reverse_speed := 25.0
@@ -48,6 +50,7 @@ var planet: Node  # gravity_at(pos), density_at(pos), height_at(dir), planet_rad
 var piloted := false
 var hover_assist := true  # H; assisted velocity goals, off preserves the original glide
 var horizon_follow := true
+var brake_active := false
 var commanded_speed := 0.0
 var forward_speed_limit := 45.0
 var terrain_clearance := 0.0
@@ -242,10 +245,14 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		input = test_input
 		roll = test_roll
 		boost = test_boost
+	brake_active = piloted and SpikeInput.pressed(KEY_X)
+	if brake_active:
+		input = Vector3.ZERO
+		boost = 1.0
 
 	var v := state.linear_velocity
 	var drag := -v * drag_k * density * v.length()
-	if hover_assist:
+	if hover_assist or brake_active:
 		var pos: Vector3 = planet.to_planet(state.transform.origin)
 		var up := pos.normalized()
 		terrain_clearance = clearance_at(state.transform.origin)
@@ -272,6 +279,10 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 			budget = maxf(budget, assisted_boost_accel)
 		if correction.dot(v) < 0.0:
 			budget = braking_budget(v.length(), forward_speed_limit)
+		# Only neutral piloted input gets the gentle release response. Keep
+		# authority for turns, deliberate braking, and an unattended ship.
+		if piloted and input.is_zero_approx() and not brake_active:
+			budget = maxf(release_braking, maxf(v.length(), forward_speed_limit) / release_braking_time)
 		var curve_accel := Vector3.ZERO
 		if horizon_follow:
 			curve_accel = (up.cross(v) / pos.length()).cross(v)

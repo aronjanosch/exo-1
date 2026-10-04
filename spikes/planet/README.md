@@ -10,6 +10,9 @@ Run: `godot --path .` from the repo root (agents: see `WORKSPACE.md` if present)
 - Walker: WASD walk, Shift run, Space jump. V: debug fly mode (no gravity, no collision; Space/Ctrl up/down, Shift x4, mouse wheel speed).
 - F at the seat inside the cabin: sit down / stand up. Walk in and out over the ramp at the back.
 - Ship: mouse pitch/yaw, W/S forward/reverse, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost. H: flight assist (default on: holds requested velocity, cancels gravity, brakes on release, slows requested descent near terrain). Forward speed grows with terrain clearance; boost raises forward speed away from the ground and acceleration. Without assist the original thrust, x5 boost, gravity and quadratic air drag remain, with coasting in space. L: horizon follow (default on: the ship's frame turns with the local up while moving, so "straight" means along the horizon and pitch relative to the horizon stays constant).
+- Release movement keys for gentle assisted slowing; hold X for a firm brake.
+  X overrides movement/boost while held, including with H off. Release X to
+  restore held input (or manual coasting with H off). The HUD shows brake state.
 - F3: toggle debug overlay. F12: screenshot to `user://screenshots/`.
 - While seated, a separate flight HUD shows speed, forward speed limit, altitude
   above the planet's reference sphere, terrain clearance (GROUND), vertical
@@ -100,6 +103,10 @@ numbers below are provisional spike tuning, not final design):
 - Acceleration budget starts at 30 m/s² and grows with cruise/actual speed
   divided by 3.5 s. Braking starts at 40 m/s² and grows with cruise/actual speed
   divided by 2.25 s. Boost retains at least 60 m/s² acceleration.
+  Neutral piloted input uses gentler braking: 14 m/s² minimum, growing with
+  cruise/actual speed divided by 6 s. X, active movement correction, and unpiloted
+  hover retain the firm authority. Holding X with H off temporarily applies the
+  existing velocity/hover aid; releasing restores manual flight.
   Velocity error uses a 0.35 s response and thrust builds with a 0.15 s smoothing
   time constant, easing starts and stops without snapping velocity.
   Horizon curvature and drag compensation reserve some of that budget; gravity

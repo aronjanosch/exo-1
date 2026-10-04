@@ -35,6 +35,27 @@ minus planet radius), retaining separate terrain clearance. Acceptance: both
 readouts are visible/readable while seated. Braking behavior is unchanged while
 the release-versus-explicit-brake design is discussed.
 
+## Accepted follow-up: gentle release and deliberate brake
+
+The initiator answered "alright" to the recommendation of gentler automatic
+slowing plus a deliberate strong brake, preserving steering authority. On the
+same local spike branch, neutral translation input while piloted uses a provisional
+14 m/s² base budget, rising to max(actual speed, forward limit) / 6 s. Active
+movement/turn correction and unpiloted hover retain their previous authority.
+
+Hold X to request zero velocity with the previous firm braking budget. X overrides
+translation/boost input but permits orientation changes; releasing restores held
+movement input. With H off, X temporarily applies the existing velocity/hover aid
+while held; release restores manual thrust, gravity and coasting. HUD shows brake
+state. No sticky throttle or new travel mode.
+
+Acceptance: neutral stops take longer than 2 s near ground and 4 s at 350 m/s,
+still settle within 5/9 s in the fixture, and maintain curved flight. X stops
+faster, overrides W/Shift, works with H off, and release restores manual coasting
+or held assisted input without velocity snaps. Preserve heading correction and
+origin/terrain/boarding/cabin checks. Bot uses X before starting its landing.
+This supersedes the first slice's release-stop timing; X retains the firm profile.
+
 Regression repair: the full test exposed a shutdown abort from unreaped terrain
 and collision WorkerThreadPool tasks. Scene exit now waits for those tasks while
 the scripts are alive. This is a separate small correctness fix/commit, not a new

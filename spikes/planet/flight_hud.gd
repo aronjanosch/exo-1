@@ -35,7 +35,8 @@ func _process(delta: float) -> void:
 	var up := planet_pos.normalized()
 	var altitude: float = planet_pos.length() - ship.planet.planet_radius
 	var limit := "%.0f m/s" % ship.forward_speed_limit if ship.hover_assist else "manual"
-	_label.text = "SPEED  %5.1f m/s     FORWARD LIMIT  %s\nALTITUDE  %5.0f m\nGROUND  %5.0f m      VERTICAL  %+.1f m/s\nFLIGHT ASSIST [H]  %s     PLANET FOLLOW [L]  %s" % [
-		ship.linear_velocity.length(), limit, altitude, ship.clearance_at(ship.global_position),
+	_label.text = "SPEED  %5.1f m/s     FORWARD LIMIT  %s\nALTITUDE  %5.0f m     BRAKE [X]  %s\nGROUND  %5.0f m      VERTICAL  %+.1f m/s\nFLIGHT ASSIST [H]  %s     PLANET FOLLOW [L]  %s" % [
+		ship.linear_velocity.length(), limit, altitude, "ACTIVE" if ship.brake_active else "READY",
+		ship.clearance_at(ship.global_position),
 		ship.linear_velocity.dot(up), "ON" if ship.hover_assist else "OFF",
 		"ON" if ship.horizon_follow else "OFF"]

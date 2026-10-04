@@ -74,8 +74,13 @@ func _cruise_and_land() -> void:
 		_keys([KEY_CTRL], agl > 150.0)
 		t += await _frame()
 	_keys([KEY_W, KEY_SHIFT, KEY_SPACE, KEY_CTRL], false)
-	await _wait(2.0)
+	# Neutral release is intentionally gentle; brake before the landing leg.
+	_keys([KEY_X], true)
+	t = 0.0
+	while main.ship.linear_velocity.length() > 0.5 and t < 8.0:
+		t += await _frame()
 	_shot("cruise")
+	_keys([KEY_X], false)
 	_end("lowest %.0f m above ground" % min_agl)
 
 	_begin("land")

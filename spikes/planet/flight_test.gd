@@ -67,8 +67,25 @@ func _run() -> void:
 	await _ticks(30)
 	_check(ship.linear_velocity.length() > 20.0, "ground stop retains movement after 0.5 s (%.2f m/s)" % ship.linear_velocity.length())
 	await _ticks(90)
-	_check(ship.linear_velocity.length() < 0.5, "neutral stops in atmosphere")
+	_check(ship.linear_velocity.length() > 12.0, "gentle ground release still moving after 2 s (%.2f m/s)" % ship.linear_velocity.length())
+	var ground_ticks := 120
+	while ship.linear_velocity.length() > 0.5 and ground_ticks < 300:
+		await physics_frame
+		ground_ticks += 1
+	_check(ship.linear_velocity.length() < 0.5, "neutral stops in atmosphere in %.2f s" % (ground_ticks / 60.0))
 	_check(absf(ship.clearance_at(ship.global_position) - 15.0) < 2.0, "hover/curvature clearance %.2f m" % ship.clearance_at(ship.global_position))
+
+	SpikeInput.held[KEY_W] = true
+	await _ticks(240)
+	SpikeInput.held[KEY_SHIFT] = true
+	SpikeInput.held[KEY_X] = true
+	await _ticks(120)
+	_check(ship.brake_active and ship.commanded_speed == 0.0 and ship.linear_velocity.length() < 0.5,
+		"firm brake overrides forward/boost and stops ground flight in 2 s")
+	SpikeInput.held.erase(KEY_X)
+	await _ticks(240)
+	_check(not ship.brake_active and absf(ship.linear_velocity.length() - 45.0) < 1.0,
+		"releasing brake restores held movement input")
 
 	await _spawn(150.0)
 	SpikeInput.held[KEY_W] = true
@@ -77,11 +94,12 @@ func _run() -> void:
 	var distance := 0.0
 	var previous := ship.global_position
 	SpikeInput.held.clear()
+	SpikeInput.held[KEY_X] = true
 	for i in 120:
 		await physics_frame
 		distance += previous.distance_to(ship.global_position)
 		previous = ship.global_position
-	_check(ship.linear_velocity.length() < 0.5 and distance < 60.0, "release stop %.2f m over 2 s, speed %.3f" % [distance, ship.linear_velocity.length()])
+	_check(ship.linear_velocity.length() < 0.5 and distance < 60.0, "firm stop %.2f m over 2 s, speed %.3f" % [distance, ship.linear_velocity.length()])
 
 	await _spawn(150.0)
 	SpikeInput.held[KEY_W] = true
@@ -118,13 +136,33 @@ func _run() -> void:
 	previous = ship.global_position
 	SpikeInput.held.clear()
 	var stop_ticks := 0
-	while ship.linear_velocity.length() > 0.5 and stop_ticks < 240:
+	while ship.linear_velocity.length() > 0.5 and stop_ticks < 540:
 		await physics_frame
 		high_distance += previous.distance_to(ship.global_position)
 		previous = ship.global_position
 		stop_ticks += 1
-	_check(stop_ticks <= 210 and ship.linear_velocity.length() < 0.5 and high_distance < 650.0,
-		"350 m/s stop %.2f s / %.1f m / residual %.3f m/s" % [stop_ticks / 60.0, high_distance, ship.linear_velocity.length()])
+	_check(stop_ticks > 240 and stop_ticks < 540 and ship.linear_velocity.length() < 0.5,
+		"350 m/s gentle stop %.2f s / %.1f m / residual %.3f m/s" % [stop_ticks / 60.0, high_distance, ship.linear_velocity.length()])
+	_check(absf(ship.clearance_at(ship.global_position) - 2000.0) < 20.0,
+		"gentle high-speed stop retains curved flight")
+
+	SpikeInput.held[KEY_W] = true
+	await _ticks(480)
+	SpikeInput.held.clear()
+	SpikeInput.held[KEY_X] = true
+	var before_brake := ship.linear_velocity
+	await _ticks(2)
+	_check(ship.linear_velocity.length() > 340.0 and (ship.linear_velocity - before_brake).length() < 6.0,
+		"pressing firm brake preserves momentum and bounds initial correction")
+	var firm_ticks := 2
+	while ship.linear_velocity.length() > 0.5 and firm_ticks < 240:
+		await physics_frame
+		firm_ticks += 1
+	_check(firm_ticks < stop_ticks / 2 and firm_ticks <= 210 and ship.linear_velocity.length() < 0.5,
+		"350 m/s firm stop %.2f s (gentle %.2f s)" % [firm_ticks / 60.0, stop_ticks / 60.0])
+	await _ticks(240 - firm_ticks)
+	_check(ship.linear_velocity.length() < 0.5, "held brake settles at rest within 4 s")
+	SpikeInput.held.erase(KEY_X)
 
 	# A heading change must redirect trajectory, not just the model. Measure
 	# remaining side-slip after the mouse stops moving, at travel speed.
@@ -149,8 +187,25 @@ func _run() -> void:
 	await _ticks(120)
 	_check(ship.linear_velocity.length() > 340.0, "unassisted vacuum coasts %.2f m/s" % ship.linear_velocity.length())
 	ship.hover_assist = true
+	await _ticks(540)
+	_check(ship.linear_velocity.length() < 0.5, "assist arrests high-speed drift in 9 s (%.3f m/s)" % ship.linear_velocity.length())
+
+	await _spawn(2000.0)
+	SpikeInput.held[KEY_W] = true
+	await _ticks(600)
+	ship.hover_assist = false
+	SpikeInput.held[KEY_X] = true
 	await _ticks(240)
-	_check(ship.linear_velocity.length() < 0.5, "assist arrests high-speed drift in 4 s (%.3f m/s)" % ship.linear_velocity.length())
+	_check(ship.brake_active and ship.commanded_speed == 0.0 and ship.linear_velocity.length() < 0.5,
+		"firm brake works with assist off and overrides held W; active %s, goal %.3f, residual %.3f" % [
+			ship.brake_active, ship.commanded_speed, ship.linear_velocity.length()])
+	SpikeInput.held.erase(KEY_X)
+	await _ticks(30)
+	_check(not ship.brake_active and ship.linear_velocity.length() > 5.0,
+		"brake release restores manual thrust")
+	SpikeInput.held.clear()
+	await _ticks(120)
+	_check(ship.linear_velocity.length() > 5.0, "manual flight still coasts after braking")
 
 	await _spawn(700.0)
 	SpikeInput.held[KEY_W] = true

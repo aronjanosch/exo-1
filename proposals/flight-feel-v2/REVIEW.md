@@ -70,3 +70,26 @@ The [CIG landing guide](https://support.robertsspaceindustries.com/hc/en-us/arti
 describes coupled automatic stopping, decoupled momentum, and X space brake.
 Supplied summaries additionally describe retained throttle; no exact current
 ship braking values or timings have been verified.
+
+## Follow-up: gentle release plus held brake
+
+Initiator accepted the proposed experiment with "alright". Neutral piloted input
+now uses the gentler budget; X overrides translation and retains firm stopping.
+Active steering and unpiloted hover retain previous authority. With H off, held
+X temporarily applies the existing velocity/hover aid. Bot landing now uses X.
+Risk: yellow. Vision: fits. No new dependencies, risky APIs, red paths, content
+code or imported implementation. No per-frame allocations added to physics.
+
+Verified: 32 fixture checks passed. Ground neutral release from 45 m/s reached
+below 0.5 m/s in 3.57 s. From 350 m/s, neutral release reached that threshold in
+7.15 s / 1313 m; X reached it in 2.75 s and settled below threshold at 4 s.
+Initial brake correction is bounded; W/Shift override, brake release, H-off
+braking/manual resumption and curved stopping passed. Heading correction still
+converges within 2.5 s. No instantaneous velocity clamps introduced.
+
+Full headless regression exited zero: zero rescues, successful boarding and
+cabin walking, no passenger ejections, six shifts with zero speed discontinuity.
+Rendered Vulkan cruise/landing exited zero with zero rescues. Screenshot inspected:
+BRAKE [X] ACTIVE is readable alongside ALTITUDE. Bot brake before landing uses
+real input; this is still not a collision-avoidance system. Human feel judgment,
+production MCP coverage and runtime performance benchmarks remain outstanding.

@@ -11,6 +11,10 @@
 - Basic flight HUD is wanted. The initiator delegated the next spike choice with
   "your call"; translation tuning first was selected and documented in SPEC.md.
   Banking policy remains a recommendation for the subsequent steering experiment.
+- Gravity follow-up: initiator requests full gravity in atmosphere and gentle
+  disappearance by 6 km reference altitude (7 km only if recommended). The
+  recommendation selects 6 km; atmosphere remains 1200 m. Planet Follow fades
+  with planetary influence as proposed in the preceding design discussion.
 
 ## What the current code actually does
 

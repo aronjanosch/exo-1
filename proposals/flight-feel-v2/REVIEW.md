@@ -116,3 +116,36 @@ with zero speed discontinuity. Inspected screenshot shows readable NOSE -0.0
 degrees / VIEW -10.0 degrees. Scripted input exercises the existing bot interface;
 production MCP coverage and human interpretation of the display remain untested.
 This review reports evidence and does not approve a PR.
+
+## Follow-up: gravity and planet follow fade out by 6 km
+
+Initiator selected full gravity in atmosphere and a gentle disappearance by
+6 km, with 7 km optional on recommendation. Recommendation uses 6 km and keeps
+atmosphere top at 1200 m. Gravity is now constant 9.81 m/s² inside atmosphere,
+then smoothstep to zero. Shared original field helper also scales follow force,
+orientation transport and terrain preview. HUD shows effective follow percent;
+assisted release braking remains active outside the field.
+
+Risk: yellow. Vision: fits (small original Godot flight experiment, no core-loop
+change). No red paths, networking, risky APIs, dependencies or imported assets.
+Terrain preview integrates turning velocity so partial follow does not shrink
+the predicted travel distance. Physics adds bounded scalar calculations only.
+
+All 51 fixture checks passed, including actual entry-point gravity values and
+smooth boundaries, half strength at 3600 m, zero at 6000/7000/20000 m and origin
+invariance. At 7000 m, an unassisted stationary ship remained stationary for 5 s;
+assisted forward movement with L enabled flew straight for 20 s and retained
+manual steering. Full-follow high-speed comparisons moved from 2000 to 1200 m
+because 2000 m now intentionally has partial follow. At 1200 m, level nose lost
+15.88 m over 60 s; small numerical drift remains unresolved. Camera-level
+initial aim gained 2077.83 m over 30 s, reaching nose +18.80 degrees as follow
+faded, so pitch retention is now limited to the full-influence region.
+
+Full headless terrain/boarding/cabin regression exited zero with zero rescues,
+no passenger ejections and ten origin shifts with zero speed discontinuity.
+Rendered Forward+/Vulkan cruise/landing exited zero with zero rescues, minimum
+84 m clearance in cruise and -0.01 m at landing. Inspected HUD shows ON 100%
+readably. No runtime performance benchmark, multiplayer or production MCP test.
+One fixture run concurrent with both terrain runs emitted a Jolt job-capacity
+warning. A serial fixture rerun passed all 51 checks, exited zero and emitted
+no errors/warnings. Cause of the concurrent warning was not diagnosed.

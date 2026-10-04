@@ -41,4 +41,4 @@ func _process(delta: float) -> void:
 		ship.linear_velocity.length(), limit, altitude, "ACTIVE" if ship.brake_active else "READY",
 		ship.clearance_at(ship.global_position),
 		ship.linear_velocity.dot(up), nose_pitch, view_pitch, "ON" if ship.hover_assist else "OFF",
-		"ON" if ship.horizon_follow else "OFF"]
+		"ON %.0f%%" % (ship.planet_follow_strength * 100.0) if ship.horizon_follow else "OFF"]

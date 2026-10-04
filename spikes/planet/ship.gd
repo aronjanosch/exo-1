@@ -8,6 +8,7 @@ extends RigidBody3D
 ## Horizon follow (default on, initiator's decision): "straight" means along the
 ## horizon, not off the planet. The ship's frame turns with the local up as it
 ## moves over the sphere, so its pitch relative to the horizon stays constant.
+## This support fades above atmosphere and vanishes at the planetary field edge.
 ## All numbers are start values.
 ## Spike 3 assumptions (agreed for testing, not designed): walkable greybox
 ## cabin with a ramp at the back, gravity inside always towards the cabin
@@ -46,10 +47,11 @@ const FlightHud := preload("res://spikes/planet/flight_hud.gd")
 ## above ground per second (but never below 2 m/s).
 @export var landing_sink_factor := 0.5
 
-var planet: Node  # gravity_at(pos), density_at(pos), height_at(dir), planet_radius, to_planet(pos)
+var planet: Node  # gravity_at, field_strength_at, density_at, height_at, planet_radius, to_planet
 var piloted := false
 var hover_assist := true  # H; assisted velocity goals, off preserves the original glide
 var horizon_follow := true
+var planet_follow_strength := 1.0  # effective L influence; zero outside the field
 var brake_active := false
 var commanded_speed := 0.0
 var forward_speed_limit := 45.0
@@ -217,13 +219,17 @@ func _flight_clearance(world_pos: Vector3, v: Vector3, current_clearance: float)
 	# braking must not erase time spent building thrust or sharing it with turns.
 	var preview_time := 0.5 + thrust_response_time * 3.0 + v.length() / assisted_braking
 	var clearance := current_clearance - sink * (0.5 + thrust_response_time * 3.0) - sink * sink / (2.0 * assisted_braking)
-	var horizon_w := up.cross(v) / p.length()
+	var horizon_w: Vector3 = up.cross(v) / p.length() * planet.field_strength_at(world_pos)
 	for i in range(1, 4):
 		var t := preview_time * float(i) / 3.0
 		var preview := world_pos + v * t
 		if horizon_follow and horizon_w.length_squared() > 0.00000001:
-			# Follow the curved path instead of looking along a line off the planet.
-			preview = world_pos + p.rotated(horizon_w.normalized(), horizon_w.length() * t) - p + up * v.dot(up) * t
+			# Integrate a turning velocity, retaining full travel distance when
+			# follow strength is partial. Rotating p alone would shrink the preview.
+			var radial_speed := v.dot(up)
+			var tangent := v - up * radial_speed
+			var angle := horizon_w.length() * t
+			preview = world_pos + tangent.rotated(horizon_w.normalized(), angle * 0.5) * (2.0 * sin(angle * 0.5) / horizon_w.length()) + up * radial_speed * t
 		clearance = minf(clearance, clearance_at(preview))
 	return clearance
 
@@ -233,6 +239,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	var b := state.transform.basis
 	var gravity: Vector3 = planet.gravity_at(state.transform.origin)
 	var density: float = planet.density_at(state.transform.origin)
+	planet_follow_strength = planet.field_strength_at(state.transform.origin) if horizon_follow else 0.0
 
 	var input := Vector3.ZERO
 	var roll := 0.0
@@ -285,7 +292,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 			budget = maxf(release_braking, maxf(v.length(), forward_speed_limit) / release_braking_time)
 		var curve_accel := Vector3.ZERO
 		if horizon_follow:
-			curve_accel = (up.cross(v) / pos.length()).cross(v)
+			curve_accel = (up.cross(v) / pos.length()).cross(v) * planet_follow_strength
 		# Gravity cancellation is the existing arcade hover assumption. Drag,
 		# turning and velocity correction compete within one thrust budget.
 		# Reserve thrust for the curved path/drag first. Otherwise a large speed
@@ -321,5 +328,5 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		# Rate at which the local up turns while moving over the sphere:
 		# d(up)/dt = v_tangential / r  =>  w = up x v / r.
 		var pos: Vector3 = planet.to_planet(state.transform.origin)
-		_horizon_w = pos.normalized().cross(state.linear_velocity) / pos.length()
+		_horizon_w = pos.normalized().cross(state.linear_velocity) / pos.length() * planet_follow_strength
 	state.angular_velocity = control_w.lerp(target_w, minf(1.0, 12.0 * dt)) + _horizon_w

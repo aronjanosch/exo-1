@@ -22,8 +22,10 @@ Run: `godot --path .` from the repo root (agents: see `WORKSPACE.md` if present)
 - NOSE and VIEW show the ship/camera elevation relative to the local horizontal
   plane. Positive points up; zero is level. The chase camera looks 10 degrees
   below the nose, so a level view can mean a climbing ship. The visible distant
-  horizon dips below local horizontal with altitude. Planet Follow preserves
-  existing pitch; it does not automatically level the nose or lock altitude.
+  horizon dips below local horizontal with altitude. At full strength, Planet
+  Follow preserves pitch; it does not automatically level the nose or lock altitude.
+  Its effective strength is shown as a percentage: full in atmosphere, fading
+  outside it, zero at 6 km reference altitude even with L enabled.
 - Terrain debug: 1 LOD colours, 2 skirts on/off, 3 freeze LOD, 4 reset max stats, 5 flat-shading strength (1, 0.6, 0.3, 0; facets also fade to smooth between 80 and 400 m).
 
 Command-line options (after `--`):
@@ -137,5 +139,8 @@ numbers below are provisional spike tuning, not final design):
 
 - Walk 5 m/s and run 12 m/s are placeholders and fast (real walking is about 1.4 m/s).
 - Unassisted ship: thrust 20 m/s^2, boost x5, turn rate cap 2.5 rad/s, quadratic drag k 0.0005 (terminal about 200 m/s, boost about 450 m/s), assisted landing sink factor 0.5.
-- Gravity 9.81 at the surface, atmosphere top 1200 m, terrain amplitude 150 m.
+- Gravity 9.81 m/s² throughout atmosphere (top 1200 m), then smoothly fading
+  to zero at 6000 m reference altitude. Planet Follow uses the same envelope;
+  H still controls movement/release braking in space. Exported
+  `gravity_end_height` permits later tuning. Terrain amplitude remains 150 m.
 - Planet radius: 1.5, 3 and 5 km all run; which one feels right is the initiator's call.

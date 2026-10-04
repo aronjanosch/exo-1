@@ -5,6 +5,8 @@ extends SceneTree
 
 const Ship := preload("res://spikes/planet/ship.gd")
 const SpikeInput := preload("res://spikes/planet/spike_input.gd")
+const PlanetField := preload("res://spikes/planet/planet_field.gd")
+const PlanetMain := preload("res://spikes/planet/main.gd")
 
 class TestPlanet extends Node:
 	var planet_radius := 5000.0
@@ -19,7 +21,9 @@ class TestPlanet extends Node:
 		return 1.0 - smoothstep(0.0, 1200.0, to_planet(p).length() - planet_radius) if atmosphere else 0.0
 	func gravity_at(p: Vector3) -> Vector3:
 		var r := to_planet(p)
-		return -r.normalized() * 9.81 * pow(planet_radius / r.length(), 2.0)
+		return -r.normalized() * 9.81 * field_strength_at(p)
+	func field_strength_at(p: Vector3) -> float:
+		return PlanetField.strength(to_planet(p).length() - planet_radius, 1200.0, 6000.0)
 
 var world: Node3D
 var planet: TestPlanet
@@ -64,7 +68,7 @@ func _elevation(direction: Vector3) -> float:
 
 func _horizon_comparison() -> void:
 	for setup in [["level nose", 0.0, true, 60], ["level view", 10.0, true, 30], ["follow off", 0.0, false, 30]]:
-		await _spawn(2000.0)
+		await _spawn(1200.0)  # full-follow boundary; above it the field now fades
 		# Initial orientation only; the controller supplies all subsequent motion.
 		ship.global_basis = Basis(Vector3.RIGHT, deg_to_rad(setup[1]))
 		ship.horizon_follow = setup[2]
@@ -87,10 +91,57 @@ func _horizon_comparison() -> void:
 				"level nose/follow retains reference altitude over 60 s")
 		elif setup[0] == "level view":
 			_check(absf(starting_view) < 0.1, "camera-level setup is initially horizontal")
-			_check(altitude_change > 1000.0 and absf(nose - 10.0) < 0.2,
-				"camera-level aim climbs with a preserved upward nose angle")
+			_check(altitude_change > 1000.0 and nose >= 9.8,
+				"camera-level aim climbs; fading follow permits further upward pitch")
 		else:
 			_check(altitude_change > 1000.0, "assist without planet follow leaves the sphere along a straight path")
+
+func _field_checks() -> void:
+	# Exercise the actual entry point's field/gravity methods without building terrain.
+	var model := PlanetMain.new()
+	for altitude in [-10.0, 0.0, 600.0, 1200.0]:
+		var gravity: Vector3 = model.gravity_at(Vector3.UP * (5000.0 + altitude))
+		_check(gravity.distance_to(Vector3.DOWN * 9.81) < 0.0001,
+			"full 9.81 m/s² gravity at %.0f m" % altitude)
+	_check(absf(model.field_strength_at(Vector3.UP * 8600.0) - 0.5) < 0.0001,
+		"half planetary influence at 3600 m")
+	for boundary in [1200.0, 6000.0]:
+		var below: float = model.field_strength_at(Vector3.UP * (5000.0 + boundary - 1.0))
+		var above: float = model.field_strength_at(Vector3.UP * (5000.0 + boundary + 1.0))
+		_check(absf(below - above) < 0.00001, "smooth field boundary at %.0f m" % boundary)
+	for altitude in [6000.0, 7000.0, 20000.0]:
+		_check(model.gravity_at(Vector3.UP * (5000.0 + altitude)).is_zero_approx(),
+			"zero gravity at %.0f m" % altitude)
+	var sample := Vector3.UP * 8600.0
+	var expected: Vector3 = model.gravity_at(sample)
+	model.planet_center = Vector3(-10000, 2000, 10000)
+	_check(model.gravity_at(sample + model.planet_center).distance_to(expected) < 0.0001,
+		"field and gravity are invariant under origin shifts")
+	model.free()
+
+	await _spawn(7000.0)
+	ship.hover_assist = false
+	ship.horizon_follow = false
+	var start := ship.global_position
+	await _ticks(300)
+	_check(ship.global_position.distance_to(start) < 0.01 and ship.linear_velocity.length() < 0.001,
+		"unassisted stationary ship outside field does not fall")
+
+	await _spawn(7000.0)
+	start = ship.global_position
+	SpikeInput.held[KEY_W] = true
+	await _ticks(1200)
+	_check(absf(ship.global_position.y - start.y) < 0.01 and absf(ship.linear_velocity.y) < 0.001
+		and absf(_elevation(-ship.global_basis.z)) > 20.0 and ship.planet_follow_strength == 0.0,
+		"enabled planet follow outside field flies straight without rotating the ship")
+	_check(absf(ship.linear_velocity.length() - 350.0) < 1.0,
+		"assisted forward cruise still works outside field")
+	var initial_forward := -ship.global_basis.z
+	for tick in 30:
+		ship._mouse = Vector2(0.008, 0.0)
+		await physics_frame
+	_check(initial_forward.angle_to(-ship.global_basis.z) > 0.1,
+		"manual mouse steering remains available outside field")
 
 func _run() -> void:
 	await _spawn(15.0, true)
@@ -164,11 +215,11 @@ func _run() -> void:
 	_check(local_v.z < -30.0 and absf(local_v.y) < 2.0, "turn redirects movement; local velocity %s" % local_v)
 	_check(acceleration_max < 40.5, "turn total acceleration %.2f m/s²" % acceleration_max)
 
-	await _spawn(2000.0)
+	await _spawn(1200.0)  # full-follow high-speed regression before the fade starts
 	SpikeInput.held[KEY_W] = true
 	await _ticks(1500)
 	_check(absf(ship.linear_velocity.length() - 350.0) < 3.0, "high flight %.2f m/s (target 350)" % ship.linear_velocity.length())
-	_check(absf(ship.clearance_at(ship.global_position) - 2000.0) < 20.0, "curved high flight clearance %.2f m" % ship.clearance_at(ship.global_position))
+	_check(absf(ship.clearance_at(ship.global_position) - 1200.0) < 20.0, "curved high flight clearance %.2f m" % ship.clearance_at(ship.global_position))
 	var high_distance := 0.0
 	previous = ship.global_position
 	SpikeInput.held.clear()
@@ -180,7 +231,7 @@ func _run() -> void:
 		stop_ticks += 1
 	_check(stop_ticks > 240 and stop_ticks < 540 and ship.linear_velocity.length() < 0.5,
 		"350 m/s gentle stop %.2f s / %.1f m / residual %.3f m/s" % [stop_ticks / 60.0, high_distance, ship.linear_velocity.length()])
-	_check(absf(ship.clearance_at(ship.global_position) - 2000.0) < 20.0,
+	_check(absf(ship.clearance_at(ship.global_position) - 1200.0) < 20.0,
 		"gentle high-speed stop retains curved flight")
 
 	SpikeInput.held[KEY_W] = true
@@ -264,6 +315,7 @@ func _run() -> void:
 	_check(absf(ship.clearance_at(ship.global_position) - 30.0) < 2.0 and (ship.linear_velocity - before).length() < 1.0,
 		"origin shift preserves flight frame")
 	await _horizon_comparison()
+	await _field_checks()
 	SpikeInput.held.clear()
 	print("FLIGHT TEST: %d failures" % failures)
 	quit(0 if failures == 0 else 1)

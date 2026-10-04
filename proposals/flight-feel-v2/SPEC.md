@@ -72,6 +72,29 @@ follow-off should leave the spherical surface on a straight trajectory. Repeat
 the existing flight checks and visually verify the HUD. No gravity, mass, camera,
 steering or thrust changes in this diagnostic slice.
 
+## Accepted follow-up: finite planetary influence
+
+The initiator wants full gravity inside atmosphere, then a gentle fade to no
+perceptible gravity at 6 km reference altitude, allowing 7 km if recommended.
+Selected recommendation: 6 km with the existing 1200 m atmosphere unchanged.
+Use 9.81 m/s² throughout atmosphere, then a smoothstep fade to exactly zero
+at 6000 m. This replaces the previous inverse-square gravity in this spike.
+Keep both heights configurable; measure from the reference sphere, not terrain.
+
+Planet Follow uses the same influence factor for orientation transport, curved
+acceleration and terrain preview. At zero influence, enabled L does not bend
+the path or orientation. H still provides assisted movement and release braking;
+turning H off permits inertial coasting. Show effective follow percentage in HUD.
+No speed, steering, camera, atmosphere or cabin-gravity retuning. The previously
+measured small level-flight drift remains a separate correction, not an altitude
+lock introduced by this change.
+
+Acceptance: full strength through 1200 m, half at 3600 m, zero at/above 6000 m;
+continuous smooth boundaries and origin-shift invariance. Retain low/full-follow
+flight and braking checks. With H/L off, a stationary ship beyond 6 km does not
+fall. With H on and L enabled beyond 6 km, forward flight stays straight, while
+manual steering still works. Repeat rendered terrain/landing regression.
+
 Regression repair: the full test exposed a shutdown abort from unreaped terrain
 and collision WorkerThreadPool tasks. Scene exit now waits for those tasks while
 the scripts are alive. This is a separate small correctness fix/commit, not a new

@@ -18,3 +18,6 @@ mono_crash.*.json
 
 # Personal dev environment notes, see AGENTS.md
 WORKSPACE.md
+
+# Claude Code, persönliche Einstellungen
+.claude/settings.local.json

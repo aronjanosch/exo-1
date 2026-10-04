@@ -25,7 +25,9 @@ func _ready() -> void:
 	_probe = JitterProbe.new()
 	_probe.main = main
 	add_child(_probe)
-	if "--fly-out" in OS.get_cmdline_user_args():
+	if "--start-at=cruise" in OS.get_cmdline_user_args():
+		_run_cruise_only()
+	elif "--fly-out" in OS.get_cmdline_user_args():
 		_run_fly()
 	elif "--fly-to-second" in OS.get_cmdline_user_args():
 		_run_second()
@@ -53,6 +55,55 @@ func _physics_process(_delta: float) -> void:
 	_last_tick_pos = p
 	_last_tick_vel = main.ship.linear_velocity
 	_last_tick_shifts = main.shift_count
+
+
+## Low cruise with the bot altitude hold, then land. With the spike 3 ship
+## inertia the bot sometimes rolls the ship over (video material).
+func _cruise_and_land() -> void:
+	_begin("cruise low 15 s (boost)")
+	_keys([KEY_W, KEY_SHIFT], true)
+	var min_agl := INF
+	var t := 0.0
+	while t < 15.0:
+		# Bot altitude hold, like a player would fly: 80-150 m above ground.
+		var agl := _above_ground()
+		min_agl = minf(min_agl, agl)
+		_keys([KEY_SPACE], agl < 80.0)
+		_keys([KEY_CTRL], agl > 150.0)
+		t += await _frame()
+	_keys([KEY_W, KEY_SHIFT, KEY_SPACE, KEY_CTRL], false)
+	await _wait(2.0)
+	_shot("cruise")
+	_end("lowest %.0f m above ground" % min_agl)
+
+	_begin("land")
+	_keys([KEY_CTRL], true)
+	t = 0.0
+	while t < 40.0 and main.ship.linear_velocity.length() > 0.05 or t < 3.0:
+		t += await _frame()
+	_keys([KEY_CTRL], false)
+	_shot("landed")
+	_end("%.1f s, %.2f m above ground, rescues so far %d" % [t, _above_ground(), main.stats.rescues])
+
+
+## --start-at=cruise: skip to the low cruise (for filming). Walker at the seat,
+## ship 120 m above the spawn point, heading turned by --cruise-heading=<deg>.
+func _run_cruise_only() -> void:
+	var heading := 0.0
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--cruise-heading="):
+			heading = arg.trim_prefix("--cruise-heading=").to_float()
+	await _wait(3.0)
+	var ship: RigidBody3D = main.ship
+	await _board_at_seat(ship)
+	var up: Vector3 = main.to_planet(ship.global_position).normalized()
+	var b: Basis = main._basis_for_up(up).rotated(up, deg_to_rad(heading))
+	ship.global_transform = Transform3D(b, main.planet_center + up * (main.planet_radius + main.height_at(up) + 120.0))
+	ship.linear_velocity = Vector3.ZERO
+	ship.angular_velocity = Vector3.ZERO
+	await _wait(2.0)
+	await _cruise_and_land()
+	_finish()
 
 
 ## Spike 5 runs board directly at the seat (spike 3 cabin) and fly with the
@@ -300,30 +351,7 @@ func _run() -> void:
 	await _wait(1.5)  # hover assist brakes
 	_end("%.1f s" % t)
 
-	_begin("cruise low 15 s (boost)")
-	_keys([KEY_W, KEY_SHIFT], true)
-	var min_agl := INF
-	t = 0.0
-	while t < 15.0:
-		# Bot altitude hold, like a player would fly: 80-150 m above ground.
-		var agl := _above_ground()
-		min_agl = minf(min_agl, agl)
-		_keys([KEY_SPACE], agl < 80.0)
-		_keys([KEY_CTRL], agl > 150.0)
-		t += await _frame()
-	_keys([KEY_W, KEY_SHIFT, KEY_SPACE, KEY_CTRL], false)
-	await _wait(2.0)
-	_shot("cruise")
-	_end("lowest %.0f m above ground" % min_agl)
-
-	_begin("land")
-	_keys([KEY_CTRL], true)
-	t = 0.0
-	while t < 40.0 and main.ship.linear_velocity.length() > 0.05 or t < 3.0:
-		t += await _frame()
-	_keys([KEY_CTRL], false)
-	_shot("landed")
-	_end("%.1f s, %.2f m above ground, rescues so far %d" % [t, _above_ground(), main.stats.rescues])
+	await _cruise_and_land()
 
 	await _stand_still("idle 5 s (landed ship)", main.ship)
 

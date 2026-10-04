@@ -28,6 +28,11 @@ stop within 3.5 s / 650 m, and convergence after a small high-speed heading
 change within 2.5 s. Retain ascent/descent, terrain, boarding and origin tests.
 Human feedback remains needed to decide whether the result feels right.
 
+Regression repair: the full test exposed a shutdown abort from unreaped terrain
+and collision WorkerThreadPool tasks. Scene exit now waits for those tasks while
+the scripts are alive. This is a separate small correctness fix/commit, not a new
+flight system or a red-class change.
+
 ## Problem and desired experience
 
 The initiator reports that low flight starts and stops too suddenly, feels too

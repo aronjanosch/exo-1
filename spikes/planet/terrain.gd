@@ -89,6 +89,15 @@ func _ready() -> void:
 		_roots.append(root)
 
 
+func _exit_tree() -> void:
+	# Completed tasks also retain their bound Job until they are waited for.
+	# Release them while GDScript and this worker target are still alive.
+	for job in _pending:
+		WorkerThreadPool.wait_for_task_completion(job.task_id)
+	_pending.clear()
+	_done.clear()
+
+
 ## Terrain height above the base radius along a unit direction (CPU, main thread).
 func height_at(dir: Vector3) -> float:
 	return noise.get_noise_3dv(dir * radius) * height_amplitude

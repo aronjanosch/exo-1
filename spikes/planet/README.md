@@ -118,6 +118,9 @@ numbers below are provisional spike tuning, not final design):
   ship controller and scripted movement input on a spherical fixture. Terrain,
   boarding and cabin regression: `--auto-test` (headless supported). Fixed-FPS
   accelerated runs verify behavior; their frame-time numbers are not benchmarks.
+- Worker shutdown check: `GODOT_AGENT_WORKSPACE=7 godot-agent --headless --path .
+  --script res://spikes/planet/shutdown_test.gd`. Frees a scene with queued terrain
+  and collision work and checks that the jobs are released before engine shutdown.
 
 - Walk 5 m/s and run 12 m/s are placeholders and fast (real walking is about 1.4 m/s).
 - Unassisted ship: thrust 20 m/s^2, boost x5, turn rate cap 2.5 rad/s, quadratic drag k 0.0005 (terminal about 200 m/s, boost about 450 m/s), assisted landing sink factor 0.5.

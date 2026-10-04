@@ -73,6 +73,8 @@ func _process(delta: float) -> void:
 		"   ".join(stat_parts.slice(4)),
 		"altitude %.2f m   above surface %.2f m   dist centre %.2f m" % [altitude, above_surface, dist],
 		"speed %.1f m/s   %s" % [v.length(), main.mode_text()],
+		"flight assist %s   goal %.1f m/s   forward limit %.1f m/s" % [
+			"on" if main.ship.hover_assist else "off", main.ship.commanded_speed, main.ship.forward_speed_limit],
 		"%s   %s" % [RenderingServer.get_video_adapter_name(), ProjectSettings.get_setting("rendering/renderer/rendering_method")],
 	])
 

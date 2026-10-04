@@ -4,7 +4,7 @@ extends RigidBody3D
 ## in space. Engine gravity is off; gravity comes from the planet model.
 ## Rotation is still rate-controlled (like a flight computer): an assumption.
 ## Mouse: pitch and yaw. W/S thrust, A/D strafe, Space/Ctrl up/down, Q/E roll,
-## Shift boost, H hover assist on/off, L horizon follow on/off.
+## Shift boost, H flight assist on/off (default on), L horizon follow on/off.
 ## Horizon follow (default on, initiator's decision): "straight" means along the
 ## horizon, not off the planet. The ship's frame turns with the local up as it
 ## moves over the sphere, so its pitch relative to the horizon stays constant.
@@ -21,7 +21,16 @@ const SpikeInput := preload("res://spikes/planet/spike_input.gd")
 @export var turn_rate := 2.5  # rad/s cap
 @export var roll_rate := 1.8
 @export var mouse_sensitivity := 0.002  # rad per pixel
-@export var assist_damping := 1.2  # 1/s, hover assist only: brakes axes without input
+@export var assisted_accel := 30.0  # m/s^2; all assisted correction shares one budget
+@export var assisted_braking := 40.0  # m/s^2
+@export var assisted_boost_accel := 60.0
+@export var assisted_reverse_speed := 25.0
+@export var assisted_strafe_speed := 20.0
+@export var assisted_vertical_speed := 15.0
+## (terrain clearance in metres, forward speed in m/s). Spike tuning only.
+@export var forward_speed_curve := PackedVector2Array([
+	Vector2(30, 25), Vector2(150, 60), Vector2(600, 150), Vector2(1200, 350),
+])
 ## Quadratic drag a = k * density * v^2. Start value: terminal speed at the
 ## surface about 200 m/s with normal thrust, about 450 m/s with boost.
 @export var drag_k := 0.0005
@@ -31,8 +40,11 @@ const SpikeInput := preload("res://spikes/planet/spike_input.gd")
 
 var planet: Node  # gravity_at(pos), density_at(pos), height_at(dir), planet_radius, to_planet(pos)
 var piloted := false
-var hover_assist := false  # H; off by default, physics first
+var hover_assist := true  # H; assisted velocity goals, off preserves the original glide
 var horizon_follow := true
+var commanded_speed := 0.0
+var forward_speed_limit := 25.0
+var terrain_clearance := 0.0
 var camera: Camera3D
 ## Seat position in ship space; the walker sits here.
 const SEAT_POS := Vector3(0, 0.6, -3.0)
@@ -42,6 +54,7 @@ var test_roll := 0.0
 var test_boost := 1.0
 
 var _mouse := Vector2.ZERO
+var _horizon_w := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -161,6 +174,39 @@ func _unhandled_input(event: InputEvent) -> void:
 			horizon_follow = not horizon_follow
 
 
+func clearance_at(world_pos: Vector3) -> float:
+	var p: Vector3 = planet.to_planet(world_pos)
+	return p.length() - planet.planet_radius - planet.height_at(p.normalized())
+
+
+func forward_speed_at(clearance: float) -> float:
+	for i in range(1, forward_speed_curve.size()):
+		var lo := forward_speed_curve[i - 1]
+		var hi := forward_speed_curve[i]
+		if clearance <= hi.x:
+			return lerpf(lo.y, hi.y, smoothstep(lo.x, hi.x, clearance))
+	return forward_speed_curve[forward_speed_curve.size() - 1].y
+
+
+## Preview terrain over the braking horizon. This lowers the requested speed;
+## it does not snap velocity or promise collision avoidance on every approach.
+func _flight_clearance(world_pos: Vector3, v: Vector3) -> float:
+	var p: Vector3 = planet.to_planet(world_pos)
+	var up := p.normalized()
+	var sink := maxf(0.0, -v.dot(up))
+	var clearance := clearance_at(world_pos) - sink * 0.5 - sink * sink / (2.0 * assisted_braking)
+	var preview_time := 0.5 + v.length() / assisted_braking
+	var horizon_w := up.cross(v) / p.length()
+	for i in range(1, 4):
+		var t := preview_time * float(i) / 3.0
+		var preview := world_pos + v * t
+		if horizon_follow and horizon_w.length_squared() > 0.00000001:
+			# Follow the curved path instead of looking along a line off the planet.
+			preview = world_pos + p.rotated(horizon_w.normalized(), horizon_w.length() * t) - p + up * v.dot(up) * t
+		clearance = minf(clearance, clearance_at(preview))
+	return clearance
+
+
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	var dt := state.step
 	var b := state.transform.basis
@@ -180,25 +226,43 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		boost = test_boost
 
 	var v := state.linear_velocity
-	v += (b * input.limit_length(1.0)) * thrust_accel * boost * dt
+	var drag := -v * drag_k * density * v.length()
 	if hover_assist:
-		# Optional drone-like aid: cancel gravity and brake on axes without input,
-		# also without a pilot (holds the ship when the walker stands up).
-		var local_v := b.inverse() * v
-		for axis in 3:
-			if input[axis] == 0.0:
-				local_v[axis] -= local_v[axis] * minf(1.0, assist_damping * dt)
-		v = b * local_v
 		var pos: Vector3 = planet.to_planet(state.transform.origin)
 		var up := pos.normalized()
-		var agl: float = pos.length() - planet.planet_radius - planet.height_at(up)
-		var sink := -v.dot(up)
-		var cap := maxf(2.0, agl * landing_sink_factor)
-		if sink > cap:
-			v += up * (sink - cap)
+		terrain_clearance = clearance_at(state.transform.origin)
+		var clearance := _flight_clearance(state.transform.origin, v)
+		forward_speed_limit = forward_speed_at(clearance)
+		if boost > 1.0:
+			# Boost stays gentle near terrain and cannot exceed high-altitude cruise.
+			forward_speed_limit = lerpf(forward_speed_limit,
+				minf(forward_speed_curve[-1].y, forward_speed_limit * 2.5), smoothstep(30.0, 150.0, clearance))
+		var request := input.limit_length(1.0)
+		var forward_speed := forward_speed_limit if request.z < 0.0 else assisted_reverse_speed
+		var goal := b * Vector3(request.x * assisted_strafe_speed,
+			request.y * assisted_vertical_speed, request.z * forward_speed)
+		# Slow the requested descent near the ground, without clamping momentum.
+		var sink_goal := -goal.dot(up)
+		var sink_cap := maxf(2.0, maxf(0.0, terrain_clearance) * landing_sink_factor)
+		if sink_goal > sink_cap:
+			goal += up * (sink_goal - sink_cap)
+		commanded_speed = goal.length()
+		var correction := (goal - v) / dt
+		var budget := assisted_boost_accel if boost > 1.0 else assisted_accel
+		if correction.dot(v) < 0.0:
+			budget = assisted_braking
+		var curve_accel := Vector3.ZERO
+		if horizon_follow:
+			curve_accel = (up.cross(v) / pos.length()).cross(v)
+		# Gravity cancellation is the existing arcade hover assumption. Drag,
+		# turning and velocity correction compete within one thrust budget.
+		var thrust := (correction + curve_accel - drag).limit_length(budget)
+		v += (thrust + drag) * dt
 	else:
+		commanded_speed = 0.0
+		v += (b * input.limit_length(1.0)) * thrust_accel * boost * dt
 		v += gravity * dt
-	v -= v * minf(1.0, drag_k * density * v.length() * dt)
+		v -= v * minf(1.0, drag_k * density * v.length() * dt)
 	state.linear_velocity = v
 
 	# Rotation: mouse movement is an angle per step (like mouse look), capped
@@ -207,10 +271,13 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	var yaw := clampf(-_mouse.x / dt, -turn_rate, turn_rate)
 	_mouse = Vector2.ZERO
 	var target_w := b * Vector3(pitch, yaw, roll * roll_rate)
+	# Smooth the player's rotation, not the changing planet frame. Smoothing
+	# horizon transport creates a persistent outward pitch at high speed.
+	var control_w := state.angular_velocity - _horizon_w
+	_horizon_w = Vector3.ZERO
 	if horizon_follow:
 		# Rate at which the local up turns while moving over the sphere:
 		# d(up)/dt = v_tangential / r  =>  w = up x v / r.
 		var pos: Vector3 = planet.to_planet(state.transform.origin)
-		target_w += pos.normalized().cross(state.linear_velocity) / pos.length()
-	state.angular_velocity = state.angular_velocity.lerp(target_w, minf(1.0, 12.0 * dt))
-
+		_horizon_w = pos.normalized().cross(state.linear_velocity) / pos.length()
+	state.angular_velocity = control_w.lerp(target_w, minf(1.0, 12.0 * dt)) + _horizon_w

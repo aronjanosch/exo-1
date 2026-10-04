@@ -53,3 +53,20 @@ standalone GDScript linter was found; Godot loads/compiles scripts in these runs
 
 Labels suggested: spike, flight-feel, yellow-gameplay. This review reports evidence;
 it does not approve a proposal or PR.
+
+## Follow-up: altitude HUD
+
+Explicit initiator request adds reference altitude alongside terrain clearance.
+Risk remains yellow; vision fit remains fits. The value uses planet-relative
+position and the current planet radius, so origin shifts do not change it.
+Forward+/Vulkan cruise/landing exited zero with zero rescues; inspected screenshot
+shows ALTITUDE 103 m and GROUND 111 m, both readable and consistent with the debug
+readouts. No controller changes or new automated tests for this display-only edit.
+
+Further playtest: "far better", but release stopping still feels too short at
+both speeds. Candidate next experiment: gentler neutral-input slowing, separate
+deliberate braking, while preserving turning authority. Not implemented here.
+The [CIG landing guide](https://support.robertsspaceindustries.com/hc/en-us/articles/360020925254-How-to-Land-Your-Ship)
+describes coupled automatic stopping, decoupled momentum, and X space brake.
+Supplied summaries additionally describe retained throttle; no exact current
+ship braking values or timings have been verified.

@@ -28,6 +28,13 @@ stop within 3.5 s / 650 m, and convergence after a small high-speed heading
 change within 2.5 s. Retain ascent/descent, terrain, boarding and origin tests.
 Human feedback remains needed to decide whether the result feels right.
 
+Follow-up playtest: the initiator reports "far better", but stopping after
+release is still too short at both low and high speed. They explicitly requested
+altitude in the HUD. This follow-up adds reference altitude (distance from centre
+minus planet radius), retaining separate terrain clearance. Acceptance: both
+readouts are visible/readable while seated. Braking behavior is unchanged while
+the release-versus-explicit-brake design is discussed.
+
 Regression repair: the full test exposed a shutdown abort from unreaped terrain
 and collision WorkerThreadPool tasks. Scene exit now waits for those tasks while
 the scripts are alive. This is a separate small correctness fix/commit, not a new

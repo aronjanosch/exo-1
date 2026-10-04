@@ -11,8 +11,9 @@ Run: `godot --path .` from the repo root (agents: see `WORKSPACE.md` if present)
 - F at the seat inside the cabin: sit down / stand up. Walk in and out over the ramp at the back.
 - Ship: mouse pitch/yaw, W/S forward/reverse, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost. H: flight assist (default on: holds requested velocity, cancels gravity, brakes on release, slows requested descent near terrain). Forward speed grows with terrain clearance; boost raises forward speed away from the ground and acceleration. Without assist the original thrust, x5 boost, gravity and quadratic air drag remain, with coasting in space. L: horizon follow (default on: the ship's frame turns with the local up while moving, so "straight" means along the horizon and pitch relative to the horizon stays constant).
 - F3: toggle debug overlay. F12: screenshot to `user://screenshots/`.
-- While seated, a separate flight HUD shows speed, forward speed limit, terrain
-  clearance, vertical speed, Flight Assist (H), and Planet Follow (L). It stays
+- While seated, a separate flight HUD shows speed, forward speed limit, altitude
+  above the planet's reference sphere, terrain clearance (GROUND), vertical
+  speed, Flight Assist (H), and Planet Follow (L). It stays
   visible when F3 diagnostics are hidden. Planet Follow follows the planet's
   curved horizon; it is separate from gravity and atmospheric drag.
 - Terrain debug: 1 LOD colours, 2 skirts on/off, 3 freeze LOD, 4 reset max stats, 5 flat-shading strength (1, 0.6, 0.3, 0; facets also fade to smooth between 80 and 400 m).

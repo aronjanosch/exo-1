@@ -31,9 +31,11 @@ func _process(delta: float) -> void:
 	if not visible or (_elapsed < 0.1 and not just_seated):
 		return
 	_elapsed = 0.0
-	var up: Vector3 = ship.planet.to_planet(ship.global_position).normalized()
+	var planet_pos: Vector3 = ship.planet.to_planet(ship.global_position)
+	var up := planet_pos.normalized()
+	var altitude: float = planet_pos.length() - ship.planet.planet_radius
 	var limit := "%.0f m/s" % ship.forward_speed_limit if ship.hover_assist else "manual"
-	_label.text = "SPEED  %5.1f m/s     FORWARD LIMIT  %s\nGROUND  %5.0f m      VERTICAL  %+.1f m/s\nFLIGHT ASSIST [H]  %s     PLANET FOLLOW [L]  %s" % [
-		ship.linear_velocity.length(), limit, ship.clearance_at(ship.global_position),
+	_label.text = "SPEED  %5.1f m/s     FORWARD LIMIT  %s\nALTITUDE  %5.0f m\nGROUND  %5.0f m      VERTICAL  %+.1f m/s\nFLIGHT ASSIST [H]  %s     PLANET FOLLOW [L]  %s" % [
+		ship.linear_velocity.length(), limit, altitude, ship.clearance_at(ship.global_position),
 		ship.linear_velocity.dot(up), "ON" if ship.hover_assist else "OFF",
 		"ON" if ship.horizon_follow else "OFF"]

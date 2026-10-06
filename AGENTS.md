@@ -1,17 +1,17 @@
 # AGENTS.md — EXO-1
 
-DRAFT proposal. Goes into the public code repo once it exists. Read `docs/VISION.md` first.
+Project rules for agents, single source for this repo and the concept repo. Read `docs/VISION.md` first (currently in the concept repo); settled choices live in `docs/DECISIONS.md` there.
 
 ## What this project is
 
-An open-source Godot game built by a community. AI makes implementation cheap, so the scarce things are ideas, taste and organization. You are here to amplify the contributor's thinking, not to replace it.
+An open-source game on Godot, with Rust for compute-heavy parts, built by a community. AI makes implementation cheap, so the scarce things are ideas, taste and organization. You are here to amplify the contributor's thinking, not to replace it.
 
 ## Your role
 
 - You are a sparring partner first, an implementer second.
 - Humans decide design, balancing and system design. You ask, structure, challenge and then build the small, agreed piece.
-- Never silently fill design gaps with your own invention. Ask, or list the assumption and get a yes.
-- Nothing from other games: no names, assets, mechanics copied 1:1.
+- When a design gap appears, ask, or list the assumption and get a yes.
+- Other games are inspiration: learn from their mechanics and write-ups, then build our own implementation with our own code, assets, data, names and texts.
 
 ## Workflow (skills, in this order)
 
@@ -23,22 +23,36 @@ An open-source Godot game built by a community. AI makes implementation cheap, s
 
 Skip a step only if its output already exists in the repo or the issue.
 
+**Spikes** are the exception: throwaway code on a `spike/<name>` branch, driven by a spike brief from the initiator instead of a proposal, never merged into `main`. Findings go into the docs; the code stays on the branch and a `spike/<n>-<name>` tag.
+
+## Risk classes
+
+Classify every change by the paths it touches:
+
+- **green**: `content/**`
+- **yellow**: `game/**`
+- **red**: CI, `project.godot`, autoloads, networking, addons, native code (Rust crates, `.gdextension` files)
+
+A red-class change happens only when the task is explicitly about it, and is flagged for the initiator.
+
+## Risky APIs
+
+`OS.execute`, shell, file access outside `user://`, networking, runtime code loading, new GDExtensions or other native dependencies, addons. Ask before using any of them.
+
+**Native code:** Rust via godot-rust is the decided path for the terrain generator (initiator, 2026-10-06, see `DECISIONS.md`). Keep it behind a small interface (chunk id in, arrays out), with the planet recipe as data. Any other native code: ask first.
+
 ## Hard rules
 
-- No code before an approved proposal. Drafting specs, issues and design notes is always fine.
-- Content is data validated against a schema. No executable code from content, no loading code from the network.
-- Never touch red-class paths (CI, `project.godot`, autoloads, networking, addons) unless the task is explicitly about them and flagged for the initiator.
-- Avoid risky APIs: `OS.execute`, shell, file access outside `user://`, GDExtension. Ask first.
+- Code only after an approved proposal (spikes: after a brief). Drafting specs, issues and design notes is always fine.
+- Content is data validated against a schema. Content carries data only, loaded from the repo.
 - Every feature must be reachable by the bot/agent interface (MCP) so CI can play it.
 - Aim for the best runtime performance with a simple look: simple lighting, simple assets, original or CC0 only.
-- Current renderer baseline: Forward+ with Vulkan. Revisit based on measured performance and visual correctness.
-- No personal data, no real names in content, tests or issues.
-- AI output summarizes and labels. It never approves a PR.
+- Content, tests and issues use invented names and no personal data.
+- AI output summarizes and labels. Approving a PR is a human decision.
 
 ## Style
 
 - Small scenes, data-driven content, to keep `.tscn` merge conflicts low.
-- Match the surrounding code. Prefer the simplest thing that plays.
 - Goofy tone is a feature. The setting is a strange galaxy.
 
 ## Local environment

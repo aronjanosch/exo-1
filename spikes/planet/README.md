@@ -1,6 +1,6 @@
 # Spike 1: planet (throwaway)
 
-Prototype to test whether a small seamless planet works in Godot 4.7.2. Not final structure. Results go into the spike report. Low-spec hardware is not measured in this spike by the initiator's decision (optimise later); numbers are from the dev machine.
+Prototype to test whether a small seamless planet works in Godot 4.7.2. Not final structure. Results go into the spike report. Aim for the best runtime performance with a simple look; numbers are from the dev machine.
 
 Run: `godot --path .` from the repo root (agents: see `WORKSPACE.md` if present).
 
@@ -92,7 +92,7 @@ Jolt height maps (verified in the 4.7.2-stable source, `modules/jolt_physics/sha
 
 ## Open
 
-- Compatibility renderer and z-fighting: fine for terrain alone (no coplanar surfaces), but decals, roads or building bases far away will flicker. Options: Forward+/Mobile (reverse-Z), larger near plane (0.05 to 0.2 gives 4x), or a near plane that grows with altitude. Decision for the initiator.
+- Current renderer decision (initiator, 2026-10-04): Forward+ with Vulkan, revisitable after performance measurements. Forward+ passed the distant-surface depth tests above; Compatibility's z-fighting is a measured limitation of the previous renderer.
 - Visual jitter at 3-5 km from the origin is not measured, only calculated: float32 steps of 0.24 mm (2-4 km) and 0.5 mm (4-8 km) are below a pixel unless the camera is closer than about 1 m to a surface.
 - No LOD fade or geomorphing yet; whether popping is visible needs the initiator's eyes.
 - Climb phase showed 3 frames of 33-40 ms in one run (many chunks merging at once); not reproducible so far.

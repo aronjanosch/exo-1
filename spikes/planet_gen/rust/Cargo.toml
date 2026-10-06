@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["planet_core", "planet_godot"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+# Fast rebuilds, optimised generator code (about 0.5 s per core change)
+[profile.fast]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true

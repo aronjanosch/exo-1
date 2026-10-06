@@ -20,6 +20,8 @@ const RingScript := preload("res://spikes/planet/collision_ring.gd")
 const AutoTestScript := preload("res://spikes/planet/auto_test.gd")
 const SpikeInput := preload("res://spikes/planet/spike_input.gd")
 const PlanetField := preload("res://spikes/planet/planet_field.gd")
+const PlanetWalkScript := preload("res://spikes/planet_gen/planet_walk.gd")
+const PlanetShotsScript := preload("res://spikes/planet_gen/planet_shots.gd")
 
 ## Planet radius in metres. 5 km is the first guide value (DECISIONS.md); --radius=<m> overrides.
 @export var planet_radius := 5000.0
@@ -65,6 +67,14 @@ var ring: Node3D
 var active: Node3D
 
 var _env: Environment
+var sun: DirectionalLight3D
+## Spike 8: orbit camera (key O): about 15 km out, looking at the planet, mouse rotates, wheel zooms.
+var orbit_cam: Camera3D
+var orbit_active := false
+var orbit_distance := 15000.0
+var _orbit_yaw := 0.6
+var _orbit_pitch := 0.35
+var _orbit_prev_cam: Camera3D
 var _sky_mat: ShaderMaterial
 
 
@@ -116,7 +126,16 @@ func _ready() -> void:
 	overlay.main = self
 	add_child(overlay)
 
-	if "--auto-shot" in OS.get_cmdline_user_args():
+	if "--planet-walk" in OS.get_cmdline_user_args():
+		var walk := PlanetWalkScript.new()
+		walk.main = self
+		add_child(walk)
+	elif "--planet-shots" in OS.get_cmdline_user_args():
+		var shots := PlanetShotsScript.new()
+		shots.main = self
+		shots.overlay = overlay
+		add_child(shots)
+	elif "--auto-shot" in OS.get_cmdline_user_args():
 		_auto_shot(overlay)
 	elif "--auto-test" in OS.get_cmdline_user_args():
 		var test := AutoTestScript.new()
@@ -278,18 +297,69 @@ func _notification(what: int) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	# Always set, not only when != CAPTURED: Godot's idea of the mode can be stale.
-	if event is InputEventMouseButton and event.pressed and not SpikeInput.scripted():
+	if orbit_active and event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		_orbit_yaw -= event.relative.x * 0.004
+		_orbit_pitch = clampf(_orbit_pitch + event.relative.y * 0.004, -1.5, 1.5)
+		_update_orbit_camera()
+		get_viewport().set_input_as_handled()
+	elif orbit_active and event is InputEventMouseButton and event.pressed and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		orbit_distance = clampf(orbit_distance * (0.9 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.1), planet_radius * 1.2, 40000.0)
+		_update_orbit_camera()
+		get_viewport().set_input_as_handled()
+	elif event is InputEventMouseButton and event.pressed and not SpikeInput.scripted():
 		_mouse_released = false
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.physical_keycode == KEY_ESCAPE:
 			_mouse_released = true
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		elif event.physical_keycode == KEY_O:
+			set_orbit(not orbit_active)
 		elif event.physical_keycode == KEY_F:
 			if active == ship:
 				stand_up()
 			elif near_seat():
 				sit_down()
+
+
+## Orbit camera on or off. While on, the walker is paused (as while seated, only without the ship).
+func set_orbit(on: bool) -> void:
+	if on == orbit_active:
+		return
+	if on:
+		if orbit_cam == null:
+			orbit_cam = Camera3D.new()
+			orbit_cam.far = 100000.0
+			orbit_cam.near = 5.0
+			orbit_cam.fov = 50.0
+			add_child(orbit_cam)
+		_orbit_prev_cam = get_viewport().get_camera_3d()
+		if active == player:
+			player.process_mode = Node.PROCESS_MODE_DISABLED
+		orbit_active = true
+		_update_orbit_camera()
+		orbit_cam.make_current()
+	else:
+		orbit_active = false
+		if active == player:
+			player.process_mode = Node.PROCESS_MODE_INHERIT
+		if is_instance_valid(_orbit_prev_cam):
+			_orbit_prev_cam.make_current()
+
+
+## Put the orbit camera on the sphere around the planet at the given direction (script or mouse).
+func orbit_to(dir: Vector3, distance := 15000.0) -> void:
+	orbit_distance = distance
+	_orbit_yaw = atan2(dir.x, dir.z)
+	_orbit_pitch = asin(clampf(dir.y, -1.0, 1.0))
+	_update_orbit_camera()
+
+
+func _update_orbit_camera() -> void:
+	var dir := Vector3(cos(_orbit_pitch) * sin(_orbit_yaw), sin(_orbit_pitch), cos(_orbit_pitch) * cos(_orbit_yaw))
+	orbit_cam.global_position = planet_center + dir * orbit_distance
+	var up := Vector3.UP if absf(dir.y) < 0.99 else Vector3.RIGHT
+	orbit_cam.look_at(planet_center, up)
 
 
 ## Short status for the overlay.
@@ -369,7 +439,7 @@ func _basis_for_up(up: Vector3) -> Basis:
 
 
 func _build_environment() -> void:
-	var sun := DirectionalLight3D.new()
+	sun = DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-50, 30, 0)
 	sun.shadow_enabled = false
 	add_child(sun)

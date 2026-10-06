@@ -26,6 +26,7 @@ Run: `godot --path .` from the repo root (agents: see `WORKSPACE.md` if present)
   Follow preserves pitch; it does not automatically level the nose or lock altitude.
   Its effective strength is shown as a percentage: full in atmosphere, fading
   outside it, zero at 6 km reference altitude even with L enabled.
+- Spike 8: O toggles an orbit camera (about 15 km out, looking at the planet; mouse rotates, wheel zooms; the walker is paused meanwhile). The F3 overlay has a ground line from `PlanetGen.sample`: biome id, height above sea, slope, temperature, moisture, landform, macro elevation and stamp height under the body, and the distance to the nearest site. Keys already taken: 1-5, A, D, E, F, F3, F12, H, L, O, Q, S, V, W, X, Space, Shift, Ctrl, Esc.
 - Terrain debug: 1 LOD colours, 2 skirts on/off, 3 freeze LOD, 4 reset max stats, 5 flat-shading strength (1, 0.6, 0.3, 0; facets also fade to smooth between 80 and 400 m).
 
 Command-line options (after `--`):
@@ -34,6 +35,12 @@ Command-line options (after `--`):
 - `--auto-shot`: scripted screenshots (ground, ship, low flight over a cube corner, orbit), then quit.
 - `--auto-test`: scripted run (stand still, walk, board, climb to 2000 m, descend, cruise low with a bot altitude hold, land, idle) with frame-time and precision stats per phase; writes `user://spike_results.txt`. Held keys go through `SpikeInput`, so the run does not depend on window focus.
 - Depth-buffer test: `godot --path . res://spikes/planet/depth_test.tscn [--rendering-method forward_plus]`.
+
+Spike 8 options (procedural planet, `spikes/planet_gen/`, report in `spikes/planet_gen/REPORT.md`):
+
+- `--planet-walk`: scripted walker, 1.8 m/s, 5 minutes of simulated time from four starts, biome and height logged every metre (test T5). Use with `--fixed-fps 60`. Results to `user://planet_walk_results.txt`.
+- `--planet-shots`: scripted screenshots (four orbit views, basin shore, escarpment, plateau edge, forest edge, site marker) into `spikes/planet_gen/shots/`. Needs a rendering device.
+- Both never capture the mouse (`SpikeInput.scripted()`).
 
 Spike 5 options (float limit and origin shift, branch `spike/origin-shift`, results in the concept repo's `SPIKE-5-REPORT.md`):
 

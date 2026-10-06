@@ -16,7 +16,17 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
-RUST = ROOT / "spikes/gen_bench/rust"
+# Spike 8: the script builds any of the extension workspaces. Defaults are spike 6/7's.
+#   PROJECT=planet_gen -> spikes/planet_gen/rust, crate planet_godot, check_planet.gd, extension planet_gen
+PROJECT_NAME = os.environ.get("PROJECT", "gen_bench")
+SETUPS = {
+    "gen_bench": dict(rust="spikes/gen_bench/rust", crate="gen_godot", check="check.gd", ext="exo_gen"),
+    "planet_gen": dict(rust="spikes/planet_gen/rust", crate="planet_godot", check="check_planet.gd", ext="planet_gen"),
+}
+SETUP = SETUPS[PROJECT_NAME]
+RUST = ROOT / SETUP["rust"]
+CRATE = SETUP["crate"]
+EXT = SETUP["ext"]
 OUT = ROOT / "build/spike7"
 GODOT = os.environ.get("GODOT", "godot")
 ARGS = sys.argv[1:]
@@ -47,10 +57,10 @@ compatibility_minimum = 4.7
 reloadable = false
 
 [libraries]
-linux.debug.x86_64 = "res://bin/libgen_godot.so"
-linux.release.x86_64 = "res://bin/libgen_godot.so"
-windows.debug.x86_64 = "res://bin/gen_godot.dll"
-windows.release.x86_64 = "res://bin/gen_godot.dll"
+linux.debug.x86_64 = "res://bin/lib@CRATE@.so"
+linux.release.x86_64 = "res://bin/lib@CRATE@.so"
+windows.debug.x86_64 = "res://bin/@CRATE@.dll"
+windows.release.x86_64 = "res://bin/@CRATE@.dll"
 
 [dependencies]
 windows.x86_64 = { "res://bin/libunwind.dll": "" }
@@ -61,7 +71,7 @@ name="linux"
 platform="Linux"
 runnable=true
 export_filter="all_resources"
-include_filter=""
+include_filter="recipe.json"
 exclude_filter=""
 export_path=""
 
@@ -74,7 +84,7 @@ name="windows"
 platform="Windows Desktop"
 runnable=true
 export_filter="all_resources"
-include_filter=""
+include_filter="recipe.json"
 exclude_filter=""
 export_path=""
 
@@ -108,17 +118,17 @@ shutil.rmtree(proj, ignore_errors=True)
 
 if "linux" in PLATFORMS:
     if "--no-cargo" not in ARGS:
-        times["cargo_linux_s"] = run(["cargo", "build", "--release", "-p", "gen_godot"], cwd=RUST)
-    shutil.copy(RUST / "target/release/libgen_godot.so", proj / "bin")
+        times["cargo_linux_s"] = run(["cargo", "build", "--release", "-p", CRATE], cwd=RUST)
+    shutil.copy(RUST / f"target/release/lib{CRATE}.so", proj / "bin")
 if "windows" in PLATFORMS:
     env = dict(os.environ)
     mingw = llvm_mingw_bin()
     if mingw:
         env["PATH"] = mingw + os.pathsep + env["PATH"]
     if "--no-cargo" not in ARGS:
-        times["cargo_windows_s"] = run(["cargo", "build", "--release", "-p", "gen_godot", "--target", WIN_TARGET],
+        times["cargo_windows_s"] = run(["cargo", "build", "--release", "-p", CRATE, "--target", WIN_TARGET],
                                        cwd=RUST, env=env)
-    shutil.copy(RUST / f"target/{WIN_TARGET}/release/gen_godot.dll", proj / "bin")
+    shutil.copy(RUST / f"target/{WIN_TARGET}/release/{CRATE}.dll", proj / "bin")
     if WIN_TARGET.endswith("gnullvm"):
         shutil.copy(Path(mingw).parent / "x86_64-w64-mingw32/bin/libunwind.dll", proj / "bin")
     else:
@@ -126,12 +136,14 @@ if "windows" in PLATFORMS:
 
 (proj / "project.godot").write_text(PROJECT)
 (proj / "check.tscn").write_text(SCENE)
-shutil.copy(HERE / "check.gd", proj)
-(proj / "exo_gen.gdextension").write_text(GDEXT)
+shutil.copy(HERE / SETUP["check"], proj / "check.gd")
+if PROJECT_NAME == "planet_gen":
+    shutil.copy(ROOT / "spikes/planet_gen/recipe.json", proj / "recipe.json")
+(proj / f"{EXT}.gdextension").write_text(GDEXT.replace("@CRATE@", CRATE))
 (proj / "export_presets.cfg").write_text(PRESETS)
 # The headless import can abort on exit (SIGABRT seen once); what counts is the registered extension.
 rc = subprocess.run([GODOT, "--headless", "--path", str(proj), "--import"], capture_output=True).returncode
-if "exo_gen.gdextension" not in (proj / ".godot/extension_list.cfg").read_text():
+if f"{EXT}.gdextension" not in (proj / ".godot/extension_list.cfg").read_text():
     sys.exit(f"import failed (exit {rc}), extension not registered")
 print("import exit code", rc, flush=True)
 

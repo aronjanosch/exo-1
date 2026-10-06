@@ -72,6 +72,7 @@ func _process(delta: float) -> void:
 		"   ".join(stat_parts.slice(0, 4)),
 		"   ".join(stat_parts.slice(4)),
 		"altitude %.2f m   above surface %.2f m   dist centre %.2f m" % [altitude, above_surface, dist],
+		_ground_line(dir),
 		"speed %.1f m/s   %s" % [v.length(), main.mode_text()],
 		"flight assist %s   goal %.1f m/s   forward limit %.1f m/s" % [
 			"on" if main.ship.hover_assist else "off", main.ship.commanded_speed, main.ship.forward_speed_limit],
@@ -85,3 +86,16 @@ func save_screenshot(tag := "") -> void:
 	var path := "user://screenshots/%s%s.png" % [Time.get_datetime_string_from_system().replace(":", "-"), ("-" + tag) if tag else ""]
 	img.save_png(path)
 	print("screenshot: ", ProjectSettings.globalize_path(path))
+
+
+## Spike 8: what the generator says about the spot under the body (PlanetGen.sample, no mesh needed).
+func _ground_line(dir: Vector3) -> String:
+	var gen: RefCounted = main.terrain.gen
+	var s: Dictionary = gen.sample(dir)
+	var near: PackedVector3Array = gen.sites_near(dir, 100000.0)
+	var site_m := INF
+	for site in near:
+		site_m = minf(site_m, main.planet_radius * acos(clampf(dir.dot(site), -1.0, 1.0)))
+	return "biome %d   height above sea %.1f m   slope %.0f deg   temp %.2f moist %.2f landform %d   macro elev %.1f stamp %.1f   site %s" % [
+		s.biome, s.height_above_sea, s.slope_deg, s.temperature, s.moisture, s.landform, s.macro_elevation, s.stamp_height,
+		("%.0f m" % site_m) if site_m < INF else "none"]

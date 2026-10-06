@@ -48,6 +48,13 @@ class Job:
 var _process_ms_max := 0.0
 
 
+func _exit_tree() -> void:
+	# Do not leave bound script Jobs for WorkerThreadPool's engine shutdown.
+	for job: Job in _pending.values():
+		WorkerThreadPool.wait_for_task_completion(job.task_id)
+	_pending.clear()
+
+
 func reset_max_stats() -> void:
 	_build_ms_max = 0.0
 	_process_ms_max = 0.0

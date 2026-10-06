@@ -19,11 +19,13 @@ const TerrainScript := preload("res://spikes/planet/terrain.gd")
 const RingScript := preload("res://spikes/planet/collision_ring.gd")
 const AutoTestScript := preload("res://spikes/planet/auto_test.gd")
 const SpikeInput := preload("res://spikes/planet/spike_input.gd")
+const PlanetField := preload("res://spikes/planet/planet_field.gd")
 
 ## Planet radius in metres. 5 km is the first guide value (DECISIONS.md); --radius=<m> overrides.
 @export var planet_radius := 5000.0
-@export var surface_gravity := 9.81  # arcade, not physical for a 3 km planet
+@export var surface_gravity := 9.81  # arcade surface/atmosphere acceleration
 @export var atmosphere_height := 1200.0  # start value, tune by feel
+@export var gravity_end_height := 6000.0  # no planetary influence above this altitude
 @export var fog_density := 0.00025  # at the surface
 
 ## Read by the overlay; filled by the terrain and later systems.
@@ -143,11 +145,16 @@ func to_planet(pos: Vector3) -> Vector3:
 	return pos - planet_center
 
 
-## Radial gravity, falls off with 1/r^2 above the surface. Takes world positions.
+## Shared gravity/planet-follow envelope. Takes world positions.
+func field_strength_at(pos: Vector3) -> float:
+	var altitude := to_planet(pos).length() - planet_radius
+	return PlanetField.strength(altitude, atmosphere_height, gravity_end_height)
+
+
+## Arcade radial gravity: full in atmosphere, softly fading to zero in space.
 func gravity_at(pos: Vector3) -> Vector3:
 	var p := to_planet(pos)
-	var r := maxf(p.length(), planet_radius)
-	return -p.normalized() * surface_gravity * pow(planet_radius / r, 2.0)
+	return -p.normalized() * surface_gravity * field_strength_at(pos)
 
 
 ## Atmosphere density 0..1: full at the surface, gone at atmosphere_height.
@@ -286,7 +293,7 @@ func _unhandled_input(event: InputEvent) -> void:
 ## Short status for the overlay.
 func mode_text() -> String:
 	if active == ship:
-		return "SHIP (F stand up)  hover assist %s (H)  horizon follow %s (L)" % [
+		return "SHIP (F stand up)  flight assist %s (H)  planet follow %s (L)" % [
 			"on" if ship.hover_assist else "off", "on" if ship.horizon_follow else "off"]
 	if player.fly_mode:
 		return "FLY (V)"

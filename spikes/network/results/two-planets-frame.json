@@ -1,0 +1,51 @@
+{
+  "authority": "client",
+  "frame_id": 0,
+  "invalid": 0,
+  "origin": [
+    210020.0,
+    15000.0,
+    -10000.0
+  ],
+  "physics_tick": 10,
+  "planet": 1,
+  "ready": true,
+  "remotes": [
+    {
+      "frame": 1,
+      "frame_id": 1,
+      "mode": "startup",
+      "owner": 1,
+      "planet": 0,
+      "position": [
+        0.0,
+        5002.9736328125,
+        0.0
+      ],
+      "world_position": [
+        -210020.0,
+        -9997.0263671875,
+        10000.0
+      ]
+    }
+  ],
+  "shifts": 2,
+  "ship_position": [
+    20.0,
+    5000.0751953125,
+    0.0
+  ],
+  "ship_velocity": [
+    -3.33320260281766e-09,
+    0.999997913837433,
+    0.0
+  ],
+  "slot": 2,
+  "walker_local": [
+    0.0,
+    0.600000023841858,
+    -3.0
+  ],
+  "walker_on_floor": false,
+  "walking": false
+}

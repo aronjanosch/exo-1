@@ -1,0 +1,6 @@
+{
+  "all_interfaces": true,
+  "non_loopback_private_address": true,
+  "physical_computers": 1,
+  "udp_port": 17447
+}

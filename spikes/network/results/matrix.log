@@ -1,0 +1,30 @@
+Godot Engine v4.7.2.stable.arch_linux.ed1daf0bf (2026-08-17 01:18:38 UTC) - https://godotengine.org
+
+PASS fixed 144-byte data roundtrip
+PASS reject truncated payload
+PASS reject nonfinite timestamp
+PASS reject ship-frame snapshot without parent id
+PASS Hermite, reordered packet and duplicate handling
+PASS underrun holds, does not extrapolate collision
+PASS frame transition never mixes ship-local and planet-local positions
+PASS snapshot history bounded
+PASS rejoining owner resets history; queued old life cannot return
+PASS different planets reconstruct in independent origins
+PASS shift leaves shared snapshots unchanged
+PASS shift preserves velocity
+PASS own input responds within two physics ticks (1)
+PASS real ship takeoff >45 m
+PASS real ship lands on fixture
+PASS capture survives >10 origin shifts; jump 0.000 mm
+MATRIX completed 2 players
+MATRIX completed 8 players
+PASS 30 Hz/150 ms matrix: no underruns; p95 error 4.414 mm <10 mm fixture bound
+PASS walker on interpolated 350 m/s foreign ship: drift 0.000 m, floor 358/360
+PASS walking inside foreign cabin uses local frame
+PASS passenger snapshot preserves foreign ship id and local feet
+PASS foreign ship exit returns to planet/world frame
+PASS planet-frame walker moves beside parked foreign ship; floor 24/24
+PASS outside walker snapshot uses shared planet frame
+PASS independent authorities both detect ship contact
+PASS contact conflict exposed: ticks [54, 41], disagreement 3.00 m
+SPIKE4 MATRIX 96 cases, 0 failures; /tmp/exo-spike4-data/godot/app_userdata/Planet Spike/spike4-matrix.json

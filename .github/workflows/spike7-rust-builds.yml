@@ -1,0 +1,95 @@
+# Spike 7: build the Rust extension for Linux and Windows on a Linux runner,
+# export the check project, run it on Linux and on a Windows runner.
+# Runs only on the spike branch. Actions pinned to commit SHAs, read-only token, no secrets.
+name: spike7-rust-builds
+
+on:
+  push:
+    branches: [spike/rust-builds]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: 4.7.2
+  LLVM_MINGW_VERSION: "20260922"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Cache cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            spikes/gen_bench/rust/target
+          key: cargo-${{ hashFiles('spikes/gen_bench/rust/Cargo.lock') }}-${{ hashFiles('spikes/gen_bench/rust/**/*.rs') }}
+          restore-keys: cargo-${{ hashFiles('spikes/gen_bench/rust/Cargo.lock') }}-
+
+      - name: Cache Godot and llvm-mingw
+        id: tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/tools
+            ~/.local/share/godot/export_templates
+          key: tools-godot-${{ env.GODOT_VERSION }}-llvm-mingw-${{ env.LLVM_MINGW_VERSION }}
+
+      - name: Download Godot, export templates and llvm-mingw
+        if: steps.tools.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/tools ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          curl -sSfL -o /tmp/godot.zip $base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          unzip -q /tmp/godot.zip -d ~/tools
+          mv ~/tools/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/tools/godot
+          curl -sSfL -o /tmp/templates.tpz $base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz
+          unzip -q /tmp/templates.tpz -d /tmp/templates
+          mv /tmp/templates/templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/
+          curl -sSfL https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-22.04-x86_64.tar.xz \
+            | tar -xJ -C ~/tools
+          mv ~/tools/llvm-mingw-* ~/tools/llvm-mingw
+
+      - name: Rust targets
+        run: rustup target add x86_64-pc-windows-gnullvm
+
+      - name: Build extension and export
+        run: |
+          GODOT=~/tools/godot LLVM_MINGW=~/tools/llvm-mingw/bin \
+            python3 spikes/rust_builds/build_export.py linux windows
+
+      - name: Check on Linux
+        run: |
+          cd build/spike7/linux
+          ./exo-spike7.x86_64 --headless
+          cat spike7_result.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: spike7-linux
+          path: build/spike7/linux
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: spike7-windows
+          path: build/spike7/windows
+
+  check-windows:
+    needs: build
+    runs-on: windows-2025
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: spike7-windows
+          path: spike7
+      - name: Check on Windows
+        shell: pwsh
+        run: |
+          cd spike7
+          $p = Start-Process -FilePath .\exo-spike7.exe -ArgumentList '--headless' -Wait -PassThru -NoNewWindow
+          Get-Content spike7_result.json
+          exit $p.ExitCode

@@ -41,9 +41,11 @@ dieser Sitzwechsel sind ausdrücklich Test-Platzierungen, kein Boarding-Design.
 
 Client beenden und mit derselben Slot-Nummer erneut verbinden. Keine Fehler
 und kein dauerhaftes Geisterschiff erwartet; alte Anzeigen verschwinden nach
-spätestens zwei Sekunden. **Dieser Test auf zwei physischen Rechnern ist
-manuell offen.** Lokale ENet-Verbindungen und dieselbe LAN-Bindung sind
-automatisiert geprüft.
+spätestens zwei Sekunden. **Stand 2026-10-06:** Der Test auf zwei physischen
+Rechnern im selben LAN (Host aus dem Projekt, Client aus dem Testbuild) lief;
+beide flogen, der Client nahm den Host als Passagier in seiner Kabine mit.
+Shift- und Wiederverbindungsschritte auf zwei Rechnern stehen noch aus. Lokale
+ENet-Verbindungen und dieselbe LAN-Bindung sind automatisiert geprüft.
 
 ## Steuerung und weitere Checks
 

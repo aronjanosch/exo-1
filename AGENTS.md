@@ -48,3 +48,14 @@ If a `WORKSPACE.md` exists in the repo root, read it before running anything. Ea
 ## When unsure
 
 Say what you do not know, propose the smallest next step, ask one question at a time.
+
+## Cursor Cloud specific instructions
+
+Godot 4.7.2 stable is on `PATH` as `godot` (`/usr/local/bin/godot`). The project feature tag is `4.7`. Use this 4.7.x editor so Godot does not migrate `project.godot`.
+
+From the repo root:
+
+- Import headless with `godot --headless --path . --import --quit`. This leaves `project.godot` unchanged.
+- The scaffold has no main scene. `godot --headless --path . --quit-after 1` prints `Can't run project: no main scene defined in the project.` and keeps running; stop that process by pid.
+- The editor runs Forward+ on Vulkan. On this VM the device is lavapipe (`llvmpipe`). There is no sound card, so Godot falls back to the dummy audio driver.
+- Opening the editor rewrites `project.godot`: it replaces the header comment and drops renderer lines that match engine defaults. That file is red-class. After an editor session that was only for inspection, restore it with `git checkout -- project.godot` before committing.

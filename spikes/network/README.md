@@ -109,7 +109,7 @@ python3 spikes/network/run_suite.py --case=client-8
 Laufdaten und Logs: `/tmp/exo-spike4-results/`. Separates `user://` unter
 `/tmp/exo-spike4-data/`; es überschreibt keine Ergebnisse anderer Spikes.
 Eingefrorene Messergebnisse liegen in `results/`, Einordnung im
-`SPIKE-4-REPORT.md`. Feste Seeds testen unabhängigen Verlust, keine beliebigen
+`SPIKE-4-REPORT.md` im Concept-Repo (`docs/`). Feste Seeds testen unabhängigen Verlust, keine beliebigen
 Verlustbursts oder WAN-Verbindungen.
 
 ## MCP für Bots

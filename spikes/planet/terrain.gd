@@ -17,6 +17,7 @@ const LOD_COLORS: Array[Color] = [
 	Color(1, 1, 1),
 ]
 
+const Dressing := preload("res://spikes/planet/dressing.gd")
 const RECIPE_PATH := "res://spikes/planet_gen/recipe.json"
 
 @export var radius := 3000.0
@@ -92,6 +93,7 @@ func _ready() -> void:
 	_relief = maxf(absf(relief.x), absf(relief.y))
 	_build_indices()
 	_make_water()
+	_make_markers()
 	material = ShaderMaterial.new()
 	material.shader = preload("res://spikes/planet/terrain.gdshader")
 	material.set_shader_parameter("planet_radius", radius)
@@ -126,6 +128,15 @@ func height_at(dir: Vector3) -> float:
 ## Sea level above the base radius (water sphere radius = radius + sea_level).
 func sea_level() -> float:
 	return gen.sea_level()
+
+
+func _make_markers() -> void:
+	var i := 0
+	for dir: Vector3 in gen.sites():
+		var marker := Dressing.make_marker(radius, gen.height_at(dir), dir)
+		marker.name = "SiteMarker%d" % i
+		add_child(marker)
+		i += 1
 
 
 func _make_water() -> void:
@@ -289,6 +300,12 @@ func _upload(job: Job) -> void:
 	mi.position = job.center  # exactly the centre the vertices are relative to
 	mi.set_instance_shader_parameter("lod_color", LOD_COLORS[mini(job.node.depth, LOD_COLORS.size() - 1)])
 	mi.visible = false
+	# Dressing: finest chunks only. Children of the chunk mesh, so they share its origin and visibility.
+	for kind: String in job.scatter:
+		var entry: Dictionary = job.scatter[kind]
+		if entry.count > 0:
+			var reach := job.node.edge_m * 0.75 + _relief
+			mi.add_child(Dressing.make_instances(kind, entry, AABB(Vector3.ONE * -reach, Vector3.ONE * reach * 2.0)))
 	add_child(mi)
 	job.node.mesh_instance = mi
 	job.arrays = []

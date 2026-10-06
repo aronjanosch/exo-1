@@ -106,7 +106,7 @@ Rivers, erosion, caves, voxels, grass cards, atmosphere scattering, real site sc
 
 ## Rules for this session
 
-- Branch `spike/planet-gen` only. Commit small and often, one commit per working step and one for each notable bug state, message says what it shows. Push the branch; never push to `main`, never create tags (the initiator tags the frozen state).
+- Branch `spike/planet-gen` only (it starts from `spike/combined`, the state of all spikes so far; the initiator fast-forwards `spike/combined` after review). Commit small and often, one commit per working step and one for each notable bug state, message says what it shows. Push the branch; never push to `main`, never create tags (the initiator tags the frozen state).
 - Run `git branch --show-current` right before every commit.
 - Dependencies: `godot` (godot-rust 0.5.5), `fastnoise-lite` 1.1.1, `serde`, `serde_json` are approved. Ask (stop and write the question into the report) before adding anything else.
 - When a design gap appears that this brief does not cover: take the research value or the simplest choice, mark it as **assumption** in code and report, and continue. Never invent names, lore or mechanics.

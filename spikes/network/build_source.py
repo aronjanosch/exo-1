@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory(prefix="exo-spike4-package-") as folder:
     (project / "project.godot").write_text(config)
     shutil.copyfile(ROOT / "LICENSE", project / "LICENSE")
     shutil.copyfile(HERE / "README.md", project / "README.md")
-    for name in ["ship.gd", "player.gd", "spike_input.gd"]:
+    for name in ["ship.gd", "player.gd", "spike_input.gd", "flight_hud.gd"]:
         shutil.copyfile(ROOT / "spikes/planet" / name, project / "spikes/planet" / name)
     for path in HERE.rglob("*"):
         if not path.is_file() or any(part in {"dist", "__pycache__"} for part in path.relative_to(HERE).parts):

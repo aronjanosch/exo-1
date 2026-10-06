@@ -132,5 +132,22 @@ MCP-Initialisierung, Werkzeugliste, Lesen, Betreten und Shift der Fremdkabine.
 `dist/exo-spike4-source.zip` enthält ein kleines eigenständiges Godot-Projekt
 mit dieser Szene als Startszene, ursprünglichen Controllern und Anleitung.
 Entpacken, Godot 4.7.2 verwenden; die obigen Host-/Client-Kommandos gelten dort
-ebenfalls. Keine fertige Binary: Auf dieser Maschine sind keine Export-Templates
-installiert. Ein Quellpaket genügt gemäß Auftrag.
+ebenfalls. Erzeugt mit `python3 spikes/network/build_source.py`.
+
+Testbuilds ohne Godot-Installation für Linux, Windows und macOS:
+
+```sh
+python3 spikes/network/build_binaries.py          # alle drei
+python3 spikes/network/build_binaries.py windows  # nur eine Plattform
+```
+
+Ergebnis in `build/spike4/exo-spike4-<plattform>.zip` (gitignoriert, nicht
+einchecken): Binary, `host`- und `client`-Starter, die nach Host-IP und
+Spieler-Nummer fragen, sowie `ANLEITUNG.txt` für Testpersonen. Voraussetzung
+sind die offiziellen Export-Templates 4.7.2 unter
+`~/.local/share/godot/export_templates/4.7.2.stable/`; `zip`/`unzip` im PATH.
+Der Export passiert im temporär entpackten Quellpaket, das Hauptprojekt bleibt
+unverändert. Windows ist unsigniert (SmartScreen-Hinweis), macOS nur ad hoc
+signiert; der `.command`-Starter entfernt die Quarantäne. Automatisch geprüft
+ist nur die Linux-Binary (headless Host+Client und gerenderter Bot-Lauf);
+Windows und macOS brauchen den manuellen Test.

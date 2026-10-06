@@ -16,6 +16,10 @@ class Planet extends Node3D:
 		return 0.0
 	func density_at(p: Vector3) -> float:
 		return 1.0 - smoothstep(0.0, 1200.0, to_planet(p).length() - planet_radius)
+	## Flight code asks for the gravity/planet-follow envelope. The fixture stays in
+	## the low atmosphere where the real planet returns 1.0, so no fade here.
+	func field_strength_at(_p: Vector3) -> float:
+		return 1.0
 	func gravity_at(p: Vector3) -> Vector3:
 		if zero_gravity:
 			return Vector3.ZERO

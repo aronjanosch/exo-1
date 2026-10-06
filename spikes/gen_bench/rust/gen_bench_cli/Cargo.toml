@@ -1,0 +1,7 @@
+[package]
+name = "gen_bench_cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gen_core = { path = "../gen_core" }

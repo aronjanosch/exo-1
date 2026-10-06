@@ -1,0 +1,7 @@
+[package]
+name = "gen_core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fastnoise-lite = "=1.1.1"

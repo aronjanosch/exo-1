@@ -58,6 +58,8 @@ geprüft.
 - `O`: Test-Shift um (10 km, 10 km, −10 km).
 - Zwei Schiffe berühren lassen: unterschiedliche lokale Reaktionen sind ein
   dokumentiertes Problem der getrennten Autoritäten, kein gelöster Kontakt.
+  Auf zwei Rechnern (2026-10-06) war die Kollision auf beiden Seiten da und
+  wirkte nach Augenmaß plausibel; auf Abweichungen wurde nicht gezielt geachtet.
 
 Für eine gut sichtbare automatische Bewegung dem Host `--bot` geben. Er
 startet (0–4 s), fliegt (4–10 s), dreht (10–16 s), landet (16–24 s), hält.

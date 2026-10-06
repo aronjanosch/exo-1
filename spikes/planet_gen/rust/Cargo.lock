@@ -166,6 +166,7 @@ version = "0.1.0"
 dependencies = [
  "godot",
  "planet_core",
+ "serde_json",
 ]
 
 [[package]]

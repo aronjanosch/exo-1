@@ -106,6 +106,8 @@ pub struct Planet {
     pub sea: f64,
     pub sites: Vec<V3>,
     pub baked: bool,
+    /// (min, max) crust height above the base radius found by the bake statistics.
+    pub height_range: (f64, f64),
 }
 
 pub(crate) fn par_rows<T: Send, F: Fn(usize, usize) -> T + Sync>(rows: usize, threads: usize, f: F) -> Vec<T> {
@@ -187,6 +189,7 @@ impl Planet {
             sea: 0.0,
             sites: Vec::new(),
             baked: false,
+            height_range: (0.0, 0.0),
             radius,
             recipe,
         }
@@ -349,6 +352,31 @@ impl Planet {
         }
     }
 
+    /// Collision patch heights in a tangent frame: for each grid point (x, z) the height y
+    /// where the vertical line through it meets the terrain,
+    /// |C + xT + zB + y*up| = R + h(dir). Frame centre C = up * R. Row-major, z outer.
+    pub fn patch_heights(&self, up: V3, t: V3, b: V3, n: usize) -> Vec<f32> {
+        let r = self.radius;
+        let c = up * r;
+        let half = (n as f64 - 1.0) * 0.5;
+        let mut out = Vec::with_capacity(n * n);
+        for j in 0..n {
+            let z = j as f64 - half;
+            for i in 0..n {
+                let x = i as f64 - half;
+                let flat = c + t * x + b * z;
+                let mut y = 0.0;
+                for _ in 0..3 {
+                    let dir = (flat + up * y).normalized();
+                    let surface = r + self.height_at(dir);
+                    y = (surface * surface - x * x - z * z).sqrt() - r;
+                }
+                out.push(y as f32);
+            }
+        }
+        out
+    }
+
     pub fn biome_color(&self, id: u8) -> [f32; 3] {
         self.recipe.biomes.iter().find(|b| b.id == id).map(|b| b.color).unwrap_or([1.0, 0.0, 1.0])
     }
@@ -431,6 +459,7 @@ impl Planet {
         drop(ew);
         st.sea_ms = t0.elapsed().as_secs_f64() * 1e3;
 
+        let hr;
         // 3. statistics of the full height function on a stride-2 grid
         let t0 = Instant::now();
         {
@@ -486,10 +515,12 @@ impl Planet {
             st.mean_height_above_sea = tot.hsum / tot.w;
             st.min_height_above_sea = tot.min;
             st.max_height_above_sea = tot.max;
+            hr = (tot.min + self.sea, tot.max + self.sea);
             for row in &self.recipe.biomes {
                 st.biome_area_share.insert(row.id.to_string(), tot.biomes.get(&row.id).copied().unwrap_or(0.0) / tot.w);
             }
         }
+        self.height_range = hr;
         self.feature_stats(&mut st);
         st.stats_ms = t0.elapsed().as_secs_f64() * 1e3;
 

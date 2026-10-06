@@ -187,7 +187,9 @@ func _add_planet(center: Vector3, radius: float, noise_seed: int, planet_stats: 
 	var face_edge := radius * PI * 0.5
 	pb.terrain = TerrainScript.new()
 	pb.terrain.radius = radius
-	pb.terrain.noise_seed = noise_seed
+	# Own PlanetGen per planet. The start planet (seed index 1) uses the recipe as written;
+	# further planets get their own seed.
+	pb.terrain.gen = TerrainScript.make_gen(-1 if noise_seed == 1 else noise_seed * 7919, radius)
 	pb.terrain.max_depth = maxi(1, roundi(log(face_edge / 37.0) / log(2.0)))
 	pb.terrain.stats = planet_stats
 	pb.terrain.position = center

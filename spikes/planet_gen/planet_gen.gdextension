@@ -1,0 +1,13 @@
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.7
+reloadable = false
+
+[libraries]
+linux.debug.x86_64 = "res://spikes/planet_gen/rust/target/fast/libplanet_godot.so"
+linux.release.x86_64 = "res://spikes/planet_gen/rust/target/release/libplanet_godot.so"
+windows.debug.x86_64 = "res://spikes/planet_gen/rust/target/x86_64-pc-windows-gnullvm/release/planet_godot.dll"
+windows.release.x86_64 = "res://spikes/planet_gen/rust/target/x86_64-pc-windows-gnullvm/release/planet_godot.dll"
+
+[dependencies]
+windows.x86_64 = { "res://bin/libunwind.dll": "" }

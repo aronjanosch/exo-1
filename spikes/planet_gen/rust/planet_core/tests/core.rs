@@ -146,3 +146,34 @@ fn t3_macro_statistics() {
     assert!(st.site_count == 0 || st.site_min_pair_m >= 600.0);
     let _ = p;
 }
+
+#[test]
+fn t1_collision_patches_core() {
+    // patches in tangent frames over steep ground (escarpment, plateau edge, basin rim) and flat ground
+    let (p, _) = planet();
+    let mut worst: f64 = 0.0;
+    let mut n = 0;
+    let centres = [v3(-0.4, 0.3, 1.0), v3(-1.0, -0.2, -0.4), v3(1.0, 0.2, 0.3), v3(0.3, 1.0, 0.2)];
+    for c in centres {
+        for k in 0..6 {
+            let up0 = c.normalized();
+            let east = up0.cross(v3(0.0, 1.0, 0.0)).normalized();
+            let off = (east * (k as f64 * 100.0 / p.radius) + up0).normalized();
+            let t = (east - off * east.dot(off)).normalized();
+            let b = t.cross(off);
+            let hs = p.patch_heights(off, t, b, 32);
+            for j in 0..32 {
+                for i in 0..32 {
+                    let (x, z) = (i as f64 - 15.5, j as f64 - 15.5);
+                    let o64 = off * p.radius;
+                    let o32 = v3(o64.x as f32 as f64, o64.y as f32 as f64, o64.z as f32 as f64);
+                    let w = o32 + t * x + b * z + off * hs[j * 32 + i] as f64;
+                    worst = worst.max((w.length() - p.radius - p.height_at(w.normalized())).abs());
+                    n += 1;
+                }
+            }
+        }
+    }
+    println!("T1 collision patches (core, origin rounded to f32 like the scene): {} samples, max |patch - height_at| = {:.3e} m", n, worst);
+    assert!(worst < 1e-3);
+}

@@ -17,20 +17,25 @@ const LOD_COLORS: Array[Color] = [
 	Color(1, 1, 1),
 ]
 
+const RECIPE_PATH := "res://spikes/planet_gen/recipe.json"
+
 @export var radius := 3000.0
-@export var noise_seed := 1
-@export var height_amplitude := 150.0  # start value, tune by feel
-@export var noise_frequency := 0.0008  # largest features about 1.2 km
+## Spike 8: every height, mesh and patch comes from this PlanetGen (Rust). Null = build the default one.
+var gen: RefCounted
+## -1 keeps the recipe's seed.
+@export var gen_seed := -1
 @export var max_depth := 7  # about 37 m chunks, 1.15 m quads at R = 3 km
 @export var split_factor := 1.5
 @export var merge_factor := 1.8  # larger than split_factor, avoids flicker
 @export var max_uploads_per_frame := 4
 
 var stats: Dictionary
-var noise: FastNoiseLite
 var material: ShaderMaterial
 var frozen := false
+var water: MeshInstance3D
 
+var _relief := 150.0  # largest |height| over the planet (stamps included), for chunk bounds
+var _indices := PackedInt32Array()
 var _roots: Array[ChunkNode] = []
 var _pending: Array[Job] = []
 var _done: Array[Job] = []
@@ -61,21 +66,36 @@ class ChunkNode:
 class Job:
 	extends RefCounted
 	var node: ChunkNode
-	var noise: FastNoiseLite  # own copy per job, never shared across threads
-	var radius: float
-	var amplitude: float
-	var skirt_depth: float
-	var color: Color
+	var gen: RefCounted  # PlanetGen: build_chunk takes &self, shared across worker threads
+	var with_scatter := false
 	var task_id := -1
 	var arrays: Array
+	var center: Vector3
+	var scatter: Dictionary
 	var build_usec := 0
 
 
+## One PlanetGen per planet: recipe from the data file, baked here (main thread, about 0.5 s).
+static func make_gen(seed_override: int, planet_radius: float) -> RefCounted:
+	var g: RefCounted = ClassDB.instantiate("PlanetGen")
+	if not g.load_recipe(FileAccess.get_file_as_string(RECIPE_PATH), seed_override, planet_radius):
+		push_error("PlanetGen: recipe did not load")
+		return null
+	g.bake(0)
+	return g
+
+
 func _ready() -> void:
-	noise = _make_noise()
+	if gen == null:
+		gen = make_gen(gen_seed, radius)
+	var relief: Vector2 = gen.height_range()
+	_relief = maxf(absf(relief.x), absf(relief.y))
+	_build_indices()
+	_make_water()
 	material = ShaderMaterial.new()
 	material.shader = preload("res://spikes/planet/terrain.gdshader")
 	material.set_shader_parameter("planet_radius", radius)
+	material.set_shader_parameter("sea_level", gen.sea_level())
 	material.set_shader_parameter("show_lod", false)
 	material.set_shader_parameter("show_skirts", true)
 	material.set_shader_parameter("flat_strength", 1.0)
@@ -98,9 +118,34 @@ func _exit_tree() -> void:
 	_done.clear()
 
 
-## Terrain height above the base radius along a unit direction (CPU, main thread).
+## Terrain height above the base radius along a unit direction. Same function as the mesh and the patches.
 func height_at(dir: Vector3) -> float:
-	return noise.get_noise_3dv(dir * radius) * height_amplitude
+	return gen.height_at(dir)
+
+
+## Sea level above the base radius (water sphere radius = radius + sea_level).
+func sea_level() -> float:
+	return gen.sea_level()
+
+
+func _make_water() -> void:
+	var sphere := SphereMesh.new()
+	var r: float = radius + gen.sea_level()
+	sphere.radius = r
+	sphere.height = r * 2.0
+	sphere.radial_segments = 128
+	sphere.rings = 64
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.16, 0.38, 0.52, 0.82)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.roughness = 0.35
+	sphere.material = mat
+	water = MeshInstance3D.new()
+	water.name = "Water"
+	water.mesh = sphere
+	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(water)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -241,7 +286,8 @@ func _upload(job: Job) -> void:
 	mesh.surface_set_material(0, material)
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
-	mi.position = job.node.center
+	mi.position = job.center  # exactly the centre the vertices are relative to
+	mi.set_instance_shader_parameter("lod_color", LOD_COLORS[mini(job.node.depth, LOD_COLORS.size() - 1)])
 	mi.visible = false
 	add_child(mi)
 	job.node.mesh_instance = mi
@@ -258,7 +304,7 @@ func _make_node(face: int, a0: float, b0: float, size: float, depth: int) -> Chu
 	n.depth = depth
 	n.center = cube_to_sphere(face, a0 + size * 0.5, b0 + size * 0.5) * radius
 	n.edge_m = (cube_to_sphere(face, a0, b0) - cube_to_sphere(face, a0 + size, b0)).length() * radius
-	n.bound = n.edge_m * 0.75 + height_amplitude
+	n.bound = n.edge_m * 0.75 + _relief
 	_node_count += 1
 	return n
 
@@ -266,68 +312,14 @@ func _make_node(face: int, a0: float, b0: float, size: float, depth: int) -> Chu
 func _make_job(n: ChunkNode) -> Job:
 	var job := Job.new()
 	job.node = n
-	job.noise = noise.duplicate()
-	job.radius = radius
-	job.amplitude = height_amplitude
-	job.skirt_depth = maxf(2.0, n.edge_m / GRID * 4.0)
-	job.color = LOD_COLORS[mini(n.depth, LOD_COLORS.size() - 1)]
+	job.gen = gen
+	job.with_scatter = n.depth == max_depth  # dressing only on the finest chunks
 	return job
 
 
-func _make_noise() -> FastNoiseLite:
-	var n := FastNoiseLite.new()
-	n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	n.seed = noise_seed
-	n.frequency = noise_frequency
-	n.fractal_type = FastNoiseLite.FRACTAL_FBM
-	n.fractal_octaves = 6
-	return n
-
-
-## Runs on a worker thread. Touches only the job, never the scene tree.
-## Grid of (GRID + 3)^2 samples: the outer ring is used for normals and becomes
-## the skirt (border vertex pushed down towards the centre).
-func _build_job(job: Job) -> void:
-	var t0 := Time.get_ticks_usec()
-	var n := job.node
+func _build_indices() -> void:
 	var m := GRID + 3
-	var step := n.size / GRID
-	var pos := PackedVector3Array()
-	var dirs := PackedVector3Array()
-	pos.resize(m * m)
-	dirs.resize(m * m)
-	for j in m:
-		for i in m:
-			var d := cube_to_sphere(n.face, n.a0 + (i - 1) * step, n.b0 + (j - 1) * step)
-			var h := job.noise.get_noise_3dv(d * job.radius) * job.amplitude
-			pos[j * m + i] = d * (job.radius + h)
-			dirs[j * m + i] = d
-
-	var verts := PackedVector3Array()
-	var normals := PackedVector3Array()
-	var uvs := PackedVector2Array()
-	var colors := PackedColorArray()
-	verts.resize(m * m)
-	normals.resize(m * m)
-	uvs.resize(m * m)
-	colors.resize(m * m)
-	colors.fill(job.color)
-	for j in m:
-		for i in m:
-			var k := j * m + i
-			var ck := clampi(j, 1, m - 2) * m + clampi(i, 1, m - 2)
-			var nrm := (pos[ck + 1] - pos[ck - 1]).cross(pos[ck + m] - pos[ck - m]).normalized()
-			if nrm.dot(dirs[ck]) < 0.0:
-				nrm = -nrm
-			normals[k] = nrm
-			if k == ck:
-				verts[k] = pos[k] - n.center
-			else:
-				verts[k] = pos[ck] - dirs[ck] * job.skirt_depth - n.center
-				uvs[k] = Vector2(1, 0)  # skirt flag for the shader
-
-	var indices := PackedInt32Array()
-	indices.resize((m - 1) * (m - 1) * 6)
+	_indices.resize((m - 1) * (m - 1) * 6)
 	var w := 0
 	for j in m - 1:
 		for i in m - 1:
@@ -335,22 +327,32 @@ func _build_job(job: Job) -> void:
 			var k10 := k00 + 1
 			var k01 := k00 + m
 			var k11 := k01 + 1
-			indices[w] = k00
-			indices[w + 1] = k01
-			indices[w + 2] = k10
-			indices[w + 3] = k10
-			indices[w + 4] = k01
-			indices[w + 5] = k11
+			_indices[w] = k00
+			_indices[w + 1] = k01
+			_indices[w + 2] = k10
+			_indices[w + 3] = k10
+			_indices[w + 4] = k01
+			_indices[w + 5] = k11
 			w += 6
 
+
+## Runs on a worker thread. Touches only the job, never the scene tree.
+## The vertex grid of (GRID + 3)^2 samples, normals, skirts and colours come from
+## PlanetGen.build_chunk (Rust); only the index list (built once) is added here.
+func _build_job(job: Job) -> void:
+	var t0 := Time.get_ticks_usec()
+	var n := job.node
+	var d: Dictionary = job.gen.build_chunk(n.face, n.a0, n.b0, n.size, job.with_scatter)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_NORMAL] = normals
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_COLOR] = colors
-	arrays[Mesh.ARRAY_INDEX] = indices
+	arrays[Mesh.ARRAY_VERTEX] = d.verts
+	arrays[Mesh.ARRAY_NORMAL] = d.normals
+	arrays[Mesh.ARRAY_TEX_UV] = d.uvs
+	arrays[Mesh.ARRAY_COLOR] = d.colors
+	arrays[Mesh.ARRAY_INDEX] = _indices
 	job.arrays = arrays
+	job.center = d.center
+	job.scatter = d.scatter
 	job.build_usec = Time.get_ticks_usec() - t0
 
 

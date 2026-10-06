@@ -16,7 +16,7 @@ const MAX_ADDS_PER_FRAME := 16  # spread body creation, avoids frame spikes
 
 @export var ring_radius := 100.0  # start value from the brief (100-300 m)
 
-var terrain: Node3D  # radius, height_amplitude, noise
+var terrain: Node3D  # radius, gen (PlanetGen), height_at
 var stats: Dictionary
 ## Nodes the ring follows. Each may expose `linear_velocity` or `velocity`.
 var anchors: Array[Node3D] = []
@@ -36,9 +36,7 @@ class Job:
 	var a0: float
 	var b0: float
 	var size: float
-	var radius: float
-	var amplitude: float
-	var noise: FastNoiseLite
+	var gen: RefCounted  # PlanetGen
 	var task_id := -1
 	var xform: Transform3D
 	var heights: PackedFloat32Array
@@ -154,9 +152,7 @@ func _start_job(key: Vector3i, cell: Array) -> void:
 	job.a0 = cell[1]
 	job.b0 = cell[2]
 	job.size = cell[3]
-	job.radius = terrain.radius
-	job.amplitude = terrain.height_amplitude
-	job.noise = terrain.noise.duplicate()
+	job.gen = terrain.gen
 	job.task_id = WorkerThreadPool.add_task(_build_job.bind(job), false, "collision patch")
 	_pending[key] = job
 
@@ -190,35 +186,17 @@ func _collect_jobs() -> void:
 		_patches[key] = body
 
 
-## Worker thread. For each grid point (x, z) of the tangent frame, find the
-## height y where the vertical line through it meets the terrain:
-## |C + xT + zB + y*up| = R + h(dir)  =>  y = sqrt(r^2 - x^2 - z^2) - R.
-## Two iterations are enough because h changes slowly along the line.
+## Worker thread. Tangent frame (up, t, b) of the cell; the heights of the vertical
+## lines through the 32x32 grid come from PlanetGen.patch_heights (Rust, same height
+## function as the mesh): |C + xT + zB + y*up| = R + h(dir).
 func _build_job(job: Job) -> void:
 	var t0 := Time.get_ticks_usec()
-	var r := job.radius
 	var mid := job.size * 0.5
 	var up := TerrainScript.cube_to_sphere(job.face, job.a0 + mid, job.b0 + mid)
 	var east := TerrainScript.cube_to_sphere(job.face, job.a0 + job.size, job.b0 + mid) \
 		- TerrainScript.cube_to_sphere(job.face, job.a0, job.b0 + mid)
 	var t := (east - up * east.dot(up)).normalized()
 	var b := t.cross(up)
-	var c := up * r
-	job.xform = Transform3D(Basis(t, up, b), c)
-
-	var n := PATCH_SAMPLES
-	var half := (n - 1) * 0.5
-	job.heights = PackedFloat32Array()
-	job.heights.resize(n * n)
-	for j in n:
-		var z := j - half
-		for i in n:
-			var x := i - half
-			var flat := c + t * x + b * z
-			var y := 0.0
-			for _iter in 2:
-				var dir := (flat + up * y).normalized()
-				var surface := r + job.noise.get_noise_3dv(dir * r) * job.amplitude
-				y = sqrt(surface * surface - x * x - z * z) - r
-			job.heights[j * n + i] = y
+	job.xform = Transform3D(Basis(t, up, b), up * job.gen.radius())
+	job.heights = job.gen.patch_heights(up, t, b, PATCH_SAMPLES)
 	job.build_usec = Time.get_ticks_usec() - t0

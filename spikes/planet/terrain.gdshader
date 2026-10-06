@@ -6,6 +6,9 @@ shader_type spatial;
 uniform float planet_radius = 3000.0;
 // World position of the planet centre (moves with origin shifts).
 uniform vec3 planet_center = vec3(0.0);
+// Spike 8: sea level above the base radius; chunk LOD colour as instance uniform.
+uniform float sea_level = 0.0;
+instance uniform vec4 lod_color : source_color = vec4(1.0);
 uniform bool show_lod = false;
 uniform bool show_skirts = true;
 uniform float detail_scale = 0.5; // checker cells per metre
@@ -41,13 +44,15 @@ void fragment() {
 	float slope = 1.0 - clamp(dot(sn, up), 0.0, 1.0);
 	float h = length(planet_pos) - planet_radius;
 
-	vec3 sand = vec3(0.76, 0.70, 0.50);
-	vec3 grass = vec3(0.42, 0.60, 0.33);
-	vec3 rock = vec3(0.50, 0.45, 0.42);
-	vec3 snow = vec3(0.92, 0.93, 0.96);
-	vec3 col = mix(sand, grass, smoothstep(-60.0, -40.0, h));
+	// Spike 8: flat ground wears the biome tint (vertex colour), steep ground a rock
+	// colour mixed with it, a cap above the high ground, sand just above the sea.
+	float hs = h - sea_level;
+	vec3 tint = COLOR.rgb;
+	vec3 rock = mix(vec3(0.50, 0.45, 0.42), tint, 0.25);
+	vec3 cap = vec3(0.92, 0.93, 0.96);
+	vec3 col = mix(vec3(0.76, 0.70, 0.50), tint, smoothstep(0.0, 3.0, hs));
 	col = mix(col, rock, smoothstep(0.12, 0.25, slope));
-	col = mix(col, snow, smoothstep(70.0, 95.0, h) * (1.0 - smoothstep(0.2, 0.35, slope)));
+	col = mix(col, cap, smoothstep(110.0, 140.0, hs) * (1.0 - smoothstep(0.2, 0.35, slope)));
 
 	// Triplanar checker as a motion cue, faded out with distance against aliasing.
 	vec3 w = abs(sn);
@@ -58,7 +63,7 @@ void fragment() {
 	col *= mix(mix(0.93, 1.0, c), 0.965, fade);
 
 	if (show_lod) {
-		col = mix(col, COLOR.rgb, 0.6);
+		col = mix(col, lod_color.rgb, 0.6);
 	}
 	ALBEDO = col;
 

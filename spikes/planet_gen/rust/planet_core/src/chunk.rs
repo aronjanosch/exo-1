@@ -8,10 +8,9 @@ pub const M: usize = GRID + 3;
 #[derive(Default)]
 pub struct ScatterOut {
     pub kind: String,
-    /// 12 floats per instance: basis x, y(up), z (scaled), origin; relative to the chunk centre.
-    pub xforms: Vec<f32>,
-    /// 4 floats per instance: RGBA tint.
-    pub colors: Vec<f32>,
+    /// MultiMesh buffer layout, 16 floats per instance: the 3x4 transform row-major
+    /// (relative to the chunk centre), then an RGBA tint.
+    pub buffer: Vec<f32>,
 }
 
 #[derive(Default)]
@@ -39,7 +38,9 @@ impl Planet {
         let r = self.radius;
         let step = size / GRID as f64;
         let centre_dir = cube_to_sphere(face, a0 + size * 0.5, b0 + size * 0.5);
-        let centre = centre_dir * r;
+        // exactly representable in f32, so the mesh node position in Godot is exact
+        let c64 = centre_dir * r;
+        let centre = v3(c64.x as f32 as f64, c64.y as f32 as f64, c64.z as f32 as f64);
         let edge_m = self.chunk_edge_m(face, a0, b0, size);
         let skirt_depth = (edge_m / GRID as f64 * 4.0).max(2.0);
 
@@ -154,7 +155,6 @@ impl Planet {
                         let sc = (rule.scale_min + (rule.scale_max - rule.scale_min) * hash01(key, ri as u32, ci, cj, 4)) as f64;
                         let o = dir * (r + h) - centre;
                         let (x, u, z) = (x * sc, up * sc, z * sc);
-                        so.xforms.extend([x, u, z, o].iter().flat_map(|v| [v.x as f32, v.y as f32, v.z as f32]));
                         let tint = self
                             .recipe
                             .biomes
@@ -163,7 +163,10 @@ impl Planet {
                             .map(|b| b.tints.get(&rule.kind).copied().unwrap_or(b.color))
                             .unwrap_or([1.0; 3]);
                         let v = 0.9 + 0.2 * hash01(key, ri as u32, ci, cj, 5);
-                        so.colors.extend([tint[0] * v, tint[1] * v, tint[2] * v, 1.0]);
+                        so.buffer.extend([
+                            x.x, u.x, z.x, o.x, x.y, u.y, z.y, o.y, x.z, u.z, z.z, o.z,
+                        ].iter().map(|f| *f as f32));
+                        so.buffer.extend([tint[0] * v, tint[1] * v, tint[2] * v, 1.0]);
                     }
                 }
                 out.scatter.push(so);

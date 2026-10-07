@@ -196,17 +196,41 @@ fn world_look(w: &mut World) -> DVec3 {
     })
 }
 
-/// Issue #7: largest change of the look direction from one tick to the next (degrees), in
-/// `c.v["look_jump"]`. Call every tick of a step; the first tick only starts it (setup turns).
+/// Issue #7: largest change from one tick to the next of the look direction and of up (degrees)
+/// and of the eye position less the walk (m), in `c.v["look_jump"]`, `["up_jump"]`,
+/// `["eye_jump"]`. Call every tick of a step; the first tick only starts it (setup turns).
 fn track_look(w: &mut World, c: &mut Ctx) {
     let l = world_look(w);
-    if c.t > 0.0 {
-        let jump = l.angle_between(c.p["look"]).to_degrees();
-        c.v.insert("look_jump", c.v.get("look_jump").copied().unwrap_or(0.0).max(jump));
+    let f = ship_frame_of(w);
+    let pl = planet(w);
+    let (feet, up) = with_player(w, |p| (p.world_pos(f), p.world_up(f, &pl)));
+    let eye = feet + up * crate::walker::EYE_HEIGHT;
+    // Skip the first ticks: setup may teleport, and up follows on the next step.
+    if c.t > 0.05 {
+        let mut max = |k: &'static str, x: f64| {
+            c.v.insert(k, c.v.get(k).copied().unwrap_or(0.0).max(x));
+        };
+        max("look_jump", l.angle_between(c.p["look"]).to_degrees());
+        max("up_jump", up.angle_between(c.p["up"]).to_degrees());
+        max("eye_jump", ((eye - c.p["eye"]) - (feet - c.p["feet"])).length());
     } else {
-        c.v.insert("look_jump", 0.0);
+        for k in ["look_jump", "up_jump", "eye_jump"] {
+            c.v.insert(k, 0.0);
+        }
     }
     c.p.insert("look", l);
+    c.p.insert("up", up);
+    c.p.insert("eye", eye);
+    c.p.insert("feet", feet);
+}
+
+/// The turn into or out of a tilted ship happens step by step on the ramp: no tick turns up by
+/// more than 1 deg or moves the eye more than 3 cm against the feet (a 6 deg ship turned it by
+/// 5.6 deg in one tick at the cabin edge before).
+fn check_steady(c: &mut Ctx, what: &str) {
+    let (look, up, eye) = (c.v["look_jump"], c.v["up_jump"], c.v["eye_jump"]);
+    check(c, look < 0.5 && up < 1.0 && eye < 0.03,
+        format!("{what}: view steady (largest step: look {look:.3} deg, up {up:.3} deg, eye {:.1} mm)", eye * 1000.0));
 }
 
 fn check(c: &mut Ctx, ok: bool, note: String) {
@@ -351,8 +375,7 @@ fn board(name: &'static str, from_outside: bool) -> Step {
             keys(w, &[KeyCode::KeyW], false);
         }
         if c.t >= 5.3 {
-            let jump = c.v["look_jump"];
-            check(c, jump < 0.5, format!("{name}: look direction steady when entering the cabin (largest step {jump:.3} deg)"));
+            check_steady(c, &format!("{name}: entering the cabin"));
             let e = ship_e(w);
             let (inside, at_seat) = with_player(w, |p| (p.ship == Some(e), p.ship == Some(e) && p.w.pos.distance(SEAT_POS) < 1.8));
             let f = ship_frame_of(w);
@@ -1172,8 +1195,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
                     let agl = above_ground(w);
                     end(w, c, format!("outside {outside}, {agl:.2} m above ground"));
                     check(c, outside && agl.abs() < 0.5, "walked out of the landed ship onto the ground".into());
-                    let jump = c.v["look_jump"];
-                    check(c, jump < 0.5, format!("look direction steady when leaving the cabin (largest step {jump:.3} deg)"));
+                    check_steady(c, "leaving the cabin");
                     return true;
                 }
                 false

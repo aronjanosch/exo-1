@@ -3,7 +3,7 @@
 use crate::controls::Controls;
 use crate::env::PlanetRes;
 use crate::ring::Ring;
-use crate::ship::{cabin_contains, RemoteShip, Ship, SEAT_POS};
+use crate::ship::{cabin_contains, ramp_up_weight, RemoteShip, Ship, SEAT_POS};
 use crate::Layer;
 use avian3d::character_controller::move_and_slide::DepenetrationConfig;
 use avian3d::prelude::*;
@@ -30,6 +30,8 @@ pub struct Player {
     /// Body orientation while weightless outside a cabin (issue #8), world space, camera axes
     /// (-z looks, +y is the head). Free in all axes; `w.forward` follows it, `pitch` is 0.
     pub body: Option<DQuat>,
+    /// Up outside a cabin, world space: the planet's, turned towards a ship's up on its ramp.
+    pub up: DVec3,
 }
 
 /// Marks the cabin floor collider; its pose is the frame the walker queries in.
@@ -74,7 +76,7 @@ impl World for AvianWorld<'_, '_, '_> {
 pub fn spawn_player(commands: &mut Commands, planet: &PlanetRes, offset_x: f64) -> Entity {
     let up = (DVec3::Y * planet.radius + DVec3::new(offset_x, 0.0, 0.0)).normalize();
     let pos = planet.centre + up * (planet.surface(up) + 2.0);
-    commands.spawn(Player { w: Walker::new(pos, DVec3::NEG_Z), ship: None, seated: false, pitch: 0.0, fly: false, body: None }).id()
+    commands.spawn(Player { w: Walker::new(pos, DVec3::NEG_Z), ship: None, seated: false, pitch: 0.0, fly: false, body: None, up }).id()
 }
 
 pub fn ship_frame(pos: &Position, rot: &Rotation) -> Frame {
@@ -87,11 +89,11 @@ impl Player {
         if self.ship.is_some() { ship.to_world(self.w.pos) } else { self.w.pos }
     }
     /// Up in world space (the head direction while weightless).
-    pub fn world_up(&self, ship: Frame, planet: &PlanetRes) -> DVec3 {
+    pub fn world_up(&self, ship: Frame, _planet: &PlanetRes) -> DVec3 {
         match (self.ship, self.body) {
             (Some(_), _) => ship.rot * DVec3::Y,
             (None, Some(b)) => b * DVec3::Y,
-            (None, None) => planet.up(self.w.pos),
+            (None, None) => self.up,
         }
     }
 }
@@ -112,6 +114,16 @@ fn cabin_frame(
             Frame { origin: p.0 - rot * ct.translation, rot }
         }
         None => ship_frame(body.0, body.1),
+    }
+}
+
+/// Up for a walker outside a cabin at `pos`: the planet's, turned towards the up of the ship whose
+/// ramp it is on (`ramp_up_weight`), so a tilted ship tilts the walker step by step.
+fn outside_up(pos: DVec3, planet_up: DVec3, frames: impl Iterator<Item = Frame>) -> DVec3 {
+    let best = frames.map(|f| (ramp_up_weight(f.to_local(pos)), f.rot * DVec3::Y)).max_by(|a, b| a.0.total_cmp(&b.0));
+    match best {
+        Some((w, ship_up)) if w > 0.0 => DQuat::IDENTITY.slerp(DQuat::from_rotation_arc(planet_up, ship_up), w) * planet_up,
+        _ => planet_up,
     }
 }
 
@@ -167,6 +179,11 @@ pub fn walker_step(
     ring.anchors = vec![(world_pos, if pl.ship.is_some() { slv.0 } else { pl.w.vel }), (sp.0, own_v.0)];
     if pl.seated {
         return;
+    }
+
+    let frames = || std::iter::once(own_frame).chain(remotes.iter().map(|(e, p, r, _)| cabin_frame(e, (p, r), &floors)));
+    if pl.ship.is_none() {
+        pl.up = outside_up(pl.w.pos, planet.up(pl.w.pos), frames());
     }
 
     let m = std::mem::take(&mut controls.mouse);
@@ -293,7 +310,8 @@ pub fn walker_step(
             let look = walker_core::look_dir(frame_ship.rot * pl.w.forward, frame_ship.rot * DVec3::Y, pl.pitch);
             pl.w.change_frame(&frame_ship, &Frame::IDENTITY, slv.0);
             pl.ship = None;
-            let up = planet.up(pl.w.pos);
+            let up = outside_up(pl.w.pos, planet.up(pl.w.pos), frames());
+            pl.up = up;
             keep_look(&mut pl, look, &Frame::IDENTITY, up);
         }
         _ => {}

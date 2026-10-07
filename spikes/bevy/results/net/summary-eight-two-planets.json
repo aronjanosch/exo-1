@@ -1,0 +1,139 @@
+{
+ "players": 8,
+ "seconds": 40.0,
+ "exit_codes": {
+  "1": 0,
+  "2": 0,
+  "3": 0,
+  "4": 0,
+  "5": 0,
+  "6": 0,
+  "7": 0,
+  "8": 0
+ },
+ "args": {
+  "bin": "/home/aron/Work/exo-1-spike9/spikes/bevy/target/release/exo_app",
+  "players": 8,
+  "seconds": 40.0,
+  "tag": "eight-two-planets",
+  "port": 17441,
+  "rate": 30,
+  "buffer": 150,
+  "delay": 0,
+  "jitter": 0,
+  "loss": 0,
+  "planets": "0,1,0,1,0,1,0,1",
+  "force_shift": "15,10000,10000,-10000",
+  "out": "/home/aron/Work/exo-1-spike10/spikes/bevy/results/net",
+  "extra": "--origin-shift=200"
+ },
+ "clock_error_ms_max": 7.205,
+ "clients_hold_percent": [
+  0.0138,
+  0.0,
+  0.0302
+ ],
+ "host_hold_percent": 0.0,
+ "clients_net_pre_ms_mean": [
+  0.0357,
+  0.0351,
+  0.0367
+ ],
+ "host_net_pre_ms_mean": 0.1472,
+ "clients_net_pre_ms_p95": [
+  0.0536,
+  0.052,
+  0.0548
+ ],
+ "host_net_pre_ms_p95": 0.2349,
+ "clients_net_post_ms_mean": [
+  0.0141,
+  0.0111,
+  0.0171
+ ],
+ "host_net_post_ms_mean": 0.0232,
+ "clients_physics_step_ms_mean": [
+  0.705,
+  0.6106,
+  0.8022
+ ],
+ "host_physics_step_ms_mean": 0.6801,
+ "clients_process_cpu_ms_per_tick": [
+  3.1362,
+  2.9505,
+  3.4288
+ ],
+ "host_process_cpu_ms_per_tick": 2.7988,
+ "clients_payload_tx_kB_s": [
+  4.2871,
+  4.273,
+  4.294
+ ],
+ "host_payload_tx_kB_s": 180.239,
+ "clients_payload_rx_kB_s": [
+  29.6103,
+  29.436,
+  29.723
+ ],
+ "host_payload_rx_kB_s": 26.095,
+ "clients_wire_tx_kB_s": [
+  5.255,
+  5.238,
+  5.263
+ ],
+ "host_wire_tx_kB_s": 218.333,
+ "clients_wire_rx_kB_s": [
+  35.8686,
+  35.658,
+  36.005
+ ],
+ "host_wire_rx_kB_s": 31.986,
+ "clients_invalid": [
+  0,
+  0,
+  0
+ ],
+ "host_invalid": 0,
+ "clients_injected_dropped": [
+  0,
+  0,
+  0
+ ],
+ "host_injected_dropped": 0,
+ "clients_input_response_ticks": [
+  1,
+  1,
+  1
+ ],
+ "host_input_response_ticks": 1,
+ "clients_render_error_near_max_mm": [
+  0.0139,
+  0.0084,
+  0.0171
+ ],
+ "host_render_error_near_max_mm": 0.0171,
+ "clients_render_error_far_max_mm": [
+  7.812,
+  7.8099,
+  7.8125
+ ],
+ "host_render_error_far_max_mm": 7.8097,
+ "clients_render_shift_jump_max_mm": [
+  0.0154,
+  0.0153,
+  0.0157
+ ],
+ "host_render_shift_jump_max_mm": 0.0076,
+ "clients_shift_frames_seen": [
+  4.8571,
+  4,
+  6
+ ],
+ "host_shift_frames_seen": 4,
+ "clients_max_remotes": [
+  7,
+  7,
+  7
+ ],
+ "host_max_remotes": 7
+}

@@ -1,0 +1,13 @@
+{
+  "tag": "eight-two-planets", "slot": 6, "host": false, "planet": 1, "seconds": 40.00, "ticks": 2374,
+  "rate": 30, "buffer_ms": 150, "delay_ms": 0, "jitter_ms": 0, "loss_percent": 0.0,
+  "remote_count": 7, "max_remotes": 7, "joined_owners": [2, 4, 3, 1, 5, 7, 8],
+  "payload_tx_bytes": 170928, "payload_rx_bytes": 1189008, "wire_tx_bytes": 209527, "wire_rx_bytes": 1440291, "dgram_tx": 1266, "dgram_rx": 8335,
+  "payload_tx_kB_s": 4.273, "payload_rx_kB_s": 29.723, "wire_tx_kB_s": 5.238, "wire_rx_kB_s": 36.005,
+  "injected_dropped": 0, "invalid": 0, "hold_percent": 0.0302, "displayed": 16564,
+  "net_pre_ms_mean": 0.0359, "net_pre_ms_p95": 0.0536, "net_pre_ms_max": 0.1816, "net_post_ms_mean": 0.0127, "net_post_ms_p95": 0.0314,
+  "physics_step_ms_mean": 0.7119, "physics_step_ms_p95": 1.1432, "physics_step_ms_max": 116.9491,
+  "process_cpu_ms_per_tick": 3.4288, "process_cpu_percent_of_one_core": 20.35,
+  "clock_rtt_ms": 14.035, "clock_offset_s": 3.007991, "start_epoch_s": 1791385465.731943, "input_response_ticks": 1, "shifts": 7, "shift_frames_seen": 6, "forced_shift": true,
+  "render_error_near_max_mm": 0.0084, "render_error_far_max_mm": 7.8122, "render_shift_jump_max_mm": 0.0153, "lost_host": false
+}

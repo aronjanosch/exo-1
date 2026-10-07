@@ -14,6 +14,66 @@ use bevy::prelude::*;
 use flight_core::{FlightInput, PlanetEnv};
 use std::collections::HashMap;
 use walker_core::Frame;
+use net_core::buffer::Buffer;
+use net_core::replay::DT;
+use net_core::snapshot::Snapshot;
+use crate::ship::RemoteShip;
+
+/// Spike 10 `foreign` scenario: a remote ship (kinematic proxy) is driven through the real
+/// snapshot path (encode, decode, buffer, 150 ms playout) along a known path, so the walker in its
+/// cabin can be checked against exact truth.
+#[derive(Resource)]
+pub struct ForeignDriver {
+    pub proxy: Entity,
+    pub buf: Buffer,
+    pub tick: u64,
+    /// Planet-relative start of the flight; the ship moves along -z at 350 m/s and yaws 0.003 rad/tick.
+    pub p0: DVec3,
+    /// When set the ship stands still at this pose (walker beside a parked foreign ship).
+    pub parked: Option<(DVec3, bevy::math::DQuat)>,
+    pub max_pos_err: f64,
+    pub max_rot_err_deg: f64,
+}
+
+const FOREIGN_SPEED: f64 = 350.0;
+const FOREIGN_YAW_RATE: f64 = 0.003 * 60.0;
+
+fn foreign_truth(d: &ForeignDriver, t: f64) -> (DVec3, bevy::math::DQuat, DVec3) {
+    if let Some((p, q)) = d.parked {
+        return (p, q, DVec3::ZERO);
+    }
+    (d.p0 + DVec3::new(0.0, 0.0, -FOREIGN_SPEED * t), bevy::math::DQuat::from_rotation_y(FOREIGN_YAW_RATE * t), DVec3::new(0.0, 0.0, -FOREIGN_SPEED))
+}
+
+pub fn foreign_drive(
+    mut d: ResMut<ForeignDriver>,
+    mut origin: ResMut<RenderOrigin>,
+    mut q: Query<(&mut Position, &mut Rotation, &mut LinearVelocity, &mut AngularVelocity), With<RemoteShip>>,
+) {
+    d.tick += 1;
+    let t = d.tick as f64 * DT;
+    if d.tick % 2 == 0 {
+        let (p, qn, v) = foreign_truth(&d, t);
+        let mut s = Snapshot::new(2, t, p, v, qn);
+        s.seq = d.tick as u32;
+        // Through the wire format, like a received packet.
+        let s = Snapshot::decode(&s.encode()).expect("own snapshot decodes");
+        d.buf.push(s);
+    }
+    let target = t - 0.15;
+    let Some(sample) = d.buf.sample(target) else { return };
+    let Ok((mut p, mut r, mut v, mut w)) = q.get_mut(d.proxy) else { return };
+    p.0 = sample.s.p;
+    r.0 = sample.s.q;
+    v.0 = sample.s.v;
+    w.0 = if d.parked.is_some() { DVec3::ZERO } else { DVec3::new(0.0, FOREIGN_YAW_RATE, 0.0) };
+    origin.view = sample.s.p;
+    if sample.mode == net_core::buffer::Mode::Interpolate && target > 0.5 {
+        let (tp, tq, _) = foreign_truth(&d, target);
+        d.max_pos_err = d.max_pos_err.max(sample.s.p.distance(tp));
+        d.max_rot_err_deg = d.max_rot_err_deg.max(sample.s.q.angle_between(tq).to_degrees());
+    }
+}
 
 pub type Step = Box<dyn FnMut(&mut World, &mut Ctx) -> bool + Send + Sync>;
 
@@ -641,6 +701,145 @@ fn net_cycle() -> Vec<Step> {
     ]
 }
 
+fn foreign_steps(s: &mut Vec<Step>) {
+    // 1. A proxy ship 20 km above the planet, flying through the snapshot path.
+    s.push(Box::new(|w, _| {
+        let pl = planet(w);
+        let p0 = DVec3::new(0.0, pl.radius + 20_000.0, 0.0);
+        let proxy = w.resource_scope(|w, _: Mut<RenderOrigin>| {
+            let mut sys = bevy::ecs::system::SystemState::<Commands>::new(w);
+            let mut commands = sys.get_mut(w);
+            let e = crate::net_live::spawn_proxy(&mut commands, 2, p0, bevy::math::DQuat::IDENTITY);
+            sys.apply(w);
+            e
+        });
+        w.insert_resource(ForeignDriver { proxy, buf: Buffer::new(), tick: 0, p0, parked: None, max_pos_err: 0.0, max_rot_err_deg: 0.0 });
+        true
+    }));
+    s.push(wait(1.0));
+    // 2. B: put the walker into the foreign cabin.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "board the foreign ship (350 m/s, yawing)");
+            tap(w, KeyCode::KeyB);
+            return false;
+        }
+        if c.t < 0.5 {
+            return false;
+        }
+        let proxy = w.resource::<ForeignDriver>().proxy;
+        let inside = with_player(w, |p| p.ship == Some(proxy));
+        check(c, inside, "walker is in the cabin of the remote ship".into());
+        true
+    }));
+    // 3. Stand 6 s (360 ticks) at 350 m/s: drift, deck contact, height.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "stand in the foreign cabin, 6 s");
+            let p = with_player(w, |p| p.w.pos);
+            c.p.insert("start", p);
+            c.v.insert("drift", 0.0);
+            c.v.insert("ymin", f64::MAX);
+            c.v.insert("ticks", 0.0);
+            c.v.insert("floor", 0.0);
+            c.v.insert("left", 0.0);
+            c.v.insert("shifts0", w.resource::<RenderOrigin>().shifts as f64);
+        }
+        let proxy = w.resource::<ForeignDriver>().proxy;
+        let (pos, grounded, inside) = with_player(w, |p| (p.w.pos, p.w.grounded, p.ship == Some(proxy)));
+        let start = c.p["start"];
+        *c.v.get_mut("drift").unwrap() = c.v["drift"].max(((pos.x - start.x).powi(2) + (pos.z - start.z).powi(2)).sqrt());
+        *c.v.get_mut("ymin").unwrap() = c.v["ymin"].min(pos.y);
+        *c.v.get_mut("ticks").unwrap() += 1.0;
+        *c.v.get_mut("floor").unwrap() += grounded as u32 as f64;
+        if !inside {
+            c.v.insert("left", 1.0);
+        }
+        if c.v["ticks"] >= 360.0 {
+            let d = w.resource::<ForeignDriver>();
+            let (pe, re) = (d.max_pos_err, d.max_rot_err_deg);
+            let shifts = w.resource::<RenderOrigin>().shifts as f64 - c.v["shifts0"];
+            let note = format!(
+                "lateral standing drift {:.4} m, deck contact {}/360 ticks, lowest feet {:.3} m, left cabin {}, {shifts:.0} render-origin shifts, proxy vs exact path: max {:.4} mm, {:.4} deg",
+                c.v["drift"], c.v["floor"], c.v["ymin"], c.v["left"] > 0.0, pe * 1000.0, re
+            );
+            end(w, c, note);
+            check(c, c.v["drift"] < 0.05 && c.v["ymin"] > 0.28 && c.v["floor"] > 300.0 && c.v["left"] == 0.0,
+                format!("walker on interpolated 350 m/s foreign ship: drift {:.4} m, deck contact {}/360", c.v["drift"], c.v["floor"]));
+            return true;
+        }
+        false
+    }));
+    // 4. Walk sideways in the local frame for 12 ticks (about 1 m).
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "walk inside the foreign cabin");
+            c.p.insert("start", with_player(w, |p| p.w.pos));
+            c.v.insert("n", 0.0);
+        }
+        keys(w, &[KeyCode::KeyD], true);
+        *c.v.get_mut("n").unwrap() += 1.0;
+        if c.v["n"] >= 12.0 {
+            keys(w, &[KeyCode::KeyD], false);
+            let dx = with_player(w, |p| p.w.pos.x) - c.p["start"].x;
+            end(w, c, format!("moved {dx:.3} m along the cabin x axis"));
+            check(c, dx > 0.5 && dx < 1.5, "walking inside the foreign cabin uses the local frame".into());
+            return true;
+        }
+        false
+    }));
+    // 5. Leave: back to the planet frame at the world pose, and park the remote ship on the ground
+    //    next to the spawn.
+    s.push(Box::new(|w, c| {
+        begin(w, c, "foreign ship parked on the ground, walker beside it");
+        let pl = planet(w);
+        let dir = (DVec3::Y * pl.radius + DVec3::new(30.0, 0.0, 0.0)).normalize();
+        let rot = crate::ship::basis_for_up(dir);
+        let mut ground = f64::MIN;
+        for cc in [DVec3::ZERO, DVec3::new(2., 0., 4.), DVec3::new(-2., 0., 4.), DVec3::new(2., 0., -4.), DVec3::new(-2., 0., -4.)] {
+            let d = (dir * pl.radius + rot * cc).normalize();
+            ground = ground.max(pl.surface(d) - pl.radius);
+        }
+        let pos = pl.centre + dir * (pl.radius + ground + 0.05);
+        w.resource_mut::<ForeignDriver>().parked = Some((pos, rot));
+        w.resource_mut::<RenderOrigin>().origin = pos.round();
+        place_walker(w, pos + rot * DVec3::new(7.0, 0.0, 0.0));
+        c.v.insert("n", 0.0);
+        c.v.insert("floor", 0.0);
+        true
+    }));
+    s.push(wait(1.5));
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            c.p.insert("start", with_player(w, |p| p.w.pos));
+            c.v.insert("n", 0.0);
+            c.v.insert("floor", 0.0);
+        }
+        keys(w, &[KeyCode::KeyD], true);
+        let grounded = with_player(w, |p| p.w.grounded);
+        *c.v.get_mut("n").unwrap() += 1.0;
+        *c.v.get_mut("floor").unwrap() += grounded as u32 as f64;
+        if c.v["n"] >= 24.0 {
+            keys(w, &[KeyCode::KeyD], false);
+            let moved = with_player(w, |p| p.w.pos).distance(c.p["start"]);
+            end(w, c, format!("moved {moved:.2} m, grounded {}/24 ticks", c.v["floor"]));
+            check(c, moved > 1.0 && c.v["floor"] > 15.0, format!("planet-frame walker moves beside the parked foreign ship; floor {}/24", c.v["floor"]));
+            // The wire round trip of that pose.
+            let pl = planet(w);
+            let snap = with_player(w, |p| (p.w.pos, p.w.forward, p.ship));
+            let ship = w.query_filtered::<(&Position, &Rotation, &LinearVelocity), With<Ship>>().single(w).map(|(a, b, c)| (*a, *b, *c)).unwrap();
+            let mut q = w.query::<&Player>();
+            let player = q.single(w).unwrap();
+            let s = crate::net::build_snapshot(1, 0, 2.0, 5, &pl, (&ship.0, &ship.1, &ship.2), player);
+            let dec = Snapshot::decode(&s.encode()).unwrap();
+            check(c, dec.frame == net_core::snapshot::FrameKind::Planet && dec.wp.distance(snap.0 - pl.centre) < 1e-6 && snap.2.is_none(),
+                "outside walker snapshot uses the shared planet frame".into());
+            return true;
+        }
+        false
+    }));
+}
+
 pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step> {
     let dir = out_dir.to_path_buf();
     let shot_step = move |tag: &'static str| -> Step {
@@ -683,6 +882,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
                 s.extend(net_cycle());
             }
         }
+        "foreign" => foreign_steps(&mut s),
         "full" => {
             s.push(shot_step("ground"));
             s.extend(stand_still("stand still 5 s (walker)"));

@@ -1,0 +1,31 @@
+planet: radius 5000 m, sea -7.49 m, bake 144 ms (total load 144 ms)
+NET START slot=1 host=true planet=0 port=17441
+NET JOIN slot=2
+settled after 2.0 s simulated, 224 patches
+NET JOIN slot=3
+NET JOIN slot=4
+PHASE 'takeoff' tick 156
+NET JOIN slot=5
+NET JOIN slot=6
+NET JOIN slot=7
+NET JOIN slot=8
+takeoff: 5.6 s, altitude 60 m, ground 80.1 m, speed 15.0 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'cruise' tick 495
+cruise: 8.0 s, altitude 74 m, ground 90.9 m, speed 80.4 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'turn' tick 976
+turn: turned | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'brake' tick 1217
+brake: 1.6 s, altitude 74 m, ground 51.4 m, speed 1.0 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'descend' tick 1313
+descend: 2.1 s, altitude 48 m, ground 24.9 m, speed 14.5 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'land' tick 1440
+land: 16.8 s, altitude 25 m, ground 0.0 m, speed 0.0 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'takeoff' tick 2627
+NET LEAVE owner=2
+NET LEAVE owner=3
+NET LEAVE owner=4
+NET LEAVE owner=5
+NET LEAVE owner=6
+NET LEAVE owner=7
+NET LEAVE owner=8
+NET RESULT /home/aron/Work/exo-1-spike10/spikes/bevy/results/net/live-8-impaired-slot1.json

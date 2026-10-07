@@ -183,6 +183,10 @@ pub fn build_app(o: &Options) -> App {
         app.add_systems(FixedLast, (net_live::net_post, net_live::net_finish).chain());
         app.add_systems(PostUpdate, net_live::net_measure.after(origin::sync_bodies).before(bevy::transform::TransformSystems::Propagate));
     }
+    if o.scenario.as_deref() == Some("foreign") {
+        // Ahead of the controllers like net_pre: the remote ship is placed before the walker steps.
+        app.add_systems(FixedUpdate, scenario::foreign_drive.run_if(resource_exists::<scenario::ForeignDriver>).before(ship::ship_control));
+    }
     if let Some(name) = &o.scenario {
         app.world_mut().resource_mut::<controls::Controls>().scripted = true;
         app.insert_resource(scenario::Script {

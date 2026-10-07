@@ -303,7 +303,7 @@ fn read_cpu_ticks() -> u64 {
         .unwrap_or(0)
 }
 
-fn spawn_proxy(commands: &mut Commands, owner: u32, pos: DVec3, rot: DQuat) -> Entity {
+pub fn spawn_proxy(commands: &mut Commands, owner: u32, pos: DVec3, rot: DQuat) -> Entity {
     let e = commands
         .spawn((
             RemoteShip { owner },

@@ -1,0 +1,19 @@
+planet: radius 5000 m, sea -7.49 m, bake 145 ms (total load 145 ms)
+NET START slot=2 host=false planet=0 port=17441
+settled after 2.0 s simulated, 211 patches
+PHASE 'takeoff' tick 156
+takeoff: 5.6 s, altitude 60 m, ground 80.0 m, speed 15.0 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'cruise' tick 493
+cruise: 8.0 s, altitude 74 m, ground 91.4 m, speed 77.9 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'turn' tick 974
+turn: turned | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'brake' tick 1215
+brake: 1.6 s, altitude 74 m, ground 54.6 m, speed 1.0 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'descend' tick 1314
+descend: 2.3 s, altitude 44 m, ground 24.9 m, speed 14.5 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'land' tick 1454
+land: 6.6 s, altitude 19 m, ground 0.0 m, speed 0.0 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'takeoff' tick 2032
+takeoff: 5.7 s, altitude 98 m, ground 80.2 m, speed 15.0 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'cruise' tick 2375
+NET RESULT /home/aron/Work/exo-1-spike10/spikes/bevy/results/net/live-2-slot2.json

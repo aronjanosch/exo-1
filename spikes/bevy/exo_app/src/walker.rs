@@ -54,10 +54,18 @@ impl World for AvianWorld<'_, '_, '_> {
         let cfg = ShapeCastConfig { max_distance: len, ignore_origin_penetration: true, ..default() };
         let rot = DQuat::from_rotation_arc(DVec3::Y, up);
         let hit = self.mas.spatial_query.cast_shape(&self.shape, feet + up * self.half_height, rot, dir, &cfg, &self.filter)?;
-        if std::env::var("EXO_DEBUG").is_ok() {
-            eprintln!("sweep len {:.3} dir.up {:+.2} dist {:.4} n.up {:+.3} n2.up {:+.3}", len, (motion / len).dot(up), hit.distance, hit.normal1.dot(up), hit.normal2.dot(up));
+        // A capsule touching a heightfield edge reports the edge-to-capsule direction as the
+        // normal, which is flatter than the faces next to it, so steep slopes read as floor.
+        // Take the steeper of that and the face normal under the contact point.
+        let mut normal = hit.normal1;
+        if let Ok(down) = Dir3::new((-up).as_vec3()) {
+            if let Some(ray) = self.mas.spatial_query.cast_ray(hit.point1 + up * 0.05, down, 0.2, true, &self.filter) {
+                if ray.normal.dot(up) < normal.dot(up) && ray.normal.dot(up) > 0.0 {
+                    normal = ray.normal;
+                }
+            }
         }
-        Some(Hit { distance: hit.distance, normal: hit.normal1 })
+        Some(Hit { distance: hit.distance, normal })
     }
     fn depenetrate(&self, feet: DVec3, up: DVec3) -> DVec3 {
         let rot = DQuat::from_rotation_arc(DVec3::Y, up);
@@ -184,6 +192,13 @@ pub fn walker_step(
         }
     };
     let info = pl.w.step(&frame, up, g, &input, &world, dt);
+    if std::env::var("EXO_DEBUG2").is_ok() && pl.ship.is_none() {
+        let slope = planet.pgen.sample(crate::env::to_v3(up)).slope_deg;
+        if slope > 48.0 {
+            let d = pl.w.pos - before;
+            eprintln!("steep {slope:.1} rise {:+.4} horiz {:.4} hits {} snap {} depen {:.4} grounded {} n.up {:.3}", d.dot(up), (d - up * d.dot(up)).length(), info.hits, info.snapped, info.depenetrated, pl.w.grounded, pl.w.floor_normal.dot(up));
+        }
+    }
     stats.steps += 1;
     stats.grounded += pl.w.grounded as u64;
     stats.depenetrations += (info.depenetrated > 0.0) as u64;

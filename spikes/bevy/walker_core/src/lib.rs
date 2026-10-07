@@ -200,16 +200,12 @@ impl Walker {
                     // Standing on it: no further fall, slide horizontal speed along the floor.
                     self.vel -= n * self.vel.dot(n).min(0.0);
                 }
-            } else if was_grounded && n.dot(up) > -0.1 {
-                // Wall or too steep while walking: slide along it horizontally, never climb.
-                let mut nh = n - up * n.dot(up);
-                if nh.length_squared() < 1e-12 {
-                    nh = n;
-                }
-                let nh = nh.normalize();
-                motion = rest - nh * rest.dot(nh).min(0.0);
+            } else if n.dot(up) > -0.1 {
+                // Wall or too steep (also in the air): slide along it, never upwards.
+                motion = rest - n * rest.dot(n).min(0.0);
                 motion -= up * motion.dot(up).max(0.0);
-                self.vel -= nh * self.vel.dot(nh).min(0.0);
+                self.vel -= n * self.vel.dot(n).min(0.0);
+                self.vel -= up * self.vel.dot(up).max(0.0);
             } else {
                 motion = rest - n * rest.dot(n).min(0.0);
                 self.vel -= n * self.vel.dot(n).min(0.0);

@@ -1,0 +1,5 @@
+spawn, heading east: path 544 m, height above sea -16.6..+11.6 m, steepest ground under the walker 33.9 deg, ticks on ground steeper than 50 deg 0 | rescues 0, walker grounded 100.0 %, net-only 0
+basin shore, heading to the centre: path 553 m, height above sea -59.3..+12.4 m, steepest ground under the walker 36.7 deg, ticks on ground steeper than 50 deg 0 | rescues 0, walker grounded 100.0 %, net-only 0
+escarpment foot, heading up the step: path 317 m, height above sea -8.4..+21.5 m, steepest ground under the walker 50.7 deg, ticks on ground steeper than 50 deg 6801 | rescues 0, walker grounded 58.9 %, net-only 0
+plateau approach, heading to the centre: path 372 m, height above sea +17.6..+66.8 m, steepest ground under the walker 51.5 deg, ticks on ground steeper than 50 deg 5717 | rescues 0, walker grounded 68.1 %, net-only 0
+TOTAL: rescues 0, walker grounded 81.8 % of 72613 steps, net-only 0, depenetrations 32588, origin shifts 0 (max 0.000 ms, mean 0.000 ms), patch build mean 2.31 ms max 3.56 ms, simulated 1210.2 s

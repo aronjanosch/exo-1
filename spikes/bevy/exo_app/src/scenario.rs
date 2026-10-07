@@ -172,6 +172,7 @@ fn shot(w: &mut World, c: &mut Ctx, script_dir: &std::path::Path, windowed: bool
     }
     use bevy::render::view::screenshot::{save_to_disk, Screenshot};
     c.shot_n += 1;
+    let _ = std::fs::create_dir_all(script_dir);
     let path = script_dir.join(format!("shot-{:02}-{tag}.png", c.shot_n));
     w.spawn(Screenshot::primary_window()).observe(save_to_disk(path));
     if let Some(mut v) = w.get_resource_mut::<ViewState>() {
@@ -512,6 +513,86 @@ fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: f64) -> Vec
     ]
 }
 
+/// Spike 8 T5: 1.8 m/s for 300 s from four starts; steep slopes may stop the walker.
+fn t5_starts() -> Vec<(&'static str, DVec3, DVec3)> {
+    let recipe: serde_json::Value = serde_json::from_str(crate::env::RECIPE).unwrap();
+    let off = |d: DVec3, t: DVec3, m: f64| {
+        let a = m / 5000.0;
+        (d * a.cos() + t * a.sin()).normalize()
+    };
+    let toward = |from: DVec3, to: DVec3| (to - from * from.dot(to)).normalize();
+    let mut out = vec![("spawn, heading east", DVec3::Y, DVec3::X)];
+    for st in recipe["stamps"].as_array().unwrap() {
+        let c = st["center"].as_array().unwrap();
+        let c = DVec3::new(c[0].as_f64().unwrap(), c[1].as_f64().unwrap(), c[2].as_f64().unwrap()).normalize();
+        let t = c.cross(DVec3::Y).normalize();
+        match st["type"].as_str().unwrap() {
+            "basin" => {
+                let s = off(c, t, 900.0);
+                out.push(("basin shore, heading to the centre", s, toward(s, c)));
+            }
+            "escarpment" => {
+                let n = c.cross(t).normalize();
+                let s = off(c, n, -300.0);
+                out.push(("escarpment foot, heading up the step", s, toward(s, c)));
+            }
+            "plateau" => {
+                let s = off(c, t, 1000.0);
+                out.push(("plateau approach, heading to the centre", s, toward(s, c)));
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn t5_walk(name: &'static str, dir: DVec3, heading: DVec3, secs: f64) -> Vec<Step> {
+    vec![
+        Box::new(move |w, _| {
+            let pl = planet(w);
+            place_walker(w, pl.centre + dir * pl.surface(dir));
+            with_player(w, |p| {
+                p.w.forward = heading;
+                p.w.cfg.walk_speed = 1.8;
+            });
+            w.resource_mut::<Ring>().force_update();
+            true
+        }),
+        settle(),
+        Box::new(move |w, c| {
+            if c.t == 0.0 {
+                begin(w, c, name);
+                c.p.insert("last", player_world(w));
+                c.v.insert("path", 0.0);
+                c.v.insert("hmin", f64::MAX);
+                c.v.insert("hmax", f64::MIN);
+                keys(w, &[KeyCode::KeyW], true);
+            }
+            let p = player_world(w);
+            *c.v.get_mut("path").unwrap() += p.distance(c.p["last"]);
+            c.p.insert("last", p);
+            let pl = planet(w);
+            let h = (p - pl.centre).length() - pl.radius - pl.sea;
+            *c.v.get_mut("hmin").unwrap() = c.v["hmin"].min(h);
+            *c.v.get_mut("hmax").unwrap() = c.v["hmax"].max(h);
+            let slope = pl.pgen.sample(crate::env::to_v3(pl.up(p))).slope_deg;
+            let e = c.v.entry("slope").or_insert(0.0);
+            *e = e.max(slope);
+            let climb = c.v.entry("climb").or_insert(0.0);
+            if slope > 50.0 { *climb += 1.0; }
+            if c.t >= secs {
+                keys(w, &[KeyCode::KeyW], false);
+                let note = format!("path {:.0} m, height above sea {:+.1}..{:+.1} m, steepest ground under the walker {:.1} deg, ticks on ground steeper than 50 deg {}", c.v["path"], c.v["hmin"], c.v["hmax"], c.v["slope"], c.v["climb"]);
+                c.v.remove("slope");
+                c.v.remove("climb");
+                end(w, c, note);
+                return true;
+            }
+            false
+        }),
+    ]
+}
+
 pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step> {
     let dir = out_dir.to_path_buf();
     let shot_step = move |tag: &'static str| -> Step {
@@ -527,6 +608,11 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
         "walk" => {
             s.extend(stand_still("stand still 5 s (walker)"));
             s.push(walk("walk 20 s (run)", 20.0, true));
+        }
+        "t5" => {
+            for (n, d, h) in t5_starts() {
+                s.extend(t5_walk(n, d, h, 300.0));
+            }
         }
         "full" => {
             s.push(shot_step("ground"));

@@ -160,3 +160,17 @@ fn change_frame_keeps_world_state() {
     assert!((new.to_world(w.pos) - DVec3::new(101.0, 6.0, 1.0)).length() < 1e-9);
     assert!(((new.rot * w.vel) - DVec3::new(1.0, 0.0, 0.0)).length() < 1e-9);
 }
+
+/// Spike 9 bug: in the air against a steep slope, sliding along it lifted the walker.
+#[test]
+fn airborne_walker_does_not_climb_steep_slope() {
+    let world = slope(57.0);
+    let mut w = Walker::new(DVec3::new(-0.5, 0.05, 0.0), DVec3::X);
+    let mut top: f64 = 0.0;
+    for _ in 0..600 {
+        w.step(&Frame::IDENTITY, DVec3::Y, 9.81, &WalkInput { dir: DVec2::new(0.0, 1.0), ..Default::default() }, &world, DT);
+        top = top.max(w.pos.y);
+    }
+    println!("airborne against 57 deg: highest {top:.3} m");
+    assert!(top < 0.3);
+}

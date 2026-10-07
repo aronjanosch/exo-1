@@ -5,7 +5,7 @@ use crate::Layer;
 use avian3d::prelude::*;
 use bevy::math::{DMat3, DQuat, DVec2, DVec3};
 use bevy::prelude::*;
-use flight_core::{BodyState, FlightInput, ShipController};
+use flight_core::{BodyState, FlightInput, Lag, ShipController};
 
 /// Seat position in ship space.
 pub const SEAT_POS: DVec3 = DVec3::new(0.0, 0.6, -3.0);
@@ -20,6 +20,8 @@ pub struct Ship {
     pub parked: bool,
     /// Drive while nobody pilots (scenarios only).
     pub test_input: FlightInput,
+    /// Cabin gravity (LAG): off while landed.
+    pub lag: Lag,
 }
 
 /// A ship owned by another player: kinematic proxy driven from snapshots (net module).
@@ -64,7 +66,7 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, up: DVec3, offset
     let (w, h, d) = (4.6f32, 3.2f32, 8.3f32);
     let ship = commands
         .spawn((
-            Ship { ctl: ShipController::default(), piloted: false, parked: true, test_input: FlightInput::default() },
+            Ship { ctl: ShipController::default(), piloted: false, parked: true, test_input: FlightInput::default(), lag: Lag::default() },
             RigidBody::Static,
             Position(pos),
             Rotation(rot),
@@ -138,6 +140,8 @@ pub fn ship_control(
 ) {
     let dt = time.delta_secs_f64();
     for (mut ship, pos, rot, mut lv, mut av) in &mut q {
+        let clearance = ship.ctl.clearance_at(planet.as_ref(), pos.0);
+        ship.lag.step(clearance, lv.0.length(), dt);
         if ship.parked {
             continue;
         }

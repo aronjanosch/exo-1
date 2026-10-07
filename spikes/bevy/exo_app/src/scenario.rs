@@ -29,6 +29,7 @@ pub struct Ctx {
     pub p: HashMap<&'static str, DVec3>,
     rescues0: u32,
     stats0: WalkStats,
+    pub failures: u32,
     shot_n: u32,
 }
 
@@ -124,6 +125,13 @@ fn face_towards(w: &mut World, target: DVec3) {
         p.w.forward = if p.ship.is_some() { f.rot.inverse() * d } else { d };
         p.pitch = 0.0;
     });
+}
+
+fn check(c: &mut Ctx, ok: bool, note: String) {
+    let line = format!("{} {note}", if ok { "PASS" } else { "FAIL" });
+    println!("{line}");
+    c.report.push(line);
+    c.failures += !ok as u32;
 }
 
 fn begin(w: &mut World, c: &mut Ctx, name: &str) {
@@ -231,6 +239,7 @@ fn stand_still(name: &'static str) -> Vec<Step> {
                 let drift = p.distance(c.p["start"]);
                 let note = format!("max step {:.4} mm, drift {:.4} mm, {:.1} m from planet centre", c.v["max_step"] * 1000.0, drift * 1000.0, (p - planet(w).centre).length());
                 end(w, c, note);
+                check(c, drift < 0.002, format!("{name}: drift {:.4} mm < 2 mm", drift * 1000.0));
                 return true;
             }
             false
@@ -273,6 +282,8 @@ fn walk(name: &'static str, secs: f64, away_from_ship: bool) -> Step {
                 c.v["slow"], c.v["uncovered"], p.length() / 1000.0, c.v["probe"]
             );
             end(w, c, note);
+            let rescues = w.resource::<WalkStats>().rescues - c.rescues0;
+            check(c, rescues == 0 && c.v["uncovered"] == 0.0, format!("{name}: 0 rescues ({rescues}), always on a patch"));
             return true;
         }
         false
@@ -301,6 +312,7 @@ fn board(name: &'static str, from_outside: bool) -> Step {
             let pl = planet(w);
             let ramp_end = f.to_world(DVec3::new(0.0, 0.0, 5.8));
             let tilt = (f.rot * DVec3::Y).angle_between(pl.up(f.origin)).to_degrees();
+            check(c, at_seat, format!("{name}: reached the seat over the ramp"));
             end(w, c, format!("in cabin {inside}, at seat {at_seat}, ramp end {:.2} m above ground, ship tilt {tilt:.0} deg", pl.above_ground(ramp_end)));
             if !at_seat {
                 // Keep the run going: put the walker at the seat (as the Godot bot did).
@@ -430,6 +442,7 @@ fn fly_to_space_and_back() -> Vec<Step> {
             }
             let note = format!("field strength {:.3}, gravity {:.3} m/s²", c.v["field"], c.v["g"]);
             end(w, c, note);
+            check(c, c.v["field"] == 0.0, "reached space (outside the planetary field)".into());
             true
         }),
     ]
@@ -492,6 +505,8 @@ fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: f64) -> Vec
                     c.v["vmax"], c.v["drift"], c.v["ymin"], c.v["ymax"], c.v["left"] > 0.0
                 );
                 end(w, c, note);
+                check(c, c.v["drift"] < 0.001 && c.v["left"] == 0.0 && c.v["ymax"] - c.v["ymin"] < 0.02,
+                    format!("{name}: walker stays in the cabin at {:.0} m/s, drift {:.4} m", c.v["vmax"], c.v["drift"]));
                 return true;
             }
             false
@@ -586,6 +601,7 @@ fn t5_walk(name: &'static str, dir: DVec3, heading: DVec3, secs: f64) -> Vec<Ste
                 c.v.remove("slope");
                 c.v.remove("climb");
                 end(w, c, note);
+                check(c, w.resource::<WalkStats>().rescues == c.rescues0, format!("{name}: no fall-through"));
                 return true;
             }
             false
@@ -636,6 +652,11 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
                     t > 3.0 && ship_vel(w).length() < 0.05
                 }
             }));
+            s.push(Box::new(|w, c| {
+                let (v, agl) = (ship_vel(w).length(), above_ground(w));
+                check(c, v < 0.05 && agl < 1.0, format!("landed: {v:.3} m/s, {agl:.2} m above ground"));
+                true
+            }));
             s.push(shot_step("landed"));
             s.extend(stand_still("idle 5 s (landed ship)"));
             s.push(Box::new(|w, _| {
@@ -657,6 +678,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
                     let outside = with_player(w, |p| p.ship.is_none());
                     let agl = above_ground(w);
                     end(w, c, format!("outside {outside}, {agl:.2} m above ground"));
+                    check(c, outside && agl.abs() < 0.5, "walked out of the landed ship onto the ground".into());
                     return true;
                 }
                 false
@@ -715,7 +737,8 @@ pub fn run_script(w: &mut World) {
             let path = sc.out_dir.join(format!("{}.txt", sc.name));
             let _ = std::fs::write(&path, sc.ctx.report.join("\n") + "\n");
             println!("results: {}", path.display());
-            w.write_message(AppExit::Success);
+            println!("CHECKS: {} failures", sc.ctx.failures);
+            w.write_message(if sc.ctx.failures == 0 && st.rescues == 0 { AppExit::Success } else { AppExit::error() });
             return;
         }
         let i = sc.i;

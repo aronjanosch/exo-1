@@ -192,13 +192,6 @@ pub fn walker_step(
         }
     };
     let info = pl.w.step(&frame, up, g, &input, &world, dt);
-    if std::env::var("EXO_DEBUG2").is_ok() && pl.ship.is_none() {
-        let slope = planet.pgen.sample(crate::env::to_v3(up)).slope_deg;
-        if slope > 48.0 {
-            let d = pl.w.pos - before;
-            eprintln!("steep {slope:.1} rise {:+.4} horiz {:.4} hits {} snap {} depen {:.4} grounded {} n.up {:.3}", d.dot(up), (d - up * d.dot(up)).length(), info.hits, info.snapped, info.depenetrated, pl.w.grounded, pl.w.floor_normal.dot(up));
-        }
-    }
     stats.steps += 1;
     stats.grounded += pl.w.grounded as u64;
     stats.depenetrations += (info.depenetrated > 0.0) as u64;

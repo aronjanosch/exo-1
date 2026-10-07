@@ -21,3 +21,6 @@ WORKSPACE.md
 
 # Claude Code, persönliche Einstellungen
 .claude/settings.local.json
+
+# Claude Code skill links, created locally from .agents/skills
+.claude/skills/

@@ -38,6 +38,10 @@ New dependencies, CI, `.cargo/`, `build.rs`, `unsafe`, networking, spawning proc
 - Invented names in content, tests and issues; no personal data.
 - Goofy tone is a feature. The setting is a strange galaxy.
 
+## Skills
+
+Project skills live in `.agents/skills/`. New contributors start with `exo-onboarding`, which also lists the external skills to install (`.agents/skills/exo-onboarding/SKILLS.md`). Before editing a skill, `AGENTS.md` or `CLAUDE.md`, load `writing-for-agents`.
+
 ## Local environment
 
 If a `WORKSPACE.md` exists in the repo root, read it before running anything. Each person writes their own to describe their machine, for example a shared `CARGO_TARGET_DIR`. It is gitignored. Follow it over the defaults here.

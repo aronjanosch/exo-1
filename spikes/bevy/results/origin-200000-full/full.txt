@@ -1,0 +1,31 @@
+stand still 5 s (walker): max step 0.0000 mm, drift 0.0000 mm, 4982.1 m from planet centre | rescues 0, walker grounded 100.0 %, net-only 0 | frames 720, mean 6.94 ms, p99 7.48 ms, max 9.20 ms, >33 ms 0
+PASS stand still 5 s (walker): drift 0.0000 mm < 2 mm
+walk 20 s (run): walked 233 m, slow ticks 0, ticks without patch 0, 197.0 km from world origin, GPU error 2 m ahead 0.005 px (calculated) | rescues 0, walker grounded 100.0 %, net-only 0 | frames 2880, mean 6.94 ms, p99 7.41 ms, max 9.11 ms, >33 ms 0
+PASS walk 20 s (run): 0 rescues (0), always on a patch
+PASS walk up the ramp into the parked ship: reached the seat over the ramp
+walk up the ramp into the parked ship: in cabin true, at seat true, ramp end 0.36 m above ground, ship tilt 0 deg | rescues 0, walker grounded 95.3 %, net-only 0 | frames 763, mean 6.94 ms, p99 7.54 ms, max 9.36 ms, >33 ms 0
+climb to 300 m above ground: 20.3 s, altitude 280 m, ground 300.1 m, speed 15.0 m/s | rescues 0, walker grounded 0.0 %, net-only 0 | frames 2923, mean 6.94 ms, p99 7.52 ms, max 9.03 ms, >33 ms 0
+pitch up: nose +30.0 deg above horizon (wanted +30) | rescues 0, walker grounded 0.0 %, net-only 0 | frames 432, mean 6.94 ms, p99 7.50 ms, max 9.20 ms, >33 ms 0
+fly to space (7000 m, outside the field): 35.4 s, altitude 7004 m, ground 6982.5 m, speed 350.0 m/s | rescues 0, walker grounded 0.0 %, net-only 0 | frames 5093, mean 6.94 ms, p99 7.60 ms, max 10.95 ms, >33 ms 0
+in space: field strength: field strength 0.000, gravity 0.000 m/s² | rescues 0, walker grounded 0.0 %, net-only 0
+PASS reached space (outside the planetary field)
+in space: stand + walk, boost + roll, assist off: ship up to 400 m/s, roll 0.3 (assist false), standing drift 0.0000 m, walker height in cabin 0.3100..0.3100 m, left ship false | rescues 0, walker grounded 100.0 %, net-only 0 | frames 1152, mean 6.94 ms, p99 7.40 ms, max 8.89 ms, >33 ms 0
+PASS in space: stand + walk, boost + roll, assist off: walker stays in the cabin at 400 m/s, drift 0.0000 m
+firm brake in space: 2.5 s, altitude 10343 m, ground 10319.7 m, speed 0.2 m/s | rescues 0, walker grounded 0.0 %, net-only 0 | frames 365, mean 6.94 ms, p99 7.32 ms, max 8.87 ms, >33 ms 0
+turn back towards the planet: nose -80.0 deg above horizon (wanted -80) | rescues 0, walker grounded 0.0 %, net-only 0 | frames 576, mean 6.95 ms, p99 7.47 ms, max 9.39 ms, >33 ms 0
+dive back: 34.0 s, altitude 762 m, ground 798.9 m, speed 149.2 m/s | rescues 0, walker grounded 0.0 %, net-only 0 | frames 4895, mean 6.94 ms, p99 7.56 ms, max 11.22 ms, >33 ms 0
+firm brake: 3.2 s, altitude 539 m, ground 568.8 m, speed 0.4 m/s | rescues 0, walker grounded 0.0 %, net-only 0 | frames 453, mean 6.94 ms, p99 7.98 ms, max 9.30 ms, >33 ms 0
+level out: nose -0.1 deg above horizon (wanted +0) | rescues 0, walker grounded 0.0 %, net-only 0 | frames 432, mean 6.94 ms, p99 7.51 ms, max 7.95 ms, >33 ms 0
+descend to 120 m above ground: 30.2 s, altitude 90 m, ground 119.8 m, speed 15.0 m/s | rescues 0, walker grounded 0.0 %, net-only 0 | frames 4354, mean 6.94 ms, p99 7.63 ms, max 9.42 ms, >33 ms 0
+land: 11.6 s, altitude -30 m, ground 0.1 m, speed 0.0 m/s | rescues 0, walker grounded 0.0 %, net-only 0 | frames 1652, mean 6.99 ms, p99 7.44 ms, max 96.69 ms, >33 ms 1
+PASS landed: 0.005 m/s, 0.12 m above ground
+idle 5 s (landed ship): max step 0.0350 mm, drift 1.0889 mm, 4970.0 m from planet centre | rescues 0, walker grounded 0.0 %, net-only 0 | frames 720, mean 6.94 ms, p99 7.31 ms, max 7.70 ms, >33 ms 0
+PASS idle 5 s (landed ship): drift 1.0889 mm < 2 mm
+walk out of the landed ship: outside true, 0.02 m above ground | rescues 0, walker grounded 100.0 %, net-only 0 | frames 648, mean 6.94 ms, p99 7.48 ms, max 9.26 ms, >33 ms 0
+PASS walked out of the landed ship onto the ground
+PASS walk back in to the seat: reached the seat over the ramp
+walk back in to the seat: in cabin true, at seat true, ramp end 0.04 m above ground, ship tilt 6 deg | rescues 0, walker grounded 100.0 %, net-only 0 | frames 763, mean 6.94 ms, p99 7.49 ms, max 8.50 ms, >33 ms 0
+climb to 400 m above ground: 27.1 s, altitude 369 m, ground 400.0 m, speed 15.0 m/s | rescues 0, walker grounded 0.0 %, net-only 0 | frames 3900, mean 6.94 ms, p99 7.43 ms, max 9.34 ms, >33 ms 0
+in atmosphere: stand + walk, boost + roll, assist on: ship up to 280 m/s, roll 0.3 (assist true), standing drift 0.0000 m, walker height in cabin 0.3100..0.3100 m, left ship false | rescues 0, walker grounded 100.0 %, net-only 0 | frames 1152, mean 6.94 ms, p99 7.33 ms, max 8.75 ms, >33 ms 0
+PASS in atmosphere: stand + walk, boost + roll, assist on: walker stays in the cabin at 280 m/s, drift 0.0000 m
+TOTAL: rescues 0, walker grounded 98.6 % of 3752 steps, net-only 0, depenetrations 766, origin shifts 27 (max 0.004 ms, mean 0.002 ms), patch build mean 2.15 ms max 3.56 ms, simulated 249.1 s

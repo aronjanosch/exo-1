@@ -165,6 +165,9 @@ pub fn update_hud(
         view.skip_frames -= 1;
     } else {
         view.frame_ms.push(ms);
+        if ms > 30.0 {
+            eprintln!("LONG FRAME {ms:.1} ms: chunks visible {} pending {}, patches {} pending {}", terrain.visible, terrain.pending, ring.patches.len(), ring.pending());
+        }
     }
     let (Ok(pl), Ok((ship, sp, sv)), Ok(mut text)) = (players.single(), ships.single(), hud.single_mut()) else { return };
     let mode = if pl.seated {

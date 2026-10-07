@@ -54,18 +54,7 @@ impl World for AvianWorld<'_, '_, '_> {
         let cfg = ShapeCastConfig { max_distance: len, ignore_origin_penetration: true, ..default() };
         let rot = DQuat::from_rotation_arc(DVec3::Y, up);
         let hit = self.mas.spatial_query.cast_shape(&self.shape, feet + up * self.half_height, rot, dir, &cfg, &self.filter)?;
-        // A capsule touching a heightfield edge reports the edge-to-capsule direction as the
-        // normal, which is flatter than the faces next to it, so steep slopes read as floor.
-        // Take the steeper of that and the face normal under the contact point.
-        let mut normal = hit.normal1;
-        if let Ok(down) = Dir3::new((-up).as_vec3()) {
-            if let Some(ray) = self.mas.spatial_query.cast_ray(hit.point1 + up * 0.05, down, 0.2, true, &self.filter) {
-                if ray.normal.dot(up) < normal.dot(up) && ray.normal.dot(up) > 0.0 {
-                    normal = ray.normal;
-                }
-            }
-        }
-        Some(Hit { distance: hit.distance, normal })
+        Some(Hit { distance: hit.distance, normal: hit.normal1 })
     }
     fn depenetrate(&self, feet: DVec3, up: DVec3) -> DVec3 {
         let rot = DQuat::from_rotation_arc(DVec3::Y, up);

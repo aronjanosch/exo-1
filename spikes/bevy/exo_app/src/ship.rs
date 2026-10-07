@@ -22,6 +22,12 @@ pub struct Ship {
     pub test_input: FlightInput,
 }
 
+/// A ship owned by another player: kinematic proxy driven from snapshots (net module).
+#[derive(Component)]
+pub struct RemoteShip {
+    pub owner: u32,
+}
+
 /// Visual-only part (the view plugin adds meshes for these).
 #[derive(Component, Clone)]
 pub struct ShipPart {
@@ -43,9 +49,9 @@ pub fn basis_for_up(up: DVec3) -> DQuat {
     DQuat::from_mat3(&DMat3::from_cols(fwd.cross(up), up, -fwd))
 }
 
-pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, up: DVec3) -> Entity {
+pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, up: DVec3, offset_x: f64) -> Entity {
     // Parked 15 m ahead of the walker spawn, floor on the highest ground under the hull (main.gd).
-    let dir = (up * planet.radius + DVec3::new(0.0, 0.0, -15.0)).normalize();
+    let dir = (up * planet.radius + DVec3::new(offset_x, 0.0, -15.0)).normalize();
     let rot = basis_for_up(dir);
     let mut ground = f64::MIN;
     for c in [DVec3::ZERO, DVec3::new(2., 0., 4.), DVec3::new(-2., 0., 4.), DVec3::new(2., 0., -4.), DVec3::new(-2., 0., -4.)] {
@@ -53,20 +59,6 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, up: DVec3) -> Ent
         ground = ground.max(planet.surface(d) - planet.radius);
     }
     let pos = planet.centre + dir * (planet.radius + ground + 0.05);
-    let hull = Color::srgb(0.95, 0.5, 0.15);
-    let inner = Color::srgb(0.55, 0.55, 0.6);
-    let glass = Color::srgb(0.3, 0.8, 0.9);
-    // [size, position, colour, collides] in ship space; origin at the floor bottom.
-    let parts: [(Vec3, Vec3, Color, bool); 8] = [
-        (Vec3::new(4.0, 0.3, 8.0), Vec3::new(0.0, 0.15, 0.0), inner, true),
-        (Vec3::new(0.3, 2.6, 8.0), Vec3::new(-2.15, 1.6, 0.0), hull, true),
-        (Vec3::new(0.3, 2.6, 8.0), Vec3::new(2.15, 1.6, 0.0), hull, true),
-        (Vec3::new(4.6, 0.3, 8.0), Vec3::new(0.0, 3.05, 0.0), hull, true),
-        (Vec3::new(4.6, 2.6, 0.3), Vec3::new(0.0, 1.6, -4.15), hull, true),
-        (Vec3::new(3.6, 1.0, 0.05), Vec3::new(0.0, 2.0, -3.98), glass, false),
-        (Vec3::new(1.0, 0.5, 0.8), Vec3::new(0.0, 0.55, -3.3), inner, false),
-        (Vec3::new(9.0, 0.25, 2.0), Vec3::new(0.0, 1.2, 1.0), hull, false),
-    ];
     // Mass properties are f32 in Avian even with f64 positions.
     let m = 2000.0f32;
     let (w, h, d) = (4.6f32, 3.2f32, 8.3f32);
@@ -86,6 +78,26 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, up: DVec3) -> Ent
             Visibility::default(),
         ))
         .id();
+    add_hull(commands, ship);
+    ship
+}
+
+/// Greybox cabin: visual parts, hull colliders, ramp. Shared by the own ship and the remote proxies.
+pub fn add_hull(commands: &mut Commands, ship: Entity) {
+    let hull = Color::srgb(0.95, 0.5, 0.15);
+    let inner = Color::srgb(0.55, 0.55, 0.6);
+    let glass = Color::srgb(0.3, 0.8, 0.9);
+    // [size, position, colour, collides] in ship space; origin at the floor bottom.
+    let parts: [(Vec3, Vec3, Color, bool); 8] = [
+        (Vec3::new(4.0, 0.3, 8.0), Vec3::new(0.0, 0.15, 0.0), inner, true),
+        (Vec3::new(0.3, 2.6, 8.0), Vec3::new(-2.15, 1.6, 0.0), hull, true),
+        (Vec3::new(0.3, 2.6, 8.0), Vec3::new(2.15, 1.6, 0.0), hull, true),
+        (Vec3::new(4.6, 0.3, 8.0), Vec3::new(0.0, 3.05, 0.0), hull, true),
+        (Vec3::new(4.6, 2.6, 0.3), Vec3::new(0.0, 1.6, -4.15), hull, true),
+        (Vec3::new(3.6, 1.0, 0.05), Vec3::new(0.0, 2.0, -3.98), glass, false),
+        (Vec3::new(1.0, 0.5, 0.8), Vec3::new(0.0, 0.55, -3.3), inner, false),
+        (Vec3::new(9.0, 0.25, 2.0), Vec3::new(0.0, 1.2, 1.0), hull, false),
+    ];
     commands.entity(ship).with_children(|c| {
         for (i, (size, p, color, collides)) in parts.into_iter().enumerate() {
             let mut e = c.spawn((Transform::from_translation(p), ShipPart { size, color }, Visibility::default()));
@@ -115,7 +127,6 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, up: DVec3) -> Ent
             Visibility::default(),
         ));
     });
-    ship
 }
 
 pub fn ship_control(

@@ -609,6 +609,38 @@ fn t5_walk(name: &'static str, dir: DVec3, heading: DVec3, secs: f64) -> Vec<Ste
     ]
 }
 
+/// One flight of the network bot: take off, cruise, turn, brake, descend, land, idle.
+fn net_cycle() -> Vec<Step> {
+    vec![
+        hold_until("takeoff", &[KeyCode::Space, KeyCode::ShiftLeft], 40.0, |w| above_ground(w) > 80.0),
+        hold_until("cruise", &[KeyCode::KeyW, KeyCode::ShiftLeft], 8.0, |_| false),
+        Box::new(|w, c| {
+            if c.t == 0.0 {
+                begin(w, c, "turn");
+                keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft], true);
+            }
+            // About 0.5 rad/s of yaw (the controller turns 0.002 rad per pixel).
+            w.resource_mut::<Controls>().mouse.x += 4.2;
+            if c.t >= 4.0 {
+                keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft], false);
+                end(w, c, "turned".into());
+                return true;
+            }
+            false
+        }),
+        hold_until("brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 1.0),
+        hold_until("descend", &[KeyCode::ControlLeft, KeyCode::ShiftLeft], 90.0, |w| above_ground(w) < 25.0),
+        hold_until("land", &[KeyCode::ControlLeft], 60.0, {
+            let mut t = 0.0;
+            move |w| {
+                t += 1.0 / 60.0;
+                t > 3.0 && ship_vel(w).length() < 0.05
+            }
+        }),
+        wait(3.0),
+    ]
+}
+
 pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step> {
     let dir = out_dir.to_path_buf();
     let shot_step = move |tag: &'static str| -> Step {
@@ -628,6 +660,27 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
         "t5" => {
             for (n, d, h) in t5_starts() {
                 s.extend(t5_walk(n, d, h, 300.0));
+            }
+        }
+        // Network bot: sit in the parked ship (test shortcut) and fly cycles until the run ends.
+        "net" => {
+            s.push(Box::new(|w, _| {
+                let e = ship_e(w);
+                let fr = ship_frame_of(w);
+                let v = ship_vel(w);
+                with_player(w, |p| {
+                    if p.ship.is_none() {
+                        p.w.change_frame(&Frame::IDENTITY, &fr, -v);
+                        p.ship = Some(e);
+                    }
+                    p.w.pos = DVec3::new(0.0, 0.32, -2.5);
+                    p.w.vel = DVec3::ZERO;
+                });
+                true
+            }));
+            s.extend(sit());
+            for _ in 0..60 {
+                s.extend(net_cycle());
             }
         }
         "full" => {

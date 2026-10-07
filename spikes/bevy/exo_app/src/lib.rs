@@ -3,6 +3,7 @@
 pub mod controls;
 pub mod env;
 pub mod net;
+pub mod net_live;
 pub mod origin;
 pub mod record;
 pub mod ring;
@@ -29,6 +30,10 @@ pub enum Layer {
     Ramp,
 }
 
+/// Sideways spawn offset in metres (players of one network session start 20 m apart).
+#[derive(Resource)]
+pub struct SpawnOffset(pub f64);
+
 /// Wall time spent in Avian's physics step, summed over the fixed ticks of one frame.
 #[derive(Resource, Default)]
 pub struct PhysicsTiming {
@@ -52,20 +57,27 @@ pub struct Options {
     pub out_dir: PathBuf,
     /// Write the scripted run's ship and walker path (net_core Trajectory) to this file.
     pub record: Option<PathBuf>,
+    pub spawn_offset: f64,
+    /// Headless run paced at 60 physics ticks per wall second (network runs).
+    pub realtime: bool,
+    pub net: Option<net_live::NetConfig>,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { scenario: None, headless: false, hidden: false, radius: 5000.0, planet_offset: DVec3::ZERO, origin_shift: 1000.0, out_dir: PathBuf::from("results"), record: None }
+        Options { scenario: None, headless: false, hidden: false, radius: 5000.0, planet_offset: DVec3::ZERO, origin_shift: 1000.0, out_dir: PathBuf::from("results"), record: None, spawn_offset: 0.0, realtime: false, net: None }
     }
 }
 
 impl Options {
     pub fn from_args(args: impl Iterator<Item = String>) -> Options {
         let mut o = Options::default();
+        let mut net_args: Vec<(String, String)> = Vec::new();
         for a in args {
             let (k, v) = a.split_once('=').unwrap_or((a.as_str(), ""));
             match k {
+                "--net-host" | "--net-connect" | "--bind" | "--port" | "--slot" | "--planet" | "--rate" | "--buffer" | "--delay" | "--jitter" | "--loss" | "--seconds" | "--tag"
+                | "--net-out" | "--force-shift" | "--bot" => net_args.push((k.to_string(), v.to_string())),
                 "--scenario" => o.scenario = Some(v.to_string()),
                 "--headless" => o.headless = true,
                 "--hidden" => o.hidden = true,
@@ -80,6 +92,17 @@ impl Options {
                 _ => panic!("unknown argument {a}"),
             }
         }
+        o.net = net_live::NetConfig::parse(&net_args);
+        if let Some(n) = &mut o.net {
+            n.headless = o.headless;
+            // One planet per process; planet 1 is 200 km from planet 0 in the shared frame.
+            o.planet_offset = net_core::PLANET_CENTRES[n.planet as usize];
+            o.spawn_offset = (n.slot as f64 - 1.0) * 20.0;
+            o.realtime = true;
+            if n.bot {
+                o.scenario = Some("net".into());
+            }
+        }
         o
     }
 }
@@ -88,7 +111,7 @@ pub fn build_app(o: &Options) -> App {
     let mut app = App::new();
     if o.headless {
         app.add_plugins((
-            MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::ZERO)),
+            MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(if o.realtime { TICK } else { Duration::ZERO })),
             TransformPlugin,
             bevy::asset::AssetPlugin::default(),
             bevy::mesh::MeshPlugin,
@@ -132,9 +155,10 @@ pub fn build_app(o: &Options) -> App {
             }
         }).after(PhysicsSystems::Last),
     ));
-    app.add_systems(Startup, |mut commands: Commands, planet: Res<env::PlanetRes>| {
-        walker::spawn_player(&mut commands, &planet);
-        ship::spawn_ship(&mut commands, &planet, DVec3::Y);
+    app.insert_resource(SpawnOffset(o.spawn_offset));
+    app.add_systems(Startup, |mut commands: Commands, planet: Res<env::PlanetRes>, off: Res<SpawnOffset>| {
+        walker::spawn_player(&mut commands, &planet, off.0);
+        ship::spawn_ship(&mut commands, &planet, DVec3::Y, off.0);
     });
     app.add_systems(FixedUpdate, (scenario::run_script.run_if(resource_exists::<scenario::Script>), ship::ship_control, walker::walker_step).chain());
     app.add_systems(Update, ring::update_ring);
@@ -151,6 +175,13 @@ pub fn build_app(o: &Options) -> App {
             Update,
             (controls::read_input, view::add_ship_visuals, view::update_camera, terrain::update_terrain, view::update_hud).chain().after(ring::update_ring),
         );
+    }
+    if let Some(cfg) = &o.net {
+        let origin = app.world().resource::<origin::RenderOrigin>().origin;
+        app.insert_resource(net_live::Net::new(cfg.clone(), origin));
+        app.add_systems(FixedUpdate, net_live::net_pre.before(ship::ship_control));
+        app.add_systems(FixedLast, (net_live::net_post, net_live::net_finish).chain());
+        app.add_systems(PostUpdate, net_live::net_measure.after(origin::sync_bodies).before(bevy::transform::TransformSystems::Propagate));
     }
     if let Some(name) = &o.scenario {
         app.world_mut().resource_mut::<controls::Controls>().scripted = true;

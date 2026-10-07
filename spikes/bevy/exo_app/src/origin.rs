@@ -90,7 +90,7 @@ fn sync_world_pos(origin: Res<RenderOrigin>, mut q: Query<(&WorldPos, &mut Trans
 
 /// Root rigid bodies: Transform from the f64 Position relative to the origin. Avian's own
 /// Position <-> Transform sync is switched off in main.
-fn sync_bodies(
+pub fn sync_bodies(
     origin: Res<RenderOrigin>,
     fixed: Res<Time<Fixed>>,
     mut q: Query<(&Position, &Rotation, Option<&BodyInterp>, &mut Transform), (With<RigidBody>, Without<ChildOf>)>,

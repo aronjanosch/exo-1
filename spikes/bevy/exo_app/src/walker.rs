@@ -3,7 +3,7 @@
 use crate::controls::Controls;
 use crate::env::PlanetRes;
 use crate::ring::Ring;
-use crate::ship::{cabin_contains, Ship, SEAT_POS};
+use crate::ship::{cabin_contains, RemoteShip, Ship, SEAT_POS};
 use crate::Layer;
 use avian3d::character_controller::move_and_slide::DepenetrationConfig;
 use avian3d::prelude::*;
@@ -64,8 +64,8 @@ impl World for AvianWorld<'_, '_, '_> {
     }
 }
 
-pub fn spawn_player(commands: &mut Commands, planet: &PlanetRes) -> Entity {
-    let up = DVec3::Y;
+pub fn spawn_player(commands: &mut Commands, planet: &PlanetRes, offset_x: f64) -> Entity {
+    let up = (DVec3::Y * planet.radius + DVec3::new(offset_x, 0.0, 0.0)).normalize();
     let pos = planet.centre + up * (planet.surface(up) + 2.0);
     commands.spawn(Player { w: Walker::new(pos, DVec3::NEG_Z), ship: None, seated: false, pitch: 0.0, fly: false }).id()
 }
@@ -85,6 +85,25 @@ impl Player {
     }
 }
 
+/// Frame of a ship (own or remote) as the cabin colliders have it. Avian moves child colliders to
+/// the body pose only at the start of the next physics step (update_child_collider_position in
+/// PhysicsStepSystems::First). Between steps the cabin colliders sit one tick behind the body
+/// (6.7 m at 400 m/s), so the walker works in the frame the colliders are in. Local coordinates
+/// are ship-relative either way.
+fn cabin_frame(
+    e: Entity,
+    body: (&Position, &Rotation),
+    floors: &Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
+) -> Frame {
+    match floors.iter().find(|(c, ..)| c.parent() == e) {
+        Some((_, p, r, ct)) => {
+            let rot = r.0 * ct.rotation.0.inverse();
+            Frame { origin: p.0 - rot * ct.translation, rot }
+        }
+        None => ship_frame(body.0, body.1),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn walker_step(
     mut commands: Commands,
@@ -96,21 +115,18 @@ pub fn walker_step(
     mut stats: ResMut<WalkStats>,
     mut players: Query<&mut Player>,
     mut ships: Query<(Entity, &mut Ship, &Position, &Rotation, &LinearVelocity)>,
-    floors: Query<(&Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
+    remotes: Query<(Entity, &Position, &Rotation, &LinearVelocity), With<RemoteShip>>,
+    floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
 ) {
     let dt = time.delta_secs_f64();
     let Ok(mut pl) = players.single_mut() else { return };
-    let Some((ship_e, _, sp, sr, slv)) = ships.iter().next().map(|(e, s, p, r, v)| (e, s.parked, *p, *r, *v)) else { return };
-    // Avian moves child colliders to the body pose only at the start of the next physics step
-    // (update_child_collider_position in PhysicsStepSystems::First). Between steps the cabin
-    // colliders sit one tick behind the body (6.7 m at 400 m/s), so the walker works in the
-    // frame the colliders are in. Local coordinates are ship-relative either way.
-    let frame_ship = match floors.single() {
-        Ok((p, r, ct)) => {
-            let rot = r.0 * ct.rotation.0.inverse();
-            Frame { origin: p.0 - rot * ct.translation, rot }
-        }
-        Err(_) => ship_frame(&sp, &sr),
+    let Some((ship_e, _, sp, sr, own_v)) = ships.iter().next().map(|(e, s, p, r, v)| (e, s.parked, *p, *r, *v)) else { return };
+    let own_frame = cabin_frame(ship_e, (&sp, &sr), &floors);
+    // The cabin the walker is in: the own ship, or the proxy of another player's ship.
+    let cur_e = pl.ship.unwrap_or(ship_e);
+    let (frame_ship, slv) = match remotes.get(cur_e) {
+        Ok((e, p, r, v)) => (cabin_frame(e, (p, r), &floors), *v),
+        Err(_) => (own_frame, own_v),
     };
 
     // F: sit at the seat or stand up (main.gd sit_down / stand_up).
@@ -132,12 +148,27 @@ pub fn walker_step(
             pl.w.vel = DVec3::ZERO;
         }
     }
+    // B: put the walker into the nearest remote ship's cabin (test placement of spike 4, not a
+    // boarding mechanic).
+    if controls.take_tap(KeyCode::KeyB) && !pl.seated {
+        let here = pl.world_pos(frame_ship);
+        let nearest = remotes
+            .iter()
+            .map(|(e, p, r, v)| (e, cabin_frame(e, (p, r), &floors), *v))
+            .min_by(|a, b| a.1.origin.distance(here).total_cmp(&b.1.origin.distance(here)));
+        if let Some((e, ..)) = nearest {
+            pl.ship = Some(e);
+            pl.w.pos = DVec3::new(0.0, 0.31, 1.0);
+            pl.w.vel = DVec3::ZERO;
+            pl.fly = false;
+        }
+    }
     if controls.take_tap(KeyCode::KeyV) && !pl.seated {
         pl.fly = !pl.fly;
         pl.w.vel = DVec3::ZERO;
     }
     let world_pos = if pl.ship.is_some() { frame_ship.to_world(pl.w.pos) } else { pl.w.pos };
-    ring.anchors = vec![(world_pos, if pl.ship.is_some() { slv.0 } else { pl.w.vel }), (sp.0, slv.0)];
+    ring.anchors = vec![(world_pos, if pl.ship.is_some() { slv.0 } else { pl.w.vel }), (sp.0, own_v.0)];
     if pl.seated {
         return;
     }
@@ -214,11 +245,16 @@ pub fn walker_step(
         }
     }
 
-    // Enter or leave the cabin: box test with hysteresis (main.gd _physics_process).
+    // Enter or leave the cabin: box test with hysteresis (main.gd _physics_process). The cabin can
+    // be the own ship or the proxy of another player's ship (spike 4: walker in a foreign ship).
     match pl.ship {
-        None if cabin_contains(frame_ship.to_local(pl.w.pos), -0.2) => {
-            pl.w.change_frame(&Frame::IDENTITY, &frame_ship, -slv.0);
-            pl.ship = Some(ship_e);
+        None => {
+            let own = (ship_e, own_frame, own_v);
+            let others = remotes.iter().map(|(e, p, r, v)| (e, cabin_frame(e, (p, r), &floors), *v));
+            if let Some((e, f, v)) = std::iter::once(own).chain(others).find(|(_, f, _)| cabin_contains(f.to_local(pl.w.pos), -0.2)) {
+                pl.w.change_frame(&Frame::IDENTITY, &f, -v.0);
+                pl.ship = Some(e);
+            }
         }
         Some(_) if !cabin_contains(pl.w.pos, 0.3) => {
             pl.w.change_frame(&frame_ship, &Frame::IDENTITY, slv.0);

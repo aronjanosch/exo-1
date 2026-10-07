@@ -77,12 +77,18 @@ pub fn add_ship_visuals(
 
 pub fn record_player_view(
     mut players: Query<(&Player, Option<&mut PlayerInterp>, Entity)>,
-    ships: Query<(&avian3d::prelude::Position, &avian3d::prelude::Rotation), With<Ship>>,
+    ships: Query<(Entity, &avian3d::prelude::Position, &avian3d::prelude::Rotation), With<Ship>>,
+    remotes: Query<(&avian3d::prelude::Position, &avian3d::prelude::Rotation), With<crate::ship::RemoteShip>>,
     planet: Res<PlanetRes>,
     mut commands: Commands,
 ) {
     let Ok((pl, interp, e)) = players.single_mut() else { return };
-    let Some((p, r)) = ships.iter().next() else { return };
+    let Some((own, p, r)) = ships.iter().next() else { return };
+    // The cabin the walker is in can be a remote ship's proxy (spike 10).
+    let (p, r) = match pl.ship {
+        Some(c) if c != own => remotes.get(c).unwrap_or((p, r)),
+        _ => (p, r),
+    };
     let frame = crate::walker::ship_frame(p, r);
     let fwd = if pl.ship.is_some() { frame.rot * pl.w.forward } else { pl.w.forward };
     let now = (pl.world_pos(frame), pl.world_up(frame, &planet), fwd);

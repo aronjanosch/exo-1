@@ -107,6 +107,7 @@ pub fn between(a: &Snapshot, b: &Snapshot, t: f64) -> Sample {
         s.p = hermite(a.p, a.v, b.p, b.v, span, u);
         s.v = a.v.lerp(b.v, u);
         s.q = a.q.slerp(b.q, u);
+        s.lag = a.lag + (b.lag - a.lag) * u;
     } else if u >= 1.0 {
         s = *b;
         mode = Mode::Transition;

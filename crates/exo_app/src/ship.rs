@@ -28,6 +28,8 @@ pub struct Ship {
 #[derive(Component)]
 pub struct RemoteShip {
     pub owner: u32,
+    /// Cabin gravity (LAG) level from the owner's snapshots, 0..1 (issue #11).
+    pub lag: f64,
 }
 
 /// Visual-only part (the view plugin adds meshes for these).

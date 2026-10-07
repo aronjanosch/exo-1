@@ -12,12 +12,14 @@ fn snap() -> Snapshot {
 }
 
 #[test]
-fn fixed_144_byte_roundtrip() {
-    let a = snap();
+fn fixed_148_byte_roundtrip() {
+    let mut a = snap();
+    a.lag = 0.4;
     let wire = a.encode();
-    assert_eq!(wire.len(), 144);
+    assert_eq!(wire.len(), 148);
     let b = Snapshot::decode(&wire).unwrap();
     assert_eq!((b.p, b.v, b.owner, b.t), (a.p, a.v, a.owner, a.t));
+    assert!((b.lag - 0.4).abs() < 0.5 / 255.0, "cabin gravity as one byte: {}", b.lag);
 }
 
 #[test]
@@ -49,12 +51,15 @@ fn rejects_invalid() {
     wire[68..84].fill(0);
     assert!(Snapshot::decode(&wire).is_none(), "zero quaternion");
     let mut wire = a.encode();
-    wire[0] = 2;
+    wire[0] = 9;
     assert!(Snapshot::decode(&wire).is_none(), "wrong version");
+    let mut wire = a.encode();
+    wire[144..148].copy_from_slice(&256u32.to_le_bytes());
+    assert!(Snapshot::decode(&wire).is_none(), "cabin gravity out of range");
     let mut long = a.encode().to_vec();
     long.push(0);
     assert!(Snapshot::decode(&long).is_none(), "wrong size");
-    assert_eq!(SIZE, 144);
+    assert_eq!(SIZE, 148);
 }
 
 #[test]
@@ -165,7 +170,7 @@ fn wire_packets_roundtrip_and_reject_garbage() {
     ] {
         assert_eq!(Packet::decode(&p.encode()), Some(p));
     }
-    assert_eq!(Packet::Snapshot(s).encode().len(), 146);
+    assert_eq!(Packet::Snapshot(s).encode().len(), 2 + 148);
     assert!(Packet::decode(&[]).is_none());
     assert!(Packet::decode(&[0x00, 5, 1]).is_none(), "wrong magic");
     assert!(Packet::decode(&[0xE1, 99, 1]).is_none(), "unknown type");

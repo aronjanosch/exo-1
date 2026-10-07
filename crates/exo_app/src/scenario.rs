@@ -48,7 +48,7 @@ fn foreign_truth(d: &ForeignDriver, t: f64) -> (DVec3, bevy::math::DQuat, DVec3)
 pub fn foreign_drive(
     mut d: ResMut<ForeignDriver>,
     mut origin: ResMut<RenderOrigin>,
-    mut q: Query<(&mut Position, &mut Rotation, &mut LinearVelocity, &mut AngularVelocity), With<RemoteShip>>,
+    mut q: Query<(&mut Position, &mut Rotation, &mut LinearVelocity, &mut AngularVelocity, &mut RemoteShip)>,
 ) {
     d.tick += 1;
     let t = d.tick as f64 * DT;
@@ -56,13 +56,16 @@ pub fn foreign_drive(
         let (p, qn, v) = foreign_truth(&d, t);
         let mut s = Snapshot::new(2, t, p, v, qn);
         s.seq = d.tick as u32;
+        // Parked means landed: its cabin gravity is off.
+        s.lag = if d.parked.is_some() { 0.0 } else { 1.0 };
         // Through the wire format, like a received packet.
         let s = Snapshot::decode(&s.encode()).expect("own snapshot decodes");
         d.buf.push(s);
     }
     let target = t - 0.15;
     let Some(sample) = d.buf.sample(target) else { return };
-    let Ok((mut p, mut r, mut v, mut w)) = q.get_mut(d.proxy) else { return };
+    let Ok((mut p, mut r, mut v, mut w, mut rs)) = q.get_mut(d.proxy) else { return };
+    rs.lag = sample.s.lag;
     p.0 = sample.s.p;
     r.0 = sample.s.q;
     v.0 = sample.s.v;
@@ -588,11 +591,9 @@ fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: f64) -> Vec
 /// Issue #5: stand up in space, walk out of the back and drift. Outside the field the walker
 /// keeps the velocity it left the cabin with (ship velocity plus its walking speed) and nothing
 /// pulls it. `drift` gives the ship a speed towards the planet first (stopped not exactly).
-/// `push` is the allowed extra speed at the exit: outside the cabin the walker sweeps against the
-/// ship colliders of the previous tick, so a moving ramp gives it a small push (issue #9).
 /// `careful`: W only in 0.1 s taps every 0.5 s, a careful step out: the walker leaves at step-off
 /// speed (3 m/s) at most.
-fn step_out_in_space(name: &'static str, drift: f64, push: f64, careful: bool) -> Vec<Step> {
+fn step_out_in_space(name: &'static str, drift: f64, careful: bool) -> Vec<Step> {
     let mut steps: Vec<Step> = vec![
         Box::new(move |w, _| {
             tap(w, KeyCode::KeyF); // stand up
@@ -648,7 +649,7 @@ fn step_out_in_space(name: &'static str, drift: f64, push: f64, careful: bool) -
                     "{:.0} m from planet centre, gravity {:.3} m/s², ship radial {ship_radial:+.3} m/s, walker relative to ship after exit {rel:.3} m/s (walk speed 5), velocity change over 5 s drift {dv:.6} m/s",
                     (p - pl.centre).length(), pl.gravity_at(p).length()
                 ));
-                let ok = if careful { rel <= 3.01 } else { (rel - 5.0).abs() < 0.01 + push };
+                let ok = if careful { rel <= 3.01 } else { (rel - 5.0).abs() < 0.01 };
                 check(c, ok && dv < 1e-6,
                     format!("{name}: walker keeps the ship's velocity plus its own and drifts ({rel:.3} m/s relative, change {dv:.6} m/s)"));
                 // The ship's nose is 30 deg up: leaving keeps the cabin's orientation.
@@ -792,6 +793,63 @@ fn suit_in_space() -> Vec<Step> {
             m.mouse.y += (-(pitch_err * 0.2) / sens) as f32;
             keys(w, &[KeyCode::KeyW], yaw_err.abs() + pitch_err.abs() < 0.1);
             false
+        }),
+    ];
+    steps.extend(back_to_seat());
+    steps
+}
+
+/// Issue #9: the ship coasts at 20 m/s, the walker drifts with it in the suit 0.4 m behind the
+/// end of its ramp. The ship's colliders sit one tick (0.33 m) behind its body; swept as if they
+/// stood still they stopped the walker. It must drift on with the ship.
+fn drift_behind_moving_ship() -> Vec<Step> {
+    let mut steps: Vec<Step> = vec![
+        Box::new(|w, _| {
+            tap(w, KeyCode::KeyF); // stand up
+            true
+        }),
+        wait(0.3),
+        Box::new(|w, _| {
+            with_ship(w, |s| s.ctl.hover_assist = false);
+            let e = ship_e(w);
+            let f = ship_frame_of(w);
+            w.get_mut::<LinearVelocity>(e).unwrap().0 = f.rot * DVec3::new(0.0, 0.0, -20.0);
+            true
+        }),
+        wait(0.5),
+        Box::new(|w, c| {
+            if c.t == 0.0 {
+                begin(w, c, "suit: drift with a ship coasting at 20 m/s, 0.4 m behind its ramp");
+                let f = ship_frame_of(w);
+                let v = ship_vel(w);
+                with_player(w, |p| {
+                    p.ship = None;
+                    p.w.pos = f.to_world(DVec3::new(0.0, -1.2, 6.6 + 0.35 + 0.4));
+                    p.w.vel = v;
+                    p.w.move_vel = v;
+                    p.body = Some(f.rot);
+                    p.w.forward = f.rot * DVec3::NEG_Z;
+                    p.pitch = 0.0;
+                    p.view_up = f.rot * DVec3::Y;
+                });
+                c.v.insert("gap0", f.to_local(player_world(w)).z);
+            }
+            if c.t >= 2.0 {
+                let f = ship_frame_of(w);
+                let gap = f.to_local(player_world(w)).z;
+                let dv = (with_player(w, |p| p.w.vel) - ship_vel(w)).length();
+                let moved = gap - c.v["gap0"];
+                end(w, c, format!("walker moved {moved:+.4} m against the ship in 2 s, velocity off the ship's by {dv:.4} m/s"));
+                check(c, moved.abs() < 0.05 && dv < 0.01, format!("suit: drifts on with a moving ship it touches ({moved:+.4} m, {dv:.4} m/s)"));
+                return true;
+            }
+            false
+        }),
+        Box::new(|w, _| {
+            let e = ship_e(w);
+            w.get_mut::<LinearVelocity>(e).unwrap().0 = DVec3::ZERO;
+            with_ship(w, |s| s.ctl.hover_assist = true);
+            true
         }),
     ];
     steps.extend(back_to_seat());
@@ -1094,6 +1152,44 @@ fn foreign_steps(s: &mut Vec<Step>) {
         }
         false
     }));
+    // 6. Issue #11: the parked (landed) foreign ship stands 8 deg tilted and sends its cabin
+    //    gravity off; a walker in its cabin stands about the planet's up, not the tilted floor's.
+    s.push(Box::new(|w, _| {
+        let mut d = w.resource_mut::<ForeignDriver>();
+        let (pos, rot) = d.parked.unwrap();
+        d.parked = Some((pos + rot * DVec3::new(0.0, 0.6, 0.0), rot * bevy::math::DQuat::from_rotation_x(8f64.to_radians())));
+        true
+    }));
+    s.push(wait(1.0));
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "in the cabin of the tilted, landed foreign ship");
+            let proxy = w.resource::<ForeignDriver>().proxy;
+            let (p, r) = (w.get::<Position>(proxy).unwrap().0, w.get::<Rotation>(proxy).unwrap().0);
+            let f = Frame { origin: p, rot: r };
+            with_player(w, |pl| {
+                pl.ship = Some(proxy);
+                pl.w.pos = DVec3::new(0.0, 0.4, -1.0);
+                pl.w.halt();
+                pl.w.forward = DVec3::NEG_Z;
+                pl.cabin_up = DVec3::Y;
+                pl.view_up = f.rot * DVec3::Y;
+            });
+        }
+        if c.t >= 1.0 {
+            let proxy = w.resource::<ForeignDriver>().proxy;
+            let (p, r) = (w.get::<Position>(proxy).unwrap().0, w.get::<Rotation>(proxy).unwrap().0);
+            let lag = w.get::<RemoteShip>(proxy).unwrap().lag;
+            let pl = planet(w);
+            let up = with_player(w, |pl| r * pl.cabin_up);
+            let off = up.angle_between(pl.up(p)).to_degrees();
+            let tilt = (r * DVec3::Y).angle_between(pl.up(p)).to_degrees();
+            end(w, c, format!("received cabin gravity {:.0} %, up {off:.3} deg from the planet's, ship tilt {tilt:.1} deg", lag * 100.0));
+            check(c, lag == 0.0 && off < 0.5 && tilt > 7.0, format!("landed foreign ship: its cabin gravity is off over the wire, walker stands about the planet's up ({off:.3} deg)"));
+            return true;
+        }
+        false
+    }));
 }
 
 pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step> {
@@ -1139,12 +1235,13 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
             s.extend(fly_to_space_and_back());
             s.push(hold_until("firm brake in space", &[KeyCode::KeyX], 30.0, |w| ship_vel(w).length() < 0.5));
             s.push(aim("nose up like the climb", 30.0, 3.0));
-            s.extend(step_out_in_space("in space: walk out of the stopped ship", 0.0, 0.0, false));
-            s.extend(step_out_in_space("in space: walk out of a ship drifting at 3 m/s", 3.0, 0.6, false));
+            s.extend(step_out_in_space("in space: walk out of the stopped ship", 0.0, false));
+            s.extend(step_out_in_space("in space: walk out of a ship drifting at 3 m/s", 3.0, false));
             s.push(hold_until("firm brake in space", &[KeyCode::KeyX], 30.0, |w| ship_vel(w).length() < 0.01));
-            s.extend(step_out_in_space("in space: step out carefully (tap W)", 0.0, 0.0, true));
+            s.extend(step_out_in_space("in space: step out carefully (tap W)", 0.0, true));
             s.push(hold_until("firm brake in space", &[KeyCode::KeyX], 30.0, |w| ship_vel(w).length() < 0.01));
             s.extend(suit_in_space());
+            s.extend(drift_behind_moving_ship());
         }
         "full" => {
             s.push(shot_step("ground"));

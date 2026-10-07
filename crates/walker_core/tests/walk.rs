@@ -38,7 +38,7 @@ impl World for Planes {
             }
             let t = (dist.max(0.0) / into).min(f64::MAX);
             if t <= 1.0 {
-                let h = Hit { distance: t * motion.length(), normal: n };
+                let h = Hit { distance: t * motion.length(), normal: n, velocity: DVec3::ZERO };
                 if best.is_none_or(|b| h.distance < b.distance) {
                     best = Some(h);
                 }
@@ -285,4 +285,26 @@ fn view_helpers() {
 
     let b = turn_body(DQuat::IDENTITY, 0.0, 0.0, 0.5);
     assert!((b * DVec3::NEG_Z - DVec3::NEG_Z).length() < 1e-12, "roll keeps the look");
+}
+
+/// Issue #9: touching a surface that moves along with the walker (a ship it drifts with) does not
+/// stop it; a standing surface does.
+#[test]
+fn moving_surface_stops_only_the_relative_velocity() {
+    struct Wall(DVec3);
+    impl World for Wall {
+        fn sweep(&self, _feet: DVec3, _up: DVec3, _motion: DVec3) -> Option<Hit> {
+            Some(Hit { distance: 0.0, normal: DVec3::Z, velocity: self.0 })
+        }
+        fn depenetrate(&self, _feet: DVec3, _up: DVec3) -> DVec3 {
+            DVec3::ZERO
+        }
+    }
+    let drift = DVec3::new(0.0, 0.0, -3.0);
+    let mut w = Walker::new(DVec3::ZERO, DVec3::NEG_Z);
+    w.vel = drift;
+    w.step(&Frame::IDENTITY, DVec3::Y, 0.0, &WalkInput::default(), &Wall(drift), DT);
+    assert!((w.vel - drift).length() < 1e-12, "moves with the wall: {:?}", w.vel);
+    w.step(&Frame::IDENTITY, DVec3::Y, 0.0, &WalkInput::default(), &Wall(DVec3::ZERO), DT);
+    assert!(w.vel.length() < 1e-12, "stopped by a standing wall: {:?}", w.vel);
 }

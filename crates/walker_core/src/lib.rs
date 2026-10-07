@@ -16,6 +16,8 @@ pub struct Hit {
     pub distance: f64,
     /// Surface normal of what was hit, pointing towards the walker.
     pub normal: DVec3,
+    /// Velocity of what was hit (a moving ship), world space; the walker stops only relative to it.
+    pub velocity: DVec3,
 }
 
 /// What the walker needs from the physics world. Positions are the feet (bottom of the
@@ -317,26 +319,29 @@ impl Walker {
             self.pos += dir * travel;
             let n = frame.rot.inverse() * hit.normal;
             let rest = motion - dir * travel;
+            // Into the surface relative to its own motion (issue #9: a moving ship).
+            let surface_v = frame.rot.inverse() * hit.velocity;
+            let into = |v: DVec3| n * (v - surface_v).dot(n).min(0.0);
             if weightless {
                 motion = rest - n * rest.dot(n).min(0.0);
-                self.vel -= n * self.vel.dot(n).min(0.0);
+                self.vel -= into(self.vel);
             } else if self.is_floor(n, up) {
                 self.grounded = true;
                 self.floor_normal = n;
                 motion = rest - n * rest.dot(n).min(0.0);
                 if !jumping {
                     // Standing on it: no further fall, slide horizontal speed along the floor.
-                    self.vel -= n * self.vel.dot(n).min(0.0);
+                    self.vel -= into(self.vel);
                 }
             } else if n.dot(up) > -0.1 {
                 // Wall or too steep (also in the air): slide along it, never upwards.
                 motion = rest - n * rest.dot(n).min(0.0);
                 motion -= up * motion.dot(up).max(0.0);
-                self.vel -= n * self.vel.dot(n).min(0.0);
+                self.vel -= into(self.vel);
                 self.vel -= up * self.vel.dot(up).max(0.0);
             } else {
                 motion = rest - n * rest.dot(n).min(0.0);
-                self.vel -= n * self.vel.dot(n).min(0.0);
+                self.vel -= into(self.vel);
             }
         }
 

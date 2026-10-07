@@ -63,16 +63,46 @@ struct AvianWorld<'a, 'w, 's> {
     shape: Collider,
     half_height: f64,
     filter: SpatialQueryFilter,
+    /// Outside a cabin: ship colliders with their ship's velocity. They sit one tick behind the
+    /// body and move, so they are swept with the motion relative to their ship (issue #9).
+    /// Empty in a cabin, where the motion is relative to the cabin already.
+    ship_colliders: Vec<(Entity, DVec3)>,
+    dt: f64,
 }
 
-impl World for AvianWorld<'_, '_, '_> {
-    fn sweep(&self, feet: DVec3, up: DVec3, motion: DVec3) -> Option<Hit> {
+impl AvianWorld<'_, '_, '_> {
+    /// First hit when moving the capsule by `motion` against the colliders `accept` lets through,
+    /// as a share of `motion` (0..1).
+    fn cast(&self, feet: DVec3, up: DVec3, motion: DVec3, accept: &dyn Fn(Entity) -> bool) -> Option<(f64, DVec3)> {
         let len = motion.length();
         let dir = Dir3::new((motion / len).as_vec3()).ok()?;
         let cfg = ShapeCastConfig { max_distance: len, ignore_origin_penetration: true, ..default() };
         let rot = DQuat::from_rotation_arc(DVec3::Y, up);
-        let hit = self.mas.spatial_query.cast_shape(&self.shape, feet + up * self.half_height, rot, dir, &cfg, &self.filter)?;
-        Some(Hit { distance: hit.distance, normal: hit.normal1 })
+        let hit = self.mas.spatial_query.cast_shape_predicate(&self.shape, feet + up * self.half_height, rot, dir, &cfg, &self.filter, accept)?;
+        Some((hit.distance / len, hit.normal1))
+    }
+}
+
+impl World for AvianWorld<'_, '_, '_> {
+    fn sweep(&self, feet: DVec3, up: DVec3, motion: DVec3) -> Option<Hit> {
+        let is_ship = |e: Entity| self.ship_colliders.iter().any(|(c, _)| *c == e);
+        let mut best = self.cast(feet, up, motion, &|e| !is_ship(e)).map(|(f, n)| (f, n, DVec3::ZERO));
+        let mut ships: Vec<DVec3> = self.ship_colliders.iter().map(|(_, v)| *v).collect();
+        ships.dedup();
+        for v in ships {
+            // Seen from the ship the walker moves by `motion` less the ship's own move this tick.
+            let rel = motion - v * self.dt;
+            if rel.length_squared() < 1e-14 {
+                continue;
+            }
+            let hit = self.cast(feet, up, rel, &|e| self.ship_colliders.iter().any(|(c, cv)| *c == e && *cv == v));
+            if let Some((f, n)) = hit
+                && best.is_none_or(|(bf, ..)| f < bf)
+            {
+                best = Some((f, n, v));
+            }
+        }
+        best.map(|(f, normal, velocity)| Hit { distance: f * motion.length(), normal, velocity })
     }
     fn depenetrate(&self, feet: DVec3, up: DVec3) -> DVec3 {
         let rot = DQuat::from_rotation_arc(DVec3::Y, up);
@@ -131,10 +161,9 @@ fn cabin_frame(
     }
 }
 
-/// Gravity in a cabin, world space. `lag` is None for another player's ship (its LAG state is not
-/// sent yet, issue #11): full ship gravity.
-fn cabin_gravity(lag: Option<&flight_core::Lag>, frame: &Frame, planet: &PlanetRes, at: DVec3) -> DVec3 {
-    lag.copied().unwrap_or_else(flight_core::Lag::full).gravity(frame.rot * DVec3::Y, flight_core::PlanetEnv::gravity_at(planet, at))
+/// Gravity in a cabin, world space.
+fn cabin_gravity(lag: &flight_core::Lag, frame: &Frame, planet: &PlanetRes, at: DVec3) -> DVec3 {
+    lag.gravity(frame.rot * DVec3::Y, flight_core::PlanetEnv::gravity_at(planet, at))
 }
 
 /// Up from a gravity vector (world space); weightless keeps `fallback`.
@@ -153,8 +182,9 @@ pub fn walker_step(
     mut stats: ResMut<WalkStats>,
     mut players: Query<&mut Player>,
     mut ships: Query<(Entity, &mut Ship, &Position, &Rotation, &LinearVelocity)>,
-    remotes: Query<(Entity, &Position, &Rotation, &LinearVelocity), With<RemoteShip>>,
+    remotes: Query<(Entity, &Position, &Rotation, &LinearVelocity, &RemoteShip)>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
+    colliders: Query<(Entity, &ColliderOf)>,
 ) {
     let dt = time.delta_secs_f64();
     let Ok(mut pl) = players.single_mut() else { return };
@@ -163,8 +193,13 @@ pub fn walker_step(
     // The cabin the walker is in: the own ship, or the proxy of another player's ship.
     let cur_e = pl.ship.unwrap_or(ship_e);
     let (frame_ship, slv) = match remotes.get(cur_e) {
-        Ok((e, p, r, v)) => (cabin_frame(e, (p, r), &floors), *v),
+        Ok((e, p, r, v, _)) => (cabin_frame(e, (p, r), &floors), *v),
         Err(_) => (own_frame, own_v),
+    };
+    // Cabin gravity of the own ship, or what another player's snapshots say (issue #11).
+    let lag_of = |e: Entity| match remotes.get(e) {
+        Ok((.., rs)) => flight_core::Lag { level: rs.lag, ..flight_core::Lag::full() },
+        Err(_) => own_lag,
     };
 
     // F: sit at the seat or stand up.
@@ -267,16 +302,24 @@ pub fn walker_step(
     }
 
     let cfg = pl.w.cfg;
+    let ship_colliders = if pl.ship.is_some() {
+        Vec::new()
+    } else {
+        let vel_of = |b: Entity| if b == ship_e { Some(own_v.0) } else { remotes.get(b).ok().map(|(.., v, _)| v.0) };
+        colliders.iter().filter_map(|(c, of)| vel_of(of.body).map(|v| (c, v))).collect()
+    };
     let world = AvianWorld {
         mas: &mas,
         shape: Collider::capsule(cfg.radius, cfg.height - 2.0 * cfg.radius),
         half_height: cfg.height * 0.5,
         filter: SpatialQueryFilter::from_mask([Layer::World, Layer::Ship, Layer::Ramp, Layer::Remote]),
+        ship_colliders,
+        dt,
     };
     let (frame, up, g) = match pl.ship {
         // In the cabin: LAG towards the floor, mixed with the planet's while it comes up or goes down.
         Some(e) => {
-            let g = cabin_gravity((e == ship_e).then_some(&own_lag), &frame_ship, &planet, frame_ship.to_world(pl.w.pos));
+            let g = cabin_gravity(&lag_of(e), &frame_ship, &planet, frame_ship.to_world(pl.w.pos));
             pl.cabin_up = frame_ship.rot.inverse() * up_from(g, frame_ship.rot * DVec3::Y);
             (frame_ship, pl.cabin_up, g.length())
         }
@@ -325,10 +368,10 @@ pub fn walker_step(
     match pl.ship {
         None => {
             let own = (ship_e, own_frame, own_v);
-            let others = remotes.iter().map(|(e, p, r, v)| (e, cabin_frame(e, (p, r), &floors), *v));
+            let others = remotes.iter().map(|(e, p, r, v, _)| (e, cabin_frame(e, (p, r), &floors), *v));
             if let Some((e, f, v)) = std::iter::once(own).chain(others).find(|(_, f, _)| cabin_contains(f.to_local(pl.w.pos), -0.2)) {
                 let look = pl.world_look(Frame::IDENTITY);
-                let up = up_from(cabin_gravity((e == ship_e).then_some(&own_lag), &f, &planet, pl.w.pos), f.rot * DVec3::Y);
+                let up = up_from(cabin_gravity(&lag_of(e), &f, &planet, pl.w.pos), f.rot * DVec3::Y);
                 pl.w.change_frame(&Frame::IDENTITY, &f, -v.0);
                 pl.ship = Some(e);
                 pl.cabin_up = f.rot.inverse() * up;

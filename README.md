@@ -1,19 +1,19 @@
 # EXO-1
 
-An open-source Godot game built by a community. A goofy, strange galaxy.
+Working title. A goofy co-op space game in a strange galaxy: walk, fly and land on procedural planets, in small groups of about 2-5 players. Written in Rust with Bevy. A private project of the initiator and a few friends.
 
-Status: scaffold only. No game code yet. The playable baseline arrives with milestone A1.
+Status: scaffold. The spikes are done; the Bevy code moves into the workspace layout next (`crates/` for code, `content/` as the asset root).
 
-Concept, vision and roadmap currently live in `exo-1-concept` and move here before the public start.
+## Start here
 
-## Repo decisions
+1. Clone this repo and `exo-1-concept` side by side.
+2. Open this repo in your coding agent and run the skill `exo-onboarding`. It sets up your machine, installs the skills and explains the workflow.
+3. Rules for agents: `AGENTS.md`. Vision, decisions and spike reports: `exo-1-concept`.
 
-- One repo for the game: code, content, schema, tests and CI together.
-- `project.godot` sits in the repo root.
-- No Git LFS. Assets stay small; CI enforces size limits.
-- License: MIT. Assets: original or CC0 only.
-- Top-level paths and risk classes are settled after the spikes and frozen before the public start.
+## Run
+
+Commands and scenario names arrive with the workspace move.
 
 ## License
 
-MIT, see `LICENSE`.
+MIT, see `LICENSE`. Assets: original or CC0 only.

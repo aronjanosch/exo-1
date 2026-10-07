@@ -177,7 +177,7 @@ pub fn update_hud(
     stats: Res<WalkStats>,
     mut view: ResMut<ViewState>,
     players: Query<&Player>,
-    ships: Query<(&Ship, &avian3d::prelude::Position, &avian3d::prelude::LinearVelocity)>,
+    ships: Query<(&Ship, &avian3d::prelude::Position, &avian3d::prelude::LinearVelocity, &avian3d::prelude::Rotation)>,
     mut hud: Query<&mut Text, With<Hud>>,
     mut phys: ResMut<crate::PhysicsTiming>,
     net: Option<Res<crate::net_live::Net>>,
@@ -192,7 +192,7 @@ pub fn update_hud(
             eprintln!("LONG FRAME {ms:.1} ms: chunks visible {} pending {}, patches {} pending {}, ring system {:.2} ms, terrain max {:.2} ms, physics {phys_ms:.2} ms", terrain.visible, terrain.pending, ring.patches.len(), ring.pending(), ring.last_frame_ms, terrain.frame_ms_max);
         }
     }
-    let (Ok(pl), Ok((ship, sp, sv)), Ok(mut text)) = (players.single(), ships.single(), hud.single_mut()) else { return };
+    let (Ok(pl), Ok((ship, sp, sv, sr)), Ok(mut text)) = (players.single(), ships.single(), hud.single_mut()) else { return };
     let mode = if pl.seated {
         format!(
             "SHIP  assist {} (H)  follow {} (L)  {:.1} m/s  limit {:.0}  ground {:.0} m  alt {:.0} m",
@@ -203,12 +203,19 @@ pub fn update_hud(
             planet.above_ground(sp.0),
             (sp.0 - planet.centre).length() - planet.radius,
         )
-    } else if pl.ship.is_some() {
-        "in cabin  [F] sit at the seat".to_string()
-    } else if pl.fly {
-        "FLY (V)".to_string()
     } else {
-        format!("walk  grounded {}", pl.w.grounded)
+        // Velocity relative to the planet centre, and its part along "up" (negative = towards the
+        // planet): the cabin carries the ship's velocity (own ship), outside it is the walker's own.
+        let (v, pos) = if pl.ship.is_some() { (sv.0 + sr.0 * pl.w.vel, sp.0) } else { (pl.w.vel, pl.w.pos) };
+        let radial = v.dot(planet.up(pos));
+        let speed = format!("speed {:.1} m/s, vertical {:+.1} m/s, altitude {:.0} m", v.length(), radial, (pos - planet.centre).length() - planet.radius);
+        if pl.ship.is_some() {
+            format!("in cabin  [F] sit at the seat  {speed}")
+        } else if pl.fly {
+            format!("FLY (V)  {speed}")
+        } else {
+            format!("walk  grounded {}  {speed}", pl.w.grounded)
+        }
     };
     **text = format!(
         "{:.2} ms  {}\nchunks {} pending {} build max {:.2} ms | patches {} pending {} | rescues {} net-only {}\norigin shifts {} (max {:.3} ms), view {:.1} km from planet centre",

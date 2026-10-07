@@ -766,6 +766,21 @@ fn foreign_steps(s: &mut Vec<Step>) {
         }
         false
     }));
+    // 3b. The snapshot of the passenger names the OWNER OF THE FOREIGN SHIP as its frame (it used
+    //     to say "my own ship", so the pilot composed it into the wrong ship and it vanished).
+    s.push(Box::new(|w, c| {
+        let pl = planet(w);
+        let proxy = w.resource::<ForeignDriver>().proxy;
+        let owner = w.get::<RemoteShip>(proxy).unwrap().owner;
+        let ship = w.query_filtered::<(&Position, &Rotation, &LinearVelocity), With<Ship>>().single(w).map(|(a, b, c)| (*a, *b, *c)).unwrap();
+        let mut q = w.query::<&Player>();
+        let player = q.single(w).unwrap();
+        let s = crate::net::build_snapshot(1, owner, 0, 2.0, 5, &pl, (&ship.0, &ship.1, &ship.2), player);
+        let dec = Snapshot::decode(&s.encode()).unwrap();
+        check(c, dec.frame == net_core::snapshot::FrameKind::Ship && dec.frame_id == 2 && dec.wp.distance(player.w.pos) < 1e-6,
+            "passenger snapshot names the foreign ship's owner and the local pose".into());
+        true
+    }));
     // 4. Walk sideways in the local frame for 12 ticks (about 1 m).
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
@@ -826,7 +841,7 @@ fn foreign_steps(s: &mut Vec<Step>) {
             let ship = w.query_filtered::<(&Position, &Rotation, &LinearVelocity), With<Ship>>().single(w).map(|(a, b, c)| (*a, *b, *c)).unwrap();
             let mut q = w.query::<&Player>();
             let player = q.single(w).unwrap();
-            let s = crate::net::build_snapshot(1, 0, 2.0, 5, &pl, (&ship.0, &ship.1, &ship.2), player);
+            let s = crate::net::build_snapshot(1, 1, 0, 2.0, 5, &pl, (&ship.0, &ship.1, &ship.2), player);
             let dec = Snapshot::decode(&s.encode()).unwrap();
             check(c, dec.frame == net_core::snapshot::FrameKind::Planet && dec.wp.distance(snap.0 - pl.centre) < 1e-6 && snap.2.is_none(),
                 "outside walker snapshot uses the shared planet frame".into());

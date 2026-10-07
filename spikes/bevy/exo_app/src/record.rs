@@ -39,7 +39,7 @@ pub fn record_tick(
     };
     let t = rec.traj.states.len() as f64 * DT;
     let seq = rec.traj.states.len() as u32;
-    let mut s = crate::net::build_snapshot(1, 0, t, seq, &planet, ship, pl);
+    let mut s = crate::net::build_snapshot(1, 1, 0, t, seq, &planet, ship, pl);
     s.flags = idx as u32;
     rec.traj.states.push(s);
     if script.is_some_and(|s| s.done) && !rec.written {

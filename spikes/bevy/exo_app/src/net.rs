@@ -14,14 +14,16 @@ pub fn walker_quat(forward: DVec3, up: DVec3) -> DQuat {
 }
 
 /// Snapshot of the local ship and walker. `owner` is the slot (1..8); the walker is described in
-/// the frame it lives in: a ship cabin (always the local ship here) or the planet.
-pub fn build_snapshot(owner: u32, planet_id: u32, t: f64, seq: u32, planet: &PlanetRes, ship: (&Position, &Rotation, &LinearVelocity), player: &Player) -> Snapshot {
+/// the frame it lives in: a ship cabin or the planet.
+/// `frame_owner`: slot of the ship whose cabin the walker is in (the own slot, or the owner of a
+/// remote ship the walker boarded). Ignored while the walker is outside.
+pub fn build_snapshot(owner: u32, frame_owner: u32, planet_id: u32, t: f64, seq: u32, planet: &PlanetRes, ship: (&Position, &Rotation, &LinearVelocity), player: &Player) -> Snapshot {
     let mut s = Snapshot::new(owner, t, ship.0.0 - planet.centre, ship.2.0, ship.1.0);
     s.planet = planet_id;
     s.seq = seq;
     if player.ship.is_some() {
         s.frame = FrameKind::Ship;
-        s.frame_id = owner;
+        s.frame_id = frame_owner;
         s.wp = player.w.pos;
         s.wv = player.w.vel;
         s.wq = walker_quat(player.w.forward, DVec3::Y);

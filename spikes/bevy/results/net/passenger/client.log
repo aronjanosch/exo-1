@@ -1,0 +1,4 @@
+planet: radius 5000 m, sea -7.49 m, bake 130 ms (total load 130 ms)
+NET START slot=2 host=false planet=0 port=17441
+NET LEAVE owner=1
+NET RESULT results/net/passenger/pass-slot2.json

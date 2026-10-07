@@ -48,6 +48,8 @@ pub struct NetConfig {
     /// Test hook (headless only): at this many seconds move the render origin by an offset.
     pub force_shift: Option<(f64, DVec3)>,
     pub bot: bool,
+    /// Test hook: after this many seconds press B (walker into the nearest remote ship).
+    pub board_after: Option<f64>,
     pub headless: bool,
 }
 
@@ -84,6 +86,7 @@ impl NetConfig {
                 (c[0], DVec3::new(c[1], c[2], c[3]))
             }),
             bot: get("--bot").is_some(),
+            board_after: get("--board-after").map(|v| v.parse().expect("--board-after=seconds")),
             headless: false,
         })
     }
@@ -121,6 +124,11 @@ pub struct NetStats {
     pub input_response_ticks: Option<u64>,
     pub lost_host: bool,
     pub joined_owners: Vec<u32>,
+    /// Ticks this walker was in a remote ship's cabin.
+    pub passenger_ticks: u64,
+    /// Ticks a remote walker was shown inside the own ship.
+    pub carried_ticks: u64,
+    pub boarded: bool,
 }
 
 #[derive(Resource)]
@@ -387,6 +395,7 @@ pub fn net_pre(
     mut net: ResMut<Net>,
     mut origin: ResMut<RenderOrigin>,
     mut players: Query<&mut Player>,
+    mut controls: ResMut<Controls>,
     own: Query<(&Position, &Rotation), (With<Ship>, Without<RemoteShip>)>,
     mut proxies: Query<(&mut Position, &mut Rotation, &mut LinearVelocity, &mut AngularVelocity), (With<RemoteShip>, Without<Ship>)>,
     mut walkers: Query<&mut WorldPose, With<RemoteWalker>>,
@@ -413,6 +422,17 @@ pub fn net_pre(
             for (wp, mut tr) in terrain {
                 tr.translation = (wp.0 - o).as_vec3();
             }
+        }
+    }
+    if let Some(t) = net.cfg.board_after {
+        if now >= t && !net.st.boarded {
+            net.st.boarded = true;
+            controls.taps.push(KeyCode::KeyB);
+        }
+    }
+    if let Ok(pl) = players.single() {
+        if pl.ship.is_some_and(|e| net.proxies.values().any(|p| *p == e)) {
+            net.st.passenger_ticks += 1;
         }
     }
     // Receive.
@@ -502,6 +522,7 @@ pub fn net_pre(
             FrameKind::Planet => (to_world(s.planet, s.wp), s.wq),
             FrameKind::Ship => {
                 let parent = if s.frame_id == net.cfg.slot {
+                    net.st.carried_ticks += 1;
                     own.single().ok().map(|(p, r)| (p.0, r.0))
                 } else {
                     samples.get(&s.frame_id).map(|x| (to_world(x.s.planet, x.s.p), x.s.q))
@@ -536,6 +557,7 @@ pub fn net_post(
     controls: Res<Controls>,
     mut phys: ResMut<PhysicsTiming>,
     ships: Query<(&Position, &Rotation, &LinearVelocity, &Ship), Without<RemoteShip>>,
+    remote_ships: Query<&RemoteShip>,
     players: Query<&Player>,
 ) {
     let begin = Instant::now();
@@ -577,7 +599,9 @@ pub fn net_post(
     if net.send_accum >= 1.0 / net.cfg.rate && net.ready && net.clock.ready {
         net.send_accum %= 1.0 / net.cfg.rate;
         net.seq += 1;
-        let s = crate::net::build_snapshot(net.cfg.slot, net.cfg.planet, net.clock.server_now(now), net.seq, &planet, (p, r, v), pl);
+        // The cabin the walker is in: own ship, or the owner of the remote ship it boarded.
+        let frame_owner = pl.ship.and_then(|e| remote_ships.get(e).ok()).map(|r| r.owner).unwrap_or(net.cfg.slot);
+        let s = crate::net::build_snapshot(net.cfg.slot, frame_owner, net.cfg.planet, net.clock.server_now(now), net.seq, &planet, (p, r, v), pl);
         let bytes = wire::encode_snapshot(&s);
         if net.cfg.host {
             let addrs: Vec<SocketAddr> = net.peers.values().map(|p| p.addr).collect();
@@ -647,7 +671,7 @@ pub fn net_finish(mut net: ResMut<Net>, origin: Res<RenderOrigin>, mut exit: Mes
     let (phys_mean, phys_p95, phys_max) = stats_json(&st.phys_ms);
     let secs = (now - 0.0).max(1e-6);
     let json = format!(
-        "{{\n  \"tag\": \"{}\", \"slot\": {}, \"host\": {}, \"planet\": {}, \"seconds\": {:.2}, \"ticks\": {},\n  \"rate\": {}, \"buffer_ms\": {:.0}, \"delay_ms\": {:.0}, \"jitter_ms\": {:.0}, \"loss_percent\": {:.1},\n  \"remote_count\": {}, \"max_remotes\": {}, \"joined_owners\": {:?},\n  \"payload_tx_bytes\": {}, \"payload_rx_bytes\": {}, \"wire_tx_bytes\": {}, \"wire_rx_bytes\": {}, \"dgram_tx\": {}, \"dgram_rx\": {},\n  \"payload_tx_kB_s\": {:.3}, \"payload_rx_kB_s\": {:.3}, \"wire_tx_kB_s\": {:.3}, \"wire_rx_kB_s\": {:.3},\n  \"injected_dropped\": {}, \"invalid\": {}, \"hold_percent\": {:.4}, \"displayed\": {},\n  \"net_pre_ms_mean\": {:.4}, \"net_pre_ms_p95\": {:.4}, \"net_pre_ms_max\": {:.4}, \"net_post_ms_mean\": {:.4}, \"net_post_ms_p95\": {:.4},\n  \"physics_step_ms_mean\": {:.4}, \"physics_step_ms_p95\": {:.4}, \"physics_step_ms_max\": {:.4},\n  \"process_cpu_ms_per_tick\": {:.4}, \"process_cpu_percent_of_one_core\": {:.2},\n  \"clock_rtt_ms\": {:.3}, \"clock_offset_s\": {:.6}, \"start_epoch_s\": {:.6}, \"input_response_ticks\": {}, \"shifts\": {}, \"shift_frames_seen\": {}, \"forced_shift\": {},\n  \"render_error_near_max_mm\": {:.4}, \"render_error_far_max_mm\": {:.4}, \"render_shift_jump_max_mm\": {:.4}, \"lost_host\": {}\n}}\n",
+        "{{\n  \"tag\": \"{}\", \"slot\": {}, \"host\": {}, \"planet\": {}, \"seconds\": {:.2}, \"ticks\": {},\n  \"rate\": {}, \"buffer_ms\": {:.0}, \"delay_ms\": {:.0}, \"jitter_ms\": {:.0}, \"loss_percent\": {:.1},\n  \"remote_count\": {}, \"max_remotes\": {}, \"joined_owners\": {:?},\n  \"payload_tx_bytes\": {}, \"payload_rx_bytes\": {}, \"wire_tx_bytes\": {}, \"wire_rx_bytes\": {}, \"dgram_tx\": {}, \"dgram_rx\": {},\n  \"payload_tx_kB_s\": {:.3}, \"payload_rx_kB_s\": {:.3}, \"wire_tx_kB_s\": {:.3}, \"wire_rx_kB_s\": {:.3},\n  \"injected_dropped\": {}, \"invalid\": {}, \"hold_percent\": {:.4}, \"displayed\": {},\n  \"net_pre_ms_mean\": {:.4}, \"net_pre_ms_p95\": {:.4}, \"net_pre_ms_max\": {:.4}, \"net_post_ms_mean\": {:.4}, \"net_post_ms_p95\": {:.4},\n  \"physics_step_ms_mean\": {:.4}, \"physics_step_ms_p95\": {:.4}, \"physics_step_ms_max\": {:.4},\n  \"process_cpu_ms_per_tick\": {:.4}, \"process_cpu_percent_of_one_core\": {:.2},\n  \"clock_rtt_ms\": {:.3}, \"clock_offset_s\": {:.6}, \"start_epoch_s\": {:.6}, \"input_response_ticks\": {}, \"shifts\": {}, \"shift_frames_seen\": {}, \"forced_shift\": {},\n  \"passenger_ticks\": {}, \"carried_ticks\": {},\n  \"render_error_near_max_mm\": {:.4}, \"render_error_far_max_mm\": {:.4}, \"render_shift_jump_max_mm\": {:.4}, \"lost_host\": {}\n}}\n",
         net.cfg.tag, net.cfg.slot, net.cfg.host, net.cfg.planet, now, st.ticks, net.cfg.rate, net.cfg.buffer * 1000.0, net.link.delay * 1000.0, net.cfg.jitter_ms, net.link.loss * 100.0,
         net.hist.len(), st.max_remotes, st.joined_owners, st.payload_tx, st.payload_rx, st.wire_tx, st.wire_rx, st.dgram_tx, st.dgram_rx,
         st.payload_tx as f64 / secs / 1000.0, st.payload_rx as f64 / secs / 1000.0, st.wire_tx as f64 / secs / 1000.0, st.wire_rx as f64 / secs / 1000.0,
@@ -655,7 +679,7 @@ pub fn net_finish(mut net: ResMut<Net>, origin: Res<RenderOrigin>, mut exit: Mes
         pre_mean, pre_p95, pre_max, post_mean, post_p95, phys_mean, phys_p95, phys_max,
         cpu_ticks * 10.0 / ticks, cpu_ticks * 10.0 / 1000.0 / secs * 100.0,
         net.clock.best_rtt.unwrap_or(0.0) * 1000.0, net.clock.offset, net.start_epoch, st.input_response_ticks.map(|t| t.to_string()).unwrap_or("null".into()), origin.shifts, st.shift_frames, st.forced_shift,
-        st.err_near_max, st.err_far_max, st.jump_max, st.lost_host,
+        st.passenger_ticks, st.carried_ticks, st.err_near_max, st.err_far_max, st.jump_max, st.lost_host,
     );
     let _ = std::fs::create_dir_all(&net.cfg.out);
     let path = net.cfg.out.join(format!("{}-slot{}.json", net.cfg.tag, net.cfg.slot));

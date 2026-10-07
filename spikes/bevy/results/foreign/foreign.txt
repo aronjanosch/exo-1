@@ -1,9 +1,10 @@
 PASS walker is in the cabin of the remote ship
 stand in the foreign cabin, 6 s: lateral standing drift 0.0000 m, deck contact 360/360 ticks, lowest feet 0.310 m, left cabin false, 180 render-origin shifts, proxy vs exact path: max 0.0000 mm, 0.0000 deg | rescues 0, walker grounded 100.0 %, net-only 0
 PASS walker on interpolated 350 m/s foreign ship: drift 0.0000 m, deck contact 360/360
+PASS passenger snapshot names the foreign ship's owner and the local pose
 walk inside the foreign cabin: moved 0.917 m along the cabin x axis | rescues 0, walker grounded 100.0 %, net-only 0
 PASS walking inside the foreign cabin uses the local frame
 foreign ship parked on the ground, walker beside it: moved 1.78 m, grounded 24/24 ticks | rescues 0, walker grounded 94.8 %, net-only 0
 PASS planet-frame walker moves beside the parked foreign ship; floor 24/24
 PASS outside walker snapshot uses the shared planet frame
-TOTAL: rescues 0, walker grounded 93.9 % of 702 steps, net-only 0, depenetrations 0, origin shifts 234 (max 0.001 ms, mean 0.000 ms), patch build mean 2.25 ms max 2.77 ms, simulated 11.7 s
+TOTAL: rescues 0, walker grounded 93.9 % of 703 steps, net-only 0, depenetrations 0, origin shifts 235 (max 0.000 ms, mean 0.000 ms), patch build mean 2.04 ms max 2.74 ms, simulated 11.7 s

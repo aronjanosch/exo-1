@@ -1,0 +1,6 @@
+==== planet walk (T5): 1.8 m/s, 300 s simulated per start, record every metre ====
+spawn, heading east: path 547 m (548 marks), biome changes 0, shortest complete stretch none (no complete stretch), biomes visited { 0: 548 }, height above sea -16.1..11.8 m, reached water yes (lowest ground -16.1 m above sea), fall-through rescues 0, frames without patch 0, frames not on floor 5355
+basin shore, heading to the centre: path 558 m (558 marks), biome changes 0, shortest complete stretch none (no complete stretch), biomes visited { 1: 558 }, height above sea -60.0..13.0 m, reached water yes (lowest ground -60.0 m above sea), fall-through rescues 0, frames without patch 0, frames not on floor 6656
+escarpment foot, heading up the step: path 313 m (314 marks), biome changes 1, shortest complete stretch 294 m, biomes visited { 1: 294, 0: 20 }, height above sea -8.4..17.1 m, reached water yes (lowest ground -8.4 m above sea), fall-through rescues 0, frames without patch 0, frames not on floor 3005
+plateau approach, heading to the centre: path 354 m (354 marks), biome changes 0, shortest complete stretch none (no complete stretch), biomes visited { 0: 354 }, height above sea 17.6..63.0 m, reached water no (lowest ground 17.6 m above sea), fall-through rescues 0, frames without patch 0, frames not on floor 1234
+total rescues 0 (sea level -7.49 m above the base radius)

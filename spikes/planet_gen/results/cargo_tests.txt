@@ -1,0 +1,57 @@
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+running 5 tests
+test t1_collision_patches_core ... T1 collision patches (core, origin rounded to f32 like the scene): 24576 samples, max |patch - height_at| = 8.809e-4 m
+ok
+test t1_one_height_function ... T1 random directions: max |height_ab - height_at| = 7.176e-13 m
+T1 mesh vertices: 54450 vertices of 50 chunks (depths 2,4,6,8), max |mesh - height_at| = 5.460e-4 m
+ok
+test t2_no_seams ... T2 depth 1: 3072 border vertices, worst partner distance 8.632e-5 m, unmatched 0
+T2 depth 3: 49152 border vertices, worst partner distance 4.316e-5 m, unmatched 0
+T2 depth 5: 786432 border vertices, worst partner distance 1.321e-5 m, unmatched 0
+ok
+test t3_macro_statistics ... T3 {
+  "bake_ms": 546.686038,
+  "macro_ms": 288.198515,
+  "sea_ms": 100.958517,
+  "stats_ms": 156.931648,
+  "sites_ms": 0.5130030000000001,
+  "threads": 8,
+  "sea_level_m": -7.487349033355713,
+  "land_fraction_macro": 0.6999998519253054,
+  "land_fraction_full": 0.7974332284851017,
+  "biome_area_share": {
+    "0": 0.4138210079397347,
+    "1": 0.45124533562652286,
+    "2": 0.10988723680896693,
+    "3": 0.02504641962476419
+  },
+  "min_height_above_sea": -90.22438493082282,
+  "max_height_above_sea": 166.66069865226746,
+  "mean_height_above_sea": 19.973532961834515,
+  "basin_run_through_centre_m": [
+    1680.0,
+    1690.0
+  ],
+  "basin_span_below_sea_m": [
+    1870.0,
+    1690.0
+  ],
+  "basin_centre_height_above_sea": -80.51696334848799,
+  "plateau_stamp_height_m": 110.0,
+  "plateau_top_mean_above_sea_m": 133.46827627409706,
+  "escarpment_stamp_step_m": 60.0,
+  "escarpment_full_step_mean_m": 73.72617134684265,
+  "site_count": 24,
+  "site_min_pair_m": 726.8904222623751,
+  "site_mean_nn_m": 2041.2206294679245,
+  "site_max_nn_m": 3413.554879883194
+}
+ok
+test t5_biome_run_lengths ... T5 core: 613 biome changes in 300000 m of path: one per 489 m, median complete stretch 271 m, shortest 1 m, stretches under 20 m: 50
+ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 19.03s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

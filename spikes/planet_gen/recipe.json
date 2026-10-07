@@ -5,12 +5,12 @@
   "macro": {
     "resolution": 512,
     "elevation": { "noise": { "seed_offset": 10, "frequency": 0.0002, "fractal": "fbm", "octaves": 3 }, "amplitude": 40.0 },
-    "moisture": { "noise": { "seed_offset": 11, "frequency": 0.0003, "fractal": "fbm", "octaves": 2 } },
+    "moisture": { "noise": { "seed_offset": 11, "frequency": 0.0008, "fractal": "fbm", "octaves": 2 } },
     "temperature": {
       "noise": { "seed_offset": 12, "frequency": 0.0003, "fractal": "fbm", "octaves": 2 },
       "base": 1.0, "latitude_gain": 0.5, "noise_gain": 0.3, "lapse_per_m": 0.004
     },
-    "landform": { "noise": { "seed_offset": 13, "frequency": 0.0004, "fractal": "none", "octaves": 1 }, "classes": 4 }
+    "landform": { "noise": { "seed_offset": 13, "frequency": 0.001, "fractal": "none", "octaves": 1 }, "classes": 4 }
   },
   "bands": [
     { "name": "region", "amplitude": 60.0, "noise": { "seed_offset": 1, "frequency": 0.0004, "fractal": "fbm", "octaves": 3 } },

@@ -1,0 +1,6 @@
+chunk nodes by depth { 0: 6, 1: 24, 2: 68, 3: 64, 4: 72, 5: 88, 6: 128, 7: 220, 8: 380 }, camera dir (-0.778174, -0.045082, 0.626429)
+T1 scene meshes: 1050 chunk meshes, 1143450 vertices, max |mesh height - height_at| = 0.000585 m
+dressing: 496 MultiMeshInstance3D nodes, 6483 instances under the visible-or-hidden chunk meshes; 24 site markers
+T1 scene collision: 183 patches, 187392 samples, max |patch height - height_at| = 0.000296 m
+  worst patch sample: i 29 j 30 ly 10.570  rebuilt-with-same-basis diff 0.0  (with the 32-bit body origin: max error 0.002291 m)
+PASS T1 scene part (tolerance 1 mm)

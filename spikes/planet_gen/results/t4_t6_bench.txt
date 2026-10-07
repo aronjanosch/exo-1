@@ -1,0 +1,15 @@
+T6 bake (all cores, from GDScript): 485.8 ms wall, core reports 485.7 ms (macro 246.7, sea level 106.1, statistics 132.4, sites 0.5), threads 8
+T6 bake, 1 thread: 2220.0 ms wall
+T4 sites: count 24, smallest pair 726.9 m, mean nearest neighbour 2041.2 m, largest nearest neighbour 3413.6 m
+T6 chunk depth 0 without scatter: mean 2344 us  P95 2437 us  max 2713 us
+T6 chunk depth 1 without scatter: mean 2310 us  P95 2394 us  max 2473 us
+T6 chunk depth 2 without scatter: mean 2260 us  P95 2358 us  max 2543 us
+T6 chunk depth 3 without scatter: mean 2150 us  P95 2244 us  max 2444 us
+T6 chunk depth 4 without scatter: mean 2013 us  P95 2058 us  max 2172 us
+T6 chunk depth 5 without scatter: mean 1930 us  P95 2048 us  max 2139 us
+T6 chunk depth 6 without scatter: mean 1811 us  P95 1865 us  max 2034 us
+T6 chunk depth 7 without scatter: mean 1747 us  P95 1856 us  max 2052 us
+T6 chunk depth 8 without scatter: mean 1664 us  P95 1737 us  max 1899 us
+T6 chunk depth 7 with scatter   : mean 1801 us  P95 1915 us  max 1980 us
+T6 chunk depth 8 with scatter   : mean 1687 us  P95 1760 us  max 1930 us
+T6 scatter at depth 8 (1500 random chunks of about 31 m): mean 9.0 instances per chunk, max 36, chunks with any 87%, mean over those 10.4; per kind totals { "canopy": 3008, "rocks": 10539 }

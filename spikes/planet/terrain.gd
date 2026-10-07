@@ -298,7 +298,6 @@ func _upload(job: Job) -> void:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	mi.position = job.center  # exactly the centre the vertices are relative to
-	mi.set_instance_shader_parameter("lod_color", LOD_COLORS[mini(job.node.depth, LOD_COLORS.size() - 1)])
 	mi.visible = false
 	# Dressing: finest chunks only. Children of the chunk mesh, so they share its origin and visibility.
 	for kind: String in job.scatter:

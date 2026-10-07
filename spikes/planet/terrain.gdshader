@@ -6,9 +6,11 @@ shader_type spatial;
 uniform float planet_radius = 3000.0;
 // World position of the planet centre (moves with origin shifts).
 uniform vec3 planet_center = vec3(0.0);
-// Spike 8: sea level above the base radius; chunk LOD colour as instance uniform.
+// Spike 8: sea level above the base radius. The chunk's LOD depth rides in the vertex colour alpha (depth / 16).
 uniform float sea_level = 0.0;
-instance uniform vec4 lod_color : source_color = vec4(1.0);
+const vec3 lod_palette[9] = vec3[9](
+	vec3(0.9, 0.1, 0.1), vec3(0.9, 0.5, 0.1), vec3(0.9, 0.9, 0.1), vec3(0.1, 0.9, 0.1),
+	vec3(0.1, 0.9, 0.9), vec3(0.1, 0.3, 0.9), vec3(0.6, 0.1, 0.9), vec3(0.9, 0.1, 0.7), vec3(1.0));
 uniform bool show_lod = false;
 uniform bool show_skirts = true;
 uniform float detail_scale = 0.5; // checker cells per metre
@@ -63,7 +65,7 @@ void fragment() {
 	col *= mix(mix(0.93, 1.0, c), 0.965, fade);
 
 	if (show_lod) {
-		col = mix(col, lod_color.rgb, 0.6);
+		col = mix(col, lod_palette[int(clamp(COLOR.a * 16.0 + 0.5, 0.0, 8.0))], 0.6);
 	}
 	ALBEDO = col;
 

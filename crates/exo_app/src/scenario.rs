@@ -493,6 +493,8 @@ fn fly_to_space_and_back() -> Vec<Step> {
             let note = format!("field strength {:.3}, gravity {:.3} m/s²", c.v["field"], c.v["g"]);
             end(w, c, note);
             check(c, c.v["field"] == 0.0, "reached space (outside the planetary field)".into());
+            let lag = with_ship(w, |s| s.lag);
+            check(c, !lag.landed && lag.level == 1.0, format!("cabin gravity on in flight ({:.0} %)", lag.level * 100.0));
             true
         }),
     ]
@@ -809,6 +811,35 @@ fn suit_in_space() -> Vec<Step> {
         }),
         wait(0.3),
     ]
+}
+
+/// G in the landed ship: cabin gravity comes up (up turns to the floor's up over 1 s, no step),
+/// and goes down again (up back to the planet's).
+fn lag_by_hand() -> Vec<Step> {
+    let toggle = |name: &'static str, on: bool| -> Step {
+        Box::new(move |w, c| {
+            if c.t == 0.0 {
+                begin(w, c, name);
+                tap(w, KeyCode::KeyG);
+            }
+            track_look(w, c);
+            if c.t >= 1.3 {
+                let f = ship_frame_of(w);
+                let pl = planet(w);
+                let up = with_player(w, |p| p.world_up(f, &pl));
+                let want = if on { f.rot * DVec3::Y } else { pl.up(f.origin) };
+                let off = up.angle_between(want).to_degrees();
+                let tilt = (f.rot * DVec3::Y).angle_between(pl.up(f.origin)).to_degrees();
+                let level = with_ship(w, |s| s.lag.level);
+                end(w, c, format!("gravity {:.0} %, up {off:.3} deg from the {} up, ship tilt {tilt:.1} deg", level * 100.0, if on { "floor's" } else { "planet's" }));
+                check(c, off < 0.1 && level == if on { 1.0 } else { 0.0 }, format!("{name}: up follows the cabin gravity ({off:.3} deg)"));
+                check_steady(c, name);
+                return true;
+            }
+            false
+        })
+    };
+    vec![toggle("G in the landed ship: cabin gravity on", true), toggle("G again: cabin gravity off", false)]
 }
 
 /// Long walks (spike 8 T5): 1.8 m/s for 300 s from four starts; steep slopes may stop the walker.
@@ -1174,6 +1205,11 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
             }));
             s.push(shot_step("landed"));
             s.extend(stand_still("idle 5 s (landed ship)"));
+            s.push(Box::new(|w, c| {
+                let lag = with_ship(w, |s| s.lag);
+                check(c, lag.landed && lag.level == 0.0, format!("cabin gravity off after landing ({:.0} %)", lag.level * 100.0));
+                true
+            }));
             s.push(Box::new(|w, _| {
                 tap(w, KeyCode::KeyF);
                 true
@@ -1201,6 +1237,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
                 false
             }));
             s.push(board("walk back in to the seat", false));
+            s.extend(lag_by_hand());
             s.extend(sit());
             s.push(hold_until("climb to 400 m above ground", &[KeyCode::Space, KeyCode::ShiftLeft], 60.0, |w| above_ground(w) > 400.0));
             s.push(wait(3.0));

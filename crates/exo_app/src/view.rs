@@ -204,6 +204,13 @@ pub fn update_camera(
     ambient.brightness = 80.0 + 320.0 * density;
 }
 
+/// Cabin gravity state; G works only while landed.
+fn lag_text(ship: &Ship) -> String {
+    let state = if ship.lag.is_on() { "on" } else { "off" };
+    let key = if ship.lag.landed { " (G)" } else { "" };
+    format!("gravity {state} {:.0} %{key}", ship.lag.level * 100.0)
+}
+
 /// Two decimals below 1 m/s, so a ship at rest can be told from a slow drift (issue #6).
 fn speed_text(v: f64) -> String {
     if v < 1.0 { format!("{v:.2}") } else { format!("{v:.1}") }
@@ -224,9 +231,10 @@ pub fn update_hud(
     let (Ok(pl), Ok((ship, sp, sv, sr)), Ok(mut text)) = (players.single(), ships.single(), hud.single_mut()) else { return };
     let mode = if pl.seated {
         format!(
-            "SHIP  assist {} (H)  follow {} (L){}  {} m/s  limit {:.0}  ground {:.0} m  alt {:.0} m",
+            "SHIP  assist {} (H)  follow {} (L)  {}{}  {} m/s  limit {:.0}  ground {:.0} m  alt {:.0} m",
             if ship.ctl.hover_assist { "on" } else { "off" },
             if ship.ctl.horizon_follow { "on" } else { "off" },
+            lag_text(ship),
             if ship.ctl.brake_active { "  BRAKE (X)" } else { "" },
             speed_text(sv.0.length()),
             ship.ctl.forward_speed_limit,
@@ -240,7 +248,7 @@ pub fn update_hud(
         let radial = v.dot(planet.up(pos));
         let speed = format!("speed {} m/s, vertical {:+.2} m/s, altitude {:.0} m", speed_text(v.length()), radial, (pos - planet.centre).length() - planet.radius);
         if pl.ship.is_some() {
-            format!("in cabin  [F] sit at the seat  {speed}")
+            format!("in cabin  [F] sit at the seat  {}  {speed}", lag_text(ship))
         } else if pl.fly {
             format!("FLY (V)  {speed}")
         } else if pl.body.is_some() {

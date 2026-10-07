@@ -58,7 +58,7 @@ Options: `--port`, `--bind`, `--rate=<Hz>` (default 30), `--buffer=<ms>` (defaul
 
 ## Controls
 
-Walker: mouse look (click to grab, Escape releases), WASD, Shift run, Space jump, F sit at the seat, V debug fly mode.
+Walker: mouse look (click to grab, Escape releases), WASD, Shift run, Space jump, F sit at the seat, G cabin gravity on/off (only in a landed ship; in flight it is always on), V debug fly mode.
 Ship: mouse pitch/yaw, W/S forward/back, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost, X firm brake, H flight assist, L planet follow, F stand up.
 Suit (outside a ship in space, no gravity): mouse turns freely, W/S forward/back, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost, X brake to rest.
 O: orbit camera (debug).

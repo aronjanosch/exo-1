@@ -5,7 +5,7 @@ use crate::Layer;
 use avian3d::prelude::*;
 use bevy::math::{DMat3, DQuat, DVec2, DVec3};
 use bevy::prelude::*;
-use flight_core::{BodyState, FlightInput, ShipController};
+use flight_core::{BodyState, FlightInput, Lag, ShipController};
 
 /// Seat position in ship space.
 pub const SEAT_POS: DVec3 = DVec3::new(0.0, 0.6, -3.0);
@@ -20,6 +20,8 @@ pub struct Ship {
     pub parked: bool,
     /// Drive while nobody pilots (scenarios only).
     pub test_input: FlightInput,
+    /// Cabin gravity (LAG): off while landed.
+    pub lag: Lag,
 }
 
 /// A ship owned by another player: kinematic proxy driven from snapshots (net module).
@@ -38,20 +40,6 @@ pub struct ShipPart {
 /// True if a point in ship space (the walker's feet) is inside the cabin.
 pub fn cabin_contains(p: DVec3, margin: f64) -> bool {
     p.x.abs() < 1.95 + margin && p.y > -margin && p.y < 2.9 + margin && p.z.abs() < 4.0 + margin
-}
-
-/// How much the ship's up counts for a walker outside the cabin at a point in ship space (feet),
-/// 0..1. Full on the ramp, eased in over its foot and over its sides, so stepping onto the ramp
-/// of a tilted ship turns "up" with the walker's steps instead of at the cabin edge (issue #7).
-pub fn ramp_up_weight(p: DVec3) -> f64 {
-    let ease = |from: f64, to: f64, x: f64| {
-        let t = ((x - from) / (to - from)).clamp(0.0, 1.0);
-        t * t * (3.0 - 2.0 * t)
-    };
-    // Ramp surface (see add_hull): y 0.3 at z 4.0 down to y -0.5 at z 6.6.
-    let surface = 0.3 + (p.z - 4.0) * (-0.8 / 2.6);
-    let above = p.y - surface;
-    ease(7.2, 5.4, p.z) * ease(2.3, 1.5, p.x.abs()) * ease(-1.0, -0.3, above) * ease(2.5, 1.5, above)
 }
 
 pub fn basis_for_up(up: DVec3) -> DQuat {
@@ -78,7 +66,7 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, up: DVec3, offset
     let (w, h, d) = (4.6f32, 3.2f32, 8.3f32);
     let ship = commands
         .spawn((
-            Ship { ctl: ShipController::default(), piloted: false, parked: true, test_input: FlightInput::default() },
+            Ship { ctl: ShipController::default(), piloted: false, parked: true, test_input: FlightInput::default(), lag: Lag::default() },
             RigidBody::Static,
             Position(pos),
             Rotation(rot),
@@ -152,6 +140,8 @@ pub fn ship_control(
 ) {
     let dt = time.delta_secs_f64();
     for (mut ship, pos, rot, mut lv, mut av) in &mut q {
+        let clearance = ship.ctl.clearance_at(planet.as_ref(), pos.0);
+        ship.lag.step(clearance, lv.0.length(), dt);
         if ship.parked {
             continue;
         }
@@ -182,31 +172,5 @@ pub fn ship_control(
         let (v, w) = ship.ctl.step(&body, &input, planet.as_ref(), dt);
         lv.0 = v;
         av.0 = w;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ramp_up_weight_is_full_on_the_ramp_and_eases_out_at_the_foot() {
-        let on = |z: f64| DVec3::new(0.0, 0.3 + (z - 4.0) * (-0.8 / 2.6), z);
-        assert_eq!(ramp_up_weight(on(4.3)), 1.0);
-        assert_eq!(ramp_up_weight(on(5.3)), 1.0);
-        assert_eq!(ramp_up_weight(DVec3::new(0.0, -0.6, 7.2)), 0.0);
-        assert_eq!(ramp_up_weight(DVec3::new(3.0, 0.0, 5.0)), 0.0, "beside the ramp");
-        assert_eq!(ramp_up_weight(DVec3::new(0.0, -4.0, 5.0)), 0.0, "under the ship");
-        // Walking in from the ground (y -0.5 beyond the foot) up the ramp: no steps, 1 cm moves
-        // change the weight only a little.
-        let path = |z: f64| if z > 6.6 { DVec3::new(0.0, -0.5, z) } else { on(z) };
-        let mut prev = ramp_up_weight(path(7.5));
-        let mut z: f64 = 7.5;
-        while z > 4.2 {
-            z -= 0.01;
-            let w = ramp_up_weight(path(z));
-            assert!((w - prev).abs() < 0.02, "step at z {z}");
-            prev = w;
-        }
     }
 }

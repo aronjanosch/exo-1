@@ -77,6 +77,65 @@ pub trait PlanetEnv {
     }
 }
 
+/// Localized artificial gravity (LAG) in the cabin. Off while the ship is landed, so a parked ship
+/// on a slope is just a slope under planet gravity; on in flight. G switches it by hand while
+/// landed (later one of the ship systems). The field comes up and goes down over `ramp_time`.
+#[derive(Clone, Copy, Debug)]
+pub struct Lag {
+    /// 0..1, share of the ship's gravity in the cabin (the rest is planet gravity).
+    pub level: f64,
+    pub landed: bool,
+    /// Switched on by hand while landed; cleared when the ship takes off or lands.
+    pub manual_on: bool,
+    pub ramp_time: f64,
+    pub g: f64,
+}
+
+impl Default for Lag {
+    fn default() -> Self {
+        // Assumed values: 1 s ramp (initiator agreed to "about 1 s"), Earth gravity.
+        Lag { level: 0.0, landed: true, manual_on: false, ramp_time: 1.0, g: 9.81 }
+    }
+}
+
+impl Lag {
+    /// Landed below `LANDED_CLEARANCE` m and `LANDED_SPEED` m/s, airborne above `AIRBORNE_CLEARANCE`.
+    pub const LANDED_CLEARANCE: f64 = 1.5;
+    pub const LANDED_SPEED: f64 = 0.3;
+    pub const AIRBORNE_CLEARANCE: f64 = 2.0;
+
+    pub fn is_on(&self) -> bool {
+        !self.landed || self.manual_on
+    }
+
+    /// G: switches the field by hand, only while landed.
+    pub fn toggle(&mut self) {
+        if self.landed {
+            self.manual_on = !self.manual_on;
+        }
+    }
+
+    /// One step. `clearance` is the ship's height above the terrain (m).
+    pub fn step(&mut self, clearance: f64, speed: f64, dt: f64) {
+        let landed = if self.landed { clearance < Self::AIRBORNE_CLEARANCE } else { clearance < Self::LANDED_CLEARANCE && speed < Self::LANDED_SPEED };
+        if landed != self.landed {
+            self.landed = landed;
+            self.manual_on = false;
+        }
+        let target = if self.is_on() { 1.0 } else { 0.0 };
+        self.level = move_towards(self.level, target, dt / self.ramp_time);
+    }
+
+    /// Gravity in the cabin, world space: the ship's (towards its floor) mixed with the planet's.
+    pub fn gravity(&self, ship_up: DVec3, planet_gravity: DVec3) -> DVec3 {
+        -ship_up * self.g * self.level + planet_gravity * (1.0 - self.level)
+    }
+}
+
+fn move_towards(x: f64, target: f64, step: f64) -> f64 {
+    x + (target - x).clamp(-step, step)
+}
+
 /// Rigid-body state. `integrate` is the test fixture's integrator: equivalent
 /// to Jolt with no contacts, no engine gravity and no damping.
 #[derive(Clone, Copy, Debug)]

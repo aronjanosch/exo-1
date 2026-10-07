@@ -25,6 +25,9 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+# Line tables keep file:line in backtraces; full debug info made each statically linked
+# test binary 2 GB and its link take about 27 s.
+debug = "line-tables-only"
 
 [profile.release]
 opt-level = 3

@@ -24,13 +24,15 @@ Status: starting point. The code comes from the spikes (tag `spike/combined-fina
 ```sh
 cargo run -p exo_app                                  # play (window)
 cargo dev                                             # same with Bevy dynamic linking, about 1 s rebuilds
-cargo test --workspace                                # all checks, includes the full scenario headless
-cargo run -p exo_app -- --headless --scenario=full    # full scenario without a window, exits non-zero on a failed check
+cargo t                                               # all checks, includes the full scenario headless (dynamic linking, about 2 s rebuilds)
+cargo scenario                                        # full scenario without a window, exits non-zero on a failed check (dynamic linking)
+cargo test --workspace                                # all checks, static build as in CI (about 8 s rebuilds)
+cargo run -p exo_app -- --headless --scenario=full    # full scenario headless, static build
 cargo run -p exo_app -- --scenario=full               # same in a window, with screenshots
 cargo run -p exo_app -- --hidden --scenario=full      # invisible window, screenshots still work
 ```
 
-A change is done when `cargo test --workspace` and the headless full scenario both pass.
+A change is done when `cargo t` and `cargo scenario` both pass. Other scenarios with dynamic linking: `cargo dev --headless --scenario=<name>`.
 
 Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (default `target/scenario`):
 

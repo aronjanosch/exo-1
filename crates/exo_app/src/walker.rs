@@ -63,16 +63,46 @@ struct AvianWorld<'a, 'w, 's> {
     shape: Collider,
     half_height: f64,
     filter: SpatialQueryFilter,
+    /// Outside a cabin: ship colliders with their ship's velocity. They sit one tick behind the
+    /// body and move, so they are swept with the motion relative to their ship (issue #9).
+    /// Empty in a cabin, where the motion is relative to the cabin already.
+    ship_colliders: Vec<(Entity, DVec3)>,
+    dt: f64,
 }
 
-impl World for AvianWorld<'_, '_, '_> {
-    fn sweep(&self, feet: DVec3, up: DVec3, motion: DVec3) -> Option<Hit> {
+impl AvianWorld<'_, '_, '_> {
+    /// First hit when moving the capsule by `motion` against the colliders `accept` lets through,
+    /// as a share of `motion` (0..1).
+    fn cast(&self, feet: DVec3, up: DVec3, motion: DVec3, accept: &dyn Fn(Entity) -> bool) -> Option<(f64, DVec3)> {
         let len = motion.length();
         let dir = Dir3::new((motion / len).as_vec3()).ok()?;
         let cfg = ShapeCastConfig { max_distance: len, ignore_origin_penetration: true, ..default() };
         let rot = DQuat::from_rotation_arc(DVec3::Y, up);
-        let hit = self.mas.spatial_query.cast_shape(&self.shape, feet + up * self.half_height, rot, dir, &cfg, &self.filter)?;
-        Some(Hit { distance: hit.distance, normal: hit.normal1 })
+        let hit = self.mas.spatial_query.cast_shape_predicate(&self.shape, feet + up * self.half_height, rot, dir, &cfg, &self.filter, accept)?;
+        Some((hit.distance / len, hit.normal1))
+    }
+}
+
+impl World for AvianWorld<'_, '_, '_> {
+    fn sweep(&self, feet: DVec3, up: DVec3, motion: DVec3) -> Option<Hit> {
+        let is_ship = |e: Entity| self.ship_colliders.iter().any(|(c, _)| *c == e);
+        let mut best = self.cast(feet, up, motion, &|e| !is_ship(e)).map(|(f, n)| (f, n, DVec3::ZERO));
+        let mut ships: Vec<DVec3> = self.ship_colliders.iter().map(|(_, v)| *v).collect();
+        ships.dedup();
+        for v in ships {
+            // Seen from the ship the walker moves by `motion` less the ship's own move this tick.
+            let rel = motion - v * self.dt;
+            if rel.length_squared() < 1e-14 {
+                continue;
+            }
+            let hit = self.cast(feet, up, rel, &|e| self.ship_colliders.iter().any(|(c, cv)| *c == e && *cv == v));
+            if let Some((f, n)) = hit
+                && best.is_none_or(|(bf, ..)| f < bf)
+            {
+                best = Some((f, n, v));
+            }
+        }
+        best.map(|(f, normal, velocity)| Hit { distance: f * motion.length(), normal, velocity })
     }
     fn depenetrate(&self, feet: DVec3, up: DVec3) -> DVec3 {
         let rot = DQuat::from_rotation_arc(DVec3::Y, up);
@@ -154,6 +184,7 @@ pub fn walker_step(
     mut ships: Query<(Entity, &mut Ship, &Position, &Rotation, &LinearVelocity)>,
     remotes: Query<(Entity, &Position, &Rotation, &LinearVelocity, &RemoteShip)>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
+    colliders: Query<(Entity, &ColliderOf)>,
 ) {
     let dt = time.delta_secs_f64();
     let Ok(mut pl) = players.single_mut() else { return };
@@ -271,11 +302,19 @@ pub fn walker_step(
     }
 
     let cfg = pl.w.cfg;
+    let ship_colliders = if pl.ship.is_some() {
+        Vec::new()
+    } else {
+        let vel_of = |b: Entity| if b == ship_e { Some(own_v.0) } else { remotes.get(b).ok().map(|(.., v, _)| v.0) };
+        colliders.iter().filter_map(|(c, of)| vel_of(of.body).map(|v| (c, v))).collect()
+    };
     let world = AvianWorld {
         mas: &mas,
         shape: Collider::capsule(cfg.radius, cfg.height - 2.0 * cfg.radius),
         half_height: cfg.height * 0.5,
         filter: SpatialQueryFilter::from_mask([Layer::World, Layer::Ship, Layer::Ramp, Layer::Remote]),
+        ship_colliders,
+        dt,
     };
     let (frame, up, g) = match pl.ship {
         // In the cabin: LAG towards the floor, mixed with the planet's while it comes up or goes down.

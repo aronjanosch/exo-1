@@ -6,4 +6,4 @@ PASS walking inside the foreign cabin uses the local frame
 foreign ship parked on the ground, walker beside it: moved 1.78 m, grounded 24/24 ticks | rescues 0, walker grounded 94.8 %, net-only 0
 PASS planet-frame walker moves beside the parked foreign ship; floor 24/24
 PASS outside walker snapshot uses the shared planet frame
-TOTAL: rescues 0, walker grounded 93.9 % of 702 steps, net-only 0, depenetrations 0, origin shifts 234 (max 0.001 ms, mean 0.000 ms), patch build mean 2.19 ms max 3.21 ms, simulated 11.7 s
+TOTAL: rescues 0, walker grounded 93.9 % of 702 steps, net-only 0, depenetrations 0, origin shifts 234 (max 0.001 ms, mean 0.000 ms), patch build mean 2.25 ms max 2.77 ms, simulated 11.7 s

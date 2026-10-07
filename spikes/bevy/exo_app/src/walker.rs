@@ -201,7 +201,7 @@ pub fn walker_step(
         mas: &mas,
         shape: Collider::capsule(cfg.radius, cfg.height - 2.0 * cfg.radius),
         half_height: cfg.height * 0.5,
-        filter: SpatialQueryFilter::from_mask([Layer::World, Layer::Ship, Layer::Ramp]),
+        filter: SpatialQueryFilter::from_mask([Layer::World, Layer::Ship, Layer::Ramp, Layer::Remote]),
     };
     let (frame, up, g) = match pl.ship {
         // In the cabin gravity points to the cabin floor (spike 3 assumption), fallback 9.81.

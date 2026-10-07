@@ -28,6 +28,8 @@ pub enum Layer {
     World,
     Ship,
     Ramp,
+    /// Hull of another player's ship (proxy): the walker stands on it, ships do not hit it.
+    Remote,
 }
 
 /// Sideways spawn offset in metres (players of one network session start 20 m apart).

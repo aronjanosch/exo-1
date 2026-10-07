@@ -37,7 +37,7 @@ pub struct NetConfig {
     pub rate: f64,
     /// Extra playout buffer in seconds (on top of the artificial one-way delay).
     pub buffer: f64,
-    /// Display-only extrapolation during an underrun, ms. 0 = hold (spike 4 rule).
+    /// Display-only extrapolation during an underrun, ms (default 100; 0 = hold, spike 4 rule).
     pub extrapolate_ms: f64,
     pub delay_ms: f64,
     pub jitter_ms: f64,
@@ -72,7 +72,7 @@ impl NetConfig {
             planet: num("--planet", 0.0) as u32,
             rate: num("--rate", 30.0).clamp(1.0, 60.0),
             buffer: num("--buffer", 150.0).clamp(0.0, 1000.0) / 1000.0,
-            extrapolate_ms: num("--extrapolate", 0.0),
+            extrapolate_ms: num("--extrapolate", 100.0),
             delay_ms: num("--delay", 0.0),
             jitter_ms: num("--jitter", 0.0),
             loss: num("--loss", 0.0),
@@ -377,7 +377,7 @@ pub fn spawn_proxy(commands: &mut Commands, owner: u32, pos: DVec3, rot: DQuat) 
             BodyInterp { prev: (pos, rot), curr: (pos, rot) },
         ))
         .id();
-    add_hull(commands, e);
+    add_hull(commands, e, crate::Layer::Remote);
     e
 }
 

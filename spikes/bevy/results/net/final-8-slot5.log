@@ -1,0 +1,15 @@
+planet: radius 5000 m, sea -7.49 m, bake 173 ms (total load 173 ms)
+NET START slot=5 host=false planet=0 port=17441
+settled after 2.0 s simulated, 217 patches
+PHASE 'takeoff' tick 156
+takeoff: 5.6 s, altitude 76 m, ground 80.2 m, speed 15.0 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'cruise' tick 491
+cruise: 8.0 s, altitude 91 m, ground 90.0 m, speed 77.4 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'turn' tick 972
+turn: turned | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'brake' tick 1213
+brake: 2.3 s, altitude 91 m, ground 91.2 m, speed 1.0 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'descend' tick 1350
+descend: 4.8 s, altitude 24 m, ground 24.9 m, speed 14.5 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'land' tick 1636
+NET RESULT /home/aron/Work/exo-1-spike10/spikes/bevy/results/net/final-8-slot5.json

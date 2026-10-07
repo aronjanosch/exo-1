@@ -78,12 +78,13 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, up: DVec3, offset
             Visibility::default(),
         ))
         .id();
-    add_hull(commands, ship);
+    add_hull(commands, ship, Layer::Ship);
     ship
 }
 
 /// Greybox cabin: visual parts, hull colliders, ramp. Shared by the own ship and the remote proxies.
-pub fn add_hull(commands: &mut Commands, ship: Entity) {
+/// `layer` is `Layer::Ship` for the own ship; remote proxies use `Layer::Remote` (no ship contact).
+pub fn add_hull(commands: &mut Commands, ship: Entity, layer: Layer) {
     let hull = Color::srgb(0.95, 0.5, 0.15);
     let inner = Color::srgb(0.55, 0.55, 0.6);
     let glass = Color::srgb(0.3, 0.8, 0.9);
@@ -107,7 +108,7 @@ pub fn add_hull(commands: &mut Commands, ship: Entity) {
             if collides {
                 e.insert((
                     Collider::cuboid(size.x as f64, size.y as f64, size.z as f64),
-                    CollisionLayers::new(Layer::Ship, [Layer::World, Layer::Ship]),
+                    CollisionLayers::new(layer, [Layer::World, Layer::Ship]),
                 ));
             }
         }

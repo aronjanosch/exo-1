@@ -30,7 +30,7 @@ python3 tools/net_run.py --players 8 --seconds 40 --tag live-8 --extra="--origin
 python3 tools/net_run.py --players 2 --seconds 40 --tag two-planets --planets 0,1 --force-shift 15,10000,10000,-10000
 ```
 
-Options: `--extrapolate=<ms>` (display only, an underrun carries on with the last velocity for at most this long; default 0 = hold), `--delay` (ms, one way), `--jitter`, `--loss` (percent), `--rate` (Hz), `--buffer` (ms). Faults are injected on the receiving side after the real UDP transport, on snapshots only.
+Options: `--extrapolate=<ms>` (display only, an underrun carries on with the last velocity for at most this long; default 100, 0 = hold), `--delay` (ms, one way), `--jitter`, `--loss` (percent), `--rate` (Hz), `--buffer` (ms). Faults are injected on the receiving side after the real UDP transport, on snapshots only.
 
 ## Two computers (LAN test for the initiator)
 
@@ -61,7 +61,7 @@ Acceptance steps (as in spike 4):
 2. **Passenger carry.** One flies, the other presses **B**, stands in the cabin while the pilot flies, turns and brakes. The passenger must stay on the deck.
 3. **Independent shift.** Fly more than 1 km from the start: the render origin shifts on that computer only (HUD line 3, "origin shifts"). The other computer must show no jump of the ship. `--origin-shift=200` shifts more often.
 4. **Reconnect.** Stop a client (Ctrl+C), start it again with the same `--slot` within a few seconds. The old ship disappears after 2 s without snapshots, the new one appears, no ghost remains. A client that loses the host for 3 s ends with a non-zero exit code.
-5. **Contact.** Fly the ships into each other and note what each side sees. This is the open design question; the report lists what is measured.
+5. **Contact.** Fly the ships into each other. Decided for this first test (initiator, 2026-10-07): **no ship-ship contact**, ships fly through each other's hull; the walker still stands on a foreign deck. Note whether passing through looks acceptable. Contact ownership stays an open design question (report).
 
 Fault injection on a real LAN run: add `--delay=100 --jitter=20 --loss=5` to a client.
 

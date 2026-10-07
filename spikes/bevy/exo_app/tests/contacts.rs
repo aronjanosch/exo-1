@@ -16,7 +16,7 @@ struct World2 {
     history: Vec<(DVec3, DQuat)>,
 }
 
-fn world(own_x: f64, ghost_x: f64, speed: f64) -> World2 {
+fn world(own_x: f64, ghost_x: f64, speed: f64, ghost_layer: exo_app::Layer) -> World2 {
     let mut app = App::new();
     app.add_plugins((MinimalPlugins, TransformPlugin, bevy::asset::AssetPlugin::default(), bevy::mesh::MeshPlugin));
     app.insert_resource(TimeUpdateStrategy::ManualDuration(TICK));
@@ -45,8 +45,9 @@ fn world(own_x: f64, ghost_x: f64, speed: f64) -> World2 {
         .spawn((RemoteShip { owner: 2 }, RigidBody::Kinematic, Position(DVec3::new(ghost_x, 100.0, 0.0)), Rotation::default(), SleepingDisabled, Transform::default()))
         .id();
     let mut commands = app.world_mut().commands();
-    add_hull(&mut commands, own);
-    add_hull(&mut commands, ghost);
+    // Contact test: the proxy hull stays on the ship layer so the two worlds collide.
+    add_hull(&mut commands, own, exo_app::Layer::Ship);
+    add_hull(&mut commands, ghost, ghost_layer);
     app.world_mut().flush();
     app.finish();
     app.cleanup();
@@ -81,7 +82,11 @@ pub struct Outcome {
 
 /// `lag` in ticks: how old the other ship's pose is in each world (spike 4: 9 and 3).
 pub fn head_on(lag: (usize, usize), ticks: usize) -> Outcome {
-    let mut w = [world(-12.0, 12.0, 15.0), world(12.0, -12.0, -15.0)];
+    head_on_with(lag, ticks, exo_app::Layer::Ship)
+}
+
+pub fn head_on_with(lag: (usize, usize), ticks: usize, layer: exo_app::Layer) -> Outcome {
+    let mut w = [world(-12.0, 12.0, 15.0, layer), world(12.0, -12.0, -15.0, layer)];
     let mut first = [-1i32; 2];
     let mut max_dis = 0.0f64;
     for i in 0..ticks {
@@ -153,4 +158,13 @@ fn head_on_contact_disagreement() {
     // Both authorities detect the contact (spike 4: ticks 54 and 41).
     let spike4 = rows.iter().find(|o| o.lag == (9, 3)).unwrap();
     assert!(spike4.contact_ticks.0 >= 0 && spike4.contact_ticks.1 >= 0, "both worlds detect the contact");
+}
+
+/// Decided for the first playable (initiator, 2026-10-07): no ship-ship contact. The proxy hull
+/// is on `Layer::Remote`: ships fly through it, nothing changes their velocity.
+#[test]
+fn remote_hull_does_not_touch_ships() {
+    let o = head_on_with((9, 3), 180, exo_app::Layer::Remote);
+    assert_eq!(o.contact_ticks, (-1, -1), "no velocity change in either world");
+    assert!((o.final_vel.0 - 15.0).abs() < 1e-6 && (o.final_vel.1 + 15.0).abs() < 1e-6, "{:?}", o.final_vel);
 }

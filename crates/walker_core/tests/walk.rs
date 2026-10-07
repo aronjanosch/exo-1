@@ -174,3 +174,30 @@ fn airborne_walker_does_not_climb_steep_slope() {
     println!("airborne against 57 deg: highest {top:.3} m");
     assert!(top < 0.3);
 }
+
+/// Issue #5: weightless the walker keeps the velocity it brought (e.g. from the ship), input does
+/// not move it, and a floor it drifts along does not stop it.
+#[test]
+fn weightless_walker_keeps_its_velocity() {
+    let world = Planes { planes: vec![], frame: Frame::IDENTITY };
+    let mut w = Walker::new(DVec3::ZERO, DVec3::NEG_Z);
+    w.grounded = true;
+    w.vel = DVec3::new(0.0, -3.0, 2.0);
+    let input = WalkInput { dir: DVec2::new(1.0, 1.0), run: true, jump: true, ..Default::default() };
+    for _ in 0..120 {
+        w.step(&Frame::IDENTITY, DVec3::Y, 0.0, &input, &world, DT);
+    }
+    assert!((w.vel - DVec3::new(0.0, -3.0, 2.0)).length() < 1e-12, "velocity {:?}", w.vel);
+    assert!((w.pos - DVec3::new(0.0, -6.0, 4.0)).length() < 1e-9, "position {:?}", w.pos);
+    assert!(!w.grounded);
+
+    // Drifting into a floor: the part into it stops, the part along it stays.
+    let world = flat();
+    let mut w = Walker::new(DVec3::new(0.0, 0.5, 0.0), DVec3::NEG_Z);
+    w.vel = DVec3::new(2.0, -1.0, 0.0);
+    for _ in 0..120 {
+        w.step(&Frame::IDENTITY, DVec3::Y, 0.0, &WalkInput::default(), &world, DT);
+    }
+    assert!((w.vel - DVec3::new(2.0, 0.0, 0.0)).length() < 1e-9, "velocity {:?}", w.vel);
+    assert!(w.pos.y >= 0.0 && w.pos.x > 3.9, "position {:?}", w.pos);
+}

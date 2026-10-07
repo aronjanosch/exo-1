@@ -160,20 +160,25 @@ impl Walker {
             self.pos += frame.rot.inverse() * push;
         }
 
-        let right = self.forward.cross(up);
-        let speed = if input.run { self.cfg.run_speed } else { self.cfg.walk_speed };
-        let horizontal = (right * input.dir.x + self.forward * input.dir.y).clamp_length_max(1.0) * speed;
-        let mut vertical = self.vel.dot(up);
+        // Weightless: nothing presses the feet onto a floor, so the walker can neither stand nor
+        // push off; it keeps its velocity (issue #5). Moving with equipment comes later (#8).
+        let weightless = gravity == 0.0;
         let mut jumping = false;
-        if self.grounded {
-            jumping = input.jump;
-            vertical = if jumping { self.cfg.jump_speed } else { 0.0 };
-        } else {
-            vertical -= gravity * dt;
+        if !weightless {
+            let right = self.forward.cross(up);
+            let speed = if input.run { self.cfg.run_speed } else { self.cfg.walk_speed };
+            let horizontal = (right * input.dir.x + self.forward * input.dir.y).clamp_length_max(1.0) * speed;
+            let mut vertical = self.vel.dot(up);
+            if self.grounded {
+                jumping = input.jump;
+                vertical = if jumping { self.cfg.jump_speed } else { 0.0 };
+            } else {
+                vertical -= gravity * dt;
+            }
+            self.vel = horizontal + up * vertical;
         }
-        self.vel = horizontal + up * vertical;
 
-        let was_grounded = self.grounded;
+        let was_grounded = self.grounded && !weightless;
         self.grounded = false;
         let mut motion = self.vel * dt;
         for _ in 0..self.cfg.max_slides {
@@ -192,7 +197,10 @@ impl Walker {
             self.pos += dir * travel;
             let n = frame.rot.inverse() * hit.normal;
             let rest = motion - dir * travel;
-            if self.is_floor(n, up) {
+            if weightless {
+                motion = rest - n * rest.dot(n).min(0.0);
+                self.vel -= n * self.vel.dot(n).min(0.0);
+            } else if self.is_floor(n, up) {
                 self.grounded = true;
                 self.floor_normal = n;
                 motion = rest - n * rest.dot(n).min(0.0);

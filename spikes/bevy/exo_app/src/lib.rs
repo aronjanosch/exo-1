@@ -173,7 +173,7 @@ pub fn build_app(o: &Options) -> App {
         app.add_systems(FixedLast, view::record_player_view);
         app.add_systems(
             Update,
-            (controls::read_input, view::add_ship_visuals, view::update_camera, terrain::update_terrain, view::update_hud).chain().after(ring::update_ring),
+            (controls::read_input, view::add_ship_visuals, view::add_remote_walker_visuals, view::update_camera, terrain::update_terrain, view::update_hud).chain().after(ring::update_ring),
         );
     }
     if let Some(cfg) = &o.net {

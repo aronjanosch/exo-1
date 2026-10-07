@@ -291,6 +291,34 @@ impl Net {
     }
 }
 
+impl Net {
+    /// One line for the HUD of windowed runs.
+    pub fn hud_line(&self) -> String {
+        let secs = self.now().max(1e-3);
+        let state = if self.cfg.host {
+            format!("host, {} clients", self.peers.len())
+        } else if !self.ready {
+            "joining...".to_string()
+        } else {
+            format!("client, rtt {:.0} ms", self.clock.best_rtt.unwrap_or(0.0) * 1000.0)
+        };
+        format!(
+            "net slot {} {} | planet {} | remote ships {} | holds {:.2} % | {:.1} kB/s in, {:.1} kB/s out | {} Hz + {:.0} ms buffer, delay {:.0} ms, loss {:.0} %",
+            self.cfg.slot,
+            state,
+            self.cfg.planet,
+            self.proxies.len(),
+            100.0 * (self.st.holds as f64) / (self.st.displayed.max(1) as f64),
+            self.st.wire_rx as f64 / secs / 1000.0,
+            self.st.wire_tx as f64 / secs / 1000.0,
+            self.cfg.rate,
+            self.cfg.buffer * 1000.0,
+            self.link.delay * 1000.0,
+            self.link.loss * 100.0,
+        )
+    }
+}
+
 fn read_cpu_ticks() -> u64 {
     // utime + stime of this process in clock ticks (USER_HZ is 100 on Linux). 0 elsewhere.
     std::fs::read_to_string("/proc/self/stat")

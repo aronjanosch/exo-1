@@ -75,6 +75,20 @@ pub fn add_ship_visuals(
     }
 }
 
+/// Capsule for the walker of another player (spike 10).
+pub fn add_remote_walker_visuals(
+    mut commands: Commands,
+    q: Query<Entity, Added<crate::net_live::RemoteWalker>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for e in &q {
+        commands.entity(e).with_children(|c| {
+            c.spawn((Mesh3d(meshes.add(Capsule3d::new(0.35, 1.1))), MeshMaterial3d(materials.add(Color::srgb(0.25, 0.95, 0.45))), Transform::from_xyz(0.0, 0.9, 0.0)));
+        });
+    }
+}
+
 pub fn record_player_view(
     mut players: Query<(&Player, Option<&mut PlayerInterp>, Entity)>,
     ships: Query<(Entity, &avian3d::prelude::Position, &avian3d::prelude::Rotation), With<Ship>>,
@@ -166,6 +180,7 @@ pub fn update_hud(
     ships: Query<(&Ship, &avian3d::prelude::Position, &avian3d::prelude::LinearVelocity)>,
     mut hud: Query<&mut Text, With<Hud>>,
     mut phys: ResMut<crate::PhysicsTiming>,
+    net: Option<Res<crate::net_live::Net>>,
 ) {
     let phys_ms = std::mem::take(&mut phys.frame_ms);
     let ms = time.delta_secs_f64() * 1000.0;
@@ -200,4 +215,8 @@ pub fn update_hud(
         ms, mode, terrain.visible, terrain.pending, terrain.build_ms_max, ring.patches.len(), ring.pending(), stats.rescues, stats.net_only,
         origin.shifts, origin.shift_ms_max, (origin.view - planet.centre).length() / 1000.0,
     );
+    if let Some(n) = net {
+        text.0.push('\n');
+        text.0.push_str(&n.hud_line());
+    }
 }

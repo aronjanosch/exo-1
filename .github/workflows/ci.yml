@@ -12,7 +12,10 @@ on:
     paths-ignore:
       - "**.md"
       - ".agents/**"
+      - "docs/**"
       - "LICENSE"
+      - ".gitignore"
+      - "skills-lock.json"
   workflow_dispatch:
 
 # A newer push to the same branch cancels the run still going.

@@ -186,6 +186,29 @@ fn face_towards(w: &mut World, target: DVec3) {
     });
 }
 
+/// Where the walker looks, world space (camera direction without interpolation).
+fn world_look(w: &mut World) -> DVec3 {
+    let f = ship_frame_of(w);
+    let pl = planet(w);
+    with_player(w, |p| {
+        let fwd = if p.ship.is_some() { f.rot * p.w.forward } else { p.w.forward };
+        walker_core::look_dir(fwd, p.world_up(f, &pl), p.pitch)
+    })
+}
+
+/// Issue #7: largest change of the look direction from one tick to the next (degrees), in
+/// `c.v["look_jump"]`. Call every tick of a step; the first tick only starts it (setup turns).
+fn track_look(w: &mut World, c: &mut Ctx) {
+    let l = world_look(w);
+    if c.t > 0.0 {
+        let jump = l.angle_between(c.p["look"]).to_degrees();
+        c.v.insert("look_jump", c.v.get("look_jump").copied().unwrap_or(0.0).max(jump));
+    } else {
+        c.v.insert("look_jump", 0.0);
+    }
+    c.p.insert("look", l);
+}
+
 fn check(c: &mut Ctx, ok: bool, note: String) {
     let line = format!("{} {note}", if ok { "PASS" } else { "FAIL" });
     println!("{line}");
@@ -323,10 +346,13 @@ fn board(name: &'static str, from_outside: bool) -> Step {
             face_towards(w, f.to_world(if from_outside { DVec3::new(0.0, 1.5, 0.0) } else { SEAT_POS }));
             keys(w, &[KeyCode::KeyW], true);
         }
+        track_look(w, c);
         if c.t >= 5.0 {
             keys(w, &[KeyCode::KeyW], false);
         }
         if c.t >= 5.3 {
+            let jump = c.v["look_jump"];
+            check(c, jump < 0.5, format!("{name}: look direction steady when entering the cabin (largest step {jump:.3} deg)"));
             let e = ship_e(w);
             let (inside, at_seat) = with_player(w, |p| (p.ship == Some(e), p.ship == Some(e) && p.w.pos.distance(SEAT_POS) < 1.8));
             let f = ship_frame_of(w);
@@ -988,6 +1014,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
                     face_towards(w, f.to_world(DVec3::new(0.0, 1.0, 12.0)));
                     keys(w, &[KeyCode::KeyW], true);
                 }
+                track_look(w, c);
                 if c.t >= 4.0 {
                     keys(w, &[KeyCode::KeyW], false);
                 }
@@ -996,6 +1023,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
                     let agl = above_ground(w);
                     end(w, c, format!("outside {outside}, {agl:.2} m above ground"));
                     check(c, outside && agl.abs() < 0.5, "walked out of the landed ship onto the ground".into());
+                    let jump = c.v["look_jump"];
+                    check(c, jump < 0.5, format!("look direction steady when leaving the cabin (largest step {jump:.3} deg)"));
                     return true;
                 }
                 false

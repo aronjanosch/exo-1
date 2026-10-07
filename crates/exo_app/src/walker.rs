@@ -12,6 +12,8 @@ use bevy::prelude::*;
 use walker_core::{Frame, Hit, WalkInput, Walker, World};
 
 const MOUSE_SENSITIVITY: f64 = 0.0025;
+/// Largest look angle above or below the horizon, radians.
+const PITCH_LIMIT: f64 = 1.5;
 pub const EYE_HEIGHT: f64 = 1.7;
 
 #[derive(Component)]
@@ -160,7 +162,7 @@ pub fn walker_step(
 
     let m = std::mem::take(&mut controls.mouse);
     let yaw = -m.x as f64 * MOUSE_SENSITIVITY;
-    pl.pitch = (pl.pitch - m.y as f64 * MOUSE_SENSITIVITY).clamp(-1.5, 1.5);
+    pl.pitch = (pl.pitch - m.y as f64 * MOUSE_SENSITIVITY).clamp(-PITCH_LIMIT, PITCH_LIMIT);
     let input = WalkInput {
         dir: DVec2::new(controls.axis(KeyCode::KeyD, KeyCode::KeyA), controls.axis(KeyCode::KeyW, KeyCode::KeyS)),
         run: controls.pressed(KeyCode::ShiftLeft),
@@ -237,14 +239,27 @@ pub fn walker_step(
             let own = (ship_e, own_frame, own_v);
             let others = remotes.iter().map(|(e, p, r, v)| (e, cabin_frame(e, (p, r), &floors), *v));
             if let Some((e, f, v)) = std::iter::once(own).chain(others).find(|(_, f, _)| cabin_contains(f.to_local(pl.w.pos), -0.2)) {
+                let look = walker_core::look_dir(pl.w.forward, planet.up(pl.w.pos), pl.pitch);
                 pl.w.change_frame(&Frame::IDENTITY, &f, -v.0);
                 pl.ship = Some(e);
+                keep_look(&mut pl, look, &f, f.rot * DVec3::Y);
             }
         }
         Some(_) if !cabin_contains(pl.w.pos, 0.3) => {
+            let look = walker_core::look_dir(frame_ship.rot * pl.w.forward, frame_ship.rot * DVec3::Y, pl.pitch);
             pl.w.change_frame(&frame_ship, &Frame::IDENTITY, slv.0);
             pl.ship = None;
+            let up = planet.up(pl.w.pos);
+            keep_look(&mut pl, look, &Frame::IDENTITY, up);
         }
         _ => {}
     }
+}
+
+/// After a frame change: heading and pitch about the new up (world space), so the walker keeps
+/// looking where it looked (issue #7). The camera blends the horizon (`view.rs`).
+fn keep_look(pl: &mut Player, look: DVec3, frame: &Frame, up: DVec3) {
+    let (f, pitch) = walker_core::split_look(look, up, frame.rot * pl.w.forward);
+    pl.w.forward = frame.rot.inverse() * f;
+    pl.pitch = pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
 }

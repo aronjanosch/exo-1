@@ -44,6 +44,27 @@ impl Frame {
     }
 }
 
+/// Look direction from a heading (perpendicular to `up`) and a pitch (radians, positive looks up).
+pub fn look_dir(forward: DVec3, up: DVec3, pitch: f64) -> DVec3 {
+    forward * pitch.cos() + up * pitch.sin()
+}
+
+/// Inverse of `look_dir` about another `up`: heading and pitch that give `look`. Used on a frame
+/// change, so the view keeps its direction in the world (issue #7). Looking straight along `up`
+/// has no heading; then `fallback` (projected) is used.
+pub fn split_look(look: DVec3, up: DVec3, fallback: DVec3) -> (DVec3, f64) {
+    let look = look.normalize();
+    let pitch = look.dot(up).clamp(-1.0, 1.0).asin();
+    let mut f = look - up * look.dot(up);
+    if f.length_squared() < 1e-12 {
+        f = fallback - up * fallback.dot(up);
+    }
+    if f.length_squared() < 1e-12 {
+        f = up.any_orthonormal_vector();
+    }
+    (f.normalize(), pitch)
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct WalkerConfig {
     pub radius: f64,

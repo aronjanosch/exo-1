@@ -201,3 +201,18 @@ fn weightless_walker_keeps_its_velocity() {
     assert!((w.vel - DVec3::new(2.0, 0.0, 0.0)).length() < 1e-9, "velocity {:?}", w.vel);
     assert!(w.pos.y >= 0.0 && w.pos.x > 3.9, "position {:?}", w.pos);
 }
+
+/// Issue #7: re-splitting the look direction about a tilted up keeps it in the world.
+#[test]
+fn split_look_keeps_the_world_direction() {
+    let up = DVec3::Y;
+    let forward = DVec3::NEG_Z;
+    let look = look_dir(forward, up, 0.4);
+    let tilted = DQuat::from_rotation_z(0.3) * DQuat::from_rotation_x(-0.2) * up;
+    let (f, pitch) = split_look(look, tilted, forward);
+    assert!(f.dot(tilted).abs() < 1e-12, "heading not perpendicular to up");
+    assert!((look_dir(f, tilted, pitch) - look).length() < 1e-12);
+    // Straight up: no heading, the fallback is used.
+    let (f, pitch) = split_look(DVec3::Y, DVec3::Y, DVec3::NEG_Z);
+    assert!((f - DVec3::NEG_Z).length() < 1e-12 && (pitch - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+}

@@ -31,6 +31,21 @@ pub struct ViewState {
     pub orbit: bool,
     pub orbit_yaw: f64,
     pub orbit_pitch: f64,
+    /// Cabin the walker was in last frame, to notice a frame change.
+    cabin: Option<Entity>,
+    /// Camera rotation shown last frame.
+    last_rot: DQuat,
+    /// Horizon blend after a frame change: offset from the new view to the old one, and its age (s).
+    horizon: Option<(DQuat, f64)>,
+}
+
+/// Time the horizon takes to turn into the new frame (issue #7). Start value, tune by feel.
+const HORIZON_BLEND_SECS: f64 = 0.4;
+
+/// Rotation applied on top of the new view: starts at `offset` (the old view), eases to none.
+fn horizon_offset(offset: DQuat, age: f64) -> DQuat {
+    let x = (age / HORIZON_BLEND_SECS).clamp(0.0, 1.0);
+    offset.slerp(DQuat::IDENTITY, x * x * (3.0 - 2.0 * x))
 }
 
 pub fn setup_view(mut commands: Commands) {
@@ -120,6 +135,7 @@ fn look_basis(fwd: DVec3, up: DVec3) -> DQuat {
 
 #[allow(clippy::too_many_arguments)]
 pub fn update_camera(
+    time: Res<Time>,
     fixed: Res<Time<Fixed>>,
     planet: Res<PlanetRes>,
     mut origin: ResMut<RenderOrigin>,
@@ -152,8 +168,25 @@ pub fn update_camera(
         let up = pi.prev.1.lerp(pi.curr.1, f).normalize();
         let fwd = pi.prev.2.lerp(pi.curr.2, f).normalize();
         pose.pos = feet + up * EYE_HEIGHT;
-        pose.rot = look_basis(fwd, up) * DQuat::from_rotation_x(pl.pitch);
+        let rot = look_basis(fwd, up) * DQuat::from_rotation_x(pl.pitch);
+        // Entering or leaving a cabin turns "up": the walker keeps its look direction, the
+        // horizon turns over HORIZON_BLEND_SECS from where it was.
+        if pl.ship != view.cabin {
+            view.horizon = Some((view.last_rot * rot.inverse(), 0.0));
+        }
+        pose.rot = match view.horizon {
+            Some((offset, age)) if age < HORIZON_BLEND_SECS => {
+                view.horizon = Some((offset, age + time.delta_secs_f64()));
+                horizon_offset(offset, age) * rot
+            }
+            _ => {
+                view.horizon = None;
+                rot
+            }
+        };
     }
+    view.cabin = pl.ship;
+    view.last_rot = pose.rot;
     origin.view = pose.pos;
     let density = planet.density_at(pose.pos) as f32;
     let sky = Color::srgb(0.02, 0.02, 0.05).mix(&Color::srgb(0.45, 0.62, 0.85), density);
@@ -212,5 +245,27 @@ pub fn update_hud(
     if let Some(n) = net {
         text.0.push('\n');
         text.0.push_str(&n.hud_line());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Issue #7: the horizon starts where it was and ends in the new frame, without a step.
+    #[test]
+    fn horizon_blend_starts_at_the_old_view_and_ends_in_the_new() {
+        let offset = DQuat::from_rotation_z(0.5);
+        assert!(horizon_offset(offset, 0.0).angle_between(offset) < 1e-6);
+        assert!(horizon_offset(offset, HORIZON_BLEND_SECS).angle_between(DQuat::IDENTITY) < 1e-6);
+        let dt = 1.0 / 144.0;
+        let mut age = 0.0;
+        let mut prev = offset;
+        while age < HORIZON_BLEND_SECS {
+            age += dt;
+            let q = horizon_offset(offset, age);
+            assert!(q.angle_between(prev) < 0.5 * 1.5 * dt / HORIZON_BLEND_SECS + 1e-6, "step too large at {age}");
+            prev = q;
+        }
     }
 }

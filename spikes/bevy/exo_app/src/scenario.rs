@@ -706,13 +706,9 @@ fn foreign_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, _| {
         let pl = planet(w);
         let p0 = DVec3::new(0.0, pl.radius + 20_000.0, 0.0);
-        let proxy = w.resource_scope(|w, _: Mut<RenderOrigin>| {
-            let mut sys = bevy::ecs::system::SystemState::<Commands>::new(w);
-            let mut commands = sys.get_mut(w);
-            let e = crate::net_live::spawn_proxy(&mut commands, 2, p0, bevy::math::DQuat::IDENTITY);
-            sys.apply(w);
-            e
-        });
+        let mut commands = w.commands();
+        let proxy = crate::net_live::spawn_proxy(&mut commands, 2, p0, bevy::math::DQuat::IDENTITY);
+        w.flush();
         w.insert_resource(ForeignDriver { proxy, buf: Buffer::new(), tick: 0, p0, parked: None, max_pos_err: 0.0, max_rot_err_deg: 0.0 });
         true
     }));

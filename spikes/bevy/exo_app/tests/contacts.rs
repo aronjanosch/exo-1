@@ -44,11 +44,10 @@ fn world(own_x: f64, ghost_x: f64, speed: f64) -> World2 {
         .world_mut()
         .spawn((RemoteShip { owner: 2 }, RigidBody::Kinematic, Position(DVec3::new(ghost_x, 100.0, 0.0)), Rotation::default(), SleepingDisabled, Transform::default()))
         .id();
-    let mut sys = bevy::ecs::system::SystemState::<Commands>::new(app.world_mut());
-    let mut commands = sys.get_mut(app.world_mut());
+    let mut commands = app.world_mut().commands();
     add_hull(&mut commands, own);
     add_hull(&mut commands, ghost);
-    sys.apply(app.world_mut());
+    app.world_mut().flush();
     app.finish();
     app.cleanup();
     World2 { app, own, ghost, history: Vec::new() }
@@ -105,7 +104,10 @@ pub fn head_on(lag: (usize, usize), ticks: usize) -> Outcome {
             w[k].app.update();
         }
         for k in 0..2 {
-            if first[k] < 0 && w[k].own_vel().x.abs() < 10.0 {
+            // First tick the own ship's velocity differs from its start by more than 1 m/s (a
+            // kinematic proxy can also push it back to its own speed in one tick, so a speed
+            // threshold would miss that).
+            if first[k] < 0 && (w[k].own_vel().x - if k == 0 { 15.0 } else { -15.0 }).abs() > 1.0 {
                 first[k] = i as i32;
             }
             let ghost = w[k].app.world().get::<Position>(w[k].ghost).unwrap().0;

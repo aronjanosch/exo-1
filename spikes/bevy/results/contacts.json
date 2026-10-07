@@ -1,0 +1,8 @@
+[
+  {"lag_ticks":[0,0],"contact_ticks":[40,40],"max_disagreement_m":0.535,"final_vx":[-15.499,15.360],"final_x":[-38.033,38.229],"final_a_authority_vs_proxy_m":0.000},
+  {"lag_ticks":[3,3],"contact_ticks":[42,42],"max_disagreement_m":1.047,"final_vx":[-4.511,-0.106],"final_x":[-13.273,2.554],"final_a_authority_vs_proxy_m":0.254},
+  {"lag_ticks":[9,9],"contact_ticks":[45,45],"max_disagreement_m":2.924,"final_vx":[3.622,19.061],"final_x":[4.085,37.014],"final_a_authority_vs_proxy_m":0.403},
+  {"lag_ticks":[9,3],"contact_ticks":[45,42],"max_disagreement_m":3.832,"final_vx":[-11.331,14.191],"final_x":[-19.688,29.631],"final_a_authority_vs_proxy_m":1.191},
+  {"lag_ticks":[18,18],"contact_ticks":[49,49],"max_disagreement_m":5.136,"final_vx":[-15.152,15.122],"final_x":[-33.264,33.187],"final_a_authority_vs_proxy_m":4.561},
+  {"lag_ticks":[18,3],"contact_ticks":[49,42],"max_disagreement_m":4.805,"final_vx":[-15.152,15.007],"final_x":[-33.264,36.076],"final_a_authority_vs_proxy_m":0.760}
+]

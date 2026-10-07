@@ -37,6 +37,8 @@ pub struct NetConfig {
     pub rate: f64,
     /// Extra playout buffer in seconds (on top of the artificial one-way delay).
     pub buffer: f64,
+    /// Display-only extrapolation during an underrun, ms. 0 = hold (spike 4 rule).
+    pub extrapolate_ms: f64,
     pub delay_ms: f64,
     pub jitter_ms: f64,
     pub loss: f64,
@@ -70,6 +72,7 @@ impl NetConfig {
             planet: num("--planet", 0.0) as u32,
             rate: num("--rate", 30.0).clamp(1.0, 60.0),
             buffer: num("--buffer", 150.0).clamp(0.0, 1000.0) / 1000.0,
+            extrapolate_ms: num("--extrapolate", 0.0),
             delay_ms: num("--delay", 0.0),
             jitter_ms: num("--jitter", 0.0),
             loss: num("--loss", 0.0),
@@ -457,7 +460,7 @@ pub fn net_pre(
     }
     // Playout: everybody is shown at the same shared timestamp, delay and buffer behind now.
     let target = server_now - net.link.delay - net.cfg.buffer;
-    let samples: HashMap<u32, net_core::buffer::Sample> = net.hist.iter().filter_map(|(o, b)| b.sample(target).map(|s| (*o, s))).collect();
+    let samples: HashMap<u32, net_core::buffer::Sample> = net.hist.iter().filter_map(|(o, b)| b.sample_extrapolated(target, net.cfg.extrapolate_ms / 1000.0).map(|s| (*o, s))).collect();
     net.st.max_remotes = net.st.max_remotes.max(samples.len());
     for (&owner, sample) in &samples {
         let s = &sample.s;

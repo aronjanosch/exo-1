@@ -77,7 +77,7 @@ impl Options {
             let (k, v) = a.split_once('=').unwrap_or((a.as_str(), ""));
             match k {
                 "--net-host" | "--net-connect" | "--bind" | "--port" | "--slot" | "--planet" | "--rate" | "--buffer" | "--delay" | "--jitter" | "--loss" | "--seconds" | "--tag"
-                | "--net-out" | "--force-shift" | "--bot" => net_args.push((k.to_string(), v.to_string())),
+                | "--net-out" | "--extrapolate" | "--force-shift" | "--bot" => net_args.push((k.to_string(), v.to_string())),
                 "--scenario" => o.scenario = Some(v.to_string()),
                 "--headless" => o.headless = true,
                 "--hidden" => o.hidden = true,

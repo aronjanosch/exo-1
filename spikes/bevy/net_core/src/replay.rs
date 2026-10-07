@@ -139,6 +139,11 @@ impl Acc {
 }
 
 pub fn run_case(tr: &Trajectory, case: Case) -> CaseResult {
+    run_case_extrapolated(tr, case, 0.0)
+}
+
+/// `extrapolation` in seconds: how long an underrun is carried on with the last velocity.
+pub fn run_case_extrapolated(tr: &Trajectory, case: Case, extrapolation: f64) -> CaseResult {
     let remotes = (case.players - 1) as usize;
     let mut links: Vec<Link<[u8; SIZE]>> = (0..remotes).map(|o| Link::new(case.delay_ms as f64, if case.delay_ms > 0 { 20.0 } else { 0.0 }, case.loss_percent as f64, 4400 + o as u64)).collect();
     let mut buffers: Vec<Buffer> = (0..remotes).map(|_| Buffer::new()).collect();
@@ -174,7 +179,7 @@ pub fn run_case(tr: &Trajectory, case: Case) -> CaseResult {
                     buffers[o].push(s);
                 }
             }
-            let Some(shown) = buffers[o].sample(target) else { continue };
+            let Some(shown) = buffers[o].sample_extrapolated(target, extrapolation) else { continue };
             if target < 0.5 {
                 continue;
             }

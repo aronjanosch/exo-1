@@ -30,7 +30,7 @@ python3 tools/net_run.py --players 8 --seconds 40 --tag live-8 --extra="--origin
 python3 tools/net_run.py --players 2 --seconds 40 --tag two-planets --planets 0,1 --force-shift 15,10000,10000,-10000
 ```
 
-Options: `--delay` (ms, one way), `--jitter`, `--loss` (percent), `--rate` (Hz), `--buffer` (ms). Faults are injected on the receiving side after the real UDP transport, on snapshots only.
+Options: `--extrapolate=<ms>` (display only, an underrun carries on with the last velocity for at most this long; default 0 = hold), `--delay` (ms, one way), `--jitter`, `--loss` (percent), `--rate` (Hz), `--buffer` (ms). Faults are injected on the receiving side after the real UDP transport, on snapshots only.
 
 ## Two computers (LAN test for the initiator)
 

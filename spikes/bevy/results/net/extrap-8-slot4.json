@@ -1,0 +1,13 @@
+{
+  "tag": "extrap-8", "slot": 4, "host": false, "planet": 0, "seconds": 30.01, "ticks": 1789,
+  "rate": 30, "buffer_ms": 150, "delay_ms": 150, "jitter_ms": 20, "loss_percent": 10.0,
+  "remote_count": 7, "max_remotes": 7, "joined_owners": [1, 3, 2, 5, 6, 7, 8],
+  "payload_tx_bytes": 128736, "payload_rx_bytes": 885312, "wire_tx_bytes": 157823, "wire_rx_bytes": 1072451, "dgram_tx": 954, "dgram_rx": 6207,
+  "payload_tx_kB_s": 4.290, "payload_rx_kB_s": 29.499, "wire_tx_kB_s": 5.259, "wire_rx_kB_s": 35.734,
+  "injected_dropped": 631, "invalid": 0, "hold_percent": 0.0325, "displayed": 12306,
+  "net_pre_ms_mean": 0.0307, "net_pre_ms_p95": 0.0458, "net_pre_ms_max": 1.1615, "net_post_ms_mean": 0.0201, "net_post_ms_p95": 0.0530,
+  "physics_step_ms_mean": 0.5028, "physics_step_ms_p95": 0.7165, "physics_step_ms_max": 61.0272,
+  "process_cpu_ms_per_tick": 3.1638, "process_cpu_percent_of_one_core": 18.86,
+  "clock_rtt_ms": 0.041, "clock_offset_s": 2.516250, "start_epoch_s": 1791388037.151227, "input_response_ticks": 1, "shifts": 0, "shift_frames_seen": 0, "forced_shift": false,
+  "render_error_near_max_mm": 0.0337, "render_error_far_max_mm": 0.0000, "render_shift_jump_max_mm": 0.0000, "lost_host": false
+}

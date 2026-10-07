@@ -65,6 +65,43 @@ pub fn split_look(look: DVec3, up: DVec3, fallback: DVec3) -> (DVec3, f64) {
     (f.normalize(), pitch)
 }
 
+/// Suit thrusters for weightless movement (issue #8). Assumed values, tune by feel.
+#[derive(Copy, Clone, Debug)]
+pub struct SuitConfig {
+    /// m/s² per axis at full input.
+    pub accel: f64,
+    pub boost_factor: f64,
+    /// m/s²; the brake (X) takes velocity down to rest with this at most.
+    pub brake: f64,
+    /// s; below accel/brake the brake eases out like this, so it reaches rest without overshoot.
+    pub brake_time: f64,
+}
+
+impl Default for SuitConfig {
+    fn default() -> Self {
+        SuitConfig { accel: 2.0, boost_factor: 3.0, brake: 4.0, brake_time: 0.3 }
+    }
+}
+
+/// What the suit asks for this step: `thrust` in body axes (x right, y up, z back, like the ship),
+/// each -1..1.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct SuitInput {
+    pub thrust: DVec3,
+    pub boost: bool,
+    pub brake: bool,
+}
+
+/// Acceleration from the suit, world space. `rot` is the body orientation, `vel` the velocity the
+/// brake stops (world space). The brake overrides thrust, like the ship's firm brake.
+pub fn suit_accel(cfg: &SuitConfig, rot: DQuat, vel: DVec3, input: &SuitInput) -> DVec3 {
+    if input.brake {
+        return (-vel / cfg.brake_time).clamp_length_max(cfg.brake);
+    }
+    let boost = if input.boost { cfg.boost_factor } else { 1.0 };
+    rot * input.thrust.clamp_length_max(1.0) * cfg.accel * boost
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct WalkerConfig {
     pub radius: f64,
@@ -105,6 +142,8 @@ pub struct WalkInput {
     pub jump: bool,
     /// Heading change this step, radians, positive turns left (mouse look).
     pub yaw: f64,
+    /// Weightless only: acceleration from equipment (suit thrusters), frame coordinates.
+    pub accel: DVec3,
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -182,10 +221,12 @@ impl Walker {
         }
 
         // Weightless: nothing presses the feet onto a floor, so the walker can neither stand nor
-        // push off; it keeps its velocity (issue #5). Moving with equipment comes later (#8).
+        // push off; it keeps its velocity (issue #5) and only equipment changes it (#8).
         let weightless = gravity == 0.0;
         let mut jumping = false;
-        if !weightless {
+        if weightless {
+            self.vel += input.accel * dt;
+        } else {
             let right = self.forward.cross(up);
             let speed = if input.run { self.cfg.run_speed } else { self.cfg.walk_speed };
             let horizontal = (right * input.dir.x + self.forward * input.dir.y).clamp_length_max(1.0) * speed;

@@ -32,7 +32,7 @@ pub fn build_snapshot(owner: u32, frame_owner: u32, planet_id: u32, t: f64, seq:
         s.frame_id = 0;
         s.wp = player.w.pos - planet.centre;
         s.wv = player.w.vel;
-        s.wq = walker_quat(player.w.forward, planet.up(player.w.pos));
+        s.wq = player.body.unwrap_or_else(|| walker_quat(player.w.forward, planet.up(player.w.pos)));
     }
     s
 }

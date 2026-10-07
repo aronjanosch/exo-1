@@ -9,11 +9,13 @@ use avian3d::character_controller::move_and_slide::DepenetrationConfig;
 use avian3d::prelude::*;
 use bevy::math::{DQuat, DVec2, DVec3};
 use bevy::prelude::*;
-use walker_core::{Frame, Hit, WalkInput, Walker, World};
+use walker_core::{suit_accel, Frame, Hit, SuitConfig, SuitInput, WalkInput, Walker, World};
 
 const MOUSE_SENSITIVITY: f64 = 0.0025;
 /// Largest look angle above or below the horizon, radians.
 const PITCH_LIMIT: f64 = 1.5;
+/// Suit roll rate (Q/E), rad/s. Assumed value.
+const SUIT_ROLL_RATE: f64 = 1.5;
 pub const EYE_HEIGHT: f64 = 1.7;
 
 #[derive(Component)]
@@ -25,6 +27,9 @@ pub struct Player {
     pub pitch: f64,
     /// Debug fly mode (V): no gravity, no collision.
     pub fly: bool,
+    /// Body orientation while weightless outside a cabin (issue #8), world space, camera axes
+    /// (-z looks, +y is the head). Free in all axes; `w.forward` follows it, `pitch` is 0.
+    pub body: Option<DQuat>,
 }
 
 /// Marks the cabin floor collider; its pose is the frame the walker queries in.
@@ -69,7 +74,7 @@ impl World for AvianWorld<'_, '_, '_> {
 pub fn spawn_player(commands: &mut Commands, planet: &PlanetRes, offset_x: f64) -> Entity {
     let up = (DVec3::Y * planet.radius + DVec3::new(offset_x, 0.0, 0.0)).normalize();
     let pos = planet.centre + up * (planet.surface(up) + 2.0);
-    commands.spawn(Player { w: Walker::new(pos, DVec3::NEG_Z), ship: None, seated: false, pitch: 0.0, fly: false }).id()
+    commands.spawn(Player { w: Walker::new(pos, DVec3::NEG_Z), ship: None, seated: false, pitch: 0.0, fly: false, body: None }).id()
 }
 
 pub fn ship_frame(pos: &Position, rot: &Rotation) -> Frame {
@@ -81,9 +86,13 @@ impl Player {
     pub fn world_pos(&self, ship: Frame) -> DVec3 {
         if self.ship.is_some() { ship.to_world(self.w.pos) } else { self.w.pos }
     }
-    /// Up in world space.
+    /// Up in world space (the head direction while weightless).
     pub fn world_up(&self, ship: Frame, planet: &PlanetRes) -> DVec3 {
-        if self.ship.is_some() { ship.rot * DVec3::Y } else { planet.up(self.w.pos) }
+        match (self.ship, self.body) {
+            (Some(_), _) => ship.rot * DVec3::Y,
+            (None, Some(b)) => b * DVec3::Y,
+            (None, None) => planet.up(self.w.pos),
+        }
     }
 }
 
@@ -162,12 +171,46 @@ pub fn walker_step(
 
     let m = std::mem::take(&mut controls.mouse);
     let yaw = -m.x as f64 * MOUSE_SENSITIVITY;
-    pl.pitch = (pl.pitch - m.y as f64 * MOUSE_SENSITIVITY).clamp(-PITCH_LIMIT, PITCH_LIMIT);
-    let input = WalkInput {
-        dir: DVec2::new(controls.axis(KeyCode::KeyD, KeyCode::KeyA), controls.axis(KeyCode::KeyW, KeyCode::KeyS)),
-        run: controls.pressed(KeyCode::ShiftLeft),
-        jump: controls.pressed(KeyCode::Space),
-        yaw,
+    let pitch = -m.y as f64 * MOUSE_SENSITIVITY;
+
+    // Weightless outside a cabin: the body turns freely and the suit thrusters move it (issue #8).
+    // Back in the field the look direction is kept and the horizon comes back (view blends it).
+    let weightless = pl.ship.is_none() && !pl.fly && flight_core::PlanetEnv::gravity_at(planet.as_ref(), pl.w.pos) == DVec3::ZERO;
+    match (weightless, pl.body) {
+        (true, None) => {
+            pl.body = Some(crate::net::walker_quat(pl.w.forward, planet.up(pl.w.pos)) * DQuat::from_rotation_x(pl.pitch));
+            pl.pitch = 0.0;
+        }
+        (false, Some(b)) => {
+            let up = planet.up(pl.w.pos);
+            keep_look(&mut pl, b * DVec3::NEG_Z, &Frame::IDENTITY, up);
+        }
+        _ => {}
+    }
+    let input = if let Some(b) = pl.body {
+        let roll = controls.axis(KeyCode::KeyQ, KeyCode::KeyE) * SUIT_ROLL_RATE * dt;
+        let b = (b * DQuat::from_rotation_y(yaw) * DQuat::from_rotation_x(pitch) * DQuat::from_rotation_z(roll)).normalize();
+        pl.body = Some(b);
+        pl.w.forward = b * DVec3::NEG_Z;
+        let suit = SuitInput {
+            thrust: DVec3::new(
+                controls.axis(KeyCode::KeyD, KeyCode::KeyA),
+                controls.axis(KeyCode::Space, KeyCode::ControlLeft),
+                -controls.axis(KeyCode::KeyW, KeyCode::KeyS),
+            ),
+            boost: controls.pressed(KeyCode::ShiftLeft),
+            brake: controls.pressed(KeyCode::KeyX),
+        };
+        WalkInput { accel: suit_accel(&SuitConfig::default(), b, pl.w.vel, &suit), ..default() }
+    } else {
+        pl.pitch = (pl.pitch + pitch).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+        WalkInput {
+            dir: DVec2::new(controls.axis(KeyCode::KeyD, KeyCode::KeyA), controls.axis(KeyCode::KeyW, KeyCode::KeyS)),
+            run: controls.pressed(KeyCode::ShiftLeft),
+            jump: controls.pressed(KeyCode::Space),
+            yaw,
+            ..default()
+        }
     };
 
     if pl.fly {
@@ -193,9 +236,10 @@ pub fn walker_step(
     let (frame, up, g) = match pl.ship {
         // In the cabin gravity points to the cabin floor (spike 3 assumption), fallback 9.81.
         Some(_) => (frame_ship, DVec3::Y, 9.81),
+        // Weightless the capsule stands along the body.
         None => {
             let g = planet.as_ref();
-            (Frame::IDENTITY, planet.up(pl.w.pos), flight_core::PlanetEnv::gravity_at(g, pl.w.pos).length())
+            (Frame::IDENTITY, pl.world_up(Frame::IDENTITY, &planet), flight_core::PlanetEnv::gravity_at(g, pl.w.pos).length())
         }
     };
     let info = pl.w.step(&frame, up, g, &input, &world, dt);
@@ -239,7 +283,7 @@ pub fn walker_step(
             let own = (ship_e, own_frame, own_v);
             let others = remotes.iter().map(|(e, p, r, v)| (e, cabin_frame(e, (p, r), &floors), *v));
             if let Some((e, f, v)) = std::iter::once(own).chain(others).find(|(_, f, _)| cabin_contains(f.to_local(pl.w.pos), -0.2)) {
-                let look = walker_core::look_dir(pl.w.forward, planet.up(pl.w.pos), pl.pitch);
+                let look = walker_core::look_dir(pl.w.forward, pl.world_up(Frame::IDENTITY, &planet), pl.pitch);
                 pl.w.change_frame(&Frame::IDENTITY, &f, -v.0);
                 pl.ship = Some(e);
                 keep_look(&mut pl, look, &f, f.rot * DVec3::Y);
@@ -262,4 +306,5 @@ fn keep_look(pl: &mut Player, look: DVec3, frame: &Frame, up: DVec3) {
     let (f, pitch) = walker_core::split_look(look, up, frame.rot * pl.w.forward);
     pl.w.forward = frame.rot.inverse() * f;
     pl.pitch = pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
+    pl.body = None;
 }

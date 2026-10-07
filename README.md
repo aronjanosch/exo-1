@@ -38,7 +38,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 
 - `full`: stand, run 20 s, walk up the ramp into the parked ship, take off, fly to space (7000 m), stand and walk in the cabin at 400 m/s rolling, brake, dive back, land, walk out and back in, cabin in atmosphere.
 - `walk`: stand still, run 20 s.
-- `space`: fly to space, stop, walk out of the ship and drift (stopped ship and one drifting at 3 m/s).
+- `space`: fly to space, stop, walk out of the ship and drift (stopped ship and one drifting at 3 m/s), then the suit: brake, roll, back into the field, fly back into the cabin.
 - `foreign`: a remote ship flies through the real snapshot path at 350 m/s; the walker stands and walks in its cabin, then beside it parked.
 - `t5`: four 300 s walks at 1.8 m/s (basin, escarpment, plateau); slow, for terrain work.
 - `net`: the network bot (take off, cruise, turn, brake, land, repeat); see below.
@@ -60,6 +60,7 @@ Options: `--port`, `--bind`, `--rate=<Hz>` (default 30), `--buffer=<ms>` (defaul
 
 Walker: mouse look (click to grab, Escape releases), WASD, Shift run, Space jump, F sit at the seat, V debug fly mode.
 Ship: mouse pitch/yaw, W/S forward/back, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost, X firm brake, H flight assist, L planet follow, F stand up.
+Suit (outside a ship in space, no gravity): mouse turns freely, W/S forward/back, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost, X brake to rest.
 O: orbit camera (debug).
 
 ## Windows build

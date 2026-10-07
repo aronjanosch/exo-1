@@ -429,6 +429,10 @@ fn run(s: &mut Sim) {
             s.speed()
         ),
     );
+    // Issue #6: held longer, the brake stops exactly, so nothing drifts on after release.
+    s.ticks(120);
+    let sp = s.speed();
+    s.check(sp < 0.01, format!("firm brake with assist off comes to rest within 6 s ({sp:.5} m/s)"));
     s.keys.x = false;
     s.ticks(30);
     s.check(!s.ship.brake_active && s.speed() > 5.0, "brake release restores manual thrust".into());

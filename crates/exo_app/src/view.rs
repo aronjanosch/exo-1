@@ -31,8 +31,8 @@ pub struct ViewState {
     pub orbit: bool,
     pub orbit_yaw: f64,
     pub orbit_pitch: f64,
-    /// Cabin the walker was in last frame, to notice a frame change.
-    cabin: Option<Entity>,
+    /// Cabin the walker was in last frame and whether it was weightless, to notice a frame change.
+    cabin: (Option<Entity>, bool),
     /// Camera rotation shown last frame.
     last_rot: DQuat,
     /// Horizon blend after a frame change: offset from the new view to the old one, and its age (s).
@@ -169,9 +169,9 @@ pub fn update_camera(
         let fwd = pi.prev.2.lerp(pi.curr.2, f).normalize();
         pose.pos = feet + up * EYE_HEIGHT;
         let rot = look_basis(fwd, up) * DQuat::from_rotation_x(pl.pitch);
-        // Entering or leaving a cabin turns "up": the walker keeps its look direction, the
-        // horizon turns over HORIZON_BLEND_SECS from where it was.
-        if pl.ship != view.cabin {
+        // Entering or leaving a cabin or the weightless body frame turns "up": the walker keeps
+        // its look direction, the horizon turns over HORIZON_BLEND_SECS from where it was.
+        if (pl.ship, pl.body.is_some()) != view.cabin {
             view.horizon = Some((view.last_rot * rot.inverse(), 0.0));
         }
         pose.rot = match view.horizon {
@@ -185,7 +185,7 @@ pub fn update_camera(
             }
         };
     }
-    view.cabin = pl.ship;
+    view.cabin = (pl.ship, pl.body.is_some());
     view.last_rot = pose.rot;
     origin.view = pose.pos;
     let density = planet.density_at(pose.pos) as f32;
@@ -194,6 +194,11 @@ pub fn update_camera(
     fog.color = sky;
     fog.falloff = FogFalloff::Exponential { density: 0.00025 * density };
     ambient.brightness = 80.0 + 320.0 * density;
+}
+
+/// Two decimals below 1 m/s, so a ship at rest can be told from a slow drift (issue #6).
+fn speed_text(v: f64) -> String {
+    if v < 1.0 { format!("{v:.2}") } else { format!("{v:.1}") }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -211,10 +216,11 @@ pub fn update_hud(
     let (Ok(pl), Ok((ship, sp, sv, sr)), Ok(mut text)) = (players.single(), ships.single(), hud.single_mut()) else { return };
     let mode = if pl.seated {
         format!(
-            "SHIP  assist {} (H)  follow {} (L)  {:.1} m/s  limit {:.0}  ground {:.0} m  alt {:.0} m",
+            "SHIP  assist {} (H)  follow {} (L){}  {} m/s  limit {:.0}  ground {:.0} m  alt {:.0} m",
             if ship.ctl.hover_assist { "on" } else { "off" },
             if ship.ctl.horizon_follow { "on" } else { "off" },
-            sv.0.length(),
+            if ship.ctl.brake_active { "  BRAKE (X)" } else { "" },
+            speed_text(sv.0.length()),
             ship.ctl.forward_speed_limit,
             planet.above_ground(sp.0),
             (sp.0 - planet.centre).length() - planet.radius,
@@ -224,11 +230,13 @@ pub fn update_hud(
         // planet): the cabin carries the ship's velocity (own ship), outside it is the walker's own.
         let (v, pos) = if pl.ship.is_some() { (sv.0 + sr.0 * pl.w.vel, sp.0) } else { (pl.w.vel, pl.w.pos) };
         let radial = v.dot(planet.up(pos));
-        let speed = format!("speed {:.1} m/s, vertical {:+.1} m/s, altitude {:.0} m", v.length(), radial, (pos - planet.centre).length() - planet.radius);
+        let speed = format!("speed {} m/s, vertical {:+.2} m/s, altitude {:.0} m", speed_text(v.length()), radial, (pos - planet.centre).length() - planet.radius);
         if pl.ship.is_some() {
             format!("in cabin  [F] sit at the seat  {speed}")
         } else if pl.fly {
             format!("FLY (V)  {speed}")
+        } else if pl.body.is_some() {
+            format!("SUIT  WASD Space/Ctrl thrust  Shift boost  Q/E roll  X brake  {speed}")
         } else {
             format!("walk  grounded {}  {speed}", pl.w.grounded)
         }

@@ -643,6 +643,145 @@ fn step_out_in_space(name: &'static str, drift: f64, push: f64) -> Vec<Step> {
     ]
 }
 
+/// Issue #8: the suit in space. Walk out of the stopped ship, brake to rest (X), roll (Q), turn
+/// to the ship with the mouse and fly back into the cabin (W), all through `Controls`.
+fn suit_in_space() -> Vec<Step> {
+    vec![
+        Box::new(|w, _| {
+            tap(w, KeyCode::KeyF); // stand up
+            true
+        }),
+        wait(0.5),
+        Box::new(|w, c| {
+            if c.t == 0.0 {
+                begin(w, c, "suit: walk out of the stopped ship");
+                c.v.remove("out_t");
+                let f = ship_frame_of(w);
+                face_towards(w, f.to_world(DVec3::new(0.0, 1.0, 12.0)));
+                keys(w, &[KeyCode::KeyW], true);
+            }
+            let e = ship_e(w);
+            let (outside, suit) = with_player(w, |p| (p.ship != Some(e), p.body.is_some()));
+            if outside && !c.v.contains_key("out_t") {
+                c.v.insert("out_t", c.t);
+            }
+            // The suit takes over on the next step after leaving the cabin.
+            if c.v.get("out_t").is_some_and(|t| c.t - t > 0.05) || c.t > 10.0 {
+                keys(w, &[KeyCode::KeyW], false);
+                end(w, c, format!("outside {outside}, suit mode {suit}"));
+                check(c, outside && suit, "suit: outside the ship in space the suit takes over".into());
+                return true;
+            }
+            false
+        }),
+        Box::new(|w, c| {
+            if c.t == 0.0 {
+                begin(w, c, "suit: brake to rest (X)");
+                keys(w, &[KeyCode::KeyX], true);
+            }
+            let v = with_player(w, |p| p.w.vel).length();
+            if v < 0.01 || c.t > 6.0 {
+                keys(w, &[KeyCode::KeyX], false);
+                end(w, c, format!("{v:.4} m/s after {:.2} s", c.t));
+                check(c, v < 0.01, format!("suit: X brakes to rest ({v:.4} m/s in {:.2} s)", c.t));
+                return true;
+            }
+            false
+        }),
+        Box::new(|w, c| {
+            if c.t == 0.0 {
+                begin(w, c, "suit: roll 1 s (Q)");
+                let b = with_player(w, |p| p.body.unwrap_or_default());
+                c.p.insert("look0", b * DVec3::NEG_Z);
+                c.p.insert("head0", b * DVec3::Y);
+                keys(w, &[KeyCode::KeyQ], true);
+            }
+            if c.t >= 1.0 {
+                keys(w, &[KeyCode::KeyQ], false);
+                let b = with_player(w, |p| p.body.unwrap_or_default());
+                let turned = (b * DVec3::Y).angle_between(c.p["head0"]).to_degrees();
+                let look = (b * DVec3::NEG_Z).angle_between(c.p["look0"]).to_degrees();
+                end(w, c, format!("head turned {turned:.1} deg, look moved {look:.3} deg"));
+                check(c, (turned - 1.5f64.to_degrees()).abs() < 3.0 && look < 0.01, format!("suit: Q rolls about the look axis ({turned:.1} deg in 1 s)"));
+                return true;
+            }
+            false
+        }),
+        // Back into the field (test setup: put the walker 3000 m above the ground for a moment):
+        // the suit hands over to walking, the look direction stays, gravity pulls.
+        Box::new(|w, c| {
+            if c.t == 0.0 {
+                begin(w, c, "suit: back in the planetary field (teleport to 3000 m)");
+                let pl = planet(w);
+                c.p.insert("look", world_look(w));
+                let back = with_player(w, |p| p.w.pos);
+                c.p.insert("back", back);
+                let dir = pl.up(back);
+                with_player(w, |p| {
+                    p.w.pos = pl.centre + dir * (pl.surface(dir) + 3000.0);
+                    p.w.vel = DVec3::ZERO;
+                });
+                return false;
+            }
+            if c.t >= 0.5 {
+                let look = world_look(w).angle_between(c.p["look"]).to_degrees();
+                let (suit, v) = with_player(w, |p| (p.body.is_some(), p.w.vel));
+                let pl = planet(w);
+                let fall = -v.dot(pl.up(player_world(w)));
+                let back = c.p["back"];
+                with_player(w, |p| {
+                    p.w.pos = back;
+                    p.w.vel = DVec3::ZERO;
+                });
+                end(w, c, format!("suit {suit}, look moved {look:.4} deg, falling {fall:.2} m/s after 0.5 s"));
+                check(c, !suit && look < 0.01 && fall > 0.5, format!("suit: in the field the walker walks again, look kept ({look:.4} deg), falls ({fall:.2} m/s)"));
+                return true;
+            }
+            false
+        }),
+        Box::new(|w, c| {
+            if c.t == 0.0 {
+                begin(w, c, "suit: turn to the ship and fly back in (mouse, W)");
+            }
+            let e = ship_e(w);
+            let f = ship_frame_of(w);
+            let (inside, pos, b) = with_player(w, |p| (p.ship == Some(e), p.w.pos, p.body));
+            if inside || c.t > 30.0 {
+                keys(w, &[KeyCode::KeyW], false);
+                end(w, c, format!("back in the cabin {inside} after {:.1} s", c.t));
+                check(c, inside, "suit: flew back into the cabin".into());
+                return true;
+            }
+            let Some(b) = b else { return false };
+            // Aim at the middle of the cabin like a player with the mouse (rate proportional to
+            // the error), thrust once roughly on target.
+            let l = b.inverse() * (f.to_world(DVec3::new(0.0, 1.2, 0.0)) - pos).normalize();
+            let yaw_err = (-l.x).atan2(-l.z);
+            let pitch_err = l.y.atan2((l.x * l.x + l.z * l.z).sqrt());
+            let sens = 0.0025;
+            let mut m = w.resource_mut::<Controls>();
+            m.mouse.x += (-(yaw_err * 0.2) / sens) as f32;
+            m.mouse.y += (-(pitch_err * 0.2) / sens) as f32;
+            keys(w, &[KeyCode::KeyW], yaw_err.abs() + pitch_err.abs() < 0.1);
+            false
+        }),
+        // Sit again for the rest of the run.
+        Box::new(|w, _| {
+            with_player(w, |p| {
+                p.w.pos = DVec3::new(0.0, 0.32, -2.5);
+                p.w.vel = DVec3::ZERO;
+            });
+            true
+        }),
+        wait(0.3),
+        Box::new(|w, _| {
+            tap(w, KeyCode::KeyF);
+            true
+        }),
+        wait(0.3),
+    ]
+}
+
 /// Long walks (spike 8 T5): 1.8 m/s for 300 s from four starts; steep slopes may stop the walker.
 fn t5_starts() -> Vec<(&'static str, DVec3, DVec3)> {
     let recipe: serde_json::Value = serde_json::from_str(crate::env::RECIPE).unwrap();
@@ -972,6 +1111,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
             s.push(aim("nose up like the climb", 30.0, 3.0));
             s.extend(step_out_in_space("in space: walk out of the stopped ship", 0.0, 0.0));
             s.extend(step_out_in_space("in space: walk out of a ship drifting at 3 m/s", 3.0, 0.6));
+            s.push(hold_until("firm brake in space", &[KeyCode::KeyX], 30.0, |w| ship_vel(w).length() < 0.01));
+            s.extend(suit_in_space());
         }
         "full" => {
             s.push(shot_step("ground"));

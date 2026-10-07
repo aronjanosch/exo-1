@@ -216,3 +216,25 @@ fn split_look_keeps_the_world_direction() {
     let (f, pitch) = split_look(DVec3::Y, DVec3::Y, DVec3::NEG_Z);
     assert!((f - DVec3::NEG_Z).length() < 1e-12 && (pitch - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
 }
+
+/// Issue #8: suit thrusters push along the body axes, the brake comes to rest without overshoot within 4 s.
+#[test]
+fn suit_thrusts_along_the_body_and_brakes_to_rest() {
+    let cfg = SuitConfig::default();
+    let rot = DQuat::from_rotation_y(std::f64::consts::FRAC_PI_2); // body forward (-z) is world -x
+    let a = suit_accel(&cfg, rot, DVec3::ZERO, &SuitInput { thrust: DVec3::new(0.0, 0.0, -1.0), ..Default::default() });
+    assert!((a - DVec3::new(-cfg.accel, 0.0, 0.0)).length() < 1e-12, "{a:?}");
+
+    let world = Planes { planes: vec![], frame: Frame::IDENTITY };
+    let mut w = Walker::new(DVec3::ZERO, DVec3::NEG_Z);
+    w.vel = DVec3::new(3.0, -1.0, 0.5);
+    let brake = SuitInput { brake: true, ..Default::default() };
+    let mut ticks = 0;
+    while w.vel.length() > 1e-3 && ticks < 600 {
+        let accel = suit_accel(&cfg, rot, w.vel, &brake);
+        w.step(&Frame::IDENTITY, DVec3::Y, 0.0, &WalkInput { accel, ..Default::default() }, &world, DT);
+        assert!(w.vel.dot(DVec3::new(3.0, -1.0, 0.5)) >= 0.0, "brake overshoots");
+        ticks += 1;
+    }
+    assert!(ticks < 240, "brake took {ticks} ticks");
+}

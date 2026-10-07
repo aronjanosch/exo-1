@@ -87,8 +87,11 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, up: DVec3) -> Ent
         ))
         .id();
     commands.entity(ship).with_children(|c| {
-        for (size, p, color, collides) in parts {
+        for (i, (size, p, color, collides)) in parts.into_iter().enumerate() {
             let mut e = c.spawn((Transform::from_translation(p), ShipPart { size, color }, Visibility::default()));
+            if i == 0 {
+                e.insert(crate::walker::CabinFloor);
+            }
             if collides {
                 e.insert((
                     Collider::cuboid(size.x as f64, size.y as f64, size.z as f64),

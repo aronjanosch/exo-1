@@ -351,6 +351,7 @@ fn hold_until(name: &'static str, ks: &'static [KeyCode], limit: f64, mut done: 
 }
 
 /// Turn the nose by feeding mouse movement (radians per tick as the controller sees it).
+#[allow(dead_code)]
 fn pitch(name: &'static str, rad_per_tick: f64, secs: f64) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -369,10 +370,54 @@ fn pitch(name: &'static str, rad_per_tick: f64, secs: f64) -> Step {
     })
 }
 
+/// Point the nose like a player with the mouse: yaw/pitch rate proportional to the error,
+/// at most the controller's turn rate. `elevation` is the wanted angle above the horizon.
+fn aim(name: &'static str, elevation_deg: f64, secs: f64) -> Step {
+    Box::new(move |w, c| {
+        if c.t == 0.0 {
+            begin(w, c, name);
+        }
+        let f = ship_frame_of(w);
+        let up = planet(w).up(f.origin);
+        let nose = f.rot * DVec3::NEG_Z;
+        let mut flat = nose - up * nose.dot(up);
+        if flat.length_squared() < 1e-6 {
+            flat = f.rot * DVec3::Y;
+            flat -= up * flat.dot(up);
+        }
+        let flat = flat.normalize();
+        let e = elevation_deg.to_radians();
+        let target = flat * e.cos() + up * e.sin();
+        let l = f.rot.inverse() * target;
+        let yaw_err = (-l.x).atan2(-l.z);
+        let pitch_err = l.y.atan2((l.x * l.x + l.z * l.z).sqrt());
+        let dt = c.dt.max(1e-6);
+        let rate = |err: f64| (err * 2.0).clamp(-2.0, 2.0) * dt; // rad this tick
+        // Roll the ship's up towards the planet's up (Q/E, bang-bang with a dead band).
+        let back = f.rot * DVec3::Z;
+        let ship_up = f.rot * DVec3::Y;
+        let up_proj = (up - back * up.dot(back)).normalize_or_zero();
+        let roll_err = ship_up.cross(up_proj).dot(back).atan2(ship_up.dot(up_proj));
+        let mut m = w.resource_mut::<Controls>();
+        m.mouse.x += (-rate(yaw_err) / 0.002) as f32;
+        m.mouse.y += (-rate(pitch_err) / 0.002) as f32;
+        let (q, e) = (roll_err > 0.05, roll_err < -0.05);
+        keys(w, &[KeyCode::KeyQ], q);
+        keys(w, &[KeyCode::KeyE], e);
+        if c.t >= secs {
+            keys(w, &[KeyCode::KeyQ, KeyCode::KeyE], false);
+            let nose_el = nose.dot(up).asin().to_degrees();
+            end(w, c, format!("nose {nose_el:+.1} deg above horizon (wanted {elevation_deg:+.0})"));
+            return true;
+        }
+        false
+    })
+}
+
 fn fly_to_space_and_back() -> Vec<Step> {
     vec![
         hold_until("climb to 300 m above ground", &[KeyCode::Space, KeyCode::ShiftLeft], 120.0, |w| above_ground(w) > 300.0),
-        pitch("pitch up", 0.006, 1.5),
+        aim("pitch up", 30.0, 3.0),
         hold_until("fly to space (7000 m, outside the field)", &[KeyCode::KeyW, KeyCode::ShiftLeft], 240.0, |w| altitude(w) > 7000.0),
         Box::new(|w, c| {
             if c.t == 0.0 {
@@ -431,6 +476,10 @@ fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: f64) -> Vec
             let _ = grounded;
             let v = ship_vel(w).length();
             *c.v.get_mut("vmax").unwrap() = c.v["vmax"].max(v);
+            if v > 400.0 {
+                // Spike 3 range: keep rolling, stop boosting at 400 m/s.
+                with_ship(w, |s| s.test_input.thrust = DVec3::ZERO);
+            }
             if c.t >= secs {
                 keys(w, &[KeyCode::KeyW, KeyCode::KeyS], false);
                 with_ship(w, |s| {
@@ -488,10 +537,11 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
             s.extend(fly_to_space_and_back());
             s.push(shot_step("space"));
             s.extend(cabin_at_speed("in space: stand + walk, boost + roll, assist off", 8.0, false, 0.3));
-            s.push(pitch("turn back towards the planet", -0.01, 2.5));
+            s.push(hold_until("firm brake in space", &[KeyCode::KeyX], 30.0, |w| ship_vel(w).length() < 0.5));
+            s.push(aim("turn back towards the planet", -80.0, 4.0));
             s.push(hold_until("dive back", &[KeyCode::KeyW, KeyCode::ShiftLeft], 240.0, |w| above_ground(w) < 800.0));
             s.push(hold_until("firm brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 0.5));
-            s.push(pitch("level out", 0.0, 0.1));
+            s.push(aim("level out", 0.0, 3.0));
             s.push(hold_until("descend to 120 m above ground", &[KeyCode::ControlLeft, KeyCode::ShiftLeft], 180.0, |w| above_ground(w) < 120.0));
             s.push(hold_until("land", &[KeyCode::ControlLeft], 60.0, {
                 let mut t = 0.0;
@@ -531,7 +581,9 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
             s.push(wait(3.0));
             s.extend(cabin_at_speed("in atmosphere: stand + walk, boost + roll, assist on", 8.0, true, 0.3));
             s.push(Box::new(|w, _| {
-                w.resource_mut::<ViewState>().orbit = true;
+                if let Some(mut v) = w.get_resource_mut::<ViewState>() {
+                    v.orbit = true;
+                }
                 true
             }));
             s.push(wait(1.0));

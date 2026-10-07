@@ -25,6 +25,10 @@ pub struct Player {
     pub fly: bool,
 }
 
+/// Marks the cabin floor collider; its pose is the frame the walker queries in.
+#[derive(Component)]
+pub struct CabinFloor;
+
 #[derive(Resource, Default, Debug, Clone)]
 pub struct WalkStats {
     pub steps: u64,
@@ -86,6 +90,7 @@ impl Player {
 
 #[allow(clippy::too_many_arguments)]
 pub fn walker_step(
+    mut commands: Commands,
     time: Res<Time>,
     planet: Res<PlanetRes>,
     mut controls: ResMut<Controls>,
@@ -94,11 +99,22 @@ pub fn walker_step(
     mut stats: ResMut<WalkStats>,
     mut players: Query<&mut Player>,
     mut ships: Query<(Entity, &mut Ship, &Position, &Rotation, &LinearVelocity)>,
+    floors: Query<(&Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
 ) {
     let dt = time.delta_secs_f64();
     let Ok(mut pl) = players.single_mut() else { return };
     let Some((ship_e, _, sp, sr, slv)) = ships.iter().next().map(|(e, s, p, r, v)| (e, s.parked, *p, *r, *v)) else { return };
-    let frame_ship = ship_frame(&sp, &sr);
+    // Avian moves child colliders to the body pose only at the start of the next physics step
+    // (update_child_collider_position in PhysicsStepSystems::First). Between steps the cabin
+    // colliders sit one tick behind the body (6.7 m at 400 m/s), so the walker works in the
+    // frame the colliders are in. Local coordinates are ship-relative either way.
+    let frame_ship = match floors.single() {
+        Ok((p, r, ct)) => {
+            let rot = r.0 * ct.rotation.0.inverse();
+            Frame { origin: p.0 - rot * ct.translation, rot }
+        }
+        Err(_) => ship_frame(&sp, &sr),
+    };
 
     // F: sit at the seat or stand up (main.gd sit_down / stand_up).
     if controls.take_tap(KeyCode::KeyF) {
@@ -111,7 +127,10 @@ pub fn walker_step(
         } else if pl.ship == Some(ship_e) && pl.w.pos.distance(SEAT_POS) < 1.8 {
             pl.seated = true;
             ship.piloted = true;
-            ship.parked = false;
+            if ship.parked {
+                ship.parked = false;
+                commands.entity(ship_e).insert(RigidBody::Dynamic);
+            }
             pl.w.pos = SEAT_POS - DVec3::new(0.0, 0.3, 0.0);
             pl.w.vel = DVec3::ZERO;
         }

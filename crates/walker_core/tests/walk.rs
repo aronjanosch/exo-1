@@ -89,7 +89,10 @@ fn lands_and_walks_flat_ground_always_on_floor() {
     let g = walk(&world, &mut w, 600, DVec2::new(0.0, 1.0));
     println!("flat: grounded {g}/600, x {:.3}, y {:.4}", w.pos.x, w.pos.y);
     assert_eq!(g, 600);
-    assert!((w.pos.x - 50.0).abs() < 0.1);
+    // 10 s at walk speed, less the ramp-up (v² / 2a).
+    let cfg = WalkerConfig::default();
+    let expected = 50.0 - cfg.walk_speed * cfg.walk_speed / (2.0 * cfg.walk_accel);
+    assert!((w.pos.x - expected).abs() < 0.1, "x {} expected {expected}", w.pos.x);
 }
 
 #[test]
@@ -237,4 +240,20 @@ fn suit_thrusts_along_the_body_and_brakes_to_rest() {
         ticks += 1;
     }
     assert!(ticks < 240, "brake took {ticks} ticks");
+}
+
+/// A short tap of W is a slow step: speed builds up and runs out at `walk_accel`, so a player can
+/// step out of a ship carefully instead of always leaving at walk speed.
+#[test]
+fn tap_is_a_slow_step() {
+    let world = flat();
+    let mut w = Walker::new(DVec3::ZERO, DVec3::X);
+    walk(&world, &mut w, 10, DVec2::ZERO);
+    walk(&world, &mut w, 6, DVec2::new(0.0, 1.0)); // 0.1 s
+    let top = w.vel.length();
+    let accel = WalkerConfig::default().walk_accel;
+    assert!((top - accel * 0.1).abs() < 1e-6, "speed after a 0.1 s tap {top}");
+    walk(&world, &mut w, 30, DVec2::ZERO);
+    assert!(w.vel.length() < 1e-9, "comes to rest, {}", w.vel.length());
+    assert!(w.pos.x < 0.2, "a tap moves only a little: {}", w.pos.x);
 }

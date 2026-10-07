@@ -147,7 +147,7 @@ pub fn walker_step(
             pl.seated = false;
             ship.piloted = false; // hover assist now holds the ship
             pl.w.pos = DVec3::new(0.0, 0.32, SEAT_POS.z + 1.0);
-            pl.w.vel = DVec3::ZERO;
+            pl.w.halt();
         } else if pl.ship == Some(ship_e) && pl.w.pos.distance(SEAT_POS) < 1.8 {
             pl.seated = true;
             ship.piloted = true;
@@ -156,12 +156,12 @@ pub fn walker_step(
                 commands.entity(ship_e).insert(RigidBody::Dynamic);
             }
             pl.w.pos = SEAT_POS - DVec3::new(0.0, 0.3, 0.0);
-            pl.w.vel = DVec3::ZERO;
+            pl.w.halt();
         }
     }
     if controls.take_tap(KeyCode::KeyV) && !pl.seated {
         pl.fly = !pl.fly;
-        pl.w.vel = DVec3::ZERO;
+        pl.w.halt();
     }
     let world_pos = if pl.ship.is_some() { frame_ship.to_world(pl.w.pos) } else { pl.w.pos };
     ring.anchors = vec![(world_pos, if pl.ship.is_some() { slv.0 } else { pl.w.vel }), (sp.0, own_v.0)];

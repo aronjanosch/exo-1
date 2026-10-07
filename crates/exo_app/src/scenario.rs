@@ -167,7 +167,7 @@ fn place_walker(w: &mut World, at: DVec3) {
     with_player(w, |p| {
         p.ship = None;
         p.w.pos = pos;
-        p.w.vel = DVec3::ZERO;
+        p.w.halt();
         p.w.grounded = false;
     });
 }
@@ -542,7 +542,7 @@ fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: f64) -> Vec
         Box::new(|w, _| {
             with_player(w, |p| {
                 p.w.pos = DVec3::new(0.0, 0.32, -2.5);
-                p.w.vel = DVec3::ZERO;
+                p.w.halt();
             });
             true
         }),
@@ -560,7 +560,8 @@ fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: f64) -> Vec
 /// pulls it. `drift` gives the ship a speed towards the planet first (stopped not exactly).
 /// `push` is the allowed extra speed at the exit: outside the cabin the walker sweeps against the
 /// ship colliders of the previous tick, so a moving ramp gives it a small push (issue #9).
-fn step_out_in_space(name: &'static str, drift: f64, push: f64) -> Vec<Step> {
+/// `careful`: W only in 0.1 s taps every 0.5 s, a careful step out: the walker leaves slowly.
+fn step_out_in_space(name: &'static str, drift: f64, push: f64, careful: bool) -> Vec<Step> {
     vec![
         Box::new(move |w, _| {
             tap(w, KeyCode::KeyF); // stand up
@@ -584,6 +585,9 @@ fn step_out_in_space(name: &'static str, drift: f64, push: f64) -> Vec<Step> {
             }
             let e = ship_e(w);
             let outside = with_player(w, |p| p.ship != Some(e));
+            if careful && !outside {
+                keys(w, &[KeyCode::KeyW], c.t % 0.5 < 0.1);
+            }
             if outside && !c.v.contains_key("out_t") {
                 keys(w, &[KeyCode::KeyW], false);
                 c.v.insert("out_t", c.t);
@@ -594,7 +598,7 @@ fn step_out_in_space(name: &'static str, drift: f64, push: f64) -> Vec<Step> {
                 c.v.insert("rel_out", (v - ship_vel(w)).length());
             }
             let Some(&out_t) = c.v.get("out_t") else {
-                if c.t >= 10.0 {
+                if c.t >= 30.0 {
                     keys(w, &[KeyCode::KeyW], false);
                     end(w, c, "never left the cabin".into());
                     check(c, false, format!("{name}: walked out of the ship"));
@@ -612,7 +616,8 @@ fn step_out_in_space(name: &'static str, drift: f64, push: f64) -> Vec<Step> {
                     "{:.0} m from planet centre, gravity {:.3} m/s², ship radial {ship_radial:+.3} m/s, walker relative to ship after exit {rel:.3} m/s (walk speed 5), velocity change over 5 s drift {dv:.6} m/s",
                     (p - pl.centre).length(), pl.gravity_at(p).length()
                 ));
-                check(c, (rel - 5.0).abs() < 0.01 + push && dv < 1e-6,
+                let ok = if careful { rel < 2.0 } else { (rel - 5.0).abs() < 0.01 + push };
+                check(c, ok && dv < 1e-6,
                     format!("{name}: walker keeps the ship's velocity plus its own and drifts ({rel:.3} m/s relative, change {dv:.6} m/s)"));
                 return true;
             }
@@ -630,7 +635,7 @@ fn step_out_in_space(name: &'static str, drift: f64, push: f64) -> Vec<Step> {
                     p.ship = Some(e);
                 }
                 p.w.pos = DVec3::new(0.0, 0.32, -2.5);
-                p.w.vel = DVec3::ZERO;
+                p.w.halt();
             });
             true
         }),
@@ -719,7 +724,7 @@ fn suit_in_space() -> Vec<Step> {
                 let dir = pl.up(back);
                 with_player(w, |p| {
                     p.w.pos = pl.centre + dir * (pl.surface(dir) + 3000.0);
-                    p.w.vel = DVec3::ZERO;
+                    p.w.halt();
                 });
                 return false;
             }
@@ -731,7 +736,7 @@ fn suit_in_space() -> Vec<Step> {
                 let back = c.p["back"];
                 with_player(w, |p| {
                     p.w.pos = back;
-                    p.w.vel = DVec3::ZERO;
+                    p.w.halt();
                 });
                 end(w, c, format!("suit {suit}, look moved {look:.4} deg, falling {fall:.2} m/s after 0.5 s"));
                 check(c, !suit && look < 0.01 && fall > 0.5, format!("suit: in the field the walker walks again, look kept ({look:.4} deg), falls ({fall:.2} m/s)"));
@@ -769,7 +774,7 @@ fn suit_in_space() -> Vec<Step> {
         Box::new(|w, _| {
             with_player(w, |p| {
                 p.w.pos = DVec3::new(0.0, 0.32, -2.5);
-                p.w.vel = DVec3::ZERO;
+                p.w.halt();
             });
             true
         }),
@@ -915,7 +920,7 @@ fn foreign_steps(s: &mut Vec<Step>) {
             with_player(w, |p| {
                 p.ship = Some(proxy);
                 p.w.pos = DVec3::new(0.0, 0.31, 1.0);
-                p.w.vel = DVec3::ZERO;
+                p.w.halt();
                 p.fly = false;
             });
             return false;
@@ -1084,7 +1089,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
                         p.ship = Some(e);
                     }
                     p.w.pos = DVec3::new(0.0, 0.32, -2.5);
-                    p.w.vel = DVec3::ZERO;
+                    p.w.halt();
                 });
                 true
             }));
@@ -1101,7 +1106,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
                 with_player(w, |p| {
                     p.ship = Some(e);
                     p.w.pos = DVec3::new(0.0, 0.32, -2.5);
-                    p.w.vel = DVec3::ZERO;
+                    p.w.halt();
                 });
                 true
             }));
@@ -1109,8 +1114,10 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
             s.extend(fly_to_space_and_back());
             s.push(hold_until("firm brake in space", &[KeyCode::KeyX], 30.0, |w| ship_vel(w).length() < 0.5));
             s.push(aim("nose up like the climb", 30.0, 3.0));
-            s.extend(step_out_in_space("in space: walk out of the stopped ship", 0.0, 0.0));
-            s.extend(step_out_in_space("in space: walk out of a ship drifting at 3 m/s", 3.0, 0.6));
+            s.extend(step_out_in_space("in space: walk out of the stopped ship", 0.0, 0.0, false));
+            s.extend(step_out_in_space("in space: walk out of a ship drifting at 3 m/s", 3.0, 0.6, false));
+            s.push(hold_until("firm brake in space", &[KeyCode::KeyX], 30.0, |w| ship_vel(w).length() < 0.01));
+            s.extend(step_out_in_space("in space: step out carefully (tap W)", 0.0, 0.0, true));
             s.push(hold_until("firm brake in space", &[KeyCode::KeyX], 30.0, |w| ship_vel(w).length() < 0.01));
             s.extend(suit_in_space());
         }

@@ -110,6 +110,8 @@ pub struct WalkerConfig {
     pub walk_speed: f64,
     pub run_speed: f64,
     pub jump_speed: f64,
+    /// m/s²; walking and stopping ease in at this rate, so a short tap is a slow step.
+    pub walk_accel: f64,
     pub floor_max_angle_deg: f64,
     pub snap_length: f64,
     /// Gap kept to every surface after a sweep.
@@ -126,6 +128,7 @@ impl Default for WalkerConfig {
             walk_speed: 5.0,
             run_speed: 12.0,
             jump_speed: 5.0,
+            walk_accel: 15.0, // assumed: walk speed in 0.33 s
             floor_max_angle_deg: 50.0,
             snap_length: 0.5,
             skin: 0.01,
@@ -160,6 +163,9 @@ pub struct Walker {
     pub pos: DVec3,
     /// Frame coordinates (relative to the frame, not to the world).
     pub vel: DVec3,
+    /// Velocity the legs aim for (frame coordinates, horizontal part used). Collisions change
+    /// `vel` only, so walking up a slope does not lose speed every step.
+    pub move_vel: DVec3,
     /// Heading, frame coordinates, kept perpendicular to up.
     pub forward: DVec3,
     pub grounded: bool,
@@ -172,6 +178,7 @@ impl Walker {
             cfg: WalkerConfig::default(),
             pos,
             vel: DVec3::ZERO,
+            move_vel: DVec3::ZERO,
             forward,
             grounded: false,
             floor_normal: DVec3::Y,
@@ -195,6 +202,12 @@ impl Walker {
         self.forward = f.normalize();
     }
 
+    /// Stops the walker at once (teleports, sitting down).
+    pub fn halt(&mut self) {
+        self.vel = DVec3::ZERO;
+        self.move_vel = DVec3::ZERO;
+    }
+
     /// Moves the walker into another frame, keeping its world position. `frame_vel_change`
     /// is old frame velocity minus new frame velocity at the walker, world space
     /// (player.gd: `velocity -= ship.linear_velocity` on entering).
@@ -204,6 +217,7 @@ impl Walker {
         let world_fwd = old.rot * self.forward;
         self.pos = new.to_local(world_pos);
         self.vel = new.rot.inverse() * world_vel;
+        self.move_vel = self.vel;
         self.forward = new.rot.inverse() * world_fwd;
     }
 
@@ -226,10 +240,14 @@ impl Walker {
         let mut jumping = false;
         if weightless {
             self.vel += input.accel * dt;
+            self.move_vel = self.vel;
         } else {
             let right = self.forward.cross(up);
             let speed = if input.run { self.cfg.run_speed } else { self.cfg.walk_speed };
-            let horizontal = (right * input.dir.x + self.forward * input.dir.y).clamp_length_max(1.0) * speed;
+            let target = (right * input.dir.x + self.forward * input.dir.y).clamp_length_max(1.0) * speed;
+            let current = self.move_vel - up * self.move_vel.dot(up);
+            let horizontal = current + (target - current).clamp_length_max(self.cfg.walk_accel * dt);
+            self.move_vel = horizontal;
             let mut vertical = self.vel.dot(up);
             if self.grounded {
                 jumping = input.jump;

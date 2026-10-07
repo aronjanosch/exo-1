@@ -15,7 +15,9 @@ const MOUSE_SENSITIVITY: f64 = 0.0025;
 pub const EYE_HEIGHT: f64 = 1.7;
 
 #[derive(Component)]
+#[cfg_attr(feature = "remote", derive(Reflect), reflect(Component, from_reflect = false))]
 pub struct Player {
+    #[cfg_attr(feature = "remote", reflect(ignore))]
     pub w: Walker,
     /// Ship whose cabin the walker is in.
     pub ship: Option<Entity>,
@@ -30,6 +32,7 @@ pub struct Player {
 pub struct CabinFloor;
 
 #[derive(Resource, Default, Debug, Clone)]
+#[cfg_attr(feature = "remote", derive(Reflect), reflect(Resource))]
 pub struct WalkStats {
     pub steps: u64,
     pub grounded: u64,

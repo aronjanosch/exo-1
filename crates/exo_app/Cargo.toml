@@ -1,0 +1,18 @@
+[package]
+name = "exo_app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+# Bevy's dynamic linking for faster incremental builds (dev only, never for release).
+dynamic = ["bevy/dynamic_linking"]
+
+[dependencies]
+bevy = { workspace = true }
+avian3d = { workspace = true, features = ["3d", "f64", "parry-f64", "parallel", "default-collider"] }
+planet_core = { workspace = true }
+flight_core = { workspace = true }
+walker_core = { workspace = true }
+net_core = { workspace = true }
+serde_json = { workspace = true }

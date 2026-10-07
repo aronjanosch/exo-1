@@ -1,0 +1,39 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+bevy = { version = "=0.19.1" }
+avian3d = { version = "=0.7.0", default-features = false }
+glam = "0.32"
+fastnoise-lite = "=1.1.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+planet_core = { path = "crates/planet_core" }
+flight_core = { path = "crates/flight_core" }
+walker_core = { path = "crates/walker_core" }
+net_core = { path = "crates/net_core" }
+
+# Bevy recommendation: little optimisation for our code, full for dependencies.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+# Optimised builds without LTO, for measurements and quick release-like runs.
+[profile.fast]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true

@@ -1,0 +1,231 @@
+//! walker_core: first-person walker without engine types. Port of spikes/planet/player.gd
+//! (radial gravity, floor snap, 50 degree floor limit) with its own move-and-slide over a
+//! `World` that only answers sweeps and overlaps. The engine side (Avian shape casts) lives
+//! in the Bevy crate.
+//!
+//! The walker lives in a frame: the planet (identity frame, world coordinates) or a ship
+//! cabin (the ship's pose). Position and velocity are stored in that frame, so a moving
+//! ship carries the walker without any velocity of its own (spike 3 pattern).
+//! All numbers are spike test values (assumptions), not designed.
+use glam::{DQuat, DVec2, DVec3};
+
+/// Result of a sweep, world space.
+#[derive(Copy, Clone, Debug)]
+pub struct Hit {
+    /// Distance travelled along the motion direction before contact.
+    pub distance: f64,
+    /// Surface normal of what was hit, pointing towards the walker.
+    pub normal: DVec3,
+}
+
+/// What the walker needs from the physics world. Positions are the feet (bottom of the
+/// capsule), `up` the capsule axis, all in world space.
+pub trait World {
+    /// First hit when moving the capsule by `motion`, or None. `motion` is not zero.
+    fn sweep(&self, feet: DVec3, up: DVec3, motion: DVec3) -> Option<Hit>;
+    /// Displacement that moves the capsule out of every overlap (zero when free).
+    fn depenetrate(&self, feet: DVec3, up: DVec3) -> DVec3;
+}
+
+/// Local-to-world transform of the frame the walker lives in.
+#[derive(Copy, Clone, Debug)]
+pub struct Frame {
+    pub origin: DVec3,
+    pub rot: DQuat,
+}
+
+impl Frame {
+    pub const IDENTITY: Frame = Frame { origin: DVec3::ZERO, rot: DQuat::IDENTITY };
+    pub fn to_world(&self, p: DVec3) -> DVec3 {
+        self.origin + self.rot * p
+    }
+    pub fn to_local(&self, p: DVec3) -> DVec3 {
+        self.rot.inverse() * (p - self.origin)
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct WalkerConfig {
+    pub radius: f64,
+    /// Total capsule height (Godot CapsuleShape3D convention).
+    pub height: f64,
+    pub walk_speed: f64,
+    pub run_speed: f64,
+    pub jump_speed: f64,
+    pub floor_max_angle_deg: f64,
+    pub snap_length: f64,
+    /// Gap kept to every surface after a sweep.
+    pub skin: f64,
+    pub max_slides: usize,
+}
+
+impl Default for WalkerConfig {
+    fn default() -> Self {
+        // player.gd values; skin and slide count are this port's choice.
+        WalkerConfig {
+            radius: 0.35,
+            height: 1.8,
+            walk_speed: 5.0,
+            run_speed: 12.0,
+            jump_speed: 5.0,
+            floor_max_angle_deg: 50.0,
+            snap_length: 0.5,
+            skin: 0.01,
+            max_slides: 4,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct WalkInput {
+    /// x right, y forward, each -1..1.
+    pub dir: DVec2,
+    pub run: bool,
+    pub jump: bool,
+    /// Heading change this step, radians, positive turns left (mouse look).
+    pub yaw: f64,
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct StepInfo {
+    pub hits: u32,
+    pub snapped: bool,
+    pub depenetrated: f64,
+}
+
+#[derive(Clone, Debug)]
+pub struct Walker {
+    pub cfg: WalkerConfig,
+    /// Feet, frame coordinates.
+    pub pos: DVec3,
+    /// Frame coordinates (relative to the frame, not to the world).
+    pub vel: DVec3,
+    /// Heading, frame coordinates, kept perpendicular to up.
+    pub forward: DVec3,
+    pub grounded: bool,
+    pub floor_normal: DVec3,
+}
+
+impl Walker {
+    pub fn new(pos: DVec3, forward: DVec3) -> Walker {
+        Walker {
+            cfg: WalkerConfig::default(),
+            pos,
+            vel: DVec3::ZERO,
+            forward,
+            grounded: false,
+            floor_normal: DVec3::Y,
+        }
+    }
+
+    fn is_floor(&self, normal: DVec3, up: DVec3) -> bool {
+        normal.dot(up) >= self.cfg.floor_max_angle_deg.to_radians().cos()
+    }
+
+    /// Keep the heading, make it perpendicular to `up` (player.gd `_align_to_up`).
+    pub fn align(&mut self, up: DVec3, yaw: f64) {
+        let mut f = self.forward;
+        if yaw != 0.0 {
+            f = DQuat::from_axis_angle(up, yaw) * f;
+        }
+        f -= up * f.dot(up);
+        if f.length_squared() < 1e-12 {
+            f = up.any_orthonormal_vector();
+        }
+        self.forward = f.normalize();
+    }
+
+    /// Moves the walker into another frame, keeping its world position. `frame_vel_change`
+    /// is old frame velocity minus new frame velocity at the walker, world space
+    /// (player.gd: `velocity -= ship.linear_velocity` on entering).
+    pub fn change_frame(&mut self, old: &Frame, new: &Frame, frame_vel_change: DVec3) {
+        let world_pos = old.to_world(self.pos);
+        let world_vel = old.rot * self.vel + frame_vel_change;
+        let world_fwd = old.rot * self.forward;
+        self.pos = new.to_local(world_pos);
+        self.vel = new.rot.inverse() * world_vel;
+        self.forward = new.rot.inverse() * world_fwd;
+    }
+
+    /// One fixed step. `up` and `gravity` (m/s², magnitude) are in frame coordinates.
+    pub fn step(&mut self, frame: &Frame, up: DVec3, gravity: f64, input: &WalkInput, world: &impl World, dt: f64) -> StepInfo {
+        let mut info = StepInfo::default();
+        self.align(up, input.yaw);
+        let world_up = frame.rot * up;
+
+        // Out of any overlap first (terrain patch appeared around us, ship turned into us).
+        let push = world.depenetrate(frame.to_world(self.pos), world_up);
+        if push.length_squared() > 0.0 {
+            info.depenetrated = push.length();
+            self.pos += frame.rot.inverse() * push;
+        }
+
+        let right = self.forward.cross(up);
+        let speed = if input.run { self.cfg.run_speed } else { self.cfg.walk_speed };
+        let horizontal = (right * input.dir.x + self.forward * input.dir.y).clamp_length_max(1.0) * speed;
+        let mut vertical = self.vel.dot(up);
+        let mut jumping = false;
+        if self.grounded {
+            jumping = input.jump;
+            vertical = if jumping { self.cfg.jump_speed } else { 0.0 };
+        } else {
+            vertical -= gravity * dt;
+        }
+        self.vel = horizontal + up * vertical;
+
+        let was_grounded = self.grounded;
+        self.grounded = false;
+        let mut motion = self.vel * dt;
+        for _ in 0..self.cfg.max_slides {
+            if motion.length_squared() < 1e-14 {
+                break;
+            }
+            let world_motion = frame.rot * motion;
+            let Some(hit) = world.sweep(frame.to_world(self.pos), world_up, world_motion) else {
+                self.pos += motion;
+                break;
+            };
+            info.hits += 1;
+            let len = motion.length();
+            let dir = motion / len;
+            let travel = (hit.distance - self.cfg.skin).max(0.0).min(len);
+            self.pos += dir * travel;
+            let n = frame.rot.inverse() * hit.normal;
+            let rest = motion - dir * travel;
+            if self.is_floor(n, up) {
+                self.grounded = true;
+                self.floor_normal = n;
+                motion = rest - n * rest.dot(n).min(0.0);
+                if !jumping {
+                    // Standing on it: no further fall, slide horizontal speed along the floor.
+                    self.vel -= n * self.vel.dot(n).min(0.0);
+                }
+            } else if n.dot(up) > -0.1 {
+                // Wall or too steep (also in the air): slide along it, never upwards.
+                motion = rest - n * rest.dot(n).min(0.0);
+                motion -= up * motion.dot(up).max(0.0);
+                self.vel -= n * self.vel.dot(n).min(0.0);
+                self.vel -= up * self.vel.dot(up).max(0.0);
+            } else {
+                motion = rest - n * rest.dot(n).min(0.0);
+                self.vel -= n * self.vel.dot(n).min(0.0);
+            }
+        }
+
+        // Floor snap (Godot floor_snap_length): stay on the ground over small steps and crests.
+        if !self.grounded && was_grounded && !jumping && self.vel.dot(up) <= 1e-6 {
+            let probe = -world_up * self.cfg.snap_length;
+            if let Some(hit) = world.sweep(frame.to_world(self.pos), world_up, probe) {
+                let n = frame.rot.inverse() * hit.normal;
+                if self.is_floor(n, up) {
+                    self.pos -= up * (hit.distance - self.cfg.skin).max(0.0);
+                    self.grounded = true;
+                    self.floor_normal = n;
+                    info.snapped = true;
+                    self.vel -= up * self.vel.dot(up);
+                }
+            }
+        }
+        info
+    }
+}

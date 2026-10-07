@@ -1,0 +1,7 @@
+[alias]
+# Dev run with Bevy dynamic linking (about 1 s rebuilds). Never for release.
+dev = "run -p exo_app --features dynamic --"
+
+# Windows cross build from Linux with llvm-mingw (README, section "Windows build").
+[target.x86_64-pc-windows-gnullvm]
+linker = "x86_64-w64-mingw32-clang"

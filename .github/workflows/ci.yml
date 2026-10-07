@@ -1,0 +1,101 @@
+# Linux runner: workspace tests (headless, no GPU), full scenario headless, Windows cross build
+# with llvm-mingw. Windows runner: full scenario headless on the exe.
+# Actions pinned to commit SHAs, read-only token, no secrets.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  LLVM_MINGW_VERSION: "20260922"
+  CARGO_TERM_COLOR: always
+  # Keep the cached target directory small.
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: System packages for Bevy
+        run: sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+      - name: Cache cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ci-${{ hashFiles('Cargo.lock') }}-${{ hashFiles('crates/**/*.rs') }}
+          restore-keys: ci-${{ hashFiles('Cargo.lock') }}-
+
+      - name: Cache llvm-mingw
+        id: tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/tools
+          key: tools-llvm-mingw-${{ env.LLVM_MINGW_VERSION }}
+
+      - name: Download llvm-mingw
+        if: steps.tools.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/tools
+          curl -sSfL https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-22.04-x86_64.tar.xz \
+            | tar -xJ -C ~/tools
+          mv ~/tools/llvm-mingw-* ~/tools/llvm-mingw
+
+      - name: Rust targets
+        run: rustup target add x86_64-pc-windows-gnullvm
+
+      - name: Tests
+        run: cargo test --workspace
+
+      - name: Full scenario headless (Linux)
+        run: cargo run -p exo_app -- --headless --scenario=full --out=results-ci
+
+      - name: Windows cross build
+        run: |
+          export PATH=~/tools/llvm-mingw/bin:$PATH
+          cargo build --profile fast -p exo_app --target x86_64-pc-windows-gnullvm
+          mkdir -p dist-windows
+          cp target/x86_64-pc-windows-gnullvm/fast/exo_app.exe dist-windows/
+          cp ~/tools/llvm-mingw/x86_64-w64-mingw32/bin/libunwind.dll dist-windows/
+
+      - name: Drop incremental data before the cache is saved
+        run: rm -rf target/*/incremental target/*/*/incremental
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-results
+          path: results-ci
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows
+          path: dist-windows
+
+  check-windows:
+    needs: build
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows
+          path: exo
+      - name: Full scenario headless (Windows)
+        shell: pwsh
+        run: |
+          cd exo
+          $p = Start-Process -FilePath .\exo_app.exe -ArgumentList '--headless','--scenario=full','--out=results' -Wait -PassThru -NoNewWindow
+          Get-Content results\full.txt
+          exit $p.ExitCode

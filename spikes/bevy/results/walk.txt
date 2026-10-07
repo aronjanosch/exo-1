@@ -1,0 +1,3 @@
+stand still 5 s (walker): max step 0.0000 mm, drift 0.0000 mm, 4982.1 m from planet centre | rescues 0, walker grounded 100.0 %, net-only 0
+walk 20 s (run): walked 233 m, slow ticks 0, ticks without patch 0, 5.0 km from world origin, GPU error 2 m ahead 0.005 px (calculated) | rescues 0, walker grounded 100.0 %, net-only 0
+TOTAL: rescues 0, walker grounded 97.8 % of 1684 steps, net-only 0, depenetrations 620, origin shifts 0 (max 0.000 ms, mean 0.000 ms), patch build mean 2.09 ms max 3.23 ms, simulated 28.1 s

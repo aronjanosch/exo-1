@@ -217,7 +217,7 @@ impl Walker {
         }
 
         // Floor snap (Godot floor_snap_length): stay on the ground over small steps and crests.
-        if !self.grounded && was_grounded && !jumping && self.vel.dot(up) <= 0.0 {
+        if !self.grounded && was_grounded && !jumping && self.vel.dot(up) <= 1e-6 {
             let probe = -world_up * self.cfg.snap_length;
             if let Some(hit) = world.sweep(frame.to_world(self.pos), world_up, probe) {
                 let n = frame.rot.inverse() * hit.normal;

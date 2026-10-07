@@ -428,6 +428,7 @@ version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4bfadbebfc6599aa59289b754ac30023959854304f3d393da2cf62bb3cd5df8f"
 dependencies = [
+ "bevy_dylib",
  "bevy_internal",
 ]
 
@@ -758,6 +759,15 @@ dependencies = [
  "log",
  "serde",
  "sysinfo",
+]
+
+[[package]]
+name = "bevy_dylib"
+version = "0.19.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3c03a128bac8b59a8699b81038b574e3cfa33dfae18e375d46be028d3d13c0e"
+dependencies = [
+ "bevy_internal",
 ]
 
 [[package]]
@@ -2683,6 +2693,19 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "flight_core",
+ "planet_core",
+ "serde_json",
+ "walker_core",
+]
+
+[[package]]
+name = "fastnoise-lite"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e5f3c3cc9081e5d0e18bcd50e80cd33cba47fc22f88a9da9c33ecd1c87ea5c0"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
@@ -4579,6 +4602,15 @@ name = "plain"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
+
+[[package]]
+name = "planet_core"
+version = "0.1.0"
+dependencies = [
+ "fastnoise-lite",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "plotters"

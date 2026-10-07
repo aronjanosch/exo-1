@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["flight_core", "walker_core", "exo_app"]
+members = ["flight_core", "walker_core", "net_core", "exo_app"]
 
 [workspace.dependencies]
 bevy = { version = "=0.19.1" }

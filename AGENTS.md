@@ -42,6 +42,16 @@ New dependencies, CI, `.cargo/`, `build.rs`, `unsafe`, networking, spawning proc
 
 Project skills live in `.agents/skills/`. New contributors start with `exo-onboarding`, which also lists the external skills to install (`.agents/skills/exo-onboarding/SKILLS.md`). Before editing a skill, `AGENTS.md` or `CLAUDE.md`, load `writing-for-agents`.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live in GitHub Issues; use `gh`. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context documentation rules. See `docs/agents/domain.md`.
+
 ## Local environment
 
 If a `WORKSPACE.md` exists in the repo root, read it before running anything. Each person writes their own to describe their machine, for example a shared `CARGO_TARGET_DIR`. It is gitignored. Follow it over the defaults here.

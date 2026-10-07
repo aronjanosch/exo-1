@@ -12,3 +12,14 @@ WORKSPACE.md
 
 # Claude Code skill links, created locally from .agents/skills
 .claude/skills/
+
+# Locally installed third-party skills (keep project skills in .agents/skills)
+/.agents/skills/code-review/
+/.agents/skills/codebase-design/
+/.agents/skills/domain-modeling/
+/.agents/skills/grilling/
+/.agents/skills/implement/
+/.agents/skills/setup-matt-pocock-skills/
+/.agents/skills/to-spec/
+/.agents/skills/to-tickets/
+/.agents/skills/writing-for-agents/

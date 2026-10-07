@@ -2,7 +2,9 @@
 //! logic in planet_core, flight_core and walker_core.
 pub mod controls;
 pub mod env;
+pub mod net;
 pub mod origin;
+pub mod record;
 pub mod ring;
 pub mod scenario;
 pub mod ship;
@@ -48,11 +50,13 @@ pub struct Options {
     /// Render-origin shift threshold in metres, 0 = off.
     pub origin_shift: f64,
     pub out_dir: PathBuf,
+    /// Write the scripted run's ship and walker path (net_core Trajectory) to this file.
+    pub record: Option<PathBuf>,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { scenario: None, headless: false, hidden: false, radius: 5000.0, planet_offset: DVec3::ZERO, origin_shift: 1000.0, out_dir: PathBuf::from("results") }
+        Options { scenario: None, headless: false, hidden: false, radius: 5000.0, planet_offset: DVec3::ZERO, origin_shift: 1000.0, out_dir: PathBuf::from("results"), record: None }
     }
 }
 
@@ -68,6 +72,7 @@ impl Options {
                 "--radius" => o.radius = v.parse().expect("radius"),
                 "--origin-shift" => o.origin_shift = v.parse().expect("origin-shift"),
                 "--out" => o.out_dir = PathBuf::from(v),
+                "--record" => o.record = Some(PathBuf::from(v)),
                 "--planet-offset" => {
                     let c: Vec<f64> = v.split(',').map(|x| x.parse().expect("offset")).collect();
                     o.planet_offset = DVec3::new(c[0], c[1], c[2]);
@@ -133,6 +138,10 @@ pub fn build_app(o: &Options) -> App {
     });
     app.add_systems(FixedUpdate, (scenario::run_script.run_if(resource_exists::<scenario::Script>), ship::ship_control, walker::walker_step).chain());
     app.add_systems(Update, ring::update_ring);
+    if let Some(path) = &o.record {
+        app.insert_resource(record::Recorder::new(path.clone()));
+        app.add_systems(FixedLast, record::record_tick);
+    }
 
     if !o.headless {
         app.init_resource::<view::ViewState>().insert_resource(ClearColor(Color::BLACK));

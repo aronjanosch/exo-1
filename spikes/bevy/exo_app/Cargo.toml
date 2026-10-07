@@ -6,6 +6,8 @@ edition = "2024"
 [features]
 # Bevy's dynamic linking for faster incremental builds (dev only, never for release).
 dynamic = ["bevy/dynamic_linking"]
+# Bevy Remote Protocol (BRP) for agents: HTTP on 127.0.0.1:15702. Dev only, never in release builds.
+remote = ["dep:bevy_brp_extras"]
 
 [dependencies]
 bevy = { workspace = true }
@@ -15,3 +17,4 @@ flight_core = { path = "../flight_core" }
 walker_core = { path = "../walker_core" }
 net_core = { path = "../net_core" }
 serde_json = "1"
+bevy_brp_extras = { version = "=0.22.10", optional = true }

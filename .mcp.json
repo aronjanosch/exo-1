@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "bevy_brp": {
+      "command": "mise",
+      "args": ["exec", "--cd", "spikes/bevy", "--", "bevy_brp_mcp"]
+    }
+  }
+}

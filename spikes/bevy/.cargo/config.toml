@@ -1,0 +1,3 @@
+[alias]
+# Dev run with Bevy dynamic linking (1.1 s rebuilds). Never for release.
+dev = "run -p exo_app --features dynamic --"

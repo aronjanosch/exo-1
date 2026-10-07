@@ -126,6 +126,11 @@ pub fn build_app(o: &Options) -> App {
             ..default()
         }));
     }
+    #[cfg(feature = "remote")]
+    if !o.headless {
+        app.add_plugins(bevy_brp_extras::BrpExtrasPlugin);
+        app.register_type::<walker::Player>().register_type::<walker::WalkStats>().register_type::<ship::Ship>();
+    }
     app.insert_resource(Time::<Fixed>::from_duration(TICK));
     app.add_plugins(PhysicsPlugins::default())
         .insert_resource(Gravity(DVec3::ZERO))

@@ -13,12 +13,15 @@ pub const SEAT_POS: DVec3 = DVec3::new(0.0, 0.6, -3.0);
 const MOUSE_SENSITIVITY: f64 = 0.002;
 
 #[derive(Component)]
+#[cfg_attr(feature = "remote", derive(Reflect), reflect(Component, from_reflect = false))]
 pub struct Ship {
+    #[cfg_attr(feature = "remote", reflect(ignore))]
     pub ctl: ShipController,
     pub piloted: bool,
     /// Parked: static until someone first sits down (ship.gd `freeze`).
     pub parked: bool,
     /// Drive while nobody pilots (scripts only), like ship.gd test_input/test_roll/test_boost.
+    #[cfg_attr(feature = "remote", reflect(ignore))]
     pub test_input: FlightInput,
 }
 

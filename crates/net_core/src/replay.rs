@@ -18,7 +18,7 @@ pub struct Trajectory {
 }
 
 impl Trajectory {
-    /// "EXOPATH1\n<count>\n<phase|phase|...>\n" followed by `count` 144-byte snapshots.
+    /// "EXOPATH1\n<count>\n<phase|phase|...>\n" followed by `count` snapshots of `SIZE` bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut b = format!("EXOPATH1\n{}\n{}\n", self.states.len(), self.phases.join("|")).into_bytes();
         for s in &self.states {

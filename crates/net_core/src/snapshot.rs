@@ -1,10 +1,11 @@
-//! Fixed data-only wire format, 144 bytes, little endian. Planet-relative f64 positions, f32
+//! Fixed data-only wire format, 148 bytes, little endian. Planet-relative f64 positions, f32
 //! velocities and quaternions (as in spike 4). Never anything but plain numbers.
 use crate::MAX_OWNER;
 use glam::{DQuat, DVec3};
 
-pub const SIZE: usize = 144;
-pub const VERSION: u32 = 1;
+pub const SIZE: usize = 148;
+/// 2: cabin gravity (`lag`) added.
+pub const VERSION: u32 = 2;
 const MAX_PLANET: u32 = 7;
 
 /// Which frame the walker pose is in.
@@ -35,6 +36,8 @@ pub struct Snapshot {
     pub wq: DQuat,
     pub flags: u32,
     pub input_tick: u32,
+    /// Cabin gravity (LAG) level of the ship, 0..1; sent as one byte.
+    pub lag: f64,
 }
 
 impl Snapshot {
@@ -54,6 +57,7 @@ impl Snapshot {
             wq: q,
             flags: 0,
             input_tick: 0,
+            lag: 1.0,
         }
     }
 
@@ -74,6 +78,7 @@ impl Snapshot {
         put_q(&mut b, 120, self.wq);
         b[136..140].copy_from_slice(&self.flags.to_le_bytes());
         b[140..144].copy_from_slice(&self.input_tick.to_le_bytes());
+        b[144..148].copy_from_slice(&((self.lag.clamp(0.0, 1.0) * 255.0).round() as u32).to_le_bytes());
         b
     }
 
@@ -105,7 +110,11 @@ impl Snapshot {
             }
         }
         let (q, wq) = (get_q(b, 68)?, get_q(b, 120)?);
-        Some(Snapshot { owner, planet, frame, frame_id, seq: u32_at(b, 20), t, p, v, q, wp, wv, wq, flags: u32_at(b, 136), input_tick: u32_at(b, 140) })
+        let lag = u32_at(b, 144);
+        if lag > 255 {
+            return None;
+        }
+        Some(Snapshot { owner, planet, frame, frame_id, seq: u32_at(b, 20), t, p, v, q, wp, wv, wq, flags: u32_at(b, 136), input_tick: u32_at(b, 140), lag: lag as f64 / 255.0 })
     }
 }
 

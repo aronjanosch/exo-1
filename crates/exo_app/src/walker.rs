@@ -131,10 +131,9 @@ fn cabin_frame(
     }
 }
 
-/// Gravity in a cabin, world space. `lag` is None for another player's ship (its LAG state is not
-/// sent yet, issue #11): full ship gravity.
-fn cabin_gravity(lag: Option<&flight_core::Lag>, frame: &Frame, planet: &PlanetRes, at: DVec3) -> DVec3 {
-    lag.copied().unwrap_or_else(flight_core::Lag::full).gravity(frame.rot * DVec3::Y, flight_core::PlanetEnv::gravity_at(planet, at))
+/// Gravity in a cabin, world space.
+fn cabin_gravity(lag: &flight_core::Lag, frame: &Frame, planet: &PlanetRes, at: DVec3) -> DVec3 {
+    lag.gravity(frame.rot * DVec3::Y, flight_core::PlanetEnv::gravity_at(planet, at))
 }
 
 /// Up from a gravity vector (world space); weightless keeps `fallback`.
@@ -153,7 +152,7 @@ pub fn walker_step(
     mut stats: ResMut<WalkStats>,
     mut players: Query<&mut Player>,
     mut ships: Query<(Entity, &mut Ship, &Position, &Rotation, &LinearVelocity)>,
-    remotes: Query<(Entity, &Position, &Rotation, &LinearVelocity), With<RemoteShip>>,
+    remotes: Query<(Entity, &Position, &Rotation, &LinearVelocity, &RemoteShip)>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
 ) {
     let dt = time.delta_secs_f64();
@@ -163,8 +162,13 @@ pub fn walker_step(
     // The cabin the walker is in: the own ship, or the proxy of another player's ship.
     let cur_e = pl.ship.unwrap_or(ship_e);
     let (frame_ship, slv) = match remotes.get(cur_e) {
-        Ok((e, p, r, v)) => (cabin_frame(e, (p, r), &floors), *v),
+        Ok((e, p, r, v, _)) => (cabin_frame(e, (p, r), &floors), *v),
         Err(_) => (own_frame, own_v),
+    };
+    // Cabin gravity of the own ship, or what another player's snapshots say (issue #11).
+    let lag_of = |e: Entity| match remotes.get(e) {
+        Ok((.., rs)) => flight_core::Lag { level: rs.lag, ..flight_core::Lag::full() },
+        Err(_) => own_lag,
     };
 
     // F: sit at the seat or stand up.
@@ -276,7 +280,7 @@ pub fn walker_step(
     let (frame, up, g) = match pl.ship {
         // In the cabin: LAG towards the floor, mixed with the planet's while it comes up or goes down.
         Some(e) => {
-            let g = cabin_gravity((e == ship_e).then_some(&own_lag), &frame_ship, &planet, frame_ship.to_world(pl.w.pos));
+            let g = cabin_gravity(&lag_of(e), &frame_ship, &planet, frame_ship.to_world(pl.w.pos));
             pl.cabin_up = frame_ship.rot.inverse() * up_from(g, frame_ship.rot * DVec3::Y);
             (frame_ship, pl.cabin_up, g.length())
         }
@@ -325,10 +329,10 @@ pub fn walker_step(
     match pl.ship {
         None => {
             let own = (ship_e, own_frame, own_v);
-            let others = remotes.iter().map(|(e, p, r, v)| (e, cabin_frame(e, (p, r), &floors), *v));
+            let others = remotes.iter().map(|(e, p, r, v, _)| (e, cabin_frame(e, (p, r), &floors), *v));
             if let Some((e, f, v)) = std::iter::once(own).chain(others).find(|(_, f, _)| cabin_contains(f.to_local(pl.w.pos), -0.2)) {
                 let look = pl.world_look(Frame::IDENTITY);
-                let up = up_from(cabin_gravity((e == ship_e).then_some(&own_lag), &f, &planet, pl.w.pos), f.rot * DVec3::Y);
+                let up = up_from(cabin_gravity(&lag_of(e), &f, &planet, pl.w.pos), f.rot * DVec3::Y);
                 pl.w.change_frame(&Frame::IDENTITY, &f, -v.0);
                 pl.ship = Some(e);
                 pl.cabin_up = f.rot.inverse() * up;

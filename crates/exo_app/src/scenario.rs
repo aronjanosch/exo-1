@@ -48,7 +48,7 @@ fn foreign_truth(d: &ForeignDriver, t: f64) -> (DVec3, bevy::math::DQuat, DVec3)
 pub fn foreign_drive(
     mut d: ResMut<ForeignDriver>,
     mut origin: ResMut<RenderOrigin>,
-    mut q: Query<(&mut Position, &mut Rotation, &mut LinearVelocity, &mut AngularVelocity), With<RemoteShip>>,
+    mut q: Query<(&mut Position, &mut Rotation, &mut LinearVelocity, &mut AngularVelocity, &mut RemoteShip)>,
 ) {
     d.tick += 1;
     let t = d.tick as f64 * DT;
@@ -56,13 +56,16 @@ pub fn foreign_drive(
         let (p, qn, v) = foreign_truth(&d, t);
         let mut s = Snapshot::new(2, t, p, v, qn);
         s.seq = d.tick as u32;
+        // Parked means landed: its cabin gravity is off.
+        s.lag = if d.parked.is_some() { 0.0 } else { 1.0 };
         // Through the wire format, like a received packet.
         let s = Snapshot::decode(&s.encode()).expect("own snapshot decodes");
         d.buf.push(s);
     }
     let target = t - 0.15;
     let Some(sample) = d.buf.sample(target) else { return };
-    let Ok((mut p, mut r, mut v, mut w)) = q.get_mut(d.proxy) else { return };
+    let Ok((mut p, mut r, mut v, mut w, mut rs)) = q.get_mut(d.proxy) else { return };
+    rs.lag = sample.s.lag;
     p.0 = sample.s.p;
     r.0 = sample.s.q;
     v.0 = sample.s.v;
@@ -1090,6 +1093,44 @@ fn foreign_steps(s: &mut Vec<Step>) {
             let dec = Snapshot::decode(&s.encode()).unwrap();
             check(c, dec.frame == net_core::snapshot::FrameKind::Planet && dec.wp.distance(snap.0 - pl.centre) < 1e-6 && snap.2.is_none(),
                 "outside walker snapshot uses the shared planet frame".into());
+            return true;
+        }
+        false
+    }));
+    // 6. Issue #11: the parked (landed) foreign ship stands 8 deg tilted and sends its cabin
+    //    gravity off; a walker in its cabin stands about the planet's up, not the tilted floor's.
+    s.push(Box::new(|w, _| {
+        let mut d = w.resource_mut::<ForeignDriver>();
+        let (pos, rot) = d.parked.unwrap();
+        d.parked = Some((pos + rot * DVec3::new(0.0, 0.6, 0.0), rot * bevy::math::DQuat::from_rotation_x(8f64.to_radians())));
+        true
+    }));
+    s.push(wait(1.0));
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "in the cabin of the tilted, landed foreign ship");
+            let proxy = w.resource::<ForeignDriver>().proxy;
+            let (p, r) = (w.get::<Position>(proxy).unwrap().0, w.get::<Rotation>(proxy).unwrap().0);
+            let f = Frame { origin: p, rot: r };
+            with_player(w, |pl| {
+                pl.ship = Some(proxy);
+                pl.w.pos = DVec3::new(0.0, 0.4, -1.0);
+                pl.w.halt();
+                pl.w.forward = DVec3::NEG_Z;
+                pl.cabin_up = DVec3::Y;
+                pl.view_up = f.rot * DVec3::Y;
+            });
+        }
+        if c.t >= 1.0 {
+            let proxy = w.resource::<ForeignDriver>().proxy;
+            let (p, r) = (w.get::<Position>(proxy).unwrap().0, w.get::<Rotation>(proxy).unwrap().0);
+            let lag = w.get::<RemoteShip>(proxy).unwrap().lag;
+            let pl = planet(w);
+            let up = with_player(w, |pl| r * pl.cabin_up);
+            let off = up.angle_between(pl.up(p)).to_degrees();
+            let tilt = (r * DVec3::Y).angle_between(pl.up(p)).to_degrees();
+            end(w, c, format!("received cabin gravity {:.0} %, up {off:.3} deg from the planet's, ship tilt {tilt:.1} deg", lag * 100.0));
+            check(c, lag == 0.0 && off < 0.5 && tilt > 7.0, format!("landed foreign ship: its cabin gravity is off over the wire, walker stands about the planet's up ({off:.3} deg)"));
             return true;
         }
         false

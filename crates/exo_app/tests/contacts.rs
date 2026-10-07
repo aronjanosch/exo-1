@@ -42,7 +42,7 @@ fn world(own_x: f64, ghost_x: f64, speed: f64, ghost_layer: exo_app::Layer) -> W
         .id();
     let ghost = app
         .world_mut()
-        .spawn((RemoteShip { owner: 2 }, RigidBody::Kinematic, Position(DVec3::new(ghost_x, 100.0, 0.0)), Rotation::default(), SleepingDisabled, Transform::default()))
+        .spawn((RemoteShip { owner: 2, lag: 1.0 }, RigidBody::Kinematic, Position(DVec3::new(ghost_x, 100.0, 0.0)), Rotation::default(), SleepingDisabled, Transform::default()))
         .id();
     let mut commands = app.world_mut().commands();
     // The proxy hull layer is what the test varies.

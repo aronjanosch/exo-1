@@ -288,7 +288,7 @@ impl Net {
 pub fn spawn_proxy(commands: &mut Commands, owner: u32, pos: DVec3, rot: DQuat) -> Entity {
     let e = commands
         .spawn((
-            RemoteShip { owner },
+            RemoteShip { owner, lag: 1.0 },
             RigidBody::Kinematic,
             Position(pos),
             Rotation(rot),
@@ -312,7 +312,7 @@ pub fn net_pre(
     mut origin: ResMut<RenderOrigin>,
     mut players: Query<&mut Player>,
     own: Query<(&Position, &Rotation), (With<Ship>, Without<RemoteShip>)>,
-    mut proxies: Query<(&mut Position, &mut Rotation, &mut LinearVelocity, &mut AngularVelocity), (With<RemoteShip>, Without<Ship>)>,
+    mut proxies: Query<(&mut Position, &mut Rotation, &mut LinearVelocity, &mut AngularVelocity, &mut RemoteShip), Without<Ship>>,
     mut walkers: Query<&mut WorldPose, With<RemoteWalker>>,
 ) {
     let net = &mut *net;
@@ -339,7 +339,7 @@ pub fn net_pre(
         if let Some(e) = net.proxies.remove(&o) {
             if let Ok(mut pl) = players.single_mut() {
                 if pl.ship == Some(e) {
-                    if let Ok((p, r, v, _)) = proxies.get(e) {
+                    if let Ok((p, r, v, ..)) = proxies.get(e) {
                         let f = walker_core::Frame { origin: p.0, rot: r.0 };
                         pl.w.change_frame(&f, &walker_core::Frame::IDENTITY, v.0);
                         pl.ship = None;
@@ -373,11 +373,12 @@ pub fn net_pre(
         };
         match net.proxies.get(&owner).copied() {
             Some(e) => {
-                if let Ok((mut p, mut r, mut v, mut w)) = proxies.get_mut(e) {
+                if let Ok((mut p, mut r, mut v, mut w, mut rs)) = proxies.get_mut(e) {
                     p.0 = pos;
                     r.0 = s.q;
                     v.0 = s.v;
                     w.0 = if spin.is_finite() { spin } else { DVec3::ZERO };
+                    rs.lag = s.lag;
                 }
             }
             None => {
@@ -422,13 +423,13 @@ pub fn net_pre(
 pub fn net_post(
     mut net: ResMut<Net>,
     planet: Res<PlanetRes>,
-    ships: Query<(&Position, &Rotation, &LinearVelocity), (With<Ship>, Without<RemoteShip>)>,
+    ships: Query<(&Position, &Rotation, &LinearVelocity, &Ship), Without<RemoteShip>>,
     remote_ships: Query<&RemoteShip>,
     players: Query<&Player>,
 ) {
     let net = &mut *net;
     let now = net.now();
-    let (Ok((p, r, v)), Ok(pl)) = (ships.single(), players.single()) else { return };
+    let (Ok((p, r, v, ship)), Ok(pl)) = (ships.single(), players.single()) else { return };
     if !net.cfg.host {
         let host = net.host_addr.unwrap();
         if !net.ready {
@@ -453,7 +454,8 @@ pub fn net_post(
         net.seq += 1;
         // The cabin the walker is in: own ship, or the owner of the remote ship it boarded.
         let frame_owner = pl.ship.and_then(|e| remote_ships.get(e).ok()).map(|r| r.owner).unwrap_or(net.cfg.slot);
-        let s = crate::net::build_snapshot(net.cfg.slot, frame_owner, PLANET, net.clock.server_now(now), net.seq, &planet, (p, r, v), pl);
+        let mut s = crate::net::build_snapshot(net.cfg.slot, frame_owner, PLANET, net.clock.server_now(now), net.seq, &planet, (p, r, v), pl);
+        s.lag = ship.lag.level;
         let bytes = wire::encode_snapshot(&s);
         let to: Vec<SocketAddr> = if net.cfg.host { net.peers.values().map(|p| p.addr).collect() } else { vec![net.host_addr.unwrap()] };
         for a in to {

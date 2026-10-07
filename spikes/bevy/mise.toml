@@ -1,4 +1,2 @@
 [tools]
-sccache = "0.18.0"
-mold = "3.0.0"
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.146"

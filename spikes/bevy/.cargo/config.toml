@@ -1,7 +1,3 @@
-[build]
-# Shares compiled dependencies (Bevy, Avian) between worktrees.
-rustc-wrapper = "sccache"
-
 [alias]
 # Dev run with Bevy dynamic linking (1.1 s rebuilds). Never for release.
 dev = "run -p exo_app --features dynamic --"

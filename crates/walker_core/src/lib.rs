@@ -110,8 +110,10 @@ pub struct WalkerConfig {
     pub walk_speed: f64,
     pub run_speed: f64,
     pub jump_speed: f64,
-    /// m/s²; walking and stopping ease in at this rate, so a short tap is a slow step.
-    pub walk_accel: f64,
+    /// Step-off: below this speed (m/s) walking and stopping ease over `start_time`, above it
+    /// the walker is at full speed at once. So a short tap of W is a slow step.
+    pub start_speed: f64,
+    pub start_time: f64,
     pub floor_max_angle_deg: f64,
     pub snap_length: f64,
     /// Gap kept to every surface after a sweep.
@@ -128,7 +130,9 @@ impl Default for WalkerConfig {
             walk_speed: 5.0,
             run_speed: 12.0,
             jump_speed: 5.0,
-            walk_accel: 15.0, // assumed: walk speed in 0.33 s
+            // Initiator: 0 to 3 m/s within 0.1 s, then full speed.
+            start_speed: 3.0,
+            start_time: 0.1,
             floor_max_angle_deg: 50.0,
             snap_length: 0.5,
             skin: 0.01,
@@ -246,7 +250,14 @@ impl Walker {
             let speed = if input.run { self.cfg.run_speed } else { self.cfg.walk_speed };
             let target = (right * input.dir.x + self.forward * input.dir.y).clamp_length_max(1.0) * speed;
             let current = self.move_vel - up * self.move_vel.dot(up);
-            let horizontal = current + (target - current).clamp_length_max(self.cfg.walk_accel * dt);
+            let start = self.cfg.start_speed;
+            let horizontal = if current.length() < start - 1e-9 || target.length() < 1e-9 && current.length() <= start {
+                // Stepping off or coming to a stop: ease below the step-off speed.
+                let step = target.clamp_length_max(start);
+                current + (step - current).clamp_length_max(start / self.cfg.start_time * dt)
+            } else {
+                target
+            };
             self.move_vel = horizontal;
             let mut vertical = self.vel.dot(up);
             if self.grounded {

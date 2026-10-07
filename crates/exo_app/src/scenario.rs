@@ -560,7 +560,8 @@ fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: f64) -> Vec
 /// pulls it. `drift` gives the ship a speed towards the planet first (stopped not exactly).
 /// `push` is the allowed extra speed at the exit: outside the cabin the walker sweeps against the
 /// ship colliders of the previous tick, so a moving ramp gives it a small push (issue #9).
-/// `careful`: W only in 0.1 s taps every 0.5 s, a careful step out: the walker leaves slowly.
+/// `careful`: W only in 0.1 s taps every 0.5 s, a careful step out: the walker leaves at step-off
+/// speed (3 m/s) at most.
 fn step_out_in_space(name: &'static str, drift: f64, push: f64, careful: bool) -> Vec<Step> {
     vec![
         Box::new(move |w, _| {
@@ -616,7 +617,7 @@ fn step_out_in_space(name: &'static str, drift: f64, push: f64, careful: bool) -
                     "{:.0} m from planet centre, gravity {:.3} m/s², ship radial {ship_radial:+.3} m/s, walker relative to ship after exit {rel:.3} m/s (walk speed 5), velocity change over 5 s drift {dv:.6} m/s",
                     (p - pl.centre).length(), pl.gravity_at(p).length()
                 ));
-                let ok = if careful { rel < 2.0 } else { (rel - 5.0).abs() < 0.01 + push };
+                let ok = if careful { rel <= 3.01 } else { (rel - 5.0).abs() < 0.01 + push };
                 check(c, ok && dv < 1e-6,
                     format!("{name}: walker keeps the ship's velocity plus its own and drifts ({rel:.3} m/s relative, change {dv:.6} m/s)"));
                 return true;

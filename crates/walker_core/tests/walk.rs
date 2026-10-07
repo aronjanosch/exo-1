@@ -89,9 +89,9 @@ fn lands_and_walks_flat_ground_always_on_floor() {
     let g = walk(&world, &mut w, 600, DVec2::new(0.0, 1.0));
     println!("flat: grounded {g}/600, x {:.3}, y {:.4}", w.pos.x, w.pos.y);
     assert_eq!(g, 600);
-    // 10 s at walk speed, less the ramp-up (v² / 2a).
+    // 10 s at walk speed, less the step-off (0.1 s easing up to 3 m/s).
     let cfg = WalkerConfig::default();
-    let expected = 50.0 - cfg.walk_speed * cfg.walk_speed / (2.0 * cfg.walk_accel);
+    let expected = 50.0 - (cfg.walk_speed - cfg.start_speed * 0.5) * cfg.start_time;
     assert!((w.pos.x - expected).abs() < 0.1, "x {} expected {expected}", w.pos.x);
 }
 
@@ -242,18 +242,23 @@ fn suit_thrusts_along_the_body_and_brakes_to_rest() {
     assert!(ticks < 240, "brake took {ticks} ticks");
 }
 
-/// A short tap of W is a slow step: speed builds up and runs out at `walk_accel`, so a player can
-/// step out of a ship carefully instead of always leaving at walk speed.
+/// A short tap of W is a slow step: 0 to 3 m/s within 0.1 s, then full speed (initiator), so a
+/// player can step out of a ship carefully instead of always leaving at walk speed.
 #[test]
 fn tap_is_a_slow_step() {
+    let cfg = WalkerConfig::default();
     let world = flat();
     let mut w = Walker::new(DVec3::ZERO, DVec3::X);
     walk(&world, &mut w, 10, DVec2::ZERO);
-    walk(&world, &mut w, 6, DVec2::new(0.0, 1.0)); // 0.1 s
+    walk(&world, &mut w, 3, DVec2::new(0.0, 1.0)); // 0.05 s
     let top = w.vel.length();
-    let accel = WalkerConfig::default().walk_accel;
-    assert!((top - accel * 0.1).abs() < 1e-6, "speed after a 0.1 s tap {top}");
-    walk(&world, &mut w, 30, DVec2::ZERO);
+    assert!((top - cfg.start_speed * 0.5).abs() < 1e-6, "speed after a 0.05 s tap {top}");
+    walk(&world, &mut w, 10, DVec2::ZERO);
     assert!(w.vel.length() < 1e-9, "comes to rest, {}", w.vel.length());
     assert!(w.pos.x < 0.2, "a tap moves only a little: {}", w.pos.x);
+    // Held: step-off speed after 0.1 s, full walk speed right after.
+    walk(&world, &mut w, 6, DVec2::new(0.0, 1.0));
+    assert!((w.vel.length() - cfg.start_speed).abs() < 1e-6, "after 0.1 s {}", w.vel.length());
+    walk(&world, &mut w, 1, DVec2::new(0.0, 1.0));
+    assert!((w.vel.length() - cfg.walk_speed).abs() < 1e-6, "then full {}", w.vel.length());
 }

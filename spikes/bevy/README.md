@@ -20,6 +20,8 @@ cargo run -p exo_app -- --hidden --scenario=full      # same, invisible window (
 cargo run -p exo_app -- --headless --scenario=full    # no window, one physics tick per update
 cargo test --workspace                                # all checks, about 11 s after a build
 cargo build -p exo_app --features dynamic             # Bevy dynamic linking, about 1 s rebuilds
+cargo dev -- --scenario=full                          # alias: run with `dynamic`
+cargo run -p exo_app --features dynamic,remote -- --hidden   # BRP on 127.0.0.1:15702 (dev only, red-class, windowed only; MCP server in .mcp.json)
 ./run-agent.sh ./target/release/exo_app --scenario=full   # window on workspace 7 without focus (frame times)
 ```
 

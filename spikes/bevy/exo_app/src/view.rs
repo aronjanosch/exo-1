@@ -159,14 +159,16 @@ pub fn update_hud(
     players: Query<&Player>,
     ships: Query<(&Ship, &avian3d::prelude::Position, &avian3d::prelude::LinearVelocity)>,
     mut hud: Query<&mut Text, With<Hud>>,
+    mut phys: ResMut<crate::PhysicsTiming>,
 ) {
+    let phys_ms = std::mem::take(&mut phys.frame_ms);
     let ms = time.delta_secs_f64() * 1000.0;
     if view.skip_frames > 0 {
         view.skip_frames -= 1;
     } else {
         view.frame_ms.push(ms);
         if ms > 30.0 {
-            eprintln!("LONG FRAME {ms:.1} ms: chunks visible {} pending {}, patches {} pending {}", terrain.visible, terrain.pending, ring.patches.len(), ring.pending());
+            eprintln!("LONG FRAME {ms:.1} ms: chunks visible {} pending {}, patches {} pending {}, ring system {:.2} ms, terrain max {:.2} ms, physics {phys_ms:.2} ms", terrain.visible, terrain.pending, ring.patches.len(), ring.pending(), ring.last_frame_ms, terrain.frame_ms_max);
         }
     }
     let (Ok(pl), Ok((ship, sp, sv)), Ok(mut text)) = (players.single(), ships.single(), hud.single_mut()) else { return };

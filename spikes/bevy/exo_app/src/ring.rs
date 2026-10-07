@@ -36,6 +36,8 @@ pub struct Ring {
     pub build_ms_sum: f64,
     pub build_count: u32,
     pub build_ms_max: f64,
+    /// Main-thread time of the last update_ring call.
+    pub last_frame_ms: f64,
 }
 
 impl Ring {
@@ -51,6 +53,7 @@ impl Ring {
             build_ms_sum: 0.0,
             build_count: 0,
             build_ms_max: 0.0,
+            last_frame_ms: 0.0,
         }
     }
 
@@ -97,7 +100,13 @@ impl Ring {
     }
 }
 
-pub fn update_ring(mut commands: Commands, time: Res<Time>, planet: Res<PlanetRes>, mut ring: ResMut<Ring>) {
+pub fn update_ring(commands: Commands, time: Res<Time>, planet: Res<PlanetRes>, mut ring: ResMut<Ring>) {
+    let t0 = Instant::now();
+    update_ring_inner(commands, &time, &planet, &mut ring);
+    ring.last_frame_ms = t0.elapsed().as_secs_f64() * 1000.0;
+}
+
+fn update_ring_inner(mut commands: Commands, time: &Time, planet: &PlanetRes, ring: &mut Ring) {
     // Collect finished jobs, a few per frame.
     let mut adds = 0;
     let keys: Vec<Key> = ring.pending.keys().copied().collect();
@@ -148,7 +157,7 @@ pub fn update_ring(mut commands: Commands, time: Res<Time>, planet: Res<PlanetRe
     }
     let mut want = HashMap::new();
     for face in 0..6 {
-        ring.collect(&planet, face, -1.0, -1.0, 2.0, 0, &points, &mut want);
+        ring.collect(planet, face, -1.0, -1.0, 2.0, 0, &points, &mut want);
     }
     let pool = AsyncComputeTaskPool::get();
     for (&key, &(a0, b0, size, dist)) in &want {

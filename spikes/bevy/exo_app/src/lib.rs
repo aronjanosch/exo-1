@@ -27,6 +27,13 @@ pub enum Layer {
     Ramp,
 }
 
+/// Wall time spent in Avian's physics step, summed over the fixed ticks of one frame.
+#[derive(Resource, Default)]
+pub struct PhysicsTiming {
+    start: Option<std::time::Instant>,
+    pub frame_ms: f64,
+}
+
 /// One physics tick at 60 Hz (Godot's default, used by all spikes).
 pub const TICK: Duration = Duration::from_nanos(16_666_667);
 
@@ -111,6 +118,15 @@ pub fn build_app(o: &Options) -> App {
     app.insert_resource(planet);
     app.init_resource::<controls::Controls>().init_resource::<walker::WalkStats>();
     app.add_plugins(origin::plugin);
+    app.init_resource::<PhysicsTiming>();
+    app.add_systems(FixedPostUpdate, (
+        (|mut t: ResMut<PhysicsTiming>| t.start = Some(std::time::Instant::now())).before(PhysicsSystems::First),
+        (|mut t: ResMut<PhysicsTiming>| {
+            if let Some(s) = t.start.take() {
+                t.frame_ms += s.elapsed().as_secs_f64() * 1000.0;
+            }
+        }).after(PhysicsSystems::Last),
+    ));
     app.add_systems(Startup, |mut commands: Commands, planet: Res<env::PlanetRes>| {
         walker::spawn_player(&mut commands, &planet);
         ship::spawn_ship(&mut commands, &planet, DVec3::Y);

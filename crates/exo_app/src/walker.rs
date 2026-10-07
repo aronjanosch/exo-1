@@ -16,6 +16,10 @@ const MOUSE_SENSITIVITY: f64 = 0.0025;
 const PITCH_LIMIT: f64 = 1.5;
 /// Suit roll rate (Q/E), rad/s. Assumed value.
 const SUIT_ROLL_RATE: f64 = 1.5;
+/// Righting after leaving a tilted cabin in gravity: up turns to the planet's with this time
+/// constant (s), at most `RIGHTING_MAX_RATE` rad/s. Assumed values.
+const RIGHTING_TIME: f64 = 0.5;
+const RIGHTING_MAX_RATE: f64 = std::f64::consts::FRAC_PI_2;
 pub const EYE_HEIGHT: f64 = 1.7;
 
 #[derive(Component)]
@@ -32,6 +36,9 @@ pub struct Player {
     pub body: Option<DQuat>,
     /// Up in the cabin, cabin coordinates: the floor's up with LAG on, the planet's with LAG off.
     pub cabin_up: DVec3,
+    /// Up outside a cabin, world space. Leaving a cabin keeps the cabin's up; in gravity it then
+    /// rights itself towards the planet's (`RIGHTING_TIME`), weightless it stays.
+    pub up: DVec3,
 }
 
 /// Marks the cabin floor collider; its pose is the frame the walker queries in.
@@ -76,7 +83,7 @@ impl World for AvianWorld<'_, '_, '_> {
 pub fn spawn_player(commands: &mut Commands, planet: &PlanetRes, offset_x: f64) -> Entity {
     let up = (DVec3::Y * planet.radius + DVec3::new(offset_x, 0.0, 0.0)).normalize();
     let pos = planet.centre + up * (planet.surface(up) + 2.0);
-    commands.spawn(Player { w: Walker::new(pos, DVec3::NEG_Z), ship: None, seated: false, pitch: 0.0, fly: false, body: None, cabin_up: DVec3::Y }).id()
+    commands.spawn(Player { w: Walker::new(pos, DVec3::NEG_Z), ship: None, seated: false, pitch: 0.0, fly: false, body: None, cabin_up: DVec3::Y, up }).id()
 }
 
 pub fn ship_frame(pos: &Position, rot: &Rotation) -> Frame {
@@ -89,11 +96,11 @@ impl Player {
         if self.ship.is_some() { ship.to_world(self.w.pos) } else { self.w.pos }
     }
     /// Up in world space (the head direction while weightless).
-    pub fn world_up(&self, ship: Frame, planet: &PlanetRes) -> DVec3 {
+    pub fn world_up(&self, ship: Frame, _planet: &PlanetRes) -> DVec3 {
         match (self.ship, self.body) {
             (Some(_), _) => ship.rot * self.cabin_up,
             (None, Some(b)) => b * DVec3::Y,
-            (None, None) => planet.up(self.w.pos),
+            (None, None) => self.up,
         }
     }
 }
@@ -191,17 +198,36 @@ pub fn walker_step(
     let yaw = -m.x as f64 * MOUSE_SENSITIVITY;
     let pitch = -m.y as f64 * MOUSE_SENSITIVITY;
 
+    // In gravity outside a cabin up rights itself towards the planet's; the look direction stays.
+    if pl.ship.is_none() && pl.body.is_none() {
+        let target = planet.up(pl.w.pos);
+        let angle = pl.up.angle_between(target);
+        if pl.fly || angle < 1e-4 {
+            pl.up = target;
+        } else if flight_core::PlanetEnv::gravity_at(planet.as_ref(), pl.w.pos) != DVec3::ZERO {
+            let turn = (angle * dt / RIGHTING_TIME).min(RIGHTING_MAX_RATE * dt).min(angle);
+            let up = DQuat::IDENTITY.slerp(DQuat::from_rotation_arc(pl.up, target), turn / angle) * pl.up;
+            let look = walker_core::look_dir(pl.w.forward, pl.up, pl.pitch);
+            keep_look(&mut pl, look, &Frame::IDENTITY, up);
+            pl.up = up;
+        }
+    }
+
     // Weightless outside a cabin: the body turns freely and the suit thrusters move it (issue #8).
     // Back in the field the look direction is kept and the horizon comes back (view blends it).
     let weightless = pl.ship.is_none() && !pl.fly && flight_core::PlanetEnv::gravity_at(planet.as_ref(), pl.w.pos) == DVec3::ZERO;
     match (weightless, pl.body) {
+        // The body takes the view as it is (also the tilt of the cabin just left).
         (true, None) => {
-            pl.body = Some(crate::net::walker_quat(pl.w.forward, planet.up(pl.w.pos)) * DQuat::from_rotation_x(pl.pitch));
+            pl.body = Some(crate::net::walker_quat(pl.w.forward, pl.up) * DQuat::from_rotation_x(pl.pitch));
             pl.pitch = 0.0;
         }
+        // Back in gravity: the head's up for now, righting follows.
         (false, Some(b)) => {
-            let up = planet.up(pl.w.pos);
-            keep_look(&mut pl, b * DVec3::NEG_Z, &Frame::IDENTITY, up);
+            pl.up = b * DVec3::Y;
+            pl.w.forward = b * DVec3::NEG_Z;
+            pl.pitch = 0.0;
+            pl.body = None;
         }
         _ => {}
     }
@@ -314,11 +340,10 @@ pub fn walker_step(
             }
         }
         Some(_) if !cabin_contains(pl.w.pos, 0.3) => {
-            let look = walker_core::look_dir(frame_ship.rot * pl.w.forward, frame_ship.rot * pl.cabin_up, pl.pitch);
+            // Keep the cabin's up: no step in the view, righting or weightless follow.
+            pl.up = frame_ship.rot * pl.cabin_up;
             pl.w.change_frame(&frame_ship, &Frame::IDENTITY, slv.0);
             pl.ship = None;
-            let up = planet.up(pl.w.pos);
-            keep_look(&mut pl, look, &Frame::IDENTITY, up);
         }
         _ => {}
     }

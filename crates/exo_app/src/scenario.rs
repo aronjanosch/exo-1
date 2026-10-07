@@ -609,6 +609,7 @@ fn step_out_in_space(name: &'static str, drift: f64, push: f64, careful: bool) -
                 face_towards(w, f.to_world(DVec3::new(0.0, 1.0, 12.0)));
                 keys(w, &[KeyCode::KeyW], true);
             }
+            track_look(w, c);
             let e = ship_e(w);
             let outside = with_player(w, |p| p.ship != Some(e));
             if careful && !outside {
@@ -645,6 +646,8 @@ fn step_out_in_space(name: &'static str, drift: f64, push: f64, careful: bool) -
                 let ok = if careful { rel <= 3.01 } else { (rel - 5.0).abs() < 0.01 + push };
                 check(c, ok && dv < 1e-6,
                     format!("{name}: walker keeps the ship's velocity plus its own and drifts ({rel:.3} m/s relative, change {dv:.6} m/s)"));
+                // The ship's nose is 30 deg up: leaving keeps the cabin's orientation.
+                check_steady(c, name);
                 return true;
             }
             false
@@ -739,12 +742,14 @@ fn suit_in_space() -> Vec<Step> {
             false
         }),
         // Back into the field (test setup: put the walker 3000 m above the ground for a moment):
-        // the suit hands over to walking, the look direction stays, gravity pulls.
+        // the suit hands over to walking, the look direction stays, gravity pulls, and the walker
+        // rights itself from the rolled suit orientation without a step.
         Box::new(|w, c| {
+            track_look(w, c);
             if c.t == 0.0 {
                 begin(w, c, "suit: back in the planetary field (teleport to 3000 m)");
                 let pl = planet(w);
-                c.p.insert("look", world_look(w));
+                c.p.insert("look_before", world_look(w));
                 let back = with_player(w, |p| p.w.pos);
                 c.p.insert("back", back);
                 let dir = pl.up(back);
@@ -754,18 +759,21 @@ fn suit_in_space() -> Vec<Step> {
                 });
                 return false;
             }
-            if c.t >= 0.5 {
-                let look = world_look(w).angle_between(c.p["look"]).to_degrees();
-                let (suit, v) = with_player(w, |p| (p.body.is_some(), p.w.vel));
+            if c.t >= 3.5 {
+                let look = world_look(w).angle_between(c.p["look_before"]).to_degrees();
+                let (suit, v, up) = with_player(w, |p| (p.body.is_some(), p.w.vel, p.up));
                 let pl = planet(w);
                 let fall = -v.dot(pl.up(player_world(w)));
+                let tilt = up.angle_between(pl.up(player_world(w))).to_degrees();
+                let step = c.v["up_jump"];
                 let back = c.p["back"];
                 with_player(w, |p| {
                     p.w.pos = back;
                     p.w.halt();
                 });
-                end(w, c, format!("suit {suit}, look moved {look:.4} deg, falling {fall:.2} m/s after 0.5 s"));
+                end(w, c, format!("suit {suit}, look moved {look:.4} deg, falling {fall:.2} m/s, up {tilt:.3} deg from the planet's, largest righting step {step:.2} deg after 3.5 s"));
                 check(c, !suit && look < 0.01 && fall > 0.5, format!("suit: in the field the walker walks again, look kept ({look:.4} deg), falls ({fall:.2} m/s)"));
+                check(c, tilt < 0.5 && step < 1.55, format!("suit: rights itself slowly in the field ({tilt:.3} deg left, at most {step:.2} deg per tick)"));
                 return true;
             }
             false

@@ -34,6 +34,8 @@ pub const TICK: Duration = Duration::from_nanos(16_666_667);
 pub struct Options {
     pub scenario: Option<String>,
     pub headless: bool,
+    /// Window not shown (screenshots without any visible window), if the platform renders it.
+    pub hidden: bool,
     pub radius: f64,
     pub planet_offset: DVec3,
     /// Render-origin shift threshold in metres, 0 = off.
@@ -43,7 +45,7 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Options { scenario: None, headless: false, radius: 5000.0, planet_offset: DVec3::ZERO, origin_shift: 1000.0, out_dir: PathBuf::from("results") }
+        Options { scenario: None, headless: false, hidden: false, radius: 5000.0, planet_offset: DVec3::ZERO, origin_shift: 1000.0, out_dir: PathBuf::from("results") }
     }
 }
 
@@ -55,6 +57,7 @@ impl Options {
             match k {
                 "--scenario" => o.scenario = Some(v.to_string()),
                 "--headless" => o.headless = true,
+                "--hidden" => o.hidden = true,
                 "--radius" => o.radius = v.parse().expect("radius"),
                 "--origin-shift" => o.origin_shift = v.parse().expect("origin-shift"),
                 "--out" => o.out_dir = PathBuf::from(v),
@@ -82,7 +85,7 @@ pub fn build_app(o: &Options) -> App {
         app.insert_resource(TimeUpdateStrategy::ManualDuration(TICK));
     } else {
         app.add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window { title: "EXO-1 spike 9 (Bevy)".into(), resolution: (1600u32, 900u32).into(), ..default() }),
+            primary_window: Some(Window { title: "EXO-1 spike 9 (Bevy)".into(), resolution: (1600u32, 900u32).into(), visible: !o.hidden, ..default() }),
             ..default()
         }));
     }

@@ -1,0 +1,16 @@
+planet: radius 5000 m, sea -7.49 m, bake 153 ms (total load 153 ms)
+NET START slot=4 host=false planet=0 port=17441
+NET LEAVE owner=1
+settled after 2.0 s simulated, 214 patches
+PHASE 'takeoff' tick 156
+takeoff: 5.6 s, altitude 70 m, ground 80.1 m, speed 15.0 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'cruise' tick 490
+cruise: 8.0 s, altitude 84 m, ground 87.3 m, speed 79.1 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'turn' tick 971
+turn: turned | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'brake' tick 1212
+brake: 2.0 s, altitude 84 m, ground 67.9 m, speed 0.8 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'descend' tick 1332
+descend: 3.2 s, altitude 40 m, ground 24.8 m, speed 14.4 m/s | rescues 0, walker grounded 0.0 %, net-only 0
+PHASE 'land' tick 1526
+NET RESULT /home/aron/Work/exo-1-spike10/spikes/bevy/results/net/thread-8-slot4.json

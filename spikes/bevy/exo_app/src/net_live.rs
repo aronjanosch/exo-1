@@ -124,6 +124,8 @@ pub struct NetStats {
 pub struct Net {
     pub cfg: NetConfig,
     sock: UdpSocket,
+    /// Datagrams from the receive thread: source, bytes, arrival time (local seconds).
+    rx: std::sync::Mutex<std::sync::mpsc::Receiver<(SocketAddr, Vec<u8>, f64)>>,
     start: Instant,
     /// Wall clock at `start` (UNIX seconds), to check the clock sync against the true offset.
     start_epoch: f64,
@@ -159,7 +161,30 @@ impl Net {
         } else {
             UdpSocket::bind("0.0.0.0:0").expect("bind client socket")
         };
-        sock.set_nonblocking(true).expect("nonblocking");
+        let start = Instant::now();
+        // A thread owns the receive side: it stamps the arrival time at once and, on the host,
+        // answers pings itself, so clock sync does not wait for the next 60 Hz tick.
+        let (tx, rx) = std::sync::mpsc::channel();
+        let recv_sock = sock.try_clone().expect("clone socket");
+        let is_host = cfg.host;
+        std::thread::Builder::new()
+            .name("net-recv".into())
+            .spawn(move || {
+                let mut buf = [0u8; 2048];
+                while let Ok((n, from)) = recv_sock.recv_from(&mut buf) {
+                    let arrival = start.elapsed().as_secs_f64();
+                    if is_host {
+                        if let Some(Packet::Ping { sent }) = Packet::decode(&buf[..n]) {
+                            let pong = Packet::Pong { sent, server_time: start.elapsed().as_secs_f64() }.encode();
+                            let _ = recv_sock.send_to(&pong, from);
+                        }
+                    }
+                    if tx.send((from, buf[..n].to_vec(), arrival)).is_err() {
+                        break;
+                    }
+                }
+            })
+            .expect("spawn receive thread");
         let link = Link::new(cfg.delay_ms, cfg.jitter_ms, cfg.loss, 4000 + cfg.slot as u64);
         let host = cfg.host;
         let host_addr = cfg.connect;
@@ -167,7 +192,8 @@ impl Net {
         Net {
             cfg,
             sock,
-            start: Instant::now(),
+            rx: std::sync::Mutex::new(rx),
+            start,
             start_epoch: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0),
             clock: if host { ClockSync::host() } else { ClockSync::default() },
             ready: host,
@@ -217,7 +243,7 @@ impl Net {
             match packet {
                 Packet::Accepted { .. } => self.ready = true,
                 Packet::Pong { sent, server_time } => self.clock.on_pong(sent, server_time, now),
-                Packet::Snapshot(s) => self.ingest(s),
+                Packet::Snapshot(s) => self.ingest(s, now),
                 _ => {}
             }
         } else {
@@ -249,8 +275,10 @@ impl Net {
                 if let Some(p) = self.peers.values_mut().find(|p| p.addr == from) {
                     p.last = now;
                 }
-                let pong = Packet::Pong { sent, server_time: self.clock.server_now(now) }.encode();
-                self.send(&pong, from, false);
+                // The receive thread has already answered (its arrival-time pong); count it.
+                let _ = sent;
+                self.st.dgram_tx += 1;
+                self.st.wire_tx += (18 + UDP_IP_OVERHEAD) as u64;
             }
             Packet::Snapshot(s) => {
                 let Some(slot) = self.peers.iter().find(|(_, p)| p.addr == from).map(|(k, _)| *k) else {
@@ -268,7 +296,7 @@ impl Net {
                 for a in others {
                     self.send(&out, a, true);
                 }
-                self.ingest(s);
+                self.ingest(s, now);
             }
             Packet::Bye { slot } => {
                 if self.peers.get(&(slot as u32)).is_some_and(|p| p.addr == from) {
@@ -281,12 +309,12 @@ impl Net {
 
     /// A received snapshot goes through the fault-injection link (receiver side, after the real
     /// transport) and then into the owner's buffer.
-    fn ingest(&mut self, s: Snapshot) {
+    fn ingest(&mut self, s: Snapshot, arrival: f64) {
         if s.owner == self.cfg.slot {
             return;
         }
         self.st.payload_rx += net_core::snapshot::SIZE as u64;
-        let t = self.clock.server_now(self.now());
+        let t = self.clock.server_now(arrival);
         self.link.enqueue(t, s);
     }
 }
@@ -385,12 +413,12 @@ pub fn net_pre(
         }
     }
     // Receive.
-    let mut buf = [0u8; 2048];
-    for _ in 0..512 {
-        match net.sock.recv_from(&mut buf) {
-            Ok((n, from)) => net.handle(from, &buf[..n], now),
-            Err(_) => break,
-        }
+    let incoming: Vec<_> = {
+        let rx = net.rx.lock().unwrap();
+        std::iter::from_fn(|| rx.try_recv().ok()).take(512).collect()
+    };
+    for (from, data, arrival) in incoming {
+        net.handle(from, &data, arrival);
     }
     let server_now = net.clock.server_now(now);
     // Fault-injected link into the buffers.

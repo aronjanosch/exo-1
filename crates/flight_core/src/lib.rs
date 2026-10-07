@@ -104,6 +104,11 @@ impl Lag {
     pub const LANDED_SPEED: f64 = 0.3;
     pub const AIRBORNE_CLEARANCE: f64 = 2.0;
 
+    /// Fully on, for a ship whose LAG state is not known (another player's ship until it is sent).
+    pub fn full() -> Lag {
+        Lag { level: 1.0, landed: false, ..Lag::default() }
+    }
+
     pub fn is_on(&self) -> bool {
         !self.landed || self.manual_on
     }
@@ -126,9 +131,18 @@ impl Lag {
         self.level = move_towards(self.level, target, dt / self.ramp_time);
     }
 
-    /// Gravity in the cabin, world space: the ship's (towards its floor) mixed with the planet's.
+    /// Gravity in the cabin, world space: the planet's turned towards the ship's floor by `level`,
+    /// strength blended. Turning instead of adding keeps an upside-down ship from cancelling the
+    /// two halfway.
     pub fn gravity(&self, ship_up: DVec3, planet_gravity: DVec3) -> DVec3 {
-        -ship_up * self.g * self.level + planet_gravity * (1.0 - self.level)
+        let ship = -ship_up * self.g;
+        let pg = planet_gravity.length();
+        if self.level >= 1.0 || pg < 1e-9 {
+            return ship * self.level;
+        }
+        let from = planet_gravity / pg;
+        let dir = DQuat::IDENTITY.slerp(DQuat::from_rotation_arc(from, -ship_up), self.level) * from;
+        dir * lerp(pg, self.g, self.level)
     }
 }
 

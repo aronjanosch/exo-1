@@ -38,7 +38,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 
 - `full`: stand, run 20 s, walk up the ramp into the parked ship, take off, fly to space (7000 m), stand and walk in the cabin at 400 m/s rolling, brake, dive back, land, walk out and back in, cabin in atmosphere.
 - `walk`: stand still, run 20 s.
-- `space`: fly to space, stop, walk out of the ship and drift (stopped ship and one drifting at 3 m/s), then the suit: brake, roll, back into the field, fly back into the cabin.
+- `space`: fly to space, stop, walk out of the ship and drift (stopped ship, one drifting at 3 m/s, a careful step out with taps of W), then the suit: brake, roll, back into the field (righting), fly back into the cabin.
 - `foreign`: a remote ship flies through the real snapshot path at 350 m/s; the walker stands and walks in its cabin, then beside it parked.
 - `t5`: four 300 s walks at 1.8 m/s (basin, escarpment, plateau); slow, for terrain work.
 - `net`: the network bot (take off, cruise, turn, brake, land, repeat); see below.

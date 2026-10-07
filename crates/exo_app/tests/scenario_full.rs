@@ -1,6 +1,7 @@
 //! The full scripted run (walk, ramp, space and back, landing, cabin at speed) without a window.
 //! The run records the ship and walker path; the 96 network cases of spike 4 then replay on it.
-use exo_app::{build_app, record::Recorder, scenario::Script, walker::WalkStats, Options};
+mod common;
+use exo_app::{record::Recorder, Options};
 use net_core::replay::{matrix_cases, run_case_extrapolated, run_matrix};
 
 /// Spike 4 acceptance at 30 Hz with a 150 ms buffer: p95 position error under 10 mm.
@@ -13,20 +14,7 @@ const HOLD_BOUND_PERCENT: f64 = 0.05;
 fn full_scenario_passes_headless_and_network_replays_on_its_path() {
     let out = std::env::temp_dir().join("exo-full-scenario");
     let o = Options { scenario: Some("full".into()), headless: true, out_dir: out.clone(), record: Some(out.join("full-path.bin")), ..Default::default() };
-    let mut app = build_app(&o);
-    app.finish();
-    app.cleanup();
-    let t0 = std::time::Instant::now();
-    while !app.world().resource::<Script>().done {
-        app.update();
-        // The ring builds patches on worker threads in wall time; give them a moment.
-        std::thread::sleep(std::time::Duration::from_micros(200));
-        assert!(t0.elapsed().as_secs() < 600, "scenario timed out");
-    }
-    let failures = app.world().resource::<Script>().ctx.failures;
-    let rescues = app.world().resource::<WalkStats>().rescues;
-    println!("full scenario: {failures} failures, {rescues} rescues, {:.1} s wall", t0.elapsed().as_secs_f64());
-    assert_eq!((failures, rescues), (0, 0));
+    let app = common::run_scenario(&o);
 
     let tr = &app.world().resource::<Recorder>().traj;
     let results = run_matrix(tr);

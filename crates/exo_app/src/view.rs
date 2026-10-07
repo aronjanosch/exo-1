@@ -8,7 +8,7 @@ use crate::walker::{Player, WalkStats, EYE_HEIGHT};
 use crate::controls::Controls;
 use bevy::camera::PerspectiveProjection;
 use bevy::light::GlobalAmbientLight;
-use bevy::math::{DMat3, DQuat, DVec3};
+use bevy::math::{DQuat, DVec3};
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
 use flight_core::{PlanetEnv, CHASE_CAMERA_OFFSET, CHASE_CAMERA_PITCH_DEG};
@@ -19,7 +19,8 @@ pub struct MainCamera;
 #[derive(Component)]
 pub struct Hud;
 
-/// Walker feet, up and heading in world space before and after the last fixed step.
+/// Walker feet, the camera's up and the look direction in world space before and after the last
+/// fixed step.
 #[derive(Component, Default)]
 pub struct PlayerInterp {
     pub prev: (DVec3, DVec3, DVec3),
@@ -111,7 +112,6 @@ pub fn record_player_view(
     mut players: Query<(&Player, Option<&mut PlayerInterp>, Entity)>,
     ships: Query<(Entity, &avian3d::prelude::Position, &avian3d::prelude::Rotation), With<Ship>>,
     remotes: Query<(&avian3d::prelude::Position, &avian3d::prelude::Rotation), With<crate::ship::RemoteShip>>,
-    planet: Res<PlanetRes>,
     mut commands: Commands,
 ) {
     let Ok((pl, interp, e)) = players.single_mut() else { return };
@@ -122,8 +122,7 @@ pub fn record_player_view(
         _ => (p, r),
     };
     let frame = crate::walker::ship_frame(p, r);
-    let fwd = if pl.ship.is_some() { frame.rot * pl.w.forward } else { pl.w.forward };
-    let now = (pl.world_pos(frame), pl.world_up(frame, &planet), fwd);
+    let now = (pl.world_pos(frame), pl.view_up, pl.world_look(frame));
     match interp {
         Some(mut i) => {
             i.prev = i.curr;
@@ -133,11 +132,6 @@ pub fn record_player_view(
             commands.entity(e).insert(PlayerInterp { prev: now, curr: now });
         }
     }
-}
-
-fn look_basis(fwd: DVec3, up: DVec3) -> DQuat {
-    let f = (fwd - up * fwd.dot(up)).normalize();
-    DQuat::from_mat3(&DMat3::from_cols(f.cross(up), up, -f))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -165,7 +159,7 @@ pub fn update_camera(
         let d = DVec3::new(view.orbit_pitch.cos() * view.orbit_yaw.sin(), view.orbit_pitch.sin(), view.orbit_pitch.cos() * view.orbit_yaw.cos());
         pose.pos = planet.centre + d * 15_000.0;
         let up = if d.y.abs() < 0.99 { DVec3::Y } else { DVec3::X };
-        pose.rot = look_basis(-d, (up - d * up.dot(d)).normalize());
+        pose.rot = walker_core::look_rot(-d, up);
     } else if pl.seated {
         let (sp, sr) = si.at(f);
         pose.pos = sp + sr * CHASE_CAMERA_OFFSET;
@@ -173,9 +167,9 @@ pub fn update_camera(
     } else {
         let feet = pi.prev.0.lerp(pi.curr.0, f);
         let up = pi.prev.1.lerp(pi.curr.1, f).normalize();
-        let fwd = pi.prev.2.lerp(pi.curr.2, f).normalize();
+        let look = pi.prev.2.lerp(pi.curr.2, f).normalize();
         let pos = feet + up * EYE_HEIGHT;
-        let rot = look_basis(fwd, up) * DQuat::from_rotation_x(pl.pitch);
+        let rot = walker_core::look_rot(look, up);
         // Entering or leaving a cabin or the weightless body frame turns "up": the walker keeps
         // its look direction, the horizon turns over HORIZON_BLEND_SECS from where it was.
         if (pl.ship, pl.body.is_some()) != view.cabin {

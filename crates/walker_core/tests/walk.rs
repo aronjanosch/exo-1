@@ -262,3 +262,27 @@ fn tap_is_a_slow_step() {
     walk(&world, &mut w, 1, DVec2::new(0.0, 1.0));
     assert!((w.vel.length() - cfg.walk_speed).abs() < 1e-6, "then full {}", w.vel.length());
 }
+
+/// The view helpers: `look_rot` looks exactly along `look`, `turn_towards` rights smoothly and
+/// arrives, `turn_body` turns about the body's own axes.
+#[test]
+fn view_helpers() {
+    let look = DVec3::new(1.0, 0.3, -0.2).normalize();
+    let q = look_rot(look, DVec3::Y);
+    assert!((q * DVec3::NEG_Z - look).length() < 1e-12);
+    assert!((q * DVec3::Y).dot(look).abs() < 1e-12 && (q * DVec3::Y).dot(DVec3::Y) > 0.9);
+
+    let dt = 1.0 / 60.0;
+    let mut up = DVec3::X;
+    let mut largest: f64 = 0.0;
+    for _ in 0..240 {
+        let next = turn_towards(up, DVec3::Y, dt, 0.5, std::f64::consts::FRAC_PI_2);
+        largest = largest.max(next.angle_between(up));
+        up = next;
+    }
+    assert!(up.angle_between(DVec3::Y) < 1e-3, "arrives: {up:?}");
+    assert!(largest <= std::f64::consts::FRAC_PI_2 * dt + 1e-9, "rate cap: {largest}");
+
+    let b = turn_body(DQuat::IDENTITY, 0.0, 0.0, 0.5);
+    assert!((b * DVec3::NEG_Z - DVec3::NEG_Z).length() < 1e-12, "roll keeps the look");
+}

@@ -509,8 +509,13 @@ fn lag_follows_landing_and_the_manual_switch() {
     // Slow and low again: landed, the field goes down.
     run(&mut lag, 1.0, 0.1, 1.1);
     assert_eq!((lag.landed, lag.level), (true, 0.0));
-    // Mix: half way the cabin gravity is the average of ship and planet.
+    // Mix: half way the direction is half turned, the strength stays.
     let half = Lag { level: 0.5, ..Lag::default() };
     let g = half.gravity(DVec3::X, DVec3::new(0.0, -9.81, 0.0));
-    assert!((g - DVec3::new(-4.905, -4.905, 0.0)).length() < 1e-9);
+    let d = 9.81 / 2f64.sqrt();
+    assert!((g - DVec3::new(-d, -d, 0.0)).length() < 1e-9, "{g:?}");
+    // Upside down half way: still full strength, not cancelled.
+    let g = half.gravity(DVec3::NEG_Y, DVec3::new(0.0, -9.81, 0.0));
+    assert!((g.length() - 9.81).abs() < 1e-9, "{g:?}");
+    assert_eq!(Lag::full().level, 1.0);
 }

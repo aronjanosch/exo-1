@@ -65,6 +65,35 @@ pub fn split_look(look: DVec3, up: DVec3, fallback: DVec3) -> (DVec3, f64) {
     (f.normalize(), pitch)
 }
 
+/// Orientation with camera axes (-z looks, +y is the head) that looks exactly along `look`, the
+/// head as close to `up` as it gets. Looking straight along `up` falls back to any head.
+pub fn look_rot(look: DVec3, up: DVec3) -> DQuat {
+    let f = look.normalize();
+    let mut u = up - f * up.dot(f);
+    if u.length_squared() < 1e-12 {
+        u = f.any_orthonormal_vector();
+    }
+    let u = u.normalize();
+    DQuat::from_mat3(&glam::DMat3::from_cols(f.cross(u), u, -f))
+}
+
+/// Turns the unit vector `from` towards `to`: time constant `time` (s), at most `max_rate` rad/s.
+/// Used for righting the view after leaving a tilted cabin in gravity.
+pub fn turn_towards(from: DVec3, to: DVec3, dt: f64, time: f64, max_rate: f64) -> DVec3 {
+    let angle = from.angle_between(to);
+    if angle < 1e-4 {
+        return to;
+    }
+    let turn = (angle * dt / time).min(max_rate * dt).min(angle);
+    DQuat::IDENTITY.slerp(DQuat::from_rotation_arc(from, to), turn / angle) * from
+}
+
+/// Free body orientation after this step's mouse yaw and pitch and roll (radians), each about the
+/// body's own axes (issue #8).
+pub fn turn_body(body: DQuat, yaw: f64, pitch: f64, roll: f64) -> DQuat {
+    (body * DQuat::from_rotation_y(yaw) * DQuat::from_rotation_x(pitch) * DQuat::from_rotation_z(roll)).normalize()
+}
+
 /// Suit thrusters for weightless movement (issue #8). Assumed values, tune by feel.
 #[derive(Copy, Clone, Debug)]
 pub struct SuitConfig {

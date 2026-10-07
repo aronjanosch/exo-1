@@ -174,10 +174,9 @@ fn place_walker(w: &mut World, at: DVec3) {
 /// Turn the walker towards a world point (heading only, pitch level).
 fn face_towards(w: &mut World, target: DVec3) {
     let f = ship_frame_of(w);
-    let pl = planet(w);
     with_player(w, |p| {
         let pos = p.world_pos(f);
-        let up = p.world_up(f, &pl);
+        let up = p.world_up(f);
         let mut d = target - pos;
         d -= up * d.dot(up);
         let d = d.normalize();
@@ -189,21 +188,16 @@ fn face_towards(w: &mut World, target: DVec3) {
 /// Where the walker looks, world space (camera direction without interpolation).
 fn world_look(w: &mut World) -> DVec3 {
     let f = ship_frame_of(w);
-    let pl = planet(w);
-    with_player(w, |p| {
-        let fwd = if p.ship.is_some() { f.rot * p.w.forward } else { p.w.forward };
-        walker_core::look_dir(fwd, p.world_up(f, &pl), p.pitch)
-    })
+    with_player(w, |p| p.world_look(f))
 }
 
-/// Issue #7: largest change from one tick to the next of the look direction and of up (degrees)
-/// and of the eye position less the walk (m), in `c.v["look_jump"]`, `["up_jump"]`,
+/// Issue #7: largest change from one tick to the next of the look direction and of the camera's
+/// up (degrees) and of the eye position less the walk (m), in `c.v["look_jump"]`, `["up_jump"]`,
 /// `["eye_jump"]`. Call every tick of a step; the first tick only starts it (setup turns).
 fn track_look(w: &mut World, c: &mut Ctx) {
     let l = world_look(w);
     let f = ship_frame_of(w);
-    let pl = planet(w);
-    let (feet, up) = with_player(w, |p| (p.world_pos(f), p.world_up(f, &pl)));
+    let (feet, up) = with_player(w, |p| (p.world_pos(f), p.view_up));
     let eye = feet + up * crate::walker::EYE_HEIGHT;
     // Skip the first ticks: setup may teleport, and up follows on the next step.
     if c.t > 0.05 {
@@ -224,9 +218,9 @@ fn track_look(w: &mut World, c: &mut Ctx) {
     c.p.insert("feet", feet);
 }
 
-/// The turn into or out of a tilted ship happens step by step on the ramp: no tick turns up by
-/// more than 1 deg or moves the eye more than 3 cm against the feet (a 6 deg ship turned it by
-/// 5.6 deg in one tick at the cabin edge before).
+/// No step in the view: no tick turns the look by more than 0.5 deg or the camera's up by more
+/// than 1 deg, or moves the eye more than 3 cm against the feet (entering a 6 deg tilted ship
+/// once turned up by 5.6 deg in one tick at the cabin edge).
 fn check_steady(c: &mut Ctx, what: &str) {
     let (look, up, eye) = (c.v["look_jump"], c.v["up_jump"], c.v["eye_jump"]);
     check(c, look < 0.5 && up < 1.0 && eye < 0.03,
@@ -386,20 +380,43 @@ fn board(name: &'static str, from_outside: bool) -> Step {
             end(w, c, format!("in cabin {inside}, at seat {at_seat}, ramp end {:.2} m above ground, ship tilt {tilt:.0} deg", pl.above_ground(ramp_end)));
             if !at_seat {
                 // Keep the run going: put the walker at the seat.
-                let fr = ship_frame_of(w);
-                let v = ship_vel(w);
-                with_player(w, |p| {
-                    if p.ship.is_none() {
-                        p.w.change_frame(&Frame::IDENTITY, &fr, -v);
-                        p.ship = Some(e);
-                    }
-                    p.w.pos = DVec3::new(0.0, 0.32, -2.5);
-                });
+                put_at_seat(w);
             }
             return true;
         }
         false
     })
+}
+
+/// Test shortcut: put the walker at rest in the own cabin, just behind the seat.
+fn put_at_seat(w: &mut World) {
+    let e = ship_e(w);
+    let fr = ship_frame_of(w);
+    let v = ship_vel(w);
+    with_player(w, |p| {
+        if p.ship.is_none() {
+            p.w.change_frame(&Frame::IDENTITY, &fr, -v);
+            p.ship = Some(e);
+        }
+        p.w.pos = DVec3::new(0.0, 0.32, -2.5);
+        p.w.halt();
+    });
+}
+
+/// Back to the seat (test shortcut) and sit.
+fn back_to_seat() -> Vec<Step> {
+    vec![
+        Box::new(|w, _| {
+            put_at_seat(w);
+            true
+        }),
+        wait(0.3),
+        Box::new(|w, _| {
+            tap(w, KeyCode::KeyF);
+            true
+        }),
+        wait(0.3),
+    ]
 }
 
 fn sit() -> Vec<Step> {
@@ -502,7 +519,7 @@ fn fly_to_space_and_back() -> Vec<Step> {
 
 /// Cabin at speed: stand, then walk, while the ship boosts and rolls with the assist off.
 fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: f64) -> Vec<Step> {
-    vec![
+    let mut steps: Vec<Step> = vec![
         Box::new(|w, _| {
             tap(w, KeyCode::KeyF); // stand up
             true
@@ -563,21 +580,9 @@ fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: f64) -> Vec
             }
             false
         }),
-        // Back to the seat (test shortcut) and sit.
-        Box::new(|w, _| {
-            with_player(w, |p| {
-                p.w.pos = DVec3::new(0.0, 0.32, -2.5);
-                p.w.halt();
-            });
-            true
-        }),
-        wait(0.3),
-        Box::new(|w, _| {
-            tap(w, KeyCode::KeyF);
-            true
-        }),
-        wait(0.3),
-    ]
+    ];
+    steps.extend(back_to_seat());
+    steps
 }
 
 /// Issue #5: stand up in space, walk out of the back and drift. Outside the field the walker
@@ -588,7 +593,7 @@ fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: f64) -> Vec
 /// `careful`: W only in 0.1 s taps every 0.5 s, a careful step out: the walker leaves at step-off
 /// speed (3 m/s) at most.
 fn step_out_in_space(name: &'static str, drift: f64, push: f64, careful: bool) -> Vec<Step> {
-    vec![
+    let mut steps: Vec<Step> = vec![
         Box::new(move |w, _| {
             tap(w, KeyCode::KeyF); // stand up
             if drift != 0.0 {
@@ -652,35 +657,19 @@ fn step_out_in_space(name: &'static str, drift: f64, push: f64, careful: bool) -
             }
             false
         }),
-        // Back to the seat (test shortcut) and sit.
         Box::new(|w, _| {
             with_ship(w, |s| s.ctl.hover_assist = true);
-            let e = ship_e(w);
-            let fr = ship_frame_of(w);
-            let v = ship_vel(w);
-            with_player(w, |p| {
-                if p.ship.is_none() {
-                    p.w.change_frame(&Frame::IDENTITY, &fr, -v);
-                    p.ship = Some(e);
-                }
-                p.w.pos = DVec3::new(0.0, 0.32, -2.5);
-                p.w.halt();
-            });
             true
         }),
-        wait(0.3),
-        Box::new(|w, _| {
-            tap(w, KeyCode::KeyF);
-            true
-        }),
-        wait(0.3),
-    ]
+    ];
+    steps.extend(back_to_seat());
+    steps
 }
 
 /// Issue #8: the suit in space. Walk out of the stopped ship, brake to rest (X), roll (Q), turn
 /// to the ship with the mouse and fly back into the cabin (W), all through `Controls`.
 fn suit_in_space() -> Vec<Step> {
-    vec![
+    let mut steps: Vec<Step> = vec![
         Box::new(|w, _| {
             tap(w, KeyCode::KeyF); // stand up
             true
@@ -761,7 +750,7 @@ fn suit_in_space() -> Vec<Step> {
             }
             if c.t >= 3.5 {
                 let look = world_look(w).angle_between(c.p["look_before"]).to_degrees();
-                let (suit, v, up) = with_player(w, |p| (p.body.is_some(), p.w.vel, p.up));
+                let (suit, v, up) = with_player(w, |p| (p.body.is_some(), p.w.vel, p.view_up));
                 let pl = planet(w);
                 let fall = -v.dot(pl.up(player_world(w)));
                 let tilt = up.angle_between(pl.up(player_world(w))).to_degrees();
@@ -804,21 +793,9 @@ fn suit_in_space() -> Vec<Step> {
             keys(w, &[KeyCode::KeyW], yaw_err.abs() + pitch_err.abs() < 0.1);
             false
         }),
-        // Sit again for the rest of the run.
-        Box::new(|w, _| {
-            with_player(w, |p| {
-                p.w.pos = DVec3::new(0.0, 0.32, -2.5);
-                p.w.halt();
-            });
-            true
-        }),
-        wait(0.3),
-        Box::new(|w, _| {
-            tap(w, KeyCode::KeyF);
-            true
-        }),
-        wait(0.3),
-    ]
+    ];
+    steps.extend(back_to_seat());
+    steps
 }
 
 /// G in the landed ship: cabin gravity comes up (up turns to the floor's up over 1 s, no step),
@@ -834,7 +811,7 @@ fn lag_by_hand() -> Vec<Step> {
             if c.t >= 1.3 {
                 let f = ship_frame_of(w);
                 let pl = planet(w);
-                let up = with_player(w, |p| p.world_up(f, &pl));
+                let up = with_player(w, |p| p.world_up(f));
                 let want = if on { f.rot * DVec3::Y } else { pl.up(f.origin) };
                 let off = up.angle_between(want).to_degrees();
                 let tilt = (f.rot * DVec3::Y).angle_between(pl.up(f.origin)).to_degrees();
@@ -1143,17 +1120,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
         // Network bot: sit in the parked ship (test shortcut) and fly cycles until the run ends.
         "net" => {
             s.push(Box::new(|w, _| {
-                let e = ship_e(w);
-                let fr = ship_frame_of(w);
-                let v = ship_vel(w);
-                with_player(w, |p| {
-                    if p.ship.is_none() {
-                        p.w.change_frame(&Frame::IDENTITY, &fr, -v);
-                        p.ship = Some(e);
-                    }
-                    p.w.pos = DVec3::new(0.0, 0.32, -2.5);
-                    p.w.halt();
-                });
+                put_at_seat(w);
                 true
             }));
             s.extend(sit());
@@ -1165,12 +1132,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
         // Issue #5: step out of the ship in space (seat by test shortcut, then fly up).
         "space" => {
             s.push(Box::new(|w, _| {
-                let e = ship_e(w);
-                with_player(w, |p| {
-                    p.ship = Some(e);
-                    p.w.pos = DVec3::new(0.0, 0.32, -2.5);
-                    p.w.halt();
-                });
+                put_at_seat(w);
                 true
             }));
             s.extend(sit());

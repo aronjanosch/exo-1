@@ -24,7 +24,7 @@ A game in Rust with Bevy, built by the initiator and maybe a few friends. AI mak
 
 ## Agent loop
 
-- A change is done when `cargo test --workspace` and the headless full scenario both pass; the scenario exits non-zero on any failed check. Commands and scenario names: `README.md`, section "Run".
+- A change is done when `cargo t` (workspace tests) and `cargo scenario` (headless full scenario) both pass; the scenario exits non-zero on any failed check. Both link Bevy dynamically for fast rebuilds; CI on main runs the static build. Commands and scenario names: `README.md`, section "Run".
 - Every feature gets a scripted scenario that drives it through the `Controls` resource, so it can be tested without a window.
 - Bevy and Avian change their API in every release. Look up names and signatures in `~/.cargo/registry/src/*/` (`bevy*-<version>/`, `avian3d-<version>/`) and the Bevy examples there before you write code; trust the source over memory of older versions.
 

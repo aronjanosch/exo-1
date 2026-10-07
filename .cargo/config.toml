@@ -1,6 +1,10 @@
 [alias]
 # Dev run with Bevy dynamic linking (about 1 s rebuilds). Never for release.
 dev = "run -p exo_app --features dynamic --"
+# Workspace tests and the headless full scenario, also dynamically linked (about 2 s rebuilds
+# instead of 8 s static). CI on main keeps the static build.
+t = "test --workspace --features exo_app/dynamic"
+scenario = "run -p exo_app --features dynamic -- --headless --scenario=full"
 
 # Windows cross build from Linux with llvm-mingw (README, section "Windows build").
 [target.x86_64-pc-windows-gnullvm]

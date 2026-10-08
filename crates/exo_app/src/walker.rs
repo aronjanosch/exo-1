@@ -3,7 +3,7 @@
 use crate::controls::{Actions, Bindings, Tap};
 use crate::env::PlanetRes;
 use crate::ring::Ring;
-use crate::ship::{cabin_contains, RemoteShip, Ship, SEAT_POS};
+use crate::ship::{cabin_contains, RemoteShip, Ship};
 use crate::Layer;
 use avian3d::character_controller::move_and_slide::DepenetrationConfig;
 use avian3d::prelude::*;
@@ -166,7 +166,6 @@ pub(crate) fn up_from(g: DVec3, fallback: DVec3) -> DVec3 {
 
 #[allow(clippy::too_many_arguments)]
 pub fn walker_step(
-    mut commands: Commands,
     time: Res<Time>,
     planet: Res<PlanetRes>,
     mut actions: ResMut<Actions>,
@@ -198,25 +197,6 @@ pub fn walker_step(
         Err(_) => own_lag,
     };
 
-    // F: sit at the seat or stand up.
-    if actions.take_tap(Tap::Seat) {
-        let (_, mut ship, ..) = ships.get_mut(ship_e).unwrap();
-        if pl.seated {
-            pl.seated = false;
-            ship.piloted = false; // hover assist now holds the ship
-            pl.w.pos = DVec3::new(0.0, 0.32, SEAT_POS.z + 1.0);
-            pl.w.halt();
-        } else if pl.ship == Some(ship_e) && pl.w.pos.distance(SEAT_POS) < 1.8 {
-            pl.seated = true;
-            ship.piloted = true;
-            if ship.parked {
-                ship.parked = false;
-                commands.entity(ship_e).insert(RigidBody::Dynamic);
-            }
-            pl.w.pos = SEAT_POS - DVec3::new(0.0, 0.3, 0.0);
-            pl.w.halt();
-        }
-    }
     // G: cabin gravity by hand, in the own cabin (the ship allows it only while landed).
     if pl.ship == Some(ship_e) && actions.take_tap(Tap::Lag) {
         ships.get_mut(ship_e).unwrap().1.lag.toggle();

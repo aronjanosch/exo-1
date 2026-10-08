@@ -8,7 +8,7 @@ Phase 1, `feat/milestone-c-grab`:
 
 - [x] #81 `grab_core`: hold, falloff, break, throw, shared carry (test-first)
 - [x] #80 crates as data, living in the ship's frame
-- [ ] #82 interaction: one verb, one prompt
+- [x] #82 interaction: one verb, one prompt
 - [ ] #83 grab in the game: hands and the grab tool
 - [ ] #84 lock grid in the cabin
 - [ ] #85 object budget
@@ -53,3 +53,16 @@ Open points:
 - The walker walks through crates and crates do not touch each other (no collider of their own). Stacking is on the extras list.
 - Crates do not tumble and do not push the ship (see "Architecture choice").
 - Crates only know the own ship's cabin, not another player's (#86).
+
+## #82 interaction: one verb, one prompt
+
+What: `exo_app/src/interact.rs`. `Tap::Seat` is now `Tap::Interact` (binding `interact`, F and pad North); a new `Tap::Throw` (R, pad right stick click) for #83. Each fixed step the `interaction` system picks the target: stand up when seated, set down when holding, otherwise the crate nearest the centre of the view cone (25 degrees, up to the tool's 10 m), or the seat when the feet are within 1.8 m of it (the old rule). A crate in reach of the hands wins over the seat; a crate only in the tool's reach does not (so F at the seat still sits even with a crate 4 m behind). The prompt ("[F] sit", "[F] pick up the small crate", "[F] pull the medium crate (grab tool)", "[F] set the small crate down  [R] throw", "[F] stand up") is a resource the HUD shows on its own line below the screen centre; the key label comes from the bindings. The sit and stand code moved out of `walker_step` unchanged.
+
+Old player files (`settings/bindings.json` with `seat` and no `throw`) still load: `seat` is read as `interact`, a missing `throw` gets R.
+
+Checks:
+- Scenario `interact` (new, in `cargo t`): prompt "[F] pick up the small crate" with the crate targeted by the hands; F picks it up (prompt "[F] set the small crate down  [R] throw"); F sets it down; walking to the seat the prompt is "[F] sit"; the same F sits (prompt "[F] stand up"); targets used: crate, drop, seat; F stands up. 7 checks, 0 failures.
+- Unit test `old_seat_binding_still_loads`.
+- Existing scenarios: see the gate below.
+
+`TODO(initiator)`: cone half angle 25 degrees (`grab.json`); the seat by proximity instead of by the cone (keeps every scripted F at the seat working; with the cone the walker has to look at the seat). The HUD check reads the prompt resource, which the HUD line shows as is (headless runs have no HUD to read).

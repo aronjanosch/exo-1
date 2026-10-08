@@ -2028,6 +2028,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "swap" => swap_steps(&mut s, out_dir, windowed, swap_rounds.max(3)),
         // #80: a crate in the cabin through take-off, flight, warp and landing; one out over the ramp.
         "crate-ride" => crate::cargo_scenario::crate_ride_steps(&mut s, out_dir, windowed),
+        // #82: one tap for a crate and the seat, with the HUD prompt.
+        "interact" => crate::cargo_scenario::interact_steps(&mut s),
         // #63: fixed viewpoints and an atlas per planet (headless: atlas and statistics only).
         "planet-look" => crate::look::steps(&mut s, out_dir, windowed),
         // #70: walk from outside into a site; the walker stands on its flattened ground.

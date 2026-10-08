@@ -118,6 +118,15 @@ pub fn setup_view(mut commands: Commands) {
                 c.spawn((HudItem(i), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
             }
         });
+    // The one prompt (#82): what the interact key does now, below the screen centre.
+    commands.spawn((
+        PromptLine,
+        Text::new(""),
+        TextFont { font_size: FontSize::Px(18.0), ..default() },
+        TextColor(Color::srgb(1.0, 0.92, 0.55)),
+        Node { position_type: PositionType::Absolute, top: percent(58), width: percent(100), justify_content: JustifyContent::Center, ..default() },
+        TextLayout::justify(Justify::Center),
+    ));
     // Seated: the quantum drive's state, target and what to do (J, N, aim while calibrating).
     commands.spawn((
         QuantumLine,
@@ -150,6 +159,18 @@ pub fn setup_view(mut commands: Commands) {
 pub struct HudItem(u8);
 #[derive(Component)]
 pub struct QuantumLine;
+
+/// The interaction prompt (#82).
+#[derive(Component)]
+pub struct PromptLine;
+
+pub fn update_prompt(inter: Res<crate::interact::Interaction>, mut q: Query<&mut Text, With<PromptLine>>) {
+    if let Ok(mut t) = q.single_mut()
+        && **t != inter.prompt
+    {
+        **t = inter.prompt.clone();
+    }
+}
 #[derive(Component)]
 pub struct StickHud;
 #[derive(Component)]
@@ -766,7 +787,7 @@ pub fn update_hud(
             format!("speed {} m/s", speed_text(v.length()))
         };
         if pl.ship.is_some() {
-            format!("in cabin  [F] sit at the seat  {}  {speed}", lag_text(ship))
+            format!("in cabin  {}  {speed}", lag_text(ship))
         } else if pl.fly {
             format!("FLY (V)  {speed}")
         } else if pl.body.is_some() {

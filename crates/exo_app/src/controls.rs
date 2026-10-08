@@ -63,7 +63,10 @@ pub enum Button {
 /// One-shot actions. A tap lives until the end of the next fixed step; unconsumed it is dropped.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tap {
-    Seat,
+    /// The one verb (#82): sit, stand up, pick up or set down a crate, whatever is targeted.
+    Interact,
+    /// Throw the held crate (#83).
+    Throw,
     HoverAssist,
     HorizonFollow,
     Lag,
@@ -105,10 +108,11 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 10] = [Tap::Seat, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud];
+    pub const ALL: [Tap; 11] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud];
     pub fn name(self) -> &'static str {
         match self {
-            Tap::Seat => "seat",
+            Tap::Interact => "interact",
+            Tap::Throw => "throw",
             Tap::HoverAssist => "hover_assist",
             Tap::HorizonFollow => "horizon_follow",
             Tap::Lag => "lag",
@@ -241,7 +245,7 @@ impl Bindings {
         let v: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("bindings.json: {e}"))?;
         let obj = v.as_object().ok_or("bindings.json: not an object")?;
         let err = |action: &str, why: String| format!("bindings.json: action `{action}`: {why}");
-        let known: Vec<&str> = Axis::ALL.iter().map(|a| a.name()).chain(Button::ALL.iter().map(|b| b.name())).chain(Tap::ALL.iter().map(|t| t.name())).chain(["mouse", "pad", "_comment"]).collect();
+        let known: Vec<&str> = Axis::ALL.iter().map(|a| a.name()).chain(Button::ALL.iter().map(|b| b.name())).chain(Tap::ALL.iter().map(|t| t.name())).chain(["mouse", "pad", "_comment", "seat"]).collect();
         if let Some(k) = obj.keys().find(|k| !known.contains(&k.as_str())) {
             return Err(err(k, "unknown action".into()));
         }
@@ -300,7 +304,16 @@ impl Bindings {
             axes.push((a, AxisBinding { positive, negative, pad, deadzone, curve }));
         }
         let buttons = Button::ALL.iter().map(|&b| Ok((b, keys(b.name(), get(b.name())?)?))).collect::<Result<_, String>>()?;
-        let taps = Tap::ALL.iter().map(|&t| Ok((t, keys(t.name(), get(t.name())?)?))).collect::<Result<_, String>>()?;
+        // Files from before #82 call the one verb `seat` and have no `throw`: they keep working.
+        let tap_keys = |t: Tap| -> Result<Vec<Input>, String> {
+            match (t, obj.get(t.name())) {
+                (_, Some(v)) => keys(t.name(), v),
+                (Tap::Interact, None) if obj.contains_key("seat") => keys("seat", &obj["seat"]),
+                (Tap::Throw, None) => Ok(vec![Input::Key(KeyCode::KeyR)]),
+                _ => Err(err(t.name(), "missing".into())),
+            }
+        };
+        let taps = Tap::ALL.iter().map(|&t| Ok((t, tap_keys(t)?))).collect::<Result<_, String>>()?;
         let m = get("mouse")?.as_object().ok_or_else(|| err("mouse", "expected an object".into()))?;
         if let Some(k) = m.keys().find(|k| !["ship_mode", "ship_sensitivity", "walker_sensitivity", "vjoy_max_angle_deg", "vjoy_deadzone_deg", "vjoy_curve"].contains(&k.as_str())) {
             return Err(err("mouse", format!("unknown field `{k}`")));
@@ -679,10 +692,20 @@ mod tests {
     fn taps_map_to_actions() {
         let mut a = resolve(&Bindings::default(), &raw(&[], &[KeyG, KeyF, KeyJ]));
         assert!(a.take_tap(Tap::Lag));
-        assert!(a.take_tap(Tap::Seat));
+        assert!(a.take_tap(Tap::Interact));
         assert!(a.take_tap(Tap::Warp));
         assert!(!a.take_tap(Tap::Lag), "a tap is consumed once");
         assert!(!a.take_tap(Tap::HoverAssist));
+    }
+
+    /// #82: a player's file from before the one verb (`seat`, no `throw`) still loads.
+    #[test]
+    fn old_seat_binding_still_loads() {
+        let old = BINDINGS.replace("\"interact\"", "\"seat\"").replace("  \"throw\": [\"KeyR\", \"Pad:RightThumb\"],\n", "");
+        assert!(!old.contains("interact") && !old.contains("throw"));
+        let b = Bindings::from_json(&old).unwrap();
+        let mut a = resolve(&b, &raw(&[], &[KeyF, KeyR]));
+        assert!(a.take_tap(Tap::Interact) && a.take_tap(Tap::Throw));
     }
 
     /// G was missing from the keyboard's tap list (only scenarios could inject it).
@@ -772,7 +795,7 @@ mod tests {
         assert_eq!(a.move_dir.z, -1.0, "stick forward is W");
         let yaw = b.axis(Axis::TurnYaw);
         assert!((a.turn.y + yaw.shape(0.6f32 as f64)).abs() < 1e-12 && a.turn.y < 0.0, "stick right yaws right through dead zone and curve: {}", a.turn.y);
-        assert!(a.boost && a.take_tap(Tap::Seat));
+        assert!(a.boost && a.take_tap(Tap::Interact));
         // Keys and stick add up, clamped.
         c.held.insert(KeyW);
         assert_eq!(resolve(&b, &c).move_dir.z, -1.0);

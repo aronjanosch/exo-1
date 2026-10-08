@@ -118,3 +118,110 @@ pub fn crate_ride_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool
         true
     }));
 }
+
+/// Test hook: put the walker at rest in the own cabin at `pos` (ship space, feet).
+pub(crate) fn walker_in_cabin(w: &mut World, pos: DVec3) {
+    put_at_seat(w);
+    with_player(w, |p| {
+        p.w.pos = pos;
+        p.w.halt();
+    });
+}
+
+/// Turn the walker to look at a world point (heading and pitch).
+pub(crate) fn look_at(w: &mut World, target: DVec3) {
+    let f = ship_frame_of(w);
+    with_player(w, |p| {
+        let eye = p.world_pos(f) + p.world_up(f) * crate::walker::EYE_HEIGHT;
+        let up = p.world_up(f);
+        let (fwd, pitch) = walker_core::split_look(target - eye, up, p.w.forward);
+        p.w.forward = if p.ship.is_some() { f.rot.inverse() * fwd } else { fwd };
+        p.pitch = pitch;
+    });
+}
+
+pub(crate) fn crate_world_pos(w: &mut World, e: Entity) -> DVec3 {
+    let f = ship_frame_of(w);
+    crate::cargo::crate_world(w.get::<Crate>(e).unwrap(), &f).0
+}
+
+fn prompt(w: &World) -> String {
+    w.resource::<crate::interact::Interaction>().prompt.clone()
+}
+
+fn held(w: &World) -> Option<Entity> {
+    w.resource::<crate::grab::Grab>().held.map(|h| h.crate_e)
+}
+
+/// #82: one tap (F) for a crate and for the seat; the HUD prompt says which.
+pub fn interact_steps(s: &mut Vec<Step>) {
+    use crate::interact::Target;
+    s.push(Box::new(|w, c| {
+        clear_crates(w);
+        let e = cabin_crate(w, "small", 1.2, 1.5);
+        c.v.insert("crate", e.to_bits() as f64);
+        walker_in_cabin(w, DVec3::new(1.2, 0.32, 0.0));
+        let at = crate_world_pos(w, e);
+        look_at(w, at);
+        begin(w, c, "interact: crate and seat with one tap");
+        true
+    }));
+    s.push(wait(0.3));
+    s.push(Box::new(|w, c| {
+        let e = Entity::from_bits(c.v["crate"] as u64);
+        let p = prompt(w);
+        let t = w.resource::<crate::interact::Interaction>().target;
+        check(c, p == "[F] pick up the small crate" && t == Some(Target::Crate(e, grab_core::Reach::Hands)), format!("interact: the HUD prompt offers the crate: \"{p}\""));
+        tap(w, KeyCode::KeyF);
+        true
+    }));
+    s.push(wait(0.2));
+    s.push(Box::new(|w, c| {
+        let e = Entity::from_bits(c.v["crate"] as u64);
+        let p = prompt(w);
+        check(c, held(w) == Some(e) && p == "[F] set the small crate down  [R] throw", format!("interact: F picked the crate up, prompt now \"{p}\""));
+        tap(w, KeyCode::KeyF);
+        true
+    }));
+    s.push(wait(0.2));
+    s.push(Box::new(|w, c| {
+        check(c, held(w).is_none(), "interact: F again set it down".into());
+        let f = ship_frame_of(w);
+        look_at(w, f.to_world(crate::ship::SEAT_POS));
+        keys(w, &[KeyCode::KeyW], true);
+        true
+    }));
+    s.push(Box::new(|w, c| {
+        let near = with_player(w, |p| p.w.pos.distance(crate::ship::SEAT_POS) < 1.2);
+        if near || c.t > 5.0 {
+            keys(w, &[KeyCode::KeyW], false);
+            return true;
+        }
+        false
+    }));
+    s.push(wait(0.3));
+    s.push(Box::new(|w, c| {
+        let p = prompt(w);
+        check(c, p == "[F] sit", format!("interact: at the seat the prompt is \"{p}\""));
+        tap(w, KeyCode::KeyF);
+        true
+    }));
+    s.push(wait(0.3));
+    s.push(Box::new(|w, c| {
+        let seated = with_player(w, |p| p.seated);
+        let p = prompt(w);
+        let used: Vec<Target> = w.resource::<crate::interact::Interaction>().used.clone();
+        let both = used.iter().any(|t| matches!(t, Target::Crate(..))) && used.contains(&Target::Seat);
+        check(c, seated && p == "[F] stand up", format!("interact: the same F sat down, prompt now \"{p}\""));
+        check(c, both, format!("interact: one tap served the crate and the seat ({used:?})"));
+        tap(w, KeyCode::KeyF);
+        true
+    }));
+    s.push(wait(0.3));
+    s.push(Box::new(|w, c| {
+        let seated = with_player(w, |p| p.seated);
+        end(w, c, format!("seated after the last F: {seated}"));
+        check(c, !seated, "interact: F stood up again".into());
+        true
+    }));
+}

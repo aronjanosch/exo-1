@@ -47,6 +47,8 @@ pub struct Options {
     pub headless: bool,
     /// Window not shown (screenshots without any visible window), if the platform renders it.
     pub hidden: bool,
+    /// Present without vsync (frame time measurements; with vsync a frame takes the display's period).
+    pub no_vsync: bool,
     /// Radius of the first planet in metres (default: `content/system/system.json`).
     pub radius: Option<f64>,
     /// Render-origin shift threshold in metres, 0 = off.
@@ -69,6 +71,7 @@ impl Default for Options {
             scenario: None,
             headless: false,
             hidden: false,
+            no_vsync: false,
             radius: None,
             origin_shift: 1000.0,
             out_dir: PathBuf::from("target/scenario"),
@@ -94,6 +97,7 @@ impl Options {
                 "--scenario" => o.scenario = Some(v.to_string()),
                 "--headless" => o.headless = true,
                 "--hidden" => o.hidden = true,
+                "--no-vsync" => o.no_vsync = true,
                 "--distance" => o.distance = Some(v.parse().expect("distance")),
                 "--radius" => o.radius = Some(v.parse().expect("radius")),
                 "--origin-shift" => o.origin_shift = v.parse().expect("origin-shift"),
@@ -128,7 +132,10 @@ pub fn build_app(o: &Options) -> App {
         app.insert_resource(TimeUpdateStrategy::ManualDuration(TICK));
     } else {
         app.add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window { title: "EXO-1".into(), resolution: (1600u32, 900u32).into(), visible: !o.hidden, ..default() }),
+            primary_window: Some(Window { title: "EXO-1".into(), resolution: (1600u32, 900u32).into(), visible: !o.hidden,
+                present_mode: if o.no_vsync { bevy::window::PresentMode::AutoNoVsync } else { bevy::window::PresentMode::AutoVsync },
+                ..default()
+            }),
             ..default()
         }));
     }

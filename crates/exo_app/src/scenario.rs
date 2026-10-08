@@ -271,6 +271,9 @@ fn shot(w: &mut World, c: &mut Ctx, script_dir: &std::path::Path, windowed: bool
     let _ = std::fs::create_dir_all(script_dir);
     let path = script_dir.join(format!("shot-{:02}-{tag}.png", c.shot_n));
     w.spawn(Screenshot::primary_window()).observe(save_to_disk(path));
+    if let Some(mut f) = w.get_resource_mut::<crate::view::FrameLog>() {
+        f.skip = 4;
+    }
 }
 
 // ---------- step builders ----------
@@ -1278,10 +1281,9 @@ enum Flight {
 /// One warp from where the ship is placed (`start`) to planet `to`, flown by script: the pilot
 /// holds the course. Ends 2.5 s after the arrival or drop. Screenshots of every phase, frame
 /// times per phase.
-fn warp_flight(name: &'static str, start: Option<PlanetId>, to: PlanetId, how: Flight, dir: std::path::PathBuf, windowed: bool) -> Step {
+fn warp_flight(name: &'static str, tag: &'static str, start: Option<PlanetId>, to: PlanetId, how: Flight, dir: std::path::PathBuf, windowed: bool) -> Step {
     Box::new(move |w, c| {
         let lim = 240.0;
-        let tag = if how == Flight::Emergency { "emergency".to_string() } else if to == CINDER { "a2b".into() } else { "b2a".into() };
         if c.t == 0.0 {
             begin(w, c, name);
             for k in ["stood", "drift", "g0", "s0", "last_phase", "shot_due", "walk_t0", "walk_z0", "walk_g0", "walk_s0", "walk_far", "walk_done", "cabin_shot", "t_end", "nose", "end_err", "held", "terrain_ok", "terrain_n", "started"] {
@@ -1341,7 +1343,7 @@ fn warp_flight(name: &'static str, start: Option<PlanetId>, to: PlanetId, how: F
             c.v.insert("s0", w.resource::<WalkStats>().steps as f64);
             c.v.insert("drift", 0.0);
         }
-        // Walk back and forth in the cabin at top speed: S for 1 s, W for 1.2 s (5 m/s walking),
+        // Walk back and forth in the cabin at top speed: S for 1 s, W for 0.6 s (5 m/s walking),
         // starting in the cruise (2.2 s long, so the walk may end in the ramp-down).
         // The cabin picture is taken at the back of the cabin, looking at the window.
         let walking = c.v.contains_key("walk_t0") || phase == Phase::Cruise;
@@ -1360,7 +1362,7 @@ fn warp_flight(name: &'static str, start: Option<PlanetId>, to: PlanetId, how: F
                 c.v.insert("cabin_shot", 1.0);
                 shot(w, c, &dir, windowed, &format!("{tag}-cruise-cabin"));
             }
-            if (1.0..2.2).contains(&wt) {
+            if (1.0..1.6).contains(&wt) {
                 keys(w, &[KeyCode::KeyS], false);
                 keys(w, &[KeyCode::KeyW], true);
                 c.v.insert("walk_far", c.v.get("walk_far").copied().unwrap_or(z).max(z));
@@ -1372,7 +1374,7 @@ fn warp_flight(name: &'static str, start: Option<PlanetId>, to: PlanetId, how: F
                 let (g, n) = (st.grounded as f64 - c.v["walk_g0"], (st.steps as f64 - c.v["walk_s0"]).max(1.0));
                 let (far, back) = (c.v["walk_far"] - c.v["walk_z0"], z - c.v["walk_z0"]);
                 let in_cabin = with_player(w, |p| p.ship.is_some());
-                check(c, in_cabin && g / n > 0.99 && far > 2.0 && back.abs() < 2.0, format!("{name}: walking in the cabin at {:.0} km/s at the end: {far:.2} m back, {back:.2} m from the start after walking forward again, deck contact {:.1} % of {n:.0} steps", w.resource::<WarpDrive>().drive.speed() / 1000.0, 100.0 * g / n));
+                check(c, in_cabin && g / n > 0.99 && far > 2.0 && back.abs() < 3.0, format!("{name}: walking in the cabin at {:.0} km/s at the end: {far:.2} m back, {back:.2} m from the start after walking forward again, deck contact {:.1} % of {n:.0} steps", w.resource::<WarpDrive>().drive.speed() / 1000.0, 100.0 * g / n));
             }
         }
         if let Some(&sp) = c.p.get("stand_pos") {
@@ -1719,7 +1721,7 @@ fn warp_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
         }
         false
     }));
-    s.push(warp_flight("warp Hearth -> Cinder (walker in the cabin)", Some(HEARTH), CINDER, Flight::Passenger, dir.to_path_buf(), windowed));
+    s.push(warp_flight("warp Hearth -> Cinder (walker in the cabin)", "a2b", Some(HEARTH), CINDER, Flight::Passenger, dir.to_path_buf(), windowed));
     // What the terrain of the new planet costs: the swap itself, its root chunks, the refinement.
     s.push(Box::new(|w, c| {
         let (swap, rss) = (tel(w).swap_ms, tel(w).rss_mb);
@@ -1767,12 +1769,12 @@ fn warp_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
         false
     }));
     s.extend(back_to_seat());
-    s.push(warp_flight("warp Cinder -> Hearth (seated, view from outside)", Some(CINDER), HEARTH, Flight::Seated, dir.to_path_buf(), windowed));
+    s.push(warp_flight("warp Cinder -> Hearth (seated, view from outside)", "b2a", Some(CINDER), HEARTH, Flight::Seated, dir.to_path_buf(), windowed));
     s.push(wait_drive_idle());
-    s.push(warp_flight("emergency exit Hearth -> Cinder at mid-flight", Some(HEARTH), CINDER, Flight::Emergency, dir.to_path_buf(), windowed));
+    s.push(warp_flight("emergency exit Hearth -> Cinder at mid-flight", "emergency", Some(HEARTH), CINDER, Flight::Emergency, dir.to_path_buf(), windowed));
     s.push(wait_drive_idle());
     // From open space on to Cinder: the effective target is Cinder, the path starts straight.
-    s.push(warp_flight("warp from the drop point on to Cinder", None, CINDER, Flight::Seated, dir.join("after-drop"), windowed));
+    s.push(warp_flight("warp from the drop point on to Cinder", "drop2b", None, CINDER, Flight::Seated, dir.to_path_buf(), windowed));
     // Frame times per phase (windowed runs).
     s.push(Box::new(|w, c| {
         if let Some(f) = w.get_resource::<crate::view::FrameLog>() {

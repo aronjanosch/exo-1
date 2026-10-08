@@ -70,10 +70,16 @@ pub struct FrameLog {
     pub label: String,
     /// label -> (frames, total ms, worst ms)
     pub buckets: std::collections::BTreeMap<String, (u64, f64, f64)>,
+    /// Frames left out after a screenshot (readback and PNG save cost tens of ms).
+    pub skip: u32,
 }
 
 impl FrameLog {
     pub fn add(&mut self, ms: f64) {
+        if self.skip > 0 {
+            self.skip -= 1;
+            return;
+        }
         if self.label.is_empty() {
             return;
         }
@@ -151,7 +157,7 @@ pub fn setup_warp_view(
             Visibility::Hidden,
             children![
                 (Node { width: px(14), height: px(14), border: UiRect::all(px(2)), ..default() }, BorderColor::all(Color::WHITE)),
-                (NavLabel, Text::new(p.name.clone()), TextFont { font_size: FontSize::Px(13.0), ..default() }, Node { margin: UiRect::left(px(6)), ..default() }),
+                (NavLabel, Text::new(p.name.clone()), TextLayout::no_wrap(), TextFont { font_size: FontSize::Px(13.0), ..default() }, Node { margin: UiRect::left(px(6)), ..default() }),
             ],
         ));
         commands.spawn((
@@ -159,6 +165,7 @@ pub fn setup_warp_view(
             Mesh3d(sphere.clone()),
             MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(c[0], c[1], c[2]), perceptual_roughness: 0.9, ..default() })),
             Transform::default(),
+            WorldPose::default(),
             Visibility::Hidden,
         ));
     }
@@ -167,6 +174,7 @@ pub fn setup_warp_view(
         Mesh3d(meshes.add(Torus::new(0.8, 1.0))),
         MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::WHITE, emissive: LinearRgba::new(0.4, 3.0, 4.0, 1.0), unlit: true, ..default() })),
         Transform::default(),
+        WorldPose::default(),
         Visibility::Hidden,
     ));
     let streak = meshes.add(Cuboid::new(0.04, 0.04, 1.0));
@@ -179,6 +187,7 @@ pub fn setup_warp_view(
             Mesh3d(streak.clone()),
             MeshMaterial3d(mat.clone()),
             Transform::default(),
+            WorldPose::default(),
             Visibility::Hidden,
         ));
     }
@@ -203,8 +212,8 @@ pub fn update_nav_markers(
         let p = sys.planet(m.0);
         let to = p.centre() - origin.view;
         let dist = to.length();
-        // A point 1 km along the direction, in render space (the camera is at view - origin).
-        let at = (origin.view - origin.origin + to / dist * 1000.0).as_vec3();
+        // A point 1 km along the direction from where the camera was drawn (render space).
+        let at = cam_t.translation() + (to / dist * 1000.0).as_vec3();
         let screen = camera.world_to_viewport(cam_t, at).ok().filter(|_| cam_t.forward().dot(to.as_vec3()) > 0.0);
         let Some(xy) = screen.filter(|_| dist > NEAR_PLANET) else {
             *vis = Visibility::Hidden;
@@ -248,12 +257,14 @@ fn km_text(d: f64) -> String {
 
 /// Distant planets: each one is drawn as a sphere at its true direction, at most `IMPOSTOR_FROM`
 /// away and scaled to keep its angular size (the camera's far plane stays small).
+/// Things placed around the camera get a world pose, not a Transform: the render origin may still
+/// move after this system (at 1000 km/s by several km a frame), `WorldPose` follows it.
 pub fn update_impostors(
     sys: Res<crate::warp::SystemRes>,
     origin: Res<RenderOrigin>,
-    mut q: Query<(&Impostor, &mut Transform, &mut Visibility)>,
+    mut q: Query<(&Impostor, &mut WorldPose, &mut Transform, &mut Visibility)>,
 ) {
-    for (imp, mut t, mut vis) in &mut q {
+    for (imp, mut pose, mut t, mut vis) in &mut q {
         let p = sys.0.planet(imp.0);
         let to = p.centre() - origin.view;
         let dist = to.length();
@@ -262,10 +273,8 @@ pub fn update_impostors(
             continue;
         }
         let shown = IMPOSTOR_FROM;
-        t.translation = (to / dist * shown).as_vec3();
+        pose.pos = origin.view + to / dist * shown;
         t.scale = Vec3::splat((p.radius * shown / dist) as f32);
-        // The camera sits at the render origin's offset: place relative to the camera, not the origin.
-        t.translation += (origin.view - origin.origin).as_vec3();
         *vis = Visibility::Inherited;
     }
 }
@@ -274,10 +283,10 @@ pub fn update_impostors(
 pub fn update_aim_marker(
     wd: Res<crate::warp::WarpDrive>,
     origin: Res<RenderOrigin>,
-    mut q: Query<(&mut Transform, &mut Visibility), With<AimMarker>>,
+    mut q: Query<(&mut WorldPose, &mut Transform, &mut Visibility), With<AimMarker>>,
 ) {
     use warp_core::Phase;
-    let Ok((mut t, mut vis)) = q.single_mut() else { return };
+    let Ok((mut pose, mut t, mut vis)) = q.single_mut() else { return };
     let dir = match (wd.drive.phase, wd.drive.path()) {
         (Phase::Spooling | Phase::Calibrating, Some(path)) => path.start_dir(),
         _ => {
@@ -285,9 +294,8 @@ pub fn update_aim_marker(
             return;
         }
     };
-    let at = origin.view + dir * 1000.0;
-    t.translation = (at - origin.origin).as_vec3();
-    t.rotation = Quat::from_rotation_arc(Vec3::Y, dir.as_vec3());
+    pose.pos = origin.view + dir * 1000.0;
+    pose.rot = DQuat::from_rotation_arc(DVec3::Y, dir);
     t.scale = Vec3::splat(if wd.drive.warning { 14.0 } else { 10.0 });
     *vis = Visibility::Inherited;
 }
@@ -298,26 +306,25 @@ pub fn update_tunnel(
     time: Res<Time>,
     wd: Res<crate::warp::WarpDrive>,
     origin: Res<RenderOrigin>,
-    mut q: Query<(&Streak, &mut Transform, &mut Visibility)>,
+    mut q: Query<(&Streak, &mut WorldPose, &mut Transform, &mut Visibility)>,
     mut clear: ResMut<ClearColor>,
 ) {
     let level = wd.drive.tunnel() as f32;
     let t = time.elapsed_secs();
     let course = wd.drive.pose().map(|(_, v)| v.normalize_or_zero()).filter(|d| *d != DVec3::ZERO);
     let (Some(dir), true) = (course, level > 0.0) else {
-        for (_, _, mut vis) in &mut q {
+        for (_, _, _, mut vis) in &mut q {
             *vis = Visibility::Hidden;
         }
         return;
     };
-    let rot = Quat::from_rotation_arc(Vec3::NEG_Z, dir.as_vec3());
-    let cam = (origin.view - origin.origin).as_vec3();
-    for (s, mut tf, mut vis) in &mut q {
+    let rot = DQuat::from_rotation_arc(DVec3::NEG_Z, dir);
+    for (s, mut pose, mut tf, mut vis) in &mut q {
         *vis = Visibility::Inherited;
         let z = 60.0 - ((s.phase + t * (0.6 + level)) % 1.0) * 180.0;
         let len = 2.0 + 60.0 * level;
-        tf.translation = cam + rot * Vec3::new(s.angle.cos() * s.radius, s.angle.sin() * s.radius, z);
-        tf.rotation = rot;
+        pose.pos = origin.view + rot * DVec3::new((s.angle.cos() * s.radius) as f64, (s.angle.sin() * s.radius) as f64, z as f64);
+        pose.rot = rot;
         tf.scale = Vec3::new(1.0, 1.0, len);
     }
     if level > 0.0 {
@@ -554,6 +561,7 @@ fn warp_line(wd: &crate::warp::WarpDrive, sys: &warp_core::System, ship: DVec3) 
             if d.exit_hold > 0.0 { format!(" {:.0} %", 100.0 * d.exit_hold / d.cfg.emergency_hold_time) } else { String::new() }
         ),
         Phase::EmergencyDrop => format!("QUANTUM  EMERGENCY EXIT  {:.0} km/s  {dist} to {target}", d.speed() / 1000.0),
+        Phase::PostRampDown if d.drop_point().is_some() => "QUANTUM  dropped out".to_string(),
         Phase::PostRampDown => "QUANTUM  arrived".to_string(),
         Phase::Cooldown => format!("QUANTUM  cooldown {:.1} s", (d.cfg.cooldown - d.timer).max(0.0)),
     }

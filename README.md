@@ -42,10 +42,10 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 - `space`: fly to space, stop, walk out of the ship and drift (stopped ship, one drifting at 3 m/s, a careful step out with taps of W), then the suit: brake, roll, back into the field (righting), fly back into the cabin, drift with a ship coasting at 20 m/s close behind its ramp.
 - `foreign`: a remote ship flies through the real snapshot path at 350 m/s; the walker stands and walks in its cabin, then beside it parked.
 - `t5`: four 300 s walks at 1.8 m/s (basin, escarpment, plateau); slow, for terrain work.
-- `warp`: quantum drive between the two planets: refused starts (too low, ship on the path), calibration lost, cancel, Hearth to Cinder with a walker in the cabin (walking at top speed), landing on Cinder, back. Prints times, speeds, swap and memory numbers; with a window it also takes screenshots and frame times per phase.
+- `warp`: quantum drive between the two planets: refused starts (below 1.5 atmosphere heights, ship on the path), a snapshot with an unknown planet id, calibration lost, cancel, Hearth to Cinder with a walker in the cabin (walking at top speed), landing on Cinder, back seated, an emergency exit at mid-flight and a jump on from the drop point. Checks the end point, the nose at the target's centre and the terrain after the exit. Prints times, speeds, swap and memory numbers; with a window it also takes screenshots of every phase and frame times per phase.
 - `net`: the network bot (take off, cruise, turn, brake, land, repeat); see below.
 
-Other options: `--distance=<m>` (distance between the planet centres, default from `content/system/system.json`), `--origin-shift=<m>` (render-origin threshold, 0 = off, default 1000), `--radius=<m>`, `--record=<file>` (write the run's ship and walker path for the replay matrix).
+Other options: `--distance=<m>` (distance between the planet centres, default from `content/system/system.json`; frame zones that would reach past half of it shrink to 45 %, a distance too short for the arrival radii is refused), `--origin-shift=<m>` (render-origin threshold, 0 = off, default 1000), `--radius=<m>` (first planet, overrides the file), `--record=<file>` (write the run's ship and walker path for the replay matrix).
 
 ## Co-op (LAN)
 
@@ -63,7 +63,7 @@ Options: `--port`, `--bind`, `--rate=<Hz>` (default 30), `--buffer=<ms>` (defaul
 Walker: mouse look (click to grab, Escape releases), WASD, Shift run, Space jump, F sit at the seat, G cabin gravity on/off (only in a landed ship; in flight it is always on), V debug fly mode.
 Ship: mouse pitch/yaw, W/S forward/back, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost, X firm brake, H flight assist, L planet follow, F stand up.
 Suit (outside a ship in space, no gravity): mouse turns freely, W/S forward/back, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost, X brake to rest.
-Quantum drive (seated, above the atmosphere): J spool up and warp to the selected planet, J again cancels while spooling or calibrating, N selects the target. Point the nose at the ring in the sky while the gauge fills (within 5 degrees; beyond 8 degrees the jump is lost).
+Quantum drive (seated, above 1.5 times the planet's atmosphere height): J spool up and warp to the selected planet, J again cancels while spooling or calibrating, N selects the target. Every planet has a HUD marker with name and distance; the target's is larger and coloured. Point the nose at the ring in the sky while the gauge fills (within 5 degrees; beyond 8 degrees the jump is lost). During the flight, hold J for 1 s to drop out early (emergency exit).
 O: orbit camera (debug).
 
 ## Windows build

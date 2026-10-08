@@ -93,20 +93,29 @@ pub fn add_hull(commands: &mut Commands, ship: Entity, layer: Layer) {
     let inner = Color::srgb(0.55, 0.55, 0.6);
     // See-through: the tunnel streaks show through the window (spike 11, F8).
     let glass = Color::srgba(0.3, 0.8, 0.9, 0.12);
-    // [size, position, colour, collides] in ship space; origin at the floor bottom.
-    let parts: [(Vec3, Vec3, Color, bool); 8] = [
-        (Vec3::new(4.0, 0.3, 8.0), Vec3::new(0.0, 0.15, 0.0), inner, true),
-        (Vec3::new(0.3, 2.6, 8.0), Vec3::new(-2.15, 1.6, 0.0), hull, true),
-        (Vec3::new(0.3, 2.6, 8.0), Vec3::new(2.15, 1.6, 0.0), hull, true),
-        (Vec3::new(4.6, 0.3, 8.0), Vec3::new(0.0, 3.05, 0.0), hull, true),
-        (Vec3::new(4.6, 2.6, 0.3), Vec3::new(0.0, 1.6, -4.15), hull, true),
-        (Vec3::new(3.6, 1.0, 0.05), Vec3::new(0.0, 2.0, -3.98), glass, false),
-        (Vec3::new(1.0, 0.5, 0.8), Vec3::new(0.0, 0.55, -3.3), inner, false),
-        (Vec3::new(9.0, 0.25, 2.0), Vec3::new(0.0, 1.2, 1.0), hull, false),
+    // [size, position, colour, collides, drawn] in ship space; origin at the floor bottom.
+    // The front wall collides as one block; it is drawn as four pieces around the window opening
+    // (3.6 x 1.0 m at 1.5 to 2.5 m), which has the glass in it.
+    let parts: [(Vec3, Vec3, Color, bool, bool); 12] = [
+        (Vec3::new(4.0, 0.3, 8.0), Vec3::new(0.0, 0.15, 0.0), inner, true, true),
+        (Vec3::new(0.3, 2.6, 8.0), Vec3::new(-2.15, 1.6, 0.0), hull, true, true),
+        (Vec3::new(0.3, 2.6, 8.0), Vec3::new(2.15, 1.6, 0.0), hull, true, true),
+        (Vec3::new(4.6, 0.3, 8.0), Vec3::new(0.0, 3.05, 0.0), hull, true, true),
+        (Vec3::new(4.6, 2.6, 0.3), Vec3::new(0.0, 1.6, -4.15), hull, true, false),
+        (Vec3::new(4.6, 1.2, 0.3), Vec3::new(0.0, 0.9, -4.15), hull, false, true),
+        (Vec3::new(4.6, 0.4, 0.3), Vec3::new(0.0, 2.7, -4.15), hull, false, true),
+        (Vec3::new(0.5, 1.0, 0.3), Vec3::new(-2.05, 2.0, -4.15), hull, false, true),
+        (Vec3::new(0.5, 1.0, 0.3), Vec3::new(2.05, 2.0, -4.15), hull, false, true),
+        (Vec3::new(3.6, 1.0, 0.05), Vec3::new(0.0, 2.0, -4.15), glass, false, true),
+        (Vec3::new(1.0, 0.5, 0.8), Vec3::new(0.0, 0.55, -3.3), inner, false, true),
+        (Vec3::new(9.0, 0.25, 2.0), Vec3::new(0.0, 1.2, 1.0), hull, false, true),
     ];
     commands.entity(ship).with_children(|c| {
-        for (i, (size, p, color, collides)) in parts.into_iter().enumerate() {
-            let mut e = c.spawn((Transform::from_translation(p), ShipPart { size, color }, Visibility::default()));
+        for (i, (size, p, color, collides, drawn)) in parts.into_iter().enumerate() {
+            let mut e = c.spawn((Transform::from_translation(p), Visibility::default()));
+            if drawn {
+                e.insert(ShipPart { size, color });
+            }
             if i == 0 {
                 e.insert(crate::walker::CabinFloor);
             }

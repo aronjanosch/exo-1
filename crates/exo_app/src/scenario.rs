@@ -1416,6 +1416,12 @@ fn warp_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
             println!("{line}");
             c.report.push(line);
         }
+        // The obstruction radius must hold the highest terrain.
+        for (i, def) in sys.planets.iter().enumerate() {
+            let pl = PlanetRes::load_def(i, def);
+            let high = pl.radius + pl.relief;
+            check(c, high < def.obstruction_radius && def.obstruction_radius < def.arrival_radius, format!("{}: highest terrain at {high:.0} m from the centre, obstruction radius {:.0} m, arrival radius {:.0} m", def.name, def.obstruction_radius, def.arrival_radius));
+        }
         true
     }));
     // Refused: too low (inside the atmosphere).

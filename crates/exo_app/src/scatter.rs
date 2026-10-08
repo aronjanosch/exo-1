@@ -196,7 +196,7 @@ pub fn update_scatter(
         }
         let out = block_on(future::poll_once(task)).unwrap();
         let parent = commands
-            .spawn((Transform::default(), Visibility::default(), WorldPos(planet.centre + DVec3::from_array(out.center)), PlanetScene))
+            .spawn((Transform::default(), Visibility::default(), WorldPos(planet.centre + DVec3::from_array(out.center)), PlanetScene(planet.id)))
             .id();
         for inst in &out.instances {
             let (plain, rare) = view.props[inst.entry as usize].clone();

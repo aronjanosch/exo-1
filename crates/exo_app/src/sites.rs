@@ -44,7 +44,7 @@ pub fn update_sites(mut commands: Commands, planet: Res<PlanetRes>, assets: Res<
                 MeshMaterial3d(mat),
                 Transform { rotation: Quat::from_mat3(&Mat3::from_cols(x, u, z)), scale: Vec3::splat(p.scale as f32), ..default() },
                 WorldPos(planet.centre + from_v3(p.pos)),
-                PlanetScene,
+                PlanetScene(planet.id),
             ));
             view.pieces += 1;
         }

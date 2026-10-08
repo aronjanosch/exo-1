@@ -82,6 +82,8 @@ pub struct Options {
     pub settings_dir: Option<PathBuf>,
     /// `--menu`: the menus also in a scripted windowed run (screenshots of them).
     pub force_menu: bool,
+    /// `--swap-rounds=<n>`: planet swaps by warp in the `swap` scenario (default and least 3).
+    pub swap_rounds: usize,
 }
 
 impl Default for Options {
@@ -103,6 +105,7 @@ impl Default for Options {
             tuning_dir: None,
             settings_dir: None,
             force_menu: false,
+            swap_rounds: 3,
         }
     }
 }
@@ -129,6 +132,7 @@ impl Options {
                 "--tuning-dir" => o.tuning_dir = Some(PathBuf::from(v)),
                 "--settings-dir" => o.settings_dir = Some(PathBuf::from(v)),
                 "--menu" => o.force_menu = true,
+                "--swap-rounds" => o.swap_rounds = v.parse().expect("swap-rounds"),
                 "--perf" => o.perf = Some(o.perf.take().unwrap_or_default()),
                 "--perf-baseline" => o.perf.get_or_insert_default().baseline = PathBuf::from(v),
                 "--perf-save-baseline" => o.perf.get_or_insert_default().save_baseline = true,
@@ -284,6 +288,16 @@ pub fn build_app(o: &Options) -> App {
         // Ahead of the controllers like net_pre: the remote ship is placed before the walker steps.
         app.add_systems(FixedUpdate, scenario::foreign_drive.run_if(resource_exists::<scenario::ForeignDriver>).before(ship::ship_control));
     }
+    if o.scenario.as_deref() == Some("swap") {
+        // #14: count what a planet swap leaves behind; headless with the terrain too.
+        if o.headless {
+            app.init_asset::<StandardMaterial>().init_asset::<terrain_material::TerrainMaterial>().init_asset::<sky::WaterMaterial>();
+            app.add_systems(Startup, terrain::setup_terrain);
+            app.add_systems(Update, (scenario::headless_view, terrain::update_terrain).chain().after(ring::update_ring));
+        }
+        app.init_resource::<scenario::SwapAudit>();
+        app.add_systems(FixedUpdate, scenario::swap_audit.after(warp::warp_telemetry).before(ship::ship_control));
+    }
     if let Some(name) = &o.scenario {
         app.world_mut().resource_mut::<controls::Controls>().scripted = true;
         if scenario::uses_direct_mouse(name) {
@@ -296,7 +310,7 @@ pub fn build_app(o: &Options) -> App {
         }
         app.insert_resource(scenario::Script {
             name: name.clone(),
-            steps: scenario::build(name, &o.out_dir, !o.headless),
+            steps: scenario::build(name, &o.out_dir, !o.headless, o.swap_rounds),
             i: 0,
             ctx: Default::default(),
             out_dir: o.out_dir.clone(),

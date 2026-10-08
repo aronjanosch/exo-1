@@ -11,10 +11,12 @@ use crate::controls::{Actions, Tap};
 use crate::env::PlanetRes;
 use crate::ring::Ring;
 use crate::ship::{RemoteShip, Ship};
+use crate::terrain::{build_roots, PrebuiltRoots};
 use avian3d::prelude::*;
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 use bevy::tasks::{block_on, AsyncComputeTaskPool, Task};
+use planet_core::ChunkOut;
 use warp_core::{Abort, Drive, Event, Obstacle, Phase, PlanetDef, PlanetId, ShipView, System};
 
 pub const SYSTEM: &str = include_str!("../../../content/system/system.json");
@@ -58,13 +60,16 @@ pub struct WarpTelemetry {
     pub end_error: Option<f64>,
     /// Obstacles added by hand, besides remote ships.
     pub extra_obstacles: Vec<Obstacle>,
+    /// Every planet swap: time, old planet, new planet, at an emergency drop.
+    pub swaps: Vec<(f64, PlanetId, PlanetId, bool)>,
     last_pos: Option<DVec3>,
 }
 
-/// The target planet being generated in the background while the ship flies.
+/// The target planet being generated in the background while the ship flies, with its root
+/// terrain chunks (#34).
 #[derive(Resource, Default)]
 pub struct PendingPlanet {
-    task: Option<(PlanetId, Task<(PlanetRes, f64)>)>,
+    task: Option<(PlanetId, Task<(PlanetRes, Vec<ChunkOut>, f64)>)>,
     /// Wall-clock time the last background generation took (ms).
     pub gen_ms: Option<f64>,
 }
@@ -80,24 +85,31 @@ impl PendingPlanet {
             AsyncComputeTaskPool::get().spawn(async move {
                 let t0 = std::time::Instant::now();
                 let p = PlanetRes::load(id, &def);
-                (p, t0.elapsed().as_secs_f64() * 1000.0)
+                let roots = build_roots(&p);
+                (p, roots, t0.elapsed().as_secs_f64() * 1000.0)
             }),
         ));
+    }
+
+    /// A generation is running or waiting to be taken.
+    pub fn busy(&self) -> bool {
+        self.task.is_some()
     }
 
     pub fn ready(&self) -> bool {
         self.task.as_ref().is_some_and(|(_, t)| t.is_finished())
     }
 
-    /// The finished planet, or generates it here and now (a teleport has no flight to hide it in).
-    fn take(&mut self, id: PlanetId, sys: &System) -> PlanetRes {
+    /// The finished planet and its roots, or the planet generated here and now without roots (a
+    /// teleport has no flight to hide it in).
+    fn take(&mut self, id: PlanetId, sys: &System) -> (PlanetRes, Option<Vec<ChunkOut>>) {
         match self.task.take() {
             Some((t, task)) if t == id => {
-                let (p, ms) = block_on(task);
+                let (p, roots, ms) = block_on(task);
                 self.gen_ms = Some(ms);
-                p
+                (p, Some(roots))
             }
-            _ => PlanetRes::load(id, sys.planet(id)),
+            _ => (PlanetRes::load(id, sys.planet(id)), None),
         }
     }
 }
@@ -181,6 +193,7 @@ pub fn warp_drive(
     mut commands: Commands,
     time: Res<Time>,
     sys: Res<SystemRes>,
+    planet: Res<PlanetRes>,
     mut wd: ResMut<WarpDrive>,
     mut pending: ResMut<PendingPlanet>,
     mut ring: ResMut<Ring>,
@@ -203,7 +216,10 @@ pub fn warp_drive(
             // Start generating the target while the ship still ramps up.
             Event::Phase(Phase::RampUp) => {
                 if let Some(t) = wd.drive.target {
-                    pending.start(t, sys.planet(t).clone());
+                    // A jump on from a drop point goes to the planet loaded at the drop already.
+                    if t != planet.id {
+                        pending.start(t, sys.planet(t).clone());
+                    }
                     commands.entity(e).remove::<SweptCcd>();
                 }
             }
@@ -237,24 +253,37 @@ pub fn warp_drive(
     }
 }
 
-/// The ship comes into another planet's frame zone: that planet becomes the simulation's.
+/// The ship comes into another planet's frame zone: that planet becomes the simulation's. An
+/// emergency drop outside every frame zone makes the nearest planet the simulation's, once, at the
+/// drop (#14: the old one always stayed, with its terrain). It is loaded or generated already:
+/// the old planet, or the warp's target. Not re-checked while drifting (a swap there would
+/// generate a planet on the spot).
 #[allow(clippy::too_many_arguments)]
 pub fn planet_swap(
     mut commands: Commands,
     sys: Res<SystemRes>,
     planet: Res<PlanetRes>,
+    wd: Res<WarpDrive>,
     mut pending: ResMut<PendingPlanet>,
     mut ring: ResMut<Ring>,
     ships: Query<&Position, With<Ship>>,
-    tel: Option<Res<WarpTelemetry>>,
+    tel: Option<ResMut<WarpTelemetry>>,
 ) {
     let sys = &sys.0;
     let Ok(pos) = ships.single() else { return };
-    let Some(f) = sys.frame_of(pos.0).filter(|f| *f != planet.id) else { return };
-    let new = pending.take(f, sys);
+    let zone = sys.frame_of(pos.0);
+    let dropped = zone.is_none() && wd.events.contains(&Event::DroppedOut);
+    let next = if dropped { Some(sys.nearest(pos.0)) } else { zone };
+    let Some(f) = next.filter(|f| *f != planet.id) else { return };
+    let (new, roots) = pending.take(f, sys);
+    if let Some(chunks) = roots {
+        commands.insert_resource(PrebuiltRoots { planet: f, chunks });
+    }
     swap_planet(&mut commands, &mut ring, new);
-    if let Some(tel) = tel {
-        println!("warp {:7.2} s: planet {} -> {f} ({})", tel.clock, planet.id, sys.planet(f).name);
+    if let Some(mut tel) = tel {
+        println!("warp {:7.2} s: planet {} -> {f} ({}){}", tel.clock, planet.id, sys.planet(f).name, if dropped { " at the drop point" } else { "" });
+        let clock = tel.clock;
+        tel.swaps.push((clock, planet.id, f, dropped));
     }
 }
 

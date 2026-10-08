@@ -112,7 +112,7 @@ pub fn update_sky(
             medium: media.add(medium(&planet)),
         };
         let e = commands
-            .spawn((atmo, Transform::from_translation((planet.centre - origin.origin).as_vec3()), WorldPos(planet.centre), PlanetScene))
+            .spawn((atmo, Transform::from_translation((planet.centre - origin.origin).as_vec3()), WorldPos(planet.centre), PlanetScene(planet.id)))
             .id();
         state.entity = Some(e);
         state.for_planet = Some(planet.id);

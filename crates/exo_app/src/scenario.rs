@@ -1248,12 +1248,12 @@ fn events_since(w: &World, from: usize) -> Vec<(f64, Event)> {
 /// One full warp from planet `from` to planet `to`, flown by script: the pilot holds the course.
 /// With `passenger` the pilot stands up when the ramp-up starts and the walker stands in the
 /// cabin for the rest of the flight (spike 10 measures: deck contact and drift).
-fn warp_flight(name: &'static str, from: usize, to: usize, passenger: bool) -> Step {
+fn warp_flight(name: &'static str, from: usize, to: usize, passenger: bool, dir: std::path::PathBuf, windowed: bool) -> Step {
     Box::new(move |w, c| {
         let lim = 240.0;
         if c.t == 0.0 {
             begin(w, c, name);
-            for k in ["stood", "drift", "warps0", "g0", "s0"] {
+            for k in ["stood", "drift", "warps0", "g0", "s0", "last_phase", "shot_due"] {
                 c.v.remove(k);
             }
             c.p.remove("stand_pos");
@@ -1275,6 +1275,21 @@ fn warp_flight(name: &'static str, from: usize, to: usize, passenger: bool) -> S
         }
         hold_course(w);
         let phase = warp_state(w).0;
+        // Frame times and pictures per phase (windowed runs only).
+        if c.v.get("last_phase") != Some(&(phase as u8 as f64)) {
+            c.v.insert("last_phase", phase as u8 as f64);
+            if let Some(mut f) = w.get_resource_mut::<crate::view::FrameLog>() {
+                f.label = format!("{name}: {phase:?}");
+            }
+            if matches!(phase, Phase::Spooling | Phase::RampUp | Phase::Cruise | Phase::RampDown | Phase::PostRampDown) {
+                c.v.insert("shot_due", c.t + if phase == Phase::PostRampDown { 2.0 } else { 1.0 });
+            }
+        }
+        if c.v.get("shot_due").is_some_and(|&due| c.t >= due) {
+            c.v.remove("shot_due");
+            let tag = format!("{}-{phase:?}", if from == 0 { "a2b" } else { "b2a" }).to_lowercase();
+            shot(w, c, &dir, windowed, &tag);
+        }
         // Passenger: pilot out of the seat when the drive takes the ship.
         if passenger && phase == Phase::RampUp && !c.v.contains_key("stood") {
             c.v.insert("stood", 1.0);
@@ -1341,6 +1356,9 @@ fn warp_flight(name: &'static str, from: usize, to: usize, passenger: bool) -> S
                 check(c, in_cabin && g / s0.max(1.0) > 0.99 && drift < 0.05, format!("{name}: walker in the cabin through the warp: deck contact {:.1} % of {s0:.0} steps, drift {:.1} mm", 100.0 * g / s0.max(1.0), drift * 1000.0));
             }
             let _ = (pos, exit, speed);
+            if let Some(mut f) = w.get_resource_mut::<crate::view::FrameLog>() {
+                f.label.clear();
+            }
             let (seated, in_c, fly) = with_player(w, |p| (p.seated, p.ship.is_some(), p.fly));
             println!("{name}: player seated {seated}, in cabin {in_c}, fly {fly}, steps {}", w.resource::<WalkStats>().steps);
             return true;
@@ -1349,7 +1367,7 @@ fn warp_flight(name: &'static str, from: usize, to: usize, passenger: bool) -> S
     })
 }
 
-fn warp_steps(s: &mut Vec<Step>) {
+fn warp_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
     // Seat by test shortcut, hover in the field.
     s.push(Box::new(|w, _| {
         put_at_seat(w);
@@ -1461,7 +1479,36 @@ fn warp_steps(s: &mut Vec<Step>) {
         }
         false
     }));
-    s.push(warp_flight("warp Hearth -> Cinder (walker in the cabin)", 0, 1, true));
+    s.push(warp_flight("warp Hearth -> Cinder (walker in the cabin)", 0, 1, true, dir.to_path_buf(), windowed));
+    // What the terrain of the new planet costs: the swap itself, its root chunks, the refinement.
+    s.push(Box::new(|w, c| {
+        let (swap, rss) = {
+            let wd = w.resource::<WarpDrive>();
+            (wd.swap_ms, wd.rss_mb)
+        };
+        let pl = planet(w);
+        let t0 = std::time::Instant::now();
+        for face in 0..6 {
+            pl.pgen.build_chunk(face, -1.0, -1.0, 2.0, false);
+        }
+        let roots = t0.elapsed().as_secs_f64() * 1000.0;
+        let t1 = std::time::Instant::now();
+        let mut n = 0;
+        for face in 0..6 {
+            for (a, b) in [(-1.0, -1.0), (0.0, -1.0), (-1.0, 0.0), (0.0, 0.0)] {
+                pl.pgen.build_chunk(face, a, b, 1.0, false);
+                n += 1;
+            }
+        }
+        let kids = t1.elapsed().as_secs_f64() * 1000.0 / n as f64;
+        let line = format!(
+            "terrain on arrival (Cinder): planet swap {swap:.2} ms on the main thread; 6 root chunks {roots:.1} ms in one go; one level-1 chunk {kids:.2} ms; memory {:.0} MB before the swap, {:.0} MB after (now {:.0} MB)",
+            rss.0, rss.1, crate::warp::rss_mb()
+        );
+        println!("{line}");
+        c.report.push(line);
+        true
+    }));
     s.push(wait(8.0));
     // Land on Cinder: ship on the ground, walker standing next to it.
     s.push(Box::new(|w, c| {
@@ -1483,7 +1530,7 @@ fn warp_steps(s: &mut Vec<Step>) {
         false
     }));
     s.extend(back_to_seat());
-    s.push(warp_flight("warp Cinder -> Hearth", 1, 0, false));
+    s.push(warp_flight("warp Cinder -> Hearth", 1, 0, false, dir.to_path_buf(), windowed));
     s.push(wait(3.0));
 }
 
@@ -1520,7 +1567,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
             }
         }
         "foreign" => foreign_steps(&mut s),
-        "warp" => warp_steps(&mut s),
+        "warp" => warp_steps(&mut s, out_dir, windowed),
         // Issue #5: step out of the ship in space (seat by test shortcut, then fly up).
         "space" => {
             s.push(Box::new(|w, _| {

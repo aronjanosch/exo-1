@@ -44,6 +44,27 @@ pub struct PlayerInterp {
     pub curr: (DVec3, DVec3, DVec3),
 }
 
+/// Frame times per label (windowed runs): the scenario sets the label, the HUD system adds each
+/// frame's real duration to it. For the frame cost of distant planets and the tunnel (spike 11).
+#[derive(Resource, Default)]
+pub struct FrameLog {
+    pub label: String,
+    /// label -> (frames, total ms, worst ms)
+    pub buckets: std::collections::BTreeMap<String, (u64, f64, f64)>,
+}
+
+impl FrameLog {
+    pub fn add(&mut self, ms: f64) {
+        if self.label.is_empty() {
+            return;
+        }
+        let b = self.buckets.entry(self.label.clone()).or_insert((0, 0.0, 0.0));
+        b.0 += 1;
+        b.1 += ms;
+        b.2 = b.2.max(ms);
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct ViewState {
     pub orbit: bool,
@@ -326,7 +347,9 @@ pub fn update_hud(
     net: Option<Res<crate::net_live::Net>>,
     wd: Res<crate::warp::WarpDrive>,
     sys: Res<crate::warp::SystemRes>,
+    mut frames: ResMut<FrameLog>,
 ) {
+    frames.add(time.delta_secs_f64() * 1000.0);
     let (Ok(pl), Ok((ship, sp, sv, sr)), Ok(mut text)) = (players.single(), ships.single(), hud.single_mut()) else { return };
     let mode = if pl.seated {
         format!(

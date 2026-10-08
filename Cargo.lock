@@ -5834,6 +5834,7 @@ name = "warp_core"
 version = "0.1.0"
 dependencies = [
  "glam 0.32.1",
+ "net_core",
  "serde",
  "serde_json",
 ]

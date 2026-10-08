@@ -21,8 +21,6 @@ use std::time::Instant;
 const TICK_S: f64 = 1.0 / 60.0;
 /// A remote owner without snapshots for this long is removed (spike 4: 2 s).
 const EXPIRY: f64 = 2.0;
-/// One planet for now; snapshots carry the planet id of the shared frame.
-const PLANET: u32 = 0;
 
 #[derive(Clone, Debug)]
 pub struct NetConfig {
@@ -106,6 +104,10 @@ pub struct Net {
     ping_accum: f64,
     hello_accum: f64,
     pub st: NetStats,
+    /// Planet centres of the system: a snapshot is relative to its sender's planet, the buffers
+    /// hold everything relative to planet 0 (at the origin) so a sender changing planet in a
+    /// warp is interpolated straight through (spike 11).
+    pub centres: Vec<bevy::math::DVec3>,
 }
 
 /// Marker of a remote player's walker (capsule in the view).
@@ -166,6 +168,7 @@ impl Net {
             ping_accum: 0.0,
             hello_accum: 1.0,
             st: NetStats::default(),
+            centres: net_core::PLANET_CENTRES.to_vec(),
         }
     }
 
@@ -258,6 +261,8 @@ impl Net {
             return;
         }
         self.seen.insert(s.owner, arrival);
+        let mut s = s;
+        s.to_frame_of(&self.centres, 0);
         self.hist.entry(s.owner).or_default().push(s);
     }
 
@@ -436,7 +441,7 @@ pub fn net_post(
             net.hello_accum += TICK_S;
             if net.hello_accum >= 0.25 {
                 net.hello_accum = 0.0;
-                let hello = Packet::Hello { slot: net.cfg.slot as u8, planet: PLANET as u8 }.encode();
+                let hello = Packet::Hello { slot: net.cfg.slot as u8, planet: planet.id as u8 }.encode();
                 net.send(&hello, host);
             }
         } else {
@@ -454,7 +459,7 @@ pub fn net_post(
         net.seq += 1;
         // The cabin the walker is in: own ship, or the owner of the remote ship it boarded.
         let frame_owner = pl.ship.and_then(|e| remote_ships.get(e).ok()).map(|r| r.owner).unwrap_or(net.cfg.slot);
-        let mut s = crate::net::build_snapshot(net.cfg.slot, frame_owner, PLANET, net.clock.server_now(now), net.seq, &planet, (p, r, v), pl);
+        let mut s = crate::net::build_snapshot(net.cfg.slot, frame_owner, planet.id as u32, net.clock.server_now(now), net.seq, &planet, (p, r, v), pl);
         s.lag = ship.lag.level;
         let bytes = wire::encode_snapshot(&s);
         let to: Vec<SocketAddr> = if net.cfg.host { net.peers.values().map(|p| p.addr).collect() } else { vec![net.host_addr.unwrap()] };

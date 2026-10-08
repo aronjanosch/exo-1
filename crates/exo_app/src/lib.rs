@@ -154,6 +154,7 @@ pub fn build_app(o: &Options) -> App {
     });
     app.insert_resource(ring::Ring::new(planet.radius));
     app.insert_resource(planet);
+    let centres: Vec<DVec3> = sys.planets.iter().map(|p| p.centre()).collect();
     app.insert_resource(warp::WarpDrive::new(&sys)).init_resource::<warp::PendingPlanet>().insert_resource(warp::SystemRes(sys));
     app.init_resource::<controls::Controls>().init_resource::<walker::WalkStats>();
     app.add_plugins(origin::plugin);
@@ -170,7 +171,7 @@ pub fn build_app(o: &Options) -> App {
     }
 
     if !o.headless {
-        app.init_resource::<view::ViewState>().init_resource::<terrain::TerrainSwaps>().insert_resource(ClearColor(Color::BLACK));
+        app.init_resource::<view::ViewState>().init_resource::<terrain::TerrainSwaps>().init_resource::<view::FrameLog>().insert_resource(ClearColor(Color::BLACK));
         app.add_systems(Startup, (terrain::setup_terrain, view::setup_view));
         app.add_systems(Startup, view::setup_warp_view.after(view::setup_view));
         app.add_systems(FixedLast, view::record_player_view);
@@ -180,7 +181,9 @@ pub fn build_app(o: &Options) -> App {
         );
     }
     if let Some(cfg) = &o.net {
-        app.insert_resource(net_live::Net::new(cfg.clone()));
+        let mut net = net_live::Net::new(cfg.clone());
+        net.centres = centres;
+        app.insert_resource(net);
         app.add_systems(FixedUpdate, net_live::net_pre.before(ship::ship_control));
         app.add_systems(FixedLast, net_live::net_post);
     }

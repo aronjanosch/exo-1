@@ -8,3 +8,6 @@ license.workspace = true
 glam = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+net_core = { workspace = true }

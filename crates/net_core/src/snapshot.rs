@@ -7,6 +7,12 @@ pub const SIZE: usize = 148;
 /// 2: cabin gravity (`lag`) added.
 pub const VERSION: u32 = 2;
 const MAX_PLANET: u32 = 7;
+/// Plausibility limits (anything beyond is rejected as absurd). A ship in a quantum drive flight
+/// is millions of metres from its planet's centre and moves at up to 1e6 m/s (spike 11); a walker
+/// is always within the planet's own range.
+pub const MAX_SHIP_POSITION: f64 = 1.0e8;
+pub const MAX_SHIP_SPEED: f64 = 2.0e6;
+const MAX_WALKER_RANGE: f64 = 1.0e6;
 
 /// Which frame the walker pose is in.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -61,6 +67,18 @@ impl Snapshot {
         }
     }
 
+    /// Re-expresses the positions (ship, and walker while in the planet frame) relative to planet
+    /// `to` instead of `self.planet`. With one common frame the buffer interpolates straight
+    /// through a change of the sender's planet (it holds the older sample across one otherwise).
+    pub fn to_frame_of(&mut self, centres: &[DVec3], to: usize) {
+        let shift = centres[self.planet as usize] - centres[to];
+        self.p += shift;
+        if self.frame == FrameKind::Planet {
+            self.wp += shift;
+        }
+        self.planet = to as u32;
+    }
+
     pub fn encode(&self) -> [u8; SIZE] {
         let mut b = [0u8; SIZE];
         b[0..4].copy_from_slice(&VERSION.to_le_bytes());
@@ -104,8 +122,8 @@ impl Snapshot {
             return None;
         }
         let (p, v, wp, wv) = (get_d(b, 32), get_f(b, 56), get_d(b, 84), get_f(b, 108));
-        for x in [p, v, wp, wv] {
-            if !x.is_finite() || x.length() > 1_000_000.0 {
+        for (x, max) in [(p, MAX_SHIP_POSITION), (v, MAX_SHIP_SPEED), (wp, MAX_WALKER_RANGE), (wv, MAX_WALKER_RANGE)] {
+            if !x.is_finite() || x.length() > max {
                 return None;
             }
         }
@@ -154,4 +172,52 @@ fn get_q(b: &[u8], o: usize) -> Option<DQuat> {
         return None;
     }
     Some(q.normalize())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_ship_in_a_quantum_flight_is_not_absurd() {
+        // `new` copies the ship's values into the walker's; a ship in flight has a walker in its cabin.
+        let at = |p: DVec3, v: DVec3| {
+            let mut s = Snapshot::new(1, 1.0, p, v, DQuat::IDENTITY);
+            s.frame = FrameKind::Ship;
+            s.frame_id = 1;
+            s.wp = DVec3::new(0.0, 0.3, -2.0);
+            s.wv = DVec3::ZERO;
+            s
+        };
+        let s = at(DVec3::new(6.0e6, 7000.0, 0.0), DVec3::new(1.0e6, 0.0, 0.0));
+        assert!(Snapshot::decode(&s.encode()).is_some());
+        let far = at(DVec3::new(2.0e8, 0.0, 0.0), DVec3::ZERO);
+        assert!(Snapshot::decode(&far.encode()).is_none());
+        let fast = at(DVec3::ZERO, DVec3::new(5.0e6, 0.0, 0.0));
+        assert!(Snapshot::decode(&fast.encode()).is_none());
+        // The walker keeps the tight limit.
+        let mut w = Snapshot::new(1, 1.0, DVec3::ZERO, DVec3::ZERO, DQuat::IDENTITY);
+        w.wp = DVec3::new(5.0e6, 0.0, 0.0);
+        assert!(Snapshot::decode(&w.encode()).is_none());
+    }
+
+    #[test]
+    fn frame_change_keeps_the_world_position() {
+        let centres = [DVec3::ZERO, DVec3::new(12_500_000.0, 0.0, 0.0)];
+        let mut s = Snapshot::new(1, 1.0, DVec3::new(10.0, 20.0, 30.0), DVec3::ZERO, DQuat::IDENTITY);
+        s.planet = 1;
+        s.wp = DVec3::new(1.0, 2.0, 3.0);
+        let world = (centres[1] + s.p, centres[1] + s.wp);
+        s.to_frame_of(&centres, 0);
+        assert_eq!(s.planet, 0);
+        assert_eq!((s.p, s.wp), world);
+        // A walker in a cabin is in ship coordinates: unchanged.
+        let mut c = Snapshot::new(1, 1.0, DVec3::ZERO, DVec3::ZERO, DQuat::IDENTITY);
+        c.planet = 1;
+        c.frame = FrameKind::Ship;
+        c.frame_id = 1;
+        c.wp = DVec3::new(0.0, 0.3, -2.0);
+        c.to_frame_of(&centres, 0);
+        assert_eq!(c.wp, DVec3::new(0.0, 0.3, -2.0));
+    }
 }

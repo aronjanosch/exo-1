@@ -36,6 +36,9 @@ pub struct WarpDrive {
     pub warps: u32,
     /// Largest distance the ship moved in one tick (m).
     pub max_tick_move: f64,
+    /// Main-thread time of the last planet swap (ms) and the process memory around it (MB).
+    pub swap_ms: f64,
+    pub rss_mb: (f64, f64),
     /// Obstacles added by hand (scenarios), besides remote ships.
     pub extra_obstacles: Vec<Obstacle>,
     last_pos: Option<DVec3>,
@@ -51,6 +54,8 @@ impl WarpDrive {
             clock: 0.0,
             warps: 0,
             max_tick_move: 0.0,
+            swap_ms: 0.0,
+            rss_mb: (0.0, 0.0),
             extra_obstacles: Vec::new(),
             last_pos: None,
         }
@@ -107,6 +112,14 @@ pub fn swap_planet(commands: &mut Commands, ring: &mut Ring, new: PlanetRes) {
     *ring = Ring::new(new.radius);
     ring.anchors = keep;
     commands.insert_resource(new);
+}
+
+/// Resident memory of this process in MB (Linux; 0 elsewhere).
+pub fn rss_mb() -> f64 {
+    std::fs::read_to_string("/proc/self/statm")
+        .ok()
+        .and_then(|s| s.split_whitespace().nth(1)?.parse::<f64>().ok())
+        .map_or(0.0, |pages| pages * 4096.0 / 1.0e6)
 }
 
 fn course_quat(from: DQuat, dir: DVec3, max_angle: f64) -> DQuat {
@@ -222,8 +235,15 @@ pub fn warp_step(
     if let Some(f) = sys.frame_of(pos.0)
         && f != planet.id
     {
+        let t0 = std::time::Instant::now();
+        let before = rss_mb();
         let new = pending.take(f, sys);
-        println!("warp {:7.2} s: planet {} -> {} ({})", wd.clock, planet.id, f, sys.planets[f].name);
         swap_planet(&mut commands, &mut ring, new);
+        wd.swap_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        wd.rss_mb = (before, rss_mb());
+        println!(
+            "warp {:7.2} s: planet {} -> {} ({}), swap {:.2} ms on the main thread, memory {:.0} MB before, {:.0} MB after",
+            wd.clock, planet.id, f, sys.planets[f].name, wd.swap_ms, wd.rss_mb.0, wd.rss_mb.1
+        );
     }
 }

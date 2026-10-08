@@ -183,6 +183,9 @@ pub fn update_flight_hud(
     mut debug: Query<&mut Visibility, (With<Hud>, Without<StickHud>)>,
     mut stick: Query<&mut Visibility, (With<StickHud>, Without<Hud>)>,
     mut nodes: Query<(&mut Node, Option<&StickDeadzone>, Option<&StickMarker>, Option<&StickDot>), Or<(With<StickDeadzone>, With<StickMarker>, With<StickDot>)>>,
+    mut stick_root: Query<&mut Node, (With<StickHud>, Without<StickDeadzone>, Without<StickMarker>, Without<StickDot>)>,
+    cam: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    origin: Res<RenderOrigin>,
 ) {
     let (Ok(pl), Ok((ship, sp, sv, sr))) = (players.single(), ships.single()) else { return };
     let (mode, v, pos, boost) = if pl.seated {
@@ -223,15 +226,21 @@ pub fn update_flight_hud(
         *vis = if view.debug_hud { Visibility::Inherited } else { Visibility::Hidden };
     }
     let mb = &bindings.mouse;
-    let show = pl.seated && mb.ship_mode == crate::controls::ShipMouse::Vjoy && !view.orbit;
+    // Centred on where the nose points, not on the screen centre: the chase camera looks 10 deg
+    // below the nose, so the screen centre was 10 deg off the drive's aim.
+    let nose = cam.single().ok().and_then(|(c, gt)| c.world_to_viewport(gt, (sp.0 + sr.0 * DVec3::NEG_Z * 5000.0 - origin.origin).as_vec3()).ok());
+    let show = pl.seated && !view.orbit && nose.is_some();
     if let Ok(mut vis) = stick.single_mut() {
         *vis = if show { Visibility::Inherited } else { Visibility::Hidden };
     }
-    if !show {
-        return;
+    let Some(nose) = nose.filter(|_| show) else { return };
+    if let Ok(mut n) = stick_root.single_mut() {
+        n.left = px(nose.x);
+        n.top = px(nose.y);
     }
     let scale = STICK_RADIUS_PX / mb.vjoy_max_angle as f32;
-    let off = ship.stick.offset.as_vec2() * scale;
+    // Direct mouse: only the circle, as the nose's boresight.
+    let off = if mb.ship_mode == crate::controls::ShipMouse::Vjoy { ship.stick.offset.as_vec2() * scale } else { Vec2::ZERO };
     let dz = mb.vjoy_deadzone as f32 * scale;
     for (mut n, dead, marker, dot) in &mut nodes {
         let (centre, size) = if dead.is_some() {

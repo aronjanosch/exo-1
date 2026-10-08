@@ -1754,7 +1754,9 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
         }
         "foreign" => foreign_steps(&mut s),
         // Sprint 2 feel: input ramp, virtual-joystick mouse, boost, decoupled (#24, #25, #26).
-        "flight" => flight_steps(&mut s),
+        "flight" => flight_steps(&mut s, &shot_step, out_dir, windowed),
+        // #21: edit a tuning file while running (dev builds).
+        "reload" => reload_steps(&mut s, out_dir),
         "warp" => warp_steps(&mut s, out_dir, windowed),
         // Issue #5: step out of the ship in space (seat by test shortcut, then fly up).
         "space" => {
@@ -1923,7 +1925,8 @@ fn stick_yaw(name: &'static str, share: f64) -> Step {
     })
 }
 
-fn flight_steps(s: &mut Vec<Step>) {
+fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step, out_dir: &std::path::Path, windowed: bool) {
+    let dir = out_dir.to_path_buf();
     s.push(Box::new(|w, _| {
         put_at_seat(w);
         true
@@ -1953,6 +1956,14 @@ fn flight_steps(s: &mut Vec<Step>) {
     }));
     // Virtual joystick: yaw rate is deflection times turn rate; inside the dead zone nothing.
     s.push(stick_yaw("stick: full right", 1.0));
+    s.push(shot_step("stick-full-right"));
+    s.push(Box::new(|w, c| {
+        // Still at full right: the view leads the turn to the right, capped (#27).
+        let look = w.resource::<crate::ship::CameraEffects>().0.look;
+        let max = w.resource::<crate::tuning::Tuning>().camera.look_ahead_max_yaw_deg.to_radians();
+        check(c, (look.y + max).abs() < 0.01 * max && look.x.abs() < 0.01, format!("camera: look-ahead {:+.2} deg yaw in a full right turn (cap {:.0})", look.y.to_degrees(), max.to_degrees()));
+        true
+    }));
     s.push(stick_yaw("stick: half right", 0.5));
     s.push(stick_yaw("stick: centred", 0.0));
     s.push(Box::new(|w, c| {
@@ -1970,9 +1981,30 @@ fn flight_steps(s: &mut Vec<Step>) {
         }
         false
     }));
+    // #29: the pad's right stick through the same axes, without a device.
+    s.push(Box::new(|w, c| {
+        let stick = 0.8f32;
+        if c.t == 0.0 {
+            begin(w, c, "pad: right stick at 0.8");
+            w.resource_mut::<Controls>().pad_axes.insert(GamepadAxis::RightStickX, stick);
+        }
+        if c.t >= 1.5 {
+            w.resource_mut::<Controls>().pad_axes.clear();
+            let shaped = w.resource::<Bindings>().axis(crate::controls::Axis::TurnYaw).shape(stick as f64);
+            let want = -shaped * w.resource::<crate::tuning::Tuning>().ship.turn_rate;
+            let rate = yaw_rate(w);
+            end(w, c, format!("yaw rate {rate:+.3} rad/s, wanted {want:+.3}"));
+            check(c, (rate - want).abs() <= 0.05 * want.abs(), format!("pad: stick 0.8 right yaws {rate:+.3} rad/s (dead zone and curve: {want:+.3})"));
+            return true;
+        }
+        false
+    }));
+    s.push(stick_yaw("stick: centred", 0.0));
     // #24: boost is a speed stage; it raises the limit and drops back on release.
     s.push(hold_until("cruise", &[KeyCode::KeyW], 6.0, |_| false));
-    s.push(Box::new(|w, c| {
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
         let (limit, v) = (with_ship(w, |s| s.ctl.forward_speed_limit), ship_vel(w).length());
         if c.t == 0.0 {
             begin(w, c, "boost");
@@ -1981,16 +2013,21 @@ fn flight_steps(s: &mut Vec<Step>) {
             keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft], true);
         }
         if c.t >= 6.0 {
+            // Screenshot while boost is still held, so the HUD shows it.
+            shot(w, c, &dir, windowed, "boost");
             keys(w, &[KeyCode::ShiftLeft], false);
             let (l0, v0) = (c.v["limit0"], c.v["v0"]);
             c.v.insert("limit1", limit);
             c.v.insert("v1", v);
             end(w, c, format!("limit {l0:.0} -> {limit:.0} m/s, speed {v0:.0} -> {v:.0} m/s"));
             check(c, limit > 1.5 * l0 && v > v0 + 20.0, format!("boost: limit {l0:.0} -> {limit:.0} m/s, speed {v0:.0} -> {v:.0} m/s"));
+            let (fov, base) = (w.resource::<crate::ship::CameraEffects>().0.fov_deg, w.resource::<crate::tuning::Tuning>().camera.fov_curve.eval(0.0));
+            check(c, fov > base + 1.5, format!("camera: field of view {fov:.1} deg at {v:.0} m/s (at rest {base:.0})"));
             return true;
         }
         false
     }));
+    }
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "boost released");
@@ -2029,9 +2066,14 @@ fn flight_steps(s: &mut Vec<Step>) {
         }
         false
     }));
-    s.push(Box::new(|w, c| {
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
         if c.t == 0.0 {
             begin(w, c, "decoupled glide, no input");
+        }
+        if (c.t - 2.0).abs() < c.dt * 0.5 {
+            shot(w, c, &dir, windowed, "decoupled");
         }
         if c.t >= 3.0 {
             let (v0, v) = (c.v["v_release"], ship_vel(w).length());
@@ -2042,6 +2084,7 @@ fn flight_steps(s: &mut Vec<Step>) {
         }
         false
     }));
+    }
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "coupled again, no input");
@@ -2057,6 +2100,92 @@ fn flight_steps(s: &mut Vec<Step>) {
         false
     }));
     s.push(hold_until("firm brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 0.5));
+    // Touchdown gives a camera bump (#27); on a slope the second side may give another.
+    s.push(Box::new(|w, c| {
+        c.v.insert("bumps0", w.resource::<crate::ship::CameraEffects>().0.bumps as f64);
+        true
+    }));
+    s.push(hold_until("land", &[KeyCode::ControlLeft], 90.0, {
+        let mut t = 0.0;
+        move |w| {
+            t += 1.0 / 60.0;
+            t > 3.0 && ship_vel(w).length() < 0.02
+        }
+    }));
+    s.push(Box::new(|w, c| {
+        let bumps = w.resource::<crate::ship::CameraEffects>().0.bumps as f64 - c.v["bumps0"];
+        check(c, (1.0..=2.0).contains(&bumps), format!("camera: {bumps} touchdown bump(s) on landing"));
+        true
+    }));
+    s.push(shot_step("landed"));
+    s.push(Box::new(|w, _| {
+        tap(w, KeyCode::F3);
+        true
+    }));
+    s.push(wait(0.3));
+    s.push(shot_step("debug-hud-f3"));
+    // Screenshots are written a few frames later.
+    s.push(wait(1.0));
+}
+
+/// Copies the shipped tuning files to `<out>/tuning`, watches that copy, edits it mid-run.
+fn reload_steps(s: &mut Vec<Step>, out_dir: &std::path::Path) {
+    let dir = out_dir.join("tuning");
+    let ship_file = dir.join("ship.json");
+    let ship_text = crate::tuning::SHIP.to_string();
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, _| {
+            std::fs::create_dir_all(&dir).expect("tuning copy dir");
+            for (f, t) in [("ship.json", crate::tuning::SHIP), ("walker.json", crate::tuning::WALKER), ("suit.json", crate::tuning::SUIT), ("camera.json", crate::tuning::CAMERA), ("bindings.json", crate::controls::BINDINGS)] {
+                std::fs::write(dir.join(f), t).expect("tuning copy");
+            }
+            w.resource_mut::<crate::hot_reload::HotReload>().dir = dir.clone();
+            true
+        }));
+    }
+    s.push(wait(1.0));
+    s.push(Box::new(|w, c| {
+        let n = w.resource::<crate::hot_reload::HotReload>().reloads;
+        check(c, n == 0, format!("reload: unchanged files change nothing ({n} reloads)"));
+        true
+    }));
+    let edit = |name: &'static str, file: std::path::PathBuf, text: String, then: fn(&mut World) -> Option<String>| -> Step {
+        Box::new(move |w, c| {
+            if c.t == 0.0 {
+                begin(w, c, name);
+                std::fs::write(&file, &text).expect("edit tuning");
+            }
+            if let Some(note) = then(w) {
+                end(w, c, format!("after {:.2} s simulated", c.t));
+                check(c, true, format!("{name}: {note}"));
+                return true;
+            }
+            if c.t > 30.0 {
+                end(w, c, "timed out".into());
+                check(c, false, format!("{name}: no effect within 30 s"));
+                return true;
+            }
+            false
+        })
+    };
+    let slower = ship_text.replacen("\"turn_rate\": 2.5", "\"turn_rate\": 1.25", 1);
+    assert_ne!(slower, ship_text, "fixture: turn_rate in ship.json");
+    s.push(edit("reload: ship.json turn_rate 2.5 -> 1.25", ship_file.clone(), slower, |w| {
+        let (ship, res) = (with_ship(w, |s| s.ctl.tuning.turn_rate), w.resource::<crate::tuning::Tuning>().ship.turn_rate);
+        (ship == 1.25 && res == 1.25).then(|| format!("the ship turns at {ship} rad/s now"))
+    }));
+    let broken = ship_text.replacen("\"drag_k\"", "\"drag_kk\": 1, \"drag_k\"", 1);
+    s.push(edit("reload: a broken ship.json is refused", ship_file.clone(), broken, |w| {
+        let hr = w.resource::<crate::hot_reload::HotReload>();
+        let err = hr.last_error.clone()?;
+        let rate = with_ship(w, |s| s.ctl.tuning.turn_rate);
+        (rate == 1.25 && err.contains("drag_kk")).then(|| format!("old value {rate} stays, error: {err}"))
+    }));
+    s.push(edit("reload: ship.json restored", ship_file, ship_text, |w| {
+        let rate = with_ship(w, |s| s.ctl.tuning.turn_rate);
+        (rate == 2.5 && w.resource::<crate::hot_reload::HotReload>().last_error.is_none()).then(|| format!("turn rate {rate} again"))
+    }));
 }
 
 pub fn run_script(w: &mut World) {

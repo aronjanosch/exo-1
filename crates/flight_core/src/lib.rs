@@ -4,6 +4,8 @@
 //! -Z forward, right-handed, angular velocity in world space.
 //!
 //! All numbers are spike test values (assumptions for testing, not design).
+pub mod camera;
+
 use glam::{DQuat, DVec2, DVec3};
 use serde::Deserialize;
 

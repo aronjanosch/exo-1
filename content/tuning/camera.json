@@ -1,0 +1,15 @@
+{
+  "_comment": "Camera effects (flight_core::camera::CameraTuning). Assumed values. fov_curve: speed m/s -> vertical FOV deg. streak_curve: speed m/s -> streak level 0..1. Look-ahead: the view leads a turn by gain x turn rate, past the dead zone (rad/s), capped, eased. Bump: touchdown drop per m/s of approach speed, damped; a touchdown is a loss of more than bump_threshold m/s towards the ground in one step near the ground.",
+  "fov_curve": { "interp": "smooth", "points": [[0, 75], [100, 77], [400, 84], [2000, 90]] },
+  "streak_curve": { "interp": "smooth", "points": [[150, 0], [500, 0.2], [2000, 0.35]] },
+  "look_ahead_gain": 0.25,
+  "look_ahead_deadzone": 0.1,
+  "look_ahead_max_yaw_deg": 12.0,
+  "look_ahead_max_pitch_deg": 8.0,
+  "look_ahead_ease_time": 0.3,
+  "bump_per_speed": 0.08,
+  "bump_max": 0.5,
+  "bump_frequency": 3.0,
+  "bump_damping": 6.0,
+  "bump_threshold": 0.3
+}

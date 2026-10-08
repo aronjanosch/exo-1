@@ -403,10 +403,18 @@ pub fn update_tunnel(
     origin: Res<RenderOrigin>,
     mut q: Query<(&Streak, &mut WorldPose, &mut Transform, &mut Visibility)>,
     mut clear: ResMut<ClearColor>,
+    fx: Res<crate::ship::CameraEffects>,
+    players: Query<&Player>,
+    ships: Query<&avian3d::prelude::LinearVelocity, With<Ship>>,
 ) {
-    let level = wd.drive.tunnel() as f32;
+    let warp = wd.drive.tunnel() as f32;
+    // Below the warp the same streaks show speed (#27), along the ship's course, without the tint.
+    let seated = players.single().is_ok_and(|p| p.seated);
+    let speed_level = if seated { fx.0.streak as f32 } else { 0.0 };
+    let level = warp.max(speed_level);
     let t = time.elapsed_secs();
-    let course = wd.drive.pose().map(|(_, v)| v.normalize_or_zero()).filter(|d| *d != DVec3::ZERO);
+    let ship_course = ships.single().ok().map(|v| v.0.normalize_or_zero()).filter(|d| *d != DVec3::ZERO);
+    let course = wd.drive.pose().map(|(_, v)| v.normalize_or_zero()).filter(|d| *d != DVec3::ZERO).or(if warp > 0.0 { None } else { ship_course });
     let (Some(dir), true) = (course, level > 0.0) else {
         for (_, _, _, mut vis) in &mut q {
             *vis = Visibility::Hidden;
@@ -422,8 +430,8 @@ pub fn update_tunnel(
         pose.rot = rot;
         tf.scale = Vec3::new(1.0, 1.0, len);
     }
-    if level > 0.0 {
-        clear.0 = clear.0.mix(&Color::srgb(0.05, 0.10, 0.30), level * 0.8);
+    if warp > 0.0 {
+        clear.0 = clear.0.mix(&Color::srgb(0.05, 0.10, 0.30), warp * 0.8);
     }
 }
 
@@ -499,23 +507,28 @@ pub fn update_camera(
     mut view: ResMut<ViewState>,
     players: Query<(&Player, &PlayerInterp)>,
     ships: Query<&BodyInterp, With<Ship>>,
-    mut cam: Query<(&mut WorldPose, &mut DistanceFog), With<MainCamera>>,
+    mut cam: Query<(&mut WorldPose, &mut DistanceFog, &mut Projection), With<MainCamera>>,
     mut clear: ResMut<ClearColor>,
     mut ambient: ResMut<GlobalAmbientLight>,
+    fx: Res<crate::ship::CameraEffects>,
+    tuning: Res<crate::tuning::Tuning>,
 ) {
     let f = fixed.overstep_fraction_f64();
     let Ok((pl, pi)) = players.single() else { return };
     let Ok(si) = ships.single() else { return };
-    let Ok((mut pose, mut fog)) = cam.single_mut() else { return };
+    let Ok((mut pose, mut fog, mut proj)) = cam.single_mut() else { return };
+    let base_fov = tuning.camera.fov_curve.eval(0.0);
     if view.orbit {
         let d = DVec3::new(view.orbit_pitch.cos() * view.orbit_yaw.sin(), view.orbit_pitch.sin(), view.orbit_pitch.cos() * view.orbit_yaw.cos());
         pose.pos = planet.centre + d * 15_000.0;
         let up = if d.y.abs() < 0.99 { DVec3::Y } else { DVec3::X };
         pose.rot = walker_core::look_rot(-d, up);
     } else if pl.seated {
+        // Look-ahead into the turn, the touchdown bump along the ship's down (#27).
         let (sp, sr) = si.at(f);
-        pose.pos = sp + sr * CHASE_CAMERA_OFFSET;
-        pose.rot = sr * DQuat::from_rotation_x(CHASE_CAMERA_PITCH_DEG.to_radians());
+        let fx = &fx.0;
+        pose.pos = sp + sr * (CHASE_CAMERA_OFFSET - DVec3::Y * fx.bump(&tuning.camera));
+        pose.rot = sr * DQuat::from_rotation_y(fx.look.y) * DQuat::from_rotation_x(CHASE_CAMERA_PITCH_DEG.to_radians() + fx.look.x);
     } else {
         let feet = pi.prev.0.lerp(pi.curr.0, f);
         let up = pi.prev.1.lerp(pi.curr.1, f).normalize();
@@ -537,6 +550,10 @@ pub fn update_camera(
                 (pos, rot)
             }
         };
+    }
+    if let Projection::Perspective(p) = proj.as_mut() {
+        let fov = if pl.seated && !view.orbit { fx.0.fov_deg } else { base_fov };
+        p.fov = (fov as f32).to_radians();
     }
     view.cabin = (pl.ship, pl.body.is_some());
     view.last_rot = pose.rot;

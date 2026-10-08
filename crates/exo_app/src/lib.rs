@@ -1,8 +1,10 @@
 //! EXO-1 game crate: Bevy glue around planet_core, flight_core, walker_core and net_core.
 //! Rendering, input, camera, HUD, physics bodies, network transport and scripted scenarios.
 //! All game values are the spike test values, not designed.
+pub mod audio;
 pub mod controls;
 pub mod env;
+pub mod hot_reload;
 pub mod net;
 pub mod net_live;
 pub mod origin;
@@ -67,6 +69,8 @@ pub struct Options {
     pub net: Option<net_live::NetConfig>,
     /// `--perf`: step and frame timings per phase (#19).
     pub perf: Option<perf::PerfOptions>,
+    /// Dev builds: the tuning files to watch (default the repo's `content/tuning`).
+    pub tuning_dir: Option<PathBuf>,
 }
 
 impl Default for Options {
@@ -85,6 +89,7 @@ impl Default for Options {
             realtime: false,
             net: None,
             perf: None,
+            tuning_dir: None,
         }
     }
 }
@@ -108,6 +113,7 @@ impl Options {
                 "--origin-shift" => o.origin_shift = v.parse().expect("origin-shift"),
                 "--out" => o.out_dir = PathBuf::from(v),
                 "--record" => o.record = Some(PathBuf::from(v)),
+                "--tuning-dir" => o.tuning_dir = Some(PathBuf::from(v)),
                 "--perf" => o.perf = Some(o.perf.take().unwrap_or_default()),
                 "--perf-baseline" => o.perf.get_or_insert_default().baseline = PathBuf::from(v),
                 "--perf-save-baseline" => o.perf.get_or_insert_default().save_baseline = true,
@@ -188,7 +194,11 @@ pub fn build_app(o: &Options) -> App {
     let net = o.net.as_ref().map(|cfg| net_live::Net::new(cfg.clone(), &sys));
     app.insert_resource(warp::WarpDrive::new(&sys)).init_resource::<warp::PendingPlanet>().insert_resource(warp::SystemRes(sys));
     app.init_resource::<controls::Controls>().init_resource::<controls::Actions>().init_resource::<controls::Bindings>().init_resource::<walker::WalkStats>();
-    app.insert_resource(tuning::Tuning::load());
+    app.insert_resource(tuning::Tuning::load()).init_resource::<ship::CameraEffects>();
+    if cfg!(debug_assertions) {
+        app.insert_resource(hot_reload::HotReload::new(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)));
+        app.add_systems(Update, hot_reload::poll);
+    }
     app.add_plugins(origin::plugin);
     app.insert_resource(SpawnOffset(o.spawn_offset));
     app.add_systems(Startup, |mut commands: Commands, planet: Res<env::PlanetRes>, tuning: Res<tuning::Tuning>, off: Res<SpawnOffset>| {
@@ -197,7 +207,7 @@ pub fn build_app(o: &Options) -> App {
     });
     app.add_systems(
         FixedUpdate,
-        (scenario::run_script.run_if(resource_exists::<scenario::Script>), controls::resolve_actions, warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, walker::walker_step).chain(),
+        (scenario::run_script.run_if(resource_exists::<scenario::Script>), controls::resolve_actions, warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, walker::walker_step, ship::camera_fx).chain(),
     );
     app.add_systems(FixedLast, controls::drop_taps);
     app.add_systems(Update, ring::update_ring);
@@ -208,6 +218,7 @@ pub fn build_app(o: &Options) -> App {
 
     if !o.headless {
         app.init_resource::<view::ViewState>().insert_resource(ClearColor(Color::BLACK));
+        app.add_plugins(audio::plugin);
         app.add_systems(Startup, (terrain::setup_terrain, view::setup_view));
         app.add_systems(Startup, view::setup_warp_view.after(view::setup_view));
         app.add_systems(FixedLast, view::record_player_view);

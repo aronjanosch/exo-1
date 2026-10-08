@@ -193,3 +193,23 @@ pub fn ship_control(
         av.0 = w;
     }
 }
+
+/// Camera effects of the own ship (#27), stepped with the simulation so scenarios can check them;
+/// the view only applies them.
+#[derive(Resource, Default)]
+pub struct CameraEffects(pub flight_core::camera::CameraFx);
+
+pub fn camera_fx(
+    time: Res<Time>,
+    planet: Res<PlanetRes>,
+    tuning: Res<crate::tuning::Tuning>,
+    mut fx: ResMut<CameraEffects>,
+    q: Query<(&Ship, &Position, &Rotation, &LinearVelocity, &AngularVelocity)>,
+) {
+    let Ok((ship, pos, rot, lv, av)) = q.single() else { return };
+    let up = planet.up(pos.0);
+    let local = rot.0.inverse() * av.0;
+    // Hull corners touch first on a slope: up to 2.5 m above the terrain under the centre.
+    let near = ship.ctl.clearance_at(planet.as_ref(), pos.0) < 2.5;
+    fx.0.step(&tuning.camera, lv.0.length(), DVec2::new(local.x, local.y), -lv.0.dot(up), near, time.delta_secs_f64());
+}

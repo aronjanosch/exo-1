@@ -25,13 +25,13 @@ GROUND_STOREY = 4.5   # shop floor
 STOREY = 3.5          # upper floors
 TILE = 10.0           # road tile edge
 SHARP_ANGLE = math.radians(40)
-TRI_GUIDE = {"building": 10_000, "road": 1_000, "prop": 1_000}
+TRI_GUIDE = {"building": 10_000, "road": 1_000, "prop": 1_000, "vehicle": 3_000}
 
 # Materials: vertex colours carry the paint, the material only says how it shines.
 MATERIALS = {
     "paint": {"rgb": (1, 1, 1), "roughness": 0.75},
     "glass": {"rgb": (1, 1, 1), "roughness": 0.15},
-    "glow": {"rgb": (1, 1, 1), "roughness": 0.5, "emit": 4.0},
+    "glow": {"rgb": (1, 1, 1), "roughness": 0.5, "emit": 1.5},
 }
 
 
@@ -77,15 +77,64 @@ class Part:
                                     radius2=radius if radius_top is None else radius_top, depth=height, matrix=m)
         self._paint({f for v in res["verts"] for f in v.link_faces}, rgb, mat)
 
-    def dome(self, at, radius, rgb, mat="paint", squash=1.0, segments=12):
-        """Half sphere sitting on `at`."""
+    def dome(self, at, radius, rgb, mat="paint", squash=1.0, segments=16):
+        """Half sphere sitting on `at`, open at the bottom."""
         m = Matrix.Translation(Vector(at)) @ Matrix.Diagonal((1, 1, squash, 1))
         res = bmesh.ops.create_uvsphere(self.bm, u_segments=segments, v_segments=segments // 2,
                                         radius=radius, matrix=m)
         below = [v for v in res["verts"] if v.co.z < at[2] - 1e-4]
         bmesh.ops.delete(self.bm, geom=below, context="VERTS")
-        faces = {f for v in self.bm.verts if (v.co - Vector(at)).length <= radius * 1.01 + 1e-4 for f in v.link_faces}
+        self._paint({f for v in res["verts"] if v.is_valid for f in v.link_faces}, rgb, mat)
+
+    def sphere(self, at, radius, rgb, mat="paint", squash=1.0, segments=16):
+        m = Matrix.Translation(Vector(at)) @ Matrix.Diagonal((1, 1, squash, 1))
+        res = bmesh.ops.create_uvsphere(self.bm, u_segments=segments, v_segments=segments // 2,
+                                        radius=radius, matrix=m)
+        self._paint({f for v in res["verts"] for f in v.link_faces}, rgb, mat)
+
+    def torus(self, at, major, minor, rgb, mat="paint", segments=32, sides=8):
+        """A ring lying flat around `at`: glow rings, railings, bumpers."""
+        c = Vector(at)
+        grid = []
+        for i in range(segments):
+            a = 2 * math.pi * i / segments
+            row = []
+            for j in range(sides):
+                b = 2 * math.pi * j / sides
+                r = major + minor * math.cos(b)
+                row.append(self.bm.verts.new(c + Vector((r * math.cos(a), r * math.sin(a), minor * math.sin(b)))))
+            grid.append(row)
+        faces = []
+        for i in range(segments):
+            n = (i + 1) % segments
+            for j in range(sides):
+                k = (j + 1) % sides
+                faces.append(self.bm.faces.new((grid[i][j], grid[n][j], grid[n][k], grid[i][k])))
         self._paint(faces, rgb, mat)
+
+    def prism(self, outline, a, b, rgb, mat="paint", plane="XY"):
+        """Extrude a 2D outline from a to b. XY: outline in plan, a/b are heights.
+        XZ: outline in the front view, a/b are y. YZ: outline in the side view, a/b are x."""
+        def at(u, v, w):
+            return {"XY": (u, v, w), "XZ": (u, w, v), "YZ": (w, u, v)}[plane]
+        bot = [self.bm.verts.new(at(u, v, a)) for u, v in outline]
+        top = [self.bm.verts.new(at(u, v, b)) for u, v in outline]
+        faces = [self.bm.faces.new(bot[::-1]), self.bm.faces.new(top)]
+        for i in range(len(outline)):
+            j = (i + 1) % len(outline)
+            faces.append(self.bm.faces.new((bot[i], bot[j], top[j], top[i])))
+        self._paint(faces, rgb, mat)
+
+    def rounded_box(self, lo, hi, radius, rgb, mat="paint", segments=6):
+        """Box with rounded vertical edges: the basic futuristic block."""
+        r = radius
+        corners = [(hi[0] - r, hi[1] - r, 0), (lo[0] + r, hi[1] - r, 90), (lo[0] + r, lo[1] + r, 180), (hi[0] - r, lo[1] + r, 270)]
+        pts = []
+        for cx, cy, start in corners:
+            for k in range(segments + 1):
+                ang = math.radians(start + 90 * k / segments)
+                pts.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
+        self.prism(pts, lo[2], hi[2], rgb, mat)
 
     def anchor(self, name, at, **extras):
         """An empty in the export; the game reads its custom properties (glTF extras)."""
@@ -115,7 +164,7 @@ class Part:
 
     def build(self, collection):
         mesh = bpy.data.meshes.new(self.name)
-        bmesh.ops.remove_doubles(self.bm, verts=self.bm.verts, dist=1e-5)
+        bmesh.ops.recalc_face_normals(self.bm, faces=self.bm.faces)
         self.bm.normal_update()
         self.bm.to_mesh(mesh)
         self.bm.free()
@@ -144,6 +193,7 @@ def material(key):
     if m:
         return m
     m = bpy.data.materials.new(key)
+    m["exo_kit"] = True
     nodes, links = m.node_tree.nodes, m.node_tree.links
     bsdf = nodes["Principled BSDF"]
     attr = nodes.new("ShaderNodeVertexColor")
@@ -180,7 +230,7 @@ def check(obj, part, footprint):
         problems.append("no door anchor")
     loose = loose_islands(ev)
     if loose:
-        problems.append(f"{loose} floating parts (not touching ground or another part)")
+        problems.append(f"{len(loose)} floating parts (not touching ground or another part), first boxes: {loose[:3]}")
     return {"name": obj.name, "triangles": tris, "bounds": bounds,
             "anchors": [{"name": n, "at": [round(c, 2) for c in at], **e} for n, at, e in part.anchors],
             "problems": problems}
@@ -223,7 +273,7 @@ def loose_islands(mesh):
             if i not in supported and any(touch(b, boxes[j]) for j in supported):
                 supported.add(i)
                 grew = True
-    return len(boxes) - len(supported)
+    return [[round(c, 2) for c in (*b[0], *b[1])] for i, b in enumerate(boxes) if i not in supported]
 
 
 # ---------------------------------------------------------------- review renders
@@ -343,7 +393,11 @@ def run(models, out_default):
             o.select_set(o == obj or o.parent == obj)
         bpy.context.view_layer.objects.active = obj
         bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_apply=True,
-                                  export_extras=True, export_vertex_color="ACTIVE", export_yup=True)
+                                  export_extras=True, export_yup=True,
+                                  # Only "Col", as COLOR_0. The 5.2 default adds a white COLOR_0 and
+                                  # moves the paint to COLOR_1, which Bevy ignores.
+                                  export_vertex_color="NAME", export_vertex_color_name="Col",
+                                  export_all_vertex_colors=False)
         print(f"CITY {mid}: {report['triangles']} triangles -> {path}")
         for p in report["problems"]:
             print(f"  PROBLEM {mid}: {p}")

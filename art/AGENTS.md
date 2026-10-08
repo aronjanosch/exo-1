@@ -28,4 +28,4 @@ A model is done when the headless run prints no `PROBLEM` line (or the brief rec
 blender -b -P art/city/shops.py -- --out content/city --renders <dir outside the repo>
 ```
 
-Each render set shows the model three-quarter, from the street at eye height, from the top, and at night. Hand the render paths to the initiator; the look is theirs to decide.
+Each render set shows the model three-quarter, from the street at eye height, from the top, and at night. For the city, `art/city/street_preview.py` also lines the exported `.glb` files up along a lane, which shows how they work together and proves they import. Hand the render paths to the initiator; the look is theirs to decide.

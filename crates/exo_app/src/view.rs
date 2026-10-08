@@ -11,7 +11,7 @@ use bevy::light::GlobalAmbientLight;
 use bevy::math::{DQuat, DVec3};
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
-use flight_core::{PlanetEnv, CHASE_CAMERA_OFFSET, CHASE_CAMERA_PITCH_DEG};
+use flight_core::PlanetEnv;
 use warp_core::PlanetId;
 
 #[derive(Component)]
@@ -669,8 +669,9 @@ pub fn update_camera(
         // Look-ahead into the turn, the touchdown bump along the ship's down (#27).
         let (sp, sr) = si.at(f);
         let fx = &fx.0;
-        pose.pos = sp + sr * (CHASE_CAMERA_OFFSET - DVec3::Y * fx.bump(&tuning.camera));
-        pose.rot = sr * DQuat::from_rotation_y(fx.look.y) * DQuat::from_rotation_x(CHASE_CAMERA_PITCH_DEG.to_radians() + fx.look.x);
+        let ct = &tuning.camera;
+        pose.pos = sp + sr * (DVec3::from_array(ct.chase_offset) - DVec3::Y * fx.bump(ct));
+        pose.rot = sr * DQuat::from_rotation_y(fx.look.y) * DQuat::from_rotation_x(ct.chase_pitch_deg.to_radians() + fx.look.x);
     } else {
         let feet = pi.prev.0.lerp(pi.curr.0, f);
         let up = pi.prev.1.lerp(pi.curr.1, f).normalize();

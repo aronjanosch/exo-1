@@ -1,13 +1,18 @@
 //! Speed-driven camera effects (#27): field of view and streaks from speed through curves, a
 //! look-ahead that turns the pilot's view a little into the turn, and a short bump on touchdown.
 //! Plain math for the view; values in `content/tuning/camera.json`.
-use crate::{parse_tuning, Curve};
+use crate::{parse_tuning, Curve, CHASE_CAMERA_OFFSET, CHASE_CAMERA_PITCH_DEG};
 use glam::DVec2;
 use serde::Deserialize;
 
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CameraTuning {
+    /// Chase camera (seated) in ship space: x right, y up, z back (m).
+    pub chase_offset: [f64; 3],
+    /// Chase camera pitch against the nose (degrees, negative looks down). The HUD's aim circle
+    /// follows the nose wherever the camera looks.
+    pub chase_pitch_deg: f64,
     /// Speed (m/s) to field of view (degrees, vertical).
     pub fov_curve: Curve,
     /// Speed (m/s) to streak level 0..1 (the warp tunnel's streaks, without its colour).
@@ -45,6 +50,8 @@ impl Default for CameraTuning {
         use crate::Interp;
         let c = |interp, pts: &[(f64, f64)]| Curve { interp, points: pts.iter().map(|&(x, y)| DVec2::new(x, y)).collect() };
         CameraTuning {
+            chase_offset: CHASE_CAMERA_OFFSET.to_array(),
+            chase_pitch_deg: CHASE_CAMERA_PITCH_DEG,
             fov_curve: c(Interp::Smooth, &[(0.0, 75.0), (100.0, 77.0), (400.0, 84.0), (2000.0, 90.0)]),
             streak_curve: c(Interp::Smooth, &[(60.0, 0.0), (200.0, 0.2), (2000.0, 0.35)]),
             look_ahead_gain: 0.25,

@@ -5,7 +5,7 @@ use crate::ring::Ring;
 use crate::ship::{Ship, ShipPart};
 use crate::terrain::Terrain;
 use crate::walker::{Player, WalkStats, EYE_HEIGHT};
-use crate::controls::Controls;
+use crate::controls::{Actions, Tap};
 use bevy::camera::PerspectiveProjection;
 use bevy::light::GlobalAmbientLight;
 use bevy::math::{DQuat, DVec3};
@@ -66,6 +66,8 @@ pub struct PlayerInterp {
 #[derive(Resource, Default)]
 pub struct ViewState {
     pub orbit: bool,
+    /// F3: the debug lines under the HUD.
+    pub debug_hud: bool,
     pub orbit_yaw: f64,
     pub orbit_pitch: f64,
     /// Cabin the walker was in last frame and whether it was weightless, to notice a frame change.
@@ -106,12 +108,132 @@ pub fn setup_view(mut commands: Commands) {
         Transform::from_rotation(Quat::from_euler(EulerRot::YXZ, 30f32.to_radians(), -50f32.to_radians(), 0.0)),
     ));
     commands.insert_resource(GlobalAmbientLight { color: Color::srgb(0.55, 0.65, 0.8), brightness: 400.0, ..default() });
+    // At most four permanent elements: mode, speed, altitude, boost (#24).
+    commands
+        .spawn(Node { position_type: PositionType::Absolute, top: px(8), left: px(8), column_gap: px(28), ..default() })
+        .with_children(|c| {
+            for i in 0..4 {
+                c.spawn((HudItem(i), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
+            }
+        });
     commands.spawn((
         Hud,
         Text::new(""),
         TextFont { font_size: FontSize::Px(14.0), ..default() },
-        Node { position_type: PositionType::Absolute, top: px(8), left: px(8), ..default() },
+        Node { position_type: PositionType::Absolute, top: px(40), left: px(8), ..default() },
+        Visibility::Hidden,
     ));
+    // Virtual joystick: dead-zone circle, a line of dots from the centre, the marker.
+    let mark = Color::srgba(0.9, 0.95, 1.0, 0.85);
+    commands
+        .spawn((StickHud, Node { position_type: PositionType::Absolute, left: percent(50), top: percent(50), ..default() }, Visibility::Hidden))
+        .with_children(|c| {
+            c.spawn((StickDeadzone, Node { position_type: PositionType::Absolute, border: UiRect::all(px(1)), border_radius: BorderRadius::MAX, ..default() }, BorderColor::all(mark)));
+            for i in 0..STICK_DOTS {
+                c.spawn((StickDot(i), Node { position_type: PositionType::Absolute, width: px(3), height: px(3), border_radius: BorderRadius::MAX, ..default() }, BackgroundColor(mark)));
+            }
+            c.spawn((StickMarker, Node { position_type: PositionType::Absolute, width: px(12), height: px(12), border: UiRect::all(px(2)), border_radius: BorderRadius::MAX, ..default() }, BorderColor::all(mark)));
+        });
+}
+
+#[derive(Component)]
+pub struct HudItem(u8);
+#[derive(Component)]
+pub struct StickHud;
+#[derive(Component)]
+pub struct StickDeadzone;
+#[derive(Component)]
+pub struct StickMarker;
+#[derive(Component)]
+pub struct StickDot(u8);
+const STICK_DOTS: u8 = 6;
+/// Screen radius of the stick's max angle, logical pixels.
+const STICK_RADIUS_PX: f32 = 120.0;
+
+/// F3: debug lines on or off (fixed step, where taps live).
+pub fn debug_hud_toggle(mut actions: ResMut<Actions>, mut view: ResMut<ViewState>) {
+    if actions.take_tap(Tap::DebugHud) {
+        view.debug_hud = !view.debug_hud;
+    }
+}
+
+/// Mode, speed, altitude and boost; the stick marker while piloting with the virtual joystick.
+#[allow(clippy::too_many_arguments)]
+pub fn update_flight_hud(
+    planet: Res<PlanetRes>,
+    actions: Res<Actions>,
+    bindings: Res<crate::controls::Bindings>,
+    view: Res<ViewState>,
+    wd: Res<crate::warp::WarpDrive>,
+    players: Query<&Player>,
+    ships: Query<(&Ship, &avian3d::prelude::Position, &avian3d::prelude::LinearVelocity, &avian3d::prelude::Rotation)>,
+    mut items: Query<(&HudItem, &mut Text)>,
+    mut debug: Query<&mut Visibility, (With<Hud>, Without<StickHud>)>,
+    mut stick: Query<&mut Visibility, (With<StickHud>, Without<Hud>)>,
+    mut nodes: Query<(&mut Node, Option<&StickDeadzone>, Option<&StickMarker>, Option<&StickDot>), Or<(With<StickDeadzone>, With<StickMarker>, With<StickDot>)>>,
+) {
+    let (Ok(pl), Ok((ship, sp, sv, sr))) = (players.single(), ships.single()) else { return };
+    let (mode, v, pos, boost) = if pl.seated {
+        let mode = if wd.drive.phase != warp_core::Phase::Idle {
+            format!("QUANTUM {:?}", wd.drive.phase).to_uppercase()
+        } else if !ship.ctl.hover_assist {
+            "SHIP  assist off".into()
+        } else if ship.ctl.coupling < 1.0 && ship.ctl.coupled {
+            format!("SHIP  coupling {:.0} %", ship.ctl.coupling * 100.0)
+        } else if !ship.ctl.coupled {
+            if ship.ctl.coupling > 0.0 { format!("SHIP  decoupling {:.0} %", (1.0 - ship.ctl.coupling) * 100.0) } else { "SHIP  DECOUPLED".into() }
+        } else {
+            "SHIP".into()
+        };
+        (mode, sv.0, sp.0, Some(actions.boost))
+    } else if pl.ship.is_some() {
+        ("CABIN".into(), sv.0 + sr.0 * pl.w.vel, sp.0, None)
+    } else if pl.fly {
+        ("FLY".into(), pl.w.vel, pl.w.pos, None)
+    } else if pl.body.is_some() {
+        ("SUIT".into(), pl.w.vel, pl.w.pos, Some(actions.boost))
+    } else {
+        ("WALK".into(), pl.w.vel, pl.w.pos, None)
+    };
+    let alt = if (pos - planet.centre).length() < NEAR_PLANET { format!("alt {:.0} m", (pos - planet.centre).length() - planet.radius) } else { "alt -".into() };
+    let texts = [mode, format!("{} m/s", speed_text(v.length())), alt, match boost {
+        Some(true) => "BOOST".into(),
+        Some(false) => "boost -".into(),
+        None => String::new(),
+    }];
+    for (item, mut t) in &mut items {
+        **t = texts[item.0 as usize].clone();
+    }
+    if let Ok(mut vis) = debug.single_mut() {
+        *vis = if view.debug_hud { Visibility::Inherited } else { Visibility::Hidden };
+    }
+    let mb = &bindings.mouse;
+    let show = pl.seated && mb.ship_mode == crate::controls::ShipMouse::Vjoy && !view.orbit;
+    if let Ok(mut vis) = stick.single_mut() {
+        *vis = if show { Visibility::Inherited } else { Visibility::Hidden };
+    }
+    if !show {
+        return;
+    }
+    let scale = STICK_RADIUS_PX / mb.vjoy_max_angle as f32;
+    let off = ship.stick.offset.as_vec2() * scale;
+    let dz = mb.vjoy_deadzone as f32 * scale;
+    for (mut n, dead, marker, dot) in &mut nodes {
+        let (centre, size) = if dead.is_some() {
+            (Vec2::ZERO, dz * 2.0)
+        } else if marker.is_some() {
+            (off, 12.0)
+        } else {
+            let i = dot.map_or(0, |d| d.0) as f32;
+            (off * (i + 1.0) / (STICK_DOTS as f32 + 1.0), 3.0)
+        };
+        n.left = px(centre.x - size * 0.5);
+        n.top = px(centre.y - size * 0.5);
+        if dead.is_some() {
+            n.width = px(size);
+            n.height = px(size);
+        }
+    }
 }
 
 /// One lit sphere per planet and the streaks of the tunnel look.
@@ -361,6 +483,13 @@ pub fn record_player_view(
     }
 }
 
+/// O: orbit camera on or off (fixed step, where taps live).
+pub fn orbit_toggle(mut actions: ResMut<Actions>, mut view: ResMut<ViewState>) {
+    if actions.take_tap(Tap::OrbitCamera) {
+        view.orbit = !view.orbit;
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn update_camera(
     time: Res<Time>,
@@ -368,7 +497,6 @@ pub fn update_camera(
     planet: Res<PlanetRes>,
     mut origin: ResMut<RenderOrigin>,
     mut view: ResMut<ViewState>,
-    mut controls: ResMut<Controls>,
     players: Query<(&Player, &PlayerInterp)>,
     ships: Query<&BodyInterp, With<Ship>>,
     mut cam: Query<(&mut WorldPose, &mut DistanceFog), With<MainCamera>>,
@@ -379,9 +507,6 @@ pub fn update_camera(
     let Ok((pl, pi)) = players.single() else { return };
     let Ok(si) = ships.single() else { return };
     let Ok((mut pose, mut fog)) = cam.single_mut() else { return };
-    if controls.take_tap(KeyCode::KeyO) {
-        view.orbit = !view.orbit;
-    }
     if view.orbit {
         let d = DVec3::new(view.orbit_pitch.cos() * view.orbit_yaw.sin(), view.orbit_pitch.sin(), view.orbit_pitch.cos() * view.orbit_yaw.cos());
         pose.pos = planet.centre + d * 15_000.0;

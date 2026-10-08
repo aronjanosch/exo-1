@@ -6,11 +6,13 @@ pub mod env;
 pub mod net;
 pub mod net_live;
 pub mod origin;
+pub mod perf;
 pub mod record;
 pub mod ring;
 pub mod scenario;
 pub mod ship;
 pub mod terrain;
+pub mod tuning;
 pub mod view;
 pub mod walker;
 pub mod warp;
@@ -63,6 +65,8 @@ pub struct Options {
     /// Headless run paced at 60 physics ticks per wall second (network runs).
     pub realtime: bool,
     pub net: Option<net_live::NetConfig>,
+    /// `--perf`: step and frame timings per phase (#19).
+    pub perf: Option<perf::PerfOptions>,
 }
 
 impl Default for Options {
@@ -80,6 +84,7 @@ impl Default for Options {
             distance: None,
             realtime: false,
             net: None,
+            perf: None,
         }
     }
 }
@@ -103,10 +108,22 @@ impl Options {
                 "--origin-shift" => o.origin_shift = v.parse().expect("origin-shift"),
                 "--out" => o.out_dir = PathBuf::from(v),
                 "--record" => o.record = Some(PathBuf::from(v)),
+                "--perf" => o.perf = Some(o.perf.take().unwrap_or_default()),
+                "--perf-baseline" => o.perf.get_or_insert_default().baseline = PathBuf::from(v),
+                "--perf-save-baseline" => o.perf.get_or_insert_default().save_baseline = true,
+                "--perf-tolerance" => o.perf.get_or_insert_default().tolerance = v.parse().expect("perf-tolerance"),
+                "--perf-slow" => o.perf.get_or_insert_default().slow_ms = v.parse().expect("perf-slow"),
                 _ => panic!("unknown argument {a}"),
             }
         }
         o.net = net_live::NetConfig::parse(&net_args);
+        if let Some(p) = &mut o.perf {
+            // Under vsync a frame takes the display's period, not the game's time.
+            o.no_vsync = true;
+            if p.baseline.as_os_str().is_empty() {
+                p.baseline = PathBuf::from(format!("target/perf/baseline-{}-{}.json", o.scenario.as_deref().unwrap_or("none"), if o.headless { "headless" } else { "window" }));
+            }
+        }
         if let Some(n) = &mut o.net {
             n.headless = o.headless;
             o.spawn_offset = (n.slot as f64 - 1.0) * 20.0;
@@ -170,17 +187,19 @@ pub fn build_app(o: &Options) -> App {
     app.insert_resource(planet);
     let net = o.net.as_ref().map(|cfg| net_live::Net::new(cfg.clone(), &sys));
     app.insert_resource(warp::WarpDrive::new(&sys)).init_resource::<warp::PendingPlanet>().insert_resource(warp::SystemRes(sys));
-    app.init_resource::<controls::Controls>().init_resource::<walker::WalkStats>();
+    app.init_resource::<controls::Controls>().init_resource::<controls::Actions>().init_resource::<controls::Bindings>().init_resource::<walker::WalkStats>();
+    app.insert_resource(tuning::Tuning::load());
     app.add_plugins(origin::plugin);
     app.insert_resource(SpawnOffset(o.spawn_offset));
-    app.add_systems(Startup, |mut commands: Commands, planet: Res<env::PlanetRes>, off: Res<SpawnOffset>| {
-        walker::spawn_player(&mut commands, &planet, off.0);
-        ship::spawn_ship(&mut commands, &planet, DVec3::Y, off.0);
+    app.add_systems(Startup, |mut commands: Commands, planet: Res<env::PlanetRes>, tuning: Res<tuning::Tuning>, off: Res<SpawnOffset>| {
+        walker::spawn_player(&mut commands, &planet, &tuning.walker, off.0);
+        ship::spawn_ship(&mut commands, &planet, &tuning.ship, DVec3::Y, off.0);
     });
     app.add_systems(
         FixedUpdate,
-        (scenario::run_script.run_if(resource_exists::<scenario::Script>), warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, walker::walker_step).chain(),
+        (scenario::run_script.run_if(resource_exists::<scenario::Script>), controls::resolve_actions, warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, walker::walker_step).chain(),
     );
+    app.add_systems(FixedLast, controls::drop_taps);
     app.add_systems(Update, ring::update_ring);
     if let Some(path) = &o.record {
         app.insert_resource(record::Recorder::new(path.clone()));
@@ -192,9 +211,10 @@ pub fn build_app(o: &Options) -> App {
         app.add_systems(Startup, (terrain::setup_terrain, view::setup_view));
         app.add_systems(Startup, view::setup_warp_view.after(view::setup_view));
         app.add_systems(FixedLast, view::record_player_view);
+        app.add_systems(FixedUpdate, (view::orbit_toggle, view::debug_hud_toggle).after(controls::resolve_actions));
         app.add_systems(
             Update,
-            (controls::read_input, view::add_ship_visuals, view::add_remote_walker_visuals, view::update_camera, terrain::update_terrain, view::update_impostors, view::update_nav_markers, view::update_aim_marker, view::update_tunnel, view::update_hud).chain().after(ring::update_ring),
+            (controls::read_input, view::add_ship_visuals, view::add_remote_walker_visuals, view::update_camera, terrain::update_terrain, view::update_impostors, view::update_nav_markers, view::update_aim_marker, view::update_tunnel, view::update_hud, view::update_flight_hud).chain().after(ring::update_ring),
         );
     }
     if let Some(net) = net {
@@ -208,7 +228,14 @@ pub fn build_app(o: &Options) -> App {
     }
     if let Some(name) = &o.scenario {
         app.world_mut().resource_mut::<controls::Controls>().scripted = true;
+        if scenario::uses_direct_mouse(name) {
+            app.world_mut().resource_mut::<controls::Bindings>().mouse.ship_mode = controls::ShipMouse::Direct;
+        }
         app.init_resource::<warp::WarpTelemetry>();
+        if let Some(p) = &o.perf {
+            app.insert_resource(perf::Perf::new(p.clone(), !o.headless));
+            app.add_plugins(perf::plugin);
+        }
         app.insert_resource(scenario::Script {
             name: name.clone(),
             steps: scenario::build(name, &o.out_dir, !o.headless),

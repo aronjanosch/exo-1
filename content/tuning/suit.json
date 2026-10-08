@@ -1,0 +1,8 @@
+{
+  "_comment": "Suit tuning (walker_core::SuitConfig): thrusters while weightless outside a cabin. Assumed values, every field required.",
+  "accel": 2.0,
+  "boost_factor": 3.0,
+  "brake": 4.0,
+  "brake_time": 0.3,
+  "roll_rate": 1.5
+}

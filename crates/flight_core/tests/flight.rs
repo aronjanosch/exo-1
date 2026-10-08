@@ -116,6 +116,7 @@ impl Sim {
             boost: k.shift,
             brake: k.x,
             mouse: self.mouse,
+            turn: DVec2::ZERO,
             piloted: true,
         };
         self.mouse = DVec2::ZERO;

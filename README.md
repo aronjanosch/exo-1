@@ -18,7 +18,7 @@ Status: starting point. The code comes from the spikes (tag `spike/combined-fina
 - `crates/warp_core`: planet registry (two planets), quantum drive state machine, speed curve, path and obstruction check, no Bevy types.
 - `crates/net_core`: snapshot format, interpolation buffer, clock sync, datagrams, replay matrix, no Bevy types and no sockets.
 - `crates/exo_app`: the game. Bevy glue: terrain LOD and water, heightfield collision ring, ship body, walker on Avian queries, render origin, camera, HUD, UDP transport, scripted scenarios.
-- `content/`: data. `content/planet/recipe.json` is the planet recipe, `content/system/system.json` the planets (seed, radius, quantum travel radii, distance) and the drive settings.
+- `content/`: data. `content/planet/recipe.json` is the planet recipe, `content/system/system.json` the planets (seed, radius, quantum travel radii, distance) and the drive settings. `content/tuning/` holds the feel: `ship.json`, `walker.json`, `suit.json` (every field required, unknown fields rejected) and `bindings.json` (which key feeds which action, mouse sensitivities). All are embedded at build time; edit and rebuild.
 
 ## Run
 
@@ -43,9 +43,16 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 - `foreign`: a remote ship flies through the real snapshot path at 350 m/s; the walker stands and walks in its cabin, then beside it parked.
 - `t5`: four 300 s walks at 1.8 m/s (basin, escarpment, plateau); slow, for terrain work.
 - `warp`: quantum drive between the two planets: refused starts (below 1.5 atmosphere heights, ship on the path), a snapshot with an unknown planet id, calibration lost, cancel, Hearth to Cinder with a walker in the cabin (walking at top speed), landing on Cinder, back seated, an emergency exit at mid-flight and a jump on from the drop point. Checks the end point, the nose at the target's centre and the terrain after the exit. Prints flight times and speeds; with a window it also takes screenshots of the cruise (cabin and outside), the exit and 2 s after it, and checks the new planet's terrain.
+- `flight`: the flight feel: thrust and rotation ramp to full deflection in the tuned time, the virtual-joystick mouse (full, half, centred, dead zone), boost raises the speed limit and drops back, decoupled (C) blends over 4 s and glides, coupled again damps. The only scenario on the virtual joystick; the others keep the direct mouse their aiming is written for.
 - `net`: the network bot (take off, cruise, turn, brake, land, repeat); see below.
 
 Other options: `--distance=<m>` (distance between the planet centres, default from `content/system/system.json`; frame zones that would reach past half of it shrink to 45 %, a distance too short for the arrival radii is refused), `--origin-shift=<m>` (render-origin threshold, 0 = off, default 1000), `--radius=<m>` (first planet, overrides the file), `--record=<file>` (write the run's ship and walker path for the replay matrix), `--no-vsync` (frame-time measurements; with vsync every frame reads the display's period).
+
+### Performance (`--perf`)
+
+`cargo dev --headless --scenario=full --perf` writes `<out>/perf-full.json`: per scenario phase the simulation step time (p50, p95, max; FixedFirst to FixedLast, physics included), the terrain patch build times, the resident memory (Linux) and, in a window, the frame time (vsync off, screenshot frames left out). Headless runs give step times only; render times need a desktop run with a window.
+
+If a baseline exists, every phase whose step p95 exceeds the baseline's by more than the tolerance fails the scenario (default 50 % plus 0.5 ms, `--perf-tolerance=<share>`). The baseline belongs to one machine: by default it is `target/perf/baseline-<scenario>-<headless|window>.json`, `--perf-baseline=<file>` picks another. To refresh it, run on an idle machine with `--perf-save-baseline` (same command otherwise). `--perf-slow=<ms>` makes every step sleep that long (the test that a slow step fails).
 
 ## Co-op (LAN)
 
@@ -61,10 +68,10 @@ Options: `--port`, `--bind`, `--rate=<Hz>` (default 30), `--buffer=<ms>` (defaul
 ## Controls
 
 Walker: mouse look (click to grab, Escape releases), WASD, Shift run, Space jump, F sit at the seat, G cabin gravity on/off (only in a landed ship; in flight it is always on), V debug fly mode.
-Ship: mouse pitch/yaw, W/S forward/back, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost, X firm brake, H flight assist, L planet follow, F stand up.
+Ship: the mouse is a virtual joystick: moving it puts the marker off centre and the ship turns at that deflection (dead-zone circle in the middle, full at the outer edge; `ship_mode: "direct"` in `bindings.json` turns by mouse movement instead). W/S forward/back, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost (a speed stage, always available), X firm brake, H flight assist, L planet follow, C coupled/decoupled (eases over 4 s; decoupled the ship keeps gliding), F stand up. Input ramps to full deflection over a fraction of a second (`content/tuning/ship.json`).
 Suit (outside a ship in space, no gravity): mouse turns freely, W/S forward/back, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost, X brake to rest.
 Quantum drive (seated, above 1.5 times the planet's atmosphere height): J spool up and warp to the selected planet, J again cancels while spooling or calibrating, N selects the target. Every planet has a HUD marker with name and distance; the target's is larger and coloured. Point the nose at the ring in the sky while the gauge fills (within 5 degrees; beyond 8 degrees the jump is lost). During the flight, hold J for 1 s to drop out early (emergency exit).
-O: orbit camera (debug).
+O: orbit camera (debug). F3: debug lines (frame time, chunks, patches, warp, network) under the HUD; the HUD itself shows mode, speed, altitude and boost.
 
 ## Windows build
 

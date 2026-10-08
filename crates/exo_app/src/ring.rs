@@ -20,6 +20,7 @@ pub struct PatchOut {
     up: DVec3,
     rot: DQuat,
     heights: Vec<f32>,
+    build_ms: f64,
 }
 
 #[derive(Resource)]
@@ -31,6 +32,8 @@ pub struct Ring {
     pub patches: HashMap<Key, (Entity, DVec3, DQuat)>,
     pending: HashMap<Key, Task<PatchOut>>,
     timer: f64,
+    /// Build times (ms, worker wall time) of the patches collected this frame; `--perf` takes them.
+    pub built_ms: Vec<f64>,
 }
 
 impl Ring {
@@ -43,6 +46,7 @@ impl Ring {
             patches: HashMap::new(),
             pending: HashMap::new(),
             timer: 0.0,
+            built_ms: Vec::new(),
         }
     }
 
@@ -92,6 +96,8 @@ impl Ring {
 pub fn update_ring(mut commands: Commands, time: Res<Time>, planet: Res<PlanetRes>, mut ring: ResMut<Ring>) {
     let ring = ring.as_mut();
     let planet = planet.as_ref();
+    // Nobody took last frame's times (no --perf): drop them.
+    ring.built_ms.clear();
     // Collect finished jobs, a few per frame.
     let mut adds = 0;
     let keys: Vec<Key> = ring.pending.keys().copied().collect();
@@ -105,6 +111,7 @@ pub fn update_ring(mut commands: Commands, time: Res<Time>, planet: Res<PlanetRe
         let task = ring.pending.remove(&key).unwrap();
         let out = block_on(future::poll_once(task)).expect("finished");
         adds += 1;
+        ring.built_ms.push(out.build_ms);
         // Avian heightfield: rows along X, columns along Z; planet_core: row-major, z outer.
         let n = PATCH_SAMPLES;
         let heights: Vec<Vec<f64>> = (0..n).map(|i| (0..n).map(|j| out.heights[j * n + i] as f64).collect()).collect();
@@ -147,13 +154,14 @@ pub fn update_ring(mut commands: Commands, time: Res<Time>, planet: Res<PlanetRe
             let pgen = planet.pgen.clone();
             let face = key.0 as usize;
             let task = pool.spawn(async move {
+                let t0 = std::time::Instant::now();
                 let mid = size * 0.5;
                 let up = from_v3(cube_to_sphere(face, a0 + mid, b0 + mid));
                 let east = from_v3(cube_to_sphere(face, a0 + size, b0 + mid)) - from_v3(cube_to_sphere(face, a0, b0 + mid));
                 let t = (east - up * east.dot(up)).normalize();
                 let b = t.cross(up);
                 let heights = pgen.patch_heights(to_v3(up), to_v3(t), to_v3(b), PATCH_SAMPLES);
-                PatchOut { up, rot: DQuat::from_mat3(&DMat3::from_cols(t, up, b)), heights }
+                PatchOut { up, rot: DQuat::from_mat3(&DMat3::from_cols(t, up, b)), heights, build_ms: t0.elapsed().as_secs_f64() * 1000.0 }
             });
             ring.pending.insert(key, task);
         }

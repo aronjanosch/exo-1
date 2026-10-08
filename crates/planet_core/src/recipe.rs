@@ -137,31 +137,95 @@ pub struct Band {
     pub scale: BandScale,
 }
 
+/// A value drawn per placement from [min, max] (or a fixed number).
+#[derive(Deserialize, Clone, Copy, Debug)]
+#[serde(untagged)]
+pub enum Span {
+    Fixed(f64),
+    Between([f64; 2]),
+}
+
+impl Span {
+    pub fn pick(&self, u: f64) -> f64 {
+        match *self {
+            Span::Fixed(v) => v,
+            Span::Between([a, b]) => a + (b - a) * u,
+        }
+    }
+    pub fn max(&self) -> f64 {
+        match *self {
+            Span::Fixed(v) => v,
+            Span::Between([a, b]) => a.max(b),
+        }
+    }
+}
+
+/// The shape of a landform stamp (#69); every size is drawn per placement from its span.
 #[derive(Deserialize, Clone, Debug)]
-#[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
-pub enum Stamp {
-    Basin {
-        center: [f64; 3],
-        radius_m: f64,
-        depth_m: f64,
-    },
-    Escarpment {
-        center: [f64; 3],
-        length_m: f64,
-        height_m: f64,
-        slope_width_m: f64,
-        shelf_depth_m: f64,
-        end_taper_m: f64,
-        /// Forces the landform field to this value where the step is (rim biomes).
-        #[serde(default)]
-        landform: Option<f64>,
-    },
-    Plateau {
-        center: [f64; 3],
-        radius_m: f64,
-        height_m: f64,
-        falloff_m: f64,
-    },
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum StampShape {
+    /// A smooth bowl.
+    Basin { radius_m: Span, depth_m: Span },
+    /// A straight step: the upper shelf on one side, a slope, the lower ground on the other.
+    Escarpment { length_m: Span, height_m: Span, slope_width_m: Span, shelf_depth_m: Span, end_taper_m: Span },
+    /// A flat-topped rise.
+    Plateau { radius_m: Span, height_m: Span, falloff_m: Span },
+    /// A bowl with a raised rim.
+    Crater { radius_m: Span, depth_m: Span, rim_height_m: Span, rim_width_m: Span },
+    /// A cut with walls and a floor, along a meandering line.
+    Canyon { length_m: Span, floor_width_m: Span, wall_width_m: Span, depth_m: Span, meander_m: Span, end_taper_m: Span },
+    /// Several flat-topped buttes inside a radius.
+    MesaField { radius_m: Span, buttes: [u32; 2], butte_radius_m: Span, height_m: Span, falloff_m: Span },
+    /// A solitary needle, a silhouette to walk towards.
+    Spire { height_m: Span, base_radius_m: Span },
+    /// A ring mountain with a sunken centre.
+    Caldera { ring_radius_m: Span, ring_height_m: Span, ring_width_m: Span, centre_depth_m: Span },
+}
+
+/// Macro fields a landform may be placed in (temperature without the lapse).
+#[derive(Deserialize, Clone, Debug, Default)]
+#[serde(deny_unknown_fields)]
+pub struct Where {
+    #[serde(default)]
+    pub elevation: Option<[f64; 2]>,
+    #[serde(default)]
+    pub temperature: Option<[f64; 2]>,
+    #[serde(default)]
+    pub moisture: Option<[f64; 2]>,
+    #[serde(default)]
+    pub landform: Option<[f64; 2]>,
+    #[serde(default)]
+    pub weirdness: Option<[f64; 2]>,
+}
+
+/// One kind of landform in the planet's budget (#69): how many (a range), how far from every
+/// other stamp, where.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct LandformKind {
+    pub id: String,
+    pub shape: StampShape,
+    pub count: [u32; 2],
+    /// No other stamp centre closer than this (the larger of the two kinds' values counts).
+    pub min_separation_m: f64,
+    #[serde(default, rename = "where")]
+    pub where_: Where,
+    /// Forces the landform field to this value where the stamp is high (rim biomes).
+    #[serde(default)]
+    pub landform: Option<f64>,
+    /// The planet's signature landform: placed first, bigger than the global relief.
+    #[serde(default)]
+    pub signature: bool,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Landforms {
+    /// Placement tries (each with its own seed) before the bake gives up.
+    pub retry_limit: u32,
+    /// Random candidate spots per try.
+    pub candidates: u32,
+    pub kinds: Vec<LandformKind>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -457,7 +521,7 @@ pub struct Recipe {
     #[serde(rename = "macro")]
     pub macro_: MacroSpec,
     pub bands: Vec<Band>,
-    pub stamps: Vec<Stamp>,
+    pub landforms: Landforms,
     pub shape: Shape,
     pub biome_space: BiomeSpace,
     pub sea_level: SeaLevel,
@@ -495,6 +559,14 @@ impl Recipe {
             return Err("duplicate biome ids".into());
         }
         r.check_scatter()?;
+        if r.landforms.kinds.iter().filter(|k| k.signature).count() > 1 {
+            return Err("landforms: at most one signature landform".into());
+        }
+        for k in &r.landforms.kinds {
+            if k.count[0] > k.count[1] {
+                return Err(format!("landform {}: count min above max", k.id));
+            }
+        }
         if r.material.strata_colors.is_empty() || r.material.strata_colors.len() > 4 {
             return Err("material.strata_colors: 1 to 4 colours".into());
         }

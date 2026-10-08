@@ -1,6 +1,7 @@
 //! The look harness's planet side (#63): an equirectangular atlas per layer (height, biome,
 //! landform, scatter density) and named spots for fixed viewpoints. No window, no GPU.
 use crate::math::*;
+use crate::landform::ShapeRt;
 use crate::planet::*;
 use serde::Deserialize;
 
@@ -41,7 +42,7 @@ pub struct Viewpoints {
 impl Viewpoints {
     pub fn from_json(s: &str) -> Result<Viewpoints, String> {
         let v: Viewpoints = serde_json::from_str(s).map_err(|e| e.to_string())?;
-        let known = ["orbit", "basin", "rim", "plateau", "site", "forest_edge", "coast"];
+        let known = ["orbit", "basin", "rim", "plateau", "crater", "canyon", "mesa", "spire", "caldera", "signature", "site", "forest_edge", "coast"];
         for p in &v.viewpoints {
             if !known.contains(&p.spot.as_str()) {
                 return Err(format!("viewpoint {}: unknown spot {}", p.id, p.spot));
@@ -190,6 +191,10 @@ impl Planet {
         for s in &self.sites {
             mark(&mut biome, w, h, *s, [255, 255, 255]);
         }
+        // Landforms on the height layer: red, the signature yellow.
+        for s in &self.stamps {
+            mark(&mut height, w, h, s.c, if s.signature { [255, 230, 0] } else { [230, 30, 30] });
+        }
         Atlas {
             width: w,
             height: h,
@@ -204,34 +209,46 @@ impl Planet {
     pub fn spot(&self, kind: &str) -> Option<Spot> {
         let r = self.radius;
         match kind {
-            "basin" | "rim" | "plateau" => {
+            "basin" | "rim" | "plateau" | "crater" | "canyon" | "mesa" | "spire" | "caldera" | "signature" => {
+                // Stand at `m` metres from the stamp centre, facing it.
+                let towards = |c: V3, m: f64| {
+                    let (e, _) = tangent_frame(c);
+                    let d = walk(c, e, m, r);
+                    Spot { dir: d, facing: (c - d * c.dot(d)).normalized() }
+                };
                 for s in &self.stamps {
-                    match (kind, s) {
-                        ("basin", StampRt::Basin { c, r: br, .. }) => {
-                            let (e, _) = tangent_frame(*c);
+                    let c = s.c;
+                    match (kind, &s.shape) {
+                        ("basin", ShapeRt::Basin { r: br, .. }) => {
+                            let (e, _) = tangent_frame(c);
                             // From the centre outwards until the ground is 3 m above the sea.
                             let mut m = 0.0;
                             while m < br * 1.5 {
-                                let d = walk(*c, e, m, r);
+                                let d = walk(c, e, m, r);
                                 if self.height_at(d) - self.sea > 3.0 {
-                                    let to_c = (*c - d * c.dot(d)).normalized();
-                                    return Some(Spot { dir: d, facing: to_c });
+                                    return Some(Spot { dir: d, facing: (c - d * c.dot(d)).normalized() });
                                 }
                                 m += 10.0;
                             }
-                            return Some(Spot { dir: walk(*c, e, br * 0.6, r), facing: -e });
+                            return Some(towards(c, br * 0.6));
                         }
-                        ("rim", StampRt::Esc { c, n, spec, .. }) => {
-                            let d = walk(*c, *n, spec.2 * 0.5 + 15.0, r);
+                        ("rim", ShapeRt::Esc { n, sw, .. }) => {
+                            let d = walk(c, *n, sw * 0.5 + 15.0, r);
                             let down = -(*n - d * n.dot(d)).normalized();
                             return Some(Spot { dir: d, facing: down });
                         }
-                        ("plateau", StampRt::Plateau { c, r: pr, fall, .. }) => {
-                            let (e, _) = tangent_frame(*c);
-                            let d = walk(*c, e, (pr - fall - 20.0).max(0.0), r);
-                            let out = (e - d * e.dot(d)).normalized();
-                            return Some(Spot { dir: d, facing: out });
+                        ("plateau", ShapeRt::Plateau { r: pr, fall, .. }) => {
+                            let (e, _) = tangent_frame(c);
+                            let d = walk(c, e, (pr - fall - 20.0).max(0.0), r);
+                            return Some(Spot { dir: d, facing: (e - d * e.dot(d)).normalized() });
                         }
+                        ("crater", ShapeRt::Crater { r: cr, .. }) => return Some(towards(c, *cr)),
+                        // On the floor in the middle, looking along the cut.
+                        ("canyon", ShapeRt::Canyon { t, .. }) => return Some(Spot { dir: c, facing: *t }),
+                        ("mesa", ShapeRt::Mesa { .. }) => return Some(towards(c, s.reach_m + 150.0)),
+                        ("spire", ShapeRt::Spire { r: sr, .. }) if !s.signature => return Some(towards(c, sr * 3.0 + 150.0)),
+                        ("caldera", ShapeRt::Caldera { rr, w, .. }) => return Some(towards(c, rr + w * 1.5)),
+                        ("signature", _) if s.signature => return Some(towards(c, s.reach_m + 400.0)),
                         _ => {}
                     }
                 }

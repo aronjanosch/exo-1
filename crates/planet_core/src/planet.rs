@@ -36,11 +36,7 @@ struct BandRt {
     scale: BandScale,
 }
 
-pub(crate) enum StampRt {
-    Basin { c: V3, r: f64, d: f64, cos_reach: f64 },
-    Esc { c: V3, t: V3, n: V3, spec: (f64, f64, f64, f64, f64), landform: Option<f64>, cos_reach: f64 },
-    Plateau { c: V3, r: f64, h: f64, fall: f64, cos_reach: f64 },
-}
+use crate::landform::{ShapeRt, StampRt};
 
 /// Macro fields at one point.
 #[derive(Copy, Clone, Debug, Default)]
@@ -108,6 +104,9 @@ pub struct BakeStats {
     pub site_median_nn_m: f64,
     /// Rows below their `min_share`.
     pub quota_misses: Vec<String>,
+    /// Stamps placed per landform kind, and the placement try that succeeded (#69).
+    pub landform_counts: BTreeMap<String, usize>,
+    pub landform_tries: u32,
     /// Share of 200 random straight walks of 540 m (5 min at 1.8 m/s, on land) that cross at
     /// least two biome rows, and the median number of rows per walk (#68: sizes by walking).
     pub walks_two_biomes_share: f64,
@@ -125,6 +124,8 @@ pub struct Planet {
     bands: Vec<BandRt>,
     pub(crate) scatter: crate::scatter::ScatterRt,
     pub(crate) stamps: Vec<StampRt>,
+    landform_tries: u32,
+    placement_error: Option<String>,
     pub macro_img: Vec<f32>,
     pub sea: f64,
     pub sites: Vec<V3>,
@@ -167,41 +168,7 @@ impl Planet {
             })
             .collect();
         let scatter = crate::scatter::ScatterRt::new(&recipe, seed);
-        let stamps = recipe
-            .stamps
-            .iter()
-            .map(|s| match s {
-                Stamp::Basin { center, radius_m, depth_m } => StampRt::Basin {
-                    c: V3::from_arr(*center).normalized(),
-                    r: *radius_m,
-                    d: *depth_m,
-                    cos_reach: (radius_m / radius).cos(),
-                },
-                Stamp::Escarpment { center, length_m, height_m, slope_width_m, shelf_depth_m, end_taper_m, landform } => {
-                    let c = V3::from_arr(*center).normalized();
-                    // assumption: the segment runs east-west (tangent = c x world up)
-                    let t = c.cross(v3(0.0, 1.0, 0.0)).normalized();
-                    let n = c.cross(t).normalized();
-                    let reach = ((length_m * 0.5).hypot(*shelf_depth_m) + slope_width_m) / radius;
-                    StampRt::Esc {
-                        c,
-                        t,
-                        n,
-                        spec: (*length_m, *height_m, *slope_width_m, *shelf_depth_m, *end_taper_m),
-                        landform: *landform,
-                        cos_reach: reach.min(3.0).cos(),
-                    }
-                }
-                Stamp::Plateau { center, radius_m, height_m, falloff_m } => StampRt::Plateau {
-                    c: V3::from_arr(*center).normalized(),
-                    r: *radius_m,
-                    h: *height_m,
-                    fall: *falloff_m,
-                    cos_reach: (radius_m / radius).cos(),
-                },
-            })
-            .collect();
-        Planet {
+        let mut p = Planet {
             n_elev: make_noise(&m.elevation.noise, seed),
             n_moist: make_noise(&m.moisture.noise, seed),
             n_temp: make_noise(&m.temperature.noise, seed),
@@ -209,7 +176,9 @@ impl Planet {
             n_weird: make_noise(&m.weirdness.noise, seed),
             bands,
             scatter,
-            stamps,
+            stamps: Vec::new(),
+            landform_tries: 0,
+            placement_error: None,
             macro_img: Vec::new(),
             sea: 0.0,
             sites: Vec::new(),
@@ -217,6 +186,24 @@ impl Planet {
             height_range: (0.0, 0.0),
             radius,
             recipe,
+        };
+        let (stamps, tries, ok) = p.place_landforms();
+        p.stamps = stamps;
+        p.landform_tries = tries;
+        p.placement_error = ok.err();
+        p
+    }
+
+    /// Macro fields straight from the noise (before or without the baked image).
+    pub fn fields_at(&self, dir: V3) -> Fields {
+        let p = self.p32(dir);
+        let tm = &self.recipe.macro_.temperature;
+        Fields {
+            elev: nz(&self.n_elev, p) as f64,
+            temp: tm.base - tm.latitude_gain * dir.y.abs() + tm.noise_gain * nz(&self.n_temp, p) as f64,
+            moist: nz(&self.n_moist, p) as f64,
+            land: nz(&self.n_land, p) as f64,
+            weird: nz(&self.n_weird, p) as f64,
         }
     }
 
@@ -225,42 +212,15 @@ impl Planet {
         [(dir.x * self.radius) as f32, (dir.y * self.radius) as f32, (dir.z * self.radius) as f32]
     }
 
-    /// Sum of the stamped features (metres) and the landform id they force, if any.
+    /// Sum of the stamped features (metres) and the landform value they force, if any.
     pub fn stamp_height(&self, dir: V3) -> (f64, Option<f64>) {
         let mut h = 0.0;
         let mut lf = None;
         for s in &self.stamps {
-            match s {
-                StampRt::Basin { c, r, d, cos_reach } => {
-                    let dt = dir.dot(*c);
-                    if dt > *cos_reach {
-                        let t = self.radius * dt.clamp(-1.0, 1.0).acos() / r;
-                        let w = 1.0 - t * t;
-                        h -= d * w * w; // smooth bowl, zero slope at the rim
-                    }
-                }
-                StampRt::Esc { c, t, n, spec, landform, cos_reach } => {
-                    let dc = dir.dot(*c);
-                    if dc > *cos_reach {
-                        let (len, height, sw, shelf, taper) = *spec;
-                        let x = self.radius * dir.dot(*n).clamp(-1.0, 1.0).asin();
-                        let l = self.radius * dir.dot(*t).atan2(dc);
-                        let w = smoothstep(-sw * 0.5, sw * 0.5, x)
-                            * (1.0 - smoothstep(shelf - taper, shelf, x))
-                            * (1.0 - smoothstep(len * 0.5 - taper, len * 0.5, l.abs()));
-                        h += height * w;
-                        if w > 0.5 && landform.is_some() {
-                            lf = *landform;
-                        }
-                    }
-                }
-                StampRt::Plateau { c, r, h: ph, fall, cos_reach } => {
-                    let dt = dir.dot(*c);
-                    if dt > *cos_reach {
-                        let s = self.radius * dt.clamp(-1.0, 1.0).acos();
-                        h += ph * (1.0 - smoothstep(r - fall, *r, s));
-                    }
-                }
+            let (dh, w) = s.height(dir, self.radius);
+            h += dh;
+            if w > 0.5 && s.landform.is_some() {
+                lf = s.landform;
             }
         }
         (h, lf)
@@ -462,12 +422,7 @@ impl Planet {
                             for i in 0..w {
                                 let a = -1.0 + i as f64 * 2.0 / n as f64;
                                 let dir = cube_to_sphere(face, a, b);
-                                let p = this.p32(dir);
-                                let m = &this.recipe.macro_;
-                                let elev = nz(&this.n_elev, p) as f64;
-                                let tm = &m.temperature;
-                                let temp = tm.base - tm.latitude_gain * dir.y.abs() + tm.noise_gain * nz(&this.n_temp, p) as f64;
-                                let f = Fields { elev, temp, moist: nz(&this.n_moist, p) as f64, land: nz(&this.n_land, p) as f64, weird: nz(&this.n_weird, p) as f64 };
+                                let f = this.fields_at(dir);
                                 let o = &mut out[i * CHANNELS..(i + 1) * CHANNELS];
                                 o[0] = f.elev as f32;
                                 o[1] = f.temp as f32;
@@ -593,6 +548,9 @@ impl Planet {
     /// `bake`, failing when a biome row misses its quota (`min_share`).
     pub fn bake_checked(&mut self, threads: usize) -> Result<BakeStats, String> {
         let st = self.bake(threads);
+        if let Some(e) = &self.placement_error {
+            return Err(format!("bake: {e}"));
+        }
         if st.quota_misses.is_empty() { Ok(st) } else { Err(format!("bake: {}", st.quota_misses.join("; "))) }
     }
 
@@ -637,50 +595,61 @@ impl Planet {
     }
 
     fn feature_stats(&self, st: &mut BakeStats) {
-        for s in &self.stamps {
-            match s {
-                StampRt::Basin { c, r, .. } => {
-                    let t1 = c.cross(v3(0.0, 1.0, 0.0)).normalized();
-                    let t2 = c.cross(t1).normalized();
-                    st.basin_centre_height_above_sea = self.height_at(*c) - self.sea;
-                    let (r1, s1) = self.run_below_sea(*c, t1, r * 1.5);
-                    let (r2, s2) = self.run_below_sea(*c, t2, r * 1.5);
-                    st.basin_run_through_centre_m = [r1, r2];
-                    st.basin_span_below_sea_m = [s1, s2];
-                }
-                StampRt::Plateau { c, r, .. } => {
-                    st.plateau_stamp_height_m = self.stamp_height(*c).0;
-                    // mean full height above sea over a disc of half the radius
-                    let t1 = c.cross(v3(0.0, 1.0, 0.0)).normalized();
-                    let t2 = c.cross(t1);
-                    let (mut sum, mut cnt) = (0.0, 0.0);
-                    for ia in -5..=5 {
-                        for ib in -5..=5 {
-                            let (x, y) = (ia as f64 * r * 0.1, ib as f64 * r * 0.1);
-                            if x.hypot(y) <= r * 0.5 {
-                                let d = (*c + t1 * (x / self.radius) + t2 * (y / self.radius)).normalized();
-                                sum += self.height_at(d) - self.sea;
-                                cnt += 1.0;
-                            }
-                        }
+        st.landform_tries = self.landform_tries;
+        for k in &self.recipe.landforms.kinds {
+            st.landform_counts.insert(k.id.clone(), self.stamps.iter().filter(|s| s.kind == k.id).count());
+        }
+        // The first basin, plateau and escarpment (the spike's three features).
+        let first = |name: &str| self.stamps.iter().find(|s| match (&s.shape, name) {
+            (ShapeRt::Basin { .. }, "basin") | (ShapeRt::Plateau { .. }, "plateau") | (ShapeRt::Esc { .. }, "esc") => true,
+            _ => false,
+        });
+        if let Some(s) = first("basin")
+            && let ShapeRt::Basin { r, .. } = s.shape
+        {
+            let c = s.c;
+            let t1 = c.cross(v3(0.0, 1.0, 0.0)).normalized();
+            let t2 = c.cross(t1).normalized();
+            st.basin_centre_height_above_sea = self.height_at(c) - self.sea;
+            let (r1, s1) = self.run_below_sea(c, t1, r * 1.5);
+            let (r2, s2) = self.run_below_sea(c, t2, r * 1.5);
+            st.basin_run_through_centre_m = [r1, r2];
+            st.basin_span_below_sea_m = [s1, s2];
+        }
+        if let Some(s) = first("plateau")
+            && let ShapeRt::Plateau { r, .. } = s.shape
+        {
+            let c = s.c;
+            st.plateau_stamp_height_m = self.stamp_height(c).0;
+            let t1 = c.cross(v3(0.0, 1.0, 0.0)).normalized();
+            let t2 = c.cross(t1);
+            let (mut sum, mut cnt) = (0.0, 0.0);
+            for ia in -5..=5 {
+                for ib in -5..=5 {
+                    let (x, y) = (ia as f64 * r * 0.1, ib as f64 * r * 0.1);
+                    if x.hypot(y) <= r * 0.5 {
+                        let d = (c + t1 * (x / self.radius) + t2 * (y / self.radius)).normalized();
+                        sum += self.height_at(d) - self.sea;
+                        cnt += 1.0;
                     }
-                    st.plateau_top_mean_above_sea_m = sum / cnt;
-                }
-                StampRt::Esc { c, t, n, spec, .. } => {
-                    let off = 200.0 / self.radius;
-                    let step_at = |l: f64| {
-                        let base = *c * (l / self.radius).cos() + *t * (l / self.radius).sin();
-                        let hi = (base + *n * off).normalized();
-                        let lo = (base - *n * off).normalized();
-                        (self.stamp_height(hi).0 - self.stamp_height(lo).0, self.height_at(hi) - self.height_at(lo))
-                    };
-                    st.escarpment_stamp_step_m = step_at(0.0).0;
-                    let len = spec.0;
-                    let k = 11;
-                    let mean: f64 = (0..k).map(|i| step_at((i as f64 / (k - 1) as f64 - 0.5) * len * 0.6).1).sum::<f64>() / k as f64;
-                    st.escarpment_full_step_mean_m = mean;
                 }
             }
+            st.plateau_top_mean_above_sea_m = sum / cnt;
+        }
+        if let Some(s) = first("esc")
+            && let ShapeRt::Esc { t, n, len, .. } = s.shape
+        {
+            let c = s.c;
+            let off = 200.0 / self.radius;
+            let step_at = |l: f64| {
+                let base = c * (l / self.radius).cos() + t * (l / self.radius).sin();
+                let hi = (base + n * off).normalized();
+                let lo = (base - n * off).normalized();
+                (self.stamp_height(hi).0 - self.stamp_height(lo).0, self.height_at(hi) - self.height_at(lo))
+            };
+            st.escarpment_stamp_step_m = step_at(0.0).0;
+            let k = 11;
+            st.escarpment_full_step_mean_m = (0..k).map(|i| step_at((i as f64 / (k - 1) as f64 - 0.5) * len * 0.6).1).sum::<f64>() / k as f64;
         }
     }
 
@@ -751,6 +720,10 @@ impl Planet {
             let rr = (1.0 - z * z).sqrt();
             let d = v3(rr * phi.cos(), z, rr * phi.sin());
             if sites.iter().any(|s| s.dot(d) > min_dot) {
+                continue;
+            }
+            // Never under a stamp (#69): outside every stamp's reach plus the clear radius.
+            if self.stamps.iter().any(|s| self.radius * s.c.dot(d).clamp(-1.0, 1.0).acos() < s.reach_m + rule.clear_radius_m) {
                 continue;
             }
             let s = self.sample(d);

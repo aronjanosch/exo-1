@@ -151,7 +151,10 @@ fn t3_macro_statistics() {
 fn t1_collision_patches_core() {
     // patches in tangent frames over steep ground (escarpment, plateau edge, basin rim) and flat ground
     let (p, _) = planet();
-    let mut worst: f64 = 0.0;
+    // The patch against the height function with the frame origin in f64 (the generator's own
+    // error), and rounded to f32 like the scene (adds the rounding, up to about 0.4 mm along the
+    // radius plus the sideways part times the local gradient; LEARNINGS.md, "1 mm at 5 km").
+    let (mut worst64, mut worst32): (f64, f64) = (0.0, 0.0);
     let mut n = 0;
     let centres = [v3(-0.4, 0.3, 1.0), v3(-1.0, -0.2, -0.4), v3(1.0, 0.2, 0.3), v3(0.3, 1.0, 0.2)];
     for c in centres {
@@ -167,15 +170,20 @@ fn t1_collision_patches_core() {
                     let (x, z) = (i as f64 - 15.5, j as f64 - 15.5);
                     let o64 = off * p.radius;
                     let o32 = v3(o64.x as f32 as f64, o64.y as f32 as f64, o64.z as f32 as f64);
-                    let w = o32 + t * x + b * z + off * hs[j * 32 + i] as f64;
-                    worst = worst.max((w.length() - p.radius - p.height_at(w.normalized())).abs());
+                    let err = |o: V3| {
+                        let w = o + t * x + b * z + off * hs[j * 32 + i] as f64;
+                        (w.length() - p.radius - p.height_at(w.normalized())).abs()
+                    };
+                    worst64 = worst64.max(err(o64));
+                    worst32 = worst32.max(err(o32));
                     n += 1;
                 }
             }
         }
     }
-    println!("T1 collision patches (core, origin rounded to f32 like the scene): {} samples, max |patch - height_at| = {:.3e} m", n, worst);
-    assert!(worst < 1e-3);
+    println!("T1 collision patches (core): {n} samples, max |patch - height_at| = {worst64:.3e} m (f64 origin), {worst32:.3e} m (origin rounded to f32 like the scene)");
+    assert!(worst64 < 1e-3);
+    assert!(worst32 < 2e-3);
 }
 
 /// Core-side estimate for T5: along random great circles (1 m steps over 2 km, land and sea),

@@ -24,12 +24,30 @@
     { "name": "warped", "amplitude": 25.0, "scale": "roughness", "noise": { "seed_offset": 5, "frequency": 0.002, "fractal": "fbm", "octaves": 2 },
       "warp": { "seed_offset": 4, "frequency": 0.0025, "amplitude": 150.0 } }
   ],
-  "stamps": [
-    { "type": "basin", "center": [1.0, 0.2, 0.3], "radius_m": 1500.0, "depth_m": 90.0 },
-    { "type": "escarpment", "center": [-0.4, 0.3, 1.0], "length_m": 2000.0, "height_m": 60.0, "slope_width_m": 80.0,
-      "shelf_depth_m": 1000.0, "end_taper_m": 300.0, "landform": 1.0 },
-    { "type": "plateau", "center": [-1.0, -0.2, -0.4], "radius_m": 700.0, "height_m": 110.0, "falloff_m": 120.0 }
-  ],
+  "landforms": {
+    "retry_limit": 12,
+    "candidates": 4000,
+    "kinds": [
+    { "id": "caldera", "signature": true, "shape": { "type": "caldera", "ring_radius_m": [900.0, 1100.0], "ring_height_m": [200.0, 260.0], "ring_width_m": [200.0, 280.0], "centre_depth_m": [60.0, 90.0] },
+      "landform": 1.0, "count": [1, 1], "min_separation_m": 3500.0 },
+    { "id": "basin", "shape": { "type": "basin", "radius_m": [1300.0, 1600.0], "depth_m": [80.0, 100.0] },
+      "count": [1, 1], "min_separation_m": 2600.0, "where": { "elevation": [-0.6, 0.3] } },
+    { "id": "escarpment", "shape": { "type": "escarpment", "length_m": [1600.0, 2200.0], "height_m": [50.0, 70.0], "slope_width_m": [70.0, 90.0],
+      "shelf_depth_m": [800.0, 1100.0], "end_taper_m": 300.0 }, "landform": 1.0,
+      "count": [1, 1], "min_separation_m": 2000.0, "where": { "landform": [-0.2, 1.0] } },
+    { "id": "plateau", "shape": { "type": "plateau", "radius_m": [600.0, 800.0], "height_m": [90.0, 120.0], "falloff_m": [100.0, 140.0] },
+      "count": [1, 1], "min_separation_m": 2000.0, "where": { "elevation": [-0.2, 1.0] } },
+    { "id": "crater", "shape": { "type": "crater", "radius_m": [120.0, 300.0], "depth_m": [15.0, 40.0], "rim_height_m": [6.0, 15.0], "rim_width_m": [30.0, 60.0] },
+      "landform": 0.8, "count": [2, 4], "min_separation_m": 900.0, "where": { "elevation": [-0.3, 1.0] } },
+    { "id": "canyon", "shape": { "type": "canyon", "length_m": [700.0, 1200.0], "floor_width_m": [20.0, 40.0], "wall_width_m": [25.0, 40.0],
+      "depth_m": [30.0, 45.0], "meander_m": [20.0, 60.0], "end_taper_m": 150.0 },
+      "count": [1, 2], "min_separation_m": 1500.0, "where": { "elevation": [-0.2, 1.0] } },
+    { "id": "spire", "shape": { "type": "spire", "height_m": [60.0, 110.0], "base_radius_m": [25.0, 45.0] },
+      "count": [1, 3], "min_separation_m": 1000.0 },
+    { "id": "mesas", "shape": { "type": "mesa_field", "radius_m": [250.0, 400.0], "buttes": [3, 7], "butte_radius_m": [25.0, 60.0], "height_m": [25.0, 50.0], "falloff_m": [6.0, 12.0] },
+      "count": [2, 3], "min_separation_m": 1200.0 }
+    ]
+  },
   "sea_level": { "land_fraction": 0.7 },
   "material": {
     "rock_slope_deg": [12.0, 22.0],

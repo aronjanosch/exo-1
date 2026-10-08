@@ -920,33 +920,25 @@ fn lag_by_hand() -> Vec<Step> {
 
 /// Long walks (spike 8 T5): 1.8 m/s for 300 s from four starts; steep slopes may stop the walker.
 fn t5_starts() -> Vec<(&'static str, DVec3, DVec3)> {
-    let recipe: serde_json::Value = serde_json::from_str(crate::env::RECIPES[0].1).unwrap();
-    let off = |d: DVec3, t: DVec3, m: f64| {
-        let a = m / 5000.0;
-        (d * a.cos() + t * a.sin()).normalize()
-    };
-    let toward = |from: DVec3, to: DVec3| (to - from * from.dot(to)).normalize();
+    // The stamps are placed by the planet's budget (#69): starts come from its look spots.
+    let sys = warp_core::System::from_json(crate::warp::SYSTEM).expect("system.json");
+    let home = PlanetRes::load(PlanetId(0), sys.planet(PlanetId(0)));
+    let pg = &home.pgen;
+    let r = home.radius;
+    let back = |s: planet_core::Spot, m: f64| crate::env::from_v3(planet_core::look::walk(s.dir, s.facing, m, r));
     let mut out = vec![("spawn, heading east", DVec3::Y, DVec3::X)];
-    for st in recipe["stamps"].as_array().unwrap() {
-        let c = st["center"].as_array().unwrap();
-        let c = DVec3::new(c[0].as_f64().unwrap(), c[1].as_f64().unwrap(), c[2].as_f64().unwrap()).normalize();
-        let t = c.cross(DVec3::Y).normalize();
-        match st["type"].as_str().unwrap() {
-            "basin" => {
-                let s = off(c, t, 900.0);
-                out.push(("basin shore, heading to the centre", s, toward(s, c)));
-            }
-            "escarpment" => {
-                let n = c.cross(t).normalize();
-                let s = off(c, n, -300.0);
-                out.push(("escarpment foot, heading up the step", s, toward(s, c)));
-            }
-            "plateau" => {
-                let s = off(c, t, 1000.0);
-                out.push(("plateau approach, heading to the centre", s, toward(s, c)));
-            }
-            _ => {}
-        }
+    if let Some(s) = pg.spot("basin") {
+        out.push(("basin shore, heading to the centre", crate::env::from_v3(s.dir), crate::env::from_v3(s.facing)));
+    }
+    // The rim spot stands on top facing down: start 300 m below it, heading up the step.
+    if let Some(s) = pg.spot("rim") {
+        let start = back(s, 300.0);
+        out.push(("escarpment foot, heading up the step", start, (crate::env::from_v3(s.dir) - start).normalize()));
+    }
+    // The plateau spot is near its edge facing out: start 400 m outside, heading in.
+    if let Some(s) = pg.spot("plateau") {
+        let start = back(s, 400.0);
+        out.push(("plateau approach, heading to the centre", start, (crate::env::from_v3(s.dir) - start).normalize()));
     }
     out
 }

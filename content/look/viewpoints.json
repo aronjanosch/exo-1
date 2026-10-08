@@ -17,6 +17,14 @@
     { "id": "site-ground", "spot": "site", "height_m": 1.7 },
     { "id": "forest-ground", "spot": "forest_edge", "height_m": 1.7 },
     { "id": "forest-hill", "spot": "forest_edge", "height_m": 200.0, "back_m": 350.0, "pitch_deg": -18.0 },
-    { "id": "coast-ground", "spot": "coast", "height_m": 1.7 }
+    { "id": "coast-ground", "spot": "coast", "height_m": 1.7 },
+    { "id": "signature-hill", "spot": "signature", "height_m": 200.0, "back_m": 600.0, "pitch_deg": -2.0 },
+    { "id": "signature-ground", "spot": "signature", "height_m": 1.7, "pitch_deg": 12.0 },
+    { "id": "crater-hill", "spot": "crater", "height_m": 200.0, "back_m": 300.0, "pitch_deg": -25.0 },
+    { "id": "canyon-ground", "spot": "canyon", "height_m": 1.7, "pitch_deg": 3.0 },
+    { "id": "canyon-hill", "spot": "canyon", "height_m": 200.0, "back_m": 350.0, "pitch_deg": -22.0 },
+    { "id": "mesa-hill", "spot": "mesa", "height_m": 200.0, "back_m": 300.0, "pitch_deg": -15.0 },
+    { "id": "spire-ground", "spot": "spire", "height_m": 1.7, "pitch_deg": 10.0 },
+    { "id": "caldera-hill", "spot": "caldera", "height_m": 200.0, "back_m": 400.0, "pitch_deg": -10.0 }
   ]
 }

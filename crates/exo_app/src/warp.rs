@@ -7,7 +7,7 @@
 //!
 //! Four fixed-step systems in a chain: `warp_input` (keys), `warp_drive` (state machine and the
 //! ship on rails), `planet_swap` (simulation's planet), `warp_telemetry` (scenario numbers only).
-use crate::controls::Controls;
+use crate::controls::{Actions, Tap};
 use crate::env::PlanetRes;
 use crate::ring::Ring;
 use crate::ship::{RemoteShip, Ship};
@@ -138,7 +138,7 @@ pub fn warp_input(
     time: Res<Time>,
     sys: Res<SystemRes>,
     mut wd: ResMut<WarpDrive>,
-    mut controls: ResMut<Controls>,
+    mut actions: ResMut<Actions>,
     ships: Query<(&Ship, &Position, &Rotation, &LinearVelocity)>,
     remotes: Query<&Position, (With<RemoteShip>, Without<Ship>)>,
     tel: Option<Res<WarpTelemetry>>,
@@ -147,11 +147,11 @@ pub fn warp_input(
     let wd = wd.as_mut();
     wd.events.clear();
     let Ok((ship, pos, rot, lv)) = ships.single() else { return };
-    if controls.take_tap(KeyCode::KeyN) {
+    if actions.take_tap(Tap::WarpTarget) {
         wd.selected = PlanetId(((wd.selected.index() + 1) % sys.planets.len()) as u8);
     }
     let obstacles = obstacles(&remotes, tel.as_deref());
-    let j = controls.take_tap(KeyCode::KeyJ);
+    let j = actions.take_tap(Tap::Warp);
     if j && !ship.piloted {
         println!("warp: J ignored, nobody is piloting");
     }
@@ -169,7 +169,7 @@ pub fn warp_input(
             wd.events.push(ev);
         }
     }
-    let held = ship.piloted && controls.pressed(KeyCode::KeyJ);
+    let held = ship.piloted && actions.warp_exit;
     if let Some(ev) = wd.drive.hold_exit(held, time.delta_secs_f64(), sys, &obstacles) {
         wd.events.push(ev);
     }

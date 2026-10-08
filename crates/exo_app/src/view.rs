@@ -5,7 +5,7 @@ use crate::ring::Ring;
 use crate::ship::{Ship, ShipPart};
 use crate::terrain::Terrain;
 use crate::walker::{Player, WalkStats, EYE_HEIGHT};
-use crate::controls::Controls;
+use crate::controls::{Actions, Tap};
 use bevy::camera::PerspectiveProjection;
 use bevy::light::GlobalAmbientLight;
 use bevy::math::{DQuat, DVec3};
@@ -361,6 +361,13 @@ pub fn record_player_view(
     }
 }
 
+/// O: orbit camera on or off (fixed step, where taps live).
+pub fn orbit_toggle(mut actions: ResMut<Actions>, mut view: ResMut<ViewState>) {
+    if actions.take_tap(Tap::OrbitCamera) {
+        view.orbit = !view.orbit;
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn update_camera(
     time: Res<Time>,
@@ -368,7 +375,6 @@ pub fn update_camera(
     planet: Res<PlanetRes>,
     mut origin: ResMut<RenderOrigin>,
     mut view: ResMut<ViewState>,
-    mut controls: ResMut<Controls>,
     players: Query<(&Player, &PlayerInterp)>,
     ships: Query<&BodyInterp, With<Ship>>,
     mut cam: Query<(&mut WorldPose, &mut DistanceFog), With<MainCamera>>,
@@ -379,9 +385,6 @@ pub fn update_camera(
     let Ok((pl, pi)) = players.single() else { return };
     let Ok(si) = ships.single() else { return };
     let Ok((mut pose, mut fog)) = cam.single_mut() else { return };
-    if controls.take_tap(KeyCode::KeyO) {
-        view.orbit = !view.orbit;
-    }
     if view.orbit {
         let d = DVec3::new(view.orbit_pitch.cos() * view.orbit_yaw.sin(), view.orbit_pitch.sin(), view.orbit_pitch.cos() * view.orbit_yaw.cos());
         pose.pos = planet.centre + d * 15_000.0;

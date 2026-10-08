@@ -1,0 +1,21 @@
+{
+  "_comment": "Which key feeds which action. Key names are Bevy's KeyCode names. Axes: z is back (W is negative). deadzone (0..1) and curve apply to analog sources only (the pad, the virtual-joystick mouse); keyboard keys are digital. The same key may serve several actions.",
+  "move_x": { "positive": ["KeyD"], "negative": ["KeyA"] },
+  "move_y": { "positive": ["Space"], "negative": ["ControlLeft"] },
+  "move_z": { "positive": ["KeyS"], "negative": ["KeyW"] },
+  "roll": { "positive": ["KeyQ"], "negative": ["KeyE"] },
+  "boost": ["ShiftLeft"],
+  "brake": ["KeyX"],
+  "run": ["ShiftLeft"],
+  "jump": ["Space"],
+  "warp_exit": ["KeyJ"],
+  "seat": ["KeyF"],
+  "hover_assist": ["KeyH"],
+  "horizon_follow": ["KeyL"],
+  "lag": ["KeyG"],
+  "debug_fly": ["KeyV"],
+  "orbit_camera": ["KeyO"],
+  "warp_target": ["KeyN"],
+  "warp": ["KeyJ"],
+  "mouse": { "ship_mode": "direct", "ship_sensitivity": 0.002, "walker_sensitivity": 0.0025 }
+}

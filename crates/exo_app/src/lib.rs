@@ -11,6 +11,7 @@ pub mod ring;
 pub mod scenario;
 pub mod ship;
 pub mod terrain;
+pub mod tuning;
 pub mod view;
 pub mod walker;
 pub mod warp;
@@ -170,17 +171,19 @@ pub fn build_app(o: &Options) -> App {
     app.insert_resource(planet);
     let net = o.net.as_ref().map(|cfg| net_live::Net::new(cfg.clone(), &sys));
     app.insert_resource(warp::WarpDrive::new(&sys)).init_resource::<warp::PendingPlanet>().insert_resource(warp::SystemRes(sys));
-    app.init_resource::<controls::Controls>().init_resource::<walker::WalkStats>();
+    app.init_resource::<controls::Controls>().init_resource::<controls::Actions>().init_resource::<controls::Bindings>().init_resource::<walker::WalkStats>();
+    app.insert_resource(tuning::Tuning::load());
     app.add_plugins(origin::plugin);
     app.insert_resource(SpawnOffset(o.spawn_offset));
-    app.add_systems(Startup, |mut commands: Commands, planet: Res<env::PlanetRes>, off: Res<SpawnOffset>| {
-        walker::spawn_player(&mut commands, &planet, off.0);
-        ship::spawn_ship(&mut commands, &planet, DVec3::Y, off.0);
+    app.add_systems(Startup, |mut commands: Commands, planet: Res<env::PlanetRes>, tuning: Res<tuning::Tuning>, off: Res<SpawnOffset>| {
+        walker::spawn_player(&mut commands, &planet, &tuning.walker, off.0);
+        ship::spawn_ship(&mut commands, &planet, &tuning.ship, DVec3::Y, off.0);
     });
     app.add_systems(
         FixedUpdate,
-        (scenario::run_script.run_if(resource_exists::<scenario::Script>), warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, walker::walker_step).chain(),
+        (scenario::run_script.run_if(resource_exists::<scenario::Script>), controls::resolve_actions, warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, walker::walker_step).chain(),
     );
+    app.add_systems(FixedLast, controls::drop_taps);
     app.add_systems(Update, ring::update_ring);
     if let Some(path) = &o.record {
         app.insert_resource(record::Recorder::new(path.clone()));
@@ -192,6 +195,7 @@ pub fn build_app(o: &Options) -> App {
         app.add_systems(Startup, (terrain::setup_terrain, view::setup_view));
         app.add_systems(Startup, view::setup_warp_view.after(view::setup_view));
         app.add_systems(FixedLast, view::record_player_view);
+        app.add_systems(FixedUpdate, view::orbit_toggle.after(controls::resolve_actions));
         app.add_systems(
             Update,
             (controls::read_input, view::add_ship_visuals, view::add_remote_walker_visuals, view::update_camera, terrain::update_terrain, view::update_impostors, view::update_nav_markers, view::update_aim_marker, view::update_tunnel, view::update_hud).chain().after(ring::update_ring),

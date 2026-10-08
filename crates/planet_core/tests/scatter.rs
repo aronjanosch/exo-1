@@ -70,7 +70,7 @@ fn recipe_rejects_missing_cluster_mesh_and_unknown_multiplier() {
     for (from, to, want) in [
         ("\"cluster\": \"grove\"", "\"cluster\": \"nowhere\"", "cluster preset 'nowhere'"),
         ("\"mesh\": \"tree_b\"", "\"mesh\": \"teapot\"", "mesh 'teapot'"),
-        ("\"scatter\": { \"tree_round\": 1.3 }", "\"scatter\": { \"palm\": 1.3 }", "unknown entry or group 'palm'"),
+        ("\"scatter\": { \"tree_round\": 1.5,", "\"scatter\": { \"palm\": 1.5,", "unknown entry or group 'palm'"),
     ] {
         assert!(HEARTH.contains(from), "fixture {from}");
         let e = Recipe::from_json(&HEARTH.replacen(from, to, 1)).unwrap_err();

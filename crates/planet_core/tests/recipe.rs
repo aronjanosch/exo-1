@@ -20,7 +20,7 @@ fn with(text: &str, from: &str, to: &str) -> String {
 #[test]
 fn unknown_fields_are_rejected_at_every_level() {
     let top = with(HEARTH, "\"macro\":", "\"colour_of_the_wind\": 1, \"macro\":");
-    let nested = with(HEARTH, "\"land_fraction\": 0.7", "\"land_fraction\": 0.7, \"tide\": 2");
+    let nested = with(HEARTH, "\"land_fraction\": 0.66", "\"land_fraction\": 0.66, \"tide\": 2");
     let stamp = with(HEARTH, "\"depth_m\": [80.0, 100.0]", "\"depth_m\": [80.0, 100.0], \"wobble\": 1");
     // Seed and radius belong to system.json.
     let seed = with(HEARTH, "\"macro\":", "\"seed\": 7, \"macro\":");

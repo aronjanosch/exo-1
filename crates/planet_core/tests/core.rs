@@ -142,7 +142,7 @@ fn t2_no_seams() {
 fn t3_macro_statistics() {
     let (p, st) = planet();
     println!("T3 {}", serde_json::to_string_pretty(st).unwrap());
-    assert!((st.land_fraction_macro - 0.7).abs() < 0.01);
+    assert!((st.land_fraction_macro - p.recipe.sea_level.land_fraction).abs() < 0.01);
     assert!(st.site_count == 0 || st.site_min_pair_m >= 600.0);
     let _ = p;
 }

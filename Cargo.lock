@@ -2698,6 +2698,7 @@ dependencies = [
  "planet_core",
  "serde_json",
  "walker_core",
+ "warp_core",
 ]
 
 [[package]]
@@ -5826,6 +5827,16 @@ name = "walker_core"
 version = "0.1.0"
 dependencies = [
  "glam 0.32.1",
+]
+
+[[package]]
+name = "warp_core"
+version = "0.1.0"
+dependencies = [
+ "glam 0.32.1",
+ "net_core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

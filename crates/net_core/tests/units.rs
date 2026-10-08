@@ -5,7 +5,6 @@ use net_core::clock::ClockSync;
 use net_core::link::Link;
 use net_core::snapshot::{FrameKind, Snapshot, SIZE};
 use net_core::wire::Packet;
-use net_core::{to_planet, to_world};
 
 fn snap() -> Snapshot {
     Snapshot::new(1, 1.0, DVec3::new(1.0, 5000.0, 3.0), DVec3::new(10.0, 0.0, 0.0), DQuat::IDENTITY)
@@ -45,8 +44,11 @@ fn rejects_invalid() {
     s.owner = 9;
     assert!(Snapshot::decode(&s.encode()).is_none(), "unknown owner");
     let mut s = a;
-    s.p = DVec3::new(2.0e6, 0.0, 0.0);
-    assert!(Snapshot::decode(&s.encode()).is_none(), "absurd position");
+    s.p = DVec3::new(f64::INFINITY, 0.0, 0.0);
+    assert!(Snapshot::decode(&s.encode()).is_none(), "non-finite position");
+    let mut s = a;
+    s.wp = DVec3::new(2.0e6, 0.0, 0.0);
+    assert!(Snapshot::decode(&s.encode()).is_none(), "absurd walker position");
     let mut wire = a.encode();
     wire[68..84].fill(0);
     assert!(Snapshot::decode(&wire).is_none(), "zero quaternion");
@@ -147,11 +149,12 @@ fn rejoining_owner_resets_history() {
 
 #[test]
 fn shared_frame_reconstructs_in_any_origin() {
-    // Planet 1 is 200 km away: world = centre + relative, exact in f64, and a shift of the render
+    // A planet 200 km away: world = centre + relative, exact in f64, and a shift of the render
     // origin (any whole-metre amount) never changes the shared coordinates.
+    let centre = DVec3::new(200_000.0, 0.0, 0.0);
     let rel = DVec3::new(0.25, 5000.5, 0.125);
-    let w1 = to_world(1, rel);
-    assert_eq!(to_planet(1, w1), rel);
+    let w1 = centre + rel;
+    assert_eq!(w1 - centre, rel);
     let origin = DVec3::new(200_000.0, 5_000.0, 0.0);
     let shifted = origin + DVec3::new(10_000.0, 10_000.0, -10_000.0);
     assert_eq!((w1 - shifted) + DVec3::new(10_000.0, 10_000.0, -10_000.0), w1 - origin);

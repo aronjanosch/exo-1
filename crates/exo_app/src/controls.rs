@@ -8,7 +8,7 @@ use std::collections::HashSet;
 #[derive(Resource, Default)]
 pub struct Controls {
     pub held: HashSet<KeyCode>,
-    /// One-shot keys (F, H, L, V, O, B), consumed by the fixed-step systems.
+    /// One-shot keys (F, H, L, V, O, B, J, N), consumed by the fixed-step systems.
     pub taps: Vec<KeyCode>,
     /// Mouse movement in pixels since the last fixed step.
     pub mouse: Vec2,
@@ -32,7 +32,7 @@ impl Controls {
     }
 }
 
-const TAPS: [KeyCode; 6] = [KeyCode::KeyF, KeyCode::KeyH, KeyCode::KeyL, KeyCode::KeyV, KeyCode::KeyO, KeyCode::KeyB];
+const TAPS: [KeyCode; 8] = [KeyCode::KeyF, KeyCode::KeyH, KeyCode::KeyL, KeyCode::KeyV, KeyCode::KeyO, KeyCode::KeyB, KeyCode::KeyJ, KeyCode::KeyN];
 
 pub fn read_input(
     mut c: ResMut<Controls>,

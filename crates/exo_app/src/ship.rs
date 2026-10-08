@@ -91,21 +91,31 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, up: DVec3, offset
 pub fn add_hull(commands: &mut Commands, ship: Entity, layer: Layer) {
     let hull = Color::srgb(0.95, 0.5, 0.15);
     let inner = Color::srgb(0.55, 0.55, 0.6);
-    let glass = Color::srgb(0.3, 0.8, 0.9);
-    // [size, position, colour, collides] in ship space; origin at the floor bottom.
-    let parts: [(Vec3, Vec3, Color, bool); 8] = [
-        (Vec3::new(4.0, 0.3, 8.0), Vec3::new(0.0, 0.15, 0.0), inner, true),
-        (Vec3::new(0.3, 2.6, 8.0), Vec3::new(-2.15, 1.6, 0.0), hull, true),
-        (Vec3::new(0.3, 2.6, 8.0), Vec3::new(2.15, 1.6, 0.0), hull, true),
-        (Vec3::new(4.6, 0.3, 8.0), Vec3::new(0.0, 3.05, 0.0), hull, true),
-        (Vec3::new(4.6, 2.6, 0.3), Vec3::new(0.0, 1.6, -4.15), hull, true),
-        (Vec3::new(3.6, 1.0, 0.05), Vec3::new(0.0, 2.0, -3.98), glass, false),
-        (Vec3::new(1.0, 0.5, 0.8), Vec3::new(0.0, 0.55, -3.3), inner, false),
-        (Vec3::new(9.0, 0.25, 2.0), Vec3::new(0.0, 1.2, 1.0), hull, false),
+    // See-through: the tunnel streaks show through the window.
+    let glass = Color::srgba(0.3, 0.8, 0.9, 0.12);
+    // [size, position, colour, collides, drawn] in ship space; origin at the floor bottom.
+    // The front wall collides as one block; it is drawn as four pieces around the window opening
+    // (3.6 x 1.0 m at 1.5 to 2.5 m), which has the glass in it.
+    let parts: [(Vec3, Vec3, Color, bool, bool); 12] = [
+        (Vec3::new(4.0, 0.3, 8.0), Vec3::new(0.0, 0.15, 0.0), inner, true, true),
+        (Vec3::new(0.3, 2.6, 8.0), Vec3::new(-2.15, 1.6, 0.0), hull, true, true),
+        (Vec3::new(0.3, 2.6, 8.0), Vec3::new(2.15, 1.6, 0.0), hull, true, true),
+        (Vec3::new(4.6, 0.3, 8.0), Vec3::new(0.0, 3.05, 0.0), hull, true, true),
+        (Vec3::new(4.6, 2.6, 0.3), Vec3::new(0.0, 1.6, -4.15), hull, true, false),
+        (Vec3::new(4.6, 1.2, 0.3), Vec3::new(0.0, 0.9, -4.15), hull, false, true),
+        (Vec3::new(4.6, 0.4, 0.3), Vec3::new(0.0, 2.7, -4.15), hull, false, true),
+        (Vec3::new(0.5, 1.0, 0.3), Vec3::new(-2.05, 2.0, -4.15), hull, false, true),
+        (Vec3::new(0.5, 1.0, 0.3), Vec3::new(2.05, 2.0, -4.15), hull, false, true),
+        (Vec3::new(3.6, 1.0, 0.05), Vec3::new(0.0, 2.0, -4.15), glass, false, true),
+        (Vec3::new(1.0, 0.5, 0.8), Vec3::new(0.0, 0.55, -3.3), inner, false, true),
+        (Vec3::new(9.0, 0.25, 2.0), Vec3::new(0.0, 1.2, 1.0), hull, false, true),
     ];
     commands.entity(ship).with_children(|c| {
-        for (i, (size, p, color, collides)) in parts.into_iter().enumerate() {
-            let mut e = c.spawn((Transform::from_translation(p), ShipPart { size, color }, Visibility::default()));
+        for (i, (size, p, color, collides, drawn)) in parts.into_iter().enumerate() {
+            let mut e = c.spawn((Transform::from_translation(p), Visibility::default()));
+            if drawn {
+                e.insert(ShipPart { size, color });
+            }
             if i == 0 {
                 e.insert(crate::walker::CabinFloor);
             }
@@ -138,13 +148,15 @@ pub fn ship_control(
     time: Res<Time>,
     planet: Res<PlanetRes>,
     mut controls: ResMut<Controls>,
+    warp: Res<crate::warp::WarpDrive>,
     mut q: Query<(&mut Ship, &Position, &Rotation, &mut LinearVelocity, &mut AngularVelocity)>,
 ) {
     let dt = time.delta_secs_f64();
     for (mut ship, pos, rot, mut lv, mut av) in &mut q {
         let clearance = ship.ctl.clearance_at(planet.as_ref(), pos.0);
         ship.lag.step(clearance, lv.0.length(), dt);
-        if ship.parked {
+        // From the pre-ramp on the drive holds the ship.
+        if ship.parked || warp.drive.phase.holds_ship() {
             continue;
         }
         let input = if ship.piloted {

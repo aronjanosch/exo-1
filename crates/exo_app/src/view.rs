@@ -12,12 +12,48 @@ use bevy::math::{DQuat, DVec3};
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
 use flight_core::{PlanetEnv, CHASE_CAMERA_OFFSET, CHASE_CAMERA_PITCH_DEG};
+use warp_core::PlanetId;
 
 #[derive(Component)]
 pub struct MainCamera;
 
 #[derive(Component)]
 pub struct Hud;
+
+/// Sphere standing in for a planet that is too far for its terrain.
+#[derive(Component)]
+pub struct Impostor(pub PlanetId);
+
+/// HUD marker of a planet: a box at its place on screen with name and distance (Star Citizen
+/// marks every destination this way). The jump target's box is larger and coloured.
+#[derive(Component)]
+pub struct NavMarker(pub PlanetId);
+
+#[derive(Component)]
+pub struct NavLabel;
+
+/// Marker in the sky where the drive's course runs while spooling and calibrating: point the
+/// nose at it.
+#[derive(Component)]
+pub struct AimMarker;
+
+/// Star streak of the tunnel look: its place on a tube around the course (angle, radius) and
+/// phase along it. Placed in the world around the camera, along the direction of travel, so it
+/// shows through the cabin window whichever way the walker looks.
+#[derive(Component)]
+pub struct Streak {
+    angle: f32,
+    radius: f32,
+    phase: f32,
+}
+
+/// Distance from a planet's centre beyond which its impostor replaces the terrain (m). The
+/// terrain is culled by the camera's far plane at about this distance.
+pub const IMPOSTOR_FROM: f64 = 100_000.0;
+/// Planet markers and the ground and altitude readout show only when the camera is farther
+/// than this from a planet's centre / closer than this (the terrain is drawn closer).
+pub const NEAR_PLANET: f64 = IMPOSTOR_FROM;
+const STREAKS: usize = 160;
 
 /// Walker feet, the camera's up and the look direction in world space before and after the last
 /// fixed step.
@@ -60,7 +96,7 @@ pub fn setup_view(mut commands: Commands) {
     commands.spawn((
         MainCamera,
         Camera3d::default(),
-        Projection::Perspective(PerspectiveProjection { fov: 75f32.to_radians(), near: 0.05, far: 50_000.0, ..default() }),
+        Projection::Perspective(PerspectiveProjection { fov: 75f32.to_radians(), near: 0.05, far: 120_000.0, ..default() }),
         Transform::default(),
         WorldPose::default(),
         DistanceFog { color: Color::srgb(0.72, 0.82, 0.95), falloff: FogFalloff::Exponential { density: 0.00025 }, ..default() },
@@ -76,6 +112,197 @@ pub fn setup_view(mut commands: Commands) {
         TextFont { font_size: FontSize::Px(14.0), ..default() },
         Node { position_type: PositionType::Absolute, top: px(8), left: px(8), ..default() },
     ));
+}
+
+/// One lit sphere per planet and the streaks of the tunnel look.
+pub fn setup_warp_view(
+    mut commands: Commands,
+    sys: Res<crate::warp::SystemRes>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let sphere = meshes.add(Sphere::new(1.0).mesh().uv(48, 24));
+    for (i, p) in sys.0.ids().zip(&sys.0.planets) {
+        let c = p.color;
+        commands.spawn((
+            NavMarker(i),
+            Node { position_type: PositionType::Absolute, ..default() },
+            Visibility::Hidden,
+            children![
+                (Node { width: px(14), height: px(14), border: UiRect::all(px(2)), ..default() }, BorderColor::all(Color::WHITE)),
+                (NavLabel, Text::new(p.name.clone()), TextLayout::no_wrap(), TextFont { font_size: FontSize::Px(13.0), ..default() }, Node { margin: UiRect::left(px(6)), ..default() }),
+            ],
+        ));
+        commands.spawn((
+            Impostor(i),
+            Mesh3d(sphere.clone()),
+            MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(c[0], c[1], c[2]), perceptual_roughness: 0.9, ..default() })),
+            Transform::default(),
+            WorldPose::default(),
+            Visibility::Hidden,
+        ));
+    }
+    commands.spawn((
+        AimMarker,
+        Mesh3d(meshes.add(Torus::new(0.8, 1.0))),
+        MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::WHITE, emissive: LinearRgba::new(0.4, 3.0, 4.0, 1.0), unlit: true, ..default() })),
+        Transform::default(),
+        WorldPose::default(),
+        Visibility::Hidden,
+    ));
+    let streak = meshes.add(Cuboid::new(0.04, 0.04, 1.0));
+    let mat = materials.add(StandardMaterial { base_color: Color::WHITE, emissive: LinearRgba::new(6.0, 8.0, 12.0, 1.0), unlit: true, ..default() });
+    for i in 0..STREAKS {
+        // A cheap hash spreads them over the tube.
+        let h = |k: f32| ((i as f32 * 12.9898 + k * 78.233).sin() * 43758.547).fract().abs();
+        commands.spawn((
+            Streak { angle: h(1.0) * std::f32::consts::TAU, radius: 3.0 + h(2.0) * 30.0, phase: h(3.0) },
+            Mesh3d(streak.clone()),
+            MeshMaterial3d(mat.clone()),
+            Transform::default(),
+            WorldPose::default(),
+            Visibility::Hidden,
+        ));
+    }
+}
+
+/// Planet markers on the HUD: every planet farther than `NEAR_PLANET`, at its place on screen,
+/// with name and distance from the camera; the jump target (`System::effective_target` of the
+/// selection, or the running jump's target) larger and coloured. Hidden behind the camera.
+pub fn update_nav_markers(
+    sys: Res<crate::warp::SystemRes>,
+    wd: Res<crate::warp::WarpDrive>,
+    origin: Res<RenderOrigin>,
+    cam: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    mut markers: Query<(&NavMarker, &mut Node, &mut Visibility, &Children)>,
+    mut boxes: Query<(&mut Node, &mut BorderColor), Without<NavMarker>>,
+    mut labels: Query<(&mut Text, &mut TextColor), With<NavLabel>>,
+) {
+    let Ok((camera, cam_t)) = cam.single() else { return };
+    let sys = &sys.0;
+    let target = wd.drive.target.unwrap_or_else(|| sys.effective_target(wd.selected, origin.view));
+    for (m, mut node, mut vis, children) in &mut markers {
+        let p = sys.planet(m.0);
+        let to = p.centre() - origin.view;
+        let dist = to.length();
+        // A point 1 km along the direction from where the camera was drawn (render space).
+        let at = cam_t.translation() + (to / dist * 1000.0).as_vec3();
+        let screen = camera.world_to_viewport(cam_t, at).ok().filter(|_| cam_t.forward().dot(to.as_vec3()) > 0.0);
+        let Some(xy) = screen.filter(|_| dist > NEAR_PLANET) else {
+            *vis = Visibility::Hidden;
+            continue;
+        };
+        let is_target = m.0 == target;
+        let size = if is_target { 22.0 } else { 14.0 };
+        let colour = if is_target { Color::srgb(0.4, 1.0, 0.9) } else { Color::srgba(1.0, 1.0, 1.0, 0.7) };
+        node.left = px(xy.x - size * 0.5);
+        node.top = px(xy.y - size * 0.5);
+        *vis = Visibility::Inherited;
+        for c in children.iter() {
+            if let Ok((mut b, mut bc)) = boxes.get_mut(c) {
+                b.width = px(size);
+                b.height = px(size);
+                *bc = BorderColor::all(colour);
+            }
+            if let Ok((mut t, mut tc)) = labels.get_mut(c) {
+                t.0 = format!("{}{}  {}", if is_target { "> " } else { "" }, p.name, km_text(dist));
+                tc.0 = colour;
+            }
+        }
+    }
+}
+
+/// Distance for the HUD: km with thousands separators, metres below 10 km.
+fn km_text(d: f64) -> String {
+    if d < 10_000.0 {
+        return format!("{d:.0} m");
+    }
+    let km = format!("{:.0}", d / 1000.0);
+    let mut out = String::new();
+    for (i, c) in km.chars().enumerate() {
+        if i > 0 && (km.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out + " km"
+}
+
+/// Distant planets: each one is drawn as a sphere at its true direction, at most `IMPOSTOR_FROM`
+/// away and scaled to keep its angular size (the camera's far plane stays small).
+/// Things placed around the camera get a world pose, not a Transform: the render origin may still
+/// move after this system (at 1000 km/s by several km a frame), `WorldPose` follows it.
+pub fn update_impostors(
+    sys: Res<crate::warp::SystemRes>,
+    origin: Res<RenderOrigin>,
+    mut q: Query<(&Impostor, &mut WorldPose, &mut Transform, &mut Visibility)>,
+) {
+    for (imp, mut pose, mut t, mut vis) in &mut q {
+        let p = sys.0.planet(imp.0);
+        let to = p.centre() - origin.view;
+        let dist = to.length();
+        if dist < IMPOSTOR_FROM {
+            *vis = Visibility::Hidden;
+            continue;
+        }
+        let shown = IMPOSTOR_FROM;
+        pose.pos = origin.view + to / dist * shown;
+        t.scale = Vec3::splat((p.radius * shown / dist) as f32);
+        *vis = Visibility::Inherited;
+    }
+}
+
+/// The course marker, 1 km ahead along the drive's path start, a ring facing the camera's side.
+pub fn update_aim_marker(
+    wd: Res<crate::warp::WarpDrive>,
+    origin: Res<RenderOrigin>,
+    mut q: Query<(&mut WorldPose, &mut Transform, &mut Visibility), With<AimMarker>>,
+) {
+    use warp_core::Phase;
+    let Ok((mut pose, mut t, mut vis)) = q.single_mut() else { return };
+    let dir = match (wd.drive.phase, wd.drive.path()) {
+        (Phase::Spooling | Phase::Calibrating, Some(path)) => path.start_dir(),
+        _ => {
+            *vis = Visibility::Hidden;
+            return;
+        }
+    };
+    pose.pos = origin.view + dir * 1000.0;
+    pose.rot = DQuat::from_rotation_arc(DVec3::Y, dir);
+    t.scale = Vec3::splat(if wd.drive.warning { 14.0 } else { 10.0 });
+    *vis = Visibility::Inherited;
+}
+
+/// Tunnel look keyed to the drive's speed: streaks on a tube around the camera along the
+/// direction of travel, a tint of the sky.
+pub fn update_tunnel(
+    time: Res<Time>,
+    wd: Res<crate::warp::WarpDrive>,
+    origin: Res<RenderOrigin>,
+    mut q: Query<(&Streak, &mut WorldPose, &mut Transform, &mut Visibility)>,
+    mut clear: ResMut<ClearColor>,
+) {
+    let level = wd.drive.tunnel() as f32;
+    let t = time.elapsed_secs();
+    let course = wd.drive.pose().map(|(_, v)| v.normalize_or_zero()).filter(|d| *d != DVec3::ZERO);
+    let (Some(dir), true) = (course, level > 0.0) else {
+        for (_, _, _, mut vis) in &mut q {
+            *vis = Visibility::Hidden;
+        }
+        return;
+    };
+    let rot = DQuat::from_rotation_arc(DVec3::NEG_Z, dir);
+    for (s, mut pose, mut tf, mut vis) in &mut q {
+        *vis = Visibility::Inherited;
+        let z = 60.0 - ((s.phase + t * (0.6 + level)) % 1.0) * 180.0;
+        let len = 2.0 + 60.0 * level;
+        pose.pos = origin.view + rot * DVec3::new((s.angle.cos() * s.radius) as f64, (s.angle.sin() * s.radius) as f64, z as f64);
+        pose.rot = rot;
+        tf.scale = Vec3::new(1.0, 1.0, len);
+    }
+    if level > 0.0 {
+        clear.0 = clear.0.mix(&Color::srgb(0.05, 0.10, 0.30), level * 0.8);
+    }
 }
 
 /// Meshes for ship parts (the simulation spawns only colliders and markers).
@@ -221,26 +448,33 @@ pub fn update_hud(
     ships: Query<(&Ship, &avian3d::prelude::Position, &avian3d::prelude::LinearVelocity, &avian3d::prelude::Rotation)>,
     mut hud: Query<&mut Text, With<Hud>>,
     net: Option<Res<crate::net_live::Net>>,
+    wd: Res<crate::warp::WarpDrive>,
+    sys: Res<crate::warp::SystemRes>,
 ) {
     let (Ok(pl), Ok((ship, sp, sv, sr)), Ok(mut text)) = (players.single(), ships.single(), hud.single_mut()) else { return };
+    // Ground and altitude only near the planet (millions of metres during a warp say nothing).
+    let near = |p: DVec3| (p - planet.centre).length() < NEAR_PLANET;
     let mode = if pl.seated {
+        let height = if near(sp.0) { format!("  ground {:.0} m  alt {:.0} m", planet.above_ground(sp.0), (sp.0 - planet.centre).length() - planet.radius) } else { String::new() };
         format!(
-            "SHIP  assist {} (H)  follow {} (L)  {}{}  {} m/s  limit {:.0}  ground {:.0} m  alt {:.0} m",
+            "SHIP  assist {} (H)  follow {} (L)  {}{}  {} m/s  limit {:.0}{height}",
             if ship.ctl.hover_assist { "on" } else { "off" },
             if ship.ctl.horizon_follow { "on" } else { "off" },
             lag_text(ship),
             if ship.ctl.brake_active { "  BRAKE (X)" } else { "" },
             speed_text(sv.0.length()),
             ship.ctl.forward_speed_limit,
-            planet.above_ground(sp.0),
-            (sp.0 - planet.centre).length() - planet.radius,
         )
     } else {
         // Velocity relative to the planet centre, and its part along "up" (negative = towards the
         // planet): the cabin carries the ship's velocity (own ship), outside it is the walker's own.
         let (v, pos) = if pl.ship.is_some() { (sv.0 + sr.0 * pl.w.vel, sp.0) } else { (pl.w.vel, pl.w.pos) };
-        let radial = v.dot(planet.up(pos));
-        let speed = format!("speed {} m/s, vertical {:+.2} m/s, altitude {:.0} m", speed_text(v.length()), radial, (pos - planet.centre).length() - planet.radius);
+        let speed = if near(pos) {
+            let radial = v.dot(planet.up(pos));
+            format!("speed {} m/s, vertical {:+.2} m/s, altitude {:.0} m", speed_text(v.length()), radial, (pos - planet.centre).length() - planet.radius)
+        } else {
+            format!("speed {} m/s", speed_text(v.length()))
+        };
         if pl.ship.is_some() {
             format!("in cabin  [F] sit at the seat  {}  {speed}", lag_text(ship))
         } else if pl.fly {
@@ -260,9 +494,47 @@ pub fn update_hud(
         ring.pending(),
         stats.rescues,
     );
+    text.0.push('\n');
+    text.0.push_str(&warp_line(&wd, &sys.0, sp.0));
     if let Some(n) = net {
         text.0.push('\n');
         text.0.push_str(&n.hud_line());
+    }
+}
+
+/// Quantum drive status: phase, gauge and aim while calibrating, speed on rails. Target and
+/// distance come from one rule: the running jump's target, else `System::effective_target`.
+fn warp_line(wd: &crate::warp::WarpDrive, sys: &warp_core::System, ship: DVec3) -> String {
+    use warp_core::Phase;
+    let d = &wd.drive;
+    let id = d.target.unwrap_or_else(|| sys.effective_target(wd.selected, ship));
+    let target = sys.planet(id).name.as_str();
+    let dist = km_text(sys.planet(id).centre().distance(ship));
+    match d.phase {
+        Phase::Idle => {
+            let refused = wd.last_abort.map(|a| format!("  last: {a:?}")).unwrap_or_default();
+            format!("QUANTUM  ready  J: warp to {target} ({dist})  N: select{refused}")
+        }
+        Phase::Spooling => format!("QUANTUM  spooling {:.1}/{:.0} s  -> {target} ({dist})  aim {:.1} deg  (J cancels)", d.timer, d.cfg.spool_time, d.angle),
+        Phase::Calibrating => format!(
+            "QUANTUM  calibrating {:.0} %  aim {:.1} deg{}  -> {target} ({dist})  (J cancels)",
+            d.gauge * 100.0,
+            d.angle,
+            if d.warning { "  WARNING: hold the course" } else { "" }
+        ),
+        Phase::PreRamp => format!("QUANTUM  engaging  -> {target} ({dist})"),
+        Phase::RampUp | Phase::Cruise | Phase::RampDown => format!(
+            "QUANTUM  {:?} stage {}  {:.0} km/s  tunnel {:.0} %  {dist} to {target}  (hold J: emergency exit{})",
+            d.phase,
+            d.stage(),
+            d.speed() / 1000.0,
+            d.tunnel() * 100.0,
+            if d.exit_hold > 0.0 { format!(" {:.0} %", 100.0 * d.exit_hold / d.cfg.emergency_hold_time) } else { String::new() }
+        ),
+        Phase::EmergencyDrop => format!("QUANTUM  EMERGENCY EXIT  {:.0} km/s  {dist} to {target}", d.speed() / 1000.0),
+        Phase::PostRampDown if d.drop_point().is_some() => "QUANTUM  dropped out".to_string(),
+        Phase::PostRampDown => "QUANTUM  arrived".to_string(),
+        Phase::Cooldown => format!("QUANTUM  cooldown {:.1} s", (d.cfg.cooldown - d.timer).max(0.0)),
     }
 }
 

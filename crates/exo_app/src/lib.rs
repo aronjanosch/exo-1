@@ -13,6 +13,7 @@ pub mod ship;
 pub mod terrain;
 pub mod view;
 pub mod walker;
+pub mod warp;
 
 use avian3d::prelude::*;
 use avian3d::physics_transform::PhysicsTransformConfig;
@@ -46,7 +47,10 @@ pub struct Options {
     pub headless: bool,
     /// Window not shown (screenshots without any visible window), if the platform renders it.
     pub hidden: bool,
-    pub radius: f64,
+    /// Present without vsync (frame time measurements; with vsync a frame takes the display's period).
+    pub no_vsync: bool,
+    /// Radius of the first planet in metres (default: `content/system/system.json`).
+    pub radius: Option<f64>,
     /// Render-origin shift threshold in metres, 0 = off.
     pub origin_shift: f64,
     /// Scenario reports and screenshots.
@@ -54,6 +58,8 @@ pub struct Options {
     /// Write the scripted run's ship and walker path (net_core Trajectory) to this file.
     pub record: Option<PathBuf>,
     pub spawn_offset: f64,
+    /// Distance between the planet centres in metres (default: `content/system/system.json`).
+    pub distance: Option<f64>,
     /// Headless run paced at 60 physics ticks per wall second (network runs).
     pub realtime: bool,
     pub net: Option<net_live::NetConfig>,
@@ -65,11 +71,13 @@ impl Default for Options {
             scenario: None,
             headless: false,
             hidden: false,
-            radius: 5000.0,
+            no_vsync: false,
+            radius: None,
             origin_shift: 1000.0,
             out_dir: PathBuf::from("target/scenario"),
             record: None,
             spawn_offset: 0.0,
+            distance: None,
             realtime: false,
             net: None,
         }
@@ -89,7 +97,9 @@ impl Options {
                 "--scenario" => o.scenario = Some(v.to_string()),
                 "--headless" => o.headless = true,
                 "--hidden" => o.hidden = true,
-                "--radius" => o.radius = v.parse().expect("radius"),
+                "--no-vsync" => o.no_vsync = true,
+                "--distance" => o.distance = Some(v.parse().expect("distance")),
+                "--radius" => o.radius = Some(v.parse().expect("radius")),
                 "--origin-shift" => o.origin_shift = v.parse().expect("origin-shift"),
                 "--out" => o.out_dir = PathBuf::from(v),
                 "--record" => o.record = Some(PathBuf::from(v)),
@@ -122,7 +132,10 @@ pub fn build_app(o: &Options) -> App {
         app.insert_resource(TimeUpdateStrategy::ManualDuration(TICK));
     } else {
         app.add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window { title: "EXO-1".into(), resolution: (1600u32, 900u32).into(), visible: !o.hidden, ..default() }),
+            primary_window: Some(Window { title: "EXO-1".into(), resolution: (1600u32, 900u32).into(), visible: !o.hidden,
+                present_mode: if o.no_vsync { bevy::window::PresentMode::AutoNoVsync } else { bevy::window::PresentMode::AutoVsync },
+                ..default()
+            }),
             ..default()
         }));
     }
@@ -131,7 +144,19 @@ pub fn build_app(o: &Options) -> App {
         .insert_resource(Gravity(DVec3::ZERO))
         .insert_resource(PhysicsTransformConfig { transform_to_position: false, position_to_transform: false, ..default() });
 
-    let planet = env::PlanetRes::load(o.radius, net_core::PLANET_CENTRES[0]);
+    let mut sys = warp_core::System::from_json(warp::SYSTEM).expect("system.json");
+    if let Some(d) = o.distance {
+        match sys.set_distance(d) {
+            Ok(notes) => notes.iter().for_each(|n| println!("--distance: {n}")),
+            Err(e) => panic!("--distance refused: {e}"),
+        }
+    }
+    // The file wins; --radius only when given (first planet).
+    if let Some(r) = o.radius {
+        sys.planets[0].radius = r;
+    }
+    let home = warp_core::PlanetId(0);
+    let planet = env::PlanetRes::load(home, sys.planet(home));
     println!("planet: radius {} m, sea {:.2} m, bake {:.0} ms", planet.radius, planet.sea, planet.bake_ms);
     let start = planet.centre + DVec3::Y * planet.surface(DVec3::Y);
     app.insert_resource(origin::RenderOrigin {
@@ -143,6 +168,8 @@ pub fn build_app(o: &Options) -> App {
     });
     app.insert_resource(ring::Ring::new(planet.radius));
     app.insert_resource(planet);
+    let net = o.net.as_ref().map(|cfg| net_live::Net::new(cfg.clone(), &sys));
+    app.insert_resource(warp::WarpDrive::new(&sys)).init_resource::<warp::PendingPlanet>().insert_resource(warp::SystemRes(sys));
     app.init_resource::<controls::Controls>().init_resource::<walker::WalkStats>();
     app.add_plugins(origin::plugin);
     app.insert_resource(SpawnOffset(o.spawn_offset));
@@ -150,7 +177,10 @@ pub fn build_app(o: &Options) -> App {
         walker::spawn_player(&mut commands, &planet, off.0);
         ship::spawn_ship(&mut commands, &planet, DVec3::Y, off.0);
     });
-    app.add_systems(FixedUpdate, (scenario::run_script.run_if(resource_exists::<scenario::Script>), ship::ship_control, walker::walker_step).chain());
+    app.add_systems(
+        FixedUpdate,
+        (scenario::run_script.run_if(resource_exists::<scenario::Script>), warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, walker::walker_step).chain(),
+    );
     app.add_systems(Update, ring::update_ring);
     if let Some(path) = &o.record {
         app.insert_resource(record::Recorder::new(path.clone()));
@@ -160,14 +190,15 @@ pub fn build_app(o: &Options) -> App {
     if !o.headless {
         app.init_resource::<view::ViewState>().insert_resource(ClearColor(Color::BLACK));
         app.add_systems(Startup, (terrain::setup_terrain, view::setup_view));
+        app.add_systems(Startup, view::setup_warp_view.after(view::setup_view));
         app.add_systems(FixedLast, view::record_player_view);
         app.add_systems(
             Update,
-            (controls::read_input, view::add_ship_visuals, view::add_remote_walker_visuals, view::update_camera, terrain::update_terrain, view::update_hud).chain().after(ring::update_ring),
+            (controls::read_input, view::add_ship_visuals, view::add_remote_walker_visuals, view::update_camera, terrain::update_terrain, view::update_impostors, view::update_nav_markers, view::update_aim_marker, view::update_tunnel, view::update_hud).chain().after(ring::update_ring),
         );
     }
-    if let Some(cfg) = &o.net {
-        app.insert_resource(net_live::Net::new(cfg.clone()));
+    if let Some(net) = net {
+        app.insert_resource(net);
         app.add_systems(FixedUpdate, net_live::net_pre.before(ship::ship_control));
         app.add_systems(FixedLast, net_live::net_post);
     }
@@ -177,6 +208,7 @@ pub fn build_app(o: &Options) -> App {
     }
     if let Some(name) = &o.scenario {
         app.world_mut().resource_mut::<controls::Controls>().scripted = true;
+        app.init_resource::<warp::WarpTelemetry>();
         app.insert_resource(scenario::Script {
             name: name.clone(),
             steps: scenario::build(name, &o.out_dir, !o.headless),

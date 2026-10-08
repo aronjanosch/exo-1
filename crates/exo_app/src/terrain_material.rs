@@ -22,6 +22,8 @@ pub struct TerrainLookUniform {
     pub cap: Vec4,
     pub misc: Vec4,
     pub counts: Vec4,
+    pub water: Vec4,
+    pub shore: Vec4,
 }
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone, Default)]
@@ -37,6 +39,10 @@ impl MaterialExtension for TerrainExt {
     fn deferred_fragment_shader() -> ShaderRef {
         "shaders/terrain.wgsl".into()
     }
+}
+
+pub fn lin_pub(c: [f32; 3]) -> Vec4 {
+    lin(c)
 }
 
 pub fn srgb_to_linear(c: f32) -> f32 {
@@ -60,6 +66,8 @@ pub fn look_uniform(planet: &PlanetRes, centre_render: Vec3) -> TerrainLookUnifo
         cap: lin(m.cap_color).truncate().extend(m.cap_height_m),
         misc: Vec4::new(m.cap_fade_m, m.strata_jitter_m, m.detail_strength, m.detail_far_m),
         counts: Vec4::new(m.strata_colors.len() as f32, 0.0, 0.0, 0.0),
+        water: lin(planet.pgen.recipe.water.deep).truncate().extend(planet.pgen.recipe.water.depth_m),
+        shore: lin(planet.pgen.recipe.water.shore).truncate().extend(planet.pgen.recipe.water.shore_width_m),
     }
 }
 

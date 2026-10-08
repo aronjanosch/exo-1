@@ -30,6 +30,10 @@ struct TerrainLook {
     misc: vec4<f32>,
     // x number of strata colours
     counts: vec4<f32>,
+    // rgb ground tint deep under water, w depth (m) where it is full
+    water: vec4<f32>,
+    // rgb wet band along the shore, w its half width (m)
+    shore: vec4<f32>,
 }
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(100) var<uniform> look: TerrainLook;
@@ -110,6 +114,13 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // A broad patchiness at any distance (20 m), so flats are not one colour.
     let blotch = value_noise(rel * 0.045) - 0.5;
     col = col * (1.0 + (grain - 0.5) * look.misc.z * fade + blotch * look.misc.z * 0.6);
+
+    // Under water the ground turns into the deep colour with depth (shallow lighter, seen
+    // through the surface); a wet, lighter band along the shore.
+    let depth = -above_sea;
+    col = mix(col, look.water.rgb, smoothstep(0.0, max(look.water.w, 0.1), depth));
+    let shore_t = 1.0 - smoothstep(0.0, max(look.shore.w, 0.01), abs(above_sea - look.shore.w * 0.5));
+    col = mix(col, look.shore.rgb, shore_t * 0.6);
 
     pbr_input.material.base_color = vec4(col, 1.0);
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);

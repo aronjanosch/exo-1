@@ -53,7 +53,11 @@ pub fn camera_pose(planet: &PlanetRes, vp: &Viewpoint) -> Option<(DVec3, DQuat, 
         let from = DVec3::from_array(vp.from?).normalize();
         let pos = planet.centre + from * vp.height_m;
         let up = if from.y.abs() < 0.99 { DVec3::Y } else { DVec3::X };
-        let rot = walker_core::look_rot(-from, up);
+        // Pitched up from looking at the centre (towards the horizon on a descent).
+        let t = (up - from * up.dot(from)).normalize();
+        let p = vp.pitch_deg.to_radians();
+        let look = -from * p.cos() + t * p.sin();
+        let rot = walker_core::look_rot(look, from);
         return Some((pos, rot, from));
     }
     let spot = planet.pgen.spot(&vp.spot)?;

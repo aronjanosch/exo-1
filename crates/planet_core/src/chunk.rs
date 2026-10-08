@@ -17,6 +17,10 @@ pub struct ChunkOut {
     /// Height above the base radius per vertex (M*M, skirt ring included), metres.
     pub heights: Vec<f32>,
     pub biomes: Vec<u8>,
+    /// Sea surface over this chunk (#67), when any vertex is below sea level: M*M positions
+    /// relative to the centre on the sphere at sea level; the skirt ring sits on its edge
+    /// vertex (no area: a dipped skirt showed as a dark line through the transparent water).
+    pub water: Option<Vec<[f32; 3]>>,
     pub min_h: f32,
     pub max_h: f32,
 }
@@ -90,6 +94,17 @@ impl Planet {
             }
         }
         out.biomes = rows.clone();
+        if (out.min_h as f64) < self.sea {
+            let mut w = Vec::with_capacity(M * M);
+            for j in 0..M {
+                for i in 0..M {
+                    let ck = j.clamp(1, M - 2) * M + i.clamp(1, M - 2);
+                    let p = dirs[ck] * (r + self.sea) - centre;
+                    w.push([p.x as f32, p.y as f32, p.z as f32]);
+                }
+            }
+            out.water = Some(w);
+        }
 
         out
     }

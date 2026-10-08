@@ -43,6 +43,7 @@ pub struct Terrain {
     roots: Vec<usize>,
     max_depth: u32,
     pub material: Handle<crate::terrain_material::TerrainMaterial>,
+    pub water: Handle<crate::sky::WaterMaterial>,
     indices: Vec<u32>,
     pub visible: usize,
     pub pending: usize,
@@ -109,6 +110,25 @@ impl Terrain {
             .with_inserted_indices(Indices::U32(self.indices.clone()))
     }
 
+    fn water_mesh(&self, out: &ChunkOut) -> Option<Mesh> {
+        let w = out.water.as_ref()?;
+        let c = DVec3::from_array(out.center);
+        let normals: Vec<[f32; 3]> = w.iter().map(|p| (c + DVec3::new(p[0] as f64, p[1] as f64, p[2] as f64)).normalize().as_vec3().to_array()).collect();
+        Some(
+            Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
+                .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, w.clone())
+                .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+                .with_inserted_indices(Indices::U32(self.indices.clone())),
+        )
+    }
+
+    /// The chunk's sea surface as a child of the chunk entity (shown and dropped with it).
+    fn spawn_water(&self, commands: &mut Commands, meshes: &mut Assets<Mesh>, chunk: Entity, out: &ChunkOut) {
+        if let Some(m) = self.water_mesh(out) {
+            commands.spawn((Mesh3d(meshes.add(m)), MeshMaterial3d(self.water.clone()), Transform::default(), ChildOf(chunk)));
+        }
+    }
+
     /// Returns true when this node (or its children) is on screen.
     fn update_node(&mut self, commands: &mut Commands, planet: &PlanetRes, i: usize, cam: DVec3) {
         let n = &self.nodes[i];
@@ -158,9 +178,11 @@ pub fn setup_terrain(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut terrain_mats: ResMut<Assets<TerrainMaterial>>,
+    mut waters: ResMut<Assets<crate::sky::WaterMaterial>>,
 ) {
     let material = terrain_mats.add(crate::terrain_material::new_material(&planet, &origin));
-    let t = build_terrain(&mut commands, &planet, &mut meshes, &mut materials, material);
+    let water = waters.add(crate::sky::new_water(&planet, &origin));
+    let t = build_terrain(&mut commands, &planet, &mut meshes, &mut materials, material, water);
     commands.insert_resource(t);
 }
 
@@ -171,6 +193,7 @@ pub fn build_terrain(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     material: Handle<TerrainMaterial>,
+    water: Handle<crate::sky::WaterMaterial>,
 ) -> Terrain {
     let face_edge = planet.radius * std::f64::consts::PI * 0.5;
     let mut indices = Vec::with_capacity((M - 1) * (M - 1) * 6);
@@ -187,7 +210,7 @@ pub fn build_terrain(
         for_planet: planet.id,
         nodes: Vec::new(), free: Vec::new(), roots: Vec::new(),
         max_depth: ((face_edge / 37.0).log2().round() as u32).max(1),
-        material, indices,
+        material, water, indices,
         visible: 0, pending: 0,
     };
     for face in 0..6 {
@@ -199,25 +222,10 @@ pub fn build_terrain(
         let e = commands
             .spawn((Mesh3d(mesh), MeshMaterial3d(t.material.clone()), Transform::default(), WorldPos(planet.centre + DVec3::from_array(out.center)), PlanetScene))
             .id();
+        t.spawn_water(commands, meshes, e, &out);
         t.nodes[i].entity = Some(e);
         t.roots.push(i);
     }
-    // Water sphere at sea level (no collision, walkable under it, as in spike 8).
-    let r = (planet.radius + planet.sea) as f32;
-    commands.spawn((
-        Mesh3d(meshes.add(Sphere::new(r).mesh().uv(128, 64))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgba(0.16, 0.38, 0.52, 0.82),
-            alpha_mode: AlphaMode::Blend,
-            cull_mode: None,
-            double_sided: true,
-            perceptual_roughness: 0.35,
-            ..default()
-        })),
-        Transform::default(),
-        WorldPos(planet.centre),
-        PlanetScene,
-    ));
     // Site markers: 24 m orange pillars.
     let pillar = meshes.add(Cylinder::new(0.9, 24.0));
     let orange = materials.add(Color::srgb(1.0, 0.45, 0.1));
@@ -244,6 +252,7 @@ pub fn update_terrain(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut terrain_mats: ResMut<Assets<TerrainMaterial>>,
+    mut waters: ResMut<Assets<crate::sky::WaterMaterial>>,
     scene: Query<Entity, With<PlanetScene>>,
 ) {
     if terrain.for_planet != planet.id {
@@ -255,7 +264,11 @@ pub fn update_terrain(
         if let Some(mut m) = terrain_mats.get_mut(&material) {
             *m = crate::terrain_material::new_material(&planet, &origin);
         }
-        *terrain = build_terrain(&mut commands, &planet, &mut meshes, &mut materials, material);
+        let water = terrain.water.clone();
+        if let Some(mut m) = waters.get_mut(&water) {
+            *m = crate::sky::new_water(&planet, &origin);
+        }
+        *terrain = build_terrain(&mut commands, &planet, &mut meshes, &mut materials, material, water);
     }
     let t = terrain.as_mut();
     let mut uploads = 0;
@@ -279,6 +292,7 @@ pub fn update_terrain(
                 WorldPos(planet.centre + DVec3::from_array(out.center)),
             ))
             .id();
+        t.spawn_water(&mut commands, &mut meshes, e, &out);
         t.nodes[i].entity = Some(e);
         uploads += 1;
     }

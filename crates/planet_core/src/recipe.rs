@@ -157,6 +157,44 @@ pub struct TerrainLook {
     pub detail_far_m: f32,
 }
 
+/// Sky and haze of a planet (#67), for Bevy's `Atmosphere`: scattering per kilometre (our
+/// atmosphere is 1.2 km, so about 80 times Earth's per-metre values for a similar look), the
+/// share of the atmosphere height each term falls off over, and a distance haze.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Sky {
+    /// Rayleigh scattering per km (r, g, b): the colour of the sky.
+    pub rayleigh_per_km: [f32; 3],
+    pub rayleigh_scale: f32,
+    pub mie_per_km: f32,
+    pub mie_absorption_per_km: f32,
+    pub mie_asymmetry: f32,
+    pub mie_scale: f32,
+    /// Absorption per km (r, g, b) of a layer in the middle of the atmosphere (Earth: ozone).
+    pub absorption_per_km: [f32; 3],
+    pub ground_albedo: f32,
+    pub haze_color: [f32; 3],
+    /// Exponential distance fog density per metre at the ground (fades out with height).
+    pub haze_density: f32,
+}
+
+/// Water of a planet (#67): surface colour and opacity, the ground tint below it by depth
+/// (shallow lighter), a wet band along the shore, the ripple of the surface.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Water {
+    pub surface: [f32; 3],
+    pub alpha: f32,
+    pub deep: [f32; 3],
+    /// Depth (m) at which the ground below has turned into `deep`.
+    pub depth_m: f32,
+    pub shore: [f32; 3],
+    pub shore_width_m: f32,
+    /// Ripple pattern size (m) and speed (m/s).
+    pub ripple_m: f32,
+    pub ripple_speed: f32,
+}
+
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct BiomeRow {
@@ -325,6 +363,8 @@ pub struct Recipe {
     pub stamps: Vec<Stamp>,
     pub sea_level: SeaLevel,
     pub material: TerrainLook,
+    pub sky: Sky,
+    pub water: Water,
     pub biomes: Vec<BiomeRow>,
     pub scatter: ScatterSpec,
     pub sites: SiteRule,

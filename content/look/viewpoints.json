@@ -6,6 +6,8 @@
   "viewpoints": [
     { "id": "orbit-a", "spot": "orbit", "height_m": 16000.0, "from": [0.35, 0.55, 0.75] },
     { "id": "orbit-b", "spot": "orbit", "height_m": 16000.0, "from": [-0.6, -0.2, -0.75] },
+    { "id": "descent-high", "spot": "orbit", "height_m": 6400.0, "pitch_deg": 60.0, "from": [0.35, 0.55, 0.75] },
+    { "id": "descent-low", "spot": "orbit", "height_m": 5600.0, "pitch_deg": 75.0, "from": [0.35, 0.55, 0.75] },
     { "id": "basin-hill", "spot": "basin", "height_m": 200.0, "back_m": 350.0, "pitch_deg": -18.0 },
     { "id": "basin-ground", "spot": "basin", "height_m": 1.7 },
     { "id": "rim-hill", "spot": "rim", "height_m": 200.0, "back_m": 350.0, "pitch_deg": -18.0 },

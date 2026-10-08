@@ -706,11 +706,12 @@ pub fn update_camera(
     view.last_rot = pose.rot;
     view.last_pos = pose.pos;
     origin.view = pose.pos;
+    // The sky is the planet's atmosphere (sky.rs); the clear colour is space. Haze per planet (#67).
     let density = planet.density_at(pose.pos) as f32;
-    let sky = Color::srgb(0.02, 0.02, 0.05).mix(&Color::srgb(0.45, 0.62, 0.85), density);
-    clear.0 = sky;
-    fog.color = sky;
-    fog.falloff = FogFalloff::Exponential { density: 0.00025 * density };
+    let s = &planet.pgen.recipe.sky;
+    clear.0 = Color::srgb(0.02, 0.02, 0.05);
+    fog.color = Color::srgb(s.haze_color[0], s.haze_color[1], s.haze_color[2]);
+    fog.falloff = FogFalloff::Exponential { density: s.haze_density * density };
     ambient.brightness = 80.0 + 320.0 * density;
 }
 

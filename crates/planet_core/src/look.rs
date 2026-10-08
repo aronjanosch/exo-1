@@ -7,7 +7,8 @@ use serde::Deserialize;
 /// A fixed viewpoint (`content/look/viewpoints.json`). `spot` names a place from
 /// `Planet::spot`, or `orbit`: then the camera is `height_m` from the centre along `from`,
 /// looking at the centre. On the ground the camera stands `back_m` behind the spot (against its
-/// facing), `height_m` above the ground there, turned by `turn_deg` and pitched by `pitch_deg`.
+/// facing), `height_m` above the ground there, turned by `turn_deg` and pitched by `pitch_deg`
+/// (in orbit `pitch_deg` turns the view up from the centre towards the horizon).
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Viewpoint {

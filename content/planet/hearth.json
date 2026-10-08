@@ -31,6 +31,16 @@
     "cap_color": [0.93, 0.95, 0.98], "cap_height_m": 70.0, "cap_fade_m": 25.0,
     "detail_strength": 0.22, "detail_far_m": 60.0
   },
+  "sky": {
+    "rayleigh_per_km": [0.11, 0.26, 0.64], "rayleigh_scale": 0.35,
+    "mie_per_km": 0.04, "mie_absorption_per_km": 0.004, "mie_asymmetry": 0.8, "mie_scale": 0.12,
+    "absorption_per_km": [0.05, 0.15, 0.01], "ground_albedo": 0.3,
+    "haze_color": [0.72, 0.80, 0.92], "haze_density": 0.00012
+  },
+  "water": {
+    "surface": [0.16, 0.42, 0.55], "alpha": 0.72, "deep": [0.05, 0.16, 0.30], "depth_m": 14.0,
+    "shore": [0.86, 0.90, 0.88], "shore_width_m": 0.5, "ripple_m": 3.0, "ripple_speed": 0.4
+  },
   "biomes": [
     { "id": 3, "color": [0.90, 0.92, 0.95], "palette": { "ground": [0.88, 0.90, 0.92], "rock": [0.55, 0.55, 0.60], "strata": 0.3, "cap": 1.0 }, "scatter": { "flora": 0.15, "tuft": 0.0 }, "tints": { "ground": [0.85, 0.88, 0.85], "foliage": [0.8, 0.85, 0.8], "rock": [0.85, 0.85, 0.9] },
       "when": [ { "field": "height_above_sea", "min": 60.0 }, { "field": "temperature", "max": 0.5 } ] },

@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use flight_core::{Field, PlanetEnv};
 use planet_core::{Planet, Recipe, V3};
 use std::sync::Arc;
+use warp_core::{PlanetDef, PlanetId};
 
 pub const RECIPE: &str = include_str!("../../../content/planet/recipe.json");
 
@@ -25,30 +26,17 @@ pub struct PlanetRes {
     pub relief: f64,
     pub field: Field,
     pub bake_ms: f64,
-    /// Index in the system registry (`warp_core::System::planets`).
-    pub id: usize,
+    /// The planet in the system registry.
+    pub id: PlanetId,
 }
 
 impl PlanetRes {
-    pub fn load(radius: f64, centre: DVec3) -> PlanetRes {
-        Self::build(radius, centre, None)
-    }
-
-    /// A planet of the registry: its seed, radius and centre.
-    pub fn load_def(id: usize, def: &warp_core::PlanetDef) -> PlanetRes {
-        let mut p = Self::build(def.radius, def.centre(), Some(def.seed));
-        p.id = id;
-        p
-    }
-
-    fn build(radius: f64, centre: DVec3, seed: Option<i32>) -> PlanetRes {
+    /// A planet of the registry: the recipe with its seed and radius, at its centre, with its
+    /// atmosphere height.
+    pub fn load(id: PlanetId, def: &PlanetDef) -> PlanetRes {
         let mut recipe = Recipe::from_json(RECIPE).expect("recipe");
-        if radius > 0.0 {
-            recipe.radius = radius;
-        }
-        if let Some(seed) = seed {
-            recipe.seed = seed;
-        }
+        recipe.radius = def.radius;
+        recipe.seed = def.seed;
         let mut p = Planet::new(recipe);
         let st = p.bake(0);
         let (lo, hi) = p.height_range;
@@ -57,10 +45,10 @@ impl PlanetRes {
             sea: p.sea,
             relief: lo.abs().max(hi.abs()),
             pgen: Arc::new(p),
-            centre,
-            field: Field::default(),
+            centre: def.centre(),
+            field: Field { atmosphere_height: def.atmosphere_height, ..Field::default() },
             bake_ms: st.bake_ms,
-            id: 0,
+            id,
         }
     }
     /// Distance from the centre to the ground along a direction.

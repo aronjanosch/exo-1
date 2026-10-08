@@ -11,8 +11,7 @@ use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 use net_core::buffer::{Buffer, Mode};
 use net_core::clock::ClockSync;
-use net_core::snapshot::{FrameKind, Snapshot};
-use net_core::to_world;
+use net_core::snapshot::{FrameKind, Limits, Snapshot};
 use net_core::wire::{self, Packet, UDP_IP_OVERHEAD};
 use std::collections::HashMap;
 use std::net::{SocketAddr, UdpSocket};
@@ -105,9 +104,16 @@ pub struct Net {
     hello_accum: f64,
     pub st: NetStats,
     /// Planet centres of the system: a snapshot is relative to its sender's planet, the buffers
-    /// hold everything relative to planet 0 (at the origin) so a sender changing planet in a
-    /// warp is interpolated straight through (spike 11).
-    pub centres: Vec<bevy::math::DVec3>,
+    /// hold everything relative to planet 0 so a sender changing planet in a warp is
+    /// interpolated straight through (spike 11).
+    centres: Vec<DVec3>,
+    /// Planet ids, ship range and speed this system allows; anything else is dropped on receipt.
+    limits: Limits,
+}
+
+/// What a receiver of this system admits: its planet ids, how far out and how fast a ship can be.
+pub fn limits(sys: &warp_core::System) -> Limits {
+    Limits { planets: sys.planets.len() as u32, ship_position: sys.max_ship_offset(), ship_speed: sys.max_ship_speed() }
 }
 
 /// Marker of a remote player's walker (capsule in the view).
@@ -117,7 +123,7 @@ pub struct RemoteWalker {
 }
 
 impl Net {
-    pub fn new(cfg: NetConfig) -> Net {
+    pub fn new(cfg: NetConfig, sys: &warp_core::System) -> Net {
         let sock = if cfg.host {
             UdpSocket::bind(format!("{}:{}", cfg.bind, cfg.port)).unwrap_or_else(|e| panic!("bind {}:{}: {e}", cfg.bind, cfg.port))
         } else {
@@ -168,7 +174,8 @@ impl Net {
             ping_accum: 0.0,
             hello_accum: 1.0,
             st: NetStats::default(),
-            centres: net_core::PLANET_CENTRES.to_vec(),
+            centres: sys.planets.iter().map(|p| p.centre()).collect(),
+            limits: limits(sys),
         }
     }
 
@@ -260,9 +267,12 @@ impl Net {
         if s.owner == self.cfg.slot {
             return;
         }
-        self.seen.insert(s.owner, arrival);
         let mut s = s;
-        s.to_frame_of(&self.centres, 0);
+        if !self.limits.admits(&s) || !s.to_frame_of(&self.centres, 0) {
+            self.st.invalid += 1;
+            return;
+        }
+        self.seen.insert(s.owner, arrival);
         self.hist.entry(s.owner).or_default().push(s);
     }
 
@@ -368,7 +378,7 @@ pub fn net_pre(
         if sample.mode == Mode::Hold {
             net.st.holds += 1;
         }
-        let pos = to_world(s.planet, s.p);
+        let pos = net.centres[0] + s.p;
         let ahead = net.hist[&owner].sample(target + TICK_S).map(|x| x.s.q).unwrap_or(s.q);
         let spin = {
             let d = ahead * s.q.inverse();
@@ -396,12 +406,12 @@ pub fn net_pre(
     for (&owner, sample) in &samples {
         let s = &sample.s;
         let (pos, rot) = match s.frame {
-            FrameKind::Planet => (to_world(s.planet, s.wp), s.wq),
+            FrameKind::Planet => (net.centres[0] + s.wp, s.wq),
             FrameKind::Ship => {
                 let parent = if s.frame_id == net.cfg.slot {
                     own.single().ok().map(|(p, r)| (p.0, r.0))
                 } else {
-                    samples.get(&s.frame_id).map(|x| (to_world(x.s.planet, x.s.p), x.s.q))
+                    samples.get(&s.frame_id).map(|x| (net.centres[0] + x.s.p, x.s.q))
                 };
                 match parent {
                     Some((pp, pr)) => (pp + pr * s.wp, pr * s.wq),
@@ -441,7 +451,7 @@ pub fn net_post(
             net.hello_accum += TICK_S;
             if net.hello_accum >= 0.25 {
                 net.hello_accum = 0.0;
-                let hello = Packet::Hello { slot: net.cfg.slot as u8, planet: planet.id as u8 }.encode();
+                let hello = Packet::Hello { slot: net.cfg.slot as u8, planet: planet.id.0 }.encode();
                 net.send(&hello, host);
             }
         } else {
@@ -459,7 +469,7 @@ pub fn net_post(
         net.seq += 1;
         // The cabin the walker is in: own ship, or the owner of the remote ship it boarded.
         let frame_owner = pl.ship.and_then(|e| remote_ships.get(e).ok()).map(|r| r.owner).unwrap_or(net.cfg.slot);
-        let mut s = crate::net::build_snapshot(net.cfg.slot, frame_owner, planet.id as u32, net.clock.server_now(now), net.seq, &planet, (p, r, v), pl);
+        let mut s = crate::net::build_snapshot(net.cfg.slot, frame_owner, planet.id.wire(), net.clock.server_now(now), net.seq, &planet, (p, r, v), pl);
         s.lag = ship.lag.level;
         let bytes = wire::encode_snapshot(&s);
         let to: Vec<SocketAddr> = if net.cfg.host { net.peers.values().map(|p| p.addr).collect() } else { vec![net.host_addr.unwrap()] };

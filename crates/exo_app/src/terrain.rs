@@ -37,7 +37,7 @@ pub struct PlanetScene;
 #[derive(Resource)]
 pub struct Terrain {
     /// Registry id of the planet these chunks belong to.
-    pub for_planet: usize,
+    pub for_planet: warp_core::PlanetId,
     nodes: Vec<Node>,
     free: Vec<usize>,
     roots: Vec<usize>,

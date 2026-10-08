@@ -3,6 +3,10 @@
 //! planet's frame zone. Real movement through the shared f64 world, no loading screen.
 //!
 //! J starts a warp to the selected planet (N selects) and cancels while spooling or calibrating.
+//! Holding J during the flight drops out early (emergency exit).
+//!
+//! Four fixed-step systems in a chain: `warp_input` (keys), `warp_drive` (state machine and the
+//! ship on rails), `planet_swap` (simulation's planet), `warp_telemetry` (scenario numbers only).
 use crate::controls::Controls;
 use crate::env::PlanetRes;
 use crate::ring::Ring;
@@ -11,7 +15,7 @@ use avian3d::prelude::*;
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 use bevy::tasks::{block_on, AsyncComputeTaskPool, Task};
-use warp_core::{Abort, Drive, Event, Obstacle, Phase, ShipView, System};
+use warp_core::{Abort, Drive, Event, Obstacle, Phase, PlanetDef, PlanetId, ShipView, System};
 
 pub const SYSTEM: &str = include_str!("../../../content/system/system.json");
 
@@ -26,11 +30,24 @@ pub struct SystemRes(pub System);
 #[derive(Resource)]
 pub struct WarpDrive {
     pub drive: Drive,
-    /// Planet selected as the target (N).
-    pub selected: usize,
+    /// Planet selected as the target (N); the jump goes to `System::effective_target` of it.
+    pub selected: PlanetId,
     /// Why the last start was refused or the last warp aborted.
     pub last_abort: Option<Abort>,
-    /// Every event with the simulated time it happened (scenario reports and HUD).
+    /// Events of this tick (input and drive), for the systems after `warp_drive`.
+    pub events: Vec<Event>,
+}
+
+impl WarpDrive {
+    pub fn new(sys: &System) -> WarpDrive {
+        WarpDrive { drive: Drive::new(sys.drive.clone()), selected: PlanetId(1.min(sys.planets.len() as u8 - 1)), last_abort: None, events: Vec::new() }
+    }
+}
+
+/// Numbers for the scenario reports (only present in scripted runs), and its test hook.
+#[derive(Resource, Default)]
+pub struct WarpTelemetry {
+    /// Every event with the simulated time it happened.
     pub log: Vec<(f64, Event)>,
     pub clock: f64,
     pub warps: u32,
@@ -39,65 +56,51 @@ pub struct WarpDrive {
     /// Main-thread time of the last planet swap (ms) and the process memory around it (MB).
     pub swap_ms: f64,
     pub rss_mb: (f64, f64),
-    /// Obstacles added by hand (scenarios), besides remote ships.
+    /// Distance of the ship from the drive's end point (exit or drop point) on the tick it got
+    /// there, after the ship was placed (m).
+    pub end_error: Option<f64>,
+    /// Obstacles added by hand, besides remote ships.
     pub extra_obstacles: Vec<Obstacle>,
     last_pos: Option<DVec3>,
-}
-
-impl WarpDrive {
-    pub fn new(sys: &System) -> WarpDrive {
-        WarpDrive {
-            drive: Drive::new(sys.drive.clone()),
-            selected: 1,
-            last_abort: None,
-            log: Vec::new(),
-            clock: 0.0,
-            warps: 0,
-            max_tick_move: 0.0,
-            swap_ms: 0.0,
-            rss_mb: (0.0, 0.0),
-            extra_obstacles: Vec::new(),
-            last_pos: None,
-        }
-    }
 }
 
 /// The target planet being generated in the background while the ship flies.
 #[derive(Resource, Default)]
 pub struct PendingPlanet {
-    pub id: usize,
-    task: Option<Task<(PlanetRes, f64)>>,
+    task: Option<(PlanetId, Task<(PlanetRes, f64)>)>,
     /// Wall-clock time the last background generation took (ms).
     pub gen_ms: Option<f64>,
 }
 
 impl PendingPlanet {
-    pub fn start(&mut self, id: usize, def: warp_core::PlanetDef) {
-        if self.task.is_some() && self.id == id {
+    pub fn start(&mut self, id: PlanetId, def: PlanetDef) {
+        if self.task.as_ref().is_some_and(|(t, _)| *t == id) {
             return;
         }
-        self.id = id;
         self.gen_ms = None;
-        self.task = Some(AsyncComputeTaskPool::get().spawn(async move {
-            let t0 = std::time::Instant::now();
-            let p = PlanetRes::load_def(id, &def);
-            (p, t0.elapsed().as_secs_f64() * 1000.0)
-        }));
+        self.task = Some((
+            id,
+            AsyncComputeTaskPool::get().spawn(async move {
+                let t0 = std::time::Instant::now();
+                let p = PlanetRes::load(id, &def);
+                (p, t0.elapsed().as_secs_f64() * 1000.0)
+            }),
+        ));
     }
 
     pub fn ready(&self) -> bool {
-        self.task.as_ref().is_some_and(|t| t.is_finished())
+        self.task.as_ref().is_some_and(|(_, t)| t.is_finished())
     }
 
     /// The finished planet, or generates it here and now (a teleport has no flight to hide it in).
-    fn take(&mut self, id: usize, sys: &System) -> PlanetRes {
+    fn take(&mut self, id: PlanetId, sys: &System) -> PlanetRes {
         match self.task.take() {
-            Some(t) if self.id == id => {
-                let (p, ms) = block_on(t);
+            Some((t, task)) if t == id => {
+                let (p, ms) = block_on(task);
                 self.gen_ms = Some(ms);
                 p
             }
-            _ => PlanetRes::load_def(id, &sys.planets[id]),
+            _ => PlanetRes::load(id, sys.planet(id)),
         }
     }
 }
@@ -132,77 +135,93 @@ fn course_quat(from: DQuat, dir: DVec3, max_angle: f64) -> DQuat {
     DQuat::IDENTITY.slerp(turn, (max_angle / angle).min(1.0)) * from
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn warp_step(
-    mut commands: Commands,
+/// Other ships, and the scenario's extra obstacles.
+fn obstacles(remotes: &Query<&Position, (With<RemoteShip>, Without<Ship>)>, tel: Option<&WarpTelemetry>) -> Vec<Obstacle> {
+    let mut o: Vec<Obstacle> = remotes.iter().map(|p| Obstacle { centre: p.0, radius: SHIP_OBSTACLE_RADIUS }).collect();
+    if let Some(t) = tel {
+        o.extend(t.extra_obstacles.iter().copied());
+    }
+    o
+}
+
+/// N selects the target, J starts or cancels, J held during the flight drops out.
+pub fn warp_input(
     time: Res<Time>,
     sys: Res<SystemRes>,
-    planet: Res<PlanetRes>,
     mut wd: ResMut<WarpDrive>,
-    mut pending: ResMut<PendingPlanet>,
     mut controls: ResMut<Controls>,
-    mut ring: ResMut<Ring>,
-    mut ships: Query<(Entity, &mut Ship, &mut Position, &mut Rotation, &mut LinearVelocity, &mut AngularVelocity)>,
+    ships: Query<(&Ship, &Position, &Rotation, &LinearVelocity)>,
     remotes: Query<&Position, (With<RemoteShip>, Without<Ship>)>,
+    tel: Option<Res<WarpTelemetry>>,
 ) {
-    let dt = time.delta_secs_f64();
     let sys = &sys.0;
     let wd = wd.as_mut();
-    wd.clock += dt;
-    let Ok((e, mut ship, mut pos, mut rot, mut lv, mut av)) = ships.single_mut() else { return };
-
-    let n = sys.planets.len();
+    wd.events.clear();
+    let Ok((ship, pos, rot, lv)) = ships.single() else { return };
     if controls.take_tap(KeyCode::KeyN) {
-        wd.selected = (wd.selected + 1) % n;
+        wd.selected = PlanetId(((wd.selected.index() + 1) % sys.planets.len()) as u8);
     }
-    let mut obstacles: Vec<Obstacle> = remotes.iter().map(|p| Obstacle { centre: p.0, radius: SHIP_OBSTACLE_RADIUS }).collect();
-    obstacles.extend(wd.extra_obstacles.iter().copied());
-    let view = ShipView { pos: pos.0, forward: rot.0 * DVec3::NEG_Z, speed: lv.0.length() };
-
-    let mut events = Vec::new();
+    let obstacles = obstacles(&remotes, tel.as_deref());
     let j = controls.take_tap(KeyCode::KeyJ);
     if j && !ship.piloted {
         println!("warp: J ignored, nobody is piloting");
     }
     if j && ship.piloted {
         if wd.drive.phase == Phase::Idle {
-            let target = if wd.selected == sys.nearest(pos.0) { (wd.selected + 1) % n } else { wd.selected };
-            match wd.drive.begin(target, &view, sys, &obstacles) {
+            let view = ShipView { pos: pos.0, forward: rot.0 * DVec3::NEG_Z, speed: lv.0.length() };
+            match wd.drive.begin(sys.effective_target(wd.selected, pos.0), &view, sys, &obstacles) {
                 Ok(()) => {
                     wd.last_abort = None;
-                    events.push(Event::Phase(Phase::Spooling));
+                    wd.events.push(Event::Phase(Phase::Spooling));
                 }
-                Err(why) => {
-                    wd.last_abort = Some(why);
-                    events.push(Event::Aborted(why));
-                }
+                Err(why) => wd.events.push(Event::Aborted(why)),
             }
         } else if let Some(ev) = wd.drive.cancel() {
-            events.push(ev);
+            wd.events.push(ev);
         }
     }
-    events.extend(wd.drive.step(dt, &view, sys, &obstacles));
+    let held = ship.piloted && controls.pressed(KeyCode::KeyJ);
+    if let Some(ev) = wd.drive.hold_exit(held, time.delta_secs_f64(), sys, &obstacles) {
+        wd.events.push(ev);
+    }
+}
 
-    for ev in &events {
-        let t = wd.clock;
-        wd.log.push((t, *ev));
+/// One tick of the drive; on rails the ship is put at the path's pose.
+#[allow(clippy::too_many_arguments)]
+pub fn warp_drive(
+    mut commands: Commands,
+    time: Res<Time>,
+    sys: Res<SystemRes>,
+    mut wd: ResMut<WarpDrive>,
+    mut pending: ResMut<PendingPlanet>,
+    mut ring: ResMut<Ring>,
+    mut ships: Query<(Entity, &mut Ship, &mut Position, &mut Rotation, &mut LinearVelocity, &mut AngularVelocity)>,
+    remotes: Query<&Position, (With<RemoteShip>, Without<Ship>)>,
+    tel: Option<Res<WarpTelemetry>>,
+) {
+    let dt = time.delta_secs_f64();
+    let sys = &sys.0;
+    let wd = wd.as_mut();
+    let Ok((e, mut ship, mut pos, mut rot, mut lv, mut av)) = ships.single_mut() else { return };
+    let view = ShipView { pos: pos.0, forward: rot.0 * DVec3::NEG_Z, speed: lv.0.length() };
+    let obstacles = obstacles(&remotes, tel.as_deref());
+    let stepped = wd.drive.step(dt, &view, sys, &obstacles);
+    wd.events.extend(stepped);
+
+    for ev in &wd.events {
         match ev {
             Event::Aborted(why) => wd.last_abort = Some(*why),
             // Start generating the target while the ship still ramps up.
             Event::Phase(Phase::RampUp) => {
                 if let Some(t) = wd.drive.target {
-                    pending.start(t, sys.planets[t].clone());
+                    pending.start(t, sys.planet(t).clone());
                     commands.entity(e).remove::<SweptCcd>();
                 }
             }
             Event::Phase(Phase::PostRampDown) => {
                 commands.entity(e).insert(SweptCcd::default());
             }
-            Event::Arrived => wd.warps += 1,
             _ => {}
-        }
-        if matches!(ev, Event::Phase(_) | Event::Aborted(_) | Event::Arrived) {
-            println!("warp {:7.2} s: {ev:?}", t);
         }
     }
 
@@ -214,7 +233,8 @@ pub fn warp_step(
             rot.0 = course_quat(rot.0, v.normalize_or_zero(), RAILS_TURN_RATE * dt);
             lv.0 = DVec3::ZERO;
         } else {
-            // Hand-over at the exit point: the pilot gets the exit velocity back.
+            // Hand-over at the end point: the pilot gets the exit velocity back, nose along it
+            // (at an arrival: at the target's centre).
             rot.0 = course_quat(rot.0, v.normalize_or_zero(), std::f64::consts::PI);
             lv.0 = v;
         }
@@ -226,24 +246,56 @@ pub fn warp_step(
         // The anchors of the collision ring would reach for patches along the way.
         ring.anchors.clear();
     }
-    if let Some(last) = wd.last_pos {
-        wd.max_tick_move = wd.max_tick_move.max(pos.0.distance(last));
-    }
-    wd.last_pos = Some(pos.0);
+}
 
-    // The ship comes into another planet's frame zone: that planet becomes the simulation's.
-    if let Some(f) = sys.frame_of(pos.0)
-        && f != planet.id
-    {
-        let t0 = std::time::Instant::now();
-        let before = rss_mb();
-        let new = pending.take(f, sys);
-        swap_planet(&mut commands, &mut ring, new);
-        wd.swap_ms = t0.elapsed().as_secs_f64() * 1000.0;
-        wd.rss_mb = (before, rss_mb());
+/// The ship comes into another planet's frame zone: that planet becomes the simulation's.
+#[allow(clippy::too_many_arguments)]
+pub fn planet_swap(
+    mut commands: Commands,
+    sys: Res<SystemRes>,
+    planet: Res<PlanetRes>,
+    mut pending: ResMut<PendingPlanet>,
+    mut ring: ResMut<Ring>,
+    ships: Query<&Position, With<Ship>>,
+    tel: Option<ResMut<WarpTelemetry>>,
+) {
+    let sys = &sys.0;
+    let Ok(pos) = ships.single() else { return };
+    let Some(f) = sys.frame_of(pos.0).filter(|f| *f != planet.id) else { return };
+    let t0 = std::time::Instant::now();
+    let before = tel.is_some().then(rss_mb);
+    let new = pending.take(f, sys);
+    swap_planet(&mut commands, &mut ring, new);
+    let ms = t0.elapsed().as_secs_f64() * 1000.0;
+    if let (Some(mut tel), Some(before)) = (tel, before) {
+        tel.swap_ms = ms;
+        tel.rss_mb = (before, rss_mb());
         println!(
-            "warp {:7.2} s: planet {} -> {} ({}), swap {:.2} ms on the main thread, memory {:.0} MB before, {:.0} MB after",
-            wd.clock, planet.id, f, sys.planets[f].name, wd.swap_ms, wd.rss_mb.0, wd.rss_mb.1
+            "warp {:7.2} s: planet {} -> {f} ({}), swap {ms:.2} ms on the main thread, memory {before:.0} MB before, {:.0} MB after",
+            tel.clock,
+            planet.id,
+            sys.planet(f).name,
+            tel.rss_mb.1
         );
     }
+}
+
+/// Scenario numbers: event log with times, warps, largest step per tick, end point error.
+pub fn warp_telemetry(time: Res<Time>, wd: Res<WarpDrive>, mut tel: ResMut<WarpTelemetry>, ships: Query<&Position, With<Ship>>) {
+    let tel = tel.as_mut();
+    tel.clock += time.delta_secs_f64();
+    let Ok(pos) = ships.single() else { return };
+    for ev in &wd.events {
+        tel.log.push((tel.clock, *ev));
+        println!("warp {:7.2} s: {ev:?}", tel.clock);
+        if matches!(ev, Event::Arrived | Event::DroppedOut) {
+            tel.warps += (*ev == Event::Arrived) as u32;
+            let end = if *ev == Event::Arrived { wd.drive.exit() } else { wd.drive.drop_point() };
+            tel.end_error = end.map(|p| p.distance(pos.0));
+        }
+    }
+    if let Some(last) = tel.last_pos {
+        tel.max_tick_move = tel.max_tick_move.max(pos.0.distance(last));
+    }
+    tel.last_pos = Some(pos.0);
 }

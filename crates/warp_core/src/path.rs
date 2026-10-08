@@ -1,7 +1,8 @@
-//! The warp path: a cubic Hermite spline from the ship to the exit point. It leaves and arrives
-//! along the planet's tangent when the straight line would run into the planet, and the
-//! obstruction check walks the same curve, so a path can go around a body the line would hit.
-use crate::system::{Obstacle, PlanetDef};
+//! The warp path: a cubic Hermite spline from the ship to the exit point. It leaves along the
+//! planet's tangent when the straight line would run into the planet, and comes in radially at
+//! the end (the ship arrives facing the target's centre). The obstruction check walks the same
+//! curve, so a path can go around a body the line would hit.
+use crate::system::{Obstacle, PlanetDef, PlanetId};
 use glam::DVec3;
 
 const TABLE: usize = 512;
@@ -36,15 +37,14 @@ fn tangent_dir(dir: DVec3, up: DVec3) -> DVec3 {
 }
 
 impl Path {
-    /// `from_up` is the radial direction at the start (planet it leaves), `to_up` at the exit
-    /// point (planet it arrives at).
-    pub fn new(p0: DVec3, from_up: DVec3, p1: DVec3, to_up: DVec3, tension: f64) -> Path {
+    /// `from_up` is the radial direction at the start when the ship is at a planet (in its frame
+    /// zone), None in open space. `end_dir` is the direction of travel at the exit point.
+    pub fn new(p0: DVec3, from_up: Option<DVec3>, p1: DVec3, end_dir: DVec3, tension: f64) -> Path {
         let chord = p1 - p0;
         let len = chord.length();
         let dir = if len > 0.0 { chord / len } else { DVec3::NEG_Z };
-        let m0 = tangent_dir(dir, from_up) * len * tension;
-        // Arriving: into the planet means along its tangent instead.
-        let m1 = tangent_dir(dir, to_up) * len * tension;
+        let m0 = from_up.map_or(dir, |up| tangent_dir(dir, up)) * len * tension;
+        let m1 = end_dir.normalize_or(dir) * len * tension;
         let mut p = Path { p0, p1, m0, m1, arc: vec![0.0; TABLE + 1] };
         let mut last = p0;
         for i in 1..=TABLE {
@@ -89,20 +89,21 @@ impl Path {
         self.p1
     }
 
-    /// First thing the curve runs into: a planet or an obstacle, by index.
-    /// Sweeps segments between samples, never single points (at 1000 km/s a tick is 17 km).
-    pub fn blocked(&self, planets: &[PlanetDef], margin: f64, obstacles: &[Obstacle]) -> Option<Blocker> {
+    /// First thing the curve runs into: a planet (its obstruction radius plus margin) or an
+    /// obstacle, by index. Sweeps segments between samples, never single points (at 1000 km/s a
+    /// tick is 17 km).
+    pub fn blocked(&self, planets: &[PlanetDef], obstacles: &[Obstacle]) -> Option<Blocker> {
         let n = TABLE * 2;
         let mut prev = self.at_u(0.0);
         for i in 1..=n {
             let q = self.at_u(i as f64 / n as f64);
             for (k, pl) in planets.iter().enumerate() {
-                if segment_hits_sphere(prev, q, pl.centre(), pl.obstruction_radius + margin) {
-                    return Some(Blocker::Planet(k));
+                if segment_hits_sphere(prev, q, pl.centre(), pl.keep_out()) {
+                    return Some(Blocker::Planet(PlanetId(k as u8)));
                 }
             }
             for (k, o) in obstacles.iter().enumerate() {
-                if segment_hits_sphere(prev, q, o.centre, o.radius + margin) {
+                if segment_hits_sphere(prev, q, o.centre, o.radius) {
                     return Some(Blocker::Obstacle(k));
                 }
             }
@@ -112,9 +113,17 @@ impl Path {
     }
 }
 
+/// What is at `p`: a planet whose keep-out sphere holds it, or an obstacle closer than its radius.
+pub fn blocked_at(p: DVec3, planets: &[PlanetDef], obstacles: &[Obstacle]) -> Option<Blocker> {
+    if let Some(k) = planets.iter().position(|pl| pl.centre().distance(p) < pl.keep_out()) {
+        return Some(Blocker::Planet(PlanetId(k as u8)));
+    }
+    obstacles.iter().position(|o| o.centre.distance(p) < o.radius).map(Blocker::Obstacle)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Blocker {
-    Planet(usize),
+    Planet(PlanetId),
     Obstacle(usize),
 }
 

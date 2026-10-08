@@ -3,8 +3,8 @@
 //! truth at the shown time, by phase, and what the swap of the sender's planet does.
 use glam::{DQuat, DVec3};
 use net_core::buffer::{Buffer, Mode};
-use net_core::snapshot::Snapshot;
-use warp_core::{Drive, Event, Phase, ShipView, System};
+use net_core::snapshot::{Limits, Snapshot};
+use warp_core::{Drive, Event, Phase, PlanetId, ShipView, System};
 
 const DT: f64 = 1.0 / 60.0;
 const PLAYOUT: f64 = 0.15;
@@ -15,7 +15,7 @@ fn truth(sys: &System) -> Vec<(f64, DVec3, DVec3, Phase)> {
     let start = DVec3::new(0.0, 7000.0, 0.0);
     let mut d = Drive::new(sys.drive.clone());
     let mut ship = ShipView { pos: start, forward: DVec3::X, speed: 0.0 };
-    d.begin(1, &ship, sys, &[]).unwrap();
+    d.begin(PlanetId(1), &ship, sys, &[]).unwrap();
     ship.forward = d.path().unwrap().start_dir();
     let mut out = Vec::new();
     let mut t = 0.0;
@@ -63,7 +63,7 @@ fn run(sys: &System, loss_every: usize, normalise: bool, label: &str) -> Vec<(Ph
     let tr = truth(sys);
     let centres: Vec<DVec3> = sys.planets.iter().map(|p| p.centre()).collect();
     // The sender's planet: the one whose frame zone it entered last (as in the game).
-    let mut active = 0usize;
+    let mut active = PlanetId(0);
     let mut buf = Buffer::new();
     let mut stats: Vec<(Phase, Stat)> = Vec::new();
     let mut holds = 0;
@@ -74,8 +74,8 @@ fn run(sys: &System, loss_every: usize, normalise: bool, label: &str) -> Vec<(Ph
                 active = f;
             }
             // Planet-relative on the wire, like the game's sender.
-            let mut s = Snapshot::new(2, t, p - centres[active], v, DQuat::IDENTITY);
-            s.planet = active as u32;
+            let mut s = Snapshot::new(2, t, p - centres[active.index()], v, DQuat::IDENTITY);
+            s.planet = active.wire();
             // The walker stands in the cabin.
             s.frame = net_core::snapshot::FrameKind::Ship;
             s.frame_id = 2;
@@ -86,7 +86,7 @@ fn run(sys: &System, loss_every: usize, normalise: bool, label: &str) -> Vec<(Ph
             if loss_every == 0 || (seq as usize) % loss_every != 0 {
                 let mut r = Snapshot::decode(&s.encode()).expect("decodes");
                 if normalise {
-                    r.to_frame_of(&centres, 0);
+                    assert!(r.to_frame_of(&centres, 0));
                 }
                 buf.push(r);
             }
@@ -137,4 +137,41 @@ fn remote_ship_warping_is_shown_within_metres() {
     run(&sys, 10, true, "10 % loss, extrapolation 100 ms");
     // What the 150 ms playout means for where the ship is drawn at top speed.
     println!("display lag at top speed: {:.0} km behind the true position", top * PLAYOUT / 1000.0);
+}
+
+/// The receiver's limits as the game derives them from its system.
+fn limits(sys: &System) -> Limits {
+    Limits { planets: sys.planets.len() as u32, ship_position: sys.max_ship_offset(), ship_speed: sys.max_ship_speed() }
+}
+
+/// F2: at the longest trip of the research table (187,500 km) every snapshot of the flight is
+/// admitted by limits derived from the loaded system.
+#[test]
+fn longest_trip_snapshots_are_admitted() {
+    let mut sys = System::from_json(JSON).unwrap();
+    sys.set_distance(187_500_000.0).unwrap();
+    let lim = limits(&sys);
+    let tr = truth(&sys);
+    let centres: Vec<DVec3> = sys.planets.iter().map(|p| p.centre()).collect();
+    let mut active = PlanetId(0);
+    let (mut far, mut fast, mut n) = (0.0f64, 0.0f64, 0);
+    for &(t, p, v, _) in &tr {
+        if let Some(f) = sys.frame_of(p) {
+            active = f;
+        }
+        let mut s = Snapshot::new(2, t, p - centres[active.index()], v, DQuat::IDENTITY);
+        s.planet = active.wire();
+        s.frame = net_core::snapshot::FrameKind::Ship;
+        s.frame_id = 2;
+        s.wp = DVec3::new(0.0, 0.3, -2.0);
+        s.wv = DVec3::ZERO;
+        let r = Snapshot::decode(&s.encode()).expect("decodes");
+        assert!(lim.admits(&r), "t {t:.2}: {:.0} m out at {:.0} m/s, limits {lim:?}", r.p.length(), r.v.length());
+        far = far.max(r.p.length());
+        fast = fast.max(r.v.length());
+        n += 1;
+    }
+    println!("187,500 km: {n} snapshots admitted, farthest {:.0} km of {:.0} km allowed, fastest {:.0} of {:.0} km/s", far / 1000.0, lim.ship_position / 1000.0, fast / 1000.0, lim.ship_speed / 1000.0);
+    // The constant limits of round 1 (1e8 m) would have refused this flight.
+    assert!(far > 1.0e8);
 }

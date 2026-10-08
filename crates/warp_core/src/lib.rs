@@ -8,8 +8,8 @@ pub mod path;
 pub mod system;
 
 pub use drive::{Abort, Drive, Event, Phase, ShipView};
-pub use path::Path;
-pub use system::{DriveConfig, Obstacle, PlanetDef, System};
+pub use path::{Blocker, Path};
+pub use system::{DriveConfig, Obstacle, PlanetDef, PlanetId, System};
 
 #[cfg(test)]
 mod tests;

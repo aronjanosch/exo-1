@@ -91,7 +91,8 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, up: DVec3, offset
 pub fn add_hull(commands: &mut Commands, ship: Entity, layer: Layer) {
     let hull = Color::srgb(0.95, 0.5, 0.15);
     let inner = Color::srgb(0.55, 0.55, 0.6);
-    let glass = Color::srgb(0.3, 0.8, 0.9);
+    // See-through: the tunnel streaks show through the window (spike 11, F8).
+    let glass = Color::srgba(0.3, 0.8, 0.9, 0.12);
     // [size, position, colour, collides] in ship space; origin at the floor bottom.
     let parts: [(Vec3, Vec3, Color, bool); 8] = [
         (Vec3::new(4.0, 0.3, 8.0), Vec3::new(0.0, 0.15, 0.0), inner, true),
@@ -146,7 +147,7 @@ pub fn ship_control(
         let clearance = ship.ctl.clearance_at(planet.as_ref(), pos.0);
         ship.lag.step(clearance, lv.0.length(), dt);
         // From the pre-ramp on the drive holds the ship.
-        if ship.parked || matches!(warp.drive.phase, warp_core::Phase::PreRamp | warp_core::Phase::RampUp | warp_core::Phase::Cruise | warp_core::Phase::RampDown) {
+        if ship.parked || warp.drive.phase.holds_ship() {
             continue;
         }
         let input = if ship.piloted {

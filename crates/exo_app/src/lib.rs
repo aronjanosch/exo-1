@@ -13,6 +13,7 @@ pub mod origin;
 pub mod perf;
 pub mod record;
 pub mod ring;
+pub mod scatter;
 pub mod scenario;
 pub mod settings;
 pub mod ship;
@@ -160,6 +161,12 @@ impl Options {
     }
 }
 
+/// Bevy's asset root, `content/` (props). Dev builds read the repo's folder wherever the binary
+/// runs from; release builds expect `content/` next to the executable.
+fn content_dir() -> String {
+    if cfg!(debug_assertions) { concat!(env!("CARGO_MANIFEST_DIR"), "/../../content").to_string() } else { "content".to_string() }
+}
+
 pub fn build_app(o: &Options) -> App {
     let mut app = App::new();
     if o.headless {
@@ -172,7 +179,7 @@ pub fn build_app(o: &Options) -> App {
         // Each update is exactly one physics tick, independent of wall time.
         app.insert_resource(TimeUpdateStrategy::ManualDuration(TICK));
     } else {
-        app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        app.add_plugins(DefaultPlugins.set(bevy::asset::AssetPlugin { file_path: content_dir(), ..default() }).set(WindowPlugin {
             primary_window: Some(Window { title: "EXO-1".into(), resolution: (1600u32, 900u32).into(), visible: !o.hidden,
                 present_mode: if o.no_vsync { bevy::window::PresentMode::AutoNoVsync } else { bevy::window::PresentMode::AutoVsync },
                 ..default()
@@ -247,6 +254,7 @@ pub fn build_app(o: &Options) -> App {
     if !o.headless {
         app.init_resource::<view::ViewState>().insert_resource(ClearColor(Color::BLACK));
         app.add_plugins(audio::plugin);
+        app.add_plugins(scatter::plugin);
         app.add_systems(Update, settings::apply_volume);
         if o.menu() {
             app.add_plugins(menu::plugin);

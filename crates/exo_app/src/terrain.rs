@@ -79,7 +79,7 @@ impl Terrain {
         let n = &self.nodes[i];
         let (face, a0, b0, size) = (n.face, n.a0, n.b0, n.size);
         let pgen = planet.pgen.clone();
-        self.nodes[i].task = Some(AsyncComputeTaskPool::get().spawn(async move { pgen.build_chunk(face, a0, b0, size, false) }));
+        self.nodes[i].task = Some(AsyncComputeTaskPool::get().spawn(async move { pgen.build_chunk(face, a0, b0, size) }));
     }
 
     fn discard(&mut self, commands: &mut Commands, i: usize) {
@@ -187,7 +187,7 @@ pub fn build_terrain(
         let i = t.make_node(planet, face, -1.0, -1.0, 2.0, 0);
         // Roots synchronously, so there is always a planet.
         let n = &t.nodes[i];
-        let out = planet.pgen.build_chunk(n.face, n.a0, n.b0, n.size, false);
+        let out = planet.pgen.build_chunk(n.face, n.a0, n.b0, n.size);
         let mesh = meshes.add(t.mesh(&out));
         let e = commands
             .spawn((Mesh3d(mesh), MeshMaterial3d(t.material.clone()), Transform::default(), WorldPos(planet.centre + DVec3::from_array(out.center)), PlanetScene))

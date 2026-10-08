@@ -135,24 +135,6 @@ struct Px {
 }
 
 impl Planet {
-    /// Density (0..1) of the densest scatter rule at a point, as the chunk build would roll it
-    /// (mask and biome row; slope and site filters left out).
-    pub fn scatter_density_at(&self, dir: V3, biome: u8, h_above_sea: f64) -> f32 {
-        let p = self.p32(dir);
-        let mut best: f32 = 0.0;
-        for (ri, rule) in self.recipe.scatter.iter().enumerate() {
-            if rule.above_sea && h_above_sea <= 0.0 {
-                continue;
-            }
-            if nz(&self.masks[ri], p) <= rule.mask.threshold {
-                continue;
-            }
-            let dens = rule.row_density.get(&biome.to_string()).or_else(|| rule.row_density.get("default")).copied().unwrap_or(0.0);
-            best = best.max(dens);
-        }
-        best
-    }
-
     /// The atlas at `width` x `width / 2` pixels. Sites are white dots on the biome layer.
     pub fn atlas(&self, width: usize, threads: usize) -> Atlas {
         let (w, h) = (width, width / 2);
@@ -168,7 +150,7 @@ impl Planet {
                     let lf = self.stamp_height(d).1;
                     let ha = hh - self.sea;
                     let biome = self.biome_for(ha, &f, lf);
-                    out.push(Px { ha, biome, land: lf.unwrap_or(f.land), scatter: self.scatter_density_at(d, biome, ha) });
+                    out.push(Px { ha, biome, land: lf.unwrap_or(f.land), scatter: self.scatter_density_at(d, biome, ha, None) });
                 }
             }
             out
@@ -293,10 +275,10 @@ impl Planet {
                             return Some(Spot { dir: d, facing: e });
                         }
                     } else {
-                        let here = self.scatter_density_at(d, s.biome as u8, s.height_above_sea);
+                        let here = self.scatter_density_at(d, s.biome as u8, s.height_above_sea, Some("tree"));
                         let sa = self.sample(ahead);
-                        let there = self.scatter_density_at(ahead, sa.biome as u8, sa.height_above_sea);
-                        if here == 0.0 && there > 0.5 && sa.height_above_sea > 0.0 {
+                        let there = self.scatter_density_at(ahead, sa.biome as u8, sa.height_above_sea, Some("tree"));
+                        if here < 0.1 && there > 0.5 && sa.height_above_sea > 0.0 {
                             return Some(Spot { dir: d, facing: e });
                         }
                     }

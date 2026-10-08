@@ -101,7 +101,7 @@ pub struct Planet {
     n_temp: FastNoiseLite,
     n_land: FastNoiseLite,
     bands: Vec<BandRt>,
-    pub(crate) masks: Vec<FastNoiseLite>,
+    pub(crate) scatter: crate::scatter::ScatterRt,
     pub(crate) stamps: Vec<StampRt>,
     pub macro_img: Vec<f32>,
     pub sea: f64,
@@ -143,7 +143,7 @@ impl Planet {
                 }),
             })
             .collect();
-        let masks = recipe.scatter.iter().map(|s| make_noise(&s.mask.noise, seed)).collect();
+        let scatter = crate::scatter::ScatterRt::new(&recipe, seed);
         let stamps = recipe
             .stamps
             .iter()
@@ -184,7 +184,7 @@ impl Planet {
             n_temp: make_noise(&m.temperature.noise, seed),
             n_land: make_noise(&m.landform.noise, seed),
             bands,
-            masks,
+            scatter,
             stamps,
             macro_img: Vec::new(),
             sea: 0.0,

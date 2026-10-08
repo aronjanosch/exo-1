@@ -65,7 +65,7 @@ fn t1_one_height_function() {
         let ix = (rng.next() * (1u32 << depth) as f64) as usize;
         let iy = (rng.next() * (1u32 << depth) as f64) as usize;
         let (a0, b0) = (-1.0 + ix as f64 * size, -1.0 + iy as f64 * size);
-        let c = p.build_chunk(face, a0, b0, size, false);
+        let c = p.build_chunk(face, a0, b0, size);
         for (k, _, _) in interior() {
             let w = chunk_world(p, &c, k);
             let h_mesh = w.length() - p.radius;
@@ -87,7 +87,7 @@ fn seam_check(p: &Planet, depth: u32) -> (usize, f64, usize) {
     for face in 0..6 {
         for iy in 0..n {
             for ix in 0..n {
-                let c = p.build_chunk(face, -1.0 + ix as f64 * size, -1.0 + iy as f64 * size, size, false);
+                let c = p.build_chunk(face, -1.0 + ix as f64 * size, -1.0 + iy as f64 * size, size);
                 for (k, i, j) in interior() {
                     if i == 1 || i == GRID + 1 || j == 1 || j == GRID + 1 {
                         let w = chunk_world(p, &c, k);

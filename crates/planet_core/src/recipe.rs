@@ -1,7 +1,7 @@
 //! The recipe is data (`content/planet/<id>.json`, one per planet): no code, no expressions.
 //! Unknown fields are rejected.
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "lowercase")]
@@ -132,28 +132,137 @@ pub struct BiomeRow {
     pub color: [f32; 3],
     #[serde(default)]
     pub tints: HashMap<String, [f32; 3]>,
+    /// Scatter multipliers by entry or group id (0 = off, missing = 1), #65.
+    #[serde(default)]
+    pub scatter: BTreeMap<String, f32>,
     /// All conditions must hold; the first matching row wins. No `when` = catch-all.
     #[serde(default)]
     pub when: Vec<Condition>,
 }
 
+/// A named noise mask for scatter (a forest, a rock field): weight 0 below `threshold`, rising to
+/// 1 over `edge` above it, so a wood has an inside and an edge.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ScatterMask {
     pub noise: NoiseSpec,
     pub threshold: f32,
+    #[serde(default = "default_edge")]
+    pub edge: f32,
 }
+fn default_edge() -> f32 {
+    0.05
+}
+
+/// A storey of the scatter (#65): its own grid spacing and view range. Ground cover, shrubs and
+/// rocks, trees.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct ScatterRule {
-    pub kind: String,
+pub struct Storey {
+    /// Grid spacing of the candidate spots (m).
     pub spacing_m: f64,
-    pub slope_max_deg: f64,
-    pub above_sea: bool,
-    pub mask: ScatterMask,
-    pub row_density: HashMap<String, f32>,
-    pub scale_min: f32,
-    pub scale_max: f32,
+    /// Drawn up to this distance from the camera on the ground (m)...
+    pub range_m: f64,
+    /// ...and up to this one from 200 m above the ground up.
+    pub elevated_range_m: f64,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ClusterShape {
+    pub weight: f32,
+    /// Extra instances around the first one, min and max.
+    pub count: [u32; 2],
+    /// Distance between neighbours, min and max (m).
+    pub spacing_m: [f64; 2],
+}
+
+/// How an entry clusters: with `chance` a placed instance gets company, shaped by a weighted
+/// pick of `shapes`. A lone rock and a boulder field are the same mesh with different presets.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ClusterPreset {
+    pub chance: f32,
+    #[serde(default)]
+    pub shapes: Vec<ClusterShape>,
+}
+
+/// A second roll on a placed instance: a rare look (another mesh, a scale, a tint).
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Rare {
+    pub chance: f32,
+    pub mesh: String,
+    #[serde(default = "one")]
+    pub scale: f32,
+    #[serde(default)]
+    pub tint: Option<[f32; 3]>,
+}
+fn one() -> f32 {
+    1.0
+}
+
+/// One thing that can stand on the ground. Its weight is a chance per candidate spot of its
+/// storey (times the group weight, the biome multiplier and the mask).
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ScatterEntry {
+    pub id: String,
+    pub weight: f32,
+    pub storey: String,
+    /// Mesh set; the planet's `meshes` map picks the prop (the variant).
+    pub mesh: String,
+    /// Key into the biome row's `tints` (falls back to the row colour).
+    pub tint: String,
+    #[serde(default)]
+    pub cluster: Option<String>,
+    #[serde(default)]
+    pub mask: Option<String>,
+    #[serde(default = "slope_any")]
+    pub slope_deg: [f64; 2],
+    #[serde(default = "height_any")]
+    pub height_above_sea_m: [f64; 2],
+    /// 0 = upright along the radius, 1 = along the ground's normal.
+    #[serde(default)]
+    pub align: f64,
+    pub scale: [f32; 2],
+    /// Sunk into the ground by this much (m, at scale 1).
+    #[serde(default)]
+    pub sink_m: f64,
+    /// Kept out of a site's clear radius.
+    #[serde(default = "yes")]
+    pub clear_sites: bool,
+    #[serde(default)]
+    pub rare: Option<Rare>,
+}
+fn slope_any() -> [f64; 2] {
+    [0.0, 90.0]
+}
+fn height_any() -> [f64; 2] {
+    [-1.0e9, 1.0e9]
+}
+fn yes() -> bool {
+    true
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ScatterGroup {
+    pub id: String,
+    pub weight: f32,
+    pub entries: Vec<ScatterEntry>,
+}
+
+/// The planet's scatter (#65): planet-wide groups of entries; biome rows only multiply them.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ScatterSpec {
+    pub storeys: BTreeMap<String, Storey>,
+    pub masks: BTreeMap<String, ScatterMask>,
+    pub clusters: BTreeMap<String, ClusterPreset>,
+    /// Mesh set -> prop id (`content/props/<id>.glb`): the planet's variant of each set.
+    pub meshes: BTreeMap<String, String>,
+    pub groups: Vec<ScatterGroup>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -182,7 +291,7 @@ pub struct Recipe {
     pub stamps: Vec<Stamp>,
     pub sea_level: SeaLevel,
     pub biomes: Vec<BiomeRow>,
-    pub scatter: Vec<ScatterRule>,
+    pub scatter: ScatterSpec,
     pub sites: SiteRule,
 }
 
@@ -206,9 +315,57 @@ impl Recipe {
         if ids.len() != r.biomes.len() {
             return Err("duplicate biome ids".into());
         }
+        r.check_scatter()?;
         if r.macro_.resolution < 8 {
             return Err("macro resolution too small".into());
         }
         Ok(r)
+    }
+
+    fn check_scatter(&self) -> Result<(), String> {
+        let sc = &self.scatter;
+        let mut ids: Vec<&str> = Vec::new();
+        for g in &sc.groups {
+            ids.push(&g.id);
+            for e in &g.entries {
+                ids.push(&e.id);
+                let at = |what: &str, name: &str| format!("scatter entry {}: {what} '{name}' is not defined", e.id);
+                if !sc.storeys.contains_key(&e.storey) {
+                    return Err(at("storey", &e.storey));
+                }
+                if !sc.meshes.contains_key(&e.mesh) {
+                    return Err(at("mesh", &e.mesh));
+                }
+                if let Some(c) = &e.cluster
+                    && !sc.clusters.contains_key(c)
+                {
+                    return Err(at("cluster preset", c));
+                }
+                if let Some(m) = &e.mask
+                    && !sc.masks.contains_key(m)
+                {
+                    return Err(at("mask", m));
+                }
+                if let Some(r) = &e.rare
+                    && !sc.meshes.contains_key(&r.mesh)
+                {
+                    return Err(at("rare mesh", &r.mesh));
+                }
+            }
+        }
+        let n = ids.len();
+        ids.sort();
+        ids.dedup();
+        if ids.len() != n {
+            return Err("scatter group and entry ids must be unique".into());
+        }
+        for b in &self.biomes {
+            for k in b.scatter.keys() {
+                if !ids.contains(&k.as_str()) {
+                    return Err(format!("biome row {}: scatter multiplier for unknown entry or group '{k}'", b.id));
+                }
+            }
+        }
+        Ok(())
     }
 }

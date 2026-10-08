@@ -147,7 +147,9 @@ fn go_to(i: usize) -> Step {
 
 fn settled(w: &World) -> bool {
     let ring = w.resource::<Ring>();
-    ring.pending() == 0 && w.get_resource::<Terrain>().is_none_or(|t| t.pending == 0)
+    ring.pending() == 0
+        && w.get_resource::<Terrain>().is_none_or(|t| t.pending == 0)
+        && w.get_resource::<crate::scatter::ScatterView>().is_none_or(|s| s.pending == 0)
 }
 
 /// One viewpoint: camera and sun there, walker on the spot, wait for the terrain, hold, shoot.
@@ -180,6 +182,11 @@ fn shoot(out: PathBuf, vps: Viewpoints, k: usize) -> Step {
             c.phase = format!("look {} {}", name.to_lowercase(), vp.id);
         } else if stage == 1.0 && c.t - c.v["look_t"] >= HOLD_SECS {
             use bevy::render::view::screenshot::{save_to_disk, Screenshot};
+            if let Some(sv) = w.get_resource::<crate::scatter::ScatterView>() {
+                let line = format!("look {name} {}: scatter {} instances in {} cells", vp.id, sv.instances, sv.shown_cells);
+                println!("{line}");
+                c.report.push(line);
+            }
             let dir = planet_dir(&out, &name);
             let _ = std::fs::create_dir_all(&dir);
             let path = dir.join(format!("{}.png", vp.id));

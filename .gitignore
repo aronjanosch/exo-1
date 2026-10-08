@@ -23,3 +23,6 @@ WORKSPACE.md
 /.agents/skills/to-spec/
 /.agents/skills/to-tickets/
 /.agents/skills/writing-for-agents/
+
+# Python bytecode from the Blender scripts
+__pycache__/

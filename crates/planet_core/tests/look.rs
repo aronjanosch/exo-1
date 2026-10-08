@@ -2,7 +2,7 @@
 use planet_core::*;
 
 fn hearth() -> Planet {
-    let r = Recipe::from_json(include_str!("../../../content/planet/recipe.json")).unwrap();
+    let r = Recipe::for_planet(include_str!("../../../content/planet/hearth.json"), 1337, 5000.0).unwrap();
     let mut p = Planet::new(r);
     p.bake(0);
     p

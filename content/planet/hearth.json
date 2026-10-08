@@ -1,7 +1,5 @@
 {
-  "_comment": "Spike 8 recipe. Data only: no code, no expressions. Every number is a test value unless the brief says decided. Biome rows have ids only, no names.",
-  "seed": 1337,
-  "radius": 5000.0,
+  "_comment": "Hearth's surface recipe (#64). Data only: no code, no expressions. Seed and radius live in content/system/system.json. Every number is a test value. Biome rows have ids only, no names.",
   "macro": {
     "resolution": 512,
     "elevation": { "noise": { "seed_offset": 10, "frequency": 0.0002, "fractal": "fbm", "octaves": 3 }, "amplitude": 40.0 },

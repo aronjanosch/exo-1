@@ -920,7 +920,7 @@ fn lag_by_hand() -> Vec<Step> {
 
 /// Long walks (spike 8 T5): 1.8 m/s for 300 s from four starts; steep slopes may stop the walker.
 fn t5_starts() -> Vec<(&'static str, DVec3, DVec3)> {
-    let recipe: serde_json::Value = serde_json::from_str(crate::env::RECIPE).unwrap();
+    let recipe: serde_json::Value = serde_json::from_str(crate::env::RECIPES[0].1).unwrap();
     let off = |d: DVec3, t: DVec3, m: f64| {
         let a = m / 5000.0;
         (d * a.cos() + t * a.sin()).normalize()

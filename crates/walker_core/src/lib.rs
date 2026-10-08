@@ -201,7 +201,7 @@ impl WalkerConfig {
 }
 
 /// Parses a tuning object: every field required, unknown fields rejected, except an optional
-/// `_comment` string (as in `recipe.json`). Same rule as `flight_core::parse_tuning`.
+/// `_comment` string (as in the planet recipes). Same rule as `flight_core::parse_tuning`.
 fn parse_tuning<T: serde::de::DeserializeOwned>(what: &str, s: &str) -> Result<T, String> {
     let mut v: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("{what}: {e}"))?;
     if let Some(o) = v.as_object_mut()

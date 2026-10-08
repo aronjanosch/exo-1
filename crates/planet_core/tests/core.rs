@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 static PLANET: OnceLock<(Planet, BakeStats)> = OnceLock::new();
 fn planet() -> &'static (Planet, BakeStats) {
     PLANET.get_or_init(|| {
-        let r = Recipe::from_json(include_str!("../../../content/planet/recipe.json")).unwrap();
+        let r = Recipe::for_planet(include_str!("../../../content/planet/hearth.json"), 1337, 5000.0).unwrap();
         let mut p = Planet::new(r);
         let st = p.bake(0);
         (p, st)

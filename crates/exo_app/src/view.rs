@@ -66,6 +66,8 @@ pub struct PlayerInterp {
 #[derive(Resource, Default)]
 pub struct ViewState {
     pub orbit: bool,
+    /// A fixed camera pose (world), set by the planet-look scenario; wins over every other mode.
+    pub look: Option<(DVec3, DQuat)>,
     /// F3: the debug lines under the HUD.
     pub debug_hud: bool,
     pub orbit_yaw: f64,
@@ -660,7 +662,9 @@ pub fn update_camera(
     // The settings' field of view at rest; the speed curve adds its rise to it.
     let base_fov = settings.fov_deg;
     let speed_fov = fx.0.fov_deg - tuning.camera.fov_curve.eval(0.0);
-    if view.orbit {
+    if let Some((p, r)) = view.look {
+        (pose.pos, pose.rot) = (p, r);
+    } else if view.orbit {
         let d = DVec3::new(view.orbit_pitch.cos() * view.orbit_yaw.sin(), view.orbit_pitch.sin(), view.orbit_pitch.cos() * view.orbit_yaw.cos());
         pose.pos = planet.centre + d * 15_000.0;
         let up = if d.y.abs() < 0.99 { DVec3::Y } else { DVec3::X };
@@ -702,11 +706,12 @@ pub fn update_camera(
     view.last_rot = pose.rot;
     view.last_pos = pose.pos;
     origin.view = pose.pos;
+    // The sky is the planet's atmosphere (sky.rs); the clear colour is space. Haze per planet (#67).
     let density = planet.density_at(pose.pos) as f32;
-    let sky = Color::srgb(0.02, 0.02, 0.05).mix(&Color::srgb(0.45, 0.62, 0.85), density);
-    clear.0 = sky;
-    fog.color = sky;
-    fog.falloff = FogFalloff::Exponential { density: 0.00025 * density };
+    let s = &planet.pgen.recipe.sky;
+    clear.0 = Color::srgb(0.02, 0.02, 0.05);
+    fog.color = Color::srgb(s.haze_color[0], s.haze_color[1], s.haze_color[2]);
+    fog.falloff = FogFalloff::Exponential { density: s.haze_density * density };
     ambient.brightness = 80.0 + 320.0 * density;
 }
 

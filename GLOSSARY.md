@@ -42,9 +42,21 @@ _Avoid_: skin, avatar
 
 ### Places
 
+**Biome**:
+A row of a planet's recipe: a point or intervals in the space of the shared macro fields (elevation, temperature, moisture, landform, weirdness, height above sea), with its ground colours, scatter multipliers and allowed site kinds. Each spot belongs to the nearest row. Rows have ids; names come from the initiator.
+_Avoid_: zone, region (a region is a band of the height noise), climate
+
 **Site**:
 A spot on a planet that the generator found flat enough to build on.
 _Avoid_: spawn point, POI
+
+**Site kind**:
+A recipe row that says what a site is and where it may be: footprint, allowed biomes, slope and height filters, count, separation, the ground edits under it and its kit of pieces. Kinds are placeholders until the initiator names them.
+_Avoid_: site type, structure, POI
+
+**Landmark**:
+A unique, large thing visible from afar (a giant arch, a lone huge tree), one to three per planet, placed on high ground so it shows above the horizon. A site kind of the category landmark.
+_Avoid_: monument, wonder
 
 **Location**:
 A site with content: a name, goods, jobs.

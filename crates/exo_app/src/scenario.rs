@@ -195,12 +195,12 @@ fn with_ship<R>(w: &mut World, f: impl FnOnce(&mut Ship) -> R) -> R {
     let e = ship_e(w);
     f(&mut w.get_mut::<Ship>(e).unwrap())
 }
-fn with_player<R>(w: &mut World, f: impl FnOnce(&mut Player) -> R) -> R {
+pub(crate) fn with_player<R>(w: &mut World, f: impl FnOnce(&mut Player) -> R) -> R {
     let mut q = w.query::<&mut Player>();
     let mut p = q.single_mut(w).unwrap();
     f(&mut p)
 }
-fn player_world(w: &mut World) -> DVec3 {
+pub(crate) fn player_world(w: &mut World) -> DVec3 {
     let f = ship_frame_of(w);
     with_player(w, |p| p.world_pos(f))
 }
@@ -218,7 +218,7 @@ fn altitude(w: &mut World) -> f64 {
     (p - pl.centre).length() - pl.radius
 }
 /// Put the walker on the ground at a world point (test setup).
-fn place_walker(w: &mut World, at: DVec3) {
+pub(crate) fn place_walker(w: &mut World, at: DVec3) {
     let pl = planet(w);
     let dir = pl.up(at);
     let pos = pl.centre + dir * (pl.surface(dir) + 0.1);
@@ -230,7 +230,7 @@ fn place_walker(w: &mut World, at: DVec3) {
     });
 }
 /// Turn the walker towards a world point (heading only, pitch level).
-fn face_towards(w: &mut World, target: DVec3) {
+pub(crate) fn face_towards(w: &mut World, target: DVec3) {
     let f = ship_frame_of(w);
     with_player(w, |p| {
         let pos = p.world_pos(f);
@@ -285,7 +285,7 @@ fn check_steady(c: &mut Ctx, what: &str) {
         format!("{what}: view steady (largest step: look {look:.3} deg, up {up:.3} deg, eye {:.1} mm)", eye * 1000.0));
 }
 
-fn check(c: &mut Ctx, ok: bool, note: String) {
+pub(crate) fn check(c: &mut Ctx, ok: bool, note: String) {
     let line = format!("{} {note}", if ok { "PASS" } else { "FAIL" });
     println!("{line}");
     c.report.push(line);
@@ -328,11 +328,11 @@ fn shot(w: &mut World, c: &mut Ctx, script_dir: &std::path::Path, windowed: bool
 
 // ---------- step builders ----------
 
-fn wait(sec: f64) -> Step {
+pub(crate) fn wait(sec: f64) -> Step {
     Box::new(move |_, c| c.t >= sec)
 }
 
-fn settle() -> Step {
+pub(crate) fn settle() -> Step {
     Box::new(|w, c| {
         let r = w.resource::<Ring>();
         let ring_ok = r.pending() == 0 && !r.patches.is_empty();
@@ -973,33 +973,25 @@ fn lag_by_hand() -> Vec<Step> {
 
 /// Long walks (spike 8 T5): 1.8 m/s for 300 s from four starts; steep slopes may stop the walker.
 fn t5_starts() -> Vec<(&'static str, DVec3, DVec3)> {
-    let recipe: serde_json::Value = serde_json::from_str(crate::env::RECIPE).unwrap();
-    let off = |d: DVec3, t: DVec3, m: f64| {
-        let a = m / 5000.0;
-        (d * a.cos() + t * a.sin()).normalize()
-    };
-    let toward = |from: DVec3, to: DVec3| (to - from * from.dot(to)).normalize();
+    // The stamps are placed by the planet's budget (#69): starts come from its look spots.
+    let sys = warp_core::System::from_json(crate::warp::SYSTEM).expect("system.json");
+    let home = PlanetRes::load(PlanetId(0), sys.planet(PlanetId(0)));
+    let pg = &home.pgen;
+    let r = home.radius;
+    let back = |s: planet_core::Spot, m: f64| crate::env::from_v3(planet_core::look::walk(s.dir, s.facing, m, r));
     let mut out = vec![("spawn, heading east", DVec3::Y, DVec3::X)];
-    for st in recipe["stamps"].as_array().unwrap() {
-        let c = st["center"].as_array().unwrap();
-        let c = DVec3::new(c[0].as_f64().unwrap(), c[1].as_f64().unwrap(), c[2].as_f64().unwrap()).normalize();
-        let t = c.cross(DVec3::Y).normalize();
-        match st["type"].as_str().unwrap() {
-            "basin" => {
-                let s = off(c, t, 900.0);
-                out.push(("basin shore, heading to the centre", s, toward(s, c)));
-            }
-            "escarpment" => {
-                let n = c.cross(t).normalize();
-                let s = off(c, n, -300.0);
-                out.push(("escarpment foot, heading up the step", s, toward(s, c)));
-            }
-            "plateau" => {
-                let s = off(c, t, 1000.0);
-                out.push(("plateau approach, heading to the centre", s, toward(s, c)));
-            }
-            _ => {}
-        }
+    if let Some(s) = pg.spot("basin") {
+        out.push(("basin shore, heading to the centre", crate::env::from_v3(s.dir), crate::env::from_v3(s.facing)));
+    }
+    // The rim spot stands on top facing down: start 300 m below it, heading up the step.
+    if let Some(s) = pg.spot("rim") {
+        let start = back(s, 300.0);
+        out.push(("escarpment foot, heading up the step", start, (crate::env::from_v3(s.dir) - start).normalize()));
+    }
+    // The plateau spot is near its edge facing out: start 400 m outside, heading in.
+    if let Some(s) = pg.spot("plateau") {
+        let start = back(s, 400.0);
+        out.push(("plateau approach, heading to the centre", start, (crate::env::from_v3(s.dir) - start).normalize()));
     }
     out
 }
@@ -1033,18 +1025,25 @@ fn t5_walk(name: &'static str, dir: DVec3, heading: DVec3, secs: f64) -> Vec<Ste
             let h = (p - pl.centre).length() - pl.radius - pl.sea;
             *c.v.get_mut("hmin").unwrap() = c.v["hmin"].min(h);
             *c.v.get_mut("hmax").unwrap() = c.v["hmax"].max(h);
-            let slope = pl.pgen.sample(crate::env::to_v3(pl.up(p))).slope_deg;
+            let here = pl.pgen.sample(crate::env::to_v3(pl.up(p)));
+            let slope = here.slope_deg;
+            // Biome rows walked through (#68), as a bit set.
+            let seen = c.v.entry("biomes").or_insert(0.0);
+            *seen = (*seen as u64 | 1u64 << here.biome.clamp(0, 63)) as f64;
             let e = c.v.entry("slope").or_insert(0.0);
             *e = e.max(slope);
             let climb = c.v.entry("climb").or_insert(0.0);
             if slope > 50.0 { *climb += 1.0; }
             if c.t >= secs {
                 keys(w, &[KeyCode::KeyW], false);
-                let note = format!("path {:.0} m, height above sea {:+.1}..{:+.1} m, steepest ground under the walker {:.1} deg, ticks on ground steeper than 50 deg {}", c.v["path"], c.v["hmin"], c.v["hmax"], c.v["slope"], c.v["climb"]);
+                let rows = (c.v["biomes"] as u64).count_ones();
+                let note = format!("path {:.0} m, height above sea {:+.1}..{:+.1} m, steepest ground under the walker {:.1} deg, ticks on ground steeper than 50 deg {}, biome rows {rows}", c.v["path"], c.v["hmin"], c.v["hmax"], c.v["slope"], c.v["climb"]);
                 c.v.remove("slope");
                 c.v.remove("climb");
+                c.v.remove("biomes");
                 end(w, c, note);
                 check(c, w.resource::<WalkStats>().rescues == c.rescues0, format!("{name}: no fall-through"));
+                check(c, rows >= 2, format!("{name}: crosses {rows} biome rows (at least 2)"));
                 return true;
             }
             false
@@ -1456,7 +1455,7 @@ fn tel(w: &World) -> &WarpTelemetry {
 }
 
 /// Place the ship (test setup): pose, no velocity.
-fn teleport_ship(w: &mut World, pos: DVec3, rot: DQuat) {
+pub(crate) fn teleport_ship(w: &mut World, pos: DVec3, rot: DQuat) {
     let e = ship_e(w);
     w.get_mut::<Position>(e).unwrap().0 = pos;
     w.get_mut::<Rotation>(e).unwrap().0 = rot;
@@ -2027,6 +2026,10 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "warp" => warp_steps(&mut s, out_dir, windowed),
         // #14 and #34: three planet swaps and an emergency drop; what each swap leaves behind.
         "swap" => swap_steps(&mut s, out_dir, windowed, swap_rounds.max(3)),
+        // #63: fixed viewpoints and an atlas per planet (headless: atlas and statistics only).
+        "planet-look" => crate::look::steps(&mut s, out_dir, windowed),
+        // #70: walk from outside into a site; the walker stands on its flattened ground.
+        "site-walk" => crate::look::site_walk_steps(&mut s),
         // Issue #5: step out of the ship in space (seat by test shortcut, then fly up).
         "space" => {
             s.push(Box::new(|w, _| {

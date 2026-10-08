@@ -291,7 +291,7 @@ pub fn build_app(o: &Options) -> App {
     if o.scenario.as_deref() == Some("swap") {
         // #14: count what a planet swap leaves behind; headless with the terrain too.
         if o.headless {
-            app.init_asset::<StandardMaterial>();
+            app.init_asset::<StandardMaterial>().init_asset::<terrain_material::TerrainMaterial>().init_asset::<sky::WaterMaterial>();
             app.add_systems(Startup, terrain::setup_terrain);
             app.add_systems(Update, (scenario::headless_view, terrain::update_terrain).chain().after(ring::update_ring));
         }

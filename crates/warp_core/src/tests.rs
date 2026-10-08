@@ -226,3 +226,28 @@ fn path_leaves_and_arrives_along_the_tangent() {
     // The detour stays small.
     assert!(len / chord < 1.05, "{}", len / chord);
 }
+
+/// The start values at the three trip lengths of the research note (Star Citizen's short,
+/// medium and long buckets scaled to our planets), plus a short hop: spool and calibration,
+/// flight, top speed reached, sky size of the target. Printed for the spike report.
+#[test]
+fn trip_times_by_distance() {
+    println!("distance km | sky arcmin | start->engage s | flight s | top km/s | cruise s");
+    for d in [300_000.0, 2_000_000.0, 12_500_000.0, 62_500_000.0, 187_500_000.0] {
+        let mut s = sys();
+        s.set_distance(d);
+        let (mut dr, mut ship) = ready(&s);
+        dr.begin(1, &ship, &s, &[]).unwrap();
+        let (ev, vmax) = run(&mut dr, &mut ship, &s, 600.0);
+        let t = |p: Phase| ev.iter().find(|(_, e)| *e == Event::Phase(p)).map(|(t, _)| *t);
+        let arrived = ev.iter().find(|(_, e)| *e == Event::Arrived).expect("arrived").0;
+        let ramp = t(Phase::RampUp).unwrap();
+        let cruise = match (t(Phase::Cruise), t(Phase::RampDown)) {
+            (Some(a), Some(b)) => b - a,
+            _ => 0.0,
+        };
+        let arcmin = 2.0 * (s.planets[1].radius / d).atan().to_degrees() * 60.0;
+        println!("{:11.0} | {arcmin:10.2} | {ramp:15.1} | {:8.1} | {:8.0} | {cruise:8.1}", d / 1000.0, arrived - ramp, vmax / 1000.0);
+        assert!(ship.pos.distance(Drive::exit_point(&s, 1, DVec3::new(0.0, 7000.0, 0.0))) < 1e-6);
+    }
+}

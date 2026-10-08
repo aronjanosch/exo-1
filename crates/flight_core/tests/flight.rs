@@ -118,6 +118,7 @@ impl Sim {
             mouse: self.mouse,
             turn: DVec2::ZERO,
             piloted: true,
+            grounded: false,
         };
         self.mouse = DVec2::ZERO;
         let (v, w) = self.ship.step(&self.body, &input, &self.planet, DT);

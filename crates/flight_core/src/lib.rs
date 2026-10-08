@@ -4,6 +4,8 @@
 //! -Z forward, right-handed, angular velocity in world space.
 //!
 //! All numbers are spike test values (assumptions for testing, not design).
+pub mod camera;
+
 use glam::{DQuat, DVec2, DVec3};
 use serde::Deserialize;
 
@@ -187,6 +189,8 @@ pub struct FlightInput {
     /// `turn_rate` (virtual-joystick mouse, pad).
     pub turn: DVec2,
     pub piloted: bool,
+    /// The hull touches the ground (contacts, from the physics).
+    pub grounded: bool,
 }
 
 /// The mouse as a virtual joystick: moving the mouse moves an offset (an angle, mouse axes:
@@ -447,6 +451,8 @@ pub struct ShipController {
     /// along the input, the ship keeps gliding).
     pub coupling: f64,
     pub ramp: InputRamp,
+    /// Seconds the hull has rested on the ground (touching, not sinking) without a break.
+    pub ground_time: f64,
 
     horizon_w: DVec3,
     correction_accel: DVec3,
@@ -472,10 +478,16 @@ impl ShipController {
             coupled: true,
             coupling: 1.0,
             ramp: InputRamp::default(),
+            ground_time: 0.0,
             horizon_w: DVec3::ZERO,
             correction_accel: DVec3::ZERO,
         }
     }
+
+    /// m/s: on the ground the assist settles the ship at this speed (no slide, see `step`).
+    pub const GROUND_SETTLE_SPEED: f64 = 0.5;
+    /// s: resting this long on the ground (not sinking) ends the settle push.
+    pub const GROUND_SETTLE_TIME: f64 = 0.3;
 
     pub fn clearance_at(&self, env: &impl PlanetEnv, world: DVec3) -> f64 {
         let p = env.to_planet(world);
@@ -570,6 +582,18 @@ impl ShipController {
                 request.y * self.tuning.assisted_vertical_speed,
                 request.z * forward_speed,
             );
+            // On the ground without sideways or upward input: settle gently straight down and keep
+            // no sideways speed. Pressed down at the landing sink rate onto a slope, the contact
+            // turned the push into a 20 s slide.
+            let hold = input.grounded && request.x.abs() < 1e-5 && request.z.abs() < 1e-5 && request.y <= 1e-5;
+            // Resting: on the ground and no longer sinking although pushed (all contacts carry it).
+            let sinking = body.lin_vel.dot(up) < -0.05;
+            self.ground_time = if input.grounded && !sinking { self.ground_time + dt } else { 0.0 };
+            if hold {
+                // Settle until it rests, tipping onto the slope; then no push at all (a push on a
+                // slope creeps).
+                goal = if self.ground_time < Self::GROUND_SETTLE_TIME { -up * Self::GROUND_SETTLE_SPEED } else { DVec3::ZERO };
+            }
             // Slow the requested descent near the ground, without clamping momentum.
             let sink_goal = -goal.dot(up);
             let sink_cap = 2.0f64.max(self.terrain_clearance.max(0.0) * self.tuning.landing_sink_factor);
@@ -614,6 +638,9 @@ impl ShipController {
             self.correction_accel = limit_length(self.correction_accel, available);
             let thrust = support + self.correction_accel;
             v += (thrust + drag) * dt;
+            if hold {
+                v = up * v.dot(up);
+            }
         } else {
             self.correction_accel = DVec3::ZERO;
             self.commanded_speed = 0.0;

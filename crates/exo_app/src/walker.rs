@@ -172,6 +172,7 @@ pub fn walker_step(
     mut actions: ResMut<Actions>,
     bindings: Res<Bindings>,
     tuning: Res<crate::tuning::Tuning>,
+    settings: Res<crate::settings::Settings>,
     mas: MoveAndSlide,
     mut ring: ResMut<Ring>,
     mut stats: ResMut<WalkStats>,
@@ -231,9 +232,11 @@ pub fn walker_step(
     }
 
     let m = std::mem::take(&mut actions.look);
-    let sens = bindings.mouse.walker_sensitivity;
-    let yaw = -m.x as f64 * sens;
-    let pitch = -m.y as f64 * sens;
+    let sens = bindings.mouse.walker_sensitivity * settings.mouse_sensitivity;
+    // The pad's stick (turn: x pitch up, y yaw left) turns the view at a rate.
+    let stick = actions.turn * bindings.pad.look_rate * dt;
+    let yaw = -m.x as f64 * sens + stick.y;
+    let pitch = -m.y as f64 * sens + stick.x;
     let cfg = pl.w.cfg;
 
     // Weightless outside a cabin: the body turns freely and the suit thrusters move it (issue #8).

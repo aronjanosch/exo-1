@@ -1,8 +1,11 @@
 //! EXO-1 game crate: Bevy glue around planet_core, flight_core, walker_core and net_core.
 //! Rendering, input, camera, HUD, physics bodies, network transport and scripted scenarios.
 //! All game values are the spike test values, not designed.
+pub mod audio;
 pub mod controls;
 pub mod env;
+pub mod hot_reload;
+pub mod menu;
 pub mod net;
 pub mod net_live;
 pub mod origin;
@@ -10,6 +13,7 @@ pub mod perf;
 pub mod record;
 pub mod ring;
 pub mod scenario;
+pub mod settings;
 pub mod ship;
 pub mod terrain;
 pub mod tuning;
@@ -67,6 +71,12 @@ pub struct Options {
     pub net: Option<net_live::NetConfig>,
     /// `--perf`: step and frame timings per phase (#19).
     pub perf: Option<perf::PerfOptions>,
+    /// Dev builds: the tuning files to watch (default the repo's `content/tuning`).
+    pub tuning_dir: Option<PathBuf>,
+    /// Player settings and user bindings (default `settings/`).
+    pub settings_dir: Option<PathBuf>,
+    /// `--menu`: the menus also in a scripted windowed run (screenshots of them).
+    pub force_menu: bool,
 }
 
 impl Default for Options {
@@ -85,6 +95,9 @@ impl Default for Options {
             realtime: false,
             net: None,
             perf: None,
+            tuning_dir: None,
+            settings_dir: None,
+            force_menu: false,
         }
     }
 }
@@ -108,6 +121,9 @@ impl Options {
                 "--origin-shift" => o.origin_shift = v.parse().expect("origin-shift"),
                 "--out" => o.out_dir = PathBuf::from(v),
                 "--record" => o.record = Some(PathBuf::from(v)),
+                "--tuning-dir" => o.tuning_dir = Some(PathBuf::from(v)),
+                "--settings-dir" => o.settings_dir = Some(PathBuf::from(v)),
+                "--menu" => o.force_menu = true,
                 "--perf" => o.perf = Some(o.perf.take().unwrap_or_default()),
                 "--perf-baseline" => o.perf.get_or_insert_default().baseline = PathBuf::from(v),
                 "--perf-save-baseline" => o.perf.get_or_insert_default().save_baseline = true,
@@ -133,6 +149,13 @@ impl Options {
             }
         }
         o
+    }
+}
+
+impl Options {
+    /// Players start in the menu: a window, no script, no network flags.
+    pub fn menu(&self) -> bool {
+        !self.headless && (self.force_menu || self.scenario.is_none() && self.net.is_none())
     }
 }
 
@@ -188,7 +211,21 @@ pub fn build_app(o: &Options) -> App {
     let net = o.net.as_ref().map(|cfg| net_live::Net::new(cfg.clone(), &sys));
     app.insert_resource(warp::WarpDrive::new(&sys)).init_resource::<warp::PendingPlanet>().insert_resource(warp::SystemRes(sys));
     app.init_resource::<controls::Controls>().init_resource::<controls::Actions>().init_resource::<controls::Bindings>().init_resource::<walker::WalkStats>();
-    app.insert_resource(tuning::Tuning::load());
+    app.insert_resource(tuning::Tuning::load()).init_resource::<ship::CameraEffects>();
+    // Settings and user bindings belong to players; scripted and headless runs keep the defaults.
+    let settings_dir = o.settings_dir.clone().unwrap_or_else(settings::SettingsDir::default_dir);
+    if o.scenario.is_none() && !o.headless {
+        let (s, b, notes) = settings::load(&settings_dir);
+        notes.iter().for_each(|n| println!("settings: {n}"));
+        app.insert_resource(s).insert_resource(b);
+    } else {
+        app.init_resource::<settings::Settings>();
+    }
+    app.insert_resource(settings::SettingsDir(settings_dir));
+    if cfg!(debug_assertions) {
+        app.insert_resource(hot_reload::HotReload::new(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)));
+        app.add_systems(Update, hot_reload::poll);
+    }
     app.add_plugins(origin::plugin);
     app.insert_resource(SpawnOffset(o.spawn_offset));
     app.add_systems(Startup, |mut commands: Commands, planet: Res<env::PlanetRes>, tuning: Res<tuning::Tuning>, off: Res<SpawnOffset>| {
@@ -197,7 +234,7 @@ pub fn build_app(o: &Options) -> App {
     });
     app.add_systems(
         FixedUpdate,
-        (scenario::run_script.run_if(resource_exists::<scenario::Script>), controls::resolve_actions, warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, walker::walker_step).chain(),
+        (scenario::run_script.run_if(resource_exists::<scenario::Script>), controls::resolve_actions, warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, walker::walker_step, ship::camera_fx).chain(),
     );
     app.add_systems(FixedLast, controls::drop_taps);
     app.add_systems(Update, ring::update_ring);
@@ -208,20 +245,26 @@ pub fn build_app(o: &Options) -> App {
 
     if !o.headless {
         app.init_resource::<view::ViewState>().insert_resource(ClearColor(Color::BLACK));
+        app.add_plugins(audio::plugin);
+        app.add_systems(Update, settings::apply_volume);
+        if o.menu() {
+            app.add_plugins(menu::plugin);
+        }
         app.add_systems(Startup, (terrain::setup_terrain, view::setup_view));
         app.add_systems(Startup, view::setup_warp_view.after(view::setup_view));
         app.add_systems(FixedLast, view::record_player_view);
         app.add_systems(FixedUpdate, (view::orbit_toggle, view::debug_hud_toggle).after(controls::resolve_actions));
         app.add_systems(
             Update,
-            (controls::read_input, view::add_ship_visuals, view::add_remote_walker_visuals, view::update_camera, terrain::update_terrain, view::update_impostors, view::update_nav_markers, view::update_aim_marker, view::update_tunnel, view::update_hud, view::update_flight_hud).chain().after(ring::update_ring),
+            (controls::read_input, view::add_ship_visuals, view::add_remote_walker_visuals, view::update_camera, terrain::update_terrain, view::update_impostors, view::update_nav_markers, view::update_aim_marker, view::update_tunnel, view::update_speed_dust, view::update_hud, view::update_flight_hud, view::update_name_tags).chain().after(ring::update_ring),
         );
     }
     if let Some(net) = net {
         app.insert_resource(net);
-        app.add_systems(FixedUpdate, net_live::net_pre.before(ship::ship_control));
-        app.add_systems(FixedLast, net_live::net_post);
     }
+    // A session can also start later, from the menu.
+    app.add_systems(FixedUpdate, net_live::net_pre.run_if(resource_exists::<net_live::Net>).before(ship::ship_control));
+    app.add_systems(FixedLast, net_live::net_post.run_if(resource_exists::<net_live::Net>));
     if o.scenario.as_deref() == Some("foreign") {
         // Ahead of the controllers like net_pre: the remote ship is placed before the walker steps.
         app.add_systems(FixedUpdate, scenario::foreign_drive.run_if(resource_exists::<scenario::ForeignDriver>).before(ship::ship_control));

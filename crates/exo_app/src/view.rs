@@ -11,7 +11,7 @@ use bevy::light::GlobalAmbientLight;
 use bevy::math::{DQuat, DVec3};
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
-use flight_core::{PlanetEnv, CHASE_CAMERA_OFFSET, CHASE_CAMERA_PITCH_DEG};
+use flight_core::PlanetEnv;
 use warp_core::PlanetId;
 
 #[derive(Component)]
@@ -116,11 +116,19 @@ pub fn setup_view(mut commands: Commands) {
                 c.spawn((HudItem(i), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
             }
         });
+    // Seated: the quantum drive's state, target and what to do (J, N, aim while calibrating).
+    commands.spawn((
+        QuantumLine,
+        Text::new(""),
+        TextFont { font_size: FontSize::Px(16.0), ..default() },
+        TextColor(Color::srgb(0.55, 0.95, 1.0)),
+        Node { position_type: PositionType::Absolute, top: px(38), left: px(8), ..default() },
+    ));
     commands.spawn((
         Hud,
         Text::new(""),
         TextFont { font_size: FontSize::Px(14.0), ..default() },
-        Node { position_type: PositionType::Absolute, top: px(40), left: px(8), ..default() },
+        Node { position_type: PositionType::Absolute, top: px(64), left: px(8), ..default() },
         Visibility::Hidden,
     ));
     // Virtual joystick: dead-zone circle, a line of dots from the centre, the marker.
@@ -138,6 +146,8 @@ pub fn setup_view(mut commands: Commands) {
 
 #[derive(Component)]
 pub struct HudItem(u8);
+#[derive(Component)]
+pub struct QuantumLine;
 #[derive(Component)]
 pub struct StickHud;
 #[derive(Component)]
@@ -167,10 +177,15 @@ pub fn update_flight_hud(
     wd: Res<crate::warp::WarpDrive>,
     players: Query<&Player>,
     ships: Query<(&Ship, &avian3d::prelude::Position, &avian3d::prelude::LinearVelocity, &avian3d::prelude::Rotation)>,
-    mut items: Query<(&HudItem, &mut Text)>,
+    mut items: Query<(&HudItem, &mut Text), Without<QuantumLine>>,
+    mut quantum: Query<&mut Text, With<QuantumLine>>,
+    sys: Res<crate::warp::SystemRes>,
     mut debug: Query<&mut Visibility, (With<Hud>, Without<StickHud>)>,
     mut stick: Query<&mut Visibility, (With<StickHud>, Without<Hud>)>,
     mut nodes: Query<(&mut Node, Option<&StickDeadzone>, Option<&StickMarker>, Option<&StickDot>), Or<(With<StickDeadzone>, With<StickMarker>, With<StickDot>)>>,
+    mut stick_root: Query<&mut Node, (With<StickHud>, Without<StickDeadzone>, Without<StickMarker>, Without<StickDot>)>,
+    cam: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    origin: Res<RenderOrigin>,
 ) {
     let (Ok(pl), Ok((ship, sp, sv, sr))) = (players.single(), ships.single()) else { return };
     let (mode, v, pos, boost) = if pl.seated {
@@ -204,19 +219,28 @@ pub fn update_flight_hud(
     for (item, mut t) in &mut items {
         **t = texts[item.0 as usize].clone();
     }
+    if let Ok(mut t) = quantum.single_mut() {
+        **t = if pl.seated { warp_line(&wd, &sys.0, sp.0) } else { String::new() };
+    }
     if let Ok(mut vis) = debug.single_mut() {
         *vis = if view.debug_hud { Visibility::Inherited } else { Visibility::Hidden };
     }
     let mb = &bindings.mouse;
-    let show = pl.seated && mb.ship_mode == crate::controls::ShipMouse::Vjoy && !view.orbit;
+    // Centred on where the nose points, not on the screen centre: the chase camera looks 10 deg
+    // below the nose, so the screen centre was 10 deg off the drive's aim.
+    let nose = cam.single().ok().and_then(|(c, gt)| c.world_to_viewport(gt, (sp.0 + sr.0 * DVec3::NEG_Z * 5000.0 - origin.origin).as_vec3()).ok());
+    let show = pl.seated && !view.orbit && nose.is_some();
     if let Ok(mut vis) = stick.single_mut() {
         *vis = if show { Visibility::Inherited } else { Visibility::Hidden };
     }
-    if !show {
-        return;
+    let Some(nose) = nose.filter(|_| show) else { return };
+    if let Ok(mut n) = stick_root.single_mut() {
+        n.left = px(nose.x);
+        n.top = px(nose.y);
     }
     let scale = STICK_RADIUS_PX / mb.vjoy_max_angle as f32;
-    let off = ship.stick.offset.as_vec2() * scale;
+    // Direct mouse: only the circle, as the nose's boresight.
+    let off = if mb.ship_mode == crate::controls::ShipMouse::Vjoy { ship.stick.offset.as_vec2() * scale } else { Vec2::ZERO };
     let dz = mb.vjoy_deadzone as f32 * scale;
     for (mut n, dead, marker, dot) in &mut nodes {
         let (centre, size) = if dead.is_some() {
@@ -272,6 +296,20 @@ pub fn setup_warp_view(
         WorldPose::default(),
         Visibility::Hidden,
     ));
+    // Speed dust (#27): fixed in the world, the ship flies past it.
+    let dust = meshes.add(Cuboid::new(0.05, 0.05, 1.0));
+    let dust_mat = materials.add(StandardMaterial { base_color: Color::srgba(0.9, 0.95, 1.0, 0.5), unlit: true, alpha_mode: AlphaMode::Blend, ..default() });
+    for i in 0..DUST {
+        let h = |k: f32| ((i as f32 * 12.9898 + k * 78.233).sin() * 43758.547).fract().abs() as f64 - 0.5;
+        commands.spawn((
+            Dust(DVec3::new(h(1.0), h(2.0), h(3.0)) * DUST_BOX),
+            Mesh3d(dust.clone()),
+            MeshMaterial3d(dust_mat.clone()),
+            Transform::default(),
+            WorldPose::default(),
+            Visibility::Hidden,
+        ));
+    }
     let streak = meshes.add(Cuboid::new(0.04, 0.04, 1.0));
     let mat = materials.add(StandardMaterial { base_color: Color::WHITE, emissive: LinearRgba::new(6.0, 8.0, 12.0, 1.0), unlit: true, ..default() });
     for i in 0..STREAKS {
@@ -404,7 +442,8 @@ pub fn update_tunnel(
     mut q: Query<(&Streak, &mut WorldPose, &mut Transform, &mut Visibility)>,
     mut clear: ResMut<ClearColor>,
 ) {
-    let level = wd.drive.tunnel() as f32;
+    let warp = wd.drive.tunnel() as f32;
+    let level = warp;
     let t = time.elapsed_secs();
     let course = wd.drive.pose().map(|(_, v)| v.normalize_or_zero()).filter(|d| *d != DVec3::ZERO);
     let (Some(dir), true) = (course, level > 0.0) else {
@@ -422,8 +461,51 @@ pub fn update_tunnel(
         pose.rot = rot;
         tf.scale = Vec3::new(1.0, 1.0, len);
     }
-    if level > 0.0 {
-        clear.0 = clear.0.mix(&Color::srgb(0.05, 0.10, 0.30), level * 0.8);
+    if warp > 0.0 {
+        clear.0 = clear.0.mix(&Color::srgb(0.05, 0.10, 0.30), warp * 0.8);
+    }
+}
+
+/// A speck of speed dust: its position, world space (kept inside a box around the camera).
+#[derive(Component)]
+pub struct Dust(DVec3);
+const DUST: usize = 160;
+/// Edge of the box around the camera the dust fills (m).
+const DUST_BOX: f64 = 120.0;
+
+/// Speed dust (#27, replaces streaks from the warp tunnel, which moved with the camera and turned
+/// with the course): world-fixed specks the ship flies past; leaving the box around the camera a
+/// speck comes back on the other side. Each is stretched along the ship's velocity by the distance
+/// it covers in 1/30 s; the camera effects' streak curve thickens them in with speed.
+pub fn update_speed_dust(
+    fx: Res<crate::ship::CameraEffects>,
+    origin: Res<RenderOrigin>,
+    wd: Res<crate::warp::WarpDrive>,
+    players: Query<&Player>,
+    ships: Query<&avian3d::prelude::LinearVelocity, With<Ship>>,
+    mut q: Query<(&mut Dust, &mut WorldPose, &mut Transform, &mut Visibility)>,
+) {
+    let seated = players.single().is_ok_and(|p| p.seated);
+    let level = if seated && wd.drive.tunnel() == 0.0 { fx.0.streak } else { 0.0 };
+    let v = ships.single().map(|v| v.0).unwrap_or_default();
+    if level <= 0.0 || v.length_squared() < 1.0 {
+        for (.., mut vis) in &mut q {
+            *vis = Visibility::Hidden;
+        }
+        return;
+    }
+    let cam = origin.view;
+    let rot = DQuat::from_rotation_arc(DVec3::NEG_Z, v.normalize());
+    // Length: the way covered in 1/30 s (motion blur); the streak level only thickens them.
+    let len = (v.length() / 30.0).clamp(0.3, 15.0);
+    let thick = (level / 0.2).min(1.0);
+    for (mut d, mut pose, mut tf, mut vis) in &mut q {
+        let rel = d.0 - cam;
+        d.0 -= (rel / DUST_BOX).round() * DUST_BOX;
+        pose.pos = d.0;
+        pose.rot = rot;
+        tf.scale = Vec3::new(thick as f32, thick as f32, len as f32);
+        *vis = Visibility::Inherited;
     }
 }
 
@@ -444,16 +526,81 @@ pub fn add_ship_visuals(
 }
 
 /// Capsule for the walker of another player.
+/// Body colour of each slot's figure: flat, loud, one per player.
+const FIGURE_COLOURS: [(f32, f32, f32); 8] = [(0.95, 0.55, 0.15), (0.15, 0.75, 0.7), (0.6, 0.35, 0.85), (0.95, 0.85, 0.2), (0.95, 0.45, 0.65), (0.55, 0.85, 0.25), (0.35, 0.65, 0.95), (0.9, 0.25, 0.25)];
+
+/// Box parts of the figure in its own space: feet at the origin, face towards -z. A chunky
+/// low-poly figure built from code (#32): stubby legs, a block body, a big head with googly eyes
+/// and an antenna. No rig, no animation. (size, centre, colour slot: 0 body, 1 dark, 2 white, 3 black)
+pub const FIGURE_PARTS: [(Vec3, Vec3, u8); 12] = [
+    (Vec3::new(0.22, 0.7, 0.26), Vec3::new(-0.15, 0.35, 0.0), 1),
+    (Vec3::new(0.22, 0.7, 0.26), Vec3::new(0.15, 0.35, 0.0), 1),
+    (Vec3::new(0.62, 0.68, 0.38), Vec3::new(0.0, 1.04, 0.0), 0),
+    (Vec3::new(0.16, 0.6, 0.18), Vec3::new(-0.4, 1.02, 0.0), 0),
+    (Vec3::new(0.16, 0.6, 0.18), Vec3::new(0.4, 1.02, 0.0), 0),
+    (Vec3::new(0.56, 0.46, 0.5), Vec3::new(0.0, 1.62, 0.0), 0),
+    (Vec3::new(0.15, 0.15, 0.03), Vec3::new(-0.12, 1.68, -0.26), 2),
+    (Vec3::new(0.15, 0.15, 0.03), Vec3::new(0.12, 1.68, -0.26), 2),
+    (Vec3::new(0.07, 0.07, 0.03), Vec3::new(-0.1, 1.66, -0.28), 3),
+    (Vec3::new(0.07, 0.07, 0.03), Vec3::new(0.14, 1.7, -0.28), 3),
+    (Vec3::new(0.04, 0.3, 0.04), Vec3::new(0.08, 2.0, 0.0), 1),
+    (Vec3::new(0.12, 0.12, 0.12), Vec3::new(0.08, 2.18, 0.0), 0),
+];
+
+/// Another player's name over its figure (UI, placed on screen every frame).
+#[derive(Component)]
+pub struct NameTag(pub Entity);
+
 pub fn add_remote_walker_visuals(
     mut commands: Commands,
-    q: Query<Entity, Added<crate::net_live::RemoteWalker>>,
+    q: Query<(Entity, &crate::net_live::RemoteWalker), Added<crate::net_live::RemoteWalker>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for e in &q {
+    for (e, rw) in &q {
+        let (r, g, b) = FIGURE_COLOURS[(rw.owner.max(1) as usize - 1) % FIGURE_COLOURS.len()];
+        let colours = [Color::srgb(r, g, b), Color::srgb(r * 0.45, g * 0.45, b * 0.45), Color::WHITE, Color::BLACK];
+        let mats: Vec<_> = colours.iter().map(|c| materials.add(StandardMaterial { base_color: *c, perceptual_roughness: 1.0, ..default() })).collect();
         commands.entity(e).with_children(|c| {
-            c.spawn((Mesh3d(meshes.add(Capsule3d::new(0.35, 1.1))), MeshMaterial3d(materials.add(Color::srgb(0.25, 0.95, 0.45))), Transform::from_xyz(0.0, 0.9, 0.0)));
+            for (size, at, m) in FIGURE_PARTS {
+                c.spawn((Mesh3d(meshes.add(Cuboid::from_size(size))), MeshMaterial3d(mats[m as usize].clone()), Transform::from_translation(at)));
+            }
         });
+        commands.spawn((
+            NameTag(e),
+            Text::new(format!("Pilot {}", rw.owner)),
+            TextFont { font_size: FontSize::Px(15.0), ..default() },
+            TextColor(colours[0].lighter(0.25)),
+            Node { position_type: PositionType::Absolute, ..default() },
+            Visibility::Hidden,
+        ));
+    }
+}
+
+/// Name tags follow their figures on screen; hidden behind the camera or beyond 150 m.
+pub fn update_name_tags(
+    mut commands: Commands,
+    cam: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    walkers: Query<&GlobalTransform, With<crate::net_live::RemoteWalker>>,
+    mut tags: Query<(Entity, &NameTag, &mut Node, &mut Visibility, &ComputedNode)>,
+) {
+    let Ok((camera, cam_gt)) = cam.single() else { return };
+    for (tag, NameTag(of), mut node, mut vis, computed) in &mut tags {
+        let Ok(gt) = walkers.get(*of) else {
+            commands.entity(tag).despawn();
+            continue;
+        };
+        let head = gt.translation() + gt.up() * 2.5;
+        let far = head.distance(cam_gt.translation()) > 150.0;
+        match camera.world_to_viewport(cam_gt, head) {
+            Ok(p) if !far => {
+                let size = computed.size() * computed.inverse_scale_factor();
+                node.left = px(p.x - size.x * 0.5);
+                node.top = px(p.y - size.y);
+                *vis = Visibility::Inherited;
+            }
+            _ => *vis = Visibility::Hidden,
+        }
     }
 }
 
@@ -499,23 +646,32 @@ pub fn update_camera(
     mut view: ResMut<ViewState>,
     players: Query<(&Player, &PlayerInterp)>,
     ships: Query<&BodyInterp, With<Ship>>,
-    mut cam: Query<(&mut WorldPose, &mut DistanceFog), With<MainCamera>>,
+    mut cam: Query<(&mut WorldPose, &mut DistanceFog, &mut Projection), With<MainCamera>>,
     mut clear: ResMut<ClearColor>,
     mut ambient: ResMut<GlobalAmbientLight>,
+    fx: Res<crate::ship::CameraEffects>,
+    tuning: Res<crate::tuning::Tuning>,
+    settings: Res<crate::settings::Settings>,
 ) {
     let f = fixed.overstep_fraction_f64();
     let Ok((pl, pi)) = players.single() else { return };
     let Ok(si) = ships.single() else { return };
-    let Ok((mut pose, mut fog)) = cam.single_mut() else { return };
+    let Ok((mut pose, mut fog, mut proj)) = cam.single_mut() else { return };
+    // The settings' field of view at rest; the speed curve adds its rise to it.
+    let base_fov = settings.fov_deg;
+    let speed_fov = fx.0.fov_deg - tuning.camera.fov_curve.eval(0.0);
     if view.orbit {
         let d = DVec3::new(view.orbit_pitch.cos() * view.orbit_yaw.sin(), view.orbit_pitch.sin(), view.orbit_pitch.cos() * view.orbit_yaw.cos());
         pose.pos = planet.centre + d * 15_000.0;
         let up = if d.y.abs() < 0.99 { DVec3::Y } else { DVec3::X };
         pose.rot = walker_core::look_rot(-d, up);
     } else if pl.seated {
+        // Look-ahead into the turn, the touchdown bump along the ship's down (#27).
         let (sp, sr) = si.at(f);
-        pose.pos = sp + sr * CHASE_CAMERA_OFFSET;
-        pose.rot = sr * DQuat::from_rotation_x(CHASE_CAMERA_PITCH_DEG.to_radians());
+        let fx = &fx.0;
+        let ct = &tuning.camera;
+        pose.pos = sp + sr * (DVec3::from_array(ct.chase_offset) - DVec3::Y * fx.bump(ct));
+        pose.rot = sr * DQuat::from_rotation_y(fx.look.y) * DQuat::from_rotation_x(ct.chase_pitch_deg.to_radians() + fx.look.x);
     } else {
         let feet = pi.prev.0.lerp(pi.curr.0, f);
         let up = pi.prev.1.lerp(pi.curr.1, f).normalize();
@@ -537,6 +693,10 @@ pub fn update_camera(
                 (pos, rot)
             }
         };
+    }
+    if let Projection::Perspective(p) = proj.as_mut() {
+        let fov = if pl.seated && !view.orbit { base_fov + speed_fov } else { base_fov };
+        p.fov = (fov as f32).to_radians();
     }
     view.cabin = (pl.ship, pl.body.is_some());
     view.last_rot = pose.rot;
@@ -629,6 +789,18 @@ pub fn update_hud(
 
 /// Quantum drive status: phase, gauge and aim while calibrating, speed on rails. Target and
 /// distance come from one rule: the running jump's target, else `System::effective_target`.
+fn abort_text(a: warp_core::Abort) -> String {
+    use warp_core::Abort::*;
+    match a {
+        NoTarget => "no target".into(),
+        TooLow => "too low, climb above 1.5 atmosphere heights".into(),
+        Obstructed(b) => format!("path blocked ({b:?})"),
+        NotReady => "drive not ready".into(),
+        Cancelled => "cancelled".into(),
+        CalibrationLost => "aim lost while calibrating, keep the nose on the ring".into(),
+    }
+}
+
 fn warp_line(wd: &crate::warp::WarpDrive, sys: &warp_core::System, ship: DVec3) -> String {
     use warp_core::Phase;
     let d = &wd.drive;
@@ -637,15 +809,19 @@ fn warp_line(wd: &crate::warp::WarpDrive, sys: &warp_core::System, ship: DVec3) 
     let dist = km_text(sys.planet(id).centre().distance(ship));
     match d.phase {
         Phase::Idle => {
-            let refused = wd.last_abort.map(|a| format!("  last: {a:?}")).unwrap_or_default();
-            format!("QUANTUM  ready  J: warp to {target} ({dist})  N: select{refused}")
+            let refused = wd.last_abort.map(|a| format!("  (last try: {})", abort_text(a))).unwrap_or_default();
+            // With two planets there is only one destination: the one you are not at.
+            let select = if sys.planets.len() > 2 { "  N: next target" } else { "" };
+            format!("QUANTUM  ready  J: warp to {target} ({dist}){select}{refused}")
         }
         Phase::Spooling => format!("QUANTUM  spooling {:.1}/{:.0} s  -> {target} ({dist})  aim {:.1} deg  (J cancels)", d.timer, d.cfg.spool_time, d.angle),
         Phase::Calibrating => format!(
-            "QUANTUM  calibrating {:.0} %  aim {:.1} deg{}  -> {target} ({dist})  (J cancels)",
+            "QUANTUM  calibrating {:.0} %  nose on the ring: {:.1} deg off (keep under {:.0}, lost at {:.0}){}  -> {target}  (J cancels)",
             d.gauge * 100.0,
             d.angle,
-            if d.warning { "  WARNING: hold the course" } else { "" }
+            d.cfg.calibration_angle,
+            d.cfg.warning_angle,
+            if d.warning { "  HOLD THE COURSE" } else { "" }
         ),
         Phase::PreRamp => format!("QUANTUM  engaging  -> {target} ({dist})"),
         Phase::RampUp | Phase::Cruise | Phase::RampDown => format!(

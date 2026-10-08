@@ -455,6 +455,37 @@ fn hold_until(name: &'static str, ks: &'static [KeyCode], limit: f64, mut done: 
     })
 }
 
+/// Hold Ctrl until the ship rests (well below the landed check's 0.05 m/s). From the first hull
+/// contact on it must not slide: pressed down onto a slope it used to slide 20 s. Tipping from the
+/// first corner onto the slope moves the centre a little (0.3 m on the 14 degree slope of `full`).
+fn land(name: &'static str) -> Step {
+    Box::new(move |w, c| {
+        if c.t == 0.0 {
+            begin(w, c, name);
+            keys(w, &[KeyCode::ControlLeft], true);
+            c.p.remove("touch");
+        }
+        let pos = ship_frame_of(w).origin;
+        if with_ship(w, |s| s.grounded) && !c.p.contains_key("touch") {
+            c.p.insert("touch", pos);
+        }
+        let v = ship_vel(w).length();
+        if c.t > 3.0 && v < 0.02 || c.t >= 90.0 {
+            keys(w, &[KeyCode::ControlLeft], false);
+            let up = planet(w).up(pos);
+            let slide = c.p.get("touch").map(|t| {
+                let d = pos - *t;
+                (d - up * d.dot(up)).length()
+            });
+            let agl = above_ground(w);
+            end(w, c, format!("{:.1} s, ground {agl:.2} m, speed {v:.3} m/s, slid {:.3} m after touchdown", c.t, slide.unwrap_or(f64::NAN)));
+            check(c, slide.is_some_and(|s| s < 0.5), format!("{name}: no slide after touchdown ({:.3} m)", slide.unwrap_or(f64::NAN)));
+            return true;
+        }
+        false
+    })
+}
+
 /// Point the nose like a player with the mouse: yaw/pitch rate proportional to the error,
 /// at most the controller's turn rate. `elevation` is the wanted angle above the horizon.
 fn aim(name: &'static str, elevation_deg: f64, secs: f64) -> Step {
@@ -1753,8 +1784,14 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
             }
         }
         "foreign" => foreign_steps(&mut s),
+        // #16: a warping remote ship (about 1e6 m/s) right next to the walking walker.
+        "foreign_warp" => foreign_warp_steps(&mut s),
+        // #32 and #30: another player's figure outside and in the cabin; with --menu the menus.
+        "figure" => figure_steps(&mut s, &shot_step),
         // Sprint 2 feel: input ramp, virtual-joystick mouse, boost, decoupled (#24, #25, #26).
-        "flight" => flight_steps(&mut s),
+        "flight" => flight_steps(&mut s, &shot_step, out_dir, windowed),
+        // #21: edit a tuning file while running (dev builds).
+        "reload" => reload_steps(&mut s, out_dir),
         "warp" => warp_steps(&mut s, out_dir, windowed),
         // Issue #5: step out of the ship in space (seat by test shortcut, then fly up).
         "space" => {
@@ -1789,15 +1826,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
             s.push(hold_until("firm brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 0.5));
             s.push(aim("level out", 0.0, 3.0));
             s.push(hold_until("descend to 120 m above ground", &[KeyCode::ControlLeft, KeyCode::ShiftLeft], 180.0, |w| above_ground(w) < 120.0));
-            // Until well below the check's 0.05 m/s: a ship that touched down on a slope slides
-            // and settles slowly, and ending at the check's own threshold made it a coin toss.
-            s.push(hold_until("land", &[KeyCode::ControlLeft], 60.0, {
-                let mut t = 0.0;
-                move |w| {
-                    t += 1.0 / 60.0;
-                    t > 3.0 && ship_vel(w).length() < 0.02
-                }
-            }));
+            s.push(land("land"));
             s.push(Box::new(|w, c| {
                 let (v, agl) = (ship_vel(w).length(), above_ground(w));
                 check(c, v < 0.05 && agl < 1.0, format!("landed: {v:.3} m/s, {agl:.2} m above ground"));
@@ -1923,7 +1952,8 @@ fn stick_yaw(name: &'static str, share: f64) -> Step {
     })
 }
 
-fn flight_steps(s: &mut Vec<Step>) {
+fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step, out_dir: &std::path::Path, windowed: bool) {
+    let dir = out_dir.to_path_buf();
     s.push(Box::new(|w, _| {
         put_at_seat(w);
         true
@@ -1953,6 +1983,14 @@ fn flight_steps(s: &mut Vec<Step>) {
     }));
     // Virtual joystick: yaw rate is deflection times turn rate; inside the dead zone nothing.
     s.push(stick_yaw("stick: full right", 1.0));
+    s.push(shot_step("stick-full-right"));
+    s.push(Box::new(|w, c| {
+        // Still at full right: the view leads the turn to the right, capped (#27).
+        let look = w.resource::<crate::ship::CameraEffects>().0.look;
+        let max = w.resource::<crate::tuning::Tuning>().camera.look_ahead_max_yaw_deg.to_radians();
+        check(c, (look.y + max).abs() < 0.01 * max && look.x.abs() < 0.01, format!("camera: look-ahead {:+.2} deg yaw in a full right turn (cap {:.0})", look.y.to_degrees(), max.to_degrees()));
+        true
+    }));
     s.push(stick_yaw("stick: half right", 0.5));
     s.push(stick_yaw("stick: centred", 0.0));
     s.push(Box::new(|w, c| {
@@ -1970,9 +2008,30 @@ fn flight_steps(s: &mut Vec<Step>) {
         }
         false
     }));
+    // #29: the pad's right stick through the same axes, without a device.
+    s.push(Box::new(|w, c| {
+        let stick = 0.8f32;
+        if c.t == 0.0 {
+            begin(w, c, "pad: right stick at 0.8");
+            w.resource_mut::<Controls>().pad_axes.insert(GamepadAxis::RightStickX, stick);
+        }
+        if c.t >= 1.5 {
+            w.resource_mut::<Controls>().pad_axes.clear();
+            let shaped = w.resource::<Bindings>().axis(crate::controls::Axis::TurnYaw).shape(stick as f64);
+            let want = -shaped * w.resource::<crate::tuning::Tuning>().ship.turn_rate;
+            let rate = yaw_rate(w);
+            end(w, c, format!("yaw rate {rate:+.3} rad/s, wanted {want:+.3}"));
+            check(c, (rate - want).abs() <= 0.05 * want.abs(), format!("pad: stick 0.8 right yaws {rate:+.3} rad/s (dead zone and curve: {want:+.3})"));
+            return true;
+        }
+        false
+    }));
+    s.push(stick_yaw("stick: centred", 0.0));
     // #24: boost is a speed stage; it raises the limit and drops back on release.
     s.push(hold_until("cruise", &[KeyCode::KeyW], 6.0, |_| false));
-    s.push(Box::new(|w, c| {
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
         let (limit, v) = (with_ship(w, |s| s.ctl.forward_speed_limit), ship_vel(w).length());
         if c.t == 0.0 {
             begin(w, c, "boost");
@@ -1981,16 +2040,21 @@ fn flight_steps(s: &mut Vec<Step>) {
             keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft], true);
         }
         if c.t >= 6.0 {
+            // Screenshot while boost is still held, so the HUD shows it.
+            shot(w, c, &dir, windowed, "boost");
             keys(w, &[KeyCode::ShiftLeft], false);
             let (l0, v0) = (c.v["limit0"], c.v["v0"]);
             c.v.insert("limit1", limit);
             c.v.insert("v1", v);
             end(w, c, format!("limit {l0:.0} -> {limit:.0} m/s, speed {v0:.0} -> {v:.0} m/s"));
             check(c, limit > 1.5 * l0 && v > v0 + 20.0, format!("boost: limit {l0:.0} -> {limit:.0} m/s, speed {v0:.0} -> {v:.0} m/s"));
+            let (fov, base) = (w.resource::<crate::ship::CameraEffects>().0.fov_deg, w.resource::<crate::tuning::Tuning>().camera.fov_curve.eval(0.0));
+            check(c, fov > base + 1.5, format!("camera: field of view {fov:.1} deg at {v:.0} m/s (at rest {base:.0})"));
             return true;
         }
         false
     }));
+    }
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "boost released");
@@ -2029,9 +2093,14 @@ fn flight_steps(s: &mut Vec<Step>) {
         }
         false
     }));
-    s.push(Box::new(|w, c| {
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
         if c.t == 0.0 {
             begin(w, c, "decoupled glide, no input");
+        }
+        if (c.t - 2.0).abs() < c.dt * 0.5 {
+            shot(w, c, &dir, windowed, "decoupled");
         }
         if c.t >= 3.0 {
             let (v0, v) = (c.v["v_release"], ship_vel(w).length());
@@ -2042,6 +2111,7 @@ fn flight_steps(s: &mut Vec<Step>) {
         }
         false
     }));
+    }
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "coupled again, no input");
@@ -2057,6 +2127,204 @@ fn flight_steps(s: &mut Vec<Step>) {
         false
     }));
     s.push(hold_until("firm brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 0.5));
+    // Touchdown gives a camera bump (#27); on a slope the second side may give another.
+    s.push(Box::new(|w, c| {
+        c.v.insert("bumps0", w.resource::<crate::ship::CameraEffects>().0.bumps as f64);
+        true
+    }));
+    s.push(land("land"));
+    s.push(Box::new(|w, c| {
+        let bumps = w.resource::<crate::ship::CameraEffects>().0.bumps as f64 - c.v["bumps0"];
+        check(c, (1.0..=2.0).contains(&bumps), format!("camera: {bumps} touchdown bump(s) on landing"));
+        true
+    }));
+    s.push(shot_step("landed"));
+    s.push(Box::new(|w, _| {
+        tap(w, KeyCode::F3);
+        true
+    }));
+    s.push(wait(0.3));
+    s.push(shot_step("debug-hud-f3"));
+    // Screenshots are written a few frames later.
+    s.push(wait(1.0));
+}
+
+/// #16: a remote proxy held 40 m beside the walker with the velocity of a ship in a warp
+/// (1e6 m/s): its collider AABB grows to kilometres and the walker's moving-collider sweep sees
+/// 16.7 km of relative motion per tick. The walk must be the same as without it.
+fn foreign_warp_steps(s: &mut Vec<Step>) {
+    const WARP_SPEED: f64 = 1.0e6;
+    s.push(Box::new(|w, _| {
+        // Away from the own parked ship (15 m ahead of the spawn).
+        let p = player_world(w);
+        let own = ship_frame_of(w).origin;
+        face_towards(w, p + (p - own));
+        let pl = planet(w);
+        let feet = player_world(w);
+        let up = pl.up(feet);
+        let (fwd, right) = with_player(w, |p| (p.w.forward, p.w.forward.cross(p.up)));
+        let pos = feet + right * 40.0 + up * 3.0;
+        let mut commands = w.commands();
+        let proxy = crate::net_live::spawn_proxy(&mut commands, 2, pos, walker_core::look_rot(fwd, up));
+        w.flush();
+        w.insert_resource(WarpingProxy { proxy, pos, vel: fwd * WARP_SPEED });
+        true
+    }));
+    s.push(Box::new(|w, c| {
+        hold_proxy(w);
+        if c.t == 0.0 {
+            begin(w, c, "walk 5 s beside a remote ship at 1e6 m/s");
+            c.p.insert("start", player_world(w));
+            keys(w, &[KeyCode::KeyW], true);
+        }
+        if c.t >= 5.0 {
+            keys(w, &[KeyCode::KeyW], false);
+            let d = player_world(w).distance(c.p["start"]);
+            let (v, steps) = (with_player(w, |p| p.w.vel.length()), w.resource::<WalkStats>().steps);
+            end(w, c, format!("walked {d:.2} m, speed {v:.2} m/s, {steps} steps"));
+            // Walk speed 5 m/s for 5 s, less the step-off.
+            check(c, d > 22.0 && d < 26.0 && d.is_finite(), format!("foreign warp: walked {d:.2} m in 5 s next to a ship at 1e6 m/s (free walk 24.5)"));
+            return true;
+        }
+        false
+    }));
+    s.push(Box::new(|w, c| {
+        let ok = with_player(w, |p| p.w.pos.is_finite() && p.ship.is_none());
+        check(c, ok, "foreign warp: walker stays outside, finite".into());
+        true
+    }));
+}
+
+#[derive(Resource)]
+struct WarpingProxy {
+    proxy: Entity,
+    pos: DVec3,
+    vel: DVec3,
+}
+
+/// Back to its place each tick, with the warp's velocity (the physics step moves it 16.7 km).
+fn hold_proxy(w: &mut World) {
+    let Some(wp) = w.get_resource::<WarpingProxy>() else { return };
+    let (e, pos, vel) = (wp.proxy, wp.pos, wp.vel);
+    if let Some(mut p) = w.get_mut::<Position>(e) {
+        p.0 = pos;
+    }
+    if let Some(mut v) = w.get_mut::<LinearVelocity>(e) {
+        v.0 = vel;
+    }
+}
+
+fn figure_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
+    use crate::menu::{Back, Menu, Screen};
+    let menu_shot = |screen: Screen, tag: &'static str, shot_step: &dyn Fn(&'static str) -> Step| -> Vec<Step> {
+        vec![
+            Box::new(move |w: &mut World, _: &mut Ctx| {
+                if let Some(mut m) = w.get_resource_mut::<Menu>() {
+                    m.screen = screen;
+                }
+                true
+            }),
+            wait(0.3),
+            shot_step(tag),
+            wait(0.3),
+        ]
+    };
+    for (screen, tag) in [(Screen::Main, "menu-main"), (Screen::Join, "menu-join"), (Screen::Settings(Back::Main), "menu-settings"), (Screen::Paused, "menu-paused")] {
+        s.extend(menu_shot(screen, tag, shot_step));
+    }
+    s.extend(menu_shot(Screen::None, "menu-closed", shot_step));
+    // Another player's figure 4 m in front, facing the walker (test hook: a remote walker without
+    // a network).
+    s.push(Box::new(|w, _| {
+        let p = player_world(w);
+        let own = ship_frame_of(w).origin;
+        face_towards(w, p + (p - own));
+        let (fwd, up) = with_player(w, |pl| (pl.w.forward, pl.up));
+        let at = p + fwd * 4.0;
+        w.spawn((crate::net_live::RemoteWalker { owner: 2 }, crate::origin::WorldPose { pos: at, rot: walker_core::look_rot(-fwd, up) }, Transform::default(), Visibility::default()));
+        true
+    }));
+    s.push(wait(0.5));
+    s.push(shot_step("figure-outside"));
+    // A screenshot is taken a few frames later; keep the scene until then.
+    s.push(wait(0.5));
+    // In the cabin: the walker stands at the seat, the figure near the back, both looking at it.
+    s.push(Box::new(|w, _| {
+        put_at_seat(w);
+        let f = ship_frame_of(w);
+        let at = f.to_world(DVec3::new(0.0, 0.32, 2.0));
+        let up = f.rot * DVec3::Y;
+        let mut q = w.query_filtered::<&mut crate::origin::WorldPose, With<crate::net_live::RemoteWalker>>();
+        for mut pose in q.iter_mut(w) {
+            pose.pos = at;
+            pose.rot = walker_core::look_rot(f.rot * DVec3::NEG_Z, up);
+        }
+        face_towards(w, at);
+        true
+    }));
+    s.push(wait(0.6));
+    s.push(shot_step("figure-cabin"));
+    s.push(wait(1.0));
+}
+
+/// Copies the shipped tuning files to `<out>/tuning`, watches that copy, edits it mid-run.
+fn reload_steps(s: &mut Vec<Step>, out_dir: &std::path::Path) {
+    let dir = out_dir.join("tuning");
+    let ship_file = dir.join("ship.json");
+    let ship_text = crate::tuning::SHIP.to_string();
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, _| {
+            std::fs::create_dir_all(&dir).expect("tuning copy dir");
+            for (f, t) in [("ship.json", crate::tuning::SHIP), ("walker.json", crate::tuning::WALKER), ("suit.json", crate::tuning::SUIT), ("camera.json", crate::tuning::CAMERA), ("bindings.json", crate::controls::BINDINGS)] {
+                std::fs::write(dir.join(f), t).expect("tuning copy");
+            }
+            w.resource_mut::<crate::hot_reload::HotReload>().dir = dir.clone();
+            true
+        }));
+    }
+    s.push(wait(1.0));
+    s.push(Box::new(|w, c| {
+        let n = w.resource::<crate::hot_reload::HotReload>().reloads;
+        check(c, n == 0, format!("reload: unchanged files change nothing ({n} reloads)"));
+        true
+    }));
+    let edit = |name: &'static str, file: std::path::PathBuf, text: String, then: fn(&mut World) -> Option<String>| -> Step {
+        Box::new(move |w, c| {
+            if c.t == 0.0 {
+                begin(w, c, name);
+                std::fs::write(&file, &text).expect("edit tuning");
+            }
+            if let Some(note) = then(w) {
+                end(w, c, format!("after {:.2} s simulated", c.t));
+                check(c, true, format!("{name}: {note}"));
+                return true;
+            }
+            if c.t > 30.0 {
+                end(w, c, "timed out".into());
+                check(c, false, format!("{name}: no effect within 30 s"));
+                return true;
+            }
+            false
+        })
+    };
+    let slower = ship_text.replacen("\"turn_rate\": 2.5", "\"turn_rate\": 1.25", 1);
+    assert_ne!(slower, ship_text, "fixture: turn_rate in ship.json");
+    s.push(edit("reload: ship.json turn_rate 2.5 -> 1.25", ship_file.clone(), slower, |w| {
+        let (ship, res) = (with_ship(w, |s| s.ctl.tuning.turn_rate), w.resource::<crate::tuning::Tuning>().ship.turn_rate);
+        (ship == 1.25 && res == 1.25).then(|| format!("the ship turns at {ship} rad/s now"))
+    }));
+    let broken = ship_text.replacen("\"drag_k\"", "\"drag_kk\": 1, \"drag_k\"", 1);
+    s.push(edit("reload: a broken ship.json is refused", ship_file.clone(), broken, |w| {
+        let hr = w.resource::<crate::hot_reload::HotReload>();
+        let err = hr.last_error.clone()?;
+        let rate = with_ship(w, |s| s.ctl.tuning.turn_rate);
+        (rate == 1.25 && err.contains("drag_kk")).then(|| format!("old value {rate} stays, error: {err}"))
+    }));
+    s.push(edit("reload: ship.json restored", ship_file, ship_text, |w| {
+        let rate = with_ship(w, |s| s.ctl.tuning.turn_rate);
+        (rate == 2.5 && w.resource::<crate::hot_reload::HotReload>().last_error.is_none()).then(|| format!("turn rate {rate} again"))
+    }));
 }
 
 pub fn run_script(w: &mut World) {

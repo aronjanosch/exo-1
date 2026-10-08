@@ -35,12 +35,57 @@ pub struct ForeignDriver {
     pub parked: Option<(DVec3, bevy::math::DQuat)>,
     pub max_pos_err: f64,
     pub max_rot_err_deg: f64,
+    /// #16: the received velocity is replaced by this one (a ship at warp speed held in place).
+    pub hold_vel: Option<DVec3>,
+    /// #16: the ship warps along its nose (wins over `parked`).
+    pub warp: Option<ForeignWarp>,
+}
+
+/// A remote ship's warp for the `foreign` scenario: still at `p0` until `t0`, then the drive's
+/// two acceleration stages up to its top speed, then cruise (`content/system/system.json`).
+#[derive(Clone, Copy)]
+pub struct ForeignWarp {
+    pub t0: f64,
+    pub p0: DVec3,
+    pub q: DQuat,
+    pub accel_one: f64,
+    pub switch_speed: f64,
+    pub accel_two: f64,
+    pub top_speed: f64,
+}
+
+impl ForeignWarp {
+    /// Distance along the nose and speed at time `t`.
+    fn at(&self, t: f64) -> (f64, f64) {
+        let tau = (t - self.t0).max(0.0);
+        let (a1, vs, a2, vt) = (self.accel_one, self.switch_speed, self.accel_two, self.top_speed);
+        let (t1, t2) = (vs / a1, (vt - vs) / a2);
+        let (s1, s2) = (0.5 * a1 * t1 * t1, vs * t2 + 0.5 * a2 * t2 * t2);
+        if tau < t1 {
+            (0.5 * a1 * tau * tau, a1 * tau)
+        } else if tau < t1 + t2 {
+            let u = tau - t1;
+            (s1 + vs * u + 0.5 * a2 * u * u, vs + a2 * u)
+        } else {
+            (s1 + s2 + vt * (tau - t1 - t2), vt)
+        }
+    }
+
+    /// Seconds from `t0` to the top speed.
+    fn ramp_time(&self) -> f64 {
+        self.switch_speed / self.accel_one + (self.top_speed - self.switch_speed) / self.accel_two
+    }
 }
 
 const FOREIGN_SPEED: f64 = 350.0;
 const FOREIGN_YAW_RATE: f64 = 0.003 * 60.0;
 
 fn foreign_truth(d: &ForeignDriver, t: f64) -> (DVec3, bevy::math::DQuat, DVec3) {
+    if let Some(wp) = d.warp {
+        let nose = wp.q * DVec3::NEG_Z;
+        let (s, v) = wp.at(t);
+        return (wp.p0 + nose * s, wp.q, nose * v);
+    }
     if let Some((p, q)) = d.parked {
         return (p, q, DVec3::ZERO);
     }
@@ -60,6 +105,14 @@ pub fn foreign_drive(
         s.seq = d.tick as u32;
         // Parked means landed: its cabin gravity is off.
         s.lag = if d.parked.is_some() { 0.0 } else { 1.0 };
+        if d.warp.is_some() {
+            // The owner sits in its own ship, as a real pilot sends it (the default walker pose is
+            // planet-relative and would be out of the walker range at warp speed).
+            s.frame = net_core::snapshot::FrameKind::Ship;
+            s.frame_id = 2;
+            s.wp = SEAT_POS;
+            s.wv = DVec3::ZERO;
+        }
         // Through the wire format, like a received packet.
         let s = Snapshot::decode(&s.encode()).expect("own snapshot decodes");
         d.buf.push(s);
@@ -70,8 +123,8 @@ pub fn foreign_drive(
     rs.lag = sample.s.lag;
     p.0 = sample.s.p;
     r.0 = sample.s.q;
-    v.0 = sample.s.v;
-    w.0 = if d.parked.is_some() { DVec3::ZERO } else { DVec3::new(0.0, FOREIGN_YAW_RATE, 0.0) };
+    v.0 = d.hold_vel.unwrap_or(sample.s.v);
+    w.0 = if d.parked.is_some() || d.warp.is_some() { DVec3::ZERO } else { DVec3::new(0.0, FOREIGN_YAW_RATE, 0.0) };
     origin.view = sample.s.p;
     if sample.mode == net_core::buffer::Mode::Interpolate && target > 0.5 {
         let (tp, tq, _) = foreign_truth(&d, target);
@@ -1039,7 +1092,7 @@ fn foreign_steps(s: &mut Vec<Step>) {
         let mut commands = w.commands();
         let proxy = crate::net_live::spawn_proxy(&mut commands, 2, p0, bevy::math::DQuat::IDENTITY);
         w.flush();
-        w.insert_resource(ForeignDriver { proxy, buf: Buffer::new(), tick: 0, p0, parked: None, max_pos_err: 0.0, max_rot_err_deg: 0.0 });
+        w.insert_resource(ForeignDriver { proxy, buf: Buffer::new(), tick: 0, p0, parked: None, max_pos_err: 0.0, max_rot_err_deg: 0.0, hold_vel: None, warp: None });
         true
     }));
     s.push(wait(1.0));
@@ -1223,6 +1276,163 @@ fn foreign_steps(s: &mut Vec<Step>) {
         }
         false
     }));
+    foreign_warp_extra_steps(s);
+}
+
+/// The same speed as `foreign_warp`: the drive's top speed (1e6 m/s).
+const FOREIGN_WARP_SPEED: f64 = 1.0e6;
+
+/// #16 without a network: a remote ship at warp speed next to the walking walker, then warping
+/// with the walker in its cabin. Through the real snapshot path like the rest of `foreign`.
+fn foreign_warp_extra_steps(s: &mut Vec<Step>) {
+    // 7. The landed ship carries 1e6 m/s along its nose while it stands (a 17 km swept AABB and
+    //    that relative velocity in the walker's moving-collider sweeps); the walker walks away
+    //    from it outside.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "walk 5 s beside the landed foreign ship carrying 1e6 m/s");
+            let proxy = w.resource::<ForeignDriver>().proxy;
+            let (pp, pr) = (w.get::<Position>(proxy).unwrap().0, w.get::<Rotation>(proxy).unwrap().0);
+            w.resource_mut::<ForeignDriver>().hold_vel = Some(pr * DVec3::NEG_Z * FOREIGN_WARP_SPEED);
+            place_walker(w, pp + pr * DVec3::new(7.0, 0.0, 0.0));
+            c.v.insert("ready", 0.0);
+            return false;
+        }
+        // Land first (placed 0.1 m above the ground).
+        if c.v["ready"] == 0.0 {
+            if c.t < 1.0 {
+                return false;
+            }
+            let proxy = w.resource::<ForeignDriver>().proxy;
+            let pp = w.get::<Position>(proxy).unwrap().0;
+            let p = player_world(w);
+            face_towards(w, p + (p - pp));
+            c.v.insert("ready", c.t);
+            c.p.insert("start", p);
+            c.p.insert("last", p);
+            c.v.insert("depen0", w.resource::<WalkStats>().depenetrations as f64);
+            c.v.insert("g", 0.0);
+            c.v.insert("n", 0.0);
+            c.v.insert("jump", 0.0);
+            keys(w, &[KeyCode::KeyW], true);
+            return false;
+        }
+        let p = player_world(w);
+        *c.v.get_mut("jump").unwrap() = c.v["jump"].max(p.distance(c.p["last"]));
+        c.p.insert("last", p);
+        *c.v.get_mut("g").unwrap() += with_player(w, |pl| pl.w.grounded) as u32 as f64;
+        *c.v.get_mut("n").unwrap() += 1.0;
+        if c.t - c.v["ready"] >= 5.0 {
+            keys(w, &[KeyCode::KeyW], false);
+            let d = p.distance(c.p["start"]);
+            let ws = w.resource::<WalkStats>().clone();
+            let (dep, resc) = (ws.depenetrations as f64 - c.v["depen0"], ws.rescues - c.rescues0);
+            let (g, n, jump) = (c.v["g"], c.v["n"], c.v["jump"]);
+            let proxy = w.resource::<ForeignDriver>().proxy;
+            let pv = w.get::<LinearVelocity>(proxy).unwrap().0.length();
+            end(w, c, format!("walked {d:.2} m, grounded {g}/{n} ticks, largest step {:.3} m, {dep} depenetrations, foreign ship at {:.0} km/s", jump, pv / 1000.0));
+            // Walk speed 5 m/s for 5 s, less the step-off (as in `foreign_warp`).
+            check(c, d > 22.0 && d < 26.0 && g / n > 0.95 && resc == 0 && jump < 0.2 && pv > 0.99 * FOREIGN_WARP_SPEED && p.is_finite(),
+                format!("foreign ship at {:.0} km/s next to the walker: walked {d:.2} m in 5 s (free walk 24.5), grounded {:.1} %, {resc} rescues, {dep} depenetrations, largest step {jump:.3} m", pv / 1000.0, 100.0 * g / n));
+            w.resource_mut::<ForeignDriver>().hold_vel = None;
+            return true;
+        }
+        false
+    }));
+    // 8. The ship lifts to 3 km (no terrain on its course), the walker boards (test setup), the
+    //    ship ramps up like the quantum drive to 1e6 m/s and cruises 3 s; at the end the walker
+    //    walks sideways in the cabin.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "in the cabin of the foreign ship warping to 1e6 m/s");
+            let pl = planet(w);
+            let (pos, _) = w.resource::<ForeignDriver>().parked.unwrap();
+            let up = pl.up(pos);
+            let p0 = pl.centre + up * (pl.surface(up) + 3000.0);
+            let q = crate::ship::basis_for_up(up);
+            let cfg = w.resource::<SystemRes>().0.drive.clone();
+            let mut d = w.resource_mut::<ForeignDriver>();
+            let t0 = d.tick as f64 * DT + 1.5;
+            // In flight: the snapshots send the cabin gravity on again.
+            d.parked = None;
+            d.warp = Some(ForeignWarp { t0, p0, q, accel_one: cfg.accel_stage_one, switch_speed: cfg.stage_switch_speed, accel_two: cfg.accel_stage_two, top_speed: FOREIGN_WARP_SPEED });
+            for k in ["boarded", "n", "g", "out", "drift", "ymin", "jump", "vmax", "walk_n"] {
+                c.v.remove(k);
+            }
+            return false;
+        }
+        let d = w.resource::<ForeignDriver>();
+        let (proxy, wp, now) = (d.proxy, d.warp.unwrap(), d.tick as f64 * DT);
+        // Board once the ship holds still at 3 km (after the 150 ms playout).
+        if !c.v.contains_key("boarded") {
+            if c.t < 1.0 {
+                return false;
+            }
+            with_player(w, |p| {
+                p.ship = Some(proxy);
+                p.w.pos = DVec3::new(0.0, 0.4, -1.0);
+                p.w.halt();
+                p.w.forward = DVec3::NEG_Z;
+                p.cabin_up = DVec3::Y;
+            });
+            c.v.insert("boarded", 1.0);
+            return false;
+        }
+        if now < wp.t0 + 0.3 {
+            // Settle on the deck while it stands.
+            c.p.insert("start", with_player(w, |p| p.w.pos));
+            c.p.insert("last", c.p["start"]);
+            c.v.insert("depen0", w.resource::<WalkStats>().depenetrations as f64);
+            c.v.insert("rescue0", w.resource::<WalkStats>().rescues as f64);
+            for k in ["n", "g", "out", "drift", "jump", "vmax"] {
+                c.v.insert(k, 0.0);
+            }
+            c.v.insert("ymin", f64::MAX);
+            return false;
+        }
+        let (pos, grounded, inside) = with_player(w, |p| (p.w.pos, p.w.grounded, p.ship == Some(proxy)));
+        let pv = w.get::<LinearVelocity>(proxy).unwrap().0.length();
+        let walking = c.v.contains_key("walk_n");
+        let start = c.p["start"];
+        if !walking {
+            *c.v.get_mut("drift").unwrap() = c.v["drift"].max(((pos.x - start.x).powi(2) + (pos.z - start.z).powi(2)).sqrt());
+            *c.v.get_mut("ymin").unwrap() = c.v["ymin"].min(pos.y);
+            *c.v.get_mut("jump").unwrap() = c.v["jump"].max(pos.distance(c.p["last"]));
+        }
+        c.p.insert("last", pos);
+        *c.v.get_mut("vmax").unwrap() = c.v["vmax"].max(pv);
+        *c.v.get_mut("n").unwrap() += 1.0;
+        *c.v.get_mut("g").unwrap() += grounded as u32 as f64;
+        *c.v.get_mut("out").unwrap() += !inside as u32 as f64;
+        let cruise_end = wp.t0 + wp.ramp_time() + 3.0;
+        if now >= cruise_end && !walking {
+            c.v.insert("walk_n", 0.0);
+            c.p.insert("walk_start", pos);
+            keys(w, &[KeyCode::KeyD], true);
+            return false;
+        }
+        if walking {
+            *c.v.get_mut("walk_n").unwrap() += 1.0;
+            if c.v["walk_n"] < 12.0 {
+                return false;
+            }
+            keys(w, &[KeyCode::KeyD], false);
+            let dx = pos.x - c.p["walk_start"].x;
+            let ws = w.resource::<WalkStats>().clone();
+            let dep = ws.depenetrations as f64 - c.v["depen0"];
+            let resc = ws.rescues as f64 - c.v["rescue0"];
+            let (n, g, out, drift, ymin, jump, vmax) = (c.v["n"], c.v["g"], c.v["out"], c.v["drift"], c.v["ymin"], c.v["jump"], c.v["vmax"]);
+            let (dist, _) = wp.at(now);
+            end(w, c, format!(
+                "ship top speed {:.0} km/s, {:.0} km flown, ramp {:.1} s + 3 s cruise; deck contact {g}/{n} ticks, left cabin {out} ticks, standing drift {:.2} mm, lowest feet {ymin:.3} m, largest standing step {:.2} mm, {dep} depenetrations, {resc} rescues; walked {dx:.3} m sideways at top speed",
+                vmax / 1000.0, dist / 1000.0, wp.ramp_time(), drift * 1000.0, jump * 1000.0));
+            check(c, vmax > 0.99 * FOREIGN_WARP_SPEED && out == 0.0 && g / n > 0.99 && drift < 0.05 && ymin > 0.28 && jump < 0.01 && resc == 0.0 && dep == 0.0 && pos.is_finite(),
+                format!("walker in the cabin of a foreign ship warping to {:.0} km/s: deck contact {:.1} %, drift {:.2} mm, largest step {:.2} mm, {dep} depenetrations, {resc} rescues", vmax / 1000.0, 100.0 * g / n, drift * 1000.0, jump * 1000.0));
+            check(c, dx > 0.5 && dx < 1.5, format!("walking inside the foreign cabin at {:.0} km/s uses the local frame ({dx:.3} m)", vmax / 1000.0));
+            return true;
+        }
+        false
+    }));
 }
 
 
@@ -1317,6 +1527,8 @@ fn warp_flight(name: &'static str, tag: &'static str, start: Option<PlanetId>, t
                 teleport_ship(w, p, r);
             }
             c.v.insert("log0", tel(w).log.len() as f64);
+            c.v.insert("planet0", w.resource::<PlanetRes>().id.0 as f64);
+            c.v.insert("swaps0", tel(w).swaps.len() as f64);
             c.v.insert("grounded0", w.resource::<WalkStats>().grounded as f64);
             c.v.insert("steps0", w.resource::<WalkStats>().steps as f64);
             c.v.insert("min_clear", f64::MAX);
@@ -1512,7 +1724,13 @@ fn warp_flight(name: &'static str, tag: &'static str, start: Option<PlanetId>, t
                     c.v["nose"] < NOSE_TOLERANCE && alt > p.min_jump_altitude(),
                     format!("{name}: at the exit the nose is {:.3} deg off {}'s centre (tolerance {NOSE_TOLERANCE} deg), {:.0} m from the centre, {alt:.0} m above the radius ({:.0} m above the atmosphere top)", c.v["nose"], p.name, pos.distance(p.centre()), alt - p.atmosphere_height),
                 );
-                check(c, gen_ms >= 0.0 && gen_ms < dur * 1000.0, format!("{name}: target generated in {gen_ms:.0} ms in the background during {dur:.1} s of flight"));
+                if c.v["planet0"] == to.0 as f64 {
+                    // On from a drop point: the target became the simulation's planet at the drop (#14).
+                    let (busy, swaps) = (w.resource::<PendingPlanet>().busy(), tel(w).swaps.len() as f64 - c.v["swaps0"]);
+                    check(c, !busy && swaps == 0.0, format!("{name}: target loaded since the drop: nothing generated (busy {busy}), {swaps} planet swaps"));
+                } else {
+                    check(c, gen_ms >= 0.0 && gen_ms < dur * 1000.0, format!("{name}: target generated in {gen_ms:.0} ms in the background during {dur:.1} s of flight"));
+                }
                 if windowed {
                     let n = c.v.get("terrain_n").copied().unwrap_or(0.0);
                     check(c, c.v.get("terrain_ok") == Some(&1.0), format!("{name}: terrain of {} drawn 2 s after the exit ({n:.0} chunks visible)", p.name));
@@ -1793,6 +2011,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
         // #21: edit a tuning file while running (dev builds).
         "reload" => reload_steps(&mut s, out_dir),
         "warp" => warp_steps(&mut s, out_dir, windowed),
+        // #14 and #34: three planet swaps and an emergency drop; what each swap leaves behind.
+        "swap" => swap_steps(&mut s, out_dir, windowed),
         // Issue #5: step out of the ship in space (seat by test shortcut, then fly up).
         "space" => {
             s.push(Box::new(|w, _| {
@@ -2152,6 +2372,155 @@ fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step, out
 /// #16: a remote proxy held 40 m beside the walker with the velocity of a ship in a warp
 /// (1e6 m/s): its collider AABB grows to kilometres and the walker's moving-collider sweep sees
 /// 16.7 km of relative motion per tick. The walk must be the same as without it.
+// ---------- planet swaps (#14, #34) ----------
+
+/// Ticks between a planet swap and its count: the freed meshes leave `Assets` a frame later,
+/// and the ship is still about 1000 km out (only the new planet's roots, no refinement yet).
+const SWAP_AUDIT_DELAY: u64 = 30;
+
+/// What one planet swap left behind, counted `SWAP_AUDIT_DELAY` ticks after it.
+#[derive(Clone, Debug)]
+pub struct SwapRow {
+    pub from: PlanetId,
+    pub to: PlanetId,
+    pub drop: bool,
+    /// Terrain chunks, entities (all of its scene) and meshes of the departed planet still there.
+    pub old_chunks: usize,
+    pub old_entities: usize,
+    pub old_meshes: usize,
+    /// The departed planet's generator is freed (no `Arc` left anywhere).
+    pub old_freed: bool,
+    /// Whole world: terrain chunks, entities, meshes.
+    pub chunks: usize,
+    pub entities: u32,
+    pub meshes: usize,
+    /// Root chunks built on the main thread on the swap frame (#34).
+    pub roots_built_here: usize,
+    pub rss_mb: Option<f64>,
+}
+
+/// Scenario `swap`: watches `WarpTelemetry::swaps` and counts what each swap left behind.
+#[derive(Resource, Default)]
+pub struct SwapAudit {
+    tick: u64,
+    seen: usize,
+    /// The current planet's generator, kept weak (taken every tick, so at a swap it is the old one's).
+    last: Option<std::sync::Weak<planet_core::Planet>>,
+    due: Vec<(u64, PlanetId, PlanetId, bool, Vec<AssetId<Mesh>>, std::sync::Weak<planet_core::Planet>)>,
+    pub rows: Vec<SwapRow>,
+}
+
+/// Runs after `planet_swap` in the fixed step, before the terrain is rebuilt (Update): the old
+/// terrain still knows its meshes.
+pub fn swap_audit(w: &mut World) {
+    let swaps = w.resource::<WarpTelemetry>().swaps.clone();
+    let old_meshes = w.get_resource::<crate::terrain::Terrain>().map(|t| t.mesh_ids()).unwrap_or_default();
+    let weak = std::sync::Arc::downgrade(&w.resource::<PlanetRes>().pgen);
+    let mut a = w.resource_mut::<SwapAudit>();
+    a.tick += 1;
+    while a.seen < swaps.len() {
+        let (_, from, to, drop) = swaps[a.seen];
+        let old = a.last.clone().unwrap_or_default();
+        let due = a.tick + SWAP_AUDIT_DELAY;
+        a.due.push((due, from, to, drop, old_meshes.clone(), old));
+        a.seen += 1;
+    }
+    a.last = Some(weak);
+    let tick = a.tick;
+    let ready: Vec<_> = a.due.iter().filter(|d| d.0 <= tick).cloned().collect();
+    a.due.retain(|d| d.0 > tick);
+    for (_, from, to, drop, meshes, old) in ready {
+        let mut q = w.query::<(&crate::terrain::PlanetScene, Has<crate::terrain::TerrainChunk>)>();
+        let (mut old_chunks, mut old_entities, mut chunks) = (0, 0, 0);
+        for (ps, chunk) in q.iter(w) {
+            old_entities += (ps.0 == from) as usize;
+            old_chunks += (ps.0 == from && chunk) as usize;
+            chunks += chunk as usize;
+        }
+        let assets = w.resource::<Assets<Mesh>>();
+        let row = SwapRow {
+            from,
+            to,
+            drop,
+            old_chunks,
+            old_entities,
+            old_meshes: meshes.iter().filter(|id| assets.contains(**id)).count(),
+            old_freed: old.upgrade().is_none(),
+            chunks,
+            entities: w.entities().count_spawned(),
+            meshes: assets.len(),
+            roots_built_here: w.get_resource::<crate::terrain::Terrain>().filter(|t| t.for_planet == to).map_or(usize::MAX, |t| t.roots_built_here),
+            rss_mb: crate::perf::rss_mb(),
+        };
+        println!(
+            "swap {} {from} -> {to}{}: departed planet left {} terrain chunks, {} entities, {} of its {} meshes, generator freed {}; world {} terrain chunks, {} entities, {} meshes; root chunks built on the swap frame {}; RSS {}",
+            w.resource::<SwapAudit>().rows.len() + 1,
+            if drop { " (emergency drop)" } else { "" },
+            row.old_chunks,
+            row.old_entities,
+            row.old_meshes,
+            meshes.len(),
+            row.old_freed,
+            row.chunks,
+            row.entities,
+            row.meshes,
+            row.roots_built_here,
+            row.rss_mb.map_or("n/a".into(), |m| format!("{m:.0} MB")),
+        );
+        w.resource_mut::<SwapAudit>().rows.push(row);
+    }
+}
+
+/// Without a window nobody moves the view: the terrain refines around the own ship.
+pub fn headless_view(mut origin: ResMut<RenderOrigin>, ships: Query<&Position, With<Ship>>) {
+    if let Ok(p) = ships.single() {
+        origin.view = p.0;
+    }
+}
+
+/// Share the counts after a later swap may differ from the first swap's (#14).
+const SWAP_COUNT_TOLERANCE: f64 = 0.05;
+
+fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
+    s.push(Box::new(|w, _| {
+        put_at_seat(w);
+        true
+    }));
+    s.extend(sit());
+    s.push(warp_flight("swap 1: warp Hearth -> Cinder", "swap1", Some(HEARTH), CINDER, Flight::Seated, dir.to_path_buf(), windowed));
+    s.push(wait_drive_idle());
+    s.push(warp_flight("swap 2: warp Cinder -> Hearth", "swap2", Some(CINDER), HEARTH, Flight::Seated, dir.to_path_buf(), windowed));
+    s.push(wait_drive_idle());
+    s.push(warp_flight("swap 3: warp Hearth -> Cinder", "swap3", Some(HEARTH), CINDER, Flight::Seated, dir.to_path_buf(), windowed));
+    s.push(wait_drive_idle());
+    s.push(warp_flight("swap 4: emergency exit Cinder -> Hearth", "swap4", Some(CINDER), HEARTH, Flight::Emergency, dir.to_path_buf(), windowed));
+    s.push(wait(1.0));
+    s.push(Box::new(|w, c| {
+        begin(w, c, "what the planet swaps left behind");
+        let rows = w.resource::<SwapAudit>().rows.clone();
+        let normal = rows.iter().filter(|r| !r.drop).count();
+        let drop = rows.iter().find(|r| r.drop).cloned();
+        check(c, normal >= 3 && drop.is_some(), format!("swap: {normal} planet swaps by warp and {} at an emergency drop", drop.is_some() as u32));
+        let Some(first) = rows.first().cloned() else { return true };
+        let near = |a: f64, b: f64| (a - b).abs() <= SWAP_COUNT_TOLERANCE * b.max(1.0);
+        for (i, r) in rows.iter().enumerate() {
+            check(c, r.old_chunks == 0 && r.old_entities == 0 && r.old_meshes == 0 && r.old_freed,
+                format!("swap {}: departed planet {} left {} terrain chunks, {} entities, {} meshes; generator freed {}", i + 1, r.from, r.old_chunks, r.old_entities, r.old_meshes, r.old_freed));
+            check(c, near(r.chunks as f64, first.chunks as f64) && near(r.entities as f64, first.entities as f64) && near(r.meshes as f64, first.meshes as f64),
+                format!("swap {}: world {} terrain chunks, {} entities, {} meshes; within {:.0} % of the first swap's {}, {}, {}", i + 1, r.chunks, r.entities, r.meshes, SWAP_COUNT_TOLERANCE * 100.0, first.chunks, first.entities, first.meshes));
+            // #34: the roots come from the pool, built during the flight.
+            check(c, r.roots_built_here == 0, format!("swap {}: {} root chunks built on the swap frame (prebuilt on the pool)", i + 1, r.roots_built_here));
+        }
+        if let Some(d) = drop {
+            let now = w.resource::<PlanetRes>().id;
+            check(c, now != d.from && now == d.to, format!("swap: after the emergency drop the simulation's planet is {now} (the warp's target), no longer {}", d.from));
+        }
+        let rss: Vec<String> = rows.iter().map(|r| r.rss_mb.map_or("n/a".into(), |m| format!("{m:.0}"))).collect();
+        end(w, c, format!("RSS after each swap (MB, reported, not checked): {}", rss.join(", ")));
+        true
+    }));
+}
+
 fn foreign_warp_steps(s: &mut Vec<Step>) {
     const WARP_SPEED: f64 = 1.0e6;
     s.push(Box::new(|w, _| {

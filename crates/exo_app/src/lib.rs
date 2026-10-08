@@ -269,6 +269,16 @@ pub fn build_app(o: &Options) -> App {
         // Ahead of the controllers like net_pre: the remote ship is placed before the walker steps.
         app.add_systems(FixedUpdate, scenario::foreign_drive.run_if(resource_exists::<scenario::ForeignDriver>).before(ship::ship_control));
     }
+    if o.scenario.as_deref() == Some("swap") {
+        // #14: count what a planet swap leaves behind; headless with the terrain too.
+        if o.headless {
+            app.init_asset::<StandardMaterial>();
+            app.add_systems(Startup, terrain::setup_terrain);
+            app.add_systems(Update, (scenario::headless_view, terrain::update_terrain).chain().after(ring::update_ring));
+        }
+        app.init_resource::<scenario::SwapAudit>();
+        app.add_systems(FixedUpdate, scenario::swap_audit.after(warp::warp_telemetry).before(ship::ship_control));
+    }
     if let Some(name) = &o.scenario {
         app.world_mut().resource_mut::<controls::Controls>().scripted = true;
         if scenario::uses_direct_mouse(name) {

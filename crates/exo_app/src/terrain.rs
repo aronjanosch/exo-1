@@ -25,14 +25,35 @@ struct Node {
     bound: f64,
     children: Vec<usize>,
     entity: Option<Entity>,
+    mesh: Option<AssetId<Mesh>>,
     task: Option<Task<ChunkOut>>,
     alive: bool,
 }
 
 /// Everything the terrain spawns for one planet (chunks, water, markers): despawned together
-/// when the simulation's planet changes.
+/// when the simulation's planet changes (#14: refined chunks used to miss it and stayed behind).
 #[derive(Component)]
-pub struct PlanetScene;
+pub struct PlanetScene(pub warp_core::PlanetId);
+
+/// A terrain chunk (root or refined) of a planet.
+#[derive(Component)]
+pub struct TerrainChunk;
+
+/// The six root chunks of a planet, built on the pool while the ship flies there (#34), so the
+/// frame of the planet swap does not build them.
+#[derive(Resource)]
+pub struct PrebuiltRoots {
+    pub planet: warp_core::PlanetId,
+    pub chunks: Vec<ChunkOut>,
+}
+
+/// The root chunk of each cube face.
+const ROOT: (f64, f64, f64) = (-1.0, -1.0, 2.0);
+
+/// The six root chunks of `planet` (also called on the pool, see `PrebuiltRoots`).
+pub fn build_roots(planet: &PlanetRes) -> Vec<ChunkOut> {
+    (0..6).map(|face| planet.pgen.build_chunk(face, ROOT.0, ROOT.1, ROOT.2, false)).collect()
+}
 
 #[derive(Resource)]
 pub struct Terrain {
@@ -46,6 +67,10 @@ pub struct Terrain {
     indices: Vec<u32>,
     pub visible: usize,
     pub pending: usize,
+    /// Root chunks built on the main thread when this terrain was built (6 without prebuilt roots).
+    pub roots_built_here: usize,
+    /// Meshes of the water and the site markers.
+    extra_meshes: Vec<AssetId<Mesh>>,
 }
 
 fn srgb_to_linear(c: f32) -> f32 {
@@ -64,7 +89,7 @@ impl Terrain {
         let node = Node {
             face, a0, b0, size, depth, centre, edge_m,
             bound: bound + planet.relief,
-            children: Vec::new(), entity: None, task: None, alive: true,
+            children: Vec::new(), entity: None, mesh: None, task: None, alive: true,
         };
         if let Some(i) = self.free.pop() {
             self.nodes[i] = node;
@@ -91,6 +116,7 @@ impl Terrain {
         if let Some(e) = n.entity.take() {
             commands.entity(e).despawn();
         }
+        n.mesh = None;
         n.task = None; // dropping a bevy Task cancels it
         n.alive = false;
         self.free.push(i);
@@ -103,6 +129,11 @@ impl Terrain {
             .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, out.normals.clone())
             .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colors)
             .with_inserted_indices(Indices::U32(self.indices.clone()))
+    }
+
+    /// Every mesh this terrain holds (chunks, water, markers), for the swap check (#14).
+    pub fn mesh_ids(&self) -> Vec<AssetId<Mesh>> {
+        self.nodes.iter().filter(|n| n.alive).filter_map(|n| n.mesh).chain(self.extra_meshes.iter().copied()).collect()
     }
 
     /// Returns true when this node (or its children) is on screen.
@@ -153,16 +184,18 @@ pub fn setup_terrain(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let t = build_terrain(&mut commands, &planet, &mut meshes, &mut materials);
+    let t = build_terrain(&mut commands, &planet, &mut meshes, &mut materials, None);
     commands.insert_resource(t);
 }
 
-/// Root chunks (synchronously, so there is always a planet), water and site markers of `planet`.
+/// Root chunks (prebuilt, or here and now so there is always a planet), water and site markers
+/// of `planet`.
 pub fn build_terrain(
     commands: &mut Commands,
     planet: &PlanetRes,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
+    prebuilt: Option<Vec<ChunkOut>>,
 ) -> Terrain {
     let face_edge = planet.radius * std::f64::consts::PI * 0.5;
     let mut indices = Vec::with_capacity((M - 1) * (M - 1) * 6);
@@ -181,24 +214,28 @@ pub fn build_terrain(
         nodes: Vec::new(), free: Vec::new(), roots: Vec::new(),
         max_depth: ((face_edge / 37.0).log2().round() as u32).max(1),
         material, indices,
-        visible: 0, pending: 0,
+        visible: 0, pending: 0, roots_built_here: 0, extra_meshes: Vec::new(),
     };
-    for face in 0..6 {
-        let i = t.make_node(planet, face, -1.0, -1.0, 2.0, 0);
-        // Roots synchronously, so there is always a planet.
-        let n = &t.nodes[i];
-        let out = planet.pgen.build_chunk(n.face, n.a0, n.b0, n.size, false);
+    let roots = prebuilt.filter(|r| r.len() == 6).unwrap_or_else(|| {
+        t.roots_built_here = 6;
+        build_roots(planet)
+    });
+    for (face, out) in roots.into_iter().enumerate() {
+        let i = t.make_node(planet, face, ROOT.0, ROOT.1, ROOT.2, 0);
         let mesh = meshes.add(t.mesh(&out));
+        t.nodes[i].mesh = Some(mesh.id());
         let e = commands
-            .spawn((Mesh3d(mesh), MeshMaterial3d(t.material.clone()), Transform::default(), WorldPos(planet.centre + DVec3::from_array(out.center)), PlanetScene))
+            .spawn((Mesh3d(mesh), MeshMaterial3d(t.material.clone()), Transform::default(), WorldPos(planet.centre + DVec3::from_array(out.center)), PlanetScene(planet.id), TerrainChunk))
             .id();
         t.nodes[i].entity = Some(e);
         t.roots.push(i);
     }
     // Water sphere at sea level (no collision, walkable under it, as in spike 8).
     let r = (planet.radius + planet.sea) as f32;
+    let water = meshes.add(Sphere::new(r).mesh().uv(128, 64));
+    t.extra_meshes.push(water.id());
     commands.spawn((
-        Mesh3d(meshes.add(Sphere::new(r).mesh().uv(128, 64))),
+        Mesh3d(water),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgba(0.16, 0.38, 0.52, 0.82),
             alpha_mode: AlphaMode::Blend,
@@ -209,10 +246,11 @@ pub fn build_terrain(
         })),
         Transform::default(),
         WorldPos(planet.centre),
-        PlanetScene,
+        PlanetScene(planet.id),
     ));
     // Site markers: 24 m orange pillars.
     let pillar = meshes.add(Cylinder::new(0.9, 24.0));
+    t.extra_meshes.push(pillar.id());
     let orange = materials.add(Color::srgb(1.0, 0.45, 0.1));
     for s in &planet.pgen.sites {
         let dir = from_v3(*s);
@@ -222,7 +260,7 @@ pub fn build_terrain(
             MeshMaterial3d(orange.clone()),
             Transform::from_rotation(Quat::from_rotation_arc(Vec3::Y, dir.as_vec3())),
             WorldPos(base),
-            PlanetScene,
+            PlanetScene(planet.id),
         ));
     }
     t
@@ -237,13 +275,16 @@ pub fn update_terrain(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     scene: Query<Entity, With<PlanetScene>>,
+    prebuilt: Option<ResMut<PrebuiltRoots>>,
 ) {
     if terrain.for_planet != planet.id {
         // The simulation's planet changed (warp or teleport): free the old terrain, build the new.
         for e in &scene {
             commands.entity(e).despawn();
         }
-        *terrain = build_terrain(&mut commands, &planet, &mut meshes, &mut materials);
+        let roots = prebuilt.filter(|r| r.planet == planet.id).map(|mut r| std::mem::take(&mut r.chunks));
+        commands.remove_resource::<PrebuiltRoots>();
+        *terrain = build_terrain(&mut commands, &planet, &mut meshes, &mut materials, roots);
     }
     let t = terrain.as_mut();
     let mut uploads = 0;
@@ -258,6 +299,7 @@ pub fn update_terrain(
         }
         let out = block_on(future::poll_once(t.nodes[i].task.take().unwrap())).unwrap();
         let mesh = meshes.add(t.mesh(&out));
+        t.nodes[i].mesh = Some(mesh.id());
         let e = commands
             .spawn((
                 Mesh3d(mesh),
@@ -265,6 +307,8 @@ pub fn update_terrain(
                 Transform::default(),
                 Visibility::Hidden,
                 WorldPos(planet.centre + DVec3::from_array(out.center)),
+                PlanetScene(planet.id),
+                TerrainChunk,
             ))
             .id();
         t.nodes[i].entity = Some(e);

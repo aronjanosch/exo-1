@@ -98,7 +98,7 @@ pub fn frame(mut perf: ResMut<Perf>, time: Res<Time<Real>>, script: Option<Res<S
 }
 
 /// Resident memory (Linux `/proc/self/statm`, the process's own entry); elsewhere none.
-fn rss_mb() -> Option<f64> {
+pub fn rss_mb() -> Option<f64> {
     let s = std::fs::read_to_string("/proc/self/statm").ok()?;
     let pages: f64 = s.split_whitespace().nth(1)?.parse().ok()?;
     Some(pages * 4096.0 / 1_048_576.0)

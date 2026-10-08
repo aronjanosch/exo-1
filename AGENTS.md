@@ -15,6 +15,8 @@ A game in Rust with Bevy, built by the initiator and maybe a few friends. AI mak
 
 **Spikes**: throwaway code on a `spike/<name>` branch, driven by a spike brief, never merged into `main`. Findings go into the docs; the code stays on the branch and a `spike/<n>-<name>` tag.
 
+**Git state** (tags, merges, deleting branches): read the concept repo's `docs/LEARNINGS.md`, section "Git and spike states", before you change it.
+
 ## Architecture
 
 - One Cargo workspace at the repo root, every crate in `crates/`, content in `content/` (the Bevy asset root).

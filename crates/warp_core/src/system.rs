@@ -29,6 +29,9 @@ impl std::fmt::Display for PlanetId {
 #[derive(Deserialize, Clone, Debug)]
 pub struct PlanetDef {
     pub name: String,
+    /// Surface recipe: `content/planet/<recipe>.json` (#64). Seed and radius stay here.
+    #[serde(default)]
+    pub recipe: String,
     pub seed: i32,
     pub centre: [f64; 3],
     pub radius: f64,

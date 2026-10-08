@@ -7,7 +7,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-pub const CHANNELS: usize = 5; // elevation (noise only), temperature, moisture, landform, reserved (wind/rain shadow, unused)
+pub const CHANNELS: usize = 5; // elevation, temperature, moisture, landform, weirdness (all noise, -1..1 except temperature)
 
 pub fn make_noise(spec: &NoiseSpec, seed: i32) -> FastNoiseLite {
     let mut n = FastNoiseLite::with_seed(seed + spec.seed_offset);
@@ -33,21 +33,31 @@ struct BandRt {
     noise: FastNoiseLite,
     amp: f64,
     warp: Option<(FastNoiseLite, f64)>,
+    scale: BandScale,
 }
 
-enum StampRt {
-    Basin { c: V3, r: f64, d: f64, cos_reach: f64 },
-    Esc { c: V3, t: V3, n: V3, spec: (f64, f64, f64, f64, f64), landform: Option<i32>, cos_reach: f64 },
-    Plateau { c: V3, r: f64, h: f64, fall: f64, cos_reach: f64 },
-}
+use crate::landform::{ShapeRt, StampRt};
 
 /// Macro fields at one point.
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Fields {
-    pub elev: f64, // macro noise elevation in metres, stamps not included
+    pub elev: f64, // macro elevation field (noise, -1..1), stamps not included
     pub temp: f64,
     pub moist: f64,
-    pub land: i32,
+    pub land: f64,
+    pub weird: f64,
+}
+
+impl Fields {
+    pub fn get(&self, f: FieldName) -> f64 {
+        match f {
+            FieldName::Elevation => self.elev,
+            FieldName::Temperature => self.temp,
+            FieldName::Moisture => self.moist,
+            FieldName::Landform => self.land,
+            FieldName::Weirdness => self.weird,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -59,7 +69,8 @@ pub struct Sample {
     pub slope_deg: f64,
     pub temperature: f64,
     pub moisture: f64,
-    pub landform: i32,
+    pub landform: f64,
+    pub weirdness: f64,
     pub macro_elevation: f64,
     pub stamp_height: f64,
 }
@@ -90,6 +101,23 @@ pub struct BakeStats {
     pub site_min_pair_m: f64,
     pub site_mean_nn_m: f64,
     pub site_max_nn_m: f64,
+    pub site_median_nn_m: f64,
+    /// How far land is from the nearest site (20,000 random land points): the worst and the
+    /// median (m). The worst is the largest hole: what a hike to the next site can take (#70).
+    pub site_cover_worst_m: f64,
+    pub site_cover_median_m: f64,
+    /// Placed per site kind, and the landmarks among them (#70).
+    pub site_kind_counts: BTreeMap<String, usize>,
+    pub landmark_count: usize,
+    /// Rows below their `min_share`.
+    pub quota_misses: Vec<String>,
+    /// Stamps placed per landform kind, and the placement try that succeeded (#69).
+    pub landform_counts: BTreeMap<String, usize>,
+    pub landform_tries: u32,
+    /// Share of 200 random straight walks of 540 m (5 min at 1.8 m/s, on land) that cross at
+    /// least two biome rows, and the median number of rows per walk (#68: sizes by walking).
+    pub walks_two_biomes_share: f64,
+    pub walk_biomes_median: f64,
 }
 
 pub struct Planet {
@@ -99,12 +127,15 @@ pub struct Planet {
     n_moist: FastNoiseLite,
     n_temp: FastNoiseLite,
     n_land: FastNoiseLite,
+    n_weird: FastNoiseLite,
     bands: Vec<BandRt>,
-    pub(crate) masks: Vec<FastNoiseLite>,
-    stamps: Vec<StampRt>,
+    pub(crate) scatter: crate::scatter::ScatterRt,
+    pub(crate) stamps: Vec<StampRt>,
+    landform_tries: u32,
+    placement_error: Option<String>,
     pub macro_img: Vec<f32>,
     pub sea: f64,
-    pub sites: Vec<V3>,
+    pub sites: Vec<crate::site::Site>,
     pub baked: bool,
     /// (min, max) crust height above the base radius found by the bake statistics.
     pub height_range: (f64, f64),
@@ -140,51 +171,21 @@ impl Planet {
                     let spec = NoiseSpec { seed_offset: w.seed_offset, frequency: w.frequency, fractal: Fractal::None, octaves: 1 };
                     (make_noise(&spec, seed), w.amplitude)
                 }),
+                scale: b.scale,
             })
             .collect();
-        let masks = recipe.scatter.iter().map(|s| make_noise(&s.mask.noise, seed)).collect();
-        let stamps = recipe
-            .stamps
-            .iter()
-            .map(|s| match s {
-                Stamp::Basin { center, radius_m, depth_m } => StampRt::Basin {
-                    c: V3::from_arr(*center).normalized(),
-                    r: *radius_m,
-                    d: *depth_m,
-                    cos_reach: (radius_m / radius).cos(),
-                },
-                Stamp::Escarpment { center, length_m, height_m, slope_width_m, shelf_depth_m, end_taper_m, landform } => {
-                    let c = V3::from_arr(*center).normalized();
-                    // assumption: the segment runs east-west (tangent = c x world up)
-                    let t = c.cross(v3(0.0, 1.0, 0.0)).normalized();
-                    let n = c.cross(t).normalized();
-                    let reach = ((length_m * 0.5).hypot(*shelf_depth_m) + slope_width_m) / radius;
-                    StampRt::Esc {
-                        c,
-                        t,
-                        n,
-                        spec: (*length_m, *height_m, *slope_width_m, *shelf_depth_m, *end_taper_m),
-                        landform: *landform,
-                        cos_reach: reach.min(3.0).cos(),
-                    }
-                }
-                Stamp::Plateau { center, radius_m, height_m, falloff_m } => StampRt::Plateau {
-                    c: V3::from_arr(*center).normalized(),
-                    r: *radius_m,
-                    h: *height_m,
-                    fall: *falloff_m,
-                    cos_reach: (radius_m / radius).cos(),
-                },
-            })
-            .collect();
-        Planet {
+        let scatter = crate::scatter::ScatterRt::new(&recipe, seed);
+        let mut p = Planet {
             n_elev: make_noise(&m.elevation.noise, seed),
             n_moist: make_noise(&m.moisture.noise, seed),
             n_temp: make_noise(&m.temperature.noise, seed),
             n_land: make_noise(&m.landform.noise, seed),
+            n_weird: make_noise(&m.weirdness.noise, seed),
             bands,
-            masks,
-            stamps,
+            scatter,
+            stamps: Vec::new(),
+            landform_tries: 0,
+            placement_error: None,
             macro_img: Vec::new(),
             sea: 0.0,
             sites: Vec::new(),
@@ -192,6 +193,24 @@ impl Planet {
             height_range: (0.0, 0.0),
             radius,
             recipe,
+        };
+        let (stamps, tries, ok) = p.place_landforms();
+        p.stamps = stamps;
+        p.landform_tries = tries;
+        p.placement_error = ok.err();
+        p
+    }
+
+    /// Macro fields straight from the noise (before or without the baked image).
+    pub fn fields_at(&self, dir: V3) -> Fields {
+        let p = self.p32(dir);
+        let tm = &self.recipe.macro_.temperature;
+        Fields {
+            elev: nz(&self.n_elev, p) as f64,
+            temp: tm.base - tm.latitude_gain * dir.y.abs() + tm.noise_gain * nz(&self.n_temp, p) as f64,
+            moist: nz(&self.n_moist, p) as f64,
+            land: nz(&self.n_land, p) as f64,
+            weird: nz(&self.n_weird, p) as f64,
         }
     }
 
@@ -200,48 +219,24 @@ impl Planet {
         [(dir.x * self.radius) as f32, (dir.y * self.radius) as f32, (dir.z * self.radius) as f32]
     }
 
-    /// Sum of the stamped features (metres) and the landform id they force, if any.
-    pub fn stamp_height(&self, dir: V3) -> (f64, Option<i32>) {
+    /// Sum of the stamped features (metres) and the landform value they force, if any.
+    pub fn stamp_height(&self, dir: V3) -> (f64, Option<f64>) {
         let mut h = 0.0;
         let mut lf = None;
         for s in &self.stamps {
-            match s {
-                StampRt::Basin { c, r, d, cos_reach } => {
-                    let dt = dir.dot(*c);
-                    if dt > *cos_reach {
-                        let t = self.radius * dt.clamp(-1.0, 1.0).acos() / r;
-                        let w = 1.0 - t * t;
-                        h -= d * w * w; // smooth bowl, zero slope at the rim
-                    }
-                }
-                StampRt::Esc { c, t, n, spec, landform, cos_reach } => {
-                    let dc = dir.dot(*c);
-                    if dc > *cos_reach {
-                        let (len, height, sw, shelf, taper) = *spec;
-                        let x = self.radius * dir.dot(*n).clamp(-1.0, 1.0).asin();
-                        let l = self.radius * dir.dot(*t).atan2(dc);
-                        let w = smoothstep(-sw * 0.5, sw * 0.5, x)
-                            * (1.0 - smoothstep(shelf - taper, shelf, x))
-                            * (1.0 - smoothstep(len * 0.5 - taper, len * 0.5, l.abs()));
-                        h += height * w;
-                        if w > 0.5 && landform.is_some() {
-                            lf = *landform;
-                        }
-                    }
-                }
-                StampRt::Plateau { c, r, h: ph, fall, cos_reach } => {
-                    let dt = dir.dot(*c);
-                    if dt > *cos_reach {
-                        let s = self.radius * dt.clamp(-1.0, 1.0).acos();
-                        h += ph * (1.0 - smoothstep(r - fall, *r, s));
-                    }
-                }
+            let (dh, w) = s.height(dir, self.radius);
+            h += dh;
+            if w > 0.5 && s.landform.is_some() {
+                lf = s.landform;
             }
         }
         (h, lf)
     }
 
-    fn bands_height(&self, p: [f32; 3]) -> f64 {
+    fn bands_height(&self, p: [f32; 3], f: &Fields) -> f64 {
+        let sh = &self.recipe.shape;
+        let stretch = sh.stretch.eval(f.get(sh.stretch.field));
+        let rough = sh.roughness.eval(f.get(sh.roughness.field));
         let mut h = 0.0;
         for b in &self.bands {
             let v = if let Some((w, wa)) = &b.warp {
@@ -255,9 +250,20 @@ impl Planet {
             } else {
                 nz(&b.noise, p)
             };
-            h += v as f64 * b.amp;
+            let k = match b.scale {
+                BandScale::None => 1.0,
+                BandScale::Stretch => stretch,
+                BandScale::Roughness => rough,
+            };
+            h += v as f64 * b.amp * k;
         }
         h
+    }
+
+    /// Height offset of the shape at the macro fields (metres, stamps and bands not included).
+    pub fn shape_offset(&self, f: &Fields) -> f64 {
+        let o = &self.recipe.shape.offset;
+        o.eval(f.get(o.field))
     }
 
     /// Macro fields at face coordinates (a, b in [-1, 1]). Vertex-centred grid: edge
@@ -281,15 +287,28 @@ impl Planet {
             let x1 = cc + (d - cc) * fu;
             x0 + (x1 - x0) * fv
         };
-        let k = if fu >= 0.5 { if fv >= 0.5 { k11 } else { k10 } } else if fv >= 0.5 { k01 } else { k00 };
-        Fields { elev: bil(0), temp: bil(1), moist: bil(2), land: m[k + 3] as i32 }
+        Fields { elev: bil(0), temp: bil(1), moist: bil(2), land: bil(3), weird: bil(4) }
     }
 
-    /// THE height function: metres above the base radius, from face coordinates.
+    /// THE height function: metres above the base radius, from face coordinates. The noise
+    /// ground (shape, stamps, bands), then the ground edits of the sites (#70).
     pub fn height_ab(&self, face: usize, a: f64, b: f64, dir: V3) -> (f64, Fields) {
+        let (h, f) = self.base_height_ab(face, a, b, dir);
+        (self.apply_edits(dir, h), f)
+    }
+
+    /// The height function without the site edits.
+    pub fn base_height_ab(&self, face: usize, a: f64, b: f64, dir: V3) -> (f64, Fields) {
         let f = self.macro_lookup(face, a, b);
-        let h = f.elev + self.stamp_height(dir).0 + self.bands_height(self.p32(dir));
+        let h = self.shape_offset(&f) + self.stamp_height(dir).0 + self.bands_height(self.p32(dir), &f);
         (h, f)
+    }
+
+    pub fn base_height_at(&self, dir: V3) -> f64 {
+        let d = dir.normalized();
+        let face = face_of(d);
+        let (a, b) = sphere_to_face_ab(face, d);
+        self.base_height_ab(face, a, b, d).0
     }
 
     /// THE height function, from a unit direction (inverts the cube mapping first).
@@ -300,27 +319,33 @@ impl Planet {
         self.height_ab(face, a, b, d).0
     }
 
-    pub fn biome_for(&self, h_above_sea: f64, f: &Fields, forced_landform: Option<i32>) -> u8 {
-        let t = &self.recipe.macro_.temperature;
-        let temp = f.temp - t.lapse_per_m * h_above_sea.max(0.0);
+    /// Temperature at a point: the field less the lapse with height above the sea.
+    pub fn temperature_at(&self, f: &Fields, h_above_sea: f64) -> f64 {
+        f.temp - self.recipe.macro_.temperature.lapse_per_m * h_above_sea.max(0.0)
+    }
+
+    /// The biome row nearest to the point in parameter space (#68): per row the sum of squared
+    /// distances to its points or intervals over the axes it names, plus its offset. Ties go to
+    /// the row listed first.
+    pub fn biome_for(&self, h_above_sea: f64, f: &Fields, forced_landform: Option<f64>) -> u8 {
+        let temp = self.temperature_at(f, h_above_sea);
         let land = forced_landform.unwrap_or(f.land);
+        let hs = self.recipe.biome_space.height_scale_m.max(1e-6);
+        let mut best = (f64::MAX, self.recipe.biomes[0].id);
         for row in &self.recipe.biomes {
-            let ok = row.when.iter().all(|c| {
-                let v = match c.field {
-                    Field::HeightAboveSea => h_above_sea,
-                    Field::Temperature => temp,
-                    Field::Moisture => f.moist,
-                    Field::Landform => land as f64,
-                };
-                c.min.map_or(true, |m| v >= m)
-                    && c.max.map_or(true, |m| v <= m)
-                    && c.one_of.as_ref().map_or(true, |l| l.contains(&(v as i32)))
-            });
-            if ok {
-                return row.id;
+            let c = &row.climate;
+            let mut d = row.offset;
+            for (r, v) in [(c.elevation, f.elev), (c.temperature, temp), (c.moisture, f.moist), (c.landform, land), (c.weirdness, f.weird), (c.height_above_sea, h_above_sea / hs)] {
+                if let Some(r) = r {
+                    let x = r.distance(v);
+                    d += x * x;
+                }
+            }
+            if d < best.0 {
+                best = (d, row.id);
             }
         }
-        self.recipe.biomes.last().unwrap().id
+        best.1
     }
 
     /// Everything the bot interface wants to know about one spot.
@@ -344,9 +369,10 @@ impl Planet {
             sea: self.sea,
             biome: self.biome_for(ha, &f, lf) as i32,
             slope_deg: gx.hypot(gy).atan().to_degrees(),
-            temperature: f.temp - self.recipe.macro_.temperature.lapse_per_m * ha.max(0.0),
+            temperature: self.temperature_at(&f, ha),
             moisture: f.moist,
             landform: lf.unwrap_or(f.land),
+            weirdness: f.weird,
             macro_elevation: f.elev,
             stamp_height: sh,
         }
@@ -377,13 +403,17 @@ impl Planet {
         out
     }
 
+    pub fn palette(&self, id: u8) -> Palette {
+        self.recipe.biomes.iter().find(|b| b.id == id).map(|b| b.palette.clone()).unwrap_or(Palette { ground: [1.0, 0.0, 1.0], rock: [1.0, 0.0, 1.0], strata: 0.0, cap: 0.0 })
+    }
+
     pub fn biome_color(&self, id: u8) -> [f32; 3] {
         self.recipe.biomes.iter().find(|b| b.id == id).map(|b| b.color).unwrap_or([1.0, 0.0, 1.0])
     }
 
-    pub fn sites_near(&self, dir: V3, radius_m: f64) -> Vec<V3> {
+    pub fn sites_near(&self, dir: V3, radius_m: f64) -> Vec<&crate::site::Site> {
         let d = dir.normalized();
-        self.sites.iter().copied().filter(|s| self.radius * s.dot(d).clamp(-1.0, 1.0).acos() <= radius_m).collect()
+        self.sites.iter().filter(|s| self.radius * s.dir.dot(d).clamp(-1.0, 1.0).acos() <= radius_m + s.footprint_m).collect()
     }
 
     /// Macro shell, sea level, sites, statistics. `threads` = 0 means all cores.
@@ -413,20 +443,14 @@ impl Planet {
                             for i in 0..w {
                                 let a = -1.0 + i as f64 * 2.0 / n as f64;
                                 let dir = cube_to_sphere(face, a, b);
-                                let p = this.p32(dir);
-                                let m = &this.recipe.macro_;
-                                let elev = nz(&this.n_elev, p) as f64 * m.elevation.amplitude;
-                                let tm = &m.temperature;
-                                let temp = tm.base - tm.latitude_gain * dir.y.abs() + tm.noise_gain * nz(&this.n_temp, p) as f64;
-                                let cl = m.landform.classes as f32;
-                                let land = ((nz(&this.n_land, p) + 1.0) * 0.5 * cl).floor().clamp(0.0, cl - 1.0);
+                                let f = this.fields_at(dir);
                                 let o = &mut out[i * CHANNELS..(i + 1) * CHANNELS];
-                                o[0] = elev as f32;
-                                o[1] = temp as f32;
-                                o[2] = nz(&this.n_moist, p);
-                                o[3] = land;
-                                o[4] = 0.0;
-                                eo[i * 2] = (elev + this.stamp_height(dir).0) as f32;
+                                o[0] = f.elev as f32;
+                                o[1] = f.temp as f32;
+                                o[2] = f.moist as f32;
+                                o[3] = f.land as f32;
+                                o[4] = f.weird as f32;
+                                eo[i * 2] = (this.shape_offset(&f) + this.stamp_height(dir).0) as f32;
                                 eo[i * 2 + 1] = this.area_weight(face, a, b) as f32;
                             }
                         }
@@ -459,8 +483,16 @@ impl Planet {
         drop(ew);
         st.sea_ms = t0.elapsed().as_secs_f64() * 1e3;
 
+        // 3. sites (#70): placed on the noise ground, then their edits join the height function
+        let t0 = Instant::now();
+        let (sites, misses) = self.place_sites_v2();
+        self.sites = sites;
+        st.quota_misses.extend(misses);
+        self.site_stats(&mut st);
+        st.sites_ms = t0.elapsed().as_secs_f64() * 1e3;
+
         let hr;
-        // 3. statistics of the full height function on a stride-2 grid
+        // 4. statistics of the full height function on a stride-2 grid
         let t0 = Instant::now();
         {
             let this = &*self;
@@ -517,22 +549,33 @@ impl Planet {
             st.max_height_above_sea = tot.max;
             hr = (tot.min + self.sea, tot.max + self.sea);
             for row in &self.recipe.biomes {
-                st.biome_area_share.insert(row.id.to_string(), tot.biomes.get(&row.id).copied().unwrap_or(0.0) / tot.w);
+                let share = tot.biomes.get(&row.id).copied().unwrap_or(0.0) / tot.w;
+                st.biome_area_share.insert(row.id.to_string(), share);
+                if let Some(min) = row.min_share
+                    && share < min
+                {
+                    st.quota_misses.push(format!("biome row {}: area share {:.2} % below its quota {:.2} %", row.id, share * 100.0, min * 100.0));
+                }
             }
         }
         self.height_range = hr;
         self.feature_stats(&mut st);
+        self.walk_stats(&mut st, threads);
         st.stats_ms = t0.elapsed().as_secs_f64() * 1e3;
 
-        // 4. sites
-        let t0 = Instant::now();
-        self.sites = self.place_sites();
         self.baked = true;
-        self.site_stats(&mut st);
-        st.sites_ms = t0.elapsed().as_secs_f64() * 1e3;
         st.bake_ms = t_all.elapsed().as_secs_f64() * 1e3;
         let _ = r;
         st
+    }
+
+    /// `bake`, failing when a biome row misses its quota (`min_share`).
+    pub fn bake_checked(&mut self, threads: usize) -> Result<BakeStats, String> {
+        let st = self.bake(threads);
+        if let Some(e) = &self.placement_error {
+            return Err(format!("bake: {e}"));
+        }
+        if st.quota_misses.is_empty() { Ok(st) } else { Err(format!("bake: {}", st.quota_misses.join("; "))) }
     }
 
     /// Area element of the cube-sphere mapping at (a, b), relative units.
@@ -576,86 +619,119 @@ impl Planet {
     }
 
     fn feature_stats(&self, st: &mut BakeStats) {
-        for s in &self.stamps {
-            match s {
-                StampRt::Basin { c, r, .. } => {
-                    let t1 = c.cross(v3(0.0, 1.0, 0.0)).normalized();
-                    let t2 = c.cross(t1).normalized();
-                    st.basin_centre_height_above_sea = self.height_at(*c) - self.sea;
-                    let (r1, s1) = self.run_below_sea(*c, t1, r * 1.5);
-                    let (r2, s2) = self.run_below_sea(*c, t2, r * 1.5);
-                    st.basin_run_through_centre_m = [r1, r2];
-                    st.basin_span_below_sea_m = [s1, s2];
-                }
-                StampRt::Plateau { c, r, .. } => {
-                    st.plateau_stamp_height_m = self.stamp_height(*c).0;
-                    // mean full height above sea over a disc of half the radius
-                    let t1 = c.cross(v3(0.0, 1.0, 0.0)).normalized();
-                    let t2 = c.cross(t1);
-                    let (mut sum, mut cnt) = (0.0, 0.0);
-                    for ia in -5..=5 {
-                        for ib in -5..=5 {
-                            let (x, y) = (ia as f64 * r * 0.1, ib as f64 * r * 0.1);
-                            if x.hypot(y) <= r * 0.5 {
-                                let d = (*c + t1 * (x / self.radius) + t2 * (y / self.radius)).normalized();
-                                sum += self.height_at(d) - self.sea;
-                                cnt += 1.0;
-                            }
-                        }
+        st.landform_tries = self.landform_tries;
+        for k in &self.recipe.landforms.kinds {
+            st.landform_counts.insert(k.id.clone(), self.stamps.iter().filter(|s| s.kind == k.id).count());
+        }
+        // The first basin, plateau and escarpment (the spike's three features).
+        let first = |name: &str| self.stamps.iter().find(|s| match (&s.shape, name) {
+            (ShapeRt::Basin { .. }, "basin") | (ShapeRt::Plateau { .. }, "plateau") | (ShapeRt::Esc { .. }, "esc") => true,
+            _ => false,
+        });
+        if let Some(s) = first("basin")
+            && let ShapeRt::Basin { r, .. } = s.shape
+        {
+            let c = s.c;
+            let t1 = c.cross(v3(0.0, 1.0, 0.0)).normalized();
+            let t2 = c.cross(t1).normalized();
+            st.basin_centre_height_above_sea = self.height_at(c) - self.sea;
+            let (r1, s1) = self.run_below_sea(c, t1, r * 1.5);
+            let (r2, s2) = self.run_below_sea(c, t2, r * 1.5);
+            st.basin_run_through_centre_m = [r1, r2];
+            st.basin_span_below_sea_m = [s1, s2];
+        }
+        if let Some(s) = first("plateau")
+            && let ShapeRt::Plateau { r, .. } = s.shape
+        {
+            let c = s.c;
+            st.plateau_stamp_height_m = self.stamp_height(c).0;
+            let t1 = c.cross(v3(0.0, 1.0, 0.0)).normalized();
+            let t2 = c.cross(t1);
+            let (mut sum, mut cnt) = (0.0, 0.0);
+            for ia in -5..=5 {
+                for ib in -5..=5 {
+                    let (x, y) = (ia as f64 * r * 0.1, ib as f64 * r * 0.1);
+                    if x.hypot(y) <= r * 0.5 {
+                        let d = (c + t1 * (x / self.radius) + t2 * (y / self.radius)).normalized();
+                        sum += self.height_at(d) - self.sea;
+                        cnt += 1.0;
                     }
-                    st.plateau_top_mean_above_sea_m = sum / cnt;
-                }
-                StampRt::Esc { c, t, n, spec, .. } => {
-                    let off = 200.0 / self.radius;
-                    let step_at = |l: f64| {
-                        let base = *c * (l / self.radius).cos() + *t * (l / self.radius).sin();
-                        let hi = (base + *n * off).normalized();
-                        let lo = (base - *n * off).normalized();
-                        (self.stamp_height(hi).0 - self.stamp_height(lo).0, self.height_at(hi) - self.height_at(lo))
-                    };
-                    st.escarpment_stamp_step_m = step_at(0.0).0;
-                    let len = spec.0;
-                    let k = 11;
-                    let mean: f64 = (0..k).map(|i| step_at((i as f64 / (k - 1) as f64 - 0.5) * len * 0.6).1).sum::<f64>() / k as f64;
-                    st.escarpment_full_step_mean_m = mean;
                 }
             }
+            st.plateau_top_mean_above_sea_m = sum / cnt;
+        }
+        if let Some(s) = first("esc")
+            && let ShapeRt::Esc { t, n, len, .. } = s.shape
+        {
+            let c = s.c;
+            let off = 200.0 / self.radius;
+            let step_at = |l: f64| {
+                let base = c * (l / self.radius).cos() + t * (l / self.radius).sin();
+                let hi = (base + n * off).normalized();
+                let lo = (base - n * off).normalized();
+                (self.stamp_height(hi).0 - self.stamp_height(lo).0, self.height_at(hi) - self.height_at(lo))
+            };
+            st.escarpment_stamp_step_m = step_at(0.0).0;
+            let k = 11;
+            st.escarpment_full_step_mean_m = (0..k).map(|i| step_at((i as f64 / (k - 1) as f64 - 0.5) * len * 0.6).1).sum::<f64>() / k as f64;
         }
     }
 
-    fn place_sites(&self) -> Vec<V3> {
-        let rule = &self.recipe.sites;
-        let mut state: u64 = 0x9E3779B97F4A7C15 ^ (self.recipe.seed as u64).wrapping_mul(0xBF58476D1CE4E5B9);
-        let mut next = || {
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
-            (state >> 11) as f64 / (1u64 << 53) as f64
-        };
-        let mut sites: Vec<V3> = Vec::new();
-        let min_dot = (rule.min_separation_m / self.radius).cos();
-        for _ in 0..400_000 {
-            if sites.len() >= rule.count {
-                break;
+    fn walk_stats(&self, st: &mut BakeStats, threads: usize) {
+        const WALKS: usize = 200;
+        // One walk per index, its own random start (on land) and heading: parallel and the same
+        // result for any thread count.
+        let parts = par_rows(WALKS, threads, |i0, i1| {
+            let mut out = Vec::with_capacity(i1 - i0);
+            for i in i0..i1 {
+                let mut rng = 0x5DEECE66Du64 ^ (self.recipe.seed as u64).wrapping_mul(0x9E3779B97F4A7C15) ^ (i as u64 + 1).wrapping_mul(0xBF58476D1CE4E5B9);
+                let mut next = || {
+                    rng ^= rng << 13;
+                    rng ^= rng >> 7;
+                    rng ^= rng << 17;
+                    (rng >> 11) as f64 / (1u64 << 53) as f64
+                };
+                let d = loop {
+                    let z = next() * 2.0 - 1.0;
+                    let phi = next() * std::f64::consts::TAU;
+                    let rr = (1.0 - z * z).sqrt();
+                    let d = v3(rr * phi.cos(), z, rr * phi.sin());
+                    if self.height_at(d) > self.sea {
+                        break d;
+                    }
+                };
+                let (e, n) = crate::look::tangent_frame(d);
+                let a = next() * std::f64::consts::TAU;
+                let t = e * a.cos() + n * a.sin();
+                let mut seen: Vec<u8> = Vec::new();
+                for k in 0..=54 {
+                    let p = crate::look::walk(d, t, k as f64 * 10.0, self.radius);
+                    let face = face_of(p);
+                    let (a, b) = sphere_to_face_ab(face, p);
+                    let (h, f) = self.height_ab(face, a, b, p);
+                    let row = self.biome_for(h - self.sea, &f, self.stamp_height(p).1);
+                    if !seen.contains(&row) {
+                        seen.push(row);
+                    }
+                }
+                out.push(seen.len());
             }
-            let z = next() * 2.0 - 1.0;
-            let phi = next() * std::f64::consts::TAU;
-            let rr = (1.0 - z * z).sqrt();
-            let d = v3(rr * phi.cos(), z, rr * phi.sin());
-            if sites.iter().any(|s| s.dot(d) > min_dot) {
-                continue;
-            }
-            let s = self.sample(d);
-            if s.height_above_sea < rule.min_height_above_sea_m || s.slope_deg > rule.max_slope_deg {
-                continue;
-            }
-            sites.push(d);
-        }
-        sites
+            out
+        });
+        let mut counts: Vec<usize> = parts.into_iter().flatten().collect();
+        counts.sort();
+        st.walks_two_biomes_share = counts.iter().filter(|c| **c >= 2).count() as f64 / WALKS as f64;
+        st.walk_biomes_median = counts[WALKS / 2] as f64;
     }
 
     fn site_stats(&self, st: &mut BakeStats) {
-        let n = self.sites.len();
+        for k in &self.recipe.sites.kinds {
+            st.site_kind_counts.insert(k.id.clone(), self.sites.iter().filter(|s| s.id == k.id).count());
+        }
+        st.landmark_count = self.sites.iter().filter(|s| s.category == SiteCategory::Landmark).count();
+        // Gaps between sites proper (not landmarks or finds).
+        let sites: Vec<V3> = self.sites.iter().filter(|s| s.category == SiteCategory::Site).map(|s| s.dir).collect();
+        let n = sites.len();
         st.site_count = n;
         if n < 2 {
             return;
@@ -663,9 +739,10 @@ impl Planet {
         let dist = |a: &V3, b: &V3| self.radius * a.dot(*b).clamp(-1.0, 1.0).acos();
         let mut min_pair = f64::MAX;
         let (mut sum, mut max) = (0.0, 0.0f64);
-        for (i, a) in self.sites.iter().enumerate() {
+        let mut nns = Vec::with_capacity(n);
+        for (i, a) in sites.iter().enumerate() {
             let mut nn = f64::MAX;
-            for (j, b) in self.sites.iter().enumerate() {
+            for (j, b) in sites.iter().enumerate() {
                 if i != j {
                     let d = dist(a, b);
                     nn = nn.min(d);
@@ -674,7 +751,33 @@ impl Planet {
             }
             sum += nn;
             max = max.max(nn);
+            nns.push(nn);
         }
+        nns.sort_by(f64::total_cmp);
+        st.site_median_nn_m = nns[n / 2];
+        let mut rng = 0x243F6A8885A308D3u64 ^ (self.recipe.seed as u64);
+        let mut next = || {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            (rng >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let mut cover = Vec::with_capacity(20_000);
+        while cover.len() < 20_000 {
+            let z = next() * 2.0 - 1.0;
+            let phi = next() * std::f64::consts::TAU;
+            let rr = (1.0 - z * z).sqrt();
+            let d = v3(rr * phi.cos(), z, rr * phi.sin());
+            // Land by the macro height (cheap; the sea level is the macro percentile).
+            let f = self.fields_at(d);
+            if self.shape_offset(&f) + self.stamp_height(d).0 <= self.sea {
+                continue;
+            }
+            cover.push(sites.iter().map(|s| dist(s, &d)).fold(f64::MAX, f64::min));
+        }
+        cover.sort_by(f64::total_cmp);
+        st.site_cover_worst_m = cover[cover.len() - 1];
+        st.site_cover_median_m = cover[cover.len() / 2];
         st.site_min_pair_m = min_pair;
         st.site_mean_nn_m = sum / n as f64;
         st.site_max_nn_m = max;

@@ -10,7 +10,9 @@ pub struct ChunkOut {
     pub center: [f64; 3],
     pub verts: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
+    /// Biome palette per vertex (#66): ground rgb + cap share, rock rgb + strata share.
     pub colors: Vec<[f32; 4]>,
+    pub rock: Vec<[f32; 4]>,
     pub uvs: Vec<[f32; 2]>,
     /// Height above the base radius per vertex (M*M, skirt ring included), metres.
     pub heights: Vec<f32>,
@@ -35,8 +37,6 @@ impl Planet {
         let edge_m = self.chunk_edge_m(face, a0, b0, size);
         let skirt_depth = (edge_m / GRID as f64 * 4.0).max(2.0);
 
-        // vertex colour alpha carries the LOD depth (debug colours in the shader)
-        let lod_depth = (2.0 / size).log2().round() as f32;
         let mut pos = vec![V3::default(); M * M];
         let mut dirs = vec![V3::default(); M * M];
         let mut hs = vec![0.0f64; M * M];
@@ -79,8 +79,9 @@ impl Planet {
                 };
                 out.verts.push([vv.x as f32, vv.y as f32, vv.z as f32]);
                 out.uvs.push(uv);
-                let c = self.biome_color(rows[k]);
-                out.colors.push([c[0], c[1], c[2], lod_depth / 16.0]);
+                let p = self.palette(rows[k]);
+                out.colors.push([p.ground[0], p.ground[1], p.ground[2], p.cap]);
+                out.rock.push([p.rock[0], p.rock[1], p.rock[2], p.strata]);
                 out.heights.push(hs[k] as f32);
                 if k == ck {
                     out.min_h = out.min_h.min(hs[k] as f32);

@@ -42,15 +42,13 @@ pub struct Terrain {
     free: Vec<usize>,
     roots: Vec<usize>,
     max_depth: u32,
-    material: Handle<StandardMaterial>,
+    pub material: Handle<crate::terrain_material::TerrainMaterial>,
     indices: Vec<u32>,
     pub visible: usize,
     pub pending: usize,
 }
 
-fn srgb_to_linear(c: f32) -> f32 {
-    if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
-}
+use crate::terrain_material::{srgb_to_linear, TerrainMaterial};
 
 impl Terrain {
     fn make_node(&mut self, planet: &PlanetRes, face: usize, a0: f64, b0: f64, size: f64, depth: u32) -> usize {
@@ -97,11 +95,17 @@ impl Terrain {
     }
 
     fn mesh(&self, out: &ChunkOut) -> Mesh {
-        let colors: Vec<[f32; 4]> = out.colors.iter().map(|c| [srgb_to_linear(c[0]), srgb_to_linear(c[1]), srgb_to_linear(c[2]), 1.0]).collect();
+        // The biome palette (#66): ground + cap share as the colour, rock in UV0 + UV1.x, strata
+        // share in UV1.y (see terrain_material.rs).
+        let colors: Vec<[f32; 4]> = out.colors.iter().map(|c| [srgb_to_linear(c[0]), srgb_to_linear(c[1]), srgb_to_linear(c[2]), c[3]]).collect();
+        let uv0: Vec<[f32; 2]> = out.rock.iter().map(|c| [srgb_to_linear(c[0]), srgb_to_linear(c[1])]).collect();
+        let uv1: Vec<[f32; 2]> = out.rock.iter().map(|c| [srgb_to_linear(c[2]), c[3]]).collect();
         Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, out.verts.clone())
             .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, out.normals.clone())
             .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colors)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uv0)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_1, uv1)
             .with_inserted_indices(Indices::U32(self.indices.clone()))
     }
 
@@ -150,10 +154,13 @@ impl Terrain {
 pub fn setup_terrain(
     mut commands: Commands,
     planet: Res<PlanetRes>,
+    origin: Res<RenderOrigin>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut terrain_mats: ResMut<Assets<TerrainMaterial>>,
 ) {
-    let t = build_terrain(&mut commands, &planet, &mut meshes, &mut materials);
+    let material = terrain_mats.add(crate::terrain_material::new_material(&planet, &origin));
+    let t = build_terrain(&mut commands, &planet, &mut meshes, &mut materials, material);
     commands.insert_resource(t);
 }
 
@@ -163,6 +170,7 @@ pub fn build_terrain(
     planet: &PlanetRes,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
+    material: Handle<TerrainMaterial>,
 ) -> Terrain {
     let face_edge = planet.radius * std::f64::consts::PI * 0.5;
     let mut indices = Vec::with_capacity((M - 1) * (M - 1) * 6);
@@ -175,7 +183,6 @@ pub fn build_terrain(
             indices.extend([k00, k10, k01, k10, k11, k01]);
         }
     }
-    let material = materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, ..default() });
     let mut t = Terrain {
         for_planet: planet.id,
         nodes: Vec::new(), free: Vec::new(), roots: Vec::new(),
@@ -236,6 +243,7 @@ pub fn update_terrain(
     mut terrain: ResMut<Terrain>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut terrain_mats: ResMut<Assets<TerrainMaterial>>,
     scene: Query<Entity, With<PlanetScene>>,
 ) {
     if terrain.for_planet != planet.id {
@@ -243,7 +251,11 @@ pub fn update_terrain(
         for e in &scene {
             commands.entity(e).despawn();
         }
-        *terrain = build_terrain(&mut commands, &planet, &mut meshes, &mut materials);
+        let material = terrain.material.clone();
+        if let Some(mut m) = terrain_mats.get_mut(&material) {
+            *m = crate::terrain_material::new_material(&planet, &origin);
+        }
+        *terrain = build_terrain(&mut commands, &planet, &mut meshes, &mut materials, material);
     }
     let t = terrain.as_mut();
     let mut uploads = 0;

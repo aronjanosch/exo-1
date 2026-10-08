@@ -378,6 +378,10 @@ impl Planet {
         out
     }
 
+    pub fn palette(&self, id: u8) -> Palette {
+        self.recipe.biomes.iter().find(|b| b.id == id).map(|b| b.palette.clone()).unwrap_or(Palette { ground: [1.0, 0.0, 1.0], rock: [1.0, 0.0, 1.0], strata: 0.0, cap: 0.0 })
+    }
+
     pub fn biome_color(&self, id: u8) -> [f32; 3] {
         self.recipe.biomes.iter().find(|b| b.id == id).map(|b| b.color).unwrap_or([1.0, 0.0, 1.0])
     }

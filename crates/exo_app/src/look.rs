@@ -210,11 +210,24 @@ pub fn steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool) {
     if !windowed {
         return;
     }
-    let n = warp_core::System::from_json(crate::warp::SYSTEM).expect("system.json").planets.len();
+    // Dev filter: EXO_LOOK=<planet>[:<viewpoint>,...] shoots only those (quick iterations).
+    let filter = std::env::var("EXO_LOOK").ok().filter(|f| !f.is_empty());
+    let (only_planet, only_vps) = match filter.as_deref().map(|f| f.split_once(':').unwrap_or((f, ""))) {
+        Some((p, v)) => (Some(p.to_lowercase()), v.split(',').filter(|x| !x.is_empty()).map(String::from).collect::<Vec<_>>()),
+        None => (None, Vec::new()),
+    };
+    let sys = warp_core::System::from_json(crate::warp::SYSTEM).expect("system.json");
+    let n = sys.planets.len();
     for i in 0..n {
+        if only_planet.as_ref().is_some_and(|p| *p != sys.planets[i].name.to_lowercase()) {
+            continue;
+        }
         s.push(go_to(i));
         s.push(crate::scenario::settle());
         for k in 0..vps.viewpoints.len() {
+            if !only_vps.is_empty() && !only_vps.contains(&vps.viewpoints[k].id) {
+                continue;
+            }
             s.push(shoot(out.clone(), vps.clone(), k));
         }
     }

@@ -125,11 +125,45 @@ pub struct Condition {
     #[serde(default, rename = "in")]
     pub one_of: Option<Vec<i32>>,
 }
+/// Terrain colours of a biome row (#66): flat ground, steep rock, and how much of the planet's
+/// strata and cap shows (0..1). Blended at borders by the mesh.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Palette {
+    pub ground: [f32; 3],
+    pub rock: [f32; 3],
+    pub strata: f32,
+    pub cap: f32,
+}
+
+/// The terrain material's planet-wide values (#66): where rock takes over, the strata bands on
+/// steep faces, the cap high up, the detail pattern near the camera.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct TerrainLook {
+    /// Slope (degrees) where rock starts and where it is full.
+    pub rock_slope_deg: [f32; 2],
+    /// Band colours, bottom to top, repeating (1 to 4).
+    pub strata_colors: Vec<[f32; 3]>,
+    pub strata_band_m: f32,
+    /// Bands wobble up and down by this much (m).
+    pub strata_jitter_m: f32,
+    pub cap_color: [f32; 3],
+    /// Cap starts this high above the sea (m) and is full `cap_fade_m` higher.
+    pub cap_height_m: f32,
+    pub cap_fade_m: f32,
+    /// Brightness variation of the grain near the camera (0..1), and where it has faded (m).
+    pub detail_strength: f32,
+    pub detail_far_m: f32,
+}
+
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct BiomeRow {
     pub id: u8,
+    /// Map colour (atlas, orbit impostor).
     pub color: [f32; 3],
+    pub palette: Palette,
     #[serde(default)]
     pub tints: HashMap<String, [f32; 3]>,
     /// Scatter multipliers by entry or group id (0 = off, missing = 1), #65.
@@ -290,6 +324,7 @@ pub struct Recipe {
     pub bands: Vec<Band>,
     pub stamps: Vec<Stamp>,
     pub sea_level: SeaLevel,
+    pub material: TerrainLook,
     pub biomes: Vec<BiomeRow>,
     pub scatter: ScatterSpec,
     pub sites: SiteRule,
@@ -316,6 +351,9 @@ impl Recipe {
             return Err("duplicate biome ids".into());
         }
         r.check_scatter()?;
+        if r.material.strata_colors.is_empty() || r.material.strata_colors.len() > 4 {
+            return Err("material.strata_colors: 1 to 4 colours".into());
+        }
         if r.macro_.resolution < 8 {
             return Err("macro resolution too small".into());
         }

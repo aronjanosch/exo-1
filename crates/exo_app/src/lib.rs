@@ -18,6 +18,7 @@ pub mod scenario;
 pub mod settings;
 pub mod ship;
 pub mod terrain;
+pub mod terrain_material;
 pub mod tuning;
 pub mod view;
 pub mod walker;
@@ -255,6 +256,7 @@ pub fn build_app(o: &Options) -> App {
         app.init_resource::<view::ViewState>().insert_resource(ClearColor(Color::BLACK));
         app.add_plugins(audio::plugin);
         app.add_plugins(scatter::plugin);
+        app.add_plugins(terrain_material::plugin);
         app.add_systems(Update, settings::apply_volume);
         if o.menu() {
             app.add_plugins(menu::plugin);

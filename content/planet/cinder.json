@@ -155,16 +155,16 @@
       "huge_tree": [ { "prop": "tree_lolly", "yaw_deg": 0.0, "scale": [6.5, 7.5], "sink_m": 0.6, "tint": [0.35, 0.65, 0.30] } ],
       "lookout": [ { "prop": "mast", "yaw_deg": 0.0, "sink_m": 0.3, "tint": [0.85, 0.85, 0.90] } ],
       "crash": [
-        { "prop": "hull_broken", "yaw_deg": 0.0, "sink_m": 0.6, "tint": [0.86, 0.84, 0.80] },
+        { "prop": "hull_broken", "yaw_deg": 0.0, "scale": 1.4, "sink_m": 0.6, "tint": [0.86, 0.84, 0.80] },
         { "prop": "debris_panel", "sink_m": 0.04, "align": 0.8, "tint": [0.80, 0.78, 0.74], "scatter": { "count": [5, 9], "radius_m": [5.0, 16.0] } },
         { "prop": "debris_strut", "sink_m": 0.05, "align": 1.0, "tint": [0.60, 0.60, 0.64], "scatter": { "count": [4, 7], "radius_m": [4.0, 14.0] } }
       ],
       "ruin": [
-        { "prop": "wall_broken", "at": [-6.0, 0.0], "yaw_deg": 0.0, "sink_m": 0.3, "tint": [0.80, 0.76, 0.68] },
-        { "prop": "wall_broken", "at": [6.0, 2.0], "yaw_deg": 90.0, "sink_m": 0.3, "tint": [0.80, 0.76, 0.68] },
-        { "prop": "wall_broken", "at": [0.0, -6.0], "yaw_deg": 0.0, "scale": 0.8, "sink_m": 0.3, "tint": [0.76, 0.72, 0.64] },
-        { "prop": "pillar_stub", "at": [4.0, -5.0], "sink_m": 0.2, "tint": [0.82, 0.78, 0.70] },
-        { "prop": "pillar_stub", "at": [-4.0, 5.0], "sink_m": 0.2, "tint": [0.82, 0.78, 0.70] },
+        { "prop": "wall_broken", "at": [-8.0, 0.0], "yaw_deg": 0.0, "scale": 1.8, "sink_m": 0.3, "tint": [0.80, 0.76, 0.68] },
+        { "prop": "wall_broken", "at": [8.0, 2.0], "yaw_deg": 90.0, "scale": 1.8, "sink_m": 0.3, "tint": [0.80, 0.76, 0.68] },
+        { "prop": "wall_broken", "at": [0.0, -6.5], "yaw_deg": 0.0, "scale": 1.4, "sink_m": 0.3, "tint": [0.76, 0.72, 0.64] },
+        { "prop": "pillar_stub", "at": [4.0, -5.0], "scale": 1.6, "sink_m": 0.2, "tint": [0.82, 0.78, 0.70] },
+        { "prop": "pillar_stub", "at": [-4.0, 5.0], "scale": 1.6, "sink_m": 0.2, "tint": [0.82, 0.78, 0.70] },
         { "prop": "pillar_stub", "at": [7.0, -6.0], "scale": 0.7, "sink_m": 0.2, "tint": [0.82, 0.78, 0.70] },
         { "prop": "rock_round", "scale": [0.3, 0.6], "sink_m": 0.1, "align": 0.6, "tint": [0.74, 0.70, 0.64], "scatter": { "count": [3, 6], "radius_m": [3.0, 10.0] } }
       ],

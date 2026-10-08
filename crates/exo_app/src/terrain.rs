@@ -176,13 +176,12 @@ pub fn setup_terrain(
     planet: Res<PlanetRes>,
     origin: Res<RenderOrigin>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     mut terrain_mats: ResMut<Assets<TerrainMaterial>>,
     mut waters: ResMut<Assets<crate::sky::WaterMaterial>>,
 ) {
     let material = terrain_mats.add(crate::terrain_material::new_material(&planet, &origin));
     let water = waters.add(crate::sky::new_water(&planet, &origin));
-    let t = build_terrain(&mut commands, &planet, &mut meshes, &mut materials, material, water);
+    let t = build_terrain(&mut commands, &planet, &mut meshes, material, water);
     commands.insert_resource(t);
 }
 
@@ -191,7 +190,6 @@ pub fn build_terrain(
     commands: &mut Commands,
     planet: &PlanetRes,
     meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
     material: Handle<TerrainMaterial>,
     water: Handle<crate::sky::WaterMaterial>,
 ) -> Terrain {
@@ -236,7 +234,6 @@ pub fn update_terrain(
     origin: Res<RenderOrigin>,
     mut terrain: ResMut<Terrain>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     mut terrain_mats: ResMut<Assets<TerrainMaterial>>,
     mut waters: ResMut<Assets<crate::sky::WaterMaterial>>,
     scene: Query<Entity, With<PlanetScene>>,
@@ -254,7 +251,7 @@ pub fn update_terrain(
         if let Some(mut m) = waters.get_mut(&water) {
             *m = crate::sky::new_water(&planet, &origin);
         }
-        *terrain = build_terrain(&mut commands, &planet, &mut meshes, &mut materials, material, water);
+        *terrain = build_terrain(&mut commands, &planet, &mut meshes, material, water);
     }
     let t = terrain.as_mut();
     let mut uploads = 0;

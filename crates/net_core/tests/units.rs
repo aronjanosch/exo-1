@@ -45,8 +45,11 @@ fn rejects_invalid() {
     s.owner = 9;
     assert!(Snapshot::decode(&s.encode()).is_none(), "unknown owner");
     let mut s = a;
-    s.p = DVec3::new(2.0e6, 0.0, 0.0);
+    s.p = DVec3::new(2.0e8, 0.0, 0.0);
     assert!(Snapshot::decode(&s.encode()).is_none(), "absurd position");
+    let mut s = a;
+    s.wp = DVec3::new(2.0e6, 0.0, 0.0);
+    assert!(Snapshot::decode(&s.encode()).is_none(), "absurd walker position");
     let mut wire = a.encode();
     wire[68..84].fill(0);
     assert!(Snapshot::decode(&wire).is_none(), "zero quaternion");

@@ -1253,7 +1253,7 @@ fn warp_flight(name: &'static str, from: usize, to: usize, passenger: bool, dir:
         let lim = 240.0;
         if c.t == 0.0 {
             begin(w, c, name);
-            for k in ["stood", "drift", "warps0", "g0", "s0", "last_phase", "shot_due"] {
+            for k in ["stood", "drift", "warps0", "g0", "s0", "last_phase", "shot_due", "walk_t0", "walk_z0", "walk_g0", "walk_s0", "walk_far", "walk_done"] {
                 c.v.remove(k);
             }
             c.p.remove("stand_pos");
@@ -1304,11 +1304,41 @@ fn warp_flight(name: &'static str, from: usize, to: usize, passenger: bool, dir:
             c.v.insert("s0", w.resource::<WalkStats>().steps as f64);
             c.v.insert("drift", 0.0);
         }
+        // Walk back and forth in the cabin at top speed: S for 1 s, W for 1.2 s (5 m/s walking).
+        if passenger && c.p.contains_key("stand_pos") && phase == Phase::Cruise && !c.v.contains_key("walk_done") {
+            let st = w.resource::<WalkStats>().clone();
+            let z = with_player(w, |p| p.w.pos.z);
+            if !c.v.contains_key("walk_t0") {
+                c.v.insert("walk_t0", c.t);
+                c.v.insert("walk_z0", z);
+                c.v.insert("walk_g0", st.grounded as f64);
+                c.v.insert("walk_s0", st.steps as f64);
+                keys(w, &[KeyCode::KeyS], true);
+            }
+            let wt = c.t - c.v["walk_t0"];
+            if wt >= 1.0 && wt < 2.2 {
+                keys(w, &[KeyCode::KeyS], false);
+                keys(w, &[KeyCode::KeyW], true);
+                c.v.insert("walk_far", c.v.get("walk_far").copied().unwrap_or(z).max(z));
+            } else if wt < 1.0 {
+                c.v.insert("walk_far", z);
+            } else {
+                keys(w, &[KeyCode::KeyW], false);
+                c.v.insert("walk_done", 1.0);
+                let (g, n) = (st.grounded as f64 - c.v["walk_g0"], (st.steps as f64 - c.v["walk_s0"]).max(1.0));
+                let (far, back) = (c.v["walk_far"] - c.v["walk_z0"], z - c.v["walk_z0"]);
+                let in_cabin = with_player(w, |p| p.ship.is_some());
+                check(c, in_cabin && g / n > 0.99 && far > 2.0 && back.abs() < 2.0, format!("{name}: walking in the cabin at {:.0} km/s: {far:.2} m back, {back:.2} m from the start after walking forward again, deck contact {:.1} % of {n:.0} steps", w.resource::<WarpDrive>().drive.speed() / 1000.0, 100.0 * g / n));
+            }
+        }
         if let Some(&sp) = c.p.get("stand_pos") {
             let local = with_player(w, |p| p.w.pos);
             let d = local.distance(sp);
-            let e = c.v.get_mut("drift").unwrap();
-            *e = e.max(d);
+            // Drift is measured while standing still: before the walk starts.
+            if !c.v.contains_key("walk_t0") {
+                let e = c.v.get_mut("drift").unwrap();
+                *e = e.max(d);
+            }
         }
         // Distance to every planet's centre, each tick (the core checks the swept path).
         let ship = ship_frame_of(w).origin;
@@ -1374,6 +1404,20 @@ fn warp_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
         true
     }));
     s.extend(sit());
+    // The other planet in the sky: apparent size from orbit (full moon about 31 arcmin).
+    s.push(Box::new(|w, c| {
+        let sys = w.resource::<SystemRes>().0.clone();
+        for (i, p) in sys.planets.iter().enumerate() {
+            let j = (i + 1) % sys.planets.len();
+            let q = &sys.planets[j];
+            let d = p.centre().distance(q.centre());
+            let arcmin = 2.0 * (q.radius / d).atan().to_degrees() * 60.0;
+            let line = format!("sky from {} (orbit): {} is {:.2} arcmin wide at {:.0} km ({:.1} % of the full moon)", p.name, q.name, arcmin, d / 1000.0, 100.0 * arcmin / 31.0);
+            println!("{line}");
+            c.report.push(line);
+        }
+        true
+    }));
     // Refused: too low (inside the atmosphere).
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {

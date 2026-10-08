@@ -23,6 +23,11 @@ pub struct Hud;
 #[derive(Component)]
 pub struct Impostor(pub usize);
 
+/// Marker in the sky where the drive's course runs while spooling and calibrating: point the
+/// nose at it.
+#[derive(Component)]
+pub struct AimMarker;
+
 /// Star streak of the tunnel look: its place on the tube (angle, radius) and phase along it.
 #[derive(Component)]
 pub struct Streak {
@@ -135,6 +140,13 @@ pub fn setup_warp_view(
             Visibility::Hidden,
         ));
     }
+    commands.spawn((
+        AimMarker,
+        Mesh3d(meshes.add(Torus::new(0.8, 1.0))),
+        MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::WHITE, emissive: LinearRgba::new(0.4, 3.0, 4.0, 1.0), unlit: true, ..default() })),
+        Transform::default(),
+        Visibility::Hidden,
+    ));
     let Ok(cam) = cam.single() else { return };
     let streak = meshes.add(Cuboid::new(0.04, 0.04, 1.0));
     let mat = materials.add(StandardMaterial { base_color: Color::WHITE, emissive: LinearRgba::new(6.0, 8.0, 12.0, 1.0), unlit: true, ..default() });
@@ -175,6 +187,28 @@ pub fn update_impostors(
         t.translation += (origin.view - origin.origin).as_vec3();
         *vis = Visibility::Inherited;
     }
+}
+
+/// The course marker, 1 km ahead along the drive's path start, a ring facing the camera's side.
+pub fn update_aim_marker(
+    wd: Res<crate::warp::WarpDrive>,
+    origin: Res<RenderOrigin>,
+    mut q: Query<(&mut Transform, &mut Visibility), With<AimMarker>>,
+) {
+    use warp_core::Phase;
+    let Ok((mut t, mut vis)) = q.single_mut() else { return };
+    let dir = match (wd.drive.phase, wd.drive.path()) {
+        (Phase::Spooling | Phase::Calibrating, Some(path)) => path.start_dir(),
+        _ => {
+            *vis = Visibility::Hidden;
+            return;
+        }
+    };
+    let at = origin.view + dir * 1000.0;
+    t.translation = (at - origin.origin).as_vec3();
+    t.rotation = Quat::from_rotation_arc(Vec3::Y, dir.as_vec3());
+    t.scale = Vec3::splat(if wd.drive.warning { 14.0 } else { 10.0 });
+    *vis = Visibility::Inherited;
 }
 
 /// Tunnel look keyed to the drive's speed: streaks along the course, a tint at the screen edge.

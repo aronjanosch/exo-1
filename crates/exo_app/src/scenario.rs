@@ -980,18 +980,25 @@ fn t5_walk(name: &'static str, dir: DVec3, heading: DVec3, secs: f64) -> Vec<Ste
             let h = (p - pl.centre).length() - pl.radius - pl.sea;
             *c.v.get_mut("hmin").unwrap() = c.v["hmin"].min(h);
             *c.v.get_mut("hmax").unwrap() = c.v["hmax"].max(h);
-            let slope = pl.pgen.sample(crate::env::to_v3(pl.up(p))).slope_deg;
+            let here = pl.pgen.sample(crate::env::to_v3(pl.up(p)));
+            let slope = here.slope_deg;
+            // Biome rows walked through (#68), as a bit set.
+            let seen = c.v.entry("biomes").or_insert(0.0);
+            *seen = (*seen as u64 | 1u64 << here.biome.clamp(0, 63)) as f64;
             let e = c.v.entry("slope").or_insert(0.0);
             *e = e.max(slope);
             let climb = c.v.entry("climb").or_insert(0.0);
             if slope > 50.0 { *climb += 1.0; }
             if c.t >= secs {
                 keys(w, &[KeyCode::KeyW], false);
-                let note = format!("path {:.0} m, height above sea {:+.1}..{:+.1} m, steepest ground under the walker {:.1} deg, ticks on ground steeper than 50 deg {}", c.v["path"], c.v["hmin"], c.v["hmax"], c.v["slope"], c.v["climb"]);
+                let rows = (c.v["biomes"] as u64).count_ones();
+                let note = format!("path {:.0} m, height above sea {:+.1}..{:+.1} m, steepest ground under the walker {:.1} deg, ticks on ground steeper than 50 deg {}, biome rows {rows}", c.v["path"], c.v["hmin"], c.v["hmax"], c.v["slope"], c.v["climb"]);
                 c.v.remove("slope");
                 c.v.remove("climb");
+                c.v.remove("biomes");
                 end(w, c, note);
                 check(c, w.resource::<WalkStats>().rescues == c.rescues0, format!("{name}: no fall-through"));
+                check(c, rows >= 2, format!("{name}: crosses {rows} biome rows (at least 2)"));
                 return true;
             }
             false

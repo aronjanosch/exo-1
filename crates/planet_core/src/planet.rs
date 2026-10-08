@@ -7,7 +7,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-pub const CHANNELS: usize = 5; // elevation (noise only), temperature, moisture, landform, reserved (wind/rain shadow, unused)
+pub const CHANNELS: usize = 5; // elevation, temperature, moisture, landform, weirdness (all noise, -1..1 except temperature)
 
 pub fn make_noise(spec: &NoiseSpec, seed: i32) -> FastNoiseLite {
     let mut n = FastNoiseLite::with_seed(seed + spec.seed_offset);
@@ -33,21 +33,35 @@ struct BandRt {
     noise: FastNoiseLite,
     amp: f64,
     warp: Option<(FastNoiseLite, f64)>,
+    scale: BandScale,
 }
 
 pub(crate) enum StampRt {
     Basin { c: V3, r: f64, d: f64, cos_reach: f64 },
-    Esc { c: V3, t: V3, n: V3, spec: (f64, f64, f64, f64, f64), landform: Option<i32>, cos_reach: f64 },
+    Esc { c: V3, t: V3, n: V3, spec: (f64, f64, f64, f64, f64), landform: Option<f64>, cos_reach: f64 },
     Plateau { c: V3, r: f64, h: f64, fall: f64, cos_reach: f64 },
 }
 
 /// Macro fields at one point.
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Fields {
-    pub elev: f64, // macro noise elevation in metres, stamps not included
+    pub elev: f64, // macro elevation field (noise, -1..1), stamps not included
     pub temp: f64,
     pub moist: f64,
-    pub land: i32,
+    pub land: f64,
+    pub weird: f64,
+}
+
+impl Fields {
+    pub fn get(&self, f: FieldName) -> f64 {
+        match f {
+            FieldName::Elevation => self.elev,
+            FieldName::Temperature => self.temp,
+            FieldName::Moisture => self.moist,
+            FieldName::Landform => self.land,
+            FieldName::Weirdness => self.weird,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -59,7 +73,8 @@ pub struct Sample {
     pub slope_deg: f64,
     pub temperature: f64,
     pub moisture: f64,
-    pub landform: i32,
+    pub landform: f64,
+    pub weirdness: f64,
     pub macro_elevation: f64,
     pub stamp_height: f64,
 }
@@ -91,6 +106,12 @@ pub struct BakeStats {
     pub site_mean_nn_m: f64,
     pub site_max_nn_m: f64,
     pub site_median_nn_m: f64,
+    /// Rows below their `min_share`.
+    pub quota_misses: Vec<String>,
+    /// Share of 200 random straight walks of 540 m (5 min at 1.8 m/s, on land) that cross at
+    /// least two biome rows, and the median number of rows per walk (#68: sizes by walking).
+    pub walks_two_biomes_share: f64,
+    pub walk_biomes_median: f64,
 }
 
 pub struct Planet {
@@ -100,6 +121,7 @@ pub struct Planet {
     n_moist: FastNoiseLite,
     n_temp: FastNoiseLite,
     n_land: FastNoiseLite,
+    n_weird: FastNoiseLite,
     bands: Vec<BandRt>,
     pub(crate) scatter: crate::scatter::ScatterRt,
     pub(crate) stamps: Vec<StampRt>,
@@ -141,6 +163,7 @@ impl Planet {
                     let spec = NoiseSpec { seed_offset: w.seed_offset, frequency: w.frequency, fractal: Fractal::None, octaves: 1 };
                     (make_noise(&spec, seed), w.amplitude)
                 }),
+                scale: b.scale,
             })
             .collect();
         let scatter = crate::scatter::ScatterRt::new(&recipe, seed);
@@ -183,6 +206,7 @@ impl Planet {
             n_moist: make_noise(&m.moisture.noise, seed),
             n_temp: make_noise(&m.temperature.noise, seed),
             n_land: make_noise(&m.landform.noise, seed),
+            n_weird: make_noise(&m.weirdness.noise, seed),
             bands,
             scatter,
             stamps,
@@ -202,7 +226,7 @@ impl Planet {
     }
 
     /// Sum of the stamped features (metres) and the landform id they force, if any.
-    pub fn stamp_height(&self, dir: V3) -> (f64, Option<i32>) {
+    pub fn stamp_height(&self, dir: V3) -> (f64, Option<f64>) {
         let mut h = 0.0;
         let mut lf = None;
         for s in &self.stamps {
@@ -242,7 +266,10 @@ impl Planet {
         (h, lf)
     }
 
-    fn bands_height(&self, p: [f32; 3]) -> f64 {
+    fn bands_height(&self, p: [f32; 3], f: &Fields) -> f64 {
+        let sh = &self.recipe.shape;
+        let stretch = sh.stretch.eval(f.get(sh.stretch.field));
+        let rough = sh.roughness.eval(f.get(sh.roughness.field));
         let mut h = 0.0;
         for b in &self.bands {
             let v = if let Some((w, wa)) = &b.warp {
@@ -256,9 +283,20 @@ impl Planet {
             } else {
                 nz(&b.noise, p)
             };
-            h += v as f64 * b.amp;
+            let k = match b.scale {
+                BandScale::None => 1.0,
+                BandScale::Stretch => stretch,
+                BandScale::Roughness => rough,
+            };
+            h += v as f64 * b.amp * k;
         }
         h
+    }
+
+    /// Height offset of the shape at the macro fields (metres, stamps and bands not included).
+    pub fn shape_offset(&self, f: &Fields) -> f64 {
+        let o = &self.recipe.shape.offset;
+        o.eval(f.get(o.field))
     }
 
     /// Macro fields at face coordinates (a, b in [-1, 1]). Vertex-centred grid: edge
@@ -282,14 +320,13 @@ impl Planet {
             let x1 = cc + (d - cc) * fu;
             x0 + (x1 - x0) * fv
         };
-        let k = if fu >= 0.5 { if fv >= 0.5 { k11 } else { k10 } } else if fv >= 0.5 { k01 } else { k00 };
-        Fields { elev: bil(0), temp: bil(1), moist: bil(2), land: m[k + 3] as i32 }
+        Fields { elev: bil(0), temp: bil(1), moist: bil(2), land: bil(3), weird: bil(4) }
     }
 
     /// THE height function: metres above the base radius, from face coordinates.
     pub fn height_ab(&self, face: usize, a: f64, b: f64, dir: V3) -> (f64, Fields) {
         let f = self.macro_lookup(face, a, b);
-        let h = f.elev + self.stamp_height(dir).0 + self.bands_height(self.p32(dir));
+        let h = self.shape_offset(&f) + self.stamp_height(dir).0 + self.bands_height(self.p32(dir), &f);
         (h, f)
     }
 
@@ -301,27 +338,33 @@ impl Planet {
         self.height_ab(face, a, b, d).0
     }
 
-    pub fn biome_for(&self, h_above_sea: f64, f: &Fields, forced_landform: Option<i32>) -> u8 {
-        let t = &self.recipe.macro_.temperature;
-        let temp = f.temp - t.lapse_per_m * h_above_sea.max(0.0);
+    /// Temperature at a point: the field less the lapse with height above the sea.
+    pub fn temperature_at(&self, f: &Fields, h_above_sea: f64) -> f64 {
+        f.temp - self.recipe.macro_.temperature.lapse_per_m * h_above_sea.max(0.0)
+    }
+
+    /// The biome row nearest to the point in parameter space (#68): per row the sum of squared
+    /// distances to its points or intervals over the axes it names, plus its offset. Ties go to
+    /// the row listed first.
+    pub fn biome_for(&self, h_above_sea: f64, f: &Fields, forced_landform: Option<f64>) -> u8 {
+        let temp = self.temperature_at(f, h_above_sea);
         let land = forced_landform.unwrap_or(f.land);
+        let hs = self.recipe.biome_space.height_scale_m.max(1e-6);
+        let mut best = (f64::MAX, self.recipe.biomes[0].id);
         for row in &self.recipe.biomes {
-            let ok = row.when.iter().all(|c| {
-                let v = match c.field {
-                    Field::HeightAboveSea => h_above_sea,
-                    Field::Temperature => temp,
-                    Field::Moisture => f.moist,
-                    Field::Landform => land as f64,
-                };
-                c.min.map_or(true, |m| v >= m)
-                    && c.max.map_or(true, |m| v <= m)
-                    && c.one_of.as_ref().map_or(true, |l| l.contains(&(v as i32)))
-            });
-            if ok {
-                return row.id;
+            let c = &row.climate;
+            let mut d = row.offset;
+            for (r, v) in [(c.elevation, f.elev), (c.temperature, temp), (c.moisture, f.moist), (c.landform, land), (c.weirdness, f.weird), (c.height_above_sea, h_above_sea / hs)] {
+                if let Some(r) = r {
+                    let x = r.distance(v);
+                    d += x * x;
+                }
+            }
+            if d < best.0 {
+                best = (d, row.id);
             }
         }
-        self.recipe.biomes.last().unwrap().id
+        best.1
     }
 
     /// Everything the bot interface wants to know about one spot.
@@ -345,9 +388,10 @@ impl Planet {
             sea: self.sea,
             biome: self.biome_for(ha, &f, lf) as i32,
             slope_deg: gx.hypot(gy).atan().to_degrees(),
-            temperature: f.temp - self.recipe.macro_.temperature.lapse_per_m * ha.max(0.0),
+            temperature: self.temperature_at(&f, ha),
             moisture: f.moist,
             landform: lf.unwrap_or(f.land),
+            weirdness: f.weird,
             macro_elevation: f.elev,
             stamp_height: sh,
         }
@@ -420,18 +464,17 @@ impl Planet {
                                 let dir = cube_to_sphere(face, a, b);
                                 let p = this.p32(dir);
                                 let m = &this.recipe.macro_;
-                                let elev = nz(&this.n_elev, p) as f64 * m.elevation.amplitude;
+                                let elev = nz(&this.n_elev, p) as f64;
                                 let tm = &m.temperature;
                                 let temp = tm.base - tm.latitude_gain * dir.y.abs() + tm.noise_gain * nz(&this.n_temp, p) as f64;
-                                let cl = m.landform.classes as f32;
-                                let land = ((nz(&this.n_land, p) + 1.0) * 0.5 * cl).floor().clamp(0.0, cl - 1.0);
+                                let f = Fields { elev, temp, moist: nz(&this.n_moist, p) as f64, land: nz(&this.n_land, p) as f64, weird: nz(&this.n_weird, p) as f64 };
                                 let o = &mut out[i * CHANNELS..(i + 1) * CHANNELS];
-                                o[0] = elev as f32;
-                                o[1] = temp as f32;
-                                o[2] = nz(&this.n_moist, p);
-                                o[3] = land;
-                                o[4] = 0.0;
-                                eo[i * 2] = (elev + this.stamp_height(dir).0) as f32;
+                                o[0] = f.elev as f32;
+                                o[1] = f.temp as f32;
+                                o[2] = f.moist as f32;
+                                o[3] = f.land as f32;
+                                o[4] = f.weird as f32;
+                                eo[i * 2] = (this.shape_offset(&f) + this.stamp_height(dir).0) as f32;
                                 eo[i * 2 + 1] = this.area_weight(face, a, b) as f32;
                             }
                         }
@@ -522,11 +565,18 @@ impl Planet {
             st.max_height_above_sea = tot.max;
             hr = (tot.min + self.sea, tot.max + self.sea);
             for row in &self.recipe.biomes {
-                st.biome_area_share.insert(row.id.to_string(), tot.biomes.get(&row.id).copied().unwrap_or(0.0) / tot.w);
+                let share = tot.biomes.get(&row.id).copied().unwrap_or(0.0) / tot.w;
+                st.biome_area_share.insert(row.id.to_string(), share);
+                if let Some(min) = row.min_share
+                    && share < min
+                {
+                    st.quota_misses.push(format!("biome row {}: area share {:.2} % below its quota {:.2} %", row.id, share * 100.0, min * 100.0));
+                }
             }
         }
         self.height_range = hr;
         self.feature_stats(&mut st);
+        self.walk_stats(&mut st, threads);
         st.stats_ms = t0.elapsed().as_secs_f64() * 1e3;
 
         // 4. sites
@@ -538,6 +588,12 @@ impl Planet {
         st.bake_ms = t_all.elapsed().as_secs_f64() * 1e3;
         let _ = r;
         st
+    }
+
+    /// `bake`, failing when a biome row misses its quota (`min_share`).
+    pub fn bake_checked(&mut self, threads: usize) -> Result<BakeStats, String> {
+        let st = self.bake(threads);
+        if st.quota_misses.is_empty() { Ok(st) } else { Err(format!("bake: {}", st.quota_misses.join("; "))) }
     }
 
     /// Area element of the cube-sphere mapping at (a, b), relative units.
@@ -626,6 +682,53 @@ impl Planet {
                 }
             }
         }
+    }
+
+    fn walk_stats(&self, st: &mut BakeStats, threads: usize) {
+        const WALKS: usize = 200;
+        // One walk per index, its own random start (on land) and heading: parallel and the same
+        // result for any thread count.
+        let parts = par_rows(WALKS, threads, |i0, i1| {
+            let mut out = Vec::with_capacity(i1 - i0);
+            for i in i0..i1 {
+                let mut rng = 0x5DEECE66Du64 ^ (self.recipe.seed as u64).wrapping_mul(0x9E3779B97F4A7C15) ^ (i as u64 + 1).wrapping_mul(0xBF58476D1CE4E5B9);
+                let mut next = || {
+                    rng ^= rng << 13;
+                    rng ^= rng >> 7;
+                    rng ^= rng << 17;
+                    (rng >> 11) as f64 / (1u64 << 53) as f64
+                };
+                let d = loop {
+                    let z = next() * 2.0 - 1.0;
+                    let phi = next() * std::f64::consts::TAU;
+                    let rr = (1.0 - z * z).sqrt();
+                    let d = v3(rr * phi.cos(), z, rr * phi.sin());
+                    if self.height_at(d) > self.sea {
+                        break d;
+                    }
+                };
+                let (e, n) = crate::look::tangent_frame(d);
+                let a = next() * std::f64::consts::TAU;
+                let t = e * a.cos() + n * a.sin();
+                let mut seen: Vec<u8> = Vec::new();
+                for k in 0..=54 {
+                    let p = crate::look::walk(d, t, k as f64 * 10.0, self.radius);
+                    let face = face_of(p);
+                    let (a, b) = sphere_to_face_ab(face, p);
+                    let (h, f) = self.height_ab(face, a, b, p);
+                    let row = self.biome_for(h - self.sea, &f, self.stamp_height(p).1);
+                    if !seen.contains(&row) {
+                        seen.push(row);
+                    }
+                }
+                out.push(seen.len());
+            }
+            out
+        });
+        let mut counts: Vec<usize> = parts.into_iter().flatten().collect();
+        counts.sort();
+        st.walks_two_biomes_share = counts.iter().filter(|c| **c >= 2).count() as f64 / WALKS as f64;
+        st.walk_biomes_median = counts[WALKS / 2] as f64;
     }
 
     fn place_sites(&self) -> Vec<V3> {

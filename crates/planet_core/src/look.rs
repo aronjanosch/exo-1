@@ -119,19 +119,10 @@ fn to_u8(c: [f32; 3]) -> [u8; 3] {
     [(c[0].clamp(0.0, 1.0) * 255.0) as u8, (c[1].clamp(0.0, 1.0) * 255.0) as u8, (c[2].clamp(0.0, 1.0) * 255.0) as u8]
 }
 
-/// Fixed palette for landform classes and other ids (not recipe colours: a debug map).
-fn id_color(i: i32) -> [f32; 3] {
-    const P: [[f32; 3]; 8] = [
-        [0.90, 0.60, 0.20], [0.30, 0.70, 0.90], [0.60, 0.85, 0.35], [0.85, 0.35, 0.55],
-        [0.95, 0.90, 0.40], [0.50, 0.45, 0.90], [0.40, 0.90, 0.75], [0.75, 0.75, 0.75],
-    ];
-    P[i.rem_euclid(8) as usize]
-}
-
 struct Px {
     ha: f64,
     biome: u8,
-    land: i32,
+    land: f64,
     scatter: f32,
 }
 
@@ -190,7 +181,7 @@ impl Planet {
                 let bc = self.biome_color(p.biome);
                 let bs = if p.ha <= 0.0 { 0.55 } else { shade };
                 biome.extend(to_u8([bc[0] * bs, bc[1] * bs, bc[2] * bs]));
-                let lc = id_color(p.land);
+                let lc = lerp3([0.2, 0.35, 0.75], [0.95, 0.55, 0.25], ((p.land + 1.0) * 0.5) as f32);
                 land.extend(to_u8([lc[0] * shade, lc[1] * shade, lc[2] * shade]));
                 let s = if p.ha <= 0.0 { [0.05, 0.08, 0.2] } else { lerp3([0.12, 0.10, 0.08], [0.3, 1.0, 0.35], p.scatter) };
                 scatter.extend(to_u8(s));

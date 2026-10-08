@@ -116,10 +116,10 @@ fn atlas_step(out: PathBuf, vps: Viewpoints) -> Step {
             check(c, ok, format!("look {}: atlas {}x{} ({} layers) in {:.0} ms", def.name, atlas.width, atlas.height, AtlasLayer::ALL.len(), t0.elapsed().as_secs_f64() * 1e3));
             let shares: Vec<String> = st.biome_area_share.iter().map(|(k, v)| format!("{k}: {:.1} %", v * 100.0)).collect();
             let line = format!(
-                "look {}: bake {:.0} ms, sea {:.1} m, land {:.1} % (macro {:.1} %), height above sea {:.0}..{:.0} m, biomes [{}], sites {} (gap worst {:.0} m, median {:.0} m, closest pair {:.0} m)",
+                "look {}: bake {:.0} ms, sea {:.1} m, land {:.1} % (macro {:.1} %), height above sea {:.0}..{:.0} m, biomes [{}], sites {} (gap worst {:.0} m, median {:.0} m, closest pair {:.0} m), 540 m walks crossing 2+ biomes {:.0} % (median {} rows)",
                 def.name, st.bake_ms, st.sea_level_m, st.land_fraction_full * 100.0, st.land_fraction_macro * 100.0,
                 st.min_height_above_sea, st.max_height_above_sea, shares.join(", "),
-                st.site_count, st.site_max_nn_m, st.site_median_nn_m, st.site_min_pair_m,
+                st.site_count, st.site_max_nn_m, st.site_median_nn_m, st.site_min_pair_m, st.walks_two_biomes_share * 100.0, st.walk_biomes_median,
             );
             println!("{line}");
             c.report.push(line);

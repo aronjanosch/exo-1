@@ -24,7 +24,6 @@ pub struct NoiseSpec {
 #[serde(deny_unknown_fields)]
 pub struct Elevation {
     pub noise: NoiseSpec,
-    pub amplitude: f64,
 }
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
@@ -45,7 +44,11 @@ pub struct Temperature {
 #[serde(deny_unknown_fields)]
 pub struct Landform {
     pub noise: NoiseSpec,
-    pub classes: i32,
+}
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Weirdness {
+    pub noise: NoiseSpec,
 }
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
@@ -55,6 +58,63 @@ pub struct MacroSpec {
     pub moisture: Moisture,
     pub temperature: Temperature,
     pub landform: Landform,
+    /// Variants (#68): odd places where this field is high.
+    pub weirdness: Weirdness,
+}
+
+/// One of the shared macro fields (#68). All are about -1..1 except temperature (its own scale).
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum FieldName {
+    Elevation,
+    Temperature,
+    Moisture,
+    Landform,
+    Weirdness,
+}
+
+/// Piecewise linear map from a field to a value; clamped at both ends.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Spline {
+    pub field: FieldName,
+    pub points: Vec<[f64; 2]>,
+}
+
+impl Spline {
+    pub fn eval(&self, x: f64) -> f64 {
+        let p = &self.points;
+        if x <= p[0][0] {
+            return p[0][1];
+        }
+        for w in p.windows(2) {
+            if x <= w[1][0] {
+                let t = (x - w[0][0]) / (w[1][0] - w[0][0]).max(1e-12);
+                return w[0][1] + (w[1][1] - w[0][1]) * t;
+            }
+        }
+        p[p.len() - 1][1]
+    }
+}
+
+/// How the shared fields shape the ground (#68): a height offset, a vertical stretch of the
+/// bands marked `stretch`, a roughness of the bands marked `roughness`. Biomes read the same
+/// fields, so a mountain biome and a mountain shape come together.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Shape {
+    pub offset: Spline,
+    pub stretch: Spline,
+    pub roughness: Spline,
+}
+
+#[derive(Deserialize, Clone, Copy, Debug, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum BandScale {
+    #[default]
+    None,
+    Stretch,
+    Roughness,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -72,6 +132,9 @@ pub struct Band {
     pub noise: NoiseSpec,
     #[serde(default)]
     pub warp: Option<Warp>,
+    /// Scaled by the shape's stretch or roughness (#68).
+    #[serde(default)]
+    pub scale: BandScale,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -89,8 +152,9 @@ pub enum Stamp {
         slope_width_m: f64,
         shelf_depth_m: f64,
         end_taper_m: f64,
+        /// Forces the landform field to this value where the step is (rim biomes).
         #[serde(default)]
-        landform: Option<i32>,
+        landform: Option<f64>,
     },
     Plateau {
         center: [f64; 3],
@@ -106,25 +170,50 @@ pub struct SeaLevel {
     pub land_fraction: f64,
 }
 
-#[derive(Deserialize, Clone, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum Field {
-    HeightAboveSea,
-    Temperature,
-    Moisture,
-    Landform,
+/// A point or an interval on one axis of the biome parameter space.
+#[derive(Deserialize, Clone, Copy, Debug)]
+#[serde(untagged)]
+pub enum Range {
+    Point(f64),
+    Interval([f64; 2]),
 }
+
+impl Range {
+    /// Distance from a value to the point or interval (0 inside).
+    pub fn distance(&self, v: f64) -> f64 {
+        match *self {
+            Range::Point(p) => (v - p).abs(),
+            Range::Interval([lo, hi]) => (lo - v).max(v - hi).max(0.0),
+        }
+    }
+}
+
+/// Where a biome row sits in parameter space (#68). Missing axes do not count.
+#[derive(Deserialize, Clone, Debug, Default)]
+#[serde(deny_unknown_fields)]
+pub struct Climate {
+    #[serde(default)]
+    pub elevation: Option<Range>,
+    #[serde(default)]
+    pub temperature: Option<Range>,
+    #[serde(default)]
+    pub moisture: Option<Range>,
+    #[serde(default)]
+    pub landform: Option<Range>,
+    #[serde(default)]
+    pub weirdness: Option<Range>,
+    /// Metres; divided by `biome_space.height_scale_m` before it counts.
+    #[serde(default)]
+    pub height_above_sea: Option<Range>,
+}
+
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct Condition {
-    pub field: Field,
-    #[serde(default)]
-    pub min: Option<f64>,
-    #[serde(default)]
-    pub max: Option<f64>,
-    #[serde(default, rename = "in")]
-    pub one_of: Option<Vec<i32>>,
+pub struct BiomeSpace {
+    /// Metres of height above sea that weigh like one unit of a field.
+    pub height_scale_m: f64,
 }
+
 /// Terrain colours of a biome row (#66): flat ground, steep rock, and how much of the planet's
 /// strata and cap shows (0..1). Blended at borders by the mesh.
 #[derive(Deserialize, Clone, Debug)]
@@ -207,9 +296,17 @@ pub struct BiomeRow {
     /// Scatter multipliers by entry or group id (0 = off, missing = 1), #65.
     #[serde(default)]
     pub scatter: BTreeMap<String, f32>,
-    /// All conditions must hold; the first matching row wins. No `when` = catch-all.
+    /// Its point or intervals in parameter space; the nearest row wins (#68).
+    pub climate: Climate,
+    /// Added to the row's distance (a row that should win less often gets a positive offset).
     #[serde(default)]
-    pub when: Vec<Condition>,
+    pub offset: f64,
+    /// Smallest area share the bake accepts for this row (quota), 0..1.
+    #[serde(default)]
+    pub min_share: Option<f64>,
+    /// Site kinds allowed in this row (#70); missing = all.
+    #[serde(default)]
+    pub sites: Option<Vec<String>>,
 }
 
 /// A named noise mask for scatter (a forest, a rock field): weight 0 below `threshold`, rising to
@@ -361,6 +458,8 @@ pub struct Recipe {
     pub macro_: MacroSpec,
     pub bands: Vec<Band>,
     pub stamps: Vec<Stamp>,
+    pub shape: Shape,
+    pub biome_space: BiomeSpace,
     pub sea_level: SeaLevel,
     pub material: TerrainLook,
     pub sky: Sky,
@@ -381,8 +480,13 @@ impl Recipe {
 
     pub fn from_json(s: &str) -> Result<Recipe, String> {
         let r: Recipe = serde_json::from_str(s).map_err(|e| e.to_string())?;
-        if r.biomes.is_empty() || !r.biomes.last().unwrap().when.is_empty() {
-            return Err("last biome row must be a catch-all (no `when`)".into());
+        if r.biomes.is_empty() {
+            return Err("at least one biome row".into());
+        }
+        for (name, sp) in [("offset", &r.shape.offset), ("stretch", &r.shape.stretch), ("roughness", &r.shape.roughness)] {
+            if sp.points.len() < 2 || sp.points.windows(2).any(|w| w[1][0] <= w[0][0]) {
+                return Err(format!("shape.{name}: at least two points with rising x"));
+            }
         }
         let mut ids: Vec<u8> = r.biomes.iter().map(|b| b.id).collect();
         ids.sort();

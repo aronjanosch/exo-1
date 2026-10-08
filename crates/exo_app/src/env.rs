@@ -50,7 +50,7 @@ impl PlanetRes {
     pub fn load_with_stats(id: PlanetId, def: &PlanetDef) -> (PlanetRes, BakeStats) {
         let recipe = recipe_for(def).unwrap_or_else(|e| panic!("{e}"));
         let mut p = Planet::new(recipe);
-        let st = p.bake(0);
+        let st = p.bake_checked(0).unwrap_or_else(|e| panic!("content/planet/{}.json: {e}", def.recipe));
         let (lo, hi) = p.height_range;
         let res = PlanetRes {
             radius: p.radius,

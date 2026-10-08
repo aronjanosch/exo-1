@@ -36,7 +36,7 @@ fn separation_and_sites_are_respected() {
                 assert!(d >= sep(&a.kind).max(sep(&b.kind)) - 1e-6, "{} and {} {d:.0} m apart", a.kind, b.kind);
             }
             for s in &p.sites {
-                let d = p.radius * a.centre.dot(*s).clamp(-1.0, 1.0).acos();
+                let d = p.radius * a.centre.dot(s.dir).clamp(-1.0, 1.0).acos();
                 assert!(d >= a.reach_m, "site inside {} ({d:.0} m < {:.0} m)", a.kind, a.reach_m);
             }
         }

@@ -44,7 +44,7 @@ impl Viewpoints {
         let v: Viewpoints = serde_json::from_str(s).map_err(|e| e.to_string())?;
         let known = ["orbit", "basin", "rim", "plateau", "crater", "canyon", "mesa", "spire", "caldera", "signature", "site", "forest_edge", "coast"];
         for p in &v.viewpoints {
-            if !known.contains(&p.spot.as_str()) {
+            if !known.contains(&p.spot.as_str()) && !p.spot.starts_with("site:") && p.spot != "landmark" {
                 return Err(format!("viewpoint {}: unknown spot {}", p.id, p.spot));
             }
             if p.spot == "orbit" && p.from.is_none() {
@@ -188,8 +188,12 @@ impl Planet {
                 scatter.extend(to_u8(s));
             }
         }
+        // Sites by kind on the biome layer (landmarks larger), black outline first.
+        const KIND: [[u8; 3]; 6] = [[255, 255, 255], [255, 80, 200], [80, 230, 255], [255, 200, 40], [140, 255, 120], [255, 120, 60]];
         for s in &self.sites {
-            mark(&mut biome, w, h, *s, [255, 255, 255]);
+            let big = s.category == crate::recipe::SiteCategory::Landmark;
+            mark_n(&mut biome, w, h, s.dir, [0, 0, 0], if big { 5 } else { 3 });
+            mark_n(&mut biome, w, h, s.dir, KIND[s.kind % KIND.len()], if big { 4 } else { 2 });
         }
         // Landforms on the height layer: red, the signature yellow.
         for s in &self.stamps {
@@ -254,11 +258,18 @@ impl Planet {
                 }
                 None
             }
-            "site" => {
-                let s = *self.sites.first()?;
-                let (e, _) = tangent_frame(s);
-                let d = walk(s, e, 30.0, r);
-                Some(Spot { dir: d, facing: (s - d * s.dot(d)).normalized() })
+            // `site`: the first site proper; `site:<kind>`: the first of a kind; `landmark`: the
+            // first landmark. Standing outside the footprint, facing the centre.
+            _ if kind == "site" || kind == "landmark" || kind.starts_with("site:") => {
+                use crate::recipe::SiteCategory;
+                let s = self.sites.iter().find(|s| match kind {
+                    "site" => s.category == SiteCategory::Site,
+                    "landmark" => s.category == SiteCategory::Landmark,
+                    k => s.id == k["site:".len()..],
+                })?;
+                let (e, _) = tangent_frame(s.dir);
+                let d = walk(s.dir, e, s.footprint_m + if s.category == SiteCategory::Landmark { 120.0 } else { 12.0 }, r);
+                Some(Spot { dir: d, facing: (s.dir - d * s.dir.dot(d)).normalized() })
             }
             "forest_edge" | "coast" => {
                 let mut rng = 0x2545F4914F6CDD1Du64 ^ (self.recipe.seed as u64);
@@ -301,12 +312,17 @@ impl Planet {
 
 /// A 5 x 5 pixel dot at a direction.
 pub fn mark(img: &mut [u8], w: usize, h: usize, d: V3, c: [u8; 3]) {
+    mark_n(img, w, h, d, c, 2)
+}
+
+/// A (2n+1) square dot at a direction.
+pub fn mark_n(img: &mut [u8], w: usize, h: usize, d: V3, c: [u8; 3], n: isize) {
     let lon = d.z.atan2(d.x);
     let lat = d.y.clamp(-1.0, 1.0).asin();
     let x = ((lon + std::f64::consts::PI) / std::f64::consts::TAU * w as f64) as isize;
     let y = ((std::f64::consts::FRAC_PI_2 - lat) / std::f64::consts::PI * h as f64) as isize;
-    for dy in -2..=2 {
-        for dx in -2..=2 {
+    for dy in -n..=n {
+        for dx in -n..=n {
             let xx = (x + dx).rem_euclid(w as isize) as usize;
             let yy = (y + dy).clamp(0, h as isize - 1) as usize;
             let k = (yy * w + xx) * 3;

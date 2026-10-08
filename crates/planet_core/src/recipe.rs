@@ -498,14 +498,144 @@ pub struct ScatterSpec {
     pub groups: Vec<ScatterGroup>,
 }
 
+/// A ground edit under a site (#70), applied after the noise in `order`. The height function
+/// includes it, so mesh, collision and scatter agree.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Edit {
+    /// Level to the ground height at the site centre: a disc (`radius_m`) or a rectangle
+    /// (`half_extent_m`, along the site's yaw), blending out over `rolloff_m`; `dish_m` sinks the
+    /// middle a little.
+    Flatten {
+        order: i32,
+        #[serde(default)]
+        radius_m: Option<f64>,
+        #[serde(default)]
+        half_extent_m: Option<[f64; 2]>,
+        rolloff_m: f64,
+        #[serde(default)]
+        dish_m: f64,
+    },
+    /// Pull the height towards the mean of a ring around it (the noise below, not earlier edits).
+    Smooth { order: i32, radius_m: f64, strength: f64 },
+    /// Raise (positive) or lower (negative) a disc, with an optional rim at its edge.
+    Raise {
+        order: i32,
+        radius_m: f64,
+        rolloff_m: f64,
+        amount_m: f64,
+        #[serde(default)]
+        rim_m: f64,
+        #[serde(default = "two")]
+        rim_width_m: f64,
+    },
+}
+fn two() -> f64 {
+    2.0
+}
+
+impl Edit {
+    pub fn order(&self) -> i32 {
+        match self {
+            Edit::Flatten { order, .. } | Edit::Smooth { order, .. } | Edit::Raise { order, .. } => *order,
+        }
+    }
+}
+
+/// Pieces scattered around a kit piece's spot.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct PieceScatter {
+    pub count: [u32; 2],
+    pub radius_m: [f64; 2],
+}
+
+/// One piece of a site's kit: a prop at an offset (metres east/north in the site's turned
+/// frame), or several scattered around it.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct KitPiece {
+    pub prop: String,
+    #[serde(default)]
+    pub at: [f64; 2],
+    #[serde(default)]
+    pub yaw_deg: Option<f64>,
+    #[serde(default = "span_one")]
+    pub scale: Span,
+    #[serde(default)]
+    pub sink_m: f64,
+    /// 0 = upright along the radius, 1 = along the ground's normal.
+    #[serde(default)]
+    pub align: f64,
+    pub tint: [f32; 3],
+    #[serde(default)]
+    pub scatter: Option<PieceScatter>,
+}
+fn span_one() -> Span {
+    Span::Fixed(1.0)
+}
+
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SiteCategory {
+    Site,
+    Landmark,
+    Find,
+}
+
+/// A kind of site (#70). Placeholder kinds until the initiator picks (ids, no fiction names).
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct SiteKind {
+    pub id: String,
+    pub category: SiteCategory,
+    pub count: [u32; 2],
+    /// Ordinary scatter stays out of this radius (m).
+    pub footprint_m: f64,
+    /// To sites of the same kind, and to every site (the larger value of the two kinds counts).
+    pub min_separation_m: f64,
+    pub min_separation_all_m: f64,
+    /// Allowed biome rows (and the row's own `sites` list must allow the kind); missing = all.
+    #[serde(default)]
+    pub biomes: Option<Vec<u8>>,
+    #[serde(default = "slope_flat")]
+    pub slope_deg: [f64; 2],
+    #[serde(default = "height_land")]
+    pub height_above_sea_m: [f64; 2],
+    /// Pick the highest of the candidates (landmarks: seen above the horizon) instead of the
+    /// one farthest from all sites so far.
+    #[serde(default)]
+    pub prefer_high: bool,
+    #[serde(default)]
+    pub edits: Vec<Edit>,
+    pub kit: String,
+}
+fn slope_flat() -> [f64; 2] {
+    [0.0, 20.0]
+}
+fn height_land() -> [f64; 2] {
+    [2.0, 1.0e9]
+}
+
+/// At most `max` sites of `category` within `radius_m` of each other (#70).
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Budget {
+    pub category: SiteCategory,
+    pub radius_m: f64,
+    pub max: u32,
+}
+
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SiteRule {
-    pub count: usize,
-    pub min_separation_m: f64,
-    pub clear_radius_m: f64,
-    pub max_slope_deg: f64,
-    pub min_height_above_sea_m: f64,
+    /// Candidates compared per placed site (best-candidate sampling).
+    pub best_of: u32,
+    /// Random spots tried per site kind before it gives up.
+    pub candidates: u32,
+    pub kinds: Vec<SiteKind>,
+    pub budgets: Vec<Budget>,
+    pub kits: BTreeMap<String, Vec<KitPiece>>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -559,6 +689,19 @@ impl Recipe {
             return Err("duplicate biome ids".into());
         }
         r.check_scatter()?;
+        for k in &r.sites.kinds {
+            if !r.sites.kits.contains_key(&k.kit) {
+                return Err(format!("site kind {}: kit '{}' is not defined", k.id, k.kit));
+            }
+            if k.count[0] > k.count[1] {
+                return Err(format!("site kind {}: count min above max", k.id));
+            }
+            for e in &k.edits {
+                if let Edit::Flatten { radius_m: None, half_extent_m: None, .. } = e {
+                    return Err(format!("site kind {}: flatten needs radius_m or half_extent_m", k.id));
+                }
+            }
+        }
         if r.landforms.kinds.iter().filter(|k| k.signature).count() > 1 {
             return Err("landforms: at most one signature landform".into());
         }

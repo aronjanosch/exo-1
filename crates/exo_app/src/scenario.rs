@@ -142,12 +142,12 @@ fn with_ship<R>(w: &mut World, f: impl FnOnce(&mut Ship) -> R) -> R {
     let e = ship_e(w);
     f(&mut w.get_mut::<Ship>(e).unwrap())
 }
-fn with_player<R>(w: &mut World, f: impl FnOnce(&mut Player) -> R) -> R {
+pub(crate) fn with_player<R>(w: &mut World, f: impl FnOnce(&mut Player) -> R) -> R {
     let mut q = w.query::<&mut Player>();
     let mut p = q.single_mut(w).unwrap();
     f(&mut p)
 }
-fn player_world(w: &mut World) -> DVec3 {
+pub(crate) fn player_world(w: &mut World) -> DVec3 {
     let f = ship_frame_of(w);
     with_player(w, |p| p.world_pos(f))
 }
@@ -177,7 +177,7 @@ pub(crate) fn place_walker(w: &mut World, at: DVec3) {
     });
 }
 /// Turn the walker towards a world point (heading only, pitch level).
-fn face_towards(w: &mut World, target: DVec3) {
+pub(crate) fn face_towards(w: &mut World, target: DVec3) {
     let f = ship_frame_of(w);
     with_player(w, |p| {
         let pos = p.world_pos(f);
@@ -1794,6 +1794,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
         "warp" => warp_steps(&mut s, out_dir, windowed),
         // #63: fixed viewpoints and an atlas per planet (headless: atlas and statistics only).
         "planet-look" => crate::look::steps(&mut s, out_dir, windowed),
+        // #70: walk from outside into a site; the walker stands on its flattened ground.
+        "site-walk" => crate::look::site_walk_steps(&mut s),
         // Issue #5: step out of the ship in space (seat by test shortcut, then fly up).
         "space" => {
             s.push(Box::new(|w, _| {

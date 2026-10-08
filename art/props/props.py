@@ -169,7 +169,104 @@ def crystal(rng):
     return finish(bm, "crystal")
 
 
-PROPS = [tree_lolly, tree_stack, shrub_blob, rock_round, rock_slab, tuft, mushroom_giant, crystal]
+# ------------------------------------------------------------- site kits (#70)
+
+def hull_broken(rng):
+    """Crash site: the front half of a stubby hull, nose down, torn open at the back."""
+    bm = bmesh.new()
+    m = Matrix.Rotation(math.radians(-14), 4, "X") @ Matrix.Translation((0, 0, 1.4)) @ Matrix.Rotation(math.radians(90), 4, "X")
+    res = bmesh.ops.create_cone(bm, cap_ends=False, segments=10, radius1=1.9, radius2=1.4, depth=5.5, matrix=m)
+    paint(bm, {f for v in res["verts"] for f in v.link_faces}, (0.82, 0.80, 0.76))
+    for v in res["verts"]:
+        if v.co.y < -1.0:
+            v.co += Vector((rng.uniform(-0.4, 0.4), rng.uniform(-0.6, 0.2), rng.uniform(-0.3, 0.3)))
+    nose = add_blob(bm, 2, 1.45, (0.0, 2.9, 0.75), (1.0, 1.1, 0.9), (0.82, 0.80, 0.76), 0.04, rng)
+    fin = add_cone(bm, 4, 0.9, 0.1, 1.8, (0.0, -1.2, 2.6), (0.95, 0.45, 0.12), tilt=(0.5, 0.0))
+    return finish(bm, "hull_broken")
+
+
+def debris_panel(rng):
+    """A bent hull panel."""
+    bm = bmesh.new()
+    m = Matrix.Rotation(0.3, 4, "Y") @ Matrix.Translation((0, 0, 0.1)) @ Matrix.Diagonal((1.4, 0.9, 0.08, 1.0))
+    bmesh.ops.create_cube(bm, size=1.0, matrix=m)
+    bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=1, use_grid_fill=True)
+    for v in bm.verts:
+        v.co.z += 0.25 * (v.co.x / 0.7) ** 2
+    paint(bm, bm.faces, (0.80, 0.78, 0.74))
+    return finish(bm, "debris_panel")
+
+
+def debris_strut(rng):
+    """A snapped strut."""
+    bm = bmesh.new()
+    add_cone(bm, 5, 0.12, 0.09, 2.4, (0, 0, 0), (0.55, 0.55, 0.58), tilt=(1.35, 0.2))
+    return finish(bm, "debris_strut")
+
+
+def wall_broken(rng):
+    """Ruin: a wall piece with a ragged top."""
+    bm = bmesh.new()
+    m = Matrix.Translation((0, 0, 1.1)) @ Matrix.Diagonal((3.0, 0.45, 2.2, 1.0))
+    bmesh.ops.create_cube(bm, size=1.0, matrix=m)
+    bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=3, use_grid_fill=True)
+    for v in bm.verts:
+        if v.co.z > 1.5:
+            v.co.z -= rng.uniform(0.0, 1.1) * (0.5 + 0.5 * math.sin(v.co.x * 2.1))
+        v.co.x += rng.uniform(-0.03, 0.03)
+    paint(bm, bm.faces, (0.78, 0.74, 0.66))
+    return finish(bm, "wall_broken")
+
+
+def pillar_stub(rng):
+    """Ruin: a broken round pillar."""
+    bm = bmesh.new()
+    vs = add_cone(bm, 8, 0.45, 0.4, 2.0, (0, 0, 0), (0.80, 0.76, 0.68))
+    for v in vs:
+        if v.co.z > 1.0:
+            v.co.z -= rng.uniform(0.0, 0.6)
+    return finish(bm, "pillar_stub")
+
+
+def mast(rng):
+    """Lookout: a tall mast with a lamp box on top and three stays."""
+    bm = bmesh.new()
+    add_cone(bm, 6, 0.18, 0.1, 9.0, (0, 0, 0), (0.62, 0.62, 0.66))
+    m = Matrix.Translation((0, 0, 9.3)) @ Matrix.Diagonal((0.7, 0.7, 0.5, 1.0))
+    res = bmesh.ops.create_cube(bm, size=1.0, matrix=m)
+    paint(bm, {f for v in res["verts"] for f in v.link_faces}, (1.0, 0.75, 0.2))
+    for i in range(3):
+        a = i / 3 * math.tau
+        add_cone(bm, 3, 0.04, 0.04, 6.3, (math.cos(a) * 3.0, math.sin(a) * 3.0, 0.0), (0.5, 0.5, 0.5), tilt=(math.sin(a) * -0.45, math.cos(a) * 0.45))
+    return finish(bm, "mast")
+
+
+def arch_giant(rng):
+    """Landmark: a natural arch about 45 m tall, lumpy."""
+    bm = bmesh.new()
+    segs = 14
+    for i in range(segs):
+        a0 = math.pi * i / segs
+        a1 = math.pi * (i + 1) / segs
+        p0 = Vector((math.cos(a0) * 24.0, 0.0, math.sin(a0) * 40.0))
+        p1 = Vector((math.cos(a1) * 24.0, 0.0, math.sin(a1) * 40.0))
+        mid = (p0 + p1) * 0.5
+        d = (p1 - p0)
+        r = 5.5 - 2.0 * math.sin((a0 + a1) * 0.5)
+        rot = Vector((0, 0, 1)).rotation_difference(d.normalized()).to_matrix().to_4x4()
+        m = Matrix.Translation(mid - d * 0.5) @ rot @ Matrix.Translation((0, 0, d.length * 0.55))
+        res = bmesh.ops.create_cone(bm, cap_ends=True, segments=7, radius1=r * 1.1, radius2=r, depth=d.length * 1.2, matrix=m)
+        for v in res["verts"]:
+            v.co += Vector((rng.uniform(-0.6, 0.6), rng.uniform(-0.6, 0.6), rng.uniform(-0.6, 0.6)))
+        paint(bm, {f for v in res["verts"] for f in v.link_faces}, (0.82, 0.70, 0.60))
+    # feet sink into the ground
+    for v in bm.verts:
+        v.co.z = max(v.co.z, -3.0)
+    return finish(bm, "arch_giant")
+
+
+PROPS = [tree_lolly, tree_stack, shrub_blob, rock_round, rock_slab, tuft, mushroom_giant, crystal,
+         hull_broken, debris_panel, debris_strut, wall_broken, pillar_stub, mast, arch_giant]
 
 
 def main():

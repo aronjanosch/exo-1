@@ -1,5 +1,5 @@
 {
-  "_comment": "Hearth's surface recipe (#64). Data only: no code, no expressions. Seed and radius live in content/system/system.json. Every number is a test value. Biome rows have ids only, no names (TODO(initiator): names); roles: 5 sea floor, 4 shore, 3 cold high ground, 2 broken rim, 7 odd grove (weirdness), 0 wet lowland forest, 1 dry flats, 6 meadow. Nearest row wins; ties go to the row listed first.",
+  "_comment": "Hearth's surface recipe (#64). Data only: no code, no expressions. Seed and radius live in content/system/system.json. Every number is a test value. Site kinds and landmarks are ids too (TODO(initiator): kinds, names, looks). Biome rows have ids only, no names (TODO(initiator): names); roles: 5 sea floor, 4 shore, 3 cold high ground, 2 broken rim, 7 odd grove (weirdness), 0 wet lowland forest, 1 dry flats, 6 meadow. Nearest row wins; ties go to the row listed first.",
   "macro": {
     "resolution": 512,
     "elevation": { "noise": { "seed_offset": 10, "frequency": 0.0002, "fractal": "fbm", "octaves": 3 } },
@@ -122,5 +122,56 @@
       ] }
     ]
   },
-  "sites": { "count": 24, "min_separation_m": 600.0, "clear_radius_m": 15.0, "max_slope_deg": 20.0, "min_height_above_sea_m": 2.0 }
+  "sites": {
+    "best_of": 24,
+    "candidates": 30000,
+    "budgets": [
+      { "category": "site", "radius_m": 1000.0, "max": 2 },
+      { "category": "landmark", "radius_m": 3000.0, "max": 1 }
+    ],
+    "kinds": [
+      { "id": "arch", "category": "landmark", "count": [1, 1], "footprint_m": 34.0, "min_separation_m": 3000.0, "min_separation_all_m": 900.0,
+        "slope_deg": [0.0, 25.0], "height_above_sea_m": [10.0, 400.0], "prefer_high": true,
+        "edits": [ { "type": "flatten", "order": 0, "radius_m": 30.0, "rolloff_m": 20.0 } ], "kit": "arch" },
+      { "id": "huge_tree", "category": "landmark", "count": [1, 1], "footprint_m": 20.0, "min_separation_m": 3000.0, "min_separation_all_m": 900.0,
+        "biomes": [0, 6, 7], "slope_deg": [0.0, 15.0], "height_above_sea_m": [5.0, 400.0], "prefer_high": true,
+        "edits": [ { "type": "flatten", "order": 0, "radius_m": 10.0, "rolloff_m": 10.0 } ], "kit": "huge_tree" },
+      { "id": "lookout", "category": "site", "count": [4, 6], "footprint_m": 8.0, "min_separation_m": 1500.0, "min_separation_all_m": 700.0,
+        "slope_deg": [0.0, 20.0], "height_above_sea_m": [20.0, 400.0], "prefer_high": true,
+        "edits": [ { "type": "flatten", "order": 0, "radius_m": 4.0, "rolloff_m": 4.0 } ], "kit": "lookout" },
+      { "id": "crash", "category": "site", "count": [6, 8], "footprint_m": 22.0, "min_separation_m": 1200.0, "min_separation_all_m": 700.0,
+        "biomes": [0, 1, 6, 7], "slope_deg": [0.0, 18.0], "height_above_sea_m": [3.0, 150.0],
+        "edits": [ { "type": "flatten", "order": 0, "radius_m": 12.0, "rolloff_m": 10.0, "dish_m": 0.8 },
+                   { "type": "raise", "order": 1, "radius_m": 6.0, "rolloff_m": 4.0, "amount_m": -1.0, "rim_m": 0.6, "rim_width_m": 2.0 } ], "kit": "crash" },
+      { "id": "ruin", "category": "site", "count": [7, 9], "footprint_m": 20.0, "min_separation_m": 1000.0, "min_separation_all_m": 700.0,
+        "biomes": [0, 1, 2, 6], "slope_deg": [0.0, 15.0], "height_above_sea_m": [3.0, 150.0],
+        "edits": [ { "type": "smooth", "order": 0, "radius_m": 24.0, "strength": 0.6 },
+                   { "type": "flatten", "order": 1, "half_extent_m": [11.0, 8.0], "rolloff_m": 8.0 } ], "kit": "ruin" },
+      { "id": "grove", "category": "site", "count": [5, 7], "footprint_m": 16.0, "min_separation_m": 1200.0, "min_separation_all_m": 700.0,
+        "biomes": [0, 6, 7], "slope_deg": [0.0, 25.0], "height_above_sea_m": [2.0, 150.0], "kit": "grove" }
+    ],
+    "kits": {
+      "arch": [ { "prop": "arch_giant", "yaw_deg": 0.0, "scale": [0.9, 1.15], "sink_m": 2.0, "tint": [0.85, 0.70, 0.60] } ],
+      "huge_tree": [ { "prop": "tree_lolly", "yaw_deg": 0.0, "scale": [6.5, 7.5], "sink_m": 0.6, "tint": [0.35, 0.65, 0.30] } ],
+      "lookout": [ { "prop": "mast", "yaw_deg": 0.0, "sink_m": 0.3, "tint": [0.85, 0.85, 0.90] } ],
+      "crash": [
+        { "prop": "hull_broken", "yaw_deg": 0.0, "sink_m": 0.6, "tint": [0.86, 0.84, 0.80] },
+        { "prop": "debris_panel", "sink_m": 0.04, "align": 0.8, "tint": [0.80, 0.78, 0.74], "scatter": { "count": [5, 9], "radius_m": [5.0, 16.0] } },
+        { "prop": "debris_strut", "sink_m": 0.05, "align": 1.0, "tint": [0.60, 0.60, 0.64], "scatter": { "count": [4, 7], "radius_m": [4.0, 14.0] } }
+      ],
+      "ruin": [
+        { "prop": "wall_broken", "at": [-6.0, 0.0], "yaw_deg": 0.0, "sink_m": 0.3, "tint": [0.80, 0.76, 0.68] },
+        { "prop": "wall_broken", "at": [6.0, 2.0], "yaw_deg": 90.0, "sink_m": 0.3, "tint": [0.80, 0.76, 0.68] },
+        { "prop": "wall_broken", "at": [0.0, -6.0], "yaw_deg": 0.0, "scale": 0.8, "sink_m": 0.3, "tint": [0.76, 0.72, 0.64] },
+        { "prop": "pillar_stub", "at": [4.0, -5.0], "sink_m": 0.2, "tint": [0.82, 0.78, 0.70] },
+        { "prop": "pillar_stub", "at": [-4.0, 5.0], "sink_m": 0.2, "tint": [0.82, 0.78, 0.70] },
+        { "prop": "pillar_stub", "at": [7.0, -6.0], "scale": 0.7, "sink_m": 0.2, "tint": [0.82, 0.78, 0.70] },
+        { "prop": "rock_round", "scale": [0.3, 0.6], "sink_m": 0.1, "align": 0.6, "tint": [0.74, 0.70, 0.64], "scatter": { "count": [3, 6], "radius_m": [3.0, 10.0] } }
+      ],
+      "grove": [
+        { "prop": "mushroom_giant", "scale": [0.4, 1.0], "sink_m": 0.2, "tint": [0.85, 0.50, 0.90], "scatter": { "count": [4, 7], "radius_m": [2.0, 12.0] } },
+        { "prop": "crystal", "scale": [0.6, 1.6], "sink_m": 0.15, "align": 0.3, "tint": [0.50, 0.90, 1.00], "scatter": { "count": [8, 14], "radius_m": [1.0, 14.0] } }
+      ]
+    }
+  }
 }

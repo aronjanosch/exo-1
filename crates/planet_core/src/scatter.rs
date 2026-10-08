@@ -156,14 +156,13 @@ impl Planet {
         Ground { dir, h, nrm, biome: self.biome_for(h - self.sea, &f, lf) }
     }
 
-    fn passes(&self, e: &EntryRt, spec: &ScatterEntry, g: &Ground, sites: &[V3]) -> bool {
+    fn passes(&self, e: &EntryRt, spec: &ScatterEntry, g: &Ground, sites: &[&crate::site::Site]) -> bool {
         let ha = g.h - self.sea;
         let c = g.nrm.dot(g.dir);
         if ha < spec.height_above_sea_m[0] || ha > spec.height_above_sea_m[1] || c < e.cos_slope[0] - 1e-9 || c > e.cos_slope[1] + 1e-9 {
             return false;
         }
-        let clear = self.recipe.sites.clear_radius_m;
-        !(spec.clear_sites && sites.iter().any(|s| self.radius * s.dot(g.dir).clamp(-1.0, 1.0).acos() < clear))
+        !(spec.clear_sites && sites.iter().any(|s| self.radius * s.dir.dot(g.dir).clamp(-1.0, 1.0).acos() < s.footprint_m))
     }
 
     /// Chance per spot of the storeys `which` (all but ground cover when None) at a point,
@@ -195,7 +194,7 @@ impl Planet {
         let n = ((edge_m / st.spacing_m).round() as u32).max(1);
         // One metre in face coordinates, for the normals.
         let step = size / edge_m;
-        let sites = self.sites_near(centre_dir, edge_m * 1.5 + self.recipe.sites.clear_radius_m);
+        let sites = self.sites_near(centre_dir, edge_m * 1.5);
         let (ix, iy) = (((a0 + 1.0) / size).round() as u32, ((b0 + 1.0) / size).round() as u32);
         let depth = (2.0 / size).log2().round() as u32;
         let key = hash(self.recipe.seed as u32 ^ (storey as u32).wrapping_mul(0x632BE5AB), face as u32, ix, iy, depth);

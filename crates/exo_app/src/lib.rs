@@ -16,6 +16,7 @@ pub mod ring;
 pub mod scatter;
 pub mod scenario;
 pub mod settings;
+pub mod sites;
 pub mod sky;
 pub mod ship;
 pub mod terrain;
@@ -259,6 +260,7 @@ pub fn build_app(o: &Options) -> App {
         app.add_plugins(scatter::plugin);
         app.add_plugins(terrain_material::plugin);
         app.add_plugins(sky::plugin);
+        app.add_plugins(sites::plugin);
         app.add_systems(Update, settings::apply_volume);
         if o.menu() {
             app.add_plugins(menu::plugin);

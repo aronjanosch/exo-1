@@ -116,10 +116,10 @@ fn atlas_step(out: PathBuf, vps: Viewpoints) -> Step {
             check(c, ok, format!("look {}: atlas {}x{} ({} layers) in {:.0} ms", def.name, atlas.width, atlas.height, AtlasLayer::ALL.len(), t0.elapsed().as_secs_f64() * 1e3));
             let shares: Vec<String> = st.biome_area_share.iter().map(|(k, v)| format!("{k}: {:.1} %", v * 100.0)).collect();
             let line = format!(
-                "look {}: bake {:.0} ms, sea {:.1} m, land {:.1} % (macro {:.1} %), height above sea {:.0}..{:.0} m, biomes [{}], sites {} (gap worst {:.0} m, median {:.0} m, closest pair {:.0} m), 540 m walks crossing 2+ biomes {:.0} % (median {} rows)",
+                "look {}: bake {:.0} ms, sea {:.1} m, land {:.1} % (macro {:.1} %), height above sea {:.0}..{:.0} m, biomes [{}], sites {} (land to the nearest site: worst {:.0} m, median {:.0} m; nearest-neighbour gap worst {:.0} m, median {:.0} m, closest pair {:.0} m), landmarks {}, 540 m walks crossing 2+ biomes {:.0} % (median {} rows)",
                 def.name, st.bake_ms, st.sea_level_m, st.land_fraction_full * 100.0, st.land_fraction_macro * 100.0,
                 st.min_height_above_sea, st.max_height_above_sea, shares.join(", "),
-                st.site_count, st.site_max_nn_m, st.site_median_nn_m, st.site_min_pair_m, st.walks_two_biomes_share * 100.0, st.walk_biomes_median,
+                st.site_count, st.site_cover_worst_m, st.site_cover_median_m, st.site_max_nn_m, st.site_median_nn_m, st.site_min_pair_m, st.landmark_count, st.walks_two_biomes_share * 100.0, st.walk_biomes_median,
             );
             println!("{line}");
             c.report.push(line);
@@ -242,4 +242,63 @@ pub fn steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool) {
         true
     }));
     s.push(wait(1.0));
+}
+
+/// `site-walk` (#70): the walker starts 40 m from the first ruin (a flat pad), walks in at 1.8 m/s and
+/// stops at its centre. Checks it stands on the ground of the edited height function and that
+/// the ground there is flat.
+pub fn site_walk_steps(s: &mut Vec<Step>) {
+    use crate::scenario::{face_towards, keys, player_world, with_player};
+    s.push(Box::new(|w, c| {
+        let pl = w.resource::<PlanetRes>().clone();
+        let Some(site) = pl.pgen.sites.iter().find(|s| s.id == "ruin").or(pl.pgen.sites.first()).cloned() else {
+            check(c, false, "site-walk: the planet has no site".into());
+            return true;
+        };
+        let (e, _) = planet_core::look::tangent_frame(site.dir);
+        let start = from_v3(walk(site.dir, e, 40.0, pl.radius));
+        let centre = pl.centre + from_v3(site.dir) * pl.surface(from_v3(site.dir));
+        place_walker(w, pl.centre + start * pl.surface(start));
+        face_towards(w, centre);
+        with_player(w, |p| p.w.cfg.walk_speed = 1.8);
+        w.resource_mut::<Ring>().force_update();
+        c.p.insert("site", centre);
+        c.v.insert("site_flat", site.ground_m);
+        let line = format!("site-walk: to a '{}' site, 40 m", site.id);
+        println!("{line}");
+        c.report.push(line);
+        true
+    }));
+    s.push(crate::scenario::settle());
+    s.push(Box::new(|w, c| {
+        let target = c.p["site"];
+        if c.t == 0.0 {
+            face_towards(w, target);
+            keys(w, &[KeyCode::KeyW], true);
+        }
+        let p = player_world(w);
+        let near = (p - target).length() < 2.0;
+        if near || c.t > 45.0 {
+            keys(w, &[KeyCode::KeyW], false);
+            c.v.insert("site_reached", near as u8 as f64);
+            c.v.insert("site_walk_t", c.t);
+            return true;
+        }
+        false
+    }));
+    s.push(wait(1.0));
+    s.push(Box::new(|w, c| {
+        let pl = w.resource::<PlanetRes>().clone();
+        let p = player_world(w);
+        let grounded = with_player(w, |p| p.w.grounded);
+        let dir = (p - pl.centre).normalize();
+        let feet = (p - pl.centre).length() - pl.radius;
+        let ground = pl.pgen.height_at(to_v3(dir));
+        let base = pl.pgen.base_height_at(to_v3(dir));
+        let slope = pl.pgen.sample(to_v3(dir)).slope_deg;
+        check(c, c.v["site_reached"] == 1.0, format!("site-walk: reached the site centre in {:.1} s", c.v["site_walk_t"]));
+        check(c, grounded && (feet - ground).abs() < 0.15, format!("site-walk: standing on the edited ground (feet {feet:.2} m, ground {ground:.2} m, noise ground {base:.2} m, flatten level {:.2} m)", c.v["site_flat"]));
+        check(c, slope < 3.0, format!("site-walk: ground under the walker is flat ({slope:.2} deg)"));
+        true
+    }));
 }

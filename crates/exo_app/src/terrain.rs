@@ -226,20 +226,6 @@ pub fn build_terrain(
         t.nodes[i].entity = Some(e);
         t.roots.push(i);
     }
-    // Site markers: 24 m orange pillars.
-    let pillar = meshes.add(Cylinder::new(0.9, 24.0));
-    let orange = materials.add(Color::srgb(1.0, 0.45, 0.1));
-    for s in &planet.pgen.sites {
-        let dir = from_v3(*s);
-        let base = planet.centre + dir * (planet.surface(dir) + 12.0);
-        commands.spawn((
-            Mesh3d(pillar.clone()),
-            MeshMaterial3d(orange.clone()),
-            Transform::from_rotation(Quat::from_rotation_arc(Vec3::Y, dir.as_vec3())),
-            WorldPos(base),
-            PlanetScene,
-        ));
-    }
     t
 }
 

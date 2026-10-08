@@ -1,7 +1,7 @@
 //! Scripted runs: a list of steps, each called once per fixed tick until it returns true. Steps
 //! drive the game only through `Controls` and a few test hooks (teleport for test setup, ship
 //! test input). A run exits non-zero when a check fails.
-use crate::controls::Controls;
+use crate::controls::{Bindings, Controls};
 use crate::env::PlanetRes;
 use crate::origin::RenderOrigin;
 use crate::ring::Ring;
@@ -11,7 +11,7 @@ use crate::walker::{ship_frame, Player, WalkStats};
 use crate::warp::{PendingPlanet, SystemRes, WarpDrive, WarpTelemetry};
 use warp_core::{Abort, Drive, Event, Obstacle, Phase, PlanetId};
 use avian3d::prelude::*;
-use bevy::math::{DQuat, DVec3};
+use bevy::math::{DQuat, DVec2, DVec3};
 use bevy::prelude::*;
 use flight_core::{FlightInput, PlanetEnv};
 use std::collections::HashMap;
@@ -1753,6 +1753,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
             }
         }
         "foreign" => foreign_steps(&mut s),
+        // Sprint 2 feel: input ramp, virtual-joystick mouse, boost, decoupled (#24, #25, #26).
+        "flight" => flight_steps(&mut s),
         "warp" => warp_steps(&mut s, out_dir, windowed),
         // Issue #5: step out of the ship in space (seat by test shortcut, then fly up).
         "space" => {
@@ -1787,11 +1789,13 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
             s.push(hold_until("firm brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 0.5));
             s.push(aim("level out", 0.0, 3.0));
             s.push(hold_until("descend to 120 m above ground", &[KeyCode::ControlLeft, KeyCode::ShiftLeft], 180.0, |w| above_ground(w) < 120.0));
+            // Until well below the check's 0.05 m/s: a ship that touched down on a slope slides
+            // and settles slowly, and ending at the check's own threshold made it a coin toss.
             s.push(hold_until("land", &[KeyCode::ControlLeft], 60.0, {
                 let mut t = 0.0;
                 move |w| {
                     t += 1.0 / 60.0;
-                    t > 3.0 && ship_vel(w).length() < 0.05
+                    t > 3.0 && ship_vel(w).length() < 0.02
                 }
             }));
             s.push(Box::new(|w, c| {
@@ -1853,6 +1857,208 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
     s
 }
 
+/// Scenarios written for the direct mouse (`aim`, the net bot's turn: pixels at 0.002 rad) keep
+/// it; `flight` uses the shipped default, the virtual joystick.
+pub fn uses_direct_mouse(name: &str) -> bool {
+    name != "flight"
+}
+
+/// Hold keys from rest and measure how long the ramped input takes to reach full deflection
+/// (`ShipController::ramp.out[axis]`), against the tuning value.
+fn ramp_check(name: &'static str, ks: &'static [KeyCode], axis: usize, want: fn(&flight_core::ShipTuning) -> f64) -> Step {
+    Box::new(move |w, c| {
+        if c.t == 0.0 {
+            begin(w, c, name);
+            keys(w, ks, true);
+            return false;
+        }
+        let out = with_ship(w, |s| s.ctl.ramp.out[axis]);
+        if out.abs() >= 1.0 - 1e-6 || c.t > 3.0 {
+            keys(w, ks, false);
+            let want = want(&w.resource::<crate::tuning::Tuning>().ship);
+            end(w, c, format!("full after {:.3} s (tuning {want:.3} s)", c.t));
+            check(c, (c.t - want).abs() <= c.dt * 1.01, format!("{name}: full deflection after {:.3} s, tuning {want:.3} s", c.t));
+            return true;
+        }
+        false
+    })
+}
+
+/// Move the virtual stick to an angle (radians, mouse axes) by mouse pixels through `Controls`.
+fn stick_to(w: &mut World, target: DVec2) {
+    let off = with_ship(w, |s| s.stick.offset);
+    let sens = w.resource::<Bindings>().mouse.ship_sensitivity;
+    let d = (target - off) / sens;
+    w.resource_mut::<Controls>().mouse += Vec2::new(d.x as f32, d.y as f32);
+}
+
+/// Yaw rate of the ship about its own up (rad/s, left positive), without the horizon follow.
+fn yaw_rate(w: &mut World) -> f64 {
+    let e = ship_e(w);
+    let (r, av) = (w.get::<Rotation>(e).unwrap().0, w.get::<AngularVelocity>(e).unwrap().0);
+    av.dot(r * DVec3::Y)
+}
+
+/// Stick right by a share of its travel past the dead zone, hold, check the yaw rate is that
+/// share of the turn rate; 0 centres the stick.
+fn stick_yaw(name: &'static str, share: f64) -> Step {
+    Box::new(move |w, c| {
+        let (dz, max) = {
+            let m = &w.resource::<Bindings>().mouse;
+            (m.vjoy_deadzone, m.vjoy_max_angle)
+        };
+        if c.t == 0.0 {
+            begin(w, c, name);
+            let angle = if share == 0.0 { 0.0 } else { dz + share * (max - dz) };
+            stick_to(w, DVec2::new(angle, 0.0));
+        }
+        if c.t >= 1.5 {
+            let rate = yaw_rate(w);
+            let want = -share * w.resource::<crate::tuning::Tuning>().ship.turn_rate;
+            end(w, c, format!("yaw rate {rate:+.3} rad/s, wanted {want:+.3}"));
+            check(c, (rate - want).abs() <= 0.05 * want.abs().max(1.0), format!("{name}: yaw {rate:+.3} rad/s for {share} of the stick (wanted {want:+.3})"));
+            return true;
+        }
+        false
+    })
+}
+
+fn flight_steps(s: &mut Vec<Step>) {
+    s.push(Box::new(|w, _| {
+        put_at_seat(w);
+        true
+    }));
+    s.extend(sit());
+    s.push(hold_until("climb to 300 m above ground", &[KeyCode::Space, KeyCode::ShiftLeft], 60.0, |w| above_ground(w) > 300.0));
+    s.push(hold_until("hover", &[], 10.0, |w| ship_vel(w).length() < 0.5));
+    // #25: thrust and rotation ramp to full deflection.
+    s.push(ramp_check("ramp: W to full thrust", &[KeyCode::KeyW], 2, |t| t.linear_ramp_time));
+    s.push(hold_until("hover", &[], 10.0, |w| ship_vel(w).length() < 0.5));
+    s.push(Box::new(|w, c| {
+        // Stick to full right: the turn ramps like any rotation.
+        if c.t == 0.0 {
+            begin(w, c, "ramp: stick to full yaw");
+            let max = w.resource::<Bindings>().mouse.vjoy_max_angle;
+            stick_to(w, DVec2::new(max * 2.0, 0.0));
+            return false;
+        }
+        let out = with_ship(w, |s| s.ctl.ramp.out[5]);
+        if out.abs() >= 1.0 - 1e-6 || c.t > 3.0 {
+            let want = w.resource::<crate::tuning::Tuning>().ship.angular_ramp_time;
+            end(w, c, format!("full after {:.3} s (tuning {want:.3} s)", c.t));
+            check(c, (c.t - want).abs() <= c.dt * 1.01, format!("ramp: stick to full yaw after {:.3} s, tuning {want:.3} s", c.t));
+            return true;
+        }
+        false
+    }));
+    // Virtual joystick: yaw rate is deflection times turn rate; inside the dead zone nothing.
+    s.push(stick_yaw("stick: full right", 1.0));
+    s.push(stick_yaw("stick: half right", 0.5));
+    s.push(stick_yaw("stick: centred", 0.0));
+    s.push(Box::new(|w, c| {
+        let dz = w.resource::<Bindings>().mouse.vjoy_deadzone;
+        if c.t == 0.0 {
+            begin(w, c, "stick: inside the dead zone");
+            stick_to(w, DVec2::new(dz * 0.8, 0.0));
+        }
+        if c.t >= 1.0 {
+            let rate = yaw_rate(w);
+            end(w, c, format!("yaw rate {rate:+.4} rad/s"));
+            check(c, rate.abs() < 0.01, format!("stick: inside the dead zone the ship does not turn ({rate:+.4} rad/s)"));
+            stick_to(w, DVec2::ZERO);
+            return true;
+        }
+        false
+    }));
+    // #24: boost is a speed stage; it raises the limit and drops back on release.
+    s.push(hold_until("cruise", &[KeyCode::KeyW], 6.0, |_| false));
+    s.push(Box::new(|w, c| {
+        let (limit, v) = (with_ship(w, |s| s.ctl.forward_speed_limit), ship_vel(w).length());
+        if c.t == 0.0 {
+            begin(w, c, "boost");
+            c.v.insert("limit0", limit);
+            c.v.insert("v0", v);
+            keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft], true);
+        }
+        if c.t >= 6.0 {
+            keys(w, &[KeyCode::ShiftLeft], false);
+            let (l0, v0) = (c.v["limit0"], c.v["v0"]);
+            c.v.insert("limit1", limit);
+            c.v.insert("v1", v);
+            end(w, c, format!("limit {l0:.0} -> {limit:.0} m/s, speed {v0:.0} -> {v:.0} m/s"));
+            check(c, limit > 1.5 * l0 && v > v0 + 20.0, format!("boost: limit {l0:.0} -> {limit:.0} m/s, speed {v0:.0} -> {v:.0} m/s"));
+            return true;
+        }
+        false
+    }));
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "boost released");
+        }
+        if c.t >= 8.0 {
+            keys(w, &[KeyCode::KeyW], false);
+            let (limit, v) = (with_ship(w, |s| s.ctl.forward_speed_limit), ship_vel(w).length());
+            let (l0, l1, v1) = (c.v["limit0"], c.v["limit1"], c.v["v1"]);
+            end(w, c, format!("limit {l1:.0} -> {limit:.0} m/s, speed {v1:.0} -> {v:.0} m/s"));
+            check(c, limit < 0.6 * l1 && (limit - l0).abs() < 0.3 * l0 && v < v1 - 20.0, format!("boost released: limit {l1:.0} -> {limit:.0} m/s (before {l0:.0}), speed {v1:.0} -> {v:.0} m/s"));
+            return true;
+        }
+        false
+    }));
+    s.push(hold_until("firm brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 0.5));
+    // #26: decoupled blends the damping out over decouple_time; the ship keeps gliding.
+    s.push(hold_until("cruise", &[KeyCode::KeyW], 4.0, |_| false));
+    s.push(Box::new(|w, c| {
+        let time = w.resource::<crate::tuning::Tuning>().ship.decouple_time;
+        if c.t == 0.0 {
+            begin(w, c, "decouple (C) while cruising");
+            keys(w, &[KeyCode::KeyW], true);
+            tap(w, KeyCode::KeyC);
+            return false;
+        }
+        let level = with_ship(w, |s| s.ctl.coupling);
+        if (c.t - time * 0.5).abs() < c.dt * 0.5 {
+            check(c, (level - 0.5).abs() < 0.02, format!("decouple: coupling {level:.3} halfway through the blend"));
+        }
+        if c.t >= time + 0.2 {
+            keys(w, &[KeyCode::KeyW], false);
+            c.v.insert("v_release", ship_vel(w).length());
+            end(w, c, format!("coupling {level:.3} after {:.1} s", c.t));
+            check(c, level == 0.0, format!("decouple: coupling {level:.3} after {:.1} s (blend {time} s)", c.t));
+            return true;
+        }
+        false
+    }));
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "decoupled glide, no input");
+        }
+        if c.t >= 3.0 {
+            let (v0, v) = (c.v["v_release"], ship_vel(w).length());
+            end(w, c, format!("speed {v0:.1} -> {v:.1} m/s"));
+            check(c, v > 0.97 * v0, format!("decoupled: keeps gliding without input, {v0:.1} -> {v:.1} m/s in 3 s"));
+            tap(w, KeyCode::KeyC);
+            return true;
+        }
+        false
+    }));
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "coupled again, no input");
+            c.v.insert("v_couple", ship_vel(w).length());
+        }
+        if c.t >= 8.0 {
+            let (v0, v) = (c.v["v_couple"], ship_vel(w).length());
+            let level = with_ship(w, |s| s.ctl.coupling);
+            end(w, c, format!("speed {v0:.1} -> {v:.1} m/s, coupling {level:.2}"));
+            check(c, level == 1.0 && v < 0.7 * v0, format!("coupled again: the assist damps, {v0:.1} -> {v:.1} m/s in 8 s"));
+            return true;
+        }
+        false
+    }));
+    s.push(hold_until("firm brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 0.5));
+}
+
 pub fn run_script(w: &mut World) {
     let dt = w.resource::<Time>().delta_secs_f64();
     w.resource_scope(|w, mut sc: Mut<Script>| {
@@ -1877,6 +2083,11 @@ pub fn run_script(w: &mut World) {
             );
             println!("{summary}");
             sc.ctx.report.push(summary);
+            if let Some(perf) = w.get_resource::<crate::perf::Perf>() {
+                for (ok, line) in crate::perf::finish(perf, &sc.name, &sc.out_dir) {
+                    check(&mut sc.ctx, ok, line);
+                }
+            }
             let _ = std::fs::create_dir_all(&sc.out_dir);
             let path = sc.out_dir.join(format!("{}.txt", sc.name));
             let _ = std::fs::write(&path, sc.ctx.report.join("\n") + "\n");

@@ -1,5 +1,5 @@
 {
-  "_comment": "Which key feeds which action. Key names are Bevy's KeyCode names. Axes: z is back (W is negative). deadzone (0..1) and curve apply to analog sources only (the pad, the virtual-joystick mouse); keyboard keys are digital. The same key may serve several actions.",
+  "_comment": "Which key feeds which action. Key names are Bevy's KeyCode names. Axes: z is back (W is negative). deadzone (0..1) and curve apply to analog sources only (the pad, the virtual-joystick mouse); keyboard keys are digital. The same key may serve several actions. mouse.ship_mode: \"vjoy\" (the mouse moves a virtual stick; ship_sensitivity is radians of stick offset per pixel) or \"direct\" (radians of turn per pixel).",
   "move_x": { "positive": ["KeyD"], "negative": ["KeyA"] },
   "move_y": { "positive": ["Space"], "negative": ["ControlLeft"] },
   "move_z": { "positive": ["KeyS"], "negative": ["KeyW"] },
@@ -17,5 +17,14 @@
   "orbit_camera": ["KeyO"],
   "warp_target": ["KeyN"],
   "warp": ["KeyJ"],
-  "mouse": { "ship_mode": "direct", "ship_sensitivity": 0.002, "walker_sensitivity": 0.0025 }
+  "decoupled": ["KeyC"],
+  "debug_hud": ["F3"],
+  "mouse": {
+    "ship_mode": "vjoy",
+    "ship_sensitivity": 0.002,
+    "walker_sensitivity": 0.0025,
+    "vjoy_max_angle_deg": 15.0,
+    "vjoy_deadzone_deg": 1.5,
+    "vjoy_curve": { "interp": "linear", "points": [[0, 0], [1, 1]] }
+  }
 }

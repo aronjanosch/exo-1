@@ -56,6 +56,10 @@ pub enum Tap {
     OrbitCamera,
     WarpTarget,
     Warp,
+    /// Coupled or decoupled flight (#26).
+    Decoupled,
+    /// The debug lines of the HUD (F3).
+    DebugHud,
 }
 
 impl Axis {
@@ -84,7 +88,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 8] = [Tap::Seat, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp];
+    pub const ALL: [Tap; 10] = [Tap::Seat, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud];
     pub fn name(self) -> &'static str {
         match self {
             Tap::Seat => "seat",
@@ -95,6 +99,8 @@ impl Tap {
             Tap::OrbitCamera => "orbit_camera",
             Tap::WarpTarget => "warp_target",
             Tap::Warp => "warp",
+            Tap::Decoupled => "decoupled",
+            Tap::DebugHud => "debug_hud",
         }
     }
 }
@@ -161,14 +167,21 @@ impl AxisBinding {
 pub enum ShipMouse {
     /// Pixels times sensitivity, capped at the ship's turn rate.
     Direct,
+    /// Virtual joystick: the mouse moves an offset (pixels times sensitivity, an angle); past the
+    /// dead zone it is the deflection, full at the max angle. The HUD shows it.
+    Vjoy,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MouseBindings {
     pub ship_mode: ShipMouse,
-    /// Radians per pixel.
+    /// Radians per pixel: the ship's turn (direct) or the stick's offset (vjoy).
     pub ship_sensitivity: f64,
     pub walker_sensitivity: f64,
+    /// Virtual joystick, radians (degrees in the file).
+    pub vjoy_max_angle: f64,
+    pub vjoy_deadzone: f64,
+    pub vjoy_curve: Curve,
 }
 
 /// Which key feeds which action (`content/tuning/bindings.json`). A key may serve several actions
@@ -239,7 +252,7 @@ impl Bindings {
         let buttons = Button::ALL.iter().map(|&b| Ok((b, keys(b.name(), get(b.name())?)?))).collect::<Result<_, String>>()?;
         let taps = Tap::ALL.iter().map(|&t| Ok((t, keys(t.name(), get(t.name())?)?))).collect::<Result<_, String>>()?;
         let m = get("mouse")?.as_object().ok_or_else(|| err("mouse", "expected an object".into()))?;
-        if let Some(k) = m.keys().find(|k| !["ship_mode", "ship_sensitivity", "walker_sensitivity"].contains(&k.as_str())) {
+        if let Some(k) = m.keys().find(|k| !["ship_mode", "ship_sensitivity", "walker_sensitivity", "vjoy_max_angle_deg", "vjoy_deadzone_deg", "vjoy_curve"].contains(&k.as_str())) {
             return Err(err("mouse", format!("unknown field `{k}`")));
         }
         let num = |f: &str| {
@@ -247,9 +260,25 @@ impl Bindings {
         };
         let ship_mode = match m.get("ship_mode").and_then(|v| v.as_str()) {
             Some("direct") => ShipMouse::Direct,
-            other => return Err(err("mouse", format!("ship_mode {other:?}: only \"direct\" for now"))),
+            Some("vjoy") => ShipMouse::Vjoy,
+            other => return Err(err("mouse", format!("ship_mode {other:?}: \"direct\" or \"vjoy\""))),
         };
-        Ok(Bindings { axes, buttons, taps, mouse: MouseBindings { ship_mode, ship_sensitivity: num("ship_sensitivity")?, walker_sensitivity: num("walker_sensitivity")? } })
+        let (max, dz) = (num("vjoy_max_angle_deg")?, m.get("vjoy_deadzone_deg").and_then(|v| v.as_f64()).unwrap_or(f64::NAN));
+        if !(0.0..max).contains(&dz) {
+            return Err(err("mouse", format!("vjoy_deadzone_deg must be 0 or more and below vjoy_max_angle_deg ({max})")));
+        }
+        let curve: Curve = serde_json::from_value(m.get("vjoy_curve").cloned().ok_or_else(|| err("mouse", "missing `vjoy_curve`".into()))?)
+            .map_err(|e| err("mouse", format!("vjoy_curve: {e}")))?;
+        curve.validate().map_err(|e| err("mouse", format!("vjoy_curve: {e}")))?;
+        let mouse = MouseBindings {
+            ship_mode,
+            ship_sensitivity: num("ship_sensitivity")?,
+            walker_sensitivity: num("walker_sensitivity")?,
+            vjoy_max_angle: max.to_radians(),
+            vjoy_deadzone: dz.to_radians(),
+            vjoy_curve: curve,
+        };
+        Ok(Bindings { axes, buttons, taps, mouse })
     }
 }
 
@@ -457,7 +486,8 @@ mod tests {
         rejects("\"roll\": {", "\"roll\": { \"deadzone\": 1.5,", "`roll`: deadzone");
         rejects("\"roll\": {", "\"roll\": { \"curve\": { \"interp\": \"linear\", \"points\": [[1, 0], [0, 1]] },", "`roll`: curve x must be strictly ascending");
         rejects("\"lag\": [\"KeyG\"],", "", "`lag`: missing");
-        rejects("\"direct\"", "\"vjoy\"", "`mouse`");
+        rejects("\"vjoy\"", "\"mouse-aim\"", "`mouse`: ship_mode");
+        rejects("\"vjoy_deadzone_deg\": 1.5", "\"vjoy_deadzone_deg\": 20", "`mouse`: vjoy_deadzone_deg");
     }
 
     #[test]

@@ -1,5 +1,5 @@
 {
-  "_comment": "Ship tuning (flight_core::ShipTuning). Spike test values, not designed. Every field required. forward_speed_curve: (terrain clearance m, forward speed m/s).",
+  "_comment": "Ship tuning (flight_core::ShipTuning). Spike test values, not designed. Every field required. forward_speed_curve: (terrain clearance m, forward speed m/s). ramp_curve: (ramp progress 0..1, deflection cap), the ramp times are seconds to full deflection. decouple_time: seconds the switch to decoupled (C) blends over.",
   "thrust_accel": 20.0,
   "boost_factor": 5.0,
   "turn_rate": 2.5,
@@ -18,5 +18,10 @@
   "assisted_vertical_speed": 15.0,
   "forward_speed_curve": { "interp": "smooth", "points": [[30, 45], [150, 60], [600, 150], [1200, 350]] },
   "drag_k": 0.0005,
-  "landing_sink_factor": 0.5
+  "landing_sink_factor": 0.5,
+  "assisted_boost_speed_factor": 2.5,
+  "linear_ramp_time": 0.3,
+  "angular_ramp_time": 0.25,
+  "ramp_curve": { "interp": "smooth", "points": [[0, 0.25], [1, 1]] },
+  "decouple_time": 4.0
 }

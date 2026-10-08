@@ -183,7 +183,75 @@ pub struct FlightInput {
     pub brake: bool,
     /// Mouse movement accumulated this step, radians (Godot's `_mouse`): x yaw, y pitch.
     pub mouse: DVec2,
+    /// Stick deflection -1..1: x pitch (nose up), y yaw (nose left); turns at deflection times
+    /// `turn_rate` (virtual-joystick mouse, pad).
+    pub turn: DVec2,
     pub piloted: bool,
+}
+
+/// The mouse as a virtual joystick: moving the mouse moves an offset (an angle, mouse axes:
+/// x right, y down) that stays where it is; its distance from the centre past a dead zone is the
+/// deflection.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct VirtualStick {
+    pub offset: DVec2,
+}
+
+impl VirtualStick {
+    pub fn push(&mut self, delta: DVec2, max_angle: f64) {
+        self.offset = (self.offset + delta).clamp_length_max(max_angle);
+    }
+
+    /// Deflection as `FlightInput::turn` (x pitch, y yaw): zero inside `deadzone`, 1 at
+    /// `max_angle`, through `curve` (identity without one).
+    pub fn deflection(&self, deadzone: f64, max_angle: f64, curve: Option<&Curve>) -> DVec2 {
+        let r = self.offset.length();
+        if r <= deadzone || max_angle <= deadzone {
+            return DVec2::ZERO;
+        }
+        let m = ((r - deadzone) / (max_angle - deadzone)).min(1.0);
+        let m = curve.map_or(m, |c| c.eval(m));
+        let d = self.offset / r * m;
+        // Mouse right turns the nose right (negative yaw), mouse up (negative y) lifts it.
+        DVec2::new(-d.y, -d.x)
+    }
+}
+
+/// Ship input ramps to full deflection over a time instead of snapping (#25): per axis the
+/// progress runs from 0 to 1 over the ramp time while the axis is held in one direction, and the
+/// output is the input capped at `curve(progress)`. Release or a reversal starts over.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct InputRamp {
+    progress: [f64; 6],
+    /// Ramped input of the last step: thrust x, y, z, roll, turn x, turn y.
+    pub out: [f64; 6],
+}
+
+impl InputRamp {
+    fn axis(&mut self, i: usize, target: f64, dt: f64, time: f64, curve: &Curve) -> f64 {
+        let prev = self.out[i];
+        if target == 0.0 || (prev != 0.0 && prev.signum() != target.signum()) {
+            self.progress[i] = 0.0;
+        }
+        if target == 0.0 {
+            self.out[i] = 0.0;
+            return 0.0;
+        }
+        self.progress[i] = if time > 0.0 { (self.progress[i] + dt / time).min(1.0) } else { 1.0 };
+        // Below 1e-9 of full counts as full (the progress sums dt steps).
+        let cap = if self.progress[i] > 1.0 - 1e-9 { 1.0 } else { curve.eval(self.progress[i]) };
+        self.out[i] = target.signum() * target.abs().min(cap);
+        self.out[i]
+    }
+
+    /// Ramps thrust, roll and turn; the direct mouse is not a deflection and passes unchanged.
+    pub fn apply(&mut self, input: &FlightInput, t: &ShipTuning, dt: f64) -> FlightInput {
+        let (lt, at, c) = (t.linear_ramp_time, t.angular_ramp_time, &t.ramp_curve);
+        let thrust = DVec3::new(self.axis(0, input.thrust.x, dt, lt, c), self.axis(1, input.thrust.y, dt, lt, c), self.axis(2, input.thrust.z, dt, lt, c));
+        let roll = self.axis(3, input.roll, dt, at, c);
+        let turn = DVec2::new(self.axis(4, input.turn.x, dt, at, c), self.axis(5, input.turn.y, dt, at, c));
+        FlightInput { thrust, roll, turn, ..*input }
+    }
 }
 
 /// Interpolation between neighbouring curve points.
@@ -301,12 +369,23 @@ pub struct ShipTuning {
     pub drag_k: f64,
     /// Landing aid: sink rate capped to this share of the clearance per second (min 2 m/s).
     pub landing_sink_factor: f64,
+    /// Assisted boost: the forward speed limit times this, at most the curve's top (gentle near
+    /// terrain, see `step`).
+    pub assisted_boost_speed_factor: f64,
+    /// Seconds from no input to full deflection, thrust and rotation (#25).
+    pub linear_ramp_time: f64,
+    pub angular_ramp_time: f64,
+    /// Deflection cap (y) over the ramp's progress (x, 0..1).
+    pub ramp_curve: Curve,
+    /// Seconds over which switching to decoupled (or back) blends the assist's damping (#26).
+    pub decouple_time: f64,
 }
 
 impl ShipTuning {
     pub fn from_json(s: &str) -> Result<ShipTuning, String> {
         let t: ShipTuning = parse_tuning("ship.json", s)?;
         t.forward_speed_curve.validate().map_err(|e| format!("ship.json: forward_speed_curve: {e}"))?;
+        t.ramp_curve.validate().map_err(|e| format!("ship.json: ramp_curve: {e}"))?;
         Ok(t)
     }
 }
@@ -341,6 +420,11 @@ impl Default for ShipTuning {
             },
             drag_k: 0.0005,
             landing_sink_factor: 0.5,
+            assisted_boost_speed_factor: 2.5,
+            linear_ramp_time: 0.3,
+            angular_ramp_time: 0.25,
+            ramp_curve: Curve { interp: Interp::Smooth, points: vec![DVec2::new(0.0, 0.25), DVec2::new(1.0, 1.0)] },
+            decouple_time: 4.0,
         }
     }
 }
@@ -357,6 +441,12 @@ pub struct ShipController {
     pub terrain_clearance: f64,
     /// Effective L influence; zero outside the field.
     pub planet_follow_strength: f64,
+    /// Coupled flight wanted (C switches); `coupling` follows it over `decouple_time`.
+    pub coupled: bool,
+    /// 1 = coupled (the assist damps towards the requested velocity), 0 = decoupled (thrust only
+    /// along the input, the ship keeps gliding).
+    pub coupling: f64,
+    pub ramp: InputRamp,
 
     horizon_w: DVec3,
     correction_accel: DVec3,
@@ -379,6 +469,9 @@ impl ShipController {
             forward_speed_limit: 45.0,
             terrain_clearance: 0.0,
             planet_follow_strength: 1.0,
+            coupled: true,
+            coupling: 1.0,
+            ramp: InputRamp::default(),
             horizon_w: DVec3::ZERO,
             correction_accel: DVec3::ZERO,
         }
@@ -429,6 +522,16 @@ impl ShipController {
     /// One physics step (Godot's `_integrate_forces`). Returns the new linear and
     /// angular velocity; the caller writes them to the body before integration.
     pub fn step(&mut self, body: &BodyState, input: &FlightInput, env: &impl PlanetEnv, dt: f64) -> (DVec3, DVec3) {
+        // Scripted test input (nobody piloting) is not ramped.
+        let ramped;
+        let input = if input.piloted {
+            ramped = self.ramp.apply(input, &self.tuning, dt);
+            &ramped
+        } else {
+            input
+        };
+        let target = if self.coupled { 1.0 } else { 0.0 };
+        self.coupling = move_towards(self.coupling, target, if self.tuning.decouple_time > 0.0 { dt / self.tuning.decouple_time } else { 1.0 });
         let b = body.rot;
         let origin = body.pos;
         let gravity = env.gravity_at(origin);
@@ -456,7 +559,7 @@ impl ShipController {
                 let top = self.tuning.forward_speed_curve.last_y();
                 self.forward_speed_limit = lerp(
                     self.forward_speed_limit,
-                    top.min(self.forward_speed_limit * 2.5),
+                    top.min(self.forward_speed_limit * self.tuning.assisted_boost_speed_factor),
                     smoothstep(30.0, 150.0, clearance),
                 );
             }
@@ -496,7 +599,14 @@ impl ShipController {
             // for the curved path and drag first, then spend the rest on correction.
             let support = limit_length(curve_accel - drag, budget);
             let available = (budget - support.length()).max(0.0);
-            let desired = limit_length(correction, available);
+            let mut desired = limit_length(correction, available);
+            // Decoupled: the damping towards the requested velocity blends out; what stays is
+            // thrust along the input. The brake always damps.
+            let c = if self.brake_active { 1.0 } else { self.coupling };
+            if c < 1.0 {
+                let raw = limit_length(b * limit_length(thrust_in, 1.0) * self.tuning.thrust_accel * boost, available);
+                desired = desired * c + raw * (1.0 - c);
+            }
             self.correction_accel = self
                 .correction_accel
                 .lerp(desired, 1.0 - (-dt / self.tuning.thrust_response_time).exp());
@@ -514,8 +624,9 @@ impl ShipController {
 
         // Rotation: mouse movement is an angle per step, capped at turn_rate and
         // smoothed a little so the ship has some weight.
-        let pitch = (-input.mouse.y / dt).clamp(-self.tuning.turn_rate, self.tuning.turn_rate);
-        let yaw = (-input.mouse.x / dt).clamp(-self.tuning.turn_rate, self.tuning.turn_rate);
+        let rate = self.tuning.turn_rate;
+        let pitch = (-input.mouse.y / dt + input.turn.x * rate).clamp(-rate, rate);
+        let yaw = (-input.mouse.x / dt + input.turn.y * rate).clamp(-rate, rate);
         let target_w = b * DVec3::new(pitch, yaw, input.roll * self.tuning.roll_rate);
         // Smooth the player's rotation, not the changing planet frame.
         let control_w = body.ang_vel - self.horizon_w;

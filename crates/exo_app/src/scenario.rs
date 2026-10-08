@@ -8,8 +8,10 @@ use crate::ring::Ring;
 use crate::ship::{Ship, SEAT_POS};
 use crate::view::ViewState;
 use crate::walker::{ship_frame, Player, WalkStats};
+use crate::warp::{PendingPlanet, SystemRes, WarpDrive};
+use warp_core::{Abort, Drive, Event, Obstacle, Phase};
 use avian3d::prelude::*;
-use bevy::math::DVec3;
+use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 use flight_core::{FlightInput, PlanetEnv};
 use std::collections::HashMap;
@@ -1192,6 +1194,299 @@ fn foreign_steps(s: &mut Vec<Step>) {
     }));
 }
 
+
+// ---------- warp (spike 11) ----------
+
+fn warp_state(w: &World) -> (Phase, Option<Abort>) {
+    let wd = w.resource::<WarpDrive>();
+    (wd.drive.phase, wd.last_abort)
+}
+
+/// Place the ship (test setup): pose, no velocity.
+fn teleport_ship(w: &mut World, pos: DVec3, rot: DQuat) {
+    let e = ship_e(w);
+    w.get_mut::<Position>(e).unwrap().0 = pos;
+    w.get_mut::<Rotation>(e).unwrap().0 = rot;
+    w.get_mut::<LinearVelocity>(e).unwrap().0 = DVec3::ZERO;
+    w.get_mut::<AngularVelocity>(e).unwrap().0 = DVec3::ZERO;
+}
+
+fn nose_along(dir: DVec3) -> DQuat {
+    DQuat::from_rotation_arc(DVec3::NEG_Z, dir)
+}
+
+/// Orbit point of planet `i`: 7000 m from the centre, on its +y side, nose along the course
+/// to planet `to` (what a pilot would aim at; the course is the drive's own path start).
+fn orbit_pose(w: &World, i: usize, to: usize) -> (DVec3, DQuat) {
+    let sys = &w.resource::<SystemRes>().0;
+    let pos = sys.planets[i].centre() + DVec3::Y * sys.planets[i].arrival_radius;
+    let view = warp_core::ShipView { pos, forward: DVec3::X, speed: 0.0 };
+    let mut d = Drive::new(sys.drive.clone());
+    d.begin(to, &view, sys, &[]).expect("orbit start is free");
+    (pos, nose_along(d.path().unwrap().start_dir()))
+}
+
+/// Like a pilot holding the course while the drive spools and calibrates.
+fn hold_course(w: &mut World) {
+    let (phase, dir) = {
+        let wd = w.resource::<WarpDrive>();
+        (wd.drive.phase, wd.drive.path().map(|p| p.start_dir()))
+    };
+    if matches!(phase, Phase::Spooling | Phase::Calibrating) {
+        if let Some(d) = dir {
+            let e = ship_e(w);
+            w.get_mut::<Rotation>(e).unwrap().0 = nose_along(d);
+            w.get_mut::<AngularVelocity>(e).unwrap().0 = DVec3::ZERO;
+        }
+    }
+}
+
+fn events_since(w: &World, from: usize) -> Vec<(f64, Event)> {
+    w.resource::<WarpDrive>().log[from..].to_vec()
+}
+
+/// One full warp from planet `from` to planet `to`, flown by script: the pilot holds the course.
+/// With `passenger` the pilot stands up when the ramp-up starts and the walker stands in the
+/// cabin for the rest of the flight (spike 10 measures: deck contact and drift).
+fn warp_flight(name: &'static str, from: usize, to: usize, passenger: bool) -> Step {
+    Box::new(move |w, c| {
+        let lim = 240.0;
+        if c.t == 0.0 {
+            begin(w, c, name);
+            for k in ["stood", "drift", "warps0", "g0", "s0"] {
+                c.v.remove(k);
+            }
+            c.p.remove("stand_pos");
+            let (p, r) = orbit_pose(w, from, to);
+            teleport_ship(w, p, r);
+            c.v.insert("log0", w.resource::<WarpDrive>().log.len() as f64);
+            c.v.insert("moved", 0.0);
+            c.v.insert("grounded0", w.resource::<WalkStats>().grounded as f64);
+            c.v.insert("steps0", w.resource::<WalkStats>().steps as f64);
+            c.v.insert("min_clear", f64::MAX);
+        }
+        if c.t < 0.2 {
+            return false;
+        }
+        if c.t < 0.2 + c.dt * 1.5 && warp_state(w).0 == Phase::Idle && w.resource::<WarpDrive>().warps == c.v.get("warps0").copied().unwrap_or(w.resource::<WarpDrive>().warps as f64) as u32 {
+            c.v.insert("warps0", w.resource::<WarpDrive>().warps as f64);
+            tap(w, KeyCode::KeyJ);
+            return false;
+        }
+        hold_course(w);
+        let phase = warp_state(w).0;
+        // Passenger: pilot out of the seat when the drive takes the ship.
+        if passenger && phase == Phase::RampUp && !c.v.contains_key("stood") {
+            c.v.insert("stood", 1.0);
+            tap(w, KeyCode::KeyF);
+            c.v.insert("g0", w.resource::<WalkStats>().grounded as f64);
+            c.v.insert("s0", w.resource::<WalkStats>().steps as f64);
+        }
+        if passenger && c.v.contains_key("stood") && !c.p.contains_key("stand_pos") && with_player(w, |p| !p.seated) {
+            let local = with_player(w, |p| p.w.pos);
+            c.p.insert("stand_pos", local);
+            c.v.insert("g0", w.resource::<WalkStats>().grounded as f64);
+            c.v.insert("s0", w.resource::<WalkStats>().steps as f64);
+            c.v.insert("drift", 0.0);
+        }
+        if let Some(&sp) = c.p.get("stand_pos") {
+            let local = with_player(w, |p| p.w.pos);
+            let d = local.distance(sp);
+            let e = c.v.get_mut("drift").unwrap();
+            *e = e.max(d);
+        }
+        // Distance to every planet's centre, each tick (the core checks the swept path).
+        let ship = ship_frame_of(w).origin;
+        let sys = w.resource::<SystemRes>().0.clone();
+        for (i, p) in sys.planets.iter().enumerate() {
+            let d = ship.distance(p.centre());
+            if i != from || phase != Phase::Spooling {
+                let m = c.v.get_mut("min_clear").unwrap();
+                *m = m.min(d - p.obstruction_radius);
+            }
+        }
+        if phase == Phase::Cooldown || c.t >= lim {
+            let (log0, moved) = (c.v["log0"] as usize, w.resource::<WarpDrive>().max_tick_move);
+            let ev = events_since(w, log0);
+            let at = |p: Phase| ev.iter().find(|(_, e)| *e == Event::Phase(p)).map(|(t, _)| *t);
+            let arrived = ev.iter().find(|(_, e)| *e == Event::Arrived).map(|(t, _)| *t);
+            let ok = arrived.is_some();
+            let (Some(t_ramp), Some(t_arr)) = (at(Phase::RampUp), arrived) else {
+                check(c, false, format!("{name}: arrived (events {ev:?})"));
+                return true;
+            };
+            let planet_id = w.resource::<PlanetRes>().id;
+            let gen_ms = w.resource::<PendingPlanet>().gen_ms.unwrap_or(-1.0);
+            let exit = w.resource::<WarpDrive>().drive.exit();
+            let pos = ship_frame_of(w).origin;
+            let speed = ship_vel(w).length();
+            let cfg = sys.drive.clone();
+            // Tolerance: the pilot has the ship back for the ticks between arrival and now, at
+            // most exit speed times those ticks (plus cooldown phase length).
+            let since = (t_arr - t_ramp).max(0.0);
+            let _ = since;
+            check(c, ok, format!("{name}: arrived at the exit point"));
+            check(c, planet_id == to, format!("{name}: simulation's planet is now {} ({})", planet_id, sys.planets[to].name));
+            let alt = pos.distance(sys.planets[to].centre()) - sys.planets[to].radius;
+            println!("{name}: ship {:.1} m from the exit point now, altitude {alt:.0} m, speed {speed:.1} m/s", pos.distance(exit));
+            check(c, c.v["min_clear"] > 0.0, format!("{name}: stayed {:.0} m outside every obstruction radius (sampled per tick)", c.v["min_clear"]));
+            let dur = t_arr - t_ramp;
+            check(c, dur > 3.0, format!("{name}: flight {dur:.1} s, spool+calibration {:.1} s, top speed set {:.0} km/s, largest step {:.0} km per tick", t_ramp - at(Phase::Spooling).unwrap_or(0.0), cfg.top_speed / 1000.0, moved / 1000.0));
+            check(c, gen_ms >= 0.0 && gen_ms < dur * 1000.0, format!("{name}: target generated in {gen_ms:.0} ms in the background during {dur:.1} s of flight"));
+            if passenger {
+                let st = w.resource::<WalkStats>();
+                let (g, s0) = (st.grounded as f64 - c.v["g0"], st.steps as f64 - c.v["s0"]);
+                let in_cabin = with_player(w, |p| p.ship.is_some());
+                let drift = c.v.get("drift").copied().unwrap_or(f64::NAN);
+                check(c, in_cabin && g / s0.max(1.0) > 0.99 && drift < 0.05, format!("{name}: walker in the cabin through the warp: deck contact {:.1} % of {s0:.0} steps, drift {:.1} mm", 100.0 * g / s0.max(1.0), drift * 1000.0));
+            }
+            let _ = (pos, exit, speed);
+            let (seated, in_c, fly) = with_player(w, |p| (p.seated, p.ship.is_some(), p.fly));
+            println!("{name}: player seated {seated}, in cabin {in_c}, fly {fly}, steps {}", w.resource::<WalkStats>().steps);
+            return true;
+        }
+        false
+    })
+}
+
+fn warp_steps(s: &mut Vec<Step>) {
+    // Seat by test shortcut, hover in the field.
+    s.push(Box::new(|w, _| {
+        put_at_seat(w);
+        true
+    }));
+    s.extend(sit());
+    // Refused: too low (inside the atmosphere).
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "start refused: too low");
+            let pl = planet(w);
+            let up = DVec3::Y;
+            teleport_ship(w, pl.centre + up * (pl.radius + 600.0), DQuat::IDENTITY);
+        }
+        if c.t > 0.2 && c.t < 0.2 + 0.02 {
+            tap(w, KeyCode::KeyJ);
+        }
+        if c.t >= 0.5 {
+            let (phase, why) = warp_state(w);
+            check(c, phase == Phase::Idle && why == Some(Abort::TooLow), format!("start refused below the minimum altitude ({phase:?}, {why:?})"));
+            w.resource_mut::<WarpDrive>().last_abort = None;
+            return true;
+        }
+        false
+    }));
+    // Refused: another ship on the path.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "start refused: ship on the path");
+            let (p, r) = orbit_pose(w, 0, 1);
+            teleport_ship(w, p, r);
+            // A ship-sized sphere at the middle of the course.
+            let sys = w.resource::<SystemRes>().0.clone();
+            let view = warp_core::ShipView { pos: p, forward: DVec3::X, speed: 0.0 };
+            let mut d = Drive::new(sys.drive.clone());
+            d.begin(1, &view, &sys, &[]).unwrap();
+            let path = d.path().unwrap();
+            let (mid, _) = path.at(path.length() * 0.5);
+            w.resource_mut::<WarpDrive>().extra_obstacles.push(Obstacle { centre: mid, radius: 20.0 });
+        }
+        if c.t > 0.2 && c.t < 0.22 {
+            tap(w, KeyCode::KeyJ);
+        }
+        if c.t >= 0.5 {
+            let (phase, why) = warp_state(w);
+            check(c, phase == Phase::Idle && matches!(why, Some(Abort::Obstructed(_))), format!("start refused with a ship on the path ({phase:?}, {why:?})"));
+            let mut wd = w.resource_mut::<WarpDrive>();
+            wd.extra_obstacles.clear();
+            wd.last_abort = None;
+            return true;
+        }
+        false
+    }));
+    // Aborted: the aim drifts 20 degrees away in the middle of the calibration.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "calibration lost");
+            for k in ["tapped", "tapped2", "turned"] {
+                c.v.remove(k);
+            }
+            let (p, r) = orbit_pose(w, 0, 1);
+            teleport_ship(w, p, r);
+        }
+        if c.t > 0.2 && !c.v.contains_key("tapped") {
+            c.v.insert("tapped", 1.0);
+            tap(w, KeyCode::KeyJ);
+            return false;
+        }
+        let (phase, why) = warp_state(w);
+        let gauge = w.resource::<WarpDrive>().drive.gauge;
+        if phase == Phase::Calibrating && gauge > 0.4 && !c.v.contains_key("turned") {
+            c.v.insert("turned", gauge);
+            let e = ship_e(w);
+            let rot = w.get::<Rotation>(e).unwrap().0;
+            w.get_mut::<Rotation>(e).unwrap().0 = DQuat::from_rotation_y(20f64.to_radians()) * rot;
+        } else if !c.v.contains_key("turned") {
+            hold_course(w);
+        }
+        if (phase == Phase::Idle && c.t > 0.5) || c.t > 30.0 {
+            check(c, phase == Phase::Idle && why == Some(Abort::CalibrationLost), format!("aim lost at gauge {:.0} %: aborted ({phase:?}, {why:?})", c.v.get("turned").copied().unwrap_or(0.0) * 100.0));
+            w.resource_mut::<WarpDrive>().last_abort = None;
+            return true;
+        }
+        false
+    }));
+    // Cancelled while spooling.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "cancel while spooling");
+            for k in ["tapped", "tapped2", "turned"] {
+                c.v.remove(k);
+            }
+            let (p, r) = orbit_pose(w, 0, 1);
+            teleport_ship(w, p, r);
+        }
+        if c.t > 0.2 && !c.v.contains_key("tapped") {
+            c.v.insert("tapped", 1.0);
+            tap(w, KeyCode::KeyJ);
+        }
+        if c.t > 1.5 && !c.v.contains_key("tapped2") {
+            c.v.insert("tapped2", 1.0);
+            tap(w, KeyCode::KeyJ);
+        }
+        if c.t >= 2.0 {
+            let (phase, why) = warp_state(w);
+            check(c, phase == Phase::Idle && why == Some(Abort::Cancelled), format!("cancelled while spooling ({phase:?}, {why:?})"));
+            w.resource_mut::<WarpDrive>().last_abort = None;
+            return true;
+        }
+        false
+    }));
+    s.push(warp_flight("warp Hearth -> Cinder (walker in the cabin)", 0, 1, true));
+    s.push(wait(8.0));
+    // Land on Cinder: ship on the ground, walker standing next to it.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "land on Cinder");
+            let pl = planet(w);
+            let dir = DVec3::Y;
+            let rot = crate::ship::basis_for_up(dir);
+            teleport_ship(w, pl.centre + dir * (pl.surface(dir) + 5.0), rot);
+            let p = pl.centre + dir * pl.surface(dir);
+            place_walker(w, p + DVec3::new(10.0, 0.0, 0.0));
+        }
+        if c.t >= 8.0 {
+            let (agl, v) = (above_ground(w), ship_vel(w).length());
+            let (g, pid) = (with_player(w, |p| p.w.grounded), w.resource::<PlanetRes>().id);
+            check(c, pid == 1 && g && v < 1.0, format!("on Cinder: planet {pid}, walker grounded {g}, ship {agl:.1} m above ground at {v:.2} m/s"));
+            return true;
+        }
+        false
+    }));
+    s.extend(back_to_seat());
+    s.push(warp_flight("warp Cinder -> Hearth", 1, 0, false));
+    s.push(wait(3.0));
+}
+
 pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step> {
     let dir = out_dir.to_path_buf();
     let shot_step = move |tag: &'static str| -> Step {
@@ -1225,6 +1520,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
             }
         }
         "foreign" => foreign_steps(&mut s),
+        "warp" => warp_steps(&mut s),
         // Issue #5: step out of the ship in space (seat by test shortcut, then fly up).
         "space" => {
             s.push(Box::new(|w, _| {

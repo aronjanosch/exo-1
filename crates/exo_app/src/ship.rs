@@ -138,13 +138,15 @@ pub fn ship_control(
     time: Res<Time>,
     planet: Res<PlanetRes>,
     mut controls: ResMut<Controls>,
+    warp: Res<crate::warp::WarpDrive>,
     mut q: Query<(&mut Ship, &Position, &Rotation, &mut LinearVelocity, &mut AngularVelocity)>,
 ) {
     let dt = time.delta_secs_f64();
     for (mut ship, pos, rot, mut lv, mut av) in &mut q {
         let clearance = ship.ctl.clearance_at(planet.as_ref(), pos.0);
         ship.lag.step(clearance, lv.0.length(), dt);
-        if ship.parked {
+        // From the pre-ramp on the drive holds the ship.
+        if ship.parked || matches!(warp.drive.phase, warp_core::Phase::PreRamp | warp_core::Phase::RampUp | warp_core::Phase::Cruise | warp_core::Phase::RampDown) {
             continue;
         }
         let input = if ship.piloted {

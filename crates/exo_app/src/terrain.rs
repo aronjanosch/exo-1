@@ -29,8 +29,15 @@ struct Node {
     alive: bool,
 }
 
+/// Everything the terrain spawns for one planet (chunks, water, markers): despawned together
+/// when the simulation's planet changes.
+#[derive(Component)]
+pub struct PlanetScene;
+
 #[derive(Resource)]
 pub struct Terrain {
+    /// Registry id of the planet these chunks belong to.
+    pub for_planet: usize,
     nodes: Vec<Node>,
     free: Vec<usize>,
     roots: Vec<usize>,
@@ -140,12 +147,30 @@ impl Terrain {
     }
 }
 
+/// How often and how fast the terrain was rebuilt for another planet.
+#[derive(Resource, Default)]
+pub struct TerrainSwaps {
+    pub count: u32,
+    pub last_ms: f64,
+}
+
 pub fn setup_terrain(
     mut commands: Commands,
     planet: Res<PlanetRes>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    let t = build_terrain(&mut commands, &planet, &mut meshes, &mut materials);
+    commands.insert_resource(t);
+}
+
+/// Root chunks (synchronously, so there is always a planet), water and site markers of `planet`.
+pub fn build_terrain(
+    commands: &mut Commands,
+    planet: &PlanetRes,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+) -> Terrain {
     let face_edge = planet.radius * std::f64::consts::PI * 0.5;
     let mut indices = Vec::with_capacity((M - 1) * (M - 1) * 6);
     for j in 0..M - 1 {
@@ -159,19 +184,20 @@ pub fn setup_terrain(
     }
     let material = materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, ..default() });
     let mut t = Terrain {
+        for_planet: planet.id,
         nodes: Vec::new(), free: Vec::new(), roots: Vec::new(),
         max_depth: ((face_edge / 37.0).log2().round() as u32).max(1),
         material, indices,
         visible: 0, pending: 0,
     };
     for face in 0..6 {
-        let i = t.make_node(&planet, face, -1.0, -1.0, 2.0, 0);
+        let i = t.make_node(planet, face, -1.0, -1.0, 2.0, 0);
         // Roots synchronously, so there is always a planet.
         let n = &t.nodes[i];
         let out = planet.pgen.build_chunk(n.face, n.a0, n.b0, n.size, false);
         let mesh = meshes.add(t.mesh(&out));
         let e = commands
-            .spawn((Mesh3d(mesh), MeshMaterial3d(t.material.clone()), Transform::default(), WorldPos(planet.centre + DVec3::from_array(out.center))))
+            .spawn((Mesh3d(mesh), MeshMaterial3d(t.material.clone()), Transform::default(), WorldPos(planet.centre + DVec3::from_array(out.center)), PlanetScene))
             .id();
         t.nodes[i].entity = Some(e);
         t.roots.push(i);
@@ -190,6 +216,7 @@ pub fn setup_terrain(
         })),
         Transform::default(),
         WorldPos(planet.centre),
+        PlanetScene,
     ));
     // Site markers: 24 m orange pillars.
     let pillar = meshes.add(Cylinder::new(0.9, 24.0));
@@ -202,18 +229,34 @@ pub fn setup_terrain(
             MeshMaterial3d(orange.clone()),
             Transform::from_rotation(Quat::from_rotation_arc(Vec3::Y, dir.as_vec3())),
             WorldPos(base),
+            PlanetScene,
         ));
     }
-    commands.insert_resource(t);
+    t
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_terrain(
     mut commands: Commands,
     planet: Res<PlanetRes>,
     origin: Res<RenderOrigin>,
     mut terrain: ResMut<Terrain>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    scene: Query<Entity, With<PlanetScene>>,
+    mut swaps: ResMut<TerrainSwaps>,
 ) {
+    if terrain.for_planet != planet.id {
+        // The simulation's planet changed (warp or teleport): free the old terrain, build the new.
+        let t0 = std::time::Instant::now();
+        for e in &scene {
+            commands.entity(e).despawn();
+        }
+        *terrain = build_terrain(&mut commands, &planet, &mut meshes, &mut materials);
+        swaps.count += 1;
+        swaps.last_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        println!("terrain: planet {} roots built in {:.1} ms", planet.id, swaps.last_ms);
+    }
     let t = terrain.as_mut();
     let mut uploads = 0;
     let mut pending = 0;

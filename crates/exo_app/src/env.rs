@@ -25,13 +25,29 @@ pub struct PlanetRes {
     pub relief: f64,
     pub field: Field,
     pub bake_ms: f64,
+    /// Index in the system registry (`warp_core::System::planets`).
+    pub id: usize,
 }
 
 impl PlanetRes {
     pub fn load(radius: f64, centre: DVec3) -> PlanetRes {
+        Self::build(radius, centre, None)
+    }
+
+    /// A planet of the registry: its seed, radius and centre.
+    pub fn load_def(id: usize, def: &warp_core::PlanetDef) -> PlanetRes {
+        let mut p = Self::build(def.radius, def.centre(), Some(def.seed));
+        p.id = id;
+        p
+    }
+
+    fn build(radius: f64, centre: DVec3, seed: Option<i32>) -> PlanetRes {
         let mut recipe = Recipe::from_json(RECIPE).expect("recipe");
         if radius > 0.0 {
             recipe.radius = radius;
+        }
+        if let Some(seed) = seed {
+            recipe.seed = seed;
         }
         let mut p = Planet::new(recipe);
         let st = p.bake(0);
@@ -44,6 +60,7 @@ impl PlanetRes {
             centre,
             field: Field::default(),
             bake_ms: st.bake_ms,
+            id: 0,
         }
     }
     /// Distance from the centre to the ground along a direction.

@@ -19,6 +19,23 @@ pub struct MainCamera;
 #[derive(Component)]
 pub struct Hud;
 
+/// Sphere standing in for a planet that is too far for its terrain (index in the registry).
+#[derive(Component)]
+pub struct Impostor(pub usize);
+
+/// Star streak of the tunnel look: its place on the tube (angle, radius) and phase along it.
+#[derive(Component)]
+pub struct Streak {
+    angle: f32,
+    radius: f32,
+    phase: f32,
+}
+
+/// Distance from a planet's centre beyond which its impostor replaces the terrain (m). The
+/// terrain is culled by the camera's far plane at about this distance.
+pub const IMPOSTOR_FROM: f64 = 100_000.0;
+const STREAKS: usize = 160;
+
 /// Walker feet, the camera's up and the look direction in world space before and after the last
 /// fixed step.
 #[derive(Component, Default)]
@@ -60,7 +77,7 @@ pub fn setup_view(mut commands: Commands) {
     commands.spawn((
         MainCamera,
         Camera3d::default(),
-        Projection::Perspective(PerspectiveProjection { fov: 75f32.to_radians(), near: 0.05, far: 50_000.0, ..default() }),
+        Projection::Perspective(PerspectiveProjection { fov: 75f32.to_radians(), near: 0.05, far: 120_000.0, ..default() }),
         Transform::default(),
         WorldPose::default(),
         DistanceFog { color: Color::srgb(0.72, 0.82, 0.95), falloff: FogFalloff::Exponential { density: 0.00025 }, ..default() },
@@ -76,6 +93,92 @@ pub fn setup_view(mut commands: Commands) {
         TextFont { font_size: FontSize::Px(14.0), ..default() },
         Node { position_type: PositionType::Absolute, top: px(8), left: px(8), ..default() },
     ));
+}
+
+/// One lit sphere per planet and the streaks of the tunnel look.
+pub fn setup_warp_view(
+    mut commands: Commands,
+    sys: Res<crate::warp::SystemRes>,
+    cam: Query<Entity, With<MainCamera>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let sphere = meshes.add(Sphere::new(1.0).mesh().uv(48, 24));
+    for (i, p) in sys.0.planets.iter().enumerate() {
+        let c = p.color;
+        commands.spawn((
+            Impostor(i),
+            Mesh3d(sphere.clone()),
+            MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(c[0], c[1], c[2]), perceptual_roughness: 0.9, ..default() })),
+            Transform::default(),
+            Visibility::Hidden,
+        ));
+    }
+    let Ok(cam) = cam.single() else { return };
+    let streak = meshes.add(Cuboid::new(0.04, 0.04, 1.0));
+    let mat = materials.add(StandardMaterial { base_color: Color::WHITE, emissive: LinearRgba::new(6.0, 8.0, 12.0, 1.0), unlit: true, ..default() });
+    commands.entity(cam).with_children(|c| {
+        for i in 0..STREAKS {
+            // A cheap hash spreads them over the tube.
+            let h = |k: f32| ((i as f32 * 12.9898 + k * 78.233).sin() * 43758.5453).fract().abs();
+            c.spawn((
+                Streak { angle: h(1.0) * std::f32::consts::TAU, radius: 3.0 + h(2.0) * 30.0, phase: h(3.0) },
+                Mesh3d(streak.clone()),
+                MeshMaterial3d(mat.clone()),
+                Transform::default(),
+                Visibility::Hidden,
+            ));
+        }
+    });
+}
+
+/// Distant planets: each one is drawn as a sphere at its true direction, at most `IMPOSTOR_FROM`
+/// away and scaled to keep its angular size (the camera's far plane stays small).
+pub fn update_impostors(
+    sys: Res<crate::warp::SystemRes>,
+    origin: Res<RenderOrigin>,
+    mut q: Query<(&Impostor, &mut Transform, &mut Visibility)>,
+) {
+    for (imp, mut t, mut vis) in &mut q {
+        let p = &sys.0.planets[imp.0];
+        let to = p.centre() - origin.view;
+        let dist = to.length();
+        if dist < IMPOSTOR_FROM {
+            *vis = Visibility::Hidden;
+            continue;
+        }
+        let shown = IMPOSTOR_FROM;
+        t.translation = (to / dist * shown).as_vec3();
+        t.scale = Vec3::splat((p.radius * shown / dist) as f32);
+        // The camera sits at the render origin's offset: place relative to the camera, not the origin.
+        t.translation += (origin.view - origin.origin).as_vec3();
+        *vis = Visibility::Inherited;
+    }
+}
+
+/// Tunnel look keyed to the drive's speed: streaks along the course, a tint at the screen edge.
+pub fn update_tunnel(
+    time: Res<Time>,
+    wd: Res<crate::warp::WarpDrive>,
+    mut q: Query<(&Streak, &mut Transform, &mut Visibility)>,
+    mut clear: ResMut<ClearColor>,
+) {
+    let level = wd.drive.tunnel() as f32;
+    let t = time.elapsed_secs();
+    for (s, mut tf, mut vis) in &mut q {
+        if level <= 0.0 {
+            *vis = Visibility::Hidden;
+            continue;
+        }
+        *vis = Visibility::Inherited;
+        let z = -(((s.phase + t * (0.6 + level)) % 1.0) * 120.0);
+        let len = 2.0 + 60.0 * level;
+        tf.translation = Vec3::new(s.angle.cos() * s.radius, s.angle.sin() * s.radius, z);
+        tf.scale = Vec3::new(1.0, 1.0, len);
+    }
+    if level > 0.0 {
+        clear.0 = clear.0.mix(&Color::srgb(0.05, 0.10, 0.30), level * 0.8);
+    }
 }
 
 /// Meshes for ship parts (the simulation spawns only colliders and markers).
@@ -221,6 +324,8 @@ pub fn update_hud(
     ships: Query<(&Ship, &avian3d::prelude::Position, &avian3d::prelude::LinearVelocity, &avian3d::prelude::Rotation)>,
     mut hud: Query<&mut Text, With<Hud>>,
     net: Option<Res<crate::net_live::Net>>,
+    wd: Res<crate::warp::WarpDrive>,
+    sys: Res<crate::warp::SystemRes>,
 ) {
     let (Ok(pl), Ok((ship, sp, sv, sr)), Ok(mut text)) = (players.single(), ships.single(), hud.single_mut()) else { return };
     let mode = if pl.seated {
@@ -260,9 +365,44 @@ pub fn update_hud(
         ring.pending(),
         stats.rescues,
     );
+    text.0.push('\n');
+    text.0.push_str(&warp_line(&wd, &sys.0, sp.0, planet.id));
     if let Some(n) = net {
         text.0.push('\n');
         text.0.push_str(&n.hud_line());
+    }
+}
+
+/// Quantum drive status: phase, gauge and aim while calibrating, speed on rails.
+fn warp_line(wd: &crate::warp::WarpDrive, sys: &warp_core::System, ship: DVec3, here: usize) -> String {
+    use warp_core::Phase;
+    let d = &wd.drive;
+    let name = |i: usize| sys.planets[i].name.as_str();
+    let target = d.target.map(name).unwrap_or_else(|| name(if wd.selected == here { (here + 1) % sys.planets.len() } else { wd.selected }));
+    let dist_km = sys.planets[d.target.unwrap_or(wd.selected)].centre().distance(ship) / 1000.0;
+    match d.phase {
+        Phase::Idle => {
+            let refused = wd.last_abort.map(|a| format!("  last: {a:?}")).unwrap_or_default();
+            format!("QUANTUM  ready  J: warp to {target} ({dist_km:.0} km)  N: select{refused}")
+        }
+        Phase::Spooling => format!("QUANTUM  spooling {:.1}/{:.0} s  -> {target}  aim {:.1} deg  (J cancels)", d.timer, d.cfg.spool_time, d.angle),
+        Phase::Calibrating => format!(
+            "QUANTUM  calibrating {:.0} %  aim {:.1} deg{}  -> {target}  (J cancels)",
+            d.gauge * 100.0,
+            d.angle,
+            if d.warning { "  WARNING: hold the course" } else { "" }
+        ),
+        Phase::PreRamp => format!("QUANTUM  engaging  -> {target}"),
+        Phase::RampUp | Phase::Cruise | Phase::RampDown => format!(
+            "QUANTUM  {:?} stage {}  {:.0} km/s  tunnel {:.0} %  {:.0} km to {target}",
+            d.phase,
+            d.stage(),
+            d.speed() / 1000.0,
+            d.tunnel() * 100.0,
+            dist_km
+        ),
+        Phase::PostRampDown => "QUANTUM  arrived".to_string(),
+        Phase::Cooldown => format!("QUANTUM  cooldown {:.1} s", (d.cfg.cooldown - d.timer).max(0.0)),
     }
 }
 

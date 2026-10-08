@@ -15,4 +15,5 @@ planet_core = { workspace = true }
 flight_core = { workspace = true }
 walker_core = { workspace = true }
 net_core = { workspace = true }
+warp_core = { workspace = true }
 serde_json = { workspace = true }

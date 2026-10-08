@@ -13,6 +13,7 @@ pub mod ship;
 pub mod terrain;
 pub mod view;
 pub mod walker;
+pub mod warp;
 
 use avian3d::prelude::*;
 use avian3d::physics_transform::PhysicsTransformConfig;
@@ -54,6 +55,8 @@ pub struct Options {
     /// Write the scripted run's ship and walker path (net_core Trajectory) to this file.
     pub record: Option<PathBuf>,
     pub spawn_offset: f64,
+    /// Distance between the planet centres in metres (default: `content/system/system.json`).
+    pub distance: Option<f64>,
     /// Headless run paced at 60 physics ticks per wall second (network runs).
     pub realtime: bool,
     pub net: Option<net_live::NetConfig>,
@@ -70,6 +73,7 @@ impl Default for Options {
             out_dir: PathBuf::from("target/scenario"),
             record: None,
             spawn_offset: 0.0,
+            distance: None,
             realtime: false,
             net: None,
         }
@@ -89,6 +93,7 @@ impl Options {
                 "--scenario" => o.scenario = Some(v.to_string()),
                 "--headless" => o.headless = true,
                 "--hidden" => o.hidden = true,
+                "--distance" => o.distance = Some(v.parse().expect("distance")),
                 "--radius" => o.radius = v.parse().expect("radius"),
                 "--origin-shift" => o.origin_shift = v.parse().expect("origin-shift"),
                 "--out" => o.out_dir = PathBuf::from(v),
@@ -131,7 +136,13 @@ pub fn build_app(o: &Options) -> App {
         .insert_resource(Gravity(DVec3::ZERO))
         .insert_resource(PhysicsTransformConfig { transform_to_position: false, position_to_transform: false, ..default() });
 
-    let planet = env::PlanetRes::load(o.radius, net_core::PLANET_CENTRES[0]);
+    let mut sys = warp_core::System::from_json(warp::SYSTEM).expect("system.json");
+    if let Some(d) = o.distance {
+        sys.set_distance(d);
+    }
+    // --radius sets the first planet's size, as before the registry.
+    sys.planets[0].radius = o.radius;
+    let planet = env::PlanetRes::load_def(0, &sys.planets[0]);
     println!("planet: radius {} m, sea {:.2} m, bake {:.0} ms", planet.radius, planet.sea, planet.bake_ms);
     let start = planet.centre + DVec3::Y * planet.surface(DVec3::Y);
     app.insert_resource(origin::RenderOrigin {
@@ -143,6 +154,7 @@ pub fn build_app(o: &Options) -> App {
     });
     app.insert_resource(ring::Ring::new(planet.radius));
     app.insert_resource(planet);
+    app.insert_resource(warp::WarpDrive::new(&sys)).init_resource::<warp::PendingPlanet>().insert_resource(warp::SystemRes(sys));
     app.init_resource::<controls::Controls>().init_resource::<walker::WalkStats>();
     app.add_plugins(origin::plugin);
     app.insert_resource(SpawnOffset(o.spawn_offset));
@@ -150,7 +162,7 @@ pub fn build_app(o: &Options) -> App {
         walker::spawn_player(&mut commands, &planet, off.0);
         ship::spawn_ship(&mut commands, &planet, DVec3::Y, off.0);
     });
-    app.add_systems(FixedUpdate, (scenario::run_script.run_if(resource_exists::<scenario::Script>), ship::ship_control, walker::walker_step).chain());
+    app.add_systems(FixedUpdate, (scenario::run_script.run_if(resource_exists::<scenario::Script>), warp::warp_step, ship::ship_control, walker::walker_step).chain());
     app.add_systems(Update, ring::update_ring);
     if let Some(path) = &o.record {
         app.insert_resource(record::Recorder::new(path.clone()));
@@ -158,12 +170,13 @@ pub fn build_app(o: &Options) -> App {
     }
 
     if !o.headless {
-        app.init_resource::<view::ViewState>().insert_resource(ClearColor(Color::BLACK));
+        app.init_resource::<view::ViewState>().init_resource::<terrain::TerrainSwaps>().insert_resource(ClearColor(Color::BLACK));
         app.add_systems(Startup, (terrain::setup_terrain, view::setup_view));
+        app.add_systems(Startup, view::setup_warp_view.after(view::setup_view));
         app.add_systems(FixedLast, view::record_player_view);
         app.add_systems(
             Update,
-            (controls::read_input, view::add_ship_visuals, view::add_remote_walker_visuals, view::update_camera, terrain::update_terrain, view::update_hud).chain().after(ring::update_ring),
+            (controls::read_input, view::add_ship_visuals, view::add_remote_walker_visuals, view::update_camera, terrain::update_terrain, view::update_impostors, view::update_tunnel, view::update_hud).chain().after(ring::update_ring),
         );
     }
     if let Some(cfg) = &o.net {

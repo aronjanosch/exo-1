@@ -1,5 +1,5 @@
 {
-  "_comment": "Spike 11 system. Metres, seconds, degrees. Every value is a test value, set explicitly; nothing derived from a radius. Start values: research/quantum-drive-reference.md, 'Mapped to our scale'.",
+  "_comment": "The planet system. Metres, seconds, degrees. Every value is a test value, set explicitly; nothing derived from a radius. Start values: research/quantum-drive-reference.md, 'Mapped to our scale'.",
   "planets": [
     {
       "name": "Hearth", "seed": 1337, "centre": [0.0, 0.0, 0.0], "radius": 5000.0,

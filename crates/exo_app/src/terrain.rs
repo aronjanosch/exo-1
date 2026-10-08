@@ -147,13 +147,6 @@ impl Terrain {
     }
 }
 
-/// How often and how fast the terrain was rebuilt for another planet.
-#[derive(Resource, Default)]
-pub struct TerrainSwaps {
-    pub count: u32,
-    pub last_ms: f64,
-}
-
 pub fn setup_terrain(
     mut commands: Commands,
     planet: Res<PlanetRes>,
@@ -244,18 +237,13 @@ pub fn update_terrain(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     scene: Query<Entity, With<PlanetScene>>,
-    mut swaps: ResMut<TerrainSwaps>,
 ) {
     if terrain.for_planet != planet.id {
         // The simulation's planet changed (warp or teleport): free the old terrain, build the new.
-        let t0 = std::time::Instant::now();
         for e in &scene {
             commands.entity(e).despawn();
         }
         *terrain = build_terrain(&mut commands, &planet, &mut meshes, &mut materials);
-        swaps.count += 1;
-        swaps.last_ms = t0.elapsed().as_secs_f64() * 1000.0;
-        println!("terrain: planet {} roots built in {:.1} ms", planet.id, swaps.last_ms);
     }
     let t = terrain.as_mut();
     let mut uploads = 0;

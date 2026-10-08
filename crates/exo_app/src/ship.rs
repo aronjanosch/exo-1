@@ -91,7 +91,7 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, up: DVec3, offset
 pub fn add_hull(commands: &mut Commands, ship: Entity, layer: Layer) {
     let hull = Color::srgb(0.95, 0.5, 0.15);
     let inner = Color::srgb(0.55, 0.55, 0.6);
-    // See-through: the tunnel streaks show through the window (spike 11, F8).
+    // See-through: the tunnel streaks show through the window.
     let glass = Color::srgba(0.3, 0.8, 0.9, 0.12);
     // [size, position, colour, collides, drawn] in ship space; origin at the floor bottom.
     // The front wall collides as one block; it is drawn as four pieces around the window opening

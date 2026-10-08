@@ -63,33 +63,6 @@ pub struct PlayerInterp {
     pub curr: (DVec3, DVec3, DVec3),
 }
 
-/// Frame times per label (windowed runs): the scenario sets the label, the HUD system adds each
-/// frame's real duration to it. For the frame cost of distant planets and the tunnel (spike 11).
-#[derive(Resource, Default)]
-pub struct FrameLog {
-    pub label: String,
-    /// label -> (frames, total ms, worst ms)
-    pub buckets: std::collections::BTreeMap<String, (u64, f64, f64)>,
-    /// Frames left out after a screenshot (readback and PNG save cost tens of ms).
-    pub skip: u32,
-}
-
-impl FrameLog {
-    pub fn add(&mut self, ms: f64) {
-        if self.skip > 0 {
-            self.skip -= 1;
-            return;
-        }
-        if self.label.is_empty() {
-            return;
-        }
-        let b = self.buckets.entry(self.label.clone()).or_insert((0, 0.0, 0.0));
-        b.0 += 1;
-        b.1 += ms;
-        b.2 = b.2.max(ms);
-    }
-}
-
 #[derive(Resource, Default)]
 pub struct ViewState {
     pub orbit: bool,
@@ -181,7 +154,7 @@ pub fn setup_warp_view(
     let mat = materials.add(StandardMaterial { base_color: Color::WHITE, emissive: LinearRgba::new(6.0, 8.0, 12.0, 1.0), unlit: true, ..default() });
     for i in 0..STREAKS {
         // A cheap hash spreads them over the tube.
-        let h = |k: f32| ((i as f32 * 12.9898 + k * 78.233).sin() * 43758.5453).fract().abs();
+        let h = |k: f32| ((i as f32 * 12.9898 + k * 78.233).sin() * 43758.547).fract().abs();
         commands.spawn((
             Streak { angle: h(1.0) * std::f32::consts::TAU, radius: 3.0 + h(2.0) * 30.0, phase: h(3.0) },
             Mesh3d(streak.clone()),
@@ -477,11 +450,9 @@ pub fn update_hud(
     net: Option<Res<crate::net_live::Net>>,
     wd: Res<crate::warp::WarpDrive>,
     sys: Res<crate::warp::SystemRes>,
-    mut frames: ResMut<FrameLog>,
 ) {
-    frames.add(time.delta_secs_f64() * 1000.0);
     let (Ok(pl), Ok((ship, sp, sv, sr)), Ok(mut text)) = (players.single(), ships.single(), hud.single_mut()) else { return };
-    // Ground and altitude only near the planet (F9: millions of metres during a warp say nothing).
+    // Ground and altitude only near the planet (millions of metres during a warp say nothing).
     let near = |p: DVec3| (p - planet.centre).length() < NEAR_PLANET;
     let mode = if pl.seated {
         let height = if near(sp.0) { format!("  ground {:.0} m  alt {:.0} m", planet.above_ground(sp.0), (sp.0 - planet.centre).length() - planet.radius) } else { String::new() };

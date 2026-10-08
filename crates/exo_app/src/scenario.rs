@@ -271,9 +271,6 @@ fn shot(w: &mut World, c: &mut Ctx, script_dir: &std::path::Path, windowed: bool
     let _ = std::fs::create_dir_all(script_dir);
     let path = script_dir.join(format!("shot-{:02}-{tag}.png", c.shot_n));
     w.spawn(Screenshot::primary_window()).observe(save_to_disk(path));
-    if let Some(mut f) = w.get_resource_mut::<crate::view::FrameLog>() {
-        f.skip = 4;
-    }
 }
 
 // ---------- step builders ----------
@@ -1198,7 +1195,7 @@ fn foreign_steps(s: &mut Vec<Step>) {
 }
 
 
-// ---------- warp (spike 11) ----------
+// ---------- warp ----------
 
 const HEARTH: PlanetId = PlanetId(0);
 const CINDER: PlanetId = PlanetId(1);
@@ -1247,12 +1244,12 @@ fn hold_course(w: &mut World) {
         let wd = w.resource::<WarpDrive>();
         (wd.drive.phase, wd.drive.path().map(|p| p.start_dir()))
     };
-    if matches!(phase, Phase::Spooling | Phase::Calibrating) {
-        if let Some(d) = dir {
-            let e = ship_e(w);
-            w.get_mut::<Rotation>(e).unwrap().0 = nose_along(d);
-            w.get_mut::<AngularVelocity>(e).unwrap().0 = DVec3::ZERO;
-        }
+    if matches!(phase, Phase::Spooling | Phase::Calibrating)
+        && let Some(d) = dir
+    {
+        let e = ship_e(w);
+        w.get_mut::<Rotation>(e).unwrap().0 = nose_along(d);
+        w.get_mut::<AngularVelocity>(e).unwrap().0 = DVec3::ZERO;
     }
 }
 
@@ -1260,17 +1257,11 @@ fn events_since(w: &World, from: usize) -> Vec<(f64, Event)> {
     tel(w).log[from..].to_vec()
 }
 
-fn set_frame_label(w: &mut World, label: String) {
-    if let Some(mut f) = w.get_resource_mut::<crate::view::FrameLog>() {
-        f.label = label;
-    }
-}
-
 /// How the scripted flight is flown.
 #[derive(Clone, Copy, PartialEq)]
 enum Flight {
-    /// The pilot stands up when the ramp-up starts and the walker stays in the cabin (spike 10
-    /// measures: deck contact and drift; walking at top speed; the cabin view of the cruise).
+    /// The pilot stands up when the ramp-up starts and the walker stays in the cabin (deck
+    /// contact and drift; walking at top speed; the cabin view of the cruise).
     Passenger,
     /// The pilot stays seated (chase camera: the view from outside).
     Seated,
@@ -1279,14 +1270,14 @@ enum Flight {
 }
 
 /// One warp from where the ship is placed (`start`) to planet `to`, flown by script: the pilot
-/// holds the course. Ends 2.5 s after the arrival or drop. Screenshots of every phase, frame
-/// times per phase.
+/// holds the course. Ends 2.5 s after the arrival or drop. Screenshots of the cruise, the exit
+/// and 2 s after it.
 fn warp_flight(name: &'static str, tag: &'static str, start: Option<PlanetId>, to: PlanetId, how: Flight, dir: std::path::PathBuf, windowed: bool) -> Step {
     Box::new(move |w, c| {
         let lim = 240.0;
         if c.t == 0.0 {
             begin(w, c, name);
-            for k in ["stood", "drift", "g0", "s0", "last_phase", "shot_due", "walk_t0", "walk_z0", "walk_g0", "walk_s0", "walk_far", "walk_done", "cabin_shot", "t_end", "nose", "end_err", "held", "terrain_ok", "terrain_n", "started"] {
+            for k in ["stood", "drift", "g0", "s0", "shot_due", "walk_t0", "walk_z0", "walk_g0", "walk_s0", "walk_far", "walk_done", "cabin_shot", "t_end", "nose", "end_err", "held", "terrain_ok", "terrain_n", "started"] {
                 c.v.remove(k);
             }
             c.p.remove("stand_pos");
@@ -1312,24 +1303,13 @@ fn warp_flight(name: &'static str, tag: &'static str, start: Option<PlanetId>, t
         }
         hold_course(w);
         let phase = warp_state(w).0;
-        // Frame times and pictures per phase (windowed runs only).
-        if c.v.get("last_phase") != Some(&(phase as u8 as f64)) {
-            c.v.insert("last_phase", phase as u8 as f64);
-            set_frame_label(w, format!("{tag} {phase:?}"));
-            if matches!(phase, Phase::Spooling | Phase::RampUp | Phase::RampDown | Phase::EmergencyDrop) {
-                c.v.insert("shot_due", c.t + 1.0);
-            }
-            if phase == Phase::Cruise && how != Flight::Passenger {
-                c.v.insert("shot_due", c.t + 1.0);
-            }
+        // The cruise from outside (seated: chase camera), 1 s into it.
+        if phase == Phase::Cruise && how == Flight::Seated && !c.v.contains_key("shot_due") {
+            c.v.insert("shot_due", c.t + 1.0);
         }
-        if c.v.get("shot_due").is_some_and(|&due| c.t >= due) {
-            c.v.remove("shot_due");
-            let extra = match (phase, how) {
-                (Phase::Cruise, Flight::Seated) => "-outside",
-                _ => "",
-            };
-            shot(w, c, &dir, windowed, &format!("{tag}-{phase:?}{extra}").to_lowercase());
+        if c.v.get("shot_due").is_some_and(|&due| due > 0.0 && c.t >= due) {
+            c.v.insert("shot_due", -1.0);
+            shot(w, c, &dir, windowed, &format!("{tag}-cruise-outside"));
         }
         // Passenger: pilot out of the seat when the drive takes the ship.
         if how == Flight::Passenger && phase == Phase::RampUp && !c.v.contains_key("stood") {
@@ -1422,7 +1402,6 @@ fn warp_flight(name: &'static str, tag: &'static str, start: Option<PlanetId>, t
             let st = w.resource::<WalkStats>();
             c.v.insert("g_end", st.grounded as f64);
             c.v.insert("s_end", st.steps as f64);
-            set_frame_label(w, format!("{tag} exit, first 2 s"));
             let label = if how == Flight::Emergency { "dropped" } else { "exit" };
             shot(w, c, &dir, windowed, &format!("{tag}-{label}"));
         }
@@ -1435,7 +1414,6 @@ fn warp_flight(name: &'static str, tag: &'static str, start: Option<PlanetId>, t
                 let (for_planet, visible) = w.get_resource::<crate::terrain::Terrain>().map_or((None, 0), |t| (Some(t.for_planet), t.visible));
                 c.v.insert("terrain_n", visible as f64);
                 c.v.insert("terrain_ok", (for_planet == Some(to) && visible > 0) as u8 as f64);
-                set_frame_label(w, String::new());
         }
         let done = c.v.get("t_end").is_some_and(|&te| c.t - te >= 2.5);
         if done || c.t >= lim {
@@ -1510,7 +1488,7 @@ fn warp_flight(name: &'static str, tag: &'static str, start: Option<PlanetId>, t
                 }
             }
             if how == Flight::Passenger {
-                // Deck contact from the ramp-up to the arrival tick (round 1's measure), and the
+                // Deck contact from the ramp-up to the arrival tick, and the
                 // 2.5 s after it (the pilot has left the seat; the ship is handed over at 400 m/s).
                 let st = w.resource::<WalkStats>();
                 let (g, s0) = (c.v["g_end"] - c.v["g0"], c.v["s_end"] - c.v["s0"]);
@@ -1519,7 +1497,6 @@ fn warp_flight(name: &'static str, tag: &'static str, start: Option<PlanetId>, t
                 let drift = c.v.get("drift").copied().unwrap_or(f64::NAN);
                 check(c, in_cabin && g / s0.max(1.0) > 0.99 && drift < 0.05, format!("{name}: walker in the cabin through the warp: deck contact {:.1} % of {s0:.0} steps, drift {:.1} mm; after the arrival {:.1} % of {sa:.0} steps", 100.0 * g / s0.max(1.0), drift * 1000.0, 100.0 * ga / sa.max(1.0)));
             }
-            set_frame_label(w, String::new());
             c.v.remove("started");
             return true;
         }
@@ -1581,17 +1558,8 @@ fn warp_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
         true
     }));
     s.extend(sit());
-    // The other planet in the sky: apparent size from orbit (full moon about 31 arcmin).
     s.push(Box::new(|w, c| {
         let sys = w.resource::<SystemRes>().0.clone();
-        for (i, p) in sys.planets.iter().enumerate() {
-            let q = &sys.planets[(i + 1) % sys.planets.len()];
-            let d = p.centre().distance(q.centre());
-            let arcmin = 2.0 * (q.radius / d).atan().to_degrees() * 60.0;
-            let line = format!("sky from {} (orbit): {} is {:.2} arcmin wide at {:.0} km ({:.1} % of the full moon)", p.name, q.name, arcmin, d / 1000.0, 100.0 * arcmin / 31.0);
-            println!("{line}");
-            c.report.push(line);
-        }
         // The obstruction radius must hold the highest terrain, the arrival radius must be
         // above the jump altitude, frame zones below half the distance.
         for (id, def) in sys.ids().zip(&sys.planets) {
@@ -1607,7 +1575,7 @@ fn warp_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
         check(c, sys.planets.iter().all(|p| p.frame_radius < d * 0.5), format!("frame zones {:.0} km below half the distance ({:.0} km)", sys.planets[0].frame_radius / 1000.0, d / 2000.0));
         true
     }));
-    // F1: a snapshot with a planet id the system does not know is dropped, no panic.
+    // A snapshot with a planet id the system does not know is dropped, no panic.
     s.push(Box::new(|w, c| {
         use net_core::snapshot::FrameKind;
         let sys = w.resource::<SystemRes>().0.clone();
@@ -1625,10 +1593,10 @@ fn warp_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
         }
         s.planet = 1;
         let r = Snapshot::decode(&s.encode()).unwrap();
-        check(c, ok && lim.admits(&r), format!("F1: snapshots with planet ids 2, 7, 255, 2^32-1 dropped without a panic, planet 1 admitted (limits {lim:?})"));
+        check(c, ok && lim.admits(&r), format!("snapshots with planet ids 2, 7, 255, 2^32-1 dropped without a panic, planet 1 admitted (limits {lim:?})"));
         true
     }));
-    // Design change 3: refused below 1.5 x the atmosphere height, also just above the atmosphere.
+    // Refused below 1.5 x the atmosphere height, also just above the atmosphere.
     s.push(start_at_altitude("start refused: inside the atmosphere", 600.0, true));
     s.push(start_at_altitude("start refused: above the atmosphere, below 1.5 x", 1300.0, true));
     s.push(start_at_altitude("start refused: just below the jump altitude", 1790.0, true));
@@ -1722,32 +1690,6 @@ fn warp_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
         false
     }));
     s.push(warp_flight("warp Hearth -> Cinder (walker in the cabin)", "a2b", Some(HEARTH), CINDER, Flight::Passenger, dir.to_path_buf(), windowed));
-    // What the terrain of the new planet costs: the swap itself, its root chunks, the refinement.
-    s.push(Box::new(|w, c| {
-        let (swap, rss) = (tel(w).swap_ms, tel(w).rss_mb);
-        let pl = planet(w);
-        let t0 = std::time::Instant::now();
-        for face in 0..6 {
-            pl.pgen.build_chunk(face, -1.0, -1.0, 2.0, false);
-        }
-        let roots = t0.elapsed().as_secs_f64() * 1000.0;
-        let t1 = std::time::Instant::now();
-        let mut n = 0;
-        for face in 0..6 {
-            for (a, b) in [(-1.0, -1.0), (0.0, -1.0), (-1.0, 0.0), (0.0, 0.0)] {
-                pl.pgen.build_chunk(face, a, b, 1.0, false);
-                n += 1;
-            }
-        }
-        let kids = t1.elapsed().as_secs_f64() * 1000.0 / n as f64;
-        let line = format!(
-            "terrain on arrival (Cinder): planet swap {swap:.2} ms on the main thread; 6 root chunks {roots:.1} ms in one go; one level-1 chunk {kids:.2} ms; memory {:.0} MB before the swap, {:.0} MB after (now {:.0} MB)",
-            rss.0, rss.1, crate::warp::rss_mb()
-        );
-        println!("{line}");
-        c.report.push(line);
-        true
-    }));
     s.push(wait_drive_idle());
     // Land on Cinder: ship on the ground, walker standing next to it.
     s.push(Box::new(|w, c| {
@@ -1775,17 +1717,6 @@ fn warp_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
     s.push(wait_drive_idle());
     // From open space on to Cinder: the effective target is Cinder, the path starts straight.
     s.push(warp_flight("warp from the drop point on to Cinder", "drop2b", None, CINDER, Flight::Seated, dir.to_path_buf(), windowed));
-    // Frame times per phase (windowed runs).
-    s.push(Box::new(|w, c| {
-        if let Some(f) = w.get_resource::<crate::view::FrameLog>() {
-            for (label, (n, total, worst)) in &f.buckets {
-                let line = format!("frame time {label}: mean {:.2} ms, worst {worst:.1} ms over {n} frames", total / *n as f64);
-                println!("{line}");
-                c.report.push(line);
-            }
-        }
-        true
-    }));
     s.push(wait(1.0));
 }
 

@@ -105,7 +105,7 @@ pub struct Net {
     pub st: NetStats,
     /// Planet centres of the system: a snapshot is relative to its sender's planet, the buffers
     /// hold everything relative to planet 0 so a sender changing planet in a warp is
-    /// interpolated straight through (spike 11).
+    /// interpolated straight through.
     centres: Vec<DVec3>,
     /// Planet ids, ship range and speed this system allows; anything else is dropped on receipt.
     limits: Limits,

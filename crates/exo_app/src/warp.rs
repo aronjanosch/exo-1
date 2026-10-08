@@ -1,4 +1,4 @@
-//! The quantum drive in the game (spike 11): the `warp_core` state machine driven by the piloted
+//! The quantum drive in the game: the `warp_core` state machine driven by the piloted
 //! ship, the ship carried along the path, the planets swapped when the ship enters another
 //! planet's frame zone. Real movement through the shared f64 world, no loading screen.
 //!
@@ -53,9 +53,6 @@ pub struct WarpTelemetry {
     pub warps: u32,
     /// Largest distance the ship moved in one tick (m).
     pub max_tick_move: f64,
-    /// Main-thread time of the last planet swap (ms) and the process memory around it (MB).
-    pub swap_ms: f64,
-    pub rss_mb: (f64, f64),
     /// Distance of the ship from the drive's end point (exit or drop point) on the tick it got
     /// there, after the ship was placed (m).
     pub end_error: Option<f64>,
@@ -115,14 +112,6 @@ pub fn swap_planet(commands: &mut Commands, ring: &mut Ring, new: PlanetRes) {
     *ring = Ring::new(new.radius);
     ring.anchors = keep;
     commands.insert_resource(new);
-}
-
-/// Resident memory of this process in MB (Linux; 0 elsewhere).
-pub fn rss_mb() -> f64 {
-    std::fs::read_to_string("/proc/self/statm")
-        .ok()
-        .and_then(|s| s.split_whitespace().nth(1)?.parse::<f64>().ok())
-        .map_or(0.0, |pages| pages * 4096.0 / 1.0e6)
 }
 
 fn course_quat(from: DQuat, dir: DVec3, max_angle: f64) -> DQuat {
@@ -257,26 +246,15 @@ pub fn planet_swap(
     mut pending: ResMut<PendingPlanet>,
     mut ring: ResMut<Ring>,
     ships: Query<&Position, With<Ship>>,
-    tel: Option<ResMut<WarpTelemetry>>,
+    tel: Option<Res<WarpTelemetry>>,
 ) {
     let sys = &sys.0;
     let Ok(pos) = ships.single() else { return };
     let Some(f) = sys.frame_of(pos.0).filter(|f| *f != planet.id) else { return };
-    let t0 = std::time::Instant::now();
-    let before = tel.is_some().then(rss_mb);
     let new = pending.take(f, sys);
     swap_planet(&mut commands, &mut ring, new);
-    let ms = t0.elapsed().as_secs_f64() * 1000.0;
-    if let (Some(mut tel), Some(before)) = (tel, before) {
-        tel.swap_ms = ms;
-        tel.rss_mb = (before, rss_mb());
-        println!(
-            "warp {:7.2} s: planet {} -> {f} ({}), swap {ms:.2} ms on the main thread, memory {before:.0} MB before, {:.0} MB after",
-            tel.clock,
-            planet.id,
-            sys.planet(f).name,
-            tel.rss_mb.1
-        );
+    if let Some(tel) = tel {
+        println!("warp {:7.2} s: planet {} -> {f} ({})", tel.clock, planet.id, sys.planet(f).name);
     }
 }
 

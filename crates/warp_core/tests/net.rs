@@ -1,10 +1,10 @@
-//! Spike 11, step 6: a ship warps, another client sees it through the real snapshot path
+//! A ship warps, another client sees it through the real snapshot path
 //! (wire format, interpolation buffer, 150 ms playout). Measures the position error against the
 //! truth at the shown time, by phase, and what the swap of the sender's planet does.
 use glam::{DQuat, DVec3};
 use net_core::buffer::{Buffer, Mode};
 use net_core::snapshot::{Limits, Snapshot};
-use warp_core::{Drive, Event, Phase, PlanetId, ShipView, System};
+use warp_core::{Drive, Phase, PlanetId, ShipView, System};
 
 const DT: f64 = 1.0 / 60.0;
 const PLAYOUT: f64 = 0.15;
@@ -27,7 +27,7 @@ fn truth(sys: &System) -> Vec<(f64, DVec3, DVec3, Phase)> {
     let (mut pos, mut vel) = (start, DVec3::ZERO);
     let mut after = 0;
     loop {
-        let ev = d.step(DT, &ship, sys, &[]);
+        d.step(DT, &ship, sys, &[]);
         match d.pose() {
             Some((p, v)) => {
                 pos = p;
@@ -43,7 +43,6 @@ fn truth(sys: &System) -> Vec<(f64, DVec3, DVec3, Phase)> {
             None => {}
         }
         // The first tick after arrival carries the exit pose; from then on the ship coasts.
-        let _ = ev.iter().any(|e| *e == Event::Arrived);
         out.push((t, pos, if d.phase.on_rails() || after > 0 { vel } else { DVec3::ZERO }, d.phase));
         t += DT;
         if after > 300 {
@@ -83,7 +82,7 @@ fn run(sys: &System, loss_every: usize, normalise: bool, label: &str) -> Vec<(Ph
             s.wv = DVec3::ZERO;
             s.seq = seq;
             seq += 1;
-            if loss_every == 0 || (seq as usize) % loss_every != 0 {
+            if loss_every == 0 || !(seq as usize).is_multiple_of(loss_every) {
                 let mut r = Snapshot::decode(&s.encode()).expect("decodes");
                 if normalise {
                     assert!(r.to_frame_of(&centres, 0));
@@ -144,7 +143,7 @@ fn limits(sys: &System) -> Limits {
     Limits { planets: sys.planets.len() as u32, ship_position: sys.max_ship_offset(), ship_speed: sys.max_ship_speed() }
 }
 
-/// F2: at the longest trip of the research table (187,500 km) every snapshot of the flight is
+/// At the longest trip of the research table (187,500 km) every snapshot of the flight is
 /// admitted by limits derived from the loaded system.
 #[test]
 fn longest_trip_snapshots_are_admitted() {
@@ -172,6 +171,5 @@ fn longest_trip_snapshots_are_admitted() {
         n += 1;
     }
     println!("187,500 km: {n} snapshots admitted, farthest {:.0} km of {:.0} km allowed, fastest {:.0} of {:.0} km/s", far / 1000.0, lim.ship_position / 1000.0, fast / 1000.0, lim.ship_speed / 1000.0);
-    // The constant limits of round 1 (1e8 m) would have refused this flight.
     assert!(far > 1.0e8);
 }

@@ -247,7 +247,7 @@ fn path_leaves_along_the_tangent_and_arrives_facing_the_centre() {
     assert!(len / chord < 1.05, "{}", len / chord);
 }
 
-/// F4: before the start the exit point moves with the ship; the ship lands on the exit point
+/// Before the start the exit point moves with the ship; the ship lands on the exit point
 /// of the path it flies, within 1e-6 m.
 #[test]
 fn exit_point_follows_the_path_until_the_start() {
@@ -377,27 +377,17 @@ fn distance_setting_keeps_frame_zones_apart() {
     assert!(sys().set_distance(12_500_000.0).unwrap().is_empty());
 }
 
-/// The start values at the three trip lengths of the research note (Star Citizen's short,
-/// medium and long buckets scaled to our planets), plus a short hop: spool and calibration,
-/// flight, top speed reached, sky size of the target. Printed for the spike report.
+/// Trips of every length of the research note (Star Citizen's short, medium and long buckets
+/// scaled to our planets), plus a short hop, end exactly at the exit point.
 #[test]
-fn trip_times_by_distance() {
-    println!("distance km | sky arcmin | start->engage s | flight s | top km/s | cruise s");
+fn trips_of_every_length_arrive() {
     for d in [300_000.0, 2_000_000.0, 12_500_000.0, 62_500_000.0, 187_500_000.0] {
         let mut s = sys();
         s.set_distance(d).unwrap();
         let (mut dr, mut ship) = ready(&s);
         dr.begin(CINDER, &ship, &s, &[]).unwrap();
-        let (ev, vmax) = run(&mut dr, &mut ship, &s, 600.0);
-        let t = |p: Phase| ev.iter().find(|(_, e)| *e == Event::Phase(p)).map(|(t, _)| *t);
-        let arrived = ev.iter().find(|(_, e)| *e == Event::Arrived).expect("arrived").0;
-        let ramp = t(Phase::RampUp).unwrap();
-        let cruise = match (t(Phase::Cruise), t(Phase::RampDown)) {
-            (Some(a), Some(b)) => b - a,
-            _ => 0.0,
-        };
-        let arcmin = 2.0 * (s.planets[1].radius / d).atan().to_degrees() * 60.0;
-        println!("{:11.0} | {arcmin:10.2} | {ramp:15.1} | {:8.1} | {:8.0} | {cruise:8.1}", d / 1000.0, arrived - ramp, vmax / 1000.0);
+        let (ev, _) = run(&mut dr, &mut ship, &s, 600.0);
+        assert!(ev.iter().any(|(_, e)| *e == Event::Arrived), "no arrival at {d} m");
         assert!(ship.pos.distance(Drive::exit_point(&s, CINDER, DVec3::new(0.0, 7000.0, 0.0))) < 1e-6);
     }
 }

@@ -188,7 +188,7 @@ pub fn build_app(o: &Options) -> App {
     }
 
     if !o.headless {
-        app.init_resource::<view::ViewState>().init_resource::<terrain::TerrainSwaps>().init_resource::<view::FrameLog>().insert_resource(ClearColor(Color::BLACK));
+        app.init_resource::<view::ViewState>().insert_resource(ClearColor(Color::BLACK));
         app.add_systems(Startup, (terrain::setup_terrain, view::setup_view));
         app.add_systems(Startup, view::setup_warp_view.after(view::setup_view));
         app.add_systems(FixedLast, view::record_player_view);

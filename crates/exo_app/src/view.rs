@@ -66,6 +66,8 @@ pub struct PlayerInterp {
 #[derive(Resource, Default)]
 pub struct ViewState {
     pub orbit: bool,
+    /// A fixed camera pose (world), set by the planet-look scenario; wins over every other mode.
+    pub look: Option<(DVec3, DQuat)>,
     /// F3: the debug lines under the HUD.
     pub debug_hud: bool,
     pub orbit_yaw: f64,
@@ -660,7 +662,9 @@ pub fn update_camera(
     // The settings' field of view at rest; the speed curve adds its rise to it.
     let base_fov = settings.fov_deg;
     let speed_fov = fx.0.fov_deg - tuning.camera.fov_curve.eval(0.0);
-    if view.orbit {
+    if let Some((p, r)) = view.look {
+        (pose.pos, pose.rot) = (p, r);
+    } else if view.orbit {
         let d = DVec3::new(view.orbit_pitch.cos() * view.orbit_yaw.sin(), view.orbit_pitch.sin(), view.orbit_pitch.cos() * view.orbit_yaw.cos());
         pose.pos = planet.centre + d * 15_000.0;
         let up = if d.y.abs() < 0.99 { DVec3::Y } else { DVec3::X };

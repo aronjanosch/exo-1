@@ -35,7 +35,7 @@ struct BandRt {
     warp: Option<(FastNoiseLite, f64)>,
 }
 
-enum StampRt {
+pub(crate) enum StampRt {
     Basin { c: V3, r: f64, d: f64, cos_reach: f64 },
     Esc { c: V3, t: V3, n: V3, spec: (f64, f64, f64, f64, f64), landform: Option<i32>, cos_reach: f64 },
     Plateau { c: V3, r: f64, h: f64, fall: f64, cos_reach: f64 },
@@ -90,6 +90,7 @@ pub struct BakeStats {
     pub site_min_pair_m: f64,
     pub site_mean_nn_m: f64,
     pub site_max_nn_m: f64,
+    pub site_median_nn_m: f64,
 }
 
 pub struct Planet {
@@ -101,7 +102,7 @@ pub struct Planet {
     n_land: FastNoiseLite,
     bands: Vec<BandRt>,
     pub(crate) masks: Vec<FastNoiseLite>,
-    stamps: Vec<StampRt>,
+    pub(crate) stamps: Vec<StampRt>,
     pub macro_img: Vec<f32>,
     pub sea: f64,
     pub sites: Vec<V3>,
@@ -663,6 +664,7 @@ impl Planet {
         let dist = |a: &V3, b: &V3| self.radius * a.dot(*b).clamp(-1.0, 1.0).acos();
         let mut min_pair = f64::MAX;
         let (mut sum, mut max) = (0.0, 0.0f64);
+        let mut nns = Vec::with_capacity(n);
         for (i, a) in self.sites.iter().enumerate() {
             let mut nn = f64::MAX;
             for (j, b) in self.sites.iter().enumerate() {
@@ -674,7 +676,10 @@ impl Planet {
             }
             sum += nn;
             max = max.max(nn);
+            nns.push(nn);
         }
+        nns.sort_by(f64::total_cmp);
+        st.site_median_nn_m = nns[n / 2];
         st.site_min_pair_m = min_pair;
         st.site_mean_nn_m = sum / n as f64;
         st.site_max_nn_m = max;

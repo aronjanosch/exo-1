@@ -5,6 +5,7 @@ pub mod audio;
 pub mod controls;
 pub mod env;
 pub mod hot_reload;
+pub mod look;
 pub mod menu;
 pub mod net;
 pub mod net_live;

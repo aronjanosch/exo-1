@@ -165,7 +165,7 @@ fn altitude(w: &mut World) -> f64 {
     (p - pl.centre).length() - pl.radius
 }
 /// Put the walker on the ground at a world point (test setup).
-fn place_walker(w: &mut World, at: DVec3) {
+pub(crate) fn place_walker(w: &mut World, at: DVec3) {
     let pl = planet(w);
     let dir = pl.up(at);
     let pos = pl.centre + dir * (pl.surface(dir) + 0.1);
@@ -232,7 +232,7 @@ fn check_steady(c: &mut Ctx, what: &str) {
         format!("{what}: view steady (largest step: look {look:.3} deg, up {up:.3} deg, eye {:.1} mm)", eye * 1000.0));
 }
 
-fn check(c: &mut Ctx, ok: bool, note: String) {
+pub(crate) fn check(c: &mut Ctx, ok: bool, note: String) {
     let line = format!("{} {note}", if ok { "PASS" } else { "FAIL" });
     println!("{line}");
     c.report.push(line);
@@ -275,11 +275,11 @@ fn shot(w: &mut World, c: &mut Ctx, script_dir: &std::path::Path, windowed: bool
 
 // ---------- step builders ----------
 
-fn wait(sec: f64) -> Step {
+pub(crate) fn wait(sec: f64) -> Step {
     Box::new(move |_, c| c.t >= sec)
 }
 
-fn settle() -> Step {
+pub(crate) fn settle() -> Step {
     Box::new(|w, c| {
         let r = w.resource::<Ring>();
         let ring_ok = r.pending() == 0 && !r.patches.is_empty();
@@ -1246,7 +1246,7 @@ fn tel(w: &World) -> &WarpTelemetry {
 }
 
 /// Place the ship (test setup): pose, no velocity.
-fn teleport_ship(w: &mut World, pos: DVec3, rot: DQuat) {
+pub(crate) fn teleport_ship(w: &mut World, pos: DVec3, rot: DQuat) {
     let e = ship_e(w);
     w.get_mut::<Position>(e).unwrap().0 = pos;
     w.get_mut::<Rotation>(e).unwrap().0 = rot;
@@ -1793,6 +1793,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
         // #21: edit a tuning file while running (dev builds).
         "reload" => reload_steps(&mut s, out_dir),
         "warp" => warp_steps(&mut s, out_dir, windowed),
+        // #63: fixed viewpoints and an atlas per planet (headless: atlas and statistics only).
+        "planet-look" => crate::look::steps(&mut s, out_dir, windowed),
         // Issue #5: step out of the ship in space (seat by test shortcut, then fly up).
         "space" => {
             s.push(Box::new(|w, _| {

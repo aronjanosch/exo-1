@@ -2,7 +2,7 @@
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use flight_core::{Field, PlanetEnv};
-use planet_core::{Planet, Recipe, V3};
+use planet_core::{BakeStats, Planet, Recipe, V3};
 use std::sync::Arc;
 use warp_core::{PlanetDef, PlanetId};
 
@@ -34,13 +34,17 @@ impl PlanetRes {
     /// A planet of the registry: the recipe with its seed and radius, at its centre, with its
     /// atmosphere height.
     pub fn load(id: PlanetId, def: &PlanetDef) -> PlanetRes {
+        Self::load_with_stats(id, def).0
+    }
+    /// `load`, with the bake's statistics.
+    pub fn load_with_stats(id: PlanetId, def: &PlanetDef) -> (PlanetRes, BakeStats) {
         let mut recipe = Recipe::from_json(RECIPE).expect("recipe");
         recipe.radius = def.radius;
         recipe.seed = def.seed;
         let mut p = Planet::new(recipe);
         let st = p.bake(0);
         let (lo, hi) = p.height_range;
-        PlanetRes {
+        let res = PlanetRes {
             radius: p.radius,
             sea: p.sea,
             relief: lo.abs().max(hi.abs()),
@@ -49,7 +53,8 @@ impl PlanetRes {
             field: Field { atmosphere_height: def.atmosphere_height, ..Field::default() },
             bake_ms: st.bake_ms,
             id,
-        }
+        };
+        (res, st)
     }
     /// Distance from the centre to the ground along a direction.
     pub fn surface(&self, dir: DVec3) -> f64 {

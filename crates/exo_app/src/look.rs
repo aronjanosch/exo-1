@@ -1,0 +1,221 @@
+//! `planet-look` scenario (#63): for every planet in `content/system/system.json` an atlas
+//! (equirectangular height, biome, landform and scatter maps) and the bake statistics, and in a
+//! window a screenshot from each fixed viewpoint of `content/look/viewpoints.json`. Same seed,
+//! same spots, same sun: two runs compare side by side.
+//!
+//! Output: `<out>/look/<planet>/atlas-<layer>.png`, `stats.json`, `<viewpoint>.png`.
+use crate::env::{from_v3, to_v3, PlanetRes};
+use crate::ring::Ring;
+use crate::scenario::{check, place_walker, teleport_ship, wait, Ctx, Step};
+use crate::terrain::Terrain;
+use crate::view::ViewState;
+use crate::warp::SystemRes;
+use bevy::asset::RenderAssetUsages;
+use bevy::math::{DQuat, DVec3};
+use bevy::prelude::*;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use planet_core::look::walk;
+use planet_core::{AtlasLayer, Viewpoint, Viewpoints};
+use std::path::{Path, PathBuf};
+use warp_core::PlanetId;
+
+pub const VIEWPOINTS: &str = include_str!("../../../content/look/viewpoints.json");
+
+/// Seconds the camera holds still at a viewpoint before the shot (frame times are taken here).
+const HOLD_SECS: f64 = 1.5;
+/// Longest wait for the terrain under a new viewpoint (simulated seconds).
+const SETTLE_LIMIT: f64 = 25.0;
+
+fn planet_dir(out: &Path, name: &str) -> PathBuf {
+    out.join("look").join(name.to_lowercase())
+}
+
+/// RGB8 rows to a PNG through Bevy's image support.
+pub fn save_rgb(path: &Path, w: usize, h: usize, rgb: &[u8]) -> Result<(), String> {
+    let mut rgba = Vec::with_capacity(w * h * 4);
+    for p in rgb.chunks(3) {
+        rgba.extend([p[0], p[1], p[2], 255]);
+    }
+    let img = Image::new(
+        Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: 1 },
+        TextureDimension::D2,
+        rgba,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::default(),
+    );
+    let dynamic = img.try_into_dynamic().map_err(|e| e.to_string())?;
+    dynamic.to_rgb8().save(path).map_err(|e| e.to_string())
+}
+
+/// World camera pose of a viewpoint on `planet`, or None when the planet has no such spot.
+pub fn camera_pose(planet: &PlanetRes, vp: &Viewpoint) -> Option<(DVec3, DQuat, DVec3)> {
+    if vp.spot == "orbit" {
+        let from = DVec3::from_array(vp.from?).normalize();
+        let pos = planet.centre + from * vp.height_m;
+        let up = if from.y.abs() < 0.99 { DVec3::Y } else { DVec3::X };
+        let rot = walker_core::look_rot(-from, up);
+        return Some((pos, rot, from));
+    }
+    let spot = planet.pgen.spot(&vp.spot)?;
+    let cam_dir = from_v3(walk(spot.dir, -spot.facing, vp.back_m, planet.radius));
+    let up = cam_dir;
+    let facing = from_v3(spot.facing);
+    let f = (facing - up * facing.dot(up)).normalize();
+    let f = DQuat::from_axis_angle(up, -vp.turn_deg.to_radians()) * f;
+    let p = vp.pitch_deg.to_radians();
+    let look = f * p.cos() + up * p.sin();
+    let pos = planet.centre + cam_dir * (planet.surface(cam_dir) + vp.height_m);
+    Some((pos, walker_core::look_rot(look, up), from_v3(spot.dir)))
+}
+
+/// Sun direction (towards the sun) for a viewpoint pose: the same angles in every spot's frame.
+fn sun_for(vps: &Viewpoints, vp: &Viewpoint, pos: DVec3, rot: DQuat, centre: DVec3) -> DVec3 {
+    let up = (pos - centre).normalize();
+    let fwd = rot * DVec3::NEG_Z;
+    if vp.spot == "orbit" {
+        let left = rot * DVec3::NEG_X;
+        return (up * 0.8 + left * 0.5 + (rot * DVec3::Y) * 0.3).normalize();
+    }
+    let f = (fwd - up * fwd.dot(up)).normalize();
+    let right = f.cross(up);
+    let (el, az) = (vps.sun_elevation_deg.to_radians(), vps.sun_azimuth_deg.to_radians());
+    up * el.sin() + (f * az.cos() + right * az.sin()) * el.cos()
+}
+
+fn set_sun(w: &mut World, towards: DVec3) {
+    let mut q = w.query::<(&DirectionalLight, &mut Transform)>();
+    for (_, mut t) in q.iter_mut(w) {
+        let up = if towards.y.abs() < 0.99 { DVec3::Y } else { DVec3::X };
+        t.rotation = walker_core::look_rot(-towards, up).as_quat();
+    }
+}
+
+/// Atlas and statistics of every planet (a fresh bake from its recipe, as the game loads it).
+fn atlas_step(out: PathBuf, vps: Viewpoints) -> Step {
+    Box::new(move |w, c| {
+        let sys = w.resource::<SystemRes>().0.clone();
+        for (i, def) in sys.planets.iter().enumerate() {
+            let t0 = std::time::Instant::now();
+            let (p, st) = PlanetRes::load_with_stats(PlanetId(i as u8), def);
+            let atlas = p.pgen.atlas(vps.atlas_width, 0);
+            let dir = planet_dir(&out, &def.name);
+            let _ = std::fs::create_dir_all(&dir);
+            let mut ok = true;
+            for (layer, rgb) in &atlas.layers {
+                let path = dir.join(format!("atlas-{}.png", layer.name()));
+                if let Err(e) = save_rgb(&path, atlas.width, atlas.height, rgb) {
+                    println!("atlas {}: {e}", path.display());
+                    ok = false;
+                }
+            }
+            let _ = std::fs::write(dir.join("stats.json"), serde_json::to_string_pretty(&st).unwrap_or_default());
+            check(c, ok, format!("look {}: atlas {}x{} ({} layers) in {:.0} ms", def.name, atlas.width, atlas.height, AtlasLayer::ALL.len(), t0.elapsed().as_secs_f64() * 1e3));
+            let shares: Vec<String> = st.biome_area_share.iter().map(|(k, v)| format!("{k}: {:.1} %", v * 100.0)).collect();
+            let line = format!(
+                "look {}: bake {:.0} ms, sea {:.1} m, land {:.1} % (macro {:.1} %), height above sea {:.0}..{:.0} m, biomes [{}], sites {} (gap worst {:.0} m, median {:.0} m, closest pair {:.0} m)",
+                def.name, st.bake_ms, st.sea_level_m, st.land_fraction_full * 100.0, st.land_fraction_macro * 100.0,
+                st.min_height_above_sea, st.max_height_above_sea, shares.join(", "),
+                st.site_count, st.site_max_nn_m, st.site_median_nn_m, st.site_min_pair_m,
+            );
+            println!("{line}");
+            c.report.push(line);
+        }
+        true
+    })
+}
+
+/// Bring the simulation to planet `i`: the parked ship into its frame zone (the swap follows),
+/// then back onto its ground at the spawn direction.
+fn go_to(i: usize) -> Step {
+    Box::new(move |w, c| {
+        let id = PlanetId(i as u8);
+        if w.resource::<PlanetRes>().id == id {
+            if c.t > 0.0 {
+                let pl = w.resource::<PlanetRes>().clone();
+                let pos = pl.centre + DVec3::Y * (pl.surface(DVec3::Y) + 0.05);
+                teleport_ship(w, pos, DQuat::IDENTITY);
+            }
+            return true;
+        }
+        if c.t == 0.0 {
+            let def = w.resource::<SystemRes>().0.planet(id).clone();
+            teleport_ship(w, def.centre() + DVec3::Y * (def.radius + 3000.0), DQuat::IDENTITY);
+        }
+        c.t > 30.0
+    })
+}
+
+fn settled(w: &World) -> bool {
+    let ring = w.resource::<Ring>();
+    ring.pending() == 0 && w.get_resource::<Terrain>().is_none_or(|t| t.pending == 0)
+}
+
+/// One viewpoint: camera and sun there, walker on the spot, wait for the terrain, hold, shoot.
+fn shoot(out: PathBuf, vps: Viewpoints, k: usize) -> Step {
+    Box::new(move |w, c: &mut Ctx| {
+        let vp = &vps.viewpoints[k];
+        let pl = w.resource::<PlanetRes>().clone();
+        let name = w.resource::<SystemRes>().0.planet(pl.id).name.clone();
+        if c.t == 0.0 {
+            let Some((pos, rot, ground)) = camera_pose(&pl, vp) else {
+                let line = format!("look {name} {}: SKIP, the planet has no spot '{}'", vp.id, vp.spot);
+                println!("{line}");
+                c.report.push(line);
+                return true;
+            };
+            w.resource_mut::<ViewState>().look = Some((pos, rot));
+            set_sun(w, sun_for(&vps, vp, pos, rot, pl.centre));
+            place_walker(w, pl.centre + ground * pl.surface(ground));
+            c.v.insert("look_stage", 0.0);
+            c.v.insert("look_t", 0.0);
+            c.phase = "look settle".into();
+            let s = pl.pgen.sample(to_v3(ground));
+            println!("look {name} {}: spot biome {}, {:.1} m above sea, slope {:.1} deg", vp.id, s.biome, s.height_above_sea, s.slope_deg);
+            return false;
+        }
+        let stage = c.v["look_stage"];
+        if stage == 0.0 && (c.t > 1.0 && settled(w) || c.t > SETTLE_LIMIT) {
+            c.v.insert("look_stage", 1.0);
+            c.v.insert("look_t", c.t);
+            c.phase = format!("look {} {}", name.to_lowercase(), vp.id);
+        } else if stage == 1.0 && c.t - c.v["look_t"] >= HOLD_SECS {
+            use bevy::render::view::screenshot::{save_to_disk, Screenshot};
+            let dir = planet_dir(&out, &name);
+            let _ = std::fs::create_dir_all(&dir);
+            let path = dir.join(format!("{}.png", vp.id));
+            w.spawn(Screenshot::primary_window()).observe(save_to_disk(path));
+            c.v.insert("look_stage", 2.0);
+            c.v.insert("look_t", c.t);
+            c.v.insert("look_shots", c.v.get("look_shots").copied().unwrap_or(0.0) + 1.0);
+            c.phase = "look shot".into();
+        } else if stage == 2.0 && c.t - c.v["look_t"] >= 0.3 {
+            c.phase.clear();
+            return true;
+        }
+        false
+    })
+}
+
+pub fn steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool) {
+    let vps = Viewpoints::from_json(VIEWPOINTS).expect("content/look/viewpoints.json");
+    let out = out_dir.to_path_buf();
+    s.push(atlas_step(out.clone(), vps.clone()));
+    if !windowed {
+        return;
+    }
+    let n = warp_core::System::from_json(crate::warp::SYSTEM).expect("system.json").planets.len();
+    for i in 0..n {
+        s.push(go_to(i));
+        s.push(crate::scenario::settle());
+        for k in 0..vps.viewpoints.len() {
+            s.push(shoot(out.clone(), vps.clone(), k));
+        }
+    }
+    s.push(Box::new(move |w, c| {
+        w.resource_mut::<ViewState>().look = None;
+        let shots = c.v.get("look_shots").copied().unwrap_or(0.0) as usize;
+        check(c, shots > 0, format!("look: {shots} screenshots for {n} planets"));
+        true
+    }));
+    s.push(wait(1.0));
+}

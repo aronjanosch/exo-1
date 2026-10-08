@@ -3,6 +3,9 @@
 //! the build time of the ring's terrain patches and the resident memory, written as JSON when the
 //! script ends. With a baseline file every phase's step p95 is checked against it: a phase fails
 //! when it is slower than the baseline by more than the tolerance.
+//!
+//! Windowed, also per planet swap the frames around it (#34), and every frame slower than one
+//! 60 Hz frame with its phase and warp phase (#15). Reported, not checked.
 use crate::scenario::Script;
 use bevy::prelude::*;
 use serde_json::{json, Value};
@@ -37,17 +40,48 @@ struct Phase {
     rss_mb: Option<f64>,
 }
 
+/// Frames kept before a planet swap, and counted after it.
+const SWAP_BEFORE: usize = 30;
+const SWAP_AFTER: usize = 60;
+/// A frame slower than this goes into the spike list (one 60 Hz frame).
+const SPIKE_MS: f64 = 1000.0 / 60.0;
+/// The spike list stops growing here.
+const MAX_SPIKES: usize = 500;
+
+/// The frames around one planet swap. A frame's time is measured at the start of the next one,
+/// and the render runs a frame behind, so the swap's cost shows a frame or two after it.
+struct SwapWindow {
+    label: String,
+    /// Frame number of the swap.
+    frame: u64,
+    /// (frame number, ms), from `SWAP_BEFORE` frames before to `SWAP_AFTER` after.
+    frames: Vec<(u64, f64)>,
+}
+
+struct Spike {
+    frame: u64,
+    ms: f64,
+    phase: String,
+    warp: String,
+}
+
 #[derive(Resource)]
 pub struct Perf {
     pub opt: PerfOptions,
     windowed: bool,
     phases: Vec<Phase>,
     step_start: Option<Instant>,
+    frame_no: u64,
+    /// The last `SWAP_BEFORE` frames.
+    recent: std::collections::VecDeque<(u64, f64)>,
+    swaps_seen: usize,
+    swaps: Vec<SwapWindow>,
+    spikes: Vec<Spike>,
 }
 
 impl Perf {
     pub fn new(opt: PerfOptions, windowed: bool) -> Perf {
-        Perf { opt, windowed, phases: Vec::new(), step_start: None }
+        Perf { opt, windowed, phases: Vec::new(), step_start: None, frame_no: 0, recent: Default::default(), swaps_seen: 0, swaps: Vec::new(), spikes: Vec::new() }
     }
 
     fn phase(&mut self, name: &str) -> &mut Phase {
@@ -85,16 +119,82 @@ pub fn step_end(mut perf: ResMut<Perf>, script: Option<Res<Script>>) {
     p.rss_mb = rss_mb().or(p.rss_mb);
 }
 
-/// Update, after the ring: frame time (windowed) and the patches built since the last frame.
-pub fn frame(mut perf: ResMut<Perf>, time: Res<Time<Real>>, script: Option<Res<Script>>, mut ring: ResMut<crate::ring::Ring>, shots: Query<(), With<bevy::render::view::screenshot::Screenshot>>) {
+/// Update, after the ring: frame time (windowed) and the patches built since the last frame;
+/// the frames around planet swaps and the slow frames.
+#[allow(clippy::too_many_arguments)]
+pub fn frame(
+    mut perf: ResMut<Perf>,
+    time: Res<Time<Real>>,
+    script: Option<Res<Script>>,
+    mut ring: ResMut<crate::ring::Ring>,
+    shots: Query<(), With<bevy::render::view::screenshot::Screenshot>>,
+    tel: Option<Res<crate::warp::WarpTelemetry>>,
+    wd: Option<Res<crate::warp::WarpDrive>>,
+) {
     let name = phase_name(&script);
     let windowed = perf.windowed;
     let built = std::mem::take(&mut ring.built_ms);
     let p = perf.phase(&name);
     p.build_ms.extend(built);
-    if windowed && shots.is_empty() && time.delta_secs_f64() > 0.0 {
-        p.frame_ms.push(time.delta_secs_f64() * 1000.0);
+    perf.frame_no += 1;
+    let n = perf.frame_no;
+    // Planet swaps of this frame's fixed steps (they run before Update).
+    if let Some(tel) = &tel {
+        while perf.swaps_seen < tel.swaps.len() {
+            let (_, from, to, drop) = tel.swaps[perf.swaps_seen];
+            let frames = perf.recent.iter().copied().collect();
+            perf.swaps.push(SwapWindow { label: format!("{from} -> {to}{}", if drop { " (emergency drop)" } else { "" }), frame: n, frames });
+            perf.swaps_seen += 1;
+        }
     }
+    if !(windowed && shots.is_empty() && time.delta_secs_f64() > 0.0) {
+        return;
+    }
+    let ms = time.delta_secs_f64() * 1000.0;
+    perf.phase(&name).frame_ms.push(ms);
+    perf.recent.push_back((n, ms));
+    if perf.recent.len() > SWAP_BEFORE {
+        perf.recent.pop_front();
+    }
+    for w in perf.swaps.iter_mut().filter(|w| n >= w.frame && n <= w.frame + SWAP_AFTER as u64) {
+        w.frames.push((n, ms));
+    }
+    if ms > SPIKE_MS && perf.spikes.len() < MAX_SPIKES {
+        let warp = wd.map(|w| format!("{:?}", w.drive.phase)).unwrap_or_default();
+        perf.spikes.push(Spike { frame: n, ms, phase: name, warp });
+    }
+}
+
+/// The frames around each swap, and the slow frames, for the report (also printed).
+fn swap_report(perf: &Perf) -> (Vec<Value>, Vec<Value>) {
+    let swaps = perf
+        .swaps
+        .iter()
+        .map(|w| {
+            let (before, after): (Vec<(u64, f64)>, Vec<(u64, f64)>) = w.frames.iter().partition(|(f, _)| *f < w.frame);
+            let worst = after.iter().copied().max_by(|a, b| a.1.total_cmp(&b.1));
+            let base: Vec<f64> = before.iter().map(|x| x.1).collect();
+            let line = match worst {
+                Some((f, ms)) => format!("perf swap {}: worst frame {ms:.2} ms at swap {:+} frames; the {} frames before: {}", w.label, f as i64 - w.frame as i64, base.len(), stats(&base)),
+                None => format!("perf swap {}: no frame measured after it", w.label),
+            };
+            println!("{line}");
+            let offsets: Vec<Value> = w.frames.iter().map(|(f, ms)| json!([*f as i64 - w.frame as i64, ms])).collect();
+            json!({ "swap": w.label, "frame": w.frame, "worst_ms": worst.map(|x| x.1), "worst_offset": worst.map(|x| x.0 as i64 - w.frame as i64), "before_ms": stats(&base), "frames": offsets })
+        })
+        .collect();
+    let spikes: Vec<Value> = perf
+        .spikes
+        .iter()
+        .map(|s| {
+            let near = perf.swaps.iter().map(|w| s.frame as i64 - w.frame as i64).min_by_key(|d| d.abs());
+            json!({ "frame": s.frame, "ms": s.ms, "phase": s.phase, "warp": s.warp, "from_swap": near })
+        })
+        .collect();
+    if perf.windowed {
+        println!("perf: {} frames slower than {SPIKE_MS:.1} ms (list in the report)", perf.spikes.len());
+    }
+    (swaps, spikes)
 }
 
 /// Resident memory (Linux `/proc/self/statm`, the process's own entry); elsewhere none.
@@ -122,7 +222,8 @@ pub fn finish(perf: &Perf, scenario: &str, out_dir: &std::path::Path) -> Vec<(bo
         .iter()
         .map(|p| json!({ "name": p.name, "step_ms": stats(&p.step_ms), "frame_ms": stats(&p.frame_ms), "chunk_build_ms": stats(&p.build_ms), "rss_mb": p.rss_mb }))
         .collect();
-    let report = json!({ "scenario": scenario, "windowed": perf.windowed, "slow_ms": perf.opt.slow_ms, "phases": phases });
+    let (swaps, spikes) = swap_report(perf);
+    let report = json!({ "scenario": scenario, "windowed": perf.windowed, "slow_ms": perf.opt.slow_ms, "phases": phases, "swaps": swaps, "spikes": spikes });
     let _ = std::fs::create_dir_all(out_dir);
     let path = out_dir.join(format!("perf-{scenario}.json"));
     let text = serde_json::to_string_pretty(&report).unwrap();

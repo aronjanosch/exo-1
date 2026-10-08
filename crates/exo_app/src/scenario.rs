@@ -1508,6 +1508,19 @@ enum Flight {
     Seated,
     /// Seated; the pilot holds J from the middle of the path on: emergency exit.
     Emergency,
+    /// Seated; the pilot holds J from a fifth of the path on: the drop ends nearer the planet left.
+    EarlyEmergency,
+}
+
+impl Flight {
+    fn emergency(self) -> bool {
+        matches!(self, Flight::Emergency | Flight::EarlyEmergency)
+    }
+
+    /// Share of the path from which the pilot holds J.
+    fn hold_from(self) -> f64 {
+        if self == Flight::EarlyEmergency { 0.2 } else { 0.5 }
+    }
 }
 
 /// One warp from where the ship is placed (`start`) to planet `to`, flown by script: the pilot
@@ -1609,14 +1622,14 @@ fn warp_flight(name: &'static str, tag: &'static str, start: Option<PlanetId>, t
                 *e = e.max(d);
             }
         }
-        // Emergency exit: hold J from the middle of the path until the drop starts.
-        if how == Flight::Emergency {
-            let past_half = {
+        // Emergency exit: hold J from the middle of the path (early: a fifth) until the drop starts.
+        if how.emergency() {
+            let past = {
                 let wd = w.resource::<WarpDrive>();
                 let pos = ship_frame_of_ro(w);
-                wd.drive.path().is_some_and(|p| pos.distance(p.at(0.0).0) > p.length() * 0.5)
+                wd.drive.path().is_some_and(|p| pos.distance(p.at(0.0).0) > p.length() * how.hold_from())
             };
-            let hold = phase.on_rails() && phase != Phase::EmergencyDrop && past_half;
+            let hold = phase.on_rails() && phase != Phase::EmergencyDrop && past;
             if hold && !c.v.contains_key("held") {
                 c.v.insert("held", c.t);
             }
@@ -1645,14 +1658,14 @@ fn warp_flight(name: &'static str, tag: &'static str, start: Option<PlanetId>, t
             let st = w.resource::<WalkStats>();
             c.v.insert("g_end", st.grounded as f64);
             c.v.insert("s_end", st.steps as f64);
-            let label = if how == Flight::Emergency { "dropped" } else { "exit" };
+            let label = if how.emergency() { "dropped" } else { "exit" };
             shot(w, c, &dir, windowed, &format!("{tag}-{label}"));
         }
         if let Some(&te) = c.v.get("t_end")
             && c.t - te >= 2.0
             && !c.v.contains_key("terrain_n")
         {
-                let label = if how == Flight::Emergency { "dropped" } else { "exit" };
+                let label = if how.emergency() { "dropped" } else { "exit" };
                 shot(w, c, &dir, windowed, &format!("{tag}-{label}-2s"));
                 let (for_planet, visible) = w.get_resource::<crate::terrain::Terrain>().map_or((None, 0), |t| (Some(t.for_planet), t.visible));
                 c.v.insert("terrain_n", visible as f64);
@@ -1689,7 +1702,7 @@ fn warp_flight(name: &'static str, tag: &'static str, start: Option<PlanetId>, t
             );
             println!("{line}");
             c.report.push(line);
-            if how == Flight::Emergency {
+            if how.emergency() {
                 let t_drop = at(Phase::EmergencyDrop).unwrap_or(f64::NAN);
                 let speed = c.v["end_speed"];
                 let mut open = true;
@@ -1969,7 +1982,8 @@ fn warp_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
     s.push(wait(1.0));
 }
 
-pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step> {
+/// `swap_rounds`: planet swaps by warp in the `swap` scenario (at least 3).
+pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds: usize) -> Vec<Step> {
     let dir = out_dir.to_path_buf();
     let shot_step = move |tag: &'static str| -> Step {
         let dir = dir.clone();
@@ -2012,7 +2026,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
         "reload" => reload_steps(&mut s, out_dir),
         "warp" => warp_steps(&mut s, out_dir, windowed),
         // #14 and #34: three planet swaps and an emergency drop; what each swap leaves behind.
-        "swap" => swap_steps(&mut s, out_dir, windowed),
+        "swap" => swap_steps(&mut s, out_dir, windowed, swap_rounds.max(3)),
         // Issue #5: step out of the ship in space (seat by test shortcut, then fly up).
         "space" => {
             s.push(Box::new(|w, _| {
@@ -2481,26 +2495,53 @@ pub fn headless_view(mut origin: ResMut<RenderOrigin>, ships: Query<&Position, W
 /// Share the counts after a later swap may differ from the first swap's (#14).
 const SWAP_COUNT_TOLERANCE: f64 = 0.05;
 
-fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
+fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool, rounds: usize) {
     s.push(Box::new(|w, _| {
         put_at_seat(w);
         true
     }));
     s.extend(sit());
-    s.push(warp_flight("swap 1: warp Hearth -> Cinder", "swap1", Some(HEARTH), CINDER, Flight::Seated, dir.to_path_buf(), windowed));
+    let name = |n: String| -> &'static str { Box::leak(n.into_boxed_str()) };
+    let pname = |p: PlanetId| if p == HEARTH { "Hearth" } else { "Cinder" };
+    let mut at = HEARTH;
+    for i in 0..rounds {
+        let to = if at == HEARTH { CINDER } else { HEARTH };
+        s.push(warp_flight(name(format!("swap {}: warp {} -> {}", i + 1, pname(at), pname(to))), name(format!("swap{}", i + 1)), Some(at), to, Flight::Seated, dir.to_path_buf(), windowed));
+        s.push(wait_drive_idle());
+        at = to;
+    }
+    let other = if at == HEARTH { CINDER } else { HEARTH };
+    // Late drop (past the middle): the nearest planet is the target, it becomes the simulation's.
+    s.push(warp_flight(name(format!("swap {}: late emergency exit {} -> {}", rounds + 1, pname(at), pname(other))), "swap-late", Some(at), other, Flight::Emergency, dir.to_path_buf(), windowed));
+    s.push(Box::new(move |w, c| {
+        let now = w.resource::<PlanetRes>().id;
+        check(c, now == other, format!("swap: after the late drop the simulation's planet is {now}, the nearest (the warp's target {other}), no longer {at}"));
+        true
+    }));
     s.push(wait_drive_idle());
-    s.push(warp_flight("swap 2: warp Cinder -> Hearth", "swap2", Some(CINDER), HEARTH, Flight::Seated, dir.to_path_buf(), windowed));
-    s.push(wait_drive_idle());
-    s.push(warp_flight("swap 3: warp Hearth -> Cinder", "swap3", Some(HEARTH), CINDER, Flight::Seated, dir.to_path_buf(), windowed));
-    s.push(wait_drive_idle());
-    s.push(warp_flight("swap 4: emergency exit Cinder -> Hearth", "swap4", Some(CINDER), HEARTH, Flight::Emergency, dir.to_path_buf(), windowed));
-    s.push(wait(1.0));
+    // Early drop (a fifth into the path): the nearest planet is the one left, it stays; the
+    // target is kept generated for a jump on.
     s.push(Box::new(|w, c| {
+        c.v.insert("swaps_before_early", tel(w).swaps.len() as f64);
+        true
+    }));
+    s.push(warp_flight(name(format!("early emergency exit {} -> {}", pname(other), pname(at))), "early", Some(other), at, Flight::EarlyEmergency, dir.to_path_buf(), windowed));
+    s.push(Box::new(move |w, c| {
+        let now = w.resource::<PlanetRes>().id;
+        let swaps = tel(w).swaps.len() as f64 - c.v["swaps_before_early"];
+        let busy = w.resource::<PendingPlanet>().busy();
+        check(c, now == other && swaps == 0.0 && busy, format!("swap: after the early drop the simulation's planet stays {now}, the nearest; {swaps} planet swaps; target kept generated for a jump on {busy}"));
+        true
+    }));
+    s.push(wait_drive_idle());
+    // On from the drop point: the kept target, swapped in when the ship enters its zone.
+    s.push(warp_flight(name(format!("swap {}: warp on from the drop point to {}", rounds + 2, pname(at))), "swap-on", None, at, Flight::Seated, dir.to_path_buf(), windowed));
+    s.push(wait(1.0));
+    s.push(Box::new(move |w, c| {
         begin(w, c, "what the planet swaps left behind");
         let rows = w.resource::<SwapAudit>().rows.clone();
-        let normal = rows.iter().filter(|r| !r.drop).count();
-        let drop = rows.iter().find(|r| r.drop).cloned();
-        check(c, normal >= 3 && drop.is_some(), format!("swap: {normal} planet swaps by warp and {} at an emergency drop", drop.is_some() as u32));
+        let drops = rows.iter().filter(|r| r.drop).count();
+        check(c, rows.len() == rounds + 2 && drops == 1, format!("swap: {} planet swaps, {drops} of them at an emergency drop (expected {} and 1)", rows.len(), rounds + 2));
         let Some(first) = rows.first().cloned() else { return true };
         let near = |a: f64, b: f64| (a - b).abs() <= SWAP_COUNT_TOLERANCE * b.max(1.0);
         for (i, r) in rows.iter().enumerate() {
@@ -2510,10 +2551,6 @@ fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
                 format!("swap {}: world {} terrain chunks, {} entities, {} meshes; within {:.0} % of the first swap's {}, {}, {}", i + 1, r.chunks, r.entities, r.meshes, SWAP_COUNT_TOLERANCE * 100.0, first.chunks, first.entities, first.meshes));
             // #34: the roots come from the pool, built during the flight.
             check(c, r.roots_built_here == 0, format!("swap {}: {} root chunks built on the swap frame (prebuilt on the pool)", i + 1, r.roots_built_here));
-        }
-        if let Some(d) = drop {
-            let now = w.resource::<PlanetRes>().id;
-            check(c, now != d.from && now == d.to, format!("swap: after the emergency drop the simulation's planet is {now} (the warp's target), no longer {}", d.from));
         }
         let rss: Vec<String> = rows.iter().map(|r| r.rss_mb.map_or("n/a".into(), |m| format!("{m:.0}"))).collect();
         end(w, c, format!("RSS after each swap (MB, reported, not checked): {}", rss.join(", ")));

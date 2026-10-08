@@ -254,8 +254,10 @@ pub fn warp_drive(
 }
 
 /// The ship comes into another planet's frame zone: that planet becomes the simulation's. An
-/// emergency drop outside every frame zone makes the warp's target the simulation's planet (#14:
-/// the old one stayed, with its terrain); it is generated already, and a jump on goes there.
+/// emergency drop outside every frame zone makes the nearest planet the simulation's, once, at the
+/// drop (#14: the old one always stayed, with its terrain). It is loaded or generated already:
+/// the old planet, or the warp's target. Not re-checked while drifting (a swap there would
+/// generate a planet on the spot).
 #[allow(clippy::too_many_arguments)]
 pub fn planet_swap(
     mut commands: Commands,
@@ -271,7 +273,7 @@ pub fn planet_swap(
     let Ok(pos) = ships.single() else { return };
     let zone = sys.frame_of(pos.0);
     let dropped = zone.is_none() && wd.events.contains(&Event::DroppedOut);
-    let next = if dropped { wd.drive.target } else { zone };
+    let next = if dropped { Some(sys.nearest(pos.0)) } else { zone };
     let Some(f) = next.filter(|f| *f != planet.id) else { return };
     let (new, roots) = pending.take(f, sys);
     if let Some(chunks) = roots {

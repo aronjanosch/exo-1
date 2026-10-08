@@ -8,6 +8,7 @@
 //! ship carries the walker without any velocity of its own (spike 3 pattern).
 //! All numbers are spike test values (assumptions), not designed.
 use glam::{DQuat, DVec2, DVec3};
+use serde::Deserialize;
 
 /// Result of a sweep, world space.
 #[derive(Copy, Clone, Debug)]
@@ -97,7 +98,9 @@ pub fn turn_body(body: DQuat, yaw: f64, pitch: f64, roll: f64) -> DQuat {
 }
 
 /// Suit thrusters for weightless movement (issue #8). Assumed values, tune by feel.
-#[derive(Copy, Clone, Debug)]
+/// `content/tuning/suit.json`.
+#[derive(Deserialize, Copy, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SuitConfig {
     /// m/s² per axis at full input.
     pub accel: f64,
@@ -106,11 +109,19 @@ pub struct SuitConfig {
     pub brake: f64,
     /// s; below accel/brake the brake eases out like this, so it reaches rest without overshoot.
     pub brake_time: f64,
+    /// Roll rate (Q/E), rad/s. Assumed value.
+    pub roll_rate: f64,
 }
 
 impl Default for SuitConfig {
     fn default() -> Self {
-        SuitConfig { accel: 2.0, boost_factor: 3.0, brake: 4.0, brake_time: 0.3 }
+        SuitConfig { accel: 2.0, boost_factor: 3.0, brake: 4.0, brake_time: 0.3, roll_rate: 1.5 }
+    }
+}
+
+impl SuitConfig {
+    pub fn from_json(s: &str) -> Result<SuitConfig, String> {
+        parse_tuning("suit.json", s)
     }
 }
 
@@ -133,7 +144,9 @@ pub fn suit_accel(cfg: &SuitConfig, rot: DQuat, vel: DVec3, input: &SuitInput) -
     rot * input.thrust.clamp_length_max(1.0) * cfg.accel * boost
 }
 
-#[derive(Copy, Clone, Debug)]
+/// `content/tuning/walker.json`.
+#[derive(Deserialize, Copy, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct WalkerConfig {
     pub radius: f64,
     /// Total capsule height (Godot CapsuleShape3D convention).
@@ -150,6 +163,12 @@ pub struct WalkerConfig {
     /// Gap kept to every surface after a sweep.
     pub skin: f64,
     pub max_slides: usize,
+    /// Largest look angle above or below the horizon, radians.
+    pub pitch_limit: f64,
+    /// Righting the view after leaving a tilted cabin in gravity: its up turns to the planet's
+    /// with this time constant (s), at most `righting_max_rate` rad/s. Assumed values.
+    pub righting_time: f64,
+    pub righting_max_rate: f64,
 }
 
 impl Default for WalkerConfig {
@@ -168,8 +187,30 @@ impl Default for WalkerConfig {
             snap_length: 0.5,
             skin: 0.01,
             max_slides: 4,
+            pitch_limit: 1.5,
+            righting_time: 0.5,
+            righting_max_rate: std::f64::consts::FRAC_PI_2,
         }
     }
+}
+
+impl WalkerConfig {
+    pub fn from_json(s: &str) -> Result<WalkerConfig, String> {
+        parse_tuning("walker.json", s)
+    }
+}
+
+/// Parses a tuning object: every field required, unknown fields rejected, except an optional
+/// `_comment` string (as in `recipe.json`). Same rule as `flight_core::parse_tuning`.
+fn parse_tuning<T: serde::de::DeserializeOwned>(what: &str, s: &str) -> Result<T, String> {
+    let mut v: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("{what}: {e}"))?;
+    if let Some(o) = v.as_object_mut()
+        && let Some(c) = o.remove("_comment")
+        && !c.is_string()
+    {
+        return Err(format!("{what}: _comment must be a string"));
+    }
+    serde_json::from_value(v).map_err(|e| format!("{what}: {e}"))
 }
 
 #[derive(Copy, Clone, Debug, Default)]

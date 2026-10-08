@@ -1,0 +1,17 @@
+{
+  "_comment": "Walker tuning (walker_core::WalkerConfig). player.gd values and assumptions, not designed. Angles in radians, every field required.",
+  "radius": 0.35,
+  "height": 1.8,
+  "walk_speed": 5.0,
+  "run_speed": 12.0,
+  "jump_speed": 5.0,
+  "start_speed": 3.0,
+  "start_time": 0.1,
+  "floor_max_angle_deg": 50.0,
+  "snap_length": 0.5,
+  "skin": 0.01,
+  "max_slides": 4,
+  "pitch_limit": 1.5,
+  "righting_time": 0.5,
+  "righting_max_rate": 1.5707963267948966
+}

@@ -1,0 +1,22 @@
+{
+  "_comment": "Ship tuning (flight_core::ShipTuning). Spike test values, not designed. Every field required. forward_speed_curve: (terrain clearance m, forward speed m/s).",
+  "thrust_accel": 20.0,
+  "boost_factor": 5.0,
+  "turn_rate": 2.5,
+  "roll_rate": 1.8,
+  "assisted_accel": 30.0,
+  "assisted_braking": 40.0,
+  "assisted_boost_accel": 60.0,
+  "assisted_acceleration_time": 3.5,
+  "assisted_braking_time": 2.25,
+  "release_braking": 14.0,
+  "release_braking_time": 6.0,
+  "velocity_response_time": 0.35,
+  "thrust_response_time": 0.15,
+  "assisted_reverse_speed": 25.0,
+  "assisted_strafe_speed": 20.0,
+  "assisted_vertical_speed": 15.0,
+  "forward_speed_curve": { "interp": "smooth", "points": [[30, 45], [150, 60], [600, 150], [1200, 350]] },
+  "drag_k": 0.0005,
+  "landing_sink_factor": 0.5
+}

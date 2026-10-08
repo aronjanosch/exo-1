@@ -18,7 +18,7 @@ Status: starting point. The code comes from the spikes (tag `spike/combined-fina
 - `crates/warp_core`: planet registry (two planets), quantum drive state machine, speed curve, path and obstruction check, no Bevy types.
 - `crates/net_core`: snapshot format, interpolation buffer, clock sync, datagrams, replay matrix, no Bevy types and no sockets.
 - `crates/exo_app`: the game. Bevy glue: terrain LOD and water, heightfield collision ring, ship body, walker on Avian queries, render origin, camera, HUD, UDP transport, scripted scenarios.
-- `content/`: data. `content/planet/recipe.json` is the planet recipe, `content/system/system.json` the planets (seed, radius, quantum travel radii, distance) and the drive settings.
+- `content/`: data. `content/planet/recipe.json` is the planet recipe, `content/system/system.json` the planets (seed, radius, quantum travel radii, distance) and the drive settings. `content/tuning/` holds the feel: `ship.json`, `walker.json`, `suit.json` (every field required, unknown fields rejected) and `bindings.json` (which key feeds which action, mouse sensitivities). All are embedded at build time; edit and rebuild.
 
 ## Run
 

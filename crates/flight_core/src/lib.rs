@@ -5,6 +5,7 @@
 //!
 //! All numbers are spike test values (assumptions for testing, not design).
 use glam::{DQuat, DVec2, DVec3};
+use serde::Deserialize;
 
 /// Godot's chase camera sits at (0, 5.5, 17) in ship space, pitched by this.
 pub const CHASE_CAMERA_PITCH_DEG: f64 = -10.0;
@@ -185,9 +186,97 @@ pub struct FlightInput {
     pub piloted: bool,
 }
 
-/// Assisted-flight controller. Spike test values throughout.
-#[derive(Clone, Debug)]
-pub struct ShipController {
+/// Interpolation between neighbouring curve points.
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Interp {
+    /// `lerp` with `smoothstep` between the points (the ship's forward speed curve).
+    Smooth,
+    /// Plain `lerp` (input curves, where `Smooth` cannot express the identity).
+    Linear,
+}
+
+/// A response curve: points (x, y) with ascending x, clamped at both ends.
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[serde(from = "RawCurve")]
+pub struct Curve {
+    pub interp: Interp,
+    pub points: Vec<DVec2>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawCurve {
+    interp: Interp,
+    points: Vec<[f64; 2]>,
+}
+
+impl From<RawCurve> for Curve {
+    fn from(r: RawCurve) -> Curve {
+        Curve { interp: r.interp, points: r.points.into_iter().map(DVec2::from).collect() }
+    }
+}
+
+impl Curve {
+    pub fn new(interp: Interp, points: Vec<DVec2>) -> Result<Curve, String> {
+        let c = Curve { interp, points };
+        c.validate()?;
+        Ok(c)
+    }
+
+    /// At least 2 points, x strictly ascending, all values finite. Parsing does not check this;
+    /// the owner of a curve calls it and puts the curve's name in front of the reason.
+    pub fn validate(&self) -> Result<(), String> {
+        let points = &self.points;
+        if points.len() < 2 {
+            return Err(format!("curve needs at least 2 points, has {}", points.len()));
+        }
+        if let Some(p) = points.iter().find(|p| !p.is_finite()) {
+            return Err(format!("curve point {p} is not finite"));
+        }
+        if let Some(w) = points.windows(2).find(|w| w[1].x <= w[0].x) {
+            return Err(format!("curve x must be strictly ascending: {} then {}", w[0].x, w[1].x));
+        }
+        Ok(())
+    }
+
+    pub fn eval(&self, x: f64) -> f64 {
+        let c = &self.points;
+        for i in 1..c.len() {
+            let (lo, hi) = (c[i - 1], c[i]);
+            if x <= hi.x {
+                let t = match self.interp {
+                    Interp::Smooth => smoothstep(lo.x, hi.x, x),
+                    Interp::Linear => ((x - lo.x) / (hi.x - lo.x)).clamp(0.0, 1.0),
+                };
+                return lerp(lo.y, hi.y, t);
+            }
+        }
+        c[c.len() - 1].y
+    }
+
+    pub fn last_y(&self) -> f64 {
+        self.points[self.points.len() - 1].y
+    }
+}
+
+/// Parses a tuning object: every field required, unknown fields rejected, except an optional
+/// `_comment` string (as in `recipe.json`). `what` names the file in errors.
+pub fn parse_tuning<T: serde::de::DeserializeOwned>(what: &str, s: &str) -> Result<T, String> {
+    let mut v: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("{what}: {e}"))?;
+    if let Some(o) = v.as_object_mut()
+        && let Some(c) = o.remove("_comment")
+        && !c.is_string()
+    {
+        return Err(format!("{what}: _comment must be a string"));
+    }
+    serde_json::from_value(v).map_err(|e| format!("{what}: {e}"))
+}
+
+/// The ship's tuning values (`content/tuning/ship.json`). Spike test values throughout.
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ShipTuning {
     pub thrust_accel: f64, // m/s²
     pub boost_factor: f64,
     pub turn_rate: f64, // rad/s cap
@@ -206,29 +295,25 @@ pub struct ShipController {
     pub assisted_strafe_speed: f64,
     pub assisted_vertical_speed: f64,
     /// (terrain clearance in metres, forward speed in m/s).
-    pub forward_speed_curve: Vec<DVec2>,
+    pub forward_speed_curve: Curve,
     /// Quadratic drag a = k * density * v². Terminal speed at the surface about
     /// 200 m/s with normal thrust, about 450 m/s with boost.
     pub drag_k: f64,
     /// Landing aid: sink rate capped to this share of the clearance per second (min 2 m/s).
     pub landing_sink_factor: f64,
-
-    pub hover_assist: bool,   // H
-    pub horizon_follow: bool, // L
-    pub brake_active: bool,
-    pub commanded_speed: f64,
-    pub forward_speed_limit: f64,
-    pub terrain_clearance: f64,
-    /// Effective L influence; zero outside the field.
-    pub planet_follow_strength: f64,
-
-    horizon_w: DVec3,
-    correction_accel: DVec3,
 }
 
-impl Default for ShipController {
+impl ShipTuning {
+    pub fn from_json(s: &str) -> Result<ShipTuning, String> {
+        let t: ShipTuning = parse_tuning("ship.json", s)?;
+        t.forward_speed_curve.validate().map_err(|e| format!("ship.json: forward_speed_curve: {e}"))?;
+        Ok(t)
+    }
+}
+
+impl Default for ShipTuning {
     fn default() -> Self {
-        ShipController {
+        ShipTuning {
             thrust_accel: 20.0,
             boost_factor: 5.0,
             turn_rate: 2.5,
@@ -245,14 +330,48 @@ impl Default for ShipController {
             assisted_reverse_speed: 25.0,
             assisted_strafe_speed: 20.0,
             assisted_vertical_speed: 15.0,
-            forward_speed_curve: vec![
-                DVec2::new(30.0, 45.0),
-                DVec2::new(150.0, 60.0),
-                DVec2::new(600.0, 150.0),
-                DVec2::new(1200.0, 350.0),
-            ],
+            forward_speed_curve: Curve {
+                interp: Interp::Smooth,
+                points: vec![
+                    DVec2::new(30.0, 45.0),
+                    DVec2::new(150.0, 60.0),
+                    DVec2::new(600.0, 150.0),
+                    DVec2::new(1200.0, 350.0),
+                ],
+            },
             drag_k: 0.0005,
             landing_sink_factor: 0.5,
+        }
+    }
+}
+
+/// Assisted-flight controller: its tuning plus the runtime state.
+#[derive(Clone, Debug)]
+pub struct ShipController {
+    pub tuning: ShipTuning,
+    pub hover_assist: bool,   // H
+    pub horizon_follow: bool, // L
+    pub brake_active: bool,
+    pub commanded_speed: f64,
+    pub forward_speed_limit: f64,
+    pub terrain_clearance: f64,
+    /// Effective L influence; zero outside the field.
+    pub planet_follow_strength: f64,
+
+    horizon_w: DVec3,
+    correction_accel: DVec3,
+}
+
+impl Default for ShipController {
+    fn default() -> Self {
+        ShipController::new(ShipTuning::default())
+    }
+}
+
+impl ShipController {
+    pub fn new(tuning: ShipTuning) -> Self {
+        ShipController {
+            tuning,
             hover_assist: true,
             horizon_follow: true,
             brake_active: false,
@@ -264,29 +383,20 @@ impl Default for ShipController {
             correction_accel: DVec3::ZERO,
         }
     }
-}
 
-impl ShipController {
     pub fn clearance_at(&self, env: &impl PlanetEnv, world: DVec3) -> f64 {
         let p = env.to_planet(world);
         p.length() - env.radius() - env.height_at(p.normalize())
     }
 
     pub fn forward_speed_at(&self, clearance: f64) -> f64 {
-        let c = &self.forward_speed_curve;
-        for i in 1..c.len() {
-            let (lo, hi) = (c[i - 1], c[i]);
-            if clearance <= hi.x {
-                return lerp(lo.y, hi.y, smoothstep(lo.x, hi.x, clearance));
-            }
-        }
-        c[c.len() - 1].y
+        self.tuning.forward_speed_curve.eval(clearance)
     }
 
     /// Uses the cruise envelope as well as actual speed so authority does not
     /// fade away throughout a stop.
     pub fn braking_budget(&self, speed: f64, cruise_limit: f64) -> f64 {
-        self.assisted_braking.max(speed.max(cruise_limit) / self.assisted_braking_time)
+        self.tuning.assisted_braking.max(speed.max(cruise_limit) / self.tuning.assisted_braking_time)
     }
 
     /// Preview terrain over the braking horizon. Lowers the requested speed; it
@@ -295,9 +405,9 @@ impl ShipController {
         let p = env.to_planet(world);
         let up = p.normalize();
         let sink = (-v.dot(up)).max(0.0);
-        let lead = 0.5 + self.thrust_response_time * 3.0;
-        let preview_time = lead + v.length() / self.assisted_braking;
-        let mut clearance = current - sink * lead - sink * sink / (2.0 * self.assisted_braking);
+        let lead = 0.5 + self.tuning.thrust_response_time * 3.0;
+        let preview_time = lead + v.length() / self.tuning.assisted_braking;
+        let mut clearance = current - sink * lead - sink * sink / (2.0 * self.tuning.assisted_braking);
         let horizon_w = up.cross(v) / p.length() * env.field_strength_at(world);
         for i in 1..4 {
             let t = preview_time * i as f64 / 3.0;
@@ -326,7 +436,7 @@ impl ShipController {
         self.planet_follow_strength = if self.horizon_follow { env.field_strength_at(origin) } else { 0.0 };
 
         let mut thrust_in = input.thrust;
-        let mut boost = if input.boost { self.boost_factor } else { 1.0 };
+        let mut boost = if input.boost { self.tuning.boost_factor } else { 1.0 };
         self.brake_active = input.piloted && input.brake;
         if self.brake_active {
             thrust_in = DVec3::ZERO;
@@ -334,7 +444,7 @@ impl ShipController {
         }
 
         let mut v = body.lin_vel;
-        let drag = -v * self.drag_k * density * v.length();
+        let drag = -v * self.tuning.drag_k * density * v.length();
         if self.hover_assist || self.brake_active {
             let pos = env.to_planet(origin);
             let up = pos.normalize();
@@ -343,7 +453,7 @@ impl ShipController {
             self.forward_speed_limit = self.forward_speed_at(clearance);
             if boost > 1.0 {
                 // Boost stays gentle near terrain and cannot exceed high-altitude cruise.
-                let top = self.forward_speed_curve.last().unwrap().y;
+                let top = self.tuning.forward_speed_curve.last_y();
                 self.forward_speed_limit = lerp(
                     self.forward_speed_limit,
                     top.min(self.forward_speed_limit * 2.5),
@@ -351,24 +461,24 @@ impl ShipController {
                 );
             }
             let request = limit_length(thrust_in, 1.0);
-            let forward_speed = if request.z < 0.0 { self.forward_speed_limit } else { self.assisted_reverse_speed };
+            let forward_speed = if request.z < 0.0 { self.forward_speed_limit } else { self.tuning.assisted_reverse_speed };
             let mut goal = b * DVec3::new(
-                request.x * self.assisted_strafe_speed,
-                request.y * self.assisted_vertical_speed,
+                request.x * self.tuning.assisted_strafe_speed,
+                request.y * self.tuning.assisted_vertical_speed,
                 request.z * forward_speed,
             );
             // Slow the requested descent near the ground, without clamping momentum.
             let sink_goal = -goal.dot(up);
-            let sink_cap = 2.0f64.max(self.terrain_clearance.max(0.0) * self.landing_sink_factor);
+            let sink_cap = 2.0f64.max(self.terrain_clearance.max(0.0) * self.tuning.landing_sink_factor);
             if sink_goal > sink_cap {
                 goal += up * (sink_goal - sink_cap);
             }
             self.commanded_speed = goal.length();
-            let correction = (goal - v) / self.velocity_response_time;
+            let correction = (goal - v) / self.tuning.velocity_response_time;
             let reference_speed = v.length().max(goal.length().max(self.forward_speed_limit));
-            let mut budget = self.assisted_accel.max(reference_speed / self.assisted_acceleration_time);
+            let mut budget = self.tuning.assisted_accel.max(reference_speed / self.tuning.assisted_acceleration_time);
             if boost > 1.0 {
-                budget = budget.max(self.assisted_boost_accel);
+                budget = budget.max(self.tuning.assisted_boost_accel);
             }
             if correction.dot(v) < 0.0 {
                 budget = self.braking_budget(v.length(), self.forward_speed_limit);
@@ -376,7 +486,7 @@ impl ShipController {
             // Only neutral piloted input gets the gentle release response (Godot's is_zero_approx).
             let neutral = thrust_in.abs().max_element() < 1e-5;
             if input.piloted && neutral && !self.brake_active {
-                budget = self.release_braking.max(v.length().max(self.forward_speed_limit) / self.release_braking_time);
+                budget = self.tuning.release_braking.max(v.length().max(self.forward_speed_limit) / self.tuning.release_braking_time);
             }
             let mut curve_accel = DVec3::ZERO;
             if self.horizon_follow {
@@ -389,7 +499,7 @@ impl ShipController {
             let desired = limit_length(correction, available);
             self.correction_accel = self
                 .correction_accel
-                .lerp(desired, 1.0 - (-dt / self.thrust_response_time).exp());
+                .lerp(desired, 1.0 - (-dt / self.tuning.thrust_response_time).exp());
             // Bound acceleration, never snap velocity to the new target.
             self.correction_accel = limit_length(self.correction_accel, available);
             let thrust = support + self.correction_accel;
@@ -397,16 +507,16 @@ impl ShipController {
         } else {
             self.correction_accel = DVec3::ZERO;
             self.commanded_speed = 0.0;
-            v += (b * limit_length(thrust_in, 1.0)) * self.thrust_accel * boost * dt;
+            v += (b * limit_length(thrust_in, 1.0)) * self.tuning.thrust_accel * boost * dt;
             v += gravity * dt;
-            v -= v * (self.drag_k * density * v.length() * dt).min(1.0);
+            v -= v * (self.tuning.drag_k * density * v.length() * dt).min(1.0);
         }
 
         // Rotation: mouse movement is an angle per step, capped at turn_rate and
         // smoothed a little so the ship has some weight.
-        let pitch = (-input.mouse.y / dt).clamp(-self.turn_rate, self.turn_rate);
-        let yaw = (-input.mouse.x / dt).clamp(-self.turn_rate, self.turn_rate);
-        let target_w = b * DVec3::new(pitch, yaw, input.roll * self.roll_rate);
+        let pitch = (-input.mouse.y / dt).clamp(-self.tuning.turn_rate, self.tuning.turn_rate);
+        let yaw = (-input.mouse.x / dt).clamp(-self.tuning.turn_rate, self.tuning.turn_rate);
+        let target_w = b * DVec3::new(pitch, yaw, input.roll * self.tuning.roll_rate);
         // Smooth the player's rotation, not the changing planet frame.
         let control_w = body.ang_vel - self.horizon_w;
         self.horizon_w = DVec3::ZERO;

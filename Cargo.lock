@@ -3113,6 +3113,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "grab_core"
+version = "0.1.0"
+dependencies = [
+ "glam 0.32.1",
+ "serde",
+ "serde_json",
+ "walker_core",
+]
+
+[[package]]
 name = "grid"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

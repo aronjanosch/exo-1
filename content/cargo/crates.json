@@ -1,0 +1,8 @@
+{
+  "_comment": "Standard crate sizes (grab_core::CrateTable, #80). Edges double from row to row. hands: 1 = one hand, 2 = both hands (slower, no sprint, no jump). holders: players needed to lift it. TODO(initiator): masses and edges are starting values for the playtest. Bigger sizes (machines) come later.",
+  "sizes": [
+    { "name": "small", "extents": [0.5, 0.5, 0.5], "mass": 15.0, "hands": 1, "holders": 1 },
+    { "name": "medium", "extents": [1.0, 1.0, 1.0], "mass": 60.0, "hands": 2, "holders": 1 },
+    { "name": "large", "extents": [2.0, 2.0, 2.0], "mass": 240.0, "hands": 2, "holders": 2 }
+  ]
+}

@@ -537,7 +537,7 @@ def head_frame(f):
     return (lo + hi) / 2, (hi - lo) / 2, hi
 
 
-def norb_head_parts(f, hc, he, hi, front):
+def norb_head_parts(f, hc, he, hi, front, hair="mop"):
     """Eyes, brows, ears, nose and hair: the parts in 3D."""
     for s, look, lid, low in ((-1, (0.18, 0.0), 0.34, 0.12), (1, (-0.12, -0.05), 0.27, 0.1)):
         r = 0.036 if s < 0 else 0.039
@@ -550,19 +550,63 @@ def norb_head_parts(f, hc, he, hi, front):
         loc = f.surface((s, hc.y, hc.z - 0.005), (-s, 0, 0))
         f.blob("skin", loc + Vector((s * 0.008, 0.005, 0)), (0.014, 0.024, 0.036), rot=(0, s * -15, 0))
 
+    HAIRSTYLES[hair](f, hc, he)
+    bridge = front(0, hc.z - 0.008, inset=0.006)
+    tip = bridge + Vector((0, -0.028, -0.038))
+    f.tube("skin", [bridge, bridge + Vector((0, -0.016, -0.02)), tip], 0.012, taper=[0.6, 0.9, 1.1], sides=10)
+    f.blob("skin", tip + Vector((0, 0.002, 0)), (0.019, 0.017, 0.016))
+    for s in (-1, 1):
+        f.blob("skin", tip + Vector((s * 0.014, 0.008, 0.002)), (0.01, 0.01, 0.009))
+
+
+# ---------------------------------------------------------------- hairstyles
+#
+# A hairstyle is a short cap hugging the scalp (one shell cut from the body)
+# plus a few chunky locks that make the style readable from afar.
+
+def head_point(f, hc, he, az, el, lift=0.0):
+    """Point on the head surface: az degrees around (0 front, 90 right, 180
+    back), el degrees up from the head centre; lifted `lift` metres outwards."""
+    a, e = math.radians(az), math.radians(el)
+    d = Vector((math.sin(a) * math.cos(e), -math.cos(a) * math.cos(e), math.sin(e)))
+    hit = f.surface(hc + d * 0.6, -d)
+    if hit is None:
+        hit = hc + Vector((d.x * he.x, d.y * he.y, d.z * he.z))
+    return hit + d * lift
+
+
+def outward(az):
+    a = math.radians(az)
+    return Vector((math.sin(a), -math.cos(a), 0))
+
+
+def short_cap(f, hc, he, front, side, back, bumps=(), lift=0.006):
+    """Close-cropped hair: hairline heights (relative to the head centre) at
+    the front, sides and back; bumps = [((x, y, z) offset, height)]."""
+    def hairline(co):
+        fb = max(-1.0, min(1.0, (co.y - hc.y) / he.y))
+        line = side + (front - side) * -fb if fb < 0 else side + (back - side) * fb
+        return co.z > hc.z + line
+
+    def displace(co, normal):
+        rel = co - hc
+        return normal * (lift + sum(h * math.exp(-((rel - Vector(c)).length / 0.04) ** 2) for c, h in bumps))
+
+    f.hair_shell(hairline, displace, thickness=0.006)
+
+
+def hair_mop(f, hc, he):
+    """Messy mop with pointed bangs."""
     def front_line(x):
-        """Fringe edge: pointed bangs (a triangle wave) across the forehead."""
         phase = (x / 0.032) % 1.0
         return hc.z + 0.06 + 0.022 * abs(phase - 0.5) * 2
 
     def hairline(co):
-        fb = max(-1.0, min(1.0, (co.y - hc.y) / he.y))  # -1 front, +1 back
+        fb = max(-1.0, min(1.0, (co.y - hc.y) / he.y))
         side, back = hc.z + 0.03, hc.z - 0.085
-        fringe = front_line(co.x)
-        line = side + (fringe - side) * -fb if fb < 0 else side + (back - side) * fb
+        line = side + (front_line(co.x) - side) * -fb if fb < 0 else side + (back - side) * fb
         return co.z > line
 
-    # Messy clumps on top and at the sides; the fringe droops over the forehead.
     rng = np.random.default_rng(3)
     tufts = [((x + rng.uniform(-0.01, 0.01), y, 0.11), rng.uniform(0.03, 0.05))
              for x in (-0.06, -0.02, 0.02, 0.06) for y in (-0.05, 0.0, 0.05)]
@@ -570,20 +614,50 @@ def norb_head_parts(f, hc, he, hi, front):
 
     def displace(co, normal):
         rel = co - hc
-        lift = 0.005 + sum(a * math.exp(-((rel - Vector(c)).length / 0.03) ** 2) for c, a in tufts)
-        d = normal * lift
-        if co.y < hc.y:  # near the fringe edge: pull forward and down
-            near = math.exp(-((co.z - front_line(co.x)) / 0.025) ** 2)
-            d += Vector((0, -0.012, -0.016)) * near
+        d = normal * (0.005 + sum(a * math.exp(-((rel - Vector(c)).length / 0.03) ** 2) for c, a in tufts))
+        if co.y < hc.y:
+            d += Vector((0, -0.012, -0.016)) * math.exp(-((co.z - front_line(co.x)) / 0.025) ** 2)
         return d
 
     f.hair_shell(hairline, displace)
-    bridge = front(0, hc.z - 0.008, inset=0.006)
-    tip = bridge + Vector((0, -0.028, -0.038))
-    f.tube("skin", [bridge, bridge + Vector((0, -0.016, -0.02)), tip], 0.012, taper=[0.6, 0.9, 1.1], sides=10)
-    f.blob("skin", tip + Vector((0, 0.002, 0)), (0.019, 0.017, 0.016))
-    for s in (-1, 1):
-        f.blob("skin", tip + Vector((s * 0.014, 0.008, 0.002)), (0.01, 0.01, 0.009))
+
+
+def hair_mullet(f, hc, he):
+    """Business in front, party in the back: short on top, a mane down the neck."""
+    short_cap(f, hc, he, front=0.075, side=0.035, back=-0.09,
+              bumps=[((0.0, -0.02, 0.12), 0.012), ((0.0, 0.04, 0.11), 0.01)])
+    for i, az in enumerate(np.linspace(118, 242, 9)):
+        start = head_point(f, hc, he, az, 30, 0.004)
+        mid = head_point(f, hc, he, az, -12, 0.022)
+        end = mid + outward(az) * 0.02 + Vector((0, 0, -0.13 - 0.02 * (i % 2)))
+        flip = end + outward(az) * 0.03 + Vector((0, 0, 0.012))
+        f.tube("hair", [start, mid, end, flip], 0.026, taper=[0.8, 1.0, 0.75, 0.35])
+
+
+def hair_side_part(f, hc, he):
+    """Side parting with a big swoosh across the forehead."""
+    short_cap(f, hc, he, front=0.08, side=0.03, back=-0.07)
+    for i, az0 in enumerate((-20, -45, -70, -95, -120, -145)):
+        az1 = az0 + 110 - i * 8
+        start = head_point(f, hc, he, az0, 52, 0.004)
+        mid = head_point(f, hc, he, (az0 + az1) / 2, 72 - i * 3, 0.03 - i * 0.003)
+        end = head_point(f, hc, he, az1, 32 + i * 4, 0.012)
+        f.tube("hair", [start, mid, end], 0.03 - i * 0.002, taper=[0.6, 1.0, 0.45])
+
+
+def hair_spikes(f, hc, he):
+    """Short spikes standing up, a little swept back."""
+    short_cap(f, hc, he, front=0.075, side=0.04, back=-0.06)
+    for el, azs in ((48, range(-150, 180, 40)), (72, range(-135, 180, 60)), (88, (0,))):
+        for az in azs:
+            base = head_point(f, hc, he, az, el, -0.004)
+            a, e = math.radians(az), math.radians(min(el + 12, 90))
+            d = Vector((math.sin(a) * math.cos(e), -math.cos(a) * math.cos(e), math.sin(e)))
+            tip = base + d * 0.07 + Vector((0, 0.02, 0))
+            f.tube("hair", [base, tip], 0.024, taper=[1.0, 0.08], sides=8)
+
+
+HAIRSTYLES = {"mop": hair_mop, "mullet": hair_mullet, "side_part": hair_side_part, "spikes": hair_spikes}
 
 
 def front_of(f):
@@ -606,15 +680,15 @@ def norb():
     return f
 
 
-def norb_painted():
+def norb_painted(name="NorbPainted", hair="mop", slot=(0.1, 0.55, 0.85)):
     """Human with painted layers: face details and clothes live on a texture,
-    only eyes, brows, hair and ears are shapes (as in Schedule I)."""
-    skin, slot = (0.93, 0.72, 0.58), (0.1, 0.55, 0.85)
-    f = Figure("NorbPainted", skin=skin, suit=slot)
+    only eyes, brows, nose, ears and hair are shapes (as in Schedule I)."""
+    skin = (0.93, 0.72, 0.58)
+    f = Figure(name, skin=skin, suit=slot)
     j = norb_body(f)
     body = f.body
     hc, he, hi = head_frame(f)
-    norb_head_parts(f, hc, he, hi, front_of(f))
+    norb_head_parts(f, hc, he, hi, front_of(f), hair=hair)
 
     unwrap(body, zoom=(lambda co: co.z > 1.42, 2.5, Vector(hc)))
     zones = [m.name for m in body.data.materials]
@@ -689,10 +763,10 @@ def norb_painted():
         pt.put(pt.mask("shoes") & (np.abs(z - lz) < 0.0025) & (y < -0.03) & (y > -0.11)
                & (np.abs(np.abs(x) - 0.095) < 0.022), (0.3, 0.3, 0.32))
 
-    img = pt.image("NorbPainted_paint")
+    img = pt.image(f"{name}_paint")
     for i, zname in enumerate(zones):
         key = names[zname]
-        body.data.materials[i] = painted_material(f"Body_{key}", img, tint=slot if key == "suit" else None)
+        body.data.materials[i] = painted_material(f"{name}_{key}", img, tint=slot if key == "suit" else None)
     return f
 
 
@@ -819,7 +893,19 @@ def wobbel():
     return f
 
 
-FIGURES = [norb, norb_painted, glibbo, zorp, wobbel]
+def norb_mullet():
+    return norb_painted("NorbMullet", "mullet", slot=(0.9, 0.3, 0.15))
+
+
+def norb_side_part():
+    return norb_painted("NorbSidePart", "side_part", slot=(0.2, 0.7, 0.3))
+
+
+def norb_spikes():
+    return norb_painted("NorbSpikes", "spikes", slot=(0.6, 0.3, 0.8))
+
+
+FIGURES = [norb, norb_painted, norb_mullet, norb_side_part, norb_spikes, glibbo, zorp, wobbel]
 
 
 # ---------------------------------------------------------------- review renders

@@ -14,7 +14,9 @@ import sys
 
 import bmesh
 import bpy
+import numpy as np
 from mathutils import Vector
+from mathutils.geometry import intersect_ray_tri
 
 SHARP_ANGLE = math.radians(50)
 
@@ -136,11 +138,12 @@ class Figure:
 
     # -- features
 
-    def eye(self, centre, radius, look=(0, 0), lid=0.3, lid_tilt=30, lid_mat="skin"):
+    def eye(self, centre, radius, look=(0, 0), lid=0.3, lid_tilt=30, lid_mat="skin", low_lid=0.0):
         """Eyeball with a dot pupil and a heavy upper lid.
 
         look shifts the pupil (x, z) in fractions of the radius; lid is how far
-        down the lid comes (0 open, 0.6 half shut), lid_tilt turns it forward.
+        down the lid comes (0 open, 0.6 half shut), lid_tilt turns it forward;
+        low_lid does the same from below.
         """
         centre = Vector(centre)
         seg, rings = (24, 14) if radius > 0.08 else (14, 8)
@@ -149,6 +152,9 @@ class Figure:
         self.blob("pupil", pupil, (radius * 0.24, radius * 0.12, radius * 0.24), segments=8, rings=4)
         if lid:
             self.cap(lid_mat, centre, (radius * 1.08,) * 3, keep_above=1 - 2 * lid, tilt=lid_tilt,
+                     segments=seg, rings=rings)
+        if low_lid:
+            self.cap(lid_mat, centre, (radius * 1.06,) * 3, keep_above=1 - 2 * low_lid, tilt=180 - 15,
                      segments=seg, rings=rings)
 
     def eye_on(self, head, dx, dz, radius, **kw):
@@ -210,6 +216,121 @@ class Figure:
             p = c + Vector((n.x * rx, n.y * ry, n.z * rz)) * 0.985
             self.blob(mat, p, (r, r, r))
 
+    def skin_body(self, joints, bones, levels=2):
+        """One seamless body from a joint skeleton (skin modifier + subdivision).
+
+        joints: {name: ((x, y, z), (radius_a, radius_b))}; the first joint is the root.
+        bones: [(joint_a, joint_b, zones)]; zones is a material name or
+        ((t, material), ...) to colour a bone from joint_a (t=0) to joint_b (t=1),
+        each entry from its t on. Clothes are colour zones, as on a painted body.
+        """
+        names = list(joints)
+        mesh = bpy.data.meshes.new(f"{self.name}_body")
+        mesh.from_pydata([joints[n][0] for n in names],
+                         [(names.index(a), names.index(b)) for a, b, _ in bones], [])
+        o = bpy.data.objects.new(f"{self.name}_body", mesh)
+        bpy.context.collection.objects.link(o)
+        o.modifiers.new("skin", "SKIN")
+        for i, n in enumerate(names):
+            v = mesh.skin_vertices[0].data[i]
+            v.radius = joints[n][1]
+            v.use_root = i == 0
+        sub = o.modifiers.new("subdiv", "SUBSURF")
+        sub.levels = levels
+        bpy.ops.object.select_all(action="DESELECT")
+        o.select_set(True)
+        bpy.context.view_layer.objects.active = o
+        for m in list(o.modifiers):
+            bpy.ops.object.modifier_apply(modifier=m.name)
+
+        mats = sorted({z for _, _, zs in bones for z in ([zs] if isinstance(zs, str) else [m for _, m in zs])})
+        for m in mats:
+            o.data.materials.append(self.m[m])
+        segs = [(Vector(joints[a][0]), Vector(joints[b][0]), zs) for a, b, zs in bones]
+        radii = [(sum(joints[a][1]) / 2, sum(joints[b][1]) / 2) for a, b, _ in bones]
+
+        def nearest(c):
+            """Bone whose surface is closest (distance minus its radius), and t."""
+            best = None
+            for i, (a, b, _) in enumerate(segs):
+                ab = b - a
+                t = max(0.0, min(1.0, (c - a).dot(ab) / ab.length_squared))
+                d = (a + ab * t - c).length - (radii[i][0] + (radii[i][1] - radii[i][0]) * t)
+                if best is None or d < best[0]:
+                    best = (d, i, t)
+            return best[1], best[2]
+
+        # Cut a clean edge loop where a bone changes colour (hems, cuffs),
+        # only through the faces that belong to that bone.
+        bm = bmesh.new()
+        bm.from_mesh(o.data)
+        for i, (a, b, zs) in enumerate(segs):
+            if isinstance(zs, str):
+                continue
+            for t0, _ in zs[1:]:
+                bm.faces.ensure_lookup_table()
+                faces = [fc for fc in bm.faces if nearest(fc.calc_center_median())[0] == i]
+                geom = list({e for fc in faces for e in fc.edges}) + faces + list({v for fc in faces for v in fc.verts})
+                bmesh.ops.bisect_plane(bm, geom=geom, plane_co=a + (b - a) * t0, plane_no=(b - a).normalized())
+        for fc in bm.faces:
+            i, t = nearest(fc.calc_center_median())
+            zs = segs[i][2]
+            name = zs if isinstance(zs, str) else [m for t0, m in zs if t >= t0][-1]
+            fc.material_index = mats.index(name)
+        bm.to_mesh(o.data)
+        bm.free()
+        o.data.calc_loop_triangles()
+        vs = o.data.vertices
+        self.body_tris = [tuple(vs[i].co.copy() for i in t.vertices) for t in o.data.loop_triangles]
+        self.parts.append(o)
+        self.body = o
+        return o
+
+    def surface(self, origin, direction):
+        """First hit on the body from origin along direction, or None."""
+        origin, direction = Vector(origin), Vector(direction).normalized()
+        hits = [p for tri in self.body_tris if (p := intersect_ray_tri(*tri, direction, origin, True))]
+        return min(hits, key=lambda p: (p - origin).length, default=None)
+
+    def hair_shell(self, hairline, displace, thickness=0.008, mat="hair"):
+        """Hair as one mesh: the scalp above `hairline(co) -> bool` is copied off
+        the body, its edge smoothed, moved by `displace(co, normal) -> Vector`,
+        then given thickness and smoothed."""
+        bm = bmesh.new()
+        bm.from_mesh(self.body.data)
+        # Work on a finer copy of the upper head so the hairline can have detail.
+        top = max(v.co.z for v in bm.verts)
+        bmesh.ops.delete(bm, geom=[fc for fc in bm.faces if fc.calc_center_median().z < top - 0.3],
+                         context="FACES")
+        bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=2, use_grid_fill=True, smooth=1.0)
+        keep = {fc for fc in bm.faces if all(hairline(v.co) for v in fc.verts)}
+        bmesh.ops.delete(bm, geom=[fc for fc in bm.faces if fc not in keep], context="FACES")
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+        for _ in range(1):
+            bmesh.ops.smooth_vert(bm, verts=[v for v in bm.verts if v.is_boundary], factor=0.5,
+                                  use_axis_x=True, use_axis_y=True, use_axis_z=True)
+        bm.normal_update()
+        moved = [(v, displace(v.co.copy(), v.normal.copy())) for v in bm.verts]
+        for v, d in moved:
+            v.co += d
+        me = bpy.data.meshes.new("hair")
+        bm.to_mesh(me)
+        bm.free()
+        for poly in me.polygons:
+            poly.material_index = 0
+        o = bpy.data.objects.new("hair", me)
+        bpy.context.collection.objects.link(o)
+        me.materials.clear()
+        sol = o.modifiers.new("solidify", "SOLIDIFY")
+        sol.thickness = thickness
+        sol.offset = -1
+        bpy.ops.object.select_all(action="DESELECT")
+        o.select_set(True)
+        bpy.context.view_layer.objects.active = o
+        for m in list(o.modifiers):
+            bpy.ops.object.modifier_apply(modifier=m.name)
+        return self._add(o, mat)
+
     def build(self, x=0.0):
         bpy.ops.object.select_all(action="DESELECT")
         for p in self.parts:
@@ -223,6 +344,136 @@ class Figure:
         o.data.set_sharp_from_angle(angle=SHARP_ANGLE)
         o.location.x = x
         return o
+
+
+# ---------------------------------------------------------------- painted layers
+
+def linear_to_srgb(c):
+    c = np.clip(c, 0.0, 1.0)
+    return np.where(c <= 0.0031308, c * 12.92, 1.055 * np.power(c, 1 / 2.4) - 0.055)
+
+
+class Paint:
+    """A texture painted by functions of the body surface, like Schedule I's layers.
+
+    Every texel knows where it sits on the body (P, metres) and which zone it
+    belongs to; painters set colours with masks over P. Clothes in the Suit
+    zone are painted in grey so the slot colour can be multiplied on top.
+    """
+
+    def __init__(self, body, zone_names, size=1024):
+        self.size = size
+        me = body.data
+        me.calc_loop_triangles()
+        uv = me.uv_layers.active.data
+        co = np.array([v.co for v in me.vertices])
+        pos = np.zeros((size, size, 3))
+        zone = np.full((size, size), -1, dtype=np.int32)
+        for t in me.loop_triangles:
+            uvs = np.array([uv[i].uv for i in t.loops]) * size - 0.5
+            pts = co[list(t.vertices)]
+            x0, y0 = np.maximum(np.floor(uvs.min(0)).astype(int), 0)
+            x1, y1 = np.minimum(np.ceil(uvs.max(0)).astype(int), size - 1)
+            if x1 < x0 or y1 < y0:
+                continue
+            xs, ys = np.meshgrid(np.arange(x0, x1 + 1), np.arange(y0, y1 + 1))
+            a, b, c = uvs
+            m = np.array([[b[0] - a[0], c[0] - a[0]], [b[1] - a[1], c[1] - a[1]]])
+            det = np.linalg.det(m)
+            if abs(det) < 1e-12:
+                continue
+            inv = np.linalg.inv(m)
+            d = np.stack([xs - a[0], ys - a[1]], -1) @ inv.T
+            w = np.stack([1 - d[..., 0] - d[..., 1], d[..., 0], d[..., 1]], -1)
+            inside = (w >= -0.02).all(-1)
+            pos[ys[inside], xs[inside]] = w[inside] @ pts
+            zone[ys[inside], xs[inside]] = t.material_index
+        self.covered = zone >= 0
+        self.P = pos
+        self.zone = zone
+        self.zone_names = zone_names
+        self.C = np.ones((size, size, 3))
+
+    def mask(self, zone):
+        return self.zone == self.zone_names.index(zone)
+
+    def fill(self, zone, rgb):
+        self.C[self.mask(zone)] = rgb
+
+    def put(self, where, rgb, opacity=1.0):
+        """Blend rgb over the texels in mask `where` (opacity may be an array)."""
+        a = np.broadcast_to(np.asarray(opacity, dtype=float), where.shape)[where][:, None]
+        self.C[where] = self.C[where] * (1 - a) + np.asarray(rgb) * a
+
+    def stroke(self, zone, points, width, rgb, front=True):
+        """A line through `points` (x, z) on the front (or back) of a zone."""
+        P = self.P
+        x, z = P[..., 0], P[..., 2]
+        dist = np.full(x.shape, np.inf)
+        for (ax, az), (bx, bz) in zip(points, points[1:]):
+            vx, vz = bx - ax, bz - az
+            t = np.clip(((x - ax) * vx + (z - az) * vz) / (vx * vx + vz * vz), 0, 1)
+            dist = np.minimum(dist, np.hypot(x - (ax + t * vx), z - (az + t * vz)))
+        side = P[..., 1] < 0 if front else P[..., 1] > 0
+        self.put(self.mask(zone) & side & (dist < width), rgb)
+
+    def image(self, name):
+        """Bleed colours into the empty texels (no seams when mipmapped) and
+        return the result as a packed sRGB image."""
+        C, filled = self.C.copy(), self.covered.copy()
+        for _ in range(8):
+            for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+                src = np.roll(np.roll(filled, dy, 0), dx, 1)
+                take = src & ~filled
+                C[take] = np.roll(np.roll(C, dy, 0), dx, 1)[take]
+                filled |= take
+        img = bpy.data.images.new(name, self.size, self.size)
+        rgba = np.concatenate([linear_to_srgb(C), np.ones((self.size, self.size, 1))], -1)
+        img.pixels.foreach_set(rgba.astype(np.float32).ravel())
+        img.pack()
+        return img
+
+
+def painted_material(name, img, tint=None):
+    """Material showing `img`; tint (the slot colour) is multiplied on top."""
+    m = bpy.data.materials.new(name)
+    nt = m.node_tree
+    bsdf = nt.nodes["Principled BSDF"]
+    bsdf.inputs["Roughness"].default_value = 0.6
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = img
+    out = tex.outputs["Color"]
+    if tint:
+        mix = nt.nodes.new("ShaderNodeMix")
+        mix.data_type = "RGBA"
+        mix.blend_type = "MULTIPLY"
+        mix.inputs["Factor"].default_value = 1.0
+        nt.links.new(out, mix.inputs["A"])
+        mix.inputs["B"].default_value = (*tint, 1)
+        out = mix.outputs["Result"]
+    nt.links.new(out, bsdf.inputs["Base Color"])
+    return m
+
+
+def unwrap(body, zoom=None):
+    """UV-unwrap the body. zoom=(predicate, factor) gives matching vertices
+    (the face) more texels by unwrapping them scaled up."""
+    me = body.data
+    saved = [v.co.copy() for v in me.vertices]
+    if zoom:
+        pick, factor, centre = zoom
+        for v in me.vertices:
+            if pick(v.co):
+                v.co = centre + (v.co - centre) * factor
+    bpy.ops.object.select_all(action="DESELECT")
+    body.select_set(True)
+    bpy.context.view_layer.objects.active = body
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.01)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    for v, co in zip(me.vertices, saved):
+        v.co = co
 
 
 def surface_front(blob, dx, dz, inset=0.0):
@@ -239,49 +490,209 @@ def mirrored(f, fn):
 
 # ---------------------------------------------------------------- the four
 
+def norb_body(f):
+    """The human base body: one seamless mesh, no face; returns the skeleton."""
+    # Skeleton: (position, (radius across, radius front-back)); front is -Y.
+    j = {
+        "pelvis": ((0, 0, 0.9), (0.13, 0.09)),
+        "waist": ((0, 0, 1.03), (0.12, 0.085)),
+        "chest": ((0, 0, 1.2), (0.14, 0.09)),
+        "neck": ((0, 0, 1.37), (0.045, 0.045)),
+        "jaw": ((0, -0.012, 1.47), (0.1, 0.1)),
+        "head": ((0, -0.005, 1.57), (0.12, 0.12)),
+        "crown": ((0, 0.005, 1.67), (0.1, 0.1)),
+    }
+    for s, side in ((-1, "l"), (1, "r")):
+        j |= {
+            f"hip_{side}": ((s * 0.085, 0, 0.84), (0.065, 0.065)),
+            f"knee_{side}": ((s * 0.09, 0.0, 0.47), (0.047, 0.047)),
+            f"ankle_{side}": ((s * 0.09, 0.01, 0.09), (0.04, 0.04)),
+            f"toe_{side}": ((s * 0.095, -0.15, 0.045), (0.055, 0.04)),
+            f"shoulder_{side}": ((s * 0.17, 0, 1.3), (0.045, 0.045)),
+            f"elbow_{side}": ((s * 0.23, 0.02, 1.04), (0.034, 0.034)),
+            f"wrist_{side}": ((s * 0.255, -0.01, 0.8), (0.026, 0.022)),
+            f"hand_{side}": ((s * 0.265, -0.02, 0.69), (0.032, 0.014)),
+            f"thumb_{side}": ((s * 0.245, -0.06, 0.74), (0.011, 0.011)),
+        }
+    shirt_then_skin = ((0.0, "suit"), (0.45, "skin"))
+    bones = [("pelvis", "waist", ((0.0, "pants"), (0.25, "suit"))), ("waist", "chest", "suit"),
+             ("chest", "neck", ((0.0, "suit"), (0.8, "skin"))), ("neck", "jaw", "skin"),
+             ("jaw", "head", "skin"), ("head", "crown", "skin")]
+    for side in "lr":
+        bones += [("pelvis", f"hip_{side}", "pants"), (f"hip_{side}", f"knee_{side}", "pants"),
+                  (f"knee_{side}", f"ankle_{side}", ((0.0, "pants"), (0.93, "shoes"))),
+                  (f"ankle_{side}", f"toe_{side}", "shoes"),
+                  ("chest", f"shoulder_{side}", "suit"), (f"shoulder_{side}", f"elbow_{side}", shirt_then_skin),
+                  (f"elbow_{side}", f"wrist_{side}", "skin"), (f"wrist_{side}", f"hand_{side}", "skin"),
+                  (f"wrist_{side}", f"thumb_{side}", "skin")]
+    f.skin_body(j, bones)
+    return j
+
+
+
+def head_frame(f):
+    head_vs = [v.co for v in f.body.data.vertices if v.co.z > 1.47]
+    lo = Vector([min(v[i] for v in head_vs) for i in range(3)])
+    hi = Vector([max(v[i] for v in head_vs) for i in range(3)])
+    return (lo + hi) / 2, (hi - lo) / 2, hi
+
+
+def norb_head_parts(f, hc, he, hi, front):
+    """Eyes, brows, ears, nose and hair: the parts in 3D."""
+    for s, look, lid, low in ((-1, (0.18, 0.0), 0.34, 0.12), (1, (-0.12, -0.05), 0.27, 0.1)):
+        r = 0.036 if s < 0 else 0.039
+        f.eye(front(s * 0.045, hc.z + 0.01, inset=r * 0.55), r, look, lid=lid, lid_tilt=18, low_lid=low)
+    for s, angle, dz in ((-1, -6, 0.0), (1, 10, 0.006)):
+        pts = [front(s * x, hc.z + 0.055 + dz + (x - 0.04) * math.tan(math.radians(angle)), inset=-0.004)
+               for x in (0.016, 0.04, 0.064)]
+        f.tube("hair", pts, 0.009, taper=[0.7, 1, 0.8], sides=6)
+    for s in (-1, 1):
+        loc = f.surface((s, hc.y, hc.z - 0.005), (-s, 0, 0))
+        f.blob("skin", loc + Vector((s * 0.008, 0.005, 0)), (0.014, 0.024, 0.036), rot=(0, s * -15, 0))
+
+    def front_line(x):
+        """Fringe edge: pointed bangs (a triangle wave) across the forehead."""
+        phase = (x / 0.032) % 1.0
+        return hc.z + 0.06 + 0.022 * abs(phase - 0.5) * 2
+
+    def hairline(co):
+        fb = max(-1.0, min(1.0, (co.y - hc.y) / he.y))  # -1 front, +1 back
+        side, back = hc.z + 0.03, hc.z - 0.085
+        fringe = front_line(co.x)
+        line = side + (fringe - side) * -fb if fb < 0 else side + (back - side) * fb
+        return co.z > line
+
+    # Messy clumps on top and at the sides; the fringe droops over the forehead.
+    rng = np.random.default_rng(3)
+    tufts = [((x + rng.uniform(-0.01, 0.01), y, 0.11), rng.uniform(0.03, 0.05))
+             for x in (-0.06, -0.02, 0.02, 0.06) for y in (-0.05, 0.0, 0.05)]
+    tufts += [((s * 0.1, y, 0.04), 0.02) for s in (-1, 1) for y in (-0.02, 0.04)]
+
+    def displace(co, normal):
+        rel = co - hc
+        lift = 0.005 + sum(a * math.exp(-((rel - Vector(c)).length / 0.03) ** 2) for c, a in tufts)
+        d = normal * lift
+        if co.y < hc.y:  # near the fringe edge: pull forward and down
+            near = math.exp(-((co.z - front_line(co.x)) / 0.025) ** 2)
+            d += Vector((0, -0.012, -0.016)) * near
+        return d
+
+    f.hair_shell(hairline, displace)
+    bridge = front(0, hc.z - 0.008, inset=0.006)
+    tip = bridge + Vector((0, -0.028, -0.038))
+    f.tube("skin", [bridge, bridge + Vector((0, -0.016, -0.02)), tip], 0.012, taper=[0.6, 0.9, 1.1], sides=10)
+    f.blob("skin", tip + Vector((0, 0.002, 0)), (0.019, 0.017, 0.016))
+    for s in (-1, 1):
+        f.blob("skin", tip + Vector((s * 0.014, 0.008, 0.002)), (0.01, 0.01, 0.009))
+
+
+def front_of(f):
+    def front(x, z, inset=0.0):
+        loc = f.surface((x, -1, z), (0, 1, 0))
+        assert loc is not None, f"nothing on the body at x={x:.3f}, z={z:.3f}"
+        return loc + Vector((0, inset, 0))
+    return front
+
+
 def norb():
-    """Human: lanky, big head, sleepy bulging eyes, T-shirt in the slot colour."""
+    """Human with a modelled face: nose and mouth as shapes on the body."""
     f = Figure("Norb", skin=(0.93, 0.72, 0.58), suit=(0.1, 0.55, 0.85))
+    norb_body(f)
+    hc, he, hi = head_frame(f)
+    front = front_of(f)
+    norb_head_parts(f, hc, he, hi, front)
+    f.tube("mouth", [front(x, hc.z - 0.085 + 6 * x * x, inset=0.002) for x in (-0.042, -0.02, 0.0, 0.02, 0.038)],
+           0.0055, sides=6)
+    return f
 
-    def leg(f, s):
-        x = s * 0.095
-        f.shoe(x, s)
-        f.tube("pants", [(x, 0, 0.08), (x, 0.015, 0.45), (x, 0, 0.84)], 0.058, taper=[0.85, 0.9, 1.15])
-        f.torus("pants", (x, 0, 0.1), 0.05, 0.012, segments=16)
 
-    def arm(f, s):
-        sh = (s * 0.2, 0, 1.15)
-        f.tube("suit", [sh, (s * 0.24, 0.01, 1.04)], 0.052)
-        f.torus("suit", (s * 0.245, 0.01, 1.03), 0.045, 0.01, segments=16)
-        f.tube("skin", [(s * 0.23, 0.01, 1.08), (s * 0.27, 0.02, 0.95), (s * 0.27, -0.03, 0.8)], 0.032)
-        f.hand((s * 0.27, -0.035, 0.8), s, fingers=3)
+def norb_painted():
+    """Human with painted layers: face details and clothes live on a texture,
+    only eyes, brows, hair and ears are shapes (as in Schedule I)."""
+    skin, slot = (0.93, 0.72, 0.58), (0.1, 0.55, 0.85)
+    f = Figure("NorbPainted", skin=skin, suit=slot)
+    j = norb_body(f)
+    body = f.body
+    hc, he, hi = head_frame(f)
+    norb_head_parts(f, hc, he, hi, front_of(f))
 
-    mirrored(f, leg)
-    mirrored(f, arm)
-    # trousers and belt
-    f.blob("pants", (0, 0, 0.86), (0.17, 0.12, 0.09))
-    f.torus("belt", (0, 0, 0.9), 0.165, 0.016, squash=0.72)
-    f.box("metal", (0, -0.125, 0.9), (0.04, 0.012, 0.03))
-    # T-shirt: chest, belly, collar, hem
-    f.blob("suit", (0, 0, 1.06), (0.2, 0.13, 0.15))
-    f.blob("suit", (0, -0.005, 0.95), (0.18, 0.13, 0.11))
-    f.torus("suit", (0, 0, 0.88), 0.17, 0.018, squash=0.74)
-    f.torus("suit", (0, -0.005, 1.2), 0.055, 0.014, segments=16)
-    # neck and head
-    f.tube("skin", [(0, 0, 1.18), (0, -0.01, 1.26), (0, -0.02, 1.32)], 0.045)
-    head = f.blob("skin", (0, -0.02, 1.49), (0.18, 0.17, 0.2), segments=20, rings=12)
-    f.blob("skin", (0, -0.06, 1.35), (0.11, 0.1, 0.07))  # chin and jaw
-    mirrored(f, lambda f, s: f.ear(head, s, dz=0.0))
-    f.cap("hair", (0, 0.0, 1.5), (0.19, 0.185, 0.205), keep_above=0.15, tilt=-18, segments=20, rings=12)
-    for x, z, r in ((-0.09, 1.66, 0.06), (0.0, 1.69, 0.07), (0.1, 1.66, 0.055), (0.05, 1.63, 0.05)):
-        f.blob("hair", (x, -0.07, z), (r, r * 0.8, r * 0.7))
-    f.eye_on(head, -0.072, 0.03, 0.055, look=(0.15, 0.0), lid=0.32, lid_tilt=25)
-    f.eye_on(head, 0.072, 0.03, 0.06, look=(-0.1, -0.05), lid=0.25, lid_tilt=25)
-    f.brow(head, -0.075, 0.1, 0.07, angle=-8)
-    f.brow(head, 0.075, 0.105, 0.07, angle=12)
-    f.blob("skin", surface_front(head, 0, -0.04, inset=0.008), (0.028, 0.045, 0.035))
-    f.mouth(head, -0.12, 0.055, open_=0.014)
-    f.torus("belt", (-0.27, -0.03, 0.82), 0.03, 0.008, segments=12)  # wristwatch
+    unwrap(body, zoom=(lambda co: co.z > 1.42, 2.5, Vector(hc)))
+    zones = [m.name for m in body.data.materials]
+    names = {f.m[k].name: k for k in ("skin", "suit", "pants", "shoes")}
+    pt = Paint(body, [names[z] for z in zones])
+    P = pt.P
+    x, y, z = P[..., 0], P[..., 1], P[..., 2]
+    skin_dark = tuple(c * 0.62 for c in skin)
+
+    # skin: face lines, blush, freckles
+    pt.fill("skin", skin)
+    ez, mz = hc.z + 0.01, hc.z - 0.085
+    pt.stroke("skin", [(xx, mz + 6 * xx * xx) for xx in np.linspace(-0.042, 0.04, 9)], 0.0042, (0.36, 0.07, 0.08))
+    for s in (-1, 1):
+        pt.stroke("skin", [(s * xx, ez - 0.05 - 0.15 * (xx - s * 0.045 * s) ** 2) for xx in (0.028, 0.045, 0.062)],
+                  0.0018, tuple(c * 0.78 for c in skin))
+        cheek = np.hypot(x - s * 0.068, z - (ez - 0.065))
+        pt.put(pt.mask("skin") & (y < 0) & (cheek < 0.03), (0.95, 0.5, 0.48), np.clip(1 - cheek / 0.03, 0, 1) * 0.35)
+    rng = np.random.default_rng(7)
+    for _ in range(14):
+        s = rng.choice((-1, 1))
+        fx, fz = s * rng.uniform(0.03, 0.085), ez - rng.uniform(0.035, 0.08)
+        pt.put(pt.mask("skin") & (y < 0) & (np.hypot(x - fx, z - fz) < 0.0032), (0.7, 0.42, 0.3), 0.7)
+    for s in (-1, 1):  # knuckle lines on the fists
+        for k in range(3):
+            hz = j[f"hand_{'l' if s < 0 else 'r'}"][0][2] + 0.02 - k * 0.012
+            pt.put(pt.mask("skin") & (np.abs(z - hz) < 0.0016) & (np.abs(x - s * 0.265) < 0.03) & (y < -0.02),
+                   skin_dark)
+
+    # shirt (grey, the slot colour multiplies on top): stitched collar, cuffs, hem, a planet print
+    pt.fill("suit", (1, 1, 1))
+    seam = (0.62, 0.62, 0.62)
+    neck_a, neck_b = Vector(j["chest"][0]), Vector(j["neck"][0])
+    nz = neck_a.z + (neck_b.z - neck_a.z) * 0.8
+    pt.put(pt.mask("suit") & (z > nz - 0.022), seam)
+    pt.put(pt.mask("suit") & (z > nz - 0.03) & (z < nz - 0.026), seam)
+    pt.put(pt.mask("suit") & (z < 0.948) & (z > 0.944), seam)
+    for side in "lr":
+        a, b = Vector(j[f"shoulder_{side}"][0]), Vector(j[f"elbow_{side}"][0])
+        plane, normal = a + (b - a) * 0.45, (b - a).normalized()
+        rel = P - np.array(plane)
+        d = rel @ np.array(normal)
+        off_axis = np.linalg.norm(rel - d[..., None] * np.array(normal), axis=-1)
+        pt.put(pt.mask("suit") & (d > -0.02) & (d < -0.016) & (off_axis < 0.07), seam)
+    px, pz = 0.045, 1.16
+    ring = np.hypot((x - px) / 0.055, (z - pz) / 0.016)
+    disc = np.hypot(x - px, z - pz)
+    front_chest = pt.mask("suit") & (y < 0)
+    pt.put(front_chest & (disc < 0.03), (0.35, 0.35, 0.35))
+    pt.put(front_chest & (disc < 0.03) & (z > pz + 0.01) & (x < px - 0.005), (0.55, 0.55, 0.55))
+    pt.put(front_chest & (np.abs(ring - 1) < 0.12) & ~((disc < 0.03) & (z > pz)), (0.2, 0.2, 0.2))
+
+    # trousers: belt and buckle, fly, pockets, cuffs
+    pants = (0.16, 0.18, 0.3)
+    pt.fill("pants", pants)
+    dark = tuple(c * 0.6 for c in pants)
+    pt.put(pt.mask("pants") & (z > 0.902), (0.3, 0.17, 0.08))
+    pt.put(pt.mask("pants") & (z > 0.905) & (z < 0.928) & (np.abs(x) < 0.02) & (y < 0), (0.8, 0.75, 0.55))
+    pt.stroke("pants", [(0.0, 0.9), (0.0, 0.81), (0.012, 0.79)], 0.0025, dark)
+    for s in (-1, 1):
+        pt.stroke("pants", [(s * 0.055, 0.9), (s * 0.085, 0.86), (s * 0.115, 0.85)], 0.0025, dark)
+        az = j[f"knee_{'l' if s < 0 else 'r'}"][0][2]
+        ankle = j[f"ankle_{'l' if s < 0 else 'r'}"][0][2]
+        cuff = az + (ankle - az) * 0.93
+        pt.put(pt.mask("pants") & (z < cuff + 0.035) & (z > cuff + 0.031), dark)
+
+    # shoes: sole, toe cap line, laces
+    pt.fill("shoes", (0.9, 0.9, 0.87))
+    pt.put(pt.mask("shoes") & (z < 0.022), (0.2, 0.2, 0.22))
+    pt.put(pt.mask("shoes") & (z < 0.03) & (z > 0.026), (0.55, 0.55, 0.55))
+    for lz in (0.062, 0.075, 0.088):
+        pt.put(pt.mask("shoes") & (np.abs(z - lz) < 0.0025) & (y < -0.03) & (y > -0.11)
+               & (np.abs(np.abs(x) - 0.095) < 0.022), (0.3, 0.3, 0.32))
+
+    img = pt.image("NorbPainted_paint")
+    for i, zname in enumerate(zones):
+        key = names[zname]
+        body.data.materials[i] = painted_material(f"Body_{key}", img, tint=slot if key == "suit" else None)
     return f
 
 
@@ -408,7 +819,7 @@ def wobbel():
     return f
 
 
-FIGURES = [norb, glibbo, zorp, wobbel]
+FIGURES = [norb, norb_painted, glibbo, zorp, wobbel]
 
 
 # ---------------------------------------------------------------- review renders
@@ -453,12 +864,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--renders", help="directory for the review renders")
     ap.add_argument("--blend", help="save the lineup scene for a look in Blender")
+    ap.add_argument("--only", help="build just these figures, e.g. Norb,NorbPainted")
     args = ap.parse_args(argv)
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
+    only = [n.strip().lower() for n in args.only.split(",")] if args.only else None
+    makers = [m for m in FIGURES if not only or m.__name__.replace("_", "") in only]
     spacing = 1.2
-    xs = [(i - (len(FIGURES) - 1) / 2) * spacing for i in range(len(FIGURES))]
-    figures = [make().build(x) for make, x in zip(FIGURES, xs)]
+    xs = [(i - (len(makers) - 1) / 2) * spacing for i in range(len(makers))]
+    figures = [make().build(x) for make, x in zip(makers, xs)]
     for o in figures:
         tris = sum(len(p.vertices) - 2 for p in o.data.polygons)
         top = max((o.matrix_world @ v.co).z for v in o.data.vertices)

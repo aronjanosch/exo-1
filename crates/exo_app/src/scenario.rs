@@ -455,6 +455,37 @@ fn hold_until(name: &'static str, ks: &'static [KeyCode], limit: f64, mut done: 
     })
 }
 
+/// Hold Ctrl until the ship rests (well below the landed check's 0.05 m/s). From the first hull
+/// contact on it must not slide: pressed down onto a slope it used to slide 20 s. Tipping from the
+/// first corner onto the slope moves the centre a little (0.3 m on the 14 degree slope of `full`).
+fn land(name: &'static str) -> Step {
+    Box::new(move |w, c| {
+        if c.t == 0.0 {
+            begin(w, c, name);
+            keys(w, &[KeyCode::ControlLeft], true);
+            c.p.remove("touch");
+        }
+        let pos = ship_frame_of(w).origin;
+        if with_ship(w, |s| s.grounded) && !c.p.contains_key("touch") {
+            c.p.insert("touch", pos);
+        }
+        let v = ship_vel(w).length();
+        if c.t > 3.0 && v < 0.02 || c.t >= 90.0 {
+            keys(w, &[KeyCode::ControlLeft], false);
+            let up = planet(w).up(pos);
+            let slide = c.p.get("touch").map(|t| {
+                let d = pos - *t;
+                (d - up * d.dot(up)).length()
+            });
+            let agl = above_ground(w);
+            end(w, c, format!("{:.1} s, ground {agl:.2} m, speed {v:.3} m/s, slid {:.3} m after touchdown", c.t, slide.unwrap_or(f64::NAN)));
+            check(c, slide.is_some_and(|s| s < 0.5), format!("{name}: no slide after touchdown ({:.3} m)", slide.unwrap_or(f64::NAN)));
+            return true;
+        }
+        false
+    })
+}
+
 /// Point the nose like a player with the mouse: yaw/pitch rate proportional to the error,
 /// at most the controller's turn rate. `elevation` is the wanted angle above the horizon.
 fn aim(name: &'static str, elevation_deg: f64, secs: f64) -> Step {
@@ -1795,15 +1826,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
             s.push(hold_until("firm brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 0.5));
             s.push(aim("level out", 0.0, 3.0));
             s.push(hold_until("descend to 120 m above ground", &[KeyCode::ControlLeft, KeyCode::ShiftLeft], 180.0, |w| above_ground(w) < 120.0));
-            // Until well below the check's 0.05 m/s: a ship that touched down on a slope slides
-            // and settles slowly, and ending at the check's own threshold made it a coin toss.
-            s.push(hold_until("land", &[KeyCode::ControlLeft], 60.0, {
-                let mut t = 0.0;
-                move |w| {
-                    t += 1.0 / 60.0;
-                    t > 3.0 && ship_vel(w).length() < 0.02
-                }
-            }));
+            s.push(land("land"));
             s.push(Box::new(|w, c| {
                 let (v, agl) = (ship_vel(w).length(), above_ground(w));
                 check(c, v < 0.05 && agl < 1.0, format!("landed: {v:.3} m/s, {agl:.2} m above ground"));
@@ -2109,13 +2132,7 @@ fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step, out
         c.v.insert("bumps0", w.resource::<crate::ship::CameraEffects>().0.bumps as f64);
         true
     }));
-    s.push(hold_until("land", &[KeyCode::ControlLeft], 90.0, {
-        let mut t = 0.0;
-        move |w| {
-            t += 1.0 / 60.0;
-            t > 3.0 && ship_vel(w).length() < 0.02
-        }
-    }));
+    s.push(land("land"));
     s.push(Box::new(|w, c| {
         let bumps = w.resource::<crate::ship::CameraEffects>().0.bumps as f64 - c.v["bumps0"];
         check(c, (1.0..=2.0).contains(&bumps), format!("camera: {bumps} touchdown bump(s) on landing"));

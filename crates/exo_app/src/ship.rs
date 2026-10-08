@@ -22,6 +22,8 @@ pub struct Ship {
     pub lag: Lag,
     /// The mouse as a virtual joystick (bindings `ship_mode: "vjoy"`); centred while nobody pilots.
     pub stick: VirtualStick,
+    /// A hull collider touches something (the ground; ships do not touch each other).
+    pub grounded: bool,
 }
 
 /// A ship owned by another player: kinematic proxy driven from snapshots (net module).
@@ -68,7 +70,7 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, tuning: &ShipTuni
     let (w, h, d) = (4.6f32, 3.2f32, 8.3f32);
     let ship = commands
         .spawn((
-            Ship { ctl: ShipController::new(tuning.clone()), piloted: false, parked: true, test_input: FlightInput::default(), lag: Lag::default(), stick: VirtualStick::default() },
+            Ship { ctl: ShipController::new(tuning.clone()), piloted: false, parked: true, test_input: FlightInput::default(), lag: Lag::default(), stick: VirtualStick::default(), grounded: false },
             RigidBody::Static,
             Position(pos),
             Rotation(rot),
@@ -151,10 +153,13 @@ pub fn ship_control(
     bindings: Res<Bindings>,
     settings: Res<crate::settings::Settings>,
     warp: Res<crate::warp::WarpDrive>,
-    mut q: Query<(&mut Ship, &Position, &Rotation, &mut LinearVelocity, &mut AngularVelocity)>,
+    mut q: Query<(Entity, &mut Ship, &Position, &Rotation, &mut LinearVelocity, &mut AngularVelocity)>,
+    collisions: Collisions,
+    colliders: Query<(Entity, &ColliderOf)>,
 ) {
     let dt = time.delta_secs_f64();
-    for (mut ship, pos, rot, mut lv, mut av) in &mut q {
+    for (e, mut ship, pos, rot, mut lv, mut av) in &mut q {
+        ship.grounded = colliders.iter().any(|(c, of)| of.body == e && collisions.collisions_with(c).next().is_some());
         let clearance = ship.ctl.clearance_at(planet.as_ref(), pos.0);
         ship.lag.step(clearance, lv.0.length(), dt);
         // From the pre-ramp on the drive holds the ship.
@@ -184,9 +189,9 @@ pub fn ship_control(
                     (DVec2::ZERO, actions.turn + ship.stick.deflection(mb.vjoy_deadzone, mb.vjoy_max_angle, Some(&mb.vjoy_curve)))
                 }
             };
-            FlightInput { thrust: actions.move_dir, roll: actions.roll, boost: actions.boost, brake: actions.brake, mouse, turn: turn.clamp(DVec2::NEG_ONE, DVec2::ONE), piloted: true }
+            FlightInput { thrust: actions.move_dir, roll: actions.roll, boost: actions.boost, brake: actions.brake, mouse, turn: turn.clamp(DVec2::NEG_ONE, DVec2::ONE), piloted: true, grounded: ship.grounded }
         } else {
-            FlightInput { piloted: false, ..ship.test_input }
+            FlightInput { piloted: false, grounded: ship.grounded, ..ship.test_input }
         };
         let body = BodyState { pos: pos.0, rot: rot.0, lin_vel: lv.0, ang_vel: av.0 };
         let (v, w) = ship.ctl.step(&body, &input, planet.as_ref(), dt);

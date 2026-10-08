@@ -116,11 +116,19 @@ pub fn setup_view(mut commands: Commands) {
                 c.spawn((HudItem(i), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
             }
         });
+    // Seated: the quantum drive's state, target and what to do (J, N, aim while calibrating).
+    commands.spawn((
+        QuantumLine,
+        Text::new(""),
+        TextFont { font_size: FontSize::Px(16.0), ..default() },
+        TextColor(Color::srgb(0.55, 0.95, 1.0)),
+        Node { position_type: PositionType::Absolute, top: px(38), left: px(8), ..default() },
+    ));
     commands.spawn((
         Hud,
         Text::new(""),
         TextFont { font_size: FontSize::Px(14.0), ..default() },
-        Node { position_type: PositionType::Absolute, top: px(40), left: px(8), ..default() },
+        Node { position_type: PositionType::Absolute, top: px(64), left: px(8), ..default() },
         Visibility::Hidden,
     ));
     // Virtual joystick: dead-zone circle, a line of dots from the centre, the marker.
@@ -138,6 +146,8 @@ pub fn setup_view(mut commands: Commands) {
 
 #[derive(Component)]
 pub struct HudItem(u8);
+#[derive(Component)]
+pub struct QuantumLine;
 #[derive(Component)]
 pub struct StickHud;
 #[derive(Component)]
@@ -167,7 +177,9 @@ pub fn update_flight_hud(
     wd: Res<crate::warp::WarpDrive>,
     players: Query<&Player>,
     ships: Query<(&Ship, &avian3d::prelude::Position, &avian3d::prelude::LinearVelocity, &avian3d::prelude::Rotation)>,
-    mut items: Query<(&HudItem, &mut Text)>,
+    mut items: Query<(&HudItem, &mut Text), Without<QuantumLine>>,
+    mut quantum: Query<&mut Text, With<QuantumLine>>,
+    sys: Res<crate::warp::SystemRes>,
     mut debug: Query<&mut Visibility, (With<Hud>, Without<StickHud>)>,
     mut stick: Query<&mut Visibility, (With<StickHud>, Without<Hud>)>,
     mut nodes: Query<(&mut Node, Option<&StickDeadzone>, Option<&StickMarker>, Option<&StickDot>), Or<(With<StickDeadzone>, With<StickMarker>, With<StickDot>)>>,
@@ -203,6 +215,9 @@ pub fn update_flight_hud(
     }];
     for (item, mut t) in &mut items {
         **t = texts[item.0 as usize].clone();
+    }
+    if let Ok(mut t) = quantum.single_mut() {
+        **t = if pl.seated { warp_line(&wd, &sys.0, sp.0) } else { String::new() };
     }
     if let Ok(mut vis) = debug.single_mut() {
         *vis = if view.debug_hud { Visibility::Inherited } else { Visibility::Hidden };
@@ -272,6 +287,20 @@ pub fn setup_warp_view(
         WorldPose::default(),
         Visibility::Hidden,
     ));
+    // Speed dust (#27): fixed in the world, the ship flies past it.
+    let dust = meshes.add(Cuboid::new(0.05, 0.05, 1.0));
+    let dust_mat = materials.add(StandardMaterial { base_color: Color::srgba(0.9, 0.95, 1.0, 0.5), unlit: true, alpha_mode: AlphaMode::Blend, ..default() });
+    for i in 0..DUST {
+        let h = |k: f32| ((i as f32 * 12.9898 + k * 78.233).sin() * 43758.547).fract().abs() as f64 - 0.5;
+        commands.spawn((
+            Dust(DVec3::new(h(1.0), h(2.0), h(3.0)) * DUST_BOX),
+            Mesh3d(dust.clone()),
+            MeshMaterial3d(dust_mat.clone()),
+            Transform::default(),
+            WorldPose::default(),
+            Visibility::Hidden,
+        ));
+    }
     let streak = meshes.add(Cuboid::new(0.04, 0.04, 1.0));
     let mat = materials.add(StandardMaterial { base_color: Color::WHITE, emissive: LinearRgba::new(6.0, 8.0, 12.0, 1.0), unlit: true, ..default() });
     for i in 0..STREAKS {
@@ -403,18 +432,11 @@ pub fn update_tunnel(
     origin: Res<RenderOrigin>,
     mut q: Query<(&Streak, &mut WorldPose, &mut Transform, &mut Visibility)>,
     mut clear: ResMut<ClearColor>,
-    fx: Res<crate::ship::CameraEffects>,
-    players: Query<&Player>,
-    ships: Query<&avian3d::prelude::LinearVelocity, With<Ship>>,
 ) {
     let warp = wd.drive.tunnel() as f32;
-    // Below the warp the same streaks show speed (#27), along the ship's course, without the tint.
-    let seated = players.single().is_ok_and(|p| p.seated);
-    let speed_level = if seated { fx.0.streak as f32 } else { 0.0 };
-    let level = warp.max(speed_level);
+    let level = warp;
     let t = time.elapsed_secs();
-    let ship_course = ships.single().ok().map(|v| v.0.normalize_or_zero()).filter(|d| *d != DVec3::ZERO);
-    let course = wd.drive.pose().map(|(_, v)| v.normalize_or_zero()).filter(|d| *d != DVec3::ZERO).or(if warp > 0.0 { None } else { ship_course });
+    let course = wd.drive.pose().map(|(_, v)| v.normalize_or_zero()).filter(|d| *d != DVec3::ZERO);
     let (Some(dir), true) = (course, level > 0.0) else {
         for (_, _, _, mut vis) in &mut q {
             *vis = Visibility::Hidden;
@@ -432,6 +454,49 @@ pub fn update_tunnel(
     }
     if warp > 0.0 {
         clear.0 = clear.0.mix(&Color::srgb(0.05, 0.10, 0.30), warp * 0.8);
+    }
+}
+
+/// A speck of speed dust: its position, world space (kept inside a box around the camera).
+#[derive(Component)]
+pub struct Dust(DVec3);
+const DUST: usize = 160;
+/// Edge of the box around the camera the dust fills (m).
+const DUST_BOX: f64 = 120.0;
+
+/// Speed dust (#27, replaces streaks from the warp tunnel, which moved with the camera and turned
+/// with the course): world-fixed specks the ship flies past; leaving the box around the camera a
+/// speck comes back on the other side. Each is stretched along the ship's velocity by the distance
+/// it covers in 1/30 s; the camera effects' streak curve thickens them in with speed.
+pub fn update_speed_dust(
+    fx: Res<crate::ship::CameraEffects>,
+    origin: Res<RenderOrigin>,
+    wd: Res<crate::warp::WarpDrive>,
+    players: Query<&Player>,
+    ships: Query<&avian3d::prelude::LinearVelocity, With<Ship>>,
+    mut q: Query<(&mut Dust, &mut WorldPose, &mut Transform, &mut Visibility)>,
+) {
+    let seated = players.single().is_ok_and(|p| p.seated);
+    let level = if seated && wd.drive.tunnel() == 0.0 { fx.0.streak } else { 0.0 };
+    let v = ships.single().map(|v| v.0).unwrap_or_default();
+    if level <= 0.0 || v.length_squared() < 1.0 {
+        for (.., mut vis) in &mut q {
+            *vis = Visibility::Hidden;
+        }
+        return;
+    }
+    let cam = origin.view;
+    let rot = DQuat::from_rotation_arc(DVec3::NEG_Z, v.normalize());
+    // Length: the way covered in 1/30 s (motion blur); the streak level only thickens them.
+    let len = (v.length() / 30.0).clamp(0.3, 15.0);
+    let thick = (level / 0.2).min(1.0);
+    for (mut d, mut pose, mut tf, mut vis) in &mut q {
+        let rel = d.0 - cam;
+        d.0 -= (rel / DUST_BOX).round() * DUST_BOX;
+        pose.pos = d.0;
+        pose.rot = rot;
+        tf.scale = Vec3::new(thick as f32, thick as f32, len as f32);
+        *vis = Visibility::Inherited;
     }
 }
 
@@ -714,6 +779,18 @@ pub fn update_hud(
 
 /// Quantum drive status: phase, gauge and aim while calibrating, speed on rails. Target and
 /// distance come from one rule: the running jump's target, else `System::effective_target`.
+fn abort_text(a: warp_core::Abort) -> String {
+    use warp_core::Abort::*;
+    match a {
+        NoTarget => "no target".into(),
+        TooLow => "too low, climb above 1.5 atmosphere heights".into(),
+        Obstructed(b) => format!("path blocked ({b:?})"),
+        NotReady => "drive not ready".into(),
+        Cancelled => "cancelled".into(),
+        CalibrationLost => "aim lost while calibrating, keep the nose on the ring".into(),
+    }
+}
+
 fn warp_line(wd: &crate::warp::WarpDrive, sys: &warp_core::System, ship: DVec3) -> String {
     use warp_core::Phase;
     let d = &wd.drive;
@@ -722,15 +799,19 @@ fn warp_line(wd: &crate::warp::WarpDrive, sys: &warp_core::System, ship: DVec3) 
     let dist = km_text(sys.planet(id).centre().distance(ship));
     match d.phase {
         Phase::Idle => {
-            let refused = wd.last_abort.map(|a| format!("  last: {a:?}")).unwrap_or_default();
-            format!("QUANTUM  ready  J: warp to {target} ({dist})  N: select{refused}")
+            let refused = wd.last_abort.map(|a| format!("  (last try: {})", abort_text(a))).unwrap_or_default();
+            // With two planets there is only one destination: the one you are not at.
+            let select = if sys.planets.len() > 2 { "  N: next target" } else { "" };
+            format!("QUANTUM  ready  J: warp to {target} ({dist}){select}{refused}")
         }
         Phase::Spooling => format!("QUANTUM  spooling {:.1}/{:.0} s  -> {target} ({dist})  aim {:.1} deg  (J cancels)", d.timer, d.cfg.spool_time, d.angle),
         Phase::Calibrating => format!(
-            "QUANTUM  calibrating {:.0} %  aim {:.1} deg{}  -> {target} ({dist})  (J cancels)",
+            "QUANTUM  calibrating {:.0} %  nose on the ring: {:.1} deg off (keep under {:.0}, lost at {:.0}){}  -> {target}  (J cancels)",
             d.gauge * 100.0,
             d.angle,
-            if d.warning { "  WARNING: hold the course" } else { "" }
+            d.cfg.calibration_angle,
+            d.cfg.warning_angle,
+            if d.warning { "  HOLD THE COURSE" } else { "" }
         ),
         Phase::PreRamp => format!("QUANTUM  engaging  -> {target} ({dist})"),
         Phase::RampUp | Phase::Cruise | Phase::RampDown => format!(

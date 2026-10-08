@@ -46,7 +46,7 @@ impl Default for CameraTuning {
         let c = |interp, pts: &[(f64, f64)]| Curve { interp, points: pts.iter().map(|&(x, y)| DVec2::new(x, y)).collect() };
         CameraTuning {
             fov_curve: c(Interp::Smooth, &[(0.0, 75.0), (100.0, 77.0), (400.0, 84.0), (2000.0, 90.0)]),
-            streak_curve: c(Interp::Smooth, &[(150.0, 0.0), (500.0, 0.2), (2000.0, 0.35)]),
+            streak_curve: c(Interp::Smooth, &[(60.0, 0.0), (200.0, 0.2), (2000.0, 0.35)]),
             look_ahead_gain: 0.25,
             look_ahead_deadzone: 0.1,
             look_ahead_max_yaw_deg: 12.0,

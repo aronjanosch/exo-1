@@ -126,3 +126,35 @@ fn decoupled_thrust_only_along_input() {
     assert!((b.lin_vel.x - 20.0).abs() < 1e-9, "no damping across the input: {}", b.lin_vel);
     assert!(b.lin_vel.z < -20.0, "thrust forward: {}", b.lin_vel);
 }
+
+#[test]
+fn grounded_with_down_input_settles_without_sliding() {
+    let env = Space(Field::default());
+    let mut c = ShipController::default();
+    // Sliding sideways on the ground, Ctrl held: only a gentle settle straight down remains.
+    let b = BodyState::default();
+    let up = env.to_planet(b.pos).normalize();
+    let mut v = DVec3::X * 1.6;
+    for _ in 0..30 {
+        let input = FlightInput { thrust: DVec3::NEG_Y, grounded: true, piloted: true, ..Default::default() };
+        v = c.step(&BodyState { lin_vel: v, ..b }, &input, &env, DT).0;
+    }
+    assert!((v - up * v.dot(up)).length() < 1e-9, "no sideways speed on the ground: {v}");
+    assert!(v.dot(up) < 0.0 && v.dot(up) > -0.6, "gentle settle: {v}");
+    // The ground stops the sinking (what the contact does); resting a moment, the push ends.
+    for _ in 0..120 {
+        let input = FlightInput { thrust: DVec3::NEG_Y, grounded: true, piloted: true, ..Default::default() };
+        v = c.step(&BodyState { lin_vel: v, ..b }, &input, &env, DT).0;
+        v -= up * v.dot(up).min(0.0);
+    }
+    let input = FlightInput { thrust: DVec3::NEG_Y, grounded: true, piloted: true, ..Default::default() };
+    let pushed = c.step(&BodyState { lin_vel: v, ..b }, &input, &env, DT).0;
+    assert!(pushed.length() < 1e-3, "resting, no push: {pushed}");
+    // In the air the same input descends.
+    let input = FlightInput { thrust: DVec3::NEG_Y, piloted: true, ..Default::default() };
+    let mut v = DVec3::ZERO;
+    for _ in 0..60 {
+        v = c.step(&BodyState { lin_vel: v, ..b }, &input, &env, DT).0;
+    }
+    assert!(v.y < -1.0, "{v}");
+}

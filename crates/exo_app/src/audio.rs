@@ -12,7 +12,8 @@ const RATE: u32 = 44_100;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sound {
-    /// Loop: two low saw-ish partials with a slow wobble.
+    /// Loop: a low rumble, noise through two low-pass stages with a faint 38 Hz under it. (The
+    /// first try, a 55 Hz tone with overtones and a wobble, sounded like a toy duck.)
     Hum,
     /// Loop: noise through a one-pole low-pass, slowly breathing.
     Wind,
@@ -40,11 +41,12 @@ pub struct Synth {
     n: u64,
     noise: u32,
     lp: f32,
+    lp2: f32,
 }
 
 impl Synth {
     pub fn new(sound: Sound) -> Synth {
-        Synth { sound, n: 0, noise: 0x1234_5678, lp: 0.0 }
+        Synth { sound, n: 0, noise: 0x1234_5678, lp: 0.0, lp2: 0.0 }
     }
 
     fn white(&mut self) -> f32 {
@@ -69,9 +71,11 @@ impl Iterator for Synth {
         let tau = std::f32::consts::TAU;
         let s = match self.sound {
             Sound::Hum => {
-                let wobble = 1.0 + 0.01 * (tau * 0.7 * t).sin();
-                let f = 55.0 * wobble;
-                0.5 * (tau * f * t).sin() + 0.25 * (tau * 2.0 * f * t).sin() + 0.12 * (tau * 3.0 * f * t).sin()
+                // About 90 Hz cut-off twice: no pitch to hear, only a body.
+                let w = self.white();
+                self.lp += (w - self.lp) * 0.013;
+                self.lp2 += (self.lp - self.lp2) * 0.013;
+                self.lp2 * 9.0 + 0.08 * (tau * 38.0 * t).sin()
             }
             Sound::Wind => {
                 let w = self.white();
@@ -157,6 +161,8 @@ fn update(
     players: Query<&Player>,
     ships: Query<(&Ship, &avian3d::prelude::Position, &avian3d::prelude::LinearVelocity)>,
     mut loops: Query<(&Loop, &mut AudioSink)>,
+    time: Res<Time>,
+    mut level: Local<[f32; 2]>,
 ) {
     let (Ok(pl), Ok((ship, pos, lv))) = (players.single(), ships.single()) else { return };
     let near_ship = pl.seated || pl.ship.is_some();
@@ -165,12 +171,15 @@ fn update(
     let idle = if ship.parked { 0.0 } else { 0.08 };
     let density = flight_core::PlanetEnv::density_at(planet.as_ref(), pos.0) as f32;
     let airspeed = if pl.seated { lv.0.length() as f32 } else { 0.0 };
+    // Volumes glide (0.25 s), so thrust taps do not click the loop on and off.
+    let k = 1.0 - (-time.delta_secs() / 0.25).exp();
     for (l, mut sink) in &mut loops {
-        let v = match l.0 {
-            Sound::Hum => if near_ship { idle + 0.35 * thrust } else { 0.0 },
-            _ => density * (airspeed / 200.0).min(1.0) * 0.5,
+        let (i, want) = match l.0 {
+            Sound::Hum => (0, if near_ship { idle + 0.25 * thrust } else { 0.0 }),
+            _ => (1, density * (airspeed / 200.0).min(1.0) * 0.5),
         };
-        sink.set_volume(Volume::Linear(v));
+        level[i] += (want - level[i]) * k;
+        sink.set_volume(Volume::Linear(level[i]));
     }
     if fx.0.bumps > heard.bumps {
         heard.bumps = fx.0.bumps;

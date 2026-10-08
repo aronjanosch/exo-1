@@ -331,6 +331,34 @@ class Figure:
             bpy.ops.object.modifier_apply(modifier=m.name)
         return self._add(o, mat)
 
+    def fuse(self, parts, mat, voxel=0.003, smooth=6, triangles=2500):
+        """Melt overlapping parts into one closed surface (voxel remesh), round
+        off the joins and bring it back to about `triangles`."""
+        for o in parts:
+            self.parts.remove(o)
+        bpy.ops.object.select_all(action="DESELECT")
+        for o in parts:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = parts[0]
+        bpy.ops.object.join()
+        o = bpy.context.active_object
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+        rem = o.modifiers.new("remesh", "REMESH")
+        rem.mode = "VOXEL"
+        rem.voxel_size = voxel
+        sm = o.modifiers.new("smooth", "SMOOTH")
+        sm.factor = 0.5
+        sm.iterations = smooth
+        bpy.ops.object.modifier_apply(modifier=rem.name)
+        bpy.ops.object.modifier_apply(modifier=sm.name)
+        tris = sum(len(p.vertices) - 2 for p in o.data.polygons)
+        if tris > triangles:
+            dec = o.modifiers.new("decimate", "DECIMATE")
+            dec.ratio = triangles / tris
+            bpy.ops.object.modifier_apply(modifier=dec.name)
+        o.data.materials.clear()
+        return self._add(o, mat)
+
     def build(self, x=0.0):
         bpy.ops.object.select_all(action="DESELECT")
         for p in self.parts:
@@ -550,7 +578,9 @@ def norb_head_parts(f, hc, he, hi, front, hair="mop"):
         loc = f.surface((s, hc.y, hc.z - 0.005), (-s, 0, 0))
         f.blob("skin", loc + Vector((s * 0.008, 0.005, 0)), (0.014, 0.024, 0.036), rot=(0, s * -15, 0))
 
+    first = len(f.parts)
     HAIRSTYLES[hair](f, hc, he)
+    f.fuse(f.parts[first:], "hair")
     bridge = front(0, hc.z - 0.008, inset=0.006)
     tip = bridge + Vector((0, -0.028, -0.038))
     f.tube("skin", [bridge, bridge + Vector((0, -0.016, -0.02)), tip], 0.012, taper=[0.6, 0.9, 1.1], sides=10)
@@ -592,7 +622,7 @@ def short_cap(f, hc, he, front, side, back, bumps=(), lift=0.006):
         rel = co - hc
         return normal * (lift + sum(h * math.exp(-((rel - Vector(c)).length / 0.04) ** 2) for c, h in bumps))
 
-    f.hair_shell(hairline, displace, thickness=0.006)
+    f.hair_shell(hairline, displace, thickness=0.009)
 
 
 def hair_mop(f, hc, he):

@@ -2694,6 +2694,7 @@ dependencies = [
  "avian3d",
  "bevy",
  "flight_core",
+ "grab_core",
  "net_core",
  "planet_core",
  "serde_json",

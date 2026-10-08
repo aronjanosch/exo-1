@@ -140,7 +140,7 @@ impl Player {
 /// PhysicsStepSystems::First). Between steps the cabin colliders sit one tick behind the body
 /// (6.7 m at 400 m/s), so the walker works in the frame the colliders are in. Local coordinates
 /// are ship-relative either way.
-fn cabin_frame(
+pub(crate) fn cabin_frame(
     e: Entity,
     body: (&Position, &Rotation),
     floors: &Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
@@ -155,12 +155,12 @@ fn cabin_frame(
 }
 
 /// Gravity in a cabin, world space.
-fn cabin_gravity(lag: &flight_core::Lag, frame: &Frame, planet: &PlanetRes, at: DVec3) -> DVec3 {
+pub(crate) fn cabin_gravity(lag: &flight_core::Lag, frame: &Frame, planet: &PlanetRes, at: DVec3) -> DVec3 {
     lag.gravity(frame.rot * DVec3::Y, flight_core::PlanetEnv::gravity_at(planet, at))
 }
 
 /// Up from a gravity vector (world space); weightless keeps `fallback`.
-fn up_from(g: DVec3, fallback: DVec3) -> DVec3 {
+pub(crate) fn up_from(g: DVec3, fallback: DVec3) -> DVec3 {
     if g.length_squared() > 1e-12 { -g.normalize() } else { fallback }
 }
 

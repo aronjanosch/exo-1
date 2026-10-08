@@ -7,7 +7,7 @@ Morning report of the unattended run (brief: concept repo `docs/RUN-C-NIGHT-BRIE
 Phase 1, `feat/milestone-c-grab`:
 
 - [x] #81 `grab_core`: hold, falloff, break, throw, shared carry (test-first)
-- [ ] #80 crates as data, living in the ship's frame
+- [x] #80 crates as data, living in the ship's frame
 - [ ] #82 interaction: one verb, one prompt
 - [ ] #83 grab in the game: hands and the grab tool
 - [ ] #84 lock grid in the cabin
@@ -39,3 +39,17 @@ Checks (`cargo test -p grab_core`, 21 tests):
 - break: 1.5 m for 1.0 s. Throw: 120 N s impulse, at most 8 m/s. Holder mass 90 kg.
 - turn: 3 rad/s up to 30 kg, 20 % while touching. View turn share 100 / (100 + mass).
 - two hands: 60 % walking speed, no sprint, no jump. Friction 0.5. Sleep below 0.05 m/s for 0.5 s.
+
+## #80 crates as data, living in the ship's frame
+
+What: `exo_app/src/cargo.rs`. A `Crate` component wraps a `grab_core::CrateBody` and a frame (`ship: Option<Entity>`). Crates in a cabin step ship-local in the frame of the cabin colliders (`walker::cabin_frame`, the same one-tick-behind rule as the walker) with the cabin gravity (LAG); on the planet they step in world space with the planet's gravity and a CPU height-function safety net where no collision patch exists. Box sweeps go through Avian shape casts against the world, hulls and ramps. Leaving the cabin (bottom centre out of the cabin box by 0.3 m) or entering it (0.2 m inside) keeps the world pose and hands over the ship velocity (`CrateBody::change_frame`, same rule as the walker). While the warp drive holds the ship (`Phase::holds_ship`), crates in its cabin are not stepped at all: they are held to the ship. A crate at rest sleeps (not stepped until pushed). Rendering: a coloured box with two dark bands per size, riding the ship's interpolated pose. Every normal game and the `full` scenario start with one small test crate on the cabin floor behind the seat.
+
+Checks:
+- Scenario `crate-ride` (new, also in `cargo t` as `tests/scenario_crate_ride.rs`): the crate rests and sleeps (5.5 mm settle from its 6 mm spawn gap); take-off to 300 m, a crate pushed out over the ramp while the ship flies at 13.65 m/s: world velocity before and after the hand-over identical (jump 0.0 m/s), 2.48 m/s relative to the ship (the push); fly to space, warp Hearth -> Cinder (1000 km/s top speed, the crate held for 3082 crate steps), landing on Cinder: largest drift of the test crate 0.005 m over 7078 ticks, never outside the cabin. 0 failures.
+- `full`: new check, the test crate is still in the cabin after both flights.
+- Table test rejects a missing field: `grab_core` `table_rejects_missing_field` (#81 commit).
+
+Open points:
+- The walker walks through crates and crates do not touch each other (no collider of their own). Stacking is on the extras list.
+- Crates do not tumble and do not push the ship (see "Architecture choice").
+- Crates only know the own ship's cabin, not another player's (#86).

@@ -2,6 +2,8 @@
 //! Rendering, input, camera, HUD, physics bodies, network transport and scripted scenarios.
 //! All game values are the spike test values, not designed.
 pub mod audio;
+pub mod cargo;
+pub mod cargo_scenario;
 pub mod controls;
 pub mod env;
 pub mod hot_reload;
@@ -243,15 +245,23 @@ pub fn build_app(o: &Options) -> App {
     }
     app.add_plugins(origin::plugin);
     app.insert_resource(SpawnOffset(o.spawn_offset));
-    app.add_systems(Startup, |mut commands: Commands, planet: Res<env::PlanetRes>, tuning: Res<tuning::Tuning>, off: Res<SpawnOffset>| {
+    app.init_resource::<cargo::Crates>().init_resource::<cargo::CargoStats>();
+    let test_crates = o.scenario.is_none() || o.scenario.as_deref() == Some("full");
+    app.add_systems(Startup, move |mut commands: Commands, planet: Res<env::PlanetRes>, tuning: Res<tuning::Tuning>, off: Res<SpawnOffset>, crates: Res<cargo::Crates>| {
         walker::spawn_player(&mut commands, &planet, &tuning.walker, off.0);
-        ship::spawn_ship(&mut commands, &planet, &tuning.ship, DVec3::Y, off.0);
+        let ship = ship::spawn_ship(&mut commands, &planet, &tuning.ship, DVec3::Y, off.0);
+        if test_crates {
+            // The first object (#80): a test crate on the cabin floor, behind the seat on the right.
+            let t = &crates.0;
+            commands.spawn(cargo::crate_bundle(t, "small", Some(ship), cargo::cabin_floor_pos(t, "small", 1.2, 1.5), DVec3::NEG_Z));
+        }
     });
     app.add_systems(
         FixedUpdate,
-        (scenario::run_script.run_if(resource_exists::<scenario::Script>), controls::resolve_actions, warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, walker::walker_step, ship::camera_fx).chain(),
+        (scenario::run_script.run_if(resource_exists::<scenario::Script>), controls::resolve_actions, warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, walker::walker_step, cargo::crate_step, ship::camera_fx).chain(),
     );
-    app.add_systems(FixedLast, controls::drop_taps);
+    app.add_systems(FixedLast, (controls::drop_taps, cargo::record_crate_interp));
+    app.add_systems(FixedUpdate, cargo::crate_watch.run_if(resource_exists::<cargo::CrateWatch>).after(cargo::crate_step));
     app.add_systems(Update, ring::update_ring);
     if let Some(path) = &o.record {
         app.insert_resource(record::Recorder::new(path.clone()));
@@ -275,7 +285,7 @@ pub fn build_app(o: &Options) -> App {
         app.add_systems(FixedUpdate, (view::orbit_toggle, view::debug_hud_toggle).after(controls::resolve_actions));
         app.add_systems(
             Update,
-            (controls::read_input, view::add_ship_visuals, view::add_remote_walker_visuals, view::update_camera, terrain::update_terrain, view::update_impostors, view::update_nav_markers, view::update_aim_marker, view::update_tunnel, view::update_speed_dust, view::update_hud, view::update_flight_hud, view::update_name_tags).chain().after(ring::update_ring),
+            (controls::read_input, view::add_ship_visuals, view::add_remote_walker_visuals, cargo::add_crate_visuals, cargo::update_crate_visuals, view::update_camera, terrain::update_terrain, view::update_impostors, view::update_nav_markers, view::update_aim_marker, view::update_tunnel, view::update_speed_dust, view::update_hud, view::update_flight_hud, view::update_name_tags).chain().after(ring::update_ring),
         );
     }
     if let Some(net) = net {

@@ -452,16 +452,81 @@ pub fn add_ship_visuals(
 }
 
 /// Capsule for the walker of another player.
+/// Body colour of each slot's figure: flat, loud, one per player.
+const FIGURE_COLOURS: [(f32, f32, f32); 8] = [(0.95, 0.55, 0.15), (0.15, 0.75, 0.7), (0.6, 0.35, 0.85), (0.95, 0.85, 0.2), (0.95, 0.45, 0.65), (0.55, 0.85, 0.25), (0.35, 0.65, 0.95), (0.9, 0.25, 0.25)];
+
+/// Box parts of the figure in its own space: feet at the origin, face towards -z. A chunky
+/// low-poly figure built from code (#32): stubby legs, a block body, a big head with googly eyes
+/// and an antenna. No rig, no animation. (size, centre, colour slot: 0 body, 1 dark, 2 white, 3 black)
+pub const FIGURE_PARTS: [(Vec3, Vec3, u8); 12] = [
+    (Vec3::new(0.22, 0.7, 0.26), Vec3::new(-0.15, 0.35, 0.0), 1),
+    (Vec3::new(0.22, 0.7, 0.26), Vec3::new(0.15, 0.35, 0.0), 1),
+    (Vec3::new(0.62, 0.68, 0.38), Vec3::new(0.0, 1.04, 0.0), 0),
+    (Vec3::new(0.16, 0.6, 0.18), Vec3::new(-0.4, 1.02, 0.0), 0),
+    (Vec3::new(0.16, 0.6, 0.18), Vec3::new(0.4, 1.02, 0.0), 0),
+    (Vec3::new(0.56, 0.46, 0.5), Vec3::new(0.0, 1.62, 0.0), 0),
+    (Vec3::new(0.15, 0.15, 0.03), Vec3::new(-0.12, 1.68, -0.26), 2),
+    (Vec3::new(0.15, 0.15, 0.03), Vec3::new(0.12, 1.68, -0.26), 2),
+    (Vec3::new(0.07, 0.07, 0.03), Vec3::new(-0.1, 1.66, -0.28), 3),
+    (Vec3::new(0.07, 0.07, 0.03), Vec3::new(0.14, 1.7, -0.28), 3),
+    (Vec3::new(0.04, 0.3, 0.04), Vec3::new(0.08, 2.0, 0.0), 1),
+    (Vec3::new(0.12, 0.12, 0.12), Vec3::new(0.08, 2.18, 0.0), 0),
+];
+
+/// Another player's name over its figure (UI, placed on screen every frame).
+#[derive(Component)]
+pub struct NameTag(pub Entity);
+
 pub fn add_remote_walker_visuals(
     mut commands: Commands,
-    q: Query<Entity, Added<crate::net_live::RemoteWalker>>,
+    q: Query<(Entity, &crate::net_live::RemoteWalker), Added<crate::net_live::RemoteWalker>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for e in &q {
+    for (e, rw) in &q {
+        let (r, g, b) = FIGURE_COLOURS[(rw.owner.max(1) as usize - 1) % FIGURE_COLOURS.len()];
+        let colours = [Color::srgb(r, g, b), Color::srgb(r * 0.45, g * 0.45, b * 0.45), Color::WHITE, Color::BLACK];
+        let mats: Vec<_> = colours.iter().map(|c| materials.add(StandardMaterial { base_color: *c, perceptual_roughness: 1.0, ..default() })).collect();
         commands.entity(e).with_children(|c| {
-            c.spawn((Mesh3d(meshes.add(Capsule3d::new(0.35, 1.1))), MeshMaterial3d(materials.add(Color::srgb(0.25, 0.95, 0.45))), Transform::from_xyz(0.0, 0.9, 0.0)));
+            for (size, at, m) in FIGURE_PARTS {
+                c.spawn((Mesh3d(meshes.add(Cuboid::from_size(size))), MeshMaterial3d(mats[m as usize].clone()), Transform::from_translation(at)));
+            }
         });
+        commands.spawn((
+            NameTag(e),
+            Text::new(format!("Pilot {}", rw.owner)),
+            TextFont { font_size: FontSize::Px(15.0), ..default() },
+            TextColor(colours[0].lighter(0.25)),
+            Node { position_type: PositionType::Absolute, ..default() },
+            Visibility::Hidden,
+        ));
+    }
+}
+
+/// Name tags follow their figures on screen; hidden behind the camera or beyond 150 m.
+pub fn update_name_tags(
+    mut commands: Commands,
+    cam: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    walkers: Query<&GlobalTransform, With<crate::net_live::RemoteWalker>>,
+    mut tags: Query<(Entity, &NameTag, &mut Node, &mut Visibility, &ComputedNode)>,
+) {
+    let Ok((camera, cam_gt)) = cam.single() else { return };
+    for (tag, NameTag(of), mut node, mut vis, computed) in &mut tags {
+        let Ok(gt) = walkers.get(*of) else {
+            commands.entity(tag).despawn();
+            continue;
+        };
+        let head = gt.translation() + gt.up() * 2.5;
+        let far = head.distance(cam_gt.translation()) > 150.0;
+        match camera.world_to_viewport(cam_gt, head) {
+            Ok(p) if !far => {
+                let size = computed.size() * computed.inverse_scale_factor();
+                node.left = px(p.x - size.x * 0.5);
+                node.top = px(p.y - size.y);
+                *vis = Visibility::Inherited;
+            }
+            _ => *vis = Visibility::Hidden,
+        }
     }
 }
 
@@ -512,12 +577,15 @@ pub fn update_camera(
     mut ambient: ResMut<GlobalAmbientLight>,
     fx: Res<crate::ship::CameraEffects>,
     tuning: Res<crate::tuning::Tuning>,
+    settings: Res<crate::settings::Settings>,
 ) {
     let f = fixed.overstep_fraction_f64();
     let Ok((pl, pi)) = players.single() else { return };
     let Ok(si) = ships.single() else { return };
     let Ok((mut pose, mut fog, mut proj)) = cam.single_mut() else { return };
-    let base_fov = tuning.camera.fov_curve.eval(0.0);
+    // The settings' field of view at rest; the speed curve adds its rise to it.
+    let base_fov = settings.fov_deg;
+    let speed_fov = fx.0.fov_deg - tuning.camera.fov_curve.eval(0.0);
     if view.orbit {
         let d = DVec3::new(view.orbit_pitch.cos() * view.orbit_yaw.sin(), view.orbit_pitch.sin(), view.orbit_pitch.cos() * view.orbit_yaw.cos());
         pose.pos = planet.centre + d * 15_000.0;
@@ -552,7 +620,7 @@ pub fn update_camera(
         };
     }
     if let Projection::Perspective(p) = proj.as_mut() {
-        let fov = if pl.seated && !view.orbit { fx.0.fov_deg } else { base_fov };
+        let fov = if pl.seated && !view.orbit { base_fov + speed_fov } else { base_fov };
         p.fov = (fov as f32).to_radians();
     }
     view.cabin = (pl.ship, pl.body.is_some());

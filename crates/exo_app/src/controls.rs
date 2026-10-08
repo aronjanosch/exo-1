@@ -337,6 +337,134 @@ impl Bindings {
     }
 }
 
+/// The name of an input as the file writes it.
+pub fn input_name(i: Input) -> String {
+    match i {
+        Input::Key(k) => format!("{k:?}"),
+        Input::Pad(GamepadButton::Other(n)) => format!("Pad:Button{n}"),
+        Input::Pad(b) => format!("Pad:{b:?}"),
+    }
+}
+
+fn pad_axis_name(a: GamepadAxis) -> String {
+    match a {
+        GamepadAxis::Other(n) => format!("Axis{n}"),
+        a => format!("{a:?}"),
+    }
+}
+
+fn curve_json(c: &Curve) -> serde_json::Value {
+    let interp = match c.interp {
+        flight_core::Interp::Smooth => "smooth",
+        flight_core::Interp::Linear => "linear",
+    };
+    serde_json::json!({ "interp": interp, "points": c.points.iter().map(|p| [p.x, p.y]).collect::<Vec<_>>() })
+}
+
+impl Bindings {
+    /// The file form (`from_json` reads it back): rebinding in the settings writes it.
+    pub fn to_json(&self) -> String {
+        use serde_json::{json, Map, Value};
+        let names = |l: &[Input]| Value::from(l.iter().map(|i| input_name(*i)).collect::<Vec<_>>());
+        let mut o = Map::new();
+        o.insert("_comment".into(), "Written by the settings menu; the shipped default is content/tuning/bindings.json.".into());
+        for (a, ab) in &self.axes {
+            let mut e = Map::new();
+            e.insert("positive".into(), names(&ab.positive));
+            e.insert("negative".into(), names(&ab.negative));
+            if let Some((ax, inv)) = ab.pad {
+                e.insert("pad".into(), format!("{}{}", if inv { "-" } else { "" }, pad_axis_name(ax)).into());
+            }
+            if ab.deadzone > 0.0 {
+                e.insert("deadzone".into(), ab.deadzone.into());
+            }
+            if let Some(c) = &ab.curve {
+                e.insert("curve".into(), curve_json(c));
+            }
+            o.insert(a.name().into(), Value::Object(e));
+        }
+        for (b, l) in &self.buttons {
+            o.insert(b.name().into(), names(l));
+        }
+        for (t, l) in &self.taps {
+            o.insert(t.name().into(), names(l));
+        }
+        let m = &self.mouse;
+        o.insert(
+            "mouse".into(),
+            json!({
+                "ship_mode": match m.ship_mode { ShipMouse::Direct => "direct", ShipMouse::Vjoy => "vjoy" },
+                "ship_sensitivity": m.ship_sensitivity,
+                "walker_sensitivity": m.walker_sensitivity,
+                "vjoy_max_angle_deg": m.vjoy_max_angle.to_degrees(),
+                "vjoy_deadzone_deg": m.vjoy_deadzone.to_degrees(),
+                "vjoy_curve": curve_json(&m.vjoy_curve),
+            }),
+        );
+        o.insert("pad".into(), json!({ "look_rate_deg": self.pad.look_rate.to_degrees() }));
+        serde_json::to_string_pretty(&Value::Object(o)).unwrap()
+    }
+
+    /// The inputs of one bindable slot (the settings menu's rows).
+    pub fn slot_mut(&mut self, slot: Slot) -> &mut Vec<Input> {
+        match slot {
+            Slot::Positive(a) => &mut self.axes.iter_mut().find(|(x, _)| *x == a).unwrap().1.positive,
+            Slot::Negative(a) => &mut self.axes.iter_mut().find(|(x, _)| *x == a).unwrap().1.negative,
+            Slot::Button(b) => &mut self.buttons.iter_mut().find(|(x, _)| *x == b).unwrap().1,
+            Slot::Tap(t) => &mut self.taps.iter_mut().find(|(x, _)| *x == t).unwrap().1,
+        }
+    }
+
+    /// Rebind: the slot's first key becomes `k` (pad buttons stay).
+    pub fn rebind(&mut self, slot: Slot, k: KeyCode) {
+        let l = self.slot_mut(slot);
+        match l.iter().position(|i| matches!(i, Input::Key(_))) {
+            Some(i) => l[i] = Input::Key(k),
+            None => l.insert(0, Input::Key(k)),
+        }
+    }
+}
+
+/// A bindable list of inputs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Slot {
+    Positive(Axis),
+    Negative(Axis),
+    Button(Button),
+    Tap(Tap),
+}
+
+impl Slot {
+    /// Every keyboard-bindable slot, in menu order (the stick-only turn axes have no keys).
+    pub fn all() -> Vec<Slot> {
+        let mut v = Vec::new();
+        for a in [Axis::MoveZ, Axis::MoveX, Axis::MoveY, Axis::Roll] {
+            v.push(Slot::Negative(a));
+            v.push(Slot::Positive(a));
+        }
+        v.extend(Button::ALL.iter().map(|b| Slot::Button(*b)));
+        v.extend(Tap::ALL.iter().map(|t| Slot::Tap(*t)));
+        v
+    }
+
+    pub fn label(self) -> String {
+        match self {
+            Slot::Positive(Axis::MoveZ) => "back".into(),
+            Slot::Negative(Axis::MoveZ) => "forward".into(),
+            Slot::Positive(Axis::MoveX) => "right".into(),
+            Slot::Negative(Axis::MoveX) => "left".into(),
+            Slot::Positive(Axis::MoveY) => "up".into(),
+            Slot::Negative(Axis::MoveY) => "down".into(),
+            Slot::Positive(Axis::Roll) => "roll left".into(),
+            Slot::Negative(Axis::Roll) => "roll right".into(),
+            Slot::Positive(a) => format!("{} +", a.name()),
+            Slot::Negative(a) => format!("{} -", a.name()),
+            Slot::Button(b) => b.name().replace('_', " "),
+            Slot::Tap(t) => t.name().replace('_', " "),
+        }
+    }
+}
+
 impl Default for Bindings {
     fn default() -> Self {
         Bindings::from_json(BINDINGS).unwrap_or_else(|e| panic!("{e}"))
@@ -400,8 +528,19 @@ pub fn read_input(
     motion: Res<AccumulatedMouseMotion>,
     mut cursor: Query<&mut CursorOptions>,
     pads: Query<&Gamepad>,
+    menu: Option<Res<crate::menu::Menu>>,
 ) {
     if c.scripted {
+        return;
+    }
+    // A menu takes the keyboard and mouse: the game sees nothing held.
+    if menu.is_some_and(|m| m.open()) {
+        c.held.clear();
+        c.taps.clear();
+        c.pad_held.clear();
+        c.pad_axes.clear();
+        c.pad_taps.clear();
+        c.mouse = Vec2::ZERO;
         return;
     }
     // The first gamepad or joystick: every bound axis and button.
@@ -649,6 +788,26 @@ mod tests {
         let b = Bindings::from_json(&BINDINGS.replacen("\"pad\": \"-RightStickX\"", "\"pad\": \"Axis5\"", 1)).unwrap();
         assert_eq!(b.axis(Axis::TurnYaw).pad, Some((GamepadAxis::Other(5), false)));
         rejects("\"pad\": \"-RightStickX\"", "\"pad\": \"Wheel\"", "`turn_yaw`: unknown pad axis `Wheel`");
+    }
+
+    #[test]
+    fn bindings_file_round_trip() {
+        let b = Bindings::default();
+        let back = Bindings::from_json(&b.to_json()).unwrap();
+        assert_eq!(back.axes, b.axes);
+        assert_eq!(back.buttons, b.buttons);
+        assert_eq!(back.taps, b.taps);
+        assert!((back.mouse.vjoy_max_angle - b.mouse.vjoy_max_angle).abs() < 1e-12 && (back.pad.look_rate - b.pad.look_rate).abs() < 1e-12);
+    }
+
+    #[test]
+    fn rebind_replaces_the_first_key_and_keeps_pad_buttons() {
+        let mut b = Bindings::default();
+        b.rebind(Slot::Button(Button::Boost), KeyT);
+        assert_eq!(b.slot_mut(Slot::Button(Button::Boost))[0], Input::Key(KeyT));
+        assert!(b.slot_mut(Slot::Button(Button::Boost)).contains(&Input::Pad(GamepadButton::LeftThumb)));
+        assert!(act(&[KeyT]).boost == false && resolve(&b, &raw(&[KeyT], &[])).boost);
+        assert!(Slot::all().iter().all(|s| !s.label().is_empty()));
     }
 
     #[test]

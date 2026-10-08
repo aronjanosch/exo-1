@@ -1753,6 +1753,10 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
             }
         }
         "foreign" => foreign_steps(&mut s),
+        // #16: a warping remote ship (about 1e6 m/s) right next to the walking walker.
+        "foreign_warp" => foreign_warp_steps(&mut s),
+        // #32 and #30: another player's figure outside and in the cabin; with --menu the menus.
+        "figure" => figure_steps(&mut s, &shot_step),
         // Sprint 2 feel: input ramp, virtual-joystick mouse, boost, decoupled (#24, #25, #26).
         "flight" => flight_steps(&mut s, &shot_step, out_dir, windowed),
         // #21: edit a tuning file while running (dev builds).
@@ -2125,6 +2129,124 @@ fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step, out
     s.push(wait(0.3));
     s.push(shot_step("debug-hud-f3"));
     // Screenshots are written a few frames later.
+    s.push(wait(1.0));
+}
+
+/// #16: a remote proxy held 40 m beside the walker with the velocity of a ship in a warp
+/// (1e6 m/s): its collider AABB grows to kilometres and the walker's moving-collider sweep sees
+/// 16.7 km of relative motion per tick. The walk must be the same as without it.
+fn foreign_warp_steps(s: &mut Vec<Step>) {
+    const WARP_SPEED: f64 = 1.0e6;
+    s.push(Box::new(|w, _| {
+        // Away from the own parked ship (15 m ahead of the spawn).
+        let p = player_world(w);
+        let own = ship_frame_of(w).origin;
+        face_towards(w, p + (p - own));
+        let pl = planet(w);
+        let feet = player_world(w);
+        let up = pl.up(feet);
+        let (fwd, right) = with_player(w, |p| (p.w.forward, p.w.forward.cross(p.up)));
+        let pos = feet + right * 40.0 + up * 3.0;
+        let mut commands = w.commands();
+        let proxy = crate::net_live::spawn_proxy(&mut commands, 2, pos, walker_core::look_rot(fwd, up));
+        w.flush();
+        w.insert_resource(WarpingProxy { proxy, pos, vel: fwd * WARP_SPEED });
+        true
+    }));
+    s.push(Box::new(|w, c| {
+        hold_proxy(w);
+        if c.t == 0.0 {
+            begin(w, c, "walk 5 s beside a remote ship at 1e6 m/s");
+            c.p.insert("start", player_world(w));
+            keys(w, &[KeyCode::KeyW], true);
+        }
+        if c.t >= 5.0 {
+            keys(w, &[KeyCode::KeyW], false);
+            let d = player_world(w).distance(c.p["start"]);
+            let (v, steps) = (with_player(w, |p| p.w.vel.length()), w.resource::<WalkStats>().steps);
+            end(w, c, format!("walked {d:.2} m, speed {v:.2} m/s, {steps} steps"));
+            // Walk speed 5 m/s for 5 s, less the step-off.
+            check(c, d > 22.0 && d < 26.0 && d.is_finite(), format!("foreign warp: walked {d:.2} m in 5 s next to a ship at 1e6 m/s (free walk 24.5)"));
+            return true;
+        }
+        false
+    }));
+    s.push(Box::new(|w, c| {
+        let ok = with_player(w, |p| p.w.pos.is_finite() && p.ship.is_none());
+        check(c, ok, "foreign warp: walker stays outside, finite".into());
+        true
+    }));
+}
+
+#[derive(Resource)]
+struct WarpingProxy {
+    proxy: Entity,
+    pos: DVec3,
+    vel: DVec3,
+}
+
+/// Back to its place each tick, with the warp's velocity (the physics step moves it 16.7 km).
+fn hold_proxy(w: &mut World) {
+    let Some(wp) = w.get_resource::<WarpingProxy>() else { return };
+    let (e, pos, vel) = (wp.proxy, wp.pos, wp.vel);
+    if let Some(mut p) = w.get_mut::<Position>(e) {
+        p.0 = pos;
+    }
+    if let Some(mut v) = w.get_mut::<LinearVelocity>(e) {
+        v.0 = vel;
+    }
+}
+
+fn figure_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
+    use crate::menu::{Back, Menu, Screen};
+    let menu_shot = |screen: Screen, tag: &'static str, shot_step: &dyn Fn(&'static str) -> Step| -> Vec<Step> {
+        vec![
+            Box::new(move |w: &mut World, _: &mut Ctx| {
+                if let Some(mut m) = w.get_resource_mut::<Menu>() {
+                    m.screen = screen;
+                }
+                true
+            }),
+            wait(0.3),
+            shot_step(tag),
+            wait(0.3),
+        ]
+    };
+    for (screen, tag) in [(Screen::Main, "menu-main"), (Screen::Join, "menu-join"), (Screen::Settings(Back::Main), "menu-settings"), (Screen::Paused, "menu-paused")] {
+        s.extend(menu_shot(screen, tag, shot_step));
+    }
+    s.extend(menu_shot(Screen::None, "menu-closed", shot_step));
+    // Another player's figure 4 m in front, facing the walker (test hook: a remote walker without
+    // a network).
+    s.push(Box::new(|w, _| {
+        let p = player_world(w);
+        let own = ship_frame_of(w).origin;
+        face_towards(w, p + (p - own));
+        let (fwd, up) = with_player(w, |pl| (pl.w.forward, pl.up));
+        let at = p + fwd * 4.0;
+        w.spawn((crate::net_live::RemoteWalker { owner: 2 }, crate::origin::WorldPose { pos: at, rot: walker_core::look_rot(-fwd, up) }, Transform::default(), Visibility::default()));
+        true
+    }));
+    s.push(wait(0.5));
+    s.push(shot_step("figure-outside"));
+    // A screenshot is taken a few frames later; keep the scene until then.
+    s.push(wait(0.5));
+    // In the cabin: the walker stands at the seat, the figure near the back, both looking at it.
+    s.push(Box::new(|w, _| {
+        put_at_seat(w);
+        let f = ship_frame_of(w);
+        let at = f.to_world(DVec3::new(0.0, 0.32, 2.0));
+        let up = f.rot * DVec3::Y;
+        let mut q = w.query_filtered::<&mut crate::origin::WorldPose, With<crate::net_live::RemoteWalker>>();
+        for mut pose in q.iter_mut(w) {
+            pose.pos = at;
+            pose.rot = walker_core::look_rot(f.rot * DVec3::NEG_Z, up);
+        }
+        face_towards(w, at);
+        true
+    }));
+    s.push(wait(0.6));
+    s.push(shot_step("figure-cabin"));
     s.push(wait(1.0));
 }
 

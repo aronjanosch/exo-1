@@ -45,6 +45,8 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 - `warp`: quantum drive between the two planets: refused starts (below 1.5 atmosphere heights, ship on the path), a snapshot with an unknown planet id, calibration lost, cancel, Hearth to Cinder with a walker in the cabin (walking at top speed), landing on Cinder, back seated, an emergency exit at mid-flight and a jump on from the drop point. Checks the end point, the nose at the target's centre and the terrain after the exit. Prints flight times and speeds; with a window it also takes screenshots of the cruise (cabin and outside), the exit and 2 s after it, and checks the new planet's terrain.
 - `flight`: the flight feel: thrust and rotation ramp to full deflection in the tuned time, the virtual-joystick mouse (full, half, centred, dead zone), the pad's right stick through its dead zone and curve (no device needed), boost raises the speed limit and drops back, decoupled (C) blends over 4 s and glides, coupled again damps; camera look-ahead in the turn, wider field of view at speed, a bump on touchdown. With a window it takes screenshots (stick, boost, decoupled, landed, F3). The only scenario on the virtual joystick; the others keep the direct mouse their aiming is written for.
 - `reload`: edits a copy of the tuning files while running (dev builds): a changed turn rate takes effect, a broken file is refused, the restored file loads again.
+- `foreign_warp`: a remote ship at warp speed (1e6 m/s) held next to the walking walker; the walk must be the same as without it (#16).
+- `figure`: another player's figure in front of the walker and in the cabin; with `--menu` and a window also screenshots of the menus.
 - `net`: the network bot (take off, cruise, turn, brake, land, repeat); see below.
 
 Other options: `--distance=<m>` (distance between the planet centres, default from `content/system/system.json`; frame zones that would reach past half of it shrink to 45 %, a distance too short for the arrival radii is refused), `--origin-shift=<m>` (render-origin threshold, 0 = off, default 1000), `--radius=<m>` (first planet, overrides the file), `--record=<file>` (write the run's ship and walker path for the replay matrix), `--no-vsync` (frame-time measurements; with vsync every frame reads the display's period).
@@ -57,7 +59,11 @@ If a baseline exists, every phase whose step p95 exceeds the baseline's by more 
 
 ## Co-op (LAN)
 
-One player hosts, the others connect. Each simulates its own walker and ship; the host relays snapshots (UDP port 17441).
+Players start in the menu: **Host**, or **Join** with the host's address (type it, `ip:port`) and a slot (2 to 8, one per player), **Settings**, **Quit**. Escape in game opens the pause menu (the world keeps running). Other players show as chunky figures with a name tag ("Pilot <slot>").
+
+Settings (mouse sensitivity, field of view, volume) and rebound keys are saved in `settings/` where the game runs (`settings.json`, `bindings.json`; `--settings-dir=<dir>` picks another). A broken file falls back to the defaults with a message. Scripted and headless runs ignore them.
+
+The flags below skip the menu (scenarios, bots). One player hosts, the others connect. Each simulates its own walker and ship; the host relays snapshots (UDP port 17441).
 
 ```sh
 cargo run -p exo_app -- --net-host                               # host, slot 1

@@ -124,10 +124,15 @@ pub struct RemoteWalker {
 
 impl Net {
     pub fn new(cfg: NetConfig, sys: &warp_core::System) -> Net {
+        Net::try_new(cfg, sys).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// As `new`, with a socket that cannot bind as an error (the menu shows it).
+    pub fn try_new(cfg: NetConfig, sys: &warp_core::System) -> Result<Net, String> {
         let sock = if cfg.host {
-            UdpSocket::bind(format!("{}:{}", cfg.bind, cfg.port)).unwrap_or_else(|e| panic!("bind {}:{}: {e}", cfg.bind, cfg.port))
+            UdpSocket::bind(format!("{}:{}", cfg.bind, cfg.port)).map_err(|e| format!("bind {}:{}: {e}", cfg.bind, cfg.port))?
         } else {
-            UdpSocket::bind("0.0.0.0:0").expect("bind client socket")
+            UdpSocket::bind("0.0.0.0:0").map_err(|e| format!("bind client socket: {e}"))?
         };
         let start = Instant::now();
         // A thread owns the receive side: it stamps the arrival time at once and, on the host,
@@ -156,7 +161,7 @@ impl Net {
         let host = cfg.host;
         let host_addr = cfg.connect;
         println!("NET START slot={} host={} port={}", cfg.slot, host, cfg.port);
-        Net {
+        Ok(Net {
             cfg,
             sock,
             rx: std::sync::Mutex::new(rx),
@@ -176,7 +181,7 @@ impl Net {
             st: NetStats::default(),
             centres: sys.planets.iter().map(|p| p.centre()).collect(),
             limits: limits(sys),
-        }
+        })
     }
 
     fn now(&self) -> f64 {

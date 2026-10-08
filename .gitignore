@@ -23,3 +23,5 @@ WORKSPACE.md
 /.agents/skills/to-spec/
 /.agents/skills/to-tickets/
 /.agents/skills/writing-for-agents/
+# Player settings and rebound keys, written by the game where it runs
+/settings/

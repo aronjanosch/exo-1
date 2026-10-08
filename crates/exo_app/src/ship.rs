@@ -149,6 +149,7 @@ pub fn ship_control(
     planet: Res<PlanetRes>,
     mut actions: ResMut<Actions>,
     bindings: Res<Bindings>,
+    settings: Res<crate::settings::Settings>,
     warp: Res<crate::warp::WarpDrive>,
     mut q: Query<(&mut Ship, &Position, &Rotation, &mut LinearVelocity, &mut AngularVelocity)>,
 ) {
@@ -175,7 +176,7 @@ pub fn ship_control(
             }
             let mb = &bindings.mouse;
             let m = std::mem::take(&mut actions.look);
-            let m = DVec2::new(m.x as f64, m.y as f64) * mb.ship_sensitivity;
+            let m = DVec2::new(m.x as f64, m.y as f64) * mb.ship_sensitivity * settings.mouse_sensitivity;
             let (mouse, turn) = match mb.ship_mode {
                 ShipMouse::Direct => (m, actions.turn),
                 ShipMouse::Vjoy => {

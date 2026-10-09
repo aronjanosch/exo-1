@@ -64,14 +64,18 @@ fn viewer(players: &Query<&Player>, ships: &Query<&Position, With<Ship>>) -> Opt
     if p.seated || p.ship.is_some() { ships.single().ok().map(|s| s.0) } else { Some(p.w.pos) }
 }
 
-/// The sun and its light for a planet, clock time and viewer.
-pub fn sun_at(dn: &DayNight, sys: &SystemRes, planet: &PlanetRes, t: f64, at: DVec3, fixed: Option<DVec3>) -> Sun {
+/// The sun and its light for a planet, clock time and viewer. `dir` is the one light's direction:
+/// the planet's own sun near it, the star's true direction far from it (`daynight_core::SpaceBlend`);
+/// the cost is one direction per call.
+pub fn sun_at(dn: &DayNightRes, sys: &SystemRes, planet: &PlanetRes, t: f64, at: DVec3, fixed: Option<DVec3>) -> Sun {
     let recipe = &sys.0.planet(planet.id).recipe;
-    let (ps, look) = dn.planet(recipe).unwrap_or_else(|e| panic!("{e}"));
+    let (ps, look) = dn.0.planet(recipe).unwrap_or_else(|e| panic!("{e}"));
+    let star = sys.0.star.position();
     let up = (at - planet.centre).try_normalize().unwrap_or(DVec3::Y);
-    let dir = fixed.unwrap_or_else(|| ps.sun_dir(t));
+    let dir = fixed.unwrap_or_else(|| ps.light_dir(&dn.0.space_blend, star, planet.centre, at, t));
     let elevation_deg = dir.dot(up).clamp(-1.0, 1.0).asin().to_degrees();
-    Sun { dir, elevation_deg, hour: ps.local_hour(up, t), light: look.sample(elevation_deg), fixed }
+    let hour = ps.local_hour(up, daynight_core::to_star(star, planet.centre), t);
+    Sun { dir, elevation_deg, hour, light: look.sample(elevation_deg), fixed }
 }
 
 /// Advance the clock and recompute the sun (end of the fixed step, after the walker moved).
@@ -87,7 +91,7 @@ pub fn tick(
 ) {
     clock.t += time.delta_secs_f64() * clock.rate;
     let at = viewer(&players, &ships).unwrap_or(planet.centre + DVec3::Y * planet.radius);
-    *sun = sun_at(&dn.0, &sys, &planet, clock.t, at, sun.fixed);
+    *sun = sun_at(&dn, &sys, &planet, clock.t, at, sun.fixed);
 }
 
 fn rgb(c: [f64; 3]) -> Color {
@@ -136,12 +140,14 @@ pub fn plugin(app: &mut App) {
     let dn = DayNight::from_json(DAYNIGHT).unwrap_or_else(|e| panic!("{e}"));
     let sys = warp_core::System::from_json(crate::warp::SYSTEM).expect("system.json");
     for p in &sys.planets {
-        dn.planet(&p.recipe).unwrap_or_else(|e| panic!("{e} (planet {} in system.json)", p.name));
+        dn.check_geometry(&p.recipe, p.centre(), sys.star.position()).unwrap_or_else(|e| panic!("{e} (planet {} in system.json)", p.name));
     }
-    let (ps, look) = dn.planet(&sys.planets[0].recipe).unwrap();
-    let dir = ps.sun_dir(0.0);
+    let p0 = &sys.planets[0];
+    let (ps, look) = dn.planet(&p0.recipe).unwrap();
+    let ts = daynight_core::to_star(sys.star.position(), p0.centre());
+    let dir = ps.sun_dir(ts, 0.0);
     let elevation_deg = dir.dot(daynight_core::SPAWN_UP).asin().to_degrees();
-    app.insert_resource(Sun { dir, elevation_deg, hour: Some(ps.start_hour), light: look.sample(elevation_deg), fixed: None });
+    app.insert_resource(Sun { dir, elevation_deg, hour: ps.local_hour(daynight_core::SPAWN_UP, ts, 0.0), light: look.sample(elevation_deg), fixed: None });
     app.insert_resource(DayNightRes(dn));
     app.init_resource::<DayClock>();
     app.add_systems(FixedUpdate, tick.in_set(crate::phases::Fx::Effects));
@@ -183,6 +189,7 @@ pub fn scenario_steps(s: &mut Vec<crate::scenario::Step>) {
             let sys = w.resource::<SystemRes>().0.clone();
             let def = sys.planet(pl.id);
             let (ps, _) = w.resource::<DayNightRes>().0.planet(&def.recipe).map(|(p, l)| (p.clone(), l.clone())).unwrap();
+            let ts = daynight_core::to_star(sys.star.position(), pl.centre);
             let clock = *w.resource::<DayClock>();
             let sun = w.resource::<Sun>().clone();
             let up = (crate::scenario::player_world(w) - pl.centre).normalize();
@@ -194,8 +201,8 @@ pub fn scenario_steps(s: &mut Vec<crate::scenario::Step>) {
                 return false;
             }
             // `tick` ran after the clock's last advance: the sun belongs to `clock.t`.
-            max_err = max_err.max(sun.dir.angle_between(ps.sun_dir(clock.t)).to_degrees());
-            max_err = max_err.max((sun.elevation_deg - ps.elevation_deg(up, clock.t)).abs());
+            max_err = max_err.max(sun.dir.angle_between(ps.sun_dir(ts, clock.t)).to_degrees());
+            max_err = max_err.max((sun.elevation_deg - ps.elevation_deg(up, ts, clock.t)).abs());
             let l = &sun.light;
             samples.push(Sample { elevation: sun.elevation_deg, brightness: l.ground_brightness(), hour: sun.hour.unwrap_or(f64::NAN), sun_lux: l.sun_lux, night_lux: l.night_lux });
             if clock.t - t0 < ps.day_length_s {
@@ -207,13 +214,13 @@ pub fn scenario_steps(s: &mut Vec<crate::scenario::Step>) {
             check(c, (c.t - FAST_DAY_SECS).abs() < 0.2, format!("daynight {name}: one day of {:.0} s fast-forwarded in {:.2} s", ps.day_length_s, c.t));
             // One tick of the clock turns the sun by at most this much.
             let step = c.dt * ps.day_length_s / FAST_DAY_SECS * ps.omega();
-            let back = dir0.angle_between(ps.sun_dir(t0 + ps.day_length_s));
+            let back = dir0.angle_between(ps.sun_dir(ts, t0 + ps.day_length_s));
             let end = sun.dir.angle_between(dir0);
             check(c, back < 1e-6 && end <= step * 1.5, format!("daynight {name}: the sun is back after a day ({:.2} deg from the start, one tick {:.2} deg)", end.to_degrees(), step.to_degrees()));
             let hi = samples.iter().copied().max_by(|a, b| a.elevation.total_cmp(&b.elevation)).unwrap();
             let lo = samples.iter().copied().min_by(|a, b| a.elevation.total_cmp(&b.elevation)).unwrap();
-            let noon_el = ps.time_for_hour(up, 12.0, t0).map_or(f64::NAN, |t| ps.elevation_deg(up, t));
-            let night_el = ps.time_for_hour(up, 0.0, t0).map_or(f64::NAN, |t| ps.elevation_deg(up, t));
+            let noon_el = ps.time_for_hour(up, ts, 12.0, t0).map_or(f64::NAN, |t| ps.elevation_deg(up, ts, t));
+            let night_el = ps.time_for_hour(up, ts, 0.0, t0).map_or(f64::NAN, |t| ps.elevation_deg(up, ts, t));
             let tol = step.to_degrees() + 0.05;
             check(c, (hi.elevation - noon_el).abs() < tol && (hi.hour - 12.0).abs() < 0.2, format!("daynight {name}: highest sun {:.1} deg at {:.2} h (noon {noon_el:.1} deg)", hi.elevation, hi.hour));
             let midnight = lo.hour.is_finite() && lo.hour.min(24.0 - lo.hour) < 0.2;
@@ -229,4 +236,29 @@ pub fn scenario_steps(s: &mut Vec<crate::scenario::Step>) {
             true
         }));
     }
+    // One star for all: lit sides of every planet agree with the star direction.
+    s.push(Box::new(|w, c| {
+        let sys = w.resource::<SystemRes>().0.clone();
+        let dn = w.resource::<DayNightRes>().0.clone();
+        let (star, t) = (sys.star.position(), w.resource::<DayClock>().t);
+        for def in &sys.planets {
+            let (ps, _) = dn.planet(&def.recipe).unwrap();
+            let ts = daynight_core::to_star(star, def.centre());
+            // On the planet: its own sun, turned from the star direction by the day's rotation;
+            // the point under that sun is lit at 90 deg.
+            let at = def.centre() + def.radius * ps.sun_dir(ts, t);
+            let dir = ps.light_dir(&dn.space_blend, star, def.centre(), at, t);
+            let turn = ps.omega() * t;
+            let want = bevy::math::DQuat::from_axis_angle(ps.axis(), turn) * ts;
+            check(c, dir.angle_between(want) < 1e-9 && dir.dot((at - def.centre()).normalize()) > 1.0 - 1e-9, format!("daynight {}: at its subsolar point the sun is overhead and its direction is the star's turned by the day ({:.1} deg turned)", def.name.to_lowercase(), (turn % std::f64::consts::TAU).to_degrees()));
+        }
+        // In space, between the planets: one direction for everybody, the star's.
+        let mid = sys.planets.iter().map(|p| p.centre()).sum::<DVec3>() / sys.planets.len() as f64 + DVec3::new(0.0, 4.0e6, 3.0e6);
+        let dirs: Vec<DVec3> = sys.planets.iter().map(|p| dn.planet(&p.recipe).unwrap().0.light_dir(&dn.space_blend, star, p.centre(), mid, t)).collect();
+        let truth = daynight_core::to_star(star, mid);
+        let worst = dirs.iter().map(|d| d.angle_between(truth).to_degrees()).fold(0.0, f64::max);
+        let spread = dirs.iter().map(|d| d.angle_between(dirs[0]).to_degrees()).fold(0.0, f64::max);
+        check(c, worst < 1e-6 && spread < 1e-6, format!("daynight sky: in space every planet is lit from the star ({worst:.1e} deg off, {spread:.1e} deg between planets, {} planets)", dirs.len()));
+        true
+    }));
 }

@@ -1,4 +1,4 @@
-//! T1 (core part), T2, T3 of spikes/planet_gen/BRIEF.md. Run: cargo test --profile fast -- --nocapture
+//! T1 (core part), T2, T3 of the planet generation spike. Run: cargo test --profile fast -- --nocapture
 use planet_core::*;
 use std::collections::HashMap;
 use std::sync::OnceLock;

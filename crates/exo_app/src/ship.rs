@@ -156,6 +156,7 @@ pub fn ship_control(
     time: Res<Time>,
     planet: Res<PlanetRes>,
     mut actions: ResMut<Actions>,
+    controls: Res<crate::controls::Controls>,
     bindings: Res<Bindings>,
     settings: Res<crate::settings::Settings>,
     warp: Res<crate::warp::WarpDrive>,
@@ -167,17 +168,23 @@ pub fn ship_control(
     for (e, mut ship, pos, rot, mut lv, mut av) in &mut q {
         ship.grounded = colliders.iter().any(|(c, of)| of.body == e && collisions.collisions_with(c).next().is_some());
         let clearance = ship.ctl.clearance_at(planet.as_ref(), pos.0);
-        ship.lag.step(clearance, lv.0.length(), dt);
+        // A parked ship is static: no contacts with the static terrain, but it stands on it.
+        let grounded = ship.grounded || ship.parked;
+        ship.lag.step(grounded, clearance, lv.0.length(), dt);
+        // Nobody flying, or the game does not have the mouse (menu, free cursor): the stick centres.
+        if !ship.piloted || controls.released {
+            ship.stick = VirtualStick::default();
+        }
         // From the pre-ramp on the drive holds the ship.
         if ship.parked || warp.drive.phase.holds_ship() {
-            // The boost meter goes on (released): no boost left running through a quantum flight.
-            let ctl = &mut ship.ctl;
-            ctl.boost.step(false, &ctl.tuning.boost_capacitor, dt);
-            ctl.boost_strength = 0.0;
+            if ship.piloted {
+                // Mouse movement during the hold is dropped, not applied at once afterwards
+                // (#110 point 3); the stick starts centred.
+                actions.look = Vec2::ZERO;
+                ship.stick = VirtualStick::default();
+            }
+            ship.ctl.skip_step(dt);
             continue;
-        }
-        if !ship.piloted {
-            ship.stick = VirtualStick::default();
         }
         let input = if ship.piloted {
             if actions.take_tap(Tap::HoverAssist) {
@@ -191,6 +198,13 @@ pub fn ship_control(
             }
             if actions.take_tap(Tap::BoostMode) {
                 ship.ctl.boost_stage = !ship.ctl.boost_stage;
+            }
+            if actions.take_tap(Tap::LandingMode) {
+                ship.ctl.landing_mode = !ship.ctl.landing_mode;
+            }
+            if actions.take_tap(Tap::TurnCap) {
+                let cap = &mut ship.ctl.tuning.g_safety.cap_turns;
+                *cap = !*cap;
             }
             let mb = &bindings.mouse;
             let m = std::mem::take(&mut actions.look);
@@ -228,7 +242,6 @@ pub fn camera_fx(
     let Ok((ship, pos, rot, lv, av)) = q.single() else { return };
     let up = planet.up(pos.0);
     let local = rot.0.inverse() * av.0;
-    // Hull corners touch first on a slope: up to 2.5 m above the terrain under the centre.
-    let near = ship.ctl.clearance_at(planet.as_ref(), pos.0) < 2.5;
-    fx.0.step(&tuning.camera, lv.0.length(), DVec2::new(local.x, local.y), -lv.0.dot(up), near, time.delta_secs_f64());
+    // The bump comes with the first hull contact (#110 point 4).
+    fx.0.step(&tuning.camera, lv.0.length(), DVec2::new(local.x, local.y), -lv.0.dot(up), ship.grounded, time.delta_secs_f64());
 }

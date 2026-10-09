@@ -112,11 +112,11 @@ fn set_down_on_a_slope_it_keeps_the_touchdown_spot() {
     assert!(moved < 0.005, "moved {moved:.4} m while settling");
     assert!(sideways(rest - hold.at, rest.normalize()).length() < 0.005, "rests on the touchdown spot: {:?}", rest - hold.at);
     assert!((b.pos - rest).length() < 1e-9, "and stays there: {:?}", b.pos - rest);
-    // Without the hold (limit 0) the same contact slides it down the slope until the push ends
-    // (1.5 cm here; 0.55 m in `full`, where the hull tipped for 12 s and the push went on).
+    // Without the hold (limit 0) no spot is kept; the settle rule alone drops the sideways speed,
+    // which this point contact does not turn into a slide (the hull in `full` did: 0.55 m).
     let mut free = ShipController::new(ShipTuning { landing_slope_limit: 0.0, ..ShipTuning::default() });
-    let (slid, _) = settle(&mut free, &env, 5.0, 0.0);
-    assert!(free.ground_hold.is_none() && slid > 0.01, "without the hold it slides: {slid:.4} m");
+    settle(&mut free, &env, 5.0, 0.0);
+    assert!(free.ground_hold.is_none(), "no hold above the limit");
 }
 
 #[test]
@@ -186,4 +186,74 @@ fn moved_far_away_or_assist_off_lets_go() {
     c.hover_assist = false;
     c.step(&b, &down(), &env, DT);
     assert!(c.ground_hold.is_none(), "assist off lets go");
+}
+
+/// #104 point 1: one step of hull contact with a crest at speed, neutral input, starts no hold;
+/// the ship keeps its speed and flies on.
+#[test]
+fn brushing_a_crest_at_speed_keeps_flying() {
+    let env = Slope::new(0.0);
+    let mut c = ShipController::default();
+    let mut b = BodyState { pos: env.ground(0.0), lin_vel: DVec3::X * 80.0, ..Default::default() };
+    let none = FlightInput { piloted: true, ..Default::default() };
+    let (v, _) = c.step(&b, &FlightInput { grounded: true, ..none }, &env, DT);
+    assert!(c.ground_hold.is_none(), "no hold from a brush at 80 m/s");
+    assert!(sideways(v, b.pos.normalize()).length() > 75.0, "keeps its speed: {v}");
+    b.lin_vel = v;
+    for _ in 0..30 {
+        b.pos += DVec3::Y * 0.1;
+        let (v, _) = c.step(&b, &none, &env, DT);
+        b.lin_vel = v;
+        b.integrate(DT);
+    }
+    assert!(c.ground_hold.is_none() && sideways(b.lin_vel, b.pos.normalize()).length() > 60.0, "flies on: {}", b.lin_vel);
+}
+
+/// #104 point 1: a settling hold whose contact stays lost lets go (the ground fell away); a
+/// flicker of one step does not (see `at_rest_it_returns_to_its_spot_until_thrust`), and a resting
+/// hold keeps the ship on its spot without contact (the physics drops a contact without push).
+#[test]
+fn contact_lost_while_settling_ends_the_hold() {
+    let env = Slope::new(10.0);
+    let mut c = ShipController::default();
+    let b = BodyState { pos: env.ground(0.0), ..Default::default() };
+    c.step(&b, &down(), &env, DT);
+    assert!(c.ground_hold.is_some_and(|h| h.rest.is_none()), "settling");
+    let none = FlightInput { grounded: false, piloted: true, ..Default::default() };
+    for _ in 0..(ShipController::GROUND_HOLD_RELEASE_TIME / DT).ceil() as usize + 1 {
+        c.step(&b, &none, &env, DT);
+    }
+    assert!(c.ground_hold.is_none(), "contact lost for {} s lets go", ShipController::GROUND_HOLD_RELEASE_TIME);
+    let mut c = ShipController::default();
+    let (_, b) = settle(&mut c, &env, 3.0, 0.5);
+    assert!(c.ground_hold.and_then(|h| h.rest).is_some());
+    for _ in 0..120 {
+        c.step(&b, &none, &env, DT);
+    }
+    assert!(c.ground_hold.is_some(), "resting: held without contact");
+}
+
+/// #104 point 2: a rested ship lifted 20 m straight up (a teleport, a depenetration) is not
+/// pulled back into the ground in one step.
+#[test]
+fn lifted_straight_up_it_is_not_pulled_back() {
+    let env = Slope::new(10.0);
+    let mut c = ShipController::default();
+    let (_, b) = settle(&mut c, &env, 3.0, 0.5);
+    assert!(c.ground_hold.and_then(|h| h.rest).is_some());
+    let lifted = BodyState { pos: b.pos + b.pos.normalize() * 20.0, lin_vel: DVec3::ZERO, ..b };
+    let (v, _) = c.step(&lifted, &FlightInput { grounded: true, piloted: true, ..Default::default() }, &env, DT);
+    assert!(c.ground_hold.is_none() && v.length() < 5.0, "lets go instead of 1200 m/s down: {v}");
+}
+
+/// A level ship touching a slope just under the limit with a hull corner has its centre ~2.7 m
+/// above the terrain: still on the ground, held (review of the #104 point 1 gate).
+#[test]
+fn a_corner_touch_on_a_steep_slope_below_the_limit_is_held() {
+    let env = Slope::new(34.0);
+    let mut c = ShipController::default();
+    let up = env.ground(0.0).normalize();
+    let b = BodyState { pos: env.ground(0.0) + up * 4.0 * 34f64.to_radians().tan(), ..Default::default() };
+    c.step(&b, &down(), &env, DT);
+    assert!(c.ground_hold.is_some(), "clearance {:.2} m", c.terrain_clearance);
 }

@@ -1,5 +1,5 @@
 {
-  "_comment": "Camera (flight_core::camera::CameraTuning). Assumed values. chase_offset: seated camera in ship space (x right, y up, z back, m); chase_pitch_deg: its pitch against the nose (negative looks down). fov_curve: speed m/s -> vertical FOV deg. streak_curve: speed m/s -> speed dust level (0 none, 0.2 and more full thickness). Look-ahead: the view leads a turn by gain x turn rate, past the dead zone (rad/s), capped, eased. Bump: touchdown drop per m/s of approach speed, damped; a touchdown is a loss of more than bump_threshold m/s towards the ground in one step near the ground.",
+  "_comment": "Camera (flight_core::camera::CameraTuning). Assumed values. chase_offset: seated camera in ship space (x right, y up, z back, m); chase_pitch_deg: its pitch against the nose (negative looks down). fov_curve: speed m/s -> vertical FOV deg. streak_curve: speed m/s -> speed dust level (0 none, 0.2 and more full thickness). Look-ahead: the view leads a turn by gain x turn rate, past the dead zone (rad/s), capped, eased. Bump: touchdown drop per m/s of approach speed, damped; the bump comes when the hull starts touching, if the approach speed just before was above bump_threshold m/s.",
   "chase_offset": [0.0, 5.5, 17.0],
   "chase_pitch_deg": -10.0,
   "fov_curve": { "interp": "smooth", "points": [[0, 75], [100, 77], [400, 84], [2000, 90]] },

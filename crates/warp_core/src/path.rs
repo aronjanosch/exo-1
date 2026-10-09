@@ -13,6 +13,8 @@ pub struct Path {
     p1: DVec3,
     m0: DVec3,
     m1: DVec3,
+    /// Unit direction at the start (`m0` can be zero: no tension, no chord).
+    start: DVec3,
     /// Arc length at u = i / TABLE.
     arc: Vec<f64>,
 }
@@ -43,9 +45,10 @@ impl Path {
         let chord = p1 - p0;
         let len = chord.length();
         let dir = if len > 0.0 { chord / len } else { DVec3::NEG_Z };
-        let m0 = from_up.map_or(dir, |up| tangent_dir(dir, up)) * len * tension;
+        let start = from_up.map_or(dir, |up| tangent_dir(dir, up));
+        let m0 = start * len * tension;
         let m1 = end_dir.normalize_or(dir) * len * tension;
-        let mut p = Path { p0, p1, m0, m1, arc: vec![0.0; TABLE + 1] };
+        let mut p = Path { p0, p1, m0, m1, start, arc: vec![0.0; TABLE + 1] };
         let mut last = p0;
         for i in 1..=TABLE {
             let q = p.at_u(i as f64 / TABLE as f64);
@@ -82,7 +85,7 @@ impl Path {
     }
 
     pub fn start_dir(&self) -> DVec3 {
-        self.m0.normalize()
+        self.start
     }
 
     pub fn end(&self) -> DVec3 {

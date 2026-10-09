@@ -40,7 +40,10 @@ fn look_ahead_leads_the_turn_capped_and_eases_back() {
 fn touchdown_bumps_once_and_dies_out() {
     let t = CameraTuning::default();
     let mut fx = CameraFx::default();
-    fx.step(&t, 2.0, DVec2::ZERO, 2.0, true, DT);
+    // Approaching at 2 m/s; the contact flag comes a step after the solver cut the approach.
+    fx.step(&t, 2.0, DVec2::ZERO, 2.0, false, DT);
+    fx.step(&t, 0.1, DVec2::ZERO, 0.1, false, DT);
+    assert_eq!(fx.bumps, 0);
     fx.step(&t, 0.1, DVec2::ZERO, 0.1, true, DT);
     assert_eq!(fx.bumps, 1);
     let peak = (0..30).map(|_| {
@@ -53,4 +56,54 @@ fn touchdown_bumps_once_and_dies_out() {
     }
     assert!(fx.bump(&t) < 1e-3);
     assert_eq!(fx.bumps, 1, "resting does not bump again");
+}
+
+/// #110 point 4: a pull-up near the ground without contact does not bump; a touch does, also
+/// when the centre is high (a corner on a steep slope).
+#[test]
+fn bump_on_contact_not_on_a_pull_up() {
+    let t = CameraTuning::default();
+    let mut fx = CameraFx::default();
+    fx.step(&t, 10.0, DVec2::ZERO, 5.0, false, DT);
+    fx.step(&t, 10.0, DVec2::ZERO, 0.0, false, DT);
+    for _ in 0..30 {
+        fx.step(&t, 10.0, DVec2::ZERO, -3.0, false, DT);
+    }
+    assert_eq!(fx.bumps, 0, "pull-up without contact");
+    fx.step(&t, 3.0, DVec2::ZERO, 3.0, false, DT);
+    fx.step(&t, 3.0, DVec2::ZERO, 3.0, true, DT);
+    assert_eq!(fx.bumps, 1, "contact");
+    // A slow touch (below the threshold) does not bump.
+    let mut fx = CameraFx::default();
+    fx.step(&t, 0.1, DVec2::ZERO, 0.1, false, DT);
+    fx.step(&t, 0.1, DVec2::ZERO, 0.1, true, DT);
+    assert_eq!(fx.bumps, 0);
+}
+
+/// #106 point 6: values that make the bump unbounded or NaN are refused.
+#[test]
+fn rejects_bad_values() {
+    let cam = include_str!("../../../content/tuning/camera.json");
+    for (from, to) in [
+        ("\"bump_damping\": 6.0", "\"bump_damping\": -1.0"),
+        ("\"bump_frequency\": 3.0", "\"bump_frequency\": -3.0"),
+        ("\"bump_max\": 0.5", "\"bump_max\": -0.5"),
+        ("\"bump_per_speed\": 0.08", "\"bump_per_speed\": -0.08"),
+        ("\"look_ahead_ease_time\": 0.3", "\"look_ahead_ease_time\": -0.3"),
+        ("\"look_ahead_gain\": 0.25", "\"look_ahead_gain\": -0.25"),
+        ("\"bump_threshold\": 0.3", "\"bump_threshold\": -0.3"),
+    ] {
+        assert!(cam.contains(from), "{from}");
+        let e = CameraTuning::from_json(&cam.replacen(from, to, 1)).unwrap_err();
+        let name = from.split('"').nth(1).unwrap();
+        assert!(e.contains(name), "{to}: {e}");
+    }
+}
+
+#[test]
+fn rejects_non_finite_values_built_in_code() {
+    let t = CameraTuning { chase_offset: [0.0, f64::NAN, 17.0], ..CameraTuning::default() };
+    assert!(t.validate().unwrap_err().contains("chase_offset"));
+    let t = CameraTuning { bump_damping: f64::INFINITY, ..CameraTuning::default() };
+    assert!(t.validate().unwrap_err().contains("bump_damping"));
 }

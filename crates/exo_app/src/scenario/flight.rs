@@ -37,6 +37,12 @@ fn yaw_rate(w: &mut World) -> f64 {
     av.dot(r * DVec3::Y)
 }
 
+/// Full-stick yaw rate of a ship hovering at rest (rad/s): the rate at its share for speed 0.
+fn rest_yaw_rate(w: &World) -> f64 {
+    let t = &w.resource::<crate::tuning::Tuning>().ship;
+    t.rate.yaw * t.rate_over_speed.eval(0.0)
+}
+
 /// Stick right by a share of its travel past the dead zone, hold, check the yaw rate is that
 /// share of the turn rate; 0 centres the stick.
 fn stick_yaw(name: &'static str, share: f64) -> Step {
@@ -52,7 +58,7 @@ fn stick_yaw(name: &'static str, share: f64) -> Step {
         }
         if c.t >= 1.5 {
             let rate = yaw_rate(w);
-            let want = -share * w.resource::<crate::tuning::Tuning>().ship.turn_rate;
+            let want = -share * rest_yaw_rate(w);
             end(w, c, format!("yaw rate {rate:+.3} rad/s, wanted {want:+.3}"));
             check(c, (rate - want).abs() <= 0.05 * want.abs().max(1.0), format!("{name}: yaw {rate:+.3} rad/s for {share} of the stick (wanted {want:+.3})"));
             return true;
@@ -127,7 +133,7 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
         if c.t >= 1.5 {
             w.resource_mut::<Controls>().pad_axes.clear();
             let shaped = w.resource::<Bindings>().axis(crate::controls::Axis::TurnYaw).shape(stick as f64);
-            let want = -shaped * w.resource::<crate::tuning::Tuning>().ship.turn_rate;
+            let want = -shaped * rest_yaw_rate(w);
             let rate = yaw_rate(w);
             end(w, c, format!("yaw rate {rate:+.3} rad/s, wanted {want:+.3}"));
             check(c, (rate - want).abs() <= 0.05 * want.abs(), format!("pad: stick 0.8 right yaws {rate:+.3} rad/s (dead zone and curve: {want:+.3})"));

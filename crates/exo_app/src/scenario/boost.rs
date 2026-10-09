@@ -178,6 +178,7 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
             begin(w, c, "F6: boost as the speed stage");
             let r = readout(w);
             check(c, stage && r.boost_mode == "STAGE" && r.gauge.is_none(), format!("F6: stage {stage}, hud {:?} {}, gauge {:?}", r.texts[3], r.boost_mode, r.gauge));
+            c.v.insert("stage_charge0", charge);
             keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft], true);
             return false;
         }
@@ -186,7 +187,9 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
             let r = readout(w);
             keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft], false);
             end(w, c, format!("{:.1} s, strength {strength:.2}, charge {charge:.3}, hud {:?} {}", c.t, r.texts[3], r.boost_mode));
-            check(c, strength == 1.0 && charge == 1.0, format!("stage: full boost after {:.1} s (strength {strength:.2}, charge {charge:.3})", c.t));
+            // The stage leaves the meter as it was (#104 point 8: F6 refilled an empty one).
+            let c0 = c.v["stage_charge0"];
+            check(c, strength == 1.0 && charge == c0, format!("stage: full boost after {:.1} s, meter untouched (strength {strength:.2}, charge {c0:.3} -> {charge:.3})", c.t));
             check(c, r.texts[3] == "BOOST ON" && r.boosting, format!("hud stage boosting: {:?}", r.texts[3]));
             check_readout(w, c, "stage");
             tap(w, KeyCode::F6);
@@ -197,7 +200,8 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         let stage = with_ship(w, |s| s.ctl.boost_stage);
         let r = readout(w);
-        check(c, !stage && r.boost_mode == "CAPACITOR" && r.gauge == Some(1.0), format!("F6 again: stage {stage}, hud {:?} {}, gauge {:?}", r.texts[3], r.boost_mode, r.gauge));
+        let c0 = c.v["stage_charge0"];
+        check(c, !stage && r.boost_mode == "CAPACITOR" && r.gauge.is_some_and(|g| (g - c0).abs() < 0.02), format!("F6 again: stage {stage}, hud {:?} {}, gauge {:?} (meter {c0:.3})", r.texts[3], r.boost_mode, r.gauge));
         true
     }));
     s.push(hold_until("firm brake after the stage", &[KeyCode::KeyX], 20.0, |w| ship_vel(w).length() < 0.5));

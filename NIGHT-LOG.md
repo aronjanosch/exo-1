@@ -22,7 +22,7 @@ Phase 2, `night/extras` (branched from the tip of `feat/milestone-c-grab`, all e
 - [ ] E2 the walker bumps into crates; crates stack: **dropped in this form** (initiator, playtest 2026-10-09): committed as 7e83b52, reverted; replaced by the three-state crate model, spike `spike/avian-crates` first (see below)
 - [ ] E3 visible grab-tool beam: not started
 - [ ] E4 synthesized grab, throw and lock sounds: not started
-- [ ] E5 #52 split `scenario.rs` (cargo scenarios already live in `cargo_scenario.rs`): not started
+- [x] E5 #52 split `scenario.rs` (branch `feat/e5-split-scenario`)
 
 ## Architecture choice (read this first)
 
@@ -172,3 +172,15 @@ Feedback: the crates hardly turn, the physics does not feel good, and they slide
 Open design questions, for the initiator to decide:
 - TODO(initiator) a) Cabin: does every crate set down become part of the ship at once (the lock grid then only helps keep order, and sliding under acceleration goes away)? Or does the lock grid stay the condition, with loose crates keeping the current model?
 - TODO(initiator) b) Friction start value: 0.8 plus impact friction is in now (`content/tuning/grab.json`), to be tuned by feel.
+
+## E5 #52 split `scenario.rs`
+
+Branch `feat/e5-split-scenario` from `origin/main`.
+
+What: `scenario.rs` (2805 lines) became `scenario/` with one module per topic, and `cargo_scenario.rs` moved in as `scenario/cargo.rs`:
+- `mod.rs` (731 lines) keeps the shared script interface: `Step`, `Ctx`, `Script`, the helpers, the general step builders (walk, board, sit, land, aim), `build` and `run_script`.
+- The topics: `net` (foreign ship, net bot, proxy at warp speed), `space`, `walk` (T5), `warp`, `flight`, `swap`, `figure`, `reload`, `cargo`.
+
+A pure move. Every old line is in the new files exactly once, except the module headers, `pub(super)` on the functions `build` calls, the `cargo::` paths in `build`, and two section-divider comments that became module docs; checked with a script. One orphaned doc comment (#16, the proxy at warp speed) now sits on `foreign_warp_steps`, where it belongs. Outside the folder nothing changes: `crate::scenario::...` paths stay the same.
+
+Gate: `cargo t` exit 0, `cargo scenario` 0 failures.

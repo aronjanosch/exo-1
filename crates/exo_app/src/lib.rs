@@ -3,7 +3,6 @@
 //! All game values are the spike test values, not designed.
 pub mod audio;
 pub mod cargo;
-pub mod cargo_scenario;
 pub mod controls;
 pub mod env;
 pub mod grab;

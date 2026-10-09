@@ -1,21 +1,12 @@
 # Linux runner: workspace tests (headless, no GPU), full scenario headless, Windows cross build
 # with llvm-mingw. Windows runner: full scenario headless on the exe.
 # Actions pinned to commit SHAs, read-only token, no secrets.
-# Runs only for main (runner minutes are limited); a branch can be checked by hand
-# (Actions -> ci -> Run workflow). The local gate stays `cargo test --workspace` plus the
-# headless full scenario (AGENTS.md).
+# Off (runner minutes are limited, initiator 2026-10-09): the workflow is disabled on GitHub
+# and only starts by hand (Actions -> ci -> Run workflow) after enabling it. The gate is local:
+# `cargo t` and `cargo scenario` (AGENTS.md), `cargo test --workspace` for the static build.
 name: ci
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "**.md"
-      - ".agents/**"
-      - "docs/**"
-      - "LICENSE"
-      - ".gitignore"
-      - "skills-lock.json"
   workflow_dispatch:
 
 # A newer push to the same branch cancels the run still going.

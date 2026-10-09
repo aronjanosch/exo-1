@@ -30,7 +30,7 @@ cargo run -p exo_app                                  # play (window)
 cargo dev                                             # same with Bevy dynamic linking, about 1 s rebuilds
 cargo t                                               # all checks, includes the full scenario headless (dynamic linking, about 2 s rebuilds)
 cargo scenario                                        # full scenario without a window, exits non-zero on a failed check (dynamic linking)
-cargo test --workspace                                # all checks, static build as in CI (about 8 s rebuilds)
+cargo test --workspace                                # all checks, static build (about 8 s rebuilds)
 cargo run -p exo_app -- --headless --scenario=full    # full scenario headless, static build
 cargo run -p exo_app -- --scenario=full               # same in a window, with screenshots
 cargo run -p exo_app -- --hidden --scenario=full      # invisible window, screenshots still work
@@ -105,7 +105,7 @@ rustup target add x86_64-pc-windows-gnullvm
 cargo build --release -p exo_app --target x86_64-pc-windows-gnullvm
 ```
 
-Ship `libunwind.dll` from llvm-mingw (`x86_64-w64-mingw32/bin/`) next to the exe. CI builds it on every push (`.github/workflows/ci.yml`).
+Ship `libunwind.dll` from llvm-mingw (`x86_64-w64-mingw32/bin/`) next to the exe. The workflow `.github/workflows/ci.yml` builds it when started by hand (GitHub CI is off otherwise).
 
 ## License
 

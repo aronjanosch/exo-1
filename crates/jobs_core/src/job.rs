@@ -2,6 +2,7 @@
 //! abandoned. Each deliver leg is a reducer over the crate events of its own crates.
 use std::collections::{BTreeMap, BTreeSet};
 
+use gameplay_core::notice::{Arg, Notice, NoticeKind};
 use gameplay_core::save::{Envelope, SaveError};
 use gameplay_core::{ClientId, CommodityId, Content, CrateId, Event, Flag, LocationId, Progress, TrackId, WorldEvent};
 use serde::{Deserialize, Serialize};
@@ -120,6 +121,8 @@ pub enum Outcome {
     Ended { job: JobId, state: JobState, grade: Option<Grade> },
     /// A domain event for every system (payout, XP, flag); the host gives it an id and applies it.
     Emit(WorldEvent),
+    /// Something the players should hear about (#165); the host queues it.
+    Notice(Notice),
 }
 
 /// Why a jobs event was not applied. The state is unchanged.
@@ -214,7 +217,9 @@ impl Jobs {
                 j.state = JobState::Active;
                 j.accepted_by = Some(by);
                 j.participants.insert(by);
-                Ok(j.legs.iter().enumerate().map(|(i, l)| Outcome::SpawnCrates { job: *job, leg: i, commodity: l.commodity.clone(), count: l.amount, at: l.from.clone() }).collect())
+                let mut out = vec![Outcome::Notice(Notice::new(NoticeKind::Accepted, "notice.job.accepted").arg("title", Arg::Key(t.title.clone())))];
+                out.extend(j.legs.iter().enumerate().map(|(i, l)| Outcome::SpawnCrates { job: *job, leg: i, commodity: l.commodity.clone(), count: l.amount, at: l.from.clone() }));
+                Ok(out)
             }
             JobEvent::JobAbandoned { job } => {
                 let j = self.jobs.get_mut(job).ok_or(Refusal::UnknownJob)?;
@@ -223,7 +228,11 @@ impl Jobs {
                 }
                 j.state = JobState::Abandoned;
                 let crates = j.legs.iter().flat_map(|l| l.crates.keys().copied()).collect();
-                Ok(vec![Outcome::ReleaseCrates { crates }, Outcome::Ended { job: *job, state: JobState::Abandoned, grade: None }])
+                let mut out = vec![Outcome::ReleaseCrates { crates }, Outcome::Ended { job: *job, state: JobState::Abandoned, grade: None }];
+                if let Some(t) = jc.templates.get(&j.template) {
+                    out.push(Outcome::Notice(Notice::new(NoticeKind::Warning, "notice.job.abandoned").arg("title", Arg::Key(t.record.title.clone()))));
+                }
+                Ok(out)
             }
             JobEvent::CratesSpawned { job, leg, crates } => {
                 let j = self.jobs.get_mut(job).ok_or(Refusal::UnknownJob)?;
@@ -246,6 +255,8 @@ impl Jobs {
     pub fn apply_world(&mut self, jc: &JobContent, ev: &Event<WorldEvent>) -> Vec<Outcome> {
         let by = ev.sender();
         let mut ended = Vec::new();
+        let mut notes = Vec::new();
+        let title = |j: &Job| jc.templates.get(&j.template).map(|t| Arg::Key(t.record.title.clone()));
         match &ev.payload {
             WorldEvent::CratePickedUp { crate_id, .. } => {
                 if let Some(j) = self.job_with(*crate_id)
@@ -253,9 +264,13 @@ impl Jobs {
                 {
                     let m = l.crates.get_mut(crate_id).expect("leg_of found it");
                     if matches!(m, CrateMark::Waiting | CrateMark::Carried) {
+                        let first = *m == CrateMark::Waiting;
                         *m = CrateMark::Carried;
                         j.participants.insert(by);
                         j.clock_s.get_or_insert(0.0);
+                        if first && let Some(t) = title(j) {
+                            notes.push(Outcome::Notice(Notice::new(NoticeKind::Updated, "notice.job.picked_up").arg("title", t).arg("delivered", Arg::Number(j.delivered() as i64)).arg("asked", Arg::Number(j.asked() as i64))));
+                        }
                     }
                 }
             }
@@ -267,8 +282,12 @@ impl Jobs {
                     let m = l.crates.get_mut(crate_id).expect("leg_of found it");
                     if matches!(m, CrateMark::Waiting | CrateMark::Carried) {
                         // Set down elsewhere: it waits there to be picked up again.
-                        *m = if *at == to { CrateMark::Delivered { condition: condition.clamp(0.0, 1.0) } } else { CrateMark::Waiting };
+                        let there = *at == to;
+                        *m = if there { CrateMark::Delivered { condition: condition.clamp(0.0, 1.0) } } else { CrateMark::Waiting };
                         j.participants.insert(by);
+                        if there && let Some(t) = title(j) {
+                            notes.push(Outcome::Notice(Notice::new(NoticeKind::Updated, "notice.job.delivered").arg("title", t).arg("delivered", Arg::Number(j.delivered() as i64)).arg("asked", Arg::Number(j.asked() as i64))));
+                        }
                         if j.legs.iter().all(Leg::resolved) {
                             ended.push((j.id, JobState::Completed));
                         }
@@ -282,6 +301,9 @@ impl Jobs {
                     let m = l.crates.get_mut(crate_id).expect("leg_of found it");
                     if !matches!(m, CrateMark::Delivered { .. }) {
                         *m = CrateMark::Lost;
+                        if let Some(t) = title(j) {
+                            notes.push(Outcome::Notice(Notice::new(NoticeKind::Warning, "notice.job.crate_lost").arg("title", t)));
+                        }
                         if j.legs.iter().all(Leg::resolved) {
                             ended.push((j.id, JobState::Completed));
                         }
@@ -300,7 +322,8 @@ impl Jobs {
             }
             WorldEvent::PlayerJoined | WorldEvent::UnlockBought { .. } | WorldEvent::TrackChanged { .. } | WorldEvent::FlagRaised { .. } => {}
         }
-        ended.into_iter().flat_map(|(id, state)| self.end(jc, id, state)).collect()
+        notes.extend(ended.into_iter().flat_map(|(id, state)| self.end(jc, id, state)));
+        notes
     }
 
     /// The active job a crate belongs to.
@@ -332,6 +355,45 @@ impl Jobs {
             out.push(Outcome::ReleaseCrates { crates: loose });
         }
         out.push(Outcome::Ended { job: id, state, grade: Some(g) });
+        out.extend(end_notices(t, state, &g, j.delivered(), j.asked()).into_iter().map(Outcome::Notice));
         out
     }
+}
+
+/// The notices of a finished job (#165): the banner, then the payout itemised (base, share,
+/// condition, hazard; the lines add up to the pay), then XP.
+fn end_notices(t: &JobTemplate, state: JobState, g: &Grade, delivered: u32, asked: u32) -> Vec<Notice> {
+    let title = Arg::Key(t.title.clone());
+    let (kind, key) = match state {
+        JobState::Completed if g.money > 0 => (NoticeKind::Completed, "notice.job.completed"),
+        JobState::Expired => (NoticeKind::Failed, "notice.job.expired"),
+        _ => (NoticeKind::Failed, "notice.job.failed"),
+    };
+    let mut out = vec![Notice::new(kind, key).arg("title", title).arg("money", Arg::Number(g.money))];
+    // Running totals, each rounded, so the lines add up exactly to the rounded pay.
+    let base = t.reward as f64;
+    let steps = [
+        ("notice.reward.base", base),
+        ("notice.reward.share", base * g.band),
+        ("notice.reward.condition", base * g.band * g.condition),
+        ("notice.reward.hazard", base * g.band * g.condition * g.hazard),
+    ];
+    let mut prev = 0i64;
+    for (key, total) in steps {
+        let total = total.round() as i64;
+        let n = total - prev;
+        prev = total;
+        if n == 0 && key != "notice.reward.base" || g.money == 0 {
+            continue;
+        }
+        let mut line = Notice::new(NoticeKind::Reward, key).arg("n", Arg::Number(n));
+        if key == "notice.reward.share" {
+            line = line.arg("delivered", Arg::Number(delivered as i64)).arg("asked", Arg::Number(asked as i64));
+        }
+        out.push(line);
+    }
+    if g.xp != 0 {
+        out.push(Notice::new(NoticeKind::Reward, "notice.reward.xp").arg("n", Arg::Number(g.xp)).arg("track", Arg::Key(gameplay_core::TextKey::new(format!("track.{}.name", t.track)))));
+    }
+    out
 }

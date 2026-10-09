@@ -117,11 +117,41 @@ pub fn deliver_steps(s: &mut Vec<Step>) {
         let paid = gp.progress.wallet() as f64 - c.v["wallet0"];
         let xp = gp.progress.value(&gp.kernel, &TrackId::new("freight_xp"), Some(crate::gameplay::HOST)).unwrap_or(0);
         let flag = gp.progress.has_flag(&Flag::new("job_completed:first_haul"));
-        let line = gp.readout.clone();
         check(c, job_state(w, "first_haul") == Some(JobState::Completed) && paid == 300.0 && xp == 50 && flag,
             format!("deliver: 3 crates set down gently on the Bent Spoon pad complete the job (paid {paid}, XP {xp}, flag {flag})"));
-        check(c, line.contains("Job done"), format!("deliver: the job line says so ('{}')", line.replace('\n', " | ")));
         end(w, c, format!("wallet {}", gp.progress.wallet()));
+        true
+    }));
+    // #165: the ritual comes out staged, one beat after the other.
+    s.push(wait(12.0));
+    s.push(Box::new(|w, c| {
+        begin(w, c, "deliver: the notices of the first job (#165)");
+        let g = gp(w);
+        let keys: Vec<&str> = g.shown.iter().map(|l| l.key.as_str()).collect();
+        let order = ["notice.job.accepted", "notice.job.picked_up", "notice.job.delivered", "notice.job.completed", "notice.reward.base", "notice.reward.xp"];
+        let mut at = 0;
+        for k in &keys {
+            if at < order.len() && *k == order[at] {
+                at += 1;
+            }
+        }
+        check(c, at == order.len(), format!("deliver: beats in order accepted, picked up, delivered, completed, base pay, XP ({keys:?})"));
+        check(c, keys.iter().filter(|k| **k == "notice.job.delivered").count() == 3 && keys.iter().filter(|k| **k == "notice.job.completed").count() == 1, "deliver: three delivered beats and one completed".into());
+        let done = g.shown.iter().find(|l| l.key == "notice.job.completed");
+        check(c, done.is_some_and(|l| l.banner && l.money == Some(300) && l.text.contains("300")), format!("deliver: the completed banner carries the payout ({:?})", done.map(|l| &l.text)));
+        // Never two banners at once: each banner starts after the previous one is over.
+        let banners: Vec<&crate::gameplay::ShownLine> = g.shown.iter().filter(|l| l.banner).collect();
+        let overlap = banners.windows(2).any(|p| p[1].at + 0.05 < p[0].at + p[0].seconds);
+        check(c, !banners.is_empty() && !overlap, format!("deliver: never two banners at once ({} banners)", banners.len()));
+        // Never the same line twice in a row for a key.
+        let mut repeat = false;
+        for key in ["notice.job.picked_up", "notice.job.delivered"] {
+            let t: Vec<&str> = g.shown.iter().filter(|l| l.key == key).map(|l| l.text.as_str()).collect();
+            repeat |= t.windows(2).any(|p| p[0] == p[1]);
+        }
+        check(c, !repeat, "deliver: no line twice in a row".into());
+        check(c, g.notices.is_empty(), "deliver: the queue is empty after the ritual".into());
+        end(w, c, format!("{} notices shown", g.shown.len()));
         true
     }));
     // A second round of the same job, the crates dropped from 10 m: they arrive damaged.
@@ -145,6 +175,20 @@ pub fn deliver_steps(s: &mut Vec<Step>) {
         check(c, job_state(w, "first_haul") == Some(JobState::Completed) && paid > 0.0 && paid < 300.0,
             format!("deliver: damaged crates still complete the job but pay less (paid {paid} of 300)"));
         end(w, c, format!("wallet {}", gp(w).progress.wallet()));
+        true
+    }));
+    // #165: the player can skip the ritual; the same notices come out, fast.
+    s.push(Box::new(|w, c| {
+        begin(w, c, "deliver: skipping the ritual (#165)");
+        c.v.insert("shown0", gp(w).shown.len() as f64);
+        tap(w, KeyCode::Enter);
+        true
+    }));
+    s.push(wait(4.0));
+    s.push(Box::new(|w, c| {
+        let g = gp(w);
+        check(c, g.notices.is_empty() && g.shown.len() as f64 > c.v["shown0"], format!("deliver: after skipping the queue is empty within 4 s ({} notices, {} left)", g.shown.len(), g.notices.len()));
+        end(w, c, String::new());
         true
     }));
 }

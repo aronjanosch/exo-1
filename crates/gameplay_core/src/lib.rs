@@ -7,6 +7,8 @@
 //! - `content`: the shared records `commodity`, `location`, `progress_track`, `unlock`, loaded one
 //!   per file and checked; systems check their references against it.
 //! - `condition`: the small typed conditions from the data.
+//! - `notice`, `text`: notices (what a system reports), the pacing queue, text pools without repeats.
+//! - `rng`: a seeded generator.
 //! - `save`: the save envelope with a section per system, the kernel's and the world's sections.
 //! - `progress`: track values (money, XP), owned tags, bought unlocks, raised flags.
 //!
@@ -16,8 +18,11 @@ pub mod condition;
 pub mod content;
 pub mod event;
 pub mod id;
+pub mod notice;
 pub mod progress;
+pub mod rng;
 pub mod save;
+pub mod text;
 
 pub use condition::Condition;
 pub use content::{Content, File};

@@ -8,10 +8,11 @@
 //!
 //! A crate is on a pad when it rests outside any cabin, not held, within the pad's radius. Leaving
 //! a pad is a pickup, coming to rest on one a delivery (the jobs system decides whether it counts).
-use std::collections::HashMap;
 
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
+use gameplay_core::notice::{Arg, Notice, NoticeKind, NoticeQueue};
+use gameplay_core::text::{Picker, TextTable};
 use gameplay_core::{ClientId, CommodityId, Content, CrateId, Dedup, Event, LocationId, Progress, TextKey, TrackId, WorldEvent};
 use jobs_core::{JobContent, JobEvent, JobId, JobState, Jobs, Outcome};
 
@@ -35,8 +36,8 @@ pub fn window_plugin(app: &mut App) {
 
 /// The host's own client id until each client keeps one (#135).
 pub const HOST: ClientId = ClientId(1);
-/// How long a notice ("Job done: +375 credits") stays in the job line (s).
-const NOTICE_TIME: f64 = 6.0;
+/// Seed of the text picks (TODO(initiator): later the save's seed).
+const TEXT_SEED: u64 = 0x5EED_0001;
 
 /// A crate that carries goods for a job.
 #[derive(Component, Clone, Debug)]
@@ -77,7 +78,12 @@ enum Queued {
 pub struct Gameplay {
     pub kernel: Content,
     pub jobs_content: JobContent,
-    text: HashMap<String, String>,
+    text: TextTable,
+    picker: Picker,
+    /// What the players are told: queued by the systems, released with pauses (#165).
+    pub notices: NoticeQueue,
+    /// Every notice shown so far, oldest first (the window draws them, scenario checks read them).
+    pub shown: Vec<ShownLine>,
     pub progress: Progress,
     pub jobs: Jobs,
     dedup: Dedup,
@@ -88,10 +94,24 @@ pub struct Gameplay {
     queue: Vec<Queued>,
     /// What happened, oldest first (scenario checks).
     pub log: Vec<String>,
-    /// The job line as shown: money, the active job, a recent notice.
+    /// The job line as shown: money, the active job.
     pub readout: String,
-    notice: Option<(String, f64)>,
     clock: f64,
+}
+
+/// A notice as the player sees it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShownLine {
+    pub kind: NoticeKind,
+    pub key: String,
+    pub text: String,
+    pub banner: bool,
+    /// How long it stays on screen (s).
+    pub seconds: f64,
+    /// A payout to count up in the banner (`{money}` in its text).
+    pub money: Option<i64>,
+    /// Game clock when it was released (s).
+    pub at: f64,
 }
 
 impl Gameplay {
@@ -118,23 +138,20 @@ impl Gameplay {
         let text = files
             .iter()
             .find(|f| f.path == "text/en.json")
-            .map(|f| {
-                let mut m: HashMap<String, String> = serde_json::from_str(&f.text).unwrap_or_else(|e| panic!("content/gameplay/text/en.json: {e}"));
-                m.remove("_comment");
-                m
-            })
+            .map(|f| TextTable::from_json("content/gameplay/text/en.json", &f.text).unwrap_or_else(|e| panic!("{e}")))
             .unwrap_or_default();
         let progress = Progress::new(&kernel);
         let mut jobs = Jobs::default();
         for t in jobs_content.templates.values() {
             jobs.offer_fixed(&t.record);
         }
-        Gameplay { kernel, jobs_content, text, progress, jobs, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), notice: None, clock: 0.0 }
+        Gameplay { kernel, jobs_content, text, picker: Picker::new(TEXT_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0 }
     }
 
-    /// English text for a key; the key itself when it has none (#131 adds checked tables).
+    /// English text for a key (the first line of a pool); the key itself when it has none (#131
+    /// adds checked tables).
     pub fn text(&self, key: &TextKey) -> String {
-        self.text.get(key.as_str()).cloned().unwrap_or_else(|| key.to_string())
+        self.text.lines(key.as_str()).and_then(|l| l.first().cloned()).unwrap_or_else(|| key.to_string())
     }
 
     pub fn push_world(&mut self, from: ClientId, e: WorldEvent) {
@@ -169,10 +186,36 @@ impl Gameplay {
         format!("{} ({} {})", self.text(&t.record.title), t.record.reward, self.text(&TextKey::new("track.wallet.name")))
     }
 
+    /// A line for the developer log (scenario checks, the terminal); the players are told through
+    /// notices.
     fn note(&mut self, s: String) {
         println!("gameplay: {s}");
-        self.log.push(s.clone());
-        self.notice = Some((s, self.clock + NOTICE_TIME));
+        self.log.push(s);
+    }
+
+    /// Queues a notice for the players.
+    pub fn notify(&mut self, n: Notice) {
+        self.notices.push(n);
+    }
+
+    /// Releases what the queue allows and renders it (a line of the pool, never the same twice).
+    fn pace_notices(&mut self, dt: f64) {
+        for s in self.notices.tick(dt) {
+            let text = self.picker.render(&self.text, &s.notice);
+            let money = s.notice.args.iter().find_map(|(k, a)| if let ("money", Arg::Number(n)) = (k.as_str(), a) { Some(*n) } else { None });
+            println!("gameplay: [{}] {text}", if s.banner { "banner" } else { "toast" });
+            self.shown.push(ShownLine { kind: s.notice.kind, key: s.notice.key.to_string(), text, banner: s.banner, seconds: s.seconds, money, at: self.clock });
+        }
+    }
+
+    /// Tells the players a request was refused, where they can act on it.
+    fn refused(&mut self, r: &jobs_core::Refusal) {
+        let key = match r {
+            jobs_core::Refusal::TooManyActive => "notice.refused.too_many",
+            jobs_core::Refusal::NotAvailable => "notice.refused.not_available",
+            _ => return,
+        };
+        self.notify(Notice::new(NoticeKind::Warning, key));
     }
 }
 
@@ -224,9 +267,12 @@ pub fn watch_pads(mut gp: ResMut<Gameplay>, grab: Res<Grab>, mut crates: Query<(
 }
 
 /// Applies the queued events once each and carries out the outcomes.
-pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>, mut gp: ResMut<Gameplay>, goods: Query<(Entity, &Goods)>) {
+pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>, mut actions: ResMut<crate::controls::Actions>, mut gp: ResMut<Gameplay>, goods: Query<(Entity, &Goods)>) {
     gp.clock += time.delta_secs_f64();
     let dt = time.delta_secs_f64();
+    if actions.take_tap(crate::controls::Tap::SkipNotices) {
+        gp.notices.skip();
+    }
     gp.push_world(HOST, WorldEvent::TimePassed { dt });
     let mut rounds = 0;
     while !gp.queue.is_empty() {
@@ -240,8 +286,9 @@ pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>
                     if !g.dedup.first_time(ev.id) {
                         continue;
                     }
-                    if let Err(r) = g.progress.apply(&g.kernel, &ev) {
-                        g.note(format!("refused {:?}: {r:?}", ev.payload));
+                    match g.progress.apply_with_notices(&g.kernel, &ev) {
+                        Ok(ns) => ns.into_iter().for_each(|n| g.notify(n)),
+                        Err(r) => g.note(format!("refused {:?}: {r:?}", ev.payload)),
                     }
                     g.jobs.apply_world(&g.jobs_content, &ev)
                 }
@@ -250,15 +297,10 @@ pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>
                         continue;
                     }
                     match g.jobs.apply_job(&g.jobs_content, &g.kernel, &g.progress, &ev) {
-                        Ok(o) => {
-                            if let JobEvent::OfferAccepted { job } = ev.payload {
-                                let label = g.offer_label(job);
-                                g.note(format!("Job taken: {label}"));
-                            }
-                            o
-                        }
+                        Ok(o) => o,
                         Err(r) => {
                             g.note(format!("refused {:?}: {r:?}", ev.payload));
+                            g.refused(&r);
                             Vec::new()
                         }
                     }
@@ -269,6 +311,7 @@ pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>
             }
         }
     }
+    gp.pace_notices(dt);
 }
 
 fn carry_out(commands: &mut Commands, table: &Crates, gp: &mut Gameplay, goods: &Query<(Entity, &Goods)>, o: Outcome) {
@@ -302,23 +345,16 @@ fn carry_out(commands: &mut Commands, table: &Crates, gp: &mut Gameplay, goods: 
                 }
             }
         }
-        Outcome::Ended { job, state, grade } => {
+        Outcome::Ended { job, .. } => {
             // Delivered crates stay where they are, as plain crates.
             for (e, g) in goods {
                 if g.job == job {
                     commands.entity(e).remove::<Goods>();
                 }
             }
-            let title = gp.jobs.get(job).and_then(|j| gp.jobs_content.templates.get(&j.template)).map(|t| gp.text(&t.record.title)).unwrap_or_default();
-            let money = grade.map_or(0, |g| g.money);
-            let what = match state {
-                JobState::Completed => "done",
-                JobState::Expired => "expired",
-                _ => "abandoned",
-            };
-            gp.note(format!("Job {what}: {title}, +{money} {}", gp.text(&TextKey::new("track.wallet.name"))));
         }
         Outcome::Emit(e) => gp.push_world(HOST, e),
+        Outcome::Notice(n) => gp.notify(n),
     }
 }
 
@@ -388,11 +424,6 @@ pub fn update_readout(
         && let Some(p) = point(&gp, &l.from)
     {
         s += &format!("\njob on offer: {p}");
-    }
-    if let Some((n, until)) = &gp.notice
-        && *until > gp.clock
-    {
-        s += &format!("\n{n}");
     }
     gp.readout = s;
 }

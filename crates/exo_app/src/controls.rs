@@ -98,6 +98,8 @@ pub enum Tap {
     LandingMode,
     /// A/B switch: the axis model's G-safety turn cap on or off (F8, #118).
     TurnCap,
+    /// Run the queued banners and toasts (the arrival ritual) fast (#165).
+    SkipNotices,
 }
 
 impl Axis {
@@ -128,7 +130,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 14] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::LandingMode, Tap::TurnCap];
+    pub const ALL: [Tap; 15] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::LandingMode, Tap::TurnCap, Tap::SkipNotices];
     pub fn name(self) -> &'static str {
         match self {
             Tap::Interact => "interact",
@@ -145,6 +147,7 @@ impl Tap {
             Tap::BoostMode => "boost_mode",
             Tap::LandingMode => "landing_mode",
             Tap::TurnCap => "turn_cap",
+            Tap::SkipNotices => "skip_notices",
         }
     }
 }
@@ -339,6 +342,8 @@ impl Bindings {
                 (Tap::LandingMode, None) => Ok(vec![Input::Key(KeyCode::KeyK)]),
                 // ... and no `turn_cap` (#118).
                 (Tap::TurnCap, None) => Ok(vec![Input::Key(KeyCode::F8)]),
+                // ... and no `skip_notices` (#165).
+                (Tap::SkipNotices, None) => Ok(vec![Input::Key(KeyCode::Enter)]),
                 _ => Err(err(t.name(), "missing".into())),
             }
         };

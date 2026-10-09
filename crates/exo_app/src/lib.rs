@@ -15,6 +15,7 @@ pub mod look;
 pub mod menu;
 pub mod net;
 pub mod net_live;
+pub mod notices;
 pub mod origin;
 pub mod perf;
 pub mod phases;
@@ -314,7 +315,7 @@ pub fn build_app(o: &Options) -> App {
     });
     if !o.headless {
         app.add_plugins((view::plugin, controls::window_plugin, settings::window_plugin, terrain::plugin, daynight::window_plugin, grab::window_plugin, cargo::window_plugin));
-        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, gameplay::window_plugin));
+        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, gameplay::window_plugin, notices::window_plugin));
         if o.menu() {
             app.add_plugins(menu::plugin);
         }

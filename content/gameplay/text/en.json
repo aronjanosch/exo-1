@@ -1,5 +1,5 @@
 {
-  "_comment": "English strings for the gameplay keys. #131 turns this into checked localisation tables.",
+  "_comment": "English strings for the gameplay keys. A list is a pool: the game picks one by seed, never the same line twice in a row. {name} is filled in. All texts are placeholders (TODO(initiator)). #131 turns this into checked localisation tables.",
   "commodity.fizzy_mud.name": "fizzy mud",
   "location.drip_rock.name": "Drip Rock",
   "location.bent_spoon.name": "Bent Spoon",
@@ -7,5 +7,52 @@
   "track.freight_xp.name": "freight XP",
   "unlock.bent_spoon_permit.name": "Bent Spoon landing permit",
   "job.first_haul.title": "First haul",
-  "job.first_haul.brief": "Three crates of fizzy mud for Bent Spoon. They fizz less if you don't drop them."
+  "job.first_haul.brief": "Three crates of fizzy mud for Bent Spoon. They fizz less if you don't drop them.",
+
+  "notice.job.accepted": [
+    "Job taken: {title}.",
+    "You said yes to {title}. No refunds.",
+    "{title} is yours now. Try not to lose it."
+  ],
+  "notice.job.picked_up": [
+    "Picked up. {delivered} of {asked} delivered.",
+    "Crate grabbed. {delivered}/{asked} delivered so far.",
+    "Got it. Mind the fizz."
+  ],
+  "notice.job.delivered": [
+    "Delivered {delivered} of {asked}.",
+    "Crate down. {delivered}/{asked}.",
+    "{delivered} of {asked} in place. Gently, please."
+  ],
+  "notice.job.completed": [
+    "JOB DONE: {title}   +{money}",
+    "{title} delivered   +{money}",
+    "ALL DELIVERED   +{money}"
+  ],
+  "notice.job.expired": [
+    "Too slow: {title} ran out of time.",
+    "{title} expired. The mud waits for nobody."
+  ],
+  "notice.job.failed": [
+    "{title} paid nothing. Bold strategy.",
+    "Nothing arrived for {title}. The customer sighs."
+  ],
+  "notice.job.abandoned": [
+    "You dropped {title}.",
+    "{title} abandoned. The crates are now decoration."
+  ],
+  "notice.job.crate_lost": [
+    "A crate is gone.",
+    "One crate fewer. It was not insured.",
+    "Crate lost. It had a good life."
+  ],
+  "notice.reward.base": ["Base pay   {n}", "Pay   {n}"],
+  "notice.reward.share": ["Delivered {delivered} of {asked}   {n}", "Share delivered ({delivered}/{asked})   {n}"],
+  "notice.reward.condition": ["Condition   {n}", "Crate condition   {n}"],
+  "notice.reward.hazard": ["Hazard bonus   {n}", "Danger money   {n}"],
+  "notice.reward.xp": ["{n} {track}", "{track}: {n}"],
+  "notice.unlock": ["Unlocked: {name}", "New thing: {name}"],
+  "notice.rank": ["{track}: level {level}!", "Level up! {track} is now level {level}."],
+  "notice.refused.too_many": ["Two jobs at a time is plenty.", "Your hands are full of jobs."],
+  "notice.refused.not_available": ["Not yet. Come back when you are someone.", "They do not know you well enough."]
 }

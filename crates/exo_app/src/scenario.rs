@@ -173,25 +173,25 @@ pub fn keys(w: &mut World, ks: &[KeyCode], on: bool) {
         }
     }
 }
-fn tap(w: &mut World, k: KeyCode) {
+pub(crate) fn tap(w: &mut World, k: KeyCode) {
     w.resource_mut::<Controls>().taps.push(k);
 }
-fn planet(w: &World) -> PlanetRes {
+pub(crate) fn planet(w: &World) -> PlanetRes {
     w.resource::<PlanetRes>().clone()
 }
-fn ship_e(w: &mut World) -> Entity {
+pub(crate) fn ship_e(w: &mut World) -> Entity {
     w.query_filtered::<Entity, With<Ship>>().single(w).unwrap()
 }
-fn ship_frame_of(w: &mut World) -> Frame {
+pub(crate) fn ship_frame_of(w: &mut World) -> Frame {
     let e = ship_e(w);
     let (p, r) = (w.get::<Position>(e).unwrap(), w.get::<Rotation>(e).unwrap());
     ship_frame(p, r)
 }
-fn ship_vel(w: &mut World) -> DVec3 {
+pub(crate) fn ship_vel(w: &mut World) -> DVec3 {
     let e = ship_e(w);
     w.get::<LinearVelocity>(e).unwrap().0
 }
-fn with_ship<R>(w: &mut World, f: impl FnOnce(&mut Ship) -> R) -> R {
+pub(crate) fn with_ship<R>(w: &mut World, f: impl FnOnce(&mut Ship) -> R) -> R {
     let e = ship_e(w);
     f(&mut w.get_mut::<Ship>(e).unwrap())
 }
@@ -205,14 +205,14 @@ pub(crate) fn player_world(w: &mut World) -> DVec3 {
     with_player(w, |p| p.world_pos(f))
 }
 /// Position of whatever the player controls (ship when seated).
-fn active_pos(w: &mut World) -> DVec3 {
+pub(crate) fn active_pos(w: &mut World) -> DVec3 {
     if with_player(w, |p| p.seated) { ship_frame_of(w).origin } else { player_world(w) }
 }
-fn above_ground(w: &mut World) -> f64 {
+pub(crate) fn above_ground(w: &mut World) -> f64 {
     let p = active_pos(w);
     planet(w).above_ground(p)
 }
-fn altitude(w: &mut World) -> f64 {
+pub(crate) fn altitude(w: &mut World) -> f64 {
     let p = active_pos(w);
     let pl = planet(w);
     (p - pl.centre).length() - pl.radius
@@ -292,14 +292,14 @@ pub(crate) fn check(c: &mut Ctx, ok: bool, note: String) {
     c.failures += !ok as u32;
 }
 
-fn begin(w: &mut World, c: &mut Ctx, name: &str) {
+pub(crate) fn begin(w: &mut World, c: &mut Ctx, name: &str) {
     c.phase = name.to_string();
     c.stats0 = w.resource::<WalkStats>().clone();
     c.rescues0 = c.stats0.rescues;
     println!("PHASE '{name}' tick {}", c.ticks);
 }
 
-fn end(w: &mut World, c: &mut Ctx, note: String) {
+pub(crate) fn end(w: &mut World, c: &mut Ctx, note: String) {
     let s = w.resource::<WalkStats>().clone();
     let steps = (s.steps - c.stats0.steps).max(1);
     let line = format!(
@@ -447,7 +447,7 @@ fn board(name: &'static str, from_outside: bool) -> Step {
 }
 
 /// Test shortcut: put the walker at rest in the own cabin, just behind the seat.
-fn put_at_seat(w: &mut World) {
+pub(crate) fn put_at_seat(w: &mut World) {
     let e = ship_e(w);
     let fr = ship_frame_of(w);
     let v = ship_vel(w);
@@ -477,7 +477,7 @@ fn back_to_seat() -> Vec<Step> {
     ]
 }
 
-fn sit() -> Vec<Step> {
+pub(crate) fn sit() -> Vec<Step> {
     vec![
         Box::new(|w, _| {
             tap(w, KeyCode::KeyF);
@@ -492,7 +492,7 @@ fn sit() -> Vec<Step> {
 }
 
 /// Hold keys until a condition or a time limit.
-fn hold_until(name: &'static str, ks: &'static [KeyCode], limit: f64, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
+pub(crate) fn hold_until(name: &'static str, ks: &'static [KeyCode], limit: f64, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
             begin(w, c, name);
@@ -511,7 +511,7 @@ fn hold_until(name: &'static str, ks: &'static [KeyCode], limit: f64, mut done: 
 /// Hold Ctrl until the ship rests (well below the landed check's 0.05 m/s). From the first hull
 /// contact on it must not slide: pressed down onto a slope it used to slide 20 s. Tipping from the
 /// first corner onto the slope moves the centre a little (0.3 m on the 14 degree slope of `full`).
-fn land(name: &'static str) -> Step {
+pub(crate) fn land(name: &'static str) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
             begin(w, c, name);
@@ -541,7 +541,7 @@ fn land(name: &'static str) -> Step {
 
 /// Point the nose like a player with the mouse: yaw/pitch rate proportional to the error,
 /// at most the controller's turn rate. `elevation` is the wanted angle above the horizon.
-fn aim(name: &'static str, elevation_deg: f64, secs: f64) -> Step {
+pub(crate) fn aim(name: &'static str, elevation_deg: f64, secs: f64) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
             begin(w, c, name);
@@ -583,7 +583,7 @@ fn aim(name: &'static str, elevation_deg: f64, secs: f64) -> Step {
     })
 }
 
-fn fly_to_space_and_back() -> Vec<Step> {
+pub(crate) fn fly_to_space_and_back() -> Vec<Step> {
     vec![
         hold_until("climb to 300 m above ground", &[KeyCode::Space, KeyCode::ShiftLeft], 120.0, |w| above_ground(w) > 300.0),
         aim("pitch up", 30.0, 3.0),
@@ -1437,15 +1437,15 @@ fn foreign_warp_extra_steps(s: &mut Vec<Step>) {
 
 // ---------- warp ----------
 
-const HEARTH: PlanetId = PlanetId(0);
-const CINDER: PlanetId = PlanetId(1);
+pub(crate) const HEARTH: PlanetId = PlanetId(0);
+pub(crate) const CINDER: PlanetId = PlanetId(1);
 /// The ship must be this close to the drive's end point on the tick after it got there (m):
 /// it is placed exactly, then flies one tick at the exit speed (6.7 m) under the pilot.
 const END_TOLERANCE: f64 = 10.0;
 /// Nose within this angle of the target's centre on the first tick after the arrival (deg).
 const NOSE_TOLERANCE: f64 = 2.0;
 
-fn warp_state(w: &World) -> (Phase, Option<Abort>) {
+pub(crate) fn warp_state(w: &World) -> (Phase, Option<Abort>) {
     let wd = w.resource::<WarpDrive>();
     (wd.drive.phase, wd.last_abort)
 }
@@ -1499,7 +1499,7 @@ fn events_since(w: &World, from: usize) -> Vec<(f64, Event)> {
 
 /// How the scripted flight is flown.
 #[derive(Clone, Copy, PartialEq)]
-enum Flight {
+pub(crate) enum Flight {
     /// The pilot stands up when the ramp-up starts and the walker stays in the cabin (deck
     /// contact and drift; walking at top speed; the cabin view of the cruise).
     Passenger,
@@ -1525,7 +1525,7 @@ impl Flight {
 /// One warp from where the ship is placed (`start`) to planet `to`, flown by script: the pilot
 /// holds the course. Ends 2.5 s after the arrival or drop. Screenshots of the cruise, the exit
 /// and 2 s after it.
-fn warp_flight(name: &'static str, tag: &'static str, start: Option<PlanetId>, to: PlanetId, how: Flight, dir: std::path::PathBuf, windowed: bool) -> Step {
+pub(crate) fn warp_flight(name: &'static str, tag: &'static str, start: Option<PlanetId>, to: PlanetId, how: Flight, dir: std::path::PathBuf, windowed: bool) -> Step {
     Box::new(move |w, c| {
         let lim = 240.0;
         if c.t == 0.0 {
@@ -1775,7 +1775,7 @@ fn ship_frame_of_ro(w: &World) -> DVec3 {
 }
 
 /// Wait until the drive is idle again (cooldown over).
-fn wait_drive_idle() -> Step {
+pub(crate) fn wait_drive_idle() -> Step {
     Box::new(|w, c| warp_state(w).0 == Phase::Idle || c.t > 30.0)
 }
 
@@ -2026,6 +2026,18 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "warp" => warp_steps(&mut s, out_dir, windowed),
         // #14 and #34: three planet swaps and an emergency drop; what each swap leaves behind.
         "swap" => swap_steps(&mut s, out_dir, windowed, swap_rounds.max(3)),
+        // #80: a crate in the cabin through take-off, flight, warp and landing; one out over the ramp.
+        "crate-ride" => crate::cargo_scenario::crate_ride_steps(&mut s, out_dir, windowed),
+        // #82: one tap for a crate and the seat, with the HUD prompt.
+        "interact" => crate::cargo_scenario::interact_steps(&mut s),
+        // #83: carry each size, throw, the grab tool from 8 m, the large crate alone.
+        "crate-carry" => crate::cargo_scenario::crate_carry_steps(&mut s),
+        // #84: lock grid: locked, loose and blocked crates through hard acceleration and a warp.
+        "crate-lock" => crate::cargo_scenario::crate_lock_steps(&mut s, out_dir, windowed),
+        // #85: object budget: cap, sleep, persistence cap over a planet swap, timeout, distance.
+        "crate-budget" => crate::cargo_scenario::crate_budget_steps(&mut s, out_dir, windowed),
+        // Night extra E1: unload the parked ship down the ramp by hand and load it again.
+        "crate-unload" => crate::cargo_scenario::crate_unload_steps(&mut s),
         // #63: fixed viewpoints and an atlas per planet (headless: atlas and statistics only).
         "planet-look" => crate::look::steps(&mut s, out_dir, windowed),
         // #70: walk from outside into a site; the walker stands on its flattened ground.
@@ -2108,6 +2120,14 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
             s.push(hold_until("climb to 400 m above ground", &[KeyCode::Space, KeyCode::ShiftLeft], 60.0, |w| above_ground(w) > 400.0));
             s.push(wait(3.0));
             s.extend(cabin_at_speed("in atmosphere: stand + walk, boost + roll, assist on", 8.0, true, 0.3));
+            // #80: the test crate rode along the whole flight in the cabin.
+            s.push(Box::new(|w, c| {
+                let ship = ship_e(w);
+                let crates: Vec<(Option<Entity>, DVec3)> = w.query::<&crate::cargo::Crate>().iter(w).map(|c| (c.ship, c.body.pos)).collect();
+                let inside = crates.iter().filter(|(s, p)| *s == Some(ship) && crate::ship::cabin_contains(*p, 0.0)).count();
+                check(c, crates.len() == 1 && inside == 1, format!("test crate still in the cabin after the flights ({inside} of {} crates inside)", crates.len()));
+                true
+            }));
             s.push(Box::new(|w, _| {
                 if let Some(mut v) = w.get_resource_mut::<ViewState>() {
                     v.orbit = true;

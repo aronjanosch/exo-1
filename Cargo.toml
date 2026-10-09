@@ -19,6 +19,7 @@ flight_core = { path = "crates/flight_core" }
 walker_core = { path = "crates/walker_core" }
 net_core = { path = "crates/net_core" }
 warp_core = { path = "crates/warp_core" }
+grab_core = { path = "crates/grab_core" }
 
 # Bevy recommendation: little optimisation for our code, full for dependencies.
 [profile.dev]

@@ -3,7 +3,7 @@
 use crate::controls::{Actions, Bindings, Tap};
 use crate::env::PlanetRes;
 use crate::ring::Ring;
-use crate::ship::{cabin_contains, RemoteShip, Ship, SEAT_POS};
+use crate::ship::{cabin_contains, RemoteShip, Ship};
 use crate::Layer;
 use avian3d::character_controller::move_and_slide::DepenetrationConfig;
 use avian3d::prelude::*;
@@ -140,7 +140,7 @@ impl Player {
 /// PhysicsStepSystems::First). Between steps the cabin colliders sit one tick behind the body
 /// (6.7 m at 400 m/s), so the walker works in the frame the colliders are in. Local coordinates
 /// are ship-relative either way.
-fn cabin_frame(
+pub(crate) fn cabin_frame(
     e: Entity,
     body: (&Position, &Rotation),
     floors: &Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
@@ -155,18 +155,17 @@ fn cabin_frame(
 }
 
 /// Gravity in a cabin, world space.
-fn cabin_gravity(lag: &flight_core::Lag, frame: &Frame, planet: &PlanetRes, at: DVec3) -> DVec3 {
+pub(crate) fn cabin_gravity(lag: &flight_core::Lag, frame: &Frame, planet: &PlanetRes, at: DVec3) -> DVec3 {
     lag.gravity(frame.rot * DVec3::Y, flight_core::PlanetEnv::gravity_at(planet, at))
 }
 
 /// Up from a gravity vector (world space); weightless keeps `fallback`.
-fn up_from(g: DVec3, fallback: DVec3) -> DVec3 {
+pub(crate) fn up_from(g: DVec3, fallback: DVec3) -> DVec3 {
     if g.length_squared() > 1e-12 { -g.normalize() } else { fallback }
 }
 
 #[allow(clippy::too_many_arguments)]
 pub fn walker_step(
-    mut commands: Commands,
     time: Res<Time>,
     planet: Res<PlanetRes>,
     mut actions: ResMut<Actions>,
@@ -181,6 +180,7 @@ pub fn walker_step(
     remotes: Query<(Entity, &Position, &Rotation, &LinearVelocity, &RemoteShip)>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
     colliders: Query<(Entity, &ColliderOf)>,
+    grab: Res<crate::grab::Grab>,
 ) {
     let dt = time.delta_secs_f64();
     let Ok(mut pl) = players.single_mut() else { return };
@@ -198,25 +198,6 @@ pub fn walker_step(
         Err(_) => own_lag,
     };
 
-    // F: sit at the seat or stand up.
-    if actions.take_tap(Tap::Seat) {
-        let (_, mut ship, ..) = ships.get_mut(ship_e).unwrap();
-        if pl.seated {
-            pl.seated = false;
-            ship.piloted = false; // hover assist now holds the ship
-            pl.w.pos = DVec3::new(0.0, 0.32, SEAT_POS.z + 1.0);
-            pl.w.halt();
-        } else if pl.ship == Some(ship_e) && pl.w.pos.distance(SEAT_POS) < 1.8 {
-            pl.seated = true;
-            ship.piloted = true;
-            if ship.parked {
-                ship.parked = false;
-                commands.entity(ship_e).insert(RigidBody::Dynamic);
-            }
-            pl.w.pos = SEAT_POS - DVec3::new(0.0, 0.3, 0.0);
-            pl.w.halt();
-        }
-    }
     // G: cabin gravity by hand, in the own cabin (the ship allows it only while landed).
     if pl.ship == Some(ship_e) && actions.take_tap(Tap::Lag) {
         ships.get_mut(ship_e).unwrap().1.lag.toggle();
@@ -235,8 +216,11 @@ pub fn walker_step(
     let sens = bindings.mouse.walker_sensitivity * settings.mouse_sensitivity;
     // The pad's stick (turn: x pitch up, y yaw left) turns the view at a rate.
     let stick = actions.turn * bindings.pad.look_rate * dt;
-    let yaw = -m.x as f64 * sens + stick.y;
-    let pitch = -m.y as f64 * sens + stick.x;
+    // A held crate slows the view's turn, more for heavy ones (#83).
+    let turn_share = grab.held.map_or(1.0, |h| grab_core::view_turn_share(&tuning.grab, h.mass));
+    let yaw = (-m.x as f64 * sens + stick.y) * turn_share;
+    let pitch = (-m.y as f64 * sens + stick.x) * turn_share;
+    let carry = grab.carry(&tuning.grab);
     let cfg = pl.w.cfg;
 
     // Weightless outside a cabin: the body turns freely and the suit thrusters move it (issue #8).
@@ -271,14 +255,17 @@ pub fn walker_step(
             boost: actions.boost,
             brake: actions.brake,
         };
-        WalkInput { accel: suit_accel(&tuning.suit, b, pl.w.vel, &suit), ..default() }
+        // Weightless, a held crate pulls the walker as much as the walker pulls it.
+        let reaction = grab_core::holder_accel(&tuning.grab, grab.reaction);
+        WalkInput { accel: suit_accel(&tuning.suit, b, pl.w.vel, &suit) + reaction, ..default() }
     } else {
         pl.pitch = (pl.pitch + pitch).clamp(-cfg.pitch_limit, cfg.pitch_limit);
         WalkInput {
             dir: DVec2::new(actions.move_dir.x, -actions.move_dir.z),
-            run: actions.run,
-            jump: actions.jump,
+            run: actions.run && carry.can_run,
+            jump: actions.jump && carry.can_jump,
             yaw,
+            slow: 1.0 - carry.speed_share,
             ..default()
         }
     };

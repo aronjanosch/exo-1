@@ -1,0 +1,4 @@
+{
+  "_comment": "Object budget per category (grab_core::Budget, #85). cap: most objects alive; persistence_cap: loose ones kept on a planet the players left (frozen until they come back); timeout_s: a loose one resting on a planet nobody touched this long goes; far_m: a loose one still moving (drifting in space) this far from every player and ship goes. Held, locked and cabin objects never go. TODO(initiator): all values are starting points.",
+  "crate": { "cap": 24, "persistence_cap": 4, "timeout_s": 900.0, "far_m": 3000.0 }
+}

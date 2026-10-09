@@ -1,0 +1,17 @@
+{
+  "_comment": "The first playable round (#133): a fixed job from the start pad to Bent Spoon. All numbers are starting values (TODO(initiator)).",
+  "id": "first_haul",
+  "title": "job.first_haul.title",
+  "brief": "job.first_haul.brief",
+  "objectives": [
+    { "deliver": { "from": { "location": "drip_rock" }, "to": { "location": "bent_spoon" }, "commodity": { "one_of": ["fizzy_mud"] }, "amount": [3, 3] } }
+  ],
+  "reward": 300,
+  "grading": {
+    "bands": [ { "share": 0.3, "pays": 0.3 }, { "share": 0.6, "pays": 0.6 }, { "share": 1.0, "pays": 1.0 } ],
+    "condition_weight": 0.5
+  },
+  "track": "freight_xp",
+  "xp": 50,
+  "once_only": true
+}

@@ -1,0 +1,11 @@
+{
+  "_comment": "English strings for the gameplay keys. #131 turns this into checked localisation tables.",
+  "commodity.fizzy_mud.name": "fizzy mud",
+  "location.drip_rock.name": "Drip Rock",
+  "location.bent_spoon.name": "Bent Spoon",
+  "track.wallet.name": "credits",
+  "track.freight_xp.name": "freight XP",
+  "unlock.bent_spoon_permit.name": "Bent Spoon landing permit",
+  "job.first_haul.title": "First haul",
+  "job.first_haul.brief": "Three crates of fizzy mud for Bent Spoon. They fizz less if you don't drop them."
+}

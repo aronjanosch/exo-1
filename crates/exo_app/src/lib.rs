@@ -6,6 +6,7 @@ pub mod cargo;
 pub mod controls;
 pub mod daynight;
 pub mod env;
+pub mod gameplay;
 pub mod grab;
 pub mod hot_reload;
 pub mod hud;
@@ -176,8 +177,31 @@ impl Options {
 
 /// Bevy's asset root, `content/` (props). Dev builds read the repo's folder wherever the binary
 /// runs from; release builds expect `content/` next to the executable.
-fn content_dir() -> String {
+pub fn content_dir() -> String {
     if cfg!(debug_assertions) { concat!(env!("CARGO_MANIFEST_DIR"), "/../../content").to_string() } else { "content".to_string() }
+}
+
+/// Every `.json` file under `content/<sub>/` (one folder deep), with its path relative to
+/// `content/<sub>/` (`commodity/fizzy_mud.json`), sorted. A missing folder gives none.
+pub fn content_files(sub: &str) -> Vec<content_core::File> {
+    let root = std::path::Path::new(&content_dir()).join(sub);
+    let mut out = Vec::new();
+    let mut dirs = vec![root.clone()];
+    while let Some(d) = dirs.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() && d == root {
+                dirs.push(p);
+            } else if p.extension().is_some_and(|x| x == "json") {
+                let rel = p.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/");
+                let text = std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display()));
+                out.push(content_core::File::new(rel, text));
+            }
+        }
+    }
+    out.sort_by(|a, b| a.path.cmp(&b.path));
+    out
 }
 
 pub fn build_app(o: &Options) -> App {
@@ -274,6 +298,7 @@ pub fn build_app(o: &Options) -> App {
     // Domain plugins. The order between phases is in `phases`; inside a phase each plugin orders its own systems.
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
     app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, cargo::plugin, hud::plugin, net_live::plugin));
+    app.add_plugins(gameplay::plugin);
     if let Some(name) = &o.scenario {
         app.add_plugins(scenario::plugin(name, o.headless));
     }
@@ -289,7 +314,7 @@ pub fn build_app(o: &Options) -> App {
     });
     if !o.headless {
         app.add_plugins((view::plugin, controls::window_plugin, settings::window_plugin, terrain::plugin, daynight::window_plugin, grab::window_plugin, cargo::window_plugin));
-        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin));
+        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, gameplay::window_plugin));
         if o.menu() {
             app.add_plugins(menu::plugin);
         }

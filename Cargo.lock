@@ -2710,9 +2710,12 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "content_core",
  "daynight_core",
  "flight_core",
+ "gameplay_core",
  "grab_core",
+ "jobs_core",
  "net_core",
  "planet_core",
  "serde_json",

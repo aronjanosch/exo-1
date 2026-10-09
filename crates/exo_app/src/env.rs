@@ -18,6 +18,15 @@ pub fn recipe_for(def: &PlanetDef) -> Result<Recipe, String> {
     Recipe::for_planet(text, def.seed, def.radius).map_err(|e| format!("content/planet/{}.json: {e}", def.recipe))
 }
 
+/// The hand-placed places of a planet recipe (`content/place/*.json`, #129).
+pub fn places_for(recipe: &str) -> Vec<planet_core::Place> {
+    crate::content_files("place")
+        .iter()
+        .map(|f| content_core::parse_strict::<planet_core::Place>(&format!("content/place/{}", f.path), &f.text).unwrap_or_else(|e| panic!("{e}")))
+        .filter(|p| p.planet == recipe)
+        .collect()
+}
+
 pub fn to_v3(d: DVec3) -> V3 {
     planet_core::v3(d.x, d.y, d.z)
 }
@@ -50,6 +59,7 @@ impl PlanetRes {
     pub fn load_with_stats(id: PlanetId, def: &PlanetDef) -> (PlanetRes, BakeStats) {
         let recipe = recipe_for(def).unwrap_or_else(|e| panic!("{e}"));
         let mut p = Planet::new(recipe);
+        p.set_places(places_for(&def.recipe)).unwrap_or_else(|e| panic!("content/place: {e}"));
         let st = p.bake_checked(0).unwrap_or_else(|e| panic!("content/planet/{}.json: {e}", def.recipe));
         let (lo, hi) = p.height_range;
         let res = PlanetRes {

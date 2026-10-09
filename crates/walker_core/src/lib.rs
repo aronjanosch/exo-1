@@ -1,7 +1,6 @@
-//! walker_core: first-person walker without engine types. Port of spikes/planet/player.gd
-//! (radial gravity, floor snap, 50 degree floor limit) with its own move-and-slide over a
-//! `World` that only answers sweeps and overlaps. The engine side (Avian shape casts) lives
-//! in the Bevy crate.
+//! walker_core: first-person walker without engine types (radial gravity, floor snap, 50 degree
+//! floor limit) with its own move-and-slide over a `World` that only answers sweeps and overlaps.
+//! The engine side (Avian shape casts) lives in the Bevy crate.
 //!
 //! The walker lives in a frame: the planet (identity frame, world coordinates) or a ship
 //! cabin (the ship's pose). Position and velocity are stored in that frame, so a moving
@@ -149,7 +148,7 @@ pub fn suit_accel(cfg: &SuitConfig, rot: DQuat, vel: DVec3, input: &SuitInput) -
 #[serde(deny_unknown_fields)]
 pub struct WalkerConfig {
     pub radius: f64,
-    /// Total capsule height (Godot CapsuleShape3D convention).
+    /// Total capsule height, the hemispheres included.
     pub height: f64,
     pub walk_speed: f64,
     pub run_speed: f64,
@@ -173,7 +172,7 @@ pub struct WalkerConfig {
 
 impl Default for WalkerConfig {
     fn default() -> Self {
-        // player.gd values; skin and slide count are this port's choice.
+        // Spike values; skin and slide count assumed.
         WalkerConfig {
             radius: 0.35,
             height: 1.8,
@@ -267,7 +266,7 @@ impl Walker {
         normal.dot(up) >= self.cfg.floor_max_angle_deg.to_radians().cos()
     }
 
-    /// Keep the heading, make it perpendicular to `up` (player.gd `_align_to_up`).
+    /// Keep the heading, make it perpendicular to `up`.
     pub fn align(&mut self, up: DVec3, yaw: f64) {
         let mut f = self.forward;
         if yaw != 0.0 {
@@ -287,8 +286,7 @@ impl Walker {
     }
 
     /// Moves the walker into another frame, keeping its world position. `frame_vel_change`
-    /// is old frame velocity minus new frame velocity at the walker, world space
-    /// (player.gd: `velocity -= ship.linear_velocity` on entering).
+    /// is old frame velocity minus new frame velocity at the walker, world space.
     pub fn change_frame(&mut self, old: &Frame, new: &Frame, frame_vel_change: DVec3) {
         let world_pos = old.to_world(self.pos);
         let world_vel = old.rot * self.vel + frame_vel_change;
@@ -388,7 +386,7 @@ impl Walker {
             }
         }
 
-        // Floor snap (Godot floor_snap_length): stay on the ground over small steps and crests.
+        // Floor snap: stay on the ground over small steps and crests.
         if !self.grounded && was_grounded && !jumping && self.vel.dot(up) <= 1e-6 {
             let probe = -world_up * self.cfg.snap_length;
             if let Some(hit) = world.sweep(frame.to_world(self.pos), world_up, probe) {

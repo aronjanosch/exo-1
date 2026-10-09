@@ -1,6 +1,5 @@
-//! Port of `spikes/planet/flight_test.gd`: controller checks on a cheap
-//! spherical fixture at 60 Hz. Initial placement is scripted; measured motion
-//! uses input and physics steps. `cargo test -p flight_core -- --nocapture`.
+//! Controller checks on a cheap spherical fixture at 60 Hz. Initial placement is scripted;
+//! measured motion uses input and physics steps. `cargo test -p flight_core -- --nocapture`.
 use flight_core::*;
 use glam::{DQuat, DVec2, DVec3};
 
@@ -36,7 +35,7 @@ impl PlanetEnv for TestPlanet {
     }
 }
 
-/// main.gd's planet model (centre, radius 5000, default field).
+/// The game's planet model (centre, radius 5000, default field).
 struct MainModel {
     centre: DVec3,
     field: Field,
@@ -57,7 +56,7 @@ impl PlanetEnv for MainModel {
     }
 }
 
-/// Godot's SpikeInput.held as flags.
+/// Held keys as flags.
 #[derive(Default, Clone, Copy)]
 struct Keys {
     w: bool,
@@ -81,7 +80,7 @@ struct Sim {
     body: BodyState,
     ship: ShipController,
     keys: Keys,
-    /// Godot's `ship._mouse`, consumed by the next step.
+    /// Mouse movement, consumed by the next step.
     mouse: DVec2,
     failures: u32,
     checks: u32,

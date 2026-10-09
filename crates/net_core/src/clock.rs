@@ -1,5 +1,5 @@
 //! Clock sync by ping/pong against the host, keeping the offset of the lowest round trip
-//! (as main.gd). Times are seconds on the local monotonic clock.
+//! Times are seconds on the local monotonic clock.
 #[derive(Default, Clone, Copy, Debug)]
 pub struct ClockSync {
     pub offset: f64,

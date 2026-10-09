@@ -1,5 +1,5 @@
-//! Input as state the simulation reads, so scripts and the keyboard drive the same path
-//! (Godot's SpikeInput pattern). Scripted runs never read the keyboard and never grab the mouse.
+//! Input as state the simulation reads, so scripts and the keyboard drive the same path.
+//! Scripted runs never read the keyboard and never grab the mouse.
 //!
 //! Two layers: `Controls` is the raw input (held keys, tapped keys, mouse pixels) that the keyboard
 //! and the scenario scripts write. Once per fixed step `resolve_actions` turns it into `Actions`

@@ -22,6 +22,8 @@ Diagnostics answer “what is happening over time?” Tracing answers “where d
 execution spend time?” Render diagnostics expose pass-level renderer measurements.
 Use all three, but do not treat any one of them as proof of a bottleneck.
 
+In EXO-1, measure first with the game's own perf harness (`--perf`, README section "Performance", `crates/exo_app/src/perf.rs`): step and frame times per scenario phase against a baseline. Reach for this skill when the harness shows a phase is slow and the cause is open.
+
 ## Canonical pattern
 
 ```rust

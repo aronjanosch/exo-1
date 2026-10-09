@@ -21,7 +21,7 @@ Machine budget (16 cores, 31 GB): at most three lanes that build at once; resear
    cp -a --reflink=always ~/.cache/exo-1-target ~/.cache/exo-1-target-<name>
    ```
    Every cargo command in the lane runs with `CARGO_TARGET_DIR=~/.cache/exo-1-target-<name>` and `CARGO_BUILD_JOBS=4`. Done when `git branch --show-current` in the worktree prints `<branch>`.
-2. **Work** test-first in the `*_core` crate where the logic lives. Subagents read, research and review; cargo runs one command at a time, from the lane itself. Open design questions become `TODO(initiator)` placeholders in the data plus a line in the report; the lane keeps going. A choice the initiator should judge by feel gets an in-game toggle key.
+2. **Work** test-first in the `*_core` crate where the logic lives. Subagents read, research and review; cargo runs one command at a time, from the lane itself. Open design questions, and any step of a loaded skill that waits for the initiator (such as `tdd` confirming seams), become `TODO(initiator)` placeholders plus a line in the report; the lane keeps going. A choice the initiator should judge by feel gets an in-game toggle key.
 3. **Check in tiers**: while working, `cargo test -p <crate>` and the lane's own scenario test; once at the end, `cargo t` and `cargo scenario`.
 4. **Push after every commit** to the lane branch. Check `git branch --show-current` before each commit.
 5. **Finish**: merge `origin/main` into the lane (merge, keep the commits), run the full check, push. Done when both commands exit 0 on the pushed commit.

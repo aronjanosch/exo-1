@@ -20,7 +20,7 @@ last value, so do not call it once per completed job and expect a latency sample
 every job. Aggregate in an application-owned histogram/export queue and publish a
 defined summary sample instead.
 
-Use stable paths such as `voxel/task_latency_ms`; do not put section coordinates,
+Use stable paths such as `terrain/task_latency_ms`; do not put section coordinates,
 entity IDs, filenames, or player IDs in the path. That creates unbounded metric
 cardinality. Put targeted identifiers in trace fields instead.
 
@@ -33,7 +33,7 @@ Register a `Diagnostic` once during plugin construction. Record through the
 use bevy::{diagnostic::{DiagnosticPath, DiagnosticsStore}, prelude::*};
 
 const APPLY_TIME: DiagnosticPath =
-    DiagnosticPath::const_new("voxel/apply_time_ms");
+    DiagnosticPath::const_new("terrain/apply_time_ms");
 
 fn inspect(store: Res<DiagnosticsStore>) {
     let latest = store
@@ -54,7 +54,7 @@ Name spans by operation, not object identity:
 
 ```rust
 let span = info_span!(
-    "voxel_remesh",
+    "terrain_patch_build",
     queue_wait_ms = tracing::field::Empty,
     revision = revision,
 );
@@ -77,5 +77,4 @@ continuous overview and temporarily richer spans for a reproducible capture.
 `SystemInformationDiagnosticsPlugin` samples asynchronously because system queries
 are relatively expensive. It supports Linux, Windows, Android, and macOS in suitable
 standard builds. It is unsupported with Bevy dynamic linking, on iOS, and on Wasm.
-Treat absent data as “not available.” Browser memory/CPU evidence must come from
-browser/platform tools and application-owned counters.
+Treat absent data as “not available.”

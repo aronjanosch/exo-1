@@ -1,6 +1,6 @@
 ---
 name: bevy-diagnostics-profiling
-description: "Use when profiling Bevy 0.19 with `DiagnosticPath`, `DiagnosticsStore`, `info_span!`, or `RenderDiagnosticsPlugin`: custom metrics, CPU/GPU pass timings, queue/task/upload telemetry, stale-result counts, and native, Steam Deck, or WebGPU budgets."
+description: "Use when profiling Bevy 0.19 with `DiagnosticPath`, `DiagnosticsStore`, `info_span!`, or `RenderDiagnosticsPlugin`: custom metrics, CPU/GPU pass timings, queue/task/upload telemetry, stale-result counts, and native frame budgets."
 license: MIT
 compatibility: opencode,claude-code,cursor
 metadata:
@@ -15,7 +15,7 @@ metadata:
 
 - A frame, render pass, worker pipeline, or upload path needs causal evidence.
 - A queue/task system needs stable gauges, counters, latency, and high-water marks.
-- Performance claims must pass native, Steam Deck, or browser acceptance budgets.
+- Performance claims must pass native acceptance budgets.
 - Render GPU diagnostics are absent or disagree with CPU traces.
 
 Diagnostics answer “what is happening over time?” Tracing answers “where did this
@@ -32,31 +32,31 @@ use bevy::{
     prelude::*,
 };
 
-const REMESH_QUEUE_DEPTH: DiagnosticPath =
-    DiagnosticPath::const_new("voxel/remesh_queue_depth");
+const PATCH_QUEUE_DEPTH: DiagnosticPath =
+    DiagnosticPath::const_new("terrain/patch_queue_depth");
 
 #[derive(Resource, Default)]
-struct RemeshQueue {
+struct PatchQueue {
     valid_jobs: usize,
 }
 
-struct VoxelDiagnosticsPlugin;
+struct TerrainDiagnosticsPlugin;
 
-impl Plugin for VoxelDiagnosticsPlugin {
+impl Plugin for TerrainDiagnosticsPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<RemeshQueue>()
+        app.init_resource::<PatchQueue>()
             .register_diagnostic(
-                Diagnostic::new(REMESH_QUEUE_DEPTH).with_suffix(" sections"),
+                Diagnostic::new(PATCH_QUEUE_DEPTH).with_suffix(" patches"),
             )
-            .add_systems(Update, record_voxel_diagnostics);
+            .add_systems(Update, record_terrain_diagnostics);
     }
 }
 
-fn record_voxel_diagnostics(
-    queue: Res<RemeshQueue>,
+fn record_terrain_diagnostics(
+    queue: Res<PatchQueue>,
     mut diagnostics: Diagnostics,
 ) {
-    diagnostics.add_measurement(&REMESH_QUEUE_DEPTH, || queue.valid_jobs as f64);
+    diagnostics.add_measurement(&PATCH_QUEUE_DEPTH, || queue.valid_jobs as f64);
 }
 ```
 
@@ -70,12 +70,19 @@ telemetry, not a same-system synchronisation mechanism.
 - `FrameTimeDiagnosticsPlugin`: FPS, frame time, and frame count.
 - `EntityCountDiagnosticsPlugin`: live entity count.
 - `SystemInformationDiagnosticsPlugin`: process/system CPU and memory on supported
-  native targets. It is unavailable/no-op for WASM, iOS, and dynamic-link builds.
+  native targets. It is unavailable/no-op in dynamic-link builds, which includes
+  this project's `cargo t` and `cargo scenario`.
 - `LogDiagnosticsPlugin`: development output; filter paths and cadence to avoid noise.
 - `RenderDiagnosticsPlugin`: CPU/GPU time per recorded render span and pipeline
   statistics where the backend supports them.
 
-Add `RenderDiagnosticsPlugin` from `bevy::render::diagnostic`. It creates dynamic
+`FrameTimeDiagnosticsPlugin` and `EntityCountDiagnosticsPlugin` are structs with
+fields: add them as `FrameTimeDiagnosticsPlugin::default()`.
+
+Add `RenderDiagnosticsPlugin` from `bevy::render::diagnostic`, guarded by
+`if !app.is_plugin_added::<RenderDiagnosticsPlugin>()` after `DefaultPlugins`:
+with `bevy/trace_tracy`, `RenderPlugin` adds it already (`bevy_render` feature
+`tracing-tracy`), and a second `add_plugins` panics with `DuplicatePlugin`. It creates dynamic
 paths shaped like `render/<span>/elapsed_cpu` and, when supported,
 `render/<span>/elapsed_gpu` plus invocation/primitive statistics.
 
@@ -107,13 +114,12 @@ for continuous observability and switch on detailed traces for investigation.
 ## Gotchas and platform truth
 
 Bevy 0.19 render timestamp queries and pipeline statistics are supported on Vulkan
-and DX12. Metal, WebGPU, and WebGL2 expose CPU render timings only through
+and DX12. Metal exposes CPU render timings only through
 `RenderDiagnosticsPlugin`. Missing `elapsed_gpu` is an unsupported measurement, not
 zero GPU cost. Use vendor/platform GPU profilers where available; RenderDoc is a
 graphics debugger, not a performance profiler.
 
 Profile the shipping renderer, resolution, power mode, content, and build profile.
-Desktop results do not establish Steam Deck or browser budgets.
 
 ## Choose the relevant deep dive
 
@@ -135,8 +141,6 @@ Desktop results do not establish Steam Deck or browser budgets.
 
 ## See also
 
-- [`bevy-voxel-runtime`](../bevy-voxel-runtime/SKILL.md) — concrete queue, stale-result, and upload metrics.
-- [`bevy-rendering`](../bevy-rendering/SKILL.md) — renderer architecture and custom render systems.
 - [`bevy-testing`](../bevy-testing/SKILL.md) — deterministic benchmark replays and visual captures.
 - [Bevy diagnostics](https://docs.rs/bevy/0.19.0/bevy/diagnostic/index.html)
 - [Bevy render diagnostics](https://docs.rs/bevy/0.19.0/bevy/render/diagnostic/index.html)

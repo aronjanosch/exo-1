@@ -13,16 +13,9 @@ targets:
   native_min_spec:
     frame_time_p99_ms: <project value>
     queue_recovery_seconds: <project value>
-  steam_deck_15w:
-    frame_time_p99_ms: <project value>
-    queue_recovery_seconds: <project value>
-  chrome_webgpu_min_spec:
-    frame_time_p99_ms: <project value>
-    queue_recovery_seconds: <project value>
 ```
 
-Pin resolution, renderer/backend, target frame rate, Deck power/refresh profile,
-browser version, world seed, camera route, edit stream, and asset state. Record
+Pin resolution, renderer/backend, target frame rate, power profile, world seed, camera route, edit stream, and asset state. Record
 thermal state where it matters. Thresholds copied from a different game are not
 acceptance criteria.
 
@@ -54,9 +47,7 @@ mesh count without bytes can hide a single pathological asset.
 ## Pass/fail interpretation
 
 A run fails if a hard threshold is exceeded after allowed warm-up, if the queue does
-not recover in the specified interval, or if required evidence is absent. Do not pass
-a WebGPU run because GPU timings were unsupported; use the target's alternative
-evidence. Compare distributions over repeated runs and keep the raw artifacts needed
+not recover in the specified interval, or if required evidence is absent. Compare distributions over repeated runs and keep the raw artifacts needed
 to explain a regression.
 
 When optimisation changes quality—render distance, collider fidelity, update cadence,

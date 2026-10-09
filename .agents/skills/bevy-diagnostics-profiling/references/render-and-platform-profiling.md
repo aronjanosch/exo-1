@@ -6,7 +6,11 @@
 use bevy::{prelude::*, render::diagnostic::RenderDiagnosticsPlugin};
 
 fn install(app: &mut App) {
-    app.add_plugins((DefaultPlugins, RenderDiagnosticsPlugin));
+    app.add_plugins(DefaultPlugins);
+    // `bevy/trace_tracy` makes `RenderPlugin` add it already; a second add panics.
+    if !app.is_plugin_added::<RenderDiagnosticsPlugin>() {
+        app.add_plugins(RenderDiagnosticsPlugin);
+    }
 }
 ```
 
@@ -42,12 +46,9 @@ frame-time percentiles.
 | Vulkan | yes | yes, subject to device support | yes, subject to device support |
 | DX12 | yes | yes, subject to device support | yes, subject to device support |
 | Metal | yes | no through this plugin | no through this plugin |
-| Browser WebGPU | yes | no through this plugin | no through this plugin |
-| WebGL2 | yes | no through this plugin | no through this plugin |
 
-Do not compare an absent browser GPU diagnostic to a native zero. Use browser GPU
-profiling/timing facilities that are available on the tested browser and device, and
-label evidence by browser, version, adapter, backend, resolution, and power mode.
+An absent GPU diagnostic is not a zero. Label evidence by adapter, backend,
+resolution, and power mode.
 
 ## Tool choice
 

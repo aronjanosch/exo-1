@@ -121,6 +121,10 @@ pub fn grab_step(
     let drop = if held.reach == Reach::Hands { c.body.half.y } else { 0.0 };
     let target = cf.to_local(eye + look * held.dist - up_w * drop);
     let holder = Holder { target, target_vel: to_local * (walker_vel - cf_vel), source: cf.to_local(eye), reach: held.reach };
+    // Grabbing unlocks a crate from the plates (#84).
+    if c.locked {
+        c.locked = false;
+    }
     let mass = c.body.mass;
     let g = -c.body.up * c.g;
     let out = grab_core::hold_force(cfg, mass, c.body.pos, c.body.vel, g, &[holder]);

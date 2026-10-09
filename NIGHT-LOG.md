@@ -10,7 +10,7 @@ Phase 1, `feat/milestone-c-grab`:
 - [x] #80 crates as data, living in the ship's frame
 - [x] #82 interaction: one verb, one prompt
 - [x] #83 grab in the game: hands and the grab tool
-- [ ] #84 lock grid in the cabin
+- [x] #84 lock grid in the cabin
 - [ ] #85 object budget
 - not in this run: #86 (network)
 
@@ -86,3 +86,24 @@ Open points / `TODO(initiator)`:
 - Hold point height (half the crate's height below the eye line) and the tool's reel speed and hold distance (3 m/s, 3 m) are guesses.
 - The view turn share applies to mouse and stick alike, also with the tool.
 - Shared carry with two players needs #86 (network).
+
+## #84 lock grid in the cabin
+
+What (`exo_app/src/cargo.rs`): a grid of 0.5 m floor plates in the rear part of the cabin (x -1.5..1.5, z -1.0..3.5: 6 x 9 plates, clear of the seat). A crate in the cabin that comes to rest (sleeps) with nobody pushing it and its whole footprint on the plates snaps to them (heading to a quarter turn, edges onto plate lines) and locks: it is not stepped any more (part of the ship), and its plates are lit green. A crate resting partly on the plates does not lock and its plates show red. Grabbing unlocks (`grab_step`). Loose crates in the cabin now feel the ship's acceleration (from its velocity change per step, the part along the floor, capped at 40 m/s²), so they slide when that beats friction. Plate visuals are thin tiles on the ship (dim, green with glow, red with glow).
+
+Three related rules this needed (all `TODO(initiator)`):
+- **Ramp field.** The cabin has no rear wall, so hard forward acceleration threw loose crates out over the ramp. In flight (not landed) a loose crate nobody pushes stops at the ramp edge. A carried, pushed or thrown crate can still leave. Landed, nothing stops them.
+- **Warp hold covers PostRampDown.** `Phase::holds_ship()` ends before the drive has braked the ship back down; crates in the cabin are now held through `PostRampDown` too.
+- **Cabin safety net.** A loose crate is kept inside the side walls, front wall and ceiling (4 mm gap) and above the floor. Before it existed, after a warp a crate pressed to the front wall went through it: a sweep that starts touching a wall ignores that wall (`ignore_origin_penetration`). With the net, corrections over 2 cm (`CargoStats::wall_catches`) were 0 in `crate-lock`.
+
+Checks, scenario `crate-lock` (new, in `cargo t`):
+- set down: the crate fully on the plates locks and snaps to (-0.75, 1.25); the one off the plates and the one half on the right edge do not; 1 plate lit, 1 red.
+- hard acceleration (6 s boost forward to 197 m/s), firm brake, 3 s hard strafe, firm brake: locked crate drift 0.0000 m; loose crate slid 5.75 m and stayed in the cabin (ramp field stopped it 441 steps).
+- fly to space and warp Hearth -> Cinder: locked crate still locked, drift 0.0000 m; loose crate still in the cabin; net corrections over 2 cm: 0.
+- landed on Cinder: grabbing unlocks (held, not locked, 0 plates lit); set down again on the plates it locks again.
+- 0 failures. `crate-ride` now also locks its test crate (it snapped 0.255 m onto the plates), so from then on it does not move at all (drift 0.000 m through flight, warp and landing). Its pushed crate now leaves while the ship accelerates (W held until the hand-over: with inertia, the ship's braking after W pushed the crate forward against the shove); hand-over at 25.36 m/s ship speed, jump 0.0 m/s.
+
+Open points:
+- Locked crates add no mass to the ship; loose crates do not push it.
+- The inertia ignores the ship's turning (no centrifugal push) and the vertical part (cabin gravity holds crates down).
+- Plate area and size, the 40 m/s² cap and the ramp field are guesses.

@@ -30,25 +30,40 @@ fn watch(w: &World) -> &CrateWatch {
     w.resource::<CrateWatch>()
 }
 
+/// Starts watching these crates (drift from where they are now, ever outside the cabin).
+pub(crate) fn watch_crates(w: &mut World, es: &[Entity]) {
+    let crates = es
+        .iter()
+        .map(|&e| crate::cargo::Watched { e, start: w.get::<Crate>(e).unwrap().body.pos, max_drift: 0.0, left_cabin: false })
+        .collect();
+    w.insert_resource(CrateWatch { crates, ticks: 0 });
+}
+
 /// #80: a test crate on the cabin floor through take-off, flight, warp and landing; a second one
 /// pushed out over the ramp of the flying ship.
 pub fn crate_ride_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
     s.push(Box::new(|w, c| {
         clear_crates(w);
         let e = cabin_crate(w, "small", 1.2, 1.5);
-        let start = w.get::<Crate>(e).unwrap().body.pos;
-        w.insert_resource(CrateWatch { e, start, max_drift: 0.0, left_cabin: false, ticks: 0 });
+        watch_crates(w, &[e]);
+        c.v.insert("watched", e.to_bits() as f64);
         begin(w, c, "crate-ride: test crate on the cabin floor");
         true
     }));
     s.push(wait(1.5));
     s.push(Box::new(|w, c| {
-        let e = watch(w).e;
-        let b = crate_of(w, e).unwrap().body.clone();
+        let e = Entity::from_bits(c.v["watched"] as u64);
+        let cr = crate_of(w, e).unwrap();
+        let (asleep, locked) = (cr.body.asleep || cr.locked, cr.locked);
+        let drift = watch(w).get(e).max_drift;
         let stats = w.resource::<CargoStats>();
-        let note = format!("asleep {}, grounded {}, drift {:.1} mm, steps {} asleep-steps {}", b.asleep, b.grounded, watch(w).max_drift * 1000.0, stats.steps, stats.asleep);
+        let note = format!("at rest {asleep}, locked {locked}, drift {:.1} mm, steps {} asleep-steps {}", drift * 1000.0, stats.steps, stats.asleep);
         end(w, c, note);
-        check(c, b.asleep && watch(w).max_drift < 0.01, format!("crate-ride: the crate rests and sleeps on the floor (drift {:.1} mm < 10 mm)", watch(w).max_drift * 1000.0));
+        // It rests on the plates, so it also locks and snaps to them (#84): up to half a plate
+        // along each axis, 0.354 m on the diagonal.
+        check(c, asleep && drift < 0.36, format!("crate-ride: the crate comes to rest on the floor (drift {:.1} mm, snapped to the plates: {locked})", drift * 1000.0));
+        // Reset the watch: from here on the crate must not move.
+        watch_crates(w, &[e]);
         true
     }));
     s.push(Box::new(|w, _| {
@@ -69,7 +84,7 @@ pub fn crate_ride_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool
         }
         let e = Entity::from_bits(c.v["pushed"] as u64);
         if c.t > 0.8 {
-            keys(w, &[KeyCode::KeyW], false);
+            // Keep flying forward (the ship's acceleration pushes loose crates back too, #84).
             // Shove it backwards, harder than friction (test hook: what a hand will do in #83).
             if let Some(mut cr) = w.get_mut::<Crate>(e) {
                 cr.push = DVec3::new(0.0, 0.0, 8.0);
@@ -77,10 +92,11 @@ pub fn crate_ride_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool
         }
         let hs = &w.resource::<CargoStats>().handovers[c.v["n0"] as usize..];
         if let Some(h) = hs.iter().find(|h| h.crate_e == e && h.out).copied() {
+            keys(w, &[KeyCode::KeyW], false);
             let jump = (h.after - h.before).length();
             let rel = (h.after - h.ship_vel).length();
             end(w, c, format!("hand-over at ship speed {:.2} m/s: world velocity before {:.3?}, after {:.3?}, crate relative to the ship {rel:.2} m/s", h.ship_vel.length(), h.before, h.after));
-            check(c, jump < 1e-6 && rel < 5.0 && h.ship_vel.length() > 1.0, format!("crate-ride: the crate keeps the ship velocity at the hand-over (jump {jump:.2e} m/s, ship {:.2} m/s, relative {rel:.2} m/s)", h.ship_vel.length()));
+            check(c, jump < 1e-6 && rel < 10.0 && h.ship_vel.length() > 1.0, format!("crate-ride: the crate keeps the ship velocity at the hand-over (jump {jump:.2e} m/s, ship {:.2} m/s, relative {rel:.2} m/s)", h.ship_vel.length()));
             return true;
         }
         if c.t > 10.0 {
@@ -107,8 +123,9 @@ pub fn crate_ride_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool
     s.push(land("crate-ride: land on Cinder"));
     s.push(wait(2.0));
     s.push(Box::new(|w, c| {
-        let wt = watch(w);
-        let (e, drift, left, ticks) = (wt.e, wt.max_drift, wt.left_cabin, wt.ticks);
+        let e = Entity::from_bits(c.v["watched"] as u64);
+        let x = watch(w).get(e);
+        let (drift, left, ticks) = (x.max_drift, x.left_cabin, watch(w).ticks);
         let ship = ship_e(w);
         let b = crate_of(w, e).map(|c| (c.ship, c.body.pos));
         let inside = b.is_some_and(|(s, p)| s == Some(ship) && cabin_contains(p, 0.0));
@@ -485,4 +502,111 @@ pub fn crate_carry_steps(s: &mut Vec<Step>) {
         true
     }));
     s.push(wait(0.3));
+}
+
+fn plates(w: &World) -> (usize, usize) {
+    let g = w.resource::<crate::cargo::LockGrid>();
+    (g.count(crate::cargo::Plate::Lit), g.count(crate::cargo::Plate::Blocked))
+}
+
+/// #84: one crate locked on the plates, one loose off them, one partly on (red). Hard
+/// acceleration and a warp: the locked one does not move, the loose one slides and stays in the
+/// cabin; grabbing unlocks.
+pub fn crate_lock_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
+    s.push(Box::new(|w, c| {
+        clear_crates(w);
+        // On the plates (locks), off them in front (loose), half on the right edge (blocked).
+        let a = cabin_crate(w, "small", -0.95, 1.1);
+        let b = cabin_crate(w, "small", 1.2, -2.0);
+        let r = cabin_crate(w, "small", 1.6, 0.25);
+        for (k, e) in [("a", a), ("b", b), ("r", r)] {
+            c.v.insert(k, e.to_bits() as f64);
+        }
+        begin(w, c, "crate-lock: three crates set down in the cabin");
+        true
+    }));
+    s.push(wait(1.5));
+    s.push(Box::new(|w, c| {
+        let [a, b, r] = ["a", "b", "r"].map(|k| crate_e(c, k));
+        let locked = |w: &World, e| crate_of(w, e).unwrap().locked;
+        let (lit, red) = plates(w);
+        let pa = crate_of(w, a).unwrap().body.pos;
+        end(w, c, format!("locked: a {}, b {}, r {}; plates lit {lit}, red {red}; a snapped to ({:.2}, {:.2})", locked(w, a), locked(w, b), locked(w, r), pa.x, pa.z));
+        check(c, locked(w, a) && !locked(w, b) && !locked(w, r), "crate-lock: the crate fully on the plates locks, the others do not".into());
+        check(c, lit == 1 && red >= 1, format!("crate-lock: one plate lit under the locked crate ({lit}), red under the one half on the grid ({red})"));
+        watch_crates(w, &[a, b]);
+        true
+    }));
+    s.push(Box::new(|w, _| {
+        put_at_seat(w);
+        true
+    }));
+    s.extend(sit());
+    s.push(hold_until("crate-lock: take off, climb to 300 m above ground", &[KeyCode::Space, KeyCode::ShiftLeft], 120.0, |w| above_ground(w) > 300.0));
+    s.push(hold_until("crate-lock: hard acceleration (boost forward)", &[KeyCode::KeyW, KeyCode::ShiftLeft], 6.0, |_| false));
+    s.push(hold_until("crate-lock: firm brake", &[KeyCode::KeyX], 20.0, |w| ship_vel(w).length() < 0.5));
+    s.push(hold_until("crate-lock: hard strafe right", &[KeyCode::KeyD, KeyCode::ShiftLeft], 3.0, |_| false));
+    s.push(hold_until("crate-lock: firm brake", &[KeyCode::KeyX], 20.0, |w| ship_vel(w).length() < 0.5));
+    s.push(Box::new(|w, c| {
+        let [a, b] = ["a", "b"].map(|k| crate_e(c, k));
+        let (xa, xb) = (watch(w).get(a), watch(w).get(b));
+        let stops = w.resource::<CargoStats>().field_stops;
+        check(c, xa.max_drift == 0.0, format!("crate-lock: the locked crate did not move under hard acceleration (drift {:.4} m)", xa.max_drift));
+        check(c, xb.max_drift > 0.3 && !xb.left_cabin, format!("crate-lock: the loose crate slid {:.2} m and stayed in the cabin (ramp field stops so far: {stops})", xb.max_drift));
+        true
+    }));
+    s.extend(fly_to_space_and_back());
+    s.push(warp_flight("crate-lock: warp Hearth -> Cinder", "crate-lock", Some(HEARTH), CINDER, Flight::Seated, dir.to_path_buf(), windowed));
+    s.push(wait_drive_idle());
+    s.push(Box::new(|w, c| {
+        let [a, b] = ["a", "b"].map(|k| crate_e(c, k));
+        let (xa, xb) = (watch(w).get(a), watch(w).get(b));
+        let ship = ship_e(w);
+        let inside = |w: &World, e| crate_of(w, e).is_some_and(|c| c.ship == Some(ship));
+        check(c, xa.max_drift == 0.0 && crate_of(w, a).unwrap().locked, format!("crate-lock: after the warp the locked crate is still locked and has not moved ({:.4} m)", xa.max_drift));
+        let catches = w.resource::<CargoStats>().wall_catches;
+        check(c, !xb.left_cabin && inside(w, b), format!("crate-lock: after the warp the loose crate is still in the cabin (largest drift {:.2} m, cabin safety net caught it {catches} times)", xb.max_drift));
+        // Down on Cinder for the grab: ship level on the ground.
+        let pl = planet(w);
+        let up = DVec3::Y;
+        teleport_ship(w, pl.centre + up * (pl.surface(up) + 40.0), crate::ship::basis_for_up(up));
+        true
+    }));
+    s.push(wait(1.0));
+    s.push(land("crate-lock: land on Cinder"));
+    s.push(Box::new(|w, _| {
+        tap(w, KeyCode::KeyF);
+        true
+    }));
+    s.push(wait(0.5));
+    s.push(Box::new(|w, c| {
+        let a = crate_e(c, "a");
+        let pa = crate_of(w, a).unwrap().body.pos;
+        walker_in_cabin(w, DVec3::new(pa.x, 0.32, pa.z - 1.4));
+        let at = crate_world_pos(w, a);
+        look_at(w, at);
+        true
+    }));
+    s.push(wait(0.2));
+    s.push(Box::new(|w, _| {
+        tap(w, KeyCode::KeyF);
+        true
+    }));
+    s.push(wait(0.5));
+    s.push(Box::new(|w, c| {
+        let a = crate_e(c, "a");
+        let locked = crate_of(w, a).unwrap().locked;
+        let (lit, _) = plates(w);
+        check(c, held(w) == Some(a) && !locked && lit == 0, format!("crate-lock: grabbing unlocks the crate (held {}, locked {locked}, plates lit {lit})", held(w) == Some(a)));
+        tap(w, KeyCode::KeyF);
+        true
+    }));
+    s.push(wait(2.0));
+    s.push(Box::new(|w, c| {
+        let a = crate_e(c, "a");
+        let locked = crate_of(w, a).unwrap().locked;
+        end(w, c, format!("set down again: locked {locked}"));
+        check(c, locked, "crate-lock: set down on the plates again, it locks again".into());
+        true
+    }));
 }

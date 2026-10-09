@@ -2032,6 +2032,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "interact" => crate::cargo_scenario::interact_steps(&mut s),
         // #83: carry each size, throw, the grab tool from 8 m, the large crate alone.
         "crate-carry" => crate::cargo_scenario::crate_carry_steps(&mut s),
+        // #84: lock grid: locked, loose and blocked crates through hard acceleration and a warp.
+        "crate-lock" => crate::cargo_scenario::crate_lock_steps(&mut s, out_dir, windowed),
         // #63: fixed viewpoints and an atlas per planet (headless: atlas and statistics only).
         "planet-look" => crate::look::steps(&mut s, out_dir, windowed),
         // #70: walk from outside into a site; the walker stands on its flattened ground.

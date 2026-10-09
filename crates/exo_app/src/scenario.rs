@@ -280,8 +280,13 @@ fn track_look(w: &mut World, c: &mut Ctx) {
 /// than 1 deg, or moves the eye more than 3 cm against the feet (entering a 6 deg tilted ship
 /// once turned up by 5.6 deg in one tick at the cabin edge).
 fn check_steady(c: &mut Ctx, what: &str) {
+    check_steady_within(c, what, 0.5);
+}
+
+/// `check_steady` with another largest look step (deg per tick).
+fn check_steady_within(c: &mut Ctx, what: &str, look_max: f64) {
     let (look, up, eye) = (c.v["look_jump"], c.v["up_jump"], c.v["eye_jump"]);
-    check(c, look < 0.5 && up < 1.0 && eye < 0.03,
+    check(c, look < look_max && up < 1.0 && eye < 0.03,
         format!("{what}: view steady (largest step: look {look:.3} deg, up {up:.3} deg, eye {:.1} mm)", eye * 1000.0));
 }
 
@@ -509,19 +514,24 @@ pub(crate) fn hold_until(name: &'static str, ks: &'static [KeyCode], limit: f64,
 }
 
 /// Hold Ctrl until the ship rests (well below the landed check's 0.05 m/s). From the first hull
-/// contact on it must not slide: pressed down onto a slope it used to slide 20 s. Tipping from the
-/// first corner onto the slope moves the centre a little (0.3 m on the 14 degree slope of `full`).
+/// contact on it must not slide (#92): pressed down onto a slope it used to slide 20 s, and tipping
+/// from the first corner onto a 33 degree slope 0.55 m. The touchdown spot is left in `c.p`.
 pub(crate) fn land(name: &'static str) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
             begin(w, c, name);
             keys(w, &[KeyCode::ControlLeft], true);
             c.p.remove("touch");
+            c.p.remove("before");
         }
         let pos = ship_frame_of(w).origin;
+        // `grounded` is from the last tick's ship step, which found the contact at the position
+        // this step saw a tick earlier: that is the touchdown spot.
         if with_ship(w, |s| s.grounded) && !c.p.contains_key("touch") {
-            c.p.insert("touch", pos);
+            let at = c.p.get("before").copied().unwrap_or(pos);
+            c.p.insert("touch", at);
         }
+        c.p.insert("before", pos);
         let v = ship_vel(w).length();
         if c.t > 3.0 && v < 0.02 || c.t >= 90.0 {
             keys(w, &[KeyCode::ControlLeft], false);
@@ -531,8 +541,9 @@ pub(crate) fn land(name: &'static str) -> Step {
                 (d - up * d.dot(up)).length()
             });
             let agl = above_ground(w);
-            end(w, c, format!("{:.1} s, ground {agl:.2} m, speed {v:.3} m/s, slid {:.3} m after touchdown", c.t, slide.unwrap_or(f64::NAN)));
-            check(c, slide.is_some_and(|s| s < 0.5), format!("{name}: no slide after touchdown ({:.3} m)", slide.unwrap_or(f64::NAN)));
+            let mm = slide.unwrap_or(f64::NAN) * 1000.0;
+            end(w, c, format!("{:.1} s, ground {agl:.2} m, speed {v:.3} m/s, slid {mm:.2} mm after touchdown", c.t));
+            check(c, slide.is_some_and(|s| s < 0.001), format!("{name}: no slide after touchdown ({mm:.2} mm)"));
             return true;
         }
         false
@@ -580,16 +591,6 @@ pub(crate) fn aim(name: &'static str, elevation_deg: f64, secs: f64) -> Step {
             return true;
         }
         false
-    })
-}
-
-/// Boost as the speed stage of #24 (no capacitor) for scenarios whose checks were written for that
-/// flight path: they hold Shift for minutes, and the landing and cabin checks of `full` are measured
-/// on the spot it reaches. The capacitor has its own scenario, `boost-hud` (#90).
-pub(crate) fn boost_as_speed_stage() -> Step {
-    Box::new(|w, _| {
-        with_ship(w, |s| s.ctl.tuning.boost_capacitor.drain_time = 0.0);
-        true
     })
 }
 
@@ -972,7 +973,10 @@ fn lag_by_hand() -> Vec<Step> {
                 let level = with_ship(w, |s| s.lag.level);
                 end(w, c, format!("gravity {:.0} %, up {off:.3} deg from the {} up, ship tilt {tilt:.1} deg", level * 100.0, if on { "floor's" } else { "planet's" }));
                 check(c, off < 0.1 && level == if on { 1.0 } else { 0.0 }, format!("{name}: up follows the cabin gravity ({off:.3} deg)"));
-                check_steady(c, name);
+                // The field turns the view by the ship's tilt over its ramp time: on a slope steeper
+                // than 30 degrees that is more than 0.5 deg a tick, smooth all the same.
+                let ramp = with_ship(w, |s| s.lag.ramp_time);
+                check_steady_within(c, name, 0.5f64.max(1.25 * tilt * c.dt / ramp));
                 return true;
             }
             false
@@ -2033,6 +2037,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "flight" => flight_steps(&mut s, &shot_step, out_dir, windowed),
         // #90, #91: the boost capacitor drains, cuts out and recharges; the HUD shows it.
         "boost-hud" => crate::boost_scenario::boost_hud_steps(&mut s),
+        // #92: land on a slope below the limit; no drift from touchdown until thrust.
+        "slope-landing" => crate::landing_scenario::slope_landing_steps(&mut s),
         // #21: edit a tuning file while running (dev builds).
         "reload" => reload_steps(&mut s, out_dir),
         "warp" => warp_steps(&mut s, out_dir, windowed),
@@ -2073,7 +2079,6 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
             s.extend(drift_behind_moving_ship());
         }
         "full" => {
-            s.push(boost_as_speed_stage());
             s.push(shot_step("ground"));
             s.extend(stand_still("stand still 5 s (walker)"));
             s.push(walk("walk 20 s (run)", 20.0, true));
@@ -2297,7 +2302,8 @@ fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step, out
         false
     }));
     s.push(stick_yaw("stick: centred", 0.0));
-    // #24: boost is a speed stage; it raises the limit and drops back on release.
+    // Boost raises the limit and drops back on release (#24); with the capacitor (#90) while the
+    // charge lasts, so Shift is held for half the drain time.
     s.push(hold_until("cruise", &[KeyCode::KeyW], 6.0, |_| false));
     {
         let dir = dir.clone();
@@ -2305,13 +2311,11 @@ fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step, out
         let (limit, v) = (with_ship(w, |s| s.ctl.forward_speed_limit), ship_vel(w).length());
         if c.t == 0.0 {
             begin(w, c, "boost");
-            // The speed stage itself (#24): no capacitor here; `boost-hud` checks it (#90).
-            with_ship(w, |s| s.ctl.tuning.boost_capacitor.drain_time = 0.0);
             c.v.insert("limit0", limit);
             c.v.insert("v0", v);
             keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft], true);
         }
-        if c.t >= 6.0 {
+        if c.t >= 0.5 * with_ship(w, |s| s.ctl.tuning.boost_capacitor.drain_time) {
             // Screenshot while boost is still held, so the HUD shows it.
             shot(w, c, &dir, windowed, "boost");
             keys(w, &[KeyCode::ShiftLeft], false);
@@ -2336,9 +2340,9 @@ fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step, out
             let (limit, v) = (with_ship(w, |s| s.ctl.forward_speed_limit), ship_vel(w).length());
             let (l0, l1, v1) = (c.v["limit0"], c.v["limit1"], c.v["v1"]);
             end(w, c, format!("limit {l1:.0} -> {limit:.0} m/s, speed {v1:.0} -> {v:.0} m/s"));
-            check(c, limit < 0.6 * l1 && (limit - l0).abs() < 0.3 * l0 && v < v1 - 20.0, format!("boost released: limit {l1:.0} -> {limit:.0} m/s (before {l0:.0}), speed {v1:.0} -> {v:.0} m/s"));
-            let cap = w.resource::<crate::tuning::Tuning>().ship.boost_capacitor.clone();
-            with_ship(w, |s| s.ctl.tuning.boost_capacitor = cap);
+            // At least 70 % of the raise is gone and the limit is back near the cruise limit (the
+            // ground below moves that a little).
+            check(c, l1 - limit > 0.7 * (l1 - l0) && (limit - l0).abs() < 0.3 * l0 && v < v1 - 20.0, format!("boost released: limit {l1:.0} -> {limit:.0} m/s (before {l0:.0}), speed {v1:.0} -> {v:.0} m/s"));
             return true;
         }
         false

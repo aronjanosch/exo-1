@@ -542,8 +542,6 @@ pub fn crate_lock_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool
         true
     }));
     s.extend(sit());
-    // Hard acceleration for 6 s: the full boost, not the capacitor (#90).
-    s.push(boost_as_speed_stage());
     s.push(hold_until("crate-lock: take off, climb to 300 m above ground", &[KeyCode::Space, KeyCode::ShiftLeft], 120.0, |w| above_ground(w) > 300.0));
     s.push(hold_until("crate-lock: hard acceleration (boost forward)", &[KeyCode::KeyW, KeyCode::ShiftLeft], 6.0, |_| false));
     s.push(hold_until("crate-lock: firm brake", &[KeyCode::KeyX], 20.0, |w| ship_vel(w).length() < 0.5));

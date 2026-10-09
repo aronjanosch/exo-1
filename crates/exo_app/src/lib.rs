@@ -11,6 +11,7 @@ pub mod grab;
 pub mod hot_reload;
 pub mod hud;
 pub mod interact;
+pub mod landing_scenario;
 pub mod look;
 pub mod menu;
 pub mod net;

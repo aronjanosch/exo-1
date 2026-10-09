@@ -2,7 +2,8 @@
 //! fills `HudReadout` every fixed step, headless too, so scenarios check what the player sees;
 //! the view only copies it into the text nodes (`view::update_flight_hud`).
 //!
-//! TODO(initiator): which elements, their words and the gauge look are starting points (#91).
+//! TODO(initiator): which elements, their words (one decimal on the speed, "SHIP  DECOUPLED")
+//! and the gauge look are starting points (#91).
 use crate::env::PlanetRes;
 use crate::ship::Ship;
 use crate::view::NEAR_PLANET;
@@ -26,8 +27,9 @@ pub enum Mode {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Boost {
     None,
-    /// The suit has no capacitor (decided "no fuel"): only whether boost is held.
-    Suit { held: bool },
+    /// No meter: the suit (decided "no fuel") or the ship's speed stage (`drain_time: 0`); only
+    /// whether boost is held.
+    Held(bool),
     /// The ship's capacitor (#90): charge 0..1, a boost is running, enough charge to start one.
     Ship { charge: f64, active: bool, ready: bool },
 }
@@ -74,7 +76,7 @@ pub fn readout(i: &HudIn) -> HudReadout {
     let alt = i.altitude.map_or(String::new(), |a| format!("ALT {a:.0} m"));
     let (boost, gauge, boosting, ready) = match i.boost {
         Boost::None => (String::new(), None, false, false),
-        Boost::Suit { held } => (if held { "BOOST".into() } else { String::new() }, None, held, false),
+        Boost::Held(held) => (if held { "BOOST".into() } else { String::new() }, None, held, false),
         Boost::Ship { charge, active, ready } => (format!("BOOST {:.0} %", charge * 100.0), Some(charge), active, ready),
     };
     HudReadout { texts: [mode, format!("{} m/s", speed_text(i.speed)), alt, boost], gauge, boosting, ready }
@@ -96,15 +98,15 @@ pub fn update_readout(
         } else {
             Mode::Ship { assist: ship.ctl.hover_assist, decoupled: !ship.ctl.coupled }
         };
-        let cap = &ship.ctl.boost;
-        let ready = cap.active || cap.charge > 0.0 && cap.charge >= ship.ctl.tuning.boost_capacitor.start_charge;
-        (mode, sv.0, sp.0, Boost::Ship { charge: cap.charge, active: cap.active, ready })
+        let (cap, t) = (&ship.ctl.boost, &ship.ctl.tuning.boost_capacitor);
+        let boost = if t.drain_time <= 0.0 { Boost::Held(cap.active) } else { Boost::Ship { charge: cap.charge, active: cap.active, ready: cap.ready(t) } };
+        (mode, sv.0, sp.0, boost)
     } else if pl.ship.is_some() {
         (Mode::Cabin, sv.0 + sr.0 * pl.w.vel, sp.0, Boost::None)
     } else if pl.fly {
         (Mode::Fly, pl.w.vel, pl.w.pos, Boost::None)
     } else if pl.body.is_some() {
-        (Mode::Suit, pl.w.vel, pl.w.pos, Boost::Suit { held: actions.boost })
+        (Mode::Suit, pl.w.vel, pl.w.pos, Boost::Held(actions.boost))
     } else {
         (Mode::Walk, pl.w.vel, pl.w.pos, Boost::None)
     };
@@ -156,7 +158,7 @@ mod tests {
 
     #[test]
     fn suit_shows_boost_only_while_held() {
-        let i = |held| HudIn { mode: Mode::Suit, speed: 2.0, altitude: Some(10.0), boost: Boost::Suit { held } };
+        let i = |held| HudIn { mode: Mode::Suit, speed: 2.0, altitude: Some(10.0), boost: Boost::Held(held) };
         assert_eq!(readout(&i(true)).texts[3], "BOOST");
         assert_eq!(readout(&i(false)).texts[3], "");
         assert_eq!(readout(&i(true)).gauge, None);

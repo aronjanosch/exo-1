@@ -6,6 +6,7 @@ use crate::ship::{Ship, ShipPart};
 use crate::terrain::Terrain;
 use crate::walker::{Player, WalkStats, EYE_HEIGHT};
 use crate::controls::{Actions, Tap};
+use crate::hud::speed_text;
 use bevy::camera::PerspectiveProjection;
 use bevy::light::GlobalAmbientLight;
 use bevy::math::{DQuat, DVec3};
@@ -756,7 +757,6 @@ fn lag_text(ship: &Ship) -> String {
     format!("gravity {state} {:.0} %{key}", ship.lag.level * 100.0)
 }
 
-use crate::hud::speed_text;
 
 #[allow(clippy::too_many_arguments)]
 pub fn update_hud(

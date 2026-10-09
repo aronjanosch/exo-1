@@ -66,7 +66,8 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
         let max = c.v["max_limit"].max(limit);
         c.v.insert("max_limit", max);
         let r = readout(w);
-        if (c.t - 1.0).abs() < c.dt * 0.5 {
+        if c.t >= 1.0 && !c.v.contains_key("checked_1s") {
+            c.v.insert("checked_1s", 1.0);
             check(c, r.boosting && r.gauge.is_some_and(|g| g < 0.9 && g > 0.5), format!("hud after 1 s of boost: {:?}, gauge {:?}, boosting {}", r.texts[3], r.gauge, r.boosting));
             check_readout(w, c, "boosting");
         }
@@ -126,11 +127,29 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
         }
         false
     }));
-    s.push(hold_until("firm brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 0.5));
+    // Half the meter, then X with Shift still held: the brake uses no charge (TODO(initiator), #90).
+    s.push(hold_until("boost to half the meter", &[KeyCode::KeyW, KeyCode::ShiftLeft], 10.0, |w| with_ship(w, |s| s.ctl.boost.charge) <= 0.5));
     s.push(Box::new(|w, c| {
         let charge = with_ship(w, |s| s.ctl.boost.charge);
-        check(c, charge == 1.0, format!("the brake used no charge: {charge:.3}"));
-        check_readout(w, c, "stopped");
-        true
+        if c.t == 0.0 {
+            begin(w, c, "firm brake with Shift held");
+            c.v.insert("charge0", charge);
+            c.v.insert("min", charge);
+            keys(w, &[KeyCode::KeyX, KeyCode::ShiftLeft], true);
+            return false;
+        }
+        let min = c.v["min"].min(charge);
+        c.v.insert("min", min);
+        if ship_vel(w).length() < 0.5 || c.t > 15.0 {
+            keys(w, &[KeyCode::KeyX, KeyCode::ShiftLeft], false);
+            let c0 = c.v["charge0"];
+            let r = readout(w);
+            end(w, c, format!("{:.1} s, charge {c0:.3}, lowest {min:.3}", c.t));
+            check(c, min >= c0 - 1e-9 && min < 0.6, format!("the brake used no charge: {c0:.3} at the start, lowest {min:.3}"));
+            check(c, !r.boosting, format!("hud braking: not boosting ({:?})", r.texts[3]));
+            check_readout(w, c, "stopped");
+            return true;
+        }
+        false
     }));
 }

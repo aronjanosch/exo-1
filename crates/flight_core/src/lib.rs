@@ -222,16 +222,22 @@ impl BoostCapacitor {
         BoostCapacitor { charge, ..BoostCapacitor::default() }
     }
 
+    /// A boost runs or could start now (charge at or above the start charge).
+    pub fn ready(&self, t: &BoostCapacitorTuning) -> bool {
+        self.active || self.charge > 0.0 && self.charge >= t.start_charge
+    }
+
     /// One step with boost held (`want`) or not; returns the boost strength 0..1 for this step.
     pub fn step(&mut self, want: bool, t: &BoostCapacitorTuning, dt: f64) -> f64 {
         if t.drain_time <= 0.0 {
             self.charge = 1.0;
             self.active = want;
+            self.idle = 0.0;
             return if want { 1.0 } else { 0.0 };
         }
         if !want {
             self.active = false;
-        } else if !self.active && self.charge > 0.0 && self.charge >= t.start_charge {
+        } else if self.ready(t) {
             self.active = true;
         }
         if self.active {
@@ -659,7 +665,7 @@ impl ShipController {
 
         let mut thrust_in = input.thrust;
         self.brake_active = input.piloted && input.brake;
-        // The brake brakes with boost strength without using the charge (TODO(initiator), #90).
+        // The brake neither uses nor drains the charge (TODO(initiator), #90).
         let strength = self.boost.step(input.boost && !self.brake_active, &self.tuning.boost_capacitor, dt);
         self.boost_strength = strength;
         let boost = 1.0 + (self.tuning.boost_factor - 1.0) * strength;

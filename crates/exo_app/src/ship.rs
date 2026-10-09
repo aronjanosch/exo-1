@@ -164,6 +164,10 @@ pub fn ship_control(
         ship.lag.step(clearance, lv.0.length(), dt);
         // From the pre-ramp on the drive holds the ship.
         if ship.parked || warp.drive.phase.holds_ship() {
+            // The boost meter goes on (released): no boost left running through a quantum flight.
+            let ctl = &mut ship.ctl;
+            ctl.boost.step(false, &ctl.tuning.boost_capacitor, dt);
+            ctl.boost_strength = 0.0;
             continue;
         }
         if !ship.piloted {

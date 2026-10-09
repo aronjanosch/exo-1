@@ -187,3 +187,20 @@ fn the_brake_does_not_drain() {
     accel(&mut ship, true);
     assert_eq!(ship.boost.charge, 1.0);
 }
+
+#[test]
+fn the_dev_switch_flies_the_speed_stage_and_back() {
+    let mut ship = ShipController::new(ShipTuning::default());
+    ship.hover_assist = false;
+    ship.boost_stage = true;
+    let first = accel(&mut ship, false);
+    for _ in 0..4 {
+        accel(&mut ship, false);
+    }
+    let fifth = accel(&mut ship, false);
+    assert_eq!(ship.boost.charge, 1.0, "the speed stage uses no charge");
+    assert!((fifth - first).abs() < 0.02 * first, "full boost after 5 s: {fifth:.1} vs {first:.1} m/s");
+    ship.boost_stage = false;
+    accel(&mut ship, false);
+    assert!(ship.boost.charge < 0.9, "back on the capacitor it drains: {}", ship.boost.charge);
+}

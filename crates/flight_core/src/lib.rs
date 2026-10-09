@@ -5,6 +5,7 @@
 //!
 //! All numbers are spike test values (assumptions for testing, not design).
 pub mod camera;
+pub mod hud;
 
 use glam::{DQuat, DVec2, DVec3};
 use serde::Deserialize;
@@ -227,13 +228,18 @@ impl BoostCapacitor {
         self.active || self.charge > 0.0 && self.charge >= t.start_charge
     }
 
+    /// The speed stage of #24: full boost while held, the meter stays full.
+    pub fn stage(&mut self, want: bool) -> f64 {
+        self.charge = 1.0;
+        self.active = want;
+        self.idle = 0.0;
+        if want { 1.0 } else { 0.0 }
+    }
+
     /// One step with boost held (`want`) or not; returns the boost strength 0..1 for this step.
     pub fn step(&mut self, want: bool, t: &BoostCapacitorTuning, dt: f64) -> f64 {
         if t.drain_time <= 0.0 {
-            self.charge = 1.0;
-            self.active = want;
-            self.idle = 0.0;
-            return if want { 1.0 } else { 0.0 };
+            return self.stage(want);
         }
         if !want {
             self.active = false;
@@ -564,6 +570,8 @@ pub struct ShipController {
     /// The boost's charge (#90); `boost_strength` is what it gave the last step (0..1).
     pub boost: BoostCapacitor,
     pub boost_strength: f64,
+    /// Dev switch (F6): boost as the speed stage of #24, the capacitor ignored. Not a tuning value.
+    pub boost_stage: bool,
 
     horizon_w: DVec3,
     correction_accel: DVec3,
@@ -592,6 +600,7 @@ impl ShipController {
             ground_time: 0.0,
             boost: BoostCapacitor::default(),
             boost_strength: 0.0,
+            boost_stage: false,
             horizon_w: DVec3::ZERO,
             correction_accel: DVec3::ZERO,
         }
@@ -666,7 +675,8 @@ impl ShipController {
         let mut thrust_in = input.thrust;
         self.brake_active = input.piloted && input.brake;
         // The brake neither uses nor drains the charge (TODO(initiator), #90).
-        let strength = self.boost.step(input.boost && !self.brake_active, &self.tuning.boost_capacitor, dt);
+        let want = input.boost && !self.brake_active;
+        let strength = if self.boost_stage { self.boost.stage(want) } else { self.boost.step(want, &self.tuning.boost_capacitor, dt) };
         self.boost_strength = strength;
         let boost = 1.0 + (self.tuning.boost_factor - 1.0) * strength;
         if self.brake_active {

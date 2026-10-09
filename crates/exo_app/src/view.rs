@@ -128,6 +128,8 @@ pub fn setup_view(mut commands: Commands) {
             .with_children(|b| {
                 b.spawn((BoostFill, Node { width: percent(100), height: percent(100), ..default() }, BackgroundColor(BOOST_READY)));
             });
+            // Next to the bar: CAPACITOR or STAGE, the F6 dev switch (#90).
+            c.spawn((HudItem(BOOST_MODE_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
         });
     // The one prompt (#82): what the interact key does now, below the screen centre.
     commands.spawn((
@@ -174,6 +176,8 @@ pub struct BoostBar;
 #[derive(Component)]
 pub struct BoostFill;
 const BOOST_BAR_PX: f32 = 120.0;
+/// The `HudItem` after the bar that names the boost mode (`HudReadout::boost_mode`).
+const BOOST_MODE_ITEM: u8 = 4;
 const BOOST_READY: Color = Color::srgb(0.55, 0.95, 1.0);
 const BOOST_ACTIVE: Color = Color::srgb(1.0, 0.85, 0.35);
 const BOOST_LOW: Color = Color::srgba(0.55, 0.6, 0.7, 0.6);
@@ -236,9 +240,9 @@ pub fn update_flight_hud(
     let (Ok(pl), Ok((ship, sp, si))) = (players.single(), ships.single()) else { return };
     // Only touch a Text whose content changed (#24).
     for (item, mut t) in &mut items {
-        let want = &readout.texts[item.0 as usize];
+        let want = if item.0 == BOOST_MODE_ITEM { readout.boost_mode } else { readout.texts[item.0 as usize].as_str() };
         if **t != *want {
-            **t = want.clone();
+            **t = want.to_string();
         }
     }
     if let Ok(mut vis) = bar.single_mut() {

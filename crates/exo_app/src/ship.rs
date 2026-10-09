@@ -183,6 +183,9 @@ pub fn ship_control(
             if actions.take_tap(Tap::Decoupled) {
                 ship.ctl.coupled = !ship.ctl.coupled;
             }
+            if actions.take_tap(Tap::BoostMode) {
+                ship.ctl.boost_stage = !ship.ctl.boost_stage;
+            }
             let mb = &bindings.mouse;
             let m = std::mem::take(&mut actions.look);
             let m = DVec2::new(m.x as f64, m.y as f64) * mb.ship_sensitivity * settings.mouse_sensitivity;

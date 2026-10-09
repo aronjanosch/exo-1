@@ -13,6 +13,7 @@ import json
 import math
 import os
 import sys
+from contextlib import contextmanager
 
 import bmesh
 import bpy
@@ -31,7 +32,7 @@ TRI_GUIDE = {"building": 10_000, "road": 1_000, "prop": 1_000, "vehicle": 3_000}
 MATERIALS = {
     "paint": {"rgb": (1, 1, 1), "roughness": 0.75},
     "glass": {"rgb": (1, 1, 1), "roughness": 0.15},
-    "glow": {"rgb": (1, 1, 1), "roughness": 0.5, "emit": 1.5},
+    "glow": {"rgb": (1, 1, 1), "roughness": 0.5, "emit": 0.6},   # higher burns lit windows white
 }
 
 
@@ -136,6 +137,19 @@ class Part:
                 pts.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
         self.prism(pts, lo[2], hi[2], rgb, mat)
 
+    @contextmanager
+    def placed(self, matrix):
+        """Everything built inside the block (geometry and anchors) is moved by `matrix` afterwards,
+        so a facade can be built facing -Y and then turned onto any side."""
+        self.bm.verts.ensure_lookup_table()
+        nv, na = len(self.bm.verts), len(self.anchors)
+        yield
+        self.bm.verts.ensure_lookup_table()
+        bmesh.ops.transform(self.bm, matrix=matrix, verts=list(self.bm.verts)[nv:])
+        for i in range(na, len(self.anchors)):
+            name, at, extras = self.anchors[i]
+            self.anchors[i] = (name, matrix @ at, extras)
+
     def anchor(self, name, at, **extras):
         """An empty in the export; the game reads its custom properties (glTF extras)."""
         self.anchors.append((name, Vector(at), extras))
@@ -190,8 +204,11 @@ class Part:
 def material(key):
     spec = MATERIALS[key]
     m = bpy.data.materials.get(key)
-    if m:
+    if m and any(n.type == "VERTEX_COLOR" and n.layer_name == "Col" for n in m.node_tree.nodes):
         return m
+    if m:
+        # An imported glTF material took the name (it carries exo_kit as an extra); move it aside.
+        m.name = f"{key}_gltf"
     m = bpy.data.materials.new(key)
     m["exo_kit"] = True
     nodes, links = m.node_tree.nodes, m.node_tree.links
@@ -278,9 +295,10 @@ def loose_islands(mesh):
 
 # ---------------------------------------------------------------- review renders
 
-def stage(collection, night=False):
+def stage(collection, night=False, render=True):
+    """Ground, sun and sky; render=False leaves the render settings alone (live Blender)."""
     scene = bpy.context.scene
-    bpy.ops.mesh.primitive_plane_add(size=300, location=(0, 0, -0.005))
+    bpy.ops.mesh.primitive_plane_add(size=1000, location=(0, 0, -0.005))
     ground = bpy.context.active_object
     for c in ground.users_collection:
         c.objects.unlink(ground)
@@ -297,6 +315,8 @@ def stage(collection, night=False):
     bg = world.node_tree.nodes["Background"]
     bg.inputs["Color"].default_value = (0.005, 0.005, 0.02, 1) if night else (0.3, 0.26, 0.4, 1)
     scene.world = world
+    if not render:
+        return
     scene.render.engine = "CYCLES"
     scene.cycles.samples = 48
     scene.cycles.device = "GPU"
@@ -333,6 +353,32 @@ def review(collection, obj, out):
         bpy.data.objects.remove(o)
     stage(collection, night=True)
     shoot(collection, f"{out}/{obj.name}_night.png", (c.x + r * 0.9, lo.y - r * 2.2, 1.7), (c.x, c.y, c.z), lens=20)
+
+
+def place(content, mid, x, y, z, turn, col=None):
+    """Import an exported model, put it at (x, y, z) turned by `turn` degrees about Z."""
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=f"{content}/{mid}.glb")
+    new = [o for o in bpy.data.objects if o not in before]
+    if col:
+        for o in new:
+            for c in o.users_collection:
+                c.objects.unlink(o)
+            col.objects.link(o)
+    # Blender's glTF import leaves COLOR_0 unused (Bevy multiplies it in); put the kit materials back.
+    for o in new:
+        if o.type != "MESH":
+            continue
+        if o.data.color_attributes:
+            o.data.color_attributes[0].name = "Col"
+        for slot in o.material_slots:
+            slot.material = material(slot.material.name.split(".")[0].removesuffix("_gltf"))
+    for o in new:
+        if o.parent is None:
+            o.location = (x, y, z)
+            o.rotation_mode = "XYZ"
+            o.rotation_euler = (0, 0, math.radians(turn))
+    return new
 
 
 # ---------------------------------------------------------------- entry point

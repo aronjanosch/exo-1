@@ -41,6 +41,7 @@ New dependencies, CI, `.cargo/`, `build.rs`, `unsafe`, networking, spawning proc
 - Simple look, best runtime performance. Assets original or CC0.
 - Invented names in content, tests and issues; no personal data.
 - Goofy tone is a feature. The setting is a strange galaxy.
+- For Blender modeling and visual refinement, follow `art/README.md` (live MCP workflow).
 
 ## Skills
 

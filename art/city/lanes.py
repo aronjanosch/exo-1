@@ -8,6 +8,7 @@ Run headless (writes content/city/<id>.glb, renders optional):
     blender -b -P art/city/lanes.py -- --out content/city [--renders DIR] [--only id,id]
 """
 
+import math
 import os
 import sys
 
@@ -100,10 +101,75 @@ def crossing():
     return p
 
 
+def arc_band(p, r0, r1, a0, a1, z, rgb, mat="paint", centre=(H, -H), segments=16):
+    """A flat band between radii r0 and r1, from angle a0 to a1 (degrees), around `centre`."""
+    cx, cy = centre
+    outer = [(cx + r1 * math.cos(math.radians(a0 + (a1 - a0) * k / segments)),
+              cy + r1 * math.sin(math.radians(a0 + (a1 - a0) * k / segments))) for k in range(segments + 1)]
+    inner = [(cx + r0 * math.cos(math.radians(a0 + (a1 - a0) * k / segments)),
+              cy + r0 * math.sin(math.radians(a0 + (a1 - a0) * k / segments))) for k in range(segments + 1)]
+    p.prism(outer + inner[::-1], 0.0, z, rgb, mat)
+
+
+def curve():
+    """Lane comes in from -Y and turns to +X, a quarter circle around the tile's +X/-Y corner."""
+    p = Part("lane_curve", kind="road")
+    plaza(p)
+    arc_band(p, H - L, H + L, 90, 180, 0.02, LANE_RGB)
+    for r in (H - L, H + L):
+        arc_band(p, r - 0.1, r + 0.1, 90, 180, 0.03, GLOW, "glow")
+    chevron(p, -H + 3.2, H - 3.2, along="X")
+    beacon(p, -H + 0.8, H - 0.8)
+    return p
+
+
+def end():
+    """Lane from -Y stops in a round turnaround with a glowing ring."""
+    p = Part("lane_end", kind="road")
+    plaza(p)
+    lane(p, (-L, -H), (L, 0.0))
+    p.cylinder((0, 0, 0.0), L, 0.02, LANE_RGB, segments=32)
+    for s in (-1, 1):
+        strip(p, (s * L - 0.1, -H), (s * L + 0.1, 0.0))
+    arc_band(p, L - 0.1, L + 0.1, 0, 180, 0.03, GLOW, "glow", centre=(0, 0), segments=24)
+    p.cylinder((0, 0, 0.0), 0.8, 0.06, POST, segments=16)
+    beacon(p, 0.0, H - 0.8)
+    return p
+
+
+def plaza_tile():
+    """Paving only, with lighter slabs and a small ring: squares, markets, the foot of landmarks."""
+    p = Part("plaza_tile", kind="road")
+    plaza(p)
+    slab = colour("#e9e4f0")
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            p.box((sx * 0.6 if sx > 0 else -4.6, sy * 0.6 if sy > 0 else -4.6, 0.0),
+                  (4.6 if sx > 0 else -0.6, 4.6 if sy > 0 else -0.6, 0.015), slab)
+    p.cylinder((0, 0, 0.0), 0.45, 0.04, CHEVRON, segments=16)
+    return p
+
+
+def parking():
+    """Paving with two hover-car pads, glowing rims; the pads are anchors for parked cars."""
+    p = Part("parking_pads", kind="road")
+    plaza(p)
+    for x in (-2.5, 2.5):
+        p.cylinder((x, 0, 0.0), 2.3, 0.08, POST, segments=24)
+        p.cylinder((x, 0, 0.08), 1.9, 0.01, LANE_RGB, segments=24)
+        p.torus((x, 0, 0.08), 2.2, 0.05, GLOW, "glow", segments=24, sides=4)
+        p.anchor(f"pad_{'w' if x < 0 else 'e'}", (x, 0, 0.08), kind="pad", size="car")
+    return p
+
+
 MODELS = {
     "lane_straight": (straight, (-H, -H, H, H)),
     "lane_tee": (tee, (-H, -H, H, H)),
     "lane_crossing": (crossing, (-H, -H, H, H)),
+    "lane_curve": (curve, (-H, -H, H, H)),
+    "lane_end": (end, (-H, -H, H, H)),
+    "plaza_tile": (plaza_tile, (-H, -H, H, H)),
+    "parking_pads": (parking, (-H, -H, H, H)),
 }
 
 kit.run(MODELS, "content/city")

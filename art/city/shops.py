@@ -18,20 +18,44 @@ TRIM = colour("#f4f1e8")     # warm white: slabs, rings, frames (the city's shar
 METAL = colour("#9aa7b8")
 GLASS = colour("#2a4a6b")
 LIT = colour("#ffe2a0")
+CLEAR = colour("#cfeef5")   # see-through glass into a room
 GLOW_CYAN = colour("#5ef2e0")
 GLOW_PINK = colour("#ff5fa2")
 
 
 def saucer_diner():
     """A flying saucer parked on a stick: glass kiosk below, diner in the disc, a spire on top,
-    and a boomerang fin sign beside it."""
+    and a boomerang fin sign beside it. The kiosk is a real room: a round order counter with the
+    cook in the middle, stools around it. The disc upstairs is instanced (#94)."""
     p = Part("saucer_diner")
     body, accent = colour("#ff8c5a"), colour("#2fb5a8")
-    # Kiosk: round glass room on a white plinth.
-    p.cylinder((0, 0, 0), 3.6, 0.4, TRIM, segments=24)
-    p.cylinder((0, 0, 0.4), 3.2, 2.8, LIT, "glow", segments=24)
-    p.cylinder((0, 0, 3.2), 3.5, 0.35, TRIM, segments=24)
-    p.door("door_shop", 0.0, -3.1, TRIM, accent, use="shop")
+    # Kiosk: a round glass room on a low white plinth; the plinth is its floor.
+    floor, roof, r = 0.12, 3.2, 3.2
+    p.cylinder((0, 0, 0), 3.6, floor, TRIM, segments=32)
+    p.cylinder((0, 0, floor), r - 0.1, 0.02, colour("#d9d3e6"), segments=32)
+    gap = math.degrees(math.asin(0.95 / r))
+    p.ring_wall((0, 0), r - 0.1, r, floor, roof, CLEAR, "clear", segments=32, gaps=[(-90 - gap, -90 + gap)])
+    for k in range(8):
+        a = math.radians(22.5 + 45 * k)
+        if abs(math.degrees(a) - 270) > 30:
+            p.cylinder((r * math.cos(a), r * math.sin(a), floor), 0.07, roof - floor, TRIM, segments=6)
+    p.cylinder((0, 0, roof), 3.5, 0.35, TRIM, segments=32)
+    p.torus((0, 0, roof - 0.08), 2.2, 0.06, LIT, "glow", segments=32, sides=4)
+    # A sliding glass door: no wall above to hide a leaf in, so it slides sideways along the glass.
+    p.doorway("door_shop", 0.0, -r - 0.05, TRIM, accent, GLOW_PINK, w=1.5, h=2.4, wall=0.2,
+              slide=(1.6, 0.0, 0.0), use="shop")
+    # Order counter: a ring around the cook, open at the back so the cook gets in.
+    p.ring_wall((0, 0), 1.05, 1.5, floor, floor + 1.0, accent, segments=24, gaps=[(60, 120)])
+    p.ring_wall((0, 0), 0.98, 1.6, floor + 1.0, floor + 1.06, TRIM, segments=24, gaps=[(64, 116)])
+    for k, a in enumerate((-150, -120, -60, -30, 0, 180)):
+        x, y = 2.15 * math.cos(math.radians(a)), 2.15 * math.sin(math.radians(a))
+        p.cylinder((x, y, floor), 0.05, 0.65, METAL, segments=8)
+        p.cylinder((x, y, floor + 0.65), 0.22, 0.1, GLOW_PINK if k % 2 else accent, segments=12)
+    # A shake machine on the counter, glowing tanks.
+    for dx in (-0.25, 0.0, 0.25):
+        p.cylinder((1.25 * math.cos(math.radians(30)) + dx * 0.3, 1.25 * math.sin(math.radians(30)) + dx,
+                    floor + 1.06), 0.1, 0.45, GLOW_CYAN if dx else LIT, "glow", segments=8)
+    p.anchor("npc", (0, 0, floor), kind="npc", role="cook")
     # Stem and saucer.
     p.cylinder((0, 0, 3.55), 1.1, 4.0, accent, segments=16)
     p.cylinder((0, 0, 7.0), 1.6, 1.0, body, radius_top=5.6, segments=32)       # underside

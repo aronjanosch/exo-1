@@ -22,6 +22,7 @@ METAL = colour("#9aa7b8")
 DARK = colour("#3b3f4a")
 GLASS = colour("#2a4a6b")
 LIT = colour("#ffe2a0")
+CLEAR = colour("#cfeef5")   # see-through glass into a room
 GLOW_CYAN = colour("#5ef2e0")
 GLOW_PINK = colour("#ff5fa2")
 
@@ -131,11 +132,35 @@ def charge_stop():
         p.rounded_box((x - 0.35, -2.3, 0.08), (x + 0.35, -1.7, 1.8), 0.15, accent, segments=4)
         p.box((x - 0.25, -2.33, 1.0), (x + 0.25, -2.3, 1.6), GLOW_PINK, "glow")
         p.torus((x, -2.0, 1.2), 0.45, 0.05, DARK, segments=16, sides=6)
-    # Kiosk shop behind the canopy.
-    p.box((-8.5, 0.0, 0.0), (-1.5, 3.0, 3.2), body)
-    p.box((-8.7, -0.2, 3.2), (-1.3, 3.2, 3.5), frame)
-    p.box((-7.0, -0.05, 0.6), (-3.8, 0.0, 2.6), LIT, "glow")
-    p.door("door_shop", -2.6, 0.0, frame, accent, w=1.4, h=2.4, use="shop")
+    # Kiosk shop behind the canopy: a real room. Its roof is too thin to hide a leaf, so the door
+    # slides sideways into the front wall, and the shop window stops short of the pocket.
+    x0, x1, d, h, wall = -8.5, -1.5, 3.0, 3.2, 0.2
+    holes = [p.doorway("door_shop", -2.6, 0.0, frame, accent, GLOW_PINK, w=1.4, h=2.4, wall=wall,
+                       slide=(-1.5, 0.0, 0.0), use="shop"),
+             (-7.8, -5.0, 0.7, 2.6)]
+    p.wall((x0, 0, 0), (x1, wall, h), body, holes)
+    p.box((-7.8, -0.04, 0.7), (-5.0, 0.0, 2.6), CLEAR, "clear")
+    for xa, xb, za, zb in ((-7.9, -7.8, 0.7, 2.6), (-5.0, -4.9, 0.7, 2.6), (-7.9, -4.9, 0.6, 0.7), (-7.9, -4.9, 2.6, 2.7)):
+        p.box((xa, -0.1, za), (xb, 0.0, zb), frame)
+    p.box((x0, d - wall, 0), (x1, d, h), body)
+    p.box((x0, wall, 0), (x0 + wall, d - wall, h), body)   # between front and back, no overlap
+    p.box((x1 - wall, wall, 0), (x1, d - wall, h), body)
+    p.box((x0, 0, 0), (x1, d, 0.02), colour("#7d7887"))
+    p.box((-8.7, -0.2, h), (-1.3, 3.2, h + 0.3), frame)
+    p.box((-7.5, 1.3, h - 0.04), (-2.5, 1.7, h), LIT, "glow")
+    # Inside: snacks and charge cells on the back wall, a cooler, a short counter, the clerk behind it.
+    for k, x in enumerate((-4.9, -4.3, -3.7, -3.1, -2.5)):
+        p.box((x - 0.3, d - wall - 0.06, 0.02), (x + 0.3, d - wall, 1.9), DARK)
+        for z in (0.5, 1.0, 1.5):
+            p.box((x - 0.3, d - wall - 0.4, z - 0.04), (x + 0.3, d - wall - 0.06, z), frame)
+            p.box((x - 0.18, d - wall - 0.35, z), (x + 0.18, d - wall - 0.1, z + 0.25),
+                  (GLOW_CYAN, accent, GLOW_PINK)[(k + int(z * 2)) % 3], "glow" if (k + int(z * 2)) % 3 != 1 else "paint")
+    p.box((-5.6, d - wall - 0.6, 0.02), (-5.2, d - wall, 2.0), METAL)
+    p.box((-5.58, d - wall - 0.62, 0.3), (-5.22, d - wall - 0.6, 1.8), GLOW_CYAN, "glow")
+    p.rounded_box((-6.6, 0.9, 0.02), (-6.0, d - wall, 1.05), 0.2, accent, segments=4)
+    p.box((-6.7, 0.8, 1.05), (-5.9, d - wall, 1.11), frame)
+    p.box((-6.55, 1.2, 1.11), (-6.15, 1.5, 1.4), GLOW_PINK, "glow")
+    p.anchor("npc", (-7.4, 1.6, 0.02), kind="npc", role="trader")
     # Sign pole with a ring and a ball, seen from the arterial.
     p.cylinder((3.5, 1.5, 0), 0.25, 9.0, METAL, segments=10)
     p.box((2.4, 1.4, 6.0), (4.6, 1.6, 8.2), accent)

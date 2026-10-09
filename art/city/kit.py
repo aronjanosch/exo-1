@@ -187,6 +187,21 @@ class Part:
             if z < hi[2] - eps:
                 self.box((a, lo[1], z), (b, hi[1], hi[2]), rgb, mat)
 
+    def ring_wall(self, at, r_in, r_out, z0, z1, rgb, mat="paint", segments=32, gaps=()):
+        """A round wall (or a ring counter) around `at`, open where gaps [(from_deg, to_deg)] say;
+        0 degrees is +X, -90 is the front (-Y)."""
+        def open_at(a):
+            return any(lo <= a <= hi or lo <= a - 360 <= hi or lo <= a + 360 <= hi for lo, hi in gaps)
+
+        cx, cy = at[0], at[1]
+        for k in range(segments):
+            a0, a1 = 360 * k / segments - 180, 360 * (k + 1) / segments - 180
+            if open_at((a0 + a1) / 2):
+                continue
+            pts = [(cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a)))
+                   for r, a in ((r_in, a0), (r_out, a0), (r_out, a1), (r_in, a1))]
+            self.prism(pts, z0, z1, rgb, mat)
+
     def child(self, name, kind, **extras):
         """A separate object parented to this part, built in this part's frame."""
         c = Part(name, kind)
@@ -229,16 +244,18 @@ class Part:
         self.box((x - w / 2, front_y - 0.17, 0), (x + w / 2, front_y - 0.02, h), door_rgb)
         self.anchor(name, (x, front_y - 1.0, 0), kind="door", **extras)
 
-    def doorway(self, name, x, front_y, frame_rgb, leaf_rgb, glow_rgb, w=1.5, h=2.5, wall=WALL, **extras):
+    def doorway(self, name, x, front_y, frame_rgb, leaf_rgb, glow_rgb, w=1.5, h=2.5, wall=WALL, slide=None,
+                **extras):
         """A real door through a wall that runs from front_y to front_y + wall: a frame with reveals,
-        a leaf the game slides up into the wall (child object, kind "leaf", `slide` in metres) and
-        the door anchor 1 m in front. Returns the hole (x0, x1, z0, z1) to cut into the wall."""
+        a leaf the game slides open (child object, kind "leaf", `slide` in metres, default up into
+        the wall above; sideways where there is no wall above to hide it) and the door anchor 1 m in
+        front. Returns the hole (x0, x1, z0, z1) to cut into the wall."""
         x0, x1 = x - w / 2, x + w / 2
         back = front_y + wall + 0.04          # reveals stand a hair proud of the inside lining
         self.box((x0 - 0.15, front_y - 0.15, 0), (x0, back, h + 0.15), frame_rgb)
         self.box((x1, front_y - 0.15, 0), (x1 + 0.15, back, h + 0.15), frame_rgb)
         self.box((x0, front_y - 0.15, h), (x1, back, h + 0.15), frame_rgb)
-        leaf = self.child(f"{name}_leaf", "leaf", door=name, slide=[0.0, 0.0, h])
+        leaf = self.child(f"{name}_leaf", "leaf", door=name, slide=list(slide or (0.0, 0.0, h)))
         mid = front_y + wall / 2
         leaf.box((x0, mid - 0.05, 0), (x1, mid + 0.05, h), leaf_rgb)
         # A round glowing window in the leaf, so a closed door still says "open for business".

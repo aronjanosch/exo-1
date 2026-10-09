@@ -83,8 +83,10 @@ Initiator: "denk dran dass man in einige der gebäude auch rein will. am besten 
 - **The door leaf** is its own child object and slides up into the wall above the door (`slide`); the wall and the solid floor above hide it. No pocket beside the door is needed, so any door width works (the garage's 7 m too).
 - **Fit-outs** (`interiors.py`) are separate models, `fit_<kind>_<bays>`, placed on the building's `room` anchor. The plan picks the kind per placement (`city_plan.fit`, default per model in `city_plan.FIT`), so one house is a bar in one street and a workshop in the next. Every fit-out keeps the front of the room clear (doors sit anywhere along the front), has a counter or desk across the back and the `npc` anchor behind it.
 - **Flat doors** (`use = "flat"`, `"back"`) stay panels: upper floors, flats and large buildings are instanced behind a portal (like the caves in #75).
+- **One-offs furnish themselves** (assumption, waiting for the initiator's yes): the fit-outs are rectangular 9.4 m deep rooms, so round or shallow rooms (the diner's kiosk, the charge stop's kiosk) carry their furniture and `npc` anchor in the model, with no `room` anchor. Doors with no wall above them slide sideways (`Part.doorway(slide=...)`), round walls come from `Part.ring_wall`.
+- The company gate and the spire's lift stay flat doors: large interiors are instanced.
 - Rooms carry no light; the game lights them (the preview puts one soft panel light per room as a stand-in).
-- Next: the diner and the landmarks, then the bungalows (the whole house is the room).
+- Next: pod tower and bubble shop, then the bungalows (the whole house is the room).
 
 ## What the game reads
 

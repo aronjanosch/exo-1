@@ -2,7 +2,8 @@
 //! thrust, wind by airspeed in the atmosphere, a thud on touchdown, a click on UI toggles.
 //! Cargo (night extra E4): a fwip on grabbing a crate, a whoosh on a throw, a ka-chunk when a
 //! crate locks onto the plates.
-//! Windowed runs only; headless runs have no audio. Volume controls come with the settings menu.
+//! Windowed runs only; headless runs have no audio. The settings menu sets the volume and switches
+//! the sound off (`Settings::master`).
 use crate::controls::{Actions, Tap};
 use crate::ship::{CameraEffects, Ship};
 use crate::walker::Player;
@@ -210,6 +211,7 @@ fn update(
     grab: Res<crate::grab::Grab>,
     cargo: Res<crate::cargo::CargoStats>,
     mut level: Local<[f32; 2]>,
+    settings: Res<crate::settings::Settings>,
 ) {
     let (Ok(pl), Ok((ship, pos, lv))) = (players.single(), ships.single()) else { return };
     let near_ship = pl.seated || pl.ship.is_some();
@@ -226,7 +228,7 @@ fn update(
             _ => (1, density * (airspeed / 200.0).min(1.0) * 0.5),
         };
         level[i] += (want - level[i]) * k;
-        sink.set_volume(Volume::Linear(level[i]));
+        sink.set_volume(Volume::Linear(loop_volume(level[i], &settings)));
     }
     if fx.0.bumps > heard.bumps {
         heard.bumps = fx.0.bumps;
@@ -256,6 +258,12 @@ fn update(
     }
 }
 
+/// A loop's sink volume: its level times the master volume. The loops set their sink every frame,
+/// which replaces the global volume Bevy gave them at the start.
+fn loop_volume(level: f32, settings: &crate::settings::Settings) -> f32 {
+    level * settings.master()
+}
+
 /// Windowed runs: the synthesized sources and the systems that play them.
 pub fn plugin(app: &mut App) {
     app.add_audio_source::<SynthAudio>().init_resource::<Clicks>().init_resource::<Heard>();
@@ -277,6 +285,14 @@ mod tests {
             assert!(samples.iter().all(|x| x.is_finite() && x.abs() <= 1.0));
             assert!(samples.iter().any(|x| x.abs() > 0.1), "{s:?} is audible");
         }
+    }
+
+    #[test]
+    fn loops_follow_the_volume_setting() {
+        let half = crate::settings::Settings::default();
+        assert_eq!(loop_volume(0.4, &half), 0.2);
+        let off = crate::settings::Settings { sound: false, ..half };
+        assert_eq!(loop_volume(0.4, &off), 0.0);
     }
 
     #[test]

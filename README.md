@@ -76,7 +76,7 @@ If a baseline exists, every phase whose step p95 exceeds the baseline's by more 
 
 Players start in the menu: **Host**, or **Join** with the host's address (type it, `ip:port`) and a slot (2 to 8, one per player), **Settings**, **Quit**. Escape in game opens the pause menu (the world keeps running). Other players show as chunky figures with a name tag ("Pilot <slot>").
 
-Settings (mouse sensitivity, field of view, volume) and rebound keys are saved in `settings/` where the game runs (`settings.json`, `bindings.json`; `--settings-dir=<dir>` picks another). A broken file falls back to the defaults with a message. Scripted and headless runs ignore them.
+Settings (mouse sensitivity, field of view, volume (default 50 %), sound on/off) and rebound keys are saved in `settings/` where the game runs (`settings.json`, `bindings.json`; `--settings-dir=<dir>` picks another). A broken file falls back to the defaults with a message. Scripted and headless runs ignore them.
 
 The flags below skip the menu (scenarios, bots). One player hosts, the others connect. Each simulates its own walker and ship; the host relays snapshots (UDP port 17441).
 

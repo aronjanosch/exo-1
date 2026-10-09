@@ -11,8 +11,8 @@
 //!   open space: generated in the background while the drop's post-ramp lasts, then taken, done
 //!   or not (a bound in game time, so runs faster than real time end the same way).
 //! - A generation stays after a drop near the old planet, for a jump on (`swap` scenario, #14);
-//!   it is discarded when a jump heads elsewhere or it is of the simulation's planet.
-//!   TODO(initiator): #111 point 7 calls the kept planet a leak; drop it at the drop instead?
+//!   it is discarded when a jump heads elsewhere or it is of the simulation's planet (#111
+//!   point 7: kept on purpose, initiator 2026-10-09).
 use crate::drive::{Drive, Phase};
 use crate::system::{PlanetId, System};
 use glam::DVec3;

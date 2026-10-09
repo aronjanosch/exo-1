@@ -4,8 +4,8 @@
 //!
 //! J starts a warp to the selected planet (N selects) and cancels while spooling or calibrating.
 //! Holding J during the flight drops out early (emergency exit). J works for whoever is aboard:
-//! the pilot, or a walker in the cabin who stood up mid-warp (#111).
-//! TODO(initiator): or block standing up while the drive is busy (`interact.rs`)?
+//! the pilot, or a walker in the cabin who stood up mid-warp (#111; standing up stays allowed,
+//! initiator 2026-10-09).
 //!
 //! Four fixed-step systems in a chain: `warp_input` (keys), `warp_drive` (state machine and the
 //! ship on rails), `planet_swap` (simulation's planet), `warp_telemetry` (scenario numbers only).
@@ -127,7 +127,7 @@ impl PendingPlanet {
     /// The finished planet and its roots; a running generation is waited for, and without one the
     /// planet is generated here and now without roots. Only when the loader swaps off rails in a
     /// frame zone (a teleport, an arrival before the generation is done): no flight to hide it in.
-    /// TODO(initiator): a short "materialising" state for teleports instead of the hitch (#113).
+    /// A "materialising" state instead of this hitch: #140.
     fn take(&mut self, id: PlanetId, sys: &System) -> (PlanetRes, Option<Vec<ChunkOut>>) {
         match self.task.take() {
             Some((t, task)) if t == id => {
@@ -213,8 +213,8 @@ pub fn warp_input(
             wd.events.push(ev);
         }
     }
-    // An empty ship does not jump: everybody left while it spooled or calibrated.
-    // TODO(initiator): assumption, not in #111.
+    // An empty ship does not jump: everybody left while it spooled or calibrated (initiator
+    // 2026-10-09).
     if !aboard && let Some(ev) = wd.drive.cancel() {
         println!("warp: cancelled, nobody is aboard");
         wd.events.push(ev);

@@ -69,7 +69,7 @@ _Avoid_: landing zone, helipad
 ### Goods
 
 **Commodity**:
-A kind of good, defined as data: name, base price, volume.
+A kind of good, defined as data: name, base price, crate size, tags.
 _Avoid_: item, resource
 
 **Crate**:
@@ -79,3 +79,61 @@ _Avoid_: box, container, package
 **Cargo**:
 Whatever crates a ship currently carries.
 _Avoid_: load, inventory
+
+### Gameplay
+
+**Crew**:
+The players of one co-op session together. Money, unlocks and jobs belong to the crew.
+_Avoid_: party, team, group
+
+**Client id**:
+The id a game install creates once and keeps; the host save keys personal tracks by it. Not the network slot.
+_Avoid_: player id, user id
+
+**Domain event**:
+A message that something happened in the game ("crate delivered at a pad", "unlock bought"). The host applies each one once (by its id); every system reads them. In this project "event" means only this.
+_Avoid_: action, command, signal; route event (say encounter)
+
+**System**:
+One area of gameplay in its own `*_core` crate with its own state, events, content records and save section: jobs, encounters, later farming, mining, markets. Systems talk only through domain events and conditions.
+_Avoid_: module, feature, manager
+
+**Condition**:
+A small typed rule in the data (track at least, has tag, flag set, all, any, not) that says when something is available.
+_Avoid_: requirement, prerequisite, gate
+
+**Progress track**:
+A number the crew or a player owns, with thresholds: money (the crew track `wallet`), XP per job kind, later reputation.
+_Avoid_: stat, skill, currency
+
+**Unlock**:
+Something the crew buys with money that grants tags; places and job templates with those tags become available.
+_Avoid_: upgrade, perk, license
+
+**Tag**:
+A label on content (`dusty`, `route_bent_spoon`). The crew owns the tags its unlocks grant.
+_Avoid_: category, keyword
+
+**Flag**:
+A fact a system raised at runtime (`job_completed:<template>`) that conditions can ask for.
+_Avoid_: achievement, state
+
+**Job**:
+Work the crew took on: an instance of a job template with objectives, a reward, maybe a deadline.
+_Avoid_: mission, quest, contract
+
+**Objective**:
+One part of a job that counts domain events until it is done (deliver, later find, collect, harvest).
+_Avoid_: task, goal, step
+
+**Offer**:
+A job not yet accepted, on a board.
+_Avoid_: listing, posting
+
+**Board**:
+The list of offers at a location.
+_Avoid_: mission board, terminal, job list
+
+**Encounter**:
+Something that happens to the crew on the way (floating cargo, a systems hiccup), drawn from pools by a seeded timer.
+_Avoid_: route event, random event, incident

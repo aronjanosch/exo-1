@@ -4,8 +4,11 @@
 //! -Z forward, right-handed, angular velocity in world space.
 //!
 //! All numbers are spike test values (assumptions for testing, not design).
+pub mod axis;
 pub mod camera;
 pub mod hud;
+
+pub use axis::{AxisState, AxisTuning, FlightModel};
 
 use glam::{DQuat, DVec2, DVec3};
 use serde::Deserialize;
@@ -572,6 +575,11 @@ pub struct ShipController {
     pub boost_strength: f64,
     /// Dev switch (F6): boost as the speed stage of #24, the capacitor ignored. Not a tuning value.
     pub boost_stage: bool,
+    /// Dev switch (F7, spike 13): which model `step` flies; change it with `set_model`.
+    pub model: FlightModel,
+    /// The axis model's values (`ship_axis.json`) and what it did in its last step.
+    pub axis_tuning: AxisTuning,
+    pub axis: AxisState,
 
     horizon_w: DVec3,
     correction_accel: DVec3,
@@ -601,9 +609,24 @@ impl ShipController {
             boost: BoostCapacitor::default(),
             boost_strength: 0.0,
             boost_stage: false,
+            model: FlightModel::Classic,
+            axis_tuning: AxisTuning::default(),
+            axis: AxisState::default(),
             horizon_w: DVec3::ZERO,
             correction_accel: DVec3::ZERO,
         }
+    }
+
+    pub fn with_axis(mut self, axis_tuning: AxisTuning) -> Self {
+        self.axis_tuning = axis_tuning;
+        self
+    }
+
+    /// Switches the model; the classic one's smoothed thrust starts from zero again.
+    pub fn set_model(&mut self, model: FlightModel) {
+        self.model = model;
+        self.correction_accel = DVec3::ZERO;
+        self.axis = AxisState::default();
     }
 
     /// m/s: on the ground the assist settles the ship at this speed (no slide, see `step`).
@@ -656,6 +679,9 @@ impl ShipController {
     /// One physics step (Godot's `_integrate_forces`). Returns the new linear and
     /// angular velocity; the caller writes them to the body before integration.
     pub fn step(&mut self, body: &BodyState, input: &FlightInput, env: &impl PlanetEnv, dt: f64) -> (DVec3, DVec3) {
+        if self.model == FlightModel::Axis {
+            return self.step_axis(body, input, env, dt);
+        }
         // Scripted test input (nobody piloting) is not ramped.
         let ramped;
         let input = if input.piloted {

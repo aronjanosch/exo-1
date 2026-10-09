@@ -85,29 +85,41 @@ def cables(col, sag=0.6, height=6.95, arm=1.3):
                 col.objects.link(obj)
 
 
-def furnish(content, col, new, spec):
-    """Put the placement's fit-out on the building's room anchor and a marker on its npc anchor."""
-    bpy.context.view_layer.update()
-    room = next((o for o in new if o.get("kind") == "room"), None)
-    if room is None:
-        print(f"PROBLEM no room anchor for fit {spec}")
-        return
-    fit = kit.place(content, f"fit_{spec['fit']}_{room['bays']}", 0, 0, 0, 0, col=col)
-    root = next(o for o in fit if o.parent is None)
-    root.matrix_world = room.matrix_world.copy()
-    # A stand-in for the game's room light: one soft panel under the ceiling.
-    w, d, h = room["size"]
+def room_light(col, at, w, d, h):
+    """A stand-in for the game's room light: one soft panel under the ceiling. at: a matrix on the
+    floor in the room's middle."""
     light = bpy.data.objects.new("room_light", bpy.data.lights.new("room_light", "AREA"))
     light.data.shape, light.data.size, light.data.size_y = "RECTANGLE", w * 0.8, d * 0.8
     light.data.energy = 7.0 * w * d
     light.data.color = (1.0, 0.9, 0.78)
     col.objects.link(light)
-    light.matrix_world = room.matrix_world @ Matrix.Translation((0, -d / 2, h - 0.1))
+    light.matrix_world = at @ Matrix.Translation((0, 0, h - 0.1))
+
+
+def furnish(content, col, new, spec):
+    """Put the placement's fit-out on the building's room anchor. Returns the fit-out's objects."""
+    room = next((o for o in new if o.get("kind") == "room"), None)
+    if room is None:
+        print(f"PROBLEM no room anchor for fit {spec}")
+        return []
+    fit = kit.place(content, f"fit_{spec['fit']}_{room['bays']}", 0, 0, 0, 0, col=col)
+    next(o for o in fit if o.parent is None).matrix_world = room.matrix_world.copy()
     bpy.context.view_layer.update()
-    for o in fit:
-        if o.get("kind") == "npc":
-            marker = kit.place(content, "npc_marker", 0, 0, 0, 0, col=col)
-            next(m for m in marker if m.parent is None).matrix_world = o.matrix_world.copy()
+    w, d, h = room["size"]
+    room_light(col, room.matrix_world @ Matrix.Translation((0, -d / 2, 0)), w, d, h)
+    return fit
+
+
+def populate(content, col, objs, has_room):
+    """A marker on every npc anchor; rooms without a room anchor (one-offs, homes) get a smaller
+    light over their character."""
+    for o in objs:
+        if o.get("kind") != "npc":
+            continue
+        marker = kit.place(content, "npc_marker", 0, 0, 0, 0, col=col)
+        next(m for m in marker if m.parent is None).matrix_world = o.matrix_world.copy()
+        if not has_room:
+            room_light(col, o.matrix_world, 6.0, 6.0, 2.7)
 
 
 def build(content, col):
@@ -116,8 +128,9 @@ def build(content, col):
         for o in new:
             if o.get("kind") == "leaf":
                 o.location += Vector(o["slide"])   # doors open, so the review sees in
-        if len(row) > 5:
-            furnish(content, col, new, row[5])
+        bpy.context.view_layer.update()
+        fit = furnish(content, col, new, row[5]) if len(row) > 5 else []
+        populate(content, col, new + fit, bool(fit))
     roads(col)
     ground(col)
     cables(col)
@@ -154,6 +167,8 @@ def main():
         ("window_eye", (-29, 2.5, 1.7), (-29, 12, 1.4), 22),
         ("inside_bar", (-14.6, 6.5, 1.7), (-17, 14.0, 1.2), 16),
         ("inside_workshop", (-6.0, -24.5, 1.7), (-14.0, -23.0, 1.0), 16),
+        ("diner_eye", (24.0, -1.5, 1.7), (25.0, -12.0, 2.0), 22),
+        ("bubble_eye", (10.0, -44.5, 1.7), (12.0, -51.0, 1.5), 22),
     ]
     only = set(args.shots.split(",")) if args.shots else None
     shots = [s for s in shots if not only or s[0] in only]

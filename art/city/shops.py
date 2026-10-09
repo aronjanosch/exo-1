@@ -81,11 +81,26 @@ def pod_tower():
     a bulb on top with its own hover-car pad, a glass lift tube up the side."""
     p = Part("pod_tower")
     body, accent = colour("#8fd4e8"), colour("#7a5cc4")
-    # Shop block.
-    p.rounded_box((-5.5, -5.5, 0), (5.5, 5.5, GROUND_STOREY), 2.0, body)
-    p.rounded_box((-5.6, -5.6, 0.9), (5.6, 5.6, 3.4), 2.05, LIT, "glow")      # ribbon shop window
+    # Shop block: a room with see-through windows on its straight sides; a fit-out from the plan
+    # furnishes it (room anchor, 2 bays). The door sits in a solid stretch of wall, its leaf slides
+    # up into the wall and the trim slab.
+    t, half = 0.25, 5.5
+    door_x, side = 1.5, (-1.6, 1.6, 0.9, 3.4)
+    front = [(-3.4, -0.2, 0.9, 3.4), (2.9, 3.4, 0.9, 3.4)]
+    hole = p.doorway("door_shop", door_x, -half, TRIM, accent, GLOW_CYAN, w=1.5, h=2.4, wall=t, use="shop")
+    p.rounded_room((-half, -half, 0), (half, half, GROUND_STOREY), 2.0, t, body,
+                   {"front": front + [hole], "left": [side], "right": [side]})
+    for xa, xb, _, _ in front:
+        p.box((xa, -half - 0.04, 0.9), (xb, -half + 0.02, 3.4), CLEAR, "clear")
+    for sx in (-1, 1):
+        x = sx * half
+        p.box((min(x, x - sx * 0.06), -1.6, 0.9), (max(x + sx * 0.04, x - sx * 0.06), 1.6, 3.4), CLEAR, "clear")
+    p.rounded_box((-half + t, -half + t, 0), (half - t, half - t, 0.02), 2.0 - t, colour("#7d7887"))
+    p.rounded_box((-half, -half, GROUND_STOREY - 0.3), (half, half, GROUND_STOREY), 2.0, colour("#e6f3f7"))
+    for x in (-2.5, 2.5):
+        p.box((x - 0.15, -3.5, GROUND_STOREY - 0.35), (x + 0.15, 3.5, GROUND_STOREY - 0.3), LIT, "glow")
+    p.anchor("room", (0, half - t - 0.02, 0.02), kind="room", bays=2, size=[7.36, 9.36, 4.18])
     p.rounded_box((-5.8, -5.8, GROUND_STOREY), (5.8, 5.8, GROUND_STOREY + 0.4), 2.2, TRIM)
-    p.door("door_shop", 1.5, -5.6, TRIM, accent, use="shop")
     p.sign(-2.0, 3.6, 4.5, 0.8, -5.5, accent, GLOW_PINK)
     # Stalk: tapers from r 4 to r 3, one floor slab and one window ribbon per floor.
     z0, floors = GROUND_STOREY + 0.4, 8
@@ -124,12 +139,44 @@ def bubble_shop():
     body, accent = colour("#ffd84d"), colour("#e2483d")
     w, d = 7.0, 8.0
     lo, hi = (-w / 2, -d / 2 + 1.5, 0), (w / 2, d / 2 - 0.2, GROUND_STOREY + STOREY)
-    p.rounded_box(lo, hi, 1.6, body)
-    # Ribbon windows wrap around on both floors.
-    p.rounded_box((lo[0] - 0.08, lo[1] - 0.08, 0.8), (hi[0] + 0.08, hi[1] + 0.08, 3.4), 1.68, LIT, "glow")
-    p.rounded_box((lo[0] - 0.08, lo[1] - 0.08, GROUND_STOREY + 0.9), (hi[0] + 0.08, hi[1] + 0.08, GROUND_STOREY + 2.4), 1.68, GLASS, "glass")
-    p.rounded_box((lo[0] - 0.2, lo[1] - 0.2, GROUND_STOREY - 0.3), (hi[0] + 0.2, hi[1] + 0.2, GROUND_STOREY), 1.8, TRIM)
-    p.door("door_shop", -1.5, lo[1] - 0.08, TRIM, accent, use="shop")
+    # Ground floor: a gumball shop, too shallow for a fit-out, so it carries its own furniture.
+    t, r, gs = 0.25, 1.6, GROUND_STOREY
+    side = (-1.3, 1.3, 0.8, 3.4)
+    front = [(0.4, 1.8, 0.8, 3.4)]
+    hole = p.doorway("door_shop", -0.9, lo[1], TRIM, accent, GLOW_PINK, w=1.5, h=2.5, wall=t, use="shop")
+    p.rounded_room(lo, (hi[0], hi[1], gs), r, t, body, {"front": front + [hole], "left": [side], "right": [side]})
+    p.box((0.4, lo[1] - 0.04, 0.8), (1.8, lo[1] + 0.02, 3.4), CLEAR, "clear")
+    cy = (lo[1] + hi[1]) / 2
+    for sx in (-1, 1):
+        x = sx * w / 2
+        p.box((min(x + sx * 0.04, x - sx * 0.02), cy - 1.3, 0.8), (max(x + sx * 0.04, x - sx * 0.02), cy + 1.3, 3.4),
+              CLEAR, "clear")
+    p.rounded_box((lo[0] + t, lo[1] + t, 0), (hi[0] - t, hi[1] - t, 0.02), r - t, colour("#f3c6d6"))
+    p.rounded_box((lo[0], lo[1], gs - 0.3), (hi[0], hi[1], gs), r, TRIM)
+    p.torus((0, cy, gs - 0.36), 1.6, 0.05, LIT, "glow", segments=32, sides=4)
+    p.rounded_box((lo[0], lo[1], gs), hi, r, body)
+    # Counter across the back, the shopkeeper behind it, a jar shelf on the back wall.
+    back = hi[1] - t
+    p.rounded_box((-2.0, back - 1.6, 0.02), (2.0, back - 1.0, 1.05), 0.25, accent, segments=4)
+    p.rounded_box((-2.08, back - 1.68, 1.05), (2.08, back - 0.95, 1.11), 0.3, TRIM, segments=4)
+    p.box((-2.2, back - 0.3, 0.02), (2.2, back, 2.2), colour("#f4f1e8"))
+    for k, z in enumerate((0.9, 1.5)):
+        p.box((-2.2, back - 0.45, z - 0.04), (2.2, back - 0.3, z), METAL)
+        for j in range(7):
+            x = -1.95 + j * 0.65
+            p.cylinder((x, back - 0.38, z), 0.13, 0.3, (GLOW_PINK, GLOW_CYAN, LIT)[(j + k) % 3], "glow", segments=8)
+    p.anchor("npc", (0, back - 0.5, 0.02), kind="npc", role="trader")
+    # Giant gumball machines either side of the room: a clear globe full of balls on a red foot.
+    balls = [colour(h) for h in ("#ff5fa2", "#5ef2e0", "#ffd84d", "#7fb069", "#e07b39", "#7a5cc4")]
+    for k, (x, y) in enumerate(((-2.3, -0.6), (2.4, -0.4))):
+        p.cylinder((x, y, 0.02), 0.45, 0.9, accent, radius_top=0.3, segments=16)
+        p.box((x - 0.12, y - 0.33, 0.45), (x + 0.12, y - 0.28, 0.65), METAL)
+        p.sphere((x, y, 1.55), 0.65, CLEAR, "clear", segments=16)
+        for j in range(9):
+            a = 2.4 * j + k
+            p.sphere((x + 0.26 * math.cos(a), y + 0.26 * math.sin(a), 1.3 + 0.06 * j), 0.16,
+                     balls[(j + k) % len(balls)], segments=8)
+        p.cylinder((x, y, 2.2), 0.2, 0.12, accent, segments=12)
     # Swoosh canopy over the door, wider at the street end.
     canopy = [(-3.4, lo[1]), (0.4, lo[1]), (0.8, lo[1] - 1.4), (-3.8, lo[1] - 1.4)]
     p.prism(canopy, 3.3, 3.5, accent)

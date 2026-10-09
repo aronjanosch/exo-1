@@ -202,6 +202,26 @@ class Part:
                    for r, a in ((r_in, a0), (r_out, a0), (r_out, a1), (r_in, a1))]
             self.prism(pts, z0, z1, rgb, mat)
 
+    def rounded_room(self, lo, hi, r, t, rgb, holes=None, mat="paint"):
+        """Walls of a room with rounded vertical corners (like `rounded_box`), t thick, inside lo-hi.
+        holes: {"front": [...], "back": [...], "left": [...], "right": [...]}, each (x0, x1, z0, z1)
+        along that wall seen from outside, x measured from the wall's middle."""
+        holes = holes or {}
+        (x0, y0, z0), (x1, y1, z1) = lo, hi
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        sides = {"front": (x1 - x0 - 2 * r, Matrix.Translation((cx, y0, 0))),
+                 "back": (x1 - x0 - 2 * r, Matrix.Translation((cx, y1, 0)) @ Matrix.Rotation(math.pi, 4, "Z")),
+                 "right": (y1 - y0 - 2 * r, Matrix.Translation((x1, cy, 0)) @ Matrix.Rotation(math.pi / 2, 4, "Z")),
+                 "left": (y1 - y0 - 2 * r, Matrix.Translation((x0, cy, 0)) @ Matrix.Rotation(-math.pi / 2, 4, "Z"))}
+        for side, (length, m) in sides.items():
+            with self.placed(m):
+                self.wall((-length / 2, 0, z0), (length / 2, t, z1), rgb, holes.get(side, ()), mat)
+        for (ax, ay), (a0, a1) in (((x1 - r, y1 - r), (0, 90)), ((x0 + r, y1 - r), (90, 180)),
+                                   ((x0 + r, y0 + r), (-180, -90)), ((x1 - r, y0 + r), (-90, 0))):
+            # ring_wall's gaps are what stays open: everything outside this corner's quarter.
+            self.ring_wall((ax, ay), r - t, r, z0, z1, rgb, mat, segments=24,
+                           gaps=[(a1, a1 + 270)] if a1 + 270 <= 180 else [(a1, 180), (-180, a1 + 270 - 360)])
+
     def child(self, name, kind, **extras):
         """A separate object parented to this part, built in this part's frame."""
         c = Part(name, kind)
@@ -245,23 +265,24 @@ class Part:
         self.anchor(name, (x, front_y - 1.0, 0), kind="door", **extras)
 
     def doorway(self, name, x, front_y, frame_rgb, leaf_rgb, glow_rgb, w=1.5, h=2.5, wall=WALL, slide=None,
-                **extras):
+                z0=0.0, **extras):
         """A real door through a wall that runs from front_y to front_y + wall: a frame with reveals,
         a leaf the game slides open (child object, kind "leaf", `slide` in metres, default up into
         the wall above; sideways where there is no wall above to hide it) and the door anchor 1 m in
-        front. Returns the hole (x0, x1, z0, z1) to cut into the wall."""
+        front; z0 is the floor the door stands on (a plinth). Returns the hole (x0, x1, z0, z1) to cut
+        into the wall."""
         x0, x1 = x - w / 2, x + w / 2
         back = front_y + wall + 0.04          # reveals stand a hair proud of the inside lining
-        self.box((x0 - 0.15, front_y - 0.15, 0), (x0, back, h + 0.15), frame_rgb)
-        self.box((x1, front_y - 0.15, 0), (x1 + 0.15, back, h + 0.15), frame_rgb)
-        self.box((x0, front_y - 0.15, h), (x1, back, h + 0.15), frame_rgb)
+        self.box((x0 - 0.15, front_y - 0.15, z0), (x0, back, z0 + h + 0.15), frame_rgb)
+        self.box((x1, front_y - 0.15, z0), (x1 + 0.15, back, z0 + h + 0.15), frame_rgb)
+        self.box((x0, front_y - 0.15, z0 + h), (x1, back, z0 + h + 0.15), frame_rgb)
         leaf = self.child(f"{name}_leaf", "leaf", door=name, slide=list(slide or (0.0, 0.0, h)))
         mid = front_y + wall / 2
-        leaf.box((x0, mid - 0.05, 0), (x1, mid + 0.05, h), leaf_rgb)
+        leaf.box((x0, mid - 0.05, z0), (x1, mid + 0.05, z0 + h), leaf_rgb)
         # A round glowing window in the leaf, so a closed door still says "open for business".
-        leaf.cylinder((x, mid - 0.07, h * 0.62), 0.22, 0.14, glow_rgb, "glow", segments=16, axis="Y")
+        leaf.cylinder((x, mid - 0.07, z0 + h * 0.62), 0.22, 0.14, glow_rgb, "glow", segments=16, axis="Y")
         self.anchor(name, (x, front_y - 1.0, 0), kind="door", **extras)
-        return (x0, x1, 0.0, h)
+        return (x0, x1, z0, z0 + h)
 
     def sign(self, x, z, w, h, front_y, board_rgb, glow_rgb, depth=0.2):
         """A sign board with a glowing face; the lettering comes later as a decal or texture."""
@@ -456,19 +477,45 @@ def shoot(collection, path, location, target, lens=35, size=(1600, 900)):
     bpy.data.objects.remove(cam)
 
 
+def room_lights(collection, obj):
+    """Stand-ins for the game's room lights: a soft panel under each room's ceiling, a smaller one
+    over each character in a room without a room anchor. Returns the npc anchors."""
+    anchors = [o for o in obj.children if o.type == "EMPTY"]
+    npcs = [o for o in anchors if o.get("kind") == "npc"]
+    rooms = [o for o in anchors if o.get("kind") == "room"]
+    spots = [(o.location + Vector((0, -o["size"][1] / 2, o["size"][2] - 0.1)), o["size"][0], o["size"][1])
+             for o in rooms]
+    if not rooms:
+        spots += [(o.location + Vector((0, 0, 2.6)), 6.0, 6.0) for o in npcs]
+    for at, w, d in spots:
+        light = bpy.data.objects.new("room_light", bpy.data.lights.new("room_light", "AREA"))
+        light.data.shape, light.data.size, light.data.size_y = "RECTANGLE", w * 0.8, d * 0.8
+        light.data.energy = 7.0 * w * d
+        light.data.color = (1.0, 0.9, 0.78)
+        light.location = at
+        collection.objects.link(light)
+    return npcs
+
+
 def review(collection, obj, out):
-    """Fixed views, the same for every model: three-quarter, street level, top, night."""
+    """Fixed views, the same for every model: three-quarter, street level, top, night; for a model
+    with a character inside, also the view from just inside the door towards the character."""
     lo = Vector(obj.bound_box[0])
     hi = Vector(obj.bound_box[6])
     c = (lo + hi) / 2
     r = max((hi - lo).length / 2, 3.0)
+    npcs = room_lights(collection, obj)
     stage(collection)
     # Far enough that the bounding sphere fits the 35 mm lens's vertical field (about 32 degrees).
     shoot(collection, f"{out}/{obj.name}_three_quarter.png", c + Vector((0.55, -0.75, 0.38)).normalized() * r * 3.9, c)
     # A walker on the far sidewalk: eye height 1.7 m, 9 m in front, wide lens.
     shoot(collection, f"{out}/{obj.name}_street.png", (c.x - 2.0, lo.y - 9.0, 1.7), (c.x, lo.y, max(2.5, c.z * 0.8)), lens=18)
     shoot(collection, f"{out}/{obj.name}_top.png", (c.x, c.y, hi.z + r * 3.0), c, lens=35, size=(900, 900))
-    for o in [o for o in collection.objects if o.type == "LIGHT" or o.name.startswith("Plane")]:
+    door = next((o for o in obj.children if o.get("kind") == "door" and o.get("use") in ("shop", "home")), None)
+    if npcs and door:
+        eye = door.location + Vector((0, 1.0 + 0.6, 1.7))   # the anchor is 1 m out; step 0.6 m in
+        shoot(collection, f"{out}/{obj.name}_inside.png", eye, npcs[0].location + Vector((0, 0, 1.2)), lens=16)
+    for o in [o for o in collection.objects if o.name.startswith(("Sun", "Plane"))]:
         bpy.data.objects.remove(o)
     stage(collection, night=True)
     shoot(collection, f"{out}/{obj.name}_night.png", (c.x + r * 0.9, lo.y - r * 2.2, 1.7), (c.x, c.y, c.z), lens=20)

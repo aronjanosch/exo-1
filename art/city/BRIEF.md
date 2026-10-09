@@ -83,10 +83,12 @@ Initiator: "denk dran dass man in einige der gebäude auch rein will. am besten 
 - **The door leaf** is its own child object and slides up into the wall above the door (`slide`); the wall and the solid floor above hide it. No pocket beside the door is needed, so any door width works (the garage's 7 m too).
 - **Fit-outs** (`interiors.py`) are separate models, `fit_<kind>_<bays>`, placed on the building's `room` anchor. The plan picks the kind per placement (`city_plan.fit`, default per model in `city_plan.FIT`), so one house is a bar in one street and a workshop in the next. Every fit-out keeps the front of the room clear (doors sit anywhere along the front), has a counter or desk across the back and the `npc` anchor behind it.
 - **Flat doors** (`use = "flat"`, `"back"`) stay panels: upper floors, flats and large buildings are instanced behind a portal (like the caves in #75).
-- **One-offs furnish themselves** (assumption, waiting for the initiator's yes): the fit-outs are rectangular 9.4 m deep rooms, so round or shallow rooms (the diner's kiosk, the charge stop's kiosk) carry their furniture and `npc` anchor in the model, with no `room` anchor. Doors with no wall above them slide sideways (`Part.doorway(slide=...)`), round walls come from `Part.ring_wall`.
+- **One-offs furnish themselves** (assumption, initiator said to carry on 2026-10-09): the fit-outs are rectangular 9.4 m deep rooms, so round or shallow rooms (the diner's kiosk, the charge stop's kiosk, the bubble shop's gumball shop) carry their furniture and `npc` anchor in the model, with no `room` anchor. The pod tower's shop block is big enough and takes a 2-bay fit-out from the plan. Doors with no wall above them slide sideways (`Part.doorway(slide=...)`); round walls come from `Part.ring_wall`, rooms with rounded corners from `Part.rounded_room`.
+- **Homes:** each bungalow is one room: see-through glass to the street, a door that slides sideways into the front wall (the roof is too thin to hide it), furniture (sofa, kidney table, sputnik lamp, screen) and an `npc` anchor with `role = "resident"`. The butterfly house's chimney wall has a passage; the dome house is entered through a hollow tunnel.
+- Quest givers behind counters and in homes come from the npc anchors; `city_plan.QUESTS` keeps only the ones out in the open.
 - The company gate and the spire's lift stay flat doors: large interiors are instanced.
 - Rooms carry no light; the game lights them (the preview puts one soft panel light per room as a stand-in).
-- Next: pod tower and bubble shop, then the bungalows (the whole house is the room).
+- Review renders (`kit.review`) light rooms like the preview and add an `_inside` view from just inside the shop or home door towards the character.
 
 ## What the game reads
 
@@ -94,7 +96,7 @@ Initiator: "denk dran dass man in einige der gebäude auch rein will. am besten 
   - `kind = "door"` plus `use` (`shop`, `flat`): sits 1 m in front of the door, on the ground, where a walker stands.
   - `kind = "pad"` plus `size`: a hover-car pad, on its surface.
   - `kind = "room"` plus `bays` and `size` [width, depth, height]: on the floor at the back wall's inner face, centred, facing -Y. The fit-out `fit_<kind>_<bays>` goes here.
-  - `kind = "npc"` plus `role` (`trader`, `barkeep`, `mechanic`, `quest`), in a fit-out: where the character stands, behind the counter, facing -Y. The plan's `role` overrides it.
+  - `kind = "npc"` plus `role` (`trader`, `barkeep`, `mechanic`, `quest`, `cook`, `resident`), in a fit-out or a one-off: where the character stands, behind the counter, facing -Y. The plan's `role` overrides it.
 - Child meshes of the building with `kind = "leaf"`, `door` (the door anchor's name) and `slide` [x, y, z]: the door leaf; the game moves it by `slide` (building frame, metres) to open the door.
 - Placements in `city_plan.py` with a sixth element `{"fit": kind, "role": role}`.
 - Colours come as `COLOR_0`; Bevy multiplies it into the material. Blender's own glTF import ignores it (`street_preview.py` puts the kit materials back).

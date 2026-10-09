@@ -377,10 +377,11 @@ PLACEMENTS += [("lane_pylon", x, y, 0, turn) for run in CABLE_RUNS[:len(DOWNTOWN
 
 # Quest givers (placeholders): where the game puts a character with a quest.
 _gx, _gy = at(WEST_ROAD, length_of(WEST_ROAD) - 4.0)[0]
-_cs = beside(ARTERIAL, 104.0, "npc_marker", 1, 6.5)
+# Characters behind counters and in homes come from the models' npc anchors (#94), not from here:
+# the diner's cook, the charge stop's clerk, every fit-out and every home.
 QUESTS = [
     ("plaza_regular", 11.5, 13.0), ("back_yard_dealer", -30.0, 21.0), ("garage_mechanic", -3.8, -20.0),
-    ("diner_cook", 21.0, -4.0), ("charge_stop_clerk", _cs[1], _cs[2]), ("pond_watcher", 235.0, -76.5),
+    ("pond_watcher", 235.0, -76.5),
     ("shop_street_courier", 233.0, -26.0), ("gatekeeper", _gx, _gy + 3.5),
 ]
 PLACEMENTS += [("npc_marker", x, y, 0, 0) for _, x, y in QUESTS]

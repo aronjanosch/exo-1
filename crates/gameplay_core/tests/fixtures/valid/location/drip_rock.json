@@ -1,0 +1,7 @@
+{
+  "id": "drip_rock",
+  "name": "location.drip_rock.name",
+  "planet": "hearth",
+  "site": { "kind": "outpost", "nth": 0 },
+  "tags": ["start", "wet"]
+}

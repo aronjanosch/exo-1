@@ -33,6 +33,34 @@ All numbers below are starting values (guide values, not rules); change them her
 - **Palette per building:** one body colour, one accent, one glow colour. All buildings share the warm white `TRIM` (slabs, rings, frames) and `METAL`, so the streets hang together. Glows are cyan and pink.
 - Kit shapes: `box`, `rounded_box`, `cylinder` (tapered), `dome`, `sphere`, `torus`, `prism` (outline extruded in any plane), plus the facade helpers `window`, `door`, `sign`.
 
+## Recipe for houses (from the Schedule I review, 2026-10-09)
+
+The simple boxes work when the facade carries relief and the silhouette carries the idea:
+
+- **Relief, not colour:** piers on every bay line (0.3 m proud), floor bands, windows set back between them with frame strips, a deep sill, mullions and a spandrel panel. Light and shadow do the work.
+- **False front:** the street facade rises above the roof (step, arch, fin, butterfly, saw). The house's silhouette from the street comes from it, not from the box.
+- **Muted bodies, strong accents:** body colours are greyed pastels; only the accent (doors, awnings, fins) and the glow are saturated.
+- **Glow strength 0.6:** higher burns lit windows white in Eevee and loses their colour.
+- **Backs and roofs:** a plain back facade (small windows, a back door, a drainpipe) and junk on every roof (air units, vents, dishes).
+- **Corners:** a corner house carries a second street facade and something tall on the corner (turret or sign pylon).
+- Door sizes are guide values; anything at least the walker's size (capsule 0.7 x 1.8 m) works, a company gate may be 8 x 10 m.
+
+## Scripts and families
+
+| Script | Family |
+|---|---|
+| `rows.py` | row houses (one recipe, parameters per house) and corner houses |
+| `landmarks.py` | one-offs that anchor a quarter and show over the horizon (company building, beacon spire) |
+| `shops.py` | the first round shops (saucer diner, pod tower, bubble shop) |
+| `lanes.py` | hover-lane tiles: straight, tee, crossing, curve, end, plaza, parking pads |
+| `props.py` | street and roof props |
+| `flora.py` | alien plants |
+| `vehicles.py` | hover cars, van, bus |
+| `street_preview.py` | the first quarter laid out from the exported models; live or headless renders |
+| `catalog.py` | contact sheets: every model by family, labelled, one render per family |
+
+`kit.Part.placed(matrix)` builds a part in its own frame and turns it into place: facades are built facing -Y and turned onto any side.
+
 ## What the game reads
 
 - Empties parented to the building, with custom properties (glTF extras):

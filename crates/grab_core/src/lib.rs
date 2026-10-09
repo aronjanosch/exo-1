@@ -48,7 +48,7 @@ pub struct CrateTable {
 
 impl CrateTable {
     pub fn from_json(s: &str) -> Result<CrateTable, String> {
-        let t: CrateTable = parse_tuning("crates.json", s)?;
+        let t: CrateTable = content_core::parse_strict("crates.json", s)?;
         if t.sizes.is_empty() {
             return Err("crates.json: no sizes".into());
         }
@@ -138,25 +138,12 @@ pub struct GrabConfig {
 
 impl GrabConfig {
     pub fn from_json(s: &str) -> Result<GrabConfig, String> {
-        let c: GrabConfig = parse_tuning("grab.json", s)?;
+        let c: GrabConfig = content_core::parse_strict("grab.json", s)?;
         if !(c.hand_range > 0.0 && c.tool_full_range >= c.hand_range && c.tool_max_range > c.tool_full_range) {
             return Err("grab.json: ranges must grow: hand_range <= tool_full_range < tool_max_range".into());
         }
         Ok(c)
     }
-}
-
-/// Parses a tuning object: every field required, unknown fields rejected, except an optional
-/// `_comment` string. Same rule as `walker_core` and `flight_core`.
-pub(crate) fn parse_tuning<T: serde::de::DeserializeOwned>(what: &str, s: &str) -> Result<T, String> {
-    let mut v: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("{what}: {e}"))?;
-    if let Some(o) = v.as_object_mut()
-        && let Some(c) = o.remove("_comment")
-        && !c.is_string()
-    {
-        return Err(format!("{what}: _comment must be a string"));
-    }
-    serde_json::from_value(v).map_err(|e| format!("{what}: {e}"))
 }
 
 // ---------- hold ----------

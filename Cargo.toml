@@ -21,6 +21,8 @@ net_core = { path = "crates/net_core" }
 warp_core = { path = "crates/warp_core" }
 daynight_core = { path = "crates/daynight_core" }
 grab_core = { path = "crates/grab_core" }
+content_core = { path = "crates/content_core" }
+gameplay_core = { path = "crates/gameplay_core" }
 
 # Bevy recommendation: little optimisation for our code, full for dependencies.
 [profile.dev]

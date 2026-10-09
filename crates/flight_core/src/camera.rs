@@ -1,7 +1,7 @@
 //! Speed-driven camera effects (#27): field of view and streaks from speed through curves, a
 //! look-ahead that turns the pilot's view a little into the turn, and a short bump on touchdown.
 //! Plain math for the view; values in `content/tuning/camera.json`.
-use crate::{parse_tuning, Curve, CHASE_CAMERA_OFFSET, CHASE_CAMERA_PITCH_DEG};
+use crate::{Curve, CHASE_CAMERA_OFFSET, CHASE_CAMERA_PITCH_DEG};
 use glam::DVec2;
 use serde::Deserialize;
 
@@ -38,7 +38,7 @@ pub struct CameraTuning {
 
 impl CameraTuning {
     pub fn from_json(s: &str) -> Result<CameraTuning, String> {
-        let t: CameraTuning = parse_tuning("camera.json", s)?;
+        let t: CameraTuning = content_core::parse_strict("camera.json", s)?;
         t.fov_curve.validate().map_err(|e| format!("camera.json: fov_curve: {e}"))?;
         t.streak_curve.validate().map_err(|e| format!("camera.json: streak_curve: {e}"))?;
         Ok(t)

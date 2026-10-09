@@ -256,5 +256,6 @@ pub fn finish(perf: &Perf, scenario: &str, out_dir: &std::path::Path) -> Vec<(bo
 pub fn plugin(app: &mut App) {
     app.add_systems(FixedFirst, step_begin);
     app.add_systems(FixedLast, step_end);
-    app.add_systems(Update, frame.after(crate::ring::update_ring));
+    // Last in the frame: after the HUD it measures.
+    app.add_systems(Update, frame.after(crate::view::update_hud).in_set(crate::phases::Frame::Hud));
 }

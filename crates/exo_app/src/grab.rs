@@ -14,6 +14,17 @@ use bevy::prelude::*;
 use grab_core::{BreakTimer, CrateSize, GrabConfig, Holder, Reach};
 use walker_core::Frame;
 
+/// Window only: the beam.
+pub fn window_plugin(app: &mut App) {
+    app.add_systems(Startup, setup_beam);
+    app.add_systems(Update, update_beam.in_set(crate::phases::Frame::World));
+}
+
+pub fn plugin(app: &mut App) {
+    app.init_resource::<Grab>();
+    app.add_systems(FixedUpdate, grab_step.before(crate::cargo::crate_step).in_set(crate::phases::Fx::Cargo));
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Held {
     pub crate_e: Entity,

@@ -164,7 +164,7 @@ struct Loop(Sound);
 
 /// Clicks heard this frame (counted in the fixed step, where taps live).
 #[derive(Resource, Default)]
-struct Clicks(u32);
+pub struct Clicks(u32);
 
 #[derive(Resource, Default)]
 struct Heard {
@@ -190,7 +190,7 @@ fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
 }
 
 /// Fixed step, right after the actions are resolved: UI toggles click.
-fn count_clicks(actions: Res<Actions>, mut clicks: ResMut<Clicks>) {
+pub fn count_clicks(actions: Res<Actions>, mut clicks: ResMut<Clicks>) {
     let ui = [Tap::HoverAssist, Tap::HorizonFollow, Tap::Decoupled, Tap::DebugHud, Tap::WarpTarget, Tap::OrbitCamera, Tap::Lag, Tap::BoostMode];
     clicks.0 += actions.taps().iter().filter(|t| ui.contains(t)).count() as u32;
 }
@@ -260,9 +260,9 @@ fn update(
 pub fn plugin(app: &mut App) {
     app.add_audio_source::<SynthAudio>().init_resource::<Clicks>().init_resource::<Heard>();
     app.add_systems(Startup, setup);
-    // Before anyone consumes the taps (the warp and the view toggles come first).
-    app.add_systems(FixedUpdate, count_clicks.after(crate::controls::resolve_actions).before(crate::warp::warp_input).before(crate::view::orbit_toggle).before(crate::view::debug_hud_toggle));
-    app.add_systems(Update, update);
+    // Before anyone consumes the taps: the Drive phase and the view toggles come after.
+    app.add_systems(FixedUpdate, count_clicks.after(crate::controls::resolve_actions).in_set(crate::phases::Fx::Input));
+    app.add_systems(Update, update.in_set(crate::phases::Frame::Input));
 }
 
 #[cfg(test)]

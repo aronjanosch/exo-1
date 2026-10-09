@@ -18,6 +18,20 @@ use bevy::prelude::*;
 use grab_core::{BoxWorld, CrateBody, CrateTable};
 use walker_core::{Frame, Hit};
 
+/// Window only: crate and lock plate visuals. `add_*` before `update_*` through the sync point.
+pub fn window_plugin(app: &mut App) {
+    use crate::phases::Frame;
+    app.add_systems(Update, (add_crate_visuals, update_crate_visuals).chain().in_set(Frame::Sync));
+    app.add_systems(Update, (add_lock_plates, update_lock_plates).chain().in_set(Frame::Sync));
+}
+
+pub fn plugin(app: &mut App) {
+    app.init_resource::<Crates>().init_resource::<CargoStats>().init_resource::<LockGrid>().init_resource::<ObjectBudget>();
+    app.add_systems(FixedUpdate, (crate_step, budget_step).chain().in_set(crate::phases::Fx::Cargo));
+    app.add_systems(FixedUpdate, crate_watch.run_if(resource_exists::<CrateWatch>).after(budget_step).in_set(crate::phases::Fx::Cargo));
+    app.add_systems(FixedLast, record_crate_interp);
+}
+
 pub const CRATES: &str = include_str!("../../../content/cargo/crates.json");
 pub const BUDGET: &str = include_str!("../../../content/cargo/budget.json");
 

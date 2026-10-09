@@ -338,5 +338,5 @@ fn keys(
 pub fn plugin(app: &mut App) {
     app.init_resource::<Menu>();
     app.add_systems(Startup, setup);
-    app.add_systems(Update, (keys, clicks, rebuild).chain().before(crate::controls::read_input));
+    app.add_systems(Update, (keys, clicks, rebuild).chain().before(crate::controls::read_input).in_set(crate::phases::Frame::Input));
 }

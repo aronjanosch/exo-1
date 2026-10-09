@@ -12,6 +12,12 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use daynight_core::{DayNight, LightKey};
 
+/// Window only: the lights.
+pub fn window_plugin(app: &mut App) {
+    app.add_systems(Startup, setup_lights);
+    app.add_systems(Update, apply_lights.in_set(crate::phases::Frame::Sync));
+}
+
 pub const DAYNIGHT: &str = include_str!("../../../content/daynight/daynight.json");
 
 #[derive(Resource, Clone)]
@@ -138,7 +144,7 @@ pub fn plugin(app: &mut App) {
     app.insert_resource(Sun { dir, elevation_deg, hour: Some(ps.start_hour), light: look.sample(elevation_deg), fixed: None });
     app.insert_resource(DayNightRes(dn));
     app.init_resource::<DayClock>();
-    app.add_systems(FixedUpdate, tick.after(crate::ship::camera_fx));
+    app.add_systems(FixedUpdate, tick.in_set(crate::phases::Fx::Effects));
 }
 
 /// Simulated seconds the `daynight` scenario takes for one day.

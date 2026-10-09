@@ -11,6 +11,11 @@ use bevy::math::{DQuat, DVec2, DVec3};
 use bevy::prelude::*;
 use walker_core::{suit_accel, Frame, Hit, SuitInput, WalkInput, Walker, WalkerConfig, World};
 
+pub fn plugin(app: &mut App) {
+    app.init_resource::<WalkStats>();
+    app.add_systems(FixedUpdate, walker_step.in_set(crate::phases::Fx::Walker));
+}
+
 pub const EYE_HEIGHT: f64 = 1.7;
 
 #[derive(Component)]

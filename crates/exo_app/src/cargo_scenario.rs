@@ -596,8 +596,10 @@ pub fn crate_lock_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool
     s.push(Box::new(|w, c| {
         let a = crate_e(c, "a");
         let locked = crate_of(w, a).unwrap().locked;
+        // Other crates may have come to rest on the plates and locked by now; this is about `a`.
         let (lit, _) = plates(w);
-        check(c, held(w) == Some(a) && !locked && lit == 0, format!("crate-lock: grabbing unlocks the crate (held {}, locked {locked}, plates lit {lit})", held(w) == Some(a)));
+        let b_locked = crate_of(w, crate_e(c, "b")).is_some_and(|c| c.locked);
+        check(c, held(w) == Some(a) && !locked, format!("crate-lock: grabbing unlocks the crate (held {}, locked {locked}; plates lit {lit}, the loose crate locked meanwhile: {b_locked})", held(w) == Some(a)));
         tap(w, KeyCode::KeyF);
         true
     }));
@@ -870,4 +872,123 @@ pub fn crate_unload_steps(s: &mut Vec<Step>) {
             true
         }));
     }
+}
+
+/// Bottom of crate `top` above the top of crate `base`, along the frame's up (m).
+fn gap_between(w: &World, base: Entity, top: Entity) -> f64 {
+    let (b, t) = (&crate_of(w, base).unwrap().body, &crate_of(w, top).unwrap().body);
+    (t.pos - b.pos).dot(b.up) - b.half.y - t.half.y
+}
+
+/// Night extra E2: crates have colliders. They stack (cabin and ground), the walker stops at a
+/// crate instead of walking through it, and stands on one.
+pub fn crate_stack_steps(s: &mut Vec<Step>) {
+    s.push(Box::new(|w, c| {
+        clear_crates(w);
+        let base = cabin_crate(w, "medium", 0.0, 1.0);
+        let top = cabin_crate(w, "small", 0.1, 1.05);
+        // Drop the small one from 0.4 m above the medium one.
+        w.get_mut::<Crate>(top).unwrap().body.pos.y = 0.3 + 1.0 + 0.25 + 0.4;
+        c.v.insert("base", base.to_bits() as f64);
+        c.v.insert("top", top.to_bits() as f64);
+        begin(w, c, "crate-stack: a small crate dropped onto a medium one in the cabin");
+        true
+    }));
+    s.push(wait(2.0));
+    s.push(Box::new(|w, c| {
+        let (base, top) = (crate_e(c, "base"), crate_e(c, "top"));
+        let gap = gap_between(w, base, top);
+        let asleep = crate_of(w, top).unwrap().body.asleep;
+        let base_locked = crate_of(w, base).unwrap().locked;
+        end(w, c, format!("gap {:.1} mm, small asleep {asleep}, medium locked {base_locked}", gap * 1000.0));
+        check(c, gap.abs() < 0.02 && asleep, format!("crate-stack: in the cabin the small crate rests on the medium one ({:.1} mm gap)", gap * 1000.0));
+        true
+    }));
+    // The walker stands on the medium crate.
+    s.push(Box::new(|w, c| {
+        // The small one off the top first, so the walker has room.
+        let (base, top) = (crate_e(c, "base"), crate_e(c, "top"));
+        w.despawn(top);
+        let p = crate_of(w, base).unwrap().body.pos;
+        walker_in_cabin(w, DVec3::new(p.x, 0.3 + 1.0 + 0.1, p.z));
+        begin(w, c, "crate-stack: the walker stands on a crate");
+        true
+    }));
+    s.push(wait(1.0));
+    s.push(Box::new(|w, c| {
+        let (feet, grounded) = with_player(w, |p| (p.w.pos.y, p.w.grounded));
+        let top = 0.3 + 1.0;
+        end(w, c, format!("feet at {feet:.3} m ship space, crate top {top:.3} m, grounded {grounded}"));
+        check(c, grounded && (feet - top).abs() < 0.05, format!("crate-stack: the walker stands on the medium crate (feet {:.0} mm above its top)", (feet - top) * 1000.0));
+        true
+    }));
+    // On the ground: a second crate dropped onto a first.
+    s.push(Box::new(|w, c| {
+        clear_crates(w);
+        walker_on_ground(w);
+        let at = ahead(w, 4.0);
+        let base = ground_crate(w, "small", at);
+        c.v.insert("base", base.to_bits() as f64);
+        begin(w, c, "crate-stack: on the ground");
+        true
+    }));
+    s.push(wait(1.0));
+    s.push(Box::new(|w, c| {
+        let base = crate_e(c, "base");
+        let b = crate_of(w, base).unwrap().body.clone();
+        let t = w.resource::<Crates>().0.clone();
+        let top = w.spawn(crate_bundle(&t, "small", None, b.pos + b.up * 1.0, b.forward)).id();
+        c.v.insert("top", top.to_bits() as f64);
+        true
+    }));
+    s.push(wait(2.0));
+    s.push(Box::new(|w, c| {
+        let (base, top) = (crate_e(c, "base"), crate_e(c, "top"));
+        let gap = gap_between(w, base, top);
+        let asleep = crate_of(w, top).unwrap().body.asleep;
+        end(w, c, format!("gap {:.1} mm, asleep {asleep}", gap * 1000.0));
+        check(c, gap.abs() < 0.02 && asleep, format!("crate-stack: on the ground the second crate rests on the first ({:.1} mm gap)", gap * 1000.0));
+        true
+    }));
+    // The walker walks into a crate and stops at it.
+    s.push(Box::new(|w, c| {
+        clear_crates(w);
+        walker_on_ground(w);
+        let at = ahead(w, 3.0);
+        let e = ground_crate(w, "medium", at);
+        c.v.insert("crate", e.to_bits() as f64);
+        begin(w, c, "crate-stack: walk into a crate");
+        true
+    }));
+    s.push(wait(0.8));
+    s.push(Box::new(|w, c| {
+        let e = crate_e(c, "crate");
+        let at = crate_world_pos(w, e);
+        face_towards(w, at);
+        c.p.insert("crate0", at);
+        true
+    }));
+    // Walk at it for 2.5 s; track how close the walker's centre line ever gets to the crate's.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            keys(w, &[KeyCode::KeyW], true);
+            c.v.insert("min", f64::MAX);
+        }
+        let e = crate_e(c, "crate");
+        let at = crate_world_pos(w, e);
+        let p = player_world(w);
+        let up = planet(w).up(p);
+        let d = at - p;
+        c.v.insert("min", c.v["min"].min((d - up * d.dot(up)).length()));
+        if c.t < 2.5 {
+            return false;
+        }
+        keys(w, &[KeyCode::KeyW], false);
+        let min = c.v["min"];
+        let face = crate_of(w, e).unwrap().body.half.x + with_player(w, |p| p.w.cfg.radius);
+        let moved = at.distance(c.p["crate0"]);
+        end(w, c, format!("closest {min:.2} m from the crate's centre (face contact at {face:.2} m), crate moved {moved:.3} m"));
+        check(c, min > face - 0.05 && moved < 0.01, format!("crate-stack: the walker does not walk through a crate (closest {min:.2} m from its centre, face contact at {face:.2} m) and does not shove it"));
+        true
+    }));
 }

@@ -47,6 +47,8 @@ pub enum Layer {
     Ramp,
     /// Hull of another player's ship (proxy): the walker stands on it, ships do not hit it.
     Remote,
+    /// Crates: the walker and other crates sweep against them; no contacts.
+    Crate,
 }
 
 /// Sideways spawn offset in metres (players of one network session start 20 m apart).
@@ -260,7 +262,7 @@ pub fn build_app(o: &Options) -> App {
     });
     app.add_systems(
         FixedUpdate,
-        (scenario::run_script.run_if(resource_exists::<scenario::Script>), controls::resolve_actions, warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, interact::interaction, walker::walker_step, grab::grab_step, cargo::crate_step, cargo::budget_step, ship::camera_fx).chain(),
+        (scenario::run_script.run_if(resource_exists::<scenario::Script>), controls::resolve_actions, warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, interact::interaction, walker::walker_step, grab::grab_step, cargo::crate_step, cargo::budget_step, cargo::sync_crate_colliders, ship::camera_fx).chain(),
     );
     app.add_systems(FixedLast, (controls::drop_taps, cargo::record_crate_interp));
     app.add_systems(FixedUpdate, cargo::crate_watch.run_if(resource_exists::<cargo::CrateWatch>).after(cargo::crate_step));

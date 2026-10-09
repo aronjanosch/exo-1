@@ -19,7 +19,7 @@ Phase 1 done 2026-10-09 03:08 (all six issues commented, none closed). Gate on t
 Phase 2, `night/extras` (branched from the tip of `feat/milestone-c-grab`, all extras on this one branch):
 
 - [x] E1 carry crates down the ramp and back up (load and unload the ship)
-- [ ] E2 the walker bumps into crates; crates stack: **not done, parked** in local `git stash@{0}` on this machine (not pushed), see below
+- [x] E2 the walker bumps into crates; crates stack (finished 2026-10-09 midday, after the run, on the initiator's "continue on extras")
 - [ ] E3 visible grab-tool beam: not started
 - [ ] E4 synthesized grab, throw and lock sounds: not started
 - [ ] E5 #52 split `scenario.rs` (cargo scenarios already live in `cargo_scenario.rs`): not started
@@ -144,11 +144,11 @@ Checks (0 failures):
 - small: carried 16.7 m behind the ship's centre (walker outside, crate in the planet frame, still held); rests on the ground 0.09 m above the CPU height (asleep); carried back into the cabin; locks again at (0.25, 0.56, 0.75), 1 plate lit.
 - medium (two hands, slower): carried 13.6 m out; rests 0.24 m above the height under its centre (sloped ground; the check allows 0.35 m); back in; locks at (0.00, 0.81, 2.00), 4 plates lit.
 
-## E2 the walker bumps into crates; crates stack (parked, not done)
+## E2 the walker bumps into crates; crates stack
 
-State: code in local `git stash@{0}` on the NAS (`git stash show -p stash@{0}`), not pushed. Each crate got a collider entity on a new `Layer::Crate` (memberships only), kept in place by a `sync_crate_colliders` system: a child of the ship in a cabin, standalone on the planet. Crates swept against other crates, and the walker swept against crates except the held one. Its own scenario `crate-stack` passed (crates stack with a 5.0 mm gap in the cabin and on the ground; the walker stands on a crate 5 mm above its top; the walker never got closer than 0.86 m to a crate's centre, face contact 0.85 m). `crate-lock` needed one check changed (the loose crate now locks on the plates after the flight).
+What: each crate got a collider entity on a new `Layer::Crate` (memberships only), kept in place by a `sync_crate_colliders` system: a child of the ship in a cabin, standalone on the planet. Crates swept against other crates, and the walker swept against crates except the held one. Its own scenario `crate-stack` passed (crates stack with a 5.0 mm gap in the cabin and on the ground; the walker stands on a crate 5 mm above its top; the walker never got closer than 0.86 m to a crate's centre, face contact 0.85 m). `crate-lock` needed one check changed (the loose crate now locks on the plates after the flight).
 
-Why parked: the full gate failed in `tests/session.rs` (host and join through the menu): "Encountered an error in command: Entity despawned". Most likely `sync_crate_colliders` despawns or parents to an entity the menu path already removed (fix idea: `try_despawn`, and skip a crate whose ship is gone). Not tried: the run had stopped (next section).
+Gate: at 03:57 the full gate had failed in `tests/session.rs` (host and join through the menu): "Encountered an error in command: Entity despawned". The stashed code already contains the planned fix (`try_despawn`, and skip a crate whose ship is gone, so no collider gets parented to a removed ship); it was apparently written before the stop but never gated. At 11:40 with the stash re-applied: `session` passed 6 times in a row with no despawn error in the log, `cargo t` exit 0, `cargo scenario` 0 failures.
 
 Also seen on the way: `tests/perf.rs` failed once under load (p95 3.49 ms against a limit of 3.40 ms, load average 13 to 15); rerun alone it passed twice.
 

@@ -23,6 +23,8 @@
   "decoupled": ["KeyC", "Pad:DPadLeft"],
   "debug_hud": ["F3"],
   "boost_mode": ["F6"],
+  "flight_model": ["F7"],
+  "landing_mode": ["KeyK"],
   "mouse": {
     "ship_mode": "vjoy",
     "ship_sensitivity": 0.002,

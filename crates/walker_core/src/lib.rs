@@ -120,7 +120,7 @@ impl Default for SuitConfig {
 
 impl SuitConfig {
     pub fn from_json(s: &str) -> Result<SuitConfig, String> {
-        parse_tuning("suit.json", s)
+        content_core::parse_strict("suit.json", s)
     }
 }
 
@@ -195,21 +195,8 @@ impl Default for WalkerConfig {
 
 impl WalkerConfig {
     pub fn from_json(s: &str) -> Result<WalkerConfig, String> {
-        parse_tuning("walker.json", s)
+        content_core::parse_strict("walker.json", s)
     }
-}
-
-/// Parses a tuning object: every field required, unknown fields rejected, except an optional
-/// `_comment` string (as in the planet recipes). Same rule as `flight_core::parse_tuning`.
-fn parse_tuning<T: serde::de::DeserializeOwned>(what: &str, s: &str) -> Result<T, String> {
-    let mut v: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("{what}: {e}"))?;
-    if let Some(o) = v.as_object_mut()
-        && let Some(c) = o.remove("_comment")
-        && !c.is_string()
-    {
-        return Err(format!("{what}: _comment must be a string"));
-    }
-    serde_json::from_value(v).map_err(|e| format!("{what}: {e}"))
 }
 
 #[derive(Copy, Clone, Debug, Default)]

@@ -1,0 +1,9 @@
+{
+  "_comment": "First dropoff pad, about 1.9 km from the pickup. Invented name. Position and sizes are starting values (TODO(initiator)).",
+  "id": "bent_spoon",
+  "planet": "hearth",
+  "lat_deg": 70.0,
+  "lon_deg": 315.0,
+  "edits": [ { "type": "flatten", "order": 0, "radius_m": 18.0, "rolloff_m": 20.0 } ],
+  "pads": [ { "id": "main", "at": [0.0, 0.0], "radius_m": 15.0 } ]
+}

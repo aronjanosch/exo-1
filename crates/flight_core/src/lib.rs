@@ -462,19 +462,6 @@ impl Curve {
     }
 }
 
-/// Parses a tuning object: every field required, unknown fields rejected, except an optional
-/// `_comment` string (as in the planet recipes). `what` names the file in errors.
-pub fn parse_tuning<T: serde::de::DeserializeOwned>(what: &str, s: &str) -> Result<T, String> {
-    let mut v: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("{what}: {e}"))?;
-    if let Some(o) = v.as_object_mut()
-        && let Some(c) = o.remove("_comment")
-        && !c.is_string()
-    {
-        return Err(format!("{what}: _comment must be a string"));
-    }
-    serde_json::from_value(v).map_err(|e| format!("{what}: {e}"))
-}
-
 /// The ship's tuning values (`content/tuning/ship.json`): the axis flight model (spike 13) and the
 /// parts around it (ramp, decoupling, boost capacitor, ground hold). TODO(initiator): all values.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
@@ -529,7 +516,7 @@ pub struct ShipTuning {
 
 impl ShipTuning {
     pub fn from_json(s: &str) -> Result<ShipTuning, String> {
-        let t: ShipTuning = parse_tuning("ship.json", s)?;
+        let t: ShipTuning = content_core::parse_strict("ship.json", s)?;
         t.validate().map_err(|e| format!("ship.json: {e}"))?;
         Ok(t)
     }

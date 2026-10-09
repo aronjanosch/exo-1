@@ -1,0 +1,13 @@
+{
+  "_comment": "Test fixture: no deadline.",
+  "id": "slow_mud",
+  "title": "job.slow_mud.title",
+  "brief": "job.slow_mud.brief",
+  "objectives": [
+    { "deliver": { "from": { "location": "bent_spoon" }, "to": { "location": "drip_rock" }, "commodity": { "one_of": ["fizzy_mud"] }, "amount": [2, 2] } }
+  ],
+  "reward": 100,
+  "grading": { "bands": [ { "share": 0.5, "pays": 0.5 }, { "share": 1.0, "pays": 1.0 } ], "condition_weight": 0.5 },
+  "track": "freight_xp",
+  "xp": 10
+}

@@ -16,8 +16,8 @@ pub(crate) enum EditRt {
 /// A placed site.
 #[derive(Clone)]
 pub struct Site {
-    /// Index into `recipe.sites.kinds`.
-    pub kind: usize,
+    /// Index into `recipe.sites.kinds`; None for a hand-placed place.
+    pub kind: Option<usize>,
     pub id: String,
     pub category: SiteCategory,
     pub dir: V3,
@@ -60,7 +60,7 @@ impl Rng {
     }
 }
 
-fn edit_rt(e: &Edit) -> (EditRt, f64) {
+pub(crate) fn edit_rt(e: &Edit) -> (EditRt, f64) {
     match *e {
         Edit::Flatten { radius_m: Some(r), rolloff_m, dish_m, .. } => (EditRt::FlattenDisc { r, roll: rolloff_m, dish: dish_m }, r + rolloff_m),
         Edit::Flatten { half_extent_m: Some([hx, hy]), rolloff_m, dish_m, .. } => (EditRt::FlattenRect { hx, hy, roll: rolloff_m, dish: dish_m }, hx.hypot(hy) + rolloff_m),
@@ -132,7 +132,16 @@ impl Planet {
         let mut rng = Rng::new(0x9E3779B97F4A7C15 ^ (self.recipe.seed as u64).wrapping_mul(0xBF58476D1CE4E5B9));
         let kinds = &rule.kinds;
         let want: Vec<u32> = kinds.iter().map(|k| (k.count[0] + ((k.count[1] - k.count[0] + 1) as f64 * rng.next()) as u32).min(k.count[1])).collect();
+        // Hand-placed places first: fixed, and the generated sites keep away from them.
         let mut placed: Vec<Site> = Vec::new();
+        let mut place_misses = Vec::new();
+        for pl in &self.places {
+            let smp = self.sample(pl.dir());
+            if smp.water_depth > 0.0 {
+                place_misses.push(format!("place {}: stands in water ({:.1} m deep)", pl.id, smp.water_depth));
+            }
+            placed.push(pl.site(smp.height, self.radius));
+        }
         let mut tries = vec![0u32; kinds.len()];
         let mut got = vec![0u32; kinds.len()];
         let dist = |a: V3, b: V3| self.radius * a.dot(b).clamp(-1.0, 1.0).acos();
@@ -157,8 +166,12 @@ impl Planet {
                     let rr = (1.0 - z * z).sqrt();
                     let d = v3(rr * phi.cos(), z, rr * phi.sin());
                     let ok_sep = placed.iter().all(|s| {
-                        let other = &kinds[s.kind];
-                        let sep = if s.kind == ki { k.min_separation_m.max(k.min_separation_all_m) } else { k.min_separation_all_m.max(other.min_separation_all_m) };
+                        let sep = match s.kind {
+                            Some(sk) if sk == ki => k.min_separation_m.max(k.min_separation_all_m),
+                            Some(sk) => k.min_separation_all_m.max(kinds[sk].min_separation_all_m),
+                            // A hand-placed place: clear of its reach plus this kind's footprint.
+                            None => k.min_separation_all_m.max(s.reach_m + reach_k),
+                        };
                         dist(s.dir, d) >= sep
                     });
                     if !ok_sep {
@@ -200,7 +213,7 @@ impl Planet {
                     let (rts, reaches): (Vec<EditRt>, Vec<f64>) = edits.into_iter().map(edit_rt).unzip();
                     let reach = reaches.iter().copied().fold(0.0, f64::max);
                     placed.push(Site {
-                        kind: ki,
+                        kind: Some(ki),
                         id: k.id.clone(),
                         category: k.category,
                         dir: d,
@@ -220,19 +233,20 @@ impl Planet {
                 break;
             }
         }
-        let misses = kinds
+        let mut misses: Vec<String> = kinds
             .iter()
             .enumerate()
             .filter(|(i, k)| got[*i] < k.count[0])
             .map(|(i, k)| format!("site kind {}: placed {} of at least {} ({} candidates)", k.id, got[i], k.count[0], tries[i]))
             .collect();
+        misses.extend(place_misses);
         (placed, misses)
     }
 
     /// The pieces of site `i`'s kit, standing on the edited ground.
     pub fn site_pieces(&self, i: usize) -> Vec<Piece> {
         let Some(s) = self.sites.get(i) else { return Vec::new() };
-        let kind = &self.recipe.sites.kinds[s.kind];
+        let Some(kind) = s.kind.map(|k| &self.recipe.sites.kinds[k]) else { return Vec::new() };
         let Some(kit) = self.recipe.sites.kits.get(&kind.kit) else { return Vec::new() };
         let mut rng = Rng::new(0xD1B54A32D192ED03 ^ (self.recipe.seed as u64).wrapping_mul(0x94D049BB133111EB) ^ (i as u64 + 1).wrapping_mul(0x2545F4914F6CDD1D));
         let mut out = Vec::new();

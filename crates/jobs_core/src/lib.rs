@@ -1,0 +1,20 @@
+//! jobs_core: jobs and their objectives as a system on top of `gameplay_core`, without engine
+//! types (#123, #124; the board follows in #126).
+//!
+//! - `template`: the `job_template` record (objectives, reward, grading, deadline, modifiers,
+//!   track, availability, once-only, follow-up) and its checked loader.
+//! - `job`: offers and jobs as a state machine over domain events; the deliver objective as a
+//!   reducer over crate events. Results are `Outcome`s for the host: spawn or release crates, and
+//!   new domain events (payout, XP, the flag `job_completed:<template>`).
+//! - `grading`: payout = reward × band(delivered share) × condition factor × hazard factor.
+//!
+//! This crate reads only domain events and kernel state; it never calls another system.
+pub mod grading;
+pub mod id;
+pub mod job;
+pub mod template;
+
+pub use grading::{Grade, grade};
+pub use id::{JobId, TemplateId};
+pub use job::{CrateMark, Job, JobEvent, JobState, Jobs, Leg, MAX_ACTIVE, Outcome, Refusal};
+pub use template::{JobContent, JobTemplate};

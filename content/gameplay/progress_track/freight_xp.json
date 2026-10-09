@@ -1,0 +1,1 @@
+{ "_comment": "Counted and shown, gates nothing in milestone D.", "id": "freight_xp", "name": "track.freight_xp.name", "owner": "player", "thresholds": [100, 300, 700] }

@@ -1,0 +1,1 @@
+{ "_comment": "The crew's money. Start value is a starting point (TODO(initiator)).", "id": "wallet", "name": "track.wallet.name", "owner": "crew", "start": 100 }

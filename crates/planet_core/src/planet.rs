@@ -208,6 +208,8 @@ pub struct Planet {
     pub macro_img: Vec<f32>,
     pub sea: f64,
     pub sites: Vec<crate::site::Site>,
+    /// Hand-placed places, set before the bake (`set_places`).
+    pub places: Vec<crate::place::Place>,
     pub rivers: Vec<River>,
     pub lakes: Vec<Lake>,
     pub baked: bool,
@@ -263,6 +265,7 @@ impl Planet {
             macro_img: Vec::new(),
             sea: 0.0,
             sites: Vec::new(),
+            places: Vec::new(),
             rivers: Vec::new(),
             lakes: Vec::new(),
             baked: false,

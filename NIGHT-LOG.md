@@ -14,9 +14,15 @@ Phase 1, `feat/milestone-c-grab`:
 - [x] #85 object budget
 - not in this run: #86 (network)
 
-Phase 1 done 2026-10-09 03:2x (all six issues commented, none closed). Gate on the tip of `feat/milestone-c-grab`: `cargo t` exit 0, `cargo scenario` exit 0.
+Phase 1 done 2026-10-09 03:08 (all six issues commented, none closed). Gate on the tip of `feat/milestone-c-grab`: `cargo t` exit 0, `cargo scenario` exit 0.
 
-Phase 2, `night/extras`: see the checklist there (branched from the tip of `feat/milestone-c-grab`).
+Phase 2, `night/extras` (branched from the tip of `feat/milestone-c-grab`, all extras on this one branch):
+
+- [ ] E1 carry crates down the ramp and back up (load and unload the ship)
+- [ ] E2 the walker bumps into crates; crates stack
+- [ ] E3 visible grab-tool beam
+- [ ] E4 synthesized grab, throw and lock sounds
+- [ ] E5 #52 split `scenario.rs` (cargo scenarios already live in `cargo_scenario.rs`)
 
 ## Architecture choice (read this first)
 

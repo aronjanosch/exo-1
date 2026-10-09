@@ -5,7 +5,7 @@
 //! and large sinks stay as lakes and river beds are cut where enough rain gathers. The bake keeps
 //! two macro channels from it: the change of the ground and the water surface.
 use crate::math::*;
-use crate::recipe::{DrainageSpec, Erosion};
+use crate::recipe::{DrainageSpec, Erosion, SinkCrossing};
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 
@@ -76,7 +76,8 @@ pub struct LakeOut {
 }
 
 pub struct Drained {
-    /// Change of the ground per node (m, at most 0): erosion and river beds.
+    /// Change of the ground per node (m): erosion and river beds (down), sediment in the sinks a
+    /// river fills (up).
     pub carve: Vec<f32>,
     /// Water surface per node (m above the base radius), NO_WATER where none is defined.
     pub water: Vec<f32>,
@@ -104,12 +105,46 @@ fn key(x: f32) -> u32 {
     if b & 0x8000_0000 != 0 { !b } else { b | 0x8000_0000 }
 }
 
-/// Priority flood from the sea (every node below `sea_level`) and the `outlets` (node, water
+/// The sea for the water: the connected areas below `sea_level` at least `min_area_m2` large (the
+/// largest one if none is). Smaller pockets below the sea level are sinks like any other: they
+/// fill to a lake, or a river cuts through them.
+pub fn ocean(mesh: &impl Mesh, h: &[f32], sea_level: f32, min_area_m2: f64) -> Vec<bool> {
+    let n = mesh.len();
+    let below = |v: usize| mesh.is_node(v) && h[v] < sea_level;
+    let mut comp = vec![NONE; n];
+    let mut areas: Vec<f64> = Vec::new();
+    let (mut stack, mut nb) = (Vec::new(), Vec::with_capacity(16));
+    for v0 in 0..n {
+        if !below(v0) || comp[v0] != NONE {
+            continue;
+        }
+        let id = areas.len() as u32;
+        let mut area = 0.0;
+        comp[v0] = id;
+        stack.push(v0);
+        while let Some(v) = stack.pop() {
+            area += mesh.area_m2(v);
+            mesh.neighbours(v, &mut nb);
+            for &u in &nb {
+                if below(u) && comp[u] == NONE {
+                    comp[u] = id;
+                    stack.push(u);
+                }
+            }
+        }
+        areas.push(area);
+    }
+    let largest = areas.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).map(|(i, _)| i as u32);
+    let keep: Vec<bool> = areas.iter().enumerate().map(|(i, a)| *a >= min_area_m2 || Some(i as u32) == largest).collect();
+    comp.iter().map(|&c| c != NONE && keep[c as usize]).collect()
+}
+
+/// Priority flood from the sea (the nodes marked in `sea`) and the `outlets` (node, water
 /// level; lakes that never spill): each node is reached from its lowest neighbour and sinks fill
 /// to their spill point; inside a sink first come first served (a plain queue, Barnes et al.
 /// 2014), so the water takes the shortest way to the spill. Where nothing pools the water then
 /// takes the steepest way down. Without a sea or outlet the lowest node is the outlet.
-pub fn route(mesh: &impl Mesh, h: &[f32], sea_level: f32, outlets: &[(u32, f32)]) -> Routing {
+pub fn route(mesh: &impl Mesh, h: &[f32], ocean: &[bool], outlets: &[(u32, f32)]) -> Routing {
     let n = mesh.len();
     let mut rcv = vec![NONE; n];
     let mut level = h.to_vec();
@@ -127,7 +162,7 @@ pub fn route(mesh: &impl Mesh, h: &[f32], sea_level: f32, outlets: &[(u32, f32)]
         pushed.push(v as u32);
     };
     for v in 0..n {
-        if mesh.is_node(v) && h[v] < sea_level {
+        if ocean[v] {
             sea[v] = true;
             closed[v] = true;
         }
@@ -289,7 +324,8 @@ pub fn drain(mesh: &impl Mesh, h0: &[f32], rain: &[f32], sea_level: f32, s: &Dra
         t = std::time::Instant::now();
     };
     let mut h = h0.to_vec();
-    let first = route(mesh, &h, sea_level, &[]);
+    let sea = ocean(mesh, h0, sea_level, s.sea_min_area_km2 * 1e6);
+    let first = route(mesh, &h, &sea, &[]);
     lap("route");
     let flow = accumulate(&first, rain);
     erode(mesh, &first, &flow, &mut h, sea_level, &s.erosion);
@@ -302,7 +338,7 @@ pub fn drain(mesh: &impl Mesh, h0: &[f32], rain: &[f32], sea_level: f32, s: &Dra
         sum += l;
         land += 1;
     }
-    let r = route(mesh, &h, sea_level, &[]);
+    let r = route(mesh, &h, &sea, &[]);
     let flow = accumulate(&r, rain);
     lap("route again");
     let amin = s.river_min_catchment_km2 * 1e6;
@@ -346,17 +382,23 @@ pub fn drain(mesh: &impl Mesh, h0: &[f32], rain: &[f32], sea_level: f32, s: &Dra
     let (r, flow) = if outlets.is_empty() {
         (r, flow)
     } else {
-        let r = route(mesh, &h, sea_level, &outlets);
+        let r = route(mesh, &h, &sea, &outlets);
         let flow = accumulate(&r, rain);
         (r, flow)
     };
 
     // Sinks that fill to their spill point: a lake when deep enough and fed by a river (a river
-    // never cuts through a sink deeper than the lake depth), or large enough and wet enough.
+    // never cuts through a sink deeper than the lake depth), or large enough and wet enough. A
+    // river crosses the others by cutting their sill, or across sediment up to the spill.
     for c in sinks(mesh, &r, &h, &flow) {
         let depth = c.level - h[c.deepest];
         let budget = if s.lake_evaporation > 0.0 { c.inflow / s.lake_evaporation } else { f64::INFINITY };
         if (depth as f64) < s.lake_min_depth_m || (c.inflow < amin && (c.area < s.lake_min_area_m2 || c.area > budget)) {
+            if s.river_sinks == SinkCrossing::Fill && c.inflow >= amin {
+                for &v in &c.members {
+                    h[v] = c.level;
+                }
+            }
             continue;
         }
         let id = lakes.len() as u32;
@@ -732,6 +774,8 @@ mod tests {
             lake_min_depth_m: 2.0,
             lake_min_area_m2: 2000.0,
             lake_evaporation: 0.0,
+            sea_min_area_km2: 0.0,
+            river_sinks: SinkCrossing::Cut,
             erosion: Erosion { iterations: 4, strength: 0.01, area_exponent: 0.5, max_m: 10.0 },
         }
     }
@@ -778,9 +822,9 @@ mod tests {
             assert!(r.level_m >= r.bed_m && r.level_m <= h[r.node as usize], "water within the banks");
             assert!(d.water[r.node as usize] > ground(&d, &h, r.node as usize), "the river node is wet");
         }
-        assert!(d.carve.iter().all(|c| *c <= 0.0), "drainage only cuts");
+        assert!(d.carve.iter().all(|c| *c <= 0.0), "cutting through sinks never raises the ground");
         let g = Grid { w: W, h: W, cell: CELL };
-        let r = route(&g, &h, 0.0, &[]);
+        let r = route(&g, &h, &ocean(&g, &h, 0.0, 0.0), &[]);
         for &v in &r.order {
             let rc = r.rcv[v as usize];
             if rc != NONE {
@@ -899,10 +943,26 @@ mod tests {
     }
 
     #[test]
+    fn a_sink_on_a_river_fills_with_sediment_instead() {
+        let h = terrain(8.0);
+        let g = Grid { w: W, h: W, cell: CELL };
+        let cut = run(&h);
+        let fill = drain(&g, &h, &vec![(CELL * CELL) as f32; W * W], 0.0, &DrainageSpec { lake_min_depth_m: 20.0, river_sinks: SinkCrossing::Fill, ..spec() });
+        assert!(cut.lakes.len() == 1 && fill.lakes.is_empty(), "the sink: a lake at 2 m lake depth, filled at 20 m: {:?} {:?}", cut.lakes, fill.lakes);
+        // The floor rose; nothing on the way out was cut deeper than a bed.
+        let floor = (0..W * W).filter(|&v| ((v % W) as isize - 50).abs() <= 1 && ((v / W) as isize - 40).abs() <= 1).map(|v| fill.carve[v]).fold(f32::MIN, f32::max);
+        assert!(floor > 0.5, "the sink's floor rose by {floor} m");
+        let deepest_cut = fill.carve.iter().copied().fold(0.0f32, f32::min);
+        assert!(-deepest_cut <= spec().river_depth_m[1] as f32 + spec().erosion.max_m as f32 + 1e-3, "cut {deepest_cut} m");
+        // One river runs across it to the sea.
+        assert!(fill.rivers.iter().all(|r| r.next != Mouth::Lake(0)));
+    }
+
+    #[test]
     fn erosion_only_lowers_and_follows_the_water() {
         let h = terrain(0.0);
         let g = Grid { w: W, h: W, cell: CELL };
-        let r = route(&g, &h, 0.0, &[]);
+        let r = route(&g, &h, &ocean(&g, &h, 0.0, 0.0), &[]);
         let flow = accumulate(&r, &vec![(CELL * CELL) as f32; W * W]);
         let mut e = h.clone();
         erode(&g, &r, &flow, &mut e, 0.0, &spec().erosion);

@@ -360,6 +360,16 @@ pub struct Erosion {
     pub max_m: f64,
 }
 
+/// How a river crosses a sink that holds no lake (#72).
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SinkCrossing {
+    /// Its bed cuts the way out down to the sink's floor (a gorge through the sill).
+    Cut,
+    /// Sediment fills the sink to its spill point and the river runs across the flat.
+    Fill,
+}
+
 /// Rivers and lakes from drainage on the macro grid (#72), cut in the bake.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
@@ -384,6 +394,10 @@ pub struct DrainageSpec {
     /// Rain-weighted catchment (m²) a lake needs per m² of its surface: a sink that gathers less
     /// holds a smaller lake that never spills, or stays dry. 0 = every sink fills to its spill.
     pub lake_evaporation: f64,
+    /// Areas below the sea level count as the sea for the water from this size on (km²); smaller
+    /// pockets fill to a lake or a river cuts through them. 0 = every one is sea.
+    pub sea_min_area_km2: f64,
+    pub river_sinks: SinkCrossing,
     pub erosion: Erosion,
 }
 

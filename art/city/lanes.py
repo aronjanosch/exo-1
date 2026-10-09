@@ -77,7 +77,7 @@ def tee():
     strip(p, (-L - 0.1, -H), (-L + 0.1, H))
     for s in (-1, 1):
         strip(p, (L - 0.1, s * L if s > 0 else -H), (L + 0.1, H if s > 0 else -L))
-        strip(p, (L, s * L - 0.1), (H, s * L + 0.1))
+        strip(p, (L + 0.1, s * L - 0.1), (H, s * L + 0.1))   # starts where the long strip ends
     beacon(p, -H + 0.8, 0.0)
     return p
 
@@ -91,7 +91,7 @@ def crossing():
     for sx in (-1, 1):
         for sy in (-1, 1):
             # Edge strips around each corner of paving.
-            x0, x1 = sorted((sx * L, sx * H))
+            x0, x1 = sorted((sx * (L + 0.1), sx * H))   # clear of the crossing strip
             y0, y1 = sorted((sy * L, sy * H))
             strip(p, (sx * L - 0.1, y0), (sx * L + 0.1, y1))
             strip(p, (x0, sy * L - 0.1), (x1, sy * L + 0.1))

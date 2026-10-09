@@ -41,7 +41,9 @@ def company_hq():
     # Gate portal: a deep frame around the gate, the gate itself with glowing bands.
     p.box((-5.2, -1.0, 0), (-4.2, 0, 11.0), accent)
     p.box((4.2, -1.0, 0), (5.2, 0, 11.0), accent)
-    p.box((-5.2, -1.0, 10.0), (5.2, 0, 11.0), accent)
+    # The lintel sits between the posts; behind the podium slab's front edge it continues above it.
+    p.box((-4.2, -1.0, 10.0), (4.2, -0.5, 11.0), accent)
+    p.box((-4.2, -0.5, 10.5), (4.2, 0, 11.0), accent)
     p.door("door_gate", 0.0, 0, frame, DARK, w=8.0, h=9.5, use="company")
     for z in (2.0, 4.5, 7.0):
         p.box((-3.8, -0.22, z), (3.8, -0.17, z + 0.15), GLOW_CYAN, "glow")
@@ -119,7 +121,7 @@ def charge_stop():
     p = Part("charge_stop")
     accent, frame, body = colour("#e07b39"), colour("#f4f1e8"), colour("#c9d6d8")
     # Forecourt pad.
-    p.box((-9.0, -6.0, 0.0), (5.0, 3.0, 0.08), colour("#d9d3e6"))
+    p.box((-9.0, -6.0, 0.0), (5.0, 2.8, 0.08), colour("#d9d3e6"))   # ends under the kiosk
     # Canopy: a thin wing on two angled legs.
     for x in (-6.5, 0.5):
         leg = [(0.0, 0.0), (0.4, 0.0), (0.9, 4.6), (0.5, 4.6)]
@@ -145,7 +147,7 @@ def charge_stop():
     p.box((x0, d - wall, 0), (x1, d, h), body)
     p.box((x0, wall, 0), (x0 + wall, d - wall, h), body)   # between front and back, no overlap
     p.box((x1 - wall, wall, 0), (x1, d - wall, h), body)
-    p.box((x0, 0, 0), (x1, d, 0.02), colour("#7d7887"))
+    p.box((x0 + wall, wall, 0.08), (x1 - wall, d - wall, 0.1), colour("#7d7887"))   # on the forecourt pad
     p.box((-8.7, -0.2, h), (-1.3, 3.2, h + 0.3), frame)
     p.box((-7.5, 1.3, h - 0.04), (-2.5, 1.7, h), LIT, "glow")
     # Inside: snacks and charge cells on the back wall, a cooler, a short counter, the clerk behind it.
@@ -160,7 +162,7 @@ def charge_stop():
     p.rounded_box((-6.6, 0.9, 0.02), (-6.0, d - wall, 1.05), 0.2, accent, segments=4)
     p.box((-6.7, 0.8, 1.05), (-5.9, d - wall, 1.11), frame)
     p.box((-6.55, 1.2, 1.11), (-6.15, 1.5, 1.4), GLOW_PINK, "glow")
-    p.anchor("npc", (-7.4, 1.6, 0.02), kind="npc", role="trader")
+    p.anchor("npc", (-7.4, 1.6, 0.1), kind="npc", role="trader")
     # Sign pole with a ring and a ball, seen from the arterial.
     p.cylinder((3.5, 1.5, 0), 0.25, 9.0, METAL, segments=10)
     p.box((2.4, 1.4, 6.0), (4.6, 1.6, 8.2), accent)

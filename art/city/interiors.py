@@ -49,7 +49,7 @@ def shelf(p, x0, x1, y0, y1, h, levels, rnd, frame=METAL):
         p.box((x, y0, 0), (x + 0.06, y1, h), frame)
     for k in range(levels):
         z = 0.15 + k * (h - 0.25) / max(1, levels - 1) if levels > 1 else 0.15
-        p.box((x0, y0, z), (x1, y1, z + 0.04), TRIM)
+        p.box((x0 + 0.06, y0, z), (x1 - 0.06, y1, z + 0.04), TRIM)   # between the uprights
         if z > h - 0.3:
             continue
         x = x0 + 0.15

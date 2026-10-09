@@ -74,7 +74,7 @@ def pane(p, cx, z, w, h, frame, on, bars=(0, 1), clear=False):
         p.box((x - 0.04, -0.08, z), (x + 0.04, -0.04, z + h), frame)
     for k in range(1, nh + 1):
         zz = z + h * (0.62 if nh == 1 else k / (nh + 1))
-        p.box((g0, -0.08, zz - 0.04), (g1, -0.04, zz + 0.04), frame)
+        p.box((g0, -0.07, zz - 0.04), (g1, -0.04, zz + 0.04), frame)   # behind the vertical bars
 
 
 def bay_windows(p, style, cx, z, frame, panel, on):
@@ -94,11 +94,12 @@ def bay_windows(p, style, cx, z, frame, panel, on):
         p.box((cx - 1.4, -0.05, z + 0.2), (cx + 1.4, 0, z + 0.65), panel)
 
 
-def facade(p, w, upper, c, windows, doors, shop=True):
+def facade(p, w, upper, c, windows, doors, shop=True, ends=(0.0, 0.0)):
     """Street facade, including the ground floor's front wall (y from 0 to WALL). doors: [(name, x,
     use, door_rgb, width, height)]; shop doors open into the room, the others are flat (instanced
     behind). shop=True: see-through shop glass, awning and fascia sign on the ground floor; otherwise
-    ground-floor windows like the floors above."""
+    ground-floor windows like the floors above. ends: how much of the front wall to leave out at
+    the left and right end, where another wall already stands (a corner house's side facade)."""
     bays = round(w / BAY)
     x0, x1 = -w / 2, w / 2
     top = top_of(upper)
@@ -113,7 +114,7 @@ def facade(p, w, upper, c, windows, doors, shop=True):
         p.box((a, -0.3, z0), (b, 0, top), c["frame"])
     for i in range(1, upper):
         z = GROUND_STOREY + i * STOREY
-        p.box((x0, -0.25, z - 0.12), (x1, 0, z + 0.12), c["frame"])
+        p.box((x0 + 0.01, -0.25, z - 0.12), (x1 - 0.01, 0, z + 0.12), c["frame"])   # inside the end piers
 
     holes = []
     for name, x, use, rgb, dw, dh in doors:
@@ -133,7 +134,7 @@ def facade(p, w, upper, c, windows, doors, shop=True):
                 holes.append((a, b, 0.7, 2.7))
         awning = [(0, 3.35), (-1.4, 2.95), (-1.4, 2.8), (0, 3.15)]
         p.prism(awning, x0 + 0.5, x1 - 0.5, c["accent"], plane="YZ")
-        p.box((x0, -0.45, GROUND_STOREY - 0.6), (x1, 0, GROUND_STOREY + 0.2), c["frame"])
+        p.box((x0 + 0.01, -0.45, GROUND_STOREY - 0.6), (x1 - 0.01, 0, GROUND_STOREY + 0.2), c["frame"])
         p.sign(0, GROUND_STOREY - 0.5, w - 1.6, 0.6, -0.45, DARK, c["glow"])
     else:
         door_xs = [x for _, x, *_ in doors]
@@ -141,9 +142,11 @@ def facade(p, w, upper, c, windows, doors, shop=True):
             cx = x0 + BAY * (j + 0.5)
             if all(abs(cx - dx) > 1.6 for dx in door_xs):
                 bay_windows(p, windows, cx, 0.0, c["frame"], c["panel"], lit(9, j))
-        p.box((x0, -0.25, GROUND_STOREY - 0.12), (x1, 0, GROUND_STOREY + 0.12), c["frame"])
-    p.wall((x0, 0, 0), (x1, WALL, GROUND_STOREY), c["body"], holes)
-    p.wall((x0, WALL, 0), (x1, WALL + 0.02, CEILING), c["inside"], holes)
+        p.box((x0 + 0.01, -0.25, GROUND_STOREY - 0.12), (x1 - 0.01, 0, GROUND_STOREY + 0.12), c["frame"])
+    # The walls stop under the ceiling slab and the lining stays between the side walls, so no two
+    # parts share an outer face (z-fighting).
+    p.wall((x0 + ends[0], 0, 0), (x1 - ends[1], WALL, CEILING), c["body"], holes)
+    p.wall((x0 + WALL, WALL, 0.02), (x1 - WALL, WALL + 0.02, CEILING), c["inside"], holes)
 
     for i in range(upper):
         z = GROUND_STOREY + i * STOREY
@@ -206,7 +209,11 @@ def false_front(p, shape, x0, x1, top, colour_):
 def roof_junk(p, name, x0, x1, y0, y1, roof, keep_clear):
     """Air units, vents and a dish, scattered behind the false front, away from the topper."""
     rnd = random.Random(name)
-    spots = [x for x in (x0 + 1.4, x1 - 1.4, x0 + 2.6, x1 - 2.6) if abs(x) > keep_clear and x0 + 1 < x < x1 - 1]
+    spots = []
+    for x in (x0 + 1.4, x1 - 1.4, x0 + 2.6, x1 - 2.6):
+        # Far enough apart that two units never overlap (their tops would z-fight).
+        if abs(x) > keep_clear and x0 + 1 < x < x1 - 1 and all(abs(x - o) >= 1.6 for o in spots):
+            spots.append(x)
     for x in spots[:3]:
         y = rnd.uniform(y0 + 3.0, y1 - 2.0)
         kind = rnd.choice(("ac", "vent", "ac", "dish"))
@@ -280,17 +287,19 @@ def shell(p, x0, x1, d, height, c, open_sides):
     """The body: a ground-floor room (floor, lined walls, ceiling with light strips) and solid upper
     floors. open_sides: walls a facade builds itself ("front", "left", "right"). Puts the `room`
     anchor on the floor at the back wall's inner face, centred; a fit-out stands there, facing -Y."""
-    gs = GROUND_STOREY
-    walls = {"back": ((x0, d - WALL, 0), (x1, d, gs)), "left": ((x0, 0, 0), (x0 + WALL, d, gs)),
-             "right": ((x1 - WALL, 0, 0), (x1, d, gs))}
-    linings = {"back": ((x0, d - WALL - 0.02, 0), (x1, d - WALL, CEILING)),
-               "left": ((x0 + WALL, 0, 0), (x0 + WALL + 0.02, d, CEILING)),
-               "right": ((x1 - WALL - 0.02, 0, 0), (x1 - WALL, d, CEILING))}
+    # No two parts overlap: the back wall runs the full width, the side walls stand between front
+    # and back, everything stops under the ceiling slab, floor and linings stay inside the walls.
+    gs, t = GROUND_STOREY, 0.02
+    walls = {"back": ((x0, d - WALL, 0), (x1, d, CEILING)), "left": ((x0, WALL, 0), (x0 + WALL, d - WALL, CEILING)),
+             "right": ((x1 - WALL, WALL, 0), (x1, d - WALL, CEILING))}
+    linings = {"back": ((x0 + WALL, d - WALL - t, t), (x1 - WALL, d - WALL, CEILING)),
+               "left": ((x0 + WALL, WALL + t, t), (x0 + WALL + t, d - WALL - t, CEILING)),
+               "right": ((x1 - WALL - t, WALL + t, t), (x1 - WALL, d - WALL - t, CEILING))}
     for side, (lo, hi) in walls.items():
         if side not in open_sides:
             p.box(lo, hi, c["body"])
             p.box(*linings[side], c["inside"])
-    p.box((x0, 0, 0), (x1, d, 0.02), FLOOR)
+    p.box((x0 + WALL, WALL, 0), (x1 - WALL, d - WALL, t), FLOOR)
     p.box((x0, 0, CEILING), (x1, d, gs), c["inside"])
     p.box((x0, 0, gs), (x1, d, height), c["body"])
     bays = round((x1 - x0) / BAY)
@@ -347,7 +356,8 @@ def corner_house(name, bays, side_bays, upper, c, windows="pair", side="left", c
     facade(p, w, upper, c, windows, [("door_shop", -s * (w / 2 - 1.5), "shop", c["accent"], 1.5, 2.5)])
     # Side street facade, turned onto the side; its door sits at the far end from the corner.
     with p.placed(turned(90 * s, (sx, d / 2, 0))):
-        facade(p, d, upper, c, windows, [("door_flat", s * (d / 2 - 1.5), "flat", DARK, 1.5, 2.5)])
+        facade(p, d, upper, c, windows, [("door_flat", s * (d / 2 - 1.5), "flat", DARK, 1.5, 2.5)],
+               ends=(WALL, WALL))
     with p.placed(turned(180, (0, d, 0))):
         back_facade(p, w, upper, c)
 

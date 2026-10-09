@@ -160,7 +160,7 @@ def fence_panel():
     for z in (0.35, 1.05):
         p.box((-1.95, -0.03, z), (1.95, 0.03, z + 0.08), METAL)
     p.box((-1.95, -0.02, 0.43), (1.95, 0.02, 1.05), colour("#5b6478"))
-    p.box((-1.95, -0.04, 0.7), (1.95, 0.04, 0.76), GLOW_CYAN, "glow")
+    p.box((-1.93, -0.04, 0.7), (1.93, 0.04, 0.76), GLOW_CYAN, "glow")
     return p
 
 
@@ -172,7 +172,7 @@ def sign_post():
     for z, turn, c in ((2.7, 0, TEAL), (2.25, 110, RUST), (1.8, 230, MUSTARD)):
         a = math.radians(turn)
         # A thin arrow board in the front view, turned about the post.
-        arrow = [(0.1, -0.2), (1.0, -0.2), (1.3, 0.0), (1.0, 0.2), (0.1, 0.2)]
+        arrow = [(0.05, -0.2), (1.0, -0.2), (1.3, 0.0), (1.0, 0.2), (0.05, 0.2)]   # into the post
         with p.placed(Matrix.Rotation(a, 4, "Z")):
             p.prism([(u, z + v) for u, v in arrow], -0.03, 0.03, c, plane="XZ")
             p.box((0.3, -0.035, z - 0.05), (0.9, -0.03, z + 0.05), TRIM)
@@ -243,7 +243,7 @@ def robot_sweeper():
     p.dome((0, 0, 0.9), 0.3, TRIM, segments=16)
     p.sphere((0, -0.27, 1.02), 0.08, GLOW_PINK, "glow", segments=8)
     p.cylinder((0.33, -0.05, 0.6), 0.03, 0.6, METAL, segments=6, axis="X")
-    p.box((0.88, -0.3, 0.1), (0.98, 0.2, 0.62), TEAL)
+    p.box((0.88, -0.3, 0.22), (0.98, 0.2, 0.62), TEAL)
     p.box((0.86, -0.32, 0.1), (1.0, 0.22, 0.22), MUSTARD)
     return p
 

@@ -233,11 +233,10 @@ class Part:
     def placed(self, matrix):
         """Everything built inside the block (geometry, anchors, new children) is moved by `matrix`
         afterwards, so a facade can be built facing -Y and then turned onto any side."""
-        self.bm.verts.ensure_lookup_table()
-        nv, na, nc = len(self.bm.verts), len(self.anchors), len(self.children)
+        # New verts are told apart by identity, not by index: bmesh does not keep creation order.
+        before, na, nc = set(self.bm.verts), len(self.anchors), len(self.children)
         yield
-        self.bm.verts.ensure_lookup_table()
-        bmesh.ops.transform(self.bm, matrix=matrix, verts=list(self.bm.verts)[nv:])
+        bmesh.ops.transform(self.bm, matrix=matrix, verts=[v for v in self.bm.verts if v not in before])
         for i in range(na, len(self.anchors)):
             name, at, extras = self.anchors[i]
             self.anchors[i] = (name, matrix @ at, extras)
@@ -376,6 +375,9 @@ def check(obj, part, footprint):
     for c in part.children:
         if c.kind == "leaf" and "slide" not in c.extras:
             problems.append(f"door leaf {c.name} without slide")
+    fights = coplanar_overlaps(obj.data)
+    if fights:
+        problems.append(f"{len(fights)} coplanar overlaps (z-fighting), first centres: {[f[2] for f in fights[:4]]}")
     # A fit-out stands in a room: its walls (the footprint's edges) and ceiling hold things too.
     loose = loose_islands(ev, part.ceiling, footprint if part.kind == "interior" else None)
     if loose:
@@ -383,6 +385,67 @@ def check(obj, part, footprint):
     return {"name": obj.name, "triangles": tris, "bounds": bounds,
             "anchors": [{"name": n, "at": [round(c, 2) for c in at], **e} for n, at, e in part.anchors],
             "problems": problems}
+
+
+def coplanar_overlaps(mesh, min_area=0.002):
+    """Visible z-fighting: pairs of axis-aligned faces that lie in the same plane and overlap,
+    where at least one side of the overlap is open air. Two parts touching back to back have a
+    part on both sides and never show; neither do faces buried in a third part or undersides on the
+    ground. Parts are told apart by their bounding boxes (the mesh's islands), so a fight next to a
+    round part may go unreported. Returns [(axis, plane, centre, area)]."""
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    bm.verts.ensure_lookup_table()
+    seen, solids = set(), []
+    for v in bm.verts:
+        if v.index in seen:
+            continue
+        stack, cos = [v], []
+        seen.add(v.index)
+        while stack:
+            w = stack.pop()
+            cos.append(w.co)
+            for e in w.link_edges:
+                o = e.other_vert(w)
+                if o.index not in seen:
+                    seen.add(o.index)
+                    stack.append(o)
+        solids.append((Vector([min(c[i] for c in cos) for i in range(3)]),
+                       Vector([max(c[i] for c in cos) for i in range(3)])))
+    groups = {}
+    for f in bm.faces:
+        n = f.normal
+        axis = max(range(3), key=lambda i: abs(n[i]))
+        if abs(n[axis]) < 0.999:
+            continue
+        u, v = [i for i in range(3) if i != axis]
+        cos = [vert.co for vert in f.verts]
+        rect = (min(c[u] for c in cos), min(c[v] for c in cos), max(c[u] for c in cos), max(c[v] for c in cos))
+        if abs((rect[2] - rect[0]) * (rect[3] - rect[1]) - f.calc_area()) > 1e-4:
+            continue   # not a rectangle: skip rather than guess
+        groups.setdefault((axis, round(cos[0][axis], 3)), []).append(rect)
+    bm.free()
+
+    def solid_at(q):
+        return q.z < 0 or any(all(lo[i] + 1e-4 < q[i] < hi[i] - 1e-4 for i in range(3)) for lo, hi in solids)
+
+    found = []
+    for (axis, plane), rects in groups.items():
+        u, v = [i for i in range(3) if i != axis]
+        for i in range(len(rects)):
+            for j in range(i + 1, len(rects)):
+                a, b = rects[i], rects[j]
+                w = min(a[2], b[2]) - max(a[0], b[0])
+                h = min(a[3], b[3]) - max(a[1], b[1])
+                if w <= 0.005 or h <= 0.005 or w * h < min_area:
+                    continue
+                c = [0.0, 0.0, 0.0]
+                c[axis], c[u], c[v] = plane, max(a[0], b[0]) + w / 2, max(a[1], b[1]) + h / 2
+                c = Vector(c)
+                off = Vector([0.004 if k == axis else 0.0 for k in range(3)])
+                if not solid_at(c + off) or not solid_at(c - off):
+                    found.append((axis, plane, [round(x, 2) for x in c], round(w * h, 3)))
+    return found
 
 
 def loose_islands(mesh, ceiling=None, walls=None):

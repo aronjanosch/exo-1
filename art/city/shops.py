@@ -88,7 +88,7 @@ def pod_tower():
     door_x, side = 1.5, (-1.6, 1.6, 0.9, 3.4)
     front = [(-3.4, -0.2, 0.9, 3.4), (2.9, 3.4, 0.9, 3.4)]
     hole = p.doorway("door_shop", door_x, -half, TRIM, accent, GLOW_CYAN, w=1.5, h=2.4, wall=t, use="shop")
-    p.rounded_room((-half, -half, 0), (half, half, GROUND_STOREY), 2.0, t, body,
+    p.rounded_room((-half, -half, 0), (half, half, GROUND_STOREY - 0.3), 2.0, t, body,
                    {"front": front + [hole], "left": [side], "right": [side]})
     for xa, xb, _, _ in front:
         p.box((xa, -half - 0.04, 0.9), (xb, -half + 0.02, 3.4), CLEAR, "clear")
@@ -144,7 +144,7 @@ def bubble_shop():
     side = (-1.3, 1.3, 0.8, 3.4)
     front = [(0.4, 1.8, 0.8, 3.4)]
     hole = p.doorway("door_shop", -0.9, lo[1], TRIM, accent, GLOW_PINK, w=1.5, h=2.5, wall=t, use="shop")
-    p.rounded_room(lo, (hi[0], hi[1], gs), r, t, body, {"front": front + [hole], "left": [side], "right": [side]})
+    p.rounded_room(lo, (hi[0], hi[1], gs - 0.3), r, t, body, {"front": front + [hole], "left": [side], "right": [side]})
     p.box((0.4, lo[1] - 0.04, 0.8), (1.8, lo[1] + 0.02, 3.4), CLEAR, "clear")
     cy = (lo[1] + hi[1]) / 2
     for sx in (-1, 1):

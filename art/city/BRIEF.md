@@ -29,6 +29,7 @@ All numbers below are starting values (guide values, not rules); change them her
 ## Look
 
 - **Flat colours only:** vertex colours, no textures. Four materials: `paint`, `glass` (dark, opaque), `glow` (emissive), `clear` (see-through, alpha 0.25: shop windows into a room).
+- **No shared outer faces:** two parts that overlap must not end in the same plane on a visible side (z-fighting). Walls stop under ceiling slabs, side walls stand between front and back walls, bands stop inside end piers. The kit check reports `coplanar overlaps` as a PROBLEM.
 - Smooth shading with hard edges (edge split at 40°). Round shapes get enough segments to read round (16–48).
 - **Palette per building:** one body colour, one accent, one glow colour. All buildings share the warm white `TRIM` (slabs, rings, frames) and `METAL`, so the streets hang together. Glows are cyan and pink.
 - Kit shapes: `box`, `rounded_box`, `cylinder` (tapered), `dome`, `sphere`, `torus`, `prism` (outline extruded in any plane), plus the facade helpers `window`, `door`, `sign`.

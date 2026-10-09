@@ -748,3 +748,126 @@ pub fn crate_budget_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bo
         true
     }));
 }
+
+/// Walk with keys held for `secs`, then stop (heading as set before).
+fn walk_for(keys_held: &'static [KeyCode], secs: f64) -> Step {
+    Box::new(move |w, c| {
+        if c.t == 0.0 {
+            keys(w, keys_held, true);
+        }
+        if c.t >= secs {
+            keys(w, keys_held, false);
+            return true;
+        }
+        false
+    })
+}
+
+/// E1 (night extras): unload the parked ship by hand and load it again: a crate from the plates
+/// down the ramp onto the ground, set down there, picked up again and carried back up onto the
+/// plates, where it locks. Once with the small crate, once with the medium one (two hands).
+pub fn crate_unload_steps(s: &mut Vec<Step>) {
+    for size in ["small", "medium"] {
+        s.push(Box::new(move |w, c| {
+            clear_crates(w);
+            let e = cabin_crate(w, size, 0.0, 1.5);
+            c.v.insert("crate", e.to_bits() as f64);
+            walker_in_cabin(w, DVec3::new(0.0, 0.32, -0.6));
+            begin(w, c, &format!("crate-unload: {size} crate down the ramp and back"));
+            true
+        }));
+        s.push(wait(1.2));
+        s.push(Box::new(move |w, c| {
+            let e = crate_e(c, "crate");
+            check(c, crate_of(w, e).unwrap().locked, format!("crate-unload: the {size} crate is locked on the plates"));
+            let at = crate_world_pos(w, e);
+            look_at(w, at);
+            true
+        }));
+        s.push(wait(0.1));
+        s.push(Box::new(|w, _| {
+            tap(w, KeyCode::KeyF);
+            true
+        }));
+        s.push(wait(0.8));
+        // Out the back: face the ramp, walk down it and on 6 m.
+        s.push(Box::new(|w, _| {
+            let f = ship_frame_of(w);
+            look_at(w, f.to_world(DVec3::new(0.0, 0.0, 14.0)));
+            with_player(w, |p| p.pitch = -0.3);
+            true
+        }));
+        s.push(walk_for(&[KeyCode::KeyW], if size == "small" { 3.0 } else { 4.5 }));
+        s.push(wait(0.8));
+        s.push(Box::new(move |w, c| {
+            let e = crate_e(c, "crate");
+            let (outside, held_it) = (with_player(w, |p| p.ship.is_none()), held(w) == Some(e));
+            let in_planet = crate_of(w, e).is_some_and(|c| c.ship.is_none());
+            let f = ship_frame_of(w);
+            let behind = f.to_local(crate_world_pos(w, e)).z;
+            check(c, outside && held_it && in_planet && behind > 6.6, format!("crate-unload: carried the {size} crate down the ramp ({behind:.1} m behind the ship's centre, walker outside {outside}, still held {held_it}, crate on the planet {in_planet})"));
+            tap(w, KeyCode::KeyF);
+            true
+        }));
+        s.push(wait(1.5));
+        s.push(Box::new(move |w, c| {
+            let e = crate_e(c, "crate");
+            let h = crate_above_ground(w, e);
+            let asleep = crate_of(w, e).unwrap().body.asleep;
+            check(c, h.abs() < 0.35 && asleep, format!("crate-unload: set down, the {size} crate rests on the ground ({h:.2} m above it, asleep {asleep})"));
+            // Pick it up again, facing it.
+            let at = crate_world_pos(w, e);
+            look_at(w, at);
+            true
+        }));
+        s.push(wait(0.1));
+        s.push(Box::new(|w, _| {
+            tap(w, KeyCode::KeyF);
+            true
+        }));
+        s.push(wait(0.8));
+        // Back up the ramp into the cabin, onto the plates.
+        s.push(Box::new(|w, _| {
+            let f = ship_frame_of(w);
+            look_at(w, f.to_world(DVec3::new(0.0, 1.5, -1.5)));
+            with_player(w, |p| p.pitch = -0.3);
+            true
+        }));
+        s.push(Box::new(move |w, c| {
+            if c.t == 0.0 {
+                keys(w, &[KeyCode::KeyW], true);
+            }
+            // Stop once the walker stands well inside: the crate ahead is then over the plates.
+            let z = with_player(w, |p| p.ship.is_some().then_some(p.w.pos.z));
+            if z.is_some_and(|z| z < 3.2) || c.t > 8.0 {
+                keys(w, &[KeyCode::KeyW], false);
+                return true;
+            }
+            false
+        }));
+        s.push(wait(0.8));
+        s.push(Box::new(|w, c| {
+            let e = crate_e(c, "crate");
+            let inside = crate_of(w, e).is_some_and(|c| c.ship.is_some());
+            check(c, held(w) == Some(e) && inside, format!("crate-unload: carried back up the ramp into the cabin (held {}, crate in the cabin {inside})", held(w) == Some(e)));
+            // Level look so the crate goes down in front, then let go.
+            with_player(w, |p| p.pitch = -0.5);
+            true
+        }));
+        s.push(wait(0.6));
+        s.push(Box::new(|w, _| {
+            tap(w, KeyCode::KeyF);
+            true
+        }));
+        s.push(wait(2.0));
+        s.push(Box::new(move |w, c| {
+            let e = crate_e(c, "crate");
+            let cr = crate_of(w, e).unwrap();
+            let (locked, pos) = (cr.locked, cr.body.pos);
+            let lit = plates(w).0;
+            end(w, c, format!("{size} crate back at ({:.2}, {:.2}, {:.2}) ship space, locked {locked}, plates lit {lit}", pos.x, pos.y, pos.z));
+            check(c, locked && lit > 0, format!("crate-unload: set down on the plates, the {size} crate locks again ({lit} plates lit)"));
+            true
+        }));
+    }
+}

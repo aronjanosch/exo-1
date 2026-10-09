@@ -18,7 +18,7 @@ Phase 1 done 2026-10-09 03:08 (all six issues commented, none closed). Gate on t
 
 Phase 2, `night/extras` (branched from the tip of `feat/milestone-c-grab`, all extras on this one branch):
 
-- [ ] E1 carry crates down the ramp and back up (load and unload the ship)
+- [x] E1 carry crates down the ramp and back up (load and unload the ship)
 - [ ] E2 the walker bumps into crates; crates stack
 - [ ] E3 visible grab-tool beam
 - [ ] E4 synthesized grab, throw and lock sounds
@@ -133,3 +133,13 @@ Checks, scenario `crate-budget` (new, in `cargo t`):
 - 0 failures. Numbers are counts only (no frame times on this machine).
 
 Open points: one category (crates); the budget counts only the local player and the own ship as "players and ships" (#86 adds the others).
+
+## E1 carry crates down the ramp and back up
+
+Why: loading and unloading the ship by hand is the core of "does moving cargo feel good?", and it crosses the cabin edge while holding (frame hand-over with a holder pushing), the ramp collider and the lock grid in one go. Nothing checked that together.
+
+What: scenario `crate-unload` (new, in `cargo t`), no game code changed. For the small and the medium crate: locked on the plates; pick up (unlocks); walk out the back down the ramp onto the ground; set down; pick up again; walk back up into the cabin; set down on the plates.
+
+Checks (0 failures):
+- small: carried 16.7 m behind the ship's centre (walker outside, crate in the planet frame, still held); rests on the ground 0.09 m above the CPU height (asleep); carried back into the cabin; locks again at (0.25, 0.56, 0.75), 1 plate lit.
+- medium (two hands, slower): carried 13.6 m out; rests 0.24 m above the height under its centre (sloped ground; the check allows 0.35 m); back in; locks at (0.00, 0.81, 2.00), 4 plates lit.

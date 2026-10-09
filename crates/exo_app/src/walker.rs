@@ -186,6 +186,7 @@ pub fn walker_step(
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
     colliders: Query<(Entity, &ColliderOf)>,
     grab: Res<crate::grab::Grab>,
+    warp: Res<crate::warp::WarpDrive>,
 ) {
     let dt = time.delta_secs_f64();
     let Ok(mut pl) = players.single_mut() else { return };
@@ -212,7 +213,10 @@ pub fn walker_step(
         pl.w.halt();
     }
     let world_pos = if pl.ship.is_some() { frame_ship.to_world(pl.w.pos) } else { pl.w.pos };
-    ring.anchors = vec![(world_pos, if pl.ship.is_some() { slv.0 } else { pl.w.vel }), (sp.0, own_v.0)];
+    // On rails the anchors would reach for patches along the way (#111).
+    if !warp.drive.phase.on_rails() {
+        ring.anchors = vec![(world_pos, if pl.ship.is_some() { slv.0 } else { pl.w.vel }), (sp.0, own_v.0)];
+    }
     if pl.seated {
         return;
     }
@@ -316,6 +320,7 @@ pub fn walker_step(
             (Frame::IDENTITY, pl.world_up(Frame::IDENTITY), flight_core::PlanetEnv::gravity_at(g, pl.w.pos).length())
         }
     };
+    let before = pl.w.clone();
     let info = pl.w.step(&frame, up, g, &input, &world, dt);
     stats.steps += 1;
     stats.grounded += pl.w.grounded as u64;
@@ -365,6 +370,13 @@ pub fn walker_step(
                 keep_look(&mut pl, look, &f, up);
                 pl.view_up = up;
             }
+        }
+        // While the drive holds the own ship the cabin keeps the walker: out there it would be
+        // left behind at the ship's velocity, which is zero on rails (#111).
+        Some(e) if e == ship_e && warp.drive.phase.holds_ship() && !cabin_contains(pl.w.pos, 0.3) => {
+            pl.w = before;
+            pl.w.halt();
+            pl.view_up = frame_ship.rot * pl.cabin_up;
         }
         Some(_) if !cabin_contains(pl.w.pos, 0.3) => {
             // The view keeps the cabin's up (no step); weightless the body takes it, in gravity the

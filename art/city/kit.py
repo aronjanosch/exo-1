@@ -282,7 +282,9 @@ class Part:
         # A round glowing window in the leaf, so a closed door still says "open for business".
         leaf.cylinder((x, mid - 0.07, z0 + h * 0.62), 0.22, 0.14, glow_rgb, "glow", segments=16, axis="Y")
         self.anchor(name, (x, front_y - 1.0, 0), kind="door", **extras)
-        return (x0, x1, z0, z0 + h)
+        # The hole is 0.1 m bigger than the opening, so the frame sits in the wall instead of sharing
+        # the reveal faces with it (coplanar faces flicker).
+        return (x0 - 0.1, x1 + 0.1, z0, z0 + h + 0.1)
 
     def sign(self, x, z, w, h, front_y, board_rgb, glow_rgb, depth=0.2):
         """A sign board with a glowing face; the lettering comes later as a decal or texture."""

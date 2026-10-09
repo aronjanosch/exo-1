@@ -2038,6 +2038,12 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "crate-budget" => crate::cargo_scenario::crate_budget_steps(&mut s, out_dir, windowed),
         // Night extra E1: unload the parked ship down the ramp by hand and load it again.
         "crate-unload" => crate::cargo_scenario::crate_unload_steps(&mut s),
+        // Spike 12, question 3.
+        "crate-ramp-takeoff" => crate::cargo_scenario::crate_ramp_takeoff_steps(&mut s),
+        // Spike 12, question 4.
+        "crate-wake-stream" => crate::cargo_scenario::crate_wake_stream_steps(&mut s),
+        // Spike 12, question 5.
+        "crate-stack3" => crate::cargo_scenario::crate_stack3_steps(&mut s),
         // #63: fixed viewpoints and an atlas per planet (headless: atlas and statistics only).
         "planet-look" => crate::look::steps(&mut s, out_dir, windowed),
         // #70: walk from outside into a site; the walker stands on its flattened ground.

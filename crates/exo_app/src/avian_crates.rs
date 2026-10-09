@@ -249,3 +249,8 @@ pub fn track_continuity(
     }
     println!("continuity-elsewhere pos_err_max={:.4} dv_max={:.3}", worst.0, worst.1);
 }
+
+/// Spike 12: `EXO_AVIAN_RAMP_HIT=1` adds crates to the hull's and the ramp's filters.
+pub fn ramp_hit() -> bool {
+    std::env::var("EXO_AVIAN_RAMP_HIT").as_deref() == Ok("1")
+}

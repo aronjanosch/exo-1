@@ -871,3 +871,183 @@ pub fn crate_unload_steps(s: &mut Vec<Step>) {
         }));
     }
 }
+
+/// Spike 12, question 3: a crate on the ramp of the parked ship, then the ship takes off. Notes
+/// where the crate ends up (no checks: findings for the report).
+pub fn crate_ramp_takeoff_steps(s: &mut Vec<Step>) {
+    s.push(Box::new(|w, c| {
+        clear_crates(w);
+        put_at_seat(w);
+        let f = ship_frame_of(w);
+        // Ramp top surface at z 5.3: y = 0.3 - 0.8 * (1.3 / 2.6) = -0.1; small crate half 0.25.
+        let at = f.to_world(DVec3::new(0.0, 0.25, 5.3));
+        let t = w.resource::<Crates>().0.clone();
+        let e = w.spawn(crate_bundle(&t, "small", None, at, f.rot * DVec3::NEG_Z)).id();
+        c.v.insert("crate", e.to_bits() as f64);
+        begin(w, c, "crate-ramp-takeoff: small crate on the ramp");
+        true
+    }));
+    s.push(wait(2.0));
+    s.push(Box::new(|w, c| {
+        let e = crate_e(c, "crate");
+        let f = ship_frame_of(w);
+        let local = f.to_local(crate_world_pos(w, e));
+        let body = w.get::<crate::avian_crates::AvianCrate>(e).is_some();
+        let h = crate_above_ground(w, e);
+        end(w, c, format!("after 2 s parked: ship-local ({:.2}, {:.2}, {:.2}), {h:.2} m above ground, body {body}", local.x, local.y, local.z));
+        true
+    }));
+    s.extend(sit());
+    s.push(hold_until("crate-ramp-takeoff: climb", &[KeyCode::Space, KeyCode::ShiftLeft], 20.0, |w| above_ground(w) > 30.0));
+    s.push(wait(2.0));
+    s.push(Box::new(|w, c| {
+        let e = crate_e(c, "crate");
+        let f = ship_frame_of(w);
+        let p = crate_world_pos(w, e);
+        let local = f.to_local(p);
+        let body = w.get::<crate::avian_crates::AvianCrate>(e).is_some();
+        let in_ship = crate_of(w, e).is_some_and(|c| c.ship.is_some());
+        let h = crate_above_ground(w, e);
+        let st = w.resource::<crate::avian_crates::AvianStats>();
+        let (sink, wakes, sleeps) = (st.worst_sink, st.wakes, st.sleeps);
+        let ship_h = above_ground(w);
+        begin(w, c, "crate-ramp-takeoff: result");
+        end(w, c, format!("ship {ship_h:.1} m above ground; crate ship-local ({:.2}, {:.2}, {:.2}), {h:.2} m above ground, {:.1} m from the ship, body {body}, in ship frame {in_ship}, worst sink {sink:.3} m, wakes {wakes}, back {sleeps}", local.x, local.y, local.z, p.distance(f.origin)));
+        true
+    }));
+}
+
+/// Spike 12, question 4: crates resting 500 m away (no collision patch, frozen), then the walker
+/// appears 3 m next to them and the patches stream in. Notes the height at waking and after.
+pub fn crate_wake_stream_steps(s: &mut Vec<Step>) {
+    s.push(Box::new(|w, c| {
+        clear_crates(w);
+        walker_on_ground(w);
+        let p = player_world(w);
+        let pl = planet(w);
+        let up = pl.up(p);
+        let side = up.any_orthonormal_vector();
+        let far = pl.centre + (p - pl.centre + side * 500.0).normalize() * (p - pl.centre).length();
+        let a = ground_crate(w, "small", far);
+        let b = ground_crate(w, "medium", far + side * 2.0);
+        c.v.insert("a", a.to_bits() as f64);
+        c.v.insert("b", b.to_bits() as f64);
+        begin(w, c, "crate-wake-stream: two crates 500 m away");
+        true
+    }));
+    s.push(wait(3.0));
+    s.push(Box::new(|w, c| {
+        let (a, b) = (crate_e(c, "a"), crate_e(c, "b"));
+        let (ha, hb) = (crate_above_ground(w, a), crate_above_ground(w, b));
+        let asleep = crate_of(w, a).unwrap().body.asleep && crate_of(w, b).unwrap().body.asleep;
+        let pa = crate_world_pos(w, a);
+        let patch = w.resource::<crate::ring::Ring>().has_patch_near(pa);
+        end(w, c, format!("frozen: heights {ha:.3} / {hb:.3} m, asleep {asleep}, patch under them {patch}"));
+        // The walker appears 3 m away.
+        let p = crate_world_pos(w, a);
+        let pl = planet(w);
+        let side = pl.up(p).any_orthonormal_vector();
+        place_walker(w, p - side * 3.0);
+        w.resource_mut::<crate::avian_crates::AvianStats>().wake_heights.clear();
+        w.resource_mut::<crate::avian_crates::AvianStats>().worst_sink = 0.0;
+        begin(w, c, "crate-wake-stream: walker next to them");
+        true
+    }));
+    s.push(Box::new(|w, c| {
+        let (a, b) = (crate_e(c, "a"), crate_e(c, "b"));
+        // Record the first tick each crate is a body and the patch arrival.
+        for k in ["a", "b"] {
+            let e = crate_e(c, k);
+            let key: &'static str = if k == "a" { "wake_a" } else { "wake_b" };
+            if !c.v.contains_key(key) && w.get::<crate::avian_crates::AvianCrate>(e).is_some() {
+                c.v.insert(key, c.t);
+            }
+        }
+        let pa = crate_world_pos(w, a);
+        if !c.v.contains_key("patch_t") && w.resource::<crate::ring::Ring>().has_patch_near(pa) {
+            c.v.insert("patch_t", c.t);
+        }
+        let low = crate_above_ground(w, a).min(crate_above_ground(w, b));
+        let m = c.v.entry("low").or_insert(f64::MAX);
+        *m = m.min(low);
+        if c.t < 3.0 {
+            return false;
+        }
+        let (ha, hb) = (crate_above_ground(w, a), crate_above_ground(w, b));
+        let st = w.resource::<crate::avian_crates::AvianStats>();
+        let wakes: Vec<String> = st.wake_heights.iter().map(|(_, h)| format!("{h:.3}")).collect();
+        let sink = st.worst_sink;
+        let g = |k: &str| c.v.get(k).map_or("never".to_string(), |t| format!("{t:.2} s"));
+        end(w, c, format!("patch after {}, bodies after {} / {}, heights at waking [{}], lowest {:.3} m, after 3 s {ha:.3} / {hb:.3} m, worst sink {sink:.3} m", g("patch_t"), g("wake_a"), g("wake_b"), wakes.join(", "), c.v["low"]));
+        true
+    }));
+}
+
+/// Spike 12, question 5: three small crates stacked 4 m in front of the walker; do they stay and
+/// sleep? Then the walker runs into them.
+pub fn crate_stack3_steps(s: &mut Vec<Step>) {
+    s.push(Box::new(|w, c| {
+        clear_crates(w);
+        walker_on_ground(w);
+        let at = ahead(w, 4.0);
+        let pl = planet(w);
+        let up = pl.up(at);
+        let base = ground_crate(w, "small", at);
+        let t = w.resource::<Crates>().0.clone();
+        let h = t.get("small").unwrap().extents[1];
+        let p0 = crate_world_pos(w, base);
+        let fwd = up.any_orthonormal_vector();
+        let e1 = w.spawn(crate_bundle(&t, "small", None, p0 + up * (h + 0.01), fwd)).id();
+        let e2 = w.spawn(crate_bundle(&t, "small", None, p0 + up * (2.0 * h + 0.02), fwd)).id();
+        for (k, e) in [("s0", base), ("s1", e1), ("s2", e2)] {
+            c.v.insert(k, e.to_bits() as f64);
+        }
+        begin(w, c, "crate-stack3: three small crates stacked");
+        true
+    }));
+    s.push(Box::new(|w, c| {
+        // Trace: heights every 0.25 s for 2 s.
+        if (c.t * 4.0).fract() < 1.0 / 15.0 {
+            let hs: Vec<String> = ["s0", "s1", "s2"].iter().map(|k| { let e = crate_e(c, k); format!("{:.2}", crate_above_ground(w, e)) }).collect();
+            println!("stack-trace t={:.2} heights {}", c.t, hs.join(" "));
+        }
+        c.t >= 2.0
+    }));
+    s.push(wait(5.0));
+    s.push(Box::new(|w, c| {
+        let mut notes = Vec::new();
+        for k in ["s0", "s1", "s2"] {
+            let e = crate_e(c, k);
+            let h = crate_above_ground(w, e);
+            let sleeping = w.get::<avian3d::prelude::Sleeping>(e).is_some();
+            let body = w.get::<crate::avian_crates::AvianCrate>(e).is_some();
+            notes.push(format!("{k}: {h:.2} m up, body {body}, sleeping {sleeping}"));
+        }
+        end(w, c, format!("after 5 s: {}", notes.join("; ")));
+        let at = crate_world_pos(w, crate_e(c, "s0"));
+        look_at(w, at);
+        begin(w, c, "crate-stack3: walker runs into the stack");
+        keys(w, &[KeyCode::KeyW], true);
+        true
+    }));
+    s.push(Box::new(|w, c| {
+        if (c.t * 4.0).fract() < 1.0 / 15.0 {
+            let p = player_world(w);
+            let ds: Vec<String> = ["s0", "s1", "s2"].iter().map(|k| { let e = crate_e(c, k); format!("{:.2}", crate_world_pos(w, e).distance(p)) }).collect();
+            let v = with_player(w, |pl| pl.w.vel.length());
+            println!("walk-trace t={:.2} walker speed {v:.2} distances {}", c.t, ds.join(" "));
+        }
+        c.t >= 2.0
+    }));
+    s.push(Box::new(|w, c| {
+        keys(w, &[KeyCode::KeyW], false);
+        let p = player_world(w);
+        let mut notes = Vec::new();
+        for k in ["s0", "s1", "s2"] {
+            let e = crate_e(c, k);
+            notes.push(format!("{k}: {:.2} m from the walker, {:.2} m up", crate_world_pos(w, e).distance(p), crate_above_ground(w, e)));
+        }
+        end(w, c, notes.join("; "));
+        true
+    }));
+}

@@ -124,7 +124,8 @@ pub fn add_hull(commands: &mut Commands, ship: Entity, layer: Layer) {
             if collides {
                 e.insert((
                     Collider::cuboid(size.x as f64, size.y as f64, size.z as f64),
-                    CollisionLayers::new(layer, [Layer::World, Layer::Ship]),
+                    // Spike 12: EXO_AVIAN_RAMP_HIT=1 lets hull and ramp stop crate bodies too.
+                    CollisionLayers::new(layer, if crate::avian_crates::ramp_hit() { LayerMask::from([Layer::World, Layer::Ship, Layer::Crate]) } else { LayerMask::from([Layer::World, Layer::Ship]) }),
                 ));
             }
         }
@@ -136,7 +137,7 @@ pub fn add_hull(commands: &mut Commands, ship: Entity, layer: Layer) {
         c.spawn((
             Transform::default(),
             Collider::convex_hull(pts).expect("ramp hull"),
-            CollisionLayers::new(Layer::Ramp, LayerMask::NONE),
+            CollisionLayers::new(Layer::Ramp, if crate::avian_crates::ramp_hit() { LayerMask::from(Layer::Crate) } else { LayerMask::NONE }),
         ));
         c.spawn((
             Transform::from_xyz(0.0, -0.148, 5.285).with_rotation(Quat::from_rotation_x(17.1f32.to_radians())),

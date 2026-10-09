@@ -90,6 +90,7 @@ fn shipped_file_equals_default_and_bad_values_are_refused() {
     assert!(bad("\"forward\": 30.0", "\"forward\": -1.0").contains("accel.forward"));
     assert!(bad("\"full_below\": 15.0, \"off_above\": 80.0", "\"full_below\": 90.0, \"off_above\": 80.0").contains("precision"));
     assert!(bad("\"cruise_speed\"", "\"cruise_sped\": 1.0, \"cruise_speed\"").contains("cruise_sped"));
+    assert!(bad("\"boost_speed_backward\": 200.0", "\"boost_speed_backward\": 100.0").contains("below cruise_speed"));
 }
 
 #[test]
@@ -222,9 +223,8 @@ fn g_safety_caps_the_turn_at_speed_and_the_felt_g() {
         felt = felt.max(s.ship.axis.felt_g);
     }
     let rate = (s.body.rot.inverse() * s.body.ang_vel).y;
-    // The cap of the last step, from the speed across the yaw axis.
-    let lv = s.local_v();
-    let speed = DVec3::new(lv.x, 0.0, lv.z).length();
+    // The cap of the last step: a left yaw pulls the forward velocity to the left.
+    let speed = -s.local_v().z;
     let cap = t.g_safety.limit.left * G0 / speed;
     assert!(s.ship.axis.rate_capped && (rate - cap).abs() < 0.02 * cap, "yaw at {speed:.0} m/s: {rate:.3} rad/s, G cap {cap:.3}");
     assert!(felt <= t.g_safety.limit.forward + 1e-9, "felt {felt:.2} g");
@@ -275,4 +275,54 @@ fn switching_mid_flight_keeps_the_velocity() {
         let jump = (s.body.lin_vel - v0).length() / DT;
         assert!(jump < 80.0, "{first:?} -> {:?}: {jump:.1} m/s² in the switching step (at {:.1} m/s)", first.next(), v0.length());
     }
+}
+
+#[test]
+fn g_safety_counts_gravity_and_the_direction_of_travel() {
+    let t = AxisTuning::default();
+    let pitch_up = |s: &mut Sim| {
+        s.step(&FlightInput { turn: DVec2::new(1.0, 0.0), ..Default::default() });
+        (s.body.rot.inverse() * s.body.ang_vel).x
+    };
+    // 150 m/s forward under 1 g: nose up needs thrust up on top of the 1 g hold: (6 - 1) g.
+    // Backward, nose up pulls the velocity down: thrust down, which the hold relieves: (3 + 1) g.
+    for (dir, limit) in [(DVec3::NEG_Z, t.g_safety.limit.up - 1.0), (DVec3::Z, t.g_safety.limit.down + 1.0)] {
+        let mut s = Sim::new(500.0, true);
+        s.body.lin_vel = dir * 150.0;
+        let mut rate = 0.0;
+        // Held level at 150 m/s: only the rate answers.
+        for _ in 0..60 {
+            s.body.lin_vel = dir * 150.0;
+            s.body.rot = DQuat::IDENTITY;
+            rate = pitch_up(&mut s);
+        }
+        let want = limit * G0 / 150.0;
+        assert!(s.ship.axis.rate_capped && (rate - want).abs() < 0.01 * want, "{dir}: pitch {rate:.4} rad/s, want {want:.4}");
+    }
+}
+
+#[test]
+fn the_stopping_distance_counts_the_attitude() {
+    // Rolled on its side the up thrust is the side thrust (12 m/s², 2.2 m/s² after gravity), so
+    // a 30 m/s descent at 200 m (205 m to stop) is already deep in the band; level (15.2 m/s²,
+    // 30 m to stop) it is not.
+    let mut level = Sim::new(200.0, true);
+    level.body.lin_vel = DVec3::new(0.0, -30.0, 0.0);
+    level.step(&scripted(DVec3::ZERO));
+    let mut rolled = Sim::new(200.0, true);
+    rolled.body.rot = DQuat::from_rotation_z(90f64.to_radians());
+    rolled.body.lin_vel = DVec3::new(0.0, -30.0, 0.0);
+    rolled.step(&scripted(DVec3::ZERO));
+    assert!(level.ship.axis.precision < 0.01 && rolled.ship.axis.precision > 0.99, "precision level {:.3}, rolled {:.3}", level.ship.axis.precision, rolled.ship.axis.precision);
+}
+
+#[test]
+fn decoupled_on_the_ground_holds_still() {
+    let mut s = Sim::new(0.0, true);
+    s.ship.coupled = false;
+    s.ship.coupling = 0.0;
+    s.body.lin_vel = DVec3::new(3.0, 0.0, 0.0);
+    s.step(&FlightInput { grounded: true, ..Default::default() });
+    let side = s.body.lin_vel.x.abs();
+    assert!(side < 1e-9, "no sideways speed while holding on the ground: {side:.4} m/s");
 }

@@ -234,8 +234,11 @@ fn steps_for(m: usize, s: &mut Vec<Step>, t: &Shared) {
     }
     // A full right turn at cruise speed, W held.
     s.push(manoeuvre(m, "W 12 s, then full right stick 5 s", START_HEIGHT, 0.0, move |w, c, p, t| {
-        let (_, rot) = pose(w);
+        let (pos, rot) = pose(w);
+        // The heading: the nose on the local horizontal plane (horizon follow pitches it).
+        let up = planet(w).up(pos);
         let nose = rot * DVec3::NEG_Z;
+        let nose = (nose - up * nose.dot(up)).normalize_or_zero();
         if c.t == 0.0 {
             keys(w, &[KeyCode::KeyW], true);
         }
@@ -266,8 +269,8 @@ fn steps_for(m: usize, s: &mut Vec<Step>, t: &Shared) {
             put(t, m, "turn: highest felt g", p.max_g);
             if MODELS[m] == FlightModel::Axis {
                 let a = axis_tuning(w);
-                let lv = rot.inverse() * v;
-                let cap = a.g_safety.limit.right * flight_core::axis::G0 / DVec3::new(lv.x, 0.0, lv.z).length();
+                // A right yaw pulls the forward velocity to the right.
+                let cap = a.g_safety.limit.right * flight_core::axis::G0 / -(rot.inverse() * v).z;
                 check(c, -rate <= cap.min(a.rate.yaw) * 1.05, format!("axis: G-safety caps the yaw rate at {:.1} m/s: {:.3} rad/s (cap {cap:.3})", v.length(), -rate));
             }
             c.p.remove("nose0");
@@ -343,23 +346,28 @@ fn steps_for(m: usize, s: &mut Vec<Step>, t: &Shared) {
         false
     }, t));
     // Landing with Ctrl held from 100 m until it rests.
-    s.push(manoeuvre(m, "land from 100 m with Ctrl", LAND_HEIGHT, 0.0, move |w, c, _, t| {
+    s.push(manoeuvre(m, "land from 100 m with Ctrl", LAND_HEIGHT, 0.0, {
+        let mut sinks: Vec<(f64, f64)> = Vec::new();
+        move |w, c, _, t| {
         let v = ship_vel(w);
         let (pos, _) = pose(w);
         let up = planet(w).up(pos);
         if c.t == 0.0 {
             c.p.remove("touch");
+            sinks.clear();
             keys(w, &[KeyCode::ControlLeft], true);
         }
+        // `grounded` comes a step after the contact, and the solver has cut the approach by then:
+        // the touchdown speed is the largest sink of the last 0.25 s before it.
+        sinks.push((c.t, -v.dot(up)));
         let grounded = with_ship(w, |s| s.grounded);
         if grounded && !c.p.contains_key("touch") {
             c.p.insert("touch", pos);
             c.v.insert("touch_t", c.t);
-            // The tick before the contact: what it hit the ground with.
+            let sink = sinks.iter().filter(|(ts, _)| *ts >= c.t - 0.25).map(|x| x.1).fold(f64::NAN, f64::max);
             put(t, m, "land: time to touchdown (s)", c.t);
-            put(t, m, "land: sink at touchdown (m/s)", c.v.get("sink").copied().unwrap_or(f64::NAN));
+            put(t, m, "land: sink at touchdown (m/s)", sink);
         }
-        c.v.insert("sink", -v.dot(up));
         let rested = c.p.contains_key("touch") && c.t - c.v["touch_t"] > 1.0 && v.length() < 0.05;
         if rested || c.t >= 90.0 {
             let slid = c.p.get("touch").map_or(f64::NAN, |t0| {
@@ -378,7 +386,7 @@ fn steps_for(m: usize, s: &mut Vec<Step>, t: &Shared) {
             return true;
         }
         false
-    }, t));
+    }}, t));
 }
 
 pub fn flight_models_steps(s: &mut Vec<Step>) {

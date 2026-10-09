@@ -1,0 +1,15 @@
+{
+  "_comment": "Test fixture: a board job; the board picks places by tag, the commodity and the amount (#126).",
+  "id": "jelly_run",
+  "title": "job.jelly_run.title",
+  "brief": "job.jelly_run.brief",
+  "objectives": [
+    { "deliver": { "from": { "tagged": "wet" }, "to": { "tagged": "dusty" }, "commodity": { "one_of": ["jelly_bricks", "fizzy_mud"] }, "amount": [2, 3] } }
+  ],
+  "reward": 220,
+  "grading": { "bands": [ { "share": 1.0, "pays": 1.0 } ], "condition_weight": 0.3 },
+  "modifiers": [ { "tag": "drifting_junk", "kind": "upside" } ],
+  "track": "freight_xp",
+  "xp": 30,
+  "available": { "has_tag": "jelly_jobs" }
+}

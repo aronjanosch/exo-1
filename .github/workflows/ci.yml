@@ -1,13 +1,23 @@
 # Linux runner: workspace tests (headless, no GPU), full scenario headless, Windows cross build
 # with llvm-mingw. Windows runner: full scenario headless on the exe.
 # Actions pinned to commit SHAs, read-only token, no secrets.
-# Runs only for main (runner minutes are limited); a branch can be checked by hand
+# Runs for main and for pull requests into main (one PR per playtest round, skill
+# exo-orchestrate; runner minutes are limited); any other branch can be checked by hand
 # (Actions -> ci -> Run workflow). The local gate stays `cargo test --workspace` plus the
 # headless full scenario (AGENTS.md).
 name: ci
 
 on:
   push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - ".agents/**"
+      - "docs/**"
+      - "LICENSE"
+      - ".gitignore"
+      - "skills-lock.json"
+  pull_request:
     branches: [main]
     paths-ignore:
       - "**.md"

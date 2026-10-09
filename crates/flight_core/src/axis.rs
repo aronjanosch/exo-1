@@ -6,8 +6,8 @@
 //! classic model, and `drag_k`, the ramp and `decouple_time` from `ShipTuning`.
 //!
 //! All values are TODO(initiator) (`content/tuning/ship_axis.json`).
-use crate::{lerp, limit_length, move_towards, parse_tuning, smoothstep, BodyState, FlightInput, PlanetEnv, ShipController};
-use glam::DVec3;
+use crate::{lerp, limit_length, move_towards, parse_tuning, smoothstep, BodyState, Curve, FlightInput, Interp, PlanetEnv, ShipController};
+use glam::{DVec2, DVec3};
 use serde::Deserialize;
 
 /// m/s²: one g, for the G-safety limits.
@@ -148,11 +148,24 @@ pub struct Precision {
     pub rate_share: f64,
 }
 
+/// Speed caps out of the atmosphere; blended with the caps of `AxisTuning` by the air density.
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SpaceCaps {
+    pub cruise_speed: f64,
+    pub boost_speed_forward: f64,
+    pub boost_speed_backward: f64,
+}
+
 /// The pilot's G tolerance and whether the assist keeps to it.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct GSafety {
+    /// The thrust stays inside `limit`.
     pub enabled: bool,
+    /// Also scale pitch and yaw so a coupled turn (rate x velocity) stays inside `limit`: the nose
+    /// follows the velocity. Off, the nose turns at its rate and the velocity slips behind.
+    pub cap_turns: bool,
     /// g per direction of the felt acceleration (the thrust) in ship space; `up` presses the
     /// pilot into the seat, so does `forward`.
     pub limit: Dirs,
@@ -162,13 +175,18 @@ pub struct GSafety {
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct AxisTuning {
-    /// m/s: coupled speed for full stick in any direction (the stick is normalised into a ball).
+    /// m/s: coupled speed for full stick in any direction (the stick is normalised into a ball),
+    /// in full atmosphere; decoupled thrust stops at the same caps.
     pub cruise_speed: f64,
     /// m/s: the forward and backward caps at full boost (at least `cruise_speed`).
     pub boost_speed_forward: f64,
     pub boost_speed_backward: f64,
-    /// m/s²: what the thrusters give per axis and direction.
+    /// The same caps out of the atmosphere (faster in space).
+    pub space: SpaceCaps,
+    /// m/s²: what the thrusters give per axis and direction in vacuum.
     pub accel: Dirs,
+    /// Share of that thrust in full atmosphere (density 1), blended by the density.
+    pub atmosphere_thrust: f64,
     /// Multipliers on `accel` at full boost (the brake always gets them).
     pub boost_accel: Dirs,
     /// 1/s: the assist asks for this times the velocity error (saturated far from the goal,
@@ -176,6 +194,9 @@ pub struct AxisTuning {
     pub linear_decay: f64,
     /// rad/s: turn rates at full stick; pitch and yaw share an ellipse.
     pub rate: Rot,
+    /// Share of the turn rates (y) over the speed as a share of the cruise cap (x): a corner speed
+    /// in the middle, slower at rest and at the top.
+    pub rate_over_speed: Curve,
     /// Multipliers on `rate` at full boost.
     pub boost_rate: Rot,
     /// rad/s²: angular acceleration cap per axis.
@@ -201,6 +222,15 @@ impl AxisTuning {
         if self.boost_speed_forward < self.cruise_speed || self.boost_speed_backward < self.cruise_speed {
             return Err(format!("boost speeds {} and {} below cruise_speed {}", self.boost_speed_forward, self.boost_speed_backward, self.cruise_speed));
         }
+        let s = &self.space;
+        pos("space.cruise_speed", s.cruise_speed)?;
+        if s.boost_speed_forward < s.cruise_speed || s.boost_speed_backward < s.cruise_speed {
+            return Err(format!("space: boost speeds {} and {} below cruise_speed {}", s.boost_speed_forward, s.boost_speed_backward, s.cruise_speed));
+        }
+        if !(self.atmosphere_thrust > 0.0 && self.atmosphere_thrust <= 1.0) {
+            return Err(format!("atmosphere_thrust {} out of range", self.atmosphere_thrust));
+        }
+        self.rate_over_speed.validate().map_err(|e| format!("rate_over_speed: {e}"))?;
         pos("linear_decay", self.linear_decay)?;
         pos("angular_decay", self.angular_decay)?;
         self.accel.validate("accel")?;
@@ -230,15 +260,18 @@ impl Default for AxisTuning {
             cruise_speed: 150.0,
             boost_speed_forward: 350.0,
             boost_speed_backward: 200.0,
-            accel: Dirs { forward: 30.0, backward: 20.0, left: 12.0, right: 12.0, up: 25.0, down: 15.0 },
+            space: SpaceCaps { cruise_speed: 300.0, boost_speed_forward: 600.0, boost_speed_backward: 400.0 },
+            accel: Dirs { forward: 60.0, backward: 40.0, left: 24.0, right: 24.0, up: 50.0, down: 30.0 },
+            atmosphere_thrust: 0.5,
             boost_accel: Dirs { forward: 2.0, backward: 1.5, left: 1.25, right: 1.25, up: 1.25, down: 1.25 },
-            linear_decay: 2.0,
+            linear_decay: 3.0,
             rate: Rot { pitch: 1.6, yaw: 1.6, roll: 2.4 },
+            rate_over_speed: Curve { interp: Interp::Linear, points: vec![DVec2::new(0.0, 0.85), DVec2::new(0.5, 1.0), DVec2::new(1.0, 0.8)] },
             boost_rate: Rot { pitch: 1.2, yaw: 1.2, roll: 1.0 },
-            angular_accel: Rot { pitch: 6.0, yaw: 6.0, roll: 10.0 },
-            angular_decay: 8.0,
+            angular_accel: Rot { pitch: 8.0, yaw: 8.0, roll: 14.0 },
+            angular_decay: 12.0,
             precision: Precision { full_below: 5.0, off_above: 40.0, speed: 15.0, landing_share: 0.2, rate_share: 1.0 },
-            g_safety: GSafety { enabled: true, limit: Dirs { forward: 8.0, backward: 4.0, left: 4.0, right: 4.0, up: 6.0, down: 3.0 } },
+            g_safety: GSafety { enabled: true, cap_turns: true, limit: Dirs { forward: 8.0, backward: 6.0, left: 4.0, right: 4.0, up: 6.0, down: 3.0 } },
         }
     }
 }
@@ -291,7 +324,10 @@ impl ShipController {
         let stick = if self.brake_active { DVec3::ZERO } else { limit_length(input.thrust, 1.0) };
         let assist = self.hover_assist || self.brake_active;
         let boost_share = if self.brake_active { 1.0 } else { strength };
-        let limits = t.accel.mul(&Dirs::splat(1.0).zip(&t.boost_accel, |one, m| lerp(one, m, boost_share)));
+        // Thrusters lose thrust in air; the caps are higher out of it.
+        let limits = t.accel.scaled(lerp(1.0, t.atmosphere_thrust, density)).mul(&Dirs::splat(1.0).zip(&t.boost_accel, |one, m| lerp(one, m, boost_share)));
+        let cruise = lerp(t.space.cruise_speed, t.cruise_speed, density);
+        let (boost_forward, boost_backward) = (lerp(t.space.boost_speed_forward, t.boost_speed_forward, density), lerp(t.space.boost_speed_backward, t.boost_speed_backward, density));
         let g_limit = t.g_safety.enabled.then(|| t.g_safety.limit.scaled(G0));
         let thrust_box = g_limit.map_or(limits, |g| limits.min(&g));
 
@@ -301,12 +337,12 @@ impl ShipController {
         let sink = (-v.dot(up)).max(0.0);
         let brake = (thrust_box.support(inv * up) - gravity.length()).max(1.0);
         let p = if self.landing_mode { 1.0 - smoothstep(t.precision.full_below, t.precision.off_above, self.terrain_clearance - sink * sink / (2.0 * brake)) } else { 0.0 };
-        let forward_cap = lerp(t.cruise_speed, t.boost_speed_forward, strength);
-        let backward_cap = lerp(t.cruise_speed, t.boost_speed_backward, strength);
+        let forward_cap = lerp(cruise, boost_forward, strength);
+        let backward_cap = lerp(cruise, boost_backward, strength);
         self.forward_speed_limit = lerp(forward_cap, forward_cap.min(t.precision.speed), p);
 
         // Coupled: a velocity goal from the stick, turning with the ship.
-        let local_goal = DVec3::new(stick.x * t.cruise_speed, stick.y * t.cruise_speed, stick.z * if stick.z < 0.0 { forward_cap } else { backward_cap });
+        let local_goal = DVec3::new(stick.x * cruise, stick.y * cruise, stick.z * if stick.z < 0.0 { forward_cap } else { backward_cap });
         let mut goal = b * local_goal;
         if p > 0.0 {
             // Precision mode caps the speed along the ground and the descent, not the climb.
@@ -344,7 +380,12 @@ impl ShipController {
         let coupled_accel = (goal - v) * t.linear_decay + body.ang_vel.cross(goal) + descent_brake;
         // Decoupled: full thrust along the stick, the velocity is kept (curving with the planet
         // while L is on).
-        let decoupled_accel = b * limits.along(stick) + horizon_w.cross(v);
+        // Decoupled thrust stops at the same caps per axis (it ran away and was hard to correct).
+        let lv = inv * v;
+        let caps = DVec3::new(cruise, cruise, if stick.z < 0.0 { forward_cap } else { backward_cap });
+        let free = |s: f64, v: f64, cap: f64| if s * v > 0.0 && v.abs() >= cap { 0.0 } else { s };
+        let capped_stick = DVec3::new(free(stick.x, lv.x, caps.x), free(stick.y, lv.y, caps.y), free(stick.z, lv.z, caps.z));
+        let decoupled_accel = b * limits.along(capped_stick) + horizon_w.cross(v);
         // The brake and the ground hold always damp.
         let c = if self.brake_active || hold { 1.0 } else { self.coupling };
         let drag = -v * self.tuning.drag_k * density * v.length();
@@ -370,7 +411,8 @@ impl ShipController {
         }
 
         // Rotation: target rate per axis, pitch and yaw in an ellipse.
-        let boost_rate = |r: f64, m: f64| r * lerp(1.0, m, strength) * lerp(1.0, t.precision.rate_share, p);
+        let over_speed = t.rate_over_speed.eval(v.length() / cruise);
+        let boost_rate = |r: f64, m: f64| r * lerp(1.0, m, strength) * lerp(1.0, t.precision.rate_share, p) * over_speed;
         let rate = Rot { pitch: boost_rate(t.rate.pitch, t.boost_rate.pitch), yaw: boost_rate(t.rate.yaw, t.boost_rate.yaw), roll: boost_rate(t.rate.roll, t.boost_rate.roll) };
         let mut pitch = -input.mouse.y / dt + input.turn.x * rate.pitch;
         let mut yaw = -input.mouse.x / dt + input.turn.y * rate.yaw;
@@ -384,6 +426,7 @@ impl ShipController {
         // of holding against gravity; scale pitch and yaw so that stays inside the tolerance.
         self.axis.rate_capped = false;
         if let Some(g) = g_limit
+            && t.g_safety.cap_turns
             && self.hover_assist
             && c > 0.0
         {

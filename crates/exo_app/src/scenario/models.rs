@@ -15,6 +15,8 @@ const MODELS: [FlightModel; 2] = [FlightModel::Classic, FlightModel::Axis];
 /// m above the ground: the start of every manoeuvre but the landing.
 const START_HEIGHT: f64 = 400.0;
 const LAND_HEIGHT: f64 = 100.0;
+/// m above the ground: out of the atmosphere and the gravity field (they end at 1200 and 6000 m).
+const SPACE_HEIGHT: f64 = 8000.0;
 
 /// The numbers: one row per measure, one column per model.
 #[derive(Default)]
@@ -158,8 +160,9 @@ fn steps_for(m: usize, s: &mut Vec<Step>, t: &Shared) {
                 put(t, m, "W: time to 90 % of it (s)", t90);
                 put(t, m, "W: highest felt g", p.max_g);
                 if MODELS[m] == FlightModel::Axis {
-                    let cap = axis_tuning(w).cruise_speed;
-                    check(c, (v - cap).abs() < 0.03 * cap, format!("axis: W for 15 s reaches the cruise speed {cap} ({v:.1} m/s)"));
+                    // The cap at this height: between the atmosphere's and the space one by the density.
+                    let cap = with_ship(w, |s| s.ctl.forward_speed_limit);
+                    check(c, (v - cap).abs() < 0.03 * cap, format!("axis: W for 15 s reaches the cruise cap at this height, {cap:.1} m/s ({v:.1} m/s)"));
                 }
                 return false;
             }
@@ -269,9 +272,14 @@ fn steps_for(m: usize, s: &mut Vec<Step>, t: &Shared) {
             put(t, m, "turn: highest felt g", p.max_g);
             if MODELS[m] == FlightModel::Axis {
                 let a = axis_tuning(w);
-                // A right yaw pulls the forward velocity to the right.
-                let cap = a.g_safety.limit.right * flight_core::axis::G0 / -(rot.inverse() * v).z;
-                check(c, -rate <= cap.min(a.rate.yaw) * 1.05, format!("axis: G-safety caps the yaw rate at {:.1} m/s: {:.3} rad/s (cap {cap:.3})", v.length(), -rate));
+                let top = a.rate.yaw * a.rate_over_speed.points.iter().map(|p| p.y).fold(0.0, f64::max);
+                if a.g_safety.cap_turns {
+                    // A right yaw pulls the forward velocity to the right.
+                    let cap = a.g_safety.limit.right * flight_core::axis::G0 / -(rot.inverse() * v).z;
+                    check(c, -rate <= cap.min(top) * 1.05, format!("axis: G-safety caps the yaw rate at {:.1} m/s: {:.3} rad/s (cap {cap:.3})", v.length(), -rate));
+                } else {
+                    check(c, -rate <= top * 1.02 && -rate > 0.5 * a.rate.yaw, format!("axis: the nose turns at its rate over the speed at {:.1} m/s: {:.3} rad/s (top {top:.3})", v.length(), -rate));
+                }
             }
             c.p.remove("nose0");
             return true;
@@ -341,6 +349,60 @@ fn steps_for(m: usize, s: &mut Vec<Step>, t: &Shared) {
                 let holds = side >= 9.81 * 1.02;
                 check(c, if holds { lost.abs() < 1.0 } else { lost > 1.0 }, format!("axis: rolled with {side} m/s² sideways the ship {} ({lost:.2} m lost)", if holds { "holds" } else { "sinks" }));
             }
+            return true;
+        }
+        false
+    }, t));
+    // Out of the atmosphere and the field: full thrust from rest.
+    s.push(manoeuvre(m, "space: W 20 s", SPACE_HEIGHT, 0.0, {
+        let mut speeds = Vec::new();
+        move |w, c, _, t| {
+            let v = ship_vel(w).length();
+            if c.t == 0.0 {
+                speeds.clear();
+                keys(w, &[KeyCode::KeyW], true);
+            }
+            speeds.push((c.t, v));
+            if c.t >= 20.0 {
+                put(t, m, "space W: speed after 20 s (m/s)", v);
+                put(t, m, "space W: time to 90 % of it (s)", speeds.iter().find(|(_, s)| *s >= 0.9 * v).map_or(f64::NAN, |x| x.0));
+                if MODELS[m] == FlightModel::Axis {
+                    let cap = axis_tuning(w).space.cruise_speed;
+                    check(c, (v - cap).abs() < 0.02 * cap, format!("axis: in space W reaches the space cruise speed {cap} ({v:.1} m/s)"));
+                }
+                return true;
+            }
+            false
+        }
+    }, t));
+    // Decoupled in space: W for 15 s, then X until it stops.
+    s.push(manoeuvre(m, "space: C, W 15 s, then X", SPACE_HEIGHT, 0.0, move |w, c, p, t| {
+        let v = ship_vel(w).length();
+        if c.t == 0.0 {
+            tap(w, KeyCode::KeyC);
+            keys(w, &[KeyCode::KeyW], true);
+        }
+        if c.t < 15.0 {
+            return false;
+        }
+        if !c.v.contains_key("space_x") {
+            c.v.insert("space_x", c.t);
+            c.v.insert("dist0", p.dist);
+            put(t, m, "space C: speed after 15 s of W (m/s)", v);
+            if MODELS[m] == FlightModel::Axis {
+                let cap = axis_tuning(w).space.cruise_speed;
+                check(c, v <= cap * 1.02, format!("axis: decoupled W stops at the space cruise cap {cap} ({v:.1} m/s)"));
+            }
+            keys(w, &[KeyCode::KeyW], false);
+            keys(w, &[KeyCode::KeyX], true);
+        }
+        let since = c.t - c.v["space_x"];
+        if v < 0.5 || since > 60.0 {
+            put(t, m, "space C: X to < 0.5 m/s (s)", since);
+            put(t, m, "space C: X distance (m)", p.dist - c.v["dist0"]);
+            check(c, v < 0.5, format!("{}: X stops the decoupled ship in space ({since:.1} s)", MODELS[m].label()));
+            tap(w, KeyCode::KeyC);
+            c.v.remove("space_x");
             return true;
         }
         false

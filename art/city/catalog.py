@@ -22,10 +22,11 @@ from mathutils import Vector
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kit  # noqa: E402
 
-LANDMARKS = {"company_hq", "beacon_spire", "saucer_diner", "pod_tower", "bubble_shop"}
+LANDMARKS = {"company_hq", "beacon_spire", "saucer_diner", "pod_tower", "bubble_shop", "charge_stop"}
 FAMILIES = [
     ("buildings", lambda m: m.startswith(("row_", "corner_"))),
     ("landmarks", lambda m: m in LANDMARKS),
+    ("homes", lambda m: m.startswith("bungalow_")),
     ("street", lambda m: m.startswith(("lane_", "plaza_", "parking_"))),
     ("vehicles", lambda m: m.startswith("hover_")),
     ("flora", lambda m: m.startswith(("tree_", "bush_", "grass_"))),

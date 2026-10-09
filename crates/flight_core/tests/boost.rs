@@ -11,6 +11,7 @@ fn tuning() -> BoostCapacitorTuning {
         recharge_delay: 1.0,
         start_charge: 0.2,
         strength_curve: Curve::new(Interp::Linear, vec![DVec2::new(0.0, 0.0), DVec2::new(1.0, 1.0)]).unwrap(),
+        restart_while_held: false,
     }
 }
 
@@ -88,8 +89,8 @@ fn needs_the_start_charge_but_runs_until_empty() {
 
 #[test]
 fn held_on_empty_recharges_and_starts_again_at_the_start_charge() {
-    // TODO(initiator): no fresh press needed (issue #90, question 4).
-    let t = tuning();
+    // TODO(initiator): no fresh press needed (issue #90, question 4), or a new press (#104 point 9).
+    let t = BoostCapacitorTuning { restart_while_held: true, ..tuning() };
     let mut c = BoostCapacitor::default();
     run(&mut c, &t, true, 3.5);
     assert!(!c.active);
@@ -203,4 +204,49 @@ fn the_dev_switch_flies_the_speed_stage_and_back() {
     ship.boost_stage = false;
     accel(&mut ship, false);
     assert!(ship.boost.charge < 0.9, "back on the capacitor it drains: {}", ship.boost.charge);
+}
+
+/// #104 point 8: the speed stage (F6) does not refill an empty capacitor.
+#[test]
+fn the_speed_stage_leaves_the_charge_alone() {
+    let mut c = BoostCapacitor::with_charge(0.0);
+    assert_eq!(c.stage(true), 1.0);
+    assert_eq!(c.stage(false), 0.0);
+    assert_eq!(c.charge, 0.0, "F6 does not refill");
+}
+
+/// #104 point 9: holding boost through an empty capacitor gives no more pulses; a new press
+/// boosts again once the start charge is back (`restart_while_held: false`).
+#[test]
+fn after_empty_a_new_press_is_needed() {
+    let t = tuning();
+    let mut c = BoostCapacitor::default();
+    run(&mut c, &t, true, 3.1);
+    assert_eq!(c.charge, 0.0);
+    let mut most: f64 = 0.0;
+    for _ in 0..(8.0 / DT) as usize {
+        most = most.max(c.step(true, &t, DT));
+    }
+    assert_eq!(most, 0.0, "held through empty: no weak pulses");
+    assert!(c.charge > t.start_charge, "it recharged meanwhile: {}", c.charge);
+    run(&mut c, &t, false, DT);
+    assert!(run(&mut c, &t, true, DT) > 0.0, "a new press boosts");
+}
+
+/// Tapping the brake while holding boost through empty does not count as a new press.
+#[test]
+fn the_brake_does_not_rearm_an_empty_boost() {
+    let t = tuning();
+    let mut c = BoostCapacitor::default();
+    for _ in 0..(3.1 / DT) as usize {
+        c.step_braking(true, false, &t, DT);
+    }
+    for _ in 0..(3.0 / DT) as usize {
+        c.step_braking(true, false, &t, DT);
+    }
+    assert!(c.charge > t.start_charge);
+    c.step_braking(true, true, &t, DT);
+    assert_eq!(c.step_braking(true, false, &t, DT), 0.0, "still needs a new press");
+    c.step_braking(false, false, &t, DT);
+    assert!(c.step_braking(true, false, &t, DT) > 0.0);
 }

@@ -4,8 +4,11 @@
 //! -Z forward, right-handed, angular velocity in world space.
 //!
 //! All numbers are spike test values (assumptions for testing, not design).
+pub mod axis;
 pub mod camera;
 pub mod hud;
+
+pub use axis::{AxisState, AxisTuning, FlightModel};
 
 use glam::{DQuat, DVec2, DVec3};
 use serde::Deserialize;
@@ -103,8 +106,8 @@ impl Default for Lag {
 }
 
 impl Lag {
-    /// Landed below `LANDED_CLEARANCE` m and `LANDED_SPEED` m/s, airborne above `AIRBORNE_CLEARANCE`.
-    pub const LANDED_CLEARANCE: f64 = 1.5;
+    /// Landed: the hull touches the ground below `LANDED_SPEED` m/s; airborne again without contact
+    /// above `AIRBORNE_CLEARANCE` m.
     pub const LANDED_SPEED: f64 = 0.3;
     pub const AIRBORNE_CLEARANCE: f64 = 2.0;
 
@@ -124,9 +127,11 @@ impl Lag {
         }
     }
 
-    /// One step. `clearance` is the ship's height above the terrain (m).
-    pub fn step(&mut self, clearance: f64, speed: f64, dt: f64) {
-        let landed = if self.landed { clearance < Self::AIRBORNE_CLEARANCE } else { clearance < Self::LANDED_CLEARANCE && speed < Self::LANDED_SPEED };
+    /// One step. `grounded`: the hull touches the ground; `clearance` is the ship's height above
+    /// the terrain under its centre (m). Contact decides landing (a ship hovering low has none, a
+    /// parked one over a dip has), the clearance only taking off.
+    pub fn step(&mut self, grounded: bool, clearance: f64, speed: f64, dt: f64) {
+        let landed = if self.landed { grounded || clearance < Self::AIRBORNE_CLEARANCE } else { grounded && speed < Self::LANDED_SPEED };
         if landed != self.landed {
             self.landed = landed;
             self.manual_on = false;
@@ -168,18 +173,21 @@ pub struct BoostCapacitorTuning {
     pub start_charge: f64,
     /// Boost strength 0..1 (of the full boost) over the charge 0..1.
     pub strength_curve: Curve,
+    /// Held through empty, the boost starts again by itself at the start charge (weak pulses);
+    /// false: it needs a new press (#104 point 9). TODO(initiator): which one.
+    pub restart_while_held: bool,
 }
 
 impl BoostCapacitorTuning {
     pub fn validate(&self) -> Result<(), String> {
         let bad = |what: &str, v: f64| Err(format!("boost_capacitor: {what} {v} out of range"));
-        if !(self.drain_time >= 0.0) {
+        if !(self.drain_time >= 0.0 && self.drain_time.is_finite()) {
             return bad("drain_time", self.drain_time);
         }
-        if !(self.recharge_time > 0.0) {
+        if !(self.recharge_time > 0.0 && self.recharge_time.is_finite()) {
             return bad("recharge_time", self.recharge_time);
         }
-        if !(self.recharge_delay >= 0.0) {
+        if !(self.recharge_delay >= 0.0 && self.recharge_delay.is_finite()) {
             return bad("recharge_delay", self.recharge_delay);
         }
         if !(0.0..=1.0).contains(&self.start_charge) {
@@ -197,6 +205,7 @@ impl Default for BoostCapacitorTuning {
             recharge_delay: 1.0,
             start_charge: 0.2,
             strength_curve: Curve { interp: Interp::Linear, points: vec![DVec2::new(0.0, 0.0), DVec2::new(1.0, 1.0)] },
+            restart_while_held: false,
         }
     }
 }
@@ -210,11 +219,13 @@ pub struct BoostCapacitor {
     pub active: bool,
     /// Seconds since the last use.
     idle: f64,
+    /// Ran empty while held: the next boost needs a new press (unless `restart_while_held`).
+    needs_release: bool,
 }
 
 impl Default for BoostCapacitor {
     fn default() -> Self {
-        BoostCapacitor { charge: 1.0, active: false, idle: 0.0 }
+        BoostCapacitor { charge: 1.0, active: false, idle: 0.0, needs_release: false }
     }
 }
 
@@ -228,12 +239,20 @@ impl BoostCapacitor {
         self.active || self.charge > 0.0 && self.charge >= t.start_charge
     }
 
-    /// The speed stage of #24: full boost while held, the meter stays full.
+    /// The speed stage of #24: full boost while held; the meter stays as it is (F6 must not refill
+    /// it, #104 point 8).
     pub fn stage(&mut self, want: bool) -> f64 {
-        self.charge = 1.0;
         self.active = want;
-        self.idle = 0.0;
         if want { 1.0 } else { 0.0 }
+    }
+
+    /// One step with boost held (`held`) while the brake may block it: the brake stops the boost
+    /// but is no new press for a boost that ran empty.
+    pub fn step_braking(&mut self, held: bool, braking: bool, t: &BoostCapacitorTuning, dt: f64) -> f64 {
+        let latched = self.needs_release && held;
+        let strength = self.step(held && !braking, t, dt);
+        self.needs_release |= latched;
+        strength
     }
 
     /// One step with boost held (`want`) or not; returns the boost strength 0..1 for this step.
@@ -243,7 +262,8 @@ impl BoostCapacitor {
         }
         if !want {
             self.active = false;
-        } else if self.ready(t) {
+            self.needs_release = false;
+        } else if !self.needs_release && self.ready(t) {
             self.active = true;
         }
         if self.active {
@@ -252,6 +272,7 @@ impl BoostCapacitor {
             self.idle = 0.0;
             if self.charge == 0.0 {
                 self.active = false;
+                self.needs_release = !t.restart_while_held;
             }
             return strength;
         }
@@ -504,13 +525,51 @@ pub struct ShipTuning {
 impl ShipTuning {
     pub fn from_json(s: &str) -> Result<ShipTuning, String> {
         let t: ShipTuning = parse_tuning("ship.json", s)?;
-        t.forward_speed_curve.validate().map_err(|e| format!("ship.json: forward_speed_curve: {e}"))?;
-        t.ramp_curve.validate().map_err(|e| format!("ship.json: ramp_curve: {e}"))?;
-        t.boost_capacitor.validate().map_err(|e| format!("ship.json: {e}"))?;
-        if !(0.0..=90.0).contains(&t.landing_slope_limit) {
-            return Err(format!("ship.json: landing_slope_limit {} out of range (0 to 90 degrees)", t.landing_slope_limit));
-        }
+        t.validate().map_err(|e| format!("ship.json: {e}"))?;
         Ok(t)
+    }
+
+    /// Times, accelerations and speeds the step divides by or scales with are positive, the rest
+    /// not negative; everything finite (#106 point 5).
+    pub fn validate(&self) -> Result<(), String> {
+        let positive = [
+            ("thrust_accel", self.thrust_accel),
+            ("boost_factor", self.boost_factor),
+            ("turn_rate", self.turn_rate),
+            ("roll_rate", self.roll_rate),
+            ("assisted_accel", self.assisted_accel),
+            ("assisted_braking", self.assisted_braking),
+            ("assisted_boost_accel", self.assisted_boost_accel),
+            ("assisted_acceleration_time", self.assisted_acceleration_time),
+            ("assisted_braking_time", self.assisted_braking_time),
+            ("release_braking", self.release_braking),
+            ("release_braking_time", self.release_braking_time),
+            ("velocity_response_time", self.velocity_response_time),
+            ("thrust_response_time", self.thrust_response_time),
+            ("assisted_reverse_speed", self.assisted_reverse_speed),
+            ("assisted_strafe_speed", self.assisted_strafe_speed),
+            ("assisted_vertical_speed", self.assisted_vertical_speed),
+            ("assisted_boost_speed_factor", self.assisted_boost_speed_factor),
+        ];
+        let not_negative = [
+            ("drag_k", self.drag_k),
+            ("landing_sink_factor", self.landing_sink_factor),
+            ("linear_ramp_time", self.linear_ramp_time),
+            ("angular_ramp_time", self.angular_ramp_time),
+            ("decouple_time", self.decouple_time),
+        ];
+        for (what, v, ok) in positive.iter().map(|&(w, v)| (w, v, v > 0.0)).chain(not_negative.iter().map(|&(w, v)| (w, v, v >= 0.0))) {
+            if !(ok && v.is_finite()) {
+                return Err(format!("{what} {v} out of range"));
+            }
+        }
+        self.forward_speed_curve.validate().map_err(|e| format!("forward_speed_curve: {e}"))?;
+        self.ramp_curve.validate().map_err(|e| format!("ramp_curve: {e}"))?;
+        self.boost_capacitor.validate()?;
+        if !(0.0..=90.0).contains(&self.landing_slope_limit) {
+            return Err(format!("landing_slope_limit {} out of range (0 to 90 degrees)", self.landing_slope_limit));
+        }
+        Ok(())
     }
 }
 
@@ -591,8 +650,17 @@ pub struct ShipController {
     pub boost_strength: f64,
     /// Dev switch (F6): boost as the speed stage of #24, the capacitor ignored. Not a tuning value.
     pub boost_stage: bool,
+    /// Landing mode (K, spike 13): the axis model's precision band near the ground is on.
+    pub landing_mode: bool,
+    /// Dev switch (F7, spike 13): which model `step` flies; change it with `set_model`.
+    pub model: FlightModel,
+    /// The axis model's values (`ship_axis.json`) and what it did in its last step.
+    pub axis_tuning: AxisTuning,
+    pub axis: AxisState,
     /// Set down below `landing_slope_limit`: held to the spot until thrust (#92).
     pub ground_hold: Option<GroundHold>,
+    /// Seconds without hull contact; a hold lets go after `GROUND_HOLD_RELEASE_TIME`.
+    contact_lost: f64,
 
     horizon_w: DVec3,
     correction_accel: DVec3,
@@ -622,10 +690,47 @@ impl ShipController {
             boost: BoostCapacitor::default(),
             boost_strength: 0.0,
             boost_stage: false,
+            landing_mode: false,
+            model: FlightModel::Classic,
+            axis_tuning: AxisTuning::default(),
+            axis: AxisState::default(),
             ground_hold: None,
+            contact_lost: 0.0,
             horizon_w: DVec3::ZERO,
             correction_accel: DVec3::ZERO,
         }
+    }
+
+    pub fn with_axis(mut self, axis_tuning: AxisTuning) -> Self {
+        self.axis_tuning = axis_tuning;
+        self
+    }
+
+    /// Switches the model; the classic one's smoothed thrust starts from zero again, and its
+    /// ground hold (#92) is dropped: the axis model does not keep it, so a spot from an earlier
+    /// landing would pull the ship back on switching.
+    pub fn set_model(&mut self, model: FlightModel) {
+        self.model = model;
+        self.correction_accel = DVec3::ZERO;
+        self.ground_hold = None;
+        self.contact_lost = 0.0;
+        self.axis = AxisState::default();
+    }
+
+    /// Test setup after placing the ship by hand: coupled, full charge, no smoothed state left.
+    pub fn reset_state(&mut self) {
+        self.correction_accel = DVec3::ZERO;
+        self.horizon_w = DVec3::ZERO;
+        self.ramp = InputRamp::default();
+        self.axis = AxisState::default();
+        self.boost = BoostCapacitor::default();
+        self.boost_strength = 0.0;
+        self.coupled = true;
+        self.coupling = 1.0;
+        self.ground_time = 0.0;
+        self.ground_hold = None;
+        self.contact_lost = 0.0;
+        self.landing_mode = false;
     }
 
     /// m/s: on the ground the assist settles the ship at this speed (no slide, see `step`).
@@ -634,9 +739,38 @@ impl ShipController {
     pub const GROUND_SETTLE_TIME: f64 = 0.3;
     /// m: the slope under the ship is measured this far to each side (about half the hull's width).
     pub const GROUND_SLOPE_SPAN: f64 = 2.0;
-    /// m: a held ship found farther than this sideways from its spot was moved by something else
-    /// (a teleport); the hold lets go instead of pulling it back.
+    /// m: a held ship found farther than this from its spot was moved by something else (a
+    /// teleport, a depenetration); the hold lets go instead of pulling it back.
     pub const GROUND_HOLD_REACH: f64 = 1.0;
+    /// m/s: the ground rules (settle, hold) start only this slow along the ground; a brush at speed
+    /// is not a landing (#104 point 1).
+    pub const GROUND_HOLD_SPEED: f64 = 5.0;
+    /// m: half the hull's length; a level ship touching a slope with a corner has its centre up to
+    /// this times the slope's tangent above the terrain.
+    pub const HULL_HALF_LENGTH: f64 = 4.0;
+    /// s: a settling hold lets go when the hull has not touched for this long (a one-step flicker
+    /// keeps it; a resting hold keeps the ship on its spot, where the contact may drop out).
+    pub const GROUND_HOLD_RELEASE_TIME: f64 = 0.25;
+
+    /// m: the ground rules start only this low above the terrain under the centre: a corner touch
+    /// on a slope at the slope limit, plus half a metre.
+    pub fn ground_clearance(&self) -> f64 {
+        Self::HULL_HALF_LENGTH * self.tuning.landing_slope_limit.min(80.0).to_radians().tan() + 0.5
+    }
+
+    /// Low and slow enough with the hull touching for the ground rules (settle, hold).
+    fn on_ground(&self, grounded: bool, up: DVec3, v: DVec3) -> bool {
+        grounded && self.terrain_clearance < self.ground_clearance() && (v - up * v.dot(up)).length() < Self::GROUND_HOLD_SPEED
+    }
+
+    /// A step the caller does not fly (the quantum drive holds the ship): the boost is released
+    /// and its meter runs on, and no planet-follow rate stays behind for the next step (#110
+    /// point 6).
+    pub fn skip_step(&mut self, dt: f64) {
+        self.boost.step(false, &self.tuning.boost_capacitor, dt);
+        self.boost_strength = 0.0;
+        self.horizon_w = DVec3::ZERO;
+    }
 
     pub fn clearance_at(&self, env: &impl PlanetEnv, world: DVec3) -> f64 {
         let p = env.to_planet(world);
@@ -694,19 +828,32 @@ impl ShipController {
         clearance
     }
 
+    /// What both models do first: the input ramp (scripted test input, nobody piloting, is not
+    /// ramped), the coupling blend, the brake and the boost. Returns the input to fly and the boost
+    /// strength 0..1.
+    fn begin_step(&mut self, input: &FlightInput, dt: f64) -> (FlightInput, f64) {
+        let input = if input.piloted { self.ramp.apply(input, &self.tuning, dt) } else { *input };
+        let target = if self.coupled { 1.0 } else { 0.0 };
+        self.coupling = move_towards(self.coupling, target, if self.tuning.decouple_time > 0.0 { dt / self.tuning.decouple_time } else { 1.0 });
+        self.brake_active = input.piloted && input.brake;
+        // The brake neither uses nor drains the charge (TODO(initiator), #90).
+        let strength = if self.boost_stage {
+            self.boost.stage(input.boost && !self.brake_active)
+        } else {
+            self.boost.step_braking(input.boost, self.brake_active, &self.tuning.boost_capacitor, dt)
+        };
+        self.boost_strength = strength;
+        (input, strength)
+    }
+
     /// One physics step (Godot's `_integrate_forces`). Returns the new linear and
     /// angular velocity; the caller writes them to the body before integration.
     pub fn step(&mut self, body: &BodyState, input: &FlightInput, env: &impl PlanetEnv, dt: f64) -> (DVec3, DVec3) {
-        // Scripted test input (nobody piloting) is not ramped.
-        let ramped;
-        let input = if input.piloted {
-            ramped = self.ramp.apply(input, &self.tuning, dt);
-            &ramped
-        } else {
-            input
-        };
-        let target = if self.coupled { 1.0 } else { 0.0 };
-        self.coupling = move_towards(self.coupling, target, if self.tuning.decouple_time > 0.0 { dt / self.tuning.decouple_time } else { 1.0 });
+        if self.model == FlightModel::Axis {
+            return self.step_axis(body, input, env, dt);
+        }
+        let (input, strength) = self.begin_step(input, dt);
+        let input = &input;
         let b = body.rot;
         let origin = body.pos;
         let gravity = env.gravity_at(origin);
@@ -714,11 +861,6 @@ impl ShipController {
         self.planet_follow_strength = if self.horizon_follow { env.field_strength_at(origin) } else { 0.0 };
 
         let mut thrust_in = input.thrust;
-        self.brake_active = input.piloted && input.brake;
-        // The brake neither uses nor drains the charge (TODO(initiator), #90).
-        let want = input.boost && !self.brake_active;
-        let strength = if self.boost_stage { self.boost.stage(want) } else { self.boost.step(want, &self.tuning.boost_capacitor, dt) };
-        self.boost_strength = strength;
         let boost = 1.0 + (self.tuning.boost_factor - 1.0) * strength;
         if self.brake_active {
             thrust_in = DVec3::ZERO;
@@ -754,7 +896,7 @@ impl ShipController {
             // On the ground without thrust: settle gently straight down and keep no sideways speed.
             // Pressed down at the landing sink rate onto a slope, the contact turned the push into a
             // 20 s slide.
-            let hold = input.grounded && !thrusting;
+            let hold = !thrusting && self.on_ground(input.grounded, up, v);
             // Resting: on the ground and no longer sinking although pushed (all contacts carry it).
             let sinking = body.lin_vel.dot(up) < -0.05;
             self.ground_time = if input.grounded && !sinking { self.ground_time + dt } else { 0.0 };
@@ -763,8 +905,19 @@ impl ShipController {
             // push sideways (0.55 m on 33 degrees in `full`), the hold takes that back.
             let here = env.to_planet(origin);
             let sideways = |d: DVec3| d - up * d.dot(up);
-            let strayed = self.ground_hold.is_some_and(|h| sideways(here - h.rest.unwrap_or(h.at)).length() > Self::GROUND_HOLD_REACH);
-            if thrusting || strayed {
+            // Moved away by something else: settling, sideways (it may sink); resting, in any
+            // direction (the rest spot would pull a lifted ship back down at distance / dt). Also
+            // contact lost for a while, or high above the ground: no hold.
+            let strayed = self.ground_hold.is_some_and(|h| match h.rest {
+                Some(p) => (here - p).length(),
+                None => sideways(here - h.at).length(),
+            } > Self::GROUND_HOLD_REACH);
+            self.contact_lost = if input.grounded { 0.0 } else { self.contact_lost + dt };
+            // A resting hold keeps the ship exactly on its spot, so the contact may drop out; only a
+            // settling one (pushed down) counts contact lost.
+            let settling = self.ground_hold.is_some_and(|h| h.rest.is_none());
+            let left = settling && self.contact_lost >= Self::GROUND_HOLD_RELEASE_TIME || self.terrain_clearance >= self.ground_clearance();
+            if thrusting || strayed || left {
                 self.ground_hold = None;
             } else if hold && self.ground_hold.is_none() && self.ground_slope(env, origin) <= self.tuning.landing_slope_limit.to_radians() {
                 self.ground_hold = Some(GroundHold { at: here, rest: None });
@@ -837,6 +990,10 @@ impl ShipController {
             self.correction_accel = DVec3::ZERO;
             self.commanded_speed = 0.0;
             self.ground_hold = None;
+            // The readout stays fresh and the settle starts over when the assist comes back.
+            self.terrain_clearance = self.clearance_at(env, origin);
+            self.forward_speed_limit = 0.0;
+            self.ground_time = 0.0;
             v += (b * limit_length(thrust_in, 1.0)) * self.tuning.thrust_accel * boost * dt;
             v += gravity * dt;
             v -= v * (self.tuning.drag_k * density * v.length() * dt).min(1.0);

@@ -488,31 +488,38 @@ fn flight_checks() {
 fn lag_follows_landing_and_the_manual_switch() {
     let dt = 1.0 / 60.0;
     let mut lag = Lag::default();
-    let run = |lag: &mut Lag, clearance: f64, speed: f64, secs: f64| {
+    let run = |lag: &mut Lag, grounded: bool, clearance: f64, speed: f64, secs: f64| {
         for _ in 0..(secs / dt).round() as usize {
-            lag.step(clearance, speed, dt);
+            lag.step(grounded, clearance, speed, dt);
         }
     };
-    run(&mut lag, 0.1, 0.0, 2.0);
+    run(&mut lag, true, 0.1, 0.0, 2.0);
     assert_eq!((lag.landed, lag.level), (true, 0.0));
     lag.toggle();
-    run(&mut lag, 0.1, 0.0, 1.0);
+    run(&mut lag, true, 0.1, 0.0, 1.0);
     assert!(lag.manual_on && lag.level == 1.0, "G switches it on while landed");
     lag.toggle();
-    run(&mut lag, 0.1, 0.0, 1.0);
+    run(&mut lag, true, 0.1, 0.0, 1.0);
     assert_eq!(lag.level, 0.0, "and off again");
-    // Hovering low is still landed (hysteresis), above 2 m the ship flies.
-    run(&mut lag, 1.8, 3.0, 1.0);
+    // Lifting off low is still landed (hysteresis), above 2 m the ship flies.
+    run(&mut lag, false, 1.8, 3.0, 1.0);
     assert!(lag.landed);
-    run(&mut lag, 2.5, 3.0, 0.5);
+    run(&mut lag, false, 2.5, 3.0, 0.5);
     assert!(!lag.landed && (lag.level - 0.5).abs() < 0.02, "half way after 0.5 s: {}", lag.level);
-    run(&mut lag, 2.5, 3.0, 0.6);
+    run(&mut lag, false, 2.5, 3.0, 0.6);
     assert_eq!(lag.level, 1.0);
     lag.toggle();
     assert!(lag.is_on() && !lag.manual_on, "G does nothing in flight");
-    // Slow and low again: landed, the field goes down.
-    run(&mut lag, 1.0, 0.1, 1.1);
+    // #110 point 1: hovering still and low without contact is flying.
+    run(&mut lag, false, 1.4, 0.0, 1.0);
+    assert!(!lag.landed && lag.level == 1.0, "hovering at 1.4 m is not landed");
+    // Touching down slowly: landed, the field goes down.
+    run(&mut lag, true, 1.0, 0.1, 1.1);
     assert_eq!((lag.landed, lag.level), (true, 0.0));
+    // Parked with its centre over a dip deeper than 2 m: the hull touches, still landed.
+    let mut dip = Lag { landed: false, level: 1.0, ..Lag::default() };
+    run(&mut dip, true, 3.0, 0.0, 1.1);
+    assert_eq!((dip.landed, dip.level), (true, 0.0), "contact counts, not the clearance under the centre");
     // Mix: half way the direction is half turned, the strength stays.
     let half = Lag { level: 0.5, ..Lag::default() };
     let g = half.gravity(DVec3::X, DVec3::new(0.0, -9.81, 0.0));

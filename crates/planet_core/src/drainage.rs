@@ -311,6 +311,10 @@ fn sinks(mesh: &impl Mesh, r: &Routing, h: &[f32], flow: &[f32]) -> Vec<Sink> {
     out
 }
 
+/// Sediment fills a sink at least this far above the sea level (m): the ground between the
+/// vertices wanders by about this much, and a flat right at the sea level freckled with sea.
+const FILL_ABOVE_SEA_M: f32 = 2.0;
+
 /// Hops a river's cross-section reaches at most.
 const SECTION_HOPS: u32 = 4;
 
@@ -395,8 +399,9 @@ pub fn drain(mesh: &impl Mesh, h0: &[f32], rain: &[f32], sea_level: f32, s: &Dra
         let budget = if s.lake_evaporation > 0.0 { c.inflow / s.lake_evaporation } else { f64::INFINITY };
         if (depth as f64) < s.lake_min_depth_m || (c.inflow < amin && (c.area < s.lake_min_area_m2 || c.area > budget)) {
             if s.river_sinks == SinkCrossing::Fill && c.inflow >= amin {
+                let top = c.level.max(sea_level + FILL_ABOVE_SEA_M);
                 for &v in &c.members {
-                    h[v] = c.level;
+                    h[v] = top;
                 }
             }
             continue;

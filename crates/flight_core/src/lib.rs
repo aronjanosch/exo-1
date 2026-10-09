@@ -495,6 +495,10 @@ pub struct ShipTuning {
     pub decouple_time: f64,
     /// The boost's charge meter (#90).
     pub boost_capacitor: BoostCapacitorTuning,
+    /// Degrees: a ship that touches down on ground at most this steep keeps its spot until thrust
+    /// (ground hold, #92). Steeper ground: no hold. TODO(initiator): the value; what a ship does on
+    /// steeper ground.
+    pub landing_slope_limit: f64,
 }
 
 impl ShipTuning {
@@ -503,6 +507,9 @@ impl ShipTuning {
         t.forward_speed_curve.validate().map_err(|e| format!("ship.json: forward_speed_curve: {e}"))?;
         t.ramp_curve.validate().map_err(|e| format!("ship.json: ramp_curve: {e}"))?;
         t.boost_capacitor.validate().map_err(|e| format!("ship.json: {e}"))?;
+        if !(0.0..=90.0).contains(&t.landing_slope_limit) {
+            return Err(format!("ship.json: landing_slope_limit {} out of range (0 to 90 degrees)", t.landing_slope_limit));
+        }
         Ok(t)
     }
 }
@@ -543,8 +550,20 @@ impl Default for ShipTuning {
             ramp_curve: Curve { interp: Interp::Smooth, points: vec![DVec2::new(0.0, 0.25), DVec2::new(1.0, 1.0)] },
             decouple_time: 4.0,
             boost_capacitor: BoostCapacitorTuning::default(),
+            landing_slope_limit: 35.0,
         }
     }
+}
+
+/// A ship set down below the slope limit keeps its spot until thrust (#92). Positions are planet
+/// frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GroundHold {
+    /// The centre at touchdown: settling, the ship may sink and tip onto the slope along the up
+    /// through it, not sideways.
+    pub at: DVec3,
+    /// Resting, the ship is held at this centre.
+    pub rest: Option<DVec3>,
 }
 
 /// Assisted-flight controller: its tuning plus the runtime state.
@@ -572,6 +591,8 @@ pub struct ShipController {
     pub boost_strength: f64,
     /// Dev switch (F6): boost as the speed stage of #24, the capacitor ignored. Not a tuning value.
     pub boost_stage: bool,
+    /// Set down below `landing_slope_limit`: held to the spot until thrust (#92).
+    pub ground_hold: Option<GroundHold>,
 
     horizon_w: DVec3,
     correction_accel: DVec3,
@@ -601,6 +622,7 @@ impl ShipController {
             boost: BoostCapacitor::default(),
             boost_strength: 0.0,
             boost_stage: false,
+            ground_hold: None,
             horizon_w: DVec3::ZERO,
             correction_accel: DVec3::ZERO,
         }
@@ -610,10 +632,29 @@ impl ShipController {
     pub const GROUND_SETTLE_SPEED: f64 = 0.5;
     /// s: resting this long on the ground (not sinking) ends the settle push.
     pub const GROUND_SETTLE_TIME: f64 = 0.3;
+    /// m: the slope under the ship is measured this far to each side (about half the hull's width).
+    pub const GROUND_SLOPE_SPAN: f64 = 2.0;
+    /// m: a held ship found farther than this sideways from its spot was moved by something else
+    /// (a teleport); the hold lets go instead of pulling it back.
+    pub const GROUND_HOLD_REACH: f64 = 1.0;
 
     pub fn clearance_at(&self, env: &impl PlanetEnv, world: DVec3) -> f64 {
         let p = env.to_planet(world);
         p.length() - env.radius() - env.height_at(p.normalize())
+    }
+
+    /// Slope of the terrain under a point, radians: the angle between the planet's up and the
+    /// ground's normal, from the heights `GROUND_SLOPE_SPAN` to each side.
+    pub fn ground_slope(&self, env: &impl PlanetEnv, world: DVec3) -> f64 {
+        let up = env.to_planet(world).normalize();
+        let r = env.radius();
+        let ground = |side: DVec3| {
+            let dir = (up * r + side * Self::GROUND_SLOPE_SPAN).normalize();
+            dir * (r + env.height_at(dir))
+        };
+        let (a, b) = up.any_orthonormal_pair();
+        let normal = (ground(a) - ground(-a)).cross(ground(b) - ground(-b)).normalize();
+        normal.dot(up).abs().min(1.0).acos()
     }
 
     pub fn forward_speed_at(&self, clearance: f64) -> f64 {
@@ -708,14 +749,35 @@ impl ShipController {
                 request.y * self.tuning.assisted_vertical_speed,
                 request.z * forward_speed,
             );
-            // On the ground without sideways or upward input: settle gently straight down and keep
-            // no sideways speed. Pressed down at the landing sink rate onto a slope, the contact
-            // turned the push into a 20 s slide.
-            let hold = input.grounded && request.x.abs() < 1e-5 && request.z.abs() < 1e-5 && request.y <= 1e-5;
+            // Thrust is any input but down (down only presses the ship onto the ground).
+            let thrusting = request.x.abs() >= 1e-5 || request.z.abs() >= 1e-5 || request.y > 1e-5;
+            // On the ground without thrust: settle gently straight down and keep no sideways speed.
+            // Pressed down at the landing sink rate onto a slope, the contact turned the push into a
+            // 20 s slide.
+            let hold = input.grounded && !thrusting;
             // Resting: on the ground and no longer sinking although pushed (all contacts carry it).
             let sinking = body.lin_vel.dot(up) < -0.05;
             self.ground_time = if input.grounded && !sinking { self.ground_time + dt } else { 0.0 };
-            if hold {
+            // Ground hold (#92): set down below the slope limit, the ship keeps its spot until
+            // thrust. Settling still tips it onto the slope; each step the contact turns part of the
+            // push sideways (0.55 m on 33 degrees in `full`), the hold takes that back.
+            let here = env.to_planet(origin);
+            let sideways = |d: DVec3| d - up * d.dot(up);
+            let strayed = self.ground_hold.is_some_and(|h| sideways(here - h.rest.unwrap_or(h.at)).length() > Self::GROUND_HOLD_REACH);
+            if thrusting || strayed {
+                self.ground_hold = None;
+            } else if hold && self.ground_hold.is_none() && self.ground_slope(env, origin) <= self.tuning.landing_slope_limit.to_radians() {
+                self.ground_hold = Some(GroundHold { at: here, rest: None });
+            }
+            if let Some(h) = &mut self.ground_hold
+                && h.rest.is_none()
+                && self.ground_time >= Self::GROUND_SETTLE_TIME
+            {
+                // Where it rests, within one step's push of the touchdown spot (pulled further onto
+                // it, a slope would put it into the ground).
+                h.rest = Some(here);
+            }
+            if hold || self.ground_hold.is_some() {
                 // Settle until it rests, tipping onto the slope; then no push at all (a push on a
                 // slope creeps).
                 goal = if self.ground_time < Self::GROUND_SETTLE_TIME { -up * Self::GROUND_SETTLE_SPEED } else { DVec3::ZERO };
@@ -764,12 +826,17 @@ impl ShipController {
             self.correction_accel = limit_length(self.correction_accel, available);
             let thrust = support + self.correction_accel;
             v += (thrust + drag) * dt;
-            if hold {
-                v = up * v.dot(up);
+            match self.ground_hold {
+                // Back to the spot within one step, whatever the contacts did last step.
+                Some(GroundHold { rest: Some(p), .. }) => v = (p - here) / dt,
+                Some(GroundHold { at, rest: None }) => v = up * v.dot(up) + sideways(at - here) / dt,
+                None if hold => v = up * v.dot(up),
+                None => {}
             }
         } else {
             self.correction_accel = DVec3::ZERO;
             self.commanded_speed = 0.0;
+            self.ground_hold = None;
             v += (b * limit_length(thrust_in, 1.0)) * self.tuning.thrust_accel * boost * dt;
             v += gravity * dt;
             v -= v * (self.tuning.drag_k * density * v.length() * dt).min(1.0);

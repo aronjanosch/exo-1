@@ -53,5 +53,5 @@ pub fn update_sites(mut commands: Commands, planet: Res<PlanetRes>, assets: Res<
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<SiteView>();
-    app.add_systems(Update, update_sites.after(crate::terrain::update_terrain));
+    app.add_systems(Update, update_sites.after(crate::terrain::update_terrain).in_set(crate::phases::Frame::World));
 }

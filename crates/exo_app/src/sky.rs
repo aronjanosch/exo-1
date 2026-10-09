@@ -137,5 +137,5 @@ pub fn add_to_camera(mut commands: Commands, cams: Query<Entity, Added<MainCamer
 pub fn plugin(app: &mut App) {
     app.init_resource::<SkyState>();
     app.add_plugins(MaterialPlugin::<WaterMaterial>::default());
-    app.add_systems(Update, (add_to_camera, update_sky.after(crate::terrain::update_terrain)));
+    app.add_systems(Update, (add_to_camera, update_sky.after(crate::terrain::update_terrain)).in_set(crate::phases::Frame::World));
 }

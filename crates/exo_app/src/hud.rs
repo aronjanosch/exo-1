@@ -10,6 +10,11 @@ use crate::view::NEAR_PLANET;
 use crate::walker::Player;
 use bevy::math::DVec3;
 use bevy::prelude::*;
+
+pub fn plugin(app: &mut App) {
+    app.init_resource::<HudReadout>();
+    app.add_systems(FixedUpdate, update_readout.in_set(crate::phases::Fx::Effects));
+}
 pub use flight_core::hud::{Height, HudTuning};
 
 /// What the player is doing, as the mode element names it.

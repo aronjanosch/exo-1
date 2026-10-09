@@ -7,6 +7,12 @@ use bevy::math::{DMat3, DQuat, DVec2, DVec3};
 use bevy::prelude::*;
 use flight_core::{BodyState, FlightInput, Lag, ShipController, ShipTuning, VirtualStick};
 
+pub fn plugin(app: &mut App) {
+    app.init_resource::<CameraEffects>();
+    app.add_systems(FixedUpdate, ship_control.in_set(crate::phases::Fx::Ship));
+    app.add_systems(FixedUpdate, camera_fx.in_set(crate::phases::Fx::Effects));
+}
+
 /// Seat position in ship space.
 pub const SEAT_POS: DVec3 = DVec3::new(0.0, 0.6, -3.0);
 

@@ -103,6 +103,22 @@ Initiator: "denk dran dass man in einige der gebäude auch rein will. am besten 
 - Colours come as `COLOR_0`; Bevy multiplies it into the material. Blender's own glTF import ignores it (`street_preview.py` puts the kit materials back).
 - Where a building sits in the city and where the city sits on the planet: a separate placement file, not in the model (`exo-1-concept/docs/research/place-authoring.md`).
 
+## Face orientation checks
+
+`Part.build()` checks the source mesh before edge splitting and export: shared
+edges must have consistent winding and each closed island must have positive
+signed volume. Open domes are allowed. `rounded_box` rejects a radius greater
+than half the smaller footprint dimension, which would make the contour cross
+itself (including thin panels such as TV screens).
+
+Run Blender with `--python-exit-code 1` so a failed check fails the command:
+
+```sh
+blender -b --python-exit-code 1 -P art/tests/test_mesh_checks.py
+blender -b --python-exit-code 1 -P art/tests/test_city_normals.py
+blender -b --python-exit-code 1 -P art/city/homes.py -- --out content/city
+```
+
 ## Open (initiator)
 
 - Names and fiction of the shops; which fit-out each building gets (`city_plan.FIT` holds placeholders).

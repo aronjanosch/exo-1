@@ -111,7 +111,7 @@ def screen(p, x, y, rgb, z=0.0):
     for sx in (-1, 1):
         p.box((x + sx * 0.3 - 0.02, y - 0.02, z), (x + sx * 0.3 + 0.02, y + 0.02, z + 0.4), METAL)
     p.rounded_box((x - 0.45, y - 0.3, z + 0.4), (x + 0.45, y + 0.3, z + 1.1), 0.15, rgb, segments=4)
-    p.rounded_box((x - 0.33, y - 0.33, z + 0.52), (x + 0.33, y - 0.29, z + 0.98), 0.1, GLOW_CYAN, "glow", segments=3)
+    p.rounded_box((x - 0.33, y - 0.33, z + 0.52), (x + 0.33, y - 0.29, z + 0.98), 0.015, GLOW_CYAN, "glow", segments=3)
 
 
 def bungalow_butterfly():

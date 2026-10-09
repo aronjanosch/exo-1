@@ -19,6 +19,9 @@ import bmesh
 import bpy
 from mathutils import Matrix, Vector
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from mesh_checks import require_orientation
+
 # Starting values from BRIEF.md (guide values, not rules).
 CELL = 0.5            # facade grid: windows, doors and signs snap to it
 BAY = 4.0             # facade bay width
@@ -133,6 +136,9 @@ class Part:
 
     def rounded_box(self, lo, hi, radius, rgb, mat="paint", segments=6):
         """Box with rounded vertical edges: the basic futuristic block."""
+        limit = min(hi[0] - lo[0], hi[1] - lo[1]) / 2
+        if not 0 < radius <= limit or hi[2] <= lo[2]:
+            raise ValueError(f"{self.name}: rounded_box radius {radius} exceeds half its footprint ({limit}) or invalid bounds")
         r = radius
         corners = [(hi[0] - r, hi[1] - r, 0), (lo[0] + r, hi[1] - r, 90), (lo[0] + r, lo[1] + r, 180), (hi[0] - r, lo[1] + r, 270)]
         pts = []
@@ -297,6 +303,7 @@ class Part:
         mesh = bpy.data.meshes.new(self.name)
         bmesh.ops.recalc_face_normals(self.bm, faces=self.bm.faces)
         self.bm.normal_update()
+        require_orientation(self.bm, self.name)
         self.bm.to_mesh(mesh)
         self.bm.free()
         for key in self.slots:

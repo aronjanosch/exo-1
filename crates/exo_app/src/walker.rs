@@ -294,7 +294,8 @@ pub fn walker_step(
         mas: &mas,
         shape: Collider::capsule(cfg.radius, cfg.height - 2.0 * cfg.radius),
         half_height: cfg.height * 0.5,
-        filter: SpatialQueryFilter::from_mask([Layer::World, Layer::Ship, Layer::Ramp, Layer::Remote]),
+        // Spike 12: crates that are bodies block the walker, except the one in the hands.
+        filter: SpatialQueryFilter::from_mask([Layer::World, Layer::Ship, Layer::Ramp, Layer::Remote, Layer::Crate]).with_excluded_entities(grab.held.map(|h| h.crate_e)),
         ship_colliders,
         dt,
     };

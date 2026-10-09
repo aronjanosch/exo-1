@@ -108,6 +108,13 @@ pub struct CargoStats {
 }
 
 /// A crate of size `size` at `pos` in its frame (`ship`: the cabin, None: the planet).
+impl Crate {
+    /// Spike 12: the box collider, for the Avian body.
+    pub fn shape_clone(&self) -> Collider {
+        self.shape.clone()
+    }
+}
+
 pub fn crate_bundle(table: &CrateTable, size: &str, ship: Option<Entity>, pos: DVec3, forward: DVec3) -> impl Bundle {
     let i = table.sizes.iter().position(|s| s.name == size).unwrap_or_else(|| panic!("no crate size {size}"));
     let s = &table.sizes[i];
@@ -295,7 +302,7 @@ pub fn crate_step(
     mut stats: ResMut<CargoStats>,
     mut grid: ResMut<LockGrid>,
     mut prev_vel: Local<Option<DVec3>>,
-    mut crates: Query<(Entity, &mut Crate)>,
+    mut crates: Query<(Entity, &mut Crate), Without<crate::avian_crates::AvianCrate>>,
     ships: Query<(Entity, &Ship, &Position, &Rotation, &LinearVelocity)>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
 ) {
@@ -442,7 +449,7 @@ pub fn crate_step(
 }
 
 /// Bottom centre of a planet-frame crate in the ship's space.
-fn bottom_world(ship: &Frame, b: &CrateBody) -> DVec3 {
+pub(crate) fn bottom_world(ship: &Frame, b: &CrateBody) -> DVec3 {
     ship.to_local(b.pos - b.up * b.half.y)
 }
 

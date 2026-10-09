@@ -26,6 +26,8 @@ pub struct Held {
     pub mass: f64,
     /// Heading of the crate relative to the walker's, radians about up (Q/E change it).
     pub yaw: f64,
+    /// Spike 12: hold error over this hold (ticks, sum of squares, max, max after the first second).
+    pub err: (u32, f64, f64, f64),
 }
 
 #[derive(Resource, Default, Debug)]
@@ -51,10 +53,14 @@ impl Grab {
         // Keep the crate's heading relative to the walker's.
         let up = frame.rot * c.body.up;
         let yaw = signed_angle(look_fwd, frame.rot * c.body.forward, up);
-        self.held = Some(Held { crate_e: e, reach, dist, breaker: BreakTimer::default(), hands: size.hands, mass: size.mass, yaw });
+        self.held = Some(Held { crate_e: e, reach, dist, breaker: BreakTimer::default(), hands: size.hands, mass: size.mass, yaw, err: (0, 0.0, 0.0, 0.0) });
     }
 
     pub fn release(&mut self) {
+        if let (Some(h), true) = (self.held, std::env::var("EXO_HOLD_STATS").is_ok()) {
+            let (n, sq, max, late) = h.err;
+            println!("hold-stats mass={:.0} reach={:?} secs={:.2} rms={:.3} max={:.3} max_after_1s={:.3}", h.mass, h.reach, n as f64 / 60.0, (sq / n.max(1) as f64).sqrt(), max, late);
+        }
         self.held = None;
         self.reaction = DVec3::ZERO;
     }
@@ -149,7 +155,15 @@ pub fn grab_step(
     let along = rel.dot(c.body.up);
     let flat = rel - c.body.up * along;
     let standing = pl.w.grounded && (along - c.body.half.y).abs() < 0.15 && flat.length() < c.body.half.x.min(c.body.half.z);
-    if held.breaker.step(cfg, c.body.pos.distance(target), standing, dt) {
+    let e = c.body.pos.distance(target);
+    held.err.0 += 1;
+    held.err.1 += e * e;
+    held.err.2 = held.err.2.max(e);
+    if held.err.0 > 60 {
+        held.err.3 = held.err.3.max(e);
+    }
+    grab.held = Some(held);
+    if held.breaker.step(cfg, e, standing, dt) {
         grab.breaks += 1;
         grab.release();
         return;

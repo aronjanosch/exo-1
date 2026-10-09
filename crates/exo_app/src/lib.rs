@@ -2,6 +2,7 @@
 //! Rendering, input, camera, HUD, physics bodies, network transport and scripted scenarios.
 //! All game values are the spike test values, not designed.
 pub mod audio;
+pub mod avian_crates;
 pub mod cargo;
 pub mod cargo_scenario;
 pub mod controls;
@@ -47,6 +48,8 @@ pub enum Layer {
     Ramp,
     /// Hull of another player's ship (proxy): the walker stands on it, ships do not hit it.
     Remote,
+    /// Spike 12: crates that are Avian bodies.
+    Crate,
 }
 
 /// Sideways spawn offset in metres (players of one network session start 20 m apart).
@@ -260,9 +263,10 @@ pub fn build_app(o: &Options) -> App {
     });
     app.add_systems(
         FixedUpdate,
-        (scenario::run_script.run_if(resource_exists::<scenario::Script>), controls::resolve_actions, warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, interact::interaction, walker::walker_step, grab::grab_step, cargo::crate_step, cargo::budget_step, ship::camera_fx).chain(),
+        (scenario::run_script.run_if(resource_exists::<scenario::Script>), controls::resolve_actions, warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, interact::interaction, walker::walker_step, grab::grab_step, avian_crates::avian_pre, cargo::crate_step, cargo::budget_step, ship::camera_fx).chain(),
     );
-    app.add_systems(FixedLast, (controls::drop_taps, cargo::record_crate_interp));
+    app.add_systems(FixedLast, (controls::drop_taps, (avian_crates::avian_post, cargo::record_crate_interp).chain()));
+    app.insert_resource(avian_crates::AvianCrates::from_env()).init_resource::<avian_crates::AvianStats>();
     app.add_systems(FixedUpdate, cargo::crate_watch.run_if(resource_exists::<cargo::CrateWatch>).after(cargo::crate_step));
     app.add_systems(Update, ring::update_ring);
     if let Some(path) = &o.record {

@@ -159,3 +159,16 @@ Also seen on the way: `tests/perf.rs` failed once under load (p95 3.49 ms agains
 ## The run stopped early (read this)
 
 The run stopped at about 03:57 and did nothing until 09:37. Not a limit (7-day usage 51 %) and not a crash: while debugging the `session` failure above, the agent ended its turn after a tool result without taking the next step and without a note. Lost: about 5.5 hours, so E2 is unfinished and E3 to E5 were never started. At 09:37 (past the 08:30 stop) E2 was parked in a stash, so `night/extras` ends at the green E1 commit plus this log.
+
+## Playtest follow-up (2026-10-09, after the run)
+
+Feedback: the crates hardly turn, the physics does not feel good, and they slide much too far. New direction: crates get three states. Outside near a player they are an Avian rigid body. Resting far away they are frozen (pose only). In the cabin they are part of the ship, with `CrateBody` kept for the short flight inside the cabin. A spike `spike/avian-crates` comes first. E2 in its old form is reverted (56f3686).
+
+- [x] Revert E2 (56f3686).
+- [x] Impact friction in `CrateBody` (test-first, `impact_friction_cuts_the_slide`): an impact stops the motion into the surface and takes friction x impact speed off the slide along it, never reversing it. It is not applied again to the floor a crate already rests on (the floor's Coulomb friction acts there). `friction` 0.5 -> 0.8. A thrown crate in `crate-carry` now flies 4.77 m (was 6.66 m). Gate green.
+- [ ] Spike `spike/avian-crates`, brief first.
+- [ ] E3 grab-tool beam (code exists in a local stash, not gated yet), E4 sounds, E5 split `scenario.rs`.
+
+Open design questions, for the initiator to decide:
+- TODO(initiator) a) Cabin: does every crate set down become part of the ship at once (the lock grid then only helps keep order, and sliding under acceleration goes away)? Or does the lock grid stay the condition, with loose crates keeping the current model?
+- TODO(initiator) b) Friction start value: 0.8 plus impact friction is in now (`content/tuning/grab.json`), to be tuned by feel.

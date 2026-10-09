@@ -13,6 +13,7 @@ pub mod hud;
 pub mod interact;
 pub mod look;
 pub mod menu;
+pub mod models_scenario;
 pub mod net;
 pub mod net_live;
 pub mod origin;

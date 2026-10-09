@@ -629,6 +629,19 @@ impl ShipController {
         self.axis = AxisState::default();
     }
 
+    /// Test setup after placing the ship by hand: coupled, full charge, no smoothed state left.
+    pub fn reset_state(&mut self) {
+        self.correction_accel = DVec3::ZERO;
+        self.horizon_w = DVec3::ZERO;
+        self.ramp = InputRamp::default();
+        self.axis = AxisState::default();
+        self.boost = BoostCapacitor::default();
+        self.boost_strength = 0.0;
+        self.coupled = true;
+        self.coupling = 1.0;
+        self.ground_time = 0.0;
+    }
+
     /// m/s: on the ground the assist settles the ship at this speed (no slide, see `step`).
     pub const GROUND_SETTLE_SPEED: f64 = 0.5;
     /// s: resting this long on the ground (not sinking) ends the settle push.

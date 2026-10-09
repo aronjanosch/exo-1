@@ -2033,6 +2033,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "flight" => flight_steps(&mut s, &shot_step, out_dir, windowed),
         // #90, #91: the boost capacitor drains, cuts out and recharges; the HUD shows it.
         "boost-hud" => crate::boost_scenario::boost_hud_steps(&mut s),
+        // Spike 13: the same manoeuvres with the classic and the axis flight model (F7).
+        "flight-models" => crate::models_scenario::flight_models_steps(&mut s),
         // #21: edit a tuning file while running (dev builds).
         "reload" => reload_steps(&mut s, out_dir),
         "warp" => warp_steps(&mut s, out_dir, windowed),

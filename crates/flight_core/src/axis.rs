@@ -294,6 +294,15 @@ impl ShipController {
             let vertical = if vertical < 0.0 { -lerp(-vertical, (-vertical).min(descent), p) } else { vertical };
             goal = along + up * vertical;
         }
+        // On the ground without sideways, forward or upward input: settle straight down until
+        // resting, then ask for nothing (the classic model's rule; a push along a tilted hull
+        // slid the ship 63 m down a slope).
+        let hold = input.grounded && stick.x.abs() < 1e-5 && stick.z.abs() < 1e-5 && stick.y <= 1e-5;
+        let sinking = v.dot(up) < -0.05;
+        self.ground_time = if input.grounded && !sinking { self.ground_time + dt } else { 0.0 };
+        if hold {
+            goal = if self.ground_time < Self::GROUND_SETTLE_TIME { -up * Self::GROUND_SETTLE_SPEED } else { DVec3::ZERO };
+        }
         self.commanded_speed = goal.length();
         let coupled_accel = (goal - v) * t.linear_decay + body.ang_vel.cross(goal);
         // Decoupled: full thrust along the stick, the velocity is kept (curving with the planet
@@ -303,17 +312,22 @@ impl ShipController {
         let decoupled_accel = b * limits.along(stick) + horizon_w.cross(v);
         let c = if self.brake_active { 1.0 } else { self.coupling };
         let drag = -v * self.tuning.drag_k * density * v.length();
-        // Assist on: thrust also holds against gravity and drag. Off: thrust along the stick only.
-        let wanted = if self.hover_assist || self.brake_active {
-            coupled_accel * c + decoupled_accel * (1.0 - c) - gravity - drag
-        } else {
-            b * limits.along(stick)
+        // What the thrusters can give: the axis limits, then the pilot's tolerance.
+        let g_limit = t.g_safety.enabled.then(|| t.g_safety.limit.scaled(G0));
+        let fit = |a: DVec3| {
+            let l = limits.clamp(a);
+            g_limit.map_or(l, |g| g.clamp(l))
         };
-        let asked = inv * wanted;
-        let mut local = limits.clamp(asked);
-        if t.g_safety.enabled {
-            local = t.g_safety.limit.scaled(G0).clamp(local);
-        }
+        // Assist on: thrust also holds against gravity and drag; coupled and decoupled are each
+        // limited, then blended, so the damping fades out with the blend. Off: thrust along the
+        // stick only.
+        let (asked, local) = if self.hover_assist || self.brake_active {
+            let (coupled, decoupled) = (inv * (coupled_accel - gravity - drag), inv * (decoupled_accel - gravity - drag));
+            (coupled * c + decoupled * (1.0 - c), fit(coupled) * c + fit(decoupled) * (1.0 - c))
+        } else {
+            let a = limits.along(stick);
+            (a, fit(a))
+        };
         self.axis.saturated = (asked - local).length() > 1e-6;
         self.axis.felt_g = local.length() / G0;
         self.axis.precision = p;

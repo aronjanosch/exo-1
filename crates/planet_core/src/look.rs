@@ -37,6 +37,24 @@ pub struct Viewpoints {
     pub sun_azimuth_deg: f64,
     pub atlas_width: usize,
     pub viewpoints: Vec<Viewpoint>,
+    /// Time-of-day shots (#48): one viewpoint per planet at clock times instead of the fixed sun.
+    #[serde(default)]
+    pub times: Vec<TimeShot>,
+}
+
+/// A time-of-day shot from `viewpoint`: at local `hour` (12 = noon), or when the sun stands at
+/// `sun_elevation_deg` in the evening (`evening`) or morning over the spot.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct TimeShot {
+    pub id: String,
+    pub viewpoint: String,
+    #[serde(default)]
+    pub hour: Option<f64>,
+    #[serde(default)]
+    pub sun_elevation_deg: Option<f64>,
+    #[serde(default)]
+    pub evening: bool,
 }
 
 impl Viewpoints {
@@ -49,6 +67,14 @@ impl Viewpoints {
             }
             if p.spot == "orbit" && p.from.is_none() {
                 return Err(format!("viewpoint {}: orbit needs `from`", p.id));
+            }
+        }
+        for t in &v.times {
+            if !v.viewpoints.iter().any(|p| p.id == t.viewpoint) {
+                return Err(format!("time shot {}: unknown viewpoint {}", t.id, t.viewpoint));
+            }
+            if t.hour.is_some() == t.sun_elevation_deg.is_some() {
+                return Err(format!("time shot {}: needs either `hour` or `sun_elevation_deg`", t.id));
             }
         }
         Ok(v)

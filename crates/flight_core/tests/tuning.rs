@@ -83,3 +83,11 @@ fn linear_identity() {
 fn curve_rejects_non_finite() {
     assert!(Curve::new(Interp::Linear, vec![DVec2::ZERO, DVec2::new(1.0, f64::NAN)]).is_err());
 }
+
+#[test]
+fn rejects_landing_slope_limit_out_of_range() {
+    for bad in ["-1.0", "91.0"] {
+        let e = ShipTuning::from_json(&edited("\"landing_slope_limit\": 35.0", &format!("\"landing_slope_limit\": {bad}"))).unwrap_err();
+        assert!(e.contains("landing_slope_limit"), "{e}");
+    }
+}

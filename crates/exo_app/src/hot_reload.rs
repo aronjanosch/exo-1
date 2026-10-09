@@ -1,6 +1,6 @@
 //! Hot reload of `content/tuning/*.json` in dev builds (#21): every 250 ms of wall time the files
 //! are read and compared with what is loaded; when one changed and all parse, the new values take
-//! effect at once (ship and walker get them, the suit, camera, grab and bindings are read every step).
+//! effect at once (ship and walker get them, the suit, camera, grab, HUD and bindings are read every step).
 //! A file that does not parse is reported and the old values stay. Polling instead of Bevy's
 //! `file_watcher` keeps the feature set as it is.
 use crate::controls::Bindings;
@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-const FILES: [&str; 6] = ["ship.json", "walker.json", "suit.json", "camera.json", "bindings.json", "grab.json"];
+const FILES: [&str; 7] = ["ship.json", "walker.json", "suit.json", "camera.json", "bindings.json", "grab.json", "hud.json"];
 const POLL: Duration = Duration::from_millis(250);
 
 #[derive(Resource)]
@@ -26,7 +26,7 @@ pub struct HotReload {
 impl HotReload {
     /// Starts from the embedded files: shipped files on disk that equal them change nothing.
     pub fn new(dir: PathBuf) -> HotReload {
-        let loaded = [crate::tuning::SHIP, crate::tuning::WALKER, crate::tuning::SUIT, crate::tuning::CAMERA, crate::controls::BINDINGS, crate::tuning::GRAB].map(String::from).to_vec();
+        let loaded = [crate::tuning::SHIP, crate::tuning::WALKER, crate::tuning::SUIT, crate::tuning::CAMERA, crate::controls::BINDINGS, crate::tuning::GRAB, crate::tuning::HUD].map(String::from).to_vec();
         HotReload { dir, loaded, next: Instant::now(), reloads: 0, last_error: None }
     }
 
@@ -44,6 +44,7 @@ fn parse(texts: &[String]) -> Result<(Tuning, Bindings), String> {
             suit: walker_core::SuitConfig::from_json(&texts[2])?,
             camera: flight_core::camera::CameraTuning::from_json(&texts[3])?,
             grab: grab_core::GrabConfig::from_json(&texts[5])?,
+            hud: crate::hud::HudTuning::from_json(&texts[6])?,
         },
         Bindings::from_json(&texts[4])?,
     ))

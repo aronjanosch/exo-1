@@ -1,9 +1,10 @@
 //! `planet-look` scenario (#63): for every planet in `content/system/system.json` an atlas
 //! (equirectangular height, biome, landform and scatter maps) and the bake statistics, and in a
 //! window a screenshot from each fixed viewpoint of `content/look/viewpoints.json`. Same seed,
-//! same spots, same sun: two runs compare side by side.
+//! same spots, same sun: two runs compare side by side. The `times` shots (#48) stop the clock at
+//! a time of day (noon, dusk, night) and use its sun instead of the fixed one.
 //!
-//! Output: `<out>/look/<planet>/atlas-<layer>.png`, `stats.json`, `<viewpoint>.png`.
+//! Output: `<out>/look/<planet>/atlas-<layer>.png`, `stats.json`, `<viewpoint>.png`, `<time>.png`.
 use crate::env::{from_v3, to_v3, PlanetRes};
 use crate::ring::Ring;
 use crate::scenario::{check, place_walker, teleport_ship, wait, Ctx, Step};
@@ -15,7 +16,7 @@ use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use planet_core::look::walk;
-use planet_core::{AtlasLayer, Viewpoint, Viewpoints};
+use planet_core::{AtlasLayer, TimeShot, Viewpoint, Viewpoints};
 use std::path::{Path, PathBuf};
 use warp_core::PlanetId;
 
@@ -87,11 +88,7 @@ fn sun_for(vps: &Viewpoints, vp: &Viewpoint, pos: DVec3, rot: DQuat, centre: DVe
 }
 
 fn set_sun(w: &mut World, towards: DVec3) {
-    let mut q = w.query::<(&DirectionalLight, &mut Transform)>();
-    for (_, mut t) in q.iter_mut(w) {
-        let up = if towards.y.abs() < 0.99 { DVec3::Y } else { DVec3::X };
-        t.rotation = walker_core::look_rot(-towards, up).as_quat();
-    }
+    w.resource_mut::<crate::daynight::Sun>().fixed = Some(towards);
 }
 
 /// Atlas and statistics of every planet (a fresh bake from its recipe, as the game loads it).
@@ -137,7 +134,7 @@ fn atlas_step(out: PathBuf, vps: Viewpoints) -> Step {
 
 /// Bring the simulation to planet `i`: the parked ship into its frame zone (the swap follows),
 /// then back onto its ground at the spawn direction.
-fn go_to(i: usize) -> Step {
+pub(crate) fn go_to(i: usize) -> Step {
     Box::new(move |w, c| {
         let id = PlanetId(i as u8);
         if w.resource::<PlanetRes>().id == id {
@@ -163,12 +160,27 @@ fn settled(w: &World) -> bool {
         && w.get_resource::<crate::scatter::ScatterView>().is_none_or(|s| s.pending == 0)
 }
 
+/// Clock time of a time-of-day shot over the spot `ground` (unit, planet space), or None when
+/// the sun never gets there.
+fn shot_time(w: &World, pl: &PlanetRes, ground: DVec3, ts: &TimeShot) -> Option<f64> {
+    let recipe = &w.resource::<SystemRes>().0.planet(pl.id).recipe;
+    let (ps, _) = w.resource::<crate::daynight::DayNightRes>().0.planet(recipe).ok()?;
+    let from = w.resource::<crate::daynight::DayClock>().t;
+    match (ts.hour, ts.sun_elevation_deg) {
+        (Some(h), _) => ps.time_for_hour(ground, h, from),
+        (None, Some(e)) => ps.time_for_elevation(ground, e, ts.evening, from),
+        (None, None) => None,
+    }
+}
+
 /// One viewpoint: camera and sun there, walker on the spot, wait for the terrain, hold, shoot.
-fn shoot(out: PathBuf, vps: Viewpoints, k: usize) -> Step {
+/// With `time` the sun is the clock's, stopped at that time of day, and the shot is `<time id>.png`.
+fn shoot(out: PathBuf, vps: Viewpoints, k: usize, time: Option<TimeShot>) -> Step {
     Box::new(move |w, c: &mut Ctx| {
         let vp = &vps.viewpoints[k];
         let pl = w.resource::<PlanetRes>().clone();
         let name = w.resource::<SystemRes>().0.planet(pl.id).name.clone();
+        let shot_id = time.as_ref().map_or(vp.id.clone(), |t| t.id.clone());
         if c.t == 0.0 {
             let Some((pos, rot, ground)) = camera_pose(&pl, vp) else {
                 let line = format!("look {name} {}: SKIP, the planet has no spot '{}'", vp.id, vp.spot);
@@ -176,8 +188,19 @@ fn shoot(out: PathBuf, vps: Viewpoints, k: usize) -> Step {
                 c.report.push(line);
                 return true;
             };
+            if let Some(ts) = &time {
+                let Some(t) = shot_time(w, &pl, ground, ts) else {
+                    let line = format!("look {name} {}: SKIP, the sun never gets there at '{}'", ts.id, vp.id);
+                    println!("{line}");
+                    c.report.push(line);
+                    return true;
+                };
+                w.resource_mut::<crate::daynight::Sun>().fixed = None;
+                *w.resource_mut::<crate::daynight::DayClock>() = crate::daynight::DayClock { t, rate: 0.0 };
+            } else {
+                set_sun(w, sun_for(&vps, vp, pos, rot, pl.centre));
+            }
             w.resource_mut::<ViewState>().look = Some((pos, rot));
-            set_sun(w, sun_for(&vps, vp, pos, rot, pl.centre));
             place_walker(w, pl.centre + ground * pl.surface(ground));
             c.v.insert("look_stage", 0.0);
             c.v.insert("look_t", 0.0);
@@ -190,7 +213,7 @@ fn shoot(out: PathBuf, vps: Viewpoints, k: usize) -> Step {
         if stage == 0.0 && (c.t > 1.0 && settled(w) || c.t > SETTLE_LIMIT) {
             c.v.insert("look_stage", 1.0);
             c.v.insert("look_t", c.t);
-            c.phase = format!("look {} {}", name.to_lowercase(), vp.id);
+            c.phase = format!("look {} {}", name.to_lowercase(), shot_id);
         } else if stage == 1.0 && c.t - c.v["look_t"] >= HOLD_SECS {
             use bevy::render::view::screenshot::{save_to_disk, Screenshot};
             if let Some(sv) = w.get_resource::<crate::scatter::ScatterView>() {
@@ -200,7 +223,13 @@ fn shoot(out: PathBuf, vps: Viewpoints, k: usize) -> Step {
             }
             let dir = planet_dir(&out, &name);
             let _ = std::fs::create_dir_all(&dir);
-            let path = dir.join(format!("{}.png", vp.id));
+            let path = dir.join(format!("{shot_id}.png"));
+            let sun = w.resource::<crate::daynight::Sun>();
+            if time.is_some() {
+                let line = format!("look {name} {shot_id}: hour {:.2}, sun {:.1} deg, sun {:.0} lux, night light {:.0} lux, ambient {:.0}, {}", sun.hour.unwrap_or(f64::NAN), sun.elevation_deg, sun.light.sun_lux, sun.light.night_lux, sun.light.ambient, path.display());
+                println!("{line}");
+                c.report.push(line);
+            }
             w.spawn(Screenshot::primary_window()).observe(save_to_disk(path));
             c.v.insert("look_stage", 2.0);
             c.v.insert("look_t", c.t);
@@ -239,11 +268,20 @@ pub fn steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool) {
             if !only_vps.is_empty() && !only_vps.contains(&vps.viewpoints[k].id) {
                 continue;
             }
-            s.push(shoot(out.clone(), vps.clone(), k));
+            s.push(shoot(out.clone(), vps.clone(), k, None));
+        }
+        for ts in &vps.times {
+            if !only_vps.is_empty() && !only_vps.contains(&ts.id) {
+                continue;
+            }
+            let k = vps.viewpoints.iter().position(|v| v.id == ts.viewpoint).expect("validated");
+            s.push(shoot(out.clone(), vps.clone(), k, Some(ts.clone())));
         }
     }
     s.push(Box::new(move |w, c| {
         w.resource_mut::<ViewState>().look = None;
+        w.resource_mut::<crate::daynight::Sun>().fixed = None;
+        w.resource_mut::<crate::daynight::DayClock>().rate = 1.0;
         let shots = c.v.get("look_shots").copied().unwrap_or(0.0) as usize;
         check(c, shots > 0, format!("look: {shots} screenshots for {n} planets"));
         true

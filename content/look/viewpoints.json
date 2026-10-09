@@ -1,8 +1,13 @@
 {
-  "_comment": "Fixed viewpoints of the planet-look scenario (#63). Same spots, same sun, same seed: two runs compare side by side. Spots come from the planet (Planet::spot). hill = about 200 m up (1.5 km horizon), ground = eye height 1.7 m (143 m horizon). Test values.",
+  "_comment": "Fixed viewpoints of the planet-look scenario (#63). Same spots, same sun, same seed: two runs compare side by side. 'times': time-of-day shots (#48) from one viewpoint on the clock's sun (content/daynight/daynight.json). Spots come from the planet (Planet::spot). hill = about 200 m up (1.5 km horizon), ground = eye height 1.7 m (143 m horizon). Test values.",
   "sun_elevation_deg": 35.0,
   "sun_azimuth_deg": 120.0,
   "atlas_width": 1024,
+  "times": [
+    { "id": "noon", "viewpoint": "basin-hill", "hour": 12.0 },
+    { "id": "dusk", "viewpoint": "basin-hill", "sun_elevation_deg": -2.0, "evening": true },
+    { "id": "night", "viewpoint": "basin-hill", "hour": 0.0 }
+  ],
   "viewpoints": [
     { "id": "orbit-a", "spot": "orbit", "height_m": 16000.0, "from": [0.35, 0.55, 0.75] },
     { "id": "orbit-b", "spot": "orbit", "height_m": 16000.0, "from": [-0.6, -0.2, -0.75] },

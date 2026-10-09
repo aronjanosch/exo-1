@@ -22,6 +22,7 @@
   "warp": ["KeyJ", "Pad:West"],
   "decoupled": ["KeyC", "Pad:DPadLeft"],
   "debug_hud": ["F3"],
+  "boost_mode": ["F6"],
   "mouse": {
     "ship_mode": "vjoy",
     "ship_sensitivity": 0.002,

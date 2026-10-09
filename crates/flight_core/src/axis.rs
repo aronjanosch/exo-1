@@ -163,7 +163,7 @@ impl ShipController {
     /// lag and for terrain rising under the ship).
     pub const DESCENT_RESERVE: f64 = 0.6;
 
-    /// One physics step (Godot's `_integrate_forces`). Returns the new linear and angular
+    /// One physics step. Returns the new linear and angular
     /// velocity; the caller writes them to the body before integration.
     pub fn step(&mut self, body: &BodyState, input: &FlightInput, env: &impl PlanetEnv, dt: f64) -> (DVec3, DVec3) {
         let (input, strength) = self.begin_step(input, dt);

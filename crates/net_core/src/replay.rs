@@ -1,6 +1,6 @@
 //! Replay matrix of spike 4 without sockets: a recorded 60 Hz path of one player (ship and
 //! walker) goes through encode, fault-injected links, decode, buffer and playout, and the shown
-//! pose is compared with the sender's path at the same delayed timestamp. Port of test.gd.
+//! pose is compared with the sender's path at the same delayed timestamp.
 use crate::buffer::{between, Buffer, Mode};
 use crate::link::Link;
 use crate::metrics::{mean, percentile, rms};

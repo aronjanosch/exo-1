@@ -1,5 +1,5 @@
 //! One-way artificial delay, jitter and loss in the snapshot layer, receiver side and after the
-//! real transport (port of link.gd). Own deterministic RNG, so no dependency.
+//! real transport. Own deterministic RNG, so no dependency.
 use std::collections::VecDeque;
 
 /// splitmix64: small, deterministic, good enough for loss and jitter.

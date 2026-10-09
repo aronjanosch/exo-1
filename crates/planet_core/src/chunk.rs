@@ -45,7 +45,7 @@ impl Planet {
         let r = self.radius;
         let step = size / GRID as f64;
         let centre_dir = cube_to_sphere(face, a0 + size * 0.5, b0 + size * 0.5);
-        // exactly representable in f32, so the mesh node position in Godot is exact
+        // exactly representable in f32, so the mesh's f32 position is exact
         let c64 = centre_dir * r;
         let centre = v3(c64.x as f32 as f64, c64.y as f32 as f64, c64.z as f32 as f64);
         let edge_m = self.chunk_edge_m(face, a0, b0, size);

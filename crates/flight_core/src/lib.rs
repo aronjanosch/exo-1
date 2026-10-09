@@ -1,7 +1,6 @@
-//! flight_core: the assisted-flight ship controller and the arcade planet field,
-//! ported from the Godot spikes (`spikes/planet/ship.gd`, `planet_field.gd`,
-//! `main.gd`). Plain Rust, f64, glam; no Bevy types. Godot conventions: Y up,
-//! -Z forward, right-handed, angular velocity in world space.
+//! flight_core: the assisted-flight ship controller and the arcade planet field. Plain Rust,
+//! f64, glam; no Bevy types. Conventions: Y up, -Z forward, right-handed, angular velocity in
+//! world space.
 //!
 //! All numbers are spike test values (assumptions for testing, not design).
 pub mod axis;
@@ -13,11 +12,11 @@ pub use axis::{AxisState, Dirs, GSafety, Precision, Rot, SpaceCaps, G0};
 use glam::{DQuat, DVec2, DVec3};
 use serde::Deserialize;
 
-/// Godot's chase camera sits at (0, 5.5, 17) in ship space, pitched by this.
+/// The chase camera sits at (0, 5.5, 17) in ship space, pitched by this.
 pub const CHASE_CAMERA_PITCH_DEG: f64 = -10.0;
 pub const CHASE_CAMERA_OFFSET: DVec3 = DVec3::new(0.0, 5.5, 17.0);
 
-/// Godot's `smoothstep`: Hermite step, clamped.
+/// Hermite step, clamped.
 pub fn smoothstep(from: f64, to: f64, x: f64) -> f64 {
     if (from - to).abs() < 1e-9 {
         return if x <= from { 0.0 } else { 1.0 };
@@ -26,7 +25,7 @@ pub fn smoothstep(from: f64, to: f64, x: f64) -> f64 {
     s * s * (3.0 - 2.0 * s)
 }
 
-/// Godot's `Vector3.limit_length`.
+/// `v` shortened to at most `max`, direction kept.
 pub fn limit_length(v: DVec3, max: f64) -> DVec3 {
     let l = v.length();
     if l > 0.0 && max < l { v / l * max } else { v }
@@ -314,7 +313,7 @@ pub struct FlightInput {
     pub roll: f64,
     pub boost: bool,
     pub brake: bool,
-    /// Mouse movement accumulated this step, radians (Godot's `_mouse`): x yaw, y pitch.
+    /// Mouse movement accumulated this step, radians: x yaw, y pitch.
     pub mouse: DVec2,
     /// Stick deflection -1..1: x pitch (nose up), y yaw (nose left); turns at deflection times
     /// `turn_rate` (virtual-joystick mouse, pad).

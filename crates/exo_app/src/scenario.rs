@@ -2034,6 +2034,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "crate-carry" => crate::cargo_scenario::crate_carry_steps(&mut s),
         // #84: lock grid: locked, loose and blocked crates through hard acceleration and a warp.
         "crate-lock" => crate::cargo_scenario::crate_lock_steps(&mut s, out_dir, windowed),
+        // #85: object budget: cap, sleep, persistence cap over a planet swap, timeout, distance.
+        "crate-budget" => crate::cargo_scenario::crate_budget_steps(&mut s, out_dir, windowed),
         // #63: fixed viewpoints and an atlas per planet (headless: atlas and statistics only).
         "planet-look" => crate::look::steps(&mut s, out_dir, windowed),
         // #70: walk from outside into a site; the walker stands on its flattened ground.

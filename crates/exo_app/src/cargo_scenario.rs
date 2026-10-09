@@ -610,3 +610,141 @@ pub fn crate_lock_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool
         true
     }));
 }
+
+fn crate_count(w: &mut World) -> usize {
+    w.query::<&Crate>().iter(w).count()
+}
+
+fn budget_row(w: &World) -> grab_core::budget::BudgetRow {
+    w.resource::<crate::cargo::ObjectBudget>().0.crates
+}
+
+/// Spawns `n` small crates on the ground in rows 6 m ahead of the walker, one per tick from
+/// `c.v["spawned"]` on; true when all are out.
+fn spawn_rows(w: &mut World, c: &mut Ctx, n: usize) -> bool {
+    let i = c.v.get("spawned").copied().unwrap_or(0.0) as usize;
+    if i >= n {
+        return true;
+    }
+    let f = ship_frame_of(w);
+    let (p, fwd) = with_player(w, |pl| (pl.world_pos(f), pl.w.forward));
+    let up = planet(w).up(p);
+    let side = fwd.cross(up);
+    let at = p + fwd * (6.0 + (i / 6) as f64 * 1.2) + side * ((i % 6) as f64 * 1.2 - 3.0);
+    let e = ground_crate(w, "small", at);
+    c.v.insert("spawned", (i + 1) as f64);
+    if i == 0 {
+        c.v.insert("first", e.to_bits() as f64);
+    }
+    c.v.insert("last", e.to_bits() as f64);
+    false
+}
+
+/// #85: past the cap, sleeping at rest, a planet swap keeps the persistence cap, the timeout and
+/// the distance rule.
+pub fn crate_budget_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
+    s.push(Box::new(|w, c| {
+        clear_crates(w);
+        walker_on_ground(w);
+        c.v.remove("spawned");
+        begin(w, c, "crate-budget: spawn 30 crates, cap 24");
+        true
+    }));
+    s.push(Box::new(|w, c| {
+        let n = budget_row(w).cap + 6;
+        spawn_rows(w, c, n)
+    }));
+    s.push(wait(0.1));
+    s.push(Box::new(|w, c| {
+        let cap = budget_row(w).cap;
+        let n = crate_count(w);
+        let (first, last) = (crate_e(c, "first"), crate_e(c, "last"));
+        let (first_alive, last_alive) = (w.get::<Crate>(first).is_some(), w.get::<Crate>(last).is_some());
+        let despawned = w.resource::<CargoStats>().despawned;
+        end(w, c, format!("{n} crates alive after spawning {}, {despawned} removed; first spawned alive {first_alive}, last {last_alive}", cap + 6));
+        check(c, n == cap && !first_alive && last_alive, format!("crate-budget: spawning past the cap keeps {n} crates (cap {cap}), the longest untouched went first"));
+        true
+    }));
+    s.push(wait(2.0));
+    s.push(Box::new(|w, c| {
+        let asleep = w.query::<&Crate>().iter(w).filter(|c| c.body.asleep).count();
+        let n = crate_count(w);
+        c.v.insert("steps0", w.resource::<CargoStats>().steps as f64);
+        check(c, asleep == n, format!("crate-budget: all {n} crates at rest sleep ({asleep})"));
+        true
+    }));
+    s.push(wait(0.5));
+    s.push(Box::new(|w, c| {
+        let steps = w.resource::<CargoStats>().steps as f64 - c.v["steps0"];
+        check(c, steps == 0.0, format!("crate-budget: sleeping crates cost no steps ({steps} crate steps in 0.5 s)"));
+        true
+    }));
+    // Leave them on Hearth: warp to Cinder.
+    s.push(Box::new(|w, _| {
+        put_at_seat(w);
+        true
+    }));
+    s.extend(sit());
+    s.push(warp_flight("crate-budget: warp Hearth -> Cinder", "crate-budget", Some(HEARTH), CINDER, Flight::Seated, dir.to_path_buf(), windowed));
+    s.push(wait_drive_idle());
+    s.push(Box::new(|w, c| {
+        let n = crate_count(w);
+        let keep = budget_row(w).persistence_cap;
+        let frozen = w.resource::<CargoStats>().frozen;
+        let on_hearth = w.query::<&Crate>().iter(w).filter(|c| c.planet == Some(HEARTH)).count();
+        check(c, n == keep && on_hearth == keep && frozen > 0, format!("crate-budget: after the swap {n} crates are left on Hearth (persistence cap {keep}), frozen ({frozen} skipped steps)"));
+        // Down on Cinder, walker outside.
+        let pl = planet(w);
+        let up = DVec3::Y;
+        teleport_ship(w, pl.centre + up * (pl.surface(up) + 40.0), crate::ship::basis_for_up(up));
+        true
+    }));
+    s.push(wait(1.0));
+    s.push(land("crate-budget: land on Cinder"));
+    s.push(Box::new(|w, _| {
+        tap(w, KeyCode::KeyF);
+        true
+    }));
+    s.push(wait(0.3));
+    s.push(Box::new(|w, c| {
+        walker_on_ground(w);
+        c.v.remove("spawned");
+        // Test hook: a short timeout.
+        w.resource_mut::<crate::cargo::ObjectBudget>().0.crates.timeout_s = 2.0;
+        begin(w, c, "crate-budget: timeout on Cinder");
+        true
+    }));
+    s.push(wait(0.3));
+    s.push(Box::new(|w, c| spawn_rows(w, c, 3)));
+    s.push(wait(1.0));
+    s.push(Box::new(|w, c| {
+        let n = crate_count(w);
+        check(c, n == budget_row(w).persistence_cap + 3, format!("crate-budget: three fresh crates on Cinder before the timeout ({n} in all)"));
+        true
+    }));
+    s.push(wait(2.5));
+    s.push(Box::new(|w, c| {
+        let n = crate_count(w);
+        let on_cinder = w.query::<&Crate>().iter(w).filter(|c| c.planet == Some(CINDER)).count();
+        end(w, c, format!("{n} crates left, {on_cinder} on Cinder"));
+        check(c, on_cinder == 0 && n == budget_row(w).persistence_cap, format!("crate-budget: untouched crates resting on Cinder went after the timeout; the {n} frozen on Hearth stay"));
+        w.resource_mut::<crate::cargo::ObjectBudget>().0 = crate::cargo::ObjectBudget::default().0;
+        true
+    }));
+    // A crate falling far above every player and ship goes (distance rule for moving crates).
+    s.push(Box::new(|w, c| {
+        let p = player_world(w);
+        let up = planet(w).up(p);
+        let e = ground_crate(w, "small", p);
+        let far = budget_row(w).far_m + 500.0;
+        w.get_mut::<Crate>(e).unwrap().body.pos = p + up * far;
+        c.v.insert("far", e.to_bits() as f64);
+        true
+    }));
+    s.push(wait(0.2));
+    s.push(Box::new(|w, c| {
+        let gone = w.get::<Crate>(crate_e(c, "far")).is_none();
+        check(c, gone, format!("crate-budget: a crate falling {:.0} m above the walker went", budget_row(w).far_m + 500.0));
+        true
+    }));
+}

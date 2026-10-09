@@ -11,10 +11,12 @@ Phase 1, `feat/milestone-c-grab`:
 - [x] #82 interaction: one verb, one prompt
 - [x] #83 grab in the game: hands and the grab tool
 - [x] #84 lock grid in the cabin
-- [ ] #85 object budget
+- [x] #85 object budget
 - not in this run: #86 (network)
 
-Phase 2, `night/extras`: not started.
+Phase 1 done 2026-10-09 03:2x (all six issues commented, none closed). Gate on the tip of `feat/milestone-c-grab`: `cargo t` exit 0, `cargo scenario` exit 0.
+
+Phase 2, `night/extras`: see the checklist there (branched from the tip of `feat/milestone-c-grab`).
 
 ## Architecture choice (read this first)
 
@@ -107,3 +109,21 @@ Open points:
 - Locked crates add no mass to the ship; loose crates do not push it.
 - The inertia ignores the ship's turning (no centrifugal push) and the vertical part (cabin gravity holds crates down).
 - Plate area and size, the 40 m/s² cap and the ramp field are guesses.
+
+## #85 object budget
+
+What: `content/cargo/budget.json` (one row per category; crates only): cap 24, persistence cap 4, timeout 900 s, distance 3000 m. Pure rules in `grab_core::budget::over_budget` (test-first, 4 tests); `cargo::budget_step` runs after `crate_step` and despawns what they return. Rules: held, locked and cabin crates never go. A loose crate resting on the players' planet goes after the timeout untouched; a loose crate still moving goes beyond the distance from every player and ship. Crates on a planet the players left are frozen (not stepped, `CargoStats::frozen`) and only the persistence cap of them stays, most recently touched first. Over the cap the loose ones go, those left behind first, then the longest untouched. Every crate remembers its planet and when it was last touched (grab).
+
+Design gap, my starting rule (`TODO(initiator)`): **the distance rule only removes crates that are moving** (drifting in space, falling). Crates resting on a planet obey the timeout and, once the players leave, the persistence cap. Otherwise every crate left on a planet would go as soon as the players fly 3 km away, and the persistence cap would never apply. Left-behind crates come back to life when the players return to that planet (they are still entities in world space); nothing is saved to disk (#38).
+
+Found and fixed on the way (`grab_core::CrateBody`): crates resting on sloped terrain never slept. Friction only acted on the horizontal velocity, and each tick the ground turned gravity into a 0.07 m/s creep downhill. Friction now works against the floor normal (static up to friction x normal force, then kinetic). New test: on a 20.6 degree slope (friction angle 26.6) a crate creeps 0.000 m and sleeps; on 34.6 degrees it slides 14.3 m in 3 s.
+
+Checks, scenario `crate-budget` (new, in `cargo t`):
+- 30 crates spawned against cap 24: 24 alive, the first spawned (longest untouched) went, the last stays.
+- all 24 at rest sleep; 0 crate steps in 0.5 s.
+- warp Hearth -> Cinder: 4 crates left on Hearth (persistence cap 4), frozen (2804 skipped steps).
+- on Cinder with the timeout shortened to 2 s (test hook): three fresh crates there before, gone after; the 4 on Hearth stay.
+- a crate placed 3500 m above the walker (falling) goes.
+- 0 failures. Numbers are counts only (no frame times on this machine).
+
+Open points: one category (crates); the budget counts only the local player and the own ship as "players and ships" (#86 adds the others).

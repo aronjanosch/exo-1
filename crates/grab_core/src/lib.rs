@@ -5,10 +5,13 @@
 //! - `CrateTable`: the standard crate sizes (`content/cargo/crates.json`).
 //! - Hold: a velocity servo towards a hold point with a force cap per holder and a speed cap
 //!   that falls with mass, so heavy crates lag. Several holders add their caps (shared carry).
+//! - `budget`: which loose objects go (cap, persistence cap, timeout, distance), #85.
 //! - `CrateBody`: a box that falls, slides with friction and sleeps at rest, moved by sweeps
 //!   through a `BoxWorld`. It lives in a frame like the walker (planet or ship cabin).
 //!
 //! All values are starting points for the playtest (`TODO(initiator)` in the data).
+pub mod budget;
+
 use glam::{DMat3, DQuat, DVec3};
 use serde::Deserialize;
 use walker_core::{Frame, Hit};
@@ -144,7 +147,7 @@ impl GrabConfig {
 
 /// Parses a tuning object: every field required, unknown fields rejected, except an optional
 /// `_comment` string. Same rule as `walker_core` and `flight_core`.
-fn parse_tuning<T: serde::de::DeserializeOwned>(what: &str, s: &str) -> Result<T, String> {
+pub(crate) fn parse_tuning<T: serde::de::DeserializeOwned>(what: &str, s: &str) -> Result<T, String> {
     let mut v: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("{what}: {e}"))?;
     if let Some(o) = v.as_object_mut()
         && let Some(c) = o.remove("_comment")
@@ -313,6 +316,8 @@ pub struct CrateBody {
     /// Up of the frame at the crate, frame coordinates (last step's).
     pub up: DVec3,
     pub grounded: bool,
+    /// Normal of the floor it stood on in the last step, frame coordinates.
+    pub floor_normal: DVec3,
     /// Touched anything in the last step.
     pub contact: bool,
     pub asleep: bool,
@@ -324,7 +329,7 @@ const SLIDES: usize = 4;
 
 impl CrateBody {
     pub fn new(size: &CrateSize, pos: DVec3, forward: DVec3) -> CrateBody {
-        CrateBody { half: size.half(), mass: size.mass, pos, vel: DVec3::ZERO, forward, up: DVec3::Y, grounded: false, contact: false, asleep: false, rest_t: 0.0 }
+        CrateBody { half: size.half(), mass: size.mass, pos, vel: DVec3::ZERO, forward, up: DVec3::Y, grounded: false, floor_normal: DVec3::Y, contact: false, asleep: false, rest_t: 0.0 }
     }
 
     /// Orientation in the frame: -z along `forward`, +y along `up`.
@@ -378,24 +383,29 @@ impl CrateBody {
         self.contact = push.length_squared() > 0.0;
         self.pos += frame.rot.inverse() * push;
 
-        // Gravity and the vertical part of the rest; on a floor the horizontal part fights friction.
-        let a_up = accel.dot(up);
-        let a_h = accel - up * a_up;
-        let v_up = self.vel.dot(up);
-        let mut v_h = self.vel - up * v_up;
-        if self.grounded && gravity > 0.0 {
-            let limit = cfg.friction * gravity;
-            if v_h.length() < 1e-3 && a_h.length() <= limit {
-                v_h = DVec3::ZERO;
-            } else {
-                v_h += a_h * dt;
-                let s = v_h.length();
-                v_h = if s > limit * dt { v_h * (1.0 - limit * dt / s) } else { DVec3::ZERO };
+        // On a floor, everything pulling along it fights friction against the floor's push
+        // (Coulomb: static up to friction x normal force, then kinetic). Without a floor, free.
+        let a = accel - up * gravity;
+        let n = self.floor_normal;
+        let pressing = -a.dot(n);
+        if self.grounded && gravity > 0.0 && pressing > 0.0 {
+            let limit = cfg.friction * pressing;
+            let a_t = a + n * pressing;
+            let v_n = self.vel.dot(n);
+            let mut v_t = self.vel - n * v_n;
+            if v_t.length() < 1e-2 && a_t.length() <= limit {
+                // Held by static friction: no move at all this step.
+                self.vel = DVec3::ZERO;
+                self.contact = true;
+                return self.settle(cfg, turn, dt);
             }
+            v_t += a_t * dt;
+            let s = v_t.length();
+            v_t = if s > limit * dt { v_t * (1.0 - limit * dt / s) } else { DVec3::ZERO };
+            self.vel = v_t + n * (v_n - pressing * dt);
         } else {
-            v_h += a_h * dt;
+            self.vel += a * dt;
         }
-        self.vel = v_h + up * (v_up + (a_up - gravity) * dt);
 
         self.grounded = false;
         let mut motion = self.vel * dt;
@@ -415,13 +425,23 @@ impl CrateBody {
             let n = frame.rot.inverse() * hit.normal;
             if n.dot(up) > 0.64 {
                 self.grounded = true;
+                self.floor_normal = n;
             }
             let rest = motion - dir * travel;
             motion = rest - n * rest.dot(n).min(0.0);
             self.vel -= n * self.vel.dot(n).min(0.0);
         }
 
-        let still = self.vel.length() < cfg.sleep_speed && turn == 0.0 && (self.grounded || gravity == 0.0);
+        if !(self.grounded || gravity == 0.0) {
+            self.rest_t = 0.0;
+            return;
+        }
+        self.settle(cfg, turn, dt);
+    }
+
+    /// Counts time at rest (on a floor or weightless); after `sleep_time` the crate sleeps.
+    fn settle(&mut self, cfg: &GrabConfig, turn: f64, dt: f64) {
+        let still = self.vel.length() < cfg.sleep_speed && turn == 0.0;
         self.rest_t = if still { self.rest_t + dt } else { 0.0 };
         if self.rest_t >= cfg.sleep_time {
             self.asleep = true;

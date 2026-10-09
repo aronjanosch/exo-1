@@ -247,7 +247,7 @@ pub fn build_app(o: &Options) -> App {
     }
     app.add_plugins(origin::plugin);
     app.insert_resource(SpawnOffset(o.spawn_offset));
-    app.init_resource::<cargo::Crates>().init_resource::<cargo::CargoStats>().init_resource::<grab::Grab>().init_resource::<cargo::LockGrid>().init_resource::<interact::Interaction>();
+    app.init_resource::<cargo::Crates>().init_resource::<cargo::CargoStats>().init_resource::<grab::Grab>().init_resource::<cargo::LockGrid>().init_resource::<cargo::ObjectBudget>().init_resource::<interact::Interaction>();
     let test_crates = o.scenario.is_none() || o.scenario.as_deref() == Some("full");
     app.add_systems(Startup, move |mut commands: Commands, planet: Res<env::PlanetRes>, tuning: Res<tuning::Tuning>, off: Res<SpawnOffset>, crates: Res<cargo::Crates>| {
         walker::spawn_player(&mut commands, &planet, &tuning.walker, off.0);
@@ -260,7 +260,7 @@ pub fn build_app(o: &Options) -> App {
     });
     app.add_systems(
         FixedUpdate,
-        (scenario::run_script.run_if(resource_exists::<scenario::Script>), controls::resolve_actions, warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, interact::interaction, walker::walker_step, grab::grab_step, cargo::crate_step, ship::camera_fx).chain(),
+        (scenario::run_script.run_if(resource_exists::<scenario::Script>), controls::resolve_actions, warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, interact::interaction, walker::walker_step, grab::grab_step, cargo::crate_step, cargo::budget_step, ship::camera_fx).chain(),
     );
     app.add_systems(FixedLast, (controls::drop_taps, cargo::record_crate_interp));
     app.add_systems(FixedUpdate, cargo::crate_watch.run_if(resource_exists::<cargo::CrateWatch>).after(cargo::crate_step));

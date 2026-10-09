@@ -372,3 +372,115 @@ fn change_frame_keeps_world_pose_and_hands_over_velocity() {
     assert!((ship.to_world(b.pos) - world).length() < 1e-9);
     assert!((ship.rot * b.vel - local_vel_world).length() < 1e-9);
 }
+
+// ---------- object budget (#85) ----------
+
+const BUDGET: &str = include_str!("../../../content/cargo/budget.json");
+
+fn obj(id: u64, idle: f64) -> budget::Obj {
+    budget::Obj { id, protected: false, idle, distance: 10.0, resting: true, here: true }
+}
+
+#[test]
+fn budget_parses_and_rejects() {
+    let b = budget::Budget::from_json(BUDGET).unwrap();
+    assert!(b.crates.cap >= b.crates.persistence_cap);
+    assert!(budget::Budget::from_json(r#"{"crate": {"cap": 4, "persistence_cap": 5, "timeout_s": 1, "far_m": 1}}"#).is_err());
+    assert!(budget::Budget::from_json(r#"{"crate": {"cap": 4, "persistence_cap": 1, "timeout_s": 1}}"#).unwrap_err().contains("far_m"));
+}
+
+#[test]
+fn budget_cap_drops_longest_untouched_loose() {
+    let row = budget::BudgetRow { cap: 3, persistence_cap: 1, timeout_s: 100.0, far_m: 1000.0 };
+    let mut objs: Vec<budget::Obj> = (0..5).map(|i| obj(i, i as f64)).collect();
+    // The longest untouched one is held: it stays, the next two go.
+    objs[4].protected = true;
+    assert_eq!(budget::over_budget(&row, &objs), vec![3, 2]);
+    // All protected: nothing goes, even over the cap.
+    let all: Vec<budget::Obj> = (0..5).map(|i| budget::Obj { protected: true, ..obj(i, 50.0) }).collect();
+    assert!(budget::over_budget(&row, &all).is_empty());
+}
+
+#[test]
+fn budget_timeout_and_far() {
+    let row = budget::BudgetRow { cap: 10, persistence_cap: 1, timeout_s: 100.0, far_m: 1000.0 };
+    let objs = [
+        obj(1, 101.0),
+        obj(2, 99.0),
+        budget::Obj { resting: false, distance: 1001.0, ..obj(3, 0.0) },
+        // Resting far away: only the timeout counts for it.
+        budget::Obj { distance: 5000.0, ..obj(4, 5.0) },
+        budget::Obj { protected: true, ..obj(5, 1000.0) },
+    ];
+    assert_eq!(budget::over_budget(&row, &objs), vec![1, 3]);
+}
+
+#[test]
+fn budget_keeps_persistence_cap_on_a_planet_left_behind() {
+    let row = budget::BudgetRow { cap: 10, persistence_cap: 2, timeout_s: 100.0, far_m: 1000.0 };
+    let mut objs: Vec<budget::Obj> = (0..5).map(|i| budget::Obj { here: false, ..obj(i, 10.0 * i as f64) }).collect();
+    // Left behind, the timeout does not apply: they are frozen.
+    objs[4].idle = 1e6;
+    let mut gone = budget::over_budget(&row, &objs);
+    gone.sort();
+    assert_eq!(gone, vec![2, 3, 4], "the two most recently touched stay");
+    // Over the cap, those left behind go before the ones here (the longer untouched first).
+    let row = budget::BudgetRow { cap: 3, persistence_cap: 2, timeout_s: 100.0, far_m: 1000.0 };
+    let objs = [obj(1, 50.0), obj(2, 60.0), budget::Obj { here: false, ..obj(3, 1.0) }, budget::Obj { here: false, ..obj(4, 2.0) }];
+    assert_eq!(budget::over_budget(&row, &objs), vec![4]);
+}
+
+/// A single plane through the origin with normal `n`: points with p·n >= 0 are free.
+struct Slope {
+    n: DVec3,
+}
+
+impl BoxWorld for Slope {
+    fn sweep(&self, center: DVec3, half: DVec3, rot: DQuat, motion: DVec3) -> Option<walker_core::Hit> {
+        let len = motion.length();
+        let closing = -(motion / len).dot(self.n);
+        if closing <= 1e-12 {
+            return None;
+        }
+        let gap = center.dot(self.n) - support(half, rot, self.n);
+        let d = (gap / closing).max(0.0);
+        (d <= len).then_some(walker_core::Hit { distance: d, normal: self.n, velocity: DVec3::ZERO })
+    }
+    fn depenetrate(&self, center: DVec3, half: DVec3, rot: DQuat) -> DVec3 {
+        let gap = center.dot(self.n) - support(half, rot, self.n);
+        if gap < 0.0 { self.n * -gap } else { DVec3::ZERO }
+    }
+}
+
+/// A crate on a slope: below the friction angle it holds and sleeps, above it slides.
+fn on_slope(deg: f64) -> (CrateBody, f64) {
+    let c = cfg();
+    let n = DQuat::from_rotation_z(deg.to_radians()) * DVec3::Y;
+    let world = Slope { n };
+    let mut b = small_body();
+    b.pos = n * (b.half.y + 0.3);
+    b.forward = DVec3::NEG_Z;
+    let dt = 1.0 / 60.0;
+    let mut start = b.pos;
+    for i in 0..240 {
+        // Measured from 1 s on, after the drop onto the slope.
+        if i == 60 {
+            start = b.pos;
+        }
+        b.step(&c, &walker_core::Frame::IDENTITY, DVec3::Y, G, DVec3::ZERO, 0.0, &world, dt);
+    }
+    let moved = (b.pos - start).length();
+    (b, moved)
+}
+
+#[test]
+fn crate_holds_on_a_gentle_slope_and_slides_on_a_steep_one() {
+    let c = cfg();
+    let angle = c.friction.atan().to_degrees();
+    let (b, moved) = on_slope(angle - 6.0);
+    println!("{:.1} deg slope: moved {moved:.3} m, asleep {}", angle - 6.0, b.asleep);
+    assert!(b.asleep && moved < 1e-3, "holds and sleeps: moved {moved}");
+    let (b, moved) = on_slope(angle + 8.0);
+    println!("{:.1} deg slope: moved {moved:.3} m, asleep {}", angle + 8.0, b.asleep);
+    assert!(!b.asleep && moved > 1.0, "slides: moved {moved}");
+}

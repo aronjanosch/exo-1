@@ -19,6 +19,17 @@ use grab_core::{BoxWorld, CrateBody, CrateTable};
 use walker_core::{Frame, Hit};
 
 pub const CRATES: &str = include_str!("../../../content/cargo/crates.json");
+pub const BUDGET: &str = include_str!("../../../content/cargo/budget.json");
+
+/// The object budget (`content/cargo/budget.json`, #85).
+#[derive(Resource, Clone, Debug)]
+pub struct ObjectBudget(pub grab_core::budget::Budget);
+
+impl Default for ObjectBudget {
+    fn default() -> Self {
+        ObjectBudget(grab_core::budget::Budget::from_json(BUDGET).unwrap_or_else(|e| panic!("cargo: {e}")))
+    }
+}
 
 /// The standard crate sizes (`content/cargo/crates.json`).
 #[derive(Resource, Clone, Debug)]
@@ -43,6 +54,11 @@ pub struct Crate {
     pub turn: f64,
     /// Mag-locked on the cabin's plates (#84): part of the ship, not stepped. Grabbing unlocks.
     pub locked: bool,
+    /// Planet a crate outside any cabin lies on (set on its first step there). Crates on another
+    /// planet than the simulated one are frozen until the players come back (#85).
+    pub planet: Option<warp_core::PlanetId>,
+    /// Simulation time (s) anyone last touched it; None until the budget first sees it.
+    pub touched: Option<f64>,
     /// Gravity at the crate in the last step (m/s², along `-body.up`), for the hold's compensation.
     pub g: f64,
     shape: Collider,
@@ -85,6 +101,10 @@ pub struct CargoStats {
     pub field_stops: u64,
     /// Steps the cabin safety net put a loose crate back inside the walls from more than 2 cm out.
     pub wall_catches: u64,
+    /// Crate steps skipped because the crate lies on a planet the players left.
+    pub frozen: u64,
+    /// Crates the object budget removed.
+    pub despawned: u32,
 }
 
 /// A crate of size `size` at `pos` in its frame (`ship`: the cabin, None: the planet).
@@ -94,7 +114,7 @@ pub fn crate_bundle(table: &CrateTable, size: &str, ship: Option<Entity>, pos: D
     let body = CrateBody::new(s, pos, forward);
     let rot = body.rot();
     (
-        Crate { size: i, shape: Collider::cuboid(s.extents[0], s.extents[1], s.extents[2]), body, ship, push: DVec3::ZERO, turn: 0.0, locked: false, g: 0.0 },
+        Crate { size: i, shape: Collider::cuboid(s.extents[0], s.extents[1], s.extents[2]), body, ship, push: DVec3::ZERO, turn: 0.0, locked: false, planet: None, touched: None, g: 0.0 },
         CrateInterp { prev: (pos, rot), curr: (pos, rot) },
         Transform::default(),
         Visibility::default(),
@@ -311,6 +331,13 @@ pub fn crate_step(
             stats.held += 1;
             continue;
         }
+        if c.ship.is_none() {
+            let here = planet.id;
+            if *c.planet.get_or_insert(here) != here {
+                stats.frozen += 1;
+                continue;
+            }
+        }
         let felt = if c.ship.is_some() { inertia } else { DVec3::ZERO };
         if c.body.asleep && push == DVec3::ZERO && turn == 0.0 && felt.length() <= cfg.friction * c.g {
             stats.asleep += 1;
@@ -351,6 +378,7 @@ pub fn crate_step(
                     let before = c.body.vel;
                     c.body.change_frame(&Frame::IDENTITY, &ship_frame, -sv.0);
                     c.ship = Some(ship_e);
+                    c.planet = None;
                     stats.handovers.push(Handover { crate_e: e, out: false, before, after: sv.0 + ship_frame.rot * c.body.vel, ship_vel: sv.0 });
                 }
             }
@@ -378,6 +406,7 @@ pub fn crate_step(
                     let before = sv.0 + ship_frame.rot * c.body.vel;
                     c.body.change_frame(&ship_frame, &Frame::IDENTITY, sv.0);
                     c.ship = None;
+                    c.planet = Some(planet.id);
                     stats.handovers.push(Handover { crate_e: e, out: true, before, after: c.body.vel, ship_vel: sv.0 });
                 } else if c.body.asleep && push == DVec3::ZERO {
                     // At rest and let go: fully on the plates it locks and becomes part of the ship.
@@ -538,5 +567,47 @@ pub fn update_lock_plates(grid: Res<LockGrid>, mats: Option<Res<PlateMaterials>>
         if m.0 != *want {
             m.0 = want.clone();
         }
+    }
+}
+
+/// Object budget (#85): removes loose crates over the cap, untouched too long, drifting far
+/// away, or beyond the persistence cap on a planet the players left. Held, locked and cabin
+/// crates never go.
+#[allow(clippy::too_many_arguments)]
+pub fn budget_step(
+    mut commands: Commands,
+    time: Res<Time>,
+    planet: Res<PlanetRes>,
+    budget: Res<ObjectBudget>,
+    grab: Res<crate::grab::Grab>,
+    mut stats: ResMut<CargoStats>,
+    players: Query<&crate::walker::Player>,
+    ships: Query<(Entity, &Position, &Rotation), With<Ship>>,
+    floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
+    mut crates: Query<(Entity, &mut Crate)>,
+) {
+    let now = time.elapsed_secs_f64();
+    let Some((ship_e, sp, sr)) = ships.iter().next() else { return };
+    let frame = cabin_frame(ship_e, (sp, sr), &floors);
+    let walker = players.single().map(|p| p.world_pos(frame)).unwrap_or(sp.0);
+    let held = grab.held.map(|h| h.crate_e);
+    let objs: Vec<grab_core::budget::Obj> = crates
+        .iter_mut()
+        .map(|(e, mut c)| {
+            let touched = *c.touched.get_or_insert(now);
+            let (pos, _) = crate_world(&c, &frame);
+            grab_core::budget::Obj {
+                id: e.to_bits(),
+                protected: held == Some(e) || c.locked || c.ship.is_some(),
+                idle: now - touched,
+                distance: pos.distance(walker).min(pos.distance(sp.0)),
+                resting: c.body.asleep,
+                here: c.ship.is_some() || c.planet.is_none_or(|p| p == planet.id),
+            }
+        })
+        .collect();
+    for id in grab_core::budget::over_budget(&budget.0.crates, &objs) {
+        commands.entity(Entity::from_bits(id)).despawn();
+        stats.despawned += 1;
     }
 }

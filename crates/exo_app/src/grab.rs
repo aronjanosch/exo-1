@@ -125,6 +125,7 @@ pub fn grab_step(
     if c.locked {
         c.locked = false;
     }
+    c.touched = Some(time.elapsed_secs_f64());
     let mass = c.body.mass;
     let g = -c.body.up * c.g;
     let out = grab_core::hold_force(cfg, mass, c.body.pos, c.body.vel, g, &[holder]);

@@ -259,3 +259,20 @@ fn dirs_clamp_and_along() {
     assert_eq!(d.clamp(DVec3::new(10.0, 10.0, 10.0)), DVec3::new(4.0, 5.0, 1.0));
     assert_eq!(d.along(DVec3::new(-0.5, 1.0, -1.0)), DVec3::new(-1.0, 5.0, -3.0));
 }
+
+#[test]
+fn switching_mid_flight_keeps_the_velocity() {
+    // 10 s of W with each model, then the other one for one step: no jump past one step of
+    // the largest acceleration either model asks for.
+    for first in [FlightModel::Classic, FlightModel::Axis] {
+        let mut s = Sim::new(500.0, true);
+        s.ship.horizon_follow = true;
+        s.ship.set_model(first);
+        s.run(&scripted(DVec3::NEG_Z), 10.0);
+        let v0 = s.body.lin_vel;
+        s.ship.set_model(first.next());
+        s.step(&scripted(DVec3::NEG_Z));
+        let jump = (s.body.lin_vel - v0).length() / DT;
+        assert!(jump < 80.0, "{first:?} -> {:?}: {jump:.1} m/s² in the switching step (at {:.1} m/s)", first.next(), v0.length());
+    }
+}

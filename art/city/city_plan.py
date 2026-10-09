@@ -391,7 +391,7 @@ PLACEMENTS += [("npc_marker", x, y, 0, 0) for _, x, y in QUESTS]
 FIT = {
     "row_step": "bar", "row_butterfly": "shop", "row_arch": "office", "row_fin": "shop", "row_tower": "office",
     "row_tank": "bar", "row_bulb": "shop", "row_slant": "shop", "row_needle": "office", "row_garage": "workshop",
-    "row_saw": "workshop", "row_twin": "bar", "corner_turret": "bar", "corner_sign": "shop",
+    "row_saw": "workshop", "row_twin": "bar", "corner_turret": "bar", "corner_sign": "shop", "pod_tower": "bar",
 }
 PLACEMENTS = [p if len(p) > 5 or p[0] not in FIT else (*p, {"fit": FIT[p[0]], "role": None}) for p in PLACEMENTS]
 

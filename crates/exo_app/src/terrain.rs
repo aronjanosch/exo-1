@@ -10,6 +10,12 @@ use bevy::prelude::*;
 use bevy::tasks::{block_on, futures_lite::future, AsyncComputeTaskPool, Task};
 use planet_core::{cube_to_sphere, ChunkOut, M};
 
+/// One owner of the terrain: the window, and the headless `swap` scenario (which counts what a swap leaves behind).
+pub fn plugin(app: &mut App) {
+    app.add_systems(Startup, setup_terrain);
+    app.add_systems(Update, update_terrain.in_set(crate::phases::Frame::World));
+}
+
 const SPLIT_FACTOR: f64 = 1.5;
 const MERGE_FACTOR: f64 = 1.8;
 const MAX_UPLOADS_PER_FRAME: usize = 4;

@@ -17,6 +17,12 @@ use std::collections::HashMap;
 use std::net::{SocketAddr, UdpSocket};
 use std::time::Instant;
 
+/// A session can also start later, from the menu: the systems wait for the `Net` resource.
+pub fn plugin(app: &mut App) {
+    app.add_systems(FixedUpdate, net_pre.run_if(resource_exists::<Net>).after(crate::scenario::run_script).in_set(crate::phases::Fx::Input));
+    app.add_systems(FixedLast, net_post.run_if(resource_exists::<Net>));
+}
+
 const TICK_S: f64 = 1.0 / 60.0;
 /// A remote owner without snapshots for this long is removed (spike 4: 2 s).
 const EXPIRY: f64 = 2.0;

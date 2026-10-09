@@ -19,6 +19,11 @@ use bevy::tasks::{block_on, AsyncComputeTaskPool, Task};
 use planet_core::ChunkOut;
 use warp_core::{Abort, Drive, Event, Obstacle, Phase, PlanetDef, PlanetId, ShipView, System};
 
+pub fn plugin(app: &mut App) {
+    // A state machine: the order is the logic.
+    app.add_systems(FixedUpdate, (warp_input, warp_drive, planet_swap, warp_telemetry.run_if(resource_exists::<WarpTelemetry>)).chain().in_set(crate::phases::Fx::Drive));
+}
+
 pub const SYSTEM: &str = include_str!("../../../content/system/system.json");
 
 /// Radius of the sphere other ships block the path with (m).

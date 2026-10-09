@@ -13,6 +13,17 @@ use bevy::window::{CursorGrabMode, CursorOptions};
 use flight_core::Curve;
 use std::collections::{HashMap, HashSet};
 
+pub fn plugin(app: &mut App) {
+    app.init_resource::<Controls>().init_resource::<Actions>().init_resource::<Bindings>();
+    app.add_systems(FixedUpdate, resolve_actions.in_set(crate::phases::Fx::Input));
+    app.add_systems(FixedLast, drop_taps);
+}
+
+/// Window only: the keyboard and mouse into `Controls`.
+pub fn window_plugin(app: &mut App) {
+    app.add_systems(Update, read_input.in_set(crate::phases::Frame::Input));
+}
+
 pub const BINDINGS: &str = include_str!("../../../content/tuning/bindings.json");
 
 /// Raw input, written by the keyboard and mouse (`read_input`) or by a scenario script.

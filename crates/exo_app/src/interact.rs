@@ -13,6 +13,11 @@ use bevy::prelude::*;
 use grab_core::{in_cone, Reach};
 use walker_core::Frame;
 
+pub fn plugin(app: &mut App) {
+    app.init_resource::<Interaction>();
+    app.add_systems(FixedUpdate, interaction.before(crate::walker::walker_step).in_set(crate::phases::Fx::Walker));
+}
+
 /// The walker sits down when its feet are this close to the seat (m), as before #82.
 pub const SEAT_RANGE: f64 = 1.8;
 

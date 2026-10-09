@@ -38,6 +38,26 @@ pub use self::{cargo::*, net::*, swap::*};
 pub(crate) use self::warp::*;
 use self::{figure::*, flight::*, reload::*, space::*, walk::*};
 
+/// The script driver and what single scenarios add (`foreign`, `swap`). Not added without a scenario.
+pub fn plugin(name: &str, headless: bool) -> impl Plugin {
+    let name = name.to_string();
+    move |app: &mut App| {
+        app.add_systems(FixedUpdate, run_script.run_if(resource_exists::<Script>).before(crate::controls::resolve_actions).in_set(crate::phases::Fx::Input));
+        if name == "foreign" {
+            // The remote ship is placed before the controllers read it, after net_pre.
+            app.add_systems(FixedUpdate, net::foreign_drive.run_if(resource_exists::<ForeignDriver>).after(crate::net_live::net_pre).in_set(crate::phases::Fx::Input));
+        }
+        if name == "swap" {
+            // #14: count what a planet swap leaves behind; headless with the terrain too.
+            app.init_resource::<swap::SwapAudit>();
+            app.add_systems(FixedUpdate, swap::swap_audit.after(crate::warp::warp_telemetry).in_set(crate::phases::Fx::Drive));
+            if headless {
+                app.add_systems(Update, swap::headless_view.in_set(crate::phases::Frame::Camera));
+            }
+        }
+    }
+}
+
 pub type Step = Box<dyn FnMut(&mut World, &mut Ctx) -> bool + Send + Sync>;
 
 #[derive(Default)]

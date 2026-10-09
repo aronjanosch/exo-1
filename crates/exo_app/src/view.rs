@@ -15,6 +15,22 @@ use bevy::prelude::*;
 use flight_core::PlanetEnv;
 use warp_core::PlanetId;
 
+/// Window only: the scene, camera, markers and HUD.
+pub fn plugin(app: &mut App) {
+    use crate::phases::{Frame, Fx};
+    app.init_resource::<ViewState>().insert_resource(ClearColor(Color::BLACK));
+    app.add_systems(Startup, setup_view);
+    app.add_systems(Startup, setup_warp_view.after(setup_view));
+    app.add_systems(FixedLast, record_player_view);
+    // Tap consumers: after the clicks are counted (disjoint taps, no order among them).
+    app.add_systems(FixedUpdate, (orbit_toggle, debug_hud_toggle).after(crate::audio::count_clicks).after(crate::controls::resolve_actions).in_set(Fx::Input));
+    app.add_systems(Update, (add_ship_visuals, add_remote_walker_visuals).in_set(Frame::Sync));
+    app.add_systems(Update, update_camera.in_set(Frame::Camera));
+    // After the camera (Frame::Camera): the tunnel and the camera both write `ClearColor`, the tunnel wins.
+    app.add_systems(Update, (update_impostors, update_nav_markers, update_aim_marker, update_tunnel, update_speed_dust).in_set(Frame::World));
+    app.add_systems(Update, (update_hud, update_flight_hud, update_prompt, update_name_tags).in_set(Frame::Hud));
+}
+
 #[derive(Component)]
 pub struct MainCamera;
 

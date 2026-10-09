@@ -8,6 +8,11 @@ use bevy::prelude::*;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
+/// Window only.
+pub fn window_plugin(app: &mut App) {
+    app.add_systems(Update, apply_volume.in_set(crate::phases::Frame::Input));
+}
+
 #[derive(Resource, Clone, Debug, PartialEq)]
 pub struct Settings {
     /// Multiplies the mouse sensitivities of the bindings (ship and walker).

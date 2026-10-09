@@ -181,7 +181,6 @@ pub fn walker_step(
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
     colliders: Query<(Entity, &ColliderOf)>,
     grab: Res<crate::grab::Grab>,
-    crates: Query<&crate::cargo::Crate>,
 ) {
     let dt = time.delta_secs_f64();
     let Ok(mut pl) = players.single_mut() else { return };
@@ -295,9 +294,7 @@ pub fn walker_step(
         mas: &mas,
         shape: Collider::capsule(cfg.radius, cfg.height - 2.0 * cfg.radius),
         half_height: cfg.height * 0.5,
-        // Crates too, except the one in the hands (night extra E2).
-        filter: SpatialQueryFilter::from_mask([Layer::World, Layer::Ship, Layer::Ramp, Layer::Remote, Layer::Crate])
-            .with_excluded_entities(grab.held.and_then(|h| crates.get(h.crate_e).ok()).and_then(|c| c.collider).map(|(e, _)| e)),
+        filter: SpatialQueryFilter::from_mask([Layer::World, Layer::Ship, Layer::Ramp, Layer::Remote]),
         ship_colliders,
         dt,
     };

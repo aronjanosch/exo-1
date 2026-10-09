@@ -59,8 +59,6 @@ pub struct Crate {
     pub planet: Option<warp_core::PlanetId>,
     /// Simulation time (s) anyone last touched it; None until the budget first sees it.
     pub touched: Option<f64>,
-    /// Its collider entity (memberships only, `Layer::Crate`) and the ship it hangs on.
-    pub collider: Option<(Entity, Option<Entity>)>,
     /// Gravity at the crate in the last step (m/s², along `-body.up`), for the hold's compensation.
     pub g: f64,
     shape: Collider,
@@ -116,7 +114,7 @@ pub fn crate_bundle(table: &CrateTable, size: &str, ship: Option<Entity>, pos: D
     let body = CrateBody::new(s, pos, forward);
     let rot = body.rot();
     (
-        Crate { size: i, shape: Collider::cuboid(s.extents[0], s.extents[1], s.extents[2]), body, ship, push: DVec3::ZERO, turn: 0.0, locked: false, planet: None, touched: None, collider: None, g: 0.0 },
+        Crate { size: i, shape: Collider::cuboid(s.extents[0], s.extents[1], s.extents[2]), body, ship, push: DVec3::ZERO, turn: 0.0, locked: false, planet: None, touched: None, g: 0.0 },
         CrateInterp { prev: (pos, rot), curr: (pos, rot) },
         Transform::default(),
         Visibility::default(),
@@ -262,7 +260,7 @@ fn cabin_clamp(b: &mut CrateBody) -> f64 {
 }
 
 /// Snaps a crate resting fully on the grid to the plates: heading to a quarter turn, edges onto
-/// plate lines; its height stays (it may rest on another crate). False if it would not fit.
+/// plate lines. False if the snapped crate would not fit.
 fn snap_to_grid(b: &mut CrateBody) -> bool {
     let f = b.forward - DVec3::Y * b.forward.y;
     let angle = f.x.atan2(-f.z);
@@ -281,6 +279,7 @@ fn snap_to_grid(b: &mut CrateBody) -> bool {
     b.up = DVec3::Y;
     b.pos.x = snap(b.pos.x, ex, GRID_X.0, GRID_X.1);
     b.pos.z = snap(b.pos.z, ez, GRID_Z.0, GRID_Z.1);
+    b.pos.y = FLOOR_Y + b.half.y + 0.006;
     b.vel = DVec3::ZERO;
     true
 }
@@ -316,7 +315,7 @@ pub fn crate_step(
     let mut inertia = ship_frame.rot.inverse() * -accel;
     inertia.y = 0.0;
     let inertia = inertia.clamp_length_max(INERTIA_CAP);
-    let filter = SpatialQueryFilter::from_mask([Layer::World, Layer::Ship, Layer::Ramp, Layer::Crate]);
+    let filter = SpatialQueryFilter::from_mask([Layer::World, Layer::Ship, Layer::Ramp]);
     grid.plates.iter_mut().for_each(|p| *p = Plate::Idle);
     let mut on_plates: Vec<(CrateBody, Plate)> = Vec::new();
     for (e, mut c) in &mut crates {
@@ -348,9 +347,7 @@ pub fn crate_step(
             continue;
         }
         stats.steps += 1;
-        // Other crates count, its own collider does not.
-        let own = c.collider.map(|(e, _)| e);
-        let world = AvianBoxWorld { mas: &mas, shape: &c.shape, filter: filter.clone().with_excluded_entities(own) };
+        let world = AvianBoxWorld { mas: &mas, shape: &c.shape, filter: filter.clone() };
         let (frame, up, g) = match c.ship {
             Some(_) => {
                 let at = ship_frame.to_world(c.body.pos);
@@ -612,63 +609,5 @@ pub fn budget_step(
     for id in grab_core::budget::over_budget(&budget.0.crates, &objs) {
         commands.entity(Entity::from_bits(id)).despawn();
         stats.despawned += 1;
-    }
-}
-
-/// Marks a crate's collider entity, with its crate.
-#[derive(Component)]
-pub struct CrateCollider(pub Entity);
-
-/// Keeps each crate's collider where the crate is (night extra E2): a child of the ship while the
-/// crate is in its cabin (Avian moves it with the hull, one tick behind like the rest), a
-/// standalone collider on the planet. Memberships only: the walker and other crates sweep against
-/// it, nothing gets contacts. Colliders of removed crates go too.
-#[allow(clippy::type_complexity)]
-pub fn sync_crate_colliders(
-    mut commands: Commands,
-    mut crates: Query<(Entity, &mut Crate)>,
-    mut cols: Query<(&mut Position, &mut Rotation, Option<&mut ColliderTransform>), With<CrateCollider>>,
-    owners: Query<(Entity, &CrateCollider)>,
-    ships: Query<(), With<Ship>>,
-) {
-    for (e, mut c) in &mut crates {
-        // A ship that is gone (menu back to start) takes its children along; wait for a new frame.
-        if c.ship.is_some_and(|s| ships.get(s).is_err()) {
-            continue;
-        }
-        let rot = c.body.rot();
-        let pos = c.body.pos;
-        match c.collider {
-            Some((col, ship)) if ship == c.ship => {
-                let Ok((mut p, mut r, ct)) = cols.get_mut(col) else { continue };
-                if ship.is_some() {
-                    // Avian places it from this on its next step (child of the ship's body).
-                    if let Some(mut ct) = ct {
-                        ct.translation = pos;
-                        ct.rotation = Rotation(rot);
-                    }
-                } else {
-                    p.0 = pos;
-                    r.0 = rot;
-                }
-            }
-            old => {
-                if let Some((col, _)) = old {
-                    commands.entity(col).try_despawn();
-                }
-                let layers = CollisionLayers::new(Layer::Crate, LayerMask::NONE);
-                let shape = c.shape.clone();
-                let col = match c.ship {
-                    Some(ship) => commands.spawn((CrateCollider(e), shape, layers, Transform::from_translation(pos.as_vec3()).with_rotation(rot.as_quat()), ChildOf(ship))).id(),
-                    None => commands.spawn((CrateCollider(e), shape, layers, Position(pos), Rotation(rot), Transform::default())).id(),
-                };
-                c.collider = Some((col, c.ship));
-            }
-        }
-    }
-    for (col, owner) in &owners {
-        if crates.get(owner.0).is_err() {
-            commands.entity(col).try_despawn();
-        }
     }
 }

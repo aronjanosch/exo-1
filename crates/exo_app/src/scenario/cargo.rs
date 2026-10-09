@@ -305,11 +305,18 @@ fn carry_walk(size: &'static str, want_speed: fn(&walker_core::WalkerConfig, &gr
             true
         }),
         wait(1.0),
+        // Look ahead before checking the lift: the hold follows the view, and looking down at a
+        // crate on flat ground keeps a heavy one just off the floor (it passed on a 20 degree
+        // slope; the drainage made the spawn flat, #72).
+        Box::new(|w, _| {
+            with_player(w, |p| p.pitch = 0.0);
+            true
+        }),
+        wait(1.0),
         Box::new(move |w, c| {
             let e = crate_e(c, "crate");
             let lifted = crate_above_ground(w, e);
             check(c, held(w) == Some(e) && lifted > 0.15, format!("crate-carry: {size} crate held and lifted ({lifted:.2} m above ground)"));
-            with_player(w, |p| p.pitch = 0.0);
             keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft], true);
             c.v.insert("max_air", 0.0);
             true

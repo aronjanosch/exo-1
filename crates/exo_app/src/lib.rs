@@ -253,7 +253,7 @@ pub fn build_app(o: &Options) -> App {
     let test_crates = o.scenario.is_none() || o.scenario.as_deref() == Some("full");
     app.add_systems(Startup, move |mut commands: Commands, planet: Res<env::PlanetRes>, tuning: Res<tuning::Tuning>, off: Res<SpawnOffset>, crates: Res<cargo::Crates>| {
         walker::spawn_player(&mut commands, &planet, &tuning.walker, off.0);
-        let ship = ship::spawn_ship(&mut commands, &planet, &tuning.ship, DVec3::Y, off.0);
+        let ship = ship::spawn_ship(&mut commands, &planet, &tuning.ship, &tuning.ship_axis, DVec3::Y, off.0);
         if test_crates {
             // The first object (#80): a test crate on the cabin floor, behind the seat on the right.
             let t = &crates.0;

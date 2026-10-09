@@ -195,10 +195,19 @@ fn precision_mode_caps_speed_near_the_ground_but_not_the_climb() {
     let mut s = Sim::new(2.0, true);
     s.run(&scripted(DVec3::Y), 3.0);
     assert!(s.body.lin_vel.y > 20.0, "climbing away from the ground is not capped: {:.2} m/s", s.body.lin_vel.y);
-    let mut s = Sim::new(30.0, true);
-    s.run(&scripted(DVec3::NEG_Y), 20.0);
+    // From 400 m with full down stick: fast at first, then slowed early enough by the stopping
+    // distance, down to the landing share of the cap.
+    let mut s = Sim::new(400.0, true);
+    let mut fastest: f64 = 0.0;
+    while s.ship.terrain_clearance > 1.0 || s.body.pos.y > 5100.0 {
+        s.step(&scripted(DVec3::NEG_Y));
+        fastest = fastest.max(-s.body.lin_vel.y);
+        let stop = s.body.lin_vel.y.powi(2) / (2.0 * (t.accel.up - 9.81));
+        assert!(stop < s.ship.terrain_clearance + 2.0, "can still stop: {stop:.1} m needed at {:.1} m", s.ship.terrain_clearance);
+    }
     let touch = -s.body.lin_vel.y;
-    assert!(touch <= t.precision.speed + 0.1, "descending into the band slows to the cap: {touch:.2} m/s at {:.1} m", s.ship.terrain_clearance);
+    let want = t.precision.speed * t.precision.landing_share;
+    assert!(fastest > 30.0 && (touch - want).abs() < 0.1, "descent from 400 m: fastest {fastest:.1} m/s, at 1 m {touch:.2} m/s (landing cap {want})");
 }
 
 #[test]

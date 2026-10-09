@@ -80,6 +80,8 @@ pub enum Tap {
     DebugHud,
     /// Dev switch: boost capacitor or the old speed stage (F6, #90).
     BoostMode,
+    /// Dev switch: the classic or the axis flight model (F7, spike 13).
+    FlightModel,
 }
 
 impl Axis {
@@ -110,7 +112,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 12] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode];
+    pub const ALL: [Tap; 13] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::FlightModel];
     pub fn name(self) -> &'static str {
         match self {
             Tap::Interact => "interact",
@@ -125,6 +127,7 @@ impl Tap {
             Tap::Decoupled => "decoupled",
             Tap::DebugHud => "debug_hud",
             Tap::BoostMode => "boost_mode",
+            Tap::FlightModel => "flight_model",
         }
     }
 }
@@ -315,6 +318,8 @@ impl Bindings {
                 (Tap::Throw, None) => Ok(vec![Input::Key(KeyCode::KeyR)]),
                 // Files from before the boost switch (#90) have no `boost_mode`.
                 (Tap::BoostMode, None) => Ok(vec![Input::Key(KeyCode::F6)]),
+                // Files from before the model switch (spike 13) have no `flight_model`.
+                (Tap::FlightModel, None) => Ok(vec![Input::Key(KeyCode::F7)]),
                 _ => Err(err(t.name(), "missing".into())),
             }
         };
@@ -721,6 +726,19 @@ mod tests {
         let b = Bindings::from_json(&old).unwrap();
         let mut a = resolve(&b, &raw(&[], &[F6]));
         assert!(a.take_tap(Tap::BoostMode));
+    }
+
+    /// Spike 13: a player's file from before the model switch still loads, with F7.
+    #[test]
+    fn old_file_without_flight_model_gets_f7() {
+        let old = BINDINGS.replace("  \"flight_model\": [\"F7\"],\n", "");
+        assert!(!old.contains("flight_model"));
+        let b = Bindings::from_json(&old).unwrap();
+        let mut a = resolve(&b, &raw(&[], &[F7]));
+        assert!(a.take_tap(Tap::FlightModel));
+        // The shipped file binds it too.
+        let mut a = resolve(&Bindings::default(), &raw(&[], &[F7]));
+        assert!(a.take_tap(Tap::FlightModel));
     }
 
     /// G was missing from the keyboard's tap list (only scenarios could inject it).

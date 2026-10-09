@@ -105,7 +105,7 @@ pub fn start_session(w: &mut World, s: &Session) -> Result<(), String> {
         let tuning = w.resource::<crate::tuning::Tuning>().clone();
         let mut commands = w.commands();
         crate::walker::spawn_player(&mut commands, &planet, &tuning.walker, offset);
-        crate::ship::spawn_ship(&mut commands, &planet, &tuning.ship, bevy::math::DVec3::Y, offset);
+        crate::ship::spawn_ship(&mut commands, &planet, &tuning.ship, &tuning.ship_axis, bevy::math::DVec3::Y, offset);
         w.flush();
     }
     println!("menu: {s:?} started, slot {}", cfg.slot);

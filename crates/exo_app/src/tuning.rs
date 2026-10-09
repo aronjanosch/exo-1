@@ -2,7 +2,7 @@
 //! stops the game at startup with the message.
 use bevy::prelude::*;
 use flight_core::camera::CameraTuning;
-use flight_core::ShipTuning;
+use flight_core::{AxisTuning, ShipTuning};
 use grab_core::GrabConfig;
 use walker_core::{SuitConfig, WalkerConfig};
 
@@ -12,6 +12,7 @@ pub const SUIT: &str = include_str!("../../../content/tuning/suit.json");
 pub const CAMERA: &str = include_str!("../../../content/tuning/camera.json");
 pub const GRAB: &str = include_str!("../../../content/tuning/grab.json");
 pub const HUD: &str = include_str!("../../../content/tuning/hud.json");
+pub const SHIP_AXIS: &str = include_str!("../../../content/tuning/ship_axis.json");
 
 #[derive(Resource, Clone, Debug)]
 pub struct Tuning {
@@ -21,11 +22,13 @@ pub struct Tuning {
     pub camera: CameraTuning,
     pub grab: GrabConfig,
     pub hud: crate::hud::HudTuning,
+    /// The axis flight model (spike 13, F7).
+    pub ship_axis: AxisTuning,
 }
 
 impl Tuning {
     pub fn load() -> Tuning {
-        Tuning { ship: ok(ShipTuning::from_json(SHIP)), walker: ok(WalkerConfig::from_json(WALKER)), suit: ok(SuitConfig::from_json(SUIT)), camera: ok(CameraTuning::from_json(CAMERA)), grab: ok(GrabConfig::from_json(GRAB)), hud: ok(crate::hud::HudTuning::from_json(HUD)) }
+        Tuning { ship: ok(ShipTuning::from_json(SHIP)), walker: ok(WalkerConfig::from_json(WALKER)), suit: ok(SuitConfig::from_json(SUIT)), camera: ok(CameraTuning::from_json(CAMERA)), grab: ok(GrabConfig::from_json(GRAB)), hud: ok(crate::hud::HudTuning::from_json(HUD)), ship_axis: ok(AxisTuning::from_json(SHIP_AXIS)) }
     }
 }
 

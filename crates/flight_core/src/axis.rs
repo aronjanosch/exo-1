@@ -119,7 +119,9 @@ impl Rot {
     }
 }
 
-/// Precision mode near the ground: inside a band of terrain clearance the speed cap drops.
+/// Precision mode near the ground: inside a band of terrain clearance the speed cap drops. The
+/// clearance counts less the distance a descent needs to stop with the thrust upwards, so a fast
+/// descent enters the band early.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Precision {
@@ -129,6 +131,8 @@ pub struct Precision {
     pub off_above: f64,
     /// m/s: speed cap at full precision. Climbing away from the ground is not capped.
     pub speed: f64,
+    /// Share of `speed` for the descent (the touchdown speed).
+    pub landing_share: f64,
     /// Share of the rotation rates at full precision.
     pub rate_share: f64,
 }
@@ -196,6 +200,9 @@ impl AxisTuning {
             return Err(format!("precision: band {} to {} m out of range", p.full_below, p.off_above));
         }
         pos("precision.speed", p.speed)?;
+        if !(p.landing_share > 0.0 && p.landing_share <= 1.0) {
+            return Err(format!("precision.landing_share {} out of range", p.landing_share));
+        }
         if !(p.rate_share > 0.0 && p.rate_share <= 1.0) {
             return Err(format!("precision.rate_share {} out of range", p.rate_share));
         }
@@ -216,7 +223,7 @@ impl Default for AxisTuning {
             boost_rate: Rot { pitch: 1.2, yaw: 1.2, roll: 1.0 },
             angular_accel: Rot { pitch: 6.0, yaw: 6.0, roll: 10.0 },
             angular_decay: 8.0,
-            precision: Precision { full_below: 15.0, off_above: 80.0, speed: 4.0, rate_share: 0.7 },
+            precision: Precision { full_below: 15.0, off_above: 80.0, speed: 4.0, landing_share: 0.5, rate_share: 0.7 },
             g_safety: GSafety { enabled: true, limit: Dirs { forward: 8.0, backward: 4.0, left: 4.0, right: 4.0, up: 6.0, down: 3.0 } },
         }
     }
@@ -266,7 +273,10 @@ impl ShipController {
         let stick = if self.brake_active { DVec3::ZERO } else { limit_length(input.thrust, 1.0) };
 
         self.terrain_clearance = self.clearance_at(env, origin);
-        let p = 1.0 - smoothstep(t.precision.full_below, t.precision.off_above, self.terrain_clearance);
+        // What the thrust upwards can brake a descent with, and the clearance left after it.
+        let sink = (-v.dot(up)).max(0.0);
+        let brake = (t.accel.up - gravity.length()).max(1.0);
+        let p = 1.0 - smoothstep(t.precision.full_below, t.precision.off_above, self.terrain_clearance - sink * sink / (2.0 * brake));
         let forward_cap = lerp(t.cruise_speed, t.boost_speed_forward, strength);
         let backward_cap = lerp(t.cruise_speed, t.boost_speed_backward, strength);
         self.forward_speed_limit = lerp(forward_cap, forward_cap.min(t.precision.speed), p);
@@ -275,13 +285,14 @@ impl ShipController {
         let local_goal = DVec3::new(stick.x * t.cruise_speed, stick.y * t.cruise_speed, stick.z * if stick.z < 0.0 { forward_cap } else { backward_cap });
         let mut goal = b * local_goal;
         if p > 0.0 {
-            // Precision mode caps all but the climb away from the ground.
-            let climb = up * goal.dot(up).max(0.0);
-            let rest = goal - climb;
-            let l = rest.length();
-            if l > 1e-9 {
-                goal = climb + rest * (lerp(l, l.min(t.precision.speed), p) / l);
-            }
+            // Precision mode caps the speed along the ground and the descent, not the climb.
+            let vertical = goal.dot(up);
+            let along = goal - up * vertical;
+            let l = along.length();
+            let along = if l > 1e-9 { along * (lerp(l, l.min(t.precision.speed), p) / l) } else { along };
+            let descent = t.precision.speed * t.precision.landing_share;
+            let vertical = if vertical < 0.0 { -lerp(-vertical, (-vertical).min(descent), p) } else { vertical };
+            goal = along + up * vertical;
         }
         self.commanded_speed = goal.length();
         let coupled_accel = (goal - v) * t.linear_decay + body.ang_vel.cross(goal);

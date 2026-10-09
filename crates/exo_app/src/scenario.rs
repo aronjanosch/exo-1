@@ -315,7 +315,7 @@ pub(crate) fn end(w: &mut World, c: &mut Ctx, note: String) {
     c.phase.clear();
 }
 
-fn shot(w: &mut World, c: &mut Ctx, script_dir: &std::path::Path, windowed: bool, tag: &str) {
+pub(crate) fn shot(w: &mut World, c: &mut Ctx, script_dir: &std::path::Path, windowed: bool, tag: &str) {
     if !windowed {
         return;
     }
@@ -2031,7 +2031,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         // #82: one tap for a crate and the seat, with the HUD prompt.
         "interact" => crate::cargo_scenario::interact_steps(&mut s),
         // #83: carry each size, throw, the grab tool from 8 m, the large crate alone.
-        "crate-carry" => crate::cargo_scenario::crate_carry_steps(&mut s),
+        "crate-carry" => crate::cargo_scenario::crate_carry_steps(&mut s, out_dir, windowed),
         // #84: lock grid: locked, loose and blocked crates through hard acceleration and a warp.
         "crate-lock" => crate::cargo_scenario::crate_lock_steps(&mut s, out_dir, windowed),
         // #85: object budget: cap, sleep, persistence cap over a planet swap, timeout, distance.

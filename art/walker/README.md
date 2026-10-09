@@ -14,7 +14,7 @@ From the repository root, using the installed Blender:
 
 ```sh
 mkdir -p build/walker-review
-blender -b -P art/walker/walker.py -- \
+blender -b --python-exit-code 1 -P art/walker/walker.py -- \
   --renders build/walker-review \
   --blend "$PWD/build/walker-review/walkers.blend"
 ```
@@ -28,6 +28,22 @@ when `--renders` is omitted.
 Review images include front, three-quarter and back views, a face view for every
 figure, a view at 60 metres in daylight, and a view at 30 metres with night
 lighting. The script prints triangle counts, height and half width for each model.
+
+Every built figure is checked for consistent face winding and positive signed
+volume on each closed mesh island. Intentional open shells such as eyelids are
+allowed. The Skin body must also be one connected surface: acute wrist/thumb
+branches can fold and disconnect its hands, so thumbs use separate rounded
+primitives at the skeleton's positions. Body normals are repaired before
+decimation and paint; the finished figure is checked again without repair.
+Use `--python-exit-code 1`
+so a failed check also fails a headless command.
+
+Run the orientation regression tests in Blender:
+
+```sh
+blender -b --python-exit-code 1 -P art/tests/test_mesh_checks.py
+blender -b --python-exit-code 1 -P art/tests/test_walker_normals.py
+```
 
 ## Shared visual language
 

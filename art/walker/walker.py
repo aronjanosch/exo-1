@@ -19,6 +19,9 @@ import numpy as np
 from mathutils import Vector
 from mathutils.geometry import intersect_ray_tri
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from mesh_checks import face_islands, orient_mesh, require_mesh_orientation
+
 SHARP_ANGLE = math.radians(50)
 BODY_BUDGET = 2800
 HAIR_BUDGET = 1100
@@ -246,6 +249,9 @@ class Figure:
         for m in list(o.modifiers):
             bpy.ops.object.modifier_apply(modifier=m.name)
 
+        # Check Skin's surface before decimation, material cuts and hair/paint.
+        # A failed branch junction may otherwise leave detached, folded hands.
+        orient_mesh(o.data, connected=True)
         tris = sum(len(p.vertices) - 2 for p in o.data.polygons)
         if tris > BODY_BUDGET:
             dec = o.modifiers.new("body_budget", "DECIMATE")
@@ -366,6 +372,22 @@ class Figure:
             dec = o.modifiers.new("decimate", "DECIMATE")
             dec.ratio = triangles / tris
             bpy.ops.object.modifier_apply(modifier=dec.name)
+        # Decimation can collapse a tiny remeshed island to a face and its
+        # reverse (seen at the spiked hair tip). These fragments enclose no
+        # volume and have no usable surface normals. Remove only flat pairs.
+        bm = bmesh.new()
+        bm.from_mesh(o.data)
+        flat_pairs = []
+        for island in face_islands(bm):
+            if len(island) == 2:
+                a, b = island
+                if set(a.verts) == set(b.verts):
+                    flat_pairs.extend(island)
+        bmesh.ops.delete(bm, geom=flat_pairs, context="FACES")
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+        bm.to_mesh(o.data)
+        bm.free()
+        require_mesh_orientation(o.data)
         o.data.materials.clear()
         return self._add(o, mat)
 
@@ -402,6 +424,7 @@ class Figure:
         if self.name in {"NorbPainted", "NorbMullet", "NorbSidePart", "NorbSpikes"}:
             refine_norb(o)
         shade_character(o)
+        require_mesh_orientation(o.data)
         o.location.x = x
         return o
 
@@ -726,9 +749,17 @@ def norb_body(f):
                   (f"knee_{side}", f"ankle_{side}", ((0.0, "pants"), (0.93, "shoes"))),
                   (f"ankle_{side}", f"toe_{side}", "shoes"),
                   ("chest", f"shoulder_{side}", "suit"), (f"shoulder_{side}", f"elbow_{side}", shirt_then_skin),
-                  (f"elbow_{side}", f"wrist_{side}", "skin"), (f"wrist_{side}", f"hand_{side}", "skin"),
-                  (f"wrist_{side}", f"thumb_{side}", "skin")]
-    f.skin_body(j, bones)
+                  (f"elbow_{side}", f"wrist_{side}", "skin"), (f"wrist_{side}", f"hand_{side}", "skin")]
+    # Skin folds and disconnects the acute three-way wrist/thumb junction.
+    # Keep the palm continuous with the arm and attach a rounded thumb using
+    # the same skeleton positions and radius, rather than branching Skin here.
+    f.skin_body({name: value for name, value in j.items() if not name.startswith("thumb_")}, bones)
+    for side in "lr":
+        root = Vector(j[f"wrist_{side}"][0]).lerp(Vector(j[f"hand_{side}"][0]), 0.55)
+        tip = Vector(j[f"thumb_{side}"][0])
+        direction = tip - root
+        thumb = f.blob("skin", (root + tip) / 2, (0.011, 0.011, direction.length / 2 + 0.011))
+        thumb.rotation_euler = direction.to_track_quat("Z", "Y").to_euler()
     return j
 
 

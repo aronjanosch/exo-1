@@ -248,6 +248,20 @@ def robot_sweeper():
     return p
 
 
+def npc_marker():
+    """Placeholder for a quest giver: a plain figure with a glowing exclamation mark over its head.
+    Stands where the game will put the character."""
+    p = Part("npc_marker", "prop")
+    p.cylinder((0, 0, 0), 0.3, 1.2, PLUM, radius_top=0.25, segments=12)
+    p.sphere((0, 0, 1.45), 0.25, colour("#e9d7c4"), segments=12)
+    # A hologram: a thin beam from the head carries the mark.
+    p.cylinder((0, 0, 1.65), 0.015, 0.5, MUSTARD, "glow", segments=6)
+    p.sphere((0, 0, 1.95), 0.06, MUSTARD, "glow", segments=8)
+    p.box((-0.05, -0.05, 2.1), (0.05, 0.05, 2.6), MUSTARD, "glow")
+    p.torus((0, 0, 0.05), 0.5, 0.04, MUSTARD, "glow", segments=20, sides=4)
+    return p
+
+
 MODELS = {
     "bin_bot": (bin_bot, (-0.45, -0.45, 0.45, 0.45)),
     "bench_float": (bench_float, (-1.0, -0.4, 1.0, 0.5)),
@@ -265,6 +279,7 @@ MODELS = {
     "mail_tube": (mail_tube, (-0.35, -0.3, 0.35, 0.3)),
     "lamp_arc": (lamp_arc, (-1.95, -0.3, 0.3, 0.3)),
     "robot_sweeper": (robot_sweeper, (-0.55, -0.55, 1.05, 0.55)),
+    "npc_marker": (npc_marker, (-0.55, -0.55, 0.55, 0.55)),
 }
 
 kit.run(MODELS, "content/city")

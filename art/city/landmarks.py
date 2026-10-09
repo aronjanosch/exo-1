@@ -112,9 +112,43 @@ def beacon_spire():
     return p
 
 
+def charge_stop():
+    """The hover-car charge stop, our gas station: a boomerang canopy over two charge posts,
+    a kiosk shop behind, a tall sign with a spinning ring on a pole."""
+    p = Part("charge_stop")
+    accent, frame, body = colour("#e07b39"), colour("#f4f1e8"), colour("#c9d6d8")
+    # Forecourt pad.
+    p.box((-9.0, -6.0, 0.0), (5.0, 3.0, 0.08), colour("#d9d3e6"))
+    # Canopy: a thin wing on two angled legs.
+    for x in (-6.5, 0.5):
+        leg = [(0.0, 0.0), (0.4, 0.0), (0.9, 4.6), (0.5, 4.6)]
+        p.prism([(x + u, v) for u, v in leg], -2.0, -1.6, accent, plane="XZ")
+    wing = [(-8.5, 4.6), (3.5, 4.4), (4.0, 5.0), (-9.0, 5.3)]
+    p.prism(wing, -5.0, 1.5, frame, plane="XZ")
+    p.box((-9.0, -5.05, 4.75), (4.0, -5.0, 5.05), GLOW_CYAN, "glow")
+    # Charge posts with a glowing cable coil.
+    for x in (-4.5, -1.0):
+        p.rounded_box((x - 0.35, -2.3, 0.08), (x + 0.35, -1.7, 1.8), 0.15, accent, segments=4)
+        p.box((x - 0.25, -2.33, 1.0), (x + 0.25, -2.3, 1.6), GLOW_PINK, "glow")
+        p.torus((x, -2.0, 1.2), 0.45, 0.05, DARK, segments=16, sides=6)
+    # Kiosk shop behind the canopy.
+    p.box((-8.5, 0.0, 0.0), (-1.5, 3.0, 3.2), body)
+    p.box((-8.7, -0.2, 3.2), (-1.3, 3.2, 3.5), frame)
+    p.box((-7.0, -0.05, 0.6), (-3.8, 0.0, 2.6), LIT, "glow")
+    p.door("door_shop", -2.6, 0.0, frame, accent, w=1.4, h=2.4, use="shop")
+    # Sign pole with a ring and a ball, seen from the arterial.
+    p.cylinder((3.5, 1.5, 0), 0.25, 9.0, METAL, segments=10)
+    p.box((2.4, 1.4, 6.0), (4.6, 1.6, 8.2), accent)
+    p.box((2.6, 1.35, 6.2), (4.4, 1.4, 8.0), GLOW_CYAN, "glow")
+    p.torus((3.5, 1.5, 9.0), 0.9, 0.08, GLOW_PINK, "glow", segments=24, sides=6)
+    p.sphere((3.5, 1.5, 9.3), 0.4, GLOW_CYAN, "glow", segments=12)
+    return p
+
+
 MODELS = {
     "company_hq": (company_hq, (-10.5, -2.0, 10.5, 16.0)),
     "beacon_spire": (beacon_spire, (-5.5, -5.5, 5.5, 5.5)),
+    "charge_stop": (charge_stop, (-9.1, -6.1, 5.0, 3.3)),
 }
 
 kit.run(MODELS, "content/city")

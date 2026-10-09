@@ -583,6 +583,16 @@ pub(crate) fn aim(name: &'static str, elevation_deg: f64, secs: f64) -> Step {
     })
 }
 
+/// Boost as the speed stage of #24 (no capacitor) for scenarios whose checks were written for that
+/// flight path: they hold Shift for minutes, and the landing and cabin checks of `full` are measured
+/// on the spot it reaches. The capacitor has its own scenario, `boost-hud` (#90).
+pub(crate) fn boost_as_speed_stage() -> Step {
+    Box::new(|w, _| {
+        with_ship(w, |s| s.ctl.tuning.boost_capacitor.drain_time = 0.0);
+        true
+    })
+}
+
 pub(crate) fn fly_to_space_and_back() -> Vec<Step> {
     vec![
         hold_until("climb to 300 m above ground", &[KeyCode::Space, KeyCode::ShiftLeft], 120.0, |w| above_ground(w) > 300.0),
@@ -2021,6 +2031,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "figure" => figure_steps(&mut s, &shot_step),
         // Sprint 2 feel: input ramp, virtual-joystick mouse, boost, decoupled (#24, #25, #26).
         "flight" => flight_steps(&mut s, &shot_step, out_dir, windowed),
+        // #90, #91: the boost capacitor drains, cuts out and recharges; the HUD shows it.
+        "boost-hud" => crate::boost_scenario::boost_hud_steps(&mut s),
         // #21: edit a tuning file while running (dev builds).
         "reload" => reload_steps(&mut s, out_dir),
         "warp" => warp_steps(&mut s, out_dir, windowed),
@@ -2061,6 +2073,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
             s.extend(drift_behind_moving_ship());
         }
         "full" => {
+            s.push(boost_as_speed_stage());
             s.push(shot_step("ground"));
             s.extend(stand_still("stand still 5 s (walker)"));
             s.push(walk("walk 20 s (run)", 20.0, true));
@@ -2292,6 +2305,8 @@ fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step, out
         let (limit, v) = (with_ship(w, |s| s.ctl.forward_speed_limit), ship_vel(w).length());
         if c.t == 0.0 {
             begin(w, c, "boost");
+            // The speed stage itself (#24): no capacitor here; `boost-hud` checks it (#90).
+            with_ship(w, |s| s.ctl.tuning.boost_capacitor.drain_time = 0.0);
             c.v.insert("limit0", limit);
             c.v.insert("v0", v);
             keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft], true);
@@ -2322,6 +2337,8 @@ fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step, out
             let (l0, l1, v1) = (c.v["limit0"], c.v["limit1"], c.v["v1"]);
             end(w, c, format!("limit {l1:.0} -> {limit:.0} m/s, speed {v1:.0} -> {v:.0} m/s"));
             check(c, limit < 0.6 * l1 && (limit - l0).abs() < 0.3 * l0 && v < v1 - 20.0, format!("boost released: limit {l1:.0} -> {limit:.0} m/s (before {l0:.0}), speed {v1:.0} -> {v:.0} m/s"));
+            let cap = w.resource::<crate::tuning::Tuning>().ship.boost_capacitor.clone();
+            with_ship(w, |s| s.ctl.tuning.boost_capacitor = cap);
             return true;
         }
         false

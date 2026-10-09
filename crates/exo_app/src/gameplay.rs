@@ -322,8 +322,46 @@ fn carry_out(commands: &mut Commands, table: &Crates, gp: &mut Gameplay, goods: 
     }
 }
 
+/// "Bent Spoon 1.9 km, left": distance and rough side of a pad from where the player looks. A
+/// stand-in until the target arrow (#136).
+pub fn pointer(name: &str, from: DVec3, look: DVec3, to: DVec3, up: DVec3) -> String {
+    let d = to - from;
+    let flat = |v: DVec3| (v - up * v.dot(up)).normalize_or_zero();
+    let (f, t) = (flat(look), flat(d));
+    let dist = d.length();
+    let side = if dist < 40.0 {
+        "here"
+    } else {
+        let ang = f.cross(t).dot(up).atan2(f.dot(t)).to_degrees();
+        match ang {
+            a if a.abs() <= 30.0 => "ahead",
+            a if a.abs() >= 150.0 => "behind",
+            a if a > 0.0 => "left",
+            _ => "right",
+        }
+    };
+    let dist = if dist >= 1000.0 { format!("{:.1} km", dist / 1000.0) } else { format!("{dist:.0} m") };
+    format!("{name} {dist}, {side}")
+}
+
 /// The job line: money, the active job's progress and where to, a recent notice.
-pub fn update_readout(mut gp: ResMut<Gameplay>) {
+pub fn update_readout(
+    mut gp: ResMut<Gameplay>,
+    players: Query<&crate::walker::Player>,
+    ships: Query<(&avian3d::prelude::Position, &avian3d::prelude::Rotation), With<crate::ship::Ship>>,
+    planet: Res<PlanetRes>,
+) {
+    // Where the player is and looks (in the seat the walker's look is the view).
+    let view = players.single().ok().zip(ships.iter().next()).map(|(pl, (p, r))| {
+        let f = crate::walker::ship_frame(p, r);
+        (pl.world_pos(f), pl.world_look(f))
+    });
+    let point = |gp: &Gameplay, l: &LocationId| -> Option<String> {
+        let (pos, look) = view?;
+        let pad = gp.pad_of(l)?;
+        let name = gp.kernel.locations.get(l).map(|r| gp.text(&r.record.name))?;
+        Some(pointer(&name, pos, look, pad.centre, planet.up(pos)))
+    };
     let money = gp.progress.wallet();
     let mut s = format!("{money} {}", gp.text(&TextKey::new("track.wallet.name")));
     let xp = gp.progress.value(&gp.kernel, &TrackId::new("freight_xp"), Some(HOST));
@@ -337,6 +375,19 @@ pub fn update_readout(mut gp: ResMut<Gameplay>) {
         if let Some(left) = j.time_left(&t.record) {
             s += &format!(", {left:.0} s left");
         }
+        // Where to next: the pickup while crates wait there, else the dropoff.
+        if let Some(l) = j.legs.first() {
+            let waiting = l.crates.values().any(|m| *m == jobs_core::CrateMark::Waiting);
+            if let Some(p) = point(&gp, if waiting { &l.from } else { &l.to }) {
+                s += &format!("\n{} {p}", if waiting { "pick up:" } else { "deliver to:" });
+            }
+        }
+    }
+    if gp.jobs.active().next().is_none()
+        && let Some(l) = gp.jobs.all().find(|j| j.state == JobState::Offered).and_then(|j| j.legs.first())
+        && let Some(p) = point(&gp, &l.from)
+    {
+        s += &format!("\njob on offer: {p}");
     }
     if let Some((n, until)) = &gp.notice
         && *until > gp.clock
@@ -412,5 +463,15 @@ mod tests {
             assert!(s.water_depth == 0.0 && s.slope_deg < 3.0, "{}: pad in water or on a slope ({:.1}°)", l.path, s.slope_deg);
         }
         assert!(gp.jobs.all().any(|j| j.state == JobState::Offered), "the fixed job is offered at the start");
+    }
+
+    #[test]
+    fn pointer_names_distance_and_side() {
+        let (up, look) = (DVec3::Y, DVec3::NEG_Z);
+        assert_eq!(pointer("A", DVec3::ZERO, look, DVec3::new(0.0, 0.0, -1900.0), up), "A 1.9 km, ahead");
+        assert_eq!(pointer("A", DVec3::ZERO, look, DVec3::new(-300.0, 5.0, 0.0), up), "A 300 m, left");
+        assert_eq!(pointer("A", DVec3::ZERO, look, DVec3::new(300.0, 0.0, 0.0), up), "A 300 m, right");
+        assert_eq!(pointer("A", DVec3::ZERO, look, DVec3::new(0.0, 0.0, 300.0), up), "A 300 m, behind");
+        assert_eq!(pointer("A", DVec3::ZERO, look, DVec3::new(10.0, 0.0, 0.0), up), "A 10 m, here");
     }
 }

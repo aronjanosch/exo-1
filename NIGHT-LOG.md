@@ -19,10 +19,10 @@ Phase 1 done 2026-10-09 03:08 (all six issues commented, none closed). Gate on t
 Phase 2, `night/extras` (branched from the tip of `feat/milestone-c-grab`, all extras on this one branch):
 
 - [x] E1 carry crates down the ramp and back up (load and unload the ship)
-- [ ] E2 the walker bumps into crates; crates stack
-- [ ] E3 visible grab-tool beam
-- [ ] E4 synthesized grab, throw and lock sounds
-- [ ] E5 #52 split `scenario.rs` (cargo scenarios already live in `cargo_scenario.rs`)
+- [ ] E2 the walker bumps into crates; crates stack: **not done, parked** in local `git stash@{0}` on this machine (not pushed), see below
+- [ ] E3 visible grab-tool beam: not started
+- [ ] E4 synthesized grab, throw and lock sounds: not started
+- [ ] E5 #52 split `scenario.rs` (cargo scenarios already live in `cargo_scenario.rs`): not started
 
 ## Architecture choice (read this first)
 
@@ -143,3 +143,15 @@ What: scenario `crate-unload` (new, in `cargo t`), no game code changed. For the
 Checks (0 failures):
 - small: carried 16.7 m behind the ship's centre (walker outside, crate in the planet frame, still held); rests on the ground 0.09 m above the CPU height (asleep); carried back into the cabin; locks again at (0.25, 0.56, 0.75), 1 plate lit.
 - medium (two hands, slower): carried 13.6 m out; rests 0.24 m above the height under its centre (sloped ground; the check allows 0.35 m); back in; locks at (0.00, 0.81, 2.00), 4 plates lit.
+
+## E2 the walker bumps into crates; crates stack (parked, not done)
+
+State: code in local `git stash@{0}` on the NAS (`git stash show -p stash@{0}`), not pushed. Each crate got a collider entity on a new `Layer::Crate` (memberships only), kept in place by a `sync_crate_colliders` system: a child of the ship in a cabin, standalone on the planet. Crates swept against other crates, and the walker swept against crates except the held one. Its own scenario `crate-stack` passed (crates stack with a 5.0 mm gap in the cabin and on the ground; the walker stands on a crate 5 mm above its top; the walker never got closer than 0.86 m to a crate's centre, face contact 0.85 m). `crate-lock` needed one check changed (the loose crate now locks on the plates after the flight).
+
+Why parked: the full gate failed in `tests/session.rs` (host and join through the menu): "Encountered an error in command: Entity despawned". Most likely `sync_crate_colliders` despawns or parents to an entity the menu path already removed (fix idea: `try_despawn`, and skip a crate whose ship is gone). Not tried: the run had stopped (next section).
+
+Also seen on the way: `tests/perf.rs` failed once under load (p95 3.49 ms against a limit of 3.40 ms, load average 13 to 15); rerun alone it passed twice.
+
+## The run stopped early (read this)
+
+The run stopped at about 03:57 and did nothing until 09:37. Not a limit (7-day usage 51 %) and not a crash: while debugging the `session` failure above, the agent ended its turn after a tool result without taking the next step and without a note. Lost: about 5.5 hours, so E2 is unfinished and E3 to E5 were never started. At 09:37 (past the 08:30 stop) E2 was parked in a stash, so `night/extras` ends at the green E1 commit plus this log.

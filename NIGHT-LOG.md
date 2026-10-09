@@ -20,9 +20,12 @@ Phase 2, `night/extras` (branched from the tip of `feat/milestone-c-grab`, all e
 
 - [x] E1 carry crates down the ramp and back up (load and unload the ship)
 - [ ] E2 the walker bumps into crates; crates stack: **dropped in this form** (initiator, playtest 2026-10-09): committed as 7e83b52, reverted; replaced by the three-state crate model, spike `spike/avian-crates` first (see below)
-- [ ] E3 visible grab-tool beam: not started
+- [x] E3 visible grab-tool beam (2026-10-09 midday)
 - [ ] E4 synthesized grab, throw and lock sounds: not started
+- [ ] E3 visible grab-tool beam: not started
+- [x] E4 synthesized grab, throw and lock sounds (branch `feat/e4-sounds`)
 - [ ] E5 #52 split `scenario.rs` (cargo scenarios already live in `cargo_scenario.rs`): not started
+- [x] E5 #52 split `scenario.rs` (branch `feat/e5-split-scenario`)
 
 ## Architecture choice (read this first)
 
@@ -167,8 +170,40 @@ Feedback: the crates hardly turn, the physics does not feel good, and they slide
 - [x] Revert E2 (56f3686).
 - [x] Impact friction in `CrateBody` (test-first, `impact_friction_cuts_the_slide`): an impact stops the motion into the surface and takes friction x impact speed off the slide along it, never reversing it. It is not applied again to the floor a crate already rests on (the floor's Coulomb friction acts there). `friction` 0.5 -> 0.8. A thrown crate in `crate-carry` now flies 4.77 m (was 6.66 m). Gate green.
 - [ ] Spike `spike/avian-crates`, brief first.
-- [ ] E3 grab-tool beam (code exists in a local stash, not gated yet), E4 sounds, E5 split `scenario.rs`.
+- [x] E3 grab-tool beam, see below.
+- [ ] E4 sounds, E5 split `scenario.rs`.
 
 Open design questions, for the initiator to decide:
 - TODO(initiator) a) Cabin: does every crate set down become part of the ship at once (the lock grid then only helps keep order, and sliding under acceleration goes away)? Or does the lock grid stay the condition, with loose crates keeping the current model?
 - TODO(initiator) b) Friction start value: 0.8 plus impact friction is in now (`content/tuning/grab.json`), to be tuned by feel.
+
+## E3 visible grab-tool beam
+
+What: while the grab tool holds a crate, a thin glowing rod runs from a muzzle low right in front of the eye to the crate's centre. It breathes a little (6 Hz) and turns from cyan to hot orange as the hold strains towards breaking (the break timer). Render only (`grab::setup_beam`, `grab::update_beam`, windowed runs). It is hidden seen from orbit or a fixed viewpoint. Unit test `beam_spans_both_ends` covers the beam's pose. With a window, `crate-carry` takes a screenshot `shot-01-grab-beam.png` mid-pull.
+
+Look: the first screenshot (radius 2.5 cm at 45 cm from the eye) looked like a fat pipe; now 1.2 cm, muzzle 0.6 m ahead. TODO(initiator): muzzle, radius and colours are start values, tune by feel.
+
+Gate: `cargo t` exit 0, `cargo scenario` 0 failures; windowed `crate-carry` under xvfb 0 failures.
+## E4 synthesized grab, throw and lock sounds
+
+Branch `feat/e4-sounds` from `origin/main` (initiator: E4 and E5 on their own branches, nothing more on `night/extras`).
+
+What: three more one-shots in `audio.rs`, synthesized in code like the others:
+- **Grab:** 0.12 s, a 300 to 900 Hz chirp with a breath of noise ("fwip"), when a new crate is taken hold of.
+- **Throw:** 0.35 s, noise swelling and falling through a low-pass that opens and closes (a whoosh).
+- **Lock:** 0.2 s, a 110 Hz clunk and a 1.9 kHz ping 60 ms later ("ka-chunk"), on each lock onto the plates.
+
+Triggered from `Grab::held` (a new crate), `Grab::throws` and `CargoStats::locks`. Windowed runs only.
+
+Not heard: this machine has no sound device, so the unit tests check only length, range and that each sound is audible. Crates that lock at the start of a session make a ka-chunk too. TODO(initiator): sounds and volumes are start values, listen in a windowed run.
+## E5 #52 split `scenario.rs`
+
+Branch `feat/e5-split-scenario` from `origin/main`.
+
+What: `scenario.rs` (2805 lines) became `scenario/` with one module per topic, and `cargo_scenario.rs` moved in as `scenario/cargo.rs`:
+- `mod.rs` (731 lines) keeps the shared script interface: `Step`, `Ctx`, `Script`, the helpers, the general step builders (walk, board, sit, land, aim), `build` and `run_script`.
+- The topics: `net` (foreign ship, net bot, proxy at warp speed), `space`, `walk` (T5), `warp`, `flight`, `swap`, `figure`, `reload`, `cargo`.
+
+A pure move. Every old line is in the new files exactly once, except the module headers, `pub(super)` on the functions `build` calls, the `cargo::` paths in `build`, and two section-divider comments that became module docs; checked with a script. One orphaned doc comment (#16, the proxy at warp speed) now sits on `foreign_warp_steps`, where it belongs. Outside the folder nothing changes: `crate::scenario::...` paths stay the same.
+
+Gate: `cargo t` exit 0, `cargo scenario` 0 failures.

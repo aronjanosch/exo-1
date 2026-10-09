@@ -169,3 +169,89 @@ pub fn grab_step(
     }
     grab.held = Some(held);
 }
+
+/// The grab tool's beam (night extra E3): a thin glowing rod from the tool, low right in front
+/// of the eye, to the crate's centre, only while the tool holds. It turns from cyan to hot
+/// orange as the hold strains towards breaking. Render only; headless runs never spawn it.
+#[derive(Component)]
+pub struct GrabBeam(Handle<StandardMaterial>);
+
+/// Muzzle of the tool in the view frame (right, up, forward; m). Start value, TODO(initiator): tune by feel.
+const BEAM_MUZZLE: [f64; 3] = [0.22, -0.25, 0.6];
+/// Beam radius (m) and how much it breathes (share of the radius, 6 Hz).
+const BEAM_RADIUS: f32 = 0.012;
+const BEAM_WOBBLE: f32 = 0.3;
+
+/// Pose of a unit cylinder (along Y, centred) stretched from `from` to `to`: centre, rotation,
+/// length. None when the two points coincide.
+pub fn beam_pose(from: DVec3, to: DVec3) -> Option<(DVec3, DQuat, f64)> {
+    let d = to - from;
+    let len = d.length();
+    (len > 1e-6).then(|| ((from + to) * 0.5, DQuat::from_rotation_arc(DVec3::Y, d / len), len))
+}
+
+pub fn setup_beam(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
+    let mat = materials.add(StandardMaterial { base_color: Color::srgba(0.5, 1.0, 1.0, 0.8), emissive: LinearRgba::new(0.4, 3.0, 4.0, 1.0), unlit: true, alpha_mode: AlphaMode::Add, ..default() });
+    commands.spawn((GrabBeam(mat.clone()), Mesh3d(meshes.add(Cylinder::new(1.0, 1.0))), MeshMaterial3d(mat), Transform::default(), crate::origin::WorldPose::default(), Visibility::Hidden));
+}
+
+/// Places the beam each frame, after the crate's and the walker's interpolated poses.
+#[allow(clippy::too_many_arguments)]
+pub fn update_beam(
+    time: Res<Time>,
+    fixed: Res<Time<Fixed>>,
+    tuning: Res<crate::tuning::Tuning>,
+    grab: Res<Grab>,
+    view: Res<crate::view::ViewState>,
+    players: Query<(&Player, &crate::view::PlayerInterp)>,
+    crates: Query<&crate::origin::WorldPose, (With<Crate>, Without<GrabBeam>)>,
+    mut beam: Query<(&GrabBeam, &mut crate::origin::WorldPose, &mut Transform, &mut Visibility)>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let Ok((b, mut pose, mut t, mut vis)) = beam.single_mut() else { return };
+    let held = grab.held.filter(|h| h.reach == Reach::Tool);
+    let ends = held.and_then(|h| {
+        let (pl, pi) = players.single().ok()?;
+        // Seen from orbit or a fixed viewpoint the muzzle would float; seated, nothing is held.
+        if view.orbit || view.look.is_some() || pl.seated {
+            return None;
+        }
+        let f = fixed.overstep_fraction_f64();
+        let feet = pi.prev.0.lerp(pi.curr.0, f);
+        let up = pi.prev.1.lerp(pi.curr.1, f).normalize();
+        let look = pi.prev.2.lerp(pi.curr.2, f).normalize();
+        let rot = walker_core::look_rot(look, up);
+        let [x, y, z] = BEAM_MUZZLE;
+        let muzzle = feet + up * EYE_HEIGHT + rot * DVec3::new(x, y, -z);
+        Some((h, muzzle, crates.get(h.crate_e).ok()?.pos))
+    });
+    let Some((h, (centre, rot, len))) = ends.and_then(|(h, a, b)| Some((h, beam_pose(a, b)?))) else {
+        *vis = Visibility::Hidden;
+        return;
+    };
+    let strain = (h.breaker.t / tuning.grab.break_time.max(1e-6)).clamp(0.0, 1.0) as f32;
+    let s = time.elapsed_secs();
+    let r = BEAM_RADIUS * (1.0 + BEAM_WOBBLE * (s * 6.0 * std::f32::consts::TAU).sin() * (0.3 + strain));
+    (pose.pos, pose.rot) = (centre, rot);
+    t.scale = Vec3::new(r, len as f32, r);
+    if let Some(mut m) = materials.get_mut(&b.0) {
+        m.emissive = LinearRgba::new(0.4 + 3.6 * strain, 3.0 - 1.8 * strain, 4.0 * (1.0 - strain), 1.0);
+    }
+    *vis = Visibility::Inherited;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn beam_spans_both_ends() {
+        let (a, b) = (DVec3::new(1.0, 2.0, 3.0), DVec3::new(4.0, -2.0, 3.0));
+        let (c, r, len) = beam_pose(a, b).unwrap();
+        assert!((len - 5.0).abs() < 1e-9);
+        // The unit cylinder's ends (y = ±0.5) land on the two points.
+        assert!((c + r * DVec3::Y * (0.5 * len) - b).length() < 1e-9);
+        assert!((c - r * DVec3::Y * (0.5 * len) - a).length() < 1e-9);
+        assert!(beam_pose(a, a).is_none());
+    }
+}

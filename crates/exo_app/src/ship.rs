@@ -164,6 +164,10 @@ pub fn ship_control(
         ship.lag.step(clearance, lv.0.length(), dt);
         // From the pre-ramp on the drive holds the ship.
         if ship.parked || warp.drive.phase.holds_ship() {
+            // The boost meter goes on (released): no boost left running through a quantum flight.
+            let ctl = &mut ship.ctl;
+            ctl.boost.step(false, &ctl.tuning.boost_capacitor, dt);
+            ctl.boost_strength = 0.0;
             continue;
         }
         if !ship.piloted {
@@ -178,6 +182,9 @@ pub fn ship_control(
             }
             if actions.take_tap(Tap::Decoupled) {
                 ship.ctl.coupled = !ship.ctl.coupled;
+            }
+            if actions.take_tap(Tap::BoostMode) {
+                ship.ctl.boost_stage = !ship.ctl.boost_stage;
             }
             let mb = &bindings.mouse;
             let m = std::mem::take(&mut actions.look);

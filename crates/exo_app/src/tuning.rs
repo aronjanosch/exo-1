@@ -11,6 +11,7 @@ pub const WALKER: &str = include_str!("../../../content/tuning/walker.json");
 pub const SUIT: &str = include_str!("../../../content/tuning/suit.json");
 pub const CAMERA: &str = include_str!("../../../content/tuning/camera.json");
 pub const GRAB: &str = include_str!("../../../content/tuning/grab.json");
+pub const HUD: &str = include_str!("../../../content/tuning/hud.json");
 
 #[derive(Resource, Clone, Debug)]
 pub struct Tuning {
@@ -19,11 +20,12 @@ pub struct Tuning {
     pub suit: SuitConfig,
     pub camera: CameraTuning,
     pub grab: GrabConfig,
+    pub hud: crate::hud::HudTuning,
 }
 
 impl Tuning {
     pub fn load() -> Tuning {
-        Tuning { ship: ok(ShipTuning::from_json(SHIP)), walker: ok(WalkerConfig::from_json(WALKER)), suit: ok(SuitConfig::from_json(SUIT)), camera: ok(CameraTuning::from_json(CAMERA)), grab: ok(GrabConfig::from_json(GRAB)) }
+        Tuning { ship: ok(ShipTuning::from_json(SHIP)), walker: ok(WalkerConfig::from_json(WALKER)), suit: ok(SuitConfig::from_json(SUIT)), camera: ok(CameraTuning::from_json(CAMERA)), grab: ok(GrabConfig::from_json(GRAB)), hud: ok(crate::hud::HudTuning::from_json(HUD)) }
     }
 }
 

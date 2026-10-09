@@ -1,5 +1,7 @@
-//! Audio minimum (#28): four sounds synthesized in code, no files. Thrust hum by the ship's
+//! Audio minimum (#28): sounds synthesized in code, no files. Thrust hum by the ship's
 //! thrust, wind by airspeed in the atmosphere, a thud on touchdown, a click on UI toggles.
+//! Cargo (night extra E4): a fwip on grabbing a crate, a whoosh on a throw, a ka-chunk when a
+//! crate locks onto the plates.
 //! Windowed runs only; headless runs have no audio. Volume controls come with the settings menu.
 use crate::controls::{Actions, Tap};
 use crate::ship::{CameraEffects, Ship};
@@ -21,6 +23,12 @@ pub enum Sound {
     Thud,
     /// 30 ms: a short high blip.
     Click,
+    /// 0.12 s: a rising chirp with a breath of noise ("fwip"), taking hold of a crate.
+    Grab,
+    /// 0.35 s: noise swelling and falling through a sweeping low-pass, a throw.
+    Throw,
+    /// 0.2 s: a low clunk, then a bright ping 60 ms later ("ka-chunk"), a crate locks.
+    Lock,
 }
 
 impl Sound {
@@ -30,6 +38,9 @@ impl Sound {
             Sound::Hum | Sound::Wind => None,
             Sound::Thud => Some(0.35),
             Sound::Click => Some(0.03),
+            Sound::Grab => Some(0.12),
+            Sound::Throw => Some(0.35),
+            Sound::Lock => Some(0.2),
         }
     }
 }
@@ -88,6 +99,27 @@ impl Iterator for Synth {
                 env * (0.8 * (tau * f * t).sin() + 0.3 * self.white() * (-t * 40.0).exp())
             }
             Sound::Click => (-t * 180.0).exp() * (tau * 1400.0 * t).sin(),
+            Sound::Grab => {
+                // 300 Hz to 900 Hz over the sound: phase of a linear sweep.
+                let phase = tau * (300.0 * t + 0.5 * (600.0 / 0.12) * t * t);
+                let env = (t / 0.01).min(1.0) * (-t * 25.0).exp();
+                env * (0.7 * phase.sin() + 0.15 * self.white())
+            }
+            Sound::Throw => {
+                let x = t / 0.35;
+                let env = (x * std::f32::consts::PI).sin().powi(2);
+                // The low-pass opens then closes again: the whoosh passes by.
+                let k = 0.02 + 0.25 * env;
+                let w = self.white();
+                self.lp += (w - self.lp) * k;
+                env * self.lp * 2.5
+            }
+            Sound::Lock => {
+                let clunk = (-t * 30.0).exp() * (tau * 110.0 * t).sin() * 0.9;
+                let t2 = t - 0.06;
+                let ping = if t2 > 0.0 { (-t2 * 45.0).exp() * (tau * 1900.0 * t2).sin() * 0.45 } else { 0.0 };
+                clunk + ping
+            }
         };
         Some(s.clamp(-1.0, 1.0))
     }
@@ -122,6 +154,9 @@ impl bevy::audio::Decodable for SynthAudio {
 struct Sounds {
     thud: Handle<SynthAudio>,
     click: Handle<SynthAudio>,
+    grab: Handle<SynthAudio>,
+    throw: Handle<SynthAudio>,
+    lock: Handle<SynthAudio>,
 }
 
 #[derive(Component)]
@@ -134,6 +169,10 @@ struct Clicks(u32);
 #[derive(Resource, Default)]
 struct Heard {
     bumps: u32,
+    throws: usize,
+    locks: u32,
+    /// The crate held last frame: a new one is a grab.
+    held: Option<Entity>,
 }
 
 fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
@@ -141,12 +180,18 @@ fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
         let h = assets.add(SynthAudio(s));
         commands.spawn((AudioPlayer(h), PlaybackSettings { mode: PlaybackMode::Loop, volume: Volume::Linear(0.0), ..default() }, Loop(s)));
     }
-    commands.insert_resource(Sounds { thud: assets.add(SynthAudio(Sound::Thud)), click: assets.add(SynthAudio(Sound::Click)) });
+    commands.insert_resource(Sounds {
+        thud: assets.add(SynthAudio(Sound::Thud)),
+        click: assets.add(SynthAudio(Sound::Click)),
+        grab: assets.add(SynthAudio(Sound::Grab)),
+        throw: assets.add(SynthAudio(Sound::Throw)),
+        lock: assets.add(SynthAudio(Sound::Lock)),
+    });
 }
 
 /// Fixed step, right after the actions are resolved: UI toggles click.
 fn count_clicks(actions: Res<Actions>, mut clicks: ResMut<Clicks>) {
-    let ui = [Tap::HoverAssist, Tap::HorizonFollow, Tap::Decoupled, Tap::DebugHud, Tap::WarpTarget, Tap::OrbitCamera, Tap::Lag];
+    let ui = [Tap::HoverAssist, Tap::HorizonFollow, Tap::Decoupled, Tap::DebugHud, Tap::WarpTarget, Tap::OrbitCamera, Tap::Lag, Tap::BoostMode];
     clicks.0 += actions.taps().iter().filter(|t| ui.contains(t)).count() as u32;
 }
 
@@ -162,6 +207,8 @@ fn update(
     ships: Query<(&Ship, &avian3d::prelude::Position, &avian3d::prelude::LinearVelocity)>,
     mut loops: Query<(&Loop, &mut AudioSink)>,
     time: Res<Time>,
+    grab: Res<crate::grab::Grab>,
+    cargo: Res<crate::cargo::CargoStats>,
     mut level: Local<[f32; 2]>,
 ) {
     let (Ok(pl), Ok((ship, pos, lv))) = (players.single(), ships.single()) else { return };
@@ -187,6 +234,23 @@ fn update(
             commands.spawn((AudioPlayer(sounds.thud.clone()), PlaybackSettings { mode: PlaybackMode::Despawn, volume: Volume::Linear(0.8), ..default() }));
         }
     }
+    // Cargo, E4. TODO(initiator): volumes are start values.
+    let one_shot = |commands: &mut Commands, h: &Handle<SynthAudio>, v: f32| {
+        commands.spawn((AudioPlayer(h.clone()), PlaybackSettings { mode: PlaybackMode::Despawn, volume: Volume::Linear(v), ..default() }));
+    };
+    let held = grab.held.map(|h| h.crate_e);
+    if held.is_some() && held != heard.held {
+        one_shot(&mut commands, &sounds.grab, 0.5);
+    }
+    heard.held = held;
+    if grab.throws.len() > heard.throws {
+        heard.throws = grab.throws.len();
+        one_shot(&mut commands, &sounds.throw, 0.6);
+    }
+    if cargo.locks > heard.locks {
+        heard.locks = cargo.locks;
+        one_shot(&mut commands, &sounds.lock, 0.6);
+    }
     for _ in 0..std::mem::take(&mut clicks.0).min(3) {
         commands.spawn((AudioPlayer(sounds.click.clone()), PlaybackSettings { mode: PlaybackMode::Despawn, volume: Volume::Linear(0.3), ..default() }));
     }
@@ -207,7 +271,7 @@ mod tests {
 
     #[test]
     fn one_shots_end_and_every_sample_is_in_range() {
-        for s in [Sound::Thud, Sound::Click] {
+        for s in [Sound::Thud, Sound::Click, Sound::Grab, Sound::Throw, Sound::Lock] {
             let samples: Vec<f32> = Synth::new(s).collect();
             assert_eq!(samples.len(), (s.length().unwrap() * RATE as f32).ceil() as usize, "{s:?}");
             assert!(samples.iter().all(|x| x.is_finite() && x.abs() <= 1.0));

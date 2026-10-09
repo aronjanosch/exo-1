@@ -1,0 +1,4 @@
+{
+  "_comment": "HUD values (exo_app::hud::HudTuning, #91). agl_below: below this height above the ground (m, the terrain under the player from the CPU height function) the altitude element shows AGL, above it ALT, the height above the planet's reference sphere. Initiator, 2026-10-09: height above ground near the ground. TODO(initiator): the threshold is a starting value.",
+  "agl_below": 1000.0
+}

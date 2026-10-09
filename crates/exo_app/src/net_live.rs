@@ -11,8 +11,7 @@ use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 use net_core::buffer::{Buffer, Mode};
 use net_core::clock::ClockSync;
-use net_core::snapshot::{FrameKind, Snapshot};
-use net_core::to_world;
+use net_core::snapshot::{FrameKind, Limits, Snapshot};
 use net_core::wire::{self, Packet, UDP_IP_OVERHEAD};
 use std::collections::HashMap;
 use std::net::{SocketAddr, UdpSocket};
@@ -21,8 +20,6 @@ use std::time::Instant;
 const TICK_S: f64 = 1.0 / 60.0;
 /// A remote owner without snapshots for this long is removed (spike 4: 2 s).
 const EXPIRY: f64 = 2.0;
-/// One planet for now; snapshots carry the planet id of the shared frame.
-const PLANET: u32 = 0;
 
 #[derive(Clone, Debug)]
 pub struct NetConfig {
@@ -106,6 +103,17 @@ pub struct Net {
     ping_accum: f64,
     hello_accum: f64,
     pub st: NetStats,
+    /// Planet centres of the system: a snapshot is relative to its sender's planet, the buffers
+    /// hold everything relative to planet 0 so a sender changing planet in a warp is
+    /// interpolated straight through.
+    centres: Vec<DVec3>,
+    /// Planet ids, ship range and speed this system allows; anything else is dropped on receipt.
+    limits: Limits,
+}
+
+/// What a receiver of this system admits: its planet ids, how far out and how fast a ship can be.
+pub fn limits(sys: &warp_core::System) -> Limits {
+    Limits { planets: sys.planets.len() as u32, ship_position: sys.max_ship_offset(), ship_speed: sys.max_ship_speed() }
 }
 
 /// Marker of a remote player's walker (capsule in the view).
@@ -115,11 +123,16 @@ pub struct RemoteWalker {
 }
 
 impl Net {
-    pub fn new(cfg: NetConfig) -> Net {
+    pub fn new(cfg: NetConfig, sys: &warp_core::System) -> Net {
+        Net::try_new(cfg, sys).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// As `new`, with a socket that cannot bind as an error (the menu shows it).
+    pub fn try_new(cfg: NetConfig, sys: &warp_core::System) -> Result<Net, String> {
         let sock = if cfg.host {
-            UdpSocket::bind(format!("{}:{}", cfg.bind, cfg.port)).unwrap_or_else(|e| panic!("bind {}:{}: {e}", cfg.bind, cfg.port))
+            UdpSocket::bind(format!("{}:{}", cfg.bind, cfg.port)).map_err(|e| format!("bind {}:{}: {e}", cfg.bind, cfg.port))?
         } else {
-            UdpSocket::bind("0.0.0.0:0").expect("bind client socket")
+            UdpSocket::bind("0.0.0.0:0").map_err(|e| format!("bind client socket: {e}"))?
         };
         let start = Instant::now();
         // A thread owns the receive side: it stamps the arrival time at once and, on the host,
@@ -148,7 +161,7 @@ impl Net {
         let host = cfg.host;
         let host_addr = cfg.connect;
         println!("NET START slot={} host={} port={}", cfg.slot, host, cfg.port);
-        Net {
+        Ok(Net {
             cfg,
             sock,
             rx: std::sync::Mutex::new(rx),
@@ -166,7 +179,9 @@ impl Net {
             ping_accum: 0.0,
             hello_accum: 1.0,
             st: NetStats::default(),
-        }
+            centres: sys.planets.iter().map(|p| p.centre()).collect(),
+            limits: limits(sys),
+        })
     }
 
     fn now(&self) -> f64 {
@@ -257,6 +272,11 @@ impl Net {
         if s.owner == self.cfg.slot {
             return;
         }
+        let mut s = s;
+        if !self.limits.admits(&s) || !s.to_frame_of(&self.centres, 0) {
+            self.st.invalid += 1;
+            return;
+        }
         self.seen.insert(s.owner, arrival);
         self.hist.entry(s.owner).or_default().push(s);
     }
@@ -288,7 +308,7 @@ impl Net {
 pub fn spawn_proxy(commands: &mut Commands, owner: u32, pos: DVec3, rot: DQuat) -> Entity {
     let e = commands
         .spawn((
-            RemoteShip { owner },
+            RemoteShip { owner, lag: 1.0 },
             RigidBody::Kinematic,
             Position(pos),
             Rotation(rot),
@@ -312,7 +332,7 @@ pub fn net_pre(
     mut origin: ResMut<RenderOrigin>,
     mut players: Query<&mut Player>,
     own: Query<(&Position, &Rotation), (With<Ship>, Without<RemoteShip>)>,
-    mut proxies: Query<(&mut Position, &mut Rotation, &mut LinearVelocity, &mut AngularVelocity), (With<RemoteShip>, Without<Ship>)>,
+    mut proxies: Query<(&mut Position, &mut Rotation, &mut LinearVelocity, &mut AngularVelocity, &mut RemoteShip), Without<Ship>>,
     mut walkers: Query<&mut WorldPose, With<RemoteWalker>>,
 ) {
     let net = &mut *net;
@@ -339,7 +359,7 @@ pub fn net_pre(
         if let Some(e) = net.proxies.remove(&o) {
             if let Ok(mut pl) = players.single_mut() {
                 if pl.ship == Some(e) {
-                    if let Ok((p, r, v, _)) = proxies.get(e) {
+                    if let Ok((p, r, v, ..)) = proxies.get(e) {
                         let f = walker_core::Frame { origin: p.0, rot: r.0 };
                         pl.w.change_frame(&f, &walker_core::Frame::IDENTITY, v.0);
                         pl.ship = None;
@@ -363,7 +383,7 @@ pub fn net_pre(
         if sample.mode == Mode::Hold {
             net.st.holds += 1;
         }
-        let pos = to_world(s.planet, s.p);
+        let pos = net.centres[0] + s.p;
         let ahead = net.hist[&owner].sample(target + TICK_S).map(|x| x.s.q).unwrap_or(s.q);
         let spin = {
             let d = ahead * s.q.inverse();
@@ -373,11 +393,12 @@ pub fn net_pre(
         };
         match net.proxies.get(&owner).copied() {
             Some(e) => {
-                if let Ok((mut p, mut r, mut v, mut w)) = proxies.get_mut(e) {
+                if let Ok((mut p, mut r, mut v, mut w, mut rs)) = proxies.get_mut(e) {
                     p.0 = pos;
                     r.0 = s.q;
                     v.0 = s.v;
                     w.0 = if spin.is_finite() { spin } else { DVec3::ZERO };
+                    rs.lag = s.lag;
                 }
             }
             None => {
@@ -390,12 +411,12 @@ pub fn net_pre(
     for (&owner, sample) in &samples {
         let s = &sample.s;
         let (pos, rot) = match s.frame {
-            FrameKind::Planet => (to_world(s.planet, s.wp), s.wq),
+            FrameKind::Planet => (net.centres[0] + s.wp, s.wq),
             FrameKind::Ship => {
                 let parent = if s.frame_id == net.cfg.slot {
                     own.single().ok().map(|(p, r)| (p.0, r.0))
                 } else {
-                    samples.get(&s.frame_id).map(|x| (to_world(x.s.planet, x.s.p), x.s.q))
+                    samples.get(&s.frame_id).map(|x| (net.centres[0] + x.s.p, x.s.q))
                 };
                 match parent {
                     Some((pp, pr)) => (pp + pr * s.wp, pr * s.wq),
@@ -422,20 +443,20 @@ pub fn net_pre(
 pub fn net_post(
     mut net: ResMut<Net>,
     planet: Res<PlanetRes>,
-    ships: Query<(&Position, &Rotation, &LinearVelocity), (With<Ship>, Without<RemoteShip>)>,
+    ships: Query<(&Position, &Rotation, &LinearVelocity, &Ship), Without<RemoteShip>>,
     remote_ships: Query<&RemoteShip>,
     players: Query<&Player>,
 ) {
     let net = &mut *net;
     let now = net.now();
-    let (Ok((p, r, v)), Ok(pl)) = (ships.single(), players.single()) else { return };
+    let (Ok((p, r, v, ship)), Ok(pl)) = (ships.single(), players.single()) else { return };
     if !net.cfg.host {
         let host = net.host_addr.unwrap();
         if !net.ready {
             net.hello_accum += TICK_S;
             if net.hello_accum >= 0.25 {
                 net.hello_accum = 0.0;
-                let hello = Packet::Hello { slot: net.cfg.slot as u8, planet: PLANET as u8 }.encode();
+                let hello = Packet::Hello { slot: net.cfg.slot as u8, planet: planet.id.0 }.encode();
                 net.send(&hello, host);
             }
         } else {
@@ -453,7 +474,8 @@ pub fn net_post(
         net.seq += 1;
         // The cabin the walker is in: own ship, or the owner of the remote ship it boarded.
         let frame_owner = pl.ship.and_then(|e| remote_ships.get(e).ok()).map(|r| r.owner).unwrap_or(net.cfg.slot);
-        let s = crate::net::build_snapshot(net.cfg.slot, frame_owner, PLANET, net.clock.server_now(now), net.seq, &planet, (p, r, v), pl);
+        let mut s = crate::net::build_snapshot(net.cfg.slot, frame_owner, planet.id.wire(), net.clock.server_now(now), net.seq, &planet, (p, r, v), pl);
+        s.lag = ship.lag.level;
         let bytes = wire::encode_snapshot(&s);
         let to: Vec<SocketAddr> = if net.cfg.host { net.peers.values().map(|p| p.addr).collect() } else { vec![net.host_addr.unwrap()] };
         for a in to {

@@ -3,14 +3,12 @@
 use crate::env::PlanetRes;
 use crate::walker::Player;
 use avian3d::prelude::*;
-use bevy::math::{DMat3, DQuat, DVec3};
+use bevy::math::{DQuat, DVec3};
 use net_core::snapshot::{FrameKind, Snapshot};
 
-/// Orientation of a walker from its heading and up (same convention as the camera look basis).
+/// Orientation of a walker from its heading and up (camera axes, like the view).
 pub fn walker_quat(forward: DVec3, up: DVec3) -> DQuat {
-    let f = (forward - up * forward.dot(up)).normalize_or_zero();
-    let f = if f == DVec3::ZERO { DVec3::NEG_Z } else { f };
-    DQuat::from_mat3(&DMat3::from_cols(f.cross(up), up, -f))
+    walker_core::look_rot(forward - up * forward.dot(up), up)
 }
 
 /// Snapshot of the local ship and walker. `owner` is the slot (1..8); the walker is described in
@@ -26,13 +24,13 @@ pub fn build_snapshot(owner: u32, frame_owner: u32, planet_id: u32, t: f64, seq:
         s.frame_id = frame_owner;
         s.wp = player.w.pos;
         s.wv = player.w.vel;
-        s.wq = walker_quat(player.w.forward, DVec3::Y);
+        s.wq = walker_quat(player.w.forward, player.cabin_up);
     } else {
         s.frame = FrameKind::Planet;
         s.frame_id = 0;
         s.wp = player.w.pos - planet.centre;
         s.wv = player.w.vel;
-        s.wq = walker_quat(player.w.forward, planet.up(player.w.pos));
+        s.wq = player.body.unwrap_or_else(|| walker_quat(player.w.forward, player.up));
     }
     s
 }

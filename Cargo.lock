@@ -2486,6 +2486,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
 
 [[package]]
+name = "daynight_core"
+version = "0.1.0"
+dependencies = [
+ "glam 0.32.1",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "derive_more"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2693,11 +2702,14 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "daynight_core",
  "flight_core",
+ "grab_core",
  "net_core",
  "planet_core",
  "serde_json",
  "walker_core",
+ "warp_core",
 ]
 
 [[package]]
@@ -2752,6 +2764,8 @@ name = "flight_core"
 version = "0.1.0"
 dependencies = [
  "glam 0.32.1",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3107,6 +3121,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fdf242682df893b86f33a73828fb09ca4b2d3bb6cc95249707fc684d27484b91"
 dependencies = [
  "bitflags 2.13.2",
+]
+
+[[package]]
+name = "grab_core"
+version = "0.1.0"
+dependencies = [
+ "glam 0.32.1",
+ "serde",
+ "serde_json",
+ "walker_core",
 ]
 
 [[package]]
@@ -5826,6 +5850,18 @@ name = "walker_core"
 version = "0.1.0"
 dependencies = [
  "glam 0.32.1",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "warp_core"
+version = "0.1.0"
+dependencies = [
+ "glam 0.32.1",
+ "net_core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

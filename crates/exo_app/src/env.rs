@@ -2,10 +2,21 @@
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use flight_core::{Field, PlanetEnv};
-use planet_core::{Planet, Recipe, V3};
+use planet_core::{BakeStats, Planet, Recipe, V3};
 use std::sync::Arc;
+use warp_core::{PlanetDef, PlanetId};
 
-pub const RECIPE: &str = include_str!("../../../content/planet/recipe.json");
+/// Every planet recipe, embedded at build time: `content/planet/<id>.json` (#64).
+pub const RECIPES: &[(&str, &str)] = &[
+    ("hearth", include_str!("../../../content/planet/hearth.json")),
+    ("cinder", include_str!("../../../content/planet/cinder.json")),
+];
+
+/// The recipe a planet of the system names, with the planet's seed and radius.
+pub fn recipe_for(def: &PlanetDef) -> Result<Recipe, String> {
+    let text = RECIPES.iter().find(|(id, _)| *id == def.recipe).map(|(_, t)| *t).ok_or_else(|| format!("planet {}: no recipe '{}' in content/planet", def.name, def.recipe))?;
+    Recipe::for_planet(text, def.seed, def.radius).map_err(|e| format!("content/planet/{}.json: {e}", def.recipe))
+}
 
 pub fn to_v3(d: DVec3) -> V3 {
     planet_core::v3(d.x, d.y, d.z)
@@ -25,26 +36,33 @@ pub struct PlanetRes {
     pub relief: f64,
     pub field: Field,
     pub bake_ms: f64,
+    /// The planet in the system registry.
+    pub id: PlanetId,
 }
 
 impl PlanetRes {
-    pub fn load(radius: f64, centre: DVec3) -> PlanetRes {
-        let mut recipe = Recipe::from_json(RECIPE).expect("recipe");
-        if radius > 0.0 {
-            recipe.radius = radius;
-        }
+    /// A planet of the registry: the recipe with its seed and radius, at its centre, with its
+    /// atmosphere height.
+    pub fn load(id: PlanetId, def: &PlanetDef) -> PlanetRes {
+        Self::load_with_stats(id, def).0
+    }
+    /// `load`, with the bake's statistics.
+    pub fn load_with_stats(id: PlanetId, def: &PlanetDef) -> (PlanetRes, BakeStats) {
+        let recipe = recipe_for(def).unwrap_or_else(|e| panic!("{e}"));
         let mut p = Planet::new(recipe);
-        let st = p.bake(0);
+        let st = p.bake_checked(0).unwrap_or_else(|e| panic!("content/planet/{}.json: {e}", def.recipe));
         let (lo, hi) = p.height_range;
-        PlanetRes {
+        let res = PlanetRes {
             radius: p.radius,
             sea: p.sea,
             relief: lo.abs().max(hi.abs()),
             pgen: Arc::new(p),
-            centre,
-            field: Field::default(),
+            centre: def.centre(),
+            field: Field { atmosphere_height: def.atmosphere_height, ..Field::default() },
             bake_ms: st.bake_ms,
-        }
+            id,
+        };
+        (res, st)
     }
     /// Distance from the centre to the ground along a direction.
     pub fn surface(&self, dir: DVec3) -> f64 {
@@ -72,5 +90,20 @@ impl PlanetEnv for PlanetRes {
     }
     fn field(&self) -> &Field {
         &self.field
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn every_planet_of_the_system_names_a_recipe_that_loads() {
+        let sys = warp_core::System::from_json(crate::warp::SYSTEM).unwrap();
+        for def in &sys.planets {
+            let r = super::recipe_for(def).unwrap();
+            assert_eq!((r.seed, r.radius), (def.seed, def.radius), "{}", def.name);
+        }
+        let mut missing = sys.planets[0].clone();
+        missing.recipe = "nowhere".into();
+        assert!(super::recipe_for(&missing).unwrap_err().contains("no recipe 'nowhere'"));
     }
 }

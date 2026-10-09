@@ -15,6 +15,8 @@ A game in Rust with Bevy, built by the initiator and maybe a few friends. AI mak
 
 **Spikes**: throwaway code on a `spike/<name>` branch, driven by a spike brief, never merged into `main`. Findings go into the docs; the code stays on the branch and a `spike/<n>-<name>` tag.
 
+**Git state** (tags, merges, deleting branches): read the concept repo's `docs/LEARNINGS.md`, section "Git and spike states", before you change it.
+
 ## Architecture
 
 - One Cargo workspace at the repo root, every crate in `crates/`, content in `content/` (the Bevy asset root).
@@ -24,7 +26,8 @@ A game in Rust with Bevy, built by the initiator and maybe a few friends. AI mak
 
 ## Agent loop
 
-- A change is done when `cargo test --workspace` and the headless full scenario both pass; the scenario exits non-zero on any failed check. Commands and scenario names: `README.md`, section "Run".
+- A change is done when `cargo t` passes: cargo-nextest (`mise install`) runs every workspace test in parallel, the headless scenarios included (`full` among them), so the gate takes about as long as the slowest scenario. It links Bevy dynamically for fast rebuilds. The timing test `perf.rs` runs once per round on a quiet machine: `cargo t -P perf`. GitHub CI is off (runner budget), so `cargo test --workspace` checks the static build locally before a round reaches `main`. Commands and scenario names: `README.md`, section "Run".
+- Several sessions at once (a lane each) or a playtest round across them: skill `exo-orchestrate`.
 - Every feature gets a scripted scenario that drives it through the `Controls` resource, so it can be tested without a window.
 - Bevy and Avian change their API in every release. Look up names and signatures in `~/.cargo/registry/src/*/` (`bevy*-<version>/`, `avian3d-<version>/`) and the Bevy examples there before you write code; trust the source over memory of older versions.
 

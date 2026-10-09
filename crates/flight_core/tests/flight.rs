@@ -116,7 +116,9 @@ impl Sim {
             boost: k.shift,
             brake: k.x,
             mouse: self.mouse,
+            turn: DVec2::ZERO,
             piloted: true,
+            grounded: false,
         };
         self.mouse = DVec2::ZERO;
         let (v, w) = self.ship.step(&self.body, &input, &self.planet, DT);
@@ -312,6 +314,8 @@ fn run(s: &mut Sim) {
     s.check(s.speed() < 0.5 && distance < 60.0, format!("firm stop {distance:.2} m over 2 s, speed {:.3}", s.speed()));
 
     s.spawn(150.0, false);
+    // The speed stage itself (#24); the capacitor has its own tests (boost.rs, #90).
+    s.ship.tuning.boost_capacitor.drain_time = 0.0;
     s.keys.w = true;
     s.keys.shift = true;
     s.ticks(240);
@@ -429,6 +433,10 @@ fn run(s: &mut Sim) {
             s.speed()
         ),
     );
+    // Issue #6: held longer, the brake stops exactly, so nothing drifts on after release.
+    s.ticks(120);
+    let sp = s.speed();
+    s.check(sp < 0.01, format!("firm brake with assist off comes to rest within 6 s ({sp:.5} m/s)"));
     s.keys.x = false;
     s.ticks(30);
     s.check(!s.ship.brake_active && s.speed() > 5.0, "brake release restores manual thrust".into());
@@ -472,4 +480,46 @@ fn flight_checks() {
     run(&mut s);
     println!("FLIGHT TEST: {} checks, {} failures", s.checks, s.failures);
     assert_eq!(s.failures, 0);
+}
+
+/// LAG: off while landed, comes up over 1 s after take-off, goes down after landing; G only
+/// works while landed.
+#[test]
+fn lag_follows_landing_and_the_manual_switch() {
+    let dt = 1.0 / 60.0;
+    let mut lag = Lag::default();
+    let run = |lag: &mut Lag, clearance: f64, speed: f64, secs: f64| {
+        for _ in 0..(secs / dt).round() as usize {
+            lag.step(clearance, speed, dt);
+        }
+    };
+    run(&mut lag, 0.1, 0.0, 2.0);
+    assert_eq!((lag.landed, lag.level), (true, 0.0));
+    lag.toggle();
+    run(&mut lag, 0.1, 0.0, 1.0);
+    assert!(lag.manual_on && lag.level == 1.0, "G switches it on while landed");
+    lag.toggle();
+    run(&mut lag, 0.1, 0.0, 1.0);
+    assert_eq!(lag.level, 0.0, "and off again");
+    // Hovering low is still landed (hysteresis), above 2 m the ship flies.
+    run(&mut lag, 1.8, 3.0, 1.0);
+    assert!(lag.landed);
+    run(&mut lag, 2.5, 3.0, 0.5);
+    assert!(!lag.landed && (lag.level - 0.5).abs() < 0.02, "half way after 0.5 s: {}", lag.level);
+    run(&mut lag, 2.5, 3.0, 0.6);
+    assert_eq!(lag.level, 1.0);
+    lag.toggle();
+    assert!(lag.is_on() && !lag.manual_on, "G does nothing in flight");
+    // Slow and low again: landed, the field goes down.
+    run(&mut lag, 1.0, 0.1, 1.1);
+    assert_eq!((lag.landed, lag.level), (true, 0.0));
+    // Mix: half way the direction is half turned, the strength stays.
+    let half = Lag { level: 0.5, ..Lag::default() };
+    let g = half.gravity(DVec3::X, DVec3::new(0.0, -9.81, 0.0));
+    let d = 9.81 / 2f64.sqrt();
+    assert!((g - DVec3::new(-d, -d, 0.0)).length() < 1e-9, "{g:?}");
+    // Upside down half way: still full strength, not cancelled.
+    let g = half.gravity(DVec3::NEG_Y, DVec3::new(0.0, -9.81, 0.0));
+    assert!((g.length() - 9.81).abs() < 1e-9, "{g:?}");
+    assert_eq!(Lag::full().level, 1.0);
 }

@@ -10,6 +10,7 @@
 use glam::{DQuat, DVec2, DVec3};
 pub mod bladder;
 pub mod urine;
+use serde::Deserialize;
 
 /// Result of a sweep, world space.
 #[derive(Copy, Clone, Debug)]
@@ -18,6 +19,8 @@ pub struct Hit {
     pub distance: f64,
     /// Surface normal of what was hit, pointing towards the walker.
     pub normal: DVec3,
+    /// Velocity of what was hit (a moving ship), world space; the walker stops only relative to it.
+    pub velocity: DVec3,
 }
 
 /// What the walker needs from the physics world. Positions are the feet (bottom of the
@@ -46,7 +49,106 @@ impl Frame {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+/// Look direction from a heading (perpendicular to `up`) and a pitch (radians, positive looks up).
+pub fn look_dir(forward: DVec3, up: DVec3, pitch: f64) -> DVec3 {
+    forward * pitch.cos() + up * pitch.sin()
+}
+
+/// Inverse of `look_dir` about another `up`: heading and pitch that give `look`. Used on a frame
+/// change, so the view keeps its direction in the world (issue #7). Looking straight along `up`
+/// has no heading; then `fallback` (projected) is used.
+pub fn split_look(look: DVec3, up: DVec3, fallback: DVec3) -> (DVec3, f64) {
+    let look = look.normalize();
+    let pitch = look.dot(up).clamp(-1.0, 1.0).asin();
+    let mut f = look - up * look.dot(up);
+    if f.length_squared() < 1e-12 {
+        f = fallback - up * fallback.dot(up);
+    }
+    if f.length_squared() < 1e-12 {
+        f = up.any_orthonormal_vector();
+    }
+    (f.normalize(), pitch)
+}
+
+/// Orientation with camera axes (-z looks, +y is the head) that looks exactly along `look`, the
+/// head as close to `up` as it gets. Looking straight along `up` falls back to any head.
+pub fn look_rot(look: DVec3, up: DVec3) -> DQuat {
+    let f = look.normalize();
+    let mut u = up - f * up.dot(f);
+    if u.length_squared() < 1e-12 {
+        u = f.any_orthonormal_vector();
+    }
+    let u = u.normalize();
+    DQuat::from_mat3(&glam::DMat3::from_cols(f.cross(u), u, -f))
+}
+
+/// Turns the unit vector `from` towards `to`: time constant `time` (s), at most `max_rate` rad/s.
+/// Used for righting the view after leaving a tilted cabin in gravity.
+pub fn turn_towards(from: DVec3, to: DVec3, dt: f64, time: f64, max_rate: f64) -> DVec3 {
+    let angle = from.angle_between(to);
+    if angle < 1e-4 {
+        return to;
+    }
+    let turn = (angle * dt / time).min(max_rate * dt).min(angle);
+    DQuat::IDENTITY.slerp(DQuat::from_rotation_arc(from, to), turn / angle) * from
+}
+
+/// Free body orientation after this step's mouse yaw and pitch and roll (radians), each about the
+/// body's own axes (issue #8).
+pub fn turn_body(body: DQuat, yaw: f64, pitch: f64, roll: f64) -> DQuat {
+    (body * DQuat::from_rotation_y(yaw) * DQuat::from_rotation_x(pitch) * DQuat::from_rotation_z(roll)).normalize()
+}
+
+/// Suit thrusters for weightless movement (issue #8). Assumed values, tune by feel.
+/// `content/tuning/suit.json`.
+#[derive(Deserialize, Copy, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SuitConfig {
+    /// m/s² per axis at full input.
+    pub accel: f64,
+    pub boost_factor: f64,
+    /// m/s²; the brake (X) takes velocity down to rest with this at most.
+    pub brake: f64,
+    /// s; below accel/brake the brake eases out like this, so it reaches rest without overshoot.
+    pub brake_time: f64,
+    /// Roll rate (Q/E), rad/s. Assumed value.
+    pub roll_rate: f64,
+}
+
+impl Default for SuitConfig {
+    fn default() -> Self {
+        SuitConfig { accel: 2.0, boost_factor: 3.0, brake: 4.0, brake_time: 0.3, roll_rate: 1.5 }
+    }
+}
+
+impl SuitConfig {
+    pub fn from_json(s: &str) -> Result<SuitConfig, String> {
+        parse_tuning("suit.json", s)
+    }
+}
+
+/// What the suit asks for this step: `thrust` in body axes (x right, y up, z back, like the ship),
+/// each -1..1.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct SuitInput {
+    pub thrust: DVec3,
+    pub boost: bool,
+    pub brake: bool,
+}
+
+/// Acceleration from the suit, world space. `rot` is the body orientation, `vel` the velocity the
+/// brake stops (world space). The brake overrides thrust, like the ship's firm brake.
+pub fn suit_accel(cfg: &SuitConfig, rot: DQuat, vel: DVec3, input: &SuitInput) -> DVec3 {
+    if input.brake {
+        return (-vel / cfg.brake_time).clamp_length_max(cfg.brake);
+    }
+    let boost = if input.boost { cfg.boost_factor } else { 1.0 };
+    rot * input.thrust.clamp_length_max(1.0) * cfg.accel * boost
+}
+
+/// `content/tuning/walker.json`.
+#[derive(Deserialize, Copy, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct WalkerConfig {
     pub radius: f64,
     /// Total capsule height (Godot CapsuleShape3D convention).
@@ -54,11 +156,21 @@ pub struct WalkerConfig {
     pub walk_speed: f64,
     pub run_speed: f64,
     pub jump_speed: f64,
+    /// Step-off: below this speed (m/s) walking and stopping ease over `start_time`, above it
+    /// the walker is at full speed at once. So a short tap of W is a slow step.
+    pub start_speed: f64,
+    pub start_time: f64,
     pub floor_max_angle_deg: f64,
     pub snap_length: f64,
     /// Gap kept to every surface after a sweep.
     pub skin: f64,
     pub max_slides: usize,
+    /// Largest look angle above or below the horizon, radians.
+    pub pitch_limit: f64,
+    /// Righting the view after leaving a tilted cabin in gravity: its up turns to the planet's
+    /// with this time constant (s), at most `righting_max_rate` rad/s. Assumed values.
+    pub righting_time: f64,
+    pub righting_max_rate: f64,
 }
 
 impl Default for WalkerConfig {
@@ -70,12 +182,37 @@ impl Default for WalkerConfig {
             walk_speed: 5.0,
             run_speed: 12.0,
             jump_speed: 5.0,
+            // Initiator: 0 to 3 m/s within 0.1 s, then full speed.
+            start_speed: 3.0,
+            start_time: 0.1,
             floor_max_angle_deg: 50.0,
             snap_length: 0.5,
             skin: 0.01,
             max_slides: 4,
+            pitch_limit: 1.5,
+            righting_time: 0.5,
+            righting_max_rate: std::f64::consts::FRAC_PI_2,
         }
     }
+}
+
+impl WalkerConfig {
+    pub fn from_json(s: &str) -> Result<WalkerConfig, String> {
+        parse_tuning("walker.json", s)
+    }
+}
+
+/// Parses a tuning object: every field required, unknown fields rejected, except an optional
+/// `_comment` string (as in the planet recipes). Same rule as `flight_core::parse_tuning`.
+fn parse_tuning<T: serde::de::DeserializeOwned>(what: &str, s: &str) -> Result<T, String> {
+    let mut v: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("{what}: {e}"))?;
+    if let Some(o) = v.as_object_mut()
+        && let Some(c) = o.remove("_comment")
+        && !c.is_string()
+    {
+        return Err(format!("{what}: _comment must be a string"));
+    }
+    serde_json::from_value(v).map_err(|e| format!("{what}: {e}"))
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -86,6 +223,10 @@ pub struct WalkInput {
     pub jump: bool,
     /// Heading change this step, radians, positive turns left (mouse look).
     pub yaw: f64,
+    /// Weightless only: acceleration from equipment (suit thrusters), frame coordinates.
+    pub accel: DVec3,
+    /// Share of the walking speed taken away (carrying a crate in both hands, #83); 0 = none.
+    pub slow: f64,
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -102,6 +243,9 @@ pub struct Walker {
     pub pos: DVec3,
     /// Frame coordinates (relative to the frame, not to the world).
     pub vel: DVec3,
+    /// Velocity the legs aim for (frame coordinates, horizontal part used). Collisions change
+    /// `vel` only, so walking up a slope does not lose speed every step.
+    pub move_vel: DVec3,
     /// Heading, frame coordinates, kept perpendicular to up.
     pub forward: DVec3,
     pub grounded: bool,
@@ -114,6 +258,7 @@ impl Walker {
             cfg: WalkerConfig::default(),
             pos,
             vel: DVec3::ZERO,
+            move_vel: DVec3::ZERO,
             forward,
             grounded: false,
             floor_normal: DVec3::Y,
@@ -137,6 +282,12 @@ impl Walker {
         self.forward = f.normalize();
     }
 
+    /// Stops the walker at once (teleports, sitting down).
+    pub fn halt(&mut self) {
+        self.vel = DVec3::ZERO;
+        self.move_vel = DVec3::ZERO;
+    }
+
     /// Moves the walker into another frame, keeping its world position. `frame_vel_change`
     /// is old frame velocity minus new frame velocity at the walker, world space
     /// (player.gd: `velocity -= ship.linear_velocity` on entering).
@@ -146,6 +297,7 @@ impl Walker {
         let world_fwd = old.rot * self.forward;
         self.pos = new.to_local(world_pos);
         self.vel = new.rot.inverse() * world_vel;
+        self.move_vel = self.vel;
         self.forward = new.rot.inverse() * world_fwd;
     }
 
@@ -162,20 +314,38 @@ impl Walker {
             self.pos += frame.rot.inverse() * push;
         }
 
-        let right = self.forward.cross(up);
-        let speed = if input.run { self.cfg.run_speed } else { self.cfg.walk_speed };
-        let horizontal = (right * input.dir.x + self.forward * input.dir.y).clamp_length_max(1.0) * speed;
-        let mut vertical = self.vel.dot(up);
+        // Weightless: nothing presses the feet onto a floor, so the walker can neither stand nor
+        // push off; it keeps its velocity (issue #5) and only equipment changes it (#8).
+        let weightless = gravity == 0.0;
         let mut jumping = false;
-        if self.grounded {
-            jumping = input.jump;
-            vertical = if jumping { self.cfg.jump_speed } else { 0.0 };
+        if weightless {
+            self.vel += input.accel * dt;
+            self.move_vel = self.vel;
         } else {
-            vertical -= gravity * dt;
+            let right = self.forward.cross(up);
+            let speed = if input.run { self.cfg.run_speed } else { self.cfg.walk_speed } * (1.0 - input.slow);
+            let target = (right * input.dir.x + self.forward * input.dir.y).clamp_length_max(1.0) * speed;
+            let current = self.move_vel - up * self.move_vel.dot(up);
+            let start = self.cfg.start_speed;
+            let horizontal = if current.length() < start - 1e-9 || target.length() < 1e-9 && current.length() <= start {
+                // Stepping off or coming to a stop: ease below the step-off speed.
+                let step = target.clamp_length_max(start);
+                current + (step - current).clamp_length_max(start / self.cfg.start_time * dt)
+            } else {
+                target
+            };
+            self.move_vel = horizontal;
+            let mut vertical = self.vel.dot(up);
+            if self.grounded {
+                jumping = input.jump;
+                vertical = if jumping { self.cfg.jump_speed } else { 0.0 };
+            } else {
+                vertical -= gravity * dt;
+            }
+            self.vel = horizontal + up * vertical;
         }
-        self.vel = horizontal + up * vertical;
 
-        let was_grounded = self.grounded;
+        let was_grounded = self.grounded && !weightless;
         self.grounded = false;
         let mut motion = self.vel * dt;
         for _ in 0..self.cfg.max_slides {
@@ -194,23 +364,29 @@ impl Walker {
             self.pos += dir * travel;
             let n = frame.rot.inverse() * hit.normal;
             let rest = motion - dir * travel;
-            if self.is_floor(n, up) {
+            // Into the surface relative to its own motion (issue #9: a moving ship).
+            let surface_v = frame.rot.inverse() * hit.velocity;
+            let into = |v: DVec3| n * (v - surface_v).dot(n).min(0.0);
+            if weightless {
+                motion = rest - n * rest.dot(n).min(0.0);
+                self.vel -= into(self.vel);
+            } else if self.is_floor(n, up) {
                 self.grounded = true;
                 self.floor_normal = n;
                 motion = rest - n * rest.dot(n).min(0.0);
                 if !jumping {
                     // Standing on it: no further fall, slide horizontal speed along the floor.
-                    self.vel -= n * self.vel.dot(n).min(0.0);
+                    self.vel -= into(self.vel);
                 }
             } else if n.dot(up) > -0.1 {
                 // Wall or too steep (also in the air): slide along it, never upwards.
                 motion = rest - n * rest.dot(n).min(0.0);
                 motion -= up * motion.dot(up).max(0.0);
-                self.vel -= n * self.vel.dot(n).min(0.0);
+                self.vel -= into(self.vel);
                 self.vel -= up * self.vel.dot(up).max(0.0);
             } else {
                 motion = rest - n * rest.dot(n).min(0.0);
-                self.vel -= n * self.vel.dot(n).min(0.0);
+                self.vel -= into(self.vel);
             }
         }
 

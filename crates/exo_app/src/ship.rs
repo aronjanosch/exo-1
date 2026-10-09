@@ -1,16 +1,14 @@
 //! Ship body (Avian rigid body, greybox cabin) driven by flight_core.
-use crate::controls::Controls;
+use crate::controls::{Actions, Bindings, ShipMouse, Tap};
 use crate::env::PlanetRes;
 use crate::Layer;
 use avian3d::prelude::*;
 use bevy::math::{DMat3, DQuat, DVec2, DVec3};
 use bevy::prelude::*;
-use flight_core::{BodyState, FlightInput, ShipController};
+use flight_core::{BodyState, FlightInput, Lag, ShipController, ShipTuning, VirtualStick};
 
 /// Seat position in ship space.
 pub const SEAT_POS: DVec3 = DVec3::new(0.0, 0.6, -3.0);
-/// Mouse: radians per pixel.
-const MOUSE_SENSITIVITY: f64 = 0.002;
 
 #[derive(Component)]
 pub struct Ship {
@@ -20,12 +18,20 @@ pub struct Ship {
     pub parked: bool,
     /// Drive while nobody pilots (scenarios only).
     pub test_input: FlightInput,
+    /// Cabin gravity (LAG): off while landed.
+    pub lag: Lag,
+    /// The mouse as a virtual joystick (bindings `ship_mode: "vjoy"`); centred while nobody pilots.
+    pub stick: VirtualStick,
+    /// A hull collider touches something (the ground; ships do not touch each other).
+    pub grounded: bool,
 }
 
 /// A ship owned by another player: kinematic proxy driven from snapshots (net module).
 #[derive(Component)]
 pub struct RemoteShip {
     pub owner: u32,
+    /// Cabin gravity (LAG) level from the owner's snapshots, 0..1 (issue #11).
+    pub lag: f64,
 }
 
 /// Visual-only part (the view plugin adds meshes for these).
@@ -49,7 +55,7 @@ pub fn basis_for_up(up: DVec3) -> DQuat {
     DQuat::from_mat3(&DMat3::from_cols(fwd.cross(up), up, -fwd))
 }
 
-pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, up: DVec3, offset_x: f64) -> Entity {
+pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, tuning: &ShipTuning, up: DVec3, offset_x: f64) -> Entity {
     // Parked 15 m ahead of the walker spawn, floor on the highest ground under the hull.
     let dir = (up * planet.radius + DVec3::new(offset_x, 0.0, -15.0)).normalize();
     let rot = basis_for_up(dir);
@@ -64,7 +70,7 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, up: DVec3, offset
     let (w, h, d) = (4.6f32, 3.2f32, 8.3f32);
     let ship = commands
         .spawn((
-            Ship { ctl: ShipController::default(), piloted: false, parked: true, test_input: FlightInput::default() },
+            Ship { ctl: ShipController::new(tuning.clone()), piloted: false, parked: true, test_input: FlightInput::default(), lag: Lag::default(), stick: VirtualStick::default(), grounded: false },
             RigidBody::Static,
             Position(pos),
             Rotation(rot),
@@ -87,21 +93,31 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, up: DVec3, offset
 pub fn add_hull(commands: &mut Commands, ship: Entity, layer: Layer) {
     let hull = Color::srgb(0.95, 0.5, 0.15);
     let inner = Color::srgb(0.55, 0.55, 0.6);
-    let glass = Color::srgb(0.3, 0.8, 0.9);
-    // [size, position, colour, collides] in ship space; origin at the floor bottom.
-    let parts: [(Vec3, Vec3, Color, bool); 8] = [
-        (Vec3::new(4.0, 0.3, 8.0), Vec3::new(0.0, 0.15, 0.0), inner, true),
-        (Vec3::new(0.3, 2.6, 8.0), Vec3::new(-2.15, 1.6, 0.0), hull, true),
-        (Vec3::new(0.3, 2.6, 8.0), Vec3::new(2.15, 1.6, 0.0), hull, true),
-        (Vec3::new(4.6, 0.3, 8.0), Vec3::new(0.0, 3.05, 0.0), hull, true),
-        (Vec3::new(4.6, 2.6, 0.3), Vec3::new(0.0, 1.6, -4.15), hull, true),
-        (Vec3::new(3.6, 1.0, 0.05), Vec3::new(0.0, 2.0, -3.98), glass, false),
-        (Vec3::new(1.0, 0.5, 0.8), Vec3::new(0.0, 0.55, -3.3), inner, false),
-        (Vec3::new(9.0, 0.25, 2.0), Vec3::new(0.0, 1.2, 1.0), hull, false),
+    // See-through: the tunnel streaks show through the window.
+    let glass = Color::srgba(0.3, 0.8, 0.9, 0.12);
+    // [size, position, colour, collides, drawn] in ship space; origin at the floor bottom.
+    // The front wall collides as one block; it is drawn as four pieces around the window opening
+    // (3.6 x 1.0 m at 1.5 to 2.5 m), which has the glass in it.
+    let parts: [(Vec3, Vec3, Color, bool, bool); 12] = [
+        (Vec3::new(4.0, 0.3, 8.0), Vec3::new(0.0, 0.15, 0.0), inner, true, true),
+        (Vec3::new(0.3, 2.6, 8.0), Vec3::new(-2.15, 1.6, 0.0), hull, true, true),
+        (Vec3::new(0.3, 2.6, 8.0), Vec3::new(2.15, 1.6, 0.0), hull, true, true),
+        (Vec3::new(4.6, 0.3, 8.0), Vec3::new(0.0, 3.05, 0.0), hull, true, true),
+        (Vec3::new(4.6, 2.6, 0.3), Vec3::new(0.0, 1.6, -4.15), hull, true, false),
+        (Vec3::new(4.6, 1.2, 0.3), Vec3::new(0.0, 0.9, -4.15), hull, false, true),
+        (Vec3::new(4.6, 0.4, 0.3), Vec3::new(0.0, 2.7, -4.15), hull, false, true),
+        (Vec3::new(0.5, 1.0, 0.3), Vec3::new(-2.05, 2.0, -4.15), hull, false, true),
+        (Vec3::new(0.5, 1.0, 0.3), Vec3::new(2.05, 2.0, -4.15), hull, false, true),
+        (Vec3::new(3.6, 1.0, 0.05), Vec3::new(0.0, 2.0, -4.15), glass, false, true),
+        (Vec3::new(1.0, 0.5, 0.8), Vec3::new(0.0, 0.55, -3.3), inner, false, true),
+        (Vec3::new(9.0, 0.25, 2.0), Vec3::new(0.0, 1.2, 1.0), hull, false, true),
     ];
     commands.entity(ship).with_children(|c| {
-        for (i, (size, p, color, collides)) in parts.into_iter().enumerate() {
-            let mut e = c.spawn((Transform::from_translation(p), ShipPart { size, color }, Visibility::default()));
+        for (i, (size, p, color, collides, drawn)) in parts.into_iter().enumerate() {
+            let mut e = c.spawn((Transform::from_translation(p), Visibility::default()));
+            if drawn {
+                e.insert(ShipPart { size, color });
+            }
             if i == 0 {
                 e.insert(crate::walker::CabinFloor);
             }
@@ -133,40 +149,80 @@ pub fn add_hull(commands: &mut Commands, ship: Entity, layer: Layer) {
 pub fn ship_control(
     time: Res<Time>,
     planet: Res<PlanetRes>,
-    mut controls: ResMut<Controls>,
-    mut q: Query<(&mut Ship, &Position, &Rotation, &mut LinearVelocity, &mut AngularVelocity)>,
+    mut actions: ResMut<Actions>,
+    bindings: Res<Bindings>,
+    settings: Res<crate::settings::Settings>,
+    warp: Res<crate::warp::WarpDrive>,
+    mut q: Query<(Entity, &mut Ship, &Position, &Rotation, &mut LinearVelocity, &mut AngularVelocity)>,
+    collisions: Collisions,
+    colliders: Query<(Entity, &ColliderOf)>,
 ) {
     let dt = time.delta_secs_f64();
-    for (mut ship, pos, rot, mut lv, mut av) in &mut q {
-        if ship.parked {
+    for (e, mut ship, pos, rot, mut lv, mut av) in &mut q {
+        ship.grounded = colliders.iter().any(|(c, of)| of.body == e && collisions.collisions_with(c).next().is_some());
+        let clearance = ship.ctl.clearance_at(planet.as_ref(), pos.0);
+        ship.lag.step(clearance, lv.0.length(), dt);
+        // From the pre-ramp on the drive holds the ship.
+        if ship.parked || warp.drive.phase.holds_ship() {
+            // The boost meter goes on (released): no boost left running through a quantum flight.
+            let ctl = &mut ship.ctl;
+            ctl.boost.step(false, &ctl.tuning.boost_capacitor, dt);
+            ctl.boost_strength = 0.0;
             continue;
         }
+        if !ship.piloted {
+            ship.stick = VirtualStick::default();
+        }
         let input = if ship.piloted {
-            if controls.take_tap(KeyCode::KeyH) {
+            if actions.take_tap(Tap::HoverAssist) {
                 ship.ctl.hover_assist = !ship.ctl.hover_assist;
             }
-            if controls.take_tap(KeyCode::KeyL) {
+            if actions.take_tap(Tap::HorizonFollow) {
                 ship.ctl.horizon_follow = !ship.ctl.horizon_follow;
             }
-            let m = std::mem::take(&mut controls.mouse);
-            FlightInput {
-                thrust: DVec3::new(
-                    controls.axis(KeyCode::KeyD, KeyCode::KeyA),
-                    controls.axis(KeyCode::Space, KeyCode::ControlLeft),
-                    -controls.axis(KeyCode::KeyW, KeyCode::KeyS),
-                ),
-                roll: controls.axis(KeyCode::KeyQ, KeyCode::KeyE),
-                boost: controls.pressed(KeyCode::ShiftLeft),
-                brake: controls.pressed(KeyCode::KeyX),
-                mouse: DVec2::new(m.x as f64, m.y as f64) * MOUSE_SENSITIVITY,
-                piloted: true,
+            if actions.take_tap(Tap::Decoupled) {
+                ship.ctl.coupled = !ship.ctl.coupled;
             }
+            if actions.take_tap(Tap::BoostMode) {
+                ship.ctl.boost_stage = !ship.ctl.boost_stage;
+            }
+            let mb = &bindings.mouse;
+            let m = std::mem::take(&mut actions.look);
+            let m = DVec2::new(m.x as f64, m.y as f64) * mb.ship_sensitivity * settings.mouse_sensitivity;
+            let (mouse, turn) = match mb.ship_mode {
+                ShipMouse::Direct => (m, actions.turn),
+                ShipMouse::Vjoy => {
+                    ship.stick.push(m, mb.vjoy_max_angle);
+                    (DVec2::ZERO, actions.turn + ship.stick.deflection(mb.vjoy_deadzone, mb.vjoy_max_angle, Some(&mb.vjoy_curve)))
+                }
+            };
+            FlightInput { thrust: actions.move_dir, roll: actions.roll, boost: actions.boost, brake: actions.brake, mouse, turn: turn.clamp(DVec2::NEG_ONE, DVec2::ONE), piloted: true, grounded: ship.grounded }
         } else {
-            FlightInput { piloted: false, ..ship.test_input }
+            FlightInput { piloted: false, grounded: ship.grounded, ..ship.test_input }
         };
         let body = BodyState { pos: pos.0, rot: rot.0, lin_vel: lv.0, ang_vel: av.0 };
         let (v, w) = ship.ctl.step(&body, &input, planet.as_ref(), dt);
         lv.0 = v;
         av.0 = w;
     }
+}
+
+/// Camera effects of the own ship (#27), stepped with the simulation so scenarios can check them;
+/// the view only applies them.
+#[derive(Resource, Default)]
+pub struct CameraEffects(pub flight_core::camera::CameraFx);
+
+pub fn camera_fx(
+    time: Res<Time>,
+    planet: Res<PlanetRes>,
+    tuning: Res<crate::tuning::Tuning>,
+    mut fx: ResMut<CameraEffects>,
+    q: Query<(&Ship, &Position, &Rotation, &LinearVelocity, &AngularVelocity)>,
+) {
+    let Ok((ship, pos, rot, lv, av)) = q.single() else { return };
+    let up = planet.up(pos.0);
+    let local = rot.0.inverse() * av.0;
+    // Hull corners touch first on a slope: up to 2.5 m above the terrain under the centre.
+    let near = ship.ctl.clearance_at(planet.as_ref(), pos.0) < 2.5;
+    fx.0.step(&tuning.camera, lv.0.length(), DVec2::new(local.x, local.y), -lv.0.dot(up), near, time.delta_secs_f64());
 }

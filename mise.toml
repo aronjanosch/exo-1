@@ -1,0 +1,3 @@
+# Dev tools for this repo (`mise install`). cargo-nextest runs `cargo t`.
+[tools]
+"aqua:nextest-rs/nextest/cargo-nextest" = "0.9.146"

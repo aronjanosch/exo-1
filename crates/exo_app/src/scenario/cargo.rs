@@ -1,10 +1,9 @@
 //! Scenarios of milestone C (crates, grab, lock grid, budget). They drive the game through
 //! `Controls` like the others; crates are placed by test hooks.
 use crate::cargo::{cabin_floor_pos, crate_bundle, CargoStats, Crate, CrateWatch, Crates};
-use crate::scenario::*;
+use super::*;
 use crate::ship::{basis_for_up, cabin_contains};
 use bevy::math::DVec3;
-use bevy::prelude::*;
 
 /// Removes every crate (scenarios start from a known set).
 pub(crate) fn clear_crates(w: &mut World) {

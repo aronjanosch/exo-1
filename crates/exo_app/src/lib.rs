@@ -2,16 +2,13 @@
 //! Rendering, input, camera, HUD, physics bodies, network transport and scripted scenarios.
 //! All game values are the spike test values, not designed.
 pub mod audio;
-pub mod boost_scenario;
 pub mod cargo;
-pub mod cargo_scenario;
 pub mod controls;
 pub mod env;
 pub mod grab;
 pub mod hot_reload;
 pub mod hud;
 pub mod interact;
-pub mod landing_scenario;
 pub mod look;
 pub mod menu;
 pub mod net;

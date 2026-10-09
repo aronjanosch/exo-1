@@ -25,6 +25,7 @@ Phase 2, `night/extras` (branched from the tip of `feat/milestone-c-grab`, all e
 - [ ] E3 visible grab-tool beam: not started
 - [x] E4 synthesized grab, throw and lock sounds (branch `feat/e4-sounds`)
 - [ ] E5 #52 split `scenario.rs` (cargo scenarios already live in `cargo_scenario.rs`): not started
+- [x] E5 #52 split `scenario.rs` (branch `feat/e5-split-scenario`)
 
 ## Architecture choice (read this first)
 
@@ -195,5 +196,14 @@ What: three more one-shots in `audio.rs`, synthesized in code like the others:
 Triggered from `Grab::held` (a new crate), `Grab::throws` and `CargoStats::locks`. Windowed runs only.
 
 Not heard: this machine has no sound device, so the unit tests check only length, range and that each sound is audible. Crates that lock at the start of a session make a ka-chunk too. TODO(initiator): sounds and volumes are start values, listen in a windowed run.
+## E5 #52 split `scenario.rs`
+
+Branch `feat/e5-split-scenario` from `origin/main`.
+
+What: `scenario.rs` (2805 lines) became `scenario/` with one module per topic, and `cargo_scenario.rs` moved in as `scenario/cargo.rs`:
+- `mod.rs` (731 lines) keeps the shared script interface: `Step`, `Ctx`, `Script`, the helpers, the general step builders (walk, board, sit, land, aim), `build` and `run_script`.
+- The topics: `net` (foreign ship, net bot, proxy at warp speed), `space`, `walk` (T5), `warp`, `flight`, `swap`, `figure`, `reload`, `cargo`.
+
+A pure move. Every old line is in the new files exactly once, except the module headers, `pub(super)` on the functions `build` calls, the `cargo::` paths in `build`, and two section-divider comments that became module docs; checked with a script. One orphaned doc comment (#16, the proxy at warp speed) now sits on `foreign_warp_steps`, where it belongs. Outside the folder nothing changes: `crate::scenario::...` paths stay the same.
 
 Gate: `cargo t` exit 0, `cargo scenario` 0 failures.

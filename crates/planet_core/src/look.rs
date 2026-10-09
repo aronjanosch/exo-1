@@ -42,7 +42,7 @@ pub struct Viewpoints {
 impl Viewpoints {
     pub fn from_json(s: &str) -> Result<Viewpoints, String> {
         let v: Viewpoints = serde_json::from_str(s).map_err(|e| e.to_string())?;
-        let known = ["orbit", "basin", "rim", "plateau", "crater", "canyon", "mesa", "spire", "caldera", "signature", "site", "forest_edge", "coast"];
+        let known = ["orbit", "basin", "rim", "plateau", "crater", "canyon", "mesa", "spire", "caldera", "signature", "site", "forest_edge", "coast", "river", "lake"];
         for p in &v.viewpoints {
             if !known.contains(&p.spot.as_str()) && !p.spot.starts_with("site:") && p.spot != "landmark" {
                 return Err(format!("viewpoint {}: unknown spot {}", p.id, p.spot));
@@ -62,16 +62,19 @@ pub enum AtlasLayer {
     Biome,
     Landform,
     Scatter,
+    /// Sea, lakes and rivers (#72): rivers drawn by catchment over a grey hillshade.
+    Water,
 }
 
 impl AtlasLayer {
-    pub const ALL: [AtlasLayer; 4] = [AtlasLayer::Height, AtlasLayer::Biome, AtlasLayer::Landform, AtlasLayer::Scatter];
+    pub const ALL: [AtlasLayer; 5] = [AtlasLayer::Height, AtlasLayer::Biome, AtlasLayer::Landform, AtlasLayer::Scatter, AtlasLayer::Water];
     pub fn name(self) -> &'static str {
         match self {
             AtlasLayer::Height => "height",
             AtlasLayer::Biome => "biome",
             AtlasLayer::Landform => "landform",
             AtlasLayer::Scatter => "scatter",
+            AtlasLayer::Water => "water",
         }
     }
 }
@@ -125,6 +128,8 @@ struct Px {
     biome: u8,
     land: f64,
     scatter: f32,
+    /// Depth of lake or river water (m).
+    inland: f64,
 }
 
 impl Planet {
@@ -143,7 +148,10 @@ impl Planet {
                     let lf = self.stamp_height(d).1;
                     let ha = hh - self.sea;
                     let biome = self.biome_for(ha, &f, lf);
-                    out.push(Px { ha, biome, land: lf.unwrap_or(f.land), scatter: self.scatter_density_at(d, biome, ha, None) });
+                    let level = self.water_level_ab(face, a, b);
+                    let above_water = hh - level.map_or(self.sea, |l| l.max(self.sea));
+                    let inland = level.map_or(0.0, |l| (l - hh).max(0.0));
+                    out.push(Px { ha, biome, land: lf.unwrap_or(f.land), scatter: self.scatter_density_at(d, biome, above_water, None), inland });
                 }
             }
             out
@@ -154,6 +162,7 @@ impl Planet {
         let mut biome = Vec::with_capacity(w * h * 3);
         let mut land = Vec::with_capacity(w * h * 3);
         let mut scatter = Vec::with_capacity(w * h * 3);
+        let mut water = Vec::with_capacity(w * h * 3);
         // Metres per pixel along a parallel / meridian, for the hillshade.
         let my = std::f64::consts::PI * self.radius / h as f64;
         for y in 0..h {
@@ -186,6 +195,15 @@ impl Planet {
                 land.extend(to_u8([lc[0] * shade, lc[1] * shade, lc[2] * shade]));
                 let s = if p.ha <= 0.0 { [0.05, 0.08, 0.2] } else { lerp3([0.12, 0.10, 0.08], [0.3, 1.0, 0.35], p.scatter) };
                 scatter.extend(to_u8(s));
+                let wc = if p.ha <= 0.0 {
+                    [0.10, 0.22, 0.45]
+                } else if p.inland > 0.0 {
+                    lerp3([0.35, 0.75, 1.0], [0.10, 0.40, 0.85], (p.inland / 10.0) as f32)
+                } else {
+                    let g = 0.35 + 0.35 * (p.ha / hi.max(1.0)) as f32;
+                    [g * shade, g * shade, g * shade]
+                };
+                water.extend(to_u8(wc));
             }
         }
         // Sites by kind on the biome layer (landmarks larger), black outline first.
@@ -195,6 +213,16 @@ impl Planet {
             mark_n(&mut biome, w, h, s.dir, [0, 0, 0], if big { 5 } else { 3 });
             mark_n(&mut biome, w, h, s.dir, KIND[s.kind % KIND.len()], if big { 4 } else { 2 });
         }
+        // Rivers on the water layer, thicker and darker with the catchment; the lakes' deepest
+        // points as dots.
+        for rv in &self.rivers {
+            let k = (rv.catchment_km2.max(1e-3).log10() / 2.0).clamp(0.0, 1.0);
+            let c = lerp3([0.45, 0.85, 1.0], [0.05, 0.30, 0.90], k as f32);
+            mark_n(&mut water, w, h, rv.dir, to_u8(c), if k > 0.6 { 1 } else { 0 });
+        }
+        for l in &self.lakes {
+            mark_n(&mut water, w, h, l.deepest, [255, 255, 255], 1);
+        }
         // Landforms on the height layer: red, the signature yellow.
         for s in &self.stamps {
             mark(&mut height, w, h, s.c, if s.signature { [255, 230, 0] } else { [230, 30, 30] });
@@ -202,14 +230,16 @@ impl Planet {
         Atlas {
             width: w,
             height: h,
-            layers: vec![(AtlasLayer::Height, height), (AtlasLayer::Biome, biome), (AtlasLayer::Landform, land), (AtlasLayer::Scatter, scatter)],
+            layers: vec![(AtlasLayer::Height, height), (AtlasLayer::Biome, biome), (AtlasLayer::Landform, land), (AtlasLayer::Scatter, scatter), (AtlasLayer::Water, water)],
         }
     }
 
     /// A named spot for the look harness: `basin` (its shore, facing the centre), `rim` (on
     /// top of the escarpment, facing down it), `plateau` (near the top's edge, facing out),
     /// `site` (30 m from the first site, facing it), `forest_edge` (outside a forest, facing
-    /// in), `coast` (just above the sea, facing it). None when the planet has no such place.
+    /// in), `coast` (just above the sea, facing it), `river` (on the bank of the biggest river
+    /// well above the sea, facing downstream), `lake` (on the shore of the largest lake, facing
+    /// its deepest point). None when the planet has no such place.
     pub fn spot(&self, kind: &str) -> Option<Spot> {
         let r = self.radius;
         match kind {
@@ -270,6 +300,62 @@ impl Planet {
                 let (e, _) = tangent_frame(s.dir);
                 let d = walk(s.dir, e, s.footprint_m + if s.category == SiteCategory::Landmark { 120.0 } else { 12.0 }, r);
                 Some(Spot { dir: d, facing: (s.dir - d * s.dir.dot(d)).normalized() })
+            }
+            "river" => {
+                use crate::drainage::Mouth;
+                let downstream = |i: usize, steps: usize| {
+                    let mut at = i;
+                    for _ in 0..steps {
+                        match self.rivers[at].next {
+                            Mouth::River(j) => at = j as usize,
+                            _ => break,
+                        }
+                    }
+                    self.rivers[at].dir
+                };
+                let (i, rv) = self
+                    .rivers
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, rv)| rv.bed_m - self.sea > 8.0 && downstream(*i, 6) != rv.dir)
+                    .max_by(|a, b| a.1.catchment_km2.total_cmp(&b.1.catchment_km2))?;
+                let c = rv.dir;
+                let ahead = downstream(i, 6);
+                let down = (ahead - c * c.dot(ahead)).normalized();
+                let side = c.cross(down).normalized();
+                // Sideways until the ground is dry and above the water.
+                let mut m = 5.0;
+                let mut d = walk(c, side, m, r);
+                while m < 150.0 && (self.sample(d).water_depth > 0.0 || self.height_at(d) < rv.level_m + 0.5) {
+                    m += 5.0;
+                    d = walk(c, side, m, r);
+                }
+                let f = down - side * 0.5;
+                Some(Spot { dir: d, facing: (f - d * f.dot(d)).normalized() })
+            }
+            "lake" => {
+                let l = self.lakes.iter().max_by(|a, b| a.area_m2.total_cmp(&b.area_m2))?;
+                let c = l.deepest;
+                let (e, n) = tangent_frame(c);
+                // The nearest dry shore over eight headings, a metre above the level.
+                let mut best: Option<(f64, V3)> = None;
+                for k in 0..8 {
+                    let a = k as f64 * std::f64::consts::TAU / 8.0;
+                    let t = e * a.cos() + n * a.sin();
+                    let mut m = 10.0;
+                    while m < 4000.0 {
+                        let d = walk(c, t, m, r);
+                        if self.height_at(d) > l.level_m + 1.0 {
+                            if best.is_none_or(|b| m < b.0) {
+                                best = Some((m, d));
+                            }
+                            break;
+                        }
+                        m += 10.0;
+                    }
+                }
+                let (_, d) = best?;
+                Some(Spot { dir: d, facing: (c - d * c.dot(d)).normalized() })
             }
             "forest_edge" | "coast" => {
                 let mut rng = 0x2545F4914F6CDD1Du64 ^ (self.recipe.seed as u64);

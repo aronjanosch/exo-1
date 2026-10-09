@@ -147,6 +147,7 @@ impl Planet {
                     continue;
                 }
                 any = true;
+                let reach_k = k.edits.iter().map(|e| edit_rt(e).1).fold(k.footprint_m, f64::max);
                 let mut best: Option<(f64, V3, f64)> = None;
                 let mut found = 0;
                 while found < rule.best_of.max(1) && tries[ki] < rule.candidates {
@@ -173,10 +174,14 @@ impl Planet {
                     }
                     let smp = self.sample(d);
                     let ha = smp.height_above_sea;
-                    if ha < k.height_above_sea_m[0] || ha > k.height_above_sea_m[1] || smp.slope_deg < k.slope_deg[0] || smp.slope_deg > k.slope_deg[1] {
+                    if ha < k.height_above_sea_m[0] || ha > k.height_above_sea_m[1] || smp.slope_deg < k.slope_deg[0] || smp.slope_deg > k.slope_deg[1] || smp.water_depth > 0.0 {
                         continue;
                     }
                     if !self.kind_allowed_in(k, smp.biome as u8) {
+                        continue;
+                    }
+                    // No lake or river within the edits' reach, so they do not dam one (#72).
+                    if self.water_within(d, reach_k) {
                         continue;
                     }
                     found += 1;

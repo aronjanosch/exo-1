@@ -107,6 +107,9 @@ pub struct EntryInfo {
 struct Ground {
     dir: V3,
     h: f64,
+    /// The water surface the entry's height band counts from: the sea, or a lake or river
+    /// above it (#72).
+    water: f64,
     nrm: V3,
     biome: u8,
 }
@@ -153,11 +156,12 @@ impl Planet {
         if nrm.dot(dir) < 0.0 {
             nrm = -nrm;
         }
-        Ground { dir, h, nrm, biome: self.biome_for(h - self.sea, &f, lf) }
+        let water = self.water_level_ab(face, a, b).map_or(self.sea, |l| l.max(self.sea));
+        Ground { dir, h, water, nrm, biome: self.biome_for(h - self.sea, &f, lf) }
     }
 
     fn passes(&self, e: &EntryRt, spec: &ScatterEntry, g: &Ground, sites: &[&crate::site::Site]) -> bool {
-        let ha = g.h - self.sea;
+        let ha = g.h - g.water;
         let c = g.nrm.dot(g.dir);
         if ha < spec.height_above_sea_m[0] || ha > spec.height_above_sea_m[1] || c < e.cos_slope[0] - 1e-9 || c > e.cos_slope[1] + 1e-9 {
             return false;
@@ -166,15 +170,16 @@ impl Planet {
     }
 
     /// Chance per spot of the storeys `which` (all but ground cover when None) at a point,
-    /// mask and biome row included, filters left out: the atlas's scatter layer.
-    pub fn scatter_density_at(&self, dir: V3, biome: u8, h_above_sea: f64, which: Option<&str>) -> f32 {
+    /// mask and biome row included, filters left out: the atlas's scatter layer. The height
+    /// counts from the water surface (the sea, or a lake or river above it).
+    pub fn scatter_density_at(&self, dir: V3, biome: u8, h_above_water: f64, which: Option<&str>) -> f32 {
         let p = self.p32(dir);
         let m = self.mults(biome);
         let specs = self.recipe.scatter.groups.iter().flat_map(|g| g.entries.iter());
         let mut sum = 0.0;
         for (i, (e, spec)) in self.scatter.entries.iter().zip(specs).enumerate() {
             let name = self.scatter.storeys[e.storey].0.as_str();
-            if which.map_or(name == "ground", |w| w != name) || h_above_sea < spec.height_above_sea_m[0] || h_above_sea > spec.height_above_sea_m[1] {
+            if which.map_or(name == "ground", |w| w != name) || h_above_water < spec.height_above_sea_m[0] || h_above_water > spec.height_above_sea_m[1] {
                 continue;
             }
             sum += e.weight * m.get(i).copied().unwrap_or(1.0) * self.mask_weight(e.mask, p);

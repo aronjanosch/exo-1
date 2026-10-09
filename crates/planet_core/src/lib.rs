@@ -1,5 +1,6 @@
 //! planet_core: plain Rust, no Godot types. Recipe, bake, height function, chunk build, scatter, sites, statistics.
 pub mod chunk;
+pub mod drainage;
 pub mod landform;
 pub mod look;
 pub mod math;

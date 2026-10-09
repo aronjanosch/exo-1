@@ -7,7 +7,12 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-pub const CHANNELS: usize = 5; // elevation, temperature, moisture, landform, weirdness (all noise, -1..1 except temperature)
+/// Macro image channels: elevation, temperature, moisture, landform, weirdness (noise, -1..1
+/// except temperature), then from the drainage (#72) the change of the ground (m) and the water
+/// surface (m above the base radius, `drainage::NO_WATER` where none).
+pub const CHANNELS: usize = 7;
+const CARVE: usize = 5;
+const WATER: usize = 6;
 
 pub fn make_noise(spec: &NoiseSpec, seed: i32) -> FastNoiseLite {
     let mut n = FastNoiseLite::with_seed(seed + spec.seed_offset);
@@ -67,6 +72,8 @@ pub struct Sample {
     pub sea: f64,
     pub biome: i32,
     pub slope_deg: f64,
+    /// Depth of the water over the ground: sea, lake or river (m, 0 when dry).
+    pub water_depth: f64,
     pub temperature: f64,
     pub moisture: f64,
     pub landform: f64,
@@ -82,6 +89,7 @@ pub struct BakeStats {
     pub sea_ms: f64,
     pub stats_ms: f64,
     pub sites_ms: f64,
+    pub drainage_ms: f64,
     pub threads: usize,
     pub sea_level_m: f64,
     pub land_fraction_macro: f64,
@@ -118,6 +126,66 @@ pub struct BakeStats {
     /// least two biome rows, and the median number of rows per walk (#68: sizes by walking).
     pub walks_two_biomes_share: f64,
     pub walk_biomes_median: f64,
+    /// Drainage (#72): river nodes (macro vertices on a river) and their length, the river ends
+    /// at the sea and at a lake, the biggest rain-weighted catchment of any land vertex, lakes
+    /// (area share of the whole surface),
+    /// the lowering by erosion alone and the deepest cut of all (m).
+    pub river_nodes: usize,
+    pub river_length_km: f64,
+    pub rivers_to_sea: usize,
+    pub rivers_to_lake: usize,
+    pub largest_catchment_km2: f64,
+    pub lake_count: usize,
+    pub lake_area_share: f64,
+    pub largest_lake_km2: f64,
+    pub deepest_lake_m: f64,
+    pub erosion_max_m: f64,
+    pub erosion_mean_m: f64,
+    pub carve_max_m: f64,
+    /// Drainage time per step (ms): the grid, the noise ground, then the steps of `drain`.
+    pub drainage_phases_ms: BTreeMap<String, f64>,
+}
+
+/// One macro vertex on a river (#72).
+#[derive(Clone, Debug)]
+pub struct River {
+    pub dir: V3,
+    /// Rain-weighted catchment (km²).
+    pub catchment_km2: f64,
+    /// Bed and water surface, metres above the base radius.
+    pub bed_m: f64,
+    pub level_m: f64,
+    pub next: crate::drainage::Mouth,
+}
+
+/// A lake (#72): its level, size, deepest point and where it spills.
+#[derive(Clone, Debug)]
+pub struct Lake {
+    pub level_m: f64,
+    pub area_m2: f64,
+    pub depth_m: f64,
+    pub deepest: V3,
+    pub outlet: Option<V3>,
+}
+
+/// The four macro vertices around a point and its place between them.
+struct MacroCell<'a> {
+    m: &'a [f32],
+    k: [usize; 4],
+    fu: f64,
+    fv: f64,
+}
+
+impl MacroCell<'_> {
+    #[inline(always)]
+    fn bil(&self, c: usize) -> f64 {
+        let [k00, k10, k01, k11] = self.k;
+        let m = self.m;
+        let (a, b, cc, d) = (m[k00 + c] as f64, m[k10 + c] as f64, m[k01 + c] as f64, m[k11 + c] as f64);
+        let x0 = a + (b - a) * self.fu;
+        let x1 = cc + (d - cc) * self.fu;
+        x0 + (x1 - x0) * self.fv
+    }
 }
 
 pub struct Planet {
@@ -136,6 +204,8 @@ pub struct Planet {
     pub macro_img: Vec<f32>,
     pub sea: f64,
     pub sites: Vec<crate::site::Site>,
+    pub rivers: Vec<River>,
+    pub lakes: Vec<Lake>,
     pub baked: bool,
     /// (min, max) crust height above the base radius found by the bake statistics.
     pub height_range: (f64, f64),
@@ -189,6 +259,8 @@ impl Planet {
             macro_img: Vec::new(),
             sea: 0.0,
             sites: Vec::new(),
+            rivers: Vec::new(),
+            lakes: Vec::new(),
             baked: false,
             height_range: (0.0, 0.0),
             radius,
@@ -270,24 +342,64 @@ impl Planet {
     /// samples sit exactly on the cube edges, so both faces interpolate the same
     /// samples along a shared edge and there is no seam.
     pub fn macro_lookup(&self, face: usize, a: f64, b: f64) -> Fields {
+        let c = self.macro_cell(face, a, b);
+        Fields { elev: c.bil(0), temp: c.bil(1), moist: c.bil(2), land: c.bil(3), weird: c.bil(4) }
+    }
+
+    fn macro_cell(&self, face: usize, a: f64, b: f64) -> MacroCell<'_> {
         let n = self.recipe.macro_.resolution;
         let nn = n as f64;
         let u = ((a + 1.0) * 0.5 * nn).clamp(0.0, nn);
         let v = ((b + 1.0) * 0.5 * nn).clamp(0.0, nn);
         let i0 = (u.floor() as usize).min(n - 1);
         let j0 = (v.floor() as usize).min(n - 1);
-        let (fu, fv) = (u - i0 as f64, v - j0 as f64);
         let w = n + 1;
         let idx = |i: usize, j: usize| ((face * w + j) * w + i) * CHANNELS;
-        let (k00, k10, k01, k11) = (idx(i0, j0), idx(i0 + 1, j0), idx(i0, j0 + 1), idx(i0 + 1, j0 + 1));
-        let m = &self.macro_img;
-        let bil = |c: usize| {
-            let (a, b, cc, d) = (m[k00 + c] as f64, m[k10 + c] as f64, m[k01 + c] as f64, m[k11 + c] as f64);
-            let x0 = a + (b - a) * fu;
-            let x1 = cc + (d - cc) * fu;
-            x0 + (x1 - x0) * fv
-        };
-        Fields { elev: bil(0), temp: bil(1), moist: bil(2), land: bil(3), weird: bil(4) }
+        MacroCell { m: &self.macro_img, k: [idx(i0, j0), idx(i0 + 1, j0), idx(i0, j0 + 1), idx(i0 + 1, j0 + 1)], fu: u - i0 as f64, fv: v - j0 as f64 }
+    }
+
+    /// Water surface at face coordinates (m above the base radius), lakes and rivers only (#72);
+    /// None where no surface is defined. Wet where it lies above the ground.
+    pub fn water_level_ab(&self, face: usize, a: f64, b: f64) -> Option<f64> {
+        if self.macro_img.is_empty() {
+            return None;
+        }
+        let l = self.macro_cell(face, a, b).bil(WATER);
+        (l > crate::drainage::DRY_BELOW).then_some(l)
+    }
+
+    /// Whether a lake or river is near: any macro vertex within about `radius_m` (a square on the
+    /// face of the direction) with a water surface defined, its shore ring included.
+    pub fn water_within(&self, dir: V3, radius_m: f64) -> bool {
+        if self.macro_img.is_empty() {
+            return false;
+        }
+        let d = dir.normalized();
+        let face = face_of(d);
+        let (a, b) = sphere_to_face_ab(face, d);
+        let n = self.recipe.macro_.resolution;
+        let e = 1e-4;
+        // Metres per unit of a and b here.
+        let ma = (cube_to_sphere(face, a + e, b) - cube_to_sphere(face, a - e, b)).length() / (2.0 * e) * self.radius;
+        let mb = (cube_to_sphere(face, a, b + e) - cube_to_sphere(face, a, b - e)).length() / (2.0 * e) * self.radius;
+        let at = |x: f64| ((x + 1.0) * 0.5 * n as f64).round() as isize;
+        let (ri, rj) = ((radius_m / ma * 0.5 * n as f64).ceil() as isize, (radius_m / mb * 0.5 * n as f64).ceil() as isize);
+        let (i0, j0) = (at(a), at(b));
+        let w = n + 1;
+        for j in (j0 - rj).max(0)..=(j0 + rj).min(n as isize) {
+            for i in (i0 - ri).max(0)..=(i0 + ri).min(n as isize) {
+                if self.macro_img[((face * w + j as usize) * w + i as usize) * CHANNELS + WATER] as f64 > crate::drainage::DRY_BELOW {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Depth of any water over the ground at face coordinates, given the ground height there.
+    pub fn water_depth_ab(&self, face: usize, a: f64, b: f64, h: f64) -> f64 {
+        let lake = self.water_level_ab(face, a, b).unwrap_or(f64::MIN);
+        (lake.max(self.sea) - h).max(0.0)
     }
 
     /// THE height function: metres above the base radius, from face coordinates. The noise
@@ -297,11 +409,18 @@ impl Planet {
         (self.apply_edits(dir, h), f)
     }
 
-    /// The height function without the site edits.
+    /// The height function without the site edits: the noise ground and the drainage's cut.
     pub fn base_height_ab(&self, face: usize, a: f64, b: f64, dir: V3) -> (f64, Fields) {
-        let f = self.macro_lookup(face, a, b);
-        let h = self.shape_offset(&f) + self.stamp_height(dir).0 + self.bands_height(self.p32(dir), &f);
+        let c = self.macro_cell(face, a, b);
+        let f = Fields { elev: c.bil(0), temp: c.bil(1), moist: c.bil(2), land: c.bil(3), weird: c.bil(4) };
+        let h = self.shape_offset(&f) + self.stamp_height(dir).0 + self.bands_height(self.p32(dir), &f) + c.bil(CARVE);
         (h, f)
+    }
+
+    /// The noise ground alone (shape, stamps, bands): what the drainage starts from.
+    fn noise_height_ab(&self, face: usize, a: f64, b: f64, dir: V3) -> f64 {
+        let f = self.macro_lookup(face, a, b);
+        self.shape_offset(&f) + self.stamp_height(dir).0 + self.bands_height(self.p32(dir), &f)
     }
 
     pub fn base_height_at(&self, dir: V3) -> f64 {
@@ -369,6 +488,7 @@ impl Planet {
             sea: self.sea,
             biome: self.biome_for(ha, &f, lf) as i32,
             slope_deg: gx.hypot(gy).atan().to_degrees(),
+            water_depth: self.water_depth_ab(face, a, b, h),
             temperature: self.temperature_at(&f, ha),
             moisture: f.moist,
             landform: lf.unwrap_or(f.land),
@@ -450,6 +570,8 @@ impl Planet {
                                 o[2] = f.moist as f32;
                                 o[3] = f.land as f32;
                                 o[4] = f.weird as f32;
+                                o[CARVE] = 0.0;
+                                o[WATER] = crate::drainage::NO_WATER;
                                 eo[i * 2] = (this.shape_offset(&f) + this.stamp_height(dir).0) as f32;
                                 eo[i * 2 + 1] = this.area_weight(face, a, b) as f32;
                             }
@@ -483,7 +605,14 @@ impl Planet {
         drop(ew);
         st.sea_ms = t0.elapsed().as_secs_f64() * 1e3;
 
-        // 3. sites (#70): placed on the noise ground, then their edits join the height function
+        // 3. rivers and lakes (#72): cut into the noise ground before the sites look for space
+        let t0 = Instant::now();
+        if let Some(spec) = self.recipe.drainage.clone() {
+            self.drain(&spec, threads, &mut st);
+        }
+        st.drainage_ms = t0.elapsed().as_secs_f64() * 1e3;
+
+        // 4. sites (#70): placed on the noise ground, then their edits join the height function
         let t0 = Instant::now();
         let (sites, misses) = self.place_sites_v2();
         self.sites = sites;
@@ -492,7 +621,7 @@ impl Planet {
         st.sites_ms = t0.elapsed().as_secs_f64() * 1e3;
 
         let hr;
-        // 4. statistics of the full height function on a stride-2 grid
+        // 5. statistics of the full height function on a stride-2 grid
         let t0 = Instant::now();
         {
             let this = &*self;
@@ -576,6 +705,97 @@ impl Planet {
             return Err(format!("bake: {e}"));
         }
         if st.quota_misses.is_empty() { Ok(st) } else { Err(format!("bake: {}", st.quota_misses.join("; "))) }
+    }
+
+    /// Rivers and lakes (#72) on the macro grid: the cut and the water surface go into the
+    /// macro image, the rivers and lakes into their lists.
+    fn drain(&mut self, spec: &DrainageSpec, threads: usize, st: &mut BakeStats) {
+        use crate::drainage::{self, Mesh, Mouth};
+        let n = self.recipe.macro_.resolution;
+        let w = n + 1;
+        let t0 = Instant::now();
+        let grid = drainage::MacroGrid::new(n, self.radius, threads);
+        st.drainage_phases_ms.insert("0 grid".into(), t0.elapsed().as_secs_f64() * 1e3);
+        let t0 = Instant::now();
+        let (h0, rain) = {
+            let (this, grid) = (&*self, &grid);
+            let parts = par_rows(6 * w, threads, |r0, r1| {
+                let mut h = Vec::with_capacity((r1 - r0) * w);
+                let mut rain = Vec::with_capacity((r1 - r0) * w);
+                for row in r0..r1 {
+                    let (face, j) = (row / w, row % w);
+                    let b = -1.0 + j as f64 * 2.0 / n as f64;
+                    for i in 0..w {
+                        let k = row * w + i;
+                        if !grid.is_node(k) {
+                            h.push(0.0);
+                            rain.push(0.0);
+                            continue;
+                        }
+                        let a = -1.0 + i as f64 * 2.0 / n as f64;
+                        h.push(this.noise_height_ab(face, a, b, cube_to_sphere(face, a, b)) as f32);
+                        let moist = this.macro_img[k * CHANNELS + 2] as f64;
+                        rain.push((grid.area_m2(k) * (spec.rain_base + spec.rain_moisture_gain * moist).max(0.0)) as f32);
+                    }
+                }
+                (h, rain)
+            });
+            let (mut h, mut rain) = (Vec::with_capacity(6 * w * w), Vec::with_capacity(6 * w * w));
+            for (a, b) in parts {
+                h.extend(a);
+                rain.extend(b);
+            }
+            (h, rain)
+        };
+        st.drainage_phases_ms.insert("1 ground".into(), t0.elapsed().as_secs_f64() * 1e3);
+        let d = drainage::drain(&grid, &h0, &rain, self.sea as f32, spec);
+        for (i, (name, ms)) in d.phases_ms.iter().enumerate() {
+            st.drainage_phases_ms.insert(format!("{} {name}", i + 2), *ms);
+        }
+        for k in 0..6 * w * w {
+            let c = grid.canon(k);
+            self.macro_img[k * CHANNELS + CARVE] = d.carve[c];
+            self.macro_img[k * CHANNELS + WATER] = d.water[c];
+        }
+        self.lakes = d
+            .lakes
+            .iter()
+            .map(|l| Lake {
+                level_m: l.level_m as f64,
+                area_m2: l.area_m2,
+                depth_m: l.depth_m as f64,
+                deepest: grid.dir(l.deepest as usize),
+                outlet: (l.outlet != drainage::NONE).then(|| grid.dir(l.outlet as usize)),
+            })
+            .collect();
+        self.rivers = d
+            .rivers
+            .iter()
+            .map(|r| River { dir: grid.dir(r.node as usize), catchment_km2: r.catchment_m2 * 1e-6, bed_m: r.bed_m as f64, level_m: r.level_m as f64, next: r.next })
+            .collect();
+
+        let spacing = std::f64::consts::FRAC_PI_2 * self.radius / n as f64;
+        st.river_nodes = d.rivers.len();
+        st.river_length_km = d
+            .rivers
+            .iter()
+            .map(|r| match r.next {
+                Mouth::River(j) => grid.dist_m(r.node as usize, d.rivers[j as usize].node as usize),
+                _ => spacing,
+            })
+            .sum::<f64>()
+            * 1e-3
+            + 0.0; // an empty float sum is -0.0
+        st.rivers_to_sea = d.rivers.iter().filter(|r| r.next == Mouth::Sea).count();
+        st.rivers_to_lake = d.rivers.iter().filter(|r| matches!(r.next, Mouth::Lake(_))).count();
+        st.largest_catchment_km2 = d.max_catchment_m2 * 1e-6;
+        st.lake_count = d.lakes.len();
+        st.lake_area_share = d.lakes.iter().map(|l| l.area_m2).sum::<f64>() / (4.0 * std::f64::consts::PI * self.radius * self.radius);
+        st.largest_lake_km2 = d.lakes.iter().map(|l| l.area_m2 * 1e-6).fold(0.0, f64::max);
+        st.deepest_lake_m = d.lakes.iter().map(|l| l.depth_m as f64).fold(0.0, f64::max);
+        st.erosion_max_m = d.erosion_max_m;
+        st.erosion_mean_m = d.erosion_mean_m;
+        st.carve_max_m = -d.carve.iter().copied().fold(0.0f32, f32::min) as f64;
     }
 
     /// Area element of the cube-sphere mapping at (a, b), relative units.

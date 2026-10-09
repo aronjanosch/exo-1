@@ -21,6 +21,10 @@ pub struct ChunkOut {
     /// relative to the centre on the sphere at sea level; the skirt ring sits on its edge
     /// vertex (no area: a dipped skirt showed as a dark line through the transparent water).
     pub water: Option<Vec<[f32; 3]>>,
+    /// Lakes and rivers over this chunk (#72): M*M positions on their surface relative to the
+    /// centre, and the triangles of the quads that hold water (all four corners on a surface, one
+    /// of them wet; same winding as the terrain). None when the chunk has none.
+    pub inland_water: Option<(Vec<[f32; 3]>, Vec<u32>)>,
     pub min_h: f32,
     pub max_h: f32,
 }
@@ -45,6 +49,7 @@ impl Planet {
         let mut dirs = vec![V3::default(); M * M];
         let mut hs = vec![0.0f64; M * M];
         let mut rows = vec![0u8; M * M];
+        let mut levels = vec![f64::NAN; M * M];
         for j in 0..M {
             for i in 0..M {
                 let a = a0 + (i as f64 - 1.0) * step;
@@ -53,6 +58,7 @@ impl Planet {
                 let (h, f) = self.height_ab(face, a.clamp(-1.0, 1.0), b.clamp(-1.0, 1.0), dir);
                 let lf = self.stamp_height(dir).1;
                 let k = j * M + i;
+                levels[k] = self.water_level_ab(face, a.clamp(-1.0, 1.0), b.clamp(-1.0, 1.0)).unwrap_or(f64::NAN);
                 pos[k] = dir * (r + h);
                 dirs[k] = dir;
                 hs[k] = h;
@@ -83,7 +89,18 @@ impl Planet {
                 };
                 out.verts.push([vv.x as f32, vv.y as f32, vv.z as f32]);
                 out.uvs.push(uv);
-                let p = self.palette(rows[k]);
+                let mut p = self.palette(rows[k]);
+                // Under a lake or river the ground darkens with depth, as the terrain shader does
+                // under the sea (#72).
+                let depth = levels[k] - hs[k];
+                if depth > 0.0 {
+                    let wl = &self.recipe.water;
+                    let t = (depth / wl.depth_m.max(1e-3) as f64).clamp(0.0, 1.0) as f32;
+                    for c in 0..3 {
+                        p.ground[c] += (wl.deep[c] - p.ground[c]) * t;
+                        p.rock[c] += (wl.deep[c] - p.rock[c]) * t;
+                    }
+                }
                 out.colors.push([p.ground[0], p.ground[1], p.ground[2], p.cap]);
                 out.rock.push([p.rock[0], p.rock[1], p.rock[2], p.strata]);
                 out.heights.push(hs[k] as f32);
@@ -104,6 +121,26 @@ impl Planet {
                 }
             }
             out.water = Some(w);
+        }
+        let mut tris = Vec::new();
+        for j in 1..=GRID {
+            for i in 1..=GRID {
+                let (k00, k10, k01, k11) = (j * M + i, j * M + i + 1, (j + 1) * M + i, (j + 1) * M + i + 1);
+                let q = [k00, k10, k01, k11];
+                if q.iter().all(|&k| levels[k].is_finite()) && q.iter().any(|&k| levels[k] > hs[k]) {
+                    tris.extend([k00, k10, k01, k10, k11, k01].map(|k| k as u32));
+                }
+            }
+        }
+        if !tris.is_empty() {
+            let w = (0..M * M)
+                .map(|k| {
+                    let level = if levels[k].is_finite() { levels[k] } else { hs[k] };
+                    let p = dirs[k] * (r + level) - centre;
+                    [p.x as f32, p.y as f32, p.z as f32]
+                })
+                .collect();
+            out.inland_water = Some((w, tris));
         }
 
         out

@@ -109,6 +109,13 @@ impl PendingPlanet {
         self.task.as_ref().is_some_and(|(_, t)| t.is_finished())
     }
 
+    /// Waits (wall time) until the running generation is done.
+    fn finish(&self) {
+        while self.task.as_ref().is_some_and(|(_, t)| !t.is_finished()) {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
+
     fn state(&self) -> Pending {
         match &self.task {
             None => Pending::None,
@@ -293,8 +300,15 @@ pub fn planet_swap(
     let sys = &sys.0;
     let Ok(pos) = ships.single() else { return };
     let pending = pending.as_mut();
+    let dropped = wd.events.contains(&Event::DroppedOut);
+    // Scripted runs go faster than real time: there the generation gets the wall time a real
+    // flight gives it before the ship reaches its zone or drops out, so the swap lands on the
+    // same tick on every machine. The waiting itself is tested in `warp_core` (`Loader`).
+    if tel.is_some() && let Pending::Running(p) = pending.state() && (dropped || sys.frame_of(pos.0) == Some(p)) {
+        pending.finish();
+    }
     let state = pending.state();
-    let f = match pending.loader.step(sys, planet.id, pos.0, &wd.drive, wd.events.contains(&Event::DroppedOut), state) {
+    let f = match pending.loader.step(sys, planet.id, pos.0, &wd.drive, dropped, state) {
         Load::Keep => return,
         Load::Start(t) => return pending.start(t, sys.planet(t).clone()),
         Load::Discard => {

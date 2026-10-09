@@ -236,7 +236,7 @@ impl Default for AxisTuning {
             boost_rate: Rot { pitch: 1.2, yaw: 1.2, roll: 1.0 },
             angular_accel: Rot { pitch: 6.0, yaw: 6.0, roll: 10.0 },
             angular_decay: 8.0,
-            precision: Precision { full_below: 15.0, off_above: 80.0, speed: 4.0, landing_share: 0.5, rate_share: 0.7 },
+            precision: Precision { full_below: 5.0, off_above: 40.0, speed: 15.0, landing_share: 0.2, rate_share: 1.0 },
             g_safety: GSafety { enabled: true, limit: Dirs { forward: 8.0, backward: 4.0, left: 4.0, right: 4.0, up: 6.0, down: 3.0 } },
         }
     }

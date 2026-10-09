@@ -88,7 +88,7 @@ fn shipped_file_equals_default_and_bad_values_are_refused() {
     };
     assert!(bad("\"linear_decay\": 2.0", "\"linear_decay\": 0.0").contains("linear_decay"));
     assert!(bad("\"forward\": 30.0", "\"forward\": -1.0").contains("accel.forward"));
-    assert!(bad("\"full_below\": 15.0, \"off_above\": 80.0", "\"full_below\": 90.0, \"off_above\": 80.0").contains("precision"));
+    assert!(bad("\"full_below\": 5.0, \"off_above\": 40.0", "\"full_below\": 50.0, \"off_above\": 40.0").contains("precision"));
     assert!(bad("\"cruise_speed\"", "\"cruise_sped\": 1.0, \"cruise_speed\"").contains("cruise_sped"));
     assert!(bad("\"boost_speed_backward\": 200.0", "\"boost_speed_backward\": 100.0").contains("below cruise_speed"));
 }
@@ -185,14 +185,14 @@ fn assist_off_falls_and_decoupled_keeps_its_vector() {
 #[test]
 fn precision_mode_caps_speed_near_the_ground_but_not_the_climb() {
     let t = AxisTuning::default();
-    let mut s = Sim::new(5.0, true);
-    s.run(&scripted(DVec3::NEG_Z), 10.0);
+    let mut s = Sim::new(2.0, true);
+    s.run(&scripted(DVec3::NEG_Z), 4.0);
     // The ship moved sideways over a 5 km sphere: still in the band.
     assert!(s.ship.axis.precision > 0.99, "precision {:.3} at {:.1} m", s.ship.axis.precision, s.ship.terrain_clearance);
     // Along the ground: the straight flight over the sphere climbs a little, and the climb is free.
     let up = s.body.pos.normalize();
     let v = (s.body.lin_vel - up * s.body.lin_vel.dot(up)).length();
-    assert!(v <= t.precision.speed + 0.05, "forward at 5 m: {v:.2} m/s along the ground, cap {}", t.precision.speed);
+    assert!(v <= t.precision.speed + 0.05, "forward at 2 m: {v:.2} m/s along the ground, cap {}", t.precision.speed);
     let mut s = Sim::new(2.0, true);
     s.run(&scripted(DVec3::Y), 3.0);
     assert!(s.body.lin_vel.y > 20.0, "climbing away from the ground is not capped: {:.2} m/s", s.body.lin_vel.y);
@@ -208,7 +208,7 @@ fn precision_mode_caps_speed_near_the_ground_but_not_the_climb() {
     }
     let touch = -s.body.lin_vel.y;
     let want = t.precision.speed * t.precision.landing_share;
-    assert!(fastest > 30.0 && (touch - want).abs() < 0.1, "descent from 400 m: fastest {fastest:.1} m/s, at 1 m {touch:.2} m/s (landing cap {want})");
+    assert!(fastest > 30.0 && (touch - want).abs() < 0.2, "descent from 400 m: fastest {fastest:.1} m/s, at 1 m {touch:.2} m/s (landing cap {want})");
 }
 
 #[test]

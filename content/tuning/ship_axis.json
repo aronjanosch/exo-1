@@ -10,6 +10,6 @@
   "boost_rate": { "pitch": 1.2, "yaw": 1.2, "roll": 1.0 },
   "angular_accel": { "pitch": 6.0, "yaw": 6.0, "roll": 10.0 },
   "angular_decay": 8.0,
-  "precision": { "full_below": 15.0, "off_above": 80.0, "speed": 4.0, "landing_share": 0.5, "rate_share": 0.7 },
+  "precision": { "full_below": 5.0, "off_above": 40.0, "speed": 15.0, "landing_share": 0.2, "rate_share": 1.0 },
   "g_safety": { "enabled": true, "limit": { "forward": 8.0, "backward": 4.0, "left": 4.0, "right": 4.0, "up": 6.0, "down": 3.0 } }
 }

@@ -8,7 +8,7 @@ pub mod recipe;
 pub mod scatter;
 pub mod site;
 pub use landform::PlacedStamp;
-pub use look::{Atlas, AtlasLayer, Spot, Viewpoint, Viewpoints};
+pub use look::{Atlas, AtlasLayer, Spot, TimeShot, Viewpoint, Viewpoints};
 pub use chunk::{ChunkOut, GRID, M};
 pub use site::{Piece, Site};
 pub use scatter::{EntryInfo, Instance, ScatterCell};

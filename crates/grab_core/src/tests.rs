@@ -338,6 +338,27 @@ fn friction_holds_until_push_beats_it() {
     assert!(b.pos.x > 0.5, "{}", b.pos.x);
 }
 
+/// One step of a crate 1 cm above the floor moving at `vel`, weightless so only the impact acts.
+fn after_impact(vel: DVec3) -> DVec3 {
+    let mut b = small_body();
+    b.pos.y = b.half.y + 0.01;
+    b.vel = vel;
+    b.step(&cfg(), &walker_core::Frame::IDENTITY, DVec3::Y, 0.0, DVec3::ZERO, 0.0, &Room { walls: None }, 1.0 / 60.0);
+    b.vel
+}
+
+#[test]
+fn impact_friction_cuts_the_slide() {
+    let mu = cfg().friction;
+    // Fast along the floor, a light touch: it keeps sliding, slower by friction x impact speed.
+    let v = after_impact(DVec3::new(6.0, -2.0, 0.0));
+    assert!(v.y.abs() < 1e-9, "no bounce: {v}");
+    assert!((v.x - (6.0 - mu * 2.0)).abs() < 1e-6, "tangential {v}");
+    // Steep and hard: friction eats the whole slide (never reverses it).
+    let v = after_impact(DVec3::new(2.0, -4.0, 1.0));
+    assert!(v.length() < 1e-9, "stops dead: {v}");
+}
+
 #[test]
 fn crate_stays_in_room() {
     let c = cfg();

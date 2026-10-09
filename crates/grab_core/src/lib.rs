@@ -121,7 +121,8 @@ pub struct GrabConfig {
     pub turn_ref_mass: f64,
     /// Walking speed share with both hands busy.
     pub two_hand_speed_share: f64,
-    /// Friction coefficient of a crate on any floor.
+    /// Friction coefficient of a crate on any floor, also as an impulse at each impact.
+    /// TODO(initiator): start value 0.8 (was 0.5; crates slid too far in the playtest).
     pub friction: f64,
     /// Below this speed (m/s) for `sleep_time` (s) a crate on a floor sleeps.
     pub sleep_speed: f64,
@@ -407,6 +408,8 @@ impl CrateBody {
             self.vel += a * dt;
         }
 
+        // Resting on a floor its friction already acts above; the impulse is for real impacts.
+        let resting_on = self.grounded.then_some(self.floor_normal);
         self.grounded = false;
         let mut motion = self.vel * dt;
         for _ in 0..SLIDES {
@@ -429,7 +432,17 @@ impl CrateBody {
             }
             let rest = motion - dir * travel;
             motion = rest - n * rest.dot(n).min(0.0);
-            self.vel -= n * self.vel.dot(n).min(0.0);
+            // The impact stops the motion into the surface, and Coulomb friction as an impulse
+            // takes friction x impact speed off the slide along it (never reverses it).
+            let v_in = -self.vel.dot(n);
+            let same_floor = resting_on.is_some_and(|f| f.dot(n) > 0.999);
+            if v_in > 0.0 && !same_floor {
+                let v_t = self.vel + n * v_in;
+                let s = v_t.length();
+                let keep = if s > 0.0 { (1.0 - cfg.friction * v_in / s).max(0.0) } else { 0.0 };
+                self.vel = v_t * keep;
+                motion = (motion - n * motion.dot(n)) * keep + n * motion.dot(n);
+            }
         }
 
         if !(self.grounded || gravity == 0.0) {

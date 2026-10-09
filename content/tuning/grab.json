@@ -18,7 +18,7 @@
   "contact_turn_share": 0.2,
   "turn_ref_mass": 100.0,
   "two_hand_speed_share": 0.6,
-  "friction": 0.5,
+  "friction": 0.8,
   "sleep_speed": 0.05,
   "sleep_time": 0.5,
   "cone_half_angle_deg": 25.0,

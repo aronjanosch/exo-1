@@ -19,10 +19,13 @@ Phase 1 done 2026-10-09 03:08 (all six issues commented, none closed). Gate on t
 Phase 2, `night/extras` (branched from the tip of `feat/milestone-c-grab`, all extras on this one branch):
 
 - [x] E1 carry crates down the ramp and back up (load and unload the ship)
-- [ ] E2 the walker bumps into crates; crates stack: **not done, parked** in local `git stash@{0}` on this machine (not pushed), see below
-- [ ] E3 visible grab-tool beam: not started
+- [ ] E2 the walker bumps into crates; crates stack: **dropped in this form** (initiator, playtest 2026-10-09): committed as 7e83b52, reverted; replaced by the three-state crate model, spike `spike/avian-crates` first (see below)
+- [x] E3 visible grab-tool beam (2026-10-09 midday)
 - [ ] E4 synthesized grab, throw and lock sounds: not started
+- [ ] E3 visible grab-tool beam: not started
+- [x] E4 synthesized grab, throw and lock sounds (branch `feat/e4-sounds`)
 - [ ] E5 #52 split `scenario.rs` (cargo scenarios already live in `cargo_scenario.rs`): not started
+- [x] E5 #52 split `scenario.rs` (branch `feat/e5-split-scenario`)
 
 ## Architecture choice (read this first)
 
@@ -144,7 +147,11 @@ Checks (0 failures):
 - small: carried 16.7 m behind the ship's centre (walker outside, crate in the planet frame, still held); rests on the ground 0.09 m above the CPU height (asleep); carried back into the cabin; locks again at (0.25, 0.56, 0.75), 1 plate lit.
 - medium (two hands, slower): carried 13.6 m out; rests 0.24 m above the height under its centre (sloped ground; the check allows 0.35 m); back in; locks at (0.00, 0.81, 2.00), 4 plates lit.
 
-## E2 the walker bumps into crates; crates stack (parked, not done)
+## E2 the walker bumps into crates; crates stack (dropped in this form)
+
+Update 2026-10-09 midday: with the stash re-applied, `session` passed 6 times in a row (the stash already held the `try_despawn` guard, and it skips crates whose ship is gone) and the full gate was green, so it went out as 7e83b52. Then the initiator's playtest feedback replaced this approach: outside near a player a crate becomes an Avian rigid body, resting far away it is frozen (pose only), in the cabin it is part of the ship. 7e83b52 is reverted, and the stash stays as a reference only. The lesson for the spike: a collider that is a child of the ship has to cope with the ship being despawned (menu path).
+
+Original notes:
 
 State: code in local `git stash@{0}` on the NAS (`git stash show -p stash@{0}`), not pushed. Each crate got a collider entity on a new `Layer::Crate` (memberships only), kept in place by a `sync_crate_colliders` system: a child of the ship in a cabin, standalone on the planet. Crates swept against other crates, and the walker swept against crates except the held one. Its own scenario `crate-stack` passed (crates stack with a 5.0 mm gap in the cabin and on the ground; the walker stands on a crate 5 mm above its top; the walker never got closer than 0.86 m to a crate's centre, face contact 0.85 m). `crate-lock` needed one check changed (the loose crate now locks on the plates after the flight).
 
@@ -155,3 +162,48 @@ Also seen on the way: `tests/perf.rs` failed once under load (p95 3.49 ms agains
 ## The run stopped early (read this)
 
 The run stopped at about 03:57 and did nothing until 09:37. Not a limit (7-day usage 51 %) and not a crash: while debugging the `session` failure above, the agent ended its turn after a tool result without taking the next step and without a note. Lost: about 5.5 hours, so E2 is unfinished and E3 to E5 were never started. At 09:37 (past the 08:30 stop) E2 was parked in a stash, so `night/extras` ends at the green E1 commit plus this log.
+
+## Playtest follow-up (2026-10-09, after the run)
+
+Feedback: the crates hardly turn, the physics does not feel good, and they slide much too far. New direction: crates get three states. Outside near a player they are an Avian rigid body. Resting far away they are frozen (pose only). In the cabin they are part of the ship, with `CrateBody` kept for the short flight inside the cabin. A spike `spike/avian-crates` comes first. E2 in its old form is reverted (56f3686).
+
+- [x] Revert E2 (56f3686).
+- [x] Impact friction in `CrateBody` (test-first, `impact_friction_cuts_the_slide`): an impact stops the motion into the surface and takes friction x impact speed off the slide along it, never reversing it. It is not applied again to the floor a crate already rests on (the floor's Coulomb friction acts there). `friction` 0.5 -> 0.8. A thrown crate in `crate-carry` now flies 4.77 m (was 6.66 m). Gate green.
+- [ ] Spike `spike/avian-crates`, brief first.
+- [x] E3 grab-tool beam, see below.
+- [ ] E4 sounds, E5 split `scenario.rs`.
+
+Open design questions, for the initiator to decide:
+- TODO(initiator) a) Cabin: does every crate set down become part of the ship at once (the lock grid then only helps keep order, and sliding under acceleration goes away)? Or does the lock grid stay the condition, with loose crates keeping the current model?
+- TODO(initiator) b) Friction start value: 0.8 plus impact friction is in now (`content/tuning/grab.json`), to be tuned by feel.
+
+## E3 visible grab-tool beam
+
+What: while the grab tool holds a crate, a thin glowing rod runs from a muzzle low right in front of the eye to the crate's centre. It breathes a little (6 Hz) and turns from cyan to hot orange as the hold strains towards breaking (the break timer). Render only (`grab::setup_beam`, `grab::update_beam`, windowed runs). It is hidden seen from orbit or a fixed viewpoint. Unit test `beam_spans_both_ends` covers the beam's pose. With a window, `crate-carry` takes a screenshot `shot-01-grab-beam.png` mid-pull.
+
+Look: the first screenshot (radius 2.5 cm at 45 cm from the eye) looked like a fat pipe; now 1.2 cm, muzzle 0.6 m ahead. TODO(initiator): muzzle, radius and colours are start values, tune by feel.
+
+Gate: `cargo t` exit 0, `cargo scenario` 0 failures; windowed `crate-carry` under xvfb 0 failures.
+## E4 synthesized grab, throw and lock sounds
+
+Branch `feat/e4-sounds` from `origin/main` (initiator: E4 and E5 on their own branches, nothing more on `night/extras`).
+
+What: three more one-shots in `audio.rs`, synthesized in code like the others:
+- **Grab:** 0.12 s, a 300 to 900 Hz chirp with a breath of noise ("fwip"), when a new crate is taken hold of.
+- **Throw:** 0.35 s, noise swelling and falling through a low-pass that opens and closes (a whoosh).
+- **Lock:** 0.2 s, a 110 Hz clunk and a 1.9 kHz ping 60 ms later ("ka-chunk"), on each lock onto the plates.
+
+Triggered from `Grab::held` (a new crate), `Grab::throws` and `CargoStats::locks`. Windowed runs only.
+
+Not heard: this machine has no sound device, so the unit tests check only length, range and that each sound is audible. Crates that lock at the start of a session make a ka-chunk too. TODO(initiator): sounds and volumes are start values, listen in a windowed run.
+## E5 #52 split `scenario.rs`
+
+Branch `feat/e5-split-scenario` from `origin/main`.
+
+What: `scenario.rs` (2805 lines) became `scenario/` with one module per topic, and `cargo_scenario.rs` moved in as `scenario/cargo.rs`:
+- `mod.rs` (731 lines) keeps the shared script interface: `Step`, `Ctx`, `Script`, the helpers, the general step builders (walk, board, sit, land, aim), `build` and `run_script`.
+- The topics: `net` (foreign ship, net bot, proxy at warp speed), `space`, `walk` (T5), `warp`, `flight`, `swap`, `figure`, `reload`, `cargo`.
+
+A pure move. Every old line is in the new files exactly once, except the module headers, `pub(super)` on the functions `build` calls, the `cargo::` paths in `build`, and two section-divider comments that became module docs; checked with a script. One orphaned doc comment (#16, the proxy at warp speed) now sits on `foreign_warp_steps`, where it belongs. Outside the folder nothing changes: `crate::scenario::...` paths stay the same.
+
+Gate: `cargo t` exit 0, `cargo scenario` 0 failures.

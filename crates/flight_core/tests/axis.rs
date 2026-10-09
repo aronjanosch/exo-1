@@ -326,3 +326,12 @@ fn decoupled_on_the_ground_holds_still() {
     let side = s.body.lin_vel.x.abs();
     assert!(side < 1e-9, "no sideways speed while holding on the ground: {side:.4} m/s");
 }
+
+#[test]
+fn switching_drops_the_classic_ground_hold() {
+    let mut s = ShipController::default();
+    s.ground_hold = Some(flight_core::GroundHold { at: DVec3::ZERO, rest: Some(DVec3::ZERO) });
+    s.set_model(FlightModel::Axis);
+    s.set_model(FlightModel::Classic);
+    assert_eq!(s.ground_hold, None);
+}

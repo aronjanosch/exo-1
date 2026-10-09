@@ -107,6 +107,7 @@ pub fn setup_view(mut commands: Commands) {
         DistanceFog { color: Color::srgb(0.72, 0.82, 0.95), falloff: FogFalloff::Exponential { density: 0.00025 }, ..default() },
     ));
     commands.spawn((
+        crate::daynight::SunLight,
         DirectionalLight { illuminance: 9000.0, shadow_maps_enabled: false, ..default() },
         Transform::from_rotation(Quat::from_euler(EulerRot::YXZ, 30f32.to_radians(), -50f32.to_radians(), 0.0)),
     ));
@@ -701,6 +702,7 @@ pub fn update_camera(
     fx: Res<crate::ship::CameraEffects>,
     tuning: Res<crate::tuning::Tuning>,
     settings: Res<crate::settings::Settings>,
+    sun: Res<crate::daynight::Sun>,
 ) {
     let f = fixed.overstep_fraction_f64();
     let Ok((pl, pi)) = players.single() else { return };
@@ -753,13 +755,16 @@ pub fn update_camera(
     view.last_rot = pose.rot;
     view.last_pos = pose.pos;
     origin.view = pose.pos;
-    // The sky is the planet's atmosphere (sky.rs); the clear colour is space. Haze per planet (#67).
+    // The sky is the planet's atmosphere (sky.rs); the clear colour is space or the night sky's
+    // glow. Haze per planet (#67), ambient, fog and sky by the time of day (#48).
     let density = planet.density_at(pose.pos) as f32;
     let s = &planet.pgen.recipe.sky;
-    clear.0 = Color::srgb(0.02, 0.02, 0.05);
-    fog.color = Color::srgb(s.haze_color[0], s.haze_color[1], s.haze_color[2]);
-    fog.falloff = FogFalloff::Exponential { density: s.haze_density * density };
-    ambient.brightness = 80.0 + 320.0 * density;
+    let (amb_color, amb, fog_color, fog_density, sky) = crate::daynight::camera_light(&sun, s.haze_color, s.haze_density, density);
+    clear.0 = sky;
+    fog.color = fog_color;
+    fog.falloff = FogFalloff::Exponential { density: fog_density };
+    ambient.color = amb_color;
+    ambient.brightness = amb;
 }
 
 /// Cabin gravity state; G works only while landed.

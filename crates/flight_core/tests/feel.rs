@@ -150,7 +150,8 @@ fn grounded_with_down_input_settles_without_sliding() {
     let input = FlightInput { thrust: DVec3::NEG_Y, grounded: true, piloted: true, ..Default::default() };
     let pushed = c.step(&BodyState { lin_vel: v, ..b }, &input, &env, DT).0;
     assert!(pushed.length() < 1e-3, "resting, no push: {pushed}");
-    // In the air the same input descends.
+    // In the air the same input descends (a ship that was not set down; a held one stays, #92).
+    let mut c = ShipController::default();
     let input = FlightInput { thrust: DVec3::NEG_Y, piloted: true, ..Default::default() };
     let mut v = DVec3::ZERO;
     for _ in 0..60 {

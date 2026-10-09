@@ -150,7 +150,7 @@ impl Terrain {
             Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
                 .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, w.clone())
                 .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
-                .with_inserted_indices(Indices::U32(self.indices.clone())),
+                .with_inserted_indices(Indices::U32(out.water_tris.clone())),
         )
     }
 

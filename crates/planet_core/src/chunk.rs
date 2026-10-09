@@ -10,7 +10,9 @@ pub struct ChunkOut {
     pub center: [f64; 3],
     pub verts: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
-    /// Biome palette per vertex (#66): ground rgb + cap share, rock rgb + strata share.
+    /// Biome palette per vertex (#66): ground rgb + cap share, rock rgb + strata share. Under a
+    /// lake or river the alpha is minus the wetness (0..1, full a metre down) instead of the cap
+    /// share (#72): the terrain shader then leaves out the sea's tint and shore band.
     pub colors: Vec<[f32; 4]>,
     pub rock: Vec<[f32; 4]>,
     pub uvs: Vec<[f32; 2]>,
@@ -21,6 +23,10 @@ pub struct ChunkOut {
     /// relative to the centre on the sphere at sea level; the skirt ring sits on its edge
     /// vertex (no area: a dipped skirt showed as a dark line through the transparent water).
     pub water: Option<Vec<[f32; 3]>>,
+    /// The sea's triangles (the terrain's layout): every quad but those under a lake or river
+    /// surface above the sea (#72; the sea sheet showed through a lake over a pocket below the
+    /// sea level).
+    pub water_tris: Vec<u32>,
     /// Lakes and rivers over this chunk (#72): M*M positions on their surface relative to the
     /// centre, and the triangles of the quads that hold water (all four corners on a surface, one
     /// of them wet; same winding as the terrain). None when the chunk has none.
@@ -93,7 +99,9 @@ impl Planet {
                 // Under a lake or river the ground darkens with depth, as the terrain shader does
                 // under the sea (#72).
                 let depth = levels[k] - hs[k];
+                let mut alpha = p.cap;
                 if depth > 0.0 {
+                    alpha = -(depth.min(1.0) as f32);
                     let wl = &self.recipe.water;
                     let t = (depth / wl.depth_m.max(1e-3) as f64).clamp(0.0, 1.0) as f32;
                     for c in 0..3 {
@@ -101,7 +109,7 @@ impl Planet {
                         p.rock[c] += (wl.deep[c] - p.rock[c]) * t;
                     }
                 }
-                out.colors.push([p.ground[0], p.ground[1], p.ground[2], p.cap]);
+                out.colors.push([p.ground[0], p.ground[1], p.ground[2], alpha]);
                 out.rock.push([p.rock[0], p.rock[1], p.rock[2], p.strata]);
                 out.heights.push(hs[k] as f32);
                 if k == ck {
@@ -121,6 +129,21 @@ impl Planet {
                 }
             }
             out.water = Some(w);
+            let above = |k: usize| {
+                let ck = (k / M).clamp(1, M - 2) * M + (k % M).clamp(1, M - 2);
+                levels[ck].is_finite() && levels[ck] > self.sea + 0.01
+            };
+            for j in 0..M - 1 {
+                for i in 0..M - 1 {
+                    let (k00, k10, k01, k11) = (j * M + i, j * M + i + 1, (j + 1) * M + i, (j + 1) * M + i + 1);
+                    if ![k00, k10, k01, k11].iter().all(|&k| above(k)) {
+                        out.water_tris.extend([k00, k10, k01, k10, k11, k01].map(|k| k as u32));
+                    }
+                }
+            }
+            if out.water_tris.is_empty() {
+                out.water = None;
+            }
         }
         let mut tris = Vec::new();
         for j in 1..=GRID {

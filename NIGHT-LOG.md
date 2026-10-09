@@ -22,6 +22,8 @@ Phase 2, `night/extras` (branched from the tip of `feat/milestone-c-grab`, all e
 - [ ] E2 the walker bumps into crates; crates stack: **dropped in this form** (initiator, playtest 2026-10-09): committed as 7e83b52, reverted; replaced by the three-state crate model, spike `spike/avian-crates` first (see below)
 - [x] E3 visible grab-tool beam (2026-10-09 midday)
 - [ ] E4 synthesized grab, throw and lock sounds: not started
+- [ ] E3 visible grab-tool beam: not started
+- [x] E4 synthesized grab, throw and lock sounds (branch `feat/e4-sounds`)
 - [ ] E5 #52 split `scenario.rs` (cargo scenarios already live in `cargo_scenario.rs`): not started
 
 ## Architecture choice (read this first)
@@ -181,3 +183,17 @@ What: while the grab tool holds a crate, a thin glowing rod runs from a muzzle l
 Look: the first screenshot (radius 2.5 cm at 45 cm from the eye) looked like a fat pipe; now 1.2 cm, muzzle 0.6 m ahead. TODO(initiator): muzzle, radius and colours are start values, tune by feel.
 
 Gate: `cargo t` exit 0, `cargo scenario` 0 failures; windowed `crate-carry` under xvfb 0 failures.
+## E4 synthesized grab, throw and lock sounds
+
+Branch `feat/e4-sounds` from `origin/main` (initiator: E4 and E5 on their own branches, nothing more on `night/extras`).
+
+What: three more one-shots in `audio.rs`, synthesized in code like the others:
+- **Grab:** 0.12 s, a 300 to 900 Hz chirp with a breath of noise ("fwip"), when a new crate is taken hold of.
+- **Throw:** 0.35 s, noise swelling and falling through a low-pass that opens and closes (a whoosh).
+- **Lock:** 0.2 s, a 110 Hz clunk and a 1.9 kHz ping 60 ms later ("ka-chunk"), on each lock onto the plates.
+
+Triggered from `Grab::held` (a new crate), `Grab::throws` and `CargoStats::locks`. Windowed runs only.
+
+Not heard: this machine has no sound device, so the unit tests check only length, range and that each sound is audible. Crates that lock at the start of a session make a ka-chunk too. TODO(initiator): sounds and volumes are start values, listen in a windowed run.
+
+Gate: `cargo t` exit 0, `cargo scenario` 0 failures.

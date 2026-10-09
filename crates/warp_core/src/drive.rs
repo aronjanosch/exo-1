@@ -11,6 +11,9 @@ use crate::path::{blocked_at, Blocker, Path};
 use crate::system::{DriveConfig, Obstacle, PlanetId, System};
 use glam::DVec3;
 
+/// Most steps an end point moves to get clear of ships (a few ships, steps of a kilometre).
+const MAX_CLEAR_STEPS: usize = 1000;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
     Idle,
@@ -91,8 +94,11 @@ pub struct Drive {
     calibration_time: f64,
     s: f64,
     v: f64,
-    /// Emergency drop: arc length where it ends and its deceleration.
-    drop: Option<(f64, f64)>,
+    /// Arc length where the rails end: the exit point, a drop point, or short of either when a
+    /// ship is there. 0 until the ramp-up.
+    end: f64,
+    /// Emergency drop: its deceleration.
+    drop: Option<f64>,
 }
 
 impl Drive {
@@ -110,6 +116,7 @@ impl Drive {
             calibration_time: 0.0,
             s: 0.0,
             v: 0.0,
+            end: 0.0,
             drop: None,
         }
     }
@@ -169,6 +176,7 @@ impl Drive {
         self.warning = false;
         self.exit_hold = 0.0;
         self.drop = None;
+        self.end = 0.0;
         self.phase = Phase::Spooling;
         Ok(())
     }
@@ -184,7 +192,8 @@ impl Drive {
     /// The exit key, every tick: held for `emergency_hold_time` during the flight it starts an
     /// emergency drop. The drop ends `emergency_drop_time` seconds of braking further along the
     /// path; if that point is closer to a ship than its radius it moves on by
-    /// `emergency_clear_step` until it is clear (planets cannot be there: the path keeps out of them).
+    /// `emergency_clear_step` until it is clear (planets cannot be there: the path keeps out of them),
+    /// at most to the exit point and `MAX_CLEAR_STEPS` times.
     pub fn hold_exit(&mut self, pressed: bool, dt: f64, sys: &System, obstacles: &[Obstacle]) -> Option<Event> {
         if !pressed || !matches!(self.phase, Phase::RampUp | Phase::Cruise | Phase::RampDown) {
             self.exit_hold = 0.0;
@@ -198,11 +207,16 @@ impl Drive {
         let (v0, ve) = (self.v, self.cfg.exit_speed);
         let len = path.length();
         let mut end = (self.s + 0.5 * (v0 + ve) * self.cfg.emergency_drop_time).min(len);
-        while end < len && blocked_at(path.at(end).0, &sys.planets, obstacles).is_some() {
-            end = (end + self.cfg.emergency_clear_step).min(len);
+        let step = self.cfg.emergency_clear_step;
+        for _ in 0..MAX_CLEAR_STEPS {
+            if !(step > 0.0) || end >= len || blocked_at(path.at(end).0, &sys.planets, obstacles).is_none() {
+                break;
+            }
+            end = (end + step).min(len);
         }
         let decel = (v0 * v0 - ve * ve).max(0.0) / (2.0 * (end - self.s).max(1e-9));
-        self.drop = Some((end, decel));
+        self.end = end;
+        self.drop = Some(decel);
         self.exit_hold = 0.0;
         self.phase = Phase::EmergencyDrop;
         self.timer = 0.0;
@@ -211,7 +225,22 @@ impl Drive {
 
     /// Where an emergency drop ends (while dropping and after it).
     pub fn drop_point(&self) -> Option<DVec3> {
-        Some(self.path.as_ref()?.at(self.drop?.0).0)
+        self.drop?;
+        Some(self.path.as_ref()?.at(self.end).0)
+    }
+
+    /// A ship at the end of the rails (one that got to the exit first, or drifted onto the drop
+    /// point): the end moves back along the path by `emergency_clear_step` until clear, never
+    /// behind the ship (#111). Only ships: the path keeps out of planets.
+    fn clear_end(&mut self, obstacles: &[Obstacle]) {
+        let Some(path) = self.path.as_ref() else { return };
+        let step = self.cfg.emergency_clear_step;
+        for _ in 0..MAX_CLEAR_STEPS {
+            if !(step > 0.0) || self.end - step <= self.s || blocked_at(path.at(self.end).0, &[], obstacles).is_none() {
+                break;
+            }
+            self.end -= step;
+        }
     }
 
     fn abort(&mut self, why: Abort) -> Event {
@@ -285,6 +314,7 @@ impl Drive {
                     _ => {
                         if self.timer >= self.cfg.pre_ramp_time {
                             self.s = 0.0;
+                            self.end = self.path.as_ref().expect("path").length();
                             self.v = ship.speed.clamp(self.cfg.engage_speed, self.cfg.top_speed);
                             self.go(Phase::RampUp, &mut ev);
                         }
@@ -292,7 +322,8 @@ impl Drive {
                 }
             }
             Phase::RampUp | Phase::Cruise | Phase::RampDown => {
-                let len = self.path.as_ref().expect("path on rails").length();
+                self.clear_end(obstacles);
+                let len = self.end;
                 let c = &self.cfg;
                 let rem = len - self.s;
                 let accel = if self.v < c.stage_switch_speed { c.accel_stage_one } else { c.accel_stage_two };
@@ -309,7 +340,9 @@ impl Drive {
                 } else {
                     Phase::RampUp
                 };
-                if len - self.s <= self.v * dt {
+                // A speed braked to zero (bad values) still gets there instead of stopping short
+                // for ever.
+                if len - self.s <= self.v * dt || self.v <= 0.0 {
                     self.s = len;
                     ev.push(Event::Arrived);
                     self.go(Phase::PostRampDown, &mut ev);
@@ -318,13 +351,14 @@ impl Drive {
                 }
             }
             Phase::EmergencyDrop => {
-                let (end, decel) = self.drop.expect("drop point");
+                self.clear_end(obstacles);
+                let (end, decel) = (self.end, self.drop.expect("drop"));
                 let ve = self.cfg.exit_speed;
                 let lim = (ve * ve + 2.0 * decel * (end - self.s - self.v * dt).max(0.0)).sqrt();
                 let v_new = (self.v - decel * dt).min(lim).max(ve);
                 self.s += 0.5 * (self.v + v_new) * dt;
                 self.v = v_new;
-                if end - self.s <= self.v * dt {
+                if end - self.s <= self.v * dt || self.v <= 0.0 {
                     self.s = end;
                     ev.push(Event::DroppedOut);
                     self.go(Phase::PostRampDown, &mut ev);
@@ -365,8 +399,11 @@ impl Drive {
     }
 
     /// Where the path ends (the exit point); follows the path while it is rebuilt before the start.
+    /// From the ramp-up on it is the hand-over point of an arrival, short of the exit point when
+    /// a ship was there.
     pub fn exit(&self) -> Option<DVec3> {
-        self.path.as_ref().map(|p| p.end())
+        let path = self.path.as_ref()?;
+        Some(if self.end > 0.0 && self.drop.is_none() { path.at(self.end).0 } else { path.end() })
     }
 
     /// Tunnel look 0..1 for the current speed (keyed to speed, not to the phase).

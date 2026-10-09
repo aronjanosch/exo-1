@@ -4,6 +4,7 @@
 pub mod audio;
 pub mod cargo;
 pub mod controls;
+pub mod daynight;
 pub mod env;
 pub mod grab;
 pub mod hot_reload;
@@ -246,6 +247,7 @@ pub fn build_app(o: &Options) -> App {
         app.add_systems(Update, hot_reload::poll);
     }
     app.add_plugins(origin::plugin);
+    app.add_plugins(daynight::plugin);
     app.insert_resource(SpawnOffset(o.spawn_offset));
     app.init_resource::<cargo::Crates>().init_resource::<cargo::CargoStats>().init_resource::<grab::Grab>().init_resource::<cargo::LockGrid>().init_resource::<cargo::ObjectBudget>().init_resource::<interact::Interaction>().init_resource::<hud::HudReadout>();
     let test_crates = o.scenario.is_none() || o.scenario.as_deref() == Some("full");
@@ -282,12 +284,12 @@ pub fn build_app(o: &Options) -> App {
             app.add_plugins(menu::plugin);
         }
         app.add_systems(Startup, (terrain::setup_terrain, view::setup_view, grab::setup_beam));
-        app.add_systems(Startup, view::setup_warp_view.after(view::setup_view));
+        app.add_systems(Startup, (view::setup_warp_view.after(view::setup_view), daynight::setup_lights));
         app.add_systems(FixedLast, view::record_player_view);
         app.add_systems(FixedUpdate, (view::orbit_toggle, view::debug_hud_toggle).after(controls::resolve_actions));
         app.add_systems(
             Update,
-            (controls::read_input, view::add_ship_visuals, view::add_remote_walker_visuals, cargo::add_crate_visuals, cargo::update_crate_visuals, cargo::add_lock_plates, cargo::update_lock_plates, view::update_camera, grab::update_beam, terrain::update_terrain, view::update_impostors, view::update_nav_markers, view::update_aim_marker, view::update_tunnel, view::update_speed_dust, view::update_hud, view::update_flight_hud, view::update_prompt, view::update_name_tags).chain().after(ring::update_ring),
+            (controls::read_input, view::add_ship_visuals, view::add_remote_walker_visuals, cargo::add_crate_visuals, cargo::update_crate_visuals, cargo::add_lock_plates, cargo::update_lock_plates, view::update_camera, daynight::apply_lights, grab::update_beam, terrain::update_terrain, view::update_impostors, view::update_nav_markers, view::update_aim_marker, view::update_tunnel, view::update_speed_dust, view::update_hud, view::update_flight_hud, view::update_prompt, view::update_name_tags).chain().after(ring::update_ring),
         );
     }
     if let Some(net) = net {

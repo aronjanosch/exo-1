@@ -587,6 +587,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "planet-look" => crate::look::steps(&mut s, out_dir, windowed),
         // #70: walk from outside into a site; the walker stands on its flattened ground.
         "site-walk" => crate::look::site_walk_steps(&mut s),
+        // #48: fast-forward a day on every planet; sun direction and brightness against the core.
+        "daynight" => crate::daynight::scenario_steps(&mut s),
         // Issue #5: step out of the ship in space (seat by test shortcut, then fly up).
         "space" => {
             s.push(Box::new(|w, _| {

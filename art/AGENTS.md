@@ -10,6 +10,8 @@ Layout: one folder per topic (`walker/`, `props/`, `city/`), a topic's shared he
 
 ## Live Blender over the MCP
 
+The step-by-step live workflow (look, iterate, carry into the script, rebuild and compare) is in [`README.md`](README.md).
+
 A session started in `art/` gets the `blender` MCP server (`art/.mcp.json`, `mcp-for-blender`, telemetry off). It talks to a running Blender whose add-on "MCP for Blender" listens on port 9876 (N panel in the viewport). A second agent with its own Blender uses another port.
 
 Run a city script in the open Blender (builds into the collection `exo`, writes nothing, prints the check report):

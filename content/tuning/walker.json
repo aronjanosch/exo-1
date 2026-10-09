@@ -1,5 +1,5 @@
 {
-  "_comment": "Walker tuning (walker_core::WalkerConfig). player.gd values and assumptions, not designed. Angles in radians, every field required.",
+  "_comment": "Walker tuning (walker_core::WalkerConfig). Spike values and assumptions, not designed. Angles in radians, every field required.",
   "radius": 0.35,
   "height": 1.8,
   "walk_speed": 5.0,

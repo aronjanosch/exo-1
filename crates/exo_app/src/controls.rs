@@ -1,5 +1,5 @@
-//! Input as state the simulation reads, so scripts and the keyboard drive the same path
-//! (Godot's SpikeInput pattern). Scripted runs never read the keyboard and never grab the mouse.
+//! Input as state the simulation reads, so scripts and the keyboard drive the same path.
+//! Scripted runs never read the keyboard and never grab the mouse.
 //!
 //! Two layers: `Controls` is the raw input (held keys, tapped keys, mouse pixels) that the keyboard
 //! and the scenario scripts write. Once per fixed step `resolve_actions` turns it into `Actions`
@@ -39,6 +39,9 @@ pub struct Controls {
     pub pad_taps: Vec<GamepadButton>,
     pub pad_axes: HashMap<GamepadAxis, f32>,
     pub scripted: bool,
+    /// The game does not have the mouse: a menu is open or the cursor is free. The virtual stick
+    /// centres (#110 point 2).
+    pub released: bool,
 }
 
 /// A bindable input: a key, or a gamepad button (`"Pad:South"` in the file).
@@ -91,6 +94,10 @@ pub enum Tap {
     DebugHud,
     /// Dev switch: boost capacitor or the old speed stage (F6, #90).
     BoostMode,
+    /// Landing mode of the flight model (spike 13). TODO(initiator): the key (K for now).
+    LandingMode,
+    /// A/B switch: the axis model's G-safety turn cap on or off (F8, #118).
+    TurnCap,
 }
 
 impl Axis {
@@ -121,7 +128,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 12] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode];
+    pub const ALL: [Tap; 14] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::LandingMode, Tap::TurnCap];
     pub fn name(self) -> &'static str {
         match self {
             Tap::Interact => "interact",
@@ -136,6 +143,8 @@ impl Tap {
             Tap::Decoupled => "decoupled",
             Tap::DebugHud => "debug_hud",
             Tap::BoostMode => "boost_mode",
+            Tap::LandingMode => "landing_mode",
+            Tap::TurnCap => "turn_cap",
         }
     }
 }
@@ -326,6 +335,10 @@ impl Bindings {
                 (Tap::Throw, None) => Ok(vec![Input::Key(KeyCode::KeyR)]),
                 // Files from before the boost switch (#90) have no `boost_mode`.
                 (Tap::BoostMode, None) => Ok(vec![Input::Key(KeyCode::F6)]),
+                // Files from before spike 13 have no `landing_mode`.
+                (Tap::LandingMode, None) => Ok(vec![Input::Key(KeyCode::KeyK)]),
+                // ... and no `turn_cap` (#118).
+                (Tap::TurnCap, None) => Ok(vec![Input::Key(KeyCode::F8)]),
                 _ => Err(err(t.name(), "missing".into())),
             }
         };
@@ -563,6 +576,7 @@ pub fn read_input(
         return;
     }
     // A menu takes the keyboard and mouse: the game sees nothing held.
+    c.released = true;
     if menu.is_some_and(|m| m.open()) {
         c.held.clear();
         c.taps.clear();
@@ -605,6 +619,7 @@ pub fn read_input(
     }
     if cur.grab_mode != CursorGrabMode::None {
         c.mouse += motion.delta;
+        c.released = false;
     }
 }
 
@@ -732,6 +747,20 @@ mod tests {
         let b = Bindings::from_json(&old).unwrap();
         let mut a = resolve(&b, &raw(&[], &[F6]));
         assert!(a.take_tap(Tap::BoostMode));
+    }
+
+    /// Spike 13: a player's file from before the landing mode and the turn cap still loads, with
+    /// K and F8.
+    #[test]
+    fn old_file_without_landing_mode_gets_k() {
+        let old = BINDINGS.replace("  \"landing_mode\": [\"KeyK\"],\n", "");
+        assert!(!old.contains("\"landing_mode\""));
+        let mut a = resolve(&Bindings::from_json(&old).unwrap(), &raw(&[], &[KeyK]));
+        assert!(a.take_tap(Tap::LandingMode));
+        let old = BINDINGS.replace("  \"turn_cap\": [\"F8\"],\n", "");
+        assert!(!old.contains("\"turn_cap\""));
+        let mut a = resolve(&Bindings::from_json(&old).unwrap(), &raw(&[], &[F8]));
+        assert!(a.take_tap(Tap::TurnCap));
     }
 
     /// G was missing from the keyboard's tap list (only scenarios could inject it).

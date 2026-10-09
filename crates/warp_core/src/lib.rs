@@ -4,10 +4,12 @@
 //! on a spline, ramp-down, cooldown. Our own names and numbers; all values are test values
 //! (`content/system/system.json`), not designed.
 pub mod drive;
+pub mod load;
 pub mod path;
 pub mod system;
 
 pub use drive::{Abort, Drive, Event, Phase, ShipView};
+pub use load::{Load, Loader, Pending};
 pub use path::{Blocker, Path};
 pub use system::{DriveConfig, Obstacle, PlanetDef, PlanetId, System};
 

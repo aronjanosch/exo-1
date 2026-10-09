@@ -1,5 +1,5 @@
 //! Timestamp-ordered, bounded history in shared coordinates. No extrapolation. Hermite for
-//! position (uses velocity), slerp for rotation. Port of buffer.gd.
+//! position (uses velocity), slerp for rotation.
 use crate::snapshot::Snapshot;
 use glam::DVec3;
 use std::collections::VecDeque;

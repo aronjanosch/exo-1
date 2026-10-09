@@ -166,9 +166,10 @@ fn shot_time(w: &World, pl: &PlanetRes, ground: DVec3, ts: &TimeShot) -> Option<
     let recipe = &w.resource::<SystemRes>().0.planet(pl.id).recipe;
     let (ps, _) = w.resource::<crate::daynight::DayNightRes>().0.planet(recipe).ok()?;
     let from = w.resource::<crate::daynight::DayClock>().t;
+    let to_star = daynight_core::to_star(w.resource::<SystemRes>().0.star.position(), pl.centre);
     match (ts.hour, ts.sun_elevation_deg) {
-        (Some(h), _) => ps.time_for_hour(ground, h, from),
-        (None, Some(e)) => ps.time_for_elevation(ground, e, ts.evening, from),
+        (Some(h), _) => ps.time_for_hour(ground, to_star, h, from),
+        (None, Some(e)) => ps.time_for_elevation(ground, to_star, e, ts.evening, from),
         (None, None) => None,
     }
 }

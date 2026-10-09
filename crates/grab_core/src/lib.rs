@@ -134,6 +134,10 @@ pub struct GrabConfig {
     /// The tool reels a crate in to this distance from the eye (m), at `tool_reel_speed` (m/s).
     pub tool_hold_distance: f64,
     pub tool_reel_speed: f64,
+    /// Impacts up to this speed (m/s) leave a crate's condition alone (#130).
+    pub impact_safe_speed: f64,
+    /// Condition lost per m/s of impact speed above the safe speed (condition runs 1 to 0).
+    pub impact_loss_per_speed: f64,
 }
 
 impl GrabConfig {
@@ -142,8 +146,17 @@ impl GrabConfig {
         if !(c.hand_range > 0.0 && c.tool_full_range >= c.hand_range && c.tool_max_range > c.tool_full_range) {
             return Err("grab.json: ranges must grow: hand_range <= tool_full_range < tool_max_range".into());
         }
+        if c.impact_safe_speed < 0.0 || c.impact_loss_per_speed < 0.0 {
+            return Err("grab.json: impact_safe_speed and impact_loss_per_speed must not be negative".into());
+        }
         Ok(c)
     }
+}
+
+/// Condition a crate loses in one impact at `speed` (m/s into the surface): nothing up to the
+/// safe speed, then linear in the excess (#130).
+pub fn impact_loss(cfg: &GrabConfig, speed: f64) -> f64 {
+    (speed - cfg.impact_safe_speed).max(0.0) * cfg.impact_loss_per_speed
 }
 
 // ---------- hold ----------
@@ -309,6 +322,8 @@ pub struct CrateBody {
     /// Touched anything in the last step.
     pub contact: bool,
     pub asleep: bool,
+    /// Largest impact speed (m/s into a surface) in the last step; 0 without one (#130).
+    pub impact: f64,
     rest_t: f64,
 }
 
@@ -317,7 +332,7 @@ const SLIDES: usize = 4;
 
 impl CrateBody {
     pub fn new(size: &CrateSize, pos: DVec3, forward: DVec3) -> CrateBody {
-        CrateBody { half: size.half(), mass: size.mass, pos, vel: DVec3::ZERO, forward, up: DVec3::Y, grounded: false, floor_normal: DVec3::Y, contact: false, asleep: false, rest_t: 0.0 }
+        CrateBody { half: size.half(), mass: size.mass, pos, vel: DVec3::ZERO, forward, up: DVec3::Y, grounded: false, floor_normal: DVec3::Y, contact: false, asleep: false, impact: 0.0, rest_t: 0.0 }
     }
 
     /// Orientation in the frame: -z along `forward`, +y along `up`.
@@ -355,6 +370,7 @@ impl CrateBody {
     #[allow(clippy::too_many_arguments)]
     pub fn step(&mut self, cfg: &GrabConfig, frame: &Frame, up: DVec3, gravity: f64, accel: DVec3, turn: f64, world: &impl BoxWorld, dt: f64) {
         self.up = up;
+        self.impact = 0.0;
         if self.asleep {
             let limit = if gravity > 0.0 { cfg.friction * gravity } else { 1e-3 };
             let horizontal = accel - up * accel.dot(up);
@@ -424,6 +440,7 @@ impl CrateBody {
             let v_in = -self.vel.dot(n);
             let same_floor = resting_on.is_some_and(|f| f.dot(n) > 0.999);
             if v_in > 0.0 && !same_floor {
+                self.impact = self.impact.max(v_in);
                 let v_t = self.vel + n * v_in;
                 let s = v_t.length();
                 let keep = if s > 0.0 { (1.0 - cfg.friction * v_in / s).max(0.0) } else { 0.0 };

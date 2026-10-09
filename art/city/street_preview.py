@@ -1,94 +1,74 @@
-"""Review scene: imports the exported city .glb files and lays out the first quarter with them.
+"""Review scene: builds the city plan (city_plan.py) from the exported .glb files.
 
 Writes nothing into the repo; it renders only. Also proves the .glb files import cleanly.
+Placements come from the plan; roads off the lane grid, paving, the pond and pylon cables are
+generated here from the plan's data, not stored as models.
 
 Run headless after the model scripts:
     blender -b -P art/city/street_preview.py -- --renders DIR [--content content/city]
 
-In a live Blender (runpy, see art/AGENTS.md) it builds the street with ground, sun and sky into the
+In a live Blender (runpy, see art/AGENTS.md) it builds the city with ground, sun and sky into the
 collection `street` and renders nothing; a rerun replaces only that collection.
 """
 
 import argparse
+import math
 import os
 import sys
 
 import bpy
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.modules.pop("city_plan", None)
+import city_plan as plan  # noqa: E402
 import kit  # noqa: E402
+from kit import Part, colour  # noqa: E402
 
-# The first quarter. (id, x, y, z, turn); turn is the yaw in degrees. Buildings face -Y as built:
-# turn 0 faces -Y, 180 faces +Y, 90 faces +X, -90 faces -X. Fronts stand on the walkway edge,
-# 5 m from a lane's centre line. Lane tiles sit on the 10 m grid.
-#   Main street: along X at y = 0, from x = -40 to 40, turnarounds at both ends.
-#   Cross street: along Y at x = 0, from y = -30 to 30; in the north it curves east into a stub.
-#   NW block: row houses and a corner house, back yards behind fences.
-#   NE block: a plaza with the beacon spire, market stalls, the company building on its east side.
-#   SW block: row houses, a corner turret, a garage on the cross street.
-#   SE block: a row house, the saucer diner, parking pads.
-# Pylons stand in rows along the lane's edge; cables run between neighbours in a row.
-PYLON_ROWS = [((-35, -25, -15), 3.3), ((15, 25, 35), 3.3), ((15, 25, 35), -3.3)]
-STOREY_TOP = {"row_tower": 4.5 + 7 * 3.5 + 0.4, "row_garage": 4.5 + 1 * 3.5 + 0.4}
-STREET = [
-    # Main street.
-    ("lane_end", -40, 0, 0, 90), ("lane_straight", -30, 0, 0, 90), ("lane_straight", -20, 0, 0, 90),
-    ("lane_straight", -10, 0, 0, 90), ("lane_crossing", 0, 0, 0, 0), ("lane_straight", 10, 0, 0, 90),
-    ("lane_straight", 20, 0, 0, 90), ("lane_straight", 30, 0, 0, 90), ("lane_end", 40, 0, 0, -90),
-    # Cross street, the curve and the northern stub.
-    ("lane_straight", 0, 10, 0, 0), ("lane_straight", 0, 20, 0, 0), ("lane_curve", 0, 30, 0, 0),
-    ("lane_straight", 10, 30, 0, 90), ("lane_end", 20, 30, 0, -90),
-    ("lane_straight", 0, -10, 0, 0), ("lane_straight", 0, -20, 0, 0), ("lane_end", 0, -30, 0, 180),
-    # NW block.
-    ("corner_sign", -9, 5, 0, 0), ("row_step", -17, 5, 0, 0), ("row_fin", -23, 5, 0, 0),
-    ("row_bulb", -29, 5, 0, 0), ("row_tank", -37, 5, 0, 0),
-    ("row_saw", -5, 21, 0, 90), ("row_tower", -5, 29, 0, 90),
-    # NE block: the plaza.
-    ("plaza_tile", 10, 10, 0, 0), ("plaza_tile", 20, 10, 0, 0), ("plaza_tile", 10, 20, 0, 0),
-    ("plaza_tile", 20, 20, 0, 0), ("beacon_spire", 15, 15, 0, 0), ("company_hq", 27, 15.3, 0, -90),
-    ("market_stall", 7.5, 11, 0, 90), ("market_stall", 7.5, 16, 0, 90), ("market_stall", 7.5, 21, 0, 90),
-    ("bench_float", 15, 8.5, 0, 180), ("bench_float", 15, 21.5, 0, 0),
-    ("planter_blob", 11, 19, 0, 0), ("planter_blob", 19, 11, 0, 0), ("booth_tele", 22.5, 7.5, 0, 0),
-    ("robot_sweeper", 12, 10, 0, 30), ("vending_tube", 24.5, 22.5, 0, -90),
-    ("tree_bulb", 22, 22, 0, 0), ("tree_spiral", 11.5, 23, 0, 0), ("grass_tuft", 19.5, 19.5, 0, 0),
-    ("grass_tuft", 10.5, 11.5, 0, 40), ("billboard", 12, 37, 0, 0),
-    # SW block.
-    ("corner_turret", -11, -5, 0, 180), ("row_twin", -21, -5, 0, 180), ("row_needle", -27, -5, 0, 180),
-    ("row_arch", -35, -5, 0, 180), ("row_garage", -5, -23, 0, 90),
-    # SE block.
-    ("row_slant", 11, -5, 0, 180), ("saucer_diner", 25, -12, 0, 180),
-    ("parking_pads", 37, -10, 0, 0), ("row_butterfly", 5, -21, 0, -90),
-    # Back yards: fences along the block's back line, junk and plants behind the houses.
-    *[("fence_panel", x, 25.6, 0, 0) for x in (-39, -35, -31, -27, -23, -19)],
-    *[("fence_panel", x, -25.6, 0, 0) for x in (-39, -35, -31, -27, -23, -19)],
-    ("crate_stack", -30, 18, 0, 10), ("tree_spiral", -36, 21, 0, 0), ("bush_puff", -24, 22, 0, 0),
-    ("bin_bot", -20, 17.5, 0, 180), ("grass_tuft", -33, 23, 0, 0), ("grass_tuft", -27, 19, 0, 0),
-    ("tree_bulb", -33, -21, 0, 0), ("crate_stack", -23, -19, 0, 80), ("bush_puff", -38, -19, 0, 0),
-    ("roof_dish", -19, -22, 0, 150), ("grass_tuft", -28, -23, 0, 0),
-    # Walkways.
-    ("lamp_arc", -31, 4.6, 0, 0), ("lamp_arc", -19, 4.6, 0, 0), ("lamp_arc", 13, -4.6, 0, 180),
-    ("lamp_arc", -23, -4.6, 0, 180), ("lamp_arc", -4.6, 15, 0, -90), ("lamp_arc", 4.6, -15, 0, 90),
-    *[("lane_pylon", x, y, 0, 90) for xs, y in PYLON_ROWS for x in xs],
-    ("bin_bot", -18.6, 4.4, 0, 0), ("vending_tube", -13.6, 4.4, 0, 0), ("mail_tube", -27.5, 4.4, 0, 0),
-    ("bench_float", -33, -3.9, 0, 180), ("bin_bot", -15, -4.4, 0, 180), ("mail_tube", 9, -4.4, 0, 180),
-    ("sign_post", 4.2, -4.2, 0, 0), ("sign_post", -4.2, 4.2, 0, 180), ("booth_tele", -4.2, -10, 0, 90),
-    ("robot_sweeper", -12, 3.8, 0, 200), ("planter_blob", 30, -4.3, 0, 0), ("bush_puff", 33, -4.2, 0, 0),
-    # Traffic: hovering on the lanes, parked on pads.
-    ("hover_bus", 16, 1.5, 1.4, -90), ("hover_car_red", -9, -1.5, 1.2, 90), ("hover_car_teal", 8, 1.5, 1.6, -90),
-    ("hover_van", -1.5, -23, 1.0, 0), ("hover_car_teal", 1.5, 14, 1.3, 180),
-    ("hover_car_red", 34.5, -10, 0.4, 0), ("hover_van", 39.5, -10, 0.4, 180),
-    ("hover_car_teal", -10.5, 29, STOREY_TOP["row_tower"] + 1.8 + 0.4, 30),
-    ("hover_car_red", -10.5, -23, STOREY_TOP["row_garage"] + 1.8 + 0.4, -60),
-]
+PAVING = colour("#d9d3e6")
+DISTRICT = colour("#cdc7da")
+LANE_RGB = colour("#4b5a8a")
+GLOW = colour("#5ef2e0")
+WATER = colour("#3f7f9a")
+STONE = colour("#a89a8c")
+
+
+def roads(col):
+    """Hover lanes along the plan's polylines: paving, the lane, glowing edges."""
+    for i, road in enumerate(plan.ROADS):
+        p = Part(f"road_{i}", kind="road")
+        pts, closed = road["points"], road["closed"]
+        dz = 0.004 * i
+        p.ribbon(pts, -plan.WALK, plan.WALK, -0.3, dz, PAVING, closed=closed)
+        p.ribbon(pts, -plan.LANE, plan.LANE, dz, 0.02 + dz, LANE_RGB, closed=closed)
+        for side, s0, s1 in road["edges"]:
+            o = side * plan.LANE
+            p.ribbon(plan.cut(pts, s0, s1, closed), o - 0.1, o + 0.1, dz, 0.03 + dz, GLOW, "glow")
+        p.build(col)
+
+
+def ground(col):
+    """Paved districts and the pond, flat on the grass."""
+    p = Part("ground", kind="road")
+    for poly in plan.PAVING:
+        p.prism(poly, -0.004, -0.002, DISTRICT)
+    cx, cy, r = plan.CUL_END
+    p.cylinder((cx, cy, -0.3), r + 2.0, 0.3 + 0.008, PAVING, segments=32)
+    p.cylinder((cx, cy, 0.008), r - 2.0, 0.02, LANE_RGB, segments=32)
+    p.cylinder((cx, cy, 0.008), 1.2, 0.06, colour("#f4f1e8"), segments=16)
+    p.prism(plan.POND, -0.004, 0.01, WATER, "glass")
+    p.ribbon(plan.POND, 0.0, 0.7, -0.004, 0.18, STONE, closed=True)
+    p.build(col)
 
 
 def cables(col, sag=0.6, height=6.95, arm=1.3):
     """Sagging cables between neighbouring pylons, one per insulator; generated, not a model."""
     mat = bpy.data.materials.get("cable") or bpy.data.materials.new("cable")
     next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED").inputs["Base Color"].default_value = (0.04, 0.04, 0.05, 1)
-    for xs, y in PYLON_ROWS:
-        for a, b in zip(xs, xs[1:]):
+    for run in plan.CABLE_RUNS:
+        for (ax, ay, at), (bx, by, bt) in zip(run, run[1:]):
             for side in (-arm, arm):
+                ox, oy = side * math.cos(math.radians(at)), side * math.sin(math.radians(at))
+                qx, qy = side * math.cos(math.radians(bt)), side * math.sin(math.radians(bt))
                 curve = bpy.data.curves.new("cable", "CURVE")
                 curve.dimensions = "3D"
                 curve.bevel_depth = 0.025
@@ -97,19 +77,26 @@ def cables(col, sag=0.6, height=6.95, arm=1.3):
                 spline.points.add(n - 1)
                 for k, pt in enumerate(spline.points):
                     t = k / (n - 1)
-                    pt.co = (a + (b - a) * t, y + side, height - sag * 4 * t * (1 - t), 1)
+                    pt.co = (ax + ox + (bx + qx - ax - ox) * t, ay + oy + (by + qy - ay - oy) * t,
+                             height - sag * 4 * t * (1 - t), 1)
                 curve.materials.append(mat)
                 obj = bpy.data.objects.new("cable", curve)
                 col.objects.link(obj)
 
 
+def build(content, col):
+    for row in plan.PLACEMENTS:
+        kit.place(content, *row, col=col)
+    roads(col)
+    ground(col)
+    cables(col)
+
+
 def live():
     content = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "content", "city")
     col = kit.fresh_collection("street")
-    for row in STREET:
-        kit.place(content, *row, col=col)
-    cables(col)
-    kit.stage(col, render=False)
+    build(content, col)
+    kit.stage(col, render=False, ground_rgb=plan.GRASS)
     print(f"STREET {len(col.objects)} objects in collection 'street'")
 
 
@@ -120,19 +107,26 @@ def main():
     ap.add_argument("--content", default="content/city")
     args = ap.parse_args(argv)
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    for row in STREET:
-        kit.place(args.content, *row)
     col = kit.fresh_collection("preview")
-    cables(col)
+    build(args.content, col)
     os.makedirs(args.renders, exist_ok=True)
     d = args.renders.rstrip("/")
-    kit.stage(col)
-    kit.shoot(col, f"{d}/street_overview.png", (70, -80, 60), (0, 2, 5), lens=30)
-    kit.shoot(col, f"{d}/street_eye.png", (-24, -3.5, 1.7), (6, 1, 6), lens=18)
+    shots = [
+        ("city_overview", (150, -330, 210), (60, -45, 0), 30),
+        ("downtown_overview", (70, -80, 60), (0, 2, 5), 30),
+        ("downtown_eye", (-24, -3.5, 1.7), (6, 1, 6), 18),
+        ("arterial_eye", (60, -2.0, 1.7), (130, -40, 4), 22),
+        ("ringside_eye", (205, -58, 1.7), (250, -95, 3), 22),
+        ("shop_street_eye", (235, -58, 1.7), (235, -10, 5), 20),
+    ]
+    kit.stage(col, ground_rgb=plan.GRASS)
+    for name, eye, target, lens in shots:
+        kit.shoot(col, f"{d}/{name}.png", eye, target, lens=lens)
     for o in [o for o in col.objects if o.type == "LIGHT" or o.name.startswith("Plane")]:
         bpy.data.objects.remove(o)
-    kit.stage(col, night=True)
-    kit.shoot(col, f"{d}/street_night.png", (-24, -3.5, 1.7), (6, 1, 6), lens=18)
+    kit.stage(col, night=True, ground_rgb=plan.GRASS)
+    kit.shoot(col, f"{d}/downtown_night.png", (-24, -3.5, 1.7), (6, 1, 6), lens=18)
+    kit.shoot(col, f"{d}/city_night.png", (150, -330, 210), (60, -45, 0), lens=30)
 
 
 if bpy.app.background:

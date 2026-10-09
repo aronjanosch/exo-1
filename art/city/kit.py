@@ -137,6 +137,36 @@ class Part:
                 pts.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
         self.prism(pts, lo[2], hi[2], rgb, mat)
 
+    def ribbon(self, points, a, b, z0, z1, rgb, mat="paint", closed=False):
+        """A flat band along a polyline in plan, from lateral offset a to b (left of the direction is
+        positive), top at z1, bottom at z0. Corners are mitred, so the band keeps its width."""
+        pts = [Vector((x, y)) for x, y in points]
+        n = len(pts)
+        rows = []
+        for i in range(n):
+            prev = pts[i - 1] if (i > 0 or closed) else None
+            nxt = pts[(i + 1) % n] if (i < n - 1 or closed) else None
+            d_in = (pts[i] - prev).normalized() if prev is not None else None
+            d_out = (nxt - pts[i]).normalized() if nxt is not None else None
+            t = ((d_in or d_out) + (d_out or d_in)).normalized()
+            normal = Vector((-t.y, t.x))
+            seg = d_out or d_in
+            scale = 1.0 / max(0.4, normal.dot(Vector((-seg.y, seg.x))))
+            rows.append([pts[i] + normal * off * scale for off in (a, b)])
+        top = [[self.bm.verts.new((q.x, q.y, z1)) for q in r] for r in rows]
+        bot = [[self.bm.verts.new((q.x, q.y, z0)) for q in r] for r in rows]
+        faces = []
+        for i in range(n if closed else n - 1):
+            j = (i + 1) % n
+            faces.append(self.bm.faces.new((top[i][0], top[i][1], top[j][1], top[j][0])))
+            faces.append(self.bm.faces.new((bot[i][0], bot[j][0], bot[j][1], bot[i][1])))
+            faces.append(self.bm.faces.new((bot[i][0], top[i][0], top[j][0], bot[j][0])))
+            faces.append(self.bm.faces.new((bot[i][1], bot[j][1], top[j][1], top[i][1])))
+        if not closed:
+            for r_top, r_bot in ((top[0], bot[0]), (top[-1], bot[-1])):
+                faces.append(self.bm.faces.new((r_bot[0], r_bot[1], r_top[1], r_top[0])))
+        self._paint(faces, rgb, mat)
+
     @contextmanager
     def placed(self, matrix):
         """Everything built inside the block (geometry and anchors) is moved by `matrix` afterwards,
@@ -295,8 +325,9 @@ def loose_islands(mesh):
 
 # ---------------------------------------------------------------- review renders
 
-def stage(collection, night=False, render=True):
-    """Ground, sun and sky; render=False leaves the render settings alone (live Blender)."""
+def stage(collection, night=False, render=True, ground_rgb=None):
+    """Ground, sun and sky; render=False leaves the render settings alone (live Blender).
+    ground_rgb: linear rgb of the ground plane, default a neutral grey."""
     scene = bpy.context.scene
     bpy.ops.mesh.primitive_plane_add(size=1000, location=(0, 0, -0.005))
     ground = bpy.context.active_object
@@ -304,7 +335,9 @@ def stage(collection, night=False, render=True):
         c.objects.unlink(ground)
     collection.objects.link(ground)
     gm = bpy.data.materials.new("Ground")
-    gm.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.08, 0.07, 0.1, 1) if night else (0.36, 0.33, 0.38, 1)
+    day = (*ground_rgb, 1) if ground_rgb else (0.36, 0.33, 0.38, 1)
+    gm.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (
+        tuple(c * 0.25 for c in day[:3]) + (1,) if night else day)
     ground.data.materials.append(gm)
     sun = bpy.data.objects.new("Sun", bpy.data.lights.new("Sun", "SUN"))
     sun.rotation_euler = (math.radians(50), 0, math.radians(-35))

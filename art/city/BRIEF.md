@@ -50,14 +50,27 @@ The simple boxes work when the facade carries relief and the silhouette carries 
 | Script | Family |
 |---|---|
 | `rows.py` | row houses (one recipe, parameters per house) and corner houses |
-| `landmarks.py` | one-offs that anchor a quarter and show over the horizon (company building, beacon spire) |
+| `landmarks.py` | one-offs that anchor a district and show over the horizon (company building, beacon spire, charge stop) |
+| `homes.py` | suburb bungalows with carports (butterfly roof, dome, flying wedge) |
 | `shops.py` | the first round shops (saucer diner, pod tower, bubble shop) |
 | `lanes.py` | hover-lane tiles: straight, tee, crossing, curve, end, plaza, parking pads |
-| `props.py` | street and roof props |
+| `props.py` | street and roof props, and the quest-giver placeholder `npc_marker` |
 | `flora.py` | alien plants |
 | `vehicles.py` | hover cars, van, bus |
-| `street_preview.py` | the first quarter laid out from the exported models; live or headless renders |
+| `city_plan.py` | the city as data: placements, roads off the grid, paving, pond, pylon runs, quest givers; no Blender |
+| `street_preview.py` | builds the plan in Blender from the exported models, generates roads and cables; live or headless renders |
 | `catalog.py` | contact sheets: every model by family, labelled, one render per family |
+
+## City layout (2026-10-09)
+
+Initiator: "was wir brauchen ist eine gut aussehende stadt ... organisch und echt wirken mit einem dichteren stadtteil", districts apart like Schedule I's, connected by longer roads; shops and quest givers in each; a big spaceport later, like Star Citizen's.
+
+- **Downtown:** dense, on the 10 m lane grid: two parallel streets, a cross street, the plaza with the spire, the company building; the round shops as accents on the south street.
+- **The arterial:** a curved road east (about 170 m) with pylons and cables, groves, the charge stop.
+- **Ringside:** a suburb on an oval ring road: bungalows outside, a park with a pond inside, a short shop street north, a cul-de-sac south.
+- **The west road:** outskirts with a few homes, ending at a fence where the spaceport will start.
+- Roads off the grid are polylines in the plan, smoothed, generated as ribbons (paving, lane, glowing edges that stop at junctions); the game can generate them the same way.
+- Green between districts: groves of trees and bushes; the ground is grass, districts are paved.
 
 `kit.Part.placed(matrix)` builds a part in its own frame and turns it into place: facades are built facing -Y and turned onto any side.
 

@@ -7,7 +7,7 @@ Run headless after the model scripts:
     blender -b -P art/city/catalog.py -- --renders DIR [--content content/city]
 
 In a live Blender (runpy, see art/AGENTS.md) it lays the families out in the collection `catalog`,
-south of the preview quarter, and renders nothing.
+south of the preview city, and renders nothing.
 """
 
 import argparse
@@ -31,7 +31,7 @@ FAMILIES = [
     ("flora", lambda m: m.startswith(("tree_", "bush_", "grass_"))),
     ("props", lambda m: True),
 ]
-ROW_START, ROW_STEP = -70.0, -45.0   # live: rows of families south of the quarter
+ROW_START, ROW_STEP = -170.0, -45.0   # live: rows of families south of the city
 
 
 def family_of(mid):

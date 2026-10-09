@@ -710,13 +710,21 @@ fn drop_near_a_third_planet_generates_it_in_the_background() {
 }
 
 #[test]
-fn drop_near_the_old_planet_frees_the_target() {
-    let s = sys();
+fn drop_near_the_old_planet_keeps_the_target_for_a_jump_on() {
+    let s = sys3();
     let (swaps, pending, current, pos) = fly_with_loader(&s, ORBIT, CINDER, 30, Some(0.1));
     assert_eq!(s.nearest(pos), HEARTH);
     assert!(swaps.is_empty());
     assert_eq!(current, HEARTH);
-    assert!(pending.job.is_none(), "Cinder still held in memory");
+    assert_eq!(pending.state(), Pending::Ready(CINDER));
+    // A jump on to Cinder keeps it; one elsewhere frees it.
+    let mut l = Loader::default();
+    let mut d = Drive::new(s.drive.clone());
+    d.phase = Phase::Spooling;
+    d.target = Some(CINDER);
+    assert_eq!(l.step(&s, HEARTH, pos, &d, false, pending.state()), Load::Keep);
+    d.target = Some(THIRD);
+    assert_eq!(l.step(&s, HEARTH, pos, &d, false, pending.state()), Load::Discard);
 }
 
 #[test]
@@ -726,7 +734,25 @@ fn a_teleport_into_a_frame_zone_swaps_at_once() {
     let d = Drive::new(s.drive.clone());
     let at_cinder = s.planets[1].centre() + DVec3::Y * 7000.0;
     assert_eq!(l.step(&s, HEARTH, at_cinder, &d, false, Pending::None), Load::Swap(CINDER));
-    // Already the simulation's planet: nothing to do; a stale generation goes.
+    // Already the simulation's planet: nothing to do; a generation of it is useless.
     assert_eq!(l.step(&s, CINDER, at_cinder, &d, false, Pending::None), Load::Keep);
-    assert_eq!(l.step(&s, CINDER, at_cinder, &d, false, Pending::Ready(HEARTH)), Load::Discard);
+    assert_eq!(l.step(&s, CINDER, at_cinder, &d, false, Pending::Ready(CINDER)), Load::Discard);
+    assert_eq!(l.step(&s, CINDER, at_cinder, &d, false, Pending::Ready(HEARTH)), Load::Keep);
+}
+
+#[test]
+fn after_a_drop_the_wait_ends_with_the_post_ramp() {
+    let s = sys3();
+    // Far slower than the second after the drop: taken (blocking) once it is over, not later.
+    let (swaps, _, current, _) = fly_with_loader(&s, ORBIT, CINDER, 60 * 600, Some(0.45));
+    assert_eq!(swaps, vec![(THIRD, false)]);
+    assert_eq!(current, THIRD);
+    let mut l = Loader::default();
+    let mut d = Drive::new(s.drive.clone());
+    let open = DVec3::new(6_250_000.0, -2_000_000.0, 0.0);
+    d.phase = Phase::PostRampDown;
+    assert_eq!(l.step(&s, HEARTH, open, &d, true, Pending::None), Load::Start(THIRD));
+    assert_eq!(l.step(&s, HEARTH, open, &d, false, Pending::Running(THIRD)), Load::Keep);
+    d.phase = Phase::Cooldown;
+    assert_eq!(l.step(&s, HEARTH, open, &d, false, Pending::Running(THIRD)), Load::Swap(THIRD));
 }

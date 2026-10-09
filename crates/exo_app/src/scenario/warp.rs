@@ -94,7 +94,7 @@ pub(crate) fn warp_flight(name: &'static str, tag: &'static str, start: Option<P
         let lim = 240.0;
         if c.t == 0.0 {
             begin(w, c, name);
-            for k in ["stood", "drift", "g0", "s0", "shot_due", "walk_t0", "walk_z0", "walk_g0", "walk_s0", "walk_far", "walk_done", "cabin_shot", "t_end", "nose", "end_err", "held", "terrain_ok", "terrain_n", "started"] {
+            for k in ["stood", "drift", "g0", "s0", "shot_due", "walk_t0", "walk_z0", "walk_g0", "walk_s0", "walk_far", "walk_done", "ramp_t0", "ramp_z", "ramp_out", "ramp_done", "cabin_shot", "t_end", "nose", "end_err", "held", "terrain_ok", "terrain_n", "started"] {
                 c.v.remove(k);
             }
             c.p.remove("stand_pos");
@@ -174,6 +174,19 @@ pub(crate) fn warp_flight(name: &'static str, tag: &'static str, start: Option<P
                 let (far, back) = (c.v["walk_far"] - c.v["walk_z0"], z - c.v["walk_z0"]);
                 let in_cabin = with_player(w, |p| p.ship.is_some());
                 check(c, in_cabin && g / n > 0.99 && far > 2.0 && back.abs() < 3.0, format!("{name}: walking in the cabin at {:.0} km/s at the end: {far:.2} m back, {back:.2} m from the start after walking forward again, deck contact {:.1} % of {n:.0} steps", w.resource::<WarpDrive>().drive.speed() / 1000.0, 100.0 * g / n));
+            }
+        }
+        // Then walk back onto the ramp until the rails end: the cabin keeps the walker (#111).
+        if how == Flight::Passenger && c.v.contains_key("walk_done") && !c.v.contains_key("ramp_done") {
+            if phase.on_rails() {
+                c.v.entry("ramp_t0".into()).or_insert(c.t);
+                keys(w, &[KeyCode::KeyS], true);
+                let (z, aboard) = with_player(w, |p| (p.w.pos.z, p.ship.is_some()));
+                c.v.insert("ramp_z", c.v.get("ramp_z").copied().unwrap_or(z).max(z));
+                c.v.insert("ramp_out", c.v.get("ramp_out").copied().unwrap_or(0.0).max((!aboard) as u8 as f64));
+            } else {
+                keys(w, &[KeyCode::KeyS], false);
+                c.v.insert("ramp_done", c.t - c.v.get("ramp_t0").copied().unwrap_or(c.t));
             }
         }
         if let Some(&sp) = c.p.get("stand_pos") {
@@ -320,6 +333,8 @@ pub(crate) fn warp_flight(name: &'static str, tag: &'static str, start: Option<P
                 let (ga, sa) = (st.grounded as f64 - c.v["g_end"], st.steps as f64 - c.v["s_end"]);
                 let in_cabin = with_player(w, |p| p.ship.is_some());
                 let drift = c.v.get("drift").copied().unwrap_or(f64::NAN);
+                let (held_s, out) = (c.v.get("ramp_done").copied().unwrap_or(0.0), c.v.get("ramp_out").copied().unwrap_or(1.0));
+                check(c, held_s > 3.0 && out == 0.0, format!("{name}: walking back onto the ramp for {held_s:.1} s on rails, the walker stayed aboard (furthest z {:.2} m)", c.v.get("ramp_z").copied().unwrap_or(f64::NAN)));
                 check(c, in_cabin && g / s0.max(1.0) > 0.99 && drift < 0.05, format!("{name}: walker in the cabin through the warp: deck contact {:.1} % of {s0:.0} steps, drift {:.1} mm; after the arrival {:.1} % of {sa:.0} steps", 100.0 * g / s0.max(1.0), drift * 1000.0, 100.0 * ga / sa.max(1.0)));
             }
             c.v.remove("started");
@@ -514,6 +529,72 @@ pub(super) fn warp_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
         }
         false
     }));
+    // Stood up while calibrating: J from the cabin still cancels (#111).
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "stand up while calibrating, J from the cabin cancels");
+            for k in ["tapped", "stood", "tapped2"] {
+                c.v.remove(k);
+            }
+            let (p, r) = orbit_pose(w, HEARTH, CINDER);
+            teleport_ship(w, p, r);
+        }
+        if c.t > 0.2 && !c.v.contains_key("tapped") {
+            c.v.insert("tapped", 1.0);
+            tap(w, KeyCode::KeyJ);
+            return false;
+        }
+        hold_course(w);
+        let (phase, why) = warp_state(w);
+        if phase == Phase::Calibrating && !c.v.contains_key("stood") {
+            c.v.insert("stood", c.t);
+            tap(w, KeyCode::KeyF);
+        } else if c.v.contains_key("stood") && !c.v.contains_key("tapped2") && with_player(w, |p| !p.seated) {
+            c.v.insert("tapped2", c.t);
+            tap(w, KeyCode::KeyJ);
+        }
+        if (c.v.contains_key("tapped2") && phase == Phase::Idle) || c.t > 20.0 {
+            let (seated, aboard) = with_player(w, |p| (p.seated, p.ship.is_some()));
+            check(c, phase == Phase::Idle && why == Some(Abort::Cancelled) && !seated && aboard, format!("standing in the cabin, J cancelled the calibration ({phase:?}, {why:?}, seated {seated}, aboard {aboard})"));
+            w.resource_mut::<WarpDrive>().last_abort = None;
+            return true;
+        }
+        false
+    }));
+    s.extend(back_to_seat());
+    // Stood up while spooling and walked out over the ramp: the empty ship does not jump.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "walk out while spooling, the empty ship stays");
+            for k in ["tapped", "stood"] {
+                c.v.remove(k);
+            }
+            let (p, r) = orbit_pose(w, HEARTH, CINDER);
+            teleport_ship(w, p, r);
+        }
+        if c.t > 0.2 && !c.v.contains_key("tapped") {
+            c.v.insert("tapped", 1.0);
+            tap(w, KeyCode::KeyJ);
+            return false;
+        }
+        hold_course(w);
+        let (phase, why) = warp_state(w);
+        if phase == Phase::Spooling && !c.v.contains_key("stood") {
+            c.v.insert("stood", c.t);
+            tap(w, KeyCode::KeyF);
+        } else if c.v.contains_key("stood") && with_player(w, |p| !p.seated) {
+            keys(w, &[KeyCode::KeyS], true);
+        }
+        let out = with_player(w, |p| p.ship.is_none());
+        if (out && phase == Phase::Idle) || c.t > 8.0 {
+            keys(w, &[KeyCode::KeyS], false);
+            check(c, out && phase == Phase::Idle && why == Some(Abort::Cancelled), format!("walked out while spooling: out {out}, drive {phase:?}, {why:?} after {:.1} s", c.t));
+            w.resource_mut::<WarpDrive>().last_abort = None;
+            return true;
+        }
+        false
+    }));
+    s.extend(back_to_seat());
     s.push(warp_flight("warp Hearth -> Cinder (walker in the cabin)", "a2b", Some(HEARTH), CINDER, Flight::Passenger, dir.to_path_buf(), windowed));
     s.push(wait_drive_idle());
     // Land on Cinder: ship on the ground, walker standing next to it.

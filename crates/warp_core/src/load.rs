@@ -8,9 +8,11 @@
 //!   ship off rails inside a frame zone (an arrival before the generation is done, a teleport)
 //!   swaps at once and the caller finishes the work in that tick (#113).
 //! - After an emergency drop the ship wants the planet of its frame zone, or the nearest one in
-//!   open space: generated in the background, swapped when done (the ship drifts meanwhile).
-//! - A generation nobody heads for any more (a drop near the old planet, a jump back) is
-//!   discarded, so its planet does not stay in memory.
+//!   open space: generated in the background while the drop's post-ramp lasts, then taken, done
+//!   or not (a bound in game time, so runs faster than real time end the same way).
+//! - A generation stays after a drop near the old planet, for a jump on (`swap` scenario, #14);
+//!   it is discarded when a jump heads elsewhere or it is of the simulation's planet.
+//!   TODO(initiator): #111 point 7 calls the kept planet a leak; drop it at the drop instead?
 use crate::drive::{Drive, Phase};
 use crate::system::{PlanetId, System};
 use glam::DVec3;
@@ -49,9 +51,9 @@ pub enum Load {
 pub struct Loader {
     /// The planet the simulation should switch to; kept across ticks after a drop.
     wanted: Option<PlanetId>,
-    /// After a drop the ship drifts far from any ground: it may wait for the generation even
-    /// inside a frame zone.
-    patient: bool,
+    /// The wanted planet comes from a drop: it is taken at the end of the post-ramp at the latest,
+    /// wherever the ship is.
+    after_drop: bool,
 }
 
 impl Loader {
@@ -60,23 +62,25 @@ impl Loader {
         let zone = sys.frame_of(pos);
         let rails = drive.phase.on_rails();
         if rails {
-            self.patient = false;
+            self.after_drop = false;
             self.wanted = zone.filter(|z| Some(*z) == drive.target);
         } else if zone.is_some() {
             self.wanted = zone;
         } else if dropped {
             self.wanted = Some(sys.nearest(pos));
         }
-        self.patient |= dropped;
+        self.after_drop |= dropped;
         if self.wanted == Some(current) {
             self.wanted = None;
-            self.patient = false;
+            self.after_drop = false;
         }
         if let Some(f) = self.wanted {
-            // Off rails inside the zone there is no flight left to hide the generation in.
-            if pending == Pending::Ready(f) || (!rails && !self.patient && zone == Some(f)) {
+            // Off rails there is no flight left to hide the generation in: inside the zone, or once
+            // the drop's post-ramp is over.
+            let now = !rails && if self.after_drop { drive.phase != Phase::PostRampDown } else { zone == Some(f) };
+            if pending == Pending::Ready(f) || now {
                 self.wanted = None;
-                self.patient = false;
+                self.after_drop = false;
                 return Load::Swap(f);
             }
             return if pending == Pending::Running(f) { Load::Keep } else { Load::Start(f) };
@@ -87,7 +91,8 @@ impl Loader {
         };
         match (pending.id(), heading) {
             (p, Some(t)) if rails && p != Some(t) => Load::Start(t),
-            (Some(p), h) if Some(p) != h => Load::Discard,
+            (Some(p), _) if p == current => Load::Discard,
+            (Some(p), Some(t)) if p != t => Load::Discard,
             _ => Load::Keep,
         }
     }

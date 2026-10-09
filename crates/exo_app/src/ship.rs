@@ -186,6 +186,9 @@ pub fn ship_control(
             if actions.take_tap(Tap::BoostMode) {
                 ship.ctl.boost_stage = !ship.ctl.boost_stage;
             }
+            if actions.take_tap(Tap::LandingMode) {
+                ship.ctl.landing_mode = !ship.ctl.landing_mode;
+            }
             if actions.take_tap(Tap::FlightModel) {
                 let next = ship.ctl.model.next();
                 ship.ctl.set_model(next);

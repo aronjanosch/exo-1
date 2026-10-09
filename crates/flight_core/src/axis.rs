@@ -129,9 +129,10 @@ impl Rot {
     }
 }
 
-/// Precision mode near the ground: inside a band of terrain clearance the speed cap drops. The
-/// clearance counts less the distance a descent needs to stop with the thrust upwards, so a fast
-/// descent enters the band early.
+/// Landing mode (switched by hand, `ShipController::landing_mode`): inside a band of terrain
+/// clearance the speed cap drops. The clearance counts less the distance a descent needs to stop
+/// with the thrust upwards, so a fast descent enters the band early. Without landing mode only the
+/// descent is held to what the thrust can still stop above the ground.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Precision {
@@ -256,6 +257,10 @@ pub struct AxisState {
 }
 
 impl ShipController {
+    /// Share of the upward thrust the descent limit counts on (the rest is reserve for the assist's
+    /// lag and for terrain rising under the ship).
+    pub const DESCENT_RESERVE: f64 = 0.6;
+
     /// One step of the axis model; same contract as `step` (new linear and angular velocity).
     pub(crate) fn step_axis(&mut self, body: &BodyState, input: &FlightInput, env: &impl PlanetEnv, dt: f64) -> (DVec3, DVec3) {
         // Scripted test input (nobody piloting) is not ramped, as in the classic model.
@@ -295,7 +300,7 @@ impl ShipController {
         // clearance left after it.
         let sink = (-v.dot(up)).max(0.0);
         let brake = (thrust_box.support(inv * up) - gravity.length()).max(1.0);
-        let p = 1.0 - smoothstep(t.precision.full_below, t.precision.off_above, self.terrain_clearance - sink * sink / (2.0 * brake));
+        let p = if self.landing_mode { 1.0 - smoothstep(t.precision.full_below, t.precision.off_above, self.terrain_clearance - sink * sink / (2.0 * brake)) } else { 0.0 };
         let forward_cap = lerp(t.cruise_speed, t.boost_speed_forward, strength);
         let backward_cap = lerp(t.cruise_speed, t.boost_speed_backward, strength);
         self.forward_speed_limit = lerp(forward_cap, forward_cap.min(t.precision.speed), p);
@@ -313,6 +318,19 @@ impl ShipController {
             let vertical = if vertical < 0.0 { -lerp(-vertical, (-vertical).min(descent), p) } else { vertical };
             goal = along + up * vertical;
         }
+        // Always, landing mode or not: no descent faster than the thrust upwards can stop above
+        // the ground (with a reserve), ending at the landing mode's touchdown speed. While that
+        // limit holds the goal, the assist also gets the braking the limit's curve asks for
+        // (a * sink / limit), so it follows without the decay's lag (that touched down at 6 m/s).
+        let touchdown = t.precision.speed * t.precision.landing_share;
+        let a = Self::DESCENT_RESERVE * brake;
+        let safe_sink = (touchdown * touchdown + 2.0 * a * self.terrain_clearance.max(0.0)).sqrt();
+        let vertical = goal.dot(up);
+        let mut descent_brake = DVec3::ZERO;
+        if vertical < -safe_sink {
+            goal -= up * (vertical + safe_sink);
+            descent_brake = up * (a * sink / safe_sink);
+        }
         // On the ground without sideways, forward or upward input: settle straight down until
         // resting, then ask for nothing (the classic model's rule; a push along a tilted hull
         // slid the ship 63 m down a slope).
@@ -323,7 +341,7 @@ impl ShipController {
             goal = if self.ground_time < Self::GROUND_SETTLE_TIME { -up * Self::GROUND_SETTLE_SPEED } else { DVec3::ZERO };
         }
         self.commanded_speed = if assist { goal.length() } else { 0.0 };
-        let coupled_accel = (goal - v) * t.linear_decay + body.ang_vel.cross(goal);
+        let coupled_accel = (goal - v) * t.linear_decay + body.ang_vel.cross(goal) + descent_brake;
         // Decoupled: full thrust along the stick, the velocity is kept (curving with the planet
         // while L is on).
         let decoupled_accel = b * limits.along(stick) + horizon_w.cross(v);

@@ -82,6 +82,8 @@ pub enum Tap {
     BoostMode,
     /// Dev switch: the classic or the axis flight model (F7, spike 13).
     FlightModel,
+    /// Landing mode of the axis model (spike 13).
+    LandingMode,
 }
 
 impl Axis {
@@ -112,7 +114,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 13] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::FlightModel];
+    pub const ALL: [Tap; 14] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::FlightModel, Tap::LandingMode];
     pub fn name(self) -> &'static str {
         match self {
             Tap::Interact => "interact",
@@ -128,6 +130,7 @@ impl Tap {
             Tap::DebugHud => "debug_hud",
             Tap::BoostMode => "boost_mode",
             Tap::FlightModel => "flight_model",
+            Tap::LandingMode => "landing_mode",
         }
     }
 }
@@ -320,6 +323,8 @@ impl Bindings {
                 (Tap::BoostMode, None) => Ok(vec![Input::Key(KeyCode::F6)]),
                 // Files from before the model switch (spike 13) have no `flight_model`.
                 (Tap::FlightModel, None) => Ok(vec![Input::Key(KeyCode::F7)]),
+                // ... and no `landing_mode`.
+                (Tap::LandingMode, None) => Ok(vec![Input::Key(KeyCode::KeyK)]),
                 _ => Err(err(t.name(), "missing".into())),
             }
         };
@@ -739,6 +744,10 @@ mod tests {
         // The shipped file binds it too.
         let mut a = resolve(&Bindings::default(), &raw(&[], &[F7]));
         assert!(a.take_tap(Tap::FlightModel));
+        let old = BINDINGS.replace("  \"landing_mode\": [\"KeyK\"],\n", "");
+        assert!(!old.contains("landing_mode"));
+        let mut a = resolve(&Bindings::from_json(&old).unwrap(), &raw(&[], &[KeyK]));
+        assert!(a.take_tap(Tap::LandingMode));
     }
 
     /// G was missing from the keyboard's tap list (only scenarios could inject it).

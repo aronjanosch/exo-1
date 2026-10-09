@@ -356,6 +356,12 @@ fn steps_for(m: usize, s: &mut Vec<Step>, t: &Shared) {
             c.p.remove("touch");
             sinks.clear();
             keys(w, &[KeyCode::ControlLeft], true);
+            // Landing mode (K, the axis model only), through the bindings.
+            tap(w, KeyCode::KeyK);
+        }
+        if (c.t - c.dt).abs() < 1e-9 && MODELS[m] == FlightModel::Axis {
+            let shown = w.resource::<HudReadout>().flight_model;
+            check(c, with_ship(w, |s| s.ctl.landing_mode) && shown == "AXIS LANDING", format!("K: landing mode on, HUD {shown:?}"));
         }
         // `grounded` comes a step after the contact, and the solver has cut the approach by then:
         // the touchdown speed is the largest sink of the last 0.25 s before it.
@@ -374,6 +380,7 @@ fn steps_for(m: usize, s: &mut Vec<Step>, t: &Shared) {
                 let d = pos - *t0;
                 (d - up * d.dot(up)).length()
             });
+            tap(w, KeyCode::KeyK);
             put(t, m, "land: slide after touchdown (m)", slid);
             put(t, m, "land: time to rest (s)", c.t);
             check(c, rested && slid < 0.5, format!("{}: lands and rests without sliding ({slid:.3} m, {:.1} s)", MODELS[m].label(), c.t));

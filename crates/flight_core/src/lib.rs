@@ -594,6 +594,8 @@ pub struct ShipController {
     pub boost_strength: f64,
     /// Dev switch (F6): boost as the speed stage of #24, the capacitor ignored. Not a tuning value.
     pub boost_stage: bool,
+    /// Landing mode (K, spike 13): the axis model's precision band near the ground is on.
+    pub landing_mode: bool,
     /// Dev switch (F7, spike 13): which model `step` flies; change it with `set_model`.
     pub model: FlightModel,
     /// The axis model's values (`ship_axis.json`) and what it did in its last step.
@@ -630,6 +632,7 @@ impl ShipController {
             boost: BoostCapacitor::default(),
             boost_strength: 0.0,
             boost_stage: false,
+            landing_mode: false,
             model: FlightModel::Classic,
             axis_tuning: AxisTuning::default(),
             axis: AxisState::default(),
@@ -666,6 +669,7 @@ impl ShipController {
         self.coupling = 1.0;
         self.ground_time = 0.0;
         self.ground_hold = None;
+        self.landing_mode = false;
     }
 
     /// m/s: on the ground the assist settles the ship at this speed (no slide, see `step`).

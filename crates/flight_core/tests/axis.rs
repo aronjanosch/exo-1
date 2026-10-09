@@ -185,7 +185,12 @@ fn assist_off_falls_and_decoupled_keeps_its_vector() {
 #[test]
 fn precision_mode_caps_speed_near_the_ground_but_not_the_climb() {
     let t = AxisTuning::default();
+    // Without landing mode, low flight is not capped.
     let mut s = Sim::new(2.0, true);
+    s.run(&scripted(DVec3::NEG_Z), 4.0);
+    assert!(s.ship.axis.precision == 0.0 && s.body.lin_vel.length() > 2.0 * t.precision.speed, "no landing mode: {:.1} m/s at 2 m", s.body.lin_vel.length());
+    let mut s = Sim::new(2.0, true);
+    s.ship.landing_mode = true;
     s.run(&scripted(DVec3::NEG_Z), 4.0);
     // The ship moved sideways over a 5 km sphere: still in the band.
     assert!(s.ship.axis.precision > 0.99, "precision {:.3} at {:.1} m", s.ship.axis.precision, s.ship.terrain_clearance);
@@ -194,13 +199,16 @@ fn precision_mode_caps_speed_near_the_ground_but_not_the_climb() {
     let v = (s.body.lin_vel - up * s.body.lin_vel.dot(up)).length();
     assert!(v <= t.precision.speed + 0.05, "forward at 2 m: {v:.2} m/s along the ground, cap {}", t.precision.speed);
     let mut s = Sim::new(2.0, true);
+    s.ship.landing_mode = true;
     s.run(&scripted(DVec3::Y), 3.0);
     assert!(s.body.lin_vel.y > 20.0, "climbing away from the ground is not capped: {:.2} m/s", s.body.lin_vel.y);
-    // From 400 m with full down stick: fast at first, then slowed early enough by the stopping
-    // distance, down to the landing share of the cap.
+    // From 400 m with full down stick, landing mode or not: fast at first, then slowed early
+    // enough by the stopping distance, down to the landing share of the cap.
+    for landing in [true, false] {
     let mut s = Sim::new(400.0, true);
+    s.ship.landing_mode = landing;
     let mut fastest: f64 = 0.0;
-    while s.ship.terrain_clearance > 1.0 || s.body.pos.y > 5100.0 {
+    while s.ship.terrain_clearance > 0.05 || s.body.pos.y > 5100.0 {
         s.step(&scripted(DVec3::NEG_Y));
         fastest = fastest.max(-s.body.lin_vel.y);
         let stop = s.body.lin_vel.y.powi(2) / (2.0 * (t.accel.up - 9.81));
@@ -208,7 +216,8 @@ fn precision_mode_caps_speed_near_the_ground_but_not_the_climb() {
     }
     let touch = -s.body.lin_vel.y;
     let want = t.precision.speed * t.precision.landing_share;
-    assert!(fastest > 30.0 && (touch - want).abs() < 0.2, "descent from 400 m: fastest {fastest:.1} m/s, at 1 m {touch:.2} m/s (landing cap {want})");
+    assert!(fastest > 30.0 && (touch - want).abs() < 0.2, "descent from 400 m (landing mode {landing}): fastest {fastest:.1} m/s, at the ground {touch:.2} m/s (landing cap {want})");
+    }
 }
 
 #[test]
@@ -307,9 +316,11 @@ fn the_stopping_distance_counts_the_attitude() {
     // a 30 m/s descent at 200 m (205 m to stop) is already deep in the band; level (15.2 m/s²,
     // 30 m to stop) it is not.
     let mut level = Sim::new(200.0, true);
+    level.ship.landing_mode = true;
     level.body.lin_vel = DVec3::new(0.0, -30.0, 0.0);
     level.step(&scripted(DVec3::ZERO));
     let mut rolled = Sim::new(200.0, true);
+    rolled.ship.landing_mode = true;
     rolled.body.rot = DQuat::from_rotation_z(90f64.to_radians());
     rolled.body.lin_vel = DVec3::new(0.0, -30.0, 0.0);
     rolled.step(&scripted(DVec3::ZERO));

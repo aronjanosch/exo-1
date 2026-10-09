@@ -65,11 +65,11 @@ pub struct HudReadout {
     pub flight_model: &'static str,
 }
 
-/// The model's HUD word; the axis model adds `PRECISION` while that mode is mostly on near the
-/// ground. TODO(initiator): words (spike 13).
-pub fn model_word(model: flight_core::FlightModel, precision: f64) -> &'static str {
+/// The model's HUD word; the axis model adds `LANDING` in landing mode. TODO(initiator): words
+/// (spike 13).
+pub fn model_word(model: flight_core::FlightModel, landing: bool) -> &'static str {
     match model {
-        flight_core::FlightModel::Axis if precision >= 0.5 => "AXIS PRECISION",
+        flight_core::FlightModel::Axis if landing => "AXIS LANDING",
         m => m.label(),
     }
 }
@@ -115,7 +115,7 @@ pub fn update_readout(
     mut out: ResMut<HudReadout>,
 ) {
     let (Ok(pl), Ok((ship, sp, sv, sr))) = (players.single(), ships.single()) else { return };
-    let model = if pl.seated { model_word(ship.ctl.model, ship.ctl.axis.precision) } else { "" };
+    let model = if pl.seated { model_word(ship.ctl.model, ship.ctl.landing_mode) } else { "" };
     let (mode, v, pos, boost) = if pl.seated {
         let mode = if wd.drive.phase != warp_core::Phase::Idle {
             Mode::Quantum(format!("{:?}", wd.drive.phase))
@@ -163,9 +163,9 @@ mod tests {
     #[test]
     fn model_words() {
         use flight_core::FlightModel::*;
-        assert_eq!(model_word(Classic, 1.0), "CLASSIC");
-        assert_eq!(model_word(Axis, 0.0), "AXIS");
-        assert_eq!(model_word(Axis, 0.7), "AXIS PRECISION");
+        assert_eq!(model_word(Classic, true), "CLASSIC");
+        assert_eq!(model_word(Axis, false), "AXIS");
+        assert_eq!(model_word(Axis, true), "AXIS LANDING");
     }
 
     #[test]

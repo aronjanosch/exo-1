@@ -90,7 +90,7 @@ pub fn slope_landing_steps(s: &mut Vec<Step>) {
             end(w, c, format!("held {}, at rest {}, tilt {tilt:.1} deg on a {slope:.1} deg slope, largest drift from touchdown {:.3} mm", hold.is_some(), hold.is_some_and(|h| h.rest.is_some()), drift * 1000.0));
             check(c, hold.is_some_and(|h| h.rest.is_some()), "slope-landing: the ship is held at rest".into());
             check(c, (tilt - slope).abs() < 5.0, format!("slope-landing: it rests on the slope (tilt {tilt:.1} deg, slope {slope:.1} deg)"));
-            check(c, drift < 0.001, format!("slope-landing: no drift after touchdown ({:.3} mm)", drift * 1000.0));
+            check(c, drift < crate::scenario::LANDING_SETTLE_M, format!("slope-landing: no drift after touchdown ({:.3} mm)", drift * 1000.0));
             return true;
         }
         false

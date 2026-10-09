@@ -4,6 +4,6 @@ use exo_app::Options;
 
 #[test]
 fn slope_landing_scenario_passes_headless() {
-    let o = Options { scenario: Some("slope-landing".into()), headless: true, out_dir: std::env::temp_dir().join("exo-slope-landing-scenario"), ..Default::default() };
+    let o = Options { scenario: Some("slope-landing".into()), headless: true, out_dir: common::out_dir("slope-landing-scenario"), ..Default::default() };
     let _ = common::run_scenario(&o);
 }

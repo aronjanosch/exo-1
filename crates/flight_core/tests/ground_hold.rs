@@ -112,11 +112,11 @@ fn set_down_on_a_slope_it_keeps_the_touchdown_spot() {
     assert!(moved < 0.005, "moved {moved:.4} m while settling");
     assert!(sideways(rest - hold.at, rest.normalize()).length() < 0.005, "rests on the touchdown spot: {:?}", rest - hold.at);
     assert!((b.pos - rest).length() < 1e-9, "and stays there: {:?}", b.pos - rest);
-    // Without the hold (limit 0) the same contact slides it down the slope until the push ends
-    // (1.5 cm here; 0.55 m in `full`, where the hull tipped for 12 s and the push went on).
+    // Without the hold (limit 0) no spot is kept; the settle rule alone drops the sideways speed,
+    // which this point contact does not turn into a slide (the hull in `full` did: 0.55 m).
     let mut free = ShipController::new(ShipTuning { landing_slope_limit: 0.0, ..ShipTuning::default() });
-    let (slid, _) = settle(&mut free, &env, 5.0, 0.0);
-    assert!(free.ground_hold.is_none() && slid > 0.01, "without the hold it slides: {slid:.4} m");
+    settle(&mut free, &env, 5.0, 0.0);
+    assert!(free.ground_hold.is_none(), "no hold above the limit");
 }
 
 #[test]
@@ -189,27 +189,24 @@ fn moved_far_away_or_assist_off_lets_go() {
 }
 
 /// #104 point 1: one step of hull contact with a crest at speed, neutral input, starts no hold;
-/// the ship keeps its speed and flies on. Both models.
+/// the ship keeps its speed and flies on.
 #[test]
 fn brushing_a_crest_at_speed_keeps_flying() {
     let env = Slope::new(0.0);
-    for model in [FlightModel::Classic, FlightModel::Axis] {
-        let mut c = ShipController::default();
-        c.set_model(model);
-        let mut b = BodyState { pos: env.ground(0.0), lin_vel: DVec3::X * 80.0, ..Default::default() };
-        let none = FlightInput { piloted: true, ..Default::default() };
-        let (v, _) = c.step(&b, &FlightInput { grounded: true, ..none }, &env, DT);
-        assert!(c.ground_hold.is_none(), "{model:?}: no hold from a brush at 80 m/s");
-        assert!(sideways(v, b.pos.normalize()).length() > 75.0, "{model:?}: keeps its speed: {v}");
+    let mut c = ShipController::default();
+    let mut b = BodyState { pos: env.ground(0.0), lin_vel: DVec3::X * 80.0, ..Default::default() };
+    let none = FlightInput { piloted: true, ..Default::default() };
+    let (v, _) = c.step(&b, &FlightInput { grounded: true, ..none }, &env, DT);
+    assert!(c.ground_hold.is_none(), "no hold from a brush at 80 m/s");
+    assert!(sideways(v, b.pos.normalize()).length() > 75.0, "keeps its speed: {v}");
+    b.lin_vel = v;
+    for _ in 0..30 {
+        b.pos += DVec3::Y * 0.1;
+        let (v, _) = c.step(&b, &none, &env, DT);
         b.lin_vel = v;
-        for _ in 0..30 {
-            b.pos += DVec3::Y * 0.1;
-            let (v, _) = c.step(&b, &none, &env, DT);
-            b.lin_vel = v;
-            b.integrate(DT);
-        }
-        assert!(c.ground_hold.is_none() && sideways(b.lin_vel, b.pos.normalize()).length() > 60.0, "{model:?}: flies on: {}", b.lin_vel);
+        b.integrate(DT);
     }
+    assert!(c.ground_hold.is_none() && sideways(b.lin_vel, b.pos.normalize()).length() > 60.0, "flies on: {}", b.lin_vel);
 }
 
 /// #104 point 1: a settling hold whose contact stays lost lets go (the ground fell away); a

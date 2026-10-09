@@ -5,7 +5,7 @@ use crate::Layer;
 use avian3d::prelude::*;
 use bevy::math::{DMat3, DQuat, DVec2, DVec3};
 use bevy::prelude::*;
-use flight_core::{AxisTuning, BodyState, FlightInput, Lag, ShipController, ShipTuning, VirtualStick};
+use flight_core::{BodyState, FlightInput, Lag, ShipController, ShipTuning, VirtualStick};
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<CameraEffects>();
@@ -61,7 +61,7 @@ pub fn basis_for_up(up: DVec3) -> DQuat {
     DQuat::from_mat3(&DMat3::from_cols(fwd.cross(up), up, -fwd))
 }
 
-pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, tuning: &ShipTuning, axis: &AxisTuning, up: DVec3, offset_x: f64) -> Entity {
+pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, tuning: &ShipTuning, up: DVec3, offset_x: f64) -> Entity {
     // Parked 15 m ahead of the walker spawn, floor on the highest ground under the hull.
     let dir = (up * planet.radius + DVec3::new(offset_x, 0.0, -15.0)).normalize();
     let rot = basis_for_up(dir);
@@ -76,7 +76,7 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, tuning: &ShipTuni
     let (w, h, d) = (4.6f32, 3.2f32, 8.3f32);
     let ship = commands
         .spawn((
-            Ship { ctl: ShipController::new(tuning.clone()).with_axis(axis.clone()), piloted: false, parked: true, test_input: FlightInput::default(), lag: Lag::default(), stick: VirtualStick::default(), grounded: false },
+            Ship { ctl: ShipController::new(tuning.clone()), piloted: false, parked: true, test_input: FlightInput::default(), lag: Lag::default(), stick: VirtualStick::default(), grounded: false },
             RigidBody::Static,
             Position(pos),
             Rotation(rot),
@@ -202,12 +202,8 @@ pub fn ship_control(
             if actions.take_tap(Tap::LandingMode) {
                 ship.ctl.landing_mode = !ship.ctl.landing_mode;
             }
-            if actions.take_tap(Tap::FlightModel) {
-                let next = ship.ctl.model.next();
-                ship.ctl.set_model(next);
-            }
             if actions.take_tap(Tap::TurnCap) {
-                let cap = &mut ship.ctl.axis_tuning.g_safety.cap_turns;
+                let cap = &mut ship.ctl.tuning.g_safety.cap_turns;
                 *cap = !*cap;
             }
             let mb = &bindings.mouse;

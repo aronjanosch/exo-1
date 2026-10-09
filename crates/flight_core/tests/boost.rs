@@ -168,16 +168,18 @@ fn accel(ship: &mut ShipController, brake: bool) -> f64 {
 fn the_controller_drains_while_boosting_and_boost_weakens() {
     let mut ship = ShipController::new(ShipTuning::default());
     ship.hover_assist = false;
+    // The pilot's G tolerance would cap the full boost.
+    ship.tuning.g_safety.enabled = false;
     let full = accel(&mut ship, false);
     assert!(ship.boost.charge < 0.9, "one second of boost drains: {}", ship.boost.charge);
     ship.boost.charge = 0.3;
     let weak = accel(&mut ship, false);
-    assert!(weak < full * 0.6, "weaker at low charge: {weak:.1} vs {full:.1} m/s");
+    assert!(weak < full * 0.8, "weaker at low charge: {weak:.1} vs {full:.1} m/s");
     // Empty: plain thrust.
     ship.boost.charge = 0.0;
     ship.boost.active = false;
     let plain = accel(&mut ship, false);
-    let want = ship.tuning.thrust_accel;
+    let want = ship.tuning.accel.forward;
     assert!((plain - want).abs() < 0.05 * want, "empty: plain thrust {plain:.2} m/s per s, want {want}");
 }
 

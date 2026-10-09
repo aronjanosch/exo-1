@@ -42,21 +42,21 @@ pub(super) fn reload_steps(s: &mut Vec<Step>, out_dir: &std::path::Path) {
             false
         })
     };
-    let slower = ship_text.replacen("\"turn_rate\": 2.5", "\"turn_rate\": 1.25", 1);
-    assert_ne!(slower, ship_text, "fixture: turn_rate in ship.json");
-    s.push(edit("reload: ship.json turn_rate 2.5 -> 1.25", ship_file.clone(), slower, |w| {
-        let (ship, res) = (with_ship(w, |s| s.ctl.tuning.turn_rate), w.resource::<crate::tuning::Tuning>().ship.turn_rate);
-        (ship == 1.25 && res == 1.25).then(|| format!("the ship turns at {ship} rad/s now"))
+    let slower = ship_text.replacen("\"angular_decay\": 12.0", "\"angular_decay\": 6.0", 1);
+    assert_ne!(slower, ship_text, "fixture: angular_decay in ship.json");
+    s.push(edit("reload: ship.json angular_decay 12 -> 6", ship_file.clone(), slower, |w| {
+        let (ship, res) = (with_ship(w, |s| s.ctl.tuning.angular_decay), w.resource::<crate::tuning::Tuning>().ship.angular_decay);
+        (ship == 6.0 && res == 6.0).then(|| format!("the ship's turns settle at {ship} 1/s now"))
     }));
     let broken = ship_text.replacen("\"drag_k\"", "\"drag_kk\": 1, \"drag_k\"", 1);
     s.push(edit("reload: a broken ship.json is refused", ship_file.clone(), broken, |w| {
         let hr = w.resource::<crate::hot_reload::HotReload>();
         let err = hr.last_error.clone()?;
-        let rate = with_ship(w, |s| s.ctl.tuning.turn_rate);
-        (rate == 1.25 && err.contains("drag_kk")).then(|| format!("old value {rate} stays, error: {err}"))
+        let rate = with_ship(w, |s| s.ctl.tuning.angular_decay);
+        (rate == 6.0 && err.contains("drag_kk")).then(|| format!("old value {rate} stays, error: {err}"))
     }));
     s.push(edit("reload: ship.json restored", ship_file, ship_text, |w| {
-        let rate = with_ship(w, |s| s.ctl.tuning.turn_rate);
-        (rate == 2.5 && w.resource::<crate::hot_reload::HotReload>().last_error.is_none()).then(|| format!("turn rate {rate} again"))
+        let rate = with_ship(w, |s| s.ctl.tuning.angular_decay);
+        (rate == 12.0 && w.resource::<crate::hot_reload::HotReload>().last_error.is_none()).then(|| format!("angular decay {rate} again"))
     }));
 }

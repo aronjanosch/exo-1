@@ -1,11 +1,11 @@
-//! Spike 13: the axis model next to the classic one. Limits per axis and direction, decay,
-//! precision mode, G-safety, coupled and decoupled, on a planet fixture and in space at 60 Hz.
+//! The axis flight model (spike 13): limits per axis and direction, decay, precision mode,
+//! G-safety, coupled and decoupled, on a planet fixture and in space at 60 Hz.
 use flight_core::axis::{Dirs, G0};
-use flight_core::{BodyState, Field, FlightInput, FlightModel, PlanetEnv, ShipController, AxisTuning};
+use flight_core::{BodyState, Field, FlightInput, PlanetEnv, ShipController, ShipTuning};
 use glam::{DQuat, DVec2, DVec3};
 
 const DT: f64 = 1.0 / 60.0;
-const AXIS: &str = include_str!("../../../content/tuning/ship_axis.json");
+const SHIP: &str = include_str!("../../../content/tuning/ship.json");
 
 /// A flat-enough planet: radius 5000 m, no terrain, with or without gravity and air.
 struct Planet {
@@ -42,10 +42,9 @@ struct Sim {
 }
 
 impl Sim {
-    /// At `height` m above the ground, level, at rest, flying the axis model.
+    /// At `height` m above the ground, level, at rest.
     fn new(height: f64, gravity: bool) -> Sim {
         let mut ship = ShipController::default();
-        ship.set_model(FlightModel::Axis);
         ship.horizon_follow = false;
         ship.tuning.boost_capacitor.drain_time = 0.0;
         Sim { env: Planet { gravity, air: false, field: Field::default() }, body: BodyState { pos: DVec3::new(0.0, 5000.0 + height, 0.0), ..Default::default() }, ship }
@@ -81,10 +80,10 @@ fn scripted(thrust: DVec3) -> FlightInput {
 
 #[test]
 fn shipped_file_equals_default_and_bad_values_are_refused() {
-    assert_eq!(AxisTuning::from_json(AXIS).unwrap(), AxisTuning::default());
+    assert_eq!(ShipTuning::from_json(SHIP).unwrap(), ShipTuning::default());
     let bad = |from: &str, to: &str| {
-        assert!(AXIS.contains(from), "fixture text {from:?} not in ship_axis.json");
-        AxisTuning::from_json(&AXIS.replacen(from, to, 1)).unwrap_err()
+        assert!(SHIP.contains(from), "fixture text {from:?} not in ship.json");
+        ShipTuning::from_json(&SHIP.replacen(from, to, 1)).unwrap_err()
     };
     assert!(bad("\"linear_decay\": 3.0", "\"linear_decay\": 0.0").contains("linear_decay"));
     assert!(bad("\"atmosphere_thrust\": 0.5", "\"atmosphere_thrust\": 1.5").contains("atmosphere_thrust"));
@@ -93,38 +92,24 @@ fn shipped_file_equals_default_and_bad_values_are_refused() {
     assert!(bad("\"cruise_speed\"", "\"cruise_sped\": 1.0, \"cruise_speed\"").contains("cruise_sped"));
     assert!(bad("\"boost_speed_backward\": 200.0", "\"boost_speed_backward\": 100.0").contains("below cruise_speed"));
     // #106 point 5: NaN passed the `<` comparisons of the space caps.
-    let mut t = AxisTuning::default();
+    let mut t = ShipTuning::default();
     t.space.boost_speed_forward = f64::NAN;
     assert!(t.validate().unwrap_err().contains("space.boost_speed_forward"));
-    let mut t = AxisTuning::default();
+    let mut t = ShipTuning::default();
     t.boost_speed_backward = f64::INFINITY;
     assert!(t.validate().unwrap_err().contains("boost_speed_backward"));
     // Turn rates over speed: a share at or below 0 flips or zeroes the rates (clamp panics, NaN).
     for y in [0.0, -0.5] {
-        let mut t = AxisTuning::default();
+        let mut t = ShipTuning::default();
         t.rate_over_speed.points[1].y = y;
         assert!(t.validate().unwrap_err().contains("rate_over_speed"), "{y}");
     }
 }
 
 #[test]
-fn classic_by_default_and_the_switch_changes_the_response() {
-    let mut s = Sim::new(500.0, false);
-    s.ship.set_model(FlightModel::Classic);
-    assert_eq!(ShipController::default().model, FlightModel::Classic);
-    assert_eq!(FlightModel::Classic.next(), FlightModel::Axis);
-    s.run(&scripted(DVec3::NEG_Z), 1.0);
-    let classic = s.body.lin_vel.length();
-    let mut a = Sim::new(500.0, false);
-    a.run(&scripted(DVec3::NEG_Z), 1.0);
-    let axis = a.body.lin_vel.length();
-    assert!((classic - axis).abs() > 1.0, "the two models answer W differently after 1 s: classic {classic:.2}, axis {axis:.2} m/s");
-}
-
-#[test]
 fn acceleration_is_limited_per_axis_and_direction() {
     // In vacuum: the full thrust (inside the pilot's G tolerance) and the space caps.
-    let t = AxisTuning::default();
+    let t = ShipTuning::default();
     let (cap, g) = (t.space.cruise_speed, t.g_safety.limit.scaled(G0));
     for (name, stick, limit) in [("forward", DVec3::NEG_Z, t.accel.forward.min(g.forward)), ("backward", DVec3::Z, t.accel.backward.min(g.backward)), ("right", DVec3::X, t.accel.right.min(g.right)), ("down", DVec3::NEG_Y, t.accel.down.min(g.down))] {
         // High enough that 30 s down at the space cap stay far above the ground.
@@ -139,7 +124,7 @@ fn acceleration_is_limited_per_axis_and_direction() {
 
 #[test]
 fn decay_closes_the_last_metres_per_second_exponentially() {
-    let t = AxisTuning::default();
+    let t = ShipTuning::default();
     let mut s = Sim::new(5000.0, false);
     s.run(&scripted(DVec3::NEG_Z), 30.0);
     // Release: the error shrinks by (1 - decay * dt) per step once it is below accel / decay
@@ -167,8 +152,8 @@ fn the_thrusters_hold_gravity_unless_a_side_is_too_weak() {
     assert!((s.body.pos.y - 5500.0).abs() < 0.01, "on its side with 12 m/s² sideways: {:.3} m", s.body.pos.y - 5000.0);
     // A side weaker than 1 g: the ship sinks at the missing acceleration.
     let mut s = Sim::new(500.0, true);
-    s.ship.axis_tuning.accel.left = 8.0;
-    s.ship.axis_tuning.accel.right = 8.0;
+    s.ship.tuning.accel.left = 8.0;
+    s.ship.tuning.accel.right = 8.0;
     s.body.rot = DQuat::from_rotation_z(90f64.to_radians());
     s.run(&scripted(DVec3::ZERO), 1.0);
     assert!(s.ship.axis.saturated);
@@ -182,7 +167,7 @@ fn assist_off_falls_and_decoupled_keeps_its_vector() {
     s.ship.hover_assist = false;
     s.run(&scripted(DVec3::ZERO), 1.0);
     assert!((s.body.lin_vel.y + 9.81).abs() < 0.01, "assist off: free fall {:.3} m/s", s.body.lin_vel.y);
-    assert_eq!(s.ship.forward_speed_limit, 0.0, "no limit shown with the assist off, as in the classic model");
+    assert_eq!(s.ship.forward_speed_limit, 0.0, "no limit shown with the assist off");
 
     let mut s = Sim::new(500.0, true);
     s.run(&scripted(DVec3::NEG_Z), 10.0);
@@ -194,12 +179,12 @@ fn assist_off_falls_and_decoupled_keeps_its_vector() {
     // Thrust along the stick only, at the limit of that direction.
     s.run(&scripted(DVec3::X), 1.0);
     let side = (s.body.lin_vel - v0).x;
-    assert!((side - s.ship.axis_tuning.accel.right).abs() < 0.01, "decoupled: 1 s of D gives {side:.3} m/s");
+    assert!((side - s.ship.tuning.accel.right).abs() < 0.01, "decoupled: 1 s of D gives {side:.3} m/s");
 }
 
 #[test]
 fn precision_mode_caps_speed_near_the_ground_but_not_the_climb() {
-    let t = AxisTuning::default();
+    let t = ShipTuning::default();
     // Without landing mode, low flight is not capped.
     let mut s = Sim::new(2.0, true);
     s.run(&scripted(DVec3::NEG_Z), 4.0);
@@ -238,10 +223,10 @@ fn precision_mode_caps_speed_near_the_ground_but_not_the_climb() {
 
 #[test]
 fn g_safety_caps_the_turn_at_speed_and_the_felt_g() {
-    let t = AxisTuning::default();
+    let t = ShipTuning::default();
     let yaw = FlightInput { thrust: DVec3::NEG_Z, turn: DVec2::new(0.0, 1.0), ..Default::default() };
     let mut s = Sim::new(5000.0, false);
-    s.ship.axis_tuning.g_safety.cap_turns = true;
+    s.ship.tuning.g_safety.cap_turns = true;
     s.run(&scripted(DVec3::NEG_Z), 30.0);
     let mut felt: f64 = 0.0;
     for _ in 0..180 {
@@ -256,7 +241,7 @@ fn g_safety_caps_the_turn_at_speed_and_the_felt_g() {
     assert!(felt <= t.g_safety.limit.forward + 1e-9, "felt {felt:.2} g");
     // Without the turn cap the nose turns at its rate over the speed.
     let mut s = Sim::new(5000.0, false);
-    s.ship.axis_tuning.g_safety.cap_turns = false;
+    s.ship.tuning.g_safety.cap_turns = false;
     s.run(&scripted(DVec3::NEG_Z), 30.0);
     let mut felt: f64 = 0.0;
     for _ in 0..180 {
@@ -272,7 +257,7 @@ fn g_safety_caps_the_turn_at_speed_and_the_felt_g() {
 
 #[test]
 fn turn_rates_have_an_acceleration_limit_and_an_ellipse() {
-    let t = AxisTuning::default();
+    let t = ShipTuning::default();
     let mut s = Sim::new(5000.0, false);
     let full = FlightInput { turn: DVec2::new(0.0, 1.0), ..Default::default() };
     s.run(&full, 0.1);
@@ -296,25 +281,8 @@ fn dirs_clamp_and_along() {
 }
 
 #[test]
-fn switching_mid_flight_keeps_the_velocity() {
-    // 10 s of W with each model, then the other one for one step: no jump past one step of
-    // the largest acceleration either model asks for.
-    for first in [FlightModel::Classic, FlightModel::Axis] {
-        let mut s = Sim::new(500.0, true);
-        s.ship.horizon_follow = true;
-        s.ship.set_model(first);
-        s.run(&scripted(DVec3::NEG_Z), 10.0);
-        let v0 = s.body.lin_vel;
-        s.ship.set_model(first.next());
-        s.step(&scripted(DVec3::NEG_Z));
-        let jump = (s.body.lin_vel - v0).length() / DT;
-        assert!(jump < 80.0, "{first:?} -> {:?}: {jump:.1} m/s² in the switching step (at {:.1} m/s)", first.next(), v0.length());
-    }
-}
-
-#[test]
 fn g_safety_counts_gravity_and_the_direction_of_travel() {
-    let t = AxisTuning::default();
+    let t = ShipTuning::default();
     let pitch_up = |s: &mut Sim| {
         s.step(&FlightInput { turn: DVec2::new(1.0, 0.0), ..Default::default() });
         (s.body.rot.inverse() * s.body.ang_vel).x
@@ -323,7 +291,7 @@ fn g_safety_counts_gravity_and_the_direction_of_travel() {
     // Backward, nose up pulls the velocity down: thrust down, which the hold relieves: (3 + 1) g.
     for (dir, limit) in [(DVec3::NEG_Z, t.g_safety.limit.up - 1.0), (DVec3::Z, t.g_safety.limit.down + 1.0)] {
         let mut s = Sim::new(500.0, true);
-        s.ship.axis_tuning.g_safety.cap_turns = true;
+        s.ship.tuning.g_safety.cap_turns = true;
         s.body.lin_vel = dir * 150.0;
         let mut rate = 0.0;
         // Held level at 150 m/s: only the rate answers.
@@ -369,17 +337,8 @@ fn decoupled_on_the_ground_holds_still() {
 }
 
 #[test]
-fn switching_drops_the_classic_ground_hold() {
-    let mut s = ShipController::default();
-    s.ground_hold = Some(flight_core::GroundHold { at: DVec3::ZERO, rest: Some(DVec3::ZERO) });
-    s.set_model(FlightModel::Axis);
-    s.set_model(FlightModel::Classic);
-    assert_eq!(s.ground_hold, None);
-}
-
-#[test]
 fn decoupled_thrust_stops_at_the_caps() {
-    let t = AxisTuning::default();
+    let t = ShipTuning::default();
     let mut s = Sim::new(5000.0, false);
     s.ship.coupled = false;
     s.ship.coupling = 0.0;
@@ -393,7 +352,7 @@ fn decoupled_thrust_stops_at_the_caps() {
 
 #[test]
 fn space_is_faster_and_the_thrust_stronger_than_in_air() {
-    let t = AxisTuning::default();
+    let t = ShipTuning::default();
     let top = |air: bool| {
         let mut s = Sim::new(5000.0, false);
         s.env.air = air;
@@ -404,4 +363,23 @@ fn space_is_faster_and_the_thrust_stronger_than_in_air() {
     let ((a_space, v_space), (a_air, v_air)) = (top(false), top(true));
     assert!((a_space - t.accel.forward).abs() < 1e-6 && (a_air - t.accel.forward * t.atmosphere_thrust).abs() < 0.5, "thrust: space {a_space:.2}, air {a_air:.2} m/s²");
     assert!((v_space - t.space.cruise_speed).abs() < 1.0 && (v_air - t.cruise_speed).abs() < 1.0, "cruise: space {v_space:.1}, air {v_air:.1} m/s");
+}
+
+/// #144 (`full`): Ctrl on a hull pitched a few degrees asks for the cruise speed along the ship's
+/// down, part of it sideways; while the descent limit holds, the down input points straight down,
+/// so the ship comes down without drifting (it touched down at 7.4 m/s sideways and slid 0.74 m).
+/// At the start the thrusters saturate and give a short sideways push; it is gone low down.
+#[test]
+fn a_tilted_descent_does_not_drift_sideways() {
+    let mut s = Sim::new(60.0, true);
+    let mut low: f64 = 0.0;
+    while s.ship.terrain_clearance > 0.5 || s.body.pos.y > 5030.0 {
+        s.body.rot = DQuat::from_rotation_x(5f64.to_radians());
+        s.body.ang_vel = DVec3::ZERO;
+        s.step(&scripted(DVec3::NEG_Y));
+        if s.ship.terrain_clearance < 10.0 {
+            low = low.max(s.body.lin_vel.z.hypot(s.body.lin_vel.x));
+        }
+    }
+    assert!(low < 0.1, "sideways at most {low:.3} m/s in the last 10 m");
 }

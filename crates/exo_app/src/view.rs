@@ -147,8 +147,8 @@ pub fn setup_view(mut commands: Commands) {
             });
             // Next to the bar: CAPACITOR or STAGE, the F6 dev switch (#90).
             c.spawn((HudItem(BOOST_MODE_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
-            // Then CLASSIC or AXIS, the F7 dev switch (spike 13).
-            c.spawn((HudItem(FLIGHT_MODEL_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
+            // Then LANDING in landing mode (K).
+            c.spawn((HudItem(LANDING_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
         });
     // The one prompt (#82): what the interact key does now, below the screen centre.
     commands.spawn((
@@ -197,8 +197,8 @@ pub struct BoostFill;
 const BOOST_BAR_PX: f32 = 120.0;
 /// The `HudItem` after the bar that names the boost mode (`HudReadout::boost_mode`).
 const BOOST_MODE_ITEM: u8 = 4;
-/// The `HudItem` that names the flight model (`HudReadout::flight_model`).
-const FLIGHT_MODEL_ITEM: u8 = 5;
+/// The `HudItem` that shows the landing mode (`HudReadout::landing`).
+const LANDING_ITEM: u8 = 5;
 const BOOST_READY: Color = Color::srgb(0.55, 0.95, 1.0);
 const BOOST_ACTIVE: Color = Color::srgb(1.0, 0.85, 0.35);
 const BOOST_LOW: Color = Color::srgba(0.55, 0.6, 0.7, 0.6);
@@ -263,7 +263,7 @@ pub fn update_flight_hud(
     for (item, mut t) in &mut items {
         let want = match item.0 {
             BOOST_MODE_ITEM => readout.boost_mode,
-            FLIGHT_MODEL_ITEM => readout.flight_model,
+            LANDING_ITEM => readout.landing,
             i => readout.texts[i as usize].as_str(),
         };
         if **t != *want {
@@ -810,14 +810,10 @@ pub fn update_hud(
     let near = |p: DVec3| (p - planet.centre).length() < NEAR_PLANET;
     let mode = if pl.seated {
         let height = if near(sp.0) { format!("  ground {:.0} m  alt {:.0} m", planet.above_ground(sp.0), (sp.0 - planet.centre).length() - planet.radius) } else { String::new() };
-        // Spike 13: what the axis model did (felt G, precision share, thrusters at a limit).
+        // What the flight model did (felt G, precision share, thrusters at a limit).
         let a = &ship.ctl.axis;
-        let axis = if ship.ctl.model == flight_core::FlightModel::Axis {
-            let cap = if ship.ctl.axis_tuning.g_safety.cap_turns { "on" } else { "off" };
-            format!("  axis {:.1} g  prec {:.2}  turn cap {cap} (F8){}{}", a.felt_g, a.precision, if a.saturated { "  sat" } else { "" }, if a.rate_capped { "  g-cap" } else { "" })
-        } else {
-            String::new()
-        };
+        let cap = if ship.ctl.tuning.g_safety.cap_turns { "on" } else { "off" };
+        let axis = format!("  {:.1} g  prec {:.2}  turn cap {cap} (F8){}{}", a.felt_g, a.precision, if a.saturated { "  sat" } else { "" }, if a.rate_capped { "  g-cap" } else { "" });
         format!(
             "SHIP  assist {} (H)  follow {} (L)  {}{}  {} m/s  limit {:.0}{axis}{height}",
             if ship.ctl.hover_assist { "on" } else { "off" },

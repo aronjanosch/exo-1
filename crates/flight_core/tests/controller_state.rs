@@ -29,17 +29,14 @@ impl PlanetEnv for Ball {
 #[test]
 fn skipped_steps_leave_no_turn_behind() {
     let env = Ball(Field::default());
-    for model in [FlightModel::Classic, FlightModel::Axis] {
-        let mut c = ShipController::default();
-        c.set_model(model);
-        let fast = BodyState { pos: DVec3::Y * (R + 200.0), lin_vel: DVec3::NEG_Z * 300.0, ..Default::default() };
-        c.step(&fast, &FlightInput { piloted: true, ..Default::default() }, &env, DT);
-        c.skip_step(DT);
-        let rest = BodyState { lin_vel: DVec3::ZERO, ..fast };
-        let (_, w) = c.step(&rest, &FlightInput { piloted: true, ..Default::default() }, &env, DT);
-        // Only the follow rate of the little speed the step itself gives (stale: ~0.05 rad/s).
-        assert!(w.length() < 1e-4, "{model:?}: no turn at rest after a skipped step: {w}");
-    }
+    let mut c = ShipController::default();
+    let fast = BodyState { pos: DVec3::Y * (R + 200.0), lin_vel: DVec3::NEG_Z * 300.0, ..Default::default() };
+    c.step(&fast, &FlightInput { piloted: true, ..Default::default() }, &env, DT);
+    c.skip_step(DT);
+    let rest = BodyState { lin_vel: DVec3::ZERO, ..fast };
+    let (_, w) = c.step(&rest, &FlightInput { piloted: true, ..Default::default() }, &env, DT);
+    // Only the follow rate of the little speed the step itself gives (stale: ~0.05 rad/s).
+    assert!(w.length() < 1e-4, "no turn at rest after a skipped step: {w}");
 }
 
 /// The skipped step also lets the boost go and keeps the meter running.

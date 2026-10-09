@@ -232,3 +232,21 @@ fn after_empty_a_new_press_is_needed() {
     run(&mut c, &t, false, DT);
     assert!(run(&mut c, &t, true, DT) > 0.0, "a new press boosts");
 }
+
+/// Tapping the brake while holding boost through empty does not count as a new press.
+#[test]
+fn the_brake_does_not_rearm_an_empty_boost() {
+    let t = tuning();
+    let mut c = BoostCapacitor::default();
+    for _ in 0..(3.1 / DT) as usize {
+        c.step_braking(true, false, &t, DT);
+    }
+    for _ in 0..(3.0 / DT) as usize {
+        c.step_braking(true, false, &t, DT);
+    }
+    assert!(c.charge > t.start_charge);
+    c.step_braking(true, true, &t, DT);
+    assert_eq!(c.step_braking(true, false, &t, DT), 0.0, "still needs a new press");
+    c.step_braking(false, false, &t, DT);
+    assert!(c.step_braking(true, false, &t, DT) > 0.0);
+}

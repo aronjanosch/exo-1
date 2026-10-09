@@ -99,6 +99,12 @@ fn shipped_file_equals_default_and_bad_values_are_refused() {
     let mut t = AxisTuning::default();
     t.boost_speed_backward = f64::INFINITY;
     assert!(t.validate().unwrap_err().contains("boost_speed_backward"));
+    // Turn rates over speed: a share at or below 0 flips or zeroes the rates (clamp panics, NaN).
+    for y in [0.0, -0.5] {
+        let mut t = AxisTuning::default();
+        t.rate_over_speed.points[1].y = y;
+        assert!(t.validate().unwrap_err().contains("rate_over_speed"), "{y}");
+    }
 }
 
 #[test]
@@ -176,6 +182,7 @@ fn assist_off_falls_and_decoupled_keeps_its_vector() {
     s.ship.hover_assist = false;
     s.run(&scripted(DVec3::ZERO), 1.0);
     assert!((s.body.lin_vel.y + 9.81).abs() < 0.01, "assist off: free fall {:.3} m/s", s.body.lin_vel.y);
+    assert_eq!(s.ship.forward_speed_limit, 0.0, "no limit shown with the assist off, as in the classic model");
 
     let mut s = Sim::new(500.0, true);
     s.run(&scripted(DVec3::NEG_Z), 10.0);

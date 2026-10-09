@@ -246,6 +246,15 @@ impl BoostCapacitor {
         if want { 1.0 } else { 0.0 }
     }
 
+    /// One step with boost held (`held`) while the brake may block it: the brake stops the boost
+    /// but is no new press for a boost that ran empty.
+    pub fn step_braking(&mut self, held: bool, braking: bool, t: &BoostCapacitorTuning, dt: f64) -> f64 {
+        let latched = self.needs_release && held;
+        let strength = self.step(held && !braking, t, dt);
+        self.needs_release |= latched;
+        strength
+    }
+
     /// One step with boost held (`want`) or not; returns the boost strength 0..1 for this step.
     pub fn step(&mut self, want: bool, t: &BoostCapacitorTuning, dt: f64) -> f64 {
         if t.drain_time <= 0.0 {
@@ -733,17 +742,25 @@ impl ShipController {
     /// m: a held ship found farther than this from its spot was moved by something else (a
     /// teleport, a depenetration); the hold lets go instead of pulling it back.
     pub const GROUND_HOLD_REACH: f64 = 1.0;
-    /// m and m/s: the ground rules (settle, hold) start only this low above the terrain under the
-    /// centre and this slow along the ground; a brush at speed is not a landing (#104 point 1).
-    pub const GROUND_HOLD_CLEARANCE: f64 = 2.5;
+    /// m/s: the ground rules (settle, hold) start only this slow along the ground; a brush at speed
+    /// is not a landing (#104 point 1).
     pub const GROUND_HOLD_SPEED: f64 = 5.0;
+    /// m: half the hull's length; a level ship touching a slope with a corner has its centre up to
+    /// this times the slope's tangent above the terrain.
+    pub const HULL_HALF_LENGTH: f64 = 4.0;
     /// s: a settling hold lets go when the hull has not touched for this long (a one-step flicker
     /// keeps it; a resting hold keeps the ship on its spot, where the contact may drop out).
     pub const GROUND_HOLD_RELEASE_TIME: f64 = 0.25;
 
+    /// m: the ground rules start only this low above the terrain under the centre: a corner touch
+    /// on a slope at the slope limit, plus half a metre.
+    pub fn ground_clearance(&self) -> f64 {
+        Self::HULL_HALF_LENGTH * self.tuning.landing_slope_limit.min(80.0).to_radians().tan() + 0.5
+    }
+
     /// Low and slow enough with the hull touching for the ground rules (settle, hold).
     fn on_ground(&self, grounded: bool, up: DVec3, v: DVec3) -> bool {
-        grounded && self.terrain_clearance < Self::GROUND_HOLD_CLEARANCE && (v - up * v.dot(up)).length() < Self::GROUND_HOLD_SPEED
+        grounded && self.terrain_clearance < self.ground_clearance() && (v - up * v.dot(up)).length() < Self::GROUND_HOLD_SPEED
     }
 
     /// A step the caller does not fly (the quantum drive holds the ship): the boost is released
@@ -811,22 +828,32 @@ impl ShipController {
         clearance
     }
 
+    /// What both models do first: the input ramp (scripted test input, nobody piloting, is not
+    /// ramped), the coupling blend, the brake and the boost. Returns the input to fly and the boost
+    /// strength 0..1.
+    fn begin_step(&mut self, input: &FlightInput, dt: f64) -> (FlightInput, f64) {
+        let input = if input.piloted { self.ramp.apply(input, &self.tuning, dt) } else { *input };
+        let target = if self.coupled { 1.0 } else { 0.0 };
+        self.coupling = move_towards(self.coupling, target, if self.tuning.decouple_time > 0.0 { dt / self.tuning.decouple_time } else { 1.0 });
+        self.brake_active = input.piloted && input.brake;
+        // The brake neither uses nor drains the charge (TODO(initiator), #90).
+        let strength = if self.boost_stage {
+            self.boost.stage(input.boost && !self.brake_active)
+        } else {
+            self.boost.step_braking(input.boost, self.brake_active, &self.tuning.boost_capacitor, dt)
+        };
+        self.boost_strength = strength;
+        (input, strength)
+    }
+
     /// One physics step (Godot's `_integrate_forces`). Returns the new linear and
     /// angular velocity; the caller writes them to the body before integration.
     pub fn step(&mut self, body: &BodyState, input: &FlightInput, env: &impl PlanetEnv, dt: f64) -> (DVec3, DVec3) {
         if self.model == FlightModel::Axis {
             return self.step_axis(body, input, env, dt);
         }
-        // Scripted test input (nobody piloting) is not ramped.
-        let ramped;
-        let input = if input.piloted {
-            ramped = self.ramp.apply(input, &self.tuning, dt);
-            &ramped
-        } else {
-            input
-        };
-        let target = if self.coupled { 1.0 } else { 0.0 };
-        self.coupling = move_towards(self.coupling, target, if self.tuning.decouple_time > 0.0 { dt / self.tuning.decouple_time } else { 1.0 });
+        let (input, strength) = self.begin_step(input, dt);
+        let input = &input;
         let b = body.rot;
         let origin = body.pos;
         let gravity = env.gravity_at(origin);
@@ -834,11 +861,6 @@ impl ShipController {
         self.planet_follow_strength = if self.horizon_follow { env.field_strength_at(origin) } else { 0.0 };
 
         let mut thrust_in = input.thrust;
-        self.brake_active = input.piloted && input.brake;
-        // The brake neither uses nor drains the charge (TODO(initiator), #90).
-        let want = input.boost && !self.brake_active;
-        let strength = if self.boost_stage { self.boost.stage(want) } else { self.boost.step(want, &self.tuning.boost_capacitor, dt) };
-        self.boost_strength = strength;
         let boost = 1.0 + (self.tuning.boost_factor - 1.0) * strength;
         if self.brake_active {
             thrust_in = DVec3::ZERO;
@@ -894,7 +916,7 @@ impl ShipController {
             // A resting hold keeps the ship exactly on its spot, so the contact may drop out; only a
             // settling one (pushed down) counts contact lost.
             let settling = self.ground_hold.is_some_and(|h| h.rest.is_none());
-            let left = settling && self.contact_lost >= Self::GROUND_HOLD_RELEASE_TIME || self.terrain_clearance >= Self::GROUND_HOLD_CLEARANCE;
+            let left = settling && self.contact_lost >= Self::GROUND_HOLD_RELEASE_TIME || self.terrain_clearance >= self.ground_clearance();
             if thrusting || strayed || left {
                 self.ground_hold = None;
             } else if hold && self.ground_hold.is_none() && self.ground_slope(env, origin) <= self.tuning.landing_slope_limit.to_radians() {

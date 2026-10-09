@@ -6,7 +6,7 @@
 //! classic model, and `drag_k`, the ramp and `decouple_time` from `ShipTuning`.
 //!
 //! All values are TODO(initiator) (`content/tuning/ship_axis.json`).
-use crate::{lerp, limit_length, move_towards, parse_tuning, smoothstep, BodyState, Curve, FlightInput, Interp, PlanetEnv, ShipController};
+use crate::{lerp, limit_length, parse_tuning, smoothstep, BodyState, Curve, FlightInput, Interp, PlanetEnv, ShipController};
 use glam::{DVec2, DVec3};
 use serde::Deserialize;
 
@@ -233,6 +233,9 @@ impl AxisTuning {
             return Err(format!("atmosphere_thrust {} out of range", self.atmosphere_thrust));
         }
         self.rate_over_speed.validate().map_err(|e| format!("rate_over_speed: {e}"))?;
+        if let Some(p) = self.rate_over_speed.points.iter().find(|p| p.y <= 0.0) {
+            return Err(format!("rate_over_speed: share {} must be above 0", p.y));
+        }
         pos("linear_decay", self.linear_decay)?;
         pos("angular_decay", self.angular_decay)?;
         self.accel.validate("accel")?;
@@ -298,16 +301,8 @@ impl ShipController {
 
     /// One step of the axis model; same contract as `step` (new linear and angular velocity).
     pub(crate) fn step_axis(&mut self, body: &BodyState, input: &FlightInput, env: &impl PlanetEnv, dt: f64) -> (DVec3, DVec3) {
-        // Scripted test input (nobody piloting) is not ramped, as in the classic model.
-        let ramped;
-        let input = if input.piloted {
-            ramped = self.ramp.apply(input, &self.tuning, dt);
-            &ramped
-        } else {
-            input
-        };
-        let target = if self.coupled { 1.0 } else { 0.0 };
-        self.coupling = move_towards(self.coupling, target, if self.tuning.decouple_time > 0.0 { dt / self.tuning.decouple_time } else { 1.0 });
+        let (input, strength) = self.begin_step(input, dt);
+        let input = &input;
         let t = &self.axis_tuning;
         let (b, origin, v) = (body.rot, body.pos, body.lin_vel);
         let inv = b.inverse();
@@ -318,11 +313,6 @@ impl ShipController {
         self.planet_follow_strength = if self.horizon_follow { env.field_strength_at(origin) } else { 0.0 };
         let horizon_w = if self.horizon_follow { up.cross(v) / pos.length() * self.planet_follow_strength } else { DVec3::ZERO };
 
-        self.brake_active = input.piloted && input.brake;
-        // The brake neither uses nor drains the charge (TODO(initiator), #90).
-        let want = input.boost && !self.brake_active;
-        let strength = if self.boost_stage { self.boost.stage(want) } else { self.boost.step(want, &self.tuning.boost_capacitor, dt) };
-        self.boost_strength = strength;
         let stick = if self.brake_active { DVec3::ZERO } else { limit_length(input.thrust, 1.0) };
         let assist = self.hover_assist || self.brake_active;
         let boost_share = if self.brake_active { 1.0 } else { strength };
@@ -341,7 +331,8 @@ impl ShipController {
         let p = if self.landing_mode { 1.0 - smoothstep(t.precision.full_below, t.precision.off_above, self.terrain_clearance - sink * sink / (2.0 * brake)) } else { 0.0 };
         let forward_cap = lerp(cruise, boost_forward, strength);
         let backward_cap = lerp(cruise, boost_backward, strength);
-        self.forward_speed_limit = lerp(forward_cap, forward_cap.min(t.precision.speed), p);
+        // No limit shown with the assist off, as in the classic model (#110 point 5).
+        self.forward_speed_limit = if assist { lerp(forward_cap, forward_cap.min(t.precision.speed), p) } else { 0.0 };
 
         // Coupled: a velocity goal from the stick, turning with the ship.
         let local_goal = DVec3::new(stick.x * cruise, stick.y * cruise, stick.z * if stick.z < 0.0 { forward_cap } else { backward_cap });

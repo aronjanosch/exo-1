@@ -168,7 +168,8 @@ pub fn ship_control(
     for (e, mut ship, pos, rot, mut lv, mut av) in &mut q {
         ship.grounded = colliders.iter().any(|(c, of)| of.body == e && collisions.collisions_with(c).next().is_some());
         let clearance = ship.ctl.clearance_at(planet.as_ref(), pos.0);
-        let grounded = ship.grounded;
+        // A parked ship is static: no contacts with the static terrain, but it stands on it.
+        let grounded = ship.grounded || ship.parked;
         ship.lag.step(grounded, clearance, lv.0.length(), dt);
         // Nobody flying, or the game does not have the mouse (menu, free cursor): the stick centres.
         if !ship.piloted || controls.released {

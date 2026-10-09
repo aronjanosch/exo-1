@@ -248,3 +248,15 @@ fn lifted_straight_up_it_is_not_pulled_back() {
     let (v, _) = c.step(&lifted, &FlightInput { grounded: true, piloted: true, ..Default::default() }, &env, DT);
     assert!(c.ground_hold.is_none() && v.length() < 5.0, "lets go instead of 1200 m/s down: {v}");
 }
+
+/// A level ship touching a slope just under the limit with a hull corner has its centre ~2.7 m
+/// above the terrain: still on the ground, held (review of the #104 point 1 gate).
+#[test]
+fn a_corner_touch_on_a_steep_slope_below_the_limit_is_held() {
+    let env = Slope::new(34.0);
+    let mut c = ShipController::default();
+    let up = env.ground(0.0).normalize();
+    let b = BodyState { pos: env.ground(0.0) + up * 4.0 * 34f64.to_radians().tan(), ..Default::default() };
+    c.step(&b, &down(), &env, DT);
+    assert!(c.ground_hold.is_some(), "clearance {:.2} m", c.terrain_clearance);
+}

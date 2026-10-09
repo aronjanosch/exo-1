@@ -159,7 +159,8 @@ pub fn interaction(
             if let Ok((_, c)) = crates.get(e) {
                 let f = if pl.ship.is_some() { frame } else { Frame::IDENTITY };
                 let eye = pl.world_pos(f) + pl.world_up(f) * EYE_HEIGHT;
-                grab.start(cfg, e, c, reach, eye, &frame);
+                let fwd = f.rot * pl.w.forward;
+                grab.start(cfg, e, c, &table.0.sizes[c.size], reach, eye, fwd, &frame);
             }
         }
         Target::Drop(_) => grab.release(),

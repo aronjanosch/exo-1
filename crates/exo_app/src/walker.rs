@@ -180,6 +180,7 @@ pub fn walker_step(
     remotes: Query<(Entity, &Position, &Rotation, &LinearVelocity, &RemoteShip)>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
     colliders: Query<(Entity, &ColliderOf)>,
+    grab: Res<crate::grab::Grab>,
 ) {
     let dt = time.delta_secs_f64();
     let Ok(mut pl) = players.single_mut() else { return };
@@ -215,8 +216,11 @@ pub fn walker_step(
     let sens = bindings.mouse.walker_sensitivity * settings.mouse_sensitivity;
     // The pad's stick (turn: x pitch up, y yaw left) turns the view at a rate.
     let stick = actions.turn * bindings.pad.look_rate * dt;
-    let yaw = -m.x as f64 * sens + stick.y;
-    let pitch = -m.y as f64 * sens + stick.x;
+    // A held crate slows the view's turn, more for heavy ones (#83).
+    let turn_share = grab.held.map_or(1.0, |h| grab_core::view_turn_share(&tuning.grab, h.mass));
+    let yaw = (-m.x as f64 * sens + stick.y) * turn_share;
+    let pitch = (-m.y as f64 * sens + stick.x) * turn_share;
+    let carry = grab.carry(&tuning.grab);
     let cfg = pl.w.cfg;
 
     // Weightless outside a cabin: the body turns freely and the suit thrusters move it (issue #8).
@@ -251,14 +255,17 @@ pub fn walker_step(
             boost: actions.boost,
             brake: actions.brake,
         };
-        WalkInput { accel: suit_accel(&tuning.suit, b, pl.w.vel, &suit), ..default() }
+        // Weightless, a held crate pulls the walker as much as the walker pulls it.
+        let reaction = grab_core::holder_accel(&tuning.grab, grab.reaction);
+        WalkInput { accel: suit_accel(&tuning.suit, b, pl.w.vel, &suit) + reaction, ..default() }
     } else {
         pl.pitch = (pl.pitch + pitch).clamp(-cfg.pitch_limit, cfg.pitch_limit);
         WalkInput {
             dir: DVec2::new(actions.move_dir.x, -actions.move_dir.z),
-            run: actions.run,
-            jump: actions.jump,
+            run: actions.run && carry.can_run,
+            jump: actions.jump && carry.can_jump,
             yaw,
+            slow: 1.0 - carry.speed_share,
             ..default()
         }
     };

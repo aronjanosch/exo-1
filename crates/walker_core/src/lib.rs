@@ -223,6 +223,8 @@ pub struct WalkInput {
     pub yaw: f64,
     /// Weightless only: acceleration from equipment (suit thrusters), frame coordinates.
     pub accel: DVec3,
+    /// Share of the walking speed taken away (carrying a crate in both hands, #83); 0 = none.
+    pub slow: f64,
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -319,7 +321,7 @@ impl Walker {
             self.move_vel = self.vel;
         } else {
             let right = self.forward.cross(up);
-            let speed = if input.run { self.cfg.run_speed } else { self.cfg.walk_speed };
+            let speed = if input.run { self.cfg.run_speed } else { self.cfg.walk_speed } * (1.0 - input.slow);
             let target = (right * input.dir.x + self.forward * input.dir.y).clamp_length_max(1.0) * speed;
             let current = self.move_vel - up * self.move_vel.dot(up);
             let start = self.cfg.start_speed;

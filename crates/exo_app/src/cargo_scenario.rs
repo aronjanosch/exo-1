@@ -225,3 +225,264 @@ pub fn interact_steps(s: &mut Vec<Step>) {
         true
     }));
 }
+
+/// Spawns a crate resting on the planet's ground at the world point `at` (planet frame).
+pub(crate) fn ground_crate(w: &mut World, size: &str, at: DVec3) -> Entity {
+    let pl = planet(w);
+    let t = w.resource::<Crates>().0.clone();
+    let up = pl.up(at);
+    let h = t.get(size).expect("crate size").extents[1] * 0.5;
+    let pos = pl.centre + up * (pl.surface(up) + h + 0.01);
+    let fwd = up.any_orthonormal_vector();
+    w.spawn(crate_bundle(&t, size, None, pos, fwd)).id()
+}
+
+fn crate_e(c: &Ctx, k: &'static str) -> Entity {
+    Entity::from_bits(c.v[k] as u64)
+}
+
+/// Height of a crate's bottom above the planet's ground (m).
+fn crate_above_ground(w: &mut World, e: Entity) -> f64 {
+    let p = crate_world_pos(w, e);
+    let half = w.get::<Crate>(e).unwrap().body.half.y;
+    planet(w).above_ground(p) - half
+}
+
+/// Walker on open ground 25 m behind the parked ship, facing away from it, at rest.
+fn walker_on_ground(w: &mut World) {
+    let f = ship_frame_of(w);
+    place_walker(w, f.to_world(DVec3::new(8.0, 0.0, 25.0)));
+    let p = player_world(w);
+    face_towards(w, p + (p - f.origin));
+}
+
+/// A point `d` m ahead of the walker on its heading, world space.
+fn ahead(w: &mut World, d: f64) -> DVec3 {
+    let f = ship_frame_of(w);
+    let (p, fwd) = with_player(w, |pl| (pl.world_pos(f), if pl.ship.is_some() { f.rot * pl.w.forward } else { pl.w.forward }));
+    p + fwd * d
+}
+
+/// Picks up a fresh `size` crate 1.3 m ahead, then walks 3 s holding W (and Shift); checks the
+/// walking speed of this carry state and that the crate stays in the hands.
+fn carry_walk(size: &'static str, want_speed: fn(&walker_core::WalkerConfig, &grab_core::GrabConfig) -> f64, try_jump: bool) -> Vec<Step> {
+    vec![
+        Box::new(move |w, c| {
+            clear_crates(w);
+            walker_on_ground(w);
+            let at = ahead(w, 1.3);
+            let e = ground_crate(w, size, at);
+            c.v.insert("crate", e.to_bits() as f64);
+            begin(w, c, &format!("crate-carry: pick up and carry the {size} crate"));
+            true
+        }),
+        wait(0.6),
+        Box::new(|w, c| {
+            let e = crate_e(c, "crate");
+            let at = crate_world_pos(w, e);
+            look_at(w, at);
+            true
+        }),
+        wait(0.1),
+        Box::new(|w, _| {
+            tap(w, KeyCode::KeyF);
+            true
+        }),
+        wait(1.0),
+        Box::new(move |w, c| {
+            let e = crate_e(c, "crate");
+            let lifted = crate_above_ground(w, e);
+            check(c, held(w) == Some(e) && lifted > 0.15, format!("crate-carry: {size} crate held and lifted ({lifted:.2} m above ground)"));
+            with_player(w, |p| p.pitch = 0.0);
+            keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft], true);
+            c.v.insert("max_air", 0.0);
+            true
+        }),
+        Box::new(move |w, c| {
+            let p = player_world(w);
+            if c.t > 1.5 && !c.p.contains_key("from") {
+                c.p.insert("from", p);
+                c.v.insert("t_from", c.t);
+            }
+            if try_jump && c.t > 2.0 && c.t < 2.4 {
+                keys(w, &[KeyCode::Space], true);
+            }
+            if try_jump && c.t >= 2.4 {
+                keys(w, &[KeyCode::Space], false);
+            }
+            let air = planet(w).above_ground(p);
+            c.v.insert("max_air", c.v["max_air"].max(air));
+            if c.t >= 3.0 {
+                keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft, KeyCode::Space], false);
+                let from = c.p.remove("from").unwrap();
+                let up = planet(w).up(p);
+                let d = p - from;
+                let speed = (d - up * d.dot(up)).length() / (c.t - c.v["t_from"]);
+                let want = want_speed(&w.resource::<crate::tuning::Tuning>().walker, &w.resource::<crate::tuning::Tuning>().grab);
+                let e = crate_e(c, "crate");
+                let still = held(w) == Some(e);
+                end(w, c, format!("{size}: walking {speed:.2} m/s (want {want:.2}), crate still held {still}, highest feet {:.2} m", c.v["max_air"]));
+                // The walker loses a little against its target on this ground (both states alike),
+                // so the band is absolute; the states are 9 m/s apart.
+                check(c, (speed - want).abs() < 1.0 && still, format!("crate-carry: carrying the {size} crate walks at {speed:.2} m/s (want {want:.2} +-1 m/s), crate still in the hands"));
+                if try_jump {
+                    check(c, c.v["max_air"] < 0.2, format!("crate-carry: no jump with both hands busy (feet at most {:.2} m above ground)", c.v["max_air"]));
+                }
+                tap(w, KeyCode::KeyF);
+                return true;
+            }
+            false
+        }),
+        wait(0.3),
+    ]
+}
+
+/// #83: hands and the grab tool.
+pub fn crate_carry_steps(s: &mut Vec<Step>) {
+    // One hand: no cost, sprint allowed.
+    s.extend(carry_walk("small", |wc, _| wc.run_speed, false));
+    // Two hands: slower, no sprint, no jump.
+    s.extend(carry_walk("medium", |wc, gc| wc.walk_speed * gc.two_hand_speed_share, true));
+
+    // The large crate does not lift with one holder.
+    s.push(Box::new(|w, c| {
+        clear_crates(w);
+        walker_on_ground(w);
+        let at = ahead(w, 1.9);
+        let e = ground_crate(w, "large", at);
+        c.v.insert("crate", e.to_bits() as f64);
+        begin(w, c, "crate-carry: try to lift the large crate alone");
+        true
+    }));
+    s.push(wait(0.6));
+    s.push(Box::new(|w, c| {
+        let e = crate_e(c, "crate");
+        let at = crate_world_pos(w, e);
+        look_at(w, at);
+        c.v.insert("h0", crate_above_ground(w, e));
+        true
+    }));
+    s.push(wait(0.1));
+    s.push(Box::new(|w, c| {
+        let p = prompt(w);
+        check(c, p.contains("large crate"), format!("crate-carry: the prompt offers the large crate: \"{p}\""));
+        tap(w, KeyCode::KeyF);
+        c.v.insert("max_h", f64::MIN);
+        true
+    }));
+    s.push(Box::new(|w, c| {
+        let e = crate_e(c, "crate");
+        let h = crate_above_ground(w, e);
+        c.v.insert("max_h", c.v["max_h"].max(h));
+        if c.t >= 2.5 {
+            let rise = c.v["max_h"] - c.v["h0"];
+            end(w, c, format!("large crate: highest bottom {:.3} m above ground (start {:.3} m), still held {}", c.v["max_h"], c.v["h0"], held(w).is_some()));
+            check(c, rise < 0.1, format!("crate-carry: one holder cannot lift the large crate (rose {rise:.3} m)"));
+            if held(w).is_some() {
+                tap(w, KeyCode::KeyF);
+            }
+            return true;
+        }
+        false
+    }));
+    s.push(wait(0.3));
+
+    // Throw the small crate.
+    s.push(Box::new(|w, c| {
+        clear_crates(w);
+        walker_on_ground(w);
+        let at = ahead(w, 1.3);
+        let e = ground_crate(w, "small", at);
+        c.v.insert("crate", e.to_bits() as f64);
+        begin(w, c, "crate-carry: throw the small crate");
+        true
+    }));
+    s.push(wait(0.6));
+    s.push(Box::new(|w, c| {
+        let e = crate_e(c, "crate");
+        let at = crate_world_pos(w, e);
+        look_at(w, at);
+        true
+    }));
+    s.push(wait(0.1));
+    s.push(Box::new(|w, _| {
+        tap(w, KeyCode::KeyF);
+        true
+    }));
+    s.push(wait(1.0));
+    s.push(Box::new(|w, c| {
+        // Look 25 degrees up and throw.
+        with_player(w, |p| p.pitch = 25f64.to_radians());
+        let e = crate_e(c, "crate");
+        c.p.insert("from", crate_world_pos(w, e));
+        c.v.insert("n0", w.resource::<crate::grab::Grab>().throws.len() as f64);
+        tap(w, KeyCode::KeyR);
+        true
+    }));
+    s.push(Box::new(|w, c| {
+        let e = crate_e(c, "crate");
+        let pos = crate_world_pos(w, e);
+        let (asleep, vel) = w.get::<Crate>(e).map(|c| (c.body.asleep, c.body.vel)).unwrap();
+        if c.t > 0.3 && (asleep || vel.length() < 0.05) || c.t > 5.0 {
+            let throws = w.resource::<crate::grab::Grab>().throws.clone();
+            let thrown = throws.get(c.v["n0"] as usize).copied();
+            let up = planet(w).up(pos);
+            let d = pos - c.p["from"];
+            let range = (d - up * d.dot(up)).length();
+            let speed = thrown.map_or(0.0, |(_, v)| v.length());
+            let cfg = w.resource::<crate::tuning::Tuning>().grab;
+            let want = (cfg.throw_impulse / 15.0).min(cfg.throw_max_speed);
+            let below = -crate_above_ground(w, e).min(0.0);
+            end(w, c, format!("thrown at {speed:.2} m/s, landed {range:.2} m away after {:.2} s, below ground {below:.3} m", c.t));
+            check(c, thrown.is_some_and(|(x, _)| x == e) && (speed - want).abs() < 0.5 && held(w).is_none(), format!("crate-carry: R throws the small crate at {speed:.2} m/s (want {want:.2})"));
+            check(c, (2.0..12.0).contains(&range) && below < 0.05, format!("crate-carry: the thrown crate flew {range:.2} m and came to rest on the ground"));
+            return true;
+        }
+        false
+    }));
+
+    // The grab tool pulls a crate from 8 m.
+    s.push(Box::new(|w, c| {
+        clear_crates(w);
+        walker_on_ground(w);
+        let at = ahead(w, 8.0);
+        let e = ground_crate(w, "medium", at);
+        c.v.insert("crate", e.to_bits() as f64);
+        begin(w, c, "crate-carry: pull the medium crate with the grab tool from 8 m");
+        true
+    }));
+    s.push(wait(0.6));
+    s.push(Box::new(|w, c| {
+        let e = crate_e(c, "crate");
+        let at = crate_world_pos(w, e);
+        look_at(w, at);
+        true
+    }));
+    s.push(wait(0.1));
+    s.push(Box::new(|w, c| {
+        let p = prompt(w);
+        let e = crate_e(c, "crate");
+        let f = ship_frame_of(w);
+        let eye = with_player(w, |pl| pl.world_pos(f) + pl.world_up(f) * crate::walker::EYE_HEIGHT);
+        c.v.insert("d0", crate_world_pos(w, e).distance(eye));
+        check(c, p == "[F] pull the medium crate (grab tool)", format!("crate-carry: from {:.1} m the prompt offers the tool: \"{p}\"", c.v["d0"]));
+        tap(w, KeyCode::KeyF);
+        true
+    }));
+    s.push(Box::new(|w, c| {
+        if c.t < 4.0 {
+            return false;
+        }
+        let e = crate_e(c, "crate");
+        let f = ship_frame_of(w);
+        let eye = with_player(w, |pl| pl.world_pos(f) + pl.world_up(f) * crate::walker::EYE_HEIGHT);
+        let d = crate_world_pos(w, e).distance(eye);
+        let want = w.resource::<crate::tuning::Tuning>().grab.tool_hold_distance;
+        let h = crate_above_ground(w, e);
+        end(w, c, format!("tool: crate from {:.2} m to {d:.2} m from the eye in 4 s, {h:.2} m above ground", c.v["d0"]));
+        check(c, held(w) == Some(e) && (d - want).abs() < 0.6 && h > 0.2, format!("crate-carry: the tool pulled the crate from {:.1} m to {d:.2} m (hold distance {want} m) and holds it up", c.v["d0"]));
+        tap(w, KeyCode::KeyF);
+        true
+    }));
+    s.push(wait(0.3));
+}

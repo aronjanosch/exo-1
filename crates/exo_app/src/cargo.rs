@@ -41,6 +41,8 @@ pub struct Crate {
     pub push: DVec3,
     /// Turn rate about up this tick (rad/s), set before `crate_step`, cleared by it.
     pub turn: f64,
+    /// Gravity at the crate in the last step (m/s², along `-body.up`), for the hold's compensation.
+    pub g: f64,
     shape: Collider,
 }
 
@@ -82,7 +84,7 @@ pub fn crate_bundle(table: &CrateTable, size: &str, ship: Option<Entity>, pos: D
     let body = CrateBody::new(s, pos, forward);
     let rot = body.rot();
     (
-        Crate { size: i, shape: Collider::cuboid(s.extents[0], s.extents[1], s.extents[2]), body, ship, push: DVec3::ZERO, turn: 0.0 },
+        Crate { size: i, shape: Collider::cuboid(s.extents[0], s.extents[1], s.extents[2]), body, ship, push: DVec3::ZERO, turn: 0.0, g: 0.0 },
         CrateInterp { prev: (pos, rot), curr: (pos, rot) },
         Transform::default(),
         Visibility::default(),
@@ -161,6 +163,7 @@ pub fn crate_step(
             }
             None => (Frame::IDENTITY, planet.up(c.body.pos), flight_core::PlanetEnv::gravity_at(planet.as_ref(), c.body.pos).length()),
         };
+        c.g = g;
         c.body.step(cfg, &frame, up, g, push, turn, &world, dt);
 
         match c.ship {

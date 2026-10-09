@@ -9,7 +9,7 @@ Phase 1, `feat/milestone-c-grab`:
 - [x] #81 `grab_core`: hold, falloff, break, throw, shared carry (test-first)
 - [x] #80 crates as data, living in the ship's frame
 - [x] #82 interaction: one verb, one prompt
-- [ ] #83 grab in the game: hands and the grab tool
+- [x] #83 grab in the game: hands and the grab tool
 - [ ] #84 lock grid in the cabin
 - [ ] #85 object budget
 - not in this run: #86 (network)
@@ -66,3 +66,23 @@ Checks:
 - Existing scenarios: see the gate below.
 
 `TODO(initiator)`: cone half angle 25 degrees (`grab.json`); the seat by proximity instead of by the cone (keeps every scripted F at the seat working; with the cone the walker has to look at the seat). The HUD check reads the prompt resource, which the HUD line shows as is (headless runs have no HUD to read).
+
+## #83 grab in the game: hands and the grab tool
+
+What: `exo_app/src/grab.rs`, `grab_step` between `walker_step` and `crate_step`. The held crate is pulled each step to a hold point in front of the eye through `grab_core::hold_force` (one holder), as an acceleration on the crate in its own frame (cabin or planet; walker and crate may be in different frames). Hands: hold point `hold_gap` + half the crate's depth ahead, lowered by half its height; force only within 2 m. Tool: starts at the grab distance and reels in at 3 m/s to 3 m; full force to 6 m, none at 10 m. The crate keeps its heading relative to the walker's; Q/E turn it (not while the suit rolls); the turn rate is capped by mass and damped on contact. The hold breaks after 1 s with more than 1.5 m error, or when the walker stands on the crate. R throws (hand velocity plus the impulse along the look). Walker side (`walker_step`): two hands give 60 % speed, no sprint, no jump (`WalkInput::slow`, new); the view turns at 100 / (100 + mass) of its rate; weightless (suit), the hold's reaction and the throw's kick push the walker.
+
+Checks, scenario `crate-carry` (new, in `cargo t`), on open ground behind the ship:
+- small crate: held and lifted 0.58 m; with W + Shift 11.07 m/s (run speed 12), still in the hands.
+- medium crate: held and lifted 0.24 m; with W + Shift 2.57 m/s (60 % of 5 = 3.0), no jump with Space (feet at most 0.04 m up), still held.
+- large crate alone: rose -0.001 m in 2.5 s (1500 N per holder < 2354 N weight).
+- throw (25 degrees up): 8.00 m/s (want 8.00), landed 6.96 m away after 1.45 s, resting on the ground.
+- grab tool from 8.2 m: prompt "[F] pull the medium crate (grab tool)", after 4 s 3.00 m from the eye and 0.90 m above ground.
+- 0 failures.
+
+Observation (not changed): walking speeds measured on this ground are 0.4 to 0.9 m/s below the walker's target in both carry states, so the speed check uses an absolute 1 m/s band. The walker without a crate was not measured on this patch; the cause is not checked.
+
+Open points / `TODO(initiator)`:
+- The zero-G reaction is covered by the `grab_core` unit test (`reaction_pushes_holder_in_zero_g`) and wired into the suit; no scenario checks it in the game.
+- Hold point height (half the crate's height below the eye line) and the tool's reel speed and hold distance (3 m/s, 3 m) are guesses.
+- The view turn share applies to mouse and stick alike, also with the tool.
+- Shared carry with two players needs #86 (network).

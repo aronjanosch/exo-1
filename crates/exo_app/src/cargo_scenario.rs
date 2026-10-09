@@ -355,7 +355,7 @@ fn carry_walk(size: &'static str, want_speed: fn(&walker_core::WalkerConfig, &gr
 }
 
 /// #83: hands and the grab tool.
-pub fn crate_carry_steps(s: &mut Vec<Step>) {
+pub fn crate_carry_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
     // One hand: no cost, sprint allowed.
     s.extend(carry_walk("small", |wc, _| wc.run_speed, false));
     // Two hands: slower, no sprint, no jump.
@@ -486,7 +486,13 @@ pub fn crate_carry_steps(s: &mut Vec<Step>) {
         tap(w, KeyCode::KeyF);
         true
     }));
-    s.push(Box::new(|w, c| {
+    let dir = dir.join("crate-carry");
+    s.push(Box::new(move |w, c| {
+        // Windowed: the grab tool's beam mid-pull (night extra E3).
+        if c.t >= 1.5 && !c.v.contains_key("beam_shot") {
+            c.v.insert("beam_shot", 1.0);
+            shot(w, c, &dir, windowed, "grab-beam");
+        }
         if c.t < 4.0 {
             return false;
         }

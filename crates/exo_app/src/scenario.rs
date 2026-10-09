@@ -2515,7 +2515,8 @@ pub fn headless_view(mut origin: ResMut<RenderOrigin>, ships: Query<&Position, W
     }
 }
 
-/// Share the counts after a later swap may differ from the first swap's (#14).
+/// Share the counts after a later swap may differ from the first swap to the same planet's
+/// (#14; the planets differ, e.g. in lake and river meshes, #72).
 const SWAP_COUNT_TOLERANCE: f64 = 0.05;
 
 fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool, rounds: usize) {
@@ -2565,13 +2566,13 @@ fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool, rounds: 
         let rows = w.resource::<SwapAudit>().rows.clone();
         let drops = rows.iter().filter(|r| r.drop).count();
         check(c, rows.len() == rounds + 2 && drops == 1, format!("swap: {} planet swaps, {drops} of them at an emergency drop (expected {} and 1)", rows.len(), rounds + 2));
-        let Some(first) = rows.first().cloned() else { return true };
         let near = |a: f64, b: f64| (a - b).abs() <= SWAP_COUNT_TOLERANCE * b.max(1.0);
         for (i, r) in rows.iter().enumerate() {
+            let first = rows.iter().find(|f| f.to == r.to).unwrap_or(r);
             check(c, r.old_chunks == 0 && r.old_entities == 0 && r.old_meshes == 0 && r.old_freed,
                 format!("swap {}: departed planet {} left {} terrain chunks, {} entities, {} meshes; generator freed {}", i + 1, r.from, r.old_chunks, r.old_entities, r.old_meshes, r.old_freed));
             check(c, near(r.chunks as f64, first.chunks as f64) && near(r.entities as f64, first.entities as f64) && near(r.meshes as f64, first.meshes as f64),
-                format!("swap {}: world {} terrain chunks, {} entities, {} meshes; within {:.0} % of the first swap's {}, {}, {}", i + 1, r.chunks, r.entities, r.meshes, SWAP_COUNT_TOLERANCE * 100.0, first.chunks, first.entities, first.meshes));
+                format!("swap {}: world {} terrain chunks, {} entities, {} meshes; within {:.0} % of the first swap to the same planet's {}, {}, {}", i + 1, r.chunks, r.entities, r.meshes, SWAP_COUNT_TOLERANCE * 100.0, first.chunks, first.entities, first.meshes));
             // #34: the roots come from the pool, built during the flight.
             check(c, r.roots_built_here == 0, format!("swap {}: {} root chunks built on the swap frame (prebuilt on the pool)", i + 1, r.roots_built_here));
         }

@@ -27,6 +27,8 @@ struct Node {
     entity: Option<Entity>,
     mesh: Option<AssetId<Mesh>>,
     water_mesh: Option<AssetId<Mesh>>,
+    /// Lakes and rivers (#72).
+    inland_mesh: Option<AssetId<Mesh>>,
     task: Option<Task<ChunkOut>>,
     alive: bool,
 }
@@ -87,7 +89,7 @@ impl Terrain {
         let node = Node {
             face, a0, b0, size, depth, centre, edge_m,
             bound: bound + planet.relief,
-            children: Vec::new(), entity: None, mesh: None, water_mesh: None, task: None, alive: true,
+            children: Vec::new(), entity: None, mesh: None, water_mesh: None, inland_mesh: None, task: None, alive: true,
         };
         if let Some(i) = self.free.pop() {
             self.nodes[i] = node;
@@ -137,7 +139,7 @@ impl Terrain {
 
     /// Every mesh this terrain holds (chunks and their water), for the swap check (#14).
     pub fn mesh_ids(&self) -> Vec<AssetId<Mesh>> {
-        self.nodes.iter().filter(|n| n.alive).flat_map(|n| n.mesh.into_iter().chain(n.water_mesh)).collect()
+        self.nodes.iter().filter(|n| n.alive).flat_map(|n| n.mesh.into_iter().chain(n.water_mesh).chain(n.inland_mesh)).collect()
     }
 
     fn water_mesh(&self, out: &ChunkOut) -> Option<Mesh> {
@@ -152,11 +154,31 @@ impl Terrain {
         )
     }
 
-    /// The chunk's sea surface as a child of the chunk entity (shown and dropped with it).
+    /// Lakes and rivers over the chunk (#72): their own vertices and triangles, the sea's
+    /// material.
+    fn inland_water_mesh(out: &ChunkOut) -> Option<Mesh> {
+        let (w, tris) = out.inland_water.as_ref()?;
+        let c = DVec3::from_array(out.center);
+        let normals: Vec<[f32; 3]> = w.iter().map(|p| (c + DVec3::new(p[0] as f64, p[1] as f64, p[2] as f64)).normalize().as_vec3().to_array()).collect();
+        Some(
+            Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
+                .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, w.clone())
+                .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+                .with_inserted_indices(Indices::U32(tris.clone())),
+        )
+    }
+
+    /// The chunk's sea, lake and river surfaces as children of the chunk entity (shown and
+    /// dropped with it).
     fn spawn_water(&mut self, commands: &mut Commands, meshes: &mut Assets<Mesh>, i: usize, chunk: Entity, out: &ChunkOut) {
         if let Some(m) = self.water_mesh(out) {
             let mesh = meshes.add(m);
             self.nodes[i].water_mesh = Some(mesh.id());
+            commands.spawn((Mesh3d(mesh), MeshMaterial3d(self.water.clone()), Transform::default(), ChildOf(chunk)));
+        }
+        if let Some(m) = Self::inland_water_mesh(out) {
+            let mesh = meshes.add(m);
+            self.nodes[i].inland_mesh = Some(mesh.id());
             commands.spawn((Mesh3d(mesh), MeshMaterial3d(self.water.clone()), Transform::default(), ChildOf(chunk)));
         }
     }

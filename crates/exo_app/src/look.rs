@@ -120,6 +120,13 @@ fn atlas_step(out: PathBuf, vps: Viewpoints) -> Step {
             );
             println!("{line}");
             c.report.push(line);
+            let line = format!(
+                "look {}: drainage {:.0} ms, rivers {:.1} km (longest {:.2} km, through lakes {:.2} km; {} ends at the sea, {} at a lake, largest catchment {:.1} km²), lakes {} ({:.2} % of the surface, largest {:.3} km², deepest {:.1} m), erosion max {:.1} m, cut max {:.1} m",
+                def.name, st.drainage_ms, st.river_length_km, st.longest_river_km, st.longest_waterway_km, st.rivers_to_sea, st.rivers_to_lake, st.largest_catchment_km2,
+                st.lake_count, st.lake_area_share * 100.0, st.largest_lake_km2, st.deepest_lake_m, st.erosion_max_m, st.carve_max_m,
+            );
+            println!("{line}");
+            c.report.push(line);
         }
         true
     })
@@ -293,8 +300,22 @@ pub fn site_walk_steps(s: &mut Vec<Step>) {
             check(c, false, "site-walk: the planet has no site".into());
             return true;
         };
-        let (e, _) = planet_core::look::tangent_frame(site.dir);
-        let start = from_v3(walk(site.dir, e, 40.0, pl.radius));
+        // The first of eight headings whose 40 m are dry and walkable (a coast or a river next to
+        // the site would otherwise start the walk in the water).
+        let (e, n) = planet_core::look::tangent_frame(site.dir);
+        let heading = (0..8)
+            .map(|k| {
+                let a = k as f64 * std::f64::consts::FRAC_PI_4;
+                e * a.cos() + n * a.sin()
+            })
+            .find(|t| {
+                (0..=20).all(|i| {
+                    let smp = pl.pgen.sample(walk(site.dir, *t, 40.0 - i as f64 * 2.0, pl.radius));
+                    smp.water_depth == 0.0 && smp.slope_deg < 20.0
+                })
+            })
+            .unwrap_or(e);
+        let start = from_v3(walk(site.dir, heading, 40.0, pl.radius));
         let centre = pl.centre + from_v3(site.dir) * pl.surface(from_v3(site.dir));
         place_walker(w, pl.centre + start * pl.surface(start));
         face_towards(w, centre);

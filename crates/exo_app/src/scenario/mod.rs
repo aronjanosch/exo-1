@@ -418,6 +418,11 @@ pub(crate) fn hold_until(name: &'static str, ks: &'static [KeyCode], limit: f64,
     })
 }
 
+/// How far a landed ship may settle from its touchdown spot (#92). The residue depends on the
+/// ground under the hull: 0.56 mm on the slope the scenario found before the drainage (#72),
+/// 1.1 mm on the one the eroded terrain offers; before #92 a ship slid 553 mm.
+pub(crate) const LANDING_SETTLE_M: f64 = 0.002;
+
 /// Hold Ctrl until the ship rests (well below the landed check's 0.05 m/s). From the first hull
 /// contact on it must not slide (#92): pressed down onto a slope it used to slide 20 s, and tipping
 /// from the first corner onto a 33 degree slope 0.55 m. The touchdown spot is left in `c.p`.
@@ -448,7 +453,7 @@ pub(crate) fn land(name: &'static str) -> Step {
             let agl = above_ground(w);
             let mm = slide.unwrap_or(f64::NAN) * 1000.0;
             end(w, c, format!("{:.1} s, ground {agl:.2} m, speed {v:.3} m/s, slid {mm:.2} mm after touchdown", c.t));
-            check(c, slide.is_some_and(|s| s < 0.001), format!("{name}: no slide after touchdown ({mm:.2} mm)"));
+            check(c, slide.is_some_and(|s| s < LANDING_SETTLE_M), format!("{name}: no slide after touchdown ({mm:.2} mm)"));
             return true;
         }
         false

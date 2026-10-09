@@ -37,6 +37,10 @@
     { "id": "canyon-hill", "spot": "canyon", "height_m": 200.0, "back_m": 350.0, "pitch_deg": -22.0 },
     { "id": "mesa-hill", "spot": "mesa", "height_m": 200.0, "back_m": 300.0, "pitch_deg": -15.0 },
     { "id": "spire-ground", "spot": "spire", "height_m": 1.7, "pitch_deg": 10.0 },
-    { "id": "caldera-hill", "spot": "caldera", "height_m": 200.0, "back_m": 400.0, "pitch_deg": -10.0 }
+    { "id": "caldera-hill", "spot": "caldera", "height_m": 200.0, "back_m": 400.0, "pitch_deg": -10.0 },
+    { "id": "river-hill", "spot": "river", "height_m": 120.0, "back_m": 250.0, "pitch_deg": -20.0 },
+    { "id": "river-ground", "spot": "river", "height_m": 1.7, "pitch_deg": -3.0 },
+    { "id": "lake-hill", "spot": "lake", "height_m": 200.0, "back_m": 350.0, "pitch_deg": -18.0 },
+    { "id": "lake-ground", "spot": "lake", "height_m": 1.7, "pitch_deg": -2.0 }
   ]
 }

@@ -20,6 +20,7 @@ WORKSPACE.md
 /.agents/skills/grilling/
 /.agents/skills/implement/
 /.agents/skills/setup-matt-pocock-skills/
+/.agents/skills/tdd/
 /.agents/skills/to-spec/
 /.agents/skills/to-tickets/
 /.agents/skills/writing-for-agents/

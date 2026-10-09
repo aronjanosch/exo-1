@@ -1,0 +1,12 @@
+# cargo-nextest (`cargo t`): every test binary runs in parallel, so the gate takes about as long
+# as the slowest scenario.
+
+[profile.default]
+# Half the cores: as fast as all 16 here (38 s either way) and leaves room for parallel lanes.
+test-threads = 8
+# perf.rs times simulation steps and fails under load from other sessions: only on request,
+# `cargo t -P perf`, on a quiet machine.
+default-filter = "not binary(perf)"
+
+[profile.perf]
+default-filter = "binary(perf)"

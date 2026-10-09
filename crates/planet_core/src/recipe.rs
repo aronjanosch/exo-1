@@ -348,6 +348,59 @@ pub struct Water {
     pub ripple_speed: f32,
 }
 
+/// Erosion steps on the macro shell (#72), stream power: per step a node sinks towards its
+/// downstream neighbour by `strength * catchment^area_exponent / distance` (implicit, catchment
+/// in m²), never more than `max_m` in all and never below the sea.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Erosion {
+    pub iterations: u32,
+    pub strength: f64,
+    pub area_exponent: f64,
+    pub max_m: f64,
+}
+
+/// How a river crosses a sink that holds no lake (#72).
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SinkCrossing {
+    /// Its bed cuts the way out down to the sink's floor (a gorge through the sill).
+    Cut,
+    /// Sediment fills the sink to its spill point and the river runs across the flat.
+    Fill,
+}
+
+/// Rivers and lakes from drainage on the macro grid (#72), cut in the bake.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct DrainageSpec {
+    #[serde(rename = "_comment", default)]
+    pub comment: String,
+    /// Rain per square metre, relative: `rain_base + rain_moisture_gain * moisture`, at least 0.
+    pub rain_base: f64,
+    pub rain_moisture_gain: f64,
+    /// Rain-weighted catchment (km²) where a river starts.
+    pub river_min_catchment_km2: f64,
+    /// Bed depth at the river's start and at most (m); grows with the catchment^0.4.
+    pub river_depth_m: [f64; 2],
+    /// Bed width at the start and at most (m); grows with the square root of the catchment.
+    pub river_width_m: [f64; 2],
+    /// Share of the bed depth that holds water.
+    pub river_fill: f64,
+    /// A sink holds a lake when it is at least this deep, and this large or fed by a river; a
+    /// river cuts through shallower ones.
+    pub lake_min_depth_m: f64,
+    pub lake_min_area_m2: f64,
+    /// Rain-weighted catchment (m²) a lake needs per m² of its surface: a sink that gathers less
+    /// holds a smaller lake that never spills, or stays dry. 0 = every sink fills to its spill.
+    pub lake_evaporation: f64,
+    /// Areas below the sea level count as the sea for the water from this size on (km²); smaller
+    /// pockets fill to a lake or a river cuts through them. 0 = every one is sea.
+    pub sea_min_area_km2: f64,
+    pub river_sinks: SinkCrossing,
+    pub erosion: Erosion,
+}
+
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct BiomeRow {
@@ -658,6 +711,9 @@ pub struct Recipe {
     pub material: TerrainLook,
     pub sky: Sky,
     pub water: Water,
+    /// Rivers and lakes (#72); missing = none.
+    #[serde(default)]
+    pub drainage: Option<DrainageSpec>,
     pub biomes: Vec<BiomeRow>,
     pub scatter: ScatterSpec,
     pub sites: SiteRule,
@@ -715,6 +771,17 @@ impl Recipe {
         }
         if r.macro_.resolution < 8 {
             return Err("macro resolution too small".into());
+        }
+        if let Some(d) = &r.drainage {
+            if d.river_min_catchment_km2 <= 0.0 {
+                return Err("drainage.river_min_catchment_km2: above 0".into());
+            }
+            if d.river_depth_m[0] > d.river_depth_m[1] || d.river_width_m[0] > d.river_width_m[1] || d.river_width_m[0] <= 0.0 {
+                return Err("drainage: river depth and width are [start, max] with start <= max, width above 0".into());
+            }
+            if !(0.0..=1.0).contains(&d.river_fill) {
+                return Err("drainage.river_fill: 0..1".into());
+            }
         }
         Ok(r)
     }

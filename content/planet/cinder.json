@@ -66,6 +66,13 @@
     "surface": [0.30, 0.55, 0.30], "alpha": 0.8, "deep": [0.10, 0.20, 0.08], "depth_m": 14.0,
     "shore": [0.92, 0.90, 0.80], "shore_width_m": 0.5, "ripple_m": 3.0, "ripple_speed": 0.4
   },
+  "drainage": {
+    "_comment": "Rivers and lakes (#72), cut in the bake, never at runtime. TODO(initiator): every value is a starting point; dry planet: little rain, few rivers, only deep sinks hold a lake. Rain is relative: rain_base + rain_moisture_gain * moisture. A river starts where the rain-weighted catchment reaches river_min_catchment_km2; river_depth_m and river_width_m are [at the start, at most]; river_fill is the share of the bed that holds water. A sink at least lake_min_depth_m deep, and lake_min_area_m2 large or fed by a river, holds a lake; rivers cut through shallower ones. sea_min_area_km2: areas below the sea level count as the sea for the water from this size on; smaller pockets fill to a lake or a river crosses them (0: every one is sea). river_sinks: how a river crosses a sink without a lake, cut (its bed cuts the sill down to the sink's floor) or fill (sediment up to the spill point, the river runs across). lake_evaporation: rain-weighted catchment a lake needs per m² of surface; a sink that gathers less holds a smaller lake that never spills, or stays dry. Erosion: stream power on the macro grid, per step strength * catchment^area_exponent / distance, at most max_m in all.",
+    "rain_base": 0.3, "rain_moisture_gain": 0.3,
+    "river_min_catchment_km2": 0.12, "river_depth_m": [1.5, 5.0], "river_width_m": [10.0, 35.0], "river_fill": 0.6,
+    "lake_min_depth_m": 6.0, "lake_min_area_m2": 80000.0, "lake_evaporation": 25.0, "sea_min_area_km2": 0.0, "river_sinks": "cut",
+    "erosion": { "iterations": 5, "strength": 0.0003, "area_exponent": 0.5, "max_m": 10.0 }
+  },
   "biomes": [
     { "id": 5, "climate": { "height_above_sea": [-10.0, 0.0] }, "color": [0.20, 0.18, 0.20], "palette": { "ground": [0.22, 0.20, 0.20], "rock": [0.18, 0.16, 0.18], "strata": 0.4, "cap": 0.0 }, "scatter": { "flora": 0.0, "rocks": 1.0 }, "tints": { "ground": [0.3, 0.28, 0.26], "foliage": [0.3, 0.6, 0.5], "rock": [0.3, 0.28, 0.3] } },
     { "id": 4, "climate": { "height_above_sea": [0.0, 0.08] }, "min_share": 0.005, "color": [0.90, 0.88, 0.80], "palette": { "ground": [0.88, 0.86, 0.78], "rock": [0.55, 0.50, 0.46], "strata": 0.3, "cap": 0.0 }, "scatter": { "flora": 0.2, "rocks": 0.5, "tuft": 0.3 }, "tints": { "ground": [0.9, 0.88, 0.78], "foliage": [0.4, 0.75, 0.65], "rock": [0.85, 0.83, 0.78] } },

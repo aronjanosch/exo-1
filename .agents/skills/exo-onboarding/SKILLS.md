@@ -25,6 +25,7 @@ Claude Code reads `.claude/skills/`, so it needs the links under "Link for Claud
 | `codebase-design` | module interfaces and seams |
 | `to-spec`, `to-tickets` | turn an agreed idea into slices |
 | `implement` | build one slice |
+| `tdd` | red-green loop at agreed seams; `implement` calls it |
 | `code-review` | review a PR |
 
 `setup-matt-pocock-skills` is part of the restore, but its output (`docs/agents/`, the `AGENTS.md` section) is already committed. Do not run it again, it would propose the configuration anew.

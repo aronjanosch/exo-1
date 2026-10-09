@@ -104,7 +104,7 @@ fn price_not_positive() {
 fn unknown_track_in_condition() {
     let e = errors_with(
         "location/bent_spoon.json",
-        r#"{ "id": "bent_spoon", "name": "n", "planet": "hearth", "site": { "kind": "outpost", "nth": 1 }, "available": { "track_at_least": { "track": "fame", "value": 1 } } }"#,
+        r#"{ "id": "bent_spoon", "name": "n", "place": "bent_spoon", "pad": "main", "available": { "track_at_least": { "track": "fame", "value": 1 } } }"#,
     );
     one_error(&e, "location/bent_spoon.json", "available");
     assert!(e[0].contains("fame"), "{e:?}");
@@ -114,7 +114,7 @@ fn unknown_track_in_condition() {
 fn tag_no_unlock_grants() {
     let e = errors_with(
         "location/bent_spoon.json",
-        r#"{ "id": "bent_spoon", "name": "n", "planet": "hearth", "site": { "kind": "outpost", "nth": 1 }, "available": { "not": { "has_tag": "moon_pass" } } }"#,
+        r#"{ "id": "bent_spoon", "name": "n", "place": "bent_spoon", "pad": "main", "available": { "not": { "has_tag": "moon_pass" } } }"#,
     );
     one_error(&e, "location/bent_spoon.json", "available");
     assert!(e[0].contains("moon_pass"), "{e:?}");
@@ -124,7 +124,7 @@ fn tag_no_unlock_grants() {
 fn unknown_condition_kind() {
     let e = errors_with(
         "location/bent_spoon.json",
-        r#"{ "id": "bent_spoon", "name": "n", "planet": "hearth", "site": { "kind": "outpost", "nth": 1 }, "available": { "moon_is_full": true } }"#,
+        r#"{ "id": "bent_spoon", "name": "n", "place": "bent_spoon", "pad": "main", "available": { "moon_is_full": true } }"#,
     );
     one_error(&e, "location/bent_spoon.json", "moon_is_full");
 }

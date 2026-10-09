@@ -237,7 +237,7 @@ impl Planet {
         for s in &self.sites {
             let big = s.category == crate::recipe::SiteCategory::Landmark;
             mark_n(&mut biome, w, h, s.dir, [0, 0, 0], if big { 5 } else { 3 });
-            mark_n(&mut biome, w, h, s.dir, KIND[s.kind % KIND.len()], if big { 4 } else { 2 });
+            mark_n(&mut biome, w, h, s.dir, KIND[s.kind.unwrap_or(0) % KIND.len()], if big { 4 } else { 2 });
         }
         // Rivers on the water layer, thicker and darker with the catchment; the lakes' deepest
         // points as dots.

@@ -23,9 +23,9 @@ fn placement_is_deterministic_and_respects_separation_filters_and_budgets() {
     }
     let kinds = &p.recipe.sites.kinds;
     for (i, a) in p.sites.iter().enumerate() {
-        let k = &kinds[a.kind];
+        let k = &kinds[a.kind.unwrap()];
         for b in &p.sites[i + 1..] {
-            let kb = &kinds[b.kind];
+            let kb = &kinds[b.kind.unwrap()];
             let want = if a.kind == b.kind { k.min_separation_m.max(k.min_separation_all_m) } else { k.min_separation_all_m.max(kb.min_separation_all_m) };
             assert!(dist(&p, a.dir, b.dir) >= want - 1e-6, "{} and {} too close", a.id, b.id);
         }
@@ -68,7 +68,7 @@ fn edits_change_the_height_only_inside_their_reach() {
             }
         }
         // A flatten levels the middle to the ground height at the centre (less the dish).
-        let k = &p.recipe.sites.kinds[s.kind];
+        let k = &p.recipe.sites.kinds[s.kind.unwrap()];
         if let [Edit::Smooth { .. }, Edit::Flatten { dish_m, .. }] | [Edit::Flatten { dish_m, .. }] = k.edits.as_slice() {
             let mid = planet_core::look::walk(s.dir, e, 1.0, p.radius);
             assert!((p.height_at(mid) - (s.ground_m - dish_m)).abs() < 0.05, "{} not flat", s.id);

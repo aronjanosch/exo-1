@@ -31,29 +31,22 @@ pub struct Commodity {
     pub tags: Vec<Tag>,
 }
 
-/// A site with content. Its pad is the flattened ground of the site (#129).
+/// A place with content: a pad of a hand-placed place (`content/place/`, #129), with a name,
+/// goods and jobs. A city is one place with many pads, so many locations.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Location {
     pub id: LocationId,
     pub name: TextKey,
-    /// The planet recipe's name (`hearth`).
-    pub planet: String,
-    pub site: SiteRef,
+    /// The place's id (`content/place/<id>.json`); the glue checks that it exists.
+    pub place: String,
+    /// A pad of that place.
+    pub pad: String,
     #[serde(default)]
     pub tags: Vec<Tag>,
     /// When the crew may use it; none means from the start.
     #[serde(default)]
     pub available: Option<Condition>,
-}
-
-/// Which site of the planet: the `nth` site of a site kind, counted in the generator's order.
-/// #129 checks that it resolves and stays stable for the same seed.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SiteRef {
-    pub kind: String,
-    pub nth: u32,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -147,11 +140,11 @@ impl Content {
         for Loaded { path, record: r } in self.locations.values() {
             check_id(path, "id", r.id.as_str(), e);
             check_tags(path, &r.tags, e);
-            if r.planet.is_empty() {
-                e.push(format!("{path}: planet: empty"));
+            if r.place.is_empty() {
+                e.push(format!("{path}: place: empty"));
             }
-            if r.site.kind.is_empty() {
-                e.push(format!("{path}: site.kind: empty"));
+            if r.pad.is_empty() {
+                e.push(format!("{path}: pad: empty"));
             }
             if let Some(c) = &r.available {
                 self.check_condition(path, "available", c, e);

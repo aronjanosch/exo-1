@@ -219,11 +219,13 @@ impl AxisTuning {
         pos("cruise_speed", self.cruise_speed)?;
         pos("boost_speed_forward", self.boost_speed_forward)?;
         pos("boost_speed_backward", self.boost_speed_backward)?;
+        pos("space.cruise_speed", self.space.cruise_speed)?;
+        pos("space.boost_speed_forward", self.space.boost_speed_forward)?;
+        pos("space.boost_speed_backward", self.space.boost_speed_backward)?;
         if self.boost_speed_forward < self.cruise_speed || self.boost_speed_backward < self.cruise_speed {
             return Err(format!("boost speeds {} and {} below cruise_speed {}", self.boost_speed_forward, self.boost_speed_backward, self.cruise_speed));
         }
         let s = &self.space;
-        pos("space.cruise_speed", s.cruise_speed)?;
         if s.boost_speed_forward < s.cruise_speed || s.boost_speed_backward < s.cruise_speed {
             return Err(format!("space: boost speeds {} and {} below cruise_speed {}", s.boost_speed_forward, s.boost_speed_backward, s.cruise_speed));
         }
@@ -370,7 +372,7 @@ impl ShipController {
         // On the ground without sideways, forward or upward input: settle straight down until
         // resting, then ask for nothing (the classic model's rule; a push along a tilted hull
         // slid the ship 63 m down a slope).
-        let hold = assist && input.grounded && stick.x.abs() < 1e-5 && stick.z.abs() < 1e-5 && stick.y <= 1e-5;
+        let hold = assist && stick.x.abs() < 1e-5 && stick.z.abs() < 1e-5 && stick.y <= 1e-5 && self.on_ground(input.grounded, up, v);
         let sinking = v.dot(up) < -0.05;
         self.ground_time = if input.grounded && !sinking { self.ground_time + dt } else { 0.0 };
         if hold {

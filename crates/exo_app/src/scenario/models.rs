@@ -5,16 +5,18 @@ use crate::controls::Controls;
 use crate::env::PlanetRes;
 use crate::hud::HudReadout;
 use crate::scenario::{begin, check, end, keys, planet, put_at_seat, ship_e, ship_vel, sit, tap, teleport_ship, with_ship, Ctx, Step};
-use avian3d::prelude::{Position, Rotation};
+use avian3d::prelude::{LinearVelocity, Position, Rotation};
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
-use flight_core::{AxisTuning, FlightModel, PlanetEnv};
+use flight_core::{AxisTuning, FlightModel, PlanetEnv, ShipController};
 use std::sync::{Arc, Mutex};
 
 const MODELS: [FlightModel; 2] = [FlightModel::Classic, FlightModel::Axis];
 /// m above the ground: the start of every manoeuvre but the landing.
 const START_HEIGHT: f64 = 400.0;
 const LAND_HEIGHT: f64 = 100.0;
+/// m above the ground under the start point: the brush starts just above it.
+const BRUSH_HEIGHT: f64 = 1.0;
 /// m above the ground: out of the atmosphere and the gravity field (they end at 1200 and 6000 m).
 const SPACE_HEIGHT: f64 = 8000.0;
 
@@ -130,6 +132,23 @@ fn switch_to(m: usize) -> Vec<Step> {
             true
         }),
     ]
+}
+
+/// F8 (through the bindings) switches the axis model's G-safety turn cap and back (#118).
+fn toggle_turn_cap() -> Vec<Step> {
+    let flip = |back: bool| -> Step {
+        Box::new(move |w, c| {
+            if c.t == 0.0 {
+                c.v.insert("cap0", with_ship(w, |s| s.ctl.axis_tuning.g_safety.cap_turns) as u8 as f64);
+                tap(w, KeyCode::F8);
+                return false;
+            }
+            let (was, now) = (c.v["cap0"] == 1.0, with_ship(w, |s| s.ctl.axis_tuning.g_safety.cap_turns));
+            check(c, now != was, format!("F8: turn cap {was} -> {now}{}", if back { " (back)" } else { "" }));
+            true
+        })
+    };
+    vec![flip(false), flip(true)]
 }
 
 fn steps_for(m: usize, s: &mut Vec<Step>, t: &Shared) {
@@ -282,6 +301,42 @@ fn steps_for(m: usize, s: &mut Vec<Step>, t: &Shared) {
                 }
             }
             c.p.remove("nose0");
+            return true;
+        }
+        false
+    }, t));
+    if MODELS[m] == FlightModel::Axis {
+        s.extend(toggle_turn_cap());
+    }
+    // #104 point 1: brushing the ground at speed with neutral input is not a landing. Measured
+    // 0.1 s after the first contact: later the hull may hit a crest (a real collision).
+    s.push(manoeuvre(m, "brush the ground at 60 m/s", BRUSH_HEIGHT, 0.0, move |w, c, _, t| {
+        let (pos, rot) = pose(w);
+        let up = planet(w).up(pos);
+        if c.t == 0.0 {
+            let e = ship_e(w);
+            w.get_mut::<LinearVelocity>(e).unwrap().0 = rot * DVec3::NEG_Z * 60.0 - up * 3.0;
+            c.v.remove("touch_t");
+            c.v.insert("held_fast", 0.0);
+            c.v.insert("before", 60.0);
+        }
+        let v = ship_vel(w);
+        let along = (v - up * v.dot(up)).length();
+        let (grounded, held) = with_ship(w, |s| (s.grounded, s.ctl.ground_hold.is_some()));
+        // The flag comes a step after the contact: the speed of the step before is the reference.
+        if grounded && !c.v.contains_key("touch_t") {
+            c.v.insert("touch_t", c.t);
+            c.v.insert("touch_v", c.v["before"]);
+        }
+        c.v.insert("before", along);
+        if held && along > ShipController::GROUND_HOLD_SPEED {
+            c.v.insert("held_fast", 1.0);
+        }
+        let after = c.v.get("touch_t").map(|t0| c.t - t0);
+        if after.is_some_and(|a| a >= 0.1) || c.t >= 3.0 {
+            let kept = c.v.get("touch_v").map_or(f64::NAN, |v0| along / v0 * 100.0);
+            put(t, m, "brush: speed kept 0.1 s after contact (%)", kept);
+            check(c, kept > 90.0 && c.v["held_fast"] == 0.0, format!("{}: a brush at 60 m/s is no landing ({kept:.1} % kept, held while fast {})", MODELS[m].label(), c.v["held_fast"]));
             return true;
         }
         false

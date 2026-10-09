@@ -813,7 +813,8 @@ pub fn update_hud(
         // Spike 13: what the axis model did (felt G, precision share, thrusters at a limit).
         let a = &ship.ctl.axis;
         let axis = if ship.ctl.model == flight_core::FlightModel::Axis {
-            format!("  axis {:.1} g  prec {:.2}{}{}", a.felt_g, a.precision, if a.saturated { "  sat" } else { "" }, if a.rate_capped { "  g-cap" } else { "" })
+            let cap = if ship.ctl.axis_tuning.g_safety.cap_turns { "on" } else { "off" };
+            format!("  axis {:.1} g  prec {:.2}  turn cap {cap} (F8){}{}", a.felt_g, a.precision, if a.saturated { "  sat" } else { "" }, if a.rate_capped { "  g-cap" } else { "" })
         } else {
             String::new()
         };

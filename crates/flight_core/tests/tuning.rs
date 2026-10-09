@@ -91,3 +91,36 @@ fn rejects_landing_slope_limit_out_of_range() {
         assert!(e.contains("landing_slope_limit"), "{e}");
     }
 }
+
+/// #106 point 5: times, accelerations and speeds the step divides by or scales with must be
+/// positive and finite; the rest at least finite and not negative.
+#[test]
+fn rejects_zero_negative_or_non_finite_values() {
+    let positive = [
+        "thrust_accel", "boost_factor", "turn_rate", "roll_rate", "assisted_accel", "assisted_braking", "assisted_boost_accel",
+        "assisted_acceleration_time", "assisted_braking_time", "release_braking", "release_braking_time", "velocity_response_time",
+        "thrust_response_time", "assisted_reverse_speed", "assisted_strafe_speed", "assisted_vertical_speed", "assisted_boost_speed_factor",
+    ];
+    let not_negative = ["drag_k", "landing_sink_factor", "linear_ramp_time", "angular_ramp_time", "decouple_time"];
+    let value = |name: &str| {
+        let at = SHIP.find(&format!("\"{name}\": ")).unwrap_or_else(|| panic!("{name} not in ship.json"));
+        let rest = &SHIP[at..];
+        rest[..rest.find(',').unwrap()].to_string()
+    };
+    for name in positive.iter().chain(&not_negative) {
+        let bad: &[&str] = if positive.contains(name) { &["0.0", "-1.0"] } else { &["-1.0"] };
+        for b in bad {
+            let e = ShipTuning::from_json(&edited(&value(name), &format!("\"{name}\": {b}"))).unwrap_err();
+            assert!(e.contains(name), "{name} = {b}: {e}");
+        }
+    }
+}
+
+/// JSON has no NaN or infinity, but tuning built in code goes through the same check.
+#[test]
+fn rejects_non_finite_values_built_in_code() {
+    let t = ShipTuning { drag_k: f64::NAN, ..ShipTuning::default() };
+    assert!(t.validate().unwrap_err().contains("drag_k"));
+    let t = ShipTuning { velocity_response_time: f64::INFINITY, ..ShipTuning::default() };
+    assert!(t.validate().unwrap_err().contains("velocity_response_time"));
+}

@@ -39,6 +39,9 @@ pub struct Controls {
     pub pad_taps: Vec<GamepadButton>,
     pub pad_axes: HashMap<GamepadAxis, f32>,
     pub scripted: bool,
+    /// The game does not have the mouse: a menu is open or the cursor is free. The virtual stick
+    /// centres (#110 point 2).
+    pub released: bool,
 }
 
 /// A bindable input: a key, or a gamepad button (`"Pad:South"` in the file).
@@ -93,8 +96,10 @@ pub enum Tap {
     BoostMode,
     /// Dev switch: the classic or the axis flight model (F7, spike 13).
     FlightModel,
-    /// Landing mode of the axis model (spike 13).
+    /// Landing mode of the axis model (spike 13). TODO(initiator): the key (K for now).
     LandingMode,
+    /// A/B switch: the axis model's G-safety turn cap on or off (F8, #118).
+    TurnCap,
 }
 
 impl Axis {
@@ -125,7 +130,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 14] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::FlightModel, Tap::LandingMode];
+    pub const ALL: [Tap; 15] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::FlightModel, Tap::LandingMode, Tap::TurnCap];
     pub fn name(self) -> &'static str {
         match self {
             Tap::Interact => "interact",
@@ -142,6 +147,7 @@ impl Tap {
             Tap::BoostMode => "boost_mode",
             Tap::FlightModel => "flight_model",
             Tap::LandingMode => "landing_mode",
+            Tap::TurnCap => "turn_cap",
         }
     }
 }
@@ -336,6 +342,8 @@ impl Bindings {
                 (Tap::FlightModel, None) => Ok(vec![Input::Key(KeyCode::F7)]),
                 // ... and no `landing_mode`.
                 (Tap::LandingMode, None) => Ok(vec![Input::Key(KeyCode::KeyK)]),
+                // ... and no `turn_cap` (#118).
+                (Tap::TurnCap, None) => Ok(vec![Input::Key(KeyCode::F8)]),
                 _ => Err(err(t.name(), "missing".into())),
             }
         };
@@ -573,6 +581,7 @@ pub fn read_input(
         return;
     }
     // A menu takes the keyboard and mouse: the game sees nothing held.
+    c.released = true;
     if menu.is_some_and(|m| m.open()) {
         c.held.clear();
         c.taps.clear();
@@ -615,6 +624,7 @@ pub fn read_input(
     }
     if cur.grab_mode != CursorGrabMode::None {
         c.mouse += motion.delta;
+        c.released = false;
     }
 }
 
@@ -748,7 +758,7 @@ mod tests {
     #[test]
     fn old_file_without_flight_model_gets_f7() {
         let old = BINDINGS.replace("  \"flight_model\": [\"F7\"],\n", "");
-        assert!(!old.contains("flight_model"));
+        assert!(!old.contains("\"flight_model\""));
         let b = Bindings::from_json(&old).unwrap();
         let mut a = resolve(&b, &raw(&[], &[F7]));
         assert!(a.take_tap(Tap::FlightModel));
@@ -756,9 +766,13 @@ mod tests {
         let mut a = resolve(&Bindings::default(), &raw(&[], &[F7]));
         assert!(a.take_tap(Tap::FlightModel));
         let old = BINDINGS.replace("  \"landing_mode\": [\"KeyK\"],\n", "");
-        assert!(!old.contains("landing_mode"));
+        assert!(!old.contains("\"landing_mode\""));
         let mut a = resolve(&Bindings::from_json(&old).unwrap(), &raw(&[], &[KeyK]));
         assert!(a.take_tap(Tap::LandingMode));
+        let old = BINDINGS.replace("  \"turn_cap\": [\"F8\"],\n", "");
+        assert!(!old.contains("\"turn_cap\""));
+        let mut a = resolve(&Bindings::from_json(&old).unwrap(), &raw(&[], &[F8]));
+        assert!(a.take_tap(Tap::TurnCap));
     }
 
     /// G was missing from the keyboard's tap list (only scenarios could inject it).

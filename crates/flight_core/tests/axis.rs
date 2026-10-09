@@ -92,6 +92,13 @@ fn shipped_file_equals_default_and_bad_values_are_refused() {
     assert!(bad("\"full_below\": 5.0, \"off_above\": 40.0", "\"full_below\": 50.0, \"off_above\": 40.0").contains("precision"));
     assert!(bad("\"cruise_speed\"", "\"cruise_sped\": 1.0, \"cruise_speed\"").contains("cruise_sped"));
     assert!(bad("\"boost_speed_backward\": 200.0", "\"boost_speed_backward\": 100.0").contains("below cruise_speed"));
+    // #106 point 5: NaN passed the `<` comparisons of the space caps.
+    let mut t = AxisTuning::default();
+    t.space.boost_speed_forward = f64::NAN;
+    assert!(t.validate().unwrap_err().contains("space.boost_speed_forward"));
+    let mut t = AxisTuning::default();
+    t.boost_speed_backward = f64::INFINITY;
+    assert!(t.validate().unwrap_err().contains("boost_speed_backward"));
 }
 
 #[test]

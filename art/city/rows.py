@@ -1,7 +1,9 @@
 """Row houses and corner houses: boxy blocks that stand wall to wall, Schedule I grown upwards,
 retro-future on top.
 
-Every house is the same recipe: a box body, a street facade in relief (piers per bay, floor bands,
+Every house is the same recipe: a ground floor that is a real room (shell walls, a door that opens,
+see-through shop windows, an empty room the game fills with a fit-out from interiors.py), solid
+upper floors, a street facade in relief (piers per bay, floor bands,
 framed windows sitting back between them), a shop floor, a false front that rises above the roof
 and gives the house its silhouette, a plain back facade, junk on the roof, sometimes one silly
 topper. Corner houses carry a second street facade on one side and a turret or sign on the corner.
@@ -23,7 +25,7 @@ from mathutils import Matrix
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kit  # noqa: E402
-from kit import BAY, GROUND_STOREY, STOREY, Part, colour  # noqa: E402
+from kit import BAY, GROUND_STOREY, STOREY, WALL, Part, colour  # noqa: E402
 
 TRIM = colour("#f4f1e8")
 METAL = colour("#9aa7b8")
@@ -32,6 +34,9 @@ GLASS = colour("#2a4a6b")
 LIT = colour("#ffe2a0")
 GLOW_CYAN = colour("#5ef2e0")
 GLOW_PINK = colour("#ff5fa2")
+CLEAR = colour("#cfeef5")    # tint of see-through shop glass
+FLOOR = colour("#7d7887")
+CEILING = GROUND_STOREY - 0.3  # underside of the ground floor's ceiling slab
 
 DEPTH = 10.0
 OVERHANG = 1.6   # awnings and blade signs reach this far over the walkway
@@ -51,14 +56,18 @@ def top_of(upper):
 # A facade is built in its own frame: wall plane y = 0, facing -Y, spanning x in [-w/2, w/2].
 # `Part.placed` turns it onto any side of the body.
 
-def pane(p, cx, z, w, h, frame, on, bars=(0, 1)):
-    """A window set into the wall: frame strips, a deep sill, glass, mullions (vertical, horizontal)."""
+def pane(p, cx, z, w, h, frame, on, bars=(0, 1), clear=False):
+    """A window set into the wall: frame strips, a deep sill, glass, mullions (vertical, horizontal).
+    clear: see-through glass over a hole in the wall (shop windows into the room)."""
     g0, g1 = cx - w / 2, cx + w / 2
     p.box((g0 - 0.12, -0.12, z + h), (g1 + 0.12, 0, z + h + 0.12), frame)
     p.box((g0 - 0.2, -0.22, z - 0.14), (g1 + 0.2, 0, z), frame)
     p.box((g0 - 0.12, -0.12, z), (g0, 0, z + h), frame)
     p.box((g1, -0.12, z), (g1 + 0.12, 0, z + h), frame)
-    p.box((g0, -0.04, z), (g1, 0, z + h), LIT if on else GLASS, "glow" if on else "glass")
+    if clear:
+        p.box((g0, -0.04, z), (g1, 0, z + h), CLEAR, "clear")
+    else:
+        p.box((g0, -0.04, z), (g1, 0, z + h), LIT if on else GLASS, "glow" if on else "glass")
     nv, nh = bars
     for k in range(1, nv + 1):
         x = g0 + w * k / (nv + 1)
@@ -86,8 +95,10 @@ def bay_windows(p, style, cx, z, frame, panel, on):
 
 
 def facade(p, w, upper, c, windows, doors, shop=True):
-    """Street facade. doors: [(name, x, use, door_rgb, width, height)]. shop=True: shop glass, awning
-    and fascia sign on the ground floor; otherwise ground-floor windows like the floors above."""
+    """Street facade, including the ground floor's front wall (y from 0 to WALL). doors: [(name, x,
+    use, door_rgb, width, height)]; shop doors open into the room, the others are flat (instanced
+    behind). shop=True: see-through shop glass, awning and fascia sign on the ground floor; otherwise
+    ground-floor windows like the floors above."""
     bays = round(w / BAY)
     x0, x1 = -w / 2, w / 2
     top = top_of(upper)
@@ -104,8 +115,12 @@ def facade(p, w, upper, c, windows, doors, shop=True):
         z = GROUND_STOREY + i * STOREY
         p.box((x0, -0.25, z - 0.12), (x1, 0, z + 0.12), c["frame"])
 
+    holes = []
     for name, x, use, rgb, dw, dh in doors:
-        p.door(name, x, 0, c["frame"], rgb, w=dw, h=dh, use=use)
+        if use == "shop":
+            holes.append(p.doorway(name, x, 0, c["frame"], rgb, c["glow"], w=dw, h=dh, use=use))
+        else:
+            p.door(name, x, 0, c["frame"], rgb, w=dw, h=dh, use=use)
     if shop:
         # Shop glass fills what the doors leave free.
         free = [(x0 + 0.7, x1 - 0.7)]
@@ -114,7 +129,8 @@ def facade(p, w, upper, c, windows, doors, shop=True):
             free = [s for a, b in free for s in ((a, min(b, cut[0])), (max(a, cut[1]), b)) if s[1] - s[0] > 0.01]
         for a, b in free:
             if b - a > 1.0:
-                pane(p, (a + b) / 2, 0.7, b - a, 2.0, c["frame"], True, bars=(max(0, int((b - a) / 2)), 0))
+                pane(p, (a + b) / 2, 0.7, b - a, 2.0, c["frame"], True, bars=(max(0, int((b - a) / 2)), 0), clear=True)
+                holes.append((a, b, 0.7, 2.7))
         awning = [(0, 3.35), (-1.4, 2.95), (-1.4, 2.8), (0, 3.15)]
         p.prism(awning, x0 + 0.5, x1 - 0.5, c["accent"], plane="YZ")
         p.box((x0, -0.45, GROUND_STOREY - 0.6), (x1, 0, GROUND_STOREY + 0.2), c["frame"])
@@ -126,6 +142,8 @@ def facade(p, w, upper, c, windows, doors, shop=True):
             if all(abs(cx - dx) > 1.6 for dx in door_xs):
                 bay_windows(p, windows, cx, 0.0, c["frame"], c["panel"], lit(9, j))
         p.box((x0, -0.25, GROUND_STOREY - 0.12), (x1, 0, GROUND_STOREY + 0.12), c["frame"])
+    p.wall((x0, 0, 0), (x1, WALL, GROUND_STOREY), c["body"], holes)
+    p.wall((x0, WALL, 0), (x1, WALL + 0.02, CEILING), c["inside"], holes)
 
     for i in range(upper):
         z = GROUND_STOREY + i * STOREY
@@ -254,7 +272,33 @@ def blade_sign(p, x, upper, c):
 
 
 def palette(body, frame, accent, glow):
-    return {"body": body, "frame": frame, "accent": accent, "glow": glow, "panel": tuple(v * 0.75 for v in body)}
+    return {"body": body, "frame": frame, "accent": accent, "glow": glow, "panel": tuple(v * 0.75 for v in body),
+            "inside": tuple(v + (1 - v) * 0.55 for v in body)}
+
+
+def shell(p, x0, x1, d, height, c, open_sides):
+    """The body: a ground-floor room (floor, lined walls, ceiling with light strips) and solid upper
+    floors. open_sides: walls a facade builds itself ("front", "left", "right"). Puts the `room`
+    anchor on the floor at the back wall's inner face, centred; a fit-out stands there, facing -Y."""
+    gs = GROUND_STOREY
+    walls = {"back": ((x0, d - WALL, 0), (x1, d, gs)), "left": ((x0, 0, 0), (x0 + WALL, d, gs)),
+             "right": ((x1 - WALL, 0, 0), (x1, d, gs))}
+    linings = {"back": ((x0, d - WALL - 0.02, 0), (x1, d - WALL, CEILING)),
+               "left": ((x0 + WALL, 0, 0), (x0 + WALL + 0.02, d, CEILING)),
+               "right": ((x1 - WALL - 0.02, 0, 0), (x1 - WALL, d, CEILING))}
+    for side, (lo, hi) in walls.items():
+        if side not in open_sides:
+            p.box(lo, hi, c["body"])
+            p.box(*linings[side], c["inside"])
+    p.box((x0, 0, 0), (x1, d, 0.02), FLOOR)
+    p.box((x0, 0, CEILING), (x1, d, gs), c["inside"])
+    p.box((x0, 0, gs), (x1, d, height), c["body"])
+    bays = round((x1 - x0) / BAY)
+    for j in range(bays):
+        cx = x0 + BAY * (j + 0.5)
+        p.box((cx - 0.15, 1.2, CEILING - 0.05), (cx + 0.15, d - 1.2, CEILING), LIT, "glow")
+    p.anchor("room", ((x0 + x1) / 2, d - WALL - 0.02, 0.02), kind="room", bays=bays,
+             size=[round(x1 - x0 - 2 * WALL - 0.04, 2), round(d - 2 * WALL - 0.04, 2), round(CEILING - 0.02, 2)])
 
 
 def turned(angle_deg, at):
@@ -268,7 +312,7 @@ def row_house(name, bays, upper, c, windows="pair", front="flat", top=None, blad
     w = bays * BAY
     x0, x1 = -w / 2, w / 2
     height = top_of(upper)
-    p.box((x0, 0, 0), (x1, DEPTH, height), c["body"])
+    shell(p, x0, x1, DEPTH, height, c, {"front"})
     if garage:
         doors = [("door_shop", 0.0, "shop", c["accent"], min(w - 3.0, 7.0), 3.6)]
     else:
@@ -299,7 +343,7 @@ def corner_house(name, bays, side_bays, upper, c, windows="pair", side="left", c
     s = -1 if side == "left" else 1
     sx = x1 if s > 0 else x0
     height = top_of(upper)
-    p.box((x0, 0, 0), (x1, d, height), c["body"])
+    shell(p, x0, x1, d, height, c, {"front", side})
     facade(p, w, upper, c, windows, [("door_shop", -s * (w / 2 - 1.5), "shop", c["accent"], 1.5, 2.5)])
     # Side street facade, turned onto the side; its door sits at the far end from the corner.
     with p.placed(turned(90 * s, (sx, d / 2, 0))):

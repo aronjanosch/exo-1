@@ -28,7 +28,7 @@ All numbers below are starting values (guide values, not rules); change them her
 
 ## Look
 
-- **Flat colours only:** vertex colours, no textures. Three materials: `paint`, `glass`, `glow` (emissive).
+- **Flat colours only:** vertex colours, no textures. Four materials: `paint`, `glass` (dark, opaque), `glow` (emissive), `clear` (see-through, alpha 0.25: shop windows into a room).
 - Smooth shading with hard edges (edge split at 40°). Round shapes get enough segments to read round (16–48).
 - **Palette per building:** one body colour, one accent, one glow colour. All buildings share the warm white `TRIM` (slabs, rings, frames) and `METAL`, so the streets hang together. Glows are cyan and pink.
 - Kit shapes: `box`, `rounded_box`, `cylinder` (tapered), `dome`, `sphere`, `torus`, `prism` (outline extruded in any plane), plus the facade helpers `window`, `door`, `sign`.
@@ -50,6 +50,7 @@ The simple boxes work when the facade carries relief and the silhouette carries 
 | Script | Family |
 |---|---|
 | `rows.py` | row houses (one recipe, parameters per house) and corner houses |
+| `interiors.py` | fit-outs for ground-floor rooms: shop, bar, workshop, office, each for rooms of 1, 2 and 3 bays |
 | `landmarks.py` | one-offs that anchor a district and show over the horizon (company building, beacon spire, charge stop) |
 | `homes.py` | suburb bungalows with carports (butterfly roof, dome, flying wedge) |
 | `shops.py` | the first round shops (saucer diner, pod tower, bubble shop) |
@@ -74,15 +75,30 @@ Initiator: "was wir brauchen ist eine gut aussehende stadt ... organisch und ech
 
 `kit.Part.placed(matrix)` builds a part in its own frame and turns it into place: facades are built facing -Y and turned onto any side.
 
+## Enterable buildings (#94, initiator's yes 2026-10-09)
+
+Initiator: "denk dran dass man in einige der gebäude auch rein will. am besten potentiell kann jedes begehbar gemacht werden um questgeber, händler usw. dort einzuquartieren".
+
+- **Ground floors are real rooms in the open world.** `rows.shell` builds the room (floor, lined walls, ceiling with light strips), the facade builds the front wall with real holes: a shop door (`Part.doorway`) and the shop windows (`clear` glass). Upper floors stay solid.
+- **The door leaf** is its own child object and slides up into the wall above the door (`slide`); the wall and the solid floor above hide it. No pocket beside the door is needed, so any door width works (the garage's 7 m too).
+- **Fit-outs** (`interiors.py`) are separate models, `fit_<kind>_<bays>`, placed on the building's `room` anchor. The plan picks the kind per placement (`city_plan.fit`, default per model in `city_plan.FIT`), so one house is a bar in one street and a workshop in the next. Every fit-out keeps the front of the room clear (doors sit anywhere along the front), has a counter or desk across the back and the `npc` anchor behind it.
+- **Flat doors** (`use = "flat"`, `"back"`) stay panels: upper floors, flats and large buildings are instanced behind a portal (like the caves in #75).
+- Rooms carry no light; the game lights them (the preview puts one soft panel light per room as a stand-in).
+- Next: the diner and the landmarks, then the bungalows (the whole house is the room).
+
 ## What the game reads
 
 - Empties parented to the building, with custom properties (glTF extras):
   - `kind = "door"` plus `use` (`shop`, `flat`): sits 1 m in front of the door, on the ground, where a walker stands.
   - `kind = "pad"` plus `size`: a hover-car pad, on its surface.
+  - `kind = "room"` plus `bays` and `size` [width, depth, height]: on the floor at the back wall's inner face, centred, facing -Y. The fit-out `fit_<kind>_<bays>` goes here.
+  - `kind = "npc"` plus `role` (`trader`, `barkeep`, `mechanic`, `quest`), in a fit-out: where the character stands, behind the counter, facing -Y. The plan's `role` overrides it.
+- Child meshes of the building with `kind = "leaf"`, `door` (the door anchor's name) and `slide` [x, y, z]: the door leaf; the game moves it by `slide` (building frame, metres) to open the door.
+- Placements in `city_plan.py` with a sixth element `{"fit": kind, "role": role}`.
 - Colours come as `COLOR_0`; Bevy multiplies it into the material. Blender's own glTF import ignores it (`street_preview.py` puts the kit materials back).
 - Where a building sits in the city and where the city sits on the planet: a separate placement file, not in the model (`exo-1-concept/docs/research/place-authoring.md`).
 
 ## Open (initiator)
 
-- Names and fiction of the shops; which ones are enterable (interiors in the same model, like Schedule I).
+- Names and fiction of the shops; which fit-out each building gets (`city_plan.FIT` holds placeholders).
 - Do walkers cross the hover lane freely, or only at crossings?

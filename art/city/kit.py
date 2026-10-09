@@ -26,13 +26,15 @@ GROUND_STOREY = 4.5   # shop floor
 STOREY = 3.5          # upper floors
 TILE = 10.0           # road tile edge
 SHARP_ANGLE = math.radians(40)
-TRI_GUIDE = {"building": 10_000, "road": 1_000, "prop": 1_000, "vehicle": 3_000}
+WALL = 0.3            # shell walls of a ground-floor room; a door leaf slides up inside them
+TRI_GUIDE = {"building": 10_000, "road": 1_000, "prop": 1_000, "vehicle": 3_000, "interior": 4_000, "leaf": 200}
 
 # Materials: vertex colours carry the paint, the material only says how it shines.
 MATERIALS = {
     "paint": {"rgb": (1, 1, 1), "roughness": 0.75},
     "glass": {"rgb": (1, 1, 1), "roughness": 0.15},
     "glow": {"rgb": (1, 1, 1), "roughness": 0.5, "emit": 0.6},   # higher burns lit windows white
+    "clear": {"rgb": (1, 1, 1), "roughness": 0.05, "alpha": 0.25},  # see-through: shop windows into a room
 }
 
 
@@ -55,6 +57,9 @@ class Part:
         self.col = self.bm.loops.layers.color.new("Col")
         self.anchors = []   # (name, location, extras): doors, signs, spawn points for the game
         self.slots = list(MATERIALS)
+        self.children = []  # separate objects parented to this one (door leaves the game moves)
+        self.extras = {}    # custom properties of this part's own object
+        self.ceiling = None # height that also counts as support in the floating-parts check (rooms)
 
     def _paint(self, faces, rgb, mat):
         idx = self.slots.index(mat)
@@ -167,18 +172,44 @@ class Part:
                 faces.append(self.bm.faces.new((r_bot[0], r_bot[1], r_top[1], r_top[0])))
         self._paint(faces, rgb, mat)
 
+    def wall(self, lo, hi, rgb, holes=(), mat="paint"):
+        """A wall from lo to hi with rectangular openings through it along Y. holes: [(x0, x1, z0, z1)]."""
+        eps = 1e-4
+        xs = sorted({lo[0], hi[0]} | {min(max(v, lo[0]), hi[0]) for h in holes for v in h[:2]})
+        for a, b in zip(xs, xs[1:]):
+            if b - a < eps:
+                continue
+            z = lo[2]
+            for _, _, za, zb in sorted(h for h in holes if h[0] <= a + eps and h[1] >= b - eps):
+                if za > z + eps:
+                    self.box((a, lo[1], z), (b, hi[1], min(za, hi[2])), rgb, mat)
+                z = max(z, zb)
+            if z < hi[2] - eps:
+                self.box((a, lo[1], z), (b, hi[1], hi[2]), rgb, mat)
+
+    def child(self, name, kind, **extras):
+        """A separate object parented to this part, built in this part's frame."""
+        c = Part(name, kind)
+        c.extras = {"kind": kind, **extras}
+        self.children.append(c)
+        return c
+
     @contextmanager
     def placed(self, matrix):
-        """Everything built inside the block (geometry and anchors) is moved by `matrix` afterwards,
-        so a facade can be built facing -Y and then turned onto any side."""
+        """Everything built inside the block (geometry, anchors, new children) is moved by `matrix`
+        afterwards, so a facade can be built facing -Y and then turned onto any side."""
         self.bm.verts.ensure_lookup_table()
-        nv, na = len(self.bm.verts), len(self.anchors)
+        nv, na, nc = len(self.bm.verts), len(self.anchors), len(self.children)
         yield
         self.bm.verts.ensure_lookup_table()
         bmesh.ops.transform(self.bm, matrix=matrix, verts=list(self.bm.verts)[nv:])
         for i in range(na, len(self.anchors)):
             name, at, extras = self.anchors[i]
             self.anchors[i] = (name, matrix @ at, extras)
+        for c in self.children[nc:]:
+            bmesh.ops.transform(c.bm, matrix=matrix, verts=list(c.bm.verts))
+            if "slide" in c.extras:
+                c.extras["slide"] = [round(v, 4) for v in matrix.to_3x3() @ Vector(c.extras["slide"])]
 
     def anchor(self, name, at, **extras):
         """An empty in the export; the game reads its custom properties (glTF extras)."""
@@ -197,6 +228,23 @@ class Part:
         self.box((x - w / 2 - 0.15, front_y - 0.15, 0), (x + w / 2 + 0.15, front_y, h + 0.15), frame_rgb)
         self.box((x - w / 2, front_y - 0.17, 0), (x + w / 2, front_y - 0.02, h), door_rgb)
         self.anchor(name, (x, front_y - 1.0, 0), kind="door", **extras)
+
+    def doorway(self, name, x, front_y, frame_rgb, leaf_rgb, glow_rgb, w=1.5, h=2.5, wall=WALL, **extras):
+        """A real door through a wall that runs from front_y to front_y + wall: a frame with reveals,
+        a leaf the game slides up into the wall (child object, kind "leaf", `slide` in metres) and
+        the door anchor 1 m in front. Returns the hole (x0, x1, z0, z1) to cut into the wall."""
+        x0, x1 = x - w / 2, x + w / 2
+        back = front_y + wall + 0.04          # reveals stand a hair proud of the inside lining
+        self.box((x0 - 0.15, front_y - 0.15, 0), (x0, back, h + 0.15), frame_rgb)
+        self.box((x1, front_y - 0.15, 0), (x1 + 0.15, back, h + 0.15), frame_rgb)
+        self.box((x0, front_y - 0.15, h), (x1, back, h + 0.15), frame_rgb)
+        leaf = self.child(f"{name}_leaf", "leaf", door=name, slide=[0.0, 0.0, h])
+        mid = front_y + wall / 2
+        leaf.box((x0, mid - 0.05, 0), (x1, mid + 0.05, h), leaf_rgb)
+        # A round glowing window in the leaf, so a closed door still says "open for business".
+        leaf.cylinder((x, mid - 0.07, h * 0.62), 0.22, 0.14, glow_rgb, "glow", segments=16, axis="Y")
+        self.anchor(name, (x, front_y - 1.0, 0), kind="door", **extras)
+        return (x0, x1, 0.0, h)
 
     def sign(self, x, z, w, h, front_y, board_rgb, glow_rgb, depth=0.2):
         """A sign board with a glowing face; the lettering comes later as a decal or texture."""
@@ -220,6 +268,11 @@ class Part:
             p.use_smooth = True
         mod = obj.modifiers.new("hard edges", "EDGE_SPLIT")
         mod.split_angle = SHARP_ANGLE
+        for k, v in self.extras.items():
+            obj[k] = v
+        for c in self.children:
+            cobj = c.build(collection)
+            cobj.parent = obj
         for name, at, extras in self.anchors:
             e = bpy.data.objects.new(name, None)
             e.empty_display_type = "SINGLE_ARROW"
@@ -250,6 +303,9 @@ def material(key):
     if "emit" in spec:
         links.new(attr.outputs["Color"], bsdf.inputs["Emission Color"])
         bsdf.inputs["Emission Strength"].default_value = spec["emit"]
+    if "alpha" in spec:
+        bsdf.inputs["Alpha"].default_value = spec["alpha"]
+        m.surface_render_method = "BLENDED"   # glTF alphaMode BLEND
     return m
 
 
@@ -275,7 +331,13 @@ def check(obj, part, footprint):
         problems.append(f"outside the footprint {footprint}: bounds {bounds}")
     if part.kind == "building" and not any(e.get("kind") == "door" for _, _, e in part.anchors):
         problems.append("no door anchor")
-    loose = loose_islands(ev)
+    if part.kind == "interior" and not any(e.get("kind") == "npc" for _, _, e in part.anchors):
+        problems.append("no npc anchor")
+    for c in part.children:
+        if c.kind == "leaf" and "slide" not in c.extras:
+            problems.append(f"door leaf {c.name} without slide")
+    # A fit-out stands in a room: its walls (the footprint's edges) and ceiling hold things too.
+    loose = loose_islands(ev, part.ceiling, footprint if part.kind == "interior" else None)
     if loose:
         problems.append(f"{len(loose)} floating parts (not touching ground or another part), first boxes: {loose[:3]}")
     return {"name": obj.name, "triangles": tris, "bounds": bounds,
@@ -283,8 +345,9 @@ def check(obj, part, footprint):
             "problems": problems}
 
 
-def loose_islands(mesh):
-    """Islands that neither touch the ground nor overlap another island's bounding box."""
+def loose_islands(mesh, ceiling=None, walls=None):
+    """Islands that neither touch the ground (or the ceiling or walls (x0, y0, x1, y1), if given) nor
+    overlap another island's bounding box."""
     bm = bmesh.new()
     bm.from_mesh(mesh)
     bm.verts.ensure_lookup_table()
@@ -312,7 +375,13 @@ def loose_islands(mesh):
         return all(a[0][i] <= b[1][i] + eps and b[0][i] <= a[1][i] + eps for i in range(3))
 
     # Grounded islands spread support to everything they touch.
-    supported = {i for i, (lo, _) in enumerate(boxes) if lo.z <= eps}
+    def held(lo, hi):
+        if lo.z <= eps or (ceiling and hi.z >= ceiling - eps):
+            return True
+        return bool(walls) and (lo.x <= walls[0] + eps or lo.y <= walls[1] + eps or hi.x >= walls[2] - eps
+                                or hi.y >= walls[3] - eps)
+
+    supported = {i for i, (lo, hi) in enumerate(boxes) if held(lo, hi)}
     grew = True
     while grew:
         grew = False

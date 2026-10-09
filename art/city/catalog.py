@@ -27,6 +27,7 @@ FAMILIES = [
     ("buildings", lambda m: m.startswith(("row_", "corner_"))),
     ("landmarks", lambda m: m in LANDMARKS),
     ("homes", lambda m: m.startswith("bungalow_")),
+    ("fit-outs", lambda m: m.startswith("fit_")),
     ("street", lambda m: m.startswith(("lane_", "plaza_", "parking_"))),
     ("vehicles", lambda m: m.startswith("hover_")),
     ("flora", lambda m: m.startswith(("tree_", "bush_", "grass_"))),

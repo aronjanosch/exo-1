@@ -17,6 +17,7 @@ import os
 import sys
 
 import bpy
+from mathutils import Matrix, Vector
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.modules.pop("city_plan", None)
@@ -84,9 +85,39 @@ def cables(col, sag=0.6, height=6.95, arm=1.3):
                 col.objects.link(obj)
 
 
+def furnish(content, col, new, spec):
+    """Put the placement's fit-out on the building's room anchor and a marker on its npc anchor."""
+    bpy.context.view_layer.update()
+    room = next((o for o in new if o.get("kind") == "room"), None)
+    if room is None:
+        print(f"PROBLEM no room anchor for fit {spec}")
+        return
+    fit = kit.place(content, f"fit_{spec['fit']}_{room['bays']}", 0, 0, 0, 0, col=col)
+    root = next(o for o in fit if o.parent is None)
+    root.matrix_world = room.matrix_world.copy()
+    # A stand-in for the game's room light: one soft panel under the ceiling.
+    w, d, h = room["size"]
+    light = bpy.data.objects.new("room_light", bpy.data.lights.new("room_light", "AREA"))
+    light.data.shape, light.data.size, light.data.size_y = "RECTANGLE", w * 0.8, d * 0.8
+    light.data.energy = 7.0 * w * d
+    light.data.color = (1.0, 0.9, 0.78)
+    col.objects.link(light)
+    light.matrix_world = room.matrix_world @ Matrix.Translation((0, -d / 2, h - 0.1))
+    bpy.context.view_layer.update()
+    for o in fit:
+        if o.get("kind") == "npc":
+            marker = kit.place(content, "npc_marker", 0, 0, 0, 0, col=col)
+            next(m for m in marker if m.parent is None).matrix_world = o.matrix_world.copy()
+
+
 def build(content, col):
     for row in plan.PLACEMENTS:
-        kit.place(content, *row, col=col)
+        new = kit.place(content, *row[:5], col=col)
+        for o in new:
+            if o.get("kind") == "leaf":
+                o.location += Vector(o["slide"])   # doors open, so the review sees in
+        if len(row) > 5:
+            furnish(content, col, new, row[5])
     roads(col)
     ground(col)
     cables(col)
@@ -105,6 +136,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--renders", required=True)
     ap.add_argument("--content", default="content/city")
+    ap.add_argument("--shots", help="comma-separated shot names (default: all)")
     args = ap.parse_args(argv)
     bpy.ops.wm.read_factory_settings(use_empty=True)
     col = kit.fresh_collection("preview")
@@ -118,15 +150,23 @@ def main():
         ("arterial_eye", (60, -2.0, 1.7), (130, -40, 4), 22),
         ("ringside_eye", (205, -58, 1.7), (250, -95, 3), 22),
         ("shop_street_eye", (235, -58, 1.7), (235, -10, 5), 20),
+        # Into the ground floors: through a shop window, and from a door into the room.
+        ("window_eye", (-29, 2.5, 1.7), (-29, 12, 1.4), 22),
+        ("inside_bar", (-14.6, 6.5, 1.7), (-17, 14.0, 1.2), 16),
+        ("inside_workshop", (-6.0, -24.5, 1.7), (-14.0, -23.0, 1.0), 16),
     ]
+    only = set(args.shots.split(",")) if args.shots else None
+    shots = [s for s in shots if not only or s[0] in only]
     kit.stage(col, ground_rgb=plan.GRASS)
     for name, eye, target, lens in shots:
         kit.shoot(col, f"{d}/{name}.png", eye, target, lens=lens)
-    for o in [o for o in col.objects if o.type == "LIGHT" or o.name.startswith("Plane")]:
+    for o in [o for o in col.objects if o.name.startswith(("Sun", "Plane"))]:   # rooms keep their lights
         bpy.data.objects.remove(o)
     kit.stage(col, night=True, ground_rgb=plan.GRASS)
-    kit.shoot(col, f"{d}/downtown_night.png", (-24, -3.5, 1.7), (6, 1, 6), lens=18)
-    kit.shoot(col, f"{d}/city_night.png", (150, -330, 210), (60, -45, 0), lens=30)
+    for name, eye, target, lens in (("downtown_night", (-24, -3.5, 1.7), (6, 1, 6), 18),
+                                    ("city_night", (150, -330, 210), (60, -45, 0), 30)):
+        if not only or name in only:
+            kit.shoot(col, f"{d}/{name}.png", eye, target, lens=lens)
 
 
 if bpy.app.background:

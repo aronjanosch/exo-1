@@ -9,7 +9,10 @@ Districts (placeholder names):
 - The west road: a stub towards the future spaceport, ending at a gate.
 
 A placement is (id, x, y, z, turn): turn is the yaw in degrees; models face -Y as built, so
-turn 0 faces -Y, 180 faces +Y, 90 faces +X, -90 faces -X.
+turn 0 faces -Y, 180 faces +Y, 90 faces +X, -90 faces -X. A building with a ground-floor room
+carries a sixth element, {"fit": kind, "role": role}: which fit-out (interiors.py) furnishes the
+room and who stands behind the counter (role None: the fit-out's default). `fit()` sets it per
+placement; every other building gets its model's default from FIT at the end of this file.
 """
 
 import math
@@ -159,6 +162,12 @@ def pylons(points, every, side, offset, start=0.0, end=None):
     return out, run
 
 
+def fit(placements, kinds, roles=None):
+    """Give buildings their fit-out: kinds (and roles) in the same order as the placements."""
+    roles = roles or [None] * len(kinds)
+    return [(*p[:5], {"fit": k, "role": r}) for p, k, r in zip(placements, kinds, roles, strict=True)]
+
+
 # ---------------------------------------------------------------- downtown (lane grid)
 
 DOWNTOWN = [
@@ -216,7 +225,8 @@ DOWNTOWN = [
 _SOUTH = [(-45.0, -40.0), (45.0, -40.0)]
 DOWNTOWN += [
     # North side of the south street (backs onto the SW and SE back yards).
-    *frontage(_SOUTH, 0.0, ["row_saw", "row_bulb", "row_fin", "row_step"], 1, WALK),
+    *fit(frontage(_SOUTH, 0.0, ["row_saw", "row_bulb", "row_fin", "row_step"], 1, WALK),
+         ["office", "bar", "workshop", "shop"]),
     *frontage(_SOUTH, 50.0, ["row_slant", "row_twin", "row_arch", "row_tank"], 1, WALK),
     # South side: rows in the west, the round shops in the east as a little square of their own.
     *frontage(_SOUTH, 0.0, ["row_tower", "row_needle", "row_arch", "row_saw", "row_fin"], -1, WALK),
@@ -304,8 +314,9 @@ RINGSIDE = [
               closed=True),
     # The shop street: a turnaround at its end, shops on both sides.
     ("lane_end", 235, -15, 0, 0),
-    *frontage(SHOP_STREET, 6.0, ["row_garage", "row_tank", "row_fin"], 1, WALK),
-    *frontage(SHOP_STREET, 6.0, ["row_slant", "row_step"], -1, WALK),
+    *fit(frontage(SHOP_STREET, 6.0, ["row_garage", "row_tank", "row_fin"], 1, WALK),
+         ["workshop", "shop", "office"], ["mechanic", "trader", "quest"]),
+    *fit(frontage(SHOP_STREET, 6.0, ["row_slant", "row_step"], -1, WALK), ["bar", "shop"]),
     # The park inside the ring.
     ("bench_float", 235, -75.5, 0, 0), ("bench_float", 222, -86, 0, 90), ("bench_float", 248, -86, 0, -90),
     ("tree_bulb", 215, -78, 0, 0), ("tree_bulb", 254, -92, 0, 0), ("tree_spiral", 220, -96, 0, 0),
@@ -373,5 +384,14 @@ QUESTS = [
     ("shop_street_courier", 233.0, -26.0), ("gatekeeper", _gx, _gy + 3.5),
 ]
 PLACEMENTS += [("npc_marker", x, y, 0, 0) for _, x, y in QUESTS]
+
+# Fit-out per building model unless a placement says otherwise (interiors.py: shop, bar, workshop,
+# office). Placeholders until the initiator names the shops.
+FIT = {
+    "row_step": "bar", "row_butterfly": "shop", "row_arch": "office", "row_fin": "shop", "row_tower": "office",
+    "row_tank": "bar", "row_bulb": "shop", "row_slant": "shop", "row_needle": "office", "row_garage": "workshop",
+    "row_saw": "workshop", "row_twin": "bar", "corner_turret": "bar", "corner_sign": "shop",
+}
+PLACEMENTS = [p if len(p) > 5 or p[0] not in FIT else (*p, {"fit": FIT[p[0]], "role": None}) for p in PLACEMENTS]
 
 GRASS = (0.25, 0.36, 0.22)   # linear rgb of the ground between districts

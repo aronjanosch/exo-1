@@ -121,8 +121,8 @@ fn atlas_step(out: PathBuf, vps: Viewpoints) -> Step {
             println!("{line}");
             c.report.push(line);
             let line = format!(
-                "look {}: drainage {:.0} ms, rivers {:.1} km ({} ends at the sea, {} at a lake, largest catchment {:.1} km²), lakes {} ({:.2} % of the surface, largest {:.3} km², deepest {:.1} m), erosion max {:.1} m, cut max {:.1} m",
-                def.name, st.drainage_ms, st.river_length_km, st.rivers_to_sea, st.rivers_to_lake, st.largest_catchment_km2,
+                "look {}: drainage {:.0} ms, rivers {:.1} km (longest {:.2} km, through lakes {:.2} km; {} ends at the sea, {} at a lake, largest catchment {:.1} km²), lakes {} ({:.2} % of the surface, largest {:.3} km², deepest {:.1} m), erosion max {:.1} m, cut max {:.1} m",
+                def.name, st.drainage_ms, st.river_length_km, st.longest_river_km, st.longest_waterway_km, st.rivers_to_sea, st.rivers_to_lake, st.largest_catchment_km2,
                 st.lake_count, st.lake_area_share * 100.0, st.largest_lake_km2, st.deepest_lake_m, st.erosion_max_m, st.carve_max_m,
             );
             println!("{line}");

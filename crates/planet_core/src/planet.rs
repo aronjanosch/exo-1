@@ -135,6 +135,10 @@ pub struct BakeStats {
     pub rivers_to_sea: usize,
     pub rivers_to_lake: usize,
     pub largest_catchment_km2: f64,
+    /// The longest river from source to mouth, and the longest waterway on through lakes that
+    /// spill (km).
+    pub longest_river_km: f64,
+    pub longest_waterway_km: f64,
     pub lake_count: usize,
     pub lake_area_share: f64,
     pub largest_lake_km2: f64,
@@ -789,6 +793,8 @@ impl Planet {
         st.rivers_to_sea = d.rivers.iter().filter(|r| r.next == Mouth::Sea).count();
         st.rivers_to_lake = d.rivers.iter().filter(|r| matches!(r.next, Mouth::Lake(_))).count();
         st.largest_catchment_km2 = d.max_catchment_m2 * 1e-6;
+        st.longest_river_km = d.longest_river_m * 1e-3;
+        st.longest_waterway_km = d.longest_waterway_m * 1e-3;
         st.lake_count = d.lakes.len();
         st.lake_area_share = d.lakes.iter().map(|l| l.area_m2).sum::<f64>() / (4.0 * std::f64::consts::PI * self.radius * self.radius);
         st.largest_lake_km2 = d.lakes.iter().map(|l| l.area_m2 * 1e-6).fold(0.0, f64::max);

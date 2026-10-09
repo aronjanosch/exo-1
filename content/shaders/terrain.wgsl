@@ -75,10 +75,13 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
 #ifdef VERTEX_COLORS
     let ground = in.color.rgb;
-    let cap_share = in.color.a;
+    // Below 0 the alpha marks ground under a lake or river (#72; no cap there).
+    let cap_share = max(in.color.a, 0.0);
+    let inland = clamp(-in.color.a, 0.0, 1.0);
 #else
     let ground = vec3(0.5);
     let cap_share = 0.0;
+    let inland = 0.0;
 #endif
 #ifdef VERTEX_UVS_B
     let rock = vec3(in.uv.x, in.uv.y, in.uv_b.x);
@@ -116,11 +119,12 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     col = col * (1.0 + (grain - 0.5) * look.misc.z * fade + blotch * look.misc.z * 0.6);
 
     // Under water the ground turns into the deep colour with depth (shallow lighter, seen
-    // through the surface); a wet, lighter band along the shore.
+    // through the surface); a wet, lighter band along the shore. Not under a lake or river
+    // above the sea: the vertex colour carries its tint.
     let depth = -above_sea;
-    col = mix(col, look.water.rgb, smoothstep(0.0, max(look.water.w, 0.1), depth));
+    col = mix(col, look.water.rgb, smoothstep(0.0, max(look.water.w, 0.1), depth) * (1.0 - inland));
     let shore_t = 1.0 - smoothstep(0.0, max(look.shore.w, 0.01), abs(above_sea - look.shore.w * 0.5));
-    col = mix(col, look.shore.rgb, shore_t * 0.6);
+    col = mix(col, look.shore.rgb, shore_t * 0.6 * (1.0 - inland));
 
     pbr_input.material.base_color = vec4(col, 1.0);
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);

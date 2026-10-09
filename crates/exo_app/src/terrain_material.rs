@@ -1,7 +1,8 @@
 //! The terrain material (#66): `StandardMaterial` lighting with the base colour from
 //! `content/shaders/terrain.wgsl`. Per vertex the mesh carries the biome palette (ground and
-//! cap share in the vertex colour, rock in UV0 + UV1.x, strata share in UV1.y); the planet-wide
-//! values (strata bands, cap, detail) and the planet centre in render space are a uniform.
+//! cap share in the vertex colour, the share below 0 under a lake or river (#72), rock in UV0 +
+//! UV1.x, strata share in UV1.y); the planet-wide values (strata bands, cap, detail) and the
+//! planet centre in render space are a uniform.
 use crate::env::PlanetRes;
 use crate::origin::RenderOrigin;
 use bevy::pbr::{ExtendedMaterial, MaterialExtension};

@@ -191,3 +191,61 @@ pub fn avian_post(
         }
     }
 }
+
+/// Spike measurement: prints each new frame handover (velocity jump, world space) and the tilt
+/// set upright at the cabin edge, with `EXO_HOLD_STATS`.
+pub fn print_handovers(cargo: Res<CargoStats>, stats: Res<AvianStats>, mut seen: Local<(usize, usize)>) {
+    if std::env::var("EXO_HOLD_STATS").is_err() {
+        return;
+    }
+    for h in &cargo.handovers[seen.0..] {
+        println!("handover out={} before={:.3} after={:.3} jump={:.4} m/s", h.out, h.before.length(), h.after.length(), (h.after - h.before).length());
+    }
+    for t in &stats.cabin_snaps[seen.1..] {
+        println!("cabin-snap tilt={:.2} deg", t.to_degrees());
+    }
+    *seen = (cargo.handovers.len(), stats.cabin_snaps.len());
+}
+
+/// Spike measurement: per crate and tick, world position against the prediction from the last
+/// tick (pos + vel dt) and the velocity change. Prints the worst values in the 5 ticks after a
+/// state change (frame or body) next to the worst values elsewhere, with `EXO_HOLD_STATS`.
+#[allow(clippy::type_complexity)]
+pub fn track_continuity(
+    time: Res<Time>,
+    ships: Query<(Entity, &Position, &Rotation, &LinearVelocity), With<Ship>>,
+    floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
+    crates: Query<(Entity, &Crate, Has<AvianCrate>)>,
+    mut last: Local<std::collections::HashMap<Entity, (DVec3, DVec3, bool, bool, u32)>>,
+    mut worst: Local<(f64, f64)>,
+) {
+    if std::env::var("EXO_HOLD_STATS").is_err() {
+        return;
+    }
+    let dt = time.delta_secs_f64();
+    let Some((ship_e, sp, sr, sv)) = ships.iter().next() else { return };
+    let ship = cabin_frame(ship_e, (sp, sr), &floors);
+    for (e, c, body) in &crates {
+        let (pos, vel) = match c.ship {
+            Some(_) => (ship.to_world(c.body.pos), sv.0 + ship.rot * c.body.vel),
+            None => (c.body.pos, c.body.vel),
+        };
+        let in_ship = c.ship.is_some();
+        if let Some(&(p0, v0, s0, b0, since)) = last.get(&e) {
+            let err = (pos - (p0 + v0 * dt)).length();
+            let dv = (vel - v0).length();
+            let changed = s0 != in_ship || b0 != body;
+            let since = if changed { 0 } else { since + 1 };
+            if since < 5 {
+                println!("transition tick+{since} ship={in_ship} body={body} pos_err={err:.4} m dv={dv:.3} m/s");
+            } else if !c.body.asleep {
+                worst.0 = worst.0.max(err);
+                worst.1 = worst.1.max(dv);
+            }
+            last.insert(e, (pos, vel, in_ship, body, since));
+        } else {
+            last.insert(e, (pos, vel, in_ship, body, 99));
+        }
+    }
+    println!("continuity-elsewhere pos_err_max={:.4} dv_max={:.3}", worst.0, worst.1);
+}

@@ -265,7 +265,7 @@ pub fn build_app(o: &Options) -> App {
         FixedUpdate,
         (scenario::run_script.run_if(resource_exists::<scenario::Script>), controls::resolve_actions, warp::warp_input, warp::warp_drive, warp::planet_swap, warp::warp_telemetry.run_if(resource_exists::<warp::WarpTelemetry>), ship::ship_control, interact::interaction, walker::walker_step, grab::grab_step, avian_crates::avian_pre, cargo::crate_step, cargo::budget_step, ship::camera_fx).chain(),
     );
-    app.add_systems(FixedLast, (controls::drop_taps, (avian_crates::avian_post, cargo::record_crate_interp).chain()));
+    app.add_systems(FixedLast, (controls::drop_taps, (avian_crates::avian_post, cargo::record_crate_interp, avian_crates::print_handovers, avian_crates::track_continuity).chain()));
     app.insert_resource(avian_crates::AvianCrates::from_env()).init_resource::<avian_crates::AvianStats>();
     app.add_systems(FixedUpdate, cargo::crate_watch.run_if(resource_exists::<cargo::CrateWatch>).after(cargo::crate_step));
     app.add_systems(Update, ring::update_ring);

@@ -8,6 +8,8 @@
 //! ship carries the walker without any velocity of its own (spike 3 pattern).
 //! All numbers are spike test values (assumptions), not designed.
 use glam::{DQuat, DVec2, DVec3};
+pub mod bladder;
+pub mod urine;
 
 /// Result of a sweep, world space.
 #[derive(Copy, Clone, Debug)]

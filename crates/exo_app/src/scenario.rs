@@ -229,6 +229,173 @@ fn shot(w: &mut World, c: &mut Ctx, script_dir: &std::path::Path, windowed: bool
 
 // ---------- step builders ----------
 
+fn urination_steps(out_dir: &std::path::Path, windowed: bool) -> Vec<Step> {
+    let dir = out_dir.to_path_buf();
+    let mut started = None;
+    let mut samples = 0;
+    let mut max_aim_error: f64 = 0.0;
+    let mut max_horizontal: f64 = 0.0;
+    let mut max_vertical: f64 = 0.0;
+    let mut max_launch_speed_error: f64 = 0.0;
+    let mut previous_fullness = 1.0;
+    let mut decreasing = true;
+    let mut photographed = false;
+    vec![
+        Box::new(|w, c| {
+            begin(w, c, "automatic urination");
+            let e = w.query_filtered::<Entity, With<Player>>().single(w).unwrap();
+            w.get_mut::<crate::urination::Bladder>(e).unwrap().0 = Default::default();
+            c.v.insert("emitted0", w.resource::<crate::urination::UrineParticles>().emitted as f64);
+            c.v.insert("hits0", w.resource::<crate::urination::UrineParticles>().hits as f64);
+            let p = player_world(w);
+            let ship = ship_frame_of(w).origin;
+            face_towards(w, p + (p - ship));
+            true
+        }),
+        wait(30.0),
+        Box::new(|w, c| {
+            let b = w.query::<&crate::urination::Bladder>().single(w).unwrap().0;
+            check(c, !b.urinating() && (b.fullness() - 0.5).abs() < 0.005, "bladder half full after 30 seconds, no jet".into());
+            check(c, w.resource::<crate::urination::UrineJet>().0.is_none(), "no urine jet while filling".into());
+            true
+        }),
+        wait(29.8),
+        Box::new(|w, c| {
+            let b = w.query::<&crate::urination::Bladder>().single(w).unwrap().0;
+            check(c, !b.urinating() && b.fullness() > 0.99, "no early urination just before 60 seconds".into());
+            true
+        }),
+        Box::new(move |w, c| {
+            let b = w.query::<&crate::urination::Bladder>().single(w).unwrap().0;
+            if b.urinating() {
+                let start = *started.get_or_insert_with(|| {
+                    c.p.insert("urination_start", player_world(w));
+                    c.t
+                });
+                samples += 1;
+                decreasing &= b.fullness() <= previous_fullness;
+                previous_fullness = b.fullness();
+                let f = ship_frame_of(w);
+                let planet = planet(w);
+                let (feet, up, forward, pitch) = with_player(w, |p| (p.world_pos(f), p.world_up(f, &planet), if p.ship.is_some() { f.rot * p.w.forward } else { p.w.forward }, p.pitch));
+                let expected = walker_core::bladder::look_direction(forward, up, pitch);
+                match w.resource::<crate::urination::UrineJet>().0 {
+                    Some(jet) => {
+                        max_aim_error = max_aim_error.max(jet.direction.distance(expected));
+                        max_aim_error = max_aim_error.max(jet.start.distance(feet + up * 0.9 + expected * 0.4));
+                        let carrier = with_player(w, |p| p.w.vel);
+                        let right = expected.cross(up).normalize();
+                        let vertical_up = right.cross(expected).normalize();
+                        // Only the last tick's births: undo their fractional gravity step to
+                        // inspect the actual launch velocity of the Controls-driven emitter.
+                        for p in w.query::<&crate::urination::UrineParticle>().iter(w).filter(|p| p.0.age < c.dt) {
+                            let launch = p.0.velocity - carrier - planet.gravity_at(p.0.previous) * p.0.age;
+                            max_launch_speed_error = max_launch_speed_error.max((launch.length() - walker_core::urine::SPEED).abs());
+                            max_horizontal = max_horizontal.max(launch.dot(right).atan2(launch.dot(expected)).to_degrees().abs());
+                            max_vertical = max_vertical.max(launch.dot(vertical_up).atan2(launch.dot(expected)).to_degrees().abs());
+                        }
+                    }
+                    None => max_aim_error = f64::INFINITY,
+                }
+                keys(w, &[KeyCode::KeyW], true);
+                w.resource_mut::<Controls>().mouse += Vec2::new(2.0, if c.t - start < 2.5 { -1.0 } else { 1.0 });
+                if !photographed && c.t - start > 2.0 {
+                    shot(w, c, &dir, windowed, "urinating");
+                    photographed = true;
+                }
+            } else if let Some(start) = started {
+                keys(w, &[KeyCode::KeyW], false);
+                let duration = c.t - start;
+                let moved = player_world(w).distance(c.p["urination_start"]);
+                check(c, (duration - 5.0).abs() < 0.04 && samples >= 299, format!("automatic urination lasts 5 seconds ({duration:.3} s)"));
+                check(c, decreasing && b.fullness() < 0.002, "bladder drains continuously to empty".into());
+                check(c, max_aim_error < 1e-8, format!("hip jet follows yaw, pitch and position (max error {max_aim_error:.2e})"));
+                check(c, max_horizontal > 0.1 && max_horizontal <= 0.5 + 1e-8 && max_vertical > 0.1 && max_vertical <= 0.5 + 1e-8,
+                    format!("random launch spread within +/-0.5 deg per axis (horizontal {max_horizontal:.4}, vertical {max_vertical:.4} deg)"));
+                check(c, max_launch_speed_error < 1e-8, format!("spread preserves 8 m/s relative launch speed (max error {max_launch_speed_error:.2e})"));
+                check(c, moved > 5.0, format!("movement remains possible while urinating ({moved:.1} m)"));
+                check(c, w.resource::<crate::urination::UrineJet>().0.is_none(), "jet stops when bladder is empty".into());
+                let count = w.resource::<crate::urination::UrineParticles>().emitted as f64 - c.v["emitted0"];
+                check(c, count == 600.0, format!("120 droplets per second for 5 seconds ({count:.0} births)"));
+                let alive = w.query::<&crate::urination::UrineParticle>().iter(w).count();
+                check(c, alive > 0 && alive < 600, format!("independent droplets remain in flight after emission stops ({alive} alive)"));
+                return true;
+            }
+            if c.t > 6.0 {
+                keys(w, &[KeyCode::KeyW], false);
+                check(c, false, "automatic urination timed out".into());
+                return true;
+            }
+            false
+        }),
+        wait(30.0),
+        Box::new(|w, c| {
+            let b = w.query::<&crate::urination::Bladder>().single(w).unwrap().0;
+            check(c, !b.urinating() && (b.fullness() - 0.5).abs() < 0.005, "bladder starts filling again after urination".into());
+            let hits = w.resource::<crate::urination::UrineParticles>().hits as f64 - c.v["hits0"];
+            check(c, hits > 0.0 && w.query::<&crate::urination::UrineParticle>().iter(w).count() == 0, format!("droplets disappear on impact, no leftovers ({hits:.0} hits)"));
+            end(w, c, "60-second fill, 5-second drain, aim and movement checked".into());
+            true
+        }),
+    ]
+}
+
+#[derive(Resource)]
+struct ParticleProbes {
+    ground: Entity,
+    wall: Entity,
+    vacuum: Entity,
+    vacuum_start: DVec3,
+    expired0: u64,
+}
+
+/// Fixture births test the same particle system as the automatic, Controls-driven emitter.
+fn particle_environment_checks() -> Vec<Step> {
+    vec![
+        Box::new(|w, c| {
+            begin(w, c, "droplet collisions and vacuum lifetime");
+            let planet = planet(w);
+            let feet = player_world(w);
+            let up = planet.up(feet);
+            let frame = ship_frame_of(w);
+            let spawn = |w: &mut World, position, velocity| {
+                w.spawn(crate::urination::UrineParticle(walker_core::urine::Particle { previous: position, position, velocity, age: 0.0 })).id()
+            };
+            let ground = spawn(w, feet + up * 0.1, -up * 8.0);
+            // From the cabin into the thin side wall, away from terrain.
+            let wall = spawn(w, frame.to_world(DVec3::new(1.9, 1.6, 0.0)), frame.rot * DVec3::X * 8.0);
+            let vacuum_start = planet.centre + DVec3::Y * (planet.radius + 20_000.0);
+            let vacuum = spawn(w, vacuum_start, DVec3::X * 8.0);
+            let expired0 = w.resource::<crate::urination::UrineParticles>().expired;
+            w.insert_resource(ParticleProbes { ground, wall, vacuum, vacuum_start, expired0 });
+            true
+        }),
+        wait(1.0),
+        Box::new(|w, c| {
+            let probes = w.resource::<ParticleProbes>();
+            check(c, w.get::<crate::urination::UrineParticle>(probes.ground).is_none(), "droplet despawns on terrain impact".into());
+            check(c, w.get::<crate::urination::UrineParticle>(probes.wall).is_none(), "droplet despawns on a thin ship wall".into());
+            let p = w.get::<crate::urination::UrineParticle>(probes.vacuum).map(|p| p.0);
+            check(c, p.is_some_and(|p| p.velocity == DVec3::X * 8.0 && p.position.distance(probes.vacuum_start + DVec3::X * (8.0 * p.age)) < 1e-8), "without gravity droplets keep a straight trajectory and constant speed".into());
+            true
+        }),
+        wait(8.8),
+        Box::new(|w, c| {
+            let e = w.resource::<ParticleProbes>().vacuum;
+            check(c, w.get::<crate::urination::UrineParticle>(e).is_some_and(|p| p.0.age > 9.8 && p.0.age < 10.0), "vacuum droplet remains alive just before 10 seconds".into());
+            true
+        }),
+        wait(0.3),
+        Box::new(|w, c| {
+            let probes = w.resource::<ParticleProbes>();
+            check(c, w.get::<crate::urination::UrineParticle>(probes.vacuum).is_none() && w.resource::<crate::urination::UrineParticles>().expired == probes.expired0 + 1, "vacuum droplet despawns at its 10-second lifetime".into());
+            w.remove_resource::<ParticleProbes>();
+            end(w, c, "terrain, ship wall, zero gravity and lifetime checked".into());
+            true
+        }),
+    ]
+}
+
 fn wait(sec: f64) -> Step {
     Box::new(move |_, c| c.t >= sec)
 }
@@ -809,6 +976,10 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
     };
     let mut s: Vec<Step> = vec![settle()];
     match name {
+        "urination" => {
+            s.extend(urination_steps(out_dir, windowed));
+            s.extend(particle_environment_checks());
+        },
         // Walking only.
         "walk" => {
             s.extend(stand_still("stand still 5 s (walker)"));
@@ -844,6 +1015,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool) -> Vec<Step>
         "full" => {
             s.push(shot_step("ground"));
             s.extend(stand_still("stand still 5 s (walker)"));
+            s.extend(urination_steps(out_dir, windowed));
+            s.extend(particle_environment_checks());
             s.push(walk("walk 20 s (run)", 20.0, true));
             s.push(board("walk up the ramp into the parked ship", true));
             s.extend(sit());
@@ -955,4 +1128,3 @@ pub fn run_script(w: &mut World) {
         }
     });
 }
-

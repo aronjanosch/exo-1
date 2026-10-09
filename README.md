@@ -36,6 +36,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 
 - `full`: stand, run 20 s, walk up the ramp into the parked ship, take off, fly to space (7000 m), stand and walk in the cabin at 400 m/s rolling, brake, dive back, land, walk out and back in, cabin in atmosphere.
 - `walk`: stand still, run 20 s.
+- `urination`: 60 s bladder fill, automatic 5 s urination, aiming and walking through `Controls`, then refill; droplet emission, terrain/ship impacts, zero-gravity trajectory and 10 s lifetime. Also checked in `full`.
 - `foreign`: a remote ship flies through the real snapshot path at 350 m/s; the walker stands and walks in its cabin, then beside it parked.
 - `t5`: four 300 s walks at 1.8 m/s (basin, escarpment, plateau); slow, for terrain work.
 - `net`: the network bot (take off, cruise, turn, brake, land, repeat); see below.
@@ -58,6 +59,8 @@ Options: `--port`, `--bind`, `--rate=<Hz>` (default 30), `--buffer=<ms>` (defaul
 Walker: mouse look (click to grab, Escape releases), WASD, Shift run, Space jump, F sit at the seat, V debug fly mode.
 Ship: mouse pitch/yaw, W/S forward/back, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost, X firm brake, H flight assist, L planet follow, F stand up.
 O: orbit camera (debug).
+
+The local avatar starts with an empty **Bladder** HUD bar. It fills in 60 seconds, then automatically drains over 5 seconds. A simplified fluid jet emits **120 small yellow billboard particles per second** from hip height in the current view direction (including pitch), at **8 m/s relative to the moving avatar**. Each droplet receives independent random horizontal and vertical launch offsets of up to **±0.5° per axis**, including combined diagonal deviations, without changing its relative launch speed. Each droplet flies independently under the local gravity (planetary field outside, existing artificial gravity in a ship cabin); in zero gravity it flies straight. Droplets disappear on terrain/ship impact or after **10 seconds** at most. Walking and looking remain available. The agreed initial values are for playtesting; droplets do not interact with each other. The effect currently belongs to the local avatar.
 
 ## Windows build
 

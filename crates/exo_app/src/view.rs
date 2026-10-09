@@ -12,6 +12,72 @@ use bevy::math::{DMat3, DQuat, DVec3};
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
 use flight_core::{PlanetEnv, CHASE_CAMERA_OFFSET, CHASE_CAMERA_PITCH_DEG};
+use crate::urination::{Bladder, UrineParticle};
+
+#[derive(Resource)]
+pub struct UrineVisualAssets {
+    mesh: Handle<Mesh>,
+    material: Handle<StandardMaterial>,
+}
+#[derive(Component)]
+pub struct BladderFill;
+#[derive(Component)]
+pub struct BladderLabel;
+
+pub fn setup_urination_view(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    // Billboard sprites in 3D, sharing one tiny quad and one unlit material.
+    commands.insert_resource(UrineVisualAssets {
+        mesh: meshes.add(Rectangle::new(0.035, 0.035)),
+        material: materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.85, 0.05), unlit: true, ..default() }),
+    });
+    commands.spawn(Node {
+        position_type: PositionType::Absolute, bottom: px(24), left: px(24),
+        flex_direction: FlexDirection::Column, row_gap: px(6), ..default()
+    }).with_children(|c| {
+        c.spawn((BladderLabel, Text::new("Bladder 0 %"), TextFont { font_size: FontSize::Px(18.0), ..default() }));
+        c.spawn((Node { width: px(240), height: px(18), ..default() }, BackgroundColor(Color::srgb(0.12, 0.12, 0.16))))
+            .with_children(|c| {
+                c.spawn((BladderFill, Node { width: percent(0), height: percent(100), ..default() }, BackgroundColor(Color::srgb(1.0, 0.85, 0.05))));
+            });
+    });
+}
+
+/// Render independent interpolated droplets. Only the billboard orientation follows the camera.
+pub fn update_urination_view(
+    mut commands: Commands,
+    fixed: Res<Time<Fixed>>,
+    assets: Res<UrineVisualAssets>,
+    players: Query<&Bladder>,
+    camera: Query<&WorldPose, (With<MainCamera>, Without<UrineParticle>)>,
+    mut particles: Query<(Entity, &UrineParticle, Option<&mut WorldPose>), Without<MainCamera>>,
+    mut fill: Query<&mut Node, With<BladderFill>>,
+    mut label: Query<&mut Text, With<BladderLabel>>,
+) {
+    let Ok(bladder) = players.single() else { return };
+    if let Ok(mut n) = fill.single_mut() { n.width = percent((bladder.0.fullness() * 100.0) as f32); }
+    if let Ok(mut t) = label.single_mut() {
+        **t = format!("Bladder {:.0} %{}", bladder.0.fullness() * 100.0, if bladder.0.urinating() { " - Urinating!" } else { "" });
+    }
+    let Ok(camera) = camera.single() else { return };
+    let f = fixed.overstep_fraction_f64();
+    for (e, p, pose) in &mut particles {
+        let position = p.0.previous.lerp(p.0.position, f);
+        match pose {
+            Some(mut pose) => { pose.pos = position; pose.rot = camera.rot; },
+            None => {
+                commands.entity(e).insert((
+                    Mesh3d(assets.mesh.clone()), MeshMaterial3d(assets.material.clone()),
+                    WorldPose { pos: position, rot: camera.rot }, Transform::default(),
+                    bevy::light::NotShadowCaster, bevy::light::NotShadowReceiver,
+                ));
+            }
+        }
+    }
+}
 
 #[derive(Component)]
 pub struct MainCamera;

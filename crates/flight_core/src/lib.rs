@@ -800,9 +800,6 @@ impl ShipController {
         (input, strength)
     }
 
-    /// One physics step (Godot's `_integrate_forces`). Returns the new linear and
-    /// angular velocity; the caller writes them to the body before integration.
-
     /// Ground hold (#92), the part of the step before the velocity goal. `thrusting`: any stick
     /// input but down. Returns `hold` (low, slow and touching without thrust: settle straight
     /// down) and whether the step settles or rests (`hold` or a ground hold).

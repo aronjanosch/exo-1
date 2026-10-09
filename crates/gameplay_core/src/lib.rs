@@ -7,6 +7,7 @@
 //! - `content`: the shared records `commodity`, `location`, `progress_track`, `unlock`, loaded one
 //!   per file and checked; systems check their references against it.
 //! - `condition`: the small typed conditions from the data.
+//! - `save`: the save envelope with a section per system, the kernel's and the world's sections.
 //! - `progress`: track values (money, XP), owned tags, bought unlocks, raised flags.
 //!
 //! Systems talk to each other only through domain events and conditions. A system's outcome is
@@ -16,6 +17,7 @@ pub mod content;
 pub mod event;
 pub mod id;
 pub mod progress;
+pub mod save;
 
 pub use condition::Condition;
 pub use content::{Content, File};

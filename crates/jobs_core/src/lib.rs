@@ -6,6 +6,7 @@
 //! - `job`: offers and jobs as a state machine over domain events; the deliver objective as a
 //!   reducer over crate events. Results are `Outcome`s for the host: spawn or release crates, and
 //!   new domain events (payout, XP, the flag `job_completed:<template>`).
+//! - save section: `Jobs::save` and `Jobs::load` (#128), versioned on their own.
 //! - `grading`: payout = reward × band(delivered share) × condition factor × hazard factor.
 //!
 //! This crate reads only domain events and kernel state; it never calls another system.

@@ -2,6 +2,7 @@
 //! abandoned. Each deliver leg is a reducer over the crate events of its own crates.
 use std::collections::{BTreeMap, BTreeSet};
 
+use gameplay_core::save::{Envelope, SaveError};
 use gameplay_core::{ClientId, CommodityId, Content, CrateId, Event, Flag, LocationId, Progress, TrackId, WorldEvent};
 use serde::{Deserialize, Serialize};
 
@@ -141,7 +142,20 @@ pub struct Jobs {
     jobs: BTreeMap<JobId, Job>,
 }
 
+/// The jobs section of a save (#128).
+pub const SECTION: &str = "jobs";
+pub const SECTION_VERSION: u32 = 1;
+
 impl Jobs {
+    pub fn save(&self, env: &mut Envelope) {
+        env.put(SECTION, SECTION_VERSION, self);
+    }
+
+    /// None if the save has no jobs section; an error for a version this build does not read.
+    pub fn load(env: &Envelope) -> Result<Option<Jobs>, SaveError> {
+        env.get(SECTION, SECTION_VERSION)
+    }
+
     /// Makes an offer from a template and concrete legs (the board's job, #126).
     pub fn offer(&mut self, template: &TemplateId, legs: Vec<Leg>) -> JobId {
         let id = JobId(self.next_id);

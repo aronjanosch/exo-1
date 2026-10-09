@@ -386,3 +386,51 @@ fn two_participants_get_xp_and_the_wallet_is_paid_once() {
     assert_eq!(h.progress.wallet(), 300);
     assert_eq!((h.xp(ANA), h.xp(BO), h.xp(ClientId(99))), (10, 10, 0));
 }
+
+// ---------- save section (#128) ----------
+
+#[test]
+fn jobs_section_round_trips_and_a_loaded_game_finishes_the_same() {
+    use gameplay_core::save::{Envelope, KernelState, SaveError};
+    let mut h = Host::new();
+    let j = h.offer("first_haul");
+    let _other = h.offer("first_haul");
+    h.job(ANA, 0, JobEvent::OfferAccepted { job: j }).unwrap();
+    let crates = h.crates(j);
+    h.carry(ANA, 10, crates[0], "drip_rock", "bent_spoon", 0.8);
+    h.world(ANA, 20, WorldEvent::CratePickedUp { crate_id: crates[1], at: LocationId::new("drip_rock") });
+    h.world(HOST, 21, WorldEvent::TimePassed { dt: 12.5 });
+
+    // Save the kernel and the jobs section, load them into a second host.
+    let mut env = Envelope::new();
+    KernelState { progress: h.progress.clone(), dedup: h.dedup.clone() }.save(&mut env);
+    h.jobs.save(&mut env);
+    let env = Envelope::from_json(&env.to_json()).unwrap();
+    let k = KernelState::load(&env).unwrap().unwrap();
+    let jobs = Jobs::load(&env).unwrap().unwrap();
+    assert_eq!(jobs, h.jobs, "state → JSON → state is equal");
+
+    let mut g = Host::new();
+    g.progress = k.progress;
+    g.dedup = k.dedup;
+    g.jobs = jobs;
+    g.next_crate = h.next_crate;
+    g.seq = h.seq;
+
+    // The rest of the delivery on both: the same result.
+    for host in [&mut h, &mut g] {
+        host.world(ANA, 22, WorldEvent::CrateDelivered { crate_id: crates[1], at: LocationId::new("bent_spoon"), condition: 1.0 });
+        host.carry(BO, 30, crates[2], "drip_rock", "bent_spoon", 1.0);
+        host.carry(BO, 32, crates[3], "drip_rock", "bent_spoon", 0.5);
+    }
+    assert_eq!(h.state(j), JobState::Completed);
+    assert_eq!(g.jobs, h.jobs);
+    assert_eq!(g.progress, h.progress);
+    assert_eq!(g.jobs.get(j).unwrap().participants, h.jobs.get(j).unwrap().participants);
+
+    // A save of an unknown jobs version is refused, a save without the section loads as none.
+    let mut bad = Envelope::new();
+    bad.put("jobs", 99, &h.jobs);
+    assert!(matches!(Jobs::load(&bad), Err(SaveError::SectionVersion { found: 99, .. })));
+    assert_eq!(Jobs::load(&Envelope::new()).unwrap(), None);
+}

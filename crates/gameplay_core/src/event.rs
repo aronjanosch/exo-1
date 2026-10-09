@@ -84,6 +84,12 @@ impl Dedup {
         true
     }
 
+    /// The next number a sender may use: above every id seen from it (0 for an unknown sender).
+    /// A restarted client continues from here, so its new events are not taken for duplicates.
+    pub fn next_seq(&self, sender: ClientId) -> u64 {
+        self.senders.get(&sender).map_or(0, |w| w.above.last().map_or(w.below, |m| m + 1))
+    }
+
     /// Ids held above the low-water marks (a measure of how out of order events arrive).
     pub fn pending(&self) -> usize {
         self.senders.values().map(|w| w.above.len()).sum()

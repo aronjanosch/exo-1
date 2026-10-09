@@ -12,7 +12,7 @@ const HOLD_BOUND_PERCENT: f64 = 0.05;
 
 #[test]
 fn full_scenario_passes_headless_and_network_replays_on_its_path() {
-    let out = std::env::temp_dir().join("exo-full-scenario");
+    let out = common::out_dir("full-scenario");
     let o = Options { scenario: Some("full".into()), headless: true, out_dir: out.clone(), record: Some(out.join("full-path.bin")), ..Default::default() };
     let app = common::run_scenario(&o);
 

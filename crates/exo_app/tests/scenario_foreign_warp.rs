@@ -4,6 +4,6 @@ use exo_app::Options;
 
 #[test]
 fn foreign_warp_scenario_passes_headless() {
-    let o = Options { scenario: Some("foreign_warp".into()), headless: true, out_dir: std::env::temp_dir().join("exo-foreign-warp-scenario"), ..Default::default() };
+    let o = Options { scenario: Some("foreign_warp".into()), headless: true, out_dir: common::out_dir("foreign-warp-scenario"), ..Default::default() };
     let _ = common::run_scenario(&o);
 }

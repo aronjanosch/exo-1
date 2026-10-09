@@ -199,7 +199,7 @@ pub fn update_flight_hud(
     view: Res<ViewState>,
     wd: Res<crate::warp::WarpDrive>,
     players: Query<&Player>,
-    ships: Query<(&Ship, &avian3d::prelude::Position, &avian3d::prelude::LinearVelocity, &avian3d::prelude::Rotation)>,
+    ships: Query<(&Ship, &avian3d::prelude::Position, &avian3d::prelude::LinearVelocity, &avian3d::prelude::Rotation, &BodyInterp)>,
     mut items: Query<(&HudItem, &mut Text), Without<QuantumLine>>,
     mut quantum: Query<&mut Text, With<QuantumLine>>,
     sys: Res<crate::warp::SystemRes>,
@@ -207,10 +207,10 @@ pub fn update_flight_hud(
     mut stick: Query<&mut Visibility, (With<StickHud>, Without<Hud>)>,
     mut nodes: Query<(&mut Node, Option<&StickDeadzone>, Option<&StickMarker>, Option<&StickDot>), Or<(With<StickDeadzone>, With<StickMarker>, With<StickDot>)>>,
     mut stick_root: Query<&mut Node, (With<StickHud>, Without<StickDeadzone>, Without<StickMarker>, Without<StickDot>)>,
-    cam: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
-    origin: Res<RenderOrigin>,
+    cam: Query<(&Camera, &WorldPose), With<MainCamera>>,
+    (origin, fixed): (Res<RenderOrigin>, Res<Time<Fixed>>),
 ) {
-    let (Ok(pl), Ok((ship, sp, sv, sr))) = (players.single(), ships.single()) else { return };
+    let (Ok(pl), Ok((ship, sp, sv, sr, si))) = (players.single(), ships.single()) else { return };
     let (mode, v, pos, boost) = if pl.seated {
         let mode = if wd.drive.phase != warp_core::Phase::Idle {
             format!("QUANTUM {:?}", wd.drive.phase).to_uppercase()
@@ -251,7 +251,14 @@ pub fn update_flight_hud(
     let mb = &bindings.mouse;
     // Centred on where the nose points, not on the screen centre: the chase camera looks 10 deg
     // below the nose, so the screen centre was 10 deg off the drive's aim.
-    let nose = cam.single().ok().and_then(|(c, gt)| c.world_to_viewport(gt, (sp.0 + sr.0 * DVec3::NEG_Z * 5000.0 - origin.origin).as_vec3()).ok());
+    // Both from this frame's render poses: the interpolated ship (as the chase camera follows it)
+    // and the camera's WorldPose; the raw physics pose and last frame's GlobalTransform made the
+    // marker jitter in hard turns.
+    let (ip, ir) = si.at(fixed.overstep_fraction_f64());
+    let nose = cam.single().ok().and_then(|(c, wp)| {
+        let gt = GlobalTransform::from(Transform::from_translation((wp.pos - origin.origin).as_vec3()).with_rotation(wp.rot.as_quat()));
+        c.world_to_viewport(&gt, (ip + ir * DVec3::NEG_Z * 5000.0 - origin.origin).as_vec3()).ok()
+    });
     let show = pl.seated && !view.orbit && nose.is_some();
     if let Ok(mut vis) = stick.single_mut() {
         *vis = if show { Visibility::Inherited } else { Visibility::Hidden };

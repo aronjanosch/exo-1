@@ -1,13 +1,14 @@
 {
-  "_comment": "Day and night (#48). The planet stays still; the sun turns around 'axis' once per 'day_length_s'. Planets by recipe id pick a light archetype from 'looks'. Look keys are sorted by the sun's elevation at the viewer (deg) and interpolated linearly: sun_lux (directional light), night_lux (weak light from the antisolar direction), ambient (scaled by air density), sky_color (behind the atmosphere), fog_tint and fog_density (multiply the recipe's haze). Lux: noon 9000 matches the old fixed sun; sun_lux is 0 up to the horizon (no light from below, shadows are off). TODO(initiator): every value here is a placeholder, nothing is designed.",
+  "_comment": "Day and night (#48). One star per system (position in system.json); planets stay still. The direction from a planet to the star turns around the planet's 'axis' once per 'day_length_s'; declination and the hour at spawn follow from that geometry, not from numbers here. 'space_blend': from near_m to far_m from a planet's centre the light slides from that planet's rotating sun to the star's true direction, so planets seen in space are lit alike (TODO(initiator): placeholder distances). Planets by recipe id pick a light archetype from 'looks'. Look keys are sorted by the sun's elevation at the viewer (deg) and interpolated linearly: sun_lux (directional light), night_lux (weak light from the antisolar direction), ambient (scaled by air density), sky_color (behind the atmosphere), fog_tint and fog_density (multiply the recipe's haze). Lux: noon 9000 matches the old fixed sun; sun_lux is 0 up to the horizon (no light from below, shadows are off). TODO(initiator): every value here is a placeholder, nothing is designed.",
+  "space_blend": { "near_m": 30000.0, "far_m": 300000.0 },
   "planets": {
     "hearth": {
-      "_todo": "TODO(initiator): day length, axis, sun height, start hour. Placeholder: a 20 min day, the spawn at about 14 deg latitude, starting at 10:00.",
-      "day_length_s": 1200.0, "axis": [0.0, 0.25, 1.0], "declination_deg": 15.0, "start_hour": 10.0, "look": "temperate"
+      "_todo": "TODO(initiator): day length and axis (the axis against the star sets the sun height and the hour at spawn, both derived now). Placeholder: a 20 min day, the spawn at about 14 deg latitude.",
+      "day_length_s": 1200.0, "axis": [0.0, 0.25, 1.0], "look": "temperate"
     },
     "cinder": {
-      "_todo": "TODO(initiator): day length, axis, sun height, start hour. Placeholder: a 40 min day, a low sun, starting at 9:00.",
-      "day_length_s": 2400.0, "axis": [0.4, 0.1, 1.0], "declination_deg": -5.0, "start_hour": 9.0, "look": "ember"
+      "_todo": "TODO(initiator): day length and axis (the axis against the star sets the sun height and the hour at spawn, both derived now). Placeholder: a 40 min day, a low sun.",
+      "day_length_s": 2400.0, "axis": [0.4, 0.1, 1.0], "look": "ember"
     }
   },
   "looks": {

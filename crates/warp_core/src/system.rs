@@ -119,8 +119,23 @@ pub struct DriveConfig {
     pub emergency_clear_step: f64,
 }
 
+/// The star: only a place. Its light is `daynight_core`'s business.
+#[derive(Deserialize, Clone, Debug)]
+pub struct StarDef {
+    /// World position (m).
+    pub position: [f64; 3],
+}
+
+impl StarDef {
+    pub fn position(&self) -> DVec3 {
+        DVec3::from_array(self.position)
+    }
+}
+
 #[derive(Deserialize, Clone, Debug)]
 pub struct System {
+    /// The one star of the system (#104).
+    pub star: StarDef,
     pub planets: Vec<PlanetDef>,
     pub drive: DriveConfig,
 }
@@ -128,6 +143,7 @@ pub struct System {
 impl System {
     pub fn from_json(s: &str) -> Result<System, serde_json::Error> {
         let sys: System = serde_json::from_str(s)?;
+        assert!(sys.star.position().is_finite(), "star position must be finite");
         assert!(!sys.planets.is_empty() && sys.planets.len() <= u8::MAX as usize, "1 to 255 planets");
         Ok(sys)
     }

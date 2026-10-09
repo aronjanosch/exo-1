@@ -30,9 +30,11 @@ fn level_at(p: &Planet, d: V3) -> Option<f64> {
 fn hearth_has_rivers_and_lakes() {
     let (_, st) = hearth();
     println!(
-        "rivers {} nodes, {:.1} km, {} to the sea, {} to a lake, largest catchment {:.1} km²; lakes {} ({:.2} % of the surface, largest {:.3} km², deepest {:.1} m); erosion max {:.1} m, mean {:.2} m; cut max {:.1} m; drainage {:.0} ms of {:.0} ms",
+        "rivers {} nodes, {:.1} km (longest {:.2} km, through lakes {:.2} km), {} to the sea, {} to a lake, largest catchment {:.1} km²; lakes {} ({:.2} % of the surface, largest {:.3} km², deepest {:.1} m); erosion max {:.1} m, mean {:.2} m; cut max {:.1} m; drainage {:.0} ms of {:.0} ms",
         st.river_nodes,
         st.river_length_km,
+        st.longest_river_km,
+        st.longest_waterway_km,
         st.rivers_to_sea,
         st.rivers_to_lake,
         st.largest_catchment_km2,
@@ -201,9 +203,11 @@ fn cinder_stays_dry_but_drains() {
     let (p, st) = baked(CINDER, 4242, 0);
     let hearth = &hearth().1;
     println!(
-        "Cinder: largest catchment {:.2} km², rivers {:.1} km ({} to the sea, {} to a lake), lakes {} ({:.2} % of the surface, {} never spill), drainage {:.0} ms",
+        "Cinder: largest catchment {:.2} km², rivers {:.1} km (longest {:.2} km, through lakes {:.2} km; {} to the sea, {} to a lake), lakes {} ({:.2} % of the surface, {} never spill), drainage {:.0} ms",
         st.largest_catchment_km2,
         st.river_length_km,
+        st.longest_river_km,
+        st.longest_waterway_km,
         st.rivers_to_sea,
         st.rivers_to_lake,
         st.lake_count,

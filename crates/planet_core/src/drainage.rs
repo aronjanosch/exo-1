@@ -86,6 +86,10 @@ pub struct Drained {
     pub lake_of: Vec<u32>,
     /// The largest rain-weighted catchment of any land node (m²).
     pub max_catchment_m2: f64,
+    /// The longest river from its source to its mouth (m), and the longest waterway that goes on
+    /// through lakes that spill (each crossing counted straight to the outlet).
+    pub longest_river_m: f64,
+    pub longest_waterway_m: f64,
     /// Lowering by the erosion steps alone over land (m).
     pub erosion_max_m: f64,
     pub erosion_mean_m: f64,
@@ -505,7 +509,33 @@ pub fn drain(mesh: &impl Mesh, h0: &[f32], rain: &[f32], sea_level: f32, s: &Dra
     let carve = ground.iter().zip(h0).map(|(g, h)| g - h).collect();
     lap("sections");
     let max_catchment_m2 = (0..n).filter(|&v| mesh.is_node(v) && !r.sink[v]).map(|v| flow[v] as f64).fold(0.0, f64::max);
-    Drained { carve, water, rivers, lakes, lake_of, max_catchment_m2, erosion_max_m, erosion_mean_m: if land > 0 { sum / land as f64 } else { 0.0 }, phases_ms }
+    // Length to the mouth per river node, downstream first (a lake's outlet is reached before
+    // the rivers running into the lake).
+    let (mut run, mut way) = (vec![0.0f64; rivers.len()], vec![0.0f64; rivers.len()]);
+    for &v in &r.order {
+        let i = river_of[v as usize];
+        if i == NONE {
+            continue;
+        }
+        let (i, v) = (i as usize, v as usize);
+        match rivers[i].next {
+            Mouth::River(j) => {
+                let d = mesh.dist_m(v, rivers[j as usize].node as usize);
+                run[i] = d + run[j as usize];
+                way[i] = d + way[j as usize];
+            }
+            Mouth::Lake(id) => {
+                let o = lakes[id as usize].outlet;
+                if o != NONE && river_of[o as usize] != NONE {
+                    way[i] = mesh.dist_m(v, o as usize) + way[river_of[o as usize] as usize];
+                }
+            }
+            Mouth::Sea => {}
+        }
+    }
+    let longest_river_m = run.iter().copied().fold(0.0, f64::max);
+    let longest_waterway_m = way.iter().copied().fold(0.0, f64::max);
+    Drained { carve, water, rivers, lakes, lake_of, max_catchment_m2, longest_river_m, longest_waterway_m, erosion_max_m, erosion_mean_m: if land > 0 { sum / land as f64 } else { 0.0 }, phases_ms }
 }
 
 /// The macro grid as a graph: every vertex of the six face grids (`(face * w + j) * w + i`, as

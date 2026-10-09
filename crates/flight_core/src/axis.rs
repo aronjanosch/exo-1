@@ -1,42 +1,16 @@
-//! The axis model (spike 13): a second assisted-flight model next to the classic one in
+//! The axis flight model (spike 13; the only one since the classic model went, #144):
 //! `ShipController::step`, built after the structure of Star Citizen's flight control (structure
 //! only; own names, code and values): acceleration limits per axis and direction, one linear and
 //! one angular decay, a precision mode near the ground, a G-safety limit per direction, coupled
-//! and decoupled. It uses the same inputs, boost capacitor, input ramp and H/C switches as the
-//! classic model, and `drag_k`, the ramp and `decouple_time` from `ShipTuning`.
+//! and decoupled.
 //!
-//! All values are TODO(initiator) (`content/tuning/ship_axis.json`).
-use crate::{lerp, limit_length, parse_tuning, smoothstep, BodyState, Curve, FlightInput, Interp, PlanetEnv, ShipController};
-use glam::{DVec2, DVec3};
+//! All values are TODO(initiator) (`content/tuning/ship.json`).
+use crate::{lerp, limit_length, smoothstep, BodyState, FlightInput, PlanetEnv, ShipController};
+use glam::DVec3;
 use serde::Deserialize;
 
 /// m/s²: one g, for the G-safety limits.
 pub const G0: f64 = 9.81;
-
-/// Which model a ship flies (F7, a dev switch like F6; not a tuning value).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum FlightModel {
-    #[default]
-    Classic,
-    Axis,
-}
-
-impl FlightModel {
-    pub fn next(self) -> FlightModel {
-        match self {
-            FlightModel::Classic => FlightModel::Axis,
-            FlightModel::Axis => FlightModel::Classic,
-        }
-    }
-
-    /// The HUD word. TODO(initiator): name and word.
-    pub fn label(self) -> &'static str {
-        match self {
-            FlightModel::Classic => "CLASSIC",
-            FlightModel::Axis => "AXIS",
-        }
-    }
-}
 
 /// One number per axis and direction in ship space: forward is -Z, right +X, up +Y.
 #[derive(Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -99,7 +73,7 @@ impl Dirs {
         self.along(u).dot(u)
     }
 
-    fn validate(&self, what: &str) -> Result<(), String> {
+    pub(crate) fn validate(&self, what: &str) -> Result<(), String> {
         for (n, v) in [("forward", self.forward), ("backward", self.backward), ("left", self.left), ("right", self.right), ("up", self.up), ("down", self.down)] {
             if !(v > 0.0 && v.is_finite()) {
                 return Err(format!("{what}.{n} {v} out of range"));
@@ -119,7 +93,7 @@ pub struct Rot {
 }
 
 impl Rot {
-    fn validate(&self, what: &str) -> Result<(), String> {
+    pub(crate) fn validate(&self, what: &str) -> Result<(), String> {
         for (n, v) in [("pitch", self.pitch), ("yaw", self.yaw), ("roll", self.roll)] {
             if !(v > 0.0 && v.is_finite()) {
                 return Err(format!("{what}.{n} {v} out of range"));
@@ -148,7 +122,7 @@ pub struct Precision {
     pub rate_share: f64,
 }
 
-/// Speed caps out of the atmosphere; blended with the caps of `AxisTuning` by the air density.
+/// Speed caps out of the atmosphere; blended with the caps of `ShipTuning` by the air density.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SpaceCaps {
@@ -171,117 +145,7 @@ pub struct GSafety {
     pub limit: Dirs,
 }
 
-/// The axis model's values (`content/tuning/ship_axis.json`). TODO(initiator): all of them.
-#[derive(Deserialize, Clone, Debug, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct AxisTuning {
-    /// m/s: coupled speed for full stick in any direction (the stick is normalised into a ball),
-    /// in full atmosphere; decoupled thrust stops at the same caps.
-    pub cruise_speed: f64,
-    /// m/s: the forward and backward caps at full boost (at least `cruise_speed`).
-    pub boost_speed_forward: f64,
-    pub boost_speed_backward: f64,
-    /// The same caps out of the atmosphere (faster in space).
-    pub space: SpaceCaps,
-    /// m/s²: what the thrusters give per axis and direction in vacuum.
-    pub accel: Dirs,
-    /// Share of that thrust in full atmosphere (density 1), blended by the density.
-    pub atmosphere_thrust: f64,
-    /// Multipliers on `accel` at full boost (the brake always gets them).
-    pub boost_accel: Dirs,
-    /// 1/s: the assist asks for this times the velocity error (saturated far from the goal,
-    /// exponential close to it).
-    pub linear_decay: f64,
-    /// rad/s: turn rates at full stick; pitch and yaw share an ellipse.
-    pub rate: Rot,
-    /// Share of the turn rates (y) over the speed as a share of the cruise cap (x): a corner speed
-    /// in the middle, slower at rest and at the top.
-    pub rate_over_speed: Curve,
-    /// Multipliers on `rate` at full boost.
-    pub boost_rate: Rot,
-    /// rad/s²: angular acceleration cap per axis.
-    pub angular_accel: Rot,
-    /// 1/s: like `linear_decay`, for the turn rates.
-    pub angular_decay: f64,
-    pub precision: Precision,
-    pub g_safety: GSafety,
-}
-
-impl AxisTuning {
-    pub fn from_json(s: &str) -> Result<AxisTuning, String> {
-        let t: AxisTuning = parse_tuning("ship_axis.json", s)?;
-        t.validate().map_err(|e| format!("ship_axis.json: {e}"))?;
-        Ok(t)
-    }
-
-    pub fn validate(&self) -> Result<(), String> {
-        let pos = |what: &str, v: f64| if v > 0.0 && v.is_finite() { Ok(()) } else { Err(format!("{what} {v} out of range")) };
-        pos("cruise_speed", self.cruise_speed)?;
-        pos("boost_speed_forward", self.boost_speed_forward)?;
-        pos("boost_speed_backward", self.boost_speed_backward)?;
-        pos("space.cruise_speed", self.space.cruise_speed)?;
-        pos("space.boost_speed_forward", self.space.boost_speed_forward)?;
-        pos("space.boost_speed_backward", self.space.boost_speed_backward)?;
-        if self.boost_speed_forward < self.cruise_speed || self.boost_speed_backward < self.cruise_speed {
-            return Err(format!("boost speeds {} and {} below cruise_speed {}", self.boost_speed_forward, self.boost_speed_backward, self.cruise_speed));
-        }
-        let s = &self.space;
-        if s.boost_speed_forward < s.cruise_speed || s.boost_speed_backward < s.cruise_speed {
-            return Err(format!("space: boost speeds {} and {} below cruise_speed {}", s.boost_speed_forward, s.boost_speed_backward, s.cruise_speed));
-        }
-        if !(self.atmosphere_thrust > 0.0 && self.atmosphere_thrust <= 1.0) {
-            return Err(format!("atmosphere_thrust {} out of range", self.atmosphere_thrust));
-        }
-        self.rate_over_speed.validate().map_err(|e| format!("rate_over_speed: {e}"))?;
-        if let Some(p) = self.rate_over_speed.points.iter().find(|p| p.y <= 0.0) {
-            return Err(format!("rate_over_speed: share {} must be above 0", p.y));
-        }
-        pos("linear_decay", self.linear_decay)?;
-        pos("angular_decay", self.angular_decay)?;
-        self.accel.validate("accel")?;
-        self.boost_accel.validate("boost_accel")?;
-        self.rate.validate("rate")?;
-        self.boost_rate.validate("boost_rate")?;
-        self.angular_accel.validate("angular_accel")?;
-        self.g_safety.limit.validate("g_safety.limit")?;
-        let p = &self.precision;
-        if !(p.full_below >= 0.0 && p.off_above > p.full_below && p.off_above.is_finite()) {
-            return Err(format!("precision: band {} to {} m out of range", p.full_below, p.off_above));
-        }
-        pos("precision.speed", p.speed)?;
-        if !(p.landing_share > 0.0 && p.landing_share <= 1.0) {
-            return Err(format!("precision.landing_share {} out of range", p.landing_share));
-        }
-        if !(p.rate_share > 0.0 && p.rate_share <= 1.0) {
-            return Err(format!("precision.rate_share {} out of range", p.rate_share));
-        }
-        Ok(())
-    }
-}
-
-impl Default for AxisTuning {
-    fn default() -> Self {
-        AxisTuning {
-            cruise_speed: 150.0,
-            boost_speed_forward: 350.0,
-            boost_speed_backward: 200.0,
-            space: SpaceCaps { cruise_speed: 300.0, boost_speed_forward: 600.0, boost_speed_backward: 400.0 },
-            accel: Dirs { forward: 60.0, backward: 40.0, left: 24.0, right: 24.0, up: 50.0, down: 30.0 },
-            atmosphere_thrust: 0.5,
-            boost_accel: Dirs { forward: 2.0, backward: 1.5, left: 1.25, right: 1.25, up: 1.25, down: 1.25 },
-            linear_decay: 3.0,
-            rate: Rot { pitch: 1.6, yaw: 1.6, roll: 2.4 },
-            rate_over_speed: Curve { interp: Interp::Linear, points: vec![DVec2::new(0.0, 0.85), DVec2::new(0.5, 1.0), DVec2::new(1.0, 0.8)] },
-            boost_rate: Rot { pitch: 1.2, yaw: 1.2, roll: 1.0 },
-            angular_accel: Rot { pitch: 8.0, yaw: 8.0, roll: 14.0 },
-            angular_decay: 12.0,
-            precision: Precision { full_below: 5.0, off_above: 40.0, speed: 15.0, landing_share: 0.2, rate_share: 1.0 },
-            g_safety: GSafety { enabled: true, cap_turns: true, limit: Dirs { forward: 8.0, backward: 6.0, left: 4.0, right: 4.0, up: 6.0, down: 3.0 } },
-        }
-    }
-}
-
-/// What the axis model did in its last step (HUD, F3 and scenarios).
+/// What the flight model did in its last step (HUD, F3 and scenarios).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct AxisState {
     /// 0..1, 1 = full precision mode.
@@ -299,11 +163,11 @@ impl ShipController {
     /// lag and for terrain rising under the ship).
     pub const DESCENT_RESERVE: f64 = 0.6;
 
-    /// One step of the axis model; same contract as `step` (new linear and angular velocity).
-    pub(crate) fn step_axis(&mut self, body: &BodyState, input: &FlightInput, env: &impl PlanetEnv, dt: f64) -> (DVec3, DVec3) {
+    /// One physics step (Godot's `_integrate_forces`). Returns the new linear and angular
+    /// velocity; the caller writes them to the body before integration.
+    pub fn step(&mut self, body: &BodyState, input: &FlightInput, env: &impl PlanetEnv, dt: f64) -> (DVec3, DVec3) {
         let (input, strength) = self.begin_step(input, dt);
         let input = &input;
-        let t = &self.axis_tuning;
         let (b, origin, v) = (body.rot, body.pos, body.lin_vel);
         let inv = b.inverse();
         let gravity = env.gravity_at(origin);
@@ -315,6 +179,19 @@ impl ShipController {
 
         let stick = if self.brake_active { DVec3::ZERO } else { limit_length(input.thrust, 1.0) };
         let assist = self.hover_assist || self.brake_active;
+        self.terrain_clearance = self.clearance_at(env, origin);
+        // On the ground without sideways, forward or upward input: settle straight down until
+        // resting, then ask for nothing; set down below the slope limit, keep the spot (#92). A
+        // push along a tilted hull slid the ship 63 m down a slope.
+        let thrusting = stick.x.abs() >= 1e-5 || stick.z.abs() >= 1e-5 || stick.y > 1e-5;
+        let (hold, settle) = if assist {
+            self.ground_rules(env, origin, v, up, thrusting, input.grounded, dt)
+        } else {
+            self.ground_hold = None;
+            self.ground_time = 0.0;
+            (false, false)
+        };
+        let t = &self.tuning;
         let boost_share = if self.brake_active { 1.0 } else { strength };
         // Thrusters lose thrust in air; the caps are higher out of it.
         let limits = t.accel.scaled(lerp(1.0, t.atmosphere_thrust, density)).mul(&Dirs::splat(1.0).zip(&t.boost_accel, |one, m| lerp(one, m, boost_share)));
@@ -323,7 +200,6 @@ impl ShipController {
         let g_limit = t.g_safety.enabled.then(|| t.g_safety.limit.scaled(G0));
         let thrust_box = g_limit.map_or(limits, |g| limits.min(&g));
 
-        self.terrain_clearance = self.clearance_at(env, origin);
         // What the thrust upwards (in the ship's attitude) can brake a descent with, and the
         // clearance left after it.
         let sink = (-v.dot(up)).max(0.0);
@@ -331,7 +207,7 @@ impl ShipController {
         let p = if self.landing_mode { 1.0 - smoothstep(t.precision.full_below, t.precision.off_above, self.terrain_clearance - sink * sink / (2.0 * brake)) } else { 0.0 };
         let forward_cap = lerp(cruise, boost_forward, strength);
         let backward_cap = lerp(cruise, boost_backward, strength);
-        // No limit shown with the assist off, as in the classic model (#110 point 5).
+        // No limit shown with the assist off (#110 point 5).
         self.forward_speed_limit = if assist { lerp(forward_cap, forward_cap.min(t.precision.speed), p) } else { 0.0 };
 
         // Coupled: a velocity goal from the stick, turning with the ship.
@@ -357,17 +233,16 @@ impl ShipController {
         let vertical = goal.dot(up);
         let mut descent_brake = DVec3::ZERO;
         if vertical < -safe_sink {
-            goal -= up * (vertical + safe_sink);
+            // The ship's own down input points straight down while the limit holds: on a tilted
+            // hull part of it pointed sideways, and a down stick near the ground drifted the ship
+            // 7.4 m/s into a slide (#144). Forward and sideways input stay.
+            let down = b * DVec3::new(0.0, (inv * goal).y.min(0.0), 0.0);
+            goal += up * down.dot(up) - down;
+            goal -= up * (goal.dot(up) + safe_sink).min(0.0);
             descent_brake = up * (a * sink / safe_sink);
         }
-        // On the ground without sideways, forward or upward input: settle straight down until
-        // resting, then ask for nothing (the classic model's rule; a push along a tilted hull
-        // slid the ship 63 m down a slope).
-        let hold = assist && stick.x.abs() < 1e-5 && stick.z.abs() < 1e-5 && stick.y <= 1e-5 && self.on_ground(input.grounded, up, v);
-        let sinking = v.dot(up) < -0.05;
-        self.ground_time = if input.grounded && !sinking { self.ground_time + dt } else { 0.0 };
-        if hold {
-            goal = if self.ground_time < Self::GROUND_SETTLE_TIME { -up * Self::GROUND_SETTLE_SPEED } else { DVec3::ZERO };
+        if settle {
+            goal = self.ground_goal(up);
         }
         self.commanded_speed = if assist { goal.length() } else { 0.0 };
         let coupled_accel = (goal - v) * t.linear_decay + body.ang_vel.cross(goal) + descent_brake;
@@ -379,8 +254,8 @@ impl ShipController {
         let free = |s: f64, v: f64, cap: f64| if s * v > 0.0 && v.abs() >= cap { 0.0 } else { s };
         let capped_stick = DVec3::new(free(stick.x, lv.x, caps.x), free(stick.y, lv.y, caps.y), free(stick.z, lv.z, caps.z));
         let decoupled_accel = b * limits.along(capped_stick) + horizon_w.cross(v);
-        // The brake and the ground hold always damp.
-        let c = if self.brake_active || hold { 1.0 } else { self.coupling };
+        // The brake and the ground rules always damp.
+        let c = if self.brake_active || settle { 1.0 } else { self.coupling };
         let drag = -v * self.tuning.drag_k * density * v.length();
         // What the thrusters can give: the axis limits and the pilot's tolerance.
         let fit = |a: DVec3| thrust_box.clamp(a);
@@ -397,11 +272,7 @@ impl ShipController {
         self.axis.saturated = (asked - local).length() > 1e-6;
         self.axis.felt_g = local.length() / G0;
         self.axis.precision = if assist { p } else { 0.0 };
-        let mut v = v + (b * local + gravity + drag) * dt;
-        if hold {
-            // As the classic model: no sideways speed while settling or resting.
-            v = up * v.dot(up);
-        }
+        let v = self.ground_velocity(env, origin, v + (b * local + gravity + drag) * dt, up, hold, dt);
 
         // Rotation: target rate per axis, pitch and yaw in an ellipse.
         let over_speed = t.rate_over_speed.eval(v.length() / cruise);

@@ -590,8 +590,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "flight" => flight_steps(&mut s, &shot_step, out_dir, windowed),
         // #90, #91: the boost capacitor drains, cuts out and recharges; the HUD shows it.
         "boost-hud" => boost::boost_hud_steps(&mut s),
-        // Spike 13: the same manoeuvres with the classic and the axis flight model (F7).
-        "flight-models" => models::flight_models_steps(&mut s),
+        // Spike 13: manoeuvres with the axis flight model, measured as a table.
+        "flight-model" => models::flight_model_steps(&mut s),
         // #92: land on a slope below the limit; no drift from touchdown until thrust.
         "slope-landing" => landing::slope_landing_steps(&mut s),
         // #21: edit a tuning file while running (dev builds).

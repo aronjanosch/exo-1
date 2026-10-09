@@ -78,6 +78,8 @@ pub enum Tap {
     Decoupled,
     /// The debug lines of the HUD (F3).
     DebugHud,
+    /// Dev switch: boost capacitor or the old speed stage (F6, #90).
+    BoostMode,
 }
 
 impl Axis {
@@ -108,7 +110,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 11] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud];
+    pub const ALL: [Tap; 12] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode];
     pub fn name(self) -> &'static str {
         match self {
             Tap::Interact => "interact",
@@ -122,6 +124,7 @@ impl Tap {
             Tap::Warp => "warp",
             Tap::Decoupled => "decoupled",
             Tap::DebugHud => "debug_hud",
+            Tap::BoostMode => "boost_mode",
         }
     }
 }
@@ -310,6 +313,8 @@ impl Bindings {
                 (_, Some(v)) => keys(t.name(), v),
                 (Tap::Interact, None) if obj.contains_key("seat") => keys("seat", &obj["seat"]),
                 (Tap::Throw, None) => Ok(vec![Input::Key(KeyCode::KeyR)]),
+                // Files from before the boost switch (#90) have no `boost_mode`.
+                (Tap::BoostMode, None) => Ok(vec![Input::Key(KeyCode::F6)]),
                 _ => Err(err(t.name(), "missing".into())),
             }
         };
@@ -706,6 +711,16 @@ mod tests {
         let b = Bindings::from_json(&old).unwrap();
         let mut a = resolve(&b, &raw(&[], &[KeyF, KeyR]));
         assert!(a.take_tap(Tap::Interact) && a.take_tap(Tap::Throw));
+    }
+
+    /// #90: a player's file from before the boost switch still loads, with F6.
+    #[test]
+    fn old_file_without_boost_mode_gets_f6() {
+        let old = BINDINGS.replace("  \"boost_mode\": [\"F6\"],\n", "");
+        assert!(!old.contains("boost_mode"));
+        let b = Bindings::from_json(&old).unwrap();
+        let mut a = resolve(&b, &raw(&[], &[F6]));
+        assert!(a.take_tap(Tap::BoostMode));
     }
 
     /// G was missing from the keyboard's tap list (only scenarios could inject it).

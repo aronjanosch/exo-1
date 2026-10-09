@@ -6,6 +6,7 @@ use crate::ship::{Ship, ShipPart};
 use crate::terrain::Terrain;
 use crate::walker::{Player, WalkStats, EYE_HEIGHT};
 use crate::controls::{Actions, Tap};
+use crate::hud::speed_text;
 use bevy::camera::PerspectiveProjection;
 use bevy::light::GlobalAmbientLight;
 use bevy::math::{DQuat, DVec3};
@@ -110,13 +111,25 @@ pub fn setup_view(mut commands: Commands) {
         Transform::from_rotation(Quat::from_euler(EulerRot::YXZ, 30f32.to_radians(), -50f32.to_radians(), 0.0)),
     ));
     commands.insert_resource(GlobalAmbientLight { color: Color::srgb(0.55, 0.65, 0.8), brightness: 400.0, ..default() });
-    // At most four permanent elements: mode, speed, altitude, boost (#24).
+    // At most four permanent elements: mode, speed, altitude, boost with the capacitor's bar
+    // (#24, #91). TODO(initiator): placement, size and colours are placeholders.
     commands
-        .spawn(Node { position_type: PositionType::Absolute, top: px(8), left: px(8), column_gap: px(28), ..default() })
+        .spawn(Node { position_type: PositionType::Absolute, top: px(8), left: px(8), column_gap: px(28), align_items: AlignItems::Center, ..default() })
         .with_children(|c| {
             for i in 0..4 {
                 c.spawn((HudItem(i), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
             }
+            c.spawn((
+                BoostBar,
+                Node { width: px(BOOST_BAR_PX), height: px(8), border: UiRect::all(px(1)), ..default() },
+                BorderColor::all(Color::srgba(0.9, 0.95, 1.0, 0.6)),
+                Visibility::Hidden,
+            ))
+            .with_children(|b| {
+                b.spawn((BoostFill, Node { width: percent(100), height: percent(100), ..default() }, BackgroundColor(BOOST_READY)));
+            });
+            // Next to the bar: CAPACITOR or STAGE, the F6 dev switch (#90).
+            c.spawn((HudItem(BOOST_MODE_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
         });
     // The one prompt (#82): what the interact key does now, below the screen centre.
     commands.spawn((
@@ -157,6 +170,17 @@ pub fn setup_view(mut commands: Commands) {
 
 #[derive(Component)]
 pub struct HudItem(u8);
+/// The boost capacitor's bar (#91) and its fill.
+#[derive(Component)]
+pub struct BoostBar;
+#[derive(Component)]
+pub struct BoostFill;
+const BOOST_BAR_PX: f32 = 120.0;
+/// The `HudItem` after the bar that names the boost mode (`HudReadout::boost_mode`).
+const BOOST_MODE_ITEM: u8 = 4;
+const BOOST_READY: Color = Color::srgb(0.55, 0.95, 1.0);
+const BOOST_ACTIVE: Color = Color::srgb(1.0, 0.85, 0.35);
+const BOOST_LOW: Color = Color::srgba(0.55, 0.6, 0.7, 0.6);
 #[derive(Component)]
 pub struct QuantumLine;
 
@@ -190,17 +214,20 @@ pub fn debug_hud_toggle(mut actions: ResMut<Actions>, mut view: ResMut<ViewState
     }
 }
 
-/// Mode, speed, altitude and boost; the stick marker while piloting with the virtual joystick.
+/// Mode, speed, altitude and the boost gauge from `HudReadout` (#91); the stick marker while piloting with the virtual joystick.
 #[allow(clippy::too_many_arguments)]
 pub fn update_flight_hud(
-    planet: Res<PlanetRes>,
-    actions: Res<Actions>,
+    readout: Res<crate::hud::HudReadout>,
     bindings: Res<crate::controls::Bindings>,
     view: Res<ViewState>,
     wd: Res<crate::warp::WarpDrive>,
     players: Query<&Player>,
-    ships: Query<(&Ship, &avian3d::prelude::Position, &avian3d::prelude::LinearVelocity, &avian3d::prelude::Rotation, &BodyInterp)>,
+    ships: Query<(&Ship, &avian3d::prelude::Position, &BodyInterp)>,
     mut items: Query<(&HudItem, &mut Text), Without<QuantumLine>>,
+    (mut bar, mut fill): (
+        Query<&mut Visibility, (With<BoostBar>, Without<Hud>, Without<StickHud>)>,
+        Query<(&mut Node, &mut BackgroundColor), (With<BoostFill>, Without<StickDeadzone>, Without<StickMarker>, Without<StickDot>, Without<StickHud>)>,
+    ),
     mut quantum: Query<&mut Text, With<QuantumLine>>,
     sys: Res<crate::warp::SystemRes>,
     mut debug: Query<&mut Visibility, (With<Hud>, Without<StickHud>)>,
@@ -210,37 +237,21 @@ pub fn update_flight_hud(
     cam: Query<(&Camera, &WorldPose), With<MainCamera>>,
     (origin, fixed): (Res<RenderOrigin>, Res<Time<Fixed>>),
 ) {
-    let (Ok(pl), Ok((ship, sp, sv, sr, si))) = (players.single(), ships.single()) else { return };
-    let (mode, v, pos, boost) = if pl.seated {
-        let mode = if wd.drive.phase != warp_core::Phase::Idle {
-            format!("QUANTUM {:?}", wd.drive.phase).to_uppercase()
-        } else if !ship.ctl.hover_assist {
-            "SHIP  assist off".into()
-        } else if ship.ctl.coupling < 1.0 && ship.ctl.coupled {
-            format!("SHIP  coupling {:.0} %", ship.ctl.coupling * 100.0)
-        } else if !ship.ctl.coupled {
-            if ship.ctl.coupling > 0.0 { format!("SHIP  decoupling {:.0} %", (1.0 - ship.ctl.coupling) * 100.0) } else { "SHIP  DECOUPLED".into() }
-        } else {
-            "SHIP".into()
-        };
-        (mode, sv.0, sp.0, Some(actions.boost))
-    } else if pl.ship.is_some() {
-        ("CABIN".into(), sv.0 + sr.0 * pl.w.vel, sp.0, None)
-    } else if pl.fly {
-        ("FLY".into(), pl.w.vel, pl.w.pos, None)
-    } else if pl.body.is_some() {
-        ("SUIT".into(), pl.w.vel, pl.w.pos, Some(actions.boost))
-    } else {
-        ("WALK".into(), pl.w.vel, pl.w.pos, None)
-    };
-    let alt = if (pos - planet.centre).length() < NEAR_PLANET { format!("alt {:.0} m", (pos - planet.centre).length() - planet.radius) } else { "alt -".into() };
-    let texts = [mode, format!("{} m/s", speed_text(v.length())), alt, match boost {
-        Some(true) => "BOOST".into(),
-        Some(false) => "boost -".into(),
-        None => String::new(),
-    }];
+    let (Ok(pl), Ok((ship, sp, si))) = (players.single(), ships.single()) else { return };
+    // Only touch a Text whose content changed (#24).
     for (item, mut t) in &mut items {
-        **t = texts[item.0 as usize].clone();
+        let want = if item.0 == BOOST_MODE_ITEM { readout.boost_mode } else { readout.texts[item.0 as usize].as_str() };
+        if **t != *want {
+            **t = want.to_string();
+        }
+    }
+    if let Ok(mut vis) = bar.single_mut() {
+        let want = if readout.gauge.is_some() { Visibility::Inherited } else { Visibility::Hidden };
+        vis.set_if_neq(want);
+    }
+    if let (Some(charge), Ok((mut n, mut bg))) = (readout.gauge, fill.single_mut()) {
+        n.width = percent(charge as f32 * 100.0);
+        bg.0 = if readout.boosting { BOOST_ACTIVE } else if readout.ready { BOOST_READY } else { BOOST_LOW };
     }
     if let Ok(mut t) = quantum.single_mut() {
         **t = if pl.seated { warp_line(&wd, &sys.0, sp.0) } else { String::new() };
@@ -750,10 +761,6 @@ fn lag_text(ship: &Ship) -> String {
     format!("gravity {state} {:.0} %{key}", ship.lag.level * 100.0)
 }
 
-/// Two decimals below 1 m/s, so a ship at rest can be told from a slow drift (issue #6).
-fn speed_text(v: f64) -> String {
-    if v < 1.0 { format!("{v:.2}") } else { format!("{v:.1}") }
-}
 
 #[allow(clippy::too_many_arguments)]
 pub fn update_hud(

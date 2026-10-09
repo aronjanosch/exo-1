@@ -314,6 +314,8 @@ fn run(s: &mut Sim) {
     s.check(s.speed() < 0.5 && distance < 60.0, format!("firm stop {distance:.2} m over 2 s, speed {:.3}", s.speed()));
 
     s.spawn(150.0, false);
+    // The speed stage itself (#24); the capacitor has its own tests (boost.rs, #90).
+    s.ship.tuning.boost_capacitor.drain_time = 0.0;
     s.keys.w = true;
     s.keys.shift = true;
     s.ticks(240);

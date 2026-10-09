@@ -146,7 +146,7 @@ fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
 
 /// Fixed step, right after the actions are resolved: UI toggles click.
 fn count_clicks(actions: Res<Actions>, mut clicks: ResMut<Clicks>) {
-    let ui = [Tap::HoverAssist, Tap::HorizonFollow, Tap::Decoupled, Tap::DebugHud, Tap::WarpTarget, Tap::OrbitCamera, Tap::Lag];
+    let ui = [Tap::HoverAssist, Tap::HorizonFollow, Tap::Decoupled, Tap::DebugHud, Tap::WarpTarget, Tap::OrbitCamera, Tap::Lag, Tap::BoostMode];
     clicks.0 += actions.taps().iter().filter(|t| ui.contains(t)).count() as u32;
 }
 

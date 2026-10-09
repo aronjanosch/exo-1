@@ -153,6 +153,104 @@ fn move_towards(x: f64, target: f64, step: f64) -> f64 {
     x + (target - x).clamp(-step, step)
 }
 
+/// Boost capacitor tuning (`ship.json`, `boost_capacitor`, #90). Starting values, not design.
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BoostCapacitorTuning {
+    /// Seconds from full to empty while boosting; 0 = no capacitor, boost is always there (#24).
+    pub drain_time: f64,
+    /// Seconds from empty to full.
+    pub recharge_time: f64,
+    /// Seconds after the last use before recharging starts.
+    pub recharge_delay: f64,
+    /// Charge 0..1 needed to start a boost; a running boost lasts until empty.
+    pub start_charge: f64,
+    /// Boost strength 0..1 (of the full boost) over the charge 0..1.
+    pub strength_curve: Curve,
+}
+
+impl BoostCapacitorTuning {
+    pub fn validate(&self) -> Result<(), String> {
+        let bad = |what: &str, v: f64| Err(format!("boost_capacitor: {what} {v} out of range"));
+        if !(self.drain_time >= 0.0) {
+            return bad("drain_time", self.drain_time);
+        }
+        if !(self.recharge_time > 0.0) {
+            return bad("recharge_time", self.recharge_time);
+        }
+        if !(self.recharge_delay >= 0.0) {
+            return bad("recharge_delay", self.recharge_delay);
+        }
+        if !(0.0..=1.0).contains(&self.start_charge) {
+            return bad("start_charge", self.start_charge);
+        }
+        self.strength_curve.validate().map_err(|e| format!("boost_capacitor: strength_curve: {e}"))
+    }
+}
+
+impl Default for BoostCapacitorTuning {
+    fn default() -> Self {
+        BoostCapacitorTuning {
+            drain_time: 3.0,
+            recharge_time: 6.0,
+            recharge_delay: 1.0,
+            start_charge: 0.2,
+            strength_curve: Curve { interp: Interp::Linear, points: vec![DVec2::new(0.0, 0.0), DVec2::new(1.0, 1.0)] },
+        }
+    }
+}
+
+/// The boost's charge meter (#90): drains while boosting, recharges after a pause.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BoostCapacitor {
+    /// 0..1, starts full.
+    pub charge: f64,
+    /// A boost is running (started at or above the start charge, ends when released or empty).
+    pub active: bool,
+    /// Seconds since the last use.
+    idle: f64,
+}
+
+impl Default for BoostCapacitor {
+    fn default() -> Self {
+        BoostCapacitor { charge: 1.0, active: false, idle: 0.0 }
+    }
+}
+
+impl BoostCapacitor {
+    pub fn with_charge(charge: f64) -> Self {
+        BoostCapacitor { charge, ..BoostCapacitor::default() }
+    }
+
+    /// One step with boost held (`want`) or not; returns the boost strength 0..1 for this step.
+    pub fn step(&mut self, want: bool, t: &BoostCapacitorTuning, dt: f64) -> f64 {
+        if t.drain_time <= 0.0 {
+            self.charge = 1.0;
+            self.active = want;
+            return if want { 1.0 } else { 0.0 };
+        }
+        if !want {
+            self.active = false;
+        } else if !self.active && self.charge > 0.0 && self.charge >= t.start_charge {
+            self.active = true;
+        }
+        if self.active {
+            let strength = t.strength_curve.eval(self.charge).clamp(0.0, 1.0);
+            self.charge = (self.charge - dt / t.drain_time).max(0.0);
+            self.idle = 0.0;
+            if self.charge == 0.0 {
+                self.active = false;
+            }
+            return strength;
+        }
+        self.idle += dt;
+        if self.idle >= t.recharge_delay {
+            self.charge = (self.charge + dt / t.recharge_time).min(1.0);
+        }
+        0.0
+    }
+}
+
 /// Rigid-body state. `integrate` is the test fixture's integrator: equivalent
 /// to Jolt with no contacts, no engine gravity and no damping.
 #[derive(Clone, Copy, Debug)]
@@ -383,6 +481,8 @@ pub struct ShipTuning {
     pub ramp_curve: Curve,
     /// Seconds over which switching to decoupled (or back) blends the assist's damping (#26).
     pub decouple_time: f64,
+    /// The boost's charge meter (#90).
+    pub boost_capacitor: BoostCapacitorTuning,
 }
 
 impl ShipTuning {
@@ -390,6 +490,7 @@ impl ShipTuning {
         let t: ShipTuning = parse_tuning("ship.json", s)?;
         t.forward_speed_curve.validate().map_err(|e| format!("ship.json: forward_speed_curve: {e}"))?;
         t.ramp_curve.validate().map_err(|e| format!("ship.json: ramp_curve: {e}"))?;
+        t.boost_capacitor.validate().map_err(|e| format!("ship.json: {e}"))?;
         Ok(t)
     }
 }
@@ -429,6 +530,7 @@ impl Default for ShipTuning {
             angular_ramp_time: 0.25,
             ramp_curve: Curve { interp: Interp::Smooth, points: vec![DVec2::new(0.0, 0.25), DVec2::new(1.0, 1.0)] },
             decouple_time: 4.0,
+            boost_capacitor: BoostCapacitorTuning::default(),
         }
     }
 }
@@ -453,6 +555,9 @@ pub struct ShipController {
     pub ramp: InputRamp,
     /// Seconds the hull has rested on the ground (touching, not sinking) without a break.
     pub ground_time: f64,
+    /// The boost's charge (#90); `boost_strength` is what it gave the last step (0..1).
+    pub boost: BoostCapacitor,
+    pub boost_strength: f64,
 
     horizon_w: DVec3,
     correction_accel: DVec3,
@@ -479,6 +584,8 @@ impl ShipController {
             coupling: 1.0,
             ramp: InputRamp::default(),
             ground_time: 0.0,
+            boost: BoostCapacitor::default(),
+            boost_strength: 0.0,
             horizon_w: DVec3::ZERO,
             correction_accel: DVec3::ZERO,
         }
@@ -551,11 +658,13 @@ impl ShipController {
         self.planet_follow_strength = if self.horizon_follow { env.field_strength_at(origin) } else { 0.0 };
 
         let mut thrust_in = input.thrust;
-        let mut boost = if input.boost { self.tuning.boost_factor } else { 1.0 };
         self.brake_active = input.piloted && input.brake;
+        // The brake brakes with boost strength without using the charge (TODO(initiator), #90).
+        let strength = self.boost.step(input.boost && !self.brake_active, &self.tuning.boost_capacitor, dt);
+        self.boost_strength = strength;
+        let boost = 1.0 + (self.tuning.boost_factor - 1.0) * strength;
         if self.brake_active {
             thrust_in = DVec3::ZERO;
-            boost = 1.0;
         }
 
         let mut v = body.lin_vel;
@@ -566,13 +675,14 @@ impl ShipController {
             self.terrain_clearance = self.clearance_at(env, origin);
             let clearance = self.flight_clearance(env, origin, v, self.terrain_clearance);
             self.forward_speed_limit = self.forward_speed_at(clearance);
-            if boost > 1.0 {
-                // Boost stays gentle near terrain and cannot exceed high-altitude cruise.
+            if strength > 0.0 {
+                // Boost stays gentle near terrain and cannot exceed high-altitude cruise; a weak
+                // charge gives part of it.
                 let top = self.tuning.forward_speed_curve.last_y();
                 self.forward_speed_limit = lerp(
                     self.forward_speed_limit,
                     top.min(self.forward_speed_limit * self.tuning.assisted_boost_speed_factor),
-                    smoothstep(30.0, 150.0, clearance),
+                    smoothstep(30.0, 150.0, clearance) * strength,
                 );
             }
             let request = limit_length(thrust_in, 1.0);
@@ -604,8 +714,8 @@ impl ShipController {
             let correction = (goal - v) / self.tuning.velocity_response_time;
             let reference_speed = v.length().max(goal.length().max(self.forward_speed_limit));
             let mut budget = self.tuning.assisted_accel.max(reference_speed / self.tuning.assisted_acceleration_time);
-            if boost > 1.0 {
-                budget = budget.max(self.tuning.assisted_boost_accel);
+            if strength > 0.0 {
+                budget = budget.max(lerp(budget, self.tuning.assisted_boost_accel, strength));
             }
             if correction.dot(v) < 0.0 {
                 budget = self.braking_budget(v.length(), self.forward_speed_limit);

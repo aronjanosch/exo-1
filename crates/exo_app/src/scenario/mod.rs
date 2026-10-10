@@ -33,6 +33,7 @@ mod models;
 mod net;
 mod reload;
 mod sc_linear;
+mod sc_air;
 mod sc_hud;
 mod sc_switch;
 mod sc_turn;
@@ -602,6 +603,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "sc-switch" => sc_switch::sc_switch_steps(&mut s),
         // #195: the SC linear law: cap, brake, gravity compensation, master modes, limiter.
         "sc-linear" => sc_linear::sc_linear_steps(&mut s),
+        // #199: the SC model's air: wind compensation hover, turbulence low and high.
+        "sc-air" => sc_air::sc_air_steps(&mut s),
         // #197: the flight panel: badges, the coupling blend, the toast, both models.
         "sc-hud" => sc_hud::sc_hud_steps(&mut s),
         // Round 5, #196: the SC model's rotation (overshoot, reversal, roll release, G-safe turn cap).

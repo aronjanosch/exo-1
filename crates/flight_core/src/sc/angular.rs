@@ -125,6 +125,9 @@ pub struct Env {
     pub cap: f64,
     /// m/s² the thrusters give per direction (for a G-safe turn cap).
     pub thrust_box: Dirs,
+    /// rad/s², ship space: what the air turns that the flight computer holds against
+    /// (`AirOut::angular_hold`).
+    pub air_hold: DVec3,
 }
 
 /// The angular stage's memory: per pitch and yaw the acceleration the spring asked last step (the
@@ -236,5 +239,8 @@ pub fn step(s: &mut AngularState, f: &Frame, input: &FlightInput, m: &Modes, e: 
     s.accel = acc;
     let roll = roll_axis(w.z, req.z, dt, t.roll_decay, t.roll_release_share, b.roll);
 
-    AngularOut { accel: DVec3::new(pitch, yaw, roll), rate_capped }
+    // The air's known moments are held on top, inside the box.
+    let held = DVec3::new(pitch, yaw, roll) - e.air_hold;
+    let held = held.clamp(DVec3::new(-b.pitch, -b.yaw, -b.roll), DVec3::new(b.pitch, b.yaw, b.roll));
+    AngularOut { accel: held, rate_capped }
 }

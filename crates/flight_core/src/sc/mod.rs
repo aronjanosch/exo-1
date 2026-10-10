@@ -212,15 +212,15 @@ impl ScShip {
         let boost = drive::begin(&mut self.drive, input.boost, braking, &self.tuning.drive, dt);
         let air = air::step(&mut self.air, &f, &self.modes, &self.tuning.air);
         let thrust_box = self.thrust_box(air.thrust_scale, if braking { 1.0 } else { boost });
-        let lin = linear::step(&mut self.linear, &f, input, &self.modes, &linear::Env { thrust_box, boost, braking, air_accel: air.accel, cap_scale: air.cap_scale }, &self.tuning.linear);
+        let lin = linear::step(&mut self.linear, &f, input, &self.modes, &linear::Env { thrust_box, boost, braking, air_accel: air.accel, cap_scale: air.cap_scale, drift: if self.modes.wind_comp { DVec3::ZERO } else { air.wind } }, &self.tuning.linear);
         let torque_box = self.torque_box();
-        let ang = angular::step(&mut self.angular, &f, input, &self.modes, &angular::Env { accel_box: torque_box, boost, cap: lin.cap, thrust_box }, &self.tuning.angular);
+        let ang = angular::step(&mut self.angular, &f, input, &self.modes, &angular::Env { accel_box: torque_box, boost, cap: lin.cap, thrust_box, air_hold: air.angular_hold }, &self.tuning.angular);
         let shaped = drive::shape(&mut self.drive, &drive::Asked { linear: lin.accel, angular: ang.accel, boost, thrust_box }, &self.tuning.drive, dt);
 
         let s = &self.tuning.ship;
         let linear_world = f.rot * shaped.linear;
         let v = f.v + (linear_world + f.gravity + air.accel + air.push) * dt;
-        let angular_world = f.rot * (shaped.angular + air.angular);
+        let angular_world = f.rot * (shaped.angular + air.angular + air.angular_hold);
         let w = body.ang_vel + angular_world * dt;
         let torque_local = DVec3::new(shaped.angular.x * s.inertia.pitch, shaped.angular.y * s.inertia.yaw, shaped.angular.z * s.inertia.roll);
 

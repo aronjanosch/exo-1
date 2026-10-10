@@ -26,6 +26,7 @@ mod scenario_interact;
 mod scenario_look;
 mod scenario_reload;
 mod scenario_sc_linear;
+mod scenario_sc_air;
 mod scenario_sc_hud;
 mod scenario_sc_switch;
 mod scenario_sc_turn;

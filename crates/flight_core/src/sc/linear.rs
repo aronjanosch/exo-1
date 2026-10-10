@@ -165,6 +165,9 @@ pub struct Env {
     pub air_accel: DVec3,
     /// Share of the caps the air leaves (1 in space).
     pub cap_scale: f64,
+    /// m/s, world: the velocity the coupled goal moves with: the wind while wind compensation is
+    /// off (the ship drifts with the air mass), else zero.
+    pub drift: DVec3,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -231,7 +234,9 @@ pub fn step(s: &mut LinearState, f: &Frame, input: &FlightInput, m: &Modes, e: &
 
     // Gravity compensation: on, thrust holds against gravity and air; off, the fall is integrated
     // into the goal instead (the ship falls with g).
-    let hold = if m.grav_comp { -(f.gravity + e.air_accel) } else { DVec3::ZERO };
+    // The air (drag, lift, the wind with wind compensation on) is held either way; gravity only
+    // with compensation on.
+    let hold = if m.grav_comp { -f.gravity } else { DVec3::ZERO } - e.air_accel;
     // The goal uses the fall of the start of the step: the velocity then follows it with no lag.
     let fall = s.fall;
     if m.grav_comp || e.braking {
@@ -269,7 +274,7 @@ pub fn step(s: &mut LinearState, f: &Frame, input: &FlightInput, m: &Modes, e: &
     }
 
     // The goal from the stick, with the fall; the landing band and the descent limit cut it.
-    let mut goal = goal_stick + fall;
+    let mut goal = goal_stick + fall + e.drift;
     let mut forward_cap = forward;
     let mut descent = DVec3::ZERO;
     if m.landing {

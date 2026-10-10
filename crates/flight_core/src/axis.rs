@@ -188,6 +188,8 @@ pub(crate) fn brake_along(b: &Dirs, hold: DVec3, lv: DVec3, decay: f64) -> Optio
 /// ellipsoid the coupled stick goal spans (`cruise` sideways and up or down, `forward` or
 /// `backward` along the ship's Z); the limit is the larger of that cap and the speed before the
 /// step, so a speed above the cap is not cut. The direction is kept.
+/// TODO(initiator): the landing precision band (landing mode) is not part of this cap; it still
+/// limits the goal only.
 pub(crate) fn refuse_thrust(v: DVec3, inv: DQuat, speed_before: f64, cruise: f64, forward: f64, backward: f64) -> DVec3 {
     let lv = inv * v;
     let s = lv.length();

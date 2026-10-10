@@ -33,6 +33,7 @@ mod net;
 mod reload;
 mod space;
 mod swap;
+mod thruster_audio;
 mod walk;
 mod warp;
 
@@ -591,6 +592,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "flight" => flight_steps(&mut s, &shot_step, out_dir, windowed),
         // #90, #91: the boost capacitor drains, cuts out and recharges; the HUD shows it.
         "boost-hud" => boost::boost_hud_steps(&mut s),
+        "thruster-audio" => thruster_audio::thruster_audio_steps(&mut s),
         // Spike 13: manoeuvres with the axis flight model, measured as a table.
         "flight-model" => models::flight_model_steps(&mut s),
         // #92: land on a slope below the limit; no drift from touchdown until thrust.

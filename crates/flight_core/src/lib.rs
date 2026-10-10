@@ -3,6 +3,7 @@
 //! world space.
 //!
 //! All numbers are spike test values (assumptions for testing, not design).
+pub mod audio;
 pub mod axis;
 pub mod camera;
 pub mod hud;

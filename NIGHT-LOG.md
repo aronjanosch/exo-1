@@ -12,10 +12,14 @@ Phase 1, `night/d-foundation`:
 - [x] #170 courier jobs
 - [x] #168 customers
 - [x] #169 flight licence
-- [ ] #166 map
-- [ ] #135 save file
+- [x] #166 map (screenshot: `night-shots/map.png` in the worktree, not committed)
+- [ ] #135 save file: not started (run cut off, see "How the run ended")
 
 Phase 2, `night/d-extras`: not started.
+
+## How the run ended
+
+The session died at about 04:07 on 2026-10-10 while the gate for #166 was starting; it was resumed at 10:26, after the 08:30 stop time. The herdr log stops at 04:06:46 with no shutdown entry. The container has a 6 GB memory limit (`memory.max`), and one gate run peaks near 4.9 GB (`memory.peak`), so an out-of-memory kill is the likely cause; it is not proven (kernel log not readable from inside). The container itself restarted at 05:43. The same pattern may explain the stop of the night-C run at 03:57. Suggested: `CARGO_BUILD_JOBS=4` at most and nextest `--test-threads` 3 to 4 (the brief's 6 jobs and nextest's 8 threads are too many for 6 GB), check the host syslog for 04:00 to 04:10. The #166 gate was rerun after the resume with 3 jobs and 3 test threads. Not done: #135, phase 2.
 
 ## #128 save model
 
@@ -73,3 +77,16 @@ Checks: 10 tests in `jobs_core/tests/exam.rs` (loader errors, fee and per-player
 
 TODO(initiator): fee 150, retry 75, crash limit 6 m/s, honours limits (2.5 m/s, 150 s), deadline 300 s, honours standing 10, overflight height 120 m for pad reached, the school's place and all its texts.
 Open: the take-off, pad and landing in the real game are detected by `FlightWatch` but only the state machine is tested, the scenario sets the events by hook as the brief allows (no real hop under the flight model that is being reworked); a new game starts with 100 credits, so the fee needs three or four courier jobs first as decided.
+
+## #166 map
+
+Built: `planet_core::look`: `Planet::local_map` (a north-up RGB picture of the ground within a radius of a point: water by depth, land in biome colour shaded by height and slope), `local_map_dir` and `local_offset` (pixel to direction and back, in metres on the surface). A whole-planet equirectangular map is useless here because the start lies at the pole, so the map is local around the player. `jobs_core::map` (no Bevy): `pins` (places the crew may use on this planet, the tracked job's target at its next stop, the players, in that order), `next_stop` (pickup while crates wait, dropoff when all are carried, back to the pickup when one is set down elsewhere). Glue: taps `map` (M) and `track_job` (T, in `bindings.json`), `Gameplay::tracked` (kept on an active job, T cycles), the job line's pointer follows the tracked job's next stop, `exo_app::map`: M opens a 640 px overlay with the picture (made on a worker thread, about 0.9 s on this machine) and pins (yellow places, red pickup or green dropoff target, blue you), labels placed left or right so they do not overlap; it takes no input.
+
+Checks: 3 tests in `planet_core/tests/look.rs` (size, north up and east right, metres, offset inverse, water blue), 6 in `jobs_core/tests/map.rs` (open and foreign places, the pin moving from pickup to dropoff, back to the pickup, offered or foreign targets, players, order), 1 unit test, scenario `map` (in the gate): 7 places pinned, all but far Bent Spoon on the picture, the tracked pin at the pickup then the dropoff, the job line agrees, M opens and closes, the picture is made. Windowed under `xvfb-run` the scenario shot the map: `night-shots/map.png`.
+
+TODO(initiator): map radius (1000 m), picture size, colours, keys M and T.
+Open: pin labels are plain text; no fog of war or scanning; the map is only for the planet the player is on.
+
+## #135 save file
+
+Not started. #128 gives the envelope with kernel, jobs, customers sections and the world section type; what is missing is the file side (`saves/` in the game's directory, autosave, client id file) and the scenario (deliver halfway, save, restart, load, finish).

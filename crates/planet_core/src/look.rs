@@ -159,6 +159,30 @@ struct Px {
 }
 
 impl Planet {
+    /// A north-up picture (RGB8, `px` x `px`) of the ground within `radius_m` of `centre`: water
+    /// by depth, land in its biome colour shaded by height and slope (#166). Meant for a small
+    /// area (a map of what is around the player), so it is cheap to make when the map opens.
+    pub fn local_map(&self, centre: V3, radius_m: f64, px: usize) -> Vec<u8> {
+        let mut out = Vec::with_capacity(px * px * 3);
+        for y in 0..px {
+            for x in 0..px {
+                let s = self.sample(local_map_dir(centre, self.radius, radius_m, px, x, y));
+                let c = if s.water_depth > 0.0 {
+                    // Shallow water light, deep water dark.
+                    let k = (1.0 - (s.water_depth / 40.0).min(1.0) * 0.6) as f32;
+                    [0.10 * k, 0.32 * k, 0.78 * k + 0.1]
+                } else {
+                    let b = self.biome_color(s.biome.clamp(0, 255) as u8);
+                    // Higher is lighter, steep is darker.
+                    let shade = (0.85 + (s.height_above_sea / 600.0).clamp(-0.2, 0.3) - (s.slope_deg / 60.0).min(0.35)) as f32;
+                    [b[0] * shade, b[1] * shade, b[2] * shade]
+                };
+                out.extend(c.iter().map(|v| (v.clamp(0.0, 1.0) * 255.0) as u8));
+            }
+        }
+        out
+    }
+
     /// The atlas at `width` x `width / 2` pixels. Sites are white dots on the biome layer.
     pub fn atlas(&self, width: usize, threads: usize) -> Atlas {
         let (w, h) = (width, width / 2);
@@ -420,6 +444,34 @@ impl Planet {
             _ => None,
         }
     }
+}
+
+/// The direction of pixel (x, y) of a local map: `px` x `px` pixels covering `radius_m` metres to
+/// each side of `centre`, north up, east to the right (#166). Metres are metres on the surface:
+/// the pixel is walked to from the centre along its bearing.
+pub fn local_map_dir(centre: V3, planet_radius: f64, radius_m: f64, px: usize, x: usize, y: usize) -> V3 {
+    let half = px as f64 / 2.0;
+    let east_m = (x as f64 + 0.5 - half) / half * radius_m;
+    let north_m = (half - y as f64 - 0.5) / half * radius_m;
+    let (east, north) = tangent_frame(centre);
+    let m = east_m.hypot(north_m);
+    if m < 1e-9 {
+        return centre;
+    }
+    walk(centre, (east * east_m + north * north_m) * (1.0 / m), m, planet_radius)
+}
+
+/// Where a direction lies from a map's centre, in metres east and north (the inverse of
+/// `local_map_dir`, used to put pins on the picture). Exact on the surface.
+pub fn local_offset(centre: V3, planet_radius: f64, d: V3) -> (f64, f64) {
+    let (east, north) = tangent_frame(centre);
+    let t = d - centre * d.dot(centre);
+    let m = planet_radius * centre.dot(d).clamp(-1.0, 1.0).acos();
+    let len = t.length();
+    if len < 1e-12 {
+        return (0.0, 0.0);
+    }
+    (t.dot(east) / len * m, t.dot(north) / len * m)
 }
 
 /// A 5 x 5 pixel dot at a direction.

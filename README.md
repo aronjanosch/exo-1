@@ -66,6 +66,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 - `deliver` and `courier`: the first rounds of the loop, headless, with the counter, briefings, standing and the notices of the ritual; `courier` walks parcels by hand from Drip Rock to the small drops 150 to 400 m away.
 - `customers`: a customer's order becomes an offer at the wholesaler's counter, the delivery pleases or lets the customer down, relationship and next order follow (#168).
 - `licence`: the seat refuses without the flight licence, the exam at the flight school's counter (fee, ship lent, the exam's events set by test hooks), pass with honours, the seat works (#169).
+- `map`: the pins (places, the tracked job's next stop, the player), M opens and closes the map; with a window a screenshot of it (#166).
 - `net`: the network bot (take off, cruise, turn, brake, land, repeat); see below.
 
 Other options: `--distance=<m>` (distance between the planet centres, default from `content/system/system.json`; frame zones that would reach past half of it shrink to 45 %, a distance too short for the arrival radii is refused), `--origin-shift=<m>` (render-origin threshold, 0 = off, default 1000), `--radius=<m>` (first planet, overrides the file), `--record=<file>` (write the run's ship and walker path for the replay matrix), `--no-vsync` (frame-time measurements; with vsync every frame reads the display's period).

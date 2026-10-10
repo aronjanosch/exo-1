@@ -1,5 +1,5 @@
 {
-  "_comment": "Which key feeds which action. Key names are Bevy's KeyCode names. Axes: z is back (W is negative). deadzone (0..1) and curve apply to analog sources only (the pad, the virtual-joystick mouse); keyboard keys are digital. The same key may serve several actions. Gamepad or joystick: buttons as \"Pad:<GamepadButton>\" (raw: \"Pad:Button<n>\"), an axis per action as \"pad\": \"<GamepadAxis>\" (\"-\" in front inverts, raw HOTAS axes: \"Axis<n>\"). turn_pitch and turn_yaw are stick only; on foot the stick turns the view at pad.look_rate_deg. landing_mode: the axis model's landing mode, TODO(initiator): the key (K for now). skip_notices: runs the queued banners and toasts fast (#165). decline and next_offer: at a giver's counter (#167). turn_cap: A/B switch for the axis model's G-safety turn cap (#118). mouse.ship_mode: \"vjoy\" (the mouse moves a virtual stick; ship_sensitivity is radians of stick offset per pixel) or \"direct\" (radians of turn per pixel).",
+  "_comment": "Which key feeds which action. Key names are Bevy's KeyCode names. Axes: z is back (W is negative). deadzone (0..1) and curve apply to analog sources only (the pad, the virtual-joystick mouse); keyboard keys are digital. The same key may serve several actions. Gamepad or joystick: buttons as \"Pad:<GamepadButton>\" (raw: \"Pad:Button<n>\"), an axis per action as \"pad\": \"<GamepadAxis>\" (\"-\" in front inverts, raw HOTAS axes: \"Axis<n>\"). turn_pitch and turn_yaw are stick only; on foot the stick turns the view at pad.look_rate_deg. landing_mode: the axis model's landing mode, TODO(initiator): the key (K for now). skip_notices: runs the queued banners and toasts fast (#165). decline and next_offer: at a giver's counter (#167). map: opens the map, track_job: tracks the next active job (#166). turn_cap: A/B switch for the axis model's G-safety turn cap (#118). mouse.ship_mode: \"vjoy\" (the mouse moves a virtual stick; ship_sensitivity is radians of stick offset per pixel) or \"direct\" (radians of turn per pixel).",
   "move_x": { "positive": ["KeyD"], "negative": ["KeyA"], "pad": "LeftStickX", "deadzone": 0.1 },
   "move_y": { "positive": ["Space", "Pad:RightTrigger2"], "negative": ["ControlLeft", "Pad:LeftTrigger2"] },
   "move_z": { "positive": ["KeyS"], "negative": ["KeyW"], "pad": "-LeftStickY", "deadzone": 0.1 },
@@ -28,6 +28,8 @@
   "skip_notices": ["Enter"],
   "decline": ["Backspace"],
   "next_offer": ["Tab"],
+  "map": ["KeyM"],
+  "track_job": ["KeyT"],
   "mouse": {
     "ship_mode": "vjoy",
     "ship_sensitivity": 0.002,

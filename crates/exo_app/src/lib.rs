@@ -13,6 +13,7 @@ pub mod hot_reload;
 pub mod hud;
 pub mod interact;
 pub mod look;
+pub mod map;
 pub mod menu;
 pub mod net;
 pub mod net_live;
@@ -301,7 +302,7 @@ pub fn build_app(o: &Options) -> App {
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
     app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, cargo::plugin, hud::plugin, net_live::plugin));
     app.add_plugins(gameplay::plugin);
-    app.add_plugins(flight_events::plugin);
+    app.add_plugins((flight_events::plugin, map::plugin));
     // Scenarios start with the licences earned (their pilots are not the examinees), except the
     // one about the licence itself (#169).
     if o.scenario.as_deref().is_some_and(|n| n != "licence") {
@@ -322,7 +323,7 @@ pub fn build_app(o: &Options) -> App {
     });
     if !o.headless {
         app.add_plugins((view::plugin, controls::window_plugin, settings::window_plugin, terrain::plugin, daynight::window_plugin, grab::window_plugin, cargo::window_plugin));
-        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, gameplay::window_plugin, notices::window_plugin));
+        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin));
         if o.menu() {
             app.add_plugins(menu::plugin);
         }

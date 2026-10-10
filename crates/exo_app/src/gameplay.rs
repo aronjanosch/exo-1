@@ -104,6 +104,8 @@ pub struct Gameplay {
     /// The job line as shown: money, the active job.
     pub readout: String,
     clock: f64,
+    /// The job whose next stop is the pointer and the map's target (#166).
+    pub tracked: Option<JobId>,
     /// The counter the player has open: a giver's briefing with accept and decline (#167).
     pub panel: Option<Panel>,
     /// Briefings already assembled, by offer and the giver's mood then: an offer reads the same
@@ -170,7 +172,7 @@ impl Gameplay {
         let customers = Customers::new(&customer_content, CUSTOMER_SEED);
         let progress = Progress::new(&kernel);
         let jobs = Jobs::default();
-        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(TEXT_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, customers, customer_content, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, briefings: Default::default() };
+        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(TEXT_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, customers, customer_content, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, tracked: None, briefings: Default::default() };
         g.refresh_offers();
         g
     }
@@ -281,6 +283,25 @@ impl Gameplay {
         let exam = self.jobs_content.licences_allowing("pilot_ship").first().map(|l| l.exam.clone());
         let school = exam.and_then(|e| self.jobs_content.templates.get(&e)).and_then(|t| t.record.giver.clone()).and_then(|g| self.jobs_content.givers.get(&g)).map(|g| self.text(&g.record.name));
         format!("needs the flight licence{}", school.map(|s| format!(": exam at {s}")).unwrap_or_default())
+    }
+
+    /// Keeps the tracked job an active one: a job that ended is replaced by the next active job.
+    pub fn refresh_tracking(&mut self) {
+        if self.tracked.and_then(|j| self.jobs.get(j)).is_some_and(|j| j.state == JobState::Active) {
+            return;
+        }
+        self.tracked = self.jobs.active().next().map(|j| j.id);
+    }
+
+    /// Tracks the next active job after the tracked one (T).
+    pub fn track_next(&mut self) {
+        let active: Vec<JobId> = self.jobs.active().map(|j| j.id).collect();
+        if active.is_empty() {
+            self.tracked = None;
+            return;
+        }
+        let at = self.tracked.and_then(|t| active.iter().position(|j| *j == t));
+        self.tracked = Some(active[at.map_or(0, |i| (i + 1) % active.len())]);
     }
 
     /// Declines: the panel closes, the offer stays.
@@ -499,6 +520,7 @@ pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>
         }
     }
     gp.refresh_offers();
+    gp.refresh_tracking();
     gp.pace_notices(dt);
 }
 
@@ -599,19 +621,20 @@ pub fn update_readout(
         if let Some(left) = j.time_left(&t.record) {
             s += &format!(", {left:.0} s left");
         }
-        // Where to next: the pickup while crates wait there, else the dropoff.
-        if let Some(l) = j.legs.first() {
-            let waiting = l.crates.values().any(|m| *m == jobs_core::CrateMark::Waiting);
-            if let Some(p) = point(&gp, if waiting { &l.from } else { &l.to }) {
-                s += &format!("\n{} {p}", if waiting { "pick up:" } else { "deliver to:" });
-            }
+        // Where to next (only for the tracked job, T switches): the pickup while crates wait, else the dropoff.
+        if gp.tracked == Some(j.id)
+            && let Some((loc, stop)) = jobs_core::map::next_stop(j)
+            && let Some(p) = point(&gp, &loc)
+        {
+            s += &format!("\n{} {p}", if stop == jobs_core::map::Stop::Pickup { "pick up:" } else { "deliver to:" });
         }
     }
+    // With nothing active: where a giver's counter with jobs on offer is.
     if gp.jobs.active().next().is_none()
-        && let Some(l) = gp.jobs.all().find(|j| j.state == JobState::Offered).and_then(|j| j.legs.first())
-        && let Some(p) = point(&gp, &l.from)
+        && let Some(g) = gp.jobs_content.givers.values().map(|g| &g.record).find(|g| !gp.offers_of(&g.id).is_empty() && gp.pad_of(&g.location).is_some())
+        && let Some(p) = point(&gp, &g.location)
     {
-        s += &format!("\njob on offer: {p}");
+        s += &format!("\njobs at the counter: {p}");
     }
     gp.readout = s;
 }

@@ -104,6 +104,10 @@ pub enum Tap {
     Decline,
     /// The next offer at the open counter (#167).
     NextOffer,
+    /// Open or close the map (#166).
+    Map,
+    /// Track the next active job: its next stop is the pointer and the map's target (#166).
+    TrackJob,
 }
 
 impl Axis {
@@ -134,7 +138,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 17] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::LandingMode, Tap::TurnCap, Tap::SkipNotices, Tap::Decline, Tap::NextOffer];
+    pub const ALL: [Tap; 19] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::LandingMode, Tap::TurnCap, Tap::SkipNotices, Tap::Decline, Tap::NextOffer, Tap::Map, Tap::TrackJob];
     pub fn name(self) -> &'static str {
         match self {
             Tap::Interact => "interact",
@@ -154,6 +158,8 @@ impl Tap {
             Tap::SkipNotices => "skip_notices",
             Tap::Decline => "decline",
             Tap::NextOffer => "next_offer",
+            Tap::Map => "map",
+            Tap::TrackJob => "track_job",
         }
     }
 }
@@ -353,6 +359,9 @@ impl Bindings {
                 // ... and no `decline` or `next_offer` (#167).
                 (Tap::Decline, None) => Ok(vec![Input::Key(KeyCode::Backspace)]),
                 (Tap::NextOffer, None) => Ok(vec![Input::Key(KeyCode::Tab)]),
+                // ... and no `map` or `track_job` (#166).
+                (Tap::Map, None) => Ok(vec![Input::Key(KeyCode::KeyM)]),
+                (Tap::TrackJob, None) => Ok(vec![Input::Key(KeyCode::KeyT)]),
                 _ => Err(err(t.name(), "missing".into())),
             }
         };

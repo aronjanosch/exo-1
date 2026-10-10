@@ -11,6 +11,7 @@
 //!   assembled from their parts (#167).
 //! - `licence`: licences, per player, earned with an exam (an exam is a job template with checks:
 //!   take off, reach a pad, land; #169).
+//! - `map`: the map's pin list and the tracked job's next stop (#166).
 //! - `grading`: payout = reward × band(delivered share) × condition factor × hazard factor.
 //!
 //! This crate reads only domain events and kernel state; it never calls another system.
@@ -20,6 +21,7 @@ pub mod grading;
 pub mod id;
 pub mod job;
 pub mod licence;
+pub mod map;
 pub mod template;
 
 pub use briefing::{Briefing, briefing, briefing_with};

@@ -1,6 +1,6 @@
 //! #135: a job half done is saved to the file, the gameplay restarts from it, and the job finishes.
 //! Without a window.
-mod common;
+use crate::common;
 use exo_app::Options;
 
 #[test]

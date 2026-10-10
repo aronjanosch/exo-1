@@ -1,6 +1,6 @@
 //! #170: courier jobs on foot, take the job at the counter, carry the parcel to the next place, get
 //! paid. Without a window.
-mod common;
+use crate::common;
 use exo_app::Options;
 
 #[test]

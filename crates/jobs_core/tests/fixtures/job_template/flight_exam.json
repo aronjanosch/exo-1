@@ -1,0 +1,25 @@
+{
+  "_comment": "Test fixture: an exam. Take off, reach the Bent Spoon pad, land on it, set a crate down undamaged. Fee, retry fee, honours: starting values.",
+  "id": "flight_exam",
+  "title": "job.flight_exam.title",
+  "brief": "job.flight_exam.brief",
+  "objectives": [
+    { "take_off": {} },
+    { "reach_pad": { "at": "bent_spoon" } },
+    { "land": { "at": "bent_spoon", "max_mps": 6.0 } },
+    { "deliver": { "from": { "location": "drip_rock" }, "to": { "location": "bent_spoon" }, "commodity": { "one_of": ["fizzy_mud"] }, "amount": [1, 1] } }
+  ],
+  "reward": 0,
+  "grading": { "bands": [ { "share": 1.0, "pays": 1.0 } ], "condition_weight": 0.5 },
+  "deadline_s": 240,
+  "track": "freight_xp",
+  "xp": 20,
+  "available": { "not": { "track_at_least": { "track": "licence_flight", "value": 1 } } },
+  "exam": {
+    "fee": 150,
+    "retry_fee": 75,
+    "grants": "licence_flight",
+    "min_condition": 0.8,
+    "honours": { "max_touchdown_mps": 2.5, "within_s": 150, "giver": "courier", "standing": 10 }
+  }
+}

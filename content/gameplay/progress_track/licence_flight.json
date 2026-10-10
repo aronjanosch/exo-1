@@ -1,0 +1,1 @@
+{ "_comment": "The flight licence (#169): 0 or 1, per player. The exam sets it.", "id": "licence_flight", "name": "track.licence_flight.name", "owner": "player" }

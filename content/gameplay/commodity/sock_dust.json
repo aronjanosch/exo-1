@@ -1,0 +1,8 @@
+{
+  "_comment": "Invented good, legal but odd (#168): dust from odd socks. Price is a starting value (TODO(initiator)); the customer price in price_table/start.json equals it.",
+  "id": "sock_dust",
+  "name": "commodity.sock_dust.name",
+  "base_price": 30,
+  "crate_size": "small",
+  "tags": ["dry"]
+}

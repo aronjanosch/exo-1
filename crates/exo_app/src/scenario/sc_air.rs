@@ -1,6 +1,6 @@
 //! Scenario `sc-air` (#199): the SC model's air through `Controls`. Sit, F7 to the SC model, then
-//! 50 m over the ground at rest: hover 5 s with wind compensation off (Y) and the ship drifts
-//! downwind; on again (Y), it holds. Down to 40 m, fly forward at speed: the turbulence shows. Climb
+//! 50 m over the ground at rest: hover 5 s with wind compensation off (I) and the ship drifts
+//! downwind; on again (I), it holds. Down to 40 m, fly forward at speed: the turbulence shows. Climb
 //! to 1000 m with Space: no turbulence up there. Each result is a check line with its numbers.
 use crate::controls::Controls;
 use crate::scenario::{altitude, begin, check, end, keys, hold_until, planet, put_at_seat, ship_e, ship_vel, sit, tap, teleport_ship, with_ship, Step};
@@ -52,7 +52,7 @@ fn track(name: &'static str, ks: &'static [KeyCode], limit: f64, until: fn(&mut 
 
 fn tap_y() -> Step {
     Box::new(|w, _| {
-        tap(w, KeyCode::KeyY);
+        tap(w, KeyCode::KeyI);
         true
     })
 }
@@ -81,7 +81,7 @@ pub fn sc_air_steps(s: &mut Vec<Step>) {
     // Wind compensation off: the wind pushes the ship downwind.
     s.push(Box::new(|w, c| {
         c.p.insert("h0", ship_pos(w));
-        tap(w, KeyCode::KeyY);
+        tap(w, KeyCode::KeyI);
         true
     }));
     s.push(hold_until("hover 5 s, wind compensation off", &[], 5.0, |_| false));

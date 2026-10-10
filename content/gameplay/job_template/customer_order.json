@@ -1,0 +1,14 @@
+{
+  "_comment": "The template customers' orders become offers of (#168). Places, commodity, amount, reward and deadline of the offer come from the order; the numbers here are placeholders that never pay.",
+  "id": "customer_order",
+  "title": "job.customer_order.title",
+  "brief": "job.customer_order.brief",
+  "giver": "wholesaler",
+  "objectives": [
+    { "deliver": { "from": { "tagged": "wholesale" }, "to": { "tagged": "courier_drop" }, "commodity": { "one_of": ["sock_dust"] }, "amount": [1, 1] } }
+  ],
+  "reward": 1,
+  "grading": { "bands": [ { "share": 0.5, "pays": 0.5 }, { "share": 1.0, "pays": 1.0 } ], "condition_weight": 0.5 },
+  "track": "freight_xp",
+  "xp": 10
+}

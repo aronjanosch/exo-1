@@ -1,0 +1,1 @@
+{ "_comment": "Test fixture.", "id": "flight", "name": "licence.flight.name", "track": "licence_flight", "exam": "flight_exam", "allows": ["pilot_ship"] }

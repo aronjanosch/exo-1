@@ -108,7 +108,7 @@ pub enum Tap {
     Comstab,
     /// SC model: proximity assist on or off. TODO(initiator): the key (P for now).
     ProximityAssist,
-    /// SC model: wind compensation on or off. TODO(initiator): the key (Y for now).
+    /// SC model: wind compensation on or off. TODO(initiator): the key (I for now; Y abandons a job).
     WindComp,
     /// SC model: the speed limiter one step up or down. TODO(initiator): the keys (Page Up and Page
     /// Down for now; the mouse wheel later).
@@ -116,6 +116,18 @@ pub enum Tap {
     LimiterDown,
     /// Playtest switch: the camera's shake, spring lag and G field of view (F9, #148, #149).
     CameraFx,
+    /// Run the queued banners and toasts (the arrival ritual) fast (#165).
+    SkipNotices,
+    /// Close a giver's counter without taking the job (#167).
+    Decline,
+    /// The next offer at the open counter (#167).
+    NextOffer,
+    /// Open or close the map (#166).
+    Map,
+    /// Track the next active job: its next stop is the pointer and the map's target (#166).
+    TrackJob,
+    /// Drop the tracked job: the first press asks, a second within a few seconds drops it (#132).
+    AbandonJob,
 }
 
 impl Axis {
@@ -146,7 +158,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 22] = [
+    pub const ALL: [Tap; 28] = [
         Tap::Interact,
         Tap::Throw,
         Tap::HoverAssist,
@@ -169,6 +181,12 @@ impl Tap {
         Tap::WindComp,
         Tap::LimiterUp,
         Tap::LimiterDown,
+        Tap::SkipNotices,
+        Tap::Decline,
+        Tap::NextOffer,
+        Tap::Map,
+        Tap::TrackJob,
+        Tap::AbandonJob,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -194,6 +212,12 @@ impl Tap {
             Tap::WindComp => "wind_comp",
             Tap::LimiterUp => "limiter_up",
             Tap::LimiterDown => "limiter_down",
+            Tap::SkipNotices => "skip_notices",
+            Tap::Decline => "decline",
+            Tap::NextOffer => "next_offer",
+            Tap::Map => "map",
+            Tap::TrackJob => "track_job",
+            Tap::AbandonJob => "abandon_job",
         }
     }
 }
@@ -398,9 +422,19 @@ impl Bindings {
                 (Tap::MasterMode, None) => Ok(vec![Input::Key(KeyCode::KeyB)]),
                 (Tap::Comstab, None) => Ok(vec![Input::Key(KeyCode::KeyU)]),
                 (Tap::ProximityAssist, None) => Ok(vec![Input::Key(KeyCode::KeyP)]),
-                (Tap::WindComp, None) => Ok(vec![Input::Key(KeyCode::KeyY)]),
+                (Tap::WindComp, None) => Ok(vec![Input::Key(KeyCode::KeyI)]),
                 (Tap::LimiterUp, None) => Ok(vec![Input::Key(KeyCode::PageUp)]),
                 (Tap::LimiterDown, None) => Ok(vec![Input::Key(KeyCode::PageDown)]),
+                // ... and no `skip_notices` (#165).
+                (Tap::SkipNotices, None) => Ok(vec![Input::Key(KeyCode::Enter)]),
+                // ... and no `decline` or `next_offer` (#167).
+                (Tap::Decline, None) => Ok(vec![Input::Key(KeyCode::Backspace)]),
+                (Tap::NextOffer, None) => Ok(vec![Input::Key(KeyCode::Tab)]),
+                // ... and no `map` or `track_job` (#166).
+                (Tap::Map, None) => Ok(vec![Input::Key(KeyCode::KeyM)]),
+                (Tap::TrackJob, None) => Ok(vec![Input::Key(KeyCode::KeyT)]),
+                // ... and no `abandon_job` (#132).
+                (Tap::AbandonJob, None) => Ok(vec![Input::Key(KeyCode::KeyY)]),
                 _ => Err(err(t.name(), "missing".into())),
             }
         };
@@ -852,7 +886,7 @@ mod tests {
             let j = i + old[i..].find('\n').unwrap() + 1;
             old.replace_range(i..j, "");
         }
-        let mut a = resolve(&Bindings::from_json(&old).unwrap(), &raw(&[], &[KeyB, KeyU, KeyP, KeyY, PageUp, PageDown]));
+        let mut a = resolve(&Bindings::from_json(&old).unwrap(), &raw(&[], &[KeyB, KeyU, KeyP, KeyI, PageUp, PageDown]));
         for t in [Tap::MasterMode, Tap::Comstab, Tap::ProximityAssist, Tap::WindComp, Tap::LimiterUp, Tap::LimiterDown] {
             assert!(a.take_tap(t), "{}", t.name());
         }

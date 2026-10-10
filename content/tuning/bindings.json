@@ -1,5 +1,5 @@
 {
-  "_comment": "Which key feeds which action. Key names are Bevy's KeyCode names. Axes: z is back (W is negative). deadzone (0..1) and curve apply to analog sources only (the pad, the virtual-joystick mouse); keyboard keys are digital. The same key may serve several actions. Gamepad or joystick: buttons as \"Pad:<GamepadButton>\" (raw: \"Pad:Button<n>\"), an axis per action as \"pad\": \"<GamepadAxis>\" (\"-\" in front inverts, raw HOTAS axes: \"Axis<n>\"). turn_pitch and turn_yaw are stick only; on foot the stick turns the view at pad.look_rate_deg. landing_mode: the axis model's landing mode, TODO(initiator): the key (K for now). turn_cap: A/B switch for the axis model's G-safety turn cap (#118). thrust_law: F7 switch for the two thrust rules (cap refuses thrust, brake keeps the heading; #185), off by default. camera_fx: the camera shake, spring lag and G field of view on or off (#148, #149). mouse.ship_mode: \"vjoy\" (the mouse moves a virtual stick; ship_sensitivity is radians of stick offset per pixel) or \"direct\" (radians of turn per pixel).",
+  "_comment": "Which key feeds which action. Key names are Bevy's KeyCode names. Axes: z is back (W is negative). deadzone (0..1) and curve apply to analog sources only (the pad, the virtual-joystick mouse); keyboard keys are digital. The same key may serve several actions. Gamepad or joystick: buttons as \"Pad:<GamepadButton>\" (raw: \"Pad:Button<n>\"), an axis per action as \"pad\": \"<GamepadAxis>\" (\"-\" in front inverts, raw HOTAS axes: \"Axis<n>\"). turn_pitch and turn_yaw are stick only; on foot the stick turns the view at pad.look_rate_deg. landing_mode: the axis model's landing mode, TODO(initiator): the key (K for now). turn_cap: A/B switch for the axis model's G-safety turn cap (#118). mouse.ship_mode: \"vjoy\" (the mouse moves a virtual stick; ship_sensitivity is radians of stick offset per pixel) or \"direct\" (radians of turn per pixel). flight_model (F7, round 5): the axis model or the SC model; in the SC model H switches gravity compensation, C coupled or decoupled, F8 G-safe, K landing mode; master_mode (SCM or NAV), comstab, proximity_assist, wind_comp and limiter_up/limiter_down (the speed limiter) are the SC model's switches. A file that still says thrust_law keeps that key for flight_model. TODO(initiator): the SC switches' keys.",
   "move_x": { "positive": ["KeyD"], "negative": ["KeyA"], "pad": "LeftStickX", "deadzone": 0.1 },
   "move_y": { "positive": ["Space", "Pad:RightTrigger2"], "negative": ["ControlLeft", "Pad:LeftTrigger2"] },
   "move_z": { "positive": ["KeyS"], "negative": ["KeyW"], "pad": "-LeftStickY", "deadzone": 0.1 },
@@ -25,8 +25,14 @@
   "boost_mode": ["F6"],
   "landing_mode": ["KeyK"],
   "turn_cap": ["F8"],
-  "thrust_law": ["F7"],
+  "flight_model": ["F7"],
   "camera_fx": ["F9"],
+  "master_mode": ["KeyB"],
+  "comstab": ["KeyU"],
+  "proximity_assist": ["KeyP"],
+  "wind_comp": ["KeyY"],
+  "limiter_up": ["PageUp"],
+  "limiter_down": ["PageDown"],
   "mouse": {
     "ship_mode": "vjoy",
     "ship_sensitivity": 0.002,

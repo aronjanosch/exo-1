@@ -25,6 +25,9 @@ pub enum Mode {
     Suit,
     Fly,
     Ship { assist: bool, decoupled: bool },
+    /// The SC flight model (F7, round 5): the switches a pilot most needs to see. The full flight
+    /// panel is lane `sc-hud`'s.
+    ShipSc { decoupled: bool, grav_comp: bool, nav: bool },
     /// The quantum drive's phase while it is not idle.
     Quantum(String),
 }
@@ -89,6 +92,9 @@ pub fn readout(i: &HudIn) -> HudReadout {
         Mode::Ship { assist: false, .. } => "SHIP  ASSIST OFF".into(),
         Mode::Ship { decoupled: true, .. } => "SHIP  DECOUPLED".into(),
         Mode::Ship { .. } => "SHIP".into(),
+        Mode::ShipSc { decoupled, grav_comp, nav } => {
+            format!("SHIP SC  {}  {}{}", if *nav { "NAV" } else { "SCM" }, if *decoupled { "DECOUPLED" } else { "COUPLED" }, if *grav_comp { "" } else { "  NO GRAV COMP" })
+        }
         Mode::Quantum(phase) => format!("QUANTUM {}", phase.to_uppercase()),
     };
     let alt = match i.altitude {
@@ -116,15 +122,19 @@ pub fn update_readout(
     mut out: ResMut<HudReadout>,
 ) {
     let (Ok(pl), Ok((ship, sp, sv, sr))) = (players.single(), ships.single()) else { return };
-    let landing = if pl.seated { landing_word(ship.ctl.landing_mode) } else { "" };
+    let sc = ship.model == crate::ship::FlightModel::Sc;
+    let landing = if pl.seated { landing_word(if sc { ship.sc.modes.landing } else { ship.ctl.landing_mode }) } else { "" };
     let (mode, v, pos, boost) = if pl.seated {
         let mode = if wd.drive.phase != warp_core::Phase::Idle {
             Mode::Quantum(format!("{:?}", wd.drive.phase))
+        } else if sc {
+            let m = &ship.sc.modes;
+            Mode::ShipSc { decoupled: !m.coupled, grav_comp: m.grav_comp, nav: m.master == flight_core::sc::Master::Nav }
         } else {
             Mode::Ship { assist: ship.ctl.hover_assist, decoupled: !ship.ctl.coupled }
         };
-        let (cap, t) = (&ship.ctl.boost, &ship.ctl.tuning.boost_capacitor);
-        let boost = if ship.ctl.boost_stage || t.drain_time <= 0.0 { Boost::Stage(cap.active) } else { Boost::Ship { charge: cap.charge, active: cap.active, ready: cap.ready(t) } };
+        let (cap, t, stage) = if sc { (&ship.sc.drive.boost, &ship.sc.tuning.drive.boost_capacitor, false) } else { (&ship.ctl.boost, &ship.ctl.tuning.boost_capacitor, ship.ctl.boost_stage) };
+        let boost = if stage || t.drain_time <= 0.0 { Boost::Stage(cap.active) } else { Boost::Ship { charge: cap.charge, active: cap.active, ready: cap.ready(t) } };
         (mode, sv.0, sp.0, boost)
     } else if pl.ship.is_some() {
         (Mode::Cabin, sv.0 + sr.0 * pl.w.vel, sp.0, Boost::None)

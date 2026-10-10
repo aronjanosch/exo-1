@@ -1,0 +1,6 @@
+{
+  "_comment": "SC flight model (flight_core::sc::linear::LinearTuning). TODO(initiator): every value. scm and nav: speed caps per master mode in m/s (cruise for full stick in any direction, boost_forward and boost_backward at full boost, at least cruise), in vacuum; the air lowers them (sc_air.json cap_share). decay 1/s: coupled asks for decay times the velocity error.",
+  "scm": { "cruise": 150.0, "boost_forward": 250.0, "boost_backward": 200.0 },
+  "nav": { "cruise": 400.0, "boost_forward": 700.0, "boost_backward": 400.0 },
+  "decay": 3.0
+}

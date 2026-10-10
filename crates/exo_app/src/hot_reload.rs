@@ -21,7 +21,21 @@ pub fn plugin(dir: PathBuf) -> impl Plugin {
     }
 }
 
-const FILES: [&str; 7] = ["ship.json", "walker.json", "suit.json", "camera.json", "bindings.json", "grab.json", "hud.json"];
+const FILES: [&str; 13] = [
+    "ship.json",
+    "walker.json",
+    "suit.json",
+    "camera.json",
+    "bindings.json",
+    "grab.json",
+    "hud.json",
+    "sc_ship.json",
+    "sc_modes.json",
+    "sc_linear.json",
+    "sc_angular.json",
+    "sc_drive.json",
+    "sc_air.json",
+];
 const POLL: Duration = Duration::from_millis(250);
 
 #[derive(Resource)]
@@ -36,7 +50,8 @@ pub struct HotReload {
 impl HotReload {
     /// Starts from the embedded files: shipped files on disk that equal them change nothing.
     pub fn new(dir: PathBuf) -> HotReload {
-        let loaded = [crate::tuning::SHIP, crate::tuning::WALKER, crate::tuning::SUIT, crate::tuning::CAMERA, crate::controls::BINDINGS, crate::tuning::GRAB, crate::tuning::HUD].map(String::from).to_vec();
+        let mut loaded = [crate::tuning::SHIP, crate::tuning::WALKER, crate::tuning::SUIT, crate::tuning::CAMERA, crate::controls::BINDINGS, crate::tuning::GRAB, crate::tuning::HUD].map(String::from).to_vec();
+        loaded.extend(crate::tuning::SC.map(String::from));
         HotReload { dir, loaded, next: Instant::now(), reloads: 0, last_error: None }
     }
 
@@ -55,6 +70,7 @@ fn parse(texts: &[String]) -> Result<(Tuning, Bindings), String> {
             camera: flight_core::camera::CameraTuning::from_json(&texts[3])?,
             grab: grab_core::GrabConfig::from_json(&texts[5])?,
             hud: crate::hud::HudTuning::from_json(&texts[6])?,
+            sc: flight_core::sc::ScTuning::from_json([&texts[7], &texts[8], &texts[9], &texts[10], &texts[11], &texts[12]])?,
         },
         Bindings::from_json(&texts[4])?,
     ))
@@ -88,6 +104,7 @@ pub fn poll(
             }
             for mut s in &mut ships {
                 s.ctl.tuning = t.ship.clone();
+                s.sc.tuning = t.sc.clone();
             }
             for mut p in &mut players {
                 p.w.cfg = t.walker;

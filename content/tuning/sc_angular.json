@@ -1,0 +1,5 @@
+{
+  "_comment": "SC flight model (flight_core::sc::angular::AngularTuning). TODO(initiator): every value. rate rad/s at full stick (pitch and yaw share an ellipse); decay 1/s: the flight computer asks for decay times the rate error, inside the torque box (sc_ship.json torque over inertia).",
+  "rate": { "pitch": 1.4, "yaw": 1.1, "roll": 2.4 },
+  "decay": 12.0
+}

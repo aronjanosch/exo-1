@@ -7,6 +7,7 @@ pub mod audio;
 pub mod axis;
 pub mod camera;
 pub mod hud;
+pub mod sc;
 
 pub use axis::{AxisState, Dirs, GSafety, Precision, Rot, SpaceCaps, G0};
 
@@ -652,11 +653,12 @@ pub struct ShipController {
     pub boost_strength: f64,
     /// Dev switch (F6): boost as the speed stage of #24, the capacitor ignored. Not a tuning value.
     pub boost_stage: bool,
-    /// F7 switch, A3: at the speed cap in its direction of travel, thrust cannot make the ship
-    /// faster (steering still turns it). Not a tuning value; off by default.
+    /// A3 (#185): at the speed cap in its direction of travel, thrust cannot make the ship faster
+    /// (steering still turns it). On since round 5 (the initiator: "F7 ist besser"); off only in
+    /// the comparison test.
     pub cap_refuses_thrust: bool,
-    /// F7 switch, B2: the brake decelerates along the actual velocity (the heading holds). Not a
-    /// tuning value; off by default.
+    /// B2 (#185): the brake decelerates along the actual velocity (the heading holds). On since
+    /// round 5, like A3.
     pub brake_keeps_heading: bool,
     /// Landing mode (K, spike 13): the precision band near the ground is on.
     pub landing_mode: bool,
@@ -694,8 +696,8 @@ impl ShipController {
             boost: BoostCapacitor::default(),
             boost_strength: 0.0,
             boost_stage: false,
-            cap_refuses_thrust: false,
-            brake_keeps_heading: false,
+            cap_refuses_thrust: true,
+            brake_keeps_heading: true,
             landing_mode: false,
             axis: AxisState::default(),
             ground_hold: None,

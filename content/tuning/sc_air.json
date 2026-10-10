@@ -1,0 +1,6 @@
+{
+  "_comment": "SC flight model (flight_core::sc::air::AirTuning). TODO(initiator): every value. thrust_share: share of the thrust at full air density (1 in vacuum, blended by the density); cap_share: share of the speed caps at full density; drag_k: quadratic drag a = k * density * v².",
+  "thrust_share": 0.6,
+  "cap_share": 0.6,
+  "drag_k": 0.0005
+}

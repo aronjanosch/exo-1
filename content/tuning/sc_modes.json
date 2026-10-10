@@ -1,0 +1,6 @@
+{
+  "_comment": "SC flight model (flight_core::sc::modes::ModeTuning). TODO(initiator): every value. decouple_time: seconds coupled and decoupled blend over (C, both directions); limiter_step: share of the cap one speed limiter step moves; limiter_min: the lowest share.",
+  "decouple_time": 4.0,
+  "limiter_step": 0.1,
+  "limiter_min": 0.1
+}

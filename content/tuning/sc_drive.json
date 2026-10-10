@@ -1,0 +1,12 @@
+{
+  "_comment": "SC flight model (flight_core::sc::drive::DriveTuning). TODO(initiator): every value. boost_capacitor as in ship.json (drain_time, recharge_time, recharge_delay s, start_charge, strength_curve (charge, share of the full boost), restart_while_held); boost_thrust: multipliers on the thrust per direction at full boost (the brake always gets them).",
+  "boost_capacitor": {
+    "drain_time": 3.0,
+    "recharge_time": 6.0,
+    "recharge_delay": 1.0,
+    "start_charge": 0.2,
+    "strength_curve": { "interp": "linear", "points": [[0, 0], [1, 1]] },
+    "restart_while_held": false
+  },
+  "boost_thrust": { "forward": 2.0, "backward": 1.5, "left": 1.25, "right": 1.25, "up": 1.25, "down": 1.25 }
+}

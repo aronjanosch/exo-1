@@ -27,6 +27,10 @@ pub fn window_plugin(app: &mut App) {
 
 pub const BINDINGS: &str = include_str!("../../../content/tuning/bindings.json");
 
+/// Actions that existed once: a player's saved `bindings.json` may still name them, and they are
+/// skipped instead of throwing away the whole file (the axis flight model's F7, F6 and L, #206).
+const REMOVED_ACTIONS: [&str; 4] = ["flight_model", "thrust_law", "boost_mode", "horizon_follow"];
+
 /// Raw input, written by the keyboard and mouse (`read_input`) or by a scenario script.
 #[derive(Resource, Default)]
 pub struct Controls {
@@ -362,7 +366,7 @@ impl Bindings {
         let obj = v.as_object().ok_or("bindings.json: not an object")?;
         let err = |action: &str, why: String| format!("bindings.json: action `{action}`: {why}");
         let known: Vec<&str> = Axis::ALL.iter().map(|a| a.name()).chain(Button::ALL.iter().map(|b| b.name())).chain(Tap::ALL.iter().map(|t| t.name())).chain(["mouse", "pad", "_comment", "seat"]).collect();
-        if let Some(k) = obj.keys().find(|k| !known.contains(&k.as_str())) {
+        if let Some(k) = obj.keys().find(|k| !known.contains(&k.as_str()) && !REMOVED_ACTIONS.contains(&k.as_str())) {
             return Err(err(k, "unknown action".into()));
         }
         let get = |name: &str| obj.get(name).ok_or_else(|| err(name, "missing".into()));
@@ -974,6 +978,9 @@ mod tests {
     #[test]
     fn validation_names_the_action() {
         rejects("\"boost\":", "\"bost\": [\"KeyB\"], \"boost\":", "`bost`: unknown action");
+        // A saved file from before #206 still loads; its removed actions are skipped.
+        let old = BINDINGS.replacen("\"boost\":", "\"flight_model\": [\"F7\"], \"horizon_follow\": [\"KeyL\"], \"boost\":", 1);
+        assert!(Bindings::from_json(&old).is_ok(), "removed actions are skipped");
         rejects("\"lag\": [\"KeyG\"]", "\"lag\": [\"KeyGG\"]", "`lag`: unknown key name `KeyGG`");
         rejects("\"lag\": [\"KeyG\"]", "\"lag\": []", "`lag`: no key");
         rejects("\"roll\": {", "\"roll\": { \"deadzone\": 1.5,", "`roll`: deadzone");

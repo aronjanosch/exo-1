@@ -26,8 +26,8 @@ const MERGE_FACTOR: f64 = 1.8;
 /// TODO(initiator): value and feel.
 const UPLOAD_BUDGET_MS: f64 = 1.5;
 /// Mesh bytes handed to the renderer per frame; the render thread's mesh allocator copies them
-/// (about 100 kB per chunk with its water). TODO(initiator): value.
-const UPLOAD_BYTES_PER_FRAME: usize = 1 << 20;
+/// (about 100 kB per chunk with its water; u16 indices, a chunk has 35 x 35 vertices). TODO(initiator): value.
+const UPLOAD_BYTES_PER_FRAME: usize = 320 << 10;
 /// Chunk jobs in flight per pool thread, so the nearest chunks are not stuck behind far ones.
 const JOBS_PER_THREAD: usize = 2;
 /// Seconds the camera is projected along its motion for job priority and children prefetch.
@@ -122,7 +122,7 @@ pub struct Terrain {
     max_depth: u32,
     pub material: Handle<crate::terrain_material::TerrainMaterial>,
     pub water: Handle<crate::sky::WaterMaterial>,
-    indices: Arc<Vec<u32>>,
+    indices: Arc<Vec<u16>>,
     cache: HashMap<CacheKey, (u64, Meshes)>,
     cache_stamp: u64,
     /// Camera in planet space this frame, and projected along its motion.
@@ -144,12 +144,12 @@ pub struct Terrain {
 use crate::terrain_material::{srgb_to_linear, TerrainMaterial};
 
 /// The index pattern every chunk shares.
-fn chunk_indices() -> Vec<u32> {
+fn chunk_indices() -> Vec<u16> {
     let mut indices = Vec::with_capacity((M - 1) * (M - 1) * 6);
     for j in 0..M - 1 {
         for i in 0..M - 1 {
-            let k00 = (j * M + i) as u32;
-            let (k10, k01) = (k00 + 1, k00 + M as u32);
+            let k00 = (j * M + i) as u16;
+            let (k10, k01) = (k00 + 1, k00 + M as u16);
             let k11 = k01 + 1;
             // Counter-clockwise front faces (Bevy).
             indices.extend([k00, k10, k01, k10, k11, k01]);
@@ -167,12 +167,12 @@ fn water_surface(out: &ChunkOut, w: &[[f32; 3]], tris: &[u32]) -> Mesh {
     Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, w.to_vec())
         .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, water_normals(out, w))
-        .with_inserted_indices(Indices::U32(tris.to_vec()))
+        .with_inserted_indices(Indices::U16(tris.iter().map(|&k| k as u16).collect()))
 }
 
 /// The meshes of a chunk (pure, runs on the pool): the terrain, its sea, and lakes and rivers
 /// (#72, their own vertices and triangles, the sea's material).
-pub fn build_meshes(out: &ChunkOut, indices: &[u32]) -> BuiltChunk {
+pub fn build_meshes(out: &ChunkOut, indices: &[u16]) -> BuiltChunk {
     // The biome palette (#66): ground + cap share as the colour, rock in UV0 + UV1.x, strata
     // share in UV1.y (see terrain_material.rs).
     let colors: Vec<[f32; 4]> = out.colors.iter().map(|c| [srgb_to_linear(c[0]), srgb_to_linear(c[1]), srgb_to_linear(c[2]), c[3]]).collect();
@@ -184,7 +184,7 @@ pub fn build_meshes(out: &ChunkOut, indices: &[u32]) -> BuiltChunk {
         .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colors)
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uv0)
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_1, uv1)
-        .with_inserted_indices(Indices::U32(indices.to_vec()));
+        .with_inserted_indices(Indices::U16(indices.to_vec()));
     let water = out.water.as_ref().map(|w| water_surface(out, w, &out.water_tris));
     let inland = out.inland_water.as_ref().map(|(w, tris)| water_surface(out, w, tris));
     let bytes = [Some(&mesh), water.as_ref(), inland.as_ref()].into_iter().flatten().map(|m| m.get_vertex_buffer_size() + m.get_index_buffer_bytes().map_or(0, |b| b.len())).sum();

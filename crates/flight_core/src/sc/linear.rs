@@ -175,9 +175,14 @@ pub struct LinearState {
     /// m/s, world: the fall gravity adds while gravity compensation is off. The goal moves with it,
     /// so the assist does not fight the fall. Dropped when compensation comes back on.
     pub fall: DVec3,
-    /// The frame the goal turns in: the nose with comstab on, lagging behind it with comstab off.
+    /// The frame the goal turns in: the nose at rest or with comstab on, lagging while moving
+    /// with comstab off.
     pub aim: DQuat,
 }
+
+/// m/s: below this the precise HUD rounds to 0.00. At rest the goal has no old heading;
+/// active braking also finishes at exact zero (unbraked slow movement is not cut).
+pub(super) const STOP_SPEED: f64 = 0.005;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct LinearOut {
@@ -231,8 +236,9 @@ pub fn step(s: &mut LinearState, f: &Frame, input: &FlightInput, m: &Modes, e: &
     let forward = lerp(c.cruise, c.boost_forward, e.boost) * scale;
     let backward = lerp(c.cruise, c.boost_backward, e.boost) * scale;
 
-    // Comstab: the goal turns with the nose at once, or follows it with a lag.
-    s.aim = if m.comstab || t.comstab_off_lag <= 0.0 { f.rot } else { s.aim.slerp(f.rot, 1.0 - (-f.dt / t.comstab_off_lag).exp()) };
+    // Comstab: only a moving ship remembers its old heading. Update every resting step so a
+    // turn on the spot, including the first thrust afterwards, uses the current nose.
+    s.aim = if m.comstab || f.v.length_squared() < STOP_SPEED * STOP_SPEED || t.comstab_off_lag <= 0.0 { f.rot } else { s.aim.slerp(f.rot, 1.0 - (-f.dt / t.comstab_off_lag).exp()) };
     let goal_loc = DVec3::new(stick.x * cruise, stick.y * cruise, stick.z * if stick.z < 0.0 { forward } else { backward });
     let goal_stick = s.aim * goal_loc;
 

@@ -8,12 +8,10 @@
   "unlock.bent_spoon_permit.name": "Bent Spoon landing permit",
   "job.first_haul.title": "First haul",
   "job.first_haul.brief": "Three crates of fizzy mud for Bent Spoon. They fizz less if you don't drop them.",
-
   "track.standing_courier_office.name": "standing with Dinglepost Couriers",
   "track.standing_small_family.name": "standing with the Gribbles",
   "job.family_errand.title": "A small favour",
   "job.family_errand.brief": "Two crates of fizzy mud, no questions.",
-
   "commodity.parcel.name": "wobbly parcel",
   "location.lint_trap.name": "Lint Trap",
   "location.noodle_post.name": "Noodle Post",
@@ -29,14 +27,12 @@
     "Wobbly parcels hate being late and being dropped, in that order.",
     "Nobody knows what is in it. That is the charm."
   ],
-
   "commodity.sock_dust.name": "sock dust",
   "commodity.grumble_jelly.name": "grumble jelly",
   "location.slosh_wholesale.name": "Slosh & Daughter Wholesale",
   "track.standing_wholesaler.name": "standing with Slosh & Daughter",
   "job.customer_order.title": "A customer's order",
   "job.customer_order.brief": "Goods from the wholesaler for a customer who is waiting.",
-
   "giver.wholesaler.name": "Slosh & Daughter Wholesale",
   "giver.wholesaler.greet.first": [
     "Wholesale, retail, and everything in between. Mostly in between.",
@@ -53,10 +49,21 @@
     "A customer called. Several times. Loudly.",
     "Let us make this one go better. For the jelly's sake."
   ],
-  "giver.wholesaler.intro": ["Orders are up on the board.", "Somebody wants something.", "Customers, customers, customers."],
-  "giver.wholesaler.reason": ["Somebody is waiting for this.", "Somebody paid in advance. Mostly.", "It is on the house. The house disagrees."],
-  "giver.wholesaler.signoff": ["Do not shake it.", "Bring the empties back. Do not bring the empties back.", "Mind the grumbling."],
-
+  "giver.wholesaler.intro": [
+    "Orders are up on the board.",
+    "Somebody wants something.",
+    "Customers, customers, customers."
+  ],
+  "giver.wholesaler.reason": [
+    "Somebody is waiting for this.",
+    "Somebody paid in advance. Mostly.",
+    "It is on the house. The house disagrees."
+  ],
+  "giver.wholesaler.signoff": [
+    "Do not shake it.",
+    "Bring the empties back. Do not bring the empties back.",
+    "Mind the grumbling."
+  ],
   "customer.mabel_snood.name": "Mabel Snood",
   "customer.mabel_snood.order_title": "Order for Mabel Snood",
   "customer.mabel_snood.order": [
@@ -113,14 +120,12 @@
     "New order from {customer}.",
     "{customer} is waiting for goods."
   ],
-
   "location.skyhook_school.name": "Skyhook Flight School",
   "track.licence_flight.name": "flight licence",
   "track.standing_flight_school.name": "standing with Skyhook Flight School",
   "licence.flight.name": "Flight licence",
   "job.flight_exam.title": "Flight licence exam",
   "job.flight_exam.brief": "Take off, fly to the Drip Rock pad, land on it gently and set the school's crate down. The ship is lent for the exam.",
-
   "giver.flight_school.name": "Skyhook Flight School",
   "giver.flight_school.greet.first": [
     "Want to fly? Everybody wants to fly. Few want to land.",
@@ -137,20 +142,46 @@
     "Everybody crashes once. Some twice. Half price for the second.",
     "The ground was there the whole time. Remember that."
   ],
-  "giver.flight_school.intro": ["Here is how it goes.", "The exam is short, the lesson is long.", "Listen carefully, then ignore half of it."],
-  "giver.flight_school.reason": ["Without a licence the seat refuses you. It has opinions.", "A licence makes you a pilot, on paper.", "The crate is part of the test. It is also fragile."],
-  "giver.flight_school.signoff": ["Up, over, down. In that order.", "Do not land on anyone.", "Mind the ground. It is closer than it looks."],
-
-  "notice.exam.passed": ["LICENCE PASSED: you may fly. Do not let it go to your head.", "EXAM PASSED. The seat now knows you.", "PASSED. You are a pilot, officially."],
-  "notice.exam.honours": ["PASSED WITH HONOURS! The school is moved to tears, a little.", "HONOURS! A soft landing and a good time. Show-off.", "EXAM PASSED, HONOURS. The seat purrs."],
-  "notice.exam.failed": ["Exam failed. A retry costs {retry}.", "Not this time. The retry costs {retry}.", "The ground won. Try again for {retry}."],
+  "giver.flight_school.intro": [
+    "Here is how it goes.",
+    "The exam is short, the lesson is long.",
+    "Listen carefully, then ignore half of it."
+  ],
+  "giver.flight_school.reason": [
+    "Without a licence the seat refuses you. It has opinions.",
+    "A licence makes you a pilot, on paper.",
+    "The crate is part of the test. It is also fragile."
+  ],
+  "giver.flight_school.signoff": [
+    "Up, over, down. In that order.",
+    "Do not land on anyone.",
+    "Mind the ground. It is closer than it looks."
+  ],
+  "notice.exam.passed": [
+    "LICENCE PASSED: you may fly. Do not let it go to your head.",
+    "EXAM PASSED. The seat now knows you.",
+    "PASSED. You are a pilot, officially."
+  ],
+  "notice.exam.honours": [
+    "PASSED WITH HONOURS! The school is moved to tears, a little.",
+    "HONOURS! A soft landing and a good time. Show-off.",
+    "EXAM PASSED, HONOURS. The seat purrs."
+  ],
+  "notice.exam.failed": [
+    "Exam failed. A retry costs {retry}.",
+    "Not this time. The retry costs {retry}.",
+    "The ground won. Try again for {retry}."
+  ],
   "notice.licence.needed": [
     "The seat refuses: you need the flight licence. Take the exam at Skyhook Flight School.",
     "No licence, no seat. Skyhook Flight School gives exams.",
     "The seat says no. Ride along, or go and pass the exam at Skyhook."
   ],
-  "notice.refused.cannot_afford": ["Not enough credits for that.", "Your wallet declines.", "Come back with more credits."],
-
+  "notice.refused.cannot_afford": [
+    "Not enough credits for that.",
+    "Your wallet declines.",
+    "Come back with more credits."
+  ],
   "giver.courier_office.name": "Dinglepost Couriers",
   "giver.courier_office.greet.first": [
     "New face! We always need a new face. The old ones keep quitting.",
@@ -182,7 +213,6 @@
     "Mind the fizz.",
     "Off you go. Walk briskly, not heroically."
   ],
-
   "giver.small_family.name": "The Gribbles",
   "giver.small_family.greet.first": [
     "Sit. You have a face we might remember.",
@@ -214,8 +244,11 @@
     "Be well. Be discreet.",
     "Go. The soup is getting cold."
   ],
-
-  "briefing.title": ["{title} for {giver}", "{giver} needs: {title}", "{title} ({giver})"],
+  "briefing.title": [
+    "{title} for {giver}",
+    "{giver} needs: {title}",
+    "{title} ({giver})"
+  ],
   "briefing.shape.few": [
     "Take {amount} crates of {commodity} from {from} to {to}.",
     "{amount} crates of {commodity}, {from} to {to}. Not far, not hard.",
@@ -246,10 +279,16 @@
     "It rains indoors over there. Hurry.",
     "Wet customers are angry customers."
   ],
-
-  "notice.reward.standing": ["{giver}: standing +{n}", "{giver} likes you a bit more (+{n})", "{giver} respects you now (+{n})"],
-  "notice.reward.standing_lost": ["{giver}: standing -{n}", "{giver} is less impressed (-{n})", "{giver} has notes about this (-{n})"],
-
+  "notice.reward.standing": [
+    "{giver}: standing +{n}",
+    "{giver} likes you a bit more (+{n})",
+    "{giver} respects you now (+{n})"
+  ],
+  "notice.reward.standing_lost": [
+    "{giver}: standing -{n}",
+    "{giver} is less impressed (-{n})",
+    "{giver} has notes about this (-{n})"
+  ],
   "notice.job.accepted": [
     "Job taken: {title}.",
     "You said yes to {title}. No refunds.",
@@ -298,13 +337,59 @@
     "One crate fewer. It was not insured.",
     "Crate lost. It had a good life."
   ],
-  "notice.reward.base": ["Base pay   {n}", "Pay   {n}", "Reward   {n}"],
-  "notice.reward.share": ["Delivered {delivered} of {asked}   {n}", "Share delivered ({delivered}/{asked})   {n}", "Partial pay ({delivered}/{asked})   {n}"],
-  "notice.reward.condition": ["Condition   {n}", "Crate condition   {n}", "Quality bonus   {n}"],
-  "notice.reward.hazard": ["Hazard bonus   {n}", "Danger money   {n}", "Risk pay   {n}"],
-  "notice.reward.xp": ["{n} {track}", "{track}: {n}", "{track} +{n}"],
-  "notice.unlock": ["Unlocked: {name}", "New thing: {name}", "You own {name} now."],
-  "notice.rank": ["{track}: level {level}!", "Level up! {track} is now level {level}.", "{track} reached level {level}."],
-  "notice.refused.too_many": ["Two jobs at a time is plenty.", "Your hands are full of jobs.", "Finish a job before you hoard another."],
-  "notice.refused.not_available": ["Not yet. Come back when you are someone.", "They do not know you well enough.", "You are not ready. Yet."]
+  "notice.reward.base": [
+    "Base pay   {n}",
+    "Pay   {n}",
+    "Reward   {n}"
+  ],
+  "notice.reward.share": [
+    "Delivered {delivered} of {asked}   {n}",
+    "Share delivered ({delivered}/{asked})   {n}",
+    "Partial pay ({delivered}/{asked})   {n}"
+  ],
+  "notice.reward.condition": [
+    "Condition   {n}",
+    "Crate condition   {n}",
+    "Quality bonus   {n}"
+  ],
+  "notice.reward.hazard": [
+    "Hazard bonus   {n}",
+    "Danger money   {n}",
+    "Risk pay   {n}"
+  ],
+  "notice.reward.xp": [
+    "{n} {track}",
+    "{track}: {n}",
+    "{track} +{n}"
+  ],
+  "notice.unlock": [
+    "Unlocked: {name}",
+    "New thing: {name}",
+    "You own {name} now."
+  ],
+  "notice.rank": [
+    "{track}: level {level}!",
+    "Level up! {track} is now level {level}.",
+    "{track} reached level {level}."
+  ],
+  "notice.refused.too_many": [
+    "Two jobs at a time is plenty.",
+    "Your hands are full of jobs.",
+    "Finish a job before you hoard another."
+  ],
+  "notice.refused.not_available": [
+    "Not yet. Come back when you are someone.",
+    "They do not know you well enough.",
+    "You are not ready. Yet."
+  ],
+  "effect.giggly.name": "Giggly",
+  "effect.floaty.name": "Floaty",
+  "effect.glowing.name": "Glowing",
+  "effect.sticky_fingers.name": "Sticky Fingers",
+  "effect.time_lag.name": "Time Lag",
+  "effect.loud_burps.name": "Loud Burps",
+  "effect.x_ray_eyes.name": "X-Ray Eyes",
+  "effect.backwards_talk.name": "Backwards Talk",
+  "effect.sleepy.name": "Sleepy",
+  "effect.tingly.name": "Tingly"
 }

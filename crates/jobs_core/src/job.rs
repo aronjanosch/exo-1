@@ -683,6 +683,8 @@ impl Jobs {
                 }
             }
             WorldEvent::PlayerJoined | WorldEvent::UnlockBought { .. } | WorldEvent::TrackChanged { .. } | WorldEvent::FlagRaised { .. } | WorldEvent::OrderSettled { .. } => {}
+            // Round 6 events belong to traffic, heat, production, buyers and the empire ladder.
+            _ => {}
         }
         notes.extend(ended.into_iter().flat_map(|(id, state)| self.end(jc, id, state)));
         notes

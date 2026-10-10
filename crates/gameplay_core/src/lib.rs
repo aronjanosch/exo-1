@@ -10,6 +10,7 @@
 //! - `notice`, `text`: notices (what a system reports), the pacing queue, text pools without repeats.
 //! - `rng`: a seeded generator.
 //! - `save`: the save envelope with a section per system, the kernel's and the world's sections.
+//! - `product`: a made product (base good, effects, quality), shared by production and buyers.
 //! - `progress`: track values (money, XP), owned tags, bought unlocks, raised flags.
 //!
 //! Systems talk to each other only through domain events and conditions. A system's outcome is
@@ -19,6 +20,7 @@ pub mod content;
 pub mod event;
 pub mod id;
 pub mod notice;
+pub mod product;
 pub mod progress;
 pub mod rng;
 pub mod save;
@@ -26,6 +28,7 @@ pub mod text;
 
 pub use condition::Condition;
 pub use content::{Content, File};
-pub use event::{Dedup, Event, EventId, WorldEvent};
+pub use event::{Dedup, Event, EventId, ScanChoice, ViolationKind, WorldEvent};
+pub use product::ProductSpec;
 pub use id::*;
 pub use progress::{Progress, Refusal};

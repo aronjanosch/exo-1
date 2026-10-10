@@ -199,8 +199,9 @@ enum Feed {
     Roar,
 }
 
+/// A looping sound and the level that feeds it.
 #[derive(Component)]
-struct Loop(Sound, Feed);
+struct Loop(Feed);
 
 /// Clicks heard this frame (counted in the fixed step, where taps live).
 #[derive(Resource, Default)]
@@ -221,7 +222,7 @@ fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
     let loops = [(Sound::Hum, Feed::Rumble), (Sound::Wind, Feed::Wind), (Sound::Hiss, Feed::Hiss(0)), (Sound::Hiss, Feed::Hiss(1)), (Sound::Hiss, Feed::Hiss(2)), (Sound::Roar, Feed::Roar)];
     for (s, feed) in loops {
         let h = assets.add(SynthAudio(s));
-        commands.spawn((AudioPlayer(h), PlaybackSettings { mode: PlaybackMode::Loop, volume: Volume::Linear(0.0), ..default() }, Loop(s, feed)));
+        commands.spawn((AudioPlayer(h), PlaybackSettings { mode: PlaybackMode::Loop, volume: Volume::Linear(0.0), ..default() }, Loop(feed)));
     }
     commands.insert_resource(Sounds {
         thud: assets.add(SynthAudio(Sound::Thud)),
@@ -267,7 +268,7 @@ fn update(
     let k = 1.0 - (-time.delta_secs() / 0.25).exp();
     let gate = |v: f64| if near_ship { v as f32 } else { 0.0 };
     for (l, mut sink) in &mut loops {
-        let level = match l.1 {
+        let level = match l.0 {
             Feed::Rumble => gate(layers.rumble),
             Feed::Hiss(axis) => gate(layers.hiss[2 * axis] + layers.hiss[2 * axis + 1]),
             Feed::Roar => gate(layers.boost),

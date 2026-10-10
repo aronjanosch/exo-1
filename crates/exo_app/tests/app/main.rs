@@ -9,6 +9,7 @@ mod contacts;
 mod headless_ticks;
 mod out_dirs;
 mod scenario_boost_hud;
+mod scenario_camera_g;
 mod scenario_crate_budget;
 mod scenario_crate_carry;
 mod scenario_crate_lock;
@@ -28,6 +29,7 @@ mod scenario_site;
 mod scenario_slope_landing;
 mod scenario_space;
 mod scenario_swap;
+mod scenario_thruster_audio;
 mod scenario_warp;
 mod session;
 

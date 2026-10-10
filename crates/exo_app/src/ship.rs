@@ -8,9 +8,10 @@ use bevy::prelude::*;
 use flight_core::{BodyState, FlightInput, Lag, ShipController, ShipTuning, VirtualStick};
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<CameraEffects>();
+    app.init_resource::<CameraEffects>().init_resource::<ThrusterLevels>();
     app.add_systems(FixedUpdate, ship_control.in_set(crate::phases::Fx::Ship));
     app.add_systems(FixedUpdate, camera_fx.in_set(crate::phases::Fx::Effects));
+    app.add_systems(FixedUpdate, thruster_fx.in_set(crate::phases::Fx::Effects));
 }
 
 /// Seat position in ship space.
@@ -250,4 +251,30 @@ pub fn camera_fx(
     let local = rot.0.inverse() * av.0;
     // The bump comes with the first hull contact (#110 point 4).
     fx.0.step(&tuning.camera, lv.0.length(), DVec2::new(local.x, local.y), -lv.0.dot(up), ship.grounded, time.delta_secs_f64());
+}
+
+/// Thruster sound layers of the own ship (#150), stepped with the simulation so scenarios can
+/// read the levels; the audio plays them.
+#[derive(Resource, Default)]
+pub struct ThrusterLevels(pub flight_core::audio::ThrusterAudio);
+
+/// Felt acceleration (g) at which the braking thrusters sound at full level (`TODO(initiator)`:
+/// start value, tune by ear).
+pub const BRAKE_FULL_G: f64 = 1.0;
+
+pub fn thruster_fx(time: Res<Time>, mut fx: ResMut<ThrusterLevels>, q: Query<(&Ship, &Rotation, &LinearVelocity)>) {
+    let Ok((ship, rot, lv)) = q.single() else { return };
+    let o = ship.ctl.ramp.out;
+    // Braking: the thrusters fire against the motion, so the layers follow the brake, not the
+    // (zero) pilot input. The level falls with the felt acceleration, so it fades at standstill.
+    let thrust = if ship.ctl.brake_active && !ship.parked {
+        let local = rot.0.inverse() * lv.0;
+        let s = (ship.ctl.axis.felt_g / BRAKE_FULL_G).min(1.0);
+        let against = -local.normalize_or_zero() * s;
+        [against.x, against.y, against.z]
+    } else {
+        [o[0], o[1], o[2]]
+    };
+    let signal = flight_core::audio::ThrusterSignal { thrust, boost: ship.ctl.boost.active, parked: ship.parked };
+    fx.0.step(signal, time.delta_secs_f64());
 }

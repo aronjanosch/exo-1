@@ -28,6 +28,7 @@ mod scenario_reload;
 mod scenario_sc_air;
 mod scenario_sc_hud;
 mod scenario_sc_switch;
+mod scenario_sc_turn;
 mod scenario_site;
 mod scenario_slope_landing;
 mod scenario_space;

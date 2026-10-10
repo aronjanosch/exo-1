@@ -5,7 +5,7 @@ mod sc_common;
 use flight_core::sc::angular::{self, AngularState, AngularTuning, Env};
 use flight_core::sc::modes::Modes;
 use flight_core::sc::{ModeCmds, ScShip};
-use flight_core::sc::Frame;
+use flight_core::sc::StepState;
 use flight_core::{BodyState, FlightInput, PlanetEnv};
 use glam::{DQuat, DVec2, DVec3};
 use sc_common::*;
@@ -169,7 +169,7 @@ fn g_safe_caps_a_full_pitch_at_cruise_and_off_it_does_not() {
 /// huge): the spring's acceleration is `dt * natural_frequency² * target` then.
 fn pitch_target(t: &AngularTuning, speed: f64, cap: f64, landing: bool, clearance: f64, g_safe: bool) -> f64 {
     let lv = DVec3::new(0.0, 0.0, -speed);
-    let f = Frame {
+    let f = StepState {
         rot: DQuat::IDENTITY,
         inv: DQuat::IDENTITY,
         pos: DVec3::ZERO,
@@ -228,7 +228,7 @@ fn yaw_steady_rate_is_below_pitch_with_the_shipped_tuning() {
 #[test]
 fn acceleration_stays_inside_the_box() {
     let t = tuning().angular;
-    let f = Frame {
+    let f = StepState {
         rot: DQuat::IDENTITY,
         inv: DQuat::IDENTITY,
         pos: DVec3::ZERO,

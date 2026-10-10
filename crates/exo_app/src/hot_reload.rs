@@ -22,7 +22,7 @@ pub fn plugin(dir: PathBuf) -> impl Plugin {
 }
 
 const FILES: [&str; 13] = [
-    "ship.json",
+    "ground.json",
     "walker.json",
     "suit.json",
     "camera.json",
@@ -50,7 +50,7 @@ pub struct HotReload {
 impl HotReload {
     /// Starts from the embedded files: shipped files on disk that equal them change nothing.
     pub fn new(dir: PathBuf) -> HotReload {
-        let mut loaded = [crate::tuning::SHIP, crate::tuning::WALKER, crate::tuning::SUIT, crate::tuning::CAMERA, crate::controls::BINDINGS, crate::tuning::GRAB, crate::tuning::HUD].map(String::from).to_vec();
+        let mut loaded = [crate::tuning::GROUND, crate::tuning::WALKER, crate::tuning::SUIT, crate::tuning::CAMERA, crate::controls::BINDINGS, crate::tuning::GRAB, crate::tuning::HUD].map(String::from).to_vec();
         loaded.extend(crate::tuning::SC.map(String::from));
         HotReload { dir, loaded, next: Instant::now(), reloads: 0, last_error: None }
     }

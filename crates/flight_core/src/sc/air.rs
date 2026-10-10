@@ -8,7 +8,7 @@
 //! `accel` (held by gravity compensation) or to `push` (never held), see `AirOut`. All values are
 //! TODO(initiator) placeholders in `content/tuning/sc_air.json`.
 use super::modes::Modes;
-use super::Frame;
+use super::StepState;
 use crate::{lerp, smoothstep};
 use glam::{DQuat, DVec3};
 use serde::Deserialize;
@@ -248,7 +248,7 @@ fn fractal(u: f64, ch: u64) -> f64 {
 }
 
 /// The wind at the ship (world): base wind plus gusts, both falling with the density.
-fn wind_at(s: &AirState, f: &Frame, t: &AirTuning) -> DVec3 {
+fn wind_at(s: &AirState, f: &StepState, t: &AirTuning) -> DVec3 {
     let up = if f.up.length_squared() > 0.5 { f.up } else { DVec3::Y };
     let dir = horizontal_dir(up, t.wind_dir_deg);
     let perp = up.cross(dir);
@@ -257,7 +257,7 @@ fn wind_at(s: &AirState, f: &Frame, t: &AirTuning) -> DVec3 {
     (dir * t.wind_speed + gust * t.gust_speed) * f.density
 }
 
-pub fn step(s: &mut AirState, f: &Frame, m: &Modes, t: &AirTuning) -> AirOut {
+pub fn step(s: &mut AirState, f: &StepState, m: &Modes, t: &AirTuning) -> AirOut {
     let d = f.density;
     let wind = wind_at(s, f, t);
 

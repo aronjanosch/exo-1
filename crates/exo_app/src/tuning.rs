@@ -7,7 +7,7 @@ use flight_core::GroundTuning;
 use grab_core::GrabConfig;
 use walker_core::{SuitConfig, WalkerConfig};
 
-pub const SHIP: &str = include_str!("../../../content/tuning/ship.json");
+pub const GROUND: &str = include_str!("../../../content/tuning/ground.json");
 pub const WALKER: &str = include_str!("../../../content/tuning/walker.json");
 pub const SUIT: &str = include_str!("../../../content/tuning/suit.json");
 pub const CAMERA: &str = include_str!("../../../content/tuning/camera.json");
@@ -25,7 +25,7 @@ pub const SC: [&str; 6] = [
 
 #[derive(Resource, Clone, Debug)]
 pub struct Tuning {
-    /// The ground rules of the ship (`ship.json`, #92).
+    /// The ground rules of the ship (`ground.json`, #92).
     pub ground: GroundTuning,
     pub walker: WalkerConfig,
     pub suit: SuitConfig,
@@ -38,7 +38,7 @@ pub struct Tuning {
 
 impl Tuning {
     pub fn load() -> Tuning {
-        Tuning { ground: ok(GroundTuning::from_json(SHIP)), walker: ok(WalkerConfig::from_json(WALKER)), suit: ok(SuitConfig::from_json(SUIT)), camera: ok(CameraTuning::from_json(CAMERA)), grab: ok(GrabConfig::from_json(GRAB)), hud: ok(crate::hud::HudTuning::from_json(HUD)), sc: ok(ScTuning::from_json(SC)) }
+        Tuning { ground: ok(GroundTuning::from_json(GROUND)), walker: ok(WalkerConfig::from_json(WALKER)), suit: ok(SuitConfig::from_json(SUIT)), camera: ok(CameraTuning::from_json(CAMERA)), grab: ok(GrabConfig::from_json(GRAB)), hud: ok(crate::hud::HudTuning::from_json(HUD)), sc: ok(ScTuning::from_json(SC)) }
     }
 }
 

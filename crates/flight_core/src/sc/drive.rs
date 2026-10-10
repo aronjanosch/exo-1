@@ -5,7 +5,8 @@
 //! `begin`: the boost is held for `boost_pre_delay`, ramps up over `boost_ramp_up`, runs on the
 //! capacitor (with the idle cost while held) and ramps down over `boost_ramp_down` after release.
 //! `shape`: four thruster groups (main forward, retro backward, vertical up and down, lateral
-//! left and right) each wait `spool_delay` after a fresh request (a running boost skips the wait),
+//! left and right) each wait `spool_delay` after a fresh request, keeping what they give meanwhile
+//! (a running boost skips the wait),
 //! countering boost gets a share of the aligned boost, and every group's thrust and the angular
 //! acceleration build up at most at their jerk (cutting is immediate).
 use crate::limits::{Dirs, Rot};
@@ -44,8 +45,8 @@ pub struct DriveTuning {
     pub boost_capacitor: BoostCapacitorTuning,
     /// Multipliers on the thrust per direction at full boost.
     pub boost_thrust: Dirs,
-    /// s: a fresh request in a group gives no thrust until it has lasted this long (a running
-    /// boost skips it).
+    /// s: a fresh request in a group gives no more than the group gives now until it has lasted
+    /// this long (a running boost skips it).
     pub spool_delay: Groups,
     /// m/s³ per group: how fast the group's thrust may change.
     pub jerk: Groups,
@@ -204,14 +205,15 @@ pub fn shape(s: &mut DriveState, a: &Asked, t: &DriveTuning, dt: f64) -> Given {
             want[i] = want[i].clamp(-cap, cap);
         }
     }
-    // Spool per group: a pilot request that has not lasted `spool_delay` gives nothing yet. The
-    // flight computer's own thrust in a group with no request (the hold against gravity) passes.
+    // Spool per group: a pilot request that has not lasted `spool_delay` keeps the group's current
+    // thrust, capped at its target (#208), so it gives nothing new yet. The flight computer's own
+    // thrust in a group with no request (the hold against gravity) passes.
     let targets = [want[2].min(0.0), want[2].max(0.0), want[1], want[0]];
     let st = a.stick.to_array();
     let requests = [st[2].min(0.0), st[2].max(0.0), st[1], st[0]];
     let delays = [t.spool_delay.main, t.spool_delay.retro, t.spool_delay.vertical, t.spool_delay.lateral];
     let jerks = [t.jerk.main, t.jerk.retro, t.jerk.vertical, t.jerk.lateral];
-    // Spool: what each group may give now (a request still spooling gives nothing).
+    // Spool: what each group may give now (a request still spooling holds its current thrust).
     let mut goals = [0.0; 4];
     for g in 0..4 {
         let grp = &mut s.groups[g];
@@ -230,7 +232,18 @@ pub fn shape(s: &mut DriveState, a: &Asked, t: &DriveTuning, dt: f64) -> Given {
             }
             grp.waited >= delays[g] || a.boost > 0.0
         };
-        goals[g] = if passing { targets[g] } else { 0.0 };
+        // A group still spooling keeps what it gives now, never more than its target: the hold
+        // against gravity stays up while the pilot's press waits (#208).
+        goals[g] = if passing {
+            targets[g]
+        } else {
+            let (cur, t) = (grp.value, targets[g]);
+            if cur * t > 0.0 {
+                t.signum() * cur.abs().min(t.abs())
+            } else {
+                0.0
+            }
+        };
     }
     // Jerk: a group cuts its thrust at once (a thruster stops when told) and builds it up at most
     // at its jerk; the groups that build up share one factor, so the thrust keeps its direction

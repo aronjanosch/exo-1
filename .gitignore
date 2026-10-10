@@ -1,5 +1,5 @@
 # Rust build output
-/target/
+target/
 
 # Builds and release archives
 /build/

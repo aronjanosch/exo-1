@@ -32,7 +32,7 @@ use glam::{DQuat, DVec3};
 
 /// What one step sees, computed once before the stages run.
 #[derive(Clone, Copy, Debug)]
-pub struct Frame {
+pub struct StepState {
     pub rot: DQuat,
     pub inv: DQuat,
     /// World position and velocity.
@@ -55,13 +55,13 @@ pub struct Frame {
     pub dt: f64,
 }
 
-impl Frame {
-    pub fn new(body: &BodyState, env: &impl PlanetEnv, dt: f64) -> Frame {
+impl StepState {
+    pub fn new(body: &BodyState, env: &impl PlanetEnv, dt: f64) -> StepState {
         let inv = body.rot.inverse();
         let p = env.to_planet(body.pos);
         let up = p.normalize_or_zero();
         let altitude = p.length() - env.radius();
-        Frame {
+        StepState {
             rot: body.rot,
             inv,
             pos: body.pos,
@@ -246,7 +246,7 @@ impl ScShip {
 
     /// One physics step.
     pub fn step(&mut self, body: &BodyState, input: &FlightInput, cmds: &ModeCmds, env: &impl PlanetEnv, dt: f64) -> ScOut {
-        let f = Frame::new(body, env, dt);
+        let f = StepState::new(body, env, dt);
         self.modes.update(cmds, &self.tuning.modes, dt);
         let braking = input.piloted && input.brake;
         let boost = drive::begin(&mut self.drive, input.boost, braking, &self.tuning.drive, dt);

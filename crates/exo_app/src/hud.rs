@@ -106,7 +106,7 @@ impl Badge {
 }
 
 /// The panel's badge slots (the most the SC model shows at once).
-pub const BADGE_SLOTS: usize = 13;
+pub const BADGE_SLOTS: usize = 12;
 /// Seconds a toast stays in the tests (the game reads `hud.json` `toast_time`).
 #[cfg(test)]
 const TOAST_TIME: f64 = 1.5;
@@ -200,20 +200,12 @@ pub fn blend_of(coupling: f64) -> Option<f64> {
     (coupling > BLEND_EPS && coupling < 1.0 - BLEND_EPS).then_some(coupling)
 }
 
-/// The model's word (`SC`); empty off the seat.
-pub fn model_word(p: &Panel) -> &'static str {
-    match p {
-        Panel::None => "",
-        Panel::Sc { .. } => "SC",
-    }
-}
-
 fn coupling_badges(b: &mut Vec<Badge>, coupled: bool) {
     b.push(Badge::half("COUPLED", coupled));
     b.push(Badge::half("DECOUPLED", !coupled));
 }
 
-/// The panel's badges in order (#197): the model, the coupling pair, the switches, the limiter
+/// The panel's badges in order (#197): the coupling pair, the switches, the limiter
 /// (only below 100 %), landing and brake.
 pub fn badges(i: &HudIn) -> Vec<Badge> {
     let mut b = Vec::new();
@@ -221,7 +213,6 @@ pub fn badges(i: &HudIn) -> Vec<Badge> {
     match &i.panel {
         Panel::None => return b,
         Panel::Sc { coupled, grav_comp, g_safe, comstab, proximity, wind_comp, nav, limiter, braking, .. } => {
-            b.push(Badge::new("MODEL", "SC", true));
             coupling_badges(&mut b, *coupled);
             b.push(Badge::new("GRAV COMP", "GRAV COMP", *grav_comp));
             b.push(Badge::new("G-SAFE", "G-SAFE", *g_safe));
@@ -261,22 +252,20 @@ fn first_change(prev: &[Badge], now: &[Badge]) -> Option<String> {
     changes.into_iter().next()
 }
 
-/// Turns the badges' changes into toasts (#197). The first step only records the state. A model
-/// switch toasts `MODEL` alone. A later change replaces the toast.
+/// Turns the badges' changes into toasts (#197). The first step only records the state. A later
+/// change replaces the toast.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Toaster {
     prev: Option<Vec<Badge>>,
-    model: &'static str,
     left: f64,
     text: Option<String>,
 }
 
 impl Toaster {
     /// One fixed step of `dt` s; returns the toast to show now.
-    pub fn step(&mut self, badges: &[Badge], model: &'static str, dt: f64, time: f64) -> Option<String> {
+    pub fn step(&mut self, badges: &[Badge], dt: f64, time: f64) -> Option<String> {
         let change = match &self.prev {
             None => None,
-            Some(_) if model != self.model => Some(format!("MODEL {model}")),
             Some(prev) => first_change(prev, badges),
         };
         match change {
@@ -292,7 +281,6 @@ impl Toaster {
             }
         }
         self.prev = Some(badges.to_vec());
-        self.model = model;
         self.text.clone()
     }
 }
@@ -454,7 +442,7 @@ pub fn update_readout(
         }
     };
     let mut new = readout(&HudIn { mode, panel: panel.clone(), speed: v.length(), altitude, boost, landing });
-    new.toast = toaster.step(&new.badges, model_word(&panel), time.delta_secs_f64(), tuning.hud.toast_time);
+    new.toast = toaster.step(&new.badges, time.delta_secs_f64(), tuning.hud.toast_time);
     if pl.seated || pl.ship.is_some() {
         let lin = &ship.sc.tuning.linear;
         let caps = lin.caps(ship.sc.modes.master);
@@ -589,7 +577,6 @@ mod panel_tests {
         let r = readout(&sc(0.5, true, false, 1.0));
         assert_eq!((on(&r, "COUPLED"), on(&r, "DECOUPLED")), (Some(false), Some(true)));
         assert_eq!(r.blend, Some(0.5));
-        assert_eq!(on(&r, "MODEL"), Some(true));
         // At rest the blend is gone.
         assert_eq!(readout(&sc(0.0, true, false, 1.0)).blend, None);
         assert_eq!(readout(&sc(1.0, true, false, 1.0)).blend, None);
@@ -599,7 +586,7 @@ mod panel_tests {
     fn the_sc_panel_lists_every_switch_in_order() {
         let r = readout(&sc(1.0, true, false, 1.0));
         let keys: Vec<_> = r.badges.iter().map(|b| b.key).collect();
-        assert_eq!(keys, ["MODEL", "COUPLED", "DECOUPLED", "GRAV COMP", "G-SAFE", "COMSTAB", "PROX", "WIND", "SCM", "NAV", "LANDING", "BRAKE"]);
+        assert_eq!(keys, ["COUPLED", "DECOUPLED", "GRAV COMP", "G-SAFE", "COMSTAB", "PROX", "WIND", "SCM", "NAV", "LANDING", "BRAKE"]);
         assert!(keys.len() <= BADGE_SLOTS);
         assert_eq!(on(&r, "SCM"), Some(true));
         assert_eq!(on(&r, "NAV"), Some(false));
@@ -626,39 +613,39 @@ mod panel_tests {
         let mut t = Toaster::default();
         let dt = 1.0 / 60.0;
         let on_step = readout(&sc(1.0, true, false, 1.0));
-        assert_eq!(t.step(&on_step.badges, "SC", dt, TOAST_TIME), None, "the first step only records");
+        assert_eq!(t.step(&on_step.badges, dt, TOAST_TIME), None, "the first step only records");
         let off = readout(&sc(1.0, false, false, 1.0));
-        assert_eq!(t.step(&off.badges, "SC", dt, TOAST_TIME).as_deref(), Some("GRAV COMP OFF"));
+        assert_eq!(t.step(&off.badges, dt, TOAST_TIME).as_deref(), Some("GRAV COMP OFF"));
         let mut shown = 0.0;
         while shown < TOAST_TIME - 0.1 {
-            assert_eq!(t.step(&off.badges, "SC", dt, TOAST_TIME).as_deref(), Some("GRAV COMP OFF"));
+            assert_eq!(t.step(&off.badges, dt, TOAST_TIME).as_deref(), Some("GRAV COMP OFF"));
             shown += dt;
         }
         for _ in 0..(0.2 / dt) as usize + 1 {
-            t.step(&off.badges, "SC", dt, TOAST_TIME);
+            t.step(&off.badges, dt, TOAST_TIME);
         }
-        assert_eq!(t.step(&off.badges, "SC", dt, TOAST_TIME), None);
+        assert_eq!(t.step(&off.badges, dt, TOAST_TIME), None);
     }
 
     #[test]
     fn a_new_change_replaces_the_toast() {
         let mut t = Toaster::default();
         let dt = 1.0 / 60.0;
-        t.step(&readout(&sc(1.0, true, false, 1.0)).badges, "SC", dt, TOAST_TIME);
+        t.step(&readout(&sc(1.0, true, false, 1.0)).badges, dt, TOAST_TIME);
         // Decouple: the DECOUPLED half toasts, the COUPLED half going off does not.
         let r = readout(&sc(0.4, true, false, 1.0));
-        assert_eq!(t.step(&r.badges, "SC", dt, TOAST_TIME).as_deref(), Some("DECOUPLED"));
+        assert_eq!(t.step(&r.badges, dt, TOAST_TIME).as_deref(), Some("DECOUPLED"));
         let r = readout(&sc(0.4, true, true, 1.0));
-        assert_eq!(t.step(&r.badges, "SC", dt, TOAST_TIME).as_deref(), Some("NAV"));
+        assert_eq!(t.step(&r.badges, dt, TOAST_TIME).as_deref(), Some("NAV"));
     }
 
     #[test]
     fn a_limiter_that_returns_to_full_speed_toasts_off() {
         let mut t = Toaster::default();
         let dt = 1.0 / 60.0;
-        t.step(&readout(&sc(1.0, true, false, 0.9)).badges, "SC", dt, TOAST_TIME);
-        assert_eq!(t.step(&readout(&sc(1.0, true, false, 0.8)).badges, "SC", dt, TOAST_TIME).as_deref(), Some("LIMIT 80 %"));
-        assert_eq!(t.step(&readout(&sc(1.0, true, false, 1.0)).badges, "SC", dt, TOAST_TIME).as_deref(), Some("LIMIT OFF"));
+        t.step(&readout(&sc(1.0, true, false, 0.9)).badges, dt, TOAST_TIME);
+        assert_eq!(t.step(&readout(&sc(1.0, true, false, 0.8)).badges, dt, TOAST_TIME).as_deref(), Some("LIMIT 80 %"));
+        assert_eq!(t.step(&readout(&sc(1.0, true, false, 1.0)).badges, dt, TOAST_TIME).as_deref(), Some("LIMIT OFF"));
     }
 
     #[test]

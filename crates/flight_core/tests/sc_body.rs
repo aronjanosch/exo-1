@@ -9,7 +9,7 @@ use flight_core::sc::{ModeCmds, ScShip};
 use flight_core::{BodyState, FlightInput};
 use glam::DVec3;
 use flight_core::PlanetEnv;
-use sc_common::{body_at, Air, Space, DT};
+use sc_common::{body_at, thrust, Air, Space, DT};
 
 /// The shipped tuning with caps far above what these runs reach: the checks measure the
 /// thrusters (spool, jerk, boost, mass), so the coupled law must keep asking for full thrust
@@ -132,6 +132,28 @@ fn the_hold_against_gravity_is_not_spooled() {
     println!("hover from rest: first step lift {lift:.3} m/s2, sag after 3 s {:.3} m", 500.0 - body.pos.y);
     assert!(lift > 0.0, "the hold lifts at once: {:?}", acc[0]);
     assert!((body.pos.y - 500.0).abs() < 0.05, "hover: height {:.3}", body.pos.y);
+}
+
+#[test]
+fn pressing_up_while_hovering_does_not_sag() {
+    // Hover from rest on the shipped tuning, then a fresh Space press (vertical up): the
+    // vertical spool must keep the hold against gravity while it waits, so the ship does not
+    // sag at the first press.
+    let env = Air { density: 0.0, ..Air::default() };
+    let mut ship = ScShip::new(sc_common::tuning());
+    let mut body = body_at(DVec3::new(0.0, 500.0, 0.0));
+    run_in(&mut ship, &mut body, &FlightInput { piloted: true, ..FlightInput::default() }, &env, 2.0);
+    let mut min_v = f64::MAX;
+    let n = (0.3 / DT).round() as usize;
+    for _ in 0..n {
+        let out = ship.step(&mut body, &thrust(DVec3::Y), &ModeCmds::default(), &env, DT);
+        min_v = min_v.min(out.lin_vel.y);
+        body.lin_vel = out.lin_vel;
+        body.ang_vel = out.ang_vel;
+        body.integrate(DT);
+    }
+    println!("hover, then Space: minimum vertical velocity over the first 0.3 s {min_v:.4} m/s");
+    assert!(min_v >= -0.05, "the ship sags at the press: minimum vertical velocity {min_v:.4} m/s");
 }
 
 #[test]

@@ -1,5 +1,7 @@
 {
-  "_comment": "HUD values (exo_app::hud::HudTuning, #91). agl_below: below this height above the ground (m, the terrain under the player from the CPU height function) the altitude element shows AGL, above it ALT, the height above the planet's reference sphere. Initiator, 2026-10-09: height above ground near the ground. TODO(initiator): the threshold is a starting value. toast_time: seconds the flight panel shows a switch change large in the middle (#197), TODO(initiator).",
+  "_comment": "HUD values (exo_app::hud::HudTuning, #91). agl_below: below this height above the ground (m, the terrain under the player from the CPU height function) the altitude element shows AGL, above it ALT, the height above the planet's reference sphere. Initiator, 2026-10-09: height above ground near the ground. TODO(initiator): the threshold is a starting value. toast_time: seconds the flight panel shows a switch change large in the middle (#197), TODO(initiator). g_full: g at the full scale of the flight HUD G bar (#200), TODO(initiator). velocity_min: m/s below which the flight path marker is hidden (#200), TODO(initiator).",
   "agl_below": 1000.0,
-  "toast_time": 1.5
+  "toast_time": 1.5,
+  "g_full": 10.0,
+  "velocity_min": 1.0
 }

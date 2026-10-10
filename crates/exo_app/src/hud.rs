@@ -8,7 +8,7 @@ use crate::env::PlanetRes;
 use crate::ship::Ship;
 use crate::view::NEAR_PLANET;
 use crate::walker::Player;
-use bevy::math::DVec3;
+use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 
 pub fn plugin(app: &mut App) {
@@ -148,6 +148,8 @@ pub struct HudReadout {
     pub g_text: String,
     /// The last change, for `TOAST_TIME` s; set by `Toaster::step` in `update_readout`.
     pub toast: Option<String>,
+    /// The flight HUD (#200): seated or in a cabin; `None` otherwise.
+    pub flight: Option<FlightHud>,
 }
 
 /// The landing mode's HUD word. TODO(initiator): the word (spike 13).
@@ -203,6 +205,7 @@ pub fn readout(i: &HudIn) -> HudReadout {
         cap_text,
         g_text,
         toast: None,
+        flight: None,
     }
 }
 
@@ -316,6 +319,108 @@ impl Toaster {
     }
 }
 
+/// The flight HUD's inputs from the ship (#200), plain values of the model's own numbers.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlightIn {
+    /// m/s, ship space (x right, y up, z back): the ship's velocity.
+    pub lv: DVec3,
+    /// Signed thrust share per ship axis, -1..1 (x right, y up, z back).
+    pub thrust: DVec3,
+    /// m/s: the cruise cap at full stick, the first mark on the tape.
+    pub cruise: f64,
+    /// m/s: the boost cap, the top of the tape.
+    pub boost: f64,
+    /// Speed limiter share of the cruise cap, 1 = off.
+    pub limiter: f64,
+    /// g: the felt acceleration.
+    pub felt_g: f64,
+    /// g: the G-safe forward limit.
+    pub g_limit: f64,
+    /// Pitch and roll in degrees; `None` far from planets (no horizon).
+    pub horizon: Option<(f64, f64)>,
+}
+
+/// The speed tape: fill and marks as shares of the boost cap (the top), the speed number.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpeedTape {
+    pub fill: f64,
+    pub number: String,
+    /// The cruise cap's mark.
+    pub cruise: f64,
+    /// The limiter's mark (cruise cap x limiter), only below full speed.
+    pub limiter: Option<f64>,
+}
+
+/// The G bar: fill and the G-safe mark as shares of the full scale; `over` above the mark.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GBar {
+    pub fill: f64,
+    pub mark: f64,
+    pub over: bool,
+}
+
+/// The flight HUD's plain values (#200): the speed tape, the thrust cross, the G bar, the
+/// horizon and the flight path marker's direction in ship space.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlightHud {
+    pub speed_tape: SpeedTape,
+    /// Right, left, up, down, forward, back: each bar's length as a share of full thrust, 0..1.
+    pub thrust: [f64; 6],
+    pub g_bar: GBar,
+    /// Pitch and roll in degrees (`None` in space).
+    pub horizon: Option<(f64, f64)>,
+    /// Unit direction of the velocity in ship space; `None` below `velocity_min`.
+    pub velocity_dir: Option<DVec3>,
+}
+
+/// The speed tape's marks and fill (m/s in, shares of the boost cap out).
+pub fn speed_tape(speed: f64, cruise: f64, limiter: f64, boost: f64) -> SpeedTape {
+    let share = |v: f64| (v / boost).clamp(0.0, 1.0);
+    SpeedTape {
+        fill: share(speed),
+        number: format!("{speed:.0}"),
+        cruise: share(cruise),
+        limiter: (limiter < 1.0).then(|| share(cruise * limiter)),
+    }
+}
+
+/// The thrust cross's six bar lengths, 0..1: right, left, up, down, forward, back (z back is +).
+pub fn thrust_bars(share: DVec3) -> [f64; 6] {
+    let c = |v: f64| v.clamp(0.0, 1.0);
+    [c(share.x), c(-share.x), c(share.y), c(-share.y), c(-share.z), c(share.z)]
+}
+
+/// The G bar: the felt g over the full scale, the G-safe limit as the mark.
+pub fn g_bar(felt_g: f64, limit: f64, full: f64) -> GBar {
+    GBar { fill: (felt_g / full).clamp(0.0, 1.0), mark: (limit / full).clamp(0.0, 1.0), over: felt_g > limit }
+}
+
+/// The flight path marker's direction in ship space; `None` below `min_speed` m/s.
+pub fn velocity_dir(lv: DVec3, min_speed: f64) -> Option<DVec3> {
+    (lv.length() >= min_speed && lv.length() > 0.0).then(|| lv.normalize())
+}
+
+/// Pitch (nose up positive) and roll (right wing up positive) in degrees, against the planet's
+/// up. The roll is measured in the plane across the forward axis, so it holds when pitched.
+pub fn horizon_angles(rot: DQuat, planet_up: DVec3) -> (f64, f64) {
+    let (fwd, right, up_ship) = (rot * DVec3::NEG_Z, rot * DVec3::X, rot * DVec3::Y);
+    let pitch = fwd.dot(planet_up).clamp(-1.0, 1.0).asin().to_degrees();
+    let p = planet_up - fwd * planet_up.dot(fwd);
+    let roll = p.dot(right).atan2(p.dot(up_ship)).to_degrees();
+    (pitch, roll)
+}
+
+/// The flight HUD's plain values from the ship's numbers (#200).
+pub fn flight_hud(i: &FlightIn, t: &HudTuning) -> FlightHud {
+    FlightHud {
+        speed_tape: speed_tape(i.lv.length(), i.cruise, i.limiter, i.boost),
+        thrust: thrust_bars(i.thrust),
+        g_bar: g_bar(i.felt_g, i.g_limit, t.g_full),
+        horizon: i.horizon,
+        velocity_dir: velocity_dir(i.lv, t.velocity_min),
+    }
+}
+
 /// Fills `HudReadout` after the step (fixed step, also headless).
 pub fn update_readout(
     planet: Res<PlanetRes>,
@@ -377,6 +482,20 @@ pub fn update_readout(
     };
     let mut new = readout(&HudIn { mode, panel: panel.clone(), speed: v.length(), altitude, boost, landing });
     new.toast = toaster.step(&new.badges, model_word(&panel), time.delta_secs_f64(), tuning.hud.toast_time);
+    if pl.seated || pl.ship.is_some() {
+        let (cruise, boost, limiter, felt_g, g_limit, thrust) = if sc {
+            let lin = &ship.sc.tuning.linear;
+            let caps = lin.caps(ship.sc.modes.master);
+            (caps.cruise, caps.boost_forward, ship.sc.status.limiter, ship.sc.status.felt_g, lin.g_limit.forward, ship.thrust_signal(sr.0, sv.0))
+        } else {
+            let t = &ship.ctl.tuning;
+            (t.cruise_speed, t.boost_speed_forward, 1.0, ship.ctl.axis.felt_g, t.g_safety.limit.forward, ship.thrust_signal(sr.0, sv.0))
+        };
+        // The planet's up at the ship: the horizon exists only near a planet.
+        let horizon = altitude.map(|_| horizon_angles(sr.0, (sp.0 - planet.centre).normalize_or_zero()));
+        let lv = sr.0.inverse() * sv.0;
+        new.flight = Some(flight_hud(&FlightIn { lv, thrust, cruise, boost, limiter, felt_g, g_limit, horizon }, &tuning.hud));
+    }
     if *out != new {
         *out = new;
     }
@@ -429,7 +548,7 @@ mod tests {
 
     #[test]
     fn shipped_file_loads_and_bad_values_are_refused() {
-        assert_eq!(HudTuning::from_json(crate::tuning::HUD).unwrap(), HudTuning { agl_below: 1000.0, toast_time: 1.5 });
+        assert_eq!(HudTuning::from_json(crate::tuning::HUD).unwrap(), HudTuning { agl_below: 1000.0, toast_time: 1.5, g_full: 10.0, velocity_min: 1.0 });
         assert!(HudTuning::from_json("{\"agl_below\": -1}").is_err());
         assert!(HudTuning::from_json("{\"agl_below\": 1, \"x\": 2}").is_err());
     }
@@ -605,5 +724,109 @@ mod panel_tests {
         assert_eq!(blend_of(0.3), Some(0.3));
         assert_eq!(blend_of(1.0), None);
         assert_eq!(blend_of(0.0), None);
+    }
+}
+
+#[cfg(test)]
+mod flight_tests {
+    use super::*;
+
+    const TUNING: HudTuning = HudTuning { agl_below: 1000.0, toast_time: 1.5, g_full: 10.0, velocity_min: 1.0 };
+
+    fn close(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-6
+    }
+
+    /// SCM at full boost: cruise 150, boost 337.5 (150 x 2.25), a ship at 123 m/s.
+    fn scm(lv: DVec3, thrust: DVec3, limiter: f64, felt_g: f64, horizon: Option<(f64, f64)>) -> FlightIn {
+        FlightIn { lv, thrust, cruise: 150.0, boost: 337.5, limiter, felt_g, g_limit: 8.0, horizon }
+    }
+
+    #[test]
+    fn speed_tape_marks_for_a_limiter_at_half() {
+        let t = speed_tape(123.0, 150.0, 0.5, 337.5);
+        assert!(close(t.fill, 123.0 / 337.5));
+        assert_eq!(t.number, "123");
+        assert!(close(t.cruise, 150.0 / 337.5), "cruise mark at {}", t.cruise);
+        // The limiter: cruise x 0.5 = 75 m/s.
+        assert!(close(t.limiter.unwrap(), 75.0 / 337.5));
+    }
+
+    #[test]
+    fn speed_tape_has_no_limiter_mark_at_full_speed_and_caps_the_fill() {
+        assert_eq!(speed_tape(10.0, 150.0, 1.0, 337.5).limiter, None);
+        assert!(close(speed_tape(400.0, 150.0, 1.0, 337.5).fill, 1.0));
+        assert_eq!(speed_tape(0.0, 150.0, 1.0, 337.5).fill, 0.0);
+    }
+
+    #[test]
+    fn strafing_right_makes_the_right_bar_the_longest() {
+        let b = thrust_bars(DVec3::new(0.8, 0.1, 0.0));
+        assert_eq!(b, [0.8, 0.0, 0.1, 0.0, 0.0, 0.0]);
+        let longest = b.iter().cloned().fold(0.0, f64::max);
+        assert_eq!(b[0], longest);
+    }
+
+    #[test]
+    fn forward_and_back_thrust_are_the_last_two_bars() {
+        // Forward is -z in ship space (z back is +), so forward thrust fills the fifth bar.
+        assert_eq!(thrust_bars(DVec3::new(0.0, 0.0, -0.6)), [0.0, 0.0, 0.0, 0.0, 0.6, 0.0]);
+        assert_eq!(thrust_bars(DVec3::new(0.0, 0.0, 0.25)), [0.0, 0.0, 0.0, 0.0, 0.0, 0.25]);
+        assert_eq!(thrust_bars(DVec3::new(0.0, -1.0, 0.0)), [0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn g_bar_marks_the_g_safe_limit_and_goes_over_above_it() {
+        let g = g_bar(2.3, 8.0, 10.0);
+        assert!(close(g.fill, 0.23) && close(g.mark, 0.8) && !g.over);
+        let g = g_bar(9.0, 8.0, 10.0);
+        assert!(g.over && close(g.fill, 0.9));
+        assert!(close(g_bar(20.0, 8.0, 10.0).fill, 1.0));
+    }
+
+    #[test]
+    fn horizon_pitch_and_roll_of_a_ship_pitched_10_and_rolled_30() {
+        // Pitch about x (nose up), then roll about the ship's forward axis (right wing up).
+        let q = DQuat::from_rotation_x(10f64.to_radians()) * DQuat::from_rotation_z(30f64.to_radians());
+        let (pitch, roll) = horizon_angles(q, DVec3::Y);
+        assert!(close(pitch, 10.0), "pitch {pitch}");
+        assert!(close(roll, 30.0), "roll {roll}");
+        // Level flight: both zero, whatever the heading.
+        let (p, r) = horizon_angles(DQuat::from_rotation_y(1.0), DVec3::Y);
+        assert!(close(p, 0.0) && close(r, 0.0), "level: {p} {r}");
+    }
+
+    #[test]
+    fn velocity_direction_in_ship_space_hidden_below_one_metre_per_second() {
+        assert_eq!(velocity_dir(DVec3::new(0.5, 0.0, 0.0), 1.0), None);
+        let d = velocity_dir(DVec3::new(10.0, 0.0, 0.0), 1.0).unwrap();
+        assert!(close(d.x, 1.0) && d.length() > 0.999);
+        assert_eq!(velocity_dir(DVec3::ZERO, 0.0), None);
+    }
+
+    #[test]
+    fn flight_hud_from_an_scm_ship_strafing_right() {
+        let i = scm(DVec3::new(20.0, 0.0, 0.0), DVec3::new(0.7, 0.0, 0.0), 0.5, 2.0, None);
+        let f = flight_hud(&i, &TUNING);
+        assert_eq!(f.thrust[0], 0.7);
+        assert!(f.velocity_dir.unwrap().x > 0.99);
+        assert!(f.horizon.is_none());
+        assert!(f.speed_tape.limiter.is_some());
+    }
+
+    #[test]
+    fn the_limiter_mark_in_the_readout_follows_the_switch() {
+        let i = scm(DVec3::ZERO, DVec3::ZERO, 1.0, 0.0, Some((10.0, 30.0)));
+        let f = flight_hud(&i, &TUNING);
+        assert_eq!(f.speed_tape.limiter, None);
+        assert_eq!(f.horizon, Some((10.0, 30.0)));
+        assert_eq!(f.velocity_dir, None);
+    }
+
+    #[test]
+    fn shipped_flight_values_are_read() {
+        assert_eq!(HudTuning::from_json(crate::tuning::HUD).unwrap().g_full, 10.0);
+        assert!(HudTuning::from_json("{\"agl_below\": 1, \"toast_time\": 1, \"g_full\": 0, \"velocity_min\": 1}").is_err());
+        assert!(HudTuning::from_json("{\"agl_below\": 1, \"toast_time\": 1, \"g_full\": 10, \"velocity_min\": -1}").is_err());
     }
 }

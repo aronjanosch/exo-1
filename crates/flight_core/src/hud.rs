@@ -9,6 +9,10 @@ pub struct HudTuning {
     pub agl_below: f64,
     /// s: a flight panel toast stays this long after the last switch change (#197).
     pub toast_time: f64,
+    /// g: the G bar's full scale (#200).
+    pub g_full: f64,
+    /// m/s: below this speed the flight path marker is hidden (#200).
+    pub velocity_min: f64,
 }
 
 impl HudTuning {
@@ -19,6 +23,12 @@ impl HudTuning {
         }
         if !(t.toast_time > 0.0 && t.toast_time.is_finite()) {
             return Err(format!("hud.json: toast_time {} out of range", t.toast_time));
+        }
+        if !(t.g_full > 0.0 && t.g_full.is_finite()) {
+            return Err(format!("hud.json: g_full {} out of range", t.g_full));
+        }
+        if !(t.velocity_min >= 0.0 && t.velocity_min.is_finite()) {
+            return Err(format!("hud.json: velocity_min {} out of range", t.velocity_min));
         }
         Ok(t)
     }

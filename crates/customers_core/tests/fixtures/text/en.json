@@ -1,0 +1,14 @@
+{
+  "_comment": "Test fixture texts.",
+  "customer.old_nib.name": "Old Nib",
+  "customer.old_nib.order_title": "Order for Old Nib",
+  "customer.old_nib.order": ["Old Nib wants dust, and wants it now.", "Old Nib is out of dust again.", "Old Nib: bring the dust, keep the lecture."],
+  "customer.old_nib.thanks": ["Old Nib nods. High praise.", "Old Nib: not bad, not bad.", "Old Nib mutters something nice."],
+  "customer.old_nib.grumble": ["Old Nib sighs for a full minute.", "Old Nib: I have seen better dust in a sock.", "Old Nib writes your name on a list."],
+  "customer.moss_hat.name": "Moss Hat",
+  "customer.moss_hat.order_title": "Order for Moss Hat",
+  "customer.moss_hat.order": ["Moss Hat needs mud.", "Moss Hat is thirsty for mud.", "Mud for Moss Hat, please."],
+  "customer.moss_hat.thanks": ["Moss Hat blooms.", "Moss Hat is moss-pleased.", "Moss Hat hums."],
+  "customer.moss_hat.grumble": ["Moss Hat droops.", "Moss Hat withers a little.", "Moss Hat will remember."],
+  "notice.order.placed": ["{customer} has an order.", "A new order from {customer}.", "{customer} is waiting for goods."]
+}

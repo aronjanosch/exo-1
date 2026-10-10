@@ -25,10 +25,15 @@ use crate::ship::RemoteShip;
 mod boost;
 mod camera_g;
 mod cargo;
+mod courier;
+mod customers;
 mod deliver;
 mod figure;
 mod flight;
+mod first_person_settings;
 mod landing;
+mod licence;
+mod mapview;
 mod models;
 mod net;
 mod reload;
@@ -39,6 +44,7 @@ mod sc_flight_hud;
 mod sc_hud;
 mod sc_switch;
 mod sc_turn;
+mod savefile;
 mod space;
 mod swap;
 mod thruster_audio;
@@ -65,6 +71,22 @@ pub fn plugin(name: &str, headless: bool) -> impl Plugin {
             if headless {
                 app.add_systems(Update, swap::headless_view.in_set(crate::phases::Frame::Camera));
             }
+        }
+        if name == "first-person-settings" && headless {
+            // The real projection system, without a renderer or a window.
+            app.init_resource::<ViewState>().init_resource::<ClearColor>().init_resource::<bevy::light::GlobalAmbientLight>();
+            app.add_systems(Startup, |mut commands: Commands| {
+                commands.spawn((crate::view::MainCamera, crate::origin::WorldPose::default(), bevy::pbr::DistanceFog::default(), Projection::Perspective(default())));
+            });
+            app.add_systems(FixedLast, (
+                |mut commands: Commands, ships: Query<(Entity, &Position, &Rotation), (With<Ship>, Without<crate::origin::BodyInterp>)>| {
+                    for (e, p, r) in &ships {
+                        commands.entity(e).insert(crate::origin::BodyInterp { prev: (p.0, r.0), curr: (p.0, r.0) });
+                    }
+                },
+                crate::view::record_player_view,
+            ).chain());
+            app.add_systems(Update, crate::view::update_camera.in_set(crate::phases::Frame::Camera));
         }
     }
 }
@@ -598,6 +620,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "figure" => figure_steps(&mut s, &shot_step),
         // Sprint 2 feel: input ramp, virtual-joystick mouse, boost, decoupled (#24, #25, #26).
         "flight" => flight_steps(&mut s, &shot_step, out_dir, windowed),
+        "first-person-settings" => first_person_settings::steps(&mut s),
         // #90, #91: the boost capacitor drains, cuts out and recharges; the HUD shows it.
         "boost-hud" => boost::boost_hud_steps(&mut s),
         "thruster-audio" => thruster_audio::thruster_audio_steps(&mut s),
@@ -638,6 +661,16 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         // Night extra E1: unload the parked ship down the ramp by hand and load it again.
         "crate-unload" => cargo::crate_unload_steps(&mut s),
         "deliver" => deliver::deliver_steps(&mut s),
+        // #170: courier jobs on foot, carried by hand to the small drops near the start.
+        "courier" => courier::courier_steps(&mut s),
+        // #135: save file: deliver halfway, save, restart, load, finish.
+        "savefile" => savefile::savefile_steps(&mut s),
+        // #168: a customer orders, the order is an offer at the wholesaler, the delivery moves the relationship.
+        "customers" => customers::customers_steps(&mut s),
+        // #169: the seat refuses without the licence; the exam; the licence.
+        "licence" => licence::licence_steps(&mut s),
+        // #166: the map's pins from the game's state, M opens the picture (a screenshot with a window).
+        "map" => mapview::map_steps(&mut s, out_dir, windowed),
         // #63: fixed viewpoints and an atlas per planet (headless: atlas and statistics only).
         "planet-look" => crate::look::steps(&mut s, out_dir, windowed),
         // #70: walk from outside into a site; the walker stands on its flattened ground.

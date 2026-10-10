@@ -210,11 +210,11 @@ pub fn setup_beam(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut 
 #[allow(clippy::too_many_arguments)]
 pub fn update_beam(
     time: Res<Time>,
-    fixed: Res<Time<Fixed>>,
     tuning: Res<crate::tuning::Tuning>,
     grab: Res<Grab>,
     view: Res<crate::view::ViewState>,
-    players: Query<(&Player, &crate::view::PlayerInterp)>,
+    players: Query<&Player>,
+    camera: Query<&crate::origin::WorldPose, (With<crate::view::MainCamera>, Without<GrabBeam>, Without<Crate>)>,
     crates: Query<&crate::origin::WorldPose, (With<Crate>, Without<GrabBeam>)>,
     mut beam: Query<(&GrabBeam, &mut crate::origin::WorldPose, &mut Transform, &mut Visibility)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -222,18 +222,13 @@ pub fn update_beam(
     let Ok((b, mut pose, mut t, mut vis)) = beam.single_mut() else { return };
     let held = grab.held.filter(|h| h.reach == Reach::Tool);
     let ends = held.and_then(|h| {
-        let (pl, pi) = players.single().ok()?;
-        // Seen from orbit or a fixed viewpoint the muzzle would float; seated, nothing is held.
-        if view.orbit || view.look.is_some() || pl.seated {
+        // Use the displayed camera so the muzzle does not trail behind immediate mouse look.
+        let camera = camera.single().ok()?;
+        if view.orbit || view.look.is_some() || players.single().ok()?.seated {
             return None;
         }
-        let f = fixed.overstep_fraction_f64();
-        let feet = pi.prev.0.lerp(pi.curr.0, f);
-        let up = pi.prev.1.lerp(pi.curr.1, f).normalize();
-        let look = pi.prev.2.lerp(pi.curr.2, f).normalize();
-        let rot = walker_core::look_rot(look, up);
         let [x, y, z] = BEAM_MUZZLE;
-        let muzzle = feet + up * EYE_HEIGHT + rot * DVec3::new(x, y, -z);
+        let muzzle = camera.pos + camera.rot * DVec3::new(x, y, -z);
         Some((h, muzzle, crates.get(h.crate_e).ok()?.pos))
     });
     let Some((h, (centre, rot, len))) = ends.and_then(|(h, a, b)| Some((h, beam_pose(a, b)?))) else {

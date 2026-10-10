@@ -1,0 +1,1 @@
+{ "_comment": "Test fixture: the flight licence, a personal track (0 or 1).", "id": "licence_flight", "name": "track.licence_flight.name", "owner": "player" }

@@ -1,0 +1,16 @@
+{
+  "_comment": "Test fixture: a legal giver with a counter.",
+  "id": "courier",
+  "name": "giver.courier.name",
+  "kind": "legal",
+  "location": "drip_rock",
+  "standing": "standing_courier",
+  "gain": 10,
+  "loss": 15,
+  "voice": {
+    "greeting": { "first_job": "g.courier.first", "regular": "g.courier.regular", "after_failure": "g.courier.failure" },
+    "intro": "g.courier.intro",
+    "reason": "g.courier.reason",
+    "sign_off": "g.courier.signoff"
+  }
+}

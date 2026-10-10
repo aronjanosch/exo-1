@@ -1,0 +1,9 @@
+{
+  "_comment": "The flight school (#169), about 70 m from the start, opposite Drip Rock. Its pad is where the exam's crate waits. Invented name; position and sizes are starting values (TODO(initiator)). Moves when the city is placed (E).",
+  "id": "skyhook_school",
+  "planet": "hearth",
+  "lat_deg": 89.2,
+  "lon_deg": 270.0,
+  "edits": [ { "type": "flatten", "order": 0, "radius_m": 14.0, "rolloff_m": 16.0 } ],
+  "pads": [ { "id": "main", "at": [0.0, 0.0], "radius_m": 10.0 } ]
+}

@@ -1,0 +1,17 @@
+{
+  "_comment": "Placeholder giver (#167): the small odd family. Its jobs are not offered in D: the flag family_open is never raised yet. Its counter sits at Bent Spoon until it gets a place of its own (#170). Everything is TODO(initiator).",
+  "id": "small_family",
+  "name": "giver.small_family.name",
+  "kind": "family",
+  "location": "bent_spoon",
+  "standing": "standing_small_family",
+  "gain": 10,
+  "loss": 15,
+  "available": { "flag_set": "family_open" },
+  "voice": {
+    "greeting": { "first_job": "giver.small_family.greet.first", "regular": "giver.small_family.greet.regular", "after_failure": "giver.small_family.greet.failure" },
+    "intro": "giver.small_family.intro",
+    "reason": "giver.small_family.reason",
+    "sign_off": "giver.small_family.signoff"
+  }
+}

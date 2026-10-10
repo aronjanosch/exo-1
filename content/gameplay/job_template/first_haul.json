@@ -3,6 +3,7 @@
   "id": "first_haul",
   "title": "job.first_haul.title",
   "brief": "job.first_haul.brief",
+  "giver": "courier_office",
   "objectives": [
     { "deliver": { "from": { "location": "drip_rock" }, "to": { "location": "bent_spoon" }, "commodity": { "one_of": ["fizzy_mud"] }, "amount": [3, 3] } }
   ],
@@ -13,5 +14,6 @@
   },
   "track": "freight_xp",
   "xp": 50,
+  "available": { "track_at_least": { "track": "licence_flight", "value": 1 } },
   "once_only": true
 }

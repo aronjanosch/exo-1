@@ -8,18 +8,7 @@ edition = "2024"
 license = "MIT"
 
 [workspace.dependencies]
-# Only the parts the game uses: the defaults also build animation, picking, scenes, sprites,
-# gizmos, Vorbis, clipboard and more. Tonemapping LUTs (with ktx2 and zstd) are what the default
-# camera's tonemapping reads; audio is synthesized (`audio.rs`), so no decoder.
-bevy = { version = "=0.19.1", default-features = false, features = [
-    "std", "async_executor", "multi_threaded", "bevy_asset", "bevy_log", "bevy_state", "reflect_auto_register",
-    "bevy_winit", "bevy_gilrs", "x11", "wayland", "default_font",
-    "bevy_render", "bevy_core_pipeline", "bevy_pbr", "bevy_light", "bevy_camera", "bevy_color", "bevy_image",
-    "bevy_mesh", "bevy_shader", "bevy_material", "bevy_window", "bevy_mikktspace", "bevy_gltf",
-    "tonemapping_luts", "ktx2", "zstd_rust", "png",
-    "bevy_text", "bevy_ui", "bevy_ui_render",
-    "bevy_audio",
-] }
+bevy = { version = "=0.19.1" }
 avian3d = { version = "=0.7.0", default-features = false }
 glam = "0.32"
 fastnoise-lite = "=1.1.1"

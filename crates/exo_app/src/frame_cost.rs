@@ -62,6 +62,9 @@ pub struct FrameCost {
     /// Avian step stages in this frame (ms): start..broad phase, narrow phase, solver, sleeping and
     /// finalize.
     pub phys: [f64; 4],
+    /// Avian's prepare (colliders, mass properties, transforms) and writeback sets, outside the step.
+    pub prep_ms: f64,
+    pub wb_ms: f64,
     /// Of the solver stage: swept CCD (Avian's own timer).
     pub ccd_ms: f64,
     /// Of the fixed step: the `FixedUpdate` schedule (game systems).
@@ -123,7 +126,7 @@ impl FrameRec {
             self.frame, self.t, self.dt_ms, self.main_ms, c.fixed.n, c.fixed.ms, c.update.ms, c.propagate.ms
         );
         if c.fixed.ms > 8.0 {
-            s += &format!(" [game {:.1}, avian broad {:.1} narrow {:.1} solver {:.1} (ccd {:.1}) rest {:.1}]", c.fixed_update_ms, c.phys[0], c.phys[1], c.phys[2], c.ccd_ms, c.phys[3]);
+            s += &format!(" [game {:.1}, prep {:.1}, writeback {:.1}, avian broad {:.1} narrow {:.1} solver {:.1} (ccd {:.1}) rest {:.1}]", c.fixed_update_ms, c.prep_ms, c.wb_ms, c.phys[0], c.phys[1], c.phys[2], c.ccd_ms, c.phys[3]);
         }
         let mut parts = Vec::new();
         if c.terrain_up.n > 0 || c.terrain_sys.ms > 1.0 {
@@ -298,6 +301,7 @@ struct Marks {
     propagate: Option<Instant>,
     phys: Option<Instant>,
     fixed_update: Option<Instant>,
+    prep: Option<Instant>,
 }
 
 /// Closes one Avian stage: the time since the previous mark goes to `phys[N]`.
@@ -309,6 +313,19 @@ fn phys_mark<const N: usize>(mut m: ResMut<Marks>, mut cost: ResMut<FrameCost>) 
 }
 fn phys_ccd(d: Res<avian3d::dynamics::solver::SolverDiagnostics>, mut cost: ResMut<FrameCost>) {
     cost.ccd_ms += d.swept_ccd.as_secs_f64() * 1000.0;
+}
+fn prep_begin(mut m: ResMut<Marks>) {
+    m.prep = Some(Instant::now());
+}
+fn prep_end(mut m: ResMut<Marks>, mut cost: ResMut<FrameCost>) {
+    if let Some(t) = m.prep.take() {
+        cost.prep_ms += t.elapsed().as_secs_f64() * 1000.0;
+    }
+}
+fn wb_end(mut m: ResMut<Marks>, mut cost: ResMut<FrameCost>) {
+    if let Some(t) = m.prep.take() {
+        cost.wb_ms += t.elapsed().as_secs_f64() * 1000.0;
+    }
 }
 fn fu_begin(mut m: ResMut<Marks>) {
     m.fixed_update = Some(Instant::now());
@@ -406,7 +423,16 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedLast, fixed_end);
     app.add_systems(FixedUpdate, (fu_begin.before(crate::phases::Fx::Input), fu_end.after(crate::phases::Fx::Effects)));
     {
-        use avian3d::prelude::{PhysicsSchedule, PhysicsStepSystems as S};
+        use avian3d::prelude::{PhysicsSchedule, PhysicsStepSystems as S, PhysicsSystems as P};
+        app.add_systems(
+            FixedPostUpdate,
+            (
+                prep_begin.before(P::Prepare),
+                prep_end.after(P::Prepare).before(P::StepSimulation),
+                prep_begin.after(P::StepSimulation).before(P::Writeback),
+                wb_end.after(P::Writeback),
+            ),
+        );
         app.add_systems(
             PhysicsSchedule,
             (

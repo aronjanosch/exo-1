@@ -225,6 +225,9 @@ pub struct Jobs {
     /// Paid tries of an exam per player and template (`"<client>:<template>"`): the retry fee.
     #[serde(default)]
     attempts: BTreeMap<String, u32>,
+    /// Board state per location (#126).
+    #[serde(default)]
+    pub board: crate::board::Board,
 }
 
 /// The jobs section of a save (#128).
@@ -275,6 +278,88 @@ impl Jobs {
             }
         }
         Some(self.offer_with(&t.id, legs, checks))
+    }
+
+    /// Like `offer_fixed`, but only if all locations in the legs are available.
+    pub fn offer_fixed_if_available(&mut self, t: &JobTemplate, kernel: &Content, progress: &Progress) -> Option<JobId> {
+        let (mut legs, mut checks) = (Vec::new(), Vec::new());
+        for o in &t.objectives {
+            match o {
+                ObjectiveSpec::Deliver { from: PlaceSpec::Location(a), to: PlaceSpec::Location(b), commodity: CommoditySpec::OneOf(pool), amount } if pool.len() == 1 && amount[0] == amount[1] => {
+                    // Check if both locations are available
+                    if !progress.location_available(kernel, a) || !progress.location_available(kernel, b) {
+                        return None;
+                    }
+                    legs.push(Leg::new(a.clone(), b.clone(), pool[0].clone(), amount[0]));
+                }
+                ObjectiveSpec::Deliver { .. } => return None,
+                ObjectiveSpec::TakeOff {} => checks.push(Check { kind: CheckKind::TakeOff, state: CheckState::Pending }),
+                ObjectiveSpec::ReachPad { at } => {
+                    if !progress.location_available(kernel, at) {
+                        return None;
+                    }
+                    checks.push(Check { kind: CheckKind::ReachPad { at: at.clone() }, state: CheckState::Pending })
+                }
+                ObjectiveSpec::Land { at, max_mps } => {
+                    if !progress.location_available(kernel, at) {
+                        return None;
+                    }
+                    checks.push(Check { kind: CheckKind::Land { at: at.clone(), max_mps: *max_mps }, state: CheckState::Pending })
+                }
+            }
+        }
+        Some(self.offer_with(&t.id, legs, checks))
+    }
+
+    /// Generate board offers for a location with a given seed.
+    /// Returns a list of job ids that are now offered.
+    pub fn generate_board_at(&mut self, jc: &JobContent, kernel: &Content, progress: &Progress, location: &str, seed: u64) -> Vec<JobId> {
+        use crate::board::BoardLocation;
+        use gameplay_core::rng::Rng;
+
+        let mut rng = Rng::new(seed);
+        let mut job_ids = Vec::new();
+
+        // Collect all available templates (check availability condition)
+        let available_templates: Vec<&JobTemplate> =
+            jc.templates.values().map(|t| &t.record).filter(|t| {
+                if let Some(cond) = &t.available {
+                    cond.holds(kernel, progress, None)
+                } else {
+                    true
+                }
+            }).collect();
+
+        // Decide how many offers to generate (between 3 and 5)
+        let target_count = 3 + rng.below(3);
+
+        // Try to generate offers until we reach the target count
+        let mut attempts = 0;
+        let max_attempts = (available_templates.len() * 10).max(target_count * 5);
+        while job_ids.len() < target_count && attempts < max_attempts && !available_templates.is_empty() {
+            let template_idx = rng.below(available_templates.len());
+            let template = available_templates[template_idx];
+
+            // Try fixed offer first (for templates with all fixed locations and single commodity)
+            if let Some(id) = self.offer_fixed_if_available(template, kernel, progress) {
+                job_ids.push(id);
+            } else if let Ok(legs) = crate::board::generate_legs(template, kernel, progress, &mut rng) {
+                // Try to generate legs with tag search
+                let id = self.offer_with(&template.id, legs, Vec::new());
+                job_ids.push(id);
+            }
+
+            attempts += 1;
+        }
+
+        // Track board state
+        self.board.offers_per_location.insert(location.to_string(), BoardLocation {
+            offer_ids: job_ids.clone(),
+            age_s: 0.0,
+            seed,
+        });
+
+        job_ids
     }
 
     /// What happened between the crew and a giver; nothing yet for a new one.

@@ -52,7 +52,7 @@ pub fn save_rgb(path: &Path, w: usize, h: usize, rgb: &[u8]) -> Result<(), Strin
 pub fn camera_pose(planet: &PlanetRes, vp: &Viewpoint) -> Option<(DVec3, DQuat, DVec3)> {
     if vp.spot == "orbit" {
         let from = DVec3::from_array(vp.from?).normalize();
-        let pos = planet.centre + from * vp.height_m;
+        let pos = planet.centre + from * vp.radii.map_or(vp.height_m, |k| k * planet.radius);
         let up = if from.y.abs() < 0.99 { DVec3::Y } else { DVec3::X };
         // Pitched up from looking at the centre (towards the horizon on a descent).
         let t = (up - from * up.dot(from)).normalize();

@@ -12,6 +12,7 @@ pub mod planet;
 pub mod recipe;
 pub mod rivers;
 pub mod scatter;
+pub mod shape_stats;
 pub mod site;
 pub use landform::PlacedStamp;
 pub use look::{Atlas, AtlasLayer, Spot, TimeShot, Viewpoint, Viewpoints};

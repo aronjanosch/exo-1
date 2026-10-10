@@ -19,5 +19,5 @@ Report as a comment on #<n> when done.
 ## Goal (hours-long lanes only)
 
 ```
-/goal `scripts/gate` exits 0 in the transcript on the pushed head of <branch>; <one measurable result, e.g. "the scenario prints drift below 1 mm">; the report comment on #<n> exists. Or stop after <N> turns.
+/goal the feature's own tests (`cargo test -p <crate>`, `cargo ts scenario_<name>`) pass in the transcript on the pushed head of <branch>; <one measurable result, e.g. "the scenario prints drift below 1 mm">; the report comment on #<n> exists. Or stop after <N> turns.
 ```

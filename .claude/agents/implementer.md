@@ -13,7 +13,7 @@ You implement one small ticket that the coordinator has already agreed. The coor
 3. **Check** with your own commands only, each as `nice -n 15 env CARGO_TARGET_DIR=<given> CARGO_BUILD_JOBS=4 cargo …`:
    - `cargo test -p <crate>` for every crate you touched,
    - `cargo ts scenario_<name>` for the ticket's scenario, if it has one.
-   The full gate (`scripts/gate`, `cargo t`) and the static check are the coordinator's: each run loads the whole machine, and the coordinator runs them once over all collected work.
+   The full gate (`scripts/gate`, `cargo t`) and the static check run only at the end of a big round, from the coordinator: each run loads the whole machine.
 4. **Commit** to the given branch with a message that says what changed and names the ticket (`#<n>`). No push unless the ticket says so.
 5. **Report back** in a few lines: what you built, the commands you ran with their results (tests passed, numbers if any), open questions as `TODO(initiator)`, anything surprising.
 

@@ -39,7 +39,7 @@ cargo run -p exo_app -- --scenario=full               # same in a window, with s
 cargo run -p exo_app -- --hidden --scenario=full      # invisible window, screenshots still work
 ```
 
-A change is done when the gate passes. It needs cargo-nextest: `mise install` in the repo root (pinned in `mise.toml`); `.config/nextest.toml` leaves `perf.rs` out of the default run. Other scenarios with dynamic linking: `cargo dev --headless --scenario=<name>`.
+A feature is done when its own tests pass (`cargo test -p <crate>`, `cargo ts scenario_<name>`); the full gate runs at the end of a big round (`AGENTS.md`, three test sizes). It needs cargo-nextest: `mise install` in the repo root (pinned in `mise.toml`); `.config/nextest.toml` leaves `perf.rs` out of the default run. Other scenarios with dynamic linking: `cargo dev --headless --scenario=<name>`.
 
 Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (default `target/scenario`):
 

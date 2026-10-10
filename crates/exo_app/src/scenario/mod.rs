@@ -23,6 +23,7 @@ use net_core::snapshot::Snapshot;
 use crate::ship::RemoteShip;
 
 mod boost;
+mod camera_g;
 mod cargo;
 mod deliver;
 mod figure;
@@ -593,6 +594,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         // #90, #91: the boost capacitor drains, cuts out and recharges; the HUD shows it.
         "boost-hud" => boost::boost_hud_steps(&mut s),
         "thruster-audio" => thruster_audio::thruster_audio_steps(&mut s),
+        // #148, #149: the camera shake, spring lag and G field of view, and F9 (through the bindings).
+        "camera-g" => camera_g::camera_g_steps(&mut s),
         // Spike 13: manoeuvres with the axis flight model, measured as a table.
         "flight-model" => models::flight_model_steps(&mut s),
         // #92: land on a slope below the limit; no drift from touchdown until thrust.

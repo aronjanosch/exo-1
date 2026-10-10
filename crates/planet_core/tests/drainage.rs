@@ -66,7 +66,7 @@ fn water_flows_downhill() {
         if let Mouth::River(j) = rv.next {
             let n = &p.coarse.rivers[j as usize];
             assert!(n.bed_m <= rv.bed_m && n.level_m <= rv.level_m, "bed or water rises downstream");
-            assert!(p.base_height_at(n.dir) <= ground + 0.15, "the ground rises downstream");
+            assert!(p.base_height_at(n.dir) <= ground + 0.15, "the ground rises downstream: {} -> {} (beds {} -> {})", ground, p.base_height_at(n.dir), rv.bed_m, n.bed_m);
             assert!(n.catchment_km2 >= rv.catchment_km2, "water gets lost downstream");
         }
     }

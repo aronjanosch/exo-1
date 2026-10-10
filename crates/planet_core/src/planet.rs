@@ -30,6 +30,9 @@ pub fn nz(n: &FastNoiseLite, p: [f32; 3]) -> f32 {
 }
 
 struct BandRt {
+    /// Finer than the coarse grid resolves (base frequency above a quarter cell): the relief a
+    /// river's valley flattens (#177). At 5 km none is.
+    high: bool,
     noise: FastNoiseLite,
     amp: f64,
     warp: Option<(FastNoiseLite, f64)>,
@@ -210,6 +213,8 @@ pub struct Planet {
     placement_error: Option<String>,
     /// The coarse global layer (#177): the sea, the drainage's cut and water, rivers and lakes.
     pub coarse: Coarse,
+    /// The rivers' polylines indexed by place, built from the coarse layer.
+    pub river_idx: crate::rivers::RiverIndex,
     pub sea: f64,
     pub sites: Vec<crate::site::Site>,
     /// Hand-placed places, set before the bake (`set_places`).
@@ -243,6 +248,7 @@ impl Planet {
             .bands
             .iter()
             .map(|b| BandRt {
+                high: b.noise.frequency as f64 > 1.0 / (4.0 * std::f64::consts::FRAC_PI_2 * radius / m.resolution as f64),
                 noise: make_noise(&b.noise, seed),
                 amp: b.amplitude,
                 warp: b.warp.as_ref().map(|w| {
@@ -265,6 +271,7 @@ impl Planet {
             landform_tries: 0,
             placement_error: None,
             coarse: Coarse::default(),
+            river_idx: Default::default(),
             sea: 0.0,
             sites: Vec::new(),
             places: Vec::new(),
@@ -312,11 +319,12 @@ impl Planet {
         (h, lf)
     }
 
-    fn bands_height(&self, p: [f32; 3], f: &Fields) -> f64 {
+    /// The bands' height split into the part the coarse grid resolves and the finer relief.
+    fn bands_split(&self, p: [f32; 3], f: &Fields) -> (f64, f64) {
         let sh = &self.recipe.shape;
         let stretch = sh.stretch.eval(f.get(sh.stretch.field));
         let rough = sh.roughness.eval(f.get(sh.roughness.field));
-        let mut h = 0.0;
+        let (mut lo, mut hi) = (0.0, 0.0);
         for b in &self.bands {
             let v = if let Some((w, wa)) = &b.warp {
                 let wa = *wa as f32;
@@ -334,9 +342,14 @@ impl Planet {
                 BandScale::Stretch => stretch,
                 BandScale::Roughness => rough,
             };
-            h += v as f64 * b.amp * k;
+            let h = v as f64 * b.amp * k;
+            if b.high {
+                hi += h;
+            } else {
+                lo += h;
+            }
         }
-        h
+        (lo, hi)
     }
 
     /// Height offset of the shape at the macro fields (metres, stamps and bands not included).
@@ -377,7 +390,17 @@ impl Planet {
         }
         let w = &self.coarse.water;
         let l = self.macro_cell(face, a, b).bil(|k| coarse::dequantize_water(w[k]) as f64);
-        (l > crate::drainage::DRY_BELOW).then_some(l)
+        let lake = (l > crate::drainage::DRY_BELOW).then_some(l);
+        if self.river_idx.is_empty() {
+            return lake;
+        }
+        // A river's channel: its level where the point lies in it (the ground is not needed).
+        let dir = cube_to_sphere(face, a, b);
+        let river = self.river_idx.carve(&self.coarse.rivers, self.radius, dir * self.radius, 0.0).level;
+        match (lake, river) {
+            (Some(x), Some(y)) => Some(x.max(y)),
+            (x, y) => x.or(y),
+        }
     }
 
     /// Whether a lake or river is near: any macro vertex within about `radius_m` (a square on the
@@ -387,6 +410,9 @@ impl Planet {
             return false;
         }
         let d = dir.normalized();
+        if self.river_idx.within(&self.coarse.rivers, self.radius, d * self.radius, radius_m) {
+            return true;
+        }
         let face = face_of(d);
         let (a, b) = sphere_to_face_ab(face, d);
         let n = self.recipe.macro_.resolution;
@@ -424,14 +450,19 @@ impl Planet {
     /// The height function without the site edits: the noise ground and the drainage's cut.
     pub fn base_height_ab(&self, face: usize, a: f64, b: f64, dir: V3) -> (f64, Fields) {
         let f = self.fields_at(dir);
-        let h = self.shape_offset(&f) + self.stamp_height(dir).0 + self.bands_height(self.p32(dir), &f) + self.carve_ab(face, a, b);
-        (h, f)
+        let (lo, hi) = self.bands_split(self.p32(dir), &f);
+        let g = self.shape_offset(&f) + self.stamp_height(dir).0 + lo + self.carve_ab(face, a, b);
+        if self.river_idx.is_empty() {
+            return (g + hi, f);
+        }
+        let c = self.river_idx.carve(&self.coarse.rivers, self.radius, dir * self.radius, g);
+        (c.ground + hi * c.relief, f)
     }
 
     /// The noise ground alone (shape, stamps, bands): what the drainage starts from.
     fn noise_height_ab(&self, dir: V3) -> (f64, Fields) {
         let f = self.fields_at(dir);
-        (self.shape_offset(&f) + self.stamp_height(dir).0 + self.bands_height(self.p32(dir), &f), f)
+        (self.shape_offset(&f) + self.stamp_height(dir).0 + self.bands_split(self.p32(dir), &f).0, f)
     }
 
     pub fn base_height_at(&self, dir: V3) -> f64 {
@@ -569,10 +600,12 @@ impl Planet {
         if let Some(c) = cached {
             self.sea = c.sea;
             self.coarse = c;
+            self.index_rivers();
             st.coarse_from_cache = true;
             st.sea_level_m = self.sea;
         } else {
             self.bake_coarse(threads, &mut st);
+            self.index_rivers();
             if let Some(d) = cache
                 && let Err(e) = self.coarse.save(d, key)
             {
@@ -690,6 +723,13 @@ impl Planet {
         if st.quota_misses.is_empty() { Ok(st) } else { Err(format!("bake: {}", st.quota_misses.join("; "))) }
     }
 
+    /// The polylines of the coarse layer's rivers, indexed by place.
+    fn index_rivers(&mut self) {
+        let spacing = std::f64::consts::FRAC_PI_2 * self.radius / self.recipe.macro_.resolution as f64;
+        let fill = self.recipe.drainage.as_ref().map_or(0.0, |d| d.river_fill);
+        self.river_idx = crate::rivers::RiverIndex::build(&self.coarse.rivers, self.radius, spacing, fill);
+    }
+
     /// The coarse global layer from recipe and seed: the sea level (an area-weighted percentile of
     /// the noise ground at the grid vertices), then the rivers and lakes of the drainage.
     fn bake_coarse(&mut self, threads: usize, st: &mut BakeStats) {
@@ -791,8 +831,9 @@ impl Planet {
         }
         for k in 0..6 * w * w {
             let c = grid.canon(k);
-            self.coarse.carve[k] = coarse::quantize_carve(d.carve[c]);
-            self.coarse.water[k] = coarse::quantize_water(d.water[c]);
+            // The grid keeps the erosion and the lakes; the rivers' cross-sections are polylines.
+            self.coarse.carve[k] = coarse::quantize_carve(d.erosion[c]);
+            self.coarse.water[k] = coarse::quantize_water(d.lake_water[c]);
         }
         self.coarse.lakes = d
             .lakes

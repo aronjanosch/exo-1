@@ -9,6 +9,7 @@ pub mod math;
 pub mod place;
 pub mod planet;
 pub mod recipe;
+pub mod rivers;
 pub mod scatter;
 pub mod site;
 pub use landform::PlacedStamp;

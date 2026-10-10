@@ -341,3 +341,25 @@ fn landing_mode_caps_the_speed_along_the_ground_near_the_ground() {
     assert!(on <= 15.0 + 0.5, "ground speed {on:.2} in landing mode");
     assert!(off > 15.0 + 0.5, "without landing mode the speed is not capped: {off:.2}");
 }
+
+/// Anti-drift changes nothing on a straight path: W from rest accelerates as with it off (the
+/// across speed is float noise there, not drift).
+#[test]
+fn anti_drift_leaves_a_straight_burn_alone() {
+    let speed_after = |anti: bool| {
+        let mut t = tuning();
+        t.linear.anti_drift = anti;
+        let mut ship = ScShip::new(t);
+        let mut body = body_at(DVec3::new(0.0, 300.0, 0.0));
+        let air = Air { density: 0.0, ..Air::default() };
+        fly(&mut ship, &mut body, &thrust(DVec3::NEG_Z), &ModeCmds::default(), &Space::default(), 1.0);
+        let space = body.lin_vel.length();
+        let mut ship = ScShip::new(ship.tuning.clone());
+        let mut body = body_at(DVec3::new(0.0, 300.0, 0.0));
+        fly(&mut ship, &mut body, &thrust(DVec3::NEG_Z), &ModeCmds::default(), &air, 1.0);
+        (space, body.lin_vel.length())
+    };
+    let (on, off) = (speed_after(true), speed_after(false));
+    println!("straight W 1 s, space and under gravity: {on:.3?} m/s with anti-drift, {off:.3?} without");
+    assert!((on.0 - off.0).abs() < 0.01 * off.0 && (on.1 - off.1).abs() < 0.01 * off.1, "{on:?} vs {off:?}");
+}

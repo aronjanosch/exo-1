@@ -145,7 +145,7 @@ impl Default for LinearTuning {
             g_limit: Dirs { forward: 8.0, backward: 6.0, left: 4.0, right: 4.0, up: 6.0, down: 3.0 },
             boost_disables_g_safe: false,
             brake_ease_speed: 3.0,
-            comstab_off_lag: 0.6,
+            comstab_off_lag: 3.0,
             descent_reserve: 0.6,
             proximity_time: 3.0,
             landing: LandingBand { full_below: 5.0, off_above: 40.0, speed: 15.0, landing_share: 0.2 },

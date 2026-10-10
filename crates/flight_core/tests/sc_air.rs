@@ -4,7 +4,7 @@
 mod sc_common;
 
 use flight_core::sc::air::{self, AirState, Axes};
-use flight_core::sc::{Frame, ModeCmds, Modes, ScShip};
+use flight_core::sc::{StepState, ModeCmds, Modes, ScShip};
 use flight_core::FlightInput;
 use glam::DVec3;
 use sc_common::*;
@@ -13,7 +13,7 @@ use sc_common::*;
 fn air_at(pos: DVec3, vel: DVec3, env: &Air, t: &flight_core::sc::air::AirTuning) -> air::AirOut {
     let mut b = body_at(pos);
     b.lin_vel = vel;
-    let f = Frame::new(&b, env, DT);
+    let f = StepState::new(&b, env, DT);
     air::step(&mut AirState::default(), &f, &Modes::default(), t)
 }
 
@@ -103,7 +103,7 @@ fn wind_held_with_wind_compensation_and_pushes_without() {
     let t = tuning().air;
     let mut b = body_at(DVec3::Y * 50.0);
     b.lin_vel = DVec3::ZERO;
-    let f = Frame::new(&b, &env, DT);
+    let f = StepState::new(&b, &env, DT);
     let on = air::step(&mut AirState::default(), &f, &Modes { wind_comp: true, ..Modes::default() }, &t);
     let off = air::step(&mut AirState::default(), &f, &Modes { wind_comp: false, ..Modes::default() }, &t);
     println!("wind {:.2} m/s at rest: held {:.3} m/s², pushed {:.3} m/s²", on.wind.length(), on.accel.length(), off.push.length());
@@ -158,7 +158,7 @@ fn turbulence_is_repeatable_at_the_same_place_and_time() {
         b.lin_vel = DVec3::new(0.0, 0.0, -60.0);
         let mut out = Vec::new();
         for _ in 0..30 {
-            let f = Frame::new(&b, &env, DT);
+            let f = StepState::new(&b, &env, DT);
             let o = air::step(&mut s, &f, &Modes::default(), &t);
             out.push((o.angular, o.push));
         }
@@ -177,7 +177,7 @@ fn wind_is_a_base_wind_with_gusts_that_change_over_time() {
     let t = tuning().air;
     let mut b = body_at(DVec3::Y * 50.0);
     b.lin_vel = DVec3::ZERO;
-    let f = Frame::new(&b, &env, DT);
+    let f = StepState::new(&b, &env, DT);
     let mut s = AirState::default();
     let first = air::step(&mut s, &f, &Modes::default(), &t).wind;
     let mut later = first;
@@ -198,7 +198,7 @@ fn space_is_all_zero_but_the_thrust_and_caps() {
     let mut b = body_at(DVec3::new(0.0, 9000.0, 0.0));
     b.lin_vel = DVec3::new(30.0, 10.0, -100.0);
     b.ang_vel = DVec3::new(1.0, -2.0, 0.5);
-    let f = Frame::new(&b, &env, DT);
+    let f = StepState::new(&b, &env, DT);
     let mut s = AirState::default();
     let o = air::step(&mut s, &f, &Modes::default(), &t);
     assert_eq!(o.accel, DVec3::ZERO);

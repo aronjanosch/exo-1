@@ -19,7 +19,7 @@
 //!
 //! All values are TODO(initiator) (`content/tuning/sc_angular.json`).
 use super::modes::Modes;
-use super::Frame;
+use super::StepState;
 use crate::limits::{Dirs, Rot, G0};
 use crate::{lerp, smoothstep, Curve, FlightInput, Interp};
 use glam::{DVec2, DVec3};
@@ -189,7 +189,7 @@ fn landing_share(t: &AngularTuning, clearance: f64) -> f64 {
     1.0 - smoothstep(t.landing_full_below, t.landing_off_above, clearance)
 }
 
-pub fn step(s: &mut AngularState, f: &Frame, input: &FlightInput, m: &Modes, e: &Env, t: &AngularTuning) -> AngularOut {
+pub fn step(s: &mut AngularState, f: &StepState, input: &FlightInput, m: &Modes, e: &Env, t: &AngularTuning) -> AngularOut {
     let dt = f.dt;
     let w = f.w_local;
 

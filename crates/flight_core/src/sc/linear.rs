@@ -10,7 +10,7 @@
 //! and landing mode limit the descent and the speed near the ground. The first flight model's
 //! ideas (`refuse_thrust`, `brake_along`, the precision band, the descent limit) live on here.
 use super::modes::{Master, Modes};
-use super::Frame;
+use super::StepState;
 use crate::limits::{Dirs, G0};
 use crate::{lerp, limit_length, smoothstep, Curve, FlightInput, Interp};
 use glam::{DQuat, DVec2, DVec3};
@@ -240,7 +240,7 @@ fn reach(b: &Dirs, u: DVec3) -> f64 {
     [(u.x, lim.x), (u.y, lim.y), (u.z, lim.z)].iter().filter(|(c, _)| c.abs() > 1e-12).map(|(c, m)| m.abs() / c.abs()).fold(f64::INFINITY, f64::min)
 }
 
-pub fn step(s: &mut LinearState, f: &Frame, input: &FlightInput, m: &Modes, e: &Env, t: &LinearTuning) -> LinearOut {
+pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, e: &Env, t: &LinearTuning) -> LinearOut {
     let stick = if e.braking { DVec3::ZERO } else { limit_length(input.thrust, 1.0) };
     let c = t.caps(m.master);
     let scale = e.cap_scale * m.limiter;

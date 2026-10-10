@@ -68,7 +68,19 @@ impl Planet {
         (cube_to_sphere(face, a0, b0) - cube_to_sphere(face, a0 + size, b0)).length() * self.radius
     }
 
+    /// The chunk at its own level of detail: octaves its vertex spacing cannot hold are faded out
+    /// (#216).
     pub fn build_chunk(&self, face: usize, a0: f64, b0: f64, size: f64) -> ChunkOut {
+        self.build_chunk_at(face, a0, b0, size, true)
+    }
+
+    /// The chunk with every octave, whatever its level: the reference `build_chunk` is measured
+    /// against.
+    pub fn build_chunk_unculled(&self, face: usize, a0: f64, b0: f64, size: f64) -> ChunkOut {
+        self.build_chunk_at(face, a0, b0, size, false)
+    }
+
+    fn build_chunk_at(&self, face: usize, a0: f64, b0: f64, size: f64, cull: bool) -> ChunkOut {
         let r = self.radius;
         let step = size / GRID as f64;
         let centre_dir = cube_to_sphere(face, a0 + size * 0.5, b0 + size * 0.5);
@@ -77,6 +89,9 @@ impl Planet {
         let centre = v3(c64.x as f32 as f64, c64.y as f32 as f64, c64.z as f32 as f64);
         let edge_m = self.chunk_edge_m(face, a0, b0, size);
         let skirt_depth = (edge_m / GRID as f64 * 4.0).max(2.0);
+        // The level's nominal spacing, the same for every chunk of one size: neighbours then cull alike
+        // along their shared edge (a chunk's own metres vary over the cube faces).
+        let detail = cull.then_some(self.radius * std::f64::consts::FRAC_PI_2 * size / GRID as f64);
 
         let mut pos = vec![V3::default(); M * M];
         let mut dirs = vec![V3::default(); M * M];
@@ -88,7 +103,7 @@ impl Planet {
                 let a = a0 + (i as f64 - 1.0) * step;
                 let b = b0 + (j as f64 - 1.0) * step;
                 let dir = cube_to_sphere(face, a, b);
-                let (h, f, lf) = self.height_lf_ab(face, a.clamp(-1.0, 1.0), b.clamp(-1.0, 1.0), dir);
+                let (h, f, lf) = self.height_lf_lod(face, a.clamp(-1.0, 1.0), b.clamp(-1.0, 1.0), dir, detail);
                 let k = j * M + i;
                 levels[k] = self.water_level_ab(face, a.clamp(-1.0, 1.0), b.clamp(-1.0, 1.0)).unwrap_or(f64::NAN);
                 pos[k] = dir * (r + h);

@@ -21,5 +21,5 @@ pub use place::{PadAt, PadSpec, Place};
 pub use site::{Piece, Site};
 pub use scatter::{EntryInfo, Instance, ScatterCell};
 pub use math::*;
-pub use planet::{BakeStats, Planet, Sample};
+pub use planet::{octave_weight, BakeStats, Planet, Sample};
 pub use recipe::Recipe;

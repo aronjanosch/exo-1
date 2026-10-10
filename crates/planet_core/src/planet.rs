@@ -33,13 +33,81 @@ struct BandRt {
     /// Finer than the coarse grid resolves (base frequency above a quarter cell): the relief a
     /// river's valley flattens (#177). At 5 km none is.
     high: bool,
-    noise: FastNoiseLite,
+    /// The noise's octaves, each on its own (#216): a level of detail drops the fine ones.
+    octaves: Vec<Octave>,
     amp: f64,
     warp: Option<(FastNoiseLite, f64)>,
     scale: BandScale,
 }
 
 use crate::landform::{ShapeRt, StampRt};
+
+/// One octave of a band's fractal noise (#216). The octaves summed with their amplitudes equal
+/// fastnoise-lite's fractal (same seeds, frequencies, gain 0.5 and bounding), so a band at full
+/// detail is the same noise as before.
+struct Octave {
+    noise: FastNoiseLite,
+    amp: f32,
+    ridged: bool,
+    /// The octave's wavelength in metres (1 / frequency).
+    wavelength_m: f64,
+}
+
+/// The octaves of a band's noise spec, as fastnoise-lite sums them.
+fn band_octaves(spec: &NoiseSpec, seed: i32) -> Vec<Octave> {
+    const GAIN: f32 = 0.5;
+    let count = match spec.fractal {
+        Fractal::None => 1,
+        _ => spec.octaves.max(1) as usize,
+    };
+    // fastnoise-lite's bounding: 1 / (1 + gain + gain^2 + ...), for the fractal kinds.
+    let mut amp_sum = 1.0f32;
+    let mut a = GAIN;
+    for _ in 1..count {
+        amp_sum += a;
+        a *= GAIN;
+    }
+    let mut amp = if matches!(spec.fractal, Fractal::None) { 1.0 } else { 1.0 / amp_sum };
+    (0..count)
+        .map(|k| {
+            let scale = (1u32 << k) as f32;
+            let one = NoiseSpec { seed_offset: spec.seed_offset + k as i32, frequency: spec.frequency * scale, fractal: Fractal::None, octaves: 1 };
+            let o = Octave {
+                noise: make_noise(&one, seed),
+                amp,
+                ridged: matches!(spec.fractal, Fractal::Ridged),
+                wavelength_m: 1.0 / (spec.frequency as f64 * scale as f64),
+            };
+            amp *= GAIN;
+            o
+        })
+        .collect()
+}
+
+/// The weight of an octave of wavelength `wavelength_m` on a grid of `spacing_m` metres: 0 at one
+/// spacing or less, 1 from two, a smoothstep between: the octave below two spacings fades out over
+/// one octave, no step (#216).
+pub fn octave_weight(wavelength_m: f64, spacing_m: f64) -> f64 {
+    let t = (wavelength_m / spacing_m.max(1e-9) - 1.0).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// A band's noise at a point: the octaves' sum, each faded by its weight at `detail` metres of
+/// spacing (all at full weight when `detail` is None).
+fn band_noise(octaves: &[Octave], p: [f32; 3], detail: Option<f64>) -> f64 {
+    // f32 like fastnoise-lite's own sum, so the full detail is bit for bit the old noise.
+    let mut sum = 0.0f32;
+    for o in octaves {
+        let w = detail.map_or(1.0, |d| octave_weight(o.wavelength_m, d)) as f32;
+        if w <= 0.0 {
+            continue;
+        }
+        let n = nz(&o.noise, p);
+        let v = if o.ridged { n.abs() * -2.0 + 1.0 } else { n };
+        sum += v * o.amp * w;
+    }
+    sum as f64
+}
 
 /// Macro fields at one point.
 #[derive(Copy, Clone, Debug, Default)]
@@ -267,7 +335,7 @@ impl Planet {
             .iter()
             .map(|b| BandRt {
                 high: b.noise.frequency as f64 > 1.0 / (4.0 * std::f64::consts::FRAC_PI_2 * radius / m.resolution as f64),
-                noise: make_noise(&b.noise, seed),
+                octaves: band_octaves(&b.noise, seed),
                 amp: b.amplitude,
                 warp: b.warp.as_ref().map(|w| {
                     let spec = NoiseSpec { seed_offset: w.seed_offset, frequency: w.frequency, fractal: Fractal::None, octaves: 1 };
@@ -395,8 +463,9 @@ impl Planet {
         (h, lf)
     }
 
-    /// The bands' height split into the part the coarse grid resolves and the finer relief.
-    fn bands_split(&self, p: [f32; 3], f: &Fields) -> (f64, f64) {
+    /// The bands' height split into the part the coarse grid resolves and the finer relief, at a
+    /// level of detail of `detail` metres of spacing (None: every octave).
+    fn bands_split(&self, p: [f32; 3], f: &Fields, detail: Option<f64>) -> (f64, f64) {
         let sh = &self.recipe.shape;
         let stretch = sh.stretch.eval(f.get(sh.stretch.field));
         let rough = sh.roughness.eval(f.get(sh.roughness.field));
@@ -409,16 +478,16 @@ impl Planet {
                     p[1] + wa * nz(w, [p[0], p[1] + 2027.0, p[2]]),
                     p[2] + wa * nz(w, [p[0], p[1], p[2] + 3041.0]),
                 ];
-                nz(&b.noise, q)
+                band_noise(&b.octaves, q, detail)
             } else {
-                nz(&b.noise, p)
+                band_noise(&b.octaves, p, detail)
             };
             let k = match b.scale {
                 BandScale::None => 1.0,
                 BandScale::Stretch => stretch,
                 BandScale::Roughness => rough,
             };
-            let h = v as f64 * b.amp * k;
+            let h = v * b.amp * k;
             if b.high {
                 hi += h;
             } else {
@@ -525,8 +594,14 @@ impl Planet {
 
     /// `height_ab` with the stamps' forced landform too (the stamps are summed once, #216).
     pub(crate) fn height_lf_ab(&self, face: usize, a: f64, b: f64, dir: V3) -> (f64, Fields, Option<f64>) {
+        self.height_lf_lod(face, a, b, dir, None)
+    }
+
+    /// The height function at a level of detail: `detail` metres of vertex spacing (#216); None is
+    /// the full height function. Chunks use their own spacing; gameplay never does.
+    pub(crate) fn height_lf_lod(&self, face: usize, a: f64, b: f64, dir: V3, detail: Option<f64>) -> (f64, Fields, Option<f64>) {
         let (sh, lf) = self.stamp_height(dir);
-        let (h, f) = self.base_height_with(face, a, b, dir, sh);
+        let (h, f) = self.base_height_with(face, a, b, dir, sh, detail);
         (self.soft_ceiling(self.apply_edits(dir, h)), f, lf)
     }
 
@@ -540,13 +615,13 @@ impl Planet {
 
     /// The height function without the site edits: the noise ground and the drainage's cut.
     pub fn base_height_ab(&self, face: usize, a: f64, b: f64, dir: V3) -> (f64, Fields) {
-        self.base_height_with(face, a, b, dir, self.stamp_height(dir).0)
+        self.base_height_with(face, a, b, dir, self.stamp_height(dir).0, None)
     }
 
-    /// `base_height_ab` given the stamps' height at `dir`.
-    fn base_height_with(&self, face: usize, a: f64, b: f64, dir: V3, stamp_m: f64) -> (f64, Fields) {
+    /// `base_height_ab` given the stamps' height at `dir` and a level of detail.
+    fn base_height_with(&self, face: usize, a: f64, b: f64, dir: V3, stamp_m: f64, detail: Option<f64>) -> (f64, Fields) {
         let f = self.fields_at(dir);
-        let (lo, hi) = self.bands_split(self.p32(dir), &f);
+        let (lo, hi) = self.bands_split(self.p32(dir), &f, detail);
         let g = self.shape_offset(&f) + stamp_m + lo + self.carve_ab(face, a, b);
         if self.river_idx.is_empty() {
             return (g + hi, f);
@@ -558,7 +633,7 @@ impl Planet {
     /// The noise ground alone (shape, stamps, bands): what the drainage starts from.
     fn noise_height_ab(&self, dir: V3) -> (f64, Fields) {
         let f = self.fields_at(dir);
-        (self.shape_offset(&f) + self.stamp_height(dir).0 + self.bands_split(self.p32(dir), &f).0, f)
+        (self.shape_offset(&f) + self.stamp_height(dir).0 + self.bands_split(self.p32(dir), &f, None).0, f)
     }
 
     pub fn base_height_at(&self, dir: V3) -> f64 {

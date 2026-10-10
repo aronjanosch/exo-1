@@ -1,5 +1,5 @@
 {
-  "_comment": "Camera (flight_core::camera::CameraTuning). Assumed values. chase_offset: seated camera in ship space (x right, y up, z back, m); chase_pitch_deg: its pitch against the nose (negative looks down). fov_curve: speed m/s -> vertical FOV deg. streak_curve: speed m/s -> speed dust level (0 none, 0.2 and more full thickness). Look-ahead: the view leads a turn by gain x turn rate, past the dead zone (rad/s), capped, eased. Bump: touchdown drop per m/s of approach speed, damped; the bump comes when the hull starts touching, if the approach speed just before was above bump_threshold m/s.",
+  "_comment": "Camera (flight_core::camera::CameraTuning). Assumed values. chase_offset: seated camera in ship space (x right, y up, z back, m); chase_pitch_deg: its pitch against the nose (negative looks down). fov_curve: speed m/s -> vertical FOV deg. streak_curve: speed m/s -> speed dust level (0 none, 0.2 and more full thickness). Look-ahead: the view leads a turn by gain x turn rate, past the dead zone (rad/s), capped, eased. Bump: touchdown drop per m/s of approach speed, damped; the bump comes when the hull starts touching, if the approach speed just before was above bump_threshold m/s. Shake (#148, F9 switch, default on; camera_shake in settings scales it): trauma 0..1 from boost, thrust share and touchdown (per m/s approach), decays linearly, offset = smooth noise times trauma squared, bounded. TODO(initiator): every shake_*, lag_* and g_fov_curve value is a placeholder to tune by feel. Lag (#149): the chase camera trails the felt acceleration (gravity and ground contact excluded): lag_per_g m per g, a spring with lag_stiffness (1/s2) and lag_damping (1/s), bounded by lag_max. g_fov_curve: forward felt G to extra field of view (deg).",
   "chase_offset": [0.0, 5.5, 17.0],
   "chase_pitch_deg": -10.0,
   "fov_curve": { "interp": "smooth", "points": [[0, 75], [100, 77], [400, 84], [2000, 90]] },
@@ -13,5 +13,19 @@
   "bump_max": 0.5,
   "bump_frequency": 3.0,
   "bump_damping": 6.0,
-  "bump_threshold": 0.3
+  "bump_threshold": 0.3,
+  "shake_trauma_boost": 1.0,
+  "shake_trauma_thrust": 0.8,
+  "shake_trauma_touchdown": 0.1,
+  "shake_decay": 0.5,
+  "shake_frequency": 6.0,
+  "shake_max_offset": 0.15,
+  "shake_max_angle_deg": 0.6,
+  "shake_scale_chase": 1.0,
+  "shake_scale_cabin": 0.4,
+  "lag_per_g": 0.5,
+  "lag_stiffness": 16.0,
+  "lag_damping": 5.6,
+  "lag_max": 1.5,
+  "g_fov_curve": { "interp": "linear", "points": [[0, 0], [3, 6]] }
 }

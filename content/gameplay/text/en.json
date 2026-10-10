@@ -30,6 +30,90 @@
     "Nobody knows what is in it. That is the charm."
   ],
 
+  "commodity.sock_dust.name": "sock dust",
+  "commodity.grumble_jelly.name": "grumble jelly",
+  "location.slosh_wholesale.name": "Slosh & Daughter Wholesale",
+  "track.standing_wholesaler.name": "standing with Slosh & Daughter",
+  "job.customer_order.title": "A customer's order",
+  "job.customer_order.brief": "Goods from the wholesaler for a customer who is waiting.",
+
+  "giver.wholesaler.name": "Slosh & Daughter Wholesale",
+  "giver.wholesaler.greet.first": [
+    "Wholesale, retail, and everything in between. Mostly in between.",
+    "New? Everything on the shelf is legal. Technically.",
+    "Hello! Please do not feed the jelly."
+  ],
+  "giver.wholesaler.greet.regular": [
+    "The usual? We have a usual for you.",
+    "Back again. The jelly missed you.",
+    "Good timing: the sock dust is fresh."
+  ],
+  "giver.wholesaler.greet.failure": [
+    "We heard about the last order. The jelly heard too.",
+    "A customer called. Several times. Loudly.",
+    "Let us make this one go better. For the jelly's sake."
+  ],
+  "giver.wholesaler.intro": ["Orders are up on the board.", "Somebody wants something.", "Customers, customers, customers."],
+  "giver.wholesaler.reason": ["Somebody is waiting for this.", "Somebody paid in advance. Mostly.", "It is on the house. The house disagrees."],
+  "giver.wholesaler.signoff": ["Do not shake it.", "Bring the empties back. Do not bring the empties back.", "Mind the grumbling."],
+
+  "customer.mabel_snood.name": "Mabel Snood",
+  "customer.mabel_snood.order_title": "Order for Mabel Snood",
+  "customer.mabel_snood.order": [
+    "Mabel Snood: my socks are out of dust again.",
+    "Mabel Snood says the dust is for a very serious project.",
+    "Mabel Snood wants dust. Do not ask for what."
+  ],
+  "customer.mabel_snood.thanks": [
+    "Mabel Snood sniffs the dust and smiles.",
+    "Mabel Snood: you may come again.",
+    "Mabel Snood adds you to the good list."
+  ],
+  "customer.mabel_snood.grumble": [
+    "Mabel Snood: this dust has been stepped on.",
+    "Mabel Snood writes you on the other list.",
+    "Mabel Snood sighs in four languages."
+  ],
+  "customer.captain_pip.name": "Captain Pip",
+  "customer.captain_pip.order_title": "Order for Captain Pip",
+  "customer.captain_pip.order": [
+    "Captain Pip: the jelly crew is restless.",
+    "Captain Pip needs jelly before the tide of nonsense turns.",
+    "Captain Pip: jelly, and none of your excuses."
+  ],
+  "customer.captain_pip.thanks": [
+    "Captain Pip salutes with the wrong hand. High praise.",
+    "Captain Pip: shipshape, in a way.",
+    "Captain Pip names a puddle after you."
+  ],
+  "customer.captain_pip.grumble": [
+    "Captain Pip: the jelly is mutinying.",
+    "Captain Pip points at the horizon, meaningfully.",
+    "Captain Pip will be telling the harbour about this."
+  ],
+  "customer.moss_committee.name": "The Moss Committee",
+  "customer.moss_committee.order_title": "Order for the Moss Committee",
+  "customer.moss_committee.order": [
+    "The Moss Committee demands mud, in triplicate.",
+    "The Moss Committee has voted for more mud.",
+    "The Moss Committee: mud, and the minutes will show it."
+  ],
+  "customer.moss_committee.thanks": [
+    "The Moss Committee adjourns, satisfied.",
+    "The Moss Committee approves, unanimously, twice.",
+    "The Moss Committee moves to thank you. Seconded."
+  ],
+  "customer.moss_committee.grumble": [
+    "The Moss Committee notes your failure in the minutes.",
+    "The Moss Committee is disappointed, formally.",
+    "The Moss Committee will table this. Loudly."
+  ],
+  "notice.order.placed": [
+    "{customer} has an order. Check the wholesaler.",
+    "New order from {customer}.",
+    "{customer} is waiting for goods."
+  ],
+
   "giver.courier_office.name": "Dinglepost Couriers",
   "giver.courier_office.greet.first": [
     "New face! We always need a new face. The old ones keep quitting.",

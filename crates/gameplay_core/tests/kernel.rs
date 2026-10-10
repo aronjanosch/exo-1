@@ -50,8 +50,8 @@ fn ev(sender: ClientId, seq: u64, payload: WorldEvent) -> Event<WorldEvent> {
 #[test]
 fn valid_set_loads() {
     let c = content();
-    assert_eq!(c.commodities.len(), 2);
-    assert_eq!(c.locations.len(), 2);
+    assert_eq!(c.commodities.len(), 3);
+    assert_eq!(c.locations.len(), 3);
     assert_eq!(c.tracks.len(), 3);
     assert_eq!(c.unlocks.len(), 2);
     assert_eq!(c.locations[&LocationId::new("bent_spoon")].path, "location/bent_spoon.json");
@@ -395,4 +395,22 @@ fn a_track_with_a_floor_never_drops_below_it_and_recovers() {
 fn a_floor_above_the_start_is_a_content_error() {
     let e = errors_with("progress_track/standing_courier.json", r#"{ "id": "standing_courier", "name": "x", "owner": "crew", "min": 5, "start": 0 }"#);
     one_error(&e, "progress_track/standing_courier.json", "min");
+}
+
+// ---------- order events (#168) ----------
+
+#[test]
+fn order_events_are_plain_domain_events_that_progress_ignores_and_that_round_trip() {
+    let c = content();
+    let mut p = Progress::new(&c);
+    let placed = ev(HOST, 0, WorldEvent::OrderPlaced { order: OrderId(3), by: "old_nib".into(), from: LocationId::new("wholesale_yard"), to: LocationId::new("drip_rock"), commodity: CommodityId::new("fizzy_mud"), amount: 2, reward: 90, deadline_s: Some(300.0) });
+    let settled = ev(HOST, 1, WorldEvent::OrderSettled { order: OrderId(3), delivered: 2, asked: 2, condition: 0.9, in_time: true });
+    let before = p.clone();
+    p.apply(&c, &placed).unwrap();
+    p.apply(&c, &settled).unwrap();
+    assert_eq!(p, before, "progress does not change by orders, systems read them");
+    for e in [placed, settled] {
+        let back: Event<WorldEvent> = serde_json::from_str(&serde_json::to_string(&e).unwrap()).unwrap();
+        assert_eq!(back, e);
+    }
 }

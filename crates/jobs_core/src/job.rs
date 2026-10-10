@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use gameplay_core::notice::{Arg, Notice, NoticeKind};
 use gameplay_core::save::{Envelope, SaveError};
-use gameplay_core::{TextKey, ClientId, CommodityId, Content, CrateId, Event, Flag, LocationId, Progress, TrackId, WorldEvent};
+use gameplay_core::{ClientId, CommodityId, Content, CrateId, Event, Flag, LocationId, OrderId, Progress, TextKey, TrackId, WorldEvent};
 use serde::{Deserialize, Serialize};
 
 use crate::giver::{GiverHistory, GiverId};
@@ -78,6 +78,21 @@ impl Leg {
     }
 }
 
+/// The template orders become offers of (a `job_template` of this id must exist for orders to
+/// show up; its places, commodity, amount, reward and deadline are replaced by the order's).
+pub const ORDER_TEMPLATE: &str = "customer_order";
+
+/// What a customer order asks of its job (#168).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct OrderTerms {
+    pub order: OrderId,
+    /// The customer's id, for texts (`customer.<by>.name`).
+    pub by: String,
+    /// Money at full grade, instead of the template's.
+    pub reward: i64,
+    pub deadline_s: Option<f64>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Job {
     pub id: JobId,
@@ -89,6 +104,9 @@ pub struct Job {
     pub participants: BTreeSet<ClientId>,
     /// Seconds since the first pickup; none before it.
     pub clock_s: Option<f64>,
+    /// Set for a job that came from a customer's order.
+    #[serde(default)]
+    pub order: Option<OrderTerms>,
 }
 
 impl Job {
@@ -100,9 +118,30 @@ impl Job {
         self.legs.iter().map(|l| l.amount).sum()
     }
 
+    /// The deadline: an order's own, else the template's.
+    pub fn deadline_s(&self, t: &JobTemplate) -> Option<f64> {
+        match &self.order {
+            Some(o) => o.deadline_s,
+            None => t.deadline_s,
+        }
+    }
+
     /// Seconds left before the deadline; none without a deadline or before the first pickup.
     pub fn time_left(&self, t: &JobTemplate) -> Option<f64> {
-        Some((t.deadline_s? - self.clock_s?).max(0.0))
+        Some((self.deadline_s(t)? - self.clock_s?).max(0.0))
+    }
+
+    /// `time_left` with the template looked up in `jc`.
+    pub fn time_left_of(&self, jc: &JobContent) -> Option<f64> {
+        self.time_left(&jc.templates.get(&self.template)?.record)
+    }
+
+    /// The text key of the title: a customer's order has its own (`customer.<by>.order_title`).
+    pub fn title_key(&self, t: &JobTemplate) -> TextKey {
+        match &self.order {
+            Some(o) => TextKey::new(format!("customer.{}.order_title", o.by)),
+            None => t.title.clone(),
+        }
     }
 
     fn leg_of(&mut self, c: CrateId) -> Option<&mut Leg> {
@@ -167,7 +206,7 @@ impl Jobs {
     pub fn offer(&mut self, template: &TemplateId, legs: Vec<Leg>) -> JobId {
         let id = JobId(self.next_id);
         self.next_id += 1;
-        self.jobs.insert(id, Job { id, template: template.clone(), state: JobState::Offered, legs, accepted_by: None, participants: BTreeSet::new(), clock_s: None });
+        self.jobs.insert(id, Job { id, template: template.clone(), state: JobState::Offered, legs, accepted_by: None, participants: BTreeSet::new(), clock_s: None, order: None });
         id
     }
 
@@ -232,7 +271,7 @@ impl Jobs {
                 j.state = JobState::Active;
                 j.accepted_by = Some(by);
                 j.participants.insert(by);
-                let mut out = vec![Outcome::Notice(Notice::new(NoticeKind::Accepted, "notice.job.accepted").arg("title", Arg::Key(t.title.clone())))];
+                let mut out = vec![Outcome::Notice(Notice::new(NoticeKind::Accepted, "notice.job.accepted").arg("title", Arg::Key(j.title_key(t))))];
                 out.extend(j.legs.iter().enumerate().map(|(i, l)| Outcome::SpawnCrates { job: *job, leg: i, commodity: l.commodity.clone(), count: l.amount, at: l.from.clone() }));
                 Ok(out)
             }
@@ -245,8 +284,9 @@ impl Jobs {
                 let crates = j.legs.iter().flat_map(|l| l.crates.keys().copied()).collect();
                 let mut out = vec![Outcome::ReleaseCrates { crates }, Outcome::Ended { job: *job, state: JobState::Abandoned, grade: None }];
                 if let Some(t) = jc.templates.get(&j.template) {
-                    out.push(Outcome::Notice(Notice::new(NoticeKind::Warning, "notice.job.abandoned").arg("title", Arg::Key(t.record.title.clone()))));
+                    out.push(Outcome::Notice(Notice::new(NoticeKind::Warning, "notice.job.abandoned").arg("title", Arg::Key(j.title_key(&t.record)))));
                 }
+                out.extend(settle_order(j, true));
                 Ok(out)
             }
             JobEvent::CratesSpawned { job, leg, crates } => {
@@ -271,7 +311,7 @@ impl Jobs {
         let by = ev.sender();
         let mut ended = Vec::new();
         let mut notes = Vec::new();
-        let title = |j: &Job| jc.templates.get(&j.template).map(|t| Arg::Key(t.record.title.clone()));
+        let title = |j: &Job| jc.templates.get(&j.template).map(|t| Arg::Key(j.title_key(&t.record)));
         match &ev.payload {
             WorldEvent::CratePickedUp { crate_id, .. } => {
                 if let Some(j) = self.job_with(*crate_id)
@@ -329,13 +369,24 @@ impl Jobs {
                 for j in self.jobs.values_mut().filter(|j| j.state == JobState::Active) {
                     let Some(clock) = j.clock_s.as_mut() else { continue };
                     *clock += dt;
-                    let deadline = jc.templates.get(&j.template).and_then(|t| t.record.deadline_s);
-                    if deadline.is_some_and(|d| *clock >= d) {
+                    let clock = *clock;
+                    let deadline = jc.templates.get(&j.template).and_then(|t| j.deadline_s(&t.record));
+                    if deadline.is_some_and(|d| clock >= d) {
                         ended.push((j.id, JobState::Expired));
                     }
                 }
             }
-            WorldEvent::PlayerJoined | WorldEvent::UnlockBought { .. } | WorldEvent::TrackChanged { .. } | WorldEvent::FlagRaised { .. } => {}
+            WorldEvent::OrderPlaced { order, by, from, to, commodity, amount, reward, deadline_s } => {
+                // A customer's order becomes an offer of the order template, with the order's own
+                // terms. Without the template, or for an order seen before, nothing happens.
+                let template = TemplateId::new(ORDER_TEMPLATE);
+                let known = self.jobs.values().any(|j| j.order.as_ref().is_some_and(|o| o.order == *order));
+                if jc.templates.contains_key(&template) && !known {
+                    let id = self.offer(&template, vec![Leg::new(from.clone(), to.clone(), commodity.clone(), *amount)]);
+                    self.jobs.get_mut(&id).expect("just made").order = Some(OrderTerms { order: *order, by: by.clone(), reward: *reward, deadline_s: *deadline_s });
+                }
+            }
+            WorldEvent::PlayerJoined | WorldEvent::UnlockBought { .. } | WorldEvent::TrackChanged { .. } | WorldEvent::FlagRaised { .. } | WorldEvent::OrderSettled { .. } => {}
         }
         notes.extend(ended.into_iter().flat_map(|(id, state)| self.end(jc, id, state)));
         notes
@@ -351,6 +402,17 @@ impl Jobs {
     fn end(&mut self, jc: &JobContent, id: JobId, state: JobState) -> Vec<Outcome> {
         let Some(j) = self.jobs.get_mut(&id) else { return Vec::new() };
         let Some(t) = jc.templates.get(&j.template).map(|t| &t.record) else { return Vec::new() };
+        // A customer's order pays its own reward.
+        let mut t_order;
+        let t = match &j.order {
+            Some(o) => {
+                t_order = t.clone();
+                t_order.reward = o.reward;
+                t_order.deadline_s = o.deadline_s;
+                &t_order
+            }
+            None => t,
+        };
         j.state = state;
         let g = grade(t, j.delivered(), j.asked(), j.legs.iter().map(Leg::condition_sum).sum());
         let mut out = Vec::new();
@@ -387,15 +449,16 @@ impl Jobs {
             out.push(Outcome::ReleaseCrates { crates: loose });
         }
         out.push(Outcome::Ended { job: id, state, grade: Some(g) });
-        out.extend(end_notices(t, state, &g, j.delivered(), j.asked(), standing).into_iter().map(Outcome::Notice));
+        out.extend(end_notices(t, &j.title_key(t), state, &g, j.delivered(), j.asked(), standing).into_iter().map(Outcome::Notice));
+        out.extend(settle_order(j, state != JobState::Expired));
         out
     }
 }
 
 /// The notices of a finished job (#165): the banner, then the payout itemised (base, share,
 /// condition, hazard; the lines add up to the pay), then XP.
-fn end_notices(t: &JobTemplate, state: JobState, g: &Grade, delivered: u32, asked: u32, standing: Option<(TextKey, i64)>) -> Vec<Notice> {
-    let title = Arg::Key(t.title.clone());
+fn end_notices(t: &JobTemplate, title: &TextKey, state: JobState, g: &Grade, delivered: u32, asked: u32, standing: Option<(TextKey, i64)>) -> Vec<Notice> {
+    let title = Arg::Key(title.clone());
     let (kind, key) = match state {
         JobState::Completed if g.money > 0 => (NoticeKind::Completed, "notice.job.completed"),
         JobState::Expired => (NoticeKind::Failed, "notice.job.expired"),
@@ -434,4 +497,13 @@ fn end_notices(t: &JobTemplate, state: JobState, g: &Grade, delivered: u32, aske
         out.push(Notice::new(kind, key).arg("n", Arg::Number(delta.abs())).arg("giver", Arg::Key(giver)));
     }
     out
+}
+
+/// What an order job tells the customers system when it ends: how much arrived, in what
+/// condition, whether in time.
+fn settle_order(j: &Job, in_time: bool) -> Option<Outcome> {
+    let o = j.order.as_ref()?;
+    let delivered = j.delivered();
+    let condition = if delivered == 0 { 1.0 } else { (j.legs.iter().map(Leg::condition_sum).sum::<f64>() / delivered as f64).clamp(0.0, 1.0) };
+    Some(Outcome::Emit(WorldEvent::OrderSettled { order: o.order, delivered, asked: j.asked(), condition, in_time }))
 }

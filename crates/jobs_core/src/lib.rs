@@ -19,9 +19,9 @@ pub mod id;
 pub mod job;
 pub mod template;
 
-pub use briefing::{Briefing, briefing};
+pub use briefing::{Briefing, briefing, briefing_with};
 pub use giver::{Giver, GiverHistory, GiverId, Mood};
 pub use grading::{Grade, grade};
 pub use id::{JobId, TemplateId};
-pub use job::{CrateMark, Job, JobEvent, JobState, Jobs, Leg, MAX_ACTIVE, Outcome, Refusal};
+pub use job::{CrateMark, Job, JobEvent, JobState, Jobs, Leg, MAX_ACTIVE, ORDER_TEMPLATE, OrderTerms, Outcome, Refusal};
 pub use template::{JobContent, JobTemplate};

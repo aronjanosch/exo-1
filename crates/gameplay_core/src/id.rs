@@ -54,3 +54,8 @@ pub struct ClientId(pub u64);
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct CrateId(pub u64);
+
+/// A customer's order, numbered by the customers system in the order they are placed (#168).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct OrderId(pub u64);

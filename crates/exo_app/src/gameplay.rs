@@ -14,6 +14,7 @@ use bevy::prelude::*;
 use gameplay_core::notice::{Arg, Notice, NoticeKind, NoticeQueue};
 use gameplay_core::text::{Picker, TextTable};
 use gameplay_core::{ClientId, CommodityId, Content, CrateId, Dedup, Event, LocationId, Progress, TextKey, TrackId, WorldEvent};
+use customers_core::{CustomerContent, Customers};
 use jobs_core::{Briefing, GiverId, JobContent, JobEvent, JobId, JobState, Jobs, Outcome};
 
 use crate::cargo::{crate_bundle, Crate, Crates};
@@ -37,6 +38,8 @@ pub fn window_plugin(app: &mut App) {
 
 /// The host's own client id until each client keeps one (#135).
 pub const HOST: ClientId = ClientId(1);
+/// Seed of the customers' orders (TODO(initiator): later the save's seed).
+const CUSTOMER_SEED: u64 = 0xC057_0001;
 /// Seed of the text picks (TODO(initiator): later the save's seed).
 const TEXT_SEED: u64 = 0x5EED_0001;
 
@@ -87,6 +90,9 @@ pub struct Gameplay {
     pub shown: Vec<ShownLine>,
     pub progress: Progress,
     pub jobs: Jobs,
+    /// Named buyers: their orders become offers of the wholesaler (#168).
+    pub customers: Customers,
+    pub customer_content: CustomerContent,
     dedup: Dedup,
     seq: u64,
     next_crate: u64,
@@ -154,13 +160,17 @@ impl Gameplay {
             .find(|f| f.path == "text/en.json")
             .map(|f| TextTable::from_json("content/gameplay/text/en.json", &f.text).unwrap_or_else(|e| panic!("{e}")))
             .unwrap_or_default();
-        let errors = jobs_content.check_texts(&text);
+        let customer_content = CustomerContent::load(&files, &kernel).unwrap_or_else(|e| fail(e));
+        let mut errors = jobs_content.check_texts(&text);
+        errors.extend(customer_content.check_texts(&text));
+        errors.extend(check_prices(&kernel, &jobs_content, &customer_content));
         if !errors.is_empty() {
             fail(errors);
         }
+        let customers = Customers::new(&customer_content, CUSTOMER_SEED);
         let progress = Progress::new(&kernel);
         let jobs = Jobs::default();
-        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(TEXT_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, briefings: Default::default() };
+        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(TEXT_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, customers, customer_content, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, briefings: Default::default() };
         g.refresh_offers();
         g
     }
@@ -243,7 +253,10 @@ impl Gameplay {
             return Some(b.clone());
         }
         let history = self.jobs.history(t.giver.as_ref()?);
-        let b = jobs_core::briefing(&self.jobs_content, &self.kernel, &self.text, &mut self.picker, t, &j.legs, &history);
+        // A customer's order has its own title and the customer's own words as the reason.
+        let title = j.title_key(t);
+        let line = j.order.as_ref().map(|o| TextKey::new(format!("customer.{}.order", o.by)));
+        let b = jobs_core::briefing_with(&self.jobs_content, &self.kernel, &self.text, &mut self.picker, t, &j.legs, &history, &title, line.as_ref());
         self.briefings.insert(job, (mood, b.clone()));
         Some(b)
     }
@@ -272,7 +285,7 @@ impl Gameplay {
     }
 
     fn offer_pay(&self, job: JobId) -> String {
-        let reward = self.jobs.get(job).and_then(|j| self.jobs_content.templates.get(&j.template)).map_or(0, |t| t.record.reward);
+        let reward = self.jobs.get(job).and_then(|j| self.jobs_content.templates.get(&j.template).map(|t| j.order.as_ref().map_or(t.record.reward, |o| o.reward))).unwrap_or(0);
         format!("{reward} {}", self.text(&TextKey::new("track.wallet.name")))
     }
 
@@ -280,7 +293,8 @@ impl Gameplay {
     pub fn offer_label(&self, job: JobId) -> String {
         let Some(j) = self.jobs.get(job) else { return String::new() };
         let Some(t) = self.jobs_content.templates.get(&j.template) else { return String::new() };
-        format!("{} ({} {})", self.text(&t.record.title), t.record.reward, self.text(&TextKey::new("track.wallet.name")))
+        let reward = j.order.as_ref().map_or(t.record.reward, |o| o.reward);
+        format!("{} ({} {})", self.text(&j.title_key(&t.record)), reward, self.text(&TextKey::new("track.wallet.name")))
     }
 
     /// A line for the developer log (scenario checks, the terminal); the players are told through
@@ -314,6 +328,33 @@ impl Gameplay {
         };
         self.notify(Notice::new(NoticeKind::Warning, key));
     }
+}
+
+/// The one price table against the records it mirrors: customers pay the commodity's base price,
+/// the courier rewards are the templates' (#168). Errors for what differs.
+fn check_prices(k: &Content, jc: &JobContent, cc: &CustomerContent) -> Vec<String> {
+    let p = &cc.prices;
+    let mut e = Vec::new();
+    for (c, price) in &p.record.customer {
+        if let Some(com) = k.commodities.get(c)
+            && com.record.base_price != *price
+        {
+            e.push(format!("{}: customer: '{c}' is {price} here but the commodity's base_price is {}", p.path, com.record.base_price));
+        }
+    }
+    for (t, price) in &p.record.courier {
+        match jc.templates.get(&jobs_core::TemplateId::new(t.clone())) {
+            None => e.push(format!("{}: courier: no job template '{t}'", p.path)),
+            Some(tpl) if tpl.record.reward != *price => e.push(format!("{}: courier: '{t}' is {price} here but the template pays {}", p.path, tpl.record.reward)),
+            Some(_) => {}
+        }
+    }
+    for t in jc.templates.values().filter(|t| t.record.id.as_str().starts_with("courier_")) {
+        if !p.record.courier.contains_key(t.record.id.as_str()) {
+            e.push(format!("{}: courier: no price for the template '{}'", p.path, t.record.id));
+        }
+    }
+    e
 }
 
 /// Pads of the current planet, when it changes (#129).
@@ -386,6 +427,13 @@ pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>
                     match g.progress.apply_with_notices(&g.kernel, &ev) {
                         Ok(ns) => ns.into_iter().for_each(|n| g.notify(n)),
                         Err(r) => g.note(format!("refused {:?}: {r:?}", ev.payload)),
+                    }
+                    // Customers read time and settled orders; their orders go back in as events.
+                    for o in g.customers.apply_world(&g.customer_content, &g.kernel, &ev) {
+                        match o {
+                            customers_core::Outcome::Emit(e) => g.push_world(HOST, e),
+                            customers_core::Outcome::Notice(n) => g.notify(n),
+                        }
                     }
                     g.jobs.apply_world(&g.jobs_content, &ev)
                 }
@@ -648,7 +696,8 @@ mod tests {
         let gp = Gameplay::load(&Crates::default());
         assert!(gp.offers_of(&GiverId::new("small_family")).is_empty());
         assert!(!gp.offers_of(&GiverId::new("courier_office")).is_empty());
-        assert_eq!(gp.jobs_content.givers.len(), 2);
+        assert_eq!(gp.jobs_content.givers.len(), 3, "courier office, small family, wholesaler");
+        assert_eq!(gp.customer_content.customers.len(), 3);
     }
 
     #[test]

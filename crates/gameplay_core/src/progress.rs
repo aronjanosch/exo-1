@@ -122,7 +122,7 @@ impl Progress {
                 }
                 Ok(())
             }
-            WorldEvent::CratePickedUp { .. } | WorldEvent::CrateDelivered { .. } | WorldEvent::CrateLost { .. } | WorldEvent::TimePassed { .. } => Ok(()),
+            WorldEvent::CratePickedUp { .. } | WorldEvent::CrateDelivered { .. } | WorldEvent::CrateLost { .. } | WorldEvent::TimePassed { .. } | WorldEvent::OrderPlaced { .. } | WorldEvent::OrderSettled { .. } => Ok(()),
         }
     }
 

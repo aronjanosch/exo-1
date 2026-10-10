@@ -10,7 +10,7 @@ Phase 1, `night/d-foundation`:
 - [x] #165 feedback beats
 - [x] #167 givers
 - [x] #170 courier jobs
-- [ ] #168 customers
+- [x] #168 customers
 - [ ] #169 flight licence
 - [ ] #166 map
 - [ ] #135 save file
@@ -52,3 +52,14 @@ Checks: 4 new tests in `planet_core/tests/places.rs` (distance and direction at 
 
 TODO(initiator): place names and positions (placeholders until the city, E), prices and rewards (30, 45, 60), the deadline 240 s, the parcel good, all texts. Open question: the decision says a courier job takes about 2 to 3 minutes on foot; at the walking speed measured here one way is 36 to 70 s. For 2 to 3 minutes the drops would have to be farther (400 m is the limit of the decision) or a job needs a return leg; I kept the 150 to 400 m rule.
 Note: the first haul (`first_haul`) stays as it was, 300 credits to Bent Spoon; the flight licence (#169) will gate it.
+
+## #168 customers
+
+Built: new crate `customers_core` (no Bevy; its only dev-dependency is `jobs_core`, used by the test host the way the glue wires them). Record `customer` (name, location, taste tags over commodities, condition standard, order rhythm, amount, patience, start relationship, voice pools order/thanks/grumble) and the single record `price_table`, checked by the loader (every good a customer may order has a wholesale and a customer price, the customer pays more than the wholesaler asks, a wholesaler location exists). `Customers`: seeded orders by rhythm (scaled by relationship: strangers wait twice as long, friends a quarter), one open order per customer, goods of their taste from the wholesale location to their pad, reward = crates × price × (1 + 4 % per relationship point); satisfaction from share, condition against the customer's standard and time (about -0.9 to +0.7) moves the relationship (0 to 5); neglect wears it down by 0.1 per 600 s without a pleasing delivery, to a floor of 1.0 and no further; they answer in their own voice (thanks or grumble pool). Section `customers` in the save, with a round-trip test.
+Events: kernel `WorldEvent::OrderPlaced` and `OrderSettled` (plain data, `OrderId`). `jobs_core` turns `OrderPlaced` into an offer of the template `customer_order` with the order's places, goods, reward and deadline (`Job::order`, `OrderTerms`), pays the order's reward, and raises `OrderSettled` when the job ends (delivered, expired or abandoned). The customer's title and words show in the offer and the briefing.
+Glue and content: wholesaler place `slosh_wholesale` (about 290 m from Drip Rock) with a giver counter showing the orders, three goods (`fizzy_mud` wet, `sock_dust` dry, `grumble_jelly` sticky), three customers at existing places (`mabel_snood` at Noodle Post, `captain_pip` at Pebble Kiosk, `moss_committee` at Lint Trap), the price table `price_table/start.json` (wholesale, customer and courier prices in one place; the glue checks customer prices against the commodities' base prices and the courier prices against the templates, so one number cannot drift), texts.
+
+Checks: 17 tests in `customers_core/tests/customers.rs` (loader errors, pools, determinism for a seed, the first order within the rhythm, route and goods, notices, satisfaction, relationship bounds, regulars order more and pay a little more, neglect floor and winning back, repeats, the chain order → offer → delivery → satisfaction and the expiry case with the jobs system, save round trip), 7 in `jobs_core/tests/orders.rs`, 1 in the kernel. Scenario `customers` (in the gate): Mabel's order appears as an offer, the counter shows it in her words, delivery pays the order's reward (32), relationship 2.00 to 2.70, her thanks, next order due within her rhythm; a second order dropped from 30 m wrecks the goods: relationship 2.70 to 2.30, her grumble. Gate: `cargo t` 424 passed, `cargo scenario` 0 failures.
+
+TODO(initiator): every name and text (customers, goods, wholesaler), prices (one table), rhythms, standards, patience, the relationship formulas (+4 % pay, rhythm factor 2.0 to 0.25, satisfaction weights, neglect 0.1 per 600 s to a floor of 1.0), the wholesaler's gain/loss.
+Open: an order nobody accepts stays on the board and the customer waits (no withdrawal in D, so a customer with an unserved order does not order again; the relationship still decays to the floor); the customers sit at the places of the courier drops until the city is placed (E).

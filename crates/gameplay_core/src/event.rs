@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::id::{ClientId, CrateId, Flag, LocationId, TrackId, UnlockId};
+use crate::id::{ClientId, CommodityId, CrateId, Flag, LocationId, OrderId, TrackId, UnlockId};
 
 /// Unique per event: the sender plus the sender's own running number. No coordination needed;
 /// a retried or duplicated request keeps its id.
@@ -54,6 +54,13 @@ pub enum WorldEvent {
     TrackChanged { track: TrackId, delta: i64, player: Option<ClientId> },
     /// A system states a fact that conditions can ask for (`job_completed:<template>`).
     FlagRaised { flag: Flag },
+    /// A buyer (`by`: the id the customers system uses, for texts) wants goods: pick up `amount` of `commodity` at `from`, bring them to `to` for
+    /// `reward`. The customers system raises it, the jobs system turns it into an offer (#168).
+    OrderPlaced { order: OrderId, by: String, from: LocationId, to: LocationId, commodity: CommodityId, amount: u32, reward: i64, deadline_s: Option<f64> },
+    /// What came of an order: how many crates arrived, how many were asked for, their mean
+    /// condition 0..1, and whether it was in time. The jobs system raises it when the job ends;
+    /// the customers system reads it.
+    OrderSettled { order: OrderId, delivered: u32, asked: u32, condition: f64, in_time: bool },
 }
 
 /// Which event ids the host has applied. An id seen before is not applied again (co-op retries,

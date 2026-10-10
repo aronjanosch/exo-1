@@ -42,6 +42,13 @@ fn shape(t: &JobTemplate, asked: u32) -> &'static str {
 }
 
 pub fn briefing(jc: &JobContent, kernel: &Content, table: &TextTable, picker: &mut Picker, t: &JobTemplate, legs: &[Leg], history: &GiverHistory) -> Briefing {
+    briefing_with(jc, kernel, table, picker, t, legs, history, &t.title, None)
+}
+
+/// `briefing` with another title key and a reason line of its own (a customer's order: the
+/// customer's title and what they say about it).
+#[allow(clippy::too_many_arguments)]
+pub fn briefing_with(jc: &JobContent, kernel: &Content, table: &TextTable, picker: &mut Picker, t: &JobTemplate, legs: &[Leg], history: &GiverHistory, title_key: &TextKey, reason: Option<&TextKey>) -> Briefing {
     let giver = t.giver.as_ref().and_then(|g| jc.givers.get(g)).map(|g| &g.record);
     let mut out = Briefing::default();
     let asked: u32 = legs.iter().map(|l| l.amount).sum();
@@ -55,7 +62,7 @@ pub fn briefing(jc: &JobContent, kernel: &Content, table: &TextTable, picker: &m
         s
     };
     out.giver = giver.map(|g| name_of(picker, &g.name)).unwrap_or_default();
-    let title = name_of(picker, &t.title);
+    let title = name_of(picker, title_key);
     out.title = if table.has("briefing.title") && giver.is_some() { fill(picker, "briefing.title", &[("title", title), ("giver", out.giver.clone())]) } else { title };
     if let Some(l) = first {
         let commodity = kernel.commodities.get(&l.commodity).map(|c| name_of(picker, &c.record.name)).unwrap_or_else(|| l.commodity.to_string());
@@ -68,6 +75,7 @@ pub fn briefing(jc: &JobContent, kernel: &Content, table: &TextTable, picker: &m
         out.intro = name_of(picker, &g.voice.intro);
         out.sign_off = name_of(picker, &g.voice.sign_off);
         // The reason: the cargo's own, else the destination's route tag, else the giver's.
+        let reason_override = reason;
         let mut reason = None;
         if let Some(l) = first {
             let by_cargo = format!("briefing.reason.commodity.{}", l.commodity);
@@ -77,9 +85,10 @@ pub fn briefing(jc: &JobContent, kernel: &Content, table: &TextTable, picker: &m
                 reason = dest.record.tags.iter().map(|tag| format!("briefing.reason.route.{tag}")).find(|k| table.has(k));
             }
         }
-        out.reason = match reason {
-            Some(k) => picker.pick(table, &k),
-            None => name_of(picker, &g.voice.reason),
+        out.reason = match (reason_override, reason) {
+            (Some(k), _) => picker.pick(table, k.as_str()),
+            (None, Some(k)) => picker.pick(table, &k),
+            (None, None) => name_of(picker, &g.voice.reason),
         };
     }
     out

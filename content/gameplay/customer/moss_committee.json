@@ -1,0 +1,12 @@
+{
+  "_comment": "Placeholder customer (#168). Name, taste, numbers and voice are TODO(initiator).",
+  "id": "moss_committee",
+  "name": "customer.moss_committee.name",
+  "location": "lint_trap",
+  "taste": ["wet"],
+  "standard": 0.5,
+  "rhythm_s": [120.0, 180.0],
+  "amount": [2, 3],
+  "start": 2.5,
+  "voice": { "order": "customer.moss_committee.order", "thanks": "customer.moss_committee.thanks", "grumble": "customer.moss_committee.grumble" }
+}

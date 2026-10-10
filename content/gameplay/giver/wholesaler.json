@@ -1,0 +1,16 @@
+{
+  "_comment": "Placeholder giver (#168): the wholesaler, whose counter shows the customers' orders. Name, voice and numbers are TODO(initiator).",
+  "id": "wholesaler",
+  "name": "giver.wholesaler.name",
+  "kind": "legal",
+  "location": "slosh_wholesale",
+  "standing": "standing_wholesaler",
+  "gain": 5,
+  "loss": 10,
+  "voice": {
+    "greeting": { "first_job": "giver.wholesaler.greet.first", "regular": "giver.wholesaler.greet.regular", "after_failure": "giver.wholesaler.greet.failure" },
+    "intro": "giver.wholesaler.intro",
+    "reason": "giver.wholesaler.reason",
+    "sign_off": "giver.wholesaler.signoff"
+  }
+}

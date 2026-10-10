@@ -21,6 +21,7 @@
   "warp_target": ["KeyN", "Pad:Select"],
   "warp": ["KeyJ", "Pad:West"],
   "decoupled": ["KeyC", "Pad:DPadLeft"],
+  "help": ["F1"],
   "debug_hud": ["F3"],
   "boost_mode": ["F6"],
   "landing_mode": ["KeyK"],

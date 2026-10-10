@@ -72,6 +72,7 @@ The switches of Star Citizen's flight control. H and F8 mean these in the SC mod
 | Tab | `next_offer` | Next offer at the counter | – |
 | Backspace | `decline` | Close the counter without taking the job | – |
 | Enter | `skip_notices` | Run the queued banners and notices fast | – |
+| F1 | `help` | The keys that apply right now (on foot, suit, ship axis or SC) | – |
 | Escape | – | Menu; releases the mouse | – |
 
 ## Debug and comparison

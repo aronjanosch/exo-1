@@ -9,6 +9,7 @@ pub mod env;
 pub mod flight_events;
 pub mod gameplay;
 pub mod grab;
+pub mod help;
 pub mod hot_reload;
 pub mod hud;
 pub mod interact;
@@ -307,7 +308,7 @@ pub fn build_app(o: &Options) -> App {
     // folder and start new.
     let player_run = o.scenario.is_none() && !o.headless;
     savefile::plugin(&mut app, if player_run { savefile::SaveDir::default_dir() } else { o.out_dir.join("saves") }, player_run);
-    app.add_plugins((flight_events::plugin, map::plugin));
+    app.add_plugins((flight_events::plugin, map::plugin, help::plugin));
     // Scenarios start with the licences earned (their pilots are not the examinees), except the
     // one about the licence itself (#169).
     if o.scenario.as_deref().is_some_and(|n| n != "licence") {
@@ -328,7 +329,7 @@ pub fn build_app(o: &Options) -> App {
     });
     if !o.headless {
         app.add_plugins((view::plugin, controls::window_plugin, settings::window_plugin, terrain::plugin, daynight::window_plugin, grab::window_plugin, cargo::window_plugin));
-        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin));
+        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin, help::window_plugin));
         if o.menu() {
             app.add_plugins(menu::plugin);
         }

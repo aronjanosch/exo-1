@@ -23,6 +23,7 @@ mod scenario_deliver;
 mod scenario_first_person_settings;
 mod scenario_flight;
 mod scenario_flight_model;
+mod scenario_help;
 mod scenario_foreign;
 mod scenario_foreign_warp;
 mod scenario_full;

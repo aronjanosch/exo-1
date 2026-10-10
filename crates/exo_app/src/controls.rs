@@ -99,6 +99,8 @@ pub enum Tap {
     LandingMode,
     /// A/B switch: the axis model's G-safety turn cap on or off (F8, #118).
     TurnCap,
+    /// F1: the keys that apply right now, as a panel (`help.rs`).
+    Help,
     /// F7: the flight model, the axis model or the SC model (round 5). Files from before round 5
     /// call it `thrust_law` (the switch for #185's two rules, now always on in the axis model).
     FlightModel,
@@ -158,7 +160,8 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 28] = [
+    pub const ALL: [Tap; 29] = [
+        Tap::Help,
         Tap::Interact,
         Tap::Throw,
         Tap::HoverAssist,
@@ -204,6 +207,7 @@ impl Tap {
             Tap::BoostMode => "boost_mode",
             Tap::LandingMode => "landing_mode",
             Tap::TurnCap => "turn_cap",
+            Tap::Help => "help",
             Tap::FlightModel => "flight_model",
             Tap::CameraFx => "camera_fx",
             Tap::MasterMode => "master_mode",
@@ -413,6 +417,8 @@ impl Bindings {
                 (Tap::LandingMode, None) => Ok(vec![Input::Key(KeyCode::KeyK)]),
                 // ... and no `turn_cap` (#118).
                 (Tap::TurnCap, None) => Ok(vec![Input::Key(KeyCode::F8)]),
+                // ... and no `help` (round 5).
+                (Tap::Help, None) => Ok(vec![Input::Key(KeyCode::F1)]),
                 // Files from before round 5 call the model switch `thrust_law` (#185), or have none.
                 (Tap::FlightModel, None) if obj.contains_key("thrust_law") => keys("thrust_law", &obj["thrust_law"]),
                 (Tap::FlightModel, None) => Ok(vec![Input::Key(KeyCode::F7)]),
@@ -551,6 +557,17 @@ impl Bindings {
             Slot::Button(b) => &mut self.buttons.iter_mut().find(|(x, _)| *x == b).unwrap().1,
             Slot::Tap(t) => &mut self.taps.iter_mut().find(|(x, _)| *x == t).unwrap().1,
         }
+    }
+
+    /// The keyboard keys of a slot, in order (the help panel shows the first).
+    pub fn slot_keys(&self, slot: Slot) -> Vec<KeyCode> {
+        let l = match slot {
+            Slot::Positive(a) => &self.axis(a).positive,
+            Slot::Negative(a) => &self.axis(a).negative,
+            Slot::Button(b) => self.button_keys(b),
+            Slot::Tap(t) => &self.taps.iter().find(|(x, _)| *x == t).expect("every tap is bound").1,
+        };
+        l.iter().filter_map(|i| if let Input::Key(k) = i { Some(*k) } else { None }).collect()
     }
 
     /// Rebind: the slot's first key becomes `k` (pad buttons stay).

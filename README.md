@@ -62,6 +62,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 - `sc-linear` (#195): the SC model's linear law at 400 m: a strafe, the boost cap refusing thrust, W+D then X (the heading holds), gravity compensation off (falls) and on (holds), NAV above the SCM cap, the speed limiter.
 - `sc-air` (#199): the SC model's air: a hover drifts with the wind with wind compensation (I) off and holds with it on, turbulence low and fast, none high up.
 - `sc-body` (#198): the SC model's thrusters: W from a hover reaches half thrust after the spool and jerk (about 0.55 s), a boost reaches full strength after its pre-delay and ramp.
+- `help` (round 5): F1 shows the walking keys on foot, the ship's keys seated (axis model: assist; after F7 the SC model's switches), F1 again hides the panel.
 - `camera-g` (#148, #149): boost for 2 s from 300 m: trauma above 0.3, the chase camera trails behind the ship within `lag_max`, forward G widens the view; braking to a stop and F9 (through the bindings) off: no shake, lag or G field of view, and a boost stays shake-free; F9 on, landing: trauma and lag back to rest values (below 0.05 and 1 cm).
 - `reload`: edits a copy of the tuning files while running (dev builds): a changed turn rate takes effect, a broken file is refused, the restored file loads again.
 - `foreign_warp`: a remote ship at warp speed (1e6 m/s) held next to the walking walker; the walk must be the same as without it (#16).
@@ -112,7 +113,7 @@ Options: `--port`, `--bind`, `--rate=<Hz>` (default 30), `--buffer=<ms>` (defaul
 
 ## Controls
 
-All keys at a glance, sorted into game and debug: [`KEYS.md`](KEYS.md).
+All keys at a glance, sorted into game and debug: [`KEYS.md`](KEYS.md). In the game F1 shows the keys that apply right now.
 
 Walker: mouse look (click to grab, Escape releases), WASD, Shift run, Space jump, F interact: the one verb, the prompt below the screen centre says what it does (sit at the seat, pick up a crate in reach or pull one with the grab tool, set it down), R throw the held crate (a crate set down fully on the cabin's floor plates mag-locks and the plates light up; red plates: it rests partly off them; grabbing unlocks), Q/E turn it (a small crate takes one hand; a medium one both: walking at 60 %, no sprint, no jump; the large one needs two players; heavy crates lag and slow the view), G cabin gravity on/off (only in a landed ship; in flight it is always on), V debug fly mode.
 Ship: the mouse is a virtual joystick: moving it puts the marker off centre and the ship turns at that deflection (dead-zone circle in the middle, full at the outer edge; `ship_mode: "direct"` in `bindings.json` turns by mouse movement instead). W/S forward/back, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost (a speed stage, always available), X firm brake, H flight assist, L planet follow, C coupled/decoupled (eases over 4 s; decoupled the ship keeps gliding), F stand up (the same interact key). Set down on ground no steeper than `landing_slope_limit` (`ship.json`), the ship keeps its spot until thrust (any input but down). Input ramps to full deflection over a fraction of a second (`content/tuning/ship.json`).

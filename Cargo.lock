@@ -4825,6 +4825,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "production_core"
+version = "0.1.0"
+dependencies = [
+ "content_core",
+ "gameplay_core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "profiling"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"

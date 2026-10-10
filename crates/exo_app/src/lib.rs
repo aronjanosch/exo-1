@@ -2,6 +2,7 @@
 //! Rendering, input, camera, HUD, physics bodies, network transport and scripted scenarios.
 //! All game values are the spike test values, not designed.
 pub mod audio;
+pub mod avian_crates;
 pub mod cargo;
 pub mod controls;
 pub mod daynight;
@@ -56,6 +57,8 @@ pub enum Layer {
     Ramp,
     /// Hull of another player's ship (proxy): the walker stands on it, ships do not hit it.
     Remote,
+    /// Crates that are Avian bodies: the walker and other crates hit them, ships and hulls do not.
+    Crate,
 }
 
 /// Sideways spawn offset in metres (players of one network session start 20 m apart).
@@ -303,7 +306,7 @@ pub fn build_app(o: &Options) -> App {
 
     // Domain plugins. The order between phases is in `phases`; inside a phase each plugin orders its own systems.
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
-    app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, cargo::plugin, hud::plugin, net_live::plugin));
+    app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, avian_crates::plugin, cargo::plugin, hud::plugin, net_live::plugin));
     app.add_plugins(gameplay::plugin);
     // The save (#135) belongs to players: scripted and headless runs keep theirs in the output
     // folder and start new.

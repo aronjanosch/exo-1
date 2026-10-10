@@ -37,6 +37,24 @@ pub struct Held {
     pub mass: f64,
     /// Heading of the crate relative to the walker's, radians about up (Q/E change it).
     pub yaw: f64,
+    /// Distance of the crate's centre from the hold point over this hold.
+    pub err: HoldError,
+}
+
+/// Hold error over one hold, from its second on (the crate is still on its way before): ticks
+/// counted, sum of squares (m²), largest (m).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct HoldError {
+    age: u32,
+    pub ticks: u32,
+    pub sq: f64,
+    pub max: f64,
+}
+
+impl HoldError {
+    pub fn rms(&self) -> f64 {
+        (self.sq / self.ticks.max(1) as f64).sqrt()
+    }
 }
 
 #[derive(Resource, Default, Debug)]
@@ -48,6 +66,8 @@ pub struct Grab {
     pub breaks: u32,
     /// Throws: (crate, world velocity right after the throw).
     pub throws: Vec<(Entity, DVec3)>,
+    /// Hold error of the last finished hold (scenario checks).
+    pub last_hold: Option<HoldError>,
 }
 
 impl Grab {
@@ -62,10 +82,11 @@ impl Grab {
         // Keep the crate's heading relative to the walker's.
         let up = frame.rot * c.body.up;
         let yaw = signed_angle(look_fwd, frame.rot * c.body.forward, up);
-        self.held = Some(Held { crate_e: e, reach, dist, breaker: BreakTimer::default(), hands: size.hands, mass: size.mass, yaw });
+        self.held = Some(Held { crate_e: e, reach, dist, breaker: BreakTimer::default(), hands: size.hands, mass: size.mass, yaw, err: HoldError::default() });
     }
 
     pub fn release(&mut self) {
+        self.last_hold = self.held.map(|h| h.err);
         self.held = None;
         self.reaction = DVec3::ZERO;
     }
@@ -160,7 +181,16 @@ pub fn grab_step(
     let along = rel.dot(c.body.up);
     let flat = rel - c.body.up * along;
     let standing = pl.w.grounded && (along - c.body.half.y).abs() < 0.15 && flat.length() < c.body.half.x.min(c.body.half.z);
-    if held.breaker.step(cfg, c.body.pos.distance(target), standing, dt) {
+    let miss = c.body.pos.distance(target);
+    held.err.age += 1;
+    if held.err.age as f64 * dt > 1.0 {
+        held.err.ticks += 1;
+        held.err.sq += miss * miss;
+        held.err.max = held.err.max.max(miss);
+    }
+    // `release` reads the error from `grab.held`.
+    grab.held = Some(held);
+    if held.breaker.step(cfg, miss, standing, dt) {
         grab.breaks += 1;
         grab.release();
         return;

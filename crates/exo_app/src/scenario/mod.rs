@@ -663,6 +663,10 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "crate-budget" => cargo::crate_budget_steps(&mut s, out_dir, windowed),
         // Night extra E1: unload the parked ship down the ramp by hand and load it again.
         "crate-unload" => cargo::crate_unload_steps(&mut s),
+        // #210: crates 500 m away wake as Avian bodies when the walker comes and the patch is built.
+        "crate-wake-stream" => cargo::crate_wake_stream_steps(&mut s),
+        // #210: a crate on the ramp is ship: it stays a sweep crate and stays on the ground at take-off.
+        "crate-ramp" => cargo::crate_ramp_steps(&mut s),
         "deliver" => deliver::deliver_steps(&mut s),
         // #170: courier jobs on foot, carried by hand to the small drops near the start.
         "courier" => courier::courier_steps(&mut s),

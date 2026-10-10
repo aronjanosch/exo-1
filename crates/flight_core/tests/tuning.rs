@@ -2,16 +2,16 @@
 use flight_core::{Curve, GroundTuning, Interp};
 use glam::DVec2;
 
-const SHIP: &str = include_str!("../../../content/tuning/ship.json");
+const GROUND: &str = include_str!("../../../content/tuning/ground.json");
 
 #[test]
 fn shipped_file_equals_default() {
-    assert_eq!(GroundTuning::from_json(SHIP).unwrap(), GroundTuning::default());
+    assert_eq!(GroundTuning::from_json(GROUND).unwrap(), GroundTuning::default());
 }
 
 fn edited(from: &str, to: &str) -> String {
-    assert!(SHIP.contains(from), "fixture text {from:?} not in ship.json");
-    SHIP.replacen(from, to, 1)
+    assert!(GROUND.contains(from), "fixture text {from:?} not in ground.json");
+    GROUND.replacen(from, to, 1)
 }
 
 #[test]
@@ -40,7 +40,7 @@ fn rejects_unsorted_curve() {
 
 #[test]
 fn rejects_non_string_comment() {
-    let e = GroundTuning::from_json(&SHIP.replacen("\"_comment\": \"", "\"_comment\": 1, \"x\": \"", 1)).unwrap_err();
+    let e = GroundTuning::from_json(&GROUND.replacen("\"_comment\": \"", "\"_comment\": 1, \"x\": \"", 1)).unwrap_err();
     assert!(e.contains("_comment"), "{e}");
 }
 
@@ -73,8 +73,8 @@ fn rejects_zero_or_negative_values() {
     let positive = ["cruise_speed", "linear_decay", "angular_decay"];
     let not_negative: [&str; 0] = [];
     let value = |name: &str| {
-        let at = SHIP.find(&format!("\"{name}\": ")).unwrap_or_else(|| panic!("{name} not in ship.json"));
-        let rest = &SHIP[at..];
+        let at = GROUND.find(&format!("\"{name}\": ")).unwrap_or_else(|| panic!("{name} not in ground.json"));
+        let rest = &GROUND[at..];
         rest[..rest.find(',').unwrap()].to_string()
     };
     for name in positive.iter().chain(&not_negative) {

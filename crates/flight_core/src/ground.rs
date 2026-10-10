@@ -3,13 +3,13 @@
 //! resting, keeps its spot on a slope below the limit until thrust, and turns at the rates of the
 //! ground. The SC model has no landing gear yet (#162); this piece stands in for it.
 //!
-//! The values are `content/tuning/ship.json`, all placeholders (TODO(initiator)).
+//! The values are `content/tuning/ground.json`, all placeholders (TODO(initiator)).
 use crate::limits::Rot;
 use crate::{BodyState, Curve, FlightInput, Interp, PlanetEnv};
 use glam::{DVec2, DVec3};
 use serde::Deserialize;
 
-/// The ground rules' values (`content/tuning/ship.json`).
+/// The ground rules' values (`content/tuning/ground.json`).
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct GroundTuning {
@@ -33,8 +33,8 @@ pub struct GroundTuning {
 
 impl GroundTuning {
     pub fn from_json(s: &str) -> Result<GroundTuning, String> {
-        let t: GroundTuning = content_core::parse_strict("ship.json", s)?;
-        t.validate().map_err(|e| format!("ship.json: {e}"))?;
+        let t: GroundTuning = content_core::parse_strict("ground.json", s)?;
+        t.validate().map_err(|e| format!("ground.json: {e}"))?;
         Ok(t)
     }
 

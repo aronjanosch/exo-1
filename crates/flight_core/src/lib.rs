@@ -163,7 +163,7 @@ fn move_towards(x: f64, target: f64, step: f64) -> f64 {
     x + (target - x).clamp(-step, step)
 }
 
-/// Boost capacitor tuning (`ship.json`, `boost_capacitor`, #90). Starting values, not design.
+/// Boost capacitor tuning (`ground.json`, `boost_capacitor`, #90). Starting values, not design.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct BoostCapacitorTuning {

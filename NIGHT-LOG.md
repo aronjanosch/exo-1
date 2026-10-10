@@ -1,6 +1,6 @@
 # NIGHT-LOG: milestone D night run, 2026-10-10
 
-Morning report of the unattended run (brief: concept repo `docs/RUN-D-NIGHT-BRIEF.md`). Phase 1 on `night/d-foundation`, phase 2 (extras) on `night/d-extras`. Nothing merged, no PR, no issue closed. The old C log is in git history.
+Morning report of the unattended run (brief: concept repo `docs/RUN-D-NIGHT-BRIEF.md`). Phase 1 was built on `night/d-foundation`, phase 2 (extras) on `night/d-extras`, both with lane branches; all of it is now the one branch `night/d`, tagged `night/d-2026-10-10` (the other branches are deleted). Nothing merged to `main`, no PR, no issue closed. The old C log is in git history.
 
 ## Checklist
 

@@ -28,6 +28,7 @@ mod scenario_reload;
 mod scenario_sc_linear;
 mod scenario_sc_air;
 mod scenario_sc_body;
+mod scenario_sc_flight_hud;
 mod scenario_sc_hud;
 mod scenario_sc_switch;
 mod scenario_sc_turn;

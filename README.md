@@ -58,6 +58,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 - `sc-switch` (round 5): F7 (through the bindings) switches to the SC flight model; the ship lifts off more than 5 m in 2 s of Space, drifts less than 1 m in a 3 s hover, the HUD mode starts with `SHIP SC`, 3 s of W give more than 20 m/s forward, and F7 switches back.
 - `sc-turn` (#196): the SC model's rotation: a full pitch overshoots its target rate and settles, a reversal decelerates at a constant rate, a roll release stops without overshoot, F8 (G-safe) caps a turn at speed.
 - `sc-hud` (#197): the flight panel: F7 toasts `MODEL SC`, C toasts `DECOUPLED` and shows the 4 s blend, H `GRAV COMP OFF`, B `NAV`, Page Down `LIMIT 90 %`, X the `BRAKE` badge (no toast), F7 back the axis badges.
+- `sc-flight-hud` (#200): the flight HUD: sit, F7, lift; D strafes right (velocity +x, right thrust bar longest), W fills the speed tape, Page Down x5 puts the limiter mark at 50 %, the horizon is level after release.
 - `sc-linear` (#195): the SC model's linear law at 400 m: a strafe, the boost cap refusing thrust, W+D then X (the heading holds), gravity compensation off (falls) and on (holds), NAV above the SCM cap, the speed limiter.
 - `sc-air` (#199): the SC model's air: a hover drifts with the wind with wind compensation (Y) off and holds with it on, turbulence low and fast, none high up.
 - `sc-body` (#198): the SC model's thrusters: W from a hover reaches half thrust after the spool and jerk (about 0.55 s), a boost reaches full strength after its pre-delay and ramp.

@@ -35,6 +35,7 @@ mod reload;
 mod sc_linear;
 mod sc_air;
 mod sc_body;
+mod sc_flight_hud;
 mod sc_hud;
 mod sc_switch;
 mod sc_turn;
@@ -609,6 +610,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "sc-air" => sc_air::sc_air_steps(&mut s),
         // #197: the flight panel: badges, the coupling blend, the toast, both models.
         "sc-hud" => sc_hud::sc_hud_steps(&mut s),
+        // #200: the flight HUD (speed tape, thrust cross, G bar, horizon, velocity marker), SC model.
+        "sc-flight-hud" => sc_flight_hud::sc_flight_hud_steps(&mut s),
         // Round 5, #196: the SC model's rotation (overshoot, reversal, roll release, G-safe turn cap).
         "sc-turn" => sc_turn::sc_turn_steps(&mut s),
         // #148, #149: the camera shake, spring lag and G field of view, and F9 (through the bindings).

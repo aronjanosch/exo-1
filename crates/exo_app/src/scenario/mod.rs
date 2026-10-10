@@ -28,6 +28,7 @@ mod cargo;
 mod courier;
 mod customers;
 mod deliver;
+mod dev_menu;
 mod figure;
 mod flight;
 mod help;
@@ -630,6 +631,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "sc-switch" => sc_switch::sc_switch_steps(&mut s),
         // Round 5: F1 shows the keys that apply right now.
         "help" => help::help_steps(&mut s),
+        // Round 5: F10 dev menu: licence, credits, boost.
+        "dev-menu" => dev_menu::dev_menu_steps(&mut s),
         // #195: the SC linear law: cap, brake, gravity compensation, master modes, limiter.
         "sc-linear" => sc_linear::sc_linear_steps(&mut s),
         // #199: the SC model's air: wind compensation hover, turbulence low and high.

@@ -38,15 +38,20 @@ pub struct Ship {
     pub model: FlightModel,
 }
 
-/// The flight model that flies the ship (F7, round 5): the axis model (spike 13, frozen) or the
-/// SC model (`flight_core::sc`). TODO(initiator): SC becomes the default once it is accepted, and
-/// the axis model goes.
+/// The flight model that flies the ship (F7, round 5): the SC model (`flight_core::sc`) or the
+/// axis model (spike 13, frozen until it goes).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum FlightModel {
-    #[default]
     Axis,
+    #[default]
     Sc,
 }
+
+/// The model a new ship starts with: SC for players (initiator, 2026-10-10: "das richtige SC
+/// modell das neuste als default"); the scenarios start in the axis model they were written for
+/// (the SC scenarios switch with F7).
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct StartModel(pub FlightModel);
 
 impl Ship {
     /// Signed thrust share per ship axis (-1..1, x right, y up, z back), for sound and camera:
@@ -102,7 +107,7 @@ pub fn basis_for_up(up: DVec3) -> DQuat {
     DQuat::from_mat3(&DMat3::from_cols(fwd.cross(up), up, -fwd))
 }
 
-pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, tuning: &crate::tuning::Tuning, up: DVec3, offset_x: f64) -> Entity {
+pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, tuning: &crate::tuning::Tuning, model: FlightModel, up: DVec3, offset_x: f64) -> Entity {
     // Parked 15 m ahead of the walker spawn, floor on the highest ground under the hull.
     let dir = (up * planet.radius + DVec3::new(offset_x, 0.0, -15.0)).normalize();
     let rot = basis_for_up(dir);
@@ -126,7 +131,7 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, tuning: &crate::t
                 stick: VirtualStick::default(),
                 grounded: false,
                 sc: ScShip::new(tuning.sc.clone()),
-                model: FlightModel::default(),
+                model,
             },
             RigidBody::Static,
             Position(pos),

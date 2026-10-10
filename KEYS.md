@@ -33,7 +33,7 @@ Marks: **new** since round 5 · **provisional**: the key is not decided yet · *
 | K | `landing_mode` | Landing mode: precision near the ground | – |
 | F | `interact` | Stand up | North |
 
-### SC flight model (after F7)
+### SC flight model (the default)
 
 The switches of Star Citizen's flight control. H and F8 mean these in the SC model.
 
@@ -47,7 +47,7 @@ The switches of Star Citizen's flight control. H and F8 mean these in the SC mod
 | I | `wind_comp` | Wind compensation on/off: off, the ship drifts with the wind (new, provisional) | – |
 | Page Up / Page Down | `limiter_up`, `limiter_down` | Speed limiter in 10 % steps; the mouse wheel later (new, provisional) | – |
 
-### Axis flight model (old, frozen until SC is the default)
+### Axis flight model (old, frozen; F7 switches to it)
 
 | Key | Action | What it does | Pad |
 |---|---|---|---|
@@ -79,12 +79,14 @@ The switches of Star Citizen's flight control. H and F8 mean these in the SC mod
 
 | Key | Action | What it does |
 |---|---|---|
-| F7 | `flight_model` | Flight model axis ↔ SC, until SC is the default (new) |
+| F7 | `flight_model` | Flight model: SC (the default) ↔ the old axis model, until the axis model goes (new) |
 | F3 | `debug_hud` | Debug lines under the HUD: frame time, chunks, flight values, model |
 | F6 | `boost_mode` | Axis model: boost as the capacitor or the old speed stage (cut?) |
 | F8 | `turn_cap` | Axis model: the G-safety turn cap (in the SC model: G-safe, above) |
 | F9 | `camera_fx` | Camera effects on/off: shake, lag, field of view from G |
 | V | `debug_fly` | Debug flight on foot |
 | O | `orbit_camera` | Orbit camera |
+| F10 | `dev_menu` | Dev menu (dev builds only): cheats for playtests |
+| 1 / 2 / 3 | `dev_1`, `dev_2`, `dev_3` | In the open dev menu: grant every licence / +1000 credits / refill the boost |
 
 One key may serve several actions when they apply in different situations: Space jumps on foot and lifts the ship, Shift runs and boosts.

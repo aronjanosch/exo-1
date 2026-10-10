@@ -20,6 +20,7 @@ mod scenario_crate_unload;
 mod scenario_customers;
 mod scenario_daynight;
 mod scenario_deliver;
+mod scenario_dev_menu;
 mod scenario_first_person_settings;
 mod scenario_flight;
 mod scenario_flight_model;

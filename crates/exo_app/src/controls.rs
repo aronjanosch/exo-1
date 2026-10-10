@@ -101,6 +101,12 @@ pub enum Tap {
     TurnCap,
     /// F1: the keys that apply right now, as a panel (`help.rs`).
     Help,
+    /// F10: the dev menu (`dev.rs`, dev builds only).
+    DevMenu,
+    /// The dev menu's commands 1, 2, 3 (digit keys; only while the menu is open).
+    Dev1,
+    Dev2,
+    Dev3,
     /// F7: the flight model, the axis model or the SC model (round 5). Files from before round 5
     /// call it `thrust_law` (the switch for #185's two rules, now always on in the axis model).
     FlightModel,
@@ -160,8 +166,12 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 29] = [
+    pub const ALL: [Tap; 33] = [
         Tap::Help,
+        Tap::DevMenu,
+        Tap::Dev1,
+        Tap::Dev2,
+        Tap::Dev3,
         Tap::Interact,
         Tap::Throw,
         Tap::HoverAssist,
@@ -208,6 +218,10 @@ impl Tap {
             Tap::LandingMode => "landing_mode",
             Tap::TurnCap => "turn_cap",
             Tap::Help => "help",
+            Tap::DevMenu => "dev_menu",
+            Tap::Dev1 => "dev_1",
+            Tap::Dev2 => "dev_2",
+            Tap::Dev3 => "dev_3",
             Tap::FlightModel => "flight_model",
             Tap::CameraFx => "camera_fx",
             Tap::MasterMode => "master_mode",
@@ -419,6 +433,10 @@ impl Bindings {
                 (Tap::TurnCap, None) => Ok(vec![Input::Key(KeyCode::F8)]),
                 // ... and no `help` (round 5).
                 (Tap::Help, None) => Ok(vec![Input::Key(KeyCode::F1)]),
+                (Tap::DevMenu, None) => Ok(vec![Input::Key(KeyCode::F10)]),
+                (Tap::Dev1, None) => Ok(vec![Input::Key(KeyCode::Digit1)]),
+                (Tap::Dev2, None) => Ok(vec![Input::Key(KeyCode::Digit2)]),
+                (Tap::Dev3, None) => Ok(vec![Input::Key(KeyCode::Digit3)]),
                 // Files from before round 5 call the model switch `thrust_law` (#185), or have none.
                 (Tap::FlightModel, None) if obj.contains_key("thrust_law") => keys("thrust_law", &obj["thrust_law"]),
                 (Tap::FlightModel, None) => Ok(vec![Input::Key(KeyCode::F7)]),

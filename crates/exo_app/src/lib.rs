@@ -5,6 +5,7 @@ pub mod audio;
 pub mod cargo;
 pub mod controls;
 pub mod daynight;
+pub mod dev;
 pub mod env;
 pub mod flight_events;
 pub mod gameplay;
@@ -308,19 +309,20 @@ pub fn build_app(o: &Options) -> App {
     // folder and start new.
     let player_run = o.scenario.is_none() && !o.headless;
     savefile::plugin(&mut app, if player_run { savefile::SaveDir::default_dir() } else { o.out_dir.join("saves") }, player_run);
-    app.add_plugins((flight_events::plugin, map::plugin, help::plugin));
+    app.add_plugins((flight_events::plugin, map::plugin, help::plugin, dev::plugin));
     // Scenarios start with the licences earned (their pilots are not the examinees), except the
-    // one about the licence itself (#169).
-    if o.scenario.as_deref().is_some_and(|n| n != "licence") {
+    // one about the licence itself (#169) and the dev menu's, which grants them.
+    if o.scenario.as_deref().is_some_and(|n| n != "licence" && n != "dev-menu") {
         app.add_systems(Startup, gameplay::grant_starting_licences);
     }
     if let Some(name) = &o.scenario {
         app.add_plugins(scenario::plugin(name, o.headless));
     }
+    app.insert_resource(ship::StartModel(if o.scenario.is_some() { ship::FlightModel::Axis } else { ship::FlightModel::Sc }));
     let test_crates = o.scenario.is_none() || o.scenario.as_deref() == Some("full");
-    app.add_systems(Startup, move |mut commands: Commands, planet: Res<env::PlanetRes>, tuning: Res<tuning::Tuning>, off: Res<SpawnOffset>, crates: Res<cargo::Crates>| {
+    app.add_systems(Startup, move |mut commands: Commands, planet: Res<env::PlanetRes>, tuning: Res<tuning::Tuning>, off: Res<SpawnOffset>, crates: Res<cargo::Crates>, start: Res<ship::StartModel>| {
         walker::spawn_player(&mut commands, &planet, &tuning.walker, off.0);
-        let ship = ship::spawn_ship(&mut commands, &planet, &tuning, DVec3::Y, off.0);
+        let ship = ship::spawn_ship(&mut commands, &planet, &tuning, start.0, DVec3::Y, off.0);
         if test_crates {
             // The first object (#80): a test crate on the cabin floor, behind the seat on the right.
             let t = &crates.0;
@@ -329,7 +331,7 @@ pub fn build_app(o: &Options) -> App {
     });
     if !o.headless {
         app.add_plugins((view::plugin, controls::window_plugin, settings::window_plugin, terrain::plugin, daynight::window_plugin, grab::window_plugin, cargo::window_plugin));
-        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin, help::window_plugin));
+        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin, help::window_plugin, dev::window_plugin));
         if o.menu() {
             app.add_plugins(menu::plugin);
         }

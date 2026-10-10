@@ -227,6 +227,19 @@ pub struct Planet {
     pub ceiling_m: f64,
     /// (min, max) crust height above the base radius found by the bake statistics.
     pub height_range: (f64, f64),
+    /// The biome palettes by biome id (#216): a table, built once, for the chunk build's per-vertex
+    /// lookup. Ids no row names hold the magenta fallback.
+    palettes: Vec<Palette>,
+}
+
+/// Collision patches: the fixed-point steps per sample at most, and the step (m) that counts as
+/// settled (#216, #102 item 5).
+const PATCH_MAX_STEPS: usize = 8;
+const PATCH_SETTLED_M: f64 = 1e-3;
+
+/// The palette of an id no biome row names: magenta, so a gap shows.
+fn missing_palette() -> Palette {
+    Palette { ground: [1.0, 0.0, 1.0], rock: [1.0, 0.0, 1.0], strata: 0.0, cap: 0.0 }
 }
 
 pub(crate) fn par_rows<T: Send, F: Fn(usize, usize) -> T + Sync>(rows: usize, threads: usize, f: F) -> Vec<T> {
@@ -264,7 +277,12 @@ impl Planet {
             })
             .collect();
         let scatter = crate::scatter::ScatterRt::new(&recipe, seed);
+        let mut palettes = vec![missing_palette(); 256];
+        for b in &recipe.biomes {
+            palettes[b.id as usize] = b.palette.clone();
+        }
         let mut p = Planet {
+            palettes,
             n_elev: make_noise(&m.elevation.noise, seed),
             n_moist: make_noise(&m.moisture.noise, seed),
             n_temp: make_noise(&m.temperature.noise, seed),
@@ -501,8 +519,15 @@ impl Planet {
     /// THE height function: metres above the base radius, from face coordinates. The noise
     /// ground (shape, stamps, bands), then the ground edits of the sites (#70).
     pub fn height_ab(&self, face: usize, a: f64, b: f64, dir: V3) -> (f64, Fields) {
-        let (h, f) = self.base_height_ab(face, a, b, dir);
-        (self.soft_ceiling(self.apply_edits(dir, h)), f)
+        let (h, f, _) = self.height_lf_ab(face, a, b, dir);
+        (h, f)
+    }
+
+    /// `height_ab` with the stamps' forced landform too (the stamps are summed once, #216).
+    pub(crate) fn height_lf_ab(&self, face: usize, a: f64, b: f64, dir: V3) -> (f64, Fields, Option<f64>) {
+        let (sh, lf) = self.stamp_height(dir);
+        let (h, f) = self.base_height_with(face, a, b, dir, sh);
+        (self.soft_ceiling(self.apply_edits(dir, h)), f, lf)
     }
 
     /// The tallest terrain is planet data (#177, ceilings first): above 70 % of `ceiling_m` the
@@ -515,9 +540,14 @@ impl Planet {
 
     /// The height function without the site edits: the noise ground and the drainage's cut.
     pub fn base_height_ab(&self, face: usize, a: f64, b: f64, dir: V3) -> (f64, Fields) {
+        self.base_height_with(face, a, b, dir, self.stamp_height(dir).0)
+    }
+
+    /// `base_height_ab` given the stamps' height at `dir`.
+    fn base_height_with(&self, face: usize, a: f64, b: f64, dir: V3, stamp_m: f64) -> (f64, Fields) {
         let f = self.fields_at(dir);
         let (lo, hi) = self.bands_split(self.p32(dir), &f);
-        let g = self.shape_offset(&f) + self.stamp_height(dir).0 + lo + self.carve_ab(face, a, b);
+        let g = self.shape_offset(&f) + stamp_m + lo + self.carve_ab(face, a, b);
         if self.river_idx.is_empty() {
             return (g + hi, f);
         }
@@ -619,11 +649,18 @@ impl Planet {
             for i in 0..n {
                 let x = i as f64 - half;
                 let flat = c + t * x + b * z;
+                // The fixed point y = f(y) settles in a few steps; stop once a step moves less
+                // than a millimetre (#102 item 5), with a cap for ground that never settles.
                 let mut y = 0.0;
-                for _ in 0..3 {
+                for _ in 0..PATCH_MAX_STEPS {
                     let dir = (flat + up * y).normalized();
                     let surface = r + self.height_at(dir);
-                    y = (surface * surface - x * x - z * z).sqrt() - r;
+                    let next = (surface * surface - x * x - z * z).sqrt() - r;
+                    let settled = (next - y).abs() < PATCH_SETTLED_M;
+                    y = next;
+                    if settled {
+                        break;
+                    }
                 }
                 out.push(y as f32);
             }
@@ -632,7 +669,12 @@ impl Planet {
     }
 
     pub fn palette(&self, id: u8) -> Palette {
-        self.recipe.biomes.iter().find(|b| b.id == id).map(|b| b.palette.clone()).unwrap_or(Palette { ground: [1.0, 0.0, 1.0], rock: [1.0, 0.0, 1.0], strata: 0.0, cap: 0.0 })
+        self.palettes[id as usize].clone()
+    }
+
+    /// The palette of a biome id, by reference (the chunk build's per-vertex lookup).
+    pub(crate) fn palette_ref(&self, id: u8) -> &Palette {
+        &self.palettes[id as usize]
     }
 
     pub fn biome_color(&self, id: u8) -> [f32; 3] {

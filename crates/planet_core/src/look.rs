@@ -9,7 +9,9 @@ use serde::Deserialize;
 /// `Planet::spot`, or `orbit`: then the camera is `height_m` from the centre along `from`,
 /// looking at the centre. On the ground the camera stands `back_m` behind the spot (against its
 /// facing), `height_m` above the ground there, turned by `turn_deg` and pitched by `pitch_deg`
-/// (in orbit `pitch_deg` turns the view up from the centre towards the horizon).
+/// (in orbit `pitch_deg` turns the view up from the centre towards the horizon). An orbit
+/// viewpoint with `radii` stands that many planet radii from the centre instead (#214: the
+/// same picture at 5 and 100 km).
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Viewpoint {
@@ -24,6 +26,8 @@ pub struct Viewpoint {
     pub turn_deg: f64,
     #[serde(default)]
     pub from: Option<[f64; 3]>,
+    #[serde(default)]
+    pub radii: Option<f64>,
 }
 
 #[derive(Deserialize, Clone, Debug)]

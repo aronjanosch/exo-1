@@ -1,7 +1,10 @@
-# cargo-nextest (`cargo t`): every test binary runs in parallel, so the gate takes about as long
-# as the slowest scenario.
+# cargo-nextest (`cargo t`): every test runs in its own process, in parallel, so the gate takes
+# about as long as the slowest scenario. The app's tests are one binary (`app`, #186).
 
 [profile.default]
+# Print failures and the summary only: a passing gate costs a few lines of agent context.
+status-level = "fail"
+final-status-level = "fail"
 # Half the cores: as fast as all 16 here (38 s either way) and leaves room for parallel lanes.
 test-threads = 8
 # perf.rs times simulation steps and fails under load from other sessions: only on request,

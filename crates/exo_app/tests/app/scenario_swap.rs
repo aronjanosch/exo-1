@@ -1,5 +1,5 @@
 //! #14 and #34: three planet swaps and an emergency drop leave nothing of the departed planet behind.
-mod common;
+use crate::common;
 use exo_app::Options;
 
 #[test]

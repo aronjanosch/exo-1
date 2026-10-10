@@ -1,0 +1,18 @@
+{
+  "_comment": "Placeholder recipe (G groundwork): grind jelly_bricks into sock_dust. All numbers are TODO(initiator).",
+  "id": "grind_jelly",
+  "station": "mill",
+  "inputs": [
+    {
+      "id": "jelly_bricks",
+      "amount": 2
+    }
+  ],
+  "outputs": [
+    {
+      "id": "sock_dust",
+      "amount": 3
+    }
+  ],
+  "time_s": 10.0
+}

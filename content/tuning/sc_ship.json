@@ -1,7 +1,7 @@
 {
-  "_comment": "SC flight model (flight_core::sc, F7), the ship's body (sc::tuning::ShipBody). TODO(initiator): every value. Ship space: forward -Z, right +X, up +Y. mass kg; inertia kg m² about pitch (x), yaw (y), roll (z), here a 2 t box 4.6 x 3.2 x 8.3 m (the greybox hull); thrust N per direction in vacuum, all thrusters pushing that way together (here 60/40/24/50/30 m/s² on 2 t); torque N m per axis.",
+  "_comment": "SC flight model (flight_core::sc, F7), the ship's body (sc::tuning::ShipBody). TODO(initiator): every value. Ship space: forward -Z, right +X, up +Y. mass kg; inertia kg m² about pitch (x), yaw (y), roll (z), here a 2 t box 4.6 x 3.2 x 8.3 m (the greybox hull); thrust N per direction in vacuum, all thrusters pushing that way together (here 60/40/24/50/30 m/s² on 2 t); torque N m per axis (yaw the weak axis: 6 rad/s² against 8 for pitch).",
   "mass": 2000.0,
   "inertia": { "pitch": 13188.3, "yaw": 15008.3, "roll": 5233.3 },
   "thrust": { "forward": 120000.0, "backward": 80000.0, "left": 48000.0, "right": 48000.0, "up": 100000.0, "down": 60000.0 },
-  "torque": { "pitch": 105506.7, "yaw": 120066.7, "roll": 73266.7 }
+  "torque": { "pitch": 105506.7, "yaw": 90049.8, "roll": 73266.7 }
 }

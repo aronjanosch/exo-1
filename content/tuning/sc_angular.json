@@ -1,5 +1,15 @@
 {
-  "_comment": "SC flight model (flight_core::sc::angular::AngularTuning). TODO(initiator): every value. rate rad/s at full stick (pitch and yaw share an ellipse); decay 1/s: the flight computer asks for decay times the rate error, inside the torque box (sc_ship.json torque over inertia).",
+  "_comment": "SC flight model (flight_core::sc::angular::AngularTuning). TODO(initiator): every value. rate rad/s at full stick (pitch, yaw and roll share one ellipsoid budget); boost_rate multipliers on rate at full boost; rate_over_speed (x speed over the cap, y share of the rates, a corner speed). natural_frequency 1/s and damping_ratio per pitch and yaw: a second-order spring on the rate, below 1 it overshoots and settles (about 0.5 here); the angular acceleration stays inside the torque box (sc_ship.json torque over inertia). reversal_share: share of that box for a reversal (constant deceleration until the spin crosses zero). roll_decay 1/s: first order roll. roll_release_share: share of the box for a roll release (constant deceleration to zero). landing_rate_share: share of the rates in landing mode near the ground, full below landing_full_below m and off above landing_off_above m. g_limit: g per direction for the G-safe turn cap (forward, backward, left, right, up, down; the same numbers as the axis model's g_safety.limit, own copy).",
   "rate": { "pitch": 1.4, "yaw": 1.1, "roll": 2.4 },
-  "decay": 12.0
+  "boost_rate": { "pitch": 1.2, "yaw": 1.2, "roll": 1.0 },
+  "rate_over_speed": { "interp": "linear", "points": [[0, 0.85], [0.5, 1.0], [1.0, 0.8]] },
+  "natural_frequency": { "pitch": 4.0, "yaw": 4.0 },
+  "damping_ratio": { "pitch": 0.5, "yaw": 0.5 },
+  "reversal_share": 0.6,
+  "roll_decay": 6.0,
+  "roll_release_share": 0.5,
+  "landing_rate_share": 0.5,
+  "landing_full_below": 5.0,
+  "landing_off_above": 40.0,
+  "g_limit": { "forward": 8.0, "backward": 6.0, "left": 4.0, "right": 4.0, "up": 6.0, "down": 3.0 }
 }

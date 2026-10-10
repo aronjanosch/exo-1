@@ -20,6 +20,15 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Update, update_terrain.in_set(crate::phases::Frame::World));
 }
 
+/// More async threads than Bevy's default 4 for the chunk jobs (#215: the pool was the limit of
+/// the streaming at 800 m/s). TODO(initiator): value; the render and main threads need cores too.
+pub fn task_pools() -> bevy::app::TaskPoolOptions {
+    let mut o = bevy::app::TaskPoolOptions::default();
+    o.async_compute.max_threads = 6;
+    o.async_compute.percent = 0.4;
+    o
+}
+
 const SPLIT_FACTOR: f64 = 1.5;
 const MERGE_FACTOR: f64 = 1.8;
 /// Main-thread time per frame for adding ready chunks (at least one chunk is always added).
@@ -27,7 +36,7 @@ const MERGE_FACTOR: f64 = 1.8;
 const UPLOAD_BUDGET_MS: f64 = 1.5;
 /// Mesh bytes handed to the renderer per frame; the render thread's mesh allocator copies them
 /// (about 100 kB per chunk with its water; u16 indices, a chunk has 35 x 35 vertices). TODO(initiator): value.
-const UPLOAD_BYTES_PER_FRAME: usize = 320 << 10;
+const UPLOAD_BYTES_PER_FRAME: usize = 512 << 10;
 /// Chunk jobs in flight per pool thread, so the nearest chunks are not stuck behind far ones.
 const JOBS_PER_THREAD: usize = 2;
 /// Seconds the camera is projected along its motion for job priority and children prefetch.
@@ -185,8 +194,9 @@ pub fn build_meshes(out: &ChunkOut, indices: &[u16]) -> BuiltChunk {
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uv0)
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_1, uv1)
         .with_inserted_indices(Indices::U16(indices.to_vec()));
-    let water = out.water.as_ref().map(|w| water_surface(out, w, &out.water_tris));
-    let inland = out.inland_water.as_ref().map(|(w, tris)| water_surface(out, w, tris));
+    let nowater = std::env::var("EXO_NO_WATER").is_ok();
+    let water = out.water.as_ref().filter(|_| !nowater).map(|w| water_surface(out, w, &out.water_tris));
+    let inland = out.inland_water.as_ref().filter(|_| !nowater).map(|(w, tris)| water_surface(out, w, tris));
     let bytes = [Some(&mesh), water.as_ref(), inland.as_ref()].into_iter().flatten().map(|m| m.get_vertex_buffer_size() + m.get_index_buffer_bytes().map_or(0, |b| b.len())).sum();
     BuiltChunk { centre: DVec3::from_array(out.center), mesh, water, inland, bytes }
 }

@@ -252,33 +252,14 @@ fn accepted_offers_survive_rotation() {
 fn once_only_template_disappears_after_completion() {
     let mut h = Host::new();
     h.unlock_location("bent_spoon_permit");
-    let offers1 = h.generate_at("drip_rock", 100);
-
-    // Find first_haul (once_only template)
-    let first_haul_id = offers1
-        .iter()
-        .find(|id| h.jobs.get(**id).unwrap().template.as_str() == "first_haul")
-        .copied();
-
-    if first_haul_id.is_none() {
-        return; // Skip if first_haul not available
-    }
-
-    // Complete it
+    let shows = |h: &Host, seed: u64| {
+        let mut fresh = Host { k: h.k.clone(), jc: h.jc.clone(), progress: h.progress.clone(), jobs: Jobs::default(), seq: h.seq };
+        let offers = fresh.generate_at("drip_rock", seed);
+        offers.iter().any(|id| fresh.jobs.get(*id).unwrap().template.as_str() == "first_haul")
+    };
+    assert!((0..20).any(|seed| shows(&h, seed)), "first_haul is offered before it is done");
     h.complete_job_and_flag("first_haul");
-
-    // Generate new board
-    let offers2 = h.generate_at("drip_rock", 200);
-
-    // Verify first_haul is no longer offered
-    let first_haul_in_second = offers2.iter().any(|id| {
-        h.jobs.get(*id).unwrap().template.as_str() == "first_haul"
-    });
-
-    assert!(
-        !first_haul_in_second,
-        "once_only template should not appear again after completion"
-    );
+    assert!(!(0..20).any(|seed| shows(&h, seed)), "once_only template should not appear again after completion");
 }
 
 #[test]

@@ -64,6 +64,7 @@ impl PlanetRes {
     pub fn load_with_stats(id: PlanetId, def: &PlanetDef) -> (PlanetRes, BakeStats) {
         let recipe = recipe_for(def).unwrap_or_else(|e| panic!("{e}"));
         let mut p = Planet::new(recipe);
+        p.ceiling_m = def.terrain_ceiling_m.unwrap_or(f64::INFINITY);
         p.set_places(places_for(&def.recipe)).unwrap_or_else(|e| panic!("content/place: {e}"));
         let st = p.bake_with(0, Some(&cache_dir()), false);
         if let Some(e) = p.placement_error() {

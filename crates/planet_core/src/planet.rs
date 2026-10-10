@@ -223,6 +223,8 @@ pub struct Planet {
     /// Hand-placed places, set before the bake (`set_places`).
     pub places: Vec<crate::place::Place>,
     pub baked: bool,
+    /// Highest ground above the base radius (m) the height function allows; infinite = none.
+    pub ceiling_m: f64,
     /// (min, max) crust height above the base radius found by the bake statistics.
     pub height_range: (f64, f64),
 }
@@ -281,6 +283,7 @@ impl Planet {
             sites: Vec::new(),
             places: Vec::new(),
             baked: false,
+            ceiling_m: f64::INFINITY,
             height_range: (0.0, 0.0),
             radius,
             recipe,
@@ -499,7 +502,15 @@ impl Planet {
     /// ground (shape, stamps, bands), then the ground edits of the sites (#70).
     pub fn height_ab(&self, face: usize, a: f64, b: f64, dir: V3) -> (f64, Fields) {
         let (h, f) = self.base_height_ab(face, a, b, dir);
-        (self.apply_edits(dir, h), f)
+        (self.soft_ceiling(self.apply_edits(dir, h)), f)
+    }
+
+    /// The tallest terrain is planet data (#177, ceilings first): above 70 % of `ceiling_m` the
+    /// height bends towards it and never reaches it. Infinite = no ceiling (today's planets).
+    pub fn soft_ceiling(&self, h: f64) -> f64 {
+        let c = self.ceiling_m;
+        let knee = 0.7 * c;
+        if h <= knee || !c.is_finite() { h } else { knee + 0.3 * c * ((h - knee) / (0.3 * c)).tanh() }
     }
 
     /// The height function without the site edits: the noise ground and the drainage's cut.
@@ -650,7 +661,8 @@ impl Planet {
 
         // 1-3. the coarse global layer: sea level, rivers and lakes; from the cache when it fits
         let t0 = Instant::now();
-        let key = coarse::cache_key(self.recipe.source_hash, self.recipe.seed, self.radius, n);
+        let places_hash = coarse::fnv(format!("{:?}", self.places).as_bytes(), coarse::FNV_START);
+        let key = coarse::cache_key(self.recipe.source_hash, self.recipe.seed, self.radius, n, places_hash);
         let cached = cache.and_then(|d| Coarse::load(d, key)).filter(|c| c.n == n && c.carve.len() == 6 * w * w && c.water.len() == 6 * w * w);
         if let Some(c) = cached {
             self.sea = c.sea;
@@ -661,18 +673,26 @@ impl Planet {
         } else {
             self.bake_coarse(threads, &mut st);
             self.index_rivers();
-            if let Some(d) = cache
-                && let Err(e) = self.coarse.save(d, key)
-            {
-                eprintln!("planet_core: coarse layer not cached in {}: {e}", d.display());
-            }
         }
         st.coarse_ms = t0.elapsed().as_secs_f64() * 1e3;
         st.coarse_bytes = self.coarse.bytes();
 
         // 4. sites (#70): placed on the noise ground, then their edits join the height function
         let t0 = Instant::now();
-        let (sites, misses) = self.place_sites_v2();
+        // The placement is the slowest part at a large radius: the cache keeps what it found.
+        let (sites, misses) = match self.coarse.sites.clone() {
+            Some(c) => (self.restore_sites(&c), c.misses),
+            None => {
+                let (sites, misses, generated) = self.place_sites_v2();
+                self.coarse.sites = Some(coarse::SiteCache { sites: generated, misses: misses.clone() });
+                if let Some(d) = cache
+                    && let Err(e) = self.coarse.save(d, key)
+                {
+                    eprintln!("planet_core: coarse layer not cached in {}: {e}", d.display());
+                }
+                (sites, misses)
+            }
+        };
         self.sites = sites;
         self.index_sites();
         st.quota_misses.extend(misses);

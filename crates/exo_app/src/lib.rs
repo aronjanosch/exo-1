@@ -256,6 +256,7 @@ pub fn build_app(o: &Options) -> App {
         p.atmosphere_height = c.atmosphere_height;
         p.obstruction_radius = c.obstruction_radius;
         p.arrival_radius = c.arrival_radius;
+        p.terrain_ceiling_m = Some(c.terrain_max);
         if let Err(e) = p.validate() {
             panic!("--radius/--atmosphere refused: {e}");
         }

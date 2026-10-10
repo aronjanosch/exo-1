@@ -57,6 +57,15 @@ fn cache_loads_when_unchanged_and_rebakes_when_recipe_seed_radius_or_code_change
 
     // The loaded planet is the baked planet: same ground, same chunks.
     assert_eq!(first.build_chunk(0, 0.2, -0.2, 0.125).hash(), second.build_chunk(0, 0.2, -0.2, 0.125).hash());
+    // The sites came from the cache too, not from a new placement: same sites, same ground edits.
+    assert!(!first.sites.is_empty());
+    assert_eq!(first.sites.len(), second.sites.len());
+    for (a, b) in first.sites.iter().zip(&second.sites) {
+        assert_eq!((a.kind, &a.id, a.dir, a.yaw, a.ground_m, a.reach_m), (b.kind, &b.id, b.dir, b.yaw, b.ground_m, b.reach_m));
+    }
+    let at = first.sites[3].dir;
+    assert_eq!(first.height_at(at), second.height_at(at));
+    assert!(st.sites_ms < 200.0, "no placement on a cache hit: {} ms", st.sites_ms);
 
     let changed = HEARTH.replace("\"river_min_catchment_km2\": 2.0", "\"river_min_catchment_km2\": 3.0");
     assert_ne!(changed, HEARTH, "the test changes a drainage value");
@@ -67,7 +76,8 @@ fn cache_loads_when_unchanged_and_rebakes_when_recipe_seed_radius_or_code_change
     assert!(baked(HEARTH, 1337, 5000.0, 0, Some(&d)).1.coarse_from_cache, "the first is still there");
 
     // Another code version: the key changes with it, and a file of an older version does not load.
-    let key = coarse::cache_key(recipe(HEARTH, 1337, 5000.0).source_hash, 1337, 5000.0, 128);
+    let places_hash = coarse::fnv(format!("{:?}", Vec::<Place>::new()).as_bytes(), coarse::FNV_START);
+    let key = coarse::cache_key(recipe(HEARTH, 1337, 5000.0).source_hash, 1337, 5000.0, 128, places_hash);
     let mut bytes = first.coarse.encode(key);
     bytes[4] ^= 1;
     let sum = coarse::fnv(&bytes[..bytes.len() - 8], coarse::FNV_START);

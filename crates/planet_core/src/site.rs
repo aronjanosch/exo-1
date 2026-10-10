@@ -133,13 +133,14 @@ impl Planet {
     /// The global pass (#70): landmarks first (highest candidate), then the site kinds in turns,
     /// each new site the candidate farthest from all sites so far. Returns the sites and the kinds
     /// that missed their minimum count.
-    pub(crate) fn place_sites_v2(&self) -> (Vec<Site>, Vec<String>) {
+    pub(crate) fn place_sites_v2(&self) -> (Vec<Site>, Vec<String>, Vec<(u32, V3, f64, f64)>) {
         let rule = &self.recipe.sites;
         let mut rng = Rng::new(0x9E3779B97F4A7C15 ^ (self.recipe.seed as u64).wrapping_mul(0xBF58476D1CE4E5B9));
         let kinds = &rule.kinds;
         let want: Vec<u32> = kinds.iter().map(|k| self.count_pick(k.count, k.per_100_km2, rng.next())).collect();
         // Hand-placed places first: fixed, and the generated sites keep away from them.
         let mut placed: Vec<Site> = Vec::new();
+        let mut generated: Vec<(u32, V3, f64, f64)> = Vec::new();
         let mut place_misses = Vec::new();
         for pl in &self.places {
             let smp = self.sample(pl.dir());
@@ -252,28 +253,9 @@ impl Planet {
                 }
                 if let Some((_, d, ground)) = best {
                     let yaw = rng.next() * std::f64::consts::TAU;
-                    let (e0, n0) = tangent_frame(d);
-                    let east = e0 * yaw.cos() + n0 * yaw.sin();
-                    let north = d.cross(east);
-                    let mut edits: Vec<&Edit> = k.edits.iter().collect();
-                    edits.sort_by_key(|e| e.order());
-                    let (rts, reaches): (Vec<EditRt>, Vec<f64>) = edits.into_iter().map(edit_rt).unzip();
-                    let reach = reaches.iter().copied().fold(0.0, f64::max);
                     near.insert_point(placed.len() as u32, d);
-                    placed.push(Site {
-                        kind: Some(ki),
-                        id: k.id.clone(),
-                        category: k.category,
-                        dir: d,
-                        yaw,
-                        footprint_m: k.footprint_m,
-                        ground_m: ground,
-                        reach_m: reach,
-                        cos_reach: (reach / self.radius).cos(),
-                        east,
-                        north,
-                        edits: std::sync::Arc::new(rts),
-                    });
+                    placed.push(self.make_site(ki, d, yaw, ground));
+                    generated.push((ki as u32, d, yaw, ground));
                     got[ki] += 1;
                 }
             }
@@ -290,7 +272,41 @@ impl Planet {
             })
             .collect();
         misses.extend(place_misses);
-        (placed, misses)
+        (placed, misses, generated)
+    }
+
+    /// A generated site of kind `ki` at `d`, turned by `yaw`, on ground `ground` (m).
+    pub(crate) fn make_site(&self, ki: usize, d: V3, yaw: f64, ground: f64) -> Site {
+        let k = &self.recipe.sites.kinds[ki];
+        let (e0, n0) = tangent_frame(d);
+        let east = e0 * yaw.cos() + n0 * yaw.sin();
+        let north = d.cross(east);
+        let mut edits: Vec<&Edit> = k.edits.iter().collect();
+        edits.sort_by_key(|e| e.order());
+        let (rts, reaches): (Vec<EditRt>, Vec<f64>) = edits.into_iter().map(edit_rt).unzip();
+        let reach = reaches.iter().copied().fold(0.0, f64::max);
+        Site {
+            kind: Some(ki),
+            id: k.id.clone(),
+            category: k.category,
+            dir: d,
+            yaw,
+            footprint_m: k.footprint_m,
+            ground_m: ground,
+            reach_m: reach,
+            cos_reach: (reach / self.radius).cos(),
+            east,
+            north,
+            edits: std::sync::Arc::new(rts),
+        }
+    }
+
+    /// The sites of a cache: the hand-placed places (cheap, on the noise ground), then the generated
+    /// ones as the placement found them.
+    pub(crate) fn restore_sites(&self, c: &crate::coarse::SiteCache) -> Vec<Site> {
+        let mut out: Vec<Site> = self.places.iter().map(|pl| pl.site(self.sample(pl.dir()).height, self.radius)).collect();
+        out.extend(c.sites.iter().map(|&(ki, d, yaw, g)| self.make_site(ki as usize, d, yaw, g)));
+        out
     }
 
     /// The pieces of site `i`'s kit, standing on the edited ground.

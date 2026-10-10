@@ -19,6 +19,15 @@ pub const UNIT_M: f32 = 0.1;
 const WATER_OFFSET_M: f32 = 1000.0;
 pub const NO_WATER_RAW: u16 = 0;
 
+/// The generated sites of a planet (kind, direction, yaw, ground height): what the placement
+/// found, the slowest part of a bake at a large radius. The rest of a site follows from its kind.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SiteCache {
+    pub sites: Vec<(u32, V3, f64, f64)>,
+    /// What the placement reported as missed (quotas, places in water).
+    pub misses: Vec<String>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Coarse {
     /// Cells per face edge; the grid has (n + 1)² vertices per face.
@@ -30,6 +39,8 @@ pub struct Coarse {
     pub water: Vec<u16>,
     pub rivers: Vec<River>,
     pub lakes: Vec<Lake>,
+    /// The sites, once placed (the cache key includes the hand-placed places).
+    pub sites: Option<SiteCache>,
 }
 
 pub fn quantize_carve(m: f32) -> i16 {
@@ -60,9 +71,9 @@ pub fn fnv(bytes: &[u8], mut h: u64) -> u64 {
 pub const FNV_START: u64 = 0xcbf2_9ce4_8422_2325;
 
 /// Cache key of a planet's coarse layer: recipe text, seed, radius, grid size and code version.
-pub fn cache_key(recipe_hash: u64, seed: i32, radius: f64, n: usize) -> u64 {
+pub fn cache_key(recipe_hash: u64, seed: i32, radius: f64, n: usize, places_hash: u64) -> u64 {
     let mut h = recipe_hash;
-    for part in [&seed.to_le_bytes()[..], &radius.to_bits().to_le_bytes(), &(n as u64).to_le_bytes(), &CODE_VERSION.to_le_bytes()] {
+    for part in [&seed.to_le_bytes()[..], &radius.to_bits().to_le_bytes(), &(n as u64).to_le_bytes(), &CODE_VERSION.to_le_bytes(), &places_hash.to_le_bytes()] {
         h = fnv(part, h);
     }
     h
@@ -190,6 +201,24 @@ impl Coarse {
                 }
             }
         }
+        match &self.sites {
+            None => w.u32(0),
+            Some(c) => {
+                w.u32(1);
+                w.u64(c.sites.len() as u64);
+                for &(k, d, yaw, g) in &c.sites {
+                    w.u32(k);
+                    w.v3(d);
+                    w.f64(yaw);
+                    w.f64(g);
+                }
+                w.u64(c.misses.len() as u64);
+                for m in &c.misses {
+                    w.u64(m.len() as u64);
+                    w.0.extend(m.as_bytes());
+                }
+            }
+        }
         let sum = fnv(&w.0, FNV_START);
         w.u64(sum);
         w.0
@@ -245,7 +274,23 @@ impl Coarse {
             let (has, o) = (r.u32()?, r.v3()?);
             lakes.push(Lake { level_m, area_m2, depth_m, deepest, outlet: (has == 1).then_some(o) });
         }
-        Ok(Coarse { n, sea, carve, water, rivers, lakes })
+        let sites = if r.u32()? == 1 {
+            let len = r.u64()? as usize;
+            let mut sites = Vec::with_capacity(len);
+            for _ in 0..len {
+                sites.push((r.u32()?, r.v3()?, r.f64()?, r.f64()?));
+            }
+            let len = r.u64()? as usize;
+            let mut misses = Vec::with_capacity(len);
+            for _ in 0..len {
+                let l = r.u64()? as usize;
+                misses.push(String::from_utf8(r.take(l)?.to_vec()).map_err(|_| "cache: text")?);
+            }
+            Some(SiteCache { sites, misses })
+        } else {
+            None
+        };
+        Ok(Coarse { n, sea, carve, water, rivers, lakes, sites })
     }
 
     /// Loads the layer cached under `key`, or None when there is none or it does not fit.

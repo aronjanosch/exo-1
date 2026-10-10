@@ -33,7 +33,9 @@ mod models;
 mod net;
 mod reload;
 mod sc_linear;
+mod sc_hud;
 mod sc_switch;
+mod sc_turn;
 mod space;
 mod swap;
 mod thruster_audio;
@@ -600,6 +602,10 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "sc-switch" => sc_switch::sc_switch_steps(&mut s),
         // #195: the SC linear law: cap, brake, gravity compensation, master modes, limiter.
         "sc-linear" => sc_linear::sc_linear_steps(&mut s),
+        // #197: the flight panel: badges, the coupling blend, the toast, both models.
+        "sc-hud" => sc_hud::sc_hud_steps(&mut s),
+        // Round 5, #196: the SC model's rotation (overshoot, reversal, roll release, G-safe turn cap).
+        "sc-turn" => sc_turn::sc_turn_steps(&mut s),
         // #148, #149: the camera shake, spring lag and G field of view, and F9 (through the bindings).
         "camera-g" => camera_g::camera_g_steps(&mut s),
         // Spike 13: manoeuvres with the axis flight model, measured as a table.

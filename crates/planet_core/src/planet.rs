@@ -232,6 +232,11 @@ pub struct Planet {
     palettes: Vec<Palette>,
 }
 
+/// Collision patches: the fixed-point steps per sample at most, and the step (m) that counts as
+/// settled (#216, #102 item 5).
+const PATCH_MAX_STEPS: usize = 8;
+const PATCH_SETTLED_M: f64 = 1e-3;
+
 /// The palette of an id no biome row names: magenta, so a gap shows.
 fn missing_palette() -> Palette {
     Palette { ground: [1.0, 0.0, 1.0], rock: [1.0, 0.0, 1.0], strata: 0.0, cap: 0.0 }
@@ -644,11 +649,18 @@ impl Planet {
             for i in 0..n {
                 let x = i as f64 - half;
                 let flat = c + t * x + b * z;
+                // The fixed point y = f(y) settles in a few steps; stop once a step moves less
+                // than a millimetre (#102 item 5), with a cap for ground that never settles.
                 let mut y = 0.0;
-                for _ in 0..3 {
+                for _ in 0..PATCH_MAX_STEPS {
                     let dir = (flat + up * y).normalized();
                     let surface = r + self.height_at(dir);
-                    y = (surface * surface - x * x - z * z).sqrt() - r;
+                    let next = (surface * surface - x * x - z * z).sqrt() - r;
+                    let settled = (next - y).abs() < PATCH_SETTLED_M;
+                    y = next;
+                    if settled {
+                        break;
+                    }
                 }
                 out.push(y as f32);
             }

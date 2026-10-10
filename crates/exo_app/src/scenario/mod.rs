@@ -24,6 +24,7 @@ use crate::ship::RemoteShip;
 
 mod boost;
 mod cargo;
+mod courier;
 mod deliver;
 mod figure;
 mod flight;
@@ -613,6 +614,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         // Night extra E1: unload the parked ship down the ramp by hand and load it again.
         "crate-unload" => cargo::crate_unload_steps(&mut s),
         "deliver" => deliver::deliver_steps(&mut s),
+        // #170: courier jobs on foot, carried by hand to the small drops near the start.
+        "courier" => courier::courier_steps(&mut s),
         // #63: fixed viewpoints and an atlas per planet (headless: atlas and statistics only).
         "planet-look" => crate::look::steps(&mut s, out_dir, windowed),
         // #70: walk from outside into a site; the walker stands on its flattened ground.

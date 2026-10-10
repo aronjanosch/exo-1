@@ -84,3 +84,60 @@ fn place_checks() {
     assert!(hearth(vec![place(&twice)]).err().unwrap().contains("pads.id"));
     assert!(serde_json::from_str::<Place>(&PAD.replace("\"turn_deg\"", "\"x\"").replace("\"lon_deg\": 90.0,", "\"lon_deg\": 90.0, \"colour\": 1,")).is_err());
 }
+
+// ---------- near (#170): metres from another place, so distances survive a radius change ----------
+
+const NEAR: &str = r#"{ "id": "post_box", "planet": "hearth",
+  "near": { "place": "drip_rock", "east_m": 120.0, "north_m": -160.0 },
+  "edits": [ { "type": "flatten", "order": 0, "radius_m": 10.0, "rolloff_m": 10.0 } ],
+  "pads": [ { "id": "main", "at": [0.0, 0.0], "radius_m": 8.0 } ] }"#;
+
+
+#[test]
+fn a_near_place_sits_so_many_metres_from_its_reference_at_any_radius() {
+    // The position is resolved by set_places, so no bake is needed (a bigger planet may fail its
+    // biome quotas for reasons of its own); the pads of the baked planet are checked at 5000 m.
+    for radius in [3000.0, 5000.0, 6500.0, 20000.0] {
+        let mut p = Planet::new(Recipe::for_planet(HEARTH, 1337, radius).unwrap());
+        p.set_places(vec![place(PAD), place(NEAR)]).unwrap();
+        let (a, b) = (p.places[0].dir(), p.places[1].dir());
+        let d = dist(&p, a, b);
+        assert!((d - 200.0).abs() < 0.05, "radius {radius}: {d:.3} m, want 200 (120 east, 160 south)");
+        let (east, north) = planet_core::look::tangent_frame(a);
+        let off = b - a;
+        let (e_m, n_m) = (off.dot(east) * radius, off.dot(north) * radius);
+        assert!((e_m - 120.0).abs() < 0.5 && (n_m + 160.0).abs() < 0.5, "radius {radius}: east {e_m:.2}, north {n_m:.2}");
+    }
+    let p = hearth(vec![place(PAD), place(NEAR)]).unwrap();
+    let (a, b) = (p.pad("drip_rock", "main").unwrap(), p.pad("post_box", "main").unwrap());
+    assert!((dist(&p, a.up, b.up) - 200.0).abs() < 0.05);
+}
+
+#[test]
+fn a_near_place_still_flattens_its_pad_and_sites_keep_away() {
+    let p = hearth(vec![place(PAD), place(NEAR)]).unwrap();
+    let s = p.sites.iter().find(|s| s.id == "post_box").unwrap();
+    for o in p.sites.iter().filter(|o| o.kind.is_some()) {
+        assert!(dist(&p, o.dir, s.dir) >= s.reach_m);
+    }
+    let pad = p.pad("post_box", "main").unwrap();
+    assert!(pad.centre.length() - (p.radius + p.height_at(pad.up)) < 1e-6);
+}
+
+#[test]
+fn near_checks() {
+    // Unknown reference, a reference that is itself near, both ways at once, neither.
+    let unknown = NEAR.replace("\"drip_rock\"", "\"nowhere\"");
+    let e = hearth(vec![place(PAD), place(&unknown)]).err().unwrap();
+    assert!(e.contains("post_box") && e.contains("near") && e.contains("nowhere"), "{e}");
+    let chain = NEAR.replace("\"id\": \"post_box\"", "\"id\": \"second\"").replace("\"place\": \"drip_rock\"", "\"place\": \"post_box\"");
+    let e = hearth(vec![place(PAD), place(NEAR), place(&chain)]).err().unwrap();
+    assert!(e.contains("second") && e.contains("near") && e.contains("absolute"), "{e}");
+    let both = NEAR.replace("\"planet\": \"hearth\",", "\"planet\": \"hearth\", \"lat_deg\": 80.0, \"lon_deg\": 0.0,");
+    let e = hearth(vec![place(PAD), place(&both)]).err().unwrap();
+    assert!(e.contains("post_box") && e.contains("either"), "{e}");
+    let neither = NEAR.replace("\"near\": { \"place\": \"drip_rock\", \"east_m\": 120.0, \"north_m\": -160.0 },", "");
+    let e = hearth(vec![place(PAD), place(&neither)]).err().unwrap();
+    assert!(e.contains("post_box") && e.contains("lat_deg") && e.contains("near"), "{e}");
+    assert!(serde_json::from_str::<Place>(&NEAR.replace("\"east_m\"", "\"east\"")).is_err());
+}

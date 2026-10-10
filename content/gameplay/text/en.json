@@ -14,6 +14,22 @@
   "job.family_errand.title": "A small favour",
   "job.family_errand.brief": "Two crates of fizzy mud, no questions.",
 
+  "commodity.parcel.name": "wobbly parcel",
+  "location.lint_trap.name": "Lint Trap",
+  "location.noodle_post.name": "Noodle Post",
+  "location.pebble_kiosk.name": "Pebble Kiosk",
+  "job.courier_lint_trap.title": "A parcel for the Lint Trap",
+  "job.courier_lint_trap.brief": "One wobbly parcel to the Lint Trap, just down the path.",
+  "job.courier_noodle_post.title": "Noodles by hand",
+  "job.courier_noodle_post.brief": "Two wobbly parcels to the Noodle Post. They are warm. Do not ask why.",
+  "job.courier_pebble_kiosk.title": "The pebble rush",
+  "job.courier_pebble_kiosk.brief": "Three wobbly parcels to the Pebble Kiosk before the timer wins.",
+  "briefing.reason.commodity.parcel": [
+    "The parcel is wobbly. Do not shake it, do not stir it.",
+    "Wobbly parcels hate being late and being dropped, in that order.",
+    "Nobody knows what is in it. That is the charm."
+  ],
+
   "giver.courier_office.name": "Dinglepost Couriers",
   "giver.courier_office.greet.first": [
     "New face! We always need a new face. The old ones keep quitting.",

@@ -9,7 +9,7 @@ Phase 1, `night/d-foundation`:
 - [x] #128 save model (kernel envelope, kernel/jobs/world sections)
 - [x] #165 feedback beats
 - [x] #167 givers
-- [ ] #170 courier jobs
+- [x] #170 courier jobs
 - [ ] #168 customers
 - [ ] #169 flight licence
 - [ ] #166 map
@@ -43,3 +43,12 @@ Checks: 14 tests in `jobs_core/tests/givers.rs` (loader errors with file and fie
 
 TODO(initiator): giver names and every voice, briefing and reason line (placeholders, tone silly), gain 10 and loss 15, standing ranks 30/100/250, the family's counter place, panel layout and keys (Tab, Backspace).
 Open: no board yet, so one fixed offer per template; the panel is plain text.
+
+## #170 courier jobs
+
+Built: new optional place field `near: { place, east_m, north_m }` (`planet_core::Place`): a place given in metres east and north of an absolute place (east and north as on the ground there), resolved by `Planet::set_places` on the planet's radius, so walking distances stay the same when the radius changes (#177). Either `lat_deg` and `lon_deg`, or `near`; a reference that is itself near, or unknown, is an error naming the place. Three new places `lint_trap` (about 180 m from Drip Rock), `noodle_post` (about 280 m), `pebble_kiosk` (about 345 m), each with a pad and a flatten edit, three locations tagged `courier_drop`, a new commodity `parcel` (small crate, price 20), three courier templates from the courier office counter: one parcel to the Lint Trap (30), two to the Noodle Post (45), three to the Pebble Kiosk with a 240 s deadline (60), repeatable (offered again at once). Texts for them, a README line.
+
+Checks: 4 new tests in `planet_core/tests/places.rs` (distance and direction at radii 3000, 5000, 6500 and 20000 without bake, the baked pad at 5000, flatten and sites, the error cases), `exo_app` test that the drops are 150 to 400 m from Drip Rock. New scenario `courier` (and `scenario_courier.rs` in the gate): at the counter, Tab to the offer, take it, grab the parcel, the walker walks the whole way (nothing moved by test hooks): 180 m in 36 s to the Lint Trap, set down, paid 29 of 30 (a hand-drop costs a hair of condition), standing +10, the beats of #165 in order; then the timed job: 342 m in 70 s to the Pebble Kiosk, one of three parcels delivered, the job stays open. Gate: `cargo t` 398 passed, `cargo scenario` 0 failures.
+
+TODO(initiator): place names and positions (placeholders until the city, E), prices and rewards (30, 45, 60), the deadline 240 s, the parcel good, all texts. Open question: the decision says a courier job takes about 2 to 3 minutes on foot; at the walking speed measured here one way is 36 to 70 s. For 2 to 3 minutes the drops would have to be farther (400 m is the limit of the decision) or a job needs a return leg; I kept the 150 to 400 m rule.
+Note: the first haul (`first_haul`) stays as it was, 300 credits to Bent Spoon; the flight licence (#169) will gate it.

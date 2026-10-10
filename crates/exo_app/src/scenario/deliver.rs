@@ -8,26 +8,26 @@ use crate::gameplay::{Gameplay, Goods};
 use gameplay_core::{Flag, LocationId, TrackId};
 use jobs_core::{JobState, TemplateId};
 
-fn gp(w: &World) -> &Gameplay {
+pub(super) fn gp(w: &World) -> &Gameplay {
     w.resource::<Gameplay>()
 }
 
-fn pad(w: &World, l: &str) -> crate::gameplay::Pad {
+pub(super) fn pad(w: &World, l: &str) -> crate::gameplay::Pad {
     gp(w).pad_of(&LocationId::new(l)).unwrap_or_else(|| panic!("no pad for {l}")).clone()
 }
 
-fn goods(w: &mut World) -> Vec<(Entity, Goods)> {
+pub(super) fn goods_of(w: &mut World) -> Vec<(Entity, Goods)> {
     let mut v: Vec<(Entity, Goods)> = w.query::<(Entity, &Goods)>().iter(w).map(|(e, g)| (e, g.clone())).collect();
     v.sort_by_key(|(_, g)| g.id);
     v
 }
 
-fn prompt(w: &World) -> String {
+pub(super) fn prompt(w: &World) -> String {
     w.resource::<crate::interact::Interaction>().prompt.clone()
 }
 
 /// The walker on a pad, 2 m past its centre, facing the row the crates spawn in (4 m ahead).
-fn walker_on_pad(w: &mut World, l: &str) {
+pub(super) fn walker_on_pad(w: &mut World, l: &str) {
     let p = pad(w, l);
     let north = p.up.cross(p.up.any_orthonormal_vector());
     place_walker(w, p.centre + north * 2.0);
@@ -35,11 +35,11 @@ fn walker_on_pad(w: &mut World, l: &str) {
 }
 
 /// Every goods crate of `job` to a spot above the pad of `l`, `height` m over the ground, in a row.
-fn crates_above(w: &mut World, l: &str, height: f64) {
+pub(super) fn crates_above(w: &mut World, l: &str, height: f64) {
     let p = pad(w, l);
     let east = p.up.any_orthonormal_vector();
     let pl = planet(w);
-    for (i, (e, _)) in goods(w).into_iter().enumerate() {
+    for (i, (e, _)) in goods_of(w).into_iter().enumerate() {
         let at = p.centre + east * (i as f64 * 1.5 - 1.5);
         let dir = pl.up(at);
         let mut c = w.get_mut::<Crate>(e).unwrap();
@@ -51,7 +51,7 @@ fn crates_above(w: &mut World, l: &str, height: f64) {
     }
 }
 
-fn job_state(w: &World, template: &str) -> Option<JobState> {
+pub(super) fn job_state(w: &World, template: &str) -> Option<JobState> {
     let t = TemplateId::new(template);
     gp(w).jobs.all().filter(|j| j.template == t).last().map(|j| j.state)
 }
@@ -73,6 +73,8 @@ pub fn deliver_steps(s: &mut Vec<Step>) {
         true
     }));
     s.push(wait(0.5));
+    // The courier office has several offers: Tab until the panel shows the first haul.
+    s.push(show_offer("first_haul"));
     s.push(Box::new(|w, c| {
         let p = prompt(w);
         let text = w.resource_mut::<Gameplay>().panel_text("[F] take");
@@ -95,13 +97,14 @@ pub fn deliver_steps(s: &mut Vec<Step>) {
         true
     }));
     s.push(wait(0.3));
+    s.push(show_offer("first_haul"));
     s.push(Box::new(|w, _| {
         tap(w, KeyCode::KeyF);
         true
     }));
     s.push(wait(1.0));
     s.push(Box::new(|w, c| {
-        let g = goods(w);
+        let g = goods_of(w);
         let on = g.iter().filter(|(_, g)| g.on_pad.as_ref().is_some_and(|l| l.as_str() == "drip_rock")).count();
         check(c, job_state(w, "first_haul") == Some(JobState::Active) && g.len() == 3 && on == 3, format!("deliver: the job is active and its 3 crates wait on the pad ({} crates, {on} on the pad)", g.len()));
         let target = crate::scenario::cargo::crate_world_pos(w, g[1].0);
@@ -222,4 +225,21 @@ pub fn deliver_steps(s: &mut Vec<Step>) {
         end(w, c, String::new());
         true
     }));
+}
+
+/// With the counter open: Tab through the offers until the panel shows the template (the next
+/// tap only after the last one was seen, a few ticks apart).
+pub(super) fn show_offer(template: &'static str) -> Step {
+    Box::new(move |w, c| {
+        let shown = gp(w).panel_offer().and_then(|j| gp(w).jobs.get(j).map(|j| j.template.as_str() == template));
+        if shown == Some(true) {
+            return true;
+        }
+        assert!(c.t < 5.0, "the counter never showed {template}");
+        if c.t - c.v.get("tab").copied().unwrap_or(-1.0) > 0.2 {
+            c.v.insert("tab", c.t);
+            tap(w, KeyCode::Tab);
+        }
+        false
+    })
 }

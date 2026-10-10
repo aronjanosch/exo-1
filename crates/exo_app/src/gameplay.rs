@@ -623,6 +623,25 @@ mod tests {
         assert!(gp.jobs.all().any(|j| j.state == JobState::Offered), "the fixed job is offered at the start");
     }
 
+    /// #170: the courier drops lie 150 to 400 m from the start pad (the Drip Rock counter). They
+    /// are placed in metres from it, so a bigger planet keeps the distances (`planet_core`'s
+    /// places tests check that at several radii).
+    #[test]
+    fn courier_drops_are_a_walk_from_drip_rock() {
+        let sys = warp_core::System::from_json(crate::warp::SYSTEM).unwrap();
+        let home = warp_core::PlanetId(0);
+        let gp = Gameplay::load(&Crates::default());
+        let drops: Vec<_> = gp.kernel.locations.values().filter(|l| l.record.tags.iter().any(|t| t.as_str() == "courier_drop")).collect();
+        assert_eq!(drops.len(), 3);
+        let planet = PlanetRes::load(home, sys.planet(home));
+        let start = planet.pgen.pad("drip_rock", "main").unwrap().centre;
+        for l in &drops {
+            let pad = planet.pgen.pad(&l.record.place, &l.record.pad).unwrap();
+            let d = planet.radius * start.normalized().dot(pad.centre.normalized()).clamp(-1.0, 1.0).acos();
+            assert!((150.0..=400.0).contains(&d), "{}: {d:.0} m from Drip Rock", l.path);
+        }
+    }
+
     /// #167: the family is a giver of the cast but offers nothing in D; the courier office does.
     #[test]
     fn the_family_offers_nothing_yet_and_the_courier_office_does() {

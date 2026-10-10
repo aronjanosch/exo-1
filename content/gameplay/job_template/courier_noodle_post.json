@@ -1,0 +1,17 @@
+{
+  "_comment": "Courier job on foot (#170): from the counter at Drip Rock to a small drop. Numbers are starting values (TODO(initiator)); about 2 to 3 minutes on foot, pays 30 to 60.",
+  "id": "courier_noodle_post",
+  "title": "job.courier_noodle_post.title",
+  "brief": "job.courier_noodle_post.brief",
+  "giver": "courier_office",
+  "objectives": [
+    { "deliver": { "from": { "location": "drip_rock" }, "to": { "location": "noodle_post" }, "commodity": { "one_of": ["parcel"] }, "amount": [2, 2] } }
+  ],
+  "reward": 45,
+  "grading": {
+    "bands": [ { "share": 0.5, "pays": 0.5 }, { "share": 1.0, "pays": 1.0 } ],
+    "condition_weight": 0.5
+  },
+  "track": "freight_xp",
+  "xp": 15
+}

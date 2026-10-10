@@ -28,7 +28,7 @@ pub use modes::{Master, ModeCmds, Modes};
 pub use tuning::ScTuning;
 
 use crate::axis::{Dirs, Rot, G0};
-use crate::{BodyState, FlightInput, PlanetEnv};
+use crate::{limit_length, BodyState, FlightInput, PlanetEnv};
 use glam::{DQuat, DVec3};
 
 /// What one step sees, computed once before the stages run.
@@ -164,6 +164,10 @@ pub struct ScShip {
     pub drive: drive::DriveState,
     pub air: air::AirState,
     pub status: ScStatus,
+    /// kg of cargo locked on the cabin's plates (#88), on top of `tuning.ship.mass`.
+    pub cargo_mass: f64,
+    /// kg m² the cargo adds about the ship's axes (a point mass at `ShipBody::cargo_point`).
+    pub cargo_inertia: Rot,
 }
 
 impl Default for ScShip {
@@ -174,7 +178,37 @@ impl Default for ScShip {
 
 impl ScShip {
     pub fn new(tuning: ScTuning) -> ScShip {
-        ScShip { tuning, modes: Modes::default(), linear: Default::default(), angular: Default::default(), drive: Default::default(), air: Default::default(), status: ScStatus::default() }
+        ScShip {
+            tuning,
+            modes: Modes::default(),
+            linear: Default::default(),
+            angular: Default::default(),
+            drive: Default::default(),
+            air: Default::default(),
+            status: ScStatus::default(),
+            cargo_mass: 0.0,
+            cargo_inertia: Rot { pitch: 0.0, yaw: 0.0, roll: 0.0 },
+        }
+    }
+
+    /// Cargo locked on the plates, kg (#198, #88): the mass and the inertia of the cargo, as a
+    /// point at the cabin floor's centre, count from the next step on.
+    pub fn set_cargo_mass(&mut self, kg: f64) {
+        let m = kg.max(0.0);
+        let [x, y, z] = self.tuning.ship.cargo_point;
+        self.cargo_mass = m;
+        self.cargo_inertia = Rot { pitch: m * (y * y + z * z), yaw: m * (x * x + z * z), roll: m * (x * x + y * y) };
+    }
+
+    /// The ship's mass with its cargo, kg.
+    pub fn mass(&self) -> f64 {
+        self.tuning.ship.mass + self.cargo_mass
+    }
+
+    /// The ship's inertia with its cargo, kg m².
+    pub fn inertia(&self) -> Rot {
+        let (i, c) = (self.tuning.ship.inertia, self.cargo_inertia);
+        Rot { pitch: i.pitch + c.pitch, yaw: i.yaw + c.yaw, roll: i.roll + c.roll }
     }
 
     /// Test setup after placing the ship by hand: switches as at the start, no state left.
@@ -195,13 +229,13 @@ impl ScShip {
     /// leaves and the boost adds.
     pub fn thrust_box(&self, thrust_scale: f64, boost: f64) -> Dirs {
         let t = &self.tuning;
-        drive::boosted(&t.ship.thrust.scaled(thrust_scale / t.ship.mass), &t.drive, boost)
+        drive::boosted(&t.ship.thrust.scaled(thrust_scale / self.mass()), &t.drive, boost)
     }
 
     /// The angular acceleration box per axis (rad/s²): the torque over the inertia.
     pub fn torque_box(&self) -> Rot {
-        let s = &self.tuning.ship;
-        Rot { pitch: s.torque.pitch / s.inertia.pitch, yaw: s.torque.yaw / s.inertia.yaw, roll: s.torque.roll / s.inertia.roll }
+        let (s, i) = (&self.tuning.ship, self.inertia());
+        Rot { pitch: s.torque.pitch / i.pitch, yaw: s.torque.yaw / i.yaw, roll: s.torque.roll / i.roll }
     }
 
     /// One physics step.
@@ -215,14 +249,15 @@ impl ScShip {
         let lin = linear::step(&mut self.linear, &f, input, &self.modes, &linear::Env { thrust_box, boost, braking, air_accel: air.accel, cap_scale: air.cap_scale }, &self.tuning.linear);
         let torque_box = self.torque_box();
         let ang = angular::step(&mut self.angular, &f, input, &self.modes, &angular::Env { accel_box: torque_box, boost, cap: lin.cap, thrust_box }, &self.tuning.angular);
-        let shaped = drive::shape(&mut self.drive, &drive::Asked { linear: lin.accel, angular: ang.accel, boost, thrust_box }, &self.tuning.drive, dt);
+        let stick = if braking { DVec3::ZERO } else { limit_length(input.thrust, 1.0) };
+        let shaped = drive::shape(&mut self.drive, &drive::Asked { linear: lin.accel, angular: ang.accel, boost, thrust_box, velocity: f.lv, stick }, &self.tuning.drive, dt);
 
-        let s = &self.tuning.ship;
+        let (mass, inertia) = (self.mass(), self.inertia());
         let linear_world = f.rot * shaped.linear;
         let v = f.v + (linear_world + f.gravity + air.accel + air.push) * dt;
         let angular_world = f.rot * (shaped.angular + air.angular);
         let w = body.ang_vel + angular_world * dt;
-        let torque_local = DVec3::new(shaped.angular.x * s.inertia.pitch, shaped.angular.y * s.inertia.yaw, shaped.angular.z * s.inertia.roll);
+        let torque_local = DVec3::new(shaped.angular.x * inertia.pitch, shaped.angular.y * inertia.yaw, shaped.angular.z * inertia.roll);
 
         let share = |a: f64, pos: f64, neg: f64| if a >= 0.0 { a / pos } else { a / neg };
         let full = self.thrust_box(1.0, 0.0);
@@ -256,6 +291,6 @@ impl ScShip {
             turbulence: air.turbulence,
             rate_capped: ang.rate_capped,
         };
-        ScOut { lin_vel: v, ang_vel: w, force: linear_world * s.mass, torque: f.rot * torque_local }
+        ScOut { lin_vel: v, ang_vel: w, force: linear_world * mass, torque: f.rot * torque_local }
     }
 }

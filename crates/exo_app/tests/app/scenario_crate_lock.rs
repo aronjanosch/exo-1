@@ -1,5 +1,5 @@
 //! Issue #84: the lock grid through hard acceleration and a warp; grabbing unlocks. Without a window.
-mod common;
+use crate::common;
 use exo_app::Options;
 
 #[test]

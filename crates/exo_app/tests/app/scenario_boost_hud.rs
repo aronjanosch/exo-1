@@ -1,5 +1,5 @@
 //! #90, #91: the boost capacitor and the minimal HUD, driven through `Controls`.
-mod common;
+use crate::common;
 use exo_app::Options;
 
 #[test]

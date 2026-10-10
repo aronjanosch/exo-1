@@ -1,6 +1,6 @@
 //! Issue #80: a crate in the cabin through take-off, flight, warp and landing; one pushed out
 //! over the ramp keeps the ship velocity at the hand-over. Without a window.
-mod common;
+use crate::common;
 use exo_app::Options;
 
 #[test]

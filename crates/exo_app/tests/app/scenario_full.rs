@@ -1,6 +1,6 @@
 //! The full scripted run (walk, ramp, space and back, landing, cabin at speed) without a window.
 //! The run records the ship and walker path; the 96 network cases of spike 4 then replay on it.
-mod common;
+use crate::common;
 use exo_app::{record::Recorder, Options};
 use net_core::replay::{matrix_cases, run_case_extrapolated, run_matrix};
 

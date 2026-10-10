@@ -1,5 +1,5 @@
 //! Night extra E1: unload the parked ship down the ramp by hand and load it again. Without a window.
-mod common;
+use crate::common;
 use exo_app::Options;
 
 #[test]

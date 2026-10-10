@@ -1,5 +1,5 @@
 //! Spike 11: two planets and the quantum drive between them, without a window.
-mod common;
+use crate::common;
 use exo_app::Options;
 
 #[test]

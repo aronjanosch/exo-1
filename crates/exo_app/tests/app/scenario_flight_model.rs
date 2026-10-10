@@ -1,5 +1,5 @@
 //! Spike 13: the axis flight model flies a set of manoeuvres; the numbers go into a table.
-mod common;
+use crate::common;
 use exo_app::Options;
 
 #[test]

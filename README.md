@@ -41,6 +41,14 @@ cargo run -p exo_app -- --hidden --scenario=full      # invisible window, screen
 
 A feature is done when its own tests pass (`cargo test -p <crate>`, `cargo ts scenario_<name>`); the full gate runs at the end of a big round (`AGENTS.md`, three test sizes). It needs cargo-nextest: `mise install` in the repo root (pinned in `mise.toml`); `.config/nextest.toml` leaves `perf.rs` out of the default run. Other scenarios with dynamic linking: `cargo dev --headless --scenario=<name>`.
 
+Use `cargo dev` and `cargo t` for daily work to share Bevy between executables. Dev and
+test builds keep only debug line tables, including our own crates; backtraces retain
+source locations, but inspecting local variables needs an explicit debug-info override.
+Keep the build cache between runs: cleaning it repeatedly forces dependencies to be
+compiled and written again. After large profile or toolchain changes, a one-time
+`cargo clean` in the intended `CARGO_TARGET_DIR` removes obsolete variants; do it only
+when no build is using that directory. Release builds strip symbols for distribution.
+
 Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (default `target/scenario`):
 
 - `full`: stand, run 20 s, walk up the ramp into the parked ship, take off, fly to space (7000 m), stand and walk in the cabin at 400 m/s rolling, brake, dive back, land, walk out and back in, cabin in atmosphere.

@@ -1,3 +1,9 @@
 # Dev tools for this repo (`mise install`). cargo-nextest runs `cargo t`.
 [tools]
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.146"
+
+# Each checkout builds into its own cache dir outside the tree: `~/Work/exo-1` into
+# `~/.cache/exo-1-target`, a lane `~/Work/exo-1-<name>` into `~/.cache/exo-1-target-<name>`
+# (exo-orchestrate). Without it a fresh worktree builds everything again into `./target`.
+[env]
+CARGO_TARGET_DIR = "{{ env.HOME }}/.cache/exo-1-target{{ config_root | basename | replace(from='exo-1', to='') }}"

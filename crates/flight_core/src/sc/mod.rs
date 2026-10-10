@@ -255,6 +255,20 @@ impl ScShip {
         let (mass, inertia) = (self.mass(), self.inertia());
         let linear_world = f.rot * shaped.linear;
         let mut v = f.v + (linear_world + f.gravity + air.accel + air.push) * dt;
+        // A push against the velocity on an axis lands on zero there, not one step past it; the
+        // next step the push is aligned and gets its full thrust (#203).
+        let (before, mut after) = (f.lv.to_array(), (f.inv * v).to_array());
+        let st = stick.to_array();
+        let mut landed = false;
+        for i in 0..3 {
+            if st[i] * before[i] < 0.0 && after[i] * before[i] < 0.0 {
+                after[i] = 0.0;
+                landed = true;
+            }
+        }
+        if landed {
+            v = f.rot * DVec3::from_array(after);
+        }
         // Finish the brake at real rest rather than preserving sub-display velocity forever.
         // Reset the heading on this step too, before the pilot can launch again.
         if braking && v.length_squared() < linear::STOP_SPEED * linear::STOP_SPEED {

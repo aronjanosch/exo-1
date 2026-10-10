@@ -31,6 +31,9 @@ production_core = { path = "crates/production_core" }
 # Bevy recommendation: little optimisation for our code, full for dependencies.
 [profile.dev]
 opt-level = 1
+# Keep source locations in backtraces without full type and variable debug data.
+# Tests inherit this profile, including our own crates.
+debug = "line-tables-only"
 
 [profile.dev.package."*"]
 opt-level = 3
@@ -42,6 +45,7 @@ debug = "line-tables-only"
 opt-level = 3
 lto = "thin"
 codegen-units = 1
+strip = "symbols"
 
 # Optimised builds without LTO, for measurements and quick release-like runs.
 [profile.fast]

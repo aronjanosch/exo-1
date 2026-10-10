@@ -98,6 +98,11 @@ pub enum Tap {
     LandingMode,
     /// A/B switch: the axis model's G-safety turn cap on or off (F8, #118).
     TurnCap,
+    /// F7 switch: the two thrust rules (A3 cap refuses thrust, B2 brake keeps the heading) on or
+    /// off together. Off by default.
+    ThrustLaw,
+    /// Playtest switch: the camera's shake, spring lag and G field of view (F9, #148, #149).
+    CameraFx,
 }
 
 impl Axis {
@@ -128,7 +133,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 14] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::LandingMode, Tap::TurnCap];
+    pub const ALL: [Tap; 16] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::LandingMode, Tap::TurnCap, Tap::ThrustLaw, Tap::CameraFx];
     pub fn name(self) -> &'static str {
         match self {
             Tap::Interact => "interact",
@@ -145,6 +150,8 @@ impl Tap {
             Tap::BoostMode => "boost_mode",
             Tap::LandingMode => "landing_mode",
             Tap::TurnCap => "turn_cap",
+            Tap::ThrustLaw => "thrust_law",
+            Tap::CameraFx => "camera_fx",
         }
     }
 }
@@ -339,6 +346,10 @@ impl Bindings {
                 (Tap::LandingMode, None) => Ok(vec![Input::Key(KeyCode::KeyK)]),
                 // ... and no `turn_cap` (#118).
                 (Tap::TurnCap, None) => Ok(vec![Input::Key(KeyCode::F8)]),
+                // ... and no `thrust_law` (#185).
+                (Tap::ThrustLaw, None) => Ok(vec![Input::Key(KeyCode::F7)]),
+                // ... and no `camera_fx` (#148, #149).
+                (Tap::CameraFx, None) => Ok(vec![Input::Key(KeyCode::F9)]),
                 _ => Err(err(t.name(), "missing".into())),
             }
         };
@@ -749,6 +760,15 @@ mod tests {
         assert!(a.take_tap(Tap::BoostMode));
     }
 
+    /// #148, #149: a player's file from before the camera switch still loads, with F9.
+    #[test]
+    fn old_file_without_camera_fx_gets_f9() {
+        let old = BINDINGS.replace("  \"camera_fx\": [\"F9\"],\n", "");
+        assert!(!old.contains("\"camera_fx\""));
+        let mut a = resolve(&Bindings::from_json(&old).unwrap(), &raw(&[], &[F9]));
+        assert!(a.take_tap(Tap::CameraFx));
+    }
+
     /// Spike 13: a player's file from before the landing mode and the turn cap still loads, with
     /// K and F8.
     #[test]
@@ -761,6 +781,15 @@ mod tests {
         assert!(!old.contains("\"turn_cap\""));
         let mut a = resolve(&Bindings::from_json(&old).unwrap(), &raw(&[], &[F8]));
         assert!(a.take_tap(Tap::TurnCap));
+    }
+
+    /// #185: a player's file from before the thrust law still loads, with F7.
+    #[test]
+    fn old_file_without_thrust_law_gets_f7() {
+        let old = BINDINGS.replace("  \"thrust_law\": [\"F7\"],\n", "");
+        assert!(!old.contains("\"thrust_law\""));
+        let mut a = resolve(&Bindings::from_json(&old).unwrap(), &raw(&[], &[F7]));
+        assert!(a.take_tap(Tap::ThrustLaw));
     }
 
     /// G was missing from the keyboard's tap list (only scenarios could inject it).

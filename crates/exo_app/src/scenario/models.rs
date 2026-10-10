@@ -124,6 +124,26 @@ fn toggle_turn_cap() -> Vec<Step> {
     vec![flip(false), flip(true)]
 }
 
+/// F7 (through the bindings) switches both thrust rules together and back (#185).
+fn toggle_thrust_law() -> Vec<Step> {
+    let rules = |w: &mut World| with_ship(w, |s| (s.ctl.cap_refuses_thrust, s.ctl.brake_keeps_heading));
+    let flip = |back: bool| -> Step {
+        Box::new(move |w, c| {
+            if c.t == 0.0 {
+                let (a, b) = rules(w);
+                c.v.insert("law0", (a && b) as u8 as f64);
+                tap(w, KeyCode::F7);
+                return false;
+            }
+            let (a, b) = rules(w);
+            let now = (a && b) as u8 as f64;
+            check(c, a == b && now != c.v["law0"], format!("F7: thrust rules {} -> {} (A3 {a}, B2 {b}){}", c.v["law0"], now, if back { " (back)" } else { "" }));
+            true
+        })
+    };
+    vec![flip(false), flip(true)]
+}
+
 fn manoeuvres(s: &mut Vec<Step>, t: &Shared) {
     // W from rest, then release: acceleration, speed, coasting to rest.
     s.push(manoeuvre("W from rest, then release", START_HEIGHT, 0.0, {
@@ -274,6 +294,7 @@ fn manoeuvres(s: &mut Vec<Step>, t: &Shared) {
         false
     }, t));
     s.extend(toggle_turn_cap());
+    s.extend(toggle_thrust_law());
     // #104 point 1: brushing the ground at speed with neutral input is not a landing. Measured
     // 0.1 s after the first contact: later the hull may hit a crest (a real collision).
     s.push(manoeuvre("brush the ground at 60 m/s", BRUSH_HEIGHT, 0.0, move |w, c, _, t| {

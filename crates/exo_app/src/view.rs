@@ -724,6 +724,8 @@ pub fn update_camera(
     let Ok((pl, pi)) = players.single() else { return };
     let Ok(si) = ships.single() else { return };
     let Ok((mut pose, mut fog, mut proj)) = cam.single_mut() else { return };
+    // The shake (#148) applies to the seated view and to the walker in a flying cabin only.
+    let mut shaken = false;
     // The settings' field of view at rest; the speed curve adds its rise to it.
     let base_fov = settings.fov_deg;
     let speed_fov = fx.0.fov_deg - tuning.camera.fov_curve.eval(0.0);
@@ -735,18 +737,21 @@ pub fn update_camera(
         let up = if d.y.abs() < 0.99 { DVec3::Y } else { DVec3::X };
         pose.rot = walker_core::look_rot(-d, up);
     } else if pl.seated {
-        // Look-ahead into the turn, the touchdown bump along the ship's down (#27).
+        // Look-ahead into the turn, the touchdown bump along the ship's down (#27), the spring
+        // lag of the chase camera (#149).
         let (sp, sr) = si.at(f);
         let fx = &fx.0;
         let ct = &tuning.camera;
-        pose.pos = sp + sr * (DVec3::from_array(ct.chase_offset) - DVec3::Y * fx.bump(ct));
+        pose.pos = sp + sr * (DVec3::from_array(ct.chase_offset) + fx.lag - DVec3::Y * fx.bump(ct));
         pose.rot = sr * DQuat::from_rotation_y(fx.look.y) * DQuat::from_rotation_x(ct.chase_pitch_deg.to_radians() + fx.look.x);
+        shaken = true;
     } else {
         let feet = pi.prev.0.lerp(pi.curr.0, f);
         let up = pi.prev.1.lerp(pi.curr.1, f).normalize();
         let look = pi.prev.2.lerp(pi.curr.2, f).normalize();
         let pos = feet + up * EYE_HEIGHT;
         let rot = walker_core::look_rot(look, up);
+        shaken = pl.ship.is_some();
         // Entering or leaving a cabin or the weightless body frame turns "up": the walker keeps
         // its look direction, the horizon turns over HORIZON_BLEND_SECS from where it was.
         if (pl.ship, pl.body.is_some()) != view.cabin {
@@ -770,6 +775,12 @@ pub fn update_camera(
     view.cabin = (pl.ship, pl.body.is_some());
     view.last_rot = pose.rot;
     view.last_pos = pose.pos;
+    if shaken {
+        let (shake, rot) = (&fx.0, pose.rot);
+        let offset = rot * shake.shake_offset;
+        pose.pos += offset;
+        pose.rot = rot * DQuat::from_rotation_y(shake.shake_angle.y) * DQuat::from_rotation_x(shake.shake_angle.x);
+    }
     origin.view = pose.pos;
     // The sky is the planet's atmosphere (sky.rs); the clear colour is space or the night sky's
     // glow. Haze per planet (#67), ambient, fog and sky by the time of day (#48).
@@ -781,6 +792,11 @@ pub fn update_camera(
     fog.falloff = FogFalloff::Exponential { density: fog_density };
     ambient.color = amb_color;
     ambient.brightness = amb;
+}
+
+/// The HUD's word for the camera switch (#148, #149).
+pub fn camera_fx_text(on: bool) -> &'static str {
+    if on { "camera fx on (F9)" } else { "camera fx off (F9)" }
 }
 
 /// Cabin gravity state; G works only while landed.
@@ -804,6 +820,7 @@ pub fn update_hud(
     net: Option<Res<crate::net_live::Net>>,
     wd: Res<crate::warp::WarpDrive>,
     sys: Res<crate::warp::SystemRes>,
+    fx: Res<crate::ship::CameraEffects>,
 ) {
     let (Ok(pl), Ok((ship, sp, sv, sr)), Ok(mut text)) = (players.single(), ships.single(), hud.single_mut()) else { return };
     // Ground and altitude only near the planet (millions of metres during a warp say nothing).
@@ -813,7 +830,8 @@ pub fn update_hud(
         // What the flight model did (felt G, precision share, thrusters at a limit).
         let a = &ship.ctl.axis;
         let cap = if ship.ctl.tuning.g_safety.cap_turns { "on" } else { "off" };
-        let axis = format!("  {:.1} g  prec {:.2}  turn cap {cap} (F8){}{}", a.felt_g, a.precision, if a.saturated { "  sat" } else { "" }, if a.rate_capped { "  g-cap" } else { "" });
+        let law = if ship.ctl.cap_refuses_thrust && ship.ctl.brake_keeps_heading { "new" } else { "old" };
+        let axis = format!("  {:.1} g  prec {:.2}  turn cap {cap} (F8)  thrust {law} (F7){}{}", a.felt_g, a.precision, if a.saturated { "  sat" } else { "" }, if a.rate_capped { "  g-cap" } else { "" });
         format!(
             "SHIP  assist {} (H)  follow {} (L)  {}{}  {} m/s  limit {:.0}{axis}{height}",
             if ship.ctl.hover_assist { "on" } else { "off" },
@@ -843,8 +861,10 @@ pub fn update_hud(
             format!("walk  grounded {}  {speed}", pl.w.grounded)
         }
     };
+    // The camera switch (F9, #148, #149) is on the debug line, so a playtest can compare with it off.
+    let camera = camera_fx_text(fx.0.enabled);
     **text = format!(
-        "{mode}\n{:.1} ms | chunks {} pending {} | patches {} pending {} | rescues {}",
+        "{mode}\n{:.1} ms | chunks {} pending {} | patches {} pending {} | rescues {} | {camera}",
         time.delta_secs_f64() * 1000.0,
         terrain.visible,
         terrain.pending,
@@ -915,6 +935,12 @@ fn warp_line(wd: &crate::warp::WarpDrive, sys: &warp_core::System, ship: DVec3) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn camera_switch_says_on_or_off_with_its_key() {
+        assert_eq!(camera_fx_text(true), "camera fx on (F9)");
+        assert_eq!(camera_fx_text(false), "camera fx off (F9)");
+    }
 
     /// Issue #7: the horizon starts where it was and ends in the new frame, without a step.
     #[test]

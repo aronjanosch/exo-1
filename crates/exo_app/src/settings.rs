@@ -23,22 +23,25 @@ pub struct Settings {
     pub volume: f64,
     /// Off silences every sound and keeps the volume for when it comes back on.
     pub sound: bool,
+    /// Scales the camera shake (#148): 0 none, 1 as tuned.
+    pub camera_shake: f64,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { mouse_sensitivity: 1.0, fov_deg: 75.0, volume: 0.5, sound: true }
+        Settings { mouse_sensitivity: 1.0, fov_deg: 75.0, volume: 0.5, sound: true, camera_shake: 1.0 }
     }
 }
 
 pub const MOUSE_RANGE: (f64, f64) = (0.1, 5.0);
 pub const FOV_RANGE: (f64, f64) = (55.0, 100.0);
+pub const SHAKE_RANGE: (f64, f64) = (0.0, 1.0);
 
 impl Settings {
     pub fn from_json(s: &str) -> Result<Settings, String> {
         let v: Value = serde_json::from_str(s).map_err(|e| format!("settings.json: {e}"))?;
         let o = v.as_object().ok_or("settings.json: not an object")?;
-        if let Some(k) = o.keys().find(|k| !["mouse_sensitivity", "fov_deg", "volume", "sound"].contains(&k.as_str())) {
+        if let Some(k) = o.keys().find(|k| !["mouse_sensitivity", "fov_deg", "volume", "sound", "camera_shake"].contains(&k.as_str())) {
             return Err(format!("settings.json: unknown field `{k}`"));
         }
         let num = |k: &str, (lo, hi): (f64, f64)| {
@@ -49,7 +52,9 @@ impl Settings {
             None => true,
             Some(v) => v.as_bool().ok_or("settings.json: `sound` must be true or false")?,
         };
-        Ok(Settings { mouse_sensitivity: num("mouse_sensitivity", MOUSE_RANGE)?, fov_deg: num("fov_deg", FOV_RANGE)?, volume: num("volume", (0.0, 1.0))?, sound })
+        // Optional: files written before the camera shake setting (#148) keep loading at 1.
+        let camera_shake = if o.contains_key("camera_shake") { num("camera_shake", SHAKE_RANGE)? } else { 1.0 };
+        Ok(Settings { mouse_sensitivity: num("mouse_sensitivity", MOUSE_RANGE)?, fov_deg: num("fov_deg", FOV_RANGE)?, volume: num("volume", (0.0, 1.0))?, sound, camera_shake })
     }
 
     /// The factor on every sound: the volume, or 0 with the sound off.
@@ -58,7 +63,7 @@ impl Settings {
     }
 
     pub fn to_json(&self) -> String {
-        serde_json::to_string_pretty(&json!({ "mouse_sensitivity": self.mouse_sensitivity, "fov_deg": self.fov_deg, "volume": self.volume, "sound": self.sound })).unwrap()
+        serde_json::to_string_pretty(&json!({ "mouse_sensitivity": self.mouse_sensitivity, "fov_deg": self.fov_deg, "volume": self.volume, "sound": self.sound, "camera_shake": self.camera_shake })).unwrap()
     }
 }
 
@@ -125,7 +130,7 @@ mod tests {
     #[test]
     fn a_changed_setting_survives_a_restart() {
         let d = dir("restart");
-        let s = Settings { mouse_sensitivity: 1.5, fov_deg: 82.0, volume: 0.25, sound: false };
+        let s = Settings { mouse_sensitivity: 1.5, fov_deg: 82.0, volume: 0.25, sound: false, camera_shake: 0.5 };
         save_settings(&d, &s).unwrap();
         let mut b = Bindings::default();
         b.rebind(Slot::Button(Button::Brake), KeyCode::KeyB);
@@ -151,6 +156,16 @@ mod tests {
     fn a_settings_file_from_before_the_sound_switch_still_loads() {
         let s = Settings::from_json(r#"{ "mouse_sensitivity": 1.2, "fov_deg": 80, "volume": 0.3 }"#).unwrap();
         assert_eq!((s.volume, s.sound), (0.3, true));
+    }
+
+    /// #148: a settings file from before the camera shake loads at full shake; 0 is allowed.
+    #[test]
+    fn a_settings_file_from_before_the_camera_shake_still_loads() {
+        let s = Settings::from_json(r#"{ "mouse_sensitivity": 1.2, "fov_deg": 80, "volume": 0.3, "sound": true }"#).unwrap();
+        assert_eq!(s.camera_shake, 1.0);
+        let s = Settings::from_json(r#"{ "mouse_sensitivity": 1.2, "fov_deg": 80, "volume": 0.3, "camera_shake": 0 }"#).unwrap();
+        assert_eq!(s.camera_shake, 0.0);
+        assert!(Settings::from_json(r#"{ "mouse_sensitivity": 1.2, "fov_deg": 80, "volume": 0.3, "camera_shake": 2 }"#).is_err());
     }
 
     #[test]

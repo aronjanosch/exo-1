@@ -8,9 +8,10 @@ use bevy::prelude::*;
 use flight_core::{BodyState, FlightInput, Lag, ShipController, ShipTuning, VirtualStick};
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<CameraEffects>();
+    app.init_resource::<CameraEffects>().init_resource::<ThrusterLevels>();
     app.add_systems(FixedUpdate, ship_control.in_set(crate::phases::Fx::Ship));
     app.add_systems(FixedUpdate, camera_fx.in_set(crate::phases::Fx::Effects));
+    app.add_systems(FixedUpdate, thruster_fx.in_set(crate::phases::Fx::Effects));
 }
 
 /// Seat position in ship space.
@@ -206,6 +207,12 @@ pub fn ship_control(
                 let cap = &mut ship.ctl.tuning.g_safety.cap_turns;
                 *cap = !*cap;
             }
+            if actions.take_tap(Tap::ThrustLaw) {
+                // Both rules flip together (#185).
+                let on = !ship.ctl.cap_refuses_thrust;
+                ship.ctl.cap_refuses_thrust = on;
+                ship.ctl.brake_keeps_heading = on;
+            }
             let mb = &bindings.mouse;
             let m = std::mem::take(&mut actions.look);
             let m = DVec2::new(m.x as f64, m.y as f64) * mb.ship_sensitivity * settings.mouse_sensitivity;
@@ -227,21 +234,78 @@ pub fn ship_control(
     }
 }
 
-/// Camera effects of the own ship (#27), stepped with the simulation so scenarios can check them;
-/// the view only applies them.
+/// Camera effects of the own ship (#27, #148, #149), stepped with the simulation so scenarios can
+/// check them; the view only applies them.
 #[derive(Resource, Default)]
 pub struct CameraEffects(pub flight_core::camera::CameraFx);
 
+/// F9 switches the camera effects (#148, #149). The felt acceleration is the change of velocity in
+/// ship space (no gravity term: a hover thrust that holds the ship feels nothing), zero on the
+/// ground; the walker in a flying cabin gets the cabin's share.
 pub fn camera_fx(
     time: Res<Time>,
     planet: Res<PlanetRes>,
     tuning: Res<crate::tuning::Tuning>,
+    settings: Res<crate::settings::Settings>,
+    mut actions: ResMut<Actions>,
     mut fx: ResMut<CameraEffects>,
+    mut prev_vel: Local<Option<DVec3>>,
+    players: Query<&crate::walker::Player>,
     q: Query<(&Ship, &Position, &Rotation, &LinearVelocity, &AngularVelocity)>,
 ) {
+    if actions.take_tap(Tap::CameraFx) {
+        fx.0.enabled = !fx.0.enabled;
+    }
     let Ok((ship, pos, rot, lv, av)) = q.single() else { return };
+    let dt = time.delta_secs_f64();
     let up = planet.up(pos.0);
     let local = rot.0.inverse() * av.0;
-    // The bump comes with the first hull contact (#110 point 4).
-    fx.0.step(&tuning.camera, lv.0.length(), DVec2::new(local.x, local.y), -lv.0.dot(up), ship.grounded, time.delta_secs_f64());
+    let accel = match *prev_vel {
+        Some(p) if dt > 0.0 && !ship.grounded => rot.0.inverse() * ((lv.0 - p) / dt),
+        _ => DVec3::ZERO,
+    };
+    *prev_vel = Some(lv.0);
+    let cabin = players.single().is_ok_and(|p| p.ship.is_some() && !p.seated);
+    let out = ship.ctl.ramp.out;
+    let input = flight_core::camera::FxInput {
+        speed: lv.0.length(),
+        turn: DVec2::new(local.x, local.y),
+        // The bump comes with the first hull contact (#110 point 4).
+        approach: -lv.0.dot(up),
+        grounded: ship.grounded,
+        accel,
+        thrust: DVec3::new(out[0], out[1], out[2]).length().min(1.0),
+        boost: ship.ctl.boost.active,
+        turbulence: 0.0,
+        cabin,
+        shake_scale: settings.camera_shake,
+        dt,
+    };
+    fx.0.step_with(&tuning.camera, &input);
+}
+
+/// Thruster sound layers of the own ship (#150), stepped with the simulation so scenarios can
+/// read the levels; the audio plays them.
+#[derive(Resource, Default)]
+pub struct ThrusterLevels(pub flight_core::audio::ThrusterAudio);
+
+/// Felt acceleration (g) at which the braking thrusters sound at full level (`TODO(initiator)`:
+/// start value, tune by ear).
+pub const BRAKE_FULL_G: f64 = 1.0;
+
+pub fn thruster_fx(time: Res<Time>, mut fx: ResMut<ThrusterLevels>, q: Query<(&Ship, &Rotation, &LinearVelocity)>) {
+    let Ok((ship, rot, lv)) = q.single() else { return };
+    let o = ship.ctl.ramp.out;
+    // Braking: the thrusters fire against the motion, so the layers follow the brake, not the
+    // (zero) pilot input. The level falls with the felt acceleration, so it fades at standstill.
+    let thrust = if ship.ctl.brake_active && !ship.parked {
+        let local = rot.0.inverse() * lv.0;
+        let s = (ship.ctl.axis.felt_g / BRAKE_FULL_G).min(1.0);
+        let against = -local.normalize_or_zero() * s;
+        [against.x, against.y, against.z]
+    } else {
+        [o[0], o[1], o[2]]
+    };
+    let signal = flight_core::audio::ThrusterSignal { thrust, boost: ship.ctl.boost.active, parked: ship.parked };
+    fx.0.step(signal, time.delta_secs_f64());
 }

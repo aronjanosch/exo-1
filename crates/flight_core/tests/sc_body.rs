@@ -282,3 +282,19 @@ fn asked_thrust_is_shaped_inside_the_box_per_group() {
     assert!(worst_ang <= t.angular_jerk.pitch * DT * (1.0 + 1e-9));
     assert!((prev.angular.x - 50.0).abs() < 1e-9, "the angular request reached: {}", prev.angular.x);
 }
+
+/// Countering boost never runs the axis past zero in one step: a small backward drift under a
+/// boosted forward push ends at rest on that axis, not moving the other way (#203).
+#[test]
+fn countering_boost_lands_on_zero_not_past_it() {
+    let t = sc_common::instant();
+    let mut ship = flight_core::sc::ScShip::new(t);
+    let mut body = sc_common::body_at(DVec3::ZERO);
+    // Decoupled, so only the push acts; a backward drift smaller than one step's push.
+    sc_common::fly(&mut ship, &mut body, &sc_common::thrust(DVec3::ZERO), &flight_core::sc::ModeCmds { decoupled: true, ..Default::default() }, &sc_common::Space::default(), 5.0);
+    body.lin_vel = DVec3::new(0.0, 0.0, 0.3);
+    let i = flight_core::FlightInput { thrust: DVec3::NEG_Z, boost: true, piloted: true, ..Default::default() };
+    let out = ship.step(&body, &i, &flight_core::sc::ModeCmds::default(), &sc_common::Space::default(), sc_common::DT);
+    println!("countering boost from 0.3 m/s back: {:.3} m/s after one step", out.lin_vel.z);
+    assert!(out.lin_vel.z.abs() < 1e-9, "z {:.3} m/s, not zero", out.lin_vel.z);
+}

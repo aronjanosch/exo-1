@@ -365,3 +365,18 @@ fn anti_drift_leaves_a_straight_burn_alone() {
     println!("straight W 1 s, space and under gravity: {on:.3?} m/s with anti-drift, {off:.3?} without");
     assert!((on.0 - off.0).abs() < 0.01 * off.0 && (on.1 - off.1).abs() < 0.01 * off.1, "{on:?} vs {off:?}");
 }
+
+/// Anti-drift with a large error along the goal and a small drift across it: the thrust points
+/// along the velocity error (a straight path to the goal), not every axis full (a kink, #203).
+#[test]
+fn anti_drift_with_a_large_along_error_keeps_the_error_direction() {
+    let mut ship = ScShip::new(instant());
+    let mut body = body_at(DVec3::ZERO);
+    body.lin_vel = DVec3::new(5.0, 0.0, 0.0);
+    let a = step(&mut ship, &mut body, &thrust(DVec3::NEG_Z), &ModeCmds::default(), &Space::default());
+    let goal = DVec3::new(0.0, 0.0, -ship.tuning.linear.caps(flight_core::sc::Master::Scm).cruise);
+    let err = goal - DVec3::new(5.0, 0.0, 0.0);
+    let angle = a.angle_between(err).to_degrees();
+    println!("anti-drift, 150 m/s along vs 5 m/s across: accel {a:.2?}, {angle:.2} deg off the error");
+    assert!(angle < 1.0, "{angle:.2} deg off the velocity error");
+}

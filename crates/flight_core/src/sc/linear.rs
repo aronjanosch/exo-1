@@ -203,13 +203,13 @@ fn brake_ceiling(b: &Dirs, hold: DVec3, u: DVec3) -> f64 {
     k
 }
 
-/// Anti-drift (notes section 1, "Anti-drift"): thrust across the goal direction `g` (ship space)
-/// kills the velocity across it at the full thrust available that way, and the thrust along the
-/// goal follows the ratio of the along error to that across speed, so the path stays straight.
-/// `None` when the velocity has no part across the goal (the plain law then applies).
 /// m/s: anti-drift acts only on an across speed above this.
 const ANTI_DRIFT_MIN: f64 = 0.5;
 
+/// Anti-drift (notes section 1, "Anti-drift"; #203): with the velocity across the goal direction
+/// `g` (ship space), the thrust takes the direction of the velocity error at the most the box
+/// gives that way, so the path to the goal stays straight. `None` when the velocity has no part
+/// across the goal (the plain law then applies).
 fn anti_drift(b: &Dirs, lv: DVec3, g: DVec3, goal: DVec3) -> Option<DVec3> {
     let across = lv - g * lv.dot(g);
     let n = across.length();
@@ -217,10 +217,22 @@ fn anti_drift(b: &Dirs, lv: DVec3, g: DVec3, goal: DVec3) -> Option<DVec3> {
     if n < ANTI_DRIFT_MIN {
         return None;
     }
-    let p = -across / n;
-    let avail = b.support(p);
-    let along_err = (goal - lv).dot(g);
-    Some(p * avail + g * (avail * along_err / n))
+    // The thrust points along the velocity error, as far as the box reaches that way: the across
+    // speed and the error along the goal die together and the path stays straight. A large error
+    // along the goal throttles the across part to its share instead of every axis running full.
+    let err = goal - lv;
+    let l = err.length();
+    if l < 1e-9 {
+        return None;
+    }
+    let u = err / l;
+    Some(u * reach(b, u))
+}
+
+/// How far the box reaches along the unit vector `u` (the largest `s` with `s * u` inside it).
+fn reach(b: &Dirs, u: DVec3) -> f64 {
+    let lim = b.along(u.signum());
+    [(u.x, lim.x), (u.y, lim.y), (u.z, lim.z)].iter().filter(|(c, _)| c.abs() > 1e-12).map(|(c, m)| m.abs() / c.abs()).fold(f64::INFINITY, f64::min)
 }
 
 pub fn step(s: &mut LinearState, f: &Frame, input: &FlightInput, m: &Modes, e: &Env, t: &LinearTuning) -> LinearOut {

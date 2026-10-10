@@ -254,7 +254,21 @@ impl ScShip {
 
         let (mass, inertia) = (self.mass(), self.inertia());
         let linear_world = f.rot * shaped.linear;
-        let v = f.v + (linear_world + f.gravity + air.accel + air.push) * dt;
+        let mut v = f.v + (linear_world + f.gravity + air.accel + air.push) * dt;
+        // A push against the velocity on an axis lands on zero there, not one step past it; the
+        // next step the push is aligned and gets its full thrust (#203).
+        let (before, mut after) = (f.lv.to_array(), (f.inv * v).to_array());
+        let st = stick.to_array();
+        let mut landed = false;
+        for i in 0..3 {
+            if st[i] * before[i] < 0.0 && after[i] * before[i] < 0.0 {
+                after[i] = 0.0;
+                landed = true;
+            }
+        }
+        if landed {
+            v = f.rot * DVec3::from_array(after);
+        }
         let angular_world = f.rot * (shaped.angular + air.angular + air.angular_hold);
         let w = body.ang_vel + angular_world * dt;
         let torque_local = DVec3::new(shaped.angular.x * inertia.pitch, shaped.angular.y * inertia.yaw, shaped.angular.z * inertia.roll);

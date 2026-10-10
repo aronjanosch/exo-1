@@ -1,6 +1,6 @@
 //! #168: customers order, orders become offers at the wholesaler, deliveries move the relationship.
 //! Without a window.
-mod common;
+use crate::common;
 use exo_app::Options;
 
 #[test]

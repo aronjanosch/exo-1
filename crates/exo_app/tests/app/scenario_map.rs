@@ -1,5 +1,5 @@
 //! #166: the map's pins and M. Without a window.
-mod common;
+use crate::common;
 use exo_app::Options;
 
 #[test]

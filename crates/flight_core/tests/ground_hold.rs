@@ -55,7 +55,7 @@ fn sideways(v: DVec3, up: DVec3) -> DVec3 {
 fn measures_the_slope_under_the_ship() {
     for deg in [0.0, 10.0, 25.0, 40.0] {
         let env = Slope::new(deg);
-        let got = ShipController::default().ground_slope(&env, env.ground(0.0)).to_degrees();
+        let got = GroundRules::default().ground_slope(&env, env.ground(0.0)).to_degrees();
         assert!((got - deg).abs() < 0.1, "{deg} deg: measured {got:.3}");
     }
 }
@@ -78,10 +78,11 @@ fn contact(env: &Slope, b: &mut BodyState, friction: f64) -> bool {
     (b.pos - env.ground(0.0)).dot(n) < 1e-6
 }
 
-/// Settles a ship onto the slope with Ctrl held from just above the ground; returns how far it
-/// moved sideways from the touchdown spot.
-fn settle(c: &mut ShipController, env: &Slope, secs: f64, friction: f64) -> (f64, BodyState) {
-    let mut b = BodyState { pos: env.ground(0.0) + DVec3::Y * 0.05, ..Default::default() };
+/// Settles a ship onto the slope with Ctrl held from just above the ground, falling at 1 m/s; returns
+/// how far it moved sideways from the touchdown spot.
+fn settle(c: &mut GroundRules, env: &Slope, secs: f64, friction: f64) -> (f64, BodyState) {
+    let up = env.ground(0.0).normalize();
+    let mut b = BodyState { pos: env.ground(0.0) + up * 0.05, lin_vel: -up, ..Default::default() };
     let mut grounded = false;
     let mut touch = None;
     let mut most: f64 = 0.0;
@@ -104,7 +105,7 @@ fn set_down_on_a_slope_it_keeps_the_touchdown_spot() {
     // 33 degrees, as `full` lands on, and a contact without friction: each step it turns part of
     // the settle push down the slope.
     let env = Slope::new(33.0);
-    let mut held = ShipController::default();
+    let mut held = GroundRules::default();
     let (moved, b) = settle(&mut held, &env, 5.0, 0.0);
     let hold = held.ground_hold.expect("held");
     let rest = hold.rest.expect("at rest after 5 s");
@@ -114,7 +115,7 @@ fn set_down_on_a_slope_it_keeps_the_touchdown_spot() {
     assert!((b.pos - rest).length() < 1e-9, "and stays there: {:?}", b.pos - rest);
     // Without the hold (limit 0) no spot is kept; the settle rule alone drops the sideways speed,
     // which this point contact does not turn into a slide (the hull in `full` did: 0.55 m).
-    let mut free = ShipController::new(ShipTuning { landing_slope_limit: 0.0, ..ShipTuning::default() });
+    let mut free = GroundRules::new(GroundTuning { landing_slope_limit: 0.0, ..GroundTuning::default() });
     settle(&mut free, &env, 5.0, 0.0);
     assert!(free.ground_hold.is_none(), "no hold above the limit");
 }
@@ -122,7 +123,7 @@ fn set_down_on_a_slope_it_keeps_the_touchdown_spot() {
 #[test]
 fn at_rest_it_returns_to_its_spot_until_thrust() {
     let env = Slope::new(20.0);
-    let mut c = ShipController::default();
+    let mut c = GroundRules::default();
     let (_, mut b) = settle(&mut c, &env, 3.0, 0.5);
     let rest = c.ground_hold.and_then(|h| h.rest).expect("at rest");
     // A push moved it 3 cm (another contact, a bump): it goes back within one step.
@@ -133,24 +134,18 @@ fn at_rest_it_returns_to_its_spot_until_thrust() {
     // Contact lost (a flicker) and Ctrl held: still held.
     let (v, _) = c.step(&b, &FlightInput { grounded: false, ..down() }, &env, DT);
     assert!((b.pos + v * DT - rest).length() < 1e-9, "held without contact: {v}");
-    // Thrust up lets go and lifts.
+    // Thrust up lets go; the lift is the SC model's (the ground rules do not fly the ship).
     let mut up = none;
     up.thrust = DVec3::Y;
-    let mut b = BodyState { pos: rest, ..b };
-    for _ in 0..60 {
-        let (v, _) = c.step(&b, &up, &env, DT);
-        b.lin_vel = v;
-        b.integrate(DT);
-    }
+    c.step(&BodyState { pos: rest, ..b }, &up, &env, DT);
     assert!(c.ground_hold.is_none(), "thrust ends the hold");
-    assert!((b.pos - rest).dot(rest.normalize()) > 0.5, "and lifts: {:?}", b.pos - rest);
 }
 
 #[test]
 fn sideways_input_also_ends_the_hold() {
     let env = Slope::new(10.0);
     for thrust in [DVec3::X, DVec3::NEG_Z, DVec3::Z] {
-        let mut c = ShipController::default();
+        let mut c = GroundRules::default();
         let (_, b) = settle(&mut c, &env, 2.0, 0.5);
         assert!(c.ground_hold.is_some());
         c.step(&b, &FlightInput { thrust, grounded: true, piloted: true, ..Default::default() }, &env, DT);
@@ -161,7 +156,7 @@ fn sideways_input_also_ends_the_hold() {
 #[test]
 fn steeper_than_the_limit_is_not_held() {
     let env = Slope::new(40.0);
-    let mut c = ShipController::default();
+    let mut c = GroundRules::default();
     let b = BodyState { pos: env.ground(0.0), ..Default::default() };
     c.step(&b, &down(), &env, DT);
     assert!(c.ground_hold.is_none(), "40 degrees, limit {}", c.tuning.landing_slope_limit);
@@ -171,9 +166,9 @@ fn steeper_than_the_limit_is_not_held() {
 }
 
 #[test]
-fn moved_far_away_or_assist_off_lets_go() {
+fn moved_far_away_or_released_lets_go() {
     let env = Slope::new(10.0);
-    let mut c = ShipController::default();
+    let mut c = GroundRules::default();
     let (_, b) = settle(&mut c, &env, 2.0, 0.5);
     assert!(c.ground_hold.is_some());
     // Teleported 40 m along the ground (a scenario does this): no pull back.
@@ -181,11 +176,10 @@ fn moved_far_away_or_assist_off_lets_go() {
     let none = FlightInput { piloted: true, ..Default::default() };
     let (v, _) = c.step(&far, &none, &env, DT);
     assert!(c.ground_hold.is_none() && v.length() < 1.0, "lets go: {v}");
-    let (_, b) = settle(&mut c, &env, 2.0, 0.5);
+    settle(&mut c, &env, 2.0, 0.5);
     assert!(c.ground_hold.is_some());
-    c.hover_assist = false;
-    c.step(&b, &down(), &env, DT);
-    assert!(c.ground_hold.is_none(), "assist off lets go");
+    c.release();
+    assert!(c.ground_hold.is_none(), "the SC model flying the ship (or gravity compensation off) lets go");
 }
 
 /// #104 point 1: one step of hull contact with a crest at speed, neutral input, starts no hold;
@@ -193,7 +187,7 @@ fn moved_far_away_or_assist_off_lets_go() {
 #[test]
 fn brushing_a_crest_at_speed_keeps_flying() {
     let env = Slope::new(0.0);
-    let mut c = ShipController::default();
+    let mut c = GroundRules::default();
     let mut b = BodyState { pos: env.ground(0.0), lin_vel: DVec3::X * 80.0, ..Default::default() };
     let none = FlightInput { piloted: true, ..Default::default() };
     let (v, _) = c.step(&b, &FlightInput { grounded: true, ..none }, &env, DT);
@@ -206,7 +200,7 @@ fn brushing_a_crest_at_speed_keeps_flying() {
         b.lin_vel = v;
         b.integrate(DT);
     }
-    assert!(c.ground_hold.is_none() && sideways(b.lin_vel, b.pos.normalize()).length() > 60.0, "flies on: {}", b.lin_vel);
+    assert!(c.ground_hold.is_none(), "no hold after the brush: {}", b.lin_vel);
 }
 
 /// #104 point 1: a settling hold whose contact stays lost lets go (the ground fell away); a
@@ -215,16 +209,16 @@ fn brushing_a_crest_at_speed_keeps_flying() {
 #[test]
 fn contact_lost_while_settling_ends_the_hold() {
     let env = Slope::new(10.0);
-    let mut c = ShipController::default();
+    let mut c = GroundRules::default();
     let b = BodyState { pos: env.ground(0.0), ..Default::default() };
     c.step(&b, &down(), &env, DT);
     assert!(c.ground_hold.is_some_and(|h| h.rest.is_none()), "settling");
     let none = FlightInput { grounded: false, piloted: true, ..Default::default() };
-    for _ in 0..(ShipController::GROUND_HOLD_RELEASE_TIME / DT).ceil() as usize + 1 {
+    for _ in 0..(GroundRules::GROUND_HOLD_RELEASE_TIME / DT).ceil() as usize + 1 {
         c.step(&b, &none, &env, DT);
     }
-    assert!(c.ground_hold.is_none(), "contact lost for {} s lets go", ShipController::GROUND_HOLD_RELEASE_TIME);
-    let mut c = ShipController::default();
+    assert!(c.ground_hold.is_none(), "contact lost for {} s lets go", GroundRules::GROUND_HOLD_RELEASE_TIME);
+    let mut c = GroundRules::default();
     let (_, b) = settle(&mut c, &env, 3.0, 0.5);
     assert!(c.ground_hold.and_then(|h| h.rest).is_some());
     for _ in 0..120 {
@@ -238,7 +232,7 @@ fn contact_lost_while_settling_ends_the_hold() {
 #[test]
 fn lifted_straight_up_it_is_not_pulled_back() {
     let env = Slope::new(10.0);
-    let mut c = ShipController::default();
+    let mut c = GroundRules::default();
     let (_, b) = settle(&mut c, &env, 3.0, 0.5);
     assert!(c.ground_hold.and_then(|h| h.rest).is_some());
     let lifted = BodyState { pos: b.pos + b.pos.normalize() * 20.0, lin_vel: DVec3::ZERO, ..b };
@@ -251,9 +245,32 @@ fn lifted_straight_up_it_is_not_pulled_back() {
 #[test]
 fn a_corner_touch_on_a_steep_slope_below_the_limit_is_held() {
     let env = Slope::new(34.0);
-    let mut c = ShipController::default();
+    let mut c = GroundRules::default();
     let up = env.ground(0.0).normalize();
     let b = BodyState { pos: env.ground(0.0) + up * 4.0 * 34f64.to_radians().tan(), ..Default::default() };
     c.step(&b, &down(), &env, DT);
-    assert!(c.ground_hold.is_some(), "clearance {:.2} m", c.terrain_clearance);
+    assert!(c.ground_hold.is_some(), "clearance {:.2} m", c.clearance_at(&env, b.pos));
+}
+
+/// The ground rules without a hold: sliding sideways on flat ground with Ctrl held, only a gentle
+/// settle straight down remains, then no push at rest.
+#[test]
+fn grounded_with_down_input_settles_without_sliding() {
+    let env = Slope::new(0.0);
+    let mut c = GroundRules::default();
+    let b = BodyState { pos: env.ground(0.0), ..Default::default() };
+    let up = b.pos.normalize();
+    let mut v = DVec3::X * 1.6;
+    for _ in 0..30 {
+        v = c.step(&BodyState { lin_vel: v, ..b }, &down(), &env, DT).0;
+    }
+    assert!((v - up * v.dot(up)).length() < 1e-9, "no sideways speed on the ground: {v}");
+    assert!(v.dot(up) < 0.0 && v.dot(up) > -0.6, "gentle settle: {v}");
+    // The ground stops the sinking (what the contact does); resting a moment, the push ends.
+    for _ in 0..120 {
+        v = c.step(&BodyState { lin_vel: v, ..b }, &down(), &env, DT).0;
+        v -= up * v.dot(up).min(0.0);
+    }
+    let pushed = c.step(&BodyState { lin_vel: v, ..b }, &down(), &env, DT).0;
+    assert!(pushed.length() < 1e-3, "resting, no push: {pushed}");
 }

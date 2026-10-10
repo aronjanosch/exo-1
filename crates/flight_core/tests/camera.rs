@@ -1,6 +1,6 @@
 //! #27: camera effects from speed, turn and touchdown. #148: trauma shake. #149: spring lag and
 //! field of view from G.
-use flight_core::axis::G0;
+use flight_core::limits::G0;
 use flight_core::camera::{CameraFx, CameraTuning, FxInput};
 use glam::{DVec2, DVec3};
 

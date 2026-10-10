@@ -8,7 +8,7 @@
 //! left and right) each wait `spool_delay` after a fresh request (a running boost skips the wait),
 //! countering boost gets a share of the aligned boost, and every group's thrust and the angular
 //! acceleration build up at most at their jerk (cutting is immediate).
-use crate::axis::{Dirs, Rot};
+use crate::limits::{Dirs, Rot};
 use crate::{lerp, BoostCapacitor, BoostCapacitorTuning};
 use glam::DVec3;
 use serde::Deserialize;

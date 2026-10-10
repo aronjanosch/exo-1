@@ -2,7 +2,7 @@
 //! look-ahead that turns the pilot's view a little into the turn, a short bump on touchdown; the
 //! trauma shake (boost, thrust, touchdown), the spring lag of the chase camera and the field of
 //! view from forward G. Plain math for the view; values in `content/tuning/camera.json`.
-use crate::axis::G0;
+use crate::limits::G0;
 use crate::{Curve, CHASE_CAMERA_OFFSET, CHASE_CAMERA_PITCH_DEG};
 use glam::{DVec2, DVec3};
 use serde::Deserialize;

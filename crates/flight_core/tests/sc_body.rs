@@ -3,7 +3,7 @@
 //! Numbers are printed (`cargo test -p flight_core --test sc_body -- --nocapture`).
 mod sc_common;
 
-use flight_core::axis::Dirs;
+use flight_core::limits::Dirs;
 use flight_core::sc::drive::{self, Asked, DriveState, DriveTuning};
 use flight_core::sc::{ModeCmds, ScShip};
 use flight_core::{BodyState, FlightInput};

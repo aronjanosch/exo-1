@@ -7,11 +7,11 @@
 //! (B2), anti-drift keeps the path straight while an axis saturates, gravity compensation holds
 //! against gravity and air (off: the ship falls in a frame that falls with it), G-safe cuts the
 //! box, the strafe tapers with forward speed, comstab keeps the goal on the nose, and proximity
-//! and landing mode limit the descent and the speed near the ground. Ported from the axis model
-//! (`axis.rs`: `refuse_thrust`, `brake_along`, the precision band, the descent limit).
+//! and landing mode limit the descent and the speed near the ground. The first flight model's
+//! ideas (`refuse_thrust`, `brake_along`, the precision band, the descent limit) live on here.
 use super::modes::{Master, Modes};
 use super::Frame;
-use crate::axis::{Dirs, G0};
+use crate::limits::{Dirs, G0};
 use crate::{lerp, limit_length, smoothstep, Curve, FlightInput, Interp};
 use glam::{DQuat, DVec2, DVec3};
 use serde::Deserialize;
@@ -39,7 +39,7 @@ impl Caps {
     }
 }
 
-/// The landing mode's precision band (K), ported from the axis model's `Precision`.
+/// The landing mode's precision band (K).
 #[derive(Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LandingBand {
@@ -195,7 +195,7 @@ pub struct LinearOut {
 }
 
 /// The largest k that keeps `hold + u * k` inside the box: the weakest axis in that direction
-/// (ported from the axis model's `brake_along`).
+/// (the brake along the velocity).
 fn brake_ceiling(b: &Dirs, hold: DVec3, u: DVec3) -> f64 {
     let mut k = f64::INFINITY;
     for (h, c, lo, hi) in [(hold.x, u.x, -b.left, b.right), (hold.y, u.y, -b.down, b.up), (hold.z, u.z, -b.forward, b.backward)] {

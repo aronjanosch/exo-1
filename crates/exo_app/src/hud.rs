@@ -106,7 +106,7 @@ impl Badge {
 }
 
 /// The panel's badge slots (the most the SC model shows at once).
-pub const BADGE_SLOTS: usize = 13;
+pub const BADGE_SLOTS: usize = 12;
 /// Seconds a toast stays in the tests (the game reads `hud.json` `toast_time`).
 #[cfg(test)]
 const TOAST_TIME: f64 = 1.5;

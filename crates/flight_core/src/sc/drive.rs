@@ -91,7 +91,7 @@ impl Default for DriveTuning {
             boost_thrust: Dirs { forward: 2.0, backward: 1.5, left: 1.25, right: 1.25, up: 1.25, down: 1.25 },
             spool_delay: Groups { main: 0.3, retro: 0.3, vertical: 0.2, lateral: 0.0 },
             jerk: Groups { main: 120.0, retro: 90.0, vertical: 400.0, lateral: 150.0 },
-            angular_jerk: Rot { pitch: 60.0, yaw: 60.0, roll: 90.0 },
+            angular_jerk: Rot { pitch: 600.0, yaw: 600.0, roll: 600.0 },
             boost_pre_delay: 0.15,
             boost_ramp_up: 0.5,
             boost_ramp_down: 0.3,

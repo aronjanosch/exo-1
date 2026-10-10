@@ -6,7 +6,7 @@ use crate::ship::{Ship, ShipPart};
 use crate::terrain::Terrain;
 use crate::walker::{Player, WalkStats, EYE_HEIGHT};
 use crate::controls::{Actions, Tap};
-use crate::hud::speed_text;
+use crate::hud::{speed_text, BADGE_SLOTS};
 use bevy::camera::PerspectiveProjection;
 use bevy::light::GlobalAmbientLight;
 use bevy::math::{DQuat, DVec3};
@@ -28,7 +28,7 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Update, update_camera.in_set(Frame::Camera));
     // After the camera (Frame::Camera): the tunnel and the camera both write `ClearColor`, the tunnel wins.
     app.add_systems(Update, (update_impostors, update_nav_markers, update_aim_marker, update_tunnel, update_speed_dust).in_set(Frame::World));
-    app.add_systems(Update, (update_hud, update_flight_hud, update_prompt, update_name_tags).in_set(Frame::Hud));
+    app.add_systems(Update, (update_hud, update_flight_hud, update_flight_panel, update_prompt, update_name_tags).in_set(Frame::Hud));
 }
 
 #[derive(Component)]
@@ -133,9 +133,13 @@ pub fn setup_view(mut commands: Commands) {
     commands
         .spawn(Node { position_type: PositionType::Absolute, top: px(8), left: px(8), column_gap: px(28), align_items: AlignItems::Center, ..default() })
         .with_children(|c| {
-            for i in 0..4 {
-                c.spawn((HudItem(i), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
-            }
+            // Mode, speed with its cap and G (#197), altitude, boost.
+            c.spawn((HudItem(0), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
+            c.spawn((HudItem(1), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
+            c.spawn((HudItem(CAP_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
+            c.spawn((HudItem(G_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
+            c.spawn((HudItem(2), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
+            c.spawn((HudItem(3), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
             c.spawn((
                 BoostBar,
                 Node { width: px(BOOST_BAR_PX), height: px(8), border: UiRect::all(px(1)), ..default() },
@@ -150,6 +154,36 @@ pub fn setup_view(mut commands: Commands) {
             // Then LANDING in landing mode (K).
             c.spawn((HudItem(LANDING_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
         });
+    // The flight panel (#197): one slot per badge, with the coupling blend's bar in the COUPLED slot.
+    // TODO(initiator): the position, size and colours are placeholders.
+    commands
+        .spawn(Node { position_type: PositionType::Absolute, top: px(36), left: px(8), column_gap: px(6), ..default() })
+        .with_children(|c| {
+            for i in 0..BADGE_SLOTS {
+                c.spawn((
+                    BadgeSlot(i),
+                    Node { flex_direction: FlexDirection::Column, padding: UiRect::axes(px(8), px(3)), border: UiRect::all(px(1)), row_gap: px(2), border_radius: BorderRadius::all(px(3)), ..default() },
+                    BorderColor::all(BADGE_BORDER),
+                    Visibility::Hidden,
+                ))
+                .with_children(|s| {
+                    s.spawn((BadgeText(i), Text::new(""), TextFont { font_size: FontSize::Px(13.0), ..default() }, TextColor(BADGE_OFF)));
+                    s.spawn((BlendBar(i), Node { width: px(56), height: px(3), ..default() }, BackgroundColor(BADGE_BORDER), Visibility::Hidden))
+                        .with_children(|b| {
+                            b.spawn((BlendFill(i), Node { width: percent(0), height: percent(100), ..default() }, BackgroundColor(BLEND)));
+                        });
+                });
+            }
+        });
+    // The toast (#197): the last change, large, in the upper centre for `TOAST_TIME` s.
+    commands.spawn((
+        ToastLine,
+        Text::new(""),
+        TextFont { font_size: FontSize::Px(44.0), ..default() },
+        TextColor(TOAST),
+        Node { position_type: PositionType::Absolute, top: percent(30), width: percent(100), justify_content: JustifyContent::Center, ..default() },
+        TextLayout::justify(Justify::Center),
+    ));
     // The one prompt (#82): what the interact key does now, below the screen centre.
     commands.spawn((
         PromptLine,
@@ -165,13 +199,13 @@ pub fn setup_view(mut commands: Commands) {
         Text::new(""),
         TextFont { font_size: FontSize::Px(16.0), ..default() },
         TextColor(Color::srgb(0.55, 0.95, 1.0)),
-        Node { position_type: PositionType::Absolute, top: px(38), left: px(8), ..default() },
+        Node { position_type: PositionType::Absolute, top: px(68), left: px(8), ..default() },
     ));
     commands.spawn((
         Hud,
         Text::new(""),
         TextFont { font_size: FontSize::Px(14.0), ..default() },
-        Node { position_type: PositionType::Absolute, top: px(64), left: px(8), ..default() },
+        Node { position_type: PositionType::Absolute, top: px(92), left: px(8), ..default() },
         Visibility::Hidden,
     ));
     // Virtual joystick: dead-zone circle, a line of dots from the centre, the marker.
@@ -199,6 +233,28 @@ const BOOST_BAR_PX: f32 = 120.0;
 const BOOST_MODE_ITEM: u8 = 4;
 /// The `HudItem` that shows the landing mode (`HudReadout::landing`).
 const LANDING_ITEM: u8 = 5;
+/// The `HudItem`s after the speed: the cap (`HudReadout::cap_text`) and the felt G (`g_text`).
+const CAP_ITEM: u8 = 6;
+const G_ITEM: u8 = 7;
+
+/// One badge slot of the flight panel (#197); `BadgeText` and `BlendBar` carry its index.
+#[derive(Component)]
+pub struct BadgeSlot(pub usize);
+#[derive(Component)]
+pub struct BadgeText(pub usize);
+/// The coupling blend's bar (shown in the COUPLED slot while blending) and its fill.
+#[derive(Component)]
+pub struct BlendBar(pub usize);
+#[derive(Component)]
+pub struct BlendFill(pub usize);
+/// The toast line (#197).
+#[derive(Component)]
+pub struct ToastLine;
+const BADGE_ON: Color = Color::srgb(0.55, 0.95, 1.0);
+const BADGE_OFF: Color = Color::srgba(0.55, 0.6, 0.7, 0.6);
+const BADGE_BORDER: Color = Color::srgba(0.9, 0.95, 1.0, 0.35);
+const BLEND: Color = Color::srgb(1.0, 0.85, 0.35);
+const TOAST: Color = Color::srgb(1.0, 0.92, 0.55);
 const BOOST_READY: Color = Color::srgb(0.55, 0.95, 1.0);
 const BOOST_ACTIVE: Color = Color::srgb(1.0, 0.85, 0.35);
 const BOOST_LOW: Color = Color::srgba(0.55, 0.6, 0.7, 0.6);
@@ -264,6 +320,8 @@ pub fn update_flight_hud(
         let want = match item.0 {
             BOOST_MODE_ITEM => readout.boost_mode,
             LANDING_ITEM => readout.landing,
+            CAP_ITEM => readout.cap_text.as_str(),
+            G_ITEM => readout.g_text.as_str(),
             i => readout.texts[i as usize].as_str(),
         };
         if **t != *want {
@@ -322,6 +380,47 @@ pub fn update_flight_hud(
         if dead.is_some() {
             n.width = px(size);
             n.height = px(size);
+        }
+    }
+}
+
+/// The flight panel and the toast from `HudReadout` (#197). Only touches what changed.
+pub fn update_flight_panel(
+    readout: Res<crate::hud::HudReadout>,
+    mut slots: Query<(&BadgeSlot, &mut Visibility), (Without<BlendBar>, Without<ToastLine>)>,
+    mut texts: Query<(&BadgeText, &mut Text, &mut TextColor), Without<ToastLine>>,
+    mut bars: Query<(&BlendBar, &mut Visibility), (Without<BadgeSlot>, Without<ToastLine>)>,
+    mut fills: Query<(&BlendFill, &mut Node)>,
+    mut toast: Query<&mut Text, (With<ToastLine>, Without<BadgeText>)>,
+) {
+    let badges = &readout.badges;
+    for (slot, mut vis) in &mut slots {
+        vis.set_if_neq(if slot.0 < badges.len() { Visibility::Inherited } else { Visibility::Hidden });
+    }
+    for (t, mut text, mut color) in &mut texts {
+        let (label, on) = badges.get(t.0).map_or(("", false), |b| (b.label.as_str(), b.on));
+        if **text != *label {
+            **text = label.to_string();
+        }
+        let want = if on { BADGE_ON } else { BADGE_OFF };
+        if color.0 != want {
+            color.0 = want;
+        }
+    }
+    let coupled_slot = |i: usize| badges.get(i).is_some_and(|b| b.key == "COUPLED");
+    for (bar, mut vis) in &mut bars {
+        vis.set_if_neq(if readout.blend.is_some() && coupled_slot(bar.0) { Visibility::Inherited } else { Visibility::Hidden });
+    }
+    let width = percent(readout.blend.unwrap_or(0.0) as f32 * 100.0);
+    for (_, mut n) in &mut fills {
+        if n.width != width {
+            n.width = width;
+        }
+    }
+    if let Ok(mut t) = toast.single_mut() {
+        let want = readout.toast.as_deref().unwrap_or("");
+        if **t != *want {
+            **t = want.to_string();
         }
     }
 }

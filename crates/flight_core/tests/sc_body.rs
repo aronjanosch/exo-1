@@ -140,7 +140,7 @@ fn pressing_up_while_hovering_does_not_sag() {
     // vertical spool must keep the hold against gravity while it waits, so the ship does not
     // sag at the first press.
     let env = Air { density: 0.0, ..Air::default() };
-    let mut ship = ScShip::new(tuning());
+    let mut ship = ScShip::new(sc_common::tuning());
     let mut body = body_at(DVec3::new(0.0, 500.0, 0.0));
     run_in(&mut ship, &mut body, &FlightInput { piloted: true, ..FlightInput::default() }, &env, 2.0);
     let mut min_v = f64::MAX;

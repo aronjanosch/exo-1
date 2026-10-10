@@ -813,7 +813,8 @@ pub fn update_hud(
         // What the flight model did (felt G, precision share, thrusters at a limit).
         let a = &ship.ctl.axis;
         let cap = if ship.ctl.tuning.g_safety.cap_turns { "on" } else { "off" };
-        let axis = format!("  {:.1} g  prec {:.2}  turn cap {cap} (F8){}{}", a.felt_g, a.precision, if a.saturated { "  sat" } else { "" }, if a.rate_capped { "  g-cap" } else { "" });
+        let law = if ship.ctl.cap_refuses_thrust && ship.ctl.brake_keeps_heading { "new" } else { "old" };
+        let axis = format!("  {:.1} g  prec {:.2}  turn cap {cap} (F8)  thrust {law} (F7){}{}", a.felt_g, a.precision, if a.saturated { "  sat" } else { "" }, if a.rate_capped { "  g-cap" } else { "" });
         format!(
             "SHIP  assist {} (H)  follow {} (L)  {}{}  {} m/s  limit {:.0}{axis}{height}",
             if ship.ctl.hover_assist { "on" } else { "off" },

@@ -6,7 +6,7 @@
 //!
 //! All values are TODO(initiator) (`content/tuning/ship.json`).
 use crate::{lerp, limit_length, smoothstep, BodyState, FlightInput, PlanetEnv, ShipController};
-use glam::DVec3;
+use glam::{DQuat, DVec3};
 use serde::Deserialize;
 
 /// m/s²: one g, for the G-safety limits.
@@ -158,6 +158,51 @@ pub struct AxisState {
     pub rate_capped: bool,
 }
 
+/// B2: the local thrust of a brake along the velocity `lv` (local): `hold` (cancels gravity and
+/// drag) plus the unit vector against `lv` times the largest `k` that keeps the thrust inside the
+/// box `b`, capped at `speed * decay`. `None` when the ship is still or `hold` is outside the box
+/// (the caller then brakes per axis, as before).
+pub(crate) fn brake_along(b: &Dirs, hold: DVec3, lv: DVec3, decay: f64) -> Option<DVec3> {
+    const EPS: f64 = 1e-9;
+    let speed = lv.length();
+    if speed < EPS {
+        return None;
+    }
+    let inside = hold.x >= -b.left - EPS && hold.x <= b.right + EPS && hold.y >= -b.down - EPS && hold.y <= b.up + EPS && hold.z >= -b.forward - EPS && hold.z <= b.backward + EPS;
+    if !inside {
+        return None;
+    }
+    let u = -lv / speed;
+    let mut k = speed * decay;
+    for (h, c, lo, hi) in [(hold.x, u.x, -b.left, b.right), (hold.y, u.y, -b.down, b.up), (hold.z, u.z, -b.forward, b.backward)] {
+        if c > 1e-12 {
+            k = k.min((hi - h) / c);
+        } else if c < -1e-12 {
+            k = k.min((lo - h) / c);
+        }
+    }
+    Some(hold + u * k.max(0.0))
+}
+
+/// A3: the velocity `v` (world) held to the speed cap in its own direction. The cap is the
+/// ellipsoid the coupled stick goal spans (`cruise` sideways and up or down, `forward` or
+/// `backward` along the ship's Z); the limit is the larger of that cap and the speed before the
+/// step, so a speed above the cap is not cut. The direction is kept.
+/// TODO(initiator): the landing precision band (landing mode) is not part of this cap; it still
+/// limits the goal only.
+pub(crate) fn refuse_thrust(v: DVec3, inv: DQuat, speed_before: f64, cruise: f64, forward: f64, backward: f64) -> DVec3 {
+    let lv = inv * v;
+    let s = lv.length();
+    if s < 1e-9 {
+        return v;
+    }
+    let d = lv / s;
+    let cz = if d.z < 0.0 { forward } else { backward };
+    let r = 1.0 / ((d.x / cruise).powi(2) + (d.y / cruise).powi(2) + (d.z / cz).powi(2)).sqrt();
+    let limit = r.max(speed_before);
+    if s <= limit { v } else { v * (limit / s) }
+}
+
 impl ShipController {
     /// Share of the upward thrust the descent limit counts on (the rest is reserve for the assist's
     /// lag and for terrain rising under the ship).
@@ -262,8 +307,10 @@ impl ShipController {
         // Assist on: thrust also holds against gravity and drag; coupled and decoupled are each
         // limited, then blended, so the damping fades out with the blend. Off: thrust along the
         // stick only.
+        // B2: the brake along the velocity, when the ground rules do not settle the ship.
+        let held_brake = if self.brake_keeps_heading && self.brake_active && assist && !settle { brake_along(&thrust_box, inv * -(gravity + drag), inv * v, t.linear_decay) } else { None };
         let (asked, local) = if assist {
-            let (coupled, decoupled) = (inv * (coupled_accel - gravity - drag), inv * (decoupled_accel - gravity - drag));
+            let (coupled, decoupled) = (held_brake.unwrap_or(inv * (coupled_accel - gravity - drag)), inv * (decoupled_accel - gravity - drag));
             (coupled * c + decoupled * (1.0 - c), fit(coupled) * c + fit(decoupled) * (1.0 - c))
         } else {
             let a = limits.along(stick);
@@ -273,6 +320,8 @@ impl ShipController {
         self.axis.felt_g = local.length() / G0;
         self.axis.precision = if assist { p } else { 0.0 };
         let v = self.ground_velocity(env, origin, v + (b * local + gravity + drag) * dt, up, hold, dt);
+        // A3: the cap refuses thrust (not while the ground rules settle the ship).
+        let v = if self.cap_refuses_thrust && assist && !settle { refuse_thrust(v, inv, body.lin_vel.length(), cruise, forward_cap, backward_cap) } else { v };
 
         // Rotation: target rate per axis, pitch and yaw in an ellipse.
         let over_speed = t.rate_over_speed.eval(v.length() / cruise);

@@ -252,12 +252,23 @@ pub fn camera_fx(
 #[derive(Resource, Default)]
 pub struct ThrusterLevels(pub flight_core::audio::ThrusterAudio);
 
-pub fn thruster_fx(time: Res<Time>, mut fx: ResMut<ThrusterLevels>, q: Query<&Ship>) {
-    let Ok(ship) = q.single() else { return };
-    // TODO(initiator): the brake (X) is silent here. `ramp.out` is the ramped pilot input, and the
-    // brake only damps (the stick is zeroed), so braking with no movement key held plays nothing.
-    // A level from `ship.ctl.axis.felt_g` would reach it; not done this round (the ship step is off limits).
+/// Felt acceleration (g) at which the braking thrusters sound at full level (`TODO(initiator)`:
+/// start value, tune by ear).
+pub const BRAKE_FULL_G: f64 = 1.0;
+
+pub fn thruster_fx(time: Res<Time>, mut fx: ResMut<ThrusterLevels>, q: Query<(&Ship, &Rotation, &LinearVelocity)>) {
+    let Ok((ship, rot, lv)) = q.single() else { return };
     let o = ship.ctl.ramp.out;
-    let signal = flight_core::audio::ThrusterSignal { thrust: [o[0], o[1], o[2]], boost: ship.ctl.boost.active, parked: ship.parked };
+    // Braking: the thrusters fire against the motion, so the layers follow the brake, not the
+    // (zero) pilot input. The level falls with the felt acceleration, so it fades at standstill.
+    let thrust = if ship.ctl.brake_active && !ship.parked {
+        let local = rot.0.inverse() * lv.0;
+        let s = (ship.ctl.axis.felt_g / BRAKE_FULL_G).min(1.0);
+        let against = -local.normalize_or_zero() * s;
+        [against.x, against.y, against.z]
+    } else {
+        [o[0], o[1], o[2]]
+    };
+    let signal = flight_core::audio::ThrusterSignal { thrust, boost: ship.ctl.boost.active, parked: ship.parked };
     fx.0.step(signal, time.delta_secs_f64());
 }

@@ -19,5 +19,5 @@ Report as a comment on #<n> when done.
 ## Goal (hours-long lanes only)
 
 ```
-/goal `cargo t` exits 0 in the transcript on the pushed head of <branch>; <one measurable result, e.g. "the scenario prints drift below 1 mm">; the report comment on #<n> exists. Or stop after <N> turns.
+/goal `scripts/gate` exits 0 in the transcript on the pushed head of <branch>; <one measurable result, e.g. "the scenario prints drift below 1 mm">; the report comment on #<n> exists. Or stop after <N> turns.
 ```

@@ -1,0 +1,11 @@
+#!/bin/sh
+# The gate (AGENTS.md, "Agent loop"): `cargo t`, one at a time on this machine, at low priority.
+# Several lanes or sessions running the gate at once each took twice as long and heated the CPU
+# (#187); a second gate waits here for the first. Arguments go to `cargo t`.
+lock="${XDG_CACHE_HOME:-$HOME/.cache}/exo-1-gate.lock"
+exec 9>"$lock"
+if ! flock -n 9; then
+    echo "gate: waiting for another gate on this machine ($lock)" >&2
+    flock 9
+fi
+exec nice -n 15 cargo t "$@"

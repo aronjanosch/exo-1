@@ -30,18 +30,26 @@ pub enum Sound {
     Throw,
     /// 0.2 s: a low clunk, then a bright ping 60 ms later ("ka-chunk"), a crate locks.
     Lock,
+    /// Loop: noise through a band-pass (a fast low-pass minus a slow one), the thrusters' hiss
+    /// per direction (#150).
+    Hiss,
+    /// Loop: a low body and noise through a low-pass, the boost roar (#150).
+    Roar,
+    /// 0.4 s: a falling low punch with a noise crack, the boost starts (#150).
+    BoostStart,
 }
 
 impl Sound {
     /// Length in seconds; loops have none.
     pub fn length(self) -> Option<f32> {
         match self {
-            Sound::Hum | Sound::Wind => None,
+            Sound::Hum | Sound::Wind | Sound::Hiss | Sound::Roar => None,
             Sound::Thud => Some(0.35),
             Sound::Click => Some(0.03),
             Sound::Grab => Some(0.12),
             Sound::Throw => Some(0.35),
             Sound::Lock => Some(0.2),
+            Sound::BoostStart => Some(0.4),
         }
     }
 }
@@ -121,6 +129,23 @@ impl Iterator for Synth {
                 let ping = if t2 > 0.0 { (-t2 * 45.0).exp() * (tau * 1900.0 * t2).sin() * 0.45 } else { 0.0 };
                 clunk + ping
             }
+            Sound::Hiss => {
+                let w = self.white();
+                self.lp += (w - self.lp) * 0.35;
+                self.lp2 += (w - self.lp2) * 0.04;
+                (self.lp - self.lp2) * 2.5
+            }
+            Sound::Roar => {
+                let w = self.white();
+                self.lp += (w - self.lp) * 0.08;
+                self.lp * 2.5 + 0.25 * (tau * 55.0 * t).sin()
+            }
+            Sound::BoostStart => {
+                // 160 Hz falling to 60 Hz, a fast decay, and a noise crack at the front.
+                let phase = tau * (160.0 * t - 0.5 * (100.0 / 0.4) * t * t);
+                let env = (t / 0.004).min(1.0) * (-t * 9.0).exp();
+                env * (0.8 * phase.sin() + 0.35 * self.white() * (-t * 35.0).exp())
+            }
         };
         Some(s.clamp(-1.0, 1.0))
     }
@@ -158,10 +183,24 @@ struct Sounds {
     grab: Handle<SynthAudio>,
     throw: Handle<SynthAudio>,
     lock: Handle<SynthAudio>,
+    boost_start: Handle<SynthAudio>,
+}
+
+/// What a loop plays: the thruster layers (#150) or the wind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Feed {
+    /// The main engine (the `Hum` synth).
+    Rumble,
+    /// Wind by airspeed in the atmosphere.
+    Wind,
+    /// Manoeuvre hiss of one axis pair: 0 = x, 1 = y, 2 = z (both directions).
+    Hiss(usize),
+    /// The boost roar.
+    Roar,
 }
 
 #[derive(Component)]
-struct Loop(Sound);
+struct Loop(Sound, Feed);
 
 /// Clicks heard this frame (counted in the fixed step, where taps live).
 #[derive(Resource, Default)]
@@ -172,14 +211,17 @@ struct Heard {
     bumps: u32,
     throws: usize,
     locks: u32,
+    /// Boost starts heard so far (`ThrusterLevels`).
+    boost_starts: u32,
     /// The crate held last frame: a new one is a grab.
     held: Option<Entity>,
 }
 
 fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
-    for s in [Sound::Hum, Sound::Wind] {
+    let loops = [(Sound::Hum, Feed::Rumble), (Sound::Wind, Feed::Wind), (Sound::Hiss, Feed::Hiss(0)), (Sound::Hiss, Feed::Hiss(1)), (Sound::Hiss, Feed::Hiss(2)), (Sound::Roar, Feed::Roar)];
+    for (s, feed) in loops {
         let h = assets.add(SynthAudio(s));
-        commands.spawn((AudioPlayer(h), PlaybackSettings { mode: PlaybackMode::Loop, volume: Volume::Linear(0.0), ..default() }, Loop(s)));
+        commands.spawn((AudioPlayer(h), PlaybackSettings { mode: PlaybackMode::Loop, volume: Volume::Linear(0.0), ..default() }, Loop(s, feed)));
     }
     commands.insert_resource(Sounds {
         thud: assets.add(SynthAudio(Sound::Thud)),
@@ -187,6 +229,7 @@ fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
         grab: assets.add(SynthAudio(Sound::Grab)),
         throw: assets.add(SynthAudio(Sound::Throw)),
         lock: assets.add(SynthAudio(Sound::Lock)),
+        boost_start: assets.add(SynthAudio(Sound::BoostStart)),
     });
 }
 
@@ -208,27 +251,39 @@ fn update(
     ships: Query<(&Ship, &avian3d::prelude::Position, &avian3d::prelude::LinearVelocity)>,
     mut loops: Query<(&Loop, &mut AudioSink)>,
     time: Res<Time>,
+    thrusters: Res<crate::ship::ThrusterLevels>,
     grab: Res<crate::grab::Grab>,
     cargo: Res<crate::cargo::CargoStats>,
-    mut level: Local<[f32; 2]>,
+    mut wind: Local<f32>,
     settings: Res<crate::settings::Settings>,
 ) {
-    let (Ok(pl), Ok((ship, pos, lv))) = (players.single(), ships.single()) else { return };
+    let (Ok(pl), Ok((_, pos, lv))) = (players.single(), ships.single()) else { return };
     let near_ship = pl.seated || pl.ship.is_some();
-    let o = ship.ctl.ramp.out;
-    let thrust = if ship.parked { 0.0 } else { (o[0] * o[0] + o[1] * o[1] + o[2] * o[2]).sqrt().min(1.0) as f32 };
-    let idle = if ship.parked { 0.0 } else { 0.08 };
+    let layers = thrusters.0.levels();
     let density = flight_core::PlanetEnv::density_at(planet.as_ref(), pos.0) as f32;
     let airspeed = if pl.seated { lv.0.length() as f32 } else { 0.0 };
-    // Volumes glide (0.25 s), so thrust taps do not click the loop on and off.
+    // The wind glides (0.25 s); the thruster layers already have their attack and release in
+    // `flight_core::audio`.
     let k = 1.0 - (-time.delta_secs() / 0.25).exp();
+    let gate = |v: f64| if near_ship { v as f32 } else { 0.0 };
     for (l, mut sink) in &mut loops {
-        let (i, want) = match l.0 {
-            Sound::Hum => (0, if near_ship { idle + 0.25 * thrust } else { 0.0 }),
-            _ => (1, density * (airspeed / 200.0).min(1.0) * 0.5),
+        let level = match l.1 {
+            Feed::Rumble => gate(layers.rumble),
+            Feed::Hiss(axis) => gate(layers.hiss[2 * axis] + layers.hiss[2 * axis + 1]),
+            Feed::Roar => gate(layers.boost),
+            Feed::Wind => {
+                let want = density * (airspeed / 200.0).min(1.0) * 0.5;
+                *wind += (want - *wind) * k;
+                *wind
+            }
         };
-        level[i] += (want - level[i]) * k;
-        sink.set_volume(Volume::Linear(loop_volume(level[i], &settings)));
+        sink.set_volume(Volume::Linear(loop_volume(level, &settings)));
+    }
+    if layers.boost_starts > heard.boost_starts {
+        heard.boost_starts = layers.boost_starts;
+        if near_ship {
+            commands.spawn((AudioPlayer(sounds.boost_start.clone()), PlaybackSettings { mode: PlaybackMode::Despawn, volume: Volume::Linear(0.7), ..default() }));
+        }
     }
     if fx.0.bumps > heard.bumps {
         heard.bumps = fx.0.bumps;
@@ -279,7 +334,7 @@ mod tests {
 
     #[test]
     fn one_shots_end_and_every_sample_is_in_range() {
-        for s in [Sound::Thud, Sound::Click, Sound::Grab, Sound::Throw, Sound::Lock] {
+        for s in [Sound::Thud, Sound::Click, Sound::Grab, Sound::Throw, Sound::Lock, Sound::BoostStart] {
             let samples: Vec<f32> = Synth::new(s).collect();
             assert_eq!(samples.len(), (s.length().unwrap() * RATE as f32).ceil() as usize, "{s:?}");
             assert!(samples.iter().all(|x| x.is_finite() && x.abs() <= 1.0));
@@ -297,7 +352,7 @@ mod tests {
 
     #[test]
     fn loops_keep_going_and_stay_in_range() {
-        for s in [Sound::Hum, Sound::Wind] {
+        for s in [Sound::Hum, Sound::Wind, Sound::Hiss, Sound::Roar] {
             let samples: Vec<f32> = Synth::new(s).take(RATE as usize * 3).collect();
             assert_eq!(samples.len(), RATE as usize * 3);
             assert!(samples.iter().all(|x| x.is_finite() && x.abs() <= 1.0));

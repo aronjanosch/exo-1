@@ -8,9 +8,10 @@ use bevy::prelude::*;
 use flight_core::{BodyState, FlightInput, Lag, ShipController, ShipTuning, VirtualStick};
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<CameraEffects>();
+    app.init_resource::<CameraEffects>().init_resource::<ThrusterLevels>();
     app.add_systems(FixedUpdate, ship_control.in_set(crate::phases::Fx::Ship));
     app.add_systems(FixedUpdate, camera_fx.in_set(crate::phases::Fx::Effects));
+    app.add_systems(FixedUpdate, thruster_fx.in_set(crate::phases::Fx::Effects));
 }
 
 /// Seat position in ship space.
@@ -244,4 +245,19 @@ pub fn camera_fx(
     let local = rot.0.inverse() * av.0;
     // The bump comes with the first hull contact (#110 point 4).
     fx.0.step(&tuning.camera, lv.0.length(), DVec2::new(local.x, local.y), -lv.0.dot(up), ship.grounded, time.delta_secs_f64());
+}
+
+/// Thruster sound layers of the own ship (#150), stepped with the simulation so scenarios can
+/// read the levels; the audio plays them.
+#[derive(Resource, Default)]
+pub struct ThrusterLevels(pub flight_core::audio::ThrusterAudio);
+
+pub fn thruster_fx(time: Res<Time>, mut fx: ResMut<ThrusterLevels>, q: Query<&Ship>) {
+    let Ok(ship) = q.single() else { return };
+    // TODO(initiator): the brake (X) is silent here. `ramp.out` is the ramped pilot input, and the
+    // brake only damps (the stick is zeroed), so braking with no movement key held plays nothing.
+    // A level from `ship.ctl.axis.felt_g` would reach it; not done this round (the ship step is off limits).
+    let o = ship.ctl.ramp.out;
+    let signal = flight_core::audio::ThrusterSignal { thrust: [o[0], o[1], o[2]], boost: ship.ctl.boost.active, parked: ship.parked };
+    fx.0.step(signal, time.delta_secs_f64());
 }

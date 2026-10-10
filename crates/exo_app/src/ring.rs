@@ -97,7 +97,8 @@ impl Ring {
     }
 }
 
-pub fn update_ring(mut commands: Commands, time: Res<Time>, planet: Res<PlanetRes>, mut ring: ResMut<Ring>) {
+pub fn update_ring(mut commands: Commands, time: Res<Time>, planet: Res<PlanetRes>, mut ring: ResMut<Ring>, mut cost: ResMut<crate::frame_cost::FrameCost>) {
+    let t_sys = std::time::Instant::now();
     let ring = ring.as_mut();
     let planet = planet.as_ref();
     // Nobody took last frame's times (no --perf): drop them.
@@ -133,8 +134,10 @@ pub fn update_ring(mut commands: Commands, time: Res<Time>, planet: Res<PlanetRe
         ring.patches.insert(key, (e, centre, out.rot));
     }
 
+    cost.ring_up.add(adds as u32, t_sys);
     ring.timer -= time.delta_secs_f64();
     if ring.timer > 0.0 {
+        cost.ring_sys.add(0, t_sys);
         return;
     }
     ring.timer = UPDATE_INTERVAL;
@@ -153,6 +156,7 @@ pub fn update_ring(mut commands: Commands, time: Res<Time>, planet: Res<PlanetRe
         ring.collect(planet, face, -1.0, -1.0, 2.0, 0, &points, &mut want);
     }
     let pool = AsyncComputeTaskPool::get();
+    let mut started = 0;
     for (&key, &(a0, b0, size, dist)) in &want {
         if dist < ring.ring_radius && !ring.patches.contains_key(&key) && !ring.pending.contains_key(&key) {
             let pgen = planet.pgen.clone();
@@ -168,6 +172,7 @@ pub fn update_ring(mut commands: Commands, time: Res<Time>, planet: Res<PlanetRe
                 PatchOut { up, rot: DQuat::from_mat3(&DMat3::from_cols(t, up, b)), heights, build_ms: t0.elapsed().as_secs_f64() * 1000.0 }
             });
             ring.pending.insert(key, task);
+            started += 1;
         }
     }
     let stale: Vec<Key> = ring.patches.keys().filter(|k| !want.contains_key(k)).copied().collect();
@@ -175,4 +180,5 @@ pub fn update_ring(mut commands: Commands, time: Res<Time>, planet: Res<PlanetRe
         let (e, _, _) = ring.patches.remove(&k).unwrap();
         commands.entity(e).despawn();
     }
+    cost.ring_sys.add(started, t_sys);
 }

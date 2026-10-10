@@ -9,6 +9,7 @@ pub mod daynight;
 pub mod dev;
 pub mod env;
 pub mod flight_events;
+pub mod frame_cost;
 pub mod gameplay;
 pub mod grab;
 pub mod help;
@@ -92,6 +93,10 @@ pub struct Options {
     pub distance: Option<f64>,
     /// Headless run paced at 60 physics ticks per wall second (network runs).
     pub realtime: bool,
+    /// `--spike-ms=`: frames slower than this print a `spike:` line (#213).
+    pub spike_ms: f64,
+    /// `--mute`: no sound (windowed measurement runs).
+    pub mute: bool,
     pub net: Option<net_live::NetConfig>,
     /// `--perf`: step and frame timings per phase (#19).
     pub perf: Option<perf::PerfOptions>,
@@ -120,6 +125,8 @@ impl Default for Options {
             spawn_offset: 0.0,
             distance: None,
             realtime: false,
+            spike_ms: frame_cost::DEFAULT_THRESHOLD_MS,
+            mute: false,
             net: None,
             perf: None,
             tuning_dir: None,
@@ -144,6 +151,9 @@ impl Options {
                 "--headless" => o.headless = true,
                 "--hidden" => o.hidden = true,
                 "--no-vsync" => o.no_vsync = true,
+                "--realtime" => o.realtime = true,
+                "--mute" => o.mute = true,
+                "--spike-ms" => o.spike_ms = v.parse().expect("spike-ms"),
                 "--distance" => o.distance = Some(v.parse().expect("distance")),
                 "--radius" => o.radius = Some(v.parse().expect("radius")),
                 "--atmosphere" => o.atmosphere = Some(v.parse().expect("atmosphere")),
@@ -296,6 +306,9 @@ pub fn build_app(o: &Options) -> App {
     } else {
         app.init_resource::<settings::Settings>();
     }
+    if o.mute {
+        app.world_mut().resource_mut::<settings::Settings>().sound = false;
+    }
     app.insert_resource(settings::SettingsDir(settings_dir));
     app.insert_resource(SpawnOffset(o.spawn_offset));
     if let Some(path) = &o.record {
@@ -326,6 +339,8 @@ pub fn build_app(o: &Options) -> App {
     }
 
     // Domain plugins. The order between phases is in `phases`; inside a phase each plugin orders its own systems.
+    app.insert_resource(frame_cost::FrameSpikes::with_threshold(o.spike_ms));
+    app.add_plugins(frame_cost::plugin);
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
     app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, avian_crates::plugin, cargo::plugin, hud::plugin, net_live::plugin));
     app.add_plugins(gameplay::plugin);
@@ -362,6 +377,10 @@ pub fn build_app(o: &Options) -> App {
         // #14: the terrain too, headless, to count what a swap leaves behind.
         app.init_asset::<StandardMaterial>().init_asset::<terrain_material::TerrainMaterial>().init_asset::<sky::WaterMaterial>();
         app.add_plugins(terrain::plugin);
+    } else if o.scenario.as_deref() == Some("planet-flight") {
+        // #213: the streaming work headless (terrain, scatter, sites), to measure its main-thread cost.
+        app.init_asset::<StandardMaterial>().init_asset::<terrain_material::TerrainMaterial>().init_asset::<sky::WaterMaterial>();
+        app.add_plugins((terrain::plugin, scatter::plugin, sites::plugin));
     }
     app
 }

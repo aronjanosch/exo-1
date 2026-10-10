@@ -37,6 +37,7 @@ mod landing;
 mod licence;
 mod mapview;
 mod net;
+mod planet_flight;
 mod reload;
 mod sc_linear;
 mod sc_air;
@@ -64,6 +65,9 @@ pub fn plugin(name: &str, headless: bool) -> impl Plugin {
         if name == "foreign" {
             // The remote ship is placed before the controllers read it, after net_pre.
             app.add_systems(FixedUpdate, net::foreign_drive.run_if(resource_exists::<ForeignDriver>).after(crate::net_live::net_pre).in_set(crate::phases::Fx::Input));
+        }
+        if name == "planet-flight" && headless {
+            app.add_systems(Update, swap::headless_view.in_set(crate::phases::Frame::Camera));
         }
         if name == "swap" {
             // #14: count what a planet swap leaves behind; headless with the terrain too.
@@ -108,6 +112,8 @@ pub struct Ctx {
     stats0: WalkStats,
     pub failures: u32,
     shot_n: u32,
+    /// Frames a scenario collects for its report (`planet-flight`).
+    pub frames: Vec<crate::frame_cost::FrameRec>,
 }
 
 #[derive(Resource)]
@@ -649,6 +655,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         // #21: edit a tuning file while running (dev builds).
         "reload" => reload_steps(&mut s, out_dir),
         "warp" => warp_steps(&mut s, out_dir, windowed),
+        // #213: a fixed flight over a big planet; frame time and the streaming work per frame.
+        "planet-flight" => planet_flight::planet_flight_steps(&mut s, out_dir),
         // #14 and #34: three planet swaps and an emergency drop; what each swap leaves behind.
         "swap" => swap_steps(&mut s, out_dir, windowed, swap_rounds.max(3)),
         // #80: a crate in the cabin through take-off, flight, warp and landing; one out over the ramp.

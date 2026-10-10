@@ -129,7 +129,9 @@ pub fn update_scatter(
     assets: Res<AssetServer>,
     mut view: ResMut<ScatterView>,
     mut mats: ResMut<Assets<StandardMaterial>>,
+    mut cost: ResMut<crate::frame_cost::FrameCost>,
 ) {
+    let t_sys = std::time::Instant::now();
     let view = view.as_mut();
     if view.for_planet != Some(planet.id) {
         view.reset(&mut commands, &planet);
@@ -185,6 +187,7 @@ pub fn update_scatter(
         });
     }
     // Upload finished cells.
+    let t_up = std::time::Instant::now();
     let mut uploads = 0;
     let mut pending = 0;
     let keys: Vec<Key> = view.cells.keys().copied().collect();
@@ -211,11 +214,14 @@ pub fn update_scatter(
                 ChildOf(parent),
             ));
         }
+        cost.scatter_inst += out.instances.len() as u32;
         view.cells.insert(key, Cell::Shown(parent));
         uploads += 1;
     }
+    cost.scatter_up.add(uploads as u32, t_up);
     view.pending = pending;
     view.shown_cells = view.cells.values().filter(|c| matches!(c, Cell::Shown(_))).count();
+    cost.scatter_sys.add(0, t_sys);
 }
 
 /// Instances on screen (F3 line, look harness): counted from the children of the cells.

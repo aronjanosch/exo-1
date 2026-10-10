@@ -77,6 +77,13 @@ pub struct Terrain {
     indices: Vec<u32>,
     pub visible: usize,
     pub pending: usize,
+    /// Chunk jobs started this frame.
+    pub started: u32,
+    /// The camera's nadir on the cube (face, a, b), set each frame for `lod_debt`.
+    nadir: Option<(usize, f64, f64)>,
+    /// This frame the chunk under the camera wanted to split but its children were still
+    /// building (#213: the shown ground is coarser than wanted).
+    pub lod_debt: bool,
     /// Root chunks built on the main thread when this terrain was built (6 without prebuilt roots).
     pub roots_built_here: usize,
 }
@@ -110,6 +117,7 @@ impl Terrain {
         let n = &self.nodes[i];
         let (face, a0, b0, size) = (n.face, n.a0, n.b0, n.size);
         let pgen = planet.pgen.clone();
+        self.started += 1;
         self.nodes[i].task = Some(AsyncComputeTaskPool::get().spawn(async move { pgen.build_chunk(face, a0, b0, size) }));
     }
 
@@ -219,6 +227,10 @@ impl Terrain {
                 return;
             }
             // Children still building: keep the parent on screen, no holes.
+            let n = &self.nodes[i];
+            if self.nadir.is_some_and(|(f, a, b)| f == n.face && a >= n.a0 && a <= n.a0 + n.size && b >= n.b0 && b <= n.b0 + n.size) {
+                self.lod_debt = true;
+            }
         } else if !self.nodes[i].children.is_empty() {
             for c in std::mem::take(&mut self.nodes[i].children) {
                 self.discard(commands, c);
@@ -271,7 +283,7 @@ pub fn build_terrain(
         nodes: Vec::new(), free: Vec::new(), roots: Vec::new(),
         max_depth: ((face_edge / 37.0).log2().round() as u32).max(1),
         material, water, indices,
-        visible: 0, pending: 0, roots_built_here: 0,
+        visible: 0, pending: 0, started: 0, nadir: None, lod_debt: false, roots_built_here: 0,
     };
     // Roots synchronously (or prebuilt on the pool, #34), so there is always a planet.
     let roots = prebuilt.filter(|r| r.len() == 6).unwrap_or_else(|| {
@@ -303,7 +315,9 @@ pub fn update_terrain(
     mut waters: ResMut<Assets<crate::sky::WaterMaterial>>,
     scene: Query<Entity, With<PlanetScene>>,
     prebuilt: Option<ResMut<PrebuiltRoots>>,
+    mut cost: ResMut<crate::frame_cost::FrameCost>,
 ) {
+    let t_sys = std::time::Instant::now();
     if terrain.for_planet != planet.id {
         // The simulation's planet changed (warp or teleport): free the old terrain, build the new.
         for e in &scene {
@@ -322,6 +336,7 @@ pub fn update_terrain(
         *terrain = build_terrain(&mut commands, &planet, &mut meshes, material, water, roots);
     }
     let t = terrain.as_mut();
+    let t_up = std::time::Instant::now();
     let mut uploads = 0;
     let mut pending = 0;
     for i in 0..t.nodes.len() {
@@ -351,9 +366,20 @@ pub fn update_terrain(
         uploads += 1;
     }
     t.pending = pending;
+    cost.terrain_up.add(uploads as u32, t_up);
     let cam = origin.view - planet.centre;
     t.visible = 0;
+    t.started = 0;
+    t.lod_debt = false;
+    t.nadir = cam.try_normalize().map(|d| {
+        let face = planet_core::face_of(crate::env::to_v3(d));
+        let (a, b) = planet_core::sphere_to_face_ab(face, crate::env::to_v3(d));
+        (face, a, b)
+    });
     for r in t.roots.clone() {
         t.update_node(&mut commands, &planet, r, cam);
     }
+    cost.terrain_sys.add(t.started, t_sys);
+    cost.lod_debt = t.lod_debt;
+    cost.terrain_pending = t.pending as u32;
 }

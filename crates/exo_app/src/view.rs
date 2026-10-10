@@ -1132,6 +1132,7 @@ pub fn update_hud(
     wd: Res<crate::warp::WarpDrive>,
     sys: Res<crate::warp::SystemRes>,
     fx: Res<crate::ship::CameraEffects>,
+    spikes: Res<crate::frame_cost::FrameSpikes>,
 ) {
     let (Ok(pl), Ok((ship, sp, sv, sr)), Ok(mut text)) = (players.single(), ships.single(), hud.single_mut()) else { return };
     // Ground and altitude only near the planet (millions of metres during a warp say nothing).
@@ -1173,6 +1174,9 @@ pub fn update_hud(
         ring.pending(),
         stats.rescues,
     );
+    // Frame spikes (#213): worst and p99 of the last seconds.
+    text.0.push('\n');
+    text.0.push_str(&spikes.hud_line());
     text.0.push('\n');
     text.0.push_str(&warp_line(&wd, &sys.0, sp.0));
     if let Some(n) = net {

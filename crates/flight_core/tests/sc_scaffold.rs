@@ -36,3 +36,16 @@ fn forward_reaches_the_scm_cap_in_space() {
     assert!((body.lin_vel.length() - cap).abs() < 1.0, "speed {:.2}, cap {cap}", body.lin_vel.length());
     assert!(ship.status.thrust_share.z.abs() < 0.05, "at the cap the thrusters rest: {:?}", ship.status.thrust_share);
 }
+
+/// A step the caller does not fly (the ship rests on the ground, the ground rules fly it) reads no
+/// thrust: the thruster sound and the HUD take the status, not the last flown step's.
+#[test]
+fn a_skipped_step_reads_no_thrust() {
+    let mut ship = ScShip::new(tuning());
+    let mut body = body_at(DVec3::ZERO);
+    fly(&mut ship, &mut body, &thrust(DVec3::NEG_Z), &ModeCmds::default(), &Space::default(), 1.0);
+    assert!(ship.status.thrust_share.z.abs() > 0.5, "flown: {:?}", ship.status.thrust_share);
+    ship.skip_step(1.0 / 60.0);
+    assert_eq!(ship.status.thrust_share, DVec3::ZERO);
+    assert_eq!((ship.status.felt_g, ship.status.saturated, ship.status.braking), (0.0, false, false));
+}

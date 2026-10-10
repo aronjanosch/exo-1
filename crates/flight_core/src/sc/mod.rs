@@ -1,5 +1,4 @@
-//! The SC flight model (round 5, epic #143): a second flight model next to `axis`, switched with
-//! F7. Built after the structure of Star Citizen's flight control as far as our research reaches
+//! The SC flight model (round 5, epic #143; the only flight model since #206). Built after the structure of Star Citizen's flight control as far as our research reaches
 //! (concept repo `docs/research/flight-feel.md`, `docs/research/flight-controller-notes.md`, the
 //! IFCS switches of the local records); own names, code and values. Thrust is a force on the
 //! ship's mass, torque turns it against its inertia.
@@ -27,7 +26,7 @@ pub mod tuning;
 pub use modes::{Master, ModeCmds, Modes};
 pub use tuning::ScTuning;
 
-use crate::axis::{Dirs, Rot, G0};
+use crate::limits::{Dirs, Rot, G0};
 use crate::{limit_length, BodyState, FlightInput, PlanetEnv};
 use glam::{DQuat, DVec3};
 
@@ -223,6 +222,13 @@ impl ScShip {
         drive::begin(&mut self.drive, false, false, &self.tuning.drive, dt);
         self.status.boost_active = false;
         self.status.boost_charge = self.drive.boost.charge;
+        // Nothing is thrust or turned in a skipped step: the sound and the HUD read zero, not the
+        // last flown step.
+        self.status.thrust_share = DVec3::ZERO;
+        self.status.felt_g = 0.0;
+        self.status.saturated = false;
+        self.status.braking = false;
+        self.status.rate_capped = false;
     }
 
     /// The thrust box per direction (m/s²): the thrusters' force over the mass, times what the air

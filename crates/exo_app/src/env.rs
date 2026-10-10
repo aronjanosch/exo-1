@@ -27,6 +27,11 @@ pub fn places_for(recipe: &str) -> Vec<planet_core::Place> {
         .collect()
 }
 
+/// Where the coarse layers are cached (#177): `EXO_CACHE_DIR`, else `target/terrain-cache`.
+pub fn cache_dir() -> std::path::PathBuf {
+    std::env::var_os("EXO_CACHE_DIR").map(Into::into).unwrap_or_else(|| "target/terrain-cache".into())
+}
+
 pub fn to_v3(d: DVec3) -> V3 {
     planet_core::v3(d.x, d.y, d.z)
 }
@@ -60,7 +65,15 @@ impl PlanetRes {
         let recipe = recipe_for(def).unwrap_or_else(|e| panic!("{e}"));
         let mut p = Planet::new(recipe);
         p.set_places(places_for(&def.recipe)).unwrap_or_else(|e| panic!("content/place: {e}"));
-        let st = p.bake_checked(0).unwrap_or_else(|e| panic!("content/planet/{}.json: {e}", def.recipe));
+        let st = p.bake_with(0, Some(&cache_dir()), false);
+        if let Some(e) = p.placement_error() {
+            panic!("content/planet/{}.json: bake: {e}", def.recipe);
+        }
+        // The quotas are tuned to 5 km (landform counts do not grow with the area until the density
+        // rules of #177 step 5); at another radius a miss is a warning, `cargo test -p planet_core` checks them at 5 km.
+        for m in &st.quota_misses {
+            eprintln!("content/planet/{}.json: {m}", def.recipe);
+        }
         let (lo, hi) = p.height_range;
         let res = PlanetRes {
             radius: p.radius,

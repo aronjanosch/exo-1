@@ -69,6 +69,9 @@ pub struct Options {
     pub no_vsync: bool,
     /// Radius of the first planet in metres (default: `content/system/system.json`).
     pub radius: Option<f64>,
+    /// Atmosphere height of the first planet in metres (default: the ceilings rule for the radius
+    /// with `--radius`, else the file's).
+    pub atmosphere: Option<f64>,
     /// Render-origin shift threshold in metres, 0 = off.
     pub origin_shift: f64,
     /// Scenario reports and screenshots.
@@ -101,6 +104,7 @@ impl Default for Options {
             hidden: false,
             no_vsync: false,
             radius: None,
+            atmosphere: None,
             origin_shift: 1000.0,
             out_dir: PathBuf::from("target/scenario"),
             record: None,
@@ -133,6 +137,7 @@ impl Options {
                 "--no-vsync" => o.no_vsync = true,
                 "--distance" => o.distance = Some(v.parse().expect("distance")),
                 "--radius" => o.radius = Some(v.parse().expect("radius")),
+                "--atmosphere" => o.atmosphere = Some(v.parse().expect("atmosphere")),
                 "--origin-shift" => o.origin_shift = v.parse().expect("origin-shift"),
                 "--out" => o.out_dir = PathBuf::from(v),
                 "--record" => o.record = Some(PathBuf::from(v)),
@@ -237,8 +242,23 @@ pub fn build_app(o: &Options) -> App {
         }
     }
     // The file wins; --radius only when given (first planet).
-    if let Some(r) = o.radius {
-        sys.planets[0].radius = r;
+    // A radius or an atmosphere from the command line brings the ceilings that follow from it
+    // (obstruction and arrival radius, #177) with it, or the warp checks refuse the planet.
+    if o.radius.is_some() || o.atmosphere.is_some() {
+        let p = &mut sys.planets[0];
+        let r = o.radius.unwrap_or(p.radius);
+        let c = match o.atmosphere {
+            Some(a) => planet_core::Ceilings::with_atmosphere(r, a),
+            None => planet_core::Ceilings::for_radius(r),
+        };
+        println!("ceilings: radius {r} m, atmosphere {:.0} m, tallest terrain {:.0} m, obstruction {:.0} m, arrival {:.0} m", c.atmosphere_height, c.terrain_max, c.obstruction_radius, c.arrival_radius);
+        p.radius = r;
+        p.atmosphere_height = c.atmosphere_height;
+        p.obstruction_radius = c.obstruction_radius;
+        p.arrival_radius = c.arrival_radius;
+        if let Err(e) = p.validate() {
+            panic!("--radius/--atmosphere refused: {e}");
+        }
     }
     let home = warp_core::PlanetId(0);
     let planet = env::PlanetRes::load(home, sys.planet(home));

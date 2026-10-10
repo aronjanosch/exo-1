@@ -24,6 +24,7 @@ mod scenario_foreign_warp;
 mod scenario_full;
 mod scenario_interact;
 mod scenario_look;
+mod scenario_radius;
 mod scenario_reload;
 mod scenario_site;
 mod scenario_slope_landing;

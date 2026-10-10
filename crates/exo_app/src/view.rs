@@ -113,11 +113,19 @@ fn horizon_offset(offset: DQuat, age: f64) -> DQuat {
     DQuat::IDENTITY.slerp(offset, horizon_weight(age))
 }
 
-pub fn setup_view(mut commands: Commands) {
+/// Far plane of the camera: the larger of today's 120 km and 2.5 radii of the biggest planet, so a
+/// planet seen from orbit is not cut (#177).
+pub fn far_plane(sys: Option<&crate::warp::SystemRes>) -> f32 {
+    let r = sys.map_or(0.0, |s| s.0.planets.iter().map(|p| p.radius).fold(0.0, f64::max));
+    (r * 2.5).max(120_000.0) as f32
+}
+
+pub fn setup_view(mut commands: Commands, sys: Option<Res<crate::warp::SystemRes>>) {
+    let far = far_plane(sys.as_deref());
     commands.spawn((
         MainCamera,
         Camera3d::default(),
-        Projection::Perspective(PerspectiveProjection { fov: 75f32.to_radians(), near: 0.05, far: 120_000.0, ..default() }),
+        Projection::Perspective(PerspectiveProjection { fov: 75f32.to_radians(), near: 0.05, far, ..default() }),
         Transform::default(),
         WorldPose::default(),
         DistanceFog { color: Color::srgb(0.72, 0.82, 0.95), falloff: FogFalloff::Exponential { density: 0.00025 }, ..default() },
@@ -733,7 +741,7 @@ pub fn update_camera(
         (pose.pos, pose.rot) = (p, r);
     } else if view.orbit {
         let d = DVec3::new(view.orbit_pitch.cos() * view.orbit_yaw.sin(), view.orbit_pitch.sin(), view.orbit_pitch.cos() * view.orbit_yaw.cos());
-        pose.pos = planet.centre + d * 15_000.0;
+        pose.pos = planet.centre + d * (planet.radius * 3.0).max(15_000.0);
         let up = if d.y.abs() < 0.99 { DVec3::Y } else { DVec3::X };
         pose.rot = walker_core::look_rot(-d, up);
     } else if pl.seated {

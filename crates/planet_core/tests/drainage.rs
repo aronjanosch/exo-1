@@ -7,6 +7,8 @@ use planet_core::*;
 use std::sync::OnceLock;
 
 const HEARTH: &str = include_str!("../../../content/planet/hearth.json");
+/// The coarse layer stores heights in tenths of a metre: a stored level is within half of that.
+const QUANT: f64 = 0.06;
 const CINDER: &str = include_str!("../../../content/planet/cinder.json");
 
 fn baked(text: &str, seed: i32, threads: usize) -> (Planet, BakeStats) {
@@ -56,15 +58,15 @@ fn hearth_has_rivers_and_lakes() {
 #[test]
 fn water_flows_downhill() {
     let (p, _) = hearth();
-    for rv in &p.rivers {
+    for rv in &p.coarse.rivers {
         let ground = p.base_height_at(rv.dir);
-        assert!((ground - rv.bed_m).abs() < 0.05, "the ground at a river vertex is its bed: {ground} vs {}", rv.bed_m);
+        assert!((ground - rv.bed_m).abs() < 0.1, "the ground at a river vertex is its bed: {ground} vs {}", rv.bed_m);
         assert!(rv.level_m > rv.bed_m);
         assert!(level_at(p, rv.dir).is_some_and(|l| l > ground), "the river is wet at {:?}", rv.dir);
         if let Mouth::River(j) = rv.next {
-            let n = &p.rivers[j as usize];
+            let n = &p.coarse.rivers[j as usize];
             assert!(n.bed_m <= rv.bed_m && n.level_m <= rv.level_m, "bed or water rises downstream");
-            assert!(p.base_height_at(n.dir) <= ground + 0.05, "the ground rises downstream");
+            assert!(p.base_height_at(n.dir) <= ground + 0.15, "the ground rises downstream");
             assert!(n.catchment_km2 >= rv.catchment_km2, "water gets lost downstream");
         }
     }
@@ -73,11 +75,11 @@ fn water_flows_downhill() {
 #[test]
 fn lakes_sit_in_sinks() {
     let (p, _) = hearth();
-    assert!(!p.lakes.is_empty());
-    for l in &p.lakes {
+    assert!(!p.coarse.lakes.is_empty());
+    for l in &p.coarse.lakes {
         let deep = p.base_height_at(l.deepest);
         assert!(l.level_m - deep >= l.depth_m - 0.05 && l.depth_m > 0.0, "the deepest point lies {} m under the level", l.level_m - deep);
-        assert!(level_at(p, l.deepest).is_some_and(|w| (w - l.level_m).abs() < 1e-3), "the lake is flat at its level");
+        assert!(level_at(p, l.deepest).is_some_and(|w| (w - l.level_m).abs() < QUANT), "the lake is flat at its level");
         assert!(l.level_m > p.sea, "a lake above the sea");
         // Out from the deepest point the ground rises above the level before the water ends,
         // in every direction but along a river (the outlet's, one coming in).
@@ -91,7 +93,7 @@ fn lakes_sit_in_sinks() {
                 m += 5.0;
                 let d = walk(l.deepest, t, m, p.radius);
                 if level_at(p, d).is_none_or(|w| w <= p.base_height_at(d)) {
-                    let river = p.rivers.iter().any(|r| (r.dir - d).length() * p.radius < 30.0);
+                    let river = p.coarse.rivers.iter().any(|r| (r.dir - d).length() * p.radius < 30.0);
                     if p.base_height_at(d) < l.level_m - 0.5 && !river {
                         leaks += 1;
                     }
@@ -113,16 +115,16 @@ fn rivers_end_in_the_sea_or_a_lake() {
         (1..=6).any(|s| f(walk(d, e * a.cos() + n * a.sin(), s as f64 * 5.0, p.radius)))
     });
     let (mut sea, mut lake) = (0, 0);
-    for start in 0..p.rivers.len() {
+    for start in 0..p.coarse.rivers.len() {
         let mut at = start;
-        for _ in 0..=p.rivers.len() {
-            match p.rivers[at].next {
+        for _ in 0..=p.coarse.rivers.len() {
+            match p.coarse.rivers[at].next {
                 Mouth::River(j) => at = j as usize,
                 Mouth::Sea => break,
                 Mouth::Lake(_) => break,
             }
         }
-        let end = &p.rivers[at];
+        let end = &p.coarse.rivers[at];
         match end.next {
             Mouth::Sea => {
                 if at == start {
@@ -133,7 +135,7 @@ fn rivers_end_in_the_sea_or_a_lake() {
             Mouth::Lake(id) => {
                 if at == start {
                     lake += 1;
-                    let l = &p.lakes[id as usize];
+                    let l = &p.coarse.lakes[id as usize];
                     // Wet water between the lake's level and the river's: a river may drop into the
                     // lake, or the lake may drown the river's last metres.
                     let (lo, hi) = (l.level_m.min(end.level_m) - 1e-3, l.level_m.max(end.level_m) + 1e-3);
@@ -154,17 +156,17 @@ fn same_seed_same_water() {
     let (a, _) = baked(&low, 1337, 1);
     let (b, _) = baked(&low, 1337, 0);
     let (c, _) = baked(&low, 1338, 0);
-    assert!(!a.rivers.is_empty());
-    assert_eq!(a.macro_img, b.macro_img, "the macro image (cut and water) is the same on any thread count");
-    assert_eq!(a.rivers.len(), b.rivers.len());
-    for (x, y) in a.rivers.iter().zip(&b.rivers) {
+    assert!(!a.coarse.rivers.is_empty());
+    assert_eq!(a.coarse, b.coarse, "the macro image (cut and water) is the same on any thread count");
+    assert_eq!(a.coarse.rivers.len(), b.coarse.rivers.len());
+    for (x, y) in a.coarse.rivers.iter().zip(&b.coarse.rivers) {
         assert_eq!((x.dir, x.bed_m, x.level_m, x.next), (y.dir, y.bed_m, y.level_m, y.next));
     }
-    assert_eq!(a.lakes.len(), b.lakes.len());
-    for (x, y) in a.lakes.iter().zip(&b.lakes) {
+    assert_eq!(a.coarse.lakes.len(), b.coarse.lakes.len());
+    for (x, y) in a.coarse.lakes.iter().zip(&b.coarse.lakes) {
         assert_eq!((x.deepest, x.level_m, x.area_m2), (y.deepest, y.level_m, y.area_m2));
     }
-    assert!(a.rivers.len() != c.rivers.len() || a.rivers.iter().zip(&c.rivers).any(|(x, y)| x.dir != y.dir), "another seed, other rivers");
+    assert!(a.coarse.rivers.len() != c.coarse.rivers.len() || a.coarse.rivers.iter().zip(&c.coarse.rivers).any(|(x, y)| x.dir != y.dir), "another seed, other rivers");
 }
 
 #[test]
@@ -175,7 +177,7 @@ fn nothing_grows_or_builds_in_the_water() {
     }
     // Trees and shrubs keep out of lakes and rivers; scatter cells along the biggest rivers.
     let mut checked = 0;
-    for rv in p.rivers.iter().filter(|r| r.catchment_km2 > 1.0).step_by(20) {
+    for rv in p.coarse.rivers.iter().filter(|r| r.catchment_km2 > 1.0).step_by(20) {
         let face = face_of(rv.dir);
         let (a, b) = sphere_to_face_ab(face, rv.dir);
         let size = 2.0 / 64.0;
@@ -212,25 +214,25 @@ fn cinder_stays_dry_but_drains() {
         st.rivers_to_lake,
         st.lake_count,
         st.lake_area_share * 100.0,
-        p.lakes.iter().filter(|l| l.outlet.is_none()).count(),
+        p.coarse.lakes.iter().filter(|l| l.outlet.is_none()).count(),
         st.drainage_ms
     );
     assert!(st.river_length_km > 0.0, "a dry planet still drains somewhere");
     assert!(st.river_length_km < hearth.river_length_km && st.lake_area_share < hearth.lake_area_share, "less water than on the wet planet");
-    assert!(p.lakes.iter().any(|l| l.outlet.is_none()), "a dry climate keeps lakes that never spill");
-    for l in &p.lakes {
+    assert!(p.coarse.lakes.iter().any(|l| l.outlet.is_none()), "a dry climate keeps lakes that never spill");
+    for l in &p.coarse.lakes {
         let deep = p.base_height_at(l.deepest);
-        assert!(l.level_m > deep && level_at(&p, l.deepest).is_some_and(|w| (w - l.level_m).abs() < 1e-3), "a lake is wet at its level");
+        assert!(l.level_m > deep && level_at(&p, l.deepest).is_some_and(|w| (w - l.level_m).abs() < QUANT), "a lake is wet at its level");
     }
-    for start in 0..p.rivers.len() {
+    for start in 0..p.coarse.rivers.len() {
         let mut at = start;
-        for _ in 0..=p.rivers.len() {
-            match p.rivers[at].next {
+        for _ in 0..=p.coarse.rivers.len() {
+            match p.coarse.rivers[at].next {
                 Mouth::River(j) => at = j as usize,
                 _ => break,
             }
         }
-        assert!(!matches!(p.rivers[at].next, Mouth::River(_)), "river {start} runs in a circle");
+        assert!(!matches!(p.coarse.rivers[at].next, Mouth::River(_)), "river {start} runs in a circle");
     }
 }
 

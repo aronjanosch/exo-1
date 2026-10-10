@@ -62,6 +62,11 @@ pub struct RiverNode {
     pub bed_m: f32,
     pub level_m: f32,
     pub next: Mouth,
+    /// Depth of the bed below the ground at the node and half the width of the bed (m).
+    pub depth_m: f32,
+    pub half_width_m: f32,
+    /// The node the water runs to (NONE for none).
+    pub rcv: u32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -79,8 +84,12 @@ pub struct Drained {
     /// Change of the ground per node (m): erosion and river beds (down), sediment in the sinks a
     /// river fills (up).
     pub carve: Vec<f32>,
+    /// The part of `carve` without the river cross-sections: erosion and sediment only (m).
+    pub erosion: Vec<f32>,
     /// Water surface per node (m above the base radius), NO_WATER where none is defined.
     pub water: Vec<f32>,
+    /// The part of `water` that belongs to lakes (their nodes and the shore ring), none for rivers.
+    pub lake_water: Vec<f32>,
     pub rivers: Vec<RiverNode>,
     pub lakes: Vec<LakeOut>,
     /// Lake index per node (NONE outside a lake).
@@ -432,7 +441,7 @@ pub fn drain(mesh: &impl Mesh, h0: &[f32], rain: &[f32], sea_level: f32, s: &Dra
             let d = (s.river_depth_m[0] * k.powf(0.4)).min(s.river_depth_m[1]) as f32;
             depth.push(d);
             half.push(((s.river_width_m[0] * k.sqrt()).min(s.river_width_m[1]) * 0.5).max(1e-3) as f32);
-            rivers.push(RiverNode { node: v as u32, catchment_m2: flow[v] as f64, bed_m: h[v] - d, level_m: 0.0, next: Mouth::Sea });
+            rivers.push(RiverNode { node: v as u32, catchment_m2: flow[v] as f64, bed_m: h[v] - d, level_m: 0.0, next: Mouth::Sea, depth_m: d, half_width_m: *half.last().unwrap(), rcv: r.rcv[v] });
         }
     }
     let downstream = |v: u32| {
@@ -470,6 +479,7 @@ pub fn drain(mesh: &impl Mesh, h0: &[f32], rain: &[f32], sea_level: f32, s: &Dra
     // Cross-sections: a parabola from the bed, cut where it lies below the ground. The water
     // surface reaches the nodes within the half width and the first ring (the nearest river
     // wins), so a bilinear blend finds the bank between them.
+    let erosion: Vec<f32> = h.iter().zip(h0).map(|(g, h0)| g - h0).collect();
     let mut ground = h.clone();
     let mut water = vec![NO_WATER; n];
     let mut near = vec![f32::INFINITY; n];
@@ -532,6 +542,7 @@ pub fn drain(mesh: &impl Mesh, h0: &[f32], rain: &[f32], sea_level: f32, s: &Dra
         }
     }
     // Lakes: flat at their level, one ring beyond for the shore.
+    let mut lake_water = vec![NO_WATER; n];
     for v in 0..n {
         let id = lake_of[v];
         if id == NONE {
@@ -539,11 +550,19 @@ pub fn drain(mesh: &impl Mesh, h0: &[f32], rain: &[f32], sea_level: f32, s: &Dra
         }
         let lv = lakes[id as usize].level_m;
         water[v] = lv;
+        lake_water[v] = lv;
         mesh.neighbours(v, &mut nb);
         for &u in &nb {
             if lake_of[u] == NONE {
                 water[u] = water[u].max(lv);
+                lake_water[u] = lake_water[u].max(lv);
             }
+        }
+    }
+    // The shore ring of a lake lies at most at its own ground.
+    for u in 0..n {
+        if lake_water[u] > h[u] && lake_of[u] == NONE {
+            lake_water[u] = h[u];
         }
     }
     // A bank node only marks where the shore is: its water never stands above its own ground, or
@@ -582,7 +601,7 @@ pub fn drain(mesh: &impl Mesh, h0: &[f32], rain: &[f32], sea_level: f32, s: &Dra
     }
     let longest_river_m = run.iter().copied().fold(0.0, f64::max);
     let longest_waterway_m = way.iter().copied().fold(0.0, f64::max);
-    Drained { carve, water, rivers, lakes, lake_of, max_catchment_m2, longest_river_m, longest_waterway_m, erosion_max_m, erosion_mean_m: if land > 0 { sum / land as f64 } else { 0.0 }, phases_ms }
+    Drained { carve, erosion, water, lake_water, rivers, lakes, lake_of, max_catchment_m2, longest_river_m, longest_waterway_m, erosion_max_m, erosion_mean_m: if land > 0 { sum / land as f64 } else { 0.0 }, phases_ms }
 }
 
 /// The macro grid as a graph: every vertex of the six face grids (`(face * w + j) * w + i`, as

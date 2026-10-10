@@ -703,6 +703,9 @@ pub struct Recipe {
     pub seed: i32,
     #[serde(skip)]
     pub radius: f64,
+    /// Hash of the recipe's JSON text: part of the coarse layer's cache key.
+    #[serde(skip)]
+    pub source_hash: u64,
     #[serde(rename = "macro")]
     pub macro_: MacroSpec,
     pub bands: Vec<Band>,
@@ -731,7 +734,8 @@ impl Recipe {
     }
 
     pub fn from_json(s: &str) -> Result<Recipe, String> {
-        let r: Recipe = serde_json::from_str(s).map_err(|e| e.to_string())?;
+        let mut r: Recipe = serde_json::from_str(s).map_err(|e| e.to_string())?;
+        r.source_hash = crate::coarse::fnv(s.as_bytes(), crate::coarse::FNV_START);
         if r.biomes.is_empty() {
             return Err("at least one biome row".into());
         }

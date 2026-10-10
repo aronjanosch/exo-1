@@ -206,6 +206,12 @@ pub fn ship_control(
                 let cap = &mut ship.ctl.tuning.g_safety.cap_turns;
                 *cap = !*cap;
             }
+            if actions.take_tap(Tap::ThrustLaw) {
+                // Both rules flip together (#185).
+                let on = !ship.ctl.cap_refuses_thrust;
+                ship.ctl.cap_refuses_thrust = on;
+                ship.ctl.brake_keeps_heading = on;
+            }
             let mb = &bindings.mouse;
             let m = std::mem::take(&mut actions.look);
             let m = DVec2::new(m.x as f64, m.y as f64) * mb.ship_sensitivity * settings.mouse_sensitivity;

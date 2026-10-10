@@ -108,6 +108,8 @@ pub enum Tap {
     Map,
     /// Track the next active job: its next stop is the pointer and the map's target (#166).
     TrackJob,
+    /// Drop the tracked job: the first press asks, a second within a few seconds drops it (#132).
+    AbandonJob,
 }
 
 impl Axis {
@@ -138,7 +140,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 19] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::LandingMode, Tap::TurnCap, Tap::SkipNotices, Tap::Decline, Tap::NextOffer, Tap::Map, Tap::TrackJob];
+    pub const ALL: [Tap; 20] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::LandingMode, Tap::TurnCap, Tap::SkipNotices, Tap::Decline, Tap::NextOffer, Tap::Map, Tap::TrackJob, Tap::AbandonJob];
     pub fn name(self) -> &'static str {
         match self {
             Tap::Interact => "interact",
@@ -160,6 +162,7 @@ impl Tap {
             Tap::NextOffer => "next_offer",
             Tap::Map => "map",
             Tap::TrackJob => "track_job",
+            Tap::AbandonJob => "abandon_job",
         }
     }
 }
@@ -362,6 +365,8 @@ impl Bindings {
                 // ... and no `map` or `track_job` (#166).
                 (Tap::Map, None) => Ok(vec![Input::Key(KeyCode::KeyM)]),
                 (Tap::TrackJob, None) => Ok(vec![Input::Key(KeyCode::KeyT)]),
+                // ... and no `abandon_job` (#132).
+                (Tap::AbandonJob, None) => Ok(vec![Input::Key(KeyCode::KeyY)]),
                 _ => Err(err(t.name(), "missing".into())),
             }
         };

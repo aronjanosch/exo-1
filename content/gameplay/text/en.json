@@ -282,6 +282,11 @@
     "{title} is a loss. A total, complete loss.",
     "Failed: {title}. The customer had other ideas."
   ],
+  "notice.job.abandon_ask": [
+    "Drop {title}? Press again.",
+    "Really walk away from {title}? Press again.",
+    "{title} will be sad. Press again to drop it."
+  ],
   "notice.job.abandoned": [
     "You dropped {title}.",
     "{title} abandoned. The crates are now decoration.",

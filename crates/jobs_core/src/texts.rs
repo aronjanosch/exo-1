@@ -11,6 +11,7 @@ pub const GLUE_KEYS: &[&str] = &[
     "notice.job.picked_up",
     "notice.job.delivered",
     "notice.job.completed",
+    "notice.job.abandon_ask",
     "notice.exam.honours",
     "notice.licence.needed",
     "notice.order.placed",

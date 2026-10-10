@@ -15,11 +15,15 @@ Phase 1, `night/d-foundation`:
 - [x] #166 map (screenshot: `night-shots/map.png` in the worktree, not committed)
 - [x] #135 save file (done in the day session of 2026-10-10, see "Day session")
 
-Phase 2, `night/d-extras` (branch not created):
+Phase 2, `night/d-extras` (day session, from the tip of `night/d-foundation`):
 
-- [ ] extras: polish for "does a job feel like a job?" (HUD arrow and money #136, board by giver #126 #131 #132, sounds, briefing texts): not started
-- [ ] extras: `production_core` sketch (recipe record, station state machine): not started
-- [ ] extras: other backlog items: not started
+- [x] #126 board generator in `jobs_core` (built and tested, not wired into the game: the counters stay, as decided)
+- [x] #131 text keys checked against `en.json`, fuller pools
+- [x] #136 HUD target arrow (money and XP were on the job line already)
+- [x] #132 reduced by the initiator to an abandon key on the tracked job (no board menu: "the board stays later")
+- [x] `production_core` sketch (recipe record, station state machine, save section)
+- [ ] better synthesized sounds: not done
+- [ ] other backlog items: not done
 
 ## How the run ended
 
@@ -103,3 +107,36 @@ Checks: 3 unit tests in `savefile.rs` (client id made once and kept, slot writte
 
 TODO(initiator): slot name and slots, the autosave times (2 s, 60 s), where the save lives for an installed game, a new game's seed (fixed now, so scenarios repeat).
 Open: the ship's pose is not saved (the ship spawns at the start, a crate in its cabin comes back into the cabin, not mag-locked); crates on another planet than the current one are left out with a log line; no load menu; the join and send part is #134.
+
+## #126 board generator (`lane/d-board`, Haiku, reviewed and fixed)
+
+Built: `jobs_core::board` and `Jobs::generate_board_at` / `tick_board`: per location 3 to 5 offers from the templates whose condition holds and whose giver's counter is there (templates without a giver at any board), no template twice, places by tag search (pickup never the dropoff, locked places never), commodity and amount from the template's pool and range, seeded; unaccepted offers rotate after 600 s with a seed derived from the old one, accepted ones stay; exam templates and `customer_order` are never board offers; a once-only template is gone after its job is done; a follow-up waits for its job and then comes first on every board. The board state is part of the jobs save section.
+Review: the first Haiku pass only aged offers, ignored the location and had a test that asserted nothing; the second pass reported follow-ups as done while nothing read the field and the test returned early. The coordinator implemented follow-ups and made the once-only test check both sides.
+Checks: 13 tests in `jobs_core/tests/board.rs`.
+TODO(initiator): offer lifetime 600 s, 3 to 5 offers, the rule for templates without a giver.
+Open: not wired into the game, by the decision "Where jobs come from (D)": the counters still offer one fixed offer per template.
+
+## #131 text keys (`lane/d-texts`, Haiku, reviewed and fixed)
+
+Built: the loaders' text checks cover templates, givers, customers, licences and the keys the glue uses (`jobs_core::texts::GLUE_KEYS`, 16 keys); a test loads the shipped content and `en.json` and asserts no missing key and at least 3 lines in every pool a player sees often; 14 pools filled to 3 or 4 lines. The coordinator completed the glue key list (Haiku had 5 of 15) and replaced a refusal line that said one job at a time (the limit is two).
+Checks: 2 tests in `customers_core/tests/texts.rs`.
+TODO(initiator): every text (placeholders). Open: the loop UI does not yet show text only through keys (pointer words, panel hints and the HUD still have English in code).
+
+## `production_core` sketch (`lane/d-production`, Haiku, reviewed and fixed)
+
+Built: new crate `production_core` (no Bevy): record `recipe` (station kind, inputs, outputs, time) with loader errors naming file and field, `Station` state machine (idle, loading, running, done, blocked; insert, step, take outputs; wrong input refused), section `production` in the save. Two placeholder recipes in `content/gameplay/recipe/`. The coordinator fixed the shipped recipes (they named a good that does not exist; only fixtures were tested) and added a test that loads them against the shipped goods.
+Checks: 16 tests in `production_core/tests/production.rs`.
+TODO(initiator): every recipe, station kind and time. Open: no glue, no events yet; G decides how stations are placed and fed.
+
+## #136 HUD target arrow
+
+Built: `Gameplay::arrow` (target, pickup or dropoff, bearing from the look direction, distance), filled every step from the tracked job's next stop (`jobs_core::map::next_stop`, tested in #166); `gameplay::bearing` (also used by the job line's pointer words). Window: an arrow at the top centre, turned towards the target, red to a pickup and green to a dropoff as the map's pins, the distance under it; hidden without a tracked job. Money and freight XP were already on the job line.
+Checks: 1 unit test (bearing: left positive, ahead 0, behind 180, height ignored); scenario `courier` checks the arrow at the pickup while parcels wait, at the dropoff after the pickup (distance within 5 m of the walk), and the job line's money after the payout with no arrow left. The window drawing is not run headless (no screenshot this time). Gate: `cargo t` 487 passed (1 skipped: perf), `cargo scenario` 0 failures.
+TODO(initiator): look, size, place and colours of the arrow.
+
+## #132 abandon (reduced)
+
+Decided with the initiator in the day session: no board menu (the counters stay); only the missing abandon. Built: tap `abandon_job` (Y, in `bindings.json`, old binding files still load): the first press names the tracked job and asks ("press again"), a second press within 3 s drops it (`JobAbandoned`: crates become plain, nothing is charged, the giver offers it again). New pool `notice.job.abandon_ask`.
+Checks: scenario `courier` starts with it: take the Lint Trap job, one press asks and the job stays, the second drops it, its parcel is a plain crate, the job is on offer again.
+TODO(initiator): the key, the confirm time 3 s, the texts.
+

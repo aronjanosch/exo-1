@@ -54,6 +54,8 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, update_panel.in_set(crate::phases::Frame::Hud));
     app.add_systems(Update, update_pad_rings.in_set(crate::phases::Frame::World));
     app.add_systems(Update, update_job_line.in_set(crate::phases::Frame::Hud));
+    app.add_systems(Startup, spawn_arrow);
+    app.add_systems(Update, update_arrow.in_set(crate::phases::Frame::Hud));
 }
 
 /// The host's own sender id in events until the network sends each client's (#134); the folder's
@@ -83,6 +85,9 @@ pub struct Pad {
     pub up: DVec3,
     pub radius: f64,
 }
+
+/// The second abandon press must come within this time (s). TODO(initiator).
+const ABANDON_CONFIRM_S: f64 = 3.0;
 
 /// A crate on a pad stands at most this high over its centre plane (m): pads are flattened.
 const PAD_HEIGHT: f64 = 3.0;
@@ -133,6 +138,10 @@ pub struct Gameplay {
     /// Briefings already assembled, by offer and the giver's mood then: an offer reads the same
     /// each time it is opened.
     briefings: std::collections::BTreeMap<JobId, (jobs_core::Mood, Briefing)>,
+    /// The first press of abandon: which job and when (game clock), until confirmed (#132).
+    abandon_asked: Option<(JobId, f64)>,
+    /// The target arrow (#136): the tracked job's next stop as the player sees it.
+    pub arrow: Option<Arrow>,
     /// This game's seed (#135, in the save).
     pub seed: u64,
     /// Something happened to a job since the last save: the autosave writes soon (#135).
@@ -145,6 +154,16 @@ pub struct Panel {
     pub giver: GiverId,
     /// Which of the giver's offers is shown.
     pub page: usize,
+}
+
+/// The HUD's target arrow (#136).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Arrow {
+    pub target: LocationId,
+    pub stop: jobs_core::map::Stop,
+    /// Turn from where the player looks to the target, degrees, + to the left, on the ground.
+    pub bearing_deg: f64,
+    pub dist_m: f64,
 }
 
 /// A notice as the player sees it.
@@ -198,7 +217,7 @@ impl Gameplay {
         let customers = Customers::new(&customer_content, CUSTOMER_SEED);
         let progress = Progress::new(&kernel);
         let jobs = Jobs::default();
-        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(NEW_GAME_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, customers, customer_content, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, tracked: None, briefings: Default::default(), seed: NEW_GAME_SEED, save_wanted: false };
+        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(NEW_GAME_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, customers, customer_content, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, tracked: None, briefings: Default::default(), abandon_asked: None, arrow: None, seed: NEW_GAME_SEED, save_wanted: false };
         g.refresh_offers();
         g
     }
@@ -235,6 +254,7 @@ impl Gameplay {
         self.panel = None;
         self.tracked = None;
         self.briefings.clear();
+        self.abandon_asked = None;
         self.save_wanted = false;
         self.note("loaded the save".into());
         self.refresh_offers();
@@ -371,6 +391,24 @@ impl Gameplay {
         }
         let at = self.tracked.and_then(|t| active.iter().position(|j| *j == t));
         self.tracked = Some(active[at.map_or(0, |i| (i + 1) % active.len())]);
+    }
+
+    /// Abandon, pressed (#132): the first press names the tracked job and asks; a second press
+    /// within `ABANDON_CONFIRM_S` drops it. Nothing tracked, nothing happens.
+    pub fn press_abandon(&mut self) {
+        let Some(job) = self.tracked.filter(|j| self.jobs.get(*j).is_some_and(|j| j.state == JobState::Active)) else { return };
+        match self.abandon_asked {
+            Some((asked, at)) if asked == job && self.clock - at <= ABANDON_CONFIRM_S => {
+                self.abandon_asked = None;
+                self.push_job(HOST, JobEvent::JobAbandoned { job });
+            }
+            _ => {
+                self.abandon_asked = Some((job, self.clock));
+                let j = &self.jobs.get(job).unwrap();
+                let title = j.title_key(&self.jobs_content.templates[&j.template].record);
+                self.notify(Notice::new(NoticeKind::Warning, "notice.job.abandon_ask").arg("title", Arg::Key(title)));
+            }
+        }
     }
 
     /// Declines: the panel closes, the offer stays.
@@ -543,6 +581,9 @@ pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>
     if actions.take_tap(crate::controls::Tap::SkipNotices) {
         gp.notices.skip();
     }
+    if actions.take_tap(crate::controls::Tap::AbandonJob) {
+        gp.press_abandon();
+    }
     gp.push_world(HOST, WorldEvent::TimePassed { dt });
     let mut rounds = 0;
     while !gp.queue.is_empty() {
@@ -642,14 +683,10 @@ fn carry_out(commands: &mut Commands, table: &Crates, gp: &mut Gameplay, goods: 
 /// "Bent Spoon 1.9 km, left": distance and rough side of a pad from where the player looks. A
 /// stand-in until the target arrow (#136).
 pub fn pointer(name: &str, from: DVec3, look: DVec3, to: DVec3, up: DVec3) -> String {
-    let d = to - from;
-    let flat = |v: DVec3| (v - up * v.dot(up)).normalize_or_zero();
-    let (f, t) = (flat(look), flat(d));
-    let dist = d.length();
+    let (ang, dist) = bearing(from, look, to, up);
     let side = if dist < 40.0 {
         "here"
     } else {
-        let ang = f.cross(t).dot(up).atan2(f.dot(t)).to_degrees();
         match ang {
             a if a.abs() <= 30.0 => "ahead",
             a if a.abs() >= 150.0 => "behind",
@@ -659,6 +696,14 @@ pub fn pointer(name: &str, from: DVec3, look: DVec3, to: DVec3, up: DVec3) -> St
     };
     let dist = if dist >= 1000.0 { format!("{:.1} km", dist / 1000.0) } else { format!("{dist:.0} m") };
     format!("{name} {dist}, {side}")
+}
+
+/// Turn from `look` to `to` on the ground under `up` (degrees, + to the left) and the distance.
+pub fn bearing(from: DVec3, look: DVec3, to: DVec3, up: DVec3) -> (f64, f64) {
+    let d = to - from;
+    let flat = |v: DVec3| (v - up * v.dot(up)).normalize_or_zero();
+    let (f, t) = (flat(look), flat(d));
+    (f.cross(t).dot(up).atan2(f.dot(t)).to_degrees(), d.length())
 }
 
 /// The job line: money, the active job's progress and where to, a recent notice.
@@ -679,6 +724,14 @@ pub fn update_readout(
         let name = gp.kernel.locations.get(l).map(|r| gp.text(&r.record.name))?;
         Some(pointer(&name, pos, look, pad.centre, planet.up(pos)))
     };
+    // The arrow points at the tracked job's next stop (#136).
+    let arrow = gp.tracked.and_then(|t| gp.jobs.get(t)).filter(|j| j.state == JobState::Active).and_then(jobs_core::map::next_stop).and_then(|(target, stop)| {
+        let (pos, look) = view?;
+        let pad = gp.pad_of(&target)?;
+        let (bearing_deg, dist_m) = bearing(pos, look, pad.centre, planet.up(pos));
+        Some(Arrow { target, stop, bearing_deg, dist_m })
+    });
+    gp.arrow = arrow;
     let money = gp.progress.wallet();
     let mut s = format!("{money} {}", gp.text(&TextKey::new("track.wallet.name")));
     let xp = gp.progress.value(&gp.kernel, &TrackId::new("freight_xp"), Some(HOST));
@@ -729,6 +782,60 @@ fn update_job_line(gp: Res<Gameplay>, mut q: Query<&mut Text, With<JobLine>>) {
         && **t != gp.readout
     {
         **t = gp.readout.clone();
+    }
+}
+
+/// The target arrow at the top of the screen: a head and a shaft turned towards the target, the
+/// distance under it; red to a pickup, green to a dropoff, as the map's pins (#166).
+/// TODO(initiator): look, size and place.
+#[derive(Component)]
+struct ArrowUi;
+
+#[derive(Component)]
+struct ArrowPart;
+
+#[derive(Component)]
+struct ArrowDist;
+
+const ARROW_PICKUP: Color = Color::srgb(0.95, 0.35, 0.3);
+const ARROW_DROPOFF: Color = Color::srgb(0.35, 0.9, 0.4);
+
+fn spawn_arrow(mut commands: Commands) {
+    commands.spawn((Node { position_type: PositionType::Absolute, top: px(10), left: percent(50), margin: UiRect::left(px(-30)), width: px(60), flex_direction: FlexDirection::Column, align_items: AlignItems::Center, display: Display::None, ..default() }, ArrowUi)).with_children(|c| {
+        c.spawn((Node { width: px(44), height: px(44), flex_direction: FlexDirection::Column, align_items: AlignItems::Center, ..default() }, UiTransform::IDENTITY, ArrowUi)).with_children(|a| {
+            a.spawn((Node { width: px(16), height: px(16), margin: UiRect::top(px(4)), ..default() }, UiTransform { rotation: Rot2::degrees(45.0), ..UiTransform::IDENTITY }, BackgroundColor(ARROW_DROPOFF), ArrowPart));
+            a.spawn((Node { width: px(5), height: px(22), margin: UiRect::top(px(-8)), ..default() }, BackgroundColor(ARROW_DROPOFF), ArrowPart));
+        });
+        c.spawn((Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgb(1.0, 0.92, 0.55)), ArrowDist));
+    });
+}
+
+#[allow(clippy::type_complexity)]
+fn update_arrow(gp: Res<Gameplay>, mut nodes: Query<(&mut Node, Option<&mut UiTransform>), With<ArrowUi>>, mut parts: Query<&mut BackgroundColor, With<ArrowPart>>, mut dist: Query<&mut Text, With<ArrowDist>>) {
+    for (mut node, turn) in &mut nodes {
+        match (&gp.arrow, turn) {
+            // The outer node shows or hides the whole arrow.
+            (a, None) => {
+                let d = if a.is_some() { Display::Flex } else { Display::None };
+                if node.display != d {
+                    node.display = d;
+                }
+            }
+            // The inner one turns: UI rotation is clockwise, the bearing is + to the left.
+            (Some(a), Some(mut t)) => t.rotation = Rot2::degrees(-a.bearing_deg as f32),
+            (None, Some(_)) => {}
+        }
+    }
+    let Some(a) = &gp.arrow else { return };
+    let colour = if a.stop == jobs_core::map::Stop::Pickup { ARROW_PICKUP } else { ARROW_DROPOFF };
+    for mut b in &mut parts {
+        b.0 = colour;
+    }
+    if let Ok(mut t) = dist.single_mut() {
+        let text = if a.dist_m >= 1000.0 { format!("{:.1} km", a.dist_m / 1000.0) } else { format!("{:.0} m", a.dist_m) };
+        if **t != text {
+            **t = text;
+        }
     }
 }
 
@@ -844,5 +951,18 @@ mod tests {
         assert_eq!(pointer("A", DVec3::ZERO, look, DVec3::new(300.0, 0.0, 0.0), up), "A 300 m, right");
         assert_eq!(pointer("A", DVec3::ZERO, look, DVec3::new(0.0, 0.0, 300.0), up), "A 300 m, behind");
         assert_eq!(pointer("A", DVec3::ZERO, look, DVec3::new(10.0, 0.0, 0.0), up), "A 10 m, here");
+    }
+
+    /// #136: the arrow's turn is + to the left, 0 ahead, 180 behind, flat on the ground.
+    #[test]
+    fn bearing_turns_left_positive_and_ignores_height() {
+        let (up, look) = (DVec3::Y, DVec3::NEG_Z);
+        let b = |to: DVec3| bearing(DVec3::ZERO, look, to, up);
+        assert!(b(DVec3::new(0.0, 0.0, -100.0)).0.abs() < 1e-9);
+        assert!((b(DVec3::new(-100.0, 0.0, 0.0)).0 - 90.0).abs() < 1e-9);
+        assert!((b(DVec3::new(100.0, 0.0, 0.0)).0 + 90.0).abs() < 1e-9);
+        assert!((b(DVec3::new(0.0, 0.0, 100.0)).0.abs() - 180.0).abs() < 1e-9);
+        let (a, d) = b(DVec3::new(-100.0, 100.0, -100.0));
+        assert!((a - 45.0).abs() < 1e-9 && (d - 300f64.sqrt() * 10.0).abs() < 1e-9);
     }
 }

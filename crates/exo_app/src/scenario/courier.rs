@@ -63,6 +63,9 @@ fn take_and_pick_up(s: &mut Vec<Step>, template: &'static str, pay: i64) {
         let n = super::deliver::goods_of(w).len();
         let active = gp(w).jobs.active().any(|j| j.template.as_str() == template);
         check(c, active && n > 0, format!("courier: {template} is active and its parcels wait on the pad ({n})"));
+        // #136: while parcels wait, the arrow points at the pickup.
+        let arrow = gp(w).arrow.clone();
+        check(c, arrow.as_ref().is_some_and(|a| a.target.as_str() == "drip_rock" && a.stop == jobs_core::map::Stop::Pickup), format!("courier: the arrow points at the pickup while parcels wait ({arrow:?})"));
         let e = super::deliver::goods_of(w)[0].0;
         let target = crate::scenario::cargo::crate_world_pos(w, e);
         crate::scenario::cargo::look_at(w, target);
@@ -86,13 +89,62 @@ fn standing(w: &World) -> i64 {
     g.progress.value(&g.kernel, &gameplay_core::TrackId::new("standing_courier_office"), None).unwrap_or(0)
 }
 
+/// #132: take the Lint Trap job, press abandon once (it asks, the job stays), then twice (it is
+/// dropped, its parcel is a plain crate again); the job is on offer again afterwards.
+fn abandon_steps(s: &mut Vec<Step>) {
+    s.push(Box::new(|w, c| {
+        begin(w, c, "courier: abandoning a job (#132)");
+        let id = gp(w).jobs.all().find(|j| j.template.as_str() == "courier_lint_trap" && j.state == JobState::Offered).map(|j| j.id).expect("on offer");
+        c.v.insert("abandon_job", id.0 as f64);
+        w.resource_mut::<crate::gameplay::Gameplay>().push_job(crate::gameplay::HOST, jobs_core::JobEvent::OfferAccepted { job: id });
+        true
+    }));
+    s.push(wait(1.0));
+    s.push(Box::new(|w, c| {
+        let n = super::deliver::goods_of(w).len();
+        check(c, gp(w).jobs.active().count() == 1 && n == 1, format!("courier: the job is taken, its parcel waits ({n})"));
+        c.v.insert("said0", (gp(w).notices.len() + gp(w).shown.len()) as f64);
+        tap(w, KeyCode::KeyY);
+        true
+    }));
+    s.push(wait(0.5));
+    s.push(Box::new(|w, c| {
+        // The question is queued or already shown (the queue paces notices).
+        let asked = (gp(w).notices.len() + gp(w).shown.len()) as f64 > c.v["said0"];
+        check(c, asked && gp(w).jobs.active().count() == 1, "courier: one press asks and the job stays".into());
+        tap(w, KeyCode::KeyY);
+        true
+    }));
+    s.push(wait(0.5));
+    s.push(Box::new(|w, c| {
+        let id = jobs_core::JobId(c.v["abandon_job"] as u64);
+        let state = gp(w).jobs.get(id).map(|j| j.state);
+        let goods = super::deliver::goods_of(w).len();
+        let again = gp(w).jobs.all().any(|j| j.template.as_str() == "courier_lint_trap" && j.state == JobState::Offered);
+        check(c, state == Some(JobState::Abandoned) && goods == 0 && gp(w).jobs.active().count() == 0 && again, format!("courier: the second press drops the job ({state:?}), its parcel is plain ({goods} goods), the job is on offer again ({again})"));
+        crate::scenario::cargo::clear_crates(w);
+        end(w, c, String::new());
+        true
+    }));
+}
+
 pub fn courier_steps(s: &mut Vec<Step>) {
     s.push(settle());
     s.push(Box::new(|w, _| {
         crate::scenario::cargo::clear_crates(w);
         true
     }));
+    abandon_steps(s);
     take_and_pick_up(s, "courier_lint_trap", 30);
+    s.push(Box::new(|w, c| {
+        // #136: the parcel in the hands, the arrow turns to the dropoff, about as far as the walk.
+        let arrow = gp(w).arrow.clone();
+        let to = pad(w, "lint_trap").centre;
+        let from = w.query::<&crate::walker::Player>().single(w).unwrap().w.pos;
+        let ok = arrow.as_ref().is_some_and(|a| a.target.as_str() == "lint_trap" && a.stop == jobs_core::map::Stop::Dropoff && (a.dist_m - from.distance(to)).abs() < 5.0);
+        check(c, ok, format!("courier: after the pickup the arrow points at the dropoff ({arrow:?})"));
+        true
+    }));
     s.push(carry_to("lint_trap", 240.0));
     s.push(wait(4.0));
     s.push(Box::new(|w, c| {
@@ -103,6 +155,9 @@ pub fn courier_steps(s: &mut Vec<Step>) {
         // (A repeatable job is offered again at once, so look for any completed one.)
         let done = gp(w).jobs.all().any(|j| j.template.as_str() == "courier_lint_trap" && j.state == JobState::Completed);
         check(c, done && (27.0..=30.0).contains(&paid), format!("courier: the parcel set down on the Lint Trap pad completes the job (paid {paid} of 30)"));
+        // #136: the money on the job line follows the payout; no job, no arrow.
+        let money = format!("{} {}", g.progress.wallet(), g.text(&gameplay_core::TextKey::new("track.wallet.name")));
+        check(c, paid > 0.0 && g.readout.starts_with(&money) && g.arrow.is_none(), format!("courier: the HUD shows the new money and no arrow ('{}', {:?})", g.readout.lines().next().unwrap_or(""), g.arrow));
         check(c, standing(w) as f64 - c.v["standing0"] == 10.0, format!("courier: the courier office's standing rose ({} to {})", c.v["standing0"], standing(w)));
         let walk_m = c.v["walk_m"];
         check(c, (150.0..=400.0).contains(&walk_m), format!("courier: the drop is a walk of 150 to 400 m ({walk_m:.0} m)"));

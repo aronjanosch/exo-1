@@ -101,4 +101,17 @@ pub fn sc_flight_hud_steps(s: &mut Vec<Step>) {
         check(c, roll.abs() < 2.0, format!("horizon: pitch {pitch:+.1} deg, roll {roll:+.2} deg, want roll within 2 deg"));
         true
     }));
+
+    // F7 back to the axis model: the flight part is filled from the axis numbers too.
+    s.push(Box::new(|w, _| {
+        tap(w, KeyCode::F7);
+        true
+    }));
+    s.push(hold_until("F7 to axis 0.2 s", &[], 0.2, |_| false));
+    s.push(Box::new(|w, c| {
+        let f = flight(w);
+        check(c, f.speed_tape.cruise > 0.0 && f.speed_tape.cruise < 1.0, format!("axis model: cruise mark {:.3}", f.speed_tape.cruise));
+        check(c, f.g_bar.mark > 0.0, format!("axis model: G mark {:.2}", f.g_bar.mark));
+        true
+    }));
 }

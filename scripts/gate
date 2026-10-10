@@ -1,0 +1,17 @@
+#!/bin/sh
+# The full gate (AGENTS.md, three test sizes; only at the end of a big round): `cargo t`, one at a
+# time on this machine, at low priority. Several gates at once each took twice as long and heated the CPU
+# (#187); a second gate waits here for the first. `EXO_GATE_CPU=<percent of the machine>` caps the
+# CPU: at 50 the gate took 83 s instead of 49 s and peaked at 83 instead of 88 °C on the Ryzen 5800X
+# (it boosts the cores left), so the default is no cap. Arguments go to `cargo t`.
+lock="${XDG_CACHE_HOME:-$HOME/.cache}/exo-1-gate.lock"
+exec 9>"$lock"
+if ! flock -n 9; then
+    echo "gate: waiting for another gate on this machine ($lock)" >&2
+    flock 9
+fi
+cpu="${EXO_GATE_CPU:-0}"
+if [ "$cpu" != 0 ] && command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope -q true 2>/dev/null; then
+    exec systemd-run --user --scope -q -p CPUQuota=$(( $(nproc) * cpu ))% nice -n 15 cargo t "$@"
+fi
+exec nice -n 15 cargo t "$@"

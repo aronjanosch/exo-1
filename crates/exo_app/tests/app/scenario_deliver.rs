@@ -1,5 +1,5 @@
 //! #133: the first playable round, take a job on a pad and deliver it to another. Without a window.
-mod common;
+use crate::common;
 use exo_app::Options;
 
 #[test]

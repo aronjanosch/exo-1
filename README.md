@@ -28,16 +28,18 @@ Status: starting point. The code comes from the spikes (tag `spike/combined-fina
 ```sh
 cargo run -p exo_app                                  # play (window)
 cargo dev                                             # same with Bevy dynamic linking, about 1 s rebuilds
-cargo t                                               # the gate: all checks in parallel with cargo-nextest, includes every scenario headless (dynamic linking, about 2 s rebuilds)
+scripts/gate                                          # the gate: cargo t at low priority, one at a time on the machine
+cargo t                                               # the same without the lock: all checks in parallel with cargo-nextest, every scenario headless (dynamic linking)
+cargo ts scenario_warp                                # one app test by name, dynamic like the gate
 cargo t -P perf                                       # the timing test perf.rs alone, once per round on a quiet machine
 cargo scenario                                        # full scenario without a window, exits non-zero on a failed check (dynamic linking)
-cargo test --workspace                                # all checks one after the other, static build (about 8 s rebuilds), perf.rs included
+cargo check --workspace --all-targets                 # the static build compiles (no linking, no test binaries)
 cargo run -p exo_app -- --headless --scenario=full    # full scenario headless, static build
 cargo run -p exo_app -- --scenario=full               # same in a window, with screenshots
 cargo run -p exo_app -- --hidden --scenario=full      # invisible window, screenshots still work
 ```
 
-A change is done when `cargo t` passes. It needs cargo-nextest: `mise install` in the repo root (pinned in `mise.toml`); `.config/nextest.toml` leaves `perf.rs` out of the default run. Other scenarios with dynamic linking: `cargo dev --headless --scenario=<name>`.
+A feature is done when its own tests pass (`cargo test -p <crate>`, `cargo ts scenario_<name>`); the full gate runs at the end of a big round (`AGENTS.md`, three test sizes). It needs cargo-nextest: `mise install` in the repo root (pinned in `mise.toml`); `.config/nextest.toml` leaves `perf.rs` out of the default run. Other scenarios with dynamic linking: `cargo dev --headless --scenario=<name>`.
 
 Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (default `target/scenario`):
 

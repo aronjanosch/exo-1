@@ -1,5 +1,5 @@
 //! #63: the planet-look scenario headless writes an atlas and statistics for every planet.
-mod common;
+use crate::common;
 use exo_app::Options;
 
 #[test]

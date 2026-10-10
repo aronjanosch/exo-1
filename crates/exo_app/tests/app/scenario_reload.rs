@@ -1,5 +1,5 @@
 //! #21: a tuning file edited while the game runs takes effect (dev builds).
-mod common;
+use crate::common;
 use exo_app::Options;
 
 #[test]

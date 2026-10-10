@@ -1,5 +1,5 @@
 //! Replay matrix of spike 4 without sockets, on a synthetic path. The recorded path of the full
-//! scenario runs in `exo_app/tests/scenario_full.rs`.
+//! scenario runs in `exo_app/tests/app/scenario_full.rs`.
 use net_core::replay::{matrix_cases, run_matrix, synthetic_path};
 
 const PASS_BOUND_MM: f64 = 10.0;

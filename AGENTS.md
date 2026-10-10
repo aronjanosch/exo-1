@@ -27,7 +27,12 @@ A game in Rust with Bevy, built by the initiator and maybe a few friends. AI mak
 
 ## Agent loop
 
-- A change is done when `cargo t` passes: cargo-nextest (`mise install`) runs every workspace test in parallel, the headless scenarios included (`full` among them), so the gate takes about as long as the slowest scenario. It links Bevy dynamically for fast rebuilds. The timing test `perf.rs` runs once per round on a quiet machine: `cargo t -P perf`. GitHub CI is off (runner budget), so `cargo test --workspace` checks the static build locally before a round reaches `main`. Commands and scenario names: `README.md`, section "Run".
+- Tests run in three sizes; the initiator wants the long run only when a lot comes together:
+  - **A feature** is done when its own tests pass: `cargo test -p <crate>` for every crate it touches, and its scenario as `cargo ts scenario_<name>` (dynamic; `cargo test -p exo_app` builds static Bevy, 900 MB per binary).
+  - **Merging a few features** (into a round branch or `main`) reruns the tests of those features on the merged branch, no full run.
+  - **A big round** (a whole milestone or most of it) runs the full gate before it reaches `main`: `scripts/gate` (Linux and macOS; on Windows `cargo t` directly) runs `cargo t` (cargo-nextest, `mise install`, every workspace test and every headless scenario, about 50 s on a quiet machine, the whole CPU), one at a time on the machine. With it go the timing test `cargo t -P perf` on a quiet machine and `cargo check --workspace --all-targets` for the static build (GitHub CI is off, runner budget).
+  Commands and scenario names: `README.md`, section "Run".
+- The app's integration tests are one binary (`crates/exo_app/tests/app/`): a new scenario test is a module there. Each extra file in `tests/` links Bevy again.
 - Several sessions at once (a lane each) or a playtest round across them: skill `exo-orchestrate`.
 - Every feature gets a scripted scenario that drives it through the `Controls` resource, so it can be tested without a window.
 - Bevy and Avian change their API in every release. Look up names and signatures in `~/.cargo/registry/src/*/` (`bevy*-<version>/`, `avian3d-<version>/`) and the Bevy examples there before you write code; trust the source over memory of older versions.

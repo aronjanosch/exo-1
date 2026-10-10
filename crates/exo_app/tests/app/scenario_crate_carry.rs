@@ -1,5 +1,5 @@
 //! Issue #83: carry each size, throw, the grab tool from 8 m, the large crate alone. Without a window.
-mod common;
+use crate::common;
 use exo_app::Options;
 
 #[test]

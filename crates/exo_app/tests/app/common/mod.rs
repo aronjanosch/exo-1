@@ -1,4 +1,4 @@
-#![allow(dead_code)] // each test binary uses a part of this
+#![allow(dead_code)] // perf.rs uses a part of this
 //! Runs a scripted scenario headless until it is done and checks it passed.
 use exo_app::{build_app, scenario::Script, walker::WalkStats, Options};
 

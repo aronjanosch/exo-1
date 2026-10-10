@@ -1,5 +1,5 @@
 //! #117: two runs of the same test at once (two lanes) must not share an output folder.
-mod common;
+use crate::common;
 
 const CHILD: &str = "EXO_OUT_DIRS_CHILD";
 
@@ -16,7 +16,7 @@ fn two_processes_get_different_out_dirs_under_the_target_tmpdir() {
     let run = |tag: &str| {
         let report = tmp.join(format!("out-dirs-{}-{tag}.txt", std::process::id()));
         let st = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["child_reports_its_out_dir", "--exact", "--nocapture"])
+            .args(["out_dirs::child_reports_its_out_dir", "--exact", "--nocapture"])
             .env(CHILD, &report)
             .status()
             .unwrap();

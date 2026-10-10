@@ -251,6 +251,10 @@ pub fn build_app(o: &Options) -> App {
     app.insert_resource(Time::<Fixed>::from_duration(TICK));
     app.add_plugins(PhysicsPlugins::default())
         .insert_resource(Gravity(DVec3::ZERO))
+        // The collider trees are tiny; Avian's async optimise task waits behind terrain and scatter
+        // jobs in the compute pool, and the end of the step blocks on it (fixed steps of 20 to 800 ms
+        // on a 100 km planet, #217).
+        .insert_resource(ColliderTreeOptimization { use_async_tasks: false, ..default() })
         .insert_resource(PhysicsTransformConfig { transform_to_position: false, position_to_transform: false, ..default() });
 
     let mut sys = warp_core::System::from_json(warp::SYSTEM).expect("system.json");

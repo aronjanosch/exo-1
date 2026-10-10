@@ -59,6 +59,13 @@ pub struct FrameCost {
     pub propagate: Work,
     /// Fixed steps (physics and simulation) run in this frame.
     pub fixed: Work,
+    /// Avian step stages in this frame (ms): start..broad phase, narrow phase, solver, sleeping and
+    /// finalize.
+    pub phys: [f64; 4],
+    /// Of the solver stage: swept CCD (Avian's own timer).
+    pub ccd_ms: f64,
+    /// Of the fixed step: the `FixedUpdate` schedule (game systems).
+    pub fixed_update_ms: f64,
     /// The Update schedule.
     pub update: Work,
     /// The chunk under the camera is coarser than wanted (its children are still building).
@@ -115,6 +122,9 @@ impl FrameRec {
             "frame {} t {:.2} s: {:.1} ms (main {:.1}, fixed {}x {:.1}, update {:.1}, propagate {:.1})",
             self.frame, self.t, self.dt_ms, self.main_ms, c.fixed.n, c.fixed.ms, c.update.ms, c.propagate.ms
         );
+        if c.fixed.ms > 8.0 {
+            s += &format!(" [game {:.1}, avian broad {:.1} narrow {:.1} solver {:.1} (ccd {:.1}) rest {:.1}]", c.fixed_update_ms, c.phys[0], c.phys[1], c.phys[2], c.ccd_ms, c.phys[3]);
+        }
         let mut parts = Vec::new();
         if c.terrain_up.n > 0 || c.terrain_sys.ms > 1.0 {
             parts.push(format!("terrain {} up {:.1} ms (sys {:.1}, {} started)", c.terrain_up.n, c.terrain_up.ms, c.terrain_sys.ms, c.terrain_sys.n));
@@ -286,6 +296,30 @@ struct Marks {
     fixed: Option<Instant>,
     update: Option<Instant>,
     propagate: Option<Instant>,
+    phys: Option<Instant>,
+    fixed_update: Option<Instant>,
+}
+
+/// Closes one Avian stage: the time since the previous mark goes to `phys[N]`.
+fn phys_mark<const N: usize>(mut m: ResMut<Marks>, mut cost: ResMut<FrameCost>) {
+    let now = Instant::now();
+    if let Some(t) = m.phys.replace(now) {
+        cost.phys[N] += now.duration_since(t).as_secs_f64() * 1000.0;
+    }
+}
+fn phys_ccd(d: Res<avian3d::dynamics::solver::SolverDiagnostics>, mut cost: ResMut<FrameCost>) {
+    cost.ccd_ms += d.swept_ccd.as_secs_f64() * 1000.0;
+}
+fn fu_begin(mut m: ResMut<Marks>) {
+    m.fixed_update = Some(Instant::now());
+}
+fn fu_end(mut m: ResMut<Marks>, mut cost: ResMut<FrameCost>) {
+    if let Some(t) = m.fixed_update.take() {
+        cost.fixed_update_ms += t.elapsed().as_secs_f64() * 1000.0;
+    }
+}
+fn phys_start(mut m: ResMut<Marks>) {
+    m.phys = Some(Instant::now());
 }
 
 fn fixed_begin(mut m: ResMut<Marks>) {
@@ -370,6 +404,20 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Last, frame_end);
     app.add_systems(FixedFirst, fixed_begin);
     app.add_systems(FixedLast, fixed_end);
+    app.add_systems(FixedUpdate, (fu_begin.before(crate::phases::Fx::Input), fu_end.after(crate::phases::Fx::Effects)));
+    {
+        use avian3d::prelude::{PhysicsSchedule, PhysicsStepSystems as S};
+        app.add_systems(
+            PhysicsSchedule,
+            (
+                phys_start.in_set(S::First),
+                phys_mark::<0>.after(S::BroadPhase).before(S::NarrowPhase),
+                phys_mark::<1>.after(S::NarrowPhase).before(S::Solver),
+                phys_mark::<2>.after(S::Solver).before(S::Sleeping),
+                (phys_mark::<3>, phys_ccd).chain().in_set(S::Last),
+            ),
+        );
+    }
     app.add_systems(Update, (update_begin.before(crate::phases::Frame::Input), update_end.after(crate::phases::Frame::Hud)));
     app.add_systems(
         PostUpdate,

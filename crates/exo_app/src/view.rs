@@ -82,6 +82,8 @@ pub struct PlayerInterp {
 
 #[derive(Resource, Default)]
 pub struct ViewState {
+    /// Live mouse turn in world space this render frame, excluded from horizon transitions.
+    pub(crate) mouse_rotation: DQuat,
     pub orbit: bool,
     /// A fixed camera pose (world), set by the planet-look scenario; wins over every other mode.
     pub look: Option<(DVec3, DQuat)>,
@@ -795,6 +797,13 @@ pub fn record_player_view(
     }
 }
 
+/// Interpolate translation and the carrying ship, never the player's local mouse rotation.
+pub(crate) fn first_person_pose(pl: &Player, pi: &PlayerInterp, f: f64, frame: walker_core::Frame) -> (DVec3, DQuat) {
+    let feet = pi.prev.0.lerp(pi.curr.0, f);
+    let up = if pl.ship.is_some() { frame.rot * pl.cabin_up } else { pl.view_up };
+    (feet + up * EYE_HEIGHT, walker_core::look_rot(pl.world_look(frame), up))
+}
+
 /// O: orbit camera on or off (fixed step, where taps live).
 pub fn orbit_toggle(mut actions: ResMut<Actions>, mut view: ResMut<ViewState>) {
     if actions.take_tap(Tap::OrbitCamera) {
@@ -811,6 +820,7 @@ pub fn update_camera(
     mut view: ResMut<ViewState>,
     players: Query<(&Player, &PlayerInterp)>,
     ships: Query<&BodyInterp, With<Ship>>,
+    cabins: Query<(&avian3d::prelude::Position, &avian3d::prelude::Rotation, Option<&BodyInterp>), Or<(With<Ship>, With<crate::ship::RemoteShip>)>>,
     mut cam: Query<(&mut WorldPose, &mut DistanceFog, &mut Projection), With<MainCamera>>,
     mut clear: ResMut<ClearColor>,
     mut ambient: ResMut<GlobalAmbientLight>,
@@ -825,9 +835,6 @@ pub fn update_camera(
     let Ok((mut pose, mut fog, mut proj)) = cam.single_mut() else { return };
     // The shake (#148) applies to the seated view and to the walker in a flying cabin only.
     let mut shaken = false;
-    // The settings' field of view at rest; the speed curve adds its rise to it.
-    let base_fov = settings.fov_deg;
-    let speed_fov = fx.0.fov_deg - tuning.camera.fov_curve.eval(0.0);
     if let Some((p, r)) = view.look {
         (pose.pos, pose.rot) = (p, r);
     } else if view.orbit {
@@ -845,16 +852,17 @@ pub fn update_camera(
         pose.rot = sr * DQuat::from_rotation_y(fx.look.y) * DQuat::from_rotation_x(ct.chase_pitch_deg.to_radians() + fx.look.x);
         shaken = true;
     } else {
-        let feet = pi.prev.0.lerp(pi.curr.0, f);
-        let up = pi.prev.1.lerp(pi.curr.1, f).normalize();
-        let look = pi.prev.2.lerp(pi.curr.2, f).normalize();
-        let pos = feet + up * EYE_HEIGHT;
-        let rot = walker_core::look_rot(look, up);
+        let frame = pl.ship.and_then(|e| cabins.get(e).ok()).map_or(walker_core::Frame::IDENTITY, |(p, r, interp)| {
+            let (origin, rot) = interp.map_or((p.0, r.0), |i| i.at(f));
+            walker_core::Frame { origin, rot }
+        });
+        let (pos, rot) = first_person_pose(pl, pi, f, frame);
         shaken = pl.ship.is_some();
         // Entering or leaving a cabin or the weightless body frame turns "up": the walker keeps
         // its look direction, the horizon turns over HORIZON_BLEND_SECS from where it was.
         if (pl.ship, pl.body.is_some()) != view.cabin {
-            view.horizon = Some((view.last_rot * rot.inverse(), view.last_pos - pos, 0.0));
+            // Keep the frame/up transition smooth, but include fresh mouse movement immediately.
+            view.horizon = Some((view.mouse_rotation * view.last_rot * rot.inverse(), view.last_pos - pos, 0.0));
         }
         (pose.pos, pose.rot) = match view.horizon {
             Some((offset, eye, age)) if age < HORIZON_BLEND_SECS => {
@@ -868,7 +876,13 @@ pub fn update_camera(
         };
     }
     if let Projection::Perspective(p) = proj.as_mut() {
-        let fov = if pl.seated && !view.orbit { base_fov + speed_fov } else { base_fov };
+        let fov = if view.orbit || view.look.is_some() {
+            tuning.camera.fov_curve.eval(0.0)
+        } else if pl.seated {
+            fx.0.fov_deg
+        } else {
+            settings.fov_deg
+        };
         p.fov = (fov as f32).to_radians();
     }
     view.cabin = (pl.ship, pl.body.is_some());

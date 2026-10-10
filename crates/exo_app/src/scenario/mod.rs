@@ -28,6 +28,7 @@ mod cargo;
 mod deliver;
 mod figure;
 mod flight;
+mod first_person_settings;
 mod landing;
 mod models;
 mod net;
@@ -64,6 +65,22 @@ pub fn plugin(name: &str, headless: bool) -> impl Plugin {
             if headless {
                 app.add_systems(Update, swap::headless_view.in_set(crate::phases::Frame::Camera));
             }
+        }
+        if name == "first-person-settings" && headless {
+            // The real projection system, without a renderer or a window.
+            app.init_resource::<ViewState>().init_resource::<ClearColor>().init_resource::<bevy::light::GlobalAmbientLight>();
+            app.add_systems(Startup, |mut commands: Commands| {
+                commands.spawn((crate::view::MainCamera, crate::origin::WorldPose::default(), bevy::pbr::DistanceFog::default(), Projection::Perspective(default())));
+            });
+            app.add_systems(FixedLast, (
+                |mut commands: Commands, ships: Query<(Entity, &Position, &Rotation), (With<Ship>, Without<crate::origin::BodyInterp>)>| {
+                    for (e, p, r) in &ships {
+                        commands.entity(e).insert(crate::origin::BodyInterp { prev: (p.0, r.0), curr: (p.0, r.0) });
+                    }
+                },
+                crate::view::record_player_view,
+            ).chain());
+            app.add_systems(Update, crate::view::update_camera.in_set(crate::phases::Frame::Camera));
         }
     }
 }
@@ -597,6 +614,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "figure" => figure_steps(&mut s, &shot_step),
         // Sprint 2 feel: input ramp, virtual-joystick mouse, boost, decoupled (#24, #25, #26).
         "flight" => flight_steps(&mut s, &shot_step, out_dir, windowed),
+        "first-person-settings" => first_person_settings::steps(&mut s),
         // #90, #91: the boost capacitor drains, cuts out and recharges; the HUD shows it.
         "boost-hud" => boost::boost_hud_steps(&mut s),
         "thruster-audio" => thruster_audio::thruster_audio_steps(&mut s),

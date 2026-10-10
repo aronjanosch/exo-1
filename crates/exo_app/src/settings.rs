@@ -15,9 +15,9 @@ pub fn window_plugin(app: &mut App) {
 
 #[derive(Resource, Clone, Debug, PartialEq)]
 pub struct Settings {
-    /// Multiplies the mouse sensitivities of the bindings (ship and walker).
+    /// First-person sensitivity: degrees per mouse count = 0.022 * this value.
     pub mouse_sensitivity: f64,
-    /// Field of view at rest, degrees; the speed curve adds to it.
+    /// Vertical field of view on foot, degrees. Vehicle cameras use their own tuning.
     pub fov_deg: f64,
     /// 0..1.
     pub volume: f64,
@@ -33,11 +33,21 @@ impl Default for Settings {
     }
 }
 
-pub const MOUSE_RANGE: (f64, f64) = (0.1, 5.0);
-pub const FOV_RANGE: (f64, f64) = (55.0, 100.0);
+pub const MOUSE_RANGE: (f64, f64) = (0.1, 10.0);
+pub const FOV_RANGE: (f64, f64) = (40.0, 90.0);
+pub const M_YAW_DEG: f64 = 0.022;
 pub const SHAKE_RANGE: (f64, f64) = (0.0, 1.0);
 
+/// Convert vertical to horizontal FOV for a width/height aspect ratio.
+pub fn horizontal_fov(vfov_deg: f64, aspect: f64) -> f64 {
+    2.0 * ((vfov_deg.to_radians() * 0.5).tan() * aspect).atan().to_degrees()
+}
+
 impl Settings {
+    pub fn mouse_radians_per_count(&self) -> f64 {
+        (M_YAW_DEG * self.mouse_sensitivity).to_radians()
+    }
+
     pub fn from_json(s: &str) -> Result<Settings, String> {
         let v: Value = serde_json::from_str(s).map_err(|e| format!("settings.json: {e}"))?;
         let o = v.as_object().ok_or("settings.json: not an object")?;
@@ -54,7 +64,9 @@ impl Settings {
         };
         // Optional: files written before the camera shake setting (#148) keep loading at 1.
         let camera_shake = if o.contains_key("camera_shake") { num("camera_shake", SHAKE_RANGE)? } else { 1.0 };
-        Ok(Settings { mouse_sensitivity: num("mouse_sensitivity", MOUSE_RANGE)?, fov_deg: num("fov_deg", FOV_RANGE)?, volume: num("volume", (0.0, 1.0))?, sound, camera_shake })
+        // The old menu allowed up to 100 degrees. Keep its files, cap just the FOV at 90.
+        let fov_deg = num("fov_deg", (FOV_RANGE.0, 100.0))?.min(FOV_RANGE.1);
+        Ok(Settings { mouse_sensitivity: num("mouse_sensitivity", MOUSE_RANGE)?, fov_deg, volume: num("volume", (0.0, 1.0))?, sound, camera_shake })
     }
 
     /// The factor on every sound: the volume, or 0 with the sound off.
@@ -125,6 +137,25 @@ mod tests {
         let d = std::env::temp_dir().join(format!("exo-settings-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         d
+    }
+
+    #[test]
+    fn first_person_units_and_horizontal_fov() {
+        let s = Settings { mouse_sensitivity: 2.0, ..Settings::default() };
+        assert!((s.mouse_radians_per_count() * 1000.0 - 44f64.to_radians()).abs() < 1e-12);
+        assert!((horizontal_fov(90.0, 4.0 / 3.0) - 106.26020470831196).abs() < 1e-9);
+        assert!((horizontal_fov(90.0, 16.0 / 9.0) - 121.28449291441746).abs() < 1e-9);
+        assert!((horizontal_fov(90.0, 21.0 / 9.0) - 133.60281897270362).abs() < 1e-9);
+    }
+
+    #[test]
+    fn new_ranges_and_old_fov_file() {
+        let mut s = Settings { mouse_sensitivity: 10.0, fov_deg: 40.0, ..Settings::default() };
+        assert_eq!(Settings::from_json(&s.to_json()).unwrap(), s);
+        s.fov_deg = 100.0;
+        assert_eq!(Settings::from_json(&s.to_json()).unwrap().fov_deg, 90.0);
+        s.fov_deg = 39.0;
+        assert!(Settings::from_json(&s.to_json()).is_err());
     }
 
     #[test]

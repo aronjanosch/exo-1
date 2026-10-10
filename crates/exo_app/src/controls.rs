@@ -21,7 +21,8 @@ pub fn plugin(app: &mut App) {
 
 /// Window only: the keyboard and mouse into `Controls`.
 pub fn window_plugin(app: &mut App) {
-    app.add_systems(Update, read_input.in_set(crate::phases::Frame::Input));
+    // Fresh input must be available to this frame's simulation, not the next one's.
+    app.add_systems(RunFixedMainLoop, (read_input, crate::walker::mouse_look).chain().in_set(RunFixedMainLoopSystems::BeforeFixedMainLoop));
 }
 
 pub const BINDINGS: &str = include_str!("../../../content/tuning/bindings.json");
@@ -272,6 +273,7 @@ pub struct MouseBindings {
     pub ship_mode: ShipMouse,
     /// Radians per pixel: the ship's turn (direct) or the stick's offset (vjoy).
     pub ship_sensitivity: f64,
+    /// Legacy bindings field, retained for file compatibility. First-person look uses Settings.
     pub walker_sensitivity: f64,
     /// Virtual joystick, radians (degrees in the file).
     pub vjoy_max_angle: f64,

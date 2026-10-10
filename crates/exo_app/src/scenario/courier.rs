@@ -146,7 +146,10 @@ pub fn courier_steps(s: &mut Vec<Step>) {
         true
     }));
     s.push(carry_to("lint_trap", 240.0));
-    s.push(wait(4.0));
+    // The parcel is let go at 5 m/s and slides before it rests (it counts as delivered at rest):
+    // as an Avian body that takes about 1.3 s longer than the sweep crate did, and each beat
+    // follows 0.6 s after the one before.
+    s.push(wait(5.5));
     s.push(Box::new(|w, c| {
         begin(w, c, "courier: paid at the Lint Trap");
         let g = gp(w);

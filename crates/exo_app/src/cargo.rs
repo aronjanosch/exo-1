@@ -4,8 +4,8 @@
 //! and hands over the velocity. While the warp drive holds the ship, crates in its cabin are held
 //! too (the drive sets the ship pose at up to 1e6 m/s).
 //!
-//! Crates have no collider of their own: they sweep against the world, hulls and ramps, but the
-//! walker walks through them and they do not stack yet.
+//! A crate in a cabin, on a ramp or far from the walker sweeps against the world, hulls and
+//! ramps; outside near the walker it is an Avian body (`avian_crates`).
 use crate::env::PlanetRes;
 use crate::ring::Ring;
 use crate::ship::{cabin_contains, Ship};
@@ -121,6 +121,13 @@ pub struct CargoStats {
     pub frozen: u64,
     /// Crates the object budget removed.
     pub despawned: u32,
+}
+
+impl Crate {
+    /// The crate's box collider, for its Avian body.
+    pub fn collider(&self) -> Collider {
+        self.shape.clone()
+    }
 }
 
 /// A crate of size `size` at `pos` in its frame (`ship`: the cabin, None: the planet).
@@ -311,7 +318,7 @@ pub fn crate_step(
     mut stats: ResMut<CargoStats>,
     mut grid: ResMut<LockGrid>,
     mut prev_vel: Local<Option<DVec3>>,
-    mut crates: Query<(Entity, &mut Crate)>,
+    mut crates: Query<(Entity, &mut Crate), Without<crate::avian_crates::AvianCrate>>,
     ships: Query<(Entity, &Ship, &Position, &Rotation, &LinearVelocity)>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
 ) {
@@ -459,7 +466,7 @@ pub fn crate_step(
 }
 
 /// Bottom centre of a planet-frame crate in the ship's space.
-fn bottom_world(ship: &Frame, b: &CrateBody) -> DVec3 {
+pub(crate) fn bottom_world(ship: &Frame, b: &CrateBody) -> DVec3 {
     ship.to_local(b.pos - b.up * b.half.y)
 }
 

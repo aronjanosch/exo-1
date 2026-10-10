@@ -240,7 +240,7 @@ pub fn build_app(o: &Options) -> App {
         // Each update is exactly one physics tick, independent of wall time.
         app.insert_resource(TimeUpdateStrategy::ManualDuration(TICK));
     } else {
-        app.add_plugins(DefaultPlugins.set(bevy::asset::AssetPlugin { file_path: content_dir(), ..default() }).set(WindowPlugin {
+        app.add_plugins(DefaultPlugins.set(bevy::asset::AssetPlugin { file_path: content_dir(), ..default() }).set(bevy::app::TaskPoolPlugin { task_pool_options: terrain::task_pools() }).set(WindowPlugin {
             primary_window: Some(Window { title: "EXO-1".into(), resolution: (1600u32, 900u32).into(), visible: !o.hidden,
                 present_mode: if o.no_vsync { bevy::window::PresentMode::AutoNoVsync } else { bevy::window::PresentMode::AutoVsync },
                 ..default()

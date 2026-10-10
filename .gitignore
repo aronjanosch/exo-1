@@ -30,3 +30,4 @@ WORKSPACE.md
 # Python bytecode from the Blender scripts
 __pycache__/
 night-shots/
+/saves/

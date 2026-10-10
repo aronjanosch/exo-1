@@ -13,7 +13,7 @@ Phase 1, `night/d-foundation`:
 - [x] #168 customers
 - [x] #169 flight licence
 - [x] #166 map (screenshot: `night-shots/map.png` in the worktree, not committed)
-- [ ] #135 save file: not started (run cut off, see "How the run ended")
+- [x] #135 save file (done in the day session of 2026-10-10, see "Day session")
 
 Phase 2, `night/d-extras` (branch not created):
 
@@ -91,6 +91,15 @@ Checks: 3 tests in `planet_core/tests/look.rs` (size, north up and east right, m
 TODO(initiator): map radius (1000 m), picture size, colours, keys M and T.
 Open: pin labels are plain text; no fog of war or scanning; the map is only for the planet the player is on.
 
+## Day session (2026-10-10, with the initiator)
+
+The rest of the brief was finished in a day session: the initiator planned it with the coordinator (Opus) and the coordinator split it into lanes for Haiku subagents. The container's 6 GB allow one Bevy build at a time, so only lanes in the serde-only `*_core` crates ran side by side, each in its own worktree and target dir (`lane/d-board`, `lane/d-production`, `lane/d-texts`). The coordinator reviewed each lane and sent back or fixed what fell short. The Haiku lane for #135 committed without its gate and left four Bevy builds running at once; its commit was undone and #135 was done by the coordinator, as the initiator decided. Glue lanes (#136, #132) go to the coordinator as well.
+
 ## #135 save file
 
-Not started. #128 gives the envelope with kernel, jobs, customers sections and the world section type; what is missing is the file side (`saves/` in the game's directory, autosave, client id file) and the scenario (deliver halfway, save, restart, load, finish).
+Built: `exo_app::savefile`: the #128 envelope as JSON in `saves/autosave.json` in the game's own folder (scripted and headless runs: `<out_dir>/saves`, and they start new), written through a temporary file and a rename. Sections: kernel, jobs, customers, `game` (the seed) and world (the crates of active jobs with condition and place, planet frame or ship frame; the next crate id). A load is a restart: the goods crates go, the saved state replaces progress, jobs and customers (the host's event numbers continue above the saved ones, `Dedup::next_seq`), the crates come back where they were with their condition and pad. The save is loaded once at start, when the pads are known. Autosave on the game clock: 2 s after a job event (a burst writes once), else every 60 s. `saves/client_id` is made once per game folder (`LocalClient`); events still go out as `HOST` until the network sends the id (#134). `/saves/` is in `.gitignore`.
+
+Checks: 3 unit tests in `savefile.rs` (client id made once and kept, slot written whole and read back, autosave pacing). New scenario `savefile` (and `scenario_savefile.rs` in the gate): take the first haul, deliver one of three crates, wear another down to 0.8, autosave seen, save to the file, restart from a fresh gameplay state with no crates, load the file: wallet, tracks, flags, unlocks (the whole progress), the active job and the crates with their condition and pad are as saved; the two crates left are carried and the job pays 290 of 300 (the worn crate). Gate: `cargo t` 455 passed (1 skipped: perf), `cargo scenario` 0 failures.
+
+TODO(initiator): slot name and slots, the autosave times (2 s, 60 s), where the save lives for an installed game, a new game's seed (fixed now, so scenarios repeat).
+Open: the ship's pose is not saved (the ship spawns at the start, a crate in its cabin comes back into the cabin, not mag-locked); crates on another planet than the current one are left out with a log line; no load menu; the join and send part is #134.

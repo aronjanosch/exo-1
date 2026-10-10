@@ -35,6 +35,7 @@ mod mapview;
 mod models;
 mod net;
 mod reload;
+mod savefile;
 mod space;
 mod swap;
 mod walk;
@@ -619,6 +620,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "deliver" => deliver::deliver_steps(&mut s),
         // #170: courier jobs on foot, carried by hand to the small drops near the start.
         "courier" => courier::courier_steps(&mut s),
+        // #135: save file: deliver halfway, save, restart, load, finish.
+        "savefile" => savefile::savefile_steps(&mut s),
         // #168: a customer orders, the order is an offer at the wholesaler, the delivery moves the relationship.
         "customers" => customers::customers_steps(&mut s),
         // #169: the seat refuses without the licence; the exam; the licence.

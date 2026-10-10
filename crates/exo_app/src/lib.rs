@@ -23,6 +23,7 @@ pub mod perf;
 pub mod phases;
 pub mod record;
 pub mod ring;
+pub mod savefile;
 pub mod scatter;
 pub mod scenario;
 pub mod settings;
@@ -302,6 +303,10 @@ pub fn build_app(o: &Options) -> App {
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
     app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, cargo::plugin, hud::plugin, net_live::plugin));
     app.add_plugins(gameplay::plugin);
+    // The save (#135) belongs to players: scripted and headless runs keep theirs in the output
+    // folder and start new.
+    let player_run = o.scenario.is_none() && !o.headless;
+    savefile::plugin(&mut app, if player_run { savefile::SaveDir::default_dir() } else { o.out_dir.join("saves") }, player_run);
     app.add_plugins((flight_events::plugin, map::plugin));
     // Scenarios start with the licences earned (their pilots are not the examinees), except the
     // one about the licence itself (#169).

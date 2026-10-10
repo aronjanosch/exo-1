@@ -14,12 +14,32 @@ use bevy::prelude::*;
 use gameplay_core::notice::{Arg, Notice, NoticeKind, NoticeQueue};
 use gameplay_core::text::{Picker, TextTable};
 use gameplay_core::{ClientId, CommodityId, Content, CrateId, Dedup, Event, LocationId, Progress, TextKey, TrackId, WorldEvent};
+use gameplay_core::save::{Envelope, KernelState, SaveError};
 use customers_core::{CustomerContent, Customers};
 use jobs_core::{Briefing, GiverId, JobContent, JobEvent, JobId, JobState, Jobs, Outcome};
 
 use crate::cargo::{crate_bundle, Crate, Crates};
 use crate::env::{from_v3, PlanetRes};
 use crate::grab::Grab;
+
+/// The game's own section of the save (#135): its seed.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GameSave {
+    pub seed: u64,
+}
+
+impl GameSave {
+    pub const SECTION: &str = "game";
+    pub const VERSION: u32 = 1;
+
+    pub fn save(&self, env: &mut Envelope) {
+        env.put(Self::SECTION, Self::VERSION, &self.seed);
+    }
+
+    pub fn load(env: &Envelope) -> Result<Option<GameSave>, SaveError> {
+        Ok(env.get::<u64>(Self::SECTION, Self::VERSION)?.map(|seed| GameSave { seed }))
+    }
+}
 
 pub fn plugin(app: &mut App) {
     let crates = Crates::default();
@@ -36,12 +56,14 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, update_job_line.in_set(crate::phases::Frame::Hud));
 }
 
-/// The host's own client id until each client keeps one (#135).
+/// The host's own sender id in events until the network sends each client's (#134); the folder's
+/// id is `savefile::LocalClient` (#135).
 pub const HOST: ClientId = ClientId(1);
-/// Seed of the customers' orders (TODO(initiator): later the save's seed).
+/// Seed of a new game's customer orders (a loaded game continues the saved draws).
 const CUSTOMER_SEED: u64 = 0xC057_0001;
-/// Seed of the text picks (TODO(initiator): later the save's seed).
-const TEXT_SEED: u64 = 0x5EED_0001;
+/// Seed of a new game: the text picks (#135 keeps it in the save). TODO(initiator): a new game
+/// draws its own; fixed keeps the scenarios repeatable.
+const NEW_GAME_SEED: u64 = 0x5EED_0001;
 
 /// A crate that carries goods for a job.
 #[derive(Component, Clone, Debug)]
@@ -111,6 +133,10 @@ pub struct Gameplay {
     /// Briefings already assembled, by offer and the giver's mood then: an offer reads the same
     /// each time it is opened.
     briefings: std::collections::BTreeMap<JobId, (jobs_core::Mood, Briefing)>,
+    /// This game's seed (#135, in the save).
+    pub seed: u64,
+    /// Something happened to a job since the last save: the autosave writes soon (#135).
+    pub save_wanted: bool,
 }
 
 /// A giver's counter, opened.
@@ -172,9 +198,52 @@ impl Gameplay {
         let customers = Customers::new(&customer_content, CUSTOMER_SEED);
         let progress = Progress::new(&kernel);
         let jobs = Jobs::default();
-        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(TEXT_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, customers, customer_content, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, tracked: None, briefings: Default::default() };
+        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(NEW_GAME_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, customers, customer_content, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, tracked: None, briefings: Default::default(), seed: NEW_GAME_SEED, save_wanted: false };
         g.refresh_offers();
         g
+    }
+
+    /// The gameplay sections of a save (#135): kernel, jobs, customers and the game's seed. The
+    /// world (crates, ship) is `savefile::snapshot`'s.
+    pub fn save_to(&self, env: &mut Envelope) {
+        KernelState { progress: self.progress.clone(), dedup: self.dedup.clone() }.save(env);
+        self.jobs.save(env);
+        self.customers.save(env);
+        GameSave { seed: self.seed }.save(env);
+    }
+
+    /// The next crate id to hand out.
+    pub fn next_crate(&self) -> u64 {
+        self.next_crate
+    }
+
+    /// A restart from a save (#135): progress, jobs, customers and seed from `env`; notices, the
+    /// panel and anything queued are gone. Content and pads stay (same build, same planet).
+    pub fn restore(&mut self, env: &Envelope, next_crate: u64) -> Result<(), SaveError> {
+        let kernel = KernelState::load(env)?.ok_or_else(|| SaveError::Parse("no kernel section".into()))?;
+        self.jobs = Jobs::load(env)?.unwrap_or_default();
+        self.customers = Customers::load(env)?.unwrap_or_else(|| Customers::new(&self.customer_content, CUSTOMER_SEED));
+        self.seed = GameSave::load(env)?.map_or(NEW_GAME_SEED, |g| g.seed);
+        // The host's next events continue above the saved ones, so none is taken for a repeat.
+        self.seq = kernel.dedup.next_seq(HOST).saturating_sub(1);
+        self.picker = Picker::new(self.seed ^ self.seq);
+        self.progress = kernel.progress;
+        self.dedup = kernel.dedup;
+        self.next_crate = next_crate.max(self.next_crate_in_jobs());
+        self.notices = NoticeQueue::default();
+        self.queue.clear();
+        self.panel = None;
+        self.tracked = None;
+        self.briefings.clear();
+        self.save_wanted = false;
+        self.note("loaded the save".into());
+        self.refresh_offers();
+        Ok(())
+    }
+
+    /// One above every crate id the jobs know (a save without a world section).
+    fn next_crate_in_jobs(&self) -> u64 {
+        self.jobs.all().flat_map(|j| j.legs.iter().flat_map(|l| l.crates.keys().map(|c| c.0 + 1))).max().unwrap_or(1)
     }
 
     /// English text for a key (the first line of a pool); the key itself when it has none (#131
@@ -514,6 +583,8 @@ pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>
                     }
                 }
             };
+            // A job changed: the autosave writes soon (#135).
+            g.save_wanted |= !outcomes.is_empty();
             for o in outcomes {
                 carry_out(&mut commands, &table, g, &goods, o);
             }

@@ -233,7 +233,8 @@ pub fn ship_control(
 pub struct CameraEffects(pub flight_core::camera::CameraFx);
 
 /// F9 switches the camera effects (#148, #149). The felt acceleration is the change of velocity in
-/// ship space less gravity, zero on the ground; the walker in a flying cabin gets the cabin's share.
+/// ship space (no gravity term: a hover thrust that holds the ship feels nothing), zero on the
+/// ground; the walker in a flying cabin gets the cabin's share.
 pub fn camera_fx(
     time: Res<Time>,
     planet: Res<PlanetRes>,
@@ -253,7 +254,7 @@ pub fn camera_fx(
     let up = planet.up(pos.0);
     let local = rot.0.inverse() * av.0;
     let accel = match *prev_vel {
-        Some(p) if dt > 0.0 && !ship.grounded => rot.0.inverse() * ((lv.0 - p) / dt - flight_core::PlanetEnv::gravity_at(planet.as_ref(), pos.0)),
+        Some(p) if dt > 0.0 && !ship.grounded => rot.0.inverse() * ((lv.0 - p) / dt),
         _ => DVec3::ZERO,
     };
     *prev_vel = Some(lv.0);

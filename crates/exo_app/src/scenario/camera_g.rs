@@ -70,12 +70,36 @@ pub fn camera_g_steps(s: &mut Vec<Step>) {
         check(c, f.enabled, format!("F9 on again: {}", crate::view::camera_fx_text(f.enabled)));
         true
     }));
+    // Hover in the air, no input, assist on: the hover thrust holds the ship and feels nothing.
+    // Settle 3 s from the stop, then the 2 s window: the largest lag and G field of view.
+    s.push(wait(3.0));
+    s.push(Box::new(|w, c| {
+        c.v.insert("hover_lag", 0.0);
+        c.v.insert("hover_g", 0.0);
+        check(c, with_ship(w, |s| s.ctl.hover_assist), "hover: assist on, no input".into());
+        true
+    }));
+    s.push(Box::new(|w, c| {
+        let f = fx(w);
+        let (lag, g) = (c.v["hover_lag"].max(f.lag.length()), c.v["hover_g"].max(f.g_fov));
+        c.v.insert("hover_lag", lag);
+        c.v.insert("hover_g", g);
+        if c.t < 2.0 {
+            return false;
+        }
+        check(c, lag < 0.01, format!("hover 2 s in the air: largest lag {:.4} m (< 0.01)", lag));
+        check(c, g < 0.1, format!("hover 2 s in the air: largest G field of view {:.3} deg (< 0.1)", g));
+        check(c, above_ground(w) > 100.0, format!("hover at {:.0} m above ground", above_ground(w)));
+        true
+    }));
     s.push(hold_until("descend to 120 m above ground", &[KeyCode::ControlLeft, KeyCode::ShiftLeft], 180.0, |w| above_ground(w) < 120.0));
     s.push(land("land"));
     s.push(wait(3.0));
     s.push(Box::new(|w, c| {
-        let (f, landed) = (fx(w), with_ship(w, |s| s.grounded));
-        check(c, landed, "landed".into());
+        let (f, v, agl) = (fx(w), ship_vel(w).length(), above_ground(w));
+        let grounded = with_ship(w, |s| s.grounded);
+        // The `full` scenario's landed criterion (speed and height); the contact flag is shown as is.
+        check(c, v < 0.05 && agl < 1.0, format!("landed: {v:.3} m/s, {agl:.2} m above ground (contact flag {grounded})"));
         check(c, f.trauma < 0.05 && f.lag.length() < 0.01, format!("rest on the ground: trauma {:.3} (< 0.05), lag {:.4} m (< 0.01)", f.trauma, f.lag.length()));
         true
     }));

@@ -163,7 +163,8 @@ pub struct FxInput {
     pub approach: f64,
     /// The hull touches the ground.
     pub grounded: bool,
-    /// Felt acceleration in ship space (forward -Z, up +Y), gravity excluded, zero on the ground.
+    /// Felt acceleration in ship space (forward -Z, up +Y): the change of velocity per s, without a
+    /// gravity term, so a hover that holds the ship feels nothing. Zero on the ground.
     pub accel: DVec3,
     /// Thrust share 0..1 (the thrusters' ramp output).
     pub thrust: f64,

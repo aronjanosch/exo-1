@@ -2,11 +2,11 @@
 //! 400 m: D then W with boost (the peak stays under the boost cap), W+D then X (the heading holds
 //! while braking), H off (the ship falls with g), H on (it holds), B then W (NAV flies above the
 //! SCM cap, and bleeds back to it), PageDown five times (half the cap). Each line is a check with
-//! its numbers.
+//! its numbers. Comstab off: brake in space, turn on the spot, launch along the new nose.
 use crate::controls::Controls;
 use crate::scenario::{altitude, begin, check, end, keys, planet, put_at_seat, ship_e, ship_vel, sit, tap, teleport_ship, with_ship, wait, Ctx, Step};
 use crate::ship::{basis_for_up, FlightModel};
-use avian3d::prelude::Position;
+use avian3d::prelude::{AngularVelocity, Position, Rotation};
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use flight_core::PlanetEnv;
@@ -214,6 +214,80 @@ pub fn sc_linear_steps(s: &mut Vec<Step>) {
         let cap = cap_in_force(w);
         check(c, (limiter - 0.5).abs() < 1e-6, format!("PageDown x5: limiter {limiter:.2}"));
         check(c, (speed - cap).abs() < 2.0, format!("limiter 0.5: speed {speed:.1} m/s, cap {cap:.1} m/s"));
+        true
+    }));
+
+    // Playtest regression: coupled, comstab off, brake to rest, turn, then W. In vacuum the
+    // old heading cannot be confused with wind, gravity or a curved planetary horizon.
+    s.push(Box::new(|w, _| {
+        lift(w);
+        let e = ship_e(w);
+        let p = w.get::<Position>(e).unwrap().0;
+        let pl = planet(w);
+        let up = pl.up(p);
+        teleport_ship(w, pl.centre + up * (pl.radius + 8000.0), basis_for_up(up));
+        tap(w, KeyCode::KeyU);
+        true
+    }));
+    s.push(timed("comstab off: W in space, 5 s", vec![KeyCode::KeyW], 5.0, |_, _| {}));
+    s.push(Box::new(|w, c| {
+        let (coupled, comstab) = with_ship(w, |s| (s.sc.status.coupled, s.sc.status.comstab));
+        check(c, coupled && !comstab, "rest-heading regression: coupled, comstab off".into());
+        check(c, ship_vel(w).length() > 20.0, "rest-heading regression: moving before braking".into());
+        true
+    }));
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "comstab off: X to exact rest");
+            keys(w, &[KeyCode::KeyX], true);
+            return false;
+        }
+        let speed = ship_vel(w).length();
+        if speed == 0.0 || c.t >= 10.0 {
+            keys(w, &[KeyCode::KeyX], false);
+            check(c, speed == 0.0, format!("comstab off: X reaches exact rest ({speed:.12} m/s after {:.2} s)", c.t));
+            end(w, c, format!("{speed:.12} m/s"));
+            return true;
+        }
+        false
+    }));
+    let mut old_nose = DVec3::ZERO;
+    s.push(Box::new(move |w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "comstab off: turn on the spot, 2 s");
+            let e = ship_e(w);
+            old_nose = w.get::<Rotation>(e).unwrap().0 * DVec3::NEG_Z;
+            w.resource_mut::<Controls>().pad_axes.insert(GamepadAxis::RightStickX, 1.0);
+        }
+        if c.t >= 2.0 {
+            w.resource_mut::<Controls>().pad_axes.remove(&GamepadAxis::RightStickX);
+            let e = ship_e(w);
+            let nose = w.get::<Rotation>(e).unwrap().0 * DVec3::NEG_Z;
+            let turn = nose.angle_between(old_nose).to_degrees();
+            check(c, turn > 30.0, format!("comstab off: turned {turn:.2} deg on the spot"));
+            end(w, c, format!("{turn:.2} deg"));
+            return true;
+        }
+        false
+    }));
+    s.push(Box::new(|w, c| {
+        let e = ship_e(w);
+        let spin = w.get::<AngularVelocity>(e).unwrap().0.length();
+        if spin < 0.001 || c.t >= 3.0 {
+            check(c, spin < 0.001, format!("comstab off: rotation settled ({spin:.6} rad/s)"));
+            check(c, ship_vel(w).length() < 0.005, "comstab off: still at rest after turning".into());
+            return true;
+        }
+        false
+    }));
+    s.push(timed("comstab off: W along the new nose, 1 s", vec![KeyCode::KeyW], 1.0, |_, _| {}));
+    s.push(Box::new(|w, c| {
+        let e = ship_e(w);
+        let nose = w.get::<Rotation>(e).unwrap().0 * DVec3::NEG_Z;
+        let velocity = ship_vel(w);
+        let angle = if velocity.length() > 0.0 { velocity.angle_between(nose).to_degrees() } else { 180.0 };
+        check(c, velocity.dot(nose) > 20.0 && angle < 0.5,
+            format!("comstab off: launch at {:.2} m/s, {angle:.4} deg from the new nose", velocity.length()));
         true
     }));
 }

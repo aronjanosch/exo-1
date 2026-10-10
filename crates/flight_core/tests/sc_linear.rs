@@ -74,6 +74,7 @@ fn brake_along_the_velocity_keeps_the_heading_and_stops() {
     println!("B2: heading turn until 1 m/s {max_turn:.4} deg, stopped after {stopped_at:?} s");
     assert!(max_turn < 0.5, "heading turned {max_turn:.3} deg");
     assert!(stopped_at.is_some(), "the brake stops the ship");
+    assert_eq!(body.lin_vel, DVec3::ZERO, "finished braking leaves no residual velocity");
 }
 
 #[test]
@@ -89,6 +90,7 @@ fn brake_holds_the_height_on_the_air_planet() {
     }
     println!("B2 air: speed after brake {:.2} m/s, worst height change {worst:.3} m", body.lin_vel.length());
     assert!(worst < 1.0, "height moved {worst:.3} m under the brake");
+    assert_eq!(body.lin_vel, DVec3::ZERO, "finished braking in air leaves no residual velocity");
 }
 
 #[test]
@@ -249,6 +251,70 @@ fn comstab_off_slips_wider_in_a_yaw() {
     let (on, off) = (yaw_slip(3.0, true), yaw_slip(3.0, false));
     println!("comstab: slip at the end of a 90 deg yaw, lag 0.6 s: {on_default:.2} on, {off_default:.2} off; lag 3 s: {on:.2} on, {off:.2} off");
     assert!(off > on, "lag 3 s: off {off:.2} deg not above on {on:.2} deg");
+}
+
+#[test]
+fn turning_at_rest_launches_along_the_nose_with_comstab_on_or_off() {
+    let env = Space::default();
+    for comstab in [true, false] {
+        for speed in [0.0, 0.004] {
+            let mut ship = ScShip::new(tuning());
+            ship.modes.comstab = comstab;
+            let mut body = body_at(DVec3::ZERO);
+            body.lin_vel = DVec3::NEG_Z * speed;
+            // Turn on the spot without thrust, including a nonzero speed rounded to HUD 0.00.
+            for i in 0..120 {
+                body.rot = DQuat::from_rotation_y(std::f64::consts::FRAC_PI_2 * (i + 1) as f64 / 120.0);
+                fly(&mut ship, &mut body, &input(DVec3::ZERO, false, false), &ModeCmds::default(), &env, DT);
+            }
+            let nose = body.rot * DVec3::NEG_Z;
+            let start = body.pos;
+            fly(&mut ship, &mut body, &thrust(DVec3::NEG_Z), &ModeCmds::default(), &env, 1.0);
+            let across = body.lin_vel - nose * body.lin_vel.dot(nose);
+            let travel = body.pos - start;
+            let across_travel = travel - nose * travel.dot(nose);
+            assert!(body.lin_vel.dot(nose) > 20.0, "launch accelerates along the nose");
+            assert!(across.length() < 0.001 && across_travel.length() < 0.001,
+                "comstab {comstab}, initial speed {speed}: velocity {across:?}, travel {across_travel:?} across the nose");
+        }
+    }
+}
+
+#[test]
+fn comstab_off_after_braking_and_turning_does_not_remember_the_old_heading() {
+    let env = Space::default();
+    let mut ship = ScShip::new(tuning());
+    ship.modes.comstab = false;
+    let mut body = body_at(DVec3::ZERO);
+    fly(&mut ship, &mut body, &thrust(DVec3::NEG_Z), &ModeCmds::default(), &env, 5.0);
+    for _ in 0..600 {
+        step(&mut ship, &mut body, &input(DVec3::ZERO, false, true), &ModeCmds::default(), &env);
+        if body.lin_vel == DVec3::ZERO {
+            break;
+        }
+    }
+    assert_eq!(body.lin_vel, DVec3::ZERO, "braking reaches exact rest within 10 s");
+    for i in 0..120 {
+        body.rot = DQuat::from_rotation_y(std::f64::consts::FRAC_PI_2 * (i + 1) as f64 / 120.0);
+        fly(&mut ship, &mut body, &input(DVec3::ZERO, false, false), &ModeCmds::default(), &env, DT);
+    }
+    let nose = body.rot * DVec3::NEG_Z;
+    fly(&mut ship, &mut body, &thrust(DVec3::NEG_Z), &ModeCmds::default(), &env, 1.0);
+    assert!(body.lin_vel.dot(nose) > 20.0);
+    assert!(body.lin_vel.angle_between(nose).to_degrees() < 0.01, "velocity {:?} follows the nose {nose:?}", body.lin_vel);
+}
+
+#[test]
+fn slow_decoupled_motion_is_not_snapped_to_rest_without_braking() {
+    let env = Space::default();
+    let mut ship = ScShip::new(tuning());
+    ship.modes.coupled = false;
+    ship.modes.coupling = 0.0;
+    let mut body = body_at(DVec3::ZERO);
+    body.lin_vel = DVec3::NEG_Z * 0.004;
+    let velocity = body.lin_vel;
+    fly(&mut ship, &mut body, &input(DVec3::ZERO, false, false), &ModeCmds::default(), &env, 2.0);
+    assert_eq!(body.lin_vel, velocity, "slow unbraked motion stays physical");
 }
 
 #[test]

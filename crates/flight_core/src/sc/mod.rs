@@ -254,7 +254,13 @@ impl ScShip {
 
         let (mass, inertia) = (self.mass(), self.inertia());
         let linear_world = f.rot * shaped.linear;
-        let v = f.v + (linear_world + f.gravity + air.accel + air.push) * dt;
+        let mut v = f.v + (linear_world + f.gravity + air.accel + air.push) * dt;
+        // Finish the brake at real rest rather than preserving sub-display velocity forever.
+        // Reset the heading on this step too, before the pilot can launch again.
+        if braking && v.length_squared() < linear::STOP_SPEED * linear::STOP_SPEED {
+            v = DVec3::ZERO;
+            self.linear.aim = f.rot;
+        }
         let angular_world = f.rot * (shaped.angular + air.angular + air.angular_hold);
         let w = body.ang_vel + angular_world * dt;
         let torque_local = DVec3::new(shaped.angular.x * inertia.pitch, shaped.angular.y * inertia.yaw, shaped.angular.z * inertia.roll);

@@ -300,6 +300,6 @@
   "notice.reward.xp": ["{n} {track}", "{track}: {n}", "{track} +{n}"],
   "notice.unlock": ["Unlocked: {name}", "New thing: {name}", "You own {name} now."],
   "notice.rank": ["{track}: level {level}!", "Level up! {track} is now level {level}.", "{track} reached level {level}."],
-  "notice.refused.too_many": ["Two jobs at a time is plenty.", "Your hands are full of jobs.", "One at a time is the rule."],
+  "notice.refused.too_many": ["Two jobs at a time is plenty.", "Your hands are full of jobs.", "Finish a job before you hoard another."],
   "notice.refused.not_available": ["Not yet. Come back when you are someone.", "They do not know you well enough.", "You are not ready. Yet."]
 }

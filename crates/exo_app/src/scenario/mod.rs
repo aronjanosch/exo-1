@@ -32,6 +32,7 @@ mod landing;
 mod models;
 mod net;
 mod reload;
+mod sc_hud;
 mod sc_switch;
 mod space;
 mod swap;
@@ -597,6 +598,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "thruster-audio" => thruster_audio::thruster_audio_steps(&mut s),
         // Round 5: F7 switches to the SC flight model, which lifts off, hovers and flies.
         "sc-switch" => sc_switch::sc_switch_steps(&mut s),
+        // #197: the flight panel: badges, the coupling blend, the toast, both models.
+        "sc-hud" => sc_hud::sc_hud_steps(&mut s),
         // #148, #149: the camera shake, spring lag and G field of view, and F9 (through the bindings).
         "camera-g" => camera_g::camera_g_steps(&mut s),
         // Spike 13: manoeuvres with the axis flight model, measured as a table.

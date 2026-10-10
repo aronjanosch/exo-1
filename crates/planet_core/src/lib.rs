@@ -1,16 +1,21 @@
 //! planet_core: plain Rust, no engine types. Recipe, bake, height function, chunk build, scatter, sites, statistics.
+pub mod ceilings;
 pub mod chunk;
+pub mod coarse;
 pub mod drainage;
+pub mod grid;
 pub mod landform;
 pub mod look;
 pub mod math;
 pub mod place;
 pub mod planet;
 pub mod recipe;
+pub mod rivers;
 pub mod scatter;
 pub mod site;
 pub use landform::PlacedStamp;
 pub use look::{Atlas, AtlasLayer, Spot, TimeShot, Viewpoint, Viewpoints};
+pub use ceilings::Ceilings;
 pub use chunk::{ChunkOut, GRID, M};
 pub use place::{PadAt, PadSpec, Place};
 pub use site::{Piece, Site};

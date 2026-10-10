@@ -265,12 +265,12 @@ impl Planet {
         }
         // Rivers on the water layer, thicker and darker with the catchment; the lakes' deepest
         // points as dots.
-        for rv in &self.rivers {
+        for rv in &self.coarse.rivers {
             let k = (rv.catchment_km2.max(1e-3).log10() / 2.0).clamp(0.0, 1.0);
             let c = lerp3([0.45, 0.85, 1.0], [0.05, 0.30, 0.90], k as f32);
             mark_n(&mut water, w, h, rv.dir, to_u8(c), if k > 0.6 { 1 } else { 0 });
         }
-        for l in &self.lakes {
+        for l in &self.coarse.lakes {
             mark_n(&mut water, w, h, l.deepest, [255, 255, 255], 1);
         }
         // Landforms on the height layer: red, the signature yellow.
@@ -356,15 +356,15 @@ impl Planet {
                 let downstream = |i: usize, steps: usize| {
                     let mut at = i;
                     for _ in 0..steps {
-                        match self.rivers[at].next {
+                        match self.coarse.rivers[at].next {
                             Mouth::River(j) => at = j as usize,
                             _ => break,
                         }
                     }
-                    self.rivers[at].dir
+                    self.coarse.rivers[at].dir
                 };
                 let (i, rv) = self
-                    .rivers
+                    .coarse.rivers
                     .iter()
                     .enumerate()
                     .filter(|(i, rv)| rv.bed_m - self.sea > 8.0 && downstream(*i, 6) != rv.dir)
@@ -384,7 +384,7 @@ impl Planet {
                 Some(Spot { dir: d, facing: (f - d * f.dot(d)).normalized() })
             }
             "lake" => {
-                let l = self.lakes.iter().max_by(|a, b| a.area_m2.total_cmp(&b.area_m2))?;
+                let l = self.coarse.lakes.iter().max_by(|a, b| a.area_m2.total_cmp(&b.area_m2))?;
                 let c = l.deepest;
                 let (e, n) = tangent_frame(c);
                 // The nearest dry shore over eight headings, a metre above the level.

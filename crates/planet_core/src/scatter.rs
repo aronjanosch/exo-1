@@ -218,8 +218,8 @@ impl Planet {
                 let dir = cube_to_sphere(face, a, b);
                 let p = self.p32(dir);
                 // Cheap part first: weights from the biome at the point and the masks.
-                let fl = self.macro_lookup(face, a.clamp(-1.0, 1.0), b.clamp(-1.0, 1.0));
-                let (hh, lf) = (self.height_ab(face, a.clamp(-1.0, 1.0), b.clamp(-1.0, 1.0), dir).0, self.stamp_height(dir).1);
+                let (hh, fl) = self.height_ab(face, a.clamp(-1.0, 1.0), b.clamp(-1.0, 1.0), dir);
+                let lf = self.stamp_height(dir).1;
                 let biome = self.biome_for(hh - self.sea, &fl, lf);
                 let m = self.mults(biome);
                 let mut total = 0.0;

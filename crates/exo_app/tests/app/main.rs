@@ -34,6 +34,7 @@ mod scenario_interact;
 mod scenario_licence;
 mod scenario_look;
 mod scenario_map;
+mod scenario_radius;
 mod scenario_reload;
 mod scenario_savefile;
 mod scenario_sc_air;

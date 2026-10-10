@@ -27,9 +27,27 @@ pub enum Back {
     Paused,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SettingsTab {
+    #[default]
+    Sound,
+    Display,
+    Controls,
+    Keybinds,
+}
+
+impl SettingsTab {
+    pub const ALL: [Self; 4] = [Self::Sound, Self::Display, Self::Controls, Self::Keybinds];
+
+    fn label(self) -> &'static str {
+        match self { Self::Sound => "Sound", Self::Display => "Display", Self::Controls => "Controls", Self::Keybinds => "Keybinds" }
+    }
+}
+
 #[derive(Resource, Debug)]
 pub struct Menu {
     pub screen: Screen,
+    pub settings_tab: SettingsTab,
     pub address: String,
     pub slot: u32,
     /// Waiting for a key for this slot.
@@ -39,7 +57,7 @@ pub struct Menu {
 
 impl Default for Menu {
     fn default() -> Self {
-        Menu { screen: Screen::Main, address: "127.0.0.1:17441".into(), slot: 2, rebinding: None, message: None }
+        Menu { screen: Screen::Main, settings_tab: SettingsTab::default(), address: "127.0.0.1:17441".into(), slot: 2, rebinding: None, message: None }
     }
 }
 
@@ -56,6 +74,7 @@ enum Action {
     Join,
     Slot(i32),
     Settings,
+    SettingsTab(SettingsTab),
     Back,
     Resume,
     Quit,
@@ -214,7 +233,7 @@ fn label(c: &mut ChildSpawnerCommands, text: impl Into<String>, size: f32) {
     c.spawn((Text::new(text), TextFont { font_size: FontSize::Px(size), ..default() }, TextColor(Color::srgb(0.9, 0.93, 1.0))));
 }
 
-fn button(c: &mut ChildSpawnerCommands, text: impl Into<String>, action: Action, width: f32) {
+fn button(c: &mut ChildSpawnerCommands, text: impl Into<String>, action: Action, width: f32) -> Entity {
     c.spawn((
         Button,
         MenuButton(action),
@@ -222,7 +241,7 @@ fn button(c: &mut ChildSpawnerCommands, text: impl Into<String>, action: Action,
         BorderColor::all(Color::srgba(0.8, 0.9, 1.0, 0.5)),
         BackgroundColor(Color::srgba(0.15, 0.2, 0.35, 0.9)),
     ))
-    .with_children(|b| label(b, text, if matches!(action, Action::Rebind(_)) { 14.0 } else { 18.0 }));
+    .with_children(|b| label(b, text, if matches!(action, Action::Rebind(_)) { 14.0 } else { 18.0 })).id()
 }
 
 /// A row: name, value, then -/+ buttons.
@@ -299,24 +318,47 @@ fn rebuild(mut commands: Commands, menu: Res<Menu>, settings: Res<Settings>, bin
             }
             Screen::Settings(_) => {
                 label(c, "Settings", 32.0);
-                label(c, "First-person view (on foot, also inside a ship)", 16.0);
-                slider(c, "Mouse sensitivity", FirstPersonSetting::Mouse, &settings);
-                label(c, "0.10 - 10.00   |   m_yaw / m_pitch: 0.022 degrees per count", 14.0);
-                slider(c, "Vertical FOV", FirstPersonSetting::Fov, &settings);
-                c.spawn((SettingsText::HorizontalFov, Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }));
-                label(c, "40.0 - 90.0 degrees   |   Click a number to type; Enter confirms, Escape cancels", 14.0);
-                stepper(c, "Camera shake", format!("{:.0} %", settings.camera_shake * 100.0), Action::CameraShake(-0.1), Action::CameraShake(0.1));
-                stepper(c, "Volume", format!("{:.0} %", settings.volume * 100.0), Action::Volume(-0.1), Action::Volume(0.1));
-                c.spawn((Button, MenuButton(Action::Sound), Node { width: px(260), padding: UiRect::all(px(6)), justify_content: JustifyContent::Center, ..default() }, BackgroundColor(Color::srgba(0.15, 0.2, 0.35, 0.9)))).with_children(|b| {
-                    b.spawn((SettingsText::Sound, Text::new(""), TextFont { font_size: FontSize::Px(18.0), ..default() }));
+                c.spawn(Node { column_gap: px(8), ..default() }).with_children(|r| {
+                    for tab in SettingsTab::ALL {
+                        let e = button(r, tab.label(), Action::SettingsTab(tab), 140.0);
+                        if menu.settings_tab == tab {
+                            r.commands().entity(e).insert((BackgroundColor(Color::srgb(0.25, 0.4, 0.65)), BorderColor::all(Color::srgb(0.6, 0.8, 1.0))));
+                        }
+                    }
                 });
-                label(c, if menu.rebinding.is_some() { "Press a key (Escape cancels)" } else { "Keys: click one to rebind" }, 16.0);
-                c.spawn(Node { flex_direction: FlexDirection::Row, flex_wrap: FlexWrap::Wrap, width: px(900), column_gap: px(6), row_gap: px(4), justify_content: JustifyContent::Center, ..default() }).with_children(|g| {
-                    let mut b = bindings.clone();
-                    for slot in Slot::all() {
-                        let keys: Vec<String> = b.slot_mut(slot).iter().filter(|i| matches!(i, crate::controls::Input::Key(_))).map(|i| input_name(*i)).collect();
-                        let text = if menu.rebinding == Some(slot) { format!("{}: ...", slot.label()) } else { format!("{}: {}", slot.label(), keys.first().cloned().unwrap_or_else(|| "-".into())) };
-                        button(g, text, Action::Rebind(slot), 210.0);
+                // Reserve enough room for Keybinds so the tab bar and Back do not jump on switching.
+                c.spawn(Node { width: px(1000), min_height: px(380), padding: UiRect::top(px(12)), flex_direction: FlexDirection::Column, align_items: AlignItems::Center, row_gap: px(10), ..default() }).with_children(|page| {
+                    match menu.settings_tab {
+                        SettingsTab::Sound => {
+                            stepper(page, "Volume", format!("{:.0} %", settings.volume * 100.0), Action::Volume(-0.1), Action::Volume(0.1));
+                            page.spawn((Button, MenuButton(Action::Sound), Node { width: px(260), padding: UiRect::all(px(6)), justify_content: JustifyContent::Center, ..default() }, BackgroundColor(Color::srgba(0.15, 0.2, 0.35, 0.9)))).with_children(|b| {
+                                b.spawn((SettingsText::Sound, Text::new(""), TextFont { font_size: FontSize::Px(18.0), ..default() }));
+                            });
+                        }
+                        SettingsTab::Display => {
+                            label(page, "First-person view (on foot, also inside a ship)", 16.0);
+                            slider(page, "Vertical FOV", FirstPersonSetting::Fov, &settings);
+                            page.spawn((SettingsText::HorizontalFov, Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }));
+                            label(page, "40.0 - 90.0 degrees   |   Click the number to type; Enter confirms, Escape cancels", 14.0);
+                            stepper(page, "Camera shake", format!("{:.0} %", settings.camera_shake * 100.0), Action::CameraShake(-0.1), Action::CameraShake(0.1));
+                        }
+                        SettingsTab::Controls => {
+                            label(page, "First-person view (on foot, also inside a ship)", 16.0);
+                            slider(page, "Mouse sensitivity", FirstPersonSetting::Mouse, &settings);
+                            label(page, "0.10 - 10.00   |   m_yaw / m_pitch: 0.022 degrees per count", 14.0);
+                            label(page, "Click the number to type; Enter confirms, Escape cancels", 14.0);
+                        }
+                        SettingsTab::Keybinds => {
+                            label(page, if menu.rebinding.is_some() { "Press a key (Escape cancels)" } else { "Keys: click one to rebind" }, 16.0);
+                            page.spawn(Node { flex_direction: FlexDirection::Row, flex_wrap: FlexWrap::Wrap, width: px(900), column_gap: px(6), row_gap: px(4), justify_content: JustifyContent::Center, ..default() }).with_children(|g| {
+                                let mut b = bindings.clone();
+                                for slot in Slot::all() {
+                                    let keys: Vec<String> = b.slot_mut(slot).iter().filter(|i| matches!(i, crate::controls::Input::Key(_))).map(|i| input_name(*i)).collect();
+                                    let text = if menu.rebinding == Some(slot) { format!("{}: ...", slot.label()) } else { format!("{}: {}", slot.label(), keys.first().cloned().unwrap_or_else(|| "-".into())) };
+                                    button(g, text, Action::Rebind(slot), 210.0);
+                                }
+                            });
+                        }
                     }
                 });
                 button(c, "Back", Action::Back, 260.0);
@@ -366,7 +408,20 @@ fn act(w: &mut World, a: Action) {
             let mut m = w.resource_mut::<Menu>();
             m.slot = (m.slot as i32 + d).clamp(2, 8) as u32;
         }
-        Action::Settings => w.resource_mut::<Menu>().screen = Screen::Settings(if screen == Screen::Paused { Back::Paused } else { Back::Main }),
+        Action::Settings => {
+            let mut m = w.resource_mut::<Menu>();
+            m.screen = Screen::Settings(if screen == Screen::Paused { Back::Paused } else { Back::Main });
+            m.settings_tab = SettingsTab::Sound;
+        }
+        Action::SettingsTab(tab) => {
+            if w.resource::<Menu>().settings_tab != tab {
+                w.resource_mut::<SettingsInput>().editing = None;
+                let mut m = w.resource_mut::<Menu>();
+                m.settings_tab = tab;
+                m.rebinding = None;
+                m.message = None;
+            }
+        }
         Action::Back => {
             let mut m = w.resource_mut::<Menu>();
             m.rebinding = None;
@@ -596,9 +651,18 @@ mod tests {
     }
 
     fn click_number(app: &mut App, setting: FirstPersonSetting) {
+        click_tab(app, match setting { FirstPersonSetting::Mouse => SettingsTab::Controls, FirstPersonSetting::Fov => SettingsTab::Display });
+        click_action(app, Action::Edit(setting));
+    }
+
+    fn click_tab(app: &mut App, tab: SettingsTab) {
+        click_action(app, Action::SettingsTab(tab));
+    }
+
+    fn click_action(app: &mut App, action: Action) {
         let mut q = app.world_mut().query::<(&MenuButton, &mut Interaction)>();
         for (b, mut i) in q.iter_mut(app.world_mut()) {
-            if b.0 == Action::Edit(setting) { *i = Interaction::Pressed; }
+            if b.0 == action { *i = Interaction::Pressed; }
         }
         app.update();
     }
@@ -652,6 +716,7 @@ mod tests {
     #[test]
     fn slider_drags_live_without_rebuilding_and_saves_on_release() {
         let mut app = settings_app("slider");
+        click_tab(&mut app, SettingsTab::Display);
         let mut q = app.world_mut().query::<(Entity, &SettingsSlider)>();
         let e = q.iter(app.world()).find(|(_, s)| s.0 == FirstPersonSetting::Fov).unwrap().0;
         app.world_mut().entity_mut(e).insert((Interaction::Pressed, RelativeCursorPosition { normalized: Some(Vec2::new(0.0, 0.0)), cursor_over: true }));
@@ -668,6 +733,53 @@ mod tests {
         app.update();
         assert!(app.world().resource::<SettingsInput>().dragging.is_none());
         assert_eq!(crate::settings::load(&app.world().resource::<SettingsDir>().0).0.fov_deg, 90.0);
+    }
+
+    #[test]
+    fn tabs_show_their_category_and_switching_cancels_hidden_input() {
+        let mut app = settings_app("tabs");
+        let settings = app.world().resource::<Settings>().clone();
+        let buttons = |app: &mut App| -> Vec<Action> {
+            app.world_mut().query::<&MenuButton>().iter(app.world()).map(|b| b.0).collect()
+        };
+        assert_eq!(app.world().resource::<Menu>().settings_tab, SettingsTab::Sound);
+        for tab in SettingsTab::ALL {
+            click_tab(&mut app, tab);
+            let actions = buttons(&mut app);
+            assert_eq!(actions.iter().filter(|a| matches!(a, Action::SettingsTab(_))).count(), 4);
+            assert_eq!(actions.contains(&Action::Sound), tab == SettingsTab::Sound);
+            assert_eq!(actions.contains(&Action::Volume(0.1)), tab == SettingsTab::Sound);
+            assert_eq!(actions.contains(&Action::CameraShake(0.1)), tab == SettingsTab::Display);
+            assert_eq!(actions.contains(&Action::Edit(FirstPersonSetting::Fov)), tab == SettingsTab::Display);
+            assert_eq!(actions.contains(&Action::Edit(FirstPersonSetting::Mouse)), tab == SettingsTab::Controls);
+            assert_eq!(actions.iter().filter(|a| matches!(a, Action::Rebind(_))).count(), if tab == SettingsTab::Keybinds { Slot::all().len() } else { 0 });
+            let hfov_count = app.world_mut().query::<&SettingsText>().iter(app.world()).filter(|t| matches!(t, SettingsText::HorizontalFov)).count();
+            assert_eq!(hfov_count, usize::from(tab == SettingsTab::Display));
+        }
+        let slot = Slot::all()[0];
+        let before = app.world().resource::<Bindings>().clone();
+        click_action(&mut app, Action::Rebind(slot));
+        assert_eq!(app.world().resource::<Menu>().rebinding, Some(slot));
+        click_tab(&mut app, SettingsTab::Controls);
+        assert!(app.world().resource::<Menu>().rebinding.is_none());
+        press_key(&mut app, KeyCode::KeyB);
+        assert_eq!(*app.world().resource::<Bindings>(), before, "a hidden rebind must not consume keys in another tab");
+        click_number(&mut app, FirstPersonSetting::Mouse);
+        type_text(&mut app, "2.35");
+        click_tab(&mut app, SettingsTab::Controls);
+        assert!(app.world().resource::<SettingsInput>().editing.is_some(), "clicking the active tab leaves the edit alone");
+        click_tab(&mut app, SettingsTab::Display);
+        assert!(app.world().resource::<SettingsInput>().editing.is_none());
+        assert_eq!(*app.world().resource::<Settings>(), settings, "tab navigation does not apply unconfirmed edits or change settings");
+        click_action(&mut app, Action::Back);
+        assert_eq!(app.world().resource::<Menu>().screen, Screen::Main);
+        app.world_mut().resource_mut::<Menu>().screen = Screen::Paused;
+        app.update();
+        click_action(&mut app, Action::Settings);
+        assert_eq!(app.world().resource::<Menu>().settings_tab, SettingsTab::Sound);
+        click_tab(&mut app, SettingsTab::Keybinds);
+        click_action(&mut app, Action::Back);
+        assert_eq!(app.world().resource::<Menu>().screen, Screen::Paused);
     }
 
     #[test]

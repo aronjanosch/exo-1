@@ -209,6 +209,9 @@ pub struct Planet {
     bands: Vec<BandRt>,
     pub(crate) scatter: crate::scatter::ScatterRt,
     pub(crate) stamps: Vec<StampRt>,
+    /// The stamps by place (their reach) and the sites by place (their edits' reach).
+    pub(crate) stamp_grid: crate::grid::Grid,
+    pub(crate) site_grid: crate::grid::Grid,
     landform_tries: u32,
     placement_error: Option<String>,
     /// The coarse global layer (#177): the sea, the drainage's cut and water, rivers and lakes.
@@ -268,6 +271,8 @@ impl Planet {
             bands,
             scatter,
             stamps: Vec::new(),
+            stamp_grid: crate::grid::Grid::new(1000.0, radius),
+            site_grid: crate::grid::Grid::new(1000.0, radius),
             landform_tries: 0,
             placement_error: None,
             coarse: Coarse::default(),
@@ -282,6 +287,7 @@ impl Planet {
         };
         let (stamps, tries, ok) = p.place_landforms();
         p.stamps = stamps;
+        p.index_stamps();
         p.landform_tries = tries;
         p.placement_error = ok.err();
         p
@@ -300,25 +306,52 @@ impl Planet {
         }
     }
 
-    /// Calculate the count for a kind by density or static count.
-    /// For static counts, uses the midpoint of the range.
-    /// For density counts, scales the midpoint of the density range by the surface area.
-    pub(crate) fn count_by_density(&self, count: Option<[u32; 2]>, per_100_km2: Option<[f64; 2]>) -> Result<u32, String> {
-        match (count, per_100_km2) {
-            (Some([c0, c1]), None) => {
-                // Static count: use midpoint to get a stable value
-                Ok(c0 + (c1 - c0) / 2)
-            }
-            (None, Some([d0, d1])) => {
-                let surface_area_m2 = 4.0 * std::f64::consts::PI * self.radius * self.radius;
-                let count_per_100km2 = d0 + (d1 - d0) * 0.5;
-                let expected_count = (surface_area_m2 / 1e8) * count_per_100km2;
-                // At least 1 if the density says there should be any
-                let min = if count_per_100km2 > 0.0 { 1 } else { 0 };
-                Ok(expected_count.round().max(min as f64) as u32)
-            }
-            _ => Err("kind must have either count or per_100_km2".into()),
+    /// The stamps into their grid: cells about twice the median reach.
+    pub(crate) fn index_stamps(&mut self) {
+        let mut reaches: Vec<f64> = self.stamps.iter().map(|s| s.reach_m).collect();
+        reaches.sort_by(f64::total_cmp);
+        let cell = reaches.get(reaches.len() / 2).map_or(1000.0, |m| (2.0 * m).max(500.0));
+        let mut g = crate::grid::Grid::new(cell, self.radius);
+        // Plus the widest site footprint: the sites keep that far from a stamp's reach.
+        let margin = self.recipe.sites.kinds.iter().map(|k| k.footprint_m).fold(0.0, f64::max);
+        for (i, s) in self.stamps.iter().enumerate() {
+            g.insert_reach(i as u32, s.c, s.reach_m + margin);
         }
+        self.stamp_grid = g;
+    }
+
+    /// The sites into their grid (after the placement).
+    pub(crate) fn index_sites(&mut self) {
+        let mut reaches: Vec<f64> = self.sites.iter().map(|s| s.reach_m).collect();
+        reaches.sort_by(f64::total_cmp);
+        let cell = reaches.get(reaches.len() / 2).map_or(1000.0, |m| (2.0 * m).max(200.0));
+        let mut g = crate::grid::Grid::new(cell, self.radius);
+        for (i, s) in self.sites.iter().enumerate() {
+            g.insert_reach(i as u32, s.dir, s.reach_m);
+        }
+        self.site_grid = g;
+    }
+
+    /// How many of a kind a planet of this radius holds, as (at least, at most): its `count`, or
+    /// its `per_100_km2` frequency times the surface (a kind with a frequency above 0 gets one at
+    /// least). A recipe calibrated at 5 km gives the same counts there.
+    pub(crate) fn count_range(&self, count: Option<[u32; 2]>, per_100_km2: Option<[f64; 2]>) -> (u32, u32) {
+        match (count, per_100_km2) {
+            (Some([c0, c1]), _) => (c0, c1),
+            (None, Some([d0, d1])) => {
+                let per = 4.0 * std::f64::consts::PI * self.radius * self.radius / 1e8;
+                let lo = (per * d0).round() as u32;
+                let lo = if d0 > 0.0 { lo.max(1) } else { lo };
+                (lo, ((per * d1).round() as u32).max(lo))
+            }
+            (None, None) => (0, 0),
+        }
+    }
+
+    /// A count from the range, by a uniform `u` in [0, 1).
+    pub(crate) fn count_pick(&self, count: Option<[u32; 2]>, per_100_km2: Option<[f64; 2]>, u: f64) -> u32 {
+        let (lo, hi) = self.count_range(count, per_100_km2);
+        (lo + ((hi - lo + 1) as f64 * u) as u32).min(hi)
     }
 
     #[inline(always)]
@@ -330,7 +363,8 @@ impl Planet {
     pub fn stamp_height(&self, dir: V3) -> (f64, Option<f64>) {
         let mut h = 0.0;
         let mut lf = None;
-        for s in &self.stamps {
+        for &i in self.stamp_grid.at(dir) {
+            let s = &self.stamps[i as usize];
             let (dh, w) = s.height(dir, self.radius);
             h += dh;
             if w > 0.5 && s.landform.is_some() {
@@ -640,6 +674,7 @@ impl Planet {
         let t0 = Instant::now();
         let (sites, misses) = self.place_sites_v2();
         self.sites = sites;
+        self.index_sites();
         st.quota_misses.extend(misses);
         if full_stats {
             self.site_stats(&mut st);
@@ -1114,5 +1149,60 @@ impl Planet {
         st.site_min_pair_m = min_pair;
         st.site_mean_nn_m = sum / n as f64;
         st.site_max_nn_m = max;
+    }
+}
+
+#[cfg(test)]
+mod grid_tests {
+    use super::*;
+
+    /// The grids give the same height as a scan over every stamp and every site.
+    #[test]
+    fn the_grids_give_the_linear_scan_s_heights() {
+        let text = include_str!("../../../content/planet/hearth.json").replace("\"resolution\": 512", "\"resolution\": 64");
+        let mut p = Planet::new(Recipe::for_planet(&text, 1337, 8000.0).unwrap());
+        p.bake_with(0, None, false);
+        assert!(p.stamps.len() > 5 && p.sites.len() > 20);
+        let mut rng = 0x9E3779B97F4A7C15u64;
+        let mut next = || {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            (rng >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let mut near_site = 0;
+        for k in 0..4000 {
+            // Half the points at a stamp or a site, half anywhere.
+            let d = match k % 4 {
+                0 => p.stamps[(next() * p.stamps.len() as f64) as usize].c,
+                1 => p.sites[(next() * p.sites.len() as f64) as usize].dir,
+                _ => {
+                    let z = next() * 2.0 - 1.0;
+                    let phi = next() * std::f64::consts::TAU;
+                    let r = (1.0 - z * z).sqrt();
+                    v3(r * phi.cos(), z, r * phi.sin())
+                }
+            };
+            let d = if k % 4 < 2 { crate::look::walk(d, crate::look::tangent_frame(d).0, next() * 300.0, p.radius) } else { d };
+            let (mut h, mut lf) = (0.0, None);
+            for s in &p.stamps {
+                let (dh, w) = s.height(d, p.radius);
+                h += dh;
+                if w > 0.5 && s.landform.is_some() {
+                    lf = s.landform;
+                }
+            }
+            assert_eq!((h, lf), p.stamp_height(d), "stamps at {d:?}");
+            // The sites' edits: the same loop over every site, without the grid.
+            let mut linear = 5.0;
+            for s in &p.sites {
+                if d.dot(s.dir) > s.cos_reach {
+                    near_site += 1;
+                }
+                linear = p.apply_edits_one(s, d, linear);
+            }
+            assert_eq!(linear, p.apply_edits(d, 5.0), "site edits at {d:?}");
+        }
+        assert!(near_site > 30, "the test reaches sites: {near_site}");
     }
 }

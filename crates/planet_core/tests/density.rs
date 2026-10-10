@@ -1,130 +1,66 @@
-//! #177 (spike 14): density-based placement of landforms and sites.
-//! Tests: count scales with radius, separation rules hold, and bake time is reasonable.
+//! #177 (spike 14): landforms and sites by density rules. The count grows with the surface at a
+//! fixed rule, no two of a kind stand closer than their separation, and the bake stays small.
 use planet_core::*;
 use std::time::Instant;
 
 const HEARTH: &str = include_str!("../../../content/planet/hearth.json");
 
-fn recipe(text: &str, seed: i32, radius: f64) -> Recipe {
-    Recipe::for_planet(&text.replace("\"resolution\": 512", "\"resolution\": 128"), seed, radius).unwrap()
-}
-
-fn baked(text: &str, seed: i32, radius: f64) -> (Planet, std::time::Duration) {
-    let start = Instant::now();
-    let mut p = Planet::new(recipe(text, seed, radius));
-    let _ = p.bake_with(0, None, false);
-    (p, start.elapsed())
+fn baked(radius: f64) -> (Planet, f64) {
+    let text = HEARTH.replace("\"resolution\": 512", "\"resolution\": 128");
+    let t = Instant::now();
+    let mut p = Planet::new(Recipe::for_planet(&text, 1337, radius).unwrap());
+    p.bake_with(0, None, false);
+    (p, t.elapsed().as_secs_f64())
 }
 
 #[test]
-fn count_scales_with_radius_5km_vs_10km() {
-    // Test that counts scale with surface area at different radii.
-    // Ratio of areas = (r2/r1)^2
-
-    let (p5km, t5) = baked(HEARTH, 1337, 5000.0);
-    let (p10km, t10) = baked(HEARTH, 1337, 10000.0);
-
-    let sites5 = p5km.sites.len() as f64;
-    let sites10 = p10km.sites.len() as f64;
-
-    let stamps5 = p5km.stamps().len() as f64;
-    let stamps10 = p10km.stamps().len() as f64;
-
-    // Ratio 5->10 km: area increases by 4x, count should be close to 4x (within 25% tolerance).
-    let ratio_5_10_sites = sites10 / sites5;
-    let ratio_5_10_stamps = stamps10 / stamps5;
-    assert!(
-        ratio_5_10_sites > 3.0 && ratio_5_10_sites < 5.0,
-        "sites 5->10km ratio {:.2} should be ~4",
-        ratio_5_10_sites
-    );
-    assert!(
-        ratio_5_10_stamps > 3.0 && ratio_5_10_stamps < 5.0,
-        "stamps 5->10km ratio {:.2} should be ~4",
-        ratio_5_10_stamps
-    );
-
-    println!("5km: sites={} stamps={} ({:.2}s)", sites5 as u32, stamps5 as u32, t5.as_secs_f64());
-    println!("10km: sites={} stamps={} ({:.2}s)", sites10 as u32, stamps10 as u32, t10.as_secs_f64());
-    println!("✓ Scaling 5->10km: sites {:.2}x, stamps {:.2}x", ratio_5_10_sites, ratio_5_10_stamps);
+fn counts_grow_with_the_surface_at_a_fixed_rule() {
+    let rows: Vec<(f64, usize, usize, f64)> = [5000.0, 10_000.0, 20_000.0, 30_000.0]
+        .iter()
+        .map(|&r| {
+            let (p, secs) = baked(r);
+            let sites = p.sites.iter().filter(|s| s.kind.is_some()).count();
+            println!("radius {r}: {sites} sites, {} landforms, bake {secs:.1} s", p.stamps().len());
+            (r, sites, p.stamps().len(), secs)
+        })
+        .collect();
+    let (base_sites, base_stamps) = (rows[0].1 as f64, rows[0].2 as f64);
+    for &(r, sites, stamps, _) in &rows[1..] {
+        let area = (r / 5000.0) * (r / 5000.0);
+        let (rs, rl) = (sites as f64 / base_sites / area, stamps as f64 / base_stamps / area);
+        assert!((0.75..=1.25).contains(&rs), "sites at {r}: {sites} is {rs:.2} x the area's share");
+        assert!((0.75..=1.25).contains(&rl), "landforms at {r}: {stamps} is {rl:.2} x the area's share");
+    }
 }
 
 #[test]
-fn separation_rules_hold_at_5km() {
-    // Test that no two sites or stamps of the same kind are closer than min_separation_m.
-    let (planet, _) = baked(HEARTH, 1337, 5000.0);
-    let radius = 5000.0;
-
-    let kinds = &planet.recipe.sites.kinds;
-    for (ki, kind) in kinds.iter().enumerate() {
-        let mut same_kind = Vec::new();
-        for (si, site) in planet.sites.iter().enumerate() {
-            if site.kind == Some(ki) {
-                same_kind.push(si);
+fn no_two_of_a_kind_closer_than_their_separation_at_every_radius() {
+    for radius in [5000.0, 10_000.0, 20_000.0] {
+        let (p, _) = baked(radius);
+        let dist = |a: V3, b: V3| radius * a.dot(b).clamp(-1.0, 1.0).acos();
+        for (ki, kind) in p.recipe.sites.kinds.iter().enumerate() {
+            let of: Vec<&Site> = p.sites.iter().filter(|s| s.kind == Some(ki)).collect();
+            for (i, a) in of.iter().enumerate() {
+                for b in &of[i + 1..] {
+                    assert!(dist(a.dir, b.dir) >= kind.min_separation_m - 0.01, "{radius}: two {} sites {:.0} m apart (rule {})", kind.id, dist(a.dir, b.dir), kind.min_separation_m);
+                }
             }
         }
-
-        // Check all pairs of sites of the same kind.
-        for i in 0..same_kind.len() {
-            for j in (i + 1)..same_kind.len() {
-                let s1 = &planet.sites[same_kind[i]];
-                let s2 = &planet.sites[same_kind[j]];
-                let dist_m = radius * s1.dir.dot(s2.dir).clamp(-1.0, 1.0).acos();
-                assert!(
-                    dist_m >= kind.min_separation_m - 1.0, // Allow 1m tolerance for float rounding
-                    "sites of kind {} at {:.0}m < min {:.0}m",
-                    kind.id, dist_m, kind.min_separation_m
-                );
+        let stamps = p.stamps();
+        for kind in &p.recipe.landforms.kinds {
+            let of: Vec<&PlacedStamp> = stamps.iter().filter(|s| s.kind == kind.id).collect();
+            for (i, a) in of.iter().enumerate() {
+                for b in &of[i + 1..] {
+                    assert!(dist(a.centre, b.centre) >= kind.min_separation_m - 0.01, "{radius}: two {} landforms {:.0} m apart (rule {})", kind.id, dist(a.centre, b.centre), kind.min_separation_m);
+                }
             }
         }
     }
-
-    // Check stamps similarly.
-    for (ki, kind) in planet.recipe.landforms.kinds.iter().enumerate() {
-        let mut stamps_of_kind = Vec::new();
-        for (si, stamp) in planet.stamps().iter().enumerate() {
-            if stamp.kind == kind.id {
-                stamps_of_kind.push(si);
-            }
-        }
-
-        for i in 0..stamps_of_kind.len() {
-            for j in (i + 1)..stamps_of_kind.len() {
-                let s1 = &planet.stamps()[stamps_of_kind[i]];
-                let s2 = &planet.stamps()[stamps_of_kind[j]];
-                let dist_m = radius * s1.centre.dot(s2.centre).clamp(-1.0, 1.0).acos();
-                assert!(
-                    dist_m >= kind.min_separation_m - 1.0,
-                    "stamps of kind {} at {:.0}m < min {:.0}m",
-                    kind.id, dist_m, kind.min_separation_m
-                );
-            }
-        }
-    }
-
-    println!("✓ Separation rules hold at 5km");
 }
 
 #[test]
-fn count_at_different_radii_matches_expected_density() {
-    // Verify the counts at each radius are reasonable and follow density rules.
-    // Surface area at radius r: 4*pi*r^2
-    // Expected count: area_in_100km2 * density_per_100km2
-
-    let (p5km, t5) = baked(HEARTH, 1337, 5000.0);
-    let (p10km, t10) = baked(HEARTH, 1337, 10000.0);
-
-    for (planet, label, time) in [(&p5km, "5km", t5), (&p10km, "10km", t10)] {
-        let area_m2 = 4.0 * std::f64::consts::PI * planet.radius * planet.radius;
-        let area_100km2 = area_m2 / 1e8;
-
-        // Just check we have a reasonable count (non-zero, not huge).
-        assert!(planet.sites.len() > 0, "no sites at radius {}", planet.radius);
-        assert!(planet.sites.len() < 50000, "too many sites at radius {}", planet.radius);
-        assert!(planet.stamps().len() > 0, "no stamps at radius {}", planet.radius);
-        assert!(planet.stamps().len() < 50000, "too many stamps at radius {}", planet.radius);
-
-        println!("{}: area={:.1}km² sites={} stamps={} ({:.2}s)",
-                 label, area_100km2 * 100.0, planet.sites.len(), planet.stamps().len(), time.as_secs_f64());
-    }
+fn the_bake_stays_small_at_30_km() {
+    let (p, secs) = baked(30_000.0);
+    println!("30 km: {} sites, {} landforms, bake {secs:.1} s (debug build, shared machine)", p.sites.len(), p.stamps().len());
+    assert!(secs < 120.0, "{secs} s");
 }

@@ -7,18 +7,26 @@ vertex colours: white parts take the biome tint in the game, darker parts stay d
 100-1,000 (DECISIONS.md, "Triangle budgets"); ground cover far below that, it is instanced
 by the thousand.
 
-Run headless (writes content/props/<id>.glb):
-    blender -b -P art/props/props.py -- --out content/props
+Run headless (writes content/props/<id>.glb, renders optional):
+    blender -b -P art/props/props.py -- --out content/props [--renders DIR]
+
+The check report prints one line per prop with its triangle count, then a PROBLEM line for
+each orientation problem or a prop over its triangle budget (BUDGETS). --renders writes one
+three-quarter render (640x480, Workbench, vertex colours) per prop that has a budget.
 """
 
 import argparse
 import math
+import os
 import random
 import sys
 
 import bmesh
 import bpy
 from mathutils import Matrix, Vector
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from mesh_checks import orientation_problems  # noqa: E402
 
 SHARP_ANGLE = math.radians(40)
 WHITE = (1.0, 1.0, 1.0)
@@ -69,6 +77,57 @@ def finish(bm, name):
     mod = obj.modifiers.new("hard edges", "EDGE_SPLIT")
     mod.split_angle = SHARP_ANGLE
     return obj
+
+
+def add_cone_dir(bm, segments, r1, r2, length, at, direction, rgb, caps=True):
+    """A cone from its base at `at`, pointing along `direction`."""
+    rot = Vector((0, 0, 1)).rotation_difference(Vector(direction).normalized()).to_matrix().to_4x4()
+    m = Matrix.Translation(Vector(at)) @ rot @ Matrix.Translation((0, 0, length / 2))
+    res = bmesh.ops.create_cone(bm, cap_ends=caps, segments=segments, radius1=r1, radius2=r2, depth=length, matrix=m)
+    paint(bm, {f for v in res["verts"] for f in v.link_faces}, rgb)
+    return res["verts"]
+
+
+def add_uvball(bm, segments, rings, radius, at, scale, rgb):
+    """A UV sphere: fewer triangles than an icosphere of the same roundness."""
+    m = Matrix.Translation(Vector(at)) @ Matrix.Diagonal((*scale, 1.0))
+    res = bmesh.ops.create_uvsphere(bm, u_segments=segments, v_segments=rings, radius=radius, matrix=m)
+    paint(bm, {f for v in res["verts"] for f in v.link_faces}, rgb)
+    return res["verts"]
+
+
+def add_blade(bm, layer, pts, cols):
+    """A thin two-sided blade: pts are base left, base right, mid left, mid right, tip."""
+    front = [bm.verts.new(p) for p in pts]
+    back = [bm.verts.new(p) for p in pts]
+    colour = {v: c for v, c in zip(front + back, list(cols) + list(cols))}
+    for vs in [(front[0], front[1], front[3], front[2]), (front[2], front[3], front[4]),
+               (back[0], back[2], back[3], back[1]), (back[2], back[4], back[3])]:
+        f = bm.faces.new(vs)
+        for loop in f.loops:
+            loop[layer] = (*colour[loop.vert], 1.0)
+
+
+def add_lathe(bm, segments, profile):
+    """Revolves an (r, z) profile around Z. Points on the axis (r == 0) share one vertex.
+    Returns the faces per profile segment, profile[i] to profile[i + 1]."""
+    rings = []
+    for r, z in profile:
+        if r == 0:
+            rings.append([bm.verts.new((0.0, 0.0, z))] * segments)
+        else:
+            rings.append([bm.verts.new((r * math.cos(a), r * math.sin(a), z))
+                          for a in (k / segments * math.tau for k in range(segments))])
+    per_segment = []
+    for i in range(len(profile) - 1):
+        faces = []
+        for k in range(segments):
+            k2 = (k + 1) % segments
+            corners = list(dict.fromkeys([rings[i][k], rings[i][k2], rings[i + 1][k2], rings[i + 1][k]]))
+            faces.append(bm.faces.new(corners))
+        per_segment.append(faces)
+    bmesh.ops.recalc_face_normals(bm, faces=[f for fs in per_segment for f in fs])
+    return per_segment
 
 
 # ------------------------------------------------------------------ props
@@ -265,14 +324,182 @@ def arch_giant(rng):
     return finish(bm, "arch_giant")
 
 
+# ------------------------------------------------------- field and town kit (#219)
+
+BARK = (0.40, 0.31, 0.25)
+
+
+def grass_stalk(rng):
+    """Ground cover: a bundle of three to five thin bent blades, darker at the root."""
+    bm = bmesh.new()
+    layer = colour_layer(bm)
+    for _ in range(rng.randint(3, 5)):
+        a = rng.uniform(0, math.tau)
+        lean = rng.uniform(0.08, 0.2)
+        h = rng.uniform(0.4, 0.7)
+        w = rng.uniform(0.025, 0.04)
+        d = Vector((math.cos(a), math.sin(a), 0))
+        side = Vector((-d.y, d.x, 0)) * w
+        mid = d * lean * 0.4 + Vector((0, 0, h * 0.55))
+        tip = d * lean + Vector((0, 0, h))
+        pts = [-side, side, mid - side * 0.6, mid + side * 0.6, tip]
+        add_blade(bm, layer, pts, [(0.7, 0.7, 0.7), (0.7, 0.7, 0.7), WHITE, WHITE, WHITE])
+    return finish(bm, "grass_stalk")
+
+
+def flower_bud(rng):
+    """A short stem, one leaf and a fat round goofy bud, coloured so it reads under the tint."""
+    bm = bmesh.new()
+    add_cone(bm, 5, 0.035, 0.03, 0.3, (0, 0, 0), WHITE)
+    add_cone_dir(bm, 3, 0.09, 0.0, 0.24, (0, 0, 0.12), (1.0, 0.2, 0.7), WHITE)
+    add_uvball(bm, 8, 4, 0.17, (0.03, 0.0, 0.38), (1.0, 1.0, 1.1), (1.0, 0.42, 0.72))
+    return finish(bm, "flower_bud")
+
+
+def shrub_spiky(rng):
+    """Desert shrub: a low lump bristling with five leaning spikes."""
+    bm = bmesh.new()
+    add_blob(bm, 2, 0.42, (0, 0, 0.32), (1.0, 1.0, 0.75), WHITE, 0.1, rng)
+    for i in range(5):
+        th = i / 5 * math.tau + rng.uniform(-0.3, 0.3)
+        al = math.radians(rng.uniform(30, 50))
+        d = (math.sin(al) * math.cos(th), math.sin(al) * math.sin(th), math.cos(al))
+        at = (0.3 * math.cos(th), 0.3 * math.sin(th), 0.3)
+        add_cone_dir(bm, 4, 0.07, 0.0, rng.uniform(0.45, 0.6), at, d, (0.5, 0.45, 0.3))
+    return finish(bm, "shrub_spiky")
+
+
+def wrack_pile(rng):
+    """Beach pile: a flat heap of dried weed with five strands tangled over it."""
+    bm = bmesh.new()
+    add_blob(bm, 2, 0.75, (0, 0, 0.05), (1.0, 1.0, 0.25), (0.42, 0.38, 0.26), 0.1, rng)
+    for _ in range(5):
+        th = rng.uniform(0, math.tau)
+        length = rng.uniform(1.0, 1.4)
+        d = Vector((math.cos(th), math.sin(th), rng.uniform(0.0, 0.35)))
+        centre = Vector((rng.uniform(-0.3, 0.3), rng.uniform(-0.3, 0.3), rng.uniform(0.12, 0.2)))
+        at = centre - d.normalized() * length / 2
+        add_cone_dir(bm, 4, 0.03, 0.02, length, at, d, (0.28, 0.36, 0.2))
+    return finish(bm, "wrack_pile")
+
+
+def crooked_tree(rng, name, far):
+    """Cold-climate tree: a trunk bent in three, two or three lumpy crowns on top."""
+    bm = bmesh.new()
+    sides = 3 if far else 7
+    at = Vector((0, 0, 0))
+    dirs = [(0.25, 0.1, 1.0), (-0.35, -0.1, 1.0), (0.2, 0.3, 1.0)]
+    lengths = [3.0, 2.6, 2.4]
+    radii = [(0.42, 0.34), (0.34, 0.25), (0.25, 0.14)]
+    for d, length, (r1, r2) in zip(dirs, lengths, radii):
+        add_cone_dir(bm, sides, r1, r2, length, at, d, BARK, caps=not far)
+        at = at + Vector(d).normalized() * length
+    crowns = [((0, 0, -0.5), 1.9), ((1.5, 0.4, -1.6), 1.25), ((-1.2, -0.3, -2.2), 1.2)]
+    for off, r in (crowns[:2] if far else crowns):
+        add_blob(bm, 1 if far else 2, r, at + Vector(off), (1.0, 1.0, 0.8), WHITE, 0.12, rng)
+    return finish(bm, name)
+
+
+def tree_crooked(rng):
+    return crooked_tree(rng, "tree_crooked", far=False)
+
+
+def tree_crooked_far(rng):
+    return crooked_tree(rng, "tree_crooked_far", far=True)
+
+
+def round_tree(rng, name, far):
+    """Crystal-biome lollipop: a stick, one big round crown, a few smaller balls."""
+    bm = bmesh.new()
+    add_cone(bm, 3 if far else 8, 0.22, 0.14, 5.2, (0, 0, 0), (0.60, 0.52, 0.66))
+    add_uvball(bm, 6 if far else 16, 4 if far else 8, 2.3, (0, 0, 5.8), (1.0, 1.0, 0.95), WHITE)
+    smalls = [((1.8, 0.5, 4.6), 0.9), ((-1.5, -0.9, 5.0), 0.75), ((0.3, -1.9, 4.2), 0.7)]
+    for off, r in (smalls[:1] if far else smalls):
+        add_uvball(bm, 4 if far else 8, 3 if far else 4, r, off, (1.0, 1.0, 1.0), WHITE)
+    return finish(bm, name)
+
+
+def tree_round(rng):
+    return round_tree(rng, "tree_round", far=False)
+
+
+def tree_round_far(rng):
+    return round_tree(rng, "tree_round_far", far=True)
+
+
+def landing_pad(rng):
+    """Settlement landing pad: a 20 m disc with a raised rim, a darker ring, an orange H and four lights."""
+    bm = bmesh.new()
+    profile = [(0.0, 0.0), (10.0, 0.0), (10.0, 0.9), (9.4, 0.9), (9.4, 0.4), (7.6, 0.4), (6.6, 0.4), (0.0, 0.4)]
+    paints = [(0.7, 0.7, 0.7), WHITE, WHITE, WHITE, WHITE, (0.55, 0.55, 0.6), WHITE]
+    for faces, rgb in zip(add_lathe(bm, 48, profile), paints):
+        paint(bm, faces, rgb)
+    glyph = (1.0, 0.55, 0.18)
+    turn = Matrix.Rotation(0.2, 4, "Z")
+    for at, size in [((-1.25, 0.0, 0.415), (0.42, 3.0, 0.04)), ((1.25, 0.0, 0.415), (0.42, 3.0, 0.04)),
+                     ((0.0, 0.0, 0.415), (2.5, 0.42, 0.04))]:
+        # the glyph turns as one piece: bar centres turned about the pad centre, each bar turned too
+        m = Matrix.Translation(turn.to_3x3() @ Vector(at)) @ turn @ Matrix.Diagonal((*size, 1.0))
+        res = bmesh.ops.create_cube(bm, size=1.0, matrix=m)
+        paint(bm, {f for v in res["verts"] for f in v.link_faces}, glyph)
+    for k in range(4):
+        a = k / 4 * math.tau
+        x, y = 9.7 * math.cos(a), 9.7 * math.sin(a)
+        add_cone(bm, 6, 0.12, 0.08, 1.2, (x, y, 0.8), (0.5, 0.5, 0.55))
+        add_uvball(bm, 6, 4, 0.22, (x, y, 2.1), (1.0, 1.0, 1.0), (1.0, 0.9, 0.35))
+    return finish(bm, "landing_pad")
+
+
 PROPS = [tree_lolly, tree_stack, shrub_blob, rock_round, rock_slab, tuft, mushroom_giant, crystal,
-         hull_broken, debris_panel, debris_strut, wall_broken, pillar_stub, mast, arch_giant]
+         hull_broken, debris_panel, debris_strut, wall_broken, pillar_stub, mast, arch_giant,
+         grass_stalk, flower_bud, shrub_spiky, wrack_pile, tree_crooked, tree_crooked_far,
+         tree_round, tree_round_far, landing_pad]
+
+# Triangle budgets (guide values, DECISIONS.md) for the #219 props; they also get review renders.
+BUDGETS = {"grass_stalk": 40, "flower_bud": 80, "shrub_spiky": 150, "wrack_pile": 150,
+           "tree_crooked": 500, "tree_crooked_far": 60, "tree_round": 450, "tree_round_far": 60,
+           "landing_pad": 1500}
+
+
+def problems_of(obj):
+    bm = bmesh.new()
+    try:
+        bm.from_mesh(obj.data)
+        return orientation_problems(bm)
+    finally:
+        bm.free()
+
+
+def review(obj, path):
+    """A three-quarter render of one prop, lit by Workbench, showing the vertex colours."""
+    scene = bpy.context.scene
+    obj.data.color_attributes.active_color = obj.data.color_attributes["Col"]
+    scene.render.engine = "BLENDER_WORKBENCH"
+    scene.display.shading.color_type = "VERTEX"
+    scene.render.resolution_x, scene.render.resolution_y = 640, 480
+    scene.render.filepath = path
+    world = bpy.data.worlds.new("Backdrop")
+    world.color = (0.36, 0.40, 0.46)
+    scene.world = world
+    corners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+    lo = Vector(tuple(min(c[i] for c in corners) for i in range(3)))
+    hi = Vector(tuple(max(c[i] for c in corners) for i in range(3)))
+    centre = (lo + hi) / 2
+    size = max(hi[i] - lo[i] for i in range(3))
+    location = centre + Vector((0.75, -1.0, 0.55)).normalized() * (size * 1.7 + 1.5)
+    bpy.ops.object.camera_add(location=location)
+    cam = bpy.context.active_object
+    cam.rotation_euler = (centre - location).to_track_quat("-Z", "Y").to_euler()
+    scene.camera = cam
+    bpy.ops.render.render(write_still=True)
+    bpy.data.objects.remove(cam)
 
 
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="content/props")
+    ap.add_argument("--renders", help="directory for one review render per prop with a budget")
     args = ap.parse_args(argv)
     for make in PROPS:
         clear()
@@ -282,10 +509,18 @@ def main():
         obj.select_set(True)
         dg = bpy.context.evaluated_depsgraph_get()
         tris = sum(len(p.vertices) - 2 for p in obj.evaluated_get(dg).data.polygons)
+        problems = problems_of(obj)
+        if obj.name in BUDGETS and tris > BUDGETS[obj.name]:
+            problems.append(f"{tris} triangles, over the budget of {BUDGETS[obj.name]}")
         path = f"{args.out}/{obj.name}.glb"
         bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_apply=True,
                                   export_vertex_color="ACTIVE", export_materials="NONE")
         print(f"prop {obj.name}: {tris} triangles -> {path}")
+        for p in problems:
+            print(f"  PROBLEM {obj.name}: {p}")
+        if args.renders and obj.name in BUDGETS:
+            os.makedirs(args.renders, exist_ok=True)
+            review(obj, f"{args.renders.rstrip('/')}/{obj.name}.png")
 
 
 main()

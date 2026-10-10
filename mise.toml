@@ -6,4 +6,5 @@
 # `~/.cache/exo-1-target`, a lane `~/Work/exo-1-<name>` into `~/.cache/exo-1-target-<name>`
 # (exo-orchestrate). Without it a fresh worktree builds everything again into `./target`.
 [env]
-CARGO_TARGET_DIR = "{{ env.HOME }}/.cache/exo-1-target{{ config_root | basename | replace(from='exo-1', to='') }}"
+# HOME on Linux and macOS, USERPROFILE on Windows (PowerShell sets no HOME).
+CARGO_TARGET_DIR = "{{ get_env(name='HOME', default=get_env(name='USERPROFILE', default='')) }}/.cache/exo-1-target{{ config_root | basename | replace(from='exo-1', to='') }}"

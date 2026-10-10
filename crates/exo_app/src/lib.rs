@@ -240,7 +240,7 @@ pub fn build_app(o: &Options) -> App {
         // Each update is exactly one physics tick, independent of wall time.
         app.insert_resource(TimeUpdateStrategy::ManualDuration(TICK));
     } else {
-        app.add_plugins(DefaultPlugins.set(bevy::asset::AssetPlugin { file_path: content_dir(), ..default() }).set(WindowPlugin {
+        app.add_plugins(DefaultPlugins.set(bevy::asset::AssetPlugin { file_path: content_dir(), ..default() }).set(bevy::app::TaskPoolPlugin { task_pool_options: terrain::task_pools() }).set(WindowPlugin {
             primary_window: Some(Window { title: "EXO-1".into(), resolution: (1600u32, 900u32).into(), visible: !o.hidden,
                 present_mode: if o.no_vsync { bevy::window::PresentMode::AutoNoVsync } else { bevy::window::PresentMode::AutoVsync },
                 ..default()
@@ -251,6 +251,10 @@ pub fn build_app(o: &Options) -> App {
     app.insert_resource(Time::<Fixed>::from_duration(TICK));
     app.add_plugins(PhysicsPlugins::default())
         .insert_resource(Gravity(DVec3::ZERO))
+        // The collider trees are tiny; Avian's async optimise task waits behind terrain and scatter
+        // jobs in the compute pool, and the end of the step blocks on it (fixed steps of 20 to 800 ms
+        // on a 100 km planet, #217).
+        .insert_resource(ColliderTreeOptimization { use_async_tasks: false, ..default() })
         .insert_resource(PhysicsTransformConfig { transform_to_position: false, position_to_transform: false, ..default() });
 
     let mut sys = warp_core::System::from_json(warp::SYSTEM).expect("system.json");

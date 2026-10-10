@@ -1,209 +1,105 @@
-# NIGHT-LOG — milestone C night run, 2026-10-09
+# NIGHT-LOG: milestone D night run, 2026-10-10
 
-Morning report of the unattended run (brief: concept repo `docs/RUN-C-NIGHT-BRIEF.md`). Phase 1 on `feat/milestone-c-grab`, phase 2 (extras) on `night/extras`. Nothing merged, no PR, no issue closed.
+Morning report of the unattended run (brief: concept repo `docs/RUN-D-NIGHT-BRIEF.md`). Phase 1 on `night/d-foundation`, phase 2 (extras) on `night/d-extras`. Nothing merged, no PR, no issue closed. The old C log is in git history.
 
 ## Checklist
 
-Phase 1, `feat/milestone-c-grab`:
+Phase 1, `night/d-foundation`:
 
-- [x] #81 `grab_core`: hold, falloff, break, throw, shared carry (test-first)
-- [x] #80 crates as data, living in the ship's frame
-- [x] #82 interaction: one verb, one prompt
-- [x] #83 grab in the game: hands and the grab tool
-- [x] #84 lock grid in the cabin
-- [x] #85 object budget
-- not in this run: #86 (network)
+- [x] #128 save model (kernel envelope, kernel/jobs/world sections)
+- [x] #165 feedback beats
+- [x] #167 givers
+- [x] #170 courier jobs
+- [x] #168 customers
+- [x] #169 flight licence
+- [x] #166 map (screenshot: `night-shots/map.png` in the worktree, not committed)
+- [x] #135 save file (done in the day session of 2026-10-10, see "Day session")
 
-Phase 1 done 2026-10-09 03:08 (all six issues commented, none closed). Gate on the tip of `feat/milestone-c-grab`: `cargo t` exit 0, `cargo scenario` exit 0.
+Phase 2, `night/d-extras` (branch not created):
 
-Phase 2, `night/extras` (branched from the tip of `feat/milestone-c-grab`, all extras on this one branch):
+- [ ] extras: polish for "does a job feel like a job?" (HUD arrow and money #136, board by giver #126 #131 #132, sounds, briefing texts): not started
+- [ ] extras: `production_core` sketch (recipe record, station state machine): not started
+- [ ] extras: other backlog items: not started
 
-- [x] E1 carry crates down the ramp and back up (load and unload the ship)
-- [ ] E2 the walker bumps into crates; crates stack: **dropped in this form** (initiator, playtest 2026-10-09): committed as 7e83b52, reverted; replaced by the three-state crate model, spike `spike/avian-crates` first (see below)
-- [x] E3 visible grab-tool beam (2026-10-09 midday)
-- [ ] E4 synthesized grab, throw and lock sounds: not started
-- [ ] E3 visible grab-tool beam: not started
-- [x] E4 synthesized grab, throw and lock sounds (branch `feat/e4-sounds`)
-- [ ] E5 #52 split `scenario.rs` (cargo scenarios already live in `cargo_scenario.rs`): not started
-- [x] E5 #52 split `scenario.rs` (branch `feat/e5-split-scenario`)
+## How the run ended
 
-## Architecture choice (read this first)
+The session died at about 04:08 on 2026-10-10 while the gate for #166 was starting; it was resumed at 10:26, after the 08:30 stop time. Cause (from the host's `appdata.backup` log, told by the initiator): not a crash and not out of memory. The Appdata Backup plugin stops the `roost` container on purpose every day at 03:00 (stop, back up, start): it stopped it at 04:08:11, the backup and its verify took about 95 minutes, and it started again at 05:43:18. All herdr and Claude processes in the container ended with it, and nothing started them again afterwards. (My first guess in this log, an out-of-memory kill, was wrong. The 6 GB limit and the 4.9 GB peak of a gate run are real, from an older incident on 2026-10-08, so `CARGO_BUILD_JOBS` at most 4 and nextest `--test-threads` 3 to 4 stay good advice.) The earlier night-C stop at 03:57 may be the same backup. The #166 gate was rerun after the resume with 3 jobs and 3 test threads. Not done: #135, phase 2.
 
-A crate is **not** an Avian rigid body. It is a `grab_core::CrateBody`: a box that stays upright about its frame's up, falls, slides with friction, sleeps at rest and moves by sweeps through a `BoxWorld` trait (the walker's pattern: `walker_core::World`). It lives in a frame like the walker: the planet, or a ship cabin (ship-local). Reasons: decision 1 (crate lives in the ship's frame, held during warp), the research risks (Avian moves child colliders one step late; the warp sets the ship pose at up to 1e6 m/s), and decision 6 (locked crates are part of the ship). Cost: no tumbling, no crate pushing the ship. `TODO(initiator)`: fine for the playtest, or do crates need to tumble?
+## #128 save model
 
-## #81 grab_core
+Built: `gameplay_core::save`: `Envelope` (version + named sections, each with its own version; text in/out, no file I/O), `KernelState` (progress + dedup, `apply` ignores ids it has seen, also after a load), `WorldSave` (crates of active jobs with condition and place in the planet frame or the ship frame, ship pose, next crate id). `Dedup::next_seq` lets a restarted client continue its numbering above the saved ids. `jobs_core::Jobs::save` / `load` is the jobs section. A wrong envelope or section version is `SaveError`, never a guess; a missing section loads as none.
 
-What: new crate `crates/grab_core` (no Bevy types, f64). Crate table (`content/cargo/crates.json`), grab tuning (`content/tuning/grab.json`), hold regulator (velocity servo to a hold point; force cap per holder, speed cap falling as 1/mass above `ref_mass`), falloff (hands: full to 2 m, nothing beyond; tool: full to 6 m, zero at 10 m), cone check, turn cap with contact damping, break timer, throw velocity and kick, carry state, view turn share, crate body.
+Checks: 7 tests in `gameplay_core/tests/save.rs`, 1 in `jobs_core/tests/jobs.rs` (half-played job saved, loaded into a second host, both finish with equal state). Gate: `cargo t` 358 passed, `cargo scenario` 0 failures.
 
-Checks (`cargo test -p grab_core`, 21 tests):
-- lag grows with mass: error 0.4 s after grabbing from 1.4 m away: small 0.024 m, medium 0.280 m, large (two holders) 1.138 m; all below 0.05 m after 4 s.
-- falloff curve: hands 1 at 2.0 m, 0 at 2.01 m; tool 1 to 6 m, 0.5 at 8 m, 0 at 10 m.
-- break timer: breaks after 1.000 s of error above 1.5 m; a 0.5 s snag does not; standing on the crate breaks at once.
-- throw speed per size: small 8.0 m/s (capped), medium 2.0 m/s, large 0.5 m/s; the thrower gets the opposite impulse.
-- one holder cannot lift the large crate (falls 33 m in 3 s with no floor), two hold it (error 0.000 m).
-- table rejects a missing field, unknown fields, bad mass, extents, hands, holders, duplicate names, edges that do not double.
+TODO(initiator): none. Open: board offers "with seed and lifetime" have nothing to save until the board exists (#126); every later system brings its own section (each with a round-trip test).
 
-`TODO(initiator)` values (all in `content/tuning/grab.json` and `content/cargo/crates.json`):
-- sizes: small 0.5 m 15 kg one hand; medium 1.0 m 60 kg two hands; large 2.0 m 240 kg two hands, two holders.
-- hold force 1500 N per holder (one holder lifts up to about 150 kg, two up to about 300 kg).
-- speed cap 8 m/s up to 30 kg, then 1/mass, at least 0.5 m/s; gain 8 /s; response 0.06 s.
-- break: 1.5 m for 1.0 s. Throw: 120 N s impulse, at most 8 m/s. Holder mass 90 kg.
-- turn: 3 rad/s up to 30 kg, 20 % while touching. View turn share 100 / (100 + mass).
-- two hands: 60 % walking speed, no sprint, no jump. Friction 0.5. Sleep below 0.05 m/s for 0.5 s.
+## #165 feedback beats
 
-## #80 crates as data, living in the ship's frame
+Built: kernel `gameplay_core::notice` (`Notice` with kind, text key, args, weight; `NoticeQueue`: one notice at a time with a gap, never two banners at once, rank and unlock held until the objectives were quiet for 4 s, `skip` runs the rest fast), `text` (`TextTable` where a key is one line or a pool, `Picker` that never gives the same line twice in a row, seeded), `rng` (splitmix64), `Progress::apply_with_notices` (unlock bought, track level reached). `jobs_core` returns `Outcome::Notice` for accepted, picked up, delivered, crate lost, abandoned, completed or expired, and the itemised payout (base, share, condition, hazard: the lines add up to the pay; then XP). Glue: `gameplay.rs` no longer writes note lines to the player, it queues notices and renders them from `content/gameplay/text/en.json` (pools now); `exo_app::notices` draws one banner (a payout counts up) and a toast stack in the window; `audio.rs` has five new synthesized sounds (ping, accept, coin, fanfare, buzz) picked by the notice kind; new tap `skip_notices` (Enter, in `bindings.json`, old binding files still load).
 
-What: `exo_app/src/cargo.rs`. A `Crate` component wraps a `grab_core::CrateBody` and a frame (`ship: Option<Entity>`). Crates in a cabin step ship-local in the frame of the cabin colliders (`walker::cabin_frame`, the same one-tick-behind rule as the walker) with the cabin gravity (LAG); on the planet they step in world space with the planet's gravity and a CPU height-function safety net where no collision patch exists. Box sweeps go through Avian shape casts against the world, hulls and ramps. Leaving the cabin (bottom centre out of the cabin box by 0.3 m) or entering it (0.2 m inside) keeps the world pose and hands over the ship velocity (`CrateBody::change_frame`, same rule as the walker). While the warp drive holds the ship (`Phase::holds_ship`), crates in its cabin are not stepped at all: they are held to the ship. A crate at rest sleeps (not stepped until pushed). Rendering: a coloured box with two dark bands per size, riding the ship's interpolated pose. Every normal game and the `full` scenario start with one small test crate on the cabin floor behind the seat.
+Checks: 22 new tests (kernel 11, jobs 4, exo_app 3 unit), scenario `deliver` extended: beats in order, three delivered beats and one completed, payout in the banner, never two banners at once, no line twice in a row, queue empty after the ritual, skip empties the queue within 4 s (23 notices). Gate: `cargo t` 376 passed, `cargo scenario` 0 failures. Window drawing and sounds are not run headless; checked by the screenshot of the map run (#166) at the end.
 
-Checks:
-- Scenario `crate-ride` (new, also in `cargo t` as `tests/scenario_crate_ride.rs`): the crate rests and sleeps (5.5 mm settle from its 6 mm spawn gap); take-off to 300 m, a crate pushed out over the ramp while the ship flies at 13.65 m/s: world velocity before and after the hand-over identical (jump 0.0 m/s), 2.48 m/s relative to the ship (the push); fly to space, warp Hearth -> Cinder (1000 km/s top speed, the crate held for 3082 crate steps), landing on Cinder: largest drift of the test crate 0.005 m over 7078 ticks, never outside the cabin. 0 failures.
-- `full`: new check, the test crate is still in the cabin after both flights.
-- Table test rejects a missing field: `grab_core` `table_rejects_missing_field` (#81 commit).
+TODO(initiator): all pacing times (gap 0.6 s, banner 3 s, toast 2.5 s, calm 4 s), the skip key, sound volumes and shapes, every text in `en.json` (placeholders), the count-up time (1.2 s).
+Open: the XP line names the track by the convention `track.<id>.name`; the standing line of the ritual comes with #167.
 
-Open points:
-- The walker walks through crates and crates do not touch each other (no collider of their own). Stacking is on the extras list.
-- Crates do not tumble and do not push the ship (see "Architecture choice").
-- Crates only know the own ship's cabin, not another player's (#86).
+## #167 givers
 
-## #82 interaction: one verb, one prompt
+Built: `jobs_core::giver` (record `giver`: kind legal or family, counter location, voice pools with greetings by mood, standing track, gain and loss, optional `available` condition), `jobs_core::briefing` (title formula, greeting by mood, intro, paragraph by shape of the job timed/many/few, reason from the cargo, else the destination's route tag, else the giver's pool, sign-off; all picks by seed through the `Picker`), template field `giver`, `Jobs` history per giver (completed count, failure streak, saved with the jobs section), standing: a completed job raises the giver's crew track by `gain`, a failed one (expired, or nothing delivered) lowers it by `loss`; new track field `min` (floor 0) so standing never locks a giver for good and work brings it back; abandoning costs nothing. A closed giver (`available` flag) offers nothing (the family: flag `family_open`, never raised in D). Rank thresholds of the standing track unlock templates through the existing `available` condition. `check_texts` reports missing voice pools and pools with fewer than 3 lines (so no line repeats twice in a row by lack of choice). The ritual names standing gained or lost.
+Glue: counters at the giver's pad: prompt "talk to <giver>", F opens a panel on the left (giver, briefing, pay; Tab next offer, Backspace declines, F takes the job, walking away closes it; it never takes input). The fixed jobs are offered per template again after a completion (no board yet). Content: givers `courier_office` ("Dinglepost Couriers", counter at Drip Rock) and `small_family` ("The Gribbles", counter at Bent Spoon for now, moves in #170), standing tracks, a family placeholder job, about 60 new text lines.
 
-What: `exo_app/src/interact.rs`. `Tap::Seat` is now `Tap::Interact` (binding `interact`, F and pad North); a new `Tap::Throw` (R, pad right stick click) for #83. Each fixed step the `interaction` system picks the target: stand up when seated, set down when holding, otherwise the crate nearest the centre of the view cone (25 degrees, up to the tool's 10 m), or the seat when the feet are within 1.8 m of it (the old rule). A crate in reach of the hands wins over the seat; a crate only in the tool's reach does not (so F at the seat still sits even with a crate 4 m behind). The prompt ("[F] sit", "[F] pick up the small crate", "[F] pull the medium crate (grab tool)", "[F] set the small crate down  [R] throw", "[F] stand up") is a resource the HUD shows on its own line below the screen centre; the key label comes from the bindings. The sit and stand code moved out of `walker_step` unchanged.
+Checks: 14 tests in `jobs_core/tests/givers.rs` (loader errors with file and field, missing and thin pools, deterministic briefing, reason order, shape, mood, no repeat over 100 briefings, standing up/down/floor/recovery, rank unlocks a template, closed giver, history in the save, standing lines in the ritual), 2 kernel tests for the floor, 1 exo_app test. Scenario `deliver` now goes through the counter: prompt, briefing, same text when asked again, decline keeps the offer, take, standing +10 and mood regular after the job. Gate: `cargo t` 393 passed, `cargo scenario` 0 failures.
 
-Old player files (`settings/bindings.json` with `seat` and no `throw`) still load: `seat` is read as `interact`, a missing `throw` gets R.
+TODO(initiator): giver names and every voice, briefing and reason line (placeholders, tone silly), gain 10 and loss 15, standing ranks 30/100/250, the family's counter place, panel layout and keys (Tab, Backspace).
+Open: no board yet, so one fixed offer per template; the panel is plain text.
 
-Checks:
-- Scenario `interact` (new, in `cargo t`): prompt "[F] pick up the small crate" with the crate targeted by the hands; F picks it up (prompt "[F] set the small crate down  [R] throw"); F sets it down; walking to the seat the prompt is "[F] sit"; the same F sits (prompt "[F] stand up"); targets used: crate, drop, seat; F stands up. 7 checks, 0 failures.
-- Unit test `old_seat_binding_still_loads`.
-- Existing scenarios: see the gate below.
+## #170 courier jobs
 
-`TODO(initiator)`: cone half angle 25 degrees (`grab.json`); the seat by proximity instead of by the cone (keeps every scripted F at the seat working; with the cone the walker has to look at the seat). The HUD check reads the prompt resource, which the HUD line shows as is (headless runs have no HUD to read).
+Built: new optional place field `near: { place, east_m, north_m }` (`planet_core::Place`): a place given in metres east and north of an absolute place (east and north as on the ground there), resolved by `Planet::set_places` on the planet's radius, so walking distances stay the same when the radius changes (#177). Either `lat_deg` and `lon_deg`, or `near`; a reference that is itself near, or unknown, is an error naming the place. Three new places `lint_trap` (about 180 m from Drip Rock), `noodle_post` (about 280 m), `pebble_kiosk` (about 345 m), each with a pad and a flatten edit, three locations tagged `courier_drop`, a new commodity `parcel` (small crate, price 20), three courier templates from the courier office counter: one parcel to the Lint Trap (30), two to the Noodle Post (45), three to the Pebble Kiosk with a 240 s deadline (60), repeatable (offered again at once). Texts for them, a README line.
 
-## #83 grab in the game: hands and the grab tool
+Checks: 4 new tests in `planet_core/tests/places.rs` (distance and direction at radii 3000, 5000, 6500 and 20000 without bake, the baked pad at 5000, flatten and sites, the error cases), `exo_app` test that the drops are 150 to 400 m from Drip Rock. New scenario `courier` (and `scenario_courier.rs` in the gate): at the counter, Tab to the offer, take it, grab the parcel, the walker walks the whole way (nothing moved by test hooks): 180 m in 36 s to the Lint Trap, set down, paid 29 of 30 (a hand-drop costs a hair of condition), standing +10, the beats of #165 in order; then the timed job: 342 m in 70 s to the Pebble Kiosk, one of three parcels delivered, the job stays open. Gate: `cargo t` 398 passed, `cargo scenario` 0 failures.
 
-What: `exo_app/src/grab.rs`, `grab_step` between `walker_step` and `crate_step`. The held crate is pulled each step to a hold point in front of the eye through `grab_core::hold_force` (one holder), as an acceleration on the crate in its own frame (cabin or planet; walker and crate may be in different frames). Hands: hold point `hold_gap` + half the crate's depth ahead, lowered by half its height; force only within 2 m. Tool: starts at the grab distance and reels in at 3 m/s to 3 m; full force to 6 m, none at 10 m. The crate keeps its heading relative to the walker's; Q/E turn it (not while the suit rolls); the turn rate is capped by mass and damped on contact. The hold breaks after 1 s with more than 1.5 m error, or when the walker stands on the crate. R throws (hand velocity plus the impulse along the look). Walker side (`walker_step`): two hands give 60 % speed, no sprint, no jump (`WalkInput::slow`, new); the view turns at 100 / (100 + mass) of its rate; weightless (suit), the hold's reaction and the throw's kick push the walker.
+TODO(initiator): place names and positions (placeholders until the city, E), prices and rewards (30, 45, 60), the deadline 240 s, the parcel good, all texts. Open question: the decision says a courier job takes about 2 to 3 minutes on foot; at the walking speed measured here one way is 36 to 70 s. For 2 to 3 minutes the drops would have to be farther (400 m is the limit of the decision) or a job needs a return leg; I kept the 150 to 400 m rule.
+Note: the first haul (`first_haul`) stays as it was, 300 credits to Bent Spoon; the flight licence (#169) will gate it.
 
-Checks, scenario `crate-carry` (new, in `cargo t`), on open ground behind the ship:
-- small crate: held and lifted 0.58 m; with W + Shift 11.07 m/s (run speed 12), still in the hands.
-- medium crate: held and lifted 0.24 m; with W + Shift 2.57 m/s (60 % of 5 = 3.0), no jump with Space (feet at most 0.04 m up), still held.
-- large crate alone: rose -0.001 m in 2.5 s (1500 N per holder < 2354 N weight).
-- throw (25 degrees up): 8.00 m/s (want 8.00), landed 6.96 m away after 1.45 s, resting on the ground.
-- grab tool from 8.2 m: prompt "[F] pull the medium crate (grab tool)", after 4 s 3.00 m from the eye and 0.90 m above ground.
-- 0 failures.
+## #168 customers
 
-Observation (not changed): walking speeds measured on this ground are 0.4 to 0.9 m/s below the walker's target in both carry states, so the speed check uses an absolute 1 m/s band. The walker without a crate was not measured on this patch; the cause is not checked.
+Built: new crate `customers_core` (no Bevy; its only dev-dependency is `jobs_core`, used by the test host the way the glue wires them). Record `customer` (name, location, taste tags over commodities, condition standard, order rhythm, amount, patience, start relationship, voice pools order/thanks/grumble) and the single record `price_table`, checked by the loader (every good a customer may order has a wholesale and a customer price, the customer pays more than the wholesaler asks, a wholesaler location exists). `Customers`: seeded orders by rhythm (scaled by relationship: strangers wait twice as long, friends a quarter), one open order per customer, goods of their taste from the wholesale location to their pad, reward = crates × price × (1 + 4 % per relationship point); satisfaction from share, condition against the customer's standard and time (about -0.9 to +0.7) moves the relationship (0 to 5); neglect wears it down by 0.1 per 600 s without a pleasing delivery, to a floor of 1.0 and no further; they answer in their own voice (thanks or grumble pool). Section `customers` in the save, with a round-trip test.
+Events: kernel `WorldEvent::OrderPlaced` and `OrderSettled` (plain data, `OrderId`). `jobs_core` turns `OrderPlaced` into an offer of the template `customer_order` with the order's places, goods, reward and deadline (`Job::order`, `OrderTerms`), pays the order's reward, and raises `OrderSettled` when the job ends (delivered, expired or abandoned). The customer's title and words show in the offer and the briefing.
+Glue and content: wholesaler place `slosh_wholesale` (about 290 m from Drip Rock) with a giver counter showing the orders, three goods (`fizzy_mud` wet, `sock_dust` dry, `grumble_jelly` sticky), three customers at existing places (`mabel_snood` at Noodle Post, `captain_pip` at Pebble Kiosk, `moss_committee` at Lint Trap), the price table `price_table/start.json` (wholesale, customer and courier prices in one place; the glue checks customer prices against the commodities' base prices and the courier prices against the templates, so one number cannot drift), texts.
 
-Open points / `TODO(initiator)`:
-- The zero-G reaction is covered by the `grab_core` unit test (`reaction_pushes_holder_in_zero_g`) and wired into the suit; no scenario checks it in the game.
-- Hold point height (half the crate's height below the eye line) and the tool's reel speed and hold distance (3 m/s, 3 m) are guesses.
-- The view turn share applies to mouse and stick alike, also with the tool.
-- Shared carry with two players needs #86 (network).
+Checks: 17 tests in `customers_core/tests/customers.rs` (loader errors, pools, determinism for a seed, the first order within the rhythm, route and goods, notices, satisfaction, relationship bounds, regulars order more and pay a little more, neglect floor and winning back, repeats, the chain order → offer → delivery → satisfaction and the expiry case with the jobs system, save round trip), 7 in `jobs_core/tests/orders.rs`, 1 in the kernel. Scenario `customers` (in the gate): Mabel's order appears as an offer, the counter shows it in her words, delivery pays the order's reward (32), relationship 2.00 to 2.70, her thanks, next order due within her rhythm; a second order dropped from 30 m wrecks the goods: relationship 2.70 to 2.30, her grumble. Gate: `cargo t` 424 passed, `cargo scenario` 0 failures.
 
-## #84 lock grid in the cabin
+TODO(initiator): every name and text (customers, goods, wholesaler), prices (one table), rhythms, standards, patience, the relationship formulas (+4 % pay, rhythm factor 2.0 to 0.25, satisfaction weights, neglect 0.1 per 600 s to a floor of 1.0), the wholesaler's gain/loss.
+Open: an order nobody accepts stays on the board and the customer waits (no withdrawal in D, so a customer with an unserved order does not order again; the relationship still decays to the floor); the customers sit at the places of the courier drops until the city is placed (E).
 
-What (`exo_app/src/cargo.rs`): a grid of 0.5 m floor plates in the rear part of the cabin (x -1.5..1.5, z -1.0..3.5: 6 x 9 plates, clear of the seat). A crate in the cabin that comes to rest (sleeps) with nobody pushing it and its whole footprint on the plates snaps to them (heading to a quarter turn, edges onto plate lines) and locks: it is not stepped any more (part of the ship), and its plates are lit green. A crate resting partly on the plates does not lock and its plates show red. Grabbing unlocks (`grab_step`). Loose crates in the cabin now feel the ship's acceleration (from its velocity change per step, the part along the floor, capped at 40 m/s²), so they slide when that beats friction. Plate visuals are thin tiles on the ship (dim, green with glow, red with glow).
+## #169 flight licence
 
-Three related rules this needed (all `TODO(initiator)`):
-- **Ramp field.** The cabin has no rear wall, so hard forward acceleration threw loose crates out over the ramp. In flight (not landed) a loose crate nobody pushes stops at the ramp edge. A carried, pushed or thrown crate can still leave. Landed, nothing stops them.
-- **Warp hold covers PostRampDown.** `Phase::holds_ship()` ends before the drive has braked the ship back down; crates in the cabin are now held through `PostRampDown` too.
-- **Cabin safety net.** A loose crate is kept inside the side walls, front wall and ceiling (4 mm gap) and above the floor. Before it existed, after a warp a crate pressed to the front wall went through it: a sweep that starts touching a wall ignores that wall (`ignore_origin_penetration`). With the net, corrections over 2 cm (`CargoStats::wall_catches`) were 0 in `crate-lock`.
+Built: kernel events `TookOff`, `PadReached { at }`, `Landed { at, speed }` (plain data; the exam reads only these, never how the ship flies). `jobs_core`: new objective kinds `take_off`, `reach_pad`, `land` (a touchdown faster than `max_mps` is a crash) next to `deliver`; a job carries `checks` (done in order, only from the player who took the job, the clock starts at take-off); template block `exam` (fee, retry fee for every later try of the same player, the personal track it grants, minimum crate condition, optional honours with a touchdown limit, a time and a standing bonus with a giver); record `licence` (id, name, personal track, exam template, what it allows, here `pilot_ship`); a new job state `Failed` (crash, a crate too damaged); fee charged on accepting, refused when the crew cannot pay (`CannotAfford`); exam XP only when passed. Passing sets the licence track to 1 for the examinee only (per player), flag `exam_honours:<exam>` and the giver's standing bonus for honours; failing tells the retry fee. Retry after a failure costs half; passed is passed (the exam closes to holders through the template's `available` condition).
+Glue: the seat refuses without a licence that allows piloting (prompt "(needs the flight licence: exam at Skyhook Flight School)", a notice on the tap), open while the player's exam is active (the exam lends the ship); riding along and carrying never need one. `exo_app::flight_events::FlightWatch` (plain state machine with unit tests) turns the ship's state into the three events: take-off when the ship leaves the ground under the pilot, pad reached once per visit within the pad's radius and 120 m above it, landing with the largest speed towards the ground of the last 10 steps. Scenarios other than `licence` start with the licence earned. Content: flight school place `skyhook_school` (about 70 m from the start, opposite Drip Rock), giver `flight_school`, exam template `flight_exam` (take off, reach and land on the Drip Rock pad, set the school's parcel down; fee 150, retry 75, crash above 6 m/s, honours at 2.5 m/s within 150 s, deadline 300 s), licence `flight`, track `licence_flight`; `first_haul` (Bent Spoon) now needs the licence; texts (exam notices, refusal).
 
-Checks, scenario `crate-lock` (new, in `cargo t`):
-- set down: the crate fully on the plates locks and snaps to (-0.75, 1.25); the one off the plates and the one half on the right edge do not; 1 plate lit, 1 red.
-- hard acceleration (6 s boost forward to 197 m/s), firm brake, 3 s hard strafe, firm brake: locked crate drift 0.0000 m; loose crate slid 5.75 m and stayed in the cabin (ramp field stopped it 441 steps).
-- fly to space and warp Hearth -> Cinder: locked crate still locked, drift 0.0000 m; loose crate still in the cabin; net corrections over 2 cm: 0.
-- landed on Cinder: grabbing unlocks (held, not locked, 0 plates lit); set down again on the plates it locks again.
-- 0 failures. `crate-ride` now also locks its test crate (it snapped 0.255 m onto the plates), so from then on it does not move at all (drift 0.000 m through flight, warp and landing). Its pushed crate now leaves while the ship accelerates (W held until the hand-over: with inertia, the ship's braking after W pushed the crate forward against the shove); hand-over at 25.36 m/s ship speed, jump 0.0 m/s.
+Checks: 10 tests in `jobs_core/tests/exam.rs` (loader errors, fee and per-player retry price, pass, honours, a slow plain pass, order and sender of the checks, crash, damaged crate, clock out, cannot afford, closed to holders, save with attempts), 5 unit tests of `FlightWatch`, kernel test for the events. Scenario `licence` (in the gate): a new player has no licence, the seat refuses with the pointer and a notice, riding along works, exam taken at the counter (fee 150 paid, the parcel waits on the school pad, three checks), the seat is open during the exam, the three events by test hook, parcel set down on Drip Rock, exam completed with honours, licence 1, standing +10, exam closed, the seat prompt plain. Gate: `cargo t` 440 passed, `cargo scenario` 0 failures.
 
-Open points:
-- Locked crates add no mass to the ship; loose crates do not push it.
-- The inertia ignores the ship's turning (no centrifugal push) and the vertical part (cabin gravity holds crates down).
-- Plate area and size, the 40 m/s² cap and the ramp field are guesses.
+TODO(initiator): fee 150, retry 75, crash limit 6 m/s, honours limits (2.5 m/s, 150 s), deadline 300 s, honours standing 10, overflight height 120 m for pad reached, the school's place and all its texts.
+Open: the take-off, pad and landing in the real game are detected by `FlightWatch` but only the state machine is tested, the scenario sets the events by hook as the brief allows (no real hop under the flight model that is being reworked); a new game starts with 100 credits, so the fee needs three or four courier jobs first as decided.
 
-## #85 object budget
+## #166 map
 
-What: `content/cargo/budget.json` (one row per category; crates only): cap 24, persistence cap 4, timeout 900 s, distance 3000 m. Pure rules in `grab_core::budget::over_budget` (test-first, 4 tests); `cargo::budget_step` runs after `crate_step` and despawns what they return. Rules: held, locked and cabin crates never go. A loose crate resting on the players' planet goes after the timeout untouched; a loose crate still moving goes beyond the distance from every player and ship. Crates on a planet the players left are frozen (not stepped, `CargoStats::frozen`) and only the persistence cap of them stays, most recently touched first. Over the cap the loose ones go, those left behind first, then the longest untouched. Every crate remembers its planet and when it was last touched (grab).
+Built: `planet_core::look`: `Planet::local_map` (a north-up RGB picture of the ground within a radius of a point: water by depth, land in biome colour shaded by height and slope), `local_map_dir` and `local_offset` (pixel to direction and back, in metres on the surface). A whole-planet equirectangular map is useless here because the start lies at the pole, so the map is local around the player. `jobs_core::map` (no Bevy): `pins` (places the crew may use on this planet, the tracked job's target at its next stop, the players, in that order), `next_stop` (pickup while crates wait, dropoff when all are carried, back to the pickup when one is set down elsewhere). Glue: taps `map` (M) and `track_job` (T, in `bindings.json`), `Gameplay::tracked` (kept on an active job, T cycles), the job line's pointer follows the tracked job's next stop, `exo_app::map`: M opens a 640 px overlay with the picture (made on a worker thread, about 0.9 s on this machine) and pins (yellow places, red pickup or green dropoff target, blue you), labels placed left or right so they do not overlap; it takes no input.
 
-Design gap, my starting rule (`TODO(initiator)`): **the distance rule only removes crates that are moving** (drifting in space, falling). Crates resting on a planet obey the timeout and, once the players leave, the persistence cap. Otherwise every crate left on a planet would go as soon as the players fly 3 km away, and the persistence cap would never apply. Left-behind crates come back to life when the players return to that planet (they are still entities in world space); nothing is saved to disk (#38).
+Checks: 3 tests in `planet_core/tests/look.rs` (size, north up and east right, metres, offset inverse, water blue), 6 in `jobs_core/tests/map.rs` (open and foreign places, the pin moving from pickup to dropoff, back to the pickup, offered or foreign targets, players, order), 1 unit test, scenario `map` (in the gate): 7 places pinned, all but far Bent Spoon on the picture, the tracked pin at the pickup then the dropoff, the job line agrees, M opens and closes, the picture is made. Windowed under `xvfb-run` the scenario shot the map: `night-shots/map.png`.
 
-Found and fixed on the way (`grab_core::CrateBody`): crates resting on sloped terrain never slept. Friction only acted on the horizontal velocity, and each tick the ground turned gravity into a 0.07 m/s creep downhill. Friction now works against the floor normal (static up to friction x normal force, then kinetic). New test: on a 20.6 degree slope (friction angle 26.6) a crate creeps 0.000 m and sleeps; on 34.6 degrees it slides 14.3 m in 3 s.
+TODO(initiator): map radius (1000 m), picture size, colours, keys M and T.
+Open: pin labels are plain text; no fog of war or scanning; the map is only for the planet the player is on.
 
-Checks, scenario `crate-budget` (new, in `cargo t`):
-- 30 crates spawned against cap 24: 24 alive, the first spawned (longest untouched) went, the last stays.
-- all 24 at rest sleep; 0 crate steps in 0.5 s.
-- warp Hearth -> Cinder: 4 crates left on Hearth (persistence cap 4), frozen (2804 skipped steps).
-- on Cinder with the timeout shortened to 2 s (test hook): three fresh crates there before, gone after; the 4 on Hearth stay.
-- a crate placed 3500 m above the walker (falling) goes.
-- 0 failures. Numbers are counts only (no frame times on this machine).
+## Day session (2026-10-10, with the initiator)
 
-Open points: one category (crates); the budget counts only the local player and the own ship as "players and ships" (#86 adds the others).
+The rest of the brief was finished in a day session: the initiator planned it with the coordinator (Opus) and the coordinator split it into lanes for Haiku subagents. The container's 6 GB allow one Bevy build at a time, so only lanes in the serde-only `*_core` crates ran side by side, each in its own worktree and target dir (`lane/d-board`, `lane/d-production`, `lane/d-texts`). The coordinator reviewed each lane and sent back or fixed what fell short. The Haiku lane for #135 committed without its gate and left four Bevy builds running at once; its commit was undone and #135 was done by the coordinator, as the initiator decided. Glue lanes (#136, #132) go to the coordinator as well.
 
-## E1 carry crates down the ramp and back up
+## #135 save file
 
-Why: loading and unloading the ship by hand is the core of "does moving cargo feel good?", and it crosses the cabin edge while holding (frame hand-over with a holder pushing), the ramp collider and the lock grid in one go. Nothing checked that together.
+Built: `exo_app::savefile`: the #128 envelope as JSON in `saves/autosave.json` in the game's own folder (scripted and headless runs: `<out_dir>/saves`, and they start new), written through a temporary file and a rename. Sections: kernel, jobs, customers, `game` (the seed) and world (the crates of active jobs with condition and place, planet frame or ship frame; the next crate id). A load is a restart: the goods crates go, the saved state replaces progress, jobs and customers (the host's event numbers continue above the saved ones, `Dedup::next_seq`), the crates come back where they were with their condition and pad. The save is loaded once at start, when the pads are known. Autosave on the game clock: 2 s after a job event (a burst writes once), else every 60 s. `saves/client_id` is made once per game folder (`LocalClient`); events still go out as `HOST` until the network sends the id (#134). `/saves/` is in `.gitignore`.
 
-What: scenario `crate-unload` (new, in `cargo t`), no game code changed. For the small and the medium crate: locked on the plates; pick up (unlocks); walk out the back down the ramp onto the ground; set down; pick up again; walk back up into the cabin; set down on the plates.
+Checks: 3 unit tests in `savefile.rs` (client id made once and kept, slot written whole and read back, autosave pacing). New scenario `savefile` (and `scenario_savefile.rs` in the gate): take the first haul, deliver one of three crates, wear another down to 0.8, autosave seen, save to the file, restart from a fresh gameplay state with no crates, load the file: wallet, tracks, flags, unlocks (the whole progress), the active job and the crates with their condition and pad are as saved; the two crates left are carried and the job pays 290 of 300 (the worn crate). Gate: `cargo t` 455 passed (1 skipped: perf), `cargo scenario` 0 failures.
 
-Checks (0 failures):
-- small: carried 16.7 m behind the ship's centre (walker outside, crate in the planet frame, still held); rests on the ground 0.09 m above the CPU height (asleep); carried back into the cabin; locks again at (0.25, 0.56, 0.75), 1 plate lit.
-- medium (two hands, slower): carried 13.6 m out; rests 0.24 m above the height under its centre (sloped ground; the check allows 0.35 m); back in; locks at (0.00, 0.81, 2.00), 4 plates lit.
-
-## E2 the walker bumps into crates; crates stack (dropped in this form)
-
-Update 2026-10-09 midday: with the stash re-applied, `session` passed 6 times in a row (the stash already held the `try_despawn` guard, and it skips crates whose ship is gone) and the full gate was green, so it went out as 7e83b52. Then the initiator's playtest feedback replaced this approach: outside near a player a crate becomes an Avian rigid body, resting far away it is frozen (pose only), in the cabin it is part of the ship. 7e83b52 is reverted, and the stash stays as a reference only. The lesson for the spike: a collider that is a child of the ship has to cope with the ship being despawned (menu path).
-
-Original notes:
-
-State: code in local `git stash@{0}` on the NAS (`git stash show -p stash@{0}`), not pushed. Each crate got a collider entity on a new `Layer::Crate` (memberships only), kept in place by a `sync_crate_colliders` system: a child of the ship in a cabin, standalone on the planet. Crates swept against other crates, and the walker swept against crates except the held one. Its own scenario `crate-stack` passed (crates stack with a 5.0 mm gap in the cabin and on the ground; the walker stands on a crate 5 mm above its top; the walker never got closer than 0.86 m to a crate's centre, face contact 0.85 m). `crate-lock` needed one check changed (the loose crate now locks on the plates after the flight).
-
-Why parked: the full gate failed in `tests/session.rs` (host and join through the menu): "Encountered an error in command: Entity despawned". Most likely `sync_crate_colliders` despawns or parents to an entity the menu path already removed (fix idea: `try_despawn`, and skip a crate whose ship is gone). Not tried: the run had stopped (next section).
-
-Also seen on the way: `tests/perf.rs` failed once under load (p95 3.49 ms against a limit of 3.40 ms, load average 13 to 15); rerun alone it passed twice.
-
-## The run stopped early (read this)
-
-The run stopped at about 03:57 and did nothing until 09:37. Not a limit (7-day usage 51 %) and not a crash: while debugging the `session` failure above, the agent ended its turn after a tool result without taking the next step and without a note. Lost: about 5.5 hours, so E2 is unfinished and E3 to E5 were never started. At 09:37 (past the 08:30 stop) E2 was parked in a stash, so `night/extras` ends at the green E1 commit plus this log.
-
-## Playtest follow-up (2026-10-09, after the run)
-
-Feedback: the crates hardly turn, the physics does not feel good, and they slide much too far. New direction: crates get three states. Outside near a player they are an Avian rigid body. Resting far away they are frozen (pose only). In the cabin they are part of the ship, with `CrateBody` kept for the short flight inside the cabin. A spike `spike/avian-crates` comes first. E2 in its old form is reverted (56f3686).
-
-- [x] Revert E2 (56f3686).
-- [x] Impact friction in `CrateBody` (test-first, `impact_friction_cuts_the_slide`): an impact stops the motion into the surface and takes friction x impact speed off the slide along it, never reversing it. It is not applied again to the floor a crate already rests on (the floor's Coulomb friction acts there). `friction` 0.5 -> 0.8. A thrown crate in `crate-carry` now flies 4.77 m (was 6.66 m). Gate green.
-- [ ] Spike `spike/avian-crates`, brief first.
-- [x] E3 grab-tool beam, see below.
-- [ ] E4 sounds, E5 split `scenario.rs`.
-
-Open design questions, for the initiator to decide:
-- TODO(initiator) a) Cabin: does every crate set down become part of the ship at once (the lock grid then only helps keep order, and sliding under acceleration goes away)? Or does the lock grid stay the condition, with loose crates keeping the current model?
-- TODO(initiator) b) Friction start value: 0.8 plus impact friction is in now (`content/tuning/grab.json`), to be tuned by feel.
-
-## E3 visible grab-tool beam
-
-What: while the grab tool holds a crate, a thin glowing rod runs from a muzzle low right in front of the eye to the crate's centre. It breathes a little (6 Hz) and turns from cyan to hot orange as the hold strains towards breaking (the break timer). Render only (`grab::setup_beam`, `grab::update_beam`, windowed runs). It is hidden seen from orbit or a fixed viewpoint. Unit test `beam_spans_both_ends` covers the beam's pose. With a window, `crate-carry` takes a screenshot `shot-01-grab-beam.png` mid-pull.
-
-Look: the first screenshot (radius 2.5 cm at 45 cm from the eye) looked like a fat pipe; now 1.2 cm, muzzle 0.6 m ahead. TODO(initiator): muzzle, radius and colours are start values, tune by feel.
-
-Gate: `cargo t` exit 0, `cargo scenario` 0 failures; windowed `crate-carry` under xvfb 0 failures.
-## E4 synthesized grab, throw and lock sounds
-
-Branch `feat/e4-sounds` from `origin/main` (initiator: E4 and E5 on their own branches, nothing more on `night/extras`).
-
-What: three more one-shots in `audio.rs`, synthesized in code like the others:
-- **Grab:** 0.12 s, a 300 to 900 Hz chirp with a breath of noise ("fwip"), when a new crate is taken hold of.
-- **Throw:** 0.35 s, noise swelling and falling through a low-pass that opens and closes (a whoosh).
-- **Lock:** 0.2 s, a 110 Hz clunk and a 1.9 kHz ping 60 ms later ("ka-chunk"), on each lock onto the plates.
-
-Triggered from `Grab::held` (a new crate), `Grab::throws` and `CargoStats::locks`. Windowed runs only.
-
-Not heard: this machine has no sound device, so the unit tests check only length, range and that each sound is audible. Crates that lock at the start of a session make a ka-chunk too. TODO(initiator): sounds and volumes are start values, listen in a windowed run.
-## E5 #52 split `scenario.rs`
-
-Branch `feat/e5-split-scenario` from `origin/main`.
-
-What: `scenario.rs` (2805 lines) became `scenario/` with one module per topic, and `cargo_scenario.rs` moved in as `scenario/cargo.rs`:
-- `mod.rs` (731 lines) keeps the shared script interface: `Step`, `Ctx`, `Script`, the helpers, the general step builders (walk, board, sit, land, aim), `build` and `run_script`.
-- The topics: `net` (foreign ship, net bot, proxy at warp speed), `space`, `walk` (T5), `warp`, `flight`, `swap`, `figure`, `reload`, `cargo`.
-
-A pure move. Every old line is in the new files exactly once, except the module headers, `pub(super)` on the functions `build` calls, the `cargo::` paths in `build`, and two section-divider comments that became module docs; checked with a script. One orphaned doc comment (#16, the proxy at warp speed) now sits on `foreign_warp_steps`, where it belongs. Outside the folder nothing changes: `crate::scenario::...` paths stay the same.
-
-Gate: `cargo t` exit 0, `cargo scenario` 0 failures.
+TODO(initiator): slot name and slots, the autosave times (2 s, 60 s), where the save lives for an installed game, a new game's seed (fixed now, so scenarios repeat).
+Open: the ship's pose is not saved (the ship spawns at the start, a crate in its cabin comes back into the cabin, not mag-locked); crates on another planet than the current one are left out with a log line; no load menu; the join and send part is #134.

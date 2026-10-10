@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::id::{ClientId, CrateId, Flag, LocationId, TrackId, UnlockId};
+use crate::id::{ClientId, CommodityId, CrateId, Flag, LocationId, OrderId, TrackId, UnlockId};
 
 /// Unique per event: the sender plus the sender's own running number. No coordination needed;
 /// a retried or duplicated request keeps its id.
@@ -54,6 +54,21 @@ pub enum WorldEvent {
     TrackChanged { track: TrackId, delta: i64, player: Option<ClientId> },
     /// A system states a fact that conditions can ask for (`job_completed:<template>`).
     FlagRaised { flag: Flag },
+    /// A buyer (`by`: the id the customers system uses, for texts) wants goods: pick up `amount` of `commodity` at `from`, bring them to `to` for
+    /// `reward`. The customers system raises it, the jobs system turns it into an offer (#168).
+    OrderPlaced { order: OrderId, by: String, from: LocationId, to: LocationId, commodity: CommodityId, amount: u32, reward: i64, deadline_s: Option<f64> },
+    /// The sender's ship left the ground under their hands (#169). The exam asks for it; nothing
+    /// here depends on how the ship flies.
+    TookOff,
+    /// The sender's ship came over the pad of a location.
+    PadReached { at: LocationId },
+    /// The sender's ship touched down, at the pad of a location or elsewhere, with this speed
+    /// towards the ground in m/s.
+    Landed { at: Option<LocationId>, speed: f64 },
+    /// What came of an order: how many crates arrived, how many were asked for, their mean
+    /// condition 0..1, and whether it was in time. The jobs system raises it when the job ends;
+    /// the customers system reads it.
+    OrderSettled { order: OrderId, delivered: u32, asked: u32, condition: f64, in_time: bool },
 }
 
 /// Which event ids the host has applied. An id seen before is not applied again (co-op retries,
@@ -82,6 +97,12 @@ impl Dedup {
             w.below += 1;
         }
         true
+    }
+
+    /// The next number a sender may use: above every id seen from it (0 for an unknown sender).
+    /// A restarted client continues from here, so its new events are not taken for duplicates.
+    pub fn next_seq(&self, sender: ClientId) -> u64 {
+        self.senders.get(&sender).map_or(0, |w| w.above.last().map_or(w.below, |m| m + 1))
     }
 
     /// Ids held above the low-water marks (a measure of how out of order events arrive).

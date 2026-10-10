@@ -1,0 +1,8 @@
+{
+  "_comment": "Courier drop, about 280 m from Drip Rock. Placed in metres from Drip Rock (a change of the planet radius keeps the walking distance, #177). Invented name; position and sizes are starting values (TODO(initiator)). The place moves when the city is placed (E).",
+  "id": "noodle_post",
+  "planet": "hearth",
+  "near": { "place": "drip_rock", "east_m": -220.0, "north_m": 170.0 },
+  "edits": [ { "type": "flatten", "order": 0, "radius_m": 10.0, "rolloff_m": 12.0 } ],
+  "pads": [ { "id": "main", "at": [0.0, 0.0], "radius_m": 8.0 } ]
+}

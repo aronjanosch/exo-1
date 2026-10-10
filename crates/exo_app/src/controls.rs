@@ -103,6 +103,16 @@ pub enum Tap {
     ThrustLaw,
     /// Playtest switch: the camera's shake, spring lag and G field of view (F9, #148, #149).
     CameraFx,
+    /// Run the queued banners and toasts (the arrival ritual) fast (#165).
+    SkipNotices,
+    /// Close a giver's counter without taking the job (#167).
+    Decline,
+    /// The next offer at the open counter (#167).
+    NextOffer,
+    /// Open or close the map (#166).
+    Map,
+    /// Track the next active job: its next stop is the pointer and the map's target (#166).
+    TrackJob,
 }
 
 impl Axis {
@@ -133,7 +143,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 16] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::LandingMode, Tap::TurnCap, Tap::ThrustLaw, Tap::CameraFx];
+    pub const ALL: [Tap; 21] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::LandingMode, Tap::TurnCap, Tap::SkipNotices, Tap::Decline, Tap::NextOffer, Tap::Map, Tap::TrackJob, Tap::ThrustLaw, Tap::CameraFx];
     pub fn name(self) -> &'static str {
         match self {
             Tap::Interact => "interact",
@@ -152,6 +162,11 @@ impl Tap {
             Tap::TurnCap => "turn_cap",
             Tap::ThrustLaw => "thrust_law",
             Tap::CameraFx => "camera_fx",
+            Tap::SkipNotices => "skip_notices",
+            Tap::Decline => "decline",
+            Tap::NextOffer => "next_offer",
+            Tap::Map => "map",
+            Tap::TrackJob => "track_job",
         }
     }
 }
@@ -350,6 +365,14 @@ impl Bindings {
                 (Tap::ThrustLaw, None) => Ok(vec![Input::Key(KeyCode::F7)]),
                 // ... and no `camera_fx` (#148, #149).
                 (Tap::CameraFx, None) => Ok(vec![Input::Key(KeyCode::F9)]),
+                // ... and no `skip_notices` (#165).
+                (Tap::SkipNotices, None) => Ok(vec![Input::Key(KeyCode::Enter)]),
+                // ... and no `decline` or `next_offer` (#167).
+                (Tap::Decline, None) => Ok(vec![Input::Key(KeyCode::Backspace)]),
+                (Tap::NextOffer, None) => Ok(vec![Input::Key(KeyCode::Tab)]),
+                // ... and no `map` or `track_job` (#166).
+                (Tap::Map, None) => Ok(vec![Input::Key(KeyCode::KeyM)]),
+                (Tap::TrackJob, None) => Ok(vec![Input::Key(KeyCode::KeyT)]),
                 _ => Err(err(t.name(), "missing".into())),
             }
         };

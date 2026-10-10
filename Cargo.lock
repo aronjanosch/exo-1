@@ -2482,6 +2482,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
+name = "customers_core"
+version = "0.1.0"
+dependencies = [
+ "content_core",
+ "gameplay_core",
+ "jobs_core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "dasp_sample"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2711,6 +2722,7 @@ dependencies = [
  "avian3d",
  "bevy",
  "content_core",
+ "customers_core",
  "daynight_core",
  "flight_core",
  "gameplay_core",

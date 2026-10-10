@@ -1,0 +1,1 @@
+{ "_comment": "A giver standing: never below 0, a failure lowers it, work brings it back.", "id": "standing_courier", "name": "track.standing_courier.name", "owner": "crew", "min": 0, "thresholds": [30, 100] }

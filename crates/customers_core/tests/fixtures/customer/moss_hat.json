@@ -1,0 +1,12 @@
+{
+  "_comment": "Test fixture: likes wet goods, no patience limit.",
+  "id": "moss_hat",
+  "name": "customer.moss_hat.name",
+  "location": "bent_spoon",
+  "taste": ["wet"],
+  "standard": 0.5,
+  "rhythm_s": [300.0, 300.0],
+  "amount": [2, 2],
+  "start": 1.0,
+  "voice": { "order": "customer.moss_hat.order", "thanks": "customer.moss_hat.thanks", "grumble": "customer.moss_hat.grumble" }
+}

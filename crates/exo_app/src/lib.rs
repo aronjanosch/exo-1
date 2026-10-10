@@ -6,20 +6,24 @@ pub mod cargo;
 pub mod controls;
 pub mod daynight;
 pub mod env;
+pub mod flight_events;
 pub mod gameplay;
 pub mod grab;
 pub mod hot_reload;
 pub mod hud;
 pub mod interact;
 pub mod look;
+pub mod map;
 pub mod menu;
 pub mod net;
 pub mod net_live;
+pub mod notices;
 pub mod origin;
 pub mod perf;
 pub mod phases;
 pub mod record;
 pub mod ring;
+pub mod savefile;
 pub mod scatter;
 pub mod scenario;
 pub mod settings;
@@ -299,6 +303,16 @@ pub fn build_app(o: &Options) -> App {
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
     app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, cargo::plugin, hud::plugin, net_live::plugin));
     app.add_plugins(gameplay::plugin);
+    // The save (#135) belongs to players: scripted and headless runs keep theirs in the output
+    // folder and start new.
+    let player_run = o.scenario.is_none() && !o.headless;
+    savefile::plugin(&mut app, if player_run { savefile::SaveDir::default_dir() } else { o.out_dir.join("saves") }, player_run);
+    app.add_plugins((flight_events::plugin, map::plugin));
+    // Scenarios start with the licences earned (their pilots are not the examinees), except the
+    // one about the licence itself (#169).
+    if o.scenario.as_deref().is_some_and(|n| n != "licence") {
+        app.add_systems(Startup, gameplay::grant_starting_licences);
+    }
     if let Some(name) = &o.scenario {
         app.add_plugins(scenario::plugin(name, o.headless));
     }
@@ -314,7 +328,7 @@ pub fn build_app(o: &Options) -> App {
     });
     if !o.headless {
         app.add_plugins((view::plugin, controls::window_plugin, settings::window_plugin, terrain::plugin, daynight::window_plugin, grab::window_plugin, cargo::window_plugin));
-        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, gameplay::window_plugin));
+        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin));
         if o.menu() {
             app.add_plugins(menu::plugin);
         }

@@ -1,0 +1,13 @@
+{
+  "_comment": "Test fixture: a regular who likes dry goods.",
+  "id": "old_nib",
+  "name": "customer.old_nib.name",
+  "location": "drip_rock",
+  "taste": ["dry"],
+  "standard": 0.7,
+  "rhythm_s": [100.0, 200.0],
+  "amount": [1, 2],
+  "patience_s": 600.0,
+  "start": 2.0,
+  "voice": { "order": "customer.old_nib.order", "thanks": "customer.old_nib.thanks", "grumble": "customer.old_nib.grumble" }
+}

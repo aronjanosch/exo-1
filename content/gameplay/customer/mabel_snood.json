@@ -1,0 +1,13 @@
+{
+  "_comment": "Placeholder customer (#168). Name, taste, numbers and voice are TODO(initiator).",
+  "id": "mabel_snood",
+  "name": "customer.mabel_snood.name",
+  "location": "noodle_post",
+  "taste": ["dry"],
+  "standard": 0.6,
+  "rhythm_s": [150.0, 240.0],
+  "amount": [1, 2],
+  "patience_s": 480.0,
+  "start": 2.0,
+  "voice": { "order": "customer.mabel_snood.order", "thanks": "customer.mabel_snood.thanks", "grumble": "customer.mabel_snood.grumble" }
+}

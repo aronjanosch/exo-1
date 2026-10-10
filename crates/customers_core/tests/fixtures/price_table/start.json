@@ -1,0 +1,7 @@
+{
+  "_comment": "Test fixture: one table for the wholesaler's and the customers' prices per crate, and the courier rewards, so G and H can balance against them.",
+  "id": "start",
+  "wholesale": { "fizzy_mud": 20, "sock_dust": 15, "jelly_bricks": 60 },
+  "customer": { "fizzy_mud": 40, "sock_dust": 30, "jelly_bricks": 120 },
+  "courier": { "courier_lint_trap": 30 }
+}

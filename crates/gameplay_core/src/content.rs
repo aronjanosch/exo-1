@@ -68,6 +68,10 @@ pub struct ProgressTrack {
     /// Value of a new crew or player.
     #[serde(default)]
     pub start: i64,
+    /// The value never drops below this (a standing that a failure lowers but never empties
+    /// for good); none means no floor.
+    #[serde(default)]
+    pub min: Option<i64>,
     /// Values at which the level rises, strictly ascending; may be empty.
     #[serde(default)]
     pub thresholds: Vec<i64>,
@@ -154,6 +158,9 @@ impl Content {
             check_id(path, "id", r.id.as_str(), e);
             if r.thresholds.windows(2).any(|w| w[0] >= w[1]) {
                 e.push(format!("{path}: thresholds: must be strictly ascending"));
+            }
+            if r.min.is_some_and(|m| m > r.start) {
+                e.push(format!("{path}: min: must not be above start"));
             }
         }
         match self.tracks.get(&TrackId::new(WALLET)) {

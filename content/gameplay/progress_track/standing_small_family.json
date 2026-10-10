@@ -1,0 +1,1 @@
+{ "_comment": "Crew standing with the small family. Not used in D (TODO(initiator)).", "id": "standing_small_family", "name": "track.standing_small_family.name", "owner": "crew", "min": 0, "thresholds": [30, 100, 250] }

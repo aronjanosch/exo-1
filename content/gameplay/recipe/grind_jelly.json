@@ -1,10 +1,10 @@
 {
-  "_comment": "Placeholder recipe (G groundwork): grind jelly_bricks into sock_dust. All numbers are TODO(initiator).",
+  "_comment": "Placeholder recipe (G groundwork): grind grumble_jelly into sock_dust. All numbers are TODO(initiator).",
   "id": "grind_jelly",
   "station": "mill",
   "inputs": [
     {
-      "id": "jelly_bricks",
+      "id": "grumble_jelly",
       "amount": 2
     }
   ],

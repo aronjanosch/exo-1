@@ -1,5 +1,5 @@
 {
-  "_comment": "Placeholder recipe (G groundwork): combine sock_dust and jelly_bricks into fizzy_mud. All numbers are TODO(initiator).",
+  "_comment": "Placeholder recipe (G groundwork): combine sock_dust and grumble_jelly into fizzy_mud. All numbers are TODO(initiator).",
   "id": "fizz_mud",
   "station": "vat",
   "inputs": [
@@ -8,7 +8,7 @@
       "amount": 1
     },
     {
-      "id": "jelly_bricks",
+      "id": "grumble_jelly",
       "amount": 1
     }
   ],

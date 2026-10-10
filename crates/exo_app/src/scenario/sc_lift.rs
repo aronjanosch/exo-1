@@ -1,8 +1,7 @@
-//! Scenario `sc-switch` (round 5): F7 (through the bindings) switches to the SC flight model; the
-//! ship lifts off, holds its height, flies forward and shows the SC mode word; F7 switches back.
+//! Scenario `sc-lift` (round 5, renamed with #206): the SC model from the seat: the ship lifts off,
+//! holds its height, flies forward and shows the SC mode word.
 use crate::hud::HudReadout;
-use crate::scenario::{check, hold_until, planet, put_at_seat, ship_e, ship_vel, sit, tap, with_ship, Step};
-use crate::ship::FlightModel;
+use crate::scenario::{check, hold_until, planet, put_at_seat, ship_e, ship_vel, sit, Step};
 use avian3d::prelude::{Position, Rotation};
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -15,27 +14,12 @@ fn height(w: &mut World) -> f64 {
     (p - pl.centre).length() - pl.radius
 }
 
-fn model_step(want: FlightModel) -> Vec<Step> {
-    vec![
-        Box::new(|w, _| {
-            tap(w, KeyCode::F7);
-            true
-        }),
-        Box::new(move |w, c| {
-            let now = with_ship(w, |s| s.model);
-            check(c, now == want, format!("F7: model {now:?}, want {want:?}"));
-            true
-        }),
-    ]
-}
-
-pub fn sc_switch_steps(s: &mut Vec<Step>) {
+pub fn sc_lift_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, _| {
         put_at_seat(w);
         true
     }));
     s.extend(sit());
-    s.extend(model_step(FlightModel::Sc));
     s.push(Box::new(|w, c| {
         c.v.insert("h0", height(w));
         true
@@ -68,5 +52,4 @@ pub fn sc_switch_steps(s: &mut Vec<Step>) {
         check(c, forward > 20.0, format!("forward: {forward:.1} m/s after 3 s of W"));
         true
     }));
-    s.extend(model_step(FlightModel::Axis));
 }

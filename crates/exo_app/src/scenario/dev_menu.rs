@@ -20,10 +20,7 @@ pub fn dev_menu_steps(s: &mut Vec<Step>) {
         let gp = w.resource::<Gameplay>();
         c.v.insert("money0", gp.progress.wallet() as f64);
         check(c, !gp.may_pilot(HOST), "start: no flight licence".into());
-        with_ship(w, |s| {
-            s.ctl.boost.charge = 0.1;
-            s.sc.drive.boost.charge = 0.1;
-        });
+        with_ship(w, |s| s.sc.drive.boost.charge = 0.1);
         true
     }));
     s.push(press(KeyCode::Digit1));
@@ -46,8 +43,8 @@ pub fn dev_menu_steps(s: &mut Vec<Step>) {
         let (pilot, gained) = (gp.may_pilot(HOST), gp.progress.wallet() as f64 - c.v["money0"]);
         check(c, pilot, "1: the flight licence, the seat takes the pilot".into());
         check(c, gained == MONEY as f64, format!("2: +{gained} credits (want {MONEY})"));
-        let (a, b) = with_ship(w, |s| (s.ctl.boost.charge, s.sc.drive.boost.charge));
-        check(c, a > 0.99 && b > 0.99, format!("3: boost full ({a:.2}, {b:.2})"));
+        let b = with_ship(w, |s| s.sc.drive.boost.charge);
+        check(c, b > 0.99, format!("3: boost full ({b:.2})"));
         true
     }));
     // The day: 4 always day, 5 always night (the clock stands), 6 and 7 jump and the cycle runs.

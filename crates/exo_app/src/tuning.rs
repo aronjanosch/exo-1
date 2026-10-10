@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use flight_core::camera::CameraTuning;
 use flight_core::sc::ScTuning;
-use flight_core::ShipTuning;
+use flight_core::GroundTuning;
 use grab_core::GrabConfig;
 use walker_core::{SuitConfig, WalkerConfig};
 
@@ -25,19 +25,20 @@ pub const SC: [&str; 6] = [
 
 #[derive(Resource, Clone, Debug)]
 pub struct Tuning {
-    pub ship: ShipTuning,
+    /// The ground rules of the ship (`ship.json`, #92).
+    pub ground: GroundTuning,
     pub walker: WalkerConfig,
     pub suit: SuitConfig,
     pub camera: CameraTuning,
     pub grab: GrabConfig,
     pub hud: crate::hud::HudTuning,
-    /// The SC flight model (F7, round 5).
+    /// The SC flight model (round 5).
     pub sc: ScTuning,
 }
 
 impl Tuning {
     pub fn load() -> Tuning {
-        Tuning { ship: ok(ShipTuning::from_json(SHIP)), walker: ok(WalkerConfig::from_json(WALKER)), suit: ok(SuitConfig::from_json(SUIT)), camera: ok(CameraTuning::from_json(CAMERA)), grab: ok(GrabConfig::from_json(GRAB)), hud: ok(crate::hud::HudTuning::from_json(HUD)), sc: ok(ScTuning::from_json(SC)) }
+        Tuning { ground: ok(GroundTuning::from_json(SHIP)), walker: ok(WalkerConfig::from_json(WALKER)), suit: ok(SuitConfig::from_json(SUIT)), camera: ok(CameraTuning::from_json(CAMERA)), grab: ok(GrabConfig::from_json(GRAB)), hud: ok(crate::hud::HudTuning::from_json(HUD)), sc: ok(ScTuning::from_json(SC)) }
     }
 }
 

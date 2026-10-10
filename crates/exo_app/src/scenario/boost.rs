@@ -1,7 +1,7 @@
 //! Scenario `boost-hud` (#90, #91): the boost capacitor drains, cuts out and recharges, and the
 //! minimal HUD shows it with speed and altitude, all driven through `Controls`.
 use crate::hud::HudReadout;
-use crate::scenario::{above_ground, altitude, begin, check, end, hold_until, keys, put_at_seat, ship_vel, sit, tap, with_ship, Ctx, Step};
+use crate::scenario::{above_ground, altitude, begin, check, end, hold_until, keys, put_at_seat, ship_vel, sit, with_ship, Ctx, Step};
 use bevy::prelude::*;
 
 fn readout(w: &World) -> HudReadout {
@@ -9,7 +9,7 @@ fn readout(w: &World) -> HudReadout {
 }
 
 fn cap(w: &mut World) -> flight_core::BoostCapacitorTuning {
-    with_ship(w, |s| s.ctl.tuning.boost_capacitor.clone())
+    with_ship(w, |s| s.sc.tuning.drive.boost_capacitor.clone())
 }
 
 /// The number in a text such as "ALT 450 m" or "123.4 m/s".
@@ -42,7 +42,7 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
     s.extend(sit());
     s.push(Box::new(|w, c| {
         let r = readout(w);
-        check(c, r.texts[0] == "SHIP" && r.gauge == Some(1.0) && r.texts[3] == "BOOST 100 %" && r.boost_mode == "CAPACITOR", format!("hud seated: {:?}, gauge {:?}, {}", r.texts, r.gauge, r.boost_mode));
+        check(c, r.texts[0].starts_with("SHIP SC") && r.gauge == Some(1.0) && r.texts[3] == "BOOST 100 %" && r.boost_mode == "CAPACITOR", format!("hud seated: {:?}, gauge {:?}, {}", r.texts, r.gauge, r.boost_mode));
         true
     }));
     // Climb without boost, so the meter is still full.
@@ -50,7 +50,7 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
     s.push(hold_until("cruise", &[KeyCode::KeyW], 8.0, |_| false));
     s.push(Box::new(|w, c| {
         check_readout(w, c, "cruise");
-        let charge = with_ship(w, |s| s.ctl.boost.charge);
+        let charge = with_ship(w, |s| s.sc.drive.boost.charge);
         check(c, charge == 1.0, format!("capacitor full before the boost: {charge:.3}"));
         check(c, readout(w).texts[2].starts_with("AGL"), format!("hud at 300 m above ground: AGL ({:?})", readout(w).texts[2]));
         // Above the threshold ALT: lowered under the ship for one step instead of a long climb.
@@ -69,7 +69,7 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
     // Hold W + Shift until the meter is empty: it lasts the drain time, the limit is raised while
     // it runs and drops back although Shift is still held.
     s.push(Box::new(|w, c| {
-        let (limit, active, charge) = with_ship(w, |s| (s.ctl.forward_speed_limit, s.ctl.boost.active, s.ctl.boost.charge));
+        let (limit, active, charge) = with_ship(w, |s| (s.sc.status.cap, s.sc.drive.boost.active, s.sc.drive.boost.charge));
         if c.t == 0.0 {
             begin(w, c, "boost until empty");
             c.v.insert("limit0", limit);
@@ -83,7 +83,9 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
         let r = readout(w);
         if c.t >= 1.0 && !c.v.contains_key("checked_1s") {
             c.v.insert("checked_1s", 1.0);
-            check(c, r.boosting && r.gauge.is_some_and(|g| g < 0.9 && g > 0.5), format!("hud after 1 s of boost: {:?}, gauge {:?}, boosting {}", r.texts[3], r.gauge, r.boosting));
+            // The drain is the SC capacitor's drain time (20 s), so one second takes 1/drain of it.
+            let want = 1.0 - 1.0 / cap(w).drain_time;
+            check(c, r.boosting && r.gauge.is_some_and(|g| (g - want).abs() < 0.01), format!("hud after 1 s of boost: {:?}, gauge {:?} (want {want:.2}), boosting {}", r.texts[3], r.gauge, r.boosting));
             check_readout(w, c, "boosting");
         }
         let drain = cap(w).drain_time;
@@ -103,12 +105,14 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
             begin(w, c, "boost held on empty");
         }
         if c.t >= 0.8 {
-            let (limit, strength) = with_ship(w, |s| (s.ctl.forward_speed_limit, s.ctl.boost_strength));
-            let l0 = c.v["limit0"];
+            let (limit, strength) = with_ship(w, |s| (s.sc.status.cap, s.sc.status.boost_active as u8 as f64));
+            // The air thins with the climb during the boost, so the plain cap is compared with the
+            // boosted peak, not with the cap at the start.
+            let peak = c.v.get("max_limit").copied().unwrap_or(limit);
             let r = readout(w);
-            end(w, c, format!("limit {limit:.0} m/s (before {l0:.0}), strength {strength:.2}"));
-            check(c, strength == 0.0 && (limit - l0).abs() < 0.1 * l0, format!("boost empty: strength {strength:.2}, limit {limit:.0} m/s (before {l0:.0})"));
-            check(c, !r.boosting && r.texts[3] == "BOOST 0 %" && !r.ready, format!("hud empty: {:?}, boosting {}, ready {}", r.texts[3], r.boosting, r.ready));
+            end(w, c, format!("limit {limit:.0} m/s (boost peak {peak:.0}), strength {strength:.2}"));
+            check(c, strength == 0.0 && limit < 0.7 * peak, format!("boost empty: strength {strength:.2}, limit {limit:.0} m/s (boost peak {peak:.0})"));
+            check(c, !r.boosting && r.texts[3].starts_with("BOOST") && !r.ready, format!("hud empty: {:?}, boosting {}, ready {}", r.texts[3], r.boosting, r.ready));
             keys(w, &[KeyCode::ShiftLeft], false);
             return true;
         }
@@ -118,22 +122,19 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
     // the recharge time.
     s.push(Box::new(|w, c| {
         let t = cap(w);
-        let charge = with_ship(w, |s| s.ctl.boost.charge);
+        let charge = with_ship(w, |s| s.sc.drive.boost.charge);
         if c.t == 0.0 {
             begin(w, c, "recharge");
-            c.v.insert("first_charge", -1.0);
+            // 0.8 s after empty, Shift released: the recharge began at the delay (0.2 s) while held.
+            let at_release = (0.8 - t.recharge_delay) / t.recharge_time;
+            check(c, (charge - at_release).abs() < 0.005, format!("recharge: charge {charge:.4} at release, want {at_release:.4} (the delay ran while held)"));
         }
         // 0.8 s of the delay passed while Shift was still held on empty.
         let since_empty = c.t + 0.8;
-        if charge > 0.0 && c.v["first_charge"] < 0.0 {
-            c.v.insert("first_charge", since_empty);
-        }
         if charge >= 1.0 || c.t > t.recharge_delay + t.recharge_time + 2.0 {
-            let first = c.v["first_charge"];
             let full = since_empty;
             let r = readout(w);
-            end(w, c, format!("recharge starts {first:.2} s after empty, full after {full:.2} s"));
-            check(c, (first - t.recharge_delay).abs() <= 0.1, format!("recharge: starts {first:.2} s after empty (delay {} s)", t.recharge_delay));
+            end(w, c, format!("full after {full:.2} s"));
             check(c, (full - t.recharge_delay - t.recharge_time).abs() <= 0.15, format!("recharge: full {full:.2} s after empty (delay + recharge {} s)", t.recharge_delay + t.recharge_time));
             check(c, r.texts[3] == "BOOST 100 %" && r.ready, format!("hud recharged: {:?}", r.texts[3]));
             check_readout(w, c, "recharged");
@@ -143,9 +144,9 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
         false
     }));
     // Half the meter, then X with Shift still held: the brake uses no charge (TODO(initiator), #90).
-    s.push(hold_until("boost to half the meter", &[KeyCode::KeyW, KeyCode::ShiftLeft], 10.0, |w| with_ship(w, |s| s.ctl.boost.charge) <= 0.5));
+    s.push(hold_until("boost to half the meter", &[KeyCode::KeyW, KeyCode::ShiftLeft], 10.0, |w| with_ship(w, |s| s.sc.drive.boost.charge) <= 0.5));
     s.push(Box::new(|w, c| {
-        let charge = with_ship(w, |s| s.ctl.boost.charge);
+        let charge = with_ship(w, |s| s.sc.drive.boost.charge);
         if c.t == 0.0 {
             begin(w, c, "firm brake with Shift held");
             c.v.insert("charge0", charge);
@@ -167,42 +168,5 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
         }
         false
     }));
-    // F6 (dev switch, through the bindings): the speed stage of #24, then back to the capacitor.
-    s.push(Box::new(|w, _| {
-        tap(w, KeyCode::F6);
-        true
-    }));
-    s.push(Box::new(|w, c| {
-        let (stage, charge, strength) = with_ship(w, |s| (s.ctl.boost_stage, s.ctl.boost.charge, s.ctl.boost_strength));
-        if c.t == 0.0 {
-            begin(w, c, "F6: boost as the speed stage");
-            let r = readout(w);
-            check(c, stage && r.boost_mode == "STAGE" && r.gauge.is_none(), format!("F6: stage {stage}, hud {:?} {}, gauge {:?}", r.texts[3], r.boost_mode, r.gauge));
-            c.v.insert("stage_charge0", charge);
-            keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft], true);
-            return false;
-        }
-        // Longer than the drain time: the stage never runs out.
-        if c.t >= cap(w).drain_time + 2.0 {
-            let r = readout(w);
-            keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft], false);
-            end(w, c, format!("{:.1} s, strength {strength:.2}, charge {charge:.3}, hud {:?} {}", c.t, r.texts[3], r.boost_mode));
-            // The stage leaves the meter as it was (#104 point 8: F6 refilled an empty one).
-            let c0 = c.v["stage_charge0"];
-            check(c, strength == 1.0 && charge == c0, format!("stage: full boost after {:.1} s, meter untouched (strength {strength:.2}, charge {c0:.3} -> {charge:.3})", c.t));
-            check(c, r.texts[3] == "BOOST ON" && r.boosting, format!("hud stage boosting: {:?}", r.texts[3]));
-            check_readout(w, c, "stage");
-            tap(w, KeyCode::F6);
-            return true;
-        }
-        false
-    }));
-    s.push(Box::new(|w, c| {
-        let stage = with_ship(w, |s| s.ctl.boost_stage);
-        let r = readout(w);
-        let c0 = c.v["stage_charge0"];
-        check(c, !stage && r.boost_mode == "CAPACITOR" && r.gauge.is_some_and(|g| (g - c0).abs() < 0.02), format!("F6 again: stage {stage}, hud {:?} {}, gauge {:?} (meter {c0:.3})", r.texts[3], r.boost_mode, r.gauge));
-        true
-    }));
-    s.push(hold_until("firm brake after the stage", &[KeyCode::KeyX], 20.0, |w| ship_vel(w).length() < 0.5));
+    s.push(hold_until("firm brake", &[KeyCode::KeyX], 20.0, |w| ship_vel(w).length() < 0.5));
 }

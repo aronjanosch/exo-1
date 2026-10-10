@@ -1,10 +1,10 @@
-//! Scenario `sc-air` (#199): the SC model's air through `Controls`. Sit, F7 to the SC model, then
+//! Scenario `sc-air` (#199): the SC model's air through `Controls`. Sit, then
 //! 50 m over the ground at rest: hover 5 s with wind compensation off (I) and the ship drifts
 //! downwind; on again (I), it holds. Down to 40 m, fly forward at speed: the turbulence shows. Climb
 //! to 1000 m with Space: no turbulence up there. Each result is a check line with its numbers.
 use crate::controls::Controls;
 use crate::scenario::{altitude, begin, check, end, keys, hold_until, planet, put_at_seat, ship_e, ship_vel, sit, tap, teleport_ship, with_ship, Step};
-use crate::ship::{basis_for_up, FlightModel};
+use crate::ship::basis_for_up;
 use avian3d::prelude::Position;
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -63,15 +63,6 @@ pub fn sc_air_steps(s: &mut Vec<Step>) {
         true
     }));
     s.extend(sit());
-    s.push(Box::new(|w, _| {
-        tap(w, KeyCode::F7);
-        true
-    }));
-    s.push(Box::new(|w, c| {
-        let m = with_ship(w, |s| s.model);
-        check(c, m == FlightModel::Sc, format!("F7: model {m:?}, want Sc"));
-        true
-    }));
     s.push(Box::new(|w, _| {
         place(w, 50.0);
         true

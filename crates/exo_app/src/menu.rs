@@ -211,10 +211,9 @@ pub fn start_session(w: &mut World, s: &Session) -> Result<(), String> {
         }
         let planet = w.resource::<crate::env::PlanetRes>().clone();
         let tuning = w.resource::<crate::tuning::Tuning>().clone();
-        let model = w.get_resource::<crate::ship::StartModel>().map_or(crate::ship::FlightModel::Sc, |m| m.0);
         let mut commands = w.commands();
         crate::walker::spawn_player(&mut commands, &planet, &tuning.walker, offset);
-        crate::ship::spawn_ship(&mut commands, &planet, &tuning, model, bevy::math::DVec3::Y, offset);
+        crate::ship::spawn_ship(&mut commands, &planet, &tuning, bevy::math::DVec3::Y, offset);
         w.flush();
     }
     println!("menu: {s:?} started, slot {}", cfg.slot);

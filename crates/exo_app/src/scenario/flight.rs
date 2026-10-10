@@ -1,26 +1,6 @@
-//! Flight feel: input ramps, the virtual joystick, boost, decoupled, camera effects.
+//! Flight feel: the virtual joystick, boost, decoupled, camera effects (the SC model).
 use super::*;
-
-/// Hold keys from rest and measure how long the ramped input takes to reach full deflection
-/// (`ShipController::ramp.out[axis]`), against the tuning value.
-fn ramp_check(name: &'static str, ks: &'static [KeyCode], axis: usize, want: fn(&flight_core::ShipTuning) -> f64) -> Step {
-    Box::new(move |w, c| {
-        if c.t == 0.0 {
-            begin(w, c, name);
-            keys(w, ks, true);
-            return false;
-        }
-        let out = with_ship(w, |s| s.ctl.ramp.out[axis]);
-        if out.abs() >= 1.0 - 1e-6 || c.t > 3.0 {
-            keys(w, ks, false);
-            let want = want(&w.resource::<crate::tuning::Tuning>().ship);
-            end(w, c, format!("full after {:.3} s (tuning {want:.3} s)", c.t));
-            check(c, (c.t - want).abs() <= c.dt * 1.01, format!("{name}: full deflection after {:.3} s, tuning {want:.3} s", c.t));
-            return true;
-        }
-        false
-    })
-}
+use crate::ship::basis_for_up;
 
 /// Move the virtual stick to an angle (radians, mouse axes) by mouse pixels through `Controls`.
 fn stick_to(w: &mut World, target: DVec2) {
@@ -30,16 +10,17 @@ fn stick_to(w: &mut World, target: DVec2) {
     w.resource_mut::<Controls>().mouse += Vec2::new(d.x as f32, d.y as f32);
 }
 
-/// Yaw rate of the ship about its own up (rad/s, left positive), without the horizon follow.
+/// Yaw rate of the ship about its own up (rad/s, left positive).
 fn yaw_rate(w: &mut World) -> f64 {
     let e = ship_e(w);
     let (r, av) = (w.get::<Rotation>(e).unwrap().0, w.get::<AngularVelocity>(e).unwrap().0);
     av.dot(r * DVec3::Y)
 }
 
-/// Full-stick yaw rate of a ship hovering at rest (rad/s): the rate at its share for speed 0.
+/// Full-stick yaw rate of a ship hovering at rest (rad/s): the SC model's rate at its share for
+/// speed 0 (the spring settles to it within the check's 1.5 s).
 fn rest_yaw_rate(w: &World) -> f64 {
-    let t = &w.resource::<crate::tuning::Tuning>().ship;
+    let t = &w.resource::<crate::tuning::Tuning>().sc.angular;
     t.rate.yaw * t.rate_over_speed.eval(0.0)
 }
 
@@ -76,34 +57,19 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
     s.extend(sit());
     s.push(hold_until("climb to 300 m above ground", &[KeyCode::Space, KeyCode::ShiftLeft], 60.0, |w| above_ground(w) > 300.0));
     s.push(hold_until("hover", &[], 10.0, |w| ship_vel(w).length() < 0.5));
-    // #25: thrust and rotation ramp to full deflection.
-    s.push(ramp_check("ramp: W to full thrust", &[KeyCode::KeyW], 2, |t| t.linear_ramp_time));
-    s.push(hold_until("hover", &[], 10.0, |w| ship_vel(w).length() < 0.5));
-    s.push(Box::new(|w, c| {
-        // Stick to full right: the turn ramps like any rotation.
-        if c.t == 0.0 {
-            begin(w, c, "ramp: stick to full yaw");
-            let max = w.resource::<Bindings>().mouse.vjoy_max_angle;
-            stick_to(w, DVec2::new(max * 2.0, 0.0));
-            return false;
-        }
-        let out = with_ship(w, |s| s.ctl.ramp.out[5]);
-        if out.abs() >= 1.0 - 1e-6 || c.t > 3.0 {
-            let want = w.resource::<crate::tuning::Tuning>().ship.angular_ramp_time;
-            end(w, c, format!("full after {:.3} s (tuning {want:.3} s)", c.t));
-            check(c, (c.t - want).abs() <= c.dt * 1.01, format!("ramp: stick to full yaw after {:.3} s, tuning {want:.3} s", c.t));
-            return true;
-        }
-        false
-    }));
     // Virtual joystick: yaw rate is deflection times turn rate; inside the dead zone nothing.
     s.push(stick_yaw("stick: full right", 1.0));
     s.push(shot_step("stick-full-right"));
     s.push(Box::new(|w, c| {
-        // Still at full right: the view leads the turn to the right, capped (#27).
-        let look = w.resource::<crate::ship::CameraEffects>().0.look;
-        let max = w.resource::<crate::tuning::Tuning>().camera.look_ahead_max_yaw_deg.to_radians();
-        check(c, (look.y + max).abs() < 0.01 * max && look.x.abs() < 0.01, format!("camera: look-ahead {:+.2} deg yaw in a full right turn (cap {:.0})", look.y.to_degrees(), max.to_degrees()));
+        // Still at full right: the view leads the turn to the right (#27): the look-ahead of the
+        // turn rate, (rate - dead zone) x gain, capped. The SC model's full-stick rate (0.9 rad/s)
+        // is under the cap's rate (about 1.1 rad/s), so the cap is not what this checks.
+        let look = w.resource::<crate::tuning::Tuning>().camera.clone();
+        let cam = w.resource::<crate::ship::CameraEffects>().0.look;
+        let rate = yaw_rate(w);
+        let max = look.look_ahead_max_yaw_deg.to_radians();
+        let want = ((rate.abs() - look.look_ahead_deadzone).max(0.0) * look.look_ahead_gain).min(max) * rate.signum();
+        check(c, (cam.y - want).abs() < 0.01 * max && cam.x.abs() < 0.01, format!("camera: look-ahead {:+.2} deg yaw in a full right turn at {rate:+.3} rad/s (wanted {:+.2})", cam.y.to_degrees(), want.to_degrees()));
         true
     }));
     s.push(stick_yaw("stick: half right", 0.5));
@@ -148,14 +114,14 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
     {
         let dir = dir.clone();
         s.push(Box::new(move |w, c| {
-        let (limit, v) = (with_ship(w, |s| s.ctl.forward_speed_limit), ship_vel(w).length());
+        let (limit, v) = (with_ship(w, |s| s.sc.status.cap), ship_vel(w).length());
         if c.t == 0.0 {
             begin(w, c, "boost");
             c.v.insert("limit0", limit);
             c.v.insert("v0", v);
             keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft], true);
         }
-        if c.t >= 0.5 * with_ship(w, |s| s.ctl.tuning.boost_capacitor.drain_time) {
+        if c.t >= 0.5 * w.resource::<crate::tuning::Tuning>().sc.drive.boost_capacitor.drain_time {
             // Screenshot while boost is still held, so the HUD shows it.
             shot(w, c, &dir, windowed, "boost");
             keys(w, &[KeyCode::ShiftLeft], false);
@@ -177,12 +143,13 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
         }
         if c.t >= 8.0 {
             keys(w, &[KeyCode::KeyW], false);
-            let (limit, v) = (with_ship(w, |s| s.ctl.forward_speed_limit), ship_vel(w).length());
+            let (limit, v) = (with_ship(w, |s| s.sc.status.cap), ship_vel(w).length());
             let (l0, l1, v1) = (c.v["limit0"], c.v["limit1"], c.v["v1"]);
             end(w, c, format!("limit {l1:.0} -> {limit:.0} m/s, speed {v1:.0} -> {v:.0} m/s"));
-            // At least 70 % of the raise is gone and the limit is back near the cruise limit (the
-            // ground below moves that a little).
-            check(c, l1 - limit > 0.7 * (l1 - l0) && (limit - l0).abs() < 0.3 * l0 && v < v1 - 20.0, format!("boost released: limit {l1:.0} -> {limit:.0} m/s (before {l0:.0}), speed {v1:.0} -> {v:.0} m/s"));
+            // The boost's raise is gone: the limit falls back from the boosted one to the plain cap
+            // at this height. (Not the cap before the boost: the air thins during the climb, and the
+            // cap rises with it.)
+            check(c, limit < 0.7 * l1 && v < v1 - 20.0, format!("boost released: limit {l1:.0} -> {limit:.0} m/s (before {l0:.0}), speed {v1:.0} -> {v:.0} m/s"));
             return true;
         }
         false
@@ -191,14 +158,14 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
     // #26: decoupled blends the damping out over decouple_time; the ship keeps gliding.
     s.push(hold_until("cruise", &[KeyCode::KeyW], 4.0, |_| false));
     s.push(Box::new(|w, c| {
-        let time = w.resource::<crate::tuning::Tuning>().ship.decouple_time;
+        let time = w.resource::<crate::tuning::Tuning>().sc.modes.decouple_time;
         if c.t == 0.0 {
             begin(w, c, "decouple (C) while cruising");
             keys(w, &[KeyCode::KeyW], true);
             tap(w, KeyCode::KeyC);
             return false;
         }
-        let level = with_ship(w, |s| s.ctl.coupling);
+        let level = with_ship(w, |s| s.sc.modes.coupling);
         if (c.t - time * 0.5).abs() < c.dt * 0.5 {
             check(c, (level - 0.5).abs() < 0.02, format!("decouple: coupling {level:.3} halfway through the blend"));
         }
@@ -237,13 +204,24 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
         }
         if c.t >= 8.0 {
             let (v0, v) = (c.v["v_couple"], ship_vel(w).length());
-            let level = with_ship(w, |s| s.ctl.coupling);
+            let level = with_ship(w, |s| s.sc.modes.coupling);
             end(w, c, format!("speed {v0:.1} -> {v:.1} m/s, coupling {level:.2}"));
             check(c, level == 1.0 && v < 0.7 * v0, format!("coupled again: the assist damps, {v0:.1} -> {v:.1} m/s in 8 s"));
             return true;
         }
         false
     }));
+    s.push(hold_until("firm brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 0.5));
+    // Down to 120 m (Ctrl and Shift, as the camera scenario does). A test hook levels the ship first:
+    // the SC's Ctrl is the hull's down, so a nose-up hull after the cruise flies off (open question,
+    // see the report); the axis model's landing did not depend on the attitude.
+    s.push(Box::new(|w, _| {
+        let e = ship_e(w);
+        let (p, up) = (w.get::<Position>(e).unwrap().0, planet(w).up(ship_frame_of(w).origin));
+        teleport_ship(w, p, basis_for_up(up));
+        true
+    }));
+    s.push(hold_until("descend to 120 m above ground", &[KeyCode::ControlLeft, KeyCode::ShiftLeft], 240.0, |w| above_ground(w) < 120.0));
     s.push(hold_until("firm brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 0.5));
     // Touchdown gives a camera bump (#27); on a slope the second side may give another.
     s.push(Box::new(|w, c| {

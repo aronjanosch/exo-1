@@ -64,7 +64,7 @@ impl HotReload {
 fn parse(texts: &[String]) -> Result<(Tuning, Bindings), String> {
     Ok((
         Tuning {
-            ship: flight_core::ShipTuning::from_json(&texts[0])?,
+            ground: flight_core::GroundTuning::from_json(&texts[0])?,
             walker: walker_core::WalkerConfig::from_json(&texts[1])?,
             suit: walker_core::SuitConfig::from_json(&texts[2])?,
             camera: flight_core::camera::CameraTuning::from_json(&texts[3])?,
@@ -103,7 +103,7 @@ pub fn poll(
                 b.mouse.ship_mode = bindings.mouse.ship_mode;
             }
             for mut s in &mut ships {
-                s.ctl.tuning = t.ship.clone();
+                s.ground.tuning = t.ground.clone();
                 s.sc.tuning = t.sc.clone();
             }
             for mut p in &mut players {

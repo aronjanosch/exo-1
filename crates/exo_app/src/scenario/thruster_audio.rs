@@ -1,6 +1,7 @@
 //! Scenario `thruster-audio` (#150): the thruster sound layers follow the controls. A strafe
 //! right raises the +x hiss most, a boost raises the roar and counts one boost start, and after
-//! release the ship rests on the idle rumble with every other layer quiet.
+//! release the ship hovers: the SC model's thrusters hold it against gravity (a tilted ship holds
+//! part of it sideways), so the rest is not silent (the axis model was, its thrust was the input).
 use crate::scenario::{begin, check, end, hold_until, keys, planet, put_at_seat, ship_e, ship_vel, sit, Step};
 use crate::ship::ThrusterLevels;
 use avian3d::prelude::{LinearVelocity, Position, Rotation};
@@ -36,9 +37,8 @@ pub fn thruster_audio_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         let l = levels(w);
         let idle = ThrusterAudioTuning::default().idle;
-        let quiet = l.hiss.iter().all(|h| *h < 0.05) && l.boost < 0.05;
-        check(c, quiet, format!("rest: hiss and roar below 0.05 (roar {:.3}, hiss {:.3?})", l.boost, l.hiss));
-        check(c, (l.rumble - idle).abs() < 0.01, format!("rest: idle rumble {:.3} (idle {idle})", l.rumble));
+        check(c, l.boost < 0.05, format!("rest: roar below 0.05 ({:.3})", l.boost));
+        check(c, l.rumble >= idle, format!("rest: the hover thrust keeps the rumble at or above idle ({:.3}, idle {idle})", l.rumble));
         true
     }));
     // Brake (X) with no movement key: the thrusters fire against the forward motion (-z), so the
@@ -91,9 +91,8 @@ pub fn thruster_audio_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         let l = levels(w);
         let idle = ThrusterAudioTuning::default().idle;
-        let quiet = l.hiss.iter().all(|h| *h < 0.05);
-        check(c, quiet, format!("after the brake: hisses below 0.05 ({:.3?})", l.hiss));
-        check(c, (l.rumble - idle).abs() < 0.01, format!("after the brake: rumble {:.3} back to idle {idle}", l.rumble));
+        check(c, l.boost < 0.05, format!("after the brake: roar below 0.05 ({:.3})", l.boost));
+        check(c, l.rumble >= idle, format!("after the brake: the hover keeps the rumble at or above idle ({:.3}, idle {idle})", l.rumble));
         true
     }));
 }

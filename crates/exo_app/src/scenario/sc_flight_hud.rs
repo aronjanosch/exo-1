@@ -1,4 +1,4 @@
-//! Scenario `sc-flight-hud` (#200): the flight HUD's readout through `Controls`, SC model. Sit, F7,
+//! Scenario `sc-flight-hud` (#200): the flight HUD's readout through `Controls`, SC model. Sit,
 //! lift and hover; D strafes right (the velocity points along +x, the right thrust bar is the
 //! longest); W flies forward (the tape fills, the velocity points forward); Page Down x5 sets the
 //! limiter to 50 % (its mark on the tape); released, the horizon is level.
@@ -19,11 +19,7 @@ pub fn sc_flight_hud_steps(s: &mut Vec<Step>) {
         true
     }));
     s.extend(sit());
-    s.push(Box::new(|w, _| {
-        tap(w, KeyCode::F7);
-        true
-    }));
-    s.push(hold_until("F7 settle 0.2 s", &[], 0.2, |_| false));
+    s.push(hold_until("settle 0.2 s", &[], 0.2, |_| false));
     s.push(Box::new(|w, c| {
         let f = flight(w);
         let cruise = f.speed_tape.cruise;
@@ -117,19 +113,6 @@ pub fn sc_flight_hud_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         let f = flight(w);
         check(c, f.horizon.is_none(), format!("above the atmosphere: horizon {:?}, want none", f.horizon));
-        true
-    }));
-
-    // F7 back to the axis model: the flight part is filled from the axis numbers too.
-    s.push(Box::new(|w, _| {
-        tap(w, KeyCode::F7);
-        true
-    }));
-    s.push(hold_until("F7 to axis 0.2 s", &[], 0.2, |_| false));
-    s.push(Box::new(|w, c| {
-        let f = flight(w);
-        check(c, f.speed_tape.cruise > 0.0 && f.speed_tape.cruise < 1.0, format!("axis model: cruise mark {:.3}", f.speed_tape.cruise));
-        check(c, f.g_bar.mark > 0.0, format!("axis model: G mark {:.2}", f.g_bar.mark));
         true
     }));
 }

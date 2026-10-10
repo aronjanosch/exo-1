@@ -1,10 +1,9 @@
-//! Scenario `sc-body` (round 5, #198): the SC body through the controls. F7 switches to the SC
-//! model, the ship lifts to 400 m and hovers; W from the hover gives the forward thrust with its
+//! Scenario `sc-body` (round 5, #198): the SC body through the controls. The ship lifts to 400 m
+//! and hovers; W from the hover gives the forward thrust with its
 //! spool and jerk (times to 50 % and to the peak of `thrust_share.z`); after a brake to rest, W
 //! with boost gives the boosted forward thrust (times to 50 % and 95 % of its peak, the forward
 //! part of the felt acceleration).
-use crate::scenario::{begin, check, end, hold_until, keys, put_at_seat, ship_e, ship_vel, sit, tap, with_ship, Step};
-use crate::ship::FlightModel;
+use crate::scenario::{begin, check, end, hold_until, keys, put_at_seat, ship_e, ship_vel, sit, with_ship, Step};
 use avian3d::prelude::Position;
 use bevy::prelude::*;
 
@@ -69,15 +68,6 @@ pub fn sc_body_steps(s: &mut Vec<Step>) {
         true
     }));
     s.extend(sit());
-    s.push(Box::new(|w, _| {
-        tap(w, KeyCode::F7);
-        true
-    }));
-    s.push(Box::new(|w, c| {
-        let now = with_ship(w, |s| s.model);
-        check(c, now == FlightModel::Sc, format!("F7: model {now:?}"));
-        true
-    }));
     s.push(hold_until("lift to 400 m", &[KeyCode::Space], 90.0, |w| height(w) >= 400.0));
     s.push(Box::new(|w, c| {
         let h = height(w);

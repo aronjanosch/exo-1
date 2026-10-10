@@ -82,22 +82,20 @@ pub enum Tap {
     Interact,
     /// Throw the held crate (#83).
     Throw,
+    /// Gravity compensation on or off (H, SC model).
     HoverAssist,
-    HorizonFollow,
     Lag,
     DebugFly,
     OrbitCamera,
     WarpTarget,
     Warp,
-    /// Coupled or decoupled flight (#26).
+    /// Coupled or decoupled flight (C, SC model; #26).
     Decoupled,
     /// The debug lines of the HUD (F3).
     DebugHud,
-    /// Dev switch: boost capacitor or the old speed stage (F6, #90).
-    BoostMode,
-    /// Landing mode of the flight model (spike 13). TODO(initiator): the key (K for now).
+    /// Landing mode (K, SC model). TODO(initiator): the key (K for now).
     LandingMode,
-    /// A/B switch: the axis model's G-safety turn cap on or off (F8, #118).
+    /// G-safe on or off (F8, #118, SC model).
     TurnCap,
     /// F1: the keys that apply right now, as a panel (`help.rs`).
     Help,
@@ -111,9 +109,6 @@ pub enum Tap {
     Dev5,
     Dev6,
     Dev7,
-    /// F7: the flight model, the axis model or the SC model (round 5). Files from before round 5
-    /// call it `thrust_law` (the switch for #185's two rules, now always on in the axis model).
-    FlightModel,
     /// SC model: master mode SCM or NAV. TODO(initiator): the key (B for now).
     MasterMode,
     /// SC model: comstab on or off. TODO(initiator): the key (U for now).
@@ -170,7 +165,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 37] = [
+    pub const ALL: [Tap; 34] = [
         Tap::Help,
         Tap::DevMenu,
         Tap::Dev1,
@@ -183,7 +178,6 @@ impl Tap {
         Tap::Interact,
         Tap::Throw,
         Tap::HoverAssist,
-        Tap::HorizonFollow,
         Tap::Lag,
         Tap::DebugFly,
         Tap::OrbitCamera,
@@ -191,10 +185,8 @@ impl Tap {
         Tap::Warp,
         Tap::Decoupled,
         Tap::DebugHud,
-        Tap::BoostMode,
         Tap::LandingMode,
         Tap::TurnCap,
-        Tap::FlightModel,
         Tap::CameraFx,
         Tap::MasterMode,
         Tap::Comstab,
@@ -214,7 +206,6 @@ impl Tap {
             Tap::Interact => "interact",
             Tap::Throw => "throw",
             Tap::HoverAssist => "hover_assist",
-            Tap::HorizonFollow => "horizon_follow",
             Tap::Lag => "lag",
             Tap::DebugFly => "debug_fly",
             Tap::OrbitCamera => "orbit_camera",
@@ -222,7 +213,6 @@ impl Tap {
             Tap::Warp => "warp",
             Tap::Decoupled => "decoupled",
             Tap::DebugHud => "debug_hud",
-            Tap::BoostMode => "boost_mode",
             Tap::LandingMode => "landing_mode",
             Tap::TurnCap => "turn_cap",
             Tap::Help => "help",
@@ -234,7 +224,6 @@ impl Tap {
             Tap::Dev5 => "dev_5",
             Tap::Dev6 => "dev_6",
             Tap::Dev7 => "dev_7",
-            Tap::FlightModel => "flight_model",
             Tap::CameraFx => "camera_fx",
             Tap::MasterMode => "master_mode",
             Tap::Comstab => "comstab",
@@ -372,7 +361,7 @@ impl Bindings {
         let v: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("bindings.json: {e}"))?;
         let obj = v.as_object().ok_or("bindings.json: not an object")?;
         let err = |action: &str, why: String| format!("bindings.json: action `{action}`: {why}");
-        let known: Vec<&str> = Axis::ALL.iter().map(|a| a.name()).chain(Button::ALL.iter().map(|b| b.name())).chain(Tap::ALL.iter().map(|t| t.name())).chain(["mouse", "pad", "_comment", "seat", "thrust_law"]).collect();
+        let known: Vec<&str> = Axis::ALL.iter().map(|a| a.name()).chain(Button::ALL.iter().map(|b| b.name())).chain(Tap::ALL.iter().map(|t| t.name())).chain(["mouse", "pad", "_comment", "seat"]).collect();
         if let Some(k) = obj.keys().find(|k| !known.contains(&k.as_str())) {
             return Err(err(k, "unknown action".into()));
         }
@@ -437,8 +426,6 @@ impl Bindings {
                 (_, Some(v)) => keys(t.name(), v),
                 (Tap::Interact, None) if obj.contains_key("seat") => keys("seat", &obj["seat"]),
                 (Tap::Throw, None) => Ok(vec![Input::Key(KeyCode::KeyR)]),
-                // Files from before the boost switch (#90) have no `boost_mode`.
-                (Tap::BoostMode, None) => Ok(vec![Input::Key(KeyCode::F6)]),
                 // Files from before spike 13 have no `landing_mode`.
                 (Tap::LandingMode, None) => Ok(vec![Input::Key(KeyCode::KeyK)]),
                 // ... and no `turn_cap` (#118).
@@ -453,9 +440,6 @@ impl Bindings {
                 (Tap::Dev5, None) => Ok(vec![Input::Key(KeyCode::Digit5)]),
                 (Tap::Dev6, None) => Ok(vec![Input::Key(KeyCode::Digit6)]),
                 (Tap::Dev7, None) => Ok(vec![Input::Key(KeyCode::Digit7)]),
-                // Files from before round 5 call the model switch `thrust_law` (#185), or have none.
-                (Tap::FlightModel, None) if obj.contains_key("thrust_law") => keys("thrust_law", &obj["thrust_law"]),
-                (Tap::FlightModel, None) => Ok(vec![Input::Key(KeyCode::F7)]),
                 // ... and no `camera_fx` (#148, #149).
                 (Tap::CameraFx, None) => Ok(vec![Input::Key(KeyCode::F9)]),
                 // ... and none of the SC model's switches (round 5).
@@ -886,16 +870,6 @@ mod tests {
         assert!(a.take_tap(Tap::Interact) && a.take_tap(Tap::Throw));
     }
 
-    /// #90: a player's file from before the boost switch still loads, with F6.
-    #[test]
-    fn old_file_without_boost_mode_gets_f6() {
-        let old = BINDINGS.replace("  \"boost_mode\": [\"F6\"],\n", "");
-        assert!(!old.contains("boost_mode"));
-        let b = Bindings::from_json(&old).unwrap();
-        let mut a = resolve(&b, &raw(&[], &[F6]));
-        assert!(a.take_tap(Tap::BoostMode));
-    }
-
     /// #148, #149: a player's file from before the camera switch still loads, with F9.
     #[test]
     fn old_file_without_camera_fx_gets_f9() {
@@ -919,18 +893,9 @@ mod tests {
         assert!(a.take_tap(Tap::TurnCap));
     }
 
-    /// Round 5: a player's file from before the model switch loads, with F7; one that still calls
-    /// it `thrust_law` (#185) keeps its key; one without the SC switches gets B, U, P, Y and the
-    /// page keys.
+    /// Round 5: a player's file without the SC switches gets B, U, P, I and the page keys.
     #[test]
-    fn old_files_get_the_model_switch_and_the_sc_switches() {
-        let line = "  \"flight_model\": [\"F7\"],\n";
-        assert!(BINDINGS.contains(line));
-        let mut a = resolve(&Bindings::from_json(&BINDINGS.replace(line, "")).unwrap(), &raw(&[], &[F7]));
-        assert!(a.take_tap(Tap::FlightModel));
-        let renamed = BINDINGS.replace(line, "  \"thrust_law\": [\"F10\"],\n");
-        let mut a = resolve(&Bindings::from_json(&renamed).unwrap(), &raw(&[], &[F10]));
-        assert!(a.take_tap(Tap::FlightModel));
+    fn old_files_get_the_sc_switches() {
         let mut old = BINDINGS.to_string();
         for t in [Tap::MasterMode, Tap::Comstab, Tap::ProximityAssist, Tap::WindComp, Tap::LimiterUp, Tap::LimiterDown] {
             let i = old.find(&format!("  \"{}\"", t.name())).unwrap();

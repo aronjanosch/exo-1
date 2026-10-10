@@ -1,9 +1,7 @@
-//! F1: the keys that apply right now, as a panel (on foot, in the suit, in the ship with the axis
-//! or the SC model). The keys come from the live `Bindings`, so a rebind shows at once. The fixed
+//! F1: the keys that apply right now, as a panel (on foot, in the suit, in the ship). The keys come from the live `Bindings`, so a rebind shows at once. The fixed
 //! step fills `HelpPanel` (headless too, so scenarios check it); the window draws it.
 //! TODO(initiator): the words, the order and the look; `KEYS.md` is the full list.
 use crate::controls::{Actions, Axis, Bindings, Button, Slot, Tap};
-use crate::ship::{FlightModel, Ship};
 use crate::walker::Player;
 use bevy::input::keyboard::KeyCode;
 use bevy::prelude::*;
@@ -25,10 +23,8 @@ pub enum HelpContext {
     Foot,
     /// Outside a ship in space.
     Suit,
-    /// Seated, the axis model.
-    ShipAxis,
-    /// Seated, the SC model (F7).
-    ShipSc,
+    /// Seated in the ship.
+    Ship,
 }
 
 impl HelpContext {
@@ -36,8 +32,7 @@ impl HelpContext {
         match self {
             HelpContext::Foot => "On foot",
             HelpContext::Suit => "Suit",
-            HelpContext::ShipAxis => "Ship (axis model)",
-            HelpContext::ShipSc => "Ship (SC model)",
+            HelpContext::Ship => "Ship",
         }
     }
 }
@@ -99,10 +94,7 @@ const SHIP_SC: &[Entry] = &[
     (&[Slot::Tap(Tap::LimiterUp), Slot::Tap(Tap::LimiterDown)], "Speed limiter up / down"),
 ];
 
-const SHIP_AXIS: &[Entry] = &[(&[Slot::Tap(Tap::HoverAssist)], "Assist"), (&[Slot::Tap(Tap::HorizonFollow)], "Horizon follow")];
-
 const SHIP_END: &[Entry] = &[
-    (&[Slot::Tap(Tap::FlightModel)], "Flight model axis / SC"),
     (&[Slot::Tap(Tap::WarpTarget)], "Quantum target"),
     (&[Slot::Tap(Tap::Warp)], "Quantum jump (hold: exit)"),
     (&[Slot::Tap(Tap::Interact)], "Stand up"),
@@ -116,9 +108,9 @@ pub fn entries(ctx: HelpContext) -> Vec<Entry> {
     match ctx {
         HelpContext::Foot => v.extend_from_slice(FOOT),
         HelpContext::Suit => v.extend_from_slice(SUIT),
-        HelpContext::ShipAxis | HelpContext::ShipSc => {
+        HelpContext::Ship => {
             v.extend_from_slice(SHIP);
-            v.extend_from_slice(if ctx == HelpContext::ShipSc { SHIP_SC } else { SHIP_AXIS });
+            v.extend_from_slice(SHIP_SC);
             v.extend_from_slice(SHIP_END);
         }
     }
@@ -154,14 +146,11 @@ pub fn lines(ctx: HelpContext, b: &Bindings) -> Vec<(String, &'static str)> {
 }
 
 /// F1 flips the panel; the context follows the player every step.
-pub fn update_help(mut actions: ResMut<Actions>, bindings: Res<Bindings>, mut help: ResMut<HelpPanel>, players: Query<&Player>, ships: Query<&Ship>) {
+pub fn update_help(mut actions: ResMut<Actions>, bindings: Res<Bindings>, mut help: ResMut<HelpPanel>, players: Query<&Player>) {
     let flip = actions.take_tap(Tap::Help);
     let Ok(pl) = players.single() else { return };
     let ctx = if pl.seated {
-        match ships.iter().next().map(|s| s.model) {
-            Some(FlightModel::Sc) => HelpContext::ShipSc,
-            _ => HelpContext::ShipAxis,
-        }
+        HelpContext::Ship
     } else if pl.body.is_some() {
         HelpContext::Suit
     } else {
@@ -229,13 +218,10 @@ mod tests {
         assert_eq!(foot[0], ("W A S D".to_string(), "Walk"));
         assert!(foot.iter().any(|(k, w)| k == "Shift" && *w == "Run"));
         assert!(!foot.iter().any(|(_, w)| *w == "Boost"), "on foot there is no boost");
-        let sc = lines(HelpContext::ShipSc, &b);
+        let sc = lines(HelpContext::Ship, &b);
         assert!(sc.iter().any(|(k, w)| k == "H" && *w == "Gravity compensation"));
         assert!(sc.iter().any(|(k, w)| k == "Page Up Page Down" && w.starts_with("Speed limiter")));
-        let axis = lines(HelpContext::ShipAxis, &b);
-        assert!(axis.iter().any(|(k, w)| k == "H" && *w == "Assist"));
-        assert!(!axis.iter().any(|(_, w)| *w == "Comstab"), "the axis model has no comstab");
-        for ctx in [HelpContext::Foot, HelpContext::Suit, HelpContext::ShipAxis, HelpContext::ShipSc] {
+        for ctx in [HelpContext::Foot, HelpContext::Suit, HelpContext::Ship] {
             assert!(lines(ctx, &b).iter().any(|(k, w)| k == "F1" && *w == "This help"), "{ctx:?}");
         }
     }

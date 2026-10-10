@@ -151,7 +151,7 @@ pub fn setup_view(mut commands: Commands) {
             .with_children(|b| {
                 b.spawn((BoostFill, Node { width: percent(100), height: percent(100), ..default() }, BackgroundColor(BOOST_READY)));
             });
-            // Next to the bar: CAPACITOR or STAGE, the F6 dev switch (#90).
+            // Next to the bar: CAPACITOR or STAGE (no capacitor, #90).
             c.spawn((HudItem(BOOST_MODE_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
             // Then LANDING in landing mode (K).
             c.spawn((HudItem(LANDING_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
@@ -1130,23 +1130,10 @@ pub fn update_hud(
     let near = |p: DVec3| (p - planet.centre).length() < NEAR_PLANET;
     let mode = if pl.seated {
         let height = if near(sp.0) { format!("  ground {:.0} m  alt {:.0} m", planet.above_ground(sp.0), (sp.0 - planet.centre).length() - planet.radius) } else { String::new() };
-        // What the flight model did (felt G, precision share, thrusters at a limit).
-        let a = &ship.ctl.axis;
-        let cap = if ship.ctl.tuning.g_safety.cap_turns { "on" } else { "off" };
-        let model = match ship.model {
-            crate::ship::FlightModel::Axis => "axis",
-            crate::ship::FlightModel::Sc => "SC",
-        };
-        let axis = format!("  {:.1} g  prec {:.2}  turn cap {cap} (F8)  model {model} (F7){}{}", a.felt_g, a.precision, if a.saturated { "  sat" } else { "" }, if a.rate_capped { "  g-cap" } else { "" });
-        format!(
-            "SHIP  assist {} (H)  follow {} (L)  {}{}  {} m/s  limit {:.0}{axis}{height}",
-            if ship.ctl.hover_assist { "on" } else { "off" },
-            if ship.ctl.horizon_follow { "on" } else { "off" },
-            lag_text(ship),
-            if ship.ctl.brake_active { "  BRAKE (X)" } else { "" },
-            speed_text(sv.0.length()),
-            ship.ctl.forward_speed_limit,
-        )
+        // What the flight model did (felt G, thrusters at a limit, the turn cap).
+        let s = &ship.sc.status;
+        let flags = format!("{}{}{}", if s.saturated { "  sat" } else { "" }, if s.rate_capped { "  g-cap" } else { "" }, if s.braking { "  BRAKE (X)" } else { "" });
+        format!("SHIP  {}  {} m/s  cap {:.0}  {:.1} g{flags}{height}", lag_text(ship), speed_text(sv.0.length()), s.cap, s.felt_g)
     } else {
         // Velocity relative to the planet centre, and its part along "up" (negative = towards the
         // planet): the cabin carries the ship's velocity (own ship), outside it is the walker's own.

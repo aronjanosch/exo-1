@@ -100,23 +100,27 @@ pub struct Badge {
     pub label: String,
     pub on: bool,
     pub pair: bool,
+    /// Held, not switched (BRAKE): shown, never toasted.
+    pub quiet: bool,
 }
 
 impl Badge {
     fn new(key: &'static str, label: impl Into<String>, on: bool) -> Badge {
-        Badge { key, label: label.into(), on, pair: false }
+        Badge { key, label: label.into(), on, pair: false, quiet: false }
     }
     fn half(key: &'static str, on: bool) -> Badge {
-        Badge { key, label: key.into(), on, pair: true }
+        Badge { key, label: key.into(), on, pair: true, quiet: false }
+    }
+    fn held(key: &'static str, on: bool) -> Badge {
+        Badge { quiet: true, ..Badge::new(key, key, on) }
     }
 }
 
 /// The panel's badge slots (the most the SC model shows at once).
 pub const BADGE_SLOTS: usize = 13;
-/// Seconds a toast stays after the last change. TODO(initiator): the time (1.5 s starting value).
-/// Meant for `hud.json`, but `flight_core::hud::HudTuning` refuses unknown keys, so it waits here
-/// until that file's owner adds the field.
-pub const TOAST_TIME: f64 = 1.5;
+/// Seconds a toast stays in the tests (the game reads `hud.json` `toast_time`).
+#[cfg(test)]
+const TOAST_TIME: f64 = 1.5;
 /// The coupling blend's bar shows between these two values (0 and 1 are at rest).
 const BLEND_EPS: f64 = 1e-6;
 
@@ -242,14 +246,14 @@ pub fn badges(i: &HudIn) -> Vec<Badge> {
                 b.push(Badge::new("LIMIT", format!("LIMIT {:.0} %", limiter * 100.0), true));
             }
             b.push(landing);
-            b.push(Badge::new("BRAKE", "BRAKE", *braking));
+            b.push(Badge::held("BRAKE", *braking));
         }
         Panel::Axis { assist, coupled, braking, .. } => {
             b.push(Badge::new("MODEL", "AXIS", true));
             b.push(Badge::new("ASSIST", "ASSIST", *assist));
             coupling_badges(&mut b, *coupled);
             b.push(landing);
-            b.push(Badge::new("BRAKE", "BRAKE", *braking));
+            b.push(Badge::held("BRAKE", *braking));
         }
     }
     b
@@ -259,7 +263,7 @@ pub fn badges(i: &HudIn) -> Vec<Badge> {
 /// label, an off one `KEY OFF` (not for a pair half).
 fn first_change(prev: &[Badge], now: &[Badge]) -> Option<String> {
     let mut changes = Vec::new();
-    for b in now {
+    for b in now.iter().filter(|b| !b.quiet) {
         match prev.iter().find(|p| p.key == b.key) {
             Some(p) if p.on == b.on && p.label == b.label => {}
             _ if b.on => changes.push(b.label.clone()),
@@ -372,7 +376,7 @@ pub fn update_readout(
         Panel::Axis { assist: ship.ctl.hover_assist, coupled: ship.ctl.coupled, coupling: ship.ctl.coupling, braking: ship.ctl.brake_active, cap: ship.ctl.forward_speed_limit, felt_g: ship.ctl.axis.felt_g }
     };
     let mut new = readout(&HudIn { mode, panel: panel.clone(), speed: v.length(), altitude, boost, landing });
-    new.toast = toaster.step(&new.badges, model_word(&panel), time.delta_secs_f64(), TOAST_TIME);
+    new.toast = toaster.step(&new.badges, model_word(&panel), time.delta_secs_f64(), tuning.hud.toast_time);
     if *out != new {
         *out = new;
     }
@@ -425,7 +429,7 @@ mod tests {
 
     #[test]
     fn shipped_file_loads_and_bad_values_are_refused() {
-        assert_eq!(HudTuning::from_json(crate::tuning::HUD).unwrap(), HudTuning { agl_below: 1000.0 });
+        assert_eq!(HudTuning::from_json(crate::tuning::HUD).unwrap(), HudTuning { agl_below: 1000.0, toast_time: 1.5 });
         assert!(HudTuning::from_json("{\"agl_below\": -1}").is_err());
         assert!(HudTuning::from_json("{\"agl_below\": 1, \"x\": 2}").is_err());
     }

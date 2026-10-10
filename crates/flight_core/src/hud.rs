@@ -7,6 +7,8 @@ use serde::Deserialize;
 pub struct HudTuning {
     /// m: below this height above the ground the altitude element shows AGL, above it ALT.
     pub agl_below: f64,
+    /// s: a flight panel toast stays this long after the last switch change (#197).
+    pub toast_time: f64,
 }
 
 impl HudTuning {
@@ -14,6 +16,9 @@ impl HudTuning {
         let t: HudTuning = content_core::parse_strict("hud.json", s)?;
         if !(t.agl_below >= 0.0) {
             return Err(format!("hud.json: agl_below {} out of range", t.agl_below));
+        }
+        if !(t.toast_time > 0.0 && t.toast_time.is_finite()) {
+            return Err(format!("hud.json: toast_time {} out of range", t.toast_time));
         }
         Ok(t)
     }

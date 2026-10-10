@@ -227,21 +227,51 @@ pub fn ship_control(
     }
 }
 
-/// Camera effects of the own ship (#27), stepped with the simulation so scenarios can check them;
-/// the view only applies them.
+/// Camera effects of the own ship (#27, #148, #149), stepped with the simulation so scenarios can
+/// check them; the view only applies them.
 #[derive(Resource, Default)]
 pub struct CameraEffects(pub flight_core::camera::CameraFx);
 
+/// F9 switches the camera effects (#148, #149). The felt acceleration is the change of velocity in
+/// ship space less gravity, zero on the ground; the walker in a flying cabin gets the cabin's share.
 pub fn camera_fx(
     time: Res<Time>,
     planet: Res<PlanetRes>,
     tuning: Res<crate::tuning::Tuning>,
+    settings: Res<crate::settings::Settings>,
+    mut actions: ResMut<Actions>,
     mut fx: ResMut<CameraEffects>,
+    mut prev_vel: Local<Option<DVec3>>,
+    players: Query<&crate::walker::Player>,
     q: Query<(&Ship, &Position, &Rotation, &LinearVelocity, &AngularVelocity)>,
 ) {
+    if actions.take_tap(Tap::CameraFx) {
+        fx.0.enabled = !fx.0.enabled;
+    }
     let Ok((ship, pos, rot, lv, av)) = q.single() else { return };
+    let dt = time.delta_secs_f64();
     let up = planet.up(pos.0);
     let local = rot.0.inverse() * av.0;
-    // The bump comes with the first hull contact (#110 point 4).
-    fx.0.step(&tuning.camera, lv.0.length(), DVec2::new(local.x, local.y), -lv.0.dot(up), ship.grounded, time.delta_secs_f64());
+    let accel = match *prev_vel {
+        Some(p) if dt > 0.0 && !ship.grounded => rot.0.inverse() * ((lv.0 - p) / dt - flight_core::PlanetEnv::gravity_at(planet.as_ref(), pos.0)),
+        _ => DVec3::ZERO,
+    };
+    *prev_vel = Some(lv.0);
+    let cabin = players.single().is_ok_and(|p| p.ship.is_some() && !p.seated);
+    let out = ship.ctl.ramp.out;
+    let input = flight_core::camera::FxInput {
+        speed: lv.0.length(),
+        turn: DVec2::new(local.x, local.y),
+        // The bump comes with the first hull contact (#110 point 4).
+        approach: -lv.0.dot(up),
+        grounded: ship.grounded,
+        accel,
+        thrust: DVec3::new(out[0], out[1], out[2]).length().min(1.0),
+        boost: ship.ctl.boost.active,
+        turbulence: 0.0,
+        cabin,
+        shake_scale: settings.camera_shake,
+        dt,
+    };
+    fx.0.step_with(&tuning.camera, &input);
 }

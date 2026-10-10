@@ -60,6 +60,7 @@ enum Action {
     Quit,
     Mouse(f64),
     Fov(f64),
+    CameraShake(f64),
     Volume(f64),
     Sound,
     Rebind(Slot),
@@ -186,6 +187,7 @@ fn rebuild(mut commands: Commands, menu: Res<Menu>, settings: Res<Settings>, bin
                 label(c, "Settings", 32.0);
                 stepper(c, "Mouse sensitivity", format!("{:.2}", settings.mouse_sensitivity), Action::Mouse(-0.1), Action::Mouse(0.1));
                 stepper(c, "Field of view", format!("{:.0}", settings.fov_deg), Action::Fov(-5.0), Action::Fov(5.0));
+                stepper(c, "Camera shake", format!("{:.0} %", settings.camera_shake * 100.0), Action::CameraShake(-0.1), Action::CameraShake(0.1));
                 stepper(c, "Volume", format!("{:.0} %", settings.volume * 100.0), Action::Volume(-0.1), Action::Volume(0.1));
                 button(c, if settings.sound { "Sound: on" } else { "Sound: off" }, Action::Sound, 260.0);
                 label(c, if menu.rebinding.is_some() { "Press a key (Escape cancels)" } else { "Keys: click one to rebind" }, 16.0);
@@ -268,6 +270,11 @@ fn act(w: &mut World, a: Action) {
         Action::Fov(d) => {
             let mut s = w.resource_mut::<Settings>();
             s.fov_deg = (s.fov_deg + d).clamp(FOV_RANGE.0, FOV_RANGE.1);
+            save(w);
+        }
+        Action::CameraShake(d) => {
+            let mut s = w.resource_mut::<Settings>();
+            s.camera_shake = ((s.camera_shake + d) * 10.0).round().clamp(0.0, 10.0) / 10.0;
             save(w);
         }
         Action::Volume(d) => {

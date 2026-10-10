@@ -39,7 +39,7 @@ pub fn sc_hud_steps(s: &mut Vec<Step>) {
     s.extend(sit());
     s.push(Box::new(|w, c| {
         let r = readout(w);
-        check(c, badge(&r, "MODEL") == Some((true, "SC".into())), format!("seated, SC model: badges {:?}", r.badges));
+        check(c, badge(&r, "SCM") == Some((true, "SCM".into())), format!("seated, SC model: badges {:?}", r.badges));
         check(c, r.blend.is_none() && r.cap_text.ends_with("m/s") && r.g_text.ends_with(" g"), format!("seated: cap {:?}, g {:?}, blend {:?}", r.cap_text, r.g_text, r.blend));
         true
     }));

@@ -71,6 +71,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 - `customers`: a customer's order becomes an offer at the wholesaler's counter, the delivery pleases or lets the customer down, relationship and next order follow (#168).
 - `licence`: the seat refuses without the flight licence, the exam at the flight school's counter (fee, ship lent, the exam's events set by test hooks), pass with honours, the seat works (#169).
 - `map`: the pins (places, the tracked job's next stop, the player), M opens and closes the map; with a window a screenshot of it (#166).
+- `first-person-settings`: mouse look at two sensitivities outside and in the cabin, sit/stand through F, and vehicle mouse/camera isolation. Headless includes the real camera projection system.
 - `net`: the network bot (take off, cruise, turn, brake, land, repeat); see below.
 
 Other options: `--distance=<m>` (distance between the planet centres, default from `content/system/system.json`; frame zones that would reach past half of it shrink to 45 %, a distance too short for the arrival radii is refused), `--origin-shift=<m>` (render-origin threshold, 0 = off, default 1000), `--radius=<m>` (first planet, overrides the file), `--record=<file>` (write the run's ship and walker path for the replay matrix), `--no-vsync` (frame-time measurements; with vsync every frame reads the display's period).
@@ -86,6 +87,10 @@ If a baseline exists, every phase whose step p95 exceeds the baseline's by more 
 Players start in the menu: **Host**, or **Join** with the host's address (type it, `ip:port`) and a slot (2 to 8, one per player), **Settings**, **Quit**. Escape in game opens the pause menu (the world keeps running). Other players show as chunky figures with a name tag ("Pilot <slot>").
 
 Settings (mouse sensitivity, field of view, volume (default 50 %), sound on/off) and rebound keys are saved in `settings/` where the game runs (`settings.json`, `bindings.json`; `--settings-dir=<dir>` picks another). A broken file falls back to the defaults with a message. Scripted and headless runs ignore them.
+
+First-person settings apply on foot, including inside a ship, and never while steering a vehicle. **Vertical FOV** is 40–90° (default 75°), with horizontal equivalents for 4:3, 16:9 and 21:9 shown live. **Mouse sensitivity** is 0.10–10.00 (default 1.00); yaw and pitch both use 0.022° per mouse count times sensitivity, independent of FOV and frame time. Drag either slider or click its number to type (dot or comma decimal separator). Enter confirms, Escape cancels; arrow keys, Home/End, Backspace/Delete and Ctrl+A edit the number. Slider changes apply immediately and save on release; typed values apply and save on confirmation. Ship steering and its camera keep their own tuning in `content/tuning/`.
+
+Mouse look uses relative raw-device motion (Windows `WM_INPUT`), applied once per rendered frame before physics. The first-person camera uses the current look rotation without mouse smoothing or fixed-tick rotation interpolation, including frames with no physics tick. Position and the carrying ship still interpolate; horizon transitions, camera effects and held-crate turn resistance retain their existing behaviour. Scripted mouse input stays on the deterministic fixed-tick path.
 
 The flags below skip the menu (scenarios, bots). One player hosts, the others connect. Each simulates its own walker and ship; the host relays snapshots (UDP port 17441).
 

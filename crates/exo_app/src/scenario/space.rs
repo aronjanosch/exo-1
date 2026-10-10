@@ -269,7 +269,7 @@ pub(super) fn suit_in_space() -> Vec<Step> {
             let l = b.inverse() * (f.to_world(DVec3::new(0.0, 1.2, 0.0)) - pos).normalize();
             let yaw_err = (-l.x).atan2(-l.z);
             let pitch_err = l.y.atan2((l.x * l.x + l.z * l.z).sqrt());
-            let sens = 0.0025;
+            let sens = w.resource::<crate::settings::Settings>().mouse_radians_per_count();
             let mut m = w.resource_mut::<Controls>();
             m.mouse.x += (-(yaw_err * 0.2) / sens) as f32;
             m.mouse.y += (-(pitch_err * 0.2) / sens) as f32;

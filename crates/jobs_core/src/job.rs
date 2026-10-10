@@ -311,6 +311,15 @@ impl Jobs {
         Some(self.offer_with(&t.id, legs, checks))
     }
 
+    /// An offer of `t`: its fixed places, else places by tag search; None when no place fits.
+    fn offer_from_template(&mut self, t: &JobTemplate, kernel: &Content, progress: &Progress, rng: &mut gameplay_core::rng::Rng) -> Option<JobId> {
+        if let Some(id) = self.offer_fixed_if_available(t, kernel, progress) {
+            return Some(id);
+        }
+        let legs = crate::board::generate_legs(t, kernel, progress, rng).ok()?;
+        Some(self.offer_with(&t.id, legs, Vec::new()))
+    }
+
     /// Generate board offers for a location with a given seed.
     /// Returns a list of job ids that are now offered.
     pub fn generate_board_at(&mut self, jc: &JobContent, kernel: &Content, progress: &Progress, location: &str, seed: u64) -> Vec<JobId> {
@@ -334,7 +343,18 @@ impl Jobs {
                         true
                     }
                 })
+                // A follow-up waits for the job it follows (#126).
+                .filter(|t| prerequisites(jc, &t.id).all(|p| completed(progress, p)))
                 .collect();
+
+        // Follow-ups whose job is done come first, each once while none of it is open.
+        for t in available_templates.iter().filter(|t| prerequisites(jc, &t.id).next().is_some()) {
+            let open = self.jobs.values().any(|j| j.template == t.id && matches!(j.state, JobState::Offered | JobState::Active));
+            if !open && let Some(id) = self.offer_from_template(t, kernel, progress, &mut rng) {
+                job_ids.push(id);
+                used_templates.insert(t.id.clone());
+            }
+        }
 
         if available_templates.is_empty() {
             self.board.offers_per_location.insert(location.to_string(), BoardLocation {
@@ -366,12 +386,7 @@ impl Jobs {
             }
 
             // Try fixed offer first (for templates with all fixed locations and single commodity)
-            let created = if let Some(id) = self.offer_fixed_if_available(template, kernel, progress) {
-                job_ids.push(id);
-                true
-            } else if let Ok(legs) = crate::board::generate_legs(template, kernel, progress, &mut rng) {
-                // Try to generate legs with tag search
-                let id = self.offer_with(&template.id, legs, Vec::new());
+            let created = if let Some(id) = self.offer_from_template(template, kernel, progress, &mut rng) {
                 job_ids.push(id);
                 true
             } else {
@@ -840,4 +855,13 @@ fn settle_order(j: &Job, in_time: bool) -> Option<Outcome> {
     let delivered = j.delivered();
     let condition = if delivered == 0 { 1.0 } else { (j.legs.iter().map(Leg::condition_sum).sum::<f64>() / delivered as f64).clamp(0.0, 1.0) };
     Some(Outcome::Emit(WorldEvent::OrderSettled { order: o.order, delivered, asked: j.asked(), condition, in_time }))
+}
+
+/// Templates whose `follow_up` is `id`.
+fn prerequisites<'a>(jc: &'a JobContent, id: &'a TemplateId) -> impl Iterator<Item = &'a TemplateId> + 'a {
+    jc.templates.values().filter(move |t| t.record.follow_up.as_ref() == Some(id)).map(|t| &t.record.id)
+}
+
+fn completed(progress: &Progress, t: &TemplateId) -> bool {
+    progress.has_flag(&Flag::new(format!("job_completed:{t}")))
 }

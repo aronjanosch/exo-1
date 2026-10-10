@@ -283,35 +283,41 @@ fn once_only_template_disappears_after_completion() {
 
 #[test]
 fn follow_up_template_offered_after_prerequisite_completes() {
+    // jelly_run is first_haul's follow-up and needs the jelly_jobs tag (the jelly licence).
     let mut h = Host::new();
-    h.unlock_location("bent_spoon_permit");
-    let offers1 = h.generate_at("drip_rock", 100);
-
-    // Find first_haul (has follow_up: jelly_run)
-    let first_haul_id = offers1
-        .iter()
-        .find(|id| h.jobs.get(**id).unwrap().template.as_str() == "first_haul")
-        .copied();
-
-    if first_haul_id.is_none() {
-        return; // Skip if first_haul not available
+    // freight_xp is the player's, the wallet the crew's.
+    for (track, delta, player) in [("freight_xp", 100, Some(ClientId(1))), ("wallet", 200, None)] {
+        h.seq += 1;
+        let ev = Event::new(ClientId(1), h.seq, WorldEvent::TrackChanged { track: gameplay_core::TrackId::new(track), delta, player });
+        h.progress.apply(&h.k, &ev).unwrap();
     }
-
-    // Complete first_haul
+    let has = |h: &mut Host, seed: u64| {
+        let offers = h.generate_at("drip_rock", seed);
+        offers.iter().any(|id| h.jobs.get(*id).unwrap().template.as_str() == "jelly_run")
+    };
+    // The licence needs first_haul done; the case "tag without the job done" is made below by
+    // taking the flag out of the saved progress.
     h.complete_job_and_flag("first_haul");
-
-    // Verify that once_only template is gone
-    let offers2 = h.generate_at("drip_rock", 200);
-
-    let first_haul_still_there = offers2.iter().any(|id| {
-        h.jobs.get(*id).unwrap().template.as_str() == "first_haul"
-    });
-    assert!(
-        !first_haul_still_there,
-        "once_only template should disappear after completion"
-    );
-    // Note: jelly_run (follow_up) requires jelly_jobs tag which isn't in fixture,
-    // so it won't be offered. The follow_up concept is implemented.
+    // Its dropoff (dusty) is Bent Spoon, behind the permit.
+    for unlock in ["bent_spoon_permit", "jelly_license"] {
+        h.seq += 1;
+        let buy = Event::new(ClientId(1), h.seq, WorldEvent::UnlockBought { unlock: gameplay_core::UnlockId::new(unlock) });
+        h.progress.apply(&h.k, &buy).unwrap();
+    }
+    assert!(h.progress.has_tag(&gameplay_core::Tag::new("jelly_jobs")));
+    // After first_haul is done, every board carries the follow-up, whatever the seed.
+    for seed in 0..20 {
+        let mut fresh = Host { k: h.k.clone(), jc: h.jc.clone(), progress: h.progress.clone(), jobs: Jobs::default(), seq: h.seq };
+        assert!(has(&mut fresh, seed), "seed {seed}: the follow-up is on the board");
+    }
+    // Without first_haul done (same tag), it never shows.
+    let text = serde_json::to_string(&h.progress).unwrap().replace("\"job_completed:first_haul\"", "\"something_else\"");
+    let no_flag: Progress = serde_json::from_str(&text).unwrap();
+    assert!(no_flag.has_tag(&gameplay_core::Tag::new("jelly_jobs")));
+    for seed in 0..20 {
+        let mut fresh = Host { k: h.k.clone(), jc: h.jc.clone(), progress: no_flag.clone(), jobs: Jobs::default(), seq: h.seq };
+        assert!(!has(&mut fresh, seed), "seed {seed}: no follow-up before its job is done");
+    }
 }
 
 #[test]

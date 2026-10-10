@@ -1,5 +1,5 @@
 //! Scenario `sc-turn` (round 5, lane `sc-angular`): the SC model's rotation, driven through the pad
-//! stick and Q. Sit, F7, 400 m above the ground; a full pitch for 2 s (the overshoot and the
+//! stick and Q. Sit, 400 m above the ground; a full pitch for 2 s (the overshoot and the
 //! settling), a full reversal (a constant deceleration until the spin crosses zero), roll and its
 //! release, then a turn at cruise with the G-safe turn cap (F8) on and off. Each check prints its
 //! numbers.
@@ -113,13 +113,9 @@ pub fn sc_turn_steps(s: &mut Vec<Step>) {
         true
     }));
     s.extend(sit());
-    s.push(Box::new(|w, _| {
-        tap(w, KeyCode::F7);
-        true
-    }));
     s.push(Box::new(|w, c| {
-        let (model, text) = (with_ship(w, |s| s.model), w.resource::<HudReadout>().texts[0].clone());
-        check(c, model == crate::ship::FlightModel::Sc, format!("F7: model {model:?}, HUD {text:?}"));
+        let text = w.resource::<HudReadout>().texts[0].clone();
+        check(c, text.starts_with("SHIP SC"), format!("HUD mode: {text:?}"));
         true
     }));
     s.push(Box::new(|w, _| {

@@ -1,7 +1,7 @@
 //! The SC model's tuning: one file per stage (`content/tuning/sc_<stage>.json`), so each stage's
 //! lane edits only its own file. All values TODO(initiator); none are taken from Star Citizen.
 use super::{air::AirTuning, angular::AngularTuning, drive::DriveTuning, linear::LinearTuning, modes::ModeTuning};
-use crate::axis::{Dirs, Rot};
+use crate::limits::{Dirs, Rot};
 use serde::Deserialize;
 
 /// The ship's body (`sc_ship.json`): mass, inertia and what its thrusters give.
@@ -38,8 +38,8 @@ impl ShipBody {
 
 impl Default for ShipBody {
     fn default() -> Self {
-        // A 2 t hull 4.6 x 3.2 x 8.3 m as a box (the greybox ship), thrust for the axis model's
-        // accelerations (60 m/s² forward ...), torque for about 8 rad/s² pitch and yaw.
+        // A 2 t hull 4.6 x 3.2 x 8.3 m as a box (the greybox ship), thrust for 60 m/s² forward and
+        // the other accelerations of the greybox, torque for about 8 rad/s² pitch and yaw.
         let m = 2000.0;
         let (w, h, d): (f64, f64, f64) = (4.6, 3.2, 8.3);
         let inertia = Rot { pitch: m / 12.0 * (h * h + d * d), yaw: m / 12.0 * (w * w + d * d), roll: m / 12.0 * (w * w + h * h) };

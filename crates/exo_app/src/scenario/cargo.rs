@@ -96,7 +96,6 @@ pub fn crate_ride_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool
             let rel = (h.after - h.ship_vel).length();
             end(w, c, format!("hand-over at ship speed {:.2} m/s: world velocity before {:.3?}, after {:.3?}, crate relative to the ship {rel:.2} m/s", h.ship_vel.length(), h.before, h.after));
             // Relative: the 8 m/s push plus what the ship's acceleration took from under the crate
-            // (the axis model pulls away harder than the classic one did: 11.2 m/s, #144).
             check(c, jump < 1e-6 && rel < 15.0 && h.ship_vel.length() > 1.0, format!("crate-ride: the crate keeps the ship velocity at the hand-over (jump {jump:.2e} m/s, ship {:.2} m/s, relative {rel:.2} m/s)", h.ship_vel.length()));
             return true;
         }

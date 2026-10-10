@@ -2,7 +2,9 @@
 //! shakes under boost and calms at rest, and F9 (through the bindings) switches all of it off and
 //! back on. Driven through `Controls`. The HUD line is not in a headless run; its words are
 //! checked in `view::tests`.
-use crate::scenario::{above_ground, check, hold_until, land, put_at_seat, ship_vel, sit, tap, wait, with_ship, Step};
+use crate::scenario::{above_ground, check, hold_until, land, planet, put_at_seat, ship_e, ship_frame_of, ship_vel, sit, tap, teleport_ship, wait, with_ship, Step};
+use crate::ship::basis_for_up;
+use avian3d::prelude::Position;
 use bevy::math::{DVec2, DVec3};
 use bevy::prelude::*;
 use flight_core::camera::CameraFx;
@@ -76,7 +78,7 @@ pub fn camera_g_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         c.v.insert("hover_lag", 0.0);
         c.v.insert("hover_g", 0.0);
-        check(c, with_ship(w, |s| s.ctl.hover_assist), "hover: assist on, no input".into());
+        check(c, with_ship(w, |s| s.sc.modes.grav_comp), "hover: assist on, no input".into());
         true
     }));
     s.push(Box::new(|w, c| {
@@ -93,6 +95,17 @@ pub fn camera_g_steps(s: &mut Vec<Step>) {
         true
     }));
     s.push(hold_until("descend to 120 m above ground", &[KeyCode::ControlLeft, KeyCode::ShiftLeft], 180.0, |w| above_ground(w) < 120.0));
+    // Brake to rest first: the descent at 66 m/s still moves sideways at touchdown (SC has no
+    // landing gear, #162), which is not what this scenario checks. Then a test hook levels the
+    // ship at its spot: the SC's down input follows the hull, so a tilted hull slides on the way
+    // down (the axis model's #144 fix does not carry over to SC; open question, see the report).
+    s.push(hold_until("firm brake before the landing", &[KeyCode::KeyX], 20.0, |w| ship_vel(w).length() < 0.5));
+    s.push(Box::new(|w, _| {
+        let e = ship_e(w);
+        let (p, up) = (w.get::<Position>(e).unwrap().0, planet(w).up(ship_frame_of(w).origin));
+        teleport_ship(w, p, basis_for_up(up));
+        true
+    }));
     s.push(land("land"));
     s.push(wait(3.0));
     s.push(Box::new(|w, c| {

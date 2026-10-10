@@ -14,13 +14,13 @@
 //!    `roll_release_share` of the box, stopping at zero.
 //! 5. Rates follow the speed (`rate_over_speed`, speed over the cap) and boost (`boost_rate`).
 //! 6. G-safe (`Modes::g_safe`, coupled): pitch and yaw scale so rate x velocity stays inside the
-//!    G limit per direction (the axis model's `cap_turns`, own copy of the values).
+//!    G limit per direction (own copy of the values).
 //! 7. Landing mode: the rates times `landing_rate_share` near the ground.
 //!
 //! All values are TODO(initiator) (`content/tuning/sc_angular.json`).
 use super::modes::Modes;
 use super::Frame;
-use crate::axis::{Dirs, Rot, G0};
+use crate::limits::{Dirs, Rot, G0};
 use crate::{lerp, smoothstep, Curve, FlightInput, Interp};
 use glam::{DVec2, DVec3};
 use serde::Deserialize;
@@ -210,7 +210,7 @@ pub fn step(s: &mut AngularState, f: &Frame, input: &FlightInput, m: &Modes, e: 
     }
 
     // 6. G-safe turn cap: rate x velocity (the centripetal push of a coupled turn) plus the gravity
-    // hold stays inside the limit per direction. Scales pitch and yaw only, as the axis model does.
+    // hold stays inside the limit per direction. Scales pitch and yaw only.
     let mut rate_capped = false;
     if m.g_safe && m.coupling > 0.0 {
         let g = t.g_limit.scaled(G0);

@@ -21,7 +21,7 @@ pub(super) fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: 
                 c.v.insert("left", 0.0);
                 c.v.insert("vmax", 0.0);
                 with_ship(w, |s| {
-                    s.ctl.hover_assist = assist;
+                    s.sc.modes.grav_comp = assist;
                     s.test_input = FlightInput { thrust: DVec3::new(0.0, 0.0, -1.0), boost: true, roll, ..default() };
                 });
             }
@@ -52,7 +52,7 @@ pub(super) fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: 
                 keys(w, &[KeyCode::KeyW, KeyCode::KeyS], false);
                 with_ship(w, |s| {
                     s.test_input = FlightInput::default();
-                    s.ctl.hover_assist = true;
+                    s.sc.modes.grav_comp = true;
                 });
                 let note = format!(
                     "ship up to {:.0} m/s, roll {roll} (assist {assist}), standing drift {:.4} m, walker height in cabin {:.4}..{:.4} m, left ship {}",
@@ -80,7 +80,7 @@ pub(super) fn step_out_in_space(name: &'static str, drift: f64, careful: bool) -
         Box::new(move |w, _| {
             tap(w, KeyCode::KeyF); // stand up
             if drift != 0.0 {
-                with_ship(w, |s| s.ctl.hover_assist = false);
+                with_ship(w, |s| s.sc.modes.grav_comp = false);
                 let e = ship_e(w);
                 let up = planet(w).up(ship_frame_of(w).origin);
                 w.get_mut::<LinearVelocity>(e).unwrap().0 = -up * drift;
@@ -141,7 +141,7 @@ pub(super) fn step_out_in_space(name: &'static str, drift: f64, careful: bool) -
             false
         }),
         Box::new(|w, _| {
-            with_ship(w, |s| s.ctl.hover_assist = true);
+            with_ship(w, |s| s.sc.modes.grav_comp = true);
             true
         }),
     ];
@@ -292,7 +292,12 @@ pub(super) fn drift_behind_moving_ship() -> Vec<Step> {
         }),
         wait(0.3),
         Box::new(|w, _| {
-            with_ship(w, |s| s.ctl.hover_assist = false);
+            // Decoupled (C): the SC assist would brake the coast; the ship glides as the axis model's
+            // assist-off ship did.
+            with_ship(w, |s| {
+                s.sc.modes.coupled = false;
+                s.sc.modes.coupling = 0.0;
+            });
             let e = ship_e(w);
             let f = ship_frame_of(w);
             w.get_mut::<LinearVelocity>(e).unwrap().0 = f.rot * DVec3::new(0.0, 0.0, -20.0);
@@ -330,7 +335,11 @@ pub(super) fn drift_behind_moving_ship() -> Vec<Step> {
         Box::new(|w, _| {
             let e = ship_e(w);
             w.get_mut::<LinearVelocity>(e).unwrap().0 = DVec3::ZERO;
-            with_ship(w, |s| s.ctl.hover_assist = true);
+            with_ship(w, |s| {
+                s.sc.modes.coupled = true;
+                s.sc.modes.coupling = 1.0;
+                s.sc.modes.grav_comp = true;
+            });
             true
         }),
     ];

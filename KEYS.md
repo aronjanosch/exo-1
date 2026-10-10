@@ -18,7 +18,7 @@ Marks: **new** since round 5 · **provisional**: the key is not decided yet · *
 | R | `throw` | Throw the held crate | right stick click |
 | G | `lag` | Cabin gravity by hand, only in a landed ship | – |
 
-### Ship (both flight models)
+### Ship
 
 | Key | Action | What it does | Pad |
 |---|---|---|---|
@@ -30,12 +30,12 @@ Marks: **new** since round 5 · **provisional**: the key is not decided yet · *
 | Shift | `boost` | Boost (capacitor) | left stick click |
 | X | `brake` | Brake; in the SC model along the flight path | East |
 | C | `decoupled` | Coupled ↔ decoupled, blends over 4 s | D-pad left |
-| K | `landing_mode` | Landing mode: precision near the ground | – |
+| K | `landing_mode` | Landing mode (SC switch, see below): precision near the ground | – |
 | F | `interact` | Stand up | North |
 
 ### SC flight model (the default)
 
-The switches of Star Citizen's flight control. H and F8 mean these in the SC model.
+The switches of Star Citizen's flight control (the flight model is the SC model, #206). Ctrl and K as above; H and F8 are the SC switches below.
 
 | Key | Action | What it does | Pad |
 |---|---|---|---|
@@ -46,13 +46,6 @@ The switches of Star Citizen's flight control. H and F8 mean these in the SC mod
 | P | `proximity_assist` | Proximity assist on/off: catches a dive towards the ground (new, provisional) | – |
 | I | `wind_comp` | Wind compensation on/off: off, the ship drifts with the wind (new, provisional) | – |
 | Page Up / Page Down | `limiter_up`, `limiter_down` | Speed limiter in 10 % steps; the mouse wheel later (new, provisional) | – |
-
-### Axis flight model (old, frozen; F7 switches to it)
-
-| Key | Action | What it does | Pad |
-|---|---|---|---|
-| H | `hover_assist` | Assist on/off (gravity hold and damping together) | D-pad up |
-| L | `horizon_follow` | Horizon follow: the ship follows the planet's curve (cut?) | D-pad down |
 
 ### Quantum drive
 
@@ -72,17 +65,14 @@ The switches of Star Citizen's flight control. H and F8 mean these in the SC mod
 | Tab | `next_offer` | Next offer at the counter | – |
 | Backspace | `decline` | Close the counter without taking the job | – |
 | Enter | `skip_notices` | Run the queued banners and notices fast | – |
-| F1 | `help` | The keys that apply right now (on foot, suit, ship axis or SC) | – |
+| F1 | `help` | The keys that apply right now (on foot, suit or in the ship) | – |
 | Escape | – | Menu; releases the mouse | – |
 
 ## Debug and comparison
 
 | Key | Action | What it does |
 |---|---|---|
-| F7 | `flight_model` | Flight model: SC (the default) ↔ the old axis model, until the axis model goes (new) |
 | F3 | `debug_hud` | Debug lines under the HUD: frame time, chunks, flight values, model |
-| F6 | `boost_mode` | Axis model: boost as the capacitor or the old speed stage (cut?) |
-| F8 | `turn_cap` | Axis model: the G-safety turn cap (in the SC model: G-safe, above) |
 | F9 | `camera_fx` | Camera effects on/off: shake, lag, field of view from G |
 | V | `debug_fly` | Debug flight on foot |
 | O | `orbit_camera` | Orbit camera |

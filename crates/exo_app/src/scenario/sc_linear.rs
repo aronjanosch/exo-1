@@ -5,7 +5,7 @@
 //! its numbers. Comstab off: brake in space, turn on the spot, launch along the new nose.
 use crate::controls::Controls;
 use crate::scenario::{altitude, begin, check, end, keys, planet, put_at_seat, ship_e, ship_vel, sit, tap, teleport_ship, with_ship, wait, Ctx, Step};
-use crate::ship::{basis_for_up, FlightModel};
+use crate::ship::basis_for_up;
 use avian3d::prelude::{AngularVelocity, Position, Rotation};
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -56,10 +56,6 @@ fn cap_in_force(w: &mut World) -> f64 {
     with_ship(w, |s| s.sc.status.cap)
 }
 
-fn model_is_sc(w: &mut World) -> bool {
-    with_ship(w, |s| s.model) == FlightModel::Sc
-}
-
 pub fn sc_linear_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, _| {
         put_at_seat(w);
@@ -67,11 +63,6 @@ pub fn sc_linear_steps(s: &mut Vec<Step>) {
     }));
     s.extend(sit());
     s.push(Box::new(|w, _| {
-        tap(w, KeyCode::F7);
-        true
-    }));
-    s.push(Box::new(|w, c| {
-        check(c, model_is_sc(w), "F7: the SC model is on".into());
         lift(w);
         true
     }));

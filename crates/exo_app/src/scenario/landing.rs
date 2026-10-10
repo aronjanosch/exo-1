@@ -5,7 +5,7 @@ use crate::scenario::{above_ground, begin, check, end, hold_until, land, planet,
 use crate::ship::basis_for_up;
 use bevy::math::DVec3;
 use bevy::prelude::*;
-use flight_core::ShipController;
+use flight_core::GroundRules;
 
 /// Degrees below the slope limit the ground is searched for: steep, but held.
 const BELOW_LIMIT: f64 = 5.0;
@@ -16,7 +16,7 @@ const CELLS: i32 = 40;
 /// The spot nearest to `want` degrees of slope in a grid around `up`: on land, and even under the
 /// hull (the slope 4 m to each side within 3 degrees of the centre's). Returns the ground's
 /// direction and its slope in degrees.
-fn find_slope(pl: &PlanetRes, ctl: &ShipController, up: DVec3, want: f64) -> Option<(DVec3, f64)> {
+fn find_slope(pl: &PlanetRes, ctl: &GroundRules, up: DVec3, want: f64) -> Option<(DVec3, f64)> {
     let ground = |dir: DVec3| pl.centre + dir * pl.surface(dir);
     let slope = |dir: DVec3| ctl.ground_slope(pl, ground(dir)).to_degrees();
     let (a, b) = up.any_orthonormal_pair();
@@ -50,7 +50,7 @@ pub fn slope_landing_steps(s: &mut Vec<Step>) {
         begin(w, c, "slope-landing: find a slope below the limit");
         let pl = planet(w);
         let start = ship_frame_of(w).origin;
-        let ctl = with_ship(w, |s| s.ctl.clone());
+        let ctl = with_ship(w, |s| s.ground.clone());
         let limit = ctl.tuning.landing_slope_limit;
         let Some((dir, slope)) = find_slope(&pl, &ctl, pl.up(start), limit - BELOW_LIMIT) else {
             end(w, c, "no spot".into());
@@ -84,7 +84,7 @@ pub fn slope_landing_steps(s: &mut Vec<Step>) {
         let drift = c.v["drift"].max((d - up * d.dot(up)).length());
         c.v.insert("drift", drift);
         if c.t >= 10.0 {
-            let hold = with_ship(w, |s| s.ctl.ground_hold);
+            let hold = with_ship(w, |s| s.ground.ground_hold);
             let tilt = (f.rot * DVec3::Y).angle_between(up).to_degrees();
             let slope = c.v["slope"];
             end(w, c, format!("held {}, at rest {}, tilt {tilt:.1} deg on a {slope:.1} deg slope, largest drift from touchdown {:.3} mm", hold.is_some(), hold.is_some_and(|h| h.rest.is_some()), drift * 1000.0));
@@ -97,7 +97,7 @@ pub fn slope_landing_steps(s: &mut Vec<Step>) {
     }));
     s.push(hold_until("slope-landing: thrust up", &[KeyCode::Space], 3.0, |w| above_ground(w) > 5.0));
     s.push(Box::new(|w, c| {
-        let (hold, agl) = (with_ship(w, |s| s.ctl.ground_hold), above_ground(w));
+        let (hold, agl) = (with_ship(w, |s| s.ground.ground_hold), above_ground(w));
         check(c, hold.is_none() && agl > 5.0, format!("slope-landing: thrust lets go, the ship lifts ({agl:.1} m above ground)"));
         true
     }));

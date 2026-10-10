@@ -24,10 +24,8 @@ pub enum Mode {
     Cabin,
     Suit,
     Fly,
-    Ship { assist: bool, decoupled: bool },
-    /// The SC flight model (F7, round 5): the switches a pilot most needs to see. The full flight
-    /// panel is lane `sc-hud`'s.
-    ShipSc { decoupled: bool, grav_comp: bool, nav: bool },
+    /// The ship (SC flight model): the switches a pilot most needs to see.
+    Ship { decoupled: bool, grav_comp: bool, nav: bool },
     /// The quantum drive's phase while it is not idle.
     Quantum(String),
 }
@@ -38,7 +36,7 @@ pub enum Boost {
     None,
     /// The suit has no meter (decided "no fuel"): only whether boost is held.
     Held(bool),
-    /// The ship's speed stage of #24 (F6 dev switch or `drain_time: 0`): held or not.
+    /// The ship's speed stage of #24 (no capacitor: `drain_time` 0): held or not.
     Stage(bool),
     /// The ship's capacitor (#90): charge 0..1, a boost is running, enough charge to start one.
     Ship { charge: f64, active: bool, ready: bool },
@@ -64,15 +62,6 @@ pub enum Panel {
         /// m/s, the cap in force.
         cap: f64,
         /// g, the felt acceleration.
-        felt_g: f64,
-    },
-    Axis {
-        assist: bool,
-        coupled: bool,
-        coupling: f64,
-        braking: bool,
-        /// m/s, the forward speed limit.
-        cap: f64,
         felt_g: f64,
     },
 }
@@ -134,7 +123,7 @@ pub struct HudReadout {
     pub boosting: bool,
     /// Charge at or above the start charge (the bar is dimmed below).
     pub ready: bool,
-    /// Next to the bar: which boost the ship flies, `CAPACITOR` or `STAGE` (F6); empty off the seat.
+    /// Next to the bar: which boost the ship flies, `CAPACITOR` or `STAGE` (no capacitor); empty off the seat.
     pub boost_mode: &'static str,
     /// After it: `LANDING` in landing mode (K); empty otherwise and off the seat.
     pub landing: &'static str,
@@ -152,7 +141,7 @@ pub struct HudReadout {
     pub flight: Option<FlightHud>,
 }
 
-/// The landing mode's HUD word. TODO(initiator): the word (spike 13).
+/// The landing mode's HUD word. TODO(initiator): the word.
 pub fn landing_word(landing: bool) -> &'static str {
     if landing { "LANDING" } else { "" }
 }
@@ -168,10 +157,7 @@ pub fn readout(i: &HudIn) -> HudReadout {
         Mode::Cabin => "CABIN".into(),
         Mode::Suit => "SUIT".into(),
         Mode::Fly => "FLY".into(),
-        Mode::Ship { assist: false, .. } => "SHIP  ASSIST OFF".into(),
-        Mode::Ship { decoupled: true, .. } => "SHIP  DECOUPLED".into(),
-        Mode::Ship { .. } => "SHIP".into(),
-        Mode::ShipSc { decoupled, grav_comp, nav } => {
+        Mode::Ship { decoupled, grav_comp, nav } => {
             format!("SHIP SC  {}  {}{}", if *nav { "NAV" } else { "SCM" }, if *decoupled { "DECOUPLED" } else { "COUPLED" }, if *grav_comp { "" } else { "  NO GRAV COMP" })
         }
         Mode::Quantum(phase) => format!("QUANTUM {}", phase.to_uppercase()),
@@ -189,7 +175,7 @@ pub fn readout(i: &HudIn) -> HudReadout {
     };
     let (blend, cap_text, g_text) = match &i.panel {
         Panel::None => (None, String::new(), String::new()),
-        Panel::Sc { coupling, cap, felt_g, .. } | Panel::Axis { coupling, cap, felt_g, .. } => {
+        Panel::Sc { coupling, cap, felt_g, .. } => {
             (blend_of(*coupling), format!("{:.0} / {cap:.0} m/s", i.speed), format!("{felt_g:.1} g"))
         }
     };
@@ -214,12 +200,11 @@ pub fn blend_of(coupling: f64) -> Option<f64> {
     (coupling > BLEND_EPS && coupling < 1.0 - BLEND_EPS).then_some(coupling)
 }
 
-/// The model's word (`SC`, `AXIS`); empty off the seat.
+/// The model's word (`SC`); empty off the seat.
 pub fn model_word(p: &Panel) -> &'static str {
     match p {
         Panel::None => "",
         Panel::Sc { .. } => "SC",
-        Panel::Axis { .. } => "AXIS",
     }
 }
 
@@ -251,13 +236,6 @@ pub fn badges(i: &HudIn) -> Vec<Badge> {
             b.push(landing);
             b.push(Badge::held("BRAKE", *braking));
         }
-        Panel::Axis { assist, coupled, braking, .. } => {
-            b.push(Badge::new("MODEL", "AXIS", true));
-            b.push(Badge::new("ASSIST", "ASSIST", *assist));
-            coupling_badges(&mut b, *coupled);
-            b.push(landing);
-            b.push(Badge::held("BRAKE", *braking));
-        }
     }
     b
 }
@@ -284,7 +262,7 @@ fn first_change(prev: &[Badge], now: &[Badge]) -> Option<String> {
 }
 
 /// Turns the badges' changes into toasts (#197). The first step only records the state. A model
-/// switch toasts `MODEL SC` or `MODEL AXIS` alone. A later change replaces the toast.
+/// switch toasts `MODEL` alone. A later change replaces the toast.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Toaster {
     prev: Option<Vec<Badge>>,
@@ -434,19 +412,16 @@ pub fn update_readout(
     mut toaster: Local<Toaster>,
 ) {
     let (Ok(pl), Ok((ship, sp, sv, sr))) = (players.single(), ships.single()) else { return };
-    let sc = ship.model == crate::ship::FlightModel::Sc;
-    let landing = if pl.seated { landing_word(if sc { ship.sc.modes.landing } else { ship.ctl.landing_mode }) } else { "" };
+    let landing = if pl.seated { landing_word(ship.sc.modes.landing) } else { "" };
     let (mode, v, pos, boost) = if pl.seated {
         let mode = if wd.drive.phase != warp_core::Phase::Idle {
             Mode::Quantum(format!("{:?}", wd.drive.phase))
-        } else if sc {
-            let m = &ship.sc.modes;
-            Mode::ShipSc { decoupled: !m.coupled, grav_comp: m.grav_comp, nav: m.master == flight_core::sc::Master::Nav }
         } else {
-            Mode::Ship { assist: ship.ctl.hover_assist, decoupled: !ship.ctl.coupled }
+            let m = &ship.sc.modes;
+            Mode::Ship { decoupled: !m.coupled, grav_comp: m.grav_comp, nav: m.master == flight_core::sc::Master::Nav }
         };
-        let (cap, t, stage) = if sc { (&ship.sc.drive.boost, &ship.sc.tuning.drive.boost_capacitor, false) } else { (&ship.ctl.boost, &ship.ctl.tuning.boost_capacitor, ship.ctl.boost_stage) };
-        let boost = if stage || t.drain_time <= 0.0 { Boost::Stage(cap.active) } else { Boost::Ship { charge: cap.charge, active: cap.active, ready: cap.ready(t) } };
+        let (cap, t) = (&ship.sc.drive.boost, &ship.sc.tuning.drive.boost_capacitor);
+        let boost = if t.drain_time <= 0.0 { Boost::Stage(cap.active) } else { Boost::Ship { charge: cap.charge, active: cap.active, ready: cap.ready(t) } };
         (mode, sv.0, sp.0, boost)
     } else if pl.ship.is_some() {
         (Mode::Cabin, sv.0 + sr.0 * pl.w.vel, sp.0, Boost::None)
@@ -461,7 +436,7 @@ pub fn update_readout(
     let altitude = (r.length() < NEAR_PLANET).then(|| Height::pick(planet.above_ground(pos), r.length() - planet.radius, tuning.hud.agl_below));
     let panel = if !pl.seated {
         Panel::None
-    } else if sc {
+    } else {
         let s = &ship.sc.status;
         Panel::Sc {
             coupled: s.coupled,
@@ -477,20 +452,13 @@ pub fn update_readout(
             cap: s.cap,
             felt_g: s.felt_g,
         }
-    } else {
-        Panel::Axis { assist: ship.ctl.hover_assist, coupled: ship.ctl.coupled, coupling: ship.ctl.coupling, braking: ship.ctl.brake_active, cap: ship.ctl.forward_speed_limit, felt_g: ship.ctl.axis.felt_g }
     };
     let mut new = readout(&HudIn { mode, panel: panel.clone(), speed: v.length(), altitude, boost, landing });
     new.toast = toaster.step(&new.badges, model_word(&panel), time.delta_secs_f64(), tuning.hud.toast_time);
     if pl.seated || pl.ship.is_some() {
-        let (cruise, boost, limiter, felt_g, g_limit, thrust) = if sc {
-            let lin = &ship.sc.tuning.linear;
-            let caps = lin.caps(ship.sc.modes.master);
-            (caps.cruise, caps.boost_forward, ship.sc.status.limiter, ship.sc.status.felt_g, lin.g_limit.forward, ship.thrust_signal(sr.0, sv.0))
-        } else {
-            let t = &ship.ctl.tuning;
-            (t.cruise_speed, t.boost_speed_forward, 1.0, ship.ctl.axis.felt_g, t.g_safety.limit.forward, ship.thrust_signal(sr.0, sv.0))
-        };
+        let lin = &ship.sc.tuning.linear;
+        let caps = lin.caps(ship.sc.modes.master);
+        let (cruise, boost, limiter, felt_g, g_limit, thrust) = (caps.cruise, caps.boost_forward, ship.sc.status.limiter, ship.sc.status.felt_g, lin.g_limit.forward, ship.thrust_signal());
         // The planet's up at the ship: the horizon shows only in the atmosphere (initiator: off in
         // space).
         let in_air = flight_core::PlanetEnv::density_at(planet.as_ref(), sp.0) > 0.0;
@@ -508,13 +476,13 @@ mod tests {
     use super::*;
 
     fn ship(charge: f64, active: bool, ready: bool) -> HudIn {
-        HudIn { mode: Mode::Ship { assist: true, decoupled: false }, panel: Panel::None, speed: 123.44, altitude: Some(Height::Alt(450.4)), boost: Boost::Ship { charge, active, ready }, landing: "" }
+        HudIn { mode: Mode::Ship { decoupled: false, grav_comp: true, nav: false }, panel: Panel::None, speed: 123.44, altitude: Some(Height::Alt(450.4)), boost: Boost::Ship { charge, active, ready }, landing: "" }
     }
 
     #[test]
     fn ship_shows_mode_speed_altitude_and_gauge() {
         let r = readout(&ship(0.744, true, true));
-        assert_eq!(r.texts, ["SHIP".to_string(), "123.4 m/s".into(), "ALT 450 m".into(), "BOOST 74 %".into()]);
+        assert_eq!(r.texts, ["SHIP SC  SCM  COUPLED".to_string(), "123.4 m/s".into(), "ALT 450 m".into(), "BOOST 74 %".into()]);
         assert_eq!(r.gauge, Some(0.744));
         assert!(r.boosting && r.ready);
         assert_eq!(r.boost_mode, "CAPACITOR");
@@ -558,10 +526,10 @@ mod tests {
     #[test]
     fn mode_words() {
         let mut i = ship(1.0, false, true);
-        i.mode = Mode::Ship { assist: false, decoupled: true };
-        assert_eq!(readout(&i).texts[0], "SHIP  ASSIST OFF");
-        i.mode = Mode::Ship { assist: true, decoupled: true };
-        assert_eq!(readout(&i).texts[0], "SHIP  DECOUPLED");
+        i.mode = Mode::Ship { decoupled: true, grav_comp: true, nav: false };
+        assert_eq!(readout(&i).texts[0], "SHIP SC  SCM  DECOUPLED");
+        i.mode = Mode::Ship { decoupled: false, grav_comp: false, nav: true };
+        assert_eq!(readout(&i).texts[0], "SHIP SC  NAV  COUPLED  NO GRAV COMP");
         i.mode = Mode::Quantum("Cruise".into());
         assert_eq!(readout(&i).texts[0], "QUANTUM CRUISE");
         for (m, w) in [(Mode::Walk, "WALK"), (Mode::Cabin, "CABIN"), (Mode::Suit, "SUIT"), (Mode::Fly, "FLY")] {
@@ -603,23 +571,12 @@ mod panel_tests {
 
     fn sc(coupling: f64, grav_comp: bool, nav: bool, limiter: f64) -> HudIn {
         HudIn {
-            mode: Mode::ShipSc { decoupled: coupling < 0.5, grav_comp, nav },
+            mode: Mode::Ship { decoupled: coupling < 0.5, grav_comp, nav },
             panel: Panel::Sc { coupled: coupling > 0.5, coupling, grav_comp, g_safe: true, comstab: true, proximity: true, wind_comp: true, nav, limiter, braking: false, cap: 150.0, felt_g: 2.3 },
             speed: 123.44,
             altitude: None,
             boost: Boost::None,
             landing: "",
-        }
-    }
-
-    fn axis(assist: bool, coupling: f64, braking: bool) -> HudIn {
-        HudIn {
-            mode: Mode::Ship { assist, decoupled: coupling < 0.5 },
-            panel: Panel::Axis { assist, coupled: coupling > 0.5, coupling, braking, cap: 90.0, felt_g: 1.0 },
-            speed: 10.0,
-            altitude: None,
-            boost: Boost::None,
-            landing: "LANDING",
         }
     }
 
@@ -654,14 +611,6 @@ mod panel_tests {
         let r = readout(&sc(1.0, true, false, 0.9));
         let limit = r.badges.iter().find(|b| b.key == "LIMIT").unwrap();
         assert_eq!((limit.label.as_str(), limit.on), ("LIMIT 90 %", true));
-    }
-
-    #[test]
-    fn axis_panel_shows_assist_and_axis() {
-        let r = readout(&axis(false, 1.0, true));
-        assert_eq!(r.badges.iter().map(|b| b.key).collect::<Vec<_>>(), ["MODEL", "ASSIST", "COUPLED", "DECOUPLED", "LANDING", "BRAKE"]);
-        assert_eq!(r.badges[0].label, "AXIS");
-        assert_eq!((on(&r, "ASSIST"), on(&r, "BRAKE"), on(&r, "LANDING")), (Some(false), Some(true), Some(true)));
     }
 
     #[test]
@@ -701,15 +650,6 @@ mod panel_tests {
         assert_eq!(t.step(&r.badges, "SC", dt, TOAST_TIME).as_deref(), Some("DECOUPLED"));
         let r = readout(&sc(0.4, true, true, 1.0));
         assert_eq!(t.step(&r.badges, "SC", dt, TOAST_TIME).as_deref(), Some("NAV"));
-    }
-
-    #[test]
-    fn a_model_switch_toasts_the_model_alone() {
-        let mut t = Toaster::default();
-        let dt = 1.0 / 60.0;
-        t.step(&readout(&sc(1.0, true, false, 1.0)).badges, "SC", dt, TOAST_TIME);
-        let a = readout(&axis(true, 1.0, false));
-        assert_eq!(t.step(&a.badges, "AXIS", dt, TOAST_TIME).as_deref(), Some("MODEL AXIS"));
     }
 
     #[test]

@@ -63,7 +63,6 @@ fn run(i: usize, gp: &mut Gameplay, ships: &mut Query<&mut Ship>, clock: &mut Da
         }
         2 => {
             for mut s in ships.iter_mut() {
-                s.ctl.boost.charge = 1.0;
                 s.sc.drive.boost.charge = 1.0;
             }
             "boost full".into()

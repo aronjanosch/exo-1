@@ -6,7 +6,7 @@ use avian3d::prelude::*;
 use bevy::math::{DMat3, DQuat, DVec2, DVec3};
 use bevy::prelude::*;
 use flight_core::sc::{ModeCmds, ScShip};
-use flight_core::{BodyState, FlightInput, Lag, ShipController, VirtualStick};
+use flight_core::{BodyState, FlightInput, GroundRules, Lag, VirtualStick};
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<CameraEffects>().init_resource::<ThrusterLevels>();
@@ -20,7 +20,6 @@ pub const SEAT_POS: DVec3 = DVec3::new(0.0, 0.6, -3.0);
 
 #[derive(Component)]
 pub struct Ship {
-    pub ctl: ShipController,
     pub piloted: bool,
     /// Parked: static until someone first sits down.
     pub parked: bool,
@@ -32,49 +31,21 @@ pub struct Ship {
     pub stick: VirtualStick,
     /// A hull collider touches something (the ground; ships do not touch each other).
     pub grounded: bool,
-    /// The SC flight model (round 5), flying while `model` is `Sc`.
+    /// The SC flight model (`flight_core::sc`).
     pub sc: ScShip,
-    /// Which model flies the ship (F7).
-    pub model: FlightModel,
+    /// The ground rules (#92): the ship on the ground while the SC model does not fly it.
+    pub ground: GroundRules,
 }
-
-/// The flight model that flies the ship (F7, round 5): the SC model (`flight_core::sc`) or the
-/// axis model (spike 13, frozen until it goes).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum FlightModel {
-    Axis,
-    #[default]
-    Sc,
-}
-
-/// The model a new ship starts with: SC for players (initiator, 2026-10-10: "das richtige SC
-/// modell das neuste als default"); the scenarios start in the axis model they were written for
-/// (the SC scenarios switch with F7).
-#[derive(Resource, Clone, Copy, Debug, Default)]
-pub struct StartModel(pub FlightModel);
 
 impl Ship {
-    /// Signed thrust share per ship axis (-1..1, x right, y up, z back), for sound and camera:
-    /// the SC model's thrusters, or the axis model's input (the brake as thrust against the
-    /// motion, fading with the felt acceleration).
-    pub fn thrust_signal(&self, rot: DQuat, vel: DVec3) -> DVec3 {
-        if self.model == FlightModel::Sc {
-            return self.sc.status.thrust_share;
-        }
-        let o = self.ctl.ramp.out;
-        if self.ctl.brake_active && !self.parked {
-            -(rot.inverse() * vel).normalize_or_zero() * (self.ctl.axis.felt_g / BRAKE_FULL_G).min(1.0)
-        } else {
-            DVec3::new(o[0], o[1], o[2])
-        }
+    /// Signed thrust share per ship axis (-1..1, x right, y up, z back), for sound and camera.
+    pub fn thrust_signal(&self) -> DVec3 {
+        self.sc.status.thrust_share
     }
 
     /// A boost is running.
     pub fn boost_active(&self) -> bool {
-        match self.model {
-            FlightModel::Axis => self.ctl.boost.active,
-            FlightModel::Sc => self.sc.status.boost_active,
-        }
+        self.sc.status.boost_active
     }
 }
 
@@ -107,7 +78,7 @@ pub fn basis_for_up(up: DVec3) -> DQuat {
     DQuat::from_mat3(&DMat3::from_cols(fwd.cross(up), up, -fwd))
 }
 
-pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, tuning: &crate::tuning::Tuning, model: FlightModel, up: DVec3, offset_x: f64) -> Entity {
+pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, tuning: &crate::tuning::Tuning, up: DVec3, offset_x: f64) -> Entity {
     // Parked 15 m ahead of the walker spawn, floor on the highest ground under the hull.
     let dir = (up * planet.radius + DVec3::new(offset_x, 0.0, -15.0)).normalize();
     let rot = basis_for_up(dir);
@@ -123,7 +94,6 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, tuning: &crate::t
     let ship = commands
         .spawn((
             Ship {
-                ctl: ShipController::new(tuning.ship.clone()),
                 piloted: false,
                 parked: true,
                 test_input: FlightInput::default(),
@@ -131,7 +101,7 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, tuning: &crate::t
                 stick: VirtualStick::default(),
                 grounded: false,
                 sc: ScShip::new(tuning.sc.clone()),
-                model,
+                ground: GroundRules::new(tuning.ground.clone()),
             },
             RigidBody::Static,
             Position(pos),
@@ -224,7 +194,7 @@ pub fn ship_control(
     let dt = time.delta_secs_f64();
     for (e, mut ship, pos, rot, mut lv, mut av) in &mut q {
         ship.grounded = colliders.iter().any(|(c, of)| of.body == e && collisions.collisions_with(c).next().is_some());
-        let clearance = ship.ctl.clearance_at(planet.as_ref(), pos.0);
+        let clearance = ship.ground.clearance_at(planet.as_ref(), pos.0);
         // A parked ship is static: no contacts with the static terrain, but it stands on it.
         let grounded = ship.grounded || ship.parked;
         ship.lag.step(grounded, clearance, lv.0.length(), dt);
@@ -240,52 +210,23 @@ pub fn ship_control(
                 actions.look = Vec2::ZERO;
                 ship.stick = VirtualStick::default();
             }
-            ship.ctl.skip_step(dt);
             ship.sc.skip_step(dt);
             continue;
         }
         let mut cmds = ModeCmds::default();
         let input = if ship.piloted {
-            if actions.take_tap(Tap::FlightModel) {
-                ship.model = match ship.model {
-                    FlightModel::Axis => FlightModel::Sc,
-                    FlightModel::Sc => FlightModel::Axis,
-                };
-            }
-            if ship.model == FlightModel::Sc {
-                // The SC model's switches; H, C, F8 and K keep their keys with the SC meaning.
-                cmds = ModeCmds {
-                    grav_comp: actions.take_tap(Tap::HoverAssist),
-                    decoupled: actions.take_tap(Tap::Decoupled),
-                    g_safe: actions.take_tap(Tap::TurnCap),
-                    landing: actions.take_tap(Tap::LandingMode),
-                    master: actions.take_tap(Tap::MasterMode),
-                    comstab: actions.take_tap(Tap::Comstab),
-                    proximity: actions.take_tap(Tap::ProximityAssist),
-                    wind_comp: actions.take_tap(Tap::WindComp),
-                    limiter_steps: actions.take_tap(Tap::LimiterUp) as i32 - actions.take_tap(Tap::LimiterDown) as i32,
-                };
-            } else {
-                if actions.take_tap(Tap::HoverAssist) {
-                    ship.ctl.hover_assist = !ship.ctl.hover_assist;
-                }
-                if actions.take_tap(Tap::HorizonFollow) {
-                    ship.ctl.horizon_follow = !ship.ctl.horizon_follow;
-                }
-                if actions.take_tap(Tap::Decoupled) {
-                    ship.ctl.coupled = !ship.ctl.coupled;
-                }
-                if actions.take_tap(Tap::BoostMode) {
-                    ship.ctl.boost_stage = !ship.ctl.boost_stage;
-                }
-                if actions.take_tap(Tap::LandingMode) {
-                    ship.ctl.landing_mode = !ship.ctl.landing_mode;
-                }
-                if actions.take_tap(Tap::TurnCap) {
-                    let cap = &mut ship.ctl.tuning.g_safety.cap_turns;
-                    *cap = !*cap;
-                }
-            }
+            // The SC model's switches; H, C, F8 and K keep their keys with the SC meaning.
+            cmds = ModeCmds {
+                grav_comp: actions.take_tap(Tap::HoverAssist),
+                decoupled: actions.take_tap(Tap::Decoupled),
+                g_safe: actions.take_tap(Tap::TurnCap),
+                landing: actions.take_tap(Tap::LandingMode),
+                master: actions.take_tap(Tap::MasterMode),
+                comstab: actions.take_tap(Tap::Comstab),
+                proximity: actions.take_tap(Tap::ProximityAssist),
+                wind_comp: actions.take_tap(Tap::WindComp),
+                limiter_steps: actions.take_tap(Tap::LimiterUp) as i32 - actions.take_tap(Tap::LimiterDown) as i32,
+            };
             let mb = &bindings.mouse;
             let m = std::mem::take(&mut actions.look);
             let m = DVec2::new(m.x as f64, m.y as f64) * mb.ship_sensitivity;
@@ -303,29 +244,27 @@ pub fn ship_control(
         let body = BodyState { pos: pos.0, rot: rot.0, lin_vel: lv.0, ang_vel: av.0 };
         let ship = &mut *ship;
         // The SC model has no landing gear yet (#162): resting on the ground with gravity
-        // compensation on and no thrust but down, the axis model's ground rules (settle, hold on
-        // a slope, #92) keep the ship in place.
+        // compensation on and no thrust but down, the ground rules (settle, hold on a slope, #92,
+        // turning on the ground) keep the ship in place.
         let still = input.thrust.x.abs() < 1e-5 && input.thrust.z.abs() < 1e-5 && input.thrust.y <= 1e-5;
-        let ground = input.grounded && still && lv.0.length() < ShipController::GROUND_HOLD_SPEED && ship.sc.modes.grav_comp;
+        let ground = input.grounded && still && lv.0.length() < GroundRules::GROUND_HOLD_SPEED && ship.sc.modes.grav_comp;
         // Cargo locked on this ship's plates is part of the ship (#84, #88): its mass and inertia
         // count in the SC model. The locks of the last step (the crates step after the ship).
         let cargo: f64 = crates.iter().filter(|c| c.locked && c.ship == Some(e)).map(|c| table.0.sizes[c.size].mass).sum();
         ship.sc.set_cargo_mass(cargo);
-        let (v, w) = if ship.model == FlightModel::Sc && !ground {
-            let out = ship.sc.step(&body, &input, &cmds, planet.as_ref(), dt);
-            ship.ctl.skip_step(dt);
-            (out.lin_vel, out.ang_vel)
+        let (v, w) = if ground {
+            // The switches still apply on the ground, and the boost meter runs on.
+            ship.sc.modes.update(&cmds, &ship.sc.tuning.modes, dt);
+            ship.sc.skip_step(dt);
+            ship.ground.step(&body, &input, planet.as_ref(), dt)
         } else {
-            if ship.model == FlightModel::Sc {
-                // The switches still apply on the ground, and the boost meter runs on.
-                ship.sc.modes.update(&cmds, &ship.sc.tuning.modes, dt);
-                ship.sc.skip_step(dt);
+            // Thrust, gravity compensation off or speed ends the ground state. A one-step loss of
+            // contact while still does not (the ground rules let it through, #92).
+            if !still || !ship.sc.modes.grav_comp || lv.0.length() >= GroundRules::GROUND_HOLD_SPEED {
+                ship.ground.release();
             }
-            let assist = ship.ctl.hover_assist;
-            ship.ctl.hover_assist = assist || ship.model == FlightModel::Sc;
-            let vw = ship.ctl.step(&body, &input, planet.as_ref(), dt);
-            ship.ctl.hover_assist = assist;
-            vw
+            let out = ship.sc.step(&body, &input, &cmds, planet.as_ref(), dt);
+            (out.lin_vel, out.ang_vel)
         };
         lv.0 = v;
         av.0 = w;
@@ -371,9 +310,9 @@ pub fn camera_fx(
         approach: -lv.0.dot(up),
         grounded: ship.grounded,
         accel,
-        thrust: ship.thrust_signal(rot.0, lv.0).length().min(1.0),
+        thrust: ship.thrust_signal().length().min(1.0),
         boost: ship.boost_active(),
-        turbulence: if ship.model == FlightModel::Sc { ship.sc.status.turbulence } else { 0.0 },
+        turbulence: ship.sc.status.turbulence,
         cabin,
         shake_scale: settings.camera_shake,
         dt,
@@ -386,15 +325,9 @@ pub fn camera_fx(
 #[derive(Resource, Default)]
 pub struct ThrusterLevels(pub flight_core::audio::ThrusterAudio);
 
-/// Felt acceleration (g) at which the braking thrusters sound at full level (`TODO(initiator)`:
-/// start value, tune by ear).
-pub const BRAKE_FULL_G: f64 = 1.0;
-
-pub fn thruster_fx(time: Res<Time>, mut fx: ResMut<ThrusterLevels>, q: Query<(&Ship, &Rotation, &LinearVelocity)>) {
-    let Ok((ship, rot, lv)) = q.single() else { return };
-    // Braking: the thrusters fire against the motion, so the layers follow the brake, not the
-    // (zero) pilot input (`Ship::thrust_signal`).
-    let t = ship.thrust_signal(rot.0, lv.0);
+pub fn thruster_fx(time: Res<Time>, mut fx: ResMut<ThrusterLevels>, q: Query<&Ship>) {
+    let Ok(ship) = q.single() else { return };
+    let t = ship.thrust_signal();
     let signal = flight_core::audio::ThrusterSignal { thrust: [t.x, t.y, t.z], boost: ship.boost_active(), parked: ship.parked };
     fx.0.step(signal, time.delta_secs_f64());
 }

@@ -1,6 +1,6 @@
 //! Boost as a capacitor (#90): drain, recharge after a delay, start threshold, strength curve.
-use flight_core::{BodyState, BoostCapacitor, BoostCapacitorTuning, Curve, Field, FlightInput, Interp, PlanetEnv, ShipController, ShipTuning};
-use glam::{DVec2, DVec3};
+use flight_core::{BoostCapacitor, BoostCapacitorTuning, Curve, Interp};
+use glam::DVec2;
 
 const DT: f64 = 1.0 / 60.0;
 
@@ -131,90 +131,6 @@ fn tuning_rejects_bad_values() {
         let e = bad.validate().unwrap_err();
         assert!(e.contains(what), "{e}");
     }
-}
-
-struct Space(Field);
-impl PlanetEnv for Space {
-    fn to_planet(&self, world: DVec3) -> DVec3 {
-        world
-    }
-    fn radius(&self) -> f64 {
-        5000.0
-    }
-    fn height_at(&self, _dir: DVec3) -> f64 {
-        0.0
-    }
-    fn field(&self) -> &Field {
-        &self.0
-    }
-}
-
-/// Assist off in space: forward acceleration over one second with boost held from the start.
-fn accel(ship: &mut ShipController, brake: bool) -> f64 {
-    let env = Space(Field::default());
-    let mut body = BodyState { pos: DVec3::new(0.0, 1e6, 0.0), ..Default::default() };
-    let input = FlightInput { thrust: DVec3::NEG_Z, boost: true, brake, piloted: brake, ..Default::default() };
-    let v0 = body.lin_vel;
-    for _ in 0..60 {
-        let (v, w) = ship.step(&body, &input, &env, DT);
-        body.lin_vel = v;
-        body.ang_vel = w;
-        body.integrate(DT);
-    }
-    (body.lin_vel - v0).length()
-}
-
-#[test]
-fn the_controller_drains_while_boosting_and_boost_weakens() {
-    let mut ship = ShipController::new(ShipTuning::default());
-    ship.hover_assist = false;
-    // The pilot's G tolerance would cap the full boost.
-    ship.tuning.g_safety.enabled = false;
-    let full = accel(&mut ship, false);
-    assert!(ship.boost.charge < 0.9, "one second of boost drains: {}", ship.boost.charge);
-    ship.boost.charge = 0.3;
-    let weak = accel(&mut ship, false);
-    assert!(weak < full * 0.8, "weaker at low charge: {weak:.1} vs {full:.1} m/s");
-    // Empty: plain thrust.
-    ship.boost.charge = 0.0;
-    ship.boost.active = false;
-    let plain = accel(&mut ship, false);
-    let want = ship.tuning.accel.forward;
-    assert!((plain - want).abs() < 0.05 * want, "empty: plain thrust {plain:.2} m/s per s, want {want}");
-}
-
-#[test]
-fn the_brake_does_not_drain() {
-    // TODO(initiator): issue #90, question 5.
-    let mut ship = ShipController::new(ShipTuning::default());
-    accel(&mut ship, true);
-    assert_eq!(ship.boost.charge, 1.0);
-}
-
-#[test]
-fn the_dev_switch_flies_the_speed_stage_and_back() {
-    let mut ship = ShipController::new(ShipTuning::default());
-    ship.hover_assist = false;
-    ship.boost_stage = true;
-    let first = accel(&mut ship, false);
-    for _ in 0..4 {
-        accel(&mut ship, false);
-    }
-    let fifth = accel(&mut ship, false);
-    assert_eq!(ship.boost.charge, 1.0, "the speed stage uses no charge");
-    assert!((fifth - first).abs() < 0.02 * first, "full boost after 5 s: {fifth:.1} vs {first:.1} m/s");
-    ship.boost_stage = false;
-    accel(&mut ship, false);
-    assert!(ship.boost.charge < 0.9, "back on the capacitor it drains: {}", ship.boost.charge);
-}
-
-/// #104 point 8: the speed stage (F6) does not refill an empty capacitor.
-#[test]
-fn the_speed_stage_leaves_the_charge_alone() {
-    let mut c = BoostCapacitor::with_charge(0.0);
-    assert_eq!(c.stage(true), 1.0);
-    assert_eq!(c.stage(false), 0.0);
-    assert_eq!(c.charge, 0.0, "F6 does not refill");
 }
 
 /// #104 point 9: holding boost through an empty capacitor gives no more pulses; a new press

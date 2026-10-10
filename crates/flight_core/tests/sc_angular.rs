@@ -185,7 +185,7 @@ fn pitch_target(t: &AngularTuning, speed: f64, cap: f64, landing: bool, clearanc
     };
     let input = FlightInput { turn: DVec2::new(1.0, 0.0), piloted: true, ..Default::default() };
     let modes = Modes { g_safe, landing, ..Modes::default() };
-    let env = Env { accel_box: flight_core::axis::Rot { pitch: 1e6, yaw: 1e6, roll: 1e6 }, boost: 0.0, cap, thrust_box: flight_core::axis::Dirs::splat(1e6), air_hold: DVec3::ZERO };
+    let env = Env { accel_box: flight_core::limits::Rot { pitch: 1e6, yaw: 1e6, roll: 1e6 }, boost: 0.0, cap, thrust_box: flight_core::limits::Dirs::splat(1e6), air_hold: DVec3::ZERO };
     let out = angular::step(&mut AngularState::default(), &f, &input, &modes, &env, t);
     out.accel.x / (DT * t.natural_frequency.pitch * t.natural_frequency.pitch)
 }
@@ -243,7 +243,7 @@ fn acceleration_stays_inside_the_box() {
         dt: DT,
     };
     let input = FlightInput { turn: DVec2::new(-1.0, 1.0), roll: -1.0, piloted: true, ..Default::default() };
-    let env = Env { accel_box: flight_core::axis::Rot { pitch: 0.5, yaw: 0.25, roll: 0.75 }, boost: 0.0, cap: 150.0, thrust_box: flight_core::axis::Dirs::splat(1e6), air_hold: DVec3::ZERO };
+    let env = Env { accel_box: flight_core::limits::Rot { pitch: 0.5, yaw: 0.25, roll: 0.75 }, boost: 0.0, cap: 150.0, thrust_box: flight_core::limits::Dirs::splat(1e6), air_hold: DVec3::ZERO };
     let out = angular::step(&mut AngularState::default(), &f, &input, &Modes::default(), &env, &t);
     eprintln!("box: accel {:?} inside (0.5, 0.25, 0.75)", out.accel);
     assert!(out.accel.x.abs() <= 0.5 && out.accel.y.abs() <= 0.25 && out.accel.z.abs() <= 0.75);

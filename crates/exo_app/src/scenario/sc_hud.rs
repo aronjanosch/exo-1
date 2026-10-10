@@ -1,7 +1,6 @@
-//! Scenario `sc-hud` (#197): the flight panel through `Controls`. Sit (axis model), F7 to the SC
-//! model, C decouples (the blend runs 4 s), H drops gravity compensation, B takes NAV, Page Down
-//! lowers the limiter, X brakes, F7 back to the axis model. Each change shows as a toast and as a
-//! badge; the blend bar is shown only while the coupling moves.
+//! Scenario `sc-hud` (#197): the flight panel through `Controls`. Sit, C decouples (the blend runs
+//! 4 s), H drops gravity compensation, B takes NAV, Page Down lowers the limiter, X brakes. Each
+//! change shows as a toast and as a badge; the blend bar is shown only while the coupling moves.
 use crate::hud::HudReadout;
 use crate::scenario::{check, hold_until, keys, put_at_seat, sit, tap, Step};
 use bevy::prelude::*;
@@ -40,18 +39,10 @@ pub fn sc_hud_steps(s: &mut Vec<Step>) {
     s.extend(sit());
     s.push(Box::new(|w, c| {
         let r = readout(w);
-        let assist = badge(&r, "ASSIST");
-        check(c, badge(&r, "MODEL") == Some((true, "AXIS".into())) && assist == Some((true, "ASSIST".into())), format!("seated, axis model: badges {:?}", r.badges));
+        check(c, badge(&r, "MODEL") == Some((true, "SC".into())), format!("seated, SC model: badges {:?}", r.badges));
         check(c, r.blend.is_none() && r.cap_text.ends_with("m/s") && r.g_text.ends_with(" g"), format!("seated: cap {:?}, g {:?}, blend {:?}", r.cap_text, r.g_text, r.blend));
         true
     }));
-
-    // F7: the SC model, its badges, and the toast.
-    s.push(Box::new(|w, _| {
-        tap(w, KeyCode::F7);
-        true
-    }));
-    s.extend(after_tap("F7 to SC", "MODEL SC", |r| badge(r, "MODEL") == Some((true, "SC".into())), "F7"));
 
     // C: decouple. The toast is on at once, the blend runs from 1 to 0 over 4 s and is gone after.
     s.push(Box::new(|w, _| {
@@ -107,11 +98,4 @@ pub fn sc_hud_steps(s: &mut Vec<Step>) {
         keys(w, &[KeyCode::KeyX], false);
         true
     }));
-
-    // F7 back: the axis model's badges.
-    s.push(Box::new(|w, _| {
-        tap(w, KeyCode::F7);
-        true
-    }));
-    s.extend(after_tap("F7 to axis", "MODEL AXIS", |r| badge(r, "MODEL") == Some((true, "AXIS".into())) && badge(r, "ASSIST").is_some() && badge(r, "GRAV COMP").is_none(), "F7 back"));
 }

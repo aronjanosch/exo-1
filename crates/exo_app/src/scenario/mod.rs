@@ -36,7 +36,6 @@ mod first_person_settings;
 mod landing;
 mod licence;
 mod mapview;
-mod models;
 mod net;
 mod reload;
 mod sc_linear;
@@ -44,7 +43,7 @@ mod sc_air;
 mod sc_body;
 mod sc_flight_hud;
 mod sc_hud;
-mod sc_switch;
+mod sc_lift;
 mod sc_turn;
 mod savefile;
 mod space;
@@ -450,7 +449,7 @@ pub(crate) fn sit() -> Vec<Step> {
         }),
         wait(0.5),
         Box::new(|w, _| {
-            with_ship(w, |s| s.ctl.hover_assist = true);
+            with_ship(w, |s| s.sc.modes.grav_comp = true);
             true
         }),
     ]
@@ -626,9 +625,9 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         // #90, #91: the boost capacitor drains, cuts out and recharges; the HUD shows it.
         "boost-hud" => boost::boost_hud_steps(&mut s),
         "thruster-audio" => thruster_audio::thruster_audio_steps(&mut s),
-        // Round 5: F7 switches to the SC flight model, which lifts off, hovers and flies.
+        // Round 5: the SC model lifts off, hovers and flies (sc-lift).
         "sc-body" => sc_body::sc_body_steps(&mut s),
-        "sc-switch" => sc_switch::sc_switch_steps(&mut s),
+        "sc-lift" => sc_lift::sc_lift_steps(&mut s),
         // Round 5: F1 shows the keys that apply right now.
         "help" => help::help_steps(&mut s),
         // Round 5: F10 dev menu: licence, credits, boost.
@@ -637,7 +636,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "sc-linear" => sc_linear::sc_linear_steps(&mut s),
         // #199: the SC model's air: wind compensation hover, turbulence low and high.
         "sc-air" => sc_air::sc_air_steps(&mut s),
-        // #197: the flight panel: badges, the coupling blend, the toast, both models.
+        // #197: the flight panel: badges, the coupling blend, the toast.
         "sc-hud" => sc_hud::sc_hud_steps(&mut s),
         // #200: the flight HUD (speed tape, thrust cross, G bar, horizon, velocity marker), SC model.
         "sc-flight-hud" => sc_flight_hud::sc_flight_hud_steps(&mut s),
@@ -645,8 +644,6 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "sc-turn" => sc_turn::sc_turn_steps(&mut s),
         // #148, #149: the camera shake, spring lag and G field of view, and F9 (through the bindings).
         "camera-g" => camera_g::camera_g_steps(&mut s),
-        // Spike 13: manoeuvres with the axis flight model, measured as a table.
-        "flight-model" => models::flight_model_steps(&mut s),
         // #92: land on a slope below the limit; no drift from touchdown until thrust.
         "slope-landing" => landing::slope_landing_steps(&mut s),
         // #21: edit a tuning file while running (dev builds).
@@ -703,6 +700,10 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         }
         "full" => {
             s.push(shot_step("ground"));
+            s.push(Box::new(|w, c| {
+                c.p.insert("park", ship_frame_of(w).origin);
+                true
+            }));
             s.extend(stand_still("stand still 5 s (walker)"));
             s.push(walk("walk 20 s (run)", 20.0, true));
             s.push(board("walk up the ramp into the parked ship", true));
@@ -715,6 +716,14 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
             s.push(hold_until("dive back", &[KeyCode::KeyW, KeyCode::ShiftLeft], 240.0, |w| above_ground(w) < 800.0));
             s.push(hold_until("firm brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 0.5));
             s.push(aim("level out", 0.0, 3.0));
+            // A test hook sets the ship back over its parked spot, level: the dive can end on a slope,
+            // and the walk-in checks a flat floor (the SC model has no landing gear, #162).
+            s.push(Box::new(|w, c| {
+                let park = c.p["park"];
+                let up = planet(w).up(park);
+                teleport_ship(w, park + up * 130.0, crate::ship::basis_for_up(up));
+                true
+            }));
             s.push(hold_until("descend to 120 m above ground", &[KeyCode::ControlLeft, KeyCode::ShiftLeft], 180.0, |w| above_ground(w) < 120.0));
             s.push(land("land"));
             s.push(Box::new(|w, c| {

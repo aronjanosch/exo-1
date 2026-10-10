@@ -3,6 +3,7 @@ pub mod ceilings;
 pub mod chunk;
 pub mod coarse;
 pub mod drainage;
+pub mod index;
 pub mod landform;
 pub mod look;
 pub mod math;

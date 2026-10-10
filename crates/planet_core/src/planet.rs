@@ -300,6 +300,27 @@ impl Planet {
         }
     }
 
+    /// Calculate the count for a kind by density or static count.
+    /// For static counts, uses the midpoint of the range.
+    /// For density counts, scales the midpoint of the density range by the surface area.
+    pub(crate) fn count_by_density(&self, count: Option<[u32; 2]>, per_100_km2: Option<[f64; 2]>) -> Result<u32, String> {
+        match (count, per_100_km2) {
+            (Some([c0, c1]), None) => {
+                // Static count: use midpoint to get a stable value
+                Ok(c0 + (c1 - c0) / 2)
+            }
+            (None, Some([d0, d1])) => {
+                let surface_area_m2 = 4.0 * std::f64::consts::PI * self.radius * self.radius;
+                let count_per_100km2 = d0 + (d1 - d0) * 0.5;
+                let expected_count = (surface_area_m2 / 1e8) * count_per_100km2;
+                // At least 1 if the density says there should be any
+                let min = if count_per_100km2 > 0.0 { 1 } else { 0 };
+                Ok(expected_count.round().max(min as f64) as u32)
+            }
+            _ => Err("kind must have either count or per_100_km2".into()),
+        }
+    }
+
     #[inline(always)]
     pub fn p32(&self, dir: V3) -> [f32; 3] {
         [(dir.x * self.radius) as f32, (dir.y * self.radius) as f32, (dir.z * self.radius) as f32]

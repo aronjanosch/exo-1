@@ -131,7 +131,7 @@ impl Planet {
         let rule = &self.recipe.sites;
         let mut rng = Rng::new(0x9E3779B97F4A7C15 ^ (self.recipe.seed as u64).wrapping_mul(0xBF58476D1CE4E5B9));
         let kinds = &rule.kinds;
-        let want: Vec<u32> = kinds.iter().map(|k| (k.count[0] + ((k.count[1] - k.count[0] + 1) as f64 * rng.next()) as u32).min(k.count[1])).collect();
+        let want: Vec<u32> = kinds.iter().map(|k| self.count_by_density(k.count, k.per_100_km2).unwrap_or(0)).collect();
         // Hand-placed places first: fixed, and the generated sites keep away from them.
         let mut placed: Vec<Site> = Vec::new();
         let mut place_misses = Vec::new();
@@ -148,18 +148,19 @@ impl Planet {
         // Landmarks first, then the others in round-robin turns.
         let mut order: Vec<usize> = (0..kinds.len()).filter(|&i| kinds[i].prefer_high).collect();
         order.extend((0..kinds.len()).filter(|&i| !kinds[i].prefer_high));
+        let scaled_candidates = ((rule.candidates as f64) * (want.iter().sum::<u32>() as f64 / 30.0).max(1.0)) as u32;
         loop {
             let mut any = false;
             for &ki in &order {
                 let k = &kinds[ki];
-                if got[ki] >= want[ki] || tries[ki] >= rule.candidates {
+                if got[ki] >= want[ki] || tries[ki] >= scaled_candidates {
                     continue;
                 }
                 any = true;
                 let reach_k = k.edits.iter().map(|e| edit_rt(e).1).fold(k.footprint_m, f64::max);
                 let mut best: Option<(f64, V3, f64)> = None;
                 let mut found = 0;
-                while found < rule.best_of.max(1) && tries[ki] < rule.candidates {
+                while found < rule.best_of.max(1) && tries[ki] < scaled_candidates {
                     tries[ki] += 1;
                     let z = rng.next() * 2.0 - 1.0;
                     let phi = rng.next() * std::f64::consts::TAU;
@@ -236,8 +237,23 @@ impl Planet {
         let mut misses: Vec<String> = kinds
             .iter()
             .enumerate()
-            .filter(|(i, k)| got[*i] < k.count[0])
-            .map(|(i, k)| format!("site kind {}: placed {} of at least {} ({} candidates)", k.id, got[i], k.count[0], tries[i]))
+            .filter_map(|(i, k)| {
+                let min_count = match (k.count, k.per_100_km2) {
+                    (Some([c0, _]), None) => c0,
+                    (None, Some([d0, _])) => {
+                        let surface_area_m2 = 4.0 * std::f64::consts::PI * self.radius * self.radius;
+                        let count = (surface_area_m2 / 1e8 * d0).round() as u32;
+                        // Only enforce minimum of 1 if density is positive
+                        if d0 > 0.0 { count.max(1) } else { count }
+                    }
+                    _ => 0,
+                };
+                if got[i] < min_count {
+                    Some(format!("site kind {}: placed {} of at least {} ({} candidates)", k.id, got[i], min_count, tries[i]))
+                } else {
+                    None
+                }
+            })
             .collect();
         misses.extend(place_misses);
         (placed, misses)

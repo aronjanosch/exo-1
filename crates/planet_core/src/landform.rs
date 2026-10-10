@@ -228,10 +228,30 @@ impl Planet {
             let mut miss = None;
             for k in &order {
                 // How many of this kind this try wants, then candidates until they are placed.
-                let want = k.count[0] + ((k.count[1] - k.count[0] + 1) as f64 * rng.next()) as u32;
-                let want = want.min(k.count[1]);
+                let want = self.count_by_density(k.count, k.per_100_km2);
+                let want = match want {
+                    Ok(w) => w,
+                    Err(e) => {
+                        miss = Some(e);
+                        break;
+                    }
+                };
+                // Compute minimum count from density or static count.
+                let min_count = match (k.count, k.per_100_km2) {
+                    (Some([c0, _]), None) => c0,
+                    (None, Some([d0, _])) => {
+                        let surface_area_m2 = 4.0 * std::f64::consts::PI * self.radius * self.radius;
+                        let count = (surface_area_m2 / 1e8 * d0).round() as u32;
+                        // Signature landforms always need at least 1
+                        if k.signature { count.max(1) } else { count }
+                    }
+                    _ => 1,
+                };
+
                 let mut got = 0;
-                for _ in 0..lf.candidates {
+                // Scale candidates proportionally to wanted count.
+                let scaled_candidates = ((lf.candidates as f64) * (want as f64 / 10.0).max(1.0)) as u32;
+                for _ in 0..scaled_candidates {
                     if got >= want {
                         break;
                     }
@@ -248,8 +268,8 @@ impl Planet {
                     placed.push((st, k.min_separation_m));
                     got += 1;
                 }
-                if got < k.count[0] {
-                    miss = Some(format!("landform {}: placed {got} of at least {}", k.id, k.count[0]));
+                if got < min_count {
+                    miss = Some(format!("landform {}: placed {got} of at least {}", k.id, min_count));
                     break;
                 }
             }

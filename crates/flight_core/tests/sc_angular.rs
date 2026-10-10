@@ -35,7 +35,7 @@ fn rest_rates(t: &AngularTuning) -> DVec3 {
 }
 
 fn at_rest() -> (ScShip, BodyState, Space) {
-    (ScShip::new(tuning()), body_at(DVec3::new(0.0, 500.0, 0.0)), Space::default())
+    (ScShip::new(instant()), body_at(DVec3::new(0.0, 500.0, 0.0)), Space::default())
 }
 
 #[test]

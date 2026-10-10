@@ -1,17 +1,29 @@
 {
-  "_comment": "SC flight model (flight_core::sc::linear::LinearTuning). TODO(initiator): every value, all placeholders. scm and nav: speed caps per master mode in m/s (cruise for full stick sideways, up and down; boost_forward and boost_backward at full boost, at least cruise), in vacuum; the air lowers them (sc_air.json cap_share); NAV is the faster travel mode, SCM the combat mode. decay 1/s: the coupled goal asks for decay times the velocity error. refuse_thrust: the cap refuses the thrust along the velocity above it (A3; off = the thrust is not cut at the cap). anti_drift: with an axis saturated, the velocity across the goal dies first (notes section 1; off = the plain per-axis clamp). strafe_taper (unboosted) and strafe_taper_boost: share of the lateral and vertical thrust over x = forward speed / cruise cap, piecewise linear, clamped at both ends; boosted, the share tapers over the run up to the boost cap. g_limit: g per direction of the thrust while G-safe is on (forward and backward, left and right, up and down). boost_disables_g_safe: the boost lifts G-safe (TODO(initiator): default false). brake_ease_speed m/s: below it the brake's rate is proportional to the speed (no flat rate near zero). comstab_off_lag s: with comstab off, the goal turns with the nose after this lag (time constant). descent_reserve: share of the upward thrust the descent limit counts on. proximity_time s: when the time to hit the ground along the velocity (clearance / sink) is below it, the goal's downward part is cut. landing (landing mode, K): full_below m clearance full precision, off_above m off, speed m/s along the ground at full precision, landing_share of it for the descent (the touchdown speed the descent limit also holds).",
-  "scm": { "cruise": 150.0, "boost_forward": 250.0, "boost_backward": 200.0 },
-  "nav": { "cruise": 400.0, "boost_forward": 700.0, "boost_backward": 400.0 },
-  "decay": 3.0,
+  "_comment": "SC flight model (flight_core::sc::linear::LinearTuning). TODO(initiator): every value, all placeholders. scm and nav: speed caps per master mode in m/s (cruise for full stick sideways, up and down; boost_forward and boost_backward at full boost, at least cruise), in vacuum; the air lowers them (sc_air.json cap_share); NAV is the faster travel mode, SCM the combat mode. decay 1/s: the coupled goal asks for decay times the velocity error. refuse_thrust: the cap refuses the thrust along the velocity above it (A3; off = the thrust is not cut at the cap). anti_drift: with an axis saturated, the velocity across the goal dies first (notes section 1; off = the plain per-axis clamp). strafe_taper (unboosted) and strafe_taper_boost: share of the lateral and vertical thrust over x = forward speed / cruise cap, piecewise linear, clamped at both ends; boosted, the share tapers over the run up to the boost cap. g_limit: g per direction of the thrust while G-safe is on (forward and backward, left and right, up and down). boost_disables_g_safe: the boost lifts G-safe (TODO(initiator): default false). brake_ease_speed m/s: below it the brake's rate is proportional to the speed (no flat rate near zero). comstab_off_lag s: with comstab off, the goal turns with the nose after this lag (time constant). descent_reserve: share of the upward thrust the descent limit counts on. proximity_time s: when the time to hit the ground along the velocity (clearance / sink) is below it, the goal's downward part is cut. landing (landing mode, K): full_below m clearance full precision, off_above m off, speed m/s along the ground at full precision, landing_share of it for the descent (the touchdown speed the descent limit also holds). Values of 2026-10-10 derived from a small Star Citizen fighter's flight records (initiator: \"nimm die werte aus sc und passe sie an unser projekt an\"): times, rates and ratios taken over, speeds scaled to our 150 m/s SCM cap, mass kept at our 2 t; nothing copied 1:1. Still TODO(initiator) by feel. scm: boost forward x2.25 and backward x1.16 of the cruise cap; nav: x5.3 (NAV has no extra boost cap); decay 6/s; landing band 5 to 60 m, 20 m/s (SC's 30 m/s precision cap scaled); proximity_time 1.5 s (SC's activation time).",
+  "scm": { "cruise": 150.0, "boost_forward": 337.0, "boost_backward": 174.0 },
+  "nav": { "cruise": 796.0, "boost_forward": 796.0, "boost_backward": 796.0 },
+  "decay": 6.0,
   "refuse_thrust": true,
   "anti_drift": true,
-  "strafe_taper": { "interp": "linear", "points": [[0.0, 1.0], [1.0, 1.0], [1.5, 0.5]] },
-  "strafe_taper_boost": { "interp": "linear", "points": [[0.0, 1.0], [1.0, 0.6], [1.7, 0.35]] },
+  "strafe_taper": {
+    "interp": "linear",
+    "points": [[0.0, 1.0],
+      [1.0, 1.0],
+      [1.5, 0.5]
+    ]
+  },
+  "strafe_taper_boost": {
+    "interp": "linear",
+    "points": [[0.0, 1.0],
+      [1.0, 0.6],
+      [1.7, 0.35]
+    ]
+  },
   "g_limit": { "forward": 8.0, "backward": 6.0, "left": 4.0, "right": 4.0, "up": 6.0, "down": 3.0 },
   "boost_disables_g_safe": false,
   "brake_ease_speed": 3.0,
   "comstab_off_lag": 3.0,
   "descent_reserve": 0.6,
-  "proximity_time": 3.0,
-  "landing": { "full_below": 5.0, "off_above": 40.0, "speed": 15.0, "landing_share": 0.2 }
+  "proximity_time": 1.5,
+  "landing": { "full_below": 5.0, "off_above": 60.0, "speed": 20.0, "landing_share": 0.2 }
 }

@@ -1,10 +1,16 @@
 {
-  "_comment": "SC flight model, the air stage (flight_core::sc::air::AirTuning). TODO(initiator): every value, placeholders. thrust_share, cap_share: share of the thrust and the speed caps at full density (blended by the density, 1 in vacuum). drag: per ship axis (x sideways, y up/down, z along the nose), a = k * density * v² against the airspeed (airspeed = velocity minus wind); sideways brakes more than nose first. lift_k: lift = k * density * forward airspeed² * C(angle of attack, deg); lift_curve: (deg, C) pairs from 0 with rising degrees, the peak is the stall angle, past it the curve falls, held past the last point, mirrored for negative angles. weathervane: x pitch and y yaw gain (1/s² per rad of airspeed angle at weathervane_ref_speed), z roll damping (1/s), all in air; weathervane_ref_speed: m/s; weathervane_damp: 1/s pitch and yaw rate damping in air. Wind: wind_dir_deg about the planet's up (from the planet's reference direction), wind_speed m/s at the surface falling to zero with the density; gust_speed m/s per horizontal direction and gust_period s. The wind's drag goes to accel (held) with Modes::wind_comp on, to push (never held) off. Turbulence near the ground: turbulence_height m (full below, none above twice it), turbulence_speed_min and _max m/s of ground speed (none below min, full above max), turbulence_angular rad/s² at full (fractal noise per ship axis), turbulence_linear m/s² at full (a little, world, push), turbulence_rate Hz of the noise. All air effects scale with the density (none in space).",
+  "_comment": "SC flight model, the air stage (flight_core::sc::air::AirTuning). TODO(initiator): every value, placeholders. thrust_share, cap_share: share of the thrust and the speed caps at full density (blended by the density, 1 in vacuum). drag: per ship axis (x sideways, y up/down, z along the nose), a = k * density * v² against the airspeed (airspeed = velocity minus wind); sideways brakes more than nose first. lift_k: lift = k * density * forward airspeed² * C(angle of attack, deg); lift_curve: (deg, C) pairs from 0 with rising degrees, the peak is the stall angle, past it the curve falls, held past the last point, mirrored for negative angles. weathervane: x pitch and y yaw gain (1/s² per rad of airspeed angle at weathervane_ref_speed), z roll damping (1/s), all in air; weathervane_ref_speed: m/s; weathervane_damp: 1/s pitch and yaw rate damping in air. Wind: wind_dir_deg about the planet's up (from the planet's reference direction), wind_speed m/s at the surface falling to zero with the density; gust_speed m/s per horizontal direction and gust_period s. The wind's drag goes to accel (held) with Modes::wind_comp on, to push (never held) off. Turbulence near the ground: turbulence_height m (full below, none above twice it), turbulence_speed_min and _max m/s of ground speed (none below min, full above max), turbulence_angular rad/s² at full (fractal noise per ship axis), turbulence_linear m/s² at full (a little, world, push), turbulence_rate Hz of the noise. All air effects scale with the density (none in space). Values of 2026-10-10 derived from a small Star Citizen fighter's flight records (initiator: \"nimm die werte aus sc und passe sie an unser projekt an\"): times, rates and ratios taken over, speeds scaled to our 150 m/s SCM cap, mass kept at our 2 t; nothing copied 1:1. Still TODO(initiator) by feel. Turbulence: full below 25 m, none above 50 m (SC's 20 to 50 m band), by ground speed 0 to 50 m/s, 0.175 rad/s² (SC's 10 deg/s²). Lift, drag and wind stay ours (SC's aero model has other units).",
   "thrust_share": 0.6,
   "cap_share": 0.6,
   "drag": { "x": 0.008, "y": 0.002, "z": 0.001 },
   "lift_k": 0.002,
-  "lift_curve": [[0.0, 0.0], [5.0, 0.5], [10.0, 0.9], [15.0, 1.2], [25.0, 0.6], [45.0, 0.2]],
+  "lift_curve": [[0.0, 0.0],
+    [5.0, 0.5],
+    [10.0, 0.9],
+    [15.0, 1.2],
+    [25.0, 0.6],
+    [45.0, 0.2]
+  ],
   "weathervane": { "x": 0.4, "y": 0.4, "z": 0.3 },
   "weathervane_ref_speed": 100.0,
   "weathervane_damp": 0.3,
@@ -12,10 +18,10 @@
   "wind_speed": 10.0,
   "gust_speed": 4.0,
   "gust_period": 6.0,
-  "turbulence_height": 40.0,
-  "turbulence_speed_min": 10.0,
-  "turbulence_speed_max": 60.0,
-  "turbulence_angular": 0.25,
+  "turbulence_height": 25.0,
+  "turbulence_speed_min": 0.0,
+  "turbulence_speed_max": 50.0,
+  "turbulence_angular": 0.175,
   "turbulence_linear": 0.5,
   "turbulence_rate": 2.0
 }

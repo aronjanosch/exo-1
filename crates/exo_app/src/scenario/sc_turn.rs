@@ -184,7 +184,8 @@ pub fn sc_turn_steps(s: &mut Vec<Step>) {
         let stop = samples.iter().position(|s| s.spin.z.abs() < 1e-9);
         let lowest = samples.iter().map(|s| s.spin.z).fold(f64::MAX, f64::min);
         let want = -c.v["roll_share"] * c.v["roll_box"];
-        check(c, decel.len() > 5 && (mean / want - 1.0).abs() < 0.05, format!("roll release: {} ticks, decel {mean:.3} rad/s^2 (want {want:.3})", decel.len()));
+        // The mean includes the build-up at the angular jerk (#198, 0.1 s to full): within 15 %.
+        check(c, decel.len() > 5 && (mean / want - 1.0).abs() < 0.15, format!("roll release: {} ticks, decel {mean:.3} rad/s^2 (want {want:.3})", decel.len()));
         check(c, stop.is_some() && lowest > -0.01, format!("roll stops at tick {stop:?}, lowest spin {lowest:+.4} rad/s"));
     }));
 

@@ -9,7 +9,20 @@ use flight_core::sc::{ModeCmds, ScShip};
 use flight_core::{BodyState, FlightInput};
 use glam::DVec3;
 use flight_core::PlanetEnv;
-use sc_common::{body_at, tuning, Air, Space, DT};
+use sc_common::{body_at, Air, Space, DT};
+
+/// The shipped tuning with caps far above what these runs reach: the checks measure the
+/// thrusters (spool, jerk, boost, mass), so the coupled law must keep asking for full thrust
+/// (with SC's 81 m/s² the ship reaches the 150 m/s cap in 2 s), and G-safe must not cut it.
+fn tuning() -> flight_core::sc::ScTuning {
+    let mut t = sc_common::tuning();
+    let far = flight_core::sc::linear::Caps { cruise: 5000.0, boost_forward: 10000.0, boost_backward: 10000.0 };
+    t.linear.scm = far;
+    t.linear.nav = far;
+    // SC's forward acceleration (81 m/s²) is above our G-safe 8 g; G-safe is the linear law's.
+    t.linear.g_limit = Dirs { forward: 100.0, backward: 100.0, left: 100.0, right: 100.0, up: 100.0, down: 100.0 };
+    t
+}
 
 const FWD: DVec3 = DVec3::new(0.0, 0.0, -1.0);
 const RIGHT: DVec3 = DVec3::new(1.0, 0.0, 0.0);

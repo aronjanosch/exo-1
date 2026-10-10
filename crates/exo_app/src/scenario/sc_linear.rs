@@ -190,7 +190,8 @@ pub fn sc_linear_steps(s: &mut Vec<Step>) {
         tap(w, KeyCode::KeyB);
         true
     }));
-    s.push(timed("back to SCM: W, 10 s", vec![KeyCode::KeyW], 10.0, |_, _| {}));
+    // From NAV speed the bleed takes a while at the thrusters' ~80 m/s² (SC-derived values).
+    s.push(timed("back to SCM: W, 20 s", vec![KeyCode::KeyW], 20.0, |_, _| {}));
     s.push(Box::new(|w, c| {
         let speed = ship_vel(w).length();
         let cap = cap_in_force(w);

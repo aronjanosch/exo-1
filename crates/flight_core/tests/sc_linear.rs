@@ -9,20 +9,6 @@ use sc_common::*;
 
 const G0: f64 = 9.81;
 
-/// The tuning with thrusters that answer at once (no spool, jerk or boost ramp, #198), for
-/// checks of one step of the linear law.
-fn instant() -> flight_core::sc::ScTuning {
-    let mut t = tuning();
-    let d = &mut t.drive;
-    d.spool_delay = flight_core::sc::drive::Groups { main: 0.0, retro: 0.0, vertical: 0.0, lateral: 0.0 };
-    d.jerk = flight_core::sc::drive::Groups { main: 1e9, retro: 1e9, vertical: 1e9, lateral: 1e9 };
-    d.angular_jerk = flight_core::axis::Rot { pitch: 1e9, yaw: 1e9, roll: 1e9 };
-    d.boost_pre_delay = 0.0;
-    d.boost_ramp_up = 0.0;
-    d.boost_ramp_down = 0.0;
-    t
-}
-
 /// A piloted input with the thrust, boost and brake as given.
 fn input(t: DVec3, boost: bool, brake: bool) -> FlightInput {
     FlightInput { thrust: t, boost, brake, piloted: true, ..FlightInput::default() }
@@ -166,7 +152,8 @@ fn strafe_tapers_with_forward_speed_under_boost_only() {
     let at_rest = side(DVec3::ZERO, true);
     let boosted_cap = side(DVec3::new(0.0, 0.0, -150.0), true);
     let unboosted_cap = side(DVec3::new(0.0, 0.0, -150.0), false);
-    let full = tuning().ship.thrust.right / tuning().ship.mass;
+    // Full: the thrusters' side, or G-safe's 4 g if that is lower.
+    let full = (tuning().ship.thrust.right / tuning().ship.mass).min(tuning().linear.g_limit.right * G0);
     println!("strafe: boosted at rest {at_rest:.2}, boosted at the cruise cap {boosted_cap:.2}, unboosted at the cap {unboosted_cap:.2}, full right {full:.2}");
     assert!(boosted_cap < at_rest * 0.9, "boosted strafe at the cap {boosted_cap:.2} vs at rest {at_rest:.2}");
     assert!((unboosted_cap - full).abs() < 1e-3, "unboosted strafe at the cap {unboosted_cap:.3}, full {full:.3}");
@@ -275,9 +262,9 @@ fn nav_reaches_above_the_scm_cap_and_bleeds_back_to_it() {
     let nav = body.lin_vel.length();
     println!("NAV: speed {nav:.2} m/s after 15 s (SCM cap {scm})");
     assert!(nav > scm + 50.0, "NAV speed {nav:.1}");
-    fly(&mut ship, &mut body, &thrust(DVec3::NEG_Z), &ModeCmds { master: true, ..Default::default() }, &space, 10.0);
+    fly(&mut ship, &mut body, &thrust(DVec3::NEG_Z), &ModeCmds { master: true, ..Default::default() }, &space, 20.0);
     let back = body.lin_vel.length();
-    println!("back to SCM: speed {back:.2} m/s after 10 s");
+    println!("back to SCM: speed {back:.2} m/s after 20 s");
     assert!((back - scm).abs() < 1.0, "bled to {back:.2}, SCM cap {scm}");
 }
 
@@ -352,8 +339,9 @@ fn landing_mode_caps_the_speed_along_the_ground_near_the_ground() {
     };
     let (on, off) = (run(true), run(false));
     println!("landing at 3 m: ground speed peak {on:.2} m/s on, {off:.2} m/s off");
-    assert!(on <= 15.0 + 0.5, "ground speed {on:.2} in landing mode");
-    assert!(off > 15.0 + 0.5, "without landing mode the speed is not capped: {off:.2}");
+    let cap = tuning().linear.landing.speed;
+    assert!(on <= cap + 0.5, "ground speed {on:.2} in landing mode (cap {cap})");
+    assert!(off > cap + 0.5, "without landing mode the speed is not capped: {off:.2}");
 }
 
 /// Anti-drift changes nothing on a straight path: W from rest accelerates as with it off (the

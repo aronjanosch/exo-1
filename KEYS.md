@@ -88,5 +88,7 @@ The switches of Star Citizen's flight control. H and F8 mean these in the SC mod
 | O | `orbit_camera` | Orbit camera |
 | F10 | `dev_menu` | Dev menu (dev builds only): cheats for playtests |
 | 1 / 2 / 3 | `dev_1`, `dev_2`, `dev_3` | In the open dev menu: grant every licence / +1000 credits / refill the boost |
+| 4 / 5 | `dev_4`, `dev_5` | In the open dev menu: always day / always night (the clock stands) |
+| 6 / 7 | `dev_6`, `dev_7` | In the open dev menu: jump to day / to night, the cycle runs on |
 
 One key may serve several actions when they apply in different situations: Space jumps on foot and lifts the ship, Shift runs and boosts.

@@ -151,3 +151,23 @@ pub(crate) fn check_texts(g: &Loaded<Giver>, table: &TextTable, e: &mut Vec<Stri
         e.push(format!("{}: name: no text '{}'", g.path, g.record.name));
     }
 }
+
+/// Errors for voice pools with too few lines.
+pub(crate) fn check_pool_sizes(g: &Loaded<Giver>, table: &TextTable, e: &mut Vec<String>) {
+    let v = &g.record.voice;
+    let keys = [
+        ("voice.greeting.first_job", &v.greeting.first_job),
+        ("voice.greeting.regular", &v.greeting.regular),
+        ("voice.greeting.after_failure", &v.greeting.after_failure),
+        ("voice.intro", &v.intro),
+        ("voice.reason", &v.reason),
+        ("voice.sign_off", &v.sign_off),
+    ];
+    for (field, k) in keys {
+        if let Some(lines) = table.lines(k.as_str()) {
+            if lines.len() < MIN_POOL {
+                e.push(format!("{}: {field}: '{k}' has {}, needs at least {MIN_POOL}", g.path, lines.len()));
+            }
+        }
+    }
+}

@@ -247,8 +247,8 @@
     "Wet customers are angry customers."
   ],
 
-  "notice.reward.standing": ["{giver}: standing +{n}", "{giver} likes you a bit more (+{n})"],
-  "notice.reward.standing_lost": ["{giver}: standing -{n}", "{giver} is less impressed (-{n})"],
+  "notice.reward.standing": ["{giver}: standing +{n}", "{giver} likes you a bit more (+{n})", "{giver} respects you now (+{n})"],
+  "notice.reward.standing_lost": ["{giver}: standing -{n}", "{giver} is less impressed (-{n})", "{giver} has notes about this (-{n})"],
 
   "notice.job.accepted": [
     "Job taken: {title}.",
@@ -272,28 +272,34 @@
   ],
   "notice.job.expired": [
     "Too slow: {title} ran out of time.",
-    "{title} expired. The mud waits for nobody."
+    "{title} expired. The mud waits for nobody.",
+    "Time's up: {title} timed out.",
+    "Deadline missed on {title}. The clock has opinions."
   ],
   "notice.job.failed": [
     "{title} paid nothing. Bold strategy.",
-    "Nothing arrived for {title}. The customer sighs."
+    "Nothing arrived for {title}. The customer sighs.",
+    "{title} is a loss. A total, complete loss.",
+    "Failed: {title}. The customer had other ideas."
   ],
   "notice.job.abandoned": [
     "You dropped {title}.",
-    "{title} abandoned. The crates are now decoration."
+    "{title} abandoned. The crates are now decoration.",
+    "{title} is no more. Neither are the crates.",
+    "Backing out of {title}. The crates have noticed."
   ],
   "notice.job.crate_lost": [
     "A crate is gone.",
     "One crate fewer. It was not insured.",
     "Crate lost. It had a good life."
   ],
-  "notice.reward.base": ["Base pay   {n}", "Pay   {n}"],
-  "notice.reward.share": ["Delivered {delivered} of {asked}   {n}", "Share delivered ({delivered}/{asked})   {n}"],
-  "notice.reward.condition": ["Condition   {n}", "Crate condition   {n}"],
-  "notice.reward.hazard": ["Hazard bonus   {n}", "Danger money   {n}"],
-  "notice.reward.xp": ["{n} {track}", "{track}: {n}"],
-  "notice.unlock": ["Unlocked: {name}", "New thing: {name}"],
-  "notice.rank": ["{track}: level {level}!", "Level up! {track} is now level {level}."],
-  "notice.refused.too_many": ["Two jobs at a time is plenty.", "Your hands are full of jobs."],
-  "notice.refused.not_available": ["Not yet. Come back when you are someone.", "They do not know you well enough."]
+  "notice.reward.base": ["Base pay   {n}", "Pay   {n}", "Reward   {n}"],
+  "notice.reward.share": ["Delivered {delivered} of {asked}   {n}", "Share delivered ({delivered}/{asked})   {n}", "Partial pay ({delivered}/{asked})   {n}"],
+  "notice.reward.condition": ["Condition   {n}", "Crate condition   {n}", "Quality bonus   {n}"],
+  "notice.reward.hazard": ["Hazard bonus   {n}", "Danger money   {n}", "Risk pay   {n}"],
+  "notice.reward.xp": ["{n} {track}", "{track}: {n}", "{track} +{n}"],
+  "notice.unlock": ["Unlocked: {name}", "New thing: {name}", "You own {name} now."],
+  "notice.rank": ["{track}: level {level}!", "Level up! {track} is now level {level}.", "{track} reached level {level}."],
+  "notice.refused.too_many": ["Two jobs at a time is plenty.", "Your hands are full of jobs.", "Finish a job before you hoard another."],
+  "notice.refused.not_available": ["Not yet. Come back when you are someone.", "They do not know you well enough.", "You are not ready. Yet."]
 }

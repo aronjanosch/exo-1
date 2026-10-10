@@ -202,4 +202,19 @@ impl CustomerContent {
         }
         e
     }
+
+    /// Checks that all voice pools have at least 3 lines (TODO(initiator): pool text placeholders).
+    pub fn check_pool_sizes(&self, table: &TextTable) -> Vec<String> {
+        let mut e = Vec::new();
+        for Loaded { path, record: c } in self.customers.values() {
+            for (field, k) in [("voice.order", &c.voice.order), ("voice.thanks", &c.voice.thanks), ("voice.grumble", &c.voice.grumble)] {
+                if let Some(lines) = table.lines(k.as_str()) {
+                    if lines.len() < MIN_POOL {
+                        e.push(format!("{path}: {field}: '{k}' has {}, needs at least {MIN_POOL}", lines.len()));
+                    }
+                }
+            }
+        }
+        e
+    }
 }

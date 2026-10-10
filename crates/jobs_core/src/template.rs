@@ -250,6 +250,15 @@ impl JobContent {
         e
     }
 
+    /// Checks that all text pools have at least 3 lines (TODO(initiator): pool text placeholders).
+    pub fn check_pool_sizes(&self, table: &TextTable) -> Vec<String> {
+        let mut e = Vec::new();
+        for g in self.givers.values() {
+            giver::check_pool_sizes(g, table, &mut e);
+        }
+        e
+    }
+
     fn check(&self, path: &str, t: &JobTemplate, k: &Content, e: &mut Vec<String>) {
         check_id(path, "id", t.id.as_str(), e);
         if t.objectives.is_empty() {

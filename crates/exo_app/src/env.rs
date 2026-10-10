@@ -82,7 +82,9 @@ impl PlanetRes {
             relief: lo.abs().max(hi.abs()),
             pgen: Arc::new(p),
             centre: def.centre(),
-            field: Field { atmosphere_height: def.atmosphere_height, ..Field::default() },
+            // Gravity reaches at least two atmospheres up (#177): a drive starts at 1.5 atmospheres, and a
+            // walker in the cabin needs the field there (6000 m ends inside the atmosphere of a big planet).
+            field: Field { atmosphere_height: def.atmosphere_height, gravity_end_height: Field::default().gravity_end_height.max(2.0 * def.atmosphere_height), ..Field::default() },
             bake_ms: st.bake_ms,
             id,
         };

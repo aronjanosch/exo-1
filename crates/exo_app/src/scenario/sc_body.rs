@@ -5,7 +5,7 @@
 //! part of the felt acceleration).
 use crate::scenario::{begin, check, end, hold_until, keys, put_at_seat, ship_e, ship_vel, sit, tap, with_ship, Step};
 use crate::ship::FlightModel;
-use avian3d::prelude::{Position, Rotation};
+use avian3d::prelude::Position;
 use bevy::prelude::*;
 
 /// m above the planet's centre-relative reference sphere (the terrain does not matter here).

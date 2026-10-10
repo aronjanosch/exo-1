@@ -3,7 +3,8 @@
 //! longest); W flies forward (the tape fills, the velocity points forward); Page Down x5 sets the
 //! limiter to 50 % (its mark on the tape); released, the horizon is level.
 use crate::hud::HudReadout;
-use crate::scenario::{check, hold_until, keys, put_at_seat, sit, tap, Step};
+use crate::scenario::{check, hold_until, keys, planet, put_at_seat, ship_e, sit, tap, teleport_ship, Step};
+use avian3d::prelude::Position;
 use bevy::math::DVec3;
 use bevy::prelude::*;
 
@@ -99,6 +100,23 @@ pub fn sc_flight_hud_steps(s: &mut Vec<Step>) {
         let f = flight(w);
         let (pitch, roll) = f.horizon.unwrap_or((f64::NAN, f64::NAN));
         check(c, roll.abs() < 2.0, format!("horizon: pitch {pitch:+.1} deg, roll {roll:+.2} deg, want roll within 2 deg"));
+        true
+    }));
+
+    // Above the atmosphere the horizon goes (a test hook lifts the ship out of it).
+    s.push(Box::new(|w, _| {
+        let pl = planet(w);
+        let e = ship_e(w);
+        let p = w.get::<Position>(e).unwrap().0;
+        let up = pl.up(p);
+        let top = pl.field.atmosphere_height;
+        teleport_ship(w, pl.centre + up * (pl.radius + top + 500.0), crate::ship::basis_for_up(up));
+        true
+    }));
+    s.push(hold_until("above the atmosphere 0.5 s", &[], 0.5, |_| false));
+    s.push(Box::new(|w, c| {
+        let f = flight(w);
+        check(c, f.horizon.is_none(), format!("above the atmosphere: horizon {:?}, want none", f.horizon));
         true
     }));
 

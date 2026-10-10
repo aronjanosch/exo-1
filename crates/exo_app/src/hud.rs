@@ -336,7 +336,7 @@ pub struct FlightIn {
     pub felt_g: f64,
     /// g: the G-safe forward limit.
     pub g_limit: f64,
-    /// Pitch and roll in degrees; `None` far from planets (no horizon).
+    /// Pitch and roll in degrees; `None` above the atmosphere (no horizon).
     pub horizon: Option<(f64, f64)>,
 }
 
@@ -491,8 +491,10 @@ pub fn update_readout(
             let t = &ship.ctl.tuning;
             (t.cruise_speed, t.boost_speed_forward, 1.0, ship.ctl.axis.felt_g, t.g_safety.limit.forward, ship.thrust_signal(sr.0, sv.0))
         };
-        // The planet's up at the ship: the horizon exists only near a planet.
-        let horizon = altitude.map(|_| horizon_angles(sr.0, (sp.0 - planet.centre).normalize_or_zero()));
+        // The planet's up at the ship: the horizon shows only in the atmosphere (initiator: off in
+        // space).
+        let in_air = flight_core::PlanetEnv::density_at(planet.as_ref(), sp.0) > 0.0;
+        let horizon = altitude.filter(|_| in_air).map(|_| horizon_angles(sr.0, (sp.0 - planet.centre).normalize_or_zero()));
         let lv = sr.0.inverse() * sv.0;
         new.flight = Some(flight_hud(&FlightIn { lv, thrust, cruise, boost, limiter, felt_g, g_limit, horizon }, &tuning.hud));
     }

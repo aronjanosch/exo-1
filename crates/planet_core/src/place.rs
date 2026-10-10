@@ -17,9 +17,16 @@ pub struct Place {
     pub id: String,
     /// The planet recipe's name (`hearth`).
     pub planet: String,
-    /// Latitude: 90 is the planet's +y pole (where the game starts).
-    pub lat_deg: f64,
-    pub lon_deg: f64,
+    /// Latitude: 90 is the planet's +y pole (where the game starts). Either `lat_deg` and
+    /// `lon_deg`, or `near`.
+    #[serde(default)]
+    pub lat_deg: Option<f64>,
+    #[serde(default)]
+    pub lon_deg: Option<f64>,
+    /// Metres from another place instead of a latitude and longitude, so the distance between
+    /// the two stays the same when the planet's radius changes (#170, #177).
+    #[serde(default)]
+    pub near: Option<Near>,
     #[serde(default)]
     pub turn_deg: f64,
     /// The ground under it, centred on the place; levels to the ground at its centre.
@@ -27,6 +34,16 @@ pub struct Place {
     pub edits: Vec<Edit>,
     #[serde(default)]
     pub pads: Vec<PadSpec>,
+}
+
+/// A position in metres east and north of another, absolute place (east and north as on the
+/// ground there; not turned by that place's `turn_deg`).
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Near {
+    pub place: String,
+    pub east_m: f64,
+    pub north_m: f64,
 }
 
 /// A landing pad of a place.
@@ -49,15 +66,25 @@ pub struct PadAt {
 
 impl Place {
     /// Unit direction of the place's centre from the planet centre.
+    ///
+    /// Panics for a place given by `near` before `Planet::set_places` has resolved it.
     pub fn dir(&self) -> V3 {
-        let (lat, lon) = (self.lat_deg.to_radians(), self.lon_deg.to_radians());
+        let (lat, lon) = (self.lat_deg.expect("a place is resolved by set_places").to_radians(), self.lon_deg.expect("a place is resolved by set_places").to_radians());
         v3(lat.cos() * lon.cos(), lat.sin(), lat.cos() * lon.sin()).normalized()
     }
 
     /// Checks the fields that serde cannot; errors name the field.
     pub fn check(&self) -> Result<(), String> {
-        if !(-90.0..=90.0).contains(&self.lat_deg) {
-            return Err(format!("{}: lat_deg must be in -90..90", self.id));
+        match (self.lat_deg, self.lon_deg, &self.near) {
+            (Some(lat), Some(_), None) if !(-90.0..=90.0).contains(&lat) => return Err(format!("{}: lat_deg must be in -90..90", self.id)),
+            (Some(_), Some(_), None) | (None, None, Some(_)) => {}
+            (None, None, None) => return Err(format!("{}: needs lat_deg and lon_deg, or near", self.id)),
+            _ => return Err(format!("{}: give either lat_deg and lon_deg, or near (not both, not half)", self.id)),
+        }
+        if let Some(n) = &self.near
+            && !(n.east_m.is_finite() && n.north_m.is_finite())
+        {
+            return Err(format!("{}: near: east_m and north_m must be numbers", self.id));
         }
         for p in &self.pads {
             if !(p.radius_m > 0.0) {
@@ -104,9 +131,23 @@ impl Place {
 
 impl crate::planet::Planet {
     /// Sets the hand-placed places of this planet; call before `bake`. Checks each one.
-    pub fn set_places(&mut self, places: Vec<Place>) -> Result<(), String> {
+    pub fn set_places(&mut self, mut places: Vec<Place>) -> Result<(), String> {
         for p in &places {
             p.check()?;
+        }
+        // Places given by `near` get their latitude and longitude from the reference, in metres on
+        // this planet's radius. The reference must be an absolute place of this list.
+        let absolute: Vec<(String, V3)> = places.iter().filter(|p| p.near.is_none()).map(|p| (p.id.clone(), p.dir())).collect();
+        for p in places.iter_mut() {
+            let Some(n) = p.near.clone() else { continue };
+            let Some((_, d0)) = absolute.iter().find(|(id, _)| *id == n.place) else {
+                return Err(format!("{}: near: '{}' is no such place, or is itself given by near: the reference must be an absolute place", p.id, n.place));
+            };
+            let (east, north) = crate::look::tangent_frame(*d0);
+            let m = (n.east_m * n.east_m + n.north_m * n.north_m).sqrt();
+            let d = if m > 0.0 { crate::look::walk(*d0, (east * n.east_m + north * n.north_m) * (1.0 / m), m, self.radius) } else { *d0 };
+            p.lat_deg = Some(d.y.clamp(-1.0, 1.0).asin().to_degrees());
+            p.lon_deg = Some(d.z.atan2(d.x).to_degrees());
         }
         self.places = places;
         Ok(())

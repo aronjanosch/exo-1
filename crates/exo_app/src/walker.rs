@@ -121,6 +121,21 @@ pub fn ship_frame(pos: &Position, rot: &Rotation) -> Frame {
 }
 
 impl Player {
+    /// Mouse look has no timestep/filter: one count produces one fixed angular change.
+    fn turn_mouse(&mut self, mouse: Vec2, radians_per_count: f64, turn_share: f64) {
+        let yaw = -mouse.x as f64 * radians_per_count * turn_share;
+        let pitch = -mouse.y as f64 * radians_per_count * turn_share;
+        if let Some(body) = self.body {
+            let body = walker_core::turn_body(body, yaw, pitch, 0.0);
+            self.body = Some(body);
+            self.w.forward = body * DVec3::NEG_Z;
+            self.view_up = body * DVec3::Y;
+        } else {
+            self.pitch = (self.pitch + pitch).clamp(-self.w.cfg.pitch_limit, self.w.cfg.pitch_limit);
+            self.w.align(if self.ship.is_some() { self.cabin_up } else { self.up }, yaw);
+        }
+    }
+
     /// Feet in world space, given the pose of the ship (used only when in the cabin).
     pub fn world_pos(&self, ship: Frame) -> DVec3 {
         if self.ship.is_some() { ship.to_world(self.w.pos) } else { self.w.pos }
@@ -137,6 +152,31 @@ impl Player {
     pub fn world_look(&self, ship: Frame) -> DVec3 {
         let fwd = if self.ship.is_some() { ship.rot * self.w.forward } else { self.w.forward };
         walker_core::look_dir(fwd, self.world_up(ship), self.pitch)
+    }
+}
+
+/// Window input: turn once per render frame, including frames with no physics tick.
+/// Scripts retain their deterministic fixed-tick path; seated mouse input stays for the ship.
+pub fn mouse_look(
+    mut controls: ResMut<crate::controls::Controls>, settings: Res<crate::settings::Settings>,
+    tuning: Res<crate::tuning::Tuning>, grab: Res<crate::grab::Grab>, mut players: Query<&mut Player>,
+    ships: Query<(&Position, &Rotation)>, mut view: Option<ResMut<crate::view::ViewState>>,
+) {
+    if let Some(view) = &mut view { view.mouse_rotation = DQuat::IDENTITY; }
+    if controls.scripted { return; }
+    let Ok(mut pl) = players.single_mut() else { return };
+    if pl.seated { return; }
+    let mouse = std::mem::take(&mut controls.mouse);
+    if mouse == Vec2::ZERO { return; }
+    let frame = pl.ship.and_then(|e| ships.get(e).ok()).map_or(Frame::IDENTITY, |(p, r)| ship_frame(p, r));
+    let up = if pl.ship.is_some() { frame.rot * pl.cabin_up } else { pl.view_up };
+    let before = walker_core::look_rot(pl.world_look(frame), up);
+    let turn_share = grab.held.map_or(1.0, |h| grab_core::view_turn_share(&tuning.grab, h.mass));
+    pl.turn_mouse(mouse, settings.mouse_radians_per_count(), turn_share);
+    if let Some(view) = &mut view {
+        let up = if pl.ship.is_some() { frame.rot * pl.cabin_up } else { pl.view_up };
+        let after = walker_core::look_rot(pl.world_look(frame), up);
+        view.mouse_rotation = after * before.inverse();
     }
 }
 
@@ -222,7 +262,7 @@ pub fn walker_step(
     }
 
     let m = std::mem::take(&mut actions.look);
-    let sens = bindings.mouse.walker_sensitivity * settings.mouse_sensitivity;
+    let sens = settings.mouse_radians_per_count();
     // The pad's stick (turn: x pitch up, y yaw left) turns the view at a rate.
     let stick = actions.turn * bindings.pad.look_rate * dt;
     // A held crate slows the view's turn, more for heavy ones (#83).

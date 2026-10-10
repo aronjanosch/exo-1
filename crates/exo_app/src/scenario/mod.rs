@@ -25,13 +25,28 @@ use crate::ship::RemoteShip;
 mod boost;
 mod camera_g;
 mod cargo;
+mod courier;
+mod customers;
 mod deliver;
+mod dev_menu;
 mod figure;
 mod flight;
+mod help;
+mod first_person_settings;
 mod landing;
+mod licence;
+mod mapview;
 mod models;
 mod net;
 mod reload;
+mod sc_linear;
+mod sc_air;
+mod sc_body;
+mod sc_flight_hud;
+mod sc_hud;
+mod sc_switch;
+mod sc_turn;
+mod savefile;
 mod space;
 mod swap;
 mod thruster_audio;
@@ -58,6 +73,22 @@ pub fn plugin(name: &str, headless: bool) -> impl Plugin {
             if headless {
                 app.add_systems(Update, swap::headless_view.in_set(crate::phases::Frame::Camera));
             }
+        }
+        if name == "first-person-settings" && headless {
+            // The real projection system, without a renderer or a window.
+            app.init_resource::<ViewState>().init_resource::<ClearColor>().init_resource::<bevy::light::GlobalAmbientLight>();
+            app.add_systems(Startup, |mut commands: Commands| {
+                commands.spawn((crate::view::MainCamera, crate::origin::WorldPose::default(), bevy::pbr::DistanceFog::default(), Projection::Perspective(default())));
+            });
+            app.add_systems(FixedLast, (
+                |mut commands: Commands, ships: Query<(Entity, &Position, &Rotation), (With<Ship>, Without<crate::origin::BodyInterp>)>| {
+                    for (e, p, r) in &ships {
+                        commands.entity(e).insert(crate::origin::BodyInterp { prev: (p.0, r.0), curr: (p.0, r.0) });
+                    }
+                },
+                crate::view::record_player_view,
+            ).chain());
+            app.add_systems(Update, crate::view::update_camera.in_set(crate::phases::Frame::Camera));
         }
     }
 }
@@ -591,9 +622,27 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "figure" => figure_steps(&mut s, &shot_step),
         // Sprint 2 feel: input ramp, virtual-joystick mouse, boost, decoupled (#24, #25, #26).
         "flight" => flight_steps(&mut s, &shot_step, out_dir, windowed),
+        "first-person-settings" => first_person_settings::steps(&mut s),
         // #90, #91: the boost capacitor drains, cuts out and recharges; the HUD shows it.
         "boost-hud" => boost::boost_hud_steps(&mut s),
         "thruster-audio" => thruster_audio::thruster_audio_steps(&mut s),
+        // Round 5: F7 switches to the SC flight model, which lifts off, hovers and flies.
+        "sc-body" => sc_body::sc_body_steps(&mut s),
+        "sc-switch" => sc_switch::sc_switch_steps(&mut s),
+        // Round 5: F1 shows the keys that apply right now.
+        "help" => help::help_steps(&mut s),
+        // Round 5: F10 dev menu: licence, credits, boost.
+        "dev-menu" => dev_menu::dev_menu_steps(&mut s),
+        // #195: the SC linear law: cap, brake, gravity compensation, master modes, limiter.
+        "sc-linear" => sc_linear::sc_linear_steps(&mut s),
+        // #199: the SC model's air: wind compensation hover, turbulence low and high.
+        "sc-air" => sc_air::sc_air_steps(&mut s),
+        // #197: the flight panel: badges, the coupling blend, the toast, both models.
+        "sc-hud" => sc_hud::sc_hud_steps(&mut s),
+        // #200: the flight HUD (speed tape, thrust cross, G bar, horizon, velocity marker), SC model.
+        "sc-flight-hud" => sc_flight_hud::sc_flight_hud_steps(&mut s),
+        // Round 5, #196: the SC model's rotation (overshoot, reversal, roll release, G-safe turn cap).
+        "sc-turn" => sc_turn::sc_turn_steps(&mut s),
         // #148, #149: the camera shake, spring lag and G field of view, and F9 (through the bindings).
         "camera-g" => camera_g::camera_g_steps(&mut s),
         // Spike 13: manoeuvres with the axis flight model, measured as a table.
@@ -618,6 +667,16 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         // Night extra E1: unload the parked ship down the ramp by hand and load it again.
         "crate-unload" => cargo::crate_unload_steps(&mut s),
         "deliver" => deliver::deliver_steps(&mut s),
+        // #170: courier jobs on foot, carried by hand to the small drops near the start.
+        "courier" => courier::courier_steps(&mut s),
+        // #135: save file: deliver halfway, save, restart, load, finish.
+        "savefile" => savefile::savefile_steps(&mut s),
+        // #168: a customer orders, the order is an offer at the wholesaler, the delivery moves the relationship.
+        "customers" => customers::customers_steps(&mut s),
+        // #169: the seat refuses without the licence; the exam; the licence.
+        "licence" => licence::licence_steps(&mut s),
+        // #166: the map's pins from the game's state, M opens the picture (a screenshot with a window).
+        "map" => mapview::map_steps(&mut s, out_dir, windowed),
         // #63: fixed viewpoints and an atlas per planet (headless: atlas and statistics only).
         "planet-look" => crate::look::steps(&mut s, out_dir, windowed),
         // #70: walk from outside into a site; the walker stands on its flattened ground.

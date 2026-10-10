@@ -188,7 +188,7 @@ pub fn interact_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         let e = Entity::from_bits(c.v["crate"] as u64);
         let p = prompt(w);
-        let t = w.resource::<crate::interact::Interaction>().target;
+        let t = w.resource::<crate::interact::Interaction>().target.clone();
         check(c, p == "[F] pick up the small crate" && t == Some(Target::Crate(e, grab_core::Reach::Hands)), format!("interact: the HUD prompt offers the crate: \"{p}\""));
         tap(w, KeyCode::KeyF);
         true

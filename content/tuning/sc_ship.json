@@ -1,0 +1,8 @@
+{
+  "_comment": "SC flight model (flight_core::sc, F7), the ship's body (sc::tuning::ShipBody). TODO(initiator): every value. Ship space: forward -Z, right +X, up +Y. mass kg; inertia kg m² about pitch (x), yaw (y), roll (z), here a 2 t box 4.6 x 3.2 x 8.3 m (the greybox hull); thrust N per direction in vacuum, all thrusters pushing that way together (here 81 forward and back, 61 sideways, 56 up and down m/s² on 2 t: our SCM cap over the SC times to full speed, 1.85 s forward, 2.2 s sideways and vertical, with the axis scales); torque N m per axis (7 rad/s² pitch and roll, 6 yaw: SC's authored angular acceleration limit, yaw the weak axis); cargo_point m, ship space: the cabin floor's centre, where locked cargo weighs (its mass and the inertia it adds, #88). Values of 2026-10-10 derived from a small Star Citizen fighter's flight records (initiator: \"nimm die werte aus sc und passe sie an unser projekt an\"): times, rates and ratios taken over, speeds scaled to our 150 m/s SCM cap, mass kept at our 2 t; nothing copied 1:1. Still TODO(initiator) by feel.",
+  "mass": 2000.0,
+  "inertia": { "pitch": 13188.3, "yaw": 15008.3, "roll": 5233.3 },
+  "thrust": { "forward": 162000.0, "backward": 162000.0, "left": 122000.0, "right": 122000.0, "up": 112000.0, "down": 112000.0 },
+  "torque": { "pitch": 92318.1, "yaw": 90049.8, "roll": 36633.1 },
+  "cargo_point": [0.0, -1.2, 0.0]
+}

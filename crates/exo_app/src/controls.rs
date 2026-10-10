@@ -21,7 +21,8 @@ pub fn plugin(app: &mut App) {
 
 /// Window only: the keyboard and mouse into `Controls`.
 pub fn window_plugin(app: &mut App) {
-    app.add_systems(Update, read_input.in_set(crate::phases::Frame::Input));
+    // Fresh input must be available to this frame's simulation, not the next one's.
+    app.add_systems(RunFixedMainLoop, (read_input, crate::walker::mouse_look).chain().in_set(RunFixedMainLoopSystems::BeforeFixedMainLoop));
 }
 
 pub const BINDINGS: &str = include_str!("../../../content/tuning/bindings.json");
@@ -98,11 +99,47 @@ pub enum Tap {
     LandingMode,
     /// A/B switch: the axis model's G-safety turn cap on or off (F8, #118).
     TurnCap,
-    /// F7 switch: the two thrust rules (A3 cap refuses thrust, B2 brake keeps the heading) on or
-    /// off together. Off by default.
-    ThrustLaw,
+    /// F1: the keys that apply right now, as a panel (`help.rs`).
+    Help,
+    /// F10: the dev menu (`dev.rs`, dev builds only).
+    DevMenu,
+    /// The dev menu's commands 1 to 7 (digit keys; only while the menu is open).
+    Dev1,
+    Dev2,
+    Dev3,
+    Dev4,
+    Dev5,
+    Dev6,
+    Dev7,
+    /// F7: the flight model, the axis model or the SC model (round 5). Files from before round 5
+    /// call it `thrust_law` (the switch for #185's two rules, now always on in the axis model).
+    FlightModel,
+    /// SC model: master mode SCM or NAV. TODO(initiator): the key (B for now).
+    MasterMode,
+    /// SC model: comstab on or off. TODO(initiator): the key (U for now).
+    Comstab,
+    /// SC model: proximity assist on or off. TODO(initiator): the key (P for now).
+    ProximityAssist,
+    /// SC model: wind compensation on or off. TODO(initiator): the key (I for now; Y abandons a job).
+    WindComp,
+    /// SC model: the speed limiter one step up or down. TODO(initiator): the keys (Page Up and Page
+    /// Down for now; the mouse wheel later).
+    LimiterUp,
+    LimiterDown,
     /// Playtest switch: the camera's shake, spring lag and G field of view (F9, #148, #149).
     CameraFx,
+    /// Run the queued banners and toasts (the arrival ritual) fast (#165).
+    SkipNotices,
+    /// Close a giver's counter without taking the job (#167).
+    Decline,
+    /// The next offer at the open counter (#167).
+    NextOffer,
+    /// Open or close the map (#166).
+    Map,
+    /// Track the next active job: its next stop is the pointer and the map's target (#166).
+    TrackJob,
+    /// Drop the tracked job: the first press asks, a second within a few seconds drops it (#132).
+    AbandonJob,
 }
 
 impl Axis {
@@ -133,7 +170,45 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 16] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::LandingMode, Tap::TurnCap, Tap::ThrustLaw, Tap::CameraFx];
+    pub const ALL: [Tap; 37] = [
+        Tap::Help,
+        Tap::DevMenu,
+        Tap::Dev1,
+        Tap::Dev2,
+        Tap::Dev3,
+        Tap::Dev4,
+        Tap::Dev5,
+        Tap::Dev6,
+        Tap::Dev7,
+        Tap::Interact,
+        Tap::Throw,
+        Tap::HoverAssist,
+        Tap::HorizonFollow,
+        Tap::Lag,
+        Tap::DebugFly,
+        Tap::OrbitCamera,
+        Tap::WarpTarget,
+        Tap::Warp,
+        Tap::Decoupled,
+        Tap::DebugHud,
+        Tap::BoostMode,
+        Tap::LandingMode,
+        Tap::TurnCap,
+        Tap::FlightModel,
+        Tap::CameraFx,
+        Tap::MasterMode,
+        Tap::Comstab,
+        Tap::ProximityAssist,
+        Tap::WindComp,
+        Tap::LimiterUp,
+        Tap::LimiterDown,
+        Tap::SkipNotices,
+        Tap::Decline,
+        Tap::NextOffer,
+        Tap::Map,
+        Tap::TrackJob,
+        Tap::AbandonJob,
+    ];
     pub fn name(self) -> &'static str {
         match self {
             Tap::Interact => "interact",
@@ -150,8 +225,29 @@ impl Tap {
             Tap::BoostMode => "boost_mode",
             Tap::LandingMode => "landing_mode",
             Tap::TurnCap => "turn_cap",
-            Tap::ThrustLaw => "thrust_law",
+            Tap::Help => "help",
+            Tap::DevMenu => "dev_menu",
+            Tap::Dev1 => "dev_1",
+            Tap::Dev2 => "dev_2",
+            Tap::Dev3 => "dev_3",
+            Tap::Dev4 => "dev_4",
+            Tap::Dev5 => "dev_5",
+            Tap::Dev6 => "dev_6",
+            Tap::Dev7 => "dev_7",
+            Tap::FlightModel => "flight_model",
             Tap::CameraFx => "camera_fx",
+            Tap::MasterMode => "master_mode",
+            Tap::Comstab => "comstab",
+            Tap::ProximityAssist => "proximity_assist",
+            Tap::WindComp => "wind_comp",
+            Tap::LimiterUp => "limiter_up",
+            Tap::LimiterDown => "limiter_down",
+            Tap::SkipNotices => "skip_notices",
+            Tap::Decline => "decline",
+            Tap::NextOffer => "next_offer",
+            Tap::Map => "map",
+            Tap::TrackJob => "track_job",
+            Tap::AbandonJob => "abandon_job",
         }
     }
 }
@@ -231,6 +327,7 @@ pub struct MouseBindings {
     pub ship_mode: ShipMouse,
     /// Radians per pixel: the ship's turn (direct) or the stick's offset (vjoy).
     pub ship_sensitivity: f64,
+    /// Legacy bindings field, retained for file compatibility. First-person look uses Settings.
     pub walker_sensitivity: f64,
     /// Virtual joystick, radians (degrees in the file).
     pub vjoy_max_angle: f64,
@@ -275,7 +372,7 @@ impl Bindings {
         let v: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("bindings.json: {e}"))?;
         let obj = v.as_object().ok_or("bindings.json: not an object")?;
         let err = |action: &str, why: String| format!("bindings.json: action `{action}`: {why}");
-        let known: Vec<&str> = Axis::ALL.iter().map(|a| a.name()).chain(Button::ALL.iter().map(|b| b.name())).chain(Tap::ALL.iter().map(|t| t.name())).chain(["mouse", "pad", "_comment", "seat"]).collect();
+        let known: Vec<&str> = Axis::ALL.iter().map(|a| a.name()).chain(Button::ALL.iter().map(|b| b.name())).chain(Tap::ALL.iter().map(|t| t.name())).chain(["mouse", "pad", "_comment", "seat", "thrust_law"]).collect();
         if let Some(k) = obj.keys().find(|k| !known.contains(&k.as_str())) {
             return Err(err(k, "unknown action".into()));
         }
@@ -346,10 +443,38 @@ impl Bindings {
                 (Tap::LandingMode, None) => Ok(vec![Input::Key(KeyCode::KeyK)]),
                 // ... and no `turn_cap` (#118).
                 (Tap::TurnCap, None) => Ok(vec![Input::Key(KeyCode::F8)]),
-                // ... and no `thrust_law` (#185).
-                (Tap::ThrustLaw, None) => Ok(vec![Input::Key(KeyCode::F7)]),
+                // ... and no `help` (round 5).
+                (Tap::Help, None) => Ok(vec![Input::Key(KeyCode::F1)]),
+                (Tap::DevMenu, None) => Ok(vec![Input::Key(KeyCode::F10)]),
+                (Tap::Dev1, None) => Ok(vec![Input::Key(KeyCode::Digit1)]),
+                (Tap::Dev2, None) => Ok(vec![Input::Key(KeyCode::Digit2)]),
+                (Tap::Dev3, None) => Ok(vec![Input::Key(KeyCode::Digit3)]),
+                (Tap::Dev4, None) => Ok(vec![Input::Key(KeyCode::Digit4)]),
+                (Tap::Dev5, None) => Ok(vec![Input::Key(KeyCode::Digit5)]),
+                (Tap::Dev6, None) => Ok(vec![Input::Key(KeyCode::Digit6)]),
+                (Tap::Dev7, None) => Ok(vec![Input::Key(KeyCode::Digit7)]),
+                // Files from before round 5 call the model switch `thrust_law` (#185), or have none.
+                (Tap::FlightModel, None) if obj.contains_key("thrust_law") => keys("thrust_law", &obj["thrust_law"]),
+                (Tap::FlightModel, None) => Ok(vec![Input::Key(KeyCode::F7)]),
                 // ... and no `camera_fx` (#148, #149).
                 (Tap::CameraFx, None) => Ok(vec![Input::Key(KeyCode::F9)]),
+                // ... and none of the SC model's switches (round 5).
+                (Tap::MasterMode, None) => Ok(vec![Input::Key(KeyCode::KeyB)]),
+                (Tap::Comstab, None) => Ok(vec![Input::Key(KeyCode::KeyU)]),
+                (Tap::ProximityAssist, None) => Ok(vec![Input::Key(KeyCode::KeyP)]),
+                (Tap::WindComp, None) => Ok(vec![Input::Key(KeyCode::KeyI)]),
+                (Tap::LimiterUp, None) => Ok(vec![Input::Key(KeyCode::PageUp)]),
+                (Tap::LimiterDown, None) => Ok(vec![Input::Key(KeyCode::PageDown)]),
+                // ... and no `skip_notices` (#165).
+                (Tap::SkipNotices, None) => Ok(vec![Input::Key(KeyCode::Enter)]),
+                // ... and no `decline` or `next_offer` (#167).
+                (Tap::Decline, None) => Ok(vec![Input::Key(KeyCode::Backspace)]),
+                (Tap::NextOffer, None) => Ok(vec![Input::Key(KeyCode::Tab)]),
+                // ... and no `map` or `track_job` (#166).
+                (Tap::Map, None) => Ok(vec![Input::Key(KeyCode::KeyM)]),
+                (Tap::TrackJob, None) => Ok(vec![Input::Key(KeyCode::KeyT)]),
+                // ... and no `abandon_job` (#132).
+                (Tap::AbandonJob, None) => Ok(vec![Input::Key(KeyCode::KeyY)]),
                 _ => Err(err(t.name(), "missing".into())),
             }
         };
@@ -466,6 +591,17 @@ impl Bindings {
             Slot::Button(b) => &mut self.buttons.iter_mut().find(|(x, _)| *x == b).unwrap().1,
             Slot::Tap(t) => &mut self.taps.iter_mut().find(|(x, _)| *x == t).unwrap().1,
         }
+    }
+
+    /// The keyboard keys of a slot, in order (the help panel shows the first).
+    pub fn slot_keys(&self, slot: Slot) -> Vec<KeyCode> {
+        let l = match slot {
+            Slot::Positive(a) => &self.axis(a).positive,
+            Slot::Negative(a) => &self.axis(a).negative,
+            Slot::Button(b) => self.button_keys(b),
+            Slot::Tap(t) => &self.taps.iter().find(|(x, _)| *x == t).expect("every tap is bound").1,
+        };
+        l.iter().filter_map(|i| if let Input::Key(k) = i { Some(*k) } else { None }).collect()
     }
 
     /// Rebind: the slot's first key becomes `k` (pad buttons stay).
@@ -783,13 +919,37 @@ mod tests {
         assert!(a.take_tap(Tap::TurnCap));
     }
 
-    /// #185: a player's file from before the thrust law still loads, with F7.
+    /// Round 5: a player's file from before the model switch loads, with F7; one that still calls
+    /// it `thrust_law` (#185) keeps its key; one without the SC switches gets B, U, P, Y and the
+    /// page keys.
     #[test]
-    fn old_file_without_thrust_law_gets_f7() {
-        let old = BINDINGS.replace("  \"thrust_law\": [\"F7\"],\n", "");
-        assert!(!old.contains("\"thrust_law\""));
-        let mut a = resolve(&Bindings::from_json(&old).unwrap(), &raw(&[], &[F7]));
-        assert!(a.take_tap(Tap::ThrustLaw));
+    fn old_files_get_the_model_switch_and_the_sc_switches() {
+        let line = "  \"flight_model\": [\"F7\"],\n";
+        assert!(BINDINGS.contains(line));
+        let mut a = resolve(&Bindings::from_json(&BINDINGS.replace(line, "")).unwrap(), &raw(&[], &[F7]));
+        assert!(a.take_tap(Tap::FlightModel));
+        let renamed = BINDINGS.replace(line, "  \"thrust_law\": [\"F10\"],\n");
+        let mut a = resolve(&Bindings::from_json(&renamed).unwrap(), &raw(&[], &[F10]));
+        assert!(a.take_tap(Tap::FlightModel));
+        let mut old = BINDINGS.to_string();
+        for t in [Tap::MasterMode, Tap::Comstab, Tap::ProximityAssist, Tap::WindComp, Tap::LimiterUp, Tap::LimiterDown] {
+            let i = old.find(&format!("  \"{}\"", t.name())).unwrap();
+            let j = i + old[i..].find('\n').unwrap() + 1;
+            old.replace_range(i..j, "");
+        }
+        let mut a = resolve(&Bindings::from_json(&old).unwrap(), &raw(&[], &[KeyB, KeyU, KeyP, KeyI, PageUp, PageDown]));
+        for t in [Tap::MasterMode, Tap::Comstab, Tap::ProximityAssist, Tap::WindComp, Tap::LimiterUp, Tap::LimiterDown] {
+            assert!(a.take_tap(t), "{}", t.name());
+        }
+    }
+
+    /// `KEYS.md` (the page for players and developers) names every action of `bindings.json`.
+    #[test]
+    fn keys_md_lists_every_action() {
+        let page = include_str!("../../../KEYS.md");
+        let names = Axis::ALL.iter().map(|a| a.name()).chain(Button::ALL.iter().map(|b| b.name())).chain(Tap::ALL.iter().map(|t| t.name()));
+        let missing: Vec<&str> = names.filter(|n| !page.contains(&format!("`{n}`"))).collect();
+        assert!(missing.is_empty(), "KEYS.md lacks {missing:?}");
     }
 
     /// G was missing from the keyboard's tap list (only scenarios could inject it).
@@ -798,7 +958,7 @@ mod tests {
         let b = Bindings::default();
         let tap_keys: Vec<KeyCode> = b.tap_keys().collect();
         assert!(tap_keys.contains(&KeyG));
-        assert!(!tap_keys.contains(&KeyB), "B is bound to nothing");
+        assert!(!tap_keys.contains(&KeyZ), "Z is bound to nothing");
     }
 
     #[test]

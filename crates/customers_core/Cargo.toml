@@ -1,0 +1,15 @@
+[package]
+name = "customers_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+content_core = { workspace = true }
+gameplay_core = { workspace = true }
+
+[dev-dependencies]
+# Only the tests wire the systems together, the way the glue does; the crate itself never calls jobs.
+jobs_core = { workspace = true }

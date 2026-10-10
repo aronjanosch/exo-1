@@ -1,0 +1,1 @@
+{ "_comment": "Crew standing with the flight school (TODO(initiator)).", "id": "standing_flight_school", "name": "track.standing_flight_school.name", "owner": "crew", "min": 0, "thresholds": [30, 100, 250] }

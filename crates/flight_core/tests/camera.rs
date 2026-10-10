@@ -169,7 +169,8 @@ fn trauma_rises_under_boost_stays_in_range_and_decays() {
 
 #[test]
 fn thrust_adds_trauma_in_proportion_to_the_share() {
-    let t = CameraTuning::default();
+    // The shipped value is 0 since round 5 (no shake from plain thrust); the source still works.
+    let t = CameraTuning { shake_trauma_thrust: 0.8, ..CameraTuning::default() };
     let (mut half, mut full) = (CameraFx::default(), CameraFx::default());
     for _ in 0..60 {
         half.step_with(&t, &FxInput { thrust: 0.5, ..flying(10.0, DVec3::ZERO, false) });

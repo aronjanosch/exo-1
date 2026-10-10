@@ -1,5 +1,5 @@
 {
-  "_comment": "English strings for the gameplay keys. #131 turns this into checked localisation tables.",
+  "_comment": "English strings for the gameplay keys. A list is a pool: the game picks one by seed, never the same line twice in a row. {name} is filled in. All texts are placeholders (TODO(initiator)). #131 turns this into checked localisation tables.",
   "commodity.fizzy_mud.name": "fizzy mud",
   "location.drip_rock.name": "Drip Rock",
   "location.bent_spoon.name": "Bent Spoon",
@@ -7,5 +7,304 @@
   "track.freight_xp.name": "freight XP",
   "unlock.bent_spoon_permit.name": "Bent Spoon landing permit",
   "job.first_haul.title": "First haul",
-  "job.first_haul.brief": "Three crates of fizzy mud for Bent Spoon. They fizz less if you don't drop them."
+  "job.first_haul.brief": "Three crates of fizzy mud for Bent Spoon. They fizz less if you don't drop them.",
+
+  "track.standing_courier_office.name": "standing with Dinglepost Couriers",
+  "track.standing_small_family.name": "standing with the Gribbles",
+  "job.family_errand.title": "A small favour",
+  "job.family_errand.brief": "Two crates of fizzy mud, no questions.",
+
+  "commodity.parcel.name": "wobbly parcel",
+  "location.lint_trap.name": "Lint Trap",
+  "location.noodle_post.name": "Noodle Post",
+  "location.pebble_kiosk.name": "Pebble Kiosk",
+  "job.courier_lint_trap.title": "A parcel for the Lint Trap",
+  "job.courier_lint_trap.brief": "One wobbly parcel to the Lint Trap, just down the path.",
+  "job.courier_noodle_post.title": "Noodles by hand",
+  "job.courier_noodle_post.brief": "Two wobbly parcels to the Noodle Post. They are warm. Do not ask why.",
+  "job.courier_pebble_kiosk.title": "The pebble rush",
+  "job.courier_pebble_kiosk.brief": "Three wobbly parcels to the Pebble Kiosk before the timer wins.",
+  "briefing.reason.commodity.parcel": [
+    "The parcel is wobbly. Do not shake it, do not stir it.",
+    "Wobbly parcels hate being late and being dropped, in that order.",
+    "Nobody knows what is in it. That is the charm."
+  ],
+
+  "commodity.sock_dust.name": "sock dust",
+  "commodity.grumble_jelly.name": "grumble jelly",
+  "location.slosh_wholesale.name": "Slosh & Daughter Wholesale",
+  "track.standing_wholesaler.name": "standing with Slosh & Daughter",
+  "job.customer_order.title": "A customer's order",
+  "job.customer_order.brief": "Goods from the wholesaler for a customer who is waiting.",
+
+  "giver.wholesaler.name": "Slosh & Daughter Wholesale",
+  "giver.wholesaler.greet.first": [
+    "Wholesale, retail, and everything in between. Mostly in between.",
+    "New? Everything on the shelf is legal. Technically.",
+    "Hello! Please do not feed the jelly."
+  ],
+  "giver.wholesaler.greet.regular": [
+    "The usual? We have a usual for you.",
+    "Back again. The jelly missed you.",
+    "Good timing: the sock dust is fresh."
+  ],
+  "giver.wholesaler.greet.failure": [
+    "We heard about the last order. The jelly heard too.",
+    "A customer called. Several times. Loudly.",
+    "Let us make this one go better. For the jelly's sake."
+  ],
+  "giver.wholesaler.intro": ["Orders are up on the board.", "Somebody wants something.", "Customers, customers, customers."],
+  "giver.wholesaler.reason": ["Somebody is waiting for this.", "Somebody paid in advance. Mostly.", "It is on the house. The house disagrees."],
+  "giver.wholesaler.signoff": ["Do not shake it.", "Bring the empties back. Do not bring the empties back.", "Mind the grumbling."],
+
+  "customer.mabel_snood.name": "Mabel Snood",
+  "customer.mabel_snood.order_title": "Order for Mabel Snood",
+  "customer.mabel_snood.order": [
+    "Mabel Snood: my socks are out of dust again.",
+    "Mabel Snood says the dust is for a very serious project.",
+    "Mabel Snood wants dust. Do not ask for what."
+  ],
+  "customer.mabel_snood.thanks": [
+    "Mabel Snood sniffs the dust and smiles.",
+    "Mabel Snood: you may come again.",
+    "Mabel Snood adds you to the good list."
+  ],
+  "customer.mabel_snood.grumble": [
+    "Mabel Snood: this dust has been stepped on.",
+    "Mabel Snood writes you on the other list.",
+    "Mabel Snood sighs in four languages."
+  ],
+  "customer.captain_pip.name": "Captain Pip",
+  "customer.captain_pip.order_title": "Order for Captain Pip",
+  "customer.captain_pip.order": [
+    "Captain Pip: the jelly crew is restless.",
+    "Captain Pip needs jelly before the tide of nonsense turns.",
+    "Captain Pip: jelly, and none of your excuses."
+  ],
+  "customer.captain_pip.thanks": [
+    "Captain Pip salutes with the wrong hand. High praise.",
+    "Captain Pip: shipshape, in a way.",
+    "Captain Pip names a puddle after you."
+  ],
+  "customer.captain_pip.grumble": [
+    "Captain Pip: the jelly is mutinying.",
+    "Captain Pip points at the horizon, meaningfully.",
+    "Captain Pip will be telling the harbour about this."
+  ],
+  "customer.moss_committee.name": "The Moss Committee",
+  "customer.moss_committee.order_title": "Order for the Moss Committee",
+  "customer.moss_committee.order": [
+    "The Moss Committee demands mud, in triplicate.",
+    "The Moss Committee has voted for more mud.",
+    "The Moss Committee: mud, and the minutes will show it."
+  ],
+  "customer.moss_committee.thanks": [
+    "The Moss Committee adjourns, satisfied.",
+    "The Moss Committee approves, unanimously, twice.",
+    "The Moss Committee moves to thank you. Seconded."
+  ],
+  "customer.moss_committee.grumble": [
+    "The Moss Committee notes your failure in the minutes.",
+    "The Moss Committee is disappointed, formally.",
+    "The Moss Committee will table this. Loudly."
+  ],
+  "notice.order.placed": [
+    "{customer} has an order. Check the wholesaler.",
+    "New order from {customer}.",
+    "{customer} is waiting for goods."
+  ],
+
+  "location.skyhook_school.name": "Skyhook Flight School",
+  "track.licence_flight.name": "flight licence",
+  "track.standing_flight_school.name": "standing with Skyhook Flight School",
+  "licence.flight.name": "Flight licence",
+  "job.flight_exam.title": "Flight licence exam",
+  "job.flight_exam.brief": "Take off, fly to the Drip Rock pad, land on it gently and set the school's crate down. The ship is lent for the exam.",
+
+  "giver.flight_school.name": "Skyhook Flight School",
+  "giver.flight_school.greet.first": [
+    "Want to fly? Everybody wants to fly. Few want to land.",
+    "Welcome to Skyhook. Our motto: up is optional, down is mandatory.",
+    "A new pilot! The ship is lent for the exam. It is the only one we have, so please keep it whole."
+  ],
+  "giver.flight_school.greet.regular": [
+    "Licensed and still coming by? We like that.",
+    "Our favourite pilot, by default.",
+    "Back for the honours? Soft hands, soft landing."
+  ],
+  "giver.flight_school.greet.failure": [
+    "The ship is fine. Mostly. Let us try again.",
+    "Everybody crashes once. Some twice. Half price for the second.",
+    "The ground was there the whole time. Remember that."
+  ],
+  "giver.flight_school.intro": ["Here is how it goes.", "The exam is short, the lesson is long.", "Listen carefully, then ignore half of it."],
+  "giver.flight_school.reason": ["Without a licence the seat refuses you. It has opinions.", "A licence makes you a pilot, on paper.", "The crate is part of the test. It is also fragile."],
+  "giver.flight_school.signoff": ["Up, over, down. In that order.", "Do not land on anyone.", "Mind the ground. It is closer than it looks."],
+
+  "notice.exam.passed": ["LICENCE PASSED: you may fly. Do not let it go to your head.", "EXAM PASSED. The seat now knows you.", "PASSED. You are a pilot, officially."],
+  "notice.exam.honours": ["PASSED WITH HONOURS! The school is moved to tears, a little.", "HONOURS! A soft landing and a good time. Show-off.", "EXAM PASSED, HONOURS. The seat purrs."],
+  "notice.exam.failed": ["Exam failed. A retry costs {retry}.", "Not this time. The retry costs {retry}.", "The ground won. Try again for {retry}."],
+  "notice.licence.needed": [
+    "The seat refuses: you need the flight licence. Take the exam at Skyhook Flight School.",
+    "No licence, no seat. Skyhook Flight School gives exams.",
+    "The seat says no. Ride along, or go and pass the exam at Skyhook."
+  ],
+  "notice.refused.cannot_afford": ["Not enough credits for that.", "Your wallet declines.", "Come back with more credits."],
+
+  "giver.courier_office.name": "Dinglepost Couriers",
+  "giver.courier_office.greet.first": [
+    "New face! We always need a new face. The old ones keep quitting.",
+    "Welcome to Dinglepost. The coffee is mud. So is the cargo.",
+    "You look employable. That is rare around here."
+  ],
+  "giver.courier_office.greet.regular": [
+    "Back again! Management is almost proud.",
+    "The reliable one. Our insurance company hates you.",
+    "Good to see you. The crates missed you."
+  ],
+  "giver.courier_office.greet.failure": [
+    "About last time. We will not talk about last time.",
+    "The crates are still crying. Let us do better.",
+    "One more chance. Management is counting. Slowly, but counting."
+  ],
+  "giver.courier_office.intro": [
+    "Here is the deal.",
+    "Listen closely, I will say this once and then again.",
+    "Quick one for you."
+  ],
+  "giver.courier_office.reason": [
+    "The customer is waiting. The customer is always waiting.",
+    "It is urgent. Everything is urgent. This one more so.",
+    "Do not ask what is inside. It is mostly mud."
+  ],
+  "giver.courier_office.signoff": [
+    "Do not drop it.",
+    "Mind the fizz.",
+    "Off you go. Walk briskly, not heroically."
+  ],
+
+  "giver.small_family.name": "The Gribbles",
+  "giver.small_family.greet.first": [
+    "Sit. You have a face we might remember.",
+    "Come in, come in. Mind the dog. It is not a dog.",
+    "So you are the new one. Aunt Mabel has opinions."
+  ],
+  "giver.small_family.greet.regular": [
+    "Family. Almost.",
+    "Ah, our favourite stranger.",
+    "Again you. Good. The soup is still warm."
+  ],
+  "giver.small_family.greet.failure": [
+    "Disappointing. Uncle Bort cried a little.",
+    "We spoke about you at dinner. Not kindly.",
+    "Careful, now. We have long memories and short tempers."
+  ],
+  "giver.small_family.intro": [
+    "A small favour, between friends.",
+    "A little thing. Nothing much.",
+    "It is only a tiny task. Tiny."
+  ],
+  "giver.small_family.reason": [
+    "Family business.",
+    "It is a gift. For someone who will not be thanking us.",
+    "Do not ask. Aunt Mabel says asking is rude."
+  ],
+  "giver.small_family.signoff": [
+    "Be quick. Be quiet.",
+    "Be well. Be discreet.",
+    "Go. The soup is getting cold."
+  ],
+
+  "briefing.title": ["{title} for {giver}", "{giver} needs: {title}", "{title} ({giver})"],
+  "briefing.shape.few": [
+    "Take {amount} crates of {commodity} from {from} to {to}.",
+    "{amount} crates of {commodity}, {from} to {to}. Not far, not hard.",
+    "Carry {amount} {commodity} from {from} over to {to}."
+  ],
+  "briefing.shape.many": [
+    "A big one: {amount} crates of {commodity}, {from} to {to}.",
+    "{amount} crates of {commodity} from {from} to {to}. Bring a strong back.",
+    "Heavy lifting: {amount} crates, {commodity}, {from} to {to}."
+  ],
+  "briefing.shape.timed": [
+    "{amount} crates of {commodity}, {from} to {to}, and the clock is running.",
+    "{from} to {to} with {amount} crates of {commodity}. Hurry. The mud is not getting younger.",
+    "Quick: {amount} crates of {commodity} from {from} to {to} before the timer wins."
+  ],
+  "briefing.reason.commodity.fizzy_mud": [
+    "The mud must stay fizzy, so go easy on the corners.",
+    "Fizzy mud goes flat when you rush it. Do not rush it.",
+    "Customers love their mud lively."
+  ],
+  "briefing.reason.route.dusty": [
+    "The dust out there makes everyone grumpy, so be early.",
+    "Bent Spoon is dusty and impatient.",
+    "Dust makes people thirsty and cranky. Deliver before they notice."
+  ],
+  "briefing.reason.route.wet": [
+    "Drip Rock is damp and the staff are unhappy about it.",
+    "It rains indoors over there. Hurry.",
+    "Wet customers are angry customers."
+  ],
+
+  "notice.reward.standing": ["{giver}: standing +{n}", "{giver} likes you a bit more (+{n})", "{giver} respects you now (+{n})"],
+  "notice.reward.standing_lost": ["{giver}: standing -{n}", "{giver} is less impressed (-{n})", "{giver} has notes about this (-{n})"],
+
+  "notice.job.accepted": [
+    "Job taken: {title}.",
+    "You said yes to {title}. No refunds.",
+    "{title} is yours now. Try not to lose it."
+  ],
+  "notice.job.picked_up": [
+    "Picked up. {delivered} of {asked} delivered.",
+    "Crate grabbed. {delivered}/{asked} delivered so far.",
+    "Got it. Mind the fizz."
+  ],
+  "notice.job.delivered": [
+    "Delivered {delivered} of {asked}.",
+    "Crate down. {delivered}/{asked}.",
+    "{delivered} of {asked} in place. Gently, please."
+  ],
+  "notice.job.completed": [
+    "JOB DONE: {title}   +{money}",
+    "{title} delivered   +{money}",
+    "ALL DELIVERED   +{money}"
+  ],
+  "notice.job.expired": [
+    "Too slow: {title} ran out of time.",
+    "{title} expired. The mud waits for nobody.",
+    "Time's up: {title} timed out.",
+    "Deadline missed on {title}. The clock has opinions."
+  ],
+  "notice.job.failed": [
+    "{title} paid nothing. Bold strategy.",
+    "Nothing arrived for {title}. The customer sighs.",
+    "{title} is a loss. A total, complete loss.",
+    "Failed: {title}. The customer had other ideas."
+  ],
+  "notice.job.abandon_ask": [
+    "Drop {title}? Press again.",
+    "Really walk away from {title}? Press again.",
+    "{title} will be sad. Press again to drop it."
+  ],
+  "notice.job.abandoned": [
+    "You dropped {title}.",
+    "{title} abandoned. The crates are now decoration.",
+    "{title} is no more. Neither are the crates.",
+    "Backing out of {title}. The crates have noticed."
+  ],
+  "notice.job.crate_lost": [
+    "A crate is gone.",
+    "One crate fewer. It was not insured.",
+    "Crate lost. It had a good life."
+  ],
+  "notice.reward.base": ["Base pay   {n}", "Pay   {n}", "Reward   {n}"],
+  "notice.reward.share": ["Delivered {delivered} of {asked}   {n}", "Share delivered ({delivered}/{asked})   {n}", "Partial pay ({delivered}/{asked})   {n}"],
+  "notice.reward.condition": ["Condition   {n}", "Crate condition   {n}", "Quality bonus   {n}"],
+  "notice.reward.hazard": ["Hazard bonus   {n}", "Danger money   {n}", "Risk pay   {n}"],
+  "notice.reward.xp": ["{n} {track}", "{track}: {n}", "{track} +{n}"],
+  "notice.unlock": ["Unlocked: {name}", "New thing: {name}", "You own {name} now."],
+  "notice.rank": ["{track}: level {level}!", "Level up! {track} is now level {level}.", "{track} reached level {level}."],
+  "notice.refused.too_many": ["Two jobs at a time is plenty.", "Your hands are full of jobs.", "Finish a job before you hoard another."],
+  "notice.refused.not_available": ["Not yet. Come back when you are someone.", "They do not know you well enough.", "You are not ready. Yet."]
 }

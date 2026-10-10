@@ -1,0 +1,1 @@
+{ "_comment": "Crew standing with the wholesaler (TODO(initiator)).", "id": "standing_wholesaler", "name": "track.standing_wholesaler.name", "owner": "crew", "min": 0, "thresholds": [30, 100, 250] }

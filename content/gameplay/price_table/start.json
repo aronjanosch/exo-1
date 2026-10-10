@@ -1,0 +1,7 @@
+{
+  "_comment": "One table for the legal prices (#168): what the wholesaler asks per crate, what customers pay per crate (before the relationship's bonus of 4 % per point), and what the courier jobs pay. G and H balance against it: illegal goods must not always out-pay these. All numbers are starting values (TODO(initiator)). The customer prices equal the commodities' base prices and the courier rewards equal the templates' (a test checks both).",
+  "id": "start",
+  "wholesale": { "fizzy_mud": 20, "sock_dust": 15, "grumble_jelly": 25 },
+  "customer": { "fizzy_mud": 40, "sock_dust": 30, "grumble_jelly": 50 },
+  "courier": { "courier_lint_trap": 30, "courier_noodle_post": 45, "courier_pebble_kiosk": 60 }
+}

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::content::{Content, Owner, WALLET};
 use crate::event::{Event, WorldEvent};
+use crate::notice::{Arg, Notice, NoticeKind};
 use crate::id::{ClientId, Flag, LocationId, Tag, TrackId, UnlockId};
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -76,6 +77,37 @@ impl Progress {
     /// Applies one world event. Events that are not about progress are accepted and change
     /// nothing. Deduplication is the caller's (`Dedup`), once for all systems.
     pub fn apply(&mut self, content: &Content, ev: &Event<WorldEvent>) -> Result<(), Refusal> {
+        self.apply_with_notices(content, ev).map(|_| ())
+    }
+
+    /// `apply`, and the notices the event raises (#165): an unlock bought, a track level reached.
+    pub fn apply_with_notices(&mut self, content: &Content, ev: &Event<WorldEvent>) -> Result<Vec<Notice>, Refusal> {
+        let level_before = match &ev.payload {
+            WorldEvent::TrackChanged { track, player, .. } => Some(self.level(content, track, *player)),
+            _ => None,
+        };
+        self.apply_event(content, ev)?;
+        let mut out = Vec::new();
+        match &ev.payload {
+            WorldEvent::UnlockBought { unlock } => {
+                if let Some(u) = content.unlocks.get(unlock) {
+                    out.push(Notice::new(NoticeKind::Unlock, "notice.unlock").arg("name", Arg::Key(u.record.name.clone())));
+                }
+            }
+            WorldEvent::TrackChanged { track, player, .. } => {
+                let level = self.level(content, track, *player);
+                if Some(level) > level_before
+                    && let Some(t) = content.tracks.get(track)
+                {
+                    out.push(Notice::new(NoticeKind::Rank, "notice.rank").arg("track", Arg::Key(t.record.name.clone())).arg("level", Arg::Number(level as i64)));
+                }
+            }
+            _ => {}
+        }
+        Ok(out)
+    }
+
+    fn apply_event(&mut self, content: &Content, ev: &Event<WorldEvent>) -> Result<(), Refusal> {
         match &ev.payload {
             WorldEvent::UnlockBought { unlock } => self.buy(content, unlock, ev.sender()),
             WorldEvent::TrackChanged { track, delta, player } => self.change(content, track, *delta, *player),
@@ -90,7 +122,7 @@ impl Progress {
                 }
                 Ok(())
             }
-            WorldEvent::CratePickedUp { .. } | WorldEvent::CrateDelivered { .. } | WorldEvent::CrateLost { .. } | WorldEvent::TimePassed { .. } => Ok(()),
+            WorldEvent::CratePickedUp { .. } | WorldEvent::CrateDelivered { .. } | WorldEvent::CrateLost { .. } | WorldEvent::TimePassed { .. } | WorldEvent::OrderPlaced { .. } | WorldEvent::OrderSettled { .. } | WorldEvent::TookOff | WorldEvent::PadReached { .. } | WorldEvent::Landed { .. } => Ok(()),
         }
     }
 
@@ -121,6 +153,9 @@ impl Progress {
             Owner::Player => self.players.entry(player.ok_or(Refusal::NoPlayer)?).or_default().entry(track.clone()).or_insert(t.start),
         };
         *v += delta;
+        if let Some(min) = t.min {
+            *v = (*v).max(min);
+        }
         Ok(())
     }
 }

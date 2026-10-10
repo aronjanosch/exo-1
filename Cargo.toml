@@ -2,6 +2,7 @@
 resolver = "3"
 members = ["crates/*"]
 
+
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
@@ -24,10 +25,15 @@ grab_core = { path = "crates/grab_core" }
 content_core = { path = "crates/content_core" }
 gameplay_core = { path = "crates/gameplay_core" }
 jobs_core = { path = "crates/jobs_core" }
+customers_core = { path = "crates/customers_core" }
+production_core = { path = "crates/production_core" }
 
 # Bevy recommendation: little optimisation for our code, full for dependencies.
 [profile.dev]
 opt-level = 1
+# Keep source locations in backtraces without full type and variable debug data.
+# Tests inherit this profile, including our own crates.
+debug = "line-tables-only"
 
 [profile.dev.package."*"]
 opt-level = 3
@@ -39,6 +45,7 @@ debug = "line-tables-only"
 opt-level = 3
 lto = "thin"
 codegen-units = 1
+strip = "symbols"
 
 # Optimised builds without LTO, for measurements and quick release-like runs.
 [profile.fast]

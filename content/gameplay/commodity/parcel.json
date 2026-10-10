@@ -1,0 +1,8 @@
+{
+  "_comment": "Invented good for courier jobs on foot (#170): a wobbly parcel. Price is a starting value (TODO(initiator)); keep courier and wholesaler prices comparable so G and H can balance against them.",
+  "id": "parcel",
+  "name": "commodity.parcel.name",
+  "base_price": 20,
+  "crate_size": "small",
+  "tags": ["parcel"]
+}

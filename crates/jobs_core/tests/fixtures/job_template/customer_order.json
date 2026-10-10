@@ -1,0 +1,13 @@
+{
+  "_comment": "Test fixture: the template customer orders become offers of. Places, commodity, amount, reward and deadline come from the order.",
+  "id": "customer_order",
+  "title": "job.customer_order.title",
+  "brief": "job.customer_order.brief",
+  "objectives": [
+    { "deliver": { "from": { "tagged": "wholesale" }, "to": { "tagged": "start" }, "commodity": { "one_of": ["fizzy_mud"] }, "amount": [1, 1] } }
+  ],
+  "reward": 1,
+  "grading": { "bands": [ { "share": 0.5, "pays": 0.5 }, { "share": 1.0, "pays": 1.0 } ], "condition_weight": 0.5 },
+  "track": "freight_xp",
+  "xp": 10
+}

@@ -59,7 +59,7 @@ pub struct SunLight;
 pub struct NightLight;
 
 /// Where the player is (world): the ship when seated or in its cabin, the walker otherwise.
-fn viewer(players: &Query<&Player>, ships: &Query<&Position, With<Ship>>) -> Option<DVec3> {
+pub(crate) fn viewer(players: &Query<&Player>, ships: &Query<&Position, With<Ship>>) -> Option<DVec3> {
     let p = players.single().ok()?;
     if p.seated || p.ship.is_some() { ships.single().ok().map(|s| s.0) } else { Some(p.w.pos) }
 }

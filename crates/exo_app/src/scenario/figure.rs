@@ -2,7 +2,7 @@
 use super::*;
 
 pub(super) fn figure_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
-    use crate::menu::{Back, Menu, Screen};
+    use crate::menu::{Back, Menu, Screen, SettingsTab};
     let menu_shot = |screen: Screen, tag: &'static str, shot_step: &dyn Fn(&'static str) -> Step| -> Vec<Step> {
         vec![
             Box::new(move |w: &mut World, _: &mut Ctx| {
@@ -16,9 +16,17 @@ pub(super) fn figure_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
             wait(0.3),
         ]
     };
-    for (screen, tag) in [(Screen::Main, "menu-main"), (Screen::Join, "menu-join"), (Screen::Settings(Back::Main), "menu-settings"), (Screen::Paused, "menu-paused")] {
+    for (screen, tag) in [(Screen::Main, "menu-main"), (Screen::Join, "menu-join")] {
         s.extend(menu_shot(screen, tag, shot_step));
     }
+    for (tab, tag) in [(SettingsTab::Sound, "settings-sound"), (SettingsTab::Display, "settings-display"), (SettingsTab::Controls, "settings-controls"), (SettingsTab::Keybinds, "settings-keybinds")] {
+        s.push(Box::new(move |w, _| {
+            if let Some(mut m) = w.get_resource_mut::<Menu>() { m.settings_tab = tab; }
+            true
+        }));
+        s.extend(menu_shot(Screen::Settings(Back::Main), tag, shot_step));
+    }
+    s.extend(menu_shot(Screen::Paused, "menu-paused", shot_step));
     s.extend(menu_shot(Screen::None, "menu-closed", shot_step));
     // Another player's figure 4 m in front, facing the walker (test hook: a remote walker without
     // a network).

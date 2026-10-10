@@ -37,9 +37,30 @@ pub enum Sound {
     Roar,
     /// 0.4 s: a falling low punch with a noise crack, the boost starts (#150).
     BoostStart,
+    /// 0.1 s: a soft two-note blip, something small happened (#165).
+    Ping,
+    /// 0.25 s: two rising notes, a job taken.
+    Accept,
+    /// 0.35 s: a bright double ping like a coin, one payout line.
+    Coin,
+    /// 0.9 s: a major arpeggio, a job done, a rank, an unlock.
+    Fanfare,
+    /// 0.25 s: a low two-tone buzz, a warning or a failure.
+    Buzz,
 }
 
 impl Sound {
+    /// The sound of a notice kind's sound id (`gameplay_core::notice::NoticeKind::sound`).
+    pub fn of_notice(id: &str) -> Sound {
+        match id {
+            "accept" => Sound::Accept,
+            "coin" => Sound::Coin,
+            "fanfare" => Sound::Fanfare,
+            "buzz" => Sound::Buzz,
+            _ => Sound::Ping,
+        }
+    }
+
     /// Length in seconds; loops have none.
     pub fn length(self) -> Option<f32> {
         match self {
@@ -50,6 +71,11 @@ impl Sound {
             Sound::Throw => Some(0.35),
             Sound::Lock => Some(0.2),
             Sound::BoostStart => Some(0.4),
+            Sound::Ping => Some(0.1),
+            Sound::Accept => Some(0.25),
+            Sound::Coin => Some(0.35),
+            Sound::Fanfare => Some(0.9),
+            Sound::Buzz => Some(0.25),
         }
     }
 }
@@ -146,6 +172,40 @@ impl Iterator for Synth {
                 let env = (t / 0.004).min(1.0) * (-t * 9.0).exp();
                 env * (0.8 * phase.sin() + 0.35 * self.white() * (-t * 35.0).exp())
             }
+            Sound::Ping => {
+                let (a, b) = (tau * 880.0 * t, tau * 1320.0 * t);
+                (-t * 30.0).exp() * (0.5 * a.sin() + 0.3 * b.sin())
+            }
+            Sound::Accept => {
+                // Two notes, 392 Hz then 523 Hz from 0.1 s.
+                let n1 = (-t * 14.0).exp() * (tau * 392.0 * t).sin();
+                let t2 = t - 0.1;
+                let n2 = if t2 > 0.0 { (-t2 * 12.0).exp() * (tau * 523.0 * t2).sin() } else { 0.0 };
+                0.5 * (n1 + n2)
+            }
+            Sound::Coin => {
+                let ping = |t: f32, f: f32| if t > 0.0 { (-t * 16.0).exp() * ((tau * f * t).sin() + 0.4 * (tau * 2.0 * f * t).sin()) } else { 0.0 };
+                0.35 * (ping(t, 1318.0) + ping(t - 0.07, 1760.0))
+            }
+            Sound::Fanfare => {
+                // C, E, G, then C an octave up, a note each 0.15 s, the last one rings.
+                let notes = [(0.0, 523.0), (0.15, 659.0), (0.3, 784.0), (0.45, 1047.0)];
+                let mut x = 0.0;
+                for (start, f) in notes {
+                    let tt = t - start;
+                    if tt > 0.0 {
+                        let decay = if start < 0.45 { 9.0 } else { 3.5 };
+                        x += (-tt * decay).exp() * ((tau * f * tt).sin() + 0.25 * (tau * 2.0 * f * tt).sin());
+                    }
+                }
+                0.3 * x
+            }
+            Sound::Buzz => {
+                let f = if t < 0.15 { 180.0 } else { 140.0 };
+                let env = (t / 0.01).min(1.0) * (1.0 - t / 0.25);
+                // A square-ish wave: low and rude.
+                env * 0.4 * (tau * f * t).sin().signum()
+            }
         };
         Some(s.clamp(-1.0, 1.0))
     }
@@ -184,6 +244,8 @@ struct Sounds {
     throw: Handle<SynthAudio>,
     lock: Handle<SynthAudio>,
     boost_start: Handle<SynthAudio>,
+    /// Notice sounds by `Sound` (#165).
+    notice: Vec<(Sound, Handle<SynthAudio>)>,
 }
 
 /// What a loop plays: the thruster layers (#150) or the wind.
@@ -216,6 +278,8 @@ struct Heard {
     boost_starts: u32,
     /// The crate held last frame: a new one is a grab.
     held: Option<Entity>,
+    /// How many of `Gameplay::shown` have been played (#165).
+    notices: usize,
 }
 
 fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
@@ -231,12 +295,13 @@ fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
         throw: assets.add(SynthAudio(Sound::Throw)),
         lock: assets.add(SynthAudio(Sound::Lock)),
         boost_start: assets.add(SynthAudio(Sound::BoostStart)),
+        notice: [Sound::Ping, Sound::Accept, Sound::Coin, Sound::Fanfare, Sound::Buzz].into_iter().map(|s| (s, assets.add(SynthAudio(s)))).collect(),
     });
 }
 
 /// Fixed step, right after the actions are resolved: UI toggles click.
 pub fn count_clicks(actions: Res<Actions>, mut clicks: ResMut<Clicks>) {
-    let ui = [Tap::HoverAssist, Tap::HorizonFollow, Tap::Decoupled, Tap::DebugHud, Tap::WarpTarget, Tap::OrbitCamera, Tap::Lag, Tap::BoostMode, Tap::LandingMode, Tap::TurnCap, Tap::ThrustLaw, Tap::CameraFx];
+    let ui = [Tap::Help, Tap::DevMenu, Tap::HoverAssist, Tap::HorizonFollow, Tap::Decoupled, Tap::DebugHud, Tap::WarpTarget, Tap::OrbitCamera, Tap::Lag, Tap::BoostMode, Tap::LandingMode, Tap::TurnCap, Tap::FlightModel, Tap::CameraFx, Tap::MasterMode, Tap::Comstab, Tap::ProximityAssist, Tap::WindComp, Tap::LimiterUp, Tap::LimiterDown];
     clicks.0 += actions.taps().iter().filter(|t| ui.contains(t)).count() as u32;
 }
 
@@ -257,7 +322,16 @@ fn update(
     cargo: Res<crate::cargo::CargoStats>,
     mut wind: Local<f32>,
     settings: Res<crate::settings::Settings>,
+    gp: Res<crate::gameplay::Gameplay>,
 ) {
+    // A sound per notice released (#165). TODO(initiator): volumes are start values.
+    for l in gp.shown.get(heard.notices..).unwrap_or_default() {
+        let s = Sound::of_notice(l.kind.sound());
+        if let Some((_, h)) = sounds.notice.iter().find(|(x, _)| *x == s) {
+            commands.spawn((AudioPlayer(h.clone()), PlaybackSettings { mode: PlaybackMode::Despawn, volume: Volume::Linear(0.5), ..default() }));
+        }
+    }
+    heard.notices = gp.shown.len();
     let (Ok(pl), Ok((_, pos, lv))) = (players.single(), ships.single()) else { return };
     let near_ship = pl.seated || pl.ship.is_some();
     let layers = thrusters.0.levels();
@@ -335,12 +409,21 @@ mod tests {
 
     #[test]
     fn one_shots_end_and_every_sample_is_in_range() {
-        for s in [Sound::Thud, Sound::Click, Sound::Grab, Sound::Throw, Sound::Lock, Sound::BoostStart] {
+        for s in [Sound::Thud, Sound::Click, Sound::Grab, Sound::Throw, Sound::Lock, Sound::BoostStart, Sound::Ping, Sound::Accept, Sound::Coin, Sound::Fanfare, Sound::Buzz] {
             let samples: Vec<f32> = Synth::new(s).collect();
             assert_eq!(samples.len(), (s.length().unwrap() * RATE as f32).ceil() as usize, "{s:?}");
             assert!(samples.iter().all(|x| x.is_finite() && x.abs() <= 1.0));
             assert!(samples.iter().any(|x| x.abs() > 0.1), "{s:?} is audible");
         }
+    }
+
+    #[test]
+    fn every_notice_kind_has_a_synthesized_sound() {
+        for k in gameplay_core::notice::NoticeKind::ALL {
+            let s = Sound::of_notice(k.sound());
+            assert!(s.length().is_some(), "{k:?}");
+        }
+        assert_ne!(Sound::of_notice("fanfare"), Sound::of_notice("buzz"));
     }
 
     #[test]

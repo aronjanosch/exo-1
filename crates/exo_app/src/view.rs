@@ -6,7 +6,7 @@ use crate::ship::{Ship, ShipPart};
 use crate::terrain::Terrain;
 use crate::walker::{Player, WalkStats, EYE_HEIGHT};
 use crate::controls::{Actions, Tap};
-use crate::hud::speed_text;
+use crate::hud::{speed_text, BADGE_SLOTS};
 use bevy::camera::PerspectiveProjection;
 use bevy::light::GlobalAmbientLight;
 use bevy::math::{DQuat, DVec3};
@@ -28,7 +28,7 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Update, update_camera.in_set(Frame::Camera));
     // After the camera (Frame::Camera): the tunnel and the camera both write `ClearColor`, the tunnel wins.
     app.add_systems(Update, (update_impostors, update_nav_markers, update_aim_marker, update_tunnel, update_speed_dust).in_set(Frame::World));
-    app.add_systems(Update, (update_hud, update_flight_hud, update_prompt, update_name_tags).in_set(Frame::Hud));
+    app.add_systems(Update, (update_hud, update_flight_hud, update_flight_panel, update_flight_visuals, update_prompt, update_name_tags).in_set(Frame::Hud));
 }
 
 #[derive(Component)]
@@ -82,6 +82,8 @@ pub struct PlayerInterp {
 
 #[derive(Resource, Default)]
 pub struct ViewState {
+    /// Live mouse turn in world space this render frame, excluded from horizon transitions.
+    pub(crate) mouse_rotation: DQuat,
     pub orbit: bool,
     /// A fixed camera pose (world), set by the planet-look scenario; wins over every other mode.
     pub look: Option<(DVec3, DQuat)>,
@@ -133,9 +135,13 @@ pub fn setup_view(mut commands: Commands) {
     commands
         .spawn(Node { position_type: PositionType::Absolute, top: px(8), left: px(8), column_gap: px(28), align_items: AlignItems::Center, ..default() })
         .with_children(|c| {
-            for i in 0..4 {
-                c.spawn((HudItem(i), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
-            }
+            // Mode, speed with its cap and G (#197), altitude, boost.
+            c.spawn((HudItem(0), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
+            c.spawn((HudItem(1), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
+            c.spawn((HudItem(CAP_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
+            c.spawn((HudItem(G_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
+            c.spawn((HudItem(2), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
+            c.spawn((HudItem(3), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
             c.spawn((
                 BoostBar,
                 Node { width: px(BOOST_BAR_PX), height: px(8), border: UiRect::all(px(1)), ..default() },
@@ -150,6 +156,36 @@ pub fn setup_view(mut commands: Commands) {
             // Then LANDING in landing mode (K).
             c.spawn((HudItem(LANDING_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
         });
+    // The flight panel (#197): one slot per badge, with the coupling blend's bar in the COUPLED slot.
+    // TODO(initiator): the position, size and colours are placeholders.
+    commands
+        .spawn(Node { position_type: PositionType::Absolute, top: px(36), left: px(8), column_gap: px(6), ..default() })
+        .with_children(|c| {
+            for i in 0..BADGE_SLOTS {
+                c.spawn((
+                    BadgeSlot(i),
+                    Node { flex_direction: FlexDirection::Column, padding: UiRect::axes(px(8), px(3)), border: UiRect::all(px(1)), row_gap: px(2), border_radius: BorderRadius::all(px(3)), ..default() },
+                    BorderColor::all(BADGE_BORDER),
+                    Visibility::Hidden,
+                ))
+                .with_children(|s| {
+                    s.spawn((BadgeText(i), Text::new(""), TextFont { font_size: FontSize::Px(13.0), ..default() }, TextColor(BADGE_OFF)));
+                    s.spawn((BlendBar(i), Node { width: px(56), height: px(3), ..default() }, BackgroundColor(BADGE_BORDER), Visibility::Hidden))
+                        .with_children(|b| {
+                            b.spawn((BlendFill(i), Node { width: percent(0), height: percent(100), ..default() }, BackgroundColor(BLEND)));
+                        });
+                });
+            }
+        });
+    // The toast (#197): the last change, large, in the upper centre for `TOAST_TIME` s.
+    commands.spawn((
+        ToastLine,
+        Text::new(""),
+        TextFont { font_size: FontSize::Px(44.0), ..default() },
+        TextColor(TOAST),
+        Node { position_type: PositionType::Absolute, top: percent(30), width: percent(100), justify_content: JustifyContent::Center, ..default() },
+        TextLayout::justify(Justify::Center),
+    ));
     // The one prompt (#82): what the interact key does now, below the screen centre.
     commands.spawn((
         PromptLine,
@@ -165,13 +201,13 @@ pub fn setup_view(mut commands: Commands) {
         Text::new(""),
         TextFont { font_size: FontSize::Px(16.0), ..default() },
         TextColor(Color::srgb(0.55, 0.95, 1.0)),
-        Node { position_type: PositionType::Absolute, top: px(38), left: px(8), ..default() },
+        Node { position_type: PositionType::Absolute, top: px(68), left: px(8), ..default() },
     ));
     commands.spawn((
         Hud,
         Text::new(""),
         TextFont { font_size: FontSize::Px(14.0), ..default() },
-        Node { position_type: PositionType::Absolute, top: px(64), left: px(8), ..default() },
+        Node { position_type: PositionType::Absolute, top: px(92), left: px(8), ..default() },
         Visibility::Hidden,
     ));
     // Virtual joystick: dead-zone circle, a line of dots from the centre, the marker.
@@ -184,6 +220,90 @@ pub fn setup_view(mut commands: Commands) {
                 c.spawn((StickDot(i), Node { position_type: PositionType::Absolute, width: px(3), height: px(3), border_radius: BorderRadius::MAX, ..default() }, BackgroundColor(mark)));
             }
             c.spawn((StickMarker, Node { position_type: PositionType::Absolute, width: px(12), height: px(12), border: UiRect::all(px(2)), border_radius: BorderRadius::MAX, ..default() }, BorderColor::all(mark)));
+        });
+    spawn_flight_hud(&mut commands);
+}
+
+/// The flight HUD's sizes and colours (#200). TODO(initiator): every value is a placeholder.
+const FL_TAPE_PX: f32 = 200.0;
+const FL_TAPE_W: f32 = 10.0;
+/// From the screen centre to the speed tape's and the G bar's edge (px).
+const FL_SIDE_GAP: f32 = 90.0;
+const FL_THRUST_PX: f32 = 40.0;
+const FL_THRUST_GAP: f32 = 12.0;
+const FL_THRUST_THICK: f32 = 2.0;
+const FL_HORIZON_PX: f32 = 240.0;
+/// Screen px per degree of pitch, for the horizon's offset from the nose.
+const FL_HORIZON_PX_PER_DEG: f64 = 6.0;
+const FL_VELOCITY_PX: f32 = 14.0;
+const FL_LINE: Color = Color::srgba(0.9, 0.95, 1.0, 0.7);
+const FL_FILL: Color = Color::srgb(0.55, 0.95, 1.0);
+const FL_OVER: Color = Color::srgb(1.0, 0.3, 0.3);
+const FL_MARK: Color = Color::srgb(1.0, 0.85, 0.35);
+
+/// The flight HUD (#200): one full-screen layer, shown while the readout has a flight part.
+#[derive(Component)]
+pub struct FlightLayer;
+
+/// The flight HUD's parts (`HudReadout::flight`); the thrust bars carry their index (right, left,
+/// up, down, forward, back).
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub enum FlightPart {
+    /// The flight path marker, a circle with three ticks.
+    Velocity,
+    TapeFill,
+    TapeCruise,
+    TapeLimiter,
+    TapeNumber,
+    Thrust(u8),
+    Horizon,
+    GFill,
+    GMark,
+}
+
+/// Spawns the flight HUD's layer and its parts (#200), hidden until the readout has a flight part.
+fn spawn_flight_hud(commands: &mut Commands) {
+    let line = |w: f32, h: f32| Node { position_type: PositionType::Absolute, width: px(w), height: px(h), ..default() };
+    commands
+        .spawn((FlightLayer, Node { position_type: PositionType::Absolute, left: px(0), top: px(0), width: percent(100), height: percent(100), ..default() }, Visibility::Hidden))
+        .with_children(|c| {
+            c.spawn((FlightPart::Velocity, Node { position_type: PositionType::Absolute, width: px(FL_VELOCITY_PX), height: px(FL_VELOCITY_PX), border: UiRect::all(px(1)), border_radius: BorderRadius::MAX, display: Display::None, ..default() }, BorderColor::all(FL_LINE)))
+                .with_children(|v| {
+                    v.spawn((Node { left: px(-8), top: px(6), ..line(6.0, 1.0) }, BackgroundColor(FL_LINE)));
+                    v.spawn((Node { left: px(FL_VELOCITY_PX + 2.0), top: px(6), ..line(6.0, 1.0) }, BackgroundColor(FL_LINE)));
+                    v.spawn((Node { left: px(6), top: px(-8), ..line(1.0, 6.0) }, BackgroundColor(FL_LINE)));
+                });
+            // The speed tape, left of the centre: the frame, the fill from the bottom, the marks.
+            let frame = |left: f32| Node {
+                position_type: PositionType::Absolute,
+                left: percent(50),
+                top: percent(50),
+                width: px(FL_TAPE_W),
+                height: px(FL_TAPE_PX),
+                border: UiRect::all(px(1)),
+                margin: UiRect { left: px(left), top: px(-FL_TAPE_PX / 2.0), ..default() },
+                ..default()
+            };
+            c.spawn((frame(-FL_SIDE_GAP - FL_TAPE_W), BorderColor::all(FL_LINE)))
+                .with_children(|t| {
+                    t.spawn((FlightPart::TapeFill, Node { position_type: PositionType::Absolute, left: px(0), bottom: px(0), width: percent(100), height: percent(0), ..default() }, BackgroundColor(FL_FILL)));
+                    // The boost cap is the top edge.
+                    t.spawn((Node { position_type: PositionType::Absolute, left: px(-6), top: px(-1), ..line(FL_TAPE_W + 12.0, 1.0) }, BackgroundColor(FL_LINE)));
+                    t.spawn((FlightPart::TapeCruise, Node { position_type: PositionType::Absolute, left: px(-6), bottom: percent(0), ..line(FL_TAPE_W + 12.0, 1.0) }, BackgroundColor(FL_LINE)));
+                    t.spawn((FlightPart::TapeLimiter, Node { position_type: PositionType::Absolute, left: px(-6), bottom: percent(0), display: Display::None, ..line(FL_TAPE_W + 12.0, 1.0) }, BackgroundColor(FL_MARK)));
+                    t.spawn((FlightPart::TapeNumber, Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(FL_LINE), Node { position_type: PositionType::Absolute, left: px(-46), bottom: percent(0), ..default() }));
+                });
+            // The G bar, right of the centre: red above the G-safe mark.
+            c.spawn((frame(FL_SIDE_GAP), BorderColor::all(FL_LINE)))
+                .with_children(|g| {
+                    g.spawn((FlightPart::GFill, Node { position_type: PositionType::Absolute, left: px(0), bottom: px(0), width: percent(100), height: percent(0), ..default() }, BackgroundColor(FL_FILL)));
+                    g.spawn((FlightPart::GMark, Node { position_type: PositionType::Absolute, left: px(-6), bottom: percent(0), ..line(FL_TAPE_W + 12.0, 1.0) }, BackgroundColor(FL_MARK)));
+                });
+            // The thrust cross around the nose point: positions are set per frame.
+            for i in 0..6u8 {
+                c.spawn((FlightPart::Thrust(i), Node { position_type: PositionType::Absolute, ..default() }, BackgroundColor(FL_FILL)));
+            }
+            c.spawn((FlightPart::Horizon, Node { position_type: PositionType::Absolute, display: Display::None, ..line(FL_HORIZON_PX, 1.0) }, BackgroundColor(FL_LINE), UiTransform::default()));
         });
 }
 
@@ -199,6 +319,28 @@ const BOOST_BAR_PX: f32 = 120.0;
 const BOOST_MODE_ITEM: u8 = 4;
 /// The `HudItem` that shows the landing mode (`HudReadout::landing`).
 const LANDING_ITEM: u8 = 5;
+/// The `HudItem`s after the speed: the cap (`HudReadout::cap_text`) and the felt G (`g_text`).
+const CAP_ITEM: u8 = 6;
+const G_ITEM: u8 = 7;
+
+/// One badge slot of the flight panel (#197); `BadgeText` and `BlendBar` carry its index.
+#[derive(Component)]
+pub struct BadgeSlot(pub usize);
+#[derive(Component)]
+pub struct BadgeText(pub usize);
+/// The coupling blend's bar (shown in the COUPLED slot while blending) and its fill.
+#[derive(Component)]
+pub struct BlendBar(pub usize);
+#[derive(Component)]
+pub struct BlendFill(pub usize);
+/// The toast line (#197).
+#[derive(Component)]
+pub struct ToastLine;
+const BADGE_ON: Color = Color::srgb(0.55, 0.95, 1.0);
+const BADGE_OFF: Color = Color::srgba(0.55, 0.6, 0.7, 0.6);
+const BADGE_BORDER: Color = Color::srgba(0.9, 0.95, 1.0, 0.35);
+const BLEND: Color = Color::srgb(1.0, 0.85, 0.35);
+const TOAST: Color = Color::srgb(1.0, 0.92, 0.55);
 const BOOST_READY: Color = Color::srgb(0.55, 0.95, 1.0);
 const BOOST_ACTIVE: Color = Color::srgb(1.0, 0.85, 0.35);
 const BOOST_LOW: Color = Color::srgba(0.55, 0.6, 0.7, 0.6);
@@ -264,6 +406,8 @@ pub fn update_flight_hud(
         let want = match item.0 {
             BOOST_MODE_ITEM => readout.boost_mode,
             LANDING_ITEM => readout.landing,
+            CAP_ITEM => readout.cap_text.as_str(),
+            G_ITEM => readout.g_text.as_str(),
             i => readout.texts[i as usize].as_str(),
         };
         if **t != *want {
@@ -322,6 +466,153 @@ pub fn update_flight_hud(
         if dead.is_some() {
             n.width = px(size);
             n.height = px(size);
+        }
+    }
+}
+
+/// The flight panel and the toast from `HudReadout` (#197). Only touches what changed.
+pub fn update_flight_panel(
+    readout: Res<crate::hud::HudReadout>,
+    mut slots: Query<(&BadgeSlot, &mut Visibility), (Without<BlendBar>, Without<ToastLine>)>,
+    mut texts: Query<(&BadgeText, &mut Text, &mut TextColor), Without<ToastLine>>,
+    mut bars: Query<(&BlendBar, &mut Visibility), (Without<BadgeSlot>, Without<ToastLine>)>,
+    mut fills: Query<(&BlendFill, &mut Node)>,
+    mut toast: Query<&mut Text, (With<ToastLine>, Without<BadgeText>)>,
+) {
+    let badges = &readout.badges;
+    for (slot, mut vis) in &mut slots {
+        vis.set_if_neq(if slot.0 < badges.len() { Visibility::Inherited } else { Visibility::Hidden });
+    }
+    for (t, mut text, mut color) in &mut texts {
+        let (label, on) = badges.get(t.0).map_or(("", false), |b| (b.label.as_str(), b.on));
+        if **text != *label {
+            **text = label.to_string();
+        }
+        let want = if on { BADGE_ON } else { BADGE_OFF };
+        if color.0 != want {
+            color.0 = want;
+        }
+    }
+    let coupled_slot = |i: usize| badges.get(i).is_some_and(|b| b.key == "COUPLED");
+    for (bar, mut vis) in &mut bars {
+        vis.set_if_neq(if readout.blend.is_some() && coupled_slot(bar.0) { Visibility::Inherited } else { Visibility::Hidden });
+    }
+    let width = percent(readout.blend.unwrap_or(0.0) as f32 * 100.0);
+    for (_, mut n) in &mut fills {
+        if n.width != width {
+            n.width = width;
+        }
+    }
+    if let Ok(mut t) = toast.single_mut() {
+        let want = readout.toast.as_deref().unwrap_or("");
+        if **t != *want {
+            **t = want.to_string();
+        }
+    }
+}
+
+/// The flight HUD's parts from `HudReadout::flight` (#200): the flight path marker, the speed tape,
+/// the thrust cross, the G bar and the horizon, at the nose point (the chase camera's aim).
+#[allow(clippy::too_many_arguments)]
+pub fn update_flight_visuals(
+    readout: Res<crate::hud::HudReadout>,
+    view: Res<ViewState>,
+    ships: Query<&BodyInterp, With<Ship>>,
+    cam: Query<(&Camera, &WorldPose), With<MainCamera>>,
+    (origin, fixed): (Res<RenderOrigin>, Res<Time<Fixed>>),
+    mut layer: Query<&mut Visibility, With<FlightLayer>>,
+    mut nodes: Query<(&FlightPart, &mut Node)>,
+    mut colours: Query<(&FlightPart, &mut BackgroundColor)>,
+    mut texts: Query<(&FlightPart, &mut Text)>,
+    mut transforms: Query<(&FlightPart, &mut UiTransform)>,
+) {
+    let Ok(mut vis) = layer.single_mut() else { return };
+    let (Some(f), Ok(si), Ok((c, wp))) = (readout.flight.as_ref(), ships.single(), cam.single()) else {
+        vis.set_if_neq(Visibility::Hidden);
+        return;
+    };
+    // The nose point and the render-space camera, as the stick's centre (`update_flight_hud`).
+    let (ip, ir) = si.at(fixed.overstep_fraction_f64());
+    let gt = GlobalTransform::from(Transform::from_translation((wp.pos - origin.origin).as_vec3()).with_rotation(wp.rot.as_quat()));
+    let screen = |p: DVec3| c.world_to_viewport(&gt, (p - origin.origin).as_vec3()).ok();
+    let nose = screen(ip + ir * DVec3::NEG_Z * 5000.0);
+    let Some(nose) = nose.filter(|_| !view.orbit) else {
+        vis.set_if_neq(Visibility::Hidden);
+        return;
+    };
+    vis.set_if_neq(Visibility::Inherited);
+    // The flight path marker: on the ship's velocity, not behind the camera.
+    let cam_fwd = wp.rot * DVec3::NEG_Z;
+    let velocity = f.velocity_dir.and_then(|d| {
+        let p = ip + ir * d * 5000.0;
+        ((p - wp.pos).dot(cam_fwd) > 0.0).then(|| screen(p)).flatten()
+    });
+    let tape = &f.speed_tape;
+    let g = &f.g_bar;
+    for (part, mut n) in &mut nodes {
+        match *part {
+            FlightPart::Velocity => {
+                let at = velocity.unwrap_or(Vec2::ZERO);
+                n.display = if velocity.is_some() { Display::Flex } else { Display::None };
+                n.left = px(at.x - FL_VELOCITY_PX / 2.0);
+                n.top = px(at.y - FL_VELOCITY_PX / 2.0);
+            }
+            FlightPart::TapeFill => n.height = percent(tape.fill as f32 * 100.0),
+            FlightPart::TapeCruise => n.bottom = percent(tape.cruise as f32 * 100.0),
+            FlightPart::TapeLimiter => {
+                n.display = if tape.limiter.is_some() { Display::Flex } else { Display::None };
+                n.bottom = percent(tape.limiter.unwrap_or(0.0) as f32 * 100.0);
+            }
+            FlightPart::TapeNumber => n.bottom = percent(tape.fill as f32 * 100.0),
+            FlightPart::GFill => n.height = percent(g.fill as f32 * 100.0),
+            FlightPart::GMark => n.bottom = percent(g.mark as f32 * 100.0),
+            FlightPart::Thrust(i) => {
+                let len = f.thrust[i as usize] as f32 * FL_THRUST_PX;
+                let (gap, t) = (FL_THRUST_GAP, FL_THRUST_THICK);
+                // Right, left, up, down; forward and back as two bars below the cross.
+                let (l, top, w, h) = match i {
+                    0 => (nose.x + gap, nose.y - t / 2.0, len, t),
+                    1 => (nose.x - gap - len, nose.y - t / 2.0, len, t),
+                    2 => (nose.x - t / 2.0, nose.y - gap - len, t, len),
+                    3 => (nose.x - t / 2.0, nose.y + gap, t, len),
+                    4 => (nose.x - gap - len, nose.y + 3.0 * gap, len, t),
+                    _ => (nose.x + gap, nose.y + 3.0 * gap, len, t),
+                };
+                (n.left, n.top, n.width, n.height) = (px(l), px(top), px(w), px(h));
+            }
+            FlightPart::Horizon => match f.horizon {
+                Some((pitch, roll)) => {
+                    // Nose up moves the horizon down; the offset turns with the roll.
+                    let d = pitch * FL_HORIZON_PX_PER_DEG;
+                    let r = roll.to_radians();
+                    let (x, y) = (nose.x as f64 - r.sin() * d, nose.y as f64 + r.cos() * d);
+                    n.display = Display::Flex;
+                    n.left = px(x as f32 - FL_HORIZON_PX / 2.0);
+                    n.top = px(y as f32 - 0.5);
+                }
+                None => n.display = Display::None,
+            },
+        }
+    }
+    for (part, mut bg) in &mut colours {
+        let want = match *part {
+            FlightPart::GFill if g.over => FL_OVER,
+            FlightPart::GFill | FlightPart::TapeFill | FlightPart::Thrust(_) => FL_FILL,
+            _ => continue,
+        };
+        if bg.0 != want {
+            bg.0 = want;
+        }
+    }
+    for (part, mut t) in &mut texts {
+        if *part == FlightPart::TapeNumber && **t != *tape.number {
+            **t = tape.number.clone();
+        }
+    }
+    for (part, mut tr) in &mut transforms {
+        if *part == FlightPart::Horizon {
+            let roll = f.horizon.map_or(0.0, |(_, r)| r);
+            tr.rotation = Rot2::degrees(roll as f32);
         }
     }
 }
@@ -696,6 +987,13 @@ pub fn record_player_view(
     }
 }
 
+/// Interpolate translation and the carrying ship, never the player's local mouse rotation.
+pub(crate) fn first_person_pose(pl: &Player, pi: &PlayerInterp, f: f64, frame: walker_core::Frame) -> (DVec3, DQuat) {
+    let feet = pi.prev.0.lerp(pi.curr.0, f);
+    let up = if pl.ship.is_some() { frame.rot * pl.cabin_up } else { pl.view_up };
+    (feet + up * EYE_HEIGHT, walker_core::look_rot(pl.world_look(frame), up))
+}
+
 /// O: orbit camera on or off (fixed step, where taps live).
 pub fn orbit_toggle(mut actions: ResMut<Actions>, mut view: ResMut<ViewState>) {
     if actions.take_tap(Tap::OrbitCamera) {
@@ -712,6 +1010,7 @@ pub fn update_camera(
     mut view: ResMut<ViewState>,
     players: Query<(&Player, &PlayerInterp)>,
     ships: Query<&BodyInterp, With<Ship>>,
+    cabins: Query<(&avian3d::prelude::Position, &avian3d::prelude::Rotation, Option<&BodyInterp>), Or<(With<Ship>, With<crate::ship::RemoteShip>)>>,
     mut cam: Query<(&mut WorldPose, &mut DistanceFog, &mut Projection), With<MainCamera>>,
     mut clear: ResMut<ClearColor>,
     mut ambient: ResMut<GlobalAmbientLight>,
@@ -726,9 +1025,6 @@ pub fn update_camera(
     let Ok((mut pose, mut fog, mut proj)) = cam.single_mut() else { return };
     // The shake (#148) applies to the seated view and to the walker in a flying cabin only.
     let mut shaken = false;
-    // The settings' field of view at rest; the speed curve adds its rise to it.
-    let base_fov = settings.fov_deg;
-    let speed_fov = fx.0.fov_deg - tuning.camera.fov_curve.eval(0.0);
     if let Some((p, r)) = view.look {
         (pose.pos, pose.rot) = (p, r);
     } else if view.orbit {
@@ -746,16 +1042,17 @@ pub fn update_camera(
         pose.rot = sr * DQuat::from_rotation_y(fx.look.y) * DQuat::from_rotation_x(ct.chase_pitch_deg.to_radians() + fx.look.x);
         shaken = true;
     } else {
-        let feet = pi.prev.0.lerp(pi.curr.0, f);
-        let up = pi.prev.1.lerp(pi.curr.1, f).normalize();
-        let look = pi.prev.2.lerp(pi.curr.2, f).normalize();
-        let pos = feet + up * EYE_HEIGHT;
-        let rot = walker_core::look_rot(look, up);
+        let frame = pl.ship.and_then(|e| cabins.get(e).ok()).map_or(walker_core::Frame::IDENTITY, |(p, r, interp)| {
+            let (origin, rot) = interp.map_or((p.0, r.0), |i| i.at(f));
+            walker_core::Frame { origin, rot }
+        });
+        let (pos, rot) = first_person_pose(pl, pi, f, frame);
         shaken = pl.ship.is_some();
         // Entering or leaving a cabin or the weightless body frame turns "up": the walker keeps
         // its look direction, the horizon turns over HORIZON_BLEND_SECS from where it was.
         if (pl.ship, pl.body.is_some()) != view.cabin {
-            view.horizon = Some((view.last_rot * rot.inverse(), view.last_pos - pos, 0.0));
+            // Keep the frame/up transition smooth, but include fresh mouse movement immediately.
+            view.horizon = Some((view.mouse_rotation * view.last_rot * rot.inverse(), view.last_pos - pos, 0.0));
         }
         (pose.pos, pose.rot) = match view.horizon {
             Some((offset, eye, age)) if age < HORIZON_BLEND_SECS => {
@@ -769,7 +1066,13 @@ pub fn update_camera(
         };
     }
     if let Projection::Perspective(p) = proj.as_mut() {
-        let fov = if pl.seated && !view.orbit { base_fov + speed_fov } else { base_fov };
+        let fov = if view.orbit || view.look.is_some() {
+            tuning.camera.fov_curve.eval(0.0)
+        } else if pl.seated {
+            fx.0.fov_deg
+        } else {
+            settings.fov_deg
+        };
         p.fov = (fov as f32).to_radians();
     }
     view.cabin = (pl.ship, pl.body.is_some());
@@ -830,8 +1133,11 @@ pub fn update_hud(
         // What the flight model did (felt G, precision share, thrusters at a limit).
         let a = &ship.ctl.axis;
         let cap = if ship.ctl.tuning.g_safety.cap_turns { "on" } else { "off" };
-        let law = if ship.ctl.cap_refuses_thrust && ship.ctl.brake_keeps_heading { "new" } else { "old" };
-        let axis = format!("  {:.1} g  prec {:.2}  turn cap {cap} (F8)  thrust {law} (F7){}{}", a.felt_g, a.precision, if a.saturated { "  sat" } else { "" }, if a.rate_capped { "  g-cap" } else { "" });
+        let model = match ship.model {
+            crate::ship::FlightModel::Axis => "axis",
+            crate::ship::FlightModel::Sc => "SC",
+        };
+        let axis = format!("  {:.1} g  prec {:.2}  turn cap {cap} (F8)  model {model} (F7){}{}", a.felt_g, a.precision, if a.saturated { "  sat" } else { "" }, if a.rate_capped { "  g-cap" } else { "" });
         format!(
             "SHIP  assist {} (H)  follow {} (L)  {}{}  {} m/s  limit {:.0}{axis}{height}",
             if ship.ctl.hover_assist { "on" } else { "off" },

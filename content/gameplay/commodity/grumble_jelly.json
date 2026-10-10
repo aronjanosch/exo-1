@@ -1,0 +1,8 @@
+{
+  "_comment": "Invented good, legal but odd (#168): jelly that complains when it is carried. Price is a starting value (TODO(initiator)).",
+  "id": "grumble_jelly",
+  "name": "commodity.grumble_jelly.name",
+  "base_price": 50,
+  "crate_size": "small",
+  "tags": ["sticky"]
+}

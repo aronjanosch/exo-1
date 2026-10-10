@@ -170,6 +170,9 @@ fn assist_off_falls_and_decoupled_keeps_its_vector() {
     assert_eq!(s.ship.forward_speed_limit, 0.0, "no limit shown with the assist off");
 
     let mut s = Sim::new(500.0, true);
+    // The bare decoupled thrust: A3 (on since round 5) would trim the side push at full forward
+    // speed (23.94 instead of 24 m/s), which `thrust_compare` measures.
+    s.ship.cap_refuses_thrust = false;
     s.run(&scripted(DVec3::NEG_Z), 10.0);
     s.ship.coupled = false;
     s.ship.coupling = 0.0;

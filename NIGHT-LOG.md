@@ -15,7 +15,11 @@ Phase 1, `night/d-foundation`:
 - [x] #166 map (screenshot: `night-shots/map.png` in the worktree, not committed)
 - [ ] #135 save file: not started (run cut off, see "How the run ended")
 
-Phase 2, `night/d-extras`: not started.
+Phase 2, `night/d-extras` (branch not created):
+
+- [ ] extras: polish for "does a job feel like a job?" (HUD arrow and money #136, board by giver #126 #131 #132, sounds, briefing texts): not started
+- [ ] extras: `production_core` sketch (recipe record, station state machine): not started
+- [ ] extras: other backlog items: not started
 
 ## How the run ended
 

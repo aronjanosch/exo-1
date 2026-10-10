@@ -1,4 +1,5 @@
 //! #19: `--perf` writes the JSON, a run against its own baseline passes, a slowed step fails.
+#[path = "app/common/mod.rs"]
 mod common;
 use exo_app::{build_app, perf::PerfOptions, scenario::Script, Options};
 

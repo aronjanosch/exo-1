@@ -2,9 +2,13 @@
 # Dev run with Bevy dynamic linking (about 1 s rebuilds). Never for release.
 dev = "run -p exo_app --features dynamic --"
 # The gate: workspace tests in parallel with cargo-nextest (`mise install`), every scenario
-# headless, dynamically linked (about 2 s rebuilds instead of 8 s static). `cargo t -P perf` runs
-# the timing test (.config/nextest.toml); `cargo test --workspace` checks the static build.
+# headless, dynamically linked (about 2 s rebuilds instead of 8 s static). Run it through
+# `scripts/gate` (one gate at a time, low priority). `cargo t -P perf` runs the timing test
+# (.config/nextest.toml); `cargo check --workspace --all-targets` checks the static build.
 t = "nextest run --workspace --features exo_app/dynamic"
+# One app test, dynamically linked like the gate: `cargo ts scenario_warp` (a substring of the
+# test name, `scenario_<name>::…`). Builds only the app test binary.
+ts = "nextest run --workspace --features exo_app/dynamic --test app"
 # The full scenario alone, for a quick look; `cargo t` already runs it.
 scenario = "run -p exo_app --features dynamic -- --headless --scenario=full"
 

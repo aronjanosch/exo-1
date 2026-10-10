@@ -1,5 +1,5 @@
 //! #48: a fast-forwarded day on every planet; sun direction and brightness as the core says.
-mod common;
+use crate::common;
 use exo_app::Options;
 
 #[test]

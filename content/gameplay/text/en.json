@@ -9,6 +9,110 @@
   "job.first_haul.title": "First haul",
   "job.first_haul.brief": "Three crates of fizzy mud for Bent Spoon. They fizz less if you don't drop them.",
 
+  "track.standing_courier_office.name": "standing with Dinglepost Couriers",
+  "track.standing_small_family.name": "standing with the Gribbles",
+  "job.family_errand.title": "A small favour",
+  "job.family_errand.brief": "Two crates of fizzy mud, no questions.",
+
+  "giver.courier_office.name": "Dinglepost Couriers",
+  "giver.courier_office.greet.first": [
+    "New face! We always need a new face. The old ones keep quitting.",
+    "Welcome to Dinglepost. The coffee is mud. So is the cargo.",
+    "You look employable. That is rare around here."
+  ],
+  "giver.courier_office.greet.regular": [
+    "Back again! Management is almost proud.",
+    "The reliable one. Our insurance company hates you.",
+    "Good to see you. The crates missed you."
+  ],
+  "giver.courier_office.greet.failure": [
+    "About last time. We will not talk about last time.",
+    "The crates are still crying. Let us do better.",
+    "One more chance. Management is counting. Slowly, but counting."
+  ],
+  "giver.courier_office.intro": [
+    "Here is the deal.",
+    "Listen closely, I will say this once and then again.",
+    "Quick one for you."
+  ],
+  "giver.courier_office.reason": [
+    "The customer is waiting. The customer is always waiting.",
+    "It is urgent. Everything is urgent. This one more so.",
+    "Do not ask what is inside. It is mostly mud."
+  ],
+  "giver.courier_office.signoff": [
+    "Do not drop it.",
+    "Mind the fizz.",
+    "Off you go. Walk briskly, not heroically."
+  ],
+
+  "giver.small_family.name": "The Gribbles",
+  "giver.small_family.greet.first": [
+    "Sit. You have a face we might remember.",
+    "Come in, come in. Mind the dog. It is not a dog.",
+    "So you are the new one. Aunt Mabel has opinions."
+  ],
+  "giver.small_family.greet.regular": [
+    "Family. Almost.",
+    "Ah, our favourite stranger.",
+    "Again you. Good. The soup is still warm."
+  ],
+  "giver.small_family.greet.failure": [
+    "Disappointing. Uncle Bort cried a little.",
+    "We spoke about you at dinner. Not kindly.",
+    "Careful, now. We have long memories and short tempers."
+  ],
+  "giver.small_family.intro": [
+    "A small favour, between friends.",
+    "A little thing. Nothing much.",
+    "It is only a tiny task. Tiny."
+  ],
+  "giver.small_family.reason": [
+    "Family business.",
+    "It is a gift. For someone who will not be thanking us.",
+    "Do not ask. Aunt Mabel says asking is rude."
+  ],
+  "giver.small_family.signoff": [
+    "Be quick. Be quiet.",
+    "Be well. Be discreet.",
+    "Go. The soup is getting cold."
+  ],
+
+  "briefing.title": ["{title} for {giver}", "{giver} needs: {title}", "{title} ({giver})"],
+  "briefing.shape.few": [
+    "Take {amount} crates of {commodity} from {from} to {to}.",
+    "{amount} crates of {commodity}, {from} to {to}. Not far, not hard.",
+    "Carry {amount} {commodity} from {from} over to {to}."
+  ],
+  "briefing.shape.many": [
+    "A big one: {amount} crates of {commodity}, {from} to {to}.",
+    "{amount} crates of {commodity} from {from} to {to}. Bring a strong back.",
+    "Heavy lifting: {amount} crates, {commodity}, {from} to {to}."
+  ],
+  "briefing.shape.timed": [
+    "{amount} crates of {commodity}, {from} to {to}, and the clock is running.",
+    "{from} to {to} with {amount} crates of {commodity}. Hurry. The mud is not getting younger.",
+    "Quick: {amount} crates of {commodity} from {from} to {to} before the timer wins."
+  ],
+  "briefing.reason.commodity.fizzy_mud": [
+    "The mud must stay fizzy, so go easy on the corners.",
+    "Fizzy mud goes flat when you rush it. Do not rush it.",
+    "Customers love their mud lively."
+  ],
+  "briefing.reason.route.dusty": [
+    "The dust out there makes everyone grumpy, so be early.",
+    "Bent Spoon is dusty and impatient.",
+    "Dust makes people thirsty and cranky. Deliver before they notice."
+  ],
+  "briefing.reason.route.wet": [
+    "Drip Rock is damp and the staff are unhappy about it.",
+    "It rains indoors over there. Hurry.",
+    "Wet customers are angry customers."
+  ],
+
+  "notice.reward.standing": ["{giver}: standing +{n}", "{giver} likes you a bit more (+{n})"],
+  "notice.reward.standing_lost": ["{giver}: standing -{n}", "{giver} is less impressed (-{n})"],
+
   "notice.job.accepted": [
     "Job taken: {title}.",
     "You said yes to {title}. No refunds.",

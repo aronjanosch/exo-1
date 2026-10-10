@@ -3,6 +3,7 @@
   "id": "first_haul",
   "title": "job.first_haul.title",
   "brief": "job.first_haul.brief",
+  "giver": "courier_office",
   "objectives": [
     { "deliver": { "from": { "location": "drip_rock" }, "to": { "location": "bent_spoon" }, "commodity": { "one_of": ["fizzy_mud"] }, "amount": [3, 3] } }
   ],

@@ -1,0 +1,16 @@
+{
+  "_comment": "Placeholder giver (#167): the legal courier office with its counter at Drip Rock. Name, voice and numbers are TODO(initiator).",
+  "id": "courier_office",
+  "name": "giver.courier_office.name",
+  "kind": "legal",
+  "location": "drip_rock",
+  "standing": "standing_courier_office",
+  "gain": 10,
+  "loss": 15,
+  "voice": {
+    "greeting": { "first_job": "giver.courier_office.greet.first", "regular": "giver.courier_office.greet.regular", "after_failure": "giver.courier_office.greet.failure" },
+    "intro": "giver.courier_office.intro",
+    "reason": "giver.courier_office.reason",
+    "sign_off": "giver.courier_office.signoff"
+  }
+}

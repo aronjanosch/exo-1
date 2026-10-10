@@ -4,9 +4,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use gameplay_core::notice::{Arg, Notice, NoticeKind};
 use gameplay_core::save::{Envelope, SaveError};
-use gameplay_core::{ClientId, CommodityId, Content, CrateId, Event, Flag, LocationId, Progress, TrackId, WorldEvent};
+use gameplay_core::{TextKey, ClientId, CommodityId, Content, CrateId, Event, Flag, LocationId, Progress, TrackId, WorldEvent};
 use serde::{Deserialize, Serialize};
 
+use crate::giver::{GiverHistory, GiverId};
 use crate::grading::{Grade, grade};
 use crate::id::{JobId, TemplateId};
 use crate::template::{CommoditySpec, JobContent, JobTemplate, ObjectiveSpec, PlaceSpec};
@@ -143,6 +144,9 @@ pub enum Refusal {
 pub struct Jobs {
     next_id: u64,
     jobs: BTreeMap<JobId, Job>,
+    /// How the crew stands with each giver (#167): drives the mood of the briefings.
+    #[serde(default)]
+    history: BTreeMap<GiverId, GiverHistory>,
 }
 
 /// The jobs section of a save (#128).
@@ -183,6 +187,11 @@ impl Jobs {
         Some(self.offer(&t.id, legs))
     }
 
+    /// What happened between the crew and a giver; nothing yet for a new one.
+    pub fn history(&self, g: &GiverId) -> GiverHistory {
+        self.history.get(g).cloned().unwrap_or_default()
+    }
+
     pub fn get(&self, id: JobId) -> Option<&Job> {
         self.jobs.get(&id)
     }
@@ -210,6 +219,12 @@ impl Jobs {
                 }
                 let t = &jc.templates.get(&j.template).ok_or(Refusal::UnknownJob)?.record;
                 if let Some(c) = &t.available
+                    && !c.holds(kernel, progress, Some(by))
+                {
+                    return Err(Refusal::NotAvailable);
+                }
+                // A giver that is not open offers nothing (the family in D).
+                if let Some(c) = t.giver.as_ref().and_then(|g| jc.givers.get(g)).and_then(|g| g.record.available.as_ref())
                     && !c.holds(kernel, progress, Some(by))
                 {
                     return Err(Refusal::NotAvailable);
@@ -350,19 +365,36 @@ impl Jobs {
         if state == JobState::Completed {
             out.push(Outcome::Emit(WorldEvent::FlagRaised { flag: Flag::new(format!("job_completed:{}", t.id)) }));
         }
+        // Standing with the giver: work raises it, a failure lowers it (to the floor, not for good).
+        let mut standing = None;
+        if let Some(giver) = t.giver.as_ref().and_then(|g| jc.givers.get(g)).map(|g| &g.record) {
+            let h = self.history.entry(giver.id.clone()).or_default();
+            let delta = if state == JobState::Completed && g.money > 0 {
+                h.completed += 1;
+                h.failure_streak = 0;
+                giver.gain
+            } else {
+                h.failure_streak += 1;
+                -giver.loss
+            };
+            if delta != 0 {
+                out.push(Outcome::Emit(WorldEvent::TrackChanged { track: giver.standing.clone(), delta, player: None }));
+            }
+            standing = Some((giver.name.clone(), delta));
+        }
         let loose: Vec<CrateId> = j.legs.iter().flat_map(|l| l.crates.iter().filter(|(_, m)| !matches!(m, CrateMark::Delivered { .. })).map(|(c, _)| *c)).collect();
         if !loose.is_empty() {
             out.push(Outcome::ReleaseCrates { crates: loose });
         }
         out.push(Outcome::Ended { job: id, state, grade: Some(g) });
-        out.extend(end_notices(t, state, &g, j.delivered(), j.asked()).into_iter().map(Outcome::Notice));
+        out.extend(end_notices(t, state, &g, j.delivered(), j.asked(), standing).into_iter().map(Outcome::Notice));
         out
     }
 }
 
 /// The notices of a finished job (#165): the banner, then the payout itemised (base, share,
 /// condition, hazard; the lines add up to the pay), then XP.
-fn end_notices(t: &JobTemplate, state: JobState, g: &Grade, delivered: u32, asked: u32) -> Vec<Notice> {
+fn end_notices(t: &JobTemplate, state: JobState, g: &Grade, delivered: u32, asked: u32, standing: Option<(TextKey, i64)>) -> Vec<Notice> {
     let title = Arg::Key(t.title.clone());
     let (kind, key) = match state {
         JobState::Completed if g.money > 0 => (NoticeKind::Completed, "notice.job.completed"),
@@ -394,6 +426,12 @@ fn end_notices(t: &JobTemplate, state: JobState, g: &Grade, delivered: u32, aske
     }
     if g.xp != 0 {
         out.push(Notice::new(NoticeKind::Reward, "notice.reward.xp").arg("n", Arg::Number(g.xp)).arg("track", Arg::Key(gameplay_core::TextKey::new(format!("track.{}.name", t.track)))));
+    }
+    if let Some((giver, delta)) = standing
+        && delta != 0
+    {
+        let (kind, key) = if delta > 0 { (NoticeKind::Reward, "notice.reward.standing") } else { (NoticeKind::Warning, "notice.reward.standing_lost") };
+        out.push(Notice::new(kind, key).arg("n", Arg::Number(delta.abs())).arg("giver", Arg::Key(giver)));
     }
     out
 }

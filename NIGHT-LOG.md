@@ -8,7 +8,7 @@ Phase 1, `night/d-foundation`:
 
 - [x] #128 save model (kernel envelope, kernel/jobs/world sections)
 - [x] #165 feedback beats
-- [ ] #167 givers
+- [x] #167 givers
 - [ ] #170 courier jobs
 - [ ] #168 customers
 - [ ] #169 flight licence
@@ -33,3 +33,13 @@ Checks: 22 new tests (kernel 11, jobs 4, exo_app 3 unit), scenario `deliver` ext
 
 TODO(initiator): all pacing times (gap 0.6 s, banner 3 s, toast 2.5 s, calm 4 s), the skip key, sound volumes and shapes, every text in `en.json` (placeholders), the count-up time (1.2 s).
 Open: the XP line names the track by the convention `track.<id>.name`; the standing line of the ritual comes with #167.
+
+## #167 givers
+
+Built: `jobs_core::giver` (record `giver`: kind legal or family, counter location, voice pools with greetings by mood, standing track, gain and loss, optional `available` condition), `jobs_core::briefing` (title formula, greeting by mood, intro, paragraph by shape of the job timed/many/few, reason from the cargo, else the destination's route tag, else the giver's pool, sign-off; all picks by seed through the `Picker`), template field `giver`, `Jobs` history per giver (completed count, failure streak, saved with the jobs section), standing: a completed job raises the giver's crew track by `gain`, a failed one (expired, or nothing delivered) lowers it by `loss`; new track field `min` (floor 0) so standing never locks a giver for good and work brings it back; abandoning costs nothing. A closed giver (`available` flag) offers nothing (the family: flag `family_open`, never raised in D). Rank thresholds of the standing track unlock templates through the existing `available` condition. `check_texts` reports missing voice pools and pools with fewer than 3 lines (so no line repeats twice in a row by lack of choice). The ritual names standing gained or lost.
+Glue: counters at the giver's pad: prompt "talk to <giver>", F opens a panel on the left (giver, briefing, pay; Tab next offer, Backspace declines, F takes the job, walking away closes it; it never takes input). The fixed jobs are offered per template again after a completion (no board yet). Content: givers `courier_office` ("Dinglepost Couriers", counter at Drip Rock) and `small_family` ("The Gribbles", counter at Bent Spoon for now, moves in #170), standing tracks, a family placeholder job, about 60 new text lines.
+
+Checks: 14 tests in `jobs_core/tests/givers.rs` (loader errors with file and field, missing and thin pools, deterministic briefing, reason order, shape, mood, no repeat over 100 briefings, standing up/down/floor/recovery, rank unlocks a template, closed giver, history in the save, standing lines in the ritual), 2 kernel tests for the floor, 1 exo_app test. Scenario `deliver` now goes through the counter: prompt, briefing, same text when asked again, decline keeps the offer, take, standing +10 and mood regular after the job. Gate: `cargo t` 393 passed, `cargo scenario` 0 failures.
+
+TODO(initiator): giver names and every voice, briefing and reason line (placeholders, tone silly), gain 10 and loss 15, standing ranks 30/100/250, the family's counter place, panel layout and keys (Tab, Backspace).
+Open: no board yet, so one fixed offer per template; the panel is plain text.

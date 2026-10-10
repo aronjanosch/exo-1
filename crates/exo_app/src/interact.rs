@@ -21,7 +21,7 @@ pub fn plugin(app: &mut App) {
 /// The walker sits down when its feet are this close to the seat (m), as before #82.
 pub const SEAT_RANGE: f64 = 1.8;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Target {
     Seat,
     StandUp,
@@ -29,8 +29,10 @@ pub enum Target {
     Crate(Entity, Reach),
     /// Set the held crate down (let go).
     Drop(Entity),
-    /// Take the job offered at this pad for the crew.
-    Job(jobs_core::JobId),
+    /// Talk to the giver whose counter is at this pad: opens the briefing (#167).
+    Counter(jobs_core::GiverId),
+    /// Take the job the open counter shows, for the crew.
+    Accept(jobs_core::JobId),
 }
 
 #[derive(Resource, Default, Debug)]
@@ -54,14 +56,15 @@ pub fn key_label(bindings: &Bindings, t: Tap) -> String {
         .unwrap_or_else(|| "?".into())
 }
 
-fn verb(t: Target, size: &str) -> String {
+fn verb(t: &Target, size: &str) -> String {
     match t {
         Target::Seat => "sit".into(),
         Target::StandUp => "stand up".into(),
         Target::Crate(_, Reach::Hands) => format!("pick up the {size} crate"),
         Target::Crate(_, Reach::Tool) => format!("pull the {size} crate (grab tool)"),
         Target::Drop(_) => format!("set the {size} crate down"),
-        Target::Job(_) => "take the job: ".into(),
+        Target::Counter(_) => "talk to ".into(),
+        Target::Accept(_) => "take the job: ".into(),
     }
 }
 
@@ -95,7 +98,26 @@ pub fn interaction(
         None => true,
         Some(e) => e == ship_e,
     };
-    let target = if pl.seated {
+    // The player's place on foot, for counters: not in a cabin, not in the air.
+    let on_foot = pl.ship.is_none() && !pl.seated && !pl.fly;
+    let here = pl.world_pos(Frame::IDENTITY);
+    // Walking away from the counter closes it.
+    if gp.panel.as_ref().is_some_and(|p| !on_foot || gp.counter_at(here).as_ref() != Some(&p.giver)) {
+        gp.close_counter();
+    }
+    if on_foot && gp.panel.is_some() {
+        if actions.take_tap(Tap::Decline) {
+            gp.close_counter();
+        } else if actions.take_tap(Tap::NextOffer) {
+            if let Some(p) = gp.panel.as_mut() {
+                p.page += 1;
+            }
+        }
+    }
+    let panel_offer = if on_foot && grab.held.is_none() { gp.panel_offer() } else { None };
+    let target = if let Some(job) = panel_offer {
+        Some(Target::Accept(job))
+    } else if pl.seated {
         Some(Target::StandUp)
     } else if let Some(h) = grab.held {
         Some(Target::Drop(h.crate_e))
@@ -125,19 +147,27 @@ pub fn interaction(
             None => None,
         }
     };
-    // On a pad with an offered job, and nothing else to do: take the job.
-    let target = target.or_else(|| (pl.ship.is_none() && !pl.seated && !pl.fly && grab.held.is_none()).then(|| gp.offer_at(pl.world_pos(Frame::IDENTITY))).flatten().map(Target::Job));
-    inter.target = target;
-    inter.prompt = match target {
+    // At a giver's counter with something to offer, and nothing else to do: talk to the giver.
+    let target = target.or_else(|| {
+        let giver = (on_foot && grab.held.is_none()).then(|| gp.counter_at(here)).flatten()?;
+        (!gp.offers_of(&giver).is_empty()).then_some(Target::Counter(giver))
+    });
+    inter.target = target.clone();
+    inter.prompt = match &target {
         None => String::new(),
         Some(t) => {
             let size = match t {
-                Target::Crate(e, _) | Target::Drop(e) => size_of(e),
+                Target::Crate(e, _) | Target::Drop(e) => size_of(*e),
                 _ => String::new(),
             };
             let mut p = format!("[{}] {}", key_label(&bindings, Tap::Interact), verb(t, &size));
-            if let Target::Job(j) = t {
-                p.push_str(&gp.offer_label(j));
+            match t {
+                Target::Counter(g) => p.push_str(&gp.jobs_content.givers.get(g).map(|g| gp.text(&g.record.name)).unwrap_or_default()),
+                Target::Accept(j) => {
+                    p.push_str(&gp.offer_label(*j));
+                    p.push_str(&format!("   [{}] next  [{}] decline", key_label(&bindings, Tap::NextOffer), key_label(&bindings, Tap::Decline)));
+                }
+                _ => {}
             }
             if matches!(t, Target::Drop(_)) {
                 p.push_str(&format!("  [{}] throw", key_label(&bindings, Tap::Throw)));
@@ -150,7 +180,7 @@ pub fn interaction(
         return;
     }
     let Some(t) = target else { return };
-    inter.used.push(t);
+    inter.used.push(t.clone());
     let (_, mut ship, ..) = ships.get_mut(ship_e).unwrap();
     match t {
         Target::StandUp => {
@@ -178,6 +208,10 @@ pub fn interaction(
             }
         }
         Target::Drop(_) => grab.release(),
-        Target::Job(j) => gp.push_job(crate::gameplay::HOST, jobs_core::JobEvent::OfferAccepted { job: j }),
+        Target::Counter(g) => gp.open_counter(g),
+        Target::Accept(j) => {
+            gp.push_job(crate::gameplay::HOST, jobs_core::JobEvent::OfferAccepted { job: j });
+            gp.close_counter();
+        }
     }
 }

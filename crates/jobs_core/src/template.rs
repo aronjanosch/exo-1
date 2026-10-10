@@ -4,9 +4,11 @@ use std::collections::BTreeMap;
 
 use content_core::{File, Loaded, Record, check_id, load_records};
 use gameplay_core::content::Owner;
+use gameplay_core::text::TextTable;
 use gameplay_core::{CommodityId, Condition, Content, LocationId, Tag, TextKey, TrackId};
 use serde::{Deserialize, Serialize};
 
+use crate::giver::{self, Giver, GiverId};
 use crate::id::TemplateId;
 
 /// The folder this system reads.
@@ -18,6 +20,9 @@ pub struct JobTemplate {
     pub id: TemplateId,
     pub title: TextKey,
     pub brief: TextKey,
+    /// Who offers it (a `giver` record); none for a job nobody in particular gives.
+    #[serde(default)]
+    pub giver: Option<GiverId>,
     /// At least one. Milestone D has only `deliver`.
     pub objectives: Vec<ObjectiveSpec>,
     /// Money at full grade, before modifiers.
@@ -117,6 +122,7 @@ pub enum ModifierKind {
 #[derive(Clone, Debug, PartialEq)]
 pub struct JobContent {
     pub templates: BTreeMap<TemplateId, Loaded<JobTemplate>>,
+    pub givers: BTreeMap<GiverId, Loaded<Giver>>,
 }
 
 impl JobContent {
@@ -124,11 +130,50 @@ impl JobContent {
     /// each naming the file and the field.
     pub fn load(files: &[File], kernel: &Content) -> Result<JobContent, Vec<String>> {
         let mut e = Vec::new();
-        let c = JobContent { templates: load_records(files, FOLDER, &mut e) };
+        let c = JobContent { templates: load_records(files, FOLDER, &mut e), givers: load_records(files, giver::FOLDER, &mut e) };
         for Loaded { path, record: t } in c.templates.values() {
             c.check(path, t, kernel, &mut e);
         }
+        for Loaded { path, record: g } in c.givers.values() {
+            c.check_giver(path, g, kernel, &mut e);
+        }
         if e.is_empty() { Ok(c) } else { Err(e) }
+    }
+
+    fn check_giver(&self, path: &str, g: &Giver, k: &Content, e: &mut Vec<String>) {
+        check_id(path, "id", g.id.as_str(), e);
+        k.check_location(path, "location", &g.location, e);
+        match k.tracks.get(&g.standing) {
+            None => e.push(format!("{path}: standing: unknown track '{}'", g.standing)),
+            Some(t) if t.record.owner != Owner::Crew => e.push(format!("{path}: standing: '{}' must be a crew track", g.standing)),
+            Some(_) => {}
+        }
+        if g.gain < 0 {
+            e.push(format!("{path}: gain: must not be negative"));
+        }
+        if g.loss < 0 {
+            e.push(format!("{path}: loss: must not be negative"));
+        }
+        if let Some(c) = &g.available {
+            k.check_condition(path, "available", c, e);
+        }
+    }
+
+    /// Checks the texts the givers and their templates need against the text table: every voice
+    /// key has a pool of enough lines, every template of a giver has its title and brief.
+    pub fn check_texts(&self, table: &TextTable) -> Vec<String> {
+        let mut e = Vec::new();
+        for g in self.givers.values() {
+            giver::check_texts(g, table, &mut e);
+        }
+        for Loaded { path, record: t } in self.templates.values().filter(|t| t.record.giver.is_some()) {
+            for (field, k) in [("title", &t.title), ("brief", &t.brief)] {
+                if !table.has(k.as_str()) {
+                    e.push(format!("{path}: {field}: no text '{k}'"));
+                }
+            }
+        }
+        e
     }
 
     fn check(&self, path: &str, t: &JobTemplate, k: &Content, e: &mut Vec<String>) {
@@ -202,6 +247,11 @@ impl JobContent {
         }
         if let Some(c) = &t.available {
             k.check_condition(path, "available", c, e);
+        }
+        if let Some(g) = &t.giver
+            && !self.givers.contains_key(g)
+        {
+            e.push(format!("{path}: giver: unknown giver '{g}'"));
         }
         if let Some(f) = &t.follow_up
             && !self.templates.contains_key(f)

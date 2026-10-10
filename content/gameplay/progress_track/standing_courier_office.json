@@ -1,0 +1,1 @@
+{ "_comment": "Crew standing with the courier office: work raises it, a failure lowers it, never below 0. Ranks at the thresholds (TODO(initiator)).", "id": "standing_courier_office", "name": "track.standing_courier_office.name", "owner": "crew", "min": 0, "thresholds": [30, 100, 250] }

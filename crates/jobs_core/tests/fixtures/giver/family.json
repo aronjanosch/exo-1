@@ -1,0 +1,17 @@
+{
+  "_comment": "Test fixture: a giver whose jobs are not offered yet (the flag is never raised).",
+  "id": "family",
+  "name": "giver.family.name",
+  "kind": "family",
+  "location": "bent_spoon",
+  "standing": "standing_courier",
+  "gain": 10,
+  "loss": 15,
+  "available": { "flag_set": "family_open" },
+  "voice": {
+    "greeting": { "first_job": "g.family.first", "regular": "g.family.regular", "after_failure": "g.family.failure" },
+    "intro": "g.family.intro",
+    "reason": "g.family.reason",
+    "sign_off": "g.family.signoff"
+  }
+}

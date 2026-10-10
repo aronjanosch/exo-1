@@ -100,6 +100,10 @@ pub enum Tap {
     TurnCap,
     /// Run the queued banners and toasts (the arrival ritual) fast (#165).
     SkipNotices,
+    /// Close a giver's counter without taking the job (#167).
+    Decline,
+    /// The next offer at the open counter (#167).
+    NextOffer,
 }
 
 impl Axis {
@@ -130,7 +134,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 15] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::LandingMode, Tap::TurnCap, Tap::SkipNotices];
+    pub const ALL: [Tap; 17] = [Tap::Interact, Tap::Throw, Tap::HoverAssist, Tap::HorizonFollow, Tap::Lag, Tap::DebugFly, Tap::OrbitCamera, Tap::WarpTarget, Tap::Warp, Tap::Decoupled, Tap::DebugHud, Tap::BoostMode, Tap::LandingMode, Tap::TurnCap, Tap::SkipNotices, Tap::Decline, Tap::NextOffer];
     pub fn name(self) -> &'static str {
         match self {
             Tap::Interact => "interact",
@@ -148,6 +152,8 @@ impl Tap {
             Tap::LandingMode => "landing_mode",
             Tap::TurnCap => "turn_cap",
             Tap::SkipNotices => "skip_notices",
+            Tap::Decline => "decline",
+            Tap::NextOffer => "next_offer",
         }
     }
 }
@@ -344,6 +350,9 @@ impl Bindings {
                 (Tap::TurnCap, None) => Ok(vec![Input::Key(KeyCode::F8)]),
                 // ... and no `skip_notices` (#165).
                 (Tap::SkipNotices, None) => Ok(vec![Input::Key(KeyCode::Enter)]),
+                // ... and no `decline` or `next_offer` (#167).
+                (Tap::Decline, None) => Ok(vec![Input::Key(KeyCode::Backspace)]),
+                (Tap::NextOffer, None) => Ok(vec![Input::Key(KeyCode::Tab)]),
                 _ => Err(err(t.name(), "missing".into())),
             }
         };

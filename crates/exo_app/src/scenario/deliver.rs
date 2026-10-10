@@ -67,8 +67,35 @@ pub fn deliver_steps(s: &mut Vec<Step>) {
     s.push(wait(1.0));
     s.push(Box::new(|w, c| {
         let p = prompt(w);
-        check(c, p.contains("take the job") && p.contains("First haul"), format!("deliver: the prompt on the pad offers the job ('{p}')"));
+        check(c, p.contains("talk to") && p.contains("Dinglepost"), format!("deliver: the prompt at the counter names the giver ('{p}')"));
         c.v.insert("wallet0", gp(w).progress.wallet() as f64);
+        tap(w, KeyCode::KeyF);
+        true
+    }));
+    s.push(wait(0.5));
+    s.push(Box::new(|w, c| {
+        let p = prompt(w);
+        let text = w.resource_mut::<Gameplay>().panel_text("[F] take");
+        let open = gp(w).panel.is_some();
+        check(c, open && text.contains("First haul") && text.contains("Dinglepost") && text.contains("fizzy mud") && text.contains("Bent Spoon"), format!("deliver: the counter opens the briefing of the giver ({})", text.replace('\n', " | ")));
+        check(c, p.contains("take the job") && p.contains("First haul"), format!("deliver: the prompt offers the job ('{p}')"));
+        // The same offer reads the same each time it is opened.
+        let again = w.resource_mut::<Gameplay>().panel_text("[F] take");
+        check(c, again == text, "deliver: the briefing reads the same when asked again".into());
+        // Declining closes the panel and keeps the offer.
+        tap(w, KeyCode::Backspace);
+        true
+    }));
+    s.push(wait(0.3));
+    s.push(Box::new(|w, c| {
+        let closed = gp(w).panel.is_none();
+        let offered = gp(w).jobs.all().any(|j| j.state == JobState::Offered);
+        check(c, closed && offered, "deliver: declining closes the panel and the offer stays".into());
+        tap(w, KeyCode::KeyF);
+        true
+    }));
+    s.push(wait(0.3));
+    s.push(Box::new(|w, _| {
         tap(w, KeyCode::KeyF);
         true
     }));
@@ -119,6 +146,10 @@ pub fn deliver_steps(s: &mut Vec<Step>) {
         let flag = gp.progress.has_flag(&Flag::new("job_completed:first_haul"));
         check(c, job_state(w, "first_haul") == Some(JobState::Completed) && paid == 300.0 && xp == 50 && flag,
             format!("deliver: 3 crates set down gently on the Bent Spoon pad complete the job (paid {paid}, XP {xp}, flag {flag})"));
+        let standing = gp.progress.value(&gp.kernel, &TrackId::new("standing_courier_office"), None);
+        check(c, standing == Some(10), format!("deliver: the giver's standing rose by a completed job (#167, {standing:?})"));
+        let giver = jobs_core::GiverId::new("courier_office");
+        check(c, gp.jobs.history(&giver).mood() == jobs_core::Mood::Regular, "deliver: the giver now treats the crew as a regular".into());
         end(w, c, format!("wallet {}", gp.progress.wallet()));
         true
     }));

@@ -153,6 +153,9 @@ impl Progress {
             Owner::Player => self.players.entry(player.ok_or(Refusal::NoPlayer)?).or_default().entry(track.clone()).or_insert(t.start),
         };
         *v += delta;
+        if let Some(min) = t.min {
+            *v = (*v).max(min);
+        }
         Ok(())
     }
 }

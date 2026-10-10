@@ -52,7 +52,7 @@ fn valid_set_loads() {
     let c = content();
     assert_eq!(c.commodities.len(), 2);
     assert_eq!(c.locations.len(), 2);
-    assert_eq!(c.tracks.len(), 2);
+    assert_eq!(c.tracks.len(), 3);
     assert_eq!(c.unlocks.len(), 2);
     assert_eq!(c.locations[&LocationId::new("bent_spoon")].path, "location/bent_spoon.json");
 }
@@ -371,4 +371,28 @@ fn progress_round_trips_as_json() {
     p.apply(&c, &ev(HOST, 0, WorldEvent::TrackChanged { track: TrackId::new("freight_xp"), delta: 42, player: Some(BO) })).unwrap();
     let s = serde_json::to_string(&p).unwrap();
     assert_eq!(serde_json::from_str::<Progress>(&s).unwrap(), p);
+}
+
+// ---------- track floor (#167) ----------
+
+#[test]
+fn a_track_with_a_floor_never_drops_below_it_and_recovers() {
+    let c = content();
+    let mut p = Progress::new(&c);
+    let t = TrackId::new("standing_courier");
+    let change = |p: &mut Progress, seq, d| p.apply(&c, &ev(HOST, seq, WorldEvent::TrackChanged { track: TrackId::new("standing_courier"), delta: d, player: None })).unwrap();
+    change(&mut p, 0, 20);
+    change(&mut p, 1, -50);
+    assert_eq!(p.value(&c, &t, None), Some(0), "a failure lowers standing, not below the floor");
+    change(&mut p, 2, 15);
+    assert_eq!(p.value(&c, &t, None), Some(15), "work brings it back from the floor");
+    // The wallet has no floor.
+    p.apply(&c, &ev(HOST, 3, WorldEvent::TrackChanged { track: TrackId::new("wallet"), delta: -500, player: None })).unwrap();
+    assert_eq!(p.wallet(), -300);
+}
+
+#[test]
+fn a_floor_above_the_start_is_a_content_error() {
+    let e = errors_with("progress_track/standing_courier.json", r#"{ "id": "standing_courier", "name": "x", "owner": "crew", "min": 5, "start": 0 }"#);
+    one_error(&e, "progress_track/standing_courier.json", "min");
 }

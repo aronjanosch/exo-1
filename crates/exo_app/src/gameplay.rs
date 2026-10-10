@@ -14,7 +14,7 @@ use bevy::prelude::*;
 use gameplay_core::notice::{Arg, Notice, NoticeKind, NoticeQueue};
 use gameplay_core::text::{Picker, TextTable};
 use gameplay_core::{ClientId, CommodityId, Content, CrateId, Dedup, Event, LocationId, Progress, TextKey, TrackId, WorldEvent};
-use jobs_core::{JobContent, JobEvent, JobId, JobState, Jobs, Outcome};
+use jobs_core::{Briefing, GiverId, JobContent, JobEvent, JobId, JobState, Jobs, Outcome};
 
 use crate::cargo::{crate_bundle, Crate, Crates};
 use crate::env::{from_v3, PlanetRes};
@@ -29,7 +29,8 @@ pub fn plugin(app: &mut App) {
 /// Window only: pad rings and the job line.
 pub fn window_plugin(app: &mut App) {
     app.init_resource::<PadRings>();
-    app.add_systems(Startup, spawn_job_line);
+    app.add_systems(Startup, (spawn_job_line, spawn_panel));
+    app.add_systems(Update, update_panel.in_set(crate::phases::Frame::Hud));
     app.add_systems(Update, update_pad_rings.in_set(crate::phases::Frame::World));
     app.add_systems(Update, update_job_line.in_set(crate::phases::Frame::Hud));
 }
@@ -97,6 +98,19 @@ pub struct Gameplay {
     /// The job line as shown: money, the active job.
     pub readout: String,
     clock: f64,
+    /// The counter the player has open: a giver's briefing with accept and decline (#167).
+    pub panel: Option<Panel>,
+    /// Briefings already assembled, by offer and the giver's mood then: an offer reads the same
+    /// each time it is opened.
+    briefings: std::collections::BTreeMap<JobId, (jobs_core::Mood, Briefing)>,
+}
+
+/// A giver's counter, opened.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Panel {
+    pub giver: GiverId,
+    /// Which of the giver's offers is shown.
+    pub page: usize,
 }
 
 /// A notice as the player sees it.
@@ -140,12 +154,15 @@ impl Gameplay {
             .find(|f| f.path == "text/en.json")
             .map(|f| TextTable::from_json("content/gameplay/text/en.json", &f.text).unwrap_or_else(|e| panic!("{e}")))
             .unwrap_or_default();
-        let progress = Progress::new(&kernel);
-        let mut jobs = Jobs::default();
-        for t in jobs_content.templates.values() {
-            jobs.offer_fixed(&t.record);
+        let errors = jobs_content.check_texts(&text);
+        if !errors.is_empty() {
+            fail(errors);
         }
-        Gameplay { kernel, jobs_content, text, picker: Picker::new(TEXT_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0 }
+        let progress = Progress::new(&kernel);
+        let jobs = Jobs::default();
+        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(TEXT_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, briefings: Default::default() };
+        g.refresh_offers();
+        g
     }
 
     /// English text for a key (the first line of a pool); the key itself when it has none (#131
@@ -173,10 +190,90 @@ impl Gameplay {
         self.pads.iter().find(|p| &p.location == l)
     }
 
-    /// An offered job whose first pickup is the pad at `p` (the prompt offers it there).
-    pub fn offer_at(&self, p: DVec3) -> Option<JobId> {
+    /// Makes sure every giver's fixed job is on offer: one offer per template while it is not
+    /// active, and none for a once-only job that was completed. (No board yet, #126.)
+    pub fn refresh_offers(&mut self) {
+        let ids: Vec<_> = self.jobs_content.templates.values().filter(|t| t.record.giver.is_some()).map(|t| t.record.id.clone()).collect();
+        for id in ids {
+            let t = &self.jobs_content.templates[&id].record;
+            let open = self.jobs.all().any(|j| j.template == id && matches!(j.state, JobState::Offered | JobState::Active));
+            let done = t.once_only && self.progress.has_flag(&gameplay_core::Flag::new(format!("job_completed:{id}")));
+            if !open && !done {
+                let t = t.clone();
+                self.jobs.offer_fixed(&t);
+            }
+        }
+    }
+
+    /// The giver whose counter is at the pad under `p`.
+    pub fn counter_at(&self, p: DVec3) -> Option<GiverId> {
         let pad = self.pad_at(p)?;
-        self.jobs.all().find(|j| j.state == JobState::Offered && j.legs.first().is_some_and(|l| l.from == pad.location)).map(|j| j.id)
+        self.jobs_content.givers.values().find(|g| g.record.location == pad.location).map(|g| g.record.id.clone())
+    }
+
+    /// The giver's offers the crew may take now: open giver, template condition holds.
+    pub fn offers_of(&self, giver: &GiverId) -> Vec<JobId> {
+        let Some(g) = self.jobs_content.givers.get(giver) else { return Vec::new() };
+        if g.record.available.as_ref().is_some_and(|c| !c.holds(&self.kernel, &self.progress, Some(HOST))) {
+            return Vec::new();
+        }
+        self.jobs
+            .all()
+            .filter(|j| j.state == JobState::Offered)
+            .filter(|j| self.jobs_content.templates.get(&j.template).is_some_and(|t| t.record.giver.as_ref() == Some(giver) && t.record.available.as_ref().is_none_or(|c| c.holds(&self.kernel, &self.progress, Some(HOST)))))
+            .map(|j| j.id)
+            .collect()
+    }
+
+    /// The offer the open panel shows.
+    pub fn panel_offer(&self) -> Option<JobId> {
+        let p = self.panel.as_ref()?;
+        let offers = self.offers_of(&p.giver);
+        (!offers.is_empty()).then(|| offers[p.page % offers.len()])
+    }
+
+    /// The briefing of an offer, assembled once per mood of its giver.
+    pub fn briefing_of(&mut self, job: JobId) -> Option<Briefing> {
+        let j = self.jobs.get(job)?;
+        let t = &self.jobs_content.templates.get(&j.template)?.record;
+        let mood = t.giver.as_ref().map(|g| self.jobs.history(g).mood())?;
+        if let Some((m, b)) = self.briefings.get(&job)
+            && *m == mood
+        {
+            return Some(b.clone());
+        }
+        let history = self.jobs.history(t.giver.as_ref()?);
+        let b = jobs_core::briefing(&self.jobs_content, &self.kernel, &self.text, &mut self.picker, t, &j.legs, &history);
+        self.briefings.insert(job, (mood, b.clone()));
+        Some(b)
+    }
+
+    /// The counter opens: the giver's greeting and the first offer.
+    pub fn open_counter(&mut self, giver: GiverId) {
+        self.panel = Some(Panel { giver, page: 0 });
+    }
+
+    /// Declines: the panel closes, the offer stays.
+    pub fn close_counter(&mut self) {
+        self.panel = None;
+    }
+
+    /// The panel's text: giver, briefing, pay and the keys; empty when no counter is open.
+    pub fn panel_text(&mut self, keys: &str) -> String {
+        let Some(p) = self.panel.clone() else { return String::new() };
+        let Some(job) = self.panel_offer() else {
+            let name = self.jobs_content.givers.get(&p.giver).map(|g| self.text(&g.record.name)).unwrap_or_default();
+            return format!("{name}\nNothing for you right now.");
+        };
+        let Some(b) = self.briefing_of(job) else { return String::new() };
+        let pay = self.offer_pay(job);
+        let n = self.offers_of(&p.giver).len();
+        format!("{}\n\n{}\n{}\n{}\n\n{}  ({pay})\n{keys}{}", b.title, b.greeting, b.intro, b.paragraph, b.reason, if n > 1 { format!("   ({} of {n})", p.page % n + 1) } else { String::new() })
+    }
+
+    fn offer_pay(&self, job: JobId) -> String {
+        let reward = self.jobs.get(job).and_then(|j| self.jobs_content.templates.get(&j.template)).map_or(0, |t| t.record.reward);
+        format!("{reward} {}", self.text(&TextKey::new("track.wallet.name")))
     }
 
     /// "First haul (300 credits)".
@@ -311,6 +408,7 @@ pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>
             }
         }
     }
+    gp.refresh_offers();
     gp.pace_notices(dt);
 }
 
@@ -450,6 +548,35 @@ fn update_job_line(gp: Res<Gameplay>, mut q: Query<&mut Text, With<JobLine>>) {
     }
 }
 
+#[derive(Component)]
+struct PanelText;
+
+/// The giver's counter: a panel on the left with the briefing. It takes no input itself (the
+/// interact, next and decline taps do), so nobody is blocked by it.
+fn spawn_panel(mut commands: Commands) {
+    commands.spawn((
+        PanelText,
+        Text::new(""),
+        TextFont { font_size: FontSize::Px(17.0), ..default() },
+        TextColor(Color::srgb(0.95, 0.95, 0.85)),
+        BackgroundColor(Color::srgba(0.05, 0.05, 0.08, 0.7)),
+        Node { position_type: PositionType::Absolute, left: px(16), top: percent(30), max_width: px(420), padding: UiRect::all(px(12)), display: Display::None, ..default() },
+    ));
+}
+
+fn update_panel(mut gp: ResMut<Gameplay>, bindings: Res<crate::controls::Bindings>, mut q: Query<(&mut Text, &mut Node), With<PanelText>>) {
+    use crate::controls::Tap;
+    use crate::interact::key_label;
+    let keys = format!("[{}] take the job   [{}] next   [{}] decline", key_label(&bindings, Tap::Interact), key_label(&bindings, Tap::NextOffer), key_label(&bindings, Tap::Decline));
+    let s = gp.panel_text(&keys);
+    if let Ok((mut t, mut n)) = q.single_mut() {
+        n.display = if s.is_empty() { Display::None } else { Display::Flex };
+        if **t != s {
+            **t = s;
+        }
+    }
+}
+
 /// Which planet the rings were spawned for.
 #[derive(Resource, Default)]
 pub struct PadRings(Option<warp_core::PlanetId>);
@@ -494,6 +621,15 @@ mod tests {
             assert!(s.water_depth == 0.0 && s.slope_deg < 3.0, "{}: pad in water or on a slope ({:.1}°)", l.path, s.slope_deg);
         }
         assert!(gp.jobs.all().any(|j| j.state == JobState::Offered), "the fixed job is offered at the start");
+    }
+
+    /// #167: the family is a giver of the cast but offers nothing in D; the courier office does.
+    #[test]
+    fn the_family_offers_nothing_yet_and_the_courier_office_does() {
+        let gp = Gameplay::load(&Crates::default());
+        assert!(gp.offers_of(&GiverId::new("small_family")).is_empty());
+        assert!(!gp.offers_of(&GiverId::new("courier_office")).is_empty());
+        assert_eq!(gp.jobs_content.givers.len(), 2);
     }
 
     #[test]

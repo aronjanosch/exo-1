@@ -112,6 +112,8 @@ Options: `--port`, `--bind`, `--rate=<Hz>` (default 30), `--buffer=<ms>` (defaul
 
 ## Controls
 
+All keys at a glance, sorted into game and debug: [`KEYS.md`](KEYS.md).
+
 Walker: mouse look (click to grab, Escape releases), WASD, Shift run, Space jump, F interact: the one verb, the prompt below the screen centre says what it does (sit at the seat, pick up a crate in reach or pull one with the grab tool, set it down), R throw the held crate (a crate set down fully on the cabin's floor plates mag-locks and the plates light up; red plates: it rests partly off them; grabbing unlocks), Q/E turn it (a small crate takes one hand; a medium one both: walking at 60 %, no sprint, no jump; the large one needs two players; heavy crates lag and slow the view), G cabin gravity on/off (only in a landed ship; in flight it is always on), V debug fly mode.
 Ship: the mouse is a virtual joystick: moving it puts the marker off centre and the ship turns at that deflection (dead-zone circle in the middle, full at the outer edge; `ship_mode: "direct"` in `bindings.json` turns by mouse movement instead). W/S forward/back, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost (a speed stage, always available), X firm brake, H flight assist, L planet follow, C coupled/decoupled (eases over 4 s; decoupled the ship keeps gliding), F stand up (the same interact key). Set down on ground no steeper than `landing_slope_limit` (`ship.json`), the ship keeps its spot until thrust (any input but down). Input ramps to full deflection over a fraction of a second (`content/tuning/ship.json`).
 Suit (outside a ship in space, no gravity): mouse turns freely, W/S forward/back, A/D strafe, Space/Ctrl up/down, Q/E roll, Shift boost, X brake to rest.

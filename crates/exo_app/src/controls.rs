@@ -892,6 +892,15 @@ mod tests {
         }
     }
 
+    /// `KEYS.md` (the page for players and developers) names every action of `bindings.json`.
+    #[test]
+    fn keys_md_lists_every_action() {
+        let page = include_str!("../../../KEYS.md");
+        let names = Axis::ALL.iter().map(|a| a.name()).chain(Button::ALL.iter().map(|b| b.name())).chain(Tap::ALL.iter().map(|t| t.name()));
+        let missing: Vec<&str> = names.filter(|n| !page.contains(&format!("`{n}`"))).collect();
+        assert!(missing.is_empty(), "KEYS.md lacks {missing:?}");
+    }
+
     /// G was missing from the keyboard's tap list (only scenarios could inject it).
     #[test]
     fn every_tap_action_is_a_keyboard_tap() {

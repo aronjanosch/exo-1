@@ -48,8 +48,12 @@ pub struct AirState {}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AirOut {
-    /// m/s², world: drag, lift and wind on the ship.
+    /// m/s², world: drag, lift and wind on the ship that the flight computer holds against (with
+    /// gravity compensation on).
     pub accel: DVec3,
+    /// m/s², world: what the air does that the flight computer does not hold against (the wind
+    /// with wind compensation off). Integrated, never compensated.
+    pub push: DVec3,
     /// rad/s², ship space: what the air turns (turbulence, weathervaning).
     pub angular: DVec3,
     /// Share of the thrust the air leaves.
@@ -66,6 +70,7 @@ pub fn step(_s: &mut AirState, f: &Frame, _m: &Modes, t: &AirTuning) -> AirOut {
     let drag = -f.v * t.drag_k * f.density * f.v.length();
     AirOut {
         accel: drag,
+        push: DVec3::ZERO,
         angular: DVec3::ZERO,
         thrust_scale: lerp(1.0, t.thrust_share, f.density),
         cap_scale: lerp(1.0, t.cap_share, f.density),

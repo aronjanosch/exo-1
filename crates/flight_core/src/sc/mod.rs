@@ -10,6 +10,7 @@
 //!    speed limiter, ...).
 //! 2. `drive::begin`: the boost this step.
 //! 3. `air`: what the atmosphere does (drag, lift, wind, turbulence, thrust lost in air).
+//!    The proximity assist (`Modes::proximity`) is `linear`'s: it limits the descent near the ground.
 //! 4. `linear`: the thrust the flight computer asks for, inside the thrust box.
 //! 5. `angular`: the angular acceleration it asks for, inside the torque box.
 //! 6. `drive::shape`: what the thrusters really give (spool, jerk, boost).
@@ -218,7 +219,7 @@ impl ScShip {
 
         let s = &self.tuning.ship;
         let linear_world = f.rot * shaped.linear;
-        let v = f.v + (linear_world + f.gravity + air.accel) * dt;
+        let v = f.v + (linear_world + f.gravity + air.accel + air.push) * dt;
         let angular_world = f.rot * (shaped.angular + air.angular);
         let w = body.ang_vel + angular_world * dt;
         let torque_local = DVec3::new(shaped.angular.x * s.inertia.pitch, shaped.angular.y * s.inertia.yaw, shaped.angular.z * s.inertia.roll);

@@ -57,7 +57,7 @@ pub enum Layer {
     Ramp,
     /// Hull of another player's ship (proxy): the walker stands on it, ships do not hit it.
     Remote,
-    /// Crates that are Avian bodies: the walker and other crates hit them, ships and hulls do not.
+    /// Crates that are Avian bodies: the walker, other crates and the hull hit them, ships do not.
     Crate,
 }
 

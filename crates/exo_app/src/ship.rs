@@ -156,7 +156,8 @@ pub fn add_hull(commands: &mut Commands, ship: Entity, layer: Layer) {
             if collides {
                 e.insert((
                     Collider::cuboid(size.x as f64, size.y as f64, size.z as f64),
-                    CollisionLayers::new(layer, [Layer::World, Layer::Ship]),
+                    // Crate bodies hit the hull too (walls, roof, front, underside); only the ramp is out of their contact.
+                    CollisionLayers::new(layer, [Layer::World, Layer::Ship, Layer::Crate]),
                 ));
             }
         }
@@ -193,7 +194,8 @@ pub fn ship_control(
 ) {
     let dt = time.delta_secs_f64();
     for (e, mut ship, pos, rot, mut lv, mut av) in &mut q {
-        ship.grounded = colliders.iter().any(|(c, of)| of.body == e && collisions.collisions_with(c).next().is_some());
+        // A crate body leaning on the hull is not the ground.
+        ship.grounded = colliders.iter().any(|(c, of)| of.body == e && collisions.collisions_with(c).any(|p| !crates.contains(p.collider1) && !crates.contains(p.collider2)));
         let clearance = ship.ground.clearance_at(planet.as_ref(), pos.0);
         // A parked ship is static: no contacts with the static terrain, but it stands on it.
         let grounded = ship.grounded || ship.parked;

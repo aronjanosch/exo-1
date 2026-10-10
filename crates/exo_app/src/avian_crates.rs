@@ -3,7 +3,7 @@
 //! on the plates. `avian_pre` decides the state and puts gravity and the hold in as accelerations;
 //! `avian_post` copies the pose back into `CrateBody`, so grab, interaction, budget and rendering
 //! keep reading `Crate::body`, and hands a body entering the cabin back to `CrateBody`.
-//! Not a contact with the ship: the ramp counts as ship, a crate on or over it stays a `CrateBody`.
+//! The hull is a solid obstacle for bodies; the ramp counts as ship: a crate on or over it stays a `CrateBody`.
 use crate::cargo::{bottom_world, CargoStats, Crate};
 use crate::env::PlanetRes;
 use crate::ring::Ring;
@@ -112,7 +112,7 @@ pub fn avian_pre(
                     Rotation(rot),
                     LinearVelocity(c.body.vel),
                     AngularVelocity::ZERO,
-                    CollisionLayers::new(Layer::Crate, [Layer::World, Layer::Crate]),
+                    CollisionLayers::new(Layer::Crate, [Layer::World, Layer::Ship, Layer::Crate]),
                     Friction::new(FRICTION),
                     Restitution::new(0.0),
                     SweptCcd::default(),

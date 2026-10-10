@@ -14,6 +14,7 @@ mod scenario_camera_g;
 mod scenario_courier;
 mod scenario_crate_budget;
 mod scenario_crate_carry;
+mod scenario_crate_hull;
 mod scenario_crate_lock;
 mod scenario_crate_ramp;
 mod scenario_crate_ride;

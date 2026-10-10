@@ -83,6 +83,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 - `crate-lock`: one crate locked on the cabin's floor plates, one loose off them, one half on them (red); hard acceleration, a strafe and a warp: the locked one does not move, the loose one slides and stays in the cabin; grabbing unlocks, setting down on the plates locks again (#84).
 - `crate-unload`: carries a crate off the plates, down the ramp and out, sets it down, and carries it back up to lock again; checks the handover to an Avian body at the ramp's end does not jump (#210).
 - `crate-ramp`: a crate on the parked ship's ramp stays a sweep crate (the ramp counts as ship) and stays on the ground when the ship takes off (#210).
+- `crate-hull`: a crate thrown at the parked ship's side wall stops outside the hull, never in the cabin (#210).
 - `crate-wake-stream`: crates 500 m away are frozen; the walker comes, the patch is built and they wake as Avian bodies with no drop below the ground (#210).
 - `crate-budget`: the object budget (#85): 30 crates spawned against a cap of 24 (the longest untouched go), all at rest sleep and cost no steps, a warp to Cinder leaves the persistence cap (4) frozen on Hearth, crates resting untouched on Cinder go after a (shortened) timeout, a crate falling far above everyone goes.
 - `deliver` and `courier`: the first rounds of the loop, headless, with the counter, briefings, standing and the notices of the ritual; `courier` walks parcels by hand from Drip Rock to the small drops 150 to 400 m away.

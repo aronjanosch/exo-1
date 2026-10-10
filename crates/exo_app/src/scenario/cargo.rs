@@ -1085,3 +1085,55 @@ pub fn crate_ramp_steps(s: &mut Vec<Step>) {
         true
     }));
 }
+
+/// #210: a crate thrown at the parked ship's side wall at throw speed stops outside the hull: its
+/// centre never gets past the wall's outer face (x 2.3 m ship-local), so it is never in the cabin.
+pub fn crate_hull_steps(s: &mut Vec<Step>) {
+    s.push(Box::new(|w, c| {
+        clear_crates(w);
+        let f = ship_frame_of(w);
+        place_walker(w, f.to_world(DVec3::new(6.0, 0.0, 0.0)));
+        face_towards(w, f.to_world(DVec3::new(0.0, 0.0, 0.0)));
+        let at = ahead(w, 1.3);
+        let e = ground_crate(w, "small", at);
+        c.v.insert("crate", e.to_bits() as f64);
+        begin(w, c, "crate-hull: throw the small crate at the ship's side wall");
+        true
+    }));
+    s.push(wait(0.6));
+    s.push(Box::new(|w, c| {
+        let e = crate_e(c, "crate");
+        let at = crate_world_pos(w, e);
+        look_at(w, at);
+        true
+    }));
+    s.push(wait(0.1));
+    s.push(Box::new(|w, _| {
+        tap(w, KeyCode::KeyF);
+        true
+    }));
+    s.push(wait(1.0));
+    s.push(Box::new(|w, c| {
+        // Level look at the wall, then throw; track how far in the centre gets.
+        with_player(w, |p| p.pitch = 0.1);
+        c.v.insert("min_x", f64::MAX);
+        tap(w, KeyCode::KeyR);
+        true
+    }));
+    s.push(Box::new(|w, c| {
+        let e = crate_e(c, "crate");
+        let f = ship_frame_of(w);
+        let local = f.to_local(crate_world_pos(w, e));
+        let m = c.v.entry("min_x").or_insert(f64::MAX);
+        *m = m.min(local.x.abs());
+        if c.t < 3.0 {
+            return false;
+        }
+        let min_x = c.v["min_x"];
+        let in_cabin = crate_of(w, e).is_some_and(|c| c.ship.is_some());
+        let thrown = !w.resource::<crate::grab::Grab>().throws.is_empty();
+        end(w, c, format!("closest centre to the ship's axis {min_x:.2} m, now at ({:.2}, {:.2}, {:.2}) ship-local, in the cabin {in_cabin}", local.x, local.y, local.z));
+        check(c, thrown && !in_cabin && min_x > 2.3, format!("crate-hull: the thrown crate stopped outside the wall (centre never closer than {min_x:.2} m to the axis, wall face at 2.30 m)"));
+        true
+    }));
+}

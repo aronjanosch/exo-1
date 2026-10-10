@@ -667,6 +667,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "crate-wake-stream" => cargo::crate_wake_stream_steps(&mut s),
         // #210: a crate on the ramp is ship: it stays a sweep crate and stays on the ground at take-off.
         "crate-ramp" => cargo::crate_ramp_steps(&mut s),
+        // #210: a crate thrown at the hull's side wall stops outside it.
+        "crate-hull" => cargo::crate_hull_steps(&mut s),
         "deliver" => deliver::deliver_steps(&mut s),
         // #170: courier jobs on foot, carried by hand to the small drops near the start.
         "courier" => courier::courier_steps(&mut s),

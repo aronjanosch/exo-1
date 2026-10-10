@@ -60,7 +60,8 @@
     "rayleigh_per_km": [0.11, 0.26, 0.64], "rayleigh_scale": 0.35,
     "mie_per_km": 0.04, "mie_absorption_per_km": 0.004, "mie_asymmetry": 0.8, "mie_scale": 0.12,
     "absorption_per_km": [0.05, 0.15, 0.01], "ground_albedo": 0.3,
-    "haze_color": [0.72, 0.80, 0.92], "haze_density": 0.00012
+    "haze_color": [0.72, 0.80, 0.92], "haze_density": 0.00012,
+    "clouds": { "altitude": 0.4, "coverage": 0.45, "scale_m": 14000.0, "color": [0.97, 0.97, 1.0], "drift_m_s": 6.0, "min_radius_m": 20000.0 }
   },
   "water": {
     "surface": [0.16, 0.42, 0.55], "alpha": 0.72, "deep": [0.05, 0.16, 0.30], "depth_m": 14.0,

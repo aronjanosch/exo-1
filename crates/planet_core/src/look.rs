@@ -187,6 +187,49 @@ impl Planet {
         out
     }
 
+    /// The planet seen from far away (#224): one equirectangular colour map of `width` x
+    /// `width / 2` RGBA8 pixels (sRGB, rows from the north pole down, longitude -180..180) with
+    /// what the terrain would show from orbit: the sea in its surface colour, darker with depth,
+    /// lakes in the surface colour, land in the biome's ground colour (rock where the landform
+    /// is steep, the cap colour on the heights). No sites, no hillshade.
+    pub fn orbit_map(&self, width: usize, threads: usize) -> Vec<u8> {
+        let (w, h) = (width, width / 2);
+        let threads = if threads == 0 { std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) } else { threads };
+        let wt = &self.recipe.water;
+        let m = &self.recipe.material;
+        let rows = par_rows(h, threads, |y0, y1| {
+            let mut out = Vec::with_capacity((y1 - y0) * w * 4);
+            for y in y0..y1 {
+                for x in 0..w {
+                    let d = pixel_dir(x, y, w, h);
+                    let face = face_of(d);
+                    let (a, b) = sphere_to_face_ab(face, d);
+                    let (hh, f) = self.height_ab(face, a, b, d);
+                    let lf = self.stamp_height(d).1;
+                    let ha = hh - self.sea;
+                    let level = self.water_level_ab(face, a, b);
+                    let inland = level.map_or(0.0, |l| (l - hh).max(0.0));
+                    let c = if ha <= 0.0 {
+                        lerp3(wt.surface, wt.deep, (-ha / (wt.depth_m as f64).max(1.0)) as f32)
+                    } else if inland > 0.0 {
+                        lerp3(wt.surface, wt.deep, (inland / (wt.depth_m as f64).max(1.0)) as f32 * 0.5)
+                    } else {
+                        let biome = self.biome_for(ha, &f, lf);
+                        let p = self.palette(biome);
+                        let rock = (lf.unwrap_or(f.land).clamp(0.0, 1.0) as f32) * 0.5 * p.strata;
+                        let g = lerp3(p.ground, p.rock, rock);
+                        let cap = ((ha - m.cap_height_m as f64) / (m.cap_fade_m as f64).max(1.0)).clamp(0.0, 1.0) as f32 * p.cap;
+                        lerp3(g, m.cap_color, cap)
+                    };
+                    let [r, g, b] = to_u8(c);
+                    out.extend([r, g, b, 255]);
+                }
+            }
+            out
+        });
+        rows.into_iter().flatten().collect()
+    }
+
     /// The atlas at `width` x `width / 2` pixels. Sites are white dots on the biome layer.
     pub fn atlas(&self, width: usize, threads: usize) -> Atlas {
         let (w, h) = (width, width / 2);

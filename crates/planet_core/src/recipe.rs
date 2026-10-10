@@ -634,6 +634,8 @@ pub enum SiteCategory {
     Site,
     Landmark,
     Find,
+    /// A hand-placed place (`content/place/`), not from a kind.
+    Place,
 }
 
 /// A kind of site (#70). Placeholder kinds until the initiator picks (ids, no fiction names).

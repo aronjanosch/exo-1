@@ -1,7 +1,7 @@
 //! Speed-driven camera effects (#27): field of view and streaks from speed through curves, a
 //! look-ahead that turns the pilot's view a little into the turn, and a short bump on touchdown.
 //! Plain math for the view; values in `content/tuning/camera.json`.
-use crate::{parse_tuning, Curve, CHASE_CAMERA_OFFSET, CHASE_CAMERA_PITCH_DEG};
+use crate::{Curve, CHASE_CAMERA_OFFSET, CHASE_CAMERA_PITCH_DEG};
 use glam::DVec2;
 use serde::Deserialize;
 
@@ -32,16 +32,43 @@ pub struct CameraTuning {
     pub bump_frequency: f64,
     /// Decay rate of the bump (1/s).
     pub bump_damping: f64,
-    /// Speed lost towards the ground within one step (m/s) that counts as a touchdown.
+    /// Approach speed (m/s) below which a touchdown gives no bump.
     pub bump_threshold: f64,
 }
 
 impl CameraTuning {
     pub fn from_json(s: &str) -> Result<CameraTuning, String> {
-        let t: CameraTuning = parse_tuning("camera.json", s)?;
-        t.fov_curve.validate().map_err(|e| format!("camera.json: fov_curve: {e}"))?;
-        t.streak_curve.validate().map_err(|e| format!("camera.json: streak_curve: {e}"))?;
+        let t: CameraTuning = content_core::parse_strict("camera.json", s)?;
+        t.validate().map_err(|e| format!("camera.json: {e}"))?;
         Ok(t)
+    }
+
+    /// Everything finite; gains, limits, times and the bump not negative (#106 point 6).
+    pub fn validate(&self) -> Result<(), String> {
+        if let Some(v) = self.chase_offset.iter().find(|v| !v.is_finite()) {
+            return Err(format!("chase_offset {v} not finite"));
+        }
+        if !self.chase_pitch_deg.is_finite() {
+            return Err(format!("chase_pitch_deg {} not finite", self.chase_pitch_deg));
+        }
+        for (what, v) in [
+            ("look_ahead_gain", self.look_ahead_gain),
+            ("look_ahead_deadzone", self.look_ahead_deadzone),
+            ("look_ahead_max_yaw_deg", self.look_ahead_max_yaw_deg),
+            ("look_ahead_max_pitch_deg", self.look_ahead_max_pitch_deg),
+            ("look_ahead_ease_time", self.look_ahead_ease_time),
+            ("bump_per_speed", self.bump_per_speed),
+            ("bump_max", self.bump_max),
+            ("bump_frequency", self.bump_frequency),
+            ("bump_damping", self.bump_damping),
+            ("bump_threshold", self.bump_threshold),
+        ] {
+            if !(v >= 0.0 && v.is_finite()) {
+                return Err(format!("{what} {v} out of range"));
+            }
+        }
+        self.fov_curve.validate().map_err(|e| format!("fov_curve: {e}"))?;
+        self.streak_curve.validate().map_err(|e| format!("streak_curve: {e}"))
     }
 }
 
@@ -78,13 +105,20 @@ pub struct CameraFx {
     bump_age: f64,
     /// Touchdowns so far (scenario checks).
     pub bumps: u32,
+    /// Recent approach speed, falling off over `APPROACH_MEMORY`: the contact comes a step after
+    /// the solver has cut the approach.
     approach: f64,
+    grounded: bool,
 }
+
+/// s: time constant of the remembered approach speed.
+const APPROACH_MEMORY: f64 = 0.1;
 
 impl CameraFx {
     /// One step. `turn` is the ship's turn rate in its own axes (x pitch, y yaw, rad/s),
-    /// `approach` its speed towards the ground (m/s), `near_ground` whether it is within touching.
-    pub fn step(&mut self, t: &CameraTuning, speed: f64, turn: DVec2, approach: f64, near_ground: bool, dt: f64) {
+    /// `approach` its speed towards the ground (m/s), `grounded` whether the hull touches; the
+    /// bump comes when contact starts (#110 point 4).
+    pub fn step(&mut self, t: &CameraTuning, speed: f64, turn: DVec2, approach: f64, grounded: bool, dt: f64) {
         self.fov_deg = t.fov_curve.eval(speed);
         self.streak = t.streak_curve.eval(speed).clamp(0.0, 1.0);
         let lead = |rate: f64, max_deg: f64| {
@@ -94,12 +128,13 @@ impl CameraFx {
         let target = DVec2::new(lead(turn.x, t.look_ahead_max_pitch_deg), lead(turn.y, t.look_ahead_max_yaw_deg));
         let k = if t.look_ahead_ease_time > 0.0 { 1.0 - (-dt / t.look_ahead_ease_time).exp() } else { 1.0 };
         self.look += (target - self.look) * k;
-        if near_ground && self.approach - approach > t.bump_threshold {
+        self.approach = approach.max(self.approach * (-dt / APPROACH_MEMORY).exp());
+        if grounded && !self.grounded && self.approach > t.bump_threshold {
             self.bump_amp = (self.approach * t.bump_per_speed).min(t.bump_max);
             self.bump_age = 0.0;
             self.bumps += 1;
         }
-        self.approach = approach;
+        self.grounded = grounded;
         self.bump_age += dt;
     }
 

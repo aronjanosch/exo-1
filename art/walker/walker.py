@@ -1,4 +1,4 @@
-"""Walker figures: one body plan, four blockouts (one human, three aliens).
+"""Walker figures: a painted human with four hairstyles and three aliens.
 
 This script is the only source of the figures (concept repo DECISIONS.md,
 model source). Blender units are metres; each figure stands on its origin,
@@ -10,6 +10,7 @@ Run headless:
 
 import argparse
 import math
+from pathlib import Path
 import sys
 
 import bmesh
@@ -18,7 +19,12 @@ import numpy as np
 from mathutils import Vector
 from mathutils.geometry import intersect_ray_tri
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from mesh_checks import face_islands, orient_mesh, require_mesh_orientation
+
 SHARP_ANGLE = math.radians(50)
+BODY_BUDGET = 2800
+HAIR_BUDGET = 1100
 
 
 # ---------------------------------------------------------------- materials
@@ -243,6 +249,15 @@ class Figure:
         for m in list(o.modifiers):
             bpy.ops.object.modifier_apply(modifier=m.name)
 
+        # Check Skin's surface before decimation, material cuts and hair/paint.
+        # A failed branch junction may otherwise leave detached, folded hands.
+        orient_mesh(o.data, connected=True)
+        tris = sum(len(p.vertices) - 2 for p in o.data.polygons)
+        if tris > BODY_BUDGET:
+            dec = o.modifiers.new("body_budget", "DECIMATE")
+            dec.ratio = BODY_BUDGET / tris
+            bpy.ops.object.modifier_apply(modifier=dec.name)
+
         mats = sorted({z for _, _, zs in bones for z in ([zs] if isinstance(zs, str) else [m for _, m in zs])})
         for m in mats:
             o.data.materials.append(self.m[m])
@@ -340,7 +355,8 @@ class Figure:
         for o in parts:
             o.select_set(True)
         bpy.context.view_layer.objects.active = parts[0]
-        bpy.ops.object.join()
+        if len(parts) > 1:
+            bpy.ops.object.join()
         o = bpy.context.active_object
         bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
         rem = o.modifiers.new("remesh", "REMESH")
@@ -356,8 +372,40 @@ class Figure:
             dec = o.modifiers.new("decimate", "DECIMATE")
             dec.ratio = triangles / tris
             bpy.ops.object.modifier_apply(modifier=dec.name)
+        # Decimation can collapse a tiny remeshed island to a face and its
+        # reverse (seen at the spiked hair tip). These fragments enclose no
+        # volume and have no usable surface normals. Remove only flat pairs.
+        bm = bmesh.new()
+        bm.from_mesh(o.data)
+        flat_pairs = []
+        for island in face_islands(bm):
+            if len(island) == 2:
+                a, b = island
+                if set(a.verts) == set(b.verts):
+                    flat_pairs.extend(island)
+        bmesh.ops.delete(bm, geom=flat_pairs, context="FACES")
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+        bm.to_mesh(o.data)
+        bm.free()
+        require_mesh_orientation(o.data)
         o.data.materials.clear()
         return self._add(o, mat)
+
+    def merge_surfaces(self, parts, budgets=None):
+        """Unify organic and cloth volumes; keep eyes and garment edges separate.
+
+        Pass body parts collected before adding facial details. Overlapping
+        volumes merge;
+        disconnected hands and limbs keep their silhouette.
+        """
+        budgets = budgets or {"skin": BODY_BUDGET, "suit": 1400, "pants": 400}
+        merged = {}
+        for key, budget in budgets.items():
+            group = [o for o in parts if o in self.parts and
+                     len(o.data.materials) == 1 and o.data.materials[0] == self.m[key]]
+            if len(group) > 1:
+                merged[key] = self.fuse(group, key, voxel=0.004, smooth=4, triangles=budget)
+        return merged
 
     def build(self, x=0.0):
         bpy.ops.object.select_all(action="DESELECT")
@@ -368,10 +416,113 @@ class Figure:
         o = bpy.context.active_object
         o.name = self.name
         bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-        o.data.shade_smooth()
-        o.data.set_sharp_from_angle(angle=SHARP_ANGLE)
+        # Joined primitives retain the first primitive's origin. Put every
+        # model in the same coordinate frame before positioning the lineup.
+        bpy.context.scene.cursor.location = (0, 0, 0)
+        bpy.ops.object.origin_set(type="ORIGIN_CURSOR")
+        ground_character(o)
+        if self.name in {"NorbPainted", "NorbMullet", "NorbSidePart", "NorbSpikes"}:
+            refine_norb(o)
+        shade_character(o)
+        require_mesh_orientation(o.data)
         o.location.x = x
         return o
+
+
+def ground_character(obj):
+    """Place the lowest point at local z=0, keeping the shared foot origin."""
+    floor = min(v.co.z for v in obj.data.vertices)
+    for vertex in obj.data.vertices:
+        vertex.co.z -= floor
+
+
+def refine_norb(obj):
+    """Reproduce the jaw and hair refinement selected in live Blender MCP.
+
+    Paint stays attached to the skin while the lower face becomes shorter and
+    the jaw separates more clearly from the neck. Separate face parts retain
+    their shape. Positions use the grounded mesh's metre coordinates.
+    """
+    skin_slots = {i for i, mat in enumerate(obj.data.materials)
+                  if mat.name.startswith(f"{obj.name}_skin")}
+    vertices = {v for poly in obj.data.polygons if poly.material_index in skin_slots
+                for v in poly.vertices}
+    for index in vertices:
+        vertex = obj.data.vertices[index]
+        z = vertex.co.z
+        jaw = math.exp(-((z - 1.48) / 0.045) ** 2)
+        throat = math.exp(-((z - 1.405) / 0.026) ** 2)
+        vertex.co.x *= 1 + 0.16 * jaw - 0.08 * throat
+        if vertex.co.y < 0:
+            vertex.co.y -= 0.006 * jaw
+        vertex.co.z += 0.012 * math.exp(-((z - 1.45) / 0.025) ** 2)
+
+    if obj.name in {"NorbPainted", "NorbSidePart"}:
+        hair_slots = {i for i, mat in enumerate(obj.data.materials) if mat.name == "Hair"}
+        vertices = sorted({v for poly in obj.data.polygons if poly.material_index in hair_slots
+                           for v in poly.vertices})
+        group = obj.vertex_groups.new(name="HairRefinement")
+        group.add(vertices, 1.0, "REPLACE")
+        smooth = obj.modifiers.new("HairRefinement", "SMOOTH")
+        smooth.vertex_group = group.name
+        smooth.factor = 0.4
+        smooth.iterations = 2
+        bpy.context.view_layer.objects.active = obj
+        group_name = group.name
+        bpy.ops.object.modifier_apply(modifier=smooth.name)
+        group = obj.vertex_groups.get(group_name)
+        if group is not None:
+            obj.vertex_groups.remove(group)
+
+        if obj.name == "NorbPainted":
+            skin_vertices = {v for poly in obj.data.polygons if poly.material_index in skin_slots
+                             for v in poly.vertices}
+            hair_vertices = {v for poly in obj.data.polygons if poly.material_index in hair_slots
+                             for v in poly.vertices}
+            scalp = max(obj.data.vertices[i].co.z for i in skin_vertices)
+            top = max(obj.data.vertices[i].co.z for i in hair_vertices)
+            pivot = scalp - 0.025
+            target = scalp + 0.022
+            ratio = min(1.0, (target - pivot) / (top - pivot))
+            for index in hair_vertices:
+                vertex = obj.data.vertices[index]
+                if vertex.co.z > pivot:
+                    vertex.co.z = pivot + (vertex.co.z - pivot) * ratio
+    # Enlarge the complete head, including eyes, ears and hair, together.
+    # Smoothly blend into the upper neck to retain a continuous silhouette.
+    for vertex in obj.data.vertices:
+        z = vertex.co.z
+        t = max(0.0, min(1.0, (z - 1.39) / 0.08))
+        weight = t * t * (3.0 - 2.0 * t)
+        vertex.co.x *= 1.0 + 0.25 * weight
+        vertex.co.y *= 1.0 + 0.25 * weight
+        vertex.co.z += 0.25 * weight * (z - 1.48)
+    obj.data.update()
+
+
+def shade_character(obj):
+    """Keep true garment corners sharp, organic surfaces continuously smooth.
+
+    A decimated curved surface can have steep triangulation edges; those are
+    not designed hard edges. Material names identify the organic surfaces.
+    """
+    mesh = obj.data
+    mesh.shade_smooth()
+    mesh.set_sharp_from_angle(angle=SHARP_ANGLE)
+    organic = {"EyeWhite", "Pupil", "Tongue", "Tooth", "Hair"}
+    indices = {i for i, mat in enumerate(mesh.materials)
+               if mat.name in organic or mat.name.startswith(("Skin_", "SkinDark_"))
+               or mat.name.split(".", 1)[0] == f"{obj.name}_skin"}
+    edge_lookup = {tuple(sorted(e.vertices)): e.index for e in mesh.edges}
+    touches = [[] for _ in mesh.edges]
+    for poly in mesh.polygons:
+        for key in poly.edge_keys:
+            touches[edge_lookup[tuple(sorted(key))]].append(poly.material_index)
+    sharp = mesh.attributes.get("sharp_edge")
+    if sharp:
+        for i, materials in enumerate(touches):
+            if materials and all(m in indices for m in materials):
+                sharp.data[i].value = False
 
 
 # ---------------------------------------------------------------- painted layers
@@ -511,6 +662,52 @@ def surface_front(blob, dx, dz, inset=0.0):
     return Vector((c.x + dx, c.y - ry * math.sqrt(k) + inset, c.z + dz))
 
 
+def paint_alien_face(f, body, mouth, width, opening):
+    """Use the same painted face language as Norb on a fused alien body.
+
+    Eyes and brows stay geometry. Mouth and cheek colour sit on the skin,
+    avoiding separate floating lip volumes.
+    """
+    bpy.ops.object.select_all(action="DESELECT")
+    body.select_set(True)
+    bpy.context.view_layer.objects.active = body
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    unwrap(body)
+    pt = Paint(body, ["skin"])
+    skin = f.m["skin"].node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value[:3]
+    pt.fill("skin", skin)
+    x, y, z = (pt.P[..., i] for i in range(3))
+    front = y < mouth.y + 0.025
+    # Slightly crooked smile, with a soft lower lip painted into the skin.
+    line = mouth.z + 0.18 * (x - mouth.x) ** 2 / width
+    d = ((x - mouth.x) / width) ** 2 + ((z - line) / opening) ** 2
+    pt.put(pt.mask("skin") & front & (d < 1), (0.25, 0.04, 0.06))
+    lip = np.hypot((x - mouth.x) / width, (z - line + opening * 0.4) / (opening * 1.15))
+    pt.put(pt.mask("skin") & front & (lip < 1.1) & (d >= 1),
+           tuple(c * 0.72 for c in skin), 0.5)
+    for side in (-1, 1):
+        cheek = np.hypot(x - mouth.x - side * width * 1.05, z - mouth.z - opening * 1.8)
+        radius = width * 0.28
+        pt.put(pt.mask("skin") & front & (cheek < radius),
+               tuple(c * 0.85 for c in skin), np.clip(1 - cheek / radius, 0, 1) * 0.3)
+    body.data.materials[0] = painted_material(f"{f.name}_skin", pt.image(f"{f.name}_face"))
+
+
+def paint_alien_clothes(f, body, strokes):
+    """Paint broad clothing seams in grey; the shared slot tint colours them."""
+    bpy.ops.object.select_all(action="DESELECT")
+    body.select_set(True)
+    bpy.context.view_layer.objects.active = body
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    unwrap(body)
+    pt = Paint(body, ["suit"], size=512)
+    pt.fill("suit", (1, 1, 1))
+    for points, width, shade in strokes:
+        pt.stroke("suit", points, width, (shade,) * 3)
+    tint = f.m["suit"].node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value[:3]
+    body.data.materials[0] = painted_material(f"{f.name}_suit", pt.image(f"{f.name}_clothes"), tint=tint)
+
+
 def mirrored(f, fn):
     for s in (-1, 1):
         fn(f, s)
@@ -525,8 +722,9 @@ def norb_body(f):
         "pelvis": ((0, 0, 0.9), (0.13, 0.09)),
         "waist": ((0, 0, 1.03), (0.12, 0.085)),
         "chest": ((0, 0, 1.2), (0.14, 0.09)),
-        "neck": ((0, 0, 1.37), (0.045, 0.045)),
-        "jaw": ((0, -0.012, 1.47), (0.1, 0.1)),
+        "neck": ((0, 0, 1.365), (0.038, 0.038)),
+        "neck_top": ((0, 0, 1.43), (0.038, 0.038)),
+        "jaw": ((0, -0.012, 1.485), (0.112, 0.095)),
         "head": ((0, -0.005, 1.57), (0.12, 0.12)),
         "crown": ((0, 0.005, 1.67), (0.1, 0.1)),
     }
@@ -544,16 +742,24 @@ def norb_body(f):
         }
     shirt_then_skin = ((0.0, "suit"), (0.45, "skin"))
     bones = [("pelvis", "waist", ((0.0, "pants"), (0.25, "suit"))), ("waist", "chest", "suit"),
-             ("chest", "neck", ((0.0, "suit"), (0.8, "skin"))), ("neck", "jaw", "skin"),
+             ("chest", "neck", ((0.0, "suit"), (0.8, "skin"))), ("neck", "neck_top", "skin"), ("neck_top", "jaw", "skin"),
              ("jaw", "head", "skin"), ("head", "crown", "skin")]
     for side in "lr":
         bones += [("pelvis", f"hip_{side}", "pants"), (f"hip_{side}", f"knee_{side}", "pants"),
                   (f"knee_{side}", f"ankle_{side}", ((0.0, "pants"), (0.93, "shoes"))),
                   (f"ankle_{side}", f"toe_{side}", "shoes"),
                   ("chest", f"shoulder_{side}", "suit"), (f"shoulder_{side}", f"elbow_{side}", shirt_then_skin),
-                  (f"elbow_{side}", f"wrist_{side}", "skin"), (f"wrist_{side}", f"hand_{side}", "skin"),
-                  (f"wrist_{side}", f"thumb_{side}", "skin")]
-    f.skin_body(j, bones)
+                  (f"elbow_{side}", f"wrist_{side}", "skin"), (f"wrist_{side}", f"hand_{side}", "skin")]
+    # Skin folds and disconnects the acute three-way wrist/thumb junction.
+    # Keep the palm continuous with the arm and attach a rounded thumb using
+    # the same skeleton positions and radius, rather than branching Skin here.
+    f.skin_body({name: value for name, value in j.items() if not name.startswith("thumb_")}, bones)
+    for side in "lr":
+        root = Vector(j[f"wrist_{side}"][0]).lerp(Vector(j[f"hand_{side}"][0]), 0.55)
+        tip = Vector(j[f"thumb_{side}"][0])
+        direction = tip - root
+        thumb = f.blob("skin", (root + tip) / 2, (0.011, 0.011, direction.length / 2 + 0.011))
+        thumb.rotation_euler = direction.to_track_quat("Z", "Y").to_euler()
     return j
 
 
@@ -580,13 +786,15 @@ def norb_head_parts(f, hc, he, hi, front, hair="mop"):
 
     first = len(f.parts)
     HAIRSTYLES[hair](f, hc, he)
-    f.fuse(f.parts[first:], "hair")
-    bridge = front(0, hc.z - 0.008, inset=0.006)
+    f.fuse(f.parts[first:], "hair", triangles=HAIR_BUDGET)
+    first = len(f.parts)
+    bridge = front(0, hc.z - 0.008, inset=0.009)
     tip = bridge + Vector((0, -0.028, -0.038))
     f.tube("skin", [bridge, bridge + Vector((0, -0.016, -0.02)), tip], 0.012, taper=[0.6, 0.9, 1.1], sides=10)
     f.blob("skin", tip + Vector((0, 0.002, 0)), (0.019, 0.017, 0.016))
     for s in (-1, 1):
         f.blob("skin", tip + Vector((s * 0.014, 0.008, 0.002)), (0.01, 0.01, 0.009))
+    f.fuse(f.parts[first:], "skin", voxel=0.0015, smooth=4, triangles=240)
 
 
 # ---------------------------------------------------------------- hairstyles
@@ -823,16 +1031,18 @@ def glibbo():
     f.torus("suit", (0, 0, 1.06), 0.22, 0.06)
     f.torus("trim", (0, 0, 1.11), 0.21, 0.04)
     head = f.blob("skin", (0, 0, 1.33), (0.33, 0.29, 0.33), segments=24, rings=14)
-    f.spots(head, [(55, 30, 0.02), (-45, 45, 0.015)])
+    surfaces = list(f.parts)
     f.eye_on(head, 0, 0.1, 0.13, look=(0.1, -0.05), lid=0.22, lid_tilt=12)
     f.brow(head, 0, 0.27, 0.2, angle=0, mat="skin_dark")
-    mouth = f.mouth(head, -0.13, 0.15, open_=0.05, lip=True)
+    mouth = surface_front(head, 0, -0.13, inset=0.012)
     for dx, h in ((-0.07, 0.03), (-0.02, 0.022), (0.05, 0.034)):
         f.blob("tooth", mouth + Vector((dx, -0.035, 0.035 - h * 0.4)), (0.02, 0.012, h), segments=8, rings=4)
     f.blob("tongue", mouth + Vector((0.02, -0.03, -0.02)), (0.07, 0.03, 0.025))
     for x, curl in ((-0.05, -1), (0.0, 1), (0.06, 1)):
         base = (x, 0.02, 1.64)
         f.tube("skin_dark", [base, (x + curl * 0.02, 0.0, 1.72), (x + curl * 0.05, -0.02, 1.71)], 0.006, sides=4)
+    merged = f.merge_surfaces(surfaces)
+    paint_alien_face(f, merged["skin"], mouth, 0.15, 0.05)
     return f
 
 
@@ -847,7 +1057,7 @@ def zorp():
         f.torus("pants", (x, 0, 0.11), 0.072, 0.014, segments=16)
 
     def arm(f, s):
-        f.tube("suit", [(s * 0.26, 0, 1.0), (s * 0.34, -0.02, 0.88), (s * 0.35, -0.05, 0.8)], 0.055)
+        f.tube("suit", [(s * 0.21, 0, 1.0), (s * 0.32, -0.02, 0.88), (s * 0.35, -0.05, 0.8)], 0.06)
         f.torus("trim", (s * 0.35, -0.05, 0.79), 0.045, 0.012, segments=16)
         f.hand((s * 0.35, -0.06, 0.79), s, fingers=2, size=1.2)
 
@@ -857,23 +1067,28 @@ def zorp():
     f.blob("suit", (0, 0, 0.62), (0.32, 0.27, 0.31), segments=20, rings=12)
     f.blob("suit", (0, 0, 0.95), (0.24, 0.21, 0.2))
     f.torus("trim", (0, 0, 0.38), 0.21, 0.025, squash=0.85)
-    f.blob("suit", (0, -0.25, 0.55), (0.17, 0.05, 0.09))
-    f.tube("metal", [surface_front(f.parts[-3], 0, 0.15, inset=-0.004),
-                     surface_front(f.parts[-3], 0, 0.0, inset=-0.004)], 0.006, sides=4)
     f.blob("suit", (0, 0.13, 1.12), (0.2, 0.1, 0.12))
     for s in (-1, 1):
         top = (s * 0.06, -0.17, 1.08)
         f.tube("trim", [top, (s * 0.07, -0.21, 0.96), (s * 0.065, -0.22, 0.88)], 0.006, sides=4)
         f.blob("metal", (s * 0.065, -0.22, 0.87), (0.012, 0.012, 0.018))
     head = f.blob("skin", (0, -0.02, 1.16), (0.17, 0.16, 0.12))
-    f.mouth(head, -0.03, 0.09, open_=0.016)
+    surfaces = list(f.parts)
+    mouth = surface_front(head, 0, -0.03, inset=0.012)
     for tip, r, look, lid in (((-0.13, -0.06, 1.52), 0.055, (0.2, 0), 0.35),
                               ((0.0, -0.09, 1.62), 0.06, (0, -0.15), 0.2),
                               ((0.14, -0.05, 1.48), 0.05, (-0.25, 0.1), 0.45)):
         base = (tip[0] * 0.4, -0.02, 1.25)
         mid = (tip[0] * 0.8, tip[1] * 0.5, (1.25 + tip[2]) / 2 + 0.03)
-        f.tube("skin", [base, mid, (tip[0], tip[1] + 0.02, tip[2] - r * 0.8)], 0.02)
+        stalk = f.tube("skin", [base, mid, (tip[0], tip[1] + 0.02, tip[2] - r * 0.8)], 0.025, taper=[1.4, 1.0, 0.85])
+        surfaces.append(stalk)
         f.eye(tip, r, look, lid=lid, lid_tilt=20)
+    merged = f.merge_surfaces(surfaces)
+    paint_alien_face(f, merged["skin"], mouth, 0.09, 0.016)
+    paint_alien_clothes(f, merged["suit"], [
+        ([(0, 1.08), (0, 0.68)], 0.006, 0.55),
+        ([(-0.13, 0.62), (-0.1, 0.53), (0.1, 0.53), (0.13, 0.62)], 0.005, 0.65),
+    ])
     return f
 
 
@@ -888,17 +1103,15 @@ def wobbel():
         f.tube("skin", [(0, 0, 0.55), (c * 0.12, s * 0.12, 0.3), (c * 0.28, s * 0.28, 0.05),
                         (c * 0.38, s * 0.38, 0.03), (math.cos(curl) * 0.4, math.sin(curl) * 0.4, 0.09)],
                0.065, taper=[1, 0.9, 0.55, 0.35, 0.2], sides=8)
-        for t, r in ((0.2, 0.018), (0.28, 0.014), (0.35, 0.01)):
-            f.blob("skin_dark", (c * t, s * t, 0.012 + (0.32 - t) * 0.1), (r, r, r * 0.5))
+
     # bathrobe: body, lapels, belt with knot and ends, pocket
-    robe = f.blob("suit", (0, 0, 0.86), (0.23, 0.19, 0.36), segments=20, rings=12)
+    f.blob("suit", (0, 0, 0.86), (0.23, 0.19, 0.36), segments=20, rings=12)
     for s in (-1, 1):
         f.blob("trim", (s * 0.045, -0.172, 1.0), (0.022, 0.02, 0.15), rot=(0, s * 22, 0))
     f.torus("trim", (0, 0, 0.78), 0.215, 0.022, squash=0.85)
     f.blob("trim", (0.05, -0.17, 0.78), (0.035, 0.025, 0.03))
     for dx in (0.03, 0.07):
         f.tube("trim", [(dx, -0.17, 0.77), (dx + 0.01, -0.175, 0.68), (dx, -0.17, 0.6)], 0.012, sides=6)
-    f.blob("suit", surface_front(robe, -0.12, -0.12, inset=0.02), (0.06, 0.02, 0.05))
 
     def arms(f, s):
         for z, reach in ((1.1, 0.0), (0.95, 0.05)):
@@ -913,13 +1126,19 @@ def wobbel():
     head = f.blob("skin", (0, -0.03, 1.5), (0.17, 0.15, 0.14), segments=20, rings=12)
     f.blob("skin", (0.08, 0.0, 1.61), (0.12, 0.11, 0.1))
     f.blob("skin", (-0.09, 0.02, 1.58), (0.08, 0.08, 0.07))
-    f.spots(head, [(-55, 25, 0.018)])
+    surfaces = list(f.parts)
     f.eye_on(head, -0.07, 0.03, 0.065, look=(0.2, 0.1), lid=0.2, lid_tilt=25)
     f.eye_on(head, 0.07, 0.0, 0.042, look=(-0.1, -0.2), lid=0.42, lid_tilt=25)
     f.brow(head, -0.075, 0.1, 0.07, angle=-15, mat="skin_dark")
     f.brow(head, 0.07, 0.06, 0.05, angle=20, mat="skin_dark")
     f.blob("skin_dark", surface_front(head, 0, -0.03, inset=0.006), (0.012, 0.01, 0.008))
-    f.mouth(head, -0.08, 0.07, open_=0.022)
+    mouth = surface_front(head, 0, -0.08, inset=0.012)
+    merged = f.merge_surfaces(surfaces)
+    paint_alien_face(f, merged["skin"], mouth, 0.07, 0.022)
+    paint_alien_clothes(f, merged["suit"], [
+        ([(-0.15, 0.72), (-0.15, 0.64), (-0.06, 0.64), (-0.06, 0.72)], 0.004, 0.65),
+        ([(0, 0.51), (0, 0.73)], 0.004, 0.75),
+    ])
     return f
 
 
@@ -935,7 +1154,9 @@ def norb_spikes():
     return norb_painted("NorbSpikes", "spikes", slot=(0.6, 0.3, 0.8))
 
 
-FIGURES = [norb, norb_painted, norb_mullet, norb_side_part, norb_spikes, glibbo, zorp, wobbel]
+FIGURES = [norb_painted, norb_mullet, norb_side_part, norb_spikes, glibbo, zorp, wobbel]
+# The earlier geometric-face study remains available explicitly via --only Norb.
+STUDIES = [norb]
 
 
 # ---------------------------------------------------------------- review renders
@@ -979,13 +1200,17 @@ def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     ap = argparse.ArgumentParser()
     ap.add_argument("--renders", help="directory for the review renders")
+    ap.add_argument("--samples", type=int, default=48, help="Cycles samples per review image")
     ap.add_argument("--blend", help="save the lineup scene for a look in Blender")
     ap.add_argument("--only", help="build just these figures, e.g. Norb,NorbPainted")
     args = ap.parse_args(argv)
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     only = [n.strip().lower() for n in args.only.split(",")] if args.only else None
-    makers = [m for m in FIGURES if not only or m.__name__.replace("_", "") in only]
+    makers = [m for m in (FIGURES + STUDIES if only else FIGURES)
+              if not only or m.__name__.replace("_", "") in only]
+    if not makers:
+        ap.error("--only matched no figures")
     spacing = 1.2
     xs = [(i - (len(makers) - 1) / 2) * spacing for i in range(len(makers))]
     figures = [make().build(x) for make, x in zip(makers, xs)]
@@ -996,23 +1221,33 @@ def main():
         print(f"FIGURE {o.name}: {tris} triangles, {top:.2f} m tall, {half:.2f} m half width")
 
     ground = stage()
+    bpy.context.scene.cycles.samples = max(1, args.samples)
     if args.blend:
         bpy.ops.wm.save_as_mainfile(filepath=args.blend)
     if args.renders:
         d = args.renders.rstrip("/")
-        shoot(f"{d}/lineup_three_quarter.png", (2.4, -6.0, 1.7), (0, 0, 0.9), lens=40)
-        shoot(f"{d}/lineup_front.png", (0, -7.0, 0.95), (0, 0, 0.9), lens=45)
+        Path(d).mkdir(parents=True, exist_ok=True)
+        distance = max(5.0, len(figures) * spacing * 1.35)
+        shoot(f"{d}/lineup_three_quarter.png", (distance * 0.28, -distance, 2.1), (0, 0, 0.9), lens=45)
+        shoot(f"{d}/lineup_front.png", (0, -distance, 0.95), (0, 0, 0.9), lens=45)
+        shoot(f"{d}/lineup_back.png", (0, distance, 1.4), (0, 0, 0.9), lens=45)
         for o in figures:
             top = max((o.matrix_world @ v.co).z for v in o.data.vertices)
-            face = (o.location.x, 0, top - 0.25)
+            # Eye stalks and the cyclops sit much higher than the human face.
+            # Use recipe framing instead of cropping their expression off.
+            face_z = {"Glibbo": 1.4, "Zorp": 1.4, "Wobbel": 1.53}.get(o.name, top - 0.15)
+            face = (o.location.x, 0, face_z)
             shoot(f"{d}/face_{o.name.lower()}.png", (o.location.x + 0.45, -1.3, face[2] + 0.05), face,
                   lens=50, size=(800, 800))
+        shoot(f"{d}/at_60m_day.png", (0, -60, 1.0), (0, 0, 1.0), fov_deg=80, size=(1920, 1080))
         # A game-like view: 80 degree field of view, eye height, 30 m away, night.
         bpy.data.objects.remove(ground)
         for light in [o for o in bpy.data.objects if o.type == "LIGHT"]:
             bpy.data.objects.remove(light)
         stage(night=True)
+        bpy.context.scene.cycles.samples = max(1, args.samples)
         shoot(f"{d}/at_30m_night.png", (0, -30, 1.0), (0, 0, 1.0), fov_deg=80, size=(1920, 1080))
 
 
-main()
+if __name__ == "__main__":
+    main()

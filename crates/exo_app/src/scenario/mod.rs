@@ -24,9 +24,11 @@ use crate::ship::RemoteShip;
 
 mod boost;
 mod cargo;
+mod deliver;
 mod figure;
 mod flight;
 mod landing;
+mod models;
 mod net;
 mod reload;
 mod space;
@@ -38,6 +40,26 @@ mod warp;
 pub use self::{cargo::*, net::*, swap::*};
 pub(crate) use self::warp::*;
 use self::{figure::*, flight::*, reload::*, space::*, walk::*};
+
+/// The script driver and what single scenarios add (`foreign`, `swap`). Not added without a scenario.
+pub fn plugin(name: &str, headless: bool) -> impl Plugin {
+    let name = name.to_string();
+    move |app: &mut App| {
+        app.add_systems(FixedUpdate, run_script.run_if(resource_exists::<Script>).before(crate::controls::resolve_actions).in_set(crate::phases::Fx::Input));
+        if name == "foreign" {
+            // The remote ship is placed before the controllers read it, after net_pre.
+            app.add_systems(FixedUpdate, net::foreign_drive.run_if(resource_exists::<ForeignDriver>).after(crate::net_live::net_pre).in_set(crate::phases::Fx::Input));
+        }
+        if name == "swap" {
+            // #14: count what a planet swap leaves behind; headless with the terrain too.
+            app.init_resource::<swap::SwapAudit>();
+            app.add_systems(FixedUpdate, swap::swap_audit.after(crate::warp::warp_telemetry).in_set(crate::phases::Fx::Drive));
+            if headless {
+                app.add_systems(Update, swap::headless_view.in_set(crate::phases::Frame::Camera));
+            }
+        }
+    }
+}
 
 pub type Step = Box<dyn FnMut(&mut World, &mut Ctx) -> bool + Send + Sync>;
 
@@ -575,6 +597,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "flight" => flight_steps(&mut s, &shot_step, out_dir, windowed),
         // #90, #91: the boost capacitor drains, cuts out and recharges; the HUD shows it.
         "boost-hud" => boost::boost_hud_steps(&mut s),
+        // Spike 13: manoeuvres with the axis flight model, measured as a table.
+        "flight-model" => models::flight_model_steps(&mut s),
         // #92: land on a slope below the limit; no drift from touchdown until thrust.
         "slope-landing" => landing::slope_landing_steps(&mut s),
         // #21: edit a tuning file while running (dev builds).
@@ -594,6 +618,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "crate-budget" => cargo::crate_budget_steps(&mut s, out_dir, windowed),
         // Night extra E1: unload the parked ship down the ramp by hand and load it again.
         "crate-unload" => cargo::crate_unload_steps(&mut s),
+        "deliver" => deliver::deliver_steps(&mut s),
         // #63: fixed viewpoints and an atlas per planet (headless: atlas and statistics only).
         "planet-look" => crate::look::steps(&mut s, out_dir, windowed),
         // #70: walk from outside into a site; the walker stands on its flattened ground.

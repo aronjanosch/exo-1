@@ -1,0 +1,1 @@
+{ "id": "freight_xp", "name": "track.freight_xp.name", "owner": "player", "thresholds": [100, 300, 700] }

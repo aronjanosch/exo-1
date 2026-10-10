@@ -233,5 +233,5 @@ pub fn count_instances(mut view: ResMut<ScatterView>, cells: Query<&Children, Wi
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<ScatterView>();
-    app.add_systems(Update, (update_scatter, count_instances).chain().after(crate::terrain::update_terrain));
+    app.add_systems(Update, (update_scatter, count_instances).chain().after(crate::terrain::update_terrain).in_set(crate::phases::Frame::World));
 }

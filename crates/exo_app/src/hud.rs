@@ -10,6 +10,11 @@ use crate::view::NEAR_PLANET;
 use crate::walker::Player;
 use bevy::math::DVec3;
 use bevy::prelude::*;
+
+pub fn plugin(app: &mut App) {
+    app.init_resource::<HudReadout>();
+    app.add_systems(FixedUpdate, update_readout.in_set(crate::phases::Fx::Effects));
+}
 pub use flight_core::hud::{Height, HudTuning};
 
 /// What the player is doing, as the mode element names it.
@@ -45,6 +50,8 @@ pub struct HudIn {
     /// `None` far from every planet.
     pub altitude: Option<Height>,
     pub boost: Boost,
+    /// `LANDING` in landing mode (K); empty otherwise and off the seat.
+    pub landing: &'static str,
 }
 
 /// The four permanent elements as shown, plus the gauge for the bar.
@@ -59,6 +66,13 @@ pub struct HudReadout {
     pub ready: bool,
     /// Next to the bar: which boost the ship flies, `CAPACITOR` or `STAGE` (F6); empty off the seat.
     pub boost_mode: &'static str,
+    /// After it: `LANDING` in landing mode (K); empty otherwise and off the seat.
+    pub landing: &'static str,
+}
+
+/// The landing mode's HUD word. TODO(initiator): the word (spike 13).
+pub fn landing_word(landing: bool) -> &'static str {
+    if landing { "LANDING" } else { "" }
 }
 
 /// Two decimals below 1 m/s, so a ship at rest can be told from a slow drift (issue #6).
@@ -88,7 +102,7 @@ pub fn readout(i: &HudIn) -> HudReadout {
         Boost::Stage(held) => (if held { "BOOST ON".into() } else { "BOOST".into() }, None, held, true, "STAGE"),
         Boost::Ship { charge, active, ready } => (format!("BOOST {:.0} %", charge * 100.0), Some(charge), active, ready, "CAPACITOR"),
     };
-    HudReadout { texts: [mode, format!("{} m/s", speed_text(i.speed)), alt, boost], gauge, boosting, ready, boost_mode }
+    HudReadout { texts: [mode, format!("{} m/s", speed_text(i.speed)), alt, boost], gauge, boosting, ready, boost_mode, landing: i.landing }
 }
 
 /// Fills `HudReadout` after the step (fixed step, also headless).
@@ -102,6 +116,7 @@ pub fn update_readout(
     mut out: ResMut<HudReadout>,
 ) {
     let (Ok(pl), Ok((ship, sp, sv, sr))) = (players.single(), ships.single()) else { return };
+    let landing = if pl.seated { landing_word(ship.ctl.landing_mode) } else { "" };
     let (mode, v, pos, boost) = if pl.seated {
         let mode = if wd.drive.phase != warp_core::Phase::Idle {
             Mode::Quantum(format!("{:?}", wd.drive.phase))
@@ -122,7 +137,7 @@ pub fn update_readout(
     };
     let r: DVec3 = pos - planet.centre;
     let altitude = (r.length() < NEAR_PLANET).then(|| Height::pick(planet.above_ground(pos), r.length() - planet.radius, tuning.hud.agl_below));
-    let new = readout(&HudIn { mode, speed: v.length(), altitude, boost });
+    let new = readout(&HudIn { mode, speed: v.length(), altitude, boost, landing });
     if *out != new {
         *out = new;
     }
@@ -133,7 +148,7 @@ mod tests {
     use super::*;
 
     fn ship(charge: f64, active: bool, ready: bool) -> HudIn {
-        HudIn { mode: Mode::Ship { assist: true, decoupled: false }, speed: 123.44, altitude: Some(Height::Alt(450.4)), boost: Boost::Ship { charge, active, ready } }
+        HudIn { mode: Mode::Ship { assist: true, decoupled: false }, speed: 123.44, altitude: Some(Height::Alt(450.4)), boost: Boost::Ship { charge, active, ready }, landing: "" }
     }
 
     #[test]
@@ -143,6 +158,13 @@ mod tests {
         assert_eq!(r.gauge, Some(0.744));
         assert!(r.boosting && r.ready);
         assert_eq!(r.boost_mode, "CAPACITOR");
+        assert_eq!(r.landing, "");
+    }
+
+    #[test]
+    fn landing_words() {
+        assert_eq!(landing_word(false), "");
+        assert_eq!(landing_word(true), "LANDING");
     }
 
     #[test]
@@ -190,15 +212,15 @@ mod tests {
 
     #[test]
     fn far_from_planets_no_altitude_and_slow_speeds_get_two_decimals() {
-        let r = readout(&HudIn { mode: Mode::Walk, speed: 0.256, altitude: None, boost: Boost::None });
-        assert_eq!(r.boost_mode, "");
+        let r = readout(&HudIn { mode: Mode::Walk, speed: 0.256, altitude: None, boost: Boost::None, landing: "" });
+        assert_eq!((r.boost_mode, r.landing), ("", ""));
         assert_eq!(r.texts, ["WALK".to_string(), "0.26 m/s".into(), String::new(), String::new()]);
         assert_eq!(r.gauge, None);
     }
 
     #[test]
     fn suit_shows_boost_only_while_held() {
-        let i = |held| HudIn { mode: Mode::Suit, speed: 2.0, altitude: Some(Height::Agl(10.0)), boost: Boost::Held(held) };
+        let i = |held| HudIn { mode: Mode::Suit, speed: 2.0, altitude: Some(Height::Agl(10.0)), boost: Boost::Held(held), landing: "" };
         assert_eq!(readout(&i(true)).texts[3], "BOOST");
         assert_eq!(readout(&i(false)).texts[3], "");
         assert_eq!(readout(&i(true)).gauge, None);

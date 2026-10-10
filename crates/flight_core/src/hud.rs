@@ -1,5 +1,4 @@
 //! HUD values that are data (`content/tuning/hud.json`, #91) and the altitude rule. Plain Rust.
-use crate::parse_tuning;
 use serde::Deserialize;
 
 /// HUD values (`content/tuning/hud.json`).
@@ -12,7 +11,7 @@ pub struct HudTuning {
 
 impl HudTuning {
     pub fn from_json(s: &str) -> Result<HudTuning, String> {
-        let t: HudTuning = parse_tuning("hud.json", s)?;
+        let t: HudTuning = content_core::parse_strict("hud.json", s)?;
         if !(t.agl_below >= 0.0) {
             return Err(format!("hud.json: agl_below {} out of range", t.agl_below));
         }

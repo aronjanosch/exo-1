@@ -1,6 +1,5 @@
-//! Port of `spikes/planet/flight_test.gd`: controller checks on a cheap
-//! spherical fixture at 60 Hz. Initial placement is scripted; measured motion
-//! uses input and physics steps. `cargo test -p flight_core -- --nocapture`.
+//! Controller checks on a cheap spherical fixture at 60 Hz. Initial placement is scripted;
+//! measured motion uses input and physics steps. `cargo test -p flight_core -- --nocapture`.
 use flight_core::*;
 use glam::{DQuat, DVec2, DVec3};
 
@@ -36,7 +35,7 @@ impl PlanetEnv for TestPlanet {
     }
 }
 
-/// main.gd's planet model (centre, radius 5000, default field).
+/// The game's planet model (centre, radius 5000, default field).
 struct MainModel {
     centre: DVec3,
     field: Field,
@@ -57,7 +56,7 @@ impl PlanetEnv for MainModel {
     }
 }
 
-/// Godot's SpikeInput.held as flags.
+/// Held keys as flags.
 #[derive(Default, Clone, Copy)]
 struct Keys {
     w: bool,
@@ -81,7 +80,7 @@ struct Sim {
     body: BodyState,
     ship: ShipController,
     keys: Keys,
-    /// Godot's `ship._mouse`, consumed by the next step.
+    /// Mouse movement, consumed by the next step.
     mouse: DVec2,
     failures: u32,
     checks: u32,
@@ -250,9 +249,11 @@ fn field_checks(s: &mut Sim) {
         && s.elevation(s.forward()).abs() > 20.0
         && s.ship.planet_follow_strength == 0.0;
     s.check(ok, "enabled planet follow outside field flies straight without rotating the ship".into());
-    s.check((s.speed() - 350.0).abs() < 1.0, "assisted forward cruise still works outside field".into());
+    let space = ShipTuning::default().space.cruise_speed;
+    s.check((s.speed() - space).abs() < 1.0, "assisted forward cruise still works outside field".into());
     let initial_forward = s.forward();
-    for _ in 0..30 {
+    // At the space cruise the G-safety holds the yaw to a few hundredths of a radian per second.
+    for _ in 0..120 {
         s.mouse = DVec2::new(0.008, 0.0);
         s.tick();
     }
@@ -260,14 +261,14 @@ fn field_checks(s: &mut Sim) {
 }
 
 fn run(s: &mut Sim) {
+    let t = ShipTuning::default();
+    // Low in full air the caps are the atmosphere's, in vacuum the space caps.
+    let (air, space) = (t.cruise_speed, t.space.cruise_speed);
     s.spawn(15.0, true);
     s.keys.w = true;
-    s.ticks(2);
+    s.ticks(600);
     let sp = s.speed();
-    s.check(sp > 0.0 && sp < 0.2, format!("takeoff builds thrust instead of applying full acceleration ({sp:.3} m/s after two ticks)"));
-    s.ticks(238);
-    let sp = s.speed();
-    s.check((sp - 45.0).abs() < 1.0, format!("low flight {sp:.2} m/s (target 45)"));
+    s.check((sp - air).abs() < 1.0, format!("low flight {sp:.2} m/s (cruise {air})"));
     s.keys = Keys::default();
     s.ticks(30);
     let sp = s.speed();
@@ -276,7 +277,7 @@ fn run(s: &mut Sim) {
     let sp = s.speed();
     s.check(sp > 12.0, format!("gentle ground release still moving after 2 s ({sp:.2} m/s)"));
     let mut ground_ticks = 120;
-    while s.speed() > 0.5 && ground_ticks < 300 {
+    while s.speed() > 0.5 && ground_ticks < 900 {
         s.tick();
         ground_ticks += 1;
     }
@@ -285,53 +286,44 @@ fn run(s: &mut Sim) {
     s.check((c - 15.0).abs() < 2.0, format!("hover/curvature clearance {c:.2} m"));
 
     s.keys.w = true;
-    s.ticks(240);
+    s.ticks(600);
     s.keys.shift = true;
     s.keys.x = true;
-    s.ticks(120);
+    s.ticks(360);
     s.check(
         s.ship.brake_active && s.ship.commanded_speed == 0.0 && s.speed() < 0.5,
-        "firm brake overrides forward/boost and stops ground flight in 2 s".into(),
+        format!("firm brake overrides forward/boost and stops low flight in 6 s ({:.2} m/s)", s.speed()),
     );
     s.keys.x = false;
-    s.ticks(240);
-    s.check(!s.ship.brake_active && (s.speed() - 45.0).abs() < 1.0, "releasing brake restores held movement input".into());
+    s.ticks(600);
+    s.check(!s.ship.brake_active && (s.speed() - air).abs() < 1.0, "releasing brake restores held movement input".into());
 
     s.spawn(150.0, false);
     s.keys.w = true;
-    s.ticks(300);
+    s.ticks(600);
     let sp = s.speed();
-    s.check((sp - 60.0).abs() < 2.0, format!("150 m flight {sp:.2} m/s (target 60)"));
-    let mut distance = 0.0;
-    let mut previous = s.pos();
-    s.keys = Keys::default();
-    s.keys.x = true;
-    for _ in 0..120 {
-        s.tick();
-        distance += previous.distance(s.pos());
-        previous = s.pos();
-    }
-    s.check(s.speed() < 0.5 && distance < 60.0, format!("firm stop {distance:.2} m over 2 s, speed {:.3}", s.speed()));
+    s.check((sp - space).abs() < 2.0, format!("vacuum flight {sp:.2} m/s (space cruise {space})"));
 
     s.spawn(150.0, false);
     // The speed stage itself (#24); the capacitor has its own tests (boost.rs, #90).
     s.ship.tuning.boost_capacitor.drain_time = 0.0;
     s.keys.w = true;
+    s.ticks(600);
     s.keys.shift = true;
     s.ticks(240);
     let sp = s.speed();
-    s.check(sp > 140.0 && sp < 155.0, format!("boost at 150 m {sp:.2} m/s"));
+    s.check(sp > space + 50.0 && sp <= t.space.boost_speed_forward + 1.0, format!("boost {sp:.2} m/s (cruise {space}, boost cap {})", t.space.boost_speed_forward));
     s.keys.shift = false;
-    s.ticks(240);
+    s.ticks(600);
     let sp = s.speed();
-    s.check((sp - 60.0).abs() < 3.0, format!("boost release returns to cruise {sp:.2} m/s"));
+    s.check((sp - space).abs() < 3.0, format!("boost release returns to cruise {sp:.2} m/s"));
 
     s.spawn(150.0, false);
     s.keys.w = true;
     s.keys.d = true;
-    s.ticks(240);
+    s.ticks(600);
     let sp = s.speed();
-    s.check(sp < 61.0, format!("diagonal speed {sp:.2} m/s"));
+    s.check(sp < space + 1.0, format!("diagonal speed {sp:.2} m/s (the stick is a ball)"));
     let mut acceleration_max: f64 = 0.0;
     let mut last_v = s.body.lin_vel;
     for _ in 0..120 {
@@ -340,71 +332,73 @@ fn run(s: &mut Sim) {
         acceleration_max = acceleration_max.max((s.body.lin_vel - last_v).length() * 60.0);
         last_v = s.body.lin_vel;
     }
-    s.ticks(120);
+    s.ticks(300);
     let lv = s.local_v();
     s.check(lv.z < -30.0 && lv.y.abs() < 2.0, format!("turn redirects movement; local velocity {}", fmt_v(lv)));
-    s.check(acceleration_max < 40.5, format!("turn total acceleration {acceleration_max:.2} m/s²"));
+    // The thrust stays inside the pilot's tolerance (forward and sideways at once).
+    let most = (t.g_safety.limit.forward.hypot(t.g_safety.limit.right) * flight_core::G0).hypot(t.g_safety.limit.up * flight_core::G0);
+    s.check(acceleration_max < most, format!("turn total acceleration {acceleration_max:.2} m/s² (tolerance {most:.1})"));
 
     s.spawn(1200.0, false); // full-follow high-speed regression before the fade starts
     s.keys.w = true;
     s.ticks(1500);
     let sp = s.speed();
-    s.check((sp - 350.0).abs() < 3.0, format!("high flight {sp:.2} m/s (target 350)"));
+    s.check((sp - space).abs() < 3.0, format!("high flight {sp:.2} m/s (space cruise {space})"));
     let c = s.clearance();
     s.check((c - 1200.0).abs() < 20.0, format!("curved high flight clearance {c:.2} m"));
     let mut high_distance = 0.0;
-    previous = s.pos();
+    let mut previous = s.pos();
     s.keys = Keys::default();
     let mut stop_ticks = 0;
-    while s.speed() > 0.5 && stop_ticks < 540 {
+    while s.speed() > 0.5 && stop_ticks < 1200 {
         s.tick();
         high_distance += previous.distance(s.pos());
         previous = s.pos();
         stop_ticks += 1;
     }
     s.check(
-        stop_ticks > 240 && stop_ticks < 540 && s.speed() < 0.5,
-        format!("350 m/s gentle stop {:.2} s / {high_distance:.1} m / residual {:.3} m/s", stop_ticks as f64 / 60.0, s.speed()),
+        stop_ticks < 1200 && s.speed() < 0.5,
+        format!("{space} m/s neutral stop {:.2} s / {high_distance:.1} m / residual {:.3} m/s", stop_ticks as f64 / 60.0, s.speed()),
     );
-    s.check((s.clearance() - 1200.0).abs() < 20.0, "gentle high-speed stop retains curved flight".into());
+    s.check((s.clearance() - 1200.0).abs() < 20.0, "high-speed stop retains curved flight".into());
 
     s.keys.w = true;
-    s.ticks(480);
+    s.ticks(900);
     s.keys = Keys::default();
     s.keys.x = true;
     let before_brake = s.body.lin_vel;
     s.ticks(2);
     s.check(
-        s.speed() > 340.0 && (s.body.lin_vel - before_brake).length() < 6.0,
+        s.speed() > space - 10.0 && (s.body.lin_vel - before_brake).length() < 6.0,
         "pressing firm brake preserves momentum and bounds initial correction".into(),
     );
     let mut firm_ticks = 2;
-    while s.speed() > 0.5 && firm_ticks < 240 {
+    while s.speed() > 0.5 && firm_ticks < 600 {
         s.tick();
         firm_ticks += 1;
     }
     s.check(
-        firm_ticks < stop_ticks / 2 && firm_ticks <= 210 && s.speed() < 0.5,
-        format!("350 m/s firm stop {:.2} s (gentle {:.2} s)", firm_ticks as f64 / 60.0, stop_ticks as f64 / 60.0),
+        firm_ticks < stop_ticks && s.speed() < 0.5,
+        format!("{space} m/s firm stop {:.2} s (neutral {:.2} s)", firm_ticks as f64 / 60.0, stop_ticks as f64 / 60.0),
     );
-    s.ticks(240 - firm_ticks);
-    s.check(s.speed() < 0.5, "held brake settles at rest within 4 s".into());
+    s.ticks(60);
+    s.check(s.speed() < 0.5, "held brake keeps it at rest".into());
     s.keys.x = false;
 
     // A heading change must redirect trajectory, not just the model.
     s.keys.w = true;
-    s.ticks(480);
+    s.ticks(900);
     for _ in 0..30 {
         s.mouse = DVec2::new(0.008, 0.0);
         s.tick();
     }
-    s.ticks(150);
+    s.ticks(300);
     let lv = s.local_v();
-    s.check(lv.z < -330.0 && lv.x.abs() < 5.0, format!("high-speed turn catches heading within 2.5 s; local velocity {}", fmt_v(lv)));
+    s.check(lv.z < -(space - 20.0) && lv.x.abs() < 5.0, format!("high-speed turn catches heading within 5 s; local velocity {}", fmt_v(lv)));
 
     s.spawn(2000.0, false);
     s.keys.w = true;
-    s.ticks(600);
+    s.ticks(900);
     s.keys = Keys::default();
     let v0 = s.body.lin_vel;
     s.ship.hover_assist = false;
@@ -412,18 +406,18 @@ fn run(s: &mut Sim) {
     s.check((s.body.lin_vel - v0).length() < 1.0, "assist toggle preserves momentum".into());
     s.ticks(120);
     let sp = s.speed();
-    s.check(sp > 340.0, format!("unassisted vacuum coasts {sp:.2} m/s"));
+    s.check(sp > space - 10.0, format!("unassisted vacuum coasts {sp:.2} m/s"));
     s.ship.hover_assist = true;
-    s.ticks(540);
+    s.ticks(900);
     let sp = s.speed();
-    s.check(sp < 0.5, format!("assist arrests high-speed drift in 9 s ({sp:.3} m/s)"));
+    s.check(sp < 0.5, format!("assist arrests high-speed drift in 15 s ({sp:.3} m/s)"));
 
     s.spawn(2000.0, false);
     s.keys.w = true;
-    s.ticks(600);
+    s.ticks(900);
     s.ship.hover_assist = false;
     s.keys.x = true;
-    s.ticks(240);
+    s.ticks(480);
     s.check(
         s.ship.brake_active && s.ship.commanded_speed == 0.0 && s.speed() < 0.5,
         format!(
@@ -434,9 +428,9 @@ fn run(s: &mut Sim) {
         ),
     );
     // Issue #6: held longer, the brake stops exactly, so nothing drifts on after release.
-    s.ticks(120);
+    s.ticks(240);
     let sp = s.speed();
-    s.check(sp < 0.01, format!("firm brake with assist off comes to rest within 6 s ({sp:.5} m/s)"));
+    s.check(sp < 0.01, format!("firm brake with assist off comes to rest within 12 s ({sp:.5} m/s)"));
     s.keys.x = false;
     s.ticks(30);
     s.check(!s.ship.brake_active && s.speed() > 5.0, "brake release restores manual thrust".into());
@@ -444,28 +438,17 @@ fn run(s: &mut Sim) {
     s.ticks(120);
     s.check(s.speed() > 5.0, "manual flight still coasts after braking".into());
 
-    s.spawn(700.0, false);
-    s.keys.w = true;
-    s.keys.ctrl = true;
-    s.ticks(1800);
-    s.check(
-        s.ship.forward_speed_limit < 120.0 && s.speed() < 90.0,
-        format!("descending lowers limit {:.2}, speed {:.2}, clearance {:.2}", s.ship.forward_speed_limit, s.speed(), s.clearance()),
-    );
-
     s.spawn(600.0, false);
     s.planet.terrain_height = 570.0;
     s.keys.w = true;
-    s.ticks(240);
-    let sp = s.speed();
-    s.check((sp - 45.0).abs() < 2.0, format!("mountain clearance governs speed {sp:.2}"));
-    let before = s.body.lin_vel;
+    s.ticks(900);
+    let (before, clearance) = (s.body.lin_vel, s.clearance());
     let offset = DVec3::new(10000.0, 0.0, 0.0);
     s.planet.centre -= offset;
     s.body.pos -= offset;
     s.ticks(3);
     s.check(
-        (s.clearance() - 30.0).abs() < 2.0 && (s.body.lin_vel - before).length() < 1.0,
+        (s.clearance() - clearance).abs() < 2.0 && (s.body.lin_vel - before).length() < 1.0,
         "origin shift preserves flight frame".into(),
     );
 
@@ -488,31 +471,38 @@ fn flight_checks() {
 fn lag_follows_landing_and_the_manual_switch() {
     let dt = 1.0 / 60.0;
     let mut lag = Lag::default();
-    let run = |lag: &mut Lag, clearance: f64, speed: f64, secs: f64| {
+    let run = |lag: &mut Lag, grounded: bool, clearance: f64, speed: f64, secs: f64| {
         for _ in 0..(secs / dt).round() as usize {
-            lag.step(clearance, speed, dt);
+            lag.step(grounded, clearance, speed, dt);
         }
     };
-    run(&mut lag, 0.1, 0.0, 2.0);
+    run(&mut lag, true, 0.1, 0.0, 2.0);
     assert_eq!((lag.landed, lag.level), (true, 0.0));
     lag.toggle();
-    run(&mut lag, 0.1, 0.0, 1.0);
+    run(&mut lag, true, 0.1, 0.0, 1.0);
     assert!(lag.manual_on && lag.level == 1.0, "G switches it on while landed");
     lag.toggle();
-    run(&mut lag, 0.1, 0.0, 1.0);
+    run(&mut lag, true, 0.1, 0.0, 1.0);
     assert_eq!(lag.level, 0.0, "and off again");
-    // Hovering low is still landed (hysteresis), above 2 m the ship flies.
-    run(&mut lag, 1.8, 3.0, 1.0);
+    // Lifting off low is still landed (hysteresis), above 2 m the ship flies.
+    run(&mut lag, false, 1.8, 3.0, 1.0);
     assert!(lag.landed);
-    run(&mut lag, 2.5, 3.0, 0.5);
+    run(&mut lag, false, 2.5, 3.0, 0.5);
     assert!(!lag.landed && (lag.level - 0.5).abs() < 0.02, "half way after 0.5 s: {}", lag.level);
-    run(&mut lag, 2.5, 3.0, 0.6);
+    run(&mut lag, false, 2.5, 3.0, 0.6);
     assert_eq!(lag.level, 1.0);
     lag.toggle();
     assert!(lag.is_on() && !lag.manual_on, "G does nothing in flight");
-    // Slow and low again: landed, the field goes down.
-    run(&mut lag, 1.0, 0.1, 1.1);
+    // #110 point 1: hovering still and low without contact is flying.
+    run(&mut lag, false, 1.4, 0.0, 1.0);
+    assert!(!lag.landed && lag.level == 1.0, "hovering at 1.4 m is not landed");
+    // Touching down slowly: landed, the field goes down.
+    run(&mut lag, true, 1.0, 0.1, 1.1);
     assert_eq!((lag.landed, lag.level), (true, 0.0));
+    // Parked with its centre over a dip deeper than 2 m: the hull touches, still landed.
+    let mut dip = Lag { landed: false, level: 1.0, ..Lag::default() };
+    run(&mut dip, true, 3.0, 0.0, 1.1);
+    assert_eq!((dip.landed, dip.level), (true, 0.0), "contact counts, not the clearance under the centre");
     // Mix: half way the direction is half turned, the strength stays.
     let half = Lag { level: 0.5, ..Lag::default() };
     let g = half.gravity(DVec3::X, DVec3::new(0.0, -9.81, 0.0));

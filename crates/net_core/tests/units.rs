@@ -1,4 +1,4 @@
-//! Port of the unit checks of spike 4 (test.gd `_unit_checks`) plus wire, link and clock.
+//! Unit checks of spike 4 (buffer, snapshot) plus wire, link and clock.
 use glam::{DQuat, DVec3};
 use net_core::buffer::{Buffer, Mode};
 use net_core::clock::ClockSync;

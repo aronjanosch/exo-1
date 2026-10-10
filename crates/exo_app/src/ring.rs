@@ -10,6 +10,10 @@ use bevy::tasks::{block_on, futures_lite::future, AsyncComputeTaskPool, Task};
 use planet_core::cube_to_sphere;
 use std::collections::HashMap;
 
+pub fn plugin(app: &mut App) {
+    app.add_systems(Update, update_ring.in_set(crate::phases::Frame::Sync));
+}
+
 pub const PATCH_SAMPLES: usize = 32; // 1 m spacing, 31 m wide
 const UPDATE_INTERVAL: f64 = 0.2;
 const MAX_ADDS_PER_FRAME: usize = 16;

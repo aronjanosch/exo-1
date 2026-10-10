@@ -2246,6 +2246,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "content_core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "convert_case"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2702,9 +2710,12 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "content_core",
  "daynight_core",
  "flight_core",
+ "gameplay_core",
  "grab_core",
+ "jobs_core",
  "net_core",
  "planet_core",
  "serde_json",
@@ -2763,6 +2774,7 @@ dependencies = [
 name = "flight_core"
 version = "0.1.0"
 dependencies = [
+ "content_core",
  "glam 0.32.1",
  "serde",
  "serde_json",
@@ -2907,6 +2919,15 @@ dependencies = [
  "futures-task",
  "pin-project-lite",
  "slab",
+]
+
+[[package]]
+name = "gameplay_core"
+version = "0.1.0"
+dependencies = [
+ "content_core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3127,6 +3148,7 @@ dependencies = [
 name = "grab_core"
 version = "0.1.0"
 dependencies = [
+ "content_core",
  "glam 0.32.1",
  "serde",
  "serde_json",
@@ -3563,6 +3585,16 @@ checksum = "38c0b942f458fe50cdac086d2f946512305e5631e720728f2a61aabcd47a6264"
 dependencies = [
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "jobs_core"
+version = "0.1.0"
+dependencies = [
+ "content_core",
+ "gameplay_core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -5849,6 +5881,7 @@ dependencies = [
 name = "walker_core"
 version = "0.1.0"
 dependencies = [
+ "content_core",
  "glam 0.32.1",
  "serde",
  "serde_json",

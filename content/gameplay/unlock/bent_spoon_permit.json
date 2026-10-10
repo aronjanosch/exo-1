@@ -1,0 +1,1 @@
+{ "_comment": "Not sold anywhere yet (the board comes in step 4); here so the unlock path has content.", "id": "bent_spoon_permit", "name": "unlock.bent_spoon_permit.name", "price": 150, "grants": ["route_bent_spoon"] }

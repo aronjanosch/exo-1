@@ -8,6 +8,16 @@ use walker_core::urine::{Emitter, Particle, Status, World};
 use flight_core::PlanetEnv;
 use crate::ship::{Ship, RemoteShip, cabin_contains};
 
+pub fn plugin(app: &mut App) {
+    app.init_resource::<UrineJet>().init_resource::<UrineParticles>();
+    app.add_systems(FixedUpdate, (step, step_particles).chain().after(crate::ship::camera_fx).in_set(crate::phases::Fx::Effects));
+}
+
+pub fn window_plugin(app: &mut App) {
+    app.add_systems(Startup, crate::view::setup_urination_view);
+    app.add_systems(Update, crate::view::update_urination_view.in_set(crate::phases::Frame::Hud));
+}
+
 #[derive(Component)]
 pub struct UrineParticle(pub Particle, pub Option<Entity>);
 

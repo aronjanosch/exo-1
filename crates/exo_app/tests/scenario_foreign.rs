@@ -5,6 +5,6 @@ use exo_app::Options;
 
 #[test]
 fn foreign_scenario_passes_headless() {
-    let o = Options { scenario: Some("foreign".into()), headless: true, out_dir: std::env::temp_dir().join("exo-foreign-scenario"), ..Default::default() };
+    let o = Options { scenario: Some("foreign".into()), headless: true, out_dir: common::out_dir("foreign-scenario"), ..Default::default() };
     let _ = common::run_scenario(&o);
 }

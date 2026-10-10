@@ -505,3 +505,43 @@ fn crate_holds_on_a_gentle_slope_and_slides_on_a_steep_one() {
     println!("{:.1} deg slope: moved {moved:.3} m, asleep {}", angle + 8.0, b.asleep);
     assert!(!b.asleep && moved > 1.0, "slides: moved {moved}");
 }
+
+// ---------- condition (#130) ----------
+
+/// Largest impact speed while a small crate falls from `height` (bottom above the floor) and rests.
+fn drop_impact(height: f64) -> f64 {
+    let c = cfg();
+    let room = Room { walls: None };
+    let mut b = small_body();
+    b.pos.y = b.half.y + height;
+    let mut most: f64 = 0.0;
+    for _ in 0..240 {
+        b.step(&c, &walker_core::Frame::IDENTITY, DVec3::Y, G, DVec3::ZERO, 0.0, &room, 1.0 / 60.0);
+        most = most.max(b.impact);
+    }
+    assert!(b.asleep, "rests after the drop");
+    most
+}
+
+#[test]
+fn impact_speed_matches_the_fall() {
+    for h in [0.5, 2.0, 8.0] {
+        let want = (2.0 * G * h).sqrt();
+        let got = drop_impact(h);
+        assert!((got - want).abs() < 0.25, "drop {h} m: impact {got:.2} m/s, free fall {want:.2}");
+    }
+    assert!(drop_impact(0.0) < 0.5, "settling on the floor is a tiny impact at most");
+}
+
+#[test]
+fn impacts_below_the_safe_speed_cost_nothing_and_harder_ones_more() {
+    let c = cfg();
+    assert_eq!(impact_loss(&c, 0.0), 0.0);
+    assert_eq!(impact_loss(&c, c.impact_safe_speed), 0.0);
+    let (a, b) = (impact_loss(&c, c.impact_safe_speed + 2.0), impact_loss(&c, c.impact_safe_speed + 6.0));
+    assert!(a > 0.0 && b > a, "{a} {b}");
+    // With the shipped values: a 0.5 m drop is free, an 8 m drop (12.5 m/s) costs about 40 %.
+    assert_eq!(impact_loss(&c, drop_impact(0.5)), 0.0);
+    let eight = impact_loss(&c, drop_impact(8.0));
+    assert!((0.35..0.5).contains(&eight), "8 m drop: {eight}");
+}

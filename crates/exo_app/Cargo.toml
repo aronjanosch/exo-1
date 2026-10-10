@@ -18,4 +18,7 @@ net_core = { workspace = true }
 warp_core = { workspace = true }
 daynight_core = { workspace = true }
 grab_core = { workspace = true }
+content_core = { workspace = true }
+gameplay_core = { workspace = true }
+jobs_core = { workspace = true }
 serde_json = { workspace = true }

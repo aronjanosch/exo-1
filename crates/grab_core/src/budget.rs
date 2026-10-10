@@ -26,7 +26,7 @@ pub struct Budget {
 
 impl Budget {
     pub fn from_json(s: &str) -> Result<Budget, String> {
-        let b: Budget = crate::parse_tuning("budget.json", s)?;
+        let b: Budget = content_core::parse_strict("budget.json", s)?;
         let r = &b.crates;
         if r.cap == 0 || r.persistence_cap > r.cap || !(r.timeout_s > 0.0) || !(r.far_m > 0.0) {
             return Err("budget.json: crate: cap > 0, persistence_cap <= cap, timeout_s > 0, far_m > 0".into());

@@ -1,7 +1,7 @@
 //! Interaction (#82): one verb (`Tap::Interact`, F) and one prompt. Each step the target is
 //! chosen from what the walker looks at: the crate nearest the centre of the view cone, or the
 //! seat when the walker stands at it. The HUD shows `Interaction::prompt`; the tap does what it
-//! says. Targets now: seat, crates; pads come later.
+//! says. Targets: seat, crates, and on a pad the job offered there (#133).
 use crate::cargo::{crate_world, Crate, Crates};
 use crate::controls::{Actions, Bindings, Input, Tap};
 use crate::grab::Grab;
@@ -12,6 +12,11 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use grab_core::{in_cone, Reach};
 use walker_core::Frame;
+
+pub fn plugin(app: &mut App) {
+    app.init_resource::<Interaction>();
+    app.add_systems(FixedUpdate, interaction.before(crate::walker::walker_step).in_set(crate::phases::Fx::Walker));
+}
 
 /// The walker sits down when its feet are this close to the seat (m), as before #82.
 pub const SEAT_RANGE: f64 = 1.8;
@@ -24,6 +29,8 @@ pub enum Target {
     Crate(Entity, Reach),
     /// Set the held crate down (let go).
     Drop(Entity),
+    /// Take the job offered at this pad for the crew.
+    Job(jobs_core::JobId),
 }
 
 #[derive(Resource, Default, Debug)]
@@ -54,6 +61,7 @@ fn verb(t: Target, size: &str) -> String {
         Target::Crate(_, Reach::Hands) => format!("pick up the {size} crate"),
         Target::Crate(_, Reach::Tool) => format!("pull the {size} crate (grab tool)"),
         Target::Drop(_) => format!("set the {size} crate down"),
+        Target::Job(_) => "take the job: ".into(),
     }
 }
 
@@ -70,6 +78,7 @@ pub fn interaction(
     mut ships: Query<(Entity, &mut Ship, &Position, &Rotation)>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
     crates: Query<(Entity, &Crate)>,
+    mut gp: ResMut<crate::gameplay::Gameplay>,
 ) {
     let Ok(mut pl) = players.single_mut() else { return };
     let Some((ship_e, sp, sr)) = ships.iter().next().map(|(e, _, p, r)| (e, *p, *r)) else { return };
@@ -116,6 +125,8 @@ pub fn interaction(
             None => None,
         }
     };
+    // On a pad with an offered job, and nothing else to do: take the job.
+    let target = target.or_else(|| (pl.ship.is_none() && !pl.seated && !pl.fly && grab.held.is_none()).then(|| gp.offer_at(pl.world_pos(Frame::IDENTITY))).flatten().map(Target::Job));
     inter.target = target;
     inter.prompt = match target {
         None => String::new(),
@@ -125,6 +136,9 @@ pub fn interaction(
                 _ => String::new(),
             };
             let mut p = format!("[{}] {}", key_label(&bindings, Tap::Interact), verb(t, &size));
+            if let Target::Job(j) = t {
+                p.push_str(&gp.offer_label(j));
+            }
             if matches!(t, Target::Drop(_)) {
                 p.push_str(&format!("  [{}] throw", key_label(&bindings, Tap::Throw)));
             }
@@ -164,5 +178,6 @@ pub fn interaction(
             }
         }
         Target::Drop(_) => grab.release(),
+        Target::Job(j) => gp.push_job(crate::gameplay::HOST, jobs_core::JobEvent::OfferAccepted { job: j }),
     }
 }

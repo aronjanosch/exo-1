@@ -1,0 +1,9 @@
+{
+  "_comment": "First pickup pad, about 350 m from the start. Invented name. Position and sizes are starting values (TODO(initiator)).",
+  "id": "drip_rock",
+  "planet": "hearth",
+  "lat_deg": 86.0,
+  "lon_deg": 90.0,
+  "edits": [ { "type": "flatten", "order": 0, "radius_m": 18.0, "rolloff_m": 20.0 } ],
+  "pads": [ { "id": "main", "at": [0.0, 0.0], "radius_m": 15.0 } ]
+}

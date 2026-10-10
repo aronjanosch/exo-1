@@ -1,0 +1,8 @@
+{
+  "_comment": "Invented good. Price is a starting value (TODO(initiator)).",
+  "id": "fizzy_mud",
+  "name": "commodity.fizzy_mud.name",
+  "base_price": 40,
+  "crate_size": "small",
+  "tags": ["wet"]
+}

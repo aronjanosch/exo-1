@@ -26,3 +26,6 @@ WORKSPACE.md
 /.agents/skills/writing-for-agents/
 # Player settings and rebound keys, written by the game where it runs
 /settings/
+
+# Python bytecode from the Blender scripts
+__pycache__/

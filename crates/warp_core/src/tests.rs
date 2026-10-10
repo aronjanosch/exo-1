@@ -391,3 +391,368 @@ fn trips_of_every_length_arrive() {
         assert!(ship.pos.distance(Drive::exit_point(&s, CINDER, DVec3::new(0.0, 7000.0, 0.0))) < 1e-6);
     }
 }
+
+// ---- Edge cases and validation (#111, #106 points 1-2, #113 point 3) ----
+
+use crate::load::{Load, Loader, Pending};
+use serde_json::{json, Value};
+
+fn with(edit: impl FnOnce(&mut Value)) -> Result<System, String> {
+    let mut v: Value = serde_json::from_str(JSON).unwrap();
+    edit(&mut v);
+    System::from_json(&v.to_string())
+}
+
+#[test]
+fn shipped_system_is_valid() {
+    sys().validate().unwrap();
+}
+
+#[test]
+fn unknown_fields_are_refused() {
+    assert!(with(|v| v["typo"] = json!(1)).is_err());
+    assert!(with(|v| v["planets"][0]["radiuss"] = json!(1.0)).is_err());
+    assert!(with(|v| v["drive"]["top_sped"] = json!(1.0)).is_err());
+    // The comment stays allowed, as a string.
+    assert!(with(|v| v["_comment"] = json!("still fine")).is_ok());
+}
+
+#[test]
+fn planet_count_is_an_error_not_a_panic() {
+    assert!(with(|v| v["planets"] = json!([])).is_err());
+    let many = with(|v| {
+        let p = v["planets"][0].clone();
+        v["planets"] = Value::Array(vec![p; 256]);
+    });
+    assert!(many.is_err());
+}
+
+#[test]
+fn planet_radii_must_nest() {
+    let bad: [(&str, Value); 8] = [
+        ("radius", json!(0.0)),
+        ("radius", json!(-5.0)),
+        // radius < obstruction radius
+        ("obstruction_radius", json!(4000.0)),
+        ("obstruction_margin", json!(-1.0)),
+        // keep-out < arrival radius: the exit point must be outside the keep-out
+        ("arrival_radius", json!(5400.0)),
+        // arrival < frame radius
+        ("frame_radius", json!(12000.0)),
+        ("atmosphere_height", json!(-1.0)),
+        ("jump_altitude_factor", json!(-1.0)),
+    ];
+    for (k, x) in bad {
+        assert!(with(|v| v["planets"][1][k] = x.clone()).is_err(), "{k} = {x} accepted");
+    }
+    // A NaN cannot come from JSON, but a centre far out of range can be checked as finite.
+    assert!(with(|v| v["planets"][1]["centre"] = json!([1e308, 1e308, 0.0])).is_ok());
+}
+
+#[test]
+fn drive_values_are_checked() {
+    let bad: [(&str, Value); 14] = [
+        ("emergency_clear_step", json!(0.0)),
+        ("emergency_clear_step", json!(-1000.0)),
+        ("exit_speed", json!(0.0)),
+        ("top_speed", json!(0.0)),
+        ("accel_stage_one", json!(0.0)),
+        ("decel_stage_two", json!(-1.0)),
+        // exit <= switch <= top
+        ("exit_speed", json!(300000.0)),
+        ("stage_switch_speed", json!(2000000.0)),
+        ("engage_speed", json!(2000000.0)),
+        ("spline_tension", json!(0.0)),
+        ("calibration_time_min", json!(0.0)),
+        // the warning band lies outside the calibration angle
+        ("warning_angle", json!(4.0)),
+        ("vfx_full_speed", json!(6250.0)),
+        ("emergency_drop_time", json!(0.0)),
+    ];
+    for (k, x) in bad {
+        assert!(with(|v| v["drive"][k] = x.clone()).is_err(), "drive.{k} = {x} accepted");
+    }
+}
+
+/// A drive fed bad values anyway (built by hand, not from a file) must still end: on rails it
+/// always reaches the end point.
+#[test]
+fn zero_exit_speed_still_arrives() {
+    let s = sys();
+    let (mut d, mut ship) = ready(&s);
+    d.cfg.exit_speed = 0.0;
+    d.begin(CINDER, &ship, &s, &[]).unwrap();
+    let (ev, _) = run(&mut d, &mut ship, &s, 200.0);
+    assert!(ev.iter().any(|(_, e)| *e == Event::Arrived), "stuck in {:?}", d.phase);
+}
+
+#[test]
+fn zero_exit_speed_drop_still_ends() {
+    let s = sys();
+    let (mut d, mut ship) = ready(&s);
+    d.cfg.exit_speed = 0.0;
+    d.cfg.emergency_hold_time = 0.0;
+    d.begin(CINDER, &ship, &s, &[]).unwrap();
+    while d.phase != Phase::Cruise {
+        d.step(DT, &ship, &s, &[]);
+        if let Some((p, _)) = d.pose() {
+            ship.pos = p;
+        }
+    }
+    d.hold_exit(true, DT, &s, &[]).unwrap();
+    let (ev, _) = run(&mut d, &mut ship, &s, 60.0);
+    assert!(ev.iter().any(|(_, e)| *e == Event::DroppedOut), "stuck in {:?}", d.phase);
+}
+
+#[test]
+fn zero_clear_step_does_not_hang_the_drop() {
+    let s = sys();
+    let (mut d, mut ship) = ready(&s);
+    d.begin(CINDER, &ship, &s, &[]).unwrap();
+    while d.phase != Phase::Cruise {
+        d.step(DT, &ship, &s, &[]);
+        if let Some((p, _)) = d.pose() {
+            ship.pos = p;
+        }
+    }
+    d.cfg.emergency_hold_time = 0.0;
+    let mut probe = d.clone();
+    probe.hold_exit(true, DT, &s, &[]).unwrap();
+    let other = Obstacle { centre: probe.drop_point().unwrap(), radius: 50.0 };
+    d.cfg.emergency_clear_step = 0.0;
+    // Returns (it used to loop forever).
+    assert!(d.hold_exit(true, DT, &s, &[other]).is_some());
+}
+
+/// A ship that got to the exit point first (it was not there at the start) moves the end of the
+/// rails back along the path: the hand-over is never inside it.
+#[test]
+fn arrival_stops_short_of_a_ship_at_the_exit() {
+    let s = sys();
+    let (mut d, mut ship) = ready(&s);
+    d.begin(CINDER, &ship, &s, &[]).unwrap();
+    let exit = d.exit().unwrap();
+    let other = Obstacle { centre: exit, radius: 20.0 };
+    let mut arrived = false;
+    let mut t = 0.0;
+    while t < 200.0 && !arrived {
+        t += DT;
+        // The other ship shows up once this one is on its way.
+        let obs: &[Obstacle] = if d.phase.on_rails() { std::slice::from_ref(&other) } else { &[] };
+        let ev = d.step(DT, &ship, &s, obs);
+        if let Some((p, v)) = d.pose() {
+            ship.pos = p;
+            ship.speed = v.length();
+        }
+        arrived = ev.contains(&Event::Arrived);
+    }
+    assert!(arrived);
+    let gap = ship.pos.distance(other.centre);
+    println!("handed over {gap:.0} m from the ship at the exit");
+    assert!(gap >= other.radius, "{gap}");
+    assert!(ship.pos.distance(d.exit().unwrap()) < 1e-6, "exit() names the hand-over point");
+    assert!((ship.speed - s.drive.exit_speed).abs() < 1e-6);
+}
+
+#[test]
+fn zero_tension_path_has_a_start_direction() {
+    let p = Path::new(DVec3::ZERO, None, DVec3::X * 1000.0, DVec3::X, 0.0);
+    assert!((p.start_dir() - DVec3::X).length() < 1e-9, "{}", p.start_dir());
+    let q = Path::new(DVec3::ZERO, None, DVec3::ZERO, DVec3::ZERO, 0.25);
+    assert!(q.start_dir().is_finite() && (q.start_dir().length() - 1.0).abs() < 1e-9);
+}
+
+#[test]
+fn zero_tension_calibration_still_needs_the_aim() {
+    let s = sys();
+    let (mut d, mut ship) = ready(&s);
+    d.cfg.spline_tension = 0.0;
+    ship.forward = -ship.forward;
+    d.begin(CINDER, &ship, &s, &[]).unwrap();
+    let (ev, _) = run(&mut d, &mut ship, &s, 30.0);
+    assert!(ev.iter().any(|(_, e)| *e == Event::Aborted(Abort::CalibrationLost)), "{ev:?}");
+}
+
+// ---- Which planet the simulation holds (Loader) ----
+
+const THIRD: PlanetId = PlanetId(2);
+
+/// Three planets: a third one beside the Hearth-Cinder line, its frame zone across the path but
+/// its keep-out far off it.
+fn sys3() -> System {
+    with(|v| {
+        let mut p = v["planets"][1].clone();
+        p["name"] = json!("Third");
+        p["centre"] = json!([6250000.0, 600000.0, 0.0]);
+        v["planets"].as_array_mut().unwrap().push(p);
+    })
+    .unwrap()
+}
+
+/// A background generation that takes `ticks` ticks.
+#[derive(Default)]
+struct FakePending {
+    job: Option<(PlanetId, u32)>,
+    ticks: u32,
+    /// Every generation started.
+    started: Vec<PlanetId>,
+}
+
+impl FakePending {
+    fn state(&self) -> Pending {
+        match self.job {
+            None => Pending::None,
+            Some((p, 0)) => Pending::Ready(p),
+            Some((p, _)) => Pending::Running(p),
+        }
+    }
+
+    fn tick(&mut self) {
+        if let Some((_, n)) = &mut self.job {
+            *n = n.saturating_sub(1);
+        }
+    }
+}
+
+/// Flies a whole warp with the loader; returns the swaps (planet, ready when taken) and the
+/// generations started. `drop_at`: hold the exit key from this share of the path on.
+fn fly_with_loader(s: &System, from: DVec3, to: PlanetId, gen_ticks: u32, drop_at: Option<f64>) -> (Vec<(PlanetId, bool)>, FakePending, PlanetId, DVec3) {
+    let mut d = Drive::new(s.drive.clone());
+    let mut ship = ShipView { pos: from, forward: DVec3::X, speed: 0.0 };
+    let mut probe = d.clone();
+    probe.begin(to, &ship, s, &[]).unwrap();
+    ship.forward = probe.path().unwrap().start_dir();
+    d.begin(to, &ship, s, &[]).unwrap();
+    let mut current = s.nearest(from);
+    let mut loader = Loader::default();
+    let mut pending = FakePending { ticks: gen_ticks, ..Default::default() };
+    let mut swaps = Vec::new();
+    let mut t = 0.0;
+    d.cfg.emergency_hold_time = 0.0;
+    while t < 220.0 {
+        t += DT;
+        let mut ev = Vec::new();
+        if let (Some(share), Some(p)) = (drop_at, d.path()) {
+            let pressed = d.phase.on_rails() && d.phase != Phase::EmergencyDrop && ship.pos.distance(from) > p.length() * share;
+            ev.extend(d.hold_exit(pressed, DT, s, &[]));
+        }
+        ev.extend(d.step(DT, &ship, s, &[]));
+        if let Some((p, v)) = d.pose() {
+            ship.pos = p;
+            ship.speed = v.length();
+        }
+        let dropped = ev.contains(&Event::DroppedOut);
+        match loader.step(s, current, ship.pos, &d, dropped, pending.state()) {
+            Load::Keep => {}
+            Load::Start(p) => {
+                pending.job = Some((p, pending.ticks));
+                pending.started.push(p);
+            }
+            Load::Discard => pending.job = None,
+            Load::Swap(p) => {
+                let ready = pending.state() == Pending::Ready(p);
+                pending.job = None;
+                swaps.push((p, ready));
+                current = p;
+            }
+        }
+        pending.tick();
+        if d.phase == Phase::Idle && t > 1.0 {
+            break;
+        }
+    }
+    (swaps, pending, current, ship.pos)
+}
+
+const ORBIT: DVec3 = DVec3::new(0.0, 7000.0, 0.0);
+
+#[test]
+fn passing_a_third_planet_keeps_generating_the_target() {
+    let s = sys3();
+    // The path runs through the third planet's frame zone.
+    let mut d = Drive::new(s.drive.clone());
+    d.begin(CINDER, &ShipView { pos: ORBIT, forward: DVec3::X, speed: 0.0 }, &s, &[]).unwrap();
+    let path = d.path().unwrap();
+    assert!((0..=100).any(|i| s.frame_of(path.at(path.length() * i as f64 / 100.0).0) == Some(THIRD)));
+
+    let (swaps, pending, current, _) = fly_with_loader(&s, ORBIT, CINDER, 40, None);
+    assert_eq!(swaps, vec![(CINDER, true)], "one swap, to the target, never blocking");
+    assert_eq!(pending.started, vec![CINDER]);
+    assert_eq!(current, CINDER);
+}
+
+#[test]
+fn a_slow_generation_waits_on_rails_instead_of_blocking() {
+    let s = sys();
+    // Takes longer than the flight from the ramp-up to the frame zone (about 1 s at 1e6 m/s).
+    let (swaps, ..) = fly_with_loader(&s, ORBIT, CINDER, 60 * 9, None);
+    assert_eq!(swaps, vec![(CINDER, true)], "swapped only once the generation was done");
+}
+
+#[test]
+fn a_generation_not_done_at_the_arrival_is_taken_there() {
+    let s = sys();
+    // Much longer than the whole flight: the arrival must not wait for it forever.
+    let (swaps, ..) = fly_with_loader(&s, ORBIT, CINDER, 60 * 600, None);
+    assert_eq!(swaps, vec![(CINDER, false)]);
+}
+
+#[test]
+fn drop_near_a_third_planet_generates_it_in_the_background() {
+    let s = sys3();
+    // Drop in the middle of the flight: open space, nearest is the third planet.
+    let (swaps, pending, current, pos) = fly_with_loader(&s, ORBIT, CINDER, 30, Some(0.45));
+    assert_eq!(s.frame_of(pos), None, "dropped in open space");
+    assert_eq!(s.nearest(pos), THIRD);
+    assert_eq!(swaps, vec![(THIRD, true)], "no generation in the swap tick");
+    assert_eq!(pending.started, vec![CINDER, THIRD]);
+    assert_eq!(current, THIRD);
+}
+
+#[test]
+fn drop_near_the_old_planet_keeps_the_target_for_a_jump_on() {
+    let s = sys3();
+    let (swaps, pending, current, pos) = fly_with_loader(&s, ORBIT, CINDER, 30, Some(0.1));
+    assert_eq!(s.nearest(pos), HEARTH);
+    assert!(swaps.is_empty());
+    assert_eq!(current, HEARTH);
+    assert_eq!(pending.state(), Pending::Ready(CINDER));
+    // A jump on to Cinder keeps it; one elsewhere frees it.
+    let mut l = Loader::default();
+    let mut d = Drive::new(s.drive.clone());
+    d.phase = Phase::Spooling;
+    d.target = Some(CINDER);
+    assert_eq!(l.step(&s, HEARTH, pos, &d, false, pending.state()), Load::Keep);
+    d.target = Some(THIRD);
+    assert_eq!(l.step(&s, HEARTH, pos, &d, false, pending.state()), Load::Discard);
+}
+
+#[test]
+fn a_teleport_into_a_frame_zone_swaps_at_once() {
+    let s = sys();
+    let mut l = Loader::default();
+    let d = Drive::new(s.drive.clone());
+    let at_cinder = s.planets[1].centre() + DVec3::Y * 7000.0;
+    assert_eq!(l.step(&s, HEARTH, at_cinder, &d, false, Pending::None), Load::Swap(CINDER));
+    // Already the simulation's planet: nothing to do; a generation of it is useless.
+    assert_eq!(l.step(&s, CINDER, at_cinder, &d, false, Pending::None), Load::Keep);
+    assert_eq!(l.step(&s, CINDER, at_cinder, &d, false, Pending::Ready(CINDER)), Load::Discard);
+    assert_eq!(l.step(&s, CINDER, at_cinder, &d, false, Pending::Ready(HEARTH)), Load::Keep);
+}
+
+#[test]
+fn after_a_drop_the_wait_ends_with_the_post_ramp() {
+    let s = sys3();
+    // Far slower than the second after the drop: taken (blocking) once it is over, not later.
+    let (swaps, _, current, _) = fly_with_loader(&s, ORBIT, CINDER, 60 * 600, Some(0.45));
+    assert_eq!(swaps, vec![(THIRD, false)]);
+    assert_eq!(current, THIRD);
+    let mut l = Loader::default();
+    let mut d = Drive::new(s.drive.clone());
+    let open = DVec3::new(6_250_000.0, -2_000_000.0, 0.0);
+    d.phase = Phase::PostRampDown;
+    assert_eq!(l.step(&s, HEARTH, open, &d, true, Pending::None), Load::Start(THIRD));
+    assert_eq!(l.step(&s, HEARTH, open, &d, false, Pending::Running(THIRD)), Load::Keep);
+    d.phase = Phase::Cooldown;
+    assert_eq!(l.step(&s, HEARTH, open, &d, false, Pending::Running(THIRD)), Load::Swap(THIRD));
+}

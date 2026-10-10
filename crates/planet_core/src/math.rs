@@ -83,7 +83,7 @@ pub const FACE_NORMALS: [V3; 6] = [
     V3 { x: 0.0, y: 0.0, z: -1.0 },
 ];
 
-/// Same mapping as `terrain.gd::cube_to_sphere` (spherified cube, u x v = face normal).
+/// Cube to sphere (spherified cube, u x v = face normal).
 #[inline]
 pub fn cube_to_sphere(face: usize, a: f64, b: f64) -> V3 {
     let nrm = FACE_NORMALS[face];

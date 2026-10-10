@@ -11,6 +11,16 @@ use bevy::prelude::*;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+/// Dev builds only: watches `dir` and applies changed tuning files.
+pub fn plugin(dir: PathBuf) -> impl Plugin {
+    move |app: &mut App| {
+        if cfg!(debug_assertions) {
+            app.insert_resource(HotReload::new(dir.clone()));
+            app.add_systems(Update, poll.before(crate::controls::read_input).in_set(crate::phases::Frame::Input));
+        }
+    }
+}
+
 const FILES: [&str; 7] = ["ship.json", "walker.json", "suit.json", "camera.json", "bindings.json", "grab.json", "hud.json"];
 const POLL: Duration = Duration::from_millis(250);
 

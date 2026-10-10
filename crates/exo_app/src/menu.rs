@@ -61,6 +61,7 @@ enum Action {
     Mouse(f64),
     Fov(f64),
     Volume(f64),
+    Sound,
     Rebind(Slot),
 }
 
@@ -186,6 +187,7 @@ fn rebuild(mut commands: Commands, menu: Res<Menu>, settings: Res<Settings>, bin
                 stepper(c, "Mouse sensitivity", format!("{:.2}", settings.mouse_sensitivity), Action::Mouse(-0.1), Action::Mouse(0.1));
                 stepper(c, "Field of view", format!("{:.0}", settings.fov_deg), Action::Fov(-5.0), Action::Fov(5.0));
                 stepper(c, "Volume", format!("{:.0} %", settings.volume * 100.0), Action::Volume(-0.1), Action::Volume(0.1));
+                button(c, if settings.sound { "Sound: on" } else { "Sound: off" }, Action::Sound, 260.0);
                 label(c, if menu.rebinding.is_some() { "Press a key (Escape cancels)" } else { "Keys: click one to rebind" }, 16.0);
                 c.spawn(Node { flex_direction: FlexDirection::Row, flex_wrap: FlexWrap::Wrap, width: px(900), column_gap: px(6), row_gap: px(4), justify_content: JustifyContent::Center, ..default() }).with_children(|g| {
                     let mut b = bindings.clone();
@@ -273,6 +275,11 @@ fn act(w: &mut World, a: Action) {
             s.volume = ((s.volume + d) * 10.0).round().clamp(0.0, 10.0) / 10.0;
             save(w);
         }
+        Action::Sound => {
+            let mut s = w.resource_mut::<Settings>();
+            s.sound = !s.sound;
+            save(w);
+        }
         Action::Rebind(slot) => w.resource_mut::<Menu>().rebinding = Some(slot),
     }
 }
@@ -338,5 +345,27 @@ fn keys(
 pub fn plugin(app: &mut App) {
     app.init_resource::<Menu>();
     app.add_systems(Startup, setup);
-    app.add_systems(Update, (keys, clicks, rebuild).chain().before(crate::controls::read_input));
+    app.add_systems(Update, (keys, clicks, rebuild).chain().before(crate::controls::read_input).in_set(crate::phases::Frame::Input));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_sound_switch_toggles_and_is_saved() {
+        let dir = std::env::temp_dir().join(format!("exo-menu-sound-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut w = World::new();
+        w.insert_resource(Settings::default());
+        w.insert_resource(SettingsDir(dir.clone()));
+        w.init_resource::<Menu>();
+        act(&mut w, Action::Sound);
+        assert!(!w.resource::<Settings>().sound);
+        assert!(!crate::settings::load(&dir).0.sound, "saved off");
+        act(&mut w, Action::Sound);
+        assert!(w.resource::<Settings>().sound);
+        assert!(crate::settings::load(&dir).0.sound, "saved on");
+        assert_eq!(w.resource::<Settings>().volume, 0.5, "the volume stays");
+    }
 }

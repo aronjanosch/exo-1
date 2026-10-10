@@ -1,0 +1,7 @@
+{
+  "id": "jelly_license",
+  "name": "unlock.jelly_license.name",
+  "price": 100,
+  "condition": { "all": [ { "flag_set": "job_completed:first_haul" }, { "track_at_least": { "track": "freight_xp", "value": 100 } } ] },
+  "grants": ["jelly_jobs"]
+}

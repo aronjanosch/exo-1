@@ -1,4 +1,5 @@
 //! #19: `--perf` writes the JSON, a run against its own baseline passes, a slowed step fails.
+mod common;
 use exo_app::{build_app, perf::PerfOptions, scenario::Script, Options};
 
 fn run(perf: PerfOptions, out: &std::path::Path) -> u32 {
@@ -15,8 +16,7 @@ fn run(perf: PerfOptions, out: &std::path::Path) -> u32 {
 
 #[test]
 fn baseline_passes_and_slowed_step_fails() {
-    let out = std::env::temp_dir().join("exo-perf-test");
-    let _ = std::fs::remove_dir_all(&out);
+    let out = common::out_dir("perf-test");
     // Generous tolerance: other test binaries may share the machine.
     let opt = PerfOptions { baseline: out.join("baseline.json"), tolerance: 1.0, ..Default::default() };
     assert_eq!(run(PerfOptions { save_baseline: true, ..opt.clone() }, &out), 0);

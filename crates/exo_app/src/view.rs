@@ -87,6 +87,22 @@ pub fn update_urination_view(
     }
 }
 
+/// Window only: the scene, camera, markers and HUD.
+pub fn plugin(app: &mut App) {
+    use crate::phases::{Frame, Fx};
+    app.init_resource::<ViewState>().insert_resource(ClearColor(Color::BLACK));
+    app.add_systems(Startup, setup_view);
+    app.add_systems(Startup, setup_warp_view.after(setup_view));
+    app.add_systems(FixedLast, record_player_view);
+    // Tap consumers: after the clicks are counted (disjoint taps, no order among them).
+    app.add_systems(FixedUpdate, (orbit_toggle, debug_hud_toggle).after(crate::audio::count_clicks).after(crate::controls::resolve_actions).in_set(Fx::Input));
+    app.add_systems(Update, (add_ship_visuals, add_remote_walker_visuals).in_set(Frame::Sync));
+    app.add_systems(Update, update_camera.in_set(Frame::Camera));
+    // After the camera (Frame::Camera): the tunnel and the camera both write `ClearColor`, the tunnel wins.
+    app.add_systems(Update, (update_impostors, update_nav_markers, update_aim_marker, update_tunnel, update_speed_dust).in_set(Frame::World));
+    app.add_systems(Update, (update_hud, update_flight_hud, update_prompt, update_name_tags).in_set(Frame::Hud));
+}
+
 #[derive(Component)]
 pub struct MainCamera;
 
@@ -203,6 +219,8 @@ pub fn setup_view(mut commands: Commands) {
             });
             // Next to the bar: CAPACITOR or STAGE, the F6 dev switch (#90).
             c.spawn((HudItem(BOOST_MODE_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
+            // Then LANDING in landing mode (K).
+            c.spawn((HudItem(LANDING_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
         });
     // The one prompt (#82): what the interact key does now, below the screen centre.
     commands.spawn((
@@ -251,6 +269,8 @@ pub struct BoostFill;
 const BOOST_BAR_PX: f32 = 120.0;
 /// The `HudItem` after the bar that names the boost mode (`HudReadout::boost_mode`).
 const BOOST_MODE_ITEM: u8 = 4;
+/// The `HudItem` that shows the landing mode (`HudReadout::landing`).
+const LANDING_ITEM: u8 = 5;
 const BOOST_READY: Color = Color::srgb(0.55, 0.95, 1.0);
 const BOOST_ACTIVE: Color = Color::srgb(1.0, 0.85, 0.35);
 const BOOST_LOW: Color = Color::srgba(0.55, 0.6, 0.7, 0.6);
@@ -313,7 +333,11 @@ pub fn update_flight_hud(
     let (Ok(pl), Ok((ship, sp, si))) = (players.single(), ships.single()) else { return };
     // Only touch a Text whose content changed (#24).
     for (item, mut t) in &mut items {
-        let want = if item.0 == BOOST_MODE_ITEM { readout.boost_mode } else { readout.texts[item.0 as usize].as_str() };
+        let want = match item.0 {
+            BOOST_MODE_ITEM => readout.boost_mode,
+            LANDING_ITEM => readout.landing,
+            i => readout.texts[i as usize].as_str(),
+        };
         if **t != *want {
             **t = want.to_string();
         }
@@ -858,8 +882,12 @@ pub fn update_hud(
     let near = |p: DVec3| (p - planet.centre).length() < NEAR_PLANET;
     let mode = if pl.seated {
         let height = if near(sp.0) { format!("  ground {:.0} m  alt {:.0} m", planet.above_ground(sp.0), (sp.0 - planet.centre).length() - planet.radius) } else { String::new() };
+        // What the flight model did (felt G, precision share, thrusters at a limit).
+        let a = &ship.ctl.axis;
+        let cap = if ship.ctl.tuning.g_safety.cap_turns { "on" } else { "off" };
+        let axis = format!("  {:.1} g  prec {:.2}  turn cap {cap} (F8){}{}", a.felt_g, a.precision, if a.saturated { "  sat" } else { "" }, if a.rate_capped { "  g-cap" } else { "" });
         format!(
-            "SHIP  assist {} (H)  follow {} (L)  {}{}  {} m/s  limit {:.0}{height}",
+            "SHIP  assist {} (H)  follow {} (L)  {}{}  {} m/s  limit {:.0}{axis}{height}",
             if ship.ctl.hover_assist { "on" } else { "off" },
             if ship.ctl.horizon_follow { "on" } else { "off" },
             lag_text(ship),

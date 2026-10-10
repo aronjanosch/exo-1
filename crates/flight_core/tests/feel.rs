@@ -131,8 +131,9 @@ fn decoupled_thrust_only_along_input() {
 fn grounded_with_down_input_settles_without_sliding() {
     let env = Space(Field::default());
     let mut c = ShipController::default();
-    // Sliding sideways on the ground, Ctrl held: only a gentle settle straight down remains.
-    let b = BodyState::default();
+    // Sliding sideways on the ground, Ctrl held: only a gentle settle straight down remains. On
+    // the surface: the ground rules need the terrain right under the hull (#104 point 1).
+    let b = BodyState { pos: DVec3::NEG_Y * (1e7 - 5000.0), ..Default::default() };
     let up = env.to_planet(b.pos).normalize();
     let mut v = DVec3::X * 1.6;
     for _ in 0..30 {

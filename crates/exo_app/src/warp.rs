@@ -3,7 +3,9 @@
 //! planet's frame zone. Real movement through the shared f64 world, no loading screen.
 //!
 //! J starts a warp to the selected planet (N selects) and cancels while spooling or calibrating.
-//! Holding J during the flight drops out early (emergency exit).
+//! Holding J during the flight drops out early (emergency exit). J works for whoever is aboard:
+//! the pilot, or a walker in the cabin who stood up mid-warp (#111; standing up stays allowed,
+//! initiator 2026-10-09).
 //!
 //! Four fixed-step systems in a chain: `warp_input` (keys), `warp_drive` (state machine and the
 //! ship on rails), `planet_swap` (simulation's planet), `warp_telemetry` (scenario numbers only).
@@ -12,12 +14,18 @@ use crate::env::PlanetRes;
 use crate::ring::Ring;
 use crate::ship::{RemoteShip, Ship};
 use crate::terrain::{build_roots, PrebuiltRoots};
+use crate::walker::Player;
 use avian3d::prelude::*;
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 use bevy::tasks::{block_on, AsyncComputeTaskPool, Task};
 use planet_core::ChunkOut;
-use warp_core::{Abort, Drive, Event, Obstacle, Phase, PlanetDef, PlanetId, ShipView, System};
+use warp_core::{Abort, Drive, Event, Load, Loader, Obstacle, Pending, Phase, PlanetDef, PlanetId, ShipView, System};
+
+pub fn plugin(app: &mut App) {
+    // A state machine: the order is the logic.
+    app.add_systems(FixedUpdate, (warp_input, warp_drive, planet_swap, warp_telemetry.run_if(resource_exists::<WarpTelemetry>)).chain().in_set(crate::phases::Fx::Drive));
+}
 
 pub const SYSTEM: &str = include_str!("../../../content/system/system.json");
 
@@ -66,12 +74,13 @@ pub struct WarpTelemetry {
 }
 
 /// The target planet being generated in the background while the ship flies, with its root
-/// terrain chunks (#34).
+/// terrain chunks (#34). `warp_core::Loader` decides what is generated and when it is swapped in.
 #[derive(Resource, Default)]
 pub struct PendingPlanet {
     task: Option<(PlanetId, Task<(PlanetRes, Vec<ChunkOut>, f64)>)>,
     /// Wall-clock time the last background generation took (ms).
     pub gen_ms: Option<f64>,
+    loader: Loader,
 }
 
 impl PendingPlanet {
@@ -100,8 +109,25 @@ impl PendingPlanet {
         self.task.as_ref().is_some_and(|(_, t)| t.is_finished())
     }
 
-    /// The finished planet and its roots, or the planet generated here and now without roots (a
-    /// teleport has no flight to hide it in).
+    /// Waits (wall time) until the running generation is done.
+    fn finish(&self) {
+        while self.task.as_ref().is_some_and(|(_, t)| !t.is_finished()) {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
+
+    fn state(&self) -> Pending {
+        match &self.task {
+            None => Pending::None,
+            Some((p, t)) if t.is_finished() => Pending::Ready(*p),
+            Some((p, _)) => Pending::Running(*p),
+        }
+    }
+
+    /// The finished planet and its roots; a running generation is waited for, and without one the
+    /// planet is generated here and now without roots. Only when the loader swaps off rails in a
+    /// frame zone (a teleport, an arrival before the generation is done): no flight to hide it in.
+    /// A "materialising" state instead of this hitch: #140.
     fn take(&mut self, id: PlanetId, sys: &System) -> (PlanetRes, Option<Vec<ChunkOut>>) {
         match self.task.take() {
             Some((t, task)) if t == id => {
@@ -128,8 +154,12 @@ pub fn swap_planet(commands: &mut Commands, ring: &mut Ring, new: PlanetRes) {
 
 fn course_quat(from: DQuat, dir: DVec3, max_angle: f64) -> DQuat {
     let nose = from * DVec3::NEG_Z;
+    // A zero or broken direction keeps the rotation (#111).
+    if !dir.is_finite() || dir.length_squared() < 1e-24 {
+        return from;
+    }
     let angle = nose.angle_between(dir);
-    if angle < 1e-9 {
+    if !angle.is_finite() || angle < 1e-9 {
         return from;
     }
     let turn = DQuat::from_rotation_arc(nose, dir);
@@ -151,23 +181,25 @@ pub fn warp_input(
     sys: Res<SystemRes>,
     mut wd: ResMut<WarpDrive>,
     mut actions: ResMut<Actions>,
-    ships: Query<(&Ship, &Position, &Rotation, &LinearVelocity)>,
+    ships: Query<(Entity, &Ship, &Position, &Rotation, &LinearVelocity)>,
     remotes: Query<&Position, (With<RemoteShip>, Without<Ship>)>,
+    players: Query<&Player>,
     tel: Option<Res<WarpTelemetry>>,
 ) {
     let sys = &sys.0;
     let wd = wd.as_mut();
     wd.events.clear();
-    let Ok((ship, pos, rot, lv)) = ships.single() else { return };
+    let Ok((ship_e, ship, pos, rot, lv)) = ships.single() else { return };
+    let aboard = ship.piloted || players.iter().any(|p| p.ship == Some(ship_e));
     if actions.take_tap(Tap::WarpTarget) {
         wd.selected = PlanetId(((wd.selected.index() + 1) % sys.planets.len()) as u8);
     }
     let obstacles = obstacles(&remotes, tel.as_deref());
     let j = actions.take_tap(Tap::Warp);
-    if j && !ship.piloted {
-        println!("warp: J ignored, nobody is piloting");
+    if j && !aboard {
+        println!("warp: J ignored, nobody is aboard");
     }
-    if j && ship.piloted {
+    if j && aboard {
         if wd.drive.phase == Phase::Idle {
             let view = ShipView { pos: pos.0, forward: rot.0 * DVec3::NEG_Z, speed: lv.0.length() };
             match wd.drive.begin(sys.effective_target(wd.selected, pos.0), &view, sys, &obstacles) {
@@ -181,7 +213,13 @@ pub fn warp_input(
             wd.events.push(ev);
         }
     }
-    let held = ship.piloted && actions.warp_exit;
+    // An empty ship does not jump: everybody left while it spooled or calibrated (initiator
+    // 2026-10-09).
+    if !aboard && let Some(ev) = wd.drive.cancel() {
+        println!("warp: cancelled, nobody is aboard");
+        wd.events.push(ev);
+    }
+    let held = aboard && actions.warp_exit;
     if let Some(ev) = wd.drive.hold_exit(held, time.delta_secs_f64(), sys, &obstacles) {
         wd.events.push(ev);
     }
@@ -193,9 +231,7 @@ pub fn warp_drive(
     mut commands: Commands,
     time: Res<Time>,
     sys: Res<SystemRes>,
-    planet: Res<PlanetRes>,
     mut wd: ResMut<WarpDrive>,
-    mut pending: ResMut<PendingPlanet>,
     mut ring: ResMut<Ring>,
     mut ships: Query<(Entity, &mut Ship, &mut Position, &mut Rotation, &mut LinearVelocity, &mut AngularVelocity)>,
     remotes: Query<&Position, (With<RemoteShip>, Without<Ship>)>,
@@ -213,15 +249,8 @@ pub fn warp_drive(
     for ev in &wd.events {
         match ev {
             Event::Aborted(why) => wd.last_abort = Some(*why),
-            // Start generating the target while the ship still ramps up.
             Event::Phase(Phase::RampUp) => {
-                if let Some(t) = wd.drive.target {
-                    // A jump on from a drop point goes to the planet loaded at the drop already.
-                    if t != planet.id {
-                        pending.start(t, sys.planet(t).clone());
-                    }
-                    commands.entity(e).remove::<SweptCcd>();
-                }
+                commands.entity(e).remove::<SweptCcd>();
             }
             Event::Phase(Phase::PostRampDown) => {
                 commands.entity(e).insert(SweptCcd::default());
@@ -254,10 +283,9 @@ pub fn warp_drive(
 }
 
 /// The ship comes into another planet's frame zone: that planet becomes the simulation's. An
-/// emergency drop outside every frame zone makes the nearest planet the simulation's, once, at the
-/// drop (#14: the old one always stayed, with its terrain). It is loaded or generated already:
-/// the old planet, or the warp's target. Not re-checked while drifting (a swap there would
-/// generate a planet on the spot).
+/// emergency drop outside every frame zone makes the nearest planet the simulation's (#14: the
+/// old one always stayed, with its terrain). `warp_core::Loader` has the rules: on rails only the
+/// target counts and the swap waits for its background generation (#111, #113).
 #[allow(clippy::too_many_arguments)]
 pub fn planet_swap(
     mut commands: Commands,
@@ -271,10 +299,25 @@ pub fn planet_swap(
 ) {
     let sys = &sys.0;
     let Ok(pos) = ships.single() else { return };
-    let zone = sys.frame_of(pos.0);
-    let dropped = zone.is_none() && wd.events.contains(&Event::DroppedOut);
-    let next = if dropped { Some(sys.nearest(pos.0)) } else { zone };
-    let Some(f) = next.filter(|f| *f != planet.id) else { return };
+    let pending = pending.as_mut();
+    let dropped = wd.events.contains(&Event::DroppedOut);
+    // Scripted runs go faster than real time: there the generation gets the wall time a real
+    // flight gives it before the ship reaches its zone or drops out, so the swap lands on the
+    // same tick on every machine. The waiting itself is tested in `warp_core` (`Loader`).
+    if tel.is_some() && let Pending::Running(p) = pending.state() && (dropped || sys.frame_of(pos.0) == Some(p)) {
+        pending.finish();
+    }
+    let state = pending.state();
+    let f = match pending.loader.step(sys, planet.id, pos.0, &wd.drive, dropped, state) {
+        Load::Keep => return,
+        Load::Start(t) => return pending.start(t, sys.planet(t).clone()),
+        Load::Discard => {
+            pending.task = None;
+            return;
+        }
+        Load::Swap(f) => f,
+    };
+    let dropped = sys.frame_of(pos.0).is_none();
     let (new, roots) = pending.take(f, sys);
     if let Some(chunks) = roots {
         commands.insert_resource(PrebuiltRoots { planet: f, chunks });

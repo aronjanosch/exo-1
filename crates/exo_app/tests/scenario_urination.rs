@@ -4,6 +4,6 @@ use exo_app::Options;
 
 #[test]
 fn urination_scenario_passes_headless() {
-    let o = Options { scenario: Some("urination".into()), headless: true, out_dir: std::env::temp_dir().join("exo-urination-scenario"), ..Default::default() };
+    let o = Options { scenario: Some("urination".into()), headless: true, out_dir: common::out_dir("urination"), ..Default::default() };
     let _ = common::run_scenario(&o);
 }

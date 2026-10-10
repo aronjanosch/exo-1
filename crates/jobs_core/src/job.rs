@@ -225,6 +225,9 @@ pub struct Jobs {
     /// Paid tries of an exam per player and template (`"<client>:<template>"`): the retry fee.
     #[serde(default)]
     attempts: BTreeMap<String, u32>,
+    /// Board state per location (#126).
+    #[serde(default)]
+    pub board: crate::board::Board,
 }
 
 /// The jobs section of a save (#128).
@@ -275,6 +278,190 @@ impl Jobs {
             }
         }
         Some(self.offer_with(&t.id, legs, checks))
+    }
+
+    /// Like `offer_fixed`, but only if all locations in the legs are available.
+    pub fn offer_fixed_if_available(&mut self, t: &JobTemplate, kernel: &Content, progress: &Progress) -> Option<JobId> {
+        let (mut legs, mut checks) = (Vec::new(), Vec::new());
+        for o in &t.objectives {
+            match o {
+                ObjectiveSpec::Deliver { from: PlaceSpec::Location(a), to: PlaceSpec::Location(b), commodity: CommoditySpec::OneOf(pool), amount } if pool.len() == 1 && amount[0] == amount[1] => {
+                    // Check if both locations are available
+                    if !progress.location_available(kernel, a) || !progress.location_available(kernel, b) {
+                        return None;
+                    }
+                    legs.push(Leg::new(a.clone(), b.clone(), pool[0].clone(), amount[0]));
+                }
+                ObjectiveSpec::Deliver { .. } => return None,
+                ObjectiveSpec::TakeOff {} => checks.push(Check { kind: CheckKind::TakeOff, state: CheckState::Pending }),
+                ObjectiveSpec::ReachPad { at } => {
+                    if !progress.location_available(kernel, at) {
+                        return None;
+                    }
+                    checks.push(Check { kind: CheckKind::ReachPad { at: at.clone() }, state: CheckState::Pending })
+                }
+                ObjectiveSpec::Land { at, max_mps } => {
+                    if !progress.location_available(kernel, at) {
+                        return None;
+                    }
+                    checks.push(Check { kind: CheckKind::Land { at: at.clone(), max_mps: *max_mps }, state: CheckState::Pending })
+                }
+            }
+        }
+        Some(self.offer_with(&t.id, legs, checks))
+    }
+
+    /// An offer of `t`: its fixed places, else places by tag search; None when no place fits.
+    fn offer_from_template(&mut self, t: &JobTemplate, kernel: &Content, progress: &Progress, rng: &mut gameplay_core::rng::Rng) -> Option<JobId> {
+        if let Some(id) = self.offer_fixed_if_available(t, kernel, progress) {
+            return Some(id);
+        }
+        let legs = crate::board::generate_legs(t, kernel, progress, rng).ok()?;
+        Some(self.offer_with(&t.id, legs, Vec::new()))
+    }
+
+    /// Generate board offers for a location with a given seed.
+    /// Returns a list of job ids that are now offered.
+    pub fn generate_board_at(&mut self, jc: &JobContent, kernel: &Content, progress: &Progress, location: &str, seed: u64) -> Vec<JobId> {
+        use crate::board::{BoardLocation, templates_for_location};
+        use gameplay_core::rng::Rng;
+
+        let mut rng = Rng::new(seed);
+        let mut job_ids = Vec::new();
+        let mut used_templates = BTreeSet::new();
+
+        // Collect templates for this location (filtered by giver location, excludes exams/orders)
+        let available_templates: Vec<&JobTemplate> =
+            templates_for_location(jc, kernel, progress, location)
+                .into_iter()
+                .filter(|t| {
+                    // Don't offer once_only templates that already have completed jobs
+                    if t.once_only {
+                        let flag = Flag::new(format!("job_completed:{}", t.id));
+                        !progress.has_flag(&flag)
+                    } else {
+                        true
+                    }
+                })
+                // A follow-up waits for the job it follows (#126).
+                .filter(|t| prerequisites(jc, &t.id).all(|p| completed(progress, p)))
+                .collect();
+
+        // Follow-ups whose job is done come first, each once while none of it is open.
+        for t in available_templates.iter().filter(|t| prerequisites(jc, &t.id).next().is_some()) {
+            let open = self.jobs.values().any(|j| j.template == t.id && matches!(j.state, JobState::Offered | JobState::Active));
+            if !open && let Some(id) = self.offer_from_template(t, kernel, progress, &mut rng) {
+                job_ids.push(id);
+                used_templates.insert(t.id.clone());
+            }
+        }
+
+        if available_templates.is_empty() {
+            self.board.offers_per_location.insert(location.to_string(), BoardLocation {
+                offer_ids: Vec::new(),
+                age_s: 0.0,
+                seed,
+            });
+            return job_ids;
+        }
+
+        // Decide how many offers to generate (3-5 if we have at least 3 qualifying templates, else all)
+        let target_count = if available_templates.len() >= 3 {
+            3 + rng.below(3)
+        } else {
+            available_templates.len()
+        };
+
+        // Try to generate offers, allowing at most 1 per template (no duplicates)
+        let mut attempts = 0;
+        let max_attempts = available_templates.len() * 3;
+        while job_ids.len() < target_count && attempts < max_attempts && !available_templates.is_empty() {
+            let template_idx = rng.below(available_templates.len());
+            let template = available_templates[template_idx];
+
+            // Skip if we already used this template on this board
+            if used_templates.contains(&template.id) {
+                attempts += 1;
+                continue;
+            }
+
+            // Try fixed offer first (for templates with all fixed locations and single commodity)
+            let created = if let Some(id) = self.offer_from_template(template, kernel, progress, &mut rng) {
+                job_ids.push(id);
+                true
+            } else {
+                false
+            };
+
+            if created {
+                used_templates.insert(template.id.clone());
+            }
+            attempts += 1;
+        }
+
+        // Track board state
+        self.board.offers_per_location.insert(location.to_string(), BoardLocation {
+            offer_ids: job_ids.clone(),
+            age_s: 0.0,
+            seed,
+        });
+
+        job_ids
+    }
+
+    /// Tick the board forward by dt seconds; rotate expired unaccepted offers and generate new ones.
+    /// Accepted offers are never rotated.
+    pub fn tick_board(&mut self, jc: &JobContent, kernel: &Content, progress: &Progress, location: &str, dt: f64) -> Vec<JobId> {
+        use crate::board::{OFFER_LIFETIME_S, next_seed};
+
+        let should_rotate = {
+            if let Some(board_loc) = self.board.offers_per_location.get_mut(location) {
+                board_loc.age_s += dt;
+                board_loc.age_s >= OFFER_LIFETIME_S
+            } else {
+                false
+            }
+        };
+
+        if !should_rotate {
+            return Vec::new();
+        }
+
+        // Find which offers to remove (those that are still offered, not accepted)
+        let to_remove: Vec<JobId> = if let Some(board_loc) = self.board.offers_per_location.get(location) {
+            board_loc
+                .offer_ids
+                .iter()
+                .filter(|id| {
+                    if let Some(job) = self.jobs.get(id) {
+                        // Remove only if still offered (not accepted)
+                        job.state == JobState::Offered
+                    } else {
+                        true // Remove if job not found
+                    }
+                })
+                .copied()
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        // Remove the expired offers from Jobs
+        for id in to_remove {
+            self.jobs.remove(&id);
+        }
+
+        // Generate new offers with a deterministic next seed
+        let (new_seed, location_str) = {
+            let board_loc = self.board.offers_per_location.get_mut(location).unwrap();
+            let old_seed = board_loc.seed;
+            let new_seed = next_seed(old_seed);
+            board_loc.age_s = 0.0;
+            board_loc.seed = new_seed;
+            (new_seed, location.to_string())
+        };
+
+        self.generate_board_at(jc, kernel, progress, &location_str, new_seed)
     }
 
     /// What happened between the crew and a giver; nothing yet for a new one.
@@ -668,4 +855,13 @@ fn settle_order(j: &Job, in_time: bool) -> Option<Outcome> {
     let delivered = j.delivered();
     let condition = if delivered == 0 { 1.0 } else { (j.legs.iter().map(Leg::condition_sum).sum::<f64>() / delivered as f64).clamp(0.0, 1.0) };
     Some(Outcome::Emit(WorldEvent::OrderSettled { order: o.order, delivered, asked: j.asked(), condition, in_time }))
+}
+
+/// Templates whose `follow_up` is `id`.
+fn prerequisites<'a>(jc: &'a JobContent, id: &'a TemplateId) -> impl Iterator<Item = &'a TemplateId> + 'a {
+    jc.templates.values().filter(move |t| t.record.follow_up.as_ref() == Some(id)).map(|t| &t.record.id)
+}
+
+fn completed(progress: &Progress, t: &TemplateId) -> bool {
+    progress.has_flag(&Flag::new(format!("job_completed:{t}")))
 }

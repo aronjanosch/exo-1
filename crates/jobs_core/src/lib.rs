@@ -6,6 +6,7 @@
 //! - `job`: offers and jobs as a state machine over domain events; the deliver objective as a
 //!   reducer over crate events. Results are `Outcome`s for the host: spawn or release crates, and
 //!   new domain events (payout, XP, the flag `job_completed:<template>`).
+//! - `board`: seeded board generator per location, 3-5 offers, lifetime rotation (#126).
 //! - save section: `Jobs::save` and `Jobs::load` (#128), versioned on their own.
 //! - `giver`, `briefing`: the named contacts jobs come from (voice, standing, history) and briefings
 //!   assembled from their parts (#167).
@@ -15,6 +16,7 @@
 //! - `grading`: payout = reward × band(delivered share) × condition factor × hazard factor.
 //!
 //! This crate reads only domain events and kernel state; it never calls another system.
+pub mod board;
 pub mod briefing;
 pub mod giver;
 pub mod grading;

@@ -73,7 +73,7 @@ fn over_ramp(p: DVec3, r: f64, margin: f64) -> bool {
     p.x.abs() < 1.5 + m && p.z > 3.0 && p.z < 6.6 + m && p.y > -1.5 - m && p.y < 3.5 + m
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn avian_pre(
     mut commands: Commands,
     planet: Res<PlanetRes>,
@@ -160,7 +160,7 @@ pub fn avian_pre(
 
 /// After the physics step: pose back into `CrateBody`, the impact into the crate's condition; a
 /// body whose bottom enters the cabin becomes a cabin crate again (set upright).
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn avian_post(
     mut commands: Commands,
     planet: Res<PlanetRes>,

@@ -218,7 +218,7 @@ fn shoot(out: PathBuf, vps: Viewpoints, k: usize, time: Option<TimeShot>) -> Ste
         } else if stage == 1.0 && c.t - c.v["look_t"] >= HOLD_SECS {
             use bevy::render::view::screenshot::{save_to_disk, Screenshot};
             if let Some(sv) = w.get_resource::<crate::scatter::ScatterView>() {
-                let line = format!("look {name} {}: scatter {} instances in {} cells", vp.id, sv.instances, sv.shown_cells);
+                let line = format!("look {name} {}: scatter {} instances in {} cells, {} entities", vp.id, sv.instances, sv.shown_cells, sv.entities);
                 println!("{line}");
                 c.report.push(line);
             }

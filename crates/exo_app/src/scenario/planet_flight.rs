@@ -78,8 +78,9 @@ fn leg_report(c: &mut Ctx, name: &str, frames: &[FrameRec], threshold: f64) {
     let ring = sum(|f| (f.cost.ring_up.n, f.cost.ring_up.ms));
     let scatter = sum(|f| (f.cost.scatter_up.n, f.cost.scatter_up.ms));
     let shift = sum(|f| (f.cost.shift.n.min(1), f.cost.shift.ms));
+    let (s_ents, s_inst) = frames.iter().fold((0, 0), |a, f| (a.0 + f.cost.scatter_ents, a.1 + f.cost.scatter_inst));
     let line = format!(
-        "{name}: {} frames, frame p50 {p50:.1} p99 {p99:.1} max {max:.1} ms, {over} over {threshold:.0} ms | main p50 {m50:.1} p99 {m99:.1} max {mmax:.1} ms | terrain {} uploads {:.0} ms, ring {} patches {:.0} ms, scatter {} cells {:.0} ms, origin shifts {} {:.0} ms",
+        "{name}: {} frames, frame p50 {p50:.1} p99 {p99:.1} max {max:.1} ms, {over} over {threshold:.0} ms | main p50 {m50:.1} p99 {m99:.1} max {mmax:.1} ms | terrain {} uploads {:.0} ms, ring {} patches {:.0} ms, scatter {} cells ({s_ents} entities, {s_inst} instances) {:.0} ms, origin shifts {} {:.0} ms",
         frames.len(), terrain.0, terrain.1, ring.0, ring.1, scatter.0, scatter.1, shift.0, shift.1
     );
     println!("{line}");

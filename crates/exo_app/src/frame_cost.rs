@@ -51,6 +51,8 @@ pub struct FrameCost {
     /// Scatter cells spawned; n = cells, `scatter_inst` = instances spawned.
     pub scatter_up: Work,
     pub scatter_inst: u32,
+    /// Entities spawned for the scatter cells (one per cell and prop).
+    pub scatter_ents: u32,
     /// The whole scatter system (cell walk, task starts, uploads).
     pub scatter_sys: Work,
     /// Render-origin shift: n = transforms moved.
@@ -136,7 +138,7 @@ impl FrameRec {
             parts.push(format!("ring {} patches {:.1} ms (sys {:.1})", c.ring_up.n, c.ring_up.ms, c.ring_sys.ms));
         }
         if c.scatter_up.n > 0 || c.scatter_sys.ms > 1.0 {
-            parts.push(format!("scatter {} cells {} inst {:.1} ms (sys {:.1})", c.scatter_up.n, c.scatter_inst, c.scatter_up.ms, c.scatter_sys.ms));
+            parts.push(format!("scatter {} cells {} ents {} inst {:.1} ms (sys {:.1})", c.scatter_up.n, c.scatter_ents, c.scatter_inst, c.scatter_up.ms, c.scatter_sys.ms));
         }
         if c.shift.n > 0 {
             parts.push(format!("origin shift {} transforms {:.1} ms", c.shift.n, c.shift.ms));

@@ -162,7 +162,7 @@ impl ScatterView {
     }
 
     /// Reads the vertex data of every prop once all their meshes are loaded.
-    fn collect_geoms(&mut self, meshes: &Assets<Mesh>) {
+    fn collect_geoms(&mut self, meshes: &Assets<Mesh>, assets: &AssetServer) {
         if self.geoms.is_some() {
             return;
         }
@@ -173,7 +173,14 @@ impl ScatterView {
             }
         } else {
             for (id, h) in &self.sources {
-                let Some(mesh) = meshes.get(h) else { return };
+                let Some(mesh) = meshes.get(h) else {
+                    if assets.load_state(h).is_failed() {
+                        // A prop that does not load is left out (its instances are not drawn).
+                        warn!("scatter: prop {id} did not load");
+                        continue;
+                    }
+                    return;
+                };
                 let Some(g) = PropGeom::from_mesh(mesh) else { return };
                 out.insert(id.clone(), g);
             }
@@ -274,7 +281,7 @@ pub fn update_scatter(
     if view.for_planet != Some(planet.id) {
         view.reset(&mut commands, &planet, &assets);
     }
-    view.collect_geoms(&meshes);
+    view.collect_geoms(&meshes, &assets);
     let cam = origin.view - planet.centre;
     let agl = planet.above_ground(origin.view).max(0.0);
     let walk = view.walked.is_none_or(|(p, h)| p.distance(cam) > WALK_MOVE_M || (h - agl).abs() > WALK_MOVE_M);
@@ -334,6 +341,7 @@ pub fn update_scatter(
             );
         }
         cost.scatter_inst += out.instances as u32;
+        cost.scatter_ents += entities.len() as u32;
         view.cells.insert(key, Cell::Shown { entities, instances: out.instances });
         uploads += 1;
     }

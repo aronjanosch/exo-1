@@ -156,11 +156,14 @@ fn fly(v0: DVec3, goal: DVec3, done: f64, mut accel: impl FnMut(DVec3) -> DVec3)
     run
 }
 
-/// The shipped step from `v0` under `input` (level ship, coupled, assisted, in space).
-fn fly_step(v0: DVec3, goal: DVec3, done: f64, input: FlightInput) -> Run {
+/// The shipped step from `v0` under `input` (level ship, coupled, assisted, in space), with the
+/// F7 switches `law` = (A3 cap refuses thrust, B2 brake keeps the heading).
+fn fly_step(v0: DVec3, goal: DVec3, done: f64, input: FlightInput, law: (bool, bool)) -> Run {
     let mut ship = ShipController::new(tuning());
     ship.horizon_follow = false;
     ship.tuning.boost_capacitor.drain_time = 0.0;
+    ship.cap_refuses_thrust = law.0;
+    ship.brake_keeps_heading = law.1;
     let env = Space { field: Field::default() };
     let mut body = BodyState { pos: START, lin_vel: v0, ..Default::default() };
     fly(v0, goal, done, |v| {
@@ -171,6 +174,11 @@ fn fly_step(v0: DVec3, goal: DVec3, done: f64, input: FlightInput) -> Run {
         body.integrate(DT);
         (nv - v) / DT
     })
+}
+
+/// The shipped step with both F7 switches on.
+fn f7(t: &ShipTuning, c: &Case) -> Run {
+    fly_step(c.v0, goal(t, c), DONE, input(c), (true, true))
 }
 
 struct Case {
@@ -206,7 +214,7 @@ const DONE: f64 = 0.1;
 
 fn runs(t: &ShipTuning, c: &Case) -> (Run, Run) {
     let g = goal(t, c);
-    let shipped = fly_step(c.v0, g, DONE, input(c));
+    let shipped = fly_step(c.v0, g, DONE, input(c), (false, false));
     let (ab, bb, k) = (assist_box(t), brake_box(t), t.linear_decay);
     let cand = if c.brake { fly(c.v0, g, DONE, |v| candidate_brake(&bb, k, v)) } else { fly(c.v0, g, DONE, |v| candidate(&ab, k, v, g)) };
     (shipped, cand)
@@ -221,7 +229,7 @@ fn today_formula_matches_the_shipped_step() {
         let g = goal(&t, &c);
         let b = if c.brake { brake_box(&t) } else { assist_box(&t) };
         let formula = fly(c.v0, g, DONE, |v| today(&b, t.linear_decay, v, g));
-        let shipped = fly_step(c.v0, g, DONE, input(&c));
+        let shipped = fly_step(c.v0, g, DONE, input(&c), (false, false));
         assert_eq!(formula.time, shipped.time, "{}", c.name);
         assert!((formula.path - shipped.path).abs() < 1e-6, "{}: {} vs {}", c.name, formula.path, shipped.path);
     }
@@ -238,7 +246,8 @@ fn comparison_table() {
     println!("|---|---|---|---|---|---|---|");
     for c in cases(&t) {
         let (shipped, cand) = runs(&t, &c);
-        for (law, r) in [("today", &shipped), ("candidate", &cand)] {
+        let on = f7(&t, &c);
+        for (law, r) in [("today", &shipped), ("candidate", &cand), ("F7 (A3 + B2)", &on)] {
             let heading = if c.brake { format!("{:.1}°", r.heading) } else { "–".to_string() };
             println!("| {} | {law} | {} | {:.0} m | {} | {:.1} m/s | {heading} |", c.name, fmt_t(r), r.path, over(r), r.off_line);
         }
@@ -257,5 +266,92 @@ fn candidate_keeps_the_cap_and_the_heading() {
         if c.brake {
             assert!(cand.heading < 0.5, "{}: heading turned {}°", c.name, cand.heading);
         }
+    }
+}
+
+/// F7 on (A3 + B2) on manoeuvre 1: the velocity never gets faster than the cap.
+#[test]
+fn f7_refuses_thrust_past_the_cap() {
+    let t = tuning();
+    let c = &cases(&t)[0];
+    let r = f7(&t, c);
+    assert!(r.time.is_some(), "{}: not finished", c.name);
+    assert!(r.peak <= t.space.cruise_speed + 0.5, "{}: peak {}", c.name, r.peak);
+}
+
+/// F7 on: every stop keeps its heading, and stop 2a (along the nose) is today's stop.
+#[test]
+fn f7_brake_keeps_the_heading_and_stop_2a_is_today() {
+    let t = tuning();
+    for c in cases(&t).iter().filter(|c| c.brake) {
+        let r = f7(&t, c);
+        assert!(r.time.is_some(), "{}: not finished", c.name);
+        assert!(r.heading < 0.5, "{}: heading turned {}°", c.name, r.heading);
+    }
+    let c = &cases(&t)[1];
+    let (today, on) = (fly_step(c.v0, goal(&t, c), DONE, input(c), (false, false)), f7(&t, c));
+    assert_eq!(today.time, on.time, "{}", c.name);
+    assert!((today.path - on.path).abs() < 1.0, "{}: {} vs {}", c.name, today.path, on.path);
+}
+
+/// F7 on, in full air with gravity: a diagonal brake from 100 m/s, 400 m up, stops within 10 s,
+/// keeps its heading and its height along the start's up axis (not the distance to the centre:
+/// the straight stop of about 230 m raises that by about 5 m through curvature alone).
+#[test]
+fn f7_brake_in_air_stops_on_its_line_at_its_height() {
+    let env = Air { field: Field::default() };
+    let up = DVec3::Y;
+    let start = up * (5000.0 + 400.0);
+    let v0 = DVec3::new(1.0, 0.0, -1.0).normalize() * 100.0;
+    let mut ship = ShipController::new(tuning());
+    ship.horizon_follow = false;
+    ship.tuning.boost_capacitor.drain_time = 0.0;
+    ship.cap_refuses_thrust = true;
+    ship.brake_keeps_heading = true;
+    let mut body = BodyState { pos: start, lin_vel: v0, ..Default::default() };
+    let brake = FlightInput { brake: true, piloted: true, ..Default::default() };
+    let (mut stop, mut heading, mut height) = (None, 0.0_f64, 0.0_f64);
+    for i in 1..=(10.0 / DT) as usize {
+        let (v, w) = ship.step(&body, &brake, &env, DT);
+        body.lin_vel = v;
+        body.ang_vel = w;
+        body.integrate(DT);
+        if v.length() > 1.0 {
+            heading = heading.max(v.angle_between(v0).to_degrees());
+        }
+        height = height.max((body.pos.dot(up) - start.dot(up)).abs());
+        if v.length() < 0.5 && stop.is_none() {
+            stop = Some(i as f64 * DT);
+        }
+    }
+    println!("air F7 brake: stop {stop:?} s, heading {heading:.3}°, height {height:.3} m");
+    assert!(stop.is_some(), "not stopped within 10 s, speed {}", body.lin_vel.length());
+    assert!(heading < 0.5, "heading turned {heading}°");
+    assert!(height < 1.0, "height moved {height} m");
+}
+
+/// Gravity pulls down the planet's centre; drag as in the shipped step (full air).
+struct Air {
+    field: Field,
+}
+
+impl PlanetEnv for Air {
+    fn to_planet(&self, world: DVec3) -> DVec3 {
+        world
+    }
+    fn radius(&self) -> f64 {
+        5000.0
+    }
+    fn height_at(&self, _dir: DVec3) -> f64 {
+        0.0
+    }
+    fn field(&self) -> &Field {
+        &self.field
+    }
+    fn gravity_at(&self, world: DVec3) -> DVec3 {
+        -world.normalize() * 9.81
+    }
+    fn density_at(&self, _world: DVec3) -> f64 {
+        1.0
     }
 }

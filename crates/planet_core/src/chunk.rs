@@ -88,8 +88,7 @@ impl Planet {
                 let a = a0 + (i as f64 - 1.0) * step;
                 let b = b0 + (j as f64 - 1.0) * step;
                 let dir = cube_to_sphere(face, a, b);
-                let (h, f) = self.height_ab(face, a.clamp(-1.0, 1.0), b.clamp(-1.0, 1.0), dir);
-                let lf = self.stamp_height(dir).1;
+                let (h, f, lf) = self.height_lf_ab(face, a.clamp(-1.0, 1.0), b.clamp(-1.0, 1.0), dir);
                 let k = j * M + i;
                 levels[k] = self.water_level_ab(face, a.clamp(-1.0, 1.0), b.clamp(-1.0, 1.0)).unwrap_or(f64::NAN);
                 pos[k] = dir * (r + h);
@@ -122,7 +121,7 @@ impl Planet {
                 };
                 out.verts.push([vv.x as f32, vv.y as f32, vv.z as f32]);
                 out.uvs.push(uv);
-                let mut p = self.palette(rows[k]);
+                let mut p = self.palette_ref(rows[k]).clone();
                 // Under a lake or river the ground darkens with depth, as the terrain shader does
                 // under the sea (#72).
                 let depth = levels[k] - hs[k];
@@ -145,7 +144,7 @@ impl Planet {
                 }
             }
         }
-        out.biomes = rows.clone();
+        out.biomes = rows;
         if (out.min_h as f64) < self.sea {
             let mut w = Vec::with_capacity(M * M);
             for j in 0..M {

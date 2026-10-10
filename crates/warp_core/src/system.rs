@@ -49,6 +49,10 @@ pub struct PlanetDef {
     pub arrival_radius: f64,
     /// Zone where a ship belongs to this planet's frame (render and load), from the centre.
     pub frame_radius: f64,
+    /// Highest ground above the radius (m), when the planet is held to a ceiling (#177); none =
+    /// the recipe's own relief.
+    #[serde(default)]
+    pub terrain_ceiling_m: Option<f64>,
     /// Colour of the distant sphere (linear-ish sRGB), look only.
     #[serde(default = "grey")]
     pub color: [f32; 3],

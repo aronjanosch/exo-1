@@ -35,6 +35,33 @@ pub struct ChunkOut {
     pub max_h: f32,
 }
 
+impl ChunkOut {
+    /// A hash of the whole chunk (positions, normals, colours, heights, water): equal chunks hash
+    /// equal, on any thread and in any run.
+    pub fn hash(&self) -> u64 {
+        use crate::coarse::{fnv, FNV_START};
+        let mut h = FNV_START;
+        let mut put = |bytes: &[u8]| h = fnv(bytes, h);
+        for c in self.center {
+            put(&c.to_le_bytes());
+        }
+        for v in self.verts.iter().chain(&self.normals) {
+            v.iter().for_each(|x| put(&x.to_le_bytes()));
+        }
+        for v in self.colors.iter().chain(&self.rock) {
+            v.iter().for_each(|x| put(&x.to_le_bytes()));
+        }
+        self.uvs.iter().flatten().for_each(|x| put(&x.to_le_bytes()));
+        self.heights.iter().for_each(|x| put(&x.to_le_bytes()));
+        put(&self.biomes);
+        for w in self.water.iter().chain(self.inland_water.as_ref().map(|(p, _)| p).into_iter()) {
+            w.iter().flatten().for_each(|x| put(&x.to_le_bytes()));
+        }
+        self.water_tris.iter().for_each(|x| put(&x.to_le_bytes()));
+        h
+    }
+}
+
 impl Planet {
     /// Chunk edge length in metres (along an edge of the chunk, base sphere).
     pub fn chunk_edge_m(&self, face: usize, a0: f64, b0: f64, size: f64) -> f64 {

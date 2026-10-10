@@ -225,13 +225,18 @@ impl Planet {
         for attempt in 0..lf.retry_limit.max(1) {
             let mut rng = Rng(0xA0761D6478BD642F ^ (self.recipe.seed as u64).wrapping_mul(0xE7037ED1A0B428DB) ^ (attempt as u64 + 1).wrapping_mul(0x8EBC6AF09C88C6E3));
             let mut placed: Vec<(StampRt, f64)> = Vec::new();
+            // Centres by place: a kind's separation never exceeds the widest one, the grid's cell.
+            let widest = lf.kinds.iter().map(|k| k.min_separation_m).fold(1.0, f64::max);
+            let mut near = crate::grid::Grid::new(widest, self.radius);
             let mut miss = None;
             for k in &order {
                 // How many of this kind this try wants, then candidates until they are placed.
-                let want = k.count[0] + ((k.count[1] - k.count[0] + 1) as f64 * rng.next()) as u32;
-                let want = want.min(k.count[1]);
+                let (min_count, _) = self.count_range(k.count, k.per_100_km2);
+                let want = self.count_pick(k.count, k.per_100_km2, rng.next());
                 let mut got = 0;
-                for _ in 0..lf.candidates {
+                // The candidate budget grows with the wanted count.
+                let scaled_candidates = ((lf.candidates as f64) * (want as f64 / 10.0).max(1.0)) as u32;
+                for _ in 0..scaled_candidates {
                     if got >= want {
                         break;
                     }
@@ -241,15 +246,19 @@ impl Planet {
                     if !(inside(w.elevation, f.elev) && inside(w.temperature, f.temp) && inside(w.moisture, f.moist) && inside(w.landform, f.land) && inside(w.weirdness, f.weird)) {
                         continue;
                     }
-                    if placed.iter().any(|(s, sep)| self.radius * s.c.dot(c).clamp(-1.0, 1.0).acos() < sep.max(k.min_separation_m)) {
+                    if near.any_near(c, widest, |i| {
+                        let (s, sep) = &placed[i as usize];
+                        self.radius * s.c.dot(c).clamp(-1.0, 1.0).acos() < sep.max(k.min_separation_m)
+                    }) {
                         continue;
                     }
                     let st = build(k, c, &mut rng, self.radius);
+                    near.insert_point(placed.len() as u32, c);
                     placed.push((st, k.min_separation_m));
                     got += 1;
                 }
-                if got < k.count[0] {
-                    miss = Some(format!("landform {}: placed {got} of at least {}", k.id, k.count[0]));
+                if got < min_count {
+                    miss = Some(format!("landform {}: placed {got} of at least {}", k.id, min_count));
                     break;
                 }
             }

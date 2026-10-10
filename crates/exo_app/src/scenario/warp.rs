@@ -31,11 +31,12 @@ fn nose_along(dir: DVec3) -> DQuat {
     DQuat::from_rotation_arc(DVec3::NEG_Z, dir)
 }
 
-/// Orbit point of planet `i`: 7000 m from the centre, on its +y side, nose along the course
+/// Orbit point of planet `i`: 200 m above its jump altitude (7000 m from the centre at Hearth), on its +y side, nose along the course
 /// to planet `to` (what a pilot would aim at; the course is the drive's own path start).
 fn orbit_pose(w: &World, i: PlanetId, to: PlanetId) -> (DVec3, DQuat) {
     let sys = &w.resource::<SystemRes>().0;
-    let pos = sys.planet(i).centre() + DVec3::Y * 7000.0;
+    let p = sys.planet(i);
+    let pos = p.centre() + DVec3::Y * (p.radius + p.min_jump_altitude() + 200.0);
     let view = warp_core::ShipView { pos, forward: DVec3::X, speed: 0.0 };
     let mut d = Drive::new(sys.drive.clone());
     d.begin(to, &view, sys, &[]).expect("orbit start is free");
@@ -358,12 +359,14 @@ pub(crate) fn wait_drive_idle() -> Step {
     Box::new(|w, c| warp_state(w).0 == Phase::Idle || c.t > 30.0)
 }
 
-/// A start refused below the jump altitude, or allowed above it (then cancelled).
+/// A start refused below the jump altitude, or allowed above it (then cancelled). `alt` is
+/// metres at Hearth's 1200 m atmosphere and scales with the planet's atmosphere height (#177).
 fn start_at_altitude(name: &'static str, alt: f64, refused: bool) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
             begin(w, c, name);
             let pl = planet(w);
+            let alt = alt * w.resource::<SystemRes>().0.planet(pl.id).atmosphere_height / 1200.0;
             teleport_ship(w, pl.centre + DVec3::Y * (pl.radius + alt), DQuat::IDENTITY);
             w.resource_mut::<WarpDrive>().last_abort = None;
         }

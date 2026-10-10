@@ -205,7 +205,8 @@ pub struct Where {
 pub struct LandformKind {
     pub id: String,
     pub shape: StampShape,
-    pub count: [u32; 2],
+    #[serde(default)]
+    pub count: Option<[u32; 2]>,
     /// No other stamp centre closer than this (the larger of the two kinds' values counts).
     pub min_separation_m: f64,
     #[serde(default, rename = "where")]
@@ -216,6 +217,9 @@ pub struct LandformKind {
     /// The planet's signature landform: placed first, bigger than the global relief.
     #[serde(default)]
     pub signature: bool,
+    /// Expected count range per 100 km2 of surface; when present replaces `count`.
+    #[serde(default)]
+    pub per_100_km2: Option<[f64; 2]>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -644,7 +648,8 @@ pub enum SiteCategory {
 pub struct SiteKind {
     pub id: String,
     pub category: SiteCategory,
-    pub count: [u32; 2],
+    #[serde(default)]
+    pub count: Option<[u32; 2]>,
     /// Ordinary scatter stays out of this radius (m).
     pub footprint_m: f64,
     /// To sites of the same kind, and to every site (the larger value of the two kinds counts).
@@ -664,6 +669,9 @@ pub struct SiteKind {
     #[serde(default)]
     pub edits: Vec<Edit>,
     pub kit: String,
+    /// Expected count range per 100 km2 of surface; when present replaces `count`.
+    #[serde(default)]
+    pub per_100_km2: Option<[f64; 2]>,
 }
 fn slope_flat() -> [f64; 2] {
     [0.0, 20.0]
@@ -703,6 +711,9 @@ pub struct Recipe {
     pub seed: i32,
     #[serde(skip)]
     pub radius: f64,
+    /// Hash of the recipe's JSON text: part of the coarse layer's cache key.
+    #[serde(skip)]
+    pub source_hash: u64,
     #[serde(rename = "macro")]
     pub macro_: MacroSpec,
     pub bands: Vec<Band>,
@@ -731,7 +742,8 @@ impl Recipe {
     }
 
     pub fn from_json(s: &str) -> Result<Recipe, String> {
-        let r: Recipe = serde_json::from_str(s).map_err(|e| e.to_string())?;
+        let mut r: Recipe = serde_json::from_str(s).map_err(|e| e.to_string())?;
+        r.source_hash = crate::coarse::fnv(s.as_bytes(), crate::coarse::FNV_START);
         if r.biomes.is_empty() {
             return Err("at least one biome row".into());
         }
@@ -751,8 +763,16 @@ impl Recipe {
             if !r.sites.kits.contains_key(&k.kit) {
                 return Err(format!("site kind {}: kit '{}' is not defined", k.id, k.kit));
             }
-            if k.count[0] > k.count[1] {
-                return Err(format!("site kind {}: count min above max", k.id));
+            if let Some([c0, c1]) = k.count {
+                if c0 > c1 {
+                    return Err(format!("site kind {}: count min above max", k.id));
+                }
+            }
+            if k.per_100_km2.is_some() && k.count.is_some() {
+                return Err(format!("site kind {}: cannot have both count and per_100_km2", k.id));
+            }
+            if k.per_100_km2.is_none() && k.count.is_none() {
+                return Err(format!("site kind {}: must have either count or per_100_km2", k.id));
             }
             for e in &k.edits {
                 if let Edit::Flatten { radius_m: None, half_extent_m: None, .. } = e {
@@ -764,8 +784,16 @@ impl Recipe {
             return Err("landforms: at most one signature landform".into());
         }
         for k in &r.landforms.kinds {
-            if k.count[0] > k.count[1] {
-                return Err(format!("landform {}: count min above max", k.id));
+            if let Some([c0, c1]) = k.count {
+                if c0 > c1 {
+                    return Err(format!("landform {}: count min above max", k.id));
+                }
+            }
+            if k.per_100_km2.is_some() && k.count.is_some() {
+                return Err(format!("landform {}: cannot have both count and per_100_km2", k.id));
+            }
+            if k.per_100_km2.is_none() && k.count.is_none() {
+                return Err(format!("landform {}: must have either count or per_100_km2", k.id));
             }
         }
         if r.material.strata_colors.is_empty() || r.material.strata_colors.len() > 4 {

@@ -77,42 +77,48 @@ impl Planet {
     /// `base` is the noise height at `dir` (shape, stamps, bands).
     pub(crate) fn apply_edits(&self, dir: V3, base: f64) -> f64 {
         let mut h = base;
-        for s in &self.sites {
-            let dc = dir.dot(s.dir);
-            if dc <= s.cos_reach {
-                continue;
-            }
-            let x = self.radius * dir.dot(s.east).clamp(-1.0, 1.0).asin();
-            let y = self.radius * dir.dot(s.north).clamp(-1.0, 1.0).asin();
-            let d = x.hypot(y);
-            for e in s.edits.iter() {
-                match *e {
-                    EditRt::FlattenDisc { r, roll, dish } => {
-                        let w = 1.0 - smoothstep(r, r + roll.max(1e-6), d);
-                        let t = (d / r.max(1e-6)).min(1.0);
-                        h += (s.ground_m - dish * (1.0 - t * t) - h) * w;
-                    }
-                    EditRt::FlattenRect { hx, hy, roll, dish } => {
-                        let out = (x.abs() - hx).max(0.0).hypot((y.abs() - hy).max(0.0));
-                        let w = 1.0 - smoothstep(0.0, roll.max(1e-6), out);
-                        let t = (x.abs() / hx.max(1e-6)).max(y.abs() / hy.max(1e-6)).min(1.0);
-                        h += (s.ground_m - dish * (1.0 - t * t) - h) * w;
-                    }
-                    EditRt::Smooth { r, strength } => {
-                        let w = 1.0 - smoothstep(r * 0.5, r * 1.5, d);
-                        if w > 0.0 {
-                            let mut sum = 0.0;
-                            for k in 0..6 {
-                                let a = k as f64 / 6.0 * std::f64::consts::TAU;
-                                sum += self.base_height_at(walk(dir, s.east * a.cos() + s.north * a.sin(), r * 0.5, self.radius));
-                            }
-                            h += (sum / 6.0 - h) * w * strength.clamp(0.0, 1.0);
+        for &i in self.site_grid.at(dir) {
+            h = self.apply_edits_one(&self.sites[i as usize], dir, h);
+        }
+        h
+    }
+
+    /// One site's edits on the height `h` at `dir`: none beyond its reach.
+    pub(crate) fn apply_edits_one(&self, s: &Site, dir: V3, mut h: f64) -> f64 {
+        let dc = dir.dot(s.dir);
+        if dc <= s.cos_reach {
+            return h;
+        }
+        let x = self.radius * dir.dot(s.east).clamp(-1.0, 1.0).asin();
+        let y = self.radius * dir.dot(s.north).clamp(-1.0, 1.0).asin();
+        let d = x.hypot(y);
+        for e in s.edits.iter() {
+            match *e {
+                EditRt::FlattenDisc { r, roll, dish } => {
+                    let w = 1.0 - smoothstep(r, r + roll.max(1e-6), d);
+                    let t = (d / r.max(1e-6)).min(1.0);
+                    h += (s.ground_m - dish * (1.0 - t * t) - h) * w;
+                }
+                EditRt::FlattenRect { hx, hy, roll, dish } => {
+                    let out = (x.abs() - hx).max(0.0).hypot((y.abs() - hy).max(0.0));
+                    let w = 1.0 - smoothstep(0.0, roll.max(1e-6), out);
+                    let t = (x.abs() / hx.max(1e-6)).max(y.abs() / hy.max(1e-6)).min(1.0);
+                    h += (s.ground_m - dish * (1.0 - t * t) - h) * w;
+                }
+                EditRt::Smooth { r, strength } => {
+                    let w = 1.0 - smoothstep(r * 0.5, r * 1.5, d);
+                    if w > 0.0 {
+                        let mut sum = 0.0;
+                        for k in 0..6 {
+                            let a = k as f64 / 6.0 * std::f64::consts::TAU;
+                            sum += self.base_height_at(walk(dir, s.east * a.cos() + s.north * a.sin(), r * 0.5, self.radius));
                         }
+                        h += (sum / 6.0 - h) * w * strength.clamp(0.0, 1.0);
                     }
-                    EditRt::Raise { r, roll, amount, rim, rim_w } => {
-                        let w = 1.0 - smoothstep(r, r + roll.max(1e-6), d);
-                        h += amount * w + rim * (-((d - r) / rim_w.max(1e-6)).powi(2)).exp();
-                    }
+                }
+                EditRt::Raise { r, roll, amount, rim, rim_w } => {
+                    let w = 1.0 - smoothstep(r, r + roll.max(1e-6), d);
+                    h += amount * w + rim * (-((d - r) / rim_w.max(1e-6)).powi(2)).exp();
                 }
             }
         }
@@ -127,13 +133,14 @@ impl Planet {
     /// The global pass (#70): landmarks first (highest candidate), then the site kinds in turns,
     /// each new site the candidate farthest from all sites so far. Returns the sites and the kinds
     /// that missed their minimum count.
-    pub(crate) fn place_sites_v2(&self) -> (Vec<Site>, Vec<String>) {
+    pub(crate) fn place_sites_v2(&self) -> (Vec<Site>, Vec<String>, Vec<(u32, V3, f64, f64)>) {
         let rule = &self.recipe.sites;
         let mut rng = Rng::new(0x9E3779B97F4A7C15 ^ (self.recipe.seed as u64).wrapping_mul(0xBF58476D1CE4E5B9));
         let kinds = &rule.kinds;
-        let want: Vec<u32> = kinds.iter().map(|k| (k.count[0] + ((k.count[1] - k.count[0] + 1) as f64 * rng.next()) as u32).min(k.count[1])).collect();
+        let want: Vec<u32> = kinds.iter().map(|k| self.count_pick(k.count, k.per_100_km2, rng.next())).collect();
         // Hand-placed places first: fixed, and the generated sites keep away from them.
         let mut placed: Vec<Site> = Vec::new();
+        let mut generated: Vec<(u32, V3, f64, f64)> = Vec::new();
         let mut place_misses = Vec::new();
         for pl in &self.places {
             let smp = self.sample(pl.dir());
@@ -142,47 +149,73 @@ impl Planet {
             }
             placed.push(pl.site(smp.height, self.radius));
         }
+        // Sites by place. A kind's separation, a budget radius or a hand-placed place's clearance
+        // never exceeds the widest of them, which is the grid's cell.
+        let max_reach_k = kinds.iter().map(|k| k.edits.iter().map(|e| edit_rt(e).1).fold(k.footprint_m, f64::max)).fold(0.0, f64::max);
+        let widest = kinds
+            .iter()
+            .map(|k| k.min_separation_m.max(k.min_separation_all_m))
+            .chain(placed.iter().map(|s| s.reach_m + max_reach_k))
+            .chain(rule.budgets.iter().map(|b| b.radius_m))
+            .fold(100.0, f64::max);
+        let mut near = crate::grid::Grid::new(widest, self.radius);
+        for (i, s) in placed.iter().enumerate() {
+            near.insert_point(i as u32, s.dir);
+        }
         let mut tries = vec![0u32; kinds.len()];
         let mut got = vec![0u32; kinds.len()];
         let dist = |a: V3, b: V3| self.radius * a.dot(b).clamp(-1.0, 1.0).acos();
         // Landmarks first, then the others in round-robin turns.
         let mut order: Vec<usize> = (0..kinds.len()).filter(|&i| kinds[i].prefer_high).collect();
         order.extend((0..kinds.len()).filter(|&i| !kinds[i].prefer_high));
+        let scaled_candidates = ((rule.candidates as f64) * (want.iter().sum::<u32>() as f64 / 30.0).max(1.0)) as u32;
         loop {
             let mut any = false;
             for &ki in &order {
                 let k = &kinds[ki];
-                if got[ki] >= want[ki] || tries[ki] >= rule.candidates {
+                if got[ki] >= want[ki] || tries[ki] >= scaled_candidates {
                     continue;
                 }
                 any = true;
                 let reach_k = k.edits.iter().map(|e| edit_rt(e).1).fold(k.footprint_m, f64::max);
                 let mut best: Option<(f64, V3, f64)> = None;
                 let mut found = 0;
-                while found < rule.best_of.max(1) && tries[ki] < rule.candidates {
+                while found < rule.best_of.max(1) && tries[ki] < scaled_candidates {
                     tries[ki] += 1;
                     let z = rng.next() * 2.0 - 1.0;
                     let phi = rng.next() * std::f64::consts::TAU;
                     let rr = (1.0 - z * z).sqrt();
                     let d = v3(rr * phi.cos(), z, rr * phi.sin());
-                    let ok_sep = placed.iter().all(|s| {
+                    let too_close = near.any_near(d, widest, |i| {
+                        let s = &placed[i as usize];
                         let sep = match s.kind {
                             Some(sk) if sk == ki => k.min_separation_m.max(k.min_separation_all_m),
                             Some(sk) => k.min_separation_all_m.max(kinds[sk].min_separation_all_m),
                             // A hand-placed place: clear of its reach plus this kind's footprint.
                             None => k.min_separation_all_m.max(s.reach_m + reach_k),
                         };
-                        dist(s.dir, d) >= sep
+                        dist(s.dir, d) < sep
                     });
-                    if !ok_sep {
+                    if too_close {
                         continue;
                     }
-                    // Never under a stamp.
-                    if self.stamps.iter().any(|s| dist(s.c, d) < s.reach_m + k.footprint_m) {
+                    // Never under a stamp (the stamps' grid holds their reach plus the widest footprint).
+                    if self.stamp_grid.at(d).iter().any(|&i| {
+                        let s = &self.stamps[i as usize];
+                        dist(s.c, d) < s.reach_m + k.footprint_m
+                    }) {
                         continue;
                     }
                     // Budgets of the kind's category.
-                    if rule.budgets.iter().any(|b| b.category == k.category && placed.iter().filter(|s| s.category == b.category && dist(s.dir, d) < b.radius_m).count() as u32 >= b.max) {
+                    if rule.budgets.iter().any(|b| {
+                        let mut n = 0u32;
+                        b.category == k.category
+                            && near.any_near(d, b.radius_m, |i| {
+                                let s = &placed[i as usize];
+                                n += (s.category == b.category && dist(s.dir, d) < b.radius_m) as u32;
+                                n >= b.max
+                            })
+                    }) {
                         continue;
                     }
                     let smp = self.sample(d);
@@ -198,34 +231,31 @@ impl Planet {
                         continue;
                     }
                     found += 1;
-                    let score = if k.prefer_high { ha } else { placed.iter().map(|s| dist(s.dir, d)).fold(f64::MAX, f64::min) };
+                    let score = if k.prefer_high {
+                        ha
+                    } else {
+                        // Distance to the nearest site: exact up to three cells, beyond that "far".
+                        let mut nearest = f64::MAX;
+                        for within in [widest, 3.0 * widest] {
+                            near.any_near(d, within, |i| {
+                                nearest = nearest.min(dist(placed[i as usize].dir, d));
+                                false
+                            });
+                            if nearest <= within {
+                                break;
+                            }
+                        }
+                        nearest
+                    };
                     if best.is_none_or(|b| score > b.0) {
                         best = Some((score, d, smp.height));
                     }
                 }
                 if let Some((_, d, ground)) = best {
                     let yaw = rng.next() * std::f64::consts::TAU;
-                    let (e0, n0) = tangent_frame(d);
-                    let east = e0 * yaw.cos() + n0 * yaw.sin();
-                    let north = d.cross(east);
-                    let mut edits: Vec<&Edit> = k.edits.iter().collect();
-                    edits.sort_by_key(|e| e.order());
-                    let (rts, reaches): (Vec<EditRt>, Vec<f64>) = edits.into_iter().map(edit_rt).unzip();
-                    let reach = reaches.iter().copied().fold(0.0, f64::max);
-                    placed.push(Site {
-                        kind: Some(ki),
-                        id: k.id.clone(),
-                        category: k.category,
-                        dir: d,
-                        yaw,
-                        footprint_m: k.footprint_m,
-                        ground_m: ground,
-                        reach_m: reach,
-                        cos_reach: (reach / self.radius).cos(),
-                        east,
-                        north,
-                        edits: std::sync::Arc::new(rts),
-                    });
+                    near.insert_point(placed.len() as u32, d);
+                    placed.push(self.make_site(ki, d, yaw, ground));
+                    generated.push((ki as u32, d, yaw, ground));
                     got[ki] += 1;
                 }
             }
@@ -236,11 +266,47 @@ impl Planet {
         let mut misses: Vec<String> = kinds
             .iter()
             .enumerate()
-            .filter(|(i, k)| got[*i] < k.count[0])
-            .map(|(i, k)| format!("site kind {}: placed {} of at least {} ({} candidates)", k.id, got[i], k.count[0], tries[i]))
+            .filter_map(|(i, k)| {
+                let min_count = self.count_range(k.count, k.per_100_km2).0;
+                (got[i] < min_count).then(|| format!("site kind {}: placed {} of at least {} ({} candidates)", k.id, got[i], min_count, tries[i]))
+            })
             .collect();
         misses.extend(place_misses);
-        (placed, misses)
+        (placed, misses, generated)
+    }
+
+    /// A generated site of kind `ki` at `d`, turned by `yaw`, on ground `ground` (m).
+    pub(crate) fn make_site(&self, ki: usize, d: V3, yaw: f64, ground: f64) -> Site {
+        let k = &self.recipe.sites.kinds[ki];
+        let (e0, n0) = tangent_frame(d);
+        let east = e0 * yaw.cos() + n0 * yaw.sin();
+        let north = d.cross(east);
+        let mut edits: Vec<&Edit> = k.edits.iter().collect();
+        edits.sort_by_key(|e| e.order());
+        let (rts, reaches): (Vec<EditRt>, Vec<f64>) = edits.into_iter().map(edit_rt).unzip();
+        let reach = reaches.iter().copied().fold(0.0, f64::max);
+        Site {
+            kind: Some(ki),
+            id: k.id.clone(),
+            category: k.category,
+            dir: d,
+            yaw,
+            footprint_m: k.footprint_m,
+            ground_m: ground,
+            reach_m: reach,
+            cos_reach: (reach / self.radius).cos(),
+            east,
+            north,
+            edits: std::sync::Arc::new(rts),
+        }
+    }
+
+    /// The sites of a cache: the hand-placed places (cheap, on the noise ground), then the generated
+    /// ones as the placement found them.
+    pub(crate) fn restore_sites(&self, c: &crate::coarse::SiteCache) -> Vec<Site> {
+        let mut out: Vec<Site> = self.places.iter().map(|pl| pl.site(self.sample(pl.dir()).height, self.radius)).collect();
+        out.extend(c.sites.iter().map(|&(ki, d, yaw, g)| self.make_site(ki as usize, d, yaw, g)));
+        out
     }
 
     /// The pieces of site `i`'s kit, standing on the edited ground.

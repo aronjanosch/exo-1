@@ -20,6 +20,7 @@
   "briefing.shape.timed": ["{amount} crates of {commodity}, {from} to {to}, and the clock is running."],
   "briefing.reason.commodity.fizzy_mud": ["The mud must stay fizzy."],
   "briefing.reason.route.dusty": ["Dust makes everyone grumpy at the far end."],
+  "licence.flight.name": "Flight licence",
   "job.first_haul.title": "First haul",
   "commodity.fizzy_mud.name": "fizzy mud",
   "location.drip_rock.name": "Drip Rock",

@@ -169,12 +169,14 @@ fn loader_errors_name_file_and_field() {
         ("\"legal\"", "\"mafia\"", "mafia"),
         ("\"intro\": \"g.courier.intro\",", "", "intro"),
     ] {
-        let e = replace(p, from, to);
+        // (Breaking the courier also breaks what refers to it, like the exam's honours: only the
+        // errors of this file count.)
+        let e: Vec<String> = replace(p, from, to).into_iter().filter(|m| m.starts_with(p)).collect();
         assert_eq!(e.len(), 1, "{field}: {e:?}");
-        assert!(e[0].starts_with(p) && e[0].contains(field), "{field}: {e:?}");
+        assert!(e[0].contains(field), "{field}: {e:?}");
     }
     // The standing must be a crew track: freight_xp is a personal one.
-    let e = replace(p, "\"standing_courier\"", "\"freight_xp\"");
+    let e: Vec<String> = replace(p, "\"standing_courier\"", "\"freight_xp\"").into_iter().filter(|m| m.starts_with(p)).collect();
     assert!(e[0].contains("standing") && e[0].contains("crew"), "{e:?}");
 }
 

@@ -1,0 +1,26 @@
+{
+  "_comment": "The flight licence exam (#169), the tutorial with a grade. Take off, reach the Drip Rock pad, land on it (a touchdown faster than 6 m/s is a crash), set the school's crate down undamaged. Honours for a soft landing (2.5 m/s) in 150 s give a small standing bonus with the courier office. The exam lends the one ship there is. Fee, retry fee, limits and the time are starting values (TODO(initiator)). It reads only the events TookOff, PadReached and Landed.",
+  "id": "flight_exam",
+  "title": "job.flight_exam.title",
+  "brief": "job.flight_exam.brief",
+  "giver": "flight_school",
+  "objectives": [
+    { "take_off": {} },
+    { "reach_pad": { "at": "drip_rock" } },
+    { "land": { "at": "drip_rock", "max_mps": 6.0 } },
+    { "deliver": { "from": { "location": "skyhook_school" }, "to": { "location": "drip_rock" }, "commodity": { "one_of": ["parcel"] }, "amount": [1, 1] } }
+  ],
+  "reward": 0,
+  "grading": { "bands": [ { "share": 1.0, "pays": 1.0 } ], "condition_weight": 0.5 },
+  "deadline_s": 300,
+  "track": "freight_xp",
+  "xp": 25,
+  "available": { "not": { "track_at_least": { "track": "licence_flight", "value": 1 } } },
+  "exam": {
+    "fee": 150,
+    "retry_fee": 75,
+    "grants": "licence_flight",
+    "min_condition": 0.8,
+    "honours": { "max_touchdown_mps": 2.5, "within_s": 150, "giver": "courier_office", "standing": 10 }
+  }
+}

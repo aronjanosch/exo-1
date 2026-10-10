@@ -114,6 +114,43 @@
     "{customer} is waiting for goods."
   ],
 
+  "location.skyhook_school.name": "Skyhook Flight School",
+  "track.licence_flight.name": "flight licence",
+  "track.standing_flight_school.name": "standing with Skyhook Flight School",
+  "licence.flight.name": "Flight licence",
+  "job.flight_exam.title": "Flight licence exam",
+  "job.flight_exam.brief": "Take off, fly to the Drip Rock pad, land on it gently and set the school's crate down. The ship is lent for the exam.",
+
+  "giver.flight_school.name": "Skyhook Flight School",
+  "giver.flight_school.greet.first": [
+    "Want to fly? Everybody wants to fly. Few want to land.",
+    "Welcome to Skyhook. Our motto: up is optional, down is mandatory.",
+    "A new pilot! The ship is lent for the exam. It is the only one we have, so please keep it whole."
+  ],
+  "giver.flight_school.greet.regular": [
+    "Licensed and still coming by? We like that.",
+    "Our favourite pilot, by default.",
+    "Back for the honours? Soft hands, soft landing."
+  ],
+  "giver.flight_school.greet.failure": [
+    "The ship is fine. Mostly. Let us try again.",
+    "Everybody crashes once. Some twice. Half price for the second.",
+    "The ground was there the whole time. Remember that."
+  ],
+  "giver.flight_school.intro": ["Here is how it goes.", "The exam is short, the lesson is long.", "Listen carefully, then ignore half of it."],
+  "giver.flight_school.reason": ["Without a licence the seat refuses you. It has opinions.", "A licence makes you a pilot, on paper.", "The crate is part of the test. It is also fragile."],
+  "giver.flight_school.signoff": ["Up, over, down. In that order.", "Do not land on anyone.", "Mind the ground. It is closer than it looks."],
+
+  "notice.exam.passed": ["LICENCE PASSED: you may fly. Do not let it go to your head.", "EXAM PASSED. The seat now knows you.", "PASSED. You are a pilot, officially."],
+  "notice.exam.honours": ["PASSED WITH HONOURS! The school is moved to tears, a little.", "HONOURS! A soft landing and a good time. Show-off.", "EXAM PASSED, HONOURS. The seat purrs."],
+  "notice.exam.failed": ["Exam failed. A retry costs {retry}.", "Not this time. The retry costs {retry}.", "The ground won. Try again for {retry}."],
+  "notice.licence.needed": [
+    "The seat refuses: you need the flight licence. Take the exam at Skyhook Flight School.",
+    "No licence, no seat. Skyhook Flight School gives exams.",
+    "The seat says no. Ride along, or go and pass the exam at Skyhook."
+  ],
+  "notice.refused.cannot_afford": ["Not enough credits for that.", "Your wallet declines.", "Come back with more credits."],
+
   "giver.courier_office.name": "Dinglepost Couriers",
   "giver.courier_office.greet.first": [
     "New face! We always need a new face. The old ones keep quitting.",

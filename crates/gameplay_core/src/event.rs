@@ -57,6 +57,14 @@ pub enum WorldEvent {
     /// A buyer (`by`: the id the customers system uses, for texts) wants goods: pick up `amount` of `commodity` at `from`, bring them to `to` for
     /// `reward`. The customers system raises it, the jobs system turns it into an offer (#168).
     OrderPlaced { order: OrderId, by: String, from: LocationId, to: LocationId, commodity: CommodityId, amount: u32, reward: i64, deadline_s: Option<f64> },
+    /// The sender's ship left the ground under their hands (#169). The exam asks for it; nothing
+    /// here depends on how the ship flies.
+    TookOff,
+    /// The sender's ship came over the pad of a location.
+    PadReached { at: LocationId },
+    /// The sender's ship touched down, at the pad of a location or elsewhere, with this speed
+    /// towards the ground in m/s.
+    Landed { at: Option<LocationId>, speed: f64 },
     /// What came of an order: how many crates arrived, how many were asked for, their mean
     /// condition 0..1, and whether it was in time. The jobs system raises it when the job ends;
     /// the customers system reads it.

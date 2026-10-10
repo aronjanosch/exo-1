@@ -35,6 +35,32 @@ pub enum JobState {
     Completed,
     Expired,
     Abandoned,
+    /// An exam that went wrong: a crash landing, a crate too damaged (#169).
+    Failed,
+}
+
+/// A check of an exam: something the player's ship has to do (not a delivery).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckKind {
+    TakeOff,
+    ReachPad { at: LocationId },
+    Land { at: LocationId, max_mps: f64 },
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckState {
+    Pending,
+    /// Seconds on the job's clock when it was done, and a value (the touchdown speed for a landing).
+    Done { at_s: f64, value: f64 },
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Check {
+    pub kind: CheckKind,
+    pub state: CheckState,
 }
 
 /// What a crate of a leg went through.
@@ -107,11 +133,19 @@ pub struct Job {
     /// Set for a job that came from a customer's order.
     #[serde(default)]
     pub order: Option<OrderTerms>,
+    /// What an exam asks of the ship besides the delivery, in order.
+    #[serde(default)]
+    pub checks: Vec<Check>,
 }
 
 impl Job {
     pub fn delivered(&self) -> u32 {
         self.legs.iter().map(Leg::delivered).sum()
+    }
+
+    /// Every delivery is resolved and every check done: nothing more can happen.
+    fn finished(&self) -> bool {
+        self.legs.iter().all(Leg::resolved) && self.checks.iter().all(|c| matches!(c.state, CheckState::Done { .. }))
     }
 
     pub fn asked(&self) -> u32 {
@@ -176,6 +210,8 @@ pub enum Refusal {
     NotAvailable,
     /// `CratesSpawned` for an unknown leg, twice, or with the wrong count.
     BadSpawn,
+    /// An exam costs more than the crew has (#169).
+    CannotAfford { price: i64, wallet: i64 },
 }
 
 /// The crew's offers and jobs.
@@ -186,6 +222,9 @@ pub struct Jobs {
     /// How the crew stands with each giver (#167): drives the mood of the briefings.
     #[serde(default)]
     history: BTreeMap<GiverId, GiverHistory>,
+    /// Paid tries of an exam per player and template (`"<client>:<template>"`): the retry fee.
+    #[serde(default)]
+    attempts: BTreeMap<String, u32>,
 }
 
 /// The jobs section of a save (#128).
@@ -204,26 +243,38 @@ impl Jobs {
 
     /// Makes an offer from a template and concrete legs (the board's job, #126).
     pub fn offer(&mut self, template: &TemplateId, legs: Vec<Leg>) -> JobId {
+        self.offer_with(template, legs, Vec::new())
+    }
+
+    /// `offer` with the checks of an exam.
+    pub fn offer_with(&mut self, template: &TemplateId, legs: Vec<Leg>, checks: Vec<Check>) -> JobId {
         let id = JobId(self.next_id);
         self.next_id += 1;
-        self.jobs.insert(id, Job { id, template: template.clone(), state: JobState::Offered, legs, accepted_by: None, participants: BTreeSet::new(), clock_s: None, order: None });
+        self.jobs.insert(id, Job { id, template: template.clone(), state: JobState::Offered, legs, accepted_by: None, participants: BTreeSet::new(), clock_s: None, order: None, checks });
         id
+    }
+
+    /// How many paid tries of an exam the player has made.
+    pub fn attempts(&self, who: ClientId, template: &TemplateId) -> u32 {
+        self.attempts.get(&format!("{}:{template}", who.0)).copied().unwrap_or(0)
     }
 
     /// Makes an offer from a template that names everything: fixed places, one commodity, one
     /// amount (targeted and story jobs). None if it leaves a choice to the board.
     pub fn offer_fixed(&mut self, t: &JobTemplate) -> Option<JobId> {
-        let legs = t
-            .objectives
-            .iter()
-            .map(|o| match o {
+        let (mut legs, mut checks) = (Vec::new(), Vec::new());
+        for o in &t.objectives {
+            match o {
                 ObjectiveSpec::Deliver { from: PlaceSpec::Location(a), to: PlaceSpec::Location(b), commodity: CommoditySpec::OneOf(pool), amount } if pool.len() == 1 && amount[0] == amount[1] => {
-                    Some(Leg::new(a.clone(), b.clone(), pool[0].clone(), amount[0]))
+                    legs.push(Leg::new(a.clone(), b.clone(), pool[0].clone(), amount[0]));
                 }
-                _ => None,
-            })
-            .collect::<Option<Vec<_>>>()?;
-        Some(self.offer(&t.id, legs))
+                ObjectiveSpec::Deliver { .. } => return None,
+                ObjectiveSpec::TakeOff {} => checks.push(Check { kind: CheckKind::TakeOff, state: CheckState::Pending }),
+                ObjectiveSpec::ReachPad { at } => checks.push(Check { kind: CheckKind::ReachPad { at: at.clone() }, state: CheckState::Pending }),
+                ObjectiveSpec::Land { at, max_mps } => checks.push(Check { kind: CheckKind::Land { at: at.clone(), max_mps: *max_mps }, state: CheckState::Pending }),
+            }
+        }
+        Some(self.offer_with(&t.id, legs, checks))
     }
 
     /// What happened between the crew and a giver; nothing yet for a new one.
@@ -268,10 +319,26 @@ impl Jobs {
                 {
                     return Err(Refusal::NotAvailable);
                 }
+                // An exam costs a fee, half of it for every try after the first (per player).
+                let mut fee_out = Vec::new();
+                if let Some(x) = &t.exam {
+                    let key = format!("{}:{}", by.0, j.template);
+                    let tries = self.attempts.get(&key).copied().unwrap_or(0);
+                    let fee = if tries == 0 { x.fee } else { x.retry_fee };
+                    let wallet = progress.wallet();
+                    if wallet < fee {
+                        return Err(Refusal::CannotAfford { price: fee, wallet });
+                    }
+                    self.attempts.insert(key, tries + 1);
+                    if fee > 0 {
+                        fee_out.push(Outcome::Emit(WorldEvent::TrackChanged { track: TrackId::new(gameplay_core::content::WALLET), delta: -fee, player: None }));
+                    }
+                }
                 j.state = JobState::Active;
                 j.accepted_by = Some(by);
                 j.participants.insert(by);
-                let mut out = vec![Outcome::Notice(Notice::new(NoticeKind::Accepted, "notice.job.accepted").arg("title", Arg::Key(j.title_key(t))))];
+                let mut out = fee_out;
+                out.push(Outcome::Notice(Notice::new(NoticeKind::Accepted, "notice.job.accepted").arg("title", Arg::Key(j.title_key(t)))));
                 out.extend(j.legs.iter().enumerate().map(|(i, l)| Outcome::SpawnCrates { job: *job, leg: i, commodity: l.commodity.clone(), count: l.amount, at: l.from.clone() }));
                 Ok(out)
             }
@@ -343,7 +410,7 @@ impl Jobs {
                         if there && let Some(t) = title(j) {
                             notes.push(Outcome::Notice(Notice::new(NoticeKind::Updated, "notice.job.delivered").arg("title", t).arg("delivered", Arg::Number(j.delivered() as i64)).arg("asked", Arg::Number(j.asked() as i64))));
                         }
-                        if j.legs.iter().all(Leg::resolved) {
+                        if j.finished() {
                             ended.push((j.id, JobState::Completed));
                         }
                     }
@@ -359,7 +426,7 @@ impl Jobs {
                         if let Some(t) = title(j) {
                             notes.push(Outcome::Notice(Notice::new(NoticeKind::Warning, "notice.job.crate_lost").arg("title", t)));
                         }
-                        if j.legs.iter().all(Leg::resolved) {
+                        if j.finished() {
                             ended.push((j.id, JobState::Completed));
                         }
                     }
@@ -376,6 +443,48 @@ impl Jobs {
                     }
                 }
             }
+            WorldEvent::TookOff => {
+                for j in self.jobs.values_mut().filter(|j| j.state == JobState::Active && j.accepted_by == Some(by)) {
+                    let clock = *j.clock_s.get_or_insert(0.0);
+                    if let Some(c) = j.checks.iter_mut().find(|c| c.state == CheckState::Pending)
+                        && c.kind == CheckKind::TakeOff
+                    {
+                        c.state = CheckState::Done { at_s: clock, value: 0.0 };
+                    }
+                }
+            }
+            WorldEvent::PadReached { at } => {
+                for j in self.jobs.values_mut().filter(|j| j.state == JobState::Active && j.accepted_by == Some(by)) {
+                    let clock = j.clock_s.unwrap_or(0.0);
+                    if let Some(c) = j.checks.iter_mut().find(|c| c.state == CheckState::Pending)
+                        && matches!(&c.kind, CheckKind::ReachPad { at: want } if want == at)
+                    {
+                        c.state = CheckState::Done { at_s: clock, value: 0.0 };
+                    }
+                }
+            }
+            WorldEvent::Landed { at: Some(at), speed } => {
+                for j in self.jobs.values_mut().filter(|j| j.state == JobState::Active && j.accepted_by == Some(by)) {
+                    let clock = j.clock_s.unwrap_or(0.0);
+                    let id = j.id;
+                    let finished_before = j.finished();
+                    let Some(c) = j.checks.iter_mut().find(|c| c.state == CheckState::Pending) else { continue };
+                    let CheckKind::Land { at: want, max_mps } = c.kind.clone() else { continue };
+                    if want != *at {
+                        continue;
+                    }
+                    if *speed > max_mps {
+                        c.state = CheckState::Failed;
+                        ended.push((id, JobState::Failed));
+                    } else {
+                        c.state = CheckState::Done { at_s: clock, value: *speed };
+                        if !finished_before && j.finished() {
+                            ended.push((id, JobState::Completed));
+                        }
+                    }
+                }
+            }
+            WorldEvent::Landed { at: None, .. } => {}
             WorldEvent::OrderPlaced { order, by, from, to, commodity, amount, reward, deadline_s } => {
                 // A customer's order becomes an offer of the order template, with the order's own
                 // terms. Without the template, or for an order seen before, nothing happens.
@@ -413,8 +522,22 @@ impl Jobs {
             }
             None => t,
         };
+        // An exam is failed by a crate too damaged, and pays no XP unless it is passed.
+        let exam = t.exam.clone();
+        let mut state = state;
+        let mean_condition = if j.delivered() == 0 { 1.0 } else { j.legs.iter().map(Leg::condition_sum).sum::<f64>() / j.delivered() as f64 };
+        if let Some(x) = &exam
+            && state == JobState::Completed
+            && mean_condition < x.min_condition
+        {
+            state = JobState::Failed;
+        }
         j.state = state;
-        let g = grade(t, j.delivered(), j.asked(), j.legs.iter().map(Leg::condition_sum).sum());
+        let mut g = grade(t, j.delivered(), j.asked(), j.legs.iter().map(Leg::condition_sum).sum());
+        if exam.is_some() && state != JobState::Completed {
+            g.money = 0;
+            g.xp = 0;
+        }
         let mut out = Vec::new();
         if g.money != 0 {
             out.push(Outcome::Emit(WorldEvent::TrackChanged { track: TrackId::new(gameplay_core::content::WALLET), delta: g.money, player: None }));
@@ -431,7 +554,7 @@ impl Jobs {
         let mut standing = None;
         if let Some(giver) = t.giver.as_ref().and_then(|g| jc.givers.get(g)).map(|g| &g.record) {
             let h = self.history.entry(giver.id.clone()).or_default();
-            let delta = if state == JobState::Completed && g.money > 0 {
+            let delta = if state == JobState::Completed && (g.money > 0 || exam.is_some()) {
                 h.completed += 1;
                 h.failure_streak = 0;
                 giver.gain
@@ -444,12 +567,35 @@ impl Jobs {
             }
             standing = Some((giver.name.clone(), delta));
         }
+        // Passing the exam: the examinee's personal licence track, and honours' standing bonus.
+        let mut exam_result = None;
+        if let Some(x) = &exam {
+            if state == JobState::Completed {
+                let landing = j.checks.iter().find_map(|c| match (&c.kind, c.state) {
+                    (CheckKind::Land { .. }, CheckState::Done { value, .. }) => Some(value),
+                    _ => None,
+                });
+                let honours = x.honours.as_ref().filter(|h| landing.is_some_and(|v| v <= h.max_touchdown_mps) && j.clock_s.is_some_and(|c| c <= h.within_s));
+                if let Some(who) = j.accepted_by {
+                    out.push(Outcome::Emit(WorldEvent::TrackChanged { track: x.grants.clone(), delta: 1, player: Some(who) }));
+                }
+                if let Some(h) = honours {
+                    if let Some(giver) = jc.givers.get(&h.giver) {
+                        out.push(Outcome::Emit(WorldEvent::TrackChanged { track: giver.record.standing.clone(), delta: h.standing, player: None }));
+                    }
+                    out.push(Outcome::Emit(WorldEvent::FlagRaised { flag: Flag::new(format!("exam_honours:{}", t.id)) }));
+                }
+                exam_result = Some(if honours.is_some() { ExamResult::Honours } else { ExamResult::Passed });
+            } else {
+                exam_result = Some(ExamResult::Failed { retry_fee: x.retry_fee });
+            }
+        }
         let loose: Vec<CrateId> = j.legs.iter().flat_map(|l| l.crates.iter().filter(|(_, m)| !matches!(m, CrateMark::Delivered { .. })).map(|(c, _)| *c)).collect();
         if !loose.is_empty() {
             out.push(Outcome::ReleaseCrates { crates: loose });
         }
         out.push(Outcome::Ended { job: id, state, grade: Some(g) });
-        out.extend(end_notices(t, &j.title_key(t), state, &g, j.delivered(), j.asked(), standing).into_iter().map(Outcome::Notice));
+        out.extend(end_notices(t, &j.title_key(t), state, &g, j.delivered(), j.asked(), standing, exam_result).into_iter().map(Outcome::Notice));
         out.extend(settle_order(j, state != JobState::Expired));
         out
     }
@@ -457,14 +603,22 @@ impl Jobs {
 
 /// The notices of a finished job (#165): the banner, then the payout itemised (base, share,
 /// condition, hazard; the lines add up to the pay), then XP.
-fn end_notices(t: &JobTemplate, title: &TextKey, state: JobState, g: &Grade, delivered: u32, asked: u32, standing: Option<(TextKey, i64)>) -> Vec<Notice> {
+fn end_notices(t: &JobTemplate, title: &TextKey, state: JobState, g: &Grade, delivered: u32, asked: u32, standing: Option<(TextKey, i64)>, exam: Option<ExamResult>) -> Vec<Notice> {
     let title = Arg::Key(title.clone());
-    let (kind, key) = match state {
+    let (kind, key) = match (exam, state) {
+        (Some(ExamResult::Passed), _) => (NoticeKind::Completed, "notice.exam.passed"),
+        (Some(ExamResult::Honours), _) => (NoticeKind::Completed, "notice.exam.honours"),
+        (Some(ExamResult::Failed { .. }), _) => (NoticeKind::Failed, "notice.exam.failed"),
+        (None, _) => match state {
         JobState::Completed if g.money > 0 => (NoticeKind::Completed, "notice.job.completed"),
         JobState::Expired => (NoticeKind::Failed, "notice.job.expired"),
         _ => (NoticeKind::Failed, "notice.job.failed"),
+        },
     };
     let mut out = vec![Notice::new(kind, key).arg("title", title).arg("money", Arg::Number(g.money))];
+    if let Some(ExamResult::Failed { retry_fee }) = exam {
+        out[0] = out[0].clone().arg("retry", Arg::Number(retry_fee));
+    }
     // Running totals, each rounded, so the lines add up exactly to the rounded pay.
     let base = t.reward as f64;
     let steps = [
@@ -497,6 +651,14 @@ fn end_notices(t: &JobTemplate, title: &TextKey, state: JobState, g: &Grade, del
         out.push(Notice::new(kind, key).arg("n", Arg::Number(delta.abs())).arg("giver", Arg::Key(giver)));
     }
     out
+}
+
+/// How an exam ended.
+#[derive(Copy, Clone, Debug, PartialEq)]
+enum ExamResult {
+    Passed,
+    Honours,
+    Failed { retry_fee: i64 },
 }
 
 /// What an order job tells the customers system when it ends: how much arrived, in what

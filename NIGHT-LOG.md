@@ -11,7 +11,7 @@ Phase 1, `night/d-foundation`:
 - [x] #167 givers
 - [x] #170 courier jobs
 - [x] #168 customers
-- [ ] #169 flight licence
+- [x] #169 flight licence
 - [ ] #166 map
 - [ ] #135 save file
 
@@ -63,3 +63,13 @@ Checks: 17 tests in `customers_core/tests/customers.rs` (loader errors, pools, d
 
 TODO(initiator): every name and text (customers, goods, wholesaler), prices (one table), rhythms, standards, patience, the relationship formulas (+4 % pay, rhythm factor 2.0 to 0.25, satisfaction weights, neglect 0.1 per 600 s to a floor of 1.0), the wholesaler's gain/loss.
 Open: an order nobody accepts stays on the board and the customer waits (no withdrawal in D, so a customer with an unserved order does not order again; the relationship still decays to the floor); the customers sit at the places of the courier drops until the city is placed (E).
+
+## #169 flight licence
+
+Built: kernel events `TookOff`, `PadReached { at }`, `Landed { at, speed }` (plain data; the exam reads only these, never how the ship flies). `jobs_core`: new objective kinds `take_off`, `reach_pad`, `land` (a touchdown faster than `max_mps` is a crash) next to `deliver`; a job carries `checks` (done in order, only from the player who took the job, the clock starts at take-off); template block `exam` (fee, retry fee for every later try of the same player, the personal track it grants, minimum crate condition, optional honours with a touchdown limit, a time and a standing bonus with a giver); record `licence` (id, name, personal track, exam template, what it allows, here `pilot_ship`); a new job state `Failed` (crash, a crate too damaged); fee charged on accepting, refused when the crew cannot pay (`CannotAfford`); exam XP only when passed. Passing sets the licence track to 1 for the examinee only (per player), flag `exam_honours:<exam>` and the giver's standing bonus for honours; failing tells the retry fee. Retry after a failure costs half; passed is passed (the exam closes to holders through the template's `available` condition).
+Glue: the seat refuses without a licence that allows piloting (prompt "(needs the flight licence: exam at Skyhook Flight School)", a notice on the tap), open while the player's exam is active (the exam lends the ship); riding along and carrying never need one. `exo_app::flight_events::FlightWatch` (plain state machine with unit tests) turns the ship's state into the three events: take-off when the ship leaves the ground under the pilot, pad reached once per visit within the pad's radius and 120 m above it, landing with the largest speed towards the ground of the last 10 steps. Scenarios other than `licence` start with the licence earned. Content: flight school place `skyhook_school` (about 70 m from the start, opposite Drip Rock), giver `flight_school`, exam template `flight_exam` (take off, reach and land on the Drip Rock pad, set the school's parcel down; fee 150, retry 75, crash above 6 m/s, honours at 2.5 m/s within 150 s, deadline 300 s), licence `flight`, track `licence_flight`; `first_haul` (Bent Spoon) now needs the licence; texts (exam notices, refusal).
+
+Checks: 10 tests in `jobs_core/tests/exam.rs` (loader errors, fee and per-player retry price, pass, honours, a slow plain pass, order and sender of the checks, crash, damaged crate, clock out, cannot afford, closed to holders, save with attempts), 5 unit tests of `FlightWatch`, kernel test for the events. Scenario `licence` (in the gate): a new player has no licence, the seat refuses with the pointer and a notice, riding along works, exam taken at the counter (fee 150 paid, the parcel waits on the school pad, three checks), the seat is open during the exam, the three events by test hook, parcel set down on Drip Rock, exam completed with honours, licence 1, standing +10, exam closed, the seat prompt plain. Gate: `cargo t` 440 passed, `cargo scenario` 0 failures.
+
+TODO(initiator): fee 150, retry 75, crash limit 6 m/s, honours limits (2.5 m/s, 150 s), deadline 300 s, honours standing 10, overflight height 120 m for pad reached, the school's place and all its texts.
+Open: the take-off, pad and landing in the real game are detected by `FlightWatch` but only the state machine is tested, the scenario sets the events by hook as the brief allows (no real hop under the flight model that is being reworked); a new game starts with 100 credits, so the fee needs three or four courier jobs first as decided.

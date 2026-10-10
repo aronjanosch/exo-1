@@ -1,0 +1,1 @@
+{ "_comment": "The flight licence (#169): per player, earned with the exam. Without it the seat of the ship refuses; riding along and carrying need none.", "id": "flight", "name": "licence.flight.name", "track": "licence_flight", "exam": "flight_exam", "allows": ["pilot_ship"] }

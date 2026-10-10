@@ -266,6 +266,23 @@ impl Gameplay {
         self.panel = Some(Panel { giver, page: 0 });
     }
 
+    /// Whether the player may take the seat: with a licence that allows piloting, or while taking
+    /// its exam (the exam lends the ship). Without any such licence in the data, always (#169).
+    pub fn may_pilot(&self, who: ClientId) -> bool {
+        let needed = self.jobs_content.licences_allowing("pilot_ship");
+        needed.is_empty()
+            || needed.iter().any(|l| {
+                self.progress.value(&self.kernel, &l.track, Some(who)).is_some_and(|v| v >= 1) || self.jobs.active().any(|j| j.accepted_by == Some(who) && j.template == l.exam)
+            })
+    }
+
+    /// Where to take the exam, for the prompt and the refusal.
+    pub fn licence_hint(&self) -> String {
+        let exam = self.jobs_content.licences_allowing("pilot_ship").first().map(|l| l.exam.clone());
+        let school = exam.and_then(|e| self.jobs_content.templates.get(&e)).and_then(|t| t.record.giver.clone()).and_then(|g| self.jobs_content.givers.get(&g)).map(|g| self.text(&g.record.name));
+        format!("needs the flight licence{}", school.map(|s| format!(": exam at {s}")).unwrap_or_default())
+    }
+
     /// Declines: the panel closes, the offer stays.
     pub fn close_counter(&mut self) {
         self.panel = None;
@@ -281,10 +298,22 @@ impl Gameplay {
         let Some(b) = self.briefing_of(job) else { return String::new() };
         let pay = self.offer_pay(job);
         let n = self.offers_of(&p.giver).len();
-        format!("{}\n\n{}\n{}\n{}\n\n{}  ({pay})\n{keys}{}", b.title, b.greeting, b.intro, b.paragraph, b.reason, if n > 1 { format!("   ({} of {n})", p.page % n + 1) } else { String::new() })
+        // An exam tells what it asks in its own words (it is the tutorial); other jobs say where from and to.
+        let body = match self.jobs.get(job).and_then(|j| self.jobs_content.templates.get(&j.template)).filter(|t| t.record.exam.is_some()) {
+            Some(t) => self.text(&t.record.brief),
+            None => b.paragraph.clone(),
+        };
+        format!("{}\n\n{}\n{}\n{}\n\n{}  ({pay})\n{keys}{}", b.title, b.greeting, b.intro, body, b.reason, if n > 1 { format!("   ({} of {n})", p.page % n + 1) } else { String::new() })
     }
 
     fn offer_pay(&self, job: JobId) -> String {
+        // An exam costs a fee, half of it after the first try.
+        if let Some(j) = self.jobs.get(job)
+            && let Some(x) = self.jobs_content.templates.get(&j.template).and_then(|t| t.record.exam.as_ref())
+        {
+            let fee = if self.jobs.attempts(HOST, &j.template) == 0 { x.fee } else { x.retry_fee };
+            return format!("fee {fee} {}", self.text(&TextKey::new("track.wallet.name")));
+        }
         let reward = self.jobs.get(job).and_then(|j| self.jobs_content.templates.get(&j.template).map(|t| j.order.as_ref().map_or(t.record.reward, |o| o.reward))).unwrap_or(0);
         format!("{reward} {}", self.text(&TextKey::new("track.wallet.name")))
     }
@@ -294,6 +323,10 @@ impl Gameplay {
         let Some(j) = self.jobs.get(job) else { return String::new() };
         let Some(t) = self.jobs_content.templates.get(&j.template) else { return String::new() };
         let reward = j.order.as_ref().map_or(t.record.reward, |o| o.reward);
+        if let Some(x) = &t.record.exam {
+            let fee = if self.jobs.attempts(HOST, &j.template) == 0 { x.fee } else { x.retry_fee };
+            return format!("{} (fee {fee} {})", self.text(&t.record.title), self.text(&TextKey::new("track.wallet.name")));
+        }
         format!("{} ({} {})", self.text(&j.title_key(&t.record)), reward, self.text(&TextKey::new("track.wallet.name")))
     }
 
@@ -324,9 +357,18 @@ impl Gameplay {
         let key = match r {
             jobs_core::Refusal::TooManyActive => "notice.refused.too_many",
             jobs_core::Refusal::NotAvailable => "notice.refused.not_available",
+            jobs_core::Refusal::CannotAfford { .. } => "notice.refused.cannot_afford",
             _ => return,
         };
         self.notify(Notice::new(NoticeKind::Warning, key));
+    }
+}
+
+/// Startup system of the scenarios: every licence is earned for the host's client.
+pub fn grant_starting_licences(mut gp: ResMut<Gameplay>) {
+    let tracks: Vec<_> = gp.jobs_content.licences.values().map(|l| l.record.track.clone()).collect();
+    for track in tracks {
+        gp.push_world(HOST, WorldEvent::TrackChanged { track, delta: 1, player: Some(HOST) });
     }
 }
 
@@ -696,7 +738,7 @@ mod tests {
         let gp = Gameplay::load(&Crates::default());
         assert!(gp.offers_of(&GiverId::new("small_family")).is_empty());
         assert!(!gp.offers_of(&GiverId::new("courier_office")).is_empty());
-        assert_eq!(gp.jobs_content.givers.len(), 3, "courier office, small family, wholesaler");
+        assert_eq!(gp.jobs_content.givers.len(), 4, "courier office, small family, wholesaler, flight school");
         assert_eq!(gp.customer_content.customers.len(), 3);
     }
 

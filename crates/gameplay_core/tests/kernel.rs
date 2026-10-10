@@ -52,7 +52,7 @@ fn valid_set_loads() {
     let c = content();
     assert_eq!(c.commodities.len(), 3);
     assert_eq!(c.locations.len(), 3);
-    assert_eq!(c.tracks.len(), 3);
+    assert_eq!(c.tracks.len(), 4);
     assert_eq!(c.unlocks.len(), 2);
     assert_eq!(c.locations[&LocationId::new("bent_spoon")].path, "location/bent_spoon.json");
 }
@@ -413,4 +413,23 @@ fn order_events_are_plain_domain_events_that_progress_ignores_and_that_round_tri
         let back: Event<WorldEvent> = serde_json::from_str(&serde_json::to_string(&e).unwrap()).unwrap();
         assert_eq!(back, e);
     }
+}
+
+#[test]
+fn flight_events_are_plain_domain_events() {
+    let c = content();
+    let mut p = Progress::new(&c);
+    let before = p.clone();
+    let evs = [
+        ev(ANA, 0, WorldEvent::TookOff),
+        ev(ANA, 1, WorldEvent::PadReached { at: LocationId::new("bent_spoon") }),
+        ev(ANA, 2, WorldEvent::Landed { at: Some(LocationId::new("bent_spoon")), speed: 2.5 }),
+        ev(ANA, 3, WorldEvent::Landed { at: None, speed: 11.0 }),
+    ];
+    for e in &evs {
+        p.apply(&c, e).unwrap();
+        let back: Event<WorldEvent> = serde_json::from_str(&serde_json::to_string(e).unwrap()).unwrap();
+        assert_eq!(&back, e);
+    }
+    assert_eq!(p, before);
 }

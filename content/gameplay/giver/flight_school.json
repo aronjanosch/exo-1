@@ -1,0 +1,16 @@
+{
+  "_comment": "Placeholder giver (#169): the flight school with the exam at its counter. Name, voice and numbers are TODO(initiator).",
+  "id": "flight_school",
+  "name": "giver.flight_school.name",
+  "kind": "legal",
+  "location": "skyhook_school",
+  "standing": "standing_flight_school",
+  "gain": 10,
+  "loss": 5,
+  "voice": {
+    "greeting": { "first_job": "giver.flight_school.greet.first", "regular": "giver.flight_school.greet.regular", "after_failure": "giver.flight_school.greet.failure" },
+    "intro": "giver.flight_school.intro",
+    "reason": "giver.flight_school.reason",
+    "sign_off": "giver.flight_school.signoff"
+  }
+}

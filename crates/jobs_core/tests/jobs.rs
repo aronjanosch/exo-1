@@ -130,7 +130,7 @@ impl Host {
 #[test]
 fn fixture_templates_load() {
     let h = Host::new();
-    assert_eq!(h.jc.templates.len(), 4);
+    assert_eq!(h.jc.templates.len(), 5);
 }
 
 fn template_errors(path: &str, text: &str) -> Vec<String> {

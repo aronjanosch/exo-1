@@ -24,6 +24,8 @@ pub const SEAT_RANGE: f64 = 1.8;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Target {
     Seat,
+    /// The seat, but the player has no flight licence: the prompt says where to get one (#169).
+    SeatLocked,
     StandUp,
     /// Pick up a crate with the hands or pull it with the grab tool.
     Crate(Entity, Reach),
@@ -59,6 +61,7 @@ pub fn key_label(bindings: &Bindings, t: Tap) -> String {
 fn verb(t: &Target, size: &str) -> String {
     match t {
         Target::Seat => "sit".into(),
+        Target::SeatLocked => "sit".into(),
         Target::StandUp => "stand up".into(),
         Target::Crate(_, Reach::Hands) => format!("pick up the {size} crate"),
         Target::Crate(_, Reach::Tool) => format!("pull the {size} crate (grab tool)"),
@@ -142,7 +145,7 @@ pub fn interaction(
         match best {
             // A crate in reach of the hands wins over the seat; the tool's reach does not.
             Some((_, e, Reach::Hands)) => Some(Target::Crate(e, Reach::Hands)),
-            _ if at_seat => Some(Target::Seat),
+            _ if at_seat => Some(if gp.may_pilot(crate::gameplay::HOST) { Target::Seat } else { Target::SeatLocked }),
             Some((_, e, r)) => Some(Target::Crate(e, r)),
             None => None,
         }
@@ -162,6 +165,7 @@ pub fn interaction(
             };
             let mut p = format!("[{}] {}", key_label(&bindings, Tap::Interact), verb(t, &size));
             match t {
+                Target::SeatLocked => p.push_str(&format!(" ({})", gp.licence_hint())),
                 Target::Counter(g) => p.push_str(&gp.jobs_content.givers.get(g).map(|g| gp.text(&g.record.name)).unwrap_or_default()),
                 Target::Accept(j) => {
                     p.push_str(&gp.offer_label(*j));
@@ -208,6 +212,7 @@ pub fn interaction(
             }
         }
         Target::Drop(_) => grab.release(),
+        Target::SeatLocked => gp.notify(gameplay_core::notice::Notice::new(gameplay_core::notice::NoticeKind::Warning, "notice.licence.needed")),
         Target::Counter(g) => gp.open_counter(g),
         Target::Accept(j) => {
             gp.push_job(crate::gameplay::HOST, jobs_core::JobEvent::OfferAccepted { job: j });

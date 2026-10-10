@@ -6,6 +6,7 @@ pub mod cargo;
 pub mod controls;
 pub mod daynight;
 pub mod env;
+pub mod flight_events;
 pub mod gameplay;
 pub mod grab;
 pub mod hot_reload;
@@ -300,6 +301,12 @@ pub fn build_app(o: &Options) -> App {
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
     app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, cargo::plugin, hud::plugin, net_live::plugin));
     app.add_plugins(gameplay::plugin);
+    app.add_plugins(flight_events::plugin);
+    // Scenarios start with the licences earned (their pilots are not the examinees), except the
+    // one about the licence itself (#169).
+    if o.scenario.as_deref().is_some_and(|n| n != "licence") {
+        app.add_systems(Startup, gameplay::grant_starting_licences);
+    }
     if let Some(name) = &o.scenario {
         app.add_plugins(scenario::plugin(name, o.headless));
     }

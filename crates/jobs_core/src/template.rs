@@ -9,6 +9,7 @@ use gameplay_core::{CommodityId, Condition, Content, LocationId, Tag, TextKey, T
 use serde::{Deserialize, Serialize};
 
 use crate::giver::{self, Giver, GiverId};
+use crate::licence::{self, Licence, LicenceId};
 use crate::id::TemplateId;
 
 /// The folder this system reads.
@@ -47,6 +48,9 @@ pub struct JobTemplate {
     /// Offered once this one is completed (#126).
     #[serde(default)]
     pub follow_up: Option<TemplateId>,
+    /// Set for a licence exam.
+    #[serde(default)]
+    pub exam: Option<Exam>,
 }
 
 impl Record for JobTemplate {
@@ -62,6 +66,42 @@ impl Record for JobTemplate {
 pub enum ObjectiveSpec {
     /// Carry `amount` crates of a commodity from one place to another.
     Deliver { from: PlaceSpec, to: PlaceSpec, commodity: CommoditySpec, amount: [u32; 2] },
+    /// The ship leaves the ground under the player's hands (the event `TookOff`). Checks come in
+    /// the order of the objectives, and only from the player who took the job (#169).
+    TakeOff {},
+    /// The ship comes over the pad of a location (`PadReached`).
+    ReachPad { at: LocationId },
+    /// The ship touches down on the pad of a location (`Landed`); faster than `max_mps` towards the
+    /// ground is a crash and fails the job. Only these events are read, never the flight model.
+    Land { at: LocationId, max_mps: f64 },
+}
+
+/// A job that is a licence exam (#169): it costs a fee to take, grants a personal track when
+/// passed, and may give honours.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Exam {
+    /// Paid on the first try. TODO(initiator): a starting value.
+    pub fee: i64,
+    /// Paid for every later try of the same player.
+    pub retry_fee: i64,
+    /// The personal track set to 1 when passed.
+    pub grants: TrackId,
+    /// A delivered crate must be at least this good (0..1) or the exam is failed.
+    pub min_condition: f64,
+    #[serde(default)]
+    pub honours: Option<Honours>,
+}
+
+/// Passed with honours: a soft touchdown and a good time give a standing bonus with a giver.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Honours {
+    pub max_touchdown_mps: f64,
+    /// Seconds from take-off to the end.
+    pub within_s: f64,
+    pub giver: GiverId,
+    pub standing: i64,
 }
 
 /// A fixed location or any location with a tag (the board picks one, never the same for both ends).
@@ -123,6 +163,7 @@ pub enum ModifierKind {
 pub struct JobContent {
     pub templates: BTreeMap<TemplateId, Loaded<JobTemplate>>,
     pub givers: BTreeMap<GiverId, Loaded<Giver>>,
+    pub licences: BTreeMap<LicenceId, Loaded<Licence>>,
 }
 
 impl JobContent {
@@ -130,12 +171,15 @@ impl JobContent {
     /// each naming the file and the field.
     pub fn load(files: &[File], kernel: &Content) -> Result<JobContent, Vec<String>> {
         let mut e = Vec::new();
-        let c = JobContent { templates: load_records(files, FOLDER, &mut e), givers: load_records(files, giver::FOLDER, &mut e) };
+        let c = JobContent { templates: load_records(files, FOLDER, &mut e), givers: load_records(files, giver::FOLDER, &mut e), licences: load_records(files, licence::FOLDER, &mut e) };
         for Loaded { path, record: t } in c.templates.values() {
             c.check(path, t, kernel, &mut e);
         }
         for Loaded { path, record: g } in c.givers.values() {
             c.check_giver(path, g, kernel, &mut e);
+        }
+        for Loaded { path, record: l } in c.licences.values() {
+            c.check_licence(path, l, kernel, &mut e);
         }
         if e.is_empty() { Ok(c) } else { Err(e) }
     }
@@ -159,12 +203,42 @@ impl JobContent {
         }
     }
 
+    fn check_licence(&self, path: &str, l: &Licence, k: &Content, e: &mut Vec<String>) {
+        check_id(path, "id", l.id.as_str(), e);
+        match k.tracks.get(&l.track) {
+            None => e.push(format!("{path}: track: unknown track '{}'", l.track)),
+            Some(t) if t.record.owner != Owner::Player => e.push(format!("{path}: track: '{}' must be a personal track", l.track)),
+            Some(_) => {}
+        }
+        match self.templates.get(&l.exam).map(|t| &t.record) {
+            None => e.push(format!("{path}: exam: unknown job template '{}'", l.exam)),
+            Some(t) => match &t.exam {
+                None => e.push(format!("{path}: exam: '{}' is no exam (it has no exam block)", l.exam)),
+                Some(x) if x.grants != l.track => e.push(format!("{path}: track: the exam grants '{}', not '{}'", x.grants, l.track)),
+                Some(_) => {}
+            },
+        }
+        if l.allows.is_empty() {
+            e.push(format!("{path}: allows: empty"));
+        }
+    }
+
+    /// The licences that allow something (`pilot_ship`).
+    pub fn licences_allowing(&self, tag: &str) -> Vec<&Licence> {
+        self.licences.values().map(|l| &l.record).filter(|l| l.allows.iter().any(|t| t.as_str() == tag)).collect()
+    }
+
     /// Checks the texts the givers and their templates need against the text table: every voice
     /// key has a pool of enough lines, every template of a giver has its title and brief.
     pub fn check_texts(&self, table: &TextTable) -> Vec<String> {
         let mut e = Vec::new();
         for g in self.givers.values() {
             giver::check_texts(g, table, &mut e);
+        }
+        for Loaded { path, record: l } in self.licences.values() {
+            if !table.has(l.name.as_str()) {
+                e.push(format!("{path}: name: no text '{}'", l.name));
+            }
         }
         for Loaded { path, record: t } in self.templates.values().filter(|t| t.record.giver.is_some()) {
             for (field, k) in [("title", &t.title), ("brief", &t.brief)] {
@@ -202,10 +276,22 @@ impl JobContent {
                         e.push(format!("{path}: objectives.deliver.amount: needs 1 <= min <= max"));
                     }
                 }
+                ObjectiveSpec::TakeOff {} => {}
+                ObjectiveSpec::ReachPad { at } => k.check_location(path, "objectives.reach_pad.at", at, e),
+                ObjectiveSpec::Land { at, max_mps } => {
+                    k.check_location(path, "objectives.land.at", at, e);
+                    if !(*max_mps > 0.0) {
+                        e.push(format!("{path}: objectives.land.max_mps: must be positive"));
+                    }
+                }
             }
         }
-        if t.reward <= 0 {
-            e.push(format!("{path}: reward: must be positive"));
+        // An exam costs a fee instead of paying a reward.
+        if t.reward < 0 || t.reward == 0 && t.exam.is_none() {
+            e.push(format!("{path}: reward: must be positive (zero only for an exam)"));
+        }
+        if let Some(x) = &t.exam {
+            self.check_exam(path, x, k, e);
         }
         let b = &t.grading.bands;
         if b.is_empty() {
@@ -257,6 +343,33 @@ impl JobContent {
             && !self.templates.contains_key(f)
         {
             e.push(format!("{path}: follow_up: unknown job template '{f}'"));
+        }
+    }
+}
+
+impl JobContent {
+    fn check_exam(&self, path: &str, x: &Exam, k: &Content, e: &mut Vec<String>) {
+        if x.fee < 0 {
+            e.push(format!("{path}: exam.fee: must not be negative"));
+        }
+        if x.retry_fee < 0 || x.retry_fee > x.fee {
+            e.push(format!("{path}: exam.retry_fee: must be between 0 and the fee"));
+        }
+        match k.tracks.get(&x.grants) {
+            None => e.push(format!("{path}: exam.grants: unknown track '{}'", x.grants)),
+            Some(t) if t.record.owner != Owner::Player => e.push(format!("{path}: exam.grants: '{}' must be a personal track", x.grants)),
+            Some(_) => {}
+        }
+        if !(0.0..=1.0).contains(&x.min_condition) {
+            e.push(format!("{path}: exam.min_condition: must be in 0..1"));
+        }
+        if let Some(h) = &x.honours {
+            if !self.givers.contains_key(&h.giver) {
+                e.push(format!("{path}: exam.honours.giver: unknown giver '{}'", h.giver));
+            }
+            if !(h.max_touchdown_mps > 0.0 && h.within_s > 0.0) || h.standing < 0 {
+                e.push(format!("{path}: exam.honours: needs positive max_touchdown_mps and within_s, and a standing that is not negative"));
+            }
         }
     }
 }

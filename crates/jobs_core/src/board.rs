@@ -14,7 +14,7 @@ use crate::template::{CommoditySpec, JobTemplate, ObjectiveSpec, PlaceSpec};
 pub const OFFER_LIFETIME_S: f64 = 600.0;
 
 /// Board state per location: which offers are active and their lifetimes.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Board {
     /// Per location, the offers currently shown.
     pub offers_per_location: BTreeMap<String, BoardLocation>,
@@ -30,27 +30,7 @@ pub struct BoardLocation {
     pub seed: u64,
 }
 
-impl Default for Board {
-    fn default() -> Self {
-        Board { offers_per_location: BTreeMap::new() }
-    }
-}
-
-impl Board {
-    /// Tick the board forward by `dt` seconds; rotate offers whose lifetime expired.
-    pub fn tick(&mut self, dt: f64) {
-        for loc in self.offers_per_location.values_mut() {
-            loc.age_s += dt;
-        }
-    }
-
-    /// Clear the board entries (used for save/load).
-    pub fn clear(&mut self) {
-        self.offers_per_location.clear();
-    }
-}
-
-/// Generate concrete legs from a template's deliver objectives.
+/// Generate concrete legs from a template's deliver objectives, picking amount from the range.
 /// Returns the legs, or an error if tag search fails.
 pub fn generate_legs(
     template: &JobTemplate,
@@ -85,8 +65,12 @@ pub fn generate_legs(
                 let commodity_idx = rng.below(pool.len());
                 let commodity = pool[commodity_idx].clone();
 
-                // Use minimum amount for boards
-                let amt = amount[0];
+                // Pick amount from the range [amount[0], amount[1]]
+                let min = amount[0] as u64;
+                let max = amount[1] as u64;
+                let range = (max - min).max(1);
+                let offset = rng.below(range as usize) as u64;
+                let amt = (min + offset) as u32;
 
                 legs.push(Leg::new(pickup, dropoff, commodity, amt));
             }
@@ -136,4 +120,60 @@ fn resolve_place_spec(
             Ok(candidates.swap_remove(idx))
         }
     }
+}
+
+/// Filter templates that can appear on a board at a given location.
+/// Excludes: exams, customer_order, templates with givers at other locations.
+/// Templates without a giver appear at all boards. TODO(initiator): clarify if templates without
+/// a giver and fixed places at specific locations should be restricted to those locations.
+pub fn templates_for_location<'a>(
+    jc: &'a crate::JobContent,
+    kernel: &Content,
+    progress: &Progress,
+    location: &str,
+) -> Vec<&'a JobTemplate> {
+    jc.templates
+        .values()
+        .filter_map(|t| {
+            let template = &t.record;
+
+            // Check template availability condition
+            if let Some(cond) = &template.available {
+                if !cond.holds(kernel, progress, None) {
+                    return None;
+                }
+            }
+
+            // Exclude exams (those with an exam block)
+            if template.exam.is_some() {
+                return None;
+            }
+
+            // Exclude customer_order (offered only by OrderPlaced)
+            if template.id.as_str() == "customer_order" {
+                return None;
+            }
+
+            // Check giver location: if template has a giver, it must be at this location
+            if let Some(giver_id) = &template.giver {
+                if let Some(giver) = jc.givers.get(giver_id) {
+                    if giver.record.location.as_str() != location {
+                        return None;
+                    }
+                } else {
+                    // Giver not found, skip
+                    return None;
+                }
+            }
+
+            // Template with no giver can appear at any board
+            Some(template)
+        })
+        .collect()
+}
+
+/// Derive the next seed from current seed for deterministic rotation.
+pub fn next_seed(seed: u64) -> u64 {
+    let mut rng = Rng::new(seed);
+    rng.next_u64()
 }

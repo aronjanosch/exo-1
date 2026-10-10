@@ -314,41 +314,73 @@ impl Jobs {
     /// Generate board offers for a location with a given seed.
     /// Returns a list of job ids that are now offered.
     pub fn generate_board_at(&mut self, jc: &JobContent, kernel: &Content, progress: &Progress, location: &str, seed: u64) -> Vec<JobId> {
-        use crate::board::BoardLocation;
+        use crate::board::{BoardLocation, templates_for_location};
         use gameplay_core::rng::Rng;
 
         let mut rng = Rng::new(seed);
         let mut job_ids = Vec::new();
+        let mut used_templates = BTreeSet::new();
 
-        // Collect all available templates (check availability condition)
+        // Collect templates for this location (filtered by giver location, excludes exams/orders)
         let available_templates: Vec<&JobTemplate> =
-            jc.templates.values().map(|t| &t.record).filter(|t| {
-                if let Some(cond) = &t.available {
-                    cond.holds(kernel, progress, None)
-                } else {
-                    true
-                }
-            }).collect();
+            templates_for_location(jc, kernel, progress, location)
+                .into_iter()
+                .filter(|t| {
+                    // Don't offer once_only templates that already have completed jobs
+                    if t.once_only {
+                        let flag = Flag::new(format!("job_completed:{}", t.id));
+                        !progress.has_flag(&flag)
+                    } else {
+                        true
+                    }
+                })
+                .collect();
 
-        // Decide how many offers to generate (between 3 and 5)
-        let target_count = 3 + rng.below(3);
+        if available_templates.is_empty() {
+            self.board.offers_per_location.insert(location.to_string(), BoardLocation {
+                offer_ids: Vec::new(),
+                age_s: 0.0,
+                seed,
+            });
+            return job_ids;
+        }
 
-        // Try to generate offers until we reach the target count
+        // Decide how many offers to generate (3-5 if we have at least 3 qualifying templates, else all)
+        let target_count = if available_templates.len() >= 3 {
+            3 + rng.below(3)
+        } else {
+            available_templates.len()
+        };
+
+        // Try to generate offers, allowing at most 1 per template (no duplicates)
         let mut attempts = 0;
-        let max_attempts = (available_templates.len() * 10).max(target_count * 5);
+        let max_attempts = available_templates.len() * 3;
         while job_ids.len() < target_count && attempts < max_attempts && !available_templates.is_empty() {
             let template_idx = rng.below(available_templates.len());
             let template = available_templates[template_idx];
 
+            // Skip if we already used this template on this board
+            if used_templates.contains(&template.id) {
+                attempts += 1;
+                continue;
+            }
+
             // Try fixed offer first (for templates with all fixed locations and single commodity)
-            if let Some(id) = self.offer_fixed_if_available(template, kernel, progress) {
+            let created = if let Some(id) = self.offer_fixed_if_available(template, kernel, progress) {
                 job_ids.push(id);
+                true
             } else if let Ok(legs) = crate::board::generate_legs(template, kernel, progress, &mut rng) {
                 // Try to generate legs with tag search
                 let id = self.offer_with(&template.id, legs, Vec::new());
                 job_ids.push(id);
-            }
+                true
+            } else {
+                false
+            };
 
+            if created {
+                used_templates.insert(template.id.clone());
+            }
             attempts += 1;
         }
 
@@ -360,6 +392,61 @@ impl Jobs {
         });
 
         job_ids
+    }
+
+    /// Tick the board forward by dt seconds; rotate expired unaccepted offers and generate new ones.
+    /// Accepted offers are never rotated.
+    pub fn tick_board(&mut self, jc: &JobContent, kernel: &Content, progress: &Progress, location: &str, dt: f64) -> Vec<JobId> {
+        use crate::board::{OFFER_LIFETIME_S, next_seed};
+
+        let should_rotate = {
+            if let Some(board_loc) = self.board.offers_per_location.get_mut(location) {
+                board_loc.age_s += dt;
+                board_loc.age_s >= OFFER_LIFETIME_S
+            } else {
+                false
+            }
+        };
+
+        if !should_rotate {
+            return Vec::new();
+        }
+
+        // Find which offers to remove (those that are still offered, not accepted)
+        let to_remove: Vec<JobId> = if let Some(board_loc) = self.board.offers_per_location.get(location) {
+            board_loc
+                .offer_ids
+                .iter()
+                .filter(|id| {
+                    if let Some(job) = self.jobs.get(id) {
+                        // Remove only if still offered (not accepted)
+                        job.state == JobState::Offered
+                    } else {
+                        true // Remove if job not found
+                    }
+                })
+                .copied()
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        // Remove the expired offers from Jobs
+        for id in to_remove {
+            self.jobs.remove(&id);
+        }
+
+        // Generate new offers with a deterministic next seed
+        let (new_seed, location_str) = {
+            let board_loc = self.board.offers_per_location.get_mut(location).unwrap();
+            let old_seed = board_loc.seed;
+            let new_seed = next_seed(old_seed);
+            board_loc.age_s = 0.0;
+            board_loc.seed = new_seed;
+            (new_seed, location.to_string())
+        };
+
+        self.generate_board_at(jc, kernel, progress, &location_str, new_seed)
     }
 
     /// What happened between the crew and a giver; nothing yet for a new one.

@@ -1,6 +1,6 @@
 //! Scenario `sc-air` (#199): the SC model's air through `Controls`. Sit, F7 to the SC model, then
 //! 50 m over the ground at rest: hover 5 s with wind compensation off (Y) and the ship drifts
-//! downwind; on again (Y), it holds. Down to 20 m, fly forward at speed: the turbulence shows. Climb
+//! downwind; on again (Y), it holds. Down to 40 m, fly forward at speed: the turbulence shows. Climb
 //! to 1000 m with Space: no turbulence up there. Each result is a check line with its numbers.
 use crate::controls::Controls;
 use crate::scenario::{altitude, begin, check, end, keys, hold_until, planet, put_at_seat, ship_e, ship_vel, sit, tap, teleport_ship, with_ship, Step};
@@ -108,18 +108,25 @@ pub fn sc_air_steps(s: &mut Vec<Step>) {
     }));
 
     // Low and fast: the turbulence near the ground.
+    // 40 m: inside the full turbulence band (`turbulence_height`), high enough that a gust over
+    // rising ground does not end the pass in the terrain at 90 m/s.
     s.push(Box::new(|w, _| {
-        place(w, 20.0);
+        place(w, 40.0);
         true
     }));
     s.push(track("fly low 8 s at speed (W)", &[KeyCode::KeyW], 8.0, |_| false));
     s.push(Box::new(|_, c| {
         let (turb, speed) = (c.v["turb_max"], c.v["speed_max"]);
-        check(c, turb > 0.2, format!("low at {speed:.0} m/s: turbulence up to {turb:.2} (20 m)"));
+        check(c, turb > 0.2, format!("low at {speed:.0} m/s: turbulence up to {turb:.2} (40 m)"));
         true
     }));
 
-    // Up to 1000 m: no turbulence there.
+    // Up to 1000 m: no turbulence there. The low pass left the ship turned by the gusts (the SC
+    // model does not level itself); a test hook sets it level again.
+    s.push(Box::new(|w, _| {
+        place(w, 60.0);
+        true
+    }));
     s.push(track("climb to 1000 m (Space)", &[KeyCode::Space], 90.0, |w| altitude(w) >= 1000.0));
     s.push(Box::new(|w, c| {
         let turb = with_ship(w, |s| s.sc.status.turbulence);

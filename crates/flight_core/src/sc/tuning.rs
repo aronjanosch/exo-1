@@ -16,6 +16,9 @@ pub struct ShipBody {
     pub thrust: Dirs,
     /// N m per rotation axis, both directions.
     pub torque: Rot,
+    /// m, ship space: where cargo locked on the cabin floor weighs (its centre), for the inertia
+    /// it adds (#198, #88).
+    pub cargo_point: [f64; 3],
 }
 
 impl ShipBody {
@@ -25,7 +28,11 @@ impl ShipBody {
         }
         self.inertia.validate("inertia")?;
         self.thrust.validate("thrust")?;
-        self.torque.validate("torque")
+        self.torque.validate("torque")?;
+        if !self.cargo_point.iter().all(|v| v.is_finite()) {
+            return Err(format!("cargo_point {:?} out of range", self.cargo_point));
+        }
+        Ok(())
     }
 }
 
@@ -41,6 +48,7 @@ impl Default for ShipBody {
             inertia,
             thrust: Dirs { forward: 60.0 * m, backward: 40.0 * m, left: 24.0 * m, right: 24.0 * m, up: 50.0 * m, down: 30.0 * m },
             torque: Rot { pitch: 8.0 * inertia.pitch, yaw: 8.0 * inertia.yaw, roll: 14.0 * inertia.roll },
+            cargo_point: [0.0, -1.2, 0.0],
         }
     }
 }

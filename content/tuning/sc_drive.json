@@ -1,5 +1,5 @@
 {
-  "_comment": "SC flight model (flight_core::sc::drive::DriveTuning). TODO(initiator): every value. boost_capacitor as in ship.json (drain_time, recharge_time, recharge_delay s, start_charge, strength_curve (charge, share of the full boost), restart_while_held); boost_thrust: multipliers on the thrust per direction at full boost (the brake always gets them).",
+  "_comment": "SC flight model (flight_core::sc::drive::DriveTuning). TODO(initiator): every value. boost_capacitor as in ship.json (drain_time, recharge_time, recharge_delay s, start_charge, strength_curve (charge, share of the full boost), restart_while_held); boost_thrust: multipliers on the thrust per direction at full boost (the brake always gets them). spool_delay: s per thruster group (main forward, retro backward, vertical up and down, lateral left and right) that a fresh request waits before thrust; a running boost skips it; the timer resets when the request returns to zero. jerk: m/s³ per group, how fast a group's thrust may change (time to full = spool + full/jerk). angular_jerk: rad/s³ per pitch, yaw, roll. boost_pre_delay: s from the press to the boost start; boost_ramp_up / boost_ramp_down: s to full strength after the start, and to none after release. boost_counter_share: 0..1, countering boost (against the velocity on an axis) gets this share of the aligned boost at full boost; unboosted countering is the plain box. idle_cost: charge 0..1 per s drained while boost is held, with or without thrust, on top of the capacitor's drain.",
   "boost_capacitor": {
     "drain_time": 3.0,
     "recharge_time": 6.0,
@@ -8,5 +8,13 @@
     "strength_curve": { "interp": "linear", "points": [[0, 0], [1, 1]] },
     "restart_while_held": false
   },
-  "boost_thrust": { "forward": 2.0, "backward": 1.5, "left": 1.25, "right": 1.25, "up": 1.25, "down": 1.25 }
+  "boost_thrust": { "forward": 2.0, "backward": 1.5, "left": 1.25, "right": 1.25, "up": 1.25, "down": 1.25 },
+  "spool_delay": { "main": 0.3, "retro": 0.3, "vertical": 0.2, "lateral": 0.0 },
+  "jerk": { "main": 120.0, "retro": 90.0, "vertical": 400.0, "lateral": 150.0 },
+  "angular_jerk": { "pitch": 600.0, "yaw": 600.0, "roll": 600.0 },
+  "boost_pre_delay": 0.15,
+  "boost_ramp_up": 0.5,
+  "boost_ramp_down": 0.3,
+  "boost_counter_share": 0.6,
+  "idle_cost": 0.0
 }

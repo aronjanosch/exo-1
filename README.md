@@ -60,6 +60,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 - `sc-hud` (#197): the flight panel: F7 toasts `MODEL SC`, C toasts `DECOUPLED` and shows the 4 s blend, H `GRAV COMP OFF`, B `NAV`, Page Down `LIMIT 90 %`, X the `BRAKE` badge (no toast), F7 back the axis badges.
 - `sc-linear` (#195): the SC model's linear law at 400 m: a strafe, the boost cap refusing thrust, W+D then X (the heading holds), gravity compensation off (falls) and on (holds), NAV above the SCM cap, the speed limiter.
 - `sc-air` (#199): the SC model's air: a hover drifts with the wind with wind compensation (Y) off and holds with it on, turbulence low and fast, none high up.
+- `sc-body` (#198): the SC model's thrusters: W from a hover reaches half thrust after the spool and jerk (about 0.55 s), a boost reaches full strength after its pre-delay and ramp.
 - `camera-g` (#148, #149): boost for 2 s from 300 m: trauma above 0.3, the chase camera trails behind the ship within `lag_max`, forward G widens the view; braking to a stop and F9 (through the bindings) off: no shake, lag or G field of view, and a boost stays shake-free; F9 on, landing: trauma and lag back to rest values (below 0.05 and 1 cm).
 - `reload`: edits a copy of the tuning files while running (dev builds): a changed turn rate takes effect, a broken file is refused, the restored file loads again.
 - `foreign_warp`: a remote ship at warp speed (1e6 m/s) held next to the walking walker; the walk must be the same as without it (#16).

@@ -9,6 +9,20 @@ use sc_common::*;
 
 const G0: f64 = 9.81;
 
+/// The tuning with thrusters that answer at once (no spool, jerk or boost ramp, #198), for
+/// checks of one step of the linear law.
+fn instant() -> flight_core::sc::ScTuning {
+    let mut t = tuning();
+    let d = &mut t.drive;
+    d.spool_delay = flight_core::sc::drive::Groups { main: 0.0, retro: 0.0, vertical: 0.0, lateral: 0.0 };
+    d.jerk = flight_core::sc::drive::Groups { main: 1e9, retro: 1e9, vertical: 1e9, lateral: 1e9 };
+    d.angular_jerk = flight_core::axis::Rot { pitch: 1e9, yaw: 1e9, roll: 1e9 };
+    d.boost_pre_delay = 0.0;
+    d.boost_ramp_up = 0.0;
+    d.boost_ramp_down = 0.0;
+    t
+}
+
 /// A piloted input with the thrust, boost and brake as given.
 fn input(t: DVec3, boost: bool, brake: bool) -> FlightInput {
     FlightInput { thrust: t, boost, brake, piloted: true, ..FlightInput::default() }
@@ -145,7 +159,7 @@ fn strafe_tapers_with_forward_speed_under_boost_only() {
     let space = Space::default();
     // The sideways acceleration of one step with D and the given velocity.
     let side = |v: DVec3, boost: bool| {
-        let mut ship = ScShip::new(tuning());
+        let mut ship = ScShip::new(instant());
         let mut body = BodyState { lin_vel: v, ..body_at(DVec3::ZERO) };
         step(&mut ship, &mut body, &input(DVec3::X, boost, false), &ModeCmds::default(), &space).x
     };

@@ -172,7 +172,7 @@ impl Default for AirTuning {
             turbulence_height: 40.0,
             turbulence_speed_min: 10.0,
             turbulence_speed_max: 60.0,
-            turbulence_angular: 0.5,
+            turbulence_angular: 0.25,
             turbulence_linear: 0.5,
             turbulence_rate: 2.0,
         }

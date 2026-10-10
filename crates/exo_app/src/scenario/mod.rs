@@ -34,6 +34,7 @@ mod net;
 mod reload;
 mod sc_linear;
 mod sc_air;
+mod sc_body;
 mod sc_hud;
 mod sc_switch;
 mod sc_turn;
@@ -600,6 +601,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "boost-hud" => boost::boost_hud_steps(&mut s),
         "thruster-audio" => thruster_audio::thruster_audio_steps(&mut s),
         // Round 5: F7 switches to the SC flight model, which lifts off, hovers and flies.
+        "sc-body" => sc_body::sc_body_steps(&mut s),
         "sc-switch" => sc_switch::sc_switch_steps(&mut s),
         // #195: the SC linear law: cap, brake, gravity compensation, master modes, limiter.
         "sc-linear" => sc_linear::sc_linear_steps(&mut s),

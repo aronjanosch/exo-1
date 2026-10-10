@@ -214,6 +214,8 @@ pub fn ship_control(
     mut q: Query<(Entity, &mut Ship, &Position, &Rotation, &mut LinearVelocity, &mut AngularVelocity)>,
     collisions: Collisions,
     colliders: Query<(Entity, &ColliderOf)>,
+    crates: Query<&crate::cargo::Crate>,
+    table: Res<crate::cargo::Crates>,
 ) {
     let dt = time.delta_secs_f64();
     for (e, mut ship, pos, rot, mut lv, mut av) in &mut q {
@@ -301,6 +303,10 @@ pub fn ship_control(
         // a slope, #92) keep the ship in place.
         let still = input.thrust.x.abs() < 1e-5 && input.thrust.z.abs() < 1e-5 && input.thrust.y <= 1e-5;
         let ground = input.grounded && still && lv.0.length() < ShipController::GROUND_HOLD_SPEED && ship.sc.modes.grav_comp;
+        // Cargo locked on this ship's plates is part of the ship (#84, #88): its mass and inertia
+        // count in the SC model. The locks of the last step (the crates step after the ship).
+        let cargo: f64 = crates.iter().filter(|c| c.locked && c.ship == Some(e)).map(|c| table.0.sizes[c.size].mass).sum();
+        ship.sc.set_cargo_mass(cargo);
         let (v, w) = if ship.model == FlightModel::Sc && !ground {
             let out = ship.sc.step(&body, &input, &cmds, planet.as_ref(), dt);
             ship.ctl.skip_step(dt);

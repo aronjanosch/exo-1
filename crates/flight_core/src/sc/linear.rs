@@ -207,10 +207,14 @@ fn brake_ceiling(b: &Dirs, hold: DVec3, u: DVec3) -> f64 {
 /// kills the velocity across it at the full thrust available that way, and the thrust along the
 /// goal follows the ratio of the along error to that across speed, so the path stays straight.
 /// `None` when the velocity has no part across the goal (the plain law then applies).
+/// m/s: anti-drift acts only on an across speed above this.
+const ANTI_DRIFT_MIN: f64 = 0.5;
+
 fn anti_drift(b: &Dirs, lv: DVec3, g: DVec3, goal: DVec3) -> Option<DVec3> {
     let across = lv - g * lv.dot(g);
     let n = across.length();
-    if n < 1e-9 {
+    // Below this the across speed is the ship settling, not drift.
+    if n < ANTI_DRIFT_MIN {
         return None;
     }
     let p = -across / n;

@@ -1166,13 +1166,14 @@ pub fn update_hud(
     // The camera switch (F9, #148, #149) is on the debug line, so a playtest can compare with it off.
     let camera = camera_fx_text(fx.0.enabled);
     **text = format!(
-        "{mode}\n{:.1} ms | chunks {} pending {} | patches {} pending {} | rescues {} | {camera}",
+        "{mode}\n{:.1} ms | chunks {} pending {} | patches {} pending {} | rescues {} | {camera} | morph {} (F4)",
         time.delta_secs_f64() * 1000.0,
         terrain.visible,
         terrain.pending,
         ring.patches.len(),
         ring.pending(),
         stats.rescues,
+        if terrain.morph_on { "on" } else { "off" },
     );
     // Frame spikes (#213): worst and p99 of the last seconds.
     text.0.push('\n');

@@ -31,6 +31,14 @@ pub struct ChunkOut {
     /// centre, and the triangles of the quads that hold water (all four corners on a surface, one
     /// of them wet; same winding as the terrain). None when the chunk has none.
     pub inland_water: Option<(Vec<[f32; 3]>, Vec<u32>)>,
+    /// Geomorphing (#220): per vertex, what to add to `verts` to get the vertex where the PARENT's
+    /// mesh has it, the chunk at half resolution (even grid vertices stay, an odd one goes to the
+    /// middle of its two even neighbours along the edge, or along the cell's diagonal). A
+    /// chunk's children at full morph look exactly like the parent at none. Skirt vertices follow
+    /// the edge vertex they hang from.
+    pub morph_delta: Vec<[f32; 3]>,
+    /// The normals of that coarse shape (the parent mesh's), absolute.
+    pub morph_normals: Vec<[f32; 3]>,
     pub min_h: f32,
     pub max_h: f32,
 }
@@ -145,6 +153,7 @@ impl Planet {
             }
         }
         out.biomes = rows;
+        morph_targets(&mut out, &pos, &dirs, centre, skirt_depth);
         if (out.min_h as f64) < self.sea {
             let mut w = Vec::with_capacity(M * M);
             for j in 0..M {
@@ -193,5 +202,51 @@ impl Planet {
         }
 
         out
+    }
+}
+
+/// The two real vertices (grid indices 1..=M-2) whose middle is the coarse (parent-level)
+/// position of `(i, j)`: the vertex itself on even ones, else its neighbours along the edge, or
+/// along the cell diagonal (the shared index buffer runs it from (i+1, j) to (i, j+1)).
+fn coarse_pattern(i: usize, j: usize) -> [(usize, usize); 2] {
+    match ((i - 1) % 2, (j - 1) % 2) {
+        (0, 0) => [(i, j), (i, j)],
+        (1, 0) => [(i - 1, j), (i + 1, j)],
+        (0, 1) => [(i, j - 1), (i, j + 1)],
+        _ => [(i + 1, j - 1), (i - 1, j + 1)],
+    }
+}
+
+fn morph_targets(out: &mut ChunkOut, pos: &[V3], dirs: &[V3], centre: V3, skirt_depth: f64) {
+    let at = |(i, j): (usize, usize)| j * M + i;
+    // Normals of the coarse mesh at the even vertices: central differences two cells wide.
+    let coarse_n = |i: usize, j: usize| {
+        let (i0, i1, j0, j1) = (i.saturating_sub(2).max(1), (i + 2).min(M - 2), j.saturating_sub(2).max(1), (j + 2).min(M - 2));
+        let n = (pos[at((i1, j))] - pos[at((i0, j))]).cross(pos[at((i, j1))] - pos[at((i, j0))]).normalized();
+        if n.dot(dirs[at((i, j))]) < 0.0 { -n } else { n }
+    };
+    let mut tp = vec![V3::default(); M * M];
+    let mut tn = vec![V3::default(); M * M];
+    for j in 1..M - 1 {
+        for i in 1..M - 1 {
+            let [a, b] = coarse_pattern(i, j);
+            tp[at((i, j))] = (pos[at(a)] + pos[at(b)]) * 0.5;
+            let (na, nb) = (coarse_n(a.0, a.1), coarse_n(b.0, b.1));
+            tn[at((i, j))] = if a == b { na } else { (na + nb).normalized() };
+        }
+    }
+    out.morph_delta.reserve_exact(M * M);
+    out.morph_normals.reserve_exact(M * M);
+    for j in 0..M {
+        for i in 0..M {
+            let k = j * M + i;
+            let ck = j.clamp(1, M - 2) * M + i.clamp(1, M - 2);
+            let target = if k == ck { tp[ck] } else { tp[ck] - dirs[ck] * skirt_depth };
+            let own = out.verts[k];
+            let d = target - centre - v3(own[0] as f64, own[1] as f64, own[2] as f64);
+            out.morph_delta.push([d.x as f32, d.y as f32, d.z as f32]);
+            let n = tn[ck];
+            out.morph_normals.push([n.x as f32, n.y as f32, n.z as f32]);
+        }
     }
 }

@@ -5,10 +5,33 @@
 //! planet centre in render space are a uniform.
 use crate::env::PlanetRes;
 use crate::origin::RenderOrigin;
-use bevy::pbr::{ExtendedMaterial, MaterialExtension};
+use bevy::mesh::{MeshVertexAttribute, MeshVertexBufferLayoutRef, VertexFormat};
+use bevy::pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline};
 use bevy::prelude::*;
-use bevy::render::render_resource::{AsBindGroup, ShaderType};
+use bevy::render::render_resource::{AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError};
 use bevy::shader::ShaderRef;
+
+/// Geomorphing (#220): the delta to the vertex's position in the parent chunk's mesh, and the
+/// parent's normal (see `terrain_vertex.wgsl`).
+pub const ATTRIBUTE_MORPH_DELTA: MeshVertexAttribute = MeshVertexAttribute::new("MorphDelta", 0x4c34_0a01, VertexFormat::Float32x3);
+pub const ATTRIBUTE_MORPH_NORMAL: MeshVertexAttribute = MeshVertexAttribute::new("MorphNormal", 0x4c34_0a02, VertexFormat::Snorm8x4);
+
+/// Per material: whether the vertex stage morphs (F4 in the window; x of the vec).
+#[derive(Clone, Copy, Debug, ShaderType, Reflect)]
+pub struct MorphUniform {
+    pub on: Vec4,
+}
+
+impl Default for MorphUniform {
+    fn default() -> Self {
+        MorphUniform { on: Vec4::new(f32::from(morph_default()), 0.0, 0.0, 0.0) }
+    }
+}
+
+/// Geomorphing starts on, off with `EXO_NO_MORPH` set.
+pub fn morph_default() -> bool {
+    std::env::var("EXO_NO_MORPH").is_err()
+}
 
 pub type TerrainMaterial = ExtendedMaterial<StandardMaterial, TerrainExt>;
 
@@ -31,6 +54,8 @@ pub struct TerrainLookUniform {
 pub struct TerrainExt {
     #[uniform(100)]
     pub look: TerrainLookUniform,
+    #[uniform(101)]
+    pub morph: MorphUniform,
 }
 
 impl MaterialExtension for TerrainExt {
@@ -39,6 +64,26 @@ impl MaterialExtension for TerrainExt {
     }
     fn deferred_fragment_shader() -> ShaderRef {
         "shaders/terrain.wgsl".into()
+    }
+    fn vertex_shader() -> ShaderRef {
+        "shaders/terrain_vertex.wgsl".into()
+    }
+    fn prepass_vertex_shader() -> ShaderRef {
+        "shaders/terrain_vertex.wgsl".into()
+    }
+    fn deferred_vertex_shader() -> ShaderRef {
+        "shaders/terrain_vertex.wgsl".into()
+    }
+    fn specialize(
+        _pipeline: &MaterialExtensionPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        layout: &MeshVertexBufferLayoutRef,
+        _key: MaterialExtensionKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        // The morph attributes join the layout the base material built (one interleaved buffer).
+        let extra = layout.0.get_layout(&[ATTRIBUTE_MORPH_DELTA.at_shader_location(10), ATTRIBUTE_MORPH_NORMAL.at_shader_location(11)])?;
+        descriptor.vertex.buffers[0].attributes.extend(extra.attributes);
+        Ok(())
     }
 }
 
@@ -75,7 +120,7 @@ pub fn look_uniform(planet: &PlanetRes, centre_render: Vec3) -> TerrainLookUnifo
 pub fn new_material(planet: &PlanetRes, origin: &RenderOrigin) -> TerrainMaterial {
     ExtendedMaterial {
         base: StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, ..default() },
-        extension: TerrainExt { look: look_uniform(planet, (planet.centre - origin.origin).as_vec3()) },
+        extension: TerrainExt { look: look_uniform(planet, (planet.centre - origin.origin).as_vec3()), morph: MorphUniform::default() },
     }
 }
 

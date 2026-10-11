@@ -83,10 +83,9 @@ struct Beacon {
 #[derive(Component)]
 struct ScanRing;
 
+/// The patrol craft model (`smuggle/patrol_craft.glb`); its lights are its named materials.
 #[derive(Component)]
-struct PatrolCraft {
-    lights: [Handle<StandardMaterial>; 2],
-}
+struct PatrolCraft;
 
 #[derive(Component)]
 struct Vignette;
@@ -407,9 +406,9 @@ fn patrol_craft(
     gp: Res<Gameplay>,
     planet: Res<PlanetRes>,
     ships: Query<(&Position, &Rotation), With<Ship>>,
-    mut meshes: ResMut<Assets<Mesh>>,
+    assets: Res<AssetServer>,
+    mut craft: Query<(Entity, &mut WorldPose, Option<&crate::named_material::NamedMaterials>), With<PatrolCraft>>,
     mut mats: ResMut<Assets<StandardMaterial>>,
-    mut craft: Query<(Entity, &PatrolCraft, &mut WorldPose)>,
 ) {
     let s = &gp.smuggling;
     let active = s.patrol.ordered_left().is_some() || (s.patrol_scan && s.open_scan.is_some());
@@ -425,12 +424,14 @@ fn patrol_craft(
     let ahead = r.0 * DVec3::NEG_Z;
     let target = p.0 + up * 5.0 + side * 12.0 + ahead * 22.0;
     let t = time.elapsed_secs_f64();
-    if let Ok((_, c, mut wp)) = craft.single_mut() {
+    if let Ok((_, mut wp, named)) = craft.single_mut() {
         let k = (time.delta_secs_f64() * 3.0).min(1.0);
         wp.pos = wp.pos.lerp(target, k);
         wp.rot = r.0;
+        // Lights are named in the model; skipped while it loads.
         let on = (t * 4.0) as i64 % 2 == 0;
-        for (i, h) in c.lights.iter().enumerate() {
+        for (i, name) in ["light_red", "light_blue"].iter().enumerate() {
+            let Some(h) = named.and_then(|n| n.0.get(name)) else { continue };
             if let Some(mut m) = mats.get_mut(h) {
                 let lit = on == (i == 0);
                 let col = if i == 0 { Color::srgb(1.0, 0.15, 0.1) } else { Color::srgb(0.15, 0.3, 1.0) };
@@ -439,16 +440,14 @@ fn patrol_craft(
         }
         return;
     }
-    let hull = mats.add(StandardMaterial { base_color: Color::srgb(0.12, 0.13, 0.16), metallic: 0.5, perceptual_roughness: 0.5, ..default() });
-    let red = mats.add(StandardMaterial { base_color: Color::srgb(1.0, 0.15, 0.1), emissive: LinearRgba::rgb(10.0, 1.0, 0.5), ..default() });
-    let blue = mats.add(StandardMaterial { base_color: Color::srgb(0.15, 0.3, 1.0), emissive: LinearRgba::rgb(0.5, 1.0, 10.0), ..default() });
-    let light = meshes.add(Sphere::new(0.9));
-    commands
-        .spawn((Mesh3d(meshes.add(Cuboid::new(4.5, 1.4, 7.0))), MeshMaterial3d(hull), Transform::default(), WorldPose { pos: target + up * 20.0, rot: r.0 }, PlanetScene(planet.id), PatrolCraft { lights: [red.clone(), blue.clone()] }))
-        .with_children(|c| {
-            c.spawn((Mesh3d(light.clone()), MeshMaterial3d(red), Transform::from_xyz(-1.6, 1.0, 0.0)));
-            c.spawn((Mesh3d(light), MeshMaterial3d(blue), Transform::from_xyz(1.6, 1.0, 0.0)));
-        });
+    // The model's origin is its hull bottom, so it hangs at the old cuboid's lower face.
+    commands.spawn((
+        WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("smuggle/patrol_craft.glb"))),
+        WorldPose { pos: target + up * 20.0, rot: r.0 },
+        PlanetScene(planet.id),
+        PatrolCraft,
+        crate::named_material::WantMaterials(&["light_red", "light_blue"]),
+    ));
 }
 
 /// Red edges by heat, breathing; a fresh star flashes (`run_flash`).

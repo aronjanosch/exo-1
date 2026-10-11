@@ -8,8 +8,8 @@
     {
       "type": "flatten",
       "order": 0,
-      "radius_m": 48.0,
-      "rolloff_m": 30.0
+      "radius_m": 85.0,
+      "rolloff_m": 50.0
     }
   ],
   "pads": [

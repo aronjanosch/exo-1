@@ -878,6 +878,20 @@ fn stand_and_look(w: &mut World, at: DVec3, look: DVec3) {
     face_towards(w, look);
 }
 
+/// Set the day clock to the hour with the highest sun over `at` (within the next 40 h), so a
+/// picture there is taken in daylight.
+fn noon_at(w: &mut World, at: DVec3) {
+    let t0 = w.resource::<crate::daynight::DayClock>().t;
+    let (dn, sys, planet) = (w.resource::<crate::daynight::DayNightRes>(), w.resource::<crate::warp::SystemRes>(), w.resource::<crate::env::PlanetRes>());
+    let best = (0..2400).map(|k| t0 + k as f64 * 60.0).max_by(|a, b| {
+        let e = |t| crate::daynight::sun_at(dn, sys, planet, t, at, None).elevation_deg;
+        e(*a).total_cmp(&e(*b))
+    });
+    if let Some(t) = best {
+        w.resource_mut::<crate::daynight::DayClock>().t = t;
+    }
+}
+
 /// For the playtest issue: the spaceport, a street, the phone, the kettle, an approach with a
 /// clearance. Headless it only walks the steps (no pictures).
 pub fn shots_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool) {
@@ -991,7 +1005,69 @@ pub fn shots_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool)
         }));
     }
     s.push(wait(0.5));
+    // A buyer with an open, tracked order (the marker over them), and the three crate kinds on the
+    // ground beside them: a product, a base, an ingredient.
+    s.push(Box::new(|w, _| {
+        let ids: Vec<customers_core::CustomerId> = gp(w).customer_content.customers.keys().cloned().collect();
+        let mut g = w.resource_mut::<Gameplay>();
+        for id in ids {
+            g.customers.set_wait(&id, if id.as_str() == BUYER { 0.5 } else { 1e9 });
+        }
+        true
+    }));
+    s.push(wait(2.0));
+    s.push(Box::new(|w, _| {
+        let Some((id, o)) = buyer_order(w) else { return true };
+        w.resource_mut::<Gameplay>().smuggling.tracked_order = Some(id);
+        let (spot, up) = buyer_spot(gp(w), &o.at, 0).expect("the buyer's pad");
+        noon_at(w, spot);
+        let pad = gp(w).pad_of(&o.at).expect("the buyer's pad").centre;
+        let side = up.any_orthonormal_vector();
+        let away = (spot - pad).reject_from(up).normalize();
+        stock_at(w, "blorp_paste", Some(product(&["giggly"])), spot + side * 1.2 + away * 1.0);
+        stock_at(w, "blorp_paste", None, spot + side * 2.4 + away * 1.0);
+        stock_at(w, "space_sugar", None, spot + side * 3.6 + away * 1.0);
+        stand_and_look(w, spot + side * 1.8 + away * 6.5, spot + side * 1.8 + up * 0.8);
+        true
+    }));
+    s.push(wait(3.0));
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
+            shot(w, c, &dir, windowed, "buyer-order-crates");
+            true
+        }));
+    }
+    s.push(wait(0.5));
     s.extend(seated());
+    // The far towns from the approach (about 300 m out from the south-east, 120 m up) and from
+    // above (north at the top), to see their dressing; each in daylight, horizon level.
+    for town in ["bent_spoon", "noodle_town", "gulch_freeport"] {
+        for (out, up, tag) in [(300.0, 120.0, "far"), (0.0, 200.0, "top")] {
+            s.push(Box::new(move |w, _| {
+                let p = super::deliver::pad(w, town);
+                noon_at(w, p.centre);
+                let f = crate::town::Frame::of_place(w.resource::<crate::env::PlanetRes>(), town).expect("a far town");
+                let from = if tag == "top" { -f.north } else { (f.east - f.north).normalize() };
+                let at = p.centre + from * out + p.up * up;
+                let nose = if tag == "top" { -p.up } else { (p.centre - at).normalize() };
+                let roll_up = if tag == "top" { f.north } else { p.up };
+                teleport_ship(w, at, walker_core::look_rot(nose, roll_up));
+                true
+            }));
+            s.push(wait(1.5));
+            let dir = dir.clone();
+            s.push(Box::new(move |w, c| {
+                shot(w, c, &dir, windowed, &format!("town-{town}-{tag}"));
+                true
+            }));
+        }
+    }
+    s.push(Box::new(|w, _| {
+        let p = super::deliver::pad(w, "bent_spoon");
+        noon_at(w, p.centre);
+        true
+    }));
     s.push(Box::new(|w, _| {
         let p = super::deliver::pad(w, "bent_spoon");
         let east = p.up.any_orthonormal_vector();
@@ -1095,10 +1171,13 @@ pub fn shots_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool)
         let dir = dir.clone();
         s.push(Box::new(move |w, c| {
             shot(w, c, &dir, windowed, "patrol");
-            end(w, c, format!("pictures in {}", dir.display()));
             true
         }));
     }
+    s.push(Box::new(move |w, c| {
+        end(w, c, format!("pictures in {}", dir.display()));
+        true
+    }));
     s.push(wait(1.0));
 }
 

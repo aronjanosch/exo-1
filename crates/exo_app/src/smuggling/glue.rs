@@ -743,18 +743,23 @@ pub fn prompt_override(st: &StationTarget, inter: &mut Interaction) -> bool {
     false
 }
 
-/// A placeholder vat at every kettle (window only): a fat cylinder with a glowing top.
+/// A kettle's model and its table (window only); the root carries the kettle's `KettleTop`.
 #[derive(Component)]
 pub struct KettleModel;
 
-/// A kettle's brew surface: its material and where bubbles rise from.
+/// The brew surface of a kettle: where bubbles rise from. Its brew material is the `brew` one of
+/// the kettle's `NamedMaterials` (`kettle_fx`), once the model is in.
 #[derive(Component)]
 pub struct KettleTop {
     pub id: String,
-    pub mat: Handle<StandardMaterial>,
     pub top: DVec3,
     pub up: DVec3,
 }
+
+/// Brew surface height over the ground (m). TODO: read it from lab_kettle.glb (guessed, the model is 1.55 m).
+const BREW_TOP_M: f64 = 1.3;
+/// Where the table stands, beside the kettle (m). TODO(initiator): the spacing.
+const TABLE_SIDE_M: f64 = 2.2;
 
 #[derive(Component)]
 pub struct Bubble {
@@ -767,9 +772,8 @@ pub fn kettle_view(
     town: Res<Town>,
     gp: Res<Gameplay>,
     planet: Res<crate::env::PlanetRes>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut mats: ResMut<Assets<StandardMaterial>>,
     shown: Query<Entity, With<KettleModel>>,
+    assets: Res<AssetServer>,
     mut count: Local<usize>,
 ) {
     let ks = kettles(&town, &gp);
@@ -780,17 +784,28 @@ pub fn kettle_view(
     for e in &shown {
         commands.entity(e).despawn();
     }
-    let body = meshes.add(Cylinder::new(0.6, 1.1));
-    let top = meshes.add(Cylinder::new(0.5, 0.08));
-    let metal = mats.add(StandardMaterial { base_color: Color::srgb(0.45, 0.5, 0.55), metallic: 0.6, perceptual_roughness: 0.4, ..default() });
     for (id, p, up) in ks {
-        // Each kettle's brew has its own material: its colour follows the mix (`kettle_fx`).
-        let brew = mats.add(StandardMaterial { base_color: Color::srgb(0.2, 0.22, 0.2), emissive: LinearRgba::BLACK, ..default() });
         let ground = planet.centre + up * planet.surface(up);
         let ground = ground + (p - planet.centre - up * (p - planet.centre).dot(up));
         let rot = Quat::from_rotation_arc(Vec3::Y, up.as_vec3());
-        commands.spawn((Mesh3d(body.clone()), MeshMaterial3d(metal.clone()), Transform::from_rotation(rot), crate::origin::WorldPos(ground + up * 0.55), crate::terrain::PlanetScene(planet.id), KettleModel));
-        commands.spawn((Mesh3d(top.clone()), MeshMaterial3d(brew.clone()), Transform::from_rotation(rot), crate::origin::WorldPos(ground + up * 1.12), crate::terrain::PlanetScene(planet.id), KettleModel, KettleTop { id, mat: brew, top: ground + up * 1.16, up }));
+        // The brew's colour follows the mix (`kettle_fx`), through the model's `brew` material.
+        commands.spawn((
+            WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("smuggle/lab_kettle.glb"))),
+            Transform::from_rotation(rot),
+            crate::origin::WorldPos(ground),
+            crate::terrain::PlanetScene(planet.id),
+            KettleModel,
+            crate::named_material::WantMaterials(&["brew"]),
+            KettleTop { id, top: ground + up * BREW_TOP_M, up },
+        ));
+        let table = ground + up.any_orthonormal_vector() * TABLE_SIDE_M;
+        commands.spawn((
+            WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("smuggle/lab_table.glb"))),
+            Transform::from_rotation(rot),
+            crate::origin::WorldPos(table),
+            crate::terrain::PlanetScene(planet.id),
+            KettleModel,
+        ));
     }
 }
 
@@ -827,7 +842,7 @@ pub fn kettle_fx(
     time: Res<Time>,
     gp: Res<Gameplay>,
     planet: Res<crate::env::PlanetRes>,
-    tops: Query<&KettleTop>,
+    tops: Query<(&KettleTop, Option<&crate::named_material::NamedMaterials>)>,
     mut mats: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut bubbles: Query<(Entity, &Bubble, &mut crate::origin::WorldPose, &mut Transform)>,
@@ -837,8 +852,10 @@ pub fn kettle_fx(
     let now = time.elapsed_secs_f64();
     let lab = &gp.smuggling.lab;
     let mut spawn_at = Vec::new();
-    for k in &tops {
-        let Some(mut m) = mats.get_mut(&k.mat) else { continue };
+    for (k, named) in &tops {
+        // Skipped while the model is still loading (its brew material is not named yet).
+        let Some(mat) = named.and_then(|n| n.0.get("brew")) else { continue };
+        let Some(mut m) = mats.get_mut(mat) else { continue };
         let (colour, glow) = match lab.kettle(&k.id) {
             None | Some(production_core::Kettle::Empty) => (Color::srgb(0.2, 0.22, 0.2), 0.0),
             Some(production_core::Kettle::Loaded { base, ingredients }) => (mix_colour(std::iter::once(base.as_str()).chain(ingredients.iter().map(|i| i.as_str()))), 0.6),

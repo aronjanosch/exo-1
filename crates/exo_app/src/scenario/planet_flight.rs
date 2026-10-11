@@ -105,14 +105,14 @@ fn leg_report(c: &mut Ctx, name: &str, frames: &[FrameRec], threshold: f64) {
 }
 
 fn write_csv(dir: &std::path::Path, frames: &[FrameRec]) {
-    let mut s = String::from("frame,t,phase,dt_ms,main_ms,fixed_n,fixed_ms,update_ms,propagate_ms,terrain_up,terrain_up_ms,terrain_sys_ms,terrain_started,ring_up,ring_up_ms,ring_sys_ms,scatter_cells,scatter_inst,scatter_up_ms,scatter_sys_ms,shift_n,shift_ms,render_n,render_ms,r_assets,r_views,r_queue,r_prepare,r_graph,r_cleanup,lod_debt,terrain_pending\n");
+    let mut s = String::from("frame,t,phase,dt_ms,main_ms,fixed_n,fixed_ms,update_ms,propagate_ms,terrain_up,terrain_up_ms,terrain_sys_ms,terrain_started,ring_up,ring_up_ms,ring_sys_ms,scatter_cells,scatter_inst,scatter_up_ms,scatter_sys_ms,shift_n,shift_ms,render_n,render_ms,r_assets,r_views,r_queue,r_prepare,r_graph,r_cleanup,lod_debt,terrain_pending,gpu_ms\n");
     for f in frames {
         let c = &f.cost;
         s.push_str(&format!(
-            "{},{:.4},{},{:.3},{:.3},{},{:.3},{:.3},{:.3},{},{:.3},{:.3},{},{},{:.3},{:.3},{},{},{:.3},{:.3},{},{:.3},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{}\n",
+            "{},{:.4},{},{:.3},{:.3},{},{:.3},{:.3},{:.3},{},{:.3},{:.3},{},{},{:.3},{:.3},{},{},{:.3},{:.3},{},{:.3},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{},{:.3}\n",
             f.frame, f.t, f.phase.replace(",", ";"), f.dt_ms, f.main_ms, c.fixed.n, c.fixed.ms, c.update.ms, c.propagate.ms, c.terrain_up.n, c.terrain_up.ms, c.terrain_sys.ms, c.terrain_sys.n,
             c.ring_up.n, c.ring_up.ms, c.ring_sys.ms, c.scatter_up.n, c.scatter_inst, c.scatter_up.ms, c.scatter_sys.ms, c.shift.n, c.shift.ms,
-            f.render.frames, f.render.total_ms, f.render.assets_ms, f.render.views_ms, f.render.queue_ms, f.render.prepare_ms, f.render.graph_ms, f.render.cleanup_ms, c.lod_debt as u8, c.terrain_pending
+            f.render.frames, f.render.total_ms, f.render.assets_ms, f.render.views_ms, f.render.queue_ms, f.render.prepare_ms, f.render.graph_ms, f.render.cleanup_ms, c.lod_debt as u8, c.terrain_pending, c.gpu_ms
         ));
     }
     let _ = std::fs::create_dir_all(dir);

@@ -77,6 +77,9 @@ pub struct FrameCost {
     pub lod_debt: bool,
     /// Chunk jobs in flight or waiting for upload.
     pub terrain_pending: u32,
+    /// GPU time of the top-level render passes (ms) as last reported, with `EXO_GPU_DIAG` set
+    /// (Bevy's render diagnostics; arrives a few frames late).
+    pub gpu_ms: f64,
 }
 
 /// The render thread's last finished frame (windowed): ms per stage of the `Render` schedule.
@@ -287,6 +290,19 @@ fn frame_begin(mut spikes: ResMut<FrameSpikes>, mut cost: ResMut<FrameCost>, scr
     spikes.open = Some(FrameRec { frame, t: (now - start).as_secs_f64(), phase: script.map(|s| s.ctx.phase.clone()).unwrap_or_default(), ..default() });
 }
 
+/// With `EXO_GPU_DIAG`: the GPU time of the top-level render passes into the frame's cost.
+fn gpu_time(store: Option<Res<bevy::diagnostic::DiagnosticsStore>>, mut cost: ResMut<FrameCost>) {
+    let Some(store) = store else { return };
+    cost.gpu_ms = store
+        .iter()
+        .filter(|d| {
+            let p = d.path().as_str();
+            p.starts_with("render/") && p.ends_with("/elapsed_gpu") && p.matches('/').count() == 2
+        })
+        .filter_map(|d| d.value())
+        .sum();
+}
+
 fn frame_end(mut spikes: ResMut<FrameSpikes>, cost: Res<FrameCost>) {
     let Some(t0) = spikes.frame_start else { return };
     let main_ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -420,7 +436,10 @@ pub fn plugin(app: &mut App) {
         app.init_resource::<FrameSpikes>();
     }
     app.add_systems(First, frame_begin);
-    app.add_systems(Last, frame_end);
+    app.add_systems(Last, (gpu_time, frame_end).chain());
+    if std::env::var("EXO_GPU_DIAG").is_ok() && app.get_sub_app(bevy::render::RenderApp).is_some() {
+        app.add_plugins(bevy::render::diagnostic::RenderDiagnosticsPlugin);
+    }
     app.add_systems(FixedFirst, fixed_begin);
     app.add_systems(FixedLast, fixed_end);
     app.add_systems(FixedUpdate, (fu_begin.before(crate::phases::Fx::Input), fu_end.after(crate::phases::Fx::Effects)));

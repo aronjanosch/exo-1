@@ -104,8 +104,13 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let wobble = (value_noise(rel * 0.08) - 0.5) * 8.0;
     let rock_t = smoothstep(look.shape.y, look.shape.z, slope + wobble);
 
-    // Strata: bands by height, wobbling a few metres, soft at their borders.
-    let band = (h + (value_noise(rel * 0.015) - 0.5) * 2.0 * look.misc.y) / max(look.shape.w, 0.1);
+    // Strata: bands by height, wobbling a few metres, soft at their borders. On steep faces only,
+    // and the bands wander by several of their widths over a few hundred metres: horizontal
+    // bands over a whole hillside read as contour lines (playtest #236). TODO(initiator): the
+    // slopes (30 to 45 degrees), the wander and the strength (0.6).
+    let strata_steep = smoothstep(30.0, 45.0, slope + wobble);
+    let wander = (value_noise(rel * 0.003) - 0.5) * 8.0 * look.shape.w;
+    let band = (h + wander + (value_noise(rel * 0.015) - 0.5) * 2.0 * look.misc.y) / max(look.shape.w, 0.1);
     let k = i32(floor(band));
     let f = fract(band);
     let edge = smoothstep(0.0, 0.08, f) * (1.0 - smoothstep(0.92, 1.0, f));
@@ -114,7 +119,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let mean = (look.strata0.rgb + look.strata1.rgb + look.strata2.rgb + look.strata3.rgb) * 0.25;
     let resolved = 1.0 - smoothstep(0.25, 0.75, fwidth(band));
     let layer = mix(mean, mix(strata_color(k - 1), strata_color(k), edge), resolved);
-    let rock_col = mix(rock, layer * (rock / max(max(rock.r, max(rock.g, rock.b)), 0.05) * 0.35 + 0.65), strata_share);
+    let rock_col = mix(rock, layer * (rock / max(max(rock.r, max(rock.g, rock.b)), 0.05) * 0.35 + 0.65), strata_share * strata_steep * 0.6);
 
     var col = mix(ground, rock_col, rock_t);
 

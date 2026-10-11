@@ -177,6 +177,16 @@
     "No licence, no seat. Skyhook Flight School gives exams.",
     "The seat says no. Ride along, or go and pass the exam at Skyhook."
   ],
+  "notice.heat.up": [
+    "The scanners took an interest. Heat is at {stars} star(s).",
+    "Somebody is watching you now. {stars} star(s) of heat.",
+    "The wanted board updated. You are at {stars} star(s)."
+  ],
+  "notice.heat.down": [
+    "The heat cools. {stars} star(s) left.",
+    "Nobody is looking at you quite so hard. {stars} star(s).",
+    "The board forgot about you a little. {stars} star(s)."
+  ],
   "notice.refused.cannot_afford": [
     "Not enough credits for that.",
     "Your wallet declines.",

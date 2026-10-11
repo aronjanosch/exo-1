@@ -624,3 +624,32 @@ fn the_save_section_is_named_and_versioned() {
     assert_eq!(SECTION, "heat");
     assert_eq!(SECTION_VERSION, 1);
 }
+
+// ---- Patrol tuning (#231)
+
+#[test]
+fn shipped_patrol_tuning_loads_with_the_spec_values() {
+    let t = tuning();
+    assert_eq!(t.patrol_from_stars, 2);
+    assert_eq!(t.patrol_check_s, 30.0);
+    assert_eq!(t.patrol_chance_per_star, 0.12);
+    assert_eq!(t.patrol_halt_speed_ms, 8.0);
+    assert_eq!(t.patrol_halt_s, 12.0);
+    assert_eq!(t.patrol_cooldown_s, 120.0);
+}
+
+#[test]
+fn patrol_loader_errors_name_the_file_and_the_field() {
+    let e = load_with("\"patrol_from_stars\": 2", "\"patrol_from_stars\": 6");
+    assert!(e.iter().any(|x| x.contains("heat/") && x.contains("patrol_from_stars")), "{e:?}");
+    let e = load_with("\"patrol_check_s\": 30.0", "\"patrol_check_s\": 0.0");
+    assert!(e.iter().any(|x| x.contains("patrol_check_s")), "{e:?}");
+    let e = load_with("\"patrol_chance_per_star\": 0.12", "\"patrol_chance_per_star\": 1.5");
+    assert!(e.iter().any(|x| x.contains("patrol_chance_per_star")), "{e:?}");
+    let e = load_with("\"patrol_halt_speed_ms\": 8.0", "\"patrol_halt_speed_ms\": -1.0");
+    assert!(e.iter().any(|x| x.contains("patrol_halt_speed_ms")), "{e:?}");
+    let e = load_with("\"patrol_halt_s\": 12.0", "\"patrol_halt_s\": -1.0");
+    assert!(e.iter().any(|x| x.contains("patrol_halt_s")), "{e:?}");
+    let e = load_with("\"patrol_cooldown_s\": 120.0", "\"patrol_cooldown_s\": -1.0");
+    assert!(e.iter().any(|x| x.contains("patrol_cooldown_s")), "{e:?}");
+}

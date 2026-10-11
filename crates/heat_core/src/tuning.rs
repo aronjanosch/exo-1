@@ -69,6 +69,19 @@ pub struct Tuning {
     pub thorough_chance: f64,
     /// Money per heat point, for paying down at a fixer.
     pub paydown_per_point: i64,
+    /// Air patrols (#231): from this star level on a town's patrol may hail a hot ship.
+    /// TODO(initiator): 2 is a starting value.
+    pub patrol_from_stars: u8,
+    /// Seconds spent inside an official airspace per patrol roll. TODO(initiator)
+    pub patrol_check_s: f64,
+    /// Chance per roll = stars x this, capped at 0.9 (in `patrol`). TODO(initiator)
+    pub patrol_chance_per_star: f64,
+    /// Speed (m/s) under which the ship counts as halted. TODO(initiator)
+    pub patrol_halt_speed_ms: f64,
+    /// Seconds the ship has to get below the halt speed. TODO(initiator)
+    pub patrol_halt_s: f64,
+    /// Seconds after an order ended before a new one. TODO(initiator)
+    pub patrol_cooldown_s: f64,
 }
 
 impl Record for Tuning {
@@ -143,5 +156,23 @@ fn check(path: &str, t: &Tuning, e: &mut Vec<String>) {
     }
     if t.thorough_from_stars > STARS_MAX {
         bad("thorough_from_stars", "must be a star level 0 to 5");
+    }
+    if t.patrol_from_stars > STARS_MAX {
+        bad("patrol_from_stars", "must be a star level 0 to 5");
+    }
+    if !(t.patrol_check_s > 0.0) {
+        bad("patrol_check_s", "must be positive (seconds per roll)");
+    }
+    if !(0.0..=1.0).contains(&t.patrol_chance_per_star) {
+        bad("patrol_chance_per_star", "must be in 0..1");
+    }
+    for (field, v) in [
+        ("patrol_halt_speed_ms", t.patrol_halt_speed_ms),
+        ("patrol_halt_s", t.patrol_halt_s),
+        ("patrol_cooldown_s", t.patrol_cooldown_s),
+    ] {
+        if !(v >= 0.0) {
+            bad(field, "must not be negative");
+        }
     }
 }

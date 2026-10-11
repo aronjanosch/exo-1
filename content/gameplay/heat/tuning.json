@@ -1,5 +1,5 @@
 {
-  "_comment": "Heat tuning (#227). Every number is a placeholder: TODO(initiator). Stars are points / points_per_star, capped at 5.",
+  "_comment": "Heat tuning (#227). Every number is a placeholder: TODO(initiator). Stars are points / points_per_star, capped at 5. The patrol_* fields are air patrols (#231).",
   "id": "tuning",
   "points_per_star": 20.0,
   "max_points": 100.0,
@@ -24,5 +24,11 @@
   "comply_points": -5.0,
   "thorough_from_stars": 4,
   "thorough_chance": 0.5,
-  "paydown_per_point": 10
+  "paydown_per_point": 10,
+  "patrol_from_stars": 2,
+  "patrol_check_s": 30.0,
+  "patrol_chance_per_star": 0.12,
+  "patrol_halt_speed_ms": 8.0,
+  "patrol_halt_s": 12.0,
+  "patrol_cooldown_s": 120.0
 }

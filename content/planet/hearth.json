@@ -15,7 +15,7 @@
   "relief": {
     "continent": { "field": "elevation", "points": [[-1.0, -900.0], [-0.45, -420.0], [-0.15, -60.0], [0.0, 0.0], [0.08, 30.0], [0.25, 80.0], [0.5, 220.0], [0.8, 330.0], [1.0, 380.0]] },
     "flatness": { "field": "erosion", "points": [[-1.0, 1.0], [-0.3, 1.0], [0.0, 1.0], [0.3, 0.5], [0.55, 0.12], [1.0, 0.03]] },
-    "ridge": { "field": "peaks", "points": [[-1.0, 0.0], [-0.5, 600.0], [-0.2, 900.0], [0.2, 1200.0], [0.6, 1500.0], [1.0, 1800.0]] },
+    "ridge": { "field": "peaks", "points": [[-1.0, 0.0], [-0.5, 600.0], [-0.2, 900.0], [0.2, 750.0], [0.6, 760.0], [1.0, 780.0]] },
     "land_gate": { "field": "elevation", "points": [[-0.2, 0.3], [0.0, 0.8], [0.2, 1.0], [1.0, 1.0]] },
     "ridge_noise": { "seed_offset": 20, "wavelength_radii": 0.06, "fractal": "ridged", "octaves": 4 },
     "ridge_warp": { "seed_offset": 21, "wavelength_radii": 0.02, "amplitude": 400.0 }
@@ -77,7 +77,7 @@
     "_comment": "Rivers and lakes (#72), cut in the bake, never at runtime. TODO(initiator): every value is a starting point. Rain is relative: rain_base + rain_moisture_gain * moisture. A river starts where the rain-weighted catchment reaches river_min_catchment_km2; river_depth_m and river_width_m are [at the start, at most]; river_fill is the share of the bed that holds water. A sink at least lake_min_depth_m deep, and lake_min_area_m2 large or fed by a river, holds a lake; rivers cut through shallower ones. sea_min_area_km2: areas below the sea level count as the sea for the water from this size on; smaller pockets fill to a lake or a river crosses them (0: every one is sea). river_sinks: how a river crosses a sink without a lake, cut (its bed cuts the sill down to the sink's floor) or fill (sediment up to the spill point, the river runs across). lake_evaporation: rain-weighted catchment a lake needs per m² of surface; a sink that gathers less holds a smaller lake that never spills, or stays dry. Hearth (playtest #72: few long rivers from the heights to the sea, fewer small lakes): only seas from 0.5 km² count as sea, sinks under 50 m on a river fill with sediment, only deep ones keep a lake. Erosion: stream power on the macro grid, per step strength * catchment^area_exponent / distance, at most max_m in all.",
     "rain_base": 1.0, "rain_moisture_gain": 0.6,
     "river_min_catchment_km2": 2.0, "river_depth_m": [1.5, 5.0], "river_width_m": [8.0, 40.0], "river_fill": 0.75,
-    "lake_min_depth_m": 250.0, "lake_min_area_m2": 250000.0, "lake_evaporation": 1.0, "sea_min_area_km2": 0.5, "river_sinks": "fill",
+    "lake_min_depth_m": 1000.0, "lake_min_area_m2": 250000.0, "lake_evaporation": 1.0, "sea_min_area_km2": 0.5, "river_sinks": "fill",
     "erosion": { "iterations": 5, "strength": 0.003, "area_exponent": 0.5, "max_m": 15.0 }
   },
   "biomes": [

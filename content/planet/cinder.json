@@ -15,7 +15,7 @@
   "relief": {
     "continent": { "field": "elevation", "points": [[-1.0, -900.0], [-0.6, -300.0], [-0.3, -120.0], [0.0, -20.0], [0.1, 20.0], [0.25, 80.0], [0.5, 220.0], [0.8, 330.0], [1.0, 380.0]] },
     "flatness": { "field": "erosion", "points": [[-1.0, 1.0], [-0.3, 1.0], [0.0, 1.0], [0.3, 0.6], [0.55, 0.2], [1.0, 0.05]] },
-    "ridge": { "field": "peaks", "points": [[-1.0, 0.0], [-0.5, 700.0], [-0.2, 1000.0], [0.2, 1300.0], [0.6, 1600.0], [1.0, 1900.0]] },
+    "ridge": { "field": "peaks", "points": [[-1.0, 0.0], [-0.5, 700.0], [-0.2, 900.0], [0.2, 720.0], [0.6, 740.0], [1.0, 760.0]] },
     "land_gate": { "field": "elevation", "points": [[-0.2, 0.3], [0.0, 0.8], [0.2, 1.0], [1.0, 1.0]] },
     "ridge_noise": { "seed_offset": 20, "wavelength_radii": 0.06, "fractal": "ridged", "octaves": 4 },
     "ridge_warp": { "seed_offset": 21, "wavelength_radii": 0.02, "amplitude": 400.0 }

@@ -805,6 +805,11 @@ impl Recipe {
 
     /// Relative wavelengths become frequencies at this radius (#221).
     fn resolve_wavelengths(&mut self, radius: f64) {
+        // The lake depth is given at the relief's reference radius; it grows with the planet
+        // like the relief does (#221, TODO(initiator): the reference values).
+        if let (Some(rl), Some(d)) = (&self.relief, &mut self.drainage) {
+            d.lake_min_depth_m *= radius / rl.radius_m;
+        }
         let m = &mut self.macro_;
         let mut specs: Vec<&mut NoiseSpec> = vec![&mut m.elevation.noise, &mut m.moisture.noise, &mut m.temperature.noise, &mut m.landform.noise, &mut m.weirdness.noise];
         if let Some(e) = &mut m.erosion {

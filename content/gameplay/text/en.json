@@ -413,5 +413,140 @@
   "location.gulch_freeport.name": "Gulch Freeport",
   "location.gulch_freeport_east.name": "Gulch Freeport East Pad",
   "location.bent_spoon_scrub.name": "Scrub outside Bent Spoon",
-  "location.noodle_scrub.name": "Ditch outside Noodle Town"
+  "location.noodle_scrub.name": "Ditch outside Noodle Town",
+  "town.drip_rock.name": "Drip Rock Airspace",
+  "town.bent_spoon.name": "Bent Spoon Airspace",
+  "town.noodle_post.name": "Noodle Post Airspace",
+  "notice.traffic.out_of_range": "Out of range of the tower. Get closer, then hail.",
+  "notice.traffic.no_tower": "No tower here. Land wherever you like.",
+  "tower.grumpy.granted": [
+    "Pad's yours. Don't make me regret it.",
+    "Clearance granted. Try not to bounce off my antenna.",
+    "Fine, land. The pad is waiting, unlike my patience."
+  ],
+  "tower.grumpy.held": [
+    "Hold position. I am eating a sandwich. Wait.",
+    "Holding pattern. The sky is busy with nonsense.",
+    "No. Circle. I said circle. Circle until I say otherwise."
+  ],
+  "tower.grumpy.inspection": [
+    "Inspection pad. Yes, you. Your crates look suspicious, and so do you.",
+    "Go to the inspection pad. Bring your paperwork and your excuses.",
+    "Inspection pad, now. Your heat is famous around here."
+  ],
+  "tower.grumpy.expired": [
+    "Your window closed. Clearance void. Go away and come back later.",
+    "Too slow. Clearance expired. Hail me again, you brave idiot.",
+    "Window's shut. The pad has moved on without you."
+  ],
+  "tower.grumpy.out_of_range": [
+    "You are not in my airspace. Go away and bother somebody else.",
+    "Out of range. I cannot hear you, and frankly I do not want to.",
+    "Wrong sky, pal. Come back inside the airspace and hail again."
+  ],
+  "tower.grumpy.no_tower": [
+    "There is no tower here. Yes, really. Fly however you like.",
+    "No tower in this sky. Nobody is watching, so behave badly.",
+    "This is a free port. I have nothing to say. Stop asking."
+  ],
+  "tower.grumpy.violation.no_clearance": [
+    "You landed without clearance. A fine, as a treat.",
+    "No clearance and you landed anyway. Bold. Expensive, too.",
+    "Landing without asking. That is a fine and a frown."
+  ],
+  "tower.grumpy.violation.wrong_pad": [
+    "Wrong pad. I gave you a different pad. Read your own screen.",
+    "That is not your pad. Fine, and do not do it again.",
+    "Wrong pad, genius. The assigned one was right there."
+  ],
+  "tower.grumpy.violation.speeding": [
+    "Slow down, you lunatic. Speed limit, look it up.",
+    "Too fast in my airspace. Fine. Slow down, please.",
+    "Speeding over my sky. That is a fine and a sigh."
+  ],
+  "tower.grumpy.graded.0": [
+    "That landing was a crime against gravity.",
+    "Rough touchdown. My coffee is spilled. Thanks for that.",
+    "That was not a landing. That was a sneeze with wings."
+  ],
+  "tower.grumpy.graded.1": [
+    "Survived it. Barely. Stamp issued, self-respect not included.",
+    "Passable. Stamp given, dignity pending.",
+    "Bumpy, but you are still in one piece. Stamp of the lowest kind."
+  ],
+  "tower.grumpy.graded.2": [
+    "Good landing. I almost clapped.",
+    "Solid touchdown. Stamp of quality, I suppose.",
+    "Nice and easy. Nobody on the pad sneezed."
+  ],
+  "tower.grumpy.graded.3": [
+    "Perfect. Do not let it go to your head.",
+    "Flawless. I will tell absolutely nobody.",
+    "Textbook landing. I hate how good that was."
+  ],
+  "tower.chirpy.granted": [
+    "Pad's all yours, friend! Go go go!",
+    "Clearance! Wheee, you are cleared to land!",
+    "Yes yes yes, land on the pad, sparkle at it!"
+  ],
+  "tower.chirpy.held": [
+    "Oh, hold tight! Ten laps around the spoon, zoom zoom!",
+    "Holding pattern, sweetie! Hold, hold, hold!",
+    "Wait wait wait, the pad is busy being a pad!"
+  ],
+  "tower.chirpy.inspection": [
+    "Inspection pad, buddy! Big scan, big smile!",
+    "Go to the inspection pad, shiny one! The scanners are excited!",
+    "Inspection! Please wave your crates at the scanner!"
+  ],
+  "tower.chirpy.expired": [
+    "Oh no! Your window closed, I am so sorry!",
+    "Time is up, little ship! Hail me again, pretty please!",
+    "Window's gone, the pad is taken, back to the sky!"
+  ],
+  "tower.chirpy.out_of_range": [
+    "Oopsie, you are too far out! Come closer, sweetheart!",
+    "I cannot hear you from out there, come back inside my sky!",
+    "Out of range! Fly over the spoon and call again!"
+  ],
+  "tower.chirpy.no_tower": [
+    "No tower here, what a lovely wild place! Go wherever!",
+    "Nobody is up here but the wind. Fly free!",
+    "This is a free port, no rules, no tower, weeee!"
+  ],
+  "tower.chirpy.violation.no_clearance": [
+    "No clearance and you landed! Fine, sorry, sorry!",
+    "You landed without asking, oh dear. A fine for the spoon!",
+    "Landing without a clearance, naughty! Fine time!"
+  ],
+  "tower.chirpy.violation.wrong_pad": [
+    "Wrong pad, silly! That was not your pad!",
+    "Oops, wrong pad! Fine, but with a kiss on the bumper.",
+    "That is not the pad I gave you! Fine, pretty please remember next time."
+  ],
+  "tower.chirpy.violation.speeding": [
+    "Too fast, too fast! Slow down, rocket!",
+    "Speeding in my sky! Fine, and a wobbly wave.",
+    "Whoa, speedy! Slow down, the spoon gets dizzy!"
+  ],
+  "tower.chirpy.graded.0": [
+    "Ooh, bumpy! Are you okay? Stamp, sadly.",
+    "That one went boing. Stamp of the bumpiest kind!",
+    "Rough one, buddy! Stamp anyway, hugs."
+  ],
+  "tower.chirpy.graded.1": [
+    "Landed! A bit wobbly, but a stamp!",
+    "Okay okay, a little wobbly, but I counted it!",
+    "Wobbly but yours. Stamp, sticker, the works."
+  ],
+  "tower.chirpy.graded.2": [
+    "Nice landing, you smooth operator!",
+    "Ooh smooth! Stamp with a sparkle!",
+    "Very nice, a good wiggle-free touchdown!"
+  ],
+  "tower.chirpy.graded.3": [
+    "PERFECT! Tiny confetti for you!",
+    "Flawless! I am squeaking with joy!",
+    "Best landing of the day! Stamp of gold, sparkle included!"
+  ]
 }

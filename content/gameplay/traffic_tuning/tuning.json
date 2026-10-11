@@ -1,0 +1,13 @@
+{
+  "_comment": "Tuning of the airspace and the tower (traffic, round 6). Every number is a starting value (TODO(initiator)). grade_speeds: the touchdown speed in m/s for grades 3, 2 and 1; faster is grade 0.",
+  "id": "start",
+  "answer_delay_s": 2.5,
+  "window_s": 90.0,
+  "hold_s": 20.0,
+  "grade_speeds": [1.5, 3.0, 6.0],
+  "speeding_grace_s": 3.0,
+  "speeding_cooldown_s": 20.0,
+  "fine_no_clearance": 40,
+  "fine_wrong_pad": 25,
+  "fine_speeding": 15
+}

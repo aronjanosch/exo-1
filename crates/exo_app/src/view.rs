@@ -245,6 +245,9 @@ const FL_LINE: Color = Color::srgba(0.9, 0.95, 1.0, 0.7);
 const FL_FILL: Color = Color::srgb(0.55, 0.95, 1.0);
 const FL_OVER: Color = Color::srgb(1.0, 0.3, 0.3);
 const FL_MARK: Color = Color::srgb(1.0, 0.85, 0.35);
+/// The horizon and its tilt number when the ship sits level, and nearly level.
+const FL_LEVEL: Color = Color::srgb(0.35, 1.0, 0.45);
+const FL_NEAR_LEVEL: Color = Color::srgb(1.0, 0.85, 0.35);
 
 /// The flight HUD (#200): one full-screen layer, shown while the readout has a flight part.
 #[derive(Component)]
@@ -262,6 +265,8 @@ pub enum FlightPart {
     TapeNumber,
     Thrust(u8),
     Horizon,
+    /// The tilt against the planet's up in degrees, beside the nose.
+    Tilt,
     GFill,
     GMark,
 }
@@ -309,6 +314,7 @@ fn spawn_flight_hud(commands: &mut Commands) {
                 c.spawn((FlightPart::Thrust(i), Node { position_type: PositionType::Absolute, ..default() }, BackgroundColor(FL_FILL)));
             }
             c.spawn((FlightPart::Horizon, Node { position_type: PositionType::Absolute, display: Display::None, ..line(FL_HORIZON_PX, 1.0) }, BackgroundColor(FL_LINE), UiTransform::default()));
+            c.spawn((FlightPart::Tilt, Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(FL_LINE), Node { position_type: PositionType::Absolute, display: Display::None, ..default() }));
         });
 }
 
@@ -528,7 +534,7 @@ pub fn update_flight_visuals(
     mut layer: Query<&mut Visibility, With<FlightLayer>>,
     mut nodes: Query<(&FlightPart, &mut Node)>,
     mut colours: Query<(&FlightPart, &mut BackgroundColor)>,
-    mut texts: Query<(&FlightPart, &mut Text)>,
+    mut texts: Query<(&FlightPart, &mut Text, &mut TextColor)>,
     mut transforms: Query<(&FlightPart, &mut UiTransform)>,
 ) {
     let Ok(mut vis) = layer.single_mut() else { return };
@@ -597,21 +603,42 @@ pub fn update_flight_visuals(
                 }
                 None => n.display = Display::None,
             },
+            FlightPart::Tilt => {
+                n.display = if f.tilt.is_some() { Display::Flex } else { Display::None };
+                n.left = px(nose.x + FL_HORIZON_PX / 2.0 + 10.0);
+                n.top = px(nose.y - 9.0);
+            }
         }
     }
+    // The horizon and the tilt number: green when level, yellow when nearly level.
+    let level_colour = match f.tilt.map(|(_, l)| l) {
+        Some(crate::hud::Level::Level) => FL_LEVEL,
+        Some(crate::hud::Level::Near) => FL_NEAR_LEVEL,
+        _ => FL_LINE,
+    };
     for (part, mut bg) in &mut colours {
         let want = match *part {
             FlightPart::GFill if g.over => FL_OVER,
             FlightPart::GFill | FlightPart::TapeFill | FlightPart::Thrust(_) => FL_FILL,
+            FlightPart::Horizon => level_colour,
             _ => continue,
         };
         if bg.0 != want {
             bg.0 = want;
         }
     }
-    for (part, mut t) in &mut texts {
+    for (part, mut t, mut colour) in &mut texts {
+        if *part == FlightPart::Tilt && colour.0 != level_colour {
+            colour.0 = level_colour;
+        }
         if *part == FlightPart::TapeNumber && **t != *tape.number {
             **t = tape.number.clone();
+        }
+        if *part == FlightPart::Tilt {
+            let want = f.tilt.map_or(String::new(), |(d, _)| format!("{d:.1}°"));
+            if **t != *want {
+                **t = want;
+            }
         }
     }
     for (part, mut tr) in &mut transforms {

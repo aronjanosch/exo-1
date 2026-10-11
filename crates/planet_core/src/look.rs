@@ -9,7 +9,9 @@ use serde::Deserialize;
 /// `Planet::spot`, or `orbit`: then the camera is `height_m` from the centre along `from`,
 /// looking at the centre. On the ground the camera stands `back_m` behind the spot (against its
 /// facing), `height_m` above the ground there, turned by `turn_deg` and pitched by `pitch_deg`
-/// (in orbit `pitch_deg` turns the view up from the centre towards the horizon).
+/// (in orbit `pitch_deg` turns the view up from the centre towards the horizon). An orbit
+/// viewpoint with `radii` stands that many planet radii from the centre instead (#214: the
+/// same picture at 5 and 100 km).
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Viewpoint {
@@ -24,6 +26,8 @@ pub struct Viewpoint {
     pub turn_deg: f64,
     #[serde(default)]
     pub from: Option<[f64; 3]>,
+    #[serde(default)]
+    pub radii: Option<f64>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -158,6 +162,10 @@ struct Px {
     inland: f64,
 }
 
+/// Depth (and height above the water) over which the orbit map's dryness goes from 0.5 to 0 (1),
+/// at the radius the look was tuned on (scaled by `Planet::look_scale`).
+pub const ORBIT_SHORE_M: f64 = 10.0;
+
 impl Planet {
     /// A north-up picture (RGB8, `px` x `px`) of the ground within `radius_m` of `centre`: water
     /// by depth, land in its biome colour shaded by height and slope (#166). Meant for a small
@@ -181,6 +189,53 @@ impl Planet {
             }
         }
         out
+    }
+
+    /// The planet seen from far away (#224): one equirectangular colour map of `width` x
+    /// `width / 2` RGBA8 pixels (sRGB, rows from the north pole down, longitude -180..180) with
+    /// what the terrain would show from orbit: the land's biome ground colour (rock where the
+    /// landform is steep, the cap colour on the heights), under water too, and in alpha how dry
+    /// the point is: 0.5 at a shore, 1 from `ORBIT_SHORE_M` above any water, 0 from as deep below
+    /// (#235). The impostor shader draws the water and its shore per pixel from that, so a coast
+    /// is no stair step of the map's pixels. No sites, no hillshade.
+    pub fn orbit_map(&self, width: usize, threads: usize) -> Vec<u8> {
+        let (w, h) = (width, width / 2);
+        let threads = if threads == 0 { std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) } else { threads };
+        let m = &self.recipe.material;
+        let rows = par_rows(h, threads, |y0, y1| {
+            let mut out = Vec::with_capacity((y1 - y0) * w * 4);
+            for y in y0..y1 {
+                for x in 0..w {
+                    let d = pixel_dir(x, y, w, h);
+                    let face = face_of(d);
+                    let (a, b) = sphere_to_face_ab(face, d);
+                    let (hh, f) = self.height_ab(face, a, b, d);
+                    let lf = self.stamp_height(d).1;
+                    let ha = hh - self.sea;
+                    // How far below the sea or a lake or river the ground is (negative above).
+                    let wet = self.water_level_ab(face, a, b).map_or(-ha, |l| (-ha).max(l - hh));
+                    let dry = (0.5 - wet / (ORBIT_SHORE_M * self.look_scale())).clamp(0.0, 1.0);
+                    let ha = ha.max(0.0);
+                    let c = {
+                        // The two nearest biomes blended by their share (#235), as the terrain
+                        // does at its borders; the snow line in the look's scaled metres (#236).
+                        let pair = self.biome_pair(ha, &f, lf);
+                        let rock = lf.unwrap_or(f.land).clamp(0.0, 1.0) as f32 * 0.5;
+                        let (pa, pb) = (self.palette_ref(pair.lo), self.palette_ref(pair.hi));
+                        let colour = |p: &crate::recipe::Palette| lerp3(p.ground, p.rock, rock * p.strata);
+                        let g = lerp3(colour(pa), colour(pb), pair.hi_share);
+                        let k = self.look_scale();
+                        let cap_share = pa.cap + (pb.cap - pa.cap) * pair.hi_share;
+                        let cap = ((ha - m.cap_height_m as f64 * k) / (m.cap_fade_m as f64 * k).max(1.0)).clamp(0.0, 1.0) as f32 * cap_share;
+                        lerp3(g, m.cap_color, cap)
+                    };
+                    let [r, g, b] = to_u8(c);
+                    out.extend([r, g, b, (dry * 255.0).round() as u8]);
+                }
+            }
+            out
+        });
+        rows.into_iter().flatten().collect()
     }
 
     /// The atlas at `width` x `width / 2` pixels. Sites are white dots on the biome layer.
@@ -265,12 +320,12 @@ impl Planet {
         }
         // Rivers on the water layer, thicker and darker with the catchment; the lakes' deepest
         // points as dots.
-        for rv in &self.rivers {
+        for rv in &self.coarse.rivers {
             let k = (rv.catchment_km2.max(1e-3).log10() / 2.0).clamp(0.0, 1.0);
             let c = lerp3([0.45, 0.85, 1.0], [0.05, 0.30, 0.90], k as f32);
             mark_n(&mut water, w, h, rv.dir, to_u8(c), if k > 0.6 { 1 } else { 0 });
         }
-        for l in &self.lakes {
+        for l in &self.coarse.lakes {
             mark_n(&mut water, w, h, l.deepest, [255, 255, 255], 1);
         }
         // Landforms on the height layer: red, the signature yellow.
@@ -356,15 +411,15 @@ impl Planet {
                 let downstream = |i: usize, steps: usize| {
                     let mut at = i;
                     for _ in 0..steps {
-                        match self.rivers[at].next {
+                        match self.coarse.rivers[at].next {
                             Mouth::River(j) => at = j as usize,
                             _ => break,
                         }
                     }
-                    self.rivers[at].dir
+                    self.coarse.rivers[at].dir
                 };
                 let (i, rv) = self
-                    .rivers
+                    .coarse.rivers
                     .iter()
                     .enumerate()
                     .filter(|(i, rv)| rv.bed_m - self.sea > 8.0 && downstream(*i, 6) != rv.dir)
@@ -384,7 +439,7 @@ impl Planet {
                 Some(Spot { dir: d, facing: (f - d * f.dot(d)).normalized() })
             }
             "lake" => {
-                let l = self.lakes.iter().max_by(|a, b| a.area_m2.total_cmp(&b.area_m2))?;
+                let l = self.coarse.lakes.iter().max_by(|a, b| a.area_m2.total_cmp(&b.area_m2))?;
                 let c = l.deepest;
                 let (e, n) = tangent_frame(c);
                 // The nearest dry shore over eight headings, a metre above the level.

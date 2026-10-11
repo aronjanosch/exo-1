@@ -1,0 +1,17 @@
+{
+  "_comment": "Product buyer (#229), placeholder. Name, taste, numbers and voice are TODO(initiator).",
+  "id": "the_sleepy_guild",
+  "name": "customer.the_sleepy_guild.name",
+  "town": "noodle_town",
+  "at": "noodle_town",
+  "taste": { "wants": ["sleepy", "time_lag"], "picks": 1, "min_quality": 0.3, "amount": [1, 1] },
+  "rhythm_s": [200.0, 300.0],
+  "start": 2.0,
+  "voice": {
+    "order": "customer.the_sleepy_guild.order",
+    "thanks": "customer.the_sleepy_guild.thanks",
+    "grumble": "customer.the_sleepy_guild.grumble",
+    "counter_yes": "customer.the_sleepy_guild.counter_yes",
+    "counter_no": "customer.the_sleepy_guild.counter_no"
+  }
+}

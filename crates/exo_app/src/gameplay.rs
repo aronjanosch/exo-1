@@ -124,7 +124,7 @@ pub struct Gameplay {
     seq: u64,
     next_crate: u64,
     pub pads: Vec<Pad>,
-    pads_for: Option<warp_core::PlanetId>,
+    pub(crate) pads_for: Option<warp_core::PlanetId>,
     queue: Vec<Queued>,
     /// What happened, oldest first (scenario checks).
     pub log: Vec<String>,
@@ -146,6 +146,10 @@ pub struct Gameplay {
     pub seed: u64,
     /// Something happened to a job since the last save: the autosave writes soon (#135).
     pub save_wanted: bool,
+    /// Round 6: traffic, heat, the lab, the family ladder and its shops (`smuggling`).
+    pub smuggling: crate::smuggling::systems::Systems,
+    /// Round 6b: felt feedback (stamps, kicks, bursts) for the window and scenario checks.
+    pub feedback: crate::feedback::Feedback,
 }
 
 /// A giver's counter, opened.
@@ -214,10 +218,11 @@ impl Gameplay {
         if !errors.is_empty() {
             fail(errors);
         }
+        let smuggling = crate::smuggling::systems::Systems::load(&files, &kernel, &text).unwrap_or_else(|e| fail(e));
         let customers = Customers::new(&customer_content, CUSTOMER_SEED);
         let progress = Progress::new(&kernel);
         let jobs = Jobs::default();
-        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(NEW_GAME_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, customers, customer_content, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, tracked: None, briefings: Default::default(), abandon_asked: None, arrow: None, seed: NEW_GAME_SEED, save_wanted: false };
+        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(NEW_GAME_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, customers, customer_content, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, tracked: None, briefings: Default::default(), abandon_asked: None, arrow: None, seed: NEW_GAME_SEED, save_wanted: false, smuggling, feedback: Default::default() };
         g.refresh_offers();
         g
     }
@@ -228,6 +233,7 @@ impl Gameplay {
         KernelState { progress: self.progress.clone(), dedup: self.dedup.clone() }.save(env);
         self.jobs.save(env);
         self.customers.save(env);
+        self.smuggling.save(env);
         GameSave { seed: self.seed }.save(env);
     }
 
@@ -243,6 +249,7 @@ impl Gameplay {
         self.jobs = Jobs::load(env)?.unwrap_or_default();
         self.customers = Customers::load(env)?.unwrap_or_else(|| Customers::new(&self.customer_content, CUSTOMER_SEED));
         self.seed = GameSave::load(env)?.map_or(NEW_GAME_SEED, |g| g.seed);
+        self.smuggling.restore(env)?;
         // The host's next events continue above the saved ones, so none is taken for a repeat.
         self.seq = kernel.dedup.next_seq(HOST).saturating_sub(1);
         self.picker = Picker::new(self.seed ^ self.seq);
@@ -466,8 +473,32 @@ impl Gameplay {
     }
 
     /// Queues a notice for the players.
+    /// A radio line (round 6): the speaker's name from a text key, the line picked from a pool.
+    pub fn say(&mut self, who: &TextKey, pool: &str) {
+        let who = self.text(who);
+        let text = self.picker.pick(&self.text, pool);
+        self.note(format!("radio [{who}] {text}"));
+        let at = self.clock;
+        self.smuggling.radio.push(crate::smuggling::RadioLine { who, text, at });
+    }
+
+    /// A line from a pool (never the same twice in a row), for glue texts.
+    pub fn line(&mut self, pool: &str) -> String {
+        self.picker.pick(&self.text, pool)
+    }
+
+    /// The game clock (s).
+    pub fn clock(&self) -> f64 {
+        self.clock
+    }
+
     pub fn notify(&mut self, n: Notice) {
         self.notices.push(n);
+    }
+
+    /// A notice's text without queueing it (stamps and glue lines).
+    pub fn render(&mut self, n: &Notice) -> String {
+        self.picker.render(&self.text, n)
     }
 
     /// Releases what the queue allows and renders it (a line of the pool, never the same twice).
@@ -608,6 +639,16 @@ pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>
                             customers_core::Outcome::Notice(n) => g.notify(n),
                         }
                     }
+                    // Round 6: traffic, heat, the lab and the family ladder read every world event too.
+                    for o in g.smuggling.apply_world(&g.kernel, &g.progress, &ev) {
+                        match o {
+                            crate::smuggling::systems::Out::Emit(e) => g.push_world(HOST, e),
+                            crate::smuggling::systems::Out::Notice(n) => g.notify(n),
+                            crate::smuggling::systems::Out::Say { who, key } => g.say(&who, key.as_str()),
+                        }
+                    }
+                    // Round 6b: what the player feels besides the text.
+                    crate::feedback::on_world(g, &ev.payload);
                     g.jobs.apply_world(&g.jobs_content, &ev)
                 }
                 Queued::Job(ev) => {
@@ -731,7 +772,18 @@ pub fn update_readout(
         let (bearing_deg, dist_m) = bearing(pos, look, pad.centre, planet.up(pos));
         Some(Arrow { target, stop, bearing_deg, dist_m })
     });
-    gp.arrow = arrow;
+    // Round 6: a clearance points the arrow at the assigned pad; else a tracked buyer's order.
+    let smuggle_target = gp.smuggling.traffic.clearance(HOST).map(|c| c.pad.clone()).or_else(|| {
+        let o = gp.smuggling.tracked_order?;
+        gp.customers.product_orders().find(|(i, _)| *i == o).map(|(_, po)| po.at.clone())
+    });
+    let smuggle_arrow = smuggle_target.and_then(|target| {
+        let (pos, look) = view?;
+        let pad = gp.pad_of(&target)?;
+        let (bearing_deg, dist_m) = bearing(pos, look, pad.centre, planet.up(pos));
+        Some(Arrow { target, stop: jobs_core::map::Stop::Dropoff, bearing_deg, dist_m })
+    });
+    gp.arrow = smuggle_arrow.or(arrow);
     let money = gp.progress.wallet();
     let mut s = format!("{money} {}", gp.text(&TextKey::new("track.wallet.name")));
     let xp = gp.progress.value(&gp.kernel, &TrackId::new("freight_xp"), Some(HOST));
@@ -770,18 +822,27 @@ fn spawn_job_line(mut commands: Commands) {
     commands.spawn((
         JobLine,
         Text::new(""),
-        TextFont { font_size: FontSize::Px(16.0), ..default() },
-        TextColor(Color::srgb(1.0, 0.92, 0.55)),
-        Node { position_type: PositionType::Absolute, top: px(8), right: px(12), ..default() },
+        TextFont { font_size: FontSize::Px(crate::ui_theme::BODY), ..default() },
+        TextColor(crate::ui_theme::GOLD),
+        TextShadow { offset: Vec2::splat(1.5), color: crate::ui_theme::SHADOW },
+        Node { position_type: PositionType::Absolute, top: px(8), right: px(crate::ui_theme::MARGIN), ..default() },
         TextLayout::justify(Justify::Right),
     ));
 }
 
-fn update_job_line(gp: Res<Gameplay>, mut q: Query<&mut Text, With<JobLine>>) {
-    if let Ok(mut t) = q.single_mut()
-        && **t != gp.readout
-    {
-        **t = gp.readout.clone();
+/// The job line; the credits count towards a new total instead of jumping, green going up and
+/// red going down (round 6b).
+fn update_job_line(time: Res<Time>, gp: Res<Gameplay>, mut shown: Local<Option<f64>>, mut q: Query<(&mut Text, &mut TextColor), With<JobLine>>) {
+    let Ok((mut t, mut c)) = q.single_mut() else { return };
+    let money = gp.progress.wallet();
+    let v = shown.get_or_insert(money as f64);
+    let gap = money as f64 - *v;
+    *v = if gap.abs() < 1.0 { money as f64 } else { *v + gap * (time.delta_secs_f64() * 5.0).min(1.0) + gap.signum() };
+    let now = v.round() as i64;
+    c.0 = if now == money { crate::ui_theme::GOLD } else if gap > 0.0 { crate::ui_theme::GOOD } else { crate::ui_theme::BAD };
+    let text = gp.readout.replacen(&format!("{money} "), &format!("{now} "), 1);
+    if **t != text {
+        **t = text;
     }
 }
 
@@ -872,14 +933,23 @@ fn update_panel(mut gp: ResMut<Gameplay>, bindings: Res<crate::controls::Binding
 #[derive(Resource, Default)]
 pub struct PadRings(Option<warp_core::PlanetId>);
 
-/// A plain glowing ring on every pad until places have models (DECISIONS.md, "Places").
-fn update_pad_rings(mut commands: Commands, planet: Res<PlanetRes>, gp: Res<Gameplay>, mut rings: ResMut<PadRings>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>) {
+/// Every pad: the landing-pad model (`props/landing_pad.glb`, a 20 m disc, scaled to the pad) and
+/// a glowing ring at its edge (round 6; the ring alone before).
+fn update_pad_rings(mut commands: Commands, planet: Res<PlanetRes>, gp: Res<Gameplay>, mut rings: ResMut<PadRings>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>, assets: Res<AssetServer>) {
     if rings.0 == Some(planet.id) || gp.pads_for != Some(planet.id) {
         return;
     }
     rings.0 = Some(planet.id);
     let mat = mats.add(StandardMaterial { base_color: Color::srgb(1.0, 0.85, 0.3), emissive: LinearRgba::rgb(4.0, 2.6, 0.6), ..default() });
+    let pad_model = assets.load(GltfAssetLabel::Scene(0).from_asset("props/landing_pad.glb"));
     for p in &gp.pads {
+        // The disc's deck is 0.4 m up; sink it so the deck sits just above the flattened ground.
+        commands.spawn((
+            WorldAssetRoot(pad_model.clone()),
+            Transform { rotation: Quat::from_rotation_arc(Vec3::Y, p.up.as_vec3()), scale: Vec3::splat(p.radius as f32 / 10.0), ..default() },
+            crate::origin::WorldPos(p.centre - p.up * 0.3),
+            crate::terrain::PlanetScene(planet.id),
+        ));
         let mesh = meshes.add(Torus { minor_radius: 0.12, major_radius: p.radius as f32 });
         commands.spawn((
             Mesh3d(mesh),
@@ -933,6 +1003,76 @@ mod tests {
         }
     }
 
+    /// Probe (round 6, run by hand): dry, flat spots for a town near a latitude and longitude.
+    #[test]
+    #[ignore]
+    fn probe_town_spots() {
+        let sys = warp_core::System::from_json(crate::warp::SYSTEM).unwrap();
+        let home = warp_core::PlanetId(0);
+        // Every town pad at 5 km and at 100 km: dry and flat?
+        for radius in [5000.0, 100_000.0] {
+            let mut def = sys.planet(home).clone();
+            def.radius = radius;
+            let c = planet_core::Ceilings::for_radius(radius);
+            def.atmosphere_height = c.atmosphere_height;
+            def.obstruction_radius = c.obstruction_radius;
+            def.arrival_radius = c.arrival_radius;
+            let planet = PlanetRes::load(home, &def);
+            let gp = Gameplay::load(&Crates::default());
+            for l in gp.kernel.locations.values() {
+                let Some(pad) = planet.pgen.pad(&l.record.place, &l.record.pad) else { continue };
+                let s = planet.pgen.sample(pad.up);
+                if s.water_depth > 0.0 || s.slope_deg >= 3.0 {
+                    println!("probe at {radius}: {} wet {:.1} or slope {:.1}", l.record.id, s.water_depth, s.slope_deg);
+                }
+            }
+            println!("probe at {radius}: pads checked");
+        }
+        // Dry spots around a reference place, east/north metres (for `near`).
+        for (radius, place, rings) in [(5000.0, "noodle_town", [500.0, 700.0]), (100_000.0, "drip_rock", [220.0, 300.0])] {
+            let mut def = sys.planet(home).clone();
+            def.radius = radius;
+            let c = planet_core::Ceilings::for_radius(radius);
+            def.atmosphere_height = c.atmosphere_height;
+            def.obstruction_radius = c.obstruction_radius;
+            def.arrival_radius = c.arrival_radius;
+            let planet = PlanetRes::load(home, &def);
+            let d0 = planet.pgen.places.iter().find(|p| p.id == place).unwrap().dir();
+            let (east, north) = planet_core::look::tangent_frame(d0);
+            let mut ok = Vec::new();
+            for m in rings {
+                for k in 0..16 {
+                    let a = k as f64 / 16.0 * std::f64::consts::TAU;
+                    let (e, n) = (m * a.cos(), m * a.sin());
+                    let d = planet_core::look::walk(d0, (east * e + north * n) * (1.0 / m), m, planet.radius);
+                    let s = planet.pgen.sample(d);
+                    if s.water_depth == 0.0 && !planet.pgen.water_within(d, 40.0) && s.slope_deg < 8.0 {
+                        ok.push((e.round(), n.round(), (s.slope_deg * 10.0).round() / 10.0, s.height_above_sea.round()));
+                    }
+                }
+            }
+            println!("probe near {place} at {radius}: {ok:?}");
+        }
+        let planet = PlanetRes::load(home, sys.planet(home));
+        for (lat0, lon0) in [(4.0f64, 40.0f64), (44.0, 140.0)] {
+            let mut ok = Vec::new();
+            for dl in -6..=6 {
+                for dn in -6..=6 {
+                    let (lat, lon) = (lat0 + dl as f64 * 2.0, lon0 + dn as f64 * 2.0);
+                    let (la, lo) = (lat.to_radians(), lon.to_radians());
+                    let d = planet_core::v3(la.cos() * lo.cos(), la.sin(), la.cos() * lo.sin());
+                    let s = planet.pgen.sample(d);
+                    // Dry and flat over the town's 60 m.
+                    if s.water_depth == 0.0 && s.slope_deg < 6.0 && !planet.pgen.water_within(d, 80.0) {
+                        ok.push((lat, lon, s.slope_deg));
+                    }
+                }
+            }
+            ok.sort_by(|a, b| a.2.total_cmp(&b.2));
+            println!("probe near {lat0},{lon0}: {:?}", &ok[..ok.len().min(8)]);
+        }
+    }
+
     /// #167: the family is a giver of the cast but offers nothing in D; the courier office does.
     #[test]
     fn the_family_offers_nothing_yet_and_the_courier_office_does() {
@@ -940,7 +1080,7 @@ mod tests {
         assert!(gp.offers_of(&GiverId::new("small_family")).is_empty());
         assert!(!gp.offers_of(&GiverId::new("courier_office")).is_empty());
         assert_eq!(gp.jobs_content.givers.len(), 4, "courier office, small family, wholesaler, flight school");
-        assert_eq!(gp.customer_content.customers.len(), 3);
+        assert_eq!(gp.customer_content.customers.len(), 9, "three wholesale customers and six buyers with taste (round 6)");
     }
 
     #[test]

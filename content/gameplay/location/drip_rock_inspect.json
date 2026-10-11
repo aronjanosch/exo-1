@@ -1,0 +1,10 @@
+{
+  "id": "drip_rock_inspect",
+  "name": "location.drip_rock_inspect.name",
+  "place": "drip_rock",
+  "pad": "inspect",
+  "tags": [
+    "spaceport",
+    "inspection"
+  ]
+}

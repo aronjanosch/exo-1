@@ -8,7 +8,10 @@ pub mod controls;
 pub mod daynight;
 pub mod dev;
 pub mod env;
+pub mod feedback;
+pub mod feedback_view;
 pub mod flight_events;
+pub mod frame_cost;
 pub mod gameplay;
 pub mod grab;
 pub mod help;
@@ -17,6 +20,7 @@ pub mod hud;
 pub mod interact;
 pub mod look;
 pub mod map;
+pub mod named_material;
 pub mod menu;
 pub mod net;
 pub mod net_live;
@@ -32,10 +36,13 @@ pub mod scenario;
 pub mod settings;
 pub mod sites;
 pub mod sky;
+pub mod smuggling;
 pub mod ship;
 pub mod terrain;
 pub mod terrain_material;
+pub mod town;
 pub mod tuning;
+pub mod ui_theme;
 pub mod view;
 pub mod walker;
 pub mod warp;
@@ -78,6 +85,12 @@ pub struct Options {
     pub no_vsync: bool,
     /// Radius of the first planet in metres (default: `content/system/system.json`).
     pub radius: Option<f64>,
+    /// Start at this place's main pad instead of the pole (round 6: `--start drip_rock`, the
+    /// city's spaceport): the ship parks on the pad, the walker beside it.
+    pub start: Option<String>,
+    /// Atmosphere height of the first planet in metres (default: the ceilings rule for the radius
+    /// with `--radius`, else the file's).
+    pub atmosphere: Option<f64>,
     /// Render-origin shift threshold in metres, 0 = off.
     pub origin_shift: f64,
     /// Scenario reports and screenshots.
@@ -89,6 +102,13 @@ pub struct Options {
     pub distance: Option<f64>,
     /// Headless run paced at 60 physics ticks per wall second (network runs).
     pub realtime: bool,
+    /// `--all-planets`: `--radius`/`--atmosphere` apply to every planet, not only the first
+    /// (`planet-look` of both planets at one size, #214).
+    pub all_planets: bool,
+    /// `--spike-ms=`: frames slower than this print a `spike:` line (#213).
+    pub spike_ms: f64,
+    /// `--mute`: no sound (windowed measurement runs).
+    pub mute: bool,
     pub net: Option<net_live::NetConfig>,
     /// `--perf`: step and frame timings per phase (#19).
     pub perf: Option<perf::PerfOptions>,
@@ -110,12 +130,19 @@ impl Default for Options {
             hidden: false,
             no_vsync: false,
             radius: None,
-            origin_shift: 1000.0,
+            start: None,
+            atmosphere: None,
+            // #214: 4 km keeps f32 render positions within about 0.5 mm and shifts a quarter as
+            // often as 1 km did (each shift touches every mesh instance on the render side).
+            origin_shift: 4000.0,
             out_dir: PathBuf::from("target/scenario"),
             record: None,
             spawn_offset: 0.0,
             distance: None,
             realtime: false,
+            all_planets: false,
+            spike_ms: frame_cost::DEFAULT_THRESHOLD_MS,
+            mute: false,
             net: None,
             perf: None,
             tuning_dir: None,
@@ -140,8 +167,14 @@ impl Options {
                 "--headless" => o.headless = true,
                 "--hidden" => o.hidden = true,
                 "--no-vsync" => o.no_vsync = true,
+                "--realtime" => o.realtime = true,
+                "--all-planets" => o.all_planets = true,
+                "--mute" => o.mute = true,
+                "--spike-ms" => o.spike_ms = v.parse().expect("spike-ms"),
                 "--distance" => o.distance = Some(v.parse().expect("distance")),
                 "--radius" => o.radius = Some(v.parse().expect("radius")),
+                "--start" => o.start = Some(v.to_string()),
+                "--atmosphere" => o.atmosphere = Some(v.parse().expect("atmosphere")),
                 "--origin-shift" => o.origin_shift = v.parse().expect("origin-shift"),
                 "--out" => o.out_dir = PathBuf::from(v),
                 "--record" => o.record = Some(PathBuf::from(v)),
@@ -225,7 +258,7 @@ pub fn build_app(o: &Options) -> App {
         // Each update is exactly one physics tick, independent of wall time.
         app.insert_resource(TimeUpdateStrategy::ManualDuration(TICK));
     } else {
-        app.add_plugins(DefaultPlugins.set(bevy::asset::AssetPlugin { file_path: content_dir(), ..default() }).set(WindowPlugin {
+        app.add_plugins(DefaultPlugins.set(bevy::asset::AssetPlugin { file_path: content_dir(), ..default() }).set(bevy::app::TaskPoolPlugin { task_pool_options: terrain::task_pools() }).set(WindowPlugin {
             primary_window: Some(Window { title: "EXO-1".into(), resolution: (1600u32, 900u32).into(), visible: !o.hidden,
                 present_mode: if o.no_vsync { bevy::window::PresentMode::AutoNoVsync } else { bevy::window::PresentMode::AutoVsync },
                 ..default()
@@ -236,6 +269,10 @@ pub fn build_app(o: &Options) -> App {
     app.insert_resource(Time::<Fixed>::from_duration(TICK));
     app.add_plugins(PhysicsPlugins::default())
         .insert_resource(Gravity(DVec3::ZERO))
+        // The collider trees are tiny; Avian's async optimise task waits behind terrain and scatter
+        // jobs in the compute pool, and the end of the step blocks on it (fixed steps of 20 to 800 ms
+        // on a 100 km planet, #217).
+        .insert_resource(ColliderTreeOptimization { use_async_tasks: false, ..default() })
         .insert_resource(PhysicsTransformConfig { transform_to_position: false, position_to_transform: false, ..default() });
 
     let mut sys = warp_core::System::from_json(warp::SYSTEM).expect("system.json");
@@ -245,14 +282,39 @@ pub fn build_app(o: &Options) -> App {
             Err(e) => panic!("--distance refused: {e}"),
         }
     }
-    // The file wins; --radius only when given (first planet).
-    if let Some(r) = o.radius {
-        sys.planets[0].radius = r;
+    // The file wins; --radius only when given (first planet, or all with --all-planets).
+    // A radius or an atmosphere from the command line brings the ceilings that follow from it
+    // (obstruction and arrival radius, #177) with it, or the warp checks refuse the planet.
+    let n_planets = if o.all_planets { sys.planets.len() } else { 1 };
+    for p in sys.planets.iter_mut().take(n_planets).filter(|_| o.radius.is_some() || o.atmosphere.is_some()) {
+        let r = o.radius.unwrap_or(p.radius);
+        let c = match o.atmosphere {
+            Some(a) => planet_core::Ceilings::with_atmosphere(r, a),
+            None => planet_core::Ceilings::for_radius(r),
+        };
+        println!("ceilings: radius {r} m, atmosphere {:.0} m, tallest terrain {:.0} m, obstruction {:.0} m, arrival {:.0} m", c.atmosphere_height, c.terrain_max, c.obstruction_radius, c.arrival_radius);
+        p.radius = r;
+        p.atmosphere_height = c.atmosphere_height;
+        p.obstruction_radius = c.obstruction_radius;
+        p.arrival_radius = c.arrival_radius;
+        p.terrain_ceiling_m = Some(c.terrain_max);
+        if let Err(e) = p.validate() {
+            panic!("--radius/--atmosphere refused: {e}");
+        }
     }
     let home = warp_core::PlanetId(0);
     let planet = env::PlanetRes::load(home, sys.planet(home));
     println!("planet: radius {} m, sea {:.2} m, bake {:.0} ms", planet.radius, planet.sea, planet.bake_ms);
-    let start = planet.centre + DVec3::Y * planet.surface(DVec3::Y);
+    // The start direction: the pole, or 15 m south of a place's main pad, so the ship (parked 15 m
+    // ahead of the walker) stands on the pad.
+    let start_up = match &o.start {
+        None => DVec3::Y,
+        Some(place) => {
+            let pad = planet.pgen.pad(place, "main").unwrap_or_else(|| panic!("--start: no place '{place}' with a pad 'main' on this planet"));
+            (env::from_v3(pad.up) * planet.radius + DVec3::new(0.0, 0.0, 15.0)).normalize()
+        }
+    };
+    let start = planet.centre + start_up * planet.surface(start_up);
     app.insert_resource(origin::RenderOrigin {
         // Without shifting the origin stays at the world origin.
         origin: if o.origin_shift > 0.0 { start.round() } else { DVec3::ZERO },
@@ -274,6 +336,9 @@ pub fn build_app(o: &Options) -> App {
         app.insert_resource(s).insert_resource(b);
     } else {
         app.init_resource::<settings::Settings>();
+    }
+    if o.mute {
+        app.world_mut().resource_mut::<settings::Settings>().sound = false;
     }
     app.insert_resource(settings::SettingsDir(settings_dir));
     app.insert_resource(SpawnOffset(o.spawn_offset));
@@ -305,9 +370,11 @@ pub fn build_app(o: &Options) -> App {
     }
 
     // Domain plugins. The order between phases is in `phases`; inside a phase each plugin orders its own systems.
+    app.insert_resource(frame_cost::FrameSpikes::with_threshold(o.spike_ms));
+    app.add_plugins(frame_cost::plugin);
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
     app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, avian_crates::plugin, cargo::plugin, hud::plugin, net_live::plugin));
-    app.add_plugins(gameplay::plugin);
+    app.add_plugins((gameplay::plugin, town::plugin, smuggling::glue::plugin));
     // The save (#135) belongs to players: scripted and headless runs keep theirs in the output
     // folder and start new.
     let player_run = o.scenario.is_none() && !o.headless;
@@ -323,8 +390,8 @@ pub fn build_app(o: &Options) -> App {
     }
     let test_crates = o.scenario.is_none() || o.scenario.as_deref() == Some("full");
     app.add_systems(Startup, move |mut commands: Commands, planet: Res<env::PlanetRes>, tuning: Res<tuning::Tuning>, off: Res<SpawnOffset>, crates: Res<cargo::Crates>| {
-        walker::spawn_player(&mut commands, &planet, &tuning.walker, off.0);
-        let ship = ship::spawn_ship(&mut commands, &planet, &tuning, DVec3::Y, off.0);
+        walker::spawn_player_at(&mut commands, &planet, &tuning.walker, start_up, off.0);
+        let ship = ship::spawn_ship(&mut commands, &planet, &tuning, start_up, off.0);
         if test_crates {
             // The first object (#80): a test crate on the cabin floor, behind the seat on the right.
             let t = &crates.0;
@@ -333,7 +400,7 @@ pub fn build_app(o: &Options) -> App {
     });
     if !o.headless {
         app.add_plugins((view::plugin, controls::window_plugin, settings::window_plugin, terrain::plugin, daynight::window_plugin, grab::window_plugin, cargo::window_plugin));
-        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin, help::window_plugin, dev::window_plugin));
+        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, town::window_plugin, named_material::window_plugin, smuggling::hud::window_plugin, feedback_view::window_plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin, help::window_plugin, dev::window_plugin));
         if o.menu() {
             app.add_plugins(menu::plugin);
         }
@@ -341,6 +408,12 @@ pub fn build_app(o: &Options) -> App {
         // #14: the terrain too, headless, to count what a swap leaves behind.
         app.init_asset::<StandardMaterial>().init_asset::<terrain_material::TerrainMaterial>().init_asset::<sky::WaterMaterial>();
         app.add_plugins(terrain::plugin);
+    } else if o.scenario.as_deref() == Some("planet-flight") {
+        // #213: the streaming work headless (terrain, scatter, sites), to measure its main-thread cost.
+        app.init_asset::<StandardMaterial>().init_asset::<terrain_material::TerrainMaterial>().init_asset::<sky::WaterMaterial>();
+        // City pieces of the settlements are glTF scenes (#223).
+        app.init_asset::<bevy::world_serialization::WorldAsset>();
+        app.add_plugins((terrain::plugin, scatter::plugin, sites::plugin));
     }
     app
 }

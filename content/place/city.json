@@ -1,0 +1,10 @@
+{
+  "_comment": "The first city (art/city/city_plan.py, exported to content/city/plan.json), centred here; its west gate faces Drip Rock's spaceport. No edits: buildings stand on the ground below them (round 6). TODO(initiator) place and flattening.",
+  "id": "city",
+  "planet": "hearth",
+  "near": {
+    "place": "drip_rock",
+    "east_m": 263.0,
+    "north_m": -71.0
+  }
+}

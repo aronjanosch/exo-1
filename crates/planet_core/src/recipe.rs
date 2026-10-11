@@ -15,9 +15,25 @@ pub enum Fractal {
 #[serde(deny_unknown_fields)]
 pub struct NoiseSpec {
     pub seed_offset: i32,
+    /// Absolute frequency (per metre). Either this or `wavelength_radii` is given.
+    #[serde(default)]
     pub frequency: f32,
+    /// Wavelength in planet radii (#221): the frequency becomes 1 / (wavelength_radii * radius),
+    /// so the features scale with the planet. Set once by `Recipe::for_planet`.
+    #[serde(default)]
+    pub wavelength_radii: Option<f32>,
     pub fractal: Fractal,
     pub octaves: i32,
+}
+
+impl NoiseSpec {
+    /// The frequency from the wavelength in radii, if one is given: the radii are `length_m` long
+    /// (the planet's radius for the macro fields, #221).
+    pub fn resolve(&mut self, length_m: f64) {
+        if let Some(wl) = self.wavelength_radii {
+            self.frequency = (1.0 / (wl as f64 * length_m)) as f32;
+        }
+    }
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -60,6 +76,9 @@ pub struct MacroSpec {
     pub landform: Landform,
     /// Variants (#68): odd places where this field is high.
     pub weirdness: Weirdness,
+    /// Erosion (#221): how rugged the ground is, 1 rugged .. -1 smooth. Needed by `relief`.
+    #[serde(default)]
+    pub erosion: Option<Elevation>,
 }
 
 /// One of the shared macro fields (#68). All are about -1..1 except temperature (its own scale).
@@ -71,6 +90,10 @@ pub enum FieldName {
     Moisture,
     Landform,
     Weirdness,
+    /// Erosion (#221), see `MacroSpec::erosion`.
+    Erosion,
+    /// Peaks and valleys (#221), derived from weirdness: 1 - |3|W| - 2|, -1..1.
+    Peaks,
 }
 
 /// Piecewise linear map from a field to a value; clamped at both ends.
@@ -121,7 +144,10 @@ pub enum BandScale {
 #[serde(deny_unknown_fields)]
 pub struct Warp {
     pub seed_offset: i32,
+    #[serde(default)]
     pub frequency: f32,
+    #[serde(default)]
+    pub wavelength_radii: Option<f32>,
     pub amplitude: f64,
 }
 #[derive(Deserialize, Clone, Debug)]
@@ -135,6 +161,63 @@ pub struct Band {
     /// Scaled by the shape's stretch or roughness (#68).
     #[serde(default)]
     pub scale: BandScale,
+    /// With `relief` (#221): a detail band, metres scale, kept and multiplied by the flatness.
+    /// The other bands are the old large-scale ground and are dropped when `relief` is given.
+    #[serde(default)]
+    pub detail: bool,
+}
+
+/// The relief of a planet (#221, draft "terrain v2" section 3): the ground from continentalness
+/// (metres), flattened by erosion, plus ridged mountains on the peaks and valleys of weirdness
+/// and gated to land. Each spline gives metres or a factor, linear between points.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Relief {
+    /// Field `elevation` (continentalness) -> metres above the base radius.
+    pub continent: Spline,
+    /// Field `erosion` -> factor 0..1 on the ridges and the detail bands.
+    pub flatness: Spline,
+    /// Field `peaks` -> metres of ridge height.
+    pub ridge: Spline,
+    /// Field `elevation` -> factor 0..1 on the ridges: none in the sea.
+    pub land_gate: Spline,
+    /// The ridged fBm of the mountains: 0..1 on the ridge spline's metres.
+    pub ridge_noise: NoiseSpec,
+    /// Domain warp of the ridge noise (metres).
+    #[serde(default)]
+    pub ridge_warp: Option<Warp>,
+    /// The radius (m) at which the metres above are as written. Other radii scale every metre
+    /// by radius / this (#221): the ground grows with the planet, as the ceilings do.
+    #[serde(default = "default_relief_radius")]
+    pub radius_m: f64,
+    /// Exponent k of the scale: the metres are multiplied by (radius / radius_m)^k (TODO(initiator):
+    /// 1 = linear; 0.5 keeps the 5 km planets near their old relief, see #221).
+    #[serde(default = "default_scale_exponent")]
+    pub scale_exponent: f64,
+    /// Exponent of the lake depth's scale; missing = `scale_exponent` (TODO(initiator): lakes
+    /// and relief may scale differently, see #221).
+    #[serde(default)]
+    pub lake_scale_exponent: Option<f64>,
+}
+
+impl Relief {
+    /// The factor on the metres of the relief and on its wavelengths at this radius (#221).
+    pub fn scale_at(&self, radius: f64) -> f64 {
+        (radius / self.radius_m).powf(self.scale_exponent)
+    }
+
+    /// The factor on the lake depth at this radius (#221).
+    pub fn lake_scale_at(&self, radius: f64) -> f64 {
+        (radius / self.radius_m).powf(self.lake_scale_exponent.unwrap_or(self.scale_exponent))
+    }
+}
+
+fn default_relief_radius() -> f64 {
+    100_000.0
+}
+
+fn default_scale_exponent() -> f64 {
+    1.0
 }
 
 /// A value drawn per placement from [min, max] (or a fixed number).
@@ -205,7 +288,8 @@ pub struct Where {
 pub struct LandformKind {
     pub id: String,
     pub shape: StampShape,
-    pub count: [u32; 2],
+    #[serde(default)]
+    pub count: Option<[u32; 2]>,
     /// No other stamp centre closer than this (the larger of the two kinds' values counts).
     pub min_separation_m: f64,
     #[serde(default, rename = "where")]
@@ -216,6 +300,9 @@ pub struct LandformKind {
     /// The planet's signature landform: placed first, bigger than the global relief.
     #[serde(default)]
     pub signature: bool,
+    /// Expected count range per 100 km2 of surface; when present replaces `count`.
+    #[serde(default)]
+    pub per_100_km2: Option<[f64; 2]>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -266,6 +353,9 @@ pub struct Climate {
     pub landform: Option<Range>,
     #[serde(default)]
     pub weirdness: Option<Range>,
+    /// Field `erosion` (#222): -1..1, the flat ground's field.
+    #[serde(default)]
+    pub erosion: Option<Range>,
     /// Metres; divided by `biome_space.height_scale_m` before it counts.
     #[serde(default)]
     pub height_above_sea: Option<Range>,
@@ -274,8 +364,27 @@ pub struct Climate {
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct BiomeSpace {
-    /// Metres of height above sea that weigh like one unit of a field.
+    /// Metres of height above sea that weigh like one unit of a field, at `tuned_radius_m`.
     pub height_scale_m: f64,
+    /// The radius (m) at which `height_scale_m` and the temperature lapse were tuned (#222). At
+    /// other radii both scale with the relief's factor (`Relief::scale_at`), so the same climate
+    /// pattern sits on the taller ground of a bigger planet.
+    #[serde(default = "default_tuned_radius_m")]
+    pub tuned_radius_m: f64,
+    /// Width of the border band between two biomes (#235), in the parameter space's squared
+    /// distance: where the nearest two rows are closer than this, the ground colour blends
+    /// towards the second and the shader draws a frayed border. 0 = hard borders.
+    /// TODO(initiator): value.
+    #[serde(default = "default_biome_blend")]
+    pub blend: f64,
+}
+
+fn default_tuned_radius_m() -> f64 {
+    5000.0
+}
+
+fn default_biome_blend() -> f64 {
+    0.004
 }
 
 /// Terrain colours of a biome row (#66): flat ground, steep rock, and how much of the planet's
@@ -329,6 +438,28 @@ pub struct Sky {
     pub haze_color: [f32; 3],
     /// Exponential distance fog density per metre at the ground (fades out with height).
     pub haze_density: f32,
+    /// A cloud layer (#224); none when absent.
+    #[serde(default)]
+    pub clouds: Option<Clouds>,
+}
+
+/// A cheap cloud layer (#224): a shell around the planet with noise in the fragment shader.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Clouds {
+    /// Height of the shell as a share of the atmosphere height (so it scales with the planet).
+    pub altitude: f32,
+    /// Share of the sky that is cloud (0..1).
+    pub coverage: f32,
+    /// Size of the largest cloud patches in metres.
+    pub scale_m: f32,
+    pub color: [f32; 3],
+    /// How fast the pattern drifts, in metres per second at the shell.
+    pub drift_m_s: f32,
+    /// No clouds on a planet smaller than this (m): the shell would be one soft wall over a 5 km
+    /// planet. 0: on every planet.
+    #[serde(default)]
+    pub min_radius_m: f64,
 }
 
 /// Water of a planet (#67): surface colour and opacity, the ground tint below it by depth
@@ -636,6 +767,8 @@ pub enum SiteCategory {
     Find,
     /// A hand-placed place (`content/place/`), not from a kind.
     Place,
+    /// A small town on a plain: a level plot, a landing pad and city pieces (#223).
+    Settlement,
 }
 
 /// A kind of site (#70). Placeholder kinds until the initiator picks (ids, no fiction names).
@@ -644,7 +777,8 @@ pub enum SiteCategory {
 pub struct SiteKind {
     pub id: String,
     pub category: SiteCategory,
-    pub count: [u32; 2],
+    #[serde(default)]
+    pub count: Option<[u32; 2]>,
     /// Ordinary scatter stays out of this radius (m).
     pub footprint_m: f64,
     /// To sites of the same kind, and to every site (the larger value of the two kinds counts).
@@ -661,9 +795,23 @@ pub struct SiteKind {
     /// one farthest from all sites so far.
     #[serde(default)]
     pub prefer_high: bool,
+    /// The ground must be a plain (#223): see `PlainRule`. Missing = no requirement.
+    #[serde(default)]
+    pub plain: Option<PlainRule>,
     #[serde(default)]
     pub edits: Vec<Edit>,
     pub kit: String,
+    /// Expected count range per 100 km2 of surface; when present replaces `count`.
+    #[serde(default)]
+    pub per_100_km2: Option<[f64; 2]>,
+}
+/// A plain (#223): the noise ground (before edits) rises by at most `max_rise_m` across the span
+/// of `2 * radius_m` through the site's centre, in each of its two tangent directions.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct PlainRule {
+    pub radius_m: f64,
+    pub max_rise_m: f64,
 }
 fn slope_flat() -> [f64; 2] {
     [0.0, 20.0]
@@ -703,6 +851,9 @@ pub struct Recipe {
     pub seed: i32,
     #[serde(skip)]
     pub radius: f64,
+    /// Hash of the recipe's JSON text: part of the coarse layer's cache key.
+    #[serde(skip)]
+    pub source_hash: u64,
     #[serde(rename = "macro")]
     pub macro_: MacroSpec,
     pub bands: Vec<Band>,
@@ -716,6 +867,9 @@ pub struct Recipe {
     /// Rivers and lakes (#72); missing = none.
     #[serde(default)]
     pub drainage: Option<DrainageSpec>,
+    /// The relief (#221); missing = the old shape and large bands.
+    #[serde(default)]
+    pub relief: Option<Relief>,
     pub biomes: Vec<BiomeRow>,
     pub scatter: ScatterSpec,
     pub sites: SiteRule,
@@ -727,11 +881,63 @@ impl Recipe {
         let mut r = Recipe::from_json(s)?;
         r.seed = seed;
         r.radius = radius;
+        r.resolve_wavelengths(radius);
         Ok(r)
     }
 
+    /// Relative wavelengths become frequencies at this radius (#221).
+    /// Relative wavelengths become frequencies at this radius (#221). The relief is self-similar:
+    /// its wavelengths and its detail bands scale with the same factor s as its metres (so the
+    /// slopes do not change with the radius); the macro fields stay relative to the radius.
+    fn resolve_wavelengths(&mut self, radius: f64) {
+        let (s, lake_s) = match &self.relief {
+            Some(rl) => (rl.scale_at(radius), rl.lake_scale_at(radius)),
+            None => (1.0, 1.0),
+        };
+        if let Some(d) = &mut self.drainage {
+            if self.relief.is_some() {
+                d.lake_min_depth_m *= lake_s;
+            }
+        }
+        let m = &mut self.macro_;
+        let mut specs: Vec<&mut NoiseSpec> = vec![&mut m.elevation.noise, &mut m.moisture.noise, &mut m.temperature.noise, &mut m.landform.noise, &mut m.weirdness.noise];
+        if let Some(e) = &mut m.erosion {
+            specs.push(&mut e.noise);
+        }
+        for s in specs {
+            s.resolve(radius);
+        }
+        let relief = self.relief.is_some();
+        for b in &mut self.bands {
+            b.noise.resolve(radius);
+            if let Some(w) = b.warp.as_mut() {
+                if let Some(wl) = w.wavelength_radii {
+                    w.frequency = (1.0 / (wl as f64 * radius)) as f32;
+                }
+            }
+            // A detail band under the relief: the same self-similar scale as the relief.
+            if relief && b.detail {
+                b.noise.frequency /= s as f32;
+                b.amplitude *= s;
+                if let Some(w) = b.warp.as_mut() {
+                    w.frequency /= s as f32;
+                    w.amplitude *= s;
+                }
+            }
+        }
+        if let Some(rl) = &mut self.relief {
+            rl.ridge_noise.resolve(rl.radius_m * s);
+            if let Some(w) = rl.ridge_warp.as_mut() {
+                if let Some(wl) = w.wavelength_radii {
+                    w.frequency = (1.0 / (wl as f64 * rl.radius_m * s)) as f32;
+                }
+            }
+        }
+    }
+
     pub fn from_json(s: &str) -> Result<Recipe, String> {
-        let r: Recipe = serde_json::from_str(s).map_err(|e| e.to_string())?;
+        let mut r: Recipe = serde_json::from_str(s).map_err(|e| e.to_string())?;
+        r.source_hash = crate::coarse::fnv(s.as_bytes(), crate::coarse::FNV_START);
         if r.biomes.is_empty() {
             return Err("at least one biome row".into());
         }
@@ -751,8 +957,16 @@ impl Recipe {
             if !r.sites.kits.contains_key(&k.kit) {
                 return Err(format!("site kind {}: kit '{}' is not defined", k.id, k.kit));
             }
-            if k.count[0] > k.count[1] {
-                return Err(format!("site kind {}: count min above max", k.id));
+            if let Some([c0, c1]) = k.count {
+                if c0 > c1 {
+                    return Err(format!("site kind {}: count min above max", k.id));
+                }
+            }
+            if k.per_100_km2.is_some() && k.count.is_some() {
+                return Err(format!("site kind {}: cannot have both count and per_100_km2", k.id));
+            }
+            if k.per_100_km2.is_none() && k.count.is_none() {
+                return Err(format!("site kind {}: must have either count or per_100_km2", k.id));
             }
             for e in &k.edits {
                 if let Edit::Flatten { radius_m: None, half_extent_m: None, .. } = e {
@@ -764,8 +978,16 @@ impl Recipe {
             return Err("landforms: at most one signature landform".into());
         }
         for k in &r.landforms.kinds {
-            if k.count[0] > k.count[1] {
-                return Err(format!("landform {}: count min above max", k.id));
+            if let Some([c0, c1]) = k.count {
+                if c0 > c1 {
+                    return Err(format!("landform {}: count min above max", k.id));
+                }
+            }
+            if k.per_100_km2.is_some() && k.count.is_some() {
+                return Err(format!("landform {}: cannot have both count and per_100_km2", k.id));
+            }
+            if k.per_100_km2.is_none() && k.count.is_none() {
+                return Err(format!("landform {}: must have either count or per_100_km2", k.id));
             }
         }
         if r.material.strata_colors.is_empty() || r.material.strata_colors.len() > 4 {
@@ -773,6 +995,25 @@ impl Recipe {
         }
         if r.macro_.resolution < 8 {
             return Err("macro resolution too small".into());
+        }
+        let mut noises: Vec<(&str, &NoiseSpec)> = vec![("macro elevation", &r.macro_.elevation.noise), ("macro moisture", &r.macro_.moisture.noise), ("macro temperature", &r.macro_.temperature.noise), ("macro landform", &r.macro_.landform.noise), ("macro weirdness", &r.macro_.weirdness.noise)];
+        for b in &r.bands {
+            noises.push((&b.name, &b.noise));
+        }
+        for (what, n) in &noises {
+            if n.frequency <= 0.0 && n.wavelength_radii.is_none() {
+                return Err(format!("{what}: a frequency or a wavelength_radii"));
+            }
+        }
+        if let Some(rl) = &r.relief {
+            if r.macro_.erosion.is_none() {
+                return Err("relief needs macro.erosion".into());
+            }
+            for (name, sp) in [("continent", &rl.continent), ("flatness", &rl.flatness), ("ridge", &rl.ridge), ("land_gate", &rl.land_gate)] {
+                if sp.points.len() < 2 || sp.points.windows(2).any(|w| w[1][0] <= w[0][0]) {
+                    return Err(format!("relief.{name}: at least two points with rising x"));
+                }
+            }
         }
         if let Some(d) = &r.drainage {
             if d.river_min_catchment_km2 <= 0.0 {
@@ -790,6 +1031,11 @@ impl Recipe {
 
     fn check_scatter(&self) -> Result<(), String> {
         let sc = &self.scatter;
+        for (k, m) in &sc.masks {
+            if m.noise.frequency <= 0.0 || m.noise.wavelength_radii.is_some() {
+                return Err(format!("scatter mask {k}: an absolute frequency above 0 (wavelength_radii is for the terrain)"));
+            }
+        }
         let mut ids: Vec<&str> = Vec::new();
         for g in &sc.groups {
             ids.push(&g.id);

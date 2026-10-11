@@ -1,0 +1,1 @@
+{ "_comment": "Free on the Partner rise. A seat at the table (TODO(initiator): what it grants).", "id": "family_seat", "name": "unlock.family_seat.name", "price": 0, "grants": ["family_seat"] }

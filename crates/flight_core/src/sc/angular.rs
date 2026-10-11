@@ -16,6 +16,8 @@
 //! 6. G-safe (`Modes::g_safe`, coupled): pitch and yaw scale so rate x velocity stays inside the
 //!    G limit per direction (own copy of the values).
 //! 7. Landing mode: the rates times `landing_rate_share` near the ground.
+//! 8. Brake to level (`Env::level`, X held while hovering): pitch and roll turn the ship's up onto
+//!    the planet's up, at `brake_level_gain` times the angle, unless the pilot steers that axis.
 //!
 //! All values are TODO(initiator) (`content/tuning/sc_angular.json`).
 use super::modes::Modes;
@@ -62,6 +64,10 @@ pub struct AngularTuning {
     pub landing_off_above: f64,
     /// g per direction of the G-safe turn cap (the centripetal push of a turn plus the gravity hold).
     pub g_limit: Dirs,
+    /// m/s: braking below this speed (hovering) also levels the ship against the planet's up.
+    pub brake_level_below: f64,
+    /// 1/s: the levelling turn rate per radian of tilt (inside the rates).
+    pub brake_level_gain: f64,
 }
 
 impl AngularTuning {
@@ -91,6 +97,12 @@ impl AngularTuning {
         if !(self.landing_full_below >= 0.0 && self.landing_off_above > self.landing_full_below && self.landing_off_above.is_finite()) {
             return Err(format!("landing band {} to {} out of range", self.landing_full_below, self.landing_off_above));
         }
+        if !(self.brake_level_below >= 0.0 && self.brake_level_below.is_finite()) {
+            return Err(format!("brake_level_below {} out of range", self.brake_level_below));
+        }
+        if !(self.brake_level_gain > 0.0 && self.brake_level_gain.is_finite()) {
+            return Err(format!("brake_level_gain {} out of range", self.brake_level_gain));
+        }
         self.g_limit.validate("g_limit")
     }
 }
@@ -110,6 +122,8 @@ impl Default for AngularTuning {
             landing_full_below: 5.0,
             landing_off_above: 40.0,
             g_limit: Dirs { forward: 8.0, backward: 6.0, left: 4.0, right: 4.0, up: 6.0, down: 3.0 },
+            brake_level_below: 3.0,
+            brake_level_gain: 2.0,
         }
     }
 }
@@ -128,6 +142,8 @@ pub struct Env {
     /// rad/s², ship space: what the air turns that the flight computer holds against
     /// (`AirOut::angular_hold`).
     pub air_hold: DVec3,
+    /// The brake is held while hovering: level the ship (item 8).
+    pub level: bool,
 }
 
 /// The angular stage's memory: per pitch and yaw the acceleration the spring asked last step (the
@@ -164,6 +180,12 @@ fn pitch_yaw_axis(reversing: &mut f64, accel: &mut f64, spin: f64, target: f64, 
         *reversing = spin.signum();
         *accel = -*reversing * share * box_;
     } else {
+        // A reversal that just crossed zero hands over to the spring from rest: its constant
+        // deceleration is not the spring's state, and kept, it shoots a small target several
+        // times over (#239).
+        if *reversing != 0.0 {
+            *accel = 0.0;
+        }
         *reversing = 0.0;
         let a = *accel + dt * (wn * wn * (target - spin) - 2.0 * zeta * wn * *accel);
         *accel = a.clamp(-box_, box_);
@@ -207,6 +229,24 @@ pub fn step(s: &mut AngularState, f: &StepState, input: &FlightInput, m: &Modes,
     let norm = (req / rates).length();
     if norm > 1.0 {
         req /= norm;
+    }
+
+    // 8. Brake to level: the turn that brings the ship's up onto the planet's up, on the axes the
+    // pilot leaves alone.
+    if e.level {
+        let up = f.inv * f.up;
+        let axis = DVec3::new(up.z, 0.0, -up.x);
+        let n = axis.length();
+        if n > 1e-9 {
+            let angle = up.y.clamp(-1.0, 1.0).acos();
+            let turn = axis / n * (t.brake_level_gain * angle);
+            if input.turn.x == 0.0 && input.mouse.y == 0.0 {
+                req.x = turn.x.clamp(-rates.x, rates.x);
+            }
+            if input.roll == 0.0 {
+                req.z = turn.z.clamp(-rates.z, rates.z);
+            }
+        }
     }
 
     // 6. G-safe turn cap: rate x velocity (the centripetal push of a coupled turn) plus the gravity

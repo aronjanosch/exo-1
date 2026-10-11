@@ -205,6 +205,10 @@ pub fn deliver_steps(s: &mut Vec<Step>) {
     }));
     s.push(wait(4.0));
     s.push(Box::new(|w, c| {
+        // Dropped crates settle at their own pace (slower on a busy machine): wait for the job.
+        if job_state(w, "first_haul") != Some(JobState::Completed) && c.t < 8.0 {
+            return false;
+        }
         let paid = gp(w).progress.wallet() as f64 - c.v["wallet1"];
         check(c, job_state(w, "first_haul") == Some(JobState::Completed) && paid > 0.0 && paid < 300.0,
             format!("deliver: damaged crates still complete the job but pay less (paid {paid} of 300)"));

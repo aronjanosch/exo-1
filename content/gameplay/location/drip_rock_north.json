@@ -1,0 +1,9 @@
+{
+  "id": "drip_rock_north",
+  "name": "location.drip_rock_north.name",
+  "place": "drip_rock",
+  "pad": "north",
+  "tags": [
+    "spaceport"
+  ]
+}

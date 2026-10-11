@@ -81,7 +81,11 @@ fn water_is_blue_in_a_local_map_and_land_is_not() {
     let a = p.atlas(128, 0);
     let _ = a;
     let wet = (0..200).map(|i| planet_core::look::pixel_dir((i * 7) % 128, 5 + (i * 3) % 50, 128, 64)).find(|d| p.sample(*d).water_depth > 1.0).expect("water somewhere");
-    let dry = (0..200).map(|i| planet_core::look::pixel_dir((i * 11) % 128, 5 + (i * 5) % 50, 128, 64)).find(|d| p.sample(*d).water_depth == 0.0 && p.sample(*d).height_above_sea > 20.0).expect("dry land somewhere");
+    // Not the violet glass row (#222): its ground is purple by design, so the land check needs other land.
+    let dry = (0..200).map(|i| planet_core::look::pixel_dir((i * 11) % 128, 5 + (i * 5) % 50, 128, 64)).find(|d| {
+        let s = p.sample(*d);
+        s.water_depth == 0.0 && s.height_above_sea > 20.0 && s.biome != 7
+    }).expect("dry land somewhere");
     let px = |d| {
         let img = p.local_map(d, 50.0, 8);
         let k = (4 * 8 + 4) * 3;
@@ -91,4 +95,35 @@ fn water_is_blue_in_a_local_map_and_land_is_not() {
     let l = px(dry);
     assert!(w[2] > w[0] && w[2] > w[1], "water is blue-ish: {w:?}");
     assert!(!(l[2] > l[0] && l[2] > l[1] + 20), "land is not blue: {l:?}");
+}
+
+#[test]
+fn orbit_map_has_its_size_and_its_dryness_marks_the_sea() {
+    // #235: the map holds the land colour everywhere and in alpha how dry the point is (0.5 at a
+    // shore); the impostor shader draws the water from it.
+    let p = hearth();
+    let m = p.orbit_map(128, 0);
+    assert_eq!(m.len(), 128 * 64 * 4);
+    let (mut sea_wet, mut land_dry, mut ns, mut nl) = (0, 0, 0, 0);
+    for y in 0..64 {
+        for x in 0..128 {
+            let d = planet_core::look::pixel_dir(x, y, 128, 64);
+            let face = face_of(d);
+            let (a, b) = sphere_to_face_ab(face, d);
+            let (hh, _) = p.height_ab(face, a, b, d);
+            let alpha = m[(y * 128 + x) * 4 + 3];
+            // A metre below the sea is wet; land that high above any water is dry.
+            let wet_at = planet_core::look::ORBIT_SHORE_M * p.look_scale();
+            if hh - p.sea < -wet_at {
+                ns += 1;
+                sea_wet += (alpha == 0) as usize;
+            } else if hh - p.sea > wet_at && p.water_level_ab(face, a, b).is_none_or(|l| hh - l > wet_at) {
+                nl += 1;
+                land_dry += (alpha == 255) as usize;
+            }
+        }
+    }
+    assert!(ns > 0 && nl > 0, "{ns} sea and {nl} land pixels");
+    assert_eq!(sea_wet, ns, "deep sea is fully wet");
+    assert_eq!(land_dry, nl, "land well above any water is fully dry");
 }

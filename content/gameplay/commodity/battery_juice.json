@@ -1,0 +1,8 @@
+{
+  "_comment": "Invented legal ingredient (#228). Price and crate size are TODO(initiator) starting values.",
+  "id": "battery_juice",
+  "name": "commodity.battery_juice.name",
+  "base_price": 35,
+  "crate_size": "small",
+  "tags": ["ingredient"]
+}

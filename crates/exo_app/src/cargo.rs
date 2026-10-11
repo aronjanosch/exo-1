@@ -21,7 +21,7 @@ use walker_core::{Frame, Hit};
 /// Window only: crate and lock plate visuals. `add_*` before `update_*` through the sync point.
 pub fn window_plugin(app: &mut App) {
     use crate::phases::Frame;
-    app.add_systems(Update, (add_crate_visuals, update_crate_visuals).chain().in_set(Frame::Sync));
+    app.add_systems(Update, (add_crate_visuals, update_crate_visuals, tint_bands).chain().in_set(Frame::Sync));
     app.add_systems(Update, (add_lock_plates, update_lock_plates).chain().in_set(Frame::Sync));
 }
 
@@ -488,11 +488,57 @@ pub fn crate_world(c: &Crate, ship_frame: &Frame) -> (DVec3, DQuat) {
 /// Colour of each crate size: loud, so a crate reads from across a landing pad.
 const CRATE_COLOURS: [(f32, f32, f32); 3] = [(0.95, 0.8, 0.15), (0.2, 0.75, 0.65), (0.6, 0.3, 0.85)];
 
-pub fn add_crate_visuals(mut commands: Commands, q: Query<(Entity, &Crate), Added<Crate>>, table: Res<Crates>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
-    for (e, c) in &q {
+/// A stock crate's model: file, and its box in glTF metres (min, max; y up, origin at the bottom).
+const PRODUCT_MODEL: (&str, [f32; 3], [f32; 3]) = ("smuggle/crate_product.glb", [-0.52, 0.0, -0.52], [0.52, 1.0, 0.56]);
+const BASE_MODEL: (&str, [f32; 3], [f32; 3]) = ("smuggle/crate_base.glb", [-0.53, 0.0, -0.53], [0.53, 1.0, 0.65]);
+const INGREDIENT_MODEL: (&str, [f32; 3], [f32; 3]) = ("smuggle/crate_ingredient.glb", [-0.5, 0.0, -0.5], [0.51, 1.55, 0.55]);
+
+/// The transform that fits a model's glTF box into a crate of `size` (full extents), its centre on
+/// the crate's centre.
+pub fn model_fit(size: Vec3, min: [f32; 3], max: [f32; 3]) -> Transform {
+    let (min, max) = (Vec3::from(min), Vec3::from(max));
+    let k = size / (max - min);
+    let centre = (min + max) * 0.5;
+    Transform { translation: -centre * k, scale: k, ..default() }
+}
+
+/// A product crate's band takes the product's colour once its model is in (`tint_bands`).
+#[derive(Component)]
+pub struct BandTint(pub Color);
+
+#[derive(Component)]
+struct Tinted;
+
+pub fn add_crate_visuals(
+    mut commands: Commands,
+    q: Query<(Entity, &Crate, Option<&crate::smuggling::glue::Stock>), Added<Crate>>,
+    table: Res<Crates>,
+    gp: Res<crate::gameplay::Gameplay>,
+    assets: Res<AssetServer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for (e, c, stock) in &q {
         let s = &table.0.sizes[c.size];
         let (r, g, b) = CRATE_COLOURS[c.size % CRATE_COLOURS.len()];
         let size = Vec3::new(s.extents[0] as f32, s.extents[1] as f32, s.extents[2] as f32);
+        if let Some(stock) = stock {
+            // Stock crates are the economy's models: a product (band tinted by its effects), a
+            // product base (barrel), or an ingredient.
+            let (model, names, tint) = match &stock.product {
+                Some(p) => (PRODUCT_MODEL, &["band"][..], Some(crate::smuggling::glue::mix_colour(p.effects.iter().map(|x| x.as_str())))),
+                None if gp.smuggling.lab_c.bases.contains_key(&stock.commodity) => (BASE_MODEL, &[][..], None),
+                None => (INGREDIENT_MODEL, &[][..], None),
+            };
+            let (path, min, max) = model;
+            commands.entity(e).insert(crate::origin::WorldPose::default()).with_children(|p| {
+                let mut child = p.spawn((WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset(path))), model_fit(size, min, max), crate::named_material::WantMaterials(names)));
+                if let Some(tint) = tint {
+                    child.insert(BandTint(tint));
+                }
+            });
+            continue;
+        }
         let body = materials.add(StandardMaterial { base_color: Color::srgb(r, g, b), perceptual_roughness: 0.9, ..default() });
         let band = materials.add(StandardMaterial { base_color: Color::srgb(r * 0.35, g * 0.35, b * 0.35), perceptual_roughness: 0.9, ..default() });
         commands.entity(e).insert((Mesh3d(meshes.add(Cuboid::from_size(size))), MeshMaterial3d(body), crate::origin::WorldPose::default())).with_children(|p| {
@@ -501,6 +547,18 @@ pub fn add_crate_visuals(mut commands: Commands, q: Query<(Entity, &Crate), Adde
                 p.spawn((Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(size.x * 0.08, size.y * 1.02, size.z * 1.02)))), MeshMaterial3d(band.clone()), Transform::from_xyz(x * size.x, 0.0, 0.0)));
             }
         });
+    }
+}
+
+/// A product crate's band takes its product's colour: base and emissive, once, when its model is in.
+fn tint_bands(mut commands: Commands, mut mats: ResMut<Assets<StandardMaterial>>, q: Query<(Entity, &BandTint, &crate::named_material::NamedMaterials), Without<Tinted>>) {
+    for (e, tint, named) in &q {
+        let Some(h) = named.0.get("band") else { continue };
+        if let Some(mut m) = mats.get_mut(h) {
+            m.base_color = tint.0;
+            m.emissive = tint.0.to_linear() * 1.5;
+        }
+        commands.entity(e).insert(Tinted);
     }
 }
 

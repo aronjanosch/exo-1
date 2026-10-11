@@ -1,0 +1,7 @@
+{
+  "_comment": "Placeholder product base (#228): no start effects. max_effects and crates_out are TODO(initiator).",
+  "id": "blorp_paste",
+  "effects": [],
+  "max_effects": 6,
+  "crates_out": 2
+}

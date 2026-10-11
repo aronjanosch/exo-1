@@ -1,0 +1,6 @@
+{
+  "_comment": "Placeholder ingredient (#228). The effect and the transforms are TODO(initiator).",
+  "id": "pickle_brine",
+  "adds": "sticky_fingers",
+  "transforms": [{ "from": "tingly", "to": "loud_burps" }]
+}

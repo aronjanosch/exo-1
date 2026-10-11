@@ -8,12 +8,10 @@
   "unlock.bent_spoon_permit.name": "Bent Spoon landing permit",
   "job.first_haul.title": "First haul",
   "job.first_haul.brief": "Three crates of fizzy mud for Bent Spoon. They fizz less if you don't drop them.",
-
   "track.standing_courier_office.name": "standing with Dinglepost Couriers",
   "track.standing_small_family.name": "standing with the Gribbles",
   "job.family_errand.title": "A small favour",
   "job.family_errand.brief": "Two crates of fizzy mud, no questions.",
-
   "commodity.parcel.name": "wobbly parcel",
   "location.lint_trap.name": "Lint Trap",
   "location.noodle_post.name": "Noodle Post",
@@ -29,14 +27,12 @@
     "Wobbly parcels hate being late and being dropped, in that order.",
     "Nobody knows what is in it. That is the charm."
   ],
-
   "commodity.sock_dust.name": "sock dust",
   "commodity.grumble_jelly.name": "grumble jelly",
   "location.slosh_wholesale.name": "Slosh & Daughter Wholesale",
   "track.standing_wholesaler.name": "standing with Slosh & Daughter",
   "job.customer_order.title": "A customer's order",
   "job.customer_order.brief": "Goods from the wholesaler for a customer who is waiting.",
-
   "giver.wholesaler.name": "Slosh & Daughter Wholesale",
   "giver.wholesaler.greet.first": [
     "Wholesale, retail, and everything in between. Mostly in between.",
@@ -53,10 +49,21 @@
     "A customer called. Several times. Loudly.",
     "Let us make this one go better. For the jelly's sake."
   ],
-  "giver.wholesaler.intro": ["Orders are up on the board.", "Somebody wants something.", "Customers, customers, customers."],
-  "giver.wholesaler.reason": ["Somebody is waiting for this.", "Somebody paid in advance. Mostly.", "It is on the house. The house disagrees."],
-  "giver.wholesaler.signoff": ["Do not shake it.", "Bring the empties back. Do not bring the empties back.", "Mind the grumbling."],
-
+  "giver.wholesaler.intro": [
+    "Orders are up on the board.",
+    "Somebody wants something.",
+    "Customers, customers, customers."
+  ],
+  "giver.wholesaler.reason": [
+    "Somebody is waiting for this.",
+    "Somebody paid in advance. Mostly.",
+    "It is on the house. The house disagrees."
+  ],
+  "giver.wholesaler.signoff": [
+    "Do not shake it.",
+    "Bring the empties back. Do not bring the empties back.",
+    "Mind the grumbling."
+  ],
   "customer.mabel_snood.name": "Mabel Snood",
   "customer.mabel_snood.order_title": "Order for Mabel Snood",
   "customer.mabel_snood.order": [
@@ -108,19 +115,179 @@
     "The Moss Committee is disappointed, formally.",
     "The Moss Committee will table this. Loudly."
   ],
+  "customer.aunt_brisket.name": "Aunt Brisket",
+  "customer.aunt_brisket.order_title": "Order for Aunt Brisket",
+  "customer.aunt_brisket.order": [
+    "Aunt Brisket wants something giggly for the fête. Do not ask.",
+    "Aunt Brisket: the loud ones, please, the neighbours are asleep.",
+    "Aunt Brisket is hosting again and needs you to be funny about it."
+  ],
+  "customer.aunt_brisket.thanks": [
+    "Aunt Brisket pinches your cheek and calls you a good egg.",
+    "Aunt Brisket: this will do nicely, dear.",
+    "Aunt Brisket hums the whole way out the door."
+  ],
+  "customer.aunt_brisket.grumble": [
+    "Aunt Brisket: it burps at the wrong moments. I am disappointed, dear.",
+    "Aunt Brisket hands it back to you, slightly sticky.",
+    "Aunt Brisket: the neighbours will hear about this."
+  ],
+  "customer.aunt_brisket.counter_yes": [
+    "Aunt Brisket: a little extra for a good cause? Fine. Fine.",
+    "Aunt Brisket: you drive a hard bargain, dear. Here.",
+    "Aunt Brisket says yes and then asks for a receipt."
+  ],
+  "customer.aunt_brisket.counter_no": [
+    "Aunt Brisket: no, dear. The price is the price.",
+    "Aunt Brisket: I have a sister who sells it cheaper.",
+    "Aunt Brisket: we will say no and never mention it."
+  ],
+  "customer.dr_fennel_obbs.name": "Dr. Fennel Obbs",
+  "customer.dr_fennel_obbs.order_title": "Order for Dr. Fennel Obbs",
+  "customer.dr_fennel_obbs.order": [
+    "Dr. Fennel Obbs requires two floaty tonics, one tingle and a glow.",
+    "Dr. Fennel Obbs: the study needs a mix with two of the three.",
+    "Dr. Fennel Obbs has a theory. The theory needs crates."
+  ],
+  "customer.dr_fennel_obbs.thanks": [
+    "Dr. Fennel Obbs: the results are promising. Promising!",
+    "Dr. Fennel Obbs writes a note on a napkin. It says thanks, probably.",
+    "Dr. Fennel Obbs: a clean sample. My colleagues will be jealous."
+  ],
+  "customer.dr_fennel_obbs.grumble": [
+    "Dr. Fennel Obbs: the controls were not controlled by this.",
+    "Dr. Fennel Obbs: the samples are on the floor, sadly.",
+    "Dr. Fennel Obbs writes you up in the journal of complaints."
+  ],
+  "customer.dr_fennel_obbs.counter_yes": [
+    "Dr. Fennel Obbs: the study has a budget for this. Barely.",
+    "Dr. Fennel Obbs: fine, the grant will cover it.",
+    "Dr. Fennel Obbs: an increase, noted, approved, signed."
+  ],
+  "customer.dr_fennel_obbs.counter_no": [
+    "Dr. Fennel Obbs: the grant does not stretch that far.",
+    "Dr. Fennel Obbs: we shall use the cheaper sample instead.",
+    "Dr. Fennel Obbs: request denied, with a small diagram."
+  ],
+  "customer.the_sleepy_guild.name": "The Sleepy Guild",
+  "customer.the_sleepy_guild.order_title": "Order for The Sleepy Guild",
+  "customer.the_sleepy_guild.order": [
+    "The Sleepy Guild wants one sleepy crate. Wake them for it.",
+    "The Sleepy Guild: send the sleepy stuff, slowly, as is our way.",
+    "The Sleepy Guild has been napping since the last delivery. Send more."
+  ],
+  "customer.the_sleepy_guild.thanks": [
+    "The Sleepy Guild yawns a thank you that lasts a while.",
+    "The Sleepy Guild: good stuff. Wake us when it is next.",
+    "The Sleepy Guild snores approvingly."
+  ],
+  "customer.the_sleepy_guild.grumble": [
+    "The Sleepy Guild woke up for this. They are not happy.",
+    "The Sleepy Guild: this one kept us awake. Bad.",
+    "The Sleepy Guild has written a complaint, eventually."
+  ],
+  "customer.the_sleepy_guild.counter_yes": [
+    "The Sleepy Guild: sure, a bit more. Wake us when it is paid.",
+    "The Sleepy Guild: yes, if you do not mind waiting for the nap.",
+    "The Sleepy Guild agrees, slowly, in a drawn-out way."
+  ],
+  "customer.the_sleepy_guild.counter_no": [
+    "The Sleepy Guild: no. Come back after the nap.",
+    "The Sleepy Guild: the price is asleep. Leave it.",
+    "The Sleepy Guild is not interested. They are dreaming about it."
+  ],
+  "customer.grandpa_wibble.name": "Grandpa Wibble",
+  "customer.grandpa_wibble.order_title": "Order for Grandpa Wibble",
+  "customer.grandpa_wibble.order": [
+    "Grandpa Wibble: two of the see-through ones, and do not look at my teeth.",
+    "Grandpa Wibble wants to see through things. Mostly his lunch.",
+    "Grandpa Wibble: the x-ray stuff, two crates, and a receipt for my wife."
+  ],
+  "customer.grandpa_wibble.thanks": [
+    "Grandpa Wibble: I can see right through you, and you are good.",
+    "Grandpa Wibble: now I see the bottom of the jar. Thank you.",
+    "Grandpa Wibble thanks you with an x-ray wink."
+  ],
+  "customer.grandpa_wibble.grumble": [
+    "Grandpa Wibble: I can see right through this, and it is rubbish.",
+    "Grandpa Wibble: the see-through stuff was not see-through enough.",
+    "Grandpa Wibble: I will tell the whole retirement home."
+  ],
+  "customer.grandpa_wibble.counter_yes": [
+    "Grandpa Wibble: a little more for the eyes? Fine, fine.",
+    "Grandpa Wibble: I have seen the future and it costs a bit more.",
+    "Grandpa Wibble: yes. I can see the money in your pocket."
+  ],
+  "customer.grandpa_wibble.counter_no": [
+    "Grandpa Wibble: I can see you are lying about the price.",
+    "Grandpa Wibble: no. My eyes are not that good.",
+    "Grandpa Wibble: the price stays. I saw it coming."
+  ],
+  "customer.quartermaster_glim.name": "Quartermaster Glim",
+  "customer.quartermaster_glim.order_title": "Order for Quartermaster Glim",
+  "customer.quartermaster_glim.order": [
+    "Quartermaster Glim: sticky fingers and a glow, one crate each, quick.",
+    "Quartermaster Glim needs crates, no questions, the port is watching.",
+    "Quartermaster Glim: a glowing crate for the back room, please."
+  ],
+  "customer.quartermaster_glim.thanks": [
+    "Quartermaster Glim: nobody saw that. Good work.",
+    "Quartermaster Glim taps the crate twice. That is a thank you.",
+    "Quartermaster Glim: the port thanks you, unofficially."
+  ],
+  "customer.quartermaster_glim.grumble": [
+    "Quartermaster Glim: the glow is wrong and the fingers are not sticky.",
+    "Quartermaster Glim: this will be on your file. Several files.",
+    "Quartermaster Glim: the port remembers. The port always remembers."
+  ],
+  "customer.quartermaster_glim.counter_yes": [
+    "Quartermaster Glim: a bit more for the risk, yes. Keep quiet.",
+    "Quartermaster Glim: fine, the port will pay the extra. Quietly.",
+    "Quartermaster Glim nods once. The price goes up by one nod."
+  ],
+  "customer.quartermaster_glim.counter_no": [
+    "Quartermaster Glim: no. Too loud a price for a quiet deal.",
+    "Quartermaster Glim: the port says no. Do not argue with the port.",
+    "Quartermaster Glim: the price is what it is. Move along."
+  ],
+  "customer.cousin_nettle.name": "Cousin Nettle",
+  "customer.cousin_nettle.order_title": "Order for Cousin Nettle",
+  "customer.cousin_nettle.order": [
+    "Cousin Nettle: aunt sent me, so you have to serve me. Tingly, please.",
+    "Cousin Nettle wants tingly stuff, or the sleepy one, whichever is nearer.",
+    "Cousin Nettle is new in town and would like one crate, politely."
+  ],
+  "customer.cousin_nettle.thanks": [
+    "Cousin Nettle: aunt was right about you. Thanks, I think.",
+    "Cousin Nettle tingles a little and says it is nice.",
+    "Cousin Nettle: I will tell aunt you are alright."
+  ],
+  "customer.cousin_nettle.grumble": [
+    "Cousin Nettle: aunt said you were good. You are not good.",
+    "Cousin Nettle: I am telling aunt. She will be cross.",
+    "Cousin Nettle sniffs and looks at the wall, pointedly."
+  ],
+  "customer.cousin_nettle.counter_yes": [
+    "Cousin Nettle: fine, the tingle is worth a bit more.",
+    "Cousin Nettle: yes, I will pay the extra, for aunt's sake.",
+    "Cousin Nettle nods. The extra is in the pocket."
+  ],
+  "customer.cousin_nettle.counter_no": [
+    "Cousin Nettle: no way. Aunt would never pay that.",
+    "Cousin Nettle: the price is too tingly for me.",
+    "Cousin Nettle: I will ask aunt. She will say no too."
+  ],
   "notice.order.placed": [
     "{customer} has an order. Check the wholesaler.",
     "New order from {customer}.",
     "{customer} is waiting for goods."
   ],
-
   "location.skyhook_school.name": "Skyhook Flight School",
   "track.licence_flight.name": "flight licence",
   "track.standing_flight_school.name": "standing with Skyhook Flight School",
   "licence.flight.name": "Flight licence",
   "job.flight_exam.title": "Flight licence exam",
   "job.flight_exam.brief": "Take off, fly to the Drip Rock pad, land on it gently and set the school's crate down. The ship is lent for the exam.",
-
   "giver.flight_school.name": "Skyhook Flight School",
   "giver.flight_school.greet.first": [
     "Want to fly? Everybody wants to fly. Few want to land.",
@@ -137,20 +304,72 @@
     "Everybody crashes once. Some twice. Half price for the second.",
     "The ground was there the whole time. Remember that."
   ],
-  "giver.flight_school.intro": ["Here is how it goes.", "The exam is short, the lesson is long.", "Listen carefully, then ignore half of it."],
-  "giver.flight_school.reason": ["Without a licence the seat refuses you. It has opinions.", "A licence makes you a pilot, on paper.", "The crate is part of the test. It is also fragile."],
-  "giver.flight_school.signoff": ["Up, over, down. In that order.", "Do not land on anyone.", "Mind the ground. It is closer than it looks."],
-
-  "notice.exam.passed": ["LICENCE PASSED: you may fly. Do not let it go to your head.", "EXAM PASSED. The seat now knows you.", "PASSED. You are a pilot, officially."],
-  "notice.exam.honours": ["PASSED WITH HONOURS! The school is moved to tears, a little.", "HONOURS! A soft landing and a good time. Show-off.", "EXAM PASSED, HONOURS. The seat purrs."],
-  "notice.exam.failed": ["Exam failed. A retry costs {retry}.", "Not this time. The retry costs {retry}.", "The ground won. Try again for {retry}."],
+  "giver.flight_school.intro": [
+    "Here is how it goes.",
+    "The exam is short, the lesson is long.",
+    "Listen carefully, then ignore half of it."
+  ],
+  "giver.flight_school.reason": [
+    "Without a licence the seat refuses you. It has opinions.",
+    "A licence makes you a pilot, on paper.",
+    "The crate is part of the test. It is also fragile."
+  ],
+  "giver.flight_school.signoff": [
+    "Up, over, down. In that order.",
+    "Do not land on anyone.",
+    "Mind the ground. It is closer than it looks."
+  ],
+  "notice.exam.passed": [
+    "LICENCE PASSED: you may fly. Do not let it go to your head.",
+    "EXAM PASSED. The seat now knows you.",
+    "PASSED. You are a pilot, officially."
+  ],
+  "notice.exam.honours": [
+    "PASSED WITH HONOURS! The school is moved to tears, a little.",
+    "HONOURS! A soft landing and a good time. Show-off.",
+    "EXAM PASSED, HONOURS. The seat purrs."
+  ],
+  "notice.exam.failed": [
+    "Exam failed. A retry costs {retry}.",
+    "Not this time. The retry costs {retry}.",
+    "The ground won. Try again for {retry}."
+  ],
   "notice.licence.needed": [
     "The seat refuses: you need the flight licence. Take the exam at Skyhook Flight School.",
     "No licence, no seat. Skyhook Flight School gives exams.",
     "The seat says no. Ride along, or go and pass the exam at Skyhook."
   ],
-  "notice.refused.cannot_afford": ["Not enough credits for that.", "Your wallet declines.", "Come back with more credits."],
-
+  "notice.heat.up": [
+    "The scanners took an interest. Heat is at {stars} star(s).",
+    "Somebody is watching you now. {stars} star(s) of heat.",
+    "The wanted board updated. You are at {stars} star(s)."
+  ],
+  "notice.heat.down": [
+    "The heat cools. {stars} star(s) left.",
+    "Nobody is looking at you quite so hard. {stars} star(s).",
+    "The board forgot about you a little. {stars} star(s)."
+  ],
+  "patrol.name": "Sergeant Bunting-Nine",
+  "patrol.ordered": [
+    "Halt for inspection! Slow down and keep your hands where we can see them.",
+    "Attention, hot crate. Reduce speed now or we start counting.",
+    "This is the airspace patrol. Halt for inspection, and do not make us chase you."
+  ],
+  "patrol.halted": [
+    "Good. Hold still while the scanner has a nap over your hull.",
+    "Thank you for slowing down. The scanner is warming up its nose.",
+    "Halted. Nobody panic, the inspection is only a little bit rude."
+  ],
+  "patrol.fled": [
+    "You ran. Running is a confession, and the scanner loves confessions.",
+    "Speed is not an alibi. The patrol has written down your number.",
+    "The chase is on record now. Sergeant Bunting-Nine does not forget a hull."
+  ],
+  "notice.refused.cannot_afford": [
+    "Not enough credits for that.",
+    "Your wallet declines.",
+    "Come back with more credits."
+  ],
   "giver.courier_office.name": "Dinglepost Couriers",
   "giver.courier_office.greet.first": [
     "New face! We always need a new face. The old ones keep quitting.",
@@ -182,7 +401,6 @@
     "Mind the fizz.",
     "Off you go. Walk briskly, not heroically."
   ],
-
   "giver.small_family.name": "The Gribbles",
   "giver.small_family.greet.first": [
     "Sit. You have a face we might remember.",
@@ -214,8 +432,11 @@
     "Be well. Be discreet.",
     "Go. The soup is getting cold."
   ],
-
-  "briefing.title": ["{title} for {giver}", "{giver} needs: {title}", "{title} ({giver})"],
+  "briefing.title": [
+    "{title} for {giver}",
+    "{giver} needs: {title}",
+    "{title} ({giver})"
+  ],
   "briefing.shape.few": [
     "Take {amount} crates of {commodity} from {from} to {to}.",
     "{amount} crates of {commodity}, {from} to {to}. Not far, not hard.",
@@ -246,10 +467,16 @@
     "It rains indoors over there. Hurry.",
     "Wet customers are angry customers."
   ],
-
-  "notice.reward.standing": ["{giver}: standing +{n}", "{giver} likes you a bit more (+{n})", "{giver} respects you now (+{n})"],
-  "notice.reward.standing_lost": ["{giver}: standing -{n}", "{giver} is less impressed (-{n})", "{giver} has notes about this (-{n})"],
-
+  "notice.reward.standing": [
+    "{giver}: standing +{n}",
+    "{giver} likes you a bit more (+{n})",
+    "{giver} respects you now (+{n})"
+  ],
+  "notice.reward.standing_lost": [
+    "{giver}: standing -{n}",
+    "{giver} is less impressed (-{n})",
+    "{giver} has notes about this (-{n})"
+  ],
   "notice.job.accepted": [
     "Job taken: {title}.",
     "You said yes to {title}. No refunds.",
@@ -298,13 +525,331 @@
     "One crate fewer. It was not insured.",
     "Crate lost. It had a good life."
   ],
-  "notice.reward.base": ["Base pay   {n}", "Pay   {n}", "Reward   {n}"],
-  "notice.reward.share": ["Delivered {delivered} of {asked}   {n}", "Share delivered ({delivered}/{asked})   {n}", "Partial pay ({delivered}/{asked})   {n}"],
-  "notice.reward.condition": ["Condition   {n}", "Crate condition   {n}", "Quality bonus   {n}"],
-  "notice.reward.hazard": ["Hazard bonus   {n}", "Danger money   {n}", "Risk pay   {n}"],
-  "notice.reward.xp": ["{n} {track}", "{track}: {n}", "{track} +{n}"],
-  "notice.unlock": ["Unlocked: {name}", "New thing: {name}", "You own {name} now."],
-  "notice.rank": ["{track}: level {level}!", "Level up! {track} is now level {level}.", "{track} reached level {level}."],
-  "notice.refused.too_many": ["Two jobs at a time is plenty.", "Your hands are full of jobs.", "Finish a job before you hoard another."],
-  "notice.refused.not_available": ["Not yet. Come back when you are someone.", "They do not know you well enough.", "You are not ready. Yet."]
+  "notice.reward.base": [
+    "Base pay   {n}",
+    "Pay   {n}",
+    "Reward   {n}"
+  ],
+  "notice.reward.share": [
+    "Delivered {delivered} of {asked}   {n}",
+    "Share delivered ({delivered}/{asked})   {n}",
+    "Partial pay ({delivered}/{asked})   {n}"
+  ],
+  "notice.reward.condition": [
+    "Condition   {n}",
+    "Crate condition   {n}",
+    "Quality bonus   {n}"
+  ],
+  "notice.reward.hazard": [
+    "Hazard bonus   {n}",
+    "Danger money   {n}",
+    "Risk pay   {n}"
+  ],
+  "notice.reward.xp": [
+    "{n} {track}",
+    "{track}: {n}",
+    "{track} +{n}"
+  ],
+  "notice.unlock": [
+    "Unlocked: {name}",
+    "New thing: {name}",
+    "You own {name} now."
+  ],
+  "notice.rank": [
+    "{track}: level {level}!",
+    "Level up! {track} is now level {level}.",
+    "{track} reached level {level}."
+  ],
+  "notice.refused.too_many": [
+    "Two jobs at a time is plenty.",
+    "Your hands are full of jobs.",
+    "Finish a job before you hoard another."
+  ],
+  "notice.refused.not_available": [
+    "Not yet. Come back when you are someone.",
+    "They do not know you well enough.",
+    "You are not ready. Yet."
+  ],
+  "effect.giggly.name": "Giggly",
+  "effect.floaty.name": "Floaty",
+  "effect.glowing.name": "Glowing",
+  "effect.sticky_fingers.name": "Sticky Fingers",
+  "effect.time_lag.name": "Time Lag",
+  "effect.loud_burps.name": "Loud Burps",
+  "effect.x_ray_eyes.name": "X-Ray Eyes",
+  "effect.backwards_talk.name": "Backwards Talk",
+  "effect.sleepy.name": "Sleepy",
+  "effect.tingly.name": "Tingly",
+  "location.drip_rock_north.name": "Drip Rock Pad North",
+  "location.drip_rock_inspect.name": "Drip Rock Inspection",
+  "location.bent_spoon_east.name": "Bent Spoon East Pad",
+  "location.bent_spoon_west.name": "Bent Spoon West Pad",
+  "location.bent_spoon_inspect.name": "Bent Spoon Inspection",
+  "location.noodle_town.name": "Noodle Town",
+  "location.noodle_town_east.name": "Noodle Town East Pad",
+  "location.noodle_town_inspect.name": "Noodle Town Inspection",
+  "location.gulch_freeport.name": "Gulch Freeport",
+  "location.gulch_freeport_east.name": "Gulch Freeport East Pad",
+  "location.bent_spoon_scrub.name": "Scrub outside Bent Spoon",
+  "location.noodle_scrub.name": "Ditch outside Noodle Town",
+  "town.drip_rock.name": "Drip Rock",
+  "town.bent_spoon.name": "Bent Spoon",
+  "notice.traffic.out_of_range": "Out of range of the tower. Get closer, then hail.",
+  "notice.traffic.no_tower": "No tower here. Land wherever you like.",
+  "tower.grumpy.granted": [
+    "Pad's yours. Don't make me regret it.",
+    "Clearance granted. Try not to bounce off my antenna.",
+    "Fine, land. The pad is waiting, unlike my patience."
+  ],
+  "tower.grumpy.held": [
+    "Hold position. I am eating a sandwich. Wait.",
+    "Holding pattern. The sky is busy with nonsense.",
+    "No. Circle. I said circle. Circle until I say otherwise."
+  ],
+  "tower.grumpy.inspection": [
+    "Inspection pad. Yes, you. Your crates look suspicious, and so do you.",
+    "Go to the inspection pad. Bring your paperwork and your excuses.",
+    "Inspection pad, now. Your heat is famous around here."
+  ],
+  "tower.grumpy.expired": [
+    "Your window closed. Clearance void. Go away and come back later.",
+    "Too slow. Clearance expired. Hail me again, you brave idiot.",
+    "Window's shut. The pad has moved on without you."
+  ],
+  "tower.grumpy.out_of_range": [
+    "You are not in my airspace. Go away and bother somebody else.",
+    "Out of range. I cannot hear you, and frankly I do not want to.",
+    "Wrong sky, pal. Come back inside the airspace and hail again."
+  ],
+  "tower.grumpy.no_tower": [
+    "There is no tower here. Yes, really. Fly however you like.",
+    "No tower in this sky. Nobody is watching, so behave badly.",
+    "This is a free port. I have nothing to say. Stop asking."
+  ],
+  "tower.grumpy.violation.no_clearance": [
+    "You landed without clearance. A fine, as a treat.",
+    "No clearance and you landed anyway. Bold. Expensive, too.",
+    "Landing without asking. That is a fine and a frown."
+  ],
+  "tower.grumpy.violation.wrong_pad": [
+    "Wrong pad. I gave you a different pad. Read your own screen.",
+    "That is not your pad. Fine, and do not do it again.",
+    "Wrong pad, genius. The assigned one was right there."
+  ],
+  "tower.grumpy.violation.speeding": [
+    "Slow down, you lunatic. Speed limit, look it up.",
+    "Too fast in my airspace. Fine. Slow down, please.",
+    "Speeding over my sky. That is a fine and a sigh."
+  ],
+  "tower.grumpy.graded.0": [
+    "That landing was a crime against gravity.",
+    "Rough touchdown. My coffee is spilled. Thanks for that.",
+    "That was not a landing. That was a sneeze with wings."
+  ],
+  "tower.grumpy.graded.1": [
+    "Survived it. Barely. Stamp issued, self-respect not included.",
+    "Passable. Stamp given, dignity pending.",
+    "Bumpy, but you are still in one piece. Stamp of the lowest kind."
+  ],
+  "tower.grumpy.graded.2": [
+    "Good landing. I almost clapped.",
+    "Solid touchdown. Stamp of quality, I suppose.",
+    "Nice and easy. Nobody on the pad sneezed."
+  ],
+  "tower.grumpy.graded.3": [
+    "Perfect. Do not let it go to your head.",
+    "Flawless. I will tell absolutely nobody.",
+    "Textbook landing. I hate how good that was."
+  ],
+  "tower.chirpy.granted": [
+    "Pad's all yours, friend! Go go go!",
+    "Clearance! Wheee, you are cleared to land!",
+    "Yes yes yes, land on the pad, sparkle at it!"
+  ],
+  "tower.chirpy.held": [
+    "Oh, hold tight! Ten laps around the spoon, zoom zoom!",
+    "Holding pattern, sweetie! Hold, hold, hold!",
+    "Wait wait wait, the pad is busy being a pad!"
+  ],
+  "tower.chirpy.inspection": [
+    "Inspection pad, buddy! Big scan, big smile!",
+    "Go to the inspection pad, shiny one! The scanners are excited!",
+    "Inspection! Please wave your crates at the scanner!"
+  ],
+  "tower.chirpy.expired": [
+    "Oh no! Your window closed, I am so sorry!",
+    "Time is up, little ship! Hail me again, pretty please!",
+    "Window's gone, the pad is taken, back to the sky!"
+  ],
+  "tower.chirpy.out_of_range": [
+    "Oopsie, you are too far out! Come closer, sweetheart!",
+    "I cannot hear you from out there, come back inside my sky!",
+    "Out of range! Fly over the spoon and call again!"
+  ],
+  "tower.chirpy.no_tower": [
+    "No tower here, what a lovely wild place! Go wherever!",
+    "Nobody is up here but the wind. Fly free!",
+    "This is a free port, no rules, no tower, weeee!"
+  ],
+  "tower.chirpy.violation.no_clearance": [
+    "No clearance and you landed! Fine, sorry, sorry!",
+    "You landed without asking, oh dear. A fine for the spoon!",
+    "Landing without a clearance, naughty! Fine time!"
+  ],
+  "tower.chirpy.violation.wrong_pad": [
+    "Wrong pad, silly! That was not your pad!",
+    "Oops, wrong pad! Fine, but with a kiss on the bumper.",
+    "That is not the pad I gave you! Fine, pretty please remember next time."
+  ],
+  "tower.chirpy.violation.speeding": [
+    "Too fast, too fast! Slow down, rocket!",
+    "Speeding in my sky! Fine, and a wobbly wave.",
+    "Whoa, speedy! Slow down, the spoon gets dizzy!"
+  ],
+  "tower.chirpy.graded.0": [
+    "Ooh, bumpy! Are you okay? Stamp, sadly.",
+    "That one went boing. Stamp of the bumpiest kind!",
+    "Rough one, buddy! Stamp anyway, hugs."
+  ],
+  "tower.chirpy.graded.1": [
+    "Landed! A bit wobbly, but a stamp!",
+    "Okay okay, a little wobbly, but I counted it!",
+    "Wobbly but yours. Stamp, sticker, the works."
+  ],
+  "tower.chirpy.graded.2": [
+    "Nice landing, you smooth operator!",
+    "Ooh smooth! Stamp with a sparkle!",
+    "Very nice, a good wiggle-free touchdown!"
+  ],
+  "tower.chirpy.graded.3": [
+    "PERFECT! Tiny confetti for you!",
+    "Flawless! I am squeaking with joy!",
+    "Best landing of the day! Stamp of gold, sparkle included!"
+  ],
+  "commodity.blorp_paste.name": "blorp paste",
+  "commodity.dream_goo.name": "dream goo",
+  "commodity.space_sugar.name": "space sugar",
+  "commodity.battery_juice.name": "battery juice",
+  "commodity.pickle_brine.name": "pickle brine",
+  "commodity.moth_dust.name": "moth dust",
+  "commodity.ghost_pepper.name": "ghost pepper",
+  "commodity.foam_gum.name": "foam gum",
+  "lab.brewed": [
+    "The vat gurgles. Crates are ready.",
+    "Something in the vat sighs. Done.",
+    "The brew settles. Smells like a plan."
+  ],
+  "lab.discovered": [
+    "Brand new mix! Written in the recipe book.",
+    "Nobody has ever made this before. Noted.",
+    "A new recipe, scribbled into the book."
+  ],
+  "town.noodle_town.name": "Noodle Town",
+  "town.gulch_freeport.name": "Gulch Freeport",
+  "track.deals_done.name": "deals settled",
+  "track.recipes_found.name": "recipes found",
+  "track.perfect_landings.name": "perfect landings",
+  "track.clean_scans.name": "clean scans",
+  "track.jobs_done.name": "jobs done",
+  "ladder.gribbles.name": "the Gribbles",
+  "rank.gribbles.errand_kid.name": "Errand Kid",
+  "goal.gribbles.errand_kid.jobs": "Finish 2 jobs",
+  "rank.gribbles.runner.name": "Runner",
+  "goal.gribbles.runner.recipe": "Find 1 recipe",
+  "goal.gribbles.runner.deals": "Settle 2 deals",
+  "rank.gribbles.cook.name": "Cook",
+  "goal.gribbles.cook.recipes": "Find 4 recipes",
+  "goal.gribbles.cook.deals": "Settle 6 deals",
+  "goal.gribbles.cook.landings": "Land 2 perfect landings",
+  "rank.gribbles.partner.name": "Partner",
+  "goal.gribbles.partner.deals": "Settle 12 deals",
+  "goal.gribbles.partner.scans": "Get 3 clean scans",
+  "empire.pay_tribute": "Pay the tribute",
+  "unlock.lab_key.name": "lab key",
+  "unlock.far_buyers.name": "far buyers list",
+  "unlock.freeport_contact.name": "freeport contact",
+  "unlock.family_seat.name": "family seat",
+  "unlock.hidden_hold.name": "hidden hold",
+  "unlock.scan_jammer.name": "scan jammer",
+  "unlock.cargo_plates.name": "extra cargo plates",
+  "unlock.second_kettle.name": "second kettle",
+  "shop.mechanic.name": "Bent Spoon mechanic",
+  "shop.wholesaler_goods.name": "Slosh & Daughter crates",
+  "shop.lab_supply.name": "Drip Rock lab supply",
+  "notice.empire.goal_missing": "Not yet: {goal}.",
+  "notice.empire.tribute_short": "The family wants {amount} credits.",
+  "notice.empire.cannot_afford": "You cannot pay the {amount} credit tribute.",
+  "notice.empire.rank_up": "{ladder} takes you on as {rank}.",
+  "notice.empire.top": "You are already the top of {ladder}.",
+  "notice.traffic.reminder": [
+    "Clearance runs out in 20 seconds. Land or lose the pad.",
+    "Twenty seconds left on your pad, pilot.",
+    "The tower taps its watch: 20 seconds."
+  ],
+  "rival.name": "The Velvet Sporks",
+  "rival.poach": [
+    "Too slow, sweetie. Your customer buys from the Sporks now.",
+    "Another one of yours just switched to us. Keep napping.",
+    "Your buyer called. Not you. Us."
+  ],
+  "stamp.cleared": "PAD {pad} - {s} s",
+  "stamp.cleared_inspection": "INSPECTION - {pad} - {s} s",
+  "stamp.held": "HOLD - {s} s",
+  "stamp.expired": "CLEARANCE EXPIRED",
+  "stamp.graded": "{word} {stars}",
+  "stamp.graded_on_time": "{word} {stars} - ON TIME",
+  "stamp.grade.0": "OUCH",
+  "stamp.grade.1": "BUMPY",
+  "stamp.grade.2": "SMOOTH",
+  "stamp.grade.3": "BUTTER",
+  "stamp.violation.no_clearance": "NO CLEARANCE - FINED",
+  "stamp.violation.wrong_pad": "WRONG PAD - FINED",
+  "stamp.violation.speeding": "TOO FAST - FINED",
+  "stamp.violation.fled": "FLED - WANTED",
+  "stamp.scan": "SCAN!",
+  "stamp.verdict.confiscated": "CONFISCATED",
+  "stamp.verdict.fled": "YOU RAN",
+  "stamp.verdict.bribed": "BRIBED -{money} cr",
+  "stamp.verdict.talked": "TALKED OUT OF IT",
+  "stamp.verdict.fined": "FINED -{money} cr",
+  "stamp.verdict.clean": "CLEAN",
+  "stamp.brewed": "{word} - Q{q} - {n} crates",
+  "stamp.quality.perfect": "PERFECT",
+  "stamp.quality.good": "GOOD",
+  "stamp.quality.ok": "OKAY",
+  "stamp.quality.sloppy": "SLOPPY",
+  "stamp.recipe": "NEW RECIPE",
+  "stamp.bought": "BOUGHT {n}x {what}",
+  "stamp.counter_yes": "DEAL - {money} cr",
+  "stamp.counter_no": "NO DEAL",
+  "stamp.rank": "RANK UP: {name}",
+  "deal.paid": "PAID   +{money} cr",
+  "deal.order": [
+    "{customer} wants {n} crates for {money} cr. Phone, Orders.",
+    "New order: {customer}, {n} crates, {money} cr."
+  ],
+  "deal.referred": [
+    "{customer} heard about you. A new contact in the phone.",
+    "A friend of a friend: {customer} wants to buy."
+  ],
+  "deal.poached": [
+    "{customer} buys from the rival now.",
+    "The rival got {customer}. Should have called back."
+  ],
+  "shop.refused": "Can't buy that: {why}.",
+  "shop.why.money": "not enough credits",
+  "shop.why.owned": "you have it already",
+  "shop.why.locked": "the family hasn't trusted you with it yet",
+  "shop.why.place": "not from here",
+  "heat.fixer_short": "The fixer wants {money} cr up front.",
+  "lab.refused": "The vat burps it back out: {why}.",
+  "lab.why.unknown": "that is not something you cook with",
+  "lab.why.second_base": "one base per vat",
+  "lab.why.base_first": "the base goes in first",
+  "lab.why.full": "the vat is full",
+  "lab.why.no_base": "no base in the vat",
+  "lab.why.busy": "the vat is busy",
+  "stamp.halt": "HALT!",
+  "stamp.airspace": "{town} AIRSPACE",
+  "stamp.airspace_free": "{town} - FREE PORT"
 }

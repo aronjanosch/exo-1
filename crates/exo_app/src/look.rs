@@ -52,7 +52,7 @@ pub fn save_rgb(path: &Path, w: usize, h: usize, rgb: &[u8]) -> Result<(), Strin
 pub fn camera_pose(planet: &PlanetRes, vp: &Viewpoint) -> Option<(DVec3, DQuat, DVec3)> {
     if vp.spot == "orbit" {
         let from = DVec3::from_array(vp.from?).normalize();
-        let pos = planet.centre + from * vp.height_m;
+        let pos = planet.centre + from * vp.radii.map_or(vp.height_m, |k| k * planet.radius);
         let up = if from.y.abs() < 0.99 { DVec3::Y } else { DVec3::X };
         // Pitched up from looking at the centre (towards the horizon on a descent).
         let t = (up - from * up.dot(from)).normalize();
@@ -91,6 +91,13 @@ fn set_sun(w: &mut World, towards: DVec3) {
     w.resource_mut::<crate::daynight::Sun>().fixed = Some(towards);
 }
 
+/// The round goal of #214 for a 100 km planet: tallest ground above the base radius (m), plain
+/// share of the land, biomes present. Reported for every planet, met only at that size.
+const SHAPE_MAX_M: (f64, f64) = (900.0, 1170.0);
+const SHAPE_PLAIN: (f64, f64) = (0.20, 0.40);
+const SHAPE_BIOMES: usize = 6;
+const SHAPE_SAMPLES: usize = 40_000;
+
 /// Atlas and statistics of every planet (a fresh bake from its recipe, as the game loads it).
 fn atlas_step(out: PathBuf, vps: Viewpoints) -> Step {
     Box::new(move |w, c| {
@@ -110,6 +117,20 @@ fn atlas_step(out: PathBuf, vps: Viewpoints) -> Step {
                 }
             }
             let _ = std::fs::write(dir.join("stats.json"), serde_json::to_string_pretty(&st).unwrap_or_default());
+            // #214: the shape goal of the 100 km round (tallest ground, plains, biomes).
+            let sh = p.pgen.shape_stats(SHAPE_SAMPLES, 0);
+            let _ = std::fs::write(dir.join("shape.json"), serde_json::to_string_pretty(&sh).unwrap_or_default());
+            let met = (SHAPE_MAX_M.0..=SHAPE_MAX_M.1).contains(&sh.max_above_radius_m)
+                && (SHAPE_PLAIN.0..=SHAPE_PLAIN.1).contains(&sh.plain_share_land)
+                && (sh.land_share - st.land_fraction_full).abs() <= 0.05
+                && sh.biomes_present >= SHAPE_BIOMES;
+            let line = format!(
+                "target: shape {}: {} (tallest {:.0} m above radius [{:.0}..{:.0}], {:.0} m above sea, land p99 {:.0} m; plain {:.1} % of land [{:.0}..{:.0} %]; dry land {:.1} % vs bake {:.1} %; biomes {} [>= {SHAPE_BIOMES}], {} samples)",
+                def.name, if met { "MET" } else { "MISSED" }, sh.max_above_radius_m, SHAPE_MAX_M.0, SHAPE_MAX_M.1, sh.max_above_sea_m, sh.p99_land_above_sea_m,
+                sh.plain_share_land * 100.0, SHAPE_PLAIN.0 * 100.0, SHAPE_PLAIN.1 * 100.0, sh.land_share * 100.0, st.land_fraction_full * 100.0, sh.biomes_present, sh.samples,
+            );
+            println!("{line}");
+            c.report.push(line);
             check(c, ok, format!("look {}: atlas {}x{} ({} layers) in {:.0} ms", def.name, atlas.width, atlas.height, AtlasLayer::ALL.len(), t0.elapsed().as_secs_f64() * 1e3));
             let shares: Vec<String> = st.biome_area_share.iter().map(|(k, v)| format!("{k}: {:.1} %", v * 100.0)).collect();
             let line = format!(
@@ -218,7 +239,7 @@ fn shoot(out: PathBuf, vps: Viewpoints, k: usize, time: Option<TimeShot>) -> Ste
         } else if stage == 1.0 && c.t - c.v["look_t"] >= HOLD_SECS {
             use bevy::render::view::screenshot::{save_to_disk, Screenshot};
             if let Some(sv) = w.get_resource::<crate::scatter::ScatterView>() {
-                let line = format!("look {name} {}: scatter {} instances in {} cells", vp.id, sv.instances, sv.shown_cells);
+                let line = format!("look {name} {}: scatter {} instances in {} cells, {} entities", vp.id, sv.instances, sv.shown_cells, sv.entities);
                 println!("{line}");
                 c.report.push(line);
             }

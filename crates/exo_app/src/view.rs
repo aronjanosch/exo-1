@@ -67,9 +67,6 @@ pub struct Streak {
 /// Distance from a planet's centre beyond which its impostor replaces the terrain (m). The
 /// terrain is culled by the camera's far plane at about this distance.
 pub const IMPOSTOR_FROM: f64 = 100_000.0;
-/// Planet markers and the ground and altitude readout show only when the camera is farther
-/// than this from a planet's centre / closer than this (the terrain is drawn closer).
-pub const NEAR_PLANET: f64 = IMPOSTOR_FROM;
 const STREAKS: usize = 160;
 
 /// Walker feet, the camera's up and the look direction in world space before and after the last
@@ -115,11 +112,19 @@ fn horizon_offset(offset: DQuat, age: f64) -> DQuat {
     DQuat::IDENTITY.slerp(offset, horizon_weight(age))
 }
 
-pub fn setup_view(mut commands: Commands) {
+/// Far plane of the camera: the larger of today's 120 km and 2.5 radii of the biggest planet, so a
+/// planet seen from orbit is not cut (#177).
+pub fn far_plane(sys: Option<&crate::warp::SystemRes>) -> f32 {
+    let r = sys.map_or(0.0, |s| s.0.planets.iter().map(|p| p.radius).fold(0.0, f64::max));
+    (r * 2.5).max(120_000.0) as f32
+}
+
+pub fn setup_view(mut commands: Commands, sys: Option<Res<crate::warp::SystemRes>>) {
+    let far = far_plane(sys.as_deref());
     commands.spawn((
         MainCamera,
         Camera3d::default(),
-        Projection::Perspective(PerspectiveProjection { fov: 75f32.to_radians(), near: 0.05, far: 120_000.0, ..default() }),
+        Projection::Perspective(PerspectiveProjection { fov: 75f32.to_radians(), near: 0.05, far, ..default() }),
         Transform::default(),
         WorldPose::default(),
         DistanceFog { color: Color::srgb(0.72, 0.82, 0.95), falloff: FogFalloff::Exponential { density: 0.00025 }, ..default() },
@@ -240,6 +245,9 @@ const FL_LINE: Color = Color::srgba(0.9, 0.95, 1.0, 0.7);
 const FL_FILL: Color = Color::srgb(0.55, 0.95, 1.0);
 const FL_OVER: Color = Color::srgb(1.0, 0.3, 0.3);
 const FL_MARK: Color = Color::srgb(1.0, 0.85, 0.35);
+/// The horizon and its tilt number when the ship sits level, and nearly level.
+const FL_LEVEL: Color = Color::srgb(0.35, 1.0, 0.45);
+const FL_NEAR_LEVEL: Color = Color::srgb(1.0, 0.85, 0.35);
 
 /// The flight HUD (#200): one full-screen layer, shown while the readout has a flight part.
 #[derive(Component)]
@@ -257,6 +265,8 @@ pub enum FlightPart {
     TapeNumber,
     Thrust(u8),
     Horizon,
+    /// The tilt against the planet's up in degrees, beside the nose.
+    Tilt,
     GFill,
     GMark,
 }
@@ -304,6 +314,7 @@ fn spawn_flight_hud(commands: &mut Commands) {
                 c.spawn((FlightPart::Thrust(i), Node { position_type: PositionType::Absolute, ..default() }, BackgroundColor(FL_FILL)));
             }
             c.spawn((FlightPart::Horizon, Node { position_type: PositionType::Absolute, display: Display::None, ..line(FL_HORIZON_PX, 1.0) }, BackgroundColor(FL_LINE), UiTransform::default()));
+            c.spawn((FlightPart::Tilt, Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(FL_LINE), Node { position_type: PositionType::Absolute, display: Display::None, ..default() }));
         });
 }
 
@@ -523,7 +534,7 @@ pub fn update_flight_visuals(
     mut layer: Query<&mut Visibility, With<FlightLayer>>,
     mut nodes: Query<(&FlightPart, &mut Node)>,
     mut colours: Query<(&FlightPart, &mut BackgroundColor)>,
-    mut texts: Query<(&FlightPart, &mut Text)>,
+    mut texts: Query<(&FlightPart, &mut Text, &mut TextColor)>,
     mut transforms: Query<(&FlightPart, &mut UiTransform)>,
 ) {
     let Ok(mut vis) = layer.single_mut() else { return };
@@ -592,21 +603,42 @@ pub fn update_flight_visuals(
                 }
                 None => n.display = Display::None,
             },
+            FlightPart::Tilt => {
+                n.display = if f.tilt.is_some() { Display::Flex } else { Display::None };
+                n.left = px(nose.x + FL_HORIZON_PX / 2.0 + 10.0);
+                n.top = px(nose.y - 9.0);
+            }
         }
     }
+    // The horizon and the tilt number: green when level, yellow when nearly level.
+    let level_colour = match f.tilt.map(|(_, l)| l) {
+        Some(crate::hud::Level::Level) => FL_LEVEL,
+        Some(crate::hud::Level::Near) => FL_NEAR_LEVEL,
+        _ => FL_LINE,
+    };
     for (part, mut bg) in &mut colours {
         let want = match *part {
             FlightPart::GFill if g.over => FL_OVER,
             FlightPart::GFill | FlightPart::TapeFill | FlightPart::Thrust(_) => FL_FILL,
+            FlightPart::Horizon => level_colour,
             _ => continue,
         };
         if bg.0 != want {
             bg.0 = want;
         }
     }
-    for (part, mut t) in &mut texts {
+    for (part, mut t, mut colour) in &mut texts {
+        if *part == FlightPart::Tilt && colour.0 != level_colour {
+            colour.0 = level_colour;
+        }
         if *part == FlightPart::TapeNumber && **t != *tape.number {
             **t = tape.number.clone();
+        }
+        if *part == FlightPart::Tilt {
+            let want = f.tilt.map_or(String::new(), |(d, _)| format!("{d:.1}°"));
+            if **t != *want {
+                **t = want;
+            }
         }
     }
     for (part, mut tr) in &mut transforms {
@@ -683,7 +715,7 @@ pub fn setup_warp_view(
     }
 }
 
-/// Planet markers on the HUD: every planet farther than `NEAR_PLANET`, at its place on screen,
+/// Planet markers on the HUD: every planet farther than `sky::impostor_from`, at its place on screen,
 /// with name and distance from the camera; the jump target (`System::effective_target` of the
 /// selection, or the running jump's target) larger and coloured. Hidden behind the camera.
 pub fn update_nav_markers(
@@ -705,7 +737,7 @@ pub fn update_nav_markers(
         // A point 1 km along the direction from where the camera was drawn (render space).
         let at = cam_t.translation() + (to / dist * 1000.0).as_vec3();
         let screen = camera.world_to_viewport(cam_t, at).ok().filter(|_| cam_t.forward().dot(to.as_vec3()) > 0.0);
-        let Some(xy) = screen.filter(|_| dist > NEAR_PLANET) else {
+        let Some(xy) = screen.filter(|_| dist > crate::sky::impostor_from(p.radius, planet_core::Ceilings::atmosphere_for(p.radius))) else {
             *vis = Visibility::Hidden;
             continue;
         };
@@ -751,6 +783,7 @@ fn km_text(d: f64) -> String {
 /// move after this system (at 1000 km/s by several km a frame), `WorldPose` follows it.
 pub fn update_impostors(
     sys: Res<crate::warp::SystemRes>,
+    planet: Res<PlanetRes>,
     origin: Res<RenderOrigin>,
     mut q: Query<(&Impostor, &mut WorldPose, &mut Transform, &mut Visibility)>,
 ) {
@@ -758,7 +791,10 @@ pub fn update_impostors(
         let p = sys.0.planet(imp.0);
         let to = p.centre() - origin.view;
         let dist = to.length();
-        if dist < IMPOSTOR_FROM {
+        // The planet in play brings the terrain as far as two atmospheres up (#224); every other
+        // planet uses the rule's atmosphere for its radius.
+        let atm = if imp.0 == planet.id { planet.field.atmosphere_height } else { planet_core::Ceilings::atmosphere_for(p.radius) };
+        if dist < crate::sky::impostor_from(p.radius, atm) {
             *vis = Visibility::Hidden;
             continue;
         }
@@ -1029,7 +1065,7 @@ pub fn update_camera(
         (pose.pos, pose.rot) = (p, r);
     } else if view.orbit {
         let d = DVec3::new(view.orbit_pitch.cos() * view.orbit_yaw.sin(), view.orbit_pitch.sin(), view.orbit_pitch.cos() * view.orbit_yaw.cos());
-        pose.pos = planet.centre + d * 15_000.0;
+        pose.pos = planet.centre + d * (planet.radius * 3.0).max(15_000.0);
         let up = if d.y.abs() < 0.99 { DVec3::Y } else { DVec3::X };
         pose.rot = walker_core::look_rot(-d, up);
     } else if pl.seated {
@@ -1089,7 +1125,7 @@ pub fn update_camera(
     // glow. Haze per planet (#67), ambient, fog and sky by the time of day (#48).
     let density = planet.density_at(pose.pos) as f32;
     let s = &planet.pgen.recipe.sky;
-    let (amb_color, amb, fog_color, fog_density, sky) = crate::daynight::camera_light(&sun, s.haze_color, s.haze_density, density);
+    let (amb_color, amb, fog_color, fog_density, sky) = crate::daynight::camera_light(&sun, s.haze_color, crate::sky::haze_density(&planet), density);
     clear.0 = sky;
     fog.color = fog_color;
     fog.falloff = FogFalloff::Exponential { density: fog_density };
@@ -1124,10 +1160,11 @@ pub fn update_hud(
     wd: Res<crate::warp::WarpDrive>,
     sys: Res<crate::warp::SystemRes>,
     fx: Res<crate::ship::CameraEffects>,
+    spikes: Res<crate::frame_cost::FrameSpikes>,
 ) {
     let (Ok(pl), Ok((ship, sp, sv, sr)), Ok(mut text)) = (players.single(), ships.single(), hud.single_mut()) else { return };
     // Ground and altitude only near the planet (millions of metres during a warp say nothing).
-    let near = |p: DVec3| (p - planet.centre).length() < NEAR_PLANET;
+    let near = |p: DVec3| (p - planet.centre).length() < crate::sky::impostor_from(planet.radius, planet.field.atmosphere_height);
     let mode = if pl.seated {
         let height = if near(sp.0) { format!("  ground {:.0} m  alt {:.0} m", planet.above_ground(sp.0), (sp.0 - planet.centre).length() - planet.radius) } else { String::new() };
         // What the flight model did (felt G, thrusters at a limit, the turn cap).
@@ -1157,14 +1194,18 @@ pub fn update_hud(
     // The camera switch (F9, #148, #149) is on the debug line, so a playtest can compare with it off.
     let camera = camera_fx_text(fx.0.enabled);
     **text = format!(
-        "{mode}\n{:.1} ms | chunks {} pending {} | patches {} pending {} | rescues {} | {camera}",
+        "{mode}\n{:.1} ms | chunks {} pending {} | patches {} pending {} | rescues {} | {camera} | morph {} (F4)",
         time.delta_secs_f64() * 1000.0,
         terrain.visible,
         terrain.pending,
         ring.patches.len(),
         ring.pending(),
         stats.rescues,
+        if terrain.morph_on { "on" } else { "off" },
     );
+    // Frame spikes (#213): worst and p99 of the last seconds.
+    text.0.push('\n');
+    text.0.push_str(&spikes.hud_line());
     text.0.push('\n');
     text.0.push_str(&warp_line(&wd, &sys.0, sp.0));
     if let Some(n) = net {

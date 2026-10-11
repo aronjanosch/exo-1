@@ -1,0 +1,41 @@
+{
+  "_comment": "Noodle Town, a far town: about 76 km from Drip Rock at 100 km radius (3.8 km at 5 km). Invented name; TODO(initiator).",
+  "id": "noodle_town",
+  "planet": "hearth",
+  "lat_deg": 44.0,
+  "lon_deg": 140.0,
+  "edits": [
+    {
+      "type": "flatten",
+      "order": 0,
+      "radius_m": 85.0,
+      "rolloff_m": 50.0
+    }
+  ],
+  "pads": [
+    {
+      "id": "main",
+      "at": [
+        0.0,
+        0.0
+      ],
+      "radius_m": 15.0
+    },
+    {
+      "id": "east",
+      "at": [
+        30.0,
+        0.0
+      ],
+      "radius_m": 12.0
+    },
+    {
+      "id": "inspect",
+      "at": [
+        0.0,
+        -30.0
+      ],
+      "radius_m": 12.0
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "_comment": "An unofficial landing spot outside Noodle Town: no tower, no scan, a long walk. Invented name; Moved: the first spot was wet on the 5 km planet. TODO(initiator).",
+  "id": "noodle_scrub",
+  "planet": "hearth",
+  "near": {
+    "place": "noodle_town",
+    "east_m": -647.0,
+    "north_m": 268.0
+  },
+  "edits": [
+    {
+      "type": "flatten",
+      "order": 0,
+      "radius_m": 14.0,
+      "rolloff_m": 14.0
+    }
+  ],
+  "pads": [
+    {
+      "id": "main",
+      "at": [
+        0.0,
+        0.0
+      ],
+      "radius_m": 10.0
+    }
+  ]
+}

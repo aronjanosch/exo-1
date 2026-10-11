@@ -1,0 +1,1 @@
+{ "_comment": "Counts one on deals_done (TODO(initiator): which events count).", "id": "deal", "on": "product_order_settled", "track": "deals_done" }

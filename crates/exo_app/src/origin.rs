@@ -56,26 +56,30 @@ fn record_interp(mut q: Query<(&Position, &Rotation, &mut BodyInterp)>) {
     }
 }
 
-fn sync_world_pose(origin: Res<RenderOrigin>, mut q: Query<(&WorldPose, &mut Transform)>) {
+pub fn sync_world_pose(origin: Res<RenderOrigin>, mut q: Query<(&WorldPose, &mut Transform)>) {
     for (wp, mut t) in &mut q {
         t.translation = (wp.pos - origin.origin).as_vec3();
         t.rotation = wp.rot.as_quat();
     }
 }
 
-fn shift_origin(mut origin: ResMut<RenderOrigin>, mut q: Query<(&WorldPos, &mut Transform)>) {
+pub fn shift_origin(mut origin: ResMut<RenderOrigin>, mut q: Query<(&WorldPos, &mut Transform)>, mut cost: ResMut<crate::frame_cost::FrameCost>) {
     if origin.threshold <= 0.0 || (origin.view - origin.origin).length() <= origin.threshold {
         return;
     }
+    let t0 = std::time::Instant::now();
     origin.origin = origin.view.round();
     let o = origin.origin;
+    let mut n = 0;
     for (wp, mut t) in &mut q {
         t.translation = (wp.0 - o).as_vec3();
+        n += 1;
     }
     origin.shifts += 1;
+    cost.shift.add(n, t0);
 }
 
-fn sync_world_pos(origin: Res<RenderOrigin>, mut q: Query<(&WorldPos, &mut Transform), Added<WorldPos>>) {
+pub fn sync_world_pos(origin: Res<RenderOrigin>, mut q: Query<(&WorldPos, &mut Transform), Added<WorldPos>>) {
     for (wp, mut t) in &mut q {
         t.translation = (wp.0 - origin.origin).as_vec3();
     }

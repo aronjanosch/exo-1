@@ -1,0 +1,28 @@
+{
+  "_comment": "An unofficial landing spot in the scrub outside Bent Spoon: no tower, no scan, a long walk. Invented name; TODO(initiator).",
+  "id": "bent_spoon_scrub",
+  "planet": "hearth",
+  "near": {
+    "place": "bent_spoon",
+    "east_m": 650.0,
+    "north_m": 380.0
+  },
+  "edits": [
+    {
+      "type": "flatten",
+      "order": 0,
+      "radius_m": 14.0,
+      "rolloff_m": 14.0
+    }
+  ],
+  "pads": [
+    {
+      "id": "main",
+      "at": [
+        0.0,
+        0.0
+      ],
+      "radius_m": 10.0
+    }
+  ]
+}

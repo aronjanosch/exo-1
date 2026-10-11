@@ -123,6 +123,8 @@ impl Progress {
                 Ok(())
             }
             WorldEvent::CratePickedUp { .. } | WorldEvent::CrateDelivered { .. } | WorldEvent::CrateLost { .. } | WorldEvent::TimePassed { .. } | WorldEvent::OrderPlaced { .. } | WorldEvent::OrderSettled { .. } | WorldEvent::TookOff | WorldEvent::PadReached { .. } | WorldEvent::Landed { .. } => Ok(()),
+            // Round 6: the systems that own these turn them into `TrackChanged`, `FlagRaised` and `UnlockBought`.
+            _ => Ok(()),
         }
     }
 

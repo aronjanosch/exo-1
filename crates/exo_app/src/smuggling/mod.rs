@@ -69,6 +69,8 @@ pub struct BrewView {
     pub needle: f64,
     pub sweet: f64,
     pub width: f64,
+    /// The needle was just stopped: it stands where F caught it for a moment (round 6b).
+    pub frozen: bool,
 }
 
 /// Everything the round-6 HUD shows; the fixed step fills it (headless too, for scenarios).

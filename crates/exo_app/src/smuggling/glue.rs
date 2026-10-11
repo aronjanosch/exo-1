@@ -31,6 +31,8 @@ pub const STATION_RANGE: f64 = 2.4;
 pub const HANDOVER_RANGE: f64 = 8.0;
 /// A counter-offer asks this much more (%). TODO(initiator): let the player pick.
 pub const COUNTER_PCT: u32 = 20;
+/// How long the stopped needle stays on screen (s). TODO(initiator).
+pub const NEEDLE_HOLD_S: f64 = 1.2;
 /// What paying the fixer costs per press (money). TODO(initiator).
 pub const FIXER_STEP: i64 = 100;
 
@@ -363,6 +365,7 @@ pub fn station_interact(
                     let t = now - clock.0.get(&id).copied().unwrap_or(now);
                     match g.smuggling.lab.release(&g.smuggling.lab_c, &id, t) {
                         Ok(outs) => {
+                            g.smuggling.needle_hit = Some((production_core::needle(t, g.smuggling.lab_c.tuning.needle_period_s), now));
                             for o in outs {
                                 match o {
                                     production_core::LabOutcome::Emit(e) => g.push_world(HOST, e),
@@ -682,9 +685,13 @@ pub fn fill_hud(mut hud: ResMut<SmuggleHud>, mut gp: ResMut<Gameplay>, phone: Re
         Some(Station::Kettle(id)) if matches!(s.lab.kettle(id), Some(production_core::Kettle::Done { .. })) => {
             let t = &s.lab_c.tuning;
             let since = gp.clock() - clock.0.get(id).copied().unwrap_or(gp.clock());
-            Some(BrewView { needle: production_core::needle(since, t.needle_period_s), sweet: t.sweet_spot, width: t.sweet_width })
+            Some(BrewView { needle: production_core::needle(since, t.needle_period_s), sweet: t.sweet_spot, width: t.sweet_width, frozen: false })
         }
-        _ => None,
+        // The needle stands where F caught it for a moment, so the player sees how close it was.
+        _ => s.needle_hit.filter(|(_, at)| gp.clock() - at < NEEDLE_HOLD_S).map(|(n, _)| {
+            let t = &s.lab_c.tuning;
+            BrewView { needle: n, sweet: t.sweet_spot, width: t.sweet_width, frozen: true }
+        }),
     };
     let _ = players;
     // The buyers as characters at their pads.

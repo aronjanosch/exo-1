@@ -822,7 +822,7 @@
   "stamp.bought": "BOUGHT {n}x {what}",
   "stamp.counter_yes": "DEAL - {money} cr",
   "stamp.counter_no": "NO DEAL",
-  "stamp.rank": "RANK UP",
+  "stamp.rank": "RANK UP: {name}",
   "deal.paid": "PAID   +{money} cr",
   "deal.order": [
     "{customer} wants {n} crates for {money} cr. Phone, Orders.",
@@ -849,5 +849,7 @@
   "lab.why.full": "the vat is full",
   "lab.why.no_base": "no base in the vat",
   "lab.why.busy": "the vat is busy",
-  "stamp.halt": "HALT!"
+  "stamp.halt": "HALT!",
+  "stamp.airspace": "{town} AIRSPACE",
+  "stamp.airspace_free": "{town} - FREE PORT"
 }

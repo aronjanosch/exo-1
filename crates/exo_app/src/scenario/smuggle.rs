@@ -429,6 +429,8 @@ pub fn lab_steps(s: &mut Vec<Step>) {
         check(c, product.effects == want, format!("lab: sugar then moth dust gives {:?}", product.effects));
         check(c, product.quality > 0.8, format!("lab: the needle stopped at {:.2} gives quality {:.2}", c.v["needle"], product.quality));
         check(c, gp(w).smuggling.lab.book().len() == 1, "lab: the mix is in the recipe book".into());
+        let b = hud(w).brew;
+        check(c, b.is_some_and(|b| b.frozen && (b.needle - c.v["needle"]).abs() < 0.1), format!("lab: the needle stands where F caught it ({b:?})"));
         c.v.insert("crates", crates as f64);
         tap(w, KeyCode::KeyF);
         true

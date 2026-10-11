@@ -185,8 +185,14 @@ pub fn on_world(g: &mut Gameplay, ev: &WorldEvent) {
             let name = customer_name(g, by);
             g.notify(Notice::new(NoticeKind::Warning, "deal.poached").arg("customer", name));
         }
-        WorldEvent::RankReached { .. } => {
-            cues.push(stamp(g, "stamp.rank", &[], Tone::Gold, 0.5));
+        WorldEvent::RankReached { ladder, rank } => {
+            let name = g.smuggling.ladders.ladders.get(ladder).and_then(|l| l.record.ranks.get((*rank as usize).saturating_sub(1))).map(|r| Arg::Key(r.name.clone())).unwrap_or_else(|| Arg::Number(*rank as i64));
+            cues.push(stamp(g, "stamp.rank", &[("name", name)], Tone::Gold, 0.5));
+        }
+        WorldEvent::AirspaceEntered { town } => {
+            let name = g.smuggling.town(town).map(|t| Arg::Key(t.name.clone())).unwrap_or_else(|| Arg::Text(town.to_string()));
+            let key = if g.smuggling.town(town).is_some_and(|t| t.free_port) { "stamp.airspace_free" } else { "stamp.airspace" };
+            cues.push(stamp(g, key, &[("town", name)], Tone::Info, 0.0));
         }
         _ => {}
     }
@@ -257,6 +263,18 @@ mod tests {
         assert_eq!(s(cues_for(&mut g, WorldEvent::LandingGraded { town: town.clone(), at: at.clone(), grade: 3, on_time: true })).0, "BUTTER *** - ON TIME");
         let (t, _) = s(cues_for(&mut g, WorldEvent::ClearanceGranted { town, pad: at, window_s: 90.0, inspection: false }));
         assert!(t.starts_with("PAD ") && t.ends_with(" - 90 s") && !t.contains("bent_spoon_east"), "the pad by its name: {t}");
+    }
+
+    #[test]
+    fn a_rank_names_itself_and_an_airspace_its_town() {
+        let mut g = Gameplay::load(&Crates::default());
+        let s = |cues: Vec<Cue>| cues.into_iter().find_map(|c| if let Cue::Stamp { text, .. } = c { Some(text) } else { None }).expect("a stamp");
+        let rank = s(cues_for(&mut g, WorldEvent::RankReached { ladder: crate::smuggling::systems::LADDER.into(), rank: 1 }));
+        assert!(rank.starts_with("RANK UP: ") && !rank.ends_with(": 1") && !rank.contains("rank."), "{rank}");
+        let air = s(cues_for(&mut g, WorldEvent::AirspaceEntered { town: TownId::new("bent_spoon") }));
+        assert!(air.ends_with(" AIRSPACE") && !air.contains("bent_spoon"), "{air}");
+        let free = s(cues_for(&mut g, WorldEvent::AirspaceEntered { town: TownId::new("gulch_freeport") }));
+        assert!(free.ends_with("FREE PORT"), "{free}");
     }
 
     #[test]

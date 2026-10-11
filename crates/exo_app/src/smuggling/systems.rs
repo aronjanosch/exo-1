@@ -86,6 +86,8 @@ pub struct Systems {
     pub reminded: Option<(TownId, LocationId)>,
     /// The window of the last clearance (s), for the HUD's countdown bar.
     pub clear_window_s: f64,
+    /// Where F stopped the needle and when (game clock), so the HUD can hold it a moment.
+    pub needle_hit: Option<(f64, f64)>,
 }
 
 impl Systems {
@@ -132,6 +134,7 @@ impl Systems {
             tracked_order: None,
             reminded: None,
             clear_window_s: 0.0,
+            needle_hit: None,
         })
     }
 

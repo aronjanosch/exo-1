@@ -287,15 +287,19 @@ fn draw_phone(
 }
 
 #[allow(clippy::type_complexity)]
-fn draw_brew(hud: Res<SmuggleHud>, mut bar: Query<&mut Node, (With<BrewBar>, Without<BrewNeedle>, Without<BrewSweet>)>, mut needle: Query<&mut Node, (With<BrewNeedle>, Without<BrewBar>, Without<BrewSweet>)>, mut sweet: Query<&mut Node, (With<BrewSweet>, Without<BrewBar>, Without<BrewNeedle>)>) {
+fn draw_brew(hud: Res<SmuggleHud>, mut bar: Query<&mut Node, (With<BrewBar>, Without<BrewNeedle>, Without<BrewSweet>)>, mut needle: Query<(&mut Node, &mut BackgroundColor), (With<BrewNeedle>, Without<BrewBar>, Without<BrewSweet>)>, mut sweet: Query<&mut Node, (With<BrewSweet>, Without<BrewBar>, Without<BrewNeedle>)>) {
     let Ok(mut b) = bar.single_mut() else { return };
     let d = if hud.brew.is_some() { Display::Flex } else { Display::None };
     if b.display != d {
         b.display = d;
     }
     let Some(br) = hud.brew else { return };
-    if let Ok(mut n) = needle.single_mut() {
+    if let Ok((mut n, mut c)) = needle.single_mut() {
         n.left = percent((br.needle * 100.0) as f32);
+        // Stopped: gold inside the sweet zone, red outside, and wider.
+        let inside = (br.needle - br.sweet).abs() <= br.width;
+        c.0 = if !br.frozen { Color::WHITE } else if inside { th::GOLD } else { th::BAD };
+        n.width = px(if br.frozen { 8.0 } else { 4.0 });
     }
     if let Ok(mut s) = sweet.single_mut() {
         s.left = percent(((br.sweet - br.width) * 100.0) as f32);

@@ -822,18 +822,27 @@ fn spawn_job_line(mut commands: Commands) {
     commands.spawn((
         JobLine,
         Text::new(""),
-        TextFont { font_size: FontSize::Px(16.0), ..default() },
-        TextColor(Color::srgb(1.0, 0.92, 0.55)),
-        Node { position_type: PositionType::Absolute, top: px(8), right: px(12), ..default() },
+        TextFont { font_size: FontSize::Px(crate::ui_theme::BODY), ..default() },
+        TextColor(crate::ui_theme::GOLD),
+        TextShadow { offset: Vec2::splat(1.5), color: crate::ui_theme::SHADOW },
+        Node { position_type: PositionType::Absolute, top: px(8), right: px(crate::ui_theme::MARGIN), ..default() },
         TextLayout::justify(Justify::Right),
     ));
 }
 
-fn update_job_line(gp: Res<Gameplay>, mut q: Query<&mut Text, With<JobLine>>) {
-    if let Ok(mut t) = q.single_mut()
-        && **t != gp.readout
-    {
-        **t = gp.readout.clone();
+/// The job line; the credits count towards a new total instead of jumping, green going up and
+/// red going down (round 6b).
+fn update_job_line(time: Res<Time>, gp: Res<Gameplay>, mut shown: Local<Option<f64>>, mut q: Query<(&mut Text, &mut TextColor), With<JobLine>>) {
+    let Ok((mut t, mut c)) = q.single_mut() else { return };
+    let money = gp.progress.wallet();
+    let v = shown.get_or_insert(money as f64);
+    let gap = money as f64 - *v;
+    *v = if gap.abs() < 1.0 { money as f64 } else { *v + gap * (time.delta_secs_f64() * 5.0).min(1.0) + gap.signum() };
+    let now = v.round() as i64;
+    c.0 = if now == money { crate::ui_theme::GOLD } else if gap > 0.0 { crate::ui_theme::GOOD } else { crate::ui_theme::BAD };
+    let text = gp.readout.replacen(&format!("{money} "), &format!("{now} "), 1);
+    if **t != text {
+        **t = text;
     }
 }
 

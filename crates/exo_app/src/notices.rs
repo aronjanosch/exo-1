@@ -88,7 +88,8 @@ fn spawn(mut commands: Commands) {
         BannerText,
         Text::new(""),
         TextFont { font_size: FontSize::Px(34.0), ..default() },
-        TextColor(Color::srgb(1.0, 0.9, 0.4)),
+        TextColor(crate::ui_theme::GOLD),
+        TextShadow { offset: Vec2::splat(2.5), color: crate::ui_theme::SHADOW },
         Node { position_type: PositionType::Absolute, top: percent(14), width: percent(100), justify_content: JustifyContent::Center, ..default() },
         TextLayout::justify(Justify::Center),
     ));
@@ -96,7 +97,8 @@ fn spawn(mut commands: Commands) {
         ToastText,
         Text::new(""),
         TextFont { font_size: FontSize::Px(18.0), ..default() },
-        TextColor(Color::srgb(0.92, 0.95, 1.0)),
+        TextColor(crate::ui_theme::INK),
+        TextShadow { offset: Vec2::splat(1.5), color: crate::ui_theme::SHADOW },
         Node { position_type: PositionType::Absolute, top: percent(24), width: percent(100), justify_content: JustifyContent::Center, ..default() },
         TextLayout::justify(Justify::Center),
     ));

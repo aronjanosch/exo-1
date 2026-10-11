@@ -221,8 +221,13 @@ pub struct TownView {
     pub models: usize,
 }
 
+/// A character's marker; `pos` and `up` are where it stands (the hop of a paid buyer starts there).
 #[derive(Component)]
-pub struct NpcModel;
+pub struct NpcModel {
+    pub id: String,
+    pub pos: bevy::math::DVec3,
+    pub up: bevy::math::DVec3,
+}
 
 /// The city's models and the characters' markers (window only).
 fn update_town_view(mut commands: Commands, planet: Res<PlanetRes>, town: Res<Town>, assets: Res<AssetServer>, mut view: ResMut<TownView>, npcs: Query<Entity, With<NpcModel>>) {
@@ -259,7 +264,7 @@ fn update_town_view(mut commands: Commands, planet: Res<PlanetRes>, town: Res<To
                 Transform::from_rotation(Quat::from_rotation_arc(Vec3::Y, n.up.as_vec3())),
                 WorldPos(n.pos),
                 PlanetScene(planet.id),
-                NpcModel,
+                NpcModel { id: n.id.clone(), pos: n.pos, up: n.up },
             ));
         }
     }

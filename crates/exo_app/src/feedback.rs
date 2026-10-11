@@ -251,12 +251,12 @@ mod tests {
         let at = LocationId::new("bent_spoon_east");
         let s = |cues: Vec<Cue>| cues.into_iter().find_map(|c| if let Cue::Stamp { text, hold, .. } = c { Some((text, hold)) } else { None }).expect("a stamp");
         let (t, hold) = s(cues_for(&mut g, WorldEvent::ScanResolved { scan: 1, choice: ScanChoice::Bribe, confiscate: false, fine: 240, heat: 0.0 }));
-        assert_eq!(t, "BRIBED · -240");
+        assert_eq!(t, "BRIBED -240 cr");
         assert_eq!(hold, VERDICT_HOLD, "the verdict waits a beat");
         assert_eq!(s(cues_for(&mut g, WorldEvent::ScanResolved { scan: 2, choice: ScanChoice::Comply, confiscate: false, fine: 0, heat: 0.0 })).0, "CLEAN");
-        assert_eq!(s(cues_for(&mut g, WorldEvent::LandingGraded { town: town.clone(), at: at.clone(), grade: 3, on_time: true })).0, "BUTTER *** · ON TIME");
+        assert_eq!(s(cues_for(&mut g, WorldEvent::LandingGraded { town: town.clone(), at: at.clone(), grade: 3, on_time: true })).0, "BUTTER *** - ON TIME");
         let (t, _) = s(cues_for(&mut g, WorldEvent::ClearanceGranted { town, pad: at, window_s: 90.0, inspection: false }));
-        assert!(t.starts_with("PAD ") && t.ends_with(" · 90 s") && !t.contains("bent_spoon_east"), "the pad by its name: {t}");
+        assert!(t.starts_with("PAD ") && t.ends_with(" - 90 s") && !t.contains("bent_spoon_east"), "the pad by its name: {t}");
     }
 
     #[test]

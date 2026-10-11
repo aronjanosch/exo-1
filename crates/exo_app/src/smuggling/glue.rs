@@ -647,6 +647,14 @@ pub fn fill_hud(mut hud: ResMut<SmuggleHud>, mut gp: ResMut<Gameplay>, phone: Re
             None => String::new(),
         },
     } };
+    hud.bar = if let Some(left) = s.patrol.ordered_left() {
+        Some(super::HudBar { left: (left / s.heat_c.tuning.record.patrol_halt_s).clamp(0.0, 1.0), tone: Tone::Bad })
+    } else {
+        s.traffic.clearance(HOST).map(|c| {
+            let left = (c.time_left_s / s.clear_window_s.max(1.0)).clamp(0.0, 1.0);
+            super::HudBar { left, tone: if c.inspection || left < 0.2 { Tone::Bad } else { Tone::Info } }
+        })
+    };
     let tab = PhoneTab::ALL[phone.tab];
     let rows = if phone.open { phone_rows(&gp, tab) } else { Vec::new() };
     hud.phone = super::PhoneView {
@@ -723,6 +731,21 @@ pub fn prompt_override(st: &StationTarget, inter: &mut Interaction) -> bool {
 #[derive(Component)]
 pub struct KettleModel;
 
+/// A kettle's brew surface: its material and where bubbles rise from.
+#[derive(Component)]
+pub struct KettleTop {
+    pub id: String,
+    pub mat: Handle<StandardMaterial>,
+    pub top: DVec3,
+    pub up: DVec3,
+}
+
+#[derive(Component)]
+pub struct Bubble {
+    born: f64,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn kettle_view(
     mut commands: Commands,
     town: Res<Town>,
@@ -744,13 +767,14 @@ pub fn kettle_view(
     let body = meshes.add(Cylinder::new(0.6, 1.1));
     let top = meshes.add(Cylinder::new(0.5, 0.08));
     let metal = mats.add(StandardMaterial { base_color: Color::srgb(0.45, 0.5, 0.55), metallic: 0.6, perceptual_roughness: 0.4, ..default() });
-    let brew = mats.add(StandardMaterial { base_color: Color::srgb(0.3, 1.0, 0.4), emissive: LinearRgba::rgb(0.6, 3.0, 0.8), ..default() });
-    for (_, p, up) in ks {
+    for (id, p, up) in ks {
+        // Each kettle's brew has its own material: its colour follows the mix (`kettle_fx`).
+        let brew = mats.add(StandardMaterial { base_color: Color::srgb(0.2, 0.22, 0.2), emissive: LinearRgba::BLACK, ..default() });
         let ground = planet.centre + up * planet.surface(up);
         let ground = ground + (p - planet.centre - up * (p - planet.centre).dot(up));
         let rot = Quat::from_rotation_arc(Vec3::Y, up.as_vec3());
         commands.spawn((Mesh3d(body.clone()), MeshMaterial3d(metal.clone()), Transform::from_rotation(rot), crate::origin::WorldPos(ground + up * 0.55), crate::terrain::PlanetScene(planet.id), KettleModel));
-        commands.spawn((Mesh3d(top.clone()), MeshMaterial3d(brew.clone()), Transform::from_rotation(rot), crate::origin::WorldPos(ground + up * 1.12), crate::terrain::PlanetScene(planet.id), KettleModel));
+        commands.spawn((Mesh3d(top.clone()), MeshMaterial3d(brew.clone()), Transform::from_rotation(rot), crate::origin::WorldPos(ground + up * 1.12), crate::terrain::PlanetScene(planet.id), KettleModel, KettleTop { id, mat: brew, top: ground + up * 1.16, up }));
     }
 }
 
@@ -765,4 +789,72 @@ fn lab_refused(g: &mut Gameplay, r: &production_core::LabRefusal) {
         _ => "lab.why.busy",
     };
     g.notify(Notice::new(NoticeKind::Warning, "lab.refused").arg("why", Arg::Key(TextKey::new(why))));
+}
+
+/// A colour for a mix: each name gives a hue, the mix is their blend. TODO(initiator): colours
+/// per effect in the content.
+pub fn mix_colour<'a>(names: impl Iterator<Item = &'a str>) -> Color {
+    let (mut r, mut g, mut b, mut n) = (0.0, 0.0, 0.0, 0.0);
+    for name in names {
+        let h = name.bytes().fold(2166136261u32, |h, c| (h ^ c as u32).wrapping_mul(16777619));
+        let c = Color::hsl((h % 360) as f32, 0.85, 0.55).to_srgba();
+        (r, g, b, n) = (r + c.red, g + c.green, b + c.blue, n + 1.0);
+    }
+    if n == 0.0 { Color::srgb(0.2, 0.22, 0.2) } else { Color::srgb(r / n, g / n, b / n) }
+}
+
+/// The brew in each kettle (window): dull when empty, the mix's colour when loaded, bubbling
+/// while it brews, pulsing gold when the needle waits, glowing when the crates are ready.
+#[allow(clippy::too_many_arguments)]
+pub fn kettle_fx(
+    mut commands: Commands,
+    time: Res<Time>,
+    gp: Res<Gameplay>,
+    planet: Res<crate::env::PlanetRes>,
+    tops: Query<&KettleTop>,
+    mut mats: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut bubbles: Query<(Entity, &Bubble, &mut crate::origin::WorldPose, &mut Transform)>,
+    mut next: Local<f64>,
+    mut mesh: Local<Option<(Handle<Mesh>, Handle<StandardMaterial>)>>,
+) {
+    let now = time.elapsed_secs_f64();
+    let lab = &gp.smuggling.lab;
+    let mut spawn_at = Vec::new();
+    for k in &tops {
+        let Some(mut m) = mats.get_mut(&k.mat) else { continue };
+        let (colour, glow) = match lab.kettle(&k.id) {
+            None | Some(production_core::Kettle::Empty) => (Color::srgb(0.2, 0.22, 0.2), 0.0),
+            Some(production_core::Kettle::Loaded { base, ingredients }) => (mix_colour(std::iter::once(base.as_str()).chain(ingredients.iter().map(|i| i.as_str()))), 0.6),
+            Some(production_core::Kettle::Brewing { base, ingredients, .. }) => {
+                spawn_at.push((k.top, k.up));
+                (mix_colour(std::iter::once(base.as_str()).chain(ingredients.iter().map(|i| i.as_str()))), 1.2 + 0.8 * (now * 5.0).sin().abs() as f32)
+            }
+            Some(production_core::Kettle::Done { .. }) => (crate::ui_theme::GOLD, 1.0 + 2.5 * (now * 8.0).sin().abs() as f32),
+            Some(production_core::Kettle::Ready { product, .. }) => (mix_colour(product.effects.iter().map(|e| e.as_str())), 2.0),
+        };
+        m.base_color = colour;
+        m.emissive = colour.to_linear() * glow;
+    }
+    if now >= *next && !spawn_at.is_empty() {
+        *next = now + 0.12;
+        let (mesh, mat) = mesh.get_or_insert_with(|| (meshes.add(Sphere::new(0.07)), mats.add(StandardMaterial { base_color: Color::srgba(1.0, 1.0, 1.0, 0.7), emissive: LinearRgba::rgb(1.5, 1.5, 1.5), alpha_mode: AlphaMode::Blend, ..default() }))).clone();
+        for (i, (top, up)) in spawn_at.into_iter().enumerate() {
+            let e = up.any_orthonormal_vector();
+            let a = (now * 7.3 + i as f64 * 2.1).sin() * std::f64::consts::PI;
+            let off = (e * a.cos() + up.cross(e) * a.sin()) * 0.3;
+            commands.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::default(), crate::origin::WorldPose { pos: top + off, rot: DQuat::IDENTITY }, crate::terrain::PlanetScene(planet.id), Bubble { born: now }));
+        }
+    }
+    let dt = time.delta_secs_f64();
+    for (e, b, mut wp, mut t) in &mut bubbles {
+        let age = now - b.born;
+        if age > 1.0 {
+            commands.entity(e).despawn();
+            continue;
+        }
+        let up = planet.up(wp.pos);
+        wp.pos += up * dt * 0.9;
+        t.scale = Vec3::splat((1.0 + age as f32) * (1.0 - age as f32 * 0.8));
+    }
 }

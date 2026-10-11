@@ -834,7 +834,7 @@ pub fn smuggle_run_steps(s: &mut Vec<Step>) {
         use crate::feedback::{Anchor, Cue};
         let stamps: Vec<&str> = fb.stamps().collect();
         check(c, has(&|q| matches!(q, Cue::Burst { at: Anchor::Kettle(_), .. })), "smuggle_run: the kettle splashed and burst".into());
-        check(c, stamps.iter().any(|s| s.contains(" · Q")), format!("smuggle_run: the brew's quality was stamped ({:?})", stamps.iter().find(|s| s.contains(" · Q"))));
+        check(c, stamps.iter().any(|s| s.contains(" - Q")), format!("smuggle_run: the brew's quality was stamped ({:?})", stamps.iter().find(|s| s.contains(" - Q"))));
         check(c, stamps.iter().any(|s| s.starts_with("INSPECTION") || s.starts_with("PAD ")), "smuggle_run: the clearance was stamped".into());
         check(c, has(&|q| matches!(q, Cue::Dust)) && has(&|q| matches!(q, Cue::Kick(_))), "smuggle_run: the touchdown raised dust and kicked the camera".into());
         check(c, stamps.iter().any(|s| s.starts_with("BRIBED")), format!("smuggle_run: the verdict was stamped ({:?})", stamps.iter().find(|s| s.starts_with("BRIBED"))));
@@ -952,7 +952,7 @@ pub fn shots_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool)
     s.push(Box::new(|w, _| {
         let p = super::deliver::pad(w, "bent_spoon");
         let east = p.up.any_orthonormal_vector();
-        let at = p.centre + east * 120.0 + p.up * 140.0;
+        let at = p.centre + east * 420.0 + p.up * 110.0;
         let nose = (p.centre - at).normalize();
         let rot = DQuat::from_rotation_arc(DVec3::NEG_Z, nose);
         teleport_ship(w, at, rot);
@@ -965,6 +965,93 @@ pub fn shots_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool)
         let dir = dir.clone();
         s.push(Box::new(move |w, c| {
             shot(w, c, &dir, windowed, "approach-cleared");
+            true
+        }));
+    }
+    s.push(wait(0.5));
+    // Round 6b: the felt moments. The ship sits down on the cleared pad; the events that the
+    // real run raises are pushed directly, so each picture shows one moment.
+    s.push(Box::new(|w, _| {
+        let pad = gp(w).smuggling.traffic.clearance(HOST).map(|c| c.pad.clone()).expect("cleared above");
+        let p = gp(w).pad_of(&pad).cloned().expect("a pad");
+        let east = p.up.any_orthonormal_vector();
+        teleport_ship(w, p.centre + p.up * 1.6 - east * 4.0, basis_for_up(p.up));
+        let town = gp(w).smuggling.traffic.clearance(HOST).map(|c| c.town.clone()).unwrap();
+        let g = &mut *w.resource_mut::<Gameplay>();
+        g.push_world(HOST, WorldEvent::Landed { at: Some(pad.clone()), speed: 3.0 });
+        g.push_world(HOST, WorldEvent::LandingGraded { town, at: pad, grade: 3, on_time: true });
+        true
+    }));
+    s.push(wait(0.55));
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
+            shot(w, c, &dir, windowed, "touchdown-stamp");
+            true
+        }));
+    }
+    s.push(wait(2.0));
+    s.push(Box::new(|w, _| {
+        heat_to(w, 3);
+        let product = ProductSpec { base: CommodityId::new("blorp_paste"), effects: [EffectId::new("giggly")].into_iter().collect(), quality: 0.9 };
+        stock_in_cabin(w, "blorp_paste", Some(product), 2);
+        true
+    }));
+    s.push(wait(1.0));
+    s.push(Box::new(|w, _| {
+        let at = gp(w).smuggling.traffic.clearance(HOST).map(|c| c.pad.clone()).unwrap_or_else(|| gameplay_core::LocationId::new("bent_spoon_east"));
+        let e = w.resource_mut::<Gameplay>().smuggling.scan_at(at);
+        w.resource_mut::<Gameplay>().push_world(HOST, e);
+        true
+    }));
+    s.push(wait(1.6));
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
+            shot(w, c, &dir, windowed, "scan-heat");
+            true
+        }));
+    }
+    s.push(wait(0.3));
+    s.push(Box::new(|w, _| {
+        tap(w, KeyCode::Digit2);
+        true
+    }));
+    s.push(wait(1.05));
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
+            shot(w, c, &dir, windowed, "verdict");
+            true
+        }));
+    }
+    s.push(wait(2.0));
+    s.push(Box::new(|w, _| {
+        w.resource_mut::<Gameplay>().push_world(HOST, WorldEvent::ProductOrderSettled { order: gameplay_core::OrderId(9999), paid: 328, matched: 1.0 });
+        true
+    }));
+    s.push(wait(0.9));
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
+            shot(w, c, &dir, windowed, "payday");
+            true
+        }));
+    }
+    s.push(wait(3.0));
+    s.push(Box::new(|w, _| {
+        let p = super::deliver::pad(w, "bent_spoon");
+        let east = p.up.any_orthonormal_vector();
+        let at = p.centre + east * 300.0 + p.up * 160.0;
+        teleport_ship(w, at, basis_for_up(p.up));
+        true
+    }));
+    s.push(wait_for_order("shots: wait for the patrol", 120.0, true));
+    s.push(wait(0.4));
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
+            shot(w, c, &dir, windowed, "patrol");
             end(w, c, format!("pictures in {}", dir.display()));
             true
         }));

@@ -9,6 +9,7 @@ pub mod daynight;
 pub mod dev;
 pub mod env;
 pub mod feedback;
+pub mod feedback_view;
 pub mod flight_events;
 pub mod frame_cost;
 pub mod gameplay;
@@ -40,6 +41,7 @@ pub mod terrain;
 pub mod terrain_material;
 pub mod town;
 pub mod tuning;
+pub mod ui_theme;
 pub mod view;
 pub mod walker;
 pub mod warp;
@@ -397,7 +399,7 @@ pub fn build_app(o: &Options) -> App {
     });
     if !o.headless {
         app.add_plugins((view::plugin, controls::window_plugin, settings::window_plugin, terrain::plugin, daynight::window_plugin, grab::window_plugin, cargo::window_plugin));
-        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, town::window_plugin, smuggling::hud::window_plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin, help::window_plugin, dev::window_plugin));
+        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, town::window_plugin, smuggling::hud::window_plugin, feedback_view::window_plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin, help::window_plugin, dev::window_plugin));
         if o.menu() {
             app.add_plugins(menu::plugin);
         }

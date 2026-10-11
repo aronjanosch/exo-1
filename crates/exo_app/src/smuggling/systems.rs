@@ -84,6 +84,8 @@ pub struct Systems {
     pub tracked_order: Option<gameplay_core::OrderId>,
     /// The clearance whose 20 s warning was given (town, pad), so it is said once.
     pub reminded: Option<(TownId, LocationId)>,
+    /// The window of the last clearance (s), for the HUD's countdown bar.
+    pub clear_window_s: f64,
 }
 
 impl Systems {
@@ -129,6 +131,7 @@ impl Systems {
             radio: Vec::new(),
             tracked_order: None,
             reminded: None,
+            clear_window_s: 0.0,
         })
     }
 
@@ -209,7 +212,10 @@ impl Systems {
             WorldEvent::GoodsBought { commodity, amount, at } => {
                 self.spawn.push(SpawnStock { commodity: commodity.clone(), product: None, count: *amount, at: at.clone() });
             }
-            WorldEvent::ClearanceGranted { pad, .. } => self.log.push(format!("cleared for {pad}")),
+            WorldEvent::ClearanceGranted { pad, window_s, .. } => {
+                self.clear_window_s = *window_s;
+                self.log.push(format!("cleared for {pad}"));
+            }
             WorldEvent::LandingGraded { at, grade, on_time, .. } => self.log.push(format!("graded {grade} at {at}, on time {on_time}")),
             WorldEvent::Violation { kind, .. } => self.log.push(format!("violation {kind:?}")),
             WorldEvent::RankReached { ladder, rank } => self.log.push(format!("rank {rank} on {ladder}")),

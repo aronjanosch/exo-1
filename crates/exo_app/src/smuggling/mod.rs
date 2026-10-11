@@ -88,6 +88,15 @@ pub struct SmuggleHud {
     pub brew: Option<BrewView>,
     /// The tower's state for the pilot: airspace, calling, holding, cleared pad and time left.
     pub clearance: String,
+    /// The countdown under it (round 6b): share of the time left (0..1), and whose it is.
+    pub bar: Option<HudBar>,
+}
+
+/// A countdown shown as a shrinking bar: the clearance window or a patrol's halt order.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HudBar {
+    pub left: f64,
+    pub tone: crate::feedback::Tone,
 }
 
 /// How long a radio line stays up (s). TODO(initiator).

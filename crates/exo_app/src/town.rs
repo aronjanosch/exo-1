@@ -7,13 +7,15 @@
 //! Colliders exist headless too, so the walker and the ship meet the same walls in scenarios;
 //! models are window-only.
 use crate::env::{PlanetRes, from_v3, to_v3};
+use crate::gameplay::Gameplay;
+use crate::named_material::{NamedMaterials, WantMaterials};
 use crate::origin::WorldPos;
 use crate::terrain::PlanetScene;
 use crate::Layer;
 use avian3d::prelude::*;
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 /// The place the plan's origin sits on (`content/place/city.json`).
 pub const CITY_PLACE: &str = "city";
@@ -300,6 +302,17 @@ pub struct NpcModel {
     pub up: bevy::math::DVec3,
 }
 
+/// The model of a character: a quest giver keeps the plain marker; a buyer is one of three
+/// figures, picked by a stable hash of its id (FNV-1a), so a buyer keeps its look.
+pub fn npc_model(id: &str, buyer: bool) -> &'static str {
+    const BUYERS: [&str; 3] = ["smuggle/buyer_a.glb", "smuggle/buyer_b.glb", "smuggle/buyer_c.glb"];
+    if !buyer {
+        return "city/npc_marker.glb";
+    }
+    let h = id.bytes().fold(2166136261u32, |h, c| (h ^ c as u32).wrapping_mul(16777619));
+    BUYERS[(h % BUYERS.len() as u32) as usize]
+}
+
 /// The city's models and the characters' markers (window only).
 fn update_town_view(mut commands: Commands, planet: Res<PlanetRes>, town: Res<Town>, assets: Res<AssetServer>, mut view: ResMut<TownView>, npcs: Query<Entity, With<NpcModel>>) {
     let npc_total = town.npcs.len() + town.extra_npcs.len();
@@ -325,15 +338,141 @@ fn update_town_view(mut commands: Commands, planet: Res<PlanetRes>, town: Res<To
         for e in &npcs {
             commands.entity(e).despawn();
         }
-        for n in town.all_npcs() {
+        for (n, buyer) in town.npcs.iter().map(|n| (n, false)).chain(town.extra_npcs.iter().map(|n| (n, true))) {
             commands.spawn((
-                WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("city/npc_marker.glb"))),
+                WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset(npc_model(&n.id, buyer)))),
                 Transform::from_rotation(Quat::from_rotation_arc(Vec3::Y, n.up.as_vec3())),
                 WorldPos(n.pos),
                 PlanetScene(planet.id),
                 NpcModel { id: n.id.clone(), pos: n.pos, up: n.up },
             ));
         }
+    }
+}
+
+/// Height of an order marker's lowest tip above the buyer's ground (m).
+const ORDER_MARKER_H: f32 = 2.3;
+
+/// A buyer with an open product order shows a floating marker (window only). It bobs (about 1 Hz,
+/// 0.15 m) and turns; the tracked order's marker is bigger and brighter.
+#[derive(Component)]
+pub struct OrderMarker;
+
+fn order_markers(
+    mut commands: Commands,
+    time: Res<Time>,
+    gp: Res<Gameplay>,
+    assets: Res<AssetServer>,
+    mut mats: ResMut<Assets<StandardMaterial>>,
+    buyers: Query<(Entity, &NpcModel)>,
+    mut markers: Query<(Entity, &ChildOf, &mut Transform, Option<&NamedMaterials>), With<OrderMarker>>,
+) {
+    // Buyer id -> is its order the tracked one? (One entry per buyer with open product orders.)
+    let mut wanted: Vec<(String, bool)> = Vec::new();
+    for (id, o) in gp.customers.product_orders() {
+        let tracked = gp.smuggling.tracked_order == Some(id);
+        match wanted.iter_mut().find(|(b, _)| b == o.customer.as_str()) {
+            Some(w) => w.1 |= tracked,
+            None => wanted.push((o.customer.as_str().to_string(), tracked)),
+        }
+    }
+    let t = time.elapsed_secs();
+    let mut marked = HashSet::new();
+    for (e, parent, mut tr, named) in &mut markers {
+        let Ok((_, npc)) = buyers.get(parent.parent()) else {
+            commands.entity(e).despawn();
+            continue;
+        };
+        let Some(&(_, tracked)) = wanted.iter().find(|(b, _)| *b == npc.id) else {
+            commands.entity(e).despawn();
+            continue;
+        };
+        marked.insert(parent.parent());
+        tr.translation = Vec3::new(0.0, ORDER_MARKER_H + 0.15 * (t * std::f32::consts::TAU).sin(), 0.0);
+        tr.rotation = Quat::from_rotation_y(t * 0.8);
+        tr.scale = Vec3::splat(if tracked { 1.3 } else { 1.0 });
+        if let Some(h) = named.and_then(|n| n.0.get("glow")) {
+            let glow = Color::srgb(1.0, 0.8, 0.3).to_linear() * if tracked { 4.0 } else { 1.2 };
+            if mats.get(h).is_some_and(|m| m.emissive != glow) {
+                if let Some(mut m) = mats.get_mut(h) {
+                    m.emissive = glow;
+                }
+            }
+        }
+    }
+    for (e, npc) in &buyers {
+        if marked.contains(&e) || !wanted.iter().any(|(b, _)| *b == npc.id) {
+            continue;
+        }
+        commands.entity(e).with_children(|c| {
+            c.spawn((
+                WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("smuggle/order_marker.glb"))),
+                Transform::from_translation(Vec3::Y * ORDER_MARKER_H),
+                WantMaterials(&["glow"]),
+                OrderMarker,
+            ));
+        });
+    }
+}
+
+/// Height and distance of the landmarks: a tower stands this far from its town's main pad (m).
+const TOWER_OFF_M: f64 = 25.0;
+/// The tower keeps this much clear of every pad's edge (m).
+const PAD_CLEAR_M: f64 = 8.0;
+/// Towers already in a town's dress plan (a town with one of these gets no `tower_small`).
+const TOWERS: [&str; 3] = ["beacon_spire", "pod_tower", "tower_small"];
+
+/// The towns that get a `tower_small`: the places with an inspect pad whose dress plan has no tower.
+pub fn tower_places(inspect_places: &[&str], dress: &[(String, Plan)]) -> Vec<String> {
+    inspect_places
+        .iter()
+        .filter(|place| !dress.iter().any(|(p, plan)| p == *place && plan.placements.iter().any(|x| TOWERS.contains(&x.model.as_str()))))
+        .map(|p| p.to_string())
+        .collect()
+}
+
+/// A tower's spot: 25 m from the main pad's centre, east, north, west or south (first that clears
+/// every pad's edge by 8 m); None when no side does. `others` are (centre, radius) of all pads.
+pub fn tower_spot(main: DVec3, up: DVec3, others: &[(DVec3, f64)]) -> Option<DVec3> {
+    let east = up.any_orthonormal_vector();
+    let north = up.cross(east);
+    [east, north, -east, -north].into_iter().map(|d| main + d * TOWER_OFF_M).find(|spot| others.iter().all(|(c, r)| spot.distance(*c) > r + PAD_CLEAR_M))
+}
+
+/// The landmarks of the towns (window only), once per planet when the pads are known: a scan gate
+/// over every inspect pad, a tower in each town that has none.
+fn landmarks(mut commands: Commands, planet: Res<PlanetRes>, gp: Res<Gameplay>, town: Res<Town>, assets: Res<AssetServer>, mut done: Local<Option<warp_core::PlanetId>>) {
+    if gp.pads_for != Some(planet.id) || *done == Some(planet.id) {
+        return;
+    }
+    *done = Some(planet.id);
+    for pad in gp.pads.iter().filter(|p| p.location.as_str().ends_with("_inspect")) {
+        let east = pad.up.any_orthonormal_vector();
+        let rot = DQuat::from_mat3(&bevy::math::DMat3::from_cols(east, pad.up, -pad.up.cross(east)));
+        commands.spawn((
+            WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("smuggle/scan_gate.glb"))),
+            Transform::from_rotation(rot.as_quat()),
+            WorldPos(pad.centre),
+            PlanetScene(planet.id),
+        ));
+    }
+    let inspect: Vec<String> = gp.pads.iter().filter(|p| p.location.as_str().ends_with("_inspect")).filter_map(|p| gp.kernel.locations.get(&p.location).map(|l| l.record.place.clone())).collect();
+    let inspect: Vec<&str> = inspect.iter().map(String::as_str).collect();
+    let others: Vec<(DVec3, f64)> = gp.pads.iter().map(|p| (p.centre, p.radius)).collect();
+    for place in tower_places(&inspect, &town.dress) {
+        let Some(main) = gp.pads.iter().find(|p| p.location.as_str() == place) else { continue };
+        let Some(spot) = tower_spot(main.centre, main.up, &others) else {
+            warn!("tower: no clear spot for '{place}' near its main pad");
+            continue;
+        };
+        let up = planet.up(spot);
+        let ground = planet.centre + up * planet.surface(up);
+        commands.spawn((
+            WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("smuggle/tower_small.glb"))),
+            Transform::from_rotation(Quat::from_rotation_arc(Vec3::Y, up.as_vec3())),
+            WorldPos(ground),
+            PlanetScene(planet.id),
+        ));
     }
 }
 
@@ -345,11 +484,14 @@ pub fn plugin(app: &mut App) {
 pub fn window_plugin(app: &mut App) {
     app.init_resource::<TownView>();
     app.add_systems(Update, update_town_view.after(update_town).in_set(crate::phases::Frame::World));
+    app.add_systems(Update, order_markers.after(update_town_view).in_set(crate::phases::Frame::World));
+    app.add_systems(Update, landmarks.after(update_town).in_set(crate::phases::Frame::World));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cargo::model_fit;
 
     const DRESS: &str = r#"{
         "place": "bent_spoon",
@@ -386,5 +528,42 @@ mod tests {
     fn placements_without_folder_are_city_models() {
         let plan = parse_plan(DRESS).unwrap();
         assert_eq!(plan.placements[1].model_path(), "city/row_slant.glb");
+    }
+
+    #[test]
+    fn npc_model_quest_givers_keep_the_marker_and_buyers_get_one_of_three() {
+        assert_eq!(npc_model("quest_a", false), "city/npc_marker.glb");
+        assert_eq!(npc_model("buyer_x", true), npc_model("buyer_x", true), "a buyer keeps its look");
+        let seen: HashSet<&str> = (0..30).map(|i| npc_model(&format!("buyer_{i}"), true)).collect();
+        assert_eq!(seen.len(), 3, "all three buyer figures are used");
+        assert!(seen.iter().all(|m| m.starts_with("smuggle/buyer_")));
+    }
+
+    #[test]
+    fn tower_goes_to_inspect_towns_without_a_tower() {
+        let plan = |place: &str, model: &str| Plan {
+            place: Some(place.into()),
+            placements: vec![Placement { model: model.into(), folder: None, at: [0.0; 3], turn_deg: 0.0, fit: None }],
+            models: BTreeMap::new(),
+            quests: Vec::new(),
+        };
+        let dress = vec![("bent_spoon".to_string(), plan("bent_spoon", "beacon_spire")), ("noodle_town".to_string(), plan("noodle_town", "pod_tower")), ("gulch_freeport".to_string(), plan("gulch_freeport", "row_tank"))];
+        assert_eq!(tower_places(&["bent_spoon", "drip_rock", "noodle_town"], &dress), vec!["drip_rock".to_string()]);
+    }
+
+    #[test]
+    fn tower_spot_clears_every_pad_or_gives_none() {
+        let (main, up) = (DVec3::ZERO, DVec3::Y);
+        let spot = tower_spot(main, up, &[(main, 6.0)]).expect("a spot is clear");
+        assert!((spot.length() - TOWER_OFF_M).abs() < 1e-9, "25 m from the main pad");
+        assert!(spot.distance(main) > 6.0 + PAD_CLEAR_M);
+        assert_eq!(tower_spot(main, up, &[(main, 100.0)]), None, "a pad that covers every side leaves no spot");
+    }
+
+    #[test]
+    fn model_fit_puts_the_box_on_the_crate() {
+        let t = model_fit(Vec3::new(2.0, 2.0, 2.0), [0.0, 0.0, 0.0], [1.0, 2.0, 1.0]);
+        assert_eq!(t.transform_point(Vec3::ZERO), Vec3::splat(-1.0), "the bottom corner is the crate's low corner");
+        assert_eq!(t.transform_point(Vec3::new(1.0, 2.0, 1.0)), Vec3::splat(1.0));
     }
 }

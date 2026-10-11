@@ -124,7 +124,7 @@ pub struct Gameplay {
     seq: u64,
     next_crate: u64,
     pub pads: Vec<Pad>,
-    pads_for: Option<warp_core::PlanetId>,
+    pub(crate) pads_for: Option<warp_core::PlanetId>,
     queue: Vec<Queued>,
     /// What happened, oldest first (scenario checks).
     pub log: Vec<String>,

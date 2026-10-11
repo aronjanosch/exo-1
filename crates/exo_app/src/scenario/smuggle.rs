@@ -1095,10 +1095,30 @@ pub fn shots_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool)
         let dir = dir.clone();
         s.push(Box::new(move |w, c| {
             shot(w, c, &dir, windowed, "patrol");
-            end(w, c, format!("pictures in {}", dir.display()));
             true
         }));
     }
+    // The far towns from the approach (about 300 m out, 120 m up), to see their dressing.
+    for town in ["bent_spoon", "noodle_town", "gulch_freeport"] {
+        s.push(Box::new(move |w, _| {
+            let p = super::deliver::pad(w, town);
+            let east = p.up.any_orthonormal_vector();
+            let at = p.centre + east * 300.0 + p.up * 120.0;
+            let nose = (p.centre - at).normalize();
+            teleport_ship(w, at, DQuat::from_rotation_arc(DVec3::NEG_Z, nose));
+            true
+        }));
+        s.push(wait(1.5));
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
+            shot(w, c, &dir, windowed, &format!("town-{town}"));
+            true
+        }));
+    }
+    s.push(Box::new(move |w, c| {
+        end(w, c, format!("pictures in {}", dir.display()));
+        true
+    }));
     s.push(wait(1.0));
 }
 

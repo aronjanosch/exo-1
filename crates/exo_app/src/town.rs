@@ -20,6 +20,9 @@ pub const CITY_PLACE: &str = "city";
 
 #[derive(Clone, Debug)]
 pub struct Plan {
+    /// The place the plan's origin sits on. The city plan has none (it is `CITY_PLACE`); a dress
+    /// plan in `content/city/dress/` names its own.
+    pub place: Option<String>,
     pub placements: Vec<Placement>,
     pub models: BTreeMap<String, Bounds>,
     pub quests: Vec<Quest>,
@@ -28,10 +31,19 @@ pub struct Plan {
 #[derive(Clone, Debug)]
 pub struct Placement {
     pub model: String,
+    /// Content folder of the model (`city` when absent). Dress placements may say `props`.
+    pub folder: Option<String>,
     /// Metres in the place frame: x east, y north, z up (z is the model's lift).
     pub at: [f64; 3],
     pub turn_deg: f64,
     pub fit: Option<String>,
+}
+
+impl Placement {
+    /// The model's file under `content/`, e.g. `city/row_slant.glb` or `props/x.glb`.
+    pub fn model_path(&self) -> String {
+        format!("{}/{}.glb", self.folder.as_deref().unwrap_or("city"), self.model)
+    }
 }
 
 /// A model's box in glTF axes: x, y up, z towards the model's front.
@@ -67,6 +79,7 @@ pub fn parse_plan(text: &str) -> Result<Plan, String> {
         let at = arr(&p["at"], &format!("placements[{i}].at"), 3)?;
         placements.push(Placement {
             model: p["model"].as_str().ok_or_else(|| format!("placements[{i}].model: expected text"))?.to_string(),
+            folder: p["folder"].as_str().map(str::to_string),
             at: [at[0], at[1], at[2]],
             turn_deg: num(&p["turn_deg"], &format!("placements[{i}].turn_deg"))?,
             fit: p["fit"].as_str().map(str::to_string),
@@ -82,7 +95,35 @@ pub fn parse_plan(text: &str) -> Result<Plan, String> {
         let at = arr(&q["at"], &format!("quests[{i}].at"), 2)?;
         quests.push(Quest { id: q["id"].as_str().ok_or_else(|| format!("quests[{i}].id: expected text"))?.to_string(), at: [at[0], at[1]] });
     }
-    Ok(Plan { placements, models, quests })
+    Ok(Plan { place: v["place"].as_str().map(str::to_string), placements, models, quests })
+}
+
+/// The dress plans: every `content/city/dress/*.json`, sorted by file name, as (place, plan).
+/// A file that does not parse or names no place is skipped with a warning (a bad dress file must
+/// not stop the game).
+pub fn load_dress() -> Vec<(String, Plan)> {
+    let dir = format!("{}/city/dress", crate::content_dir());
+    let Ok(rd) = std::fs::read_dir(&dir) else { return Vec::new() };
+    let mut files: Vec<_> = rd.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "json")).collect();
+    files.sort();
+    let mut out = Vec::new();
+    for path in files {
+        let text = match std::fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(e) => {
+                warn!("dress {}: {e}", path.display());
+                continue;
+            }
+        };
+        match parse_plan(&text) {
+            Ok(plan) => match plan.place.clone() {
+                Some(place) => out.push((place, plan)),
+                None => warn!("dress {}: no \"place\"", path.display()),
+            },
+            Err(e) => warn!("dress {}: {e}", path.display()),
+        }
+    }
+    out
 }
 
 /// Models that get a box collider: buildings and big street furniture. Everything else (trees,
@@ -143,6 +184,8 @@ pub struct Town {
     for_planet: Option<warp_core::PlanetId>,
     colliders: Vec<Entity>,
     pub plan: Option<Plan>,
+    /// The dress plans (`content/city/dress/`) with the place each one stands on.
+    pub dress: Vec<(String, Plan)>,
     pub frame: Option<Frame>,
     /// Characters from the plan (quest spots); gameplay adds its own through `extra_npcs`.
     pub npcs: Vec<Npc>,
@@ -170,6 +213,7 @@ pub fn update_town(mut commands: Commands, planet: Res<PlanetRes>, mut town: Res
     town.solid_count = 0;
     if town.plan.is_none() {
         town.plan = Some(load_plan());
+        town.dress = load_dress();
     }
     let Some(frame) = Frame::of_place(&planet, CITY_PLACE) else {
         town.frame = None;
@@ -177,10 +221,31 @@ pub fn update_town(mut commands: Commands, planet: Res<PlanetRes>, mut town: Res
     };
     town.frame = Some(frame);
     let plan = town.plan.clone().expect("loaded above");
+    let mut colliders = spawn_colliders(&mut commands, &planet, &frame, &plan);
+    town.solid_count = colliders.len();
+    for (place, dress) in &town.dress {
+        match Frame::of_place(&planet, place) {
+            Some(frame) => colliders.extend(spawn_colliders(&mut commands, &planet, &frame, dress)),
+            None => warn!("dress: place '{place}' is not on the planet; its plan is skipped"),
+        }
+    }
+    town.colliders = colliders;
+    town.npcs = plan
+        .quests
+        .iter()
+        .map(|q| {
+            let (pos, up) = frame.ground(&planet, q.at[0], q.at[1], 0.0);
+            Npc { id: q.id.clone(), pos, up }
+        })
+        .collect();
+}
+
+/// Spawns the box colliders of a plan's solid placements on `frame`, and returns them.
+fn spawn_colliders(commands: &mut Commands, planet: &PlanetRes, frame: &Frame, plan: &Plan) -> Vec<Entity> {
     let mut colliders = Vec::new();
     for p in plan.placements.iter().filter(|p| solid(&p.model)) {
         let Some(b) = plan.models.get(&p.model) else { continue };
-        let (ground, up) = frame.ground(&planet, p.at[0], p.at[1], p.at[2]);
+        let (ground, up) = frame.ground(planet, p.at[0], p.at[1], p.at[2]);
         let rot = frame.rotation(up, p.turn_deg);
         let half = DVec3::new(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]) * 0.5;
         let centre_local = DVec3::new(b.max[0] + b.min[0], b.max[1] + b.min[1], b.max[2] + b.min[2]) * 0.5;
@@ -198,16 +263,22 @@ pub fn update_town(mut commands: Commands, planet: Res<PlanetRes>, mut town: Res
             .id();
         colliders.push(e);
     }
-    town.solid_count = colliders.len();
-    town.colliders = colliders;
-    town.npcs = plan
-        .quests
-        .iter()
-        .map(|q| {
-            let (pos, up) = frame.ground(&planet, q.at[0], q.at[1], 0.0);
-            Npc { id: q.id.clone(), pos, up }
-        })
-        .collect();
+    colliders
+}
+
+/// Spawns the models of a plan's placements on `frame` (window only); returns how many.
+fn spawn_models(commands: &mut Commands, planet: &PlanetRes, assets: &AssetServer, frame: &Frame, plan: &Plan) -> usize {
+    for p in &plan.placements {
+        let (ground, up) = frame.ground(planet, p.at[0], p.at[1], p.at[2]);
+        let rot = frame.rotation(up, p.turn_deg);
+        commands.spawn((
+            WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset(p.model_path()))),
+            Transform::from_rotation(rot.as_quat()),
+            WorldPos(ground),
+            PlanetScene(planet.id),
+        ));
+    }
+    plan.placements.len()
 }
 
 #[derive(Component)]
@@ -239,16 +310,12 @@ fn update_town_view(mut commands: Commands, planet: Res<PlanetRes>, town: Res<To
         view.for_planet = Some(planet.id);
         view.models = 0;
         if let (Some(plan), Some(frame)) = (&town.plan, town.frame) {
-            for p in &plan.placements {
-                let (ground, up) = frame.ground(&planet, p.at[0], p.at[1], p.at[2]);
-                let rot = frame.rotation(up, p.turn_deg);
-                commands.spawn((
-                    WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset(format!("city/{}.glb", p.model)))),
-                    Transform::from_rotation(rot.as_quat()),
-                    WorldPos(ground),
-                    PlanetScene(planet.id),
-                ));
-                view.models += 1;
+            view.models += spawn_models(&mut commands, &planet, &assets, &frame, plan);
+        }
+        for (place, dress) in &town.dress {
+            // Unknown places were warned about in `update_town`.
+            if let Some(frame) = Frame::of_place(&planet, place) {
+                view.models += spawn_models(&mut commands, &planet, &assets, &frame, dress);
             }
         }
         view.npc_count = usize::MAX;
@@ -278,4 +345,46 @@ pub fn plugin(app: &mut App) {
 pub fn window_plugin(app: &mut App) {
     app.init_resource::<TownView>();
     app.add_systems(Update, update_town_view.after(update_town).in_set(crate::phases::Frame::World));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DRESS: &str = r#"{
+        "place": "bent_spoon",
+        "placements": [
+            {"model": "x", "folder": "props", "at": [1.0, 2.0, 0.0], "turn_deg": 0.0},
+            {"model": "row_slant", "at": [3.0, 4.0, 0.5], "turn_deg": 90.0, "fit": "bar"}
+        ],
+        "models": {"x": {"min": [0, 0, 0], "max": [1, 1, 1]}},
+        "quests": []
+    }"#;
+
+    #[test]
+    fn parse_plan_reads_place_and_folder() {
+        let plan = parse_plan(DRESS).unwrap();
+        assert_eq!(plan.place.as_deref(), Some("bent_spoon"));
+        assert_eq!(plan.placements[0].folder.as_deref(), Some("props"));
+        assert_eq!(plan.placements[1].folder, None);
+        assert_eq!(plan.placements[1].fit.as_deref(), Some("bar"));
+    }
+
+    #[test]
+    fn plan_without_place_or_folder_still_parses() {
+        let plan = parse_plan(r#"{"placements": [], "models": {}, "quests": []}"#).unwrap();
+        assert_eq!(plan.place, None);
+    }
+
+    #[test]
+    fn dress_props_map_to_props_folder() {
+        let plan = parse_plan(DRESS).unwrap();
+        assert_eq!(plan.placements[0].model_path(), "props/x.glb");
+    }
+
+    #[test]
+    fn placements_without_folder_are_city_models() {
+        let plan = parse_plan(DRESS).unwrap();
+        assert_eq!(plan.placements[1].model_path(), "city/row_slant.glb");
+    }
 }

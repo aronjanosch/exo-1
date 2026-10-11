@@ -25,8 +25,8 @@ Glue (orchestrator):
 - [x] G8 the whole loop (`smuggle_run`)
 
 End:
-- [ ] merge of round/planets-100km, gate, static check
-- [ ] playtest issue, PR, cleanup
+- [x] merge of round/planets-100km, gate, static check
+- [x] playtest issue, PR, cleanup
 
 ## Log
 
@@ -46,3 +46,6 @@ End:
 - 03:20 Merged round/planets-100km (relief, settlements #223, geomorphing, sky). The new relief put the city on a 44° slope. `content/place/city_ground.json` flattens one rectangle under the spaceport and the city; pads inside lose their own flattens.
 - 03:30 First gate on round/6: 12 failures. A baseline run of the same tests on round/planets-100km (detached checkout in the same worktree) fails 7 of them already upstream: collision_t1, crate_carry, crate_unload, crate_budget, first_person_settings, warp, full. Round 6 added courier, map, 3 unit tests (KEYS.md rows, the unbound-key test now that Z counters, a wet pad).
 - 03:55 Fixed: every pad is dry and flat at 5 km and 100 km (ignored test `probe_town_spots` checks both and searches dry offsets). The free port moved to 6°N 44°E, Noodle Scrub and Noodle Post moved. The level plot now holds Lint Trap and Noodle Post, because walking off its edge with a parcel wrecked it. exo_app lib 89/89, the 14 gameplay scenarios green.
+- 04:08 The container restarted (external, same time as the nights before). The run continued in the morning.
+- Morning: stretch goal air patrol (#231, `heat_core::patrol` plus the `patrol` scenario): from 2 stars a patrol may hail you in a town's airspace. Slow below 8 m/s within 12 s for an air scan, or flee for heat and a violation. Screenshots of a window run are on the orphan branch `shots/round-6`. Proposal updated in the concept repo. Lane worktrees and targets removed.
+- Final gate on 79aa6f5 (round/planets-100km merged, nothing new upstream since): `scripts/gate --no-fail-fast --test-threads 3` ran 786 tests: 786 passed, 8 skipped. The 7 baseline failures from 03:30 passed this time too, so they look load-dependent (the 03:30 run shared the CPU with other jobs). `cargo check --workspace --all-targets` OK.

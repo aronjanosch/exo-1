@@ -969,6 +969,28 @@ pub fn shots_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool)
         }));
     }
     s.push(wait(0.5));
+    // Round 6b: a kettle brewing, seen from a few steps back (its colour, the bubbles).
+    s.push(Box::new(|w, _| {
+        let g = &mut *w.resource_mut::<Gameplay>();
+        let lc = g.smuggling.lab_c.clone();
+        let _ = g.smuggling.lab.insert(&lc, "kettle_1", &CommodityId::new("blorp_paste"));
+        let _ = g.smuggling.lab.insert(&lc, "kettle_1", &CommodityId::new("space_sugar"));
+        let _ = g.smuggling.lab.start(&lc, "kettle_1");
+        let town = w.resource::<crate::town::Town>();
+        let (_, k, up) = kettles(town, gp(w)).into_iter().next().expect("a kettle");
+        let side = up.any_orthonormal_vector();
+        stand_and_look(w, k + side * 1.2 + up.cross(side) * 3.5, k + up * 0.6);
+        true
+    }));
+    s.push(wait(1.5));
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
+            shot(w, c, &dir, windowed, "kettle-brewing");
+            true
+        }));
+    }
+    s.push(wait(0.5));
     s.extend(seated());
     s.push(Box::new(|w, _| {
         let p = super::deliver::pad(w, "bent_spoon");

@@ -763,7 +763,18 @@ pub fn update_readout(
         let (bearing_deg, dist_m) = bearing(pos, look, pad.centre, planet.up(pos));
         Some(Arrow { target, stop, bearing_deg, dist_m })
     });
-    gp.arrow = arrow;
+    // Round 6: a clearance points the arrow at the assigned pad; else a tracked buyer's order.
+    let smuggle_target = gp.smuggling.traffic.clearance(HOST).map(|c| c.pad.clone()).or_else(|| {
+        let o = gp.smuggling.tracked_order?;
+        gp.customers.product_orders().find(|(i, _)| *i == o).map(|(_, po)| po.at.clone())
+    });
+    let smuggle_arrow = smuggle_target.and_then(|target| {
+        let (pos, look) = view?;
+        let pad = gp.pad_of(&target)?;
+        let (bearing_deg, dist_m) = bearing(pos, look, pad.centre, planet.up(pos));
+        Some(Arrow { target, stop: jobs_core::map::Stop::Dropoff, bearing_deg, dist_m })
+    });
+    gp.arrow = smuggle_arrow.or(arrow);
     let money = gp.progress.wallet();
     let mut s = format!("{money} {}", gp.text(&TextKey::new("track.wallet.name")));
     let xp = gp.progress.value(&gp.kernel, &TrackId::new("freight_xp"), Some(HOST));

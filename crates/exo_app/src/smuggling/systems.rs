@@ -75,6 +75,10 @@ pub struct Systems {
     pub log: Vec<String>,
     /// Radio lines as said (speaker, text, game clock), oldest first; the HUD shows the recent ones.
     pub radio: Vec<super::RadioLine>,
+    /// The buyer's order the arrow points to (F on an order in the phone).
+    pub tracked_order: Option<gameplay_core::OrderId>,
+    /// The clearance whose 20 s warning was given (town, pad), so it is said once.
+    pub reminded: Option<(TownId, LocationId)>,
 }
 
 impl Systems {
@@ -116,6 +120,8 @@ impl Systems {
             spawn: Vec::new(),
             log: Vec::new(),
             radio: Vec::new(),
+            tracked_order: None,
+            reminded: None,
         })
     }
 
@@ -198,6 +204,12 @@ impl Systems {
             WorldEvent::LandingGraded { at, grade, on_time, .. } => self.log.push(format!("graded {grade} at {at}, on time {on_time}")),
             WorldEvent::Violation { kind, .. } => self.log.push(format!("violation {kind:?}")),
             WorldEvent::RankReached { ladder, rank } => self.log.push(format!("rank {rank} on {ladder}")),
+            // The rival gloats on the radio when it takes a buyer.
+            WorldEvent::CustomerPoached { by } => {
+                self.log.push(format!("poached {by}"));
+                out.push(Out::Say { who: gameplay_core::TextKey::new("rival.name"), key: gameplay_core::TextKey::new("rival.poach") });
+            }
+            WorldEvent::ProductOrderSettled { order, .. } if self.tracked_order == Some(*order) => self.tracked_order = None,
             _ => {}
         }
         out

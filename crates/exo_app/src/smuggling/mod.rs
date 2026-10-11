@@ -86,6 +86,8 @@ pub struct SmuggleHud {
     /// The scan prompt while a scan waits for an answer; empty otherwise.
     pub scan: String,
     pub brew: Option<BrewView>,
+    /// The tower's state for the pilot: airspace, calling, holding, cleared pad and time left.
+    pub clearance: String,
 }
 
 /// How long a radio line stays up (s). TODO(initiator).

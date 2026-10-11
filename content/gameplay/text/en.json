@@ -764,5 +764,16 @@
   "notice.empire.tribute_short": "The family wants {amount} credits.",
   "notice.empire.cannot_afford": "You cannot pay the {amount} credit tribute.",
   "notice.empire.rank_up": "{ladder} takes you on as {rank}.",
-  "notice.empire.top": "You are already the top of {ladder}."
+  "notice.empire.top": "You are already the top of {ladder}.",
+  "notice.traffic.reminder": [
+    "Clearance runs out in 20 seconds. Land or lose the pad.",
+    "Twenty seconds left on your pad, pilot.",
+    "The tower taps its watch: 20 seconds."
+  ],
+  "rival.name": "The Velvet Sporks",
+  "rival.poach": [
+    "Too slow, sweetie. Your customer buys from the Sporks now.",
+    "Another one of yours just switched to us. Keep napping.",
+    "Your buyer called. Not you. Us."
+  ]
 }

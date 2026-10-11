@@ -9,6 +9,8 @@ struct GoalText;
 #[derive(Component)]
 struct HeatText;
 #[derive(Component)]
+struct ClearText;
+#[derive(Component)]
 struct RadioText;
 #[derive(Component)]
 struct PhoneText;
@@ -31,6 +33,7 @@ fn spawn_hud(mut commands: Commands) {
         .with_children(|c| {
             c.spawn((GoalText, Text::new(""), TextFont { font_size: FontSize::Px(16.0), ..default() }, TextColor(Color::srgb(1.0, 0.85, 0.45))));
             c.spawn((HeatText, Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }, TextColor(Color::srgb(1.0, 0.35, 0.3))));
+            c.spawn((ClearText, Text::new(""), TextFont { font_size: FontSize::Px(16.0), ..default() }, TextColor(Color::srgb(0.55, 0.9, 1.0))));
         });
     // Radio box: bottom left, the tower and the buyers talk here.
     commands.spawn((
@@ -126,7 +129,15 @@ fn draw_brew(hud: Res<SmuggleHud>, mut bar: Query<&mut Node, (With<BrewBar>, Wit
     }
 }
 
+fn draw_clearance(hud: Res<SmuggleHud>, mut q: Query<&mut Text, With<ClearText>>) {
+    if let Ok(mut t) = q.single_mut()
+        && t.0 != hud.clearance
+    {
+        t.0 = hud.clearance.clone();
+    }
+}
+
 pub fn window_plugin(app: &mut App) {
     app.add_systems(Startup, spawn_hud);
-    app.add_systems(Update, (draw_hud, draw_brew).in_set(crate::phases::Frame::Hud));
+    app.add_systems(Update, (draw_hud, draw_brew, draw_clearance).in_set(crate::phases::Frame::Hud));
 }

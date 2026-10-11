@@ -131,6 +131,14 @@ pub fn smuggle_observe(
             }
         }
     }
+    // 20 s before a clearance runs out, the tower reminds once (Star Citizen's ATC warns too).
+    if let Some(c) = g.smuggling.traffic.clearance(HOST).cloned() {
+        let key = (c.town.clone(), c.pad.clone());
+        if c.time_left_s <= 20.0 && g.smuggling.reminded.as_ref() != Some(&key) {
+            g.smuggling.reminded = Some(key);
+            g.notify(gameplay_core::notice::Notice::new(gameplay_core::notice::NoticeKind::Warning, "notice.traffic.reminder"));
+        }
+    }
     // Contraband aboard: the hidden hold takes the first few, the scan sees the rest.
     let aboard = stock.iter().filter(|(s, c)| c.ship == Some(ship_e) && is_contraband(g, &s.commodity)).count() as u32;
     let hold = if g.progress.has_tag(&Tag::new(TAG_HIDDEN_HOLD)) { HIDDEN_HOLD_CRATES } else { 0 };
@@ -375,7 +383,8 @@ pub struct PhoneState {
 pub enum RowAction {
     None,
     PayTribute(i64),
-    Counter(OrderId),
+    /// An order: F tracks it (the arrow), Z counters.
+    Order(OrderId),
     PayFixer,
     Buy { shop: String, idx: usize },
 }
@@ -415,7 +424,8 @@ pub fn phone_rows(gp: &Gameplay, tab: PhoneTab) -> Vec<(String, RowAction)> {
                     let town = s.town(&o.town).map(|t| gp.text(&t.name)).unwrap_or_else(|| o.town.to_string());
                     let wants = effects_text(gp, &o.wants.iter().cloned().collect());
                     let c = if o.countered { "" } else { "  Z: ask +20 %" };
-                    (format!("{who} @ {town}: {}× [{wants}] q≥{:.0}% — {} — {:.0}:{:02.0} left{c}", o.amount, o.min_quality * 100.0, money(o.price), (o.left_s / 60.0).floor(), o.left_s % 60.0), RowAction::Counter(id))
+                    let tracked = if gp.smuggling.tracked_order == Some(id) { "[tracked] " } else { "" };
+                    (format!("{tracked}{who} @ {town}: {}× [{wants}] q≥{:.0}% — {} — {:.0}:{:02.0} left{c}  F: track", o.amount, o.min_quality * 100.0, money(o.price), (o.left_s / 60.0).floor(), o.left_s % 60.0), RowAction::Order(id))
                 })
                 .collect();
             if v.is_empty() {
@@ -514,12 +524,12 @@ pub fn phone_step(mut actions: ResMut<Actions>, mut phone: ResMut<PhoneState>, m
     }
     let action = rows.get(phone.selected).map(|r| r.1.clone()).unwrap_or(RowAction::None);
     if actions.take_tap(Tap::Counter) {
-        if let RowAction::Counter(order) = action {
+        if let RowAction::Order(order) = action {
             gp.push_world(HOST, WorldEvent::OrderCountered { order, ask_pct: COUNTER_PCT });
         }
     }
     // F on a row with an action: the phone takes the tap (the world's F waits while it is open).
-    if !matches!(action, RowAction::None | RowAction::Counter(_)) && actions.take_tap(Tap::Interact) {
+    if !matches!(action, RowAction::None) && actions.take_tap(Tap::Interact) {
         let g = &mut *gp;
         match action {
             RowAction::PayTribute(amount) => g.push_world(HOST, WorldEvent::TributePaid { ladder: LADDER.into(), amount }),
@@ -535,7 +545,8 @@ pub fn phone_step(mut actions: ResMut<Actions>, mut phone: ResMut<PhoneState>, m
                     Err(r) => g.smuggling.log.push(format!("shop {shop}: refused {r:?}")),
                 }
             }
-            RowAction::None | RowAction::Counter(_) => {}
+            RowAction::Order(order) => g.smuggling.tracked_order = if g.smuggling.tracked_order == Some(order) { None } else { Some(order) },
+            RowAction::None => {}
         }
     }
 }
@@ -552,6 +563,17 @@ pub fn fill_hud(mut hud: ResMut<SmuggleHud>, mut gp: ResMut<Gameplay>, phone: Re
         None => String::new(),
     };
     hud.radio = s.radio.clone();
+    let pad_name = |l: &LocationId| gp.kernel.locations.get(l).map(|r| gp.text(&r.record.name)).unwrap_or_else(|| l.to_string());
+    hud.clearance = match (s.traffic.clearance(HOST), s.traffic.pending(HOST)) {
+        (Some(c), _) => format!("{}: {} — {:.0} s", if c.inspection { "INSPECTION" } else { "Cleared" }, pad_name(&c.pad), c.time_left_s.max(0.0)),
+        (None, Some(p)) if p.second => format!("Holding... the tower answers in {:.0} s", p.due_s.max(0.0)),
+        (None, Some(_)) => "Calling the tower...".into(),
+        (None, None) => match s.traffic.inside(HOST).and_then(|t| s.town(t)) {
+            Some(t) if !t.free_port => format!("{} airspace — L: ask for a pad, limit {:.0} m/s", gp.text(&t.name), t.speed_limit_ms),
+            Some(t) => format!("{} — no tower, land anywhere", gp.text(&t.name)),
+            None => String::new(),
+        },
+    };
     let tab = PhoneTab::ALL[phone.tab];
     let rows = if phone.open { phone_rows(&gp, tab) } else { Vec::new() };
     hud.phone = super::PhoneView {

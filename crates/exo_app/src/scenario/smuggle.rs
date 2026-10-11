@@ -226,8 +226,11 @@ pub fn hail_steps(s: &mut Vec<Step>) {
         check(c, cl.as_ref().is_some_and(|(p, insp)| p.starts_with("bent_spoon") && !insp), format!("hail: the tower assigns a Bent Spoon pad ({cl:?})"));
         let radio = hud(w).radio.iter().filter(|l| l.who.contains("Bent Spoon")).count();
         check(c, radio >= 1, format!("hail: the tower talks on the radio ({radio} lines, last: '{}')", hud(w).radio.last().map(|l| l.text.clone()).unwrap_or_default()));
+        let line = hud(w).clearance.clone();
+        check(c, line.starts_with("Cleared:") && line.ends_with(" s"), format!("hail: the HUD shows the clearance and its time ('{line}')"));
+        let arrow = gp(w).arrow.as_ref().map(|a| a.target.to_string());
+        check(c, arrow.is_some() && arrow == cl.as_ref().map(|(p, _)| p.clone()), format!("hail: the arrow points at the assigned pad ({arrow:?})"));
         let pad = cl.map(|(p, _)| p).unwrap_or_else(|| "bent_spoon".into());
-        c.v.insert("pad_east", 0.0);
         ship_over(w, &pad, 20.0);
         w.resource_mut::<Gameplay>().log.push(format!("scenario: landing on {pad}"));
         true
@@ -608,6 +611,14 @@ pub fn dealing_steps(s: &mut Vec<Step>) {
         };
         check(c, o.countered, format!("dealing: Z asks for more: answered, price {} → {}", c.v["price"], o.price));
         c.v.insert("price", o.price as f64);
+        tap(w, KeyCode::KeyF);
+        true
+    }));
+    s.push(wait(0.5));
+    s.push(Box::new(|w, c| {
+        let Some((_, o)) = buyer_order(w) else { return true };
+        let arrow = gp(w).arrow.as_ref().map(|a| a.target.clone());
+        check(c, arrow.as_ref() == Some(&o.at), format!("dealing: F on the order tracks it: the arrow points at {:?}", arrow));
         tap(w, KeyCode::Backquote);
         // Product crates with what the buyer wants, set down near them; the walker beside them.
         let (spot, up) = buyer_spot(gp(w), &o.at, 0).expect("the buyer's pad");

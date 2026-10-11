@@ -202,7 +202,7 @@ fn pitch_target(t: &AngularTuning, speed: f64, cap: f64, landing: bool, clearanc
     };
     let input = FlightInput { turn: DVec2::new(1.0, 0.0), piloted: true, ..Default::default() };
     let modes = Modes { g_safe, landing, ..Modes::default() };
-    let env = Env { accel_box: flight_core::limits::Rot { pitch: 1e6, yaw: 1e6, roll: 1e6 }, boost: 0.0, cap, thrust_box: flight_core::limits::Dirs::splat(1e6), air_hold: DVec3::ZERO };
+    let env = Env { accel_box: flight_core::limits::Rot { pitch: 1e6, yaw: 1e6, roll: 1e6 }, boost: 0.0, cap, thrust_box: flight_core::limits::Dirs::splat(1e6), air_hold: DVec3::ZERO, level: false };
     let out = angular::step(&mut AngularState::default(), &f, &input, &modes, &env, t);
     out.accel.x / (DT * t.natural_frequency.pitch * t.natural_frequency.pitch)
 }
@@ -260,8 +260,28 @@ fn acceleration_stays_inside_the_box() {
         dt: DT,
     };
     let input = FlightInput { turn: DVec2::new(-1.0, 1.0), roll: -1.0, piloted: true, ..Default::default() };
-    let env = Env { accel_box: flight_core::limits::Rot { pitch: 0.5, yaw: 0.25, roll: 0.75 }, boost: 0.0, cap: 150.0, thrust_box: flight_core::limits::Dirs::splat(1e6), air_hold: DVec3::ZERO };
+    let env = Env { accel_box: flight_core::limits::Rot { pitch: 0.5, yaw: 0.25, roll: 0.75 }, boost: 0.0, cap: 150.0, thrust_box: flight_core::limits::Dirs::splat(1e6), air_hold: DVec3::ZERO, level: false };
     let out = angular::step(&mut AngularState::default(), &f, &input, &Modes::default(), &env, &t);
     eprintln!("box: accel {:?} inside (0.5, 0.25, 0.75)", out.accel);
     assert!(out.accel.x.abs() <= 0.5 && out.accel.y.abs() <= 0.25 && out.accel.z.abs() <= 0.75);
+}
+
+/// X while hovering levels a tilted ship against the planet's up; yaw stays.
+#[test]
+fn brake_while_hovering_levels_the_ship() {
+    let mut ship = ScShip::new(tuning());
+    let env = Air::default();
+    let mut body = body_at(DVec3::new(0.0, 400.0, 0.0));
+    body.rot = DQuat::from_rotation_y(0.7) * DQuat::from_rotation_x(0.25) * DQuat::from_rotation_z(-0.2);
+    let heading = |b: &BodyState| {
+        let f = b.rot * DVec3::NEG_Z;
+        f.x.atan2(-f.z)
+    };
+    let h0 = heading(&body);
+    let brake = FlightInput { brake: true, piloted: true, ..Default::default() };
+    run(&mut ship, &mut body, &brake, &env, 4.0);
+    let tilt = (body.rot * DVec3::Y).angle_between(DVec3::Y).to_degrees();
+    eprintln!("brake to level: tilt {tilt:.2} deg after 4 s, heading {:.3} -> {:.3} rad", h0, heading(&body));
+    assert!(tilt < 1.0, "still tilted {tilt:.2} deg");
+    assert!((heading(&body) - h0).abs() < 0.1, "the heading moved");
 }

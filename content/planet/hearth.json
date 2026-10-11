@@ -156,7 +156,18 @@
         "edits": [ { "type": "smooth", "order": 0, "radius_m": 24.0, "strength": 0.6 },
                    { "type": "flatten", "order": 1, "half_extent_m": [11.0, 8.0], "rolloff_m": 8.0 } ], "kit": "ruin" },
       { "id": "grove", "category": "site", "per_100_km2": [1.592, 2.229], "footprint_m": 16.0, "min_separation_m": 1200.0, "min_separation_all_m": 700.0,
-        "biomes": [0, 6, 7], "slope_deg": [0.0, 25.0], "height_above_sea_m": [2.0, 150.0], "kit": "grove" }
+        "biomes": [0, 6, 7], "slope_deg": [0.0, 25.0], "height_above_sea_m": [2.0, 150.0], "kit": "grove" },
+    {
+      "id": "settlement", "category": "settlement", "per_100_km2": [0.016, 0.048],
+      "footprint_m": 160.0, "min_separation_m": 8000.0, "min_separation_all_m": 3000.0,
+      "slope_deg": [0.0, 8.0],
+      "plain": { "radius_m": 250.0, "max_rise_m": 43.7 },
+      "edits": [
+        { "type": "flatten", "order": 0, "radius_m": 150.0, "rolloff_m": 60.0 },
+        { "type": "flatten", "order": 1, "radius_m": 20.0, "rolloff_m": 14.0 }
+      ],
+      "kit": "settlement"
+    }
     ],
     "kits": {
       "arch": [ { "prop": "arch_giant", "yaw_deg": 0.0, "scale": [0.9, 1.15], "sink_m": 2.0, "tint": [0.85, 0.70, 0.60] } ],
@@ -179,6 +190,16 @@
       "grove": [
         { "prop": "mushroom_giant", "scale": [0.4, 1.0], "sink_m": 0.2, "tint": [0.85, 0.50, 0.90], "scatter": { "count": [4, 7], "radius_m": [2.0, 12.0] } },
         { "prop": "crystal", "scale": [0.6, 1.6], "sink_m": 0.15, "align": 0.3, "tint": [0.50, 0.90, 1.00], "scatter": { "count": [8, 14], "radius_m": [1.0, 14.0] } }
+      ],
+      "settlement": [
+        { "prop": "landing_pad", "yaw_deg": 0.0, "sink_m": 0.2, "tint": [0.78, 0.80, 0.84] },
+        { "prop": "city/beacon_spire", "at": [-24.0, 10.0], "yaw_deg": 0.0, "sink_m": 0.5, "tint": [0.95, 0.80, 0.45] },
+        { "prop": "city/bungalow_dome", "sink_m": 0.3, "tint": [0.90, 0.86, 0.78], "scatter": { "count": [1, 2], "radius_m": [30.0, 120.0] } },
+        { "prop": "city/bubble_shop", "sink_m": 0.3, "tint": [0.85, 0.92, 0.95], "scatter": { "count": [1, 2], "radius_m": [30.0, 120.0] } },
+        { "prop": "city/saucer_diner", "sink_m": 0.3, "tint": [0.92, 0.70, 0.80], "scatter": { "count": [1, 2], "radius_m": [30.0, 120.0] } },
+        { "prop": "city/row_tower", "sink_m": 0.3, "tint": [0.80, 0.82, 0.90], "scatter": { "count": [1, 2], "radius_m": [30.0, 120.0] } },
+        { "prop": "city/market_stall", "sink_m": 0.3, "tint": [0.95, 0.75, 0.45], "scatter": { "count": [1, 2], "radius_m": [30.0, 120.0] } },
+        { "prop": "city/planter_blob", "sink_m": 0.3, "tint": [0.55, 0.85, 0.50], "scatter": { "count": [1, 2], "radius_m": [30.0, 120.0] } }
       ]
     }
   }

@@ -55,8 +55,20 @@ fn t1_one_height_function() {
     println!("T1 random directions: max |height_ab - height_at| = {:.3e} m", worst);
     assert!(worst < 1e-3);
 
-    // (b) every vertex of 50 random chunks at several depths: mesh radius versus height_at
+    // (b) every vertex of 50 random chunks at several depths. Two checks:
+    // - strict: each stored vertex is the exact f64 position of the height at its own direction
+    //   (`height_at` of the grid direction), rounded to f32 storage. Vertices are stored relative
+    //   to an f32 centre with offsets up to about 1 km, so their rounding is up to 3e-5 m; 1e-4 m
+    //   is the bound.
+    // - the radius of the stored vertex against `height_at` at the stored position. The height
+    //   function samples an f32 noise at positions of magnitude R (quantum about R * 6e-8 m), so
+    //   near steep relief `height_at` is a staircase: a step of slope * R * 6e-8 m. Measured
+    //   slopes: up to ~3 at 100 km (2.5 cm steps), up to ~40 at 5 km with relief exponent 0.5
+    //   (a 1.2 cm step, #221). The bound is 3e-6 * R (1 cm at 5 km), 1e-3 m at least. This check
+    //   is loose on purpose; the strict check above is the contract.
+    let tol_stored = (3e-6 * p.radius).max(1e-3);
     let mut worst_mesh: f64 = 0.0;
+    let mut worst_store: f64 = 0.0;
     let mut n_vert = 0;
     for ci in 0..50 {
         let depth = [2u32, 4, 6, 8][ci % 4];
@@ -66,16 +78,23 @@ fn t1_one_height_function() {
         let iy = (rng.next() * (1u32 << depth) as f64) as usize;
         let (a0, b0) = (-1.0 + ix as f64 * size, -1.0 + iy as f64 * size);
         let c = p.build_chunk(face, a0, b0, size);
-        for (k, _, _) in interior() {
+        let centre = V3::from_arr(c.center);
+        for (k, i, j) in interior() {
+            let a = a0 + (i as f64 - 1.0) * size / GRID as f64;
+            let b = b0 + (j as f64 - 1.0) * size / GRID as f64;
+            let d = cube_to_sphere(face, a, b);
+            let exact = d * (p.radius + p.height_at(d)) - centre;
+            let stored = v3(c.verts[k][0] as f64, c.verts[k][1] as f64, c.verts[k][2] as f64);
+            let e = stored - exact;
+            worst_store = worst_store.max(e.x.abs().max(e.y.abs()).max(e.z.abs()));
             let w = chunk_world(p, &c, k);
-            let h_mesh = w.length() - p.radius;
-            let h_fn = p.height_at(w.normalized());
-            worst_mesh = worst_mesh.max((h_mesh - h_fn).abs());
+            worst_mesh = worst_mesh.max((w.length() - p.radius - p.height_at(w.normalized())).abs());
             n_vert += 1;
         }
     }
-    println!("T1 mesh vertices: {} vertices of 50 chunks (depths 2,4,6,8), max |mesh - height_at| = {:.3e} m", n_vert, worst_mesh);
-    assert!(worst_mesh < 1e-3);
+    println!("T1 mesh vertices: {n_vert} of 50 chunks, stored vs exact f64 position: {worst_store:.3e} m (f32 storage); radius vs height_at at the stored position: {worst_mesh:.3e} m (tolerance {tol_stored:.1e})");
+    assert!(worst_store < 1e-4, "stored vertex {worst_store} m off the exact position");
+    assert!(worst_mesh < tol_stored, "{worst_mesh} m");
 }
 
 fn seam_check(p: &Planet, depth: u32) -> (usize, f64, usize) {
@@ -182,8 +201,12 @@ fn t1_collision_patches_core() {
         }
     }
     println!("T1 collision patches (core): {n} samples, max |patch - height_at| = {worst64:.3e} m (f64 origin), {worst32:.3e} m (origin rounded to f32 like the scene)");
-    assert!(worst64 < 1e-3);
-    assert!(worst32 < 2e-3);
+    // The bound grows with the radius: the f32 noise staircase of `height_at` (slope * R * 6e-8 m,
+    // see t1_one_height_function) is what the fixed point settles on (#221: 1e-3 before, 5e-6 * R
+    // now, 2.5e-2 m at 5 km with relief exponent 0.5).
+    let tol64 = (5e-6 * p.radius).max(1e-3);
+    assert!(worst64 < tol64, "{worst64} m");
+    assert!(worst32 < tol64.max(2e-3), "{worst32} m");
 }
 
 /// Core-side estimate for T5: along random great circles (1 m steps over 2 km, land and sea),

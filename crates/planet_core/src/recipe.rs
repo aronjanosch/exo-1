@@ -189,10 +189,25 @@ pub struct Relief {
     /// by radius / this (#221): the ground grows with the planet, as the ceilings do.
     #[serde(default = "default_relief_radius")]
     pub radius_m: f64,
+    /// Exponent k of the scale: the metres are multiplied by (radius / radius_m)^k (TODO(initiator):
+    /// 1 = linear; 0.5 keeps the 5 km planets near their old relief, see #221).
+    #[serde(default = "default_scale_exponent")]
+    pub scale_exponent: f64,
+}
+
+impl Relief {
+    /// The factor on the metres of the relief (and on the lake depth) at this radius (#221).
+    pub fn scale_at(&self, radius: f64) -> f64 {
+        (radius / self.radius_m).powf(self.scale_exponent)
+    }
 }
 
 fn default_relief_radius() -> f64 {
     100_000.0
+}
+
+fn default_scale_exponent() -> f64 {
+    1.0
 }
 
 /// A value drawn per placement from [min, max] (or a fixed number).
@@ -808,7 +823,7 @@ impl Recipe {
         // The lake depth is given at the relief's reference radius; it grows with the planet
         // like the relief does (#221, TODO(initiator): the reference values).
         if let (Some(rl), Some(d)) = (&self.relief, &mut self.drainage) {
-            d.lake_min_depth_m *= radius / rl.radius_m;
+            d.lake_min_depth_m *= rl.scale_at(radius);
         }
         let m = &mut self.macro_;
         let mut specs: Vec<&mut NoiseSpec> = vec![&mut m.elevation.noise, &mut m.moisture.noise, &mut m.temperature.noise, &mut m.landform.noise, &mut m.weirdness.noise];

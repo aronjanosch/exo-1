@@ -36,7 +36,7 @@ const RIDGE_NOISE_TOP: f64 = 0.8;
 struct ReliefRt {
     ridge: FastNoiseLite,
     warp: Option<(FastNoiseLite, f64)>,
-    /// Radius / the recipe's `relief.radius_m`: the metres of the relief at this radius.
+    /// The factor on the relief's metres at this radius (`Relief::scale_at`).
     scale: f64,
 }
 
@@ -301,9 +301,9 @@ impl Planet {
             ridge: make_noise(&r.ridge_noise, seed),
             warp: r.ridge_warp.as_ref().map(|w| {
                 let spec = NoiseSpec { seed_offset: w.seed_offset, frequency: w.frequency, wavelength_radii: None, fractal: Fractal::None, octaves: 1 };
-                (make_noise(&spec, seed), w.amplitude * radius / r.radius_m)
+                (make_noise(&spec, seed), w.amplitude * r.scale_at(radius))
             }),
-            scale: radius / r.radius_m,
+            scale: r.scale_at(radius),
         });
         let n_erosion = m.erosion.as_ref().map(|e| make_noise(&e.noise, seed));
         let mut palettes = vec![missing_palette(); 256];

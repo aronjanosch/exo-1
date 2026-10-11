@@ -329,10 +329,12 @@ impl Customers {
             st.open_order = None;
             st.relationship = move_rel(st.relationship, -WITHDRAW_DROP);
             st.neglect += 1;
-            out.push(Outcome::Emit(WorldEvent::ProductOrderSettled { order, paid: 0, matched: 0.0 }));
+            // Withdrawn silently for the other systems: no settlement (it is no deal for heat or the
+            // family's tallies); the order just leaves the readout.
             if st.neglect >= POACH_NEGLECT {
                 st.poached_s = POACHED_S;
-                out.push(Outcome::Emit(WorldEvent::CustomerPoached { by: RIVAL.to_string() }));
+                // `by` names the buyer the rival took (the kernel's field: "a neglected buyer").
+                out.push(Outcome::Emit(WorldEvent::CustomerPoached { by: po.customer.as_str().to_string() }));
             }
             if let Some(c) = cc.get(&po.customer) {
                 st.wait_s = draw_wait(&mut self.rng, c, st.relationship);

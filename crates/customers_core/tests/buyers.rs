@@ -513,7 +513,7 @@ fn an_unanswered_order_is_withdrawn_at_its_deadline_and_the_buyer_orders_again()
     assert!(s.settled().is_empty(), "not yet");
     let mid = s.rel("aunt_brisket");
     s.tick(60);
-    assert_eq!(s.settled(), vec![(order, 0, 0.0)], "withdrawn with nothing paid");
+    assert!(s.settled().is_empty(), "a withdrawal is no settlement (no deal for heat or tallies)");
     // The drop is -0.3; the decay of the neglect rule may add one step of -0.1 in the same stretch.
     let after = s.rel("aunt_brisket");
     assert!(after <= mid - COUNTER_DROP + 1e-9 && after >= mid - COUNTER_DROP - 0.1 - 1e-9, "{after} from {mid} (before {before})");
@@ -529,14 +529,13 @@ fn an_unanswered_order_is_withdrawn_at_its_deadline_and_the_buyer_orders_again()
 fn three_neglects_hand_the_buyer_to_the_rival_for_1200_seconds() {
     let mut s = Shop::new(12);
     // dr_fennel_obbs never gets a handover: each order is withdrawn at its deadline.
-    // (CustomerPoached names the rival, not the buyer, so the buyer is watched through the state.)
     s.tick_until(20000, |s| s.c.is_poached(&cid("dr_fennel_obbs")));
     let poached_at = s.events.len();
     assert_eq!(s.c.neglect(&cid("dr_fennel_obbs")), 3);
     let mine: Vec<OrderId> = s.product_orders_of("dr_fennel_obbs").iter().map(|o| o.0).collect();
-    let withdrawn = s.settled().iter().filter(|x| mine.contains(&x.0)).count();
-    assert_eq!(withdrawn, 3, "three withdrawals before the poach");
-    assert!(s.events.iter().any(|e| matches!(e, WorldEvent::CustomerPoached { by } if by == "rival_clan")));
+    assert_eq!(mine.len(), 3, "three orders placed before the poach");
+    assert!(s.settled().iter().all(|x| !mine.contains(&x.0)), "withdrawn, never settled");
+    assert!(s.events.iter().any(|e| matches!(e, WorldEvent::CustomerPoached { by } if by == "dr_fennel_obbs")), "the event names the poached buyer");
     // Nothing for 1200 s.
     s.tick(1190);
     let during = s.events[poached_at..].iter().filter(|e| matches!(e, WorldEvent::ProductOrderPlaced { by, .. } if by == "dr_fennel_obbs")).count();

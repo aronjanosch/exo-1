@@ -949,7 +949,7 @@ mod tests {
         assert!(gp.offers_of(&GiverId::new("small_family")).is_empty());
         assert!(!gp.offers_of(&GiverId::new("courier_office")).is_empty());
         assert_eq!(gp.jobs_content.givers.len(), 4, "courier office, small family, wholesaler, flight school");
-        assert_eq!(gp.customer_content.customers.len(), 3);
+        assert_eq!(gp.customer_content.customers.len(), 9, "three wholesale customers and six buyers with taste (round 6)");
     }
 
     #[test]

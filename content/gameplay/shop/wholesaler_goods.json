@@ -1,18 +1,54 @@
 {
-  "_comment": "Ingredient crates. The goods are placeholders: the lab lane's ingredient ids replace them (TODO(initiator)). Prices equal the wholesale table's (TODO(initiator)).",
+  "_comment": "Ingredient crates and, with lab access, the product bases (round 6). Prices equal the goods' base prices (TODO(initiator)).",
   "id": "wholesaler_goods",
   "name": "shop.wholesaler_goods.name",
   "location": "slosh_wholesale",
   "items": [
     {
-      "goods": "fizzy_mud",
-      "amount": 3,
+      "goods": "space_sugar",
+      "amount": 1,
+      "price": 30
+    },
+    {
+      "goods": "battery_juice",
+      "amount": 1,
+      "price": 35
+    },
+    {
+      "goods": "pickle_brine",
+      "amount": 1,
+      "price": 25
+    },
+    {
+      "goods": "moth_dust",
+      "amount": 1,
+      "price": 40
+    },
+    {
+      "goods": "ghost_pepper",
+      "amount": 1,
+      "price": 45
+    },
+    {
+      "goods": "foam_gum",
+      "amount": 1,
       "price": 20
     },
     {
-      "goods": "sock_dust",
-      "amount": 3,
-      "price": 15
+      "goods": "blorp_paste",
+      "amount": 1,
+      "price": 120,
+      "condition": {
+        "has_tag": "lab_access"
+      }
+    },
+    {
+      "goods": "dream_goo",
+      "amount": 1,
+      "price": 150,
+      "condition": {
+        "has_tag": "lab_access"
+      }
     }
   ]
 }

@@ -67,9 +67,6 @@ pub struct Streak {
 /// Distance from a planet's centre beyond which its impostor replaces the terrain (m). The
 /// terrain is culled by the camera's far plane at about this distance.
 pub const IMPOSTOR_FROM: f64 = 100_000.0;
-/// Planet markers and the ground and altitude readout show only when the camera is farther
-/// than this from a planet's centre / closer than this (the terrain is drawn closer).
-pub const NEAR_PLANET: f64 = IMPOSTOR_FROM;
 const STREAKS: usize = 160;
 
 /// Walker feet, the camera's up and the look direction in world space before and after the last
@@ -691,7 +688,7 @@ pub fn setup_warp_view(
     }
 }
 
-/// Planet markers on the HUD: every planet farther than `NEAR_PLANET`, at its place on screen,
+/// Planet markers on the HUD: every planet farther than `sky::impostor_from`, at its place on screen,
 /// with name and distance from the camera; the jump target (`System::effective_target` of the
 /// selection, or the running jump's target) larger and coloured. Hidden behind the camera.
 pub fn update_nav_markers(
@@ -713,7 +710,7 @@ pub fn update_nav_markers(
         // A point 1 km along the direction from where the camera was drawn (render space).
         let at = cam_t.translation() + (to / dist * 1000.0).as_vec3();
         let screen = camera.world_to_viewport(cam_t, at).ok().filter(|_| cam_t.forward().dot(to.as_vec3()) > 0.0);
-        let Some(xy) = screen.filter(|_| dist > NEAR_PLANET) else {
+        let Some(xy) = screen.filter(|_| dist > crate::sky::impostor_from(p.radius, planet_core::Ceilings::atmosphere_for(p.radius))) else {
             *vis = Visibility::Hidden;
             continue;
         };
@@ -1140,7 +1137,7 @@ pub fn update_hud(
 ) {
     let (Ok(pl), Ok((ship, sp, sv, sr)), Ok(mut text)) = (players.single(), ships.single(), hud.single_mut()) else { return };
     // Ground and altitude only near the planet (millions of metres during a warp say nothing).
-    let near = |p: DVec3| (p - planet.centre).length() < NEAR_PLANET;
+    let near = |p: DVec3| (p - planet.centre).length() < crate::sky::impostor_from(planet.radius, planet.field.atmosphere_height);
     let mode = if pl.seated {
         let height = if near(sp.0) { format!("  ground {:.0} m  alt {:.0} m", planet.above_ground(sp.0), (sp.0 - planet.centre).length() - planet.radius) } else { String::new() };
         // What the flight model did (felt G, thrusters at a limit, the turn cap).

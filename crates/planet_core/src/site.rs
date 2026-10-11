@@ -125,6 +125,17 @@ impl Planet {
         h
     }
 
+    /// The largest rise of the noise ground (before edits, #223) across the span of `2 * radius_m`
+    /// through `dir`, in its two tangent directions (m). A plain is a small value.
+    pub fn plain_rise_m(&self, dir: V3, radius_m: f64) -> f64 {
+        let d = dir.normalized();
+        let (e, n) = tangent_frame(d);
+        [e, n]
+            .into_iter()
+            .map(|t| (self.base_height_at(walk(d, t, radius_m, self.radius)) - self.base_height_at(walk(d, -t, radius_m, self.radius))).abs())
+            .fold(0.0, f64::max)
+    }
+
     fn kind_allowed_in(&self, k: &SiteKind, biome: u8) -> bool {
         k.biomes.as_ref().is_none_or(|b| b.contains(&biome))
             && self.recipe.biomes.iter().find(|r| r.id == biome).is_none_or(|r| r.sites.as_ref().is_none_or(|l| l.contains(&k.id)))
@@ -224,6 +235,9 @@ impl Planet {
                         continue;
                     }
                     if !self.kind_allowed_in(k, smp.biome as u8) {
+                        continue;
+                    }
+                    if k.plain.as_ref().is_some_and(|pl| self.plain_rise_m(d, pl.radius_m) > pl.max_rise_m) {
                         continue;
                     }
                     // No lake or river within the edits' reach, so they do not dam one (#72).

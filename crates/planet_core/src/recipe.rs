@@ -662,6 +662,8 @@ pub enum SiteCategory {
     Find,
     /// A hand-placed place (`content/place/`), not from a kind.
     Place,
+    /// A small town on a plain: a level plot, a landing pad and city pieces (#223).
+    Settlement,
 }
 
 /// A kind of site (#70). Placeholder kinds until the initiator picks (ids, no fiction names).
@@ -688,12 +690,23 @@ pub struct SiteKind {
     /// one farthest from all sites so far.
     #[serde(default)]
     pub prefer_high: bool,
+    /// The ground must be a plain (#223): see `PlainRule`. Missing = no requirement.
+    #[serde(default)]
+    pub plain: Option<PlainRule>,
     #[serde(default)]
     pub edits: Vec<Edit>,
     pub kit: String,
     /// Expected count range per 100 km2 of surface; when present replaces `count`.
     #[serde(default)]
     pub per_100_km2: Option<[f64; 2]>,
+}
+/// A plain (#223): the noise ground (before edits) rises by at most `max_rise_m` across the span
+/// of `2 * radius_m` through the site's centre, in each of its two tangent directions.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct PlainRule {
+    pub radius_m: f64,
+    pub max_rise_m: f64,
 }
 fn slope_flat() -> [f64; 2] {
     [0.0, 20.0]

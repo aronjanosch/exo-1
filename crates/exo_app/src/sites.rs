@@ -27,7 +27,11 @@ pub fn update_sites(mut commands: Commands, planet: Res<PlanetRes>, assets: Res<
             let mesh = view
                 .meshes
                 .entry(p.prop.clone())
-                .or_insert_with(|| assets.load(GltfAssetLabel::Primitive { mesh: 0, primitive: 0 }.from_asset(format!("props/{}.glb", p.prop))))
+                .or_insert_with(|| {
+                    // A prop id with a '/' names a file under the content root (`city/...`), others are props.
+                    let path = if p.prop.contains('/') { format!("{}.glb", p.prop) } else { format!("props/{}.glb", p.prop) };
+                    assets.load(GltfAssetLabel::Primitive { mesh: 0, primitive: 0 }.from_asset(path))
+                })
                 .clone();
             let q = p.tint.map(|c| (c.clamp(0.0, 1.0) * 31.0).round() as u8);
             let mat = view

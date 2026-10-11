@@ -1,0 +1,6 @@
+{
+  "_comment": "Placeholder ingredient (#228). The effect and the transforms are TODO(initiator).",
+  "id": "foam_gum",
+  "adds": "time_lag",
+  "transforms": [{ "from": "sticky_fingers", "to": "floaty" }]
+}

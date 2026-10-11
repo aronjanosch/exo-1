@@ -1,0 +1,7 @@
+{
+  "_comment": "Placeholder product base (#228): starts Sleepy. max_effects and crates_out are TODO(initiator).",
+  "id": "dream_goo",
+  "effects": ["sleepy"],
+  "max_effects": 6,
+  "crates_out": 2
+}

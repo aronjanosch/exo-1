@@ -1,0 +1,6 @@
+{
+  "_comment": "Placeholder ingredient (#228). The effect and the transforms are TODO(initiator).",
+  "id": "battery_juice",
+  "adds": "tingly",
+  "transforms": [{ "from": "giggly", "to": "glowing" }, { "from": "floaty", "to": "time_lag" }]
+}

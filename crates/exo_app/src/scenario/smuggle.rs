@@ -653,12 +653,17 @@ pub fn smuggle_run_steps(s: &mut Vec<Step>) {
         c.v.insert("wallet0", wallet(w) as f64);
         push(w, WorldEvent::FlagRaised { flag: gameplay_core::Flag::new("job_completed:courier_lint_trap") });
         push(w, WorldEvent::FlagRaised { flag: gameplay_core::Flag::new("job_completed:courier_noodle_post") });
-        push(w, WorldEvent::TributePaid { ladder: "gribbles".into(), amount: 0 });
         let ids: Vec<customers_core::CustomerId> = gp(w).customer_content.customers.keys().cloned().collect();
         let mut g = w.resource_mut::<Gameplay>();
         for id in ids {
             g.customers.set_wait(&id, 1e9);
         }
+        true
+    }));
+    // The tallies count the jobs first; then the tribute (as the phone's Goals tab pays it).
+    s.push(wait(0.5));
+    s.push(Box::new(|w, _| {
+        push(w, WorldEvent::TributePaid { ladder: "gribbles".into(), amount: 0 });
         true
     }));
     s.push(wait(0.5));

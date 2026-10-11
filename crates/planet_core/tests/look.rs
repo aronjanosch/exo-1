@@ -81,7 +81,11 @@ fn water_is_blue_in_a_local_map_and_land_is_not() {
     let a = p.atlas(128, 0);
     let _ = a;
     let wet = (0..200).map(|i| planet_core::look::pixel_dir((i * 7) % 128, 5 + (i * 3) % 50, 128, 64)).find(|d| p.sample(*d).water_depth > 1.0).expect("water somewhere");
-    let dry = (0..200).map(|i| planet_core::look::pixel_dir((i * 11) % 128, 5 + (i * 5) % 50, 128, 64)).find(|d| p.sample(*d).water_depth == 0.0 && p.sample(*d).height_above_sea > 20.0).expect("dry land somewhere");
+    // Not the violet glass row (#222): its ground is purple by design, so the land check needs other land.
+    let dry = (0..200).map(|i| planet_core::look::pixel_dir((i * 11) % 128, 5 + (i * 5) % 50, 128, 64)).find(|d| {
+        let s = p.sample(*d);
+        s.water_depth == 0.0 && s.height_above_sea > 20.0 && s.biome != 7
+    }).expect("dry land somewhere");
     let px = |d| {
         let img = p.local_map(d, 50.0, 8);
         let k = (4 * 8 + 4) * 3;

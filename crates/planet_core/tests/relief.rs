@@ -91,3 +91,46 @@ fn relief_is_repeatable_at_100_km() {
     let sb = serde_json::to_string(&b.shape_stats(4000, 0)).unwrap();
     assert_eq!(sa, sb);
 }
+
+/// #222: the biome rows at 100 km. No row takes more than 30 % of the land, the snow row only the
+/// high ground (10 % at most), and six or more rows show.
+#[test]
+fn hearth_biome_rows_share_the_land_at_100_km() {
+    let (p, _) = shared("Hearth");
+    let sh = p.shape_stats(40_000, 0);
+    println!("Hearth biome shares of land: {:?}", sh.biome_share_land);
+    for (row, share) in &sh.biome_share_land {
+        assert!(*share <= 0.30, "Hearth: row {row} takes {:.1} % of the land", share * 100.0);
+    }
+    let cold = sh.biome_share_land.get(&3).copied().unwrap_or(0.0);
+    assert!(cold <= 0.10, "Hearth: the cold row takes {:.1} % of the land", cold * 100.0);
+    assert!(sh.biomes_present >= 6, "Hearth: {} rows present", sh.biomes_present);
+}
+
+/// #222: the instances of 24 cells of 0.3 km (4 per face, Hearth at 100 km) per storey. The
+/// density budget: the foliage may add at most 30 % over the count before the lane.
+fn sample_instances(p: &Planet) -> Vec<(String, usize)> {
+    let mut out = Vec::new();
+    for (st, (name, _)) in p.storeys().iter().enumerate() {
+        let mut n = 0;
+        for face in 0..6 {
+            for (a0, b0) in [(-0.5, -0.5), (-0.5, 0.5), (0.5, -0.5), (0.5, 0.5)] {
+                n += p.build_scatter(face, a0, b0, 2.0 / 512.0, st).instances.len();
+            }
+        }
+        out.push((name.clone(), n));
+    }
+    out
+}
+
+/// The count before the #222 lane (Hearth, 100 km, the same 24 cells): 114062 instances.
+const SCATTER_BEFORE_L6: f64 = 114_062.0;
+
+#[test]
+fn hearth_scatter_density_at_100_km_stays_in_budget() {
+    let (p, _) = shared("Hearth");
+    let counts = sample_instances(p);
+    let total: usize = counts.iter().map(|(_, n)| n).sum();
+    println!("Hearth instances in 24 cells of 0.3 km: {counts:?}, total {total}");
+    assert!(total as f64 <= 1.3 * SCATTER_BEFORE_L6, "{total} instances, budget {}", 1.3 * SCATTER_BEFORE_L6);
+}

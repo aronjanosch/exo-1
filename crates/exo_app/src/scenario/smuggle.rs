@@ -126,7 +126,8 @@ fn heat_to(w: &mut World, stars: u8) {
     let t = gp(w).smuggling.heat_c.tuning.record.points_per_star;
     let need = (stars as f64 * t - gp(w).smuggling.heat.points()).max(0.0);
     let per = gp(w).smuggling.heat_c.tuning.record.violation_points.of(gameplay_core::ViolationKind::NoClearance);
-    for _ in 0..(need / per).ceil() as u32 {
+    // A few points above the star: heat decays while the scenario waits.
+    for _ in 0..((need + 5.0) / per).ceil() as u32 {
         push(w, WorldEvent::Violation { town: gameplay_core::TownId::new("drip_rock"), kind: gameplay_core::ViolationKind::NoClearance });
     }
 }
@@ -511,6 +512,13 @@ pub fn scan_steps(s: &mut Vec<Step>) {
         true
     }));
     s.push(wait(1.0));
+    // With clearance: a violation would push heat to 4 stars, where scans search the hidden hold.
+    s.push(hail_until_cleared("scan: hail again"));
+    s.push(Box::new(|w, _| {
+        ship_over(w, "bent_spoon_inspect", 20.0);
+        true
+    }));
+    s.push(wait(1.0));
     s.push(land("scan: land again, the goods in the hidden hold"));
     s.push(wait(0.5));
     s.push(Box::new(|w, c| {
@@ -525,6 +533,12 @@ pub fn scan_steps(s: &mut Vec<Step>) {
         // Phase 3: flee.
         begin(w, c, "scan: flee");
         stock_in_cabin(w, "blorp_paste", Some(product(&["giggly"])), 1);
+        ship_over(w, "bent_spoon_inspect", 20.0);
+        true
+    }));
+    s.push(wait(1.0));
+    s.push(hail_until_cleared("scan: hail a third time"));
+    s.push(Box::new(|w, _| {
         ship_over(w, "bent_spoon_inspect", 20.0);
         true
     }));

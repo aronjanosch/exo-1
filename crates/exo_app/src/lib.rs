@@ -93,6 +93,9 @@ pub struct Options {
     pub distance: Option<f64>,
     /// Headless run paced at 60 physics ticks per wall second (network runs).
     pub realtime: bool,
+    /// `--all-planets`: `--radius`/`--atmosphere` apply to every planet, not only the first
+    /// (`planet-look` of both planets at one size, #214).
+    pub all_planets: bool,
     /// `--spike-ms=`: frames slower than this print a `spike:` line (#213).
     pub spike_ms: f64,
     /// `--mute`: no sound (windowed measurement runs).
@@ -127,6 +130,7 @@ impl Default for Options {
             spawn_offset: 0.0,
             distance: None,
             realtime: false,
+            all_planets: false,
             spike_ms: frame_cost::DEFAULT_THRESHOLD_MS,
             mute: false,
             net: None,
@@ -154,6 +158,7 @@ impl Options {
                 "--hidden" => o.hidden = true,
                 "--no-vsync" => o.no_vsync = true,
                 "--realtime" => o.realtime = true,
+                "--all-planets" => o.all_planets = true,
                 "--mute" => o.mute = true,
                 "--spike-ms" => o.spike_ms = v.parse().expect("spike-ms"),
                 "--distance" => o.distance = Some(v.parse().expect("distance")),
@@ -266,11 +271,11 @@ pub fn build_app(o: &Options) -> App {
             Err(e) => panic!("--distance refused: {e}"),
         }
     }
-    // The file wins; --radius only when given (first planet).
+    // The file wins; --radius only when given (first planet, or all with --all-planets).
     // A radius or an atmosphere from the command line brings the ceilings that follow from it
     // (obstruction and arrival radius, #177) with it, or the warp checks refuse the planet.
-    if o.radius.is_some() || o.atmosphere.is_some() {
-        let p = &mut sys.planets[0];
+    let n_planets = if o.all_planets { sys.planets.len() } else { 1 };
+    for p in sys.planets.iter_mut().take(n_planets).filter(|_| o.radius.is_some() || o.atmosphere.is_some()) {
         let r = o.radius.unwrap_or(p.radius);
         let c = match o.atmosphere {
             Some(a) => planet_core::Ceilings::with_atmosphere(r, a),

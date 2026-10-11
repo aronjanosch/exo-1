@@ -1,0 +1,1 @@
+{ "_comment": "Mixes the crew has brewed for the first time (the recipe book). Counts only (TODO(initiator)).", "id": "recipes_found", "name": "track.recipes_found.name", "owner": "crew", "start": 0, "min": 0 }

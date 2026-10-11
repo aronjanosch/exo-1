@@ -7,12 +7,12 @@ use content_core::{Loaded, Record, check_id, load_records};
 use serde::{Deserialize, Serialize};
 
 use crate::condition::Condition;
-use crate::id::{CommodityId, LocationId, Tag, TextKey, TrackId, UnlockId};
+use crate::id::{CommodityId, EffectId, LocationId, Tag, TextKey, TrackId, UnlockId};
 
 pub use content_core::File;
 
 /// The folders the kernel reads.
-pub const FOLDERS: [&str; 4] = ["commodity", "location", "progress_track", "unlock"];
+pub const FOLDERS: [&str; 5] = ["commodity", "effect", "location", "progress_track", "unlock"];
 
 /// The crew track that is money.
 pub const WALLET: &str = "wallet";
@@ -27,6 +27,18 @@ pub struct Commodity {
     pub base_price: i64,
     /// A size name from `content/cargo/crates.json`.
     pub crate_size: String,
+    #[serde(default)]
+    pub tags: Vec<Tag>,
+}
+
+/// What a made product does (round 6): production mixes them in, buyers ask for them.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Effect {
+    pub id: EffectId,
+    pub name: TextKey,
+    /// Added to a product's price factor (0.3 = +30 % on the base price).
+    pub value: f64,
     #[serde(default)]
     pub tags: Vec<Tag>,
 }
@@ -101,6 +113,7 @@ macro_rules! record {
     };
 }
 record!(Commodity, CommodityId);
+record!(Effect, EffectId);
 record!(Location, LocationId);
 record!(ProgressTrack, TrackId);
 record!(Unlock, UnlockId);
@@ -109,6 +122,7 @@ record!(Unlock, UnlockId);
 #[derive(Clone, Debug, PartialEq)]
 pub struct Content {
     pub commodities: BTreeMap<CommodityId, Loaded<Commodity>>,
+    pub effects: BTreeMap<EffectId, Loaded<Effect>>,
     pub locations: BTreeMap<LocationId, Loaded<Location>>,
     pub tracks: BTreeMap<TrackId, Loaded<ProgressTrack>>,
     pub unlocks: BTreeMap<UnlockId, Loaded<Unlock>>,
@@ -122,6 +136,7 @@ impl Content {
         let mut e = Vec::new();
         let c = Content {
             commodities: load_records(files, "commodity", &mut e),
+            effects: load_records(files, "effect", &mut e),
             locations: load_records(files, "location", &mut e),
             tracks: load_records(files, "progress_track", &mut e),
             unlocks: load_records(files, "unlock", &mut e),
@@ -139,6 +154,13 @@ impl Content {
             }
             if !crate_sizes.contains(&r.crate_size.as_str()) {
                 e.push(format!("{path}: crate_size: '{}' is not in the crate table ({})", r.crate_size, crate_sizes.join(", ")));
+            }
+        }
+        for Loaded { path, record: r } in self.effects.values() {
+            check_id(path, "id", r.id.as_str(), e);
+            check_tags(path, &r.tags, e);
+            if !r.value.is_finite() {
+                e.push(format!("{path}: value: must be a number"));
             }
         }
         for Loaded { path, record: r } in self.locations.values() {

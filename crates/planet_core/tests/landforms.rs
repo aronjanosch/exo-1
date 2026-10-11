@@ -58,7 +58,7 @@ fn every_new_kind_is_on_a_planet_and_the_signatures_beat_the_relief() {
 
 #[test]
 fn a_missed_count_retries_then_fails_clearly() {
-    let text = HEARTH.replacen("\"count\": [2, 4], \"min_separation_m\": 900.0, \"where\": { \"elevation\": [-0.3, 1.0] }", "\"count\": [2, 4], \"min_separation_m\": 900.0, \"where\": { \"elevation\": [5.0, 6.0] }", 1);
+    let text = HEARTH.replacen("\"per_100_km2\": [0.637, 1.274], \"min_separation_m\": 900.0, \"where\": { \"elevation\": [-0.3, 1.0] }", "\"per_100_km2\": [0.637, 1.274], \"min_separation_m\": 900.0, \"where\": { \"elevation\": [5.0, 6.0] }", 1);
     assert_ne!(text, HEARTH, "fixture");
     let mut p = Planet::new(Recipe::for_planet(&text, 1337, 5000.0).unwrap());
     let e = p.bake_checked(0).unwrap_err();

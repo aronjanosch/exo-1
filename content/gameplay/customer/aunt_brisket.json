@@ -1,0 +1,18 @@
+{
+  "_comment": "Product buyer (#229), placeholder. Name, taste, numbers and voice are TODO(initiator). Town = the place id of the town.",
+  "id": "aunt_brisket",
+  "name": "customer.aunt_brisket.name",
+  "town": "bent_spoon",
+  "at": "bent_spoon_east",
+  "taste": { "wants": ["giggly", "floaty"], "picks": 1, "min_quality": 0.5, "amount": [1, 2] },
+  "rhythm_s": [240.0, 360.0],
+  "start": 3.5,
+  "voice": {
+    "order": "customer.aunt_brisket.order",
+    "thanks": "customer.aunt_brisket.thanks",
+    "grumble": "customer.aunt_brisket.grumble",
+    "counter_yes": "customer.aunt_brisket.counter_yes",
+    "counter_no": "customer.aunt_brisket.counter_no"
+  },
+  "refers": "cousin_nettle"
+}

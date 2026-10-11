@@ -1,0 +1,1 @@
+{ "_comment": "Counts one on clean_scans (TODO(initiator): which events count).", "id": "scan", "on": "scan_clean", "track": "clean_scans" }

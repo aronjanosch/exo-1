@@ -1,0 +1,1 @@
+{ "_comment": "Deals settled by the crew (product orders). Counts only, gates the family ranks (TODO(initiator)).", "id": "deals_done", "name": "track.deals_done.name", "owner": "crew", "start": 0, "min": 0 }

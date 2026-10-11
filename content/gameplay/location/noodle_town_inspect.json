@@ -1,0 +1,9 @@
+{
+  "id": "noodle_town_inspect",
+  "name": "location.noodle_town_inspect.name",
+  "place": "noodle_town",
+  "pad": "inspect",
+  "tags": [
+    "inspection"
+  ]
+}

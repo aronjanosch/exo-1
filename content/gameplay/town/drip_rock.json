@@ -1,0 +1,13 @@
+{
+  "_comment": "Placeholder town (round 6). Airspace, speed limit, pads, hold chance and the stars at which the tower inspects are TODO(initiator).",
+  "id": "drip_rock",
+  "name": "town.drip_rock.name",
+  "voice": "tower.grumpy",
+  "airspace_m": 1500.0,
+  "speed_limit_ms": 60.0,
+  "pads": ["drip_rock", "drip_rock_north", "slosh_wholesale", "drip_rock_inspect"],
+  "inspection_pad": "drip_rock_inspect",
+  "free_port": false,
+  "hold_chance": 0.3,
+  "inspection_stars": 3
+}

@@ -1,9 +1,14 @@
 //! Scenario `dev-menu` (round 5): F10 opens the dev menu (dev builds); 1 grants the flight
 //! licence (the seat takes the pilot), 2 adds the credits, 3 refills the boost, 4 and 5 hold day
-//! or night, 6 and 7 jump to day or night with the cycle running; F10 closes it.
+//! or night, 6 and 7 jump to day or night with the cycle running, 8 puts the ship above the next
+//! settlement (#238); F10 closes it.
 //! Starts without the licences, like a new player.
 use crate::daynight::{DayClock, Sun};
-use crate::dev::{DevMenu, DAY_HOUR, MONEY, NIGHT_HOUR};
+use crate::dev::{DevMenu, DAY_HOUR, JUMP_ABOVE_M, MONEY, NIGHT_HOUR};
+use crate::env::{from_v3, PlanetRes};
+use crate::ship::Ship;
+use avian3d::prelude::Position;
+use planet_core::recipe::SiteCategory;
 use crate::gameplay::{Gameplay, HOST};
 use crate::scenario::{check, tap, wait, with_ship, Step};
 use bevy::prelude::*;
@@ -65,6 +70,25 @@ pub fn dev_menu_steps(s: &mut Vec<Step>) {
             true
         }));
     }
+    // 8: above the next settlement, or the menu says the planet has none (a small planet may not).
+    s.push(press(KeyCode::Digit8));
+    s.push(wait(0.1));
+    s.push(Box::new(|w, c| {
+        let ship = w.query_filtered::<&Position, With<Ship>>().single(w).unwrap().0;
+        let planet = w.resource::<PlanetRes>();
+        let last = w.resource::<DevMenu>().last.clone().unwrap_or_default();
+        let settlements: Vec<_> = planet.pgen.sites.iter().filter(|s| s.category == SiteCategory::Settlement).collect();
+        if settlements.is_empty() {
+            check(c, last == "no settlement on this planet", format!("8 without settlements: \"{last}\""));
+        } else {
+            // Over one of them (the ship may have drifted a little in 0.1 s), about JUMP_ABOVE_M up.
+            let up = (ship - planet.centre).normalize();
+            let (near, s) = settlements.iter().map(|s| (from_v3(s.dir).dot(up).clamp(-1.0, 1.0).acos() * planet.radius, *s)).min_by(|a, b| a.0.total_cmp(&b.0)).unwrap();
+            let above = (ship - planet.centre).length() - planet.radius - s.ground_m;
+            check(c, near < 20.0 && (above - JUMP_ABOVE_M).abs() < 20.0, format!("8: {near:.1} m from {} along the ground, {above:.0} m above it (want {JUMP_ABOVE_M}); \"{last}\"", s.id));
+        }
+        true
+    }));
     s.push(press(KeyCode::F10));
     s.push(Box::new(|w, c| {
         check(c, !w.resource::<DevMenu>().open, "F10 closes it".into());

@@ -254,7 +254,9 @@ impl ScShip {
         let thrust_box = self.thrust_box(air.thrust_scale, if braking { 1.0 } else { boost });
         let lin = linear::step(&mut self.linear, &f, input, &self.modes, &linear::Env { thrust_box, boost, braking, air_accel: air.accel, cap_scale: air.cap_scale, drift: if self.modes.wind_comp { DVec3::ZERO } else { air.wind } }, &self.tuning.linear);
         let torque_box = self.torque_box();
-        let ang = angular::step(&mut self.angular, &f, input, &self.modes, &angular::Env { accel_box: torque_box, boost, cap: lin.cap, thrust_box, air_hold: air.angular_hold }, &self.tuning.angular);
+        // X while hovering in a planet's field also levels the ship (initiator, 2026-10-11).
+        let level = braking && f.v.length() < self.tuning.angular.brake_level_below && f.gravity.length_squared() > 1e-6;
+        let ang = angular::step(&mut self.angular, &f, input, &self.modes, &angular::Env { accel_box: torque_box, boost, cap: lin.cap, thrust_box, air_hold: air.angular_hold, level }, &self.tuning.angular);
         let stick = if braking { DVec3::ZERO } else { limit_length(input.thrust, 1.0) };
         let shaped = drive::shape(&mut self.drive, &drive::Asked { linear: lin.accel, angular: ang.accel, boost, thrust_box, velocity: f.lv, stick }, &self.tuning.drive, dt);
 

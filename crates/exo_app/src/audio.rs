@@ -282,9 +282,14 @@ struct Heard {
     notices: usize,
 }
 
+/// The noise loops (engine rumble, wind, thruster hiss, boost roar) stay off: the synthesized
+/// noise was too loud and harsh. They come back with a sound pass of real samples.
+/// TODO(initiator): which loops return, and with what sounds.
+const NOISE_LOOPS: bool = false;
+
 fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
     let loops = [(Sound::Hum, Feed::Rumble), (Sound::Wind, Feed::Wind), (Sound::Hiss, Feed::Hiss(0)), (Sound::Hiss, Feed::Hiss(1)), (Sound::Hiss, Feed::Hiss(2)), (Sound::Roar, Feed::Roar)];
-    for (s, feed) in loops {
+    for (s, feed) in loops.into_iter().filter(|_| NOISE_LOOPS) {
         let h = assets.add(SynthAudio(s));
         commands.spawn((AudioPlayer(h), PlaybackSettings { mode: PlaybackMode::Loop, volume: Volume::Linear(0.0), ..default() }, Loop(feed)));
     }

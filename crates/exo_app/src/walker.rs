@@ -109,7 +109,12 @@ impl World for AvianWorld<'_, '_, '_> {
 }
 
 pub fn spawn_player(commands: &mut Commands, planet: &PlanetRes, cfg: &WalkerConfig, offset_x: f64) -> Entity {
-    let up = (DVec3::Y * planet.radius + DVec3::new(offset_x, 0.0, 0.0)).normalize();
+    spawn_player_at(commands, planet, cfg, DVec3::Y, offset_x)
+}
+
+/// `spawn_player` at another start direction (`--start <place>`, round 6).
+pub fn spawn_player_at(commands: &mut Commands, planet: &PlanetRes, cfg: &WalkerConfig, start_up: DVec3, offset_x: f64) -> Entity {
+    let up = (start_up * planet.radius + DVec3::new(offset_x, 0.0, 0.0)).normalize();
     let pos = planet.centre + up * (planet.surface(up) + 2.0);
     let mut w = Walker::new(pos, DVec3::NEG_Z);
     w.cfg = *cfg;

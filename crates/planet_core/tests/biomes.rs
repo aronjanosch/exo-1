@@ -51,7 +51,7 @@ fn a_missed_quota_fails_the_bake_with_the_row() {
 #[test]
 fn nearest_row_wins() {
     let (p, _) = bake(HEARTH);
-    let f = |moist: f64| planet_core::planet::Fields { elev: 0.0, temp: 1.0, moist, land: -0.5, weird: -0.5 };
+    let f = |moist: f64| planet_core::planet::Fields { elev: 0.0, temp: 1.0, moist, land: -0.5, weird: -0.5, erosion: 0.0 };
     // 20 m above the sea, warm: wet, middle and dry moisture pick their rows.
     assert_eq!(p.biome_for(20.0, &f(0.6), None), 0);
     assert_eq!(p.biome_for(20.0, &f(0.0), None), 6);
@@ -59,4 +59,30 @@ fn nearest_row_wins() {
     // Under water: the sea floor; a forced landform: the rim.
     assert_eq!(p.biome_for(-5.0, &f(0.6), None), 5);
     assert_eq!(p.biome_for(20.0, &f(0.6), Some(1.0)), 2);
+}
+
+/// #222: the same climate on taller ground. At 100 km the relief is 4.47 times taller than at
+/// 5 km (scale exponent 0.5), so a point at 4.47 times the height has the same row as at 5 km.
+#[test]
+fn the_climate_pattern_scales_with_the_relief() {
+    let small = Planet::new(Recipe::for_planet(HEARTH, 1337, 5000.0).unwrap());
+    let big = Planet::new(Recipe::for_planet(HEARTH, 1337, 100_000.0).unwrap());
+    let rl = big.recipe.relief.as_ref().unwrap();
+    let k = rl.scale_at(100_000.0) / rl.scale_at(5000.0);
+    let mut n = 0;
+    for &t in &[-0.83, -0.21, 0.31, 0.87] {
+        for &m in &[-0.91, -0.37, 0.03, 0.52] {
+            for &w in &[-0.61, 0.07, 0.58] {
+                for &h in &[-5.3, 3.1, 20.7, 61.0, 150.4, 401.9] {
+                    let f = planet_core::planet::Fields { elev: 0.0, temp: t, moist: m, land: -0.5, weird: w, erosion: 0.0 };
+                    assert_eq!(big.biome_for(h * k, &f, None), small.biome_for(h, &f, None), "t {t} m {m} w {w} h {h}");
+                    let (tb, ts) = (big.temperature_at(&f, h * k), small.temperature_at(&f, h));
+                    assert!((tb - ts).abs() < 1e-9, "t {t} h {h}: {tb} vs {ts}");
+                    n += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(n, 288);
+    // Off the grid's ties (equal distances to two rows): the rows' order would decide those.
 }

@@ -1,0 +1,1 @@
+{ "_comment": "Sold by the mechanic. TODO(initiator): price and effect.", "id": "cargo_plates", "name": "unlock.cargo_plates.name", "price": 300, "grants": ["ship_plates_plus"] }

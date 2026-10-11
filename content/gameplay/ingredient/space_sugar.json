@@ -1,0 +1,6 @@
+{
+  "_comment": "Placeholder ingredient (#228). The effect and the transforms are TODO(initiator).",
+  "id": "space_sugar",
+  "adds": "giggly",
+  "transforms": [{ "from": "sleepy", "to": "tingly" }]
+}

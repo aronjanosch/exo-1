@@ -726,6 +726,11 @@ pub fn crate_budget_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bo
     s.push(Box::new(|w, c| {
         let asleep = w.query::<&Crate>().iter(w).filter(|c| c.body.asleep).count();
         let n = crate_count(w);
+        // The collision patches under the crates come from worker threads, so the last crate may
+        // settle a little later on a busy machine: wait for all of them, at most 3 s more.
+        if asleep < n && c.t < 3.0 {
+            return false;
+        }
         c.v.insert("steps0", w.resource::<CargoStats>().steps as f64);
         check(c, asleep == n, format!("crate-budget: all {n} crates at rest sleep ({asleep})"));
         true
@@ -983,8 +988,19 @@ pub fn crate_wake_stream_steps(s: &mut Vec<Step>) {
         walker_on_ground(w);
         let p = player_world(w);
         let pl = planet(w);
-        let side = pl.up(p).any_orthonormal_vector();
-        let far = pl.centre + (p - pl.centre + side * 500.0).normalize() * (p - pl.centre).length();
+        // 500 m out, on level ground: on a slope a crate may still slide when the check comes.
+        let up = pl.up(p);
+        let side0 = up.any_orthonormal_vector();
+        let (side, far) = (0..36)
+            .map(|k| {
+                let side = DQuat::from_axis_angle(up, k as f64 * std::f64::consts::TAU / 36.0) * side0;
+                (side, pl.centre + (p - pl.centre + side * 500.0).normalize() * (p - pl.centre).length())
+            })
+            .find(|(side, far)| {
+                let level = |q: DVec3| pl.pgen.sample(crate::env::to_v3((q - pl.centre).normalize())).slope_deg < 5.0;
+                level(*far) && level(*far + *side * 2.0)
+            })
+            .unwrap_or((side0, pl.centre + (p - pl.centre + side0 * 500.0).normalize() * (p - pl.centre).length()));
         let a = ground_crate(w, "small", far);
         let b = ground_crate(w, "medium", far + side * 2.0);
         c.v.insert("a", a.to_bits() as f64);
@@ -1024,7 +1040,10 @@ pub fn crate_wake_stream_steps(s: &mut Vec<Step>) {
         let low = crate_above_ground(w, a).min(crate_above_ground(w, b));
         let m = c.v.entry("low").or_insert(f64::MAX);
         *m = m.min(low);
-        if c.t < 3.0 {
+        // At least 3 s, then up to 3 s more until both sleep (the patches come from worker
+        // threads; on a busy machine they settle a little later).
+        let both_asleep = crate_of(w, a).unwrap().body.asleep && crate_of(w, b).unwrap().body.asleep;
+        if c.t < 3.0 || (!both_asleep && c.t < 6.0) {
             return false;
         }
         let (ha, hb) = (crate_above_ground(w, a), crate_above_ground(w, b));

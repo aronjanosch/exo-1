@@ -6,7 +6,6 @@
 //! and the gauge look are starting points (#91).
 use crate::env::PlanetRes;
 use crate::ship::Ship;
-use crate::view::NEAR_PLANET;
 use crate::walker::Player;
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
@@ -15,7 +14,7 @@ pub fn plugin(app: &mut App) {
     app.init_resource::<HudReadout>();
     app.add_systems(FixedUpdate, update_readout.in_set(crate::phases::Fx::Effects));
 }
-pub use flight_core::hud::{Height, HudTuning};
+pub use flight_core::hud::{level, tilt_deg, Height, HudTuning, Level};
 
 /// What the player is doing, as the mode element names it.
 #[derive(Clone, Debug, PartialEq)]
@@ -335,6 +334,8 @@ pub struct FlightHud {
     pub g_bar: GBar,
     /// Pitch and roll in degrees (`None` in space).
     pub horizon: Option<(f64, f64)>,
+    /// The tilt against the planet's up (deg) and how level that is (`None` in space).
+    pub tilt: Option<(f64, Level)>,
     /// Unit direction of the velocity in ship space; `None` below `velocity_min`.
     pub velocity_dir: Option<DVec3>,
 }
@@ -383,6 +384,10 @@ pub fn flight_hud(i: &FlightIn, t: &HudTuning) -> FlightHud {
         thrust: thrust_bars(i.thrust),
         g_bar: g_bar(i.felt_g, i.g_limit, t.g_full),
         horizon: i.horizon,
+        tilt: i.horizon.map(|(p, r)| {
+            let tilt = tilt_deg(p, r);
+            (tilt, level(tilt, t))
+        }),
         velocity_dir: velocity_dir(i.lv, t.velocity_min),
     }
 }
@@ -421,7 +426,7 @@ pub fn update_readout(
         (Mode::Walk, pl.w.vel, pl.w.pos, Boost::None)
     };
     let r: DVec3 = pos - planet.centre;
-    let altitude = (r.length() < NEAR_PLANET).then(|| Height::pick(planet.above_ground(pos), r.length() - planet.radius, tuning.hud.agl_below));
+    let altitude = (r.length() < crate::sky::impostor_from(planet.radius, planet.field.atmosphere_height)).then(|| Height::pick(planet.above_ground(pos), r.length() - planet.radius, tuning.hud.agl_below));
     let panel = if !pl.seated {
         Panel::None
     } else {
@@ -506,7 +511,7 @@ mod tests {
 
     #[test]
     fn shipped_file_loads_and_bad_values_are_refused() {
-        assert_eq!(HudTuning::from_json(crate::tuning::HUD).unwrap(), HudTuning { agl_below: 1000.0, toast_time: 1.5, g_full: 10.0, velocity_min: 1.0 });
+        assert_eq!(HudTuning::from_json(crate::tuning::HUD).unwrap(), HudTuning { agl_below: 1000.0, toast_time: 1.5, g_full: 10.0, velocity_min: 1.0, level_deg: 1.0, near_level_deg: 5.0 });
         assert!(HudTuning::from_json("{\"agl_below\": -1}").is_err());
         assert!(HudTuning::from_json("{\"agl_below\": 1, \"x\": 2}").is_err());
     }
@@ -660,7 +665,7 @@ mod panel_tests {
 mod flight_tests {
     use super::*;
 
-    const TUNING: HudTuning = HudTuning { agl_below: 1000.0, toast_time: 1.5, g_full: 10.0, velocity_min: 1.0 };
+    const TUNING: HudTuning = HudTuning { agl_below: 1000.0, toast_time: 1.5, g_full: 10.0, velocity_min: 1.0, level_deg: 1.0, near_level_deg: 5.0 };
 
     fn close(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-6

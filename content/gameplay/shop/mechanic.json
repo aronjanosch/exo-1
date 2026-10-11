@@ -1,0 +1,17 @@
+{
+  "_comment": "The ship upgrades (TODO(initiator): stock and prices).",
+  "id": "mechanic",
+  "name": "shop.mechanic.name",
+  "location": "bent_spoon",
+  "items": [
+    {
+      "unlock": "hidden_hold"
+    },
+    {
+      "unlock": "scan_jammer"
+    },
+    {
+      "unlock": "cargo_plates"
+    }
+  ]
+}

@@ -62,6 +62,12 @@ The switches of Star Citizen's flight control (the flight model is the SC model,
 | M | `map` | Open or close the map | – |
 | T | `track_job` | Track the next active job (arrow and map target) | – |
 | Y, Y | `abandon_job` | Drop the tracked job: the first press asks, the second drops it | – |
+| ` | `phone` | Open or close the phone: goals, orders, contacts, recipes, heat, shop (round 6) | – |
+| ← / → | `phone_left`, `phone_right` | The phone's tabs | – |
+| ↑ / ↓ | `phone_up`, `phone_down` | The phone's rows; F acts on the selected row (track, hand over, buy, pay) | – |
+| Z | `counter` | Ask the buyer of the selected order for more money (once per order) | – |
+| L | `hail` | Call the tower of the town you fly over for a landing pad (round 6) | – |
+| 1 / 2 / 3 / 4 | `choice_1`, `choice_2`, `choice_3`, `choice_4` | During a scan: comply, bribe, talk (4 is free for later); taking off flees | – |
 | Tab | `next_offer` | Next offer at the counter | – |
 | Backspace | `decline` | Close the counter without taking the job | – |
 | Enter | `skip_notices` | Run the queued banners and notices fast | – |
@@ -80,5 +86,6 @@ The switches of Star Citizen's flight control (the flight model is the SC model,
 | 1 / 2 / 3 | `dev_1`, `dev_2`, `dev_3` | In the open dev menu: grant every licence / +1000 credits / refill the boost |
 | 4 / 5 | `dev_4`, `dev_5` | In the open dev menu: always day / always night (the clock stands) |
 | 6 / 7 | `dev_6`, `dev_7` | In the open dev menu: jump to day / to night, the cycle runs on |
+| 8 | `dev_8` | In the open dev menu: put the ship 150 m above the next settlement, stopped and level |
 
 One key may serve several actions when they apply in different situations: Space jumps on foot and lifts the ship, Shift runs and boosts.

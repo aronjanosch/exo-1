@@ -1,0 +1,8 @@
+{
+  "_comment": "Lab tuning (#228). Every number is a starting value, TODO(initiator). needle_period_s is one full sweep 0 to 1 to 0.",
+  "brew_s": 8.0,
+  "needle_period_s": 1.6,
+  "sweet_spot": 0.5,
+  "sweet_width": 0.25,
+  "max_ingredients": 3
+}

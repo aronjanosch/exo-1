@@ -130,7 +130,7 @@ impl World {
 fn customers_and_the_price_table_load() {
     let cc = content();
     assert_eq!(cc.customers.len(), 2);
-    assert_eq!(cc.customers[&CustomerId::new("old_nib")].record.location.as_str(), "drip_rock");
+    assert_eq!(cc.customers[&CustomerId::new("old_nib")].record.wholesale.as_ref().unwrap().location.as_str(), "drip_rock");
     assert_eq!(cc.prices.record.customer[&gameplay_core::CommodityId::new("sock_dust")], 30);
     assert!(cc.check_texts(&table()).is_empty(), "{:?}", cc.check_texts(&table()));
 }

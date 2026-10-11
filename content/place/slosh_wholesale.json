@@ -1,8 +1,20 @@
 {
-  "_comment": "The wholesaler where customers' goods are picked up (#168). Placed in metres from Drip Rock (about 280 m). Invented name; position and sizes are starting values (TODO(initiator)). Moves when the city is placed (E).",
+  "_comment": "The wholesaler's yard at the spaceport, south-west of Drip Rock's pads (moved out of downtown in round 6). Invented name; TODO(initiator). Stands on the city's level plot (city_ground), no edit of its own.",
   "id": "slosh_wholesale",
   "planet": "hearth",
-  "near": { "place": "drip_rock", "east_m": 280.0, "north_m": -60.0 },
-  "edits": [ { "type": "flatten", "order": 0, "radius_m": 12.0, "rolloff_m": 14.0 } ],
-  "pads": [ { "id": "main", "at": [0.0, 0.0], "radius_m": 9.0 } ]
+  "near": {
+    "place": "drip_rock",
+    "east_m": -45.0,
+    "north_m": -62.0
+  },
+  "pads": [
+    {
+      "id": "main",
+      "at": [
+        0.0,
+        0.0
+      ],
+      "radius_m": 9.0
+    }
+  ]
 }

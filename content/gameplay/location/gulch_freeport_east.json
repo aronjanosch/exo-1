@@ -1,0 +1,9 @@
+{
+  "id": "gulch_freeport_east",
+  "name": "location.gulch_freeport_east.name",
+  "place": "gulch_freeport",
+  "pad": "east",
+  "tags": [
+    "freeport"
+  ]
+}

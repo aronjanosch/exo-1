@@ -1,0 +1,8 @@
+{
+  "_comment": "Invented contraband product base (#228). Price and crate size are TODO(initiator) starting values.",
+  "id": "dream_goo",
+  "name": "commodity.dream_goo.name",
+  "base_price": 150,
+  "crate_size": "small",
+  "tags": ["contraband"]
+}

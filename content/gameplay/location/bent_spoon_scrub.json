@@ -1,0 +1,9 @@
+{
+  "id": "bent_spoon_scrub",
+  "name": "location.bent_spoon_scrub.name",
+  "place": "bent_spoon_scrub",
+  "pad": "main",
+  "tags": [
+    "unofficial"
+  ]
+}

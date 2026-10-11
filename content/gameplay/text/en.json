@@ -349,6 +349,22 @@
     "Nobody is looking at you quite so hard. {stars} star(s).",
     "The board forgot about you a little. {stars} star(s)."
   ],
+  "patrol.name": "Sergeant Bunting-Nine",
+  "patrol.ordered": [
+    "Halt for inspection! Slow down and keep your hands where we can see them.",
+    "Attention, hot crate. Reduce speed now or we start counting.",
+    "This is the airspace patrol. Halt for inspection, and do not make us chase you."
+  ],
+  "patrol.halted": [
+    "Good. Hold still while the scanner has a nap over your hull.",
+    "Thank you for slowing down. The scanner is warming up its nose.",
+    "Halted. Nobody panic, the inspection is only a little bit rude."
+  ],
+  "patrol.fled": [
+    "You ran. Running is a confession, and the scanner loves confessions.",
+    "Speed is not an alibi. The patrol has written down your number.",
+    "The chase is on record now. Sergeant Bunting-Nine does not forget a hull."
+  ],
   "notice.refused.cannot_afford": [
     "Not enough credits for that.",
     "Your wallet declines.",

@@ -8,7 +8,8 @@
 //!    along the ground, 30 s, then 5 s low;
 //! 3. low SCM boost: 350 m/s at 40 m above the ground (inside the collision ring), 20 s.
 //!
-//! Each leg starts after a hold that lets its start load (not measured). Per leg it reports frame
+//! Each leg starts after a hold (the warm-up, not measured) that lets its start load, with the
+//! ship pinned at the start point but already given the leg's velocity. Per leg it reports frame
 //! time p50, p99, max, the frames above the spike threshold, the LOD debt (share of frames whose
 //! chunk under the ship is coarser than wanted), a `target:` line against the round's goal
 //! (p99 <= 8.3 ms, max <= 25 ms, LOD debt <= 2 %) and the work in the worst frames
@@ -104,14 +105,14 @@ fn leg_report(c: &mut Ctx, name: &str, frames: &[FrameRec], threshold: f64) {
 }
 
 fn write_csv(dir: &std::path::Path, frames: &[FrameRec]) {
-    let mut s = String::from("frame,t,phase,dt_ms,main_ms,fixed_n,fixed_ms,update_ms,propagate_ms,terrain_up,terrain_up_ms,terrain_sys_ms,terrain_started,ring_up,ring_up_ms,ring_sys_ms,scatter_cells,scatter_inst,scatter_up_ms,scatter_sys_ms,shift_n,shift_ms,render_n,render_ms,r_assets,r_views,r_queue,r_prepare,r_graph,r_cleanup,lod_debt,terrain_pending\n");
+    let mut s = String::from("frame,t,phase,dt_ms,main_ms,fixed_n,fixed_ms,update_ms,propagate_ms,terrain_up,terrain_up_ms,terrain_sys_ms,terrain_started,ring_up,ring_up_ms,ring_sys_ms,scatter_cells,scatter_inst,scatter_up_ms,scatter_sys_ms,shift_n,shift_ms,render_n,render_ms,r_assets,r_views,r_queue,r_prepare,r_graph,r_cleanup,lod_debt,terrain_pending,gpu_ms\n");
     for f in frames {
         let c = &f.cost;
         s.push_str(&format!(
-            "{},{:.4},{},{:.3},{:.3},{},{:.3},{:.3},{:.3},{},{:.3},{:.3},{},{},{:.3},{:.3},{},{},{:.3},{:.3},{},{:.3},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{}\n",
+            "{},{:.4},{},{:.3},{:.3},{},{:.3},{:.3},{:.3},{},{:.3},{:.3},{},{},{:.3},{:.3},{},{},{:.3},{:.3},{},{:.3},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{},{:.3}\n",
             f.frame, f.t, f.phase.replace(",", ";"), f.dt_ms, f.main_ms, c.fixed.n, c.fixed.ms, c.update.ms, c.propagate.ms, c.terrain_up.n, c.terrain_up.ms, c.terrain_sys.ms, c.terrain_sys.n,
             c.ring_up.n, c.ring_up.ms, c.ring_sys.ms, c.scatter_up.n, c.scatter_inst, c.scatter_up.ms, c.scatter_sys.ms, c.shift.n, c.shift.ms,
-            f.render.frames, f.render.total_ms, f.render.assets_ms, f.render.views_ms, f.render.queue_ms, f.render.prepare_ms, f.render.graph_ms, f.render.cleanup_ms, c.lod_debt as u8, c.terrain_pending
+            f.render.frames, f.render.total_ms, f.render.assets_ms, f.render.views_ms, f.render.queue_ms, f.render.prepare_ms, f.render.graph_ms, f.render.cleanup_ms, c.lod_debt as u8, c.terrain_pending, c.gpu_ms
         ));
     }
     let _ = std::fs::create_dir_all(dir);
@@ -157,8 +158,10 @@ pub(super) fn planet_flight_steps(s: &mut Vec<Step>, out_dir: &std::path::Path) 
             }
             let atm = w.resource::<SystemRes>().0.planet(w.resource::<PlanetRes>().id).atmosphere_height;
             let pl = planet(w);
+            // Held at the start but already with the leg's velocity: what first shows in flight
+            // (engine effects, their pipelines) warms up here, not in the measured frames.
             let (p, v) = leg_pose(&pl, &l, atm, 0.0);
-            pose_ship(w, p, v * 0.0);
+            pose_ship(w, p, v);
             if c.t >= l.hold {
                 c.phase.clear();
                 spikes(w).reset();

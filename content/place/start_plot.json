@@ -1,0 +1,9 @@
+{
+  "_comment": "The level ground where the game starts (the +y pole, where the ship is parked): no pads, only the ground edit, so the parked ship, its ramp and the crates beside it stand on a plain (#214: the relief of #221 put a 15 % slope here). It ends 50 m out, before the Skyhook School pad 70 m from the pole. Sizes are starting values (TODO(initiator)).",
+  "id": "start_plot",
+  "planet": "hearth",
+  "lat_deg": 90.0,
+  "lon_deg": 0.0,
+  "edits": [ { "type": "flatten", "order": 0, "radius_m": 35.0, "rolloff_m": 15.0 } ],
+  "pads": []
+}

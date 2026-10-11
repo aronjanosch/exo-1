@@ -5,7 +5,7 @@
     {
       "name": "Hearth", "recipe": "hearth", "seed": 1337, "centre": [0.0, 0.0, 0.0], "radius": 5000.0,
       "atmosphere_height": 1200.0, "jump_altitude_factor": 1.5,
-      "obstruction_radius": 5400.0, "obstruction_margin": 0.0, "arrival_radius": 12000.0, "frame_radius": 1000000.0,
+      "obstruction_radius": 5500.0, "obstruction_margin": 0.0, "arrival_radius": 12000.0, "frame_radius": 1000000.0,
       "color": [0.25, 0.55, 0.35]
     },
     {

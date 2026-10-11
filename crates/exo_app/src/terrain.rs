@@ -18,7 +18,22 @@ use planet_core::{cube_to_sphere, ChunkOut, M};
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, setup_terrain);
     app.add_systems(Update, update_terrain.in_set(crate::phases::Frame::World));
+    // Streaming adds and frees meshes all the time: start the GPU slabs large and grow them in
+    // big steps, so the allocator rarely regrows and copies a slab mid-flight (#214).
+    // `EXO_SLAB_MB=0` keeps Bevy's defaults (1 MiB, x1.5) for comparison.
+    let mb: u64 = std::env::var("EXO_SLAB_MB").ok().and_then(|v| v.parse().ok()).unwrap_or(SLAB_MB);
+    if mb > 0
+        && let Some(render) = app.get_sub_app_mut(bevy::render::RenderApp)
+    {
+        let mut s = bevy::render::mesh::allocator::MeshAllocatorSettings::default();
+        s.slab_allocator_settings.min_slab_size = mb << 20;
+        s.slab_allocator_settings.growth_factor = 2.0;
+        render.insert_resource(s);
+    }
 }
+
+/// First size of a GPU mesh slab (MiB). TODO(initiator): value.
+const SLAB_MB: u64 = 64;
 
 /// More async threads than Bevy's default 4 for the chunk jobs (#215: the pool was the limit of
 /// the streaming at 800 m/s). TODO(initiator): value; the render and main threads need cores too.
@@ -29,6 +44,10 @@ pub fn task_pools() -> bevy::app::TaskPoolOptions {
     o
 }
 
+/// Margin on a node's height range for the detail its children add: metres plus a share of its
+/// edge (the parent's grid samples miss the peaks between them).
+const BOUND_PAD_M: f64 = 4.0;
+const BOUND_PAD_EDGE: f64 = 0.05;
 const SPLIT_FACTOR: f64 = 1.5;
 const MERGE_FACTOR: f64 = 1.8;
 /// Main-thread time per frame for adding ready chunks (at least one chunk is always added).
@@ -48,11 +67,8 @@ const PREFETCH_MAX_SPEED: f64 = 2000.0;
 /// `MORPH_NEAR x edge` from its bounding sphere (the distance a chunk merges back into its
 /// parent) and in its parent's shape from `MORPH_FAR x edge` (twice the child edge x the split
 /// factor: where the parent splits, so a new child appears in the parent's shape).
-const MORPH_NEAR: f64 = MERGE_FACTOR;
-const MORPH_FAR: f64 = SPLIT_FACTOR * 2.0;
-/// A chunk shown late (its parent split at a distance already inside the morph range) starts in the
-/// parent's shape anyway and flattens to its own over this many seconds. TODO(initiator): value.
-const MORPH_SETTLE_S: f64 = 0.7;
+pub const MORPH_NEAR: f64 = MERGE_FACTOR;
+pub const MORPH_FAR: f64 = SPLIT_FACTOR * 2.0;
 /// Finished chunks kept after a merge (about 100 kB of GPU memory each).
 const CACHE_MAX: usize = 256;
 
@@ -62,6 +78,8 @@ type CacheKey = (usize, u64, u64, u64);
 #[derive(Clone)]
 struct Meshes {
     centre: DVec3,
+    /// Lowest and highest ground of the chunk (m above the base radius).
+    h: (f64, f64),
     mesh: Handle<Mesh>,
     water: Option<Handle<Mesh>>,
     inland: Option<Handle<Mesh>>,
@@ -70,6 +88,7 @@ struct Meshes {
 /// What a chunk job returns: the meshes, built on the pool.
 pub struct BuiltChunk {
     centre: DVec3,
+    h: (f64, f64),
     mesh: Mesh,
     water: Option<Mesh>,
     inland: Option<Mesh>,
@@ -94,16 +113,20 @@ struct Node {
     depth: u32,
     centre: DVec3, // planet space, base sphere
     edge_m: f64,
+    /// Distance from `centre` to the farthest corner on the base sphere.
+    horiz: f64,
+    /// Height range the chunk's ground lies in (m above the base radius): the parent's until
+    /// the chunk itself is built, then its own (#214: the planet-wide relief made every node
+    /// split a kilometre too early at 100 km).
+    h: (f64, f64),
+    /// Middle of that range above `centre`, and the bounding radius around it.
+    mid: DVec3,
     bound: f64,
     children: Vec<usize>,
     entity: Option<Entity>,
     /// Handles of the spawned chunk (and its water, lakes and rivers #72), kept for the cache.
     meshes: Option<Meshes>,
     job: Job,
-    /// Geomorph state: the morph factor last written to the entity's `MeshTag` (0..=255), and the
-    /// floor a late chunk starts at, falling to 0 (see `MORPH_SETTLE_S`).
-    tag: u32,
-    floor: f64,
     /// Whether the entity is set to `Visibility::Inherited` (else Hidden): written on change only.
     shown: bool,
     alive: bool,
@@ -220,11 +243,11 @@ pub fn build_meshes(out: &ChunkOut, indices: &[u16]) -> BuiltChunk {
     let water = out.water.as_ref().filter(|_| !nowater).map(|w| water_surface(out, w, &out.water_tris));
     let inland = out.inland_water.as_ref().filter(|_| !nowater).map(|(w, tris)| water_surface(out, w, tris));
     let bytes = [Some(&mesh), water.as_ref(), inland.as_ref()].into_iter().flatten().map(|m| m.get_vertex_buffer_size() + m.get_index_buffer_bytes().map_or(0, |b| b.len())).sum();
-    BuiltChunk { centre: DVec3::from_array(out.center), mesh, water, inland, bytes }
+    BuiltChunk { centre: DVec3::from_array(out.center), h: (out.min_h as f64, out.max_h as f64), mesh, water, inland, bytes }
 }
 
 impl Terrain {
-    fn make_node(&mut self, planet: &PlanetRes, face: usize, a0: f64, b0: f64, size: f64, depth: u32) -> usize {
+    fn make_node(&mut self, planet: &PlanetRes, face: usize, a0: f64, b0: f64, size: f64, depth: u32, h: (f64, f64)) -> usize {
         let r = planet.radius;
         let centre = from_v3(cube_to_sphere(face, a0 + size * 0.5, b0 + size * 0.5)) * r;
         let edge_m = (from_v3(cube_to_sphere(face, a0, b0)) - from_v3(cube_to_sphere(face, a0 + size, b0))).length() * r;
@@ -234,16 +257,29 @@ impl Terrain {
         }
         let node = Node {
             face, a0, b0, size, depth, centre, edge_m,
-            bound: bound + planet.relief,
-            children: Vec::new(), entity: None, meshes: None, job: Job::None, tag: 0, floor: 0.0, shown: false, alive: true,
+            horiz: bound, h, mid: centre, bound,
+            children: Vec::new(), entity: None, meshes: None, job: Job::None, shown: false, alive: true,
         };
-        if let Some(i) = self.free.pop() {
+        let i = if let Some(i) = self.free.pop() {
             self.nodes[i] = node;
             i
         } else {
             self.nodes.push(node);
             self.nodes.len() - 1
-        }
+        };
+        self.set_range(i, h);
+        i
+    }
+
+    /// The node's ground lies between `h.0` and `h.1`: its bounding sphere sits around the middle
+    /// of that range, with a margin for the finer detail of the levels below.
+    fn set_range(&mut self, i: usize, h: (f64, f64)) {
+        let n = &mut self.nodes[i];
+        let pad = BOUND_PAD_M + n.edge_m * BOUND_PAD_EDGE;
+        let (lo, hi) = (h.0 - pad, h.1 + pad);
+        n.h = h;
+        n.mid = n.centre * (1.0 + 0.5 * (lo + hi) / n.centre.length());
+        n.bound = n.horiz + 0.5 * (hi - lo);
     }
 
     fn key(n: &Node) -> CacheKey {
@@ -273,7 +309,7 @@ impl Terrain {
     /// Distance to the nearer of the camera and its projection, minus the chunk's bound.
     fn dist(&self, i: usize) -> f64 {
         let n = &self.nodes[i];
-        (self.cam.distance(n.centre).min(self.pred.distance(n.centre)) - n.bound).max(0.0)
+        (self.cam.distance(n.mid).min(self.pred.distance(n.mid)) - n.bound).max(0.0)
     }
 
     /// Starts jobs for the nearest queued chunks while there are free slots.
@@ -326,7 +362,7 @@ impl Terrain {
 
     /// Adds the meshes of a built chunk to the assets.
     fn add_meshes(meshes: &mut Assets<Mesh>, b: BuiltChunk) -> Meshes {
-        Meshes { centre: b.centre, mesh: meshes.add(b.mesh), water: b.water.map(|m| meshes.add(m)), inland: b.inland.map(|m| meshes.add(m)) }
+        Meshes { centre: b.centre, h: b.h, mesh: meshes.add(b.mesh), water: b.water.map(|m| meshes.add(m)), inland: b.inland.map(|m| meshes.add(m)) }
     }
 
     /// Spawns the chunk entity of node `i`, and its sea, lake and river surfaces as children
@@ -348,12 +384,28 @@ impl Terrain {
         for h in m.water.iter().chain(m.inland.iter()) {
             commands.spawn((Mesh3d(h.clone()), MeshMaterial3d(self.water.clone()), Transform::default(), ChildOf(e)));
         }
+        self.set_range(i, m.h);
+        let tag = Self::morph_tag(&self.nodes[i], m.centre);
+        commands.entity(e).insert(MeshTag(tag));
         let n = &mut self.nodes[i];
         n.entity = Some(e);
         n.meshes = Some(m);
-        n.tag = 0;
         n.shown = visible;
         e
+    }
+
+    /// The chunk's geomorph inputs for the vertex shader (#220), fixed for its life: its edge and
+    /// its bounding radius around the chunk's origin, each as log2(m) x 4096 in 16 bits. The shader
+    /// takes the morph factor from the camera distance, so no tag changes per frame (#214: every
+    /// tag change re-queued the chunk, 6-10 ms in the render queue at speed). Roots: 0, no morph.
+    fn morph_tag(n: &Node, origin: DVec3) -> u32 {
+        if n.depth == 0 {
+            return 0;
+        }
+        // The quadtree measures from the middle of the height range; the shader from the origin.
+        let bound = n.bound + n.mid.distance(origin);
+        let q = |m: f64| (m.max(1.0).log2() * 4096.0).round().clamp(1.0, 65535.0) as u32;
+        q(n.edge_m) | (q(bound) << 16)
     }
 
     fn set_shown(&mut self, commands: &mut Commands, i: usize, shown: bool) {
@@ -379,8 +431,8 @@ impl Terrain {
     /// Returns true when this node (or its children) is on screen.
     fn update_node(&mut self, commands: &mut Commands, planet: &PlanetRes, i: usize) {
         let n = &self.nodes[i];
-        let d_real = (self.cam.distance(n.centre) - n.bound).max(0.0);
-        let d_pred = (self.pred.distance(n.centre) - n.bound).max(0.0);
+        let d_real = (self.cam.distance(n.mid) - n.bound).max(0.0);
+        let d_pred = (self.pred.distance(n.mid) - n.bound).max(0.0);
         let limit = n.edge_m * if n.children.is_empty() { SPLIT_FACTOR } else { MERGE_FACTOR };
         let can_split = n.depth < self.max_depth;
         let want_split = can_split && d_real < limit;
@@ -388,11 +440,11 @@ impl Terrain {
         let want_kids = can_split && d_real.min(d_pred) < limit;
         if want_kids && self.nodes[i].children.is_empty() {
             let n = &self.nodes[i];
-            let (face, a0, b0, half, depth) = (n.face, n.a0, n.b0, n.size * 0.5, n.depth + 1);
+            let (face, a0, b0, half, depth, h) = (n.face, n.a0, n.b0, n.size * 0.5, n.depth + 1, n.h);
             let mut kids = Vec::with_capacity(4);
             for j in 0..2 {
                 for k in 0..2 {
-                    let c = self.make_node(planet, face, a0 + k as f64 * half, b0 + j as f64 * half, half, depth);
+                    let c = self.make_node(planet, face, a0 + k as f64 * half, b0 + j as f64 * half, half, depth, h);
                     self.want(c);
                     kids.push(c);
                 }
@@ -406,13 +458,8 @@ impl Terrain {
         if want_split {
             let kids = self.nodes[i].children.clone();
             if kids.iter().all(|&c| self.nodes[c].entity.is_some()) {
-                // Children shown for the first time start in the parent's shape (#220).
-                let fresh = self.nodes[i].shown;
                 self.set_shown(commands, i, false);
                 for c in kids {
-                    if fresh && !self.nodes[c].shown {
-                        self.nodes[c].floor = 1.0;
-                    }
                     self.update_node(commands, planet, c);
                 }
                 return;
@@ -426,24 +473,9 @@ impl Terrain {
         self.set_shown(commands, i, true);
         self.hide_below(commands, i);
         self.visible += 1;
-        self.set_morph(commands, i, d_real);
     }
 
-    /// The geomorph factor of a shown chunk from its distance (the one the quadtree splits and
-    /// merges by), written to its mesh tag when it changed (#220). The roots have no parent shape.
-    fn set_morph(&mut self, commands: &mut Commands, i: usize, d: f64) {
-        let dt = self.dt;
-        let n = &mut self.nodes[i];
-        n.floor = (n.floor - dt / MORPH_SETTLE_S).max(0.0);
-        let by_distance = if n.depth == 0 { 0.0 } else { ((d / n.edge_m - MORPH_NEAR) / (MORPH_FAR - MORPH_NEAR)).clamp(0.0, 1.0) };
-        let tag = (by_distance.max(n.floor) * 255.0).round() as u32;
-        if tag != n.tag {
-            if let Some(e) = n.entity {
-                commands.entity(e).insert(MeshTag(tag * 257));
-                n.tag = tag;
-            }
-        }
-    }
+
 }
 
 pub fn setup_terrain(
@@ -485,7 +517,7 @@ pub fn build_terrain(
         build_roots(planet)
     });
     for (face, out) in roots.into_iter().enumerate() {
-        let i = t.make_node(planet, face, ROOT.0, ROOT.1, ROOT.2, 0);
+        let i = t.make_node(planet, face, ROOT.0, ROOT.1, ROOT.2, 0, (-planet.relief, planet.relief));
         let m = Terrain::add_meshes(meshes, build_meshes(&out, &t.indices));
         t.spawn_chunk(commands, planet, i, m, true);
         t.roots.push(i);

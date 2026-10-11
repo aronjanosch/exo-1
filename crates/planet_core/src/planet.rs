@@ -235,6 +235,9 @@ pub struct Planet {
     n_erosion: Option<FastNoiseLite>,
     /// The relief's ridge noise and its warp (#221), when the recipe has `relief`.
     relief_rt: Option<ReliefRt>,
+    /// The factor on the climate's metres and temperature lapse (#222): the relief's scale at
+    /// this radius over the scale at `biome_space.tuned_radius_m`; 1 without relief.
+    biome_scale: f64,
     bands: Vec<BandRt>,
     pub(crate) scatter: crate::scatter::ScatterRt,
     pub(crate) stamps: Vec<StampRt>,
@@ -327,6 +330,10 @@ impl Planet {
             scale: r.scale_at(radius),
         });
         let n_erosion = m.erosion.as_ref().map(|e| make_noise(&e.noise, seed));
+        let biome_scale = match &recipe.relief {
+            Some(r) => r.scale_at(radius) / r.scale_at(recipe.biome_space.tuned_radius_m),
+            None => 1.0,
+        };
         let mut palettes = vec![missing_palette(); 256];
         for b in &recipe.biomes {
             palettes[b.id as usize] = b.palette.clone();
@@ -340,6 +347,7 @@ impl Planet {
             n_weird: make_noise(&m.weirdness.noise, seed),
             n_erosion,
             relief_rt,
+            biome_scale,
             bands,
             scatter,
             stamps: Vec::new(),
@@ -687,7 +695,7 @@ impl Planet {
 
     /// Temperature at a point: the field less the lapse with height above the sea.
     pub fn temperature_at(&self, f: &Fields, h_above_sea: f64) -> f64 {
-        f.temp - self.recipe.macro_.temperature.lapse_per_m * h_above_sea.max(0.0)
+        f.temp - self.recipe.macro_.temperature.lapse_per_m / self.biome_scale * h_above_sea.max(0.0)
     }
 
     /// The biome row nearest to the point in parameter space (#68): per row the sum of squared
@@ -696,12 +704,12 @@ impl Planet {
     pub fn biome_for(&self, h_above_sea: f64, f: &Fields, forced_landform: Option<f64>) -> u8 {
         let temp = self.temperature_at(f, h_above_sea);
         let land = forced_landform.unwrap_or(f.land);
-        let hs = self.recipe.biome_space.height_scale_m.max(1e-6);
+        let hs = (self.recipe.biome_space.height_scale_m * self.biome_scale).max(1e-6);
         let mut best = (f64::MAX, self.recipe.biomes[0].id);
         for row in &self.recipe.biomes {
             let c = &row.climate;
             let mut d = row.offset;
-            for (r, v) in [(c.elevation, f.elev), (c.temperature, temp), (c.moisture, f.moist), (c.landform, land), (c.weirdness, f.weird), (c.height_above_sea, h_above_sea / hs)] {
+            for (r, v) in [(c.elevation, f.elev), (c.temperature, temp), (c.moisture, f.moist), (c.landform, land), (c.weirdness, f.weird), (c.erosion, f.erosion), (c.height_above_sea, h_above_sea / hs)] {
                 if let Some(r) = r {
                     let x = r.distance(v);
                     d += x * x;

@@ -24,7 +24,8 @@ pub struct MorphUniform {
 
 impl Default for MorphUniform {
     fn default() -> Self {
-        MorphUniform { on: Vec4::new(f32::from(morph_default()), 0.0, 0.0, 0.0) }
+        // x: on (F4), y and z: the morph range in chunk edges (`terrain::MORPH_NEAR`, `MORPH_FAR`).
+        MorphUniform { on: Vec4::new(f32::from(morph_default()), crate::terrain::MORPH_NEAR as f32, crate::terrain::MORPH_FAR as f32, 0.0) }
     }
 }
 

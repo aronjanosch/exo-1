@@ -1,6 +1,6 @@
 # EXO-1
 
-A goofy co-op space game in a strange galaxy: walk, fly and land on planets, carry cargo, take jobs. Small groups of about 2-5 players.
+A co-op crew game in space: friends run one walkable ship together, each in a role, fly and land on planets and explore them. Crews of about 2-5 players.
 
 ## Language
 
@@ -18,13 +18,29 @@ _Avoid_: adoption radius, gravity well
 The walkable inside of a ship, with its own gravity (LAG).
 _Avoid_: interior, deck
 
+**Room**:
+One compartment of the cabin (bridge, engine room, cargo hold, airlock …), closed off by doors, with its own air.
+_Avoid_: compartment, section, module
+
 **LAG**:
 The cabin's artificial gravity, a level from 0 to 1 that ramps and can be switched.
 _Avoid_: ship gravity, floor gravity
 
 **Warp**:
-Real, fast movement between two planets along a path, with a spool-up, a calibration and a cooldown.
-_Avoid_: quantum travel, jump, hyperspace
+Real, fast movement between two planets of one star system along a path, with a spool-up, a calibration and a cooldown.
+_Avoid_: quantum travel, hyperspace (between star systems say jump)
+
+**Jump**:
+The move from one star system to the next. It cannot be undone, and an emergency jump costs a charge.
+_Avoid_: warp (that stays inside a star system), hyperspace
+
+**Star system**:
+A star with its planets, stations and sites; the unit of play of the campaign.
+_Avoid_: system (that word means a gameplay system), sector, level
+
+**System clock**:
+The time a crew has in one star system before it turns lethal.
+_Avoid_: chaos clock, timer, doom clock
 
 ### People
 
@@ -83,8 +99,28 @@ _Avoid_: load, inventory
 ### Gameplay
 
 **Crew**:
-The players of one co-op session together. Money, unlocks and jobs belong to the crew.
+The players of one co-op session together, plus the bots on their ship. Money, unlocks and jobs belong to the crew.
 _Avoid_: party, team, group
+
+**Role**:
+A player's job on the ship: captain, pilot, engineer, tactical officer or scientist. A role gives bonuses in its own field; anyone may help elsewhere at a penalty.
+_Avoid_: class, job (a job is a contract)
+
+**Station**:
+A place on the ship where one role works a device: the helm, the reactor, a turret, the lab bench.
+_Avoid_: console, post, terminal; a station in space is a space station
+
+**Space station**:
+A place in space where the crew docks, trades, takes missions and saves; the game starts on one.
+_Avoid_: station (that is a place on the ship), outpost, hub
+
+**Ship system**:
+One working part of the ship, such as reactor, shields, life support, engines or turrets, with its own condition and power draw.
+_Avoid_: system (that word means a gameplay system), component, subsystem
+
+**Bot**:
+An AI crew member that fills an empty station and works through a priority list.
+_Avoid_: NPC (people in the world), AI player
 
 **Client id**:
 The id a game install creates once and keeps; the host save keys personal tracks by it. Not the network slot.
@@ -96,7 +132,7 @@ _Avoid_: action, command, signal; route event (say encounter)
 
 **System**:
 One area of gameplay in its own `*_core` crate with its own state, events, content records and save section: jobs, encounters, later farming, mining, markets. Systems talk only through domain events and conditions.
-_Avoid_: module, feature, manager
+_Avoid_: module, feature, manager; for the ship's reactor or shields say ship system, for a star with planets say star system
 
 **Condition**:
 A small typed rule in the data (track at least, has tag, flag set, all, any, not) that says when something is available.

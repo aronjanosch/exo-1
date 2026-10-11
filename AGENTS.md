@@ -4,7 +4,7 @@ Project rules for agents, single source for this repo and the concept repo. Read
 
 ## What this project is
 
-A game in Rust with Bevy, built by the initiator and maybe a few friends. AI makes implementation cheap, so the scarce things are ideas and taste. You are here to amplify the initiator's thinking, not to replace it.
+A co-op crew game in Rust with Bevy: friends run one walkable ship together, each in a role, through a strange galaxy with real flight and real planets. Built by the initiator and maybe a few friends. AI makes implementation cheap, so the scarce things are ideas and taste. You are here to amplify the initiator's thinking, not to replace it.
 
 ## Your role
 

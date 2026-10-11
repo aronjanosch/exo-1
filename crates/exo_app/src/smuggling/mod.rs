@@ -5,7 +5,9 @@
 //!
 //! - `systems`: the round-6 states and contents, routed from `gameplay::gameplay_step`.
 //! - `hud`: the window part (goal line, heat, radio, phone, scan prompt, needle).
+pub mod glue;
 pub mod hud;
+pub mod systems;
 
 use bevy::prelude::*;
 

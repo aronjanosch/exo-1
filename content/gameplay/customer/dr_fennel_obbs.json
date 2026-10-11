@@ -3,7 +3,7 @@
   "id": "dr_fennel_obbs",
   "name": "customer.dr_fennel_obbs.name",
   "town": "bent_spoon",
-  "at": "lint_trap",
+  "at": "bent_spoon_west",
   "taste": { "wants": ["floaty", "tingly", "glowing"], "picks": 2, "min_quality": 0.6, "amount": [2, 3] },
   "rhythm_s": [300.0, 420.0],
   "start": 2.0,

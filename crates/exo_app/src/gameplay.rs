@@ -146,6 +146,8 @@ pub struct Gameplay {
     pub seed: u64,
     /// Something happened to a job since the last save: the autosave writes soon (#135).
     pub save_wanted: bool,
+    /// Round 6: traffic, heat, the lab, the family ladder and its shops (`smuggling`).
+    pub smuggling: crate::smuggling::systems::Systems,
 }
 
 /// A giver's counter, opened.
@@ -214,10 +216,11 @@ impl Gameplay {
         if !errors.is_empty() {
             fail(errors);
         }
+        let smuggling = crate::smuggling::systems::Systems::load(&files, &kernel, &text).unwrap_or_else(|e| fail(e));
         let customers = Customers::new(&customer_content, CUSTOMER_SEED);
         let progress = Progress::new(&kernel);
         let jobs = Jobs::default();
-        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(NEW_GAME_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, customers, customer_content, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, tracked: None, briefings: Default::default(), abandon_asked: None, arrow: None, seed: NEW_GAME_SEED, save_wanted: false };
+        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(NEW_GAME_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, customers, customer_content, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, tracked: None, briefings: Default::default(), abandon_asked: None, arrow: None, seed: NEW_GAME_SEED, save_wanted: false, smuggling };
         g.refresh_offers();
         g
     }
@@ -228,6 +231,7 @@ impl Gameplay {
         KernelState { progress: self.progress.clone(), dedup: self.dedup.clone() }.save(env);
         self.jobs.save(env);
         self.customers.save(env);
+        self.smuggling.save(env);
         GameSave { seed: self.seed }.save(env);
     }
 
@@ -243,6 +247,7 @@ impl Gameplay {
         self.jobs = Jobs::load(env)?.unwrap_or_default();
         self.customers = Customers::load(env)?.unwrap_or_else(|| Customers::new(&self.customer_content, CUSTOMER_SEED));
         self.seed = GameSave::load(env)?.map_or(NEW_GAME_SEED, |g| g.seed);
+        self.smuggling.restore(env)?;
         // The host's next events continue above the saved ones, so none is taken for a repeat.
         self.seq = kernel.dedup.next_seq(HOST).saturating_sub(1);
         self.picker = Picker::new(self.seed ^ self.seq);
@@ -466,6 +471,25 @@ impl Gameplay {
     }
 
     /// Queues a notice for the players.
+    /// A radio line (round 6): the speaker's name from a text key, the line picked from a pool.
+    pub fn say(&mut self, who: &TextKey, pool: &str) {
+        let who = self.text(who);
+        let text = self.picker.pick(&self.text, pool);
+        self.note(format!("radio [{who}] {text}"));
+        let at = self.clock;
+        self.smuggling.radio.push(crate::smuggling::RadioLine { who, text, at });
+    }
+
+    /// A line from a pool (never the same twice in a row), for glue texts.
+    pub fn line(&mut self, pool: &str) -> String {
+        self.picker.pick(&self.text, pool)
+    }
+
+    /// The game clock (s).
+    pub fn clock(&self) -> f64 {
+        self.clock
+    }
+
     pub fn notify(&mut self, n: Notice) {
         self.notices.push(n);
     }
@@ -606,6 +630,14 @@ pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>
                         match o {
                             customers_core::Outcome::Emit(e) => g.push_world(HOST, e),
                             customers_core::Outcome::Notice(n) => g.notify(n),
+                        }
+                    }
+                    // Round 6: traffic, heat, the lab and the family ladder read every world event too.
+                    for o in g.smuggling.apply_world(&g.kernel, &g.progress, &ev) {
+                        match o {
+                            crate::smuggling::systems::Out::Emit(e) => g.push_world(HOST, e),
+                            crate::smuggling::systems::Out::Notice(n) => g.notify(n),
+                            crate::smuggling::systems::Out::Say { who, key } => g.say(&who, key.as_str()),
                         }
                     }
                     g.jobs.apply_world(&g.jobs_content, &ev)
@@ -884,7 +916,7 @@ fn update_pad_rings(mut commands: Commands, planet: Res<PlanetRes>, gp: Res<Game
     for p in &gp.pads {
         // The disc's deck is 0.4 m up; sink it so the deck sits just above the flattened ground.
         commands.spawn((
-            SceneRoot(pad_model.clone()),
+            WorldAssetRoot(pad_model.clone()),
             Transform { rotation: Quat::from_rotation_arc(Vec3::Y, p.up.as_vec3()), scale: Vec3::splat(p.radius as f32 / 10.0), ..default() },
             crate::origin::WorldPos(p.centre - p.up * 0.3),
             crate::terrain::PlanetScene(planet.id),

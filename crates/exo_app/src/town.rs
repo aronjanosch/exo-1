@@ -13,37 +13,35 @@ use crate::Layer;
 use avian3d::prelude::*;
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
-use serde::Deserialize;
 use std::collections::BTreeMap;
 
 /// The place the plan's origin sits on (`content/place/city.json`).
 pub const CITY_PLACE: &str = "city";
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Plan {
     pub placements: Vec<Placement>,
     pub models: BTreeMap<String, Bounds>,
     pub quests: Vec<Quest>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Placement {
     pub model: String,
     /// Metres in the place frame: x east, y north, z up (z is the model's lift).
     pub at: [f64; 3],
     pub turn_deg: f64,
-    #[serde(default)]
     pub fit: Option<String>,
 }
 
 /// A model's box in glTF axes: x, y up, z towards the model's front.
-#[derive(Deserialize, Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Bounds {
     pub min: [f64; 3],
     pub max: [f64; 3],
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Quest {
     pub id: String,
     pub at: [f64; 2],
@@ -52,7 +50,39 @@ pub struct Quest {
 pub fn load_plan() -> Plan {
     let path = format!("{}/city/plan.json", crate::content_dir());
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
-    serde_json::from_str(&text).unwrap_or_else(|e| panic!("{path}: {e}"))
+    parse_plan(&text).unwrap_or_else(|e| panic!("{path}: {e}"))
+}
+
+/// Reads the exporter's JSON (no serde derive in this crate: `serde_json::Value` by hand).
+pub fn parse_plan(text: &str) -> Result<Plan, String> {
+    use serde_json::Value;
+    let v: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+    let num = |v: &Value, what: &str| v.as_f64().ok_or_else(|| format!("{what}: expected a number"));
+    let arr = |v: &Value, what: &str, n: usize| -> Result<Vec<f64>, String> {
+        let a = v.as_array().filter(|a| a.len() == n).ok_or_else(|| format!("{what}: expected {n} numbers"))?;
+        a.iter().map(|x| num(x, what)).collect()
+    };
+    let mut placements = Vec::new();
+    for (i, p) in v["placements"].as_array().ok_or("placements: expected a list")?.iter().enumerate() {
+        let at = arr(&p["at"], &format!("placements[{i}].at"), 3)?;
+        placements.push(Placement {
+            model: p["model"].as_str().ok_or_else(|| format!("placements[{i}].model: expected text"))?.to_string(),
+            at: [at[0], at[1], at[2]],
+            turn_deg: num(&p["turn_deg"], &format!("placements[{i}].turn_deg"))?,
+            fit: p["fit"].as_str().map(str::to_string),
+        });
+    }
+    let mut models = BTreeMap::new();
+    for (id, b) in v["models"].as_object().ok_or("models: expected an object")? {
+        let (lo, hi) = (arr(&b["min"], &format!("models.{id}.min"), 3)?, arr(&b["max"], &format!("models.{id}.max"), 3)?);
+        models.insert(id.clone(), Bounds { min: [lo[0], lo[1], lo[2]], max: [hi[0], hi[1], hi[2]] });
+    }
+    let mut quests = Vec::new();
+    for (i, q) in v["quests"].as_array().ok_or("quests: expected a list")?.iter().enumerate() {
+        let at = arr(&q["at"], &format!("quests[{i}].at"), 2)?;
+        quests.push(Quest { id: q["id"].as_str().ok_or_else(|| format!("quests[{i}].id: expected text"))?.to_string(), at: [at[0], at[1]] });
+    }
+    Ok(Plan { placements, models, quests })
 }
 
 /// Models that get a box collider: buildings and big street furniture. Everything else (trees,
@@ -208,7 +238,7 @@ fn update_town_view(mut commands: Commands, planet: Res<PlanetRes>, town: Res<To
                 let (ground, up) = frame.ground(&planet, p.at[0], p.at[1], p.at[2]);
                 let rot = frame.rotation(up, p.turn_deg);
                 commands.spawn((
-                    SceneRoot(assets.load(GltfAssetLabel::Scene(0).from_asset(format!("city/{}.glb", p.model)))),
+                    WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset(format!("city/{}.glb", p.model)))),
                     Transform::from_rotation(rot.as_quat()),
                     WorldPos(ground),
                     PlanetScene(planet.id),
@@ -225,7 +255,7 @@ fn update_town_view(mut commands: Commands, planet: Res<PlanetRes>, town: Res<To
         }
         for n in town.all_npcs() {
             commands.spawn((
-                SceneRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("city/npc_marker.glb"))),
+                WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset("city/npc_marker.glb"))),
                 Transform::from_rotation(Quat::from_rotation_arc(Vec3::Y, n.up.as_vec3())),
                 WorldPos(n.pos),
                 PlanetScene(planet.id),

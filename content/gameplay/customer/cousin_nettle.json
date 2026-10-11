@@ -3,7 +3,7 @@
   "id": "cousin_nettle",
   "name": "customer.cousin_nettle.name",
   "town": "bent_spoon",
-  "at": "lint_trap",
+  "at": "bent_spoon_west",
   "taste": { "wants": ["tingly", "sleepy"], "picks": 1, "min_quality": 0.4, "amount": [1, 2] },
   "rhythm_s": [200.0, 260.0],
   "start": 2.0,

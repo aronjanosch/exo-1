@@ -2727,10 +2727,13 @@ dependencies = [
  "flight_core",
  "gameplay_core",
  "grab_core",
+ "heat_core",
  "jobs_core",
  "net_core",
  "planet_core",
+ "production_core",
  "serde_json",
+ "traffic_core",
  "walker_core",
  "warp_core",
 ]

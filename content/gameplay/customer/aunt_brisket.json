@@ -3,8 +3,8 @@
   "id": "aunt_brisket",
   "name": "customer.aunt_brisket.name",
   "town": "bent_spoon",
-  "at": "bent_spoon",
-  "taste": { "wants": ["giggly", "loud_burps"], "picks": 1, "min_quality": 0.5, "amount": [1, 2] },
+  "at": "bent_spoon_east",
+  "taste": { "wants": ["giggly", "floaty"], "picks": 1, "min_quality": 0.5, "amount": [1, 2] },
   "rhythm_s": [240.0, 360.0],
   "start": 3.5,
   "voice": {

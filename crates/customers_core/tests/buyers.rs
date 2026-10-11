@@ -253,10 +253,10 @@ fn loader_errors_name_the_file_and_the_field() {
     let p = "customer/aunt_brisket.json";
     for (from, to, field) in [
         ("\"town\": \"bent_spoon\",", "", "town"),
-        ("\"at\": \"bent_spoon\",", "\"at\": \"moon\",", "at"),
-        ("\"at\": \"bent_spoon\",", "", "at"),
-        ("\"giggly\", \"loud_burps\"", "\"giggly\", \"moon_burp\"", "wants"),
-        ("\"giggly\", \"loud_burps\"", "\"giggly\", \"giggly\"", "wants"),
+        ("\"at\": \"bent_spoon_east\",", "\"at\": \"moon\",", "at"),
+        ("\"at\": \"bent_spoon_east\",", "", "at"),
+        ("\"giggly\", \"floaty\"", "\"giggly\", \"moon_burp\"", "wants"),
+        ("\"giggly\", \"floaty\"", "\"giggly\", \"giggly\"", "wants"),
         ("\"picks\": 1", "\"picks\": 3", "picks"),
         ("\"picks\": 1", "\"picks\": 0", "picks"),
         ("\"min_quality\": 0.5", "\"min_quality\": 1.5", "min_quality"),
@@ -272,7 +272,7 @@ fn loader_errors_name_the_file_and_the_field() {
         let e = shipped_replace(p, from, to);
         assert!(e.iter().any(|m| m.starts_with(p) && m.contains(field)), "{field}: {e:?}");
     }
-    let e = shipped_replace(p, "\"at\": \"bent_spoon\",", "\"at\": \"moon\",");
+    let e = shipped_replace(p, "\"at\": \"bent_spoon_east\",", "\"at\": \"moon\",");
     assert!(e.iter().any(|m| m.contains("moon")), "{e:?}");
     let e = shipped_replace(p, "\"refers\": \"cousin_nettle\"", "\"refers\": \"dr_fennel_obbs\"");
     assert!(e.iter().any(|m| m.contains("not hidden")), "{e:?}");
@@ -340,7 +340,7 @@ fn a_placed_order_has_its_town_and_handover_spot_from_the_record() {
         })
         .collect();
     assert!(!placed.is_empty());
-    assert!(placed.iter().all(|(t, a, q)| t == "gulch_freeport" && a == "noodle_post" && *q == 0.5), "{placed:?}");
+    assert!(placed.iter().all(|(t, a, q)| t == "gulch_freeport" && a == "gulch_freeport_east" && *q == 0.5), "{placed:?}");
 }
 
 #[test]
@@ -349,7 +349,7 @@ fn the_readout_shows_the_open_order_its_spot_its_time_left_and_the_counter() {
     let (order, wants, amount, price) = s.first_order("aunt_brisket");
     let (_, po) = s.c.product_orders().find(|(o, _)| *o == order).expect("the order is open");
     assert_eq!(po.customer, cid("aunt_brisket"));
-    assert_eq!((po.town.as_str(), po.at.as_str()), ("bent_spoon", "bent_spoon"));
+    assert_eq!((po.town.as_str(), po.at.as_str()), ("bent_spoon", "bent_spoon_east"));
     assert_eq!(po.wants, wants);
     assert_eq!((po.amount, po.price, po.min_quality), (amount, price, 0.5));
     assert!((po.left_s - PRODUCT_DEADLINE_S).abs() < 1e-9, "a fresh order has the full deadline: {}", po.left_s);

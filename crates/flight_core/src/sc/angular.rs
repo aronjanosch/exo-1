@@ -164,6 +164,12 @@ fn pitch_yaw_axis(reversing: &mut f64, accel: &mut f64, spin: f64, target: f64, 
         *reversing = spin.signum();
         *accel = -*reversing * share * box_;
     } else {
+        // A reversal that just crossed zero hands over to the spring from rest: its constant
+        // deceleration is not the spring's state, and kept, it shoots a small target several
+        // times over (#239).
+        if *reversing != 0.0 {
+            *accel = 0.0;
+        }
         *reversing = 0.0;
         let a = *accel + dt * (wn * wn * (target - spin) - 2.0 * zeta * wn * *accel);
         *accel = a.clamp(-box_, box_);

@@ -576,8 +576,8 @@
   "location.gulch_freeport_east.name": "Gulch Freeport East Pad",
   "location.bent_spoon_scrub.name": "Scrub outside Bent Spoon",
   "location.noodle_scrub.name": "Ditch outside Noodle Town",
-  "town.drip_rock.name": "Drip Rock Airspace",
-  "town.bent_spoon.name": "Bent Spoon Airspace",
+  "town.drip_rock.name": "Drip Rock",
+  "town.bent_spoon.name": "Bent Spoon",
   "notice.traffic.out_of_range": "Out of range of the tower. Get closer, then hail.",
   "notice.traffic.no_tower": "No tower here. Land wherever you like.",
   "tower.grumpy.granted": [

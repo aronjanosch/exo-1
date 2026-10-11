@@ -131,6 +131,31 @@ fn heat_to(w: &mut World, stars: u8) {
     }
 }
 
+/// Moves the phone's selection one row per 0.15 s (one tap per step) until a row containing
+/// `needle` (case-insensitive) is selected; at most 40 taps, down then wrapping is not needed.
+fn select_row(needle: &'static str) -> Step {
+    Box::new(move |w, c| {
+        let p = hud(w).phone.clone();
+        let hit = |r: &String| r.to_lowercase().contains(needle);
+        if p.rows.get(p.selected).is_some_and(hit) {
+            c.v.remove("taps");
+            return true;
+        }
+        let target = p.rows.iter().position(hit);
+        let taps = c.v.get("taps").copied().unwrap_or(0.0);
+        if target.is_none() || taps > 40.0 {
+            c.v.remove("taps");
+            return true;
+        }
+        if c.t - c.v.get("tap_t").copied().unwrap_or(-1.0) >= 0.15 {
+            c.v.insert("tap_t", c.t);
+            c.v.insert("taps", taps + 1.0);
+            tap(w, if target.unwrap() > p.selected { KeyCode::ArrowDown } else { KeyCode::ArrowUp });
+        }
+        false
+    })
+}
+
 // ---------------------------------------------------------------- phone
 
 pub fn phone_steps(s: &mut Vec<Step>) {
@@ -254,20 +279,7 @@ pub fn empire_steps(s: &mut Vec<Step>) {
         true
     }));
     s.push(wait(0.3));
-    s.push(Box::new(|w, c| {
-        // The Goals tab: the tribute row is the last one.
-        let n = hud(w).phone.rows.len();
-        c.v.insert("rows", n as f64);
-        for _ in 0..n {
-            tap(w, KeyCode::ArrowDown);
-        }
-        true
-    }));
-    s.push(Box::new(|w, _| {
-        tap(w, KeyCode::ArrowDown);
-        true
-    }));
-    s.push(wait(1.0));
+    s.push(select_row("tribute"));
     s.push(Box::new(|w, c| {
         let p = hud(w).phone.clone();
         let row = p.rows.get(p.selected).cloned().unwrap_or_default();
@@ -291,19 +303,9 @@ pub fn empire_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         let p = hud(w).phone.clone();
         check(c, p.tab == crate::smuggling::PhoneTab::Shop, format!("empire: left from Goals is the Shop ({})", p.tab.title()));
-        let i = p.rows.iter().position(|r| r.contains("idden")).unwrap_or(0);
-        c.v.insert("row", i as f64);
-        for _ in 0..i {
-            tap(w, KeyCode::ArrowDown);
-        }
         true
     }));
-    s.push(Box::new(|w, _| {
-        tap(w, KeyCode::ArrowDown);
-        tap(w, KeyCode::ArrowUp);
-        true
-    }));
-    s.push(wait(1.0));
+    s.push(select_row("hidden hold"));
     s.push(Box::new(|w, c| {
         let p = hud(w).phone.clone();
         let row = p.rows.get(p.selected).cloned().unwrap_or_default();
@@ -316,23 +318,12 @@ pub fn empire_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         let paid = c.v["wallet"] - wallet(w) as f64;
         check(c, gp(w).progress.has_tag(&Tag::new("ship_hidden_hold")), format!("empire: the hidden hold is bought ({paid:.0} cr)"));
-        let p = hud(w).phone.clone();
-        let i = p.rows.iter().position(|r| r.contains("Blorp")).unwrap_or(0) as i64 - p.selected as i64;
-        c.v.insert("crates0", 0.0);
-        for _ in 0..i.max(0) {
-            tap(w, KeyCode::ArrowDown);
-        }
         true
     }));
-    s.push(Box::new(|w, _| {
-        tap(w, KeyCode::ArrowDown);
-        tap(w, KeyCode::ArrowUp);
-        true
-    }));
-    s.push(wait(1.0));
+    s.push(select_row("blorp"));
     s.push(Box::new(|w, c| {
         let row = { let p = &hud(w).phone; p.rows.get(p.selected).cloned().unwrap_or_default() };
-        check(c, row.contains("Blorp"), format!("empire: with lab access the base is for sale ('{row}')"));
+        check(c, row.to_lowercase().contains("blorp"), format!("empire: with lab access the base is for sale ('{row}')"));
         c.v.insert("crates0", stock_count(w, |s, _| s.commodity.as_str() == "blorp_paste") as f64);
         tap(w, KeyCode::KeyF);
         true

@@ -1,0 +1,21 @@
+{
+  "_comment": "One level plot under Drip Rock's spaceport and the first city (round 6): the terrain has relief, buildings and pads need flat ground. Nothing else inside flattens (one level, no fights). TODO(initiator): where the city goes; a settlement plain later (#223).",
+  "id": "city_ground",
+  "planet": "hearth",
+  "near": {
+    "place": "drip_rock",
+    "east_m": 210.0,
+    "north_m": -45.0
+  },
+  "edits": [
+    {
+      "type": "flatten",
+      "order": 0,
+      "half_extent_m": [
+        300.0,
+        145.0
+      ],
+      "rolloff_m": 120.0
+    }
+  ]
+}

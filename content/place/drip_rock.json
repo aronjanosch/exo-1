@@ -1,17 +1,9 @@
 {
-  "_comment": "The city's spaceport (round 6): Drip Rock's pads west of the city gate. Invented name. Position and sizes are starting values (TODO(initiator)).",
+  "_comment": "The city's spaceport (round 6): Drip Rock's pads west of the city gate. Invented name. Position and sizes are starting values (TODO(initiator)). Stands on the city's level plot (city_ground), no edit of its own.",
   "id": "drip_rock",
   "planet": "hearth",
   "lat_deg": 86.0,
   "lon_deg": 90.0,
-  "edits": [
-    {
-      "type": "flatten",
-      "order": 0,
-      "radius_m": 52.0,
-      "rolloff_m": 30.0
-    }
-  ],
   "pads": [
     {
       "id": "main",

@@ -49,6 +49,14 @@ pub struct StationTarget {
 #[derive(Resource, Default, Debug)]
 pub struct KettleClock(pub std::collections::BTreeMap<String, f64>);
 
+/// Within `range` on the ground (horizontal) and at most 3 m above or below: stations stand on
+/// uneven ground.
+pub fn in_reach(a: DVec3, b: DVec3, up: DVec3, range: f64) -> bool {
+    let d = b - a;
+    let v = d.dot(up);
+    (d - up * v).length() < range && v.abs() < 3.0
+}
+
 /// The kettles: in the city's back room beside the dealer (the plan's quest spot), a second one
 /// once bought. Station id, world position on the ground, up.
 pub fn kettles(town: &Town, gp: &Gameplay) -> Vec<(String, DVec3, DVec3)> {
@@ -233,7 +241,7 @@ pub fn station_interact(
     let key = crate::interact::key_label(&bindings, Tap::Interact);
     let held = grab.held.and_then(|h| stock.get(h.crate_e).ok().map(|(e, s, _)| (e, s.clone())));
     // A kettle in reach.
-    if let Some((id, ..)) = kettles(&town, &gp).into_iter().find(|(_, p, _)| p.distance(here) < STATION_RANGE) {
+    if let Some((id, ..)) = kettles(&town, &gp).into_iter().find(|(_, p, up)| in_reach(here, *p, *up, STATION_RANGE)) {
         let lc = &gp.smuggling.lab_c;
         let kettle = gp.smuggling.lab.kettle(&id).cloned().unwrap_or(production_core::Kettle::Empty);
         let name = |c: &CommodityId| gp.kernel.commodities.get(c).map(|r| gp.text(&r.record.name)).unwrap_or_else(|| c.to_string());
@@ -320,7 +328,7 @@ pub fn station_interact(
     for (by, at) in spots {
         let i = *per_pad.entry(at.clone()).and_modify(|n| *n += 1).or_insert(0);
         let Some((spot, _)) = buyer_spot(&gp, &at, i) else { continue };
-        if spot.distance(here) >= STATION_RANGE {
+        if !in_reach(here, spot, pl.world_up(Frame::IDENTITY), STATION_RANGE) {
             continue;
         }
         let order = gp.customers.product_orders().find(|(_, o)| o.customer.as_str() == by).map(|(id, o)| (id, o.clone()));

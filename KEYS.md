@@ -86,5 +86,6 @@ The switches of Star Citizen's flight control (the flight model is the SC model,
 | 1 / 2 / 3 | `dev_1`, `dev_2`, `dev_3` | In the open dev menu: grant every licence / +1000 credits / refill the boost |
 | 4 / 5 | `dev_4`, `dev_5` | In the open dev menu: always day / always night (the clock stands) |
 | 6 / 7 | `dev_6`, `dev_7` | In the open dev menu: jump to day / to night, the cycle runs on |
+| 8 | `dev_8` | In the open dev menu: put the ship 150 m above the next settlement, stopped and level |
 
 One key may serve several actions when they apply in different situations: Space jumps on foot and lifts the ship, Shift runs and boosts.

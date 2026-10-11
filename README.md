@@ -1,6 +1,6 @@
 # EXO-1
 
-Working title. A goofy co-op space game in a strange galaxy: walk, fly and land on procedural planets, in small groups of about 2-5 players. Written in Rust with Bevy 0.19 and Avian 0.7 (f64). A private project of the initiator and a few friends.
+Working title. A co-op crew game in space: friends run one walkable ship together, each in a role, through a strange galaxy, and fly and land on procedural planets, in crews of about 2-5 players. The target is version 0.1 (`docs/VISION.md` and `docs/ROADMAP.md` in `exo-1-concept`). Written in Rust with Bevy 0.19 and Avian 0.7 (f64). A private project of the initiator and a few friends.
 
 Status: starting point. The code comes from the spikes (tag `spike/combined-final`, reports in `exo-1-concept`): one planet, walking, a ship with assisted flight, space and back, walking inside a flying ship, LAN co-op with client authority. All speeds, gravity, assists, look and controls are spike test values, **not designed**.
 

@@ -27,10 +27,11 @@ pub struct NoiseSpec {
 }
 
 impl NoiseSpec {
-    /// The frequency from the wavelength in radii, if one is given (#221).
-    pub fn resolve(&mut self, radius: f64) {
+    /// The frequency from the wavelength in radii, if one is given: the radii are `length_m` long
+    /// (the planet's radius for the macro fields, #221).
+    pub fn resolve(&mut self, length_m: f64) {
         if let Some(wl) = self.wavelength_radii {
-            self.frequency = (1.0 / (wl as f64 * radius)) as f32;
+            self.frequency = (1.0 / (wl as f64 * length_m)) as f32;
         }
     }
 }
@@ -193,12 +194,21 @@ pub struct Relief {
     /// 1 = linear; 0.5 keeps the 5 km planets near their old relief, see #221).
     #[serde(default = "default_scale_exponent")]
     pub scale_exponent: f64,
+    /// Exponent of the lake depth's scale; missing = `scale_exponent` (TODO(initiator): lakes
+    /// and relief may scale differently, see #221).
+    #[serde(default)]
+    pub lake_scale_exponent: Option<f64>,
 }
 
 impl Relief {
-    /// The factor on the metres of the relief (and on the lake depth) at this radius (#221).
+    /// The factor on the metres of the relief and on its wavelengths at this radius (#221).
     pub fn scale_at(&self, radius: f64) -> f64 {
         (radius / self.radius_m).powf(self.scale_exponent)
+    }
+
+    /// The factor on the lake depth at this radius (#221).
+    pub fn lake_scale_at(&self, radius: f64) -> f64 {
+        (radius / self.radius_m).powf(self.lake_scale_exponent.unwrap_or(self.scale_exponent))
     }
 }
 
@@ -819,33 +829,51 @@ impl Recipe {
     }
 
     /// Relative wavelengths become frequencies at this radius (#221).
+    /// Relative wavelengths become frequencies at this radius (#221). The relief is self-similar:
+    /// its wavelengths and its detail bands scale with the same factor s as its metres (so the
+    /// slopes do not change with the radius); the macro fields stay relative to the radius.
     fn resolve_wavelengths(&mut self, radius: f64) {
-        // The lake depth is given at the relief's reference radius; it grows with the planet
-        // like the relief does (#221, TODO(initiator): the reference values).
-        if let (Some(rl), Some(d)) = (&self.relief, &mut self.drainage) {
-            d.lake_min_depth_m *= rl.scale_at(radius);
+        let (s, lake_s) = match &self.relief {
+            Some(rl) => (rl.scale_at(radius), rl.lake_scale_at(radius)),
+            None => (1.0, 1.0),
+        };
+        if let Some(d) = &mut self.drainage {
+            if self.relief.is_some() {
+                d.lake_min_depth_m *= lake_s;
+            }
         }
         let m = &mut self.macro_;
         let mut specs: Vec<&mut NoiseSpec> = vec![&mut m.elevation.noise, &mut m.moisture.noise, &mut m.temperature.noise, &mut m.landform.noise, &mut m.weirdness.noise];
         if let Some(e) = &mut m.erosion {
             specs.push(&mut e.noise);
         }
-        for b in &mut self.bands {
-            specs.push(&mut b.noise);
-        }
-        if let Some(rl) = &mut self.relief {
-            specs.push(&mut rl.ridge_noise);
-        }
         for s in specs {
             s.resolve(radius);
         }
-        let mut warps: Vec<&mut Warp> = self.bands.iter_mut().filter_map(|b| b.warp.as_mut()).collect();
-        if let Some(w) = self.relief.as_mut().and_then(|rl| rl.ridge_warp.as_mut()) {
-            warps.push(w);
+        let relief = self.relief.is_some();
+        for b in &mut self.bands {
+            b.noise.resolve(radius);
+            if let Some(w) = b.warp.as_mut() {
+                if let Some(wl) = w.wavelength_radii {
+                    w.frequency = (1.0 / (wl as f64 * radius)) as f32;
+                }
+            }
+            // A detail band under the relief: the same self-similar scale as the relief.
+            if relief && b.detail {
+                b.noise.frequency /= s as f32;
+                b.amplitude *= s;
+                if let Some(w) = b.warp.as_mut() {
+                    w.frequency /= s as f32;
+                    w.amplitude *= s;
+                }
+            }
         }
-        for w in warps {
-            if let Some(wl) = w.wavelength_radii {
-                w.frequency = (1.0 / (wl as f64 * radius)) as f32;
+        if let Some(rl) = &mut self.relief {
+            rl.ridge_noise.resolve(rl.radius_m * s);
+            if let Some(w) = rl.ridge_warp.as_mut() {
+                if let Some(wl) = w.wavelength_radii {
+                    w.frequency = (1.0 / (wl as f64 * rl.radius_m * s)) as f32;
+                }
             }
         }
     }

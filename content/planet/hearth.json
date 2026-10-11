@@ -19,7 +19,8 @@
     "land_gate": { "field": "elevation", "points": [[-0.2, 0.3], [0.0, 0.8], [0.2, 1.0], [1.0, 1.0]] },
     "ridge_noise": { "seed_offset": 20, "wavelength_radii": 0.06, "fractal": "ridged", "octaves": 4 },
     "ridge_warp": { "seed_offset": 21, "wavelength_radii": 0.02, "amplitude": 400.0 },
-    "radius_m": 100000.0, "scale_exponent": 0.5
+    "radius_m": 100000.0, "scale_exponent": 0.5,
+    "lake_scale_exponent": 0.54
   },
   "shape": {
     "offset": { "field": "elevation", "points": [[-1.0, -45.0], [-0.35, -12.0], [0.0, 2.0], [0.4, 12.0], [1.0, 45.0]] },

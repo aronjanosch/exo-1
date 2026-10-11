@@ -5,6 +5,7 @@ use super::systems::{SpawnStock, HIDDEN_HOLD_CRATES, LADDER, TAG_HIDDEN_HOLD, TA
 use super::{BrewView, PhoneTab, SmuggleHud};
 use crate::cargo::{crate_bundle, crate_world, Crate, Crates};
 use crate::controls::{Actions, Tap};
+use crate::feedback::{Anchor, Cue, Tone};
 use crate::gameplay::{Gameplay, HOST};
 use crate::grab::Grab;
 use crate::interact::Interaction;
@@ -13,6 +14,7 @@ use crate::walker::Player;
 use avian3d::prelude::*;
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
+use gameplay_core::notice::{Arg, Notice, NoticeKind};
 use gameplay_core::{CommodityId, LocationId, OrderId, ProductSpec, ScanChoice, Tag, TextKey, TownId, WorldEvent};
 use walker_core::Frame;
 
@@ -148,6 +150,9 @@ pub fn smuggle_observe(
             heat_core::PatrolOut::Ordered { .. } => {
                 g.smuggling.log.push("patrol: halt ordered".into());
                 g.say(&TextKey::new("patrol.name"), "patrol.ordered");
+                let (at, text) = (g.clock(), g.line("stamp.halt"));
+                g.feedback.push(at, Cue::Stamp { text, tone: Tone::Bad, hold: 0.0 });
+                g.feedback.push(at, Cue::Kick(0.2));
             }
             heat_core::PatrolOut::Halted { at } => {
                 g.smuggling.log.push("patrol: halted".into());
@@ -333,13 +338,25 @@ pub fn station_interact(
                             grab.held = None;
                             commands.entity(e).despawn();
                             g.smuggling.log.push(format!("{id}: in goes {}", s.commodity));
+                            let at = g.clock();
+                            g.feedback.push(at, Cue::Burst { at: Anchor::Kettle(id.clone()), tone: Tone::Info });
                         }
-                        Err(r) => g.smuggling.log.push(format!("{id}: refused {}: {r:?}", s.commodity)),
+                        Err(r) => {
+                            g.smuggling.log.push(format!("{id}: refused {}: {r:?}", s.commodity));
+                            lab_refused(g, &r);
+                        }
                     }
                 }
                 production_core::Kettle::Loaded { .. } => {
-                    if let Err(r) = g.smuggling.lab.start(&g.smuggling.lab_c, &id) {
-                        g.smuggling.log.push(format!("{id}: start refused: {r:?}"));
+                    match g.smuggling.lab.start(&g.smuggling.lab_c, &id) {
+                        Ok(_) => {
+                            let at = g.clock();
+                            g.feedback.push(at, Cue::Burst { at: Anchor::Kettle(id.clone()), tone: Tone::Gold });
+                        }
+                        Err(r) => {
+                            g.smuggling.log.push(format!("{id}: start refused: {r:?}"));
+                            lab_refused(g, &r);
+                        }
                     }
                 }
                 production_core::Kettle::Done { .. } => {
@@ -399,6 +416,9 @@ pub fn station_interact(
             }
             let products = near.into_iter().map(|(_, p)| p).collect();
             gp.push_world(HOST, WorldEvent::ProductHandedOver { order, products });
+            let at = gp.clock();
+            gp.feedback.push(at, Cue::Burst { at: Anchor::Buyer(by.clone()), tone: Tone::Gold });
+            gp.feedback.push(at, Cue::Hop(by.clone()));
         }
         return;
     }
@@ -576,13 +596,24 @@ pub fn phone_step(mut actions: ResMut<Actions>, mut phone: ResMut<PhoneState>, m
             RowAction::PayFixer => {
                 if g.progress.wallet() >= FIXER_STEP {
                     g.push_world(HOST, WorldEvent::HeatPaidDown { amount: FIXER_STEP });
+                } else {
+                    g.notify(Notice::new(NoticeKind::Warning, "heat.fixer_short").arg("money", Arg::Number(FIXER_STEP)));
                 }
             }
             RowAction::Buy { shop, idx } => {
                 let Some(sh) = g.smuggling.shops.shops.get(&shop).map(|s| s.record.clone()) else { return };
                 match sh.buy(idx, &g.progress, &g.kernel, sh.location.clone()) {
                     Ok(events) => events.into_iter().for_each(|e| g.push_world(HOST, e)),
-                    Err(r) => g.smuggling.log.push(format!("shop {shop}: refused {r:?}")),
+                    Err(r) => {
+                        g.smuggling.log.push(format!("shop {shop}: refused {r:?}"));
+                        let why = match r {
+                            gameplay_core::shop::Refusal::NotEnoughMoney { .. } => "shop.why.money",
+                            gameplay_core::shop::Refusal::Owned => "shop.why.owned",
+                            gameplay_core::shop::Refusal::WrongLocation => "shop.why.place",
+                            _ => "shop.why.locked",
+                        };
+                        g.notify(Notice::new(NoticeKind::Warning, "shop.refused").arg("why", Arg::Key(TextKey::new(why))));
+                    }
                 }
             }
             RowAction::Order(order) => g.smuggling.tracked_order = if g.smuggling.tracked_order == Some(order) { None } else { Some(order) },
@@ -664,6 +695,8 @@ pub fn fill_hud(mut hud: ResMut<SmuggleHud>, mut gp: ResMut<Gameplay>, phone: Re
         }
     }
     gp.smuggling.radio.retain(|l| hud.clock - l.at < 120.0);
+    let (at, line) = (gp.clock(), hud.goal_line.clone());
+    gp.feedback.goal_line(at, &line);
 }
 
 pub fn plugin(app: &mut App) {
@@ -719,4 +752,17 @@ pub fn kettle_view(
         commands.spawn((Mesh3d(body.clone()), MeshMaterial3d(metal.clone()), Transform::from_rotation(rot), crate::origin::WorldPos(ground + up * 0.55), crate::terrain::PlanetScene(planet.id), KettleModel));
         commands.spawn((Mesh3d(top.clone()), MeshMaterial3d(brew.clone()), Transform::from_rotation(rot), crate::origin::WorldPos(ground + up * 1.12), crate::terrain::PlanetScene(planet.id), KettleModel));
     }
+}
+
+/// A kettle that refuses says why, in a toast.
+fn lab_refused(g: &mut Gameplay, r: &production_core::LabRefusal) {
+    let why = match r {
+        production_core::LabRefusal::UnknownGoods => "lab.why.unknown",
+        production_core::LabRefusal::SecondBase => "lab.why.second_base",
+        production_core::LabRefusal::IngredientBeforeBase => "lab.why.base_first",
+        production_core::LabRefusal::TooManyIngredients => "lab.why.full",
+        production_core::LabRefusal::NoBase => "lab.why.no_base",
+        _ => "lab.why.busy",
+    };
+    g.notify(Notice::new(NoticeKind::Warning, "lab.refused").arg("why", Arg::Key(TextKey::new(why))));
 }

@@ -828,6 +828,20 @@ pub fn smuggle_run_steps(s: &mut Vec<Step>) {
         let line = hud(w).goal_line.clone();
         let before = gp(w).log.iter().find_map(|l| l.strip_prefix("scenario: goal before: ")).unwrap_or("").to_string();
         check(c, !line.is_empty() && line != before, format!("smuggle_run: the next goal moved: '{before}' → '{line}'"));
+        // Round 6b: every beat of the run was felt, not only read.
+        let fb = &gp(w).feedback;
+        let has = |f: &dyn Fn(&crate::feedback::Cue) -> bool| fb.cues.iter().any(|(_, q)| f(q));
+        use crate::feedback::{Anchor, Cue};
+        let stamps: Vec<&str> = fb.stamps().collect();
+        check(c, has(&|q| matches!(q, Cue::Burst { at: Anchor::Kettle(_), .. })), "smuggle_run: the kettle splashed and burst".into());
+        check(c, stamps.iter().any(|s| s.contains(" · Q")), format!("smuggle_run: the brew's quality was stamped ({:?})", stamps.iter().find(|s| s.contains(" · Q"))));
+        check(c, stamps.iter().any(|s| s.starts_with("INSPECTION") || s.starts_with("PAD ")), "smuggle_run: the clearance was stamped".into());
+        check(c, has(&|q| matches!(q, Cue::Dust)) && has(&|q| matches!(q, Cue::Kick(_))), "smuggle_run: the touchdown raised dust and kicked the camera".into());
+        check(c, stamps.iter().any(|s| s.starts_with("BRIBED")), format!("smuggle_run: the verdict was stamped ({:?})", stamps.iter().find(|s| s.starts_with("BRIBED"))));
+        check(c, has(&|q| matches!(q, Cue::Money(m) if *m < 0)) && has(&|q| matches!(q, Cue::Money(m) if *m > 0)), "smuggle_run: the bribe and the payday floated as wallet deltas".into());
+        check(c, has(&|q| matches!(q, Cue::Hop(_))), "smuggle_run: the buyer jumped".into());
+        check(c, has(&|q| matches!(q, Cue::Goal)), "smuggle_run: the goal line pulsed".into());
+        check(c, gp(w).shown.iter().any(|l| l.banner && l.money == Some(paid as i64)), format!("smuggle_run: the payday banner counts up to {paid:.0}"));
         end(w, c, format!("paid {paid:.0}, net {:+.0} cr since the start", wallet(w) as f64 - c.v["wallet0"]));
         true
     }));

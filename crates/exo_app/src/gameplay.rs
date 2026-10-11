@@ -148,6 +148,8 @@ pub struct Gameplay {
     pub save_wanted: bool,
     /// Round 6: traffic, heat, the lab, the family ladder and its shops (`smuggling`).
     pub smuggling: crate::smuggling::systems::Systems,
+    /// Round 6b: felt feedback (stamps, kicks, bursts) for the window and scenario checks.
+    pub feedback: crate::feedback::Feedback,
 }
 
 /// A giver's counter, opened.
@@ -220,7 +222,7 @@ impl Gameplay {
         let customers = Customers::new(&customer_content, CUSTOMER_SEED);
         let progress = Progress::new(&kernel);
         let jobs = Jobs::default();
-        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(NEW_GAME_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, customers, customer_content, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, tracked: None, briefings: Default::default(), abandon_asked: None, arrow: None, seed: NEW_GAME_SEED, save_wanted: false, smuggling };
+        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(NEW_GAME_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, customers, customer_content, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, tracked: None, briefings: Default::default(), abandon_asked: None, arrow: None, seed: NEW_GAME_SEED, save_wanted: false, smuggling, feedback: Default::default() };
         g.refresh_offers();
         g
     }
@@ -494,6 +496,11 @@ impl Gameplay {
         self.notices.push(n);
     }
 
+    /// A notice's text without queueing it (stamps and glue lines).
+    pub fn render(&mut self, n: &Notice) -> String {
+        self.picker.render(&self.text, n)
+    }
+
     /// Releases what the queue allows and renders it (a line of the pool, never the same twice).
     fn pace_notices(&mut self, dt: f64) {
         for s in self.notices.tick(dt) {
@@ -640,6 +647,8 @@ pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>
                             crate::smuggling::systems::Out::Say { who, key } => g.say(&who, key.as_str()),
                         }
                     }
+                    // Round 6b: what the player feels besides the text.
+                    crate::feedback::on_world(g, &ev.payload);
                     g.jobs.apply_world(&g.jobs_content, &ev)
                 }
                 Queued::Job(ev) => {

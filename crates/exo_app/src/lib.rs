@@ -8,6 +8,7 @@ pub mod controls;
 pub mod daynight;
 pub mod dev;
 pub mod env;
+pub mod feedback;
 pub mod flight_events;
 pub mod frame_cost;
 pub mod gameplay;

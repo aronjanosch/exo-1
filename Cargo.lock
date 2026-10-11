@@ -3271,6 +3271,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "heat_core"
+version = "0.1.0"
+dependencies = [
+ "content_core",
+ "gameplay_core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "hermit-abi"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

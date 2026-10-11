@@ -15,6 +15,7 @@ use crate::origin::{RenderOrigin, WorldPos};
 use crate::terrain::PlanetScene;
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::primitives::Aabb;
+use bevy::camera::visibility::VisibilityRange;
 use bevy::math::DVec3;
 use bevy::mesh::{Indices, PrimitiveTopology, VertexAttributeValues};
 use bevy::prelude::*;
@@ -27,6 +28,9 @@ use std::sync::Arc;
 const MAX_UPLOADS_PER_FRAME: usize = 8;
 /// Cell builds running on the pool at once; the rest wait, nearest first.
 const MAX_TASKS: usize = 8;
+/// A cell fades in (dithered, by the camera's distance to its centre) over the outer share of its
+/// storey's range, so a cell that appears at the edge does not pop (#237). TODO(initiator): value.
+const FADE_FROM: f32 = 0.9;
 /// The cell walk runs again after the camera moved this far (m) or its height changed by as much.
 const WALK_MOVE_M: f64 = 6.0;
 /// A cell is dropped only beyond this share of its range (no flicker at the edge).
@@ -95,6 +99,9 @@ pub struct ScatterView {
     walked: Option<(DVec3, f64)>,
     /// Per storey: quadtree depth of its cells and its ranges (m).
     storeys: Vec<(u32, f64, f64)>,
+    /// Per storey: the camera's distance to a cell at the edge of its range at the last walk (m;
+    /// the range lifted with the camera's height, and that height counted in).
+    range_now: Vec<f64>,
     /// GLB mesh handles by prop id, until their vertex data is read into `geoms`.
     sources: HashMap<String, Handle<Mesh>>,
     geoms: Option<Arc<HashMap<String, PropGeom>>>,
@@ -225,7 +232,16 @@ fn build_cell(geoms: &HashMap<String, PropGeom>, props: &[(String, Option<String
         idx.extend(g.indices.iter().map(|i| i + base));
     }
     let mut parts = Vec::with_capacity(1);
+    let mut center = center;
     if !pos.is_empty() {
+        // The mesh's origin in the middle of its bounds, on the ground: the cell's centre is on
+        // the base sphere, and the distance fade (#237) measures from the origin on the GPU.
+        let mid = (lo + hi) * 0.5;
+        for p in &mut pos {
+            *p = (Vec3::from_array(*p) - mid).to_array();
+        }
+        (lo, hi) = (lo - mid, hi - mid);
+        center = [center[0] + mid.x as f64, center[1] + mid.y as f64, center[2] + mid.z as f64];
         let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
             .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, nrm)
@@ -325,6 +341,9 @@ pub fn update_scatter(
             .material
             .get_or_insert_with(|| mats.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.92, ..default() }))
             .clone();
+        // The range it was asked for, measured to the mesh's origin (the middle of its bounds).
+        let range = view.range_now.get(key.0 as usize).copied().unwrap_or(f64::MAX) as f32;
+        let fade = VisibilityRange { start_margin: 0.0..0.0, end_margin: range * FADE_FROM..range, use_aabb: false };
         let mut entities = Vec::with_capacity(out.parts.len());
         for (mesh, aabb) in out.parts {
             entities.push(
@@ -333,6 +352,7 @@ pub fn update_scatter(
                         Mesh3d(meshes.add(mesh)),
                         MeshMaterial3d(mat.clone()),
                         aabb,
+                        fade.clone(),
                         Transform::default(),
                         WorldPos(planet.centre + DVec3::from_array(out.center)),
                         PlanetScene(planet.id),
@@ -359,9 +379,11 @@ fn walk_cells(commands: &mut Commands, view: &mut ScatterView, planet: &PlanetRe
     let lift = (agl / ELEVATED_AT_M).clamp(0.0, 1.0);
     let mut wanted: HashMap<Key, CellSpec> = HashMap::new();
     let mut keep_range = Vec::new();
+    view.range_now.clear();
     for (si, &(depth, near, far)) in view.storeys.iter().enumerate() {
         let range = near + (far - near) * lift;
         keep_range.push(range * KEEP_FACTOR);
+        view.range_now.push(range.hypot(agl));
         // Above twice its range over the ground a storey is not drawn at all.
         if agl > range * 2.0 {
             continue;
@@ -447,9 +469,11 @@ mod tests {
         assert_eq!(out.parts.len(), 1, "plain and rare prop in one mesh");
         let mesh = &out.parts[0].0;
         assert_eq!(mesh.count_vertices(), 3 * n);
-        // Instances at x = 0, 10, 20, scaled by 2 (placeholder radius 1): x spans -2..22.
+        // Instances at x = 0, 10, 20, scaled by 2 (placeholder radius 1): x spans -2..22. The mesh's
+        // origin moves to the middle of that (#237), x = 10 from the cell's centre.
         let a = out.parts[0].1;
-        assert!((a.center.x - 10.0).abs() < 0.1 && (a.half_extents.x - 12.0).abs() < 0.1, "{a:?}");
+        assert!(a.center.x.abs() < 0.1 && (a.half_extents.x - 12.0).abs() < 0.1, "{a:?}");
+        assert!((out.center[0] - 10.0).abs() < 0.1, "origin at {:?}", out.center);
         // Tint: linear of (1, .5, 0) on a white vertex colour.
         let Some(VertexAttributeValues::Float32x4(c)) = mesh.attribute(Mesh::ATTRIBUTE_COLOR) else { panic!() };
         assert!((c[0][0] - 1.0).abs() < 1e-5 && c[0][1] < 0.3 && c[0][2] == 0.0);

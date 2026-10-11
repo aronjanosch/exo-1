@@ -1,0 +1,13 @@
+{
+  "_comment": "Placeholder town (traffic, round 6). Airspace, speed limit, pads, hold chance and the stars at which the tower inspects are TODO(initiator).",
+  "id": "bent_spoon",
+  "name": "town.bent_spoon.name",
+  "voice": "tower.chirpy",
+  "airspace_m": 600.0,
+  "speed_limit_ms": 25.0,
+  "pads": ["bent_spoon", "lint_trap"],
+  "inspection_pad": "lint_trap",
+  "free_port": false,
+  "hold_chance": 0.2,
+  "inspection_stars": 4
+}

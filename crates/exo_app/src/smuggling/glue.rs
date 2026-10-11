@@ -248,9 +248,18 @@ pub fn station_interact(
             (_, production_core::Kettle::Done { .. }) => format!("[{key}] stop the needle in the green!"),
             (_, production_core::Kettle::Ready { crates, .. }) => format!("[{key}] take {crates} product crates"),
         };
+        // A crate in reach in front of the walker is for picking up (more ingredients), not the kettle.
+        let up = pl.world_up(Frame::IDENTITY);
+        let flat = |v: DVec3| (v - up * v.dot(up)).normalize_or_zero();
+        let look = flat(pl.world_look(Frame::IDENTITY));
+        let crate_in_reach = stock.iter().any(|(_, _, c)| {
+            let d = crate_world(c, &Frame::IDENTITY).0 - here;
+            c.ship.is_none() && d.length() < 2.2 && flat(d).dot(look) > 0.5
+        });
         let actionable = match (&held, &kettle) {
             (Some((_, s)), production_core::Kettle::Empty | production_core::Kettle::Loaded { .. }) => s.product.is_none(),
-            (None, production_core::Kettle::Loaded { .. } | production_core::Kettle::Done { .. } | production_core::Kettle::Ready { .. }) => true,
+            (None, production_core::Kettle::Loaded { .. }) => !crate_in_reach,
+            (None, production_core::Kettle::Done { .. } | production_core::Kettle::Ready { .. }) => true,
             _ => false,
         };
         st.target = actionable.then(|| Station::Kettle(id.clone()));

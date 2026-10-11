@@ -352,9 +352,12 @@ fn at_kettle_with(w: &mut World, commodity: &str) {
     let pl = planet(w);
     let d = pl.up(stand);
     place_walker(w, pl.centre + d * (pl.surface(d) + 0.05));
-    let toward = (k - stand).normalize();
-    stock_at(w, commodity, None, stand + up.cross(side) * 1.0 + toward * 0.0);
-    face_towards(w, stand + up.cross(side) * 1.0 - up * 1.0);
+    let ahead = up.cross(side);
+    stock_at(w, commodity, None, stand + ahead * 1.2);
+    face_towards(w, stand + ahead * 5.0);
+    // Look down at the crate (its centre about 0.3 m up, 1.2 m ahead).
+    let pitch = -((crate::walker::EYE_HEIGHT - 0.3) / 1.2).atan();
+    with_player(w, |p| p.pitch = pitch);
 }
 
 pub fn lab_steps(s: &mut Vec<Step>) {
@@ -422,7 +425,6 @@ pub fn lab_steps(s: &mut Vec<Step>) {
         check(c, product.effects == want, format!("lab: sugar then moth dust gives {:?}", product.effects));
         check(c, product.quality > 0.8, format!("lab: the needle stopped at {:.2} gives quality {:.2}", c.v["needle"], product.quality));
         check(c, gp(w).smuggling.lab.book().len() == 1, "lab: the mix is in the recipe book".into());
-        check(c, gp(w).shown.iter().any(|l| l.key == production_core::lab::DISCOVERED_KEY) || gp(w).log.iter().any(|l| l.contains("lab.discovered")) || !gp(w).notices.is_empty(), "lab: a discovery notice".into());
         c.v.insert("crates", crates as f64);
         tap(w, KeyCode::KeyF);
         true
@@ -432,8 +434,17 @@ pub fn lab_steps(s: &mut Vec<Step>) {
         let n = stock_count(w, |s, _| s.product.is_some()) as f64;
         check(c, n == c.v["crates"], format!("lab: F takes {n} product crates"));
         check(c, track(w, "recipes_found") == 1, format!("lab: the family counts the recipe ({})", track(w, "recipes_found")));
-        end(w, c, format!("{n} crates"));
         true
+    }));
+    // The notices are paced: wait until the discovery is shown (at most 15 s).
+    s.push(Box::new(|w, c| {
+        let shown = gp(w).shown.iter().find(|l| l.key == production_core::lab::DISCOVERED_KEY).map(|l| l.text.clone());
+        if shown.is_some() || c.t > 15.0 {
+            check(c, shown.is_some(), format!("lab: the discovery is announced ('{}')", shown.unwrap_or_default()));
+            end(w, c, "brewed".into());
+            return true;
+        }
+        false
     }));
 }
 
@@ -505,9 +516,10 @@ pub fn scan_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         let cargo = gp(w).smuggling.cargo;
         check(c, cargo.hidden == 2 && cargo.visible == 0, format!("scan: the hold hides both ({cargo:?})"));
-        let scans = gp(w).smuggling.log.iter().filter(|l| l.contains("Comply, confiscate false, fine 0")).count();
-        let landed_clean = scans >= 1 || gp(w).smuggling.log.last().is_some_and(|l| l.contains("scan false"));
-        check(c, landed_clean && aboard(w) == 2, format!("scan: a clean scan or none, the crates stay ({} aboard)", aboard(w)));
+        // The inspection pad always scans; with nothing in sight it comes out clean at once.
+        let clean = gp(w).smuggling.log.iter().filter(|l| l.contains("Comply, confiscate false, fine 0")).count();
+        check(c, clean == 1, format!("scan: the inspection finds nothing: a clean scan ({clean})"));
+        check(c, aboard(w) == 2, format!("scan: the crates stay aboard ({})", aboard(w)));
         let n = aboard(w);
         end(w, c, format!("{n} aboard"));
         // Phase 3: flee.

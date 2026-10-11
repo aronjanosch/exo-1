@@ -872,14 +872,23 @@ fn update_panel(mut gp: ResMut<Gameplay>, bindings: Res<crate::controls::Binding
 #[derive(Resource, Default)]
 pub struct PadRings(Option<warp_core::PlanetId>);
 
-/// A plain glowing ring on every pad until places have models (DECISIONS.md, "Places").
-fn update_pad_rings(mut commands: Commands, planet: Res<PlanetRes>, gp: Res<Gameplay>, mut rings: ResMut<PadRings>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>) {
+/// Every pad: the landing-pad model (`props/landing_pad.glb`, a 20 m disc, scaled to the pad) and
+/// a glowing ring at its edge (round 6; the ring alone before).
+fn update_pad_rings(mut commands: Commands, planet: Res<PlanetRes>, gp: Res<Gameplay>, mut rings: ResMut<PadRings>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>, assets: Res<AssetServer>) {
     if rings.0 == Some(planet.id) || gp.pads_for != Some(planet.id) {
         return;
     }
     rings.0 = Some(planet.id);
     let mat = mats.add(StandardMaterial { base_color: Color::srgb(1.0, 0.85, 0.3), emissive: LinearRgba::rgb(4.0, 2.6, 0.6), ..default() });
+    let pad_model = assets.load(GltfAssetLabel::Scene(0).from_asset("props/landing_pad.glb"));
     for p in &gp.pads {
+        // The disc's deck is 0.4 m up; sink it so the deck sits just above the flattened ground.
+        commands.spawn((
+            SceneRoot(pad_model.clone()),
+            Transform { rotation: Quat::from_rotation_arc(Vec3::Y, p.up.as_vec3()), scale: Vec3::splat(p.radius as f32 / 10.0), ..default() },
+            crate::origin::WorldPos(p.centre - p.up * 0.3),
+            crate::terrain::PlanetScene(planet.id),
+        ));
         let mesh = meshes.add(Torus { minor_radius: 0.12, major_radius: p.radius as f32 });
         commands.spawn((
             Mesh3d(mesh),

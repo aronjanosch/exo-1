@@ -1,9 +1,49 @@
 {
-  "_comment": "First dropoff pad, about 1.9 km from the pickup. Invented name. Position and sizes are starting values (TODO(initiator)).",
+  "_comment": "Bent Spoon, a far town: about 40 km from Drip Rock at 100 km radius (2 km at 5 km). Pads and an inspection pad (round 6). Invented name; TODO(initiator).",
   "id": "bent_spoon",
   "planet": "hearth",
   "lat_deg": 70.0,
   "lon_deg": 315.0,
-  "edits": [ { "type": "flatten", "order": 0, "radius_m": 18.0, "rolloff_m": 20.0 } ],
-  "pads": [ { "id": "main", "at": [0.0, 0.0], "radius_m": 15.0 } ]
+  "edits": [
+    {
+      "type": "flatten",
+      "order": 0,
+      "radius_m": 48.0,
+      "rolloff_m": 30.0
+    }
+  ],
+  "pads": [
+    {
+      "id": "main",
+      "at": [
+        0.0,
+        0.0
+      ],
+      "radius_m": 15.0
+    },
+    {
+      "id": "east",
+      "at": [
+        30.0,
+        0.0
+      ],
+      "radius_m": 12.0
+    },
+    {
+      "id": "west",
+      "at": [
+        -30.0,
+        4.0
+      ],
+      "radius_m": 12.0
+    },
+    {
+      "id": "inspect",
+      "at": [
+        0.0,
+        -30.0
+      ],
+      "radius_m": 12.0
+    }
+  ]
 }

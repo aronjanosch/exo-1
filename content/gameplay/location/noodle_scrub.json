@@ -1,0 +1,9 @@
+{
+  "id": "noodle_scrub",
+  "name": "location.noodle_scrub.name",
+  "place": "noodle_scrub",
+  "pad": "main",
+  "tags": [
+    "unofficial"
+  ]
+}

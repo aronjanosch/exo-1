@@ -50,6 +50,7 @@ mod savefile;
 mod space;
 mod swap;
 mod thruster_audio;
+mod town;
 mod walk;
 mod warp;
 
@@ -678,6 +679,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         // #210: a crate thrown at the hull's side wall stops outside it.
         "crate-hull" => cargo::crate_hull_steps(&mut s),
         "deliver" => deliver::deliver_steps(&mut s),
+        // Round 6: the city with colliders, its characters, the new towns' pads.
+        "town" => town::town_steps(&mut s),
         // #170: courier jobs on foot, carried by hand to the small drops near the start.
         "courier" => courier::courier_steps(&mut s),
         // #135: save file: deliver halfway, save, restart, load, finish.

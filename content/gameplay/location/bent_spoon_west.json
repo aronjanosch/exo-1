@@ -1,0 +1,9 @@
+{
+  "id": "bent_spoon_west",
+  "name": "location.bent_spoon_west.name",
+  "place": "bent_spoon",
+  "pad": "west",
+  "tags": [
+    "dusty"
+  ]
+}

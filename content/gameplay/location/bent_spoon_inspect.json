@@ -1,0 +1,10 @@
+{
+  "id": "bent_spoon_inspect",
+  "name": "location.bent_spoon_inspect.name",
+  "place": "bent_spoon",
+  "pad": "inspect",
+  "tags": [
+    "dusty",
+    "inspection"
+  ]
+}

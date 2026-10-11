@@ -391,5 +391,17 @@
   "effect.x_ray_eyes.name": "X-Ray Eyes",
   "effect.backwards_talk.name": "Backwards Talk",
   "effect.sleepy.name": "Sleepy",
-  "effect.tingly.name": "Tingly"
+  "effect.tingly.name": "Tingly",
+  "location.drip_rock_north.name": "Drip Rock Pad North",
+  "location.drip_rock_inspect.name": "Drip Rock Inspection",
+  "location.bent_spoon_east.name": "Bent Spoon East Pad",
+  "location.bent_spoon_west.name": "Bent Spoon West Pad",
+  "location.bent_spoon_inspect.name": "Bent Spoon Inspection",
+  "location.noodle_town.name": "Noodle Town",
+  "location.noodle_town_east.name": "Noodle Town East Pad",
+  "location.noodle_town_inspect.name": "Noodle Town Inspection",
+  "location.gulch_freeport.name": "Gulch Freeport",
+  "location.gulch_freeport_east.name": "Gulch Freeport East Pad",
+  "location.bent_spoon_scrub.name": "Scrub outside Bent Spoon",
+  "location.noodle_scrub.name": "Ditch outside Noodle Town"
 }

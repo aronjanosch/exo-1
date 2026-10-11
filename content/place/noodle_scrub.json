@@ -1,0 +1,28 @@
+{
+  "_comment": "An unofficial landing spot outside Noodle Town: no tower, no scan, a long walk. Invented name; TODO(initiator).",
+  "id": "noodle_scrub",
+  "planet": "hearth",
+  "near": {
+    "place": "noodle_town",
+    "east_m": -520.0,
+    "north_m": 610.0
+  },
+  "edits": [
+    {
+      "type": "flatten",
+      "order": 0,
+      "radius_m": 14.0,
+      "rolloff_m": 14.0
+    }
+  ],
+  "pads": [
+    {
+      "id": "main",
+      "at": [
+        0.0,
+        0.0
+      ],
+      "radius_m": 10.0
+    }
+  ]
+}

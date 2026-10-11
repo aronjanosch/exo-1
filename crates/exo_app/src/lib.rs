@@ -36,6 +36,7 @@ pub mod sky;
 pub mod ship;
 pub mod terrain;
 pub mod terrain_material;
+pub mod town;
 pub mod tuning;
 pub mod view;
 pub mod walker;
@@ -79,6 +80,9 @@ pub struct Options {
     pub no_vsync: bool,
     /// Radius of the first planet in metres (default: `content/system/system.json`).
     pub radius: Option<f64>,
+    /// Start at this place's main pad instead of the pole (round 6: `--start drip_rock`, the
+    /// city's spaceport): the ship parks on the pad, the walker beside it.
+    pub start: Option<String>,
     /// Atmosphere height of the first planet in metres (default: the ceilings rule for the radius
     /// with `--radius`, else the file's).
     pub atmosphere: Option<f64>,
@@ -118,6 +122,7 @@ impl Default for Options {
             hidden: false,
             no_vsync: false,
             radius: None,
+            start: None,
             atmosphere: None,
             origin_shift: 1000.0,
             out_dir: PathBuf::from("target/scenario"),
@@ -156,6 +161,7 @@ impl Options {
                 "--spike-ms" => o.spike_ms = v.parse().expect("spike-ms"),
                 "--distance" => o.distance = Some(v.parse().expect("distance")),
                 "--radius" => o.radius = Some(v.parse().expect("radius")),
+                "--start" => o.start = Some(v.to_string()),
                 "--atmosphere" => o.atmosphere = Some(v.parse().expect("atmosphere")),
                 "--origin-shift" => o.origin_shift = v.parse().expect("origin-shift"),
                 "--out" => o.out_dir = PathBuf::from(v),
@@ -283,7 +289,16 @@ pub fn build_app(o: &Options) -> App {
     let home = warp_core::PlanetId(0);
     let planet = env::PlanetRes::load(home, sys.planet(home));
     println!("planet: radius {} m, sea {:.2} m, bake {:.0} ms", planet.radius, planet.sea, planet.bake_ms);
-    let start = planet.centre + DVec3::Y * planet.surface(DVec3::Y);
+    // The start direction: the pole, or 15 m south of a place's main pad, so the ship (parked 15 m
+    // ahead of the walker) stands on the pad.
+    let start_up = match &o.start {
+        None => DVec3::Y,
+        Some(place) => {
+            let pad = planet.pgen.pad(place, "main").unwrap_or_else(|| panic!("--start: no place '{place}' with a pad 'main' on this planet"));
+            (env::from_v3(pad.up) * planet.radius + DVec3::new(0.0, 0.0, 15.0)).normalize()
+        }
+    };
+    let start = planet.centre + start_up * planet.surface(start_up);
     app.insert_resource(origin::RenderOrigin {
         // Without shifting the origin stays at the world origin.
         origin: if o.origin_shift > 0.0 { start.round() } else { DVec3::ZERO },
@@ -343,7 +358,7 @@ pub fn build_app(o: &Options) -> App {
     app.add_plugins(frame_cost::plugin);
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
     app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, avian_crates::plugin, cargo::plugin, hud::plugin, net_live::plugin));
-    app.add_plugins(gameplay::plugin);
+    app.add_plugins((gameplay::plugin, town::plugin));
     // The save (#135) belongs to players: scripted and headless runs keep theirs in the output
     // folder and start new.
     let player_run = o.scenario.is_none() && !o.headless;
@@ -359,8 +374,8 @@ pub fn build_app(o: &Options) -> App {
     }
     let test_crates = o.scenario.is_none() || o.scenario.as_deref() == Some("full");
     app.add_systems(Startup, move |mut commands: Commands, planet: Res<env::PlanetRes>, tuning: Res<tuning::Tuning>, off: Res<SpawnOffset>, crates: Res<cargo::Crates>| {
-        walker::spawn_player(&mut commands, &planet, &tuning.walker, off.0);
-        let ship = ship::spawn_ship(&mut commands, &planet, &tuning, DVec3::Y, off.0);
+        walker::spawn_player_at(&mut commands, &planet, &tuning.walker, start_up, off.0);
+        let ship = ship::spawn_ship(&mut commands, &planet, &tuning, start_up, off.0);
         if test_crates {
             // The first object (#80): a test crate on the cabin floor, behind the seat on the right.
             let t = &crates.0;
@@ -369,7 +384,7 @@ pub fn build_app(o: &Options) -> App {
     });
     if !o.headless {
         app.add_plugins((view::plugin, controls::window_plugin, settings::window_plugin, terrain::plugin, daynight::window_plugin, grab::window_plugin, cargo::window_plugin));
-        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin, help::window_plugin, dev::window_plugin));
+        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, town::window_plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin, help::window_plugin, dev::window_plugin));
         if o.menu() {
             app.add_plugins(menu::plugin);
         }

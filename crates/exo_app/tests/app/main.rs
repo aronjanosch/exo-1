@@ -21,6 +21,7 @@ mod scenario_crate_ride;
 mod scenario_crate_unload;
 mod scenario_crate_wake_stream;
 mod scenario_customers;
+mod scenario_town;
 mod scenario_daynight;
 mod scenario_deliver;
 mod scenario_dev_menu;

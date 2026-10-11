@@ -1,0 +1,12 @@
+{
+  "_comment": "Placeholder town (round 6). Airspace, speed limit, pads, hold chance and the stars at which the tower inspects are TODO(initiator).",
+  "id": "gulch_freeport",
+  "name": "town.gulch_freeport.name",
+  "voice": "tower.chirpy",
+  "airspace_m": 2000.0,
+  "speed_limit_ms": 999.0,
+  "pads": ["gulch_freeport", "gulch_freeport_east"],
+  "free_port": true,
+  "hold_chance": 0.0,
+  "inspection_stars": 5
+}

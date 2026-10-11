@@ -166,7 +166,7 @@ fn hail_is_granted_after_the_delay() {
     assert_eq!(ev.len(), 1, "one answer: {ev:?}");
     let WorldEvent::ClearanceGranted { town, pad, window_s, inspection } = &ev[0] else { panic!("granted, got {ev:?}") };
     assert_eq!(town, &drip());
-    assert!(["drip_rock", "slosh_wholesale"].contains(&pad.as_str()), "a normal pad, not the inspection pad: {pad}");
+    assert!(["drip_rock", "drip_rock_north", "slosh_wholesale"].contains(&pad.as_str()), "a normal pad, not the inspection pad: {pad}");
     assert_eq!(*window_s, 90.0);
     assert!(!inspection);
     assert_eq!(says(&out), vec!["drip_rock:tower.grumpy.granted"]);
@@ -195,7 +195,7 @@ fn high_heat_sends_the_crew_to_the_inspection_pad() {
     assert_eq!(w.t.heat_stars(), 3, "the last heat is remembered");
     w.granted_at_drip();
     let c = w.t.clearance(PILOT).unwrap();
-    assert_eq!((c.pad.as_str(), c.inspection), ("skyhook_school", true));
+    assert_eq!((c.pad.as_str(), c.inspection), ("drip_rock_inspect", true));
     assert_eq!(c.time_left_s, 90.0);
 }
 
@@ -206,7 +206,7 @@ fn inspection_is_said_in_the_inspection_line() {
     w.observe(Some(DRIP), 0.0, 0.0);
     w.hail(DRIP);
     let out = w.advance(2.5);
-    assert!(events(&out).contains(&WorldEvent::ClearanceGranted { town: drip(), pad: LocationId::new("skyhook_school"), window_s: 90.0, inspection: true }));
+    assert!(events(&out).contains(&WorldEvent::ClearanceGranted { town: drip(), pad: LocationId::new("drip_rock_inspect"), window_s: 90.0, inspection: true }));
     assert_eq!(says(&out), vec!["drip_rock:tower.grumpy.inspection"]);
 }
 
@@ -221,7 +221,7 @@ fn low_heat_never_sends_the_crew_to_the_inspection_pad() {
         let out = w.advance(2.5);
         let granted: Vec<WorldEvent> = events(&out).into_iter().filter(|e| matches!(e, WorldEvent::ClearanceGranted { .. })).collect();
         assert_eq!(granted.len(), 1, "seed {seed}");
-        assert!(matches!(&granted[0], WorldEvent::ClearanceGranted { pad, inspection: false, .. } if pad.as_str() != "skyhook_school"), "seed {seed}: {granted:?}");
+        assert!(matches!(&granted[0], WorldEvent::ClearanceGranted { pad, inspection: false, .. } if pad.as_str() != "drip_rock_inspect"), "seed {seed}: {granted:?}");
     }
 }
 
@@ -267,7 +267,7 @@ fn landing_on_the_wrong_pad_is_a_violation_with_a_fine() {
     let mut w = World::new(&no_hold(), 1);
     w.granted_at_drip();
     let assigned = w.t.clearance(PILOT).unwrap().pad.as_str().to_string();
-    let other = ["drip_rock", "slosh_wholesale", "skyhook_school"].into_iter().find(|p| *p != assigned).unwrap();
+    let other = ["drip_rock", "drip_rock_north", "slosh_wholesale", "drip_rock_inspect"].into_iter().find(|p| *p != assigned).unwrap();
     let out = w.land(other, 0.5);
     assert_eq!(
         events(&out),
@@ -328,7 +328,7 @@ fn speeding_has_a_grace_time_and_a_cooldown() {
     w.observe(Some(DRIP), 0.0, 0.0);
     let mut fired = Vec::new();
     for t in 1..=24 {
-        let out = w.observe(Some(DRIP), 35.0, 1.0);
+        let out = w.observe(Some(DRIP), 65.0, 1.0);
         if events(&out).contains(&WorldEvent::Violation { town: drip(), kind: ViolationKind::Speeding }) {
             assert!(events(&out).contains(&wallet(-15)), "the fine comes with it at {t} s");
             assert_eq!(says(&out), vec!["drip_rock:tower.grumpy.violation.speeding"]);
@@ -365,13 +365,16 @@ fn shipped_content_loads_and_its_texts_exist() {
     let files = shipped();
     let k = kernel(&files);
     let tc = TrafficContent::load(&files, &k).unwrap();
-    assert_eq!(tc.towns.len(), 3);
+    assert_eq!(tc.towns.len(), 4);
     assert_eq!(tc.tuning.record.window_s, 90.0);
     let en = files.iter().find(|f| f.path == "text/en.json").unwrap();
     let table = TextTable::from_json(&en.path, &en.text).unwrap();
     assert_eq!(tc.check_texts(&table), Vec::<String>::new());
-    assert_eq!(town_of_pad(&tc, &LocationId::new("pebble_kiosk")).map(|t| t.as_str()), Some("noodle_post"));
-    assert_eq!(town_of_pad(&tc, &LocationId::new("lint_trap")).map(|t| t.as_str()), Some("bent_spoon"));
+    assert_eq!(town_of_pad(&tc, &LocationId::new("noodle_town_inspect")).map(|t| t.as_str()), Some("noodle_town"));
+    assert_eq!(town_of_pad(&tc, &LocationId::new("bent_spoon_east")).map(|t| t.as_str()), Some("bent_spoon"));
+    assert!(tc.towns[&gameplay_core::TownId::new("gulch_freeport")].record.free_port, "the free port has no tower");
+    // Courier drops near Drip Rock are no town pads: landing there is no tower's business.
+    assert_eq!(town_of_pad(&tc, &LocationId::new("lint_trap")), None);
     assert_eq!(town_of_pad(&tc, &LocationId::new("drip_rock")).map(|t| t.as_str()), Some("drip_rock"));
     assert_eq!(town_of_pad(&tc, &LocationId::new("bent_spoon_not_a_pad")), None);
 }
@@ -392,12 +395,12 @@ fn a_missing_pool_line_is_a_text_error() {
 #[test]
 fn loader_names_the_file_and_the_field() {
     let k = kernel(&shipped());
-    let errs = TrafficContent::load(&tweak("town/drip_rock.json", "\"skyhook_school\"],", "\"nowhere\"],"), &k).err().unwrap();
+    let errs = TrafficContent::load(&tweak("town/drip_rock.json", "\"drip_rock_inspect\"],", "\"nowhere\"],"), &k).err().unwrap();
     assert!(errs.iter().any(|e| e.contains("town/drip_rock.json") && e.contains("pads") && e.contains("nowhere")), "{errs:?}");
 
-    let errs = TrafficContent::load(&tweak("town/drip_rock.json", "\"inspection_pad\": \"skyhook_school\"", "\"inspection_pad\": \"lint_trap\""), &k).err().unwrap();
+    let errs = TrafficContent::load(&tweak("town/drip_rock.json", "\"inspection_pad\": \"drip_rock_inspect\"", "\"inspection_pad\": \"bent_spoon\""), &k).err().unwrap();
     assert!(errs.iter().any(|e| e.contains("town/drip_rock.json") && e.contains("inspection_pad")), "{errs:?}");
 
-    let errs = TrafficContent::load(&tweak("town/bent_spoon.json", "\"pads\": [\"bent_spoon\", \"lint_trap\"]", "\"pads\": [\"bent_spoon\", \"drip_rock\"]"), &k).err().unwrap();
+    let errs = TrafficContent::load(&tweak("town/bent_spoon.json", "\"pads\": [\"bent_spoon\", \"bent_spoon_east\"", "\"pads\": [\"bent_spoon\", \"drip_rock\""), &k).err().unwrap();
     assert!(errs.iter().any(|e| e.contains("town/bent_spoon.json") && e.contains("already")), "{errs:?}");
 }

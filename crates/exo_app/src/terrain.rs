@@ -44,10 +44,6 @@ pub fn task_pools() -> bevy::app::TaskPoolOptions {
     o
 }
 
-/// Steps of the geomorph factor written to the mesh tags. TODO(initiator): fewer steps are
-/// cheaper, more are smoother (F4 compares with morphing off).
-const MORPH_STEPS: f64 = 32.0;
-
 /// Margin on a node's height range for the detail its children add: metres plus a share of its
 /// edge (the parent's grid samples miss the peaks between them).
 const BOUND_PAD_M: f64 = 4.0;
@@ -71,11 +67,8 @@ const PREFETCH_MAX_SPEED: f64 = 2000.0;
 /// `MORPH_NEAR x edge` from its bounding sphere (the distance a chunk merges back into its
 /// parent) and in its parent's shape from `MORPH_FAR x edge` (twice the child edge x the split
 /// factor: where the parent splits, so a new child appears in the parent's shape).
-const MORPH_NEAR: f64 = MERGE_FACTOR;
-const MORPH_FAR: f64 = SPLIT_FACTOR * 2.0;
-/// A chunk shown late (its parent split at a distance already inside the morph range) starts in the
-/// parent's shape anyway and flattens to its own over this many seconds. TODO(initiator): value.
-const MORPH_SETTLE_S: f64 = 0.7;
+pub const MORPH_NEAR: f64 = MERGE_FACTOR;
+pub const MORPH_FAR: f64 = SPLIT_FACTOR * 2.0;
 /// Finished chunks kept after a merge (about 100 kB of GPU memory each).
 const CACHE_MAX: usize = 256;
 
@@ -134,10 +127,6 @@ struct Node {
     /// Handles of the spawned chunk (and its water, lakes and rivers #72), kept for the cache.
     meshes: Option<Meshes>,
     job: Job,
-    /// Geomorph state: the morph factor last written to the entity's `MeshTag` (0..=255), and the
-    /// floor a late chunk starts at, falling to 0 (see `MORPH_SETTLE_S`).
-    tag: u32,
-    floor: f64,
     /// Whether the entity is set to `Visibility::Inherited` (else Hidden): written on change only.
     shown: bool,
     alive: bool,
@@ -269,7 +258,7 @@ impl Terrain {
         let node = Node {
             face, a0, b0, size, depth, centre, edge_m,
             horiz: bound, h, mid: centre, bound,
-            children: Vec::new(), entity: None, meshes: None, job: Job::None, tag: 0, floor: 0.0, shown: false, alive: true,
+            children: Vec::new(), entity: None, meshes: None, job: Job::None, shown: false, alive: true,
         };
         let i = if let Some(i) = self.free.pop() {
             self.nodes[i] = node;
@@ -396,12 +385,27 @@ impl Terrain {
             commands.spawn((Mesh3d(h.clone()), MeshMaterial3d(self.water.clone()), Transform::default(), ChildOf(e)));
         }
         self.set_range(i, m.h);
+        let tag = Self::morph_tag(&self.nodes[i], m.centre);
+        commands.entity(e).insert(MeshTag(tag));
         let n = &mut self.nodes[i];
         n.entity = Some(e);
         n.meshes = Some(m);
-        n.tag = 0;
         n.shown = visible;
         e
+    }
+
+    /// The chunk's geomorph inputs for the vertex shader (#220), fixed for its life: its edge and
+    /// its bounding radius around the chunk's origin, each as log2(m) x 4096 in 16 bits. The shader
+    /// takes the morph factor from the camera distance, so no tag changes per frame (#214: every
+    /// tag change re-queued the chunk, 6-10 ms in the render queue at speed). Roots: 0, no morph.
+    fn morph_tag(n: &Node, origin: DVec3) -> u32 {
+        if n.depth == 0 {
+            return 0;
+        }
+        // The quadtree measures from the middle of the height range; the shader from the origin.
+        let bound = n.bound + n.mid.distance(origin);
+        let q = |m: f64| (m.max(1.0).log2() * 4096.0).round().clamp(1.0, 65535.0) as u32;
+        q(n.edge_m) | (q(bound) << 16)
     }
 
     fn set_shown(&mut self, commands: &mut Commands, i: usize, shown: bool) {
@@ -454,13 +458,8 @@ impl Terrain {
         if want_split {
             let kids = self.nodes[i].children.clone();
             if kids.iter().all(|&c| self.nodes[c].entity.is_some()) {
-                // Children shown for the first time start in the parent's shape (#220).
-                let fresh = self.nodes[i].shown;
                 self.set_shown(commands, i, false);
                 for c in kids {
-                    if fresh && !self.nodes[c].shown {
-                        self.nodes[c].floor = 1.0;
-                    }
                     self.update_node(commands, planet, c);
                 }
                 return;
@@ -474,26 +473,9 @@ impl Terrain {
         self.set_shown(commands, i, true);
         self.hide_below(commands, i);
         self.visible += 1;
-        self.set_morph(commands, i, d_real);
     }
 
-    /// The geomorph factor of a shown chunk from its distance (the one the quadtree splits and
-    /// merges by), written to its mesh tag when it changed (#220). The roots have no parent shape.
-    fn set_morph(&mut self, commands: &mut Commands, i: usize, d: f64) {
-        let dt = self.dt;
-        let n = &mut self.nodes[i];
-        n.floor = (n.floor - dt / MORPH_SETTLE_S).max(0.0);
-        let by_distance = if n.depth == 0 { 0.0 } else { ((d / n.edge_m - MORPH_NEAR) / (MORPH_FAR - MORPH_NEAR)).clamp(0.0, 1.0) };
-        // Quantised to MORPH_STEPS: every tag change makes the renderer re-queue the chunk, and
-        // updating hundreds of tags each frame cost 6-10 ms in the render queue (#214).
-        let tag = ((by_distance.max(n.floor) * MORPH_STEPS).round() / MORPH_STEPS * 255.0).round() as u32;
-        if tag != n.tag {
-            if let Some(e) = n.entity {
-                commands.entity(e).insert(MeshTag(tag * 257));
-                n.tag = tag;
-            }
-        }
-    }
+
 }
 
 pub fn setup_terrain(

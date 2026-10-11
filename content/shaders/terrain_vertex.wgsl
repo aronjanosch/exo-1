@@ -1,12 +1,13 @@
 // Terrain vertex stage (#220, geomorphing): each vertex moves towards the position (and normal)
 // it has in the parent chunk's mesh by the chunk's morph factor, so a LOD step does not pop: a
 // chunk is fully morphed (the parent's shape) when it appears or disappears, and at its own
-// detail near the camera. The factor comes per chunk through the mesh tag (0..65535 = 0..1,
-// computed on the CPU from the quadtree's own distances, terrain.rs); the per-vertex data are
+// detail near the camera. The factor comes from the camera distance here, with the chunk's edge
+// and bound from its mesh tag (set once when it spawns, terrain.rs); the per-vertex data are
 // the delta to the parent position and the parent's
 // normal. The fragment stage is terrain.wgsl. Forward and prepass (depth, shadow) share this.
 #import bevy_pbr::{
     mesh_functions,
+    mesh_view_bindings::view,
     view_transformations::position_world_to_clip,
 }
 #ifdef PREPASS_PIPELINE
@@ -16,7 +17,7 @@
 #endif
 
 struct MorphParams {
-    // x 1 when morphing is on (F4 toggles it)
+    // x 1 when morphing is on (F4 toggles it); y, z the morph range in chunk edges (near, far)
     on: vec4<f32>,
 }
 @group(#{MATERIAL_BIND_GROUP}) @binding(101) var<uniform> morph_params: MorphParams;
@@ -60,8 +61,17 @@ struct TerrainVertex {
 @vertex
 fn vertex(v: TerrainVertex) -> VertexOutput {
     var out: VertexOutput;
-    let m = f32(mesh_functions::get_tag(v.instance_index)) * (1.0 / 65535.0) * morph_params.on.x;
     let world_from_local = mesh_functions::get_world_from_local(v.instance_index);
+    // The tag holds the chunk's edge and bounding radius (log2(m) x 4096, 16 bits each; 0 for a
+    // root). The factor: 0 nearer than `near` edges from the bound, 1 from `far` edges on.
+    let tag = mesh_functions::get_tag(v.instance_index);
+    var m = 0.0;
+    if tag != 0u {
+        let edge = exp2(f32(tag & 0xffffu) / 4096.0);
+        let bound = exp2(f32(tag >> 16u) / 4096.0);
+        let d = max(length(view.world_position - world_from_local[3].xyz) - bound, 0.0);
+        m = clamp((d / edge - morph_params.on.y) / (morph_params.on.z - morph_params.on.y), 0.0, 1.0) * morph_params.on.x;
+    }
     let local = v.position + v.morph_delta * m;
     out.world_position = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(local, 1.0));
     out.position = position_world_to_clip(out.world_position.xyz);

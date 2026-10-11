@@ -7,7 +7,7 @@ use crate::env::{from_v3, PlanetRes};
 use crate::origin::{RenderOrigin, WorldPos};
 use bevy::asset::RenderAssetUsages;
 use bevy::math::DVec3;
-use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::mesh::{Indices, MeshTag, PrimitiveTopology, VertexAttributeValues};
 use bevy::prelude::*;
 use bevy::tasks::{block_on, futures_lite::future, AsyncComputeTaskPool, Task};
 use std::collections::HashMap;
@@ -44,6 +44,15 @@ const JOBS_PER_THREAD: usize = 2;
 const PREFETCH_S: f64 = 1.5;
 /// Speed limit of the projection, so a teleport does not prefetch the far side.
 const PREFETCH_MAX_SPEED: f64 = 2000.0;
+/// Geomorphing (#220): a chunk is at its own detail while the camera is nearer than
+/// `MORPH_NEAR x edge` from its bounding sphere (the distance a chunk merges back into its
+/// parent) and in its parent's shape from `MORPH_FAR x edge` (twice the child edge x the split
+/// factor: where the parent splits, so a new child appears in the parent's shape).
+const MORPH_NEAR: f64 = MERGE_FACTOR;
+const MORPH_FAR: f64 = SPLIT_FACTOR * 2.0;
+/// A chunk shown late (its parent split at a distance already inside the morph range) starts in the
+/// parent's shape anyway and flattens to its own over this many seconds. TODO(initiator): value.
+const MORPH_SETTLE_S: f64 = 0.7;
 /// Finished chunks kept after a merge (about 100 kB of GPU memory each).
 const CACHE_MAX: usize = 256;
 
@@ -91,6 +100,10 @@ struct Node {
     /// Handles of the spawned chunk (and its water, lakes and rivers #72), kept for the cache.
     meshes: Option<Meshes>,
     job: Job,
+    /// Geomorph state: the morph factor last written to the entity's `MeshTag` (0..=255), and the
+    /// floor a late chunk starts at, falling to 0 (see `MORPH_SETTLE_S`).
+    tag: u32,
+    floor: f64,
     /// Whether the entity is set to `Visibility::Inherited` (else Hidden): written on change only.
     shown: bool,
     alive: bool,
@@ -139,6 +152,10 @@ pub struct Terrain {
     pred: DVec3,
     pub visible: usize,
     pub pending: usize,
+    /// Geomorphing on (F4 in the window toggles it; `EXO_NO_MORPH` starts it off).
+    pub morph_on: bool,
+    /// Seconds of this frame.
+    dt: f64,
     /// Chunk jobs started this frame.
     pub started: u32,
     /// The camera's nadir on the cube (face, a, b), set each frame for `lod_debt`.
@@ -150,7 +167,7 @@ pub struct Terrain {
     pub roots_built_here: usize,
 }
 
-use crate::terrain_material::{srgb_to_linear, TerrainMaterial};
+use crate::terrain_material::{srgb_to_linear, TerrainMaterial, ATTRIBUTE_MORPH_DELTA, ATTRIBUTE_MORPH_NORMAL};
 
 /// The index pattern every chunk shares.
 fn chunk_indices() -> Vec<u16> {
@@ -193,6 +210,11 @@ pub fn build_meshes(out: &ChunkOut, indices: &[u16]) -> BuiltChunk {
         .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colors)
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uv0)
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_1, uv1)
+        .with_inserted_attribute(ATTRIBUTE_MORPH_DELTA, out.morph_delta.clone())
+        .with_inserted_attribute(ATTRIBUTE_MORPH_NORMAL, VertexAttributeValues::Snorm8x4(out.morph_normals.iter().map(|n| {
+            let q = |x: f32| (x * 127.0).round() as i8;
+            [q(n[0]), q(n[1]), q(n[2]), 0]
+        }).collect()))
         .with_inserted_indices(Indices::U16(indices.to_vec()));
     let nowater = std::env::var("EXO_NO_WATER").is_ok();
     let water = out.water.as_ref().filter(|_| !nowater).map(|w| water_surface(out, w, &out.water_tris));
@@ -213,7 +235,7 @@ impl Terrain {
         let node = Node {
             face, a0, b0, size, depth, centre, edge_m,
             bound: bound + planet.relief,
-            children: Vec::new(), entity: None, meshes: None, job: Job::None, shown: false, alive: true,
+            children: Vec::new(), entity: None, meshes: None, job: Job::None, tag: 0, floor: 0.0, shown: false, alive: true,
         };
         if let Some(i) = self.free.pop() {
             self.nodes[i] = node;
@@ -317,6 +339,7 @@ impl Terrain {
             WorldPos(planet.centre + m.centre),
             PlanetScene(planet.id),
             TerrainChunk,
+            MeshTag(0),
         ));
         if !visible {
             e.insert(Visibility::Hidden);
@@ -328,6 +351,7 @@ impl Terrain {
         let n = &mut self.nodes[i];
         n.entity = Some(e);
         n.meshes = Some(m);
+        n.tag = 0;
         n.shown = visible;
         e
     }
@@ -382,8 +406,13 @@ impl Terrain {
         if want_split {
             let kids = self.nodes[i].children.clone();
             if kids.iter().all(|&c| self.nodes[c].entity.is_some()) {
+                // Children shown for the first time start in the parent's shape (#220).
+                let fresh = self.nodes[i].shown;
                 self.set_shown(commands, i, false);
                 for c in kids {
+                    if fresh && !self.nodes[c].shown {
+                        self.nodes[c].floor = 1.0;
+                    }
                     self.update_node(commands, planet, c);
                 }
                 return;
@@ -397,6 +426,23 @@ impl Terrain {
         self.set_shown(commands, i, true);
         self.hide_below(commands, i);
         self.visible += 1;
+        self.set_morph(commands, i, d_real);
+    }
+
+    /// The geomorph factor of a shown chunk from its distance (the one the quadtree splits and
+    /// merges by), written to its mesh tag when it changed (#220). The roots have no parent shape.
+    fn set_morph(&mut self, commands: &mut Commands, i: usize, d: f64) {
+        let dt = self.dt;
+        let n = &mut self.nodes[i];
+        n.floor = (n.floor - dt / MORPH_SETTLE_S).max(0.0);
+        let by_distance = if n.depth == 0 { 0.0 } else { ((d / n.edge_m - MORPH_NEAR) / (MORPH_FAR - MORPH_NEAR)).clamp(0.0, 1.0) };
+        let tag = (by_distance.max(n.floor) * 255.0).round() as u32;
+        if tag != n.tag {
+            if let Some(e) = n.entity {
+                commands.entity(e).insert(MeshTag(tag * 257));
+                n.tag = tag;
+            }
+        }
     }
 }
 
@@ -431,7 +477,7 @@ pub fn build_terrain(
         max_depth: ((face_edge / 37.0).log2().round() as u32).max(1),
         material, water, indices: Arc::new(chunk_indices()), cache: HashMap::new(), cache_stamp: 0,
         cam: DVec3::ZERO, pred: DVec3::ZERO,
-        visible: 0, pending: 0, started: 0, nadir: None, lod_debt: false, roots_built_here: 0,
+        visible: 0, pending: 0, morph_on: crate::terrain_material::morph_default(), dt: 0.0, started: 0, nadir: None, lod_debt: false, roots_built_here: 0,
     };
     // Roots synchronously (or prebuilt on the pool, #34), so there is always a planet.
     let roots = prebuilt.filter(|r| r.len() == 6).unwrap_or_else(|| {
@@ -461,6 +507,7 @@ pub fn update_terrain(
     prebuilt: Option<ResMut<PrebuiltRoots>>,
     mut cost: ResMut<crate::frame_cost::FrameCost>,
     mut motion: Local<Option<(DVec3, DVec3)>>,
+    keys: Option<Res<ButtonInput<KeyCode>>>,
 ) {
     let t_sys = std::time::Instant::now();
     if terrain.for_planet != planet.id {
@@ -469,8 +516,10 @@ pub fn update_terrain(
             commands.entity(e).despawn();
         }
         let material = terrain.material.clone();
+        let morph_on = terrain.morph_on;
         if let Some(mut m) = terrain_mats.get_mut(&material) {
             *m = crate::terrain_material::new_material(&planet, &origin);
+            m.extension.morph.on.x = f32::from(morph_on);
         }
         let water = terrain.water.clone();
         if let Some(mut m) = waters.get_mut(&water) {
@@ -479,9 +528,19 @@ pub fn update_terrain(
         let roots = prebuilt.filter(|r| r.planet == planet.id).map(|mut r| std::mem::take(&mut r.chunks));
         commands.remove_resource::<PrebuiltRoots>();
         *terrain = build_terrain(&mut commands, &planet, &mut meshes, material, water, roots);
+        terrain.morph_on = morph_on;
         *motion = None;
     }
     let t = terrain.as_mut();
+    t.dt = time.delta_secs_f64();
+    // Dev toggle (#220): F4 flips the geomorphing, to compare by feel.
+    if keys.is_some_and(|k| k.just_pressed(KeyCode::F4)) {
+        t.morph_on = !t.morph_on;
+        let on = f32::from(t.morph_on);
+        if let Some(mut m) = terrain_mats.get_mut(&t.material) {
+            m.extension.morph.on.x = on;
+        }
+    }
     // The camera and where it will be in a moment (smoothed velocity), for priority and prefetch.
     let cam = origin.view - planet.centre;
     let dt = time.delta_secs_f64();

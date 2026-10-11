@@ -198,3 +198,43 @@ pub(super) fn planet_flight_steps(s: &mut Vec<Step>, out_dir: &std::path::Path) 
         true
     }));
 }
+
+/// `lod-morph` (#220): a fixed slow descent (700 m down to 80 m above the ground in 21 s, 30 m/s) over a big planet
+/// with a screenshot every 0.25 s (windowed), to compare the LOD steps with geomorphing on and
+/// off: run it twice, the second time with `EXO_NO_MORPH=1`. Shots land in `<out>/lod-morph/`;
+/// `EXO_LOD_DENSE=1` shoots every 1/30 s instead, for a frame-difference check of the pops.
+pub(super) fn lod_morph_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool) {
+    s.push(Box::new(|w, _| {
+        put_at_seat(w);
+        true
+    }));
+    s.extend(sit());
+    let a = DVec3::new(0.3, 1.0, 0.2).normalize();
+    let leg = std::sync::Arc::new(Leg { name: "slow descent 30 m/s, 700 to 80 m", hold: 8.0, secs: 21.0, start: a, heading: DVec3::Y.cross(a).normalize(), speed: 30.0, agl: |t, _| 700.0 - 620.0 * (t / 21.0).clamp(0.0, 1.0) });
+    let l = leg.clone();
+    s.push(Box::new(move |w, c| {
+        let pl = planet(w);
+        let (p, _) = leg_pose(&pl, &l, 0.0, 0.0);
+        pose_ship(w, p, DVec3::ZERO);
+        c.t >= l.hold
+    }));
+    let dir = out_dir.join("lod-morph");
+    s.push(Box::new(move |w, c| {
+        if c.t == 0.0 {
+            begin(w, c, leg.name);
+            c.v.insert("next", 0.0);
+        }
+        let pl = planet(w);
+        let (p, v) = leg_pose(&pl, &leg, 0.0, c.t);
+        pose_ship(w, p, v);
+        if c.t >= c.v["next"] {
+            shot(w, c, &dir, windowed, &format!("t{:04}", (c.t * 100.0).round() as u32));
+            *c.v.get_mut("next").unwrap() += if std::env::var("EXO_LOD_DENSE").is_ok() { 1.0 / 30.0 } else { 0.25 };
+        }
+        if c.t < leg.secs {
+            return false;
+        }
+        c.phase.clear();
+        true
+    }));
+}

@@ -657,6 +657,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "warp" => warp_steps(&mut s, out_dir, windowed),
         // #213: a fixed flight over a big planet; frame time and the streaming work per frame.
         "planet-flight" => planet_flight::planet_flight_steps(&mut s, out_dir),
+        // #220: a low flight with a screenshot every 0.25 s, to compare geomorphing on and off.
+        "lod-morph" => planet_flight::lod_morph_steps(&mut s, out_dir, windowed),
         // #14 and #34: three planet swaps and an emergency drop; what each swap leaves behind.
         "swap" => swap_steps(&mut s, out_dir, windowed, swap_rounds.max(3)),
         // #80: a crate in the cabin through take-off, flight, warp and landing; one out over the ramp.

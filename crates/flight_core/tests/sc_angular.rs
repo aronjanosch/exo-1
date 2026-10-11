@@ -78,6 +78,23 @@ fn reversal_is_a_constant_deceleration_at_the_reversal_share() {
     assert!(spread < 0.05, "decel spread {:.2} % over 5 %", spread * 100.0);
 }
 
+/// #239: up, down, then slightly up (small mouse moves at rest). The reversal hands over to the
+/// spring at the zero crossing; the spring must not start with the reversal's deceleration, or a
+/// small target overshoots several times over (it reached 3.2 times the target).
+#[test]
+fn small_target_after_a_reversal_overshoots_only_like_the_spring() {
+    let mut ship = ScShip::new(tuning());
+    let (mut body, env) = (body_at(DVec3::new(0.0, 500.0, 0.0)), Space::default());
+    run(&mut ship, &mut body, &stick(0.5, 0.0, 0.0), &env, 0.15);
+    run(&mut ship, &mut body, &stick(-0.5, 0.0, 0.0), &env, 0.15);
+    let small = 0.1;
+    let target = small * rest_rates(&ship.tuning.angular).x;
+    let spins = run(&mut ship, &mut body, &stick(small, 0.0, 0.0), &env, 1.5);
+    let peak = spins.iter().map(|s| s.x).fold(f64::MIN, f64::max);
+    eprintln!("after a reversal: target {target:.4} rad/s, peak {peak:.4} ({:+.1} %)", (peak / target - 1.0) * 100.0);
+    assert!(peak < 1.25 * target, "peak {peak:.4} rad/s over 125 % of the target {target:.4}");
+}
+
 #[test]
 fn roll_release_is_a_constant_deceleration_that_stops_without_overshoot() {
     let (mut ship, mut body, env) = at_rest();

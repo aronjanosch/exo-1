@@ -832,3 +832,109 @@ pub fn smuggle_run_steps(s: &mut Vec<Step>) {
         true
     }));
 }
+
+// ---------------------------------------------------------------- screenshots (window only)
+
+/// The walker at a world point on the ground, looking at another.
+fn stand_and_look(w: &mut World, at: DVec3, look: DVec3) {
+    let pl = planet(w);
+    let d = pl.up(at);
+    place_walker(w, pl.centre + d * (pl.surface(d) + 0.05));
+    face_towards(w, look);
+}
+
+/// For the playtest issue: the spaceport, a street, the phone, the kettle, an approach with a
+/// clearance. Headless it only walks the steps (no pictures).
+pub fn shots_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool) {
+    let dir = out_dir.join("smuggle-shots");
+    s.push(settle());
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
+            begin(w, c, "shots: the spaceport, looking at the city gate");
+            let p = super::deliver::pad(w, "drip_rock");
+            let town = w.resource::<crate::town::Town>();
+            let gate = town.npcs.iter().find(|n| n.id == "gatekeeper").map(|n| n.pos).unwrap_or(p.centre);
+            let east = (gate - p.centre).normalize();
+            stand_and_look(w, p.centre - east * 25.0, gate);
+            let _ = &dir;
+            true
+        }));
+    }
+    s.push(wait(4.0));
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
+            shot(w, c, &dir, windowed, "spaceport");
+            let town = w.resource::<crate::town::Town>();
+            let plaza = town.npcs.iter().find(|n| n.id == "plaza_regular").map(|n| (n.pos, n.up)).unwrap();
+            let side = plaza.1.any_orthonormal_vector();
+            stand_and_look(w, plaza.0 + side * 18.0, plaza.0 - side * 10.0 + plaza.1 * 8.0);
+            true
+        }));
+    }
+    s.push(wait(3.0));
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
+            shot(w, c, &dir, windowed, "street");
+            tap(w, KeyCode::Backquote);
+            true
+        }));
+    }
+    s.push(wait(1.0));
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
+            shot(w, c, &dir, windowed, "phone-goals");
+            tap(w, KeyCode::ArrowRight);
+            tap(w, KeyCode::ArrowRight);
+            true
+        }));
+    }
+    s.push(wait(0.2));
+    s.push(Box::new(|w, _| {
+        tap(w, KeyCode::ArrowRight);
+        true
+    }));
+    s.push(wait(1.0));
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
+            shot(w, c, &dir, windowed, "phone-recipes");
+            tap(w, KeyCode::Backquote);
+            at_kettle_with(w, "blorp_paste");
+            true
+        }));
+    }
+    s.push(wait(2.0));
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
+            shot(w, c, &dir, windowed, "kettle");
+            true
+        }));
+    }
+    s.extend(seated());
+    s.push(Box::new(|w, _| {
+        let p = super::deliver::pad(w, "bent_spoon");
+        let east = p.up.any_orthonormal_vector();
+        let at = p.centre + east * 250.0 + p.up * 45.0;
+        let nose = (p.centre - at).normalize();
+        let rot = DQuat::from_rotation_arc(DVec3::NEG_Z, (nose - p.up * nose.dot(p.up) * 0.7).normalize());
+        teleport_ship(w, at, rot);
+        true
+    }));
+    s.push(wait(1.0));
+    s.push(hail_until_cleared("shots: hail Bent Spoon"));
+    s.push(wait(2.0));
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
+            shot(w, c, &dir, windowed, "approach-cleared");
+            end(w, c, format!("pictures in {}", dir.display()));
+            true
+        }));
+    }
+    s.push(wait(1.0));
+}

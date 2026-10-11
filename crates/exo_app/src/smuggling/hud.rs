@@ -29,7 +29,7 @@ const PANEL: Color = Color::srgba(0.04, 0.05, 0.09, 0.78);
 fn spawn_hud(mut commands: Commands) {
     // Goal line and heat: top left, under nothing else (the job line is top right).
     commands
-        .spawn(Node { position_type: PositionType::Absolute, left: px(16), top: px(10), flex_direction: FlexDirection::Column, row_gap: px(4), ..default() })
+        .spawn(Node { position_type: PositionType::Absolute, left: px(16), top: px(96), flex_direction: FlexDirection::Column, row_gap: px(4), ..default() })
         .with_children(|c| {
             c.spawn((GoalText, Text::new(""), TextFont { font_size: FontSize::Px(16.0), ..default() }, TextColor(Color::srgb(1.0, 0.85, 0.45))));
             c.spawn((HeatText, Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }, TextColor(Color::srgb(1.0, 0.35, 0.3))));
@@ -96,7 +96,7 @@ fn draw_hud(
         }
     }
     if let Ok(mut t) = heat.single_mut() {
-        let s = if hud.heat_stars == 0 && hud.heat_points < 1.0 { String::new() } else { format!("{}{}  heat", "★".repeat(hud.heat_stars as usize), "☆".repeat(5 - hud.heat_stars.min(5) as usize)) };
+        let s = if hud.heat_stars == 0 && hud.heat_points < 1.0 { String::new() } else { format!("HEAT [{}{}]", "*".repeat(hud.heat_stars as usize), "-".repeat(5 - hud.heat_stars.min(5) as usize)) };
         if t.0 != s {
             t.0 = s;
         }

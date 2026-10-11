@@ -29,6 +29,7 @@ mod scenario_lab;
 mod scenario_scan;
 mod scenario_dealing;
 mod scenario_smuggle_run;
+mod scenario_patrol;
 mod scenario_daynight;
 mod scenario_deliver;
 mod scenario_dev_menu;

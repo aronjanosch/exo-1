@@ -10,7 +10,7 @@ use gameplay_core::shop::Shops;
 use gameplay_core::tally::Tallies;
 use gameplay_core::text::TextTable;
 use gameplay_core::{CommodityId, Content, Event, File, LocationId, ProductSpec, Progress, ScanChoice, Tag, TownId, WorldEvent};
-use heat_core::{Heat, HeatContent};
+use heat_core::{Heat, HeatContent, Patrol};
 use production_core::{Lab, LabContent};
 use traffic_core::{Traffic, TrafficContent};
 
@@ -26,6 +26,7 @@ pub const HIDDEN_HOLD_CRATES: u32 = 2;
 /// Seeds of the new systems (fixed, so scenarios repeat; the save keeps the states).
 const TRAFFIC_SEED: u64 = 0x7a1f;
 const HEAT_SEED: u64 = 0x4ea7;
+const PATROL_SEED: u64 = 0x9a71;
 
 /// What a round-6 system gives back to the host.
 pub enum Out {
@@ -58,6 +59,10 @@ pub struct Systems {
     pub traffic: Traffic,
     pub heat_c: HeatContent,
     pub heat: Heat,
+    /// Air patrols that order a hot ship to halt (`heat_core::patrol`).
+    pub patrol: Patrol,
+    /// The open scan came from a patrol in the air (fleeing is speeding off, not taking off).
+    pub patrol_scan: bool,
     pub lab_c: LabContent,
     pub lab: Lab,
     pub ladders: Ladders,
@@ -107,6 +112,8 @@ impl Systems {
             traffic: Traffic::new(TRAFFIC_SEED),
             heat_c: heat_c.unwrap(),
             heat: Heat::new(HEAT_SEED),
+            patrol: Patrol::new(PATROL_SEED),
+            patrol_scan: false,
             lab_c: lab_c.unwrap(),
             lab: Lab::new(),
             ladders: ladders.unwrap(),
@@ -186,6 +193,8 @@ impl Systems {
                 if self.open_scan.as_ref().is_some_and(|(s, _)| s == scan) {
                     self.open_scan = None;
                 }
+                self.patrol.scan_over(&self.heat_c.tuning.record);
+                self.patrol_scan = false;
                 if *confiscate {
                     self.confiscate += 1;
                 }
@@ -215,9 +224,17 @@ impl Systems {
         out
     }
 
+    /// A scan the glue starts (a patrol's halt in the air): the next scan id and the cargo seen.
+    pub fn scan_at(&mut self, at: LocationId) -> WorldEvent {
+        let scan = self.next_scan;
+        self.next_scan += 1;
+        WorldEvent::ScanStarted { scan, at, visible: self.cargo.visible, hidden: self.cargo.hidden }
+    }
+
     pub fn save(&self, env: &mut Envelope) {
         self.traffic.save(env);
         self.heat.save(env);
+        self.patrol.save(env);
         self.lab.save(env);
         self.empire.save(env);
     }
@@ -225,6 +242,8 @@ impl Systems {
     pub fn restore(&mut self, env: &Envelope) -> Result<(), SaveError> {
         self.traffic = Traffic::load(env)?.unwrap_or_else(|| Traffic::new(TRAFFIC_SEED));
         self.heat = Heat::load(env)?.unwrap_or_else(|| Heat::new(HEAT_SEED));
+        self.patrol = Patrol::load(env)?.unwrap_or_else(|| Patrol::new(PATROL_SEED));
+        self.patrol_scan = false;
         self.lab = Lab::load(env)?.unwrap_or_else(Lab::new);
         self.empire = Empire::load(env)?.unwrap_or_default();
         self.open_scan = None;

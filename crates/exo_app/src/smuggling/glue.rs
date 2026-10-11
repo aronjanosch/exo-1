@@ -139,6 +139,46 @@ pub fn smuggle_observe(
             g.notify(gameplay_core::notice::Notice::new(gameplay_core::notice::NoticeKind::Warning, "notice.traffic.reminder"));
         }
     }
+    // Air patrols (hot ships in a town's airspace): halt for a scan in the air, or run.
+    let official = inside.as_ref().and_then(|t| g.smuggling.town(t)).filter(|t| !t.free_port).map(|t| (t.id.clone(), t.inspection_pad.clone().unwrap_or_else(|| t.pads[0].clone())));
+    let stars = g.smuggling.heat.stars();
+    let pouts = g.smuggling.patrol.step(&g.smuggling.heat_c.tuning.record, stars, official.as_ref().map(|(_, pad)| pad.clone()), vel.0.length(), dt);
+    for o in pouts {
+        match o {
+            heat_core::PatrolOut::Ordered { .. } => {
+                g.smuggling.log.push("patrol: halt ordered".into());
+                g.say(&TextKey::new("patrol.name"), "patrol.ordered");
+            }
+            heat_core::PatrolOut::Halted { at } => {
+                g.smuggling.log.push("patrol: halted".into());
+                g.say(&TextKey::new("patrol.name"), "patrol.halted");
+                if g.smuggling.open_scan.is_none() {
+                    g.smuggling.patrol_scan = true;
+                    let e = g.smuggling.scan_at(at);
+                    g.push_world(HOST, e);
+                } else {
+                    g.smuggling.patrol.scan_over(&g.smuggling.heat_c.tuning.record);
+                }
+            }
+            heat_core::PatrolOut::Fled => {
+                g.smuggling.log.push("patrol: fled".into());
+                g.say(&TextKey::new("patrol.name"), "patrol.fled");
+                if let Some((town, _)) = &official {
+                    g.push_world(HOST, WorldEvent::Violation { town: town.clone(), kind: gameplay_core::ViolationKind::FledScan });
+                } else if let Some(town) = g.smuggling.traffic_c.towns.keys().next().cloned() {
+                    // Left the airspace: the violation still goes to the town's books.
+                    g.push_world(HOST, WorldEvent::Violation { town, kind: gameplay_core::ViolationKind::FledScan });
+                }
+            }
+        }
+    }
+    // Speeding off during a patrol's scan is fleeing it (on a pad, taking off is).
+    if g.smuggling.patrol_scan && vel.0.length() > 3.0 * g.smuggling.heat_c.tuning.record.patrol_halt_speed_ms {
+        if let Some((scan, _)) = g.smuggling.open_scan.clone() {
+            g.smuggling.patrol_scan = false;
+            g.push_world(HOST, WorldEvent::ScanAnswered { scan, choice: ScanChoice::Flee });
+        }
+    }
     // Contraband aboard: the hidden hold takes the first few, the scan sees the rest.
     let aboard = stock.iter().filter(|(s, c)| c.ship == Some(ship_e) && is_contraband(g, &s.commodity)).count() as u32;
     let hold = if g.progress.has_tag(&Tag::new(TAG_HIDDEN_HOLD)) { HIDDEN_HOLD_CRATES } else { 0 };
@@ -352,7 +392,7 @@ pub fn station_interact(
             .take(o.amount as usize)
             .collect();
         st.target = (!near.is_empty()).then(|| Station::Buyer { order, by: by.clone() });
-        st.prompt = if near.is_empty() { format!("{name} wants {}× {} — set product crates down near them", o.amount, effects_text(&gp, &o.wants.iter().cloned().collect())) } else { format!("[{key}] hand {} of {} crates to {name}", near.len(), o.amount) };
+        st.prompt = if near.is_empty() { format!("{name} wants {}× {} - set product crates down near them", o.amount, effects_text(&gp, &o.wants.iter().cloned().collect())) } else { format!("[{key}] hand {} of {} crates to {name}", near.len(), o.amount) };
         if !near.is_empty() && actions.take_tap(Tap::Interact) {
             for (e, _) in &near {
                 commands.entity(*e).despawn();
@@ -408,7 +448,7 @@ pub fn phone_rows(gp: &Gameplay, tab: PhoneTab) -> Vec<(String, RowAction)> {
                         }
                     }
                     let pay = if g.ready_to_pay { RowAction::PayTribute(g.tribute) } else { RowAction::None };
-                    v.push((format!("Tribute {}{}", money(g.tribute), if g.ready_to_pay { "  — F: pay it" } else { "" }), pay));
+                    v.push((format!("Tribute {}{}", money(g.tribute), if g.ready_to_pay { "  - F: pay it" } else { "" }), pay));
                 } else {
                     v.push(("Top of the family. (The break comes later.)".into(), RowAction::None));
                 }
@@ -425,7 +465,7 @@ pub fn phone_rows(gp: &Gameplay, tab: PhoneTab) -> Vec<(String, RowAction)> {
                     let wants = effects_text(gp, &o.wants.iter().cloned().collect());
                     let c = if o.countered { "" } else { "  Z: ask +20 %" };
                     let tracked = if gp.smuggling.tracked_order == Some(id) { "[tracked] " } else { "" };
-                    (format!("{tracked}{who} @ {town}: {}× [{wants}] q≥{:.0}% — {} — {:.0}:{:02.0} left{c}  F: track", o.amount, o.min_quality * 100.0, money(o.price), (o.left_s / 60.0).floor(), o.left_s % 60.0), RowAction::Order(id))
+                    (format!("{tracked}{who} @ {town}: {}× [{wants}] q>={:.0}% - {} - {:.0}:{:02.0} left{c}  F: track", o.amount, o.min_quality * 100.0, money(o.price), (o.left_s / 60.0).floor(), o.left_s % 60.0), RowAction::Order(id))
                 })
                 .collect();
             if v.is_empty() {
@@ -447,7 +487,7 @@ pub fn phone_rows(gp: &Gameplay, tab: PhoneTab) -> Vec<(String, RowAction)> {
                 let town = r.town.as_ref().and_then(|t| s.town(t)).map(|t| gp.text(&t.name)).unwrap_or_default();
                 let rel = gp.customers.relationship(&id);
                 let flag = if gp.customers.is_poached(&id) { "  (buys from the rival)" } else { "" };
-                Some((format!("{} ({town}) {}{}  likes {}{flag}", gp.text(&r.name), "♥".repeat(rel.round() as usize), "·".repeat(5 - rel.round().clamp(0.0, 5.0) as usize), effects_text(gp, &taste.wants.iter().cloned().collect())), RowAction::None))
+                Some((format!("{} ({town}) {}{}  likes {}{flag}", gp.text(&r.name), "+".repeat(rel.round() as usize), ".".repeat(5 - rel.round().clamp(0.0, 5.0) as usize), effects_text(gp, &taste.wants.iter().cloned().collect())), RowAction::None))
             })
             .collect(),
         PhoneTab::Recipes => {
@@ -462,11 +502,11 @@ pub fn phone_rows(gp: &Gameplay, tab: PhoneTab) -> Vec<(String, RowAction)> {
                     (format!("{b}: {} (up to {})", effects_text(gp, eff), money(price)), RowAction::None)
                 })
                 .collect();
-            v.push(("— Ingredients —".into(), RowAction::None));
+            v.push(("- Ingredients -".into(), RowAction::None));
             for i in s.lab_c.ingredients.values().map(|i| &i.record) {
                 let n = gp.kernel.commodities.get(&i.id).map(|r| gp.text(&r.record.name)).unwrap_or_else(|| i.id.to_string());
                 let adds = i.adds.as_ref().map(|a| effects_text(gp, &[a.clone()].into())).unwrap_or_else(|| "-".into());
-                let turns: Vec<String> = i.transforms.iter().map(|t| format!("{}→{}", effects_text(gp, &[t.from.clone()].into()), effects_text(gp, &[t.to.clone()].into()))).collect();
+                let turns: Vec<String> = i.transforms.iter().map(|t| format!("{}->{}", effects_text(gp, &[t.from.clone()].into()), effects_text(gp, &[t.to.clone()].into()))).collect();
                 v.push((format!("{n}: adds {adds}; turns {}", if turns.is_empty() { "-".into() } else { turns.join(", ") }), RowAction::None));
             }
             v
@@ -474,10 +514,10 @@ pub fn phone_rows(gp: &Gameplay, tab: PhoneTab) -> Vec<(String, RowAction)> {
         PhoneTab::Heat => {
             let t = &s.heat_c.tuning.record;
             vec![
-                (format!("Heat {} ({:.0} of {:.0} points)", "★".repeat(s.heat.stars() as usize), s.heat.points(), t.max_points), RowAction::None),
+                (format!("Heat {} ({:.0} of {:.0} points)", "*".repeat(s.heat.stars() as usize), s.heat.points(), t.max_points), RowAction::None),
                 (format!("Official pads scan you {:.0} % of the time at this heat", heat_core::Heat::scan_chance(t, s.heat.stars(), false, gp.progress.has_tag(&Tag::new(super::systems::TAG_JAMMER))) * 100.0), RowAction::None),
                 (format!("Cools {:.0}/min ({:.0}/min when clean)", t.decay_per_min, t.decay_per_min_clean), RowAction::None),
-                (format!("Fixer: pay {} for -{:.0} heat  — F", money(FIXER_STEP), FIXER_STEP as f64 / t.paydown_per_point as f64), RowAction::PayFixer),
+                (format!("Fixer: pay {} for -{:.0} heat  - F", money(FIXER_STEP), FIXER_STEP as f64 / t.paydown_per_point as f64), RowAction::PayFixer),
                 (format!("Contraband aboard: {} seen, {} hidden", s.cargo.visible, s.cargo.hidden), RowAction::None),
             ]
         }
@@ -485,11 +525,11 @@ pub fn phone_rows(gp: &Gameplay, tab: PhoneTab) -> Vec<(String, RowAction)> {
             let mut v = Vec::new();
             for (sid, shop) in &s.shops.shops {
                 let shop = &shop.record;
-                v.push((format!("— {} —", gp.text(&shop.name)), RowAction::None));
+                v.push((format!("- {} -", gp.text(&shop.name)), RowAction::None));
                 for (idx, o) in shop.offers(&gp.progress, &gp.kernel).iter().enumerate() {
                     let state = if o.owned { "owned" } else if !o.available { "locked" } else if !o.affordable { "too expensive" } else { "F: buy" };
                     let amount = o.amount.map(|a| format!("{a}× ")).unwrap_or_default();
-                    v.push((format!("{amount}{} — {}  ({state})", gp.text(&o.label), money(o.price)), RowAction::Buy { shop: sid.clone(), idx }));
+                    v.push((format!("{amount}{} - {}  ({state})", gp.text(&o.label), money(o.price)), RowAction::Buy { shop: sid.clone(), idx }));
                 }
             }
             v
@@ -558,22 +598,24 @@ pub fn fill_hud(mut hud: ResMut<SmuggleHud>, mut gp: ResMut<Gameplay>, phone: Re
     hud.heat_points = s.heat.points();
     hud.heat_stars = s.heat.stars();
     hud.goal_line = match s.empire.next_goal(&s.ladders, &gp.progress, &gp.kernel, LADDER) {
-        Some(g) if g.ready_to_pay => format!("Next: pay the family {} cr (phone, Goals) → {}", g.tribute, gp.text(&g.rank_name)),
-        Some(g) => format!("Next: {} ({}/{}) → {}", gp.text(&g.goal_text), g.goals_done, g.goals_total, gp.text(&g.rank_name)),
+        Some(g) if g.ready_to_pay => format!("Next: pay the family {} cr (phone, Goals) -> {}", g.tribute, gp.text(&g.rank_name)),
+        Some(g) => format!("Next: {} ({}/{}) -> {}", gp.text(&g.goal_text), g.goals_done, g.goals_total, gp.text(&g.rank_name)),
         None => String::new(),
     };
     hud.radio = s.radio.clone();
     let pad_name = |l: &LocationId| gp.kernel.locations.get(l).map(|r| gp.text(&r.record.name)).unwrap_or_else(|| l.to_string());
-    hud.clearance = match (s.traffic.clearance(HOST), s.traffic.pending(HOST)) {
-        (Some(c), _) => format!("{}: {} — {:.0} s", if c.inspection { "INSPECTION" } else { "Cleared" }, pad_name(&c.pad), c.time_left_s.max(0.0)),
+    hud.clearance = if let Some(left) = s.patrol.ordered_left() {
+        format!("PATROL: halt! Slow below {:.0} m/s - {:.0} s (or run for it)", s.heat_c.tuning.record.patrol_halt_speed_ms, left.max(0.0))
+    } else { match (s.traffic.clearance(HOST), s.traffic.pending(HOST)) {
+        (Some(c), _) => format!("{}: {} - {:.0} s", if c.inspection { "INSPECTION" } else { "Cleared" }, pad_name(&c.pad), c.time_left_s.max(0.0)),
         (None, Some(p)) if p.second => format!("Holding... the tower answers in {:.0} s", p.due_s.max(0.0)),
         (None, Some(_)) => "Calling the tower...".into(),
         (None, None) => match s.traffic.inside(HOST).and_then(|t| s.town(t)) {
-            Some(t) if !t.free_port => format!("{} airspace — L: ask for a pad, limit {:.0} m/s", gp.text(&t.name), t.speed_limit_ms),
-            Some(t) => format!("{} — no tower, land anywhere", gp.text(&t.name)),
+            Some(t) if !t.free_port => format!("{} airspace - L: ask for a pad, limit {:.0} m/s", gp.text(&t.name), t.speed_limit_ms),
+            Some(t) => format!("{} - no tower, land anywhere", gp.text(&t.name)),
             None => String::new(),
         },
-    };
+    } };
     let tab = PhoneTab::ALL[phone.tab];
     let rows = if phone.open { phone_rows(&gp, tab) } else { Vec::new() };
     hud.phone = super::PhoneView {
@@ -581,7 +623,7 @@ pub fn fill_hud(mut hud: ResMut<SmuggleHud>, mut gp: ResMut<Gameplay>, phone: Re
         tab,
         selected: phone.selected.min(rows.len().saturating_sub(1)),
         rows: rows.into_iter().map(|r| r.0).collect(),
-        hint: "← → tabs   ↑ ↓ rows   F act   Z counter-offer   ` close".into(),
+        hint: "<- -> tabs   up/down rows   F act   Z counter-offer   ` close".into(),
     };
     hud.scan = match &s.open_scan {
         Some((_, at)) => {

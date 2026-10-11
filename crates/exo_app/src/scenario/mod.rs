@@ -692,6 +692,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "scan" => smuggle::scan_steps(&mut s),
         "dealing" => smuggle::dealing_steps(&mut s),
         "smuggle_run" => smuggle::smuggle_run_steps(&mut s),
+        "patrol" => smuggle::patrol_steps(&mut s),
         "smuggle-shots" => smuggle::shots_steps(&mut s, out_dir, windowed),
         // #170: courier jobs on foot, carried by hand to the small drops near the start.
         "courier" => courier::courier_steps(&mut s),

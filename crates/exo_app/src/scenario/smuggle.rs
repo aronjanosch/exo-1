@@ -866,6 +866,12 @@ pub fn shots_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool)
         let dir = dir.clone();
         s.push(Box::new(move |w, c| {
             shot(w, c, &dir, windowed, "spaceport");
+            true
+        }));
+    }
+    s.push(wait(0.5));
+    {
+        s.push(Box::new(move |w, _| {
             let town = w.resource::<crate::town::Town>();
             let plaza = town.npcs.iter().find(|n| n.id == "plaza_regular").map(|n| (n.pos, n.up)).unwrap();
             let side = plaza.1.any_orthonormal_vector();
@@ -878,6 +884,12 @@ pub fn shots_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool)
         let dir = dir.clone();
         s.push(Box::new(move |w, c| {
             shot(w, c, &dir, windowed, "street");
+            true
+        }));
+    }
+    s.push(wait(0.5));
+    {
+        s.push(Box::new(move |w, _| {
             tap(w, KeyCode::Backquote);
             true
         }));
@@ -902,6 +914,12 @@ pub fn shots_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool)
         let dir = dir.clone();
         s.push(Box::new(move |w, c| {
             shot(w, c, &dir, windowed, "phone-recipes");
+            true
+        }));
+    }
+    s.push(wait(0.5));
+    {
+        s.push(Box::new(move |w, _| {
             tap(w, KeyCode::Backquote);
             at_kettle_with(w, "blorp_paste");
             true
@@ -919,9 +937,9 @@ pub fn shots_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool)
     s.push(Box::new(|w, _| {
         let p = super::deliver::pad(w, "bent_spoon");
         let east = p.up.any_orthonormal_vector();
-        let at = p.centre + east * 250.0 + p.up * 45.0;
+        let at = p.centre + east * 120.0 + p.up * 140.0;
         let nose = (p.centre - at).normalize();
-        let rot = DQuat::from_rotation_arc(DVec3::NEG_Z, (nose - p.up * nose.dot(p.up) * 0.7).normalize());
+        let rot = DQuat::from_rotation_arc(DVec3::NEG_Z, nose);
         teleport_ship(w, at, rot);
         true
     }));
@@ -937,4 +955,89 @@ pub fn shots_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool)
         }));
     }
     s.push(wait(1.0));
+}
+
+// ---------------------------------------------------------------- patrol
+
+/// Wait (heat kept up) until the patrol orders a halt; at most `limit` s. `moving`: the ship
+/// cruises at 12 m/s (test hook: held at its spot with that velocity), so it has not halted.
+fn wait_for_order(name: &'static str, limit: f64, moving: bool) -> Step {
+    Box::new(move |w, c| {
+        if c.t == 0.0 {
+            begin(w, c, name);
+            c.v.insert("orders0", gp(w).smuggling.log.iter().filter(|l| l.contains("halt ordered")).count() as f64);
+            c.p.insert("spot", ship_frame_of(w).origin);
+        }
+        if moving {
+            let e = ship_e(w);
+            let spot = c.p["spot"];
+            let up = planet(w).up(spot);
+            w.get_mut::<Position>(e).unwrap().0 = spot;
+            w.get_mut::<LinearVelocity>(e).unwrap().0 = up.any_orthonormal_vector() * 12.0;
+        }
+        if gp(w).smuggling.heat.stars() < 3 {
+            heat_to(w, 3);
+        }
+        let n = gp(w).smuggling.log.iter().filter(|l| l.contains("halt ordered")).count() as f64;
+        if n > c.v["orders0"] || c.t > limit {
+            end(w, c, format!("after {:.0} s", c.t));
+            return true;
+        }
+        false
+    })
+}
+
+pub fn patrol_steps(s: &mut Vec<Step>) {
+    s.push(settle());
+    s.extend(seated());
+    s.push(Box::new(|w, c| {
+        begin(w, c, "patrol: hot, hovering in Bent Spoon's airspace");
+        crate::scenario::cargo::clear_crates(w);
+        stock_in_cabin(w, "blorp_paste", Some(product(&["giggly"])), 1);
+        heat_to(w, 3);
+        push(w, WorldEvent::TrackChanged { track: TrackId::new("wallet"), delta: 1000, player: None });
+        let p = super::deliver::pad(w, "bent_spoon");
+        let east = p.up.any_orthonormal_vector();
+        teleport_ship(w, p.centre + east * 300.0 + p.up * 150.0, basis_for_up(p.up));
+        end(w, c, String::new());
+        true
+    }));
+    s.push(wait_for_order("patrol: wait for a halt order", 600.0, false));
+    s.push(wait(1.0));
+    s.push(Box::new(|w, c| {
+        check(c, logged(w, "halt ordered"), "patrol: a patrol orders the hot ship to halt".into());
+        check(c, logged(w, "patrol: halted"), "patrol: hovering, the ship has halted at once".into());
+        let open = gp(w).smuggling.open_scan.is_some() && gp(w).smuggling.patrol_scan;
+        check(c, open, "patrol: the scan in the air waits for an answer".into());
+        let radio = hud(w).radio.iter().filter(|l| l.who.to_lowercase().contains("patrol") || l.who.contains(&gp(w).text(&gameplay_core::TextKey::new("patrol.name")))).count();
+        check(c, radio >= 2, format!("patrol: the patrol talks on the radio ({radio} lines)"));
+        c.v.insert("wallet", wallet(w) as f64);
+        tap(w, KeyCode::Digit2);
+        true
+    }));
+    s.push(wait(0.5));
+    s.push(Box::new(|w, c| {
+        let paid = c.v["wallet"] - wallet(w) as f64;
+        check(c, logged(w, "Bribe, confiscate false") && paid > 0.0, format!("patrol: a bribe ({paid:.0} cr), the goods stay ({} aboard)", aboard(w)));
+        check(c, !gp(w).smuggling.patrol_scan && gp(w).smuggling.open_scan.is_none(), "patrol: the scan is over".into());
+        true
+    }));
+    // The cooldown passes; the next order: run for it.
+    s.push(wait_for_order("patrol: wait for the next order, cruising", 900.0, true));
+    s.push(Box::new(|w, c| {
+        let line = hud(w).clearance.clone();
+        check(c, line.starts_with("PATROL"), format!("patrol: the HUD counts the halt down ('{line}')"));
+        c.v.insert("heat", gp(w).smuggling.heat.points());
+        true
+    }));
+    s.push(hold_until("patrol: run (full thrust ahead)", &[KeyCode::KeyW, KeyCode::ShiftLeft], 20.0, |w| logged(w, "patrol: fled")));
+    s.push(wait(0.5));
+    s.push(Box::new(|w, c| {
+        check(c, logged(w, "patrol: fled"), "patrol: not halting is fleeing".into());
+        check(c, logged(w, "violation FledScan"), "patrol: fleeing is a violation".into());
+        let up = gp(w).smuggling.heat.points() - c.v["heat"];
+        check(c, up > 10.0, format!("patrol: and costs heat (+{up:.0})"));
+        end(w, c, format!("heat +{up:.0}"));
+        true
+    }));
 }

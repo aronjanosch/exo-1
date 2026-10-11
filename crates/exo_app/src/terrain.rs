@@ -227,12 +227,16 @@ pub fn build_meshes(out: &ChunkOut, indices: &[u16]) -> BuiltChunk {
     let colors: Vec<[f32; 4]> = out.colors.iter().map(|c| [srgb_to_linear(c[0]), srgb_to_linear(c[1]), srgb_to_linear(c[2]), c[3]]).collect();
     let uv0: Vec<[f32; 2]> = out.rock.iter().map(|c| [srgb_to_linear(c[0]), srgb_to_linear(c[1])]).collect();
     let uv1: Vec<[f32; 2]> = out.rock.iter().map(|c| [srgb_to_linear(c[2]), c[3]]).collect();
+    // The other biome at a border (#235): its ground and its share, in the tangent slot (the
+    // terrain has no normal map, so the slot is free; terrain.wgsl reads it).
+    let ground_b: Vec<[f32; 4]> = out.ground_b.iter().map(|c| [srgb_to_linear(c[0]), srgb_to_linear(c[1]), srgb_to_linear(c[2]), c[3]]).collect();
     let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, out.verts.clone())
         .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, out.normals.clone())
         .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colors)
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uv0)
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_1, uv1)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, ground_b)
         .with_inserted_attribute(ATTRIBUTE_MORPH_DELTA, out.morph_delta.clone())
         .with_inserted_attribute(ATTRIBUTE_MORPH_NORMAL, VertexAttributeValues::Snorm8x4(out.morph_normals.iter().map(|n| {
             let q = |x: f32| (x * 127.0).round() as i8;

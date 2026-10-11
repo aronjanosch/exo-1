@@ -74,7 +74,16 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let slope = degrees(acos(clamp(dot(n, up), -1.0, 1.0)));
 
 #ifdef VERTEX_COLORS
+#ifdef VERTEX_TANGENTS
+    // The biome border (#235): the vertex colour is the lower id's ground, the tangent slot the
+    // higher id's and its share (0.5 on the border, interpolated across the triangle). Each pixel
+    // takes one of the two, the line frayed by noise on two scales, a narrow soft edge between.
+    let fray = (value_noise(rel * 0.004) - 0.5) * 0.3 + (value_noise(rel * 0.03) - 0.5) * 0.15;
+    let pick = smoothstep(0.45, 0.55, in.world_tangent.w + fray);
+    let ground = mix(in.color.rgb, in.world_tangent.rgb, pick);
+#else
     let ground = in.color.rgb;
+#endif
     // Below 0 the alpha marks ground under a lake or river (#72; no cap there).
     let cap_share = max(in.color.a, 0.0);
     let inland = clamp(-in.color.a, 0.0, 1.0);

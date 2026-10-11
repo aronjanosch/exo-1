@@ -214,11 +214,16 @@ impl Planet {
                     } else if inland > 0.0 {
                         lerp3(wt.surface, wt.deep, (inland / (wt.depth_m as f64).max(1.0)) as f32 * 0.5)
                     } else {
-                        let biome = self.biome_for(ha, &f, lf);
-                        let p = self.palette(biome);
-                        let rock = (lf.unwrap_or(f.land).clamp(0.0, 1.0) as f32) * 0.5 * p.strata;
-                        let g = lerp3(p.ground, p.rock, rock);
-                        let cap = ((ha - m.cap_height_m as f64) / (m.cap_fade_m as f64).max(1.0)).clamp(0.0, 1.0) as f32 * p.cap;
+                        // The two nearest biomes blended by their share (#235), as the terrain
+                        // does at its borders; the snow line in the look's scaled metres (#236).
+                        let pair = self.biome_pair(ha, &f, lf);
+                        let rock = lf.unwrap_or(f.land).clamp(0.0, 1.0) as f32 * 0.5;
+                        let (pa, pb) = (self.palette_ref(pair.lo), self.palette_ref(pair.hi));
+                        let colour = |p: &crate::recipe::Palette| lerp3(p.ground, p.rock, rock * p.strata);
+                        let g = lerp3(colour(pa), colour(pb), pair.hi_share);
+                        let k = self.look_scale();
+                        let cap_share = pa.cap + (pb.cap - pa.cap) * pair.hi_share;
+                        let cap = ((ha - m.cap_height_m as f64 * k) / (m.cap_fade_m as f64 * k).max(1.0)).clamp(0.0, 1.0) as f32 * cap_share;
                         lerp3(g, m.cap_color, cap)
                     };
                     let [r, g, b] = to_u8(c);

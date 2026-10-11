@@ -983,8 +983,19 @@ pub fn crate_wake_stream_steps(s: &mut Vec<Step>) {
         walker_on_ground(w);
         let p = player_world(w);
         let pl = planet(w);
-        let side = pl.up(p).any_orthonormal_vector();
-        let far = pl.centre + (p - pl.centre + side * 500.0).normalize() * (p - pl.centre).length();
+        // 500 m out, on level ground: on a slope a crate may still slide when the check comes.
+        let up = pl.up(p);
+        let side0 = up.any_orthonormal_vector();
+        let (side, far) = (0..36)
+            .map(|k| {
+                let side = DQuat::from_axis_angle(up, k as f64 * std::f64::consts::TAU / 36.0) * side0;
+                (side, pl.centre + (p - pl.centre + side * 500.0).normalize() * (p - pl.centre).length())
+            })
+            .find(|(side, far)| {
+                let level = |q: DVec3| pl.pgen.sample(crate::env::to_v3((q - pl.centre).normalize())).slope_deg < 5.0;
+                level(*far) && level(*far + *side * 2.0)
+            })
+            .unwrap_or((side0, pl.centre + (p - pl.centre + side0 * 500.0).normalize() * (p - pl.centre).length()));
         let a = ground_crate(w, "small", far);
         let b = ground_crate(w, "medium", far + side * 2.0);
         c.v.insert("a", a.to_bits() as f64);

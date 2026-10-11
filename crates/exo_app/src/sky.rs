@@ -203,6 +203,16 @@ pub struct ImpostorExt {
     #[texture(100)]
     #[sampler(101)]
     pub map: Handle<Image>,
+    #[uniform(102)]
+    pub water: ImpostorWater,
+}
+
+/// The water the impostor shader draws over the map's dryness (#235): linear colours, and in
+/// `surface.w` the planet's radius (m, for the shore's noise).
+#[derive(Clone, Copy, Debug, Default, ShaderType, Reflect)]
+pub struct ImpostorWater {
+    pub surface: Vec4,
+    pub deep: Vec4,
 }
 
 impl MaterialExtension for ImpostorExt {
@@ -248,7 +258,13 @@ pub fn update_impostor_map(
     let map = images.add(img);
     let mat = mats.add(ExtendedMaterial {
         base: StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.9, ..default() },
-        extension: ImpostorExt { map },
+        extension: ImpostorExt {
+            map,
+            water: ImpostorWater {
+                surface: crate::terrain_material::lin_pub(planet.pgen.recipe.water.surface).truncate().extend(planet.radius as f32),
+                deep: crate::terrain_material::lin_pub(planet.pgen.recipe.water.deep),
+            },
+        },
     });
     for (e, i) in &impostors {
         if i.0 == planet.id {

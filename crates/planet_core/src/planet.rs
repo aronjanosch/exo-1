@@ -702,10 +702,16 @@ impl Planet {
     /// distances to its points or intervals over the axes it names, plus its offset. Ties go to
     /// the row listed first.
     pub fn biome_for(&self, h_above_sea: f64, f: &Fields, forced_landform: Option<f64>) -> u8 {
+        self.biome_pair(h_above_sea, f, forced_landform).nearest
+    }
+
+    /// The nearest two biome rows and how far the point is into their border band (#235).
+    pub fn biome_pair(&self, h_above_sea: f64, f: &Fields, forced_landform: Option<f64>) -> BiomePair {
         let temp = self.temperature_at(f, h_above_sea);
         let land = forced_landform.unwrap_or(f.land);
         let hs = (self.recipe.biome_space.height_scale_m * self.biome_scale).max(1e-6);
         let mut best = (f64::MAX, self.recipe.biomes[0].id);
+        let mut second = best;
         for row in &self.recipe.biomes {
             let c = &row.climate;
             let mut d = row.offset;
@@ -716,10 +722,13 @@ impl Planet {
                 }
             }
             if d < best.0 {
+                second = best;
                 best = (d, row.id);
+            } else if d < second.0 {
+                second = (d, row.id);
             }
         }
-        best.1
+        BiomePair::new(best.1, second.1, second.0 - best.0, self.recipe.biome_space.blend)
     }
 
     /// Everything the bot interface wants to know about one spot.
@@ -1396,5 +1405,46 @@ mod grid_tests {
             assert_eq!(linear, p.apply_edits(d, 5.0), "site edits at {d:?}");
         }
         assert!(near_site > 30, "the test reaches sites: {near_site}");
+    }
+}
+
+/// The nearest two biome rows at a point (#235), in a fixed order (`lo` < `hi` by id) so the pair
+/// interpolates between mesh vertices, and the share of `hi`: 0.5 on the border, 0 or 1 at the
+/// band's edge and beyond. The drawn border is where the interpolated share crosses 0.5.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BiomePair {
+    pub nearest: u8,
+    pub lo: u8,
+    pub hi: u8,
+    pub hi_share: f32,
+}
+
+impl BiomePair {
+    /// From the nearest and second rows and the second's extra squared distance (`margin`).
+    pub fn new(nearest: u8, second: u8, margin: f64, band: f64) -> Self {
+        // The second's share: 0.5 on the border, 0 at the band's edge.
+        let s = if band <= 0.0 || nearest == second { 0.0 } else { 0.5 * (1.0 - smoothstep(0.0, band, margin)) };
+        let (lo, hi) = (nearest.min(second), nearest.max(second));
+        let hi_share = if nearest == hi { 1.0 - s } else { s };
+        BiomePair { nearest, lo, hi, hi_share: hi_share as f32 }
+    }
+}
+
+#[cfg(test)]
+mod biome_pair_tests {
+    use super::BiomePair;
+
+    #[test]
+    fn the_share_is_half_on_the_border_and_whole_beyond_the_band() {
+        // Nearest 3, second 7: the pair is (3, 7) whichever is nearer.
+        let on = BiomePair::new(3, 7, 0.0, 0.02);
+        assert_eq!((on.lo, on.hi, on.hi_share), (3, 7, 0.5));
+        let beyond = BiomePair::new(3, 7, 0.05, 0.02);
+        assert_eq!((beyond.nearest, beyond.hi_share), (3, 0.0));
+        let swapped = BiomePair::new(7, 3, 0.05, 0.02);
+        assert_eq!((swapped.lo, swapped.hi, swapped.hi_share), (3, 7, 1.0));
+        let inside = BiomePair::new(7, 3, 0.01, 0.02);
+        assert!(inside.hi_share > 0.5 && inside.hi_share < 1.0, "{inside:?}");
+        assert_eq!(BiomePair::new(3, 7, 0.0, 0.0).hi_share, 0.0, "band 0: hard borders");
     }
 }

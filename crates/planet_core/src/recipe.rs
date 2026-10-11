@@ -371,10 +371,20 @@ pub struct BiomeSpace {
     /// pattern sits on the taller ground of a bigger planet.
     #[serde(default = "default_tuned_radius_m")]
     pub tuned_radius_m: f64,
+    /// Width of the border band between two biomes (#235), in the parameter space's squared
+    /// distance: where the nearest two rows are closer than this, the ground colour blends
+    /// towards the second and the shader draws a frayed border. 0 = hard borders.
+    /// TODO(initiator): value.
+    #[serde(default = "default_biome_blend")]
+    pub blend: f64,
 }
 
 fn default_tuned_radius_m() -> f64 {
     5000.0
+}
+
+fn default_biome_blend() -> f64 {
+    0.004
 }
 
 /// Terrain colours of a biome row (#66): flat ground, steep rock, and how much of the planet's

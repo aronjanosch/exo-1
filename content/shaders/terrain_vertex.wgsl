@@ -50,6 +50,10 @@ struct TerrainVertex {
 #ifdef VERTEX_UVS_B
     @location(3) uv_b: vec2<f32>,
 #endif
+#ifdef VERTEX_TANGENTS
+    // Not a tangent: the other biome's ground and share at a border (#235, terrain.rs).
+    @location(4) ground_b: vec4<f32>,
+#endif
 #ifdef VERTEX_COLORS
     @location(5) color: vec4<f32>,
 #endif
@@ -87,6 +91,11 @@ fn vertex(v: TerrainVertex) -> VertexOutput {
 #endif
 #ifdef VERTEX_COLORS
     out.color = v.color;
+#endif
+#ifndef PREPASS_PIPELINE
+#ifdef VERTEX_TANGENTS
+    out.world_tangent = v.ground_b;
+#endif
 #endif
 #ifdef VERTEX_NORMALS
 #ifdef PREPASS_PIPELINE

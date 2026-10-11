@@ -74,7 +74,16 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let slope = degrees(acos(clamp(dot(n, up), -1.0, 1.0)));
 
 #ifdef VERTEX_COLORS
+#ifdef VERTEX_TANGENTS
+    // The biome border (#235): the vertex colour is the lower id's ground, the tangent slot the
+    // higher id's and its share (0.5 on the border, interpolated across the triangle). Each pixel
+    // takes one of the two, the line frayed by noise on two scales, a narrow soft edge between.
+    let fray = (value_noise(rel * 0.004) - 0.5) * 0.3 + (value_noise(rel * 0.03) - 0.5) * 0.15;
+    let pick = smoothstep(0.45, 0.55, in.world_tangent.w + fray);
+    let ground = mix(in.color.rgb, in.world_tangent.rgb, pick);
+#else
     let ground = in.color.rgb;
+#endif
     // Below 0 the alpha marks ground under a lake or river (#72; no cap there).
     let cap_share = max(in.color.a, 0.0);
     let inland = clamp(-in.color.a, 0.0, 1.0);
@@ -95,8 +104,13 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let wobble = (value_noise(rel * 0.08) - 0.5) * 8.0;
     let rock_t = smoothstep(look.shape.y, look.shape.z, slope + wobble);
 
-    // Strata: bands by height, wobbling a few metres, soft at their borders.
-    let band = (h + (value_noise(rel * 0.015) - 0.5) * 2.0 * look.misc.y) / max(look.shape.w, 0.1);
+    // Strata: bands by height, wobbling a few metres, soft at their borders. On steep faces only,
+    // and the bands wander by several of their widths over a few hundred metres: horizontal
+    // bands over a whole hillside read as contour lines (playtest #236). TODO(initiator): the
+    // slopes (30 to 45 degrees), the wander and the strength (0.6).
+    let strata_steep = smoothstep(30.0, 45.0, slope + wobble);
+    let wander = (value_noise(rel * 0.003) - 0.5) * 8.0 * look.shape.w;
+    let band = (h + wander + (value_noise(rel * 0.015) - 0.5) * 2.0 * look.misc.y) / max(look.shape.w, 0.1);
     let k = i32(floor(band));
     let f = fract(band);
     let edge = smoothstep(0.0, 0.08, f) * (1.0 - smoothstep(0.92, 1.0, f));
@@ -105,7 +119,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let mean = (look.strata0.rgb + look.strata1.rgb + look.strata2.rgb + look.strata3.rgb) * 0.25;
     let resolved = 1.0 - smoothstep(0.25, 0.75, fwidth(band));
     let layer = mix(mean, mix(strata_color(k - 1), strata_color(k), edge), resolved);
-    let rock_col = mix(rock, layer * (rock / max(max(rock.r, max(rock.g, rock.b)), 0.05) * 0.35 + 0.65), strata_share);
+    let rock_col = mix(rock, layer * (rock / max(max(rock.r, max(rock.g, rock.b)), 0.05) * 0.35 + 0.65), strata_share * strata_steep * 0.6);
 
     var col = mix(ground, rock_col, rock_t);
 

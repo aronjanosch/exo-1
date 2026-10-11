@@ -58,18 +58,29 @@ fn hearth_has_rivers_and_lakes() {
 #[test]
 fn water_flows_downhill() {
     let (p, _) = hearth();
-    for rv in &p.coarse.rivers {
-        let ground = p.base_height_at(rv.dir);
-        assert!((ground - rv.bed_m).abs() < 0.1, "the ground at a river vertex is its bed: {ground} vs {}", rv.bed_m);
+    // The river's vertex on its drawn curve (#235: smoothed and meandered off the grid vertex).
+    let on = |i: usize| p.river_idx.curve_point(&p.coarse.rivers, p.radius, i, 0.0).normalized();
+    let mut cut_deeper = 0;
+    for (i, rv) in p.coarse.rivers.iter().enumerate() {
+        let at = on(i);
+        let ground = p.base_height_at(at);
+        // At its bed, never above; lower where a nearby river's curve cuts deeper (the lowest cut
+        // wins), which only a few vertices next to another river see.
+        assert!(ground < rv.bed_m + 0.1, "the ground at a river vertex is its bed: {ground} vs {}", rv.bed_m);
+        cut_deeper += (ground < rv.bed_m - rv.depth_m) as usize;
         assert!(rv.level_m > rv.bed_m);
-        assert!(level_at(p, rv.dir).is_some_and(|l| l > ground), "the river is wet at {:?}", rv.dir);
+        assert!(level_at(p, at).is_some_and(|l| l > ground), "the river is wet at {at:?}");
         if let Mouth::River(j) = rv.next {
             let n = &p.coarse.rivers[j as usize];
             assert!(n.bed_m <= rv.bed_m && n.level_m <= rv.level_m, "bed or water rises downstream");
-            assert!(p.base_height_at(n.dir) <= ground + 0.15, "the ground rises downstream: {} -> {} (beds {} -> {})", ground, p.base_height_at(n.dir), rv.bed_m, n.bed_m);
+            let down = p.base_height_at(on(j as usize));
+            assert!(down <= ground.max(rv.bed_m) + 0.15, "the ground rises downstream: {} -> {} (beds {} -> {})", ground, down, rv.bed_m, n.bed_m);
             assert!(n.catchment_km2 >= rv.catchment_km2, "water gets lost downstream");
         }
     }
+    let n = p.coarse.rivers.len();
+    println!("{cut_deeper} of {n} river vertices lie in a deeper river's cut");
+    assert!(cut_deeper * 20 < n, "{cut_deeper} of {n} river vertices lie in another river's deeper cut");
 }
 
 #[test]

@@ -98,23 +98,32 @@ fn water_is_blue_in_a_local_map_and_land_is_not() {
 }
 
 #[test]
-fn orbit_map_has_its_size_and_the_sea_is_bluer_than_the_land() {
+fn orbit_map_has_its_size_and_its_dryness_marks_the_sea() {
+    // #235: the map holds the land colour everywhere and in alpha how dry the point is (0.5 at a
+    // shore); the impostor shader draws the water from it.
     let p = hearth();
     let m = p.orbit_map(128, 0);
     assert_eq!(m.len(), 128 * 64 * 4);
-    assert!(m.chunks(4).all(|c| c[3] == 255));
-    let (mut sea, mut land, mut ns, mut nl) = (0.0f64, 0.0f64, 0, 0);
+    let (mut sea_wet, mut land_dry, mut ns, mut nl) = (0, 0, 0, 0);
     for y in 0..64 {
         for x in 0..128 {
             let d = planet_core::look::pixel_dir(x, y, 128, 64);
             let face = face_of(d);
             let (a, b) = sphere_to_face_ab(face, d);
             let (hh, _) = p.height_ab(face, a, b, d);
-            let c = &m[(y * 128 + x) * 4..];
-            let blue = c[2] as f64 - c[0] as f64;
-            if hh - p.sea <= 0.0 { sea += blue; ns += 1 } else { land += blue; nl += 1 }
+            let alpha = m[(y * 128 + x) * 4 + 3];
+            // A metre below the sea is wet; land that high above any water is dry.
+            let wet_at = planet_core::look::ORBIT_SHORE_M * p.look_scale();
+            if hh - p.sea < -wet_at {
+                ns += 1;
+                sea_wet += (alpha == 0) as usize;
+            } else if hh - p.sea > wet_at && p.water_level_ab(face, a, b).is_none_or(|l| hh - l > wet_at) {
+                nl += 1;
+                land_dry += (alpha == 255) as usize;
+            }
         }
     }
-    assert!(ns > 0 && nl > 0);
-    assert!(sea / ns as f64 > land / nl as f64 + 20.0, "sea {} land {}", sea / ns as f64, land / nl as f64);
+    assert!(ns > 0 && nl > 0, "{ns} sea and {nl} land pixels");
+    assert_eq!(sea_wet, ns, "deep sea is fully wet");
+    assert_eq!(land_dry, nl, "land well above any water is fully dry");
 }

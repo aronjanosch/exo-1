@@ -15,6 +15,11 @@ pub struct ChunkOut {
     /// share (#72): the terrain shader then leaves out the sea's tint and shore band.
     pub colors: Vec<[f32; 4]>,
     pub rock: Vec<[f32; 4]>,
+    /// The biome border (#235): per vertex the two nearest rows in a fixed order, as their ground
+    /// colours (`colors` holds the lower id's, this the higher id's rgb) and the higher id's share
+    /// in alpha (0.5 on the border). The shader picks one per pixel, frayed by noise, so a border
+    /// is no longer a stair step of the vertex grid. Rock, cap and strata blend by the share here.
+    pub ground_b: Vec<[f32; 4]>,
     pub uvs: Vec<[f32; 2]>,
     /// Height above the base radius per vertex (M*M, skirt ring included), metres.
     pub heights: Vec<f32>,
@@ -56,7 +61,7 @@ impl ChunkOut {
         for v in self.verts.iter().chain(&self.normals) {
             v.iter().for_each(|x| put(&x.to_le_bytes()));
         }
-        for v in self.colors.iter().chain(&self.rock) {
+        for v in self.colors.iter().chain(&self.rock).chain(&self.ground_b) {
             v.iter().for_each(|x| put(&x.to_le_bytes()));
         }
         self.uvs.iter().flatten().for_each(|x| put(&x.to_le_bytes()));
@@ -90,6 +95,7 @@ impl Planet {
         let mut dirs = vec![V3::default(); M * M];
         let mut hs = vec![0.0f64; M * M];
         let mut rows = vec![0u8; M * M];
+        let mut pairs = vec![BiomePair::new(0, 0, 0.0, 0.0); M * M];
         let mut levels = vec![f64::NAN; M * M];
         for j in 0..M {
             for i in 0..M {
@@ -102,7 +108,8 @@ impl Planet {
                 pos[k] = dir * (r + h);
                 dirs[k] = dir;
                 hs[k] = h;
-                rows[k] = self.biome_for(h - self.sea, &f, lf);
+                pairs[k] = self.biome_pair(h - self.sea, &f, lf);
+                rows[k] = pairs[k].nearest;
             }
         }
 
@@ -110,6 +117,7 @@ impl Planet {
         out.verts.reserve_exact(M * M);
         out.normals.reserve_exact(M * M);
         out.colors.reserve_exact(M * M);
+        out.ground_b.reserve_exact(M * M);
         out.uvs.reserve_exact(M * M);
         let mut nrms = vec![V3::default(); M * M];
         for j in 0..M {
@@ -129,22 +137,32 @@ impl Planet {
                 };
                 out.verts.push([vv.x as f32, vv.y as f32, vv.z as f32]);
                 out.uvs.push(uv);
-                let mut p = self.palette_ref(rows[k]).clone();
+                let pair = pairs[k];
+                let (pa, pb) = (self.palette_ref(pair.lo), self.palette_ref(pair.hi));
+                let t = pair.hi_share;
+                let mix = |a: f32, b: f32| a + (b - a) * t;
+                let (mut ga, mut gb) = (pa.ground, pb.ground);
+                let mut rock = [0.0f32; 3];
+                for c in 0..3 {
+                    rock[c] = mix(pa.rock[c], pb.rock[c]);
+                }
                 // Under a lake or river the ground darkens with depth, as the terrain shader does
                 // under the sea (#72).
                 let depth = levels[k] - hs[k];
-                let mut alpha = p.cap;
+                let mut alpha = mix(pa.cap, pb.cap);
                 if depth > 0.0 {
                     alpha = -(depth.min(1.0) as f32);
                     let wl = &self.recipe.water;
-                    let t = (depth / wl.depth_m.max(1e-3) as f64).clamp(0.0, 1.0) as f32;
+                    let w = (depth / wl.depth_m.max(1e-3) as f64).clamp(0.0, 1.0) as f32;
                     for c in 0..3 {
-                        p.ground[c] += (wl.deep[c] - p.ground[c]) * t;
-                        p.rock[c] += (wl.deep[c] - p.rock[c]) * t;
+                        ga[c] += (wl.deep[c] - ga[c]) * w;
+                        gb[c] += (wl.deep[c] - gb[c]) * w;
+                        rock[c] += (wl.deep[c] - rock[c]) * w;
                     }
                 }
-                out.colors.push([p.ground[0], p.ground[1], p.ground[2], alpha]);
-                out.rock.push([p.rock[0], p.rock[1], p.rock[2], p.strata]);
+                out.colors.push([ga[0], ga[1], ga[2], alpha]);
+                out.ground_b.push([gb[0], gb[1], gb[2], t]);
+                out.rock.push([rock[0], rock[1], rock[2], mix(pa.strata, pb.strata)]);
                 out.heights.push(hs[k] as f32);
                 if k == ck {
                     out.min_h = out.min_h.min(hs[k] as f32);

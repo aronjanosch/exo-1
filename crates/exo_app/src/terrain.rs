@@ -44,6 +44,10 @@ pub fn task_pools() -> bevy::app::TaskPoolOptions {
     o
 }
 
+/// Steps of the geomorph factor written to the mesh tags. TODO(initiator): fewer steps are
+/// cheaper, more are smoother (F4 compares with morphing off).
+const MORPH_STEPS: f64 = 32.0;
+
 /// Margin on a node's height range for the detail its children add: metres plus a share of its
 /// edge (the parent's grid samples miss the peaks between them).
 const BOUND_PAD_M: f64 = 4.0;
@@ -480,7 +484,9 @@ impl Terrain {
         let n = &mut self.nodes[i];
         n.floor = (n.floor - dt / MORPH_SETTLE_S).max(0.0);
         let by_distance = if n.depth == 0 { 0.0 } else { ((d / n.edge_m - MORPH_NEAR) / (MORPH_FAR - MORPH_NEAR)).clamp(0.0, 1.0) };
-        let tag = (by_distance.max(n.floor) * 255.0).round() as u32;
+        // Quantised to MORPH_STEPS: every tag change makes the renderer re-queue the chunk, and
+        // updating hundreds of tags each frame cost 6-10 ms in the render queue (#214).
+        let tag = ((by_distance.max(n.floor) * MORPH_STEPS).round() / MORPH_STEPS * 255.0).round() as u32;
         if tag != n.tag {
             if let Some(e) = n.entity {
                 commands.entity(e).insert(MeshTag(tag * 257));

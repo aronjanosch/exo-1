@@ -1,0 +1,1 @@
+{ "_comment": "Sold by the mechanic. Hides contraband from scans (TODO(initiator): price).", "id": "hidden_hold", "name": "unlock.hidden_hold.name", "price": 400, "grants": ["ship_hidden_hold"] }

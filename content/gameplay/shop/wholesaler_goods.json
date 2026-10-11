@@ -1,0 +1,18 @@
+{
+  "_comment": "Ingredient crates. The goods are placeholders: the lab lane's ingredient ids replace them (TODO(initiator)). Prices equal the wholesale table's (TODO(initiator)).",
+  "id": "wholesaler_goods",
+  "name": "shop.wholesaler_goods.name",
+  "location": "slosh_wholesale",
+  "items": [
+    {
+      "goods": "fizzy_mud",
+      "amount": 3,
+      "price": 20
+    },
+    {
+      "goods": "sock_dust",
+      "amount": 3,
+      "price": 15
+    }
+  ]
+}

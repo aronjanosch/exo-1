@@ -1,0 +1,1 @@
+{ "_comment": "Free on the first rise of the Gribbles. Lab access (TODO(initiator): the lab lane reads the tag).", "id": "lab_key", "name": "unlock.lab_key.name", "price": 0, "grants": ["lab_access"] }

@@ -1,0 +1,1 @@
+{ "_comment": "Free on the Runner rise. Buyers further away (TODO(initiator)).", "id": "far_buyers", "name": "unlock.far_buyers.name", "price": 0, "grants": ["buyers_far"] }

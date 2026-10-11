@@ -1,0 +1,1 @@
+{ "_comment": "Sold by the mechanic. TODO(initiator): price and effect.", "id": "scan_jammer", "name": "unlock.scan_jammer.name", "price": 600, "grants": ["ship_jammer"] }

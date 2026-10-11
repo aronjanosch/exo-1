@@ -1,0 +1,1 @@
+{ "_comment": "Sold at Drip Rock. A second kettle (TODO(initiator): price, lab lane reads the tag).", "id": "second_kettle", "name": "unlock.second_kettle.name", "price": 500, "grants": ["lab_kettle_2"] }

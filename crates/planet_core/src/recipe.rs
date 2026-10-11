@@ -353,6 +353,9 @@ pub struct Climate {
     pub landform: Option<Range>,
     #[serde(default)]
     pub weirdness: Option<Range>,
+    /// Field `erosion` (#222): -1..1, the flat ground's field.
+    #[serde(default)]
+    pub erosion: Option<Range>,
     /// Metres; divided by `biome_space.height_scale_m` before it counts.
     #[serde(default)]
     pub height_above_sea: Option<Range>,
@@ -361,8 +364,17 @@ pub struct Climate {
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct BiomeSpace {
-    /// Metres of height above sea that weigh like one unit of a field.
+    /// Metres of height above sea that weigh like one unit of a field, at `tuned_radius_m`.
     pub height_scale_m: f64,
+    /// The radius (m) at which `height_scale_m` and the temperature lapse were tuned (#222). At
+    /// other radii both scale with the relief's factor (`Relief::scale_at`), so the same climate
+    /// pattern sits on the taller ground of a bigger planet.
+    #[serde(default = "default_tuned_radius_m")]
+    pub tuned_radius_m: f64,
+}
+
+fn default_tuned_radius_m() -> f64 {
+    5000.0
 }
 
 /// Terrain colours of a biome row (#66): flat ground, steep rock, and how much of the planet's

@@ -1,0 +1,8 @@
+{
+  "_comment": "Invented contraband product base (#228). Price and crate size are TODO(initiator) starting values.",
+  "id": "blorp_paste",
+  "name": "commodity.blorp_paste.name",
+  "base_price": 120,
+  "crate_size": "small",
+  "tags": ["contraband"]
+}

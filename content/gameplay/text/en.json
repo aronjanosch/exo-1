@@ -391,5 +391,23 @@
   "effect.x_ray_eyes.name": "X-Ray Eyes",
   "effect.backwards_talk.name": "Backwards Talk",
   "effect.sleepy.name": "Sleepy",
-  "effect.tingly.name": "Tingly"
+  "effect.tingly.name": "Tingly",
+  "commodity.blorp_paste.name": "blorp paste",
+  "commodity.dream_goo.name": "dream goo",
+  "commodity.space_sugar.name": "space sugar",
+  "commodity.battery_juice.name": "battery juice",
+  "commodity.pickle_brine.name": "pickle brine",
+  "commodity.moth_dust.name": "moth dust",
+  "commodity.ghost_pepper.name": "ghost pepper",
+  "commodity.foam_gum.name": "foam gum",
+  "lab.brewed": [
+    "The vat gurgles. Crates are ready.",
+    "Something in the vat sighs. Done.",
+    "The brew settles. Smells like a plan."
+  ],
+  "lab.discovered": [
+    "Brand new mix! Written in the recipe book.",
+    "Nobody has ever made this before. Noted.",
+    "A new recipe, scribbled into the book."
+  ]
 }

@@ -1,0 +1,8 @@
+{
+  "_comment": "Invented legal ingredient (#228). Price and crate size are TODO(initiator) starting values.",
+  "id": "space_sugar",
+  "name": "commodity.space_sugar.name",
+  "base_price": 30,
+  "crate_size": "small",
+  "tags": ["ingredient"]
+}

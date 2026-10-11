@@ -1,0 +1,6 @@
+{
+  "_comment": "Placeholder ingredient (#228). The effect and the transforms are TODO(initiator).",
+  "id": "moth_dust",
+  "adds": "floaty",
+  "transforms": [{ "from": "glowing", "to": "x_ray_eyes" }]
+}

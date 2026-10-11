@@ -1,0 +1,6 @@
+{
+  "_comment": "Placeholder ingredient (#228). The effect and the transforms are TODO(initiator).",
+  "id": "ghost_pepper",
+  "adds": "backwards_talk",
+  "transforms": [{ "from": "floaty", "to": "sleepy" }, { "from": "giggly", "to": "backwards_talk" }]
+}

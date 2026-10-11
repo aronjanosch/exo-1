@@ -759,6 +759,7 @@ fn km_text(d: f64) -> String {
 /// move after this system (at 1000 km/s by several km a frame), `WorldPose` follows it.
 pub fn update_impostors(
     sys: Res<crate::warp::SystemRes>,
+    planet: Res<PlanetRes>,
     origin: Res<RenderOrigin>,
     mut q: Query<(&Impostor, &mut WorldPose, &mut Transform, &mut Visibility)>,
 ) {
@@ -766,7 +767,10 @@ pub fn update_impostors(
         let p = sys.0.planet(imp.0);
         let to = p.centre() - origin.view;
         let dist = to.length();
-        if dist < IMPOSTOR_FROM {
+        // The planet in play brings the terrain as far as two atmospheres up (#224); every other
+        // planet uses the rule's atmosphere for its radius.
+        let atm = if imp.0 == planet.id { planet.field.atmosphere_height } else { planet_core::Ceilings::atmosphere_for(p.radius) };
+        if dist < crate::sky::impostor_from(p.radius, atm) {
             *vis = Visibility::Hidden;
             continue;
         }
@@ -1097,7 +1101,7 @@ pub fn update_camera(
     // glow. Haze per planet (#67), ambient, fog and sky by the time of day (#48).
     let density = planet.density_at(pose.pos) as f32;
     let s = &planet.pgen.recipe.sky;
-    let (amb_color, amb, fog_color, fog_density, sky) = crate::daynight::camera_light(&sun, s.haze_color, s.haze_density, density);
+    let (amb_color, amb, fog_color, fog_density, sky) = crate::daynight::camera_light(&sun, s.haze_color, crate::sky::haze_density(&planet), density);
     clear.0 = sky;
     fog.color = fog_color;
     fog.falloff = FogFalloff::Exponential { density: fog_density };

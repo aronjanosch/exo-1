@@ -92,3 +92,25 @@ fn water_is_blue_in_a_local_map_and_land_is_not() {
     assert!(w[2] > w[0] && w[2] > w[1], "water is blue-ish: {w:?}");
     assert!(!(l[2] > l[0] && l[2] > l[1] + 20), "land is not blue: {l:?}");
 }
+
+#[test]
+fn orbit_map_has_its_size_and_the_sea_is_bluer_than_the_land() {
+    let p = hearth();
+    let m = p.orbit_map(128, 0);
+    assert_eq!(m.len(), 128 * 64 * 4);
+    assert!(m.chunks(4).all(|c| c[3] == 255));
+    let (mut sea, mut land, mut ns, mut nl) = (0.0f64, 0.0f64, 0, 0);
+    for y in 0..64 {
+        for x in 0..128 {
+            let d = planet_core::look::pixel_dir(x, y, 128, 64);
+            let face = face_of(d);
+            let (a, b) = sphere_to_face_ab(face, d);
+            let (hh, _) = p.height_ab(face, a, b, d);
+            let c = &m[(y * 128 + x) * 4..];
+            let blue = c[2] as f64 - c[0] as f64;
+            if hh - p.sea <= 0.0 { sea += blue; ns += 1 } else { land += blue; nl += 1 }
+        }
+    }
+    assert!(ns > 0 && nl > 0);
+    assert!(sea / ns as f64 > land / nl as f64 + 20.0, "sea {} land {}", sea / ns as f64, land / nl as f64);
+}

@@ -333,6 +333,28 @@ pub struct Sky {
     pub haze_color: [f32; 3],
     /// Exponential distance fog density per metre at the ground (fades out with height).
     pub haze_density: f32,
+    /// A cloud layer (#224); none when absent.
+    #[serde(default)]
+    pub clouds: Option<Clouds>,
+}
+
+/// A cheap cloud layer (#224): a shell around the planet with noise in the fragment shader.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Clouds {
+    /// Height of the shell as a share of the atmosphere height (so it scales with the planet).
+    pub altitude: f32,
+    /// Share of the sky that is cloud (0..1).
+    pub coverage: f32,
+    /// Size of the largest cloud patches in metres.
+    pub scale_m: f32,
+    pub color: [f32; 3],
+    /// How fast the pattern drifts, in metres per second at the shell.
+    pub drift_m_s: f32,
+    /// No clouds on a planet smaller than this (m): the shell would be one soft wall over a 5 km
+    /// planet. 0: on every planet.
+    #[serde(default)]
+    pub min_radius_m: f64,
 }
 
 /// Water of a planet (#67): surface colour and opacity, the ground tint below it by depth
@@ -640,6 +662,8 @@ pub enum SiteCategory {
     Find,
     /// A hand-placed place (`content/place/`), not from a kind.
     Place,
+    /// A small town on a plain: a level plot, a landing pad and city pieces (#223).
+    Settlement,
 }
 
 /// A kind of site (#70). Placeholder kinds until the initiator picks (ids, no fiction names).
@@ -666,12 +690,23 @@ pub struct SiteKind {
     /// one farthest from all sites so far.
     #[serde(default)]
     pub prefer_high: bool,
+    /// The ground must be a plain (#223): see `PlainRule`. Missing = no requirement.
+    #[serde(default)]
+    pub plain: Option<PlainRule>,
     #[serde(default)]
     pub edits: Vec<Edit>,
     pub kit: String,
     /// Expected count range per 100 km2 of surface; when present replaces `count`.
     #[serde(default)]
     pub per_100_km2: Option<[f64; 2]>,
+}
+/// A plain (#223): the noise ground (before edits) rises by at most `max_rise_m` across the span
+/// of `2 * radius_m` through the site's centre, in each of its two tangent directions.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct PlainRule {
+    pub radius_m: f64,
+    pub max_rise_m: f64,
 }
 fn slope_flat() -> [f64; 2] {
     [0.0, 20.0]

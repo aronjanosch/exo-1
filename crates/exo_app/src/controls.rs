@@ -980,7 +980,8 @@ mod tests {
         let b = Bindings::default();
         let tap_keys: Vec<KeyCode> = b.tap_keys().collect();
         assert!(tap_keys.contains(&KeyG));
-        assert!(!tap_keys.contains(&KeyZ), "Z is bound to nothing");
+        // Z is the counter-offer since round 6; Backslash is still bound to nothing.
+        assert!(!tap_keys.contains(&Backslash), "Backslash is bound to nothing");
     }
 
     #[test]

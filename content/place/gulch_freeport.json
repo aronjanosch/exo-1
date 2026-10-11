@@ -2,8 +2,8 @@
   "_comment": "Gulch Freeport, the free port: no tower, no scans, about 146 km from Drip Rock at 100 km radius (7.3 km at 5 km). Invented name; TODO(initiator).",
   "id": "gulch_freeport",
   "planet": "hearth",
-  "lat_deg": 4.0,
-  "lon_deg": 40.0,
+  "lat_deg": 6.0,
+  "lon_deg": 44.0,
   "edits": [
     {
       "type": "flatten",

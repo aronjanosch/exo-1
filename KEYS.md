@@ -67,7 +67,7 @@ The switches of Star Citizen's flight control (the flight model is the SC model,
 | ↑ / ↓ | `phone_up`, `phone_down` | The phone's rows; F acts on the selected row (track, hand over, buy, pay) | – |
 | Z | `counter` | Ask the buyer of the selected order for more money (once per order) | – |
 | L | `hail` | Call the tower of the town you fly over for a landing pad (round 6) | – |
-| 1 / 2 / 3 / 4 | `choice_1` … `choice_4` | During a scan: comply, bribe, talk; taking off flees | – |
+| 1 / 2 / 3 / 4 | `choice_1`, `choice_2`, `choice_3`, `choice_4` | During a scan: comply, bribe, talk (4 is free for later); taking off flees | – |
 | Tab | `next_offer` | Next offer at the counter | – |
 | Backspace | `decline` | Close the counter without taking the job | – |
 | Enter | `skip_notices` | Run the queued banners and notices fast | – |

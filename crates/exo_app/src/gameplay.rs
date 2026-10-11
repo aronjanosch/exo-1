@@ -974,6 +974,76 @@ mod tests {
         }
     }
 
+    /// Probe (round 6, run by hand): dry, flat spots for a town near a latitude and longitude.
+    #[test]
+    #[ignore]
+    fn probe_town_spots() {
+        let sys = warp_core::System::from_json(crate::warp::SYSTEM).unwrap();
+        let home = warp_core::PlanetId(0);
+        // Every town pad at 5 km and at 100 km: dry and flat?
+        for radius in [5000.0, 100_000.0] {
+            let mut def = sys.planet(home).clone();
+            def.radius = radius;
+            let c = planet_core::Ceilings::for_radius(radius);
+            def.atmosphere_height = c.atmosphere_height;
+            def.obstruction_radius = c.obstruction_radius;
+            def.arrival_radius = c.arrival_radius;
+            let planet = PlanetRes::load(home, &def);
+            let gp = Gameplay::load(&Crates::default());
+            for l in gp.kernel.locations.values() {
+                let Some(pad) = planet.pgen.pad(&l.record.place, &l.record.pad) else { continue };
+                let s = planet.pgen.sample(pad.up);
+                if s.water_depth > 0.0 || s.slope_deg >= 3.0 {
+                    println!("probe at {radius}: {} wet {:.1} or slope {:.1}", l.record.id, s.water_depth, s.slope_deg);
+                }
+            }
+            println!("probe at {radius}: pads checked");
+        }
+        // Dry spots around a reference place, east/north metres (for `near`).
+        for (radius, place, rings) in [(5000.0, "noodle_town", [500.0, 700.0]), (100_000.0, "drip_rock", [220.0, 300.0])] {
+            let mut def = sys.planet(home).clone();
+            def.radius = radius;
+            let c = planet_core::Ceilings::for_radius(radius);
+            def.atmosphere_height = c.atmosphere_height;
+            def.obstruction_radius = c.obstruction_radius;
+            def.arrival_radius = c.arrival_radius;
+            let planet = PlanetRes::load(home, &def);
+            let d0 = planet.pgen.places.iter().find(|p| p.id == place).unwrap().dir();
+            let (east, north) = planet_core::look::tangent_frame(d0);
+            let mut ok = Vec::new();
+            for m in rings {
+                for k in 0..16 {
+                    let a = k as f64 / 16.0 * std::f64::consts::TAU;
+                    let (e, n) = (m * a.cos(), m * a.sin());
+                    let d = planet_core::look::walk(d0, (east * e + north * n) * (1.0 / m), m, planet.radius);
+                    let s = planet.pgen.sample(d);
+                    if s.water_depth == 0.0 && !planet.pgen.water_within(d, 40.0) && s.slope_deg < 8.0 {
+                        ok.push((e.round(), n.round(), (s.slope_deg * 10.0).round() / 10.0, s.height_above_sea.round()));
+                    }
+                }
+            }
+            println!("probe near {place} at {radius}: {ok:?}");
+        }
+        let planet = PlanetRes::load(home, sys.planet(home));
+        for (lat0, lon0) in [(4.0f64, 40.0f64), (44.0, 140.0)] {
+            let mut ok = Vec::new();
+            for dl in -6..=6 {
+                for dn in -6..=6 {
+                    let (lat, lon) = (lat0 + dl as f64 * 2.0, lon0 + dn as f64 * 2.0);
+                    let (la, lo) = (lat.to_radians(), lon.to_radians());
+                    let d = planet_core::v3(la.cos() * lo.cos(), la.sin(), la.cos() * lo.sin());
+                    let s = planet.pgen.sample(d);
+                    // Dry and flat over the town's 60 m.
+                    if s.water_depth == 0.0 && s.slope_deg < 6.0 && !planet.pgen.water_within(d, 80.0) {
+                        ok.push((lat, lon, s.slope_deg));
+                    }
+                }
+            }
+            ok.sort_by(|a, b| a.2.total_cmp(&b.2));
+            println!("probe near {lat0},{lon0}: {:?}", &ok[..ok.len().min(8)]);
+        }
+    }
+
     /// #167: the family is a giver of the cast but offers nothing in D; the courier office does.
     #[test]
     fn the_family_offers_nothing_yet_and_the_courier_office_does() {

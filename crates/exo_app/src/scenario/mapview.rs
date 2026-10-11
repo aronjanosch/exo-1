@@ -30,15 +30,26 @@ pub fn map_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool) {
     s.push(Box::new(|w, c| {
         let p = pins(w);
         let places: Vec<String> = p.iter().filter(|p| p.kind == PinKind::Place).map(|p| gp(w).text(&p.label)).collect();
-        check(c, places.len() == 7, format!("map: every place with a pad is pinned ({} places: {places:?})", places.len()));
+        let with_pads = gp(w).pads.len();
+        check(c, places.len() == with_pads, format!("map: every place with a pad is pinned ({} pins, {with_pads} pads)", places.len()));
         check(c, p.iter().filter(|p| p.kind == PinKind::Player { own: true }).count() == 1, "map: the player is pinned".into());
         check(c, target(w).is_none() && gp(w).tracked.is_none(), "map: no job, no target".into());
-        // The picture shows 1 km around the player: Bent Spoon, 1.9 km away, is off it, the rest on it.
+        // The picture shows about 1 km around the player: the city's pads are on it, the far towns
+        // (Bent Spoon 2 km and more on the 5 km planet) are off it.
         let planet = planet(w);
         let pos = player_world(w);
         let centre = planet.up(pos);
-        let off: Vec<String> = p.iter().filter(|p| pin_px(&planet, centre, p, 640.0).is_none()).map(|p| gp(w).text(&p.label)).collect();
-        check(c, off == vec!["Bent Spoon".to_string()], format!("map: every pin but far Bent Spoon lies on the picture (off it: {off:?})"));
+        let wrong: Vec<String> = p
+            .iter()
+            .filter(|p| p.kind == PinKind::Place)
+            .filter(|p| {
+                let d = (planet.centre + DVec3::from_array(p.dir) * planet.radius).distance(pos);
+                let on = pin_px(&planet, centre, p, 640.0).is_some();
+                (d < 900.0 && !on) || (d > 1100.0 && on)
+            })
+            .map(|p| gp(w).text(&p.label))
+            .collect();
+        check(c, wrong.is_empty(), format!("map: near pins are on the picture, far ones off it (wrong: {wrong:?})"));
         end(w, c, String::new());
         true
     }));

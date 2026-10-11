@@ -70,8 +70,18 @@ fn places_are_deterministic() {
 
 #[test]
 fn a_place_in_water_fails_the_bake() {
-    // lat 80, lon 0 lies in water on Hearth (seed 1337).
-    let wet = PAD.replace("\"lat_deg\": 86.0, \"lon_deg\": 90.0", "\"lat_deg\": 80.0, \"lon_deg\": 0.0");
+    // A spot in open sea on Hearth (seed 1337), found on the planet itself so the test does not
+    // depend on where the relief puts the water.
+    let open = hearth(vec![]).unwrap();
+    let (lat, lon) = (0..180)
+        .flat_map(|i| (0..360).step_by(5).map(move |j| (i as f64 - 89.5, j as f64)))
+        .find(|&(lat, lon)| {
+            let (la, lo) = (lat.to_radians(), lon.to_radians());
+            let s = open.sample(v3(la.cos() * lo.cos(), la.sin(), la.cos() * lo.sin()));
+            s.height_above_sea < -10.0 && s.water_depth > 10.0
+        })
+        .expect("Hearth has open sea");
+    let wet = PAD.replace("\"lat_deg\": 86.0, \"lon_deg\": 90.0", &format!("\"lat_deg\": {lat}, \"lon_deg\": {lon}"));
     let e = hearth(vec![place(&wet)]).err().unwrap();
     assert!(e.contains("place drip_rock") && e.contains("water"), "{e}");
 }

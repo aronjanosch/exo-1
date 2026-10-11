@@ -88,7 +88,10 @@ fn t1_one_height_function() {
     println!("T1 stored vertices vs exact f64 position: {worst_store:.3e} m");
     assert!(worst_store < 1e-4, "stored vertex {worst_store} m off the exact position");
     println!("T1 mesh vertices: {} vertices of 50 chunks (depths 2,4,6,8), max |mesh - height_at| = {:.3e} m", n_vert, worst_mesh);
-    assert!(worst_mesh < 1e-3);
+    // The noise reads its input as f32 at the planet's radius, so height_at at the f32 vertex
+    // position is a staircase of steps slope x radius x 6e-8 (#221: about 1.4 mm at 5 km with
+    // the relief's steeper ground); the exact contract is the strict check above.
+    assert!(worst_mesh < 2e-3);
 }
 
 fn seam_check(p: &Planet, depth: u32) -> (usize, f64, usize) {
@@ -195,7 +198,8 @@ fn t1_collision_patches_core() {
         }
     }
     println!("T1 collision patches (core): {n} samples, max |patch - height_at| = {worst64:.3e} m (f64 origin), {worst32:.3e} m (origin rounded to f32 like the scene)");
-    assert!(worst64 < 1e-3);
+    // f32 noise input, as in t1_one_height_function (#221).
+    assert!(worst64 < 2e-3);
     assert!(worst32 < 2e-3);
 }
 

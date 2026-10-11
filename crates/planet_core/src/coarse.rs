@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 /// Bump when the bake's output changes for the same recipe, seed and radius: an old cache is then
 /// ignored and baked again.
-pub const CODE_VERSION: u32 = 1;
+pub const CODE_VERSION: u32 = 3;
 
 /// Unit of the stored heights (m).
 pub const UNIT_M: f32 = 0.1;

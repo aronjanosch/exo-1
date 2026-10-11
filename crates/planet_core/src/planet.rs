@@ -33,8 +33,19 @@ pub fn nz(n: &FastNoiseLite, p: [f32; 3]) -> f32 {
 const RIDGE_NOISE_LOW: f64 = -0.2;
 const RIDGE_NOISE_TOP: f64 = 0.8;
 
+enum RidgeSplit {
+    AllCoarse,
+    AllFine,
+    /// The coarse octaves alone.
+    Coarse(FastNoiseLite),
+}
+
 struct ReliefRt {
     ridge: FastNoiseLite,
+    /// Which of the ridge's octaves the coarse grid resolves (wavelength at least four cells).
+    /// The drainage runs on those; the finer rest is relief a river's valley flattens, like a
+    /// high band (#177, #221).
+    ridge_split: RidgeSplit,
     warp: Option<(FastNoiseLite, f64)>,
     /// The factor on the relief's metres at this radius (`Relief::scale_at`).
     scale: f64,
@@ -297,8 +308,18 @@ impl Planet {
             })
             .collect();
         let scatter = crate::scatter::ScatterRt::new(&recipe, seed);
+        let cell_m = std::f64::consts::FRAC_PI_2 * radius / m.resolution as f64;
         let relief_rt = recipe.relief.as_ref().map(|r| ReliefRt {
             ridge: make_noise(&r.ridge_noise, seed),
+            ridge_split: {
+                let top = 1.0 / r.ridge_noise.frequency as f64;
+                let n = r.ridge_noise.octaves;
+                match (0..n).take_while(|&i| top / 2f64.powi(i) >= 4.0 * cell_m).count() as i32 {
+                    0 => RidgeSplit::AllFine,
+                    lo if lo == n => RidgeSplit::AllCoarse,
+                    lo => RidgeSplit::Coarse(make_noise(&NoiseSpec { octaves: lo, ..r.ridge_noise.clone() }, seed)),
+                }
+            },
             warp: r.ridge_warp.as_ref().map(|w| {
                 let spec = NoiseSpec { seed_offset: w.seed_offset, frequency: w.frequency, wavelength_radii: None, fractal: Fractal::None, octaves: 1 };
                 (make_noise(&spec, seed), w.amplitude * r.scale_at(radius))
@@ -487,28 +508,38 @@ impl Planet {
 
     /// The mountains of the relief (#221, metres, 0 without relief): the ridge spline on the peaks
     /// and valleys, gated to land, flattened by erosion, times a warped ridged fBm.
-    fn relief_ridge(&self, p: [f32; 3], f: &Fields) -> f64 {
+    /// The relief's ridges (m): the part the coarse grid resolves, and the finer rest.
+    fn relief_ridge(&self, p: [f32; 3], f: &Fields) -> (f64, f64) {
         let (Some(r), Some(rt)) = (&self.recipe.relief, &self.relief_rt) else {
-            return 0.0;
+            return (0.0, 0.0);
         };
-        let ridged = match &rt.warp {
+        let q = match &rt.warp {
             Some((w, wa)) => {
                 let wa = *wa as f32;
-                let q = [
+                [
                     p[0] + wa * nz(w, [p[0] + 1013.0, p[1], p[2]]),
                     p[1] + wa * nz(w, [p[0], p[1] + 2027.0, p[2]]),
                     p[2] + wa * nz(w, [p[0], p[1], p[2] + 3041.0]),
-                ];
-                nz(&rt.ridge, q)
+                ]
             }
-            None => nz(&rt.ridge, p),
+            None => p,
         };
         // The ridged fBm sits mostly between -0.2 and 0.8: that span is the ridge, 0..1.
-        let ridged = ((ridged as f64 - RIDGE_NOISE_LOW) / (RIDGE_NOISE_TOP - RIDGE_NOISE_LOW)).clamp(0.0, 1.0);
+        let unit = |v: f32| ((v as f64 - RIDGE_NOISE_LOW) / (RIDGE_NOISE_TOP - RIDGE_NOISE_LOW)).clamp(0.0, 1.0);
         let ridge_m = r.ridge.eval(f.get(r.ridge.field));
         let gate = r.land_gate.eval(f.get(r.land_gate.field));
-        rt.scale * ridge_m * gate * self.flatness(f) * ridged
+        let k = rt.scale * ridge_m * gate * self.flatness(f);
+        let full = k * unit(nz(&rt.ridge, q));
+        let lo = match &rt.ridge_split {
+            RidgeSplit::AllCoarse => full,
+            RidgeSplit::AllFine => 0.0,
+            RidgeSplit::Coarse(n) => k * unit(nz(n, q)),
+        };
+        (lo, full - lo)
     }
+
+
+
 
     /// The grid vertices around face coordinates (a, b in [-1, 1]). Vertex-centred grid: edge
     /// samples sit exactly on the cube edges, so both faces interpolate the same samples along a
@@ -623,7 +654,9 @@ impl Planet {
     fn base_height_with(&self, face: usize, a: f64, b: f64, dir: V3, stamp_m: f64) -> (f64, Fields) {
         let f = self.fields_at(dir);
         let (lo, hi) = self.bands_split(self.p32(dir), &f);
-        let g = self.shape_offset(&f) + self.relief_ridge(self.p32(dir), &f) + stamp_m + lo + self.carve_ab(face, a, b);
+        let (ridge_lo, ridge_hi) = self.relief_ridge(self.p32(dir), &f);
+        let hi = hi + ridge_hi;
+        let g = self.shape_offset(&f) + ridge_lo + stamp_m + lo + self.carve_ab(face, a, b);
         if self.river_idx.is_empty() {
             return (g + hi, f);
         }
@@ -634,7 +667,7 @@ impl Planet {
     /// The noise ground alone (shape, stamps, bands): what the drainage starts from.
     fn noise_height_ab(&self, dir: V3) -> (f64, Fields) {
         let f = self.fields_at(dir);
-        (self.shape_offset(&f) + self.relief_ridge(self.p32(dir), &f) + self.stamp_height(dir).0 + self.bands_split(self.p32(dir), &f).0, f)
+        (self.shape_offset(&f) + self.relief_ridge(self.p32(dir), &f).0 + self.stamp_height(dir).0 + self.bands_split(self.p32(dir), &f).0, f)
     }
 
     pub fn base_height_at(&self, dir: V3) -> f64 {
@@ -791,6 +824,13 @@ impl Planet {
         } else {
             self.bake_coarse(threads, &mut st);
             self.index_rivers();
+            // The drainage measures a lake on the coarse ground; with the relief's detail on top
+            // the deepest point lies a little higher or lower, so its depth is read off the full
+            // ground (#221).
+            for i in 0..self.coarse.lakes.len() {
+                let deep = self.base_height_at(self.coarse.lakes[i].deepest);
+                self.coarse.lakes[i].depth_m = self.coarse.lakes[i].level_m - deep;
+            }
         }
         st.coarse_ms = t0.elapsed().as_secs_f64() * 1e3;
         st.coarse_bytes = self.coarse.bytes();
@@ -941,7 +981,7 @@ impl Planet {
                         let a = -1.0 + i as f64 * 2.0 / n as f64;
                         let dir = cube_to_sphere(face, a, b);
                         let f = this.fields_at(dir);
-                        out.push(((this.shape_offset(&f) + this.relief_ridge(this.p32(dir), &f) + this.stamp_height(dir).0) as f32, this.area_weight(face, a, b) as f32));
+                        out.push(((this.shape_offset(&f) + this.relief_ridge(this.p32(dir), &f).0 + this.stamp_height(dir).0) as f32, this.area_weight(face, a, b) as f32));
                     }
                 }
                 out
@@ -1276,7 +1316,7 @@ impl Planet {
             let d = v3(rr * phi.cos(), z, rr * phi.sin());
             // Land by the macro height (cheap; the sea level is the macro percentile).
             let f = self.fields_at(d);
-            if self.shape_offset(&f) + self.relief_ridge(self.p32(d), &f) + self.stamp_height(d).0 <= self.sea {
+            if self.shape_offset(&f) + self.relief_ridge(self.p32(d), &f).0 + self.stamp_height(d).0 <= self.sea {
                 continue;
             }
             cover.push(sites.iter().map(|s| dist(s, &d)).fold(f64::MAX, f64::min));

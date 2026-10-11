@@ -6,7 +6,6 @@
 //! and the gauge look are starting points (#91).
 use crate::env::PlanetRes;
 use crate::ship::Ship;
-use crate::view::NEAR_PLANET;
 use crate::walker::Player;
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
@@ -421,7 +420,7 @@ pub fn update_readout(
         (Mode::Walk, pl.w.vel, pl.w.pos, Boost::None)
     };
     let r: DVec3 = pos - planet.centre;
-    let altitude = (r.length() < NEAR_PLANET).then(|| Height::pick(planet.above_ground(pos), r.length() - planet.radius, tuning.hud.agl_below));
+    let altitude = (r.length() < crate::sky::impostor_from(planet.radius, planet.field.atmosphere_height)).then(|| Height::pick(planet.above_ground(pos), r.length() - planet.radius, tuning.hud.agl_below));
     let panel = if !pl.seated {
         Panel::None
     } else {

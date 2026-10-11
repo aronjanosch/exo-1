@@ -18,6 +18,8 @@ Report as a comment on #<n> when done.
 
 ## Goal (hours-long lanes only)
 
+A goal judges only the transcript against its first wording. Keep it to the end state and the limits. Procedures (usage checks, review greps) belong in the prompt. When the initiator widens the task mid-run, set a new goal at once; the old one cannot pass any more.
+
 ```
 /goal the feature's own tests (`cargo test -p <crate>`, `cargo ts scenario_<name>`) pass in the transcript on the pushed head of <branch>; <one measurable result, e.g. "the scenario prints drift below 1 mm">; the report comment on #<n> exists. Or stop after <N> turns.
 ```

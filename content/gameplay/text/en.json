@@ -115,6 +115,168 @@
     "The Moss Committee is disappointed, formally.",
     "The Moss Committee will table this. Loudly."
   ],
+  "customer.aunt_brisket.name": "Aunt Brisket",
+  "customer.aunt_brisket.order_title": "Order for Aunt Brisket",
+  "customer.aunt_brisket.order": [
+    "Aunt Brisket wants something giggly for the fête. Do not ask.",
+    "Aunt Brisket: the loud ones, please, the neighbours are asleep.",
+    "Aunt Brisket is hosting again and needs you to be funny about it."
+  ],
+  "customer.aunt_brisket.thanks": [
+    "Aunt Brisket pinches your cheek and calls you a good egg.",
+    "Aunt Brisket: this will do nicely, dear.",
+    "Aunt Brisket hums the whole way out the door."
+  ],
+  "customer.aunt_brisket.grumble": [
+    "Aunt Brisket: it burps at the wrong moments. I am disappointed, dear.",
+    "Aunt Brisket hands it back to you, slightly sticky.",
+    "Aunt Brisket: the neighbours will hear about this."
+  ],
+  "customer.aunt_brisket.counter_yes": [
+    "Aunt Brisket: a little extra for a good cause? Fine. Fine.",
+    "Aunt Brisket: you drive a hard bargain, dear. Here.",
+    "Aunt Brisket says yes and then asks for a receipt."
+  ],
+  "customer.aunt_brisket.counter_no": [
+    "Aunt Brisket: no, dear. The price is the price.",
+    "Aunt Brisket: I have a sister who sells it cheaper.",
+    "Aunt Brisket: we will say no and never mention it."
+  ],
+  "customer.dr_fennel_obbs.name": "Dr. Fennel Obbs",
+  "customer.dr_fennel_obbs.order_title": "Order for Dr. Fennel Obbs",
+  "customer.dr_fennel_obbs.order": [
+    "Dr. Fennel Obbs requires two floaty tonics, one tingle and a glow.",
+    "Dr. Fennel Obbs: the study needs a mix with two of the three.",
+    "Dr. Fennel Obbs has a theory. The theory needs crates."
+  ],
+  "customer.dr_fennel_obbs.thanks": [
+    "Dr. Fennel Obbs: the results are promising. Promising!",
+    "Dr. Fennel Obbs writes a note on a napkin. It says thanks, probably.",
+    "Dr. Fennel Obbs: a clean sample. My colleagues will be jealous."
+  ],
+  "customer.dr_fennel_obbs.grumble": [
+    "Dr. Fennel Obbs: the controls were not controlled by this.",
+    "Dr. Fennel Obbs: the samples are on the floor, sadly.",
+    "Dr. Fennel Obbs writes you up in the journal of complaints."
+  ],
+  "customer.dr_fennel_obbs.counter_yes": [
+    "Dr. Fennel Obbs: the study has a budget for this. Barely.",
+    "Dr. Fennel Obbs: fine, the grant will cover it.",
+    "Dr. Fennel Obbs: an increase, noted, approved, signed."
+  ],
+  "customer.dr_fennel_obbs.counter_no": [
+    "Dr. Fennel Obbs: the grant does not stretch that far.",
+    "Dr. Fennel Obbs: we shall use the cheaper sample instead.",
+    "Dr. Fennel Obbs: request denied, with a small diagram."
+  ],
+  "customer.the_sleepy_guild.name": "The Sleepy Guild",
+  "customer.the_sleepy_guild.order_title": "Order for The Sleepy Guild",
+  "customer.the_sleepy_guild.order": [
+    "The Sleepy Guild wants one sleepy crate. Wake them for it.",
+    "The Sleepy Guild: send the sleepy stuff, slowly, as is our way.",
+    "The Sleepy Guild has been napping since the last delivery. Send more."
+  ],
+  "customer.the_sleepy_guild.thanks": [
+    "The Sleepy Guild yawns a thank you that lasts a while.",
+    "The Sleepy Guild: good stuff. Wake us when it is next.",
+    "The Sleepy Guild snores approvingly."
+  ],
+  "customer.the_sleepy_guild.grumble": [
+    "The Sleepy Guild woke up for this. They are not happy.",
+    "The Sleepy Guild: this one kept us awake. Bad.",
+    "The Sleepy Guild has written a complaint, eventually."
+  ],
+  "customer.the_sleepy_guild.counter_yes": [
+    "The Sleepy Guild: sure, a bit more. Wake us when it is paid.",
+    "The Sleepy Guild: yes, if you do not mind waiting for the nap.",
+    "The Sleepy Guild agrees, slowly, in a drawn-out way."
+  ],
+  "customer.the_sleepy_guild.counter_no": [
+    "The Sleepy Guild: no. Come back after the nap.",
+    "The Sleepy Guild: the price is asleep. Leave it.",
+    "The Sleepy Guild is not interested. They are dreaming about it."
+  ],
+  "customer.grandpa_wibble.name": "Grandpa Wibble",
+  "customer.grandpa_wibble.order_title": "Order for Grandpa Wibble",
+  "customer.grandpa_wibble.order": [
+    "Grandpa Wibble: two of the see-through ones, and do not look at my teeth.",
+    "Grandpa Wibble wants to see through things. Mostly his lunch.",
+    "Grandpa Wibble: the x-ray stuff, two crates, and a receipt for my wife."
+  ],
+  "customer.grandpa_wibble.thanks": [
+    "Grandpa Wibble: I can see right through you, and you are good.",
+    "Grandpa Wibble: now I see the bottom of the jar. Thank you.",
+    "Grandpa Wibble thanks you with an x-ray wink."
+  ],
+  "customer.grandpa_wibble.grumble": [
+    "Grandpa Wibble: I can see right through this, and it is rubbish.",
+    "Grandpa Wibble: the see-through stuff was not see-through enough.",
+    "Grandpa Wibble: I will tell the whole retirement home."
+  ],
+  "customer.grandpa_wibble.counter_yes": [
+    "Grandpa Wibble: a little more for the eyes? Fine, fine.",
+    "Grandpa Wibble: I have seen the future and it costs a bit more.",
+    "Grandpa Wibble: yes. I can see the money in your pocket."
+  ],
+  "customer.grandpa_wibble.counter_no": [
+    "Grandpa Wibble: I can see you are lying about the price.",
+    "Grandpa Wibble: no. My eyes are not that good.",
+    "Grandpa Wibble: the price stays. I saw it coming."
+  ],
+  "customer.quartermaster_glim.name": "Quartermaster Glim",
+  "customer.quartermaster_glim.order_title": "Order for Quartermaster Glim",
+  "customer.quartermaster_glim.order": [
+    "Quartermaster Glim: sticky fingers and a glow, one crate each, quick.",
+    "Quartermaster Glim needs crates, no questions, the port is watching.",
+    "Quartermaster Glim: a glowing crate for the back room, please."
+  ],
+  "customer.quartermaster_glim.thanks": [
+    "Quartermaster Glim: nobody saw that. Good work.",
+    "Quartermaster Glim taps the crate twice. That is a thank you.",
+    "Quartermaster Glim: the port thanks you, unofficially."
+  ],
+  "customer.quartermaster_glim.grumble": [
+    "Quartermaster Glim: the glow is wrong and the fingers are not sticky.",
+    "Quartermaster Glim: this will be on your file. Several files.",
+    "Quartermaster Glim: the port remembers. The port always remembers."
+  ],
+  "customer.quartermaster_glim.counter_yes": [
+    "Quartermaster Glim: a bit more for the risk, yes. Keep quiet.",
+    "Quartermaster Glim: fine, the port will pay the extra. Quietly.",
+    "Quartermaster Glim nods once. The price goes up by one nod."
+  ],
+  "customer.quartermaster_glim.counter_no": [
+    "Quartermaster Glim: no. Too loud a price for a quiet deal.",
+    "Quartermaster Glim: the port says no. Do not argue with the port.",
+    "Quartermaster Glim: the price is what it is. Move along."
+  ],
+  "customer.cousin_nettle.name": "Cousin Nettle",
+  "customer.cousin_nettle.order_title": "Order for Cousin Nettle",
+  "customer.cousin_nettle.order": [
+    "Cousin Nettle: aunt sent me, so you have to serve me. Tingly, please.",
+    "Cousin Nettle wants tingly stuff, or the sleepy one, whichever is nearer.",
+    "Cousin Nettle is new in town and would like one crate, politely."
+  ],
+  "customer.cousin_nettle.thanks": [
+    "Cousin Nettle: aunt was right about you. Thanks, I think.",
+    "Cousin Nettle tingles a little and says it is nice.",
+    "Cousin Nettle: I will tell aunt you are alright."
+  ],
+  "customer.cousin_nettle.grumble": [
+    "Cousin Nettle: aunt said you were good. You are not good.",
+    "Cousin Nettle: I am telling aunt. She will be cross.",
+    "Cousin Nettle sniffs and looks at the wall, pointedly."
+  ],
+  "customer.cousin_nettle.counter_yes": [
+    "Cousin Nettle: fine, the tingle is worth a bit more.",
+    "Cousin Nettle: yes, I will pay the extra, for aunt's sake.",
+    "Cousin Nettle nods. The extra is in the pocket."
+  ],
+  "customer.cousin_nettle.counter_no": [
+    "Cousin Nettle: no way. Aunt would never pay that.",
+    "Cousin Nettle: the price is too tingly for me.",
+    "Cousin Nettle: I will ask aunt. She will say no too."
+  ],
   "notice.order.placed": [
     "{customer} has an order. Check the wholesaler.",
     "New order from {customer}.",

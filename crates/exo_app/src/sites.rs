@@ -24,6 +24,15 @@ pub fn update_sites(mut commands: Commands, planet: Res<PlanetRes>, assets: Res<
     let lin = crate::terrain_material::srgb_to_linear;
     for i in 0..planet.pgen.sites.len() {
         for p in planet.pgen.site_pieces(i) {
+            let [x, u, z] = p.basis.map(|v| from_v3(v).as_vec3());
+            let transform = Transform { rotation: Quat::from_mat3(&Mat3::from_cols(x, u, z)), scale: Vec3::splat(p.scale as f32), ..default() };
+            if p.prop.contains('/') {
+                // A prop id with a '/' names a model under the content root (`city/...`, #223): the
+                // whole scene with its own parts and colours, not one tinted primitive.
+                commands.spawn((bevy::world_serialization::WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset(format!("{}.glb", p.prop)))), transform, WorldPos(planet.centre + from_v3(p.pos)), PlanetScene(planet.id)));
+                view.pieces += 1;
+                continue;
+            }
             let mesh = view
                 .meshes
                 .entry(p.prop.clone())
@@ -38,11 +47,10 @@ pub fn update_sites(mut commands: Commands, planet: Res<PlanetRes>, assets: Res<
                     mats.add(StandardMaterial { base_color: Color::linear_rgb(c[0], c[1], c[2]), perceptual_roughness: 0.85, ..default() })
                 })
                 .clone();
-            let [x, u, z] = p.basis.map(|v| from_v3(v).as_vec3());
             commands.spawn((
                 Mesh3d(mesh),
                 MeshMaterial3d(mat),
-                Transform { rotation: Quat::from_mat3(&Mat3::from_cols(x, u, z)), scale: Vec3::splat(p.scale as f32), ..default() },
+                transform,
                 WorldPos(planet.centre + from_v3(p.pos)),
                 PlanetScene(planet.id),
             ));

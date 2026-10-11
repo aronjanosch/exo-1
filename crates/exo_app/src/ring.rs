@@ -23,7 +23,8 @@ type Key = (u8, u32, u32);
 pub struct PatchOut {
     up: DVec3,
     rot: DQuat,
-    heights: Vec<f32>,
+    /// Heightfield collider, built on the pool (the conversion of 1024 samples is not free).
+    collider: Collider,
     build_ms: f64,
 }
 
@@ -117,15 +118,11 @@ pub fn update_ring(mut commands: Commands, time: Res<Time>, planet: Res<PlanetRe
         let out = block_on(future::poll_once(task)).expect("finished");
         adds += 1;
         ring.built_ms.push(out.build_ms);
-        // Avian heightfield: rows along X, columns along Z; planet_core: row-major, z outer.
-        let n = PATCH_SAMPLES;
-        let heights: Vec<Vec<f64>> = (0..n).map(|i| (0..n).map(|j| out.heights[j * n + i] as f64).collect()).collect();
         let centre = planet.centre + out.up * planet.radius;
-        let span = (n - 1) as f64;
         let e = commands
             .spawn((
                 RigidBody::Static,
-                Collider::heightfield(heights, DVec3::new(span, 1.0, span)),
+                out.collider,
                 Position(centre),
                 Rotation(out.rot),
                 CollisionLayers::new(Layer::World, LayerMask::ALL),
@@ -168,13 +165,20 @@ pub fn update_ring(mut commands: Commands, time: Res<Time>, planet: Res<PlanetRe
                 let east = from_v3(cube_to_sphere(face, a0 + size, b0 + mid)) - from_v3(cube_to_sphere(face, a0, b0 + mid));
                 let t = (east - up * east.dot(up)).normalize();
                 let b = t.cross(up);
-                let heights = pgen.patch_heights(to_v3(up), to_v3(t), to_v3(b), PATCH_SAMPLES);
-                PatchOut { up, rot: DQuat::from_mat3(&DMat3::from_cols(t, up, b)), heights, build_ms: t0.elapsed().as_secs_f64() * 1000.0 }
+                let flat = pgen.patch_heights(to_v3(up), to_v3(t), to_v3(b), PATCH_SAMPLES);
+                // Avian heightfield: rows along X, columns along Z; planet_core: row-major, z outer.
+                let n = PATCH_SAMPLES;
+                let heights: Vec<Vec<f64>> = (0..n).map(|i| (0..n).map(|j| flat[j * n + i] as f64).collect()).collect();
+                let span = (n - 1) as f64;
+                let collider = Collider::heightfield(heights, DVec3::new(span, 1.0, span));
+                PatchOut { up, rot: DQuat::from_mat3(&DMat3::from_cols(t, up, b)), collider, build_ms: t0.elapsed().as_secs_f64() * 1000.0 }
             });
             ring.pending.insert(key, task);
             started += 1;
         }
     }
+    // Jobs no longer wanted (the anchor moved on) are cancelled by dropping their task.
+    ring.pending.retain(|k, _| want.get(k).is_some_and(|w| w.3 < ring.ring_radius));
     let stale: Vec<Key> = ring.patches.keys().filter(|k| !want.contains_key(k)).copied().collect();
     for k in stale {
         let (e, _, _) = ring.patches.remove(&k).unwrap();

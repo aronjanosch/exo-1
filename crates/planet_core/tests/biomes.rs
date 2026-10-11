@@ -51,7 +51,7 @@ fn a_missed_quota_fails_the_bake_with_the_row() {
 #[test]
 fn nearest_row_wins() {
     let (p, _) = bake(HEARTH);
-    let f = |moist: f64| planet_core::planet::Fields { elev: 0.0, temp: 1.0, moist, land: -0.5, weird: -0.5 };
+    let f = |moist: f64| planet_core::planet::Fields { elev: 0.0, temp: 1.0, moist, land: -0.5, weird: -0.5, erosion: 0.0 };
     // 20 m above the sea, warm: wet, middle and dry moisture pick their rows.
     assert_eq!(p.biome_for(20.0, &f(0.6), None), 0);
     assert_eq!(p.biome_for(20.0, &f(0.0), None), 6);

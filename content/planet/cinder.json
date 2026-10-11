@@ -2,14 +2,25 @@
   "_comment": "Cinder's surface recipe (#64, #71): dry and hot, little sea, dark rock with bright strata, a caldera, sparse odd plants. Starting direction only: TODO(initiator) the look. Data only: no code, no expressions. Seed and radius live in content/system/system.json. Every number is a test value. Site kinds and landmarks are ids too (TODO(initiator): kinds, names, looks). Biome rows have ids only, no names (TODO(initiator): names); roles: 5 sea floor, 4 shore, 3 cold high ground, 2 broken rim, 7 odd grove (weirdness), 0 wet lowland forest, 1 dry flats, 6 meadow. Nearest row wins; ties go to the row listed first.",
   "macro": {
     "resolution": 512,
-    "elevation": { "noise": { "seed_offset": 10, "frequency": 0.0002, "fractal": "fbm", "octaves": 3 } },
-    "moisture": { "noise": { "seed_offset": 11, "frequency": 0.0008, "fractal": "fbm", "octaves": 2 } },
+    "elevation": { "noise": { "seed_offset": 10, "wavelength_radii": 3.0, "fractal": "fbm", "octaves": 5 } },
+    "moisture": { "noise": { "seed_offset": 11, "wavelength_radii": 0.8, "fractal": "fbm", "octaves": 2 } },
     "temperature": {
-      "noise": { "seed_offset": 12, "frequency": 0.0003, "fractal": "fbm", "octaves": 2 },
+      "noise": { "seed_offset": 12, "wavelength_radii": 1.5, "fractal": "fbm", "octaves": 2 },
       "base": 1.7, "latitude_gain": 0.2, "noise_gain": 0.5, "lapse_per_m": 0.004
     },
-    "landform": { "noise": { "seed_offset": 13, "frequency": 0.0009, "fractal": "fbm", "octaves": 2 } },
-    "weirdness": { "noise": { "seed_offset": 14, "frequency": 0.0011, "fractal": "fbm", "octaves": 2 } }
+    "landform": { "noise": { "seed_offset": 13, "wavelength_radii": 0.6, "fractal": "fbm", "octaves": 2 } },
+    "erosion": { "noise": { "seed_offset": 15, "wavelength_radii": 0.6, "fractal": "fbm", "octaves": 3 } },
+    "weirdness": { "noise": { "seed_offset": 14, "wavelength_radii": 0.4, "fractal": "fbm", "octaves": 3 } }
+  },
+  "relief": {
+    "continent": { "field": "elevation", "points": [[-1.0, -900.0], [-0.6, -300.0], [-0.3, -120.0], [0.0, -20.0], [0.1, 20.0], [0.25, 80.0], [0.5, 220.0], [0.8, 330.0], [1.0, 380.0]] },
+    "flatness": { "field": "erosion", "points": [[-1.0, 1.0], [-0.3, 1.0], [0.0, 1.0], [0.3, 0.6], [0.55, 0.2], [1.0, 0.05]] },
+    "ridge": { "field": "peaks", "points": [[-1.0, 0.0], [-0.5, 700.0], [-0.2, 900.0], [0.2, 720.0], [0.6, 740.0], [1.0, 760.0]] },
+    "land_gate": { "field": "elevation", "points": [[-0.2, 0.3], [0.0, 0.8], [0.2, 1.0], [1.0, 1.0]] },
+    "ridge_noise": { "seed_offset": 20, "wavelength_radii": 0.06, "fractal": "ridged", "octaves": 4 },
+    "ridge_warp": { "seed_offset": 21, "wavelength_radii": 0.02, "amplitude": 400.0 },
+    "radius_m": 100000.0, "scale_exponent": 0.5,
+    "lake_scale_exponent": 0.6
   },
   "shape": {
     "offset": { "field": "elevation", "points": [[-1.0, -45.0], [-0.35, -12.0], [0.0, 2.0], [0.4, 12.0], [1.0, 45.0]] },
@@ -18,10 +29,8 @@
   },
   "biome_space": { "height_scale_m": 50.0 },
   "bands": [
-    { "name": "region", "amplitude": 60.0, "scale": "stretch", "noise": { "seed_offset": 1, "frequency": 0.0004, "fractal": "fbm", "octaves": 3 } },
-    { "name": "face", "amplitude": 40.0, "scale": "stretch", "noise": { "seed_offset": 2, "frequency": 0.00125, "fractal": "ridged", "octaves": 4 } },
-    { "name": "foot", "amplitude": 8.0, "scale": "roughness", "noise": { "seed_offset": 3, "frequency": 0.0067, "fractal": "fbm", "octaves": 4 } },
-    { "name": "warped", "amplitude": 25.0, "scale": "roughness", "noise": { "seed_offset": 5, "frequency": 0.002, "fractal": "fbm", "octaves": 2 },
+    { "name": "foot", "amplitude": 8.0, "scale": "roughness", "detail": true, "noise": { "seed_offset": 3, "frequency": 0.0067, "fractal": "fbm", "octaves": 4 } },
+    { "name": "warped", "amplitude": 25.0, "scale": "roughness", "detail": true, "noise": { "seed_offset": 5, "frequency": 0.002, "fractal": "fbm", "octaves": 2 },
       "warp": { "seed_offset": 4, "frequency": 0.0025, "amplitude": 150.0 } }
   ],
   "landforms": {
@@ -60,7 +69,8 @@
     "rayleigh_per_km": [0.62, 0.30, 0.16], "rayleigh_scale": 0.35,
     "mie_per_km": 0.25, "mie_absorption_per_km": 0.05, "mie_asymmetry": 0.7, "mie_scale": 0.2,
     "absorption_per_km": [0.05, 0.15, 0.01], "ground_albedo": 0.3,
-    "haze_color": [0.85, 0.58, 0.40], "haze_density": 0.00035
+    "haze_color": [0.85, 0.58, 0.40], "haze_density": 0.00035,
+    "clouds": { "altitude": 0.35, "coverage": 0.15, "scale_m": 20000.0, "color": [0.92, 0.80, 0.70], "drift_m_s": 10.0, "min_radius_m": 20000.0 }
   },
   "water": {
     "surface": [0.30, 0.55, 0.30], "alpha": 0.8, "deep": [0.10, 0.20, 0.08], "depth_m": 14.0,
@@ -69,13 +79,13 @@
   "drainage": {
     "_comment": "Rivers and lakes (#72), cut in the bake, never at runtime. TODO(initiator): every value is a starting point; dry planet: little rain, few rivers, only deep sinks hold a lake. Rain is relative: rain_base + rain_moisture_gain * moisture. A river starts where the rain-weighted catchment reaches river_min_catchment_km2; river_depth_m and river_width_m are [at the start, at most]; river_fill is the share of the bed that holds water. A sink at least lake_min_depth_m deep, and lake_min_area_m2 large or fed by a river, holds a lake; rivers cut through shallower ones. sea_min_area_km2: areas below the sea level count as the sea for the water from this size on; smaller pockets fill to a lake or a river crosses them (0: every one is sea). river_sinks: how a river crosses a sink without a lake, cut (its bed cuts the sill down to the sink's floor) or fill (sediment up to the spill point, the river runs across). lake_evaporation: rain-weighted catchment a lake needs per m² of surface; a sink that gathers less holds a smaller lake that never spills, or stays dry. Erosion: stream power on the macro grid, per step strength * catchment^area_exponent / distance, at most max_m in all.",
     "rain_base": 0.3, "rain_moisture_gain": 0.3,
-    "river_min_catchment_km2": 0.12, "river_depth_m": [1.5, 5.0], "river_width_m": [10.0, 35.0], "river_fill": 0.6,
-    "lake_min_depth_m": 6.0, "lake_min_area_m2": 80000.0, "lake_evaporation": 25.0, "sea_min_area_km2": 0.0, "river_sinks": "cut",
+    "river_min_catchment_km2": 2.0, "river_depth_m": [1.5, 5.0], "river_width_m": [10.0, 35.0], "river_fill": 0.6,
+    "lake_min_depth_m": 120.0, "lake_min_area_m2": 80000.0, "lake_evaporation": 40.0, "sea_min_area_km2": 0.0, "river_sinks": "cut",
     "erosion": { "iterations": 5, "strength": 0.0003, "area_exponent": 0.5, "max_m": 10.0 }
   },
   "biomes": [
     { "id": 5, "climate": { "height_above_sea": [-10.0, 0.0] }, "color": [0.20, 0.18, 0.20], "palette": { "ground": [0.22, 0.20, 0.20], "rock": [0.18, 0.16, 0.18], "strata": 0.4, "cap": 0.0 }, "scatter": { "flora": 0.0, "rocks": 1.0 }, "tints": { "ground": [0.3, 0.28, 0.26], "foliage": [0.3, 0.6, 0.5], "rock": [0.3, 0.28, 0.3] } },
-    { "id": 4, "climate": { "height_above_sea": [0.0, 0.08] }, "min_share": 0.005, "color": [0.90, 0.88, 0.80], "palette": { "ground": [0.88, 0.86, 0.78], "rock": [0.55, 0.50, 0.46], "strata": 0.3, "cap": 0.0 }, "scatter": { "flora": 0.2, "rocks": 0.5, "tuft": 0.3 }, "tints": { "ground": [0.9, 0.88, 0.78], "foliage": [0.4, 0.75, 0.65], "rock": [0.85, 0.83, 0.78] } },
+    { "id": 4, "climate": { "height_above_sea": [0.0, 0.16] }, "min_share": 0.005, "color": [0.90, 0.88, 0.80], "palette": { "ground": [0.88, 0.86, 0.78], "rock": [0.55, 0.50, 0.46], "strata": 0.3, "cap": 0.0 }, "scatter": { "flora": 0.2, "rocks": 0.5, "tuft": 0.3 }, "tints": { "ground": [0.9, 0.88, 0.78], "foliage": [0.4, 0.75, 0.65], "rock": [0.85, 0.83, 0.78] } },
     { "id": 3, "climate": { "temperature": [-2.0, 0.6], "height_above_sea": [2.4, 10.0] }, "color": [0.18, 0.15, 0.20], "palette": { "ground": [0.20, 0.17, 0.22], "rock": [0.14, 0.12, 0.16], "strata": 0.5, "cap": 1.0 }, "scatter": { "flora": 0.15, "tuft": 0.0 }, "tints": { "ground": [0.3, 0.25, 0.32], "foliage": [0.6, 0.4, 0.8], "rock": [0.25, 0.2, 0.28] } },
     { "id": 2, "climate": { "landform": [0.4, 1.0] }, "min_share": 0.01, "color": [0.24, 0.20, 0.20], "palette": { "ground": [0.26, 0.22, 0.21], "rock": [0.20, 0.17, 0.17], "strata": 1.0, "cap": 0.6 }, "scatter": { "tree_round": 0.2, "tree_crooked": 0.5, "rocks": 2.5, "tuft": 0.4 }, "tints": { "ground": [0.35, 0.28, 0.25], "foliage": [0.9, 0.5, 0.2], "rock": [0.32, 0.26, 0.24] } },
     { "id": 7, "climate": { "weirdness": [0.4, 1.0], "moisture": [-0.1, 1.0] }, "min_share": 0.005, "color": [0.80, 0.30, 0.70], "palette": { "ground": [0.42, 0.24, 0.40], "rock": [0.25, 0.16, 0.24], "strata": 0.8, "cap": 0.3 }, "scatter": { "tree_round": 1.2, "tuft": 1.0 }, "tints": { "ground": [0.6, 0.3, 0.55], "foliage": [0.95, 0.35, 0.85], "rock": [0.4, 0.25, 0.4] } },
@@ -155,7 +165,18 @@
         "edits": [ { "type": "smooth", "order": 0, "radius_m": 24.0, "strength": 0.6 },
                    { "type": "flatten", "order": 1, "half_extent_m": [11.0, 8.0], "rolloff_m": 8.0 } ], "kit": "ruin" },
       { "id": "grove", "category": "site", "per_100_km2": [1.592, 2.229], "footprint_m": 16.0, "min_separation_m": 1200.0, "min_separation_all_m": 700.0,
-        "biomes": [0, 1, 6, 7], "slope_deg": [0.0, 25.0], "height_above_sea_m": [2.0, 250.0], "kit": "grove" }
+        "biomes": [0, 1, 6, 7], "slope_deg": [0.0, 25.0], "height_above_sea_m": [2.0, 250.0], "kit": "grove" },
+    {
+      "id": "settlement", "category": "settlement", "per_100_km2": [0.016, 0.048],
+      "footprint_m": 160.0, "min_separation_m": 8000.0, "min_separation_all_m": 3000.0,
+      "slope_deg": [0.0, 8.0],
+      "plain": { "radius_m": 250.0, "max_rise_m": 43.7 },
+      "edits": [
+        { "type": "flatten", "order": 0, "radius_m": 150.0, "rolloff_m": 60.0 },
+        { "type": "flatten", "order": 1, "radius_m": 20.0, "rolloff_m": 14.0 }
+      ],
+      "kit": "settlement"
+    }
     ],
     "kits": {
       "arch": [ { "prop": "arch_giant", "yaw_deg": 0.0, "scale": [0.9, 1.15], "sink_m": 2.0, "tint": [0.85, 0.70, 0.60] } ],
@@ -178,6 +199,16 @@
       "grove": [
         { "prop": "mushroom_giant", "scale": [0.4, 1.0], "sink_m": 0.2, "tint": [0.85, 0.50, 0.90], "scatter": { "count": [4, 7], "radius_m": [2.0, 12.0] } },
         { "prop": "crystal", "scale": [0.6, 1.6], "sink_m": 0.15, "align": 0.3, "tint": [0.50, 0.90, 1.00], "scatter": { "count": [8, 14], "radius_m": [1.0, 14.0] } }
+      ],
+      "settlement": [
+        { "prop": "landing_pad", "yaw_deg": 0.0, "sink_m": 0.2, "tint": [0.78, 0.80, 0.84] },
+        { "prop": "city/beacon_spire", "at": [-24.0, 10.0], "yaw_deg": 0.0, "sink_m": 0.5, "tint": [0.95, 0.80, 0.45] },
+        { "prop": "city/bungalow_dome", "sink_m": 0.3, "tint": [0.90, 0.86, 0.78], "scatter": { "count": [1, 2], "radius_m": [30.0, 120.0] } },
+        { "prop": "city/bubble_shop", "sink_m": 0.3, "tint": [0.85, 0.92, 0.95], "scatter": { "count": [1, 2], "radius_m": [30.0, 120.0] } },
+        { "prop": "city/saucer_diner", "sink_m": 0.3, "tint": [0.92, 0.70, 0.80], "scatter": { "count": [1, 2], "radius_m": [30.0, 120.0] } },
+        { "prop": "city/row_tower", "sink_m": 0.3, "tint": [0.80, 0.82, 0.90], "scatter": { "count": [1, 2], "radius_m": [30.0, 120.0] } },
+        { "prop": "city/market_stall", "sink_m": 0.3, "tint": [0.95, 0.75, 0.45], "scatter": { "count": [1, 2], "radius_m": [30.0, 120.0] } },
+        { "prop": "city/planter_blob", "sink_m": 0.3, "tint": [0.55, 0.85, 0.50], "scatter": { "count": [1, 2], "radius_m": [30.0, 120.0] } }
       ]
     }
   }

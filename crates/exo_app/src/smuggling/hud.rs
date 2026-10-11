@@ -140,4 +140,5 @@ fn draw_clearance(hud: Res<SmuggleHud>, mut q: Query<&mut Text, With<ClearText>>
 pub fn window_plugin(app: &mut App) {
     app.add_systems(Startup, spawn_hud);
     app.add_systems(Update, (draw_hud, draw_brew, draw_clearance).in_set(crate::phases::Frame::Hud));
+    app.add_systems(Update, super::glue::kettle_view.in_set(crate::phases::Frame::World));
 }

@@ -933,6 +933,7 @@ pub fn shots_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool)
             true
         }));
     }
+    s.push(wait(0.5));
     s.extend(seated());
     s.push(Box::new(|w, _| {
         let p = super::deliver::pad(w, "bent_spoon");

@@ -685,3 +685,38 @@ pub fn prompt_override(st: &StationTarget, inter: &mut Interaction) -> bool {
     }
     false
 }
+
+/// A placeholder vat at every kettle (window only): a fat cylinder with a glowing top.
+#[derive(Component)]
+pub struct KettleModel;
+
+pub fn kettle_view(
+    mut commands: Commands,
+    town: Res<Town>,
+    gp: Res<Gameplay>,
+    planet: Res<crate::env::PlanetRes>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut mats: ResMut<Assets<StandardMaterial>>,
+    shown: Query<Entity, With<KettleModel>>,
+    mut count: Local<usize>,
+) {
+    let ks = kettles(&town, &gp);
+    if ks.len() == *count {
+        return;
+    }
+    *count = ks.len();
+    for e in &shown {
+        commands.entity(e).despawn();
+    }
+    let body = meshes.add(Cylinder::new(0.6, 1.1));
+    let top = meshes.add(Cylinder::new(0.5, 0.08));
+    let metal = mats.add(StandardMaterial { base_color: Color::srgb(0.45, 0.5, 0.55), metallic: 0.6, perceptual_roughness: 0.4, ..default() });
+    let brew = mats.add(StandardMaterial { base_color: Color::srgb(0.3, 1.0, 0.4), emissive: LinearRgba::rgb(0.6, 3.0, 0.8), ..default() });
+    for (_, p, up) in ks {
+        let ground = planet.centre + up * planet.surface(up);
+        let ground = ground + (p - planet.centre - up * (p - planet.centre).dot(up));
+        let rot = Quat::from_rotation_arc(Vec3::Y, up.as_vec3());
+        commands.spawn((Mesh3d(body.clone()), MeshMaterial3d(metal.clone()), Transform::from_rotation(rot), crate::origin::WorldPos(ground + up * 0.55), crate::terrain::PlanetScene(planet.id), KettleModel));
+        commands.spawn((Mesh3d(top.clone()), MeshMaterial3d(brew.clone()), Transform::from_rotation(rot), crate::origin::WorldPos(ground + up * 1.12), crate::terrain::PlanetScene(planet.id), KettleModel));
+    }
+}

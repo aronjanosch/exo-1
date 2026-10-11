@@ -5,8 +5,53 @@
   {
    "model": "row_garage",
    "at": [
-    -44,
-    46,
+    -15.39,
+    42.29,
+    0
+   ],
+   "turn_deg": 20.0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -23.25,
+    29.5,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -21.25,
+    29.5,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -19.25,
+    29.5,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -23.25,
+    31.5,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -21.25,
+    31.5,
     0
    ],
    "turn_deg": 0
@@ -14,8 +59,53 @@
   {
    "model": "row_garage",
    "at": [
-    -16,
-    52,
+    -42.29,
+    15.39,
+    0
+   ],
+   "turn_deg": 70.0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -39.79,
+    1.97,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -37.79,
+    1.97,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -35.79,
+    1.97,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -39.79,
+    3.97,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -37.79,
+    3.97,
     0
    ],
    "turn_deg": 0
@@ -23,8 +113,53 @@
   {
    "model": "row_garage",
    "at": [
-    30,
-    52,
+    -36.86,
+    -25.81,
+    0
+   ],
+   "turn_deg": 125.0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -26.93,
+    -30.68,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -24.93,
+    -30.68,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -22.93,
+    -30.68,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -26.93,
+    -28.68,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -24.93,
+    -28.68,
     0
    ],
    "turn_deg": 0
@@ -32,11 +167,200 @@
   {
    "model": "row_garage",
    "at": [
-    62,
-    28,
+    -3.92,
+    -44.83,
     0
    ],
-   "turn_deg": -90
+   "turn_deg": 175.0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    3.94,
+    -39.53,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    5.94,
+    -39.53,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    7.94,
+    -39.53,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    3.94,
+    -37.53,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    5.94,
+    -37.53,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "row_garage",
+   "at": [
+    34.47,
+    -28.93,
+    0
+   ],
+   "turn_deg": -130.01
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    12.24,
+    -37.23,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    14.24,
+    -37.23,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    16.24,
+    -37.23,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    12.24,
+    -35.23,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    14.24,
+    -35.23,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -28.31,
+    -11.58,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -26.31,
+    -11.58,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -24.31,
+    -11.58,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -28.31,
+    -9.58,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    -26.31,
+    -9.58,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    32,
+    22,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    34,
+    22,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    36,
+    22,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    32,
+    24,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "crate_stack",
+   "at": [
+    34,
+    24,
+    0
+   ],
+   "turn_deg": 0
   },
   {
    "model": "hull_broken",
@@ -59,39 +383,79 @@
    "folder": "props"
   },
   {
+   "model": "hull_broken",
+   "at": [
+    -56,
+    38,
+    0
+   ],
+   "turn_deg": 137,
+   "folder": "props"
+  },
+  {
+   "model": "hull_broken",
+   "at": [
+    50,
+    -50,
+    0
+   ],
+   "turn_deg": 211,
+   "folder": "props"
+  },
+  {
+   "model": "hull_broken",
+   "at": [
+    6,
+    -68,
+    0
+   ],
+   "turn_deg": 53,
+   "folder": "props"
+  },
+  {
    "model": "wrack_pile",
    "at": [
+    -54,
+    -12,
+    0
+   ],
+   "turn_deg": 0,
+   "folder": "props"
+  },
+  {
+   "model": "debris_panel",
+   "at": [
+    -66,
+    -11,
+    0
+   ],
+   "turn_deg": 0,
+   "folder": "props"
+  },
+  {
+   "model": "debris_strut",
+   "at": [
+    -58,
+    -21,
+    0
+   ],
+   "turn_deg": 0,
+   "folder": "props"
+  },
+  {
+   "model": "wrack_pile",
+   "at": [
+    -65,
     -20,
-    -40,
     0
    ],
    "turn_deg": 0,
    "folder": "props"
   },
   {
-   "model": "mast",
+   "model": "wrack_pile",
    "at": [
-    44,
-    -30,
-    0
-   ],
-   "turn_deg": 0,
-   "folder": "props"
-  },
-  {
-   "model": "mushroom_giant",
-   "at": [
-    -50,
-    -30,
-    0
-   ],
-   "turn_deg": 0,
-   "folder": "props"
-  },
-  {
-   "model": "wall_broken",
-   "at": [
-    10,
+    -26,
     -60,
     0
    ],
@@ -101,8 +465,8 @@
   {
    "model": "debris_panel",
    "at": [
-    -40,
-    4,
+    -38,
+    -59,
     0
    ],
    "turn_deg": 0,
@@ -111,138 +475,292 @@
   {
    "model": "debris_strut",
    "at": [
-    48,
-    22,
+    -30,
+    -69,
     0
    ],
    "turn_deg": 0,
    "folder": "props"
   },
   {
-   "model": "crate_stack",
-   "at": [
-    -38,
-    30,
-    0
-   ],
-   "turn_deg": 0
-  },
-  {
-   "model": "crate_stack",
-   "at": [
-    -36,
-    30,
-    0
-   ],
-   "turn_deg": 0
-  },
-  {
-   "model": "crate_stack",
+   "model": "wrack_pile",
    "at": [
     -37,
-    32,
+    -68,
     0
    ],
-   "turn_deg": 0
+   "turn_deg": 0,
+   "folder": "props"
   },
   {
-   "model": "crate_stack",
+   "model": "wrack_pile",
    "at": [
-    -36,
-    42,
-    0
-   ],
-   "turn_deg": 0
-  },
-  {
-   "model": "crate_stack",
-   "at": [
-    -34,
-    42,
-    0
-   ],
-   "turn_deg": 0
-  },
-  {
-   "model": "crate_stack",
-   "at": [
-    22,
-    38,
-    0
-   ],
-   "turn_deg": 0
-  },
-  {
-   "model": "crate_stack",
-   "at": [
-    24,
-    38,
-    0
-   ],
-   "turn_deg": 0
-  },
-  {
-   "model": "crate_stack",
-   "at": [
-    23,
+    -50,
     40,
     0
    ],
-   "turn_deg": 0
+   "turn_deg": 0,
+   "folder": "props"
   },
   {
-   "model": "fence_panel",
+   "model": "debris_panel",
    "at": [
-    -8,
-    72,
+    -62,
+    41,
     0
    ],
-   "turn_deg": 0
+   "turn_deg": 0,
+   "folder": "props"
   },
   {
-   "model": "fence_panel",
+   "model": "debris_strut",
    "at": [
+    -54,
+    31,
+    0
+   ],
+   "turn_deg": 0,
+   "folder": "props"
+  },
+  {
+   "model": "wrack_pile",
+   "at": [
+    -61,
+    32,
+    0
+   ],
+   "turn_deg": 0,
+   "folder": "props"
+  },
+  {
+   "model": "wall_broken",
+   "at": [
+    66,
     -4,
-    72,
     0
    ],
-   "turn_deg": 0
+   "turn_deg": 90,
+   "folder": "props"
   },
   {
-   "model": "fence_panel",
+   "model": "wall_broken",
    "at": [
-    0,
-    72,
+    66,
+    -1,
     0
    ],
-   "turn_deg": 0
+   "turn_deg": 90,
+   "folder": "props"
   },
   {
-   "model": "fence_panel",
+   "model": "wall_broken",
    "at": [
-    4,
-    72,
+    66,
+    2,
     0
    ],
-   "turn_deg": 0
+   "turn_deg": 90,
+   "folder": "props"
   },
   {
-   "model": "fence_panel",
+   "model": "wall_broken",
    "at": [
+    66,
+    5,
+    0
+   ],
+   "turn_deg": 90,
+   "folder": "props"
+  },
+  {
+   "model": "wall_broken",
+   "at": [
+    66,
     8,
+    0
+   ],
+   "turn_deg": 90,
+   "folder": "props"
+  },
+  {
+   "model": "wall_broken",
+   "at": [
+    66,
+    11,
+    0
+   ],
+   "turn_deg": 90,
+   "folder": "props"
+  },
+  {
+   "model": "wall_broken",
+   "at": [
+    -70,
+    -25,
+    0
+   ],
+   "turn_deg": 90,
+   "folder": "props"
+  },
+  {
+   "model": "wall_broken",
+   "at": [
+    -70,
+    -22,
+    0
+   ],
+   "turn_deg": 90,
+   "folder": "props"
+  },
+  {
+   "model": "wall_broken",
+   "at": [
+    -70,
+    -19,
+    0
+   ],
+   "turn_deg": 90,
+   "folder": "props"
+  },
+  {
+   "model": "wall_broken",
+   "at": [
+    -70,
+    -16,
+    0
+   ],
+   "turn_deg": 90,
+   "folder": "props"
+  },
+  {
+   "model": "wall_broken",
+   "at": [
+    -70,
+    -13,
+    0
+   ],
+   "turn_deg": 90,
+   "folder": "props"
+  },
+  {
+   "model": "wall_broken",
+   "at": [
+    -70,
+    -10,
+    0
+   ],
+   "turn_deg": 90,
+   "folder": "props"
+  },
+  {
+   "model": "fence_panel",
+   "at": [
+    -18,
     72,
     0
    ],
    "turn_deg": 0
   },
   {
-   "model": "corner_sign",
+   "model": "fence_panel",
    "at": [
-    -66,
-    10,
+    -14,
+    72,
     0
    ],
    "turn_deg": 0
+  },
+  {
+   "model": "fence_panel",
+   "at": [
+    -10,
+    72,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "fence_panel",
+   "at": [
+    -6,
+    72,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "fence_panel",
+   "at": [
+    -2,
+    72,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "fence_panel",
+   "at": [
+    2,
+    72,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "fence_panel",
+   "at": [
+    6,
+    72,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "fence_panel",
+   "at": [
+    10,
+    72,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "fence_panel",
+   "at": [
+    14,
+    72,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "fence_panel",
+   "at": [
+    18,
+    72,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "mast",
+   "at": [
+    56,
+    -30,
+    0
+   ],
+   "turn_deg": 0,
+   "folder": "props"
+  },
+  {
+   "model": "mast",
+   "at": [
+    -64,
+    22,
+    0
+   ],
+   "turn_deg": 0,
+   "folder": "props"
   },
   {
    "model": "hover_van",
@@ -252,6 +770,34 @@
     0
    ],
    "turn_deg": 90
+  },
+  {
+   "model": "hover_van",
+   "at": [
+    24,
+    -54,
+    0
+   ],
+   "turn_deg": -20
+  },
+  {
+   "model": "corner_sign",
+   "at": [
+    -72,
+    0,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "mushroom_giant",
+   "at": [
+    0,
+    30,
+    0
+   ],
+   "turn_deg": 0,
+   "folder": "props"
   }
  ],
  "models": {

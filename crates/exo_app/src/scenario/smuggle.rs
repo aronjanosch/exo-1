@@ -1005,6 +1005,40 @@ pub fn shots_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool)
         }));
     }
     s.push(wait(0.5));
+    // A buyer with an open, tracked order (the marker over them), and the three crate kinds on the
+    // ground beside them: a product, a base, an ingredient.
+    s.push(Box::new(|w, _| {
+        let ids: Vec<customers_core::CustomerId> = gp(w).customer_content.customers.keys().cloned().collect();
+        let mut g = w.resource_mut::<Gameplay>();
+        for id in ids {
+            g.customers.set_wait(&id, if id.as_str() == BUYER { 0.5 } else { 1e9 });
+        }
+        true
+    }));
+    s.push(wait(2.0));
+    s.push(Box::new(|w, _| {
+        let Some((id, o)) = buyer_order(w) else { return true };
+        w.resource_mut::<Gameplay>().smuggling.tracked_order = Some(id);
+        let (spot, up) = buyer_spot(gp(w), &o.at, 0).expect("the buyer's pad");
+        noon_at(w, spot);
+        let pad = gp(w).pad_of(&o.at).expect("the buyer's pad").centre;
+        let side = up.any_orthonormal_vector();
+        let away = (spot - pad).reject_from(up).normalize();
+        stock_at(w, "blorp_paste", Some(product(&["giggly"])), spot + side * 1.2 + away * 1.0);
+        stock_at(w, "blorp_paste", None, spot + side * 2.4 + away * 1.0);
+        stock_at(w, "space_sugar", None, spot + side * 3.6 + away * 1.0);
+        stand_and_look(w, spot + side * 1.8 + away * 6.5, spot + side * 1.8 + up * 0.8);
+        true
+    }));
+    s.push(wait(3.0));
+    {
+        let dir = dir.clone();
+        s.push(Box::new(move |w, c| {
+            shot(w, c, &dir, windowed, "buyer-order-crates");
+            true
+        }));
+    }
+    s.push(wait(0.5));
     s.extend(seated());
     // The far towns from the approach (about 300 m out from the south-east, 120 m up) and from
     // above (north at the top), to see their dressing; each in daylight, horizon level.

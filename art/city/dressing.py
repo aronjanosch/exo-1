@@ -12,7 +12,7 @@ Facing: as in city_plan.py, a model's front is -Y (south) at turn 0; turn 90 fac
 
 TODO(initiator): bent_spoon, dusty suburb: a ring of bungalows, a beacon tower by the inspect pad, a charge stop, market stalls, parking pads with hover cars.
 TODO(initiator): noodle_town, market town: a street of row houses north of the pads, a saucer diner, a pod tower, stalls, a hover bus, a billboard.
-TODO(initiator): gulch_freeport, smugglers' den without a tower: garage warehouses, wrecks and debris from props, crate stacks, a fence and a van.
+TODO(initiator): gulch_freeport, smugglers' yard without a tower: five garage warehouses on a ring, crate clusters, wrecks with debris, wall lines, a fence, two masts and two vans, one goofy mushroom by the main pad.
 """
 import json
 import math
@@ -27,6 +27,53 @@ TOWN_R = 80.0
 KEEP_EXTRA = 8.0
 TOL = 0.1
 GROUND_PREFIX = "lane_"
+# Small clutter may touch each other (not buildings or keep-clear discs).
+SMALL = {"crate_stack", "wrack_pile", "debris_panel", "debris_strut"}
+VEHICLES = {"hover_car_red", "hover_car_teal"}
+
+def polar(r, deg):
+    a = math.radians(deg)
+    return round(r * math.cos(a), 2), round(r * math.sin(a), 2)
+
+
+def facing_centre(x, y):
+    """Turn that makes the front (-Y at turn 0) point at the origin."""
+    return round(math.degrees(math.atan2(-x, y)), 2)
+
+
+def crate_cluster(cx, cy, n):
+    """Up to 8 crate stacks on a 2 m grid, centred on (cx, cy)."""
+    grid = [(0, 0), (2, 0), (4, 0), (0, 2), (2, 2), (4, 2), (0, 4), (2, 4)]
+    return [("crate_stack", round(cx + gx - 2, 2), round(cy + gy - 2, 2), 0) for gx, gy in grid[:n]]
+
+
+def gulch_layout():
+    """Smugglers' yard: five garages on a ring, crate clusters, wrecks with their debris, walls, fences."""
+    out = []
+    for a in (110, 160, 215, 265, 320):
+        x, y = polar(45, a)
+        out.append(("row_garage", x, y, facing_centre(x, y)))
+        out += crate_cluster(*polar(38, a + 14 if a < 300 else a - 28), 5)
+    out += crate_cluster(*polar(28, 200), 5)
+    out += crate_cluster(34, 24, 5)
+    hulls = [(-60, -14, 30), (-32, -62, 100), (-56, 38, 137), (50, -50, 211), (6, -68, 53)]
+    for hx, hy, ht in hulls:
+        out.append(("hull_broken", hx, hy, ht, "props"))
+    for hx, hy in [(-60, -14), (-32, -62), (-56, 38)]:
+        out += [
+            ("wrack_pile", hx + 6, hy + 2, 0, "props"),
+            ("debris_panel", hx - 6, hy + 3, 0, "props"),
+            ("debris_strut", hx + 2, hy - 7, 0, "props"),
+            ("wrack_pile", hx - 5, hy - 6, 0, "props"),
+        ]
+    out += [("wall_broken", 66, -4 + 3 * k, 90, "props") for k in range(6)]
+    out += [("wall_broken", -70, -25 + 3 * k, 90, "props") for k in range(6)]
+    out += [("fence_panel", x, 72, 0) for x in range(-18, 19, 4)]
+    out += [("mast", 56, -30, 0, "props"), ("mast", -64, 22, 0, "props")]
+    out += [("hover_van", -20, 28, 90), ("hover_van", 24, -54, -20)]
+    out += [("corner_sign", -72, 0, 0), ("mushroom_giant", 0, 30, 0, "props")]
+    return out
+
 
 TOWNS = {
     "bent_spoon": [
@@ -44,10 +91,10 @@ TOWNS = {
         ("market_stall", -30, -20, 0),
         ("market_stall", 28, -24, 0),
         ("parking_pads", -40, 40, 0),
-        ("hover_car_red", -40, 50, 0),
-        ("hover_car_teal", -28, 40, 90),
         ("parking_pads", 40, 58, 0),
-        ("hover_car_red", 30, 60, 90),
+        ("hover_car_red", -41, 40, 0),
+        ("hover_car_teal", -37, 40, 0),
+        ("hover_car_teal", 40, 58, 90),
         ("tree_bulb", -42, -42, 0),
         ("tree_spiral", 58, 36, 0),
         ("tree_spiral", -66, 4, 0),
@@ -81,31 +128,7 @@ TOWNS = {
         ("lamp_arc", 24, 30, 0),
         ("lamp_arc", -30, 31, 0),
     ],
-    "gulch_freeport": [
-        ("row_garage", -44, 46, 0),
-        ("row_garage", -16, 52, 0),
-        ("row_garage", 30, 52, 0),
-        ("row_garage", 62, 28, -90),
-        ("hull_broken", -60, -14, 30, "props"),
-        ("hull_broken", -32, -62, 100, "props"),
-        ("wrack_pile", -20, -40, 0, "props"),
-        ("mast", 44, -30, 0, "props"),
-        ("mushroom_giant", -50, -30, 0, "props"),
-        ("wall_broken", 10, -60, 0, "props"),
-        ("debris_panel", -40, 4, 0, "props"),
-        ("debris_strut", 48, 22, 0, "props"),
-        ("crate_stack", -38, 30, 0),
-        ("crate_stack", -36, 30, 0),
-        ("crate_stack", -37, 32, 0),
-        ("crate_stack", -36, 42, 0),
-        ("crate_stack", -34, 42, 0),
-        ("crate_stack", 22, 38, 0),
-        ("crate_stack", 24, 38, 0),
-        ("crate_stack", 23, 40, 0),
-        *[("fence_panel", x, 72, 0) for x in (-8, -4, 0, 4, 8)],
-        ("corner_sign", -66, 10, 0),
-        ("hover_van", -20, 28, 90),
-    ],
+    "gulch_freeport": gulch_layout(),
 }
 
 def load_pads(place):
@@ -171,6 +194,10 @@ def check_town(place, items):
             ma, ra, _ = fps[a]
             mb, rb, _ = fps[b]
             if ma.startswith(GROUND_PREFIX) and mb.startswith(GROUND_PREFIX):
+                continue
+            if ma in SMALL and mb in SMALL:
+                continue
+            if {ma, mb} & VEHICLES and "parking_pads" in (ma, mb) and {ma, mb} - VEHICLES - {"parking_pads"} == set():
                 continue
             ox = min(ra[2], rb[2]) - max(ra[0], rb[0])
             oy = min(ra[3], rb[3]) - max(ra[1], rb[1])

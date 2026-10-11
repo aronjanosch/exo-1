@@ -129,24 +129,6 @@
    "turn_deg": 0
   },
   {
-   "model": "hover_car_red",
-   "at": [
-    -40,
-    50,
-    0
-   ],
-   "turn_deg": 0
-  },
-  {
-   "model": "hover_car_teal",
-   "at": [
-    -28,
-    40,
-    0
-   ],
-   "turn_deg": 90
-  },
-  {
    "model": "parking_pads",
    "at": [
     40,
@@ -158,8 +140,26 @@
   {
    "model": "hover_car_red",
    "at": [
-    30,
-    60,
+    -41,
+    40,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "hover_car_teal",
+   "at": [
+    -37,
+    40,
+    0
+   ],
+   "turn_deg": 0
+  },
+  {
+   "model": "hover_car_teal",
+   "at": [
+    40,
+    58,
     0
    ],
    "turn_deg": 90

@@ -92,6 +92,8 @@ pub struct SmuggleHud {
     pub clearance: String,
     /// The countdown under it (round 6b): share of the time left (0..1), and whose it is.
     pub bar: Option<HudBar>,
+    /// The tower's line is a warning (too fast, a patrol's halt): shown in red.
+    pub alert: bool,
 }
 
 /// A countdown shown as a shrinking bar: the clearance window or a patrol's halt order.

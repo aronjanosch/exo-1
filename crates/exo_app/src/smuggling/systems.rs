@@ -88,6 +88,8 @@ pub struct Systems {
     pub clear_window_s: f64,
     /// Where F stopped the needle and when (game clock), so the HUD can hold it a moment.
     pub needle_hit: Option<(f64, f64)>,
+    /// The ship's speed (m/s), seen by the glue each step, for the HUD's speed warning.
+    pub ship_speed: f64,
 }
 
 impl Systems {
@@ -135,6 +137,7 @@ impl Systems {
             reminded: None,
             clear_window_s: 0.0,
             needle_hit: None,
+            ship_speed: 0.0,
         })
     }
 

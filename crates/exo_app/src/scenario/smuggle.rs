@@ -256,6 +256,25 @@ pub fn hail_steps(s: &mut Vec<Step>) {
         check(c, fine >= 40.0, format!("hail: and costs a fine ({fine:.0} cr)"));
         check(c, gp(w).smuggling.heat.points() > 0.0, format!("hail: and heat ({:.0} points)", gp(w).smuggling.heat.points()));
         end(w, c, format!("fine {fine:.0}, heat {:.0}", gp(w).smuggling.heat.points()));
+        ship_over(w, "bent_spoon_west", 120.0);
+        true
+    }));
+    // Round 6b: too fast in the airspace, the tower's line turns red before the fine.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "hail: race through the airspace");
+            c.p.insert("spot", ship_frame_of(w).origin);
+        }
+        let e = ship_e(w);
+        let spot = c.p["spot"];
+        w.get_mut::<Position>(e).unwrap().0 = spot;
+        w.get_mut::<LinearVelocity>(e).unwrap().0 = planet(w).up(spot).any_orthonormal_vector() * 80.0;
+        if c.t < 0.5 {
+            return false;
+        }
+        let h = hud(w);
+        check(c, h.alert && h.clearance.starts_with("TOO FAST ") && h.clearance.contains("/50 m/s"), format!("hail: the line warns in red ('{}')", h.clearance));
+        end(w, c, "warned".into());
         true
     }));
 }

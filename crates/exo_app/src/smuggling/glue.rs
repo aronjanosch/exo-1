@@ -124,6 +124,7 @@ pub fn smuggle_observe(
     let Some((ship_e, pos, vel)) = ships.iter().next() else { return };
     let inside = airspace_at(&gp, pos.0);
     let g = &mut *gp;
+    g.smuggling.ship_speed = vel.0.length();
     let outs = g.smuggling.traffic.observe(&g.smuggling.traffic_c, HOST, inside.clone(), vel.0.length(), dt);
     for o in outs {
         match o {
@@ -650,6 +651,14 @@ pub fn fill_hud(mut hud: ResMut<SmuggleHud>, mut gp: ResMut<Gameplay>, phone: Re
             None => String::new(),
         },
     } };
+    // Too fast in a tower's airspace: the line says so in red before the tower fines it.
+    hud.alert = s.patrol.ordered_left().is_some();
+    if let Some(t) = s.traffic.inside(HOST).and_then(|t| s.town(t)).filter(|t| !t.free_port)
+        && s.ship_speed > t.speed_limit_ms
+    {
+        hud.clearance = format!("TOO FAST {:.0}/{:.0} m/s - slow down! | {}", s.ship_speed, t.speed_limit_ms, hud.clearance);
+        hud.alert = true;
+    }
     hud.bar = if let Some(left) = s.patrol.ordered_left() {
         Some(super::HudBar { left: (left / s.heat_c.tuning.record.patrol_halt_s).clamp(0.0, 1.0), tone: Tone::Bad })
     } else {

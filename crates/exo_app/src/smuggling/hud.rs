@@ -202,11 +202,12 @@ fn draw_hud(
 }
 
 #[allow(clippy::type_complexity)]
-fn draw_clearance(hud: Res<SmuggleHud>, mut text: Query<&mut Text, With<ClearText>>, mut bar: Query<&mut Node, (With<ClearBar>, Without<ClearFill>)>, mut fill: Query<(&mut Node, &mut BackgroundColor), (With<ClearFill>, Without<ClearBar>)>) {
-    if let Ok(mut t) = text.single_mut()
-        && t.0 != hud.clearance
-    {
-        t.0 = hud.clearance.clone();
+fn draw_clearance(hud: Res<SmuggleHud>, mut text: Query<(&mut Text, &mut TextColor), With<ClearText>>, mut bar: Query<&mut Node, (With<ClearBar>, Without<ClearFill>)>, mut fill: Query<(&mut Node, &mut BackgroundColor), (With<ClearFill>, Without<ClearBar>)>) {
+    if let Ok((mut t, mut c)) = text.single_mut() {
+        if t.0 != hud.clearance {
+            t.0 = hud.clearance.clone();
+        }
+        c.0 = if hud.alert { th::BAD } else { th::INFO };
     }
     if let Ok(mut n) = bar.single_mut() {
         let d = if hud.bar.is_some() { Display::Flex } else { Display::None };

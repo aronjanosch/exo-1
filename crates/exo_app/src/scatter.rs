@@ -76,7 +76,7 @@ impl PropGeom {
 struct CellOut {
     center: [f64; 3],
     instances: usize,
-    /// One merged mesh per prop, with its bounds.
+    /// The cell's merged mesh (none when empty), with its bounds.
     parts: Vec<(Mesh, Aabb)>,
 }
 
@@ -191,43 +191,41 @@ impl ScatterView {
     }
 }
 
-/// Merges the instances of a cell into one mesh per prop.
+/// Merges the instances of a cell into one mesh: every prop shares the white vertex-colour
+/// material, so one entity per cell is enough (#214: every mesh entity is reprocessed by the
+/// renderer on an origin shift, so fewer entities mean shorter shift frames).
 fn build_cell(geoms: &HashMap<String, PropGeom>, props: &[(String, Option<String>)], center: [f64; 3], instances: &[Instance]) -> CellOut {
-    let mut by_prop: HashMap<&str, Vec<&Instance>> = HashMap::new();
-    for inst in instances {
+    let geom = |inst: &Instance| {
         let (plain, rare) = &props[inst.entry as usize];
         let prop = if inst.rare { rare.as_ref().unwrap_or(plain) } else { plain };
-        by_prop.entry(prop.as_str()).or_default().push(inst);
-    }
-    let mut names: Vec<&str> = by_prop.keys().copied().collect();
-    names.sort_unstable();
-    let mut parts = Vec::with_capacity(names.len());
-    for name in names {
-        let list = &by_prop[name];
-        let Some(g) = geoms.get(name) else { continue };
-        let n = g.positions.len() * list.len();
-        let mut pos: Vec<[f32; 3]> = Vec::with_capacity(n);
-        let mut nrm: Vec<[f32; 3]> = Vec::with_capacity(n);
-        let mut col: Vec<[f32; 4]> = Vec::with_capacity(n);
-        let mut idx: Vec<u32> = Vec::with_capacity(g.indices.len() * list.len());
-        let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
-        for inst in list {
-            let base = pos.len() as u32;
-            let [x, u, z] = inst.basis.map(Vec3::from_array);
-            let at = Vec3::from_array(inst.pos);
-            let tint = inst.tint.map(srgb_to_linear);
-            for ((p, nm), c) in g.positions.iter().zip(&g.normals).zip(&g.colors) {
-                let p = Vec3::from_array(*p) * inst.scale;
-                let w = at + x * p.x + u * p.y + z * p.z;
-                lo = lo.min(w);
-                hi = hi.max(w);
-                pos.push(w.to_array());
-                let n = Vec3::from_array(*nm);
-                nrm.push((x * n.x + u * n.y + z * n.z).to_array());
-                col.push([c[0] * tint[0], c[1] * tint[1], c[2] * tint[2], c[3]]);
-            }
-            idx.extend(g.indices.iter().map(|i| i + base));
+        geoms.get(prop.as_str())
+    };
+    let (nv, ni) = instances.iter().filter_map(|i| geom(i)).fold((0, 0), |(v, i), g| (v + g.positions.len(), i + g.indices.len()));
+    let mut pos: Vec<[f32; 3]> = Vec::with_capacity(nv);
+    let mut nrm: Vec<[f32; 3]> = Vec::with_capacity(nv);
+    let mut col: Vec<[f32; 4]> = Vec::with_capacity(nv);
+    let mut idx: Vec<u32> = Vec::with_capacity(ni);
+    let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+    for inst in instances {
+        let Some(g) = geom(inst) else { continue };
+        let base = pos.len() as u32;
+        let [x, u, z] = inst.basis.map(Vec3::from_array);
+        let at = Vec3::from_array(inst.pos);
+        let tint = inst.tint.map(srgb_to_linear);
+        for ((p, nm), c) in g.positions.iter().zip(&g.normals).zip(&g.colors) {
+            let p = Vec3::from_array(*p) * inst.scale;
+            let w = at + x * p.x + u * p.y + z * p.z;
+            lo = lo.min(w);
+            hi = hi.max(w);
+            pos.push(w.to_array());
+            let n = Vec3::from_array(*nm);
+            nrm.push((x * n.x + u * n.y + z * n.z).to_array());
+            col.push([c[0] * tint[0], c[1] * tint[1], c[2] * tint[2], c[3]]);
         }
+        idx.extend(g.indices.iter().map(|i| i + base));
+    }
+    let mut parts = Vec::with_capacity(1);
+    if !pos.is_empty() {
         let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
             .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, nrm)
@@ -250,7 +248,9 @@ fn visit(planet: &PlanetRes, cam: DVec3, face: usize, a0: f64, b0: f64, size: f6
     for (a, b) in [(a0, b0), (a0 + size, b0), (a0, b0 + size), (a0 + size, b0 + size)] {
         bound = bound.max(centre.distance(c(a, b)));
     }
-    if cam.distance(centre) - bound - planet.relief > range {
+    // `cam` is the point under the camera on the base sphere: the height is the caller's
+    // (#214: the planet-wide relief here made every storey walk and keep cells a kilometre out).
+    if cam.distance(centre) - bound > range {
         return;
     }
     if depth == target {
@@ -353,6 +353,9 @@ pub fn update_scatter(
 /// The quadtree walk: which cells are wanted, which shown or building ones to drop, and the
 /// queue of those that still need a build (nearest first).
 fn walk_cells(commands: &mut Commands, view: &mut ScatterView, planet: &PlanetRes, cam: DVec3, agl: f64) {
+    // Distances on the base sphere, from the point under the camera; its height over the ground
+    // is `agl`, which lifts the ranges and switches storeys off.
+    let cam = cam.normalize_or_zero() * planet.radius;
     let lift = (agl / ELEVATED_AT_M).clamp(0.0, 1.0);
     let mut wanted: HashMap<Key, CellSpec> = HashMap::new();
     let mut keep_range = Vec::new();
@@ -384,7 +387,7 @@ fn walk_cells(commands: &mut Commands, view: &mut ScatterView, planet: &PlanetRe
         let (a, b) = (-1.0 + (key.2 as f64 + 0.5) * size, -1.0 + (key.3 as f64 + 0.5) * size);
         let v = cube_to_sphere(key.1 as usize, a, b);
         let centre = DVec3::new(v.x, v.y, v.z) * planet.radius;
-        if cam.distance(centre) - edge_at(planet.radius, depth) - planet.relief > keep_range[key.0 as usize] || agl > keep_range[key.0 as usize] * 2.0 {
+        if cam.distance(centre) - edge_at(planet.radius, depth) > keep_range[key.0 as usize] || agl > keep_range[key.0 as usize] * 2.0 {
             drop.push(*key);
         }
     }
@@ -434,22 +437,23 @@ mod tests {
     }
 
     #[test]
-    fn a_cell_merges_into_one_mesh_per_prop() {
+    fn a_cell_merges_into_one_mesh() {
         let g = || PropGeom::placeholder();
         let geoms: HashMap<String, PropGeom> = [("tree".to_string(), g()), ("big_tree".to_string(), g())].into();
         let props = vec![("tree".to_string(), Some("big_tree".to_string()))];
         let n = geoms["tree"].positions.len();
         let out = build_cell(&geoms, &props, [0.0; 3], &[inst(0, false, 0.0), inst(0, false, 10.0), inst(0, true, 20.0)]);
         assert_eq!(out.instances, 3);
-        assert_eq!(out.parts.len(), 2, "plain and rare prop: one mesh each");
-        let (big, tree) = (&out.parts[0].0, &out.parts[1].0);
-        assert_eq!(big.count_vertices(), n);
-        assert_eq!(tree.count_vertices(), 2 * n);
-        // Second instance sits 10 m along x, scaled by 2 (placeholder radius 1).
-        let a = out.parts[1].1;
-        assert!((a.center.x - 5.0).abs() < 0.1 && (a.half_extents.x - 7.0).abs() < 0.1, "{a:?}");
+        assert_eq!(out.parts.len(), 1, "plain and rare prop in one mesh");
+        let mesh = &out.parts[0].0;
+        assert_eq!(mesh.count_vertices(), 3 * n);
+        // Instances at x = 0, 10, 20, scaled by 2 (placeholder radius 1): x spans -2..22.
+        let a = out.parts[0].1;
+        assert!((a.center.x - 10.0).abs() < 0.1 && (a.half_extents.x - 12.0).abs() < 0.1, "{a:?}");
         // Tint: linear of (1, .5, 0) on a white vertex colour.
-        let Some(VertexAttributeValues::Float32x4(c)) = tree.attribute(Mesh::ATTRIBUTE_COLOR) else { panic!() };
+        let Some(VertexAttributeValues::Float32x4(c)) = mesh.attribute(Mesh::ATTRIBUTE_COLOR) else { panic!() };
         assert!((c[0][0] - 1.0).abs() < 1e-5 && c[0][1] < 0.3 && c[0][2] == 0.0);
+        // An empty cell spawns nothing.
+        assert!(build_cell(&geoms, &props, [0.0; 3], &[]).parts.is_empty());
     }
 }

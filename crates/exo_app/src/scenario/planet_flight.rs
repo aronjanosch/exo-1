@@ -8,7 +8,8 @@
 //!    along the ground, 30 s, then 5 s low;
 //! 3. low SCM boost: 350 m/s at 40 m above the ground (inside the collision ring), 20 s.
 //!
-//! Each leg starts after a hold that lets its start load (not measured). Per leg it reports frame
+//! Each leg starts after a hold (the warm-up, not measured) that lets its start load, with the
+//! ship pinned at the start point but already given the leg's velocity. Per leg it reports frame
 //! time p50, p99, max, the frames above the spike threshold, the LOD debt (share of frames whose
 //! chunk under the ship is coarser than wanted), a `target:` line against the round's goal
 //! (p99 <= 8.3 ms, max <= 25 ms, LOD debt <= 2 %) and the work in the worst frames
@@ -157,8 +158,10 @@ pub(super) fn planet_flight_steps(s: &mut Vec<Step>, out_dir: &std::path::Path) 
             }
             let atm = w.resource::<SystemRes>().0.planet(w.resource::<PlanetRes>().id).atmosphere_height;
             let pl = planet(w);
+            // Held at the start but already with the leg's velocity: what first shows in flight
+            // (engine effects, their pipelines) warms up here, not in the measured frames.
             let (p, v) = leg_pose(&pl, &l, atm, 0.0);
-            pose_ship(w, p, v * 0.0);
+            pose_ship(w, p, v);
             if c.t >= l.hold {
                 c.phase.clear();
                 spikes(w).reset();

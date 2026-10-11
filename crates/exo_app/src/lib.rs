@@ -119,7 +119,9 @@ impl Default for Options {
             no_vsync: false,
             radius: None,
             atmosphere: None,
-            origin_shift: 1000.0,
+            // #214: 4 km keeps f32 render positions within about 0.5 mm and shifts a quarter as
+            // often as 1 km did (each shift touches every mesh instance on the render side).
+            origin_shift: 4000.0,
             out_dir: PathBuf::from("target/scenario"),
             record: None,
             spawn_offset: 0.0,

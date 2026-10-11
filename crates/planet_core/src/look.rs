@@ -162,6 +162,10 @@ struct Px {
     inland: f64,
 }
 
+/// Depth (and height above the water) over which the orbit map's dryness goes from 0.5 to 0 (1),
+/// at the radius the look was tuned on (scaled by `Planet::look_scale`).
+pub const ORBIT_SHORE_M: f64 = 10.0;
+
 impl Planet {
     /// A north-up picture (RGB8, `px` x `px`) of the ground within `radius_m` of `centre`: water
     /// by depth, land in its biome colour shaded by height and slope (#166). Meant for a small
@@ -189,13 +193,14 @@ impl Planet {
 
     /// The planet seen from far away (#224): one equirectangular colour map of `width` x
     /// `width / 2` RGBA8 pixels (sRGB, rows from the north pole down, longitude -180..180) with
-    /// what the terrain would show from orbit: the sea in its surface colour, darker with depth,
-    /// lakes in the surface colour, land in the biome's ground colour (rock where the landform
-    /// is steep, the cap colour on the heights). No sites, no hillshade.
+    /// what the terrain would show from orbit: the land's biome ground colour (rock where the
+    /// landform is steep, the cap colour on the heights), under water too, and in alpha how dry
+    /// the point is: 0.5 at a shore, 1 from `ORBIT_SHORE_M` above any water, 0 from as deep below
+    /// (#235). The impostor shader draws the water and its shore per pixel from that, so a coast
+    /// is no stair step of the map's pixels. No sites, no hillshade.
     pub fn orbit_map(&self, width: usize, threads: usize) -> Vec<u8> {
         let (w, h) = (width, width / 2);
         let threads = if threads == 0 { std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) } else { threads };
-        let wt = &self.recipe.water;
         let m = &self.recipe.material;
         let rows = par_rows(h, threads, |y0, y1| {
             let mut out = Vec::with_capacity((y1 - y0) * w * 4);
@@ -207,13 +212,11 @@ impl Planet {
                     let (hh, f) = self.height_ab(face, a, b, d);
                     let lf = self.stamp_height(d).1;
                     let ha = hh - self.sea;
-                    let level = self.water_level_ab(face, a, b);
-                    let inland = level.map_or(0.0, |l| (l - hh).max(0.0));
-                    let c = if ha <= 0.0 {
-                        lerp3(wt.surface, wt.deep, (-ha / (wt.depth_m as f64).max(1.0)) as f32)
-                    } else if inland > 0.0 {
-                        lerp3(wt.surface, wt.deep, (inland / (wt.depth_m as f64).max(1.0)) as f32 * 0.5)
-                    } else {
+                    // How far below the sea or a lake or river the ground is (negative above).
+                    let wet = self.water_level_ab(face, a, b).map_or(-ha, |l| (-ha).max(l - hh));
+                    let dry = (0.5 - wet / (ORBIT_SHORE_M * self.look_scale())).clamp(0.0, 1.0);
+                    let ha = ha.max(0.0);
+                    let c = {
                         // The two nearest biomes blended by their share (#235), as the terrain
                         // does at its borders; the snow line in the look's scaled metres (#236).
                         let pair = self.biome_pair(ha, &f, lf);
@@ -227,7 +230,7 @@ impl Planet {
                         lerp3(g, m.cap_color, cap)
                     };
                     let [r, g, b] = to_u8(c);
-                    out.extend([r, g, b, 255]);
+                    out.extend([r, g, b, (dry * 255.0).round() as u8]);
                 }
             }
             out

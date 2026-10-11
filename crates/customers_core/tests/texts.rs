@@ -42,6 +42,7 @@ fn texts_all_keys_exist() {
     // Load kernel from shipped content (commodities, locations, tracks, unlocks)
     let kernel_files: Vec<_> = all_files.iter().filter(|f| {
         f.path.starts_with("commodity/") ||
+        f.path.starts_with("effect/") ||
         f.path.starts_with("location/") ||
         f.path.starts_with("progress_track/") ||
         f.path.starts_with("unlock/")
@@ -84,6 +85,7 @@ fn texts_pools_have_minimum_lines() {
     // Load kernel from shipped content
     let kernel_files: Vec<_> = all_files.iter().filter(|f| {
         f.path.starts_with("commodity/") ||
+        f.path.starts_with("effect/") ||
         f.path.starts_with("location/") ||
         f.path.starts_with("progress_track/") ||
         f.path.starts_with("unlock/")

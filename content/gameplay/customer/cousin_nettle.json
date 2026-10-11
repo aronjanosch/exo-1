@@ -1,0 +1,18 @@
+{
+  "_comment": "Hidden product buyer (#229): orders only after aunt_brisket refers her. Placeholder, TODO(initiator).",
+  "id": "cousin_nettle",
+  "name": "customer.cousin_nettle.name",
+  "town": "bent_spoon",
+  "at": "lint_trap",
+  "taste": { "wants": ["tingly", "sleepy"], "picks": 1, "min_quality": 0.4, "amount": [1, 2] },
+  "rhythm_s": [200.0, 260.0],
+  "start": 2.0,
+  "hidden": true,
+  "voice": {
+    "order": "customer.cousin_nettle.order",
+    "thanks": "customer.cousin_nettle.thanks",
+    "grumble": "customer.cousin_nettle.grumble",
+    "counter_yes": "customer.cousin_nettle.counter_yes",
+    "counter_no": "customer.cousin_nettle.counter_no"
+  }
+}

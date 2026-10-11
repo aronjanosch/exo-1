@@ -1,0 +1,1 @@
+{ "_comment": "Scans with no fine and no confiscation. Counts only (TODO(initiator)).", "id": "clean_scans", "name": "track.clean_scans.name", "owner": "crew", "start": 0, "min": 0 }

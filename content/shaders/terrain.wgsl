@@ -100,14 +100,20 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let k = i32(floor(band));
     let f = fract(band);
     let edge = smoothstep(0.0, 0.08, f) * (1.0 - smoothstep(0.92, 1.0, f));
-    let layer = mix(strata_color(k - 1), strata_color(k), edge);
+    // Far away a band is thinner than a pixel and the bands alias into contour rings (#236): they
+    // fade to their mean colour as a pixel spans more of a band.
+    let mean = (look.strata0.rgb + look.strata1.rgb + look.strata2.rgb + look.strata3.rgb) * 0.25;
+    let resolved = 1.0 - smoothstep(0.25, 0.75, fwidth(band));
+    let layer = mix(mean, mix(strata_color(k - 1), strata_color(k), edge), resolved);
     let rock_col = mix(rock, layer * (rock / max(max(rock.r, max(rock.g, rock.b)), 0.05) * 0.35 + 0.65), strata_share);
 
     var col = mix(ground, rock_col, rock_t);
 
     // Cap high up, kept off the steepest faces.
     let above_sea = h - look.shape.x;
-    let cap_t = smoothstep(look.cap.w, look.cap.w + look.misc.x, above_sea + wobble) * cap_share * (1.0 - 0.8 * rock_t);
+    // The snow line wanders by about its fade width over a few hundred metres, so it is no contour (#236).
+    let cap_wander = (value_noise(rel * 0.004) - 0.5) * 2.0 * look.misc.x;
+    let cap_t = smoothstep(look.cap.w, look.cap.w + look.misc.x, above_sea + wobble + cap_wander) * cap_share * (1.0 - 0.8 * rock_t);
     col = mix(col, look.cap.rgb, cap_t);
 
     // Grain near the camera: two scales of solid noise, faded out with distance.

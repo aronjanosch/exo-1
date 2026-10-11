@@ -103,15 +103,17 @@ fn lin(c: [f32; 3]) -> Vec4 {
 pub fn look_uniform(planet: &PlanetRes, centre_render: Vec3) -> TerrainLookUniform {
     let m = &planet.pgen.recipe.material;
     let s = |i: usize| lin(m.strata_colors[i.min(m.strata_colors.len() - 1)]);
+    // The recipe's metres are for the radius it was tuned on; a taller relief stretches them (#236).
+    let k = planet.pgen.look_scale() as f32;
     TerrainLookUniform {
         centre: centre_render.extend(planet.radius as f32),
-        shape: Vec4::new(planet.sea as f32, m.rock_slope_deg[0], m.rock_slope_deg[1], m.strata_band_m),
+        shape: Vec4::new(planet.sea as f32, m.rock_slope_deg[0], m.rock_slope_deg[1], m.strata_band_m * k),
         strata0: s(0),
         strata1: s(1),
         strata2: s(2),
         strata3: s(3),
-        cap: lin(m.cap_color).truncate().extend(m.cap_height_m),
-        misc: Vec4::new(m.cap_fade_m, m.strata_jitter_m, m.detail_strength, m.detail_far_m),
+        cap: lin(m.cap_color).truncate().extend(m.cap_height_m * k),
+        misc: Vec4::new(m.cap_fade_m * k, m.strata_jitter_m * k, m.detail_strength, m.detail_far_m),
         counts: Vec4::new(m.strata_colors.len() as f32, 0.0, 0.0, 0.0),
         water: lin(planet.pgen.recipe.water.deep).truncate().extend(planet.pgen.recipe.water.depth_m),
         shore: lin(planet.pgen.recipe.water.shore).truncate().extend(planet.pgen.recipe.water.shore_width_m),

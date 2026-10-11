@@ -785,6 +785,12 @@ impl Planet {
         out
     }
 
+    /// How much taller this planet's relief is than the one its looks were tuned on (#236): the
+    /// look's metres (snow line, rock strata) grow with it.
+    pub fn look_scale(&self) -> f64 {
+        self.biome_scale
+    }
+
     pub fn palette(&self, id: u8) -> Palette {
         self.palettes[id as usize].clone()
     }

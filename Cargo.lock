@@ -2766,6 +2766,7 @@ name = "fire_core"
 version = "0.1.0"
 dependencies = [
  "gameplay_core",
+ "glam 0.32.1",
 ]
 
 [[package]]

@@ -1,0 +1,1 @@
+{ "_comment": "Medicine effect (#287): treats oxygen low (health/health.json). TODO(initiator) name and value.", "id": "breathy", "name": "effect.breathy.name", "value": 0.3 }

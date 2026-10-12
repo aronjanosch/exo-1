@@ -580,6 +580,8 @@
   "effect.backwards_talk.name": "Backwards Talk",
   "effect.sleepy.name": "Sleepy",
   "effect.tingly.name": "Tingly",
+  "effect.cooling.name": "Cooling",
+  "effect.breathy.name": "Breathy",
   "location.drip_rock_north.name": "Drip Rock Pad North",
   "location.drip_rock_inspect.name": "Drip Rock Inspection",
   "location.bent_spoon_east.name": "Bent Spoon East Pad",
@@ -734,6 +736,8 @@
   "commodity.moth_dust.name": "moth dust",
   "commodity.ghost_pepper.name": "ghost pepper",
   "commodity.foam_gum.name": "foam gum",
+  "commodity.frost_moss.name": "frost moss",
+  "commodity.bubble_kelp.name": "bubble kelp",
   "lab.brewed": [
     "The vat gurgles. Crates are ready.",
     "Something in the vat sighs. Done.",

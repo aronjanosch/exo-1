@@ -226,3 +226,21 @@ fn the_shipped_file_is_checked() {
     let t = shipped();
     assert!(t.affliction("burn").is_some() && t.treatment("cooling").is_some());
 }
+
+#[test]
+fn the_lab_can_brew_every_medicine() {
+    let t = shipped();
+    let files = shipped_files();
+    let kernel = gameplay_core::Content::load(&files, &["small", "medium", "large"]).unwrap();
+    let lc = production_core::LabContent::load(&files, &kernel).unwrap();
+    let items = ["bandage", "medkit"];
+    for tr in t.treatments.iter().filter(|x| !items.contains(&x.id.as_str())) {
+        assert!(kernel.effects.contains_key(&EffectId::new(tr.id.as_str())), "{} is a lab effect", tr.id);
+        assert!(lc.ingredients.values().any(|i| i.record.adds.as_ref().is_some_and(|a| a.as_str() == tr.id)), "an ingredient adds {}", tr.id);
+    }
+    // The burn salve: blorp paste and frost moss.
+    let base = &lc.bases[&CommodityId::new("blorp_paste")].record;
+    let moss = &lc.ingredients[&CommodityId::new("frost_moss")].record;
+    let fx = production_core::mix(base, &[moss]);
+    assert_eq!(fx, [EffectId::new("cooling")].into_iter().collect());
+}

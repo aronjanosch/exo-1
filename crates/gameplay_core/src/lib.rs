@@ -10,30 +10,25 @@
 //! - `notice`, `text`: notices (what a system reports), the pacing queue, text pools without repeats.
 //! - `rng`: a seeded generator.
 //! - `save`: the save envelope with a section per system, the kernel's and the world's sections.
-//! - `product`: a made product (base good, effects, quality), shared by production and buyers.
+//! - `product`: a made product (base good, effects, quality), shared by production.
 //! - `progress`: track values (money, XP), owned tags, bought unlocks, raised flags.
-//! - `tally`, `goals`, `shop`: the family's ladder and the shops (#230): tallies count facts on crew
-//!   tracks, ladders gate ranks on goals and a tribute, shops sell unlocks and goods.
 //!
 //! Systems talk to each other only through domain events and conditions. A system's outcome is
 //! more events (a payout is `TrackChanged`, a finished job raises a flag) that the host routes.
 pub mod condition;
 pub mod content;
 pub mod event;
-pub mod goals;
 pub mod id;
 pub mod notice;
 pub mod product;
 pub mod progress;
 pub mod rng;
 pub mod save;
-pub mod shop;
-pub mod tally;
 pub mod text;
 
 pub use condition::Condition;
 pub use content::{Content, File};
-pub use event::{Dedup, Event, EventId, ScanChoice, ViolationKind, WorldEvent};
+pub use event::{Dedup, Event, EventId, WorldEvent};
 pub use product::ProductSpec;
 pub use id::*;
 pub use progress::{Progress, Refusal};

@@ -96,6 +96,14 @@ _Avoid_: box, container, package
 Whatever crates a ship currently carries.
 _Avoid_: load, inventory
 
+**Cabinet**:
+A fixed piece of furniture with slots that hold small items, such as a medical cabinet, a locker or a supply crate's inside. Each slot caps its stack and takes only some kinds; some open only with a key card.
+_Avoid_: container (the code type), storage, chest
+
+**Batch**:
+One brew from the lab's mixer on its way through the other lab devices (heater, centrifuge) into syringes. It carries its effects, quality and volume in doses.
+_Avoid_: brew (the mixing step), product (the finished good), sample
+
 ### Gameplay
 
 **Crew**:

@@ -102,6 +102,14 @@ fn bonus_chances_follow_the_crafting_shape() {
 }
 
 #[test]
+fn skill_gain_slows_with_skill_and_stops_at_the_cap() {
+    assert!(skill::gain(10.0, 40.0) > skill::gain(50.0, 40.0));
+    assert!((skill::gain(16.0, 40.0) - 40.0 / 64.0).abs() < 1e-12);
+    assert_eq!(skill::gain(100.0, 40.0), 0.0);
+    assert!(skill::gain(99.99, 1000.0) <= 0.01 + 1e-12, "never past 100");
+}
+
+#[test]
 fn dice_are_seeded_and_chances_hold_at_the_ends() {
     let (mut a, mut b) = (Dice::new(7), Dice::new(7));
     for _ in 0..50 {

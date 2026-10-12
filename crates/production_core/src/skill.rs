@@ -49,6 +49,12 @@ pub fn bonus_tiers(skill: f64, required: f64, s: &SkillTuning, dice: &mut Dice) 
     }
 }
 
+/// The skill gained by one finished job: `base` divided by the current skill to the power 1.5
+/// (skill below 1 counts as 1), so early gains are fast and late ones slow. Never past 100.
+pub fn gain(skill: f64, base: f64) -> f64 {
+    (base / skill.max(1.0).powf(1.5)).min((100.0 - skill).max(0.0))
+}
+
 /// A small seeded random source (splitmix64), saved with its state.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Dice {

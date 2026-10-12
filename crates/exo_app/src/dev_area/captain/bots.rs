@@ -3,8 +3,9 @@
 //! what `crew_core::choose` picks among two placeholder tasks (a fire marker and a turret
 //! station), so the captain sees a table change, an order or the alert change what the bot does.
 //!
-//! The demo bot moves in a straight line at `BOT_SPEED` without collision and has no animation;
-//! the window draws it as an orange box. Saving keeps the table as JSON in memory (TODO: a file
+//! The demo bot moves in a straight line at `BOT_SPEED` (or `bot_work::RUN_SPEED` to urgent work)
+//! without collision and has no animation; the window draws it as an orange box. Its real work in
+//! the engineer corner is `bot_work`. Saving keeps the table as JSON in memory (TODO: a file
 //! in the save folder once bots are real).
 use super::*;
 use crate::displays::{DisplayAction, Panels};
@@ -56,12 +57,14 @@ pub struct BotDemo {
     pub pos: [f64; 2],
     pub current: Option<Choice>,
     pub claims: Claims,
+    /// What it did with its hands in the engineer corner.
+    pub work: bot_work::Work,
     rng: Rng,
 }
 
 impl Default for BotDemo {
     fn default() -> Self {
-        BotDemo { pos: CAPTAIN.point(BOT_HOME), current: None, claims: Claims::default(), rng: Rng::new(0xB07) }
+        BotDemo { pos: CAPTAIN.point(BOT_HOME), current: None, claims: Claims::default(), work: bot_work::Work::default(), rng: Rng::new(0xB07) }
     }
 }
 
@@ -71,6 +74,10 @@ impl BotDemo {
         match self.current.as_ref().map(|c| &c.pick) {
             Some(Pick::Task(TaskId(1))) => "fire".into(),
             Some(Pick::Task(TaskId(2))) => "turret".into(),
+            Some(Pick::Task(bot_work::PUMP_TASK)) => "repair pump".into(),
+            Some(Pick::Task(bot_work::REACTOR_TASK)) => "repair reactor".into(),
+            Some(Pick::Task(bot_work::CONSOLE_TASK)) => "restart reactor".into(),
+            Some(Pick::Task(t)) if t.0 >= bot_work::FIRE_TASK_BASE => "extinguish".into(),
             Some(Pick::Task(t)) => format!("task {}", t.0),
             Some(Pick::Order { kind, .. }) => format!("order {}", kind.id()),
             None => "idle".into(),
@@ -135,6 +142,8 @@ pub fn panel(crew: &CrewState, ui: &BotsUi, demo: &BotDemo) -> Panel {
     items.push(row(8.0, vec![button("SAVE", "save"), button("LOAD", "load").enabled(ui.saved.is_some()), button("RESET", "reset")]).fixed(42.0));
     let score = demo.current.as_ref().map(|c| format!("score {:.1}{}", c.score, c.level.map(|l| format!(", {}", level_name(l))).unwrap_or_else(|| ", order".into()))).unwrap_or_default();
     items.push(label(format!("DEMO BOT ({BOT_CLASS:?}): {}   {score}", demo.doing())).tone(Tone::Good).fixed(28.0));
+    let w = &demo.work;
+    items.push(label(format!("{}   extinguisher {:.0} %   repairs {} ({} failed)   restarts {}", w.doing.as_deref().unwrap_or("-"), w.charge * 100.0, w.repairs_done, w.repair_fails, w.restarts)).tone(Tone::Dim).fixed(24.0));
     items.push(space());
     Panel::new(PANEL_PX[0], PANEL_PX[1], column(5.0, items))
 }
@@ -185,10 +194,29 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut ui: ResMut<Bots
     }
 }
 
-/// The demo bot thinks every tick and walks to its pick.
-pub fn think_and_walk(time: Res<Time>, crew: Res<CrewState>, gp: Res<Gameplay>, mut demo: ResMut<BotDemo>) {
-    let tasks = demo_tasks();
+/// The demo bot thinks every tick, walks to its pick and works there.
+#[allow(clippy::too_many_arguments)]
+pub fn think_and_walk(
+    time: Res<Time>,
+    crew: Res<CrewState>,
+    mut gp: ResMut<Gameplay>,
+    mut demo: ResMut<BotDemo>,
+    mut eng: Option<ResMut<crate::dev_area::engineer::Engineering>>,
+    active: Res<crate::displays::ActiveDisplay>,
+    displays: Query<&crate::displays::DisplayPanel>,
+    actions: Res<crate::controls::Actions>,
+) {
+    let dt = time.delta_secs_f64();
+    let mut tasks = demo_tasks();
     let demo = &mut *demo;
+    if let Some(e) = eng.as_deref() {
+        let real = bot_work::real_tasks(e);
+        let panel = active.using().and_then(|x| displays.get(x).ok()).is_some_and(|d| d.id == crate::dev_area::engineer::REACTOR_PANEL);
+        let spraying = e.extinguisher.held && actions.interact_held;
+        bot_work::player_claims(&mut demo.claims, e, &real, panel, spraying);
+        tasks.extend(real);
+    }
+    demo.claims.retain_open(&tasks);
     let view = BotView { id: BotId(1), class: BOT_CLASS, pos: [demo.pos[0], demo.pos[1], 0.0], skill: BOT_SKILL, current: demo.current.clone() };
     let sit = Situation { alert: crew.alert.level(), order: crew.orders.for_role(BOT_CLASS), flags: &[], now_s: gp.clock() };
     let choice = choose(&view, &tasks, &demo.claims, &crew.table, &sit, &mut demo.rng);
@@ -196,23 +224,42 @@ pub fn think_and_walk(time: Res<Time>, crew: Res<CrewState>, gp: Res<Gameplay>, 
         Some(c) => demo.claims.commit(view.id, c),
         None => demo.claims.release_bot(view.id),
     }
-    let goal = match choice.as_ref().map(|c| &c.pick) {
-        Some(Pick::Task(id)) => tasks.iter().find(|t| t.id == *id).map(|t| [t.pos[0], t.pos[1]]),
-        // Follow me and report: to the overview console. Other orders: stay (no positions yet).
-        Some(Pick::Order { kind: crew_core::OrderKind::FollowMe | crew_core::OrderKind::Report, .. }) => Some(CAPTAIN.point([-21.0, CONSOLE_Y - 2.0])),
+    let task = match choice.as_ref().map(|c| &c.pick) {
+        Some(Pick::Task(id)) => tasks.iter().find(|t| t.id == *id).cloned(),
+        _ => None,
+    };
+    let goal = match (choice.as_ref().map(|c| &c.pick), &task) {
+        (_, Some(t)) => Some(bot_work::stand(t, eng.as_deref())),
+        // Follow me and report: to the overview console. Other orders: to their target, if it has a place.
+        (Some(Pick::Order { kind: crew_core::OrderKind::FollowMe | crew_core::OrderKind::Report, .. }), _) => Some((CAPTAIN.point([-21.0, CONSOLE_Y - 2.0]), ARRIVE_M)),
+        (Some(Pick::Order { target: Some(t), .. }), _) => live_status::target_point(t).map(|p| (p, ARRIVE_M)),
         _ => None,
     };
     if demo.current.as_ref().map(|c| &c.pick) != choice.as_ref().map(|c| &c.pick) {
         info!("demo bot: {:?} -> {:?}", demo.current.as_ref().map(|c| &c.pick), choice.as_ref().map(|c| (&c.pick, c.score)));
+        demo.work.doing = None;
     }
+    let speed = if choice.as_ref().is_some_and(|c| c.score >= bot_work::RUN_ABOVE) { bot_work::RUN_SPEED } else { BOT_SPEED };
     demo.current = choice;
-    if let Some(g) = goal {
+    let mut arrived = goal.is_none();
+    if let Some((g, near)) = goal {
         let d = [g[0] - demo.pos[0], g[1] - demo.pos[1]];
         let len = (d[0] * d[0] + d[1] * d[1]).sqrt();
-        if len > ARRIVE_M {
-            let step = (BOT_SPEED * time.delta_secs_f64()).min(len - ARRIVE_M);
+        if len > near {
+            let step = (speed * dt).min(len - near);
             demo.pos = [demo.pos[0] + d[0] / len * step, demo.pos[1] + d[1] / len * step];
         }
+        arrived = len <= near + 1e-6 || (len - near) <= speed * dt;
+    }
+    let spraying = task.as_ref().is_some_and(|t| t.kind == TaskKind::ExtinguishFire && t.id.0 >= bot_work::FIRE_TASK_BASE);
+    if let Some(e) = eng.as_deref_mut() {
+        match &task {
+            Some(t) if arrived && t.id.0 >= bot_work::PUMP_TASK.0 => bot_work::act(&mut demo.work, e, &mut gp, t, demo.pos, dt),
+            _ => bot_work::stop_repair(&mut demo.work, e),
+        }
+    }
+    if !spraying {
+        demo.work.charge = (demo.work.charge + dt / bot_work::BOT_REFILL_S).min(1.0);
     }
 }
 

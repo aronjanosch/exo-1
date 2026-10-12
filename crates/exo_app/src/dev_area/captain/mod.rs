@@ -22,8 +22,10 @@ use crew_core::{Alert, AlertEvent, Budget, Order, Orders, PlaceholderStatus, Pri
 use gameplay_core::notice::{Arg, Notice, NoticeKind};
 use gameplay_core::TextKey;
 
+pub mod bot_work;
 pub mod bots;
 pub mod comms;
+pub mod live_status;
 pub mod missions;
 pub mod overview;
 pub mod ship_state;
@@ -49,11 +51,10 @@ pub struct CrewState {
     pub orders: Orders,
     pub budget: Budget,
     pub table: PriorityTable,
-    /// The placeholder ship the ship state display shows (until the engineer lane's systems feed
-    /// a real `ShipStatus`). TODO: map `reactor_core` and the fire system in here once they land.
+    /// The placeholder ship; `live_status` lays the engineer corner's real data over it.
     pub ship: PlaceholderStatus,
-    /// The threat flag for the automatic yellow: any forced trouble on the placeholder ship, or a
-    /// hostile answer on comms.
+    /// The threat flag for the automatic yellow (with the real ship's trouble, see `tick_crew`):
+    /// any forced trouble on the placeholder ship, or a hostile answer on comms.
     pub hostile: bool,
 }
 
@@ -117,9 +118,9 @@ pub fn console(id: PanelId, name: &str, x: f64, colour: [f32; 3]) -> Placeholder
 pub const CONSOLE_Y: f64 = -10.0;
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<DevRole>().init_resource::<CrewState>();
+    app.init_resource::<DevRole>().init_resource::<CrewState>().init_resource::<live_status::LiveShip>().init_resource::<live_status::OrderMarker>();
     app.add_systems(Startup, check_keys);
-    app.add_systems(FixedUpdate, tick_crew.in_set(crate::phases::Fx::Effects).before(overview::read_clicks));
+    app.add_systems(FixedUpdate, (tick_crew, live_status::update).chain().in_set(crate::phases::Fx::Effects).before(overview::read_clicks));
     app.add_plugins((overview::plugin, missions::plugin, ship_state::plugin, starmap::plugin, comms::plugin, bots::plugin));
 }
 
@@ -127,6 +128,7 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Startup, spawn_order_line);
     app.add_systems(Update, update_order_line.in_set(crate::phases::Frame::Hud));
     app.add_plugins(bots::window_plugin);
+    app.add_systems(Update, live_status::draw_marker.in_set(crate::phases::Frame::World));
 }
 
 /// Every key this module shows has a text (a missing one is a content mistake: stop).
@@ -136,14 +138,14 @@ fn check_keys(gp: Res<Gameplay>) {
 }
 
 /// Each tick: the placeholder ship moves, orders expire, the threat flag feeds the alert.
-fn tick_crew(time: Res<Time>, mut crew: ResMut<CrewState>, mut gp: ResMut<Gameplay>) {
+fn tick_crew(time: Res<Time>, mut crew: ResMut<CrewState>, mut gp: ResMut<Gameplay>, eng: Option<Res<crate::dev_area::engineer::Engineering>>) {
     let now = gp.clock();
     let crew = &mut *crew;
     crew.ship.step(time.delta_secs_f64());
     for _ in crew.orders.tick(now) {
         say(&mut gp, Notice::new(NoticeKind::Updated, "notice.captain.order_cleared"));
     }
-    let threat = crew.hostile || !crew.ship.forced().is_empty();
+    let threat = crew.hostile || !crew.ship.forced().is_empty() || eng.as_deref().is_some_and(live_status::real_threat);
     if let Some(e) = crew.alert.update(threat, now) {
         alert_notice(&mut gp, e);
     }

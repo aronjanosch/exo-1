@@ -1,6 +1,7 @@
-//! The ship state display: PULSAR's status screen over `crew_core::ShipStatus`. Until the
-//! engineer lane's reactor and fire feed it, the numbers come from the placeholder ship in
-//! `CrewState`, and the buttons below force trouble onto it (anyone may press them: a dev tool).
+//! The ship state display: PULSAR's status screen over `crew_core::ShipStatus`, as
+//! `live_status` builds it (the engineer corner's reactor, grid and fire deck over the placeholder
+//! ship). The dev buttons force trouble onto the placeholder (anyone may press them), and the
+//! supply row buys a rod pack for the rod crate from the buyer's role allowance.
 use super::*;
 use crate::displays::{DisplayAction, Panels};
 use crew_core::status::{Forced, ShipSystem, ShipStatus, SYSTEM_MAX};
@@ -10,10 +11,15 @@ use display_core::{bar, button, column, label, row, space, title, Panel, Tone};
 pub const ID: PanelId = PanelId::new("captain_ship_state");
 pub const NAME: &str = "Ship state";
 
-/// Which room the fire and breach buttons hit.
+/// A rod pack: this many rods into the engineer's rod crate for this many credits.
+/// TODO(initiator): price and size.
+pub const ROD_PACK: (u32, i64) = (2, 100);
+
+/// Which room the fire and breach buttons hit, and the last purchase.
 #[derive(Resource, Debug, Clone, PartialEq, Default)]
 pub struct ShipStateUi {
     pub room: usize,
+    pub bought: Option<String>,
 }
 
 pub fn plugin(app: &mut App) {
@@ -54,6 +60,9 @@ pub fn panel(s: &ShipStatus, ui: &ShipStateUi, mission: Option<String>) -> Panel
         _ => Tone::Normal,
     };
     left.push(label(format!("REACTOR  {:?}  {:.0} %  {:?}   fuel {:.0} %", r.mode, r.temp * 100.0, r.band, r.fuel * 100.0)).tone(tone).fixed(26.0));
+    if let (Some(out), Some(load)) = (r.output_kw, r.load_kw) {
+        left.push(label(format!("OUTPUT  {out:.0} kW of {load:.0} kW asked")).tone(if out + 1.0 < load { Tone::Warn } else { Tone::Normal }).fixed(26.0));
+    }
     left.push(label(format!("CLOCK  {}", s.clock_left_s.map(clock).unwrap_or_else(|| "-".into()))).fixed(26.0));
     left.push(label(format!("MISSION  {}", mission.unwrap_or_else(|| "none tracked".into()))).fixed(26.0));
     left.push(space());
@@ -71,6 +80,8 @@ pub fn panel(s: &ShipStatus, ui: &ShipStateUi, mission: Option<String>) -> Panel
     right.push(row(6.0, vec![label(format!("ROOM  {room}")).flex(2.0), button("NEXT ROOM", "room_next").flex(1.0)]).fixed(40.0));
     right.push(row(6.0, vec![button("FIRE", "fire"), button("BREACH", "breach"), button("REACTOR HOT", "hot")]).fixed(44.0));
     right.push(row(6.0, vec![button("WEAPONS DOWN", "down"), button("CLEAR", "clear")]).fixed(44.0));
+    right.push(label("SUPPLY").tone(Tone::Dim).fixed(22.0));
+    right.push(row(6.0, vec![button(format!("BUY ROD PACK ({}) {} cr", ROD_PACK.0, ROD_PACK.1), "buy_rods").flex(1.4), label(ui.bought.clone().unwrap_or_else(|| "paid from your role's allowance".into())).tone(Tone::Dim).flex(1.6)]).fixed(44.0));
     Panel::new(PANEL_PX[0], PANEL_PX[1], row(28.0, vec![column(6.0, left).flex(1.0), column(6.0, right).flex(1.0)]))
 }
 
@@ -82,9 +93,10 @@ pub fn mission_line(gp: &Gameplay) -> Option<String> {
     Some(format!("{}  {}/{}", gp.text(&l.title), l.done, l.of))
 }
 
-pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut ui: ResMut<ShipStateUi>, mut crew: ResMut<CrewState>) {
+#[allow(clippy::too_many_arguments)]
+pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut ui: ResMut<ShipStateUi>, mut crew: ResMut<CrewState>, live: Res<live_status::LiveShip>, mut eng: Option<ResMut<crate::dev_area::engineer::Engineering>>, mut gp: ResMut<Gameplay>, role: Res<DevRole>) {
     for c in clicks.read().filter(|c| c.panel == ID) {
-        let status = crew.ship.status();
+        let status = live.get(&crew);
         let room = status.rooms.get(ui.room % status.rooms.len().max(1)).map(|r| r.id.clone()).unwrap_or_else(|| RoomId::new("bridge"));
         match c.action.as_str() {
             "room_next" => ui.room = (ui.room + 1) % status.rooms.len().max(1),
@@ -93,11 +105,23 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut ui: ResMut<Ship
             "hot" => crew.ship.force(Forced::ReactorHot),
             "down" => crew.ship.force(Forced::SystemDown(ShipSystem::Weapons)),
             "clear" => crew.ship.clear(),
+            "buy_rods" => match crew.budget.try_spend(role.0, ROD_PACK.1, gp.progress.wallet()) {
+                Ok(ev) => {
+                    gp.push_world(crate::gameplay::HOST, ev);
+                    if let Some(e) = eng.as_deref_mut() {
+                        e.rods_in_crate += ROD_PACK.0;
+                    }
+                    let left = crew.budget.remaining(role.0);
+                    ui.bought = Some(format!("{:?} paid {} cr, allowance left {left}", role.0, ROD_PACK.1));
+                    gp.log.push(format!("captain: bought rods as {:?}", role.0));
+                }
+                Err(r) => refuse(&mut gp, &r),
+            },
             _ => warn!("ship state: unknown action {c:?}"),
         }
     }
 }
 
-pub fn write_panel(gp: Res<Gameplay>, crew: Res<CrewState>, ui: Res<ShipStateUi>, mut panels: ResMut<Panels>) {
-    panels.set(ID, panel(&crew.ship.status(), &ui, mission_line(&gp)));
+pub fn write_panel(gp: Res<Gameplay>, crew: Res<CrewState>, live: Res<live_status::LiveShip>, ui: Res<ShipStateUi>, mut panels: ResMut<Panels>) {
+    panels.set(ID, panel(&live.get(&crew), &ui, mission_line(&gp)));
 }

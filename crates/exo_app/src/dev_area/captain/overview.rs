@@ -15,8 +15,11 @@ pub const NAME: &str = "Captain's overview";
 /// Placeholder crew next to the player: name, role, kind, HP. Invented names.
 pub const CREW: [(&str, Role, &str, u32); 3] = [("Pim Noodle", Role::Pilot, "bot", 100), ("Ola Sprocket", Role::Engineer, "bot", 87), ("Dax Marmalade", Role::Tactical, "bot", 100)];
 /// Stations and devices an order can point at (rooms come from the ship). TODO(initiator): from the ship data.
-pub const STATIONS: [&str; 4] = ["helm", "turret_port", "engine_board", "scanner"];
-pub const DEVICES: [&str; 4] = ["reactor", "oxygen_generator", "shield_emitter", "jump_drive"];
+/// The engineer corner's are real (`live_status`), the rest placeholders; `turret_port` is the bot demo's turret.
+pub const STATIONS: [&str; 5] = ["helm", "turret_port", live_status::REACTOR_CONSOLE, live_status::POWER_CONSOLE, "scanner"];
+pub const DEVICES: [&str; 6] = [crate::dev_area::engineer::REACTOR, crate::dev_area::engineer::PUMP, crate::dev_area::engineer::EXTINGUISHER, crate::dev_area::engineer::DOOR, "oxygen_generator", "shield_emitter"];
+/// Alarm rows shown at most.
+pub const ALARM_ROWS: usize = 3;
 /// Ships the captain can name as the target. Invented.
 pub const SHIPS: [&str; 3] = ["none", "Sticky Wicket (melon freighter)", "Rusty Kettle (scrapper)"];
 /// Three canned phrases per special order slot.
@@ -66,8 +69,8 @@ pub fn targets(kind: OrderKind, ship: &crew_core::ShipStatus) -> Vec<Target> {
     }
 }
 
-fn chosen_target(ui: &OverviewUi, crew: &CrewState) -> Option<Target> {
-    let ts = targets(ui.kind, &crew.ship.status());
+fn chosen_target(ui: &OverviewUi, ship: &crew_core::ShipStatus) -> Option<Target> {
+    let ts = targets(ui.kind, ship);
     (!ts.is_empty()).then(|| ts[ui.target % ts.len()].clone())
 }
 
@@ -119,10 +122,10 @@ pub fn alert_name(a: AlertLevel) -> &'static str {
 }
 
 /// The overview from the state (1280 x 760 panel pixels).
-pub fn panel(gp: &Gameplay, crew: &CrewState, ui: &OverviewUi, role: Role) -> Panel {
+pub fn panel(gp: &Gameplay, crew: &CrewState, ui: &OverviewUi, role: Role, ship: &crew_core::ShipStatus, alarms: &[live_status::AlarmRow]) -> Panel {
     let now = gp.clock();
     let wallet = gp.progress.wallet();
-    let line = |cells: Vec<String>| row(8.0, cells.into_iter().enumerate().map(|(i, c)| label(c).flex(if i == 0 { 2.0 } else { 1.0 })).collect()).fixed(26.0);
+    let line = |cells: Vec<String>| row(8.0, cells.into_iter().enumerate().map(|(i, c)| label(c).flex(if i == 0 { 2.0 } else { 1.0 })).collect()).fixed(22.0);
 
     // Left: crew, alert, target ship, budget.
     let mut left = vec![title("CAPTAIN  OVERVIEW").fixed(40.0), label("CREW").tone(Tone::Dim).fixed(22.0), line(vec!["You".into(), format!("{role:?}"), "player".into(), "HP 100".into()])];
@@ -130,19 +133,24 @@ pub fn panel(gp: &Gameplay, crew: &CrewState, ui: &OverviewUi, role: Role) -> Pa
         left.push(line(vec![name.into(), format!("{r:?}"), kind.into(), format!("HP {hp}")]));
     }
     left.push(line(vec!["(empty slot)".into(), "Scientist".into(), "-".into(), "-".into()]));
-    left.push(button(format!("DEV: PLAY AS {}", to_name(Addressee::Slot(role))), "dev_role").fixed(34.0));
+    left.push(button(format!("DEV: PLAY AS {}", to_name(Addressee::Slot(role))), "dev_role").fixed(30.0));
     let level = crew.alert.level();
     let since = crew.alert.log().last().map(|c| format!("{} since {:.0} s ({:?})", alert_name(c.to), now - c.at_s, c.cause)).unwrap_or_else(|| "GREEN since the start".into());
     left.push(label("ALERT").tone(Tone::Dim).fixed(22.0));
-    left.push(row(8.0, AlertLevel::ALL.iter().map(|a| button(pick(alert_name(*a), *a == level), format!("alert:{}", a.id()))).collect()).fixed(44.0));
+    left.push(row(8.0, AlertLevel::ALL.iter().map(|a| button(pick(alert_name(*a), *a == level), format!("alert:{}", a.id()))).collect()).fixed(38.0));
     left.push(label(since).tone(match level { AlertLevel::Green => Tone::Good, AlertLevel::Yellow => Tone::Warn, AlertLevel::Red => Tone::Bad }).fixed(24.0));
-    left.push(row(8.0, vec![label(format!("TARGET  {}", SHIPS[ui.ship])).flex(2.2), button("NEXT", "ship_next").flex(0.8), toggle(ui.auto_target, "AUTO", "auto_target").flex(1.0)]).fixed(40.0));
+    left.push(label(format!("ALARMS  {}", if alarms.is_empty() { "none" } else { "" })).tone(if alarms.is_empty() { Tone::Dim } else { Tone::Bad }).fixed(22.0));
+    for (i, a) in alarms.iter().take(ALARM_ROWS).enumerate() {
+        let room = a.room.replace('_', " ");
+        left.push(row(6.0, vec![label(format!("{}  {room}", a.text)).tone(Tone::Bad).flex(3.0), button("ORDER", format!("alarm:{i}")).enabled(a.order.is_some()).flex(0.9)]).fixed(30.0));
+    }
+    left.push(row(8.0, vec![label(format!("TARGET  {}", SHIPS[ui.ship])).flex(2.2), button("NEXT", "ship_next").flex(0.8), toggle(ui.auto_target, "AUTO", "auto_target").flex(1.0)]).fixed(34.0));
     let pool = crew.budget.pool(wallet);
     left.push(label(format!("BUDGET  total {}   available {}", pool.total, pool.available)).fixed(26.0));
     for r in BUDGET_ROLES {
-        left.push(row(8.0, vec![label(format!("{r:?}  {}", crew.budget.remaining(r))).flex(2.0), button("-100", format!("wd:{}", r.id())).enabled(crew.budget.remaining(r) > 0), button("+100", format!("rel:{}", r.id())).enabled(pool.available >= crew_core::budget::STEP)]).fixed(36.0));
+        left.push(row(8.0, vec![label(format!("{r:?}  {}", crew.budget.remaining(r))).flex(2.0), button("-100", format!("wd:{}", r.id())).enabled(crew.budget.remaining(r) > 0), button("+100", format!("rel:{}", r.id())).enabled(pool.available >= crew_core::budget::STEP)]).fixed(30.0));
     }
-    left.push(toggle(crew.budget.limits(), "PURCHASE LIMITS", "limits").fixed(36.0));
+    left.push(toggle(crew.budget.limits(), "PURCHASE LIMITS", "limits").fixed(30.0));
     left.push(space());
 
     // Right: orders.
@@ -151,7 +159,7 @@ pub fn panel(gp: &Gameplay, crew: &CrewState, ui: &OverviewUi, role: Role) -> Pa
     for half in OrderKind::WHEEL.chunks(4) {
         right.push(row(6.0, half.iter().map(|k| button(pick(kind_name(*k), *k == ui.kind), format!("kind:{}", k.id()))).collect()).fixed(40.0));
     }
-    let target = chosen_target(ui, crew).map(|t| target_name(&t)).unwrap_or_else(|| "(no target)".into());
+    let target = chosen_target(ui, ship).map(|t| target_name(&t)).unwrap_or_else(|| "(no target)".into());
     let has_targets = ui.kind.target_kind().is_some();
     right.push(row(6.0, vec![button("<", "tgt_prev").enabled(has_targets).flex(0.5), label(format!("TARGET  {target}")).flex(3.0), button(">", "tgt_next").enabled(has_targets).flex(0.5)]).fixed(40.0));
     right.push(row(6.0, [OrderPriority::Low, OrderPriority::Normal, OrderPriority::Urgent].iter().map(|p| button(pick(&format!("{p:?}").to_uppercase(), *p == ui.priority), format!("pri:{p:?}"))).collect()).fixed(40.0));
@@ -171,7 +179,7 @@ pub fn panel(gp: &Gameplay, crew: &CrewState, ui: &OverviewUi, role: Role) -> Pa
     }
     right.push(space());
 
-    Panel::new(PANEL_PX[0], PANEL_PX[1], row(28.0, vec![column(6.0, left).flex(1.0), column(6.0, right).flex(1.15)]))
+    Panel::new(PANEL_PX[0], PANEL_PX[1], row(28.0, vec![column(4.0, left).flex(1.0), column(6.0, right).flex(1.15)]))
 }
 
 fn result_of(gp: &mut Gameplay, crew: &CrewState, r: Result<OrderEvent, Refusal>) {
@@ -183,8 +191,10 @@ fn result_of(gp: &mut Gameplay, crew: &CrewState, r: Result<OrderEvent, Refusal>
 }
 
 /// The overview's clicks.
-pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut ui: ResMut<OverviewUi>, mut crew: ResMut<CrewState>, mut gp: ResMut<Gameplay>, mut role: ResMut<DevRole>) {
+#[allow(clippy::too_many_arguments)]
+pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut ui: ResMut<OverviewUi>, mut crew: ResMut<CrewState>, mut gp: ResMut<Gameplay>, mut role: ResMut<DevRole>, live: Res<live_status::LiveShip>, eng: Option<Res<crate::dev_area::engineer::Engineering>>) {
     for c in clicks.read().filter(|c| c.panel == ID) {
+        let ship = live.get(&crew);
         let (by, now, wallet) = (role.0, gp.clock(), gp.progress.wallet());
         let crew = &mut *crew;
         let a = c.action.as_str();
@@ -197,6 +207,14 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut ui: ResMut<Over
                 Some(Err(r)) => refuse(&mut gp, &r),
                 _ => {}
             },
+            "alarm" => {
+                // Pre-fill the order wheel with the alarm's order and its real target.
+                let alarms = eng.as_deref().map(live_status::alarms).unwrap_or_default();
+                if let Some((kind, target)) = arg.parse::<usize>().ok().and_then(|i| alarms.get(i)).and_then(|a| a.order.clone()) {
+                    ui.kind = kind;
+                    ui.target = targets(kind, &ship).iter().position(|t| *t == target).unwrap_or(0);
+                }
+            }
             "ship_next" => ui.ship = (ui.ship + 1) % SHIPS.len(),
             "auto_target" => ui.auto_target = c.value.is_some_and(|v| v > 0.5),
             "rel" | "wd" => {
@@ -219,12 +237,12 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut ui: ResMut<Over
                 }
             }
             "tgt_prev" | "tgt_next" => {
-                let n = targets(ui.kind, &crew.ship.status()).len().max(1);
+                let n = targets(ui.kind, &ship).len().max(1);
                 ui.target = if head == "tgt_next" { (ui.target + 1) % n } else { (ui.target + n - 1) % n };
             }
             "pri" => ui.priority = [OrderPriority::Low, OrderPriority::Normal, OrderPriority::Urgent].into_iter().find(|p| format!("{p:?}") == arg).unwrap_or(ui.priority),
             "give" => {
-                let t = chosen_target(&ui, crew);
+                let t = chosen_target(&ui, &ship);
                 let r = crew.orders.give(by, ui.to, ui.kind, t, ui.priority, now, None);
                 result_of(&mut gp, crew, r);
             }
@@ -254,7 +272,8 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut ui: ResMut<Over
     }
 }
 
-pub fn write_panel(gp: Res<Gameplay>, crew: Res<CrewState>, ui: Res<OverviewUi>, role: Res<DevRole>, mut panels: ResMut<Panels>) {
-    panels.set(ID, panel(&gp, &crew, &ui, role.0));
+pub fn write_panel(gp: Res<Gameplay>, crew: Res<CrewState>, ui: Res<OverviewUi>, role: Res<DevRole>, live: Res<live_status::LiveShip>, eng: Option<Res<crate::dev_area::engineer::Engineering>>, mut panels: ResMut<Panels>) {
+    let alarms = eng.as_deref().map(live_status::alarms).unwrap_or_default();
+    panels.set(ID, panel(&gp, &crew, &ui, role.0, &live.get(&crew), &alarms));
 }
 

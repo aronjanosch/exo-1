@@ -15,7 +15,6 @@ use gameplay_core::notice::{Arg, Notice, NoticeKind, NoticeQueue};
 use gameplay_core::text::{Picker, TextTable};
 use gameplay_core::{ClientId, CommodityId, Content, CrateId, Dedup, Event, LocationId, Progress, TextKey, TrackId, WorldEvent};
 use gameplay_core::save::{Envelope, KernelState, SaveError};
-use customers_core::{CustomerContent, Customers};
 use jobs_core::{Briefing, GiverId, JobContent, JobEvent, JobId, JobState, Jobs, Outcome};
 
 use crate::cargo::{crate_bundle, Crate, Crates};
@@ -61,8 +60,6 @@ pub fn window_plugin(app: &mut App) {
 /// The host's own sender id in events until the network sends each client's (#134); the folder's
 /// id is `savefile::LocalClient` (#135).
 pub const HOST: ClientId = ClientId(1);
-/// Seed of a new game's customer orders (a loaded game continues the saved draws).
-const CUSTOMER_SEED: u64 = 0xC057_0001;
 /// Seed of a new game: the text picks (#135 keeps it in the save). TODO(initiator): a new game
 /// draws its own; fixed keeps the scenarios repeatable.
 const NEW_GAME_SEED: u64 = 0x5EED_0001;
@@ -117,9 +114,6 @@ pub struct Gameplay {
     pub shown: Vec<ShownLine>,
     pub progress: Progress,
     pub jobs: Jobs,
-    /// Named buyers: their orders become offers of the wholesaler (#168).
-    pub customers: Customers,
-    pub customer_content: CustomerContent,
     dedup: Dedup,
     seq: u64,
     next_crate: u64,
@@ -146,10 +140,6 @@ pub struct Gameplay {
     pub seed: u64,
     /// Something happened to a job since the last save: the autosave writes soon (#135).
     pub save_wanted: bool,
-    /// Round 6: traffic, heat, the lab, the family ladder and its shops (`smuggling`).
-    pub smuggling: crate::smuggling::systems::Systems,
-    /// Round 6b: felt feedback (stamps, kicks, bursts) for the window and scenario checks.
-    pub feedback: crate::feedback::Feedback,
 }
 
 /// A giver's counter, opened.
@@ -211,29 +201,22 @@ impl Gameplay {
             .find(|f| f.path == "text/en.json")
             .map(|f| TextTable::from_json("content/gameplay/text/en.json", &f.text).unwrap_or_else(|e| panic!("{e}")))
             .unwrap_or_default();
-        let customer_content = CustomerContent::load(&files, &kernel).unwrap_or_else(|e| fail(e));
-        let mut errors = jobs_content.check_texts(&text);
-        errors.extend(customer_content.check_texts(&text));
-        errors.extend(check_prices(&kernel, &jobs_content, &customer_content));
+        let errors = jobs_content.check_texts(&text);
         if !errors.is_empty() {
             fail(errors);
         }
-        let smuggling = crate::smuggling::systems::Systems::load(&files, &kernel, &text).unwrap_or_else(|e| fail(e));
-        let customers = Customers::new(&customer_content, CUSTOMER_SEED);
         let progress = Progress::new(&kernel);
         let jobs = Jobs::default();
-        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(NEW_GAME_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, customers, customer_content, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, tracked: None, briefings: Default::default(), abandon_asked: None, arrow: None, seed: NEW_GAME_SEED, save_wanted: false, smuggling, feedback: Default::default() };
+        let mut g = Gameplay { kernel, jobs_content, text, picker: Picker::new(NEW_GAME_SEED), notices: NoticeQueue::default(), shown: Vec::new(), progress, jobs, dedup: Dedup::default(), seq: 0, next_crate: 1, pads: Vec::new(), pads_for: None, queue: Vec::new(), log: Vec::new(), readout: String::new(), clock: 0.0, panel: None, tracked: None, briefings: Default::default(), abandon_asked: None, arrow: None, seed: NEW_GAME_SEED, save_wanted: false };
         g.refresh_offers();
         g
     }
 
-    /// The gameplay sections of a save (#135): kernel, jobs, customers and the game's seed. The
+    /// The gameplay sections of a save (#135): kernel, jobs and the game's seed. The
     /// world (crates, ship) is `savefile::snapshot`'s.
     pub fn save_to(&self, env: &mut Envelope) {
         KernelState { progress: self.progress.clone(), dedup: self.dedup.clone() }.save(env);
         self.jobs.save(env);
-        self.customers.save(env);
-        self.smuggling.save(env);
         GameSave { seed: self.seed }.save(env);
     }
 
@@ -242,14 +225,12 @@ impl Gameplay {
         self.next_crate
     }
 
-    /// A restart from a save (#135): progress, jobs, customers and seed from `env`; notices, the
+    /// A restart from a save (#135): progress, jobs and seed from `env`; notices, the
     /// panel and anything queued are gone. Content and pads stay (same build, same planet).
     pub fn restore(&mut self, env: &Envelope, next_crate: u64) -> Result<(), SaveError> {
         let kernel = KernelState::load(env)?.ok_or_else(|| SaveError::Parse("no kernel section".into()))?;
         self.jobs = Jobs::load(env)?.unwrap_or_default();
-        self.customers = Customers::load(env)?.unwrap_or_else(|| Customers::new(&self.customer_content, CUSTOMER_SEED));
         self.seed = GameSave::load(env)?.map_or(NEW_GAME_SEED, |g| g.seed);
-        self.smuggling.restore(env)?;
         // The host's next events continue above the saved ones, so none is taken for a repeat.
         self.seq = kernel.dedup.next_seq(HOST).saturating_sub(1);
         self.picker = Picker::new(self.seed ^ self.seq);
@@ -472,16 +453,6 @@ impl Gameplay {
         self.log.push(s);
     }
 
-    /// Queues a notice for the players.
-    /// A radio line (round 6): the speaker's name from a text key, the line picked from a pool.
-    pub fn say(&mut self, who: &TextKey, pool: &str) {
-        let who = self.text(who);
-        let text = self.picker.pick(&self.text, pool);
-        self.note(format!("radio [{who}] {text}"));
-        let at = self.clock;
-        self.smuggling.radio.push(crate::smuggling::RadioLine { who, text, at });
-    }
-
     /// A line from a pool (never the same twice in a row), for glue texts.
     pub fn line(&mut self, pool: &str) -> String {
         self.picker.pick(&self.text, pool)
@@ -529,33 +500,6 @@ pub fn grant_starting_licences(mut gp: ResMut<Gameplay>) {
     for track in tracks {
         gp.push_world(HOST, WorldEvent::TrackChanged { track, delta: 1, player: Some(HOST) });
     }
-}
-
-/// The one price table against the records it mirrors: customers pay the commodity's base price,
-/// the courier rewards are the templates' (#168). Errors for what differs.
-fn check_prices(k: &Content, jc: &JobContent, cc: &CustomerContent) -> Vec<String> {
-    let p = &cc.prices;
-    let mut e = Vec::new();
-    for (c, price) in &p.record.customer {
-        if let Some(com) = k.commodities.get(c)
-            && com.record.base_price != *price
-        {
-            e.push(format!("{}: customer: '{c}' is {price} here but the commodity's base_price is {}", p.path, com.record.base_price));
-        }
-    }
-    for (t, price) in &p.record.courier {
-        match jc.templates.get(&jobs_core::TemplateId::new(t.clone())) {
-            None => e.push(format!("{}: courier: no job template '{t}'", p.path)),
-            Some(tpl) if tpl.record.reward != *price => e.push(format!("{}: courier: '{t}' is {price} here but the template pays {}", p.path, tpl.record.reward)),
-            Some(_) => {}
-        }
-    }
-    for t in jc.templates.values().filter(|t| t.record.id.as_str().starts_with("courier_")) {
-        if !p.record.courier.contains_key(t.record.id.as_str()) {
-            e.push(format!("{}: courier: no price for the template '{}'", p.path, t.record.id));
-        }
-    }
-    e
 }
 
 /// Pads of the current planet, when it changes (#129).
@@ -632,23 +576,6 @@ pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>
                         Ok(ns) => ns.into_iter().for_each(|n| g.notify(n)),
                         Err(r) => g.note(format!("refused {:?}: {r:?}", ev.payload)),
                     }
-                    // Customers read time and settled orders; their orders go back in as events.
-                    for o in g.customers.apply_world(&g.customer_content, &g.kernel, &ev) {
-                        match o {
-                            customers_core::Outcome::Emit(e) => g.push_world(HOST, e),
-                            customers_core::Outcome::Notice(n) => g.notify(n),
-                        }
-                    }
-                    // Round 6: traffic, heat, the lab and the family ladder read every world event too.
-                    for o in g.smuggling.apply_world(&g.kernel, &g.progress, &ev) {
-                        match o {
-                            crate::smuggling::systems::Out::Emit(e) => g.push_world(HOST, e),
-                            crate::smuggling::systems::Out::Notice(n) => g.notify(n),
-                            crate::smuggling::systems::Out::Say { who, key } => g.say(&who, key.as_str()),
-                        }
-                    }
-                    // Round 6b: what the player feels besides the text.
-                    crate::feedback::on_world(g, &ev.payload);
                     g.jobs.apply_world(&g.jobs_content, &ev)
                 }
                 Queued::Job(ev) => {
@@ -772,18 +699,7 @@ pub fn update_readout(
         let (bearing_deg, dist_m) = bearing(pos, look, pad.centre, planet.up(pos));
         Some(Arrow { target, stop, bearing_deg, dist_m })
     });
-    // Round 6: a clearance points the arrow at the assigned pad; else a tracked buyer's order.
-    let smuggle_target = gp.smuggling.traffic.clearance(HOST).map(|c| c.pad.clone()).or_else(|| {
-        let o = gp.smuggling.tracked_order?;
-        gp.customers.product_orders().find(|(i, _)| *i == o).map(|(_, po)| po.at.clone())
-    });
-    let smuggle_arrow = smuggle_target.and_then(|target| {
-        let (pos, look) = view?;
-        let pad = gp.pad_of(&target)?;
-        let (bearing_deg, dist_m) = bearing(pos, look, pad.centre, planet.up(pos));
-        Some(Arrow { target, stop: jobs_core::map::Stop::Dropoff, bearing_deg, dist_m })
-    });
-    gp.arrow = smuggle_arrow.or(arrow);
+    gp.arrow = arrow;
     let money = gp.progress.wallet();
     let mut s = format!("{money} {}", gp.text(&TextKey::new("track.wallet.name")));
     let xp = gp.progress.value(&gp.kernel, &TrackId::new("freight_xp"), Some(HOST));
@@ -1080,7 +996,6 @@ mod tests {
         assert!(gp.offers_of(&GiverId::new("small_family")).is_empty());
         assert!(!gp.offers_of(&GiverId::new("courier_office")).is_empty());
         assert_eq!(gp.jobs_content.givers.len(), 4, "courier office, small family, wholesaler, flight school");
-        assert_eq!(gp.customer_content.customers.len(), 9, "three wholesale customers and six buyers with taste (round 6)");
     }
 
     #[test]

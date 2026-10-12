@@ -8,8 +8,6 @@ pub mod controls;
 pub mod daynight;
 pub mod dev;
 pub mod env;
-pub mod feedback;
-pub mod feedback_view;
 pub mod flight_events;
 pub mod frame_cost;
 pub mod gameplay;
@@ -36,7 +34,6 @@ pub mod scenario;
 pub mod settings;
 pub mod sites;
 pub mod sky;
-pub mod smuggling;
 pub mod ship;
 pub mod terrain;
 pub mod terrain_material;
@@ -374,7 +371,7 @@ pub fn build_app(o: &Options) -> App {
     app.add_plugins(frame_cost::plugin);
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
     app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, avian_crates::plugin, cargo::plugin, hud::plugin, net_live::plugin));
-    app.add_plugins((gameplay::plugin, town::plugin, smuggling::glue::plugin));
+    app.add_plugins((gameplay::plugin, town::plugin));
     // The save (#135) belongs to players: scripted and headless runs keep theirs in the output
     // folder and start new.
     let player_run = o.scenario.is_none() && !o.headless;
@@ -400,7 +397,7 @@ pub fn build_app(o: &Options) -> App {
     });
     if !o.headless {
         app.add_plugins((view::plugin, controls::window_plugin, settings::window_plugin, terrain::plugin, daynight::window_plugin, grab::window_plugin, cargo::window_plugin));
-        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, town::window_plugin, named_material::window_plugin, smuggling::hud::window_plugin, feedback_view::window_plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin, help::window_plugin, dev::window_plugin));
+        app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, town::window_plugin, named_material::window_plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin, help::window_plugin, dev::window_plugin));
         if o.menu() {
             app.add_plugins(menu::plugin);
         }

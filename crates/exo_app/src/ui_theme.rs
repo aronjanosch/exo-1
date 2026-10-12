@@ -2,8 +2,6 @@
 //! panels, stamps and lines agree. TODO(initiator): the look itself.
 use bevy::prelude::*;
 
-use crate::feedback::Tone;
-
 pub const INK: Color = Color::srgb(0.95, 0.95, 0.88);
 pub const DIM: Color = Color::srgb(0.62, 0.64, 0.66);
 pub const GOLD: Color = Color::srgb(1.0, 0.86, 0.42);
@@ -21,15 +19,6 @@ pub const STAMP: f32 = 46.0;
 
 /// Space between the screen edge and the HUD (px).
 pub const MARGIN: f32 = 16.0;
-
-pub fn tone(t: Tone) -> Color {
-    match t {
-        Tone::Good => GOOD,
-        Tone::Bad => BAD,
-        Tone::Info => INFO,
-        Tone::Gold => GOLD,
-    }
-}
 
 /// A colour with its alpha scaled (fades).
 pub fn faded(c: Color, a: f32) -> Color {

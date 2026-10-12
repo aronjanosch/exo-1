@@ -1,7 +1,7 @@
 //! Round 6, the town, headless: the city stands on its place with box colliders for its buildings,
 //! the plan's characters stand on the ground, a walker who walks at the company tower stops at its
 //! wall, and every pad of the new towns is on the planet.
-use super::deliver::{gp, pad};
+use super::jobs_helpers::{gp, pad};
 use super::*;
 use crate::town::Town;
 use gameplay_core::LocationId;

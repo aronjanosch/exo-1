@@ -21,8 +21,5 @@ grab_core = { workspace = true }
 content_core = { workspace = true }
 gameplay_core = { workspace = true }
 jobs_core = { workspace = true }
-customers_core = { workspace = true }
 production_core = { workspace = true }
-traffic_core = { workspace = true }
-heat_core = { workspace = true }
 serde_json = { workspace = true }

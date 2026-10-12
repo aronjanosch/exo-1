@@ -4,7 +4,7 @@
 //! these events, never the flight model), the crate is set down on the Drip Rock pad, and the
 //! pilot has the licence: the seat works, the exam is closed to them, the courier office gives a
 //! standing bonus for honours.
-use super::deliver::{crates_above, goods_of, gp, prompt, show_offer, walker_on_pad};
+use super::jobs_helpers::{crates_above, goods_of, gp, prompt, show_offer, walker_on_pad};
 use super::*;
 use crate::gameplay::{Gameplay, HOST};
 use gameplay_core::{LocationId, TrackId, WorldEvent};

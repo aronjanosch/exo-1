@@ -229,7 +229,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) 
         c.v.insert("asked", eng(w).grid.request_kw());
         true
     }));
-    s.push(click("reactor: weapons limit to 0".into(), POWER_PANEL, "limit_weapons", Some(0.0), |e| e.grid.group(Group::Weapons).limit < 0.01));
+    s.push(click("reactor: weapons limit to 0".into(), POWER_PANEL, "limit_weapons", Some(0.01), |e| e.grid.group(Group::Weapons).limit < 0.01));
     s.push(wait(0.5));
     s.push(Box::new(|w, c| {
         let e = eng(w);
@@ -317,6 +317,13 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) 
         }
         false
     }));
+    s.push(Box::new(|w, _| {
+        look_at(w, engineer::FIRE_AT, 0.5);
+        true
+    }));
+    s.push(wait(0.1));
+    s.push(shot_step("fire-from-door"));
+    s.push(aim("reactor: the prompt offers the door again", DOOR_AT, 1.1, "close the door"));
     s.push(tap_f("reactor: F closes the door", |w| !eng(w).door_open()));
     s.push(Box::new(|w, c| {
         let e = eng(w);
@@ -325,8 +332,9 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) 
         check(c, true, format!("reactor: door closed; spreads so far {}, fires in the side room {side}, side room oxygen {:.0} %", e.stats.spreads.len(), e.deck.room(e.side_room).oxygen_fraction() * 100.0));
         true
     }));
-    const AT_FIRE: [f64; 2] = [engineer::FIRE_AT[0], engineer::FIRE_AT[1] - 2.7];
-    s.push(walk("reactor: walk to the fire", &[[5.0, 7.0], AT_FIRE], 20.0));
+    // South-west of the fire, clear of the extinguisher's mount.
+    const AT_FIRE: [f64; 2] = [1.0, 7.0];
+    s.push(walk("reactor: walk to the fire", &[[5.0, 7.2], AT_FIRE], 20.0));
     s.push(Box::new(|w, _| {
         look_at(w, engineer::FIRE_AT, 0.5);
         true
@@ -353,7 +361,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) 
         true
     }));
     // Back: return the extinguisher, repair the reactor if the fire broke it, restart.
-    s.push(walk("reactor: back to the extinguisher's mount", &[[3.6, 5.2], AT_EXT], 20.0));
+    s.push(walk("reactor: back to the extinguisher's mount", &[[1.0, 5.2], AT_EXT], 20.0));
     s.push(stand_until_still());
     s.push(aim("reactor: the prompt offers to return it", EXTINGUISHER_AT, 0.9, "return the extinguisher"));
     s.push(tap_f("reactor: F returns the extinguisher", |w| !eng(w).extinguisher.held));

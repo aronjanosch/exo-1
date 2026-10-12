@@ -23,8 +23,8 @@ fn group_name(g: Group) -> &'static str {
         Group::Engines => "ENGINES",
         Group::Shields => "SHIELDS",
         Group::Weapons => "WEAPONS",
-        Group::LifeSupport => "LIFE SUPP.",
-        Group::Aux => "AUX/LIGHTS",
+        Group::LifeSupport => "LIFE",
+        Group::Aux => "LIGHTS",
     }
 }
 
@@ -74,12 +74,12 @@ pub fn reactor(e: &Engineering, skill: f64) -> Panel {
                 slider(fis / 100.0, format!("FISSION target {fis:.0}  (now {:.0})", r.fission()), "fission").fixed(34.0),
                 slider(turb / 100.0, format!("TURBINE target {turb:.0}  (now {:.0})", r.turbine()), "turbine").fixed(34.0),
                 bar(r.temperature() / 100.0, format!("TEMP {:.1}", r.temperature())).thresholds(Some(b.temp_optimal.hi / 100.0), Some(b.temp_allowed.hi / 100.0)).fixed(30.0),
-                small(format!("green {:.0}-{:.0}   fire above {:.0}   scram above {:.0}", b.temp_optimal.lo, b.temp_optimal.hi, b.temp_optimal.hi, b.temp_allowed.hi), Tone::Dim).fixed(22.0),
+                small(format!("green {:.0}-{:.0}  fire >{:.0}  scram >{:.0}", b.temp_optimal.lo, b.temp_optimal.hi, b.temp_optimal.hi, b.temp_allowed.hi), Tone::Dim).fixed(22.0),
                 bar(r.output_kw() / r.tuning().max_output_kw, format!("OUTPUT {:.0} kW  LOAD {:.0} kW", r.output_kw(), e.grid.request_kw())).fixed(30.0),
                 bar(fire_t, "FIRE TIMER").thresholds(Some(0.5), Some(0.8)).fixed(26.0),
                 bar(over_t, if r.safety() { "SCRAM TIMER" } else { "MELTDOWN TIMER" }).thresholds(Some(0.5), Some(0.8)).fixed(26.0),
                 row(8.0, alarms).fixed(28.0),
-                bar(life / (slots * 100.0), format!("FUEL  {} rods ({spent} spent), {} in the crate", r.rods().len(), e.rods_in_crate)).thresholds(Some(0.2), Some(0.1)).fixed(30.0),
+                bar(life / (slots * 100.0), format!("FUEL {} rods, {spent} spent, crate {}", r.rods().len(), e.rods_in_crate)).thresholds(Some(0.2), Some(0.1)).fixed(30.0),
                 row(10.0, vec![
                     button("INSERT ROD", "rod_in").enabled(e.rods_in_crate > 0 && r.rods().len() < r.tuning().slots),
                     button("EJECT SPENT", "rod_out").enabled(spent > 0),
@@ -116,7 +116,7 @@ pub fn power(e: &Engineering) -> Panel {
         };
         items.push(
             row(8.0, vec![
-                small(group_name(grp), Tone::Normal).fixed(120.0),
+                small(group_name(grp), Tone::Normal).fixed(110.0),
                 slider(st.limit, format!("limit {:.0} %", st.limit * 100.0), format!("limit_{key}")),
                 button(format!("P{}", st.priority), format!("prio_{key}")).fixed(56.0),
             ])

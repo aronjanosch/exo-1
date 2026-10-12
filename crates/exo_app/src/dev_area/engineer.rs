@@ -578,6 +578,25 @@ mod tests {
     }
 
     #[test]
+    fn the_spray_lands_on_the_fire_ahead() {
+        let mut e = Engineering::default();
+        let feet = DVec3::new(0.0, 0.0, 0.0);
+        let north = DVec3::Z;
+        // No fire: the end of the nozzle's line.
+        assert!((spray_point(&e.deck, feet, north) - DVec3::new(0.0, SPRAY_HEIGHT, SPRAY_RANGE)).length() < 1e-9);
+        // A fire 3 m ahead, a little to the side: the line's point nearest to it, in its reach.
+        e.deck.ignite(e.room, DVec3::new(0.4, 0.5, 3.0), 1.0);
+        let at = spray_point(&e.deck, feet, north);
+        assert!((at - DVec3::new(0.0, SPRAY_HEIGHT, 3.0)).length() < 1e-9, "{at:?}");
+        assert_eq!(e.deck.spray(at, 0.1), 1);
+        // A fire behind is not hit.
+        let mut d = Deck::new(FireTuning::default(), 1);
+        let r = d.add_room(100.0);
+        d.ignite(r, DVec3::new(0.0, 0.5, -3.0), 1.0);
+        assert_eq!(d.spray(spray_point(&d, feet, north), 0.1), 0);
+    }
+
+    #[test]
     fn the_pump_starts_broken() {
         let e = Engineering::default();
         assert!(!e.pump.functioning());

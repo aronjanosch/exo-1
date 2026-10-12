@@ -38,7 +38,7 @@ pub fn draw(
         let (w, up) = frame.ground(&planet, p.x, p.z, p.y);
         (w, frame.rotation(up, 0.0).as_quat())
     };
-    let glow = |m: &mut Assets<StandardMaterial>, c: LinearRgba| m.add(StandardMaterial { base_color: Color::BLACK, emissive: c, unlit: true, ..default() });
+    let glow = |m: &mut Assets<StandardMaterial>, c: LinearRgba| m.add(StandardMaterial { base_color: Color::srgb(0.1, 0.1, 0.1), emissive: c, perceptual_roughness: 0.6, ..default() });
 
     // Once: the reactor light and the aux lights on posts.
     if s.reactor_light.is_none() {
@@ -104,7 +104,7 @@ pub fn draw(
     }
 
     // Fires.
-    let fire_mat = s.fire_mat.get_or_insert_with(|| materials.add(StandardMaterial { base_color: Color::srgba(1.0, 0.45, 0.05, 0.85), emissive: LinearRgba::new(6.0, 1.8, 0.2, 1.0), alpha_mode: AlphaMode::Blend, ..default() })).clone();
+    let fire_mat = s.fire_mat.get_or_insert_with(|| materials.add(StandardMaterial { base_color: Color::srgba(1.0, 0.45, 0.05, 0.75), emissive: LinearRgba::new(6.0, 1.8, 0.2, 1.0), alpha_mode: AlphaMode::Blend, ..default() })).clone();
     let live: Vec<FireId> = e.deck.fires().iter().map(|f| f.id).collect();
     s.fires.retain(|id, ent| {
         let keep = live.contains(id);
@@ -114,9 +114,12 @@ pub fn draw(
         keep
     });
     for f in e.deck.fires() {
+        // Drawn a little narrower than its size (its burn range reaches further anyway) and below
+        // eye height, so a big fire does not swallow the camera of someone fighting it.
         let size = f.size.max(0.05);
-        let (w, rot) = place(DVec3::new(f.pos.x, size * 0.3, f.pos.z));
-        let tf = Transform { translation: (w - origin.origin).as_vec3(), rotation: rot, scale: Vec3::new(size as f32, (size * 0.6) as f32, size as f32) };
+        let (wide, high) = (size * 0.8, (0.15 + size * 0.25).min(1.3));
+        let (w, rot) = place(DVec3::new(f.pos.x, high * 0.5, f.pos.z));
+        let tf = Transform { translation: (w - origin.origin).as_vec3(), rotation: rot, scale: Vec3::new(wide as f32, high as f32, wide as f32) };
         match s.fires.get(&f.id).copied() {
             Some(ent) => {
                 if let Ok((mut t, mut wp)) = placed.get_mut(ent) {

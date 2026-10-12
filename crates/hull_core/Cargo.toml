@@ -1,0 +1,11 @@
+[package]
+name = "hull_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+glam = { workspace = true }
+gameplay_core = { workspace = true }
+device_core = { workspace = true }
+fire_core = { workspace = true }

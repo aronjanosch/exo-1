@@ -11,7 +11,7 @@ A co-op crew game in Rust with Bevy: friends run one walkable ship together, eac
 - Sparring partner first, implementer second.
 - The initiator decides design, balancing and system design. When a design gap appears, ask, or list the assumption and get a yes.
 - Build in small slices, one branch per feature.
-- Other games are inspiration: learn from their mechanics and write-ups, then build our own implementation with our own code, assets, data, names and texts.
+- Other games are inspiration and test material. Read their code and data, and copy or port models, mechanics, values and configs to try them in our world, side by side with our own. Code is rewritten in Rust and Bevy anyway; values get tuned to our game by playtest. Mark what is foreign: models and data under `content/foreign/<game>/`, ported values with a `// from <game>` comment, so a release can swap them out.
 
 **Spikes**: throwaway code on a `spike/<name>` branch, driven by a spike brief, never merged into `main`. Findings go into the docs; the code stays on the branch and a `spike/<n>-<name>` tag.
 
@@ -43,7 +43,7 @@ New dependencies, CI, `.cargo/`, `build.rs`, `unsafe`, networking, spawning proc
 
 ## Style
 
-- Simple look, best runtime performance. Assets original or CC0.
+- Simple look, best runtime performance. Assets we ship are original or CC0; foreign test material stays marked (see "Your role").
 - Invented names in content, tests and issues; no personal data.
 - Goofy tone is a feature. The setting is a strange galaxy.
 

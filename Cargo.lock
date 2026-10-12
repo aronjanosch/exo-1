@@ -2719,6 +2719,7 @@ dependencies = [
  "bevy",
  "content_core",
  "daynight_core",
+ "display_core",
  "flight_core",
  "gameplay_core",
  "grab_core",

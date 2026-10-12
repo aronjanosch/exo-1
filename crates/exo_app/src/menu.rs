@@ -474,6 +474,7 @@ fn keys(
     mut input: ResMut<SettingsInput>,
     mut settings: ResMut<Settings>,
     controls: Option<Res<crate::controls::Controls>>,
+    display: Option<Res<crate::displays::ActiveDisplay>>,
 ) {
     let text: Vec<KeyboardInput> = typed.read().cloned().collect();
     if let Some(edit) = &mut input.editing {
@@ -505,7 +506,9 @@ fn keys(
         }
         return;
     }
-    if keys.just_pressed(KeyCode::Escape) {
+    // Escape at a display leaves the display (`displays`), it does not pause (#285).
+    let at_display = display.is_some_and(|d| d.using().is_some());
+    if keys.just_pressed(KeyCode::Escape) && !(at_display && menu.screen == Screen::None) {
         menu.screen = match menu.screen {
             Screen::None => Screen::Paused,
             Screen::Paused => Screen::None,
@@ -797,5 +800,18 @@ mod tests {
         assert!(w.resource::<Settings>().sound);
         assert!(crate::settings::load(&dir).0.sound, "saved on");
         assert_eq!(w.resource::<Settings>().volume, 0.5, "the volume stays");
+    }
+
+    /// #285: Escape at a display leaves it (in `displays`); it must not also open the pause menu.
+    #[test]
+    fn escape_at_a_display_does_not_pause() {
+        let mut app = settings_app("display-escape");
+        app.world_mut().resource_mut::<Menu>().screen = Screen::None;
+        app.insert_resource(crate::displays::ActiveDisplay::Using(Entity::PLACEHOLDER));
+        press_key(&mut app, KeyCode::Escape);
+        assert_eq!(app.world().resource::<Menu>().screen, Screen::None);
+        app.insert_resource(crate::displays::ActiveDisplay::Idle);
+        press_key(&mut app, KeyCode::Escape);
+        assert_eq!(app.world().resource::<Menu>().screen, Screen::Paused);
     }
 }

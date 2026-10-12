@@ -14,6 +14,11 @@ edges; the lower hull is one continuous loft under the whole cabin.
 Revision 4 follows the initiator's repainted plan: storage / gear room / airlock on the port side,
 storage / crew on the starboard side, weapons (port) and lab (starboard) in front of the turret room, and a larger
 reactor level (cargo bay aft, reactor hall forward) that reaches into the sloped keel face.
+
+Footprint: the whole plan is drawn in design coordinates (revision 4) and stretched by FOOT in x and y at the end
+of the build (stretch_plan); heights do not change, because people, decks (2.8 m) and doors (2.2 m high) do not
+scale. FOOT = 1 rebuilds revision 4 exactly (same geometry hash). Door and window widths stretch with the plan.
+Option: --footprint <factor>.
 """
 from pathlib import Path
 import argparse
@@ -23,9 +28,9 @@ import math
 import sys
 import bpy
 import bmesh
-from mathutils import Vector
+from mathutils import Vector, Matrix
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT =Path(__file__).resolve().parents[2]
 OUT = ROOT / 'build/ship-v3'
 OUT.mkdir(parents=True, exist_ok=True)
 PREFIX = 'Ship v3'
@@ -61,8 +66,11 @@ RAMP_HALF = 1.25
 SKID_Y = 4.9
 STRUTS = (-9.6,-3.6,4.2)        # the middle strut clears the airlock beside the gear room
 AIR_X = (-2.8,-.2)              # airlock footprint along x, on the port side in front of the gear room
-PLAN_RES = (1600,1200)
-PLAN_SCALE = 32.0          # metres across the image width: 50 px per metre
+# TODO(initiator): 1.2 is a proposal from the PULSAR starter-ship comparison (main deck about 256 -> 370 m2,
+# length 28.6 -> 34.3 m, same decks); the size is not decided.
+FOOT = 1.2                      # plan stretch in x and y; --footprint overrides it
+PLAN_RES = (1600,1200)          # design pixels; 50 px per metre at any FOOT, see plan_res()
+PLAN_SCALE = 32.0          # design metres across the image width: 50 px per metre
 
 
 def material(name, color, metal=0.0, rough=.5):
@@ -172,6 +180,47 @@ def interp(points,x):
 
 def area(poly):
     return abs(sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(poly,poly[1:]+poly[:1])))/2
+
+
+def fp(p):
+    """A design point (x, y) or (x, y, z) in the stretched ship: x and y by FOOT, z as it is."""
+    return (p[0]*FOOT,p[1]*FOOT,*p[2:])
+
+
+def plan_res():
+    """Plan image size: the plan stretches with the ship, so the picture grows and stays at 50 px per metre."""
+    return (round(PLAN_RES[0]*FOOT),round(PLAN_RES[1]*FOOT))
+
+
+def pilot_x():
+    """Design x of the pilot's eye. The pilot sits 1.7 m behind the nose glass at any FOOT: that distance is
+    human, so it is not stretched (13.1 for FOOT = 1; fp stretches the returned value again)."""
+    return 13.1+1.7*(1-1/FOOT)
+
+
+def ramp_run_rise():
+    """The landed aft ramp in the stretched ship: horizontal run, drop to the ground, plate length."""
+    hx,hz=HINGE; tx,tz=RAMP_TOP; L=math.hypot(tx-hx,tz-hz); rise=hz-GROUND
+    run=math.sqrt(L*L-rise*rise)*FOOT
+    return run,rise,math.hypot(run,rise)
+
+
+def stretch_plan():
+    """Stretch every generated mesh and label by FOOT in x and y after the design-space build. The metre grid
+    ('Plan grid') is not stretched; plan_overlays builds it at real size. Cameras, lights and probes take
+    their positions through fp. FOOT == 1 does nothing, so revision 4 stays bit-identical."""
+    if FOOT==1: return
+    m=Matrix.Diagonal((FOOT,FOOT,1,1)); done=set()
+    for key,c in collections.items():
+        if key=='Plan grid': continue
+        for o in c.objects:
+            if o in done: continue
+            done.add(o)
+            if o.type=='MESH':
+                assert o.data.users==1,o.name
+                o.data.transform(m@o.matrix_basis); o.matrix_basis=Matrix.Identity(4)
+            elif o.type=='FONT':
+                o.location.x*=FOOT; o.location.y*=FOOT
 
 
 ROOMS = {
@@ -668,11 +717,12 @@ def exterior():
 
 
 def camera(scene,name,loc,target,lens=35,ortho=None):
+    loc,target=fp(loc),fp(target)               # given in design coordinates
     d=bpy.data.cameras.new(name); o=bpy.data.objects.new(name,d)
     scene.collection.objects.link(o); o.location=loc
     o.rotation_euler=(Vector(target)-Vector(loc)).to_track_quat('-Z','Y').to_euler()
     d.lens=lens; d.clip_start=.05; d.clip_end=500
-    if ortho: d.type='ORTHO';d.ortho_scale=ortho
+    if ortho: d.type='ORTHO';d.ortho_scale=ortho*FOOT
     return o
 
 
@@ -685,13 +735,13 @@ def lighting(scene):
     scene.view_settings.view_transform='AgX'
     for pos,power,size in [((5,-14,22),5500,14),((-8,15,16),4500,12),((17,6,10),2000,10)]:
         d=bpy.data.lights.new('Softbox','AREA');d.energy=power;d.shape='DISK';d.size=size
-        o=bpy.data.objects.new('Softbox',d);scene.collection.objects.link(o);o.location=pos
+        o=bpy.data.objects.new('Softbox',d);scene.collection.objects.link(o);o.location=fp(pos)
         o.rotation_euler=(-o.location).to_track_quat('-Z','Y').to_euler()
     # Architectural lighting, embedded in the ceiling rather than floating props.
     for pos in [(8,0,2.65),(-3,0,3.2),(-9,0,3.4),(2,1.5,3.2),(2,-1.5,3.2),(2.2,4.5,2.5),(2.2,-4.5,2.5),(-1.5,4.5,2.5),(-1.5,-4.5,2.5),
                 (-4.5,4.5,2.5),(-6.5,-4.5,2.5),(-6.5,4.5,2.5),(-4.5,0,-.35),(-.6,0,-.35),(-7.4,0,-.35)]:
         d=bpy.data.lights.new('Cabin ceiling light','AREA');d.energy=65;d.shape='DISK';d.size=2
-        o=bpy.data.objects.new('Cabin ceiling light',d);scene.collection.objects.link(o);o.location=pos
+        o=bpy.data.objects.new('Cabin ceiling light',d);scene.collection.objects.link(o);o.location=fp(pos)
 
 
 def sightline_backdrop():
@@ -727,13 +777,14 @@ def check_geometry(scene):
             triangles+=len(m.loop_triangles);ev.to_mesh_clear()
     tree=BVHTree.FromPolygons(verts,faces)
     problems=[];rays=[]
+    PILOT_X=pilot_x()
     probes=[
         # Probe between the corner posts (about +-43 degrees), not through them.
         ('captain',(8.7,0,1.65),[(a,0) for a in (-85,-65,-52,-30,0,30,52,65,85)]+[(-20,15),(0,15),(20,15)]),
         # Pilot: all round, steeply down to the floor rim, up through the roof, and back through the portal.
-        ('pilot',(13.1,0,.25),[(a,0) for a in (-85,-60,-30,0,30,60,85)]+[(-25,45),(25,45),(0,-28),(-40,-22),(40,-22)]),
+        ('pilot',(PILOT_X,0,.25),[(a,0) for a in (-85,-60,-30,0,30,60,85)]+[(-25,45),(25,45),(0,-28),(-40,-22),(40,-22)]),
         # Back through the portal into the bridge: 5.5 m, nothing may cross the doorway.
-        ('pilot back',(13.1,0,.25),[(180,0)],5.5),('pilot back high',(13.1,0,.9),[(180,0)],5.5),
+        ('pilot back',(PILOT_X,0,.25),[(180,0)],5.5),('pilot back high',(PILOT_X,0,.9),[(180,0)],5.5),
         # Standing eye behind the side windows: they must be real openings. Oblique rays toward
         # the nacelle and the airlock are blocked by design, so only the outward fan is probed.
         ('weapons window',(1.6,4.6,1.5),[(90,0),(80,0),(100,0)]),
@@ -750,7 +801,7 @@ def check_geometry(scene):
         for z in (-2.0,-1.0):
             probes.append((f'cargo walk y{yy} z{z}',(RX0+.3,yy,z),[(0,0)],RX1-RX0-.4))
     for label,eye,angles,*rest in probes:
-        reach=rest[0] if rest else 60
+        reach=(rest[0] if rest else 60)*FOOT; eye=fp(eye)       # probes are written in design space
         for az,el in angles:
             # A ray exactly through a thin mullion is not an obstruction: two of three neighbours must be clear.
             clears=[];first=None
@@ -768,7 +819,7 @@ def check_geometry(scene):
             if on_edge(p,a,b):shared.append((a,b))
         a,b=shared[0];d=(Vector(b)-Vector(a)).normalized();normal=Vector((-d.y,d.x))
         for offset in (-.36,0,.36):
-            c=Vector(p)+d*offset
+            c=Vector(fp(p))+d*offset
             for z in (.2,.9,1.79):
                 origin=Vector((c.x-normal.x*.5,c.y-normal.y*.5,z))
                 if tree.ray_cast(origin,Vector((*normal,0)),1.0)[0] is not None:
@@ -776,7 +827,7 @@ def check_geometry(scene):
     ramp_clearances=[]
     for i in range(13):
         x=9.65+i*3.9/12;floor=-min(.95,max(0,(x-9.6)*.95/2.4))
-        dist=tree.ray_cast(Vector((x,0,floor+.03)),Vector((0,0,1)),5)[3]
+        dist=tree.ray_cast(Vector((x*FOOT,0,floor+.03)),Vector((0,0,1)),5)[3]
         clearance=None if dist is None else dist+.03;ramp_clearances.append(clearance)
         if clearance is not None and clearance<1.8:problems.append(f'Pilot ramp headroom {clearance:.2f} at x={x:.2f}')
     # Glass is deliberately excluded from visibility, so headroom checks separately
@@ -787,19 +838,20 @@ def check_geometry(scene):
       'opaque_geometry_sha256':hashlib.sha256(json.dumps(sorted(tuple(round(c,5) for c in v) for v in verts)).encode()).hexdigest(),
       'extent_m':{'length':round(max(xs)-min(xs),2),'width':round(max(ys)-min(ys),2),'height':round(max(zs)-min(zs),2),
                   'x':[round(min(xs),2),round(max(xs),2)],'z':[round(min(zs),2),round(max(zs),2)]},
-      'room_floor_area_m2':{k:round(area(v),1) for k,v in ROOMS.items()},'ceiling_m':CEIL,
-      'door_count':len(DOORS),'door_widths_m':sorted(set(d[3] for d in DOORS)),
+      'footprint_factor':FOOT,
+      'room_floor_area_m2':{k:round(area(v)*FOOT**2,1) for k,v in ROOMS.items()},'ceiling_m':CEIL,
+      'door_count':len(DOORS),'door_widths_m':sorted(set(round(d[3]*FOOT,2) for d in DOORS)),
       'door_clear_height_m':2.20,'pilot_canopy_clear_height_m':round(canopy_z(14)+.95,2),
-      'pilot_ramp_angle_degrees':math.degrees(math.atan(.95/2.4)),
-      'captain_eye_above_canopy_m':round(1.65-(canopy_z(12)+.05),2),'cargo_bay_m':[round(CARGO_X-RX0,2),2*RHALF,round(-.23-FLOOR_A,2)],
-      'reactor_hall_m':[round(RX1-CARGO_X,2),2*RHALF,round(-.23-FLOOR_B,2)],'reactor_level_floor_area_m2':round((RX1-RX0)*2*RHALF,1),
+      'pilot_ramp_angle_degrees':math.degrees(math.atan(.95/(2.4*FOOT))),
+      'captain_eye_above_canopy_m':round(1.65-(canopy_z(12)+.05),2),'cargo_bay_m':[round((CARGO_X-RX0)*FOOT,2),round(2*RHALF*FOOT,2),round(-.23-FLOOR_A,2)],
+      'reactor_hall_m':[round((RX1-CARGO_X)*FOOT,2),round(2*RHALF*FOOT,2),round(-.23-FLOOR_B,2)],'reactor_level_floor_area_m2':round((RX1-RX0)*2*RHALF*FOOT**2,1),
       'reactor_floor_levels_z':[FLOOR_A,FLOOR_T,FLOOR_B,PLINTH_TOP],
-      'reactor_min_side_maintenance_m':round(RHALF-(PLINTH_C[1]+PLINTH_R),2),
+      'reactor_min_side_maintenance_m':round((RHALF-(PLINTH_C[1]+PLINTH_R))*FOOT,2),
       'landing':{'ground_z':GROUND,'deck_above_ground_m':-GROUND,'keel_clearance_m':round(min(z for _,z in KEEL_Z)-GROUND,2),
-                 'skid_centres_y':[-SKID_Y,SKID_Y],'skid_x':[-10.8,6.5],'strut_x':list(STRUTS),
-                 'ramp_length_m':round(math.hypot(RAMP_TOP[0]-HINGE[0],RAMP_TOP[1]-HINGE[1]),2),
-                 'ramp_slope_degrees':round(math.degrees(math.asin((HINGE[1]-GROUND)/math.hypot(RAMP_TOP[0]-HINGE[0],RAMP_TOP[1]-HINGE[1]))),1),
-                 'ramp_width_m':2.4,'doorway_cargo_to_bay_m':2*DOOR_BAY,'doorway_clear_height_m':round(-.6-FLOOR_A,2)},
+                 'skid_centres_y':[-SKID_Y*FOOT,SKID_Y*FOOT],'skid_x':[-10.8*FOOT,6.5*FOOT],'strut_x':[x*FOOT for x in STRUTS],
+                 'ramp_length_m':round(ramp_run_rise()[2],2),
+                 'ramp_slope_degrees':round(math.degrees(math.asin(ramp_run_rise()[1]/ramp_run_rise()[2])),1),
+                 'ramp_width_m':2.4*FOOT,'doorway_cargo_to_bay_m':2*DOOR_BAY*FOOT,'doorway_clear_height_m':round(-.6-FLOOR_A,2)},
       'sightlines':rays,'ramp_headroom_samples_m':ramp_clearances,
       'limits':'Geometry probes, not a game walk test. Ladders and door interaction are not implemented here.'}
     (OUT/'geometry-check.json').write_text(json.dumps(report,indent=2)+'\n')
@@ -829,8 +881,8 @@ def section_scene(source):
     lighting(section)
     # The cut opens the keel toward the camera: one soft light keeps its inside readable.
     d=bpy.data.lights.new('Keel interior light','AREA');d.energy=1500;d.shape='DISK';d.size=8
-    o=bpy.data.objects.new('Keel interior light',d);section.collection.objects.link(o);o.location=(-3,-14,-1.8)
-    o.rotation_euler=(Vector((-3,0,-1.8))-o.location).to_track_quat('-Z','Y').to_euler()
+    o=bpy.data.objects.new('Keel interior light',d);section.collection.objects.link(o);o.location=fp((-3,-14,-1.8))
+    o.rotation_euler=(Vector(fp((-3,0,-1.8)))-o.location).to_track_quat('-Z','Y').to_euler()
     section.camera=camera(section,'11 Longitudinal section',(1,-48,11),(1,0,-.5),ortho=32)
     return section
 
@@ -840,13 +892,15 @@ def plan_overlays():
     sees PLAN_SCALE metres across the image, so 1600 px are 32 m (50 px per metre)."""
     gl=material('grid line',(.80,.85,.88)); gb=material('grid line bold',(.52,.63,.71))
     gm=material('ghost line',(.40,.46,.51))
-    for x in range(-16,17):
-        b=x%5==0; box(f'Grid x {x}',(x,0,4.0),(.05 if b else .02,24,.01),gb if b else gl,'Plan grid',0)
-    for y in range(-12,13):
-        b=y%5==0; box(f'Grid y {y}',(0,y,4.0),(32,.05 if b else .02,.01),gb if b else gl,'Plan grid',0)
-    for x in range(-15,16,5): text(f'{x}',(x+.12,11.5,4.02),.5,ink,'Plan grid')
-    for y in range(-10,11,5): text(f'{y}',(-15.4,y+.15,4.02),.5,ink,'Plan grid')
-    text('x [m]   bow ->',(11.0,-11.5,4.02),.5,ink,'Plan grid'); text('y [m]',(-14.2,-11.5,4.02),.5,ink,'Plan grid')
+    # The grid is real metres, so it is not stretched with the ship: it covers the stretched plan area.
+    R,H=math.ceil(16*FOOT),math.ceil(12*FOOT)
+    for x in range(-R,R+1):
+        b=x%5==0; box(f'Grid x {x}',(x,0,4.0),(.05 if b else .02,2*H,.01),gb if b else gl,'Plan grid',0)
+    for y in range(-H,H+1):
+        b=y%5==0; box(f'Grid y {y}',(0,y,4.0),(2*R,.05 if b else .02,.01),gb if b else gl,'Plan grid',0)
+    for x in range(-(R//5)*5,R+1,5): text(f'{x}',(x+.12,H-.5,4.02),.5,ink,'Plan grid')
+    for y in range(-(H//5)*5,H-1,5): text(f'{y}',(-R+.6,y+.15,4.02),.5,ink,'Plan grid')
+    text('x [m]   bow ->',(R-5,-(H-.5),4.02),.5,ink,'Plan grid'); text('y [m]',(-R+1.8,-(H-.5),4.02),.5,ink,'Plan grid')
     hz=HINGE[1]-GROUND; L=math.hypot(RAMP_TOP[0]-HINGE[0],RAMP_TOP[1]-HINGE[1])
     rx=HINGE[0]-math.sqrt(L*L-hz*hz)
 
@@ -866,9 +920,9 @@ def plan_overlays():
     for name,cx,cy in ROOM_LABELS: text(name,(cx,cy,3.95),.34,gb,'Plan ghost reactor')
 
 
-def wb_render(scene,cam,path,visible,flat=True,res=PLAN_RES):
+def wb_render(scene,cam,path,visible,flat=True,res=None):
     """Workbench render: fast, flat colours, no noise. visible lists the collections that stay on."""
-    r=scene.render; r.engine='BLENDER_WORKBENCH'; r.resolution_x,r.resolution_y=res; r.resolution_percentage=100
+    r=scene.render; r.engine='BLENDER_WORKBENCH'; r.resolution_x,r.resolution_y=res or plan_res(); r.resolution_percentage=100
     r.image_settings.file_format='PNG'; r.filepath=str(path); r.film_transparent=False
     sh=scene.display.shading; sh.light='FLAT' if flat else 'STUDIO'; sh.color_type='MATERIAL'
     sh.show_shadows=False; sh.show_cavity=not flat; sh.show_object_outline=False
@@ -905,12 +959,14 @@ def render_plans(S):
     # Three-dimensional snapshots without a roof, one per level.
     wb_render(S['deck'],S['deck_3d'],out/'deck_3d.png',['Structure','Doors','Labels','Hull','Keel','Gear'],flat=False)
     wb_render(S['reactor'],S['reactor_3d'],out/'reactor_3d.png',['Lower','Labels lower','Keel','Gear','Guides'],flat=False)
-    (out/'README.txt').write_text(PLAN_README)
+    (out/'README.txt').write_text(plan_readme())
 
 
-PLAN_README = """Raumplan EXO-1 Startschiff (Revision 4)
+def plan_readme():
+    w,h=plan_res()
+    return f"""Raumplan EXO-1 Startschiff (Revision 4, Grundriss mal {FOOT:g})
 
-Bilder (alle 1600 x 1200 px, Draufsicht, Bug nach rechts):
+Bilder (alle {w} x {h} px, Draufsicht, Bug nach rechts):
   plan_deck.png            Deck-Ebene (z = 0), Dach ab, mit Raumnamen
   plan_deck_clean.png      dasselbe ohne Raumnamen und ohne Bodenfarben, zum Hineinmalen
   plan_reactor.png         Reaktor-Ebene (Cargo-Bereich -2,9, Reaktorhalle -2,55, Rampenraum), Deck-Raeume als graue Umrisse
@@ -918,8 +974,8 @@ Bilder (alle 1600 x 1200 px, Draufsicht, Bug nach rechts):
   deck_3d.png, reactor_3d.png   dachlose 3D-Ansichten zur Orientierung
 
 Massstab: 50 Pixel = 1 Meter. Der Schiffsursprung (x = 0, y = 0) liegt in der Bildmitte.
-  x_m = (px - 800) / 50      Bug (+x) ist rechts
-  y_m = (600 - py) / 50      +y ist oben (Backbord)
+  x_m = (px - {w//2}) / 50      Bug (+x) ist rechts
+  y_m = (({h//2}) - py) / 50      +y ist oben (Backbord)
 Das Raster hat Linien alle 1 m, kraeftig alle 5 m, die Zahlen am Rand sind Meter.
 Graue Umrisse zeigen Gondeln, Landekufen und Rampe; Ocker auf der Deck-Ebene: Reaktor-Ebene darunter.
 """
@@ -960,6 +1016,7 @@ def build():
     glow=material('engine idle',(.7,.3,.06))
     p=glow.node_tree.nodes.get('Principled BSDF');p.inputs['Emission Color'].default_value=(1,.4,.06,1);p.inputs['Emission Strength'].default_value=2
     architecture();roofs();exterior();lighting(scene);sightline_backdrop();plan_overlays()
+    stretch_plan()       # everything above is design space; the factor is applied once, here
     scene['status']='Design proposal for #266. No game integration or approved dimensions.'
     scene['floor_z']=0.;scene['pilot_floor_z']=-.95;scene['reactor_floor_z']=-2.9;scene['ground_z']=GROUND
     scene['review']=('Scenes: Exterior, Plan deck, Plan reactor, Landed (gear down), Flight (gear up), Section. '
@@ -971,7 +1028,7 @@ def build():
       'side':camera(scene,'03 Side',(1,-50,3),(1,0,0),ortho=34),
       'captain':camera(scene,'04 Captain eye 1.65m',(8.7,0,1.65),(20,0,1.65),lens=19),
       'captain_side':camera(scene,'05 Captain lateral',(8.7,0,1.65),(12,12,1.65),lens=23),
-      'pilot':camera(scene,'06 Pilot seated eye 1.2m above floor',(13.1,0,.25),(22,0,.65),lens=18),
+      'pilot':camera(scene,'06 Pilot seated eye 1.2m above floor',(pilot_x(),0,.25),(22,0,.65),lens=18),
       'bridge_back':camera(scene,'07 Bridge looking aft',(11,3.6,1.65),(5,-1,1.3),lens=20),
     }
     scene.camera=cameras['exterior']
@@ -1018,16 +1075,19 @@ def build():
 
 
 def main():
+    global FOOT
     parser=argparse.ArgumentParser();parser.add_argument('--render',action='store_true');parser.add_argument('--export',action='store_true')
     parser.add_argument('--views',help='Comma-separated review views; omitted means all. "plans" renders only the plan images.')
+    parser.add_argument('--footprint',type=float,help=f'Plan stretch in x and y, heights unchanged (default {FOOT:g}; 1 is revision 4).')
     args=parser.parse_args(sys.argv[sys.argv.index('--')+1:] if '--' in sys.argv else [])
+    if args.footprint: FOOT=args.footprint
     S=build();scene=S['exterior']
     check_geometry(scene)
     # Headless rebuild starts without reference assets. Saving linked scenes through
     # libraries.write crashes Blender 5.2; use the normal file-save path instead.
     if bpy.app.background:
         bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'starting-ship.blend'))
-    print('SHIP_V3: built original architectural study, bow +X, main deck 0, pilot -0.95, reactor -2.9, ground',GROUND)
+    print('SHIP_V3: built original architectural study, bow +X, main deck 0, pilot -0.95, reactor -2.9, ground',GROUND,'footprint',FOOT)
     if args.export:
         bpy.context.window.scene=scene
         bpy.ops.object.select_all(action='DESELECT')

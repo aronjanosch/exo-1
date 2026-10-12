@@ -14,9 +14,19 @@ Marks: **new** since round 5 · **provisional**: the key is not decided yet · *
 | Mouse | – | Look | right stick |
 | Shift | `run` | Run | left stick click |
 | Space | `jump` | Jump | South |
-| F | `interact` | The one verb: sit or stand up, pick up or set down a crate, a counter | North |
+| F | `interact` | The one verb: sit or stand up, pick up or set down a crate, a counter, use a display and leave it | North |
 | R | `throw` | Throw the held crate | right stick click |
 | G | `lag` | Cabin gravity by hand, only in a landed ship | – |
+
+### At a display
+
+F on a display (a console's screen) frees the mouse cursor: point and click the buttons, toggles and sliders on its panel. The walker stands still until it leaves.
+
+| Key | Action | What it does | Pad |
+|---|---|---|---|
+| Mouse, left button | – | Point and click on the panel | – |
+| F | `interact` | Leave the display | North |
+| Escape | `display_leave` | Leave the display (new; does not open the menu then) | – |
 
 ### Ship
 
@@ -76,6 +86,7 @@ The switches of Star Citizen's flight control (the flight model is the SC model,
 | F9 | `camera_fx` | Camera effects on/off: shake, lag, field of view from G |
 | V | `debug_fly` | Debug flight on foot |
 | O | `orbit_camera` | Orbit camera |
+| F6 | `display_mode` | Panels on the screen (overlay) or on the display's quad in the world: a variant to compare (new, provisional) |
 | F10 | `dev_menu` | Dev menu (dev builds only): cheats for playtests |
 | 1 / 2 / 3 | `dev_1`, `dev_2`, `dev_3` | In the open dev menu: grant every licence / +1000 credits / refill the boost |
 | 4 / 5 | `dev_4`, `dev_5` | In the open dev menu: always day / always night (the clock stands) |

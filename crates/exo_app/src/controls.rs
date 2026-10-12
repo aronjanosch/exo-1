@@ -47,6 +47,16 @@ pub struct Controls {
     /// The game does not have the mouse: a menu is open or the cursor is free. The virtual stick
     /// centres (#110 point 2).
     pub released: bool,
+    /// A display is in use (#285): the cursor stays free (a click does not grab it) and the mouse
+    /// does not turn the view. Set by the game (`displays`), read by `read_input`.
+    pub free_cursor: bool,
+    /// The cursor in window pixels (top left), while the cursor is free; None otherwise.
+    pub pointer: Option<Vec2>,
+    /// The primary mouse button is held.
+    pub pointer_down: bool,
+    /// The primary mouse button went down since the last fixed step (a tap: a press and release
+    /// between two steps still counts). Taken by `displays`.
+    pub click: bool,
 }
 
 /// A bindable input: a key, or a gamepad button (`"Pad:South"` in the file).
@@ -140,6 +150,10 @@ pub enum Tap {
     TrackJob,
     /// Drop the tracked job: the first press asks, a second within a few seconds drops it (#132).
     AbandonJob,
+    /// Leave the display in use (#285; Escape, besides the interact key).
+    DisplayLeave,
+    /// Panels on the screen or on their quad in the world (#285, a variant to compare by feel).
+    DisplayMode,
 }
 
 impl Axis {
@@ -170,7 +184,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 35] = [
+    pub const ALL: [Tap; 37] = [
         Tap::Help,
         Tap::DevMenu,
         Tap::Dev1,
@@ -206,6 +220,8 @@ impl Tap {
         Tap::Map,
         Tap::TrackJob,
         Tap::AbandonJob,
+        Tap::DisplayLeave,
+        Tap::DisplayMode,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -244,6 +260,8 @@ impl Tap {
             Tap::Map => "map",
             Tap::TrackJob => "track_job",
             Tap::AbandonJob => "abandon_job",
+            Tap::DisplayLeave => "display_leave",
+            Tap::DisplayMode => "display_mode",
         }
     }
 }
@@ -467,6 +485,9 @@ impl Bindings {
                 (Tap::TrackJob, None) => Ok(vec![Input::Key(KeyCode::KeyT)]),
                 // ... and no `abandon_job` (#132).
                 (Tap::AbandonJob, None) => Ok(vec![Input::Key(KeyCode::KeyY)]),
+                // ... and no displays (#285).
+                (Tap::DisplayLeave, None) => Ok(vec![Input::Key(KeyCode::Escape)]),
+                (Tap::DisplayMode, None) => Ok(vec![Input::Key(KeyCode::F6)]),
                 _ => Err(err(t.name(), "missing".into())),
             }
         };
@@ -708,8 +729,10 @@ pub fn read_input(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     motion: Res<AccumulatedMouseMotion>,
     mut cursor: Query<&mut CursorOptions>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     pads: Query<&Gamepad>,
     menu: Option<Res<crate::menu::Menu>>,
+    mut was_free: Local<bool>,
 ) {
     if c.scripted {
         return;
@@ -748,7 +771,21 @@ pub fn read_input(
         }
     }
     let Ok(mut cur) = cursor.single_mut() else { return };
-    if mouse_buttons.just_pressed(MouseButton::Left) {
+    // A display in use (#285): the cursor is free and points; leaving one takes the mouse back.
+    let was_free = std::mem::replace(&mut *was_free, c.free_cursor);
+    if c.free_cursor {
+        if cur.grab_mode != CursorGrabMode::None || !cur.visible {
+            cur.grab_mode = CursorGrabMode::None;
+            cur.visible = true;
+        }
+        c.pointer = windows.single().ok().and_then(|w| w.cursor_position());
+        c.pointer_down = mouse_buttons.pressed(MouseButton::Left);
+        c.click |= mouse_buttons.just_pressed(MouseButton::Left);
+        return;
+    }
+    c.pointer = None;
+    c.pointer_down = false;
+    if mouse_buttons.just_pressed(MouseButton::Left) || was_free {
         cur.grab_mode = CursorGrabMode::Locked;
         cur.visible = false;
     }
@@ -775,7 +812,7 @@ key_table!(
     ControlLeft, ControlRight, AltLeft, AltRight, Tab, Enter, Backspace, CapsLock, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, PageUp,
     PageDown, Home, End, Insert, Delete, Minus, Equal, BracketLeft, BracketRight, Semicolon, Quote, Backquote, Backslash, Comma, Period,
     Slash, Numpad0, Numpad1, Numpad2, Numpad3, Numpad4, Numpad5, Numpad6, Numpad7, Numpad8, Numpad9, NumpadAdd, NumpadSubtract,
-    NumpadMultiply, NumpadDivide, NumpadEnter, NumpadDecimal, F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+    NumpadMultiply, NumpadDivide, NumpadEnter, NumpadDecimal, Escape, F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
 );
 
 pub fn key_from_name(n: &str) -> Option<KeyCode> {

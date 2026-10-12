@@ -9,6 +9,10 @@
 //! - the pump or the reactor: `Condition::repair_step` at the bot's skill with a wrench, so the
 //!   time and the failure chance follow the skill like a player's.
 //! - the reactor console after a scram: once the lockout is over, power on and Auto.
+//! - a hull breach: `Hull::patch_step` at the bot's skill. It needs a patch kit: the bot takes one
+//!   from the kit count (`Engineering::patch_kits`) when it starts, without walking to the box
+//!   (simplified), and the kit is used up when the breach closes.
+//! - the oxygen generator: repaired like the pump.
 //!
 //! A task a player is using right now (repairing that device, spraying, at the reactor panel) is
 //! claimed by the player and the bot leaves it alone.
@@ -25,6 +29,9 @@ use reactor_core::Mode;
 pub const PUMP_TASK: TaskId = TaskId(10);
 pub const REACTOR_TASK: TaskId = TaskId(11);
 pub const CONSOLE_TASK: TaskId = TaskId(12);
+pub const PATCH_ENGINE_TASK: TaskId = TaskId(13);
+pub const PATCH_SIDE_TASK: TaskId = TaskId(14);
+pub const GENERATOR_TASK: TaskId = TaskId(15);
 /// Fire tasks: this plus the fire's id.
 pub const FIRE_TASK_BASE: u64 = 100;
 /// Seconds of spray in the bot's own extinguisher, and to refill it. TODO(initiator).
@@ -47,15 +54,22 @@ pub struct Work {
     /// Seconds spent repairing.
     pub repair_s: f64,
     pub restarts: u32,
+    pub patches_done: u32,
+    /// Seconds spent patching.
+    pub patch_s: f64,
+    /// A patch kit in its hands.
+    pub kit: bool,
     /// The device under its hands.
     pub repairing: Option<Dev>,
+    /// The hull section under its hands.
+    pub patching: Option<hull_core::SectionId>,
     /// The last thing it did at a task, for the panel.
     pub doing: Option<String>,
 }
 
 impl Default for Work {
     fn default() -> Self {
-        Work { charge: 1.0, sprayed_s: 0.0, repairs_done: 0, repair_fails: 0, repair_s: 0.0, restarts: 0, repairing: None, doing: None }
+        Work { charge: 1.0, sprayed_s: 0.0, repairs_done: 0, repair_fails: 0, repair_s: 0.0, restarts: 0, patches_done: 0, patch_s: 0.0, kit: false, repairing: None, patching: None, doing: None }
     }
 }
 
@@ -75,7 +89,16 @@ pub fn real_tasks(e: &Engineering) -> Vec<Task> {
             Task { id: TaskId(FIRE_TASK_BASE + f.id.0), kind: TaskKind::ExtinguishFire, target: Target::Room(crew_core::RoomId::new(room)), pos: [f.pos.x, f.pos.z, 0.0], urgency: (f.size / e.deck.tuning().max_size).clamp(0.2, 1.0), need_skill: 0.0 }
         })
         .collect();
-    for (d, id, task, at, depth) in [(Dev::Pump, engineer::PUMP, PUMP_TASK, engineer::PUMP_AT, engineer::PUMP_SIZE[2]), (Dev::Reactor, engineer::REACTOR, REACTOR_TASK, [engineer::REACTOR_AT[0] + 1.0, engineer::REACTOR_AT[1]], engineer::REACTOR_SIZE[2])] {
+    for (task, section, room, at) in [(PATCH_ENGINE_TASK, e.engine_section, live_status::ENGINE_ROOM, engineer::ENGINE_SECTION_AT), (PATCH_SIDE_TASK, e.side_section, live_status::SIDE_ROOM, engineer::SIDE_SECTION_AT)] {
+        if e.hull.breached(section) {
+            out.push(Task { id: task, kind: TaskKind::PatchBreach, target: Target::Room(crew_core::RoomId::new(room)), pos: front(at, 0.4), urgency: e.hull.openness(section).clamp(0.2, 1.0), need_skill: 0.0 });
+        }
+    }
+    for (d, id, task, at, depth) in [
+        (Dev::Pump, engineer::PUMP, PUMP_TASK, engineer::PUMP_AT, engineer::PUMP_SIZE[2]),
+        (Dev::Reactor, engineer::REACTOR, REACTOR_TASK, [engineer::REACTOR_AT[0] + 1.0, engineer::REACTOR_AT[1]], engineer::REACTOR_SIZE[2]),
+        (Dev::Generator, engineer::GENERATOR, GENERATOR_TASK, engineer::GENERATOR_AT, 0.8),
+    ] {
         // Open until full: an order (or the table) may send the bot to top up a worn device too.
         let c = e.condition(d);
         if c.fraction() < 1.0 {
@@ -107,6 +130,9 @@ pub fn player_claims(claims: &mut Claims, e: &Engineering, tasks: &[Task], react
         let used = match t.id {
             PUMP_TASK => e.repairing == Some(Dev::Pump),
             REACTOR_TASK => e.repairing == Some(Dev::Reactor),
+            GENERATOR_TASK => e.repairing == Some(Dev::Generator),
+            PATCH_ENGINE_TASK => e.patching == Some(e.engine_section),
+            PATCH_SIDE_TASK => e.patching == Some(e.side_section),
             CONSOLE_TASK => reactor_panel_in_use,
             _ => spraying,
         };
@@ -121,6 +147,7 @@ pub fn player_claims(claims: &mut Claims, e: &Engineering, tasks: &[Task], react
 /// The bot works at a real task it has reached, for `dt` seconds.
 pub fn act(w: &mut Work, e: &mut Engineering, gp: &mut Gameplay, t: &Task, bot: [f64; 2], dt: f64) {
     let mut repaired = None;
+    let mut patched = false;
     match t.kind {
         TaskKind::ExtinguishFire => {
             if w.charge > 0.0 {
@@ -136,10 +163,15 @@ pub fn act(w: &mut Work, e: &mut Engineering, gp: &mut Gameplay, t: &Task, bot: 
             }
         }
         TaskKind::Repair => {
-            let d = if t.id == PUMP_TASK { Dev::Pump } else { Dev::Reactor };
+            let d = match t.id {
+                PUMP_TASK => Dev::Pump,
+                GENERATOR_TASK => Dev::Generator,
+                _ => Dev::Reactor,
+            };
             let c = match d {
                 Dev::Pump => &mut e.pump,
                 Dev::Reactor => e.reactor.condition_mut(),
+                Dev::Generator => &mut e.generator.condition,
             };
             let out = c.repair_step(dt, bots::BOT_SKILL, Tool::WRENCH);
             w.repair_s += dt;
@@ -159,6 +191,33 @@ pub fn act(w: &mut Work, e: &mut Engineering, gp: &mut Gameplay, t: &Task, bot: 
                 _ => {}
             }
         }
+        TaskKind::PatchBreach => {
+            let sec = if t.id == PATCH_SIDE_TASK { e.side_section } else { e.engine_section };
+            if !w.kit {
+                if e.patch_kits == 0 {
+                    w.doing = Some("no patch kits left".into());
+                    return;
+                }
+                e.patch_kits -= 1;
+                w.kit = true;
+            }
+            if w.patching != Some(sec) {
+                stop_patch(w, e);
+                w.patching = Some(sec);
+            }
+            patched = true;
+            let was = e.hull.breached(sec);
+            e.hull.patch_step(sec, dt, bots::BOT_SKILL, Tool::WRENCH, &mut e.deck);
+            w.patch_s += dt;
+            w.doing = Some(format!("patching the hull ({:.0} % open)", e.hull.openness(sec) * 100.0));
+            if was && !e.hull.breached(sec) {
+                w.kit = false;
+                w.patches_done += 1;
+                e.stats.patches_done += 1;
+                gp.log.push("bot: patched the breach".into());
+                gp.notify(Notice::new(NoticeKind::Completed, "notice.engineer.patched").arg("room", Arg::Text(e.room_name(e.hull.section(sec).room).into())));
+            }
+        }
         TaskKind::OperateEngine => {
             if e.reactor.lockout_s() > 0.0 {
                 w.doing = Some(format!("waiting for the lockout ({:.0} s)", e.reactor.lockout_s().ceil()));
@@ -175,6 +234,15 @@ pub fn act(w: &mut Work, e: &mut Engineering, gp: &mut Gameplay, t: &Task, bot: 
         stop_repair(w, e);
         w.repairing = repaired;
     }
+    if !patched {
+        stop_patch(w, e);
+    }
+}
+
+fn stop_patch(w: &mut Work, e: &mut Engineering) {
+    if let Some(s) = w.patching.take() {
+        e.hull.stop_patch(s);
+    }
 }
 
 /// Lets go of the device under the bot's hands (the next step starts a new attempt).
@@ -182,6 +250,8 @@ pub fn stop_repair(w: &mut Work, e: &mut Engineering) {
     match w.repairing.take() {
         Some(Dev::Pump) => e.pump.stop_repair(),
         Some(Dev::Reactor) => e.reactor.condition_mut().stop_repair(),
+        Some(Dev::Generator) => e.generator.condition.stop_repair(),
         None => {}
     }
+    stop_patch(w, e);
 }

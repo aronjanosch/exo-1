@@ -77,6 +77,8 @@ impl BotDemo {
             Some(Pick::Task(bot_work::PUMP_TASK)) => "repair pump".into(),
             Some(Pick::Task(bot_work::REACTOR_TASK)) => "repair reactor".into(),
             Some(Pick::Task(bot_work::CONSOLE_TASK)) => "restart reactor".into(),
+            Some(Pick::Task(bot_work::GENERATOR_TASK)) => "repair generator".into(),
+            Some(Pick::Task(bot_work::PATCH_ENGINE_TASK | bot_work::PATCH_SIDE_TASK)) => "patch breach".into(),
             Some(Pick::Task(t)) if t.0 >= bot_work::FIRE_TASK_BASE => "extinguish".into(),
             Some(Pick::Task(t)) => format!("task {}", t.0),
             Some(Pick::Order { kind, .. }) => format!("order {}", kind.id()),

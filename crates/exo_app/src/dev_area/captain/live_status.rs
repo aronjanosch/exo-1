@@ -6,9 +6,9 @@
 //! - System bars: engineering from the pump's and the reactor's condition, weapons from the power
 //!   grid's weapons share, life support from its share and the engine room's oxygen; science keeps
 //!   the placeholder (no real source yet). Shields: the placeholder value times the shields' share.
-//! - Rooms: the engine room and the side room behind the door are real (oxygen and fire from the
-//!   fire `Deck`); the other rooms stay placeholders. Ship oxygen and its change per second come
-//!   from the deck.
+//! - Rooms: the engine room and the side room behind the door are real (oxygen, fire and breach
+//!   from the engineer's `RoomReadout`); the other rooms stay placeholders. Ship oxygen and its
+//!   change per second come from the deck; the hull gauge from the hull sections' condition.
 //! - The placeholder's forced states still win while set (`PlaceholderStatus::apply_forced`).
 //!
 //! `crew_core` knows nothing of `reactor_core` or `fire_core`; the mapping lives here.
@@ -101,15 +101,9 @@ pub fn overlay(s: &mut ShipStatus, e: &Engineering, o2_delta: f64) {
     }
     s.shields.value *= e.grid.factor(Group::Shields);
 
-    let real = |id: &str, name: &str, room: fire_core::RoomId, condition: f64, system: Option<ShipSystem>, crew: u32| RoomStatus {
-        id: RoomId::new(id),
-        name: TextKey::new(format!("room.{name}")),
-        system,
-        condition,
-        oxygen: e.deck.room(room).oxygen_fraction(),
-        fire: e.deck.fires_in(room).next().is_some(),
-        breach: false,
-        crew,
+    let real = |id: &str, name: &str, room: fire_core::RoomId, condition: f64, system: Option<ShipSystem>, crew: u32| {
+        let r = e.room_readout(room);
+        RoomStatus { id: RoomId::new(id), name: TextKey::new(format!("room.{name}")), system, condition, oxygen: r.oxygen, fire: r.fire, breach: r.breach, crew }
     };
     let crew = s.rooms.iter().find(|x| x.id.as_str() == ENGINE_ROOM).map_or(1, |x| x.crew);
     let engine = real(ENGINE_ROOM, ENGINE_ROOM, e.room, devices, Some(ShipSystem::Engineering), crew);
@@ -121,13 +115,19 @@ pub fn overlay(s: &mut ShipStatus, e: &Engineering, o2_delta: f64) {
         }
         None => s.rooms.extend([engine, side]),
     }
+    let sections = e.hull.sections();
+    if !sections.is_empty() {
+        s.hull.value = sections.iter().map(|x| x.condition.fraction()).sum::<f64>() / sections.len() as f64 * s.hull.max;
+    }
     s.oxygen.level = deck_oxygen(e);
     s.oxygen.delta_per_s = o2_delta;
 }
 
 /// Whether the real ship is in trouble: a reactor alarm (hot, critical, scram) or a fire.
 pub fn real_threat(e: &Engineering) -> bool {
-    [AlarmKind::TempHigh, AlarmKind::TempCritical, AlarmKind::Shutdown].into_iter().any(|k| e.reactor.alarm(k)) || !e.deck.fires().is_empty()
+    [AlarmKind::TempHigh, AlarmKind::TempCritical, AlarmKind::Shutdown].into_iter().any(|k| e.reactor.alarm(k))
+        || !e.deck.fires().is_empty()
+        || e.room_readouts().iter().any(|r| r.breach || r.oxygen_alarm)
 }
 
 /// One active alarm on the captain's overview: what, where, and the order it suggests.
@@ -147,6 +147,15 @@ pub fn alarms(e: &Engineering) -> Vec<AlarmRow> {
             out.push(AlarmRow { text: format!("FIRE {size:.1} m"), room: id, order: Some((OrderKind::Extinguish, Target::Room(RoomId::new(id)))) });
         }
     }
+    for (room, id) in [(e.room, ENGINE_ROOM), (e.side_room, SIDE_ROOM)] {
+        let r = e.room_readout(room);
+        if r.breach {
+            out.push(AlarmRow { text: format!("BREACH {:.0} %", r.breach_open * 100.0), room: id, order: Some((OrderKind::FixBreach, Target::Room(RoomId::new(id)))) });
+        }
+        if r.oxygen_alarm {
+            out.push(AlarmRow { text: format!("AIR LOW {:.0} %", r.oxygen * 100.0), room: id, order: Some((OrderKind::Repair, Target::Device(DeviceId::new(engineer::GENERATOR)))) });
+        }
+    }
     let console = || Some((OrderKind::Operate, Target::Station(StationId::new(REACTOR_CONSOLE))));
     let r = &e.reactor;
     if r.alarm(AlarmKind::TempCritical) {
@@ -160,11 +169,11 @@ pub fn alarms(e: &Engineering) -> Vec<AlarmRow> {
     if r.alarm(AlarmKind::FuelLow) {
         out.push(AlarmRow { text: "FUEL LOW".into(), room: ENGINE_ROOM, order: console() });
     }
-    for (d, id) in [(Dev::Reactor, engineer::REACTOR), (Dev::Pump, engineer::PUMP)] {
+    for (d, id) in [(Dev::Reactor, engineer::REACTOR), (Dev::Pump, engineer::PUMP), (Dev::Generator, engineer::GENERATOR)] {
         let c = e.condition(d);
         if !c.functioning() || c.needs_repair() {
             let state = if c.functioning() { "WORN" } else { "BROKEN" };
-            out.push(AlarmRow { text: format!("{} {state} {:.0} %", if d == Dev::Pump { "PUMP" } else { "REACTOR" }, c.fraction() * 100.0), room: ENGINE_ROOM, order: Some((OrderKind::Repair, Target::Device(DeviceId::new(id)))) });
+            out.push(AlarmRow { text: format!("{} {state} {:.0} %", match d { Dev::Pump => "PUMP", Dev::Reactor => "REACTOR", Dev::Generator => "O2 GEN" }, c.fraction() * 100.0), room: ENGINE_ROOM, order: Some((OrderKind::Repair, Target::Device(DeviceId::new(id)))) });
         }
     }
     out
@@ -174,7 +183,7 @@ pub fn alarms(e: &Engineering) -> Vec<AlarmRow> {
 /// bot; none for placeholder targets without a place.
 pub fn target_point(t: &Target) -> Option<[f64; 2]> {
     use crate::dev_area::{CAPTAIN, ENGINEERING};
-    use engineer::{DOOR_AT, EXTINGUISHER_AT, POWER_CONSOLE_AT, PUMP_AT, REACTOR_AT, REACTOR_CONSOLE_AT};
+    use engineer::{DOOR_AT, EXTINGUISHER_AT, GENERATOR_AT, POWER_CONSOLE_AT, PUMP_AT, REACTOR_AT, REACTOR_CONSOLE_AT};
     match t {
         Target::Room(r) => match r.as_str() {
             ENGINE_ROOM => Some(ENGINEERING.point([0.0, 7.0])),
@@ -193,6 +202,7 @@ pub fn target_point(t: &Target) -> Option<[f64; 2]> {
             engineer::PUMP => Some(ENGINEERING.point(PUMP_AT)),
             engineer::EXTINGUISHER => Some(ENGINEERING.point(EXTINGUISHER_AT)),
             engineer::DOOR => Some(ENGINEERING.point(DOOR_AT)),
+            engineer::GENERATOR => Some(ENGINEERING.point(GENERATOR_AT)),
             _ => None,
         },
     }

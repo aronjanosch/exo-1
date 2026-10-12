@@ -5,7 +5,8 @@
 //! it (reactor hot, fire in the engine room, oxygen falling) and the alert goes yellow by itself;
 //! from the overview's alarm rows the captain orders the bot to put the fire out, which it does;
 //! then to repair the pump (and the reactor if the fire broke it) at its skill, and to restart the
-//! reactor; the status returns to normal and the captain calls green. On the way the captain
+//! reactor; a heavy collision from the hit simulator tears the engine room's hull and the bot
+//! patches the breach; the status returns to normal and the captain calls green. On the way the captain
 //! releases 100 credits to the engineer, who buys a rod pack with them. Run with
 //! `--start=dev_area`.
 use super::captain_displays::{click, crew, display_of, go_to, gp, logged, press};
@@ -13,7 +14,7 @@ use super::dev_area::{active, stand_until_still, tap_until};
 use super::*;
 use crate::dev_area::captain::live_status::{self, LiveShip, OrderMarker};
 use crate::dev_area::captain::{bots, overview, ship_state, DevRole};
-use crate::dev_area::engineer::{self, area3, world_of, Engineering, DOOR_AT, REACTOR_CONSOLE_AT, REACTOR_PANEL};
+use crate::dev_area::engineer::{self, area3, world_of, Engineering, DOOR_AT, HIT_PANEL, HIT_SIM_AT, REACTOR_CONSOLE_AT, REACTOR_PANEL};
 use crate::dev_area::{DevArea, ENGINEERING};
 use crate::displays::{overlay_point_of, ActiveDisplay};
 use crate::interact::Interaction;
@@ -168,10 +169,6 @@ fn only_if(key: &'static str, mut step: Step) -> Step {
     Box::new(move |w, c| c.v.get(key).copied().unwrap_or(0.0) == 0.0 || step(w, c))
 }
 
-/// A step that runs only when the fire broke the reactor.
-fn only_if_broken(step: Step) -> Step {
-    only_if("reactor_broken", step)
-}
 
 fn give_to_bot(what: &'static str, kind: OrderKind, target: Target) -> Vec<Step> {
     vec![
@@ -195,6 +192,8 @@ pub(super) fn dev_area_loop_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static
 
     s.push(Box::new(|w, c| {
         begin(w, c, "loop: the dev area as one crew");
+        // This run is about the crew loop, not the player's health (#287 has its own scenario).
+        w.resource_mut::<crate::dev_area::health::Medical>().no_harm = true;
         let e = eng(w);
         let ok = !e.reactor.power_on() && !e.pump.functioning() && crew(w).alert.level() == AlertLevel::Green;
         check(c, ok, format!("loop: the reactor is off, the pump broken at {:.0}, the alert green; the bot at the turret: {}", e.pump.value(), bot(w).doing()));
@@ -332,44 +331,70 @@ pub(super) fn dev_area_loop_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static
         format!("{:.1} s after the order, {:.1} s of spray, its extinguisher at {:.0} %, side room fires {}, spreads {}", e.time - c.v["t_order"], b.work.sprayed_s, b.work.charge * 100.0, e.deck.fires_in(e.side_room).count(), e.stats.spreads.len())
     }));
 
-    // The pump, and the reactor if the fire broke it.
+    // A hit from the hit simulator tears the engine room's hull; the bot patches it.
+    s.extend(stand_at("loop: at the hit simulator", [HIT_SIM_AT[0], HIT_SIM_AT[1] - 1.3], HIT_SIM_AT, 1.6));
+    s.extend(aim_and_tap("loop: F uses the hit simulator", HIT_SIM_AT, 1.6, engineer::HIT_NAME, |w| {
+        let e = display_of(w, &HIT_PANEL);
+        e.is_some() && w.resource::<ActiveDisplay>().using() == e
+    }));
+    s.push(click_at("loop: pick the engine room", HIT_PANEL, "sec_engine", None, |w| eng(w).hit_pick.section == eng(w).engine_section));
+    s.push(click_at("loop: pick collision", HIT_PANEL, "type_collision", None, |w| eng(w).hit_pick.kind == hull_core::DamageType::Collision));
+    s.push(click_at("loop: pick heavy", HIT_PANEL, "str_heavy", None, |w| eng(w).hit_pick.strength == hull_core::Strength::Heavy));
+    s.push(click_at("loop: a heavy collision hits", HIT_PANEL, "fire", None, |w| eng(w).stats.hits >= 1));
+    s.push(until("loop: the captain's status shows the breach", 2.0, |w| live(w).room(&crew_core::RoomId::new(live_status::ENGINE_ROOM)).is_some_and(|r| r.breach), |w, _| {
+        let (e, l) = (eng(w), live(w));
+        let r = e.room_readout(e.room);
+        format!("{}; breach {:.0} % open, {:.2} m³/s out, hull gauge {:.0}, engine room O2 {:.0} % ({:+.2} %/s)", e.last_hit, r.breach_open * 100.0, r.leak_flow, l.hull.value, r.oxygen * 100.0, r.oxygen_delta * 100.0)
+    }));
+    s.push(Box::new(|w, c| {
+        let rows = live_status::alarms(eng(w));
+        check(c, rows.iter().any(|a| a.text.starts_with("BREACH")), format!("loop: the alarms list the breach {:?}", rows.iter().map(|a| &a.text).collect::<Vec<_>>()));
+        true
+    }));
     s.extend(go_to("loop: the captain back at the overview", overview::ID, overview::NAME, -21.0));
+    s.push(shot_step("overview-breach"));
+    s.extend(give_to_bot("loop: fix the breach", OrderKind::FixBreach, engine_room.clone()));
+    s.push(until("loop: the bot patches the breach by skill", 180.0, |w| !eng(w).hull.breached(eng(w).engine_section), |w, c| {
+        let (b, e) = (bot(w), eng(w));
+        format!("{:.1} s after the order, {:.1} s of patching at skill {:.0}, kits left {}, engine room O2 {:.0} %", e.time - c.v["t_order"], b.work.patch_s, bots::BOT_SKILL, e.patch_kits, e.deck.room(e.room).oxygen_fraction() * 100.0)
+    }));
+
+    // The pump, and the reactor if the fire or the hit broke it.
     s.extend(give_to_bot("loop: repair the pump", OrderKind::Repair, pump.clone()));
     s.push(until("loop: the bot repairs the pump by skill", 240.0, |w| eng(w).pump.value() >= 100.0, |w, c| {
         let (b, e) = (bot(w), eng(w));
         let full = e.pump.repair_seconds(bots::BOT_SKILL, device_core::Tool::WRENCH);
         format!("{:.1} s after the order, {:.1} s of hands-on work ({full:.1} s from 0 to full at skill {:.0}), {} failed tries, pump {:.0}", e.time - c.v["t_order"], b.work.repair_s, bots::BOT_SKILL, b.work.repair_fails, e.pump.value())
     }));
-    s.push(Box::new(move |w, c| {
-        let e = eng(w);
-        c.v.insert("reactor_broken", if !e.reactor.condition().functioning() { 1.0 } else { 0.0 });
-        check(c, true, format!("loop: the reactor's condition after the fire {:.0} (works {})", e.reactor.condition().value(), e.reactor.condition().functioning()));
+    // The fire and the hit wore the reactor: repaired to full before it restarts.
+    s.push(Box::new(|w, c| {
+        let r = eng(w).reactor.condition();
+        c.v.insert("reactor_worn", if r.needs_repair() || !r.functioning() { 1.0 } else { 0.0 });
+        check(c, true, format!("loop: the reactor's condition after the fire and the hit {:.0} (works {})", r.value(), r.functioning()));
         true
     }));
-    // Only when the fire broke it: an order to repair the reactor first.
-    for step in give_to_bot("loop: repair the broken reactor", OrderKind::Repair, reactor) {
-        s.push(only_if_broken(step));
+    for step in give_to_bot("loop: repair the reactor", OrderKind::Repair, reactor) {
+        s.push(only_if("reactor_worn", step));
     }
-    s.push(only_if_broken(until("loop: the bot repairs the broken reactor", 240.0, |w| eng(w).reactor.condition().functioning(), |w, c| {
-        format!("reactor at {:.0}, {:.1} s after the order", eng(w).reactor.condition().value(), eng(w).time - c.v["t_order"])
+    s.push(only_if("reactor_worn", until("loop: the bot repairs the reactor to full", 240.0, |w| eng(w).reactor.condition().value() >= 100.0, |w, c| {
+        let b = bot(w);
+        format!("{:.1} s after the order, {} repairs so far ({} failed tries)", eng(w).time - c.v["t_order"], b.work.repairs_done, b.work.repair_fails)
     })));
     s.extend(give_to_bot("loop: restart the reactor", OrderKind::Operate, console));
     s.push(until("loop: the bot restarts the reactor on Auto after the lockout", 120.0, |w| eng(w).reactor.power_on() && eng(w).reactor.mode() == Mode::Auto, |w, c| {
         format!("{:.1} s after the order, restarts {}", eng(w).time - c.v["t_order"], bot(w).work.restarts)
     }));
-    // The fire wore the reactor: an order to repair it to full while it runs.
+    // The hit may have worn the oxygen generator: an order to repair it.
     s.push(Box::new(|w, c| {
-        let e = eng(w);
-        c.v.insert("reactor_worn", if e.reactor.condition().needs_repair() { 1.0 } else { 0.0 });
+        let g = eng(w).condition(engineer::Dev::Generator);
+        c.v.insert("generator_worn", if g.needs_repair() || !g.functioning() { 1.0 } else { 0.0 });
+        check(c, true, format!("loop: the oxygen generator at {:.0} after the hit", g.value()));
         true
     }));
-    for step in give_to_bot("loop: repair the worn reactor", OrderKind::Repair, Target::Device(crew_core::DeviceId::new(engineer::REACTOR))) {
-        s.push(only_if("reactor_worn", step));
+    for step in give_to_bot("loop: repair the oxygen generator", OrderKind::Repair, Target::Device(crew_core::DeviceId::new(engineer::GENERATOR))) {
+        s.push(only_if("generator_worn", step));
     }
-    s.push(only_if("reactor_worn", until("loop: the bot repairs the reactor to full", 240.0, |w| eng(w).reactor.condition().value() >= 100.0, |w, c| {
-        let b = bot(w);
-        format!("{:.1} s after the order, {} repairs ({} failed tries)", eng(w).time - c.v["t_order"], b.work.repairs_done, b.work.repair_fails)
-    })));
+    s.push(only_if("generator_worn", until("loop: the bot repairs the generator", 240.0, |w| eng(w).condition(engineer::Dev::Generator).value() >= 100.0, |w, c| format!("{:.1} s after the order", eng(w).time - c.v["t_order"]))));
     s.push(until("loop: the status returns to normal", 240.0, |w| {
         let (e, l) = (eng(w), live(w));
         let load = e.grid.request_kw();

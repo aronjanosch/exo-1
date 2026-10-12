@@ -17,7 +17,7 @@ pub const CREW: [(&str, Role, &str, u32); 3] = [("Pim Noodle", Role::Pilot, "bot
 /// Stations and devices an order can point at (rooms come from the ship). TODO(initiator): from the ship data.
 /// The engineer corner's are real (`live_status`), the rest placeholders; `turret_port` is the bot demo's turret.
 pub const STATIONS: [&str; 5] = ["helm", "turret_port", live_status::REACTOR_CONSOLE, live_status::POWER_CONSOLE, "scanner"];
-pub const DEVICES: [&str; 6] = [crate::dev_area::engineer::REACTOR, crate::dev_area::engineer::PUMP, crate::dev_area::engineer::EXTINGUISHER, crate::dev_area::engineer::DOOR, "oxygen_generator", "shield_emitter"];
+pub const DEVICES: [&str; 6] = [crate::dev_area::engineer::REACTOR, crate::dev_area::engineer::PUMP, crate::dev_area::engineer::EXTINGUISHER, crate::dev_area::engineer::DOOR, crate::dev_area::engineer::GENERATOR, "shield_emitter"];
 /// Alarm rows shown at most.
 pub const ALARM_ROWS: usize = 3;
 /// Ships the captain can name as the target. Invented.

@@ -4973,6 +4973,7 @@ dependencies = [
 name = "reactor_core"
 version = "0.1.0"
 dependencies = [
+ "device_core",
  "gameplay_core",
 ]
 

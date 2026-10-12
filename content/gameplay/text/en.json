@@ -744,6 +744,16 @@
     "Nobody has ever made this before. Noted.",
     "A new recipe, scribbled into the book."
   ],
+  "lab.injected": [
+    "The dummy twitches: {effects} at {strength} %.",
+    "Straight in. The dummy now has {effects} ({strength} %).",
+    "Dose delivered: {effects}, {strength} % strong."
+  ],
+  "lab.injected_weak": [
+    "Shaky hand. Only {effects} at {strength} %.",
+    "Half of it went on the floor: {effects} at {strength} %.",
+    "Missed the good spot. {effects}, {strength} %."
+  ],
   "town.noodle_town.name": "Noodle Town",
   "town.gulch_freeport.name": "Gulch Freeport",
   "track.deals_done.name": "deals settled",

@@ -111,6 +111,9 @@ pub struct ReactorStatus {
     /// 0..1.
     pub fuel: f64,
     pub mode: ReactorMode,
+    /// What the reactor gives and what the grid asks, kW; none where no real reactor feeds it.
+    pub output_kw: Option<f64>,
+    pub load_kw: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -244,58 +247,78 @@ impl PlaceholderStatus {
     /// room's oxygen to 0.6 and the ship's oxygen change 0.01/s lower; a breach costs 15 hull,
     /// sets the room's oxygen to 0.3 and the change 0.02/s lower; a hot reactor sits at 0.95.
     pub fn status(&self) -> ShipStatus {
-        let fire = |id: &str| self.forced.iter().any(|f| matches!(f, Forced::Fire(r) if r.as_str() == id));
-        let breach = |id: &str| self.forced.iter().any(|f| matches!(f, Forced::Breach(r) if r.as_str() == id));
+        let mut s = self.status_unforced();
+        self.apply_forced(&mut s);
+        s
+    }
 
+    /// The wobbling ship without the forced states: the glue lays real data over it, then
+    /// `apply_forced`, so a forced state wins while it is set.
+    pub fn status_unforced(&self) -> ShipStatus {
         let rooms: Vec<RoomStatus> = ROOMS
             .iter()
             .enumerate()
-            .map(|(i, (id, system, crew))| {
-                let (on_fire, breached) = (fire(id), breach(id));
-                let mut condition = self.wave(9 + i, 0.9, 0.08);
-                let mut oxygen = self.wave(15 + i, 0.96, 0.02);
-                if on_fire {
-                    condition -= 0.3;
-                    oxygen = 0.6;
-                }
-                if breached {
-                    oxygen = 0.3;
-                }
-                RoomStatus { id: RoomId::new(*id), name: TextKey::new(format!("room.{id}")), system: *system, condition, oxygen, fire: on_fire, breach: breached, crew: *crew }
+            .map(|(i, (id, system, crew))| RoomStatus {
+                id: RoomId::new(*id),
+                name: TextKey::new(format!("room.{id}")),
+                system: *system,
+                condition: self.wave(9 + i, 0.9, 0.08),
+                oxygen: self.wave(15 + i, 0.96, 0.02),
+                fire: false,
+                breach: false,
+                crew: *crew,
             })
             .collect();
-
-        let systems = std::array::from_fn(|i| {
-            let system = ShipSystem::ALL[i];
-            let burning = rooms.iter().any(|r| r.fire && r.system == Some(system));
-            let mut c = self.wave(5 + i, 17.0, 3.0).round() as i32;
-            if burning {
-                c -= 6;
-            }
-            if self.forced.contains(&Forced::SystemDown(system)) {
-                c = 0;
-            }
-            SystemBar { system, condition: Some(c.clamp(0, SYSTEM_MAX as i32) as u8), fire: burning }
-        });
-
-        let fires = rooms.iter().filter(|r| r.fire).count() as f64;
-        let breaches = rooms.iter().filter(|r| r.breach).count() as f64;
-        let oxygen = Oxygen { level: self.wave(2, 0.96, 0.02), delta_per_s: self.wave_rate(2, 0.02) - 0.01 * fires - 0.02 * breaches };
-        let hull = Gauge { value: self.wave(1, 92.0, 3.0) - 15.0 * breaches, max: 100.0 };
-
-        let hot = self.forced.contains(&Forced::ReactorHot);
-        let temp = if hot { 0.95 } else { self.wave(3, 0.45, 0.1) };
-        let reactor = ReactorStatus { temp, band: TempBand::of(temp), fuel: self.wave(4, 0.8, 0.02), mode: if hot { ReactorMode::Overheating } else { ReactorMode::Running } };
-
+        let systems = std::array::from_fn(|i| SystemBar { system: ShipSystem::ALL[i], condition: Some(self.wave(5 + i, 17.0, 3.0).round().clamp(0.0, SYSTEM_MAX as f64) as u8), fire: false });
+        let temp = self.wave(3, 0.45, 0.1);
         ShipStatus {
             systems,
             shields: Gauge { value: self.wave(0, 80.0, 10.0), max: 100.0 },
-            hull,
-            oxygen,
-            reactor,
+            hull: Gauge { value: self.wave(1, 92.0, 3.0), max: 100.0 },
+            oxygen: Oxygen { level: self.wave(2, 0.96, 0.02), delta_per_s: self.wave_rate(2, 0.02) },
+            reactor: ReactorStatus { temp, band: TempBand::of(temp), fuel: self.wave(4, 0.8, 0.02), mode: ReactorMode::Running, output_kw: None, load_kw: None },
             rooms,
             clock_left_s: Some((SYSTEM_CLOCK_S - self.t).max(0.0)),
             mission: None,
+        }
+    }
+
+    /// Lays the forced states over a status (see `status` for what each does). Rooms are found by
+    /// id; a forced room the status does not list changes nothing.
+    pub fn apply_forced(&self, s: &mut ShipStatus) {
+        let fire = |id: &RoomId| self.forced.iter().any(|f| matches!(f, Forced::Fire(r) if r == id));
+        let breach = |id: &RoomId| self.forced.iter().any(|f| matches!(f, Forced::Breach(r) if r == id));
+        let (mut fires, mut breaches) = (0.0, 0.0);
+        let mut burning_systems = Vec::new();
+        for r in s.rooms.iter_mut() {
+            if fire(&r.id) {
+                r.condition -= 0.3;
+                r.oxygen = 0.6;
+                r.fire = true;
+                fires += 1.0;
+                burning_systems.extend(r.system);
+            }
+            if breach(&r.id) {
+                r.oxygen = 0.3;
+                r.breach = true;
+                breaches += 1.0;
+            }
+        }
+        for bar in s.systems.iter_mut() {
+            if burning_systems.contains(&bar.system) {
+                bar.fire = true;
+                bar.condition = bar.condition.map(|c| (c as i32 - 6).clamp(0, SYSTEM_MAX as i32) as u8);
+            }
+            if self.forced.contains(&Forced::SystemDown(bar.system)) {
+                bar.condition = Some(0);
+            }
+        }
+        s.oxygen.delta_per_s -= 0.01 * fires + 0.02 * breaches;
+        s.hull.value -= 15.0 * breaches;
+        if self.forced.contains(&Forced::ReactorHot) {
+            s.reactor.temp = 0.95;
+            s.reactor.band = TempBand::of(0.95);
+            s.reactor.mode = ReactorMode::Overheating;
         }
     }
 }

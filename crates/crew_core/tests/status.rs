@@ -85,3 +85,27 @@ fn forced_states_show_and_go_again() {
     p.clear();
     assert_eq!(p.status(), calm);
 }
+
+#[test]
+fn forced_states_lay_over_any_status() {
+    let mut p = PlaceholderStatus::new(5);
+    p.step(3.0);
+    let mut real = p.status_unforced();
+    // The glue's real data: the engine room burns for real, the reactor reports its output.
+    real.rooms[1].oxygen = 0.5;
+    real.reactor.output_kw = Some(800.0);
+    p.force(Forced::Breach(RoomId::new("engine_room")));
+    p.force(Forced::SystemDown(ShipSystem::Science));
+    let mut s = real.clone();
+    p.apply_forced(&mut s);
+    assert!(s.rooms[1].breach);
+    assert_eq!(s.rooms[1].oxygen, 0.3);
+    assert_eq!(s.hull.value, real.hull.value - 15.0);
+    assert_eq!(s.system(ShipSystem::Science).condition, Some(0));
+    assert_eq!(s.reactor.output_kw, Some(800.0));
+    // The plain status is the unforced one with the forced states on top.
+    let mut again = p.status_unforced();
+    p.apply_forced(&mut again);
+    assert_eq!(again, p.status());
+    assert_eq!(PlaceholderStatus::new(5).status().reactor.load_kw, None);
+}

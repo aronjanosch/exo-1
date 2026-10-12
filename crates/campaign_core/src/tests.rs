@@ -355,13 +355,15 @@ fn the_sky_hook_moves_the_star_and_a_refusing_hook_is_an_error() {
         let b = g.generate(&t, seed, &west).unwrap();
         assert_eq!(format!("{a:?}"), format!("{b:?}"), "seed {seed}");
     }
-    assert!(g.generate(&t, 1, &|_: &PlanetDef, _: DVec3| false).is_err());
+    let err = g.generate(&t, 1, &|_: &PlanetDef, _: DVec3| false).unwrap_err();
+    assert!(err.contains("star"), "{err}");
 }
 
 #[test]
 fn a_recipe_outside_the_set_is_an_error() {
     let t = template_with(NORMAL, |v| v["planets"]["recipes"] = Value::from(vec!["nowhere"])).unwrap();
-    assert!(generator().generate(&t, 1, &open_sky).is_err());
+    let err = generator().generate(&t, 1, &open_sky).unwrap_err();
+    assert!(err.contains("planets.recipes"), "{err}");
 }
 
 #[test]
@@ -369,12 +371,14 @@ fn a_name_pool_too_small_is_an_error() {
     let mut names = Names::from_json(NAMES).unwrap();
     names.planet.truncate(1);
     let g = Generator::new(set(), names, drive());
-    assert!(g.generate(&template(NORMAL), 1, &open_sky).is_err());
+    let err = g.generate(&template(NORMAL), 1, &open_sky).unwrap_err();
+    assert!(err.contains("names.planet") && err.contains("the template needs"), "{err}");
 
     let mut names = Names::from_json(NAMES).unwrap();
     names.station.clear();
     let g = Generator::new(set(), names, drive());
-    assert!(g.generate(&template(NORMAL), 1, &open_sky).is_err());
+    let err = g.generate(&template(NORMAL), 1, &open_sky).unwrap_err();
+    assert!(err.contains("names.station") && err.contains("the template needs"), "{err}");
 }
 
 #[test]
@@ -402,4 +406,30 @@ fn normal_seed_42_is_pinned() {
     let planets: Vec<(&str, &str, i32)> =
         out.system.planets.iter().map(|p| (p.name.as_str(), p.recipe.as_str(), p.seed)).collect();
     assert_eq!(planets, [("Mumble", "cinder", 801_617), ("Sprocket", "cinder", 544_030)]);
+}
+
+#[test]
+fn layout_retries_and_says_when_there_is_no_room() {
+    let mut v: Value = serde_json::from_str(NORMAL).unwrap();
+    v["planets"]["count"] = Value::from(vec![8, 8]);
+    v["planets"]["gap_m"] = Value::from(vec![1.0e7, 1.0e7]);
+    let t = Template::from_json(&v.to_string()).expect("eight planets pass validate");
+    let g = generator();
+    let mut ok = 0;
+    for seed in 0..100 {
+        match g.generate(&t, seed, &open_sky) {
+            Ok(out) => {
+                ok += 1;
+                let planets = &out.system.planets;
+                assert_eq!(planets.len(), 8, "seed {seed}");
+                for (i, p) in planets.iter().enumerate() {
+                    for q in &planets[..i] {
+                        assert!(dist(q.centre, p.centre) >= 1.0e7 - 1e-6, "seed {seed}: planets too close");
+                    }
+                }
+            }
+            Err(e) => assert!(e.contains("no room for planet"), "seed {seed}: {e}"),
+        }
+    }
+    assert!(ok > 0, "no seed found a layout");
 }

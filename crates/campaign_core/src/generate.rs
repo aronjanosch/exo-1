@@ -198,8 +198,8 @@ impl Generator {
         })
     }
 
+    // TODO(initiator): planets are scattered 8 to 16 million m apart, not on orbit rings round the star; real orbits?
     /// Planet centres: planet 0 at the origin, each next one a gap from the one before it.
-// TODO(initiator): planets are scattered 8 to 16 million m apart, not on orbit rings round the star; real orbits?
     fn layout(&self, t: &Template, seed: u64, count: usize) -> Result<Vec<[f64; 3]>, String> {
         let mut rng = Rng::derive(seed, KEY_LAYOUT);
         let gap = t.planets.gap_m;

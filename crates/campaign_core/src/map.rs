@@ -335,9 +335,9 @@ impl Map {
         Ok(())
     }
 
+    // TODO(initiator): the type rules are assumptions: #275 says the type mix follows rules but does not name them.
     /// The type rules: they look at kinds, columns and links only, so generation can use them
     /// before names and danger exist.
-    // TODO(initiator): the type rules are my assumptions (initiator: "the type mix follows the rules", rules not given).
     fn check_types(&self, rules: &MapRules) -> Result<(), String> {
         let Some(start) = self.nodes.first() else {
             return Err("no nodes".into());

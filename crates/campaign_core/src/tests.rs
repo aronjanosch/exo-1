@@ -801,3 +801,167 @@ fn map_seed_42_is_pinned() {
         ]
     );
 }
+
+// Progress (#275)
+
+fn progress_walk(map: &Map, mut pick: impl FnMut(&[NodeId], usize) -> NodeId) -> Progress {
+    let mut p = Progress::start(map);
+    let mut jumps = 0;
+    while !map.is_last(p.current) {
+        let ts = p.targets(map, false);
+        let to = pick(&ts, jumps);
+        let before = p.visited.clone();
+        p.jump(map, to, false).unwrap_or_else(|e| panic!("jump to {}: {e}", to.0));
+        assert!(p.visited.len() == before.len() + 1, "one more visited");
+        jumps += 1;
+    }
+    assert_eq!(jumps, map.column_count() as usize - 1);
+    p
+}
+
+fn assert_visited_sane(p: &Progress) {
+    assert!(p.visited.windows(2).all(|w| w[0] < w[1]), "{:?}", p.visited);
+    assert!(p.visited.contains(&p.current), "{:?}", p.visited);
+}
+
+#[test]
+fn progress_start_is_the_start_node_and_checks() {
+    let (rules, names) = (map_rules(), map_names());
+    for seed in [0, 1, 42] {
+        let map = gen_map(seed, &rules, &names);
+        let p = Progress::start(&map);
+        assert_eq!(p.current, Map::START);
+        assert_eq!(p.visited, vec![Map::START]);
+        assert!(p.has_visited(Map::START));
+        p.check(&map).unwrap_or_else(|e| panic!("seed {seed}: {e}"));
+    }
+}
+
+#[test]
+fn progress_walks_to_the_last_column_for_every_seed() {
+    let (rules, names) = (map_rules(), map_names());
+    for seed in 0..200 {
+        let map = gen_map(seed, &rules, &names);
+        let mut rng = Rng::new(seed ^ 0x57A1);
+        let walks = [
+            progress_walk(&map, |ts, _| ts[0]),
+            progress_walk(&map, |ts, _| *ts.last().unwrap()),
+            progress_walk(&map, |ts, _| *rng.pick(ts).unwrap()),
+        ];
+        for p in &walks {
+            assert_visited_sane(p);
+            p.check(&map).unwrap_or_else(|e| panic!("seed {seed}: {e}"));
+            assert!(map.is_last(p.current), "seed {seed}");
+            assert!(p.targets(&map, false).is_empty(), "seed {seed}");
+            for id in 0..map.nodes.len() {
+                let mut q = p.clone();
+                assert!(q.jump(&map, NodeId(id as u8), false).is_err(), "seed {seed}: jump from the end");
+                assert_eq!(&q, p);
+            }
+        }
+    }
+}
+
+#[test]
+fn progress_illegal_jumps_are_errors_and_change_nothing() {
+    let (rules, names) = (map_rules(), map_names());
+    let map = gen_map(1, &rules, &names);
+    let mut p = Progress::start(&map);
+    let two_ahead = map.nodes.iter().find(|n| n.column == 2).unwrap().id;
+    let unknown = NodeId(255);
+    assert!(map.node(unknown).is_none());
+    for to in [two_ahead, Map::START, unknown] {
+        let before = p.clone();
+        assert!(p.jump(&map, to, false).is_err(), "jump to {}", to.0);
+        assert_eq!(p, before);
+    }
+    let first = p.targets(&map, false)[0];
+    p.jump(&map, first, false).unwrap();
+    let before = p.clone();
+    assert!(p.jump(&map, Map::START, false).is_err(), "backward without allow_back");
+    assert_eq!(p, before);
+}
+
+#[test]
+fn progress_allow_back_reaches_the_node_you_came_from() {
+    let (rules, names) = (map_rules(), map_names());
+    let map = gen_map(1, &rules, &names);
+    let mut p = Progress::start(&map);
+    let first = p.targets(&map, false)[0];
+    p.jump(&map, first, true).unwrap();
+    let ts = p.targets(&map, true);
+    assert!(ts.contains(&Map::START), "{ts:?}");
+    let mut want: Vec<NodeId> = map.forward(first).iter().copied().chain(map.back(first)).collect();
+    want.sort();
+    want.dedup();
+    assert_eq!(ts, want);
+    assert!(ts.windows(2).all(|w| w[0] < w[1]));
+    p.jump(&map, Map::START, true).unwrap();
+    assert_eq!(p.current, Map::START);
+    assert_eq!(p.visited, vec![Map::START, first]);
+    assert_visited_sane(&p);
+}
+
+#[test]
+fn progress_of_another_map_is_refused() {
+    let (rules, names) = (map_rules(), map_names());
+    let (a, b) = (gen_map(1, &rules, &names), gen_map(2, &rules, &names));
+    let mut p = Progress::start(&a);
+    let before = p.clone();
+    let to = p.targets(&a, false)[0];
+    assert!(p.jump(&b, to, false).is_err());
+    assert_eq!(p, before);
+    assert!(p.check(&b).is_err());
+    assert!(p.check(&a).is_ok());
+}
+
+#[test]
+fn progress_json_round_trip_and_keys() {
+    let (rules, names) = (map_rules(), map_names());
+    let map = gen_map(1, &rules, &names);
+    let p = Progress::start(&map);
+    let json = serde_json::to_string(&p).unwrap();
+    assert_eq!(json, r#"{"seed":1,"current":0,"visited":[0]}"#);
+    let back: Progress = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, p);
+}
+
+#[test]
+fn progress_check_rejects_hand_edited_states() {
+    let (rules, names) = (map_rules(), map_names());
+    let map = gen_map(1, &rules, &names);
+    let seed = map.seed;
+    let s = Map::START;
+    let other = NodeId(1);
+    let bad = [
+        Progress { seed, current: s, visited: vec![NodeId(3), s] },
+        Progress { seed, current: s, visited: vec![s, s] },
+        Progress { seed, current: other, visited: vec![s] },
+        Progress { seed, current: s, visited: vec![s, NodeId(255)] },
+        Progress { seed, current: other, visited: vec![other] },
+    ];
+    for p in &bad {
+        assert!(p.check(&map).is_err(), "{p:?}");
+    }
+    assert!(Progress::start(&map).check(&map).is_ok());
+}
+
+#[test]
+fn progress_loaded_after_two_jumps_keeps_going() {
+    let (rules, names) = (map_rules(), map_names());
+    let map = gen_map(7, &rules, &names);
+    let mut p = Progress::start(&map);
+    for _ in 0..2 {
+        let to = p.targets(&map, false)[0];
+        p.jump(&map, to, false).unwrap();
+    }
+    let json = serde_json::to_string(&p).unwrap();
+    let mut loaded: Progress = serde_json::from_str(&json).unwrap();
+    loaded.check(&map).unwrap();
+    while !map.is_last(loaded.current) {
+        let to = *loaded.targets(&map, false).last().unwrap();
+        loaded.jump(&map, to, false).unwrap();
+    }
+    assert_eq!(loaded.visited.len(), map.column_count() as usize);
+    assert_visited_sane(&loaded);
+}

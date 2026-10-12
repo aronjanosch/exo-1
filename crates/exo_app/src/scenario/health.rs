@@ -61,6 +61,7 @@ fn put_at(what: &'static str, local: [f64; 2]) -> Vec<Step> {
             let f = w.resource::<DevArea>().frame.expect("dev area");
             let pl = planet(w);
             place_walker(w, world_of(&f, &pl, area3(local, 0.0)));
+            face_towards(w, world_of(&f, &pl, area3(FIRE_AT, 1.0)));
             println!("{what}");
             c.t >= 0.0
         }),

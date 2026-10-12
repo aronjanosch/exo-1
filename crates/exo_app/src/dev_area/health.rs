@@ -259,7 +259,10 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut med: ResMut<Med
                     hands.give(syringe_item(y));
                 }
                 match (r, last) {
-                    (Ok(d), Some(tr)) => (format!("{who}: -{:.0} ({:.0} % dose){}", tr.reduced, d.strength * 100.0, if statuses.is_empty() { String::new() } else { format!(", {}", statuses.join(", ")) }), tr.reduced > 0.0),
+                    (Ok(d), Some(tr)) => (
+                        format!("{who}: -{:.0} ({:.0} % dose){}{}", tr.reduced, d.strength * 100.0, if statuses.is_empty() { String::new() } else { format!(", {}", statuses.join(", ")) }, if tr.overdose.is_some() { ", poisoned!" } else { "" }),
+                        tr.reduced > 0.0,
+                    ),
                     (Ok(_), None) => (format!("{who}: nothing to treat, {}", if statuses.is_empty() { "no effect".to_string() } else { statuses.join(", ") }), false),
                     (Err(_), _) => ("the syringe is empty".into(), false),
                 }

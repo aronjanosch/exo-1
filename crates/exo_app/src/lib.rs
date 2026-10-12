@@ -37,6 +37,7 @@ pub mod sky;
 pub mod ship;
 pub mod terrain;
 pub mod terrain_material;
+pub mod ship_showcase;
 pub mod town;
 pub mod tuning;
 pub mod ui_theme;
@@ -117,6 +118,8 @@ pub struct Options {
     pub force_menu: bool,
     /// `--swap-rounds=<n>`: planet swaps by warp in the `swap` scenario (default and least 3).
     pub swap_rounds: usize,
+    /// `--showcase`: ship models with colliders next to the spawn, for a walk test (window only).
+    pub showcase: bool,
 }
 
 impl Default for Options {
@@ -146,6 +149,7 @@ impl Default for Options {
             settings_dir: None,
             force_menu: false,
             swap_rounds: 3,
+            showcase: false,
         }
     }
 }
@@ -178,6 +182,7 @@ impl Options {
                 "--tuning-dir" => o.tuning_dir = Some(PathBuf::from(v)),
                 "--settings-dir" => o.settings_dir = Some(PathBuf::from(v)),
                 "--menu" => o.force_menu = true,
+                "--showcase" => o.showcase = true,
                 "--swap-rounds" => o.swap_rounds = v.parse().expect("swap-rounds"),
                 "--perf" => o.perf = Some(o.perf.take().unwrap_or_default()),
                 "--perf-baseline" => o.perf.get_or_insert_default().baseline = PathBuf::from(v),
@@ -400,6 +405,10 @@ pub fn build_app(o: &Options) -> App {
         app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, town::window_plugin, named_material::window_plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin, help::window_plugin, dev::window_plugin));
         if o.menu() {
             app.add_plugins(menu::plugin);
+        }
+        if o.showcase || o.scenario.as_deref() == Some("showcase") {
+            app.insert_resource(ship_showcase::ShowcaseStart(start_up));
+            app.add_plugins(ship_showcase::plugin);
         }
     } else if o.scenario.as_deref() == Some("swap") {
         // #14: the terrain too, headless, to count what a swap leaves behind.

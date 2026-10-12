@@ -15,7 +15,7 @@ use gameplay_core::{TrackId, WorldEvent};
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<DevMenu>();
-    app.add_systems(FixedUpdate, (update_dev, jump_to_settlement).chain().in_set(crate::phases::Fx::Effects));
+    app.add_systems(FixedUpdate, (update_dev, jump_to_settlement, toggle_noclip).chain().in_set(crate::phases::Fx::Effects));
 }
 
 pub fn window_plugin(app: &mut App) {
@@ -24,10 +24,10 @@ pub fn window_plugin(app: &mut App) {
 }
 
 /// The commands, in key order (1, 2, 3, ...).
-pub const COMMANDS: [&str; 8] = ["Grant every licence", "+1000 credits", "Refill the boost", "Always day", "Always night", "Jump to day (cycle runs)", "Jump to night (cycle runs)", "Ship to the next settlement"];
+pub const COMMANDS: [&str; 9] = ["Grant every licence", "+1000 credits", "Refill the boost", "Always day", "Always night", "Jump to day (cycle runs)", "Jump to night (cycle runs)", "Ship to the next settlement", "Noclip on/off"];
 
 /// The digit taps, in the order of `COMMANDS`.
-const KEYS: [Tap; 8] = [Tap::Dev1, Tap::Dev2, Tap::Dev3, Tap::Dev4, Tap::Dev5, Tap::Dev6, Tap::Dev7, Tap::Dev8];
+const KEYS: [Tap; 9] = [Tap::Dev1, Tap::Dev2, Tap::Dev3, Tap::Dev4, Tap::Dev5, Tap::Dev6, Tap::Dev7, Tap::Dev8, Tap::Dev9];
 
 /// Money one press of the money command adds. TODO(initiator): the amount.
 pub const MONEY: i64 = 1000;
@@ -47,6 +47,8 @@ pub struct DevMenu {
     pub last: Option<String>,
     /// Command 8 was pressed; `jump_to_settlement` moves the ship.
     pub jump: bool,
+    /// Command 9 was pressed; `toggle_noclip` flips the walker's noclip.
+    pub noclip: bool,
 }
 
 /// Every licence the data has, earned by the host's client (the ones it has stay as they are).
@@ -125,10 +127,27 @@ pub fn update_dev(
                 menu.jump = true;
                 continue;
             }
+            if i == 8 {
+                menu.noclip = true;
+                continue;
+            }
             let now = clock.t;
             let at_hour = |h: f64| ps.as_ref().zip(up).and_then(|(ps, up)| ps.time_for_hour(up, to_star, h, now));
             menu.last = Some(run(i, &mut gp, &mut ships, &mut clock, at_hour));
         }
+    }
+}
+
+/// Command 9: noclip for the walker (through walls, along the view; walk keys, jump up, crouch
+/// down, run faster).
+pub fn toggle_noclip(mut menu: ResMut<DevMenu>, mut players: Query<&mut crate::walker::Player>) {
+    if !std::mem::take(&mut menu.noclip) {
+        return;
+    }
+    for mut pl in &mut players {
+        pl.noclip = !pl.noclip;
+        pl.w.halt();
+        menu.last = Some(if pl.noclip { "noclip on".into() } else { "noclip off".into() });
     }
 }
 

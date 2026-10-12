@@ -1,7 +1,7 @@
 //! Scenario `dev-menu` (round 5): F10 opens the dev menu (dev builds); 1 grants the flight
 //! licence (the seat takes the pilot), 2 adds the credits, 3 refills the boost, 4 and 5 hold day
 //! or night, 6 and 7 jump to day or night with the cycle running, 8 puts the ship above the next
-//! settlement (#238); F10 closes it.
+//! settlement (#238), 9 toggles noclip; F10 closes it.
 //! Starts without the licences, like a new player.
 use crate::daynight::{DayClock, Sun};
 use crate::dev::{DevMenu, DAY_HOUR, JUMP_ABOVE_M, MONEY, NIGHT_HOUR};
@@ -89,6 +89,16 @@ pub fn dev_menu_steps(s: &mut Vec<Step>) {
         }
         true
     }));
+    // 9: noclip on, and off again.
+    for (on, what) in [(true, "9: noclip on"), (false, "9 again: noclip off")] {
+        s.push(press(KeyCode::Digit9));
+        s.push(wait(0.1));
+        s.push(Box::new(move |w, c| {
+            let noclip = w.query::<&crate::walker::Player>().single(w).unwrap().noclip;
+            check(c, noclip == on, format!("{what} (noclip {noclip})"));
+            true
+        }));
+    }
     s.push(press(KeyCode::F10));
     s.push(Box::new(|w, c| {
         check(c, !w.resource::<DevMenu>().open, "F10 closes it".into());

@@ -93,7 +93,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 - `town`: the first city stands on its plot, its buildings stop the walker, the characters stand at their spots (round 6).
 - `net`: the network bot (take off, cruise, turn, brake, land, repeat); see below.
 
-Other options: `--distance=<m>` (distance between the planet centres, default from `content/system/system.json`; frame zones that would reach past half of it shrink to 45 %, a distance too short for the arrival radii is refused), `--origin-shift=<m>` (render-origin threshold, 0 = off, default 1000), `--radius=<m>` (first planet, overrides the file), `--start=<place>` (start beside a place's pad instead of the pole, e.g. `drip_rock`), `--record=<file>` (write the run's ship and walker path for the replay matrix), `--no-vsync` (frame-time measurements; with vsync every frame reads the display's period).
+Other options: `--distance=<m>` (distance between the planet centres, default from `content/system/system.json`; frame zones that would reach past half of it shrink to 45 %, a distance too short for the arrival radii is refused), `--origin-shift=<m>` (render-origin threshold, 0 = off, default 1000), `--radius=<m>` (first planet, overrides the file), `--start=<place>` (start beside a place's pad instead of the pole, e.g. `drip_rock`), `--record=<file>` (write the run's ship and walker path for the replay matrix), `--no-vsync` (frame-time measurements; with vsync every frame reads the display's period), `--showcase` (window: ship models with colliders next to the spawn for a walk test; foreign ones from `content/local/` when present).
 
 ### Performance (`--perf`)
 

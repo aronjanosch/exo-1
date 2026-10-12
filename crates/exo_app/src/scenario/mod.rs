@@ -48,6 +48,7 @@ mod savefile;
 mod space;
 mod swap;
 mod thruster_audio;
+mod showcase;
 mod town;
 mod walk;
 mod warp;
@@ -680,6 +681,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "crate-hull" => cargo::crate_hull_steps(&mut s),
         // Round 6: the city with colliders, its characters, the new towns' pads.
         "town" => town::town_steps(&mut s),
+        // Window only: the showcase models (`--showcase`) from outside and the starting ship's deck.
+        "showcase" => showcase::showcase_steps(&mut s, out_dir, windowed),
         // #135: save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),
         // #169: the seat refuses without the licence; the exam; the licence.

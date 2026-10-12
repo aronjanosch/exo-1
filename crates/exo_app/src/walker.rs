@@ -27,6 +27,8 @@ pub struct Player {
     pub pitch: f64,
     /// Debug fly mode (V): no gravity, no collision.
     pub fly: bool,
+    /// Dev menu noclip: like `fly`, at walking speeds, to look through walls of models.
+    pub noclip: bool,
     /// Body orientation while weightless outside a cabin (issue #8), world space, camera axes
     /// (-z looks, +y is the head). Free in all axes; `w.forward` follows it, `pitch` is 0.
     pub body: Option<DQuat>,
@@ -108,6 +110,10 @@ impl World for AvianWorld<'_, '_, '_> {
     }
 }
 
+/// Noclip speeds (m/s), walk and run. TODO(initiator): values.
+pub const NOCLIP_SPEED: f64 = 6.0;
+pub const NOCLIP_RUN_SPEED: f64 = 20.0;
+
 pub fn spawn_player(commands: &mut Commands, planet: &PlanetRes, cfg: &WalkerConfig, offset_x: f64) -> Entity {
     spawn_player_at(commands, planet, cfg, DVec3::Y, offset_x)
 }
@@ -118,7 +124,7 @@ pub fn spawn_player_at(commands: &mut Commands, planet: &PlanetRes, cfg: &Walker
     let pos = planet.centre + up * (planet.surface(up) + 2.0);
     let mut w = Walker::new(pos, DVec3::NEG_Z);
     w.cfg = *cfg;
-    commands.spawn(Player { w, ship: None, seated: false, pitch: 0.0, fly: false, body: None, cabin_up: DVec3::Y, up, view_up: up }).id()
+    commands.spawn(Player { w, ship: None, seated: false, pitch: 0.0, fly: false, noclip: false, body: None, cabin_up: DVec3::Y, up, view_up: up }).id()
 }
 
 pub fn ship_frame(pos: &Position, rot: &Rotation) -> Frame {
@@ -279,7 +285,7 @@ pub fn walker_step(
 
     // Weightless outside a cabin: the body turns freely and the suit thrusters move it (issue #8).
     let in_gravity = |at: DVec3| flight_core::PlanetEnv::gravity_at(planet.as_ref(), at) != DVec3::ZERO;
-    let weightless = pl.ship.is_none() && !pl.fly && !in_gravity(world_pos);
+    let weightless = pl.ship.is_none() && !pl.fly && !pl.noclip && !in_gravity(world_pos);
     if pl.ship.is_none() {
         pl.up = planet.up(pl.w.pos);
     }
@@ -324,13 +330,18 @@ pub fn walker_step(
         }
     };
 
-    if pl.fly {
+    if pl.fly || pl.noclip {
         let up = planet.up(pl.w.pos);
         pl.w.align(up, yaw);
         let right = pl.w.forward.cross(up);
         let look = DQuat::from_axis_angle(right, pl.pitch) * pl.w.forward;
         let d = right * input.dir.x + look * input.dir.y + up * actions.move_dir.y;
-        let speed = if input.run { 200.0 } else { 50.0 };
+        let speed = match (pl.noclip, input.run) {
+            (true, false) => NOCLIP_SPEED,
+            (true, true) => NOCLIP_RUN_SPEED,
+            (false, false) => 50.0,
+            (false, true) => 200.0,
+        };
         if pl.ship.is_none() {
             pl.w.pos += d.normalize_or_zero() * speed * dt;
             pl.view_up = up;

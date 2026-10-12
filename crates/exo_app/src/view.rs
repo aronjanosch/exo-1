@@ -1183,6 +1183,8 @@ pub fn update_hud(
         };
         if pl.ship.is_some() {
             format!("in cabin  {}  {speed}", lag_text(ship))
+        } else if pl.noclip {
+            format!("NOCLIP (F10 9)  {speed}")
         } else if pl.fly {
             format!("FLY (V)  {speed}")
         } else if pl.body.is_some() {

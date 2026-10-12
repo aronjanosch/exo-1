@@ -114,6 +114,7 @@ pub enum Tap {
     Dev6,
     Dev7,
     Dev8,
+    Dev9,
     /// SC model: master mode SCM or NAV. TODO(initiator): the key (B for now).
     MasterMode,
     /// SC model: comstab on or off. TODO(initiator): the key (U for now).
@@ -170,7 +171,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 35] = [
+    pub const ALL: [Tap; 36] = [
         Tap::Help,
         Tap::DevMenu,
         Tap::Dev1,
@@ -181,6 +182,7 @@ impl Tap {
         Tap::Dev6,
         Tap::Dev7,
         Tap::Dev8,
+        Tap::Dev9,
         Tap::Interact,
         Tap::Throw,
         Tap::HoverAssist,
@@ -231,6 +233,7 @@ impl Tap {
             Tap::Dev6 => "dev_6",
             Tap::Dev7 => "dev_7",
             Tap::Dev8 => "dev_8",
+            Tap::Dev9 => "dev_9",
             Tap::CameraFx => "camera_fx",
             Tap::MasterMode => "master_mode",
             Tap::Comstab => "comstab",
@@ -448,6 +451,7 @@ impl Bindings {
                 (Tap::Dev6, None) => Ok(vec![Input::Key(KeyCode::Digit6)]),
                 (Tap::Dev7, None) => Ok(vec![Input::Key(KeyCode::Digit7)]),
                 (Tap::Dev8, None) => Ok(vec![Input::Key(KeyCode::Digit8)]),
+                (Tap::Dev9, None) => Ok(vec![Input::Key(KeyCode::Digit9)]),
                 // ... and no `camera_fx` (#148, #149).
                 (Tap::CameraFx, None) => Ok(vec![Input::Key(KeyCode::F9)]),
                 // ... and none of the SC model's switches (round 5).

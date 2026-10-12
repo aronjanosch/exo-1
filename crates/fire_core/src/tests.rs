@@ -165,3 +165,43 @@ fn touching_fires_merge() {
     assert_ne!(f1, f3);
     assert_eq!(d.fires().len(), 2);
 }
+
+#[test]
+fn a_leak_drains_its_room_exponentially() {
+    // 80 m³ room, a 1 m² hole half open: tau = V / (k * A * open) = 80 / (4 * 0.5) = 40 s.
+    let mut d = Deck::new(FireTuning::default(), 1);
+    let r = d.add_room(80.0);
+    let leak = d.add_leak(r, DVec3::ZERO, 1.0, 0.5);
+    let tau = 80.0 / (d.tuning().leak_flow * 0.5);
+    for _ in 0..(40.0 / DT) as usize {
+        d.exchange_air(DT);
+    }
+    let f = d.room(r).oxygen_fraction();
+    println!("leak: tau {tau:.1} s, after 40 s {:.3} (exp {:.3}), lost {:.2} m³, flow now {:.3} m³/s", f, (-40.0 / tau).exp(), d.lost_to_space(), d.leak(leak).flow);
+    assert!((f - (-40.0f64 / tau).exp()).abs() < 0.01);
+    assert!((d.lost_to_space() + d.room(r).oxygen - 80.0).abs() < 1e-9, "what left went to space");
+    // Closed: nothing leaves.
+    d.set_leak(leak, 1.0, 0.0);
+    let before = d.room(r).oxygen;
+    d.exchange_air(10.0);
+    assert_eq!(d.room(r).oxygen, before);
+    assert_eq!(d.leak(leak).flow, 0.0);
+}
+
+#[test]
+fn a_closed_door_keeps_the_leak_to_one_room() {
+    let (mut d, a, b, door) = two_rooms(1.0);
+    d.add_leak(b, DVec3::new(6.0, 0.0, 0.0), 1.0, 0.75);
+    for _ in 0..(10.0 / DT) as usize {
+        d.exchange_air(DT);
+    }
+    let open_a = d.room(a).oxygen_fraction();
+    let (mut d2, a2, b2, _) = two_rooms(0.0);
+    d2.add_leak(b2, DVec3::new(6.0, 0.0, 0.0), 1.0, 0.75);
+    for _ in 0..(10.0 / DT) as usize {
+        d2.exchange_air(DT);
+    }
+    println!("leak next door for 10 s: this room {:.3} with the door open, {:.3} closed", open_a, d2.room(a2).oxygen_fraction());
+    assert!(open_a < 0.95 && d2.room(a2).oxygen_fraction() == 1.0);
+    let _ = door;
+}

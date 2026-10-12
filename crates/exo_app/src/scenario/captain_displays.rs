@@ -18,24 +18,24 @@ use crew_core::{AlertLevel, Role, Target};
 use display_core::PanelId;
 use jobs_core::{JobId, JobState};
 
-fn display_of(w: &mut World, id: &PanelId) -> Option<Entity> {
+pub(super) fn display_of(w: &mut World, id: &PanelId) -> Option<Entity> {
     w.query::<(Entity, &DisplayPanel)>().iter(w).find(|(_, d)| &d.id == id).map(|(e, _)| e)
 }
 
-fn crew(w: &World) -> &CrewState {
+pub(super) fn crew(w: &World) -> &CrewState {
     w.resource::<CrewState>()
 }
 
-fn gp(w: &World) -> &Gameplay {
+pub(super) fn gp(w: &World) -> &Gameplay {
     w.resource::<Gameplay>()
 }
 
-fn logged(w: &World, line: &str) -> bool {
+pub(super) fn logged(w: &World, line: &str) -> bool {
     gp(w).log.iter().any(|l| l == line)
 }
 
 /// Walk to a console (from 3 m south of it), F, and its display is in use.
-fn go_to(name: &'static str, id: PanelId, title: &'static str, x: f64) -> Vec<Step> {
+pub(super) fn go_to(name: &'static str, id: PanelId, title: &'static str, x: f64) -> Vec<Step> {
     let id2 = id.clone();
     let id3 = id.clone();
     vec![
@@ -71,7 +71,7 @@ fn go_to(name: &'static str, id: PanelId, title: &'static str, x: f64) -> Vec<St
 }
 
 /// Click a widget of a panel (overlay) and wait until `done` (at most `limit` s).
-fn click(panel: PanelId, action: String, what: String, limit: f64, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
+pub(super) fn click(panel: PanelId, action: String, what: String, limit: f64, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
             let Some(at) = overlay_point_of(w, &panel, &action, None) else {
@@ -96,7 +96,7 @@ fn click(panel: PanelId, action: String, what: String, limit: f64, mut done: imp
 }
 
 /// A click whose outcome is a UI state (checked silently).
-fn press(panel: PanelId, action: &'static str, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
+pub(super) fn press(panel: PanelId, action: &'static str, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
             let at = overlay_point_of(w, &panel, action, None).unwrap_or_else(|| panic!("no widget '{action}' on {panel}"));

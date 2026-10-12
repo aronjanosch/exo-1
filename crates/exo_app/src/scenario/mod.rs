@@ -28,6 +28,7 @@ mod camera_g;
 mod captain_displays;
 mod cargo;
 mod dev_area;
+mod dev_area_loop;
 mod dev_menu;
 mod displays;
 mod figure;
@@ -694,6 +695,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "cabinets" => cabinets::cabinets_steps(&mut s, &shot_step),
         // #288, with `--start=dev_area`.
         "captain_displays" => captain_displays::captain_displays_steps(&mut s, &shot_step),
+        // #288 phase 3: the dev area as one crew loop, with `--start=dev_area`.
+        "dev_area_loop" => dev_area_loop::dev_area_loop_steps(&mut s, &shot_step),
         // #286: the engineer's corner of the dev area, with `--start=dev_area`.
         "reactor" => reactor::reactor_steps(&mut s, &shot_step),
         // #135: save file: deliver halfway, save, restart, load, finish.

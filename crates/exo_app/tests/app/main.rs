@@ -24,6 +24,7 @@ mod scenario_crate_wake_stream;
 mod scenario_town;
 mod scenario_daynight;
 mod scenario_dev_area;
+mod scenario_dev_area_loop;
 mod scenario_dev_menu;
 mod scenario_displays;
 mod scenario_first_person_settings;

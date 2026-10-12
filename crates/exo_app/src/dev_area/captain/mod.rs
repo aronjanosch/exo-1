@@ -170,11 +170,12 @@ pub fn refuse(gp: &mut Gameplay, r: &Refusal) {
 
 /// A target as a short name.
 pub fn target_name(t: &Target) -> String {
-    match t {
-        Target::Room(r) => r.as_str().replace('_', " "),
-        Target::Station(s) => s.as_str().replace('_', " "),
-        Target::Device(d) => d.as_str().replace('_', " "),
-    }
+    let id = match t {
+        Target::Room(r) => r.as_str(),
+        Target::Station(s) => s.as_str(),
+        Target::Device(d) => d.as_str(),
+    };
+    id.trim_start_matches("engineer.").trim_start_matches("engineer_").replace('_', " ")
 }
 
 /// An order in words: "Fix the breach in cargo hold", or the special order's text.

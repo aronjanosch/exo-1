@@ -76,8 +76,9 @@ pub fn real_tasks(e: &Engineering) -> Vec<Task> {
         })
         .collect();
     for (d, id, task, at, depth) in [(Dev::Pump, engineer::PUMP, PUMP_TASK, engineer::PUMP_AT, engineer::PUMP_SIZE[2]), (Dev::Reactor, engineer::REACTOR, REACTOR_TASK, [engineer::REACTOR_AT[0] + 1.0, engineer::REACTOR_AT[1]], engineer::REACTOR_SIZE[2])] {
+        // Open until full: an order (or the table) may send the bot to top up a worn device too.
         let c = e.condition(d);
-        if c.needs_repair() || !c.functioning() {
+        if c.fraction() < 1.0 {
             out.push(Task { id: task, kind: TaskKind::Repair, target: Target::Device(DeviceId::new(id)), pos: front(at, depth), urgency: 1.0 - c.fraction(), need_skill: 0.0 });
         }
     }

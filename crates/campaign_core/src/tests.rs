@@ -433,3 +433,243 @@ fn layout_retries_and_says_when_there_is_no_room() {
     }
     assert!(ok > 0, "no seed found a layout");
 }
+
+// Campaign map (#275)
+
+const MAP_RULES: &str = include_str!("../../../content/campaign/map.json");
+const MAP_SEEDS: u64 = 500;
+
+fn map_rules() -> MapRules {
+    MapRules::from_json(MAP_RULES).expect("map.json")
+}
+
+fn map_names() -> Names {
+    Names::from_json(NAMES).expect("names.json")
+}
+
+fn gen_map(seed: u64, rules: &MapRules, names: &Names) -> Map {
+    Map::generate(seed, rules, names).unwrap_or_else(|e| panic!("seed {seed}: {e}"))
+}
+
+fn maps(count: u64) -> Vec<Map> {
+    let (rules, names) = (map_rules(), map_names());
+    (0..count).map(|seed| gen_map(seed, &rules, &names)).collect()
+}
+
+fn rules_from(edit: impl FnOnce(&mut Value)) -> Result<MapRules, String> {
+    let mut v: Value = serde_json::from_str(MAP_RULES).unwrap();
+    edit(&mut v);
+    MapRules::from_json(&v.to_string())
+}
+
+#[test]
+fn map_same_seed_same_map() {
+    let (rules, names) = (map_rules(), map_names());
+    for seed in [0, 1, 42, u64::MAX] {
+        assert_eq!(gen_map(seed, &rules, &names), gen_map(seed, &rules, &names), "seed {seed}");
+    }
+}
+
+#[test]
+fn map_different_seeds_give_different_maps() {
+    let all = maps(50);
+    let distinct = all.iter().enumerate().filter(|(i, m)| !all[..*i].contains(*m)).count();
+    assert!(distinct >= 45, "{distinct} distinct maps of 50");
+}
+
+#[test]
+fn map_generates_and_checks_for_every_seed() {
+    let (rules, names) = (map_rules(), map_names());
+    for seed in 0..MAP_SEEDS {
+        let m = gen_map(seed, &rules, &names);
+        m.check(&rules).unwrap_or_else(|e| panic!("seed {seed}: {e}"));
+    }
+}
+
+#[test]
+fn map_every_system_is_reachable_from_the_start() {
+    for m in maps(MAP_SEEDS) {
+        let mut seen = vec![Map::START];
+        let mut todo = vec![Map::START];
+        while let Some(id) = todo.pop() {
+            for &next in m.forward(id) {
+                if !seen.contains(&next) {
+                    seen.push(next);
+                    todo.push(next);
+                }
+            }
+        }
+        assert_eq!(seen.len(), m.nodes.len(), "seed {}", m.seed);
+    }
+}
+
+#[test]
+fn map_fans_out_two_or_three_into_the_next_column() {
+    for m in maps(MAP_SEEDS) {
+        let last = m.column_count() - 1;
+        for n in &m.nodes {
+            if n.column == last {
+                assert!(n.forward.is_empty(), "seed {}: {:?}", m.seed, n);
+                continue;
+            }
+            assert!((2..=3).contains(&n.forward.len()), "seed {}: {:?}", m.seed, n);
+            for t in &n.forward {
+                assert_eq!(m.node(*t).unwrap().column, n.column + 1, "seed {}", m.seed);
+            }
+        }
+    }
+}
+
+#[test]
+fn map_type_mix_follows_the_rules() {
+    let rules = map_rules();
+    for m in maps(MAP_SEEDS) {
+        assert_eq!(m.nodes[0].kind, SystemKind::Harbour, "seed {}", m.seed);
+        for n in m.nodes.iter().filter(|n| n.column == 1) {
+            assert_eq!(n.kind, SystemKind::Normal, "seed {}", m.seed);
+        }
+        for n in m.nodes.iter().filter(|n| !m.is_last(n.id)) {
+            let way_out = m.forward(n.id).iter().any(|t| m.node(*t).unwrap().kind != SystemKind::Hostile);
+            assert!(way_out, "seed {}: {:?} has no safe way on", m.seed, n.id);
+        }
+        let harbours = m.nodes.iter().filter(|n| n.kind == SystemKind::Harbour).count() as u32;
+        assert!((2..=rules.max_harbours).contains(&harbours), "seed {}: {harbours} harbours", m.seed);
+        assert!(m.nodes.iter().any(|n| n.kind == SystemKind::Hostile), "seed {}", m.seed);
+    }
+}
+
+#[test]
+fn map_sizes_for_the_shipped_rules() {
+    for m in maps(MAP_SEEDS) {
+        assert!((7..=8).contains(&m.nodes.len()), "seed {}: {} nodes", m.seed, m.nodes.len());
+        assert_eq!(m.column_count(), 4, "seed {}", m.seed);
+        assert_eq!(m.nodes.iter().filter(|n| n.column == 3).count(), 2, "seed {}", m.seed);
+    }
+}
+
+#[test]
+fn map_back_agrees_with_the_forward_edges() {
+    for m in maps(MAP_SEEDS) {
+        assert!(m.back(Map::START).is_empty());
+        let mut reverse: Vec<Vec<NodeId>> = vec![Vec::new(); m.nodes.len()];
+        for n in &m.nodes {
+            for t in &n.forward {
+                reverse[t.0 as usize].push(n.id);
+            }
+        }
+        for n in &m.nodes {
+            let mut expected = reverse[n.id.0 as usize].clone();
+            expected.sort();
+            assert_eq!(m.back(n.id), expected, "seed {} node {:?}", m.seed, n.id);
+        }
+    }
+}
+
+#[test]
+fn map_danger_stays_in_the_kind_range_and_grows_with_the_column() {
+    let (mut first, mut first_n, mut last, mut last_n) = (0u32, 0u32, 0u32, 0u32);
+    for m in maps(MAP_SEEDS) {
+        for n in &m.nodes {
+            let (lo, hi) = match n.kind {
+                SystemKind::Harbour => (0, 0),
+                SystemKind::Normal => (1, 3),
+                SystemKind::Hostile => (3, 5),
+            };
+            assert!((lo..=hi).contains(&n.danger), "seed {}: {:?} danger {}", m.seed, n.kind, n.danger);
+            if n.column == 1 {
+                first += u32::from(n.danger);
+                first_n += 1;
+            }
+            if m.is_last(n.id) {
+                last += u32::from(n.danger);
+                last_n += 1;
+            }
+        }
+    }
+    let (mean_first, mean_last) = (f64::from(first) / f64::from(first_n), f64::from(last) / f64::from(last_n));
+    assert!(mean_last > mean_first, "column 1 mean {mean_first}, last column mean {mean_last}");
+}
+
+#[test]
+fn map_names_and_system_seeds_are_unique() {
+    for m in maps(MAP_SEEDS) {
+        let names: HashSet<&str> = m.nodes.iter().map(|n| n.name.as_str()).collect();
+        assert_eq!(names.len(), m.nodes.len(), "seed {}: names repeat", m.seed);
+        let seeds: HashSet<u64> = m.nodes.iter().map(|n| n.seed).collect();
+        assert_eq!(seeds.len(), m.nodes.len(), "seed {}: system seeds repeat", m.seed);
+    }
+}
+
+#[test]
+fn map_all_kinds_occur_in_the_middle_columns() {
+    let mut seen = HashSet::new();
+    for m in maps(MAP_SEEDS) {
+        seen.extend(m.nodes.iter().filter(|n| (1..=3).contains(&n.column)).map(|n| n.kind));
+    }
+    for kind in SystemKind::ALL {
+        assert!(seen.contains(&kind), "{kind:?} never occurs");
+    }
+}
+
+#[test]
+fn map_check_rejects_broken_maps() {
+    let (rules, names) = (map_rules(), map_names());
+    let base = gen_map(42, &rules, &names);
+    assert!(base.check(&rules).is_ok());
+
+    let mut m = base.clone();
+    let n = m.nodes.iter_mut().find(|n| n.column == 1).unwrap();
+    n.kind = SystemKind::Hostile;
+    n.danger = 4;
+    assert!(m.check(&rules).is_err(), "hostile in column 1");
+
+    let mut m = base.clone();
+    m.nodes[0].forward.truncate(1);
+    assert!(m.check(&rules).is_err(), "one forward target");
+
+    let mut m = base.clone();
+    let n = m.nodes.iter_mut().find(|n| n.column == 1).unwrap();
+    n.kind = SystemKind::Harbour;
+    n.danger = 0;
+    assert!(m.check(&rules).is_err(), "second harbour in column 1");
+
+    let mut m = base.clone();
+    let from = m.nodes.iter().find(|n| n.column == 1).unwrap().forward.clone();
+    for t in from {
+        let target = &mut m.nodes[t.0 as usize];
+        target.kind = SystemKind::Hostile;
+        target.danger = 4;
+    }
+    assert!(m.check(&rules).is_err(), "all forward targets hostile");
+
+    let mut m = base.clone();
+    m.nodes[1].name = m.nodes[2].name.clone();
+    assert!(m.check(&rules).is_err(), "duplicate name");
+
+    let found = (0..MAP_SEEDS).find_map(|seed| {
+        let m = gen_map(seed, &rules, &names);
+        let (p, x) = m.nodes.iter().filter(|n| n.forward.len() == 3).find_map(|p| {
+            p.forward.iter().copied().find(|x| m.back(*x).len() == 1).map(|x| (p.id, x))
+        })?;
+        Some((m, p, x))
+    });
+    let (mut m, p, x) = found.expect("a seed with a lonely edge");
+    m.nodes[p.0 as usize].forward.retain(|t| *t != x);
+    let err = m.check(&rules).expect_err("unreachable node");
+    assert!(err.contains("reachable"), "{err}");
+}
+
+#[test]
+fn map_rules_reject_bad_values() {
+    assert!(rules_from(|_| {}).is_ok());
+    assert!(rules_from(|v| v["columns"][1] = serde_json::json!([1, 3])).is_err(), "column below forward[0]");
+    assert!(rules_from(|v| v["columns"][0] = serde_json::json!([1, 2])).is_err(), "column 0 not [1, 1]");
+    assert!(rules_from(|v| v["max_nodes"] = serde_json::json!(6)).is_err(), "max_nodes below the minimums");
+    assert!(rules_from(|v| v["max_harbours"] = serde_json::json!(1)).is_err(), "max_harbours below 2");
+    assert!(
+        rules_from(|v| v["weights"] = serde_json::json!({"harbour": 0, "normal": 0, "hostile": 0})).is_err(),
+        "all weights zero"
+    );
+    assert!(rules_from(|v| v["danger"]["normal"] = serde_json::json!([1, 6])).is_err(), "danger above 5");
+    assert!(rules_from(|v| v["bogus"] = serde_json::json!(1)).is_err(), "unknown field");
+}

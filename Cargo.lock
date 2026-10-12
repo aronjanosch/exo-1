@@ -2728,6 +2728,7 @@ dependencies = [
  "avian3d",
  "bevy",
  "content_core",
+ "crew_core",
  "daynight_core",
  "display_core",
  "flight_core",

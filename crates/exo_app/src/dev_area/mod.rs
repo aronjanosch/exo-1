@@ -19,6 +19,7 @@ use bevy::math::{DQuat, DVec2, DVec3};
 use bevy::prelude::*;
 use display_core::PanelId;
 
+pub mod captain;
 pub mod skills;
 pub mod test_console;
 
@@ -128,10 +129,13 @@ pub fn plugin(app: &mut App) {
     app.add_plugins(skills::plugin);
     // ROLES: one line per role module.
     app.add_plugins(test_console::plugin);
+    app.add_plugins(captain::plugin);
 }
 
 pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, (dress_boxes, mark_zones).after(spawn_devices).in_set(crate::phases::Frame::World));
+    // ROLES (window): one line per role module with a window part.
+    app.add_plugins(captain::window_plugin);
 }
 
 /// The pose of a box and of its panel: (box collider centre, rotation), and the display.

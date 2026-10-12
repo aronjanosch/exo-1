@@ -21,7 +21,7 @@ use reactor_core::{AlarmKind, Group};
 
 /// Room ids of the engineer corner's two real rooms.
 pub const ENGINE_ROOM: &str = "engine_room";
-pub const SIDE_ROOM: &str = "engine_side_room";
+pub const SIDE_ROOM: &str = "side_room";
 /// Station ids of the engineer corner's consoles (their box ids).
 pub const REACTOR_CONSOLE: &str = "engineer_reactor_console";
 pub const POWER_CONSOLE: &str = "engineer_power_console";
@@ -150,21 +150,21 @@ pub fn alarms(e: &Engineering) -> Vec<AlarmRow> {
     let console = || Some((OrderKind::Operate, Target::Station(StationId::new(REACTOR_CONSOLE))));
     let r = &e.reactor;
     if r.alarm(AlarmKind::TempCritical) {
-        out.push(AlarmRow { text: format!("REACTOR CRITICAL {:.0}", r.temperature()), room: ENGINE_ROOM, order: console() });
+        out.push(AlarmRow { text: format!("REACTOR CRIT {:.0}", r.temperature()), room: ENGINE_ROOM, order: console() });
     } else if r.alarm(AlarmKind::TempHigh) {
         out.push(AlarmRow { text: format!("REACTOR HOT {:.0}", r.temperature()), room: ENGINE_ROOM, order: console() });
     }
     if r.alarm(AlarmKind::Shutdown) {
-        out.push(AlarmRow { text: format!("REACTOR SCRAM, locked {:.0} s", r.lockout_s().ceil()), room: ENGINE_ROOM, order: console() });
+        out.push(AlarmRow { text: format!("SCRAM, locked {:.0} s", r.lockout_s().ceil()), room: ENGINE_ROOM, order: console() });
     }
     if r.alarm(AlarmKind::FuelLow) {
-        out.push(AlarmRow { text: "REACTOR FUEL LOW".into(), room: ENGINE_ROOM, order: console() });
+        out.push(AlarmRow { text: "FUEL LOW".into(), room: ENGINE_ROOM, order: console() });
     }
     for (d, id) in [(Dev::Reactor, engineer::REACTOR), (Dev::Pump, engineer::PUMP)] {
         let c = e.condition(d);
         if !c.functioning() || c.needs_repair() {
             let state = if c.functioning() { "WORN" } else { "BROKEN" };
-            out.push(AlarmRow { text: format!("{} {state} {:.0} %", d.name().to_uppercase(), c.fraction() * 100.0), room: ENGINE_ROOM, order: Some((OrderKind::Repair, Target::Device(DeviceId::new(id)))) });
+            out.push(AlarmRow { text: format!("{} {state} {:.0} %", if d == Dev::Pump { "PUMP" } else { "REACTOR" }, c.fraction() * 100.0), room: ENGINE_ROOM, order: Some((OrderKind::Repair, Target::Device(DeviceId::new(id)))) });
         }
     }
     out

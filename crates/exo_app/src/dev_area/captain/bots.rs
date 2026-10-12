@@ -4,7 +4,7 @@
 //! station), so the captain sees a table change, an order or the alert change what the bot does.
 //!
 //! The demo bot moves in a straight line at `BOT_SPEED` (or `bot_work::RUN_SPEED` to urgent work)
-//! without collision and has no animation; the window draws it as an orange box. Its real work in
+//! without collision and has no animation; the window draws it as a magenta box. Its real work in
 //! the engineer corner is `bot_work`. Saving keeps the table as JSON in memory (TODO: a file
 //! in the save folder once bots are real).
 use super::*;
@@ -276,7 +276,7 @@ pub fn distance_to(demo: &BotDemo, local: [f64; 2]) -> f64 {
 #[derive(Component)]
 struct DemoBotLook;
 
-/// Window: the demo bot as an orange box on the ground.
+/// Window: the demo bot as a magenta box on the ground.
 fn draw_bot(mut commands: Commands, demo: Res<BotDemo>, area: Res<DevArea>, planet: Res<crate::env::PlanetRes>, mut q: Query<&mut WorldPose, With<DemoBotLook>>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
     let Some(frame) = area.frame else { return };
     let (pos, up) = frame.ground(&planet, demo.pos[0], demo.pos[1], 0.85);
@@ -287,7 +287,7 @@ fn draw_bot(mut commands: Commands, demo: Res<BotDemo>, area: Res<DevArea>, plan
             commands.spawn((
                 DemoBotLook,
                 Mesh3d(meshes.add(Cuboid::new(0.6, 1.7, 0.6))),
-                MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.55, 0.1), ..default() })),
+                MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(0.85, 0.2, 0.85), ..default() })),
                 Transform::default(),
                 WorldPose { pos, rot },
             ));

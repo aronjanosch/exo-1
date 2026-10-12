@@ -142,7 +142,7 @@ pub fn panel(gp: &Gameplay, crew: &CrewState, ui: &OverviewUi, role: Role, ship:
     left.push(label(format!("ALARMS  {}", if alarms.is_empty() { "none" } else { "" })).tone(if alarms.is_empty() { Tone::Dim } else { Tone::Bad }).fixed(22.0));
     for (i, a) in alarms.iter().take(ALARM_ROWS).enumerate() {
         let room = a.room.replace('_', " ");
-        left.push(row(6.0, vec![label(format!("{}  {room}", a.text)).tone(Tone::Bad).flex(3.0), button("ORDER", format!("alarm:{i}")).enabled(a.order.is_some()).flex(0.9)]).fixed(30.0));
+        left.push(row(6.0, vec![label(a.text.clone()).tone(Tone::Bad).flex(2.2), label(room).tone(Tone::Bad).flex(1.2), button("ORDER", format!("alarm:{i}")).enabled(a.order.is_some()).flex(0.9)]).fixed(30.0));
     }
     left.push(row(8.0, vec![label(format!("TARGET  {}", SHIPS[ui.ship])).flex(2.2), button("NEXT", "ship_next").flex(0.8), toggle(ui.auto_target, "AUTO", "auto_target").flex(1.0)]).fixed(34.0));
     let pool = crew.budget.pool(wallet);

@@ -95,7 +95,8 @@ pub fn stand(t: &Task, e: Option<&Engineering>) -> ([f64; 2], f64) {
     if t.id.0 >= FIRE_TASK_BASE
         && let Some(f) = e.and_then(|e| e.deck.fire(fire_core::FireId(t.id.0 - FIRE_TASK_BASE)))
     {
-        return (at, f.size * 0.5 + FIRE_STAND_M);
+        // South of the fire, on the walkway side, facing it (the spray reaches north).
+        return ([f.pos.x, f.pos.z - f.size * 0.5 - FIRE_STAND_M], 0.5);
     }
     (at, if t.id.0 >= PUMP_TASK.0 { 0.5 } else { bots::ARRIVE_M })
 }

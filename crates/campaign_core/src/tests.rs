@@ -453,7 +453,9 @@ fn gen_map(seed: u64, rules: &MapRules, names: &Names) -> Map {
 
 fn maps(count: u64) -> Vec<Map> {
     let (rules, names) = (map_rules(), map_names());
-    (0..count).map(|seed| gen_map(seed, &rules, &names)).collect()
+    (0..count)
+        .map(|seed| gen_map(seed, &rules, &names))
+        .collect()
 }
 
 fn rules_from(edit: impl FnOnce(&mut Value)) -> Result<MapRules, String> {
@@ -466,14 +468,22 @@ fn rules_from(edit: impl FnOnce(&mut Value)) -> Result<MapRules, String> {
 fn map_same_seed_same_map() {
     let (rules, names) = (map_rules(), map_names());
     for seed in [0, 1, 42, u64::MAX] {
-        assert_eq!(gen_map(seed, &rules, &names), gen_map(seed, &rules, &names), "seed {seed}");
+        assert_eq!(
+            gen_map(seed, &rules, &names),
+            gen_map(seed, &rules, &names),
+            "seed {seed}"
+        );
     }
 }
 
 #[test]
 fn map_different_seeds_give_different_maps() {
     let all = maps(50);
-    let distinct = all.iter().enumerate().filter(|(i, m)| !all[..*i].contains(*m)).count();
+    let distinct = all
+        .iter()
+        .enumerate()
+        .filter(|(i, m)| !all[..*i].contains(*m))
+        .count();
     assert!(distinct >= 45, "{distinct} distinct maps of 50");
 }
 
@@ -482,7 +492,8 @@ fn map_generates_and_checks_for_every_seed() {
     let (rules, names) = (map_rules(), map_names());
     for seed in 0..MAP_SEEDS {
         let m = gen_map(seed, &rules, &names);
-        m.check(&rules).unwrap_or_else(|e| panic!("seed {seed}: {e}"));
+        m.check(&rules)
+            .unwrap_or_else(|e| panic!("seed {seed}: {e}"));
     }
 }
 
@@ -512,7 +523,12 @@ fn map_fans_out_two_or_three_into_the_next_column() {
                 assert!(n.forward.is_empty(), "seed {}: {:?}", m.seed, n);
                 continue;
             }
-            assert!((2..=3).contains(&n.forward.len()), "seed {}: {:?}", m.seed, n);
+            assert!(
+                (2..=3).contains(&n.forward.len()),
+                "seed {}: {:?}",
+                m.seed,
+                n
+            );
             for t in &n.forward {
                 assert_eq!(m.node(*t).unwrap().column, n.column + 1, "seed {}", m.seed);
             }
@@ -529,21 +545,46 @@ fn map_type_mix_follows_the_rules() {
             assert_eq!(n.kind, SystemKind::Normal, "seed {}", m.seed);
         }
         for n in m.nodes.iter().filter(|n| !m.is_last(n.id)) {
-            let way_out = m.forward(n.id).iter().any(|t| m.node(*t).unwrap().kind != SystemKind::Hostile);
+            let way_out = m
+                .forward(n.id)
+                .iter()
+                .any(|t| m.node(*t).unwrap().kind != SystemKind::Hostile);
             assert!(way_out, "seed {}: {:?} has no safe way on", m.seed, n.id);
         }
-        let harbours = m.nodes.iter().filter(|n| n.kind == SystemKind::Harbour).count() as u32;
-        assert!((2..=rules.max_harbours).contains(&harbours), "seed {}: {harbours} harbours", m.seed);
-        assert!(m.nodes.iter().any(|n| n.kind == SystemKind::Hostile), "seed {}", m.seed);
+        let harbours = m
+            .nodes
+            .iter()
+            .filter(|n| n.kind == SystemKind::Harbour)
+            .count() as u32;
+        assert!(
+            (2..=rules.max_harbours).contains(&harbours),
+            "seed {}: {harbours} harbours",
+            m.seed
+        );
+        assert!(
+            m.nodes.iter().any(|n| n.kind == SystemKind::Hostile),
+            "seed {}",
+            m.seed
+        );
     }
 }
 
 #[test]
 fn map_sizes_for_the_shipped_rules() {
     for m in maps(MAP_SEEDS) {
-        assert!((7..=8).contains(&m.nodes.len()), "seed {}: {} nodes", m.seed, m.nodes.len());
+        assert!(
+            (7..=8).contains(&m.nodes.len()),
+            "seed {}: {} nodes",
+            m.seed,
+            m.nodes.len()
+        );
         assert_eq!(m.column_count(), 4, "seed {}", m.seed);
-        assert_eq!(m.nodes.iter().filter(|n| n.column == 3).count(), 2, "seed {}", m.seed);
+        assert_eq!(
+            m.nodes.iter().filter(|n| n.column == 3).count(),
+            2,
+            "seed {}",
+            m.seed
+        );
     }
 }
 
@@ -575,7 +616,13 @@ fn map_danger_stays_in_the_kind_range_and_grows_with_the_column() {
                 SystemKind::Normal => (1, 3),
                 SystemKind::Hostile => (3, 5),
             };
-            assert!((lo..=hi).contains(&n.danger), "seed {}: {:?} danger {}", m.seed, n.kind, n.danger);
+            assert!(
+                (lo..=hi).contains(&n.danger),
+                "seed {}: {:?} danger {}",
+                m.seed,
+                n.kind,
+                n.danger
+            );
             if n.column == 1 {
                 first += u32::from(n.danger);
                 first_n += 1;
@@ -586,8 +633,14 @@ fn map_danger_stays_in_the_kind_range_and_grows_with_the_column() {
             }
         }
     }
-    let (mean_first, mean_last) = (f64::from(first) / f64::from(first_n), f64::from(last) / f64::from(last_n));
-    assert!(mean_last > mean_first, "column 1 mean {mean_first}, last column mean {mean_last}");
+    let (mean_first, mean_last) = (
+        f64::from(first) / f64::from(first_n),
+        f64::from(last) / f64::from(last_n),
+    );
+    assert!(
+        mean_last > mean_first,
+        "column 1 mean {mean_first}, last column mean {mean_last}"
+    );
 }
 
 #[test]
@@ -596,7 +649,12 @@ fn map_names_and_system_seeds_are_unique() {
         let names: HashSet<&str> = m.nodes.iter().map(|n| n.name.as_str()).collect();
         assert_eq!(names.len(), m.nodes.len(), "seed {}: names repeat", m.seed);
         let seeds: HashSet<u64> = m.nodes.iter().map(|n| n.seed).collect();
-        assert_eq!(seeds.len(), m.nodes.len(), "seed {}: system seeds repeat", m.seed);
+        assert_eq!(
+            seeds.len(),
+            m.nodes.len(),
+            "seed {}: system seeds repeat",
+            m.seed
+        );
     }
 }
 
@@ -604,7 +662,12 @@ fn map_names_and_system_seeds_are_unique() {
 fn map_all_kinds_occur_in_the_middle_columns() {
     let mut seen = HashSet::new();
     for m in maps(MAP_SEEDS) {
-        seen.extend(m.nodes.iter().filter(|n| (1..=3).contains(&n.column)).map(|n| n.kind));
+        seen.extend(
+            m.nodes
+                .iter()
+                .filter(|n| (1..=3).contains(&n.column))
+                .map(|n| n.kind),
+        );
     }
     for kind in SystemKind::ALL {
         assert!(seen.contains(&kind), "{kind:?} never occurs");
@@ -634,7 +697,13 @@ fn map_check_rejects_broken_maps() {
     assert!(m.check(&rules).is_err(), "second harbour in column 1");
 
     let mut m = base.clone();
-    let from = m.nodes.iter().find(|n| n.column == 1).unwrap().forward.clone();
+    let from = m
+        .nodes
+        .iter()
+        .find(|n| n.column == 1)
+        .unwrap()
+        .forward
+        .clone();
     for t in from {
         let target = &mut m.nodes[t.0 as usize];
         target.kind = SystemKind::Hostile;
@@ -648,9 +717,17 @@ fn map_check_rejects_broken_maps() {
 
     let found = (0..MAP_SEEDS).find_map(|seed| {
         let m = gen_map(seed, &rules, &names);
-        let (p, x) = m.nodes.iter().filter(|n| n.forward.len() == 3).find_map(|p| {
-            p.forward.iter().copied().find(|x| m.back(*x).len() == 1).map(|x| (p.id, x))
-        })?;
+        let (p, x) = m
+            .nodes
+            .iter()
+            .filter(|n| n.forward.len() == 3)
+            .find_map(|p| {
+                p.forward
+                    .iter()
+                    .copied()
+                    .find(|x| m.back(*x).len() == 1)
+                    .map(|x| (p.id, x))
+            })?;
         Some((m, p, x))
     });
     let (mut m, p, x) = found.expect("a seed with a lonely edge");
@@ -662,14 +739,65 @@ fn map_check_rejects_broken_maps() {
 #[test]
 fn map_rules_reject_bad_values() {
     assert!(rules_from(|_| {}).is_ok());
-    assert!(rules_from(|v| v["columns"][1] = serde_json::json!([1, 3])).is_err(), "column below forward[0]");
-    assert!(rules_from(|v| v["columns"][0] = serde_json::json!([1, 2])).is_err(), "column 0 not [1, 1]");
-    assert!(rules_from(|v| v["max_nodes"] = serde_json::json!(6)).is_err(), "max_nodes below the minimums");
-    assert!(rules_from(|v| v["max_harbours"] = serde_json::json!(1)).is_err(), "max_harbours below 2");
     assert!(
-        rules_from(|v| v["weights"] = serde_json::json!({"harbour": 0, "normal": 0, "hostile": 0})).is_err(),
+        rules_from(|v| v["columns"][1] = serde_json::json!([1, 3])).is_err(),
+        "column below forward[0]"
+    );
+    assert!(
+        rules_from(|v| v["columns"][0] = serde_json::json!([1, 2])).is_err(),
+        "column 0 not [1, 1]"
+    );
+    assert!(
+        rules_from(|v| v["max_nodes"] = serde_json::json!(6)).is_err(),
+        "max_nodes below the minimums"
+    );
+    assert!(
+        rules_from(|v| v["max_harbours"] = serde_json::json!(1)).is_err(),
+        "max_harbours below 2"
+    );
+    assert!(
+        rules_from(|v| v["weights"] = serde_json::json!({"harbour": 0, "normal": 0, "hostile": 0}))
+            .is_err(),
         "all weights zero"
     );
-    assert!(rules_from(|v| v["danger"]["normal"] = serde_json::json!([1, 6])).is_err(), "danger above 5");
-    assert!(rules_from(|v| v["bogus"] = serde_json::json!(1)).is_err(), "unknown field");
+    assert!(
+        rules_from(|v| v["danger"]["normal"] = serde_json::json!([1, 6])).is_err(),
+        "danger above 5"
+    );
+    assert!(
+        rules_from(|v| v["bogus"] = serde_json::json!(1)).is_err(),
+        "unknown field"
+    );
+}
+
+#[test]
+fn map_seed_42_is_pinned() {
+    // Pinned: a change here changes every saved campaign.
+    use SystemKind::{Harbour, Hostile, Normal};
+    let m = gen_map(42, &map_rules(), &map_names());
+    let columns: Vec<u8> = m.nodes.iter().map(|n| n.column).collect();
+    assert_eq!(columns, [0, 1, 1, 1, 2, 2, 3, 3]);
+    let kinds: Vec<SystemKind> = m.nodes.iter().map(|n| n.kind).collect();
+    assert_eq!(
+        kinds,
+        [Harbour, Normal, Normal, Normal, Harbour, Normal, Hostile, Normal]
+    );
+    let forward: Vec<Vec<u8>> = m
+        .nodes
+        .iter()
+        .map(|n| n.forward.iter().map(|t| t.0).collect())
+        .collect();
+    assert_eq!(
+        forward,
+        [
+            vec![1, 2, 3],
+            vec![4, 5],
+            vec![4, 5],
+            vec![4, 5],
+            vec![6, 7],
+            vec![6, 7],
+            vec![],
+            vec![]
+        ]
+    );
 }

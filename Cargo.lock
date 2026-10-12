@@ -2544,6 +2544,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "display_core"
+version = "0.1.0"
+dependencies = [
+ "glam 0.32.1",
+]
+
+[[package]]
 name = "displaydoc"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

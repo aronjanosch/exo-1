@@ -3285,6 +3285,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "health_core"
+version = "0.1.0"
+dependencies = [
+ "content_core",
+ "gameplay_core",
+ "production_core",
+ "serde",
+]
+
+[[package]]
 name = "heapless"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

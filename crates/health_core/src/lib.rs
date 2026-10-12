@@ -310,11 +310,11 @@ impl Health {
 
     /// Total strength of an affliction over all parts.
     pub fn strength(&self, id: &str) -> f64 {
-        self.afflictions.iter().filter(|a| a.id == id).map(|a| a.strength).sum()
+        self.afflictions.iter().filter(|a| a.id == id).fold(0.0, |s, a| s + a.strength)
     }
 
     pub fn strength_on(&self, id: &str, part: Part) -> f64 {
-        self.afflictions.iter().filter(|a| a.id == id && a.part == Some(part)).map(|a| a.strength).sum()
+        self.afflictions.iter().filter(|a| a.id == id && a.part == Some(part)).fold(0.0, |s, a| s + a.strength)
     }
 
     /// Adds strength to an affliction (a limb one without a part goes to the torso). False for an

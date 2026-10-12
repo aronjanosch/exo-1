@@ -17,6 +17,8 @@ pub struct LookState {
     lights: Vec<Handle<StandardMaterial>>,
     puff: Option<Entity>,
     sprayed: f64,
+    /// One dark slab per hull section, sized by its breach.
+    holes: Vec<Entity>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -54,6 +56,31 @@ pub fn draw(
             let (w, rot) = place(area3(at, 2.4));
             commands.spawn((Mesh3d(cube.clone()), MeshMaterial3d(mat.clone()), Transform::from_rotation(rot).with_scale(Vec3::splat(0.4)), WorldPos(w)));
             s.lights.push(mat);
+        }
+        // Hull plates where the rooms' walls would be, and a dark hole on each, shown when breached.
+        let plate = materials.add(StandardMaterial { base_color: Color::srgb(0.55, 0.57, 0.6), perceptual_roughness: 0.7, ..default() });
+        let hole = materials.add(StandardMaterial { base_color: Color::srgb(0.02, 0.02, 0.03), perceptual_roughness: 1.0, ..default() });
+        for sec in e.hull.sections() {
+            let (w, rot) = place(DVec3::new(sec.pos.x, 1.3, sec.pos.z + 0.1));
+            commands.spawn((Mesh3d(cube.clone()), MeshMaterial3d(plate.clone()), Transform::from_rotation(rot).with_scale(Vec3::new(2.4, 2.6, 0.15)), WorldPos(w)));
+            let (w, rot) = place(DVec3::new(sec.pos.x, sec.pos.y, sec.pos.z - 0.02));
+            let ent = commands.spawn((Mesh3d(cube.clone()), MeshMaterial3d(hole.clone()), Transform::from_rotation(rot).with_scale(Vec3::splat(0.001)), WorldPos(w))).id();
+            s.holes.push(ent);
+        }
+    }
+    // Breaches: the hole grows with its opening.
+    for (i, sec) in e.hull.sections().iter().enumerate() {
+        let open = e.hull.openness(hull_core::SectionId(i));
+        let side = if e.hull.breached(hull_core::SectionId(i)) { (0.3 + 1.6 * open / 0.75) as f32 } else { 0.001 };
+        let (w, rot) = place(DVec3::new(sec.pos.x, sec.pos.y, sec.pos.z - 0.02));
+        if let Some(&ent) = s.holes.get(i)
+            && let Ok((mut t, mut wp)) = placed.get_mut(ent)
+        {
+            let tf = Transform { translation: (w - origin.origin).as_vec3(), rotation: rot, scale: Vec3::new(side, side * 0.8, 0.2) };
+            if *t != tf {
+                *t = tf;
+                wp.0 = w;
+            }
         }
     }
     let r = &e.reactor;

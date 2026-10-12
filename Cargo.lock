@@ -2752,6 +2752,7 @@ dependencies = [
  "flight_core",
  "gameplay_core",
  "grab_core",
+ "hull_core",
  "jobs_core",
  "net_core",
  "planet_core",

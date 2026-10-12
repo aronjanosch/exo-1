@@ -10,6 +10,7 @@ mod headless_ticks;
 mod mouse_look;
 mod out_dirs;
 mod scenario_boost_hud;
+mod scenario_breach;
 mod scenario_cabinets;
 mod scenario_camera_g;
 mod scenario_captain_displays;

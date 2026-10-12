@@ -903,5 +903,11 @@
   "notice.engineer.repaired": ["The {device} is fixed.", "The {device} purrs again."],
   "notice.engineer.repair_failed": ["Zap! The {device} bit back (-{lost}).", "The repair slipped. The {device} lost {lost}."],
   "notice.engineer.locked": "The reactor is locked after the scram. Wait a moment.",
-  "notice.engineer.no_rods": "The rod crate is empty."
+  "notice.engineer.no_rods": "The rod crate is empty.",
+  "notice.engineer.hit": ["Hit! {kind} on the {room} hull.", "Something {kind} slammed into the {room}."],
+  "notice.engineer.breach": ["HULL BREACH in the {room}! Air is leaving.", "Breach in the {room}. Hear that hiss?"],
+  "notice.engineer.system_hit": "The hit shook the {room}'s machines (-{amount}).",
+  "notice.engineer.oxygen_low": ["Oxygen low in the {room} ({percent} %).", "The {room} is getting thin ({percent} % air)."],
+  "notice.engineer.patched": ["Breach in the {room} patched.", "The {room} hull holds again."],
+  "notice.engineer.no_kit": "You need a patch kit from the kit box."
 }

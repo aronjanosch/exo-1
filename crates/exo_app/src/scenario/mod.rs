@@ -23,6 +23,7 @@ use net_core::snapshot::Snapshot;
 use crate::ship::RemoteShip;
 
 mod boost;
+mod breach;
 mod cabinets;
 mod camera_g;
 mod captain_displays;
@@ -696,6 +697,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "captain_displays" => captain_displays::captain_displays_steps(&mut s, &shot_step),
         // #286: the engineer's corner of the dev area, with `--start=dev_area`.
         "reactor" => reactor::reactor_steps(&mut s, &shot_step),
+        // #286: hits, breaches and life support in the engineer's corner.
+        "breach" => breach::breach_steps(&mut s, &shot_step),
         // #135: save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),
         // #169: the seat refuses without the licence; the exam; the licence.

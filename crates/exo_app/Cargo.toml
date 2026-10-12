@@ -28,4 +28,5 @@ display_core = { workspace = true }
 device_core = { workspace = true }
 reactor_core = { workspace = true }
 fire_core = { workspace = true }
+hull_core = { workspace = true }
 serde_json = { workspace = true }

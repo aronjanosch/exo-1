@@ -81,7 +81,7 @@ pub fn panel(s: &ShipStatus, ui: &ShipStateUi, mission: Option<String>) -> Panel
     right.push(row(6.0, vec![button("FIRE", "fire"), button("BREACH", "breach"), button("REACTOR HOT", "hot")]).fixed(44.0));
     right.push(row(6.0, vec![button("WEAPONS DOWN", "down"), button("CLEAR", "clear")]).fixed(44.0));
     right.push(label("SUPPLY").tone(Tone::Dim).fixed(22.0));
-    right.push(row(6.0, vec![button(format!("{} RODS {} cr", ROD_PACK.0, ROD_PACK.1), "buy_rods").flex(1.0), label(ui.bought.clone().unwrap_or_else(|| "from your allowance".into())).tone(Tone::Dim).flex(2.0)]).fixed(44.0));
+    right.push(row(6.0, vec![button("BUY RODS", "buy_rods").flex(1.2), label(ui.bought.clone().unwrap_or_else(|| format!("{} rods, {} cr from your allowance", ROD_PACK.0, ROD_PACK.1))).tone(Tone::Dim).flex(2.2)]).fixed(44.0));
     Panel::new(PANEL_PX[0], PANEL_PX[1], row(28.0, vec![column(6.0, left).flex(1.0), column(6.0, right).flex(1.0)]))
 }
 

@@ -46,6 +46,8 @@ pub enum LabItem {
     Syringe(Syringe),
     /// Opens a secure locker.
     Key,
+    /// A first aid item: its kind is a treatment id (`bandage`, `medkit`).
+    FirstAid(String),
 }
 
 pub fn ingredient_item(id: &CommodityId) -> Item<LabItem> {
@@ -56,6 +58,10 @@ pub fn batch_item(b: Batch) -> Item<LabItem> {
 }
 pub fn syringe_item(s: Syringe) -> Item<LabItem> {
     Item::new("syringe", &["small", "medical", "syringe"], 1).with_payload(LabItem::Syringe(s))
+}
+/// A bandage or a medkit (a treatment of `health/health.json`).
+pub fn first_aid_item(kind: &str) -> Item<LabItem> {
+    Item::new(kind, &["small", "medical", "first_aid"], 16).with_payload(LabItem::FirstAid(kind.to_string()))
 }
 pub fn key_item() -> Item<LabItem> {
     Item::new(container_core::presets::ID_CARD, &["small", container_core::presets::ID_CARD], 1).with_payload(LabItem::Key)

@@ -20,6 +20,7 @@ pub fn item_label(item: &Item<LabItem>, names: &dyn Fn(&CommodityId) -> String) 
         Some(LabItem::Batch(b)) => format!("batch {} q{:.2} ({:.1})", names(&b.base), b.quality, b.volume),
         Some(LabItem::Syringe(y)) => format!("syringe {} q{:.2} ({})", names(&y.product.base), y.product.quality, y.doses),
         Some(LabItem::Key) => "ID card".into(),
+        Some(LabItem::FirstAid(kind)) => kind.clone(),
         None => item.kind.to_string(),
     }
 }

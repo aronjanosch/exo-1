@@ -153,6 +153,8 @@ pub struct Engineering {
     /// Simulated seconds.
     pub time: f64,
     burn_notice_at: f64,
+    /// Fire damage to the player since the health glue last took it (#287).
+    pub player_burn: f64,
 }
 
 impl Default for Engineering {
@@ -184,6 +186,7 @@ impl Default for Engineering {
             stats: Stats::default(),
             time: 0.0,
             burn_notice_at: f64::MIN,
+            player_burn: 0.0,
         }
     }
 }
@@ -373,7 +376,7 @@ fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut e: ResMut<Engineeri
 
 /// One fixed step of the engineer's corner.
 #[allow(clippy::too_many_arguments)]
-fn step(
+pub fn step(
     time: Res<Time>,
     mut e: ResMut<Engineering>,
     mut gp: ResMut<Gameplay>,
@@ -518,7 +521,10 @@ fn step(
     let mut burning = false;
     for ev in e.deck.step(dt, &targets) {
         match ev {
-            FireEvent::Damage { target: 0, .. } => burning = true,
+            FireEvent::Damage { target: 0, amount, .. } => {
+                burning = true;
+                e.player_burn += amount;
+            }
             FireEvent::Damage { target: 1, amount, .. } => {
                 if let Some(DeviceEvent::Broke) = e.reactor.condition_mut().damage(amount) {
                     broke(&mut gp, Dev::Reactor);

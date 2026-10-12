@@ -2,7 +2,7 @@
 //! that needs an ID card, and a supply crate, as boxes with a panel in the STORAGE zone. A panel
 //! lists the stacks inside and in the player's `Hands`, with take and store per stack and for all,
 //! the fill as a bar, the lock state and the last refusal. The rules are `container_core`.
-use super::science::{hands_line, ingredient_item, item_label, key_item, syringe_item, Hands, LabItem, ScienceLab};
+use super::science::{first_aid_item, hands_line, ingredient_item, item_label, key_item, syringe_item, Hands, LabItem, ScienceLab};
 use super::*;
 use crate::displays::{DisplayAction, Panels};
 use crate::gameplay::Gameplay;
@@ -78,6 +78,8 @@ pub fn stocked(lab: &ScienceLab) -> Storage {
     }
     let mut medical: Container<LabItem> = presets::medical_cabinet();
     put(&mut medical, stock_syringe("dream_goo", &["sleepy"], 0.5), 2);
+    put(&mut medical, first_aid_item("bandage"), 6);
+    put(&mut medical, first_aid_item("medkit"), 2);
     let mut locker: Container<LabItem> = presets::locker();
     put(&mut locker, key_item(), 1);
     let mut secure: Container<LabItem> = presets::secure_locker();

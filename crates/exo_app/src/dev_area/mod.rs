@@ -22,6 +22,7 @@ use display_core::PanelId;
 pub mod science;
 pub mod captain;
 pub mod engineer;
+pub mod health;
 pub mod skills;
 pub mod storage;
 pub mod test_console;
@@ -136,12 +137,14 @@ pub fn plugin(app: &mut App) {
     app.add_plugins(storage::plugin);
     app.add_plugins(captain::plugin);
     app.add_plugins(engineer::plugin);
+    app.add_plugins(health::plugin);
 }
 
 pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, (dress_boxes, mark_zones).after(spawn_devices).in_set(crate::phases::Frame::World));
     // ROLES (window): one line per role module with a window part.
     app.add_plugins(captain::window_plugin);
+    app.add_plugins(health::window_plugin);
 }
 
 /// The pose of a box and of its panel: (box collider centre, rotation), and the display.

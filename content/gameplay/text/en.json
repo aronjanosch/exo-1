@@ -748,6 +748,10 @@
     "Nobody has ever made this before. Noted.",
     "A new recipe, scribbled into the book."
   ],
+  "notice.health.unconscious": "Everything goes dark. You are out cold.",
+  "notice.health.died": "You died ({cause}). Hold on, the pads will spit you back out.",
+  "notice.health.respawn": "Back at the pads, a bit foggy: {lost} % of your skills are gone.",
+  "notice.health.fracture": "Crunch. Your legs did not like that landing.",
   "lab.injected": [
     "The dummy twitches: {effects} at {strength} %.",
     "Straight in. The dummy now has {effects} ({strength} %).",

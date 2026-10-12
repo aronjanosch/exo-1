@@ -154,6 +154,18 @@ _Avoid_: power panel, conduit screen, fuse box
 Less power than the groups ask for: the high priorities are served first, a group short of power works slower, and one below its minimum share switches off.
 _Avoid_: blackout (no power at all), power cut
 
+**Hit**:
+One blow to the ship, as data: its damage type (energy, physical, collision), strength, the hull section it lands on, and what it can cause (hull damage, a breach, fire, damage to the ship systems in the room).
+_Avoid_: shot, impact, damage event
+
+**Hull section**:
+A piece of the ship's outer wall belonging to one room, with its own damage; past a tenth of damage it leaks.
+_Avoid_: hull segment, plate (plating is the armour level), wall
+
+**Breach**:
+A hole in a hull section to space: air leaves through it, faster the bigger the hole, and a big one pulls people and loose things towards it. Patching the section closes it.
+_Avoid_: leak (say breach for the hull), hole, puncture
+
 **Scram**:
 The reactor's safety shutdown after overheating too long: power off, then a short lockout before it can start again.
 _Avoid_: meltdown (what happens with the safety off), trip

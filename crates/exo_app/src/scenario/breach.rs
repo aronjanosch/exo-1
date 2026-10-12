@@ -124,6 +124,13 @@ pub(super) fn breach_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
     s.push(stand_until_still());
     s.push(aim("breach: the prompt offers a patch kit", KITS_AT, 0.3, "take a patch kit"));
     s.push(tap_f("breach: F takes a patch kit", |w| eng(w).kit_in_hand));
+    // A look at the breach and its fire from here, for the picture.
+    s.push(Box::new(|w, _| {
+        look_at(w, ENGINE_SECTION_AT, engineer::SECTION_HEIGHT);
+        true
+    }));
+    s.push(wait(0.1));
+    s.push(shot_step("breach-from-kits"));
     s.push(walk("breach: walk to the breach", &[[-7.3, 11.9], AT_SECTION], 20.0));
     s.push(stand_until_still());
     s.push(Box::new(|w, c| {
@@ -133,8 +140,8 @@ pub(super) fn breach_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
         check(c, pull.length() > 0.0, format!("breach: at the hole the air pulls with {:.2} m/s²", pull.length()));
         true
     }));
-    s.push(shot_step("breach"));
     s.push(aim("breach: the prompt offers the patch", ENGINE_SECTION_AT, engineer::SECTION_HEIGHT, "patch the hull"));
+    s.push(shot_step("breach"));
     s.push(Box::new(|w, c| {
         c.v.insert("mech", w.resource::<crate::dev_area::skills::DevSkills>().mechanical);
         c.v.insert("o2_patch", o2(eng(w)).0);
@@ -208,6 +215,10 @@ pub(super) fn breach_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
         c.v.insert("o2_gen", o2(eng(w)).0);
         true
     }));
+    s.push(aim("breach: the prompt names the oxygen panel", GENERATOR_AT, 1.6, engineer::OXYGEN_NAME));
+    s.push(use_panel("breach: F uses the oxygen panel", engineer::OXYGEN_PANEL));
+    s.push(wait(2.0));
+    s.push(shot_step("oxygen-panel"));
     s.push(until("breach: the generator brings the air back to 90 %", 300.0, |e, _| o2(e).0 >= 0.9));
     s.push(Box::new(|w, c| {
         let e = eng(w);
@@ -215,6 +226,7 @@ pub(super) fn breach_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
         true
     }));
     s.push(shot_step("oxygen-back"));
+    s.push(leave_panel("breach: F leaves the oxygen panel"));
     s.push(walk("breach: walk to the pump", &[[-4.3, 5.2], [-4.3, 7.9], AT_PUMP], 30.0));
     s.push(stand_until_still());
     s.push(aim("breach: the prompt offers the pump", PUMP_AT, 0.7, "repair the coolant pump"));

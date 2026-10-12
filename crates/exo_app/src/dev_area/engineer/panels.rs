@@ -166,7 +166,8 @@ pub fn hit_simulator(e: &Engineering) -> Panel {
             button(match &e.volley { Some(v) => format!("VOLLEY ({} left)", v.left()), None => "RANDOM VOLLEY".into() }, "volley").enabled(e.volley.is_none()),
         ])
         .fixed(50.0),
-        small(if e.last_hit.is_empty() { "no hit yet".to_string() } else { e.last_hit.clone() }, Tone::Warn).fixed(24.0),
+        // Two lines: a hit's summary is long.
+        small(if e.last_hit.is_empty() { "no hit yet".to_string() } else { e.last_hit.clone() }, Tone::Warn).fixed(50.0),
     ];
     for room in e.rooms() {
         let s = e.section_of(room);
@@ -191,13 +192,13 @@ pub fn oxygen(e: &Engineering) -> Panel {
         title("OXYGEN").fixed(38.0),
         toggle(e.generator_on, "GENERATOR", "generator").fixed(44.0),
         bar(supply, format!("POWER (life support) {:.0} %", supply * 100.0)).thresholds(Some(0.99), Some(0.5)).fixed(30.0),
-        bar(g.output / GENERATOR_RATE, format!("OUTPUT {:.2} m³/s", g.output)).fixed(30.0),
+        bar(g.output / GENERATOR_RATE, format!("OUTPUT {:.2} m3/s", g.output)).fixed(30.0),
         bar(g.condition.fraction(), format!("CONDITION {:.0}", g.condition.value())).thresholds(Some(0.5), Some(0.2)).fixed(30.0),
     ];
     for r in e.room_readouts() {
         let mut flags = Vec::new();
         if r.breach {
-            flags.push(format!("BREACH {:.1} m³/s", r.leak_flow));
+            flags.push(format!("BREACH {:.1} m3/s", r.leak_flow));
         }
         if r.fire {
             flags.push("FIRE".to_string());

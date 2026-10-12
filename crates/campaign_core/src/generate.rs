@@ -6,17 +6,16 @@ use crate::rng::Rng;
 use crate::set::PlanetSet;
 use crate::template::{EnemyKind, SystemKind, Template};
 use glam::DVec3;
+use std::f64::consts::TAU;
 use warp_core::{DriveConfig, PlanetDef, PlanetId, StarDef, System};
 
 const KEY_PLANETS: u64 = 0x504C_414E;
 const KEY_LAYOUT: u64 = 0x4C41_5954;
-const KEY_STAR: u64 = 0x5354_4152;
 const KEY_STATIONS: u64 = 0x5354_4154;
 const KEY_SITES: u64 = 0x5349_5445;
 const KEY_ENEMY: u64 = 0x454E_454D;
 
-const LAYOUT_TRIES: u32 = 64;
-const STAR_TRIES: u32 = 32;
+const LAYOUT_TRIES: u32 = 32;
 const COLOUR_JITTER: f64 = 0.08;
 
 // Copies of the constants in content/system/system.json.
@@ -95,6 +94,9 @@ impl Generator {
 
     pub fn generate(&self, t: &Template, seed: u64, sky_ok: &dyn Fn(&PlanetDef, DVec3) -> bool) -> Result<Generated, String> {
         t.check_set(&self.set)?;
+        if t.orbits.ring_gap_m[0] <= 2.0 * FRAME_RADIUS {
+            return Err(format!("orbits.ring_gap_m: lo must be > {} (twice the frame radius)", 2.0 * FRAME_RADIUS));
+        }
         if self.names.planet.len() < t.planets.count[1] as usize {
             return Err(format!("names.planet: {} entries, the template needs {}", self.names.planet.len(), t.planets.count[1]));
         }
@@ -106,9 +108,8 @@ impl Generator {
         let count = rng.count(t.planets.count[0], t.planets.count[1]) as usize;
         let mut names = shuffled(&mut rng, &self.names.planet).into_iter();
 
-        let centres = self.layout(t, seed, count)?;
         let mut planets = Vec::with_capacity(count);
-        for centre in centres {
+        for _ in 0..count {
             let id = rng.pick(&t.planets.recipes).ok_or("planets.recipes: empty")?;
             let recipe = self.set.get(id).ok_or_else(|| format!("unknown recipe {id}"))?;
             let mut color = recipe.color;
@@ -120,7 +121,7 @@ impl Generator {
                 name: names.next().ok_or("names.planet: too few entries")?,
                 recipe: id.clone(),
                 seed: rng.count(1, 1_000_000) as i32,
-                centre,
+                centre: [0.0; 3],
                 radius,
                 atmosphere_height: rng.range(t.planets.atmosphere_height_m[0], t.planets.atmosphere_height_m[1]),
                 jump_altitude_factor: JUMP_ALTITUDE_FACTOR,
@@ -133,17 +134,10 @@ impl Generator {
             });
         }
 
-        let mut rng = Rng::derive(seed, KEY_STAR);
-        let mut star = None;
-        for _ in 0..STAR_TRIES {
-            let s = DVec3::from_array(planets[0].centre)
-                + rng.direction() * rng.range(t.star.distance_m[0], t.star.distance_m[1]);
-            if planets.iter().all(|p| sky_ok(p, s)) {
-                star = Some(s);
-                break;
-            }
+        let (centres, star) = layout(t, seed, &planets, sky_ok)?;
+        for (p, c) in planets.iter_mut().zip(centres) {
+            p.centre = c.to_array();
         }
-        let star = star.ok_or("no star position the sky allows")?;
 
         let mut rng = Rng::derive(seed, KEY_STATIONS);
         let n = rng.count(t.stations.count[0], t.stations.count[1]) as usize;
@@ -198,25 +192,49 @@ impl Generator {
         })
     }
 
-    // TODO(initiator): planets are scattered 8 to 16 million m apart, not on orbit rings round the star; real orbits?
-    /// Planet centres: planet 0 at the origin, each next one a gap from the one before it.
-    fn layout(&self, t: &Template, seed: u64, count: usize) -> Result<Vec<[f64; 3]>, String> {
-        let mut rng = Rng::derive(seed, KEY_LAYOUT);
-        let gap = t.planets.gap_m;
-        let mut centres: Vec<DVec3> = vec![DVec3::ZERO];
-        for i in 1..count {
-            let mut next = None;
-            for _ in 0..LAYOUT_TRIES {
-                let c = centres[i - 1] + rng.direction() * rng.range(gap[0], gap[1]);
-                if centres.iter().all(|e| e.distance(c) >= gap[0]) {
-                    next = Some(c);
-                    break;
-                }
-            }
-            centres.push(next.ok_or_else(|| format!("no room for planet {i}"))?);
+}
+
+// TODO(initiator): ring values
+/// Planet centres on orbit rings round the star, and the star, shifted so planet 0 is at the
+/// origin. The rings share one plane, tilted against the world's XZ plane; a layout the sky hook
+/// refuses is drawn again.
+fn layout(t: &Template, seed: u64, planets: &[PlanetDef], sky_ok: &dyn Fn(&PlanetDef, DVec3) -> bool) -> Result<(Vec<DVec3>, DVec3), String> {
+    let mut rng = Rng::derive(seed, KEY_LAYOUT);
+    let o = &t.orbits;
+    let mut radii = Vec::with_capacity(planets.len());
+    let mut r = rng.range(o.first_ring_m[0], o.first_ring_m[1]);
+    for i in 0..planets.len() {
+        if i > 0 {
+            r += rng.range(o.ring_gap_m[0], o.ring_gap_m[1]);
         }
-        Ok(centres.into_iter().map(|c| c.to_array()).collect())
+        radii.push(r);
     }
+    for _ in 0..LAYOUT_TRIES {
+        let tilt = rng.range(o.plane_tilt_deg[0], o.plane_tilt_deg[1]).to_radians();
+        let phi = rng.range(0.0, TAU);
+        let e1 = DVec3::new(phi.cos(), 0.0, phi.sin());
+        let normal = DVec3::new(-e1.z * tilt.sin(), tilt.cos(), e1.x * tilt.sin());
+        let e2 = normal.cross(e1);
+        let mut centres = Vec::with_capacity(radii.len());
+        for &r in &radii {
+            let a = rng.unit() * TAU;
+            centres.push(r * (a.cos() * e1 + a.sin() * e2));
+        }
+        let shift = centres[0];
+        for c in &mut centres {
+            *c -= shift;
+        }
+        let star = -shift;
+        let ok = planets.iter().zip(&centres).all(|(p, c)| {
+            let mut q = p.clone();
+            q.centre = c.to_array();
+            sky_ok(&q, star)
+        });
+        if ok {
+            return Ok((centres, star));
+        }
+    }
+    Err("no layout and star position the sky allows".into())
 }
 
 /// A point above a planet's atmosphere at a random altitude in `altitude_m`.

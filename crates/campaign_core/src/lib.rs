@@ -12,7 +12,7 @@ pub use generate::{open_sky, Enemy, Generated, Generator, Site, Station};
 pub use names::Names;
 pub use rng::Rng;
 pub use set::{PlanetSet, RecipeInfo};
-pub use template::{EnemyKind, EnemyRule, PlanetRule, SiteRule, StarRule, StationRule, SystemKind, Template};
+pub use template::{EnemyKind, EnemyRule, OrbitRule, PlanetRule, SiteRule, StationRule, SystemKind, Template};
 
 #[cfg(test)]
 mod tests;

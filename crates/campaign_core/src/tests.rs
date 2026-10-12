@@ -1,6 +1,7 @@
 use super::*;
 use glam::DVec3;
 use serde_json::Value;
+use std::cell::Cell;
 use std::collections::HashSet;
 use warp_core::{DriveConfig, PlanetDef};
 
@@ -263,21 +264,13 @@ fn planets_stay_inside_the_template_ranges() {
             let planets = &out.system.planets;
             assert!((r.count[0] as usize..=r.count[1] as usize).contains(&planets.len()), "seed {seed}");
             assert_eq!(planets[0].centre, [0.0, 0.0, 0.0], "seed {seed}");
-            assert!(in_range(dist([0.0; 3], out.system.star.position), t.star.distance_m), "seed {seed}");
-            for (i, p) in planets.iter().enumerate() {
+            for p in planets {
                 assert!(in_range(p.radius, r.radius_m), "seed {seed}");
                 assert!(in_range(p.atmosphere_height, r.atmosphere_height_m), "seed {seed}");
                 assert!(r.recipes.contains(&p.recipe), "seed {seed}: {}", p.recipe);
                 let recipe = s.get(&p.recipe).unwrap();
                 assert!((p.obstruction_radius - (p.radius + recipe.terrain_m)).abs() < 1e-9, "seed {seed}");
                 assert!(p.color.iter().all(|c| (0.0..=1.0).contains(c)), "seed {seed}");
-                if i > 0 {
-                    let prev = planets[i - 1].centre;
-                    assert!(in_range(dist(prev, p.centre), r.gap_m), "seed {seed}: consecutive planets");
-                }
-                for q in &planets[..i] {
-                    assert!(dist(q.centre, p.centre) >= r.gap_m[0] - 1e-6, "seed {seed}: planets too close");
-                }
             }
             let names: HashSet<&String> = planets.iter().map(|p| &p.name).collect();
             assert_eq!(names.len(), planets.len(), "seed {seed}: planet names repeat");
@@ -408,28 +401,174 @@ fn normal_seed_42_is_pinned() {
     assert_eq!(planets, [("Mumble", "cinder", 801_617), ("Sprocket", "cinder", 544_030)]);
 }
 
+// Orbit rings (#279)
+
+fn star_of(out: &Generated) -> [f64; 3] {
+    out.system.star.position
+}
+
 #[test]
-fn layout_retries_and_says_when_there_is_no_room() {
-    let mut v: Value = serde_json::from_str(NORMAL).unwrap();
-    v["planets"]["count"] = Value::from(vec![8, 8]);
-    v["planets"]["gap_m"] = Value::from(vec![1.0e7, 1.0e7]);
-    let t = Template::from_json(&v.to_string()).expect("eight planets pass validate");
+fn ring_radii_start_in_the_first_ring_and_grow_by_the_ring_gap() {
     let g = generator();
-    let mut ok = 0;
-    for seed in 0..100 {
-        match g.generate(&t, seed, &open_sky) {
-            Ok(out) => {
-                ok += 1;
-                let planets = &out.system.planets;
-                assert_eq!(planets.len(), 8, "seed {seed}");
-                for (i, p) in planets.iter().enumerate() {
-                    for q in &planets[..i] {
-                        assert!(dist(q.centre, p.centre) >= 1.0e7 - 1e-6, "seed {seed}: planets too close");
-                    }
-                }
+    for t in all_templates() {
+        let o = &t.orbits;
+        for seed in 0..SEEDS {
+            let out = gen_at(&g, &t, seed);
+            let planets = &out.system.planets;
+            let r: Vec<f64> = planets.iter().map(|p| dist(star_of(&out), p.centre)).collect();
+            assert!(in_range(r[0], o.first_ring_m), "seed {seed}: first ring {}", r[0]);
+            for i in 1..r.len() {
+                let d = r[i] - r[i - 1];
+                assert!(d > 0.0, "seed {seed}: rings do not grow");
+                assert!(d >= o.ring_gap_m[0] - 1e-3 && d <= o.ring_gap_m[1] + 1e-3, "seed {seed}: gap {d}");
             }
-            Err(e) => assert!(e.contains("no room for planet"), "seed {seed}: {e}"),
         }
     }
-    assert!(ok > 0, "no seed found a layout");
+}
+
+#[test]
+fn every_body_lies_in_one_plane_through_the_star_tilted_as_the_template_says() {
+    let g = generator();
+    for t in all_templates() {
+        for seed in 0..SEEDS {
+            let out = gen_at(&g, &t, seed);
+            let planets = &out.system.planets;
+            if planets.len() < 2 {
+                continue;
+            }
+            let star = DVec3::from_array(star_of(&out));
+            let n = (DVec3::from_array(planets[0].centre) - star)
+                .cross(DVec3::from_array(planets[1].centre) - star)
+                .normalize();
+            for p in planets {
+                let off = (DVec3::from_array(p.centre) - star).dot(n).abs();
+                assert!(off < 1e-6, "seed {seed}: {} off the plane by {off}", p.name);
+            }
+            let tilt = n.dot(DVec3::Y).abs().acos().to_degrees();
+            assert!(in_range(tilt, t.orbits.plane_tilt_deg), "seed {seed}: tilt {tilt}");
+        }
+    }
+}
+
+#[test]
+fn planet_zero_is_at_the_origin_and_all_pairs_keep_their_distance() {
+    let g = generator();
+    for t in all_templates() {
+        for seed in 0..SEEDS {
+            let out = gen_at(&g, &t, seed);
+            let planets = &out.system.planets;
+            assert_eq!(planets[0].centre, [0.0; 3], "seed {seed}");
+            for (i, p) in planets.iter().enumerate() {
+                for q in &planets[..i] {
+                    let d = dist(q.centre, p.centre);
+                    assert!(d >= t.orbits.ring_gap_m[0] - 1e-6, "seed {seed}: {d} apart");
+                    assert!(d > 2.0 * p.frame_radius, "seed {seed}: frame zones touch");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn planets_spread_round_their_rings_and_the_sun_path_varies() {
+    let g = generator();
+    let t = template(NORMAL);
+    let mut sectors = HashSet::new();
+    let mut buckets = HashSet::new();
+    for seed in 0..SEEDS {
+        let out = gen_at(&g, &t, seed);
+        let planets = &out.system.planets;
+        let star = DVec3::from_array(star_of(&out));
+        let p0 = DVec3::from_array(planets[0].centre);
+        let p1 = DVec3::from_array(planets[1].centre);
+        let e1 = (p0 - star).normalize();
+        let mut n = (p0 - star).cross(p1 - star).normalize();
+        if n.y < 0.0 {
+            n = -n;
+        }
+        let e2 = n.cross(e1);
+        let v = p1 - star;
+        let angle = v.dot(e2).atan2(v.dot(e1)).rem_euclid(std::f64::consts::TAU);
+        sectors.insert((angle / (std::f64::consts::TAU / 8.0)) as usize % 8);
+        let to_star = (star - p0).normalize().dot(DVec3::Y).clamp(-1.0, 1.0).acos().to_degrees();
+        buckets.insert((to_star / 30.0) as usize);
+    }
+    assert!(sectors.len() >= 6, "{} of 8 sectors", sectors.len());
+    assert!(buckets.len() >= 3, "{} sun-path buckets", buckets.len());
+}
+
+#[test]
+fn a_hook_that_refuses_the_first_layouts_still_gets_one() {
+    let g = generator();
+    let t = template(NORMAL);
+    let calls = Cell::new(0u32);
+    let refuse_three = |_: &PlanetDef, _: DVec3| {
+        let n = calls.get();
+        calls.set(n + 1);
+        n >= 3
+    };
+    let out = g.generate(&t, 7, &refuse_three).expect("the fourth layout passes");
+    assert!(calls.get() >= 4 && out.system.planets.len() >= 2);
+}
+
+#[test]
+fn a_hook_that_always_refuses_stops_after_bounded_tries() {
+    let t = template(NORMAL);
+    let calls = Cell::new(0u32);
+    let refuse = |_: &PlanetDef, _: DVec3| {
+        calls.set(calls.get() + 1);
+        false
+    };
+    let err = generator().generate(&t, 1, &refuse).unwrap_err();
+    assert!(err.contains("star"), "{err}");
+    assert!(calls.get() <= 32 * 4, "{} calls", calls.get());
+}
+
+#[test]
+fn a_ring_gap_inside_the_frame_zones_is_an_error() {
+    let t = template_with(NORMAL, |v| v["orbits"]["ring_gap_m"] = Value::from(vec![1.0e6, 2.0e6])).unwrap();
+    let err = generator().generate(&t, 1, &open_sky).unwrap_err();
+    assert!(err.contains("orbits.ring_gap_m"), "{err}");
+}
+
+#[test]
+fn template_rejects_bad_orbit_ranges() {
+    let err = template_with(NORMAL, |v| v["orbits"]["first_ring_m"] = Value::from(vec![0.0, 5.0e7])).unwrap_err();
+    assert!(err.contains("orbits.first_ring_m"), "{err}");
+    let err = template_with(NORMAL, |v| v["orbits"]["plane_tilt_deg"] = Value::from(vec![10.0, 120.0])).unwrap_err();
+    assert!(err.contains("orbits.plane_tilt_deg"), "{err}");
+    let err = template_with(NORMAL, |v| v["orbits"]["ring_gap_m"] = Value::from(vec![3.0e7, 1.5e7])).unwrap_err();
+    assert!(err.contains("orbits.ring_gap_m"), "{err}");
+    let err = template_with(NORMAL, |v| v["orbits"]["ring_gap_m"] = Value::from(vec![0.0, 1.5e7])).unwrap_err();
+    assert!(err.contains("orbits.ring_gap_m"), "{err}");
+}
+
+#[test]
+fn eight_planets_fit_on_their_rings() {
+    let t = template_with(NORMAL, |v| v["planets"]["count"] = Value::from(vec![8, 8])).expect("eight planets pass validate");
+    let g = generator();
+    for seed in 0..100 {
+        let out = gen_at(&g, &t, seed);
+        let planets = &out.system.planets;
+        assert_eq!(planets.len(), 8, "seed {seed}");
+        for (i, p) in planets.iter().enumerate() {
+            for q in &planets[..i] {
+                assert!(dist(q.centre, p.centre) >= t.orbits.ring_gap_m[0] - 1e-6, "seed {seed}: planets too close");
+            }
+        }
+    }
+}
+
+// Pinned: a change here changes every saved campaign.
+#[test]
+fn normal_seed_42_orbit_is_pinned() {
+    let out = gen_at(&generator(), &template(NORMAL), 42);
+    let star = star_of(&out);
+    let radii: Vec<f64> = out.system.planets.iter().map(|p| dist(star, p.centre).round()).collect();
+    assert_eq!(radii, [46_432_428.0, 64_711_860.0]);
+    let planets = &out.system.planets;
+    let s = DVec3::from_array(star);
+    let n = (DVec3::from_array(planets[0].centre) - s).cross(DVec3::from_array(planets[1].centre) - s).normalize();
+    let tilt = (n.dot(DVec3::Y).abs().acos().to_degrees() * 100.0).round() / 100.0;
+    assert_eq!(tilt, 26.81);
 }

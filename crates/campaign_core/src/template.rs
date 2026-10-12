@@ -26,7 +26,7 @@ pub struct Template {
     #[serde(rename = "_comment", default)]
     pub comment: Option<String>,
     pub kind: SystemKind,
-    pub star: StarRule,
+    pub orbits: OrbitRule,
     pub planets: PlanetRule,
     pub stations: StationRule,
     pub sites: SiteRule,
@@ -37,8 +37,10 @@ pub struct Template {
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct StarRule {
-    pub distance_m: [f64; 2],
+pub struct OrbitRule {
+    pub first_ring_m: [f64; 2],
+    pub ring_gap_m: [f64; 2],
+    pub plane_tilt_deg: [f64; 2],
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -48,7 +50,6 @@ pub struct PlanetRule {
     pub recipes: Vec<String>,
     pub radius_m: [f64; 2],
     pub atmosphere_height_m: [f64; 2],
-    pub gap_m: [f64; 2],
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -106,9 +107,17 @@ impl Template {
     }
 
     fn validate(&self) -> Result<(), String> {
-        ordered("star.distance_m", self.star.distance_m)?;
-        if self.star.distance_m[0] <= 0.0 {
-            return Err("star.distance_m: must be > 0".into());
+        ordered("orbits.first_ring_m", self.orbits.first_ring_m)?;
+        if self.orbits.first_ring_m[0] <= 0.0 {
+            return Err("orbits.first_ring_m: lo must be > 0".into());
+        }
+        ordered("orbits.ring_gap_m", self.orbits.ring_gap_m)?;
+        if self.orbits.ring_gap_m[0] <= 0.0 {
+            return Err("orbits.ring_gap_m: lo must be > 0".into());
+        }
+        ordered("orbits.plane_tilt_deg", self.orbits.plane_tilt_deg)?;
+        if self.orbits.plane_tilt_deg[0] < 0.0 || self.orbits.plane_tilt_deg[1] > 90.0 {
+            return Err("orbits.plane_tilt_deg: must be within 0 to 90".into());
         }
 
         ordered_count("planets.count", self.planets.count)?;
@@ -129,10 +138,6 @@ impl Template {
         ordered("planets.atmosphere_height_m", self.planets.atmosphere_height_m)?;
         if self.planets.atmosphere_height_m[0] < 0.0 {
             return Err("planets.atmosphere_height_m: lo must be >= 0".into());
-        }
-        ordered("planets.gap_m", self.planets.gap_m)?;
-        if self.planets.gap_m[0] <= 0.0 {
-            return Err("planets.gap_m: lo must be > 0".into());
         }
 
         ordered_count("stations.count", self.stations.count)?;

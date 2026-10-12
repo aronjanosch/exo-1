@@ -11,7 +11,7 @@ A co-op crew game in Rust with Bevy: friends run one walkable ship together, eac
 - Sparring partner first, implementer second.
 - The initiator decides design, balancing and system design. When a design gap appears, ask, or list the assumption and get a yes.
 - Build in small slices, one branch per feature.
-- Other games are inspiration and test material. Read their code and data; take over single mechanics, talents and values that make sense and reimplement them in our code so they fit, then tune by playtest. No whole files go into the game. Foreign models for side-by-side comparison live in `content/foreign/` (gitignored, never pushed). Add a short line for everything taken over to `docs/BORROWED.md` in the concept repo.
+- Other games are inspiration and test material. Read their code and data; take over single mechanics, talents and values that make sense and reimplement them in our code so they fit, then tune by playtest. No whole files go into the game. Foreign models for side-by-side comparison live in `content/local/` (gitignored, never pushed). Add a short line for everything taken over to `docs/BORROWED.md` in the concept repo.
 
 **Spikes**: throwaway code on a `spike/<name>` branch, driven by a spike brief, never merged into `main`. Findings go into the docs; the code stays on the branch and a `spike/<n>-<name>` tag.
 

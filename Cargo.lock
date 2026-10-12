@@ -2725,6 +2725,7 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "container_core",
  "content_core",
  "daynight_core",
  "display_core",

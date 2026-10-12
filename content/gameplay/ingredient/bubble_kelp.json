@@ -1,0 +1,6 @@
+{
+  "_comment": "Medicine ingredient (#287): its effect treats an affliction (health/health.json). TODO(initiator).",
+  "id": "bubble_kelp",
+  "adds": "breathy",
+  "transforms": [{ "from": "sleepy", "to": "floaty" }]
+}

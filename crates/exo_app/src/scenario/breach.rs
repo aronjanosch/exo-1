@@ -35,6 +35,8 @@ const AT_REACTOR: [f64; 2] = [REACTOR_AT[0] + 1.0, REACTOR_AT[1] - 2.4];
 pub(super) fn breach_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
     s.push(Box::new(|w, c| {
         begin(w, c, "breach: hull, air and life support");
+        // This run is about the hull and the air, not the crew's health (#287 health has its own).
+        w.resource_mut::<crate::dev_area::health::Medical>().no_harm = true;
         let Some(f) = w.resource::<DevArea>().frame else {
             check(c, false, "breach: the dev area is on the planet".into());
             return true;

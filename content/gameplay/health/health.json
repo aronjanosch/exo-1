@@ -1,0 +1,37 @@
+{
+  "_comment": "Health (#254, #287). Every number is a starting value, TODO(initiator). Bands: each runs from the previous 'to' (0 for the first); 'vitality' is the vitality lost at the band's start and end, as a share of max_vitality; 'change_per_s' is the strength's own change (negative heals). Treatments reduce afflictions per use; an id is an item kind (bandage, medkit) or a lab effect (cooling, breathy). A lab effect that is an affliction id adds it as a status.",
+  "max_vitality": 100.0,
+  "dead_at": -1.0,
+  "oxygen": { "low_below": 0.3, "fall_per_s": 5.0, "rise_per_s": 10.0, "unconscious_per_s": 1.0 },
+  "treat": { "skill_low": 0.75, "skill_high": 1.25, "overdose_chance": 0.5, "overdose_poison": 0.5, "status_dose": 40.0 },
+  "respawn_skill_loss": 0.1,
+  "afflictions": [
+    { "id": "burn", "max": 200.0, "limb": true, "bands": [
+      { "to": 30.0, "vitality": [0.0, 0.3], "change_per_s": -0.05 },
+      { "to": 60.0, "vitality": [0.3, 0.6], "change_per_s": -0.05 },
+      { "to": 200.0, "vitality": [0.6, 2.0], "change_per_s": -0.05 } ] },
+    { "id": "bleeding", "max": 100.0, "limb": true, "bands": [
+      { "to": 20.0, "vitality": [0.0, 0.02], "change_per_s": -0.1 },
+      { "to": 40.0, "vitality": [0.02, 0.04], "change_per_s": -0.1 },
+      { "to": 60.0, "vitality": [0.04, 0.06], "change_per_s": -0.1 },
+      { "to": 100.0, "vitality": [0.06, 0.1], "change_per_s": -0.1 } ] },
+    { "id": "fracture", "max": 100.0, "limb": true, "bands": [
+      { "to": 10.0, "vitality": [0.0, 0.05] },
+      { "to": 100.0, "vitality": [0.05, 0.5], "walk": 0.5, "sprint": false } ] },
+    { "id": "oxygen_low", "max": 200.0, "limb": false, "bands": [
+      { "to": 50.0, "vitality": [0.0, 0.0] },
+      { "to": 200.0, "vitality": [0.0, 2.0] } ] },
+    { "id": "poison", "max": 100.0, "limb": false, "bands": [
+      { "to": 10.0, "vitality": [0.0, 0.05], "change_per_s": -0.25 },
+      { "to": 100.0, "vitality": [0.05, 0.8], "change_per_s": -0.1 } ] },
+    { "id": "giggly", "max": 100.0, "limb": false, "bands": [ { "to": 100.0, "vitality": [0.0, 0.0], "change_per_s": -1.0 } ] },
+    { "id": "glowing", "max": 100.0, "limb": false, "bands": [ { "to": 100.0, "vitality": [0.0, 0.0], "change_per_s": -1.0 } ] },
+    { "id": "sleepy", "max": 100.0, "limb": false, "bands": [ { "to": 100.0, "vitality": [0.0, 0.0], "change_per_s": -1.0, "walk": 0.8 } ] }
+  ],
+  "treatments": [
+    { "id": "bandage", "required_skill": 40.0, "fail_factor": 0.75, "reduce": { "bleeding": 30.0, "burn": 15.0 } },
+    { "id": "medkit", "required_skill": 25.0, "fail_factor": 0.75, "reduce": { "bleeding": 40.0, "burn": 30.0, "fracture": 30.0 } },
+    { "id": "cooling", "required_skill": 0.0, "fail_factor": 0.75, "reduce": { "burn": 60.0 } },
+    { "id": "breathy", "required_skill": 0.0, "fail_factor": 0.75, "reduce": { "oxygen_low": 80.0 } }
+  ]
+}

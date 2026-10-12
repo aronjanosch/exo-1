@@ -100,6 +100,18 @@ _Avoid_: load, inventory
 A fixed piece of furniture with slots that hold small items, such as a medical cabinet, a locker or a supply crate's inside. Each slot caps its stack and takes only some kinds; some open only with a key card.
 _Avoid_: container (the code type), storage, chest
 
+**Vitality**:
+How much life a character has left: the maximum minus what the afflictions take. At zero the character is out cold, far below it dead.
+_Avoid_: health points, HP, life
+
+**Affliction**:
+Something wrong with a character's body, such as a burn, bleeding, a fracture, no air or poison, with a strength that sets how much vitality it takes and how it hinders. Some sit on a body part, some on the whole body; harmless ones from the lab (giggly) are statuses.
+_Avoid_: injury, wound, debuff, status effect
+
+**Treatment**:
+What a medicine or first aid item does to afflictions: it lowers named afflictions by a set amount per use, more with skill, less on a fumble.
+_Avoid_: heal, cure
+
 **Batch**:
 One brew from the lab's mixer on its way through the other lab devices (heater, centrifuge) into syringes. It carries its effects, quality and volume in doses.
 _Avoid_: brew (the mixing step), product (the finished good), sample

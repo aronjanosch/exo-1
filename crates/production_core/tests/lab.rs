@@ -362,7 +362,7 @@ fn shipped_content_loads_and_every_ingredient_effect_exists() {
     let k = kernel();
     let lc = lab_content();
     assert_eq!(lc.bases.len(), 2, "two product bases");
-    assert_eq!(lc.ingredients.len(), 6, "six ingredients");
+    assert_eq!(lc.ingredients.len(), 8, "six ingredients and two for medicine");
     for Loaded { record: ing, .. } in lc.ingredients.values() {
         let c = &k.commodities[&ing.id].record;
         assert!(!c.tags.contains(&Tag::new("contraband")), "{} is a legal good", ing.id);

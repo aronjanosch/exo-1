@@ -19,11 +19,13 @@ pub mod alert;
 pub mod budget;
 pub mod orders;
 pub mod priorities;
+pub mod status;
 
 pub use alert::{Alert, AlertCause, AlertChange, AlertEvent, AlertLevel};
 pub use budget::Budget;
 pub use orders::{Addressee, Order, OrderEvent, OrderKind, OrderLine, OrderPriority, Orders, TargetKind};
 pub use priorities::{BotId, BotView, Choice, Claims, Level, Pick, PriorityTable, Situation, Task, TaskId, TaskKind, Taker, choose};
+pub use status::{PlaceholderStatus, ShipStatus};
 
 /// The five crew roles. One player or bot fills each slot.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

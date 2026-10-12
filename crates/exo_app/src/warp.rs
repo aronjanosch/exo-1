@@ -19,6 +19,9 @@ use avian3d::prelude::*;
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 use bevy::tasks::{block_on, AsyncComputeTaskPool, Task};
+use campaign_core::{Generator, Names, PlanetSet, SystemKind, Template};
+use crate::Options;
+use daynight_core::DayNight;
 use planet_core::ChunkOut;
 use warp_core::{Abort, Drive, Event, Load, Loader, Obstacle, Pending, Phase, PlanetDef, PlanetId, ShipView, System};
 
@@ -28,6 +31,49 @@ pub fn plugin(app: &mut App) {
 }
 
 pub const SYSTEM: &str = include_str!("../../../content/system/system.json");
+const CAMPAIGN_SET: &str = include_str!("../../../content/campaign/planet_set.json");
+const CAMPAIGN_NAMES: &str = include_str!("../../../content/campaign/names.json");
+const CAMPAIGN_HARBOUR: &str = include_str!("../../../content/campaign/template_harbour.json");
+const CAMPAIGN_NORMAL: &str = include_str!("../../../content/campaign/template_normal.json");
+const CAMPAIGN_HOSTILE: &str = include_str!("../../../content/campaign/template_hostile.json");
+
+/// The run's star system: `content/system/system.json`, or with `--system-seed` a generated one
+/// (#274, debug switch). Generated planets get the file's drive and must pass the day/night checks.
+pub fn build_system(o: &Options) -> System {
+    let Some(seed) = o.system_seed else { return System::from_json(SYSTEM).expect("system.json") };
+    let template = match o.system_kind {
+        SystemKind::Harbour => CAMPAIGN_HARBOUR,
+        SystemKind::Normal => CAMPAIGN_NORMAL,
+        SystemKind::Hostile => CAMPAIGN_HOSTILE,
+    };
+    fn or_panic<T>(r: Result<T, String>, seed: u64) -> T {
+        r.unwrap_or_else(|e| panic!("--system-seed {seed}: {e}"))
+    }
+    let set = or_panic(PlanetSet::from_json(CAMPAIGN_SET), seed);
+    let names = or_panic(Names::from_json(CAMPAIGN_NAMES), seed);
+    let template = or_panic(Template::from_json(template), seed);
+    let drive = System::from_json(SYSTEM).expect("system.json").drive;
+    let dn = DayNight::from_json(crate::daynight::DAYNIGHT).unwrap_or_else(|e| panic!("{e}"));
+    let sky_ok = |p: &PlanetDef, star: DVec3| dn.check_geometry(&p.recipe, p.centre(), star).is_ok();
+    let g = or_panic(Generator::new(set, names, drive).generate(&template, seed, &sky_ok), seed);
+    let recipes: Vec<&str> = g.system.planets.iter().map(|p| p.recipe.as_str()).collect();
+    let kind = match g.kind {
+        SystemKind::Harbour => "harbour",
+        SystemKind::Normal => "normal",
+        SystemKind::Hostile => "hostile",
+    };
+    println!(
+        "system: generated '{}' ({kind}, seed {}): {} planets ({}), {} stations, {} enemy, {} sites; stations, sites and enemies are not placed in the world yet",
+        g.name,
+        g.seed,
+        g.system.planets.len(),
+        recipes.join(", "),
+        g.stations.len(),
+        g.enemy.is_some() as usize,
+        g.sites.len()
+    );
+    g.system
+}
 
 /// Radius of the sphere other ships block the path with (m).
 const SHIP_OBSTACLE_RADIUS: f64 = 20.0;
@@ -348,4 +394,48 @@ pub fn warp_telemetry(time: Res<Time>, wd: Res<WarpDrive>, mut tel: ResMut<WarpT
         tel.max_tick_move = tel.max_tick_move.max(pos.0.distance(last));
     }
     tel.last_pos = Some(pos.0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seeded(seed: u64, kind: campaign_core::SystemKind) -> Options {
+        Options { system_seed: Some(seed), system_kind: kind, ..Options::default() }
+    }
+
+    fn planets(sys: &System) -> Vec<(String, i32, [f64; 3])> {
+        sys.planets.iter().map(|p| (p.name.clone(), p.seed, p.centre)).collect()
+    }
+
+    #[test]
+    fn without_a_seed_the_system_is_the_file() {
+        let sys = build_system(&Options::default());
+        let file = System::from_json(SYSTEM).unwrap();
+        assert_eq!(planets(&sys), planets(&file));
+    }
+
+    #[test]
+    fn generated_systems_are_valid_and_pass_the_game_checks() {
+        let dn = daynight_core::DayNight::from_json(crate::daynight::DAYNIGHT).unwrap();
+        for kind in campaign_core::SystemKind::ALL {
+            for seed in 0..60 {
+                let sys = build_system(&seeded(seed, kind));
+                sys.validate().unwrap_or_else(|e| panic!("{kind:?} seed {seed}: {e}"));
+                for p in &sys.planets {
+                    assert!(crate::env::RECIPES.iter().any(|(id, _)| *id == p.recipe), "{kind:?} seed {seed}: recipe {}", p.recipe);
+                    dn.check_geometry(&p.recipe, p.centre(), sys.star.position()).unwrap_or_else(|e| panic!("{kind:?} seed {seed}: {e}"));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_same_seed_gives_the_same_planets() {
+        for kind in campaign_core::SystemKind::ALL {
+            for seed in [1, 7, 42] {
+                assert_eq!(planets(&build_system(&seeded(seed, kind))), planets(&build_system(&seeded(seed, kind))));
+            }
+        }
+    }
 }

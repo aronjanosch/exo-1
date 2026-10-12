@@ -19,6 +19,7 @@ use bevy::math::{DQuat, DVec2, DVec3};
 use bevy::prelude::*;
 use display_core::PanelId;
 
+pub mod engineer;
 pub mod skills;
 pub mod test_console;
 
@@ -128,6 +129,7 @@ pub fn plugin(app: &mut App) {
     app.add_plugins(skills::plugin);
     // ROLES: one line per role module.
     app.add_plugins(test_console::plugin);
+    app.add_plugins(engineer::plugin);
 }
 
 pub fn window_plugin(app: &mut App) {

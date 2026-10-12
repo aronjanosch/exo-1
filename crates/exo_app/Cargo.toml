@@ -23,4 +23,7 @@ gameplay_core = { workspace = true }
 jobs_core = { workspace = true }
 production_core = { workspace = true }
 display_core = { workspace = true }
+device_core = { workspace = true }
+reactor_core = { workspace = true }
+fire_core = { workspace = true }
 serde_json = { workspace = true }

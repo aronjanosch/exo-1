@@ -15,7 +15,7 @@ use grab_core::{in_cone, Reach};
 use walker_core::Frame;
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<Interaction>();
+    app.init_resource::<Interaction>().init_resource::<Usables>();
     app.add_systems(FixedUpdate, interaction.before(crate::walker::walker_step).in_set(crate::phases::Fx::Walker));
 }
 
@@ -40,6 +40,24 @@ pub enum Target {
     Panel(Entity),
     /// Leave the display in use.
     LeavePanel(Entity),
+    /// A device a role module offers (`Usables`, by id): repair it, take it, open it (#286).
+    Device(String),
+}
+
+/// Things on foot the interact key can use besides crates, seats and displays, offered by role
+/// modules (the dev area's devices, #286): where, how far it reaches (eye to point) and what the
+/// prompt says. The owner keeps the list up to date and reads `Interaction::tapped` for a tap,
+/// `Actions::interact_held` for a hold.
+#[derive(Resource, Default, Debug)]
+pub struct Usables(pub Vec<Usable>);
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Usable {
+    pub id: String,
+    pub pos: DVec3,
+    pub range: f64,
+    /// The prompt after the key, e.g. "repair the pump  60 %".
+    pub verb: String,
 }
 
 #[derive(Resource, Default, Debug)]
@@ -49,6 +67,8 @@ pub struct Interaction {
     pub prompt: String,
     /// Every target the tap was used on (scenario checks).
     pub used: Vec<Target>,
+    /// The target the tap was used on this step, if any (owners of `Target::Device` read it).
+    pub tapped: Option<Target>,
 }
 
 /// Short label of the first keyboard key bound to a tap ("F").
@@ -75,6 +95,7 @@ fn verb(t: &Target, size: &str) -> String {
         Target::Accept(_) => "take the job: ".into(),
         Target::Panel(_) => "use ".into(),
         Target::LeavePanel(_) => "leave ".into(),
+        Target::Device(_) => String::new(),
     }
 }
 
@@ -92,8 +113,9 @@ pub fn interaction(
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
     crates: Query<(Entity, &Crate)>,
     mut gp: ResMut<crate::gameplay::Gameplay>,
-    (mut active, displays): (ResMut<ActiveDisplay>, Query<(Entity, &DisplayPanel)>),
+    (mut active, displays, usables): (ResMut<ActiveDisplay>, Query<(Entity, &DisplayPanel)>, Res<Usables>),
 ) {
+    inter.tapped = None;
     let Ok(mut pl) = players.single_mut() else { return };
     let Some((ship_e, sp, sr)) = ships.iter().next().map(|(e, _, p, r)| (e, *p, *r)) else { return };
     let frame = cabin_frame(ship_e, (&sp, &sr), &floors);
@@ -171,12 +193,25 @@ pub fn interaction(
             best = None;
             panel_pick = Some(e);
         }
+        // A role's device, nearer the view's centre than the crate and the display.
+        let device = crate::displays::eye_on_foot(&pl).and_then(|(eye, look)| {
+            usables.0.iter().filter_map(|u| in_cone(eye, look, u.pos, half, u.range).map(|_| ((u.pos - eye).angle_between(look), u.id.clone()))).min_by(|a, b| a.0.total_cmp(&b.0))
+        });
+        let mut device_pick = None;
+        if let Some((a, id)) = device
+            && best.is_none_or(|(c, ..)| a <= c)
+            && panel.is_none_or(|(p, _)| a < p || panel_pick.is_none())
+        {
+            best = None;
+            panel_pick = None;
+            device_pick = Some(id);
+        }
         match best {
             // A crate in reach of the hands wins over the seat; the tool's reach does not.
             Some((_, e, Reach::Hands)) => Some(Target::Crate(e, Reach::Hands)),
             _ if at_seat => Some(if gp.may_pilot(crate::gameplay::HOST) { Target::Seat } else { Target::SeatLocked }),
             Some((_, e, r)) => Some(Target::Crate(e, r)),
-            None => panel_pick.map(Target::Panel),
+            None => panel_pick.map(Target::Panel).or(device_pick.map(Target::Device)),
         }
     };
     // At a giver's counter with something to offer, and nothing else to do: talk to the giver.
@@ -197,6 +232,7 @@ pub fn interaction(
                 Target::SeatLocked => p.push_str(&format!(" ({})", gp.licence_hint())),
                 Target::Counter(g) => p.push_str(&gp.jobs_content.givers.get(g).map(|g| gp.text(&g.record.name)).unwrap_or_default()),
                 Target::Panel(e) => p.push_str(&displays.get(*e).map(|(_, d)| d.name.clone()).unwrap_or_default()),
+                Target::Device(id) => p.push_str(&usables.0.iter().find(|u| &u.id == id).map(|u| u.verb.clone()).unwrap_or_default()),
                 Target::LeavePanel(e) => {
                     p.push_str(&displays.get(*e).map(|(_, d)| d.name.clone()).unwrap_or_default());
                     p.push_str(&format!("  [{}] leave", key_label(&bindings, Tap::DisplayLeave)));
@@ -219,6 +255,7 @@ pub fn interaction(
     }
     let Some(t) = target else { return };
     inter.used.push(t.clone());
+    inter.tapped = Some(t.clone());
     let (_, mut ship, ..) = ships.get_mut(ship_e).unwrap();
     match t {
         Target::StandUp => {
@@ -254,5 +291,6 @@ pub fn interaction(
         }
         Target::Panel(e) => *active = ActiveDisplay::Using(e),
         Target::LeavePanel(_) => *active = ActiveDisplay::Idle,
+        Target::Device(_) => {}
     }
 }

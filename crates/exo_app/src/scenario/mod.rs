@@ -24,6 +24,7 @@ use crate::ship::RemoteShip;
 
 mod boost;
 mod camera_g;
+mod captain_displays;
 mod cargo;
 mod dev_area;
 mod dev_menu;
@@ -685,6 +686,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         // #285, with `--start=dev_area`.
         "dev_area" => dev_area::dev_area_steps(&mut s, &shot_step),
         "displays" => displays::displays_steps(&mut s),
+        // #288, with `--start=dev_area`.
+        "captain_displays" => captain_displays::captain_displays_steps(&mut s, &shot_step),
         // #135: save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),
         // #169: the seat refuses without the licence; the exam; the licence.

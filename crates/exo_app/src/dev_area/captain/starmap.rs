@@ -88,7 +88,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut dest: ResMut<De
         }
         let name = pins(&gp, &system, &planet, &area, player_pos(&players)).into_iter().find(|p| p.id == id).map_or_else(|| id.to_string(), |p| p.name);
         dest.0 = Some(id.to_string());
-        gp.notify(Notice::new(NoticeKind::Updated, "notice.captain.destination").arg("place", Arg::Text(name)));
+        say(&mut gp, Notice::new(NoticeKind::Updated, "notice.captain.destination").arg("place", Arg::Text(name)));
     }
 }
 

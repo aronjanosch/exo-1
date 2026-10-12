@@ -217,7 +217,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut ui: ResMut<Over
                 result_of(&mut gp, crew, r);
             }
             "clear" => match crew.orders.clear(by, ui.to) {
-                Ok(Some(_)) => gp.notify(Notice::new(NoticeKind::Updated, "notice.captain.order_cleared")),
+                Ok(Some(_)) => say(&mut gp, Notice::new(NoticeKind::Updated, "notice.captain.order_cleared")),
                 Ok(None) => {}
                 Err(e) => refuse(&mut gp, &e),
             },

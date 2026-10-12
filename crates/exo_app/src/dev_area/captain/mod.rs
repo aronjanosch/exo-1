@@ -141,7 +141,7 @@ fn tick_crew(time: Res<Time>, mut crew: ResMut<CrewState>, mut gp: ResMut<Gamepl
     let crew = &mut *crew;
     crew.ship.step(time.delta_secs_f64());
     for _ in crew.orders.tick(now) {
-        gp.notify(Notice::new(NoticeKind::Updated, "notice.captain.order_cleared"));
+        say(&mut gp, Notice::new(NoticeKind::Updated, "notice.captain.order_cleared"));
     }
     let threat = crew.hostile || !crew.ship.forced().is_empty();
     if let Some(e) = crew.alert.update(threat, now) {
@@ -149,15 +149,21 @@ fn tick_crew(time: Res<Time>, mut crew: ResMut<CrewState>, mut gp: ResMut<Gamepl
     }
 }
 
+/// Queues a notice and notes its key in the gameplay log (scenario checks read it there).
+pub fn say(gp: &mut Gameplay, n: Notice) {
+    gp.log.push(format!("captain: {}", n.key));
+    gp.notify(n);
+}
+
 pub fn alert_notice(gp: &mut Gameplay, e: AlertEvent) {
     let AlertEvent::Changed { to, .. } = e;
-    gp.notify(to.notice());
+    say(gp, to.notice());
 }
 
 /// A refusal as a warning notice: "Refused: only the captain can do that".
 pub fn refuse(gp: &mut Gameplay, r: &Refusal) {
-    info!("captain: refused {r:?}");
-    gp.notify(Notice::new(NoticeKind::Warning, "notice.captain.refused").arg("reason", Arg::Key(TextKey::new(r.key()))));
+    gp.log.push(format!("captain: refused {}", r.key()));
+    say(gp, Notice::new(NoticeKind::Warning, "notice.captain.refused").arg("reason", Arg::Key(TextKey::new(r.key()))));
 }
 
 /// A target as a short name.
@@ -184,7 +190,7 @@ pub fn order_text(gp: &Gameplay, orders: &Orders, o: &Order) -> String {
 /// The notice for a new order.
 pub fn order_notice(gp: &mut Gameplay, orders: &Orders, o: &Order) {
     let text = order_text(gp, orders, o);
-    gp.notify(Notice::new(NoticeKind::Updated, "notice.captain.order").arg("order", Arg::Text(text)));
+    say(gp, Notice::new(NoticeKind::Updated, "notice.captain.order").arg("order", Arg::Text(text)));
 }
 
 /// The HUD line of the order that applies to the player's role ("" for none).

@@ -45,6 +45,7 @@ New dependencies, CI, `.cargo/`, `build.rs`, `unsafe`, networking, spawning proc
 
 - Simple look, best runtime performance. Assets we ship are original or CC0; foreign test material is listed in the concept repo's `docs/BORROWED.md`.
 - Invented names in content, tests and issues; no personal data.
+- This repo is public: issues, PRs and commits describe mechanics in our own words and point to the private concept repo for material from other games (configs, number tables, screenshots).
 - Goofy tone is a feature. The setting is a strange galaxy.
 
 ## Skills

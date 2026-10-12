@@ -1,6 +1,6 @@
 # EXO-1
 
-Working title. A co-op crew game in space: friends run one walkable ship together, each in a role, through a strange galaxy, and fly and land on procedural planets, in crews of about 2-5 players. The target is version 0.1 (`docs/VISION.md` and `docs/ROADMAP.md` in `exo-1-concept`). Written in Rust with Bevy 0.19 and Avian 0.7 (f64). A private project of the initiator and a few friends.
+Working title. A co-op crew game in space: friends run one walkable ship together, each in a role, through a strange galaxy, and fly and land on procedural planets, in crews of about 2-5 players. The target is version 0.1 (`docs/VISION.md` and `docs/ROADMAP.md` in `exo-1-concept`). Written in Rust with Bevy 0.19 and Avian 0.7 (f64). Built by the initiator and a few friends; code MIT, shipped assets CC0. The repo is public for a protected `main` and not announced yet. Vision, decisions and research live in the private repo `exo-1-concept`.
 
 Status: turning towards version 0.1 of the crew ship. Flight, planets, walking inside a flying ship, crates and LAN co-op come from the spikes and the rounds so far. The crime-empire direction (loop D, round 6 smuggling run) is gone from the code; the state before it is the tag `archive/crime-era`. What stays is reworked for the crew ship: `production_core` becomes the scientist's lab, `jobs_core` and `gameplay_core` the captain's missions. Their data still holds leftovers of that direction (courier and family job templates, givers, unlocks, texts, lab content).
 

@@ -2482,17 +2482,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
-name = "customers_core"
-version = "0.1.0"
-dependencies = [
- "content_core",
- "gameplay_core",
- "jobs_core",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "dasp_sample"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2722,18 +2711,15 @@ dependencies = [
  "avian3d",
  "bevy",
  "content_core",
- "customers_core",
  "daynight_core",
  "flight_core",
  "gameplay_core",
  "grab_core",
- "heat_core",
  "jobs_core",
  "net_core",
  "planet_core",
  "production_core",
  "serde_json",
- "traffic_core",
  "walker_core",
  "warp_core",
 ]
@@ -3271,16 +3257,6 @@ dependencies = [
  "hash32",
  "portable-atomic",
  "stable_deref_trait",
-]
-
-[[package]]
-name = "heat_core"
-version = "0.1.0"
-dependencies = [
- "content_core",
- "gameplay_core",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -5785,15 +5761,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "traffic_core"
-version = "0.1.0"
-dependencies = [
- "content_core",
- "gameplay_core",
- "serde",
 ]
 
 [[package]]

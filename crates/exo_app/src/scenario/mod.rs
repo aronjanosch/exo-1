@@ -25,15 +25,13 @@ use crate::ship::RemoteShip;
 mod boost;
 mod camera_g;
 mod cargo;
-mod courier;
-mod customers;
-mod deliver;
 mod dev_menu;
 mod figure;
 mod flight;
 mod help;
 mod first_person_settings;
 mod landing;
+mod jobs_helpers;
 mod licence;
 mod mapview;
 mod net;
@@ -50,7 +48,6 @@ mod savefile;
 mod space;
 mod swap;
 mod thruster_audio;
-mod smuggle;
 mod town;
 mod walk;
 mod warp;
@@ -681,25 +678,10 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "crate-ramp" => cargo::crate_ramp_steps(&mut s),
         // #210: a crate thrown at the hull's side wall stops outside it.
         "crate-hull" => cargo::crate_hull_steps(&mut s),
-        "deliver" => deliver::deliver_steps(&mut s),
         // Round 6: the city with colliders, its characters, the new towns' pads.
         "town" => town::town_steps(&mut s),
-        // Round 6: the phone, the tower, the family, the lab, scans, buyers, and the whole run.
-        "phone" => smuggle::phone_steps(&mut s),
-        "hail" => smuggle::hail_steps(&mut s),
-        "empire" => smuggle::empire_steps(&mut s),
-        "lab" => smuggle::lab_steps(&mut s),
-        "scan" => smuggle::scan_steps(&mut s),
-        "dealing" => smuggle::dealing_steps(&mut s),
-        "smuggle_run" => smuggle::smuggle_run_steps(&mut s),
-        "patrol" => smuggle::patrol_steps(&mut s),
-        "smuggle-shots" => smuggle::shots_steps(&mut s, out_dir, windowed),
-        // #170: courier jobs on foot, carried by hand to the small drops near the start.
-        "courier" => courier::courier_steps(&mut s),
         // #135: save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),
-        // #168: a customer orders, the order is an offer at the wholesaler, the delivery moves the relationship.
-        "customers" => customers::customers_steps(&mut s),
         // #169: the seat refuses without the licence; the exam; the licence.
         "licence" => licence::licence_steps(&mut s),
         // #166: the map's pins from the game's state, M opens the picture (a screenshot with a window).

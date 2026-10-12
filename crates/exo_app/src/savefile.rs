@@ -3,7 +3,7 @@
 //! events and on an interval, on the game clock; the save is loaded once at start. A client id is
 //! made once per game folder (`saves/client_id`). No network here: sending the state on join is #134.
 //!
-//! A load is a restart of the gameplay state: the goods crates go, progress, jobs and customers
+//! A load is a restart of the gameplay state: the goods crates go, progress and jobs
 //! come from the save, the crates of active jobs come back where they were, with their condition.
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;

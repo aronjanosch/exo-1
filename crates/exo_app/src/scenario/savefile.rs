@@ -2,7 +2,7 @@
 //! another about, save to the file, restart the gameplay state and load it; wallet, tracks, flags,
 //! the active job and the crates (with their condition) come back, and the job finishes. The
 //! crates move by test hooks, as in `deliver`.
-use super::deliver::{goods_of, gp, job_state, pad, walker_on_pad};
+use super::jobs_helpers::{goods_of, gp, job_state, pad, walker_on_pad};
 use super::*;
 use crate::cargo::Crate;
 use crate::gameplay::{Gameplay, Goods, HOST};

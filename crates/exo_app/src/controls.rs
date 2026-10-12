@@ -140,25 +140,6 @@ pub enum Tap {
     TrackJob,
     /// Drop the tracked job: the first press asks, a second within a few seconds drops it (#132).
     AbandonJob,
-    /// Open or close the phone (round 6): goals, orders, contacts, recipes, heat, shop.
-    Phone,
-    /// Call the tower of the town whose airspace the ship is in for a landing (round 6).
-    Hail,
-    /// The phone's row above (round 6).
-    PhoneUp,
-    /// The phone's row below (round 6).
-    PhoneDown,
-    /// The phone's tab to the left (round 6).
-    PhoneLeft,
-    /// The phone's tab to the right (round 6).
-    PhoneRight,
-    /// Counter-offer on the selected order in the phone: ask for more money (round 6). TODO(initiator): the key.
-    Counter,
-    /// The answers to a scan, 1 to 4 (round 6): comply, bribe, talk, (flee is taking off).
-    Choice1,
-    Choice2,
-    Choice3,
-    Choice4,
 }
 
 impl Axis {
@@ -189,7 +170,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 46] = [
+    pub const ALL: [Tap; 35] = [
         Tap::Help,
         Tap::DevMenu,
         Tap::Dev1,
@@ -225,17 +206,6 @@ impl Tap {
         Tap::Map,
         Tap::TrackJob,
         Tap::AbandonJob,
-        Tap::Phone,
-        Tap::Hail,
-        Tap::PhoneUp,
-        Tap::PhoneDown,
-        Tap::PhoneLeft,
-        Tap::PhoneRight,
-        Tap::Counter,
-        Tap::Choice1,
-        Tap::Choice2,
-        Tap::Choice3,
-        Tap::Choice4,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -274,17 +244,6 @@ impl Tap {
             Tap::Map => "map",
             Tap::TrackJob => "track_job",
             Tap::AbandonJob => "abandon_job",
-            Tap::Phone => "phone",
-            Tap::Hail => "hail",
-            Tap::PhoneUp => "phone_up",
-            Tap::PhoneDown => "phone_down",
-            Tap::PhoneLeft => "phone_left",
-            Tap::PhoneRight => "phone_right",
-            Tap::Counter => "counter",
-            Tap::Choice1 => "choice_1",
-            Tap::Choice2 => "choice_2",
-            Tap::Choice3 => "choice_3",
-            Tap::Choice4 => "choice_4",
         }
     }
 }
@@ -508,18 +467,6 @@ impl Bindings {
                 (Tap::TrackJob, None) => Ok(vec![Input::Key(KeyCode::KeyT)]),
                 // ... and no `abandon_job` (#132).
                 (Tap::AbandonJob, None) => Ok(vec![Input::Key(KeyCode::KeyY)]),
-                // ... and none of round 6's (phone, hail, counter-offer, scan answers).
-                (Tap::Phone, None) => Ok(vec![Input::Key(KeyCode::Backquote)]),
-                (Tap::Hail, None) => Ok(vec![Input::Key(KeyCode::KeyL)]),
-                (Tap::PhoneUp, None) => Ok(vec![Input::Key(KeyCode::ArrowUp)]),
-                (Tap::PhoneDown, None) => Ok(vec![Input::Key(KeyCode::ArrowDown)]),
-                (Tap::PhoneLeft, None) => Ok(vec![Input::Key(KeyCode::ArrowLeft)]),
-                (Tap::PhoneRight, None) => Ok(vec![Input::Key(KeyCode::ArrowRight)]),
-                (Tap::Counter, None) => Ok(vec![Input::Key(KeyCode::KeyZ)]),
-                (Tap::Choice1, None) => Ok(vec![Input::Key(KeyCode::Digit1)]),
-                (Tap::Choice2, None) => Ok(vec![Input::Key(KeyCode::Digit2)]),
-                (Tap::Choice3, None) => Ok(vec![Input::Key(KeyCode::Digit3)]),
-                (Tap::Choice4, None) => Ok(vec![Input::Key(KeyCode::Digit4)]),
                 _ => Err(err(t.name(), "missing".into())),
             }
         };
@@ -984,7 +931,7 @@ mod tests {
         let b = Bindings::default();
         let tap_keys: Vec<KeyCode> = b.tap_keys().collect();
         assert!(tap_keys.contains(&KeyG));
-        // Z is the counter-offer since round 6; Backslash is still bound to nothing.
+        // Backslash is bound to nothing.
         assert!(!tap_keys.contains(&Backslash), "Backslash is bound to nothing");
     }
 

@@ -85,13 +85,8 @@ pub fn interaction(
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
     crates: Query<(Entity, &Crate)>,
     mut gp: ResMut<crate::gameplay::Gameplay>,
-    station: Res<crate::smuggling::glue::StationTarget>,
 ) {
     let Ok(mut pl) = players.single_mut() else { return };
-    // Round 6: a kettle or a buyer in reach takes the verb (`smuggling::glue::station_interact`).
-    if crate::smuggling::glue::prompt_override(&station, &mut inter) {
-        return;
-    }
     let Some((ship_e, sp, sr)) = ships.iter().next().map(|(e, _, p, r)| (e, *p, *r)) else { return };
     let frame = cabin_frame(ship_e, (&sp, &sr), &floors);
     let cfg = &tuning.grab;
@@ -185,10 +180,6 @@ pub fn interaction(
         }
     };
 
-    // Nothing to do here: a station's hint (kettle empty, a buyer's wish) may show instead.
-    if inter.prompt.is_empty() {
-        inter.prompt = station.prompt.clone();
-    }
     if !actions.take_tap(Tap::Interact) {
         return;
     }

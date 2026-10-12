@@ -1,1 +1,0 @@
-{ "_comment": "Counts one on jobs_done (TODO(initiator): which events count).", "id": "job", "on": "flag:job_completed:", "track": "jobs_done" }

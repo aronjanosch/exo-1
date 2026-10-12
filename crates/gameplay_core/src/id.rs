@@ -42,8 +42,6 @@ text_id! {
     Flag;
     /// A key into the localisation table (#131); never shown text itself.
     TextKey;
-    /// A town with its own airspace and tower (`town` record of `traffic_core`, round 6).
-    TownId;
     /// An `effect` record: what a made product does to whoever takes it (round 6).
     EffectId;
 }

@@ -39,6 +39,7 @@ mod scenario_look;
 mod scenario_map;
 mod scenario_planet_flight;
 mod scenario_radius;
+mod scenario_reactor;
 mod scenario_reload;
 mod scenario_savefile;
 mod scenario_sc_air;

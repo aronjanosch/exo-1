@@ -2544,6 +2544,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "device_core"
+version = "0.1.0"
+dependencies = [
+ "gameplay_core",
+]
+
+[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2739,7 +2746,9 @@ dependencies = [
  "content_core",
  "crew_core",
  "daynight_core",
+ "device_core",
  "display_core",
+ "fire_core",
  "flight_core",
  "gameplay_core",
  "grab_core",
@@ -2747,6 +2756,7 @@ dependencies = [
  "net_core",
  "planet_core",
  "production_core",
+ "reactor_core",
  "serde_json",
  "walker_core",
  "warp_core",
@@ -2781,6 +2791,14 @@ name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
+
+[[package]]
+name = "fire_core"
+version = "0.1.0"
+dependencies = [
+ "gameplay_core",
+ "glam 0.32.1",
+]
 
 [[package]]
 name = "fixedbitset"
@@ -4981,6 +4999,14 @@ dependencies = [
  "partition",
  "tikv-jemallocator",
  "voracious_radix_sort",
+]
+
+[[package]]
+name = "reactor_core"
+version = "0.1.0"
+dependencies = [
+ "device_core",
+ "gameplay_core",
 ]
 
 [[package]]

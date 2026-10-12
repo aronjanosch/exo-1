@@ -142,6 +142,22 @@ _Avoid_: skill, perk, ability, upgrade
 One working part of the ship, such as reactor, shields, life support, engines or turrets, with its own condition and power draw.
 _Avoid_: system (that word means a gameplay system), component, subsystem
 
+**Device condition**:
+How whole a ship system or device is, 0 to 100: below the repair threshold it asks for repair, below the broken limit it stops; it falls with wear, overload and fire, and rises while someone holds the interact key on it with a tool.
+_Avoid_: health, durability, HP; "condition" alone is the data rule
+
+**Power board**:
+The engineer's display that shares the reactor's output between the consumer groups (engines, shields, weapons, life support, lights): a limit and a priority per group.
+_Avoid_: power panel, conduit screen, fuse box
+
+**Brownout**:
+Less power than the groups ask for: the high priorities are served first, a group short of power works slower, and one below its minimum share switches off.
+_Avoid_: blackout (no power at all), power cut
+
+**Scram**:
+The reactor's safety shutdown after overheating too long: power off, then a short lockout before it can start again.
+_Avoid_: meltdown (what happens with the safety off), trip
+
 **Bot**:
 An AI crew member that fills an empty station and works through a priority list.
 _Avoid_: NPC (people in the world), AI player

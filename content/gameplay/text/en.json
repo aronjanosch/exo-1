@@ -890,5 +890,18 @@
   "refusal.unknown_job": "no such mission",
   "refusal.not_offered": "that mission is not on offer",
   "refusal.not_active": "that mission is not active",
-  "refusal.too_many_active": "two missions are active already"
+  "refusal.too_many_active": "two missions are active already",
+  "reactor.temp_high": ["Reactor running hot. Something will catch fire soon.", "The reactor is past the green. Smell that?"],
+  "reactor.temp_critical": ["REACTOR CRITICAL. The safety is counting.", "Reactor critical! Cool it or it scrams."],
+  "reactor.fuel_low": ["Reactor fuel low. Fetch a rod.", "The reactor is nibbling its last rod."],
+  "reactor.shutdown": ["SCRAM! The reactor shut itself down.", "The safety pulled the plug on the reactor."],
+  "notice.engineer.fire": ["FIRE at the reactor!", "The reactor set something on fire."],
+  "notice.engineer.fire_spread": ["The fire got through the door.", "Fire next door now. Shut that door."],
+  "notice.engineer.meltdown": "MELTDOWN. The reactor is a very expensive brick now.",
+  "notice.engineer.burning": ["You are burning!", "Ouch. Hot. You are on fire."],
+  "notice.engineer.broke": "The {device} broke down.",
+  "notice.engineer.repaired": ["The {device} is fixed.", "The {device} purrs again."],
+  "notice.engineer.repair_failed": ["Zap! The {device} bit back (-{lost}).", "The repair slipped. The {device} lost {lost}."],
+  "notice.engineer.locked": "The reactor is locked after the scram. Wait a moment.",
+  "notice.engineer.no_rods": "The rod crate is empty."
 }

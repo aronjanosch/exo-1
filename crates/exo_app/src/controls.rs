@@ -284,6 +284,8 @@ pub struct Actions {
     pub run: bool,
     pub jump: bool,
     pub warp_exit: bool,
+    /// The interact key is held (hold to repair, hold to spray; #286).
+    pub interact_held: bool,
     taps: Vec<Tap>,
 }
 
@@ -702,6 +704,7 @@ pub fn resolve(b: &Bindings, c: &Controls) -> Actions {
         run: button(Button::Run),
         jump: button(Button::Jump),
         warp_exit: button(Button::WarpExit),
+        interact_held: b.taps.iter().any(|(t, ks)| *t == Tap::Interact && any(ks)),
         taps: b.taps.iter().filter(|(_, ks)| ks.iter().any(tapped)).map(|(t, _)| *t).collect(),
     }
 }

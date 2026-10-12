@@ -21,6 +21,7 @@ use display_core::PanelId;
 
 pub mod science;
 pub mod captain;
+pub mod engineer;
 pub mod skills;
 pub mod storage;
 pub mod test_console;
@@ -134,6 +135,7 @@ pub fn plugin(app: &mut App) {
     app.add_plugins(science::plugin);
     app.add_plugins(storage::plugin);
     app.add_plugins(captain::plugin);
+    app.add_plugins(engineer::plugin);
 }
 
 pub fn window_plugin(app: &mut App) {

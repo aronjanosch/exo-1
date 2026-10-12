@@ -41,6 +41,7 @@ mod licence;
 mod mapview;
 mod net;
 mod planet_flight;
+mod reactor;
 mod reload;
 mod sc_linear;
 mod sc_air;
@@ -693,6 +694,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "cabinets" => cabinets::cabinets_steps(&mut s, &shot_step),
         // #288, with `--start=dev_area`.
         "captain_displays" => captain_displays::captain_displays_steps(&mut s, &shot_step),
+        // #286: the engineer's corner of the dev area, with `--start=dev_area`.
+        "reactor" => reactor::reactor_steps(&mut s, &shot_step),
         // #135: save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),
         // #169: the seat refuses without the licence; the exam; the licence.

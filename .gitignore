@@ -31,3 +31,6 @@ WORKSPACE.md
 __pycache__/
 night-shots/
 /saves/
+
+# Foreign models for local side-by-side comparison, never pushed (AGENTS.md)
+content/foreign/

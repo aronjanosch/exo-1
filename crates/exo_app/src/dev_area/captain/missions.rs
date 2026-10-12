@@ -37,8 +37,8 @@ pub fn filter_name(f: Filter) -> &'static str {
     match f {
         Filter::Offered => "OFFERED",
         Filter::Active => "ACTIVE",
-        Filter::Completed => "COMPLETED",
-        Filter::Abandoned => "ABANDONED",
+        Filter::Completed => "DONE",
+        Filter::Abandoned => "DROPPED",
         Filter::Failed => "FAILED",
     }
 }
@@ -87,7 +87,7 @@ pub fn panel(gp: &Gameplay, ui: &MissionsUi, role: Role) -> Panel {
             right.push(label(format!("Reward  {} credits", r.reward)).fixed(26.0));
             right.push(label(match r.time_left_s {
                 Some(t) => format!("Time left  {:.0} s", t),
-                None => "Time left  - (the clock starts at the first pickup)".into(),
+                None => "Time left  - (starts at the first pickup)".into(),
             }).fixed(26.0));
             // The issuer only on the captain's card.
             right.push(match &r.issuer {

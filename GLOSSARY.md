@@ -138,6 +138,18 @@ _Avoid_: system (that word means a gameplay system), component, subsystem
 An AI crew member that fills an empty station and works through a priority list.
 _Avoid_: NPC (people in the world), AI player
 
+**Priority table**:
+The captain's settings for the bots: per bot role a level from ignore to max for each kind of task, with overrides by alert level, crew order or a flag.
+_Avoid_: AI settings, bot config
+
+**Crew order**:
+What the captain tells the crew or one role to do now (go to a room, operate a station, repair a device, follow me), shown to players as a HUD line and obeyed by bots above their priority table.
+_Avoid_: command, task (a task is open work a bot can pick)
+
+**Alert level**:
+Green, yellow or red: how much danger the captain declares for the ship; a new threat raises green to yellow by itself.
+_Avoid_: alarm (an alarm warns about one thing: fire, breach, the clock)
+
 **Client id**:
 The id a game install creates once and keeps; the host save keys personal tracks by it. Not the network slot.
 _Avoid_: player id, user id

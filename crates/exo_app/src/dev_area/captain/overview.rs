@@ -84,6 +84,18 @@ fn to_name(a: Addressee) -> &'static str {
     }
 }
 
+/// The short names of the "to" row (five buttons in half a panel).
+fn to_short(a: Addressee) -> &'static str {
+    match a {
+        Addressee::Crew => "CREW",
+        Addressee::Slot(Role::Pilot) => "PIL",
+        Addressee::Slot(Role::Engineer) => "ENG",
+        Addressee::Slot(Role::Tactical) => "TAC",
+        Addressee::Slot(Role::Scientist) => "SCI",
+        Addressee::Slot(Role::Captain) => "CPT",
+    }
+}
+
 fn kind_name(k: OrderKind) -> &'static str {
     match k {
         OrderKind::GoTo => "GO TO",
@@ -135,7 +147,7 @@ pub fn panel(gp: &Gameplay, crew: &CrewState, ui: &OverviewUi, role: Role) -> Pa
 
     // Right: orders.
     let mut right = vec![title("ORDERS").fixed(40.0)];
-    right.push(row(6.0, TO.iter().enumerate().map(|(i, a)| button(pick(to_name(*a), *a == ui.to), format!("to:{i}"))).collect()).fixed(40.0));
+    right.push(row(6.0, TO.iter().enumerate().map(|(i, a)| button(pick(to_short(*a), *a == ui.to), format!("to:{i}"))).collect()).fixed(40.0));
     for half in OrderKind::WHEEL.chunks(4) {
         right.push(row(6.0, half.iter().map(|k| button(pick(kind_name(*k), *k == ui.kind), format!("kind:{}", k.id()))).collect()).fixed(40.0));
     }

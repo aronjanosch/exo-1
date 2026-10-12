@@ -324,4 +324,16 @@ pub(super) fn captain_displays_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'sta
     s.push(wait(0.2));
     s.push(shot_step("bots"));
     s.push(tap_until(KeyCode::KeyF, "captain: F leaves the console", 1.0, |w| active(w) == ActiveDisplay::Idle));
+    // A look at the zone: the consoles, the demo fire and turret, the bot at the fire.
+    s.push(Box::new(|w, _| {
+        let pl = planet(w);
+        let area = w.resource::<DevArea>();
+        let (at, _) = area.ground(&pl, CAPTAIN.point([2.0, -16.0]), 1.0).expect("dev area");
+        let (fire, _) = area.ground(&pl, CAPTAIN.point(bots::FIRE_AT), 0.0).expect("dev area");
+        place_walker(w, at);
+        face_towards(w, fire);
+        true
+    }));
+    s.push(wait(0.5));
+    s.push(shot_step("zone"));
 }

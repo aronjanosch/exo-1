@@ -61,8 +61,9 @@ pub fn panel(s: &ShipStatus, ui: &ShipStateUi, mission: Option<String>) -> Panel
     let mut right = vec![label("ROOMS").tone(Tone::Dim).fixed(40.0)];
     for room in &s.rooms {
         let flags = [(room.fire, "FIRE"), (room.breach, "BREACH")].iter().filter(|(on, _)| *on).map(|(_, n)| *n).collect::<Vec<_>>().join(" ");
-        let text = format!("{}   cond {:.0} %   O2 {:.0} %   crew {}   {flags}", room.id.as_str().replace('_', " "), room.condition * 100.0, room.oxygen * 100.0, room.crew);
-        right.push(label(text).tone(if room.fire || room.breach { Tone::Bad } else { Tone::Normal }).fixed(28.0));
+        let tone = if room.fire || room.breach { Tone::Bad } else { Tone::Normal };
+        let cells = [room.id.as_str().replace('_', " "), format!("{:.0} %", room.condition * 100.0), format!("O2 {:.0} %", room.oxygen * 100.0), format!("crew {}", room.crew), flags];
+        right.push(row(6.0, cells.into_iter().zip([1.5, 0.7, 0.9, 0.8, 1.4]).map(|(c, f)| label(c).tone(tone).flex(f)).collect()).fixed(28.0));
     }
     right.push(space());
     right.push(label("FORCE A STATE (dev)").tone(Tone::Dim).fixed(22.0));

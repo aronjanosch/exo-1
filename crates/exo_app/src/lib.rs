@@ -196,7 +196,7 @@ impl Options {
         }
         o.net = net_live::NetConfig::parse(&net_args);
         // The dev area's scenarios start there (#285).
-        if matches!(o.scenario.as_deref(), Some("dev_area" | "displays" | "lab_devices" | "cabinets")) && o.start.is_none() {
+        if matches!(o.scenario.as_deref(), Some("dev_area" | "displays" | "lab_devices" | "cabinets" | "captain_displays")) && o.start.is_none() {
             o.start = Some(dev_area::PLACE.into());
         }
         if let Some(p) = &mut o.perf {

@@ -2382,6 +2382,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "crew_core"
+version = "0.1.0"
+dependencies = [
+ "gameplay_core",
+ "jobs_core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "criterion"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2727,6 +2737,7 @@ dependencies = [
  "bevy",
  "container_core",
  "content_core",
+ "crew_core",
  "daynight_core",
  "display_core",
  "flight_core",

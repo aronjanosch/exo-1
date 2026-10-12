@@ -1,6 +1,6 @@
 ---
 name: exo-orchestrate
-description: Rules for running several agent sessions on EXO-1 at once. Use when starting or working in a parallel session (own worktree and branch), or when coordinating a round of sessions into one playtest and one PR.
+description: Rules for running several agent sessions on EXO-1 at once. Use when starting or working in a parallel session (own worktree and branch), when coordinating a round of sessions into one playtest and one PR, or when fanning a job out to parallel Haiku subagents.
 ---
 
 # exo-orchestrate
@@ -30,9 +30,18 @@ Machine budget (16 cores, 31 GB): at most three lanes that build at once, and on
 6. **Report** as one comment on the lane's issue: what was built, the check results with numbers, the `TODO(initiator)` list, anything surprising. The coordinator reads it there.
 7. **Clean up** once the report is posted: the branch is on origin, so remove the lane's target dir (`rm -rf ~/.cache/exo-1-target-<name>`, 3 to 40 GB) and its worktree (`git worktree remove ../exo-1-<name>`). Say so in the report.
 
+## Fan out
+
+Any session (lane, coordinator or a single job) can split independent parts across parallel Haiku subagents (`model: haiku`); offer it to the initiator whenever a job has such parts. It fits research, docs, catalogs, reading code and review: parts that each write their own file. Code in one worktree stays sequential (one `implementer`, one cargo command).
+
+- Each subagent gets a self-contained prompt: inputs, its exact output file, the rules. Subagents write files only; the session commits.
+- The session spot-checks every result against its source (a few facts per file), fixes or reruns it, then commits per finished part.
+- Reports come back short (file, line count, gaps), so the session's context stays small.
+- Heavy processes (cargo, exports, unpacking) run one at a time, started early in the background while the subagents read.
+
 ## Coordinating a round
 
-1. **Plan** the lanes with the initiator. List the tools each lane needs: Blender runs only on the initiator's machine, so a model lane goes there as a prompt (example #240). The coordinator runs on Opus (`/model opus`; `opusplan` turns it into Sonnet after the plan), subagents default to Haiku (`CLAUDE_CODE_SUBAGENT_MODEL`). One issue each, a base (`origin/main`), a prompt from [`PROMPT.md`](PROMPT.md). File moves and splits (one file into a folder, renames across crates) run alone or as the first lane of the round, before feature lanes branch.
+1. **Plan** the lanes with the initiator. List the tools each lane needs: Blender runs only on the initiator's machine, so a model lane goes there as a prompt (example #240). The coordinator runs on Opus or Sonnet, subagents on Haiku (see Fan out). One issue each, a base (`origin/main`), a prompt from [`PROMPT.md`](PROMPT.md). File moves and splits (one file into a folder, renames across crates) run alone or as the first lane of the round, before feature lanes branch.
 2. **Open** `round/<n>` from `origin/main` and push it.
 3. **Watch** with `git fetch` and `gh issue view <n> --comments`; a lane without a push for 30 minutes gets a nudge. `/loop 20m` fits this.
 4. **Collect**: merge each finished lane into `round/<n>` in its own worktree with its own target dir, resolve conflicts keeping both sides, then rerun each lane's own tests on the round branch. After a merge from an upstream round, run the controls and doc tests first (`cargo t -E 'test(/controls::/)'`). Only a big round (a whole milestone or most of it) also runs the full gate before its PR: `scripts/gate --no-fail-fast`, `cargo t -P perf` once no lane builds, and `cargo check --workspace --all-targets` (the static build compiles; links nothing). A round of a few features goes to `main` on the lanes' tests. A spike lane stays out of the round; a separate throwaway `playtest/<n>` branch can carry it for comparison.

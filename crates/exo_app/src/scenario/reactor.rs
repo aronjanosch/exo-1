@@ -180,6 +180,8 @@ const AT_POWER_CONSOLE: [f64; 2] = [POWER_CONSOLE_AT[0], POWER_CONSOLE_AT[1] - 1
 pub(super) fn reactor_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
     s.push(Box::new(|w, c| {
         begin(w, c, "reactor: the engineer's corner");
+        // This run is about the fire, not the burns (#287 health).
+        w.resource_mut::<crate::dev_area::health::Medical>().no_harm = true;
         let Some(f) = w.resource::<DevArea>().frame else {
             check(c, false, "reactor: the dev area is on the planet".into());
             return true;

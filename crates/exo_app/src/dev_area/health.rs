@@ -69,6 +69,8 @@ pub struct Medical {
     pub stats: Stats,
     /// The air at the player (0..1), for the readout.
     pub air: f64,
+    /// Dev switch: fire, air and falls do not harm the player (scenarios about other things).
+    pub no_harm: bool,
     grounded: bool,
     down_speed: f64,
 }
@@ -78,7 +80,7 @@ impl Medical {
         let me = Health::new(&tuning, 0x4EA1);
         let mut bed = Health::new(&tuning, 0xBED);
         bed.add(&tuning, "burn", Some(Part::Arms), PATIENT_BURN);
-        Medical { tuning, me, bed, who: Who::Me, dead_for: None, line: Default::default(), stats: Stats::default(), air: 1.0, grounded: true, down_speed: 0.0 }
+        Medical { tuning, me, bed, who: Who::Me, dead_for: None, line: Default::default(), stats: Stats::default(), air: 1.0, no_harm: false, grounded: true, down_speed: 0.0 }
     }
 
     pub fn target(&self) -> &Health {
@@ -161,7 +163,7 @@ pub fn step_health(
     // Fire.
     if let Some(e) = eng.as_deref_mut() {
         let burn = std::mem::take(&mut e.player_burn) * BURN_PER_DAMAGE;
-        if burn > 0.0 && med.me.state() != Life::Dead {
+        if burn > 0.0 && med.me.state() != Life::Dead && !med.no_harm {
             med.me.add(&t, "burn", Some(Part::Torso), burn);
             med.stats.burned += burn;
         }
@@ -170,7 +172,7 @@ pub fn step_health(
     med.air = 1.0;
     if on_foot && let (Some(frame), Some(e)) = (area.frame, eng.as_deref()) {
         let p = area_of(&frame, &planet, pl.w.pos);
-        if ENGINEERING.contains([p.x, p.z]) {
+        if ENGINEERING.contains([p.x, p.z]) && !med.no_harm {
             med.air = e.deck.room(e.room_at(p)).oxygen_fraction();
         }
     }
@@ -178,7 +180,7 @@ pub fn step_health(
     if on_foot {
         let up = planet.up(pl.w.pos);
         let down = -pl.w.vel.dot(up);
-        if pl.w.grounded && !med.grounded && med.down_speed > FALL_SAFE {
+        if pl.w.grounded && !med.grounded && med.down_speed > FALL_SAFE && !med.no_harm {
             let s = (med.down_speed - FALL_SAFE) * FRACTURE_PER_MS;
             med.me.add(&t, "fracture", Some(Part::Legs), s);
             med.stats.fractures += 1;

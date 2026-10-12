@@ -1,0 +1,7 @@
+{
+  "_comment": "Name pools for generated star systems (#274). Invented, goofy on purpose. A system is `<first> <second>`; planets and stations come from their own pools. TODO(initiator): the names.",
+  "system_first": ["Gruel", "Lint", "Noodle", "Slosh", "Pebble", "Drip", "Wobble", "Crumb", "Trundle", "Biscuit", "Mop", "Fidget"],
+  "system_second": ["Reach", "Drift", "Shallows", "Cluster", "Verge", "Hollow", "Run", "Deep", "Gap", "Basin"],
+  "planet": ["Mumble", "Pudding", "Tuft", "Grommet", "Sprocket", "Dumpling", "Flange", "Gizmo", "Wick", "Plonk", "Nugget", "Kettle", "Bobbin", "Crouton", "Fizz", "Murk"],
+  "station": ["Lost Sock", "Last Biscuit", "Loose Bolt", "Nine Spoons", "Free Lunch", "Tin Hat", "Soft Landing", "Bent Nail"]
+}

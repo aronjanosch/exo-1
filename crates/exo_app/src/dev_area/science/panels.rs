@@ -186,6 +186,7 @@ pub fn filler_panel(v: &View) -> Panel {
         label(if b.is_some() { format!("does: {fx}") } else { String::new() }).tone(Tone::Dim).fixed(20.0),
         button(format!("fill a syringe ({cap} doses)"), "fill").enabled(b.is_some_and(|b| b.volume >= 1.0) && v.hands.has_free_slot()).fixed(40.0),
         put_take(b.is_some(), v.hands.find(|x| matches!(x, LabItem::Batch(_))).is_some()),
+        button("pour out the rest", "discard").enabled(b.is_some()).fixed(36.0),
     ];
     items.extend(footer(v, &FILLER));
     Panel::new(PANEL_W, 420.0, column(GAP, items))

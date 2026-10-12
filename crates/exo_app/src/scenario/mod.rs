@@ -23,6 +23,7 @@ use net_core::snapshot::Snapshot;
 use crate::ship::RemoteShip;
 
 mod boost;
+mod cabinets;
 mod camera_g;
 mod cargo;
 mod dev_area;
@@ -34,6 +35,7 @@ mod help;
 mod first_person_settings;
 mod landing;
 mod jobs_helpers;
+mod lab_devices;
 mod licence;
 mod mapview;
 mod net;
@@ -685,6 +687,9 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         // #285, with `--start=dev_area`.
         "dev_area" => dev_area::dev_area_steps(&mut s, &shot_step),
         "displays" => displays::displays_steps(&mut s),
+        // #287, on the dev area: the lab devices and the storage cabinets.
+        "lab_devices" => lab_devices::lab_devices_steps(&mut s, &shot_step),
+        "cabinets" => cabinets::cabinets_steps(&mut s, &shot_step),
         // #135: save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),
         // #169: the seat refuses without the licence; the exam; the licence.

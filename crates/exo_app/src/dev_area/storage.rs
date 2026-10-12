@@ -35,6 +35,8 @@ pub struct Cabinet {
     pub size: [f64; 3],
     pub container: Container<LabItem>,
     pub line: (String, Tone),
+    /// The page of stacks shown (`ROWS` per page).
+    pub page: usize,
 }
 
 #[derive(Resource, Debug, Clone)]
@@ -84,7 +86,7 @@ pub fn stocked(lab: &ScienceLab) -> Storage {
     for id in lab.lc.ingredients.keys().take(2) {
         put(&mut crate_, ingredient_item(id), 10);
     }
-    let cab = |id, name, x, colour, size, container| Cabinet { id, name, x, colour, size, container, line: Default::default() };
+    let cab = |id, name, x, colour, size, container| Cabinet { id, name, x, colour, size, container, line: Default::default(), page: 0 };
     Storage {
         cabinets: vec![
             cab(SHELF, "Ingredient shelf", -30.0, [0.55, 0.45, 0.30], [1.6, 2.0, 0.5], shelf),
@@ -136,13 +138,19 @@ pub fn refusal_text(r: &Refusal) -> String {
     }
 }
 
-/// Moves stacks: `take:<slot>`, `store:<hands slot>`, `take_all`, `store_all`.
+/// Moves stacks: `take:<slot>`, `store:<hands slot>`, `take_all`, `store_all`; pages with
+/// `prev` and `next`.
 pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut storage: ResMut<Storage>, mut hands: ResMut<Hands>) {
     for c in clicks.read() {
         let Some(cab) = storage.get_mut(&c.panel) else { continue };
         let carried = hands.carried();
         let (verb, arg) = c.action.split_once(':').unwrap_or((c.action.as_str(), ""));
         let slot = arg.parse::<usize>().ok();
+        match verb {
+            "prev" => cab.page = shown_page(cab).saturating_sub(1),
+            "next" => cab.page = shown_page(cab) + 1,
+            _ => {}
+        }
         let result: Result<u32, Refusal> = match (verb, slot) {
             ("take", Some(i)) => move_between(&mut cab.container, &mut hands.0, &carried, i, u32::MAX),
             ("store", Some(i)) => move_between(&mut hands.0, &mut cab.container, &carried, i, u32::MAX),
@@ -178,6 +186,12 @@ fn all(from: &mut Container<LabItem>, to: &mut Container<LabItem>, carried: &[co
     }
 }
 
+/// The page shown: the one asked for, within what there is.
+pub fn shown_page(cab: &Cabinet) -> usize {
+    let n = (0..cab.container.len()).filter(|&i| cab.container.slot(i).is_some()).count();
+    cab.page.min(n.div_ceil(ROWS).max(1) - 1)
+}
+
 /// A cabinet's panel.
 pub fn cabinet_panel(cab: &Cabinet, hands: &Hands, names: &dyn Fn(&CommodityId) -> String) -> Panel {
     let carried = hands.carried();
@@ -192,20 +206,26 @@ pub fn cabinet_panel(cab: &Cabinet, hands: &Hands, names: &dyn Fn(&CommodityId) 
         title(cab.name.to_uppercase()).fixed(36.0),
         label(lock.0).tone(lock.1).fixed(22.0),
         bar(cap.used_slots as f64 / cap.slots.max(1) as f64, format!("{} / {} SLOTS  {} ITEMS", cap.used_slots, cap.slots, cap.items)).thresholds(Some(0.8), Some(0.95)).fixed(28.0),
-        label("INSIDE").tone(Tone::Dim).fixed(20.0),
     ];
     let inside: Vec<usize> = (0..cab.container.len()).filter(|&i| cab.container.slot(i).is_some()).collect();
+    let pages = inside.len().div_ceil(ROWS).max(1);
+    let page = shown_page(cab);
+    items.push(
+        row(8.0, vec![
+            label(if open.is_ok() { format!("INSIDE  page {}/{pages}", page + 1) } else { "INSIDE".into() }).tone(Tone::Dim),
+            button("<", "prev").enabled(open.is_ok() && page > 0).fixed(50.0),
+            button(">", "next").enabled(open.is_ok() && page + 1 < pages).fixed(50.0),
+        ])
+        .fixed(26.0),
+    );
     if open.is_err() {
         items.push(label("contents hidden").tone(Tone::Dim).fixed(28.0));
     } else if inside.is_empty() {
         items.push(label("empty").tone(Tone::Dim).fixed(28.0));
     }
-    for &i in inside.iter().take(if open.is_ok() { ROWS } else { 0 }) {
+    for &i in inside.iter().skip(page * ROWS).take(if open.is_ok() { ROWS } else { 0 }) {
         let s = cab.container.slot(i).unwrap();
         items.push(row(8.0, vec![label(format!("{} x{}", item_label(&s.item, names), s.count)), button("take", format!("take:{i}")).fixed(90.0)]).fixed(28.0));
-    }
-    if open.is_ok() && inside.len() > ROWS {
-        items.push(label(format!("... and {} more", inside.len() - ROWS)).tone(Tone::Dim).fixed(20.0));
     }
     items.push(label("YOUR HANDS").tone(Tone::Dim).fixed(20.0));
     let held: Vec<usize> = (0..hands.0.len()).filter(|&i| hands.0.slot(i).is_some()).collect();

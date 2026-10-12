@@ -376,6 +376,11 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut s: ResMut<Scien
                     s.say(FILLER, "batch taken", Tone::Normal);
                 }
             }
+            ("lab_filler", "discard") => {
+                if s.filler.take().is_some() {
+                    s.say(FILLER, "the rest is poured out", Tone::Normal);
+                }
+            }
             ("lab_filler", "fill") => {
                 if !hands.has_free_slot() {
                     s.say(FILLER, "your hands are full", Tone::Warn);

@@ -23,6 +23,7 @@ use net_core::snapshot::Snapshot;
 use crate::ship::RemoteShip;
 
 mod boost;
+mod breach;
 mod cabinets;
 mod camera_g;
 mod captain_displays;
@@ -33,6 +34,7 @@ mod dev_menu;
 mod displays;
 mod figure;
 mod flight;
+mod health;
 mod help;
 mod first_person_settings;
 mod landing;
@@ -693,12 +695,16 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         // #287, on the dev area: the lab devices and the storage cabinets.
         "lab_devices" => lab_devices::lab_devices_steps(&mut s, &shot_step),
         "cabinets" => cabinets::cabinets_steps(&mut s, &shot_step),
+        // #287, #254: fire burns, the lab's salve treats, no air kills, respawn at the pads.
+        "health" => health::health_steps(&mut s, &shot_step),
         // #288, with `--start=dev_area`.
         "captain_displays" => captain_displays::captain_displays_steps(&mut s, &shot_step),
         // #288 phase 3: the dev area as one crew loop, with `--start=dev_area`.
         "dev_area_loop" => dev_area_loop::dev_area_loop_steps(&mut s, &shot_step),
         // #286: the engineer's corner of the dev area, with `--start=dev_area`.
         "reactor" => reactor::reactor_steps(&mut s, &shot_step),
+        // #286: hits, breaches and life support in the engineer's corner.
+        "breach" => breach::breach_steps(&mut s, &shot_step),
         // #135: save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),
         // #169: the seat refuses without the licence; the exam; the licence.

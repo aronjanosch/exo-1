@@ -151,6 +151,21 @@ pub(super) fn act(a: &'static str) -> impl Fn(&World) -> Option<String> + Send +
     move |_| Some(a.to_string())
 }
 
+/// `wait_until` with a built text.
+pub(super) fn wait_until_s(what: String, limit: f64, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
+    Box::new(move |w, c| {
+        if done(w) {
+            check(c, true, format!("{what} ({:.1} s)", c.t));
+            return true;
+        }
+        if c.t >= limit {
+            check(c, false, format!("{what}: not within {limit} s"));
+            return true;
+        }
+        false
+    })
+}
+
 /// Wait until `done` holds (at most `limit` s).
 pub(super) fn wait_until(what: &'static str, limit: f64, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
@@ -193,10 +208,11 @@ fn syringe_with(w: &World, doses: u32) -> Option<(f64, u32)> {
     syringes(w).into_iter().find(|s| s.1 == doses)
 }
 
-/// Mixer: dream goo and space sugar, brew, release when the needle is at the sweet spot, take.
-fn brew(s: &mut Vec<Step>, tag: &'static str) {
+/// Mixer: a base and an ingredient from the hands, brew, release when the needle is at the sweet
+/// spot, take.
+pub(super) fn brew(s: &mut Vec<Step>, tag: &'static str, kinds: [&'static str; 2]) {
     s.extend(go_use(science::MIXER));
-    for kind in ["dream_goo", "space_sugar"] {
+    for kind in kinds {
         s.push(click_until(science::MIXER, move |w| hands_slot(w, kind).map(|i| format!("add:{i}")), None, format!("{tag}: {kind} goes into the mixer"), 1.0, move |w| match lab(w).kettle() {
             Kettle::Loaded { base, ingredients } => base.as_str() == kind || ingredients.iter().any(|i| i.as_str() == kind),
             _ => false,
@@ -229,6 +245,68 @@ fn brew(s: &mut Vec<Step>, tag: &'static str) {
     s.push(click_until(science::MIXER, act("take"), None, format!("{tag}: the batch goes into the hands"), 1.0, |w| count_batches(w) == 1 && matches!(lab(w).kettle(), Kettle::Empty)));
 }
 
+/// Heater in the band, centrifuge at the sweet speed, filler: the batch in the hands becomes a
+/// syringe (screenshots at each device with a window).
+pub(super) fn heat_spin_fill(s: &mut Vec<Step>, tag: &'static str, shot_step: &dyn Fn(&'static str) -> Step) {
+    s.extend(go_use(science::HEATER));
+    s.push(click_until(science::HEATER, act("put"), None, format!("{tag}: the batch goes into the heater"), 1.0, |w| lab(w).heater.batch().is_some()));
+    s.push(Box::new(move |w, c| {
+        let t = lab(w).tuning.clone();
+        let target = (t.heater.band_low_c + t.heater.band_high_c) * 0.5;
+        let v = (target - t.ambient_c) / (t.heater.max_setpoint_c - t.ambient_c);
+        click(w, &science::HEATER, "setpoint", Some(v));
+        c.v.insert("target", target);
+        true
+    }));
+    s.push(wait(0.1));
+    s.push(Box::new(move |w, c| {
+        let sp = lab(w).heater.setpoint();
+        check(c, (sp - c.v["target"]).abs() < 1.5, format!("{tag}: the slider sets the heater to {sp:.1} C"));
+        true
+    }));
+    s.push(wait_until_s(format!("{tag}: the batch is heated through in the band"), 40.0, |w| lab(w).heater.batch().is_some_and(|b| b.heat >= 1.0)));
+    s.push(shot_step("heater"));
+    s.push(Box::new(move |w, c| {
+        let b = lab(w).heater.batch().unwrap();
+        check(c, !b.burnt, format!("{tag}: not burnt (peak {:.1} C)", lab(w).heater.peak_c()));
+        true
+    }));
+    s.push(click_until(science::HEATER, act("take"), None, format!("{tag}: the batch back into the hands"), 1.0, |w| count_batches(w) == 1));
+    s.extend(go_use(science::CENTRIFUGE));
+    s.push(click_until(science::CENTRIFUGE, act("put"), None, format!("{tag}: the batch goes into the centrifuge"), 1.0, |w| lab(w).centrifuge.batch().is_some()));
+    s.push(Box::new(|w, _| {
+        let t = lab(w).tuning.centrifuge.clone();
+        click(w, &science::CENTRIFUGE, "rpm", Some((t.sweet_low_rpm + t.sweet_high_rpm) * 0.5 / t.max_rpm));
+        true
+    }));
+    s.push(wait(0.1));
+    s.push(Box::new(|w, _| {
+        click(w, &science::CENTRIFUGE, "time", Some(6.0 / science::MAX_SPIN_S));
+        true
+    }));
+    s.push(wait(0.1));
+    s.push(Box::new(move |w, c| {
+        let l = lab(w);
+        let (lo, hi) = (l.tuning.centrifuge.sweet_low_rpm, l.tuning.centrifuge.sweet_high_rpm);
+        check(c, l.spin_rpm > lo && l.spin_rpm < hi && (l.spin_s - 6.0).abs() < 0.3, format!("{tag}: the sliders set {:.0} rpm for {:.1} s", l.spin_rpm, l.spin_s));
+        true
+    }));
+    s.push(click_until(science::CENTRIFUGE, act("start"), None, format!("{tag}: the centrifuge spins"), 1.0, |w| lab(w).centrifuge.state() == Spin::Spinning));
+    s.push(wait(1.0));
+    s.push(shot_step("centrifuge"));
+    s.push(wait_until_s(format!("{tag}: the run ends"), 10.0, |w| lab(w).centrifuge.state() != Spin::Spinning));
+    s.push(Box::new(move |w, c| {
+        let ce = &lab(w).centrifuge;
+        let sep = ce.batch().map(|b| b.separation).unwrap_or(0.0);
+        check(c, ce.state() == Spin::Done && sep > 0.99, format!("{tag}: separated {:.0} % without a trip ({:?})", sep * 100.0, ce.state()));
+        true
+    }));
+    s.push(click_until(science::CENTRIFUGE, act("take"), None, format!("{tag}: the batch back into the hands"), 1.0, |w| count_batches(w) == 1));
+    s.extend(go_use(science::FILLER));
+    s.push(click_until(science::FILLER, act("put"), None, format!("{tag}: the batch goes into the filler"), 1.0, |w| lab(w).filler.is_some()));
+    s.push(click_until(science::FILLER, act("fill"), None, format!("{tag}: a syringe is filled"), 1.0, |w| !syringes(w).is_empty()));
+}
+
 pub(super) fn lab_devices_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
     s.push(Box::new(|w, c| {
         begin(w, c, "lab devices: the lab and its storage");
@@ -244,65 +322,9 @@ pub(super) fn lab_devices_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static s
         s.push(take_from(storage::SHELF, kind, format!("lab devices: {kind} from the shelf into the hands")));
     }
     // The good run.
-    brew(s, "good run");
+    brew(s, "good run", ["dream_goo", "space_sugar"]);
     s.push(shot_step("mixer"));
-    s.extend(go_use(science::HEATER));
-    s.push(click_until(science::HEATER, act("put"), None, "good run: the batch goes into the heater", 1.0, |w| lab(w).heater.batch().is_some()));
-    s.push(Box::new(|w, c| {
-        let t = lab(w).tuning.clone();
-        let target = (t.heater.band_low_c + t.heater.band_high_c) * 0.5;
-        let v = (target - t.ambient_c) / (t.heater.max_setpoint_c - t.ambient_c);
-        click(w, &science::HEATER, "setpoint", Some(v));
-        c.v.insert("target", target);
-        true
-    }));
-    s.push(wait(0.1));
-    s.push(Box::new(|w, c| {
-        let sp = lab(w).heater.setpoint();
-        check(c, (sp - c.v["target"]).abs() < 1.5, format!("good run: the slider sets the heater to {sp:.1} C"));
-        true
-    }));
-    s.push(wait_until("good run: the batch is heated through in the band", 40.0, |w| lab(w).heater.batch().is_some_and(|b| b.heat >= 1.0)));
-    s.push(shot_step("heater"));
-    s.push(Box::new(|w, c| {
-        let b = lab(w).heater.batch().unwrap();
-        check(c, !b.burnt, format!("good run: not burnt (peak {:.1} C)", lab(w).heater.peak_c()));
-        true
-    }));
-    s.push(click_until(science::HEATER, act("take"), None, "good run: the batch back into the hands", 1.0, |w| count_batches(w) == 1));
-    s.extend(go_use(science::CENTRIFUGE));
-    s.push(click_until(science::CENTRIFUGE, act("put"), None, "good run: the batch goes into the centrifuge", 1.0, |w| lab(w).centrifuge.batch().is_some()));
-    s.push(Box::new(|w, _| {
-        let t = lab(w).tuning.centrifuge.clone();
-        click(w, &science::CENTRIFUGE, "rpm", Some((t.sweet_low_rpm + t.sweet_high_rpm) * 0.5 / t.max_rpm));
-        true
-    }));
-    s.push(wait(0.1));
-    s.push(Box::new(|w, _| {
-        click(w, &science::CENTRIFUGE, "time", Some(6.0 / science::MAX_SPIN_S));
-        true
-    }));
-    s.push(wait(0.1));
-    s.push(Box::new(|w, c| {
-        let l = lab(w);
-        let (lo, hi) = (l.tuning.centrifuge.sweet_low_rpm, l.tuning.centrifuge.sweet_high_rpm);
-        check(c, l.spin_rpm > lo && l.spin_rpm < hi && (l.spin_s - 6.0).abs() < 0.3, format!("good run: the sliders set {:.0} rpm for {:.1} s", l.spin_rpm, l.spin_s));
-        true
-    }));
-    s.push(click_until(science::CENTRIFUGE, act("start"), None, "good run: the centrifuge spins", 1.0, |w| lab(w).centrifuge.state() == Spin::Spinning));
-    s.push(wait(1.0));
-    s.push(shot_step("centrifuge"));
-    s.push(wait_until("good run: the run ends", 10.0, |w| lab(w).centrifuge.state() != Spin::Spinning));
-    s.push(Box::new(|w, c| {
-        let ce = &lab(w).centrifuge;
-        let sep = ce.batch().map(|b| b.separation).unwrap_or(0.0);
-        check(c, ce.state() == Spin::Done && sep > 0.99, format!("good run: separated {:.0} % without a trip ({:?})", sep * 100.0, ce.state()));
-        true
-    }));
-    s.push(click_until(science::CENTRIFUGE, act("take"), None, "good run: the batch back into the hands", 1.0, |w| count_batches(w) == 1));
-    s.extend(go_use(science::FILLER));
-    s.push(click_until(science::FILLER, act("put"), None, "good run: the batch goes into the filler", 1.0, |w| lab(w).filler.is_some()));
-    s.push(click_until(science::FILLER, act("fill"), None, "good run: a syringe is filled", 1.0, |w| !syringes(w).is_empty()));
+    heat_spin_fill(s, "good run", shot_step);
     s.push(shot_step("filler"));
     s.push(Box::new(|w, c| {
         let (q, doses) = syringes(w)[0];
@@ -322,7 +344,7 @@ pub(super) fn lab_devices_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static s
         true
     }));
     // The bad run: the same brew, burnt in the heater, straight into the filler.
-    brew(s, "bad run");
+    brew(s, "bad run", ["dream_goo", "space_sugar"]);
     s.extend(go_use(science::HEATER));
     s.push(click_until(science::HEATER, act("put"), None, "bad run: the batch goes into the heater", 1.0, |w| lab(w).heater.batch().is_some()));
     s.push(Box::new(|w, _| {

@@ -13,32 +13,32 @@ use crate::interact::Interaction;
 use display_core::PanelId;
 use reactor_core::{AlarmKind, Group, Mode};
 
-fn eng(w: &World) -> &Engineering {
+pub(super) fn eng(w: &World) -> &Engineering {
     w.resource::<Engineering>()
 }
 
-fn prompt(w: &World) -> String {
+pub(super) fn prompt(w: &World) -> String {
     w.resource::<Interaction>().prompt.clone()
 }
 
-fn frame(w: &World) -> crate::town::Frame {
+pub(super) fn frame(w: &World) -> crate::town::Frame {
     w.resource::<DevArea>().frame.expect("dev area frame")
 }
 
 /// The player's feet in the area frame.
-fn me(w: &mut World) -> DVec3 {
+pub(super) fn me(w: &mut World) -> DVec3 {
     let (f, pl) = (frame(w), planet(w));
     let p = player_world(w);
     area_of(&f, &pl, p)
 }
 
-fn face(w: &mut World, local: [f64; 2], h: f64) {
+pub(super) fn face(w: &mut World, local: [f64; 2], h: f64) {
     let (f, pl) = (frame(w), planet(w));
     face_towards(w, world_of(&f, &pl, area3(local, h)));
 }
 
 /// Face a point and look straight at it (heading and pitch), like a player aiming with the mouse.
-fn look_at(w: &mut World, local: [f64; 2], h: f64) {
+pub(super) fn look_at(w: &mut World, local: [f64; 2], h: f64) {
     let (f, pl) = (frame(w), planet(w));
     let target = world_of(&f, &pl, area3(local, h));
     face_towards(w, target);
@@ -50,12 +50,12 @@ fn look_at(w: &mut World, local: [f64; 2], h: f64) {
     });
 }
 
-fn display_of(w: &mut World, id: &PanelId) -> Option<Entity> {
+pub(super) fn display_of(w: &mut World, id: &PanelId) -> Option<Entity> {
     w.query::<(Entity, &DisplayPanel)>().iter(w).find(|(_, d)| &d.id == id).map(|(e, _)| e)
 }
 
 /// Walk (W) through zone-local waypoints, turning towards each.
-fn walk(what: &'static str, path: &'static [[f64; 2]], limit: f64) -> Step {
+pub(super) fn walk(what: &'static str, path: &'static [[f64; 2]], limit: f64) -> Step {
     let mut i = 0usize;
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -83,7 +83,7 @@ fn walk(what: &'static str, path: &'static [[f64; 2]], limit: f64) -> Step {
 }
 
 /// Face a point and wait until the prompt says `text`.
-fn aim(what: &'static str, local: [f64; 2], h: f64, text: &'static str) -> Step {
+pub(super) fn aim(what: &'static str, local: [f64; 2], h: f64, text: &'static str) -> Step {
     Box::new(move |w, c| {
         look_at(w, local, h);
         let p = prompt(w);
@@ -100,7 +100,7 @@ fn aim(what: &'static str, local: [f64; 2], h: f64, text: &'static str) -> Step 
 }
 
 /// Tap F and wait until `done` (at most 1 s).
-fn tap_f(what: &'static str, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
+pub(super) fn tap_f(what: &'static str, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
             tap(w, KeyCode::KeyF);
@@ -115,19 +115,19 @@ fn tap_f(what: &'static str, mut done: impl FnMut(&mut World) -> bool + Send + S
     })
 }
 
-fn use_panel(what: &'static str, id: PanelId) -> Step {
+pub(super) fn use_panel(what: &'static str, id: PanelId) -> Step {
     tap_f(what, move |w| {
         let e = display_of(w, &id);
         e.is_some() && w.resource::<ActiveDisplay>().using() == e
     })
 }
 
-fn leave_panel(what: &'static str) -> Step {
+pub(super) fn leave_panel(what: &'static str) -> Step {
     tap_f(what, |w| w.resource::<ActiveDisplay>().using().is_none())
 }
 
 /// Click a widget of a panel (overlay) and wait until `done` (at most 1 s).
-fn click(what: String, panel: PanelId, action: &'static str, t: Option<f64>, mut done: impl FnMut(&Engineering) -> bool + Send + Sync + 'static) -> Step {
+pub(super) fn click(what: String, panel: PanelId, action: &'static str, t: Option<f64>, mut done: impl FnMut(&Engineering) -> bool + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
             let at = overlay_point_of(w, &panel, action, t).unwrap_or_else(|| panic!("no widget '{action}' on {panel}"));
@@ -146,7 +146,7 @@ fn click(what: String, panel: PanelId, action: &'static str, t: Option<f64>, mut
 }
 
 /// Hold F until `done` or the limit.
-fn hold_f(what: &'static str, limit: f64, mut done: impl FnMut(&Engineering) -> bool + Send + Sync + 'static) -> Step {
+pub(super) fn hold_f(what: &'static str, limit: f64, mut done: impl FnMut(&Engineering) -> bool + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
             keys(w, &[KeyCode::KeyF], true);
@@ -162,7 +162,7 @@ fn hold_f(what: &'static str, limit: f64, mut done: impl FnMut(&Engineering) -> 
 }
 
 /// Wait until `done` (polled every tick) or the limit.
-fn until(what: &'static str, limit: f64, mut done: impl FnMut(&Engineering, f64) -> bool + Send + Sync + 'static) -> Step {
+pub(super) fn until(what: &'static str, limit: f64, mut done: impl FnMut(&Engineering, f64) -> bool + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
         let ok = done(eng(w), c.t);
         if ok || c.t >= limit {
@@ -174,12 +174,14 @@ fn until(what: &'static str, limit: f64, mut done: impl FnMut(&Engineering, f64)
 }
 
 /// Stand south of the reactor console and use it.
-const AT_REACTOR_CONSOLE: [f64; 2] = [REACTOR_CONSOLE_AT[0], REACTOR_CONSOLE_AT[1] - 1.3];
+pub(super) const AT_REACTOR_CONSOLE: [f64; 2] = [REACTOR_CONSOLE_AT[0], REACTOR_CONSOLE_AT[1] - 1.3];
 const AT_POWER_CONSOLE: [f64; 2] = [POWER_CONSOLE_AT[0], POWER_CONSOLE_AT[1] - 1.3];
 
 pub(super) fn reactor_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
     s.push(Box::new(|w, c| {
         begin(w, c, "reactor: the engineer's corner");
+        // This run is about the fire, not the burns (#287 health).
+        w.resource_mut::<crate::dev_area::health::Medical>().no_harm = true;
         let Some(f) = w.resource::<DevArea>().frame else {
             check(c, false, "reactor: the dev area is on the planet".into());
             return true;

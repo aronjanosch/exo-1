@@ -7,6 +7,10 @@ pub const REACTOR_W: f64 = 560.0;
 pub const REACTOR_H: f64 = 760.0;
 pub const POWER_W: f64 = 560.0;
 pub const POWER_H: f64 = 800.0;
+pub const HIT_W: f64 = 560.0;
+pub const HIT_H: f64 = 620.0;
+pub const OXYGEN_W: f64 = 560.0;
+pub const OXYGEN_H: f64 = 560.0;
 
 pub fn group_key(g: Group) -> &'static str {
     match g {
@@ -138,6 +142,79 @@ pub fn power(e: &Engineering) -> Panel {
     Panel::new(POWER_W, POWER_H, column(6.0, items))
 }
 
+/// "[X]" marks the picked one.
+fn pick(on: bool, text: &str) -> String {
+    if on { format!("[{text}]") } else { text.to_string() }
+}
+
+/// The hit simulator: where, what, how hard; fire one hit or a volley; the sections' state.
+pub fn hit_simulator(e: &Engineering) -> Panel {
+    use hull_core::{DamageType, Strength};
+    let p = e.hit_pick;
+    let mut items = vec![
+        title("HIT SIMULATOR").fixed(38.0),
+        small("the dev area's enemy: hits on the hull", Tone::Dim).fixed(22.0),
+        row(8.0, vec![
+            button(pick(p.section == e.engine_section, "ENGINE ROOM"), "sec_engine"),
+            button(pick(p.section == e.side_section, "SIDE ROOM"), "sec_side"),
+        ])
+        .fixed(44.0),
+        row(8.0, DamageType::ALL.iter().map(|k| button(pick(p.kind == *k, &k.name().to_uppercase()), format!("type_{}", k.name()))).collect()).fixed(44.0),
+        row(8.0, Strength::ALL.iter().map(|x| button(pick(p.strength == *x, &x.name().to_uppercase()), format!("str_{}", x.name()))).collect()).fixed(44.0),
+        row(8.0, vec![
+            button("FIRE", "fire"),
+            button(match &e.volley { Some(v) => format!("VOLLEY ({} left)", v.left()), None => "RANDOM VOLLEY".into() }, "volley").enabled(e.volley.is_none()),
+        ])
+        .fixed(50.0),
+        // Two lines: a hit's summary is long.
+        small(if e.last_hit.is_empty() { "no hit yet".to_string() } else { e.last_hit.clone() }, Tone::Warn).fixed(50.0),
+    ];
+    for room in e.rooms() {
+        let s = e.section_of(room);
+        let sec = e.hull.section(s);
+        let r = e.room_readout(room);
+        items.push(
+            bar(sec.condition.fraction(), format!("HULL {}  {:.0} %  {}", r.name, sec.condition.value(), if r.breach { format!("BREACH {:.0} % open", r.breach_open * 100.0) } else { "tight".into() }))
+                .thresholds(Some(0.9), Some(0.3))
+                .fixed(30.0),
+        );
+    }
+    items.push(small(format!("hits {}  breaches {}  patched {}  kits {}{}", e.stats.hits, e.stats.breaches_opened, e.stats.patches_done, e.patch_kits, if e.kit_in_hand { " (+1 in hand)" } else { "" }), Tone::Dim).fixed(22.0));
+    items.push(space());
+    Panel::new(HIT_W, HIT_H, column(8.0, items))
+}
+
+/// The oxygen generator: switch, supply, output, condition, and air per room.
+pub fn oxygen(e: &Engineering) -> Panel {
+    let g = &e.generator;
+    let supply = e.grid.factor(Group::LifeSupport);
+    let mut items = vec![
+        title("OXYGEN").fixed(38.0),
+        toggle(e.generator_on, "GENERATOR", "generator").fixed(44.0),
+        bar(supply, format!("POWER (life support) {:.0} %", supply * 100.0)).thresholds(Some(0.99), Some(0.5)).fixed(30.0),
+        bar(g.output / GENERATOR_RATE, format!("OUTPUT {:.2} m3/s", g.output)).fixed(30.0),
+        bar(g.condition.fraction(), format!("CONDITION {:.0}", g.condition.value())).thresholds(Some(0.5), Some(0.2)).fixed(30.0),
+    ];
+    for r in e.room_readouts() {
+        let mut flags = Vec::new();
+        if r.breach {
+            flags.push(format!("BREACH {:.1} m3/s", r.leak_flow));
+        }
+        if r.fire {
+            flags.push("FIRE".to_string());
+        }
+        items.push(
+            bar(r.oxygen, format!("{}  {:.0} %  {:+.1} %/s", r.name.to_uppercase(), r.oxygen * 100.0, r.oxygen_delta * 100.0))
+                .thresholds(Some(hull::OXYGEN_OK), Some(0.25))
+                .fixed(32.0),
+        );
+        items.push(small(if flags.is_empty() { "ok".to_string() } else { flags.join("  ") }, if r.oxygen_alarm || r.breach || r.fire { Tone::Bad } else { Tone::Dim }).fixed(22.0));
+    }
+    items.push(small(format!("door {}", if e.door_open() { "open" } else { "closed: rooms apart" }), Tone::Dim).fixed(22.0));
+    items.push(space());
+    Panel::new(OXYGEN_W, OXYGEN_H, column(8.0, items))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,5 +238,13 @@ mod tests {
             assert!(p.find(&format!("prio_{}", group_key(grp))).is_some());
         }
         assert!(p.find("fast_wear").is_some());
+        let h = hit_simulator(&e);
+        let o = oxygen(&e);
+        assert!(fits(&h), "hit simulator overflows");
+        assert!(fits(&o), "oxygen panel overflows");
+        for a in ["sec_engine", "sec_side", "type_energy", "type_physical", "type_collision", "str_light", "str_medium", "str_heavy", "fire", "volley"] {
+            assert!(h.find(a).is_some(), "hit simulator lacks {a}");
+        }
+        assert!(o.find("generator").is_some());
     }
 }

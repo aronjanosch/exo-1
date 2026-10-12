@@ -27,8 +27,10 @@ gameplay_core = { path = "crates/gameplay_core" }
 jobs_core = { path = "crates/jobs_core" }
 production_core = { path = "crates/production_core" }
 container_core = { path = "crates/container_core" }
+health_core = { path = "crates/health_core" }
 reactor_core = { path = "crates/reactor_core" }
 fire_core = { path = "crates/fire_core" }
+hull_core = { path = "crates/hull_core" }
 device_core = { path = "crates/device_core" }
 display_core = { path = "crates/display_core" }
 crew_core = { path = "crates/crew_core" }

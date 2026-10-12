@@ -100,6 +100,18 @@ _Avoid_: load, inventory
 A fixed piece of furniture with slots that hold small items, such as a medical cabinet, a locker or a supply crate's inside. Each slot caps its stack and takes only some kinds; some open only with a key card.
 _Avoid_: container (the code type), storage, chest
 
+**Vitality**:
+How much life a character has left: the maximum minus what the afflictions take. At zero the character is out cold, far below it dead.
+_Avoid_: health points, HP, life
+
+**Affliction**:
+Something wrong with a character's body, such as a burn, bleeding, a fracture, no air or poison, with a strength that sets how much vitality it takes and how it hinders. Some sit on a body part, some on the whole body; harmless ones from the lab (giggly) are statuses.
+_Avoid_: injury, wound, debuff, status effect
+
+**Treatment**:
+What a medicine or first aid item does to afflictions: it lowers named afflictions by a set amount per use, more with skill, less on a fumble.
+_Avoid_: heal, cure
+
 **Batch**:
 One brew from the lab's mixer on its way through the other lab devices (heater, centrifuge) into syringes. It carries its effects, quality and volume in doses.
 _Avoid_: brew (the mixing step), product (the finished good), sample
@@ -153,6 +165,18 @@ _Avoid_: power panel, conduit screen, fuse box
 **Brownout**:
 Less power than the groups ask for: the high priorities are served first, a group short of power works slower, and one below its minimum share switches off.
 _Avoid_: blackout (no power at all), power cut
+
+**Hit**:
+One blow to the ship, as data: its damage type (energy, physical, collision), strength, the hull section it lands on, and what it can cause (hull damage, a breach, fire, damage to the ship systems in the room).
+_Avoid_: shot, impact, damage event
+
+**Hull section**:
+A piece of the ship's outer wall belonging to one room, with its own damage; past a tenth of damage it leaks.
+_Avoid_: hull segment, plate (plating is the armour level), wall
+
+**Breach**:
+A hole in a hull section to space: air leaves through it, faster the bigger the hole, and a big one pulls people and loose things towards it. Patching the section closes it.
+_Avoid_: leak (say breach for the hull), hole, puncture
 
 **Scram**:
 The reactor's safety shutdown after overheating too long: power off, then a short lockout before it can start again.

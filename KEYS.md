@@ -14,7 +14,7 @@ Marks: **new** since round 5 · **provisional**: the key is not decided yet · *
 | Mouse | – | Look | right stick |
 | Shift | `run` | Run | left stick click |
 | Space | `jump` | Jump | South |
-| F | `interact` | The one verb: sit or stand up, pick up or set down a crate, a counter, use a display and leave it; in the dev area's engineering corner: hold to repair a device, take or return the extinguisher, hold to spray it, open or close a door (new) | North |
+| F | `interact` | The one verb: sit or stand up, pick up or set down a crate, a counter, use a display and leave it; in the dev area's engineering corner: hold to repair a device, take or return the extinguisher, hold to spray it, open or close a door, take a patch kit, hold to patch a hull breach (new) | North |
 | R | `throw` | Throw the held crate | right stick click |
 | G | `lag` | Cabin gravity by hand, only in a landed ship | – |
 

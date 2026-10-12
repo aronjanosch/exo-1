@@ -580,6 +580,8 @@
   "effect.backwards_talk.name": "Backwards Talk",
   "effect.sleepy.name": "Sleepy",
   "effect.tingly.name": "Tingly",
+  "effect.cooling.name": "Cooling",
+  "effect.breathy.name": "Breathy",
   "location.drip_rock_north.name": "Drip Rock Pad North",
   "location.drip_rock_inspect.name": "Drip Rock Inspection",
   "location.bent_spoon_east.name": "Bent Spoon East Pad",
@@ -734,6 +736,8 @@
   "commodity.moth_dust.name": "moth dust",
   "commodity.ghost_pepper.name": "ghost pepper",
   "commodity.foam_gum.name": "foam gum",
+  "commodity.frost_moss.name": "frost moss",
+  "commodity.bubble_kelp.name": "bubble kelp",
   "lab.brewed": [
     "The vat gurgles. Crates are ready.",
     "Something in the vat sighs. Done.",
@@ -744,6 +748,10 @@
     "Nobody has ever made this before. Noted.",
     "A new recipe, scribbled into the book."
   ],
+  "notice.health.unconscious": "Everything goes dark. You are out cold.",
+  "notice.health.died": "You died ({cause}). Hold on, the pads will spit you back out.",
+  "notice.health.respawn": "Back at the pads, a bit foggy: {lost} % of your skills are gone.",
+  "notice.health.fracture": "Crunch. Your legs did not like that landing.",
   "lab.injected": [
     "The dummy twitches: {effects} at {strength} %.",
     "Straight in. The dummy now has {effects} ({strength} %).",
@@ -903,5 +911,11 @@
   "notice.engineer.repaired": ["The {device} is fixed.", "The {device} purrs again."],
   "notice.engineer.repair_failed": ["Zap! The {device} bit back (-{lost}).", "The repair slipped. The {device} lost {lost}."],
   "notice.engineer.locked": "The reactor is locked after the scram. Wait a moment.",
-  "notice.engineer.no_rods": "The rod crate is empty."
+  "notice.engineer.no_rods": "The rod crate is empty.",
+  "notice.engineer.hit": ["Hit! {kind} on the {room} hull.", "Something {kind} slammed into the {room}."],
+  "notice.engineer.breach": ["HULL BREACH in the {room}! Air is leaving.", "Breach in the {room}. Hear that hiss?"],
+  "notice.engineer.system_hit": "The hit shook the {room}'s machines (-{amount}).",
+  "notice.engineer.oxygen_low": ["Oxygen low in the {room} ({percent} %).", "The {room} is getting thin ({percent} % air)."],
+  "notice.engineer.patched": ["Breach in the {room} patched.", "The {room} hull holds again."],
+  "notice.engineer.no_kit": "You need a patch kit from the kit box."
 }

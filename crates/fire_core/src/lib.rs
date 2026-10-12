@@ -1,7 +1,8 @@
 //! fire_core: fire in the ship's rooms, without engine types, in f64 (#286, part of #174 and
 //! #248). The seed of the rooms as air cells: each room has a scalar oxygen amount, rooms meet at
-//! gaps (doors, vents) with an open fraction. Nothing more: no pressure, no water, no breaches to
-//! space, no heat; those come with #174.
+//! gaps (doors, vents) with an open fraction, and leaks to space (hull breaches) that let air out
+//! with the room's pressure (its air fraction). Nothing more: one gas, no water, no heat; the
+//! rest comes with #174.
 //!
 //! Taken from Barotrauma's fire sources: a fire grows while the room has enough oxygen, stalls
 //! lower down and shrinks below that, uses oxygen in proportion to its size, burns people and
@@ -61,6 +62,9 @@ pub struct FireTuning {
     pub spray_radius: f64,
     /// m³ per second through 1 m² of open gap per unit of oxygen fraction difference.
     pub air_flow: f64,
+    /// m³ per second through 1 m² of open leak to space per unit of the room's air fraction
+    /// (space has none). TODO(initiator): a guess.
+    pub leak_flow: f64,
 }
 
 impl Default for FireTuning {
@@ -83,6 +87,7 @@ impl Default for FireTuning {
             extinguish: 0.6,
             spray_radius: 1.0,
             air_flow: 2.0,
+            leak_flow: 4.0,
         }
     }
 }
@@ -95,6 +100,23 @@ pub struct GapId(pub usize);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FireId(pub u64);
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct LeakId(pub usize);
+
+/// A hole from a room to space (a hull breach): air leaves through it, nothing comes in.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Leak {
+    pub room: RoomId,
+    /// Where it is, ship space.
+    pub pos: DVec3,
+    /// m² when fully open.
+    pub area: f64,
+    /// 0 closed .. 1 open.
+    pub open: f64,
+    /// m³ per second that left in the last exchange.
+    pub flow: f64,
+}
 
 /// One room as an air cell.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -109,6 +131,11 @@ impl Room {
     /// 0..1.
     pub fn oxygen_fraction(&self) -> f64 {
         if self.volume > 0.0 { self.oxygen / self.volume } else { 0.0 }
+    }
+
+    /// The room's pressure against space, 0..1: the same as its air fraction here (one gas).
+    pub fn pressure(&self) -> f64 {
+        self.oxygen_fraction()
     }
 }
 
@@ -194,12 +221,14 @@ pub struct Deck {
     fires: Vec<Fire>,
     next_fire: u64,
     rng: Rng,
+    leaks: Vec<Leak>,
+    lost: f64,
 }
 
 impl Deck {
     /// An empty deck; `seed` makes spread rolls repeatable.
     pub fn new(tuning: FireTuning, seed: u64) -> Deck {
-        Deck { tuning, rooms: Vec::new(), gaps: Vec::new(), fires: Vec::new(), next_fire: 0, rng: Rng::new(seed) }
+        Deck { tuning, rooms: Vec::new(), gaps: Vec::new(), fires: Vec::new(), next_fire: 0, rng: Rng::new(seed), leaks: Vec::new(), lost: 0.0 }
     }
 
     pub fn tuning(&self) -> &FireTuning {
@@ -234,6 +263,36 @@ impl Deck {
 
     pub fn gap(&self, g: GapId) -> &Gap {
         &self.gaps[g.0]
+    }
+
+    /// A hole to space of `area` m² in a room at `pos`, `open` 0..1 (a breach; `hull_core` sets
+    /// its size from the hull's damage).
+    pub fn add_leak(&mut self, room: RoomId, pos: DVec3, area: f64, open: f64) -> LeakId {
+        self.leaks.push(Leak { room, pos, area: area.max(0.0), open: open.clamp(0.0, 1.0), flow: 0.0 });
+        LeakId(self.leaks.len() - 1)
+    }
+
+    /// Resizes a leak (a patch closes it with `open` 0).
+    pub fn set_leak(&mut self, leak: LeakId, area: f64, open: f64) {
+        let l = &mut self.leaks[leak.0];
+        l.area = area.max(0.0);
+        l.open = open.clamp(0.0, 1.0);
+        if l.open <= 0.0 || l.area <= 0.0 {
+            l.flow = 0.0;
+        }
+    }
+
+    pub fn leak(&self, leak: LeakId) -> &Leak {
+        &self.leaks[leak.0]
+    }
+
+    pub fn leaks(&self) -> &[Leak] {
+        &self.leaks
+    }
+
+    /// m³ of air lost to space through leaks so far.
+    pub fn lost_to_space(&self) -> f64 {
+        self.lost
     }
 
     pub fn fires(&self) -> &[Fire] {
@@ -280,7 +339,8 @@ impl Deck {
     }
 
     /// Moves air through the open gaps for `dt` seconds. Each gap moves oxygen from the richer
-    /// room to the poorer one, never past even, so the total stays the same.
+    /// room to the poorer one, never past even, so the total stays the same. Open leaks then let
+    /// air out to space (`lost_to_space`).
     pub fn exchange_air(&mut self, dt: f64) {
         for g in &self.gaps {
             if g.open <= 0.0 || g.a == g.b {
@@ -297,6 +357,18 @@ impl Deck {
             let moved = if even >= 0.0 { flow.clamp(0.0, even) } else { flow.clamp(even, 0.0) };
             self.rooms[g.a.0].oxygen -= moved;
             self.rooms[g.b.0].oxygen += moved;
+        }
+        // Leaks to space: out with the room's pressure (space has none), never below empty.
+        for l in &mut self.leaks {
+            let room = &mut self.rooms[l.room.0];
+            if l.open <= 0.0 || l.area <= 0.0 || room.volume <= 0.0 {
+                l.flow = 0.0;
+                continue;
+            }
+            let out = (self.tuning.leak_flow * l.area * l.open * room.pressure() * dt).clamp(0.0, room.oxygen);
+            room.oxygen -= out;
+            self.lost += out;
+            l.flow = if dt > 0.0 { out / dt } else { 0.0 };
         }
     }
 

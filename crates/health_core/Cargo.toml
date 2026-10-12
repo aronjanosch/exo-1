@@ -1,0 +1,11 @@
+[package]
+name = "health_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+content_core = { workspace = true }
+gameplay_core = { workspace = true }
+production_core = { workspace = true }

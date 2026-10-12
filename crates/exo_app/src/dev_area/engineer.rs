@@ -8,6 +8,11 @@
 //! or the reactor to repair it (skill `mechanical`); F at the wall mount takes or returns the
 //! extinguisher, F held while carrying it sprays ahead; F at the door opens or closes it.
 //!
+//! Hull (`hull.rs`, `hull_core`): the hit simulator fires `Hit` records at a hull section of either
+//! room (damage to the devices there, fire, breach); air leaks out through a breach and pulls
+//! towards it; F at the kit box takes a patch kit, hold F at the breach to patch it; the oxygen
+//! generator (its own panel, power from life support, repairable) refills both rooms.
+//!
 //! Area frame here: `DVec3(east, up, north)` in area metres, as `fire_core` positions.
 use super::*;
 use crate::controls::Actions;
@@ -17,23 +22,35 @@ use crate::interact::{Interaction, Target, Usable, Usables};
 use crate::walker::{Player, EYE_HEIGHT};
 use device_core::{Condition, DeviceEvent, DeviceTuning, RepairOutcome, Tool};
 use fire_core::{Deck, FireEvent, FireTuning, GapId, RoomId, TargetKind};
+use hull_core::{DamageType, Hull, HullTuning, OxygenGenerator, SectionId, Strength, Volley};
 use gameplay_core::notice::{Arg, Notice, NoticeKind};
 use reactor_core::{grid, FuelRod, Grid, Group, Mode, Reactor, ReactorEvent, ReactorTuning};
 use skills::DevSkills;
 
+pub mod hull;
 mod look;
 pub mod panels;
+
+pub use hull::RoomReadout;
 
 pub const REACTOR_PANEL: PanelId = PanelId::new("reactor");
 pub const REACTOR_NAME: &str = "Reactor";
 pub const POWER_PANEL: PanelId = PanelId::new("power");
 pub const POWER_NAME: &str = "Power board";
+pub const HIT_PANEL: PanelId = PanelId::new("hit_simulator");
+pub const HIT_NAME: &str = "Hit simulator";
+pub const OXYGEN_PANEL: PanelId = PanelId::new("oxygen");
+pub const OXYGEN_NAME: &str = "Oxygen generator";
 
 // Usable ids (`interact::Usables`).
 pub const PUMP: &str = "engineer.pump";
 pub const REACTOR: &str = "engineer.reactor";
 pub const EXTINGUISHER: &str = "engineer.extinguisher";
 pub const DOOR: &str = "engineer.door";
+pub const GENERATOR: &str = "engineer.generator";
+pub const KITS: &str = "engineer.kits";
+/// A hull section's usable id is this plus its index.
+pub const SECTION: &str = "engineer.section.";
 
 // Layout in the engineering zone (m from its centre, x east, y north). Devices in a row at the
 // back, consoles in front of them, a walkway between. TODO(initiator): the layout.
@@ -52,6 +69,15 @@ pub const DOOR_SIZE: [f64; 3] = [0.3, 2.2, 1.6];
 pub const FIRE_AT: [f64; 2] = [2.2, 10.0];
 /// The aux lights on posts behind the devices.
 pub const LIGHTS: [[f64; 2]; 5] = [[-8.0, 14.0], [-4.0, 14.0], [0.0, 14.0], [4.0, 14.0], [8.0, 14.0]];
+/// The hull sections: the engineering room's wall behind the pump, the side room's wall.
+pub const ENGINE_SECTION_AT: [f64; 2] = [-2.0, 12.6];
+pub const SIDE_SECTION_AT: [f64; 2] = [9.0, 12.6];
+/// Height of a section's hole (and where its fires start).
+pub const SECTION_HEIGHT: f64 = 1.2;
+pub const GENERATOR_AT: [f64; 2] = [-9.5, 6.5];
+pub const KITS_AT: [f64; 2] = [-8.5, 10.0];
+pub const KITS_SIZE: [f64; 3] = [0.8, 0.6, 0.8];
+pub const HIT_SIM_AT: [f64; 2] = [8.5, 3.0];
 /// The side room lies east of the door: x from the door to here, y within `SIDE_HALF_Y` of it.
 const SIDE_EAST: f64 = 12.0;
 const SIDE_HALF_Y: f64 = 6.0;
@@ -66,9 +92,10 @@ pub const START_RODS: usize = 2;
 /// Rooms: the engineering zone and the side room behind the door (m³).
 pub const ROOM_VOLUME: f64 = 300.0;
 pub const SIDE_VOLUME: f64 = 80.0;
-/// Oxygen life support adds to the engineering room at full supply (m³/s); the side room gets air
-/// only through the door.
-pub const LIFE_SUPPORT_RATE: f64 = 1.0;
+/// The oxygen generator's output at full supply and condition (m³/s), shared by volume between
+/// both rooms (vents in each). TODO(initiator): a guess.
+pub const GENERATOR_RATE: f64 = 3.0;
+pub const PATCH_KITS: u32 = 4;
 /// Seconds of spray in a full extinguisher, and to refill an empty one on its mount.
 pub const SPRAY_S: f64 = 20.0;
 pub const REFILL_S: f64 = 10.0;
@@ -95,12 +122,19 @@ pub const TEXT_KEYS: &[&str] = &[
     "notice.engineer.repair_failed",
     "notice.engineer.locked",
     "notice.engineer.no_rods",
+    "notice.engineer.hit",
+    "notice.engineer.breach",
+    "notice.engineer.system_hit",
+    "notice.engineer.oxygen_low",
+    "notice.engineer.patched",
+    "notice.engineer.no_kit",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Dev {
     Pump,
     Reactor,
+    Generator,
 }
 
 impl Dev {
@@ -108,6 +142,7 @@ impl Dev {
         match self {
             Dev::Pump => "coolant pump",
             Dev::Reactor => "reactor",
+            Dev::Generator => "oxygen generator",
         }
     }
 }
@@ -131,6 +166,9 @@ pub struct Stats {
     pub skill_gained: f64,
     pub sprayed_s: f64,
     pub burning_s: f64,
+    pub hits: u32,
+    pub breaches_opened: u32,
+    pub patches_done: u32,
 }
 
 /// Everything the engineer's corner simulates.
@@ -153,6 +191,29 @@ pub struct Engineering {
     /// Simulated seconds.
     pub time: f64,
     burn_notice_at: f64,
+    /// The hull: a section in each room (`engine_section`, `side_section`).
+    pub hull: Hull,
+    pub engine_section: SectionId,
+    pub side_section: SectionId,
+    pub generator: OxygenGenerator,
+    /// The generator's own switch (off starves fires, and the crew).
+    pub generator_on: bool,
+    pub patch_kits: u32,
+    pub kit_in_hand: bool,
+    /// The section under the player's hands, and what the last patch step did.
+    pub patching: Option<SectionId>,
+    pub last_patch: Option<(SectionId, RepairOutcome)>,
+    /// The hit simulator's choice, the running volley, and what the last hit did.
+    pub hit_pick: hull::HitPick,
+    pub volley: Option<Volley>,
+    pub volleys: u64,
+    pub last_hit: String,
+    /// Per room (engineering, side): the low-oxygen alarm and the smoothed change (fraction per s).
+    pub oxygen_alarm: [bool; 2],
+    pub oxygen_delta: [f64; 2],
+    oxygen_prev: [f64; 2],
+    /// Fire damage to the player since the health glue last took it (#287).
+    pub player_burn: f64,
 }
 
 impl Default for Engineering {
@@ -168,6 +229,9 @@ impl Default for Engineering {
         let room = deck.add_room(ROOM_VOLUME);
         let side_room = deck.add_room(SIDE_VOLUME);
         let door = deck.add_gap(room, side_room, area3(DOOR_AT, 1.0), 2.0, 1.0);
+        let mut hull = Hull::new(HullTuning::default(), 44);
+        let engine_section = hull.add_section(&mut deck, room, area3(ENGINE_SECTION_AT, SECTION_HEIGHT));
+        let side_section = hull.add_section(&mut deck, side_room, area3(SIDE_SECTION_AT, SECTION_HEIGHT));
         Engineering {
             reactor,
             grid: Grid::default(),
@@ -184,6 +248,23 @@ impl Default for Engineering {
             stats: Stats::default(),
             time: 0.0,
             burn_notice_at: f64::MIN,
+            hull,
+            engine_section,
+            side_section,
+            generator: OxygenGenerator::new(GENERATOR_RATE, DeviceTuning::default(), 45),
+            generator_on: true,
+            patch_kits: PATCH_KITS,
+            kit_in_hand: false,
+            patching: None,
+            last_patch: None,
+            hit_pick: hull::HitPick { section: engine_section, kind: DamageType::Physical, strength: Strength::Medium },
+            volley: None,
+            volleys: 0,
+            last_hit: String::new(),
+            oxygen_alarm: [false; 2],
+            oxygen_delta: [0.0; 2],
+            oxygen_prev: [1.0; 2],
+            player_burn: 0.0,
         }
     }
 }
@@ -193,12 +274,14 @@ impl Engineering {
         match d {
             Dev::Pump => &self.pump,
             Dev::Reactor => self.reactor.condition(),
+            Dev::Generator => &self.generator.condition,
         }
     }
     fn condition_mut(&mut self, d: Dev) -> &mut Condition {
         match d {
             Dev::Pump => &mut self.pump,
             Dev::Reactor => self.reactor.condition_mut(),
+            Dev::Generator => &mut self.generator.condition,
         }
     }
     pub fn door_open(&self) -> bool {
@@ -255,10 +338,14 @@ pub fn plugin(app: &mut App) {
         d.add(device("engineer_door", DOOR_AT, DOOR_SIZE, [0.45, 0.3, 0.2]));
         d.add(console("engineer_reactor_console", REACTOR_CONSOLE_AT, REACTOR_PANEL, REACTOR_NAME, [0.84, 0.84 * panels::REACTOR_H / panels::REACTOR_W]));
         d.add(console("engineer_power_console", POWER_CONSOLE_AT, POWER_PANEL, POWER_NAME, [0.84, 0.84 * panels::POWER_H / panels::POWER_W]));
+        d.add(console("engineer_hit_simulator", HIT_SIM_AT, HIT_PANEL, HIT_NAME, [0.84, 0.84 * panels::HIT_H / panels::HIT_W]));
+        d.add(PlaceholderBox { colour: [0.35, 0.6, 0.7], ..console("engineer_generator", GENERATOR_AT, OXYGEN_PANEL, OXYGEN_NAME, [0.84, 0.84 * panels::OXYGEN_H / panels::OXYGEN_W]) });
+        d.add(device("engineer_patch_kits", KITS_AT, KITS_SIZE, [0.9, 0.5, 0.15]));
     }
     app.init_resource::<Engineering>();
     app.add_systems(FixedUpdate, offer_usables.before(crate::interact::interaction).in_set(crate::phases::Fx::Walker));
-    app.add_systems(FixedUpdate, (read_clicks, step, write_panels).chain().in_set(crate::phases::Fx::Effects));
+    app.add_systems(FixedUpdate, hull::pull.after(crate::displays::use_display).before(crate::walker::walker_step).in_set(crate::phases::Fx::Walker));
+    app.add_systems(FixedUpdate, (read_clicks, hull::read_clicks, step, hull::step, write_panels).chain().in_set(crate::phases::Fx::Effects));
     app.add_systems(Update, look::draw.in_set(crate::phases::Frame::World));
 }
 
@@ -271,7 +358,16 @@ fn offer_usables(e: Res<Engineering>, area: Res<DevArea>, planet: Res<PlanetRes>
     if !e.extinguisher.held {
         add(PUMP, at(PUMP_AT, 0.7, PUMP_SIZE[2] * 0.5), repair_verb(&e, Dev::Pump));
         add(REACTOR, at([REACTOR_AT[0] + 1.0, REACTOR_AT[1]], 1.0, REACTOR_SIZE[2] * 0.5), repair_verb(&e, Dev::Reactor));
+        add(GENERATOR, at(GENERATOR_AT, 0.5, 0.4), repair_verb(&e, Dev::Generator));
+        for (i, s) in e.hull.sections().iter().enumerate() {
+            if s.condition.value() < s.condition.tuning().max {
+                let id = format!("{SECTION}{i}");
+                add(&id, world_of(&frame, &planet, s.pos), hull::patch_verb(&e, SectionId(i)));
+            }
+        }
     }
+    let kits = if e.kit_in_hand { "put the patch kit back".to_string() } else { format!("take a patch kit ({} left)", e.patch_kits) };
+    add(KITS, at(KITS_AT, KITS_SIZE[1] * 0.5, 0.0), kits);
     let ext = if e.extinguisher.held {
         format!("return the extinguisher ({:.0} %)", e.extinguisher.charge * 100.0)
     } else {
@@ -315,7 +411,7 @@ pub fn spray_point(deck: &Deck, feet: DVec3, flat: DVec3) -> DVec3 {
         .unwrap_or(b)
 }
 
-fn note(gp: &mut Gameplay, key: &str) {
+pub(crate) fn note(gp: &mut Gameplay, key: &str) {
     gp.notify(Notice::new(NoticeKind::Warning, key));
 }
 
@@ -373,7 +469,7 @@ fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut e: ResMut<Engineeri
 
 /// One fixed step of the engineer's corner.
 #[allow(clippy::too_many_arguments)]
-fn step(
+pub fn step(
     time: Res<Time>,
     mut e: ResMut<Engineering>,
     mut gp: ResMut<Gameplay>,
@@ -433,6 +529,7 @@ fn step(
         let dev = match target {
             Some(PUMP) => Some(Dev::Pump),
             Some(REACTOR) => Some(Dev::Reactor),
+            Some(GENERATOR) => Some(Dev::Generator),
             _ => None,
         };
         if held && let Some(d) = dev {
@@ -502,15 +599,12 @@ fn step(
         }
     }
 
-    // Life support feeds the engineering room.
-    let ls = e.grid.factor(Group::LifeSupport);
-    let room = e.deck.room_mut(e.room);
-    room.oxygen = (room.oxygen + LIFE_SUPPORT_RATE * ls * dt).min(room.volume);
-
-    // Fire: the player, the reactor and the pump can burn.
+    // Fire: the player, the reactor, the pump and the generator can burn (life support and the
+    // hull are `hull::step`).
     let mut targets = vec![
         fire_core::Target { id: 1, kind: TargetKind::Device, room: e.room, pos: area3(REACTOR_AT, 1.0) },
         fire_core::Target { id: 2, kind: TargetKind::Device, room: e.room, pos: area3(PUMP_AT, 0.6) },
+        fire_core::Target { id: 3, kind: TargetKind::Device, room: e.room, pos: area3(GENERATOR_AT, 0.5) },
     ];
     if let Some((feet, _)) = me {
         targets.push(fire_core::Target { id: 0, kind: TargetKind::Person, room: e.room_at(feet), pos: feet + DVec3::Y });
@@ -518,7 +612,10 @@ fn step(
     let mut burning = false;
     for ev in e.deck.step(dt, &targets) {
         match ev {
-            FireEvent::Damage { target: 0, .. } => burning = true,
+            FireEvent::Damage { target: 0, amount, .. } => {
+                burning = true;
+                e.player_burn += amount;
+            }
             FireEvent::Damage { target: 1, amount, .. } => {
                 if let Some(DeviceEvent::Broke) = e.reactor.condition_mut().damage(amount) {
                     broke(&mut gp, Dev::Reactor);
@@ -527,6 +624,11 @@ fn step(
             FireEvent::Damage { target: 2, amount, .. } => {
                 if let Some(DeviceEvent::Broke) = e.pump.damage(amount) {
                     broke(&mut gp, Dev::Pump);
+                }
+            }
+            FireEvent::Damage { target: 3, amount, .. } => {
+                if let Some(DeviceEvent::Broke) = e.generator.condition.damage(amount) {
+                    broke(&mut gp, Dev::Generator);
                 }
             }
             FireEvent::Damage { .. } => {}
@@ -546,13 +648,15 @@ fn step(
     }
 }
 
-fn broke(gp: &mut Gameplay, d: Dev) {
+pub(crate) fn broke(gp: &mut Gameplay, d: Dev) {
     gp.notify(Notice::new(NoticeKind::Warning, "notice.engineer.broke").arg("device", Arg::Text(d.name().into())));
 }
 
 fn write_panels(e: Res<Engineering>, skills: Res<DevSkills>, mut out: ResMut<Panels>) {
     out.set(REACTOR_PANEL, panels::reactor(&e, skills.electrical));
     out.set(POWER_PANEL, panels::power(&e));
+    out.set(HIT_PANEL, panels::hit_simulator(&e));
+    out.set(OXYGEN_PANEL, panels::oxygen(&e));
 }
 
 #[cfg(test)]

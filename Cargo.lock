@@ -2752,6 +2752,8 @@ dependencies = [
  "flight_core",
  "gameplay_core",
  "grab_core",
+ "health_core",
+ "hull_core",
  "jobs_core",
  "net_core",
  "planet_core",
@@ -3285,6 +3287,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "health_core"
+version = "0.1.0"
+dependencies = [
+ "content_core",
+ "gameplay_core",
+ "production_core",
+ "serde",
+]
+
+[[package]]
 name = "heapless"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3327,6 +3339,16 @@ name = "hexf-parse"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
+
+[[package]]
+name = "hull_core"
+version = "0.1.0"
+dependencies = [
+ "device_core",
+ "fire_core",
+ "gameplay_core",
+ "glam 0.32.1",
+]
 
 [[package]]
 name = "icu_collections"

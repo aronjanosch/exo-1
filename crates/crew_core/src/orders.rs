@@ -88,13 +88,10 @@ impl OrderKind {
     }
 
     fn fits(self, target: &Option<Target>) -> bool {
-        match (self.target_kind(), target) {
-            (None, None) => true,
-            (Some(TargetKind::Room), Some(Target::Room(_))) => true,
-            (Some(TargetKind::Station), Some(Target::Station(_))) => true,
-            (Some(TargetKind::Device), Some(Target::Device(_))) => true,
-            _ => false,
-        }
+        matches!(
+            (self.target_kind(), target),
+            (None, None) | (Some(TargetKind::Room), Some(Target::Room(_))) | (Some(TargetKind::Station), Some(Target::Station(_))) | (Some(TargetKind::Device), Some(Target::Device(_)))
+        )
     }
 }
 

@@ -17,12 +17,14 @@ use serde::{Deserialize, Serialize};
 
 pub mod alert;
 pub mod budget;
+pub mod mission_view;
 pub mod orders;
 pub mod priorities;
 pub mod status;
 
 pub use alert::{Alert, AlertCause, AlertChange, AlertEvent, AlertLevel};
 pub use budget::Budget;
+pub use mission_view::{Filter, MissionCommand, MissionRow, ObjectiveRow};
 pub use orders::{Addressee, Order, OrderEvent, OrderKind, OrderLine, OrderPriority, Orders, TargetKind};
 pub use priorities::{BotId, BotView, Choice, Claims, Level, Pick, PriorityTable, Situation, Task, TaskId, TaskKind, Taker, choose};
 pub use status::{PlaceholderStatus, ShipStatus};

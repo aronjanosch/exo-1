@@ -11,7 +11,7 @@ pub mod system;
 pub use drive::{Abort, Drive, Event, Phase, ShipView};
 pub use load::{Load, Loader, Pending};
 pub use path::{Blocker, Path};
-pub use system::{DriveConfig, Obstacle, PlanetDef, PlanetId, System};
+pub use system::{DriveConfig, Obstacle, PlanetDef, PlanetId, StarDef, System};
 
 #[cfg(test)]
 mod tests;

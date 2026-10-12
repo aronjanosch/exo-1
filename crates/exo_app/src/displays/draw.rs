@@ -17,7 +17,7 @@ const TEX_SCALE: f32 = 2.0;
 /// World mode renders the panels of displays this close to the camera (m).
 const DRAW_RANGE: f64 = 30.0;
 
-const BG: Color = Color::srgba(0.03, 0.05, 0.08, 0.95);
+const BG: Color = Color::srgb(0.03, 0.05, 0.08);
 const EDGE: Color = Color::srgb(0.22, 0.42, 0.55);
 const BUTTON: Color = Color::srgb(0.11, 0.2, 0.28);
 const BUTTON_HOVER: Color = Color::srgb(0.2, 0.36, 0.48);

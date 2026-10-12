@@ -164,6 +164,23 @@ pub(crate) fn click_until(action: &'static str, t: Option<f64>, what: String, mu
     })
 }
 
+/// Where a widget of the console appears in the window, through the main camera (window only).
+fn screen_point_in_world_mode(w: &mut World, action: &str) -> Option<Vec2> {
+    let e = console(w)?;
+    let d = w.get::<DisplayPanel>(e)?.clone();
+    let target = crate::displays::world_point_of(w, &d, action)?;
+    let (pos, rot, fov) = w
+        .query_filtered::<(&crate::origin::WorldPose, &Projection), With<crate::view::MainCamera>>()
+        .iter(w)
+        .find_map(|(p, pr)| if let Projection::Perspective(pp) = pr { Some((p.pos, p.rot, pp.fov as f64)) } else { None })?;
+    let win = w.resource::<crate::displays::DisplayView>().window;
+    let (ww, wh) = (win.x as f64, win.y as f64);
+    let local = rot.inverse() * (target - pos);
+    let t = (fov * 0.5).tan();
+    let ndc = DVec2::new(local.x / (-local.z * t * ww / wh), local.y / (-local.z * t));
+    Some(Vec2::new(((ndc.x + 1.0) * 0.5 * ww) as f32, ((1.0 - ndc.y) * 0.5 * wh) as f32))
+}
+
 pub(super) fn dev_area_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
     s.push(Box::new(|w, c| {
         begin(w, c, "dev area: the level rectangle");
@@ -219,6 +236,27 @@ pub(super) fn dev_area_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str)
     // The same panel on the quad in the world (F6), for the picture; back to the overlay.
     s.push(tap_until(KeyCode::F6, "dev area: F6 draws the panel in the world", 0.5, |w| *w.resource::<DisplayMode>() == DisplayMode::World));
     s.push(wait(0.3));
+    // With a window: a click through the camera's ray onto the quad counts on (headless has no camera).
+    // The pointer first (the ray follows a frame later), then the click once it hovers the button.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            let Some(at) = screen_point_in_world_mode(w, "inc") else { return true };
+            w.resource_mut::<Controls>().pointer = Some(at);
+            return false;
+        }
+        let hover = w.resource::<DisplayPointer>().0.hover.clone();
+        if hover.as_deref() == Some("inc") && !c.v.contains_key("clicked") {
+            c.v.insert("clicked", 1.0);
+            w.resource_mut::<Controls>().click = true;
+        }
+        let n = console_state(w).count;
+        if n == 4 || c.t >= 1.0 {
+            check(c, n == 4, format!("dev area: in the world a click on + through the camera's ray counts to {n} (4; hover {hover:?})"));
+            c.v.remove("clicked");
+            return true;
+        }
+        false
+    }));
     s.push(shot_step("world"));
     s.push(tap_until(KeyCode::F6, "dev area: F6 again, the overlay", 0.5, |w| *w.resource::<DisplayMode>() == DisplayMode::Overlay));
     s.push(tap_until(KeyCode::KeyF, "dev area: F leaves the console", 1.0, |w| active(w) == ActiveDisplay::Idle && !w.resource::<Controls>().free_cursor));

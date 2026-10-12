@@ -205,6 +205,13 @@ pub fn overlay_point_of(w: &World, panel: &PanelId, action: &str, t: Option<f64>
     overlay_point(w, panel, at)
 }
 
+/// The world point of a widget's centre on a display's quad (world mode), for scripts.
+pub fn world_point_of(w: &World, display: &DisplayPanel, action: &str) -> Option<DVec3> {
+    let p = w.resource::<Panels>().get(&display.id)?;
+    let uv = p.find(action)?.rect.centre() / p.size;
+    Some(display_core::panel_point(display.centre, display.rot, display.size_m, uv))
+}
+
 // ---------- window: drawing ----------
 
 /// Window only: the screen size and pointer ray, the overlay, and the quads in the world.

@@ -110,6 +110,14 @@ _Avoid_: class, job (a job is a contract)
 A place on the ship where one role works a device: the helm, the reactor, a turret, the lab bench.
 _Avoid_: console, post, terminal; a station in space is a space station
 
+**Display**:
+A screen in the world that a walker uses with the interact key: the mouse cursor comes free and points at its panel, the walker stands still until it leaves. A station may have several.
+_Avoid_: terminal, monitor, screen (the player's screen)
+
+**Panel**:
+What a display shows: labels, buttons, bars, toggles and sliders laid out in panel pixels, rebuilt each tick from its owner's state. A click on it names the widget's action.
+_Avoid_: page, UI, menu (menus are outside the game world)
+
 **Space station**:
 A place in space where the crew docks, trades, takes missions and saves; the game starts on one.
 _Avoid_: station (that is a place on the ship), outpost, hub

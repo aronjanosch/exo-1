@@ -16,8 +16,10 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 pub mod alert;
+pub mod orders;
 
 pub use alert::{Alert, AlertCause, AlertChange, AlertEvent, AlertLevel};
+pub use orders::{Addressee, Order, OrderEvent, OrderKind, OrderLine, OrderPriority, Orders, TargetKind};
 
 /// The five crew roles. One player or bot fills each slot.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

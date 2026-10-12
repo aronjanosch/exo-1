@@ -114,6 +114,14 @@ _Avoid_: console, post, terminal; a station in space is a space station
 A place in space where the crew docks, trades, takes missions and saves; the game starts on one.
 _Avoid_: station (that is a place on the ship), outpost, hub
 
+**Skill**:
+A value from 0 to 100 that grows by use and sets how fast and how surely a character does something, such as repairing or steering.
+_Avoid_: stat, ability, level
+
+**Talent**:
+A perk a character unlocks in its role's talent tree with points earned from experience.
+_Avoid_: skill, perk, ability, upgrade
+
 **Ship system**:
 One working part of the ship, such as reactor, shields, life support, engines or turrets, with its own condition and power draw.
 _Avoid_: system (that word means a gameplay system), component, subsystem

@@ -10,9 +10,11 @@ use super::*;
 use crate::crew_hud::{CrewHud, Vitals};
 use crate::displays::DisplayLook;
 use crate::gameplay::{Gameplay, HOST};
+use crate::controls::Controls;
 use crate::interact::Interaction;
-use crate::items::InventoryUi;
+use crate::items::{slot_rect, HudWindow, InventoryUi};
 use display_core::hud::{north_at, HintAction, PromptKind, Reference, VitalKind};
+use display_core::Tone;
 use gameplay_core::{TrackId, WorldEvent};
 
 fn hud(w: &World) -> CrewHud {
@@ -97,8 +99,9 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
     s.push(wait(0.1));
     s.push(Box::new(|w, c| {
         let h = hud(w);
-        check(c, kinds(&h) == [VitalKind::Health, VitalKind::Oxygen, VitalKind::Burn], format!("hud: vitals with oxygen and burn set show three lines ({:?})", kinds(&h)));
-        check(c, (h.vitals[0].frac - 0.8).abs() < 1e-9 && (h.vitals[1].frac - 0.7).abs() < 1e-9, "hud: the bars carry the values".into());
+        check(c, kinds(&h) == [VitalKind::Burn, VitalKind::Oxygen, VitalKind::Health], format!("hud: vitals with oxygen and burn set show three lines, burn on top ({:?})", kinds(&h)));
+        check(c, (h.vitals[2].frac - 0.8).abs() < 1e-9 && (h.vitals[1].frac - 0.7).abs() < 1e-9, "hud: the bars carry the values".into());
+        check(c, h.vitals[0].burn_text() == "▲ BURN II" && h.vitals[2].calm() && h.vitals[1].calm(), format!("hud: the burn reads {:?}, health 80 and oxygen 70 are calm", h.vitals[0].burn_text()));
         {
             let mut v = vitals(w);
             v.oxygen = None;
@@ -127,6 +130,7 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
         check(c, cr.as_ref().is_some_and(|x| x.delta == 300 && x.alpha == 1.0), format!("hud: +300 shows ({cr:?})"));
         true
     }));
+    s.push(shot_step("hud_credits"));
     s.push(Box::new(|w, c| {
         let look = w.resource::<DisplayLook>().0.hud.credits.clone();
         if c.t < look.show_s + look.fade_s + 0.5 {
@@ -150,6 +154,7 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
     s.push(Box::new(|w, c| {
         let i = w.resource::<Interaction>();
         check(c, i.kind == PromptKind::Collect && i.at.is_some() && i.prompt.starts_with("[F]"), format!("hud: the prompt is a collect with a world place ({:?}, {:?})", i.kind, i.prompt));
+        check(c, i.view.verb == "Collect" && i.view.name == "Extinguisher" && i.view.note.is_empty(), format!("hud: the prompt reads verb over name ({:?})", i.view));
         true
     }));
     s.extend(collect("extinguisher", "Extinguisher"));
@@ -179,7 +184,7 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
     s.push(Box::new(|w, c| {
         begin(w, c, "hud: oxygen drops, burning");
         let mut v = vitals(w);
-        v.health = 0.82;
+        v.health = 0.58;
         v.oxygen = Some(1.0);
         v.burn = Some(0.6);
         true
@@ -191,6 +196,28 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
     }));
     s.push(wait(0.2));
     s.push(shot_step("hud_held"));
+    // The same, critical: burn III, oxygen and health bad (glow).
+    s.push(Box::new(|w, _| {
+        let mut v = vitals(w);
+        v.health = 0.23;
+        v.oxygen = Some(0.18);
+        v.burn = Some(0.95);
+        true
+    }));
+    s.push(wait(0.2));
+    s.push(Box::new(|w, c| {
+        let h = hud(w);
+        check(c, h.vitals[0].burn_text() == "■ BURN III" && h.vitals.iter().all(|l| l.tone == Tone::Bad), format!("hud: critical reads bad on every line ({:?})", h.vitals));
+        true
+    }));
+    s.push(shot_step("hud_crit"));
+    s.push(Box::new(|w, _| {
+        let mut v = vitals(w);
+        v.health = 0.58;
+        v.oxygen = Some(0.45);
+        v.burn = Some(0.6);
+        true
+    }));
     // Tab: the inventory open, the held name at the left.
     s.push(tap_then("hud: Tab opens the inventory", KeyCode::Tab, |w| w.resource::<InventoryUi>().open));
     s.push(wait(0.2));
@@ -200,6 +227,16 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
         true
     }));
     s.push(shot_step("hud_tab"));
+    // A drag in the open bar: the ghost follows the pointer, the slot under it is outlined.
+    s.push(pointer_step(0, true));
+    s.push(wait(0.2));
+    s.push(pointer_step(3, true));
+    s.push(wait(0.2));
+    s.push(shot_step("hud_drag"));
+    s.push(pointer_step(0, true));
+    s.push(wait(0.1));
+    s.push(pointer_step(0, false));
+    s.push(wait(0.2));
     s.push(tap_then("hud: Tab closes it", KeyCode::Tab, |w| !w.resource::<InventoryUi>().open));
     s.push(Box::new(|w, _| {
         *vitals(w) = Vitals::default();
@@ -237,6 +274,18 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
     s.push(wait(0.5));
     s.extend(heading_step("landed ship: north", 0.0, Reference::True, planet_axes));
     s.extend(heading_step("landed ship: east", 90.0, Reference::True, planet_axes));
+}
+
+/// The pointer over the middle of slot `i` of the open bar, the button down or up.
+fn pointer_step(i: usize, down: bool) -> Step {
+    Box::new(move |w, _| {
+        let (win, bar) = (w.resource::<HudWindow>().0, w.resource::<DisplayLook>().0.hud.bar.clone());
+        let (at, size) = slot_rect(i, true, win, &bar);
+        let mut ctl = w.resource_mut::<Controls>();
+        ctl.pointer = Some(at + Vec2::splat(size * 0.5));
+        ctl.pointer_down = down;
+        true
+    })
 }
 
 /// Like `tap_then`, named for this scenario: tap, wait for a state.

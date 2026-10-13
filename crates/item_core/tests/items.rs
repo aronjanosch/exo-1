@@ -20,6 +20,32 @@ fn stack(id: &str, n: u32) -> item_core::container::Stack {
 }
 
 #[test]
+fn an_item_has_a_three_letter_code_for_the_bar() {
+    // Given in its file, or the first three letters of its id until it gets one.
+    let coded = WRENCH.replace("\"name\"", "\"code\": \"WRN\", \"name\"");
+    let d = ItemDefs::from_files([("wrench.json", coded.as_str()), ("bandage.json", BANDAGE)]).unwrap();
+    assert_eq!(d.get("wrench").unwrap().short_code(), "WRN");
+    assert_eq!(d.get("bandage").unwrap().short_code(), "BAN", "no code in the file: the id's first letters");
+    for bad in ["wr", "WRNX", "wrn", "W-N"] {
+        let t = WRENCH.replace("\"name\"", &format!("\"code\": \"{bad}\", \"name\""));
+        assert!(ItemDefs::from_files([("wrench.json", t.as_str())]).unwrap_err().contains("code"), "{bad}");
+    }
+}
+
+#[test]
+fn the_shipped_items_have_their_codes() {
+    let files: Vec<(String, String)> = std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../content/items"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .map(|p| (p.file_name().unwrap().to_string_lossy().into_owned(), std::fs::read_to_string(p).unwrap()))
+        .collect();
+    let d = ItemDefs::from_files(files.iter().map(|(n, t)| (n.as_str(), t.as_str()))).unwrap();
+    let codes: Vec<_> = ["wrench", "extinguisher", "bandage"].iter().map(|id| d.get(id).unwrap()).map(|x| (x.code.clone(), x.short_code())).collect();
+    let want = |c: &str| (c.to_string(), c.to_string());
+    assert_eq!(codes, [want("WRN"), want("EXT"), want("BDG")]);
+}
+
+#[test]
 fn definitions_are_checked() {
     let d = defs();
     assert_eq!(d.get("extinguisher").unwrap().hands, 2);

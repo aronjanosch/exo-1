@@ -13,7 +13,7 @@ use crate::displays::DisplayLook;
 use crate::env::PlanetRes;
 use crate::gameplay::Gameplay;
 use crate::grab::Grab;
-use crate::interact::{key_label, Interaction};
+use crate::interact::{key_cap, Interaction};
 use crate::items::{HudWindow, InventoryUi, Items};
 use crate::origin::{RenderOrigin, WorldPose};
 use crate::ship::Ship;
@@ -23,8 +23,8 @@ use avian3d::prelude::{Position, Rotation};
 use bevy::math::{DVec2, DVec3};
 use bevy::prelude::*;
 use display_core::hud::{
-    compass_ticks, credits_text, delta_text, heading_deg, heading_text, hints, north_at, prompt_anchor, reference, vital_lines, BarIdle, CreditsFlash, CreditsView, Hint, HintAction, HudLook,
-    PromptKind, Reference, VitalKind, VitalLine,
+    compass_ticks, credits_number, delta_text, heading_deg, heading_text, hints, north_at, prompt_anchor, reference, vital_lines, BarIdle, CreditsFlash, CreditsView, Hint, HintAction, HudLook,
+    PromptKind, Reference, TickLen, VitalKind, VitalLine,
 };
 use display_core::{Rgb, Tone};
 
@@ -164,25 +164,38 @@ pub(crate) fn col_a(c: Rgb, a: f64) -> Color {
     Color::srgba(c.0[0], c.0[1], c.0[2], a.clamp(0.0, 1.0) as f32)
 }
 
-/// The status colour of a vital: normal in steel (or `normal`), warn and bad as the tokens.
-fn vital_colour(look: &display_core::Theme, normal: Rgb, t: Tone) -> Rgb {
+/// The dark outline and shadow colour.
+pub(crate) fn dark(a: f64) -> Color {
+    Color::srgba(0.0, 0.0, 0.0, a.clamp(0.0, 1.0) as f32)
+}
+
+/// The colour of a vital's tone: calm is the plain text colour (not green), warn and bad the tokens.
+fn tone_colour(theme: &display_core::Theme, t: Tone) -> Rgb {
     match t {
-        Tone::Warn => look.colours.warn,
-        Tone::Bad => look.colours.bad,
-        _ => normal,
+        Tone::Warn => theme.colours.warn,
+        Tone::Bad => theme.colours.bad,
+        _ => theme.colours.fg_1,
     }
 }
 
 /// The HUD's fonts, from the display design system (the same files the screens use).
 #[derive(Resource, Clone)]
 pub struct HudFonts {
+    /// Chakra Petch medium (500), semibold (600) and bold (700), and Share Tech Mono.
     pub display: Handle<Font>,
+    pub semibold: Handle<Font>,
     pub bold: Handle<Font>,
     pub mono: Handle<Font>,
 }
 
+impl HudFonts {
+    pub fn load(theme: &display_core::Theme, assets: &AssetServer) -> HudFonts {
+        HudFonts { display: assets.load(&theme.fonts.display), semibold: assets.load(&theme.fonts.display_semibold), bold: assets.load(&theme.fonts.display_bold), mono: assets.load(&theme.fonts.mono) }
+    }
+}
+
 /// A HUD text: the font, a size, a colour and the dark shadow that keeps it legible on bright ground.
-pub(crate) fn hud_text(font: &Handle<Font>, s: &str, size: f64, colour: Color, look: &HudLook) -> impl Bundle {
+pub(crate) fn hud_text(font: &Handle<Font>, s: &str, size: f64, colour: Color, look: &HudLook) -> impl Bundle + use<> {
     (
         Text::new(s),
         TextFont { font: bevy::text::FontSource::Handle(font.clone()), font_size: FontSize::Px(size as f32), ..default() },
@@ -190,6 +203,69 @@ pub(crate) fn hud_text(font: &Handle<Font>, s: &str, size: f64, colour: Color, l
         TextShadow { offset: Vec2::splat(look.text.shadow_px as f32), color: Color::srgba(0.0, 0.0, 0.0, look.text.shadow_alpha as f32) },
         TextLayout::no_wrap(),
     )
+}
+
+/// A HUD text in capitals with letter spacing (`em` of the size, the design uses .1).
+pub(crate) fn hud_caps(font: &Handle<Font>, s: &str, size: f64, colour: Color, look: &HudLook, em: f64) -> impl Bundle + use<> {
+    (hud_text(font, &s.to_uppercase(), size, colour, look), bevy::text::LetterSpacing::Rem(em as f32))
+}
+
+/// Every root node of the HUD (and the bar): they are despawned and built again when the look
+/// file changes, so every size in `displays.json` follows a hot reload.
+#[derive(Component)]
+pub(crate) struct HudPart;
+
+pub(crate) fn abs() -> Node {
+    Node { position_type: PositionType::Absolute, ..default() }
+}
+
+/// Changes a node only when a field differs (a touched `Node` makes the layout run again).
+pub(crate) fn edit(n: &mut Mut<Node>, f: impl FnOnce(&mut Node)) {
+    let cur = n.bypass_change_detection();
+    let mut next = cur.clone();
+    f(&mut next);
+    if *cur != next {
+        **n = next;
+    }
+}
+
+pub(crate) fn set_text_colour(c: &mut Mut<TextColor>, v: Color) {
+    if c.0 != v {
+        c.0 = v;
+    }
+}
+
+pub(crate) fn set_bg(c: &mut Mut<BackgroundColor>, v: Color) {
+    if c.0 != v {
+        c.0 = v;
+    }
+}
+
+pub(crate) fn set_border(c: &mut Mut<BorderColor>, v: Color) {
+    let want = BorderColor::all(v);
+    if **c != want {
+        **c = want;
+    }
+}
+
+pub(crate) fn set_font(f: &mut Mut<TextFont>, font: &Handle<Font>, size: f64) {
+    let (font, size) = (bevy::text::FontSource::Handle(font.clone()), FontSize::Px(size as f32));
+    if f.font != font || f.font_size != size {
+        f.font = font;
+        f.font_size = size;
+    }
+}
+
+pub(crate) fn set_text(t: &mut Mut<Text>, s: &str) {
+    if t.0 != s {
+        t.0 = s.to_string();
+    }
+}
+
+pub(crate) fn set_display(n: &mut Mut<Node>, d: Display) {
+    if n.display != d {
+        n.display = d;
+    }
 }
 
 /// A dashed frame's container; `Dash` parts carry the same id.
@@ -246,185 +322,313 @@ pub(crate) fn set_dashes<F: bevy::ecs::query::QueryFilter, G: bevy::ecs::query::
     }
 }
 
+/// A triangle pointing down from one pixel row each (the UI has no triangle).
+fn spawn_triangle(p: &mut ChildSpawnerCommands, (left, top): (f32, f32), (w, h): (f32, f32), colour: Color) {
+    let rows = h.round().max(1.0) as i32;
+    for i in 0..rows {
+        let rw = (w * (1.0 - i as f32 / rows as f32)).max(1.0);
+        p.spawn((Node { position_type: PositionType::Absolute, left: px(left + (w - rw) * 0.5), top: px(top + i as f32), width: px(rw), height: px(1), ..default() }, BackgroundColor(colour)));
+    }
+}
+
+/// A horizontal gradient that is `colour` between `fade` and `1 - fade` of the width and clear at
+/// both ends (the compass strip's mask).
+fn fade_across(colour: Color, fade: f64) -> BackgroundGradient {
+    let clear = colour.with_alpha(0.0);
+    let f = (fade * 100.0) as f32;
+    BackgroundGradient::from(LinearGradient::to_right(vec![ColorStop::new(clear, percent(0.0)), ColorStop::new(colour, percent(f)), ColorStop::new(colour, percent(100.0 - f)), ColorStop::new(clear, percent(100.0))]))
+}
+
 // ---------- window: the elements ----------
 
 pub fn window_plugin(app: &mut App) {
     use crate::phases::Frame;
-    app.add_systems(Startup, spawn_hud);
     app.add_systems(
         Update,
-        (update_compass_ui, update_vitals_ui, update_prompt_ui, update_hints_ui, update_reticle, update_credits_ui, update_readout_row).in_set(Frame::Hud),
+        (
+            build_hud,
+            (update_scrims, update_compass_ui, update_vitals_ui, update_prompt_ui, update_hints_ui, update_reticle, update_credits_ui, update_readout_row),
+        )
+            .chain()
+            .in_set(Frame::Hud),
     );
 }
 
-#[derive(Component)]
-struct CompassHeading;
-/// One mark of the strip: the wrapper holding the tick and its label.
-#[derive(Component)]
-struct CompassTick(usize);
-#[derive(Component)]
-struct CompassBar(usize);
-#[derive(Component)]
-struct CompassLabel(usize);
+/// Builds the HUD, and again after every change of the look file (hot reload).
+pub(crate) fn build_hud(mut commands: Commands, look: Res<DisplayLook>, assets: Res<AssetServer>, parts: Query<Entity, With<HudPart>>, mut built: Local<bool>) {
+    if *built && !look.is_changed() {
+        return;
+    }
+    *built = true;
+    for e in &parts {
+        commands.entity(e).despawn();
+    }
+    let fonts = HudFonts::load(&look.0, &assets);
+    commands.insert_resource(fonts.clone());
+    spawn_hud(&mut commands, &look.0, &fonts);
+    crate::items::spawn_bar(&mut commands, &look.0, &fonts);
+}
 
+/// The bottom gradient and the dark ellipse behind the open inventory.
 #[derive(Component)]
-struct VitalRow(VitalKind);
-#[derive(Component)]
-struct VitalFill(VitalKind);
-
-#[derive(Component)]
-struct PromptRoot;
-#[derive(Component)]
-struct PromptKey;
-#[derive(Component)]
-struct PromptKeyText;
-#[derive(Component)]
-struct PromptText;
-#[derive(Component)]
-struct PromptUnderline;
-/// The id of the prompt key's dashed frame (the bar's slots use their own index).
-const PROMPT_DASHES: u32 = 100;
-
-#[derive(Component)]
-struct HintRow(usize);
-#[derive(Component)]
-struct HintKey(usize);
-#[derive(Component)]
-struct HintKeyText(usize);
-#[derive(Component)]
-struct HintLabel(usize);
-
-#[derive(Component)]
-struct ReticleRoot;
-#[derive(Component)]
-struct ReticleRing;
-
-#[derive(Component)]
-struct CreditsRoot;
-#[derive(Component)]
-struct CreditsValue;
-#[derive(Component)]
-struct CreditsDelta;
+enum ScrimPart {
+    Bottom,
+    Tab,
+}
 
 /// Marks used on the strip: label wrapper width (px).
 const TICK_BOX: f32 = 44.0;
 
-fn spawn_hud(mut commands: Commands, look: Res<DisplayLook>, assets: Res<AssetServer>) {
-    let theme = &look.0;
-    let (k, h) = (&theme.colours, &theme.hud);
-    let fonts = HudFonts { display: assets.load(&theme.fonts.display), bold: assets.load(&theme.fonts.display_bold), mono: assets.load(&theme.fonts.mono) };
-    commands.insert_resource(fonts.clone());
-    let m = h.margin as f32;
-    let overlay = || Node { position_type: PositionType::Absolute, ..default() };
+#[derive(Component, Clone, Copy)]
+enum CompassPart {
+    Heading,
+    /// Mark `i` of the strip: the wrapper, its tick, the label's box and the label.
+    Tick(usize),
+    Bar(usize),
+    LabelBox(usize),
+    Label(usize),
+}
 
-    // Compass: the heading number, a small pointer, the strip.
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+enum VitalPart {
+    Row(VitalKind),
+    /// The label line above a bar (hidden while the bar is calm).
+    Head(VitalKind),
+    Glyph(VitalKind),
+    Name(VitalKind),
+    Value(VitalKind),
+    Track(VitalKind),
+    Fill(VitalKind),
+}
+
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+enum PromptPart {
+    Root,
+    Key,
+    KeyText,
+    Verb,
+    Name,
+    Sub,
+    Note,
+}
+/// The id of the prompt key's dashed frame (the bar's slots use their own index).
+const PROMPT_DASHES: u32 = 100;
+
+#[derive(Component, Clone, Copy)]
+enum HintPart {
+    Row(usize),
+    Key(usize),
+    KeyText(usize),
+    Label(usize),
+}
+
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+enum ReticlePart {
+    Root,
+    Dot,
+    Ring,
+    RingInner,
+}
+
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+enum CreditsPart {
+    Root,
+    Value,
+    Unit,
+    Delta,
+}
+
+fn spawn_hud(commands: &mut Commands, theme: &display_core::Theme, fonts: &HudFonts) {
+    let (k, h) = (&theme.colours, &theme.hud);
+    let m = h.margin as f32;
+    let edge = h.edge as f32;
+    let soft = |a: f64| col_a(h.soft, a);
+
+    // The scrims behind the lower HUD, below everything else.
+    commands.spawn((HudPart, ScrimPart::Bottom, GlobalZIndex(-1), Node { left: px(0), right: px(0), bottom: px(0), height: px(h.scrim.height as f32), ..abs() }, BackgroundGradient::default()));
+    commands.spawn((HudPart, ScrimPart::Tab, GlobalZIndex(-1), Node { width: px(h.bar.scrim_w as f32), height: px(h.bar.scrim_h as f32), display: Display::None, ..abs() }, BackgroundGradient::default()));
+
+    // Compass: the heading number, a pointer, the strip with its base line, ticks and labels.
     let c = &h.compass;
-    let strip_h = (c.major_tick_px + c.label_size + 6.0) as f32;
     commands
-        .spawn(Node { top: px(m * 0.75), left: percent(50.0), margin: UiRect::left(px(-(c.width as f32) * 0.5)), width: px(c.width as f32), flex_direction: FlexDirection::Column, align_items: AlignItems::Center, ..overlay() })
+        .spawn((HudPart, Node { top: px(c.top as f32), left: percent(50.0), margin: UiRect::left(px(-(c.width as f32) * 0.5)), width: px(c.width as f32), height: px(c.height as f32), ..abs() }))
         .with_children(|root| {
-            root.spawn((CompassHeading, hud_text(&fonts.mono, "000°", c.heading_size, col(k.fg_title), h)));
-            root.spawn((Node { width: px(7), height: px(7), margin: UiRect::vertical(px(4)), ..default() }, UiTransform { rotation: Rot2::degrees(45.0), ..UiTransform::IDENTITY }, BackgroundColor(col(k.fg_title))));
-            root.spawn(Node { width: px(c.width as f32), height: px(strip_h), ..default() }).with_children(|strip| {
-                let pool = (c.span_deg / c.tick_every_deg).ceil() as usize + 2;
-                for i in 0..pool {
-                    strip
-                        .spawn((CompassTick(i), Node { top: px(0), width: px(TICK_BOX), height: px(strip_h), flex_direction: FlexDirection::Column, align_items: AlignItems::Center, display: Display::None, ..overlay() }))
-                        .with_children(|t| {
-                            t.spawn((CompassBar(i), Node { width: px(1), height: px(c.tick_px as f32), ..default() }, BackgroundColor(col(k.hud))));
-                            t.spawn((CompassLabel(i), hud_text(&fonts.mono, "", c.label_size, col(k.fg_1), h)));
-                        });
-                }
+            root.spawn(Node { left: px(0), top: px(0), width: percent(100.0), justify_content: JustifyContent::Center, ..abs() }).with_children(|b| {
+                b.spawn((CompassPart::Heading, hud_text(&fonts.mono, "000°", c.heading_size, col(k.fg_title), h)));
             });
+            let (pw, ph) = (c.pointer_w as f32, c.pointer_h as f32);
+            let left = (c.width as f32 - pw) * 0.5;
+            spawn_triangle(root, (left - 1.0, c.pointer_y as f32), (pw + 2.0, ph + 1.0), dark(0.7));
+            spawn_triangle(root, (left, c.pointer_y as f32), (pw, ph), col(k.fg_title));
+            let outline = c.line_px as f32 + 2.0;
+            root.spawn((Node { left: px(0), top: px(c.line_y as f32 - 1.0), width: percent(100.0), height: px(outline), ..abs() }, fade_across(dark(0.55), c.fade)));
+            root.spawn((Node { left: px(0), top: px(c.line_y as f32), width: percent(100.0), height: px(c.line_px as f32), ..abs() }, fade_across(soft(c.line_alpha), c.fade)));
+            let pool = (c.span_deg / c.tick_every_deg).ceil() as usize + 2;
+            for i in 0..pool {
+                root.spawn((CompassPart::Tick(i), Node { top: px(0), width: px(TICK_BOX), height: percent(100.0), display: Display::None, ..abs() })).with_children(|t| {
+                    t.spawn((CompassPart::Bar(i), Node { left: px((TICK_BOX - c.tick_w as f32) * 0.5), top: px(c.tick_y as f32), width: px(c.tick_w as f32), height: px(c.tick_px as f32), ..abs() }, BackgroundColor(soft(1.0))));
+                    t.spawn((CompassPart::LabelBox(i), Node { left: px(0), top: px(c.label_top as f32), width: percent(100.0), justify_content: JustifyContent::Center, ..abs() })).with_children(|l| {
+                        l.spawn((CompassPart::Label(i), hud_text(&fonts.mono, "", c.label_size, soft(1.0), h)));
+                    });
+                });
+            }
         });
 
-    // Vitals: the health bar, oxygen and burn only while they apply.
+    // Vitals, bottom left: burn line, oxygen bar, health bar; each only while it applies.
     let v = &h.vitals;
-    commands.spawn(Node { left: px(m), bottom: px(m), flex_direction: FlexDirection::Column, row_gap: px(v.gap as f32), ..overlay() }).with_children(|root| {
-        for (kind, thick, label) in [(VitalKind::Burn, v.thin_h, "BURN"), (VitalKind::Oxygen, v.thin_h, "O2"), (VitalKind::Health, v.bar_h, "")] {
-            let show = kind == VitalKind::Health;
-            root.spawn((VitalRow(kind), Node { align_items: AlignItems::Center, column_gap: px(8), display: if show { Display::Flex } else { Display::None }, ..default() })).with_children(|row| {
-                row.spawn((Node { width: px(v.bar_w as f32), height: px(thick as f32), border: UiRect::all(px(1)), ..default() }, BackgroundColor(col_a(k.bg_0, 0.6)), BorderColor::all(col_a(k.line_2, 0.7)))).with_children(|track| {
-                    track.spawn((VitalFill(kind), Node { width: percent(100.0), height: percent(100.0), ..default() }, BackgroundColor(col(k.hud))));
+    commands.spawn((HudPart, Node { left: px(edge), bottom: px(edge), width: px(v.width as f32), flex_direction: FlexDirection::Column, row_gap: px(v.gap as f32), ..abs() })).with_children(|root| {
+        root.spawn((VitalPart::Row(VitalKind::Burn), Node { display: Display::None, ..default() })).with_children(|row| {
+            row.spawn((VitalPart::Name(VitalKind::Burn), hud_caps(&fonts.semibold, "", v.label_size, col(k.warn), h, 0.1)));
+        });
+        for kind in [VitalKind::Oxygen, VitalKind::Health] {
+            root.spawn((VitalPart::Row(kind), Node { flex_direction: FlexDirection::Column, row_gap: px(v.label_gap as f32), display: Display::None, ..default() })).with_children(|row| {
+                row.spawn((VitalPart::Head(kind), Node { justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Baseline, display: Display::None, ..default() })).with_children(|head| {
+                    head.spawn(Node { column_gap: px(6), align_items: AlignItems::Baseline, ..default() }).with_children(|label| {
+                        label.spawn((VitalPart::Glyph(kind), hud_text(&fonts.semibold, "", v.label_size, col(k.warn), h)));
+                        label.spawn((VitalPart::Name(kind), hud_caps(&fonts.semibold, "", v.label_size, col(k.fg_title), h, 0.1)));
+                    });
+                    head.spawn((VitalPart::Value(kind), hud_text(&fonts.mono, "", v.value_size, col(k.fg_1), h)));
                 });
-                if !label.is_empty() {
-                    row.spawn(hud_text(&fonts.display, label, v.label_size, col(k.fg_2), h));
-                }
+                row.spawn((
+                    VitalPart::Track(kind),
+                    Node { width: percent(100.0), height: px(v.track_h as f32), ..default() },
+                    BackgroundColor(soft(v.track_alpha)),
+                    Outline::new(px(1), px(0), dark(0.6)),
+                    BoxShadow::default(),
+                ))
+                .with_children(|track| {
+                    track.spawn((VitalPart::Fill(kind), Node { width: percent(100.0), height: percent(100.0), ..default() }, BackgroundColor(col(k.fg_1))));
+                });
             });
         }
     });
 
-    // The prompt: a key, the text, an amber line under it when blocked. Placed each frame.
+    // The prompt: the F key, verb over name, an optional note line. Placed each frame.
     let p = &h.prompt;
     let key = p.key_px as f32;
-    commands.spawn((PromptRoot, Node { left: px(0), width: px(600), bottom: px(0), justify_content: JustifyContent::Center, display: Display::None, ..overlay() })).with_children(|root| {
-        root.spawn(Node { flex_direction: FlexDirection::Column, align_items: AlignItems::Stretch, row_gap: px(3), ..default() }).with_children(|col_| {
-            col_.spawn(Node { align_items: AlignItems::Center, column_gap: px(8), ..default() }).with_children(|row| {
+    commands.spawn((HudPart, PromptPart::Root, Node { left: px(0), width: px(600), bottom: px(0), justify_content: JustifyContent::Center, display: Display::None, ..abs() })).with_children(|root| {
+        root.spawn(Node { flex_direction: FlexDirection::Column, align_items: AlignItems::Center, row_gap: px(p.note_gap as f32), ..default() }).with_children(|col_| {
+            col_.spawn(Node { align_items: AlignItems::Center, column_gap: px(p.key_gap as f32), ..default() }).with_children(|row| {
                 row.spawn((
-                    PromptKey,
-                    Node { width: px(key), height: px(key), border: UiRect::all(px(1)), justify_content: JustifyContent::Center, align_items: AlignItems::Center, border_radius: BorderRadius::all(px(4)), ..default() },
-                    BackgroundColor(col_a(k.bg_0, 0.7)),
-                    BorderColor::all(col(k.hud)),
+                    PromptPart::Key,
+                    Node { width: px(key), height: px(key), border: UiRect::all(px(p.key_border as f32)), justify_content: JustifyContent::Center, align_items: AlignItems::Center, ..default() },
+                    BackgroundColor(col_a(k.bg_0, p.key_bg_alpha)),
+                    BorderColor::all(col(k.fg_title)),
                 ))
                 .with_children(|cap| {
-                    cap.spawn((PromptKeyText, hud_text(&fonts.mono, "F", p.text_size - 2.0, col(k.fg_title), h)));
-                    spawn_dashes(cap, PROMPT_DASHES, (key, key), 1.0, 1.5, h, col(k.warn));
+                    cap.spawn((PromptPart::KeyText, hud_text(&fonts.mono, "F", p.key_size, col(k.fg_title), h)));
+                    spawn_dashes(cap, PROMPT_DASHES, (key, key), p.key_border as f32, p.key_border as f32, h, soft(p.blocked_alpha));
                 });
-                row.spawn((PromptText, hud_text(&fonts.display, "", p.text_size, col(k.fg_1), h)));
+                row.spawn(Node { flex_direction: FlexDirection::Column, row_gap: px(p.line_gap as f32), ..default() }).with_children(|text| {
+                    text.spawn((PromptPart::Verb, hud_caps(&fonts.display, "", p.verb_size, soft(p.verb_alpha), h, 0.1)));
+                    text.spawn(Node { align_items: AlignItems::Baseline, column_gap: px(10), ..default() }).with_children(|name| {
+                        name.spawn((PromptPart::Name, hud_caps(&fonts.bold, "", p.name_size, col(k.fg_title), h, 0.1)));
+                        name.spawn((PromptPart::Sub, hud_text(&fonts.mono, "", p.sub_size, soft(0.8), h)));
+                    });
+                });
             });
-            col_.spawn((PromptUnderline, Node { height: px(p.line_px as f32), display: Display::None, ..default() }, BackgroundColor(col(k.warn))));
+            col_.spawn((PromptPart::Note, Node { display: Display::None, ..default() }, hud_caps(&fonts.display, "", p.note_size, col(k.warn), h, 0.1)));
         });
     });
 
-    // Key hints, bottom right: the keys of the held item.
+    // Key hints, bottom right: a column, text then keycap; the keys of the held item.
     let hi = &h.hints;
-    commands.spawn(Node { right: px(m), bottom: px(m), column_gap: px(hi.gap as f32), align_items: AlignItems::Center, ..overlay() }).with_children(|root| {
+    commands.spawn((HudPart, Node { right: px(edge), bottom: px(edge), flex_direction: FlexDirection::Column, align_items: AlignItems::FlexEnd, row_gap: px(hi.gap as f32), ..abs() })).with_children(|root| {
         for i in 0..3 {
-            root.spawn((HintRow(i), Node { align_items: AlignItems::Center, column_gap: px(6), display: Display::None, ..default() })).with_children(|row| {
+            root.spawn((HintPart::Row(i), Node { align_items: AlignItems::Center, column_gap: px(hi.key_gap as f32), display: Display::None, ..default() })).with_children(|row| {
+                row.spawn((HintPart::Label(i), hud_caps(&fonts.display, "", hi.size, col(k.fg_1), h, hi.spacing)));
                 row.spawn((
-                    HintKey(i),
-                    Node { min_width: px(hi.key_px as f32), height: px(hi.key_px as f32), padding: UiRect::horizontal(px(6)), border: UiRect::all(px(1)), justify_content: JustifyContent::Center, align_items: AlignItems::Center, border_radius: BorderRadius::all(px(4)), ..default() },
-                    BackgroundColor(col_a(k.bg_0, 0.7)),
-                    BorderColor::all(col(k.hud)),
+                    HintPart::Key(i),
+                    Node { min_width: px(hi.key_min_w as f32), height: px(hi.key_h as f32), padding: UiRect::horizontal(px(7)), border: UiRect::all(px(hi.key_border as f32)), justify_content: JustifyContent::Center, align_items: AlignItems::Center, ..default() },
+                    BackgroundColor(col_a(k.bg_0, hi.key_bg_alpha)),
+                    BorderColor::all(soft(hi.key_alpha)),
                 ))
                 .with_children(|cap| {
-                    cap.spawn((HintKeyText(i), hud_text(&fonts.mono, "", hi.size - 1.0, col(k.fg_title), h)));
+                    cap.spawn((HintPart::KeyText(i), hud_text(&fonts.mono, "", hi.key_size, col(k.fg_title), h)));
                 });
-                row.spawn((HintLabel(i), hud_text(&fonts.display, "", hi.size, col(k.fg_1), h)));
             });
         }
     });
 
-    // Reticle: a small dot, a ring around it on anything F can use.
+    // Reticle: a dot; on anything F can use a ring instead.
     let r = &h.reticle;
-    commands.spawn((ReticleRoot, Node { left: px(0), top: px(0), width: percent(100.0), height: percent(100.0), justify_content: JustifyContent::Center, align_items: AlignItems::Center, ..overlay() })).with_children(|root| {
+    let (ring, dot) = (r.ring_px as f32, r.dot_px as f32);
+    commands.spawn((HudPart, ReticlePart::Root, Node { left: px(0), top: px(0), width: percent(100.0), height: percent(100.0), justify_content: JustifyContent::Center, align_items: AlignItems::Center, ..abs() })).with_children(|root| {
+        root.spawn((ReticlePart::Dot, Node { width: px(dot), height: px(dot), border_radius: BorderRadius::MAX, ..default() }, BackgroundColor(col(k.fg_title)), Outline::new(px(r.outline_px as f32), px(0), dark(r.outline_alpha))));
         root.spawn((
-            ReticleRing,
-            Node { width: px(r.ring_px as f32), height: px(r.ring_px as f32), border: UiRect::all(px(r.ring_stroke_px as f32)), justify_content: JustifyContent::Center, align_items: AlignItems::Center, border_radius: BorderRadius::MAX, ..default() },
-            BorderColor::all(Color::NONE),
+            ReticlePart::Ring,
+            Node { width: px(ring), height: px(ring), border: UiRect::all(px(r.ring_stroke_px as f32)), border_radius: BorderRadius::MAX, display: Display::None, ..abs() },
+            BorderColor::all(col(k.fg_title)),
+            Outline::new(px(r.outline_px as f32), px(0), dark(r.outline_alpha)),
         ))
         .with_children(|ring| {
-            ring.spawn((Node { width: px(r.dot_px as f32), height: px(r.dot_px as f32), border: UiRect::all(px(1)), border_radius: BorderRadius::MAX, ..default() }, BackgroundColor(col_a(k.fg_title, 0.9)), BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.5))));
+            // The dark line inside the ring.
+            ring.spawn((ReticlePart::RingInner, Node { width: percent(100.0), height: percent(100.0), border: UiRect::all(px(r.outline_px as f32)), border_radius: BorderRadius::MAX, ..default() }, BorderColor::all(dark(r.outline_alpha))));
         });
     });
 
-    // Credits, top right, only for a moment after a change.
+    // Credits, top right, only for a moment after a change: value and unit, the change below.
     let cr = &h.credits;
-    commands.spawn((CreditsRoot, Node { right: px(m), top: px(m), flex_direction: FlexDirection::Column, align_items: AlignItems::FlexEnd, display: Display::None, ..overlay() })).with_children(|root| {
-        root.spawn((CreditsValue, hud_text(&fonts.mono, "", cr.size, col(k.fg_1), h)));
-        root.spawn((CreditsDelta, hud_text(&fonts.mono, "", cr.delta_size, col(k.good), h)));
+    commands.spawn((HudPart, CreditsPart::Root, Node { right: px(m), top: px(m), flex_direction: FlexDirection::Column, align_items: AlignItems::FlexEnd, display: Display::None, ..abs() })).with_children(|root| {
+        root.spawn(Node { align_items: AlignItems::Baseline, column_gap: px(6), ..default() }).with_children(|row| {
+            row.spawn((CreditsPart::Value, hud_text(&fonts.mono, "", cr.size, col(k.fg_title), h)));
+            row.spawn((CreditsPart::Unit, hud_caps(&fonts.display, "cr", cr.unit_size, col_a(k.fg_title, cr.unit_alpha), h, 0.1)));
+        });
+        root.spawn((CreditsPart::Delta, hud_text(&fonts.mono, "", cr.delta_size, col(k.good), h)));
     });
 }
 
-fn set_text(t: &mut Text, s: &str) {
-    if t.0 != s {
-        t.0 = s.to_string();
+#[allow(clippy::type_complexity)]
+fn update_scrims(
+    ui: Res<InventoryUi>,
+    look: Res<DisplayLook>,
+    window: Res<HudWindow>,
+    mut nodes: Query<(&ScrimPart, &mut Node)>,
+    mut gradients: Query<(&ScrimPart, &mut BackgroundGradient)>,
+    mut seen: Local<Option<(bool, Vec2)>>,
+) {
+    let h = &look.0.hud;
+    let state = (ui.open, window.0);
+    let redraw = *seen != Some(state);
+    *seen = Some(state);
+    let (s, b) = (&h.scrim, &h.bar);
+    let ink = col(s.colour);
+    for (part, mut n) in &mut nodes {
+        match part {
+            ScrimPart::Bottom => edit(&mut n, |n| n.height = px(if ui.open { s.open_height } else { s.height } as f32)),
+            ScrimPart::Tab => {
+                // Centred on the open bar and the row below it.
+                let (first, size) = crate::items::slot_rect(0, true, window.0, &h.bar);
+                let (top, bottom) = (first.y, window.0.y - h.bar.open_bottom as f32);
+                let (cx, cy) = (window.0.x * 0.5, (top + bottom) * 0.5);
+                let _ = size;
+                edit(&mut n, |n| {
+                    n.display = if ui.open { Display::Flex } else { Display::None };
+                    n.left = px(cx - b.scrim_w as f32 * 0.5);
+                    n.top = px(cy - b.scrim_h as f32 * 0.5);
+                });
+            }
+        }
     }
-}
-
-fn set_display(n: &mut Node, d: Display) {
-    if n.display != d {
-        n.display = d;
+    if !redraw && !look.is_changed() {
+        return;
+    }
+    for (part, mut g) in &mut gradients {
+        *g = match part {
+            ScrimPart::Bottom => {
+                let a = if ui.open { s.open_alpha } else { s.alpha };
+                BackgroundGradient::from(LinearGradient::to_top(vec![ColorStop::new(ink.with_alpha(a as f32), percent(0.0)), ColorStop::new(ink.with_alpha(0.0), percent(100.0))]))
+            }
+            ScrimPart::Tab => BackgroundGradient::from(RadialGradient::new(
+                UiPosition::CENTER,
+                RadialGradientShape::FarthestCorner,
+                vec![
+                    ColorStop::new(ink.with_alpha(b.scrim_alpha as f32), percent(0.0)),
+                    ColorStop::new(ink.with_alpha(b.scrim_mid_alpha as f32), percent((b.scrim_mid_at * 100.0) as f32)),
+                    ColorStop::new(ink.with_alpha(0.0), percent((b.scrim_end_at * 100.0) as f32)),
+                ],
+            )),
+        };
     }
 }
 
@@ -433,70 +637,133 @@ fn update_compass_ui(
     hud: Res<CrewHud>,
     look: Res<DisplayLook>,
     fonts: Option<Res<HudFonts>>,
-    mut heading: Query<(&mut Text, &mut TextColor), (With<CompassHeading>, Without<CompassLabel>)>,
-    mut ticks: Query<(&CompassTick, &mut Node), (Without<CompassBar>, Without<CompassLabel>)>,
-    mut bars: Query<(&CompassBar, &mut Node, &mut BackgroundColor), Without<CompassTick>>,
-    mut labels: Query<(&CompassLabel, &mut Text, &mut TextColor, &mut TextFont), Without<CompassHeading>>,
+    mut nodes: Query<(&CompassPart, &mut Node)>,
+    mut fills: Query<(&CompassPart, &mut BackgroundColor)>,
+    mut texts: Query<(&CompassPart, &mut Text, &mut TextColor, &mut TextFont)>,
 ) {
     let Some(fonts) = fonts else { return };
     let (theme, c) = (&look.0, &look.0.hud.compass);
-    if let Ok((mut t, mut tc)) = heading.single_mut() {
-        set_text(&mut t, &heading_text(hud.heading));
-        tc.0 = col(theme.colours.fg_title);
-    }
+    let soft = |a: f64| col_a(theme.hud.soft, a);
     let marks = compass_ticks(hud.heading, hud.reference, c);
-    for (t, mut n) in &mut ticks {
-        match marks.get(t.0) {
-            Some(m) => {
-                set_display(&mut n, Display::Flex);
-                n.left = px((c.width * (0.5 + m.x)) as f32 - TICK_BOX * 0.5);
+    for (part, mut n) in &mut nodes {
+        match *part {
+            CompassPart::Tick(i) => match marks.get(i) {
+                Some(m) => edit(&mut n, |n| {
+                    n.display = Display::Flex;
+                    n.left = px((c.width * (0.5 + m.x)) as f32 - TICK_BOX * 0.5);
+                }),
+                None => set_display(&mut n, Display::None),
+            },
+            CompassPart::Bar(i) => {
+                let Some(m) = marks.get(i) else { continue };
+                let len = match m.len {
+                    TickLen::Major => c.tick_major_px,
+                    TickLen::Mid => c.tick_mid_px,
+                    TickLen::Minor => c.tick_px,
+                };
+                edit(&mut n, |n| n.height = px(len as f32));
             }
-            None => set_display(&mut n, Display::None),
+            CompassPart::LabelBox(i) => {
+                let Some(m) = marks.get(i) else { continue };
+                edit(&mut n, |n| n.top = px(if m.bold { c.cardinal_top } else { c.label_top } as f32));
+            }
+            _ => {}
         }
     }
-    for (b, mut n, mut bg) in &mut bars {
-        let Some(m) = marks.get(b.0) else { continue };
-        n.height = px(if m.label.is_some() { c.major_tick_px } else { c.tick_px } as f32);
-        n.width = px(if m.bold { 2.0 } else { 1.0 });
-        bg.0 = col_a(if m.bold { theme.colours.fg_title } else { theme.colours.hud }, m.alpha);
+    for (part, mut bg) in &mut fills {
+        if let CompassPart::Bar(i) = *part
+            && let Some(m) = marks.get(i)
+        {
+            let want = if m.bold { col_a(theme.colours.fg_title, m.alpha) } else { soft(c.tick_alpha * m.alpha) };
+            set_bg(&mut bg, want);
+        }
     }
-    for (l, mut t, mut tc, mut f) in &mut labels {
-        let Some(m) = marks.get(l.0) else { continue };
-        set_text(&mut t, m.label.as_deref().unwrap_or(""));
-        tc.0 = col_a(if m.bold { theme.colours.fg_title } else { theme.colours.fg_1 }, m.alpha);
-        let font = bevy::text::FontSource::Handle(if m.bold { fonts.bold.clone() } else { fonts.mono.clone() });
-        if f.font != font {
-            f.font = font;
+    for (part, mut t, mut tc, mut f) in &mut texts {
+        match *part {
+            CompassPart::Heading => set_text(&mut t, &heading_text(hud.heading)),
+            CompassPart::Label(i) => {
+                let Some(m) = marks.get(i) else { continue };
+                set_text(&mut t, m.label.as_deref().unwrap_or(""));
+                let (colour, font, size) = if m.bold {
+                    (col_a(theme.colours.fg_title, m.alpha), &fonts.bold, c.cardinal_size)
+                } else {
+                    (soft(c.label_alpha * m.alpha), &fonts.mono, c.label_size)
+                };
+                set_text_colour(&mut tc, colour);
+                set_font(&mut f, font, size);
+            }
+            _ => {}
         }
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn update_vitals_ui(
     hud: Res<CrewHud>,
     look: Res<DisplayLook>,
-    mut rows: Query<(&VitalRow, &mut Node), Without<VitalFill>>,
-    mut fills: Query<(&VitalFill, &mut Node, &mut BackgroundColor), Without<VitalRow>>,
+    mut nodes: Query<(&VitalPart, &mut Node)>,
+    mut fills: Query<(&VitalPart, &mut BackgroundColor)>,
+    mut glows: Query<(&VitalPart, &mut BoxShadow)>,
+    mut texts: Query<(&VitalPart, &mut Text, &mut TextColor)>,
 ) {
-    let theme = &look.0;
-    for (r, mut n) in &mut rows {
-        set_display(&mut n, if hud.vitals.iter().any(|l| l.kind == r.0) { Display::Flex } else { Display::None });
-    }
-    for (f, mut n, mut bg) in &mut fills {
-        let Some(l) = hud.vitals.iter().find(|l| l.kind == f.0) else { continue };
-        let w = percent(l.frac as f32 * 100.0);
-        if n.width != w {
-            n.width = w;
+    let (theme, v) = (&look.0, &look.0.hud.vitals);
+    let line = |k: VitalKind| hud.vitals.iter().find(|l| l.kind == k);
+    for (part, mut n) in &mut nodes {
+        match *part {
+            VitalPart::Row(k) => set_display(&mut n, if line(k).is_some() { Display::Flex } else { Display::None }),
+            VitalPart::Head(k) => set_display(&mut n, if line(k).is_some_and(|l| !l.calm()) { Display::Flex } else { Display::None }),
+            VitalPart::Fill(k) => {
+                if let Some(l) = line(k) {
+                    edit(&mut n, |n| n.width = percent(l.frac as f32 * 100.0));
+                }
+            }
+            _ => {}
         }
-        let normal = if l.kind == VitalKind::Oxygen { theme.colours.accent } else { theme.colours.hud };
-        bg.0 = col(vital_colour(theme, normal, l.tone));
     }
-}
-
-/// Splits "[F] pick up Wrench" into the key and the rest.
-fn split_prompt(p: &str) -> (&str, &str) {
-    match p.strip_prefix('[').and_then(|r| r.split_once("] ")) {
-        Some((k, rest)) => (k, rest),
-        None => ("", p),
+    for (part, mut bg) in &mut fills {
+        if let VitalPart::Fill(k) = *part
+            && let Some(l) = line(k)
+        {
+            set_bg(&mut bg, col(tone_colour(theme, l.tone)));
+        }
+    }
+    for (part, mut shadow) in &mut glows {
+        let VitalPart::Track(k) = *part else { continue };
+        let want = match line(k) {
+            Some(l) if l.tone == Tone::Bad => vec![ShadowStyle { color: col_a(theme.colours.bad, v.glow_alpha), x_offset: px(0), y_offset: px(0), spread_radius: px(0), blur_radius: px(v.glow_px as f32) }],
+            _ => Vec::new(),
+        };
+        if shadow.0 != want {
+            shadow.0 = want;
+        }
+    }
+    for (part, mut t, mut tc) in &mut texts {
+        match *part {
+            VitalPart::Name(VitalKind::Burn) => {
+                if let Some(l) = line(VitalKind::Burn) {
+                    set_text(&mut t, &l.burn_text());
+                    set_text_colour(&mut tc, col(tone_colour(theme, l.tone)));
+                }
+            }
+            VitalPart::Glyph(k) => {
+                if let Some(l) = line(k) {
+                    set_text(&mut t, l.glyph());
+                    set_text_colour(&mut tc, col(tone_colour(theme, l.tone)));
+                }
+            }
+            VitalPart::Name(k) => {
+                if line(k).is_some() {
+                    set_text(&mut t, if k == VitalKind::Oxygen { "OXYGEN" } else { "HEALTH" });
+                }
+            }
+            VitalPart::Value(k) => {
+                if let Some(l) = line(k) {
+                    set_text(&mut t, &l.value());
+                    set_text_colour(&mut tc, col(tone_colour(theme, l.tone)));
+                }
+            }
+            _ => {}
+        }
     }
 }
 
@@ -508,64 +775,85 @@ fn update_prompt_ui(
     (active, ui): (Res<crate::displays::ActiveDisplay>, Res<InventoryUi>),
     origin: Res<RenderOrigin>,
     cam: Query<(&Camera, &WorldPose), With<MainCamera>>,
-    mut root: Query<&mut Node, (With<PromptRoot>, Without<PromptUnderline>, Without<DashFrame>)>,
-    mut key: Query<(&mut BorderColor, &mut BackgroundColor), (With<PromptKey>, Without<PromptText>)>,
-    mut key_text: Query<(&mut Text, &mut TextColor), (With<PromptKeyText>, Without<PromptText>)>,
-    mut text: Query<(&mut Text, &mut TextColor), (With<PromptText>, Without<PromptKeyText>)>,
-    mut line: Query<&mut Node, (With<PromptUnderline>, Without<PromptRoot>, Without<DashFrame>)>,
-    mut frames: Query<(&DashFrame, &mut Node), (Without<PromptRoot>, Without<PromptUnderline>)>,
-    mut dashes: Query<(&Dash, &mut BackgroundColor), (Without<PromptKey>, Without<PromptText>)>,
+    mut nodes: Query<(&PromptPart, &mut Node)>,
+    mut borders: Query<(&PromptPart, &mut BorderColor)>,
+    mut texts: Query<(&PromptPart, &mut Text, &mut TextColor)>,
+    mut frames: Query<(&DashFrame, &mut Node), Without<PromptPart>>,
+    mut dashes: Query<(&Dash, &mut BackgroundColor), Without<PromptPart>>,
 ) {
     let (theme, h) = (&look.0, &look.0.hud);
-    let k = &theme.colours;
-    let (Ok(mut root), Ok(mut line)) = (root.single_mut(), line.single_mut()) else { return };
-    // The open inventory has the cursor: no prompt then.
-    if inter.prompt.is_empty() || ui.open {
-        set_display(&mut root, Display::None);
-        return;
-    }
-    set_display(&mut root, Display::Flex);
-    let (key_s, rest) = split_prompt(&inter.prompt);
-    let blocked = inter.kind == PromptKind::Blocked;
-    let (edge, ink) = match inter.kind {
-        PromptKind::Use => (k.hud, k.fg_1),
-        PromptKind::Collect => (k.good, k.fg_1),
-        PromptKind::Leave => (k.fg_2, k.fg_2),
-        PromptKind::Blocked => (k.warn, k.warn),
-    };
-    if let Ok((mut b, mut bg)) = key.single_mut() {
-        // A blocked key has no solid outline: it is drawn dashed.
-        let want = BorderColor::all(if blocked { Color::NONE } else { col(edge) });
-        if *b != want {
-            *b = want;
-        }
-        bg.0 = col_a(k.bg_0, 0.7);
-    }
-    if let Ok((mut t, mut c)) = key_text.single_mut() {
-        set_text(&mut t, key_s);
-        c.0 = col(if blocked { k.warn } else { k.fg_title });
-    }
-    if let Ok((mut t, mut c)) = text.single_mut() {
-        set_text(&mut t, rest);
-        c.0 = col(ink);
-    }
-    set_display(&mut line, if blocked { Display::Flex } else { Display::None });
-    set_dashes(PROMPT_DASHES, blocked, col(k.warn), &mut frames, &mut dashes);
-    // 16 px above the target; a target without a place on screen (or none) uses the spot below the
-    // reticle, and at a screen in use the prompt drops to the bottom out of its way.
-    let screen = inter.at.and_then(|p| {
+    let (k, p) = (&theme.colours, &h.prompt);
+    let soft = |a: f64| col_a(h.soft, a);
+    let show = !inter.prompt.is_empty() && !ui.open;
+    // The prompt's own hand over the open inventory: none then (the cursor is free).
+    let screen = inter.at.and_then(|at| {
         let (camera, wp) = cam.single().ok()?;
         let gt = GlobalTransform::from(Transform::from_translation((wp.pos - origin.origin).as_vec3()).with_rotation(wp.rot.as_quat()));
-        let v = camera.world_to_viewport(&gt, (p - origin.origin).as_vec3()).ok()?;
+        let v = camera.world_to_viewport(&gt, (at - origin.origin).as_vec3()).ok()?;
         Some(DVec2::new(v.x as f64, v.y as f64))
     });
     let w = DVec2::new(window.0.x as f64, window.0.y as f64);
     let mut anchor = prompt_anchor(screen, w, h);
+    // At a screen in use the prompt drops to the bottom out of its way.
     if active.using().is_some() {
         anchor.y = w.y * 0.9;
     }
-    root.left = px(anchor.x as f32 - 300.0);
-    root.bottom = px((w.y - anchor.y) as f32);
+    let (v, blocked) = (&inter.view, inter.kind == PromptKind::Blocked);
+    let name_a = if blocked { p.blocked_alpha + 0.15 } else { 1.0 };
+    for (part, mut n) in &mut nodes {
+        match *part {
+            PromptPart::Root => edit(&mut n, |n| {
+                n.display = if show { Display::Flex } else { Display::None };
+                n.left = px(anchor.x as f32 - 300.0);
+                n.bottom = px((w.y - anchor.y) as f32);
+            }),
+            PromptPart::Note => set_display(&mut n, if v.note.is_empty() { Display::None } else { Display::Flex }),
+            _ => {}
+        }
+    }
+    if !show {
+        return;
+    }
+    for (part, mut b) in &mut borders {
+        if *part == PromptPart::Key {
+            // A blocked key has no solid outline: it is drawn dashed.
+            set_border(&mut b, if blocked { Color::NONE } else { col(k.fg_title) });
+        }
+    }
+    let tone_ink = |t: Tone, a: f64| match t {
+        Tone::Warn => col_a(k.warn, a),
+        Tone::Bad => col_a(k.bad, a),
+        _ => soft(0.8 * a),
+    };
+    for (part, mut t, mut tc) in &mut texts {
+        match *part {
+            PromptPart::KeyText => {
+                set_text(&mut t, inter.prompt.strip_prefix('[').and_then(|r| r.split_once(']')).map_or("F", |(key, _)| key));
+                set_text_colour(&mut tc, col_a(k.fg_title, name_a));
+            }
+            PromptPart::Verb => {
+                set_text(&mut t, &v.verb.to_uppercase());
+                set_text_colour(&mut tc, soft(p.verb_alpha));
+            }
+            PromptPart::Name => {
+                set_text(&mut t, &v.name.to_uppercase());
+                set_text_colour(&mut tc, col_a(k.fg_title, name_a));
+            }
+            PromptPart::Sub => {
+                set_text(&mut t, &v.sub);
+                set_text_colour(&mut tc, tone_ink(v.sub_tone, 1.0));
+            }
+            PromptPart::Note => {
+                set_text(&mut t, &v.note.to_uppercase());
+                set_text_colour(&mut tc, match v.note_tone {
+                    Tone::Warn | Tone::Bad => tone_ink(v.note_tone, 1.0),
+                    _ => soft(p.verb_alpha),
+                });
+            }
+            _ => {}
+        }
+    }
+    set_dashes(PROMPT_DASHES, blocked, soft(p.blocked_alpha), &mut frames, &mut dashes);
 }
 
 #[allow(clippy::type_complexity)]
@@ -573,40 +861,50 @@ fn update_hints_ui(
     hud: Res<CrewHud>,
     look: Res<DisplayLook>,
     bindings: Res<Bindings>,
-    mut rows: Query<(&HintRow, &mut Node), (Without<HintKey>, Without<HintLabel>)>,
-    mut keys: Query<(&HintKey, &mut BorderColor)>,
-    mut key_texts: Query<(&HintKeyText, &mut Text, &mut TextColor), Without<HintLabel>>,
-    mut labels: Query<(&HintLabel, &mut Text, &mut TextColor), Without<HintKeyText>>,
+    ui: Res<InventoryUi>,
+    mut nodes: Query<(&HintPart, &mut Node)>,
+    mut keys: Query<(&HintPart, &mut BorderColor)>,
+    mut texts: Query<(&HintPart, &mut Text, &mut TextColor)>,
 ) {
-    let k = &look.0.colours;
-    let hint = |i: usize| hud.hints.get(i);
-    for (r, mut n) in &mut rows {
-        set_display(&mut n, if hint(r.0).is_some() { Display::Flex } else { Display::None });
-    }
-    let key_of = |a: HintAction| match a {
-        HintAction::Use => "LMB".to_string(),
-        HintAction::Drop => key_label(&bindings, Tap::Drop),
-        HintAction::Throw => key_label(&bindings, Tap::Throw),
-    };
-    for (i, mut b) in &mut keys {
-        if let Some(h) = hint(i.0) {
-            *b = BorderColor::all(col_a(k.hud, if h.dim { 0.4 } else { 1.0 }));
+    let (k, hi) = (&look.0.colours, &look.0.hud.hints);
+    let soft = |a: f64| col_a(look.0.hud.soft, a);
+    // Open, the inventory shows its own keys under the slots.
+    let hint = |i: usize| hud.hints.get(i).filter(|_| !ui.open);
+    for (part, mut n) in &mut nodes {
+        if let HintPart::Row(i) = *part {
+            set_display(&mut n, if hint(i).is_some() { Display::Flex } else { Display::None });
         }
     }
-    for (i, mut t, mut c) in &mut key_texts {
-        if let Some(h) = hint(i.0) {
-            set_text(&mut t, &key_of(h.action));
-            c.0 = col_a(k.fg_title, if h.dim { 0.5 } else { 1.0 });
+    for (part, mut b) in &mut keys {
+        if let HintPart::Key(i) = *part
+            && let Some(h) = hint(i)
+        {
+            set_border(&mut b, soft(hi.key_alpha * if h.dim { 0.5 } else { 1.0 }));
         }
     }
-    for (i, mut t, mut c) in &mut labels {
-        if let Some(h) = hint(i.0) {
-            set_text(&mut t, match h.action {
-                HintAction::Use => "use",
-                HintAction::Drop => "drop",
-                HintAction::Throw => "throw",
-            });
-            c.0 = col_a(k.fg_1, if h.dim { 0.5 } else { 1.0 });
+    for (part, mut t, mut c) in &mut texts {
+        match *part {
+            HintPart::KeyText(i) => {
+                if let Some(h) = hint(i) {
+                    set_text(&mut t, &match h.action {
+                        HintAction::Use => "LMB".to_string(),
+                        HintAction::Drop => key_cap(&bindings, Tap::Drop),
+                        HintAction::Throw => key_cap(&bindings, Tap::Throw),
+                    });
+                    set_text_colour(&mut c, col_a(k.fg_title, if h.dim { 0.5 } else { 1.0 }));
+                }
+            }
+            HintPart::Label(i) => {
+                if let Some(h) = hint(i) {
+                    set_text(&mut t, match h.action {
+                        HintAction::Use => "USE",
+                        HintAction::Drop => "DROP",
+                        HintAction::Throw => "THROW",
+                    });
+                    set_text_colour(&mut c, col_a(k.fg_1, if h.dim { 0.5 } else { 1.0 }));
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -615,20 +913,17 @@ fn update_hints_ui(
 fn update_reticle(
     inter: Res<Interaction>,
     controls: Res<Controls>,
-    look: Res<DisplayLook>,
     players: Query<&Player>,
-    mut root: Query<&mut Node, With<ReticleRoot>>,
-    mut ring: Query<&mut BorderColor, With<ReticleRing>>,
+    mut nodes: Query<(&ReticlePart, &mut Node)>,
 ) {
     let seated = players.single().is_ok_and(|p| p.seated);
-    if let Ok(mut n) = root.single_mut() {
-        set_display(&mut n, if seated || controls.free_cursor { Display::None } else { Display::Flex });
-    }
-    if let Ok(mut b) = ring.single_mut() {
-        let usable = inter.target.is_some() && inter.kind != PromptKind::Blocked;
-        let want = BorderColor::all(if usable { col_a(look.0.colours.fg_1, 0.85) } else { Color::NONE });
-        if *b != want {
-            *b = want;
+    let usable = inter.target.is_some() && inter.kind != PromptKind::Blocked;
+    for (part, mut n) in &mut nodes {
+        match *part {
+            ReticlePart::Root => set_display(&mut n, if seated || controls.free_cursor { Display::None } else { Display::Flex }),
+            ReticlePart::Dot => set_display(&mut n, if usable { Display::None } else { Display::Flex }),
+            ReticlePart::Ring => set_display(&mut n, if usable { Display::Flex } else { Display::None }),
+            ReticlePart::RingInner => {}
         }
     }
 }
@@ -637,27 +932,36 @@ fn update_reticle(
 fn update_credits_ui(
     hud: Res<CrewHud>,
     look: Res<DisplayLook>,
-    mut root: Query<&mut Node, With<CreditsRoot>>,
-    mut value: Query<(&mut Text, &mut TextColor, &mut TextShadow), (With<CreditsValue>, Without<CreditsDelta>)>,
-    mut delta: Query<(&mut Text, &mut TextColor, &mut TextShadow), (With<CreditsDelta>, Without<CreditsValue>)>,
+    mut nodes: Query<(&CreditsPart, &mut Node)>,
+    mut texts: Query<(&CreditsPart, &mut Text, &mut TextColor, &mut TextShadow)>,
 ) {
     let (theme, k) = (&look.0, &look.0.colours);
-    let Ok(mut n) = root.single_mut() else { return };
     let Some(c) = &hud.credits else {
-        set_display(&mut n, Display::None);
+        for (part, mut n) in &mut nodes {
+            if *part == CreditsPart::Root {
+                set_display(&mut n, Display::None);
+            }
+        }
         return;
     };
-    set_display(&mut n, Display::Flex);
-    let shadow = Color::srgba(0.0, 0.0, 0.0, (theme.hud.text.shadow_alpha * c.alpha) as f32);
-    if let Ok((mut t, mut tc, mut sh)) = value.single_mut() {
-        set_text(&mut t, &credits_text(c.value));
-        tc.0 = col_a(k.fg_1, c.alpha);
-        sh.color = shadow;
+    for (part, mut n) in &mut nodes {
+        if *part == CreditsPart::Root {
+            set_display(&mut n, Display::Flex);
+        }
     }
-    if let Ok((mut t, mut tc, mut sh)) = delta.single_mut() {
-        set_text(&mut t, &delta_text(c.delta));
-        tc.0 = col_a(if c.delta < 0 { k.bad } else { k.good }, c.alpha);
-        sh.color = shadow;
+    let shadow = dark(theme.hud.text.shadow_alpha * c.alpha);
+    for (part, mut t, mut tc, mut sh) in &mut texts {
+        let (want, colour) = match *part {
+            CreditsPart::Value => (credits_number(c.value), col_a(k.fg_title, c.alpha)),
+            CreditsPart::Unit => ("CR".to_string(), col_a(k.fg_title, theme.hud.credits.unit_alpha * c.alpha)),
+            CreditsPart::Delta => (delta_text(c.delta), col_a(if c.delta < 0 { k.bad } else { k.good }, c.alpha)),
+            CreditsPart::Root => continue,
+        };
+        set_text(&mut t, &want);
+        set_text_colour(&mut tc, colour);
+        if sh.color != shadow {
+            sh.color = shadow;
+        }
     }
 }
 

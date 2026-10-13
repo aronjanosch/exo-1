@@ -47,10 +47,9 @@ pub fn plugin(app: &mut App) {
 /// Window only: item looks, the held item, the action bar.
 pub fn window_plugin(app: &mut App) {
     use crate::phases::Frame;
-    app.add_systems(Startup, spawn_bar);
     app.add_systems(Update, (dress_items, hide_items).chain().in_set(Frame::Sync));
     app.add_systems(Update, held_item.in_set(Frame::World));
-    app.add_systems(Update, (window_size, draw_bar).chain().in_set(Frame::Hud));
+    app.add_systems(Update, (window_size, draw_bar).chain().after(crate::crew_hud::build_hud).in_set(Frame::Hud));
 }
 
 /// Every item file under `content/items/`.
@@ -402,56 +401,112 @@ fn window_size(windows: Query<&Window, With<bevy::window::PrimaryWindow>>, mut s
 // ---------- the action bar on screen (Crew HUD v3) ----------
 //
 // Eight 56 px slots at the bottom centre. The held slot lifts and has a white outline; a slot
-// shows the item's colour, its stack count and "2H" for two hands; only the held item's name is
-// written, under the bar at the left. After a few idle seconds everything but the held slot drops
-// to half contrast; while the hands carry cargo the slots are dashed and dimmed. Tab: the slots
-// grow, the hovered or held name stands at the left above them, the keys at the right.
+// shows the item's three-letter code, its stack count ("×4") and "2H" for two hands; only the held
+// item's name is written, under the bar at the left. After a few idle seconds everything but the
+// held slot dims; while the hands carry cargo the slots are dashed and dimmed. Tab: the slots grow
+// to 88 px with a dark ellipse behind them, a hovered slot lights up, a drag carries a tilted
+// ghost and outlines the slot it would drop on; below the slots stand the name (left) and the
+// keys (right).
 
-#[derive(Component)]
-struct BarSlot(usize);
-#[derive(Component)]
-struct BarKey(usize);
-#[derive(Component)]
-struct BarSwatch(usize);
-#[derive(Component)]
-struct BarCount(usize);
-#[derive(Component)]
-struct BarHands(usize);
-/// The held item's name: under the bar, or above the open bar at the left.
-#[derive(Component)]
-struct BarName;
-/// The keys of the open inventory, right-aligned above the slots.
-#[derive(Component)]
-struct BarKeys;
-#[derive(Component)]
-struct BarKeysText;
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+enum BarPart {
+    Slot(usize),
+    Key(usize),
+    CodeBox(usize),
+    Code(usize),
+    Count(usize),
+    Hands(usize),
+    /// A dashed frame that follows a slot: the dragged slot's and the drop target's.
+    Float(u32),
+    Ghost,
+    GhostCode,
+    GhostCount,
+    /// The row under the slots: the held name at the left, the keys of the open bar at the right.
+    Row,
+    Name,
+    Keys,
+    HintBox(usize),
+    HintCap(usize),
+    HintKey(usize),
+    HintText(usize),
+}
 
-fn spawn_bar(mut commands: Commands, look: Res<crate::displays::DisplayLook>, assets: Res<AssetServer>) {
-    use crate::crew_hud::{col, col_a, hud_text, spawn_dashes};
-    let theme = &look.0;
+/// The dashed frame ids of the dragged slot and the slot a drop would land on (the slots 0 to 7
+/// use their own index, the prompt 100).
+const ORIGIN_DASHES: u32 = 101;
+const DROP_DASHES: u32 = 102;
+const TAB_HINTS: usize = 5;
+
+pub(crate) fn spawn_bar(commands: &mut Commands, theme: &display_core::Theme, fonts: &crate::crew_hud::HudFonts) {
+    use crate::crew_hud::{abs, col, col_a, hud_caps, hud_text, spawn_dashes, HudPart};
     let (k, h, b) = (&theme.colours, &theme.hud, &theme.hud.bar);
-    let (display, mono) = (assets.load(&theme.fonts.display), assets.load(&theme.fonts.mono));
-    let abs = || Node { position_type: PositionType::Absolute, ..default() };
+    let soft = |a: f64| col_a(h.soft, a);
+    let (cl, op) = (&b.closed, &b.open);
     for i in 0..item_core::BAR_SLOTS {
         commands
             .spawn((
-                BarSlot(i),
-                Node { border: UiRect::all(Val::Px(b.outline_px as f32)), justify_content: JustifyContent::Center, align_items: AlignItems::Center, ..abs() },
-                BorderColor::all(col_a(k.hud_dim, 0.6)),
-                BackgroundColor(col_a(k.bg_0, 0.6)),
+                HudPart,
+                BarPart::Slot(i),
+                Node { border: UiRect::all(Val::Px(cl.border as f32)), ..abs() },
+                BorderColor::all(soft(b.filled_border)),
+                BackgroundColor(col_a(k.bg_0, b.filled_bg)),
+                BoxShadow::default(),
             ))
             .with_children(|p| {
-                p.spawn((BarKey(i), Node { left: Val::Px(4.0), top: Val::Px(2.0), ..abs() }, hud_text(&mono, &format!("{}", i + 1), b.count_size - 1.0, col(k.fg_3), h)));
-                p.spawn((BarHands(i), Node { right: Val::Px(4.0), top: Val::Px(2.0), ..abs() }, hud_text(&mono, "", b.count_size - 2.0, col(k.accent), h)));
-                p.spawn((BarCount(i), Node { right: Val::Px(4.0), bottom: Val::Px(2.0), ..abs() }, hud_text(&mono, "", b.count_size, col(k.fg_1), h)));
-                p.spawn((BarSwatch(i), Node { width: Val::Px(b.swatch as f32), height: Val::Px(b.swatch as f32), border: UiRect::all(Val::Px(1.0)), border_radius: BorderRadius::all(Val::Px(3.0)), display: Display::None, ..default() }, BackgroundColor(Color::WHITE), BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.5))));
-                spawn_dashes(p, i as u32, (b.slot as f32, b.slot as f32), b.outline_px as f32, b.outline_px as f32, h, col(k.hud_dim));
+                p.spawn((BarPart::Key(i), Node { left: Val::Px(cl.num_x as f32), top: Val::Px(cl.num_y as f32), ..abs() }, hud_text(&fonts.mono, &format!("{}", i + 1), cl.num_size, soft(cl.num_alpha), h)));
+                p.spawn((BarPart::CodeBox(i), Node { left: Val::Px(0.0), top: Val::Px(cl.code_top as f32), width: percent(100.0), justify_content: JustifyContent::Center, ..abs() })).with_children(|c| {
+                    c.spawn((BarPart::Code(i), hud_caps(&fonts.bold, "", cl.code_size, col(k.fg_title), h, 0.04)));
+                });
+                p.spawn((BarPart::Hands(i), Node { left: Val::Px(cl.tag_pad as f32), bottom: Val::Px(cl.tag_pad as f32 * 0.5), ..abs() }, hud_text(&fonts.mono, "", cl.tag_size, soft(0.85), h)));
+                p.spawn((BarPart::Count(i), Node { right: Val::Px(cl.tag_pad as f32), bottom: Val::Px(cl.tag_pad as f32 * 0.5), ..abs() }, hud_text(&fonts.mono, "", cl.tag_size, col(k.fg_1), h)));
+                spawn_dashes(p, i as u32, (cl.size as f32, cl.size as f32), cl.border as f32, cl.border as f32, h, soft(b.carry_border));
             });
     }
-    commands.spawn((BarName, Node { display: Display::None, ..abs() }, hud_text(&display, "", b.name_size, col(k.fg_1), h)));
-    commands.spawn((BarKeys, Node { display: Display::None, width: Val::Px(700.0), justify_content: JustifyContent::FlexEnd, ..abs() })).with_children(|p| {
-        p.spawn((BarKeysText, hud_text(&display, "", b.name_size - 1.0, col(k.fg_1), h)));
+    // The dashed frames of a drag: around the dragged slot and 7 px outside the drop target.
+    for (id, edge, thick, colour) in [(ORIGIN_DASHES, op.size, op.border, soft(b.origin_alpha)), (DROP_DASHES, op.size + 2.0 * b.drop_offset, op.border, col(k.accent))] {
+        commands.spawn((HudPart, BarPart::Float(id), Node { display: Display::Flex, ..abs() })).with_children(|p| {
+            spawn_dashes(p, id, (edge as f32, edge as f32), 0.0, thick as f32, h, colour);
+        });
+    }
+    // Under the slots: the held name; open, the name and the keys.
+    commands.spawn((HudPart, BarPart::Row, Node { height: Val::Px(b.name_h as f32), justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Center, ..abs() })).with_children(|row| {
+        row.spawn((BarPart::Name, hud_caps(&fonts.bold, "", b.name_size, col(k.fg_title), h, 0.1)));
+        row.spawn((BarPart::Keys, Node { align_items: AlignItems::Center, column_gap: Val::Px(18.0), display: Display::None, ..default() })).with_children(|keys| {
+            let hi = &h.hints;
+            for i in 0..TAB_HINTS {
+                keys.spawn((BarPart::HintBox(i), Node { align_items: AlignItems::Center, column_gap: Val::Px(8.0), display: Display::None, ..default() })).with_children(|hint| {
+                    hint.spawn((
+                        BarPart::HintCap(i),
+                        Node { min_width: Val::Px(hi.key_min_w as f32), height: Val::Px(hi.key_h as f32), padding: UiRect::horizontal(Val::Px(7.0)), border: UiRect::all(Val::Px(hi.key_border as f32)), justify_content: JustifyContent::Center, align_items: AlignItems::Center, ..default() },
+                        BackgroundColor(col_a(k.bg_0, hi.key_bg_alpha)),
+                        BorderColor::all(soft(hi.key_alpha)),
+                    ))
+                    .with_children(|cap| {
+                        cap.spawn((BarPart::HintKey(i), hud_text(&fonts.mono, "", hi.key_size, col(k.fg_title), h)));
+                    });
+                    hint.spawn((BarPart::HintText(i), hud_caps(&fonts.display, "", b.row_size, col(k.fg_1), h, hi.spacing)));
+                });
+            }
+        });
     });
+    // The drag's ghost, last so it draws over everything.
+    commands
+        .spawn((
+            HudPart,
+            BarPart::Ghost,
+            Node { width: Val::Px(op.size as f32), height: Val::Px(op.size as f32), border: UiRect::all(Val::Px(op.border_selected as f32)), display: Display::None, ..abs() },
+            BackgroundColor(col_a(b.ghost_bg, b.ghost_bg_alpha)),
+            BorderColor::all(col(k.fg_title)),
+            BoxShadow::new(Color::srgba(0.0, 0.0, 0.0, 0.6), Val::Px(0.0), Val::Px(8.0), Val::Px(0.0), Val::Px(16.0)),
+            UiTransform { rotation: Rot2::degrees(-b.ghost_tilt_deg as f32), ..UiTransform::IDENTITY },
+            GlobalZIndex(5),
+        ))
+        .with_children(|g| {
+            g.spawn(Node { left: Val::Px(0.0), top: Val::Px(op.code_top as f32 - op.border_selected as f32), width: percent(100.0), justify_content: JustifyContent::Center, ..abs() }).with_children(|c| {
+                c.spawn((BarPart::GhostCode, hud_caps(&fonts.bold, "", op.code_size, col(k.fg_title), h, 0.04)));
+            });
+            g.spawn((BarPart::GhostCount, Node { right: Val::Px(op.tag_pad as f32), bottom: Val::Px(op.tag_pad as f32 * 0.5), ..abs() }, hud_text(&fonts.mono, "", op.tag_size, col(k.fg_1), h)));
+        });
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -461,27 +516,38 @@ fn draw_bar(
     window: Res<HudWindow>,
     grab: Res<Grab>,
     controls: Res<Controls>,
-    (look, hud, bindings): (Res<crate::displays::DisplayLook>, Res<crate::crew_hud::CrewHud>, Res<crate::controls::Bindings>),
-    mut slots: Query<(&BarSlot, &mut Node, &mut BorderColor, &mut BackgroundColor), (Without<BarSwatch>, Without<BarName>, Without<BarKeys>, Without<DashFrame>, Without<Dash>)>,
-    mut keys: Query<(&BarKey, &mut TextColor), (Without<BarCount>, Without<BarHands>)>,
-    mut swatches: Query<(&BarSwatch, &mut Node, &mut BackgroundColor), (Without<BarSlot>, Without<BarName>, Without<BarKeys>, Without<DashFrame>, Without<Dash>)>,
-    mut counts: Query<(&BarCount, &mut Text, &mut TextColor), (Without<BarKey>, Without<BarHands>, Without<BarName>, Without<BarKeysText>)>,
-    mut hands: Query<(&BarHands, &mut Text, &mut TextColor), (Without<BarKey>, Without<BarCount>, Without<BarName>, Without<BarKeysText>)>,
-    mut name: Query<(&mut Node, &mut Text), (With<BarName>, Without<BarSlot>, Without<BarSwatch>, Without<BarKeys>, Without<DashFrame>, Without<BarCount>, Without<BarHands>, Without<BarKeysText>)>,
-    mut keys_box: Query<&mut Node, (With<BarKeys>, Without<BarSlot>, Without<BarSwatch>, Without<BarName>, Without<DashFrame>)>,
-    mut keys_text: Query<&mut Text, (With<BarKeysText>, Without<BarName>, Without<BarCount>, Without<BarHands>)>,
-    mut frames: Query<(&DashFrame, &mut Node), (Without<BarSlot>, Without<BarSwatch>, Without<BarName>, Without<BarKeys>)>,
-    mut dashes: Query<(&Dash, &mut BackgroundColor), (Without<BarSlot>, Without<BarSwatch>)>,
+    (look, hud, bindings, fonts): (Res<crate::displays::DisplayLook>, Res<crate::crew_hud::CrewHud>, Res<crate::controls::Bindings>, Option<Res<crate::crew_hud::HudFonts>>),
+    mut nodes: Query<(&BarPart, &mut Node)>,
+    mut borders: Query<(&BarPart, &mut BorderColor)>,
+    mut fills: Query<(&BarPart, &mut BackgroundColor)>,
+    mut shadows: Query<(&BarPart, &mut BoxShadow)>,
+    mut texts: Query<(&BarPart, &mut Text, &mut TextColor, &mut TextFont)>,
+    mut frames: Query<(&DashFrame, &mut Node), Without<BarPart>>,
+    mut dashes: Query<(&Dash, &mut BackgroundColor), Without<BarPart>>,
+    mut moved: Local<bool>,
 ) {
-    use crate::crew_hud::{col_a, set_dashes};
+    use crate::crew_hud::{col, col_a, dark, edit, set_bg, set_border, set_dashes, set_display, set_font, set_text, set_text_colour};
+    use display_core::hud::{tab_hints, TabKey, TabMode};
+    let Some(fonts) = fonts else { return };
     let (theme, b) = (&look.0, &look.0.hud.bar);
     let k = &theme.colours;
+    let soft = |a: f64| col_a(theme.hud.soft, a);
+    let ink = |a: f64| col_a(k.bg_0, a);
     let view = &items.client.view;
     let carrying = grab.held.map_or(0, |h| h.hands);
-    let win = window.0;
-    let hover = controls.pointer.and_then(|p| slot_at(p, true, win, b)).filter(|_| ui.open);
+    let (win, open) = (window.0, ui.open);
+    let sl = if open { &b.open } else { &b.closed };
+    let hover = controls.pointer.and_then(|p| slot_at(p, true, win, b)).filter(|_| open);
+    // A drag shows once the pointer has left the slot it began on; an empty slot has nothing to drag.
+    if open && ui.drag_from.is_some() {
+        *moved |= hover != ui.drag_from;
+    } else {
+        *moved = false;
+    }
+    let drag = ui.drag_from.filter(|f| open && *moved && controls.pointer.is_some() && view.slot(*f).is_some());
+    let drop_on = drag.and(hover).filter(|h| Some(*h) != drag);
     let contrast_of = |sel: bool| -> f64 {
-        if ui.open {
+        if open {
             1.0
         } else if carrying > 0 {
             b.carry_contrast
@@ -491,103 +557,208 @@ fn draw_bar(
             hud.contrast
         }
     };
-    let set_c = |c: &mut TextColor, want: Color| {
-        if c.0 != want {
-            c.0 = want;
-        }
+    let dashed_closed = carrying > 0 && !open;
+    let selected = view.selected;
+    let accent = |a: f64| col_a(k.accent, a);
+    let stack_of = |i: usize| view.slot(i);
+    let code_of = |i: usize| stack_of(i).and_then(|st| items.defs.of(st)).map(|d| d.short_code()).unwrap_or_default();
+    let count_of = |i: usize| stack_of(i).filter(|st| st.count > 1).map(|st| format!("×{}", st.count)).unwrap_or_default();
+    let mode = if drag.is_some() {
+        TabMode::Drag
+    } else if carrying > 0 {
+        TabMode::Carrying
+    } else {
+        TabMode::Browse
     };
-    for (s, mut n, mut border, mut bg) in &mut slots {
-        let (at, size) = slot_rect(s.0, ui.open, win, b);
-        let selected = view.selected == s.0;
-        let lift = if selected && !ui.open { b.lift as f32 } else { 0.0 };
-        n.left = Val::Px(at.x);
-        n.top = Val::Px(at.y - lift);
-        n.width = Val::Px(size);
-        n.height = Val::Px(size);
-        let c = contrast_of(selected);
-        let dashed = carrying > 0 && !ui.open;
-        let want = BorderColor::all(if dashed {
-            Color::NONE
-        } else if selected {
-            col_a(k.fg_title, 1.0)
-        } else {
-            col_a(k.hud_dim, c)
-        });
-        if *border != want {
-            *border = want;
+    let hints = tab_hints(mode);
+    let (first, size) = slot_rect(0, open, win, b);
+    let (last, _) = slot_rect(item_core::BAR_SLOTS - 1, open, win, b);
+    let row_top = display_core::hud::bar_row_top(open, win.as_dvec2(), &theme.hud.bar) as f32;
+
+    // The slot boxes, the floating dashes, the row and the ghost.
+    for (part, mut n) in &mut nodes {
+        match *part {
+            BarPart::Slot(i) => {
+                let (at, edge) = slot_rect(i, open, win, b);
+                let lift = if i == selected && !open { b.lift as f32 } else { 0.0 };
+                let border = if i == selected && open { sl.border_selected } else { sl.border } as f32;
+                edit(&mut n, |n| {
+                    n.left = Val::Px(at.x);
+                    n.top = Val::Px(at.y - lift);
+                    n.width = Val::Px(edge);
+                    n.height = Val::Px(edge);
+                    n.border = UiRect::all(Val::Px(border));
+                });
+            }
+            BarPart::Key(i) => edit(&mut n, |n| {
+                n.left = Val::Px(sl.num_x as f32);
+                n.top = Val::Px(sl.num_y as f32 - if i == selected && !open { 0.0 } else { 0.0 });
+            }),
+            BarPart::CodeBox(_) => edit(&mut n, |n| n.top = Val::Px(sl.code_top as f32 - sl.border as f32)),
+            BarPart::Count(_) => edit(&mut n, |n| {
+                n.right = Val::Px(sl.tag_pad as f32);
+                n.bottom = Val::Px(sl.tag_pad as f32 * 0.5);
+            }),
+            BarPart::Hands(_) => edit(&mut n, |n| {
+                n.left = Val::Px(sl.tag_pad as f32);
+                n.bottom = Val::Px(sl.tag_pad as f32 * 0.5);
+            }),
+            BarPart::Float(id) => {
+                let (at, show) = match (id, drag, drop_on) {
+                    (ORIGIN_DASHES, Some(f), _) => (slot_rect(f, true, win, b).0, true),
+                    (DROP_DASHES, _, Some(t)) => (slot_rect(t, true, win, b).0 - Vec2::splat(b.drop_offset as f32), true),
+                    _ => (Vec2::ZERO, false),
+                };
+                edit(&mut n, |n| {
+                    n.display = if show { Display::Flex } else { Display::None };
+                    n.left = Val::Px(at.x);
+                    n.top = Val::Px(at.y);
+                });
+            }
+            BarPart::Row => {
+                let width = last.x + size - first.x;
+                edit(&mut n, |n| {
+                    n.left = Val::Px(first.x);
+                    n.top = Val::Px(row_top);
+                    n.width = Val::Px(width);
+                    n.height = Val::Px(if open { b.row_h } else { b.name_h } as f32);
+                });
+            }
+            BarPart::Keys => set_display(&mut n, if open { Display::Flex } else { Display::None }),
+            BarPart::HintBox(i) => set_display(&mut n, if open && i < hints.len() { Display::Flex } else { Display::None }),
+            BarPart::Ghost => {
+                let at = controls.pointer.unwrap_or_default() - Vec2::splat(b.open.size as f32 * 0.5);
+                edit(&mut n, |n| {
+                    n.display = if drag.is_some() { Display::Flex } else { Display::None };
+                    n.left = Val::Px(at.x);
+                    n.top = Val::Px(at.y);
+                });
+            }
+            _ => {}
         }
-        let lit = hover == Some(s.0) || ui.drag_from == Some(s.0);
-        bg.0 = if lit { col_a(k.bg_3, 0.85) } else { col_a(k.bg_0, 0.6 * c) };
-        set_dashes(s.0 as u32, dashed, col_a(k.hud_dim, c), &mut frames, &mut dashes);
     }
-    let scale = |open: bool| if open { b.open_slot / b.slot } else { 1.0 };
-    for (s, mut n, mut bg) in &mut swatches {
-        let stack = view.slot(s.0);
-        let def = stack.and_then(|st| items.defs.of(st));
-        let want = if def.is_some() { Display::Flex } else { Display::None };
-        if n.display != want {
-            n.display = want;
-        }
-        let edge = Val::Px((b.swatch * scale(ui.open)) as f32);
-        if n.width != edge {
-            n.width = edge;
-            n.height = edge;
-        }
-        if let Some(d) = def {
-            let [r, g, bl] = d.shape.colour;
-            let c = contrast_of(view.selected == s.0);
-            bg.0 = Color::srgba(r, g, bl, c as f32);
+
+    // The slot's state: held, hovered, empty, filled, carrying cargo, dragged.
+    for (part, mut border) in &mut borders {
+        if let BarPart::Slot(i) = *part {
+            let c = contrast_of(i == selected);
+            let want = if drag == Some(i) || dashed_closed {
+                Color::NONE
+            } else if open && hover == Some(i) {
+                accent(1.0)
+            } else if i == selected {
+                col(k.fg_title)
+            } else if stack_of(i).is_some() {
+                soft(b.filled_border * c)
+            } else {
+                soft(b.empty_border * c)
+            };
+            set_border(&mut border, want);
         }
     }
-    for (kx, mut c) in &mut keys {
-        set_c(&mut c, col_a(k.fg_3, contrast_of(view.selected == kx.0)));
-    }
-    for (i, mut t, mut c) in &mut counts {
-        let s = view.slot(i.0).filter(|st| st.count > 1).map(|st| format!("x{}", st.count)).unwrap_or_default();
-        if t.0 != s {
-            t.0 = s;
+    for (part, mut bg) in &mut fills {
+        if let BarPart::Slot(i) = *part {
+            let c = contrast_of(i == selected);
+            let want = if drag == Some(i) {
+                ink(b.empty_bg)
+            } else if dashed_closed {
+                ink(b.carry_bg * c)
+            } else if open && hover == Some(i) {
+                accent(b.hover_bg)
+            } else if i == selected {
+                col_a(k.fg_title, b.selected_bg)
+            } else if stack_of(i).is_some() {
+                ink(b.filled_bg * c)
+            } else {
+                ink(b.empty_bg * c)
+            };
+            set_bg(&mut bg, want);
         }
-        set_c(&mut c, col_a(k.fg_1, contrast_of(view.selected == i.0)));
     }
-    for (i, mut t, mut c) in &mut hands {
-        let s = if view.slot(i.0).and_then(|st| items.defs.of(st)).is_some_and(|d| d.hands == 2) { "2H" } else { "" };
-        if t.0 != s {
-            t.0 = s.to_string();
+    for (part, mut shadow) in &mut shadows {
+        if let BarPart::Slot(i) = *part {
+            let want = if i == selected && !open && !dashed_closed {
+                vec![ShadowStyle { color: dark(0.55), x_offset: Val::Px(0.0), y_offset: Val::Px(4.0), spread_radius: Val::Px(0.0), blur_radius: Val::Px(10.0) }]
+            } else {
+                Vec::new()
+            };
+            if shadow.0 != want {
+                shadow.0 = want;
+            }
         }
-        set_c(&mut c, col_a(k.accent, contrast_of(view.selected == i.0)));
     }
-    // The name: under the bar at the left, or above the open bar the hovered one (else the held).
-    let (first, _) = slot_rect(0, ui.open, win, b);
-    let (last, size) = slot_rect(item_core::BAR_SLOTS - 1, ui.open, win, b);
-    let shown = if ui.open { hover.and_then(|i| view.slot(i)).map(|st| items.name(st)).unwrap_or_else(|| hud.held_name.clone()) } else { hud.held_name.clone() };
-    if let Ok((mut n, mut t)) = name.single_mut() {
-        let want = if shown.is_empty() { Display::None } else { Display::Flex };
-        if n.display != want {
-            n.display = want;
-        }
-        if t.0 != shown {
-            t.0 = shown;
-        }
-        n.left = Val::Px(first.x);
-        n.top = Val::Px(if ui.open { first.y - 30.0 } else { first.y + size + 8.0 });
+    set_dashes(ORIGIN_DASHES, drag.is_some(), soft(b.origin_alpha), &mut frames, &mut dashes);
+    set_dashes(DROP_DASHES, drop_on.is_some(), accent(1.0), &mut frames, &mut dashes);
+    for i in 0..item_core::BAR_SLOTS {
+        set_dashes(i as u32, dashed_closed, soft(b.carry_border * contrast_of(i == selected)), &mut frames, &mut dashes);
     }
-    if let Ok(mut n) = keys_box.single_mut() {
-        let want = if ui.open { Display::Flex } else { Display::None };
-        if n.display != want {
-            n.display = want;
-        }
-        n.left = Val::Px(last.x + size - 700.0);
-        n.top = Val::Px(first.y - 28.0);
-    }
-    if let Ok(mut t) = keys_text.single_mut() {
-        let s = format!(
-            "1-8 hand   {} drop   {} throw   drag: move   {} close",
-            crate::interact::key_label(&bindings, crate::controls::Tap::Drop),
-            crate::interact::key_label(&bindings, crate::controls::Tap::Throw),
-            crate::interact::key_label(&bindings, crate::controls::Tap::Inventory)
-        );
-        if t.0 != s {
-            t.0 = s;
+
+    // Texts: numbers, codes, counts, the name, the keys, the ghost.
+    let held_name = &hud.held_name;
+    let (shown, shown_accent) = if let Some(f) = drag {
+        (stack_of(f).map(|st| items.name(st)).unwrap_or_default(), false)
+    } else if open && let Some(st) = hover.and_then(stack_of) {
+        (items.name(st), hover != Some(selected))
+    } else {
+        (held_name.clone(), false)
+    };
+    let name_a = if open || b.idle_contrast >= 1.0 { 1.0 } else { 1.0 - (1.0 - hud.contrast) / (1.0 - b.idle_contrast) * (1.0 - b.name_idle_contrast) };
+    for (part, mut t, mut tc, mut f) in &mut texts {
+        match *part {
+            BarPart::Key(i) => {
+                let c = contrast_of(i == selected);
+                set_font(&mut f, &fonts.mono, sl.num_size);
+                set_text_colour(&mut tc, if i == selected { col_a(k.fg_title, c) } else { soft(sl.num_alpha * c) });
+            }
+            BarPart::Code(i) => {
+                let hidden = drag == Some(i);
+                set_text(&mut t, &code_of(i));
+                set_font(&mut f, &fonts.bold, sl.code_size);
+                set_text_colour(&mut tc, col_a(k.fg_title, if hidden { 0.0 } else { contrast_of(i == selected) }));
+            }
+            BarPart::Count(i) => {
+                set_text(&mut t, &count_of(i));
+                set_font(&mut f, &fonts.mono, sl.tag_size);
+                set_text_colour(&mut tc, col_a(k.fg_1, if drag == Some(i) { 0.0 } else { contrast_of(i == selected) }));
+            }
+            BarPart::Hands(i) => {
+                let two = stack_of(i).and_then(|st| items.defs.of(st)).is_some_and(|d| d.hands == 2);
+                set_text(&mut t, if two { "2H" } else { "" });
+                set_font(&mut f, &fonts.mono, sl.tag_size);
+                set_text_colour(&mut tc, soft(0.85 * if drag == Some(i) { 0.0 } else { contrast_of(i == selected) }));
+            }
+            BarPart::Name => {
+                set_text(&mut t, &shown.to_uppercase());
+                set_text_colour(&mut tc, if shown_accent { accent(1.0) } else { col_a(k.fg_title, name_a) });
+            }
+            BarPart::HintKey(i) => {
+                if let Some((key, _)) = hints.get(i) {
+                    set_text(&mut t, &match key {
+                        TabKey::Click => "CLICK".to_string(),
+                        TabKey::Drag => "DRAG".to_string(),
+                        TabKey::Drop => crate::interact::key_cap(&bindings, crate::controls::Tap::Drop),
+                        TabKey::Throw => crate::interact::key_cap(&bindings, crate::controls::Tap::Throw),
+                        TabKey::Close => crate::interact::key_cap(&bindings, crate::controls::Tap::Inventory),
+                        TabKey::Cancel => "ESC".to_string(),
+                    });
+                }
+            }
+            BarPart::HintText(i) => {
+                if let Some((_, text)) = hints.get(i) {
+                    set_text(&mut t, text);
+                }
+            }
+            BarPart::GhostCode => {
+                if let Some(f) = drag {
+                    set_text(&mut t, &code_of(f));
+                }
+            }
+            BarPart::GhostCount => {
+                if let Some(f) = drag {
+                    set_text(&mut t, &count_of(f));
+                }
+            }
+            _ => {}
         }
     }
 }

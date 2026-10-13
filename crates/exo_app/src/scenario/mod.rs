@@ -31,6 +31,7 @@ mod displays;
 mod figure;
 mod flight;
 mod help;
+mod health;
 mod hud;
 mod items;
 mod first_person_settings;
@@ -694,6 +695,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "items" => items::items_steps(&mut s, &shot_step),
         // Crew HUD v3: compass in both frames, vitals, credits flash, prompt, bar, hints.
         "hud" => hud::hud_steps(&mut s, &shot_step),
+        // #295: health: hazards, a bandage on oneself, down and respawn.
+        "health" => health::health_steps(&mut s),
         // #135: save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),
         // #169: the seat refuses without the licence; the exam; the licence.

@@ -28,6 +28,7 @@ mod scenario_displays;
 mod scenario_first_person_settings;
 mod scenario_flight;
 mod scenario_help;
+mod scenario_health;
 mod scenario_hud;
 mod scenario_foreign;
 mod scenario_foreign_warp;

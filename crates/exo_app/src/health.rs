@@ -40,9 +40,12 @@ pub fn plugin(app: &mut App) {
     let files = crate::content_files("gameplay");
     let tuning = HealthTuning::load(&files).unwrap_or_else(|e| panic!("health: {e:?}"));
     app.insert_resource(HealthState::new(tuning)).init_resource::<OwnVitals>();
+    // The use takes the click before the displays do (they take every click), once the script's
+    // input is in.
+    app.add_systems(FixedUpdate, use_input.after(crate::scenario::run_script).before(crate::displays::use_display));
     app.add_systems(
         FixedUpdate,
-        (use_input, apply_uses, health_step, vitals_out, own_sync).chain().after(crate::items::deliver).before(crate::walker::walker_step).in_set(crate::phases::Fx::Walker),
+        (apply_uses, health_step, vitals_out, own_sync).chain().after(crate::items::deliver).before(crate::walker::walker_step).in_set(crate::phases::Fx::Walker),
     );
 }
 

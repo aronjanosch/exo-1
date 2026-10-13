@@ -3,7 +3,7 @@ use item_core::container::Refusal;
 use item_core::*;
 
 const WRENCH: &str = r#"{ "id": "wrench", "name": "Wrench", "take": "collect", "hands": 1, "stack": 1, "use": "repair_mechanical", "tags": ["tool"], "shape": { "extents": [0.06, 0.04, 0.3], "mass": 0.8, "colour": [0.6, 0.6, 0.65] } }"#;
-const BANDAGE: &str = r#"{ "id": "bandage", "name": "Bandage", "take": "collect", "hands": 1, "stack": 4, "tags": ["medical"], "shape": { "extents": [0.1, 0.05, 0.1], "mass": 0.1, "colour": [0.9, 0.9, 0.85] } }"#;
+const BANDAGE: &str = r#"{ "id": "bandage", "name": "Bandage", "take": "collect", "hands": 1, "stack": 4, "use": "bandage", "tags": ["medical"], "shape": { "extents": [0.1, 0.05, 0.1], "mass": 0.1, "colour": [0.9, 0.9, 0.85] } }"#;
 const EXTINGUISHER: &str = r#"{ "id": "extinguisher", "name": "Extinguisher", "take": "collect", "hands": 2, "stack": 1, "use": "extinguish", "shape": { "extents": [0.18, 0.5, 0.18], "mass": 6.0, "colour": [0.85, 0.15, 0.1] } }"#;
 const BARREL: &str = r#"{ "id": "barrel", "name": "Barrel", "take": "carry", "hands": 2, "stack": 1, "shape": { "extents": [0.6, 0.9, 0.6], "mass": 60.0, "colour": [0.3, 0.3, 0.3] } }"#;
 
@@ -300,4 +300,43 @@ fn a_placement_that_cannot_be_is_refused() {
         assert_eq!(s.host.handle(&forged), vec![Event::Rejected { player: 1, seq: 77, why: Reject::Invalid }]);
     }
     assert_eq!(s.host.inventory(1).count("wrench"), 1, "nothing left the bar");
+}
+
+#[test]
+fn a_use_takes_one_from_the_stack_and_the_host_names_the_effect() {
+    // #295: a bandage used on player 1 is one less in the user's slot; the host says what to apply.
+    let mut host = Host::new(defs());
+    let mut inv = Inventory::default();
+    inv.collect(&defs(), stack("bandage", 3)).unwrap();
+    host.inventories.insert(2, inv);
+    let mut c = Client::new(2, defs());
+    c.apply(&Event::Inventory { player: 2, inv: host.inventory(2) });
+    let a = c.request(Request::Use { slot: 0, target: 1 }).unwrap();
+    assert_eq!(c.view.count("bandage"), 2, "shown at once");
+    let evs = host.handle(&a);
+    assert!(evs.contains(&Event::Used { player: 2, target: 1, effect: "bandage".into() }), "{evs:?}");
+    assert_eq!(host.inventory(2).count("bandage"), 2);
+    for e in &evs {
+        c.apply(e);
+    }
+    assert_eq!(c.confirmed.count("bandage"), 2);
+    assert!(c.pending.is_empty());
+}
+
+#[test]
+fn an_empty_slot_or_an_item_without_a_use_is_refused() {
+    let mut host = Host::new(defs());
+    let a = Action { player: 2, seq: 1, req: Request::Use { slot: 0, target: 2 } };
+    assert_eq!(host.handle(&a), vec![Event::Rejected { player: 2, seq: 1, why: Reject::EmptySlot }]);
+    // A rag that names no use is refused.
+    const RAG: &str = r#"{ "id": "rag", "name": "Rag", "take": "collect", "hands": 1, "stack": 1, "shape": { "extents": [0.2, 0.01, 0.2], "mass": 0.05, "colour": [0.5, 0.5, 0.5] } }"#;
+    let rags = ItemDefs::from_files([("rag.json", RAG)]).unwrap();
+    let mut host = Host::new(rags.clone());
+    let mut inv = Inventory::default();
+    inv.collect(&rags, rags.get("rag").unwrap().stack_of(1)).unwrap();
+    host.inventories.insert(2, inv);
+    let a = Action { player: 2, seq: 2, req: Request::Use { slot: 0, target: 2 } };
+    assert_eq!(host.handle(&a), vec![Event::Rejected { player: 2, seq: 2, why: Reject::NotUsable }]);
+    let mut c = Client::new(2, defs());
+    assert!(c.request(Request::Use { slot: 5, target: 2 }).is_err(), "an empty slot is refused without sending");
 }

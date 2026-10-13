@@ -19,6 +19,24 @@ pub enum ToHost {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ToClient {
     Event(Event),
+    /// The player's own vitals, as the host has them (#295); not an item event, but it travels
+    /// the same reliable channel.
+    Vitals(Vitals),
+}
+
+/// A player's vitals for their own display (#295). Shares are 0..1 of the maximum; `None` where
+/// the affliction is not there.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Vitals {
+    pub health: f64,
+    /// Oxygen low's share (bad air), None when there is none.
+    pub oxygen: Option<f64>,
+    /// Burn's band: 1 (I), 2 (II) or 3 (III); None without burn.
+    pub burn: Option<u8>,
+    /// Radiation's share, 0 without.
+    pub radiation: f64,
+    /// Seconds until the respawn while the player is down; None while standing.
+    pub down: Option<f64>,
 }
 
 pub fn encode<T: Serialize>(msg: &T) -> Vec<u8> {

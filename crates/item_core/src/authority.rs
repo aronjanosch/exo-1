@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::container::{Refusal, Stack};
 use crate::defs::ItemDefs;
-use crate::inventory::Inventory;
+use crate::inventory::{Inventory, BAR_SLOTS};
 
 /// A player's slot in the session (1 is the host's own player).
 pub type PlayerId = u32;
@@ -73,6 +73,9 @@ pub enum Request {
     Select { slot: usize },
     /// Move, stack or swap within the own inventory.
     Move { from: usize, to: usize },
+    /// Use one item of a slot on `target` (a player's slot; the user's own for itself). What the
+    /// item does is the host's to apply (`Event::Used`).
+    Use { slot: usize, target: PlayerId },
 }
 
 /// A request on its way to the host: who, their running number, what.
@@ -96,6 +99,8 @@ pub enum Reject {
     NoSuchSlot,
     /// The move is not possible (same slot, nothing to move).
     Invalid,
+    /// The item has no use.
+    NotUsable,
 }
 
 impl From<Refusal> for Reject {
@@ -120,6 +125,9 @@ pub enum Event {
     Removed { item: LooseId },
     /// A player's inventory as the host has it now.
     Inventory { player: PlayerId, inv: Inventory },
+    /// An item of `player` was used on `target` (one was taken from the stack); the host applies
+    /// `effect` to the target.
+    Used { player: PlayerId, target: PlayerId, effect: String },
     /// A loose item came to rest at `at`, turned as the quaternion `rot` (x, y, z, w; a resting
     /// item may lie on its side, which `at.forward` cannot say), at the shared session time `t`
     /// (the host's clock). While an item moves, its poses go out as datagrams, not events; this is
@@ -206,6 +214,9 @@ impl Host {
             },
             Request::Select { slot } => inv.select(*slot).map_err(Reject::from),
             Request::Move { from, to } => inv.move_slot(*from, *to).map_err(Reject::from),
+            Request::Use { slot, target } => use_one(&self.defs, &mut inv, *slot).map(|effect| {
+                out.push(Event::Used { player: a.player, target: *target, effect });
+            }),
         };
         match result {
             Ok(()) => {
@@ -283,7 +294,7 @@ impl Client {
                 self.pending.retain(|a| a.seq != *seq);
                 self.rejected.push((*seq, why.clone()));
             }
-            Event::Confirmed { .. } | Event::Rejected { .. } => {}
+            Event::Confirmed { .. } | Event::Rejected { .. } | Event::Used { .. } => {}
         }
         self.rebuild();
     }
@@ -325,6 +336,17 @@ fn predict(defs: &ItemDefs, loose: &BTreeMap<LooseId, Loose>, view: &mut Invento
         }
         Request::Select { slot } => view.select(*slot)?,
         Request::Move { from, to } => view.move_slot(*from, *to)?,
+        Request::Use { slot, .. } => {
+            use_one(defs, view, *slot)?;
+        }
     }
     Ok(())
+}
+
+/// Takes one item out of a slot for its use: the effect it names, or why it cannot be used.
+fn use_one(defs: &ItemDefs, inv: &mut Inventory, slot: usize) -> Result<String, Reject> {
+    let stack = inv.slot(slot).ok_or(if slot < BAR_SLOTS { Reject::EmptySlot } else { Reject::NoSuchSlot })?;
+    let effect = defs.of(stack).and_then(|d| d.use_effect.clone()).ok_or(Reject::NotUsable)?;
+    inv.bar.take(&[], slot, 1)?;
+    Ok(effect)
 }

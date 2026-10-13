@@ -12,6 +12,7 @@
 //!   crate is set down instead), R throws (the crate first), Tab opens the inventory with a mouse
 //!   cursor: a click takes a slot into the hand, a drag moves, stacks or swaps.
 use crate::cargo::{item_body_bundle, Crate};
+use crate::crew_hud::{Dash, DashFrame};
 use crate::controls::{Actions, Controls, Tap};
 use crate::env::PlanetRes;
 use crate::grab::Grab;
@@ -144,6 +145,8 @@ pub struct InventoryUi {
     /// Slot under the pointer when the button went down.
     pub drag_from: Option<usize>,
     was_down: bool,
+    /// A slot key, drop or throw was pressed since the HUD last looked (it wakes the dimmed bar).
+    pub touched: bool,
 }
 
 /// The window's size in logical pixels, for the slot layout (headless runs keep the default).
@@ -157,20 +160,17 @@ impl Default for HudWindow {
 }
 
 /// Slot `i` of the action bar on screen: top left and size in window pixels. Closed it sits at
-/// the bottom; open (Tab) it is larger, in the middle.
-pub fn slot_rect(i: usize, open: bool, window: Vec2) -> (Vec2, f32) {
-    let (size, gap) = if open { (96.0, 10.0) } else { (58.0, 6.0) };
-    let n = item_core::BAR_SLOTS as f32;
-    let width = n * size + (n - 1.0) * gap;
-    let x = (window.x - width) * 0.5 + i as f32 * (size + gap);
-    let y = if open { (window.y - size) * 0.5 } else { window.y - size - 18.0 };
-    (Vec2::new(x, y), size)
+/// the bottom; open (Tab) it is larger, in the middle. The sizes are `hud.bar` in
+/// `content/ui/displays.json` (Crew HUD v3).
+pub fn slot_rect(i: usize, open: bool, window: Vec2, look: &display_core::hud::BarLook) -> (Vec2, f32) {
+    let (at, size) = display_core::hud::bar_slot(i, item_core::BAR_SLOTS, open, window.as_dvec2(), look);
+    (at.as_vec2(), size as f32)
 }
 
 /// The slot under a window point.
-pub fn slot_at(p: Vec2, open: bool, window: Vec2) -> Option<usize> {
+pub fn slot_at(p: Vec2, open: bool, window: Vec2, look: &display_core::hud::BarLook) -> Option<usize> {
     (0..item_core::BAR_SLOTS).find(|&i| {
-        let (at, s) = slot_rect(i, open, window);
+        let (at, s) = slot_rect(i, open, window, look);
         p.x >= at.x && p.x <= at.x + s && p.y >= at.y && p.y <= at.y + s
     })
 }
@@ -212,6 +212,7 @@ pub fn item_input(
     mut ui: ResMut<InventoryUi>,
     mut grab: ResMut<Grab>,
     window: Res<HudWindow>,
+    look: Res<crate::displays::DisplayLook>,
     dev: Option<Res<crate::dev::DevMenu>>,
     active: Res<crate::displays::ActiveDisplay>,
     players: Query<&Player>,
@@ -232,6 +233,7 @@ pub fn item_input(
     if !dev.is_some_and(|d| d.open) {
         for (i, t) in Tap::SLOTS.iter().enumerate() {
             if actions.take_tap(*t) && !busy {
+                ui.touched = true;
                 let _ = items.request(now, Request::Select { slot: i });
             }
         }
@@ -240,6 +242,7 @@ pub fn item_input(
     let drop = actions.take_tap(Tap::Drop);
     // R throws the held crate first (`grab_step` takes it then).
     let throw = grab.held.is_none() && actions.take_tap(Tap::Throw);
+    ui.touched |= drop || throw;
     if drop && grab.held.is_some() {
         grab.release();
     } else if (drop || throw) && !busy {
@@ -258,7 +261,7 @@ pub fn item_input(
     controls.free_cursor |= ui.open;
     let down = controls.pointer_down || controls.click;
     if ui.open {
-        let under = controls.pointer.and_then(|p| slot_at(p, true, window.0));
+        let under = controls.pointer.and_then(|p| slot_at(p, true, window.0, &look.0.hud.bar));
         if down && !ui.was_down {
             ui.drag_from = under;
         }
@@ -396,79 +399,195 @@ fn window_size(windows: Query<&Window, With<bevy::window::PrimaryWindow>>, mut s
     }
 }
 
+// ---------- the action bar on screen (Crew HUD v3) ----------
+//
+// Eight 56 px slots at the bottom centre. The held slot lifts and has a white outline; a slot
+// shows the item's colour, its stack count and "2H" for two hands; only the held item's name is
+// written, under the bar at the left. After a few idle seconds everything but the held slot drops
+// to half contrast; while the hands carry cargo the slots are dashed and dimmed. Tab: the slots
+// grow, the hovered or held name stands at the left above them, the keys at the right.
+
 #[derive(Component)]
 struct BarSlot(usize);
 #[derive(Component)]
-struct BarText(usize);
+struct BarKey(usize);
 #[derive(Component)]
-struct BarTitle;
+struct BarSwatch(usize);
+#[derive(Component)]
+struct BarCount(usize);
+#[derive(Component)]
+struct BarHands(usize);
+/// The held item's name: under the bar, or above the open bar at the left.
+#[derive(Component)]
+struct BarName;
+/// The keys of the open inventory, right-aligned above the slots.
+#[derive(Component)]
+struct BarKeys;
+#[derive(Component)]
+struct BarKeysText;
 
-fn spawn_bar(mut commands: Commands) {
+fn spawn_bar(mut commands: Commands, look: Res<crate::displays::DisplayLook>, assets: Res<AssetServer>) {
+    use crate::crew_hud::{col, col_a, hud_text, spawn_dashes};
+    let theme = &look.0;
+    let (k, h, b) = (&theme.colours, &theme.hud, &theme.hud.bar);
+    let (display, mono) = (assets.load(&theme.fonts.display), assets.load(&theme.fonts.mono));
+    let abs = || Node { position_type: PositionType::Absolute, ..default() };
     for i in 0..item_core::BAR_SLOTS {
         commands
             .spawn((
                 BarSlot(i),
-                Node { position_type: PositionType::Absolute, border: UiRect::all(Val::Px(2.0)), padding: UiRect::all(Val::Px(4.0)), ..default() },
-                BorderColor::all(Color::srgba(0.8, 0.9, 1.0, 0.4)),
-                BackgroundColor(Color::srgba(0.05, 0.07, 0.1, 0.6)),
+                Node { border: UiRect::all(Val::Px(b.outline_px as f32)), justify_content: JustifyContent::Center, align_items: AlignItems::Center, ..abs() },
+                BorderColor::all(col_a(k.hud_dim, 0.6)),
+                BackgroundColor(col_a(k.bg_0, 0.6)),
             ))
             .with_children(|p| {
-                p.spawn((BarText(i), Text::new(""), TextFont { font_size: FontSize::Px(12.0), ..default() }, TextColor(Color::srgb(0.9, 0.95, 1.0))));
+                p.spawn((BarKey(i), Node { left: Val::Px(4.0), top: Val::Px(2.0), ..abs() }, hud_text(&mono, &format!("{}", i + 1), b.count_size - 1.0, col(k.fg_3), h)));
+                p.spawn((BarHands(i), Node { right: Val::Px(4.0), top: Val::Px(2.0), ..abs() }, hud_text(&mono, "", b.count_size - 2.0, col(k.accent), h)));
+                p.spawn((BarCount(i), Node { right: Val::Px(4.0), bottom: Val::Px(2.0), ..abs() }, hud_text(&mono, "", b.count_size, col(k.fg_1), h)));
+                p.spawn((BarSwatch(i), Node { width: Val::Px(b.swatch as f32), height: Val::Px(b.swatch as f32), border: UiRect::all(Val::Px(1.0)), border_radius: BorderRadius::all(Val::Px(3.0)), display: Display::None, ..default() }, BackgroundColor(Color::WHITE), BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.5))));
+                spawn_dashes(p, i as u32, (b.slot as f32, b.slot as f32), b.outline_px as f32, b.outline_px as f32, h, col(k.hud_dim));
             });
     }
-    commands.spawn((
-        BarTitle,
-        Text::new("Inventory: click takes a slot into the hand, drag moves (Tab closes)"),
-        TextFont { font_size: FontSize::Px(16.0), ..default() },
-        TextColor(Color::srgb(0.9, 0.95, 1.0)),
-        Node { position_type: PositionType::Absolute, display: Display::None, ..default() },
-    ));
+    commands.spawn((BarName, Node { display: Display::None, ..abs() }, hud_text(&display, "", b.name_size, col(k.fg_1), h)));
+    commands.spawn((BarKeys, Node { display: Display::None, width: Val::Px(700.0), justify_content: JustifyContent::FlexEnd, ..abs() })).with_children(|p| {
+        p.spawn((BarKeysText, hud_text(&display, "", b.name_size - 1.0, col(k.fg_1), h)));
+    });
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn draw_bar(
     items: Res<Items>,
     ui: Res<InventoryUi>,
     window: Res<HudWindow>,
     grab: Res<Grab>,
     controls: Res<Controls>,
-    mut slots: Query<(&BarSlot, &mut Node, &mut BorderColor, &mut BackgroundColor), Without<BarTitle>>,
-    mut texts: Query<(&BarText, &mut Text), Without<BarTitle>>,
-    mut title: Query<&mut Node, (With<BarTitle>, Without<BarSlot>)>,
+    (look, hud, bindings): (Res<crate::displays::DisplayLook>, Res<crate::crew_hud::CrewHud>, Res<crate::controls::Bindings>),
+    mut slots: Query<(&BarSlot, &mut Node, &mut BorderColor, &mut BackgroundColor), (Without<BarSwatch>, Without<BarName>, Without<BarKeys>, Without<DashFrame>, Without<Dash>)>,
+    mut keys: Query<(&BarKey, &mut TextColor), (Without<BarCount>, Without<BarHands>)>,
+    mut swatches: Query<(&BarSwatch, &mut Node, &mut BackgroundColor), (Without<BarSlot>, Without<BarName>, Without<BarKeys>, Without<DashFrame>, Without<Dash>)>,
+    mut counts: Query<(&BarCount, &mut Text, &mut TextColor), (Without<BarKey>, Without<BarHands>, Without<BarName>, Without<BarKeysText>)>,
+    mut hands: Query<(&BarHands, &mut Text, &mut TextColor), (Without<BarKey>, Without<BarCount>, Without<BarName>, Without<BarKeysText>)>,
+    mut name: Query<(&mut Node, &mut Text), (With<BarName>, Without<BarSlot>, Without<BarSwatch>, Without<BarKeys>, Without<DashFrame>, Without<BarCount>, Without<BarHands>, Without<BarKeysText>)>,
+    mut keys_box: Query<&mut Node, (With<BarKeys>, Without<BarSlot>, Without<BarSwatch>, Without<BarName>, Without<DashFrame>)>,
+    mut keys_text: Query<&mut Text, (With<BarKeysText>, Without<BarName>, Without<BarCount>, Without<BarHands>)>,
+    mut frames: Query<(&DashFrame, &mut Node), (Without<BarSlot>, Without<BarSwatch>, Without<BarName>, Without<BarKeys>)>,
+    mut dashes: Query<(&Dash, &mut BackgroundColor), (Without<BarSlot>, Without<BarSwatch>)>,
 ) {
+    use crate::crew_hud::{col_a, set_dashes};
+    let (theme, b) = (&look.0, &look.0.hud.bar);
+    let k = &theme.colours;
     let view = &items.client.view;
     let carrying = grab.held.map_or(0, |h| h.hands);
-    let hover = controls.pointer.and_then(|p| slot_at(p, true, window.0)).filter(|_| ui.open);
+    let win = window.0;
+    let hover = controls.pointer.and_then(|p| slot_at(p, true, win, b)).filter(|_| ui.open);
+    let contrast_of = |sel: bool| -> f64 {
+        if ui.open {
+            1.0
+        } else if carrying > 0 {
+            b.carry_contrast
+        } else if sel {
+            1.0
+        } else {
+            hud.contrast
+        }
+    };
+    let set_c = |c: &mut TextColor, want: Color| {
+        if c.0 != want {
+            c.0 = want;
+        }
+    };
     for (s, mut n, mut border, mut bg) in &mut slots {
-        let (at, size) = slot_rect(s.0, ui.open, window.0);
+        let (at, size) = slot_rect(s.0, ui.open, win, b);
+        let selected = view.selected == s.0;
+        let lift = if selected && !ui.open { b.lift as f32 } else { 0.0 };
         n.left = Val::Px(at.x);
-        n.top = Val::Px(at.y);
+        n.top = Val::Px(at.y - lift);
         n.width = Val::Px(size);
         n.height = Val::Px(size);
-        let selected = view.selected == s.0;
-        let lowered = selected && view.slot(s.0).is_some() && items.in_hand(carrying).is_none();
-        *border = BorderColor::all(match (selected, lowered) {
-            (true, false) => Color::srgb(1.0, 0.85, 0.3),
-            (true, true) => Color::srgb(0.6, 0.5, 0.3),
-            _ => Color::srgba(0.8, 0.9, 1.0, 0.4),
+        let c = contrast_of(selected);
+        let dashed = carrying > 0 && !ui.open;
+        let want = BorderColor::all(if dashed {
+            Color::NONE
+        } else if selected {
+            col_a(k.fg_title, 1.0)
+        } else {
+            col_a(k.hud_dim, c)
         });
+        if *border != want {
+            *border = want;
+        }
         let lit = hover == Some(s.0) || ui.drag_from == Some(s.0);
-        *bg = BackgroundColor(if lit { Color::srgba(0.2, 0.3, 0.45, 0.85) } else { Color::srgba(0.05, 0.07, 0.1, 0.6) });
+        bg.0 = if lit { col_a(k.bg_3, 0.85) } else { col_a(k.bg_0, 0.6 * c) };
+        set_dashes(s.0 as u32, dashed, col_a(k.hud_dim, c), &mut frames, &mut dashes);
     }
-    for (t, mut text) in &mut texts {
-        let s = match view.slot(t.0) {
-            Some(st) if st.count > 1 => format!("{}\n{}\nx{}", t.0 + 1, items.name(st), st.count),
-            Some(st) => format!("{}\n{}", t.0 + 1, items.name(st)),
-            None => format!("{}", t.0 + 1),
-        };
-        if text.0 != s {
-            text.0 = s;
+    let scale = |open: bool| if open { b.open_slot / b.slot } else { 1.0 };
+    for (s, mut n, mut bg) in &mut swatches {
+        let stack = view.slot(s.0);
+        let def = stack.and_then(|st| items.defs.of(st));
+        let want = if def.is_some() { Display::Flex } else { Display::None };
+        if n.display != want {
+            n.display = want;
+        }
+        let edge = Val::Px((b.swatch * scale(ui.open)) as f32);
+        if n.width != edge {
+            n.width = edge;
+            n.height = edge;
+        }
+        if let Some(d) = def {
+            let [r, g, bl] = d.shape.colour;
+            let c = contrast_of(view.selected == s.0);
+            bg.0 = Color::srgba(r, g, bl, c as f32);
         }
     }
-    if let Ok(mut n) = title.single_mut() {
-        let (at, _) = slot_rect(0, true, window.0);
-        n.display = if ui.open { Display::Flex } else { Display::None };
-        n.left = Val::Px(at.x);
-        n.top = Val::Px(at.y - 30.0);
+    for (kx, mut c) in &mut keys {
+        set_c(&mut c, col_a(k.fg_3, contrast_of(view.selected == kx.0)));
+    }
+    for (i, mut t, mut c) in &mut counts {
+        let s = view.slot(i.0).filter(|st| st.count > 1).map(|st| format!("x{}", st.count)).unwrap_or_default();
+        if t.0 != s {
+            t.0 = s;
+        }
+        set_c(&mut c, col_a(k.fg_1, contrast_of(view.selected == i.0)));
+    }
+    for (i, mut t, mut c) in &mut hands {
+        let s = if view.slot(i.0).and_then(|st| items.defs.of(st)).is_some_and(|d| d.hands == 2) { "2H" } else { "" };
+        if t.0 != s {
+            t.0 = s.to_string();
+        }
+        set_c(&mut c, col_a(k.accent, contrast_of(view.selected == i.0)));
+    }
+    // The name: under the bar at the left, or above the open bar the hovered one (else the held).
+    let (first, _) = slot_rect(0, ui.open, win, b);
+    let (last, size) = slot_rect(item_core::BAR_SLOTS - 1, ui.open, win, b);
+    let shown = if ui.open { hover.and_then(|i| view.slot(i)).map(|st| items.name(st)).unwrap_or_else(|| hud.held_name.clone()) } else { hud.held_name.clone() };
+    if let Ok((mut n, mut t)) = name.single_mut() {
+        let want = if shown.is_empty() { Display::None } else { Display::Flex };
+        if n.display != want {
+            n.display = want;
+        }
+        if t.0 != shown {
+            t.0 = shown;
+        }
+        n.left = Val::Px(first.x);
+        n.top = Val::Px(if ui.open { first.y - 30.0 } else { first.y + size + 8.0 });
+    }
+    if let Ok(mut n) = keys_box.single_mut() {
+        let want = if ui.open { Display::Flex } else { Display::None };
+        if n.display != want {
+            n.display = want;
+        }
+        n.left = Val::Px(last.x + size - 700.0);
+        n.top = Val::Px(first.y - 28.0);
+    }
+    if let Ok(mut t) = keys_text.single_mut() {
+        let s = format!(
+            "1-8 hand   {} drop   {} throw   drag: move   {} close",
+            crate::interact::key_label(&bindings, crate::controls::Tap::Drop),
+            crate::interact::key_label(&bindings, crate::controls::Tap::Throw),
+            crate::interact::key_label(&bindings, crate::controls::Tap::Inventory)
+        );
+        if t.0 != s {
+            t.0 = s;
+        }
     }
 }

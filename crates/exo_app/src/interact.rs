@@ -12,6 +12,7 @@ use crate::walker::{cabin_frame, CabinFloor, Player, EYE_HEIGHT};
 use avian3d::prelude::*;
 use bevy::math::DVec3;
 use bevy::prelude::*;
+use display_core::hud::PromptKind;
 use grab_core::{in_cone, Reach};
 use walker_core::Frame;
 
@@ -50,6 +51,10 @@ pub struct Interaction {
     pub target: Option<Target>,
     /// What the HUD shows, e.g. "[F] sit". Empty when there is nothing to do.
     pub prompt: String,
+    /// What F does there, for the prompt's look (blocked is drawn dashed with an amber line).
+    pub kind: display_core::hud::PromptKind,
+    /// The target's place in the world, if it has one: the prompt hangs 16 px above it on screen.
+    pub at: Option<DVec3>,
     /// Every target the tap was used on (scenario checks).
     pub used: Vec<Target>,
 }
@@ -224,6 +229,20 @@ pub fn interaction(
         (!gp.offers_of(&giver).is_empty()).then_some(Target::Counter(giver))
     });
     inter.target = target.clone();
+    inter.kind = match &target {
+        Some(Target::Item(_)) => PromptKind::Collect,
+        Some(Target::StandUp | Target::LeavePanel(_)) => PromptKind::Leave,
+        Some(Target::SeatLocked) => PromptKind::Blocked,
+        Some(Target::Crate(e, Reach::Hands)) if !hands_free(&items, &crates, &table, *e) => PromptKind::Blocked,
+        _ => PromptKind::Use,
+    };
+    inter.at = match &target {
+        Some(Target::Crate(e, _)) => crates.get(*e).ok().map(|(_, c)| crate_world(c, &frame).0),
+        Some(Target::Item(e)) => loose.get(*e).ok().map(|(_, c, _)| crate_world(c, &frame).0),
+        Some(Target::Panel(e)) => displays.get(*e).ok().map(|(_, d)| d.centre),
+        Some(Target::Seat | Target::SeatLocked) => Some(frame.to_world(SEAT_POS)),
+        _ => None,
+    };
     inter.prompt = match &target {
         None => String::new(),
         Some(t) => {

@@ -198,11 +198,30 @@ def pilot_x():
     return 13.1+1.7*(1-1/FOOT)
 
 
+def captain_x():
+    """Design x of the captain's eye. The captain stands 3.3 m behind the bridge front glass at any FOOT, so the
+    upward view under the header does not shrink while the roof height stays (8.7 for FOOT = 1)."""
+    return 8.7+3.3*(1-1/FOOT)
+
+
 def ramp_run_rise():
     """The landed aft ramp in the stretched ship: horizontal run, drop to the ground, plate length."""
     hx,hz=HINGE; tx,tz=RAMP_TOP; L=math.hypot(tx-hx,tz-hz); rise=hz-GROUND
     run=math.sqrt(L*L-rise*rise)*FOOT
     return run,rise,math.hypot(run,rise)
+
+
+def between_posts(eye,posts,step=30):
+    """Probe azimuths (degrees) between the posts, seen from the design point eye in the stretched ship. The forward
+    half (-90 to 90) is cut at every post bearing, each gap is split into pieces of at most step degrees and gets one
+    ray in the middle of each piece. The posts move with FOOT, so hand-picked angles would hit them."""
+    ex,ey=eye[0]*FOOT,eye[1]*FOOT
+    cuts={-90.0,90.0}|{round(math.degrees(math.atan2(py*FOOT-ey,px*FOOT-ex)),3) for px,py in posts if px*FOOT>ex}
+    cuts=sorted(cuts); out=[]
+    for lo,hi in zip(cuts,cuts[1:]):
+        n=max(1,math.ceil((hi-lo)/step))
+        out+=[round(lo+(hi-lo)*(k+.5)/n,1) for k in range(n)]
+    return out
 
 
 def stretch_plan():
@@ -748,15 +767,16 @@ def sightline_backdrop():
     """Review-only bearing posts make transparency and the horizon observable."""
     mat=material('sightline ground',(.28,.32,.31),0,1)
     box('Review ground',(8,0,-7),(160,160,.2),mat,'Sightline reference',0)
+    cx=captain_x()*FOOT     # the eye in real metres: the circle is round there, and stretch_plan scales design points
     for angle in range(-120,121,15):
-        r=math.radians(angle);x=8.7+28*math.cos(r);y=28*math.sin(r)
-        box('Distant bearing post',(x,y,-1.4),(.35,.35,11),brass if angle==0 else white,'Sightline reference',0)
-        t=text(f'{abs(angle):03d}',(x,y,4.7),1.0,white,'Sightline reference')
-        t.rotation_euler=Vector((8.7-x,-y,0)).to_track_quat('Z','Y').to_euler()
+        r=math.radians(angle);x=cx+28*math.cos(r);y=28*math.sin(r)
+        box('Distant bearing post',(x/FOOT,y/FOOT,-1.4),(.35,.35,11),brass if angle==0 else white,'Sightline reference',0)
+        t=text(f'{abs(angle):03d}',(x/FOOT,y/FOOT,4.7),1.0,white,'Sightline reference')
+        t.rotation_euler=Vector((cx-x,-y,0)).to_track_quat('Z','Y').to_euler()
     for a in range(-120,120,5):
         p=[]
         for angle in (a,a+5):
-            r=math.radians(angle);p.append((8.7+28*math.cos(r),28*math.sin(r),1.65))
+            r=math.radians(angle);p.append(((cx+28*math.cos(r))/FOOT,28*math.sin(r)/FOOT,1.65))
         beam('Captain horizon reference',p[0],p[1],.035,.035,brass,'Sightline reference')
 
 
@@ -779,10 +799,10 @@ def check_geometry(scene):
     problems=[];rays=[]
     PILOT_X=pilot_x()
     probes=[
-        # Probe between the corner posts (about +-43 degrees), not through them.
-        ('captain',(8.7,0,1.65),[(a,0) for a in (-85,-65,-52,-30,0,30,52,65,85)]+[(-20,15),(0,15),(20,15)]),
-        # Pilot: all round, steeply down to the floor rim, up through the roof, and back through the portal.
-        ('pilot',(PILOT_X,0,.25),[(a,0) for a in (-85,-60,-30,0,30,60,85)]+[(-25,45),(25,45),(0,-28),(-40,-22),(40,-22)]),
+        # Captain: between the corner posts (about +-43 degrees at FOOT 1), not through them, and up under the header.
+        ('captain',(captain_x(),0,1.65),[(a,0) for a in between_posts((captain_x(),0),BR)]+[(-20,15),(0,15),(20,15)]),
+        # Pilot: forward between the nose posts, steeply down to the floor rim, up through the roof, and back through the portal.
+        ('pilot',(PILOT_X,0,.25),[(a,0) for a in [0]+between_posts((PILOT_X,0),PILOT)]+[(-25,45),(25,45),(0,-28),(-40,-22),(40,-22)]),
         # Back through the portal into the bridge: 5.5 m, nothing may cross the doorway.
         ('pilot back',(PILOT_X,0,.25),[(180,0)],5.5),('pilot back high',(PILOT_X,0,.9),[(180,0)],5.5),
         # Standing eye behind the side windows: they must be real openings. Oblique rays toward
@@ -1026,8 +1046,8 @@ def build():
       'front':camera(scene,'01b Front low',(30,-19,5.5),(5,0,1.2),lens=30),
       'aft':camera(scene,'02 Aft',(-28,32,18),(-1,0,0),ortho=34),
       'side':camera(scene,'03 Side',(1,-50,3),(1,0,0),ortho=34),
-      'captain':camera(scene,'04 Captain eye 1.65m',(8.7,0,1.65),(20,0,1.65),lens=19),
-      'captain_side':camera(scene,'05 Captain lateral',(8.7,0,1.65),(12,12,1.65),lens=23),
+      'captain':camera(scene,'04 Captain eye 1.65m',(captain_x(),0,1.65),(20,0,1.65),lens=19),
+      'captain_side':camera(scene,'05 Captain lateral',(captain_x(),0,1.65),(12,12,1.65),lens=23),
       'pilot':camera(scene,'06 Pilot seated eye 1.2m above floor',(pilot_x(),0,.25),(22,0,.65),lens=18),
       'bridge_back':camera(scene,'07 Bridge looking aft',(11,3.6,1.65),(5,-1,1.3),lens=20),
     }

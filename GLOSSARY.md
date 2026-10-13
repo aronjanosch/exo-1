@@ -118,6 +118,22 @@ _Avoid_: terminal, monitor, screen (the player's screen)
 What a display shows: a plate with a header and labels, buttons, bars, toggles, sliders, dials, trends and lists laid out in panel pixels, rebuilt each tick from its owner's state. A click on it names the widget's action.
 _Avoid_: page, UI, menu (menus are outside the game world)
 
+**Item**:
+A small thing a walker collects into the action bar, holds, drops and throws: a wrench, a bandage, a fire extinguisher. Defined in `content/items/`; loose, it is a body in its frame like a crate.
+_Avoid_: object, loot, crate (a crate is cargo)
+
+**Collect**:
+F on an item: it goes into the action bar. The thing decides, not a second key: cargo is carried instead.
+_Avoid_: loot, pick up (for items; crates are picked up and carried)
+
+**Carry**:
+Hold cargo with the hands (the grab); the hands are busy meanwhile, so an item in the hand is lowered.
+_Avoid_: hold (an item is held in the hand)
+
+**Action bar**:
+The walker's inventory: eight slots on the keys 1 to 8; the selected slot is in the hand. Tab opens it with a mouse cursor to sort it.
+_Avoid_: hotbar, backpack, inventory screen
+
 **Space station**:
 A place in space where the crew docks, trades, takes missions and saves; the game starts on one.
 _Avoid_: station (that is a place on the ship), outpost, hub

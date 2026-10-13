@@ -18,6 +18,7 @@ pub mod help;
 pub mod hot_reload;
 pub mod hud;
 pub mod interact;
+pub mod items;
 pub mod look;
 pub mod map;
 pub mod named_material;
@@ -196,7 +197,7 @@ impl Options {
         }
         o.net = net_live::NetConfig::parse(&net_args);
         // The dev area's scenarios start there.
-        if matches!(o.scenario.as_deref(), Some("dev_area" | "displays")) && o.start.is_none() {
+        if matches!(o.scenario.as_deref(), Some("dev_area" | "displays" | "items")) && o.start.is_none() {
             o.start = Some(dev_area::PLACE.into());
         }
         if let Some(p) = &mut o.perf {
@@ -386,7 +387,7 @@ pub fn build_app(o: &Options) -> App {
     app.add_plugins(frame_cost::plugin);
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
     app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, avian_crates::plugin, cargo::plugin, hud::plugin, net_live::plugin));
-    app.add_plugins((gameplay::plugin, town::plugin, displays::plugin));
+    app.add_plugins((gameplay::plugin, town::plugin, displays::plugin, items::plugin));
     if o.dev_area() {
         app.add_plugins(dev_area::plugin);
     }
@@ -416,7 +417,7 @@ pub fn build_app(o: &Options) -> App {
     if !o.headless {
         app.add_plugins((view::plugin, controls::window_plugin, settings::window_plugin, terrain::plugin, daynight::window_plugin, grab::window_plugin, cargo::window_plugin));
         app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, town::window_plugin, named_material::window_plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin, help::window_plugin, dev::window_plugin));
-        app.add_plugins(displays::window_plugin);
+        app.add_plugins((displays::window_plugin, items::window_plugin));
         if o.dev_area() {
             app.add_plugins(dev_area::window_plugin);
         }

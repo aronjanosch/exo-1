@@ -66,9 +66,9 @@ RAMP_HALF = 1.25
 SKID_Y = 4.9
 STRUTS = (-9.6,-3.6,4.2)        # the middle strut clears the airlock beside the gear room
 AIR_X = (-2.8,-.2)              # airlock footprint along x, on the port side in front of the gear room
-# TODO(initiator): 1.2 is a proposal from the PULSAR starter-ship comparison (main deck about 256 -> 370 m2,
-# length 28.6 -> 34.3 m, same decks); the size is not decided.
 POD = False                     # pilot pod on the bridge nose; off: the pilot sits on the bridge, --pilot-pod brings it back
+# 1.2 was picked over 1.3 by the initiator after the side-by-side with the PULSAR starter ships
+# (main deck about 256 -> 363 m2, length 28.6 -> 31.2 m without the pod, same decks).
 FOOT = 1.2                      # plan stretch in x and y; --footprint overrides it
 PLAN_RES = (1600,1200)          # design pixels; 50 px per metre at any FOOT, see plan_res()
 PLAN_SCALE = 32.0          # design metres across the image width: 50 px per metre

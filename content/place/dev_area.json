@@ -1,0 +1,9 @@
+{
+  "_comment": "The dev area (#284): a small level rectangle where each role's placeholder devices and displays stand, to try mechanics without the finished ship. Area frame: x east, y north; zones in crates/exo_app/src/dev_area/mod.rs (captain, lab and engineering side by side, storage behind them along the north edge, the pad strip in the south). On open dry land on Hearth near the equator (the noise ground there varies by under a metre over the rectangle). `--start=dev_area` starts at the pad 'main'. Position and sizes are starting values (TODO(initiator)).",
+  "id": "dev_area",
+  "planet": "hearth",
+  "lat_deg": 7.0,
+  "lon_deg": 220.0,
+  "edits": [ { "type": "flatten", "order": 0, "half_extent_m": [29.0, 25.0], "rolloff_m": 30.0 } ],
+  "pads": [ { "id": "main", "at": [0.0, -12.0], "radius_m": 8.0 } ]
+}

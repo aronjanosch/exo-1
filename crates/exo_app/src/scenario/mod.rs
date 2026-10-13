@@ -25,7 +25,9 @@ use crate::ship::RemoteShip;
 mod boost;
 mod camera_g;
 mod cargo;
+mod dev_area;
 mod dev_menu;
+mod displays;
 mod figure;
 mod flight;
 mod help;
@@ -680,6 +682,9 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "crate-hull" => cargo::crate_hull_steps(&mut s),
         // Round 6: the city with colliders, its characters, the new towns' pads.
         "town" => town::town_steps(&mut s),
+        // The dev area and its test console, with `--start=dev_area`.
+        "dev_area" => dev_area::dev_area_steps(&mut s, &shot_step),
+        "displays" => displays::displays_steps(&mut s),
         // #135: save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),
         // #169: the seat refuses without the licence; the exam; the licence.

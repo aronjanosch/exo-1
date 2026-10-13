@@ -6,6 +6,7 @@ use crate::cargo::{crate_world, Crate, Crates};
 use crate::controls::{Actions, Bindings, Input, Tap};
 use crate::displays::{ActiveDisplay, DisplayPanel, USE_RANGE};
 use crate::grab::Grab;
+use crate::items::{Items, LooseItem};
 use crate::ship::{Ship, SEAT_POS};
 use crate::walker::{cabin_frame, CabinFloor, Player, EYE_HEIGHT};
 use avian3d::prelude::*;
@@ -40,6 +41,8 @@ pub enum Target {
     Panel(Entity),
     /// Leave the display in use.
     LeavePanel(Entity),
+    /// Collect a loose item into the action bar.
+    Item(Entity),
 }
 
 #[derive(Resource, Default, Debug)]
@@ -63,6 +66,19 @@ pub fn key_label(bindings: &Bindings, t: Tap) -> String {
         .unwrap_or_else(|| "?".into())
 }
 
+/// "  [key] verb" for a tap, or nothing when the tap has no key (`Tap::KEYLESS`).
+pub fn key_hint(bindings: &Bindings, t: Tap, verb: &str) -> String {
+    match key_label(bindings, t).as_str() {
+        "?" => String::new(),
+        k => format!("  [{k}] {verb}"),
+    }
+}
+
+/// Whether the hands can take the crate next to the item in the hand.
+fn hands_free(items: &Items, crates: &Query<(Entity, &Crate), Without<LooseItem>>, table: &Crates, e: Entity) -> bool {
+    crates.get(e).is_ok_and(|(_, c)| items.client.view.may_carry(&items.defs, table.0.sizes[c.size].hands))
+}
+
 fn verb(t: &Target, size: &str) -> String {
     match t {
         Target::Seat => "sit".into(),
@@ -75,6 +91,7 @@ fn verb(t: &Target, size: &str) -> String {
         Target::Accept(_) => "take the job: ".into(),
         Target::Panel(_) => "use ".into(),
         Target::LeavePanel(_) => "leave ".into(),
+        Target::Item(_) => "pick up ".into(),
     }
 }
 
@@ -90,9 +107,10 @@ pub fn interaction(
     mut players: Query<&mut Player>,
     mut ships: Query<(Entity, &mut Ship, &Position, &Rotation)>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
-    crates: Query<(Entity, &Crate)>,
+    crates: Query<(Entity, &Crate), Without<LooseItem>>,
     mut gp: ResMut<crate::gameplay::Gameplay>,
     (mut active, displays): (ResMut<ActiveDisplay>, Query<(Entity, &DisplayPanel)>),
+    (time, mut items, loose): (Res<Time>, ResMut<Items>, Query<(Entity, &Crate, &LooseItem)>),
 ) {
     let Ok(mut pl) = players.single_mut() else { return };
     let Some((ship_e, sp, sr)) = ships.iter().next().map(|(e, _, p, r)| (e, *p, *r)) else { return };
@@ -143,6 +161,8 @@ pub fn interaction(
         let half = cfg.cone_half_angle_deg.to_radians();
         let mut best: Option<(f64, Entity, Reach)> = None;
         let mut panel_pick = None;
+        let mut item_target = None;
+        let mut item_angle = None;
         for (e, c) in &crates {
             let (centre, _) = crate_world(c, &frame);
             let Some(dist) = in_cone(eye, look, centre, half, cfg.tool_max_range) else { continue };
@@ -151,6 +171,23 @@ pub fn interaction(
             if best.is_none_or(|(a, ..)| angle < a) {
                 best = Some((angle, e, reach));
             }
+        }
+        // A loose item in reach of the hands, nearest the view's centre; it wins over a crate
+        // nearer the edge of the view.
+        let item_pick = loose
+            .iter()
+            .filter(|(_, _, li)| crate::items::visible(&items, li))
+            .filter_map(|(e, c, _)| {
+                let (centre, _) = crate_world(c, &frame);
+                in_cone(eye, look, centre, half, cfg.hand_range).map(|_| ((centre - eye).angle_between(look), e))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        if let Some((a, e)) = item_pick
+            && best.is_none_or(|(c, ..)| a <= c)
+        {
+            best = None;
+            item_target = Some(e);
+            item_angle = Some(a);
         }
         let at_seat = pl.ship == Some(ship_e) && pl.w.pos.distance(SEAT_POS) < SEAT_RANGE;
         // A display: looked at straight (the view ray meets its quad) or inside the cone, in reach,
@@ -167,8 +204,10 @@ pub fn interaction(
         });
         if let Some((a, e)) = panel
             && best.is_none_or(|(c, ..)| a <= c)
+            && item_angle.is_none_or(|i| a < i)
         {
             best = None;
+            item_target = None;
             panel_pick = Some(e);
         }
         match best {
@@ -176,7 +215,7 @@ pub fn interaction(
             Some((_, e, Reach::Hands)) => Some(Target::Crate(e, Reach::Hands)),
             _ if at_seat => Some(if gp.may_pilot(crate::gameplay::HOST) { Target::Seat } else { Target::SeatLocked }),
             Some((_, e, r)) => Some(Target::Crate(e, r)),
-            None => panel_pick.map(Target::Panel),
+            None => item_target.map(Target::Item).or(panel_pick.map(Target::Panel)),
         }
     };
     // At a giver's counter with something to offer, and nothing else to do: talk to the giver.
@@ -197,13 +236,22 @@ pub fn interaction(
                 Target::SeatLocked => p.push_str(&format!(" ({})", gp.licence_hint())),
                 Target::Counter(g) => p.push_str(&gp.jobs_content.givers.get(g).map(|g| gp.text(&g.record.name)).unwrap_or_default()),
                 Target::Panel(e) => p.push_str(&displays.get(*e).map(|(_, d)| d.name.clone()).unwrap_or_default()),
+                Target::Item(e) => {
+                    if let Ok((_, _, li)) = loose.get(*e) {
+                        p.push_str(&items.defs.get(&li.def).map_or(li.def.clone(), |d| d.name.clone()));
+                        if li.count > 1 {
+                            p.push_str(&format!(" ({})", li.count));
+                        }
+                    }
+                }
+                Target::Crate(e, Reach::Hands) if !hands_free(&items, &crates, &table, *e) => p.push_str(" (hands full: put the item away, 1 to 8)"),
                 Target::LeavePanel(e) => {
                     p.push_str(&displays.get(*e).map(|(_, d)| d.name.clone()).unwrap_or_default());
                     p.push_str(&format!("  [{}] leave", key_label(&bindings, Tap::DisplayLeave)));
                 }
                 Target::Accept(j) => {
                     p.push_str(&gp.offer_label(*j));
-                    p.push_str(&format!("   [{}] next  [{}] decline", key_label(&bindings, Tap::NextOffer), key_label(&bindings, Tap::Decline)));
+                    p.push_str(&format!(" {}{}", key_hint(&bindings, Tap::NextOffer, "next"), key_hint(&bindings, Tap::Decline, "decline")));
                 }
                 _ => {}
             }
@@ -237,6 +285,7 @@ pub fn interaction(
             pl.w.pos = SEAT_POS - DVec3::new(0.0, 0.3, 0.0);
             pl.w.halt();
         }
+        Target::Crate(e, Reach::Hands) if !hands_free(&items, &crates, &table, e) => {}
         Target::Crate(e, reach) => {
             if let Ok((_, c)) = crates.get(e) {
                 let f = if pl.ship.is_some() { frame } else { Frame::IDENTITY };
@@ -253,6 +302,13 @@ pub fn interaction(
             gp.close_counter();
         }
         Target::Panel(e) => *active = ActiveDisplay::Using(e),
+        Target::Item(e) => {
+            if let Ok((_, _, li)) = loose.get(e)
+                && let Some(item) = li.id
+            {
+                let _ = items.request(time.elapsed_secs_f64(), item_core::Request::Collect { item });
+            }
+        }
         Target::LeavePanel(_) => *active = ActiveDisplay::Idle,
     }
 }

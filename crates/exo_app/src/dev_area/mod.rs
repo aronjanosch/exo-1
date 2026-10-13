@@ -21,6 +21,7 @@ use bevy::math::{DQuat, DVec2, DVec3};
 use bevy::prelude::*;
 use display_core::PanelId;
 
+pub mod item_table;
 pub mod test_console;
 
 /// The place (`content/place/dev_area.json`).
@@ -131,7 +132,7 @@ pub fn plugin(app: &mut App) {
     app.init_resource::<DevAreaDevices>().init_resource::<DevArea>();
     app.add_systems(Update, spawn_devices.in_set(crate::phases::Frame::World));
     // ROLES: one line per role module.
-    app.add_plugins(test_console::plugin);
+    app.add_plugins((test_console::plugin, item_table::plugin));
 }
 
 pub fn window_plugin(app: &mut App) {

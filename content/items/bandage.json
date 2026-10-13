@@ -6,7 +6,7 @@
   "take": "collect",
   "hands": 1,
   "stack": 4,
-  "use": "treat_burn",
+  "use": "bandage",
   "tags": ["small", "medical"],
   "shape": { "extents": [0.12, 0.06, 0.12], "mass": 0.1, "colour": [0.95, 0.93, 0.86] }
 }

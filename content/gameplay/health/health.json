@@ -15,7 +15,7 @@
       { "to": 200.0, "vitality": [0.0, 2.0], "change_per_s": 0.0 } ] },
     { "id": "radiation", "max": 200.0, "bands": [
       { "to": 50.0, "vitality": [0.0, 0.2], "change_per_s": 0.0 },
-      { "to": 200.0, "vitality": [0.2, 1.5], "change_per_s": 0.0 } ] }
+      { "to": 200.0, "vitality": [0.2, 2.0], "change_per_s": 0.0 } ] }
   ],
   "treatments": [
     { "id": "bandage", "required_skill": 40.0, "fail_factor": 0.75, "reduce": { "burn": 15.0 } },

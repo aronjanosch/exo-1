@@ -299,9 +299,10 @@ impl Health {
             return Vec::new();
         }
         let o = &t.oxygen;
+        // Bad air takes its rate whether awake or not; unconscious in good air still loses some.
         let air = match self.life {
-            Life::Unconscious => o.unconscious_per_s,
             _ if env.oxygen < o.low_below => o.fall_per_s,
+            Life::Unconscious => o.unconscious_per_s,
             _ => -o.rise_per_s,
         };
         if air > 0.0 {

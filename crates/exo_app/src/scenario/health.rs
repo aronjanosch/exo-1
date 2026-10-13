@@ -1,7 +1,6 @@
 //! #295, health: at the dev area's table a bandage is collected; the walker stands on the hot plate
 //! and burns; LMB uses the bandage on oneself (the burn drops, one less in the stack); the walker
-//! stands in the glowing barrel's zone until the radiation is at its top (unconscious, not dead:
-//! under the shipped bands radiation alone stops at -50 vitality), then in the no-air booth until
+//! stands in the no-air booth until the HUD shows the air, then in the glowing barrel's zone until
 //! dead; five seconds later the walker is back on the pad with full health. Without a window.
 //! Run with `--start=dev_area`.
 use super::items::{collect, items, outside, tap_then};
@@ -97,24 +96,7 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The glowing barrel: radiation up to its top, unconscious, not dead.
-    s.push(Box::new(|w, c| {
-        if c.t == 0.0 {
-            begin(w, c, "health: into the glowing barrel's zone");
-            let p = ground_at(w, GLOW_BARREL.centre);
-            place_walker(w, p);
-            return false;
-        }
-        if radiation(w) < 199.0 && c.t < 60.0 {
-            return false;
-        }
-        let unconscious = w.resource::<HealthState>().bodies.get(&LOCAL).is_some_and(|b| b.health.vitality() <= 0.0);
-        check(c, radiation(w) >= 199.0 && unconscious && !dead(w), format!("health: radiation {:.0} at its top, vitality under zero, not dead", radiation(w)));
-        end(w, c, format!("{:.0} s", c.t));
-        true
-    }));
-
-    // The no-air booth: dead, and the respawn starts.
+    // The no-air booth: oxygen low shows on the HUD; out again before it costs health.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "health: into the no-air booth");
@@ -122,11 +104,27 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
             place_walker(w, p);
             return false;
         }
-        // Unconscious, the air takes 1 per second (`unconscious_per_s`): about 50 s from here.
-        if !dead(w) && c.t < 120.0 {
+        if c.t < 4.0 {
             return false;
         }
-        check(c, dead(w) && down(w).is_some(), format!("health: dead in the booth after {:.1} s, the respawn counts ({:?} s)", c.t, down(w)));
+        let o2 = w.resource::<Vitals>().oxygen;
+        check(c, o2.is_some_and(|o| o < 1.0), format!("health: the booth's air shows on the HUD ({o2:?})"));
+        end(w, c, format!("{o2:?}"));
+        true
+    }));
+
+    // The glowing barrel: radiation until dead, and the respawn starts.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "health: into the glowing barrel's zone");
+            let p = ground_at(w, GLOW_BARREL.centre);
+            place_walker(w, p);
+            return false;
+        }
+        if !dead(w) && c.t < 60.0 {
+            return false;
+        }
+        check(c, dead(w) && down(w).is_some(), format!("health: dead by radiation ({:.0}) after {:.1} s, the respawn counts ({:?} s)", radiation(w), c.t, down(w)));
         end(w, c, "dead".into());
         true
     }));

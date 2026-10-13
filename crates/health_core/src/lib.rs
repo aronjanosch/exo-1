@@ -367,3 +367,24 @@ impl Health {
         self.recalc(t);
     }
 }
+
+/// Where a ray from `origin` along `dir` (unit) first meets a capsule that stands on `feet` and
+/// reaches `height` up `up` (unit), with `radius`: the distance along the ray, within `reach`.
+/// Sampled every 5 cm (a rough hit test for the aim; the glue passes plain numbers).
+pub fn capsule_hit(origin: [f64; 3], dir: [f64; 3], reach: f64, feet: [f64; 3], up: [f64; 3], height: f64, radius: f64) -> Option<f64> {
+    const STEP: f64 = 0.05;
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let steps = (reach / STEP).ceil().max(0.0) as usize;
+    for i in 0..=steps {
+        let t = (i as f64 * STEP).min(reach);
+        let p = [origin[0] + dir[0] * t, origin[1] + dir[1] * t, origin[2] + dir[2] * t];
+        let rel = [p[0] - feet[0], p[1] - feet[1], p[2] - feet[2]];
+        let s = dot(rel, up).clamp(0.0, height);
+        let c = [feet[0] + up[0] * s, feet[1] + up[1] * s, feet[2] + up[2] * s];
+        let d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]];
+        if dot(d, d) <= radius * radius {
+            return Some(t);
+        }
+    }
+    None
+}

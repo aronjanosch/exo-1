@@ -22,6 +22,7 @@ use bevy::prelude::*;
 use display_core::PanelId;
 
 pub mod look_samples;
+pub mod hazards;
 pub mod item_table;
 pub mod test_console;
 
@@ -110,6 +111,14 @@ pub struct DevBox {
     pub size: DVec3,
 }
 
+/// Area metres of a world position on the ground under the frame (the inverse of `Frame::ground`,
+/// flat enough for the area's 24 m).
+pub fn area_of(frame: &Frame, planet: &PlanetRes, p: DVec3) -> [f64; 2] {
+    let u = (p - planet.centre).normalize();
+    let k = u.dot(frame.dir);
+    [planet.radius * u.dot(frame.east) / k, planet.radius * u.dot(frame.north) / k]
+}
+
 /// The area on the current planet: its frame (None where the place is not) and what it spawned.
 #[derive(Resource, Default)]
 pub struct DevArea {
@@ -136,6 +145,7 @@ pub fn plugin(app: &mut App) {
     app.add_plugins(test_console::plugin);
     app.add_plugins(look_samples::plugin);
     app.add_plugins(item_table::plugin);
+    app.add_plugins(hazards::plugin);
 }
 
 pub fn window_plugin(app: &mut App) {

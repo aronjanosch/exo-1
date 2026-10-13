@@ -26,6 +26,7 @@ pub mod named_material;
 pub mod menu;
 pub mod net;
 pub mod net_live;
+pub mod health;
 pub mod items_net;
 pub mod notices;
 pub mod origin;
@@ -389,7 +390,7 @@ pub fn build_app(o: &Options) -> App {
     app.add_plugins(frame_cost::plugin);
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
     app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, avian_crates::plugin, cargo::plugin, hud::plugin, net_live::plugin));
-    app.add_plugins((gameplay::plugin, town::plugin, displays::plugin, items::plugin, crew_hud::plugin, items_net::plugin));
+    app.add_plugins((gameplay::plugin, town::plugin, displays::plugin, items::plugin, crew_hud::plugin, items_net::plugin, health::plugin));
     if o.dev_area() {
         app.add_plugins(dev_area::plugin);
     }
@@ -419,7 +420,7 @@ pub fn build_app(o: &Options) -> App {
     if !o.headless {
         app.add_plugins((view::plugin, controls::window_plugin, settings::window_plugin, terrain::plugin, daynight::window_plugin, grab::window_plugin, cargo::window_plugin));
         app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, town::window_plugin, named_material::window_plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin, help::window_plugin, dev::window_plugin));
-        app.add_plugins((displays::window_plugin, items::window_plugin, crew_hud::window_plugin, items_net::window_plugin));
+        app.add_plugins((displays::window_plugin, items::window_plugin, crew_hud::window_plugin, items_net::window_plugin, health::window_plugin));
         if o.dev_area() {
             app.add_plugins(dev_area::window_plugin);
         }

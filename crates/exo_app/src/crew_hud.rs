@@ -28,9 +28,9 @@ use display_core::hud::{
 };
 use display_core::{Rgb, Tone};
 
-/// Health, oxygen and burn of the local player. Nothing writes them yet (there is no health system
-/// in the game): later systems set them; a scenario can too. Oxygen and burn are `None` while they
-/// do not apply, and the HUD then shows neither.
+/// Health, oxygen, burn and radiation of the local player. The health system (`health`) writes
+/// them (the host's own, or what the host sends a client); a scenario can too. Oxygen and burn are
+/// `None` while they do not apply, and radiation is 0 then; the HUD shows none of them.
 #[derive(Resource, Clone, Debug, PartialEq)]
 pub struct Vitals {
     /// 0..1.
@@ -39,11 +39,13 @@ pub struct Vitals {
     pub oxygen: Option<f64>,
     /// 0..1, how hard the burn is; `None` when not burning.
     pub burn: Option<f64>,
+    /// 0..1, how much radiation the body has; the line shows only above 0 (#295).
+    pub radiation: f64,
 }
 
 impl Default for Vitals {
     fn default() -> Self {
-        Vitals { health: 1.0, oxygen: None, burn: None }
+        Vitals { health: 1.0, oxygen: None, burn: None, radiation: 0.0 }
     }
 }
 
@@ -103,7 +105,7 @@ fn update_compass(
 }
 
 fn update_vitals(vitals: Res<Vitals>, look: Res<DisplayLook>, mut hud: ResMut<CrewHud>) {
-    let lines = vital_lines(vitals.health, vitals.oxygen, vitals.burn, &look.0.hud.vitals);
+    let lines = vital_lines(vitals.health, vitals.oxygen, vitals.burn, vitals.radiation, &look.0.hud.vitals);
     if hud.vitals != lines {
         hud.vitals = lines;
     }
@@ -474,13 +476,13 @@ fn spawn_hud(commands: &mut Commands, theme: &display_core::Theme, fonts: &HudFo
             }
         });
 
-    // Vitals, bottom left: burn line, oxygen bar, health bar; each only while it applies.
+    // Vitals, bottom left: burn line, oxygen bar, radiation bar, health bar; each only while it applies.
     let v = &h.vitals;
     commands.spawn((HudPart, Node { left: px(edge), bottom: px(edge), width: px(v.width as f32), flex_direction: FlexDirection::Column, row_gap: px(v.gap as f32), ..abs() })).with_children(|root| {
         root.spawn((VitalPart::Row(VitalKind::Burn), Node { display: Display::None, ..default() })).with_children(|row| {
             row.spawn((VitalPart::Name(VitalKind::Burn), hud_caps(&fonts.semibold, "", v.label_size, col(k.warn), h, 0.1)));
         });
-        for kind in [VitalKind::Oxygen, VitalKind::Health] {
+        for kind in [VitalKind::Oxygen, VitalKind::Radiation, VitalKind::Health] {
             root.spawn((VitalPart::Row(kind), Node { flex_direction: FlexDirection::Column, row_gap: px(v.label_gap as f32), display: Display::None, ..default() })).with_children(|row| {
                 row.spawn((VitalPart::Head(kind), Node { justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Baseline, display: Display::None, ..default() })).with_children(|head| {
                     head.spawn(Node { column_gap: px(6), align_items: AlignItems::Baseline, ..default() }).with_children(|label| {
@@ -753,7 +755,11 @@ fn update_vitals_ui(
             }
             VitalPart::Name(k) => {
                 if line(k).is_some() {
-                    set_text(&mut t, if k == VitalKind::Oxygen { "OXYGEN" } else { "HEALTH" });
+                    set_text(&mut t, match k {
+                        VitalKind::Oxygen => "OXYGEN",
+                        VitalKind::Radiation => "RAD",
+                        _ => "HEALTH",
+                    });
                 }
             }
             VitalPart::Value(k) => {

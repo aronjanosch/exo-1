@@ -136,6 +136,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                         bodies.on_event(&ev);
                         items.hear(now, ev);
                     }
+                    Some(ToClient::Vitals(v)) => items.vitals_in = Some(v),
                     None => net.st.invalid += 1,
                 }
             }
@@ -248,6 +249,9 @@ pub fn items_net_out(
             }
             NetOut::Event { to, ev } => {
                 net.send_reliable(to, &wire::encode(&ToClient::Event(ev)));
+            }
+            NetOut::Vitals { to, v } => {
+                net.send_reliable(Some(to), &wire::encode(&ToClient::Vitals(v)));
             }
         }
     }

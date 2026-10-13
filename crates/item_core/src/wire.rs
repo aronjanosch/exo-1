@@ -31,8 +31,8 @@ pub struct Vitals {
     pub health: f64,
     /// Oxygen low's share (bad air), None when there is none.
     pub oxygen: Option<f64>,
-    /// Burn's band: 1 (I), 2 (II) or 3 (III); None without burn.
-    pub burn: Option<u8>,
+    /// Burn, 0..1 as the HUD reads it (its three levels); None without burn.
+    pub burn: Option<f64>,
     /// Radiation's share, 0 without.
     pub radiation: f64,
     /// Seconds until the respawn while the player is down; None while standing.

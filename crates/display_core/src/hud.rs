@@ -404,6 +404,8 @@ pub enum VitalKind {
     Health,
     Oxygen,
     Burn,
+    /// Radiation (#295): a bar, only while it is above zero.
+    Radiation,
 }
 
 /// One line of the vitals block: a bar filled to `frac` (0..1), or for the burn a text line.
@@ -435,6 +437,7 @@ impl VitalLine {
         let name = match self.kind {
             VitalKind::Health => "HEALTH",
             VitalKind::Oxygen => "OXYGEN",
+            VitalKind::Radiation => "RAD",
             VitalKind::Burn => return self.burn_text(),
         };
         format!("{} {name}", self.glyph()).trim_start().to_string()
@@ -457,8 +460,8 @@ impl VitalLine {
 }
 
 /// The lines to show now, top to bottom: the burn only while burning, oxygen only while it is set
-/// (it drops), health always.
-pub fn vital_lines(health: f64, oxygen: Option<f64>, burn: Option<f64>, v: &VitalsLook) -> Vec<VitalLine> {
+/// (it drops), radiation only above zero (warn above 0, bad above half), health always.
+pub fn vital_lines(health: f64, oxygen: Option<f64>, burn: Option<f64>, radiation: f64, v: &VitalsLook) -> Vec<VitalLine> {
     let share = |x: f64| if x.is_finite() { x.clamp(0.0, 1.0) } else { 0.0 };
     let tone = |x: f64| {
         if x < v.bad_below {
@@ -479,6 +482,10 @@ pub fn vital_lines(health: f64, oxygen: Option<f64>, burn: Option<f64>, v: &Vita
     }
     if let Some(o) = oxygen {
         out.push(VitalLine { kind: VitalKind::Oxygen, frac: share(o), tone: tone(share(o)) });
+    }
+    if radiation > 0.0 {
+        let r = share(radiation);
+        out.push(VitalLine { kind: VitalKind::Radiation, frac: r, tone: if r > 0.5 { Tone::Bad } else { Tone::Warn } });
     }
     out.push(VitalLine { kind: VitalKind::Health, frac: share(health), tone: tone(share(health)) });
     out
@@ -805,24 +812,34 @@ mod tests {
     #[test]
     fn vitals_list_burn_oxygen_health_and_only_health_when_calm() {
         let v = look().vitals;
-        let l = vital_lines(1.0, None, None, &v);
+        let l = vital_lines(1.0, None, None, 0.0, &v);
         assert_eq!(l.len(), 1);
         assert_eq!(l[0].kind, VitalKind::Health);
         assert!(l[0].calm() && l[0].glyph().is_empty(), "healthy reads calm, not green");
-        let l = vital_lines(0.9, Some(0.6), Some(0.5), &v);
+        let l = vital_lines(0.9, Some(0.6), Some(0.5), 0.0, &v);
         assert_eq!(l.iter().map(|x| x.kind).collect::<Vec<_>>(), [VitalKind::Burn, VitalKind::Oxygen, VitalKind::Health], "top to bottom");
         assert_eq!(l[0].tone, Tone::Warn);
         assert_eq!((l[1].tone, l[2].tone), (Tone::Good, Tone::Good), "60 % and up read calm");
         // The design's examples: burn, oxygen and crit.
-        let l = vital_lines(0.58, None, Some(0.5), &v);
+        let l = vital_lines(0.58, None, Some(0.5), 0.0, &v);
         assert_eq!((l[0].burn_text(), l[1].label(), l[1].value()), ("▲ BURN II".to_string(), "▲ HEALTH".to_string(), "58".to_string()));
-        let l = vital_lines(1.0, Some(0.41), None, &v);
+        let l = vital_lines(1.0, Some(0.41), None, 0.0, &v);
         assert_eq!((l[0].label(), l[0].value(), l[0].tone, l[1].calm()), ("▲ OXYGEN".to_string(), "41".to_string(), Tone::Warn, true));
-        let l = vital_lines(0.23, Some(0.18), Some(1.0), &v);
+        let l = vital_lines(0.23, Some(0.18), Some(1.0), 0.0, &v);
         assert_eq!((l[0].burn_text(), l[0].tone, l[1].label(), l[2].label()), ("■ BURN III".to_string(), Tone::Bad, "■ OXYGEN".to_string(), "■ HEALTH".to_string()));
-        let l = vital_lines(f64::NAN, Some(2.0), None, &v);
+        let l = vital_lines(f64::NAN, Some(2.0), None, 0.0, &v);
         assert_eq!((l[1].frac, l[0].frac), (0.0, 1.0));
-        assert_eq!(vital_lines(1.0, None, Some(0.1), &v)[0].burn_text(), "▲ BURN I");
+        assert_eq!(vital_lines(1.0, None, Some(0.1), 0.0, &v)[0].burn_text(), "▲ BURN I");
+    }
+
+    #[test]
+    fn radiation_is_a_bar_only_above_zero_and_bad_above_half() {
+        let v = look().vitals;
+        assert!(vital_lines(1.0, None, None, 0.0, &v).iter().all(|l| l.kind != VitalKind::Radiation));
+        let l = vital_lines(0.8, None, None, 0.3, &v);
+        assert_eq!((l[0].kind, l[0].label(), l[0].tone), (VitalKind::Radiation, "▲ RAD".to_string(), Tone::Warn));
+        let l = vital_lines(0.8, None, None, 0.6, &v);
+        assert_eq!((l[0].tone, l[0].value()), (Tone::Bad, "60".to_string()));
     }
 
     #[test]

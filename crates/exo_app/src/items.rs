@@ -25,6 +25,7 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use grab_core::CrateSize;
 use item_core::container::Stack;
+use item_core::wire::Vitals;
 use item_core::{Action, Client, Event, FrameRef, Host, ItemDefs, LooseId, Placement, PlayerId, Reject, Request};
 use walker_core::Frame;
 
@@ -81,6 +82,8 @@ pub enum NetOut {
     Action(Action),
     /// Host to the clients: one player (an answer to their action) or all (`to` None).
     Event { to: Option<PlayerId>, ev: Event },
+    /// Host to one client: its own vitals (#295).
+    Vitals { to: PlayerId, v: Vitals },
 }
 
 #[derive(Resource)]
@@ -98,6 +101,11 @@ pub struct Items {
     pub net_out: Vec<NetOut>,
     /// Every event the local client received (scenario checks).
     pub received: Vec<Event>,
+    /// Uses the host applied since the last `take_uses`: (user, target, effect). The health
+    /// system applies the effect (#295).
+    pub used: Vec<(PlayerId, PlayerId, String)>,
+    /// The latest vitals the host sent this client (#295), taken by the health system.
+    pub vitals_in: Option<Vitals>,
 }
 
 /// Whether the host can simulate an action's placement: a cabin is the host's ship. (Other
@@ -112,7 +120,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new() }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), vitals_in: None }
     }
 
     /// The local player's slot.
@@ -158,6 +166,16 @@ impl Items {
         self.publish(now, ev, None);
     }
 
+    /// The host sends a player its vitals (#295), over the reliable channel.
+    pub fn send_vitals(&mut self, to: PlayerId, v: Vitals) {
+        self.net_out.push(NetOut::Vitals { to, v });
+    }
+
+    /// The uses the host applied since the last call (#295).
+    pub fn take_uses(&mut self) -> Vec<(PlayerId, PlayerId, String)> {
+        std::mem::take(&mut self.used)
+    }
+
     /// A loose item came to rest (host, from the physics): remembered, and told to everybody.
     pub fn rest(&mut self, now: f64, item: LooseId, at: Placement, rot: [f64; 4], t: f64) {
         if let Some(ev) = self.host.rest(item, at, rot, t) {
@@ -201,6 +219,9 @@ impl Items {
             }
             let evs = if placement_ok(&a) { self.host.handle(&a) } else { vec![Event::Rejected { player: a.player, seq: a.seq, why: Reject::Invalid }] };
             for ev in evs {
+                if let Event::Used { player, target, effect } = &ev {
+                    self.used.push((*player, *target, effect.clone()));
+                }
                 self.publish(now, ev, Some(a.player));
             }
         }

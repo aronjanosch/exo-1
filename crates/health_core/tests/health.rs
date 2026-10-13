@@ -133,3 +133,16 @@ fn rng_is_seeded_and_in_range() {
         assert!((0.0..1.0).contains(&x));
     }
 }
+
+#[test]
+fn the_aim_hits_a_capsule_in_front_within_reach_only() {
+    let up = [0.0, 1.0, 0.0];
+    let feet = [0.0, 0.0, -1.5];
+    let eye = [0.0, 1.7, 0.0];
+    let fwd = [0.0, 0.0, -1.0];
+    let hit = capsule_hit(eye, fwd, 2.0, feet, up, 1.8, 0.4).expect("in front, within reach");
+    assert!((hit - 1.1).abs() < 0.06, "the near side of a 0.4 m capsule 1.5 m away: {hit}");
+    assert!(capsule_hit(eye, fwd, 2.0, [0.0, 0.0, -2.8], up, 1.8, 0.4).is_none(), "beyond the reach");
+    assert!(capsule_hit(eye, fwd, 2.0, [1.0, 0.0, -1.5], up, 1.8, 0.4).is_none(), "a metre to the side");
+    assert!(capsule_hit(eye, [0.0, 0.0, 1.0], 2.0, feet, up, 1.8, 0.4).is_none(), "behind");
+}

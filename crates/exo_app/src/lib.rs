@@ -7,6 +7,8 @@ pub mod cargo;
 pub mod controls;
 pub mod daynight;
 pub mod dev;
+pub mod dev_area;
+pub mod displays;
 pub mod env;
 pub mod flight_events;
 pub mod frame_cost;
@@ -117,6 +119,9 @@ pub struct Options {
     pub force_menu: bool,
     /// `--swap-rounds=<n>`: planet swaps by warp in the `swap` scenario (default and least 3).
     pub swap_rounds: usize,
+    /// `--dev-area`: spawn the dev area's devices wherever the run starts; `--start=dev_area` does
+    /// it too.
+    pub dev_area: bool,
 }
 
 impl Default for Options {
@@ -146,6 +151,7 @@ impl Default for Options {
             settings_dir: None,
             force_menu: false,
             swap_rounds: 3,
+            dev_area: false,
         }
     }
 }
@@ -178,6 +184,7 @@ impl Options {
                 "--tuning-dir" => o.tuning_dir = Some(PathBuf::from(v)),
                 "--settings-dir" => o.settings_dir = Some(PathBuf::from(v)),
                 "--menu" => o.force_menu = true,
+                "--dev-area" => o.dev_area = true,
                 "--swap-rounds" => o.swap_rounds = v.parse().expect("swap-rounds"),
                 "--perf" => o.perf = Some(o.perf.take().unwrap_or_default()),
                 "--perf-baseline" => o.perf.get_or_insert_default().baseline = PathBuf::from(v),
@@ -188,6 +195,10 @@ impl Options {
             }
         }
         o.net = net_live::NetConfig::parse(&net_args);
+        // The dev area's scenarios start there.
+        if matches!(o.scenario.as_deref(), Some("dev_area" | "displays")) && o.start.is_none() {
+            o.start = Some(dev_area::PLACE.into());
+        }
         if let Some(p) = &mut o.perf {
             // Under vsync a frame takes the display's period, not the game's time.
             o.no_vsync = true;
@@ -208,6 +219,10 @@ impl Options {
 }
 
 impl Options {
+    /// The dev area's devices are spawned.
+    pub fn dev_area(&self) -> bool {
+        self.dev_area || self.start.as_deref() == Some(dev_area::PLACE)
+    }
     /// Players start in the menu: a window, no script, no network flags.
     pub fn menu(&self) -> bool {
         !self.headless && (self.force_menu || self.scenario.is_none() && self.net.is_none())
@@ -371,7 +386,10 @@ pub fn build_app(o: &Options) -> App {
     app.add_plugins(frame_cost::plugin);
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
     app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, avian_crates::plugin, cargo::plugin, hud::plugin, net_live::plugin));
-    app.add_plugins((gameplay::plugin, town::plugin));
+    app.add_plugins((gameplay::plugin, town::plugin, displays::plugin));
+    if o.dev_area() {
+        app.add_plugins(dev_area::plugin);
+    }
     // The save (#135) belongs to players: scripted and headless runs keep theirs in the output
     // folder and start new.
     let player_run = o.scenario.is_none() && !o.headless;
@@ -398,6 +416,10 @@ pub fn build_app(o: &Options) -> App {
     if !o.headless {
         app.add_plugins((view::plugin, controls::window_plugin, settings::window_plugin, terrain::plugin, daynight::window_plugin, grab::window_plugin, cargo::window_plugin));
         app.add_plugins((audio::plugin, scatter::plugin, terrain_material::plugin, sky::plugin, sites::plugin, town::window_plugin, named_material::window_plugin, gameplay::window_plugin, notices::window_plugin, map::window_plugin, help::window_plugin, dev::window_plugin));
+        app.add_plugins(displays::window_plugin);
+        if o.dev_area() {
+            app.add_plugins(dev_area::window_plugin);
+        }
         if o.menu() {
             app.add_plugins(menu::plugin);
         }

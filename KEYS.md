@@ -14,9 +14,19 @@ Marks: **new** since round 5 · **provisional**: the key is not decided yet · *
 | Mouse | – | Look | right stick |
 | Shift | `run` | Run | left stick click |
 | Space | `jump` | Jump | South |
-| F | `interact` | The one verb: sit or stand up, pick up or set down a crate, a counter | North |
+| F | `interact` | The one verb: sit or stand up, pick up or set down a crate, a counter, use a display and leave it (new) | North |
 | R | `throw` | Throw the held crate | right stick click |
 | G | `lag` | Cabin gravity by hand, only in a landed ship | – |
+
+### At a display
+
+F on a display (a console's screen) opens its panel over the view and frees the mouse cursor: point and click the buttons, toggles and sliders. The walker stands still until it leaves.
+
+| Key | Action | What it does | Pad |
+|---|---|---|---|
+| Mouse, left button | – | Point and click on the panel | – |
+| F | `interact` | Leave the display | North |
+| Escape | `display_leave` | Leave the display (new; does not open the menu then) | – |
 
 ### Ship
 

@@ -1,9 +1,10 @@
 //! Interaction (#82): one verb (`Tap::Interact`, F) and one prompt. Each step the target is
 //! chosen from what the walker looks at: the crate nearest the centre of the view cone, or the
 //! seat when the walker stands at it. The HUD shows `Interaction::prompt`; the tap does what it
-//! says. Targets: seat, crates, and on a pad the job offered there (#133).
+//! says. Targets: seat, crates, on a pad the job offered there (#133), and displays.
 use crate::cargo::{crate_world, Crate, Crates};
 use crate::controls::{Actions, Bindings, Input, Tap};
+use crate::displays::{ActiveDisplay, DisplayPanel, USE_RANGE};
 use crate::grab::Grab;
 use crate::ship::{Ship, SEAT_POS};
 use crate::walker::{cabin_frame, CabinFloor, Player, EYE_HEIGHT};
@@ -35,6 +36,10 @@ pub enum Target {
     Counter(jobs_core::GiverId),
     /// Take the job the open counter shows, for the crew.
     Accept(jobs_core::JobId),
+    /// Use a display: the cursor comes free on its panel.
+    Panel(Entity),
+    /// Leave the display in use.
+    LeavePanel(Entity),
 }
 
 #[derive(Resource, Default, Debug)]
@@ -68,6 +73,8 @@ fn verb(t: &Target, size: &str) -> String {
         Target::Drop(_) => format!("set the {size} crate down"),
         Target::Counter(_) => "talk to ".into(),
         Target::Accept(_) => "take the job: ".into(),
+        Target::Panel(_) => "use ".into(),
+        Target::LeavePanel(_) => "leave ".into(),
     }
 }
 
@@ -85,6 +92,7 @@ pub fn interaction(
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
     crates: Query<(Entity, &Crate)>,
     mut gp: ResMut<crate::gameplay::Gameplay>,
+    (mut active, displays): (ResMut<ActiveDisplay>, Query<(Entity, &DisplayPanel)>),
 ) {
     let Ok(mut pl) = players.single_mut() else { return };
     let Some((ship_e, sp, sr)) = ships.iter().next().map(|(e, _, p, r)| (e, *p, *r)) else { return };
@@ -118,7 +126,9 @@ pub fn interaction(
         }
     }
     let panel_offer = if on_foot && grab.held.is_none() { gp.panel_offer() } else { None };
-    let target = if let Some(job) = panel_offer {
+    let target = if let Some(e) = active.using() {
+        Some(Target::LeavePanel(e))
+    } else if let Some(job) = panel_offer {
         Some(Target::Accept(job))
     } else if pl.seated {
         Some(Target::StandUp)
@@ -132,6 +142,7 @@ pub fn interaction(
         let look = pl.world_look(f);
         let half = cfg.cone_half_angle_deg.to_radians();
         let mut best: Option<(f64, Entity, Reach)> = None;
+        let mut panel_pick = None;
         for (e, c) in &crates {
             let (centre, _) = crate_world(c, &frame);
             let Some(dist) = in_cone(eye, look, centre, half, cfg.tool_max_range) else { continue };
@@ -142,12 +153,30 @@ pub fn interaction(
             }
         }
         let at_seat = pl.ship == Some(ship_e) && pl.w.pos.distance(SEAT_POS) < SEAT_RANGE;
+        // A display: looked at straight (the view ray meets its quad) or inside the cone, in reach,
+        // from the front. The nearer to the view's centre wins against a crate.
+        let panel = crate::displays::eye_on_foot(&pl).and_then(|(eye, look)| {
+            displays
+                .iter()
+                .filter(|(_, d)| (eye - d.centre).dot(d.rot * DVec3::Z) > 0.0)
+                .filter_map(|(e, d)| match display_core::ray_to_panel(eye, look, d.centre, d.rot, d.size_m) {
+                    Some(h) if h.distance <= USE_RANGE => Some((0.0, e)),
+                    _ => in_cone(eye, look, d.centre, half, USE_RANGE).map(|_| ((d.centre - eye).angle_between(look), e)),
+                })
+                .min_by(|a, b| a.0.total_cmp(&b.0))
+        });
+        if let Some((a, e)) = panel
+            && best.is_none_or(|(c, ..)| a <= c)
+        {
+            best = None;
+            panel_pick = Some(e);
+        }
         match best {
             // A crate in reach of the hands wins over the seat; the tool's reach does not.
             Some((_, e, Reach::Hands)) => Some(Target::Crate(e, Reach::Hands)),
             _ if at_seat => Some(if gp.may_pilot(crate::gameplay::HOST) { Target::Seat } else { Target::SeatLocked }),
             Some((_, e, r)) => Some(Target::Crate(e, r)),
-            None => None,
+            None => panel_pick.map(Target::Panel),
         }
     };
     // At a giver's counter with something to offer, and nothing else to do: talk to the giver.
@@ -167,6 +196,11 @@ pub fn interaction(
             match t {
                 Target::SeatLocked => p.push_str(&format!(" ({})", gp.licence_hint())),
                 Target::Counter(g) => p.push_str(&gp.jobs_content.givers.get(g).map(|g| gp.text(&g.record.name)).unwrap_or_default()),
+                Target::Panel(e) => p.push_str(&displays.get(*e).map(|(_, d)| d.name.clone()).unwrap_or_default()),
+                Target::LeavePanel(e) => {
+                    p.push_str(&displays.get(*e).map(|(_, d)| d.name.clone()).unwrap_or_default());
+                    p.push_str(&format!("  [{}] leave", key_label(&bindings, Tap::DisplayLeave)));
+                }
                 Target::Accept(j) => {
                     p.push_str(&gp.offer_label(*j));
                     p.push_str(&format!("   [{}] next  [{}] decline", key_label(&bindings, Tap::NextOffer), key_label(&bindings, Tap::Decline)));
@@ -218,5 +252,7 @@ pub fn interaction(
             gp.push_job(crate::gameplay::HOST, jobs_core::JobEvent::OfferAccepted { job: j });
             gp.close_counter();
         }
+        Target::Panel(e) => *active = ActiveDisplay::Using(e),
+        Target::LeavePanel(_) => *active = ActiveDisplay::Idle,
     }
 }

@@ -68,6 +68,7 @@ STRUTS = (-9.6,-3.6,4.2)        # the middle strut clears the airlock beside the
 AIR_X = (-2.8,-.2)              # airlock footprint along x, on the port side in front of the gear room
 # TODO(initiator): 1.2 is a proposal from the PULSAR starter-ship comparison (main deck about 256 -> 370 m2,
 # length 28.6 -> 34.3 m, same decks); the size is not decided.
+POD = False                     # pilot pod on the bridge nose; off: the pilot sits on the bridge, --pilot-pod brings it back
 FOOT = 1.2                      # plan stretch in x and y; --footprint overrides it
 PLAN_RES = (1600,1200)          # design pixels; 50 px per metre at any FOOT, see plan_res()
 PLAN_SCALE = 32.0          # design metres across the image width: 50 px per metre
@@ -193,9 +194,15 @@ def plan_res():
 
 
 def pilot_x():
-    """Design x of the pilot's eye. The pilot sits 1.7 m behind the nose glass at any FOOT: that distance is
-    human, so it is not stretched (13.1 for FOOT = 1; fp stretches the returned value again)."""
-    return 13.1+1.7*(1-1/FOOT)
+    """Design x of the pilot's eye. The pilot sits 1.7 m behind the glass at any FOOT: that distance is human, so it
+    is not stretched. The glass is the nose of the pod (13.1 for FOOT = 1) or the bridge front (10.3); fp stretches
+    the returned value again."""
+    return (13.1 if POD else 10.3)+1.7*(1-1/FOOT)
+
+
+def pilot_eye_z():
+    """Seated eye height: 1.2 m above the pod floor (-0.95) or the bridge deck (0)."""
+    return .25 if POD else 1.2
 
 
 def captain_x():
@@ -366,7 +373,7 @@ def architecture():
     for name,poly in ROOMS.items():
         mat=material(name+' floor',colors[name],.05,.75); FLOORS[name]=mat
         floorpoly=poly
-        if name=='BRIDGE':
+        if name=='BRIDGE' and POD:
             floorpoly=poly[:4]+[(12,-.85),(9.6,-.85),(9.6,.85),(12,.85)]+poly[4:]
         if name=='TURRET':
             for p in [rect(-7,-4.2,-3,3),rect(-2.8,0,-3,3),rect(-4.2,-2.8,-3,-.7),rect(-4.2,-2.8,.7,3)]:
@@ -456,6 +463,9 @@ def architecture():
     text('REACTOR',(-.2,1.95,FLOOR_B+.03),.4,ink,'Labels lower')
     text('RAMP BAY',(-7.4,0,FLOOR_A+.03),.3,ink,'Labels lower')
     # Cockpit floor, its short bridge ramp and protective side cheeks.
+    if not POD:
+        text('PILOT',(pilot_x(),0,.035),.3,ink)       # the pilot station is the front centre of the bridge
+        return
     prism('Pilot lowered deck',PILOT,-1.12,-.95,dark)
     mesh('Pilot access ramp',[(9.6,-.85,0),(12,-.85,-.95),(12,.85,-.95),(9.6,.85,0)],[(0,1,2,3)],dark)
     for y in (-.91,.91):
@@ -494,7 +504,7 @@ def bridge_window(a,b):
             mod=o.modifiers.new('Laminated glazing thickness','SOLIDIFY'); mod.thickness=.02
         for s in pts[1:-1]: beam('Bridge glazing mullion',(*s,bottom),bridge_top(s),.07,.07,frame)
     sill=BR_SILL
-    if a[0]==b[0]==12:
+    if POD and a[0]==b[0]==12:
         # The forward centre has a low doorway to the recessed pilot alcove.
         for p,q in [(a,(12,-1.18)),((12,1.18),b)]:
             wall_span('Bridge front sill',p,q,0,sill,hull,.25)
@@ -515,7 +525,7 @@ def bridge_window(a,b):
         beam('Bridge cage post',(*v,sill),t,.20,.20,frame)
         beam('Bridge cage fin',(v[0]+out.x*.14,v[1]+out.y*.14,sill+.05),(t[0]+out.x*.10,t[1]+out.y*.10,2.78),.05,.26,frame)
     beam('Bridge roof rim',bridge_top(a),bridge_top(b),.22,.22,frame,'Roof')
-    if not a[0]==b[0]==12: beam('Bridge rub rail',(*a,sill),(*b,sill),.13,.13,frame)
+    if not (POD and a[0]==b[0]==12): beam('Bridge rub rail',(*a,sill),(*b,sill),.13,.13,frame)
 
 
 def roofs():
@@ -589,6 +599,7 @@ def lower_hull():
         rings.append([(xe,-W,0),(xe,-(W-i1),z1),(xe,-(W-i2),zb),(xe,-h,zb),(xe,h,zb),(xe,W-i2,zb),(xe,W-i1,z1),(xe,W,0)])
     hole={(k,3) for k,x in enumerate(xs[:-1]) if RAMP_TOP[0]-1e-6<=x<HINGE[0]-1e-6}
     hull_loft('Continuous lower hull',rings,.32,(0,1,2,2,2,1,0),front_notch=(1.245,.95),hole=hole)
+    if not POD: return
     # Chin fairing under the pilot alcove, from the same family of shapes.
     cw=[(12,1.18),(14,1.18),(14.8,.72)]; cz=[(12,-1.35),(14,-1.35),(14.8,-1.25)]
     chin=[]
@@ -797,14 +808,13 @@ def check_geometry(scene):
             triangles+=len(m.loop_triangles);ev.to_mesh_clear()
     tree=BVHTree.FromPolygons(verts,faces)
     problems=[];rays=[]
-    PILOT_X=pilot_x()
+    PILOT_X=pilot_x(); PILOT_Z=pilot_eye_z()
     probes=[
         # Captain: between the corner posts (about +-43 degrees at FOOT 1), not through them, and up under the header.
         ('captain',(captain_x(),0,1.65),[(a,0) for a in between_posts((captain_x(),0),BR)]+[(-20,15),(0,15),(20,15)]),
-        # Pilot: forward between the nose posts, steeply down to the floor rim, up through the roof, and back through the portal.
-        ('pilot',(PILOT_X,0,.25),[(a,0) for a in [0]+between_posts((PILOT_X,0),PILOT)]+[(-25,45),(25,45),(0,-28),(-40,-22),(40,-22)]),
-        # Back through the portal into the bridge: 5.5 m, nothing may cross the doorway.
-        ('pilot back',(PILOT_X,0,.25),[(180,0)],5.5),('pilot back high',(PILOT_X,0,.9),[(180,0)],5.5),
+        # Pilot: forward between the posts (pod nose or bridge cage), down to the floor rim or sill, up through the roof.
+        ('pilot',(PILOT_X,0,PILOT_Z),[(a,0) for a in [0]+between_posts((PILOT_X,0),PILOT if POD else BR)]+([(-25,45),(25,45)] if POD else [(-25,30),(25,30)])+
+                 ([(0,-28),(-40,-22),(40,-22)] if POD else [(0,-14),(-45,-12),(45,-12)])),
         # Standing eye behind the side windows: they must be real openings. Oblique rays toward
         # the nacelle and the airlock are blocked by design, so only the outward fan is probed.
         ('weapons window',(1.6,4.6,1.5),[(90,0),(80,0),(100,0)]),
@@ -813,6 +823,9 @@ def check_geometry(scene):
         ('lab corner window',(3.3,-4.2,1.5),[(-56,0),(-46,0),(-66,0)])]
     # Walking out aft: three body widths and heights along the reactor level, through the doorway,
     # the ramp bay and the opening in the keel (the open ramp lies below).
+    if POD:
+        # Back through the portal into the bridge: 5.5 m, nothing may cross the doorway.
+        probes+=[('pilot back',(PILOT_X,0,.25),[(180,0)],5.5),('pilot back high',(PILOT_X,0,.9),[(180,0)],5.5)]
     for yy in (-1.0,-.4,0,.4,1.0):
         for hh in (.3,.9,1.7):
             probes.append((f'ramp path y{yy} h{hh}',(-6.0,yy,-2.9+hh),[(180,0)]))
@@ -845,14 +858,14 @@ def check_geometry(scene):
                 if tree.ray_cast(origin,Vector((*normal,0)),1.0)[0] is not None:
                     problems.append(f'Door clearance {r1}/{r2} at {offset}/{z}')
     ramp_clearances=[]
-    for i in range(13):
+    for i in range(13 if POD else 0):
         x=9.65+i*3.9/12;floor=-min(.95,max(0,(x-9.6)*.95/2.4))
         dist=tree.ray_cast(Vector((x*FOOT,0,floor+.03)),Vector((0,0,1)),5)[3]
         clearance=None if dist is None else dist+.03;ramp_clearances.append(clearance)
         if clearance is not None and clearance<1.8:problems.append(f'Pilot ramp headroom {clearance:.2f} at x={x:.2f}')
     # Glass is deliberately excluded from visibility, so headroom checks separately
     # include the canopy's measured height above its floor.
-    assert canopy_z(14)-(-.95)>=1.8
+    assert not POD or canopy_z(14)-(-.95)>=1.8
     xs=[v.x for v in verts];ys=[v.y for v in verts];zs=[v.z for v in verts]
     report={'status':'PASS' if not problems else 'PROBLEM','problems':problems,'opaque_triangles':triangles,
       'opaque_geometry_sha256':hashlib.sha256(json.dumps(sorted(tuple(round(c,5) for c in v) for v in verts)).encode()).hexdigest(),
@@ -861,9 +874,9 @@ def check_geometry(scene):
       'footprint_factor':FOOT,
       'room_floor_area_m2':{k:round(area(v)*FOOT**2,1) for k,v in ROOMS.items()},'ceiling_m':CEIL,
       'door_count':len(DOORS),'door_widths_m':sorted(set(round(d[3]*FOOT,2) for d in DOORS)),
-      'door_clear_height_m':2.20,'pilot_canopy_clear_height_m':round(canopy_z(14)+.95,2),
-      'pilot_ramp_angle_degrees':math.degrees(math.atan(.95/(2.4*FOOT))),
-      'captain_eye_above_canopy_m':round(1.65-(canopy_z(12)+.05),2),'cargo_bay_m':[round((CARGO_X-RX0)*FOOT,2),round(2*RHALF*FOOT,2),round(-.23-FLOOR_A,2)],
+      'door_clear_height_m':2.20,'pilot_pod':POD,
+      **({'pilot_canopy_clear_height_m':round(canopy_z(14)+.95,2),'pilot_ramp_angle_degrees':math.degrees(math.atan(.95/(2.4*FOOT))),
+          'captain_eye_above_canopy_m':round(1.65-(canopy_z(12)+.05),2)} if POD else {}),'cargo_bay_m':[round((CARGO_X-RX0)*FOOT,2),round(2*RHALF*FOOT,2),round(-.23-FLOOR_A,2)],
       'reactor_hall_m':[round((RX1-CARGO_X)*FOOT,2),round(2*RHALF*FOOT,2),round(-.23-FLOOR_B,2)],'reactor_level_floor_area_m2':round((RX1-RX0)*2*RHALF*FOOT**2,1),
       'reactor_floor_levels_z':[FLOOR_A,FLOOR_T,FLOOR_B,PLINTH_TOP],
       'reactor_min_side_maintenance_m':round((RHALF-(PLINTH_C[1]+PLINTH_R))*FOOT,2),
@@ -1038,7 +1051,8 @@ def build():
     architecture();roofs();exterior();lighting(scene);sightline_backdrop();plan_overlays()
     stretch_plan()       # everything above is design space; the factor is applied once, here
     scene['status']='Design proposal for #266. No game integration or approved dimensions.'
-    scene['floor_z']=0.;scene['pilot_floor_z']=-.95;scene['reactor_floor_z']=-2.9;scene['ground_z']=GROUND
+    scene['floor_z']=0.;scene['reactor_floor_z']=-2.9;scene['ground_z']=GROUND
+    if POD: scene['pilot_floor_z']=-.95
     scene['review']=('Scenes: Exterior, Plan deck, Plan reactor, Landed (gear down), Flight (gear up), Section. '
                      'All share one set of objects. Toggle collections in the Outliner (Roof, Gear, Gear stowed).')
     cameras={
@@ -1048,7 +1062,7 @@ def build():
       'side':camera(scene,'03 Side',(1,-50,3),(1,0,0),ortho=34),
       'captain':camera(scene,'04 Captain eye 1.65m',(captain_x(),0,1.65),(20,0,1.65),lens=19),
       'captain_side':camera(scene,'05 Captain lateral',(captain_x(),0,1.65),(12,12,1.65),lens=23),
-      'pilot':camera(scene,'06 Pilot seated eye 1.2m above floor',(pilot_x(),0,.25),(22,0,.65),lens=18),
+      'pilot':camera(scene,'06 Pilot seated eye 1.2m above floor',(pilot_x(),0,pilot_eye_z()),(22,0,pilot_eye_z()+.4),lens=18),
       'bridge_back':camera(scene,'07 Bridge looking aft',(11,3.6,1.65),(5,-1,1.3),lens=20),
     }
     scene.camera=cameras['exterior']
@@ -1095,19 +1109,21 @@ def build():
 
 
 def main():
-    global FOOT
+    global FOOT,POD
     parser=argparse.ArgumentParser();parser.add_argument('--render',action='store_true');parser.add_argument('--export',action='store_true')
     parser.add_argument('--views',help='Comma-separated review views; omitted means all. "plans" renders only the plan images.')
+    parser.add_argument('--pilot-pod',action='store_true',help='Build the lowered pilot pod on the bridge nose (default: the pilot sits on the bridge).')
     parser.add_argument('--footprint',type=float,help=f'Plan stretch in x and y, heights unchanged (default {FOOT:g}; 1 is revision 4).')
     args=parser.parse_args(sys.argv[sys.argv.index('--')+1:] if '--' in sys.argv else [])
     if args.footprint: FOOT=args.footprint
+    if args.pilot_pod: POD=True
     S=build();scene=S['exterior']
     check_geometry(scene)
     # Headless rebuild starts without reference assets. Saving linked scenes through
     # libraries.write crashes Blender 5.2; use the normal file-save path instead.
     if bpy.app.background:
         bpy.ops.wm.save_as_mainfile(filepath=str(OUT/'starting-ship.blend'))
-    print('SHIP_V3: built original architectural study, bow +X, main deck 0, pilot -0.95, reactor -2.9, ground',GROUND,'footprint',FOOT)
+    print('SHIP_V3: built original architectural study, bow +X, main deck 0, '+('pilot pod -0.95' if POD else 'pilot on the bridge')+', reactor -2.9, ground',GROUND,'footprint',FOOT)
     if args.export:
         bpy.context.window.scene=scene
         bpy.ops.object.select_all(action='DESELECT')

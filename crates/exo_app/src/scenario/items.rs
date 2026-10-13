@@ -102,7 +102,7 @@ pub(super) fn at_the_table(s: &mut Vec<Step>) {
         }
         let in_cabin = loose_of(w, item_table::IN_CABIN.0).iter().filter(|x| x.3).count();
         let on_table = item_table::ON_TABLE.iter().filter(|(d, ..)| outside(w, d).is_some()).count();
-        check(c, on_table == 3 && in_cabin == 1, format!("items: three items lie on the table ({on_table}), a wrench in the cabin ({in_cabin})"));
+        check(c, on_table == item_table::ON_TABLE.len() && in_cabin == 1, format!("items: every item of the table lies there ({on_table}), a wrench in the cabin ({in_cabin})"));
         end(w, c, "ready".into());
         true
     }));

@@ -160,6 +160,7 @@ pub fn use_display(
         pointer.0 = Pointer::default();
     }
     controls.free_cursor = active.using().is_some();
+    controls.cursor_on_screen = false;
     let Some(e) = active.using() else { return };
     // The walker stands: no walking, jumping or turning while the hands are on the panel.
     actions.move_dir = DVec3::ZERO;
@@ -174,6 +175,7 @@ pub fn use_display(
     let held = pointer.0.pressed.is_some();
     let hit = view.ray.and_then(|(o, dir)| if held { display_core::ray_to_panel_plane(o, dir, d.centre, d.rot, d.size_m) } else { display_core::ray_to_panel(o, dir, d.centre, d.rot, d.size_m) });
     let at = hit.map(|h| panel.from_uv(h.uv));
+    controls.cursor_on_screen = at.is_some();
     for c in pointer.0.step(panel, at, controls.pointer_down || click) {
         out.write(DisplayAction { panel: d.id.clone(), action: c.action, value: c.value.map(|v| v as f32) });
     }

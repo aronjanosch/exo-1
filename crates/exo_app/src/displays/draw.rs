@@ -1,5 +1,6 @@
-//! Drawing the panels (window only): the overlay on the screen, and on the screens in the world
-//! the same panel live (rendered into the quad's texture, read only).
+//! Drawing the panels (window only): on the screens in the world the panel live, rendered into
+//! the quad's texture by a UI camera of its own; the screen in use also shows hover and press and
+//! a small cursor mark at the pointer.
 //!
 //! The look is the design system "EXO-1 Ship Displays" (2026-10-13): every screen a physical
 //! plate with a 2 px steel outline and one cut corner, a header strip (accent lamp, caps title,
@@ -20,13 +21,24 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, T
 use bevy::window::PrimaryWindow;
 use display_core::{level, list_row_at, Glyph, Level, ListRow, Rect, Rgb, Theme, Tone, Widget};
 
-/// The window's size.
-pub fn update_view(mut view: ResMut<DisplayView>, windows: Query<&Window, With<PrimaryWindow>>) {
+/// The window's size and the camera's world ray through the cursor (None without a cursor in the
+/// window or a camera).
+pub fn update_view(mut view: ResMut<DisplayView>, windows: Query<&Window, With<PrimaryWindow>>, controls: Res<Controls>, cam: Query<(&WorldPose, &Projection), With<MainCamera>>) {
     if let Ok(w) = windows.single()
         && w.size() != view.window
         && w.size().min_element() > 0.0
     {
         view.window = w.size();
+    }
+    let ray = match (controls.pointer, cam.single()) {
+        (Some(p), Ok((pose, Projection::Perspective(proj)))) => {
+            let win = DVec2::new(view.window.x as f64, view.window.y as f64);
+            Some(display_core::pointer_ray(pose.pos, pose.rot, proj.fov as f64, win, DVec2::new(p.x as f64, p.y as f64)))
+        }
+        _ => None,
+    };
+    if view.ray != ray {
+        view.ray = ray;
     }
 }
 
@@ -96,84 +108,60 @@ pub fn add_quads(
     }
 }
 
-#[derive(Component)]
-pub struct OverlayRoot;
-
-pub fn spawn_overlay(mut commands: Commands) {
-    commands.spawn((OverlayRoot, Node { position_type: PositionType::Absolute, left: px(0), top: px(0), width: percent(100), height: percent(100), display: Display::None, ..default() }, GlobalZIndex(40)));
-}
-
 /// What a drawing shows; a new one redraws. The pointer position counts only over a list (its
-/// row hover), so moving over a button does not redraw.
-type DrawKey = (Panel, Option<String>, Option<String>, Option<(i64, i64)>, Vec2, f32);
+/// row hover), so moving over a button does not redraw; the cursor mark moves on its own.
+type DrawKey = (Panel, Option<String>, Option<String>, Option<(i64, i64)>, f32);
 
-fn draw_key(panel: &Panel, ptr: Option<&Pointer>, origin: Vec2, scale: f32) -> DrawKey {
+fn draw_key(panel: &Panel, ptr: Option<&Pointer>, scale: f32) -> DrawKey {
     let over_list = |p: &&Pointer| p.hover.as_ref().is_some_and(|h| panel.find(h).is_some_and(|w| matches!(w.widget, Widget::List { .. })));
     let list_at = ptr.filter(over_list).and_then(|p| p.at).map(|a| (a.x as i64, (a.y / 4.0) as i64));
-    (panel.clone(), ptr.and_then(|p| p.hover.clone()), ptr.and_then(|p| p.pressed.clone()), list_at, origin, scale)
+    (panel.clone(), ptr.and_then(|p| p.hover.clone()), ptr.and_then(|p| p.pressed.clone()), list_at, scale)
 }
 
-/// The panel in use, centred on the screen at its tier's size.
-#[allow(clippy::too_many_arguments)]
-pub fn draw_overlay(
-    mut commands: Commands,
-    mut root: Query<(Entity, &mut Node), With<OverlayRoot>>,
-    active: Res<ActiveDisplay>,
-    pointer: Res<DisplayPointer>,
-    panels: Res<Panels>,
-    view: Res<DisplayView>,
-    look: Res<DisplayLook>,
-    fonts: Option<Res<DisplayFonts>>,
-    displays: Query<&DisplayPanel>,
-    mut drawn: Local<Option<DrawKey>>,
-) {
-    let Ok((root, mut node)) = root.single_mut() else { return };
-    let Some(fonts) = fonts else { return };
-    let panel = active.using().and_then(|e| displays.get(e).ok()).and_then(|d| panels.get(&d.id));
-    let Some(panel) = panel else {
-        if node.display != Display::None {
-            node.display = Display::None;
-            commands.entity(root).despawn_children();
-            *drawn = None;
-        }
-        return;
-    };
-    if node.display != Display::Flex {
-        node.display = Display::Flex;
-    }
-    let fit = view.fit(panel, &look);
-    let origin = Vec2::new(fit.rect.min.x as f32, fit.rect.min.y as f32);
-    let key = draw_key(panel, Some(&pointer.0), origin, fit.scale as f32);
-    if drawn.as_ref() == Some(&key) && !look.is_changed() {
-        return;
-    }
-    commands.entity(root).despawn_children();
-    let pen = Pen { theme: &look.0, fonts: &fonts, origin, scale: fit.scale as f32 };
-    commands.entity(root).with_children(|c| pen.panel(c, panel, Some(&pointer.0)));
-    *drawn = Some(key);
-}
-
-/// A display's texture, the UI camera that draws into it, the UI root, and when it last drew.
+/// A display's texture, the UI camera that draws into it, the UI root, the cursor mark, and when
+/// it last drew.
 #[derive(Component)]
 pub struct ScreenTarget {
     camera: Entity,
     root: Entity,
+    cursor: Entity,
     material: Handle<StandardMaterial>,
     drawn: Option<DrawKey>,
+    /// Where the cursor mark stands (texture pixels), None when hidden.
+    cursor_at: Option<(i32, i32)>,
     last: f64,
     /// Frames the camera still renders after a redraw (the new nodes need a frame for layout).
     frames_left: u8,
 }
 
-/// Screens near the camera and not behind it show their panel live (the one in use with its
-/// hover and press); a changed panel redraws at most every `world.redraw_s`, and the texture's
-/// camera renders only for a few frames after a redraw, so an unchanged screen costs nothing.
-/// Far or behind: the idle glow.
+/// The cursor mark: a crosshair with a dark outline, in a zero-sized node that moves with the
+/// pointer (so moving it redraws nothing else).
+fn spawn_cursor(commands: &mut Commands, camera: Entity, theme: &Theme, scale: f32) -> Entity {
+    let k = &theme.colours;
+    let (arm, thick, edge) = (10.0 * scale, 2.0 * scale, 1.5 * scale);
+    let bar = |w: f32, h: f32| Node { position_type: PositionType::Absolute, left: px(-w * 0.5), top: px(-h * 0.5), width: px(w), height: px(h), ..default() };
+    commands
+        .spawn((Node { position_type: PositionType::Absolute, left: px(0), top: px(0), width: px(0), height: px(0), display: Display::None, ..default() }, UiTargetCamera(camera), GlobalZIndex(10)))
+        .with_children(|c| {
+            for (colour, grow) in [(col(k.bg_0), edge), (col(k.fg_title), 0.0)] {
+                c.spawn((bar(2.0 * arm + 2.0 * grow, thick + 2.0 * grow), BackgroundColor(colour)));
+                c.spawn((bar(thick + 2.0 * grow, 2.0 * arm + 2.0 * grow), BackgroundColor(colour)));
+            }
+        })
+        .id()
+}
+
+/// Screens near the camera and not behind it show their panel live. The screen in use redraws as
+/// soon as its hover, press or panel change and carries the cursor mark; the others redraw a
+/// changed panel at most every `world.redraw_s`. The texture's camera renders only for a few frames
+/// after a redraw or a cursor move, so an unchanged screen costs nothing. Far or behind: the idle
+/// glow.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_world(
     mut commands: Commands,
     mut screens: Query<(Entity, &DisplayPanel, &mut MeshMaterial3d<StandardMaterial>, Option<&mut ScreenTarget>)>,
     mut cameras: Query<&mut Camera>,
+    mut cursors: Query<&mut Node>,
     active: Res<ActiveDisplay>,
     pointer: Res<DisplayPointer>,
     panels: Res<Panels>,
@@ -194,7 +182,8 @@ pub fn draw_world(
         let panel = panels.get(&d.id);
         let to = d.centre - origin.view;
         let in_front = forward.is_none_or(|f| to.dot(f) > -0.5);
-        let want = panel.is_some() && to.length() < w.range_m && in_front;
+        let in_use = active.using() == Some(e);
+        let want = panel.is_some() && (in_use || (to.length() < w.range_m && in_front));
         match (want, target) {
             (true, None) => {
                 let panel = panel.unwrap();
@@ -205,10 +194,11 @@ pub fn draw_world(
                 let image = images.add(image);
                 let camera = commands.spawn((Camera2d, Camera { order: -1, clear_color: ClearColorConfig::Custom(col(look.0.colours.bg_0)), ..default() }, RenderTarget::Image(image.clone().into()))).id();
                 let root = commands.spawn((Node { width: percent(100), height: percent(100), ..default() }, UiTargetCamera(camera))).id();
+                let cursor = spawn_cursor(&mut commands, camera, &look.0, ts);
                 // Unlit: the screen glows the same by day and by night.
                 let material = materials.add(StandardMaterial { base_color_texture: Some(image), unlit: true, ..default() });
                 mat.0 = material.clone();
-                commands.entity(e).insert(ScreenTarget { camera, root, material, drawn: None, last: f64::NEG_INFINITY, frames_left: 0 });
+                commands.entity(e).insert(ScreenTarget { camera, root, cursor, material, drawn: None, cursor_at: None, last: f64::NEG_INFINITY, frames_left: 0 });
             }
             (true, Some(mut t)) => {
                 if mat.0 != t.material {
@@ -218,16 +208,32 @@ pub fn draw_world(
                     t.drawn = None;
                 }
                 let panel = panel.unwrap();
-                let ptr = (active.using() == Some(e)).then_some(&pointer.0);
+                let ptr = in_use.then_some(&pointer.0);
                 let ts = w.texture_scale as f32;
-                let key = draw_key(panel, ptr, Vec2::ZERO, ts);
-                if t.drawn.as_ref() != Some(&key) && now - t.last >= w.redraw_s {
+                let key = draw_key(panel, ptr, ts);
+                if t.drawn.as_ref() != Some(&key) && (in_use || now - t.last >= w.redraw_s) {
                     commands.entity(t.root).despawn_children();
-                    let pen = Pen { theme: &look.0, fonts: &fonts, origin: Vec2::ZERO, scale: ts };
+                    let pen = Pen { theme: &look.0, fonts: &fonts, scale: ts };
                     commands.entity(t.root).with_children(|c| pen.panel(c, panel, ptr));
                     t.drawn = Some(key);
                     t.last = now;
                     t.frames_left = 3;
+                }
+                // The cursor mark follows the pointer on the screen in use.
+                let at = ptr.and_then(|p| p.at).map(|a| ((a.x as f32 * ts).round() as i32, (a.y as f32 * ts).round() as i32));
+                if t.cursor_at != at {
+                    t.cursor_at = at;
+                    if let Ok(mut n) = cursors.get_mut(t.cursor) {
+                        match at {
+                            Some((x, y)) => {
+                                n.display = Display::Flex;
+                                n.left = px(x as f32);
+                                n.top = px(y as f32);
+                            }
+                            None => n.display = Display::None,
+                        }
+                    }
+                    t.frames_left = t.frames_left.max(3);
                 }
                 let on = t.frames_left > 0;
                 t.frames_left = t.frames_left.saturating_sub(1);
@@ -245,6 +251,10 @@ pub fn draw_world(
                 }
                 // Back in range it draws fresh.
                 t.drawn = None;
+                t.cursor_at = None;
+                if let Ok(mut n) = cursors.get_mut(t.cursor) {
+                    n.display = Display::None;
+                }
                 if mat.0 != quads.idle {
                     mat.0 = quads.idle.clone();
                 }
@@ -256,11 +266,10 @@ pub fn draw_world(
 
 // ---------- the pen: panel pixels to UI nodes ----------
 
-/// Draws panel pixels into UI nodes: panel pixel `p` lands at `origin + p * scale`.
+/// Draws panel pixels into UI nodes: panel pixel `p` lands at `p * scale`.
 struct Pen<'a> {
     theme: &'a Theme,
     fonts: &'a DisplayFonts,
-    origin: Vec2,
     scale: f32,
 }
 
@@ -293,7 +302,7 @@ impl Pen<'_> {
     /// An absolute node at panel rectangle `(x, y, w, h)`.
     fn node(&self, x: f64, y: f64, w: f64, h: f64) -> Node {
         let s = self.scale;
-        Node { position_type: PositionType::Absolute, left: px(self.origin.x + x as f32 * s), top: px(self.origin.y + y as f32 * s), width: px(w as f32 * s), height: px(h as f32 * s), ..default() }
+        Node { position_type: PositionType::Absolute, left: px(x as f32 * s), top: px(y as f32 * s), width: px(w as f32 * s), height: px(h as f32 * s), ..default() }
     }
 
     fn rect(&self, c: &mut ChildSpawnerCommands, x: f64, y: f64, w: f64, h: f64, colour: Color) {
@@ -378,7 +387,7 @@ impl Pen<'_> {
         }
         let mut clip = self.node(x, y, w, h);
         clip.overflow = Overflow::clip();
-        let sub = Pen { theme: self.theme, fonts: self.fonts, origin: Vec2::ZERO, scale: self.scale };
+        let sub = Pen { theme: self.theme, fonts: self.fonts, scale: self.scale };
         c.spawn(clip).with_children(|c| {
             let mut t = -h;
             while t < w {

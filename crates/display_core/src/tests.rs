@@ -150,15 +150,12 @@ fn bar_levels_for_high_and_low_bad_values() {
 }
 
 #[test]
-fn a_panel_fits_the_screen_centred_and_maps_both_ways() {
-    let f = Fit::centred(DVec2::new(1600.0, 900.0), DVec2::new(400.0, 300.0), 0.7);
-    assert!((f.rect.size.y - 630.0).abs() < 1e-9 && (f.rect.size.x - 840.0).abs() < 1e-9);
-    assert!((f.rect.centre() - DVec2::new(800.0, 450.0)).length() < 1e-9);
-    let p = DVec2::new(123.0, 45.0);
-    assert!((f.to_panel(f.to_screen(p)) - p).length() < 1e-9);
-    // A narrow screen: the width limits.
-    let n = Fit::centred(DVec2::new(500.0, 900.0), DVec2::new(400.0, 300.0), 0.7);
-    assert!((n.rect.size.x - 475.0).abs() < 1e-9 && n.rect.size.y < 630.0);
+fn a_ray_hit_becomes_a_panel_point_and_back() {
+    let p = Panel::screen(Tier::M, "Reactor 2", "RX-02", column(0.0, vec![label("a")]));
+    assert_eq!(p.from_uv(DVec2::new(0.5, 0.5)), p.size * 0.5);
+    assert_eq!(p.from_uv(DVec2::new(1.0, 0.0)), DVec2::new(p.size.x, 0.0));
+    let at = DVec2::new(123.0, 45.0);
+    assert!((p.from_uv(p.to_uv(at)) - at).length() < 1e-9);
 }
 
 #[test]
@@ -182,6 +179,26 @@ fn a_ray_meets_the_front_of_a_turned_panel() {
     assert!(ray_to_panel(front, rot * DVec3::X, centre, rot, size).is_none());
     let beside = panel_point(centre, rot, size, DVec2::new(1.2, 0.5));
     assert!(ray_to_panel(front, beside - front, centre, rot, size).is_none());
+    // The plane version still gives the point beside the quad (a held slider follows it), but not
+    // from behind.
+    let hit = ray_to_panel_plane(front, beside - front, centre, rot, size).expect("the plane is there");
+    assert!((hit.uv - DVec2::new(1.2, 0.5)).length() < 1e-9);
+    assert!(ray_to_panel_plane(back, centre - back, centre, rot, size).is_none());
+}
+
+#[test]
+fn the_pointer_ray_and_the_window_point_are_inverses() {
+    let rot = DQuat::from_rotation_y(0.4) * DQuat::from_rotation_x(-0.2);
+    let (pos, window, fov) = (DVec3::new(1.0, 2.0, 3.0), DVec2::new(1600.0, 900.0), 1.1);
+    // The window's centre looks straight ahead.
+    let (o, d) = pointer_ray(pos, rot, fov, window, window * 0.5);
+    assert!(o == pos && (d - rot * DVec3::NEG_Z).length() < 1e-9);
+    for p in [DVec2::new(10.0, 20.0), DVec2::new(800.0, 450.0), DVec2::new(1500.0, 700.0)] {
+        let (o, d) = pointer_ray(pos, rot, fov, window, p);
+        let back = window_point(pos, rot, fov, window, o + d * 2.7).expect("in front");
+        assert!((back - p).length() < 1e-6, "{p} -> {back}");
+    }
+    assert!(window_point(pos, rot, fov, window, pos + rot * DVec3::Z).is_none(), "behind the camera");
 }
 
 #[test]
@@ -267,10 +284,9 @@ fn the_shipped_theme_parses_and_bad_ones_are_refused() {
     let src = include_str!("../../../content/ui/displays.json");
     let t = Theme::from_json(src).unwrap();
     assert_eq!(t.colours.accent, Rgb::from_hex("#6fb8ff").unwrap());
-    assert!(t.share(Tier::S) < t.share(Tier::M) && t.share(Tier::M) < t.share(Tier::L), "bigger screens open bigger");
     assert_eq!(t.tone(Tone::Bad), t.colours.bad);
     assert!(Rgb::from_hex("6fb8ff").is_err() && Rgb::from_hex("#6fb8f").is_err() && Rgb::from_hex("#gggggg").is_err());
-    let bad = src.replace("\"s\": 0.42", "\"s\": 1.5");
+    let bad = src.replace("\"texture_scale\": 2.0", "\"texture_scale\": 9.0");
     assert!(Theme::from_json(&bad).is_err());
     let unknown = src.replacen("\"source\"", "\"surprise\": 1, \"source\"", 1);
     assert!(Theme::from_json(&unknown).is_err());

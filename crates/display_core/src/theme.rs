@@ -1,8 +1,8 @@
 //! The displays' look as data (`content/ui/displays.json`), from the design system "EXO-1 Ship
-//! Displays": colours, fonts, the text sizes, stroke widths, the overlay's size per tier and how
-//! often screens in the world redraw. Parsed strictly (every field required, unknown ones
+//! Displays": colours, fonts, the text sizes, stroke widths, and how often screens in the
+//! world redraw and at what texture resolution. Parsed strictly (every field required, unknown ones
 //! refused); colours are `#rrggbb` (sRGB).
-use crate::{Tier, Tone};
+use crate::Tone;
 use serde::Deserialize;
 
 /// An sRGB colour, 0..1 per channel.
@@ -94,23 +94,13 @@ pub struct Strokes {
     pub caps_tracking: f64,
 }
 
-/// The overlay's height as a share of the window, per tier (wider screens are limited to 95 % of
-/// the window's width).
-#[derive(Deserialize, Clone, Copy, Debug, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct Shares {
-    pub s: f64,
-    pub m: f64,
-    pub l: f64,
-}
-
 /// Screens in the world showing their panel live.
 #[derive(Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct WorldScreens {
     /// Only screens nearer than this to the camera draw their panel (m).
     pub range_m: f64,
-    /// At most one redraw per screen in this many seconds.
+    /// At most one redraw per screen in this many seconds (the screen in use redraws every frame).
     pub redraw_s: f64,
     /// Texture pixels per panel pixel.
     pub texture_scale: f64,
@@ -123,19 +113,12 @@ pub struct Theme {
     pub colours: Colours,
     pub fonts: Fonts,
     pub strokes: Strokes,
-    pub overlay_share: Shares,
     pub world: WorldScreens,
 }
 
 impl Theme {
     pub fn from_json(s: &str) -> Result<Theme, String> {
         let t: Theme = content_core::parse_strict("displays.json", s)?;
-        let sh = t.overlay_share;
-        for (n, v) in [("overlay_share.s", sh.s), ("overlay_share.m", sh.m), ("overlay_share.l", sh.l)] {
-            if !(v > 0.0 && v <= 1.0) {
-                return Err(format!("displays.json: {n} {v} out of (0, 1]"));
-            }
-        }
         let w = t.world;
         if !(w.range_m >= 0.0 && w.redraw_s >= 0.0 && w.texture_scale > 0.0 && w.texture_scale <= 4.0) {
             return Err("displays.json: world values out of range".into());
@@ -148,14 +131,6 @@ impl Theme {
             return Err("displays.json: a font path is empty".into());
         }
         Ok(t)
-    }
-
-    pub fn share(&self, tier: Tier) -> f64 {
-        match tier {
-            Tier::S => self.overlay_share.s,
-            Tier::M => self.overlay_share.m,
-            Tier::L => self.overlay_share.l,
-        }
     }
 
     /// A label tone's text colour.

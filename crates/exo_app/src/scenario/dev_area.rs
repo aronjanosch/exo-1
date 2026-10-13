@@ -6,7 +6,7 @@
 //! reactor's screen in the world shows that live. Run with `--start=dev_area`.
 use super::*;
 use crate::dev_area::{look_samples, test_console, DevArea, Zone, ENGINEERING, HALF_EXTENT, LAB};
-use crate::displays::{overlay_point_of, ActiveDisplay, DisplayPanel, DisplayPointer, Panels};
+use crate::displays::{aim_at, world_point_of, ActiveDisplay, DisplayPanel, DisplayPointer, Panels};
 use crate::interact::Interaction;
 
 /// The test console's display entity.
@@ -34,12 +34,23 @@ fn area_xy(w: &World, p: DVec3) -> [f64; 2] {
     [d.dot(f.east) * pl.radius, d.dot(f.north) * pl.radius]
 }
 
-/// Point the pointer at a widget of the console (overlay) and tap the button.
+/// The test console's display.
+pub(crate) fn console_display(w: &mut World) -> DisplayPanel {
+    let e = console(w).expect("the test console is spawned");
+    w.get::<DisplayPanel>(e).unwrap().clone()
+}
+
+/// Point the cursor at a widget of the console's screen in the world.
+pub(crate) fn aim_at_widget(w: &mut World, action: &str, t: Option<f64>) {
+    let d = console_display(w);
+    let at = world_point_of(w, &d, action, t).unwrap_or_else(|| panic!("no widget '{action}' on the console"));
+    aim_at(w, at);
+}
+
+/// Point the cursor at a widget of the console and click.
 pub(crate) fn click_on(w: &mut World, action: &str, t: Option<f64>) {
-    let at = overlay_point_of(w, &test_console::ID, action, t).unwrap_or_else(|| panic!("no widget '{action}' on the console"));
-    let mut c = w.resource_mut::<Controls>();
-    c.pointer = Some(at);
-    c.click = true;
+    aim_at_widget(w, action, t);
+    w.resource_mut::<Controls>().click = true;
 }
 
 /// Put the walker `back` metres south of the console, facing it, then walk (W) until the prompt
@@ -212,12 +223,11 @@ pub(super) fn dev_area_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str)
     s.push(click_until("lights", None, "dev area: the toggle switches the lights on".into(), |st| st.lights));
     s.push(Box::new(|w, _| {
         // Hover the + button for the picture.
-        let at = overlay_point_of(w, &test_console::ID, "inc", None);
-        w.resource_mut::<Controls>().pointer = at;
+        aim_at_widget(w, "inc", None);
         true
     }));
     s.push(wait(0.1));
-    s.push(shot_step("overlay"));
+    s.push(shot_step("console-world"));
     s.push(tap_until(KeyCode::KeyF, "dev area: F leaves the console", 1.0, |w| active(w) == ActiveDisplay::Idle && !w.resource::<Controls>().free_cursor));
     s.push(walk_check("dev area: after F", KeyCode::KeyS, true));
     // Again, leaving with Escape.
@@ -256,13 +266,19 @@ fn visit(name: &'static str, id: display_core::PanelId, zone: Zone, at: [f64; 2]
     ]
 }
 
-/// Point at a widget of a panel in the overlay and click it.
+/// Point the cursor at a widget of a panel's screen in the world.
+fn aim_panel(w: &mut World, id: &display_core::PanelId, action: &str, t: Option<f64>) {
+    let e = display_of(w, id).unwrap_or_else(|| panic!("no display for {id}"));
+    let d = w.get::<DisplayPanel>(e).unwrap().clone();
+    let at = world_point_of(w, &d, action, t).unwrap_or_else(|| panic!("no widget '{action}' on {id}"));
+    aim_at(w, at);
+}
+
+/// Point at a widget of a panel's screen and click it.
 fn click_panel(id: display_core::PanelId, action: &'static str, t: Option<f64>) -> Step {
     Box::new(move |w, _| {
-        let at = overlay_point_of(w, &id, action, t).unwrap_or_else(|| panic!("no widget '{action}' on {id}"));
-        let mut c = w.resource_mut::<Controls>();
-        c.pointer = Some(at);
-        c.click = true;
+        aim_panel(w, &id, action, t);
+        w.resource_mut::<Controls>().click = true;
         true
     })
 }
@@ -275,12 +291,11 @@ pub(super) fn look_sample_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static s
     s.push(Box::new(|w, c| {
         let t = w.resource::<Warmer>().temp;
         check(c, t == 38, format!("dev area: + on the warmer reads {t} °C (38)"));
-        let at = overlay_point_of(w, &LAB_ID, "run", None);
-        w.resource_mut::<Controls>().pointer = at;
+        aim_panel(w, &LAB_ID, "run", None);
         true
     }));
     s.push(wait(0.1));
-    s.push(shot_step("lab-overlay"));
+    s.push(shot_step("lab-world"));
     s.push(tap_until(KeyCode::Escape, "dev area: Escape leaves the warmer", 1.0, |w| active(w) == ActiveDisplay::Idle));
     s.extend(visit("dev area: F uses the reactor panel (M screen)", REACTOR_ID, ENGINEERING, [-4.0, -4.5], "Reactor 2"));
     s.push(click_panel(REACTOR_ID, "mode", None));
@@ -291,12 +306,11 @@ pub(super) fn look_sample_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static s
         let r = w.resource::<ReactorSample>().clone();
         let status = w.resource::<Panels>().get(&REACTOR_ID).and_then(|p| p.plate.clone()).and_then(|p| p.status).map(|s| s.0);
         check(c, !r.auto && r.setpoint == 60 && status.as_deref() == Some("HOT"), format!("dev area: manual at 60 % reads hot ({r:?}, {status:?})"));
-        let at = overlay_point_of(w, &REACTOR_ID, "scram", None);
-        w.resource_mut::<Controls>().pointer = at;
+        aim_panel(w, &REACTOR_ID, "scram", None);
         true
     }));
     s.push(wait(0.1));
-    s.push(shot_step("reactor-overlay"));
+    s.push(shot_step("reactor-cursor"));
     s.push(tap_until(KeyCode::Escape, "dev area: Escape leaves the reactor panel", 1.0, |w| active(w) == ActiveDisplay::Idle));
     // The screen in the world shows the panel live (window only; give it a redraw).
     s.push(wait(0.6));

@@ -4,8 +4,10 @@
 //! come from the design system "EXO-1 Ship Displays" (2026-10-13); colours and fonts are data
 //! (`theme`, `content/ui/displays.json`). `Panel::layout` stacks them into rectangles, a `Pointer`
 //! turns a position and a held button into hover, press and `Click`s with the widget's action id,
-//! screens come in the design system's tiers (S, M, L) on a plate with a header,
-//! and `ray_to_panel` finds where a ray (the view) meets a display's quad in the world.
+//! screens come in the design system's tiers (S, M, L) on a plate with a header (the tier is the
+//! panel's canvas, drawn into the display's texture), and `ray_to_panel` finds where a ray (the
+//! view through the cursor) meets a display's quad in the world; `Panel::from_uv` turns that hit
+//! into panel pixels.
 //!
 //! Panel pixels: origin top left, x right, y down (like screen UI). A role builds its panel each
 //! tick from its own state; widgets are plain data, so the panel can be compared, drawn on the
@@ -383,7 +385,7 @@ pub mod plate {
 
 // ---------- layout ----------
 
-/// A rectangle in panel pixels (or screen pixels for `Fit`).
+/// A rectangle in panel pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rect {
     pub min: DVec2,
@@ -428,6 +430,16 @@ pub struct Panel {
 }
 
 impl Panel {
+    /// Panel pixels from texture coordinates (0..1, v down), as `ray_to_panel` gives them.
+    pub fn from_uv(&self, uv: DVec2) -> DVec2 {
+        uv * self.size
+    }
+
+    /// Texture coordinates (0..1, v down) of a point in panel pixels (the inverse of `from_uv`).
+    pub fn to_uv(&self, at: DVec2) -> DVec2 {
+        at / self.size
+    }
+
     /// A panel of `w` by `h` panel pixels with 16 px padding and no plate.
     pub fn new(w: f64, h: f64, root: Item) -> Panel {
         Panel { size: DVec2::new(w, h), padding: 16.0, plate: None, root }
@@ -607,33 +619,7 @@ impl Pointer {
     }
 }
 
-// ---------- screen and world ----------
-
-/// A panel drawn on the screen: its rectangle in screen pixels and the scale from panel pixels.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Fit {
-    pub rect: Rect,
-    pub scale: f64,
-}
-
-impl Fit {
-    /// The panel centred on a screen, `share` of the screen's height tall (narrower if the screen
-    /// is not wide enough: then 95 % of its width).
-    pub fn centred(screen: DVec2, panel: DVec2, share: f64) -> Fit {
-        let mut scale = screen.y * share / panel.y.max(1.0);
-        if panel.x * scale > screen.x * 0.95 {
-            scale = screen.x * 0.95 / panel.x.max(1.0);
-        }
-        let size = panel * scale;
-        Fit { rect: Rect { min: (screen - size) * 0.5, size }, scale }
-    }
-    pub fn to_panel(&self, screen: DVec2) -> DVec2 {
-        (screen - self.rect.min) / self.scale
-    }
-    pub fn to_screen(&self, panel: DVec2) -> DVec2 {
-        self.rect.min + panel * self.scale
-    }
-}
+// ---------- the quad in the world ----------
 
 /// Where a ray meets a panel's quad: texture coordinates (u right, v down, 0..1) and the distance
 /// along the ray.
@@ -645,8 +631,14 @@ pub struct PanelHit {
 
 /// A ray against a panel's quad in the world. The quad is centred on `centre`, `size_m` wide (local
 /// x, right as seen from the front) and tall (local y, up); its front faces local +z. Only the front
-/// counts; a ray from behind, parallel or pointing away misses.
+/// counts; a ray from behind, parallel or pointing away misses, and so does one beside the quad.
 pub fn ray_to_panel(origin: DVec3, dir: DVec3, centre: DVec3, rot: DQuat, size_m: DVec2) -> Option<PanelHit> {
+    ray_to_panel_plane(origin, dir, centre, rot, size_m).filter(|h| (0.0..=1.0).contains(&h.uv.x) && (0.0..=1.0).contains(&h.uv.y))
+}
+
+/// The same ray against the quad's whole plane: the texture coordinates may lie outside 0..1. A
+/// held slider uses it to follow the cursor beside the screen.
+pub fn ray_to_panel_plane(origin: DVec3, dir: DVec3, centre: DVec3, rot: DQuat, size_m: DVec2) -> Option<PanelHit> {
     let n = rot * DVec3::Z;
     let along = dir.dot(n);
     if along >= -1e-12 {
@@ -658,10 +650,28 @@ pub fn ray_to_panel(origin: DVec3, dir: DVec3, centre: DVec3, rot: DQuat, size_m
     }
     let local = rot.inverse() * (origin + dir * t - centre);
     let uv = DVec2::new(local.x / size_m.x + 0.5, 0.5 - local.y / size_m.y);
-    if !(0.0..=1.0).contains(&uv.x) || !(0.0..=1.0).contains(&uv.y) {
+    Some(PanelHit { uv, distance: t * dir.length() })
+}
+
+/// The view ray through a window position (pixels, y down) for a camera at `pos` looking along its
+/// local -z, `fov_y` radians tall, in a window of `window` pixels: the ray's origin and unit
+/// direction.
+pub fn pointer_ray(pos: DVec3, rot: DQuat, fov_y: f64, window: DVec2, p: DVec2) -> (DVec3, DVec3) {
+    let ndc = DVec2::new(p.x / window.x * 2.0 - 1.0, 1.0 - p.y / window.y * 2.0);
+    let t = (fov_y * 0.5).tan();
+    let local = DVec3::new(ndc.x * t * window.x / window.y, ndc.y * t, -1.0);
+    (pos, (rot * local).normalize())
+}
+
+/// Where a world point appears in the window (the inverse of `pointer_ray`), or None behind the camera.
+pub fn window_point(pos: DVec3, rot: DQuat, fov_y: f64, window: DVec2, target: DVec3) -> Option<DVec2> {
+    let local = rot.inverse() * (target - pos);
+    if local.z >= -1e-9 {
         return None;
     }
-    Some(PanelHit { uv, distance: t * dir.length() })
+    let t = (fov_y * 0.5).tan();
+    let ndc = DVec2::new(local.x / (-local.z * t * window.x / window.y), local.y / (-local.z * t));
+    Some(DVec2::new((ndc.x + 1.0) * 0.5 * window.x, (1.0 - ndc.y) * 0.5 * window.y))
 }
 
 /// The world point of texture coordinates on a panel's quad (the inverse of `ray_to_panel`).

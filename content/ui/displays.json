@@ -1,5 +1,5 @@
 {
-  "_comment": "The look of the display panels (display_core::Theme). Colours, fonts and sizes from the initiator's Claude Design system 'EXO-1 Ship Displays' (2026-10-13): green-black glass, phosphor text, one sky-blue accent, status teal/amber/red-pink always with a glyph. Fonts: Chakra Petch and Share Tech Mono (SIL OFL, files and licences in content/fonts/). screen_idle and bezel are the screen in the world when it shows nothing and its frame (not in the system). overlay_share: the overlay's height as a share of the window per tier (S 320x240, M 640x400, L 1280x720), TODO(initiator): by feel. world: screens nearer than range_m draw their panel live, at most once per redraw_s, texture_scale texture pixels per panel pixel. Dev builds reload this file while running.",
+  "_comment": "The look of the display panels (display_core::Theme). Colours, fonts and sizes from the initiator's Claude Design system 'EXO-1 Ship Displays' (2026-10-13): green-black glass, phosphor text, one sky-blue accent, status teal/amber/red-pink always with a glyph. Fonts: Chakra Petch and Share Tech Mono (SIL OFL, files and licences in content/fonts/). screen_idle and bezel are the screen in the world when it shows nothing and its frame (not in the system). The tiers (S 320x240, M 640x400, L 1280x720 panel pixels) are the canvas the panel is drawn on. world: screens nearer than range_m draw their panel live (the screen in use every frame, the others at most once per redraw_s), texture_scale texture pixels per panel pixel. Dev builds reload this file while running.",
   "source": "Claude Design: EXO-1 Ship Displays",
   "colours": {
     "bg_0": "#060a0d",
@@ -41,6 +41,5 @@
     "scanline_every": 3.0,
     "caps_tracking": 0.08
   },
-  "overlay_share": { "s": 0.42, "m": 0.62, "l": 0.88 },
   "world": { "range_m": 12.0, "redraw_s": 0.2, "texture_scale": 2.0 }
 }

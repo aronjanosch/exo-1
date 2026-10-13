@@ -362,11 +362,17 @@ pub struct QuantumLine;
 #[derive(Component)]
 pub struct PromptLine;
 
-pub fn update_prompt(inter: Res<crate::interact::Interaction>, mut q: Query<&mut Text, With<PromptLine>>) {
-    if let Ok(mut t) = q.single_mut()
-        && **t != inter.prompt
-    {
-        **t = inter.prompt.clone();
+/// The prompt sits below the screen centre; while a display is in use it drops to the bottom so it
+/// does not cover the screen being operated.
+pub fn update_prompt(inter: Res<crate::interact::Interaction>, active: Res<crate::displays::ActiveDisplay>, mut q: Query<(&mut Text, &mut Node), With<PromptLine>>) {
+    if let Ok((mut t, mut node)) = q.single_mut() {
+        if **t != inter.prompt {
+            **t = inter.prompt.clone();
+        }
+        let top = if active.using().is_some() { percent(90) } else { percent(58) };
+        if node.top != top {
+            node.top = top;
+        }
     }
 }
 #[derive(Component)]

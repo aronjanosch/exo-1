@@ -2547,7 +2547,9 @@ dependencies = [
 name = "display_core"
 version = "0.1.0"
 dependencies = [
+ "content_core",
  "glam 0.32.1",
+ "serde",
 ]
 
 [[package]]

@@ -23,11 +23,11 @@ Marks: **new** since round 5 · **provisional**: the key is not decided yet · *
 
 ### At a display
 
-F on a display (a console's screen) opens its panel over the view and frees the mouse cursor: point and click the buttons, toggles and sliders. The walker stands still until it leaves.
+F on a display (a machine's or console's screen, looked at from up to 2.5 m) frees the mouse cursor, and the cursor is then the pointer on the screen in the world: point and click the buttons, toggles and sliders right on it, drag a slider (it follows the cursor also beside the screen). Nothing opens over the view. The walker stands still and the world runs on; damage does not pull it off. Others see the live panel on the screen. One player per screen.
 
 | Key | Action | What it does | Pad |
 |---|---|---|---|
-| Mouse, left button | – | Point and click on the panel | – |
+| Mouse, left button | – | Click on the screen under the cursor (a cursor off the screen hits nothing) | – |
 | F | `interact` | Leave the display | North |
 | Escape | `display_leave` | Leave the display (new; does not open the menu then) | – |
 

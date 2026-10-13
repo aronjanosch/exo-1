@@ -684,7 +684,10 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         // Round 6: the city with colliders, its characters, the new towns' pads.
         "town" => town::town_steps(&mut s),
         // The dev area and its test console, with `--start=dev_area`.
-        "dev_area" => dev_area::dev_area_steps(&mut s, &shot_step),
+        "dev_area" => {
+            dev_area::dev_area_steps(&mut s, &shot_step);
+            dev_area::look_sample_steps(&mut s, &shot_step);
+        }
         "displays" => displays::displays_steps(&mut s),
         // C1: items at the dev area's item table, through the request path with 75 ms each way.
         "items" => items::items_steps(&mut s, &shot_step),

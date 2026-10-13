@@ -150,15 +150,12 @@ fn bar_levels_for_high_and_low_bad_values() {
 }
 
 #[test]
-fn a_panel_fits_the_screen_centred_and_maps_both_ways() {
-    let f = Fit::centred(DVec2::new(1600.0, 900.0), DVec2::new(400.0, 300.0), 0.7);
-    assert!((f.rect.size.y - 630.0).abs() < 1e-9 && (f.rect.size.x - 840.0).abs() < 1e-9);
-    assert!((f.rect.centre() - DVec2::new(800.0, 450.0)).length() < 1e-9);
-    let p = DVec2::new(123.0, 45.0);
-    assert!((f.to_panel(f.to_screen(p)) - p).length() < 1e-9);
-    // A narrow screen: the width limits.
-    let n = Fit::centred(DVec2::new(500.0, 900.0), DVec2::new(400.0, 300.0), 0.7);
-    assert!((n.rect.size.x - 475.0).abs() < 1e-9 && n.rect.size.y < 630.0);
+fn a_ray_hit_becomes_a_panel_point_and_back() {
+    let p = Panel::screen(Tier::M, "Reactor 2", "RX-02", column(0.0, vec![label("a")]));
+    assert_eq!(p.from_uv(DVec2::new(0.5, 0.5)), p.size * 0.5);
+    assert_eq!(p.from_uv(DVec2::new(1.0, 0.0)), DVec2::new(p.size.x, 0.0));
+    let at = DVec2::new(123.0, 45.0);
+    assert!((p.from_uv(p.to_uv(at)) - at).length() < 1e-9);
 }
 
 #[test]
@@ -182,6 +179,26 @@ fn a_ray_meets_the_front_of_a_turned_panel() {
     assert!(ray_to_panel(front, rot * DVec3::X, centre, rot, size).is_none());
     let beside = panel_point(centre, rot, size, DVec2::new(1.2, 0.5));
     assert!(ray_to_panel(front, beside - front, centre, rot, size).is_none());
+    // The plane version still gives the point beside the quad (a held slider follows it), but not
+    // from behind.
+    let hit = ray_to_panel_plane(front, beside - front, centre, rot, size).expect("the plane is there");
+    assert!((hit.uv - DVec2::new(1.2, 0.5)).length() < 1e-9);
+    assert!(ray_to_panel_plane(back, centre - back, centre, rot, size).is_none());
+}
+
+#[test]
+fn the_pointer_ray_and_the_window_point_are_inverses() {
+    let rot = DQuat::from_rotation_y(0.4) * DQuat::from_rotation_x(-0.2);
+    let (pos, window, fov) = (DVec3::new(1.0, 2.0, 3.0), DVec2::new(1600.0, 900.0), 1.1);
+    // The window's centre looks straight ahead.
+    let (o, d) = pointer_ray(pos, rot, fov, window, window * 0.5);
+    assert!(o == pos && (d - rot * DVec3::NEG_Z).length() < 1e-9);
+    for p in [DVec2::new(10.0, 20.0), DVec2::new(800.0, 450.0), DVec2::new(1500.0, 700.0)] {
+        let (o, d) = pointer_ray(pos, rot, fov, window, p);
+        let back = window_point(pos, rot, fov, window, o + d * 2.7).expect("in front");
+        assert!((back - p).length() < 1e-6, "{p} -> {back}");
+    }
+    assert!(window_point(pos, rot, fov, window, pos + rot * DVec3::Z).is_none(), "behind the camera");
 }
 
 #[test]
@@ -189,4 +206,88 @@ fn panel_ids_are_const_and_compare_by_text() {
     const ID: PanelId = PanelId::new("test_console");
     assert_eq!(ID, PanelId::from("test_console".to_string()));
     assert_eq!(ID.as_str(), "test_console");
+}
+
+#[test]
+fn a_screen_puts_its_widgets_in_the_well_under_the_header() {
+    let p = Panel::screen(Tier::M, "Reactor 2", "RX-02", column(0.0, vec![label("a")])).status("STABLE", Tone::Good);
+    assert_eq!(p.size, DVec2::new(640.0, 400.0));
+    assert_eq!(p.tier(), Tier::M);
+    let h = p.header().unwrap();
+    let w = p.well().unwrap();
+    assert_eq!(h, Rect::new(2.0, 2.0, 636.0, 32.0));
+    assert_eq!(w, Rect::new(6.0, 34.0, 628.0, 360.0));
+    let c = p.content();
+    assert_eq!(c, Rect::new(6.0 + 14.0, 34.0 + 14.0, 628.0 - 28.0, 360.0 - 28.0));
+    assert_eq!(p.layout()[0].rect, c, "the one label fills the content");
+    assert_eq!(p.plate.as_ref().unwrap().status, Some(("STABLE".into(), Tone::Good)));
+    assert!(Panel::new(10.0, 10.0, space()).status("x", Tone::Bad).plate.is_none(), "no plate, no status");
+}
+
+#[test]
+fn tiers_have_the_design_canvases_and_the_nearest_is_found() {
+    assert_eq!(Tier::S.canvas(), DVec2::new(320.0, 240.0));
+    assert_eq!(Tier::L.canvas(), DVec2::new(1280.0, 720.0));
+    assert_eq!(Tier::nearest(DVec2::new(480.0, 360.0)), Tier::M);
+    assert_eq!(Tier::nearest(DVec2::new(300.0, 200.0)), Tier::S);
+}
+
+#[test]
+fn status_tones_carry_a_glyph() {
+    assert_eq!(Tone::Good.glyph(), Some(Glyph::Circle));
+    assert_eq!(Tone::Warn.glyph(), Some(Glyph::Triangle));
+    assert_eq!(Tone::Bad.glyph(), Some(Glyph::Square));
+    assert_eq!(Tone::Normal.glyph(), None);
+    assert_eq!(Level::Crit.tone(), Tone::Bad);
+}
+
+#[test]
+fn a_disabled_toggle_or_slider_is_no_target() {
+    let p = Panel::new(200.0, 200.0, column(0.0, vec![toggle(true, "", "t").enabled(false).labels("MAN", "AUTO"), slider(0.3, "", "s").enabled(false)]));
+    let mut ptr = Pointer::default();
+    for a in ["t", "s"] {
+        let at = Some(p.find(a).unwrap().rect.centre());
+        ptr.step(&p, at, false);
+        assert_eq!(ptr.hover, None, "{a} disabled: no hover");
+        assert!(ptr.step(&p, at, true).is_empty() && ptr.step(&p, at, false).is_empty(), "{a} disabled: no click");
+    }
+    assert!(matches!(&p.find("t").unwrap().widget, Widget::Toggle { labels, .. } if labels[1] == "AUTO"));
+}
+
+#[test]
+fn a_list_click_gives_the_row_index() {
+    let rows = vec![list_row("Hull", "92%", Tone::Good), list_row("Reactor", "HOT", Tone::Warn), list_row("Door", "", Tone::Dim)];
+    let p = Panel::new(232.0, 200.0, column(0.0, vec![list(rows).select(Some(0), Some("pick")).fixed(160.0), space()]));
+    let r = p.find("pick").unwrap().rect;
+    let at = Some(DVec2::new(r.centre().x, r.min.y + 40.0 * 1.5));
+    let mut ptr = Pointer::default();
+    ptr.step(&p, at, true);
+    assert_eq!(ptr.step(&p, at, false), vec![Click { action: "pick".into(), value: Some(1.0) }]);
+    assert_eq!(list_row_at(&r, 40.0, 3, DVec2::new(r.centre().x, r.min.y + 1.0)), Some(0));
+    assert_eq!(list_row_at(&r, 40.0, 3, DVec2::new(r.centre().x, r.max().y - 1.0)), None, "below the last row");
+    // Without an action the list is only a readout.
+    let q = Panel::new(232.0, 200.0, list(vec![list_row("a", "", Tone::Good)]));
+    assert!(q.hit(q.content().centre()).is_none());
+}
+
+#[test]
+fn thresholds_and_tones_reach_the_new_widgets() {
+    assert!(matches!(dial(0.5, "50%", "Output").thresholds(Some(0.8), Some(0.95)).widget, Widget::Dial { warn: Some(_), crit: Some(_), .. }));
+    assert!(matches!(trend(vec![0.1, 0.2]).thresholds(Some(0.7), None).widget, Widget::Trend { warn: Some(_), crit: None, .. }));
+    assert!(matches!(button("SCRAM", "scram").tone(Tone::Bad).widget, Widget::Button { tone: Tone::Bad, .. }));
+    assert!(matches!(readout("412 °C").widget, Widget::Label { mono: true, size, .. } if size == font::VALUE));
+    assert!(matches!(micro("Mode").widget, Widget::Label { tone: Tone::Micro, .. }));
+}
+
+#[test]
+fn the_shipped_theme_parses_and_bad_ones_are_refused() {
+    let src = include_str!("../../../content/ui/displays.json");
+    let t = Theme::from_json(src).unwrap();
+    assert_eq!(t.colours.accent, Rgb::from_hex("#6fb8ff").unwrap());
+    assert_eq!(t.tone(Tone::Bad), t.colours.bad);
+    assert!(Rgb::from_hex("6fb8ff").is_err() && Rgb::from_hex("#6fb8f").is_err() && Rgb::from_hex("#gggggg").is_err());
+    let bad = src.replace("\"texture_scale\": 2.0", "\"texture_scale\": 9.0");
+    assert!(Theme::from_json(&bad).is_err());
+    let unknown = src.replacen("\"source\"", "\"surprise\": 1, \"source\"", 1);
+    assert!(Theme::from_json(&unknown).is_err());
 }

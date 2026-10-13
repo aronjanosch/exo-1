@@ -258,17 +258,21 @@ fn own_sync(items: Res<Items>, st: Res<HealthState>, planet: Res<PlanetRes>, are
         _ => st.bodies.get(&LOCAL).map(|b| vitals_of(&st.tuning, b)),
     };
     let Some(v) = v else { return };
-    let was_down = own.last.is_some_and(|l| l.down.is_some());
+    let prev = own.last;
+    let was_down = prev.is_some_and(|l| l.down.is_some());
     if was_down && v.down.is_none()
         && let Ok(mut pl) = players.single_mut()
     {
         to_pad(&mut pl, &planet, &area);
     }
+    // The HUD is written when the vitals change, so a scenario's own readings stay until then.
+    if prev != Some(v) {
+        hud.health = v.health;
+        hud.oxygen = v.oxygen;
+        hud.burn = v.burn;
+        hud.radiation = v.radiation;
+    }
     own.last = Some(v);
-    hud.health = v.health;
-    hud.oxygen = v.oxygen;
-    hud.burn = v.burn;
-    hud.radiation = v.radiation;
     if v.down.is_some() {
         // Down: no walking, no turning, no looking.
         actions.move_dir = DVec3::ZERO;

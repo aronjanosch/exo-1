@@ -190,3 +190,88 @@ fn panel_ids_are_const_and_compare_by_text() {
     assert_eq!(ID, PanelId::from("test_console".to_string()));
     assert_eq!(ID.as_str(), "test_console");
 }
+
+#[test]
+fn a_screen_puts_its_widgets_in_the_well_under_the_header() {
+    let p = Panel::screen(Tier::M, "Reactor 2", "RX-02", column(0.0, vec![label("a")])).status("STABLE", Tone::Good);
+    assert_eq!(p.size, DVec2::new(640.0, 400.0));
+    assert_eq!(p.tier(), Tier::M);
+    let h = p.header().unwrap();
+    let w = p.well().unwrap();
+    assert_eq!(h, Rect::new(2.0, 2.0, 636.0, 32.0));
+    assert_eq!(w, Rect::new(6.0, 34.0, 628.0, 360.0));
+    let c = p.content();
+    assert_eq!(c, Rect::new(6.0 + 14.0, 34.0 + 14.0, 628.0 - 28.0, 360.0 - 28.0));
+    assert_eq!(p.layout()[0].rect, c, "the one label fills the content");
+    assert_eq!(p.plate.as_ref().unwrap().status, Some(("STABLE".into(), Tone::Good)));
+    assert!(Panel::new(10.0, 10.0, space()).status("x", Tone::Bad).plate.is_none(), "no plate, no status");
+}
+
+#[test]
+fn tiers_have_the_design_canvases_and_the_nearest_is_found() {
+    assert_eq!(Tier::S.canvas(), DVec2::new(320.0, 240.0));
+    assert_eq!(Tier::L.canvas(), DVec2::new(1280.0, 720.0));
+    assert_eq!(Tier::nearest(DVec2::new(480.0, 360.0)), Tier::M);
+    assert_eq!(Tier::nearest(DVec2::new(300.0, 200.0)), Tier::S);
+}
+
+#[test]
+fn status_tones_carry_a_glyph() {
+    assert_eq!(Tone::Good.glyph(), Some(Glyph::Circle));
+    assert_eq!(Tone::Warn.glyph(), Some(Glyph::Triangle));
+    assert_eq!(Tone::Bad.glyph(), Some(Glyph::Square));
+    assert_eq!(Tone::Normal.glyph(), None);
+    assert_eq!(Level::Crit.tone(), Tone::Bad);
+}
+
+#[test]
+fn a_disabled_toggle_or_slider_is_no_target() {
+    let p = Panel::new(200.0, 200.0, column(0.0, vec![toggle(true, "", "t").enabled(false).labels("MAN", "AUTO"), slider(0.3, "", "s").enabled(false)]));
+    let mut ptr = Pointer::default();
+    for a in ["t", "s"] {
+        let at = Some(p.find(a).unwrap().rect.centre());
+        ptr.step(&p, at, false);
+        assert_eq!(ptr.hover, None, "{a} disabled: no hover");
+        assert!(ptr.step(&p, at, true).is_empty() && ptr.step(&p, at, false).is_empty(), "{a} disabled: no click");
+    }
+    assert!(matches!(&p.find("t").unwrap().widget, Widget::Toggle { labels, .. } if labels[1] == "AUTO"));
+}
+
+#[test]
+fn a_list_click_gives_the_row_index() {
+    let rows = vec![list_row("Hull", "92%", Tone::Good), list_row("Reactor", "HOT", Tone::Warn), list_row("Door", "", Tone::Dim)];
+    let p = Panel::new(232.0, 200.0, column(0.0, vec![list(rows).select(Some(0), Some("pick")).fixed(160.0), space()]));
+    let r = p.find("pick").unwrap().rect;
+    let at = Some(DVec2::new(r.centre().x, r.min.y + 40.0 * 1.5));
+    let mut ptr = Pointer::default();
+    ptr.step(&p, at, true);
+    assert_eq!(ptr.step(&p, at, false), vec![Click { action: "pick".into(), value: Some(1.0) }]);
+    assert_eq!(list_row_at(&r, 40.0, 3, DVec2::new(r.centre().x, r.min.y + 1.0)), Some(0));
+    assert_eq!(list_row_at(&r, 40.0, 3, DVec2::new(r.centre().x, r.max().y - 1.0)), None, "below the last row");
+    // Without an action the list is only a readout.
+    let q = Panel::new(232.0, 200.0, list(vec![list_row("a", "", Tone::Good)]));
+    assert!(q.hit(q.content().centre()).is_none());
+}
+
+#[test]
+fn thresholds_and_tones_reach_the_new_widgets() {
+    assert!(matches!(dial(0.5, "50%", "Output").thresholds(Some(0.8), Some(0.95)).widget, Widget::Dial { warn: Some(_), crit: Some(_), .. }));
+    assert!(matches!(trend(vec![0.1, 0.2]).thresholds(Some(0.7), None).widget, Widget::Trend { warn: Some(_), crit: None, .. }));
+    assert!(matches!(button("SCRAM", "scram").tone(Tone::Bad).widget, Widget::Button { tone: Tone::Bad, .. }));
+    assert!(matches!(readout("412 °C").widget, Widget::Label { mono: true, size, .. } if size == font::VALUE));
+    assert!(matches!(micro("Mode").widget, Widget::Label { tone: Tone::Micro, .. }));
+}
+
+#[test]
+fn the_shipped_theme_parses_and_bad_ones_are_refused() {
+    let src = include_str!("../../../content/ui/displays.json");
+    let t = Theme::from_json(src).unwrap();
+    assert_eq!(t.colours.accent, Rgb::from_hex("#6fb8ff").unwrap());
+    assert!(t.share(Tier::S) < t.share(Tier::M) && t.share(Tier::M) < t.share(Tier::L), "bigger screens open bigger");
+    assert_eq!(t.tone(Tone::Bad), t.colours.bad);
+    assert!(Rgb::from_hex("6fb8ff").is_err() && Rgb::from_hex("#6fb8f").is_err() && Rgb::from_hex("#gggggg").is_err());
+    let bad = src.replace("\"s\": 0.42", "\"s\": 1.5");
+    assert!(Theme::from_json(&bad).is_err());
+    let unknown = src.replacen("\"source\"", "\"surprise\": 1, \"source\"", 1);
+    assert!(Theme::from_json(&unknown).is_err());
+}

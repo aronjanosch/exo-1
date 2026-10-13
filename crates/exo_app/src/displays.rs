@@ -8,10 +8,14 @@
 //! for its id. The panel's place in the world is a `DisplayPanel` entity (the dev area spawns
 //! them from its registry).
 //!
-//! The panel in use opens as an overlay on the screen, centred, 70 % of the window's height; the
-//! pointer is the cursor (decision "Station screens as overlay", 2026-10-13). In the world the
-//! display is a glowing quad. Pointer and click go through `Controls`, so scripted runs drive it
-//! without a mouse.
+//! The panel in use opens as an overlay on the screen, centred; its size follows the display's
+//! tier (a small machine display opens small, a bridge screen large; shares in
+//! `content/ui/displays.json`). The pointer is the cursor (decision "Station screens as overlay",
+//! 2026-10-13). In the world the display shows its panel live, read only, so others see a slider
+//! move. Pointer and click go through `Controls`, so scripted runs drive it without a mouse.
+//!
+//! The look (colours, fonts, strokes) is `DisplayLook`, from `content/ui/displays.json` (the
+//! design system "EXO-1 Ship Displays"); dev builds reload the file while running.
 use crate::controls::{Actions, Controls, Tap};
 use crate::walker::{Player, EYE_HEIGHT};
 use bevy::math::{DQuat, DVec2, DVec3};
@@ -22,8 +26,18 @@ use walker_core::Frame;
 
 /// Reach of the interact key on a display: eye to the panel (m). TODO(initiator): by feel.
 pub const USE_RANGE: f64 = 2.5;
-/// Overlay: the panel's height as a share of the window's. TODO(initiator): by feel.
-pub const OVERLAY_SHARE: f64 = 0.7;
+/// The look of the panels, embedded; dev builds reload it from `content/ui/` while running.
+pub const DISPLAYS_JSON: &str = include_str!("../../../content/ui/displays.json");
+
+/// The displays' theme (`content/ui/displays.json`).
+#[derive(Resource, Clone, Debug)]
+pub struct DisplayLook(pub display_core::Theme);
+
+impl Default for DisplayLook {
+    fn default() -> Self {
+        DisplayLook(display_core::Theme::from_json(DISPLAYS_JSON).unwrap_or_else(|e| panic!("{e}")))
+    }
+}
 
 /// A display in the world: what it is called (the prompt), which panel it shows, its quad.
 #[derive(Component, Clone, Debug)]
@@ -98,15 +112,15 @@ impl Default for DisplayView {
 }
 
 impl DisplayView {
-    /// Where a panel sits on the screen.
-    pub fn fit(&self, panel: &Panel) -> Fit {
-        Fit::centred(DVec2::new(self.window.x as f64, self.window.y as f64), panel.size, OVERLAY_SHARE)
+    /// Where a panel sits on the screen: centred, as tall as its tier's share of the window.
+    pub fn fit(&self, panel: &Panel, look: &DisplayLook) -> Fit {
+        Fit::centred(DVec2::new(self.window.x as f64, self.window.y as f64), panel.size, look.0.share(panel.tier()))
     }
 }
 
 pub fn plugin(app: &mut App) {
     use crate::phases::Fx;
-    app.init_resource::<Panels>().init_resource::<ActiveDisplay>().init_resource::<DisplayPointer>().init_resource::<DisplayView>();
+    app.init_resource::<Panels>().init_resource::<DisplayLook>().init_resource::<ActiveDisplay>().init_resource::<DisplayPointer>().init_resource::<DisplayView>();
     app.add_message::<DisplayAction>();
     app.add_systems(FixedUpdate, use_display.after(crate::interact::interaction).before(crate::walker::walker_step).in_set(Fx::Walker));
 }
@@ -126,6 +140,7 @@ pub fn use_display(
     mut actions: ResMut<Actions>,
     mut controls: ResMut<Controls>,
     view: Res<DisplayView>,
+    look: Res<DisplayLook>,
     panels: Res<Panels>,
     displays: Query<&DisplayPanel>,
     players: Query<&Player>,
@@ -153,7 +168,7 @@ pub fn use_display(
     actions.turn = DVec2::ZERO;
     let Ok(d) = displays.get(e) else { return };
     let Some(panel) = panels.get(&d.id) else { return };
-    let at = controls.pointer.map(|p| view.fit(panel).to_panel(DVec2::new(p.x as f64, p.y as f64)));
+    let at = controls.pointer.map(|p| view.fit(panel, &look).to_panel(DVec2::new(p.x as f64, p.y as f64)));
     for c in pointer.0.step(panel, at, controls.pointer_down || click) {
         out.write(DisplayAction { panel: d.id.clone(), action: c.action, value: c.value.map(|v| v as f32) });
     }
@@ -163,7 +178,7 @@ pub fn use_display(
 /// `Controls::pointer` to point at it.
 pub fn overlay_point(w: &World, panel: &PanelId, at: DVec2) -> Option<Vec2> {
     let p = w.resource::<Panels>().get(panel)?;
-    let s = w.resource::<DisplayView>().fit(p).to_screen(at);
+    let s = w.resource::<DisplayView>().fit(p, w.resource::<DisplayLook>()).to_screen(at);
     Some(Vec2::new(s.x as f32, s.y as f32))
 }
 
@@ -180,11 +195,38 @@ pub fn overlay_point_of(w: &World, panel: &PanelId, action: &str, t: Option<f64>
 
 // ---------- window: drawing ----------
 
-/// Window only: the screen size, the overlay, and the quads in the world.
+/// Window only: the screen size, the fonts, the overlay, and the screens in the world.
 pub fn window_plugin(app: &mut App) {
     use crate::phases::Frame;
     app.add_systems(Startup, spawn_overlay);
-    app.add_systems(Update, (update_view, add_quads, draw_overlay).chain().in_set(Frame::Hud));
+    app.add_systems(Update, (reload_look, load_fonts, update_view, add_quads, draw_overlay, draw_world).chain().in_set(Frame::Hud));
+}
+
+/// Dev builds: `content/ui/displays.json` is read every 250 ms of wall time; a changed file that
+/// parses replaces the look at once, one that does not is reported and the old look stays.
+fn reload_look(mut look: ResMut<DisplayLook>, mut state: Local<Option<(String, std::time::Instant)>>) {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let now = std::time::Instant::now();
+    let (loaded, next) = state.get_or_insert_with(|| (DISPLAYS_JSON.to_string(), now));
+    if now < *next {
+        return;
+    }
+    *next = now + std::time::Duration::from_millis(250);
+    let path = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../content/ui/displays.json"));
+    let Ok(text) = std::fs::read_to_string(path) else { return };
+    if text == *loaded {
+        return;
+    }
+    *loaded = text.clone();
+    match display_core::Theme::from_json(&text) {
+        Ok(t) => {
+            look.0 = t;
+            println!("displays: look reloaded");
+        }
+        Err(e) => println!("displays: reload refused, the old look stays: {e}"),
+    }
 }
 
 mod draw;

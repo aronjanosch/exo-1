@@ -1,0 +1,24 @@
+{
+  "_comment": "Health (#295). Every number is a starting value, TODO(initiator). Bands: each runs from the previous 'to' (0 for the first); 'vitality' is the vitality lost at the band's start and end, as a share of max_vitality; 'change_per_s' is the strength's own change (negative heals). Treatments reduce one affliction per use, an id is an item kind (bandage, deglow).",
+  "max_vitality": 100.0,
+  "dead_at": -1.0,
+  "respawn_s": 5.0,
+  "oxygen": { "low_below": 0.3, "fall_per_s": 5.0, "rise_per_s": 10.0, "unconscious_per_s": 1.0 },
+  "treat": { "skill_low": 0.75, "skill_high": 1.25 },
+  "afflictions": [
+    { "id": "burn", "max": 200.0, "bands": [
+      { "to": 30.0, "vitality": [0.0, 0.3], "change_per_s": -0.05 },
+      { "to": 60.0, "vitality": [0.3, 0.6], "change_per_s": -0.05 },
+      { "to": 200.0, "vitality": [0.6, 2.0], "change_per_s": -0.05 } ] },
+    { "id": "oxygen_low", "max": 200.0, "bands": [
+      { "to": 50.0, "vitality": [0.0, 0.0], "change_per_s": 0.0 },
+      { "to": 200.0, "vitality": [0.0, 2.0], "change_per_s": 0.0 } ] },
+    { "id": "radiation", "max": 200.0, "bands": [
+      { "to": 50.0, "vitality": [0.0, 0.2], "change_per_s": 0.0 },
+      { "to": 200.0, "vitality": [0.2, 1.5], "change_per_s": 0.0 } ] }
+  ],
+  "treatments": [
+    { "id": "bandage", "required_skill": 40.0, "fail_factor": 0.75, "reduce": { "burn": 15.0 } },
+    { "id": "deglow", "required_skill": 20.0, "fail_factor": 0.75, "reduce": { "radiation": 40.0 } }
+  ]
+}

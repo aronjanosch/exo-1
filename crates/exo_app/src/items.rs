@@ -3,9 +3,11 @@
 //! the request path; this is the glue.
 //!
 //! - Every change goes as a request from the local `Client` to the `Host` (`Items::request`).
-//!   Host and client run in this process for now; `Items::delay` holds each message back as the
-//!   internet would (the scenario plays with 75 ms each way). The client shows its request at
-//!   once; the world (loose item entities) follows the events the client receives.
+//!   Host and client run in this process alone (`Role::Local`); `Items::delay` holds each message
+//!   back as the internet would (the scenario plays with 75 ms each way). In a network session
+//!   (C2, `items_net`) the host process runs the `Host` and sends its events to the clients, a
+//!   client process sends its actions to the host and hears the events (`Role`). The client shows
+//!   its request at once; the world (loose item entities) follows the events the client receives.
 //! - A loose item is a `cargo::Crate` body flagged `item`: it falls, slides, sleeps and lives in
 //!   the ship's frame like a crate, but thrust does not push it around.
 //! - Keys: F collects (the interact target), 1 to 8 take a slot into the hand, G drops (a held
@@ -23,10 +25,11 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use grab_core::CrateSize;
 use item_core::container::Stack;
-use item_core::{Action, Client, Event, FrameRef, Host, ItemDefs, LooseId, Placement, PlayerId, Request};
+use item_core::{Action, Client, Event, FrameRef, Host, ItemDefs, LooseId, Placement, PlayerId, Reject, Request};
 use walker_core::Frame;
 
-/// The local player in the session (the host's own).
+/// The local player in a one-process game, and the host's own in a session. Slot of the ship
+/// everybody boards: items in a cabin live in the host's ship.
 pub const LOCAL: PlayerId = 1;
 /// A dropped item appears this far in front of the eye (m).
 const DROP_AHEAD: f64 = 0.6;
@@ -58,6 +61,28 @@ pub fn load_defs() -> ItemDefs {
     ItemDefs::from_files(files.iter().map(|f| (f.path.as_str(), f.text.as_str()))).unwrap_or_else(|e| panic!("items: {e}"))
 }
 
+/// Which side of a session this process is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Role {
+    /// No network: host and client in this process.
+    #[default]
+    Local,
+    /// The host (slot 1): runs the `Host`, its own player is the local client, other players'
+    /// actions come in over the network and its events go out to them.
+    Host,
+    /// A client: sends its actions to the host, hears the host's events. The `host` field is idle.
+    Client,
+}
+
+/// What `Items` hands to the network glue (`items_net`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum NetOut {
+    /// Client to host.
+    Action(Action),
+    /// Host to the clients: one player (an answer to their action) or all (`to` None).
+    Event { to: Option<PlayerId>, ev: Event },
+}
+
 #[derive(Resource)]
 pub struct Items {
     pub defs: ItemDefs,
@@ -65,17 +90,34 @@ pub struct Items {
     pub client: Client,
     /// One-way delay of every message (s): 0 in one process, the internet's in tests.
     pub delay: f64,
+    pub role: Role,
     /// Actions on the way to the host and events on the way back, with their arrival time.
     outbox: Vec<(f64, Action)>,
     inbox: Vec<(f64, Event)>,
+    /// Messages for the network, drained by `items_net`.
+    pub net_out: Vec<NetOut>,
     /// Every event the local client received (scenario checks).
     pub received: Vec<Event>,
+}
+
+/// Whether the host can simulate an action's placement: a cabin is the host's ship. (Other
+/// players' ships are proxies here, with no body to rest an item on.)
+fn placement_ok(a: &Action) -> bool {
+    match &a.req {
+        Request::Drop { at, .. } | Request::Throw { at, .. } => !matches!(at.frame, FrameRef::Ship(n) if n != LOCAL),
+        _ => true,
+    }
 }
 
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, outbox: Vec::new(), inbox: Vec::new(), received: Vec::new() }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new() }
+    }
+
+    /// The local player's slot.
+    pub fn me(&self) -> PlayerId {
+        self.client.player
     }
 
     /// The local player asks; it shows at once. The action's number, or why it cannot work.
@@ -86,25 +128,80 @@ impl Items {
         Ok(seq)
     }
 
-    /// Another player's action arriving at the host (the network later; scenarios now).
+    /// Another player's action arriving at the host (scenarios; the network uses `from_peer`).
     pub fn remote(&mut self, now: f64, a: Action) {
         self.outbox.push((now, a));
     }
 
-    /// The host puts an item into the world (level content).
-    pub fn spawn(&mut self, now: f64, stack: Stack, at: Placement) {
-        let ev = self.host.spawn(stack, at, None);
-        self.inbox.push((now + self.delay, ev));
+    /// An action from the client in `slot`, arriving over the network at the host. The player is
+    /// the connection's, not what the message says: anything else is dropped.
+    pub fn from_peer(&mut self, now: f64, slot: PlayerId, a: Action) -> bool {
+        if self.role != Role::Host || a.player != slot {
+            return false;
+        }
+        self.outbox.push((now, a));
+        true
     }
 
-    /// Delivers what has arrived: actions to the host, its events to the client. The events the
-    /// client applied, in order.
+    /// An event from the host arriving at a client over the network.
+    pub fn hear(&mut self, now: f64, ev: Event) {
+        self.inbox.push((now, ev));
+    }
+
+    /// The host puts an item into the world (level content). A client does not: the host's
+    /// events bring the world.
+    pub fn spawn(&mut self, now: f64, stack: Stack, at: Placement) {
+        if self.role == Role::Client {
+            return;
+        }
+        let ev = self.host.spawn(stack, at, None);
+        self.publish(now, ev, None);
+    }
+
+    /// A loose item came to rest (host, from the physics): remembered, and told to everybody.
+    pub fn rest(&mut self, now: f64, item: LooseId, at: Placement, rot: [f64; 4], t: f64) {
+        if let Some(ev) = self.host.rest(item, at, rot, t) {
+            self.publish(now, ev, None);
+        }
+    }
+
+    /// An event of the host: to the local client, and over the network to the others.
+    /// `actor`: the player whose action it answers.
+    fn publish(&mut self, now: f64, ev: Event, actor: Option<PlayerId>) {
+        self.inbox.push((now + self.delay, ev.clone()));
+        if self.role != Role::Host {
+            return;
+        }
+        // An answer goes to the player who asked; the host's own never leaves the process.
+        let to = match (&ev, actor) {
+            (Event::Confirmed { .. } | Event::Rejected { .. }, Some(p)) => Some(p),
+            _ => None,
+        };
+        if to != Some(self.me()) {
+            self.net_out.push(NetOut::Event { to, ev });
+        }
+    }
+
+    /// What a client that joins now needs: the world and every inventory as events, for it alone.
+    pub fn send_state(&mut self, to: PlayerId) {
+        for ev in self.host.state() {
+            self.net_out.push(NetOut::Event { to: Some(to), ev });
+        }
+    }
+
+    /// Delivers what has arrived: actions to the host (a client sends them on), its events to the
+    /// client. The events the client applied, in order.
     fn step(&mut self, now: f64) -> Vec<Event> {
         let (due, later): (Vec<_>, Vec<_>) = std::mem::take(&mut self.outbox).into_iter().partition(|(t, _)| *t <= now);
         self.outbox = later;
         for (_, a) in due {
-            for ev in self.host.handle(&a) {
-                self.inbox.push((now + self.delay, ev));
+            if self.role == Role::Client {
+                self.net_out.push(NetOut::Action(a));
+                continue;
+            }
+            let evs = if placement_ok(&a) { self.host.handle(&a) } else { vec![Event::Rejected { player: a.player, seq: a.seq, why: Reject::Invalid }] };
+            for ev in evs {
+                self.publish(now, ev, Some(a.player));
             }
         }
         let (due, later): (Vec<_>, Vec<_>) = std::mem::take(&mut self.inbox).into_iter().partition(|(t, _)| *t <= now);
@@ -182,7 +279,7 @@ pub fn body_size(defs: &ItemDefs, id: &str) -> Option<CrateSize> {
 
 /// Where the walker's hand is, as a placement in its frame (the cabin or the planet), moving at
 /// `vel` (frame coordinates).
-fn hand_placement(pl: &Player, f: &Frame, planet: &PlanetRes, throw: Option<(f64, &grab_core::GrabConfig)>) -> Placement {
+fn hand_placement(pl: &Player, f: &Frame, planet: &PlanetRes, ship_owner: PlayerId, throw: Option<(f64, &grab_core::GrabConfig)>) -> Placement {
     let in_cabin = pl.ship.is_some();
     let (eye, look, up) = if in_cabin {
         (pl.w.pos + pl.cabin_up * EYE_HEIGHT, f.rot.inverse() * pl.world_look(*f), pl.cabin_up)
@@ -195,7 +292,7 @@ fn hand_placement(pl: &Player, f: &Frame, planet: &PlanetRes, throw: Option<(f64
         None => pl.w.vel,
     };
     let fwd = (look - up * look.dot(up)).try_normalize().unwrap_or(up.any_orthonormal_vector());
-    Placement { frame: if in_cabin { FrameRef::Ship(LOCAL) } else { FrameRef::Planet(planet.id.0 as u32) }, pos: pos.to_array(), vel: vel.to_array(), forward: fwd.to_array() }
+    Placement { frame: if in_cabin { FrameRef::Ship(ship_owner) } else { FrameRef::Planet(planet.id.0 as u32) }, pos: pos.to_array(), vel: vel.to_array(), forward: fwd.to_array() }
 }
 
 /// The keys and the inventory screen.
@@ -216,12 +313,18 @@ pub fn item_input(
     active: Res<crate::displays::ActiveDisplay>,
     players: Query<&Player>,
     ships: Query<(Entity, &Position, &Rotation), With<Ship>>,
+    remotes: Query<(Entity, &Position, &Rotation, &crate::ship::RemoteShip)>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
 ) {
     let now = time.elapsed_secs_f64();
     let Ok(pl) = players.single() else { return };
-    let Some((ship_e, sp, sr)) = ships.iter().next() else { return };
-    let frame = cabin_frame(ship_e, (sp, sr), &floors);
+    let Some((own_e, sp, sr)) = ships.iter().next() else { return };
+    // The cabin the walker is in: the own ship's, or the proxy of the ship it boarded (its owner's
+    // slot names the frame in a session).
+    let (ship_e, frame, owner) = match pl.ship.and_then(|e| remotes.get(e).ok()) {
+        Some((e, p, r, rs)) => (e, cabin_frame(e, (p, r), &floors), rs.owner),
+        None => (own_e, cabin_frame(own_e, (sp, sr), &floors), items.me()),
+    };
     let busy = pl.seated || pl.fly || active.using().is_some();
     if actions.take_tap(Tap::Inventory) && !busy {
         ui.open = !ui.open;
@@ -248,11 +351,11 @@ pub fn item_input(
         let slot = items.client.view.selected;
         if let Some(s) = items.in_hand(carrying).cloned() {
             let mass = items.defs.of(&s).map_or(1.0, |d| d.shape.mass);
-            let at = hand_placement(pl, &frame, &planet, throw.then_some((mass, &tuning.grab)));
+            let at = hand_placement(pl, &frame, &planet, owner, throw.then_some((mass, &tuning.grab)));
             let req = if throw { Request::Throw { slot, at } } else { Request::Drop { slot, at } };
             if let Ok(seq) = items.request(now, req) {
                 let li = LooseItem { id: None, def: s.item.kind.to_string(), count: s.count, pending: Some(seq) };
-                spawn_loose(&mut commands, &items.defs, li, &at, ship_e);
+                spawn_loose(&mut commands, &items.defs, li, &at, ship_e, items.role == Role::Client);
             }
         }
     }
@@ -280,21 +383,29 @@ pub fn item_input(
     ui.was_down = ui.open && down;
 }
 
-/// A loose item entity at a placement.
-fn spawn_loose(commands: &mut Commands, defs: &ItemDefs, li: LooseItem, at: &Placement, ship_e: Entity) {
+/// A loose item entity at a placement. On a client (`view`) it is no simulated body but a picture
+/// of the host's: `items_net` poses it from what the host sends.
+fn spawn_loose(commands: &mut Commands, defs: &ItemDefs, li: LooseItem, at: &Placement, ship_e: Entity, view: bool) {
     let Some(size) = body_size(defs, &li.def) else { return };
     let ship = matches!(at.frame, FrameRef::Ship(_)).then_some(ship_e);
-    commands.spawn((li, item_body_bundle(&size, ship, DVec3::from_array(at.pos), DVec3::from_array(at.vel), DVec3::from_array(at.forward))));
+    let mut e = commands.spawn((li, item_body_bundle(&size, ship, DVec3::from_array(at.pos), DVec3::from_array(at.vel), DVec3::from_array(at.forward))));
+    if view {
+        e.insert(crate::items_net::LooseView::new(*at));
+    }
 }
 
 /// Messages arrive; the world follows what the client hears.
 pub fn deliver(mut commands: Commands, time: Res<Time>, mut items: ResMut<Items>, ships: Query<Entity, With<Ship>>, mut loose: Query<(Entity, &mut LooseItem)>) {
     let evs = items.step(time.elapsed_secs_f64());
     let Some(ship_e) = ships.iter().next() else { return };
+    let (me, view) = (items.me(), items.role == Role::Client);
     for ev in evs {
         match ev {
             Event::Spawned { item, loose: l, by } => {
-                let own = by.filter(|(p, _)| *p == LOCAL).map(|(_, seq)| seq);
+                if loose.iter().any(|(_, li)| li.id == Some(item)) {
+                    continue; // told twice (the state of a rejoin): the item is there
+                }
+                let own = by.filter(|(p, _)| *p == me).map(|(_, seq)| seq);
                 if let Some(seq) = own
                     && let Some((_, mut li)) = loose.iter_mut().find(|(_, li)| li.pending == Some(seq))
                 {
@@ -303,7 +414,7 @@ pub fn deliver(mut commands: Commands, time: Res<Time>, mut items: ResMut<Items>
                     continue;
                 }
                 let li = LooseItem { id: Some(item), def: l.stack.item.kind.to_string(), count: l.stack.count, pending: None };
-                spawn_loose(&mut commands, &items.defs, li, &l.at, ship_e);
+                spawn_loose(&mut commands, &items.defs, li, &l.at, ship_e, view);
             }
             Event::Removed { item } => {
                 for (e, li) in &loose {
@@ -312,7 +423,7 @@ pub fn deliver(mut commands: Commands, time: Res<Time>, mut items: ResMut<Items>
                     }
                 }
             }
-            Event::Rejected { player: LOCAL, seq, .. } => {
+            Event::Rejected { player, seq, .. } if player == me => {
                 // A drop the host refused: its item was never there.
                 for (e, li) in &loose {
                     if li.pending == Some(seq) {
@@ -344,7 +455,7 @@ fn dress_items(mut commands: Commands, items: Res<Items>, new: Query<(Entity, &L
     }
 }
 
-fn hide_items(items: Res<Items>, mut q: Query<(&LooseItem, &mut Visibility), With<Crate>>) {
+pub(crate) fn hide_items(items: Res<Items>, mut q: Query<(&LooseItem, &mut Visibility), With<Crate>>) {
     for (li, mut v) in &mut q {
         let want = if visible(&items, li) { Visibility::Inherited } else { Visibility::Hidden };
         if *v != want {

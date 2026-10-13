@@ -383,7 +383,7 @@ fn held_item(
         }
     }
     *vis = if m.0.is_some() { Visibility::Inherited } else { Visibility::Hidden };
-    pose.pos = c.pos + c.rot * DVec3::new(0.28, -0.26, -0.55);
+    pose.pos = c.pos + c.rot * DVec3::new(0.34, -0.34, -0.7);
     pose.rot = c.rot;
 }
 

@@ -9,6 +9,7 @@ use bevy::prelude::*;
 use exo_app::cargo::Crate;
 use exo_app::controls::Controls;
 use exo_app::interact::Interaction;
+use exo_app::health::HealthState;
 use exo_app::items::{Items, LooseItem, Role};
 use exo_app::menu::{start_session_with, Session};
 use exo_app::net_live::Net;
@@ -267,4 +268,55 @@ fn two_players_share_items_over_150_ms_and_2_percent_loss() {
     assert_eq!(confirmed(&p.host, "extinguisher"), 0);
     assert_eq!(items(&p.host).host.inventory(2).count("extinguisher"), 1);
     println!("[{:5.1} s] done; host rx {} B, tx {} B", p.start.elapsed().as_secs_f64(), p.host.world().resource::<Net>().st.wire_rx, p.host.world().resource::<Net>().st.wire_tx);
+}
+
+/// #295: the client uses a bandage on the host's player over the slow link: the client's stack
+/// shrinks at once and at the answer, the host's burn drops, the client's own vitals stay calm.
+#[test]
+fn a_bandage_used_by_a_client_on_the_host_heals_the_host_and_the_stack_shrinks() {
+    let port = 20000 + (std::process::id() % 1000) as u16;
+    let o = Options { headless: true, ..Default::default() };
+    let mut host = build_app(&o);
+    let mut client = build_app(&o);
+    for app in [&mut host, &mut client] {
+        app.finish();
+        app.cleanup();
+        app.update();
+    }
+    let start = Instant::now();
+    start_session_with(host.world_mut(), &Session::Host { port }, &sim_args()).expect("host");
+    start_session_with(client.world_mut(), &Session::Join { address: format!("127.0.0.1:{port}"), slot: 2 }, &sim_args()).expect("join");
+    let mut p = Pair { host, client, start };
+    p.until(30.0, "connected", |p| {
+        p.host.world_mut().query::<&exo_app::net_live::RemoteWalker>().iter(p.host.world()).count() == 1
+            && p.client.world_mut().query::<&exo_app::net_live::RemoteWalker>().iter(p.client.world()).count() == 1
+    });
+    // The host's player is burning: 60 of burn on its body (the host's health system runs each tick).
+    p.until(5.0, "the host has a body for its player", |p| p.host.world().resource::<HealthState>().bodies.contains_key(&1));
+    {
+        let st = p.host.world_mut().resource_mut::<HealthState>().into_inner();
+        st.bodies.get_mut(&1).unwrap().health.add(&st.tuning, "burn", 60.0);
+    }
+    let burn = |p: &Pair| p.host.world().resource::<HealthState>().bodies.get(&1).map_or(0.0, |b| b.health.strength("burn"));
+    assert!(burn(&p) >= 59.0, "the host burns: {}", burn(&p));
+    // The client picks up one bandage from the host's world (the host spawns it in front of the client's walker).
+    let at = in_front(&mut p.client, |_, _| DVec3::ZERO);
+    spawn(&mut p.host, "bandage", at);
+    p.until(10.0, "the client sees the bandage", |p| loose(&mut p.client).len() == 1);
+    let b1 = loose(&mut p.client)[0].id.expect("id");
+    request(&mut p.client, Request::Collect { item: b1 }).expect("predicted");
+    p.until(10.0, "the host confirmed the client's bandage", |p| confirmed(&p.client, "bandage") == 1);
+    // The client uses it (slot 0, the first free) on the host's player.
+    assert_eq!(items(&p.client).client.view.slot(0).map(|s| s.item.kind.as_str()), Some("bandage"));
+    let burn_before = burn(&p);
+    request(&mut p.client, Request::Use { slot: 0, target: 1 }).expect("predicted");
+    assert_eq!(count(&p.client, "bandage"), 0, "shown at once: the client's stack is empty");
+    p.until(10.0, "the host applied the bandage", |p| burn(p) < burn_before - 10.0);
+    p.until(10.0, "the host confirmed the use", |p| confirmed(&p.client, "bandage") == 0 && items(&p.client).client.pending.is_empty());
+    assert_eq!(items(&p.host).host.inventory(2).count("bandage"), 0, "the host's record of the client's stack");
+    // The host told the client its own vitals: no burn, full health.
+    p.until(10.0, "the client has its vitals from the host", |p| items(&p.client).vitals_in.is_some());
+    let v = items(&p.client).vitals_in.expect("vitals");
+    assert!(v.burn.is_none() && v.down.is_none() && v.health > 0.99, "the client's own vitals are calm: {v:?}");
+    println!("[{:5.1} s] done; the host's burn {:.1}", p.start.elapsed().as_secs_f64(), burn(&p));
 }

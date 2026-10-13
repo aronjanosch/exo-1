@@ -120,15 +120,15 @@ pub fn noticeably(a: &Vitals, b: &Vitals) -> bool {
         || moved(a.down.map(f64::floor), b.down.map(f64::floor), 0.0)
 }
 
-/// A player's place in the area (metres), if on foot on the planet.
-fn area_pos(area: &DevArea, planet: &PlanetRes, p: Option<DVec3>) -> Option<[f64; 2]> {
-    let (f, p) = (area.frame?, p?);
+/// A player's place in the area (metres), if on foot on the planet and the dev area is there.
+fn area_pos(area: Option<&DevArea>, planet: &PlanetRes, p: Option<DVec3>) -> Option<[f64; 2]> {
+    let (f, p) = (area?.frame?, p?);
     Some(area_of(&f, planet, p))
 }
 
 /// Host: the hazards and the air under every body, one step, the respawn countdown.
 #[allow(clippy::too_many_arguments)]
-fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, items: Res<Items>, mut st: ResMut<HealthState>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, net: Option<Res<Net>>) {
+fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, items: Res<Items>, mut st: ResMut<HealthState>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, net: Option<Res<Net>>) {
     if items.role == Role::Client {
         return;
     }
@@ -159,7 +159,7 @@ fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, item
             }
             continue;
         }
-        let here = area_pos(&area, &planet, at.get(id).copied());
+        let here = area_pos(area.as_deref(), &planet, at.get(id).copied());
         let inside = |z: &Zone| here.is_some_and(|p| z.contains(p));
         if inside(&HOT_PLATE) {
             b.health.add(t, "burn", BURN_PER_S * dt);
@@ -252,7 +252,7 @@ fn use_input(time: Res<Time>, planet: Res<PlanetRes>, mut controls: ResMut<Contr
 /// Every process: its own vitals into the HUD; frozen controls and a walk to the pad when down or
 /// back up.
 #[allow(clippy::too_many_arguments)]
-fn own_sync(items: Res<Items>, st: Res<HealthState>, planet: Res<PlanetRes>, area: Res<DevArea>, mut own: ResMut<OwnVitals>, mut hud: ResMut<crate::crew_hud::Vitals>, mut actions: ResMut<Actions>, mut players: Query<&mut Player>) {
+fn own_sync(items: Res<Items>, st: Res<HealthState>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut own: ResMut<OwnVitals>, mut hud: ResMut<crate::crew_hud::Vitals>, mut actions: ResMut<Actions>, mut players: Query<&mut Player>) {
     let v = match items.role {
         Role::Client => items.vitals_in,
         _ => st.bodies.get(&LOCAL).map(|b| vitals_of(&st.tuning, b)),
@@ -263,7 +263,9 @@ fn own_sync(items: Res<Items>, st: Res<HealthState>, planet: Res<PlanetRes>, are
     if was_down && v.down.is_none()
         && let Ok(mut pl) = players.single_mut()
     {
-        to_pad(&mut pl, &planet, &area);
+        if let Some(area) = area.as_deref() {
+            to_pad(&mut pl, &planet, area);
+        }
     }
     // The HUD is written when the vitals change, so a scenario's own readings stay until then.
     if prev != Some(v) {

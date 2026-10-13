@@ -22,6 +22,7 @@ use bevy::prelude::*;
 use display_core::PanelId;
 
 pub mod look_samples;
+pub mod item_table;
 pub mod test_console;
 
 /// The place (`content/place/dev_area.json`).
@@ -134,6 +135,7 @@ pub fn plugin(app: &mut App) {
     // ROLES: one line per role module.
     app.add_plugins(test_console::plugin);
     app.add_plugins(look_samples::plugin);
+    app.add_plugins(item_table::plugin);
 }
 
 pub fn window_plugin(app: &mut App) {

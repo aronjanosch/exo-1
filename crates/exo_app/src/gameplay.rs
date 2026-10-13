@@ -834,8 +834,8 @@ fn spawn_panel(mut commands: Commands) {
 
 fn update_panel(mut gp: ResMut<Gameplay>, bindings: Res<crate::controls::Bindings>, mut q: Query<(&mut Text, &mut Node), With<PanelText>>) {
     use crate::controls::Tap;
-    use crate::interact::key_label;
-    let keys = format!("[{}] take the job   [{}] next   [{}] decline", key_label(&bindings, Tap::Interact), key_label(&bindings, Tap::NextOffer), key_label(&bindings, Tap::Decline));
+    use crate::interact::{key_hint, key_label};
+    let keys = format!("[{}] take the job {}{}", key_label(&bindings, Tap::Interact), key_hint(&bindings, Tap::NextOffer, "next"), key_hint(&bindings, Tap::Decline, "decline"));
     let s = gp.panel_text(&keys);
     if let Ok((mut t, mut n)) = q.single_mut() {
         n.display = if s.is_empty() { Display::None } else { Display::Flex };

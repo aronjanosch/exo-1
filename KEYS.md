@@ -14,9 +14,12 @@ Marks: **new** since round 5 · **provisional**: the key is not decided yet · *
 | Mouse | – | Look | right stick |
 | Shift | `run` | Run | left stick click |
 | Space | `jump` | Jump | South |
-| F | `interact` | The one verb: sit or stand up, pick up or set down a crate, a counter, use a display and leave it (new) | North |
-| R | `throw` | Throw the held crate | right stick click |
-| G | `lag` | Cabin gravity by hand, only in a landed ship | – |
+| F | `interact` | The one verb: sit or stand up, pick up or set down a crate, collect an item, a counter, use a display and leave it (new) | North |
+| R | `throw` | Throw the held crate, else the item in the hand (new) | right stick click |
+| G | `drop` | Drop the item in the hand; a held crate is set down (new) | – |
+| 1 to 8 | `slot_1`, `slot_2`, `slot_3`, `slot_4`, `slot_5`, `slot_6`, `slot_7`, `slot_8` | Take a slot of the action bar into the hand (new; while the dev menu is open the digits run its commands) | – |
+| Tab | `inventory` | Open or close the own inventory with a mouse cursor: a click takes a slot into the hand, a drag moves, stacks or swaps (new) | – |
+| – | `lag` | Cabin gravity by hand, only in a landed ship. No key: later the captain sets it at a terminal; scripts fire it | – |
 
 ### At a display
 
@@ -72,7 +75,7 @@ The switches of Star Citizen's flight control (the flight model is the SC model,
 | M | `map` | Open or close the map | – |
 | T | `track_job` | Track the next active job (arrow and map target) | – |
 | Y, Y | `abandon_job` | Drop the tracked job: the first press asks, the second drops it | – |
-| Tab | `next_offer` | Next offer at the counter | – |
+| – | `next_offer` | Next offer at the counter. No key: jobs move to a terminal or a talk; scripts fire it | – |
 | Backspace | `decline` | Close the counter without taking the job | – |
 | Enter | `skip_notices` | Run the queued banners and notices fast | – |
 | F1 | `help` | The keys that apply right now (on foot, suit or in the ship) | – |

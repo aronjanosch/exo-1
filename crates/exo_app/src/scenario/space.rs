@@ -347,14 +347,14 @@ pub(super) fn drift_behind_moving_ship() -> Vec<Step> {
     steps
 }
 
-/// G in the landed ship: cabin gravity comes up (up turns to the floor's up over 1 s, no step),
+/// Cabin gravity by hand in the landed ship (the keyless `lag`, later the captain's terminal): it comes up (up turns to the floor's up over 1 s, no step),
 /// and goes down again (up back to the planet's).
 pub(super) fn lag_by_hand() -> Vec<Step> {
     let toggle = |name: &'static str, on: bool| -> Step {
         Box::new(move |w, c| {
             if c.t == 0.0 {
                 begin(w, c, name);
-                tap(w, KeyCode::KeyG);
+                w.resource_mut::<Controls>().actions.push(crate::controls::Tap::Lag);
             }
             track_look(w, c);
             if c.t >= 1.3 {

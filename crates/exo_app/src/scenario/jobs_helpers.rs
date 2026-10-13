@@ -54,7 +54,7 @@ pub(super) fn job_state(w: &World, template: &str) -> Option<JobState> {
     gp(w).jobs.all().filter(|j| j.template == t).last().map(|j| j.state)
 }
 
-/// With the counter open: Tab through the offers until the panel shows the template (the next
+/// With the counter open: page through the offers (the keyless `next_offer`) until the panel shows the template (the next
 /// tap only after the last one was seen, a few ticks apart).
 pub(super) fn show_offer(template: &'static str) -> Step {
     Box::new(move |w, c| {
@@ -65,7 +65,7 @@ pub(super) fn show_offer(template: &'static str) -> Step {
         assert!(c.t < 5.0, "the counter never showed {template}");
         if c.t - c.v.get("tab").copied().unwrap_or(-1.0) > 0.2 {
             c.v.insert("tab", c.t);
-            tap(w, KeyCode::Tab);
+            w.resource_mut::<Controls>().actions.push(crate::controls::Tap::NextOffer);
         }
         false
     })

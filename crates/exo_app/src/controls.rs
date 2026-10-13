@@ -60,6 +60,9 @@ pub struct Controls {
     /// The primary mouse button went down since the last fixed step (a tap: a press and release
     /// between two steps still counts). Taken by `displays`.
     pub click: bool,
+    /// Actions fired without a key (`Tap::KEYLESS`): scripts now, terminals later. Resolved with
+    /// the next fixed step like a key tap.
+    pub actions: Vec<Tap>,
 }
 
 /// A bindable input: a key, or a gamepad button (`"Pad:South"` in the file).
@@ -155,6 +158,20 @@ pub enum Tap {
     AbandonJob,
     /// Leave the display in use (Escape, besides the interact key).
     DisplayLeave,
+    /// Let the item in the hand fall (G); a held crate is set down too.
+    Drop,
+    /// Open or close the own inventory with a mouse cursor (Tab).
+    Inventory,
+    /// Take a slot of the action bar into the hand (1 to 8; while the dev menu is open the digits
+    /// run its commands instead).
+    Slot1,
+    Slot2,
+    Slot3,
+    Slot4,
+    Slot5,
+    Slot6,
+    Slot7,
+    Slot8,
 }
 
 impl Axis {
@@ -185,7 +202,7 @@ impl Button {
 }
 
 impl Tap {
-    pub const ALL: [Tap; 36] = [
+    pub const ALL: [Tap; 46] = [
         Tap::Help,
         Tap::DevMenu,
         Tap::Dev1,
@@ -222,7 +239,22 @@ impl Tap {
         Tap::TrackJob,
         Tap::AbandonJob,
         Tap::DisplayLeave,
+        Tap::Drop,
+        Tap::Inventory,
+        Tap::Slot1,
+        Tap::Slot2,
+        Tap::Slot3,
+        Tap::Slot4,
+        Tap::Slot5,
+        Tap::Slot6,
+        Tap::Slot7,
+        Tap::Slot8,
     ];
+    /// The action bar's slot taps, in slot order.
+    pub const SLOTS: [Tap; 8] = [Tap::Slot1, Tap::Slot2, Tap::Slot3, Tap::Slot4, Tap::Slot5, Tap::Slot6, Tap::Slot7, Tap::Slot8];
+    /// Actions without a key: a script, or later a terminal, fires them (`Controls::actions`).
+    /// Cabin gravity goes to the captain's terminal, the next job offer to a terminal or a talk.
+    pub const KEYLESS: [Tap; 2] = [Tap::Lag, Tap::NextOffer];
     pub fn name(self) -> &'static str {
         match self {
             Tap::Interact => "interact",
@@ -261,6 +293,16 @@ impl Tap {
             Tap::TrackJob => "track_job",
             Tap::AbandonJob => "abandon_job",
             Tap::DisplayLeave => "display_leave",
+            Tap::Drop => "drop",
+            Tap::Inventory => "inventory",
+            Tap::Slot1 => "slot_1",
+            Tap::Slot2 => "slot_2",
+            Tap::Slot3 => "slot_3",
+            Tap::Slot4 => "slot_4",
+            Tap::Slot5 => "slot_5",
+            Tap::Slot6 => "slot_6",
+            Tap::Slot7 => "slot_7",
+            Tap::Slot8 => "slot_8",
         }
     }
 }
@@ -447,7 +489,13 @@ impl Bindings {
         // Files from before #82 call the one verb `seat` and have no `throw`: they keep working.
         let tap_keys = |t: Tap| -> Result<Vec<Input>, String> {
             match (t, obj.get(t.name())) {
+                (_, Some(v)) if Tap::KEYLESS.contains(&t) => inputs(t.name(), v),
                 (_, Some(v)) => keys(t.name(), v),
+                // ... and no keyless actions, or the item keys (C1).
+                (_, None) if Tap::KEYLESS.contains(&t) => Ok(Vec::new()),
+                (Tap::Drop, None) => Ok(vec![Input::Key(KeyCode::KeyG)]),
+                (Tap::Inventory, None) => Ok(vec![Input::Key(KeyCode::Tab)]),
+                (_, None) if Tap::SLOTS.contains(&t) => Ok(vec![Input::Key([KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8][Tap::SLOTS.iter().position(|x| *x == t).unwrap()])]),
                 (Tap::Interact, None) if obj.contains_key("seat") => keys("seat", &obj["seat"]),
                 (Tap::Throw, None) => Ok(vec![Input::Key(KeyCode::KeyR)]),
                 // Files from before spike 13 have no `landing_mode`.
@@ -478,7 +526,6 @@ impl Bindings {
                 (Tap::SkipNotices, None) => Ok(vec![Input::Key(KeyCode::Enter)]),
                 // ... and no `decline` or `next_offer` (#167).
                 (Tap::Decline, None) => Ok(vec![Input::Key(KeyCode::Backspace)]),
-                (Tap::NextOffer, None) => Ok(vec![Input::Key(KeyCode::Tab)]),
                 // ... and no `map` or `track_job` (#166).
                 (Tap::Map, None) => Ok(vec![Input::Key(KeyCode::KeyM)]),
                 (Tap::TrackJob, None) => Ok(vec![Input::Key(KeyCode::KeyT)]),
@@ -709,6 +756,7 @@ pub fn resolve_actions(mut c: ResMut<Controls>, b: Res<Bindings>, mut a: ResMut<
     let carry = a.look;
     *a = resolve(&b, &c);
     a.look += carry;
+    a.taps.extend(c.actions.drain(..));
     c.taps.clear();
     c.pad_taps.clear();
     c.mouse = Vec2::ZERO;
@@ -899,10 +947,11 @@ mod tests {
     #[test]
     fn taps_map_to_actions() {
         let mut a = resolve(&Bindings::default(), &raw(&[], &[KeyG, KeyF, KeyJ]));
-        assert!(a.take_tap(Tap::Lag));
+        assert!(a.take_tap(Tap::Drop));
         assert!(a.take_tap(Tap::Interact));
         assert!(a.take_tap(Tap::Warp));
-        assert!(!a.take_tap(Tap::Lag), "a tap is consumed once");
+        assert!(!a.take_tap(Tap::Drop), "a tap is consumed once");
+        assert!(!a.take_tap(Tap::Lag), "cabin gravity has no key");
         assert!(!a.take_tap(Tap::HoverAssist));
     }
 
@@ -985,6 +1034,10 @@ mod tests {
         // Through the same path a consumer in the same step sees it.
         app.world_mut().resource_mut::<Controls>().taps.push(KeyG);
         app.world_mut().run_system_once(resolve_actions).unwrap();
+        assert!(app.world_mut().resource_mut::<Actions>().take_tap(Tap::Drop));
+        // A keyless action fired by a script goes the same way.
+        app.world_mut().resource_mut::<Controls>().actions.push(Tap::Lag);
+        app.world_mut().run_system_once(resolve_actions).unwrap();
         assert!(app.world_mut().resource_mut::<Actions>().take_tap(Tap::Lag));
     }
 
@@ -1024,11 +1077,11 @@ mod tests {
         // A saved file from before #206 still loads; its removed actions are skipped.
         let old = BINDINGS.replacen("\"boost\":", "\"flight_model\": [\"F7\"], \"horizon_follow\": [\"KeyL\"], \"boost\":", 1);
         assert!(Bindings::from_json(&old).is_ok(), "removed actions are skipped");
-        rejects("\"lag\": [\"KeyG\"]", "\"lag\": [\"KeyGG\"]", "`lag`: unknown key name `KeyGG`");
-        rejects("\"lag\": [\"KeyG\"]", "\"lag\": []", "`lag`: no key");
+        rejects("\"drop\": [\"KeyG\"]", "\"drop\": [\"KeyGG\"]", "`drop`: unknown key name `KeyGG`");
+        rejects("\"drop\": [\"KeyG\"]", "\"drop\": []", "`drop`: no key");
         rejects("\"roll\": {", "\"roll\": { \"deadzone\": 1.5,", "`roll`: deadzone");
         rejects("\"roll\": {", "\"roll\": { \"curve\": { \"interp\": \"linear\", \"points\": [[1, 0], [0, 1]] },", "`roll`: curve x must be strictly ascending");
-        rejects("\"lag\": [\"KeyG\"],", "", "`lag`: missing");
+        rejects("\"interact\": [\"KeyF\", \"Pad:North\"],", "", "`interact`: missing");
         rejects("\"vjoy\"", "\"mouse-aim\"", "`mouse`: ship_mode");
         rejects("\"vjoy_deadzone_deg\": 1.5", "\"vjoy_deadzone_deg\": 20", "`mouse`: vjoy_deadzone_deg");
     }

@@ -15,7 +15,7 @@ use avian3d::character_controller::move_and_slide::DepenetrationConfig;
 use avian3d::prelude::*;
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
-use grab_core::{BoxWorld, CrateBody, CrateTable};
+use grab_core::{BoxWorld, CrateBody, CrateSize, CrateTable};
 use walker_core::{Frame, Hit};
 
 /// Window only: crate and lock plate visuals. `add_*` before `update_*` through the sync point.
@@ -77,6 +77,10 @@ pub struct Crate {
     pub g: f64,
     /// 1 new, 0 wrecked; hard impacts lower it (#130, `grab_core::impact_loss`).
     pub condition: f64,
+    /// A loose item (`items`), not cargo: the same body, but the ship is its frame without the
+    /// inertia push (thrust does not throw items around), it never locks on the plates, the
+    /// object budget leaves it alone, and `size` means nothing.
+    pub item: bool,
     shape: Collider,
 }
 
@@ -137,7 +141,20 @@ pub fn crate_bundle(table: &CrateTable, size: &str, ship: Option<Entity>, pos: D
     let body = CrateBody::new(s, pos, forward);
     let rot = body.rot();
     (
-        Crate { size: i, shape: Collider::cuboid(s.extents[0], s.extents[1], s.extents[2]), body, ship, push: DVec3::ZERO, turn: 0.0, locked: false, planet: None, touched: None, g: 0.0, condition: 1.0 },
+        Crate { size: i, shape: Collider::cuboid(s.extents[0], s.extents[1], s.extents[2]), body, ship, push: DVec3::ZERO, turn: 0.0, locked: false, planet: None, touched: None, g: 0.0, condition: 1.0, item: false },
+        CrateInterp { prev: (pos, rot), curr: (pos, rot) },
+        Transform::default(),
+        Visibility::default(),
+    )
+}
+
+/// A loose item's body: a box of the item's shape at `pos` in its frame, moving at `vel`.
+pub fn item_body_bundle(shape: &CrateSize, ship: Option<Entity>, pos: DVec3, vel: DVec3, forward: DVec3) -> impl Bundle {
+    let mut body = CrateBody::new(shape, pos, forward);
+    body.vel = vel;
+    let rot = body.rot();
+    (
+        Crate { size: 0, shape: Collider::cuboid(shape.extents[0], shape.extents[1], shape.extents[2]), body, ship, push: DVec3::ZERO, turn: 0.0, locked: false, planet: None, touched: None, g: 0.0, condition: 1.0, item: true },
         CrateInterp { prev: (pos, rot), curr: (pos, rot) },
         Transform::default(),
         Visibility::default(),
@@ -361,10 +378,10 @@ pub fn crate_step(
                 continue;
             }
         }
-        let felt = if c.ship.is_some() { inertia } else { DVec3::ZERO };
+        let felt = if c.ship.is_some() && !c.item { inertia } else { DVec3::ZERO };
         if c.body.asleep && push == DVec3::ZERO && turn == 0.0 && felt.length() <= cfg.friction * c.g {
             stats.asleep += 1;
-            if c.ship.is_some() {
+            if c.ship.is_some() && !c.item {
                 on_plates.push((c.body.clone(), Plate::Blocked));
             }
             continue;
@@ -432,7 +449,7 @@ pub fn crate_step(
                     c.ship = None;
                     c.planet = Some(planet.id);
                     stats.handovers.push(Handover { crate_e: e, out: true, before, after: c.body.vel, ship_vel: sv.0 });
-                } else if c.body.asleep && push == DVec3::ZERO {
+                } else if c.body.asleep && push == DVec3::ZERO && !c.item {
                     // At rest and let go: fully on the plates it locks and becomes part of the ship.
                     let corners = footprint(&c.body);
                     if corners.iter().all(|p| on_grid(*p)) && snap_to_grid(&mut c.body) {
@@ -496,6 +513,9 @@ pub fn add_crate_visuals(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     for (e, c) in &q {
+        if c.item {
+            continue; // `items` dresses its own
+        }
         let s = &table.0.sizes[c.size];
         let (r, g, b) = CRATE_COLOURS[c.size % CRATE_COLOURS.len()];
         let size = Vec3::new(s.extents[0] as f32, s.extents[1] as f32, s.extents[2] as f32);
@@ -628,7 +648,7 @@ pub fn budget_step(
             let (pos, _) = crate_world(&c, &frame);
             grab_core::budget::Obj {
                 id: e.to_bits(),
-                protected: held == Some(e) || c.locked || c.ship.is_some(),
+                protected: held == Some(e) || c.locked || c.ship.is_some() || c.item,
                 idle: now - touched,
                 distance: pos.distance(walker).min(pos.distance(sp.0)),
                 resting: c.body.asleep,

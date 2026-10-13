@@ -31,6 +31,7 @@ mod displays;
 mod figure;
 mod flight;
 mod help;
+mod items;
 mod first_person_settings;
 mod landing;
 mod jobs_helpers;
@@ -688,6 +689,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
             dev_area::look_sample_steps(&mut s, &shot_step);
         }
         "displays" => displays::displays_steps(&mut s),
+        // C1: items at the dev area's item table, through the request path with 75 ms each way.
+        "items" => items::items_steps(&mut s, &shot_step),
         // #135: save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),
         // #169: the seat refuses without the licence; the exam; the licence.

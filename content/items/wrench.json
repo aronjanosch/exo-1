@@ -1,0 +1,11 @@
+{
+  "_comment": "A one-handed tool. Using it (repair) comes after C1. TODO(initiator): shape, mass.",
+  "id": "wrench",
+  "name": "Wrench",
+  "take": "collect",
+  "hands": 1,
+  "stack": 1,
+  "use": "repair_mechanical",
+  "tags": ["small", "tool"],
+  "shape": { "extents": [0.08, 0.04, 0.32], "mass": 0.8, "colour": [0.62, 0.64, 0.7] }
+}

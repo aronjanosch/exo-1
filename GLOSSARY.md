@@ -111,11 +111,11 @@ A place on the ship where one role works a device: the helm, the reactor, a turr
 _Avoid_: console, post, terminal; a station in space is a space station
 
 **Display**:
-A screen in the world that a walker uses with the interact key: its panel opens over the view, the mouse cursor comes free and points at it, the walker stands still until it leaves. A station may have several.
+A screen in the world, operated where it hangs (decision "Screens you touch"): the walker presses the interact key at it, a cursor appears and buttons, sliders and lists are clicked directly on the screen, as in Star Citizen; no window opens over the view. The walker stands still until it leaves with F or Escape. The screen shows its live panel to everyone nearby, so others see a slider move; one player per screen. Its tier (S, M or L) is the panel's canvas, its size in metres is how large it looks. A station may have several.
 _Avoid_: terminal, monitor, screen (the player's screen)
 
 **Panel**:
-What a display shows: labels, buttons, bars, toggles and sliders laid out in panel pixels, rebuilt each tick from its owner's state. A click on it names the widget's action.
+What a display shows: a plate with a header and labels, buttons, bars, toggles, sliders, dials, trends and lists laid out in panel pixels, rebuilt each tick from its owner's state. A click on it names the widget's action.
 _Avoid_: page, UI, menu (menus are outside the game world)
 
 **Space station**:

@@ -50,6 +50,9 @@ pub struct Controls {
     /// A display is in use: the cursor stays free (a click does not grab it) and the mouse does
     /// not turn the view. Set by the game (`displays`), read by `read_input`.
     pub free_cursor: bool,
+    /// The free cursor is over the screen in use: the screen draws its own mark, so the system
+    /// cursor hides. Set by the game (`displays`).
+    pub cursor_on_screen: bool,
     /// The cursor in window pixels (top left), while the cursor is free; None otherwise.
     pub pointer: Option<Vec2>,
     /// The primary mouse button is held.
@@ -769,9 +772,12 @@ pub fn read_input(
     // A display in use: the cursor is free and points; leaving one takes the mouse back.
     let was_free = std::mem::replace(&mut *was_free, c.free_cursor);
     if c.free_cursor {
-        if cur.grab_mode != CursorGrabMode::None || !cur.visible {
+        if cur.grab_mode != CursorGrabMode::None {
             cur.grab_mode = CursorGrabMode::None;
-            cur.visible = true;
+        }
+        let visible = !c.cursor_on_screen;
+        if cur.visible != visible {
+            cur.visible = visible;
         }
         c.pointer = windows.single().ok().and_then(|w| w.cursor_position());
         c.pointer_down = mouse_buttons.pressed(MouseButton::Left);

@@ -6,3 +6,5 @@ license.workspace = true
 
 [dependencies]
 glam = { workspace = true }
+serde = { workspace = true }
+content_core = { workspace = true }

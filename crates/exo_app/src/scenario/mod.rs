@@ -683,7 +683,10 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         // Round 6: the city with colliders, its characters, the new towns' pads.
         "town" => town::town_steps(&mut s),
         // The dev area and its test console, with `--start=dev_area`.
-        "dev_area" => dev_area::dev_area_steps(&mut s, &shot_step),
+        "dev_area" => {
+            dev_area::dev_area_steps(&mut s, &shot_step);
+            dev_area::look_sample_steps(&mut s, &shot_step);
+        }
         "displays" => displays::displays_steps(&mut s),
         // #135: save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),

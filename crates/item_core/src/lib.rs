@@ -9,12 +9,15 @@
 //! - `authority`: every change is a request from a player to the host, which confirms or rejects
 //!   it and sends events; the acting client shows its request at once and reconciles on the
 //!   answer (as in Barotrauma, which also plays over the internet).
+//! - `wire`: the messages as bytes for the network (C2): what a client sends the host and what the
+//!   host sends back, over a reliable ordered channel (`net_core::reliable`).
 //!
 //! All values are starting points for the playtest.
 pub mod authority;
 pub mod container;
 pub mod defs;
 pub mod inventory;
+pub mod wire;
 
 pub use authority::{Action, Client, Event, FrameRef, Host, Loose, LooseId, Placement, PlayerId, Reject, Request};
 pub use defs::{ItemDef, ItemDefs, Take};

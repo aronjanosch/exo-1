@@ -227,3 +227,51 @@ fn messages_survive_json_for_the_network_step() {
         assert_eq!(ev2, ev);
     }
 }
+
+#[test]
+fn the_state_for_a_late_joiner_lists_the_world_and_every_inventory() {
+    let mut s = Session::new();
+    let act = s.a.request(Request::Collect { item: 1 }).unwrap();
+    s.deliver(&act);
+    s.host.spawn(stack("bandage", 3), Placement { pos: [2.0, 0.0, 0.0], ..here() }, None);
+    let state = s.host.state();
+    assert!(state.iter().any(|e| matches!(e, Event::Spawned { loose, by: None, .. } if loose.stack.item.kind.as_str() == "bandage" && loose.stack.count == 3)));
+    assert!(state.iter().any(|e| matches!(e, Event::Inventory { player: 1, .. })));
+    let mut late = Client::new(3, defs());
+    for e in &state {
+        late.apply(e);
+    }
+    assert_eq!(late.loose, s.host.loose, "the loose items as the host has them");
+    assert_eq!(late.others.get(&1), Some(&s.host.inventory(1)), "the first player's bar");
+    assert_eq!(late.held_by(1).map(|st| st.item.kind.as_str()), Some("wrench"));
+}
+
+#[test]
+fn a_rest_updates_the_host_and_every_client_and_a_gone_item_has_none() {
+    let mut s = Session::new();
+    let rest = Placement { pos: [1.0, 2.0, 3.0], ..here() };
+    let ev = s.host.rest(1, rest, [0.0, 0.0, 0.0, 1.0], 4.5).expect("the item is there");
+    s.a.apply(&ev);
+    assert_eq!(s.host.loose[&1].at.pos, [1.0, 2.0, 3.0]);
+    assert_eq!(s.a.loose[&1].at.pos, [1.0, 2.0, 3.0]);
+    let json = serde_json::to_string(&ev).unwrap();
+    assert_eq!(serde_json::from_str::<Event>(&json).unwrap(), ev);
+    assert!(s.host.rest(99, rest, [0.0, 0.0, 0.0, 1.0], 5.0).is_none());
+}
+
+#[test]
+fn a_placement_that_cannot_be_is_refused() {
+    let mut s = Session::new();
+    let act = s.a.request(Request::Collect { item: 1 }).unwrap();
+    s.deliver(&act);
+    for bad in [
+        Placement { pos: [f64::NAN, 0.0, 0.0], ..here() },
+        Placement { vel: [0.0, 1.0e6, 0.0], ..here() },
+        Placement { forward: [0.0; 3], ..here() },
+        Placement { pos: [1.0e12, 0.0, 0.0], ..here() },
+    ] {
+        let forged = Action { player: 1, seq: 77, req: Request::Throw { slot: 0, at: bad } };
+        assert_eq!(s.host.handle(&forged), vec![Event::Rejected { player: 1, seq: 77, why: Reject::Invalid }]);
+    }
+    assert_eq!(s.host.inventory(1).count("wrench"), 1, "nothing left the bar");
+}

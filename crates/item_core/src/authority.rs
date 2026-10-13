@@ -41,6 +41,19 @@ pub struct Placement {
     pub forward: [f64; 3],
 }
 
+impl Placement {
+    /// Whether the numbers can be a placement: finite, a position within reach of any frame, a
+    /// speed a player can throw at, a heading. The host checks every placement a client sends.
+    pub fn sane(&self) -> bool {
+        let len = |v: &[f64; 3]| v.iter().map(|c| c * c).sum::<f64>().sqrt();
+        let finite = |v: &[f64; 3]| v.iter().all(|c| c.is_finite());
+        finite(&self.pos) && finite(&self.vel) && finite(&self.forward) && len(&self.pos) <= 1.0e9 && len(&self.vel) <= MAX_THROW_SPEED && len(&self.forward) > 1e-6
+    }
+}
+
+/// Fastest a placement may move (m/s): well above a throw, far below a ship.
+pub const MAX_THROW_SPEED: f64 = 100.0;
+
 /// A loose item: what it is and where the host put it (where it lies now is the physics').
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Loose {
@@ -107,6 +120,11 @@ pub enum Event {
     Removed { item: LooseId },
     /// A player's inventory as the host has it now.
     Inventory { player: PlayerId, inv: Inventory },
+    /// A loose item came to rest at `at`, turned as the quaternion `rot` (x, y, z, w; a resting
+    /// item may lie on its side, which `at.forward` cannot say), at the shared session time `t`
+    /// (the host's clock). While an item moves, its poses go out as datagrams, not events; this is
+    /// its last word.
+    Rest { item: LooseId, at: Placement, rot: [f64; 4], t: f64 },
     Confirmed { player: PlayerId, seq: u32 },
     Rejected { player: PlayerId, seq: u32, why: Reject },
 }
@@ -134,6 +152,30 @@ impl Host {
         Event::Spawned { item, loose, by }
     }
 
+    /// The host's physics reports where a loose item is now (no event; a client that joins later
+    /// gets this placement).
+    pub fn track(&mut self, item: LooseId, at: Placement) {
+        if let Some(l) = self.loose.get_mut(&item) {
+            l.at = at;
+        }
+    }
+
+    /// A loose item came to rest: remembered, and the event to send (None if it is gone).
+    pub fn rest(&mut self, item: LooseId, at: Placement, rot: [f64; 4], t: f64) -> Option<Event> {
+        let l = self.loose.get_mut(&item)?;
+        l.at = at;
+        Some(Event::Rest { item, at, rot, t })
+    }
+
+    /// Everything a client that joins now needs to know, as events in the order to apply them:
+    /// the loose items where they are, every player's inventory (its own and the others', whose
+    /// held items show on their figures).
+    pub fn state(&self) -> Vec<Event> {
+        let loose = self.loose.iter().map(|(id, l)| Event::Spawned { item: *id, loose: l.clone(), by: None });
+        let inventories = self.inventories.iter().map(|(p, inv)| Event::Inventory { player: *p, inv: inv.clone() });
+        loose.chain(inventories).collect()
+    }
+
     pub fn inventory(&self, p: PlayerId) -> Inventory {
         self.inventories.get(&p).cloned().unwrap_or_default()
     }
@@ -154,6 +196,7 @@ impl Host {
                     Err(r) => Err(r.into()),
                 },
             },
+            Request::Drop { at, .. } | Request::Throw { at, .. } if !at.sane() => Err(Reject::Invalid),
             Request::Drop { slot, at } | Request::Throw { slot, at } => match inv.take_slot(*slot) {
                 Ok(stack) => {
                     out.push(self.spawn(stack, *at, Some((a.player, a.seq))));
@@ -185,6 +228,8 @@ pub struct Client {
     pub loose: BTreeMap<LooseId, Loose>,
     /// The own inventory as the host last sent it.
     pub confirmed: Inventory,
+    /// The other players' inventories as the host last sent them (their held items show).
+    pub others: BTreeMap<PlayerId, Inventory>,
     /// Sent, not yet answered.
     pub pending: Vec<Action>,
     /// What the player sees: `confirmed` with `pending` replayed.
@@ -224,8 +269,15 @@ impl Client {
             Event::Removed { item } => {
                 self.loose.remove(item);
             }
+            Event::Rest { item, at, .. } => {
+                if let Some(l) = self.loose.get_mut(item) {
+                    l.at = *at;
+                }
+            }
             Event::Inventory { player, inv } if *player == self.player => self.confirmed = inv.clone(),
-            Event::Inventory { .. } => {}
+            Event::Inventory { player, inv } => {
+                self.others.insert(*player, inv.clone());
+            }
             Event::Confirmed { player, seq } if *player == self.player => self.pending.retain(|a| a.seq != *seq),
             Event::Rejected { player, seq, why } if *player == self.player => {
                 self.pending.retain(|a| a.seq != *seq);
@@ -246,6 +298,12 @@ impl Client {
         }
         self.view = view;
         self.hidden = hidden;
+    }
+
+    /// The stack in another player's hand, as the host last told (one hand's worth: the figure
+    /// shows what a free-handed player holds).
+    pub fn held_by(&self, player: PlayerId) -> Option<&Stack> {
+        self.others.get(&player)?.in_hand(&self.defs, 0)
     }
 
     /// A drop or throw of this client still waiting for the host (the glue shows its item).

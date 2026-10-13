@@ -52,6 +52,7 @@ mod scenario_space;
 mod scenario_swap;
 mod scenario_thruster_audio;
 mod scenario_warp;
+mod items_net;
 mod session;
 
 /// The binary count does not creep back: `tests/` holds only this folder and `perf.rs`.

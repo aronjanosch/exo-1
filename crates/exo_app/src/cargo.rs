@@ -335,7 +335,7 @@ pub fn crate_step(
     mut stats: ResMut<CargoStats>,
     mut grid: ResMut<LockGrid>,
     mut prev_vel: Local<Option<DVec3>>,
-    mut crates: Query<(Entity, &mut Crate), Without<crate::avian_crates::AvianCrate>>,
+    mut crates: Query<(Entity, &mut Crate), (Without<crate::avian_crates::AvianCrate>, Without<crate::items_net::LooseView>)>,
     ships: Query<(Entity, &Ship, &Position, &Rotation, &LinearVelocity)>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
 ) {
@@ -531,9 +531,10 @@ pub fn add_crate_visuals(
 }
 
 /// Crates in a cabin ride with the ship's interpolated pose; on the planet they interpolate alone.
+/// (A loose item a client shows in another player's ship rides that ship's proxy.)
 pub fn update_crate_visuals(
     fixed: Res<Time<Fixed>>,
-    ships: Query<&crate::origin::BodyInterp, With<Ship>>,
+    ships: Query<&crate::origin::BodyInterp, Or<(With<Ship>, With<crate::ship::RemoteShip>)>>,
     mut q: Query<(&Crate, &CrateInterp, &mut crate::origin::WorldPose)>,
 ) {
     let f = fixed.overstep_fraction_f64();

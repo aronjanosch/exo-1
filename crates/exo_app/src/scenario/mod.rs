@@ -32,6 +32,7 @@ mod figure;
 mod flight;
 mod help;
 mod engine_room;
+mod fire;
 mod reactor;
 mod health;
 mod hud;
@@ -702,6 +703,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         // #296: the engine room: the corridor, the wall, the door, the air, the alarm.
         "engine_room" => engine_room::engine_room_steps(&mut s),
         "reactor" => reactor::reactor_steps(&mut s),
+        // #298: fire: a fire at the reactor grows, burns, is sprayed out; the alarm follows.
+        "fire" => fire::fire_steps(&mut s),
         // #135: save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),
         // #169: the seat refuses without the licence; the exam; the licence.

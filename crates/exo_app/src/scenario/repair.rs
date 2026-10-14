@@ -1,10 +1,10 @@
-//! #299, repair at the machine: at the dev area's engine room the coolant pump breaks (the dev
-//! fault). With the screwdriver at it, nothing happens. With the wrench, LMB starts a session on
-//! the broken pump: the ring comes, and no progress until three hits; the three hits in the zones
-//! make the rise start. The rise runs at the normal speed after that, and the full pump ends the
-//! session. The junction box takes a surge (70 %): with the screwdriver, the session has no ring
-//! (half condition or more) and the slow repair runs; F ends it and keeps the progress; then it
-//! runs to full. Without a window; run with `--start=dev_area`.
+//! #299, repair at the machine. With the ring off (#300: `minigame_below` 0, repair by holding): at
+//! the dev area's engine room the coolant pump breaks (the dev fault). With the screwdriver at it,
+//! nothing happens. With the wrench, LMB starts a session on the broken pump, and it rises at once
+//! while the session is open: no ring, no hits, no misses. The rise runs at the normal speed; the
+//! full pump ends the session. The junction box takes a surge (70 %): with the screwdriver, the
+//! session rises slowly; F ends it and keeps the progress; then it runs to full. A click below half
+//! does nothing (no ring, no burn, no stun). Without a window; run with `--start=dev_area`.
 use super::items::{collect, items, outside};
 use walker_core::Frame as WalkFrame;
 use super::*;
@@ -14,7 +14,6 @@ use crate::dev_area::{DevArea, ENGINEERING};
 use crate::items::Items;
 use crate::dev_area::reactor::ReactorSim;
 use crate::repair::{RepairHurt, RepairPlay, RepairSessions};
-use device_core::minigame::Machine;
 use item_core::wire::{RepairAsk, RepairDevice, RepairTool, ReactorAsk, ReactorFault, ReactorNews};
 
 const DIGITS: [KeyCode; 8] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8];
@@ -41,13 +40,9 @@ fn sessions(w: &World) -> usize {
     w.resource::<RepairSessions>().sessions.len()
 }
 
-/// The host's hits in the one session, 0 without one.
+/// The host's hits in the one session, 0 without one (the ring is off: none come).
 fn hits(w: &World) -> u32 {
     w.resource::<RepairSessions>().sessions.first().map_or(0, |h| h.hits)
-}
-
-fn in_zone(w: &World) -> bool {
-    ring(w).is_some_and(|p| p.session.ring.in_zone())
 }
 
 /// The walker's eye looks at a machine's middle (area point, 0.6 m up). Aimed in the world frame:
@@ -80,12 +75,8 @@ fn stun(w: &World) -> f64 {
     ring(w).map_or(0.0, |p| p.stun)
 }
 
-fn pointer(w: &World) -> f64 {
-    ring(w).map_or(0.0, |p| p.session.ring.pointer_deg)
-}
-
 /// Knocks the junction box or the pump down to `share` of full, on the host's room (the dev
-/// console has no fault for it): a miss test needs the minigame, which runs below half.
+/// console has no fault for it): the click test below half needs the machine below half.
 fn knock_junction(w: &mut World, share: f64) {
     let mut sim = w.resource_mut::<ReactorSim>();
     let cond = sim.room.junction_mut().condition_mut();
@@ -98,16 +89,6 @@ fn knock_pump(w: &mut World, share: f64) {
     let cond = sim.room.pump_mut().condition_mut();
     let max = cond.tuning().max;
     cond.damage((1.0 - share) * max);
-}
-
-/// Waits for the ring to show a zone and the pointer to be outside all of them, then presses LMB
-/// (a miss). Returns true on the press.
-fn press_miss(w: &mut World) -> bool {
-    let ready = ring(w).is_some_and(|p| !p.session.ring.zones.is_empty()) && !in_zone(w);
-    if ready {
-        lmb(w);
-    }
-    ready
 }
 
 /// A step with its own clock: `body` runs each tick and returns the note when it is done; the
@@ -241,8 +222,8 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         Some("session on".into())
     }));
 
-    // Broken: no progress before three hits. The ring is on (zones come), and the pump does not rise.
-    s.push(run("repair: a broken pump makes no progress before three hits", 4.0, |w, c| {
+    // Broken: the ring is off (no zones), and holding raises the broken pump at once (no hits needed).
+    s.push(run("repair: a broken pump rises at once by holding (no ring, no hits)", 4.0, |w, c| {
         look(w, COOLANT_PUMP_AT);
         let zones = ring(w).map_or(0, |p| p.session.ring.zones.len()) as f64;
         c.v.insert("zones", c.v.get("zones").copied().unwrap_or(0.0).max(zones));
@@ -251,29 +232,14 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         }
         let share = pump(w);
         let s0 = c.v["share0"];
-        check(c, share <= s0 + 1e-9, format!("repair: no rise before the hits ({s0:.3} to {share:.3})"));
-        check(c, c.v["zones"] >= 1.0, "repair: the ring is on for a broken pump (zones came)".into());
-        check(c, hits(w) == 0, "repair: no hits yet".into());
+        check(c, share > s0 + 0.05, format!("repair: the broken pump rises by holding ({s0:.3} to {share:.3})"));
+        check(c, c.v["zones"] == 0.0, "repair: no ring (no zones) with the minigame off".into());
+        check(c, hits(w) == 0, "repair: no hits (none come with the ring off)".into());
         Some("held".into())
     }));
 
-    // Three hits in the zones: LMB only while the pointer is inside one.
-    s.push(run("repair: three hits in the zones", 25.0, |w, c| {
-        look(w, COOLANT_PUMP_AT);
-        if hits(w) >= 3 {
-            let share = pump(w);
-            check(c, sessions(w) == 1, "repair: the session runs after the third hit".into());
-            c.v.insert("share3", share);
-            return Some(format!("three hits, pump at {share:.3}"));
-        }
-        if in_zone(w) {
-            lmb(w);
-        }
-        None
-    }));
-
-    // After the hits: the rise at the normal speed, about 1/15 of max a second at skill 50.
-    s.push(run("repair: after the hits the pump rises at the normal speed", 5.0, |w, c| {
+    // Held: the rise at the normal speed, about 1/15 of max a second at skill 50.
+    s.push(run("repair: the pump rises at the normal speed while held", 5.0, |w, c| {
         look(w, COOLANT_PUMP_AT);
         if c.t < 0.2 {
             c.v.insert("rise0", pump(w));
@@ -287,17 +253,13 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         Some(format!("rise {rise:.3}"))
     }));
 
-    // To full: the rule is the same (ring while under half, LMB in zones). The host ends the session
-    // at full, and wear takes a hair off straight after, so the step watches for the session's end
-    // with the pump near full, having been full.
+    // To full: holding does it all. The host ends the session at full, and wear takes a hair off
+    // straight after, so the step watches for the session's end with the pump near full, having been full.
     s.push(run("repair: the pump is repaired to full and the session ends", 90.0, |w, c| {
         look(w, COOLANT_PUMP_AT);
         let share = pump(w);
         let peak = c.v.get("peak").copied().unwrap_or(0.0).max(share);
         c.v.insert("peak", peak);
-        if share < 0.5 && in_zone(w) {
-            lmb(w);
-        }
         if peak >= 0.999 && ring(w).is_none() && sessions(w) == 0 {
             w.resource_mut::<Controls>().click = false;
             check(c, share >= 0.98, format!("repair: the pump is at about full after the session ({share:.3})"));
@@ -413,8 +375,7 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         Some("refused".into())
     }));
 
-    // A miss at the junction box (the electrical machine) below half: a burn on the walker's body,
-    // a stun (the controls frozen, the ring still turns) and the zap's flash.
+    // The junction box below half (the dev console has no fault for it: a knock on the host's room).
     s.push(run("repair: a dev fault knocks the junction box below half", 3.0, |w, c| {
         if c.t == 0.0 {
             knock_junction(w, 0.4);
@@ -426,8 +387,10 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         check(c, junction(w) < 0.5, format!("repair: the junction box at {:.2}", junction(w)));
         Some(format!("junction {:.2}", junction(w)))
     }));
-    s.push(select("repair: the screwdriver is selected for the shock", "screwdriver"));
-    s.push(run("repair: a miss at the junction box burns the walker and stuns", 12.0, |w, c| {
+    s.push(select("repair: the screwdriver is selected for the click", "screwdriver"));
+    // Below half with the ring off: a click at the junction box does nothing (no ring, no burn, no
+    // stun, no flash), and the session still holds the rise.
+    s.push(run("repair: a click at the junction box below half does nothing (no ring, no burn, no stun)", 12.0, |w, c| {
         look(w, JUNCTION_BOX_AT);
         if !c.v.contains_key("j_started") {
             if c.t < 0.3 {
@@ -437,39 +400,32 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
             c.v.insert("j_started", 1.0);
             return None;
         }
-        if !c.v.contains_key("j_miss") {
-            if sessions(w) == 0 || !press_miss(w) {
+        if !c.v.contains_key("j_click") {
+            if sessions(w) == 0 {
                 return None;
             }
             c.v.insert("j_burn0", burn(w));
-            c.v.insert("j_miss", c.t);
+            c.v.insert("j_hurt0", w.resource::<RepairHurt>().at.unwrap_or(-1.0));
+            c.v.insert("j_share0", junction(w));
+            c.v.insert("j_click", c.t);
+            lmb(w);
             return None;
         }
-        let since = c.t - c.v["j_miss"];
-        if !c.v.contains_key("j_p1") {
-            if since < 0.05 {
-                return None;
-            }
-            c.v.insert("j_p1", pointer(w));
-            c.v.insert("j_t1", c.t);
-            return None;
-        }
-        if c.t - c.v["j_t1"] < 0.2 {
+        if c.t - c.v["j_click"] < 2.0 {
             return None;
         }
         let burn_now = burn(w);
         let burn0 = c.v["j_burn0"];
-        check(c, burn_now > burn0 + 5.0, format!("repair: the shock burns the walker ({burn0:.2} to {burn_now:.2})"));
-        let st = stun(w);
-        check(c, st > 0.0 && st < 0.5, format!("repair: the walker is stunned after the miss ({st:.2} s left)"));
-        let moved = (pointer(w) - c.v["j_p1"]).abs() > 1.0;
-        check(c, moved, "repair: the ring keeps running during the stun".into());
-        let hurt = w.resource::<RepairHurt>().clone();
-        check(c, hurt.machine == Some(Machine::Electrical) && hurt.at.is_some(), "repair: the shock's flash is set (white-blue)".into());
+        check(c, burn_now <= burn0 + 1e-9, format!("repair: the click burns nothing ({burn0:.2} to {burn_now:.2})"));
+        check(c, stun(w) == 0.0, "repair: the click does not stun".into());
+        let hurt_now = w.resource::<RepairHurt>().at.unwrap_or(-1.0);
+        check(c, hurt_now == c.v["j_hurt0"], "repair: no shock flash for a click".into());
+        check(c, ring(w).is_some_and(|p| p.session.ring.zones.is_empty()), "repair: no zones at the junction box".into());
+        check(c, junction(w) > c.v["j_share0"], format!("repair: the box still rises by holding ({:.3} to {:.3})", c.v["j_share0"], junction(w)));
         Some(format!("burn {burn0:.2} to {burn_now:.2}"))
     }));
 
-    // The pump (the mechanical machine) below half: a miss knocks, a stun, and no burn.
+    // The pump (the mechanical machine) below half: the click test below.
     s.push(run("repair: the fault knocks the coolant pump below half", 3.0, |w, c| {
         if c.t == 0.0 {
             knock_pump(w, 0.4);
@@ -493,7 +449,7 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         }
         Some("at the pump".into())
     }));
-    s.push(run("repair: a miss at the pump stuns and does not burn", 12.0, |w, c| {
+    s.push(run("repair: a click at the pump below half does nothing (no ring, no stun, no clank)", 12.0, |w, c| {
         look(w, COOLANT_PUMP_AT);
         if !c.v.contains_key("p_started") {
             if c.t < 0.3 {
@@ -503,24 +459,28 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
             c.v.insert("p_started", 1.0);
             return None;
         }
-        if !c.v.contains_key("p_miss") {
-            if sessions(w) == 0 || !press_miss(w) {
+        if !c.v.contains_key("p_click") {
+            if sessions(w) == 0 {
                 return None;
             }
             c.v.insert("p_burn0", burn(w));
-            c.v.insert("p_miss", c.t);
+            c.v.insert("p_hurt0", w.resource::<RepairHurt>().at.unwrap_or(-1.0));
+            c.v.insert("p_share0", pump(w));
+            c.v.insert("p_click", c.t);
+            lmb(w);
             return None;
         }
-        if c.t - c.v["p_miss"] < 0.1 {
+        if c.t - c.v["p_click"] < 2.0 {
             return None;
         }
         let burn_now = burn(w);
         let burn0 = c.v["p_burn0"];
-        check(c, burn_now <= burn0 + 1e-9, format!("repair: the knock burns nothing ({burn0:.2} to {burn_now:.2})"));
-        let st = stun(w);
-        check(c, st > 0.0, format!("repair: the knock stuns ({st:.2} s left)"));
-        let hurt = w.resource::<RepairHurt>().clone();
-        check(c, hurt.machine == Some(Machine::Mechanical), "repair: the knock is set (a clank, no flash)".into());
+        check(c, burn_now <= burn0 + 1e-9, format!("repair: the click burns nothing ({burn0:.2} to {burn_now:.2})"));
+        check(c, stun(w) == 0.0, "repair: the click does not stun".into());
+        let hurt_now = w.resource::<RepairHurt>().at.unwrap_or(-1.0);
+        check(c, hurt_now == c.v["p_hurt0"], "repair: no clank for a click".into());
+        check(c, ring(w).is_some_and(|p| p.session.ring.zones.is_empty()), "repair: no zones at the pump".into());
+        check(c, pump(w) > c.v["p_share0"], format!("repair: the pump still rises by holding ({:.3} to {:.3})", c.v["p_share0"], pump(w)));
         Some(format!("burn {burn0:.2} to {burn_now:.2}"))
     }));
 }

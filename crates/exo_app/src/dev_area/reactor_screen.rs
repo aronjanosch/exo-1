@@ -10,7 +10,7 @@
 //!   has its own start-up supply, so POWER can come back after a SCRAM even with the machines dark
 //!   (TODO(initiator): confirm).
 //! - The coolant pump (S, on the pump block): a picture of the pump, the flow, the status word, the
-//!   switch. The impeller turns with the flow (`effects::impeller_angle`).
+//!   three mode buttons OFF / LOW / HIGH. The impeller turns with the pump's speed (`effects::impeller_angle`).
 //! - The junction box (S, on the wall above it): three breaker levers, nothing else. Overvolt shows
 //!   in the world (sparks), not here.
 //! - The reactor room's door screen (S, in the corridor by the door): the reactor temperature, its
@@ -31,7 +31,7 @@ use crate::displays::{DisplayAction, Panels};
 use crate::dev_area::reactor::ReactorConfig;
 use crate::items::Items;
 use display_core::{button, canvas, column, ctl, font, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Shape, Tier, TextFace, Tone};
-use item_core::wire::{BreakerGroup, ReactorAsk, ReactorFault, ReactorNews};
+use item_core::wire::{BreakerGroup, PumpMode, ReactorAsk, ReactorFault, ReactorNews};
 
 pub const READOUT_ID: PanelId = PanelId::new("reactor_readout");
 pub const READOUT_NAME: &str = "REACTOR";
@@ -294,18 +294,20 @@ fn powered(r: Option<&ReactorNews>) -> bool {
     r.is_some_and(|r| r.powered)
 }
 
-/// The pump's status word and its tone: OFF when switched off, STALLED at no flow, LOW FLOW below
-/// 60 %, RUNNING above.
-pub fn pump_status(pump_on: bool, flow: f64) -> (&'static str, Tone) {
-    if !pump_on {
-        ("OFF", Tone::Dim)
-    } else if flow <= 0.0 {
-        ("STALLED", Tone::Bad)
-    } else if flow < 0.6 {
-        ("LOW FLOW", Tone::Warn)
-    } else {
-        ("RUNNING", Tone::Good)
+/// The pump's status word and its tone: OFF, LOW or HIGH by the mode, NO COOLANT with an empty tank.
+pub fn pump_status(mode: PumpMode, coolant: f64) -> (&'static str, Tone) {
+    match mode {
+        PumpMode::Off => ("OFF", Tone::Dim),
+        _ if coolant <= 0.0 => ("NO COOLANT", Tone::Bad),
+        PumpMode::Low => ("LOW", Tone::Normal),
+        PumpMode::High => ("HIGH", Tone::Good),
     }
+}
+
+/// The pump's three mode buttons: the active one in the good tone, the others normal.
+fn pump_modes(mode: PumpMode) -> Item {
+    let mode_button = |label: &str, action: &str, m: PumpMode| button(label, action).tone(if mode == m { Tone::Good } else { Tone::Normal });
+    row(6.0, vec![mode_button("OFF", "pump_off", PumpMode::Off).flex(1.0), mode_button("LOW", "pump_low", PumpMode::Low).flex(1.0), mode_button("HIGH", "pump_high", PumpMode::High).flex(1.0)]).fixed(ctl::MD)
 }
 
 /// The pump's picture (152 x 109): the inlet and the outlet pipes with the fluid, the housing and the
@@ -342,7 +344,7 @@ pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64) -> Panel {
         return no_power(PUMP_NAME, "CP-01", Tier::S);
     }
     let r = r.copied().unwrap_or_default();
-    let (word, tone) = pump_status(r.pump_on, r.flow);
+    let (word, tone) = pump_status(r.pump_mode, r.coolant);
     let body = column(
         8.0,
         vec![
@@ -355,7 +357,7 @@ pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64) -> Panel {
                 ],
             )
             .fixed(109.0),
-            toggle(r.pump_on, "", "pump").labels("OFF", "ON").fixed(ctl::MD),
+            pump_modes(r.pump_mode),
             space(),
         ],
     );
@@ -525,8 +527,13 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "tur_set" => c.value.map(|v| ReactorAsk::SetTurbine(v as f64 * 100.0)),
                 _ => None,
             }
-        } else if c.panel == PUMP_ID && c.action == "pump" {
-            snap.map(|r| ReactorAsk::SetPump(new_state(r.pump_on)))
+        } else if c.panel == PUMP_ID {
+            match c.action.as_str() {
+                "pump_off" => Some(ReactorAsk::SetPumpMode(PumpMode::Off)),
+                "pump_low" => Some(ReactorAsk::SetPumpMode(PumpMode::Low)),
+                "pump_high" => Some(ReactorAsk::SetPumpMode(PumpMode::High)),
+                _ => None,
+            }
         } else if c.panel == JUNCTION_ID || c.panel == DOOR_ID {
             let group = match c.action.as_str() {
                 "br_engines" => Some(BreakerGroup::Engines),
@@ -560,8 +567,8 @@ const IMPELLER_STEP: f64 = 6.0;
 /// Every panel from the state, every tick (`Panels::set` skips an unchanged one). The impeller
 /// turns with the pump's flow (`effects::impeller_angle`), from the fixed step's time.
 pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>, mut spin: Local<f64>, mut panels: ResMut<Panels>) {
-    let flow = items.reactor.map_or(0.0, |r| if r.pump_on { r.flow } else { 0.0 });
-    *spin = crate::effects::impeller_angle(*spin, flow, time.delta_secs_f64());
+    let speed = items.reactor.map_or(0.0, |r| r.pump_speed);
+    *spin = crate::effects::impeller_angle(*spin, speed, time.delta_secs_f64());
     let angle = (*spin / IMPELLER_STEP).round() * IMPELLER_STEP;
     panels.set(READOUT_ID, readout_panel(items.reactor.as_ref(), cfg.0.reactor.max_output_kw));
     panels.set(PUMP_ID, pump_panel_at(items.reactor.as_ref(), angle));
@@ -586,7 +593,7 @@ mod tests {
     }
 
     fn news() -> ReactorNews {
-        ReactorNews { powered: true, power_on: true, pump_on: true, flow: 1.0, breakers: [true; 3], optimal: [35.0, 65.0], allowed: [20.0, 80.0], temp: 54.0, output_kw: 500.0, load_kw: 500.0, fuel: [80.0, 12.0], ..Default::default() }
+        ReactorNews { powered: true, power_on: true, pump_on: true, pump_mode: PumpMode::High, pump_speed: 1.0, flow: 1.0, breakers: [true; 3], optimal: [35.0, 65.0], allowed: [20.0, 80.0], temp: 54.0, output_kw: 500.0, load_kw: 500.0, fuel: [80.0, 12.0], ..Default::default() }
     }
 
     fn all_panels() -> Vec<Panel> {
@@ -722,12 +729,16 @@ mod tests {
 
     #[test]
     fn the_pump_words_follow_the_flow_and_the_switch() {
-        assert_eq!(pump_status(true, 1.0).0, "RUNNING");
-        assert_eq!(pump_status(true, 0.4).0, "LOW FLOW");
-        assert_eq!(pump_status(true, 0.0).0, "STALLED");
-        assert_eq!(pump_status(false, 0.0).0, "OFF");
+        assert_eq!(pump_status(PumpMode::High, 100.0).0, "HIGH");
+        assert_eq!(pump_status(PumpMode::Low, 100.0).0, "LOW");
+        assert_eq!(pump_status(PumpMode::High, 0.0).0, "NO COOLANT");
+        assert_eq!(pump_status(PumpMode::Off, 0.0).0, "OFF");
+        assert_eq!(pump_status(PumpMode::Off, 100.0).0, "OFF");
         let p = pump_panel(Some(&news()));
-        assert!(p.find("pump").is_some() && p.find("br_lights").is_none());
+        for a in ["pump_off", "pump_low", "pump_high"] {
+            assert!(p.find(a).is_some(), "{a}");
+        }
+        assert!(p.find("br_lights").is_none());
     }
 
     #[test]

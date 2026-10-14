@@ -316,3 +316,19 @@ fn the_aim_hits_a_capsule_in_front_within_reach_only() {
     assert!(capsule_hit(eye, fwd, 2.0, [1.0, 0.0, -1.5], up, 1.8, 0.4).is_none(), "a metre to the side");
     assert!(capsule_hit(eye, [0.0, 0.0, 1.0], 2.0, feet, up, 1.8, 0.4).is_none(), "behind");
 }
+
+#[test]
+fn each_injury_costs_its_vitality_share_of_the_maximum() {
+    let t = shipped();
+    let mut h = Health::new(&t, 1);
+    assert_eq!(h.cost(&t, "burn"), 0.0, "no burn, no cost");
+    assert_eq!(h.cost(&t, "oxygen_low"), 0.0, "no bad air, no cost");
+    assert_eq!(h.cost(&t, "headache"), 0.0, "no headache, no cap lost");
+    h.add(&t, "burn", 30.0);
+    assert!(close(h.cost(&t, "burn"), 30.0), "burn 30 costs its first band's end: {}", h.cost(&t, "burn"));
+    h.add(&t, "oxygen_low", 100.0);
+    assert!(close(h.cost(&t, "oxygen_low"), 200.0 / 3.0), "oxygen 100 is a third into the second band: {}", h.cost(&t, "oxygen_low"));
+    h.add(&t, "headache", 100.0);
+    assert!(close(h.cost(&t, "headache"), 20.0), "a full headache takes the cap's 20 points: {}", h.cost(&t, "headache"));
+    assert_eq!(h.cost(&t, "radiation"), 0.0, "radiation costs no vitality");
+}

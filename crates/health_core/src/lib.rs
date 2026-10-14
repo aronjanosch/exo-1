@@ -454,6 +454,20 @@ impl Health {
         m
     }
 
+    /// The vitality an injury costs now, in points: its band's share of the maximum at its
+    /// strength (`burn`, `oxygen_low`), or the headache's part of the maximum it takes (`headache`).
+    /// 0 for anything else, and for an injury that is not there.
+    pub fn cost(&self, t: &HealthTuning, id: &str) -> f64 {
+        if id == "headache" {
+            return t.max_vitality * (1.0 - self.max_share(t));
+        }
+        let s = self.strength(id);
+        match t.affliction(id) {
+            Some(k) if s > 0.0 => k.vitality_share(s) * t.max_vitality,
+            _ => 0.0,
+        }
+    }
+
     /// Adds strength to an affliction, capped at its max. False for an unknown id. The dead take
     /// nothing.
     pub fn add(&mut self, t: &HealthTuning, id: &str, amount: f64) -> bool {

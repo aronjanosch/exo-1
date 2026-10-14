@@ -234,6 +234,8 @@ pub struct Reactor {
     coolant_target: f64,
     /// The coolant flow that takes heat away now, 0..1: follows `coolant_target` with a coast.
     coolant: f64,
+    /// Heat the fission makes this step (the pump's coolant use follows it).
+    heat_in: f64,
 }
 
 impl Reactor {
@@ -260,6 +262,7 @@ impl Reactor {
             condition: Condition::new(tuning.condition, seed),
             coolant_target: 1.0,
             coolant: 1.0,
+            heat_in: 0.0,
         }
     }
 
@@ -303,6 +306,11 @@ impl Reactor {
     /// The coolant flow that takes heat away now, 0..1 (lags the pump's factor).
     pub fn coolant_flow(&self) -> f64 {
         self.coolant
+    }
+
+    /// Heat the fission makes in the last step (0 when broken or off).
+    pub fn heat_input(&self) -> f64 {
+        self.heat_in
     }
 
     /// Skill (0..100) of whoever runs the reactor; it widens the bands. 0 when nobody does.
@@ -391,6 +399,7 @@ impl Reactor {
         let coast = (dt / t.coolant_coast_s.max(1e-9)).min(1.0);
         self.coolant += (self.coolant_target - self.coolant) * coast;
 
+        self.heat_in = 0.0;
         if !self.condition.functioning() {
             // Broken: off the grid, cools fast, targets run down. Fission and turbine stay where
             // they were (the original freezes them too).
@@ -419,6 +428,7 @@ impl Reactor {
             self.target_turbine = 0.0;
         }
         let heat = self.fission * (self.fuel / 100.0) * 2.0;
+        self.heat_in = heat;
         let cool = t.cooling_max * self.coolant;
         let residual = t.decay_heat * (1.0 - self.coolant);
         let diff = (heat + residual - self.turbine - cool) - self.temp;

@@ -3,6 +3,7 @@
 //! seat when the walker stands at it. The HUD shows `Interaction::prompt`; the tap does what it
 //! says. Targets: seat, crates, on a pad the job offered there (#133), and displays.
 use crate::cargo::{crate_world, Crate, Crates};
+use crate::dev_area::engine_room::{EngineDoor, Slab, DOOR_REACH};
 use crate::controls::{Actions, Bindings, Input, Tap};
 use crate::displays::{ActiveDisplay, DisplayPanel, USE_RANGE};
 use crate::grab::Grab;
@@ -45,6 +46,8 @@ pub enum Target {
     LeavePanel(Entity),
     /// Collect a loose item into the action bar.
     Item(Entity),
+    /// The engine room's door (#296): a request to slide it to the other state (`open` is now).
+    Door { open: bool },
 }
 
 #[derive(Resource, Default, Debug)]
@@ -108,6 +111,7 @@ fn verb(t: &Target, size: &str) -> String {
         Target::Panel(_) => "use ".into(),
         Target::LeavePanel(_) => "leave ".into(),
         Target::Item(_) => "pick up ".into(),
+        Target::Door { open } => if *open { "close ".into() } else { "open ".into() },
     }
 }
 
@@ -127,7 +131,7 @@ pub fn interaction(
     crates: Query<(Entity, &Crate), Without<LooseItem>>,
     mut gp: ResMut<crate::gameplay::Gameplay>,
     (mut active, displays): (ResMut<ActiveDisplay>, Query<(Entity, &DisplayPanel)>),
-    (time, mut items, loose): (Res<Time>, ResMut<Items>, Query<(Entity, &Crate, &LooseItem)>),
+    (time, mut items, loose, door, doors): (Res<Time>, ResMut<Items>, Query<(Entity, &Crate, &LooseItem)>, Res<EngineDoor>, Query<&Position, With<Slab>>),
 ) {
     let Ok(mut pl) = players.single_mut() else { return };
     let Some((ship_e, sp, sr)) = ships.iter().next().map(|(e, _, p, r)| (e, *p, *r)) else { return };
@@ -236,12 +240,14 @@ pub fn interaction(
             item_target = None;
             panel_pick = Some(e);
         }
+        // The engine room's door: looked at within its reach, on foot; after everything else.
+        let door_pick = (pl.ship.is_none() && doors.iter().any(|p| in_cone(eye, look, p.0, half, DOOR_REACH).is_some())).then_some(Target::Door { open: door.open });
         match best {
             // A crate in reach of the hands wins over the seat; the tool's reach does not.
             Some((_, e, Reach::Hands)) => Some(Target::Crate(e, Reach::Hands)),
             _ if at_seat => Some(if gp.may_pilot(crate::gameplay::HOST) { Target::Seat } else { Target::SeatLocked }),
             Some((_, e, r)) => Some(Target::Crate(e, r)),
-            None => item_target.map(Target::Item).or(panel_pick.map(Target::Panel)),
+            None => item_target.map(Target::Item).or(panel_pick.map(Target::Panel)).or(door_pick),
         }
     };
     // At a giver's counter with something to offer, and nothing else to do: talk to the giver.
@@ -262,6 +268,7 @@ pub fn interaction(
         Some(Target::Item(e)) => loose.get(*e).ok().map(|(_, c, _)| crate_world(c, &frame).0),
         Some(Target::Panel(e)) => displays.get(*e).ok().map(|(_, d)| d.centre),
         Some(Target::Seat | Target::SeatLocked) => Some(frame.to_world(SEAT_POS)),
+        Some(Target::Door { .. }) => doors.iter().next().map(|p| p.0),
         _ => None,
     };
     inter.prompt = match &target {
@@ -337,6 +344,7 @@ pub fn interaction(
                     set("Set down", format!("{size} crate"));
                     note = (format!("{throw_key} throw"), Tone::Normal);
                 }
+                Target::Door { open } => set(if *open { "Close" } else { "Open" }, "Engine room door".into()),
                 Target::Counter(g) => set("Talk to", gp.jobs_content.givers.get(g).map(|g| gp.text(&g.record.name)).unwrap_or_default()),
                 Target::Accept(j) => {
                     set("Take job", gp.offer_label(*j));
@@ -413,5 +421,6 @@ pub fn interaction(
             }
         }
         Target::LeavePanel(_) => *active = ActiveDisplay::Idle,
+        Target::Door { .. } => items.ask_room(item_core::wire::RoomAsk::ToggleDoor),
     }
 }

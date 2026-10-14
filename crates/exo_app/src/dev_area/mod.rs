@@ -21,6 +21,7 @@ use bevy::math::{DQuat, DVec2, DVec3};
 use bevy::prelude::*;
 use display_core::PanelId;
 
+pub mod engine_room;
 pub mod look_samples;
 pub mod hazards;
 pub mod item_table;
@@ -146,10 +147,12 @@ pub fn plugin(app: &mut App) {
     app.add_plugins(look_samples::plugin);
     app.add_plugins(item_table::plugin);
     app.add_plugins(hazards::plugin);
+    app.add_plugins(engine_room::plugin);
 }
 
 pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, (dress_boxes, mark_zones).after(spawn_devices).in_set(crate::phases::Frame::World));
+    engine_room::window_plugin(app);
     // ROLES (window): one line per role module with a window part.
 }
 

@@ -28,6 +28,8 @@ pub enum Sound {
     Grab,
     /// 0.35 s: noise swelling and falling through a sweeping low-pass, a throw.
     Throw,
+    /// 0.25 s: a soft two-tone beep, the ship's alarm (#296). Quiet on purpose.
+    AlarmBeep,
     /// 0.2 s: a low clunk, then a bright ping 60 ms later ("ka-chunk"), a crate locks.
     Lock,
     /// Loop: noise through a band-pass (a fast low-pass minus a slow one), the thrusters' hiss
@@ -69,6 +71,7 @@ impl Sound {
             Sound::Click => Some(0.03),
             Sound::Grab => Some(0.12),
             Sound::Throw => Some(0.35),
+            Sound::AlarmBeep => Some(0.25),
             Sound::Lock => Some(0.2),
             Sound::BoostStart => Some(0.4),
             Sound::Ping => Some(0.1),
@@ -134,6 +137,13 @@ impl Iterator for Synth {
                 env * (0.8 * (tau * f * t).sin() + 0.3 * self.white() * (-t * 40.0).exp())
             }
             Sound::Click => (-t * 180.0).exp() * (tau * 1400.0 * t).sin(),
+            Sound::AlarmBeep => {
+                // 660 Hz, then 880 Hz from 0.12 s: a soft two-tone, each note fading.
+                let n1 = (-t * 18.0).exp() * (tau * 660.0 * t).sin();
+                let t2 = t - 0.12;
+                let n2 = if t2 > 0.0 { (-t2 * 18.0).exp() * (tau * 880.0 * t2).sin() } else { 0.0 };
+                0.4 * (n1 + n2)
+            }
             Sound::Grab => {
                 // 300 Hz to 900 Hz over the sound: phase of a linear sweep.
                 let phase = tau * (300.0 * t + 0.5 * (600.0 / 0.12) * t * t);
@@ -242,6 +252,7 @@ struct Sounds {
     click: Handle<SynthAudio>,
     grab: Handle<SynthAudio>,
     throw: Handle<SynthAudio>,
+    alarm: Handle<SynthAudio>,
     lock: Handle<SynthAudio>,
     boost_start: Handle<SynthAudio>,
     /// Notice sounds by `Sound` (#165).
@@ -298,6 +309,7 @@ fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
         click: assets.add(SynthAudio(Sound::Click)),
         grab: assets.add(SynthAudio(Sound::Grab)),
         throw: assets.add(SynthAudio(Sound::Throw)),
+        alarm: assets.add(SynthAudio(Sound::AlarmBeep)),
         lock: assets.add(SynthAudio(Sound::Lock)),
         boost_start: assets.add(SynthAudio(Sound::BoostStart)),
         notice: [Sound::Ping, Sound::Accept, Sound::Coin, Sound::Fanfare, Sound::Buzz].into_iter().map(|s| (s, assets.add(SynthAudio(s)))).collect(),
@@ -393,6 +405,22 @@ fn update(
     }
 }
 
+/// Every process with a window: the ship's alarm tone (#296), quiet, while the walker is in the
+/// engine room or its corridor: every 2 s at Warn, every second at Danger.
+#[allow(clippy::too_many_arguments)]
+fn alarm_tone(mut commands: Commands, sounds: Res<Sounds>, alarm: Res<crate::dev_area::engine_room::ShipAlarm>, time: Res<Time>, area: Option<Res<crate::dev_area::DevArea>>, planet: Res<crate::env::PlanetRes>, players: Query<&Player>, mut next: Local<f64>) {
+    let Some(every) = crate::dev_area::engine_room::tone_every(alarm.level) else { return };
+    let near = match (players.single(), area.as_deref()) {
+        (Ok(pl), Some(area)) if pl.ship.is_none() => crate::dev_area::engine_room::walker_place(area, &planet, pl.w.pos).is_some_and(|p| p != crate::dev_area::engine_room::Place::Outside),
+        _ => false,
+    };
+    let now = time.elapsed_secs_f64();
+    if near && now >= *next {
+        *next = now + every;
+        commands.spawn((AudioPlayer(sounds.alarm.clone()), PlaybackSettings { mode: PlaybackMode::Despawn, volume: Volume::Linear(0.12), ..default() }));
+    }
+}
+
 /// A loop's sink volume: its level times the master volume. The loops set their sink every frame,
 /// which replaces the global volume Bevy gave them at the start.
 fn loop_volume(level: f32, settings: &crate::settings::Settings) -> f32 {
@@ -405,7 +433,7 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Startup, setup);
     // Before anyone consumes the taps: the Drive phase and the view toggles come after.
     app.add_systems(FixedUpdate, count_clicks.after(crate::controls::resolve_actions).in_set(crate::phases::Fx::Input));
-    app.add_systems(Update, update.in_set(crate::phases::Frame::Input));
+    app.add_systems(Update, (update, alarm_tone).in_set(crate::phases::Frame::Input));
 }
 
 #[cfg(test)]
@@ -414,7 +442,7 @@ mod tests {
 
     #[test]
     fn one_shots_end_and_every_sample_is_in_range() {
-        for s in [Sound::Thud, Sound::Click, Sound::Grab, Sound::Throw, Sound::Lock, Sound::BoostStart, Sound::Ping, Sound::Accept, Sound::Coin, Sound::Fanfare, Sound::Buzz] {
+        for s in [Sound::Thud, Sound::Click, Sound::Grab, Sound::Throw, Sound::AlarmBeep, Sound::Lock, Sound::BoostStart, Sound::Ping, Sound::Accept, Sound::Coin, Sound::Fanfare, Sound::Buzz] {
             let samples: Vec<f32> = Synth::new(s).collect();
             assert_eq!(samples.len(), (s.length().unwrap() * RATE as f32).ceil() as usize, "{s:?}");
             assert!(samples.iter().all(|x| x.is_finite() && x.abs() <= 1.0));

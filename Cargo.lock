@@ -2722,6 +2722,7 @@ dependencies = [
  "content_core",
  "daynight_core",
  "display_core",
+ "fire_core",
  "flight_core",
  "gameplay_core",
  "grab_core",
@@ -2765,6 +2766,14 @@ name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
+
+[[package]]
+name = "fire_core"
+version = "0.1.0"
+dependencies = [
+ "gameplay_core",
+ "glam 0.32.1",
+]
 
 [[package]]
 name = "fixedbitset"

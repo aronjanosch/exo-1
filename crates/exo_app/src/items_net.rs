@@ -118,10 +118,16 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
         Role::Host => {
             for slot in net.take_new_peers() {
                 items.send_state(slot);
+                let r = items.room;
+                items.net_out.push(NetOut::Room { to: Some(slot), r });
             }
             for (slot, msg) in net.take_messages() {
                 let ok = match wire::decode::<ToHost>(&msg) {
                     Some(ToHost::Action(a)) => items.from_peer(now, slot, a),
+                    Some(ToHost::Room(a)) => {
+                        items.ask_room(a);
+                        true
+                    }
                     None => false,
                 };
                 if !ok {
@@ -137,6 +143,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                         items.hear(now, ev);
                     }
                     Some(ToClient::Vitals(v)) => items.vitals_in = Some(v),
+                    Some(ToClient::Room(r)) => items.room = r,
                     None => net.st.invalid += 1,
                 }
             }
@@ -252,6 +259,12 @@ pub fn items_net_out(
             }
             NetOut::Vitals { to, v } => {
                 net.send_reliable(Some(to), &wire::encode(&ToClient::Vitals(v)));
+            }
+            NetOut::Room { to, r } => {
+                net.send_reliable(to, &wire::encode(&ToClient::Room(r)));
+            }
+            NetOut::Ask(a) => {
+                net.send_reliable(None, &wire::encode(&ToHost::Room(a)));
             }
         }
     }

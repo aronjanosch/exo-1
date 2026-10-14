@@ -13,6 +13,8 @@ pub const MAX_MESSAGE: usize = 32 * 1024;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ToHost {
     Action(Action),
+    /// A request about the engine room (#296): the host decides.
+    Room(RoomAsk),
 }
 
 /// Host to client.
@@ -22,6 +24,44 @@ pub enum ToClient {
     /// The player's own vitals, as the host has them (#295); not an item event, but it travels
     /// the same reliable channel.
     Vitals(Vitals),
+    /// The engine room's shared state as the host has it (#296): every player gets it.
+    Room(RoomNews),
+}
+
+/// The alarm level of the ship (#296). A dev toggle for now; the reactor drives it later.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Alarm {
+    #[default]
+    None,
+    Warn,
+    Danger,
+}
+
+impl Alarm {
+    /// The dev toggle's next step: None, Warn, Danger, and None again.
+    pub fn next(self) -> Alarm {
+        match self {
+            Alarm::None => Alarm::Warn,
+            Alarm::Warn => Alarm::Danger,
+            Alarm::Danger => Alarm::None,
+        }
+    }
+}
+
+/// A request to the host about the engine room (#296).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RoomAsk {
+    /// Open the door if it is shut, shut it if it is open.
+    ToggleDoor,
+    /// The dev toggle: the next alarm level.
+    CycleAlarm,
+}
+
+/// The engine room's state (#296): the door's target and the alarm level.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoomNews {
+    pub door_open: bool,
+    pub alarm: Alarm,
 }
 
 /// A player's vitals for their own display (#295). Shares are 0..1 of the maximum before any
@@ -73,6 +113,28 @@ pub fn decode<T: for<'a> Deserialize<'a>>(bytes: &[u8]) -> Option<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn room_news_and_asks_travel_as_they_are() {
+        let news = RoomNews { door_open: true, alarm: Alarm::Danger };
+        let back: RoomNews = match decode::<ToClient>(&encode(&ToClient::Room(news))).expect("decodes") {
+            ToClient::Room(r) => r,
+            _ => panic!("the room message"),
+        };
+        assert_eq!(back, news);
+        let ask: RoomAsk = match decode::<ToHost>(&encode(&ToHost::Room(RoomAsk::CycleAlarm))).expect("decodes") {
+            ToHost::Room(a) => a,
+            _ => panic!("the room request"),
+        };
+        assert_eq!(ask, RoomAsk::CycleAlarm);
+    }
+
+    #[test]
+    fn the_alarm_cycles_none_warn_danger() {
+        assert_eq!(Alarm::None.next(), Alarm::Warn);
+        assert_eq!(Alarm::Warn.next(), Alarm::Danger);
+        assert_eq!(Alarm::Danger.next(), Alarm::None);
+    }
 
     #[test]
     fn vitals_travel_as_they_are() {

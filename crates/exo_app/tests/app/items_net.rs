@@ -419,3 +419,60 @@ fn the_client_sees_the_host_burning_down_and_repairing() {
 }
 
 const LOCAL_HOST: u32 = exo_app::items::LOCAL;
+
+#[test]
+fn the_client_looking_at_the_burning_host_gets_the_medic_panel_and_the_bandage_highlight() {
+    // #300, the medic view: the client looks at the host's player from 2 m. The panel names the burn
+    // ("■ BURN · ON FIRE"), the hint is the bandage on the client's slot 0, and only that slot is
+    // highlighted. The host is the patient: its own status, sent to the client, is what it reads.
+    let port = 20500 + (std::process::id() % 1000) as u16;
+    let o = Options { headless: true, ..Default::default() };
+    let mut host = build_app(&o);
+    let mut client = build_app(&o);
+    for app in [&mut host, &mut client] {
+        app.finish();
+        app.cleanup();
+        app.update();
+    }
+    let start = Instant::now();
+    start_session_with(host.world_mut(), &Session::Host { port }, &sim_args()).expect("host");
+    start_session_with(client.world_mut(), &Session::Join { address: format!("127.0.0.1:{port}"), slot: 2 }, &sim_args()).expect("join");
+    let mut p = Pair { host, client, start };
+    p.until(30.0, "connected", |p| {
+        p.host.world_mut().query::<&exo_app::net_live::RemoteWalker>().iter(p.host.world()).count() == 1
+            && p.client.world_mut().query::<&exo_app::net_live::RemoteWalker>().iter(p.client.world()).count() == 1
+    });
+    p.until(5.0, "the host has a body for its player", |p| p.host.world().resource::<HealthState>().bodies.contains_key(&LOCAL_HOST));
+    {
+        let st = p.host.world_mut().resource_mut::<HealthState>().into_inner();
+        st.bodies.get_mut(&LOCAL_HOST).unwrap().health.add(&st.tuning, "burn", 60.0);
+    }
+    // The client holds one bandage in slot 0 (the host spawns it in front of the client's walker).
+    let at = in_front(&mut p.client, |_, _| DVec3::ZERO);
+    spawn(&mut p.host, "bandage", at);
+    p.until(10.0, "the client sees the bandage", |p| loose(&mut p.client).len() == 1);
+    let b1 = loose(&mut p.client)[0].id.expect("id");
+    request(&mut p.client, Request::Collect { item: b1 }).expect("predicted");
+    p.until(10.0, "the host confirmed the client's bandage", |p| confirmed(&p.client, "bandage") == 1);
+    assert_eq!(items(&p.client).client.view.slot(0).map(|s| s.item.kind.as_str()), Some("bandage"));
+
+    // The client stands 2 m from the host's player and looks at it.
+    let (hp, hup) = walker(&mut p.host);
+    let tangent = hup.any_orthonormal_vector();
+    {
+        let w = p.client.world_mut();
+        let mut pl = w.query::<&mut Player>().single_mut(w).expect("the client's player");
+        pl.w.pos = hp + tangent * 2.0;
+        pl.w.forward = -tangent;
+        pl.pitch = 0.0;
+    }
+    let medic = |p: &Pair| p.client.world().resource::<exo_app::health_view::MedicView>().clone();
+    p.until(15.0, "the client's medic view is about the host", |p| medic(p).target == Some(LOCAL_HOST) && medic(p).view.is_some());
+    let m = medic(&p);
+    let view = m.view.expect("the panel");
+    assert_eq!(view.name, "PILOT 1");
+    assert!(view.lines.iter().any(|l| l.label.contains("BURN")), "the panel names the burn: {:?}", view.lines);
+    assert_eq!(view.hint.as_deref(), Some("BANDAGE ▶ BURN"), "the bandage suits the burn");
+    assert_eq!(m.suitable, vec![0], "only the bandage's slot is highlighted");
+    println!("[{:5.1} s] done; panel {:?}", p.start.elapsed().as_secs_f64(), view.lines);
+}

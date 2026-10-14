@@ -286,7 +286,7 @@ fn vitals_out(mut items: ResMut<Items>, mut st: ResMut<HealthState>) {
 /// The first hit of the aim on another player's capsule, within reach: the player's slot. A
 /// player who is down or unconscious lies: the aim meets a capsule along the ground, from the
 /// feet on the figure's side (`lying`), where the upright one would miss it.
-fn aim_target(eye: DVec3, dir: DVec3, planet: &PlanetRes, remotes: &Query<(&RemoteWalker, &WorldPose)>, lying: &dyn Fn(PlayerId) -> bool, reach: f64) -> Option<PlayerId> {
+pub(crate) fn aim_target(eye: DVec3, dir: DVec3, planet: &PlanetRes, remotes: &Query<(&RemoteWalker, &WorldPose)>, lying: &dyn Fn(PlayerId) -> bool, reach: f64) -> Option<PlayerId> {
     let arr = |v: DVec3| [v.x, v.y, v.z];
     let mut best: Option<(f64, PlayerId)> = None;
     for (rw, wp) in remotes {

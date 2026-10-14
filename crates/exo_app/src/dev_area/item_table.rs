@@ -1,4 +1,4 @@
-//! The item table (C1): a table in the engineering zone with a fire extinguisher, a wrench and a
+//! The item table (C1): a table in the engineering zone with a fire extinguisher, a wrench, a screwdriver and a
 //! stack of bandages and two deglows on it, and one wrench lying in the parked ship's cabin, to try collecting,
 //! holding, dropping and throwing. The host puts them into the world once the area and the ship
 //! are there.
@@ -12,7 +12,7 @@ pub const AT: [f64; 2] = [-3.0, -3.5];
 /// Table size (m): width, height, depth.
 pub const SIZE: [f64; 3] = [1.8, 0.9, 0.8];
 /// What lies on it: item, count, offset along the table (m, east).
-pub const ON_TABLE: [(&str, u32, f64); 4] = [("extinguisher", 1, -0.6), ("wrench", 1, 0.0), ("bandage", 4, 0.55), ("deglow", 2, 0.8)];
+pub const ON_TABLE: [(&str, u32, f64); 5] = [("extinguisher", 1, -0.6), ("screwdriver", 1, -0.3), ("wrench", 1, 0.0), ("bandage", 4, 0.55), ("deglow", 2, 0.8)];
 /// The wrench in the cabin: ship-local floor spot (x, z), left of the aisle.
 pub const IN_CABIN: (&str, f64, f64) = ("wrench", -1.3, 0.8);
 

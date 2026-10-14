@@ -112,6 +112,7 @@ impl ReactorSim {
             load_kw: self.room.grid().request_kw(),
             optimal: [b.temp_optimal.lo, b.temp_optimal.hi],
             allowed: [b.temp_allowed.lo, b.temp_allowed.hi],
+            reactor: part(r.condition().fraction(), r.condition().functioning()),
             pump: part(self.room.pump().condition().fraction(), self.room.pump().condition().functioning()),
             junction: part(self.room.junction().condition().fraction(), self.room.junction().condition().functioning()),
             alarm: alarm_of(self.room.level()),

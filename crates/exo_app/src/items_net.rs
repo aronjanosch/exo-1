@@ -142,6 +142,10 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                         items.spray_asks.push((slot, a));
                         true
                     }
+                    Some(ToHost::Repair(a)) => {
+                        items.repair_asks.push((slot, a));
+                        true
+                    }
                     None => false,
                 };
                 if !ok {
@@ -160,6 +164,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                     Some(ToClient::Room(r)) => items.room = r,
                     Some(ToClient::Reactor(r)) => items.reactor = Some(r),
                     Some(ToClient::Fire(f)) => items.fire = Some(f),
+                    Some(ToClient::RepairDone) => items.repair_done = true,
                     None => net.st.invalid += 1,
                 }
             }
@@ -293,6 +298,12 @@ pub fn items_net_out(
             }
             NetOut::SprayAsk(a) => {
                 net.send_reliable(None, &wire::encode(&ToHost::Spray(a)));
+            }
+            NetOut::RepairAsk(a) => {
+                net.send_reliable(None, &wire::encode(&ToHost::Repair(a)));
+            }
+            NetOut::RepairDone { to } => {
+                net.send_reliable(Some(to), &wire::encode(&ToClient::RepairDone));
             }
         }
     }

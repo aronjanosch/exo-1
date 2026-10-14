@@ -53,7 +53,7 @@ pub const ZAP_EVERY_S: f64 = 2.0;
 /// The breaker's clunk, the power's sweep and the SCRAM's thud.
 pub const CLUNK_VOL: f32 = 0.09;
 pub const SWEEP_VOL: f32 = 0.08;
-pub const SCRAM_VOL: f32 = 0.15;
+pub const SCRAM_VOL: f32 = 0.12;
 /// The pump's hum at full flow.
 pub const PUMP_VOL: f32 = 0.06;
 /// The pump's playback speed at no flow and at full flow.

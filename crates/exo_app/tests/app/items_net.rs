@@ -393,6 +393,29 @@ fn the_client_sees_the_host_burning_down_and_repairing() {
     p.until(15.0, "the client's figure of the host repairs the reactor", |p| figure(&mut p.client, LOCAL_HOST).is_some_and(|s| s.doing == Doing::Repairing(RepairDevice::Reactor)));
     assert_eq!(figure(&mut p.client, LOCAL_HOST), Some(status(&p.client, LOCAL_HOST)), "the figure carries the public status");
     assert!(!status(&p.client, LOCAL_HOST).down, "up again after the down");
+
+    // Unconscious (#300): the host's vitality at zero, not dead. The client's figure lies down and
+    // is labelled as unconscious (not down); a treatment on the host wakes it.
+    p.host.world_mut().resource_mut::<RepairSessions>().sessions.clear();
+    {
+        let mut st = p.host.world_mut().resource_mut::<HealthState>();
+        let st = &mut *st;
+        st.bodies.get_mut(&LOCAL_HOST).expect("the host's body").health.add(&st.tuning, "burn", 110.0);
+    }
+    p.until(15.0, "the client's figure of the host is unconscious", |p| figure(&mut p.client, LOCAL_HOST).is_some_and(|s| s.unconscious));
+    let s = status(&p.client, LOCAL_HOST);
+    assert!(s.unconscious && !s.down && s.doing == Doing::Nothing, "the public status says unconscious, not down: {s:?}");
+    // Treatments on the host until its vitality is above zero (each takes 18.75 of burn at full skill).
+    for _ in 0..10 {
+        let mut st = p.host.world_mut().resource_mut::<HealthState>();
+        let st = &mut *st;
+        let b = st.bodies.get_mut(&LOCAL_HOST).expect("the host's body");
+        b.health.treat(&st.tuning, "bandage", 100.0);
+        if b.health.vitality() > 0.0 {
+            break;
+        }
+    }
+    p.until(15.0, "the client's figure of the host is awake again", |p| figure(&mut p.client, LOCAL_HOST).is_some_and(|s| !s.unconscious));
 }
 
 const LOCAL_HOST: u32 = exo_app::items::LOCAL;

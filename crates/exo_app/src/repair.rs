@@ -396,7 +396,7 @@ fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>
     let mut full = Vec::new();
     for h in sessions.sessions.clone() {
         // A broken machine waits for its hits; otherwise the rise runs at the session's tool's repair time.
-        if may_rise(h.gated, h.hits, &t) {
+        if may_rise(h.gated, h.hits, condition(&sim.room, h.device).fraction(), &t) {
             let e = condition_mut(&mut sim.room, h.device).repair_rise(dt, t.skill, tool_speed(h.tool));
             emit(&mut counts, h.device, e);
         }

@@ -95,9 +95,10 @@ pub fn minigame_on(fraction: f64, t: &Tuning) -> bool {
 }
 
 /// Whether a session may raise the condition now. A session that began on a broken device (`gated`)
-/// waits for its hits, and stays open once it has them.
-pub fn may_rise(gated: bool, hits: u32, t: &Tuning) -> bool {
-    !gated || hits >= t.broken_hits
+/// waits for its hits while the minigame is on, and stays open once it has them. With the minigame
+/// off (`minigame_below` 0) holding raises a broken device at once.
+pub fn may_rise(gated: bool, hits: u32, fraction: f64, t: &Tuning) -> bool {
+    !gated || !minigame_on(fraction, t) || hits >= t.broken_hits
 }
 
 /// One repairer's session on one machine: the ring and the hits so far. The ring turns, and LMB
@@ -486,9 +487,9 @@ mod tests {
     #[test]
     fn a_broken_device_waits_for_three_hits() {
         let t = tuning();
-        assert!(!may_rise(true, 0, &t) && !may_rise(true, 2, &t), "no progress before the third hit");
-        assert!(may_rise(true, 3, &t), "after the third hit it rises");
-        assert!(may_rise(false, 0, &t), "a session that did not start on a broken device always rises");
+        assert!(!may_rise(true, 0, 0.0, &t) && !may_rise(true, 2, 0.0, &t), "no progress before the third hit");
+        assert!(may_rise(true, 3, 0.0, &t), "after the third hit it rises");
+        assert!(may_rise(false, 0, 0.0, &t), "a session that did not start on a broken device always rises");
         let mut s = Session::new(t, 5);
         let mut hits = 0;
         // Hits land whenever the pointer is in a zone; the session counts them.
@@ -503,7 +504,15 @@ mod tests {
             }
         }
         assert_eq!(s.hits, 3, "three hits are made");
-        assert!(may_rise(true, s.hits, &t));
+        assert!(may_rise(true, s.hits, 0.1, &t));
+    }
+
+    #[test]
+    fn with_the_minigame_off_a_broken_device_rises_by_holding() {
+        let t = Tuning { minigame_below: 0.0, ..tuning() };
+        assert!(!minigame_on(0.0, &t), "no ring at condition 0");
+        assert!(may_rise(true, 0, 0.0, &t), "holding raises a broken device at once");
+        assert!(!may_rise(true, 0, 0.0, &tuning()), "with the ring on it waits for its hits");
     }
 
     #[test]

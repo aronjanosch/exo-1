@@ -32,5 +32,5 @@ pub mod tuning;
 
 pub use engine_room::{AlarmLevel, EngineRoom, Fault, Input, JunctionBox, Pump, RoomEvent, RoomTuning, Source};
 pub use grid::{Grid, Group, GroupState, Supply};
-pub use reactor::{AlarmKind, Band, Bands, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning};
+pub use reactor::{AlarmKind, Band, Bands, FuelNeed, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning, RodKind, RodKinds, Warnings};
 pub use tuning::{Tuning, REACTOR_PATH};

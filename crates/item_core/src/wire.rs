@@ -156,8 +156,17 @@ pub enum ReactorAsk {
     SetPower(bool),
     /// A consumer group's breaker on the junction box.
     SetBreaker(BreakerGroup, bool),
-    /// The coolant pump's switch.
-    SetPump(bool),
+    /// The coolant pump's control: Off, Low or High.
+    SetPumpMode(PumpMode),
+}
+
+/// The coolant pump's mode (#300): off, a low or a high stream.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PumpMode {
+    #[default]
+    Off,
+    Low,
+    High,
 }
 
 /// The junction box's consumer groups (the breakers on its screen).
@@ -292,6 +301,10 @@ pub struct ReactorNews {
     /// The breakers, by `BreakerGroup::index`: engines, life support, lights.
     pub breakers: [bool; 3],
     pub pump_on: bool,
+    /// The pump's mode as set (`pump_on` is `mode != Off`).
+    pub pump_mode: PumpMode,
+    /// The pump's speed, 0..1: it follows the mode with inertia (the impeller turns with it).
+    pub pump_speed: f64,
     /// Coolant flow, 0..1.
     pub flow: f64,
     /// Coolant in the pump's tank, 0..100 %.
@@ -424,6 +437,8 @@ mod tests {
             powered: true,
             breakers: [true, false, true],
             pump_on: true,
+            pump_mode: PumpMode::High,
+            pump_speed: 0.5,
             flow: 0.4,
             coolant: 60.0,
             coolant_low: false,
@@ -450,7 +465,7 @@ mod tests {
             ReactorAsk::SetPower(false),
             ReactorAsk::SetBreaker(BreakerGroup::Lights, false),
             ReactorAsk::SetBreaker(BreakerGroup::Engines, true),
-            ReactorAsk::SetPump(true),
+            ReactorAsk::SetPumpMode(PumpMode::Low),
         ];
         for ask in asks {
             let back = match decode::<ToHost>(&encode(&ToHost::Reactor(ask))).expect("decodes") {

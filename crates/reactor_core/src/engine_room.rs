@@ -1,10 +1,31 @@
 //! The engine room: reactor, coolant pump, junction box and the grid of consumers, stepped together.
 //!
-//! - The pump's flow (`EngineRoom::flow`: 0 when off, else the pump's factor from `device_core`, 1
-//!   working, 0 broken) is the coolant: it takes the cooling offset and the residual heat away. The
-//!   reactor's coolant follows it with a coast (`coolant_coast_s`), so off or broken lets the
-//!   temperature climb, and without flow the core climbs whatever Auto does. Heat above the optimal
-//!   band wears a running pump as overload.
+//! - The coolant pump has PULSAR's three modes (manual, `pulsar-mech-conduits.md` 1.4): Off takes no
+//!   coolant; Low is a steady small stream that drains the tank slowly; High a large stream that
+//!   cools strongly and drains it quickly. Names and states are PULSAR's; every number is ours
+//!   (`pump_low`, the time constants, `pump_use_low` and `pump_use_high`), TODO(initiator).
+//! - The pump's speed (0..1) follows the mode's target with inertia: Off 0, Low `pump_low`, High 1;
+//!   up with `pump_spin_up_s`, down with `pump_run_down_s` (an exponential approach, ours; Barotrauma
+//!   has the setting follow at once).
+//! - The flow is speed x condition factor x power factor (`EngineRoom::flow`, `stream`), 0 with an
+//!   empty tank. Condition: `device_core`, 1 working, 0 broken (Barotrauma `Pump.cs:162` lerps
+//!   the flow 0.5..1 with the condition; ours is the device's factor). Power: Barotrauma
+//!   `Pump.cs:152` multiplies the flow by the voltage (`powerFactor`), and `Pump.cs:97` needs
+//!   `Voltage >= MinVoltage` for `HasPower`: a Barotrauma pump needs grid power. Ours is a backup
+//!   supply (our touch, coordinator decision for the initiator to confirm): with the reactor
+//!   delivering nothing (off, cold start, SCRAM, broken) the pump runs on the backup at factor 1.
+//!   While the reactor delivers, the factor is the junction box's voltage of the last step,
+//!   clamped to 0..1, so a short grid (demand above the reactor's maximum) slows the pump, which
+//!   cools less and runs hotter (the brownout death spiral, the point). The pump draws no kW from
+//!   the grid here: TODO(initiator), pump as a grid consumer.
+//! - The flow is the coolant: it sets the reactor's cooling offset, which follows it with a coast
+//!   (`coolant_coast_s`, reactor.rs). Off or broken lets the temperature climb; with no flow the core
+//!   climbs whatever Auto does. Heat above the optimal band wears a running pump as overload.
+//! - The coolant tank: a mode in Low or High drains it at (`coolant_use_base` + `coolant_use_per_heat`
+//!   x heat) x its use factor (`pump_use_low` 0.6, `pump_use_high` 1.5) x the stream (condition and
+//!   power, not the speed). So High drains 2.5 times as fast as Low at the same heat, as PULSAR says
+//!   "quickly" against "slowly". Off drains nothing; its speed runs down over `pump_run_down_s`.
+//!   TODO(initiator): pump run-down and the reactor's coolant coast now stack after a switch-off.
 //! - The junction box sits between the reactor and the consumers. Supply above `overvolt_ratio`
 //!   times the demand is overvoltage (Barotrauma `PowerTransfer.cs:245-292`, `UpdateOvervoltage`:
 //!   `Overload = Voltage > max(OverloadVoltage, 1)`). While overvolted, random hits take condition
@@ -32,7 +53,7 @@ use device_core::{Condition, DeviceEvent, DeviceTuning};
 use gameplay_core::rng::Rng;
 
 use crate::grid::{Grid, Group};
-use crate::reactor::{AlarmKind, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning};
+use crate::reactor::{AlarmKind, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning, RodKinds};
 use crate::tuning::Tuning;
 use serde::{Deserialize, Serialize};
 
@@ -70,6 +91,16 @@ pub struct RoomTuning {
     pub coolant_use_per_heat: f64,
     /// The tank is low below this level, %. The pump's screen warns LOW.
     pub coolant_low: f64,
+    /// The speed the Low mode settles at, 0..1 (High settles at 1, Off at 0). TODO(initiator).
+    pub pump_low: f64,
+    /// Seconds for the pump's speed to close 63 % of the gap up to its target. TODO(initiator).
+    pub pump_spin_up_s: f64,
+    /// Seconds for the pump's speed to close 63 % of the gap down to its target. TODO(initiator).
+    pub pump_run_down_s: f64,
+    /// Coolant use factor of the Low mode (times the use per heat, at full stream). TODO(initiator).
+    pub pump_use_low: f64,
+    /// Coolant use factor of the High mode. TODO(initiator).
+    pub pump_use_high: f64,
     /// What one coolant canister adds to the tank, %.
     pub coolant_canister: f64,
     /// Dev stand-in for a helm: the engines' throttle random-walks while on. Off in code, on in
@@ -101,6 +132,11 @@ impl Default for RoomTuning {
             coolant_use_per_heat: 0.0013,
             coolant_low: 25.0,
             coolant_canister: 50.0,
+            pump_low: 0.5,
+            pump_spin_up_s: 3.0,
+            pump_run_down_s: 12.0,
+            pump_use_low: 0.6,
+            pump_use_high: 1.5,
             engine_wander: false,
             wander_every_s: 6.0,
             wander_min: 0.3,
@@ -173,19 +209,71 @@ pub enum AlarmLevel {
     Danger,
 }
 
+/// The coolant pump's switch, PULSAR's three states (manual, `pulsar-mech-conduits.md` 1.4): Off
+/// takes no coolant; Low is a steady small stream that drains the tank slowly; High is a large
+/// stream that cools strongly and drains it quickly.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum PumpMode {
+    Off,
+    Low,
+    High,
+}
+
 /// The coolant pump. Its flow scales the reactor's cooling.
 #[derive(Clone, Debug)]
 pub struct Pump {
     condition: Condition,
-    on: bool,
+    mode: PumpMode,
+    /// The pump's speed, 0..1: follows the mode's target with inertia (`spin`).
+    speed: f64,
     /// Coolant left in the tank, 0..100 %. Empty: no flow.
     tank: f64,
 }
 
 impl Pump {
-    /// A pump that is on.
+    /// A pump in High, running at full speed (as a pump that is on always was).
     pub fn new(tuning: &RoomTuning, seed: u64) -> Pump {
-        Pump { condition: Condition::new(tuning.pump, seed), on: true, tank: 100.0 }
+        Pump { condition: Condition::new(tuning.pump, seed), mode: PumpMode::High, speed: 1.0, tank: 100.0 }
+    }
+
+    /// The switch's mode.
+    pub fn mode(&self) -> PumpMode {
+        self.mode
+    }
+
+    pub fn set_mode(&mut self, mode: PumpMode) {
+        self.mode = mode;
+    }
+
+    /// The speed the mode asks for, 0..1: Off 0, Low `pump_low`, High 1.
+    fn target(&self, t: &RoomTuning) -> f64 {
+        match self.mode {
+            PumpMode::Off => 0.0,
+            PumpMode::Low => t.pump_low.clamp(0.0, 1.0),
+            PumpMode::High => 1.0,
+        }
+    }
+
+    /// The pump's speed, 0..1 (inertia: it runs up and down toward the mode's target).
+    pub fn speed(&self) -> f64 {
+        self.speed
+    }
+
+    /// Moves the speed toward the target: up with `pump_spin_up_s`, down with `pump_run_down_s`,
+    /// an exponential approach (`dt / tau`, at most the whole gap).
+    fn spin(&mut self, dt: f64, t: &RoomTuning) {
+        let target = self.target(t);
+        let tau = if target > self.speed { t.pump_spin_up_s } else { t.pump_run_down_s };
+        self.speed += (target - self.speed) * (dt / tau.max(1e-9)).min(1.0);
+    }
+
+    /// Coolant use factor of the mode: Off 0, Low `pump_use_low`, High `pump_use_high`.
+    fn use_factor(&self, t: &RoomTuning) -> f64 {
+        match self.mode {
+            PumpMode::Off => 0.0,
+            PumpMode::Low => t.pump_use_low,
+            PumpMode::High => t.pump_use_high,
+        }
     }
 
     /// Coolant left in the tank, 0..100 %.
@@ -205,22 +293,25 @@ impl Pump {
         self.tank - before
     }
 
-    /// The tank uses coolant while the pump runs, in proportion to the heat it carries away
-    /// (`heat`, the reactor's heat input) and the flow.
-    fn use_coolant(&mut self, dt: f64, flow: f64, heat: f64, t: &RoomTuning) {
-        if flow > 0.0 {
-            let rate = (t.coolant_use_base + t.coolant_use_per_heat * heat.max(0.0)) * flow;
+    /// The tank uses coolant while the pump is in Low or High, in proportion to the heat it carries
+    /// away (`heat`, the reactor's heat input), the mode's use factor and `stream`, the flow the
+    /// pump would have at full speed (condition and power). Speed is not in it, so High drains
+    /// `pump_use_high / pump_use_low` times as fast as Low at the same heat.
+    fn use_coolant(&mut self, dt: f64, stream: f64, heat: f64, t: &RoomTuning) {
+        if stream > 0.0 {
+            let rate = (t.coolant_use_base + t.coolant_use_per_heat * heat.max(0.0)) * self.use_factor(t) * stream;
             self.tank = (self.tank - rate * dt).max(0.0);
         }
     }
 
-    /// The switch on the pump's screen. Off, it takes no heat away.
+    /// The mode is Low or High. Off takes no coolant and runs its speed down.
     pub fn on(&self) -> bool {
-        self.on
+        self.mode != PumpMode::Off
     }
 
+    /// The screen's on/off switch: on is High, off is Off (`set_mode` for Low).
     pub fn set_on(&mut self, on: bool) {
-        self.on = on;
+        self.mode = if on { PumpMode::High } else { PumpMode::Off };
     }
 
     pub fn condition(&self) -> &Condition {
@@ -358,6 +449,8 @@ pub struct EngineRoom {
     wander_rng: Rng,
     wander_target: f64,
     wander_left: f64,
+    /// The rod kinds of the loaded values, for `rod_of`.
+    rods: RodKinds,
 }
 
 impl EngineRoom {
@@ -373,11 +466,13 @@ impl EngineRoom {
         for _ in 0..t.start_rods {
             let _ = reactor.insert_rod(FuelRod::standard());
         }
+        let rods = t.rods.clone();
         reactor.set_operator_skill(50.0);
         EngineRoom {
             pump: Pump::new(&t.room, seed),
             junction: JunctionBox::new(&t.room, seed.wrapping_add(1)),
             tuning: t.room,
+            rods,
             reactor,
             grid: Grid::from_tuning(&t.grid),
             level: AlarmLevel::None,
@@ -401,6 +496,11 @@ impl EngineRoom {
 
     pub fn tuning(&self) -> &RoomTuning {
         &self.tuning
+    }
+
+    /// A new rod of the loaded kind `id` (a `reactor.json` `rods` key), or None for an unknown id.
+    pub fn rod_of(&self, id: &str) -> Option<FuelRod> {
+        self.rods.rod(id)
     }
 
     pub fn reactor(&self) -> &Reactor {
@@ -469,9 +569,24 @@ impl EngineRoom {
         self.junction.condition.functioning() && self.reactor.output_kw() > 0.0
     }
 
-    /// The coolant flow, 0..1: the pump's factor while it is on and its tank has coolant, else 0.
+    /// The coolant flow, 0..1: the pump's speed times `stream`. Off, it runs down; an empty tank
+    /// or no power is no flow.
     pub fn flow(&self) -> f64 {
-        if self.pump.on && self.pump.tank > 0.0 { self.pump.factor() } else { 0.0 }
+        self.pump.speed * self.stream()
+    }
+
+    /// The flow the pump would have at full speed, 0..1: its condition factor times the power
+    /// factor, 0 with an empty tank.
+    pub fn stream(&self) -> f64 {
+        if self.pump.tank > 0.0 { self.pump.factor() * self.power_factor() } else { 0.0 }
+    }
+
+    /// The pump's power factor, 0..1 (Barotrauma `Pump.cs:152`, `powerFactor`). With the reactor
+    /// delivering nothing (off, cold start, SCRAM, broken) the pump runs on its backup supply at 1.
+    /// Otherwise it is the junction box's voltage of the last step, clamped to 0..1: a short grid
+    /// slows the pump, and a broken box (which passes nothing) stops it.
+    pub fn power_factor(&self) -> f64 {
+        if self.reactor.output_kw() <= 0.0 { 1.0 } else { self.junction.voltage().clamp(0.0, 1.0) }
     }
 
     /// Switches a consumer group's breaker on the junction box.
@@ -479,9 +594,19 @@ impl EngineRoom {
         self.grid.set_breaker(g, on);
     }
 
-    /// Switches the coolant pump on or off.
+    /// Switches the coolant pump on (High) or off (Off).
     pub fn set_pump(&mut self, on: bool) {
         self.pump.set_on(on);
+    }
+
+    /// Sets the coolant pump's mode (Off, Low or High).
+    pub fn set_pump_mode(&mut self, mode: PumpMode) {
+        self.pump.set_mode(mode);
+    }
+
+    /// The reactor's lamps for the load the grid asks for now (`Reactor::warnings`).
+    pub fn warnings(&self) -> crate::reactor::Warnings {
+        self.reactor.warnings(self.grid.request_kw())
     }
 
     /// The room's alarm, as of the last step.
@@ -498,7 +623,9 @@ impl EngineRoom {
         if input.mode == Mode::Manual {
             self.reactor.set_targets(input.fission, input.turbine);
         }
+        self.pump.spin(dt, &t);
         let flow = self.flow();
+        let stream = self.stream();
         self.reactor.set_coolant(flow);
 
         if self.wander {
@@ -507,14 +634,14 @@ impl EngineRoom {
         self.grid.set_demand(Group::Engines, self.engines_full_kw * self.throttle);
         let load = self.grid.request_kw();
         ev.extend(self.reactor.step(dt, load).into_iter().map(RoomEvent::Reactor));
-        self.pump.use_coolant(dt, flow, self.reactor.heat_input(), &t);
+        self.pump.use_coolant(dt, stream, self.reactor.heat_input(), &t);
 
         let (through, junction_ev) = self.junction.pass(dt, self.reactor.output_kw(), load, &t);
         ev.extend(junction_ev);
         self.grid.distribute(through);
 
         let excess = self.reactor.temperature() - self.reactor.bands().temp_optimal.hi;
-        if let Some(e) = self.pump.wear(dt, self.pump.on && self.reactor.power_on(), excess, &t) {
+        if let Some(e) = self.pump.wear(dt, self.pump.on() && self.reactor.power_on(), excess, &t) {
             ev.push(RoomEvent::Device { source: Source::Pump, event: e });
         }
 

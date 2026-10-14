@@ -17,7 +17,7 @@ use crate::dev_area::engine_room::{EngineAir, ShipAlarm};
 use crate::dev_area::fire::{self, FireAlarm, FireConfig, FireGrid, FireModel};
 use crate::items::{Items, NetOut, Role};
 use crate::dev_area::engine_room::ROOM;
-use item_core::wire::{Alarm, BreakerGroup, PartNews, ReactorAsk, ReactorFault, ReactorNews};
+use item_core::wire::{Alarm, BreakerGroup, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews};
 use reactor_core::{AlarmLevel, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning};
 
 /// Seconds between two sends of a changed snapshot (4 Hz).
@@ -110,7 +110,7 @@ impl ReactorSim {
                 }
             }
             ReactorAsk::SetBreaker(g, on) => self.room.set_breaker(group_of(g), on),
-            ReactorAsk::SetPump(on) => self.room.set_pump(on),
+            ReactorAsk::SetPumpMode(m) => self.room.set_pump_mode(pump_of(m)),
         }
     }
 
@@ -134,6 +134,8 @@ impl ReactorSim {
             powered: self.room.powered(),
             breakers: Group::ALL.map(|g| grid.breaker(g)),
             pump_on: self.room.pump().on(),
+            pump_mode: wire_pump(self.room.pump().mode()),
+            pump_speed: self.room.pump().speed(),
             flow: self.room.flow(),
             coolant: self.room.pump().tank(),
             coolant_low: self.room.pump().tank() < self.room.tuning().coolant_low,
@@ -153,6 +155,26 @@ pub fn group_of(g: BreakerGroup) -> Group {
         BreakerGroup::Engines => Group::Engines,
         BreakerGroup::LifeSupport => Group::LifeSupport,
         BreakerGroup::Lights => Group::Lights,
+    }
+}
+
+/// The wire's pump mode as the room's.
+pub fn pump_of(m: PumpMode) -> reactor_core::engine_room::PumpMode {
+    use reactor_core::engine_room::PumpMode as Core;
+    match m {
+        PumpMode::Off => Core::Off,
+        PumpMode::Low => Core::Low,
+        PumpMode::High => Core::High,
+    }
+}
+
+/// The room's pump mode on the wire.
+pub fn wire_pump(m: reactor_core::engine_room::PumpMode) -> PumpMode {
+    use reactor_core::engine_room::PumpMode as Core;
+    match m {
+        Core::Off => PumpMode::Off,
+        Core::Low => PumpMode::Low,
+        Core::High => PumpMode::High,
     }
 }
 
@@ -273,6 +295,17 @@ mod tests {
         Tuning::default()
     }
 
+    /// Steps the room until the snapshot says so (the pump's speed moves with inertia), at most 300 s.
+    fn settle(s: &mut ReactorSim, done: impl Fn(&ReactorNews) -> bool) {
+        for _ in 0..3000 {
+            if done(&s.news(1.0)) {
+                return;
+            }
+            s.room.step(0.1, Input::auto());
+        }
+        panic!("the snapshot never settled");
+    }
+
     #[test]
     fn scram_and_the_power_switch_ask_the_room() {
         let mut s = ReactorSim::new(&cfg());
@@ -292,15 +325,35 @@ mod tests {
     fn breakers_and_the_pump_switch_are_on_the_snapshot() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
+        let before = s.news(1.0).load_kw;
         s.apply(ReactorAsk::SetBreaker(BreakerGroup::Lights, false), &cfg(), &mut k);
         let n = s.news(1.0);
         assert_eq!(n.breakers, [true, true, false]);
-        assert!(n.load_kw < 500.0);
-        s.apply(ReactorAsk::SetPump(false), &cfg(), &mut k);
+        let lights = s.room.grid().group(Group::Lights).demand_kw;
+        assert!((before - n.load_kw - lights).abs() < 1e-9, "the load drops by the lights' demand");
+        s.apply(ReactorAsk::SetPumpMode(PumpMode::Off), &cfg(), &mut k);
+        settle(&mut s, |n| n.flow < 1e-3);
         let n = s.news(1.0);
-        assert!(!n.pump_on && n.flow == 0.0);
-        s.apply(ReactorAsk::SetPump(true), &cfg(), &mut k);
-        assert!(s.news(1.0).pump_on && s.news(1.0).flow == 1.0);
+        assert!(!n.pump_on && n.flow < 1e-3, "the pump spins down");
+        s.apply(ReactorAsk::SetPumpMode(PumpMode::High), &cfg(), &mut k);
+        settle(&mut s, |n| n.flow >= 0.99);
+        assert!(s.news(1.0).pump_on && s.news(1.0).flow >= 0.99);
+    }
+
+    #[test]
+    fn the_pump_mode_is_on_the_snapshot_and_low_runs_between_off_and_high() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.apply(ReactorAsk::SetPumpMode(PumpMode::Low), &cfg(), &mut k);
+        let n = s.news(1.0);
+        assert!(n.pump_on && n.pump_mode == PumpMode::Low);
+        for _ in 0..1200 {
+            s.room.step(0.1, Input::auto());
+        }
+        let speed = s.news(1.0).pump_speed;
+        assert!(speed > 0.2 && speed < 0.8, "Low settles between Off and High: {speed}");
+        s.apply(ReactorAsk::SetPumpMode(PumpMode::Off), &cfg(), &mut k);
+        assert!(!s.news(1.0).pump_on && s.news(1.0).pump_mode == PumpMode::Off);
     }
 
     #[test]

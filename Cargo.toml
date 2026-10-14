@@ -29,6 +29,8 @@ production_core = { path = "crates/production_core" }
 display_core = { path = "crates/display_core" }
 item_core = { path = "crates/item_core" }
 health_core = { path = "crates/health_core" }
+device_core = { path = "crates/device_core" }
+reactor_core = { path = "crates/reactor_core" }
 
 # Bevy recommendation: little optimisation for our code, full for dependencies.
 [profile.dev]

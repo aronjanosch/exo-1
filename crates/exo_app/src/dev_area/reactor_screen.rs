@@ -497,13 +497,13 @@ pub fn faults_panel() -> Panel {
                     button("Pump break", "pump_break").fixed(32.0),
                     button("Load drop", "load_drop").fixed(32.0),
                     button("Surge", "surge").fixed(32.0),
-                    button("Drain coolant", "drain_coolant").fixed(32.0),
+                    button("Drain tank", "drain_coolant").fixed(32.0),
                     space(),
                 ]),
                 col(vec![
                     button("Start fire", "fire").fixed(32.0),
-                    button("Fire: point/grid", "fire_model").fixed(32.0),
-                    button("Reset reactor", "reset").fixed(32.0),
+                    button("Fire mode", "fire_model").fixed(32.0),
+                    button("Reset RX", "reset").fixed(32.0),
                     space(),
                 ]),
             ],
@@ -623,6 +623,21 @@ mod tests {
     fn no_widget_and_no_shape_of_any_screen_overflows() {
         for (i, p) in all_panels().into_iter().enumerate() {
             assert!(p.overflowing().is_empty(), "panel {i}: {:?}", p.overflowing());
+        }
+    }
+
+    #[test]
+    fn every_button_label_fits_its_button() {
+        // The draw sets a button's label at LABEL (20 px) or 55 % of the button's height, in caps
+        // with the caps tracking: about 0.72 of the size a letter. It must fit the button's width.
+        for (i, p) in all_panels().into_iter().enumerate() {
+            for w in p.layout() {
+                if let display_core::Widget::Button { label, .. } = w.widget {
+                    let size = display_core::font::LABEL.min(w.rect.size.y * 0.55);
+                    let width = label.to_uppercase().chars().count() as f64 * size * 0.72;
+                    assert!(width <= w.rect.size.x, "panel {i}: {label:?} is {width:.0} px, its button {:.0} px", w.rect.size.x);
+                }
+            }
         }
     }
 

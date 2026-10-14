@@ -2,6 +2,7 @@
 //! Rendering, input, camera, HUD, physics bodies, network transport and scripted scenarios.
 //! All game values are the spike test values, not designed.
 pub mod audio;
+pub mod audio_slice;
 pub mod avian_crates;
 pub mod cargo;
 pub mod controls;

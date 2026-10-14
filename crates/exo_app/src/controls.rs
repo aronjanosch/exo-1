@@ -57,6 +57,9 @@ pub struct Controls {
     pub pointer: Option<Vec2>,
     /// The primary mouse button is held.
     pub pointer_down: bool,
+    /// The primary mouse button is held with the mouse captured (a use's hold, #295). Set by
+    /// `read_input` like `click`.
+    pub primary_held: bool,
     /// The primary mouse button went down since the last fixed step (a tap: a press and release
     /// between two steps still counts). Taken by `displays`.
     pub click: bool,
@@ -829,11 +832,13 @@ pub fn read_input(
         }
         c.pointer = windows.single().ok().and_then(|w| w.cursor_position());
         c.pointer_down = mouse_buttons.pressed(MouseButton::Left);
+        c.primary_held = false;
         c.click |= mouse_buttons.just_pressed(MouseButton::Left);
         return;
     }
     c.pointer = None;
     c.pointer_down = false;
+    c.primary_held = cur.grab_mode != CursorGrabMode::None && mouse_buttons.pressed(MouseButton::Left);
     // With the mouse captured, LMB uses the held item (the click that captures it does not).
     if cur.grab_mode != CursorGrabMode::None && !was_free {
         c.click |= mouse_buttons.just_pressed(MouseButton::Left);

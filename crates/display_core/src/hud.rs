@@ -428,6 +428,15 @@ impl VitalKind {
     }
 }
 
+/// What each injury takes off the health now, in vitality points (#295): the burn, the oxygen
+/// low, and the headache's part of the maximum (the cap).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Costs {
+    pub burn: f64,
+    pub oxygen: f64,
+    pub headache: f64,
+}
+
 /// What the vitals block reads, the health system's numbers as the HUD takes them.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VitalsIn {
@@ -447,6 +456,8 @@ pub struct VitalsIn {
     pub radiation: f64,
     /// Radiation makes nausea.
     pub sick: bool,
+    /// What each injury costs the health now.
+    pub costs: Costs,
 }
 
 /// One line of the vitals block: a bar filled to `frac` (0..1), or for the burn a text line with
@@ -466,17 +477,15 @@ pub struct VitalLine {
     pub on_fire: bool,
     /// Nausea from radiation (the radiation line only).
     pub sick: bool,
+    /// What each injury costs the health now (every line carries them: the health bar's segments
+    /// and the cost texts read them).
+    pub costs: Costs,
 }
 
 impl VitalLine {
-    /// Calm lines show no label and no value.
+    /// Calm lines are plain text, not green.
     pub fn calm(&self) -> bool {
         self.tone == Tone::Good
-    }
-
-    /// Whether the label line shows: any line that is not calm, and always the health.
-    pub fn labelled(&self) -> bool {
-        !self.calm() || self.kind == VitalKind::Health
     }
 
     /// The status glyph beside the label: ▲ warn, ■ bad, none when calm.
@@ -488,7 +497,7 @@ impl VitalLine {
         }
     }
 
-    /// The label line's text: `▲ HEALTH`, `▲ O2`, `■ RAD · SICK`.
+    /// The label line's text: `▲ HEALTH`, `▲ O2`, `■ RAD · SICK`. Every shown line has one.
     pub fn label(&self) -> String {
         let name = match self.kind {
             VitalKind::Health => "HEALTH".to_string(),
@@ -500,9 +509,26 @@ impl VitalLine {
         format!("{} {name}", self.glyph()).trim_start().to_string()
     }
 
-    /// The value beside the label: the share in percent.
+    /// The text at the label line's right, before the value: what the injury costs the health,
+    /// `−12` (`0` while it costs nothing; nothing for a health without a headache). The radiation
+    /// has no cost: it shows its strength, `8%`.
+    pub fn cost_text(&self) -> String {
+        match self.kind {
+            VitalKind::Burn => cost_points(self.costs.burn),
+            VitalKind::Oxygen => cost_points(self.costs.oxygen),
+            VitalKind::Health if self.costs.headache.round() < 1.0 => String::new(),
+            VitalKind::Health => cost_points(self.costs.headache),
+            VitalKind::Radiation => format!("{}%", (self.frac * 100.0).round() as i64),
+        }
+    }
+
+    /// The value at the far right: the share in percent for the health and the air; nothing for
+    /// the burn and the radiation.
     pub fn value(&self) -> String {
-        format!("{}", (self.frac * 100.0).round() as i64)
+        match self.kind {
+            VitalKind::Health | VitalKind::Oxygen => format!("{}", (self.frac * 100.0).round() as i64),
+            VitalKind::Burn | VitalKind::Radiation => String::new(),
+        }
     }
 
     /// The burn's level 1 to 3 (0 while only building up).
@@ -524,9 +550,32 @@ impl VitalLine {
     }
 }
 
-/// The lines to show now, top to bottom: the burn while it burns or builds up, oxygen only while
-/// it is set (it drops), radiation only above zero (warn above 0, bad above half), health always.
-/// The health's bar ends at its reduced maximum (`cap`).
+/// Vitality points as text: `−12`, and `0` for none.
+fn cost_points(c: f64) -> String {
+    let n = c.round() as i64;
+    if n == 0 { "0".to_string() } else { format!("\u{2212}{n}") }
+}
+
+/// Where the health bar's coloured segments sit, as (from, to) on the bar's 0..1 track. The lost
+/// part (between the fill and the cap) is split by cause from the cap inward: burn first (next to
+/// the cap), then oxygen low. The grey cap itself is `cap..1` (the headache).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HealthSegments {
+    pub burn: (f64, f64),
+    pub oxygen: (f64, f64),
+}
+
+pub fn health_segments(l: &VitalLine) -> HealthSegments {
+    let lost = (l.cap - l.frac).max(0.0);
+    let total = l.costs.burn + l.costs.oxygen;
+    let (bw, ow) = if total > 0.0 { (lost * l.costs.burn / total, lost * l.costs.oxygen / total) } else { (0.0, 0.0) };
+    let burn_from = l.cap - bw;
+    HealthSegments { burn: (burn_from, l.cap), oxygen: (burn_from - ow, burn_from) }
+}
+
+/// The lines to show now, top to bottom: the burn while it burns or builds up, radiation only
+/// above zero (warn above 0, bad above half), oxygen only while it is set (it drops), and health
+/// always. The health's bar ends at its reduced maximum (`cap`).
 pub fn vital_lines(v: &VitalsIn, look: &VitalsLook) -> Vec<VitalLine> {
     let share = |x: f64| if x.is_finite() { x.clamp(0.0, 1.0) } else { 0.0 };
     let tone = |x: f64| {
@@ -538,21 +587,22 @@ pub fn vital_lines(v: &VitalsIn, look: &VitalsLook) -> Vec<VitalLine> {
             Tone::Good
         }
     };
+    let costs = v.costs;
     let mut out = Vec::new();
     if v.burn_level > 0 || v.buildup > 0.0 || v.burning {
         let level = v.burn_level.min(3);
         let bad = level == 3 || v.burning;
-        out.push(VitalLine { kind: VitalKind::Burn, frac: share(v.buildup), tone: if bad { Tone::Bad } else { Tone::Warn }, cap: 1.0, level, on_fire: v.burning, sick: false });
-    }
-    if let Some(o) = v.oxygen {
-        out.push(VitalLine { kind: VitalKind::Oxygen, frac: share(o), tone: tone(share(o)), cap: 1.0, level: 0, on_fire: false, sick: false });
+        out.push(VitalLine { kind: VitalKind::Burn, frac: share(v.buildup), tone: if bad { Tone::Bad } else { Tone::Warn }, cap: 1.0, level, on_fire: v.burning, sick: false, costs });
     }
     let r = share(v.radiation);
     if v.radiation > 0.0 {
-        out.push(VitalLine { kind: VitalKind::Radiation, frac: r, tone: if r > 0.5 { Tone::Bad } else { Tone::Warn }, cap: 1.0, level: 0, on_fire: false, sick: v.sick });
+        out.push(VitalLine { kind: VitalKind::Radiation, frac: r, tone: if r > 0.5 { Tone::Bad } else { Tone::Warn }, cap: 1.0, level: 0, on_fire: false, sick: v.sick, costs });
+    }
+    if let Some(o) = v.oxygen {
+        out.push(VitalLine { kind: VitalKind::Oxygen, frac: share(o), tone: tone(share(o)), cap: 1.0, level: 0, on_fire: false, sick: false, costs });
     }
     let h = share(v.health);
-    out.push(VitalLine { kind: VitalKind::Health, frac: h, tone: tone(h), cap: share(v.max_share), level: 0, on_fire: false, sick: false });
+    out.push(VitalLine { kind: VitalKind::Health, frac: h, tone: tone(h), cap: share(v.max_share), level: 0, on_fire: false, sick: false, costs });
     out
 }
 
@@ -875,23 +925,56 @@ mod tests {
     }
 
     fn vin(health: f64) -> VitalsIn {
-        VitalsIn { health, max_share: 1.0, oxygen: None, burn_level: 0, buildup: 0.0, burning: false, radiation: 0.0, sick: false }
+        VitalsIn { health, max_share: 1.0, oxygen: None, burn_level: 0, buildup: 0.0, burning: false, radiation: 0.0, sick: false, costs: Costs::default() }
     }
 
     #[test]
-    fn health_is_always_there_with_its_label_and_the_others_only_when_they_apply() {
+    fn the_lines_read_top_to_bottom_burn_radiation_oxygen_health() {
         let v = look().vitals;
-        let l = vital_lines(&vin(1.0), &v);
-        assert_eq!(l.len(), 1);
-        assert_eq!(l[0].kind, VitalKind::Health);
-        assert!(l[0].calm() && l[0].glyph().is_empty(), "healthy reads calm, not green");
-        assert!(l[0].labelled(), "the health keeps its label when calm");
-        assert_eq!(l[0].kind.symbol(), VitalSymbol::Heart);
-        let l = vital_lines(&VitalsIn { oxygen: Some(0.6), burn_level: 1, buildup: 0.5, health: 0.9, ..vin(0.9) }, &v);
-        assert_eq!(l.iter().map(|x| x.kind).collect::<Vec<_>>(), [VitalKind::Burn, VitalKind::Oxygen, VitalKind::Health], "top to bottom");
+        let all = VitalsIn { oxygen: Some(0.6), burn_level: 1, buildup: 0.5, radiation: 0.3, health: 0.9, ..vin(0.9) };
+        let l = vital_lines(&all, &v);
+        assert_eq!(l.iter().map(|x| x.kind).collect::<Vec<_>>(), [VitalKind::Burn, VitalKind::Radiation, VitalKind::Oxygen, VitalKind::Health], "top to bottom: burn, then radiation, oxygen, health at the bottom");
         assert_eq!(l[0].tone, Tone::Warn);
-        assert_eq!((l[1].tone, l[2].tone), (Tone::Good, Tone::Good), "60 % and up read calm");
-        assert!(!l[1].labelled(), "a calm oxygen bar shows no label");
+        assert_eq!((l[2].tone, l[3].tone), (Tone::Good, Tone::Good), "60 % and up read calm");
+    }
+
+    #[test]
+    fn every_shown_line_has_its_label_and_symbol_calm_ones_too() {
+        let v = look().vitals;
+        let l = vital_lines(&VitalsIn { oxygen: Some(0.9), burn_level: 1, radiation: 0.1, ..vin(1.0) }, &v);
+        let got: Vec<(String, VitalSymbol)> = l.iter().map(|x| (x.label(), x.kind.symbol())).collect();
+        assert_eq!(got[0], ("▲ BURN I".to_string(), VitalSymbol::Flame));
+        assert_eq!(got[1], ("▲ RAD".to_string(), VitalSymbol::Trefoil));
+        assert_eq!(got[2], ("O2".to_string(), VitalSymbol::Bubble), "a calm oxygen line still has its label");
+        assert_eq!(got[3], ("HEALTH".to_string(), VitalSymbol::Heart));
+    }
+
+    #[test]
+    fn each_injury_shows_what_it_costs_the_health_and_the_radiation_its_strength() {
+        let v = look().vitals;
+        let costs = Costs { burn: 12.4, oxygen: 0.0, headache: 20.0 };
+        let l = vital_lines(&VitalsIn { burn_level: 2, oxygen: Some(0.9), radiation: 0.08, max_share: 0.8, costs, ..vin(0.6) }, &v);
+        assert_eq!(l[0].cost_text(), "\u{2212}12", "the burn costs its points");
+        assert_eq!(l[1].cost_text(), "8%", "radiation has no cost: its strength");
+        assert_eq!(l[2].cost_text(), "0", "oxygen costs nothing yet and says so");
+        assert_eq!(l[3].cost_text(), "\u{2212}20", "the headache's cap, next to the health");
+        assert_eq!(l[3].value(), "60", "the health keeps its percent");
+        let now = vital_lines(&VitalsIn { oxygen: Some(0.2), costs: Costs { oxygen: 66.7, ..Costs::default() }, ..vin(0.5) }, &v);
+        assert_eq!((now[0].cost_text(), now[0].value()), ("\u{2212}67".to_string(), "20".to_string()), "oxygen shows its cost once it costs");
+        assert_eq!(vital_lines(&vin(1.0), &v)[0].cost_text(), "", "no headache, no cap text");
+    }
+
+    #[test]
+    fn the_health_bar_splits_its_lost_part_by_cause_from_the_cap_inward() {
+        let v = look().vitals;
+        let l = vital_lines(&VitalsIn { max_share: 0.8, costs: Costs { burn: 10.0, oxygen: 30.0, headache: 20.0 }, ..vin(0.6) }, &v);
+        let seg = health_segments(&l[l.len() - 1]);
+        // The lost part is 0.8 - 0.6 = 0.2 of the bar: burn a quarter of it, next to the cap, and
+        // oxygen the rest.
+        assert!((seg.burn.0 - 0.75).abs() < 1e-9 && (seg.burn.1 - 0.8).abs() < 1e-9, "burn {:?}", seg.burn);
+        assert!((seg.oxygen.0 - 0.6).abs() < 1e-9 && (seg.oxygen.1 - 0.75).abs() < 1e-9, "oxygen {:?}", seg.oxygen);
+        let none = health_segments(&vital_lines(&vin(0.6), &v)[0]);
+        assert_eq!(none.burn, none.oxygen, "no cause, no segment");
     }
 
     #[test]
@@ -927,7 +1010,7 @@ mod tests {
         let l = vital_lines(&VitalsIn { radiation: 0.3, ..vin(0.8) }, &v);
         assert_eq!((l[0].kind, l[0].label(), l[0].tone), (VitalKind::Radiation, "▲ RAD".to_string(), Tone::Warn));
         let l = vital_lines(&VitalsIn { radiation: 0.6, sick: true, ..vin(0.8) }, &v);
-        assert_eq!((l[0].tone, l[0].value(), l[0].label()), (Tone::Bad, "60".to_string(), "■ RAD · SICK".to_string()));
+        assert_eq!((l[0].tone, l[0].cost_text(), l[0].label()), (Tone::Bad, "60%".to_string(), "■ RAD · SICK".to_string()));
         assert_eq!(l[0].kind.symbol(), VitalSymbol::Trefoil);
     }
 

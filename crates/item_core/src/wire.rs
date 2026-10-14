@@ -89,12 +89,17 @@ pub struct Vitals {
     pub sprint: bool,
     /// Seconds until the respawn while the player is down; None while standing.
     pub down: Option<f64>,
+    /// What each injury costs the health now, in vitality points: the burn, the oxygen low and
+    /// the headache's part of the maximum (#295).
+    pub burn_cost: f64,
+    pub oxygen_cost: f64,
+    pub headache_cost: f64,
 }
 
 impl Vitals {
     /// Calm and healthy: nothing to show but the health, walking at full speed.
     pub fn healthy() -> Vitals {
-        Vitals { health: 1.0, max_share: 1.0, oxygen: None, burn_level: 0, buildup: 0.0, burning: false, radiation: 0.0, sick: false, walk: 1.0, sprint: true, down: None }
+        Vitals { health: 1.0, max_share: 1.0, oxygen: None, burn_level: 0, buildup: 0.0, burning: false, radiation: 0.0, sick: false, walk: 1.0, sprint: true, down: None, burn_cost: 0.0, oxygen_cost: 0.0, headache_cost: 0.0 }
     }
 }
 
@@ -138,7 +143,7 @@ mod tests {
 
     #[test]
     fn vitals_travel_as_they_are() {
-        let v = Vitals { burn_level: 2, buildup: 0.4, burning: true, sick: true, walk: 0.7, sprint: false, max_share: 0.8, ..Vitals::healthy() };
+        let v = Vitals { burn_level: 2, buildup: 0.4, burning: true, sick: true, walk: 0.7, sprint: false, max_share: 0.8, burn_cost: 12.5, oxygen_cost: 3.0, headache_cost: 20.0, ..Vitals::healthy() };
         let back: Vitals = decode(&encode(&ToClient::Vitals(v)).as_slice()).map(|m: ToClient| match m {
             ToClient::Vitals(v) => v,
             _ => panic!("the vitals message"),

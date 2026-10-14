@@ -1,17 +1,18 @@
 //! #295, health: at the dev area's table a bandage is collected; the walker stands on the hot plate
 //! and catches a light burn per tick, then the buildup fills and the walker is on fire (the burn
-//! rises in steps, once per tick); off the plate, LMB uses the bandage on oneself (the burn drops,
-//! one less in the stack); the walker stands in the no-air booth until the HUD shows the air, then
+//! rises in steps, once per tick); off the plate, the bandage takes 1.5 s with LMB held on oneself
+//! (let go after 0.5 s, nothing is used; held 1.5 s, the burn drops and one less is in the stack);
+//! the walker stands in the no-air booth until the HUD shows the air, with its O2 line labelled, then
 //! in the glowing barrel's zone, where nausea shows and the walk slows, until dead; five seconds
 //! later the walker is back on the pad with full health. Without a window. Run with
 //! `--start=dev_area`.
 use super::items::{collect, items, outside, tap_then};
 use super::*;
 use crate::controls::Controls;
-use crate::crew_hud::Vitals;
+use crate::crew_hud::{CrewHud, Vitals};
 use crate::dev_area::hazards::{GLOW_BARREL, HOT_PLATE, NO_AIR};
 use crate::dev_area::{area_of, DevArea, ENGINEERING, PAD_MAIN};
-use crate::health::{HealthState, OwnMobility, OwnVitals};
+use crate::health::{HealthState, OwnMobility, OwnVitals, UseHold};
 use crate::items::{Items, LOCAL};
 use health_core::Life;
 
@@ -30,6 +31,15 @@ fn dead(w: &World) -> bool {
 }
 fn down(w: &World) -> Option<f64> {
     w.resource::<OwnVitals>().last.and_then(|v| v.down)
+}
+
+/// LMB down (a press starts a use) or up, as a player's hand does it with the mouse captured.
+fn lmb(w: &mut World, down: bool) {
+    let mut c = w.resource_mut::<Controls>();
+    c.primary_held = down;
+    if down {
+        c.click = true;
+    }
 }
 
 /// A point on the ground at area metres.
@@ -92,23 +102,54 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // Off the plate, the bandage on oneself (LMB): the burn drops, one less in the stack.
+    // Off the plate, the bandage on oneself: LMB held for 1.5 s. Let go after 0.5 s: nothing is
+    // used. Pressed again and held: the ring is filling at 1.0 s, and the bandage is used at 1.5 s.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
-            begin(w, c, "health: off the plate, LMB uses the bandage");
+            begin(w, c, "health: off the plate, LMB held on the bandage");
             let p = ground_at(w, [ENGINEERING.centre[0] - 3.0, 1.6]);
             place_walker(w, p);
-            c.v.insert("burn0", burn(w));
             c.v.insert("n0", items(w).client.confirmed.count("bandage") as f64);
-            w.resource_mut::<Controls>().click = true;
+            lmb(w, true);
             return false;
         }
-        if c.t < 0.5 {
+        let n0 = c.v["n0"] as u32;
+        // Let go at 0.5 s; the next step (a frame later) checks nothing was used, then presses again.
+        if !c.v.contains_key("let_go") {
+            if c.t < 0.5 {
+                return false;
+            }
+            lmb(w, false);
+            c.v.insert("let_go", c.t);
             return false;
         }
-        let (burn1, n1) = (burn(w), items(w).client.confirmed.count("bandage"));
-        let (b0, n0) = (c.v["burn0"], c.v["n0"] as u32);
-        check(c, n1 + 1 == n0 && burn1 < b0 - 5.0, format!("health: LMB on oneself: burn {b0:.1} to {burn1:.1}, bandages {n0} to {n1}"));
+        if !c.v.contains_key("again") {
+            if c.t - c.v["let_go"] < 0.2 {
+                return false;
+            }
+            let (n, hold) = (items(w).client.confirmed.count("bandage"), w.resource::<UseHold>().0.is_some());
+            check(c, n == n0 && !hold, format!("health: LMB let go after 0.5 s: nothing used (bandages {n0} to {n}), no hold left: {}", !hold));
+            c.v.insert("again", c.t);
+            lmb(w, true);
+            return false;
+        }
+        let since = c.t - c.v["again"];
+        if !c.v.contains_key("ring") {
+            if since < 1.0 {
+                return false;
+            }
+            let (n, p) = (items(w).client.confirmed.count("bandage"), w.resource::<UseHold>().progress());
+            check(c, n == n0 && p.is_some_and(|p| p > 0.5 && p < 1.0), format!("health: LMB held 1.0 s: the ring reads {p:?}, not used yet"));
+            c.v.insert("ring", 1.0);
+            return false;
+        }
+        if since < 1.7 {
+            return false;
+        }
+        lmb(w, false);
+        let n1 = items(w).client.confirmed.count("bandage");
+        check(c, n1 + 1 == n0, format!("health: LMB held 1.5 s: the bandage is used (bandages {n0} to {n1})"));
+        check(c, w.resource::<UseHold>().0.is_none(), "health: the hold is over after the use".into());
         end(w, c, "used".into());
         true
     }));
@@ -126,6 +167,11 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
         }
         let o2 = w.resource::<Vitals>().oxygen;
         check(c, o2.is_some_and(|o| o < 1.0), format!("health: the booth's air shows on the HUD ({o2:?})"));
+        // The HUD's lines, top to bottom: burn, radiation, oxygen, health; the O2 line has its label.
+        let lines = w.resource::<CrewHud>().vitals.clone();
+        let kinds: Vec<_> = lines.iter().map(|l| l.kind).collect();
+        let o2_label = lines.iter().find(|l| l.kind == display_core::hud::VitalKind::Oxygen).map(|l| l.label());
+        check(c, kinds.last() == Some(&display_core::hud::VitalKind::Health) && kinds.contains(&display_core::hud::VitalKind::Oxygen) && o2_label.as_deref().is_some_and(|l| l.ends_with("O2")), format!("health: the HUD lines {kinds:?}, the O2 line reads {o2_label:?}"));
         end(w, c, format!("{o2:?}"));
         true
     }));

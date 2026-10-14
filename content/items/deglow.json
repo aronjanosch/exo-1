@@ -7,6 +7,7 @@
   "hands": 1,
   "stack": 4,
   "use": "deglow",
+  "use_s": 1.5,
   "tags": ["small", "medical"],
   "shape": { "extents": [0.1, 0.1, 0.1], "mass": 0.1, "colour": [0.45, 0.9, 0.5] }
 }

@@ -12,6 +12,7 @@ use crate::controls::{Bindings, Controls, Tap};
 use crate::displays::DisplayLook;
 use crate::env::PlanetRes;
 use crate::gameplay::Gameplay;
+use crate::health::UseHold;
 use crate::grab::Grab;
 use crate::interact::{key_cap, Interaction};
 use crate::items::{HudWindow, InventoryUi, Items};
@@ -24,8 +25,9 @@ use bevy::math::{DVec2, DVec3};
 use bevy::prelude::*;
 use display_core::hud::{
     compass_ticks, credits_number, delta_text, heading_deg, heading_text, hints, north_at, prompt_anchor, reference, vital_lines, BarIdle, CreditsFlash, CreditsView, Hint, HintAction, HudLook,
-    PromptKind, Reference, TickLen, VitalKind, VitalLine, VitalSymbol, VitalsIn,
+    health_segments, PromptKind, Reference, TickLen, VitalKind, VitalLine, VitalSymbol, VitalsIn,
 };
+use display_core::hud::Costs;
 use display_core::{Rgb, Tone};
 
 /// Health, oxygen, burn and radiation of the local player. The health system (`health`) writes
@@ -49,11 +51,16 @@ pub struct Vitals {
     pub radiation: f64,
     /// Radiation makes nausea (the RAD label says SICK).
     pub sick: bool,
+    /// What each injury costs the health now, in vitality points (#295): the burn, the oxygen low,
+    /// and the headache's part of the maximum.
+    pub burn_cost: f64,
+    pub oxygen_cost: f64,
+    pub headache_cost: f64,
 }
 
 impl Default for Vitals {
     fn default() -> Self {
-        Vitals { health: 1.0, max_share: 1.0, oxygen: None, burn_level: 0, buildup: 0.0, burning: false, radiation: 0.0, sick: false }
+        Vitals { health: 1.0, max_share: 1.0, oxygen: None, burn_level: 0, buildup: 0.0, burning: false, radiation: 0.0, sick: false, burn_cost: 0.0, oxygen_cost: 0.0, headache_cost: 0.0 }
     }
 }
 
@@ -122,6 +129,7 @@ fn update_vitals(vitals: Res<Vitals>, look: Res<DisplayLook>, mut hud: ResMut<Cr
         burning: vitals.burning,
         radiation: vitals.radiation,
         sick: vitals.sick,
+        costs: Costs { burn: vitals.burn_cost, oxygen: vitals.oxygen_cost, headache: vitals.headache_cost },
     };
     let lines = vital_lines(&input, &look.0.hud.vitals);
     if hud.vitals != lines {
@@ -187,6 +195,15 @@ pub(crate) fn col_a(c: Rgb, a: f64) -> Color {
 /// The dark outline and shadow colour.
 pub(crate) fn dark(a: f64) -> Color {
     Color::srgba(0.0, 0.0, 0.0, a.clamp(0.0, 1.0) as f32)
+}
+
+/// The label's colour: the tone's colour, the title colour for the calm lines.
+fn label_colour(theme: &display_core::Theme, l: &VitalLine) -> Rgb {
+    if l.calm() {
+        theme.colours.fg_title
+    } else {
+        tone_colour(theme, l.tone)
+    }
 }
 
 /// The colour of a vital's tone: calm is the plain text colour (not green), warn and bad the tokens.
@@ -412,17 +429,28 @@ enum CompassPart {
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 enum VitalPart {
     Row(VitalKind),
-    /// The label line above a bar (hidden while the bar is calm; the health's always shows).
+    /// The label line above a bar (with its symbol, name and cost, shown with the bar).
     Head(VitalKind),
     Glyph(VitalKind),
     Name(VitalKind),
+    /// What the injury costs the health (or the radiation's strength), at the label line's right.
+    Cost(VitalKind),
     Value(VitalKind),
     Track(VitalKind),
     Fill(VitalKind),
+    /// The health bar's coloured part of the lost health, per cause (#295).
+    Segment(VitalKind, Cause),
     /// The health bar's dimmed end: above the reduced maximum (a headache).
     Cap(VitalKind),
     /// The burn's circle that fills with the buildup.
     Ring,
+}
+
+/// What took the health (the bar's segments).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Cause {
+    Burn,
+    Oxygen,
 }
 
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
@@ -452,6 +480,9 @@ enum ReticlePart {
     Dot,
     Ring,
     RingInner,
+    /// The hold's progress ring (#295): a pie that fills, with a dark disc inside.
+    Hold,
+    HoldInner,
 }
 
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
@@ -555,7 +586,7 @@ fn spawn_hud(commands: &mut Commands, theme: &display_core::Theme, fonts: &HudFo
                 BackgroundGradient::default(),
             ));
         });
-        for kind in [VitalKind::Oxygen, VitalKind::Radiation, VitalKind::Health] {
+        for kind in [VitalKind::Radiation, VitalKind::Oxygen, VitalKind::Health] {
             root.spawn((VitalPart::Row(kind), Node { flex_direction: FlexDirection::Column, row_gap: px(v.label_gap as f32), display: Display::None, ..default() })).with_children(|row| {
                 row.spawn((VitalPart::Head(kind), Node { justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Baseline, display: Display::None, ..default() })).with_children(|head| {
                     head.spawn(Node { column_gap: px(6), align_items: AlignItems::Center, ..default() }).with_children(|label| {
@@ -563,7 +594,10 @@ fn spawn_hud(commands: &mut Commands, theme: &display_core::Theme, fonts: &HudFo
                         label.spawn((VitalPart::Glyph(kind), hud_text(&fonts.semibold, "", v.label_size, col(k.warn), h)));
                         label.spawn((VitalPart::Name(kind), hud_caps(&fonts.semibold, "", v.label_size, col(k.fg_title), h, 0.1)));
                     });
-                    head.spawn((VitalPart::Value(kind), hud_text(&fonts.mono, "", v.value_size, col(k.fg_1), h)));
+                    head.spawn(Node { column_gap: px(8), align_items: AlignItems::Baseline, ..default() }).with_children(|right| {
+                        right.spawn((VitalPart::Cost(kind), hud_text(&fonts.mono, "", v.value_size, col(k.fg_1), h)));
+                        right.spawn((VitalPart::Value(kind), hud_text(&fonts.mono, "", v.value_size, col(k.fg_1), h)));
+                    });
                 });
                 row.spawn((
                     VitalPart::Track(kind),
@@ -574,6 +608,9 @@ fn spawn_hud(commands: &mut Commands, theme: &display_core::Theme, fonts: &HudFo
                 ))
                 .with_children(|track| {
                     track.spawn((VitalPart::Fill(kind), Node { width: percent(100.0), height: percent(100.0), ..default() }, BackgroundColor(col(k.fg_1))));
+                    for cause in [Cause::Burn, Cause::Oxygen] {
+                        track.spawn((VitalPart::Segment(kind, cause), Node { display: Display::None, height: percent(100.0), ..abs() }, BackgroundColor(col(if cause == Cause::Burn { k.warn } else { k.accent }))));
+                    }
                     track.spawn((VitalPart::Cap(kind), Node { display: Display::None, height: percent(100.0), ..abs() }, BackgroundColor(col_a(k.fg_1, 0.3))));
                 });
             });
@@ -632,6 +669,15 @@ fn spawn_hud(commands: &mut Commands, theme: &display_core::Theme, fonts: &HudFo
     let (ring, dot) = (r.ring_px as f32, r.dot_px as f32);
     commands.spawn((HudPart, ReticlePart::Root, Node { left: px(0), top: px(0), width: percent(100.0), height: percent(100.0), justify_content: JustifyContent::Center, align_items: AlignItems::Center, ..abs() })).with_children(|root| {
         root.spawn((ReticlePart::Dot, Node { width: px(dot), height: px(dot), border_radius: BorderRadius::MAX, ..default() }, BackgroundColor(col(k.fg_title)), Outline::new(px(r.outline_px as f32), px(0), dark(r.outline_alpha))));
+        root.spawn((
+            ReticlePart::Hold,
+            Node { width: px(ring), height: px(ring), border_radius: BorderRadius::MAX, display: Display::None, ..abs() },
+            BackgroundGradient::default(),
+        ))
+        .with_children(|hold| {
+            let inset = r.ring_stroke_px as f32;
+            hold.spawn((ReticlePart::HoldInner, Node { position_type: PositionType::Absolute, left: px(inset), top: px(inset), width: px(ring - 2.0 * inset), height: px(ring - 2.0 * inset), border_radius: BorderRadius::MAX, ..default() }, BackgroundColor(dark(0.45))));
+        });
         root.spawn((
             ReticlePart::Ring,
             Node { width: px(ring), height: px(ring), border: UiRect::all(px(r.ring_stroke_px as f32)), border_radius: BorderRadius::MAX, display: Display::None, ..abs() },
@@ -789,12 +835,24 @@ fn update_vitals_ui(
     for (part, mut n) in &mut nodes {
         match *part {
             VitalPart::Row(k) => set_display(&mut n, if line(k).is_some() { Display::Flex } else { Display::None }),
-            VitalPart::Head(k) => set_display(&mut n, if line(k).is_some_and(|l| l.labelled()) { Display::Flex } else { Display::None }),
+            VitalPart::Head(k) => set_display(&mut n, if line(k).is_some() { Display::Flex } else { Display::None }),
             VitalPart::Fill(k) => {
                 if let Some(l) = line(k) {
                     edit(&mut n, |n| n.width = percent(l.frac as f32 * 100.0));
                 }
             }
+            // The health bar's causes: from the cap inward, burn then oxygen (`health_segments`).
+            VitalPart::Segment(VitalKind::Health, cause) => match line(VitalKind::Health).map(health_segments) {
+                Some(seg) => {
+                    let (from, to) = if cause == Cause::Burn { seg.burn } else { seg.oxygen };
+                    edit(&mut n, |n| {
+                        n.display = if to > from { Display::Flex } else { Display::None };
+                        n.left = percent(from as f32 * 100.0);
+                        n.width = percent(((to - from) as f32 * 100.0).max(0.0));
+                    });
+                }
+                None => set_display(&mut n, Display::None),
+            },
             VitalPart::Cap(k) => match line(k) {
                 // The part above the reduced maximum: from the cap to the end of the bar.
                 Some(l) if l.cap < 1.0 => edit(&mut n, |n| {
@@ -847,17 +905,19 @@ fn update_vitals_ui(
             }
             VitalPart::Name(k) => {
                 if let Some(l) = line(k) {
-                    set_text(&mut t, match k {
-                        VitalKind::Oxygen => "O2",
-                        VitalKind::Radiation if l.sick => "RAD · SICK",
-                        VitalKind::Radiation => "RAD",
-                        _ => "HEALTH",
-                    });
+                    set_text(&mut t, &l.label());
+                    set_text_colour(&mut tc, col(label_colour(theme, l)));
                 }
             }
             VitalPart::Value(k) => {
                 if let Some(l) = line(k) {
                     set_text(&mut t, &l.value());
+                    set_text_colour(&mut tc, col(tone_colour(theme, l.tone)));
+                }
+            }
+            VitalPart::Cost(k) => {
+                if let Some(l) = line(k) {
+                    set_text(&mut t, &l.cost_text());
                     set_text_colour(&mut tc, col(tone_colour(theme, l.tone)));
                 }
             }
@@ -1012,17 +1072,27 @@ fn update_hints_ui(
 fn update_reticle(
     inter: Res<Interaction>,
     controls: Res<Controls>,
+    hold: Res<UseHold>,
+    look: Res<DisplayLook>,
     players: Query<&Player>,
     mut nodes: Query<(&ReticlePart, &mut Node)>,
+    mut grads: Query<(&ReticlePart, &mut BackgroundGradient)>,
 ) {
     let seated = players.single().is_ok_and(|p| p.seated);
     let usable = inter.target.is_some() && inter.kind != PromptKind::Blocked;
+    let progress = hold.progress().filter(|p| *p > 0.0);
     for (part, mut n) in &mut nodes {
         match *part {
             ReticlePart::Root => set_display(&mut n, if seated || controls.free_cursor { Display::None } else { Display::Flex }),
-            ReticlePart::Dot => set_display(&mut n, if usable { Display::None } else { Display::Flex }),
-            ReticlePart::Ring => set_display(&mut n, if usable { Display::Flex } else { Display::None }),
-            ReticlePart::RingInner => {}
+            ReticlePart::Dot => set_display(&mut n, if usable || progress.is_some() { Display::None } else { Display::Flex }),
+            ReticlePart::Ring => set_display(&mut n, if usable && progress.is_none() { Display::Flex } else { Display::None }),
+            ReticlePart::Hold => set_display(&mut n, if progress.is_some() { Display::Flex } else { Display::None }),
+            ReticlePart::RingInner | ReticlePart::HoldInner => {}
+        }
+    }
+    for (part, mut g) in &mut grads {
+        if let (ReticlePart::Hold, Some(p)) = (*part, progress) {
+            *g = ring_fill(col(look.0.colours.fg_title), p);
         }
     }
 }

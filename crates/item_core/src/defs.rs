@@ -51,6 +51,9 @@ pub struct ItemDef {
     /// What using it does, an effect id. Inert until items are used (after C1).
     #[serde(rename = "use", default)]
     pub use_effect: Option<String>,
+    /// Seconds the use takes while LMB is held (#295); None: the use is instant.
+    #[serde(default)]
+    pub use_s: Option<f64>,
     /// Labels for slot rules (`small`, `tool`, `medical`).
     #[serde(default)]
     pub tags: Vec<String>,

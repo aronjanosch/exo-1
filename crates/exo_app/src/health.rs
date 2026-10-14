@@ -6,7 +6,9 @@
 //!   the body with the air at its place, and counts down a dead player's respawn.
 //! - A use (LMB with a bandage or deglow in hand) is a request like any item request
 //!   (`Request::Use`): the client aims at another player within 2 m (or itself), the host takes
-//!   one from the stack and applies the treatment (`apply_uses`).
+//!   one from the stack and applies the treatment (`apply_uses`). A treatment with `use_s` takes
+//!   that long with LMB held (`UseHold`, the reticle's ring); letting go, switching slot or the
+//!   aim moving to another target cancels it.
 //! - The host sends each client its own vitals when they change noticeably (`vitals_out`, over
 //!   the reliable channel). Every process writes its own vitals into the HUD's `crew_hud::Vitals`
 //!   (`own_sync`); while down, the controls are frozen and a centred line counts the respawn.
@@ -40,7 +42,7 @@ const CAPSULE_RADIUS: f64 = 0.4;
 pub fn plugin(app: &mut App) {
     let files = crate::content_files("gameplay");
     let tuning = HealthTuning::load(&files).unwrap_or_else(|e| panic!("health: {e:?}"));
-    app.insert_resource(HealthState::new(tuning)).init_resource::<OwnVitals>().insert_resource(OwnMobility(Mobility { walk: 1.0, sprint: true }));
+    app.insert_resource(HealthState::new(tuning)).init_resource::<OwnVitals>().init_resource::<UseHold>().insert_resource(OwnMobility(Mobility { walk: 1.0, sprint: true }));
     // The use takes the click before the displays do (they take every click), once the script's
     // input is in.
     app.add_systems(FixedUpdate, use_input.after(crate::scenario::run_script).before(crate::displays::use_display));
@@ -88,6 +90,26 @@ pub struct OwnVitals {
     pub last: Option<Vitals>,
 }
 
+/// A use in progress: LMB held on a treatment that takes time (`use_s`), for the reticle's ring.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hold {
+    pub slot: usize,
+    pub target: PlayerId,
+    pub elapsed: f64,
+    pub need: f64,
+}
+
+/// The local use in progress, if any (#295).
+#[derive(Resource, Default, Clone, Copy, Debug)]
+pub struct UseHold(pub Option<Hold>);
+
+impl UseHold {
+    /// How far the hold has got, 0..1; None when nothing is held.
+    pub fn progress(&self) -> Option<f64> {
+        self.0.map(|h| (h.elapsed / h.need).clamp(0.0, 1.0))
+    }
+}
+
 /// How the local player walks now (the nausea's share, sprint or not): the walker reads it. The
 /// host's own body, or what the host sent a client.
 #[derive(Resource, Clone, Copy, Debug)]
@@ -112,6 +134,9 @@ pub fn vitals_of(t: &HealthTuning, b: &Body) -> Vitals {
         walk: m.walk,
         sprint: m.sprint,
         down: b.respawn_in,
+        burn_cost: h.cost(t, "burn"),
+        oxygen_cost: h.cost(t, "oxygen_low"),
+        headache_cost: h.cost(t, "headache"),
     }
 }
 
@@ -135,6 +160,9 @@ pub fn noticeably(a: &Vitals, b: &Vitals) -> bool {
         || (a.walk - b.walk).abs() > 1e-9
         || a.sprint != b.sprint
         || moved(a.down.map(f64::floor), b.down.map(f64::floor), 0.0)
+        || (a.burn_cost - b.burn_cost).abs() > 0.5
+        || (a.oxygen_cost - b.oxygen_cost).abs() > 0.5
+        || (a.headache_cost - b.headache_cost).abs() > 0.5
 }
 
 /// A player's place in the area (metres), if on foot on the planet and the dev area is there.
@@ -241,30 +269,63 @@ fn aim_target(eye: DVec3, dir: DVec3, planet: &PlanetRes, remotes: &Query<(&Remo
 }
 
 /// Client and host: LMB with a treatment in the hand asks for its use on the player aimed at, or
-/// on oneself.
+/// on oneself. A treatment with `use_s` needs LMB held that long; letting go, switching slot or
+/// the aim moving to another target cancels it.
 #[allow(clippy::too_many_arguments)]
-fn use_input(time: Res<Time>, planet: Res<PlanetRes>, mut controls: ResMut<Controls>, mut items: ResMut<Items>, st: Res<HealthState>, active: Res<crate::displays::ActiveDisplay>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>) {
-    if !controls.click || controls.free_cursor || active.using().is_some() {
+fn use_input(time: Res<Time>, planet: Res<PlanetRes>, mut controls: ResMut<Controls>, mut items: ResMut<Items>, st: Res<HealthState>, active: Res<crate::displays::ActiveDisplay>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, mut hold: ResMut<UseHold>) {
+    let Ok(pl) = players.single() else {
+        hold.0 = None;
         return;
-    }
-    let Ok(pl) = players.single() else { return };
-    if pl.seated || pl.fly {
+    };
+    if controls.free_cursor || active.using().is_some() || pl.seated || pl.fly {
+        hold.0 = None;
         return;
     }
     let slot = items.client.view.selected;
-    let Some(stack) = items.client.view.slot(slot).cloned() else { return };
-    let Some(effect) = items.defs.of(&stack).and_then(|d| d.use_effect.clone()) else { return };
-    if st.tuning.treatment(&effect).is_none() {
+    let use_s = items.client.view.slot(slot).cloned().and_then(|stack| {
+        let d = items.defs.of(&stack)?;
+        let effect = d.use_effect.clone()?;
+        st.tuning.treatment(&effect)?;
+        Some(d.use_s)
+    });
+    let Some(use_s) = use_s else {
+        hold.0 = None;
         return;
-    }
-    controls.click = false;
+    };
     let target = if pl.ship.is_none() {
         let eye = pl.w.pos + pl.up * EYE_HEIGHT;
         aim_target(eye, pl.world_look(Frame::IDENTITY), &planet, &remotes).unwrap_or(LOCAL)
     } else {
         LOCAL
     };
-    let _ = items.request(time.elapsed_secs_f64(), Request::Use { slot, target });
+    let now = time.elapsed_secs_f64();
+    match hold.0 {
+        None => {
+            if !controls.click {
+                return;
+            }
+            controls.click = false;
+            match use_s {
+                Some(need) if need > 0.0 => hold.0 = Some(Hold { slot, target, elapsed: 0.0, need }),
+                _ => {
+                    let _ = items.request(now, Request::Use { slot, target });
+                }
+            }
+        }
+        Some(h) => {
+            if !controls.primary_held || h.slot != slot || h.target != target {
+                hold.0 = None;
+                return;
+            }
+            let elapsed = h.elapsed + time.delta_secs_f64();
+            if elapsed >= h.need {
+                hold.0 = None;
+                let _ = items.request(now, Request::Use { slot: h.slot, target: h.target });
+            } else {
+                hold.0 = Some(Hold { elapsed, ..h });
+            }
+        }
+    }
 }
 
 /// Every process: its own vitals into the HUD; frozen controls and a walk to the pad when down or
@@ -288,7 +349,19 @@ fn own_sync(items: Res<Items>, st: Res<HealthState>, planet: Res<PlanetRes>, are
     mobility.0 = Mobility { walk: v.walk, sprint: v.sprint };
     // The HUD is written when the vitals change, so a scenario's own readings stay until then.
     if prev != Some(v) {
-        *hud = crate::crew_hud::Vitals { health: v.health, max_share: v.max_share, oxygen: v.oxygen, burn_level: v.burn_level, buildup: v.buildup, burning: v.burning, radiation: v.radiation, sick: v.sick };
+        *hud = crate::crew_hud::Vitals {
+            health: v.health,
+            max_share: v.max_share,
+            oxygen: v.oxygen,
+            burn_level: v.burn_level,
+            buildup: v.buildup,
+            burning: v.burning,
+            radiation: v.radiation,
+            sick: v.sick,
+            burn_cost: v.burn_cost,
+            oxygen_cost: v.oxygen_cost,
+            headache_cost: v.headache_cost,
+        };
     }
     own.last = Some(v);
     if v.down.is_some() {

@@ -53,6 +53,19 @@ fn target_of(w: &mut World, look: &Look) -> DVec3 {
     }
 }
 
+/// The walker's horizontal distance (m) to a point, and whether it looks at the point (its heading
+/// within 25 degrees of the point's bearing).
+fn look_at(w: &mut World, target: DVec3) -> (f64, bool) {
+    with_player(w, |p| {
+        let up = p.world_up(WalkFrame::IDENTITY);
+        let feet = p.world_pos(WalkFrame::IDENTITY);
+        let d = target - feet;
+        let h = d - up * d.dot(up);
+        let looks = h.length() > 1e-9 && h.normalize().dot(p.w.forward) > 25f64.to_radians().cos();
+        (h.length(), looks)
+    })
+}
+
 /// Turns the walker on foot to a point: level heading, then the pitch (the screens low on a
 /// machine are seen from above). World frame, as the repair scenario does it.
 fn aim(w: &mut World, target: DVec3) {
@@ -473,11 +486,15 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
             check(c, sprays(w) > 0, "slice e: a spray is on the fire (the steam comes where it lands)".into());
         }
         snap_once(c, w, &spray_dir, windowed, "slice_e_spray_steam");
-        if c.t < 1.6 {
+        // The spray holds until the fire is out (25 s at most): the room's fire must not burn the
+        // walker in the next steps (the junction box's stand is 3 m from the reactor).
+        let out = fires(w).is_empty();
+        if !out && c.t < 25.0 {
             return false;
         }
+        check(c, out, format!("slice e: the spray puts the reactor's fire out ({} fires)", fires(w).len()));
         w.resource_mut::<Controls>().primary_held = false;
-        end(w, c, "sprayed 1.6 s".into());
+        end(w, c, format!("sprayed {:.1} s", c.t));
         true
     }));
 
@@ -586,7 +603,9 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
             let mut items = w.resource_mut::<Items>();
             items.ask_reactor(ReactorAsk::SetBreaker(BreakerGroup::Engines, false));
             items.ask_reactor(ReactorAsk::SetBreaker(BreakerGroup::Lights, false));
-            let at = ground(w, [JUNCTION_BOX_AT[0], JUNCTION_BOX_AT[1] + 1.2], 0.0);
+            // The stand 2 m north of the box, in the room, as the screen shots stand (the walker is
+            // placed on the first tick and turned at the box every tick).
+            let at = ground(w, [JUNCTION_BOX_AT[0], JUNCTION_BOX_AT[1] + 2.0], 0.0);
             place_walker(w, at);
             return false;
         }
@@ -603,6 +622,16 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
         }
         if first(c, "overvolt_checked") {
             check(c, overvolt(w), format!("slice h: the junction box is overvolted ({})", overvolt(w)));
+        }
+        // The picture needs the box in view from about 2 m, and the walker out of the fire (a burning
+        // walker waits, up to 25 s, for the burn to end).
+        if w.resource::<Vitals>().burning && c.t < 25.0 {
+            return false;
+        }
+        if first(c, "sparks_view_checked") {
+            let (dist, looks) = look_at(w, target);
+            check(c, dist < 3.0 && looks, format!("slice h: the junction box is in view from {dist:.1} m (looking at it: {looks})"));
+            check(c, !w.resource::<Vitals>().burning, "slice h: the walker is out of the fire for the sparks".into());
         }
         if c.t < 1.0 {
             return false;

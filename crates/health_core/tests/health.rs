@@ -371,3 +371,19 @@ fn the_low_air_case_costs_73_of_oxygen_and_the_burn_takes_the_rest_so_health_rea
     let air_left = 1.0 - h.strength("oxygen_low") / 200.0;
     assert!((air_left - 0.476).abs() < 0.001, "air left {air_left}");
 }
+
+#[test]
+fn unconscious_at_zero_and_awake_again_above() {
+    let t = shipped();
+    let mut h = Health::new(&t, 1);
+    // Burn 110 is 110 points of the maximum: vitality -10, unconscious but not dead.
+    h.add(&t, "burn", 110.0);
+    let seen = run(&mut h, &t, 0.1, air(1.0));
+    assert_eq!(seen, vec![HealthEvent::Unconscious], "unconscious once, not dead: {seen:?}");
+    assert_eq!(h.state(), Life::Unconscious);
+    assert!(h.vitality() < 0.0 && h.vitality() > -100.0, "below zero, above the dead line: {}", h.vitality());
+    // A bandage at full skill takes 18.75 of burn: vitality is above zero again, awake.
+    h.treat(&t, "bandage", 100.0).expect("a bandage");
+    assert_eq!(h.state(), Life::Conscious, "awake above zero: vitality {}", h.vitality());
+    assert!(h.vitality() > 0.0);
+}

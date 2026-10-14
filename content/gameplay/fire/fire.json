@@ -1,0 +1,25 @@
+{
+  "_comment": "Fire (#298). Every number is a starting value, TODO(initiator). fire: the fire_core values (metres, m3 of air, seconds; see fire_core::FireTuning). alarm_danger_size: a fire this big (m) in the engine room or the corridor sets the ship's alarm to Danger, under it Warn. start_size: the dev button's fire (m).",
+  "fire": {
+    "growth": 0.2,
+    "grow_full": 0.2,
+    "stall": 0.1,
+    "oxygen_use": 0.5,
+    "max_size": 5.0,
+    "out_below": 0.01,
+    "spread_size": 0.1,
+    "spread_interval_s": 5.0,
+    "spread_chance": 0.15,
+    "range": 1.0,
+    "max_range": 2.5,
+    "burn_person": 10.0,
+    "burn_cap_size": 5.0,
+    "burn_device": 2.0,
+    "extinguish": 0.6,
+    "spray_radius": 1.0,
+    "air_flow": 2.0,
+    "leak_flow": 4.0
+  },
+  "alarm_danger_size": 1.0,
+  "start_size": 0.5
+}

@@ -110,7 +110,7 @@ fn burns_people_and_devices_in_range() {
     println!("one 60th of a second at size 1: near {:.4}, far {:.4}, device {:.4}, next room {:.4}", dmg(1), dmg(2), dmg(3), dmg(4));
     assert!((dmg(1) - 10.0 * (1.0f64 + 0.2 / 60.0).sqrt() / 60.0).abs() < 1e-6);
     assert_eq!(dmg(2), 0.0);
-    assert!((dmg(3) - 2.0 / 60.0).abs() < 1e-9);
+    assert!((dmg(3) - 2.0 * (1.0f64 + 0.2 / 60.0).sqrt() / 60.0).abs() < 1e-6, "a device burns by the size's curve");
     assert_eq!(dmg(4), 0.0);
 }
 

@@ -20,6 +20,9 @@
 //! All values are starting points for the playtest (`TODO(initiator)`).
 use gameplay_core::rng::Rng;
 use glam::DVec3;
+use serde::{Deserialize, Serialize};
+
+pub mod tuning;
 
 #[cfg(test)]
 mod tests;
@@ -27,7 +30,8 @@ mod tests;
 /// Fire values. TODO(initiator): starting values. Growth, oxygen lines, spread interval and
 /// chance, the burn curve and the spray rate follow the original (converted at 100 px = 1 m);
 /// oxygen use, the size cap, the device burn and the air flow are guesses for our room sizes.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct FireTuning {
     /// Metres of size per second with plenty of oxygen; the same rate shrinks it without any.
     pub growth: f64,
@@ -54,7 +58,8 @@ pub struct FireTuning {
     pub burn_person: f64,
     /// Sizes above this burn no harder.
     pub burn_cap_size: f64,
-    /// Condition per second a device in range loses.
+    /// Condition per second a device in range loses at size 1 m; it grows with the square root of
+    /// the size, like a person's burn, up to `burn_cap_size`.
     pub burn_device: f64,
     /// Metres of size per second an extinguisher takes off.
     pub extinguish: f64,
@@ -392,7 +397,7 @@ impl Deck {
             for x in targets.iter().filter(|x| x.room == f.room && f.reaches(x.pos, range)) {
                 let rate = match x.kind {
                     TargetKind::Person => t.burn_person * f.size.min(t.burn_cap_size).sqrt(),
-                    TargetKind::Device => t.burn_device,
+                    TargetKind::Device => t.burn_device * f.size.min(t.burn_cap_size).sqrt(),
                 };
                 ev.push(FireEvent::Damage { target: x.id, kind: x.kind, amount: rate * dt });
             }

@@ -636,3 +636,44 @@ fn scram_lamp_is_on_when_warm_with_the_power_off() {
     assert_eq!(off(0.0), "", "cold and off: no lamp");
     assert_eq!(lamps_after(|r| r.temp = 50.0), "", "on: no SCRAM lamp");
 }
+
+/// Meltdown blast (Barotrauma reactor.xml:45-58): a melt with fuel left blasts right after the
+/// `Meltdown` event, with the reactor's `blast` values.
+#[test]
+fn a_melt_with_fuel_blasts_right_after_the_meltdown() {
+    let mut r = reactor(50.0);
+    let ev = r.force_meltdown();
+    let at = ev.iter().position(|e| *e == ReactorEvent::Meltdown).expect("a meltdown");
+    assert_eq!(ev.get(at + 1), Some(&ReactorEvent::Blast(Blast::default())), "{ev:?}");
+    assert_eq!(ev.iter().filter(|e| matches!(e, ReactorEvent::Blast(_))).count(), 1);
+}
+
+/// Barotrauma's Conditional AvailableFuel > 1: a melt with no fuel, and with exactly `min_fuel`,
+/// makes no blast.
+#[test]
+fn a_melt_without_fuel_makes_no_blast() {
+    let mut r = reactor(50.0);
+    // pull_rod shifts the list: slot 0 twice takes both rods.
+    assert!(r.pull_rod(0).is_some() && r.pull_rod(0).is_some());
+    assert_eq!(r.available_fuel(), 0.0);
+    let ev = r.force_meltdown();
+    assert_eq!(ev, vec![ReactorEvent::Meltdown, ReactorEvent::Device(DeviceEvent::Broke)], "{ev:?}");
+
+    let mut r = Reactor::new(ReactorTuning::default(), 3);
+    r.insert_rod(FuelRod { kind: "thin".into(), heat: 1.0, life: 100.0 }).unwrap();
+    let ev = r.force_meltdown();
+    assert!(!ev.iter().any(|e| matches!(e, ReactorEvent::Blast(_))), "exactly min_fuel is no blast: {ev:?}");
+}
+
+/// A melt keeps the rods' life (the initiator's decision): the rods are spent by burning, not by
+/// the blast.
+#[test]
+fn a_melt_keeps_the_rods_life() {
+    let mut r = reactor(50.0);
+    let before: Vec<f64> = r.rods().iter().map(|x| x.life).collect();
+    let fuel = r.available_fuel();
+    r.force_meltdown();
+    let after: Vec<f64> = r.rods().iter().map(|x| x.life).collect();
+    assert_eq!(before, after);
+    assert_eq!(r.available_fuel(), fuel);
+}

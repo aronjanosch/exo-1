@@ -73,6 +73,8 @@ pub enum Action {
     InsertRodKind(String),
     /// The temperature boost: plus (true) or minus the amount. A refused one logs "Boost refused".
     Boost(bool),
+    /// Melts the core now, as if the meltdown timer had run out (`EngineRoom::melt_now`).
+    MeltNow,
 }
 
 /// A named run: the actions, and how long the run lasts.
@@ -308,6 +310,19 @@ pub fn scripts() -> Vec<Script> {
                 (13.0, Action::Boost(true)),
             ],
         },
+        // A melt with no fuel left: both rods come out at 60 s (the fuel is 0 at once, fission with it),
+        // and the core melts at 61 s. No Blast: Barotrauma's blast needs more than one unit of fuel.
+        // PullRod shifts the slots, so the second rod is slot 0 again.
+        Script {
+            name: "meltdown_dry",
+            duration_s: 200.0,
+            steps: vec![
+                (10.0, Action::Manual { fission: 100.0, turbine: 100.0 }),
+                (60.0, Action::PullRod(0)),
+                (60.0, Action::PullRod(0)),
+                (61.0, Action::MeltNow),
+            ],
+        },
         // The brake (no SCRAM): the operator holds fission and turbine at 100 (Manual), the pump breaks
         // at 10 s, and at TempCritical both rods come out.
         Script {
@@ -510,6 +525,11 @@ impl Runner {
                     self.pending.push("Boost refused".into());
                 }
             }
+            Action::MeltNow => {
+                for e in room.melt_now() {
+                    self.pending.push(label(&e));
+                }
+            }
             Action::ScramWhenMeltdownAbove(_) | Action::AfterMeltdown(..) | Action::OnAlarm(..) => {}
         }
     }
@@ -546,6 +566,7 @@ fn label(e: &RoomEvent) -> String {
     match e {
         RoomEvent::Reactor(ReactorEvent::Fire { .. }) => "Fire".into(),
         RoomEvent::Reactor(ReactorEvent::Meltdown) => "Meltdown".into(),
+        RoomEvent::Reactor(ReactorEvent::Blast(_)) => "Blast".into(),
         RoomEvent::Reactor(ReactorEvent::Alarm { kind, on }) => {
             format!("Alarm {kind:?} {}", if *on { "on" } else { "off" })
         }

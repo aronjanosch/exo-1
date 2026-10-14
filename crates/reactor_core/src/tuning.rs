@@ -62,6 +62,9 @@ impl Tuning {
         need(r.fission_lag_s > 0.0 && r.heat_output_factor >= 0.0, "reactor.fission_lag_s", "must be > 0, heat_output_factor >= 0");
         need(r.decay_lag_s > 0.0, "reactor.decay_lag_s", "must be > 0");
         need(r.boost_amount >= 0.0 && r.boost_decay > 0.0, "reactor.boost_*", "boost_amount >= 0, boost_decay > 0");
+        let b = &r.blast;
+        need(b.min_fuel >= 0.0 && b.device_damage >= 0.0 && b.burn >= 0.0 && b.stun_s >= 0.0, "reactor.blast", "min_fuel, device_damage, burn, stun_s >= 0");
+        need(b.range_m >= 0.0 && b.radiation_range_m >= 0.0 && b.radiation >= 0.0, "reactor.blast", "range_m, radiation_range_m, radiation >= 0");
         need(r.fire_delay_s > 0.0 && r.meltdown_delay_s > 0.0, "reactor.*_delay_s", "must be > 0");
                 need(r.auto_turbine_speed > 0.0 && r.auto_fission_speed > 0.0, "reactor.auto_*_speed", "must be > 0");
         need(r.alarm_hysteresis >= 0.0 && (0.0..=100.0).contains(&r.fuel_low), "reactor.fuel_low", "must be 0..100");

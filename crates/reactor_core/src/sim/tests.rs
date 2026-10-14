@@ -500,3 +500,76 @@ fn auto_at_full_load_stays_out_of_temp_critical_over_280_s() {
     assert_eq!(trace.count("Alarm TempCritical on"), 0);
     assert!(!trace.melted);
 }
+
+/// The warm room on Manual, boosted at 10 s and at 13 s (22 by then, so allowed): both take, the
+/// peak goes above the optimal band and the OH lamp shows in the warn column, and the room settles
+/// back at the held targets.
+#[test]
+fn boost_kick_takes_both_boosts_and_the_lamp_shows_the_overheat() {
+    let (trace, _) = trace_of("boost_kick", 5.0);
+    assert_eq!(trace.count("do Boost(true)"), 2);
+    assert_eq!(trace.count("Boost refused"), 0);
+    assert_eq!(row_at(&trace, 5.0).warn, "", "no lamp before the boost");
+    assert!(trace.rows.iter().any(|r| r.warn.contains("OH")), "the OH lamp shows");
+    assert!(trace.peak_temp() > 65.0, "peak {}", trace.peak_temp());
+    assert!(!trace.melted);
+    let end = trace.last().unwrap();
+    assert!((end.temp - 43.8).abs() < 1.0, "settled at {}", end.temp);
+}
+
+/// A boost within 90 % of the amount is refused and logged, the one after it is not.
+#[test]
+fn a_boost_too_soon_is_refused_and_logged() {
+    let t = shipped();
+    let script = Script {
+        name: "boost_too_soon",
+        duration_s: 15.0,
+        steps: vec![(10.0, Action::Boost(true)), (11.0, Action::Boost(false))],
+    };
+    let mut room = warm_room(&t, 7);
+    let trace = run(&mut room, &script, DT, 5.0);
+    assert_eq!(trace.count("do Boost(false)"), 1);
+    assert_eq!(trace.count("Boost refused"), 1);
+    assert!(room.reactor().temperature_boost() > 0.0, "the first boost stays");
+}
+
+/// The boost does nothing with the power off: refused, logged, and the room stays cold.
+#[test]
+fn a_boost_with_the_power_off_is_refused() {
+    let t = shipped();
+    let script = Script {
+        name: "boost_off",
+        duration_s: 5.0,
+        steps: vec![(0.0, Action::Power(false)), (1.0, Action::Boost(true))],
+    };
+    let mut room = warm_room(&t, 7);
+    let trace = run(&mut room, &script, DT, 5.0);
+    assert_eq!(trace.count("Boost refused"), 1);
+    assert_eq!(room.reactor().temperature_boost(), 0.0);
+}
+
+/// Barotrauma's oracle with a boost: a plus boost at 60 s on the oracle's own path (no inertia)
+/// gives the same temperature as ours, to 1e-4.
+#[test]
+fn boost_matches_barotrauma_without_inertia() {
+    let mut ours = comparable_reactor_with(false);
+    let mut theirs = oracle_for(&ours);
+    let (dt, load) = (0.05, 500.0);
+    ours.set_targets(25.0, 60.0);
+    theirs.target_fission = 25.0;
+    theirs.target_turbine = 60.0;
+    let mut worst = 0.0f64;
+    for k in 0..(150.0 / dt) as usize {
+        let t = k as f64 * dt;
+        if k == (60.0 / dt) as usize {
+            assert!(ours.boost(true));
+            theirs.boost = 25.0;
+        }
+        ours.step(dt, load);
+        theirs.step(dt, load);
+        assert_eq!(ours.melted(), theirs.melted, "melt state differs at {t:.2} s");
+        worst = worst.max((ours.temperature() - theirs.temp).abs());
+    }
+    assert!(worst < 1e-4, "temperature differs by {worst}");
+    assert!(ours.temperature_boost().abs() < 1e-9, "the boost faded away");
+}

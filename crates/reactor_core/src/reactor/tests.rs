@@ -469,3 +469,138 @@ fn scram_without_coolant_lets_the_core_cool_below_the_allowed_band() {
     assert!(timer_now < timer_at_scram, "the meltdown timer counts down: {timer_at_scram:.3} -> {timer_now:.3}");
     assert!(!ev.iter().any(|(_, e)| *e == ReactorEvent::Meltdown) && !r.melted());
 }
+
+// ---------- temperature boost (Barotrauma Reactor.cs 14, 52, 327, 502) ----------
+
+/// A reactor on with two rods, fission and turbine held at 25 by hand, settled.
+fn settled_boost_test_reactor() -> Reactor {
+    let mut r = reactor(50.0);
+    r.set_targets(25.0, 25.0);
+    run(&mut r, 200.0, 500.0);
+    assert!(!r.melted(), "the settling must not melt the core");
+    r
+}
+
+/// The boost is heat: the heat of one step goes up by exactly the amount, and it fades to 0 at
+/// one degree per second.
+#[test]
+fn a_boost_adds_its_amount_to_the_heat_and_fades_to_zero_in_25_s() {
+    let mut r = settled_boost_test_reactor();
+    r.step(DT, 500.0);
+    let before = r.heat_input();
+    assert!(r.boost(true));
+    r.step(DT, 500.0);
+    let boosted = r.heat_input();
+    assert!((boosted - before - 25.0).abs() < 1e-6, "{before} -> {boosted}");
+
+    let mut r = reactor(50.0);
+    r.set_targets(25.0, 25.0);
+    assert!(r.boost(true));
+    assert_eq!(r.temperature_boost(), 25.0);
+    run(&mut r, 10.0, 500.0);
+    assert!((r.temperature_boost() - 15.0).abs() < 1e-6, "{}", r.temperature_boost());
+    run(&mut r, 15.0, 500.0);
+    assert!(r.temperature_boost().abs() < 1e-9, "{}", r.temperature_boost());
+    run(&mut r, 5.0, 500.0);
+    assert_eq!(r.temperature_boost(), 0.0, "it never overshoots past 0");
+}
+
+/// The minus boost is the same, with the sign turned, and it fades up to 0.
+#[test]
+fn a_minus_boost_fades_up_to_zero() {
+    let mut r = reactor(50.0);
+    assert!(r.boost(false));
+    assert_eq!(r.temperature_boost(), -25.0);
+    run(&mut r, 25.0, 500.0);
+    assert!(r.temperature_boost().abs() < 1e-9, "{}", r.temperature_boost());
+}
+
+/// Barotrauma's AllowTemperatureBoost: a second boost is refused while |boost| >= 22.5, and the
+/// refused one leaves the boost as it was.
+#[test]
+fn a_second_boost_is_refused_while_the_boost_is_at_least_90_percent_of_its_amount() {
+    let mut r = reactor(50.0);
+    assert!(r.boost(true));
+    assert!(!r.boost_allowed());
+    assert!(!r.boost(false), "refused at 25");
+    assert_eq!(r.temperature_boost(), 25.0);
+    run(&mut r, 2.0, 500.0);
+    assert!(!r.boost(true), "refused at 23");
+    run(&mut r, 1.0, 500.0);
+    assert!(r.boost_allowed(), "allowed at 22");
+    assert!(r.boost(false));
+    assert_eq!(r.temperature_boost(), -25.0);
+}
+
+/// With the power off, or the reactor broken, a boost does nothing: refused, the boost stays 0.
+#[test]
+fn a_boost_does_nothing_while_the_power_is_off_or_the_reactor_is_broken() {
+    let mut r = Reactor::new(ReactorTuning::default(), 3);
+    r.insert_rod(FuelRod::standard()).unwrap();
+    assert!(!r.boost(true), "power off");
+    assert_eq!(r.temperature_boost(), 0.0);
+    assert!(r.set_power(true));
+    r.condition_mut().set_value(0.0);
+    assert!(!r.boost(true), "broken");
+    assert_eq!(r.temperature_boost(), 0.0);
+}
+
+// ---------- warning lamps (client Reactor.cs 621-632) ----------
+
+/// A reactor on, with every lamp off: 500 kW asked, output 500, fission 50 on 160 fuel, the core
+/// at 50 (inside the skill-50 optimal band, 35..65).
+fn calm() -> Reactor {
+    let mut r = reactor(50.0);
+    r.temp = 50.0;
+    r.output = 500.0;
+    r.fission = 50.0;
+    r
+}
+
+/// The lamps of `calm` after `change`, as their short letters.
+fn lamps_after(change: impl FnOnce(&mut Reactor)) -> String {
+    let mut r = calm();
+    change(&mut r);
+    r.warnings(500.0).short()
+}
+
+#[test]
+fn the_lamps_are_all_off_in_a_calm_reactor() {
+    assert_eq!(calm().warnings(500.0), Warnings::default());
+    assert_eq!(lamps_after(|_| {}), "");
+}
+
+/// Each lamp switches on in its own situation, and only then.
+#[test]
+fn each_lamp_switches_on_in_its_own_situation() {
+    assert_eq!(lamps_after(|r| r.temp = 70.0), "OH", "above 65");
+    assert_eq!(lamps_after(|r| r.temp = 20.0), "LT", "below 35");
+    assert_eq!(lamps_after(|r| r.output = 560.0), "HO", "above 110 % of 500");
+    assert_eq!(lamps_after(|r| r.output = 800.0), "HO CO", "above 150 % too");
+    assert_eq!(lamps_after(|r| r.output = 400.0), "LO", "below 90 % of 500");
+    assert_eq!(lamps_after(|r| r.fuel = 0.4), "FO LF", "fuel below 1 % of the fission 50");
+    assert_eq!(lamps_after(|r| r.fuel = 30.0), "LF", "fuel below the fission only");
+    assert_eq!(lamps_after(|r| r.overheat_timer = 0.6 * 120.0), "MD", "meltdown timer over half");
+}
+
+/// The lamp lines are strict: exactly on a line the lamp stays off (Barotrauma's > and <).
+#[test]
+fn the_lamp_lines_are_strict() {
+    assert_eq!(lamps_after(|r| r.temp = 65.0), "", "the optimal top itself is no overheat");
+    assert_eq!(lamps_after(|r| r.output = 550.0), "", "110 % itself is no high output");
+    assert_eq!(lamps_after(|r| r.output = 450.0), "", "90 % itself is no low output");
+    assert_eq!(lamps_after(|r| r.fuel = 50.0), "", "fuel equal to the fission is no low fuel");
+}
+
+/// With the power off every lamp is off, except the meltdown lamp, which also shows when the core
+/// melted (and its timer part does not need the power).
+#[test]
+fn with_the_power_off_only_the_meltdown_lamp_can_show() {
+    let mut r = calm();
+    r.temp = 70.0;
+    r.output = 1000.0;
+    r.power_on = false;
+    assert_eq!(r.warnings(500.0), Warnings::default());
+    r.melted = true;
+    assert_eq!(r.warnings(500.0).short(), "MD");
+}

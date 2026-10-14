@@ -104,6 +104,8 @@ pub enum NetOut {
     Status { to: Option<PlayerId>, s: Vec<(PlayerId, PublicStatus)> },
     /// Client to host: the treatment hold on this player, or none (#300).
     Treat(Option<PlayerId>),
+    /// Client to host: the CPR hold on this player, or none (#300 polish).
+    Rescue(Option<PlayerId>),
     /// Host to one client: its repair start was refused (#299).
     RepairRefused { to: PlayerId },
 }
@@ -151,6 +153,9 @@ pub struct Items {
     pub public: Vec<(PlayerId, PublicStatus)>,
     /// Treatment holds by player, to apply here (host and one process); a client sends its own (#300).
     pub treat_asks: Vec<(PlayerId, Option<PlayerId>)>,
+    /// CPR holds by player (the rescuer's patient, or none), to apply here (host and one process);
+    /// a client sends its own (#300 polish).
+    pub rescue_asks: Vec<(PlayerId, Option<PlayerId>)>,
 }
 
 /// Whether the host can simulate an action's placement: a cabin is the host's ship. (Other
@@ -165,7 +170,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new() }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), rescue_asks: Vec::new() }
     }
 
     /// The local player's slot.
@@ -245,6 +250,15 @@ impl Items {
             self.net_out.push(NetOut::Treat(target));
         } else {
             self.treat_asks.push((self.me(), target));
+        }
+    }
+
+    /// The CPR hold of the local player (#300 polish): sent from a client, kept here on the host.
+    pub fn ask_rescue(&mut self, patient: Option<PlayerId>) {
+        if self.role == Role::Client {
+            self.net_out.push(NetOut::Rescue(patient));
+        } else {
+            self.rescue_asks.push((self.me(), patient));
         }
     }
 

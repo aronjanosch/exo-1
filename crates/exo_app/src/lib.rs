@@ -36,6 +36,7 @@ pub mod perf;
 pub mod phases;
 pub mod record;
 pub mod repair;
+pub mod rescue;
 pub mod public_status;
 pub mod repair_hud;
 pub mod ring;

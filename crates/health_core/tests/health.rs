@@ -518,6 +518,7 @@ fn the_cpr_numbers_are_in_the_shipped_file_and_checked() {
     let t = shipped();
     assert!(t.cpr.start_s > 0.0 && t.cpr.revive_after_s == 2.0 && t.cpr.revive_low_max < t.cpr.stabilize_floor);
     assert!(t.treatment("oxy").is_some(), "the oxy canister is a treatment");
+}
 
 #[test]
 fn a_treatment_suits_the_injuries_it_reduces() {

@@ -16,11 +16,22 @@
 //!
 //! Values: TODO(initiator) (the rack's stock, the burn rule, hold times).
 use super::*;
-use crate::dev_area::engine_room::CORRIDOR;
-use crate::items::Items;
+use crate::controls::Controls;
+use crate::dev_area::coolant::HOLD_S;
+use crate::dev_area::engine_room::{CORRIDOR, REACTOR_AT};
+use crate::displays::ActiveDisplay;
+use crate::gameplay::Gameplay;
+use crate::items::{Items, LOCAL};
+use crate::repair::{aimed, RepairConfig};
+use crate::walker::{Player, EYE_HEIGHT};
+use avian3d::prelude::{Position, Rotation};
 use bevy::math::DVec3;
-use item_core::{FrameRef, Placement};
+use gameplay_core::notice::{Notice, NoticeKind};
+use item_core::container::Stack;
+use item_core::wire::{FuelKind, RepairDevice};
+use item_core::{FrameRef, ItemDef, Placement, Request};
 use reactor_core::FuelRod;
+use walker_core::Frame;
 
 /// The `use` effect of a fuel rod: loading it into the reactor.
 pub const LOAD: &str = "load_rod";
@@ -50,7 +61,46 @@ pub fn pull_index(rods: &[FuelRod]) -> Option<usize> {
     rods.iter().enumerate().reduce(|best, r| if r.1.life > best.1.life { r } else { best }).map(|(i, _)| i)
 }
 
+/// The kind of a rod on the readout (`reactor.json` `rods`); an unknown kind shows as standard.
+pub fn fuel_kind(kind: &str) -> FuelKind {
+    match kind {
+        "hot" => FuelKind::Hot,
+        "spicy" => FuelKind::Spicy,
+        _ => FuelKind::Standard,
+    }
+}
+
+/// The stack of one rod of `def` with the given life (its item condition).
+pub fn rod_stack(def: &ItemDef, life: f64) -> Stack {
+    Stack::new(def.item().with_condition(life), 1)
+}
+
+/// Where a rod lies when it is dropped at the reactor's front (the hands are full): on the floor,
+/// a step in front of the reactor.
+pub fn reactor_front(area: &DevArea, planet: &PlanetRes) -> Option<Placement> {
+    let frame = area.frame?;
+    let (pos, up) = frame.ground(planet, REACTOR_AT[0], REACTOR_AT[1] + 1.4, 0.05);
+    let fwd = frame.rotation(up, 0.0) * DVec3::NEG_Z;
+    Some(Placement { frame: FrameRef::Planet(planet.id.0 as u32), pos: pos.to_array(), vel: [0.0; 3], forward: fwd.to_array() })
+}
+
+/// The client's hold on the reactor with a rod in hand or empty hands: seconds so far.
+#[derive(Resource, Default, Debug)]
+pub struct RodHold {
+    pub held: f64,
+}
+
 pub fn plugin(app: &mut App) {
+    app.init_resource::<RodHold>();
+    app.add_systems(
+        FixedUpdate,
+        rod_hands
+            .after(crate::scenario::run_script)
+            .after(crate::items_net::items_net_in)
+            .before(crate::health::use_input)
+            .before(crate::displays::use_display)
+            .in_set(crate::phases::Fx::Input),
+    );
     app.world_mut().resource_mut::<DevAreaDevices>().add(PlaceholderBox {
         id: "rod_rack".into(),
         zone: CORRIDOR,
@@ -111,4 +161,38 @@ mod tests {
         assert_eq!(pull_index(&[rod(50.0), rod(50.0)]), Some(0), "the first of equals");
         assert_eq!(pull_index(&[rod(0.0)]), Some(0), "a spent rod is still a rod");
     }
+}
+
+/// Client: a fuel rod in the selected slot and the look on the reactor within reach, LMB held
+/// `HOLD_S` seconds: `Request::Use` goes to the host, which loads the rod. A reactor with no free
+/// slot (its snapshot) refuses with a notice and no request. Any other state ends the hold.
+#[allow(clippy::too_many_arguments)]
+fn rod_hands(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMut<Items>, cfg: Res<RepairConfig>, reactor: Res<crate::dev_area::reactor::ReactorConfig>, active: Res<ActiveDisplay>, mut hold: ResMut<RodHold>, mut gp: ResMut<Gameplay>, players: Query<&Player>, machines: Query<(&DevBox, &Position, &Rotation)>) {
+    let dt = time.delta_secs_f64();
+    let Ok(pl) = players.single() else {
+        hold.held = 0.0;
+        return;
+    };
+    let slot = items.client.view.selected;
+    let rod = items.client.view.slot(slot).and_then(|s| items.defs.of(s)).is_some_and(|d| d.use_effect.as_deref() == Some(LOAD));
+    let eye = pl.w.pos + pl.up * EYE_HEIGHT;
+    let at_reactor = aimed(eye, pl.world_look(Frame::IDENTITY), &machines, cfg.0.reach_m) == Some(RepairDevice::Reactor);
+    let on_foot = pl.ship.is_none() && !pl.seated && !pl.fly && active.using().is_none() && !controls.free_cursor;
+    if !(rod && at_reactor && on_foot) || !controls.primary_held {
+        hold.held = 0.0;
+        return;
+    }
+    hold.held += dt;
+    if hold.held < HOLD_S {
+        return;
+    }
+    hold.held = 0.0;
+    controls.click = false;
+    let slots = reactor.0.reactor.slots;
+    let used = items.reactor.map_or(0, |r| r.fuel.iter().filter(|t| t.rod.is_some()).count());
+    if used >= slots {
+        gp.notify(Notice::new(NoticeKind::Warning, "notice.rods.full"));
+        return;
+    }
+    let _ = items.request(time.elapsed_secs_f64(), Request::Use { slot, target: LOCAL });
 }

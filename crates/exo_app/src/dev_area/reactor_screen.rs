@@ -198,7 +198,7 @@ pub fn power_ink(out: f64, load: f64) -> Ink {
 
 /// The fuel tubes (176 x 152): two tubes with their fill (life), hatched when low.
 fn fuel(r: Option<&ReactorNews>) -> Item {
-    let life = r.map_or([0.0, 0.0], |r| r.fuel);
+    let life = r.map_or([0.0, 0.0], |r| [r.fuel[0].life, r.fuel[1].life]);
     let mut s = Vec::new();
     for (i, &l) in life.iter().enumerate() {
         let x = 40.0 + 66.0 * i as f64;
@@ -661,6 +661,13 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
 
 #[cfg(test)]
 mod tests {
+    use item_core::wire::{FuelKind, FuelTube};
+
+    /// A standard rod at `life`, for a readout test.
+    fn tube(life: f64) -> FuelTube {
+        FuelTube { rod: Some(FuelKind::Standard), life }
+    }
+
     use super::*;
 
     /// The readout at the shipped scale (`reactor.json`'s `max_output_kw`).
@@ -675,7 +682,7 @@ mod tests {
     }
 
     fn news() -> ReactorNews {
-        ReactorNews { powered: true, power_on: true, pump_on: true, pump_mode: PumpMode::High, pump_speed: 1.0, flow: 1.0, breakers: [true; 3], optimal: [35.0, 65.0], allowed: [20.0, 80.0], temp: 54.0, output_kw: 500.0, load_kw: 500.0, fuel: [80.0, 12.0], ..Default::default() }
+        ReactorNews { powered: true, power_on: true, pump_on: true, pump_mode: PumpMode::High, pump_speed: 1.0, flow: 1.0, breakers: [true; 3], optimal: [35.0, 65.0], allowed: [20.0, 80.0], temp: 54.0, output_kw: 500.0, load_kw: 500.0, fuel: [tube(80.0), tube(12.0), Default::default(), Default::default()], ..Default::default() }
     }
 
     fn all_panels() -> Vec<Panel> {

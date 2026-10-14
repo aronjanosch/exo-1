@@ -130,6 +130,9 @@ pub struct Items {
     pub used: Vec<(PlayerId, PlayerId, String)>,
     /// Coolant canisters the host applied since the last `take_refills` (#300).
     pub refills: u32,
+    /// Fuel rods the host took out of an inventory into the reactor since the last
+    /// `take_rod_loads` (#300): the player, the rod's item id and its life.
+    pub rod_loads: Vec<RodLoad>,
     /// The latest vitals the host sent this client (#295), taken by the health system.
     pub vitals_in: Option<Vitals>,
     /// The engine room as the host has it (#296): the host sets it, a client takes it from the wire.
@@ -172,7 +175,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), rescue_asks: Vec::new() }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, rod_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), rescue_asks: Vec::new() }
     }
 
     /// The local player's slot.
@@ -274,6 +277,22 @@ impl Items {
         std::mem::take(&mut self.refills)
     }
 
+    /// The fuel rods the host loaded since the last call (#300).
+    pub fn take_rod_loads(&mut self) -> Vec<RodLoad> {
+        std::mem::take(&mut self.rod_loads)
+    }
+
+    /// Host: a stack goes into a player's inventory (a fuel rod the brake pulled, or one the
+    /// reactor had no room for). Gives it back when the inventory has no room (#300).
+    pub fn give(&mut self, now: f64, player: PlayerId, stack: Stack) -> Result<(), Stack> {
+        if self.role == Role::Client {
+            return Ok(());
+        }
+        let ev = self.host.give(player, stack)?;
+        self.publish(now, ev, None);
+        Ok(())
+    }
+
     /// The uses the host applied since the last call (#295).
     pub fn take_uses(&mut self) -> Vec<(PlayerId, PlayerId, String)> {
         std::mem::take(&mut self.used)
@@ -340,12 +359,22 @@ impl Items {
                 self.net_out.push(NetOut::Action(a));
                 continue;
             }
+            // What the slot held before the use: a fuel rod's kind and life go with it (#300).
+            let held = match &a.req {
+                Request::Use { slot, .. } => self.host.inventory(a.player).slot(*slot).map(|s| (s.item.kind.as_str().to_string(), s.item.condition.unwrap_or(0.0))),
+                _ => None,
+            };
             let evs = if placement_ok(&a) { self.host.handle(&a) } else { vec![Event::Rejected { player: a.player, seq: a.seq, why: Reject::Invalid }] };
             for ev in evs {
                 if let Event::Used { player, target, effect } = &ev {
                     self.used.push((*player, *target, effect.clone()));
                     if effect == crate::dev_area::coolant::REFILL {
                         self.refills += 1;
+                    }
+                    if effect == crate::dev_area::rods::LOAD
+                        && let Some((item, life)) = held.clone()
+                    {
+                        self.rod_loads.push(RodLoad { player: *player, item, life });
                     }
                 }
                 self.publish(now, ev, Some(a.player));
@@ -369,6 +398,16 @@ impl Items {
     pub fn name(&self, s: &Stack) -> String {
         self.defs.of(s).map_or_else(|| s.item.kind.to_string(), |d| d.name.clone())
     }
+}
+
+/// A fuel rod the host took out of a player's hand into the reactor (#300).
+#[derive(Clone, Debug, PartialEq)]
+pub struct RodLoad {
+    pub player: PlayerId,
+    /// The rod's item id (`fuel_rod`, `fuel_rod_hot`, `fuel_rod_spicy`).
+    pub item: String,
+    /// Its life when it was loaded (0..100).
+    pub life: f64,
 }
 
 /// A loose item entity: the host's id once known; a drop shown before the host confirmed it

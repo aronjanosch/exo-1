@@ -8,7 +8,7 @@
 //!   has its own start-up supply, so POWER can come back after a SCRAM even with the machines dark
 //!   (TODO(initiator): confirm).
 //! - The coolant pump (S, on the pump block): a picture of the pump, the flow, the status word, the
-//!   switch. The impeller is static (TODO: it turns with the flow).
+//!   switch. The impeller turns with the flow (`effects::impeller_angle`).
 //! - The junction box (S, on the wall above it): three breaker levers, nothing else. Overvolt shows
 //!   in the world (sparks), not here.
 //! - The reactor room's door screen (S, in the corridor by the door): the reactor temperature, its
@@ -38,6 +38,8 @@ pub const DOOR_ID: PanelId = PanelId::new("engine_door_screen");
 pub const DOOR_NAME: &str = "REACTOR ROOM";
 pub const FAULTS_ID: PanelId = PanelId::new("reactor_faults");
 pub const FAULTS_NAME: &str = "Dev faults";
+/// The dev faults screen's mount point (area metres, the engine room's north wall, the room side).
+pub const FAULTS_AT: [f64; 2] = [-17.5, -11.04];
 /// The output scale of the power gauge, kW (the spec's).
 pub const POWER_MAX_KW: f64 = 1000.0;
 
@@ -291,8 +293,8 @@ pub fn pump_status(pump_on: bool, flow: f64) -> (&'static str, Tone) {
 }
 
 /// The pump's picture (152 x 109): the inlet and the outlet pipes with the fluid, the housing and the
-/// six-blade impeller (static: TODO, it turns with the flow).
-fn pump_picture(flow_on: bool) -> Item {
+/// six-blade impeller, turned by `angle` degrees (`effects::impeller_angle`).
+fn pump_picture(flow_on: bool, angle: f64) -> Item {
     let fluid = if flow_on { Ink::Fg1 } else { Ink::Fg3 };
     let (cx, cy) = (76.0, 60.0);
     let mut s = vec![
@@ -305,15 +307,21 @@ fn pump_picture(flow_on: bool) -> Item {
         Shape::Circle { cx, cy, r: 40.0, fill: Some(Ink::Bg1), stroke: Some((Ink::Hud, 3.0)) },
     ];
     for k in 0..6 {
-        let a = (k as f64 * 60.0).to_radians();
+        let a = (k as f64 * 60.0 + angle).to_radians();
         s.push(Shape::Line { a: [cx, cy], b: [cx + 30.0 * a.cos(), cy + 30.0 * a.sin()], width: 6.0, ink: Ink::Hud, dash: None });
     }
     s.push(Shape::Circle { cx, cy, r: 9.0, fill: Some(Ink::Hud), stroke: None });
     canvas(152.0, 109.0, s, None).fixed(152.0)
 }
 
-/// The coolant pump's screen (S): the picture, the flow and its word, the switch.
+/// The coolant pump's screen (S) with the impeller at 0 degrees.
 pub fn pump_panel(r: Option<&ReactorNews>) -> Panel {
+    pump_panel_at(r, 0.0)
+}
+
+/// The coolant pump's screen (S): the picture with the impeller at `angle`, the flow and its word,
+/// the switch.
+pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64) -> Panel {
     if !powered(r) {
         return no_power(PUMP_NAME, "CP-01", Tier::S);
     }
@@ -325,7 +333,7 @@ pub fn pump_panel(r: Option<&ReactorNews>) -> Panel {
             row(
                 10.0,
                 vec![
-                    pump_picture(r.pump_on && r.flow > 0.0),
+                    pump_picture(r.pump_on && r.flow > 0.0, angle),
                     column(4.0, vec![micro("FLOW"), readout(format!("{:.0}%", r.flow * 100.0)).text_size(font::VALUE).tone(tone), readout(word).text_size(font::LABEL).tone(tone)]).flex(1.0),
                 ],
             )
@@ -489,10 +497,17 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
     }
 }
 
-/// Every panel from the state, every tick (`Panels::set` skips an unchanged one).
-pub fn write_panels(items: Res<Items>, mut panels: ResMut<Panels>) {
+/// The impeller's angle is kept in steps of 6 degrees, so the panel is only redrawn when it shows.
+const IMPELLER_STEP: f64 = 6.0;
+
+/// Every panel from the state, every tick (`Panels::set` skips an unchanged one). The impeller
+/// turns with the pump's flow (`effects::impeller_angle`), from the fixed step's time.
+pub fn write_panels(items: Res<Items>, time: Res<Time>, mut spin: Local<f64>, mut panels: ResMut<Panels>) {
+    let flow = items.reactor.map_or(0.0, |r| if r.pump_on { r.flow } else { 0.0 });
+    *spin = crate::effects::impeller_angle(*spin, flow, time.delta_secs_f64());
+    let angle = (*spin / IMPELLER_STEP).round() * IMPELLER_STEP;
     panels.set(READOUT_ID, readout_panel(items.reactor.as_ref()));
-    panels.set(PUMP_ID, pump_panel(items.reactor.as_ref()));
+    panels.set(PUMP_ID, pump_panel_at(items.reactor.as_ref(), angle));
     panels.set(JUNCTION_ID, junction_panel(items.reactor.as_ref()));
     panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));
     panels.set(FAULTS_ID, faults_panel());

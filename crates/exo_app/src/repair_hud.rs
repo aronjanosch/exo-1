@@ -1,6 +1,6 @@
 //! The repair ring (#299, window only): a thin ring round the reticle while a session runs, the
 //! zones as brighter arcs, the pointer as a short tick, a flash on a hit (good) or a miss (bad),
-//! and a thin progress arc on the outer edge. Drawn with the reticle's own parts: conic gradients
+//! and the hold's progress as a thin arc on the same ring. Drawn with the reticle's own parts: conic gradients
 //! and a dark disc inside (`crew_hud::ring_fill`'s style). No condition readout.
 //! A hurt from a miss (`RepairHurt`) flashes the screen's edge: white-blue for the shock, orange
 //! for the hot machine; the knock flashes nothing.
@@ -15,11 +15,10 @@ use device_core::minigame::{minigame_on, Machine, Press};
 /// Zones the ring can show at once (the maximum of the rules; a spare slot stays hidden).
 const ZONE_SLOTS: usize = 4;
 /// The ring's radius (px, on the 1600 x 900 frame, scaled with the HUD like the rest), its stroke,
-/// the zone band's width and the progress arc's place.
+/// the zone band's width and the progress arc's stroke (the arc sits on the ring's line).
 const RADIUS: f32 = 110.0;
 const STROKE: f32 = 2.0;
 const ZONE_BAND: f32 = 14.0;
-const ARC_OUT: f32 = 10.0;
 const ARC_STROKE: f32 = 4.0;
 /// The pointer's tick: its length (px) inside the ring, and its width.
 const TICK_LEN: f32 = 26.0;
@@ -130,9 +129,9 @@ fn spawn_ring(mut commands: Commands, look: Res<DisplayLook>, mut done: Local<bo
     let fg = col(k.fg_title);
     commands.spawn((RepairPart::Root, Node { position_type: PositionType::Absolute, left: px(0), top: px(0), width: percent(100.0), height: percent(100.0), display: Display::None, ..default() })).with_children(|root| {
         root.spawn((RepairPart::Dial, Node { position_type: PositionType::Absolute, left: percent(50.0), top: percent(50.0), width: px(0), height: px(0), ..default() })).with_children(|dial| {
-            // The progress arc (outside the ring) and its dark inside, so only the arc shows.
-            dial.spawn((RepairPart::Progress, disc(RADIUS + ARC_OUT), BackgroundGradient::default()));
-            dial.spawn((RepairPart::ProgressMask, disc(RADIUS + ARC_OUT - ARC_STROKE), BackgroundColor(dark(0.25))));
+            // The progress arc: a conic fill on the ring's radius, its dark inside cut back to the stroke.
+            dial.spawn((RepairPart::Progress, disc(RADIUS), BackgroundGradient::default()));
+            dial.spawn((RepairPart::ProgressMask, disc(RADIUS - ARC_STROKE), BackgroundColor(dark(0.25))));
             // The ring itself, thin and dim.
             dial.spawn((RepairPart::Base, Node { border: UiRect::all(px(STROKE)), ..disc(RADIUS) }, BorderColor::all(col_a(k.fg_title, 0.35))));
             for i in 0..ZONE_SLOTS {
@@ -176,7 +175,7 @@ fn update_ring(
     for (part, mut n) in &mut nodes {
         match *part {
             RepairPart::Root => n.display = show(session.is_some()),
-            RepairPart::Progress => n.display = show(share.is_some_and(|s| s > 0.0)),
+            RepairPart::Progress | RepairPart::ProgressMask => n.display = show(share.is_some_and(|s| s > 0.0)),
             RepairPart::Zone(i) => n.display = show(game && session.is_some_and(|p| p.session.ring.zones.get(i).is_some_and(|z| z.width(&cfg.0) > 0.0))),
             RepairPart::Pointer => n.display = show(game),
             RepairPart::Flash => n.display = show(session.is_some_and(|p| p.flash.is_some())),

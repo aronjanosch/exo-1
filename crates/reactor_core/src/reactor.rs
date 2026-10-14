@@ -26,6 +26,18 @@
 //! minutes; a meltdown resets it. It only heats without coolant (`(1 - flow) * decay * decay_heat`).
 //! Values: TODO(initiator).
 //!
+//! Boost and lamps (Barotrauma Reactor.cs shared 14/52/327/502, client 469-483 for the boost,
+//! 615-632 for the lamps): `boost` adds `boost_amount` (25) or minus it to the heat, as the
+//! operator's plus and minus buttons do. A second boost is refused while the boost is 90 % of it
+//! or more (`boost_allowed`, |boost| < 22.5). The boost fades to 0 at `boost_decay` (1 per second)
+//! without overshooting. A boost does nothing while the power is off or the reactor is broken: it
+//! is refused (`boost` returns false), and the boost already set still fades. `warnings` gives the
+//! lamps of the panel, each ported from the client's lines with the conditions in its comment; they
+//! are off while the power is off, except the meltdown lamp (also on when the core melted) and the
+//! SCRAM lamp (on while the power is off and the core is warm). Barotrauma blinks the lamps at 2 Hz
+//! (client 619, `TotalTime % 0.5 < 0.25`); the reactor reports them steady and the glue blinks.
+//! Values: TODO(initiator).
+//!
 //! Overheat: above the optimal band a fire timer runs, and each time it is full the reactor starts
 //! a fire (`ReactorEvent::Fire`). Above the allowed band a second timer runs; when it is full the
 //! core melts (`ReactorEvent::Meltdown`). There is no automatic safety: the operator's SCRAM cuts
@@ -98,6 +110,11 @@ pub struct ReactorTuning {
     /// Auto looks this many seconds ahead: it compares the temperature it predicts (temp + speed *
     /// this) with the band, so the spring's swing is not chased. TODO(initiator): value.
     pub auto_lookahead_s: f64,
+    /// Size of a temperature boost, degrees of heat: the operator's plus and minus add this much
+    /// (Barotrauma `TemperatureBoostAmount`, 25). TODO(initiator): value.
+    pub boost_amount: f64,
+    /// How fast a boost fades back to 0, per second (Barotrauma: 1). TODO(initiator): value.
+    pub boost_decay: f64,
     /// Inertia on (the default): the temperature is the damped spring, the output makes heat and
     /// fission lags by `fission_lag_s`. Off: the first-order path of Barotrauma (the temperature moves
     /// at `temp_rate` towards its target, fission lags 1 s, no output heat), for the oracle tests.
@@ -135,6 +152,8 @@ impl Default for ReactorTuning {
             fission_lag_s: 4.0,
             decay_lag_s: 90.0,
             auto_lookahead_s: 8.0,
+            boost_amount: 25.0,
+            boost_decay: 1.0,
             inertia: true,
             condition: DeviceTuning { repair_threshold: 50.0, wear_floor: 10.0, ..DeviceTuning::default() },
         }
@@ -350,6 +369,56 @@ pub struct Reactor {
     /// Decay state, 0..1: follows fission / 100 with `decay_lag_s`; it drives the residual heat.
     /// Kept through a SCRAM, reset by a meltdown.
     decay: f64,
+    /// Temperature boost (degrees of heat, -amount..amount), fades to 0 at `boost_decay`.
+    boost: f64,
+}
+
+/// The lamps of the panel (Barotrauma's warning lights, client Reactor.cs 621-632). Each is on
+/// or off, steady (the blink is the glue's); `short` gives the letters for a trace.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Warnings {
+    /// Temperature above the optimal band.
+    pub overheat: bool,
+    /// Temperature above the allowed band (client 621, critical heat). Power on only.
+    pub critical_heat: bool,
+    /// Temperature below the optimal band.
+    pub low_temp: bool,
+    /// Temperature below the allowed band (client 622, cold). Power on only.
+    pub cold: bool,
+    /// Output above 110 % of the load.
+    pub high_output: bool,
+    /// Output above 150 % of the load.
+    pub critical_output: bool,
+    /// Output below 90 % of the load.
+    pub low_output: bool,
+    /// No fuel for the fission: available fuel below 1 % of the fission.
+    pub fuel_out: bool,
+    /// Available fuel below the fission.
+    pub low_fuel: bool,
+    /// The meltdown timer is over half its delay, or the core melted.
+    pub meltdown: bool,
+    /// Warm (above 0.1) with the power off: SCRAM was pressed or the reactor is off (client 632).
+    pub scram: bool,
+}
+
+impl Warnings {
+    /// Short letters of the lamps that are on, in panel order, e.g. "OH HO LF"; "" when none.
+    pub fn short(&self) -> String {
+        let lamps = [
+            (self.overheat, "OH"),
+            (self.critical_heat, "CH"),
+            (self.low_temp, "LT"),
+            (self.cold, "CL"),
+            (self.high_output, "HO"),
+            (self.critical_output, "CO"),
+            (self.low_output, "LO"),
+            (self.fuel_out, "FO"),
+            (self.low_fuel, "LF"),
+            (self.meltdown, "MD"),
+            (self.scram, "SC"),
+        ];
+        lamps.iter().filter(|(on, _)| *on).map(|(_, s)| *s).collect::<Vec<_>>().join(" ")
+    }
 }
 
 impl Reactor {
@@ -380,6 +449,7 @@ impl Reactor {
             heat_in: 0.0,
             temp_vel: 0.0,
             decay: 0.0,
+            boost: 0.0,
         }
     }
 
@@ -468,7 +538,30 @@ impl Reactor {
         self.fission = self.fission.min(self.fuel);
     }
 
+    /// The temperature boost (Barotrauma's plus and minus buttons): sets the boost to +`boost_amount`
+    /// (`up`) or -`boost_amount`, replacing the old one. Refused (false, the boost unchanged) when
+    /// `boost_allowed` is false, while the power is off, or while the reactor is broken.
+    pub fn boost(&mut self, up: bool) -> bool {
+        if !self.power_on || !self.condition.functioning() || !self.boost_allowed() {
+            return false;
+        }
+        let amount = self.tuning.boost_amount;
+        self.boost = if up { amount } else { -amount };
+        true
+    }
+
+    /// Barotrauma's AllowTemperatureBoost: |boost| < 90 % of the amount (Reactor.cs:52).
+    pub fn boost_allowed(&self) -> bool {
+        self.boost.abs() < self.tuning.boost_amount * 0.9
+    }
+
     // ---------- readouts ----------
+
+    /// The boost now, degrees of heat (-amount..amount; 0 when none). Named apart from `boost`,
+    /// the setter.
+    pub fn temperature_boost(&self) -> f64 {
+        self.boost
+    }
 
     pub fn tuning(&self) -> &ReactorTuning {
         &self.tuning
@@ -564,6 +657,43 @@ impl Reactor {
     pub fn bands(&self) -> Bands {
         Bands::new(self.skill, self.turbine_for_load, self.fuel)
     }
+    /// The panel's lamps, for a grid asking `load_kw` now (the last step's output and fuel). The
+    /// conditions are Barotrauma's (client Reactor.cs 621-632). Barotrauma blinks them at 2 Hz
+    /// (client 619, `TotalTime % 0.5 < 0.25`), the glue's job here. With the power off every lamp is
+    /// off except `meltdown`, whose timer part does not need the power (client 631, and on when the
+    /// core melted), and `scram`, which is on when it is warm (client 632).
+    pub fn warnings(&self, load_kw: f64) -> Warnings {
+        let b = self.bands();
+        let on = self.power_on;
+        let out = self.output;
+        let t = self.tuning;
+        Warnings {
+            // Client 625: temperature above the optimal band.
+            overheat: on && self.temp > b.temp_optimal.hi,
+            // Client 621: temperature above the allowed band.
+            critical_heat: on && self.temp > b.temp_allowed.hi,
+            // Client 627: temperature below the optimal band.
+            low_temp: on && self.temp < b.temp_optimal.lo,
+            // Client 622: temperature below the allowed band.
+            cold: on && self.temp < b.temp_allowed.lo,
+            // Client 626: output above 110 % of the load.
+            high_output: on && out > load_kw * 1.1,
+            // Client 623: output above 150 % of the load.
+            critical_output: on && out > load_kw * 1.5,
+            // Client 628: output below 90 % of the load.
+            low_output: on && out < load_kw * 0.9,
+            // Client 629: available fuel below 1 % of the fission.
+            fuel_out: on && self.fuel < self.fission * 0.01,
+            // Client 630: available fuel below the fission.
+            low_fuel: on && self.fuel < self.fission,
+            // Client 631: the meltdown timer over half its delay, or the condition at 0 with the
+            // power on (Barotrauma), or the core melted (ours: the lamp stays on for the melt).
+            meltdown: self.overheat_timer > t.meltdown_delay_s * 0.5 || (self.condition.value() <= 0.0 && on) || self.melted,
+            // Client 632: temperature above 0.1 with the power off (not blinked there).
+            scram: !on && self.temp > 0.1,
+        }
+    }
+
     pub fn alarm(&self, kind: AlarmKind) -> bool {
         self.alarms[kind.index()]
     }
@@ -602,6 +732,7 @@ impl Reactor {
             self.target_turbine = (self.target_turbine - 10.0 * dt).max(0.0);
             self.fire_timer = 0.0;
             self.overheat_timer = 0.0;
+            self.fade_boost(dt);
             self.update_alarms(&mut ev);
             return ev;
         }
@@ -621,7 +752,8 @@ impl Reactor {
             self.target_fission = 0.0;
             self.target_turbine = 0.0;
         }
-        let heat = self.heat_at(self.fission);
+        // The boost adds to the heat (Barotrauma GetGeneratedHeat, Reactor.cs:502).
+        let heat = self.heat_at(self.fission) + self.boost;
         self.heat_in = heat;
         let cool = t.cooling_max * self.coolant;
         // Decay heat follows fission with a slow lag (`decay`): a SCRAM stops fission at once and the
@@ -637,6 +769,7 @@ impl Reactor {
         // The output of the last step makes heat too.
         let output_heat = if t.inertia && t.max_output_kw > 0.0 { t.heat_output_factor * self.output / t.max_output_kw } else { 0.0 };
         self.step_temp(dt, heat + residual + output_heat - self.turbine - cool);
+        self.fade_boost(dt);
         let lag = if t.inertia { t.fission_lag_s.max(1e-9) } else { 1.0 };
         self.fission += (self.target_fission.min(fuel) - self.fission) * (dt / lag).min(1.0);
         self.turbine += (self.target_turbine - self.turbine) * k;
@@ -662,6 +795,13 @@ impl Reactor {
         }
         self.update_alarms(&mut ev);
         ev
+    }
+
+    /// The boost fades to 0 at `boost_decay` per second, never past 0 (Reactor.cs:327,
+    /// adjustValueWithoutOverShooting).
+    fn fade_boost(&mut self, dt: f64) {
+        let step = self.tuning.boost_decay * dt;
+        self.boost = if self.boost > 0.0 { (self.boost - step).max(0.0) } else { (self.boost + step).min(0.0) };
     }
 
     /// The temperature moves as a damped spring towards `target`, its speed limited to `temp_rate`.

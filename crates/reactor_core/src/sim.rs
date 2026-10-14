@@ -71,6 +71,8 @@ pub enum Action {
     PullRod(usize),
     /// Puts a new rod of this `reactor.json` kind into a free slot (unknown kinds do nothing).
     InsertRodKind(String),
+    /// The temperature boost: plus (true) or minus the amount. A refused one logs "Boost refused".
+    Boost(bool),
 }
 
 /// A named run: the actions, and how long the run lasts.
@@ -107,6 +109,8 @@ pub struct Row {
     pub melt: f64,
     /// Junction box voltage: delivered over requested, 1 with no request.
     pub volt: f64,
+    /// The reactor's lamps that are on, short letters (`Warnings::short`), "" when none.
+    pub warn: String,
     /// Junction box condition.
     pub junction: f64,
     /// Reactor condition.
@@ -133,13 +137,13 @@ impl Trace {
         let mut s = String::new();
         let _ = writeln!(
             s,
-            "{:>6} {:>6} {:>6} {:>6} {:>8} {:>7} {:>5} {:>6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>6} {:>6} {:>6} {:>5}  {}",
-            "t", "fis", "turb", "temp", "output", "load", "flow", "tank", "pmode", "pspd", "fire", "melt", "volt", "junc", "react", "pump", "on", "events"
+            "{:>6} {:>6} {:>6} {:>6} {:>8} {:>7} {:>5} {:>6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>6} {:>6} {:>6} {:>5}  {:<14}  {}",
+            "t", "fis", "turb", "temp", "output", "load", "flow", "tank", "pmode", "pspd", "fire", "melt", "volt", "junc", "react", "pump", "on", "warn", "events"
         );
         for r in &self.rows {
             let _ = writeln!(
                 s,
-                "{:>6.1} {:>6.1} {:>6.1} {:>6.1} {:>8.1} {:>7.1} {:>5.2} {:>6.1} {:>5} {:>5.2} {:>5.2} {:>5.2} {:>5.2} {:>6.1} {:>6.1} {:>6.1} {:>5}  {}",
+                "{:>6.1} {:>6.1} {:>6.1} {:>6.1} {:>8.1} {:>7.1} {:>5.2} {:>6.1} {:>5} {:>5.2} {:>5.2} {:>5.2} {:>5.2} {:>6.1} {:>6.1} {:>6.1} {:>5}  {:<14}  {}",
                 r.t,
                 r.fission,
                 r.turbine,
@@ -157,6 +161,7 @@ impl Trace {
                 r.reactor,
                 r.pump,
                 if r.power { "on" } else { "off" },
+                r.warn,
                 r.events.join(", ")
             );
         }
@@ -201,6 +206,11 @@ pub fn warm_room(tuning: &Tuning, seed: u64) -> EngineRoom {
     }
     room
 }
+
+/// The warm room's settled targets for `boost_kick` (Auto's values after `warm_room`, on the grid's
+/// 1280 kW; the temperature sits at about 37): fission 44.2, turbine 64. Held by hand from 0 s.
+const BOOST_KICK_FISSION: f64 = 44.2;
+const BOOST_KICK_TURBINE: f64 = 64.0;
 
 /// The scripts the playtest looks at.
 pub fn scripts() -> Vec<Script> {
@@ -286,6 +296,17 @@ pub fn scripts() -> Vec<Script> {
             name: "wandering_load",
             duration_s: 300.0,
             steps: vec![(0.0, Action::Wander(true))],
+        },
+        // The warm room, held by hand at its settled values; the operator boosts at 10 s, and again at
+        // 13 s, when the boost has faded below 90 % of its amount (22.5). The warn column shows the lamps.
+        Script {
+            name: "boost_kick",
+            duration_s: 120.0,
+            steps: vec![
+                (0.0, Action::Manual { fission: BOOST_KICK_FISSION, turbine: BOOST_KICK_TURBINE }),
+                (10.0, Action::Boost(true)),
+                (13.0, Action::Boost(true)),
+            ],
         },
         // The brake (no SCRAM): the operator holds fission and turbine at 100 (Manual), the pump breaks
         // at 10 s, and at TempCritical both rods come out.
@@ -484,6 +505,11 @@ impl Runner {
                     let _ = room.reactor_mut().insert_rod(rod);
                 }
             }
+            Action::Boost(up) => {
+                if !room.reactor_mut().boost(*up) {
+                    self.pending.push("Boost refused".into());
+                }
+            }
             Action::ScramWhenMeltdownAbove(_) | Action::AfterMeltdown(..) | Action::OnAlarm(..) => {}
         }
     }
@@ -506,6 +532,7 @@ fn sample(room: &EngineRoom, t: f64, events: Vec<String>) -> Row {
         fire,
         melt,
         volt: room.voltage(),
+        warn: room.warnings().short(),
         junction: room.junction().condition().value(),
         reactor: r.condition().value(),
         pump: room.pump().condition().value(),

@@ -604,6 +604,11 @@ impl EngineRoom {
         self.pump.set_mode(mode);
     }
 
+    /// The reactor's lamps for the load the grid asks for now (`Reactor::warnings`).
+    pub fn warnings(&self) -> crate::reactor::Warnings {
+        self.reactor.warnings(self.grid.request_kw())
+    }
+
     /// The room's alarm, as of the last step.
     pub fn level(&self) -> AlarmLevel {
         self.level

@@ -4,7 +4,7 @@
 //!
 //! Left out, on purpose:
 //! - the round start (`RoundDuration < 5`: rapid auto-temp), the signal and network parts, the
-//!   fuel items and their refuelling, the temperature boost (0 here), the AI user, and the
+//!   fuel items and their refuelling, the AI user, and the
 //!   item's own condition (fire and meltdown timers run at full condition, `dt` per second);
 //! - the fuel burn: Barotrauma takes the rods' condition out of `AvailableFuel`; our rods carry a
 //!   fixed heat until they are spent, so `fuel` is a constant input here and the burn is not
@@ -52,6 +52,9 @@ pub struct Baro {
     pub fission: f64,
     pub turbine: f64,
     pub temp: f64,
+    /// `temperatureBoost` (Reactor.cs line 14 for the amount, 52 for the allow): set by the test,
+    /// as the client's buttons do; faded in `step` (line 327).
+    pub boost: f64,
     /// `TargetFissionRate` (line 192), `TargetTurbineOutput` (line 195), `CorrectTurbineOutput`
     /// (line 198).
     pub target_fission: f64,
@@ -98,6 +101,7 @@ impl Baro {
             fission: 0.0,
             turbine: 0.0,
             temp: 0.0,
+            boost: 0.0,
             target_fission: 0.0,
             target_turbine: 0.0,
             correct_turbine: 0.0,
@@ -144,12 +148,19 @@ impl Baro {
         let y = f;
         self.allowed_fission = (lerp(20.0, 10.0, d).min(y - 10.0), y);
 
-        // Lines 323-326: heat (`GetGeneratedHeat`, lines 500-503, boost 0) minus turbine, moved
-        // towards at 10 degrees per second, the setter clamps to 0..100 (lines 120-128).
-        let heat = self.fission * (prev_fuel / 100.0) * 2.0;
+        // Lines 323-326: heat (`GetGeneratedHeat`, lines 500-503, with the boost) minus turbine,
+        // moved towards at 10 degrees per second, the setter clamps to 0..100 (lines 120-128).
+        let heat = self.fission * (prev_fuel / 100.0) * 2.0 + self.boost;
         let diff = (heat - self.turbine) - self.temp;
         self.temp =
             (self.temp + (sign(diff) * 10.0 * dt).clamp(-diff.abs(), diff.abs())).clamp(0.0, 100.0);
+        // Line 327: the boost fades to 0 at 1 per second, never past 0 (adjustValueWithoutOverShooting,
+        // line 293-296).
+        self.boost = if self.boost > 0.0 {
+            (self.boost - dt).max(0.0)
+        } else {
+            (self.boost + dt).min(0.0)
+        };
 
         // Lines 332-334: fission and turbine follow their targets (setters clamp, lines 131-150).
         self.fission = lerp(self.fission, self.target_fission.min(prev_fuel), dt).clamp(0.0, 100.0);

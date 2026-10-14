@@ -68,7 +68,7 @@ fn overheating_starts_a_fire_and_nothing_shuts_the_reactor_down() {
     let mut r = reactor(50.0);
     r.set_targets(100.0, 30.0);
     assert_eq!(r.mode(), Mode::Manual);
-    let ev = run(&mut r, 130.0, 500.0);
+    let ev = run(&mut r, 140.0, 500.0);
     let b = r.bands();
     let high = first(&ev, |e| *e == ReactorEvent::Alarm { kind: AlarmKind::TempHigh, on: true }).unwrap();
     let fire = first(&ev, |e| matches!(e, ReactorEvent::Fire { .. })).expect("a fire");
@@ -144,11 +144,12 @@ fn high_skill_widens_the_safe_band() {
     );
     assert!(hi.temp_optimal.hi > lo.temp_optimal.hi && hi.temp_allowed.hi > lo.temp_allowed.hi);
     assert!(hi.turbine_optimal.hi - hi.turbine_optimal.lo > lo.turbine_optimal.hi - lo.turbine_optimal.lo);
-    // The same setting (equilibrium near 67) starts fires for an unskilled operator only.
+    // The same setting starts fires for an unskilled operator only.
     let mut fires = Vec::new();
     for skill in [0.0, 100.0] {
         let mut r = reactor(skill);
-        r.set_targets(49.0, 50.0);
+        // Fission 47.5 with the output's heat: equilibrium near 67.
+        r.set_targets(47.5, 50.0);
         let ev = run(&mut r, 120.0, 500.0);
         fires.push(ev.iter().filter(|(_, e)| matches!(e, ReactorEvent::Fire { .. })).count());
         println!("skill {skill}: temp {:.1}, fires in 120 s: {}", r.temperature(), fires.last().unwrap());
@@ -241,4 +242,101 @@ fn slots_are_limited() {
     }
     assert!(r.insert_rod(FuelRod::standard()).is_err());
     assert_eq!(r.available_fuel(), 320.0);
+}
+
+/// The shipped values (`reactor.json`), for the tests that check the shipped tuning.
+fn shipped() -> ReactorTuning {
+    crate::tuning::Tuning::parse(include_str!("../../../../content/gameplay/reactor/reactor.json")).unwrap().reactor
+}
+
+/// The temperature is a damped second-order system: a step in fission overshoots its final rise by
+/// 10..40 % (about a quarter for the shipped values) and is back within 2 % of it after 60 s.
+#[test]
+fn a_step_in_fission_overshoots_and_settles() {
+    let mut r = reactor(50.0);
+    r.set_targets(40.0, 50.0);
+    run(&mut r, 300.0, 500.0);
+    let before = r.temperature();
+    // The final value: the new setting held long enough, on a copy.
+    let mut end = r.clone();
+    end.set_targets(45.0, 50.0);
+    run(&mut end, 600.0, 500.0);
+    let fin = end.temperature();
+    let rise = fin - before;
+    assert!(rise > 5.0, "a step must change the temperature: {rise:.2}");
+    r.set_targets(45.0, 50.0);
+    let mut peak = before;
+    let mut at_60 = f64::NAN;
+    for k in 1..=(120.0 / DT).round() as usize {
+        r.step(DT, 500.0);
+        peak = peak.max(r.temperature());
+        if k == (60.0 / DT).round() as usize {
+            at_60 = r.temperature();
+        }
+    }
+    let over = (peak - fin) / rise;
+    println!("step in fission: rise {rise:.2}, peak over the final by {:.0} %, at 60 s {at_60:.2} (final {fin:.2})", over * 100.0);
+    assert!((0.10..=0.40).contains(&over), "overshoot {over:.2} of the rise");
+    assert!((at_60 - fin).abs() < 0.02 * rise, "at 60 s {at_60:.2}, final {fin:.2}");
+}
+
+/// Cutting fission by hand is not a jump: the temperature falls over seconds.
+#[test]
+fn a_correction_takes_seconds() {
+    let mut r = reactor(50.0);
+    r.set_targets(40.0, 50.0);
+    run(&mut r, 300.0, 500.0);
+    let start = r.temperature();
+    r.set_targets(0.0, 50.0);
+    run(&mut r, 2.0, 500.0);
+    let fell_2 = start - r.temperature();
+    assert!(fell_2 < 3.0, "fell {fell_2:.2} degrees in 2 s");
+    run(&mut r, 28.0, 500.0);
+    let fell_30 = start - r.temperature();
+    println!("fission cut to 0: fell {fell_2:.2} in 2 s, {fell_30:.2} in 30 s");
+    assert!(fell_30 > 10.0, "fell {fell_30:.2} degrees in 30 s");
+}
+
+/// Output makes heat: at the same fission and turbine, the reactor that delivers more settles
+/// hotter by `heat_output_factor` times its output difference as a share of the maximum. (The
+/// output follows the turbine within its tolerance, so the difference is a few per cent of the
+/// maximum, not the whole factor.)
+#[test]
+fn output_makes_heat() {
+    let mut settled = Vec::new();
+    for load in [1000.0, 0.0] {
+        let mut r = reactor(50.0);
+        r.set_targets(40.0, 50.0);
+        run(&mut r, 400.0, load);
+        settled.push((r.temperature(), r.output_kw()));
+    }
+    let (hot, cold) = (settled[0], settled[1]);
+    let t = ReactorTuning::default();
+    let expect = t.heat_output_factor * (hot.1 - cold.1) / t.max_output_kw;
+    let diff = hot.0 - cold.0;
+    println!("output {:.1} kW vs {:.1} kW: temperature {:.2} vs {:.2}, expected difference {expect:.2}", hot.1, cold.1, hot.0, cold.0);
+    assert!(hot.1 > cold.1 + 10.0, "the outputs differ: {hot:?} {cold:?}");
+    assert!((diff - expect).abs() < 0.05 * expect, "difference {diff:.2}, expected {expect:.2}");
+}
+
+/// Full turbine with full fission overheats the shipped reactor into the allowed band's top.
+#[test]
+fn turbine_max_fission_max_overheats() {
+    let mut r = Reactor::new(shipped(), 3);
+    r.insert_rod(FuelRod::standard()).unwrap();
+    r.insert_rod(FuelRod::standard()).unwrap();
+    r.set_operator_skill(50.0);
+    assert!(r.set_power(true));
+    r.set_targets(100.0, 100.0);
+    let top = r.bands().temp_allowed.hi;
+    let mut reached = None;
+    for k in 1..=(120.0 / DT).round() as usize {
+        r.step(DT, 500.0);
+        if r.temperature() > top {
+            reached = Some(k as f64 * DT);
+            break;
+        }
+    }
+    println!("shipped, fission 100 turbine 100: above {top:.0} at {reached:?} s");
+    assert!(reached.is_some_and(|t| t <= 120.0), "temperature {:.1} after 120 s", r.temperature());
 }

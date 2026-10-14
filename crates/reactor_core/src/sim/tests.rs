@@ -51,10 +51,16 @@ fn print_all_traces() {
 /// The reactor of the oracle comparisons: the shipped values, with the coolant's cooling and the
 /// residual heat off (the oracle has neither), two standard rods, skill 50, power on, full flow.
 fn comparable_reactor() -> Reactor {
+    comparable_reactor_with(true)
+}
+
+/// `comparable_reactor` with the inertia switched on or off (off is the oracle's own path).
+fn comparable_reactor_with(inertia: bool) -> Reactor {
     let t = shipped();
     let rt = ReactorTuning {
         cooling_max: 0.0,
         decay_heat: 0.0,
+        inertia,
         ..t.reactor
     };
     let mut r = Reactor::new(rt, 3);
@@ -82,9 +88,23 @@ fn oracle_for(r: &Reactor) -> Baro {
 
 /// Manual targets, power on, constant load: our `Reactor` and the Barotrauma port agree in
 /// temperature, fission, turbine and output at every step.
+///
+/// Ignored since the inertia (#300): the temperature is a second-order system with the output's
+/// heat, which the Barotrauma port does not have, so the two no longer agree by design.
 #[test]
+#[ignore = "#300: the temperature has inertia and output heat by design; the oracle is first-order"]
 fn manual_matches_barotrauma() {
-    let mut ours = comparable_reactor();
+    assert_manual_matches(comparable_reactor());
+}
+
+/// The same comparison on the oracle's own path (`inertia: false`): our reactor agrees with it to
+/// 1e-6 at every step, as it did before #300.
+#[test]
+fn manual_matches_barotrauma_without_inertia() {
+    assert_manual_matches(comparable_reactor_with(false));
+}
+
+fn assert_manual_matches(mut ours: Reactor) {
     let mut theirs = oracle_for(&ours);
     let (dt, load) = (0.05, 500.0);
     // Cold start: heat is 3.2 per point of fission, so 50 would run into the 100 clamp in seconds.

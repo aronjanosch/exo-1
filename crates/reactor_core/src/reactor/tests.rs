@@ -185,7 +185,7 @@ fn fuel_burns_down_and_runs_out() {
     assert!(life > 90.5 && life < 92.0);
     r.remove_rod(0);
     r.remove_rod(0);
-    r.insert_rod(FuelRod { heat: 80.0, life: 1.0 }).unwrap();
+    r.insert_rod(FuelRod { kind: "standard".into(), heat: 80.0, life: 1.0 }).unwrap();
     let ev = run(&mut r, 60.0, 300.0);
     assert!(ev.iter().any(|(_, e)| *e == ReactorEvent::Alarm { kind: AlarmKind::FuelLow, on: true }));
     assert!(r.rods()[0].spent());
@@ -339,4 +339,87 @@ fn turbine_max_fission_max_overheats() {
     }
     println!("shipped, fission 100 turbine 100: above {top:.0} at {reached:?} s");
     assert!(reached.is_some_and(|t| t <= 120.0), "temperature {:.1} after 120 s", r.temperature());
+}
+
+/// The emergency brake (Barotrauma has no SCRAM; pulling a rod is it). The pull returns the rod
+/// and the core's temperature at that moment, and the fuel it allowed is gone in the same step:
+/// fission is capped to what is left, and the next step's heat already uses the new fuel.
+#[test]
+fn pulling_a_rod_cuts_the_fuel_in_the_same_step() {
+    let mut r = reactor(50.0);
+    r.set_targets(100.0, 50.0);
+    run(&mut r, 60.0, 500.0);
+    assert!(r.fission() > 80.0, "fission {:.1}", r.fission());
+    let temp = r.temperature();
+    assert!(r.pull_rod(9).is_none());
+    let (rod, handled) = r.pull_rod(0).expect("a rod in slot 0");
+    assert_eq!(rod.kind, "standard");
+    assert_eq!(handled, temp);
+    assert_eq!(r.available_fuel(), 80.0);
+    let f = r.fission();
+    assert!(f <= 80.0 + 1e-9, "fission {f:.2} right after the pull");
+    r.step(DT, 500.0);
+    assert!((r.heat_input() - f * 0.8 * 2.0).abs() < 1e-9, "heat {:.3} for fission {f:.2}", r.heat_input());
+}
+
+/// Barotrauma's advice (Reactor.cs:504-543, NeedMoreFuel(1.0) first, then TooMuchFuel).
+#[test]
+fn fuel_need_is_more_when_the_rods_are_gone_and_the_grid_asks() {
+    let mut r = Reactor::new(ReactorTuning::default(), 3);
+    assert!(r.set_power(true));
+    r.step(DT, 500.0);
+    assert_eq!(r.fuel_need(), FuelNeed::More);
+    let mut idle = Reactor::new(ReactorTuning::default(), 3);
+    idle.step(DT, 0.0);
+    assert_eq!(idle.fuel_need(), FuelNeed::Ok);
+}
+
+#[test]
+fn one_standard_rod_is_enough_for_half_load() {
+    let mut r = Reactor::new(ReactorTuning::default(), 3);
+    r.insert_rod(FuelRod::standard()).unwrap();
+    assert!(r.set_power(true));
+    r.step(DT, 500.0);
+    assert_eq!(r.fuel_need(), FuelNeed::Ok);
+}
+
+#[test]
+fn fuel_need_is_less_with_more_rods_than_the_load_needs() {
+    let mut r = Reactor::new(ReactorTuning::default(), 3);
+    for _ in 0..4 {
+        r.insert_rod(FuelRod::standard()).unwrap();
+    }
+    // The turbine for 500 kW of a 1000 kW reactor.
+    r.turbine_for_load = 50.0;
+    // Four rods: the fission cap is 100, so no more is needed; the low end of the optimal fission
+    // band makes 25 * 320 / 100 * 2 = 160 heat, above 1.5 * 50 = 75: too much.
+    assert_eq!(r.fuel_need(), FuelNeed::Less);
+}
+
+/// Fuel use is proportional to fission: twice the fission burns twice the life.
+#[test]
+fn burn_rate_doubles_when_fission_doubles() {
+    let burnt = |fission: f64| {
+        let mut r = reactor(50.0);
+        r.set_targets(fission, 50.0);
+        r.fission = fission;
+        let before = r.rods()[0].life;
+        run(&mut r, 10.0, 500.0);
+        before - r.rods()[0].life
+    };
+    let (low, high) = (burnt(40.0), burnt(80.0));
+    println!("burnt in 10 s: {low:.3} at fission 40, {high:.3} at 80");
+    assert!(low > 0.5 && (high / low - 2.0).abs() < 0.01, "{high} vs {low}");
+}
+
+/// A spent rod gives no heat: fission has nothing to take and the heat is zero.
+#[test]
+fn a_spent_rod_makes_no_heat() {
+    let mut r = Reactor::new(ReactorTuning::default(), 3);
+    r.insert_rod(FuelRod { kind: "standard".into(), heat: 80.0, life: 0.0 }).unwrap();
+    assert!(r.set_power(true));
+    r.set_targets(100.0, 50.0);
+    run(&mut r, 10.0, 500.0);
+    assert_eq!(r.available_fuel(), 0.0);
+    assert!(r.fission() < 1e-9 && r.heat_input() < 1e-9, "fission {} heat {}", r.fission(), r.heat_input());
 }

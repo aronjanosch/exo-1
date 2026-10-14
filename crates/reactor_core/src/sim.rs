@@ -24,7 +24,7 @@ use std::fmt::Write;
 
 use crate::engine_room::{EngineRoom, Fault, Input, PumpMode, RoomEvent, Source};
 use crate::grid::Group;
-use crate::reactor::{FuelRod, ReactorEvent};
+use crate::reactor::{AlarmKind, FuelRod, ReactorEvent};
 use crate::tuning::Tuning;
 
 #[cfg(test)]
@@ -65,6 +65,12 @@ pub enum Action {
     ScramWhenMeltdownAbove(f64),
     /// Waits for the core to melt, then runs the inner action `delay` seconds later (once).
     AfterMeltdown(f64, Box<Action>),
+    /// Waits for the alarm to be on, then runs the inner action (once per armed action).
+    OnAlarm(AlarmKind, Box<Action>),
+    /// Pulls the rod in this slot (the emergency brake); the run logs the handling heat.
+    PullRod(usize),
+    /// Puts a new rod of this `reactor.json` kind into a free slot (unknown kinds do nothing).
+    InsertRodKind(String),
 }
 
 /// A named run: the actions, and how long the run lasts.
@@ -281,6 +287,31 @@ pub fn scripts() -> Vec<Script> {
             duration_s: 300.0,
             steps: vec![(0.0, Action::Wander(true))],
         },
+        // The brake (no SCRAM): the pump breaks at full load, and at TempCritical both rods come out.
+        Script {
+            name: "pull_rods_brake",
+            duration_s: 300.0,
+            steps: vec![
+                (10.0, Action::Fault(Fault::PumpBreak)),
+                (
+                    0.0,
+                    Action::OnAlarm(AlarmKind::TempCritical, Box::new(Action::PullRod(0))),
+                ),
+                (
+                    0.0,
+                    Action::OnAlarm(AlarmKind::TempCritical, Box::new(Action::PullRod(0))),
+                ),
+            ],
+        },
+        // Auto, and at 10 s one standard rod comes out and a spicy one goes in.
+        Script {
+            name: "spicy_rod",
+            duration_s: 300.0,
+            steps: vec![
+                (10.0, Action::PullRod(0)),
+                (10.0, Action::InsertRodKind("spicy".into())),
+            ],
+        },
     ]
 }
 
@@ -291,6 +322,7 @@ pub fn run(room: &mut EngineRoom, script: &Script, dt: f64, sample_every_s: f64)
     steps.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut runner = Runner {
         input: Input::auto(),
+        armed_alarm: Vec::new(),
         armed_scram: Vec::new(),
         armed_melt: Vec::new(),
         melt_seen: false,
@@ -328,6 +360,15 @@ pub fn run(room: &mut EngineRoom, script: &Script, dt: f64, sample_every_s: f64)
             }
         }
         let mut i = 0;
+        while i < runner.armed_alarm.len() {
+            if room.reactor().alarm(runner.armed_alarm[i].0) {
+                let (_, action) = runner.armed_alarm.remove(i);
+                runner.due.push((t_end, action));
+            } else {
+                i += 1;
+            }
+        }
+        let mut i = 0;
         while i < runner.armed_scram.len() {
             if room.reactor().timers().1 > runner.armed_scram[i] {
                 runner.armed_scram.remove(i);
@@ -351,6 +392,8 @@ pub fn run(room: &mut EngineRoom, script: &Script, dt: f64, sample_every_s: f64)
 /// What `run` carries between steps.
 struct Runner {
     input: Input,
+    /// `OnAlarm` actions waiting for their alarm.
+    armed_alarm: Vec<(AlarmKind, Action)>,
     /// `ScramWhenMeltdownAbove` thresholds not yet fired.
     armed_scram: Vec<f64>,
     /// `AfterMeltdown` actions waiting for the core to melt, with their delay.
@@ -371,6 +414,10 @@ impl Runner {
             }
             Action::AfterMeltdown(delay, inner) => {
                 self.armed_melt.push((*delay, (**inner).clone()));
+                return;
+            }
+            Action::OnAlarm(kind, inner) => {
+                self.armed_alarm.push((*kind, (**inner).clone()));
                 return;
             }
             _ => {}
@@ -404,7 +451,17 @@ impl Runner {
             Action::InsertRod => {
                 let _ = room.reactor_mut().insert_rod(FuelRod::standard());
             }
-            Action::ScramWhenMeltdownAbove(_) | Action::AfterMeltdown(..) => {}
+            Action::PullRod(slot) => {
+                if let Some((rod, heat)) = room.reactor_mut().pull_rod(*slot) {
+                    self.pending.push(format!("Pulled {} at {heat:.1}", rod.kind));
+                }
+            }
+            Action::InsertRodKind(id) => {
+                if let Some(rod) = room.rod_of(id) {
+                    let _ = room.reactor_mut().insert_rod(rod);
+                }
+            }
+            Action::ScramWhenMeltdownAbove(_) | Action::AfterMeltdown(..) | Action::OnAlarm(..) => {}
         }
     }
 }

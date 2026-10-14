@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::engine_room::RoomTuning;
 use crate::grid::GridTuning;
-use crate::reactor::ReactorTuning;
+use crate::reactor::{ReactorTuning, RodKinds};
 
 /// The file's path under `content/gameplay/`.
 pub const REACTOR_PATH: &str = "reactor/reactor.json";
@@ -15,6 +15,8 @@ pub const REACTOR_PATH: &str = "reactor/reactor.json";
 pub struct Tuning {
     /// Fuel rods in the room at the start and after a reset.
     pub start_rods: usize,
+    /// The fuel rod kinds by id (`standard` is the one `start_rods` puts in).
+    pub rods: RodKinds,
     pub reactor: ReactorTuning,
     pub room: RoomTuning,
     pub grid: GridTuning,
@@ -22,7 +24,7 @@ pub struct Tuning {
 
 impl Default for Tuning {
     fn default() -> Tuning {
-        Tuning { start_rods: 2, reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default() }
+        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default() }
     }
 }
 
@@ -50,6 +52,10 @@ impl Tuning {
         let r = &self.reactor;
         need(r.slots >= 1, "reactor.slots", "must be at least 1");
         need(self.start_rods <= r.slots, "start_rods", "must fit in reactor.slots");
+        need(self.rods.0.contains_key("standard"), "rods.standard", "the rod start_rods uses must be listed");
+        for (id, k) in &self.rods.0 {
+            need(k.heat > 0.0 && k.life > 0.0 && k.life <= 100.0, &format!("rods.{id}"), "heat > 0, life in 0..=100");
+        }
         need(r.max_output_kw > 0.0, "reactor.max_output_kw", "must be > 0");
         need(r.fuel_burn >= 0.0 && r.temp_rate > 0.0, "reactor.temp_rate", "must be > 0, fuel_burn >= 0");
         need(r.temp_stiffness > 0.0 && r.temp_damping >= 0.0, "reactor.temp_stiffness", "must be > 0, temp_damping >= 0");
@@ -101,5 +107,21 @@ mod tests {
         assert!(e.iter().any(|m| m.contains("reactor.max_output_kw")), "{e:?}");
         let missing = Tuning::load(&[]).unwrap_err();
         assert!(missing[0].contains("missing"));
+    }
+}
+
+#[cfg(test)]
+mod rod_tests {
+    use super::*;
+    use crate::reactor::FuelRod;
+
+    /// The three rod kinds of the shipped file, and the standard one is the code's `FuelRod::standard`.
+    #[test]
+    fn the_shipped_rod_kinds() {
+        let t = Tuning::parse(include_str!("../../../content/gameplay/reactor/reactor.json")).unwrap();
+        assert_eq!(t.rods.rod("standard"), Some(FuelRod::standard()));
+        assert_eq!(t.rods.rod("hot").map(|r| r.heat), Some(100.0));
+        assert_eq!(t.rods.rod("spicy").map(|r| r.heat), Some(150.0));
+        assert!(t.rods.rod("nope").is_none());
     }
 }

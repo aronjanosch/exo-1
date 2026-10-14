@@ -387,3 +387,53 @@ fn wandering_load_stays_out_of_temp_critical_over_300_s() {
         trace.count("Alarm TempHigh on")
     );
 }
+
+/// The pulled rods stop the fission at once and the core cools: the fuel is the brake, not the
+/// coolant. Both rods come out at TempCritical (30 s); at 40 s there is no fission and the core is
+/// cold again.
+#[test]
+fn pulled_rods_stop_the_fission_at_once_and_the_core_cools() {
+    let (trace, room) = trace_of("pull_rods_brake", 5.0);
+    assert!(room.reactor().rods().is_empty());
+    let at = row_at(&trace, 40.0);
+    assert!(at.fission < 1e-9 && at.temp < 5.0, "{at:?}");
+    assert!(trace.first("Alarm TempCritical on").is_some_and(|t| (t - 30.0).abs() < 1e-6));
+}
+
+/// The brake does not save the core: at TempCritical both rods are pulled (no SCRAM), and the
+/// core still melts within 300 s. Without coolant the decay heat (150) minus the turbine (50)
+/// settles the core at 100, above the allowed band; the fuel is not what keeps it hot. Numbers from
+/// the run: TempCritical at 30 s, the core at 0 by 40 s, back at 100 by about 230 s, first fire at
+/// 125 s, meltdown at 255 s. Not tuned here (TODO(initiator): decay heat, turbine, what the brake
+/// should do).
+#[test]
+#[ignore = "the brake alone does not hold the core: decay heat 150 with no coolant settles at 100 (turbine 50); see the doc"]
+fn pulling_both_rods_at_temp_critical_brakes_the_core() {
+    let (trace, room) = trace_of("pull_rods_brake", 5.0);
+    println!(
+        "pull_rods_brake: peak {:.1}, fires {}, melted {}, TempCritical at {:?}, rods left {}",
+        trace.peak_temp(),
+        trace.count("Fire"),
+        trace.melted,
+        trace.first("Alarm TempCritical on"),
+        room.reactor().rods().len()
+    );
+    assert!(!trace.melted, "{}", trace.table());
+}
+
+/// One standard rod pulled and a spicy one put in at 10 s, on Auto: the spicy rod allows 150, so
+/// the room holds a standard and a spicy rod, and 230 of fuel.
+#[test]
+fn a_spicy_rod_replaces_a_standard_one() {
+    let (trace, room) = trace_of("spicy_rod", 5.0);
+    let kinds: Vec<&str> = room.reactor().rods().iter().map(|r| r.kind.as_str()).collect();
+    println!(
+        "spicy_rod: peak {:.1}, fires {}, melted {}, rods {kinds:?}, fuel {:.0}",
+        trace.peak_temp(),
+        trace.count("Fire"),
+        trace.melted,
+        room.reactor().available_fuel()
+    );
+    assert_eq!(kinds, ["standard", "spicy"]);
+    assert_eq!(room.reactor().available_fuel(), 230.0);
+}

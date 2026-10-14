@@ -11,11 +11,22 @@
 //! (`fission_lag_s`, 4 s; Barotrauma has 1 s). The turbine keeps its 1 s lag. Values:
 //! TODO(initiator).
 //!
+//! Fuel (Barotrauma reactor.xml:113-135, Reactor.cs:345-366, 504-543): each rod kind allows its
+//! `heat` (the original's uranium, thorium and fulgurium rods give 80, 100 and 150 available fuel;
+//! ours are "standard", "hot" and "spicy" in `reactor.json`). The rods together cap fission and
+//! scale the heat (`fission * fuel / 100 * 2`). Every live rod burns at `fission / 100 * fuel_burn`
+//! per second. Pulling a rod is the emergency brake (`pull_rod`, Barotrauma has no SCRAM): the fuel
+//! it allowed goes at once, fission is capped to the rest in that step, and the heat uses this
+//! step's fuel (Barotrauma uses the last step's, `prevAvailableFuel`). `fuel_need` ports
+//! Barotrauma's NeedMoreFuel(1.0) and TooMuchFuel for the screen. Values: TODO(initiator).
+//!
 //! Overheat: above the optimal band a fire timer runs, and each time it is full the reactor starts
 //! a fire (`ReactorEvent::Fire`). Above the allowed band a second timer runs; when it is full the
 //! core melts (`ReactorEvent::Meltdown`). There is no automatic safety: the operator's SCRAM cuts
 //! fission and the power at once (`Reactor::scram`). Low condition makes both timers run up to
 //! twice as fast.
+use std::collections::BTreeMap;
+
 use device_core::{Condition, DeviceEvent, DeviceTuning};
 use gameplay_core::notice::{Notice, NoticeKind};
 use serde::{Deserialize, Serialize};
@@ -127,8 +138,10 @@ const AUTO_DEAD_BAND: f64 = 1.0;
 const AUTO_FULL_SPEED_AT: f64 = 20.0;
 
 /// A fuel rod: an item that goes into a slot and burns down.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FuelRod {
+    /// The kind's id in `reactor.json` (`rods`): "standard", "hot" or "spicy".
+    pub kind: String,
     /// How much fission it allows (the sum over all rods caps fission and scales heat).
     pub heat: f64,
     /// 100 when new, burnt out at 0.
@@ -136,14 +149,56 @@ pub struct FuelRod {
 }
 
 impl FuelRod {
-    /// The common rod. TODO(initiator): stronger rods later (the original has 100 and 150).
+    /// The common rod, as `reactor.json` has it under "standard". TODO(initiator): values.
     pub fn standard() -> FuelRod {
-        FuelRod { heat: 80.0, life: 100.0 }
+        FuelRod { kind: "standard".into(), heat: 80.0, life: 100.0 }
     }
 
     pub fn spent(&self) -> bool {
         self.life <= 0.0
     }
+}
+
+/// One rod kind of `reactor.json`'s `rods` table: what it allows and its life when new.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RodKind {
+    pub heat: f64,
+    pub life: f64,
+}
+
+/// The rod kinds by id. The default is the shipped table (standard 80, hot 100, spicy 150, all
+/// at life 100). TODO(initiator): hot and spicy values.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct RodKinds(pub BTreeMap<String, RodKind>);
+
+impl Default for RodKinds {
+    fn default() -> RodKinds {
+        let kind = |heat| RodKind { heat, life: 100.0 };
+        RodKinds(BTreeMap::from([
+            ("hot".to_string(), kind(100.0)),
+            ("spicy".to_string(), kind(150.0)),
+            ("standard".to_string(), kind(80.0)),
+        ]))
+    }
+}
+
+impl RodKinds {
+    /// A new rod of kind `id` (life when new), or None for an unknown id.
+    pub fn rod(&self, id: &str) -> Option<FuelRod> {
+        self.0.get(id).map(|k| FuelRod { kind: id.to_string(), heat: k.heat, life: k.life })
+    }
+}
+
+/// What the fuel needs, for the screen (Barotrauma's advice to the operator): `More` when the rods
+/// cannot carry the load, `Less` when they make more heat than the turbine can take away, `Ok`
+/// otherwise.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum FuelNeed {
+    Ok,
+    More,
+    Less,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -264,8 +319,10 @@ pub struct Reactor {
     turbine_for_load: f64,
     skill: f64,
     rods: Vec<FuelRod>,
-    /// Available fuel of the last step.
+    /// Available fuel: the sum of the live rods' heat, kept in step with the rods (see `sync_fuel`).
     fuel: f64,
+    /// The load the grid asked for in the last step, kW (for `fuel_need`).
+    load: f64,
     fire_timer: f64,
     overheat_timer: f64,
     output: f64,
@@ -298,6 +355,7 @@ impl Reactor {
             skill: 0.0,
             rods: Vec::new(),
             fuel: 0.0,
+            load: 0.0,
             fire_timer: 0.0,
             overheat_timer: 0.0,
             output: 0.0,
@@ -368,11 +426,31 @@ impl Reactor {
             return Err(rod);
         }
         self.rods.push(rod);
+        self.sync_fuel();
         Ok(())
     }
 
     pub fn remove_rod(&mut self, slot: usize) -> Option<FuelRod> {
-        (slot < self.rods.len()).then(|| self.rods.remove(slot))
+        let rod = (slot < self.rods.len()).then(|| self.rods.remove(slot))?;
+        self.sync_fuel();
+        Some(rod)
+    }
+
+    /// The emergency brake (Barotrauma has no SCRAM; pulling the rods is it). Takes the rod in
+    /// `slot` out and returns it with the handling heat: the core's temperature at that moment
+    /// (what the glue burns the hand with; TODO(initiator): the burn rule). The fuel goes at once:
+    /// see `sync_fuel`. None for an empty slot.
+    pub fn pull_rod(&mut self, slot: usize) -> Option<(FuelRod, f64)> {
+        let rod = self.remove_rod(slot)?;
+        Some((rod, self.temp))
+    }
+
+    /// Brings the available fuel up to the rods and caps fission to it at once. Barotrauma caps
+    /// the fission target and lets fission follow it, and its heat uses last step's fuel; a pulled
+    /// rod must not leave a step of full fission on the rods that are left.
+    fn sync_fuel(&mut self) {
+        self.fuel = self.available_fuel();
+        self.fission = self.fission.min(self.fuel);
     }
 
     // ---------- readouts ----------
@@ -417,6 +495,47 @@ impl Reactor {
     /// Sum of the heat of the rods that are not spent.
     pub fn available_fuel(&self) -> f64 {
         self.rods.iter().filter(|r| !r.spent()).map(|r| r.heat).sum()
+    }
+    /// Heat per fission at the current fuel: `fission * fuel / 100 * 2` (Reactor.cs:500-503,
+    /// without its temperature boost).
+    fn heat_at(&self, fission: f64) -> f64 {
+        fission * (self.fuel / 100.0) * 2.0
+    }
+    /// What the fuel needs for the load now (`FuelNeed`). The first check wins: More, then Less.
+    pub fn fuel_need(&self) -> FuelNeed {
+        if self.need_more() {
+            FuelNeed::More
+        } else if self.too_much() {
+            FuelNeed::Less
+        } else {
+            FuelNeed::Ok
+        }
+    }
+    /// Barotrauma's NeedMoreFuel(minimumOutputRatio 1.0, minCondition 0), Reactor.cs:510-531: no
+    /// fuel left while the grid asks, or the most the fuel can make (fission capped to it, turbine
+    /// at 100, the temperature factor of the heat) is below the load.
+    fn need_more(&self) -> bool {
+        let remaining: f64 = self.rods.iter().map(|r| r.life).sum();
+        if remaining <= 0.0 && self.load > 0.0 {
+            return true;
+        }
+        let max_fission = self.fuel.min(100.0);
+        if max_fission >= 100.0 {
+            return false;
+        }
+        let temp_factor = (self.heat_at(max_fission) / 50.0).min(1.0);
+        let max_output = temp_factor * self.tuning.max_output_kw;
+        max_output < self.load
+    }
+    /// Barotrauma's TooMuchFuel, Reactor.cs:533-543: with more than one rod, the heat at the low
+    /// end of the optimal fission band is above what the turbine can take (1.5 times the turbine
+    /// for the load, at most 90).
+    fn too_much(&self) -> bool {
+        if self.rods.len() <= 1 {
+            return false;
+        }
+        let b = self.bands();
+        self.heat_at(b.fission_optimal.lo) > (self.turbine_for_load * 1.5).min(90.0)
     }
     /// 0..1 of the fire timer and the meltdown timer (for the tests and the logs).
     pub fn timers(&self) -> (f64, f64) {
@@ -463,7 +582,9 @@ impl Reactor {
             return ev;
         }
 
-        let fuel = self.available_fuel();
+        self.sync_fuel();
+        let fuel = self.fuel;
+        self.load = load_kw;
         if t.max_output_kw > 0.0 {
             let want = load_kw / t.max_output_kw * 100.0;
             self.turbine_for_load += (want - self.turbine_for_load).clamp(-20.0, 20.0) * dt;
@@ -476,7 +597,7 @@ impl Reactor {
             self.target_fission = 0.0;
             self.target_turbine = 0.0;
         }
-        let heat = self.fission * (self.fuel / 100.0) * 2.0;
+        let heat = self.heat_at(self.fission);
         self.heat_in = heat;
         let cool = t.cooling_max * self.coolant;
         let residual = t.decay_heat * (1.0 - self.coolant);
@@ -499,8 +620,6 @@ impl Reactor {
                 r.life = (r.life - burn).max(0.0);
             }
         }
-        self.fuel = fuel;
-
         self.overheat(dt, &bands, &mut ev);
         self.output = self.output_for(load_kw, &bands);
 

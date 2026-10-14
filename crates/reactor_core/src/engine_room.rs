@@ -53,7 +53,7 @@ use device_core::{Condition, DeviceEvent, DeviceTuning};
 use gameplay_core::rng::Rng;
 
 use crate::grid::{Grid, Group};
-use crate::reactor::{AlarmKind, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning};
+use crate::reactor::{AlarmKind, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning, RodKinds};
 use crate::tuning::Tuning;
 use serde::{Deserialize, Serialize};
 
@@ -449,6 +449,8 @@ pub struct EngineRoom {
     wander_rng: Rng,
     wander_target: f64,
     wander_left: f64,
+    /// The rod kinds of the loaded values, for `rod_of`.
+    rods: RodKinds,
 }
 
 impl EngineRoom {
@@ -464,11 +466,13 @@ impl EngineRoom {
         for _ in 0..t.start_rods {
             let _ = reactor.insert_rod(FuelRod::standard());
         }
+        let rods = t.rods.clone();
         reactor.set_operator_skill(50.0);
         EngineRoom {
             pump: Pump::new(&t.room, seed),
             junction: JunctionBox::new(&t.room, seed.wrapping_add(1)),
             tuning: t.room,
+            rods,
             reactor,
             grid: Grid::from_tuning(&t.grid),
             level: AlarmLevel::None,
@@ -492,6 +496,11 @@ impl EngineRoom {
 
     pub fn tuning(&self) -> &RoomTuning {
         &self.tuning
+    }
+
+    /// A new rod of the loaded kind `id` (a `reactor.json` `rods` key), or None for an unknown id.
+    pub fn rod_of(&self, id: &str) -> Option<FuelRod> {
+        self.rods.rod(id)
     }
 
     pub fn reactor(&self) -> &Reactor {

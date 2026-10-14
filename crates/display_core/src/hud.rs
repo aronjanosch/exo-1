@@ -737,6 +737,8 @@ pub enum HintAction {
     Use,
     Drop,
     Throw,
+    /// A display is in use: F or Escape leaves it.
+    Leave,
 }
 
 /// One key hint; `dim` when the action exists but the item does nothing yet.
@@ -756,6 +758,21 @@ pub fn hints(held_item: bool, item_usable: bool, carrying: bool) -> Vec<Hint> {
         return Vec::new();
     }
     vec![Hint { action: HintAction::Use, dim: !item_usable }, Hint { action: HintAction::Drop, dim: false }, Hint { action: HintAction::Throw, dim: false }]
+}
+
+/// The hints while a display is in use: the only key shown is the one that leaves it.
+pub fn display_hints() -> Vec<Hint> {
+    vec![Hint { action: HintAction::Leave, dim: false }]
+}
+
+/// The word beside a key hint.
+pub fn hint_label(action: HintAction) -> &'static str {
+    match action {
+        HintAction::Use => "USE",
+        HintAction::Drop => "DROP",
+        HintAction::Throw => "THROW",
+        HintAction::Leave => "LEAVE",
+    }
 }
 
 /// What the open inventory is doing: the keys it shows follow.
@@ -1127,6 +1144,17 @@ mod tests {
         assert!(hints(true, false, false)[0].dim, "an item with no use shows the hint dimmed");
         let h = hints(true, true, true);
         assert_eq!(h.iter().map(|x| x.action).collect::<Vec<_>>(), [Drop, Throw], "carrying: G and R only");
+    }
+
+    #[test]
+    fn a_display_in_use_shows_only_leave() {
+        let h = display_hints();
+        assert_eq!(h.iter().map(|x| x.action).collect::<Vec<_>>(), [HintAction::Leave]);
+        assert!(!h[0].dim);
+        assert_eq!(hint_label(HintAction::Leave), "LEAVE");
+        assert_eq!(hint_label(HintAction::Use), "USE");
+        assert_eq!(hint_label(HintAction::Drop), "DROP");
+        assert_eq!(hint_label(HintAction::Throw), "THROW");
     }
 
     #[test]

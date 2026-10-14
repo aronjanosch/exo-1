@@ -20,7 +20,7 @@
 //! snapshot it has (`Items::reactor`); the clicks ask the host (`ReactorAsk`).
 //!
 //! TODO(initiator): the zone limits are the skill-50 bands (30/45/65/80) as the spec has them; the
-//! output scale is 5000 kW as the spec has it, the room's maximum is 1000 kW (`ReactorTuning`).
+//! output scale is the room's maximum, 1000 kW (`ReactorTuning`; the spec drew 5000).
 //! TODO(initiator): the glow of the critical text and the scanlines' look are not drawn yet.
 use super::*;
 use crate::displays::{DisplayAction, Panels};
@@ -41,7 +41,7 @@ pub const FAULTS_NAME: &str = "Dev faults";
 /// The dev fault screen's place next to the test console (zone local metres, as `PlaceholderBox`).
 pub const FAULTS_AT: [f64; 2] = [1.9, -4.5];
 /// The output scale of the power gauge, kW (the spec's).
-pub const POWER_MAX_KW: f64 = 5000.0;
+pub const POWER_MAX_KW: f64 = 1000.0;
 
 pub fn plugin(app: &mut App) {
     app.world_mut().resource_mut::<DevAreaDevices>().add(PlaceholderBox {

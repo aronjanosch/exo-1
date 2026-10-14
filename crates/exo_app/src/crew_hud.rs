@@ -576,7 +576,8 @@ fn spawn_hud(commands: &mut Commands, theme: &display_core::Theme, fonts: &HudFo
     // health bars; each only while it applies, the health always.
     let v = &h.vitals;
     commands.spawn((HudPart, Node { left: px(edge), bottom: px(edge), width: px(v.width as f32), flex_direction: FlexDirection::Column, row_gap: px(v.gap as f32), ..abs() })).with_children(|root| {
-        root.spawn((VitalPart::Row(VitalKind::Burn), Node { display: Display::None, align_items: AlignItems::Center, column_gap: px(6), ..default() })).with_children(|row| {
+        // The burn line sits on a dark plate: its warm text would vanish on the burning edge.
+        root.spawn((VitalPart::Row(VitalKind::Burn), Node { display: Display::None, align_items: AlignItems::Center, column_gap: px(6), padding: UiRect::axes(px(6), px(3)), ..default() }, BackgroundColor(dark(0.6)))).with_children(|row| {
             spawn_symbol(row, VitalSymbol::Flame, col(k.warn));
             row.spawn((VitalPart::Name(VitalKind::Burn), hud_caps(&fonts.semibold, "", v.label_size, col(k.warn), h, 0.1)));
             row.spawn((

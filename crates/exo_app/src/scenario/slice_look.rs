@@ -397,8 +397,9 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
         }
         let f = fires(w);
         check(c, !f.is_empty(), format!("slice e: a fire exists ({} fires)", f.len()));
-        let at_reactor = |p: [f64; 2]| (p[0] - REACTOR_AT[0]).hypot(p[1] - REACTOR_AT[1]) < 1.0;
-        check(c, f.iter().all(|x| at_reactor(x.pos)), format!("slice e: the fire starts at the reactor (within 1 m of {:?}: {:?})", REACTOR_AT, f.iter().map(|x| x.pos).collect::<Vec<_>>()));
+        let start = crate::dev_area::engine_room::ignition_at(reactor_core::Source::Reactor);
+        let at_reactor = |p: [f64; 2]| (p[0] - start[0]).hypot(p[1] - start[1]) < 1.0;
+        check(c, f.iter().all(|x| at_reactor(x.pos)), format!("slice e: the fire starts in front of the reactor (within 1 m of {:?}: {:?})", start, f.iter().map(|x| x.pos).collect::<Vec<_>>()));
         end(w, c, format!("{} fires", f.len()));
         true
     }));

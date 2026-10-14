@@ -9,7 +9,7 @@
 use super::items::{collect, items, look_at, outside, tap_then, DELAY};
 use super::*;
 use crate::controls::Controls;
-use crate::dev_area::engine_room::{EngineAir, ShipAlarm, COOLANT_PUMP_AT, JUNCTION_BOX_AT, REACTOR_AT};
+use crate::dev_area::engine_room::{ignition_at, EngineAir, ShipAlarm};
 use crate::dev_area::fire::{ignite, Sprays};
 use crate::dev_area::reactor::{ReactorCounts, ReactorSim};
 use crate::dev_area::{DevArea, ENGINEERING};
@@ -135,7 +135,7 @@ pub(super) fn fire_steps(s: &mut Vec<Step>) {
         if c.t < 0.5 {
             return false;
         }
-        let size = fire_at(w, REACTOR_AT);
+        let size = fire_at(w, ignition_at(Source::Reactor));
         check(c, size.is_some_and(|s| (START..START + 0.2).contains(&s)), format!("fire: a fire of about {START} m at the reactor ({size:?})"));
         check(c, counts(w).fires >= 1, format!("fire: the fire is counted ({:?})", counts(w)));
         c.v.insert("fire_s0", size.unwrap_or(0.0));
@@ -150,7 +150,7 @@ pub(super) fn fire_steps(s: &mut Vec<Step>) {
         if c.t < 3.0 {
             return false;
         }
-        let size = fire_at(w, REACTOR_AT).unwrap_or(0.0);
+        let size = fire_at(w, ignition_at(Source::Reactor)).unwrap_or(0.0);
         let o = air(w).deck.room(air(w).engine).oxygen;
         let (s0, o0) = (c.v.get("fire_s0").copied().unwrap_or(0.0), c.v.get("fire_o0").copied().unwrap_or(0.0));
         check(c, size > s0 + 0.3, format!("fire: it grows: {s0:.2} m to {size:.2} m in 3 s"));
@@ -168,7 +168,8 @@ pub(super) fn fire_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "fire: a walker beside it catches fire");
-            let p = ground(w, [REACTOR_AT[0] + 1.2, REACTOR_AT[1]], 0.0);
+            let at = ignition_at(Source::Reactor);
+            let p = ground(w, [at[0] + 1.2, at[1]], 0.0);
             place_walker(w, p);
             return false;
         }
@@ -211,9 +212,15 @@ pub(super) fn fire_steps(s: &mut Vec<Step>) {
     }));
 
     // The extinguisher, from 3 m north of each fire: the reactor's, the pump's, the junction box's.
-    s.extend(spray_out("fire: the spray puts out the reactor's fire", REACTOR_AT, [REACTOR_AT[0], REACTOR_AT[1] + 3.0]));
-    s.extend(spray_out("fire: the spray puts out the pump's fire", COOLANT_PUMP_AT, [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 3.0]));
-    s.extend(spray_out("fire: the spray puts out the junction box's fire", JUNCTION_BOX_AT, [JUNCTION_BOX_AT[0], JUNCTION_BOX_AT[1] + 3.0]));
+    let spray_names = [
+        (Source::Reactor, "fire: the spray puts out the reactor's fire"),
+        (Source::Pump, "fire: the spray puts out the pump's fire"),
+        (Source::Junction, "fire: the spray puts out the junction box's fire"),
+    ];
+    for (src, name) in spray_names {
+        let at = ignition_at(src);
+        s.extend(spray_out(name, at, [at[0], at[1] + 3.0]));
+    }
 
     // No fire left: the alarm is back to the reactor's level, which is calm.
     s.push(Box::new(|w, c| {

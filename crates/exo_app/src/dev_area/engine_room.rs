@@ -497,3 +497,59 @@ mod tests {
         assert!((alarm_pulse(Alarm::Danger, 0.2) - 1.0).abs() < 1e-9, "a quarter of the Danger period is the top");
     }
 }
+
+/// A machine's centre and footprint (m, area metres and the box's width and depth).
+fn machine_of(s: Source) -> ([f64; 2], [f64; 3]) {
+    match s {
+        Source::Reactor => (REACTOR_AT, REACTOR_SIZE),
+        Source::Pump => (COOLANT_PUMP_AT, COOLANT_PUMP_SIZE),
+        Source::Junction => (JUNCTION_BOX_AT, JUNCTION_BOX_SIZE),
+    }
+}
+
+/// How far out from a machine's centre a fire starts, beyond its half depth (m).
+pub const IGNITION_OUT: f64 = 0.3;
+
+/// Where a fire of each source starts (area metres): on the floor at the machine's front face,
+/// the side that faces the room's centre, half its depth and `IGNITION_OUT` out from its centre.
+/// The machines' centres are inside their housings, so a fire there shows no flame.
+pub fn ignition_at(s: Source) -> [f64; 2] {
+    let (c, size) = machine_of(s);
+    let to = [ROOM.centre[0] - c[0], ROOM.centre[1] - c[1]];
+    if to[0].abs() > to[1].abs() {
+        [c[0] + to[0].signum() * (size[0] * 0.5 + IGNITION_OUT), c[1]]
+    } else {
+        [c[0], c[1] + to[1].signum() * (size[2] * 0.5 + IGNITION_OUT)]
+    }
+}
+
+#[cfg(test)]
+mod placement_tests {
+    use super::*;
+
+    /// Whether a point is inside a machine's footprint (its box on the floor).
+    fn inside_box(p: [f64; 2], c: [f64; 2], size: [f64; 3]) -> bool {
+        (p[0] - c[0]).abs() < size[0] * 0.5 && (p[1] - c[1]).abs() < size[2] * 0.5
+    }
+
+    #[test]
+    fn ignition_is_outside_every_machine_and_inside_the_room() {
+        for s in [Source::Reactor, Source::Pump, Source::Junction] {
+            let p = ignition_at(s);
+            for m in [Source::Reactor, Source::Pump, Source::Junction] {
+                let (c, size) = machine_of(m);
+                assert!(!inside_box(p, c, size), "{s:?} fire at {p:?} is inside the {m:?} box");
+            }
+            assert!((p[0] - ROOM.centre[0]).abs() < ROOM.half[0], "{s:?} fire at {p:?} is outside the room (x)");
+            assert!((p[1] - ROOM.centre[1]).abs() < ROOM.half[1], "{s:?} fire at {p:?} is outside the room (y)");
+        }
+    }
+
+    #[test]
+    fn ignition_sits_on_the_front_face_at_half_depth_plus_out() {
+        // The reactor (2.0 m deep, the room's centre to its north): 1.0 + 0.3 north of its centre.
+        assert_eq!(ignition_at(Source::Reactor), [REACTOR_AT[0], REACTOR_AT[1] + REACTOR_SIZE[2] * 0.5 + IGNITION_OUT]);
+        // The pump (1 m across): the room's centre lies to its east-south-east, the west face is the front.
+        assert_eq!(ignition_at(Source::Pump), [COOLANT_PUMP_AT[0] - (COOLANT_PUMP_SIZE[0] * 0.5 + IGNITION_OUT), COOLANT_PUMP_AT[1]]);
+    }
+}

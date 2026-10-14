@@ -310,6 +310,17 @@ pub fn flame_dims(size: f64) -> (f64, f64) {
     ((size * 0.6).max(0.3), (size * 1.6).max(0.6))
 }
 
+/// The flame as drawn: its height (m) is at most this, so a big fire does not fill the view (the
+/// physical size keeps its `flame_dims`). `TODO(initiator)`: the start value.
+pub const FLAME_VIEW_MAX_H: f64 = 2.0;
+
+/// A flame's drawn half width and height (m): `flame_dims`, scaled down to `FLAME_VIEW_MAX_H`.
+pub fn flame_view(size: f64) -> (f64, f64) {
+    let (hw, h) = flame_dims(size);
+    let k = (FLAME_VIEW_MAX_H / h).min(1.0);
+    (hw * k, h * k)
+}
+
 /// The warm glow on the floor under a fire: its radius (m), never under 0.6 m.
 pub fn glow_radius(size: f64) -> f64 {
     (size * 1.5).max(0.6)
@@ -375,6 +386,8 @@ mod visual_tests {
         assert!(h >= 0.6 && hw >= 0.3, "the start flame is {h:.2} m tall");
         assert_eq!(flame_dims(0.05), (0.3, 0.6), "a tiny fire is at the minimum");
         assert!(flame_dims(2.0).1 > flame_dims(0.5).1);
+        assert!(flame_view(5.0).1 <= FLAME_VIEW_MAX_H + 1e-9, "a big fire is drawn at most the view height");
+        assert_eq!(flame_view(0.5), flame_dims(0.5), "a small fire is drawn at its size");
         assert!(glow_radius(0.05) >= 0.6 && glow_radius(2.0) > glow_radius(0.5));
     }
 
@@ -521,7 +534,7 @@ fn flames_sync(
     for f in fires {
         let Some((ground, up)) = flame_world(area, &planet, f.pos) else { continue };
         let k = 0.9 + 0.1 * (t * 17.0 + f.id as f64).sin();
-        let (hw, h) = flame_dims(f.size);
+        let (hw, h) = flame_view(f.size);
         let h = h * k;
         let rot = frame.rotation(up, 0.0).as_quat();
         // The flame's base sits on the floor; the cone's mesh is centred and 1 m tall.
@@ -554,7 +567,7 @@ fn flames_sync(
         } else {
             let mesh = meshes.add(Cone::new(0.5, 1.0));
             // Lit, with a strong emissive: the flame reads from the far side of the room.
-            let mat = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.55, 0.12), emissive: LinearRgba::rgb(9.0, 3.0, 0.5), ..default() });
+            let mat = materials.add(StandardMaterial { base_color: Color::srgba(1.0, 0.45, 0.1, 0.7), emissive: LinearRgba::rgb(3.0, 1.0, 0.2), alpha_mode: AlphaMode::Blend, unlit: true, ..default() });
             let e = commands
                 .spawn((
                     Flame,
@@ -594,7 +607,8 @@ fn flames_sync(
             let p = jet_point(nozzle, end, half, phase, jet_spin(i));
             if let Ok((mut tr, mut v)) = jets.get_mut(vis.jets[idx]) {
                 tr.translation = to_render(p);
-                tr.scale = Vec3::splat((0.03 + 0.05 * phase) as f32);
+                // A drop of 5 to 10 cm across, the far ones the larger.
+                tr.scale = Vec3::splat((0.025 + 0.025 * phase) as f32);
                 *v = Visibility::Inherited;
                 shown[idx] = true;
             }

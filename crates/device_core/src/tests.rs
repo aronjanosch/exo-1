@@ -216,3 +216,12 @@ fn the_screwdriver_repairs_slower_than_the_wrench() {
     }
     assert!(w.value() > s.value(), "wrench {} screwdriver {}", w.value(), s.value());
 }
+
+#[test]
+fn holding_repairs_a_broken_device_all_the_way() {
+    let mut c = safe();
+    c.set_value(0.0);
+    let (t, o) = hold(&mut c, 50.0, Tool::WRENCH);
+    assert!(c.functioning() && c.fraction() >= 1.0, "{o:?}");
+    assert!(t < 60.0, "the hold takes about a repair time: {t:.1} s");
+}

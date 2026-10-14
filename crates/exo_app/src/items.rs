@@ -592,7 +592,8 @@ fn held_item(
     if m.0 != want {
         m.0 = want.clone();
         if let Some(d) = want.as_deref().and_then(|id| items.defs.get(id)) {
-            let [x, y, z] = d.shape.extents.map(|v| v as f32);
+            let k = held_scale(d.hands) as f32;
+            let [x, y, z] = d.shape.extents.map(|v| v as f32 * k);
             let [r, g, b] = d.shape.colour;
             commands.entity(e).insert((Mesh3d(meshes.add(Cuboid::new(x, y, z))), MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(r, g, b), perceptual_roughness: 0.6, ..default() }))));
         }
@@ -601,6 +602,13 @@ fn held_item(
     let hands = m.0.as_deref().and_then(|id| items.defs.get(id)).map_or(1, |d| d.hands);
     pose.pos = c.pos + c.rot * held_offset(hands);
     pose.rot = c.rot;
+}
+
+/// How big a held item is drawn, against its own size: one hand at full size; two hands at 0.6,
+/// so the item takes about a tenth of the screen (it was about a tenth of the width and most of
+/// the height at full size).
+fn held_scale(hands: u8) -> f64 {
+    if hands >= 2 { 0.6 } else { 1.0 }
 }
 
 /// Where a held item sits in the view, camera space (x right, y up, -z forward): one hand low
@@ -996,5 +1004,16 @@ mod tests {
         // Its screen area: about half of the one-handed pose (the size falls with the distance squared).
         let share = (one.z / two.z).powi(2);
         assert!((0.45..0.55).contains(&share), "area share {share}");
+    }
+
+    #[test]
+    fn a_two_handed_item_is_drawn_smaller_so_it_takes_a_small_part_of_the_screen() {
+        assert_eq!((held_scale(1), held_scale(2)), (1.0, 0.6));
+        let (one, two) = (held_offset(1), held_offset(2));
+        // Screen area against a one-handed item of the same size: the scale squared over the distance squared.
+        let area = (held_scale(2) * one.z / two.z).powi(2);
+        assert!(area < 0.2, "the two-handed item takes {area:.2} of the one-handed footprint");
+        // The old pose (full size, nearer the middle) covered about 11 % of the screen; this is ~4 %.
+        assert!(0.11 * area / 0.5 <= 0.10 + 1e-9, "screen share {:.3}", 0.11 * area / 0.5);
     }
 }

@@ -78,7 +78,7 @@ fn auto_holds_steady_at_constant_load() {
 
 /// Steady state at 500 kW, then the load drops to the life support alone.
 fn settle_then_drop(r: &mut EngineRoom) {
-    run(r, 120.0, Input::auto());
+    settle(r);
     r.trigger(Fault::LoadDrop);
 }
 
@@ -129,13 +129,14 @@ fn manual_with_a_good_input_avoids_the_overshoot() {
 #[test]
 fn pump_break_climbs_to_fire_then_meltdown() {
     let mut r = room();
-    // Fission 43.75 with two rods and the pump on: the temperature settles at 50.
-    // Settle on Auto first: a manual start from cold has no flow until the output rises (below).
+    // Settle on Auto first: a manual start from cold has no flow until the output rises.
     settle(&mut r);
+    // Manual 43.75 / 50 until the fission lag (4 s) and the temperature spring have settled: 55.0
+    // (r10 read 56.5 thirty seconds from cold, a transient; its settled value is 55.0 too).
     let input = Input::manual(43.75, 50.0);
-    run(&mut r, 1.0, input);
+    run(&mut r, 120.0, input);
     let before = r.reactor().temperature();
-    assert!((before - 56.5).abs() < 1.0, "{before}");
+    assert!((before - 55.0).abs() < 1.0, "{before}");
     let ev_now = r.trigger(Fault::PumpBreak);
     assert!(matches!(ev_now.as_slice(), [RoomEvent::Device { source: Source::Pump, event: DeviceEvent::Broke }]), "{ev_now:?}");
     assert_eq!(r.pump().factor(), 0.0);
@@ -791,15 +792,20 @@ fn low_settles_at_the_low_speed_and_high_at_full() {
 
 #[test]
 fn low_cools_less_than_high_at_the_same_heat() {
+    // The same manual inputs for both, so the fission heat is the same; the comparison is of the
+    // mean over the last minute, once the fission lag and the temperature spring have settled.
+    let input = Input::manual(43.75, 50.0);
     let mut high = room();
-    refuel(&mut high);
+    settle(&mut high);
     let mut low = room();
-    refuel(&mut low);
+    settle(&mut low);
     low.set_pump_mode(PumpMode::Low);
-    run(&mut high, 240.0, Input::auto());
-    run(&mut low, 240.0, Input::auto());
-    let (_, th) = run(&mut high, 60.0, Input::auto());
-    let (_, tl) = run(&mut low, 60.0, Input::auto());
+    run(&mut high, 120.0, input);
+    run(&mut low, 120.0, input);
+    high.pump_mut().set_tank(100.0);
+    low.pump_mut().set_tank(100.0);
+    let (_, th) = run(&mut high, 60.0, input);
+    let (_, tl) = run(&mut low, 60.0, input);
     let mh = th.iter().sum::<f64>() / th.len() as f64;
     let ml = tl.iter().sum::<f64>() / tl.len() as f64;
     assert!(ml > mh + 1.0, "Low holds the core hotter: low {ml:.1} vs high {mh:.1}");
@@ -848,6 +854,7 @@ fn the_power_factor_on_the_backup_is_one_with_no_output() {
     assert_eq!(r.power_factor(), 1.0);
     assert_eq!(r.flow(), 1.0);
 }
+
 
 
 

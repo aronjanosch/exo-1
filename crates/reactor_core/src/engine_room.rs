@@ -51,6 +51,16 @@ pub struct RoomTuning {
     pub spark_fire_size: f64,
     /// Condition a `Fault::Surge` takes from the junction box.
     pub surge_damage: f64,
+    /// Coolant tank use while the pump runs, % of the tank per second, before any heat.
+    /// TODO(initiator): value. Full tank at normal running lasts about 6.5 min with the rest.
+    pub coolant_use_base: f64,
+    /// Extra coolant use, % of the tank per second per unit of heat the reactor makes, at full
+    /// flow: the pump uses more the more heat it carries away. TODO(initiator): value.
+    pub coolant_use_per_heat: f64,
+    /// The tank is low below this level, %. The pump's screen warns LOW.
+    pub coolant_low: f64,
+    /// What one coolant canister adds to the tank, %.
+    pub coolant_canister: f64,
 }
 
 impl Default for RoomTuning {
@@ -67,6 +77,10 @@ impl Default for RoomTuning {
             spark_fire_chance: 0.2,
             spark_fire_size: 0.05,
             surge_damage: 30.0,
+            coolant_use_base: 0.04,
+            coolant_use_per_heat: 0.0013,
+            coolant_low: 25.0,
+            coolant_canister: 50.0,
         }
     }
 }
@@ -137,12 +151,40 @@ pub enum AlarmLevel {
 pub struct Pump {
     condition: Condition,
     on: bool,
+    /// Coolant left in the tank, 0..100 %. Empty: no flow.
+    tank: f64,
 }
 
 impl Pump {
     /// A pump that is on.
     pub fn new(tuning: &RoomTuning, seed: u64) -> Pump {
-        Pump { condition: Condition::new(tuning.pump, seed), on: true }
+        Pump { condition: Condition::new(tuning.pump, seed), on: true, tank: 100.0 }
+    }
+
+    /// Coolant left in the tank, 0..100 %.
+    pub fn tank(&self) -> f64 {
+        self.tank
+    }
+
+    /// Sets the tank level (0..100 %). For the dev drain and the tests.
+    pub fn set_tank(&mut self, pct: f64) {
+        self.tank = pct.clamp(0.0, 100.0);
+    }
+
+    /// Adds `pct` to the tank up to full. Returns what was added.
+    pub fn refill(&mut self, pct: f64) -> f64 {
+        let before = self.tank;
+        self.tank = (self.tank + pct.max(0.0)).min(100.0);
+        self.tank - before
+    }
+
+    /// The tank uses coolant while the pump runs, in proportion to the heat it carries away
+    /// (`heat`, the reactor's heat input) and the flow.
+    fn use_coolant(&mut self, dt: f64, flow: f64, heat: f64, t: &RoomTuning) {
+        if flow > 0.0 {
+            let rate = (t.coolant_use_base + t.coolant_use_per_heat * heat.max(0.0)) * flow;
+            self.tank = (self.tank - rate * dt).max(0.0);
+        }
     }
 
     /// The switch on the pump's screen. Off, it takes no heat away.
@@ -311,9 +353,9 @@ impl EngineRoom {
         self.junction.condition.functioning() && self.reactor.output_kw() > 0.0
     }
 
-    /// The coolant flow, 0..1: the pump's factor while it is on and the reactor runs, else 0.
+    /// The coolant flow, 0..1: the pump's factor while it is on and its tank has coolant, else 0.
     pub fn flow(&self) -> f64 {
-        if self.pump.on { self.pump.factor() } else { 0.0 }
+        if self.pump.on && self.pump.tank > 0.0 { self.pump.factor() } else { 0.0 }
     }
 
     /// Switches a consumer group's breaker on the junction box.
@@ -340,10 +382,12 @@ impl EngineRoom {
         if input.mode == Mode::Manual {
             self.reactor.set_targets(input.fission, input.turbine);
         }
-        self.reactor.set_coolant(self.flow());
+        let flow = self.flow();
+        self.reactor.set_coolant(flow);
 
         let load = self.grid.request_kw();
         ev.extend(self.reactor.step(dt, load).into_iter().map(RoomEvent::Reactor));
+        self.pump.use_coolant(dt, flow, self.reactor.heat_input(), &t);
 
         let (through, junction_ev) = self.junction.pass(dt, self.reactor.output_kw(), load, &t);
         ev.extend(junction_ev);

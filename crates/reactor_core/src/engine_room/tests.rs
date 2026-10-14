@@ -324,6 +324,7 @@ fn normal_running_wears_the_machines_to_the_floor_and_never_breaks_them() {
     let mut broke = Vec::new();
     for _ in 0..6 {
         refuel(&mut r);
+        r.pump_mut().refill(100.0);
         let (ev, _) = run(&mut r, 300.0, Input::auto());
         broke.extend(ev.into_iter().filter(|(_, e)| matches!(e, RoomEvent::Device { event: DeviceEvent::Broke, .. })));
     }
@@ -430,4 +431,74 @@ fn a_cold_start_warms_up_and_gives_output() {
     assert!(!ev.iter().any(|(_, e)| is_fire(e)));
     let (_, tail) = run(&mut r, 30.0, Input::auto());
     assert!(tail.last().unwrap() > &50.0);
+}
+
+// ---------- coolant tank (#300, lane coolant) ----------
+
+/// Steps in auto until the tank is dry; the seconds it took, or None.
+fn secs_until_dry(r: &mut EngineRoom, max_secs: f64) -> Option<f64> {
+    let mut t = 0.0;
+    while t < max_secs {
+        r.step(DT, Input::auto());
+        t += DT;
+        if r.pump().tank() <= 0.0 {
+            return Some(t);
+        }
+    }
+    None
+}
+
+#[test]
+fn a_full_tank_lasts_five_to_eight_minutes_at_normal_running() {
+    let mut r = room();
+    refuel(&mut r);
+    run(&mut r, 60.0, Input::auto());
+    r.pump_mut().set_tank(100.0);
+    let secs = secs_until_dry(&mut r, 1200.0).expect("the tank runs dry within 20 minutes");
+    assert!((300.0..=480.0).contains(&secs), "a full tank lasts {secs:.0} s at normal running");
+}
+
+#[test]
+fn the_pump_uses_more_coolant_the_more_heat_it_carries() {
+    let mut cool = room();
+    refuel(&mut cool);
+    let mut hot = room();
+    refuel(&mut hot);
+    run(&mut cool, 60.0, Input::manual(20.0, 20.0));
+    run(&mut hot, 60.0, Input::manual(90.0, 20.0));
+    assert!(
+        hot.pump().tank() < cool.pump().tank() - 1.0,
+        "hot {} should use more than cool {}",
+        hot.pump().tank(),
+        cool.pump().tank()
+    );
+}
+
+#[test]
+fn an_empty_tank_is_no_flow_and_the_core_runs_hot() {
+    let mut full = room();
+    refuel(&mut full);
+    let mut dry = room();
+    refuel(&mut dry);
+    dry.pump_mut().set_tank(0.0);
+    assert_eq!(dry.flow(), 0.0, "no tank, no flow");
+    assert!(full.flow() > 0.0);
+    // Four rods (the refuel): 15 fission is about 100 kW of heat, 30 turbine takes some of it.
+    let (_, tf) = run(&mut full, 120.0, Input::manual(15.0, 30.0));
+    let (_, td) = run(&mut dry, 120.0, Input::manual(15.0, 30.0));
+    assert!(td.last().unwrap() > &(tf.last().unwrap() + 5.0), "dry {:?} vs full {:?}", td.last(), tf.last());
+}
+
+#[test]
+fn a_canister_refills_the_tank_up_to_full_and_brings_the_flow_back() {
+    let mut r = room();
+    r.pump_mut().set_tank(30.0);
+    assert_eq!(r.pump_mut().refill(50.0), 50.0);
+    assert_eq!(r.pump().tank(), 80.0);
+    assert_eq!(r.pump_mut().refill(50.0), 20.0, "only what fits is taken");
+    assert_eq!(r.pump().tank(), 100.0);
+    r.pump_mut().set_tank(0.0);
+    assert_eq!(r.flow(), 0.0);
+    r.pump_mut().refill(50.0);
+    assert!(r.flow() > 0.0, "the flow comes back with coolant in the tank");
 }

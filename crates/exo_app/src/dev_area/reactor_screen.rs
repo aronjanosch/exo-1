@@ -356,6 +356,7 @@ pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64) -> Panel {
                 vec![
                     pump_picture(r.pump_on && r.flow > 0.0, angle),
                     column(4.0, vec![micro("FLOW").fixed(14.0), readout(format!("{:.0}%", r.flow * 100.0)).text_size(font::VALUE).tone(tone).fixed(46.0), readout(word).text_size(font::LABEL).tone(tone)]).flex(1.0),
+                    coolant_tube(&r).fixed(60.0),
                 ],
             )
             .fixed(109.0),
@@ -364,6 +365,33 @@ pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64) -> Panel {
         ],
     );
     Panel::screen(Tier::S, PUMP_NAME, "CP-01", body).with_padding(6.0)
+}
+
+/// The coolant tank as a tube beside the flow (60 x 109): its level, LOW under the line (a warn
+/// fill) and EMPTY at none (the word in bad). The sim's level and line (`ReactorNews::coolant`).
+fn coolant_tube(r: &ReactorNews) -> Item {
+    let (x, top, w, h) = (14.0, 16.0, 32.0, 70.0);
+    let mut s = vec![text(0.0, 0.0, 60.0, 14.0, "COOL", 14.0, TextFace::Display, Ink::HudDim, true), Shape::Rect { x, y: top, w, h, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) }];
+    let fill_h = h * (r.coolant / 100.0).clamp(0.0, 1.0);
+    if fill_h > 0.0 {
+        let fy = top + h - fill_h;
+        if r.coolant_low {
+            s.push(Shape::Hatch { x: x + 2.0, y: fy, w: w - 4.0, h: fill_h, ink: Ink::Warn });
+        } else {
+            s.push(Shape::Rect { x: x + 2.0, y: fy, w: w - 4.0, h: fill_h, fill: Some(Ink::Good), outline: None });
+        }
+    }
+    let (word, ink) = if r.coolant <= 0.0 {
+        ("EMPTY", Ink::Bad)
+    } else if r.coolant_low {
+        ("LOW", Ink::Warn)
+    } else {
+        ("", Ink::Fg2)
+    };
+    if !word.is_empty() {
+        s.push(text(0.0, 90.0, 60.0, 16.0, word, 16.0, TextFace::DisplayBold, ink, true));
+    }
+    canvas(60.0, 109.0, s, None)
 }
 
 /// One breaker lever (94 wide): its name, the slot, the handle at the top when on, at the bottom
@@ -459,20 +487,28 @@ pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
 
 /// The dev fault screen: the three faults, a fire at the reactor and the reset, one button a row.
 pub fn faults_panel() -> Panel {
+    // Two columns: the faults on the left, the fire and the resets on the right.
+    let col = |items: Vec<_>| column(4.0, items);
     Panel::screen(
         Tier::S,
         FAULTS_NAME,
         "DEV-02",
-        column(
-            4.0,
+        row(
+            6.0,
             vec![
-                button("Pump break", "pump_break").fixed(24.0),
-                button("Load drop", "load_drop").fixed(24.0),
-                button("Surge", "surge").fixed(24.0),
-                button("Start fire", "fire").fixed(24.0),
-                button("Fire: point/grid", "fire_model").fixed(24.0),
-                button("Reset reactor", "reset").fixed(24.0),
-                space(),
+                col(vec![
+                    button("Pump break", "pump_break").fixed(32.0),
+                    button("Load drop", "load_drop").fixed(32.0),
+                    button("Surge", "surge").fixed(32.0),
+                    button("Drain coolant", "drain_coolant").fixed(32.0),
+                    space(),
+                ]),
+                col(vec![
+                    button("Start fire", "fire").fixed(32.0),
+                    button("Fire: point/grid", "fire_model").fixed(32.0),
+                    button("Reset reactor", "reset").fixed(32.0),
+                    space(),
+                ]),
             ],
         ),
     )
@@ -511,6 +547,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "surge" => Some(ReactorAsk::Trigger(ReactorFault::Surge)),
                 "fire" => Some(ReactorAsk::Trigger(ReactorFault::Fire)),
                 "reset" => Some(ReactorAsk::Reset),
+                "drain_coolant" => Some(ReactorAsk::Trigger(ReactorFault::DrainCoolant)),
                 _ => None,
             }
         } else {
@@ -561,6 +598,10 @@ mod tests {
         }
         for flow in [0.0, 0.5, 1.0] {
             v.push(pump_panel(Some(&ReactorNews { flow, ..news() })));
+        }
+        // The coolant tube: full, LOW (warn) and EMPTY (bad).
+        for (coolant, coolant_low) in [(100.0, false), (20.0, true), (0.0, true)] {
+            v.push(pump_panel(Some(&ReactorNews { coolant, coolant_low, ..news() })));
         }
         for temp in [10.0, 40.0, 60.0, 72.0, 95.0] {
             v.push(door_panel(Some(&ReactorNews { temp, ..news() })));
@@ -657,6 +698,16 @@ mod tests {
         assert_eq!(power_ink(480.0, 500.0), Ink::Good, "4 % short");
         assert_eq!(power_ink(400.0, 500.0), Ink::Warn, "20 % short");
         assert_eq!(power_ink(200.0, 500.0), Ink::Bad, "60 % short");
+    }
+
+    #[test]
+    fn the_coolant_tube_says_low_and_empty_and_the_drain_is_a_fault() {
+        let low = pump_panel(Some(&ReactorNews { coolant: 20.0, coolant_low: true, ..news() }));
+        let empty = pump_panel(Some(&ReactorNews { coolant: 0.0, coolant_low: true, ..news() }));
+        let full = pump_panel(Some(&ReactorNews { coolant: 100.0, ..news() }));
+        assert_ne!(format!("{low:?}"), format!("{full:?}"), "a low tank is drawn");
+        assert_ne!(format!("{empty:?}"), format!("{low:?}"), "an empty tank says EMPTY");
+        assert!(faults_panel().find("drain_coolant").is_some());
     }
 
     #[test]

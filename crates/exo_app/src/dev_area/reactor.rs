@@ -59,6 +59,9 @@ impl ReactorSim {
         for _ in 0..1500 {
             let _ = room.step(0.1, Input::auto());
         }
+        // The warm-up runs the tank down; a fresh room starts with a full one (TODO(initiator): later
+        // the tank may start where the ship's last run left it).
+        room.pump_mut().refill(100.0);
         ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, sent: None, since_send: f64::MAX }
     }
 
@@ -77,6 +80,10 @@ impl ReactorSim {
             ReactorAsk::SetFission(v) if self.manual => self.fission = v.clamp(0.0, 100.0),
             ReactorAsk::SetTurbine(v) if self.manual => self.turbine = v.clamp(0.0, 100.0),
             ReactorAsk::SetFission(_) | ReactorAsk::SetTurbine(_) => {}
+            ReactorAsk::Trigger(ReactorFault::DrainCoolant) => {
+                self.room.pump_mut().set_tank(0.0);
+                info!("reactor: dev drain of the coolant tank");
+            }
             ReactorAsk::Trigger(f) => {
                 // The fire is started by `reactor_step`, which owns the air (`fault` is None for it).
                 if let Some(f) = fault(f) {
@@ -128,6 +135,8 @@ impl ReactorSim {
             breakers: Group::ALL.map(|g| grid.breaker(g)),
             pump_on: self.room.pump().on(),
             flow: self.room.flow(),
+            coolant: self.room.pump().tank(),
+            coolant_low: self.room.pump().tank() < self.room.tuning().coolant_low,
             overvolt: self.room.junction().overvolted(),
             oxygen,
             fuel: [0, 1].map(|i| r.rods().get(i).map_or(0.0, |x| x.life)),
@@ -153,7 +162,7 @@ fn fault(f: ReactorFault) -> Option<Fault> {
         ReactorFault::PumpBreak => Some(Fault::PumpBreak),
         ReactorFault::LoadDrop => Some(Fault::LoadDrop),
         ReactorFault::Surge => Some(Fault::Surge),
-        ReactorFault::Fire => None,
+        ReactorFault::Fire | ReactorFault::DrainCoolant => None,
     }
 }
 
@@ -215,8 +224,17 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
             info!("reactor: dev fire");
             events.push(RoomEvent::Fire { size: fires.0.start_size, source: Source::Reactor });
         } else {
+            if a == ReactorAsk::Reset {
+                // The fires are the air's: a fresh room starts with a fresh air (no fire survives).
+                *air = EngineAir::new();
+            }
             sim.apply(a, &cfg.0, &mut counts);
         }
+    }
+    // Canisters the host applied (`dev_area::coolant`): each refills the tank by a canister's worth.
+    for _ in 0..items.take_refills() {
+        let added = sim.room.pump_mut().refill(cfg.0.room.coolant_canister);
+        info!("reactor: coolant canister, the tank gains {added:.0} %");
     }
     let dt = time.delta_secs_f64();
     let input = if sim.manual { Input::manual(sim.fission, sim.turbine) } else { Input::auto() };
@@ -283,6 +301,26 @@ mod tests {
         assert!(!n.pump_on && n.flow == 0.0);
         s.apply(ReactorAsk::SetPump(true), &cfg(), &mut k);
         assert!(s.news(1.0).pump_on && s.news(1.0).flow == 1.0);
+    }
+
+    #[test]
+    fn a_drain_empties_the_tank_and_the_news_says_so() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        assert!(s.news(0.0).coolant > 99.0, "a new room has a full tank");
+        s.apply(ReactorAsk::Trigger(ReactorFault::DrainCoolant), &cfg(), &mut k);
+        let n = s.news(0.0);
+        assert_eq!(n.coolant, 0.0);
+        assert!(n.coolant_low && n.flow == 0.0, "an empty tank is no flow");
+    }
+
+    #[test]
+    fn a_reset_refills_the_tank() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.apply(ReactorAsk::Trigger(ReactorFault::DrainCoolant), &cfg(), &mut k);
+        s.apply(ReactorAsk::Reset, &cfg(), &mut k);
+        assert!(s.news(0.0).coolant > 99.0);
     }
 
     #[test]

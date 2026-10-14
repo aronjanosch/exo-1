@@ -230,7 +230,7 @@ pub fn plugin(app: &mut App) {
 }
 
 /// The machine whose block the look hits within `reach`, if any.
-fn aimed(eye: DVec3, look: DVec3, machines: &Query<(&DevBox, &Position, &Rotation)>, reach: f64) -> Option<RepairDevice> {
+pub(crate) fn aimed(eye: DVec3, look: DVec3, machines: &Query<(&DevBox, &Position, &Rotation)>, reach: f64) -> Option<RepairDevice> {
     let dir = look.normalize_or_zero();
     machines.iter().find_map(|(b, p, r)| {
         let d = device_of(&b.id)?;

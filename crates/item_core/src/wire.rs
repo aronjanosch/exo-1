@@ -213,6 +213,8 @@ pub enum ReactorFault {
     Surge,
     /// A fire at the reactor (#298).
     Fire,
+    /// The coolant tank runs dry (the dev drain for the coolant lane, #300).
+    DrainCoolant,
 }
 
 /// The extinguisher's spray, as its holder asks for it (#298).
@@ -292,6 +294,10 @@ pub struct ReactorNews {
     pub pump_on: bool,
     /// Coolant flow, 0..1.
     pub flow: f64,
+    /// Coolant in the pump's tank, 0..100 %.
+    pub coolant: f64,
+    /// The tank is below its LOW line (`RoomTuning::coolant_low`).
+    pub coolant_low: bool,
     /// Overvoltage at the junction box now.
     pub overvolt: bool,
     /// The engine room's air, 0..1 (the host rounds it to whole percent).
@@ -419,6 +425,8 @@ mod tests {
             breakers: [true, false, true],
             pump_on: true,
             flow: 0.4,
+            coolant: 60.0,
+            coolant_low: false,
             overvolt: true,
             oxygen: 0.21,
             fuel: [80.0, 12.5],

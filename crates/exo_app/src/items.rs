@@ -128,6 +128,8 @@ pub struct Items {
     /// Uses the host applied since the last `take_uses`: (user, target, effect). The health
     /// system applies the effect (#295).
     pub used: Vec<(PlayerId, PlayerId, String)>,
+    /// Coolant canisters the host applied since the last `take_refills` (#300).
+    pub refills: u32,
     /// The latest vitals the host sent this client (#295), taken by the health system.
     pub vitals_in: Option<Vitals>,
     /// The engine room as the host has it (#296): the host sets it, a client takes it from the wire.
@@ -170,7 +172,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), rescue_asks: Vec::new() }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), rescue_asks: Vec::new() }
     }
 
     /// The local player's slot.
@@ -267,6 +269,11 @@ impl Items {
         self.net_out.push(NetOut::Vitals { to, v });
     }
 
+    /// The canisters the host applied since the last call (#300).
+    pub fn take_refills(&mut self) -> u32 {
+        std::mem::take(&mut self.refills)
+    }
+
     /// The uses the host applied since the last call (#295).
     pub fn take_uses(&mut self) -> Vec<(PlayerId, PlayerId, String)> {
         std::mem::take(&mut self.used)
@@ -337,6 +344,9 @@ impl Items {
             for ev in evs {
                 if let Event::Used { player, target, effect } = &ev {
                     self.used.push((*player, *target, effect.clone()));
+                    if effect == crate::dev_area::coolant::REFILL {
+                        self.refills += 1;
+                    }
                 }
                 self.publish(now, ev, Some(a.player));
             }

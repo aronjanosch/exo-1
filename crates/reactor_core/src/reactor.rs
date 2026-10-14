@@ -47,6 +47,17 @@ pub struct ReactorTuning {
     /// Heat the pump takes away at full output, as an offset of the temperature target (degrees).
     /// TODO(initiator): value. Two rods are needed to hold the optimal band with it at full load.
     pub cooling_max: f64,
+    /// Residual (decay) heat in degrees of temperature target: it is there only without coolant,
+    /// the coolant takes it away (`(1 - flow) * decay_heat`). The turbine does not take it.
+    /// TODO(initiator): value. Without coolant it keeps the core hot after a SCRAM and above the
+    /// allowed band when fission is cut to nothing.
+    pub decay_heat: f64,
+    /// Seconds for the coolant flow to run down after the pump stops (and to come back): the
+    /// water in the pipes coasts. TODO(initiator): value.
+    pub coolant_coast_s: f64,
+    /// The reactor's own condition: repair threshold and wear floor (Barotrauma style, the floor
+    /// is the lowest that normal wear reaches; the broken limit is the floor at least).
+    pub condition: DeviceTuning,
 }
 
 impl Default for ReactorTuning {
@@ -64,6 +75,9 @@ impl Default for ReactorTuning {
             alarm_hysteresis: 3.0,
             fuel_low: 20.0,
             cooling_max: 40.0,
+            decay_heat: 150.0,
+            coolant_coast_s: 60.0,
+            condition: DeviceTuning { repair_threshold: 50.0, wear_floor: 10.0, ..DeviceTuning::default() },
         }
     }
 }
@@ -217,12 +231,14 @@ pub struct Reactor {
     alarms: [bool; 3],
     condition: Condition,
     /// Output factor of the coolant pump, 0..1 (set by the engine room each step).
+    coolant_target: f64,
+    /// The coolant flow that takes heat away now, 0..1: follows `coolant_target` with a coast.
     coolant: f64,
 }
 
 impl Reactor {
     /// A cold reactor, off, empty, in Auto, at full condition.
-    pub fn new(tuning: ReactorTuning, device: DeviceTuning, seed: u64) -> Reactor {
+    pub fn new(tuning: ReactorTuning, seed: u64) -> Reactor {
         Reactor {
             tuning,
             mode: Mode::Auto,
@@ -241,7 +257,8 @@ impl Reactor {
             overheat_timer: 0.0,
             output: 0.0,
             alarms: [false; 3],
-            condition: Condition::new(device, seed),
+            condition: Condition::new(tuning.condition, seed),
+            coolant_target: 1.0,
             coolant: 1.0,
         }
     }
@@ -280,7 +297,12 @@ impl Reactor {
 
     /// Output factor of the coolant pump, 0..1: scales the cooling offset.
     pub fn set_coolant(&mut self, factor: f64) {
-        self.coolant = factor.clamp(0.0, 1.0);
+        self.coolant_target = factor.clamp(0.0, 1.0);
+    }
+
+    /// The coolant flow that takes heat away now, 0..1 (lags the pump's factor).
+    pub fn coolant_flow(&self) -> f64 {
+        self.coolant
     }
 
     /// Skill (0..100) of whoever runs the reactor; it widens the bands. 0 when nobody does.
@@ -366,6 +388,8 @@ impl Reactor {
         let t = self.tuning;
         let mut ev = Vec::new();
         let k = dt.min(1.0);
+        let coast = (dt / t.coolant_coast_s.max(1e-9)).min(1.0);
+        self.coolant += (self.coolant_target - self.coolant) * coast;
 
         if !self.condition.functioning() {
             // Broken: off the grid, cools fast, targets run down. Fission and turbine stay where
@@ -396,7 +420,8 @@ impl Reactor {
         }
         let heat = self.fission * (self.fuel / 100.0) * 2.0;
         let cool = t.cooling_max * self.coolant;
-        let diff = (heat - self.turbine - cool) - self.temp;
+        let residual = t.decay_heat * (1.0 - self.coolant);
+        let diff = (heat + residual - self.turbine - cool) - self.temp;
         self.temp = (self.temp + (diff.signum() * t.temp_rate * dt).clamp(-diff.abs(), diff.abs())).clamp(0.0, 100.0);
         self.fission += (self.target_fission.min(fuel) - self.fission) * k;
         self.turbine += (self.target_turbine - self.turbine) * k;

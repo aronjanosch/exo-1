@@ -1,8 +1,10 @@
 //! The engine room: reactor, coolant pump, junction box and the grid of consumers, stepped together.
 //!
-//! - The pump's flow (`EngineRoom::flow`: 0 when off or the reactor does not run, else the pump's
-//!   factor from `device_core`, 1 working, 0 broken) scales the reactor's cooling offset, so off or
-//!   broken lets the temperature climb. Heat above the optimal band wears a running pump as overload.
+//! - The pump's flow (`EngineRoom::flow`: 0 when off, else the pump's factor from `device_core`, 1
+//!   working, 0 broken) is the coolant: it takes the cooling offset and the residual heat away. The
+//!   reactor's coolant follows it with a coast (`coolant_coast_s`), so off or broken lets the
+//!   temperature climb, and without flow the core climbs whatever Auto does. Heat above the optimal
+//!   band wears a running pump as overload.
 //! - The junction box sits between the reactor and the consumers. Supply above `overvolt_ratio`
 //!   times the demand is overvoltage: the box takes damage per second, and while overvolted each
 //!   second may bring sparks, and sparks may start a fire. A broken box passes nothing. Its
@@ -54,9 +56,11 @@ pub struct RoomTuning {
 impl Default for RoomTuning {
     fn default() -> RoomTuning {
         RoomTuning {
-            pump: DeviceTuning::default(),
+            // Wear as in Barotrauma: normal wear stops at the floor (50), above the repair line (80)
+            // for the pump and the junction box, so wear creates repair work but breaks nothing.
+            pump: DeviceTuning { repair_threshold: 80.0, ..DeviceTuning::default() },
             heat_wear_degrees: 10.0,
-            junction: DeviceTuning::default(),
+            junction: DeviceTuning { repair_threshold: 80.0, ..DeviceTuning::default() },
             overvolt_ratio: 2.0,
             overvolt_damage_s: 2.0,
             sparks_per_s: 0.1,
@@ -240,7 +244,7 @@ impl EngineRoom {
     /// A cold room from the loaded values: `start_rods` standard rods, the operator at skill 50,
     /// the grid's demands. Power is off: `set_power(true)` starts the reactor.
     pub fn from_tuning(t: &Tuning, seed: u64) -> EngineRoom {
-        let mut reactor = Reactor::new(t.reactor, DeviceTuning::default(), seed.wrapping_add(2));
+        let mut reactor = Reactor::new(t.reactor, seed.wrapping_add(2));
         for _ in 0..t.start_rods {
             let _ = reactor.insert_rod(FuelRod::standard());
         }
@@ -309,7 +313,7 @@ impl EngineRoom {
 
     /// The coolant flow, 0..1: the pump's factor while it is on and the reactor runs, else 0.
     pub fn flow(&self) -> f64 {
-        if self.pump.on && self.reactor.power_on() { self.pump.factor() } else { 0.0 }
+        if self.pump.on { self.pump.factor() } else { 0.0 }
     }
 
     /// Switches a consumer group's breaker on the junction box.

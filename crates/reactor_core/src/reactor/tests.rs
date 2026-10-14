@@ -4,7 +4,7 @@ use super::*;
 const DT: f64 = 1.0 / 30.0;
 
 fn reactor(skill: f64) -> Reactor {
-    let mut r = Reactor::new(ReactorTuning::default(), DeviceTuning::default(), 3);
+    let mut r = Reactor::new(ReactorTuning::default(), 3);
     // Two rods: the pump's cooling offset needs the fuel for the optimal band.
     r.insert_rod(FuelRod::standard()).unwrap();
     r.insert_rod(FuelRod::standard()).unwrap();
@@ -208,7 +208,7 @@ fn output_stays_in_its_range() {
     r.step(DT, 5000.0);
     assert!((r.output_kw() - r.output_range().1).abs() < 1e-6, "high load gives the maximum");
     // A cold reactor gives nothing whatever the turbine.
-    let mut cold = Reactor::new(ReactorTuning::default(), DeviceTuning::default(), 1);
+    let mut cold = Reactor::new(ReactorTuning::default(), 1);
     cold.set_targets(0.0, 100.0);
     cold.step(DT, 500.0);
     assert_eq!(cold.output_kw(), 0.0);

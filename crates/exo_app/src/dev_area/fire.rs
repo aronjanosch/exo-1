@@ -16,7 +16,7 @@
 //! - Window only: a flickering flame, a warm glow on the floor and a point light per fire (`effects`:
 //!   the light flickers per frame and reaches further as the fire grows), a white jet from each
 //!   spray's nozzle to where it lands, and steam where a spray lands (`effects`). The crackle is not made yet (`TODO`: a quiet noise sound in `audio.rs`).
-//! - No ammo for the extinguisher yet (`TODO(initiator)`).
+//! - The extinguisher wears down while it sprays and an empty one does not spray; the racks give full ones (`dev_area::extinguisher`, #300).
 use crate::controls::Controls;
 use crate::dev_area::engine_room::{footprint_of, ignition_at, place_of, source_at, EngineAir};
 use crate::dev_area::reactor::ReactorSim;

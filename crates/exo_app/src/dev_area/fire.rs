@@ -17,7 +17,7 @@
 //!   steam where a spray lands (`effects`). The crackle is not made yet (`TODO`: a quiet noise sound in `audio.rs`).
 //! - No ammo for the extinguisher yet (`TODO(initiator)`).
 use crate::controls::Controls;
-use crate::dev_area::engine_room::{place_of, source_at, EngineAir};
+use crate::dev_area::engine_room::{ignition_at, place_of, source_at, EngineAir};
 use crate::dev_area::reactor::ReactorSim;
 use crate::dev_area::{area_of, DevArea};
 use crate::displays::ActiveDisplay;
@@ -94,9 +94,9 @@ pub fn start_of(e: &RoomEvent) -> Option<(Source, f64)> {
     }
 }
 
-/// Starts a fire at a source's place in the engine room (or joins one it touches).
+/// Starts a fire at a source's front face in the engine room (or joins one it touches).
 pub fn ignite(air: &mut EngineAir, source: Source, size: f64) -> FireId {
-    let p = source_at(source);
+    let p = ignition_at(source);
     air.deck.ignite(air.engine, DVec3::new(p[0], p[1], 0.0), size)
 }
 

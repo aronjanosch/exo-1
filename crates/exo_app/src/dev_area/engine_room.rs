@@ -403,12 +403,14 @@ fn spawn_lights(mut commands: Commands, planet: Res<PlanetRes>, area: Res<DevAre
     }
 }
 
-/// Window: the room's white lights follow the lights breaker and the power (the snapshot).
-fn room_lights(items: Res<Items>, mut lights: Query<(&RoomLight, &mut PointLight)>) {
+/// Window: the room's white lights follow the lights breaker and the power (the snapshot). A power
+/// loss flickers them for a second, then they go dark; the return flickers them on (`effects`).
+fn room_lights(time: Res<Time>, items: Res<Items>, mut flicker: Local<crate::effects::LampFlicker>, mut lights: Query<(&RoomLight, &mut PointLight)>) {
     let on = items.reactor.is_some_and(|r| r.powered && r.breakers[item_core::wire::BreakerGroup::Lights.index()]);
+    let lit = flicker.update(on, time.elapsed_secs_f64());
     for (l, mut light) in &mut lights {
         if !l.alarm {
-            light.intensity = if on { 60_000.0 } else { 0.0 };
+            light.intensity = if lit { 60_000.0 } else { 0.0 };
         }
     }
 }

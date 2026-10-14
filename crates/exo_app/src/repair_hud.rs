@@ -162,8 +162,10 @@ fn update_ring(
                 }
             }
             (RepairPart::Progress, Some(_)) => {
-                let end = share.unwrap_or(0.0).clamp(0.0, 1.0) as f32 * std::f32::consts::TAU;
-                *g = conic(col(k.fg_title), 0.0, end);
+                let p = share.unwrap_or(0.0).clamp(0.0, 1.0);
+                let end = p as f32 * std::f32::consts::TAU;
+                let [r, g_, b] = crate::effects::progress_rgb(p);
+                *g = conic(Color::srgb(r, g_, b), 0.0, end);
             }
             _ => {}
         }

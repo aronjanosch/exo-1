@@ -136,7 +136,7 @@ fn power_gauge(r: Option<&ReactorNews>) -> Item {
         s.push(arc(cx, cy, rr, angle(0.0), angle(frac), sw, ink, None));
     }
     let n = (load / POWER_MAX_KW * 100.0).clamp(0.0, 100.0);
-    let (a, p0, p1) = (angle(n).to_radians(), 50.0, 70.0);
+    let (a, p0, p1) = (angle(n).to_radians(), 50.0, 66.0);
     s.push(Shape::Line { a: [cx + p0 * a.cos(), cy + p0 * a.sin()], b: [cx + p1 * a.cos(), cy + p1 * a.sin()], width: 4.0, ink: Ink::FgTitle, dash: None });
     s.push(text(0.0, 62.0, 216.0, 32.0, &format!("{out:.0}"), 28.0, TextFace::Mono, ink, true));
     s.push(text(0.0, 98.0, 216.0, 18.0, &format!("LOAD {load:.0}"), 16.0, TextFace::Mono, Ink::Fg2, true));

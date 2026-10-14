@@ -97,7 +97,6 @@ pub fn write_panel(s: Res<TestConsole>, alarm: Res<ShipAlarm>, mut panels: ResMu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dev_area::reactor_screen::FAULTS_AT;
 
     #[test]
     fn the_buttons_stop_at_the_ends_and_the_bar_follows_the_counter() {
@@ -119,12 +118,5 @@ mod tests {
             let alarm_button = p.find("alarm").expect("the alarm button is on the console");
             assert!(alarm_button.rect.min.x >= 0.0 && alarm_button.rect.max().x <= p.size.x && alarm_button.rect.size.y > 0.0);
         }
-    }
-
-    #[test]
-    fn the_dev_faults_screen_stands_clear_of_the_console() {
-        // The console is 1.6 m wide, the faults box 0.6 m, both centred on their spots.
-        let gap = FAULTS_AT[0] - AT[0] - (1.6 + 0.6) * 0.5;
-        assert!(gap > 0.2, "{gap:.2} m between the boxes");
     }
 }

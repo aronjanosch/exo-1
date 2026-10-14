@@ -49,6 +49,41 @@ pub enum Sound {
     Fanfare,
     /// 0.25 s: a low two-tone buzz, a warning or a failure.
     Buzz,
+    /// Loop: a crackle of filtered noise with random pops, the fire (#300). The level (0..2)
+    /// is the fire's size: lower and a little darker with the bigger fire.
+    Crackle(u8),
+    /// Loop: a soft hiss of the extinguisher's spray (#300).
+    Spray,
+    /// 0.35 s: a soft steam puff, a spray hits a fire (#300).
+    Steam,
+    /// Loop: a mechanical ratchet at the device while a repair runs (#300).
+    RepairLoop,
+    /// 0.07 s: a short rising blip, a repair hit (#300).
+    Blip,
+    /// 0.35 s: two bright notes, a repair done (#300).
+    Chime,
+    /// 0.12 s: a short electric crack, the junction box overvolted (#300).
+    Zap,
+    /// 0.09 s: a small low clunk, a breaker moved (#300).
+    Clunk,
+    /// 0.6 s: a falling tone, the power goes down (#300).
+    SweepDown,
+    /// 0.6 s: a rising tone, the power comes back (#300).
+    SweepUp,
+    /// Loop: a low pump hum, pitch and level by the flow (played at speed, #300).
+    PumpHum,
+    /// 0.3 s: filtered noise sweeping, a door slides (#300).
+    Slide,
+    /// 0.5 s: a soft low whoomp, the body catches fire (#300).
+    Whoomp,
+    /// 0.4 s: two low thumps, a heartbeat (#300).
+    Heart,
+    /// 0.25 s: a soft two-note confirmation, a treatment done (#300).
+    Confirm,
+    /// 0.6 s: a muffled low tone, going down (#300).
+    Muffled,
+    /// 0.5 s: a gentle rising tone, back up (#300).
+    Gentle,
 }
 
 impl Sound {
@@ -66,7 +101,19 @@ impl Sound {
     /// Length in seconds; loops have none.
     pub fn length(self) -> Option<f32> {
         match self {
-            Sound::Hum | Sound::Wind | Sound::Hiss | Sound::Roar => None,
+            Sound::Hum | Sound::Wind | Sound::Hiss | Sound::Roar | Sound::Crackle(_) | Sound::Spray | Sound::RepairLoop | Sound::PumpHum => None,
+            Sound::Steam => Some(0.35),
+            Sound::Blip => Some(0.07),
+            Sound::Chime => Some(0.35),
+            Sound::Zap => Some(0.12),
+            Sound::Clunk => Some(0.1),
+            Sound::SweepDown | Sound::SweepUp => Some(0.6),
+            Sound::Slide => Some(0.3),
+            Sound::Whoomp => Some(0.5),
+            Sound::Heart => Some(0.4),
+            Sound::Confirm => Some(0.25),
+            Sound::Muffled => Some(0.6),
+            Sound::Gentle => Some(0.5),
             Sound::Thud => Some(0.35),
             Sound::Click => Some(0.03),
             Sound::Grab => Some(0.12),
@@ -91,11 +138,13 @@ pub struct Synth {
     noise: u32,
     lp: f32,
     lp2: f32,
+    /// The fire's crackle: a pop decaying from its peak.
+    pop: f32,
 }
 
 impl Synth {
     pub fn new(sound: Sound) -> Synth {
-        Synth { sound, n: 0, noise: 0x1234_5678, lp: 0.0, lp2: 0.0 }
+        Synth { sound, n: 0, noise: 0x1234_5678, lp: 0.0, lp2: 0.0, pop: 0.0 }
     }
 
     fn white(&mut self) -> f32 {
@@ -215,6 +264,93 @@ impl Iterator for Synth {
                 let env = (t / 0.01).min(1.0) * (1.0 - t / 0.25);
                 // A square-ish wave: low and rude.
                 env * 0.4 * (tau * f * t).sin().signum()
+            }
+            Sound::Crackle(level) => {
+                // Three levels: the bigger the fire, the lower and fuller the crackle.
+                let (k, amp) = match level {
+                    0 => (0.25, 0.5),
+                    1 => (0.15, 0.6),
+                    _ => (0.08, 0.7),
+                };
+                let w = self.white();
+                self.lp += (w - self.lp) * k;
+                // A pop now and then: a short click, decaying in a few milliseconds.
+                let r = self.white();
+                if r > 0.9993 {
+                    self.pop = 0.3;
+                }
+                self.pop *= 0.97;
+                amp * (1.5 * self.lp + self.pop * r.signum())
+            }
+            Sound::Spray => {
+                let w = self.white();
+                self.lp += (w - self.lp) * 0.2;
+                self.lp2 += (w - self.lp2) * 0.03;
+                (self.lp - self.lp2) * 1.5
+            }
+            Sound::Steam => {
+                let env = (t / 0.35 * std::f32::consts::PI).sin().powi(2);
+                let w = self.white();
+                self.lp += (w - self.lp) * 0.3;
+                env * self.lp * 2.0
+            }
+            Sound::RepairLoop => {
+                // Ratchet clicks at 9 Hz over a soft 170 Hz tone.
+                let ratchet = (tau * 9.0 * t).sin().max(0.0).powi(6);
+                0.6 * ratchet * (0.6 * (tau * 170.0 * t).sin() + 0.3 * self.white())
+            }
+            Sound::Blip => {
+                let phase = tau * (600.0 * t + 0.5 * (6000.0) * t * t);
+                (-t * 40.0).exp() * phase.sin()
+            }
+            Sound::Chime => {
+                let n1 = (-t * 8.0).exp() * (tau * 784.0 * t).sin();
+                let t2 = t - 0.12;
+                let n2 = if t2 > 0.0 { (-t2 * 8.0).exp() * (tau * 1046.0 * t2).sin() } else { 0.0 };
+                0.5 * (n1 + n2)
+            }
+            Sound::Zap => {
+                let crack = (-t * 40.0).exp() * self.white() * 0.8;
+                let tone = (-t * 25.0).exp() * (tau * 2200.0 * t).sin() * 0.5;
+                crack + tone
+            }
+            Sound::Clunk => (-t * 45.0).exp() * (tau * 90.0 * t).sin() * 0.9 + (-t * 120.0).exp() * self.white() * 0.3,
+            Sound::SweepDown | Sound::SweepUp => {
+                // 330 Hz of sweep, from 440 down to 110 Hz or up from 110 to 440 Hz.
+                let (f0, df) = if self.sound == Sound::SweepDown { (440.0, -330.0) } else { (110.0, 330.0) };
+                let phase = tau * (f0 * t + 0.5 * (df / 0.6) * t * t);
+                let env = (t / 0.02).min(1.0) * (1.0 - t / 0.6);
+                0.5 * env * phase.sin()
+            }
+            Sound::PumpHum => 0.5 * (tau * 60.0 * t).sin() + 0.25 * (tau * 120.0 * t).sin() + 0.05 * self.white(),
+            Sound::Slide => {
+                let x = t / 0.3;
+                let env = (x * std::f32::consts::PI).sin().powi(2);
+                let w = self.white();
+                self.lp += (w - self.lp) * (0.05 + 0.2 * env);
+                env * self.lp * 2.0
+            }
+            Sound::Whoomp => {
+                let phase = tau * (90.0 * t - 0.5 * (40.0 / 0.5) * t * t);
+                let env = (t / 0.03).min(1.0) * (1.0 - t / 0.5).powi(2);
+                env * (0.8 * phase.sin() + 0.1 * self.white() * (-t * 12.0).exp())
+            }
+            Sound::Heart => {
+                let thump = |tt: f32| if tt > 0.0 { (-tt * 35.0).exp() * (tau * 55.0 * tt).sin() } else { 0.0 };
+                0.7 * (thump(t) + thump(t - 0.15))
+            }
+            Sound::Confirm => {
+                let (a, b) = (tau * 880.0 * t, tau * 1175.0 * t);
+                (-t * 14.0).exp() * (0.5 * a.sin() + 0.3 * b.sin())
+            }
+            Sound::Muffled => {
+                let env = (t / 0.1).min(1.0) * (1.0 - t / 0.6);
+                env * (0.5 * (tau * 120.0 * t).sin() + 0.2 * (tau * 60.0 * t).sin())
+            }
+            Sound::Gentle => {
+                let phase = tau * (330.0 * t + 0.5 * (164.0 / 0.5) * t * t);
+                let env = (t / 0.5 * std::f32::consts::PI).sin().powi(2);
+                0.6 * env * phase.sin()
             }
         };
         Some(s.clamp(-1.0, 1.0))
@@ -423,7 +559,7 @@ fn alarm_tone(mut commands: Commands, sounds: Res<Sounds>, alarm: Res<crate::dev
 
 /// A loop's sink volume: its level times the master volume. The loops set their sink every frame,
 /// which replaces the global volume Bevy gave them at the start.
-fn loop_volume(level: f32, settings: &crate::settings::Settings) -> f32 {
+pub(crate) fn loop_volume(level: f32, settings: &crate::settings::Settings) -> f32 {
     level * settings.master()
 }
 
@@ -434,6 +570,7 @@ pub fn plugin(app: &mut App) {
     // Before anyone consumes the taps: the Drive phase and the view toggles come after.
     app.add_systems(FixedUpdate, count_clicks.after(crate::controls::resolve_actions).in_set(crate::phases::Fx::Input));
     app.add_systems(Update, (update, alarm_tone).in_set(crate::phases::Frame::Input));
+    crate::audio_slice::plugin(app);
 }
 
 #[cfg(test)]
@@ -442,9 +579,11 @@ mod tests {
 
     #[test]
     fn one_shots_end_and_every_sample_is_in_range() {
-        for s in [Sound::Thud, Sound::Click, Sound::Grab, Sound::Throw, Sound::AlarmBeep, Sound::Lock, Sound::BoostStart, Sound::Ping, Sound::Accept, Sound::Coin, Sound::Fanfare, Sound::Buzz] {
+        for s in [Sound::Thud, Sound::Click, Sound::Grab, Sound::Throw, Sound::AlarmBeep, Sound::Lock, Sound::BoostStart, Sound::Ping, Sound::Accept, Sound::Coin, Sound::Fanfare, Sound::Buzz, Sound::Steam, Sound::Blip, Sound::Chime, Sound::Zap, Sound::Clunk, Sound::SweepDown, Sound::SweepUp, Sound::Slide, Sound::Whoomp, Sound::Heart, Sound::Confirm, Sound::Muffled, Sound::Gentle] {
             let samples: Vec<f32> = Synth::new(s).collect();
-            assert_eq!(samples.len(), (s.length().unwrap() * RATE as f32).ceil() as usize, "{s:?}");
+            // f32 rounding of length × rate may land one sample either side of the ceiling.
+            let want = (s.length().unwrap() * RATE as f32).ceil() as usize;
+            assert!(samples.len().abs_diff(want) <= 1, "{s:?}: {} samples, want {want}", samples.len());
             assert!(samples.iter().all(|x| x.is_finite() && x.abs() <= 1.0));
             assert!(samples.iter().any(|x| x.abs() > 0.1), "{s:?} is audible");
         }
@@ -469,7 +608,7 @@ mod tests {
 
     #[test]
     fn loops_keep_going_and_stay_in_range() {
-        for s in [Sound::Hum, Sound::Wind, Sound::Hiss, Sound::Roar] {
+        for s in [Sound::Hum, Sound::Wind, Sound::Hiss, Sound::Roar, Sound::Crackle(0), Sound::Crackle(2), Sound::Spray, Sound::RepairLoop, Sound::PumpHum] {
             let samples: Vec<f32> = Synth::new(s).take(RATE as usize * 3).collect();
             assert_eq!(samples.len(), RATE as usize * 3);
             assert!(samples.iter().all(|x| x.is_finite() && x.abs() <= 1.0));

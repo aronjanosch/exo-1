@@ -333,6 +333,7 @@ fn a_cold_manual_start_does_not_run_away_because_the_pump_has_its_backup() {
     let input = Input::manual(43.75, 50.0);
     let (ev, temps) = run(&mut r, 150.0, input);
     let peak = temps.iter().cloned().fold(f64::MIN, f64::max);
+    assert!(peak > 40.0, "the core does warm up (not a cold room): peak {peak:.1}");
     assert!(peak < 80.0, "the start stays under the allowed top: peak {peak:.1}");
     assert!(!ev.iter().any(|(_, e)| *e == RoomEvent::Reactor(ReactorEvent::Meltdown)));
     assert!(r.reactor().coolant_flow() > 0.99, "the coolant stays at full: {}", r.reactor().coolant_flow());
@@ -572,6 +573,8 @@ fn an_empty_tank_is_no_flow_and_the_core_runs_hot() {
     assert!(full.flow() > 0.0);
     let (_, tf) = run(&mut full, 120.0, Input::auto());
     let (_, td) = run(&mut dry, 120.0, Input::auto());
+    assert!(!dry.reactor().melted() && !full.reactor().melted(), "both stay alive for the comparison");
+    assert!(tf.last().unwrap() > &30.0, "the full room is hot, not cold: {:?}", tf.last());
     assert!(td.last().unwrap() > &(tf.last().unwrap() + 5.0), "dry {:?} vs full {:?}", td.last(), tf.last());
 }
 
@@ -791,25 +794,39 @@ fn low_settles_at_the_low_speed_and_high_at_full() {
 }
 
 #[test]
-fn low_cools_less_than_high_at_the_same_heat() {
-    // The same manual inputs for both, so the fission heat is the same; the comparison is of the
-    // mean over the last minute, once the fission lag and the temperature spring have settled.
-    let input = Input::manual(43.75, 50.0);
+fn low_cools_less_than_high_on_auto_and_both_stay_alive() {
+    // Both rooms on Auto, the same load, settled. A manual pair cannot keep both alive: High needs
+    // fission near 24 to make output at turbine 50, and Low at that fission melts (the residual heat
+    // of a half-flow pump). So this compares on Auto: Low holds the core hotter, and neither melts.
     let mut high = room();
     settle(&mut high);
     let mut low = room();
     settle(&mut low);
     low.set_pump_mode(PumpMode::Low);
-    run(&mut high, 120.0, input);
-    run(&mut low, 120.0, input);
-    high.pump_mut().set_tank(100.0);
-    low.pump_mut().set_tank(100.0);
-    let (_, th) = run(&mut high, 60.0, input);
-    let (_, tl) = run(&mut low, 60.0, input);
+    run(&mut high, 120.0, Input::auto());
+    run(&mut low, 120.0, Input::auto());
+    let (_, th) = run(&mut high, 60.0, Input::auto());
+    let (_, tl) = run(&mut low, 60.0, Input::auto());
     let mh = th.iter().sum::<f64>() / th.len() as f64;
     let ml = tl.iter().sum::<f64>() / tl.len() as f64;
-    assert!(ml > mh + 1.0, "Low holds the core hotter: low {ml:.1} vs high {mh:.1}");
+    println!("auto, low vs high: low {ml:.2} high {mh:.2}, low flow {:.2} high flow {:.2}", low.flow(), high.flow());
+    assert!(!high.reactor().melted() && !low.reactor().melted(), "neither melts");
+    // Both alive: the means are the settled band, not a cold or melted room.
+    assert!(mh > 30.0 && ml > 30.0, "both hot: high {mh:.1} low {ml:.1}");
+    assert!(ml > mh + 2.0, "Low holds the core hotter by a clear margin (measured 3.8): low {ml:.1} vs high {mh:.1}");
     assert!(low.flow() < high.flow());
+}
+
+#[test]
+fn manual_43_75_on_low_goes_critical_without_help() {
+    // A feel fact: manual fission 43.75 / turbine 50 with the pump on Low runs the core to TempCritical
+    // (the residual heat of a half-flow pump adds about 33 degrees at that fission). Fission 43.75 on
+    // High settles at 55 (the test above).
+    let mut r = room();
+    settle(&mut r);
+    r.set_pump_mode(PumpMode::Low);
+    let (ev, _) = run(&mut r, 240.0, Input::manual(43.75, 50.0));
+    assert!(first(&ev, alarm_on(AlarmKind::TempCritical)).is_some(), "TempCritical on Low at 43.75");
 }
 
 #[test]
@@ -854,6 +871,7 @@ fn the_power_factor_on_the_backup_is_one_with_no_output() {
     assert_eq!(r.power_factor(), 1.0);
     assert_eq!(r.flow(), 1.0);
 }
+
 
 
 

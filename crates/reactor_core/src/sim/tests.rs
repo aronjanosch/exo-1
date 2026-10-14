@@ -296,6 +296,7 @@ fn a_low_pump_at_full_load_runs_at_its_low_speed_and_drains_slowly() {
     assert!((at.pump_speed - 0.5).abs() < 0.01, "speed {}", at.pump_speed);
     assert!((at.flow - 0.5).abs() < 0.01, "flow {}", at.flow);
     assert!(at.tank > 0.0 && at.tank < 100.0, "tank {}", at.tank);
+    assert!(!trace.melted, "the Low pump at full load keeps the core alive");
     assert_eq!(room.pump().mode(), PumpMode::Low);
 }
 

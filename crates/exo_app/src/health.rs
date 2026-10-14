@@ -145,7 +145,7 @@ fn area_pos(area: Option<&DevArea>, planet: &PlanetRes, p: Option<DVec3>) -> Opt
 
 /// Host: the hazards and the air under every body, one step, the respawn countdown.
 #[allow(clippy::too_many_arguments)]
-fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, air: Res<EngineAir>, items: Res<Items>, mut st: ResMut<HealthState>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, net: Option<Res<Net>>) {
+fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, air: Option<Res<EngineAir>>, items: Res<Items>, mut st: ResMut<HealthState>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, net: Option<Res<Net>>) {
     if items.role == Role::Client {
         return;
     }
@@ -180,7 +180,11 @@ fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea
         let inside = |z: &Zone| here.is_some_and(|p| z.contains(p));
         // The air is the room's (the engine room's deck); the no-air booth takes it all away. The
         // hot plate and the glow feed the body's own rules, per tick or into the buildup.
-        let room_air = here.map_or(1.0, |p| air.oxygen_at(p));
+        // Without the dev area's engine room there is no deck: the air is full.
+        let room_air = match (here, air.as_deref()) {
+            (Some(p), Some(a)) => a.oxygen_at(p),
+            _ => 1.0,
+        };
         let env = Env { oxygen: if inside(&NO_AIR) { 0.0 } else { room_air }, hot: inside(&HOT_PLATE), glow: inside(&GLOW_BARREL) };
         for ev in b.health.step(t, dt, env) {
             if matches!(ev, HealthEvent::Died { .. }) {

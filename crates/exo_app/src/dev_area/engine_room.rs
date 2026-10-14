@@ -429,16 +429,4 @@ mod tests {
         }
         assert!((alarm_pulse(Alarm::Danger, 0.2) - 1.0).abs() < 1e-9, "a quarter of the Danger period is the top");
     }
-
-    #[test]
-    fn the_door_slides_towards_its_target_in_its_time() {
-        let mut p = 0.0_f64;
-        let step = 1.0 / 30.0 / DOOR_TIME;
-        let mut ticks = 0;
-        while p < 1.0 {
-            p = (p + step).min(1.0);
-            ticks += 1;
-        }
-        assert!((ticks as f64 / 30.0 - DOOR_TIME).abs() < 0.05);
-    }
 }

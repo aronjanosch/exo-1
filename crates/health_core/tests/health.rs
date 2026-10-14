@@ -354,3 +354,20 @@ fn a_fire_burns_by_its_amount_against_the_hot_plate() {
     assert!(big > plate, "{big} vs {plate}");
     assert!(burn_after(&t, Env { oxygen: 1.0, hot: false, glow: false, fire: 0.0 }) == 0.0);
 }
+
+#[test]
+fn the_low_air_case_costs_73_of_oxygen_and_the_burn_takes_the_rest_so_health_reads_zero() {
+    // The HUD case: the air low (oxygen_low at 104.75: half the air left, its cost 73 points) and
+    // the burn at level II (45 points). Together they are more than the whole maximum of 100, so
+    // the vitality is below zero and the health reads 0 %. The health's bar is then all lost.
+    let t = shipped();
+    let mut h = Health::new(&t, 1);
+    h.add(&t, "oxygen_low", 104.75);
+    h.add(&t, "burn", 45.0);
+    assert!(close(h.cost(&t, "oxygen_low"), 73.0), "oxygen {}", h.cost(&t, "oxygen_low"));
+    assert!(close(h.cost(&t, "burn"), 45.0), "burn {}", h.cost(&t, "burn"));
+    assert!(h.vitality() < 0.0, "vitality {}", h.vitality());
+    assert!(close(h.max_share(&t), 1.0), "no headache at this air");
+    let air_left = 1.0 - h.strength("oxygen_low") / 200.0;
+    assert!((air_left - 0.476).abs() < 0.001, "air left {air_left}");
+}

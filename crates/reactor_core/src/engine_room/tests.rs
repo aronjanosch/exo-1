@@ -326,3 +326,25 @@ fn normal_running_wears_the_machines_to_the_floor_and_never_breaks_them() {
         assert!(c.value() >= c.tuning().repair_threshold - 1e-9, "{name} asks for repair after normal running: {}", c.value());
     }
 }
+
+#[test]
+fn a_running_reactor_without_steam_gives_no_power_and_says_so() {
+    // The pump is broken (no coolant) and the turbine draws more heat than the low fission makes:
+    // the temperature falls to 0. The reactor is still on (power_on), but its output is 0 at 0 °C,
+    // so the machines are dark. The screens read `powered`, so they show NO POWER.
+    let mut r = room();
+    r.trigger(Fault::PumpBreak);
+    let input = Input::manual(6.0, 49.0);
+    let mut cold_on = false;
+    for _ in 0..(120.0 / DT) as usize {
+        r.step(DT, input);
+        if r.reactor().temperature() == 0.0 && r.reactor().power_on() {
+            cold_on = true;
+            break;
+        }
+    }
+    assert!(cold_on, "the temperature falls to 0 with the reactor on");
+    assert!(r.reactor().power_on(), "still on");
+    assert_eq!(r.reactor().output_kw(), 0.0, "no steam, no output");
+    assert!(!r.powered(), "the machines are dark while the reactor reads on");
+}

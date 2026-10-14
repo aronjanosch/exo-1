@@ -387,3 +387,15 @@ fn unconscious_at_zero_and_awake_again_above() {
     assert_eq!(h.state(), Life::Conscious, "awake above zero: vitality {}", h.vitality());
     assert!(h.vitality() > 0.0);
 }
+
+#[test]
+fn a_treatment_suits_the_injuries_it_reduces() {
+    // The bandage reduces the burn, the deglow the radiation; neither suits the oxygen, and an
+    // unknown treatment suits nothing (#300: the medic view's highlight).
+    let t = shipped();
+    assert!(t.suits("bandage", "burn"));
+    assert!(!t.suits("bandage", "radiation"));
+    assert!(t.suits("deglow", "radiation"));
+    assert!(!t.suits("deglow", "oxygen_low"));
+    assert!(!t.suits("nothing", "burn"));
+}

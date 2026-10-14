@@ -70,6 +70,37 @@ pub struct PublicStatus {
     pub down: bool,
     pub unconscious: bool,
     pub doing: Doing,
+    /// The injuries the others see (#300): what a medic reads when they look at the player.
+    pub hurt: Injuries,
+}
+
+/// A player's injuries as the others see them (#300): the health and the injuries that treatments
+/// reduce, each a whole percent in steps of 5 so a change is a small message. The burn is its level
+/// (0 without). Default: healthy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Injuries {
+    /// Vitality's share of the maximum before a headache, 0..=100 (steps of 5).
+    pub health: u8,
+    /// The burn's level 1 to 3; 0 without burn (or only building up).
+    pub burn_level: u8,
+    /// Radiation's share, 0..=100 (steps of 5); 0 without.
+    pub radiation: u8,
+    /// Oxygen low's share (bad air), 0..=100 (steps of 5); 0 without.
+    pub oxygen_low: u8,
+}
+
+impl Default for Injuries {
+    fn default() -> Injuries {
+        Injuries { health: 100, burn_level: 0, radiation: 0, oxygen_low: 0 }
+    }
+}
+
+impl Injuries {
+    /// The shares (0..1) rounded to steps of 5 per cent; the burn's level as it is.
+    pub fn from_shares(health: f64, burn_level: u8, radiation: f64, oxygen_low: f64) -> Injuries {
+        let step = |x: f64| ((x.clamp(0.0, 1.0) * 20.0).round() * 5.0) as u8;
+        Injuries { health: step(health), burn_level, radiation: step(radiation), oxygen_low: step(oxygen_low) }
+    }
 }
 
 /// The alarm level of the ship (#296). A dev toggle for now; the reactor drives it later.
@@ -437,13 +468,21 @@ mod tests {
     }
 
     #[test]
+    fn injuries_come_in_steps_of_five_per_cent() {
+        let i = Injuries::from_shares(0.512, 2, 0.4, 0.03);
+        assert_eq!((i.health, i.burn_level, i.radiation, i.oxygen_low), (50, 2, 40, 5));
+        assert_eq!(Injuries::from_shares(1.7, 0, -0.2, 0.0), Injuries { health: 100, burn_level: 0, radiation: 0, oxygen_low: 0 });
+        assert_eq!(Injuries::default(), Injuries::from_shares(1.0, 0, 0.0, 0.0), "healthy by default");
+    }
+
+    #[test]
     fn public_status_travels_as_it_is() {
         let status = vec![
-            (1, PublicStatus { burning: true, down: false, unconscious: false, doing: Doing::Treating(2) }),
-            (2, PublicStatus { burning: false, down: true, unconscious: false, doing: Doing::Nothing }),
-            (3, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Repairing(RepairDevice::CoolantPump) }),
-            (4, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Spraying }),
-            (5, PublicStatus { burning: false, down: false, unconscious: true, doing: Doing::Nothing }),
+            (1, PublicStatus { burning: true, down: false, unconscious: false, doing: Doing::Treating(2), hurt: Injuries { health: 35, burn_level: 2, radiation: 40, oxygen_low: 0 } }),
+            (2, PublicStatus { burning: false, down: true, unconscious: false, doing: Doing::Nothing, hurt: Injuries::default() }),
+            (3, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Repairing(RepairDevice::CoolantPump), hurt: Injuries::default() }),
+            (4, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Spraying, hurt: Injuries::default() }),
+            (5, PublicStatus { burning: false, down: false, unconscious: true, doing: Doing::Nothing, hurt: Injuries::from_shares(0.0, 0, 0.0, 0.5) }),
         ];
         let back = match decode::<ToClient>(&encode(&ToClient::Status(status.clone()))).expect("decodes") {
             ToClient::Status(s) => s,

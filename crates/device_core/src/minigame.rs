@@ -38,6 +38,59 @@ pub struct Tuning {
     pub walk_away_m: f64,
     /// Seconds the hit or miss flash shows on the HUD.
     pub flash_s: f64,
+    /// The minigame runs only while the condition is below this share of max (more than half
+    /// damaged). Above it the repair is the slow one, with no ring.
+    pub minigame_below: f64,
+    /// A broken device (not functioning) makes no progress until this many hits in the session.
+    pub broken_hits: u32,
+}
+
+/// Whether the minigame runs at this condition (a share of max, 0..1).
+pub fn minigame_on(fraction: f64, t: &Tuning) -> bool {
+    fraction < t.minigame_below
+}
+
+/// Whether a session may raise the condition now. A session that began on a broken device (`gated`)
+/// waits for its hits, and stays open once it has them.
+pub fn may_rise(gated: bool, hits: u32, t: &Tuning) -> bool {
+    !gated || hits >= t.broken_hits
+}
+
+/// One repairer's session on one machine: the ring and the hits so far. The ring turns, and LMB
+/// counts, only while the minigame is on; the condition's rise is the glue's (`may_rise`).
+#[derive(Clone, Debug)]
+pub struct Session {
+    pub ring: Ring,
+    /// Hits this session has made.
+    pub hits: u32,
+}
+
+impl Session {
+    pub fn new(tuning: Tuning, seed: u64) -> Session {
+        Session { ring: Ring::new(tuning, seed), hits: 0 }
+    }
+
+    /// One step at this condition: the ring turns only while the minigame is on, and a ring that
+    /// is off shows no zones.
+    pub fn step(&mut self, dt: f64, boosted: bool, fraction: f64) {
+        if minigame_on(fraction, &self.ring.tuning) {
+            self.ring.step(dt, boosted);
+        } else {
+            self.ring.zones.clear();
+        }
+    }
+
+    /// LMB at this condition: None when the minigame is off (nothing happens), else the press.
+    pub fn press(&mut self, fraction: f64) -> Option<Press> {
+        if !minigame_on(fraction, &self.ring.tuning) {
+            return None;
+        }
+        let p = self.ring.press();
+        if p == Press::Hit {
+            self.hits += 1;
+        }
+        Some(p)
+    }
 }
 
 /// A zone on the ring: its centre and its age. Its width shrinks with the age.
@@ -133,6 +186,15 @@ impl Ring {
         }
     }
 
+    /// Whether the pointer is inside a zone now: an LMB now would hit.
+    pub fn in_zone(&self) -> bool {
+        let t = self.tuning;
+        self.zones.iter().any(|z| {
+            let w = z.width(&t);
+            w > 0.0 && angle_dist(self.pointer_deg, z.centre_deg) <= w * 0.5
+        })
+    }
+
     /// A zone at a random centre at least `spawn_min_deg` away from the pointer.
     fn spawn(&mut self) {
         let t = self.tuning;
@@ -187,7 +249,7 @@ mod tests {
             skill: 50.0,
             hit_share: 0.08,
             miss_share: 0.02,
-            pointer_deg_s: 180.0,
+            pointer_deg_s: 90.0,
             boost: 2.0,
             zones_max: 2,
             zone_deg: 40.0,
@@ -197,6 +259,8 @@ mod tests {
             reach_m: 1.8,
             walk_away_m: 2.5,
             flash_s: 0.3,
+            minigame_below: 0.5,
+            broken_hits: 3,
         }
     }
 
@@ -213,6 +277,15 @@ mod tests {
         let mut r = with_zone(100.0, 105.0);
         assert_eq!(r.press(), Press::Hit);
         assert!(r.zones.is_empty());
+    }
+
+    #[test]
+    fn in_zone_says_whether_an_lmb_now_would_hit() {
+        assert!(with_zone(100.0, 105.0).in_zone());
+        assert!(!with_zone(0.0, 120.0).in_zone());
+        let mut r = with_zone(100.0, 105.0);
+        r.press();
+        assert!(!r.in_zone(), "the hit zone is gone");
     }
 
     #[test]
@@ -248,10 +321,10 @@ mod tests {
     fn the_pointer_moves_at_the_set_speed_and_rmb_doubles_it() {
         let mut plain = Ring::new(tuning(), 1);
         plain.step(0.5, false);
-        assert!((plain.pointer_deg - 90.0).abs() < 1e-9);
+        assert!((plain.pointer_deg - 45.0).abs() < 1e-9);
         let mut boosted = Ring::new(tuning(), 1);
         boosted.step(0.5, true);
-        assert!((boosted.pointer_deg - 180.0).abs() < 1e-9);
+        assert!((boosted.pointer_deg - 90.0).abs() < 1e-9);
     }
 
     #[test]
@@ -260,8 +333,8 @@ mod tests {
         r.pointer_deg = 10.0;
         r.press();
         r.step(0.1, false);
-        // 18 degrees back in 0.1 s at 180 degrees a second: 352.
-        assert!((r.pointer_deg - 352.0).abs() < 1e-9);
+        // 9 degrees back in 0.1 s at 90 degrees a second: 1.
+        assert!((r.pointer_deg - 1.0).abs() < 1e-9);
     }
 
     #[test]
@@ -336,6 +409,60 @@ mod tests {
         };
         assert_eq!(run(4), run(4));
         assert_ne!(run(4), run(5));
+    }
+
+    #[test]
+    fn below_half_damage_there_are_no_zones_and_no_presses() {
+        let t = tuning();
+        let mut s = Session::new(t, 3);
+        for _ in 0..600 {
+            s.step(DT, false, 0.6);
+        }
+        assert!(s.ring.zones.is_empty(), "at 60 % condition the minigame is off");
+        assert_eq!(s.press(0.6), None, "and LMB does nothing");
+        assert_eq!(s.ring.dir, 1.0, "the pointer did not turn");
+        assert_eq!(s.hits, 0);
+    }
+
+    #[test]
+    fn below_half_condition_the_minigame_runs_with_zones() {
+        let t = tuning();
+        let mut s = Session::new(t, 3);
+        for _ in 0..240 {
+            s.step(DT, false, 0.4);
+        }
+        assert!(!s.ring.zones.is_empty(), "at 40 % condition zones come");
+    }
+
+    #[test]
+    fn a_broken_device_waits_for_three_hits() {
+        let t = tuning();
+        assert!(!may_rise(true, 0, &t) && !may_rise(true, 2, &t), "no progress before the third hit");
+        assert!(may_rise(true, 3, &t), "after the third hit it rises");
+        assert!(may_rise(false, 0, &t), "a session that did not start on a broken device always rises");
+        let mut s = Session::new(t, 5);
+        let mut hits = 0;
+        // Hits land whenever the pointer is in a zone; the session counts them.
+        for _ in 0..(60 * 60) {
+            s.step(DT, false, 0.1);
+            if s.ring.in_zone() && hits < 3 {
+                s.press(0.1);
+                hits = s.hits;
+            }
+            if hits >= 3 {
+                break;
+            }
+        }
+        assert_eq!(s.hits, 3, "three hits are made");
+        assert!(may_rise(true, s.hits, &t));
+    }
+
+    #[test]
+    fn the_minigame_threshold_is_half() {
+        let t = tuning();
+        assert!(minigame_on(0.49, &t));
+        assert!(!minigame_on(0.5, &t), "at 50 % the repair is the slow one");
+        assert!(!minigame_on(1.0, &t));
     }
 
     #[test]

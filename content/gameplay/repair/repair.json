@@ -3,7 +3,7 @@
   "skill": 50.0,
   "hit_share": 0.08,
   "miss_share": 0.02,
-  "pointer_deg_s": 180.0,
+  "pointer_deg_s": 90.0,
   "boost": 2.0,
   "zones_max": 2,
   "zone_deg": 40.0,
@@ -12,5 +12,7 @@
   "spawn_min_deg": 60.0,
   "reach_m": 1.8,
   "walk_away_m": 2.5,
-  "flash_s": 0.3
+  "flash_s": 0.3,
+  "minigame_below": 0.5,
+  "broken_hits": 3
 }

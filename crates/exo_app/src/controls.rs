@@ -834,6 +834,10 @@ pub fn read_input(
     }
     c.pointer = None;
     c.pointer_down = false;
+    // With the mouse captured, LMB uses the held item (the click that captures it does not).
+    if cur.grab_mode != CursorGrabMode::None && !was_free {
+        c.click |= mouse_buttons.just_pressed(MouseButton::Left);
+    }
     if mouse_buttons.just_pressed(MouseButton::Left) || was_free {
         cur.grab_mode = CursorGrabMode::Locked;
         cur.visible = false;

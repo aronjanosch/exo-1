@@ -507,6 +507,12 @@ fn machine_of(s: Source) -> ([f64; 2], [f64; 3]) {
     }
 }
 
+/// A machine's half footprint on the floor (m, x and y): what fire measures its reach to.
+pub fn footprint_of(s: Source) -> [f64; 2] {
+    let (_, size) = machine_of(s);
+    [size[0] * 0.5, size[2] * 0.5]
+}
+
 /// How far out from a machine's centre a fire starts, beyond its half depth (m).
 pub const IGNITION_OUT: f64 = 0.3;
 

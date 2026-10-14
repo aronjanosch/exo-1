@@ -129,6 +129,7 @@ pub(super) fn fire_steps(s: &mut Vec<Step>) {
             begin(w, c, "fire: the dev fault starts a fire at the reactor");
             let o0 = air(w).deck.room(air(w).engine).oxygen;
             c.v.insert("fire_o0", o0);
+            c.v.insert("reactor_fresh", sim(w).room.reactor().condition().value());
             w.resource_mut::<Items>().ask_reactor(ReactorAsk::Trigger(ReactorFault::Fire));
             return false;
         }
@@ -155,6 +156,9 @@ pub(super) fn fire_steps(s: &mut Vec<Step>) {
         let (s0, o0) = (c.v.get("fire_s0").copied().unwrap_or(0.0), c.v.get("fire_o0").copied().unwrap_or(0.0));
         check(c, size > s0 + 0.3, format!("fire: it grows: {s0:.2} m to {size:.2} m in 3 s"));
         check(c, o < o0, format!("fire: the engine room's oxygen falls: {o0:.2} m3 to {o:.2} m3"));
+        // The fresh fire starts 0.3 m out from the reactor's front face: it burns the reactor at once.
+        let (r0, r) = (c.v.get("reactor_fresh").copied().unwrap_or(0.0), sim(w).room.reactor().condition().value());
+        check(c, r < r0 - 0.5, format!("fire: a fresh fire lowers the reactor's condition within 3 s: {r0:.1} to {r:.1}"));
         let lvl = alarm(w);
         check(c, lvl >= Alarm::Warn, format!("fire: the alarm is at least Warn ({lvl:?})"));
         if size >= 1.0 {

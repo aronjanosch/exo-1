@@ -33,7 +33,9 @@
 //! without overshooting. A boost does nothing while the power is off or the reactor is broken: it
 //! is refused (`boost` returns false), and the boost already set still fades. `warnings` gives the
 //! lamps of the panel, each ported from the client's lines with the conditions in its comment; they
-//! are off while the power is off, except the meltdown lamp, which also shows when the core melted.
+//! are off while the power is off, except the meltdown lamp (also on when the core melted) and the
+//! SCRAM lamp (on while the power is off and the core is warm). Barotrauma blinks the lamps at 2 Hz
+//! (client 619, `TotalTime % 0.5 < 0.25`); the reactor reports them steady and the glue blinks.
 //! Values: TODO(initiator).
 //!
 //! Overheat: above the optimal band a fire timer runs, and each time it is full the reactor starts
@@ -371,14 +373,18 @@ pub struct Reactor {
     boost: f64,
 }
 
-/// The lamps of the panel (Barotrauma's `warningButtons`, client Reactor.cs 621-632). Each is on
-/// or off; `short` gives the letters for a trace.
+/// The lamps of the panel (Barotrauma's warning lights, client Reactor.cs 621-632). Each is on
+/// or off, steady (the blink is the glue's); `short` gives the letters for a trace.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Warnings {
     /// Temperature above the optimal band.
     pub overheat: bool,
+    /// Temperature above the allowed band (client 621, critical heat). Power on only.
+    pub critical_heat: bool,
     /// Temperature below the optimal band.
     pub low_temp: bool,
+    /// Temperature below the allowed band (client 622, cold). Power on only.
+    pub cold: bool,
     /// Output above 110 % of the load.
     pub high_output: bool,
     /// Output above 150 % of the load.
@@ -391,6 +397,8 @@ pub struct Warnings {
     pub low_fuel: bool,
     /// The meltdown timer is over half its delay, or the core melted.
     pub meltdown: bool,
+    /// Warm (above 0.1) with the power off: SCRAM was pressed or the reactor is off (client 632).
+    pub scram: bool,
 }
 
 impl Warnings {
@@ -398,13 +406,16 @@ impl Warnings {
     pub fn short(&self) -> String {
         let lamps = [
             (self.overheat, "OH"),
+            (self.critical_heat, "CH"),
             (self.low_temp, "LT"),
+            (self.cold, "CL"),
             (self.high_output, "HO"),
             (self.critical_output, "CO"),
             (self.low_output, "LO"),
             (self.fuel_out, "FO"),
             (self.low_fuel, "LF"),
             (self.meltdown, "MD"),
+            (self.scram, "SC"),
         ];
         lamps.iter().filter(|(on, _)| *on).map(|(_, s)| *s).collect::<Vec<_>>().join(" ")
     }
@@ -647,9 +658,10 @@ impl Reactor {
         Bands::new(self.skill, self.turbine_for_load, self.fuel)
     }
     /// The panel's lamps, for a grid asking `load_kw` now (the last step's output and fuel). The
-    /// conditions are Barotrauma's (client Reactor.cs 621-632; the client also blinks them at 2 Hz,
-    /// which is the glue's). With the power off every lamp is off except `meltdown`, whose timer
-    /// part does not need the power (Barotrauma 631), and which is also on when the core melted.
+    /// conditions are Barotrauma's (client Reactor.cs 621-632). Barotrauma blinks them at 2 Hz
+    /// (client 619, `TotalTime % 0.5 < 0.25`), the glue's job here. With the power off every lamp is
+    /// off except `meltdown`, whose timer part does not need the power (client 631, and on when the
+    /// core melted), and `scram`, which is on when it is warm (client 632).
     pub fn warnings(&self, load_kw: f64) -> Warnings {
         let b = self.bands();
         let on = self.power_on;
@@ -658,8 +670,12 @@ impl Reactor {
         Warnings {
             // Client 625: temperature above the optimal band.
             overheat: on && self.temp > b.temp_optimal.hi,
+            // Client 621: temperature above the allowed band.
+            critical_heat: on && self.temp > b.temp_allowed.hi,
             // Client 627: temperature below the optimal band.
             low_temp: on && self.temp < b.temp_optimal.lo,
+            // Client 622: temperature below the allowed band.
+            cold: on && self.temp < b.temp_allowed.lo,
             // Client 626: output above 110 % of the load.
             high_output: on && out > load_kw * 1.1,
             // Client 623: output above 150 % of the load.
@@ -673,6 +689,8 @@ impl Reactor {
             // Client 631: the meltdown timer over half its delay, or the condition at 0 with the
             // power on (Barotrauma), or the core melted (ours: the lamp stays on for the melt).
             meltdown: self.overheat_timer > t.meltdown_delay_s * 0.5 || (self.condition.value() <= 0.0 && on) || self.melted,
+            // Client 632: temperature above 0.1 with the power off (not blinked there).
+            scram: !on && self.temp > 0.1,
         }
     }
 

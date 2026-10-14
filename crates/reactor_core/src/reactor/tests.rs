@@ -592,15 +592,47 @@ fn the_lamp_lines_are_strict() {
     assert_eq!(lamps_after(|r| r.fuel = 50.0), "", "fuel equal to the fission is no low fuel");
 }
 
-/// With the power off every lamp is off, except the meltdown lamp, which also shows when the core
-/// melted (and its timer part does not need the power).
+/// With the power off every lamp is off, except the meltdown lamp (its timer part does not need the
+/// power, and it is on when the core melted) and the SCRAM lamp (warm with the power off).
 #[test]
-fn with_the_power_off_only_the_meltdown_lamp_can_show() {
+fn with_the_power_off_only_the_meltdown_and_scram_lamps_can_show() {
     let mut r = calm();
     r.temp = 70.0;
     r.output = 1000.0;
     r.power_on = false;
-    assert_eq!(r.warnings(500.0), Warnings::default());
+    assert_eq!(r.warnings(500.0).short(), "SC", "warm and off: SCRAM only");
     r.melted = true;
-    assert_eq!(r.warnings(500.0).short(), "MD");
+    assert_eq!(r.warnings(500.0).short(), "MD SC");
+}
+
+/// Critical heat (above the allowed band, 80 at skill 50) and cold (below 20) switch on with the
+/// power on, and not with it off.
+#[test]
+fn critical_heat_and_cold_need_the_power_on() {
+    assert_eq!(lamps_after(|r| r.temp = 85.0), "OH CH", "above the allowed top 80");
+    assert_eq!(lamps_after(|r| r.temp = 80.0), "OH", "exactly on the allowed top is not critical");
+    assert_eq!(lamps_after(|r| r.temp = 5.0), "LT CL", "below the allowed bottom 20");
+    assert_eq!(lamps_after(|r| r.temp = 20.0), "LT", "exactly on the allowed bottom is not cold");
+    assert_eq!(lamps_after(|r| {
+        r.power_on = false;
+        r.temp = 85.0;
+    }), "SC", "off: no critical heat, the SCRAM lamp only");
+    assert_eq!(lamps_after(|r| {
+        r.power_on = false;
+        r.temp = 5.0;
+    }), "SC", "off: no cold, the SCRAM lamp only");
+}
+
+/// The SCRAM lamp is on while the power is off and the temperature is above 0.1, and on with the
+/// power on never.
+#[test]
+fn scram_lamp_is_on_when_warm_with_the_power_off() {
+    let off = |t: f64| lamps_after(|r| {
+        r.power_on = false;
+        r.temp = t;
+    });
+    assert_eq!(off(50.0), "SC", "warm and off");
+    assert_eq!(off(0.1), "", "0.1 itself is not above 0.1");
+    assert_eq!(off(0.0), "", "cold and off: no lamp");
+    assert_eq!(lamps_after(|r| r.temp = 50.0), "", "on: no SCRAM lamp");
 }

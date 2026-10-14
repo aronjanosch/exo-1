@@ -15,6 +15,7 @@
 use glam::{DQuat, DVec2, DVec3};
 use std::borrow::Cow;
 
+pub mod hud;
 pub mod theme;
 pub use theme::{Rgb, Theme};
 

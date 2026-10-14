@@ -28,7 +28,7 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Update, update_camera.in_set(Frame::Camera));
     // After the camera (Frame::Camera): the tunnel and the camera both write `ClearColor`, the tunnel wins.
     app.add_systems(Update, (update_impostors, update_nav_markers, update_aim_marker, update_tunnel, update_speed_dust).in_set(Frame::World));
-    app.add_systems(Update, (update_hud, update_flight_hud, update_flight_panel, update_flight_visuals, update_prompt, update_name_tags).in_set(Frame::Hud));
+    app.add_systems(Update, (update_hud, update_flight_hud, update_flight_panel, update_flight_visuals, update_name_tags).in_set(Frame::Hud));
 }
 
 #[derive(Component)]
@@ -137,8 +137,10 @@ pub fn setup_view(mut commands: Commands, sys: Option<Res<crate::warp::SystemRes
     commands.insert_resource(GlobalAmbientLight { color: Color::srgb(0.55, 0.65, 0.8), brightness: 400.0, ..default() });
     // At most four permanent elements: mode, speed, altitude, boost with the capacitor's bar
     // (#24, #91). TODO(initiator): placement, size and colours are placeholders.
+    // Crew HUD v3: this row (mode, speed, altitude, boost) shows only while seated or in the F3
+    // debug view (`crew_hud::update_readout_row`).
     commands
-        .spawn(Node { position_type: PositionType::Absolute, top: px(8), left: px(8), column_gap: px(28), align_items: AlignItems::Center, ..default() })
+        .spawn((ReadoutRow, Node { position_type: PositionType::Absolute, top: px(8), left: px(8), column_gap: px(28), align_items: AlignItems::Center, display: Display::None, ..default() }))
         .with_children(|c| {
             // Mode, speed with its cap and G (#197), altitude, boost.
             c.spawn((HudItem(0), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
@@ -189,15 +191,6 @@ pub fn setup_view(mut commands: Commands, sys: Option<Res<crate::warp::SystemRes
         TextFont { font_size: FontSize::Px(44.0), ..default() },
         TextColor(TOAST),
         Node { position_type: PositionType::Absolute, top: percent(30), width: percent(100), justify_content: JustifyContent::Center, ..default() },
-        TextLayout::justify(Justify::Center),
-    ));
-    // The one prompt (#82): what the interact key does now, below the screen centre.
-    commands.spawn((
-        PromptLine,
-        Text::new(""),
-        TextFont { font_size: FontSize::Px(18.0), ..default() },
-        TextColor(Color::srgb(1.0, 0.92, 0.55)),
-        Node { position_type: PositionType::Absolute, top: percent(58), width: percent(100), justify_content: JustifyContent::Center, ..default() },
         TextLayout::justify(Justify::Center),
     ));
     // Seated: the quantum drive's state, target and what to do (J, N, aim while calibrating).
@@ -320,6 +313,9 @@ fn spawn_flight_hud(commands: &mut Commands) {
 
 #[derive(Component)]
 pub struct HudItem(u8);
+/// The top-left row of `HudItem`s.
+#[derive(Component)]
+pub struct ReadoutRow;
 /// The boost capacitor's bar (#91) and its fill.
 #[derive(Component)]
 pub struct BoostBar;
@@ -358,23 +354,6 @@ const BOOST_LOW: Color = Color::srgba(0.55, 0.6, 0.7, 0.6);
 #[derive(Component)]
 pub struct QuantumLine;
 
-/// The interaction prompt (#82).
-#[derive(Component)]
-pub struct PromptLine;
-
-/// The prompt sits below the screen centre; while a display is in use it drops to the bottom so it
-/// does not cover the screen being operated.
-pub fn update_prompt(inter: Res<crate::interact::Interaction>, active: Res<crate::displays::ActiveDisplay>, mut q: Query<(&mut Text, &mut Node), With<PromptLine>>) {
-    if let Ok((mut t, mut node)) = q.single_mut() {
-        if **t != inter.prompt {
-            **t = inter.prompt.clone();
-        }
-        let top = if active.using().is_some() { percent(90) } else { percent(58) };
-        if node.top != top {
-            node.top = top;
-        }
-    }
-}
 #[derive(Component)]
 pub struct StickHud;
 #[derive(Component)]
@@ -725,6 +704,7 @@ pub fn setup_warp_view(
 /// with name and distance from the camera; the jump target (`System::effective_target` of the
 /// selection, or the running jump's target) larger and coloured. Hidden behind the camera.
 pub fn update_nav_markers(
+    view: Res<ViewState>,
     sys: Res<crate::warp::SystemRes>,
     wd: Res<crate::warp::WarpDrive>,
     origin: Res<RenderOrigin>,
@@ -734,6 +714,13 @@ pub fn update_nav_markers(
     mut labels: Query<(&mut Text, &mut TextColor), With<NavLabel>>,
 ) {
     let Ok((camera, cam_t)) = cam.single() else { return };
+    // Crew HUD v3: no target markers on the HUD, only in the F3 debug view.
+    if !view.debug_hud {
+        for (_, _, mut vis, _) in &mut markers {
+            vis.set_if_neq(Visibility::Hidden);
+        }
+        return;
+    }
     let sys = &sys.0;
     let target = wd.drive.target.unwrap_or_else(|| sys.effective_target(wd.selected, origin.view));
     for (m, mut node, mut vis, children) in &mut markers {

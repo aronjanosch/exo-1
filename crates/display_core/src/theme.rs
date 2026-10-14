@@ -114,6 +114,8 @@ pub struct Theme {
     pub fonts: Fonts,
     pub strokes: Strokes,
     pub world: WorldScreens,
+    /// The crew HUD's sizes (`hud::HudLook`).
+    pub hud: crate::hud::HudLook,
 }
 
 impl Theme {
@@ -130,6 +132,7 @@ impl Theme {
         if t.fonts.display.is_empty() || t.fonts.mono.is_empty() || t.fonts.display_bold.is_empty() || t.fonts.display_semibold.is_empty() {
             return Err("displays.json: a font path is empty".into());
         }
+        t.hud.check()?;
         Ok(t)
     }
 

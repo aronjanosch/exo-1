@@ -1,5 +1,5 @@
 {
-  "_comment": "Engine room (#297). Every number is a starting value, TODO(initiator). There is no automatic shutdown: the reactor melts when left hot, and SCRAM is the operator's. reactor: the reactor (fission and turbine 0..100, output kW). auto_turbine_speed and auto_fission_speed are the Auto controller's target change per second: the turbine follows the load faster than fission is cut, so a load drop overshoots. decay_heat is the residual heat (degrees) that only the coolant takes away: without flow the core climbs whatever Auto does. coolant_coast_s is how long the flow takes to run down or come back after the pump stops or is repaired. temp_stiffness and temp_damping make the temperature a damped spring towards its target (#300: a correction takes seconds, a step overshoots by about a quarter); heat_output_factor is the heat the delivered output makes at full output (degrees), auto_lookahead_s how far ahead (s) the Auto controller predicts the temperature from its speed, and fission_lag_s the time constant with which fission follows its target (Barotrauma 1 s). condition is the reactor's own device values (its repair line 50, wear floor 10, the floor is clamped to the broken limit); the pump and the junction box wear to 50 with repair at 80 (Barotrauma style: wear asks for repair, it never breaks a device). room: the coolant pump and the junction box use the device values (device_core: max, repair_threshold, broken_below, factor_at_broken, fix times in s, required_skill, fail_chance, fail_cost, fail_lockout_s, wear_rate, wear_floor, wear_delay_s as a [from, to] range, idle_wear, overload_wear). grid: demand kW at full work, priority (higher is served first) and min_ratio (0..1, the share below which the group switches off). A group's breaker is on or off in play, not in this file. coolant_* are the pump's tank: use in percent per second (base, and per unit of reactor heat at full flow), the LOW line, and what one canister adds.",
+  "_comment": "Engine room (#297, #300). Every number is a starting value, TODO(initiator). There is no automatic shutdown: the reactor melts when left hot, and SCRAM is the operator's. reactor: the reactor (fission and turbine 0..100, output kW). auto_turbine_speed and auto_fission_speed are the Auto controller's target change per second: the turbine follows the load faster than fission is cut, so a load drop overshoots. decay_heat is the residual heat (degrees) that only the coolant takes away: without flow the core climbs whatever Auto does. coolant_coast_s is how long the flow takes to run down or come back after the pump stops or is repaired. condition is the reactor's own device values (its repair line 50, wear floor 10, the floor is clamped to the broken limit); the pump and the junction box wear to 50 with repair at 80 (Barotrauma style: wear asks for repair, it never breaks a device). room: the coolant pump and the junction box use the device values (device_core: max, repair_threshold, broken_below, factor_at_broken, fix times in s, required_skill, fail_chance, fail_cost, fail_lockout_s, wear_rate, wear_floor, wear_delay_s as a [from, to] range, idle_wear, overload_wear). Overvoltage (Barotrauma PowerTransfer.cs:245-292): supply above overvolt_ratio times the load overloads the junction box; while overloaded, overvolt_hits_per_s random hits take condition (each rand 10..500 / 60, more at low condition, Barotrauma style), and the hit that breaks the box gives sparks and, with break_fire_chance, a fire. sparks_per_s are small sparks while overloaded, our touch. engine_wander is the dev stand-in for a helm (on here, off in code): the engines' throttle random-walks between wander_min and 1, a new target every wander_every_s, moving at wander_rate per second. grid: demand kW at full work, priority (higher is served first) and min_ratio (0..1, the share below which the group switches off). A group's breaker is on or off in play, not in this file. coolant_* are the pump's tank: use in percent per second (base, and per unit of reactor heat at full flow), the LOW line, and what one canister adds. "_comment": "Engine room (#297).",
   "start_rods": 2,
   "reactor": {
     "max_output_kw": 1000.0,
@@ -61,15 +61,19 @@
       "overload_wear": 4.0
     },
     "overvolt_ratio": 2.0,
-    "overvolt_damage_s": 2.0,
+    "overvolt_hits_per_s": 0.6,
+    "break_fire_chance": 0.15,
     "sparks_per_s": 0.1,
-    "spark_fire_chance": 0.2,
     "spark_fire_size": 0.05,
     "surge_damage": 30.0,
     "coolant_use_base": 0.04,
     "coolant_use_per_heat": 0.0013,
     "coolant_low": 25.0,
-    "coolant_canister": 50.0
+    "coolant_canister": 50.0,
+    "engine_wander": true,
+    "wander_every_s": 6.0,
+    "wander_min": 0.3,
+    "wander_rate": 0.15
   },
   "grid": {
     "engines": { "demand_kw": 350.0, "priority": 2, "min_ratio": 0.5 },

@@ -62,7 +62,10 @@ impl Tuning {
             need((0.0..=1.0).contains(&d.fail_chance), &format!("{name}.fail_chance"), "must be 0..1");
         }
         need(self.room.overvolt_ratio > 0.0, "room.overvolt_ratio", "must be > 0");
-        need((0.0..=1.0).contains(&self.room.spark_fire_chance), "room.spark_fire_chance", "must be 0..1");
+        need((0.0..=1.0).contains(&self.room.break_fire_chance), "room.break_fire_chance", "must be 0..1");
+        need(self.room.overvolt_hits_per_s >= 0.0, "room.overvolt_hits_per_s", "must be >= 0");
+        need(self.room.wander_every_s > 0.0 && self.room.wander_rate > 0.0, "room.wander_*", "wander_every_s and wander_rate must be > 0");
+        need((0.0..=1.0).contains(&self.room.wander_min), "room.wander_min", "must be 0..1");
         for g in crate::grid::Group::ALL {
             let s = self.grid.group(g);
             let name = format!("grid.{g:?}");
@@ -76,12 +79,15 @@ impl Tuning {
 mod tests {
     use super::*;
 
-    /// The shipped file parses and checks, and holds the defaults.
+    /// The shipped file parses and checks, and holds the defaults. The one difference: the shipped
+    /// file turns the engines' wander on (dev stand-in for a helm), the code's default is off.
     #[test]
     fn the_shipped_file_loads_and_is_the_default() {
         let text = include_str!("../../../content/gameplay/reactor/reactor.json");
         let t = Tuning::parse(text).unwrap_or_else(|e| panic!("{e:#?}"));
-        assert_eq!(t, Tuning::default());
+        let mut want = Tuning::default();
+        want.room.engine_wander = true;
+        assert_eq!(t, want);
     }
 
     #[test]

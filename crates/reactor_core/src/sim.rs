@@ -51,6 +51,8 @@ pub enum Action {
     Fault(Fault),
     /// Coolant tank level, %.
     SetTank(f64),
+    /// The engines' wander on or off (the dev stand-in for a helm).
+    Wander(bool),
     /// The reactor's condition to its maximum (a finished repair).
     RepairReactor,
     /// The coolant pump's condition to its maximum.
@@ -91,6 +93,8 @@ pub struct Row {
     pub fire: f64,
     /// Meltdown timer, 0..1 of its delay.
     pub melt: f64,
+    /// Junction box voltage: delivered over requested, 1 with no request.
+    pub volt: f64,
     /// Junction box condition.
     pub junction: f64,
     /// Reactor condition.
@@ -117,13 +121,13 @@ impl Trace {
         let mut s = String::new();
         let _ = writeln!(
             s,
-            "{:>6} {:>6} {:>6} {:>6} {:>8} {:>7} {:>5} {:>6} {:>5} {:>5} {:>6} {:>6} {:>6} {:>5}  {}",
-            "t", "fis", "turb", "temp", "output", "load", "flow", "tank", "fire", "melt", "junc", "react", "pump", "on", "events"
+            "{:>6} {:>6} {:>6} {:>6} {:>8} {:>7} {:>5} {:>6} {:>5} {:>5} {:>5} {:>6} {:>6} {:>6} {:>5}  {}",
+            "t", "fis", "turb", "temp", "output", "load", "flow", "tank", "fire", "melt", "volt", "junc", "react", "pump", "on", "events"
         );
         for r in &self.rows {
             let _ = writeln!(
                 s,
-                "{:>6.1} {:>6.1} {:>6.1} {:>6.1} {:>8.1} {:>7.1} {:>5.2} {:>6.1} {:>5.2} {:>5.2} {:>6.1} {:>6.1} {:>6.1} {:>5}  {}",
+                "{:>6.1} {:>6.1} {:>6.1} {:>6.1} {:>8.1} {:>7.1} {:>5.2} {:>6.1} {:>5.2} {:>5.2} {:>5.2} {:>6.1} {:>6.1} {:>6.1} {:>5}  {}",
                 r.t,
                 r.fission,
                 r.turbine,
@@ -134,6 +138,7 @@ impl Trace {
                 r.tank,
                 r.fire,
                 r.melt,
+                r.volt,
                 r.junction,
                 r.reactor,
                 r.pump,
@@ -171,9 +176,11 @@ impl Trace {
     }
 }
 
-/// A reactor warmed up for 120 s on Auto with two standard rods, power on, at the grid's load.
+/// A reactor warmed up for 120 s on Auto with two standard rods, power on, at the grid's full
+/// load (the wander is off for the warm-up, so every script starts from the same 500 kW).
 pub fn warm_room(tuning: &Tuning, seed: u64) -> EngineRoom {
     let mut room = EngineRoom::from_tuning(tuning, seed);
+    room.set_engine_wander(false);
     assert!(room.set_power(true));
     for _ in 0..1200 {
         room.step(0.1, Input::auto());
@@ -181,7 +188,7 @@ pub fn warm_room(tuning: &Tuning, seed: u64) -> EngineRoom {
     room
 }
 
-/// The six scripts the playtest looks at.
+/// The seven scripts the playtest looks at.
 pub fn scripts() -> Vec<Script> {
     vec![
         Script {
@@ -248,6 +255,12 @@ pub fn scripts() -> Vec<Script> {
                 ),
                 (0.0, Action::AfterMeltdown(5.0, Box::new(Action::Auto))),
             ],
+        },
+        // The engines' load wanders (a dev stand-in for a helm) and Auto follows it for five minutes.
+        Script {
+            name: "wandering_load",
+            duration_s: 300.0,
+            steps: vec![(0.0, Action::Wander(true))],
         },
     ]
 }
@@ -359,6 +372,7 @@ impl Runner {
                 }
             }
             Action::SetTank(pct) => room.pump_mut().set_tank(*pct),
+            Action::Wander(on) => room.set_engine_wander(*on),
             Action::RepairReactor => {
                 let max = room.reactor().condition().tuning().max;
                 room.reactor_mut().condition_mut().set_value(max);
@@ -389,6 +403,7 @@ fn sample(room: &EngineRoom, t: f64, events: Vec<String>) -> Row {
         tank: room.pump().tank(),
         fire,
         melt,
+        volt: room.voltage(),
         junction: room.junction().condition().value(),
         reactor: r.condition().value(),
         pump: room.pump().condition().value(),

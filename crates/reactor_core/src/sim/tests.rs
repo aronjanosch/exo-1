@@ -331,3 +331,30 @@ fn a_meltdown_spends_every_rod() {
     assert!(trace.melted);
     assert!(!room.reactor().rods().is_empty() && room.reactor().rods().iter().all(|r| r.spent()));
 }
+
+/// Auto on the shipped tuning with the load wandering for 300 s: no TempCritical, no meltdown. Also
+/// reports the peak temperature, the seconds the box is overvolted and its condition at the end.
+#[test]
+fn wandering_load_stays_out_of_temp_critical_over_300_s() {
+    let (trace, room) = trace_of("wandering_load", 5.0);
+    assert!(!trace.melted);
+    assert_eq!(trace.count("Alarm TempCritical on"), 0, "{}", trace.table());
+    // The same run again, stepped by hand, to count the seconds of overvoltage.
+    let mut probe = warm_room(&shipped(), 7);
+    probe.set_engine_wander(true);
+    let mut overvolt_s = 0.0;
+    for _ in 0..3000 {
+        probe.step(DT, Input::auto());
+        if probe.junction().overvolted() {
+            overvolt_s += DT;
+        }
+    }
+    println!(
+        "wandering_load 300 s: peak temp {:.1}, overvolt {:.1} s, junction at end {:.1}, reactor at end {:.1}, TempHigh rows {}",
+        trace.peak_temp(),
+        overvolt_s,
+        room.junction().condition().value(),
+        room.reactor().condition().value(),
+        trace.count("Alarm TempHigh on")
+    );
+}

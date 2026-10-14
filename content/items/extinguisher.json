@@ -1,5 +1,5 @@
 {
-  "_comment": "Two-handed: held, it fills both hands. Using it sprays fire (#298). TODO(initiator): shape, mass.",
+  "_comment": "Two-handed: held, it fills both hands. Using it sprays fire (#298). Wears: its condition runs down while it sprays and it is empty at 0; swap it at a rack for a full one (#300). The rate: gameplay/fire/extinguisher.json. TODO(initiator): shape, mass.",
   "id": "extinguisher",
   "name": "Extinguisher",
   "code": "EXT",
@@ -7,6 +7,7 @@
   "hands": 2,
   "stack": 1,
   "use": "extinguish",
-  "tags": ["medium", "tool"],
+  "tags": ["medium", "tool", "extinguisher"],
+  "condition": true,
   "shape": { "extents": [0.18, 0.52, 0.18], "mass": 6.0, "colour": [0.88, 0.14, 0.1] }
 }

@@ -29,6 +29,7 @@ mod scenario_first_person_settings;
 mod scenario_flight;
 mod scenario_help;
 mod scenario_engine_room;
+mod scenario_extinguisher;
 mod scenario_fire;
 mod scenario_repair;
 mod scenario_reactor;

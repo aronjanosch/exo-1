@@ -22,6 +22,7 @@ use bevy::prelude::*;
 use display_core::PanelId;
 
 pub mod engine_room;
+pub mod extinguisher;
 pub mod fire;
 pub mod look_samples;
 pub mod hazards;
@@ -154,6 +155,7 @@ pub fn plugin(app: &mut App) {
     app.add_plugins(reactor::plugin);
     app.add_plugins(reactor_screen::plugin);
     app.add_plugins(fire::plugin);
+    app.add_plugins(extinguisher::plugin);
 }
 
 pub fn window_plugin(app: &mut App) {

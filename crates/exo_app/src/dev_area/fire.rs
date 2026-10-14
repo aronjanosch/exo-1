@@ -166,6 +166,10 @@ fn spray_aim(controls: &Controls, active: &ActiveDisplay, players: &Query<&Playe
     if items.defs.of(stack)?.use_effect.as_deref() != Some(EXTINGUISH) {
         return None;
     }
+    // An empty one does not spray (#300).
+    if !stack.item.condition.is_some_and(|c| c > 0.0) {
+        return None;
+    }
     let eye = pl.w.pos + pl.up * EYE_HEIGHT;
     let dir = pl.world_look(WalkFrame::IDENTITY).normalize_or_zero();
     Some(SprayAsk::Aim { eye: eye.to_array(), dir: dir.to_array() })
@@ -195,7 +199,7 @@ fn spray_input(time: Res<Time>, controls: Res<Controls>, active: Res<ActiveDispl
 
 /// Host: the sprays' requests, then each spray in reach puts out the fires it lands on, for this
 /// tick. The spray lands at the point of its aim nearest the fire it hits first.
-fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut items: ResMut<Items>, mut sprays: ResMut<Sprays>, mut air: ResMut<EngineAir>, cfg: Res<FireConfig>) {
+fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut items: ResMut<Items>, mut sprays: ResMut<Sprays>, mut air: ResMut<EngineAir>, cfg: Res<FireConfig>, supply: Res<super::extinguisher::Supply>) {
     if items.role == Role::Client {
         return;
     }
@@ -209,8 +213,20 @@ fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>
             }
         }
     }
-    let (Some(area), Some(frame)) = (area.as_deref(), area.as_deref().and_then(|a| a.frame)) else { return };
     let dt = time.delta_secs_f64();
+    // The extinguisher runs down while it sprays; an empty one (or anything that does not wear)
+    // stops the spray (#300).
+    let now = time.elapsed_secs_f64();
+    for who in sprays.0.keys().copied().collect::<Vec<_>>() {
+        let slot = items.host.inventories.get(&who).map_or(0, |i| i.selected);
+        match items.host.condition(who, slot) {
+            Some(c) if c > 0.0 => items.wear(now, who, slot, supply.0.drain_per_s * dt),
+            _ => {
+                sprays.0.remove(&who);
+            }
+        }
+    }
+    let (Some(area), Some(frame)) = (area.as_deref(), area.as_deref().and_then(|a| a.frame)) else { return };
     let half = cfg.0.spray_half_angle_deg.to_radians();
     let reach = cfg.0.spray_reach;
     let fires: Vec<([f64; 2], f64)> = air.deck.fires().iter().map(|f| ([f.pos.x, f.pos.y], f.size)).collect();

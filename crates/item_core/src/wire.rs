@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::authority::{Action, Event};
+use crate::PlayerId;
 
 /// Biggest message accepted on receipt (bytes); a late joiner's whole state comes as many events.
 pub const MAX_MESSAGE: usize = 32 * 1024;
@@ -21,6 +22,8 @@ pub enum ToHost {
     Spray(SprayAsk),
     /// A repair session at a machine (#299): the host decides what it does to the condition.
     Repair(RepairAsk),
+    /// The treatment hold (#300): the player is treating this player (`Some`), or has stopped (`None`).
+    Treat(Option<PlayerId>),
 }
 
 /// Host to client.
@@ -38,6 +41,31 @@ pub enum ToClient {
     Fire(FireNews),
     /// The host ended this player's repair session (#299): the machine is full.
     RepairDone,
+    /// Every player's public status (#300), as the host has it: sent when one changes, and to a
+    /// client that joins.
+    Status(Vec<(PlayerId, PublicStatus)>),
+}
+
+/// What a player is doing that the others see (#300).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Doing {
+    #[default]
+    Nothing,
+    /// Holding a treatment on this player (themselves included).
+    Treating(PlayerId),
+    /// A repair session at this machine.
+    Repairing(RepairDevice),
+    /// The extinguisher's spray is on.
+    Spraying,
+}
+
+/// A player's status for the others (#300): burning, down (waiting for the respawn) and what
+/// they do.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PublicStatus {
+    pub burning: bool,
+    pub down: bool,
+    pub doing: Doing,
 }
 
 /// The alarm level of the ship (#296). A dev toggle for now; the reactor drives it later.
@@ -400,6 +428,27 @@ mod tests {
             _ => panic!("the fault"),
         };
         assert_eq!(fault, ReactorFault::Fire);
+    }
+
+    #[test]
+    fn public_status_travels_as_it_is() {
+        let status = vec![
+            (1, PublicStatus { burning: true, down: false, doing: Doing::Treating(2) }),
+            (2, PublicStatus { burning: false, down: true, doing: Doing::Nothing }),
+            (3, PublicStatus { burning: false, down: false, doing: Doing::Repairing(RepairDevice::CoolantPump) }),
+            (4, PublicStatus { burning: false, down: false, doing: Doing::Spraying }),
+        ];
+        let back = match decode::<ToClient>(&encode(&ToClient::Status(status.clone()))).expect("decodes") {
+            ToClient::Status(s) => s,
+            _ => panic!("the status message"),
+        };
+        assert_eq!(back, status);
+        let treat = match decode::<ToHost>(&encode(&ToHost::Treat(Some(3)))).expect("decodes") {
+            ToHost::Treat(t) => t,
+            _ => panic!("the treat message"),
+        };
+        assert_eq!(treat, Some(3));
+        assert!(decode::<ToHost>(&encode(&ToHost::Treat(None))).is_some_and(|m| matches!(m, ToHost::Treat(None))));
     }
 
     #[test]

@@ -205,3 +205,22 @@ fn a_closed_door_keeps_the_leak_to_one_room() {
     assert!(open_a < 0.95 && d2.room(a2).oxygen_fraction() == 1.0);
     let _ = door;
 }
+
+#[test]
+fn a_spray_lands_on_a_fire_in_the_cone_and_not_outside() {
+    let eye = DVec3::ZERO;
+    let dir = DVec3::new(0.0, 0.0, -1.0);
+    let half = 20.0f64.to_radians();
+    // Straight ahead, 3 m: lands at 3 m.
+    let ahead = DVec3::new(0.0, 0.0, -3.0);
+    assert!((cone_landing(eye, dir, ahead, 0.5, 4.0, half).unwrap() - 3.0).abs() < 1e-9);
+    // Beside the aim at 3 m, 2 m off: out of a 20 degree cone (tan 20 * 3 = 1.09 m, plus the radius).
+    assert!(cone_landing(eye, dir, DVec3::new(2.0, 0.0, -3.0), 0.5, 4.0, half).is_none());
+    // A fire of 1 m radius at 2 m off with 3 m along is in (1.09 + 1.0 = 2.09 m).
+    assert!(cone_landing(eye, dir, DVec3::new(2.0, 0.0, -3.0), 1.0, 4.0, half).is_some());
+    // Behind the nozzle, and beyond the reach.
+    assert!(cone_landing(eye, dir, DVec3::new(0.0, 0.0, 2.0), 0.5, 4.0, half).is_none());
+    assert!(cone_landing(eye, dir, DVec3::new(0.0, 0.0, -9.0), 0.5, 4.0, half).is_none());
+    // Beyond the reach but its edge in reach: the spray lands at the reach.
+    assert!((cone_landing(eye, dir, DVec3::new(0.0, 0.0, -4.8), 1.0, 4.0, half).unwrap() - 4.0).abs() < 1e-9);
+}

@@ -463,6 +463,23 @@ impl Deck {
     }
 }
 
+/// Where an extinguisher's spray from `eye` along `dir` (a unit vector) lands on a fire whose
+/// centre is `centre` and whose edge is `radius` from it: the distance along the aim to the point
+/// nearest the fire, at most `reach`; None when the fire is out of the cone (`reach` metres,
+/// `half_angle` radians) or behind the nozzle.
+pub fn cone_landing(eye: DVec3, dir: DVec3, centre: DVec3, radius: f64, reach: f64, half_angle: f64) -> Option<f64> {
+    let v = centre - eye;
+    let along = v.dot(dir);
+    if along <= 0.0 || along - radius > reach {
+        return None;
+    }
+    let off = (v - dir * along).length();
+    if off > along * half_angle.tan() + radius {
+        return None;
+    }
+    Some(along.min(reach))
+}
+
 /// Takes a fire of `size` at `pos` into `f`: the span both cover on the line between their
 /// centres, centred on that span.
 fn merge(f: &mut Fire, pos: DVec3, size: f64, max: f64) {

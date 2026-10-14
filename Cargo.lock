@@ -2740,6 +2740,7 @@ dependencies = [
  "net_core",
  "planet_core",
  "production_core",
+ "reactor_core",
  "serde_json",
  "walker_core",
  "warp_core",

@@ -25,6 +25,8 @@ pub mod engine_room;
 pub mod look_samples;
 pub mod hazards;
 pub mod item_table;
+pub mod reactor;
+pub mod reactor_screen;
 pub mod test_console;
 
 /// The place (`content/place/dev_area.json`).
@@ -148,6 +150,8 @@ pub fn plugin(app: &mut App) {
     app.add_plugins(item_table::plugin);
     app.add_plugins(hazards::plugin);
     app.add_plugins(engine_room::plugin);
+    app.add_plugins(reactor::plugin);
+    app.add_plugins(reactor_screen::plugin);
 }
 
 pub fn window_plugin(app: &mut App) {

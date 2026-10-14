@@ -16,6 +16,8 @@
 //! - Machines and the reactor screen are named placeholders (the constants below), so the next
 //!   steps attach to them.
 use super::*;
+use crate::dev_area::reactor_screen;
+use crate::displays::DisplayPanel;
 use crate::env::PlanetRes;
 use crate::items::{Items, NetOut, Role};
 use crate::origin::WorldPos;
@@ -54,6 +56,8 @@ pub const JUNCTION_BOX_SIZE: [f64; 3] = [0.6, 0.9, 0.3];
 pub const REACTOR_SCREEN_AT: [f64; 2] = [-9.03, -15.0];
 pub const REACTOR_SCREEN_SIZE: [f64; 3] = [0.06, 1.2, 1.6];
 pub const REACTOR_SCREEN_LIFT: f64 = 0.9;
+/// The readout's size on the wall (m): the M screen's 1.6 : 1 aspect.
+pub const READOUT_SIZE: [f64; 2] = [1.6, 1.0];
 
 /// The device ids of the parts (`DevBox::id`).
 pub const DOOR: &str = "engine_door";
@@ -227,7 +231,7 @@ pub fn window_plugin(app: &mut App) {
 
 /// The state of the room: the requests (host and one process apply them, a client sends them),
 /// the host's changes to the wire, and a client's copy of the wire.
-fn room_state(mut items: ResMut<Items>, mut alarm: ResMut<ShipAlarm>, mut door: ResMut<EngineDoor>) {
+pub(super) fn room_state(mut items: ResMut<Items>, mut alarm: ResMut<ShipAlarm>, mut door: ResMut<EngineDoor>) {
     let asks = std::mem::take(&mut items.room_asks);
     match items.role {
         Role::Client => {
@@ -296,6 +300,13 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
             .id();
         area.entities.push(e);
     }
+    // The reactor's readout: on the east wall, facing west into the room (turn -90 from the pads'
+    // south), its centre 0.9 m up plus half its height.
+    let (ground, up) = frame.ground(&planet, REACTOR_SCREEN_AT[0], REACTOR_SCREEN_AT[1], 0.0);
+    let rot = frame.rotation(up, -90.0);
+    let centre = ground + up * (REACTOR_SCREEN_LIFT + READOUT_SIZE[1] * 0.5);
+    let e = commands.spawn(DisplayPanel { id: reactor_screen::READOUT_ID, name: reactor_screen::READOUT_NAME.into(), size_m: DVec2::from(READOUT_SIZE), centre, rot }).id();
+    area.entities.push(e);
     // The door: a kinematic slab in the room's side of the north wall, slid as the host says.
     let d = DOOR_SIZE;
     let (ground, up) = frame.ground(&planet, DOOR_AT[0], DOOR_AT[1], 0.0);

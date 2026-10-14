@@ -111,6 +111,21 @@ fn machines_powered(w: &World) -> bool {
     items(w).reactor.as_ref().is_some_and(|r| r.powered)
 }
 
+/// Why the machines are dark or lit on this snapshot: the rule is the junction box working and the
+/// reactor's output above 0 (no steam at 0 °C, no output).
+fn power_why(w: &World) -> String {
+    let room = &sim(w).room;
+    let reac = room.reactor();
+    format!(
+        "power: reactor on {}, temp {:.1}, output {:.1} kW, junction {}, machines powered {}",
+        reac.power_on(),
+        reac.temperature(),
+        reac.output_kw(),
+        if room.junction().condition().functioning() { "working" } else { "broken" },
+        machines_powered(w)
+    )
+}
+
 fn fires(w: &World) -> Vec<FireNew> {
     items(w).fire.as_ref().map(|f| f.fires.clone()).unwrap_or_default()
 }
@@ -492,7 +507,7 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
         if c.t < 0.8 {
             return false;
         }
-        end(w, c, format!("{level:?}"));
+        end(w, c, format!("{level:?}; {}", power_why(w)));
         true
     }));
     // The wrench at the pump: LMB starts the session (retried every 0.5 s until the ring is on,

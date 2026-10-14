@@ -148,8 +148,8 @@ fn high_skill_widens_the_safe_band() {
     let mut fires = Vec::new();
     for skill in [0.0, 100.0] {
         let mut r = reactor(skill);
-        // Fission 45 with the output's heat: equilibrium near 67.
-        r.set_targets(45.0, 50.0);
+        // Fission 47.5 with the output's heat: equilibrium near 67.
+        r.set_targets(47.5, 50.0);
         let ev = run(&mut r, 120.0, 500.0);
         fires.push(ev.iter().filter(|(_, e)| matches!(e, ReactorEvent::Fire { .. })).count());
         println!("skill {skill}: temp {:.1}, fires in 120 s: {}", r.temperature(), fires.last().unwrap());

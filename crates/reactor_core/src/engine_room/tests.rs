@@ -104,11 +104,12 @@ fn manual_with_a_good_input_avoids_the_overshoot() {
 #[test]
 fn pump_break_climbs_to_fire_then_meltdown() {
     let mut r = room();
-    // Fission 43.75 with two rods and the pump on: the temperature settles at 50.
+    // Fission 43.75 with two rods and the pump on: the temperature settles near 56.5 (the output's
+    // heat adds 5 to the old 50, #300).
     let input = Input::manual(43.75, 50.0);
     run(&mut r, 30.0, input);
     let before = r.reactor().temperature();
-    assert!((before - 50.0).abs() < 1.0, "{before}");
+    assert!((before - 56.5).abs() < 1.0, "{before}");
     let ev_now = r.trigger(Fault::PumpBreak);
     assert!(matches!(ev_now.as_slice(), [RoomEvent::Device { source: Source::Pump, event: DeviceEvent::Broke }]), "{ev_now:?}");
     assert_eq!(r.pump().factor(), 0.0);
@@ -235,7 +236,7 @@ fn a_pump_switched_off_takes_no_heat_away_and_the_temperature_climbs() {
     let input = Input::manual(43.75, 50.0);
     run(&mut r, 30.0, input);
     let before = r.reactor().temperature();
-    assert!((before - 50.0).abs() < 1.0, "{before}");
+    assert!((before - 56.5).abs() < 1.0, "{before}");
     r.set_pump(false);
     assert_eq!(r.flow(), 0.0);
     let (_, temps) = run(&mut r, 20.0, input);
@@ -247,7 +248,8 @@ fn a_pump_switched_off_takes_no_heat_away_and_the_temperature_climbs() {
     let (_, temps) = run(&mut r, 120.0, input);
     // The climb turns within 40 s of the restart; the pump is worn by the overheat (it runs
     // as an overload while the core is above the optimal band), so the level it holds is not `before`.
-    let turn = temps.iter().position(|&t| t < peak - 20.0);
+    // 10 degrees down (the peak is higher now that the climb overshoots, #300).
+    let turn = temps.iter().position(|&t| t < peak - 10.0);
     assert!(turn.is_some_and(|i| (i as f64) * DT < 40.0), "the temperature turns down: {turn:?}");
     assert!(peak > before + 10.0);
 }
@@ -430,7 +432,7 @@ fn a_cold_start_warms_up_and_gives_output() {
     assert!(r.reactor().output_kw() > 0.0 || r.reactor().temperature() > 0.0, "warms up");
     assert!(!ev.iter().any(|(_, e)| is_fire(e)));
     let (_, tail) = run(&mut r, 30.0, Input::auto());
-    assert!(tail.last().unwrap() > &50.0);
+    assert!(r.reactor().bands().temp_optimal.contains(*tail.last().unwrap()), "{:?}", tail.last());
 }
 
 // ---------- coolant tank (#300, lane coolant) ----------

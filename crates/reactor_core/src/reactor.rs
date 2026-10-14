@@ -74,9 +74,21 @@ pub struct ReactorTuning {
     pub heat_output_factor: f64,
     /// Seconds for fission to follow its target (a time constant). Barotrauma: 1. TODO(initiator): value.
     pub fission_lag_s: f64,
+    /// Auto looks this many seconds ahead: it compares the temperature it predicts (temp + speed *
+    /// this) with the band, so the spring's swing is not chased. TODO(initiator): value.
+    pub auto_lookahead_s: f64,
+    /// Inertia on (the default): the temperature is the damped spring, the output makes heat and
+    /// fission lags by `fission_lag_s`. Off: the first-order path of Barotrauma (the temperature moves
+    /// at `temp_rate` towards its target, fission lags 1 s, no output heat), for the oracle tests.
+    #[serde(default = "inertia_on")]
+    pub inertia: bool,
     /// The reactor's own condition: repair threshold and wear floor (Barotrauma style, the floor
     /// is the lowest that normal wear reaches; the broken limit is the floor at least).
     pub condition: DeviceTuning,
+}
+
+fn inertia_on() -> bool {
+    true
 }
 
 impl Default for ReactorTuning {
@@ -98,8 +110,10 @@ impl Default for ReactorTuning {
             coolant_coast_s: 60.0,
             temp_stiffness: 0.06,
             temp_damping: 0.2,
-            heat_output_factor: 25.0,
+            heat_output_factor: 10.0,
             fission_lag_s: 4.0,
+            auto_lookahead_s: 8.0,
+            inertia: true,
             condition: DeviceTuning { repair_threshold: 50.0, wear_floor: 10.0, ..DeviceTuning::default() },
         }
     }
@@ -107,6 +121,10 @@ impl Default for ReactorTuning {
 
 /// Auto leaves fission alone while the temperature is this close to the middle of its band.
 const AUTO_DEAD_BAND: f64 = 1.0;
+/// Auto's fission speed is full this many degrees (predicted) from the middle of its optimal band;
+/// nearer, it is proportional. TODO(initiator): 5 did not settle with the spring (the swing stayed
+/// about 10 degrees); 20 settles.
+const AUTO_FULL_SPEED_AT: f64 = 20.0;
 
 /// A fuel rod: an item that goes into a slot and burns down.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -463,9 +481,10 @@ impl Reactor {
         let cool = t.cooling_max * self.coolant;
         let residual = t.decay_heat * (1.0 - self.coolant);
         // The output of the last step makes heat too.
-        let output_heat = if t.max_output_kw > 0.0 { t.heat_output_factor * self.output / t.max_output_kw } else { 0.0 };
+        let output_heat = if t.inertia && t.max_output_kw > 0.0 { t.heat_output_factor * self.output / t.max_output_kw } else { 0.0 };
         self.step_temp(dt, heat + residual + output_heat - self.turbine - cool);
-        self.fission += (self.target_fission.min(fuel) - self.fission) * (dt / t.fission_lag_s.max(1e-9)).min(1.0);
+        let lag = if t.inertia { t.fission_lag_s.max(1e-9) } else { 1.0 };
+        self.fission += (self.target_fission.min(fuel) - self.fission) * (dt / lag).min(1.0);
         self.turbine += (self.target_turbine - self.turbine) * k;
 
         if !self.power_on {
@@ -497,6 +516,13 @@ impl Reactor {
     /// At 0 or 100 the speed stops if it pushes outward.
     fn step_temp(&mut self, dt: f64, target: f64) {
         let t = self.tuning;
+        if !t.inertia {
+            // Barotrauma's path: at most `temp_rate` towards the target, no speed of its own.
+            let diff = target - self.temp;
+            self.temp = (self.temp + (diff.signum() * t.temp_rate * dt).clamp(-diff.abs(), diff.abs())).clamp(0.0, 100.0);
+            self.temp_vel = 0.0;
+            return;
+        }
         self.temp_vel += ((target - self.temp) * t.temp_stiffness - self.temp_vel * t.temp_damping) * dt;
         self.temp_vel = self.temp_vel.clamp(-t.temp_rate, t.temp_rate);
         let next = self.temp + self.temp_vel * dt;
@@ -548,10 +574,14 @@ impl Reactor {
         self.target_turbine += (b.turbine_optimal.mid() - self.target_turbine).clamp(-st, st) * dt;
         self.target_turbine = self.target_turbine.clamp(0.0, 100.0);
         let mid = b.temp_optimal.mid();
-        if self.temp > mid + AUTO_DEAD_BAND {
-            self.target_fission = (self.target_fission - s * dt).min(b.fission_allowed.hi);
-        } else if self.temp < mid - AUTO_DEAD_BAND || self.output < load_kw - 1.0 {
-            self.target_fission = (self.target_fission + s * dt).min(100.0);
+        let pred = self.temp + self.temp_vel * self.tuning.auto_lookahead_s;
+        // Proportional to the predicted distance from the middle, full speed beyond AUTO_FULL_SPEED_AT.
+        let gain = ((pred - mid).abs() / AUTO_FULL_SPEED_AT).min(1.0);
+        if pred > mid + AUTO_DEAD_BAND {
+            self.target_fission = (self.target_fission - s * gain * dt).min(b.fission_allowed.hi);
+        } else if pred < mid - AUTO_DEAD_BAND || self.output < load_kw - 1.0 {
+            let rate = if pred < mid - AUTO_DEAD_BAND { s * gain } else { s };
+            self.target_fission = (self.target_fission + rate * dt).min(100.0);
         }
         // Not far from the actual rate, or it overshoots while the temperature catches up.
         self.target_fission = self.target_fission.clamp(0.0, 100.0).clamp(self.fission - 5.0, self.fission + 5.0).max(0.0);

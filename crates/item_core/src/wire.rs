@@ -79,6 +79,29 @@ pub enum ReactorAsk {
     Trigger(ReactorFault),
     /// A fresh engine room: cold, the start rods, Auto.
     Reset,
+    /// SCRAM: fission to 0 and the power off at once.
+    Scram,
+    /// The power switch: on starts the reactor again after a SCRAM.
+    SetPower(bool),
+    /// A consumer group's breaker on the junction box.
+    SetBreaker(BreakerGroup, bool),
+    /// The coolant pump's switch.
+    SetPump(bool),
+}
+
+/// The junction box's consumer groups (the breakers on its screen).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BreakerGroup {
+    Engines,
+    LifeSupport,
+    Lights,
+}
+
+impl BreakerGroup {
+    /// Position in `ReactorNews::breakers`.
+    pub fn index(self) -> usize {
+        self as usize
+    }
 }
 
 /// The faults the dev console asks for.
@@ -124,23 +147,16 @@ pub struct FireNews {
     pub sprays: Vec<SprayNew>,
 }
 
-/// A part's condition for the readout: its share of full condition (0..1) and whether it works.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct PartNews {
-    pub share: f64,
-    pub working: bool,
-}
-
-/// The reactor's snapshot (#297): what the readout shows, as the host has it. Temperature,
+/// The reactor's snapshot (#297): what the screens show, as the host has it. Temperature,
 /// fission and turbine are 0..100; power is kW; the bands are (low, high) on the temperature
-/// gauge; the timers are 0..1 of their way to a fire or a shutdown (meltdown without the safety).
+/// gauge. The screens show little: no condition values, the pump gives its flow only.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ReactorNews {
     pub power_on: bool,
     pub manual: bool,
+    /// The core melted: the readout shows MELTDOWN.
+    pub melted: bool,
     pub temp: f64,
-    pub fission: f64,
-    pub turbine: f64,
     /// The targets as set (Manual) or as Auto has them.
     pub set_fission: f64,
     pub set_turbine: f64,
@@ -148,13 +164,17 @@ pub struct ReactorNews {
     pub load_kw: f64,
     pub optimal: [f64; 2],
     pub allowed: [f64; 2],
-    pub pump: PartNews,
-    pub junction: PartNews,
-    pub alarm: Alarm,
-    pub fire_timer: f64,
-    pub meltdown_timer: f64,
-    /// Rods not spent.
-    pub rods: u8,
+    /// The machines have power: the junction box works and the reactor delivers.
+    pub powered: bool,
+    /// The breakers, by `BreakerGroup::index`: engines, life support, lights.
+    pub breakers: [bool; 3],
+    pub pump_on: bool,
+    /// Coolant flow, 0..1.
+    pub flow: f64,
+    /// Overvoltage at the junction box now.
+    pub overvolt: bool,
+    /// The engine room's air, 0..1 (the host rounds it to whole percent).
+    pub oxygen: f64,
 }
 
 /// The engine room's state (#296): the door's target and the alarm level.
@@ -256,21 +276,20 @@ mod tests {
         let news = ReactorNews {
             power_on: true,
             manual: true,
+            melted: false,
             temp: 61.25,
-            fission: 43.75,
-            turbine: 50.0,
             set_fission: 40.0,
             set_turbine: 48.0,
             output_kw: 500.0,
             load_kw: 500.0,
             optimal: [35.0, 65.0],
             allowed: [20.0, 80.0],
-            pump: PartNews { share: 0.4, working: true },
-            junction: PartNews { share: 1.0, working: true },
-            alarm: Alarm::Warn,
-            fire_timer: 0.5,
-            meltdown_timer: 0.0,
-            rods: 2,
+            powered: true,
+            breakers: [true, false, true],
+            pump_on: true,
+            flow: 0.4,
+            overvolt: true,
+            oxygen: 0.21,
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {
             ToClient::Reactor(r) => r,
@@ -281,7 +300,19 @@ mod tests {
 
     #[test]
     fn reactor_asks_travel_as_they_are() {
-        for ask in [ReactorAsk::SetManual(true), ReactorAsk::SetFission(12.5), ReactorAsk::SetTurbine(0.0), ReactorAsk::Trigger(ReactorFault::LoadDrop), ReactorAsk::Reset] {
+        let asks = [
+            ReactorAsk::SetManual(true),
+            ReactorAsk::SetFission(12.5),
+            ReactorAsk::SetTurbine(0.0),
+            ReactorAsk::Trigger(ReactorFault::LoadDrop),
+            ReactorAsk::Reset,
+            ReactorAsk::Scram,
+            ReactorAsk::SetPower(false),
+            ReactorAsk::SetBreaker(BreakerGroup::Lights, false),
+            ReactorAsk::SetBreaker(BreakerGroup::Engines, true),
+            ReactorAsk::SetPump(true),
+        ];
+        for ask in asks {
             let back = match decode::<ToHost>(&encode(&ToHost::Reactor(ask))).expect("decodes") {
                 ToHost::Reactor(a) => a,
                 _ => panic!("the reactor request"),

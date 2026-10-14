@@ -598,8 +598,16 @@ fn held_item(
         }
     }
     *vis = if m.0.is_some() { Visibility::Inherited } else { Visibility::Hidden };
-    pose.pos = c.pos + c.rot * DVec3::new(0.34, -0.34, -0.7);
+    let hands = m.0.as_deref().and_then(|id| items.defs.get(id)).map_or(1, |d| d.hands);
+    pose.pos = c.pos + c.rot * held_offset(hands);
     pose.rot = c.rot;
+}
+
+/// Where a held item sits in the view, camera space (x right, y up, -z forward): one hand low
+/// on the right; two hands lower, nearer the middle and further off, so the item takes about
+/// half the screen it did and the floor in front stays in view.
+fn held_offset(hands: u8) -> DVec3 {
+    if hands >= 2 { DVec3::new(0.16, -0.40, -0.99) } else { DVec3::new(0.34, -0.34, -0.7) }
 }
 
 fn window_size(windows: Query<&Window, With<bevy::window::PrimaryWindow>>, mut size: ResMut<HudWindow>) {
@@ -973,5 +981,20 @@ fn draw_bar(
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_two_handed_item_sits_lower_more_centred_and_further_off_than_a_one_handed_one() {
+        let (one, two) = (held_offset(1), held_offset(2));
+        assert!(two.y < one.y && two.x < one.x, "lower and more centred");
+        assert!(two.z.abs() > one.z.abs(), "further off, so it looks smaller");
+        // Its screen area: about half of the one-handed pose (the size falls with the distance squared).
+        let share = (one.z / two.z).powi(2);
+        assert!((0.45..0.55).contains(&share), "area share {share}");
     }
 }

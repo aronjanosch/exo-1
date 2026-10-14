@@ -509,12 +509,14 @@ impl VitalLine {
         format!("{} {name}", self.glyph()).trim_start().to_string()
     }
 
-    /// The text at the label line's right, before the value: what the injury costs the health,
-    /// `−12` (`0` while it costs nothing; nothing for a health without a headache). The radiation
-    /// has no cost: it shows its strength, `8%`.
+    /// The text at the label line's right, `−12`: what the injury costs the health. Oxygen and
+    /// health show it only while it costs something (then it stands in for the percent, see
+    /// `value`); the burn shows `0` while it costs nothing. The radiation has no cost: it shows
+    /// its strength, `8%`.
     pub fn cost_text(&self) -> String {
         match self.kind {
             VitalKind::Burn => cost_points(self.costs.burn),
+            VitalKind::Oxygen if self.costs.oxygen.round() < 1.0 => String::new(),
             VitalKind::Oxygen => cost_points(self.costs.oxygen),
             VitalKind::Health if self.costs.headache.round() < 1.0 => String::new(),
             VitalKind::Health => cost_points(self.costs.headache),
@@ -522,12 +524,13 @@ impl VitalLine {
         }
     }
 
-    /// The value at the far right: the share in percent for the health and the air; nothing for
-    /// the burn and the radiation.
+    /// The value at the far right: the share in percent (`85%`) for the health and the air while
+    /// they cost nothing. While they cost, the cost text shows instead, so there are never two
+    /// numbers side by side. Nothing for the burn and the radiation.
     pub fn value(&self) -> String {
         match self.kind {
-            VitalKind::Health | VitalKind::Oxygen => format!("{}", (self.frac * 100.0).round() as i64),
-            VitalKind::Burn | VitalKind::Radiation => String::new(),
+            VitalKind::Health | VitalKind::Oxygen if self.cost_text().is_empty() => format!("{}%", (self.frac * 100.0).round() as i64),
+            _ => String::new(),
         }
     }
 
@@ -822,6 +825,28 @@ pub fn prompt_anchor(target: Option<DVec2>, window: DVec2, look: &HudLook) -> DV
     }
 }
 
+/// How far under the reticle (the window's centre) a display's prompt goes when the display's
+/// bottom edge is not on the screen (px).
+pub const PROMPT_RETICLE_DROP: f64 = 120.0;
+
+/// The room a prompt needs under a display's edge to fit on the screen (px, its height).
+pub const PROMPT_ROOM: f64 = 120.0;
+
+/// The top edge of a display's prompt, for a display in reach: `gap` below the lower of the two
+/// projected bottom corners `edge`, kept inside the bottom margin, so it never covers the display.
+/// Without room for it on the screen (a corner behind the camera, or the edge too low) it sits
+/// `PROMPT_RETICLE_DROP` under the reticle.
+pub fn display_prompt_top(edge: Option<[DVec2; 2]>, window: DVec2, look: &HudLook) -> f64 {
+    let fallback = window.y * 0.5 + PROMPT_RETICLE_DROP;
+    match edge {
+        Some([a, b]) if a.is_finite() && b.is_finite() => {
+            let top = a.y.max(b.y) + look.prompt.gap;
+            if top + PROMPT_ROOM <= window.y - look.margin { top.max(look.margin) } else { fallback }
+        }
+        _ => fallback,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -956,11 +981,11 @@ mod tests {
         let l = vital_lines(&VitalsIn { burn_level: 2, oxygen: Some(0.9), radiation: 0.08, max_share: 0.8, costs, ..vin(0.6) }, &v);
         assert_eq!(l[0].cost_text(), "\u{2212}12", "the burn costs its points");
         assert_eq!(l[1].cost_text(), "8%", "radiation has no cost: its strength");
-        assert_eq!(l[2].cost_text(), "0", "oxygen costs nothing yet and says so");
+        assert_eq!((l[2].cost_text(), l[2].value()), (String::new(), "90%".to_string()), "oxygen costs nothing yet: the percent alone");
         assert_eq!(l[3].cost_text(), "\u{2212}20", "the headache's cap, next to the health");
-        assert_eq!(l[3].value(), "60", "the health keeps its percent");
+        assert_eq!((l[3].value(), l[3].cost_text()), (String::new(), "\u{2212}20".to_string()), "a costing health shows the cost in place of the percent");
         let now = vital_lines(&VitalsIn { oxygen: Some(0.2), costs: Costs { oxygen: 66.7, ..Costs::default() }, ..vin(0.5) }, &v);
-        assert_eq!((now[0].cost_text(), now[0].value()), ("\u{2212}67".to_string(), "20".to_string()), "oxygen shows its cost once it costs");
+        assert_eq!((now[0].cost_text(), now[0].value()), ("\u{2212}67".to_string(), String::new()), "oxygen shows its cost in place of the percent once it costs");
         assert_eq!(vital_lines(&vin(1.0), &v)[0].cost_text(), "", "no headache, no cap text");
     }
 
@@ -981,14 +1006,14 @@ mod tests {
     fn the_burn_reads_its_level_the_buildup_and_the_fire() {
         let v = look().vitals;
         let l = vital_lines(&VitalsIn { burn_level: 2, ..vin(0.58) }, &v);
-        assert_eq!((l[0].burn_text(), l[1].label(), l[1].value()), ("▲ BURN II".to_string(), "▲ HEALTH".to_string(), "58".to_string()));
+        assert_eq!((l[0].burn_text(), l[1].label(), l[1].value()), ("▲ BURN II".to_string(), "▲ HEALTH".to_string(), "58%".to_string()));
         assert_eq!(l[0].frac, 0.0, "no buildup, the ring is empty");
         let l = vital_lines(&VitalsIn { buildup: 0.4, ..vin(1.0) }, &v);
         assert_eq!((l[0].burn_text(), l[0].frac, l[0].tone), ("▲ BURN".to_string(), 0.4, Tone::Warn), "building up: BURN without a level");
         let l = vital_lines(&VitalsIn { burn_level: 1, burning: true, ..vin(1.0) }, &v);
         assert_eq!((l[0].burn_text(), l[0].tone), ("■ BURN I · ON FIRE".to_string(), Tone::Bad), "on fire is bad");
         let l = vital_lines(&VitalsIn { oxygen: Some(0.41), ..vin(1.0) }, &v);
-        assert_eq!((l[0].label(), l[0].value(), l[0].tone), ("▲ O2".to_string(), "41".to_string(), Tone::Warn));
+        assert_eq!((l[0].label(), l[0].value(), l[0].tone), ("▲ O2".to_string(), "41%".to_string(), Tone::Warn));
         let l = vital_lines(&VitalsIn { oxygen: Some(0.18), burn_level: 3, health: 0.23, ..vin(0.23) }, &v);
         assert_eq!((l[0].burn_text(), l[0].tone, l[1].label(), l[2].label()), ("■ BURN III".to_string(), Tone::Bad, "■ O2".to_string(), "■ HEALTH".to_string()));
         let l = vital_lines(&vin(f64::NAN), &v);
@@ -1115,5 +1140,22 @@ mod tests {
         let a = prompt_anchor(Some(DVec2::new(-50.0, 2.0)), w, &l);
         assert_eq!(a, DVec2::new(l.margin, l.margin));
         assert_eq!(prompt_anchor(None, w, &l), DVec2::new(800.0, 900.0 * 0.58));
+    }
+
+    #[test]
+    fn a_display_prompt_sits_below_the_screen_never_over_it() {
+        let l = look();
+        let w = DVec2::new(1600.0, 900.0);
+        // The screen's bottom edge at y 500 (both corners): the prompt's top is 16 px under it.
+        let edge = [DVec2::new(600.0, 500.0), DVec2::new(1000.0, 500.0)];
+        assert_eq!(display_prompt_top(Some(edge), w, &l), 516.0);
+        // The lower corner decides.
+        assert_eq!(display_prompt_top(Some([DVec2::new(600.0, 420.0), DVec2::new(1000.0, 500.0)]), w, &l), 516.0);
+        // The edge too low for the prompt to fit: 120 px under the reticle (the centre, y 450).
+        let low = [DVec2::new(600.0, 800.0), DVec2::new(1000.0, 800.0)];
+        assert_eq!(display_prompt_top(Some(low), w, &l), 450.0 + PROMPT_RETICLE_DROP);
+        // A corner behind the camera (no projection) is the same fallback.
+        assert_eq!(display_prompt_top(Some([DVec2::new(f64::NAN, 0.0), DVec2::new(1000.0, 500.0)]), w, &l), 450.0 + PROMPT_RETICLE_DROP);
+        assert_eq!(display_prompt_top(None, w, &l), 450.0 + PROMPT_RETICLE_DROP);
     }
 }

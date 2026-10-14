@@ -25,7 +25,7 @@ use bevy::math::{DVec2, DVec3};
 use bevy::prelude::*;
 use display_core::hud::{
     compass_ticks, credits_number, delta_text, heading_deg, heading_text, hints, north_at, prompt_anchor, reference, vital_lines, BarIdle, CreditsFlash, CreditsView, Hint, HintAction, HudLook,
-    health_segments, PromptKind, Reference, TickLen, VitalKind, VitalLine, VitalSymbol, VitalsIn,
+    display_prompt_top, health_segments, PromptKind, Reference, TickLen, VitalKind, VitalLine, VitalSymbol, VitalsIn,
 };
 use display_core::hud::Costs;
 use display_core::{Rgb, Tone};
@@ -943,20 +943,19 @@ fn update_prompt_ui(
     let (theme, h) = (&look.0, &look.0.hud);
     let (k, p) = (&theme.colours, &h.prompt);
     let soft = |a: f64| col_a(h.soft, a);
-    let show = !inter.prompt.is_empty() && !ui.open;
-    // The prompt's own hand over the open inventory: none then (the cursor is free).
-    let screen = inter.at.and_then(|at| {
+    // A display in use has the cursor free: no prompt then.
+    let show = !inter.prompt.is_empty() && !ui.open && active.using().is_none();
+    let project = |at: DVec3| {
         let (camera, wp) = cam.single().ok()?;
         let gt = GlobalTransform::from(Transform::from_translation((wp.pos - origin.origin).as_vec3()).with_rotation(wp.rot.as_quat()));
         let v = camera.world_to_viewport(&gt, (at - origin.origin).as_vec3()).ok()?;
         Some(DVec2::new(v.x as f64, v.y as f64))
-    });
+    };
+    let screen = inter.at.and_then(project);
     let w = DVec2::new(window.0.x as f64, window.0.y as f64);
-    let mut anchor = prompt_anchor(screen, w, h);
-    // At a screen in use the prompt drops to the bottom out of its way.
-    if active.using().is_some() {
-        anchor.y = w.y * 0.9;
-    }
+    let anchor = prompt_anchor(screen, w, h);
+    // A display's prompt goes under its bottom edge (never over the display); the others hang above their point.
+    let below = inter.edge.map(|e| [project(e[0]).unwrap_or(DVec2::NAN), project(e[1]).unwrap_or(DVec2::NAN)]).map(|e| display_prompt_top(Some(e), w, h));
     let (v, blocked) = (&inter.view, inter.kind == PromptKind::Blocked);
     let name_a = if blocked { p.blocked_alpha + 0.15 } else { 1.0 };
     for (part, mut n) in &mut nodes {
@@ -964,7 +963,16 @@ fn update_prompt_ui(
             PromptPart::Root => edit(&mut n, |n| {
                 n.display = if show { Display::Flex } else { Display::None };
                 n.left = px(anchor.x as f32 - 300.0);
-                n.bottom = px((w.y - anchor.y) as f32);
+                match below {
+                    Some(top) => {
+                        n.top = px(top as f32);
+                        n.bottom = Val::Auto;
+                    }
+                    None => {
+                        n.top = Val::Auto;
+                        n.bottom = px((w.y - anchor.y) as f32);
+                    }
+                }
             }),
             PromptPart::Note => set_display(&mut n, if v.note.is_empty() { Display::None } else { Display::Flex }),
             _ => {}

@@ -334,7 +334,7 @@ pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64) -> Panel {
                 10.0,
                 vec![
                     pump_picture(r.pump_on && r.flow > 0.0, angle),
-                    column(4.0, vec![micro("FLOW"), readout(format!("{:.0}%", r.flow * 100.0)).text_size(font::VALUE).tone(tone), readout(word).text_size(font::LABEL).tone(tone)]).flex(1.0),
+                    column(4.0, vec![micro("FLOW").fixed(14.0), readout(format!("{:.0}%", r.flow * 100.0)).text_size(font::VALUE).tone(tone).fixed(46.0), readout(word).text_size(font::LABEL).tone(tone)]).flex(1.0),
                 ],
             )
             .fixed(109.0),
@@ -347,11 +347,12 @@ pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64) -> Panel {
 
 /// One breaker lever (94 wide): its name, the slot, the handle at the top when on, at the bottom
 /// when off. The whole lever is the button.
-fn lever(name: &str, on: bool, action: &str) -> Item {
-    let mut s = vec![
-        text(0.0, 0.0, 94.0, 20.0, name, 16.0, TextFace::Display, if on { Ink::Fg1 } else { Ink::Fg3 }, true),
-        Shape::Rect { x: 36.0, y: 36.0, w: 22.0, h: 124.0, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) },
-    ];
+fn lever(lines: &[&str], on: bool, action: &str) -> Item {
+    // The names are set in lines of 17 px, bottom-aligned on the slot's top (y 36): a name too wide
+    // for the lever (94 px) is split over two lines rather than cut.
+    let ink = if on { Ink::Fg1 } else { Ink::Fg3 };
+    let mut s: Vec<Shape> = lines.iter().enumerate().map(|(i, l)| text(0.0, 36.0 - 17.0 * (lines.len() - i) as f64, 94.0, 17.0, l, 16.0, TextFace::Display, ink, true)).collect();
+    s.push(Shape::Rect { x: 36.0, y: 36.0, w: 22.0, h: 124.0, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) });
     let hy = if on { 36.0 } else { 126.0 };
     s.push(Shape::Rect { x: 23.0, y: hy, w: 48.0, h: 34.0, fill: Some(if on { Ink::Hud } else { Ink::Warn }), outline: Some((Ink::FgTitle, 2.0)) });
     s.push(text(23.0, hy, 48.0, 34.0, if on { "ON" } else { "OFF" }, 16.0, TextFace::DisplayBold, Ink::Bg0, true));
@@ -367,9 +368,9 @@ pub fn junction_panel(r: Option<&ReactorNews>) -> Panel {
     let body = row(
         0.0,
         vec![
-            lever("ENGINES", b[BreakerGroup::Engines.index()], "br_engines"),
-            lever("LIFE SUPPORT", b[BreakerGroup::LifeSupport.index()], "br_life"),
-            lever("LIGHTS", b[BreakerGroup::Lights.index()], "br_lights"),
+            lever(&["ENGINES"], b[BreakerGroup::Engines.index()], "br_engines"),
+            lever(&["LIFE", "SUPPORT"], b[BreakerGroup::LifeSupport.index()], "br_life"),
+            lever(&["LIGHTS"], b[BreakerGroup::Lights.index()], "br_lights"),
         ],
     );
     Panel::screen(Tier::S, JUNCTION_NAME, "JB-01", body).with_padding(6.0)
@@ -421,15 +422,16 @@ pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
     // The screen's content is 288 x 180 px: the rows fit it.
     let temp = row(6.0, vec![readout(format!("{:.0}", r.temp)).text_size(72.0).tone(z), readout("°C").text_size(28.0).tone(z)]).fixed(70.0);
     let bandrow = row(8.0, vec![band(r.temp), readout(word).text_size(font::SMALL).tone(word_tone).flex(1.0)]).fixed(18.0);
+    // Each caption has its own line above its value or switch, so no caption touches a control.
     let air = row(
         8.0,
         vec![
             column(0.0, vec![micro("O₂").fixed(14.0), readout(format!("{:.0}%", r.oxygen * 100.0)).text_size(font::VALUE).tone(oxygen_tone(r.oxygen))]).flex(1.0),
-            toggle(r.breakers[BreakerGroup::Lights.index()], "LIGHT", "br_lights").labels("OFF", "ON").fixed(112.0),
+            column(0.0, vec![micro("LIGHT").fixed(14.0), toggle(r.breakers[BreakerGroup::Lights.index()], "", "br_lights").labels("OFF", "ON").fixed(48.0)]).fixed(112.0),
         ],
     )
-    .fixed(50.0);
-    let body = column(5.0, vec![micro("REACTOR").fixed(14.0), temp, bandrow, air, space()]);
+    .fixed(62.0);
+    let body = column(4.0, vec![micro("REACTOR").fixed(14.0), temp, bandrow, air, space()]);
     Panel::screen(Tier::S, DOOR_NAME, "ER-01", body).with_padding(8.0)
 }
 
@@ -590,6 +592,8 @@ mod tests {
         assert!(hot.find("scram").is_some() && hot.find("fis_set").is_none(), "the takeover view");
         let off = shipped_panel(Some(&ReactorNews { temp: 85.0, power_on: false, ..news() }));
         assert!(off.find("fis_set").is_some(), "scrammed: the normal view");
+        // Scrammed at 85 °C: the normal view with the header OFF (the needle shows the hot core).
+        assert_eq!(reactor_status(Some(&ReactorNews { temp: 85.0, power_on: false, ..news() })), ("OFF", Tone::Dim));
     }
 
     #[test]
@@ -624,6 +628,36 @@ mod tests {
             assert!(p.find(a).is_some(), "{a}");
         }
         assert!(matches!(p.find("br_lights").unwrap().widget, display_core::Widget::Canvas { action: Some(_), .. }));
+    }
+
+    #[test]
+    fn the_names_on_the_screens_are_labels_and_do_not_collide() {
+        let label = |p: &Panel, t: &str| p.layout().into_iter().find(|w| matches!(&w.widget, display_core::Widget::Label { text, .. } if text == t)).map(|w| w.rect);
+        assert!(label(&pump_panel(Some(&news())), "FLOW").is_some(), "the pump names its flow");
+        // The door's caption sits above its switch, not on it.
+        let door = door_panel(Some(&news()));
+        let (cap, sw) = (label(&door, "LIGHT").expect("LIGHT caption"), door.find("br_lights").expect("the switch").rect);
+        assert!(cap.max().y <= sw.min.y, "the caption is above the switch: {cap:?} {sw:?}");
+        // The junction's lever names: above the slot, apart from each other, and inside their lever.
+        let junction = junction_panel(Some(&news()));
+        for a in ["br_engines", "br_life", "br_lights"] {
+            let display_core::Widget::Canvas { shapes, .. } = &junction.find(a).unwrap().widget else { panic!("{a} is a canvas") };
+            let names: Vec<(f64, f64, f64, f64, &str, f64)> = shapes
+                .iter()
+                .filter_map(|s| match s {
+                    Shape::Text { x, y, w, h, text, size, .. } if *y < 36.0 => Some((*x, *y, *w, *h, text.as_str(), *size)),
+                    _ => None,
+                })
+                .collect();
+            assert!(!names.is_empty(), "{a} has its name");
+            for (i, n) in names.iter().enumerate() {
+                assert!(n.1 + n.3 <= 36.0, "{a}: {} sits above the slot", n.4);
+                assert!(n.4.len() as f64 * n.5 * 0.65 <= n.2, "{a}: {} fits the lever ({} px)", n.4, n.2);
+                for m in &names[i + 1..] {
+                    assert!(n.1 + n.3 <= m.1 || m.1 + m.3 <= n.1, "{a}: {} and {} do not overlap", n.4, m.4);
+                }
+            }
+        }
     }
 
     #[test]

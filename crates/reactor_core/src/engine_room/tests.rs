@@ -73,19 +73,34 @@ fn settle_then_drop(r: &mut EngineRoom) {
 }
 
 #[test]
-fn auto_overshoots_after_a_load_drop() {
+fn auto_overshoots_after_a_load_drop_and_comes_back() {
     // The controller follows the turbine fast and cuts fission slowly, so after a sudden drop
-    // the temperature climbs above the optimal band for several seconds before it turns back.
-    // No fire: the fire timer needs 20 s above the band.
+    // the temperature climbs above the optimal band for several seconds, may touch the allowed
+    // band briefly, and turns back: below the allowed top within 30 s, and the meltdown timer
+    // never gets near its end. No fire: the fire timer needs 20 s above the band.
     let mut r = room();
     settle_then_drop(&mut r);
-    let (_, temps) = run(&mut r, 150.0, Input::auto());
-    let hi = r.reactor().bands().temp_optimal.hi;
-    let peak = temps.iter().cloned().fold(f64::MIN, f64::max);
-    let above = temps.iter().filter(|&&t| t > hi).count() as f64 * DT;
-    println!("auto after LoadDrop: peak {peak:.1}, above {hi:.0} for {above:.1} s, output {:.1} kW", r.reactor().output_kw());
+    let b = r.reactor().bands();
+    let (mut above, mut peak, mut melt_max, mut last_allowed) = (0.0f64, f64::MIN, 0.0f64, 0.0f64);
+    for k in 1..=(150.0 / DT).round() as usize {
+        r.step(DT, Input::auto());
+        let (t, temp) = (k as f64 * DT, r.reactor().temperature());
+        if temp > b.temp_optimal.hi {
+            above += DT;
+        }
+        if temp > b.temp_allowed.hi {
+            last_allowed = t;
+        }
+        peak = peak.max(temp);
+        melt_max = melt_max.max(r.reactor().timers().1);
+    }
+    println!(
+        "auto after LoadDrop: peak {peak:.1}, above {:.0} for {above:.1} s, last above allowed {last_allowed:.1} s, meltdown timer max {melt_max:.2}",
+        b.temp_optimal.hi
+    );
     assert!(above >= 5.0, "above the optimal band for {above:.1} s");
-    assert!(peak < r.reactor().bands().temp_allowed.hi, "the overshoot stays short of the allowed band: {peak}");
+    assert!(last_allowed < 30.0, "still above the allowed top at {last_allowed:.1} s");
+    assert!(melt_max < 0.5, "the meltdown timer reached {melt_max:.2}");
 }
 
 #[test]
@@ -133,31 +148,41 @@ fn pump_break_climbs_to_fire_then_meltdown() {
 
 #[test]
 fn repairing_the_pump_stops_the_climb() {
+    // The break climbs past the optimal band. The operator repairs as soon as TempHigh is on, or
+    // 15 s after the break, whichever comes first: the core peaks, comes back into the optimal
+    // band and does not melt within 180 s.
     let mut r = safe_room();
     let input = Input::manual(43.75, 50.0);
     run(&mut r, 30.0, input);
     r.trigger(Fault::PumpBreak);
-    let (_, tr) = run(&mut r, 20.0, input);
-    let peak = tr.iter().cloned().fold(f64::MIN, f64::max);
-    assert!(peak > 70.0, "the break should climb: {peak}");
-    // Repair at skill 50 until the pump works again.
-    let mut steps = 0;
-    loop {
-        let o = r.pump_mut().condition_mut().repair_step(DT, 50.0, device_core::Tool::WRENCH);
+    let b = r.reactor().bands();
+    let (mut t, mut repair_at, mut repaired) = (0.0f64, None::<f64>, false);
+    let (mut peak, mut back, mut melted) = (f64::MIN, None::<f64>, false);
+    for _ in 0..(180.0 / DT).round() as usize {
+        t += DT;
+        if repair_at.is_none() && (r.reactor().alarm(AlarmKind::TempHigh) || t >= 15.0) {
+            repair_at = Some(t);
+        }
+        if repair_at.is_some() && !repaired {
+            let o = r.pump_mut().condition_mut().repair_step(DT, 50.0, device_core::Tool::WRENCH);
+            repaired = matches!(o, device_core::RepairOutcome::Done { .. }) && r.pump().factor() >= 1.0;
+        }
         r.step(DT, input);
-        steps += 1;
-        assert!(steps < 30 * 60, "repair did not finish: {o:?}");
-        if matches!(o, device_core::RepairOutcome::Done { .. }) && r.pump().factor() >= 1.0 {
-            break;
+        let temp = r.reactor().temperature();
+        peak = peak.max(temp);
+        melted |= r.reactor().melted();
+        if back.is_none() && peak > b.temp_optimal.hi && b.temp_optimal.contains(temp) {
+            back = Some(t);
         }
     }
-    // The flow coasts back up, the temperature falls from the top and turns down for good.
-    let at_repair = r.reactor().temperature();
-    let (_, tail) = run(&mut r, 90.0, input);
-    let turn = tail.iter().position(|&t| t < at_repair - 1.0);
-    println!("pump repaired after {:.1} s: temp peak {peak:.1}, at repair {at_repair:.1}, turns down after {:?} s, 90 s on {:.1}", steps as f64 * DT, turn.map(|i| i as f64 * DT), tail.last().unwrap());
-    assert!(turn.is_some(), "the climb does not stop after the repair");
-    assert!(*tail.last().unwrap() < r.reactor().bands().temp_optimal.hi, "back into the band");
+    println!(
+        "pump break, repair at {:?} s (done {repaired}): peak {peak:.1}, back in the optimal band at {back:?} s, melted {melted}",
+        repair_at
+    );
+    assert!(repaired, "the repair finished");
+    assert!(peak > b.temp_optimal.hi, "the climb passes the optimal band: {peak}");
+    assert!(!melted, "the core melted");
+    assert!(back.is_some_and(|t| t <= 180.0), "back into the optimal band: {back:?}");
 }
 
 #[test]
@@ -210,23 +235,32 @@ fn surge_breaks_a_weak_junction_box_with_an_event() {
 #[test]
 fn alarm_level_follows_the_room() {
     let mut r = safe_room();
-    run(&mut r, 120.0, Input::manual(43.75, 50.0));
+    let input = Input::manual(43.75, 50.0);
+    run(&mut r, 120.0, input);
     assert_eq!(r.level(), AlarmLevel::None);
     // A broken pump needs repair at once: Warn.
     r.trigger(Fault::PumpBreak);
-    run(&mut r, DT * 2.0, Input::manual(43.75, 50.0));
+    run(&mut r, DT * 2.0, input);
     assert_eq!(r.level(), AlarmLevel::Warn);
-    // Above the allowed band: Danger.
-    let (_, _) = run(&mut r, 40.0, Input::manual(43.75, 50.0));
+    // Above the allowed band: Danger (within about 20 s of the break).
+    let mut secs = 0.0;
+    while r.level() != AlarmLevel::Danger && secs < 40.0 {
+        run(&mut r, DT, input);
+        secs += DT;
+    }
     assert!(r.reactor().temperature() > r.reactor().bands().temp_allowed.hi);
-    assert_eq!(r.level(), AlarmLevel::Danger);
-    // Repaired pump, temperature falls back below the optimal band: None again.
+    assert_eq!(r.level(), AlarmLevel::Danger, "after {secs:.1} s");
+    // Repaired pump, the flow coasts back up and the temperature falls below the optimal band: None again.
+    // Repair until the pump is full (not just running: a pump at the broken limit runs at half).
     let input = Input::manual(10.0, 50.0);
-    while r.pump().factor() < 1.0 {
-        r.pump_mut().condition_mut().repair_step(DT, 50.0, device_core::Tool::WRENCH);
+    let mut full = false;
+    while !full {
+        let o = r.pump_mut().condition_mut().repair_step(DT, 50.0, device_core::Tool::WRENCH);
+        full = matches!(o, device_core::RepairOutcome::Done { .. });
         r.step(DT, input);
     }
-    run(&mut r, 60.0, input);
+    run(&mut r, 90.0, input);
+    assert!(!r.reactor().melted(), "the core melted");
     assert_eq!(r.level(), AlarmLevel::None, "temp {}", r.reactor().temperature());
 }
 

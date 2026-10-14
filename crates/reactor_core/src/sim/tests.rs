@@ -82,7 +82,11 @@ fn oracle_for(r: &Reactor) -> Baro {
 
 /// Manual targets, power on, constant load: our `Reactor` and the Barotrauma port agree in
 /// temperature, fission, turbine and output at every step.
+///
+/// Ignored since the inertia (#300): the temperature is a second-order system with the output's
+/// heat, which the Barotrauma port does not have, so the two no longer agree by design.
 #[test]
+#[ignore = "#300: the temperature has inertia and output heat by design; the oracle is first-order"]
 fn manual_matches_barotrauma() {
     let mut ours = comparable_reactor();
     let mut theirs = oracle_for(&ours);

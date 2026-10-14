@@ -3,6 +3,14 @@
 //! between a minimum and a maximum set by turbine and temperature; inside that range it follows
 //! the load.
 //!
+//! Inertia (PULSAR m_ReactorTempVel, m_ReactorHeatOutputFactor, pulsar-mech-conduits.md:52): the
+//! temperature is a damped second-order system, a spring towards its target with a speed of its
+//! own (`temp_velocity`), so a correction takes seconds and a step overshoots by about a quarter
+//! before it settles. The delivered output makes heat too (`heat_output_factor`), so a reactor
+//! running hot output costs heat. Fission follows its target with a time constant
+//! (`fission_lag_s`, 4 s; Barotrauma has 1 s). The turbine keeps its 1 s lag. Values:
+//! TODO(initiator).
+//!
 //! Overheat: above the optimal band a fire timer runs, and each time it is full the reactor starts
 //! a fire (`ReactorEvent::Fire`). Above the allowed band a second timer runs; when it is full the
 //! core melts (`ReactorEvent::Meltdown`). There is no automatic safety: the operator's SCRAM cuts
@@ -55,6 +63,17 @@ pub struct ReactorTuning {
     /// Seconds for the coolant flow to run down after the pump stops (and to come back): the
     /// water in the pipes coasts. TODO(initiator): value.
     pub coolant_coast_s: f64,
+    /// Stiffness of the spring that pulls the temperature to its target, 1/s². With
+    /// `temp_damping` it sets the swing (about 25 s with the starting values) and the overshoot
+    /// of a step (about a quarter). TODO(initiator): value.
+    pub temp_stiffness: f64,
+    /// Damping of the temperature's speed, 1/s. TODO(initiator): value.
+    pub temp_damping: f64,
+    /// Heat the delivered output makes at full output, degrees of temperature target. Taken from
+    /// the output of the last step. TODO(initiator): value.
+    pub heat_output_factor: f64,
+    /// Seconds for fission to follow its target (a time constant). Barotrauma: 1. TODO(initiator): value.
+    pub fission_lag_s: f64,
     /// The reactor's own condition: repair threshold and wear floor (Barotrauma style, the floor
     /// is the lowest that normal wear reaches; the broken limit is the floor at least).
     pub condition: DeviceTuning,
@@ -77,6 +96,10 @@ impl Default for ReactorTuning {
             cooling_max: 40.0,
             decay_heat: 150.0,
             coolant_coast_s: 60.0,
+            temp_stiffness: 0.06,
+            temp_damping: 0.2,
+            heat_output_factor: 25.0,
+            fission_lag_s: 4.0,
             condition: DeviceTuning { repair_threshold: 50.0, wear_floor: 10.0, ..DeviceTuning::default() },
         }
     }
@@ -236,6 +259,8 @@ pub struct Reactor {
     coolant: f64,
     /// Heat the fission makes this step (the pump's coolant use follows it).
     heat_in: f64,
+    /// Speed of the temperature, degrees per second (see the module doc).
+    temp_vel: f64,
 }
 
 impl Reactor {
@@ -263,6 +288,7 @@ impl Reactor {
             coolant_target: 1.0,
             coolant: 1.0,
             heat_in: 0.0,
+            temp_vel: 0.0,
         }
     }
 
@@ -349,6 +375,10 @@ impl Reactor {
     pub fn temperature(&self) -> f64 {
         self.temp
     }
+    /// Speed of the temperature, degrees per second (positive while it rises).
+    pub fn temp_velocity(&self) -> f64 {
+        self.temp_vel
+    }
     pub fn fission(&self) -> f64 {
         self.fission
     }
@@ -406,6 +436,7 @@ impl Reactor {
             self.power_on = false;
             self.output = 0.0;
             self.temp = (self.temp - 100.0 * dt).max(0.0);
+            self.temp_vel = 0.0;
             self.target_fission = (self.target_fission - 10.0 * dt).max(0.0);
             self.target_turbine = (self.target_turbine - 10.0 * dt).max(0.0);
             self.fire_timer = 0.0;
@@ -431,9 +462,10 @@ impl Reactor {
         self.heat_in = heat;
         let cool = t.cooling_max * self.coolant;
         let residual = t.decay_heat * (1.0 - self.coolant);
-        let diff = (heat + residual - self.turbine - cool) - self.temp;
-        self.temp = (self.temp + (diff.signum() * t.temp_rate * dt).clamp(-diff.abs(), diff.abs())).clamp(0.0, 100.0);
-        self.fission += (self.target_fission.min(fuel) - self.fission) * k;
+        // The output of the last step makes heat too.
+        let output_heat = if t.max_output_kw > 0.0 { t.heat_output_factor * self.output / t.max_output_kw } else { 0.0 };
+        self.step_temp(dt, heat + residual + output_heat - self.turbine - cool);
+        self.fission += (self.target_fission.min(fuel) - self.fission) * (dt / t.fission_lag_s.max(1e-9)).min(1.0);
         self.turbine += (self.target_turbine - self.turbine) * k;
 
         if !self.power_on {
@@ -459,6 +491,24 @@ impl Reactor {
         }
         self.update_alarms(&mut ev);
         ev
+    }
+
+    /// The temperature moves as a damped spring towards `target`, its speed limited to `temp_rate`.
+    /// At 0 or 100 the speed stops if it pushes outward.
+    fn step_temp(&mut self, dt: f64, target: f64) {
+        let t = self.tuning;
+        self.temp_vel += ((target - self.temp) * t.temp_stiffness - self.temp_vel * t.temp_damping) * dt;
+        self.temp_vel = self.temp_vel.clamp(-t.temp_rate, t.temp_rate);
+        let next = self.temp + self.temp_vel * dt;
+        if next < 0.0 {
+            self.temp = 0.0;
+            self.temp_vel = self.temp_vel.max(0.0);
+        } else if next > 100.0 {
+            self.temp = 100.0;
+            self.temp_vel = self.temp_vel.min(0.0);
+        } else {
+            self.temp = next;
+        }
     }
 
     /// The output range for the current turbine and temperature, kW.

@@ -82,6 +82,11 @@ impl ItemDef {
     }
 }
 
+/// Parses one content file (`path`, `text`), strictly; the error names the file.
+pub(crate) fn parse_content<T: serde::de::DeserializeOwned>(path: &str, text: &str) -> Result<T, String> {
+    content_core::parse_strict(path, text)
+}
+
 /// Every item definition, by id.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ItemDefs(pub BTreeMap<String, ItemDef>);

@@ -17,8 +17,10 @@ pub mod authority;
 pub mod container;
 pub mod defs;
 pub mod inventory;
+pub mod supply;
 pub mod wire;
 
 pub use authority::{Action, Client, Event, FrameRef, Host, Loose, LooseId, Placement, PlayerId, Reject, Request};
 pub use defs::{ItemDef, ItemDefs, Take};
 pub use inventory::{Inventory, BAR_SLOTS};
+pub use authority::RackId;

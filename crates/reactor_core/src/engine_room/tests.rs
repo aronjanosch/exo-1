@@ -22,9 +22,8 @@ fn safe_room() -> EngineRoom {
     r
 }
 
-/// Seconds a cold room needs to settle. The pump has no power until the reactor makes output, so
-/// the reactor's coolant coast (`coolant_coast_s`, 60 s) starts low and takes about five minutes to
-/// come back to full. Past about 350 s the High pump has run the tank dry at full load.
+/// Seconds a room runs on Auto to reach its steady state. Past about 350 s the High pump has run the
+/// tank dry at full load, so `settle` refills it after.
 const SETTLE_S: f64 = 300.0;
 
 /// A room settled on Auto, with a full tank (the settle drains about 80 % at High).
@@ -275,20 +274,32 @@ fn a_pump_switched_off_takes_no_heat_away_and_the_temperature_climbs() {
 }
 
 #[test]
-fn the_pump_loses_its_power_with_the_reactor_and_its_flow_goes_to_zero() {
-    // The pump runs on the ship's power: a SCRAMmed reactor delivers nothing, so the flow stops.
+fn the_flow_runs_on_after_a_scram_on_the_backup() {
+    // The pump has a backup supply: with the reactor delivering nothing (SCRAM, off, cold start,
+    // broken) it runs at full factor, so the flow stays while the core cools on the decay heat.
     let mut r = room();
     run(&mut r, 120.0, Input::auto());
     assert!((r.flow() - 1.0).abs() < 1e-9, "the pump is on and running: {}", r.flow());
     r.reactor_mut().scram();
-    assert_eq!(r.flow(), 0.0, "no power, no flow");
-    assert!(r.pump().on(), "the switch is still on");
+    assert_eq!(r.flow(), 1.0, "no output, the backup runs the pump");
     run(&mut r, 5.0, Input::auto());
-    assert_eq!(r.flow(), 0.0, "still no power");
+    assert_eq!(r.flow(), 1.0, "still on the backup");
     assert!(r.set_power(true));
-    // The flow comes back once the restarted reactor makes output again.
     run(&mut r, 120.0, Input::auto());
-    assert!(r.reactor().output_kw() > 0.0 && r.flow() > 0.9, "the flow comes back with the power: {}", r.flow());
+    assert!(r.reactor().output_kw() > 0.0 && (r.flow() - 1.0).abs() < 1e-9, "on the grid again: {}", r.flow());
+}
+
+#[test]
+fn a_cold_manual_start_does_not_run_away_because_the_pump_has_its_backup() {
+    // Manual 43.75 / 50 from cold: no output at first, so the pump runs on the backup at full flow,
+    // the coolant does not coast down, and the core does not run away to the top.
+    let mut r = room();
+    let input = Input::manual(43.75, 50.0);
+    let (ev, temps) = run(&mut r, 150.0, input);
+    let peak = temps.iter().cloned().fold(f64::MIN, f64::max);
+    assert!(peak < 80.0, "the start stays under the allowed top: peak {peak:.1}");
+    assert!(!ev.iter().any(|(_, e)| *e == RoomEvent::Reactor(ReactorEvent::Meltdown)));
+    assert!(r.reactor().coolant_flow() > 0.99, "the coolant stays at full: {}", r.reactor().coolant_flow());
 }
 
 #[test]
@@ -777,9 +788,9 @@ fn high_drains_the_tank_about_two_and_a_half_times_as_fast_as_low() {
 }
 
 #[test]
-fn the_power_factor_is_the_junction_box_voltage_and_falls_when_the_grid_is_short() {
+fn a_short_grid_slows_the_pump_and_no_output_does_not() {
     let mut r = room();
-    run(&mut r, 60.0, Input::auto());
+    settle(&mut r);
     assert!((r.flow() - 1.0).abs() < 1e-9, "full power, full flow");
     // A grid demand above the reactor's maximum (1000 kW): the box passes what it can.
     r.grid_mut().set_demand(Group::Lights, 2000.0);
@@ -787,6 +798,17 @@ fn the_power_factor_is_the_junction_box_voltage_and_falls_when_the_grid_is_short
     let v = r.voltage();
     assert!(v < 0.6, "the box is short: {v}");
     assert!((r.flow() - v).abs() < 0.02, "flow {} follows the voltage {v}", r.flow());
+    // With no output at all the backup carries the pump, whatever the grid asks.
+    r.reactor_mut().scram();
+    assert_eq!(r.flow(), 1.0, "no output: the backup, not the voltage");
+}
+
+#[test]
+fn the_power_factor_on_the_backup_is_one_with_no_output() {
+    // A cold room, reactor off: no output, the pump runs on its backup at full factor.
+    let r = EngineRoom::new(RoomTuning::default(), ReactorTuning::default(), 11);
+    assert_eq!(r.power_factor(), 1.0);
+    assert_eq!(r.flow(), 1.0);
 }
 
 

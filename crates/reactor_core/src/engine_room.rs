@@ -10,11 +10,14 @@
 //! - The flow is speed x condition factor x power factor (`EngineRoom::flow`, `stream`), 0 with an
 //!   empty tank. Condition: `device_core`, 1 working, 0 broken (Barotrauma `Pump.cs:162` lerps
 //!   the flow 0.5..1 with the condition; ours is the device's factor). Power: Barotrauma
-//!   `Pump.cs:152` multiplies the flow by the voltage (`powerFactor`) and `Pump.cs:97` needs
-//!   `Voltage >= MinVoltage` for `HasPower`. Ours: the junction box's voltage of the last step,
-//!   clamped to 0..1, and 0 with no power (reactor off, or the box broken). So a reactor that
-//!   delivers less than the grid asks slows the pump, which cools less and runs hotter (a death
-//!   spiral, the point). The pump draws no kW from the grid here: TODO(initiator).
+//!   `Pump.cs:152` multiplies the flow by the voltage (`powerFactor`), and `Pump.cs:97` needs
+//!   `Voltage >= MinVoltage` for `HasPower`: a Barotrauma pump needs grid power. Ours is a backup
+//!   supply (our touch, coordinator decision for the initiator to confirm): with the reactor
+//!   delivering nothing (off, cold start, SCRAM, broken) the pump runs on the backup at factor 1.
+//!   While the reactor delivers, the factor is the junction box's voltage of the last step,
+//!   clamped to 0..1, so a short grid (demand above the reactor's maximum) slows the pump, which
+//!   cools less and runs hotter (the brownout death spiral, the point). The pump draws no kW from
+//!   the grid here: TODO(initiator), pump as a grid consumer.
 //! - The flow is the coolant: it sets the reactor's cooling offset, which follows it with a coast
 //!   (`coolant_coast_s`, reactor.rs). Off or broken lets the temperature climb; with no flow the core
 //!   climbs whatever Auto does. Heat above the optimal band wears a running pump as overload.
@@ -569,10 +572,12 @@ impl EngineRoom {
         if self.pump.tank > 0.0 { self.pump.factor() * self.power_factor() } else { 0.0 }
     }
 
-    /// The pump runs on the ship's power (Barotrauma `Pump.cs:152`, `powerFactor`): the junction
-    /// box's voltage of the last step, 0..1. Without power (reactor off or the box broken) it is 0.
+    /// The pump's power factor, 0..1 (Barotrauma `Pump.cs:152`, `powerFactor`). With the reactor
+    /// delivering nothing (off, cold start, SCRAM, broken) the pump runs on its backup supply at 1.
+    /// Otherwise it is the junction box's voltage of the last step, clamped to 0..1: a short grid
+    /// slows the pump, and a broken box (which passes nothing) stops it.
     pub fn power_factor(&self) -> f64 {
-        if self.powered() { self.junction.voltage().clamp(0.0, 1.0) } else { 0.0 }
+        if self.reactor.output_kw() <= 0.0 { 1.0 } else { self.junction.voltage().clamp(0.0, 1.0) }
     }
 
     /// Switches a consumer group's breaker on the junction box.

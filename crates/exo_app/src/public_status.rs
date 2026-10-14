@@ -7,11 +7,12 @@
 //!   wire (`ToHost::Treat`, sent when the hold starts, moves to another player or stops).
 //! - Every process puts the status of each other player on its figure as `RemoteStatus`
 //!   (`remote_status_in`, headless too; the scenario reads it). The window draws it
-//!   (`window_plugin`): flames and a light while burning, the figure lying down while down, and a
-//!   label above the head.
+//!   (`window_plugin`): flames and a light while burning, the figure lying down while down or
+//!   unconscious, and a label above the head.
 //! - Not public: the vitals (only the owner gets them) and the reactor's and fires' own values.
 use crate::dev_area::fire::Sprays;
 use crate::health::{HealthState, UseHold};
+use health_core::Life;
 use crate::items::{Items, NetOut, Role};
 use crate::net_live::{Net, RemoteWalker};
 use crate::repair::RepairSessions;
@@ -68,8 +69,9 @@ fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>
         .iter()
         .map(|(id, b)| {
             let down = b.respawn_in.is_some();
-            // A player who is down does nothing; the others' work is what they show.
-            let doing = if down {
+            let unconscious = b.health.state() == Life::Unconscious;
+            // A player who is down or unconscious does nothing; the others' work is what they show.
+            let doing = if down || unconscious {
                 Doing::Nothing
             } else if let Some(s) = repairs.sessions.iter().find(|s| s.player == *id) {
                 Doing::Repairing(s.device)
@@ -80,7 +82,7 @@ fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>
             } else {
                 Doing::Nothing
             };
-            (*id, PublicStatus { burning: b.health.burning(), down, doing })
+            (*id, PublicStatus { burning: b.health.burning(), down, unconscious, doing })
         })
         .collect();
     if now != items.public {
@@ -167,11 +169,11 @@ fn tag_parts(mut commands: Commands, figures: Query<(), With<RemoteWalker>>, par
     }
 }
 
-/// Down: each part lies over from the feet; up again: it stands.
+/// Down or unconscious: each part lies over from the feet; up again: it stands.
 fn pose_parts(statuses: Query<&RemoteStatus>, mut parts: Query<(&ChildOf, &Upright, &mut Transform), Without<Flame>>) {
     let lie = Quat::from_rotation_z(LYING);
     for (parent, up, mut t) in &mut parts {
-        let down = statuses.get(parent.parent()).is_ok_and(|s| s.0.down);
+        let down = statuses.get(parent.parent()).is_ok_and(|s| s.0.down || s.0.unconscious);
         let want = if down { Transform { translation: lie * up.0.translation, rotation: lie * up.0.rotation, scale: up.0.scale } } else { up.0 };
         if *t != want {
             *t = want;
@@ -182,7 +184,7 @@ fn pose_parts(statuses: Query<&RemoteStatus>, mut parts: Query<(&ChildOf, &Uprig
 /// Burning (and not down): the flames flicker and the light is on.
 fn flames(time: Res<Time>, statuses: Query<&RemoteStatus>, mut flames: Query<(&Flame, &mut Transform, &mut Visibility), Without<FlameLight>>, mut lights: Query<(&FlameLight, &mut Visibility), Without<Flame>>) {
     let t = time.elapsed_secs();
-    let burning = |w: Entity| statuses.get(w).is_ok_and(|s| s.0.burning && !s.0.down);
+    let burning = |w: Entity| statuses.get(w).is_ok_and(|s| s.0.burning && !s.0.down && !s.0.unconscious);
     for (f, mut tr, mut vis) in &mut flames {
         let on = burning(f.walker);
         let want = if on { Visibility::Inherited } else { Visibility::Hidden };
@@ -202,10 +204,13 @@ fn flames(time: Res<Time>, statuses: Query<&RemoteStatus>, mut flames: Query<(&F
     }
 }
 
-/// The label: DOWN, else what the player does, else BURNING; over the name tag.
+/// The label: DOWN, UNCONSCIOUS, else what the player does, else BURNING; over the name tag.
 fn label_of(s: &PublicStatus) -> Option<(&'static str, Color)> {
     if s.down {
         return Some(("DOWN", Color::srgb(0.6, 0.6, 0.6)));
+    }
+    if s.unconscious {
+        return Some(("UNCONSCIOUS", Color::srgb(0.6, 0.6, 0.6)));
     }
     match s.doing {
         Doing::Treating(_) => Some(("TREATING", Color::srgb(0.5, 0.9, 1.0))),

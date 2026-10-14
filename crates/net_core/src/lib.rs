@@ -5,7 +5,9 @@
 pub mod buffer;
 pub mod clock;
 pub mod link;
+pub mod loose;
 pub mod metrics;
+pub mod reliable;
 pub mod replay;
 pub mod snapshot;
 pub mod wire;

@@ -3498,6 +3498,7 @@ version = "0.1.0"
 dependencies = [
  "content_core",
  "glam 0.32.1",
+ "net_core",
  "serde",
  "serde_json",
 ]

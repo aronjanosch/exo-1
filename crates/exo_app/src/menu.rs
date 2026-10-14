@@ -187,7 +187,12 @@ pub enum Session {
 /// Starts the network from a menu choice: the `Net` resource, and the own walker and ship moved to
 /// the slot's spawn (players of one session start 20 m apart). Shared with the `menu` scenario.
 pub fn start_session(w: &mut World, s: &Session) -> Result<(), String> {
-    let mut args: Vec<(String, String)> = Vec::new();
+    start_session_with(w, s, &[])
+}
+
+/// As `start_session`, with more network options (the command line's, like `--sim-delay`).
+pub fn start_session_with(w: &mut World, s: &Session, extra: &[(String, String)]) -> Result<(), String> {
+    let mut args: Vec<(String, String)> = extra.to_vec();
     match s {
         Session::Host { port } => {
             args.push(("--net-host".into(), String::new()));

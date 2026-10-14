@@ -82,7 +82,7 @@ pub fn avian_pre(
     players: Query<&Player>,
     ships: Query<(Entity, &Position, &Rotation), With<Ship>>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
-    mut crates: Query<(Entity, &mut Crate, Option<&mut AvianCrate>, Option<Forces>)>,
+    mut crates: Query<(Entity, &mut Crate, Option<&mut AvianCrate>, Option<Forces>), Without<crate::items_net::LooseView>>,
 ) {
     let Ok(pl) = players.single() else { return };
     let Some((ship_e, sp, sr)) = ships.iter().next() else { return };

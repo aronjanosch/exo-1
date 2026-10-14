@@ -11,6 +11,9 @@ use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 use net_core::buffer::{Buffer, Mode};
 use net_core::clock::ClockSync;
+use net_core::link::Link;
+use net_core::loose::BodyDatagram;
+use net_core::reliable::Reliable;
 use net_core::snapshot::{FrameKind, Limits, Snapshot};
 use net_core::wire::{self, Packet, UDP_IP_OVERHEAD};
 use std::collections::HashMap;
@@ -21,6 +24,12 @@ use std::time::Instant;
 pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, net_pre.run_if(resource_exists::<Net>).after(crate::scenario::run_script).in_set(crate::phases::Fx::Input));
     app.add_systems(FixedLast, net_post.run_if(resource_exists::<Net>));
+    app.add_systems(FixedLast, net_channels.run_if(resource_exists::<Net>).after(net_post));
+}
+
+/// Last of the tick: the reliable channels send (item messages queued this tick go out now).
+pub fn net_channels(mut net: ResMut<Net>) {
+    net.flush_channels();
 }
 
 const TICK_S: f64 = 1.0 / 60.0;
@@ -43,6 +52,17 @@ pub struct NetConfig {
     /// Fly the scripted network bot (scenario `net`).
     pub bot: bool,
     pub headless: bool,
+    /// Artificial delay, jitter and loss on everything this process receives (a test of the
+    /// internet on a LAN or on loopback); both ends set it to get it each way.
+    pub sim: Option<Sim>,
+}
+
+/// `net_core::link` numbers for a process's receive side.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Sim {
+    pub delay_ms: f64,
+    pub jitter_ms: f64,
+    pub loss_percent: f64,
 }
 
 impl NetConfig {
@@ -57,6 +77,7 @@ impl NetConfig {
         let num = |k: &str, d: f64| get(k).map(|v| v.parse::<f64>().unwrap_or_else(|_| panic!("{k}"))).unwrap_or(d);
         let slot = num("--slot", if host { 1.0 } else { 2.0 }) as u32;
         assert!((1..=8).contains(&slot), "--slot must be 1..8");
+        assert!(!host || slot == 1, "the host is slot 1");
         Some(NetConfig {
             host,
             connect,
@@ -68,6 +89,8 @@ impl NetConfig {
             extrapolate_ms: num("--extrapolate", 100.0),
             bot: get("--bot").is_some(),
             headless: false,
+            sim: (get("--sim-delay").is_some() || get("--sim-jitter").is_some() || get("--sim-loss").is_some())
+                .then(|| Sim { delay_ms: num("--sim-delay", 0.0), jitter_ms: num("--sim-jitter", 0.0), loss_percent: num("--sim-loss", 0.0) }),
         })
     }
 }
@@ -76,7 +99,12 @@ struct Peer {
     addr: SocketAddr,
     /// Local time of the last datagram from it.
     last: f64,
+    /// Item requests and events, reliable and ordered (`net_core::reliable`).
+    chan: Reliable,
 }
+
+/// A peer whose reliable channel has seen no ack for this long (s) is dropped.
+const PEER_STALL: f64 = 15.0;
 
 /// Counters for the HUD line.
 #[derive(Default)]
@@ -86,6 +114,8 @@ pub struct NetStats {
     pub invalid: u64,
     pub holds: u64,
     pub displayed: u64,
+    /// Datagrams with poses of loose items sent (host): none while everything lies still.
+    pub bodies_tx: u64,
 }
 
 #[derive(Resource)]
@@ -115,6 +145,16 @@ pub struct Net {
     centres: Vec<DVec3>,
     /// Planet ids, ship range and speed this system allows; anything else is dropped on receipt.
     limits: Limits,
+    /// Client: the reliable channel to the host.
+    host_chan: Reliable,
+    /// Receive side of the artificial network (`NetConfig::sim`).
+    rx_link: Option<Link<(SocketAddr, Vec<u8>)>>,
+    /// Peers that joined since the last `take_new_peers` (the host sends them the item state).
+    new_peers: Vec<u32>,
+    /// Client: poses of moving loose items received since the last `take_bodies`.
+    bodies_in: Vec<BodyDatagram>,
+    /// Sequence of the body datagrams this host sends.
+    body_seq: u32,
 }
 
 /// What a receiver of this system admits: its planet ids, how far out and how fast a ship can be.
@@ -145,7 +185,10 @@ impl Net {
         // answers pings itself, so clock sync does not wait for the next 60 Hz tick.
         let (tx, rx) = std::sync::mpsc::channel();
         let recv_sock = sock.try_clone().expect("clone socket");
-        let is_host = cfg.host;
+        // With an artificial network the main thread answers pings after the delay, so the clock
+        // sync sees the delay each way.
+        let is_host = cfg.host && cfg.sim.is_none();
+        let rx_link = cfg.sim.map(|m| Link::new(m.delay_ms, m.jitter_ms, m.loss_percent, 0x5EED ^ cfg.slot as u64));
         std::thread::Builder::new()
             .name("net-recv".into())
             .spawn(move || {
@@ -187,6 +230,11 @@ impl Net {
             st: NetStats::default(),
             centres: sys.planets.iter().map(|p| p.centre()).collect(),
             limits: limits(sys),
+            host_chan: Reliable::new(),
+            rx_link,
+            new_peers: Vec::new(),
+            bodies_in: Vec::new(),
+            body_seq: 0,
         })
     }
 
@@ -213,6 +261,12 @@ impl Net {
                 Packet::Accepted { .. } => self.ready = true,
                 Packet::Pong { sent, server_time } => self.clock.on_pong(sent, server_time, now),
                 Packet::Snapshot(s) => self.ingest(s, now),
+                Packet::Reliable(d) => self.host_chan.on_datagram(now, &d),
+                Packet::Bodies(d) => {
+                    if self.bodies_in.len() < 256 {
+                        self.bodies_in.push(d);
+                    }
+                }
                 _ => {}
             }
         } else {
@@ -232,20 +286,36 @@ impl Net {
                     Some(p) => p.addr == from || now - p.last > 1.0,
                 };
                 if free {
-                    if self.peers.get(&slot).is_none_or(|p| p.addr != from) {
-                        println!("NET JOIN slot={slot}");
+                    match self.peers.get_mut(&slot) {
+                        // A repeated hello (the accept was lost): same connection.
+                        Some(p) if p.addr == from => p.last = now,
+                        _ => {
+                            println!("NET JOIN slot={slot}");
+                            self.peers.insert(slot, Peer { addr: from, last: now, chan: Reliable::new() });
+                            self.new_peers.push(slot);
+                        }
                     }
-                    self.peers.insert(slot, Peer { addr: from, last: now });
                     let ack = Packet::Accepted { slot: slot as u8 }.encode();
                     self.send(&ack, from);
                 }
             }
-            Packet::Ping { .. } => {
-                // The receive thread has already answered; this only keeps the peer alive.
+            Packet::Ping { sent } => {
                 if let Some(p) = self.peers.values_mut().find(|p| p.addr == from) {
                     p.last = now;
                 }
+                // The receive thread answers pings itself, except with an artificial network.
+                if self.cfg.sim.is_some() {
+                    let pong = Packet::Pong { sent, server_time: now }.encode();
+                    self.send(&pong, from);
+                }
             }
+            Packet::Reliable(d) => match self.peers.iter_mut().find(|(_, p)| p.addr == from) {
+                Some((_, p)) => {
+                    p.last = now;
+                    p.chan.on_datagram(now, &d);
+                }
+                None => self.st.invalid += 1,
+            },
             Packet::Snapshot(s) => {
                 let Some(slot) = self.peers.iter().find(|(_, p)| p.addr == from).map(|(k, _)| *k) else {
                     self.st.invalid += 1;
@@ -285,6 +355,128 @@ impl Net {
         }
         self.seen.insert(s.owner, arrival);
         self.hist.entry(s.owner).or_default().push(s);
+    }
+
+    /// The host's clock now: what snapshot and body times are stamped with.
+    pub fn server_now(&self) -> f64 {
+        self.clock.server_now(self.now())
+    }
+
+    /// The shared time everybody remote is shown at: one buffer behind now.
+    pub fn playout_time(&self) -> f64 {
+        self.server_now() - self.cfg.buffer
+    }
+
+    /// Display-only extrapolation during an underrun (s).
+    pub fn extrapolation(&self) -> f64 {
+        self.cfg.extrapolate_ms / 1000.0
+    }
+
+    /// Whether the join went through and the clock is synced (the host always is).
+    pub fn connected(&self) -> bool {
+        self.ready && self.clock.ready
+    }
+
+    /// The proxy entity of a remote player's ship.
+    pub fn proxy_of(&self, owner: u32) -> Option<Entity> {
+        self.proxies.get(&owner).copied()
+    }
+
+    /// Slots of the clients that joined since the last call (host).
+    pub fn take_new_peers(&mut self) -> Vec<u32> {
+        std::mem::take(&mut self.new_peers)
+    }
+
+    /// Slots of the connected clients (host).
+    pub fn peer_slots(&self) -> Vec<u32> {
+        let mut v: Vec<u32> = self.peers.keys().copied().collect();
+        v.sort_unstable();
+        v
+    }
+
+    /// A reliable message: to a client by slot (host; None: every client), or to the host
+    /// (client; `to` ignored). False if the channel refused it (too big, or too many waiting).
+    pub fn send_reliable(&mut self, to: Option<u32>, msg: &[u8]) -> bool {
+        if !self.cfg.host {
+            return self.host_chan.send(msg);
+        }
+        let mut ok = true;
+        for (slot, p) in self.peers.iter_mut() {
+            if to.is_none_or(|t| t == *slot) {
+                ok &= p.chan.send(msg);
+            }
+        }
+        ok
+    }
+
+    /// Reliable messages that arrived, in order per sender: (slot of the sender, bytes). On a
+    /// client the sender is the host, slot 1.
+    pub fn take_messages(&mut self) -> Vec<(u32, Vec<u8>)> {
+        let mut out = Vec::new();
+        if self.cfg.host {
+            let mut slots: Vec<u32> = self.peers.keys().copied().collect();
+            slots.sort_unstable();
+            for slot in slots {
+                let chan = &mut self.peers.get_mut(&slot).unwrap().chan;
+                while let Some(m) = chan.recv() {
+                    out.push((slot, m));
+                }
+            }
+        } else {
+            while let Some(m) = self.host_chan.recv() {
+                out.push((1, m));
+            }
+        }
+        out
+    }
+
+    /// Host: poses of moving loose items to every client, not reliable.
+    pub fn send_bodies(&mut self, t: f64, bodies: Vec<net_core::loose::BodyState>) {
+        let addrs: Vec<SocketAddr> = self.peers.values().map(|p| p.addr).collect();
+        if addrs.is_empty() {
+            return;
+        }
+        for chunk in bodies.chunks(net_core::loose::MAX_BODIES) {
+            self.body_seq += 1;
+            let bytes = Packet::Bodies(BodyDatagram { t, seq: self.body_seq, bodies: chunk.to_vec() }).encode();
+            for a in &addrs {
+                self.send(&bytes, *a);
+                self.st.bodies_tx += 1;
+            }
+        }
+    }
+
+    /// Client: the body datagrams that arrived.
+    pub fn take_bodies(&mut self) -> Vec<BodyDatagram> {
+        std::mem::take(&mut self.bodies_in)
+    }
+
+    /// Sends what the reliable channels have to send now (new frames, resends, acks) and drops
+    /// peers whose channel has gone dead.
+    pub fn flush_channels(&mut self) {
+        let now = self.now();
+        let mut out: Vec<(SocketAddr, Vec<u8>)> = Vec::new();
+        if self.cfg.host {
+            let dead: Vec<u32> = self.peers.iter().filter(|(_, p)| p.chan.stalled(now, PEER_STALL) || p.chan.broken()).map(|(s, _)| *s).collect();
+            for slot in dead {
+                self.peers.remove(&slot);
+                println!("NET DROP slot={slot} (no answer on the reliable channel)");
+            }
+            for p in self.peers.values_mut() {
+                for d in p.chan.poll(now) {
+                    out.push((p.addr, Packet::Reliable(d).encode()));
+                }
+            }
+        } else if self.ready && self.clock.ready {
+            if let Some(host) = self.host_addr {
+                for d in self.host_chan.poll(now) {
+                    out.push((host, Packet::Reliable(d).encode()));
+                }
+            }
+        }
+        for (to, bytes) in out {
+            self.send(&bytes, to);
+        }
     }
 
     /// One line for the HUD.
@@ -354,7 +546,14 @@ pub fn net_pre(
         std::iter::from_fn(|| rx.try_recv().ok()).take(512).collect()
     };
     for (from, data, arrival) in incoming {
-        net.handle(from, &data, arrival);
+        match net.rx_link.as_mut() {
+            Some(link) => link.enqueue(now, (from, data)),
+            None => net.handle(from, &data, arrival),
+        }
+    }
+    let delayed = net.rx_link.as_mut().map(|l| l.ready(now)).unwrap_or_default();
+    for (from, data) in delayed {
+        net.handle(from, &data, now);
     }
     let server_now = net.clock.server_now(now);
     // Owners that went silent leave. A walker inside their ship is put back into the planet frame.

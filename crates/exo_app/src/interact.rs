@@ -123,6 +123,7 @@ pub fn interaction(
     mut players: Query<&mut Player>,
     mut ships: Query<(Entity, &mut Ship, &Position, &Rotation)>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
+    remotes: Query<(&Position, &Rotation), With<crate::ship::RemoteShip>>,
     crates: Query<(Entity, &Crate), Without<LooseItem>>,
     mut gp: ResMut<crate::gameplay::Gameplay>,
     (mut active, displays): (ResMut<ActiveDisplay>, Query<(Entity, &DisplayPanel)>),
@@ -138,10 +139,19 @@ pub fn interaction(
     }
     let size_of = |e: Entity| crates.get(e).map(|(_, c)| table.0.sizes[c.size].name.clone()).unwrap_or_default();
 
-    // In another player's cabin nothing is offered yet (#86).
+    // In another player's cabin only loose items are offered yet (#86); the cabin is that ship's.
     let own_frame = match pl.ship {
         None => true,
         Some(e) => e == ship_e,
+    };
+    let cabin = match pl.ship {
+        Some(e) if e != ship_e => remotes.get(e).map_or(frame, |(p, r)| cabin_frame(e, (p, r), &floors)),
+        _ => frame,
+    };
+    // The frame a loose body is in: the own cabin, or the proxy of the ship it lies in.
+    let frame_of = |c: &Crate| match c.ship {
+        Some(e) if e != ship_e => remotes.get(e).map_or(frame, |(p, r)| cabin_frame(e, (p, r), &floors)),
+        _ => frame,
     };
     // The player's place on foot, for counters: not in a cabin, not in the air.
     let on_foot = pl.ship.is_none() && !pl.seated && !pl.fly;
@@ -168,10 +178,10 @@ pub fn interaction(
         Some(Target::StandUp)
     } else if let Some(h) = grab.held {
         Some(Target::Drop(h.crate_e))
-    } else if !own_frame || pl.fly {
+    } else if pl.fly {
         None
     } else {
-        let f = if pl.ship.is_some() { frame } else { Frame::IDENTITY };
+        let f = if pl.ship.is_some() { cabin } else { Frame::IDENTITY };
         let eye = pl.world_pos(f) + pl.world_up(f) * EYE_HEIGHT;
         let look = pl.world_look(f);
         let half = cfg.cone_half_angle_deg.to_radians();
@@ -179,7 +189,7 @@ pub fn interaction(
         let mut panel_pick = None;
         let mut item_target = None;
         let mut item_angle = None;
-        for (e, c) in &crates {
+        for (e, c) in crates.iter().filter(|_| own_frame) {
             let (centre, _) = crate_world(c, &frame);
             let Some(dist) = in_cone(eye, look, centre, half, cfg.tool_max_range) else { continue };
             let angle = (centre - eye).angle_between(look);
@@ -194,7 +204,7 @@ pub fn interaction(
             .iter()
             .filter(|(_, _, li)| crate::items::visible(&items, li))
             .filter_map(|(e, c, _)| {
-                let (centre, _) = crate_world(c, &frame);
+                let (centre, _) = crate_world(c, &frame_of(c));
                 in_cone(eye, look, centre, half, cfg.hand_range).map(|_| ((centre - eye).angle_between(look), e))
             })
             .min_by(|a, b| a.0.total_cmp(&b.0));
@@ -208,7 +218,7 @@ pub fn interaction(
         let at_seat = pl.ship == Some(ship_e) && pl.w.pos.distance(SEAT_POS) < SEAT_RANGE;
         // A display: looked at straight (the view ray meets its quad) or inside the cone, in reach,
         // from the front. The nearer to the view's centre wins against a crate.
-        let panel = crate::displays::eye_on_foot(&pl).and_then(|(eye, look)| {
+        let panel = crate::displays::eye_on_foot(&pl).filter(|_| own_frame).and_then(|(eye, look)| {
             displays
                 .iter()
                 .filter(|(_, d)| (eye - d.centre).dot(d.rot * DVec3::Z) > 0.0)

@@ -13,7 +13,7 @@
   "reach_m": 1.8,
   "walk_away_m": 2.5,
   "flash_s": 0.3,
-  "minigame_below": 0.5,
+  "minigame_below": 0.0,
   "broken_hits": 3,
   "shock_burn": 6.0,
   "shock_stun_s": 0.5,

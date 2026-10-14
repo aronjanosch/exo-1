@@ -17,7 +17,7 @@ use crate::crew_hud::Vitals;
 use crate::dev_area::engine_room::{CORRIDOR, COOLANT_PUMP_AT, DOOR_AT, JUNCTION_BOX_AT, REACTOR_AT};
 use crate::dev_area::hazards::{GLOW_BARREL, HOT_PLATE, NO_AIR};
 use crate::dev_area::reactor::ReactorSim;
-use crate::dev_area::reactor_screen::{DOOR_ID, FAULTS_ID, JUNCTION_ID, PUMP_ID, READOUT_ID};
+use crate::dev_area::reactor_screen::{DOOR_ID, FAULTS_ID, JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID};
 use crate::dev_area::{DevArea, ENGINEERING};
 use crate::displays::{ActiveDisplay, DisplayPanel, Panels};
 use crate::effects::{self, Smoke};
@@ -336,6 +336,7 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
     s.push(shot_view("slice c: junction box screen", [JUNCTION_BOX_AT[0], -17.78], Look::Screen(JUNCTION_ID), "slice_c_junction_screen"));
     s.push(shot_view("slice c: door screen", [DOOR_AT[0] - 0.24, -10.0], Look::Screen(DOOR_ID), "slice_c_door_screen"));
     s.push(shot_view("slice c: dev faults screen", [-17.5, -12.24], Look::Screen(FAULTS_ID), "slice_c_faults_screen"));
+    s.push(shot_view("slice c: RX status screen, normal", [-9.6, -17.6], Look::Screen(STATUS_ID), "slice_c_status_screen"));
 
     // The pump breaks from the dev faults button (the ask), the reactor heats; the readout is shot
     // once it reads HOT.

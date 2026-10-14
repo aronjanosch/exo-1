@@ -377,6 +377,8 @@ mod tests {
             breakers: [true, false, true],
             pump_on: true,
             flow: 0.4,
+            coolant: 60.0,
+            coolant_low: false,
             overvolt: true,
             oxygen: 0.21,
             fuel: [80.0, 12.5],

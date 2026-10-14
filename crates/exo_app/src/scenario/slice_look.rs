@@ -6,7 +6,8 @@
 //! 1.2 m, the pump breaks and the readout goes HOT, the critical lamp lights, SCRAM (the walker
 //! uses the readout, the click is retried until the reactor is off), 2 s of dark, then POWER on; a
 //! fire at the reactor is sprayed from 2.5 m; the pump breaks again (smoke), the wrench starts the
-//! repair (the ring with zones); a load drop overvolts the junction box (sparks); the walker stands
+//! hold repair (the minigame is off: the pump rises while held); the reactor on manual at 100 % with
+//! the engines and lights off overvolts the junction box (sparks); the walker stands
 //! inside the hot plate (burn, edge), the no-air booth (dark edge) and the glowing barrel (grain).
 use super::items::{collect, items, outside, tap_then, DELAY};
 use super::reactor::{click_until, use_display};
@@ -23,7 +24,7 @@ use crate::effects::{self, Smoke};
 use crate::items::Items;
 use crate::repair::{RepairPlay, RepairSessions};
 use display_core::PanelId;
-use item_core::wire::{FireNew, ReactorAsk, ReactorFault};
+use item_core::wire::{BreakerGroup, FireNew, ReactorAsk, ReactorFault};
 use std::path::{Path, PathBuf};
 use walker_core::Frame as WalkFrame;
 
@@ -367,6 +368,29 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
     // The critical lamp on the reactor's top (above the allowed band), then SCRAM at the readout:
     // the walker uses the readout, the click is retried until the reactor is off.
     s.push(critical_lamp(dir.clone(), windowed, 60.0));
+    let critical_dir = dir.clone();
+    s.push(Box::new(move |w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "slice c: the readout while critical");
+            let at = ground(w, [-11.8, -17.76], 0.0);
+            place_walker(w, at);
+            return false;
+        }
+        let rt = screen_centre(w, &READOUT_ID);
+        aim(w, rt);
+        if c.t < 0.5 {
+            return false;
+        }
+        if first(c, "critical_readout_checked") {
+            check(c, effects::is_critical(items(w).reactor.as_ref()), "slice c: the readout is critical for its shot".into());
+        }
+        snap_once(c, w, &critical_dir, windowed, "slice_c_readout_critical");
+        if c.t < 0.9 {
+            return false;
+        }
+        end(w, c, "critical readout".into());
+        true
+    }));
     use_display(s, "REACTOR", READOUT_ID, [-11.8, -17.7]);
     s.push(click_until(READOUT_ID, "scram", None, "slice: SCRAM at the readout cuts the power", |w| !sim(w).room.reactor().power_on()));
     s.push(wait_check("slice: 2 s after SCRAM, the lights are dark", 2.0, "slice: the machines have no power after SCRAM", |w| !machines_powered(w) && !sim(w).room.reactor().power_on()));
@@ -457,7 +481,7 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
     }));
 
     // f. The repair ring: the extinguisher down, the wrench from the table, the dev fault breaks the
-    // coolant pump again; smoke above it, then the wrench's session with the ring and its zones.
+    // coolant pump again; smoke above it, then the wrench's hold session (the pump rises while held).
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "slice f: the extinguisher down, the table and the wrench");
@@ -521,19 +545,21 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
         }
         at_pump(w, 0.6);
         if ring(w).is_some() {
+            // The hold repair: the minigame is off at this condition, so the ring has no zones, and
+            // the pump rises while the session is held.
             let t0 = *c.v.entry("ring_t0").or_insert(c.t);
+            let s0 = *c.v.entry("ring_share0").or_insert(pump_share(w));
             if c.t - t0 >= 1.0 {
                 snap_once(c, w, &ring_dir, windowed, "slice_f_repair_ring");
             }
             if c.t - t0 < 1.5 {
                 return false;
             }
-            let zones = ring(w).map_or(0, |p| p.session.ring.zones.len());
             if first(c, "ring_checked") {
                 check(c, sessions(w) == 1, "slice f: the repair session runs, host and client".into());
-                check(c, zones >= 1, format!("slice f: the ring has zones ({zones})"));
+                check(c, pump_share(w) > s0 + 0.02, format!("slice f: the pump rises while held ({s0:.3} to {:.3})", pump_share(w)));
             }
-            end(w, c, format!("ring with {zones} zones"));
+            end(w, c, format!("held, pump {:.2}", pump_share(w)));
             return true;
         }
         let (tries, last) = (c.v["tries"], c.v["last"]);
@@ -550,19 +576,28 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
         false
     }));
 
-    // h. A load drop: the engines and the lights off, the supply above twice the demand, so the
-    // junction box is overvolted and throws sparks (the stand is in the room, 1.2 m off the box).
+    // h. The engines and the lights off, the reactor on manual at 100 % fission and turbine (the core
+    // harness's overvolt_turbine_max, the manual set at 10 s): the supply runs above the demand, so
+    // the junction box is overvolted and throws sparks (the stand is in the room, 1.2 m off the box).
     s.push(Box::new(move |w, c| {
         if c.t == 0.0 {
-            begin(w, c, "slice h: a load drop overvolts the junction box");
-            w.resource_mut::<Items>().ask_reactor(ReactorAsk::Trigger(ReactorFault::LoadDrop));
+            begin(w, c, "slice h: the engines and lights off, the reactor at 100 % on manual");
+            let mut items = w.resource_mut::<Items>();
+            items.ask_reactor(ReactorAsk::SetBreaker(BreakerGroup::Engines, false));
+            items.ask_reactor(ReactorAsk::SetBreaker(BreakerGroup::Lights, false));
             let at = ground(w, [JUNCTION_BOX_AT[0], JUNCTION_BOX_AT[1] + 1.2], 0.0);
             place_walker(w, at);
             return false;
         }
         let target = ground(w, JUNCTION_BOX_AT, 0.5);
         aim(w, target);
-        if !overvolt(w) && c.t < 10.0 {
+        if c.t >= 10.0 && first(c, "manual_asked") {
+            let mut items = w.resource_mut::<Items>();
+            items.ask_reactor(ReactorAsk::SetManual(true));
+            items.ask_reactor(ReactorAsk::SetFission(100.0));
+            items.ask_reactor(ReactorAsk::SetTurbine(100.0));
+        }
+        if !overvolt(w) && c.t < 30.0 {
             return false;
         }
         if first(c, "overvolt_checked") {

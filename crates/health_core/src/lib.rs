@@ -325,6 +325,12 @@ impl HealthTuning {
         self.treatments.iter().find(|t| t.id == id)
     }
 
+    /// Whether a treatment reduces this affliction (its `reduce` names it with more than zero): the
+    /// medic view highlights the items that suit an injury someone has (#300).
+    pub fn suits(&self, treatment: &str, affliction: &str) -> bool {
+        self.treatment(treatment).is_some_and(|t| t.reduce.get(affliction).is_some_and(|r| *r > 0.0))
+    }
+
     /// The reduction factor of a treater's skill (0..100).
     pub fn skill_factor(&self, skill: f64) -> f64 {
         let k = (skill / 100.0).clamp(0.0, 1.0);

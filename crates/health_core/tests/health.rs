@@ -518,4 +518,15 @@ fn the_cpr_numbers_are_in_the_shipped_file_and_checked() {
     let t = shipped();
     assert!(t.cpr.start_s > 0.0 && t.cpr.revive_after_s == 2.0 && t.cpr.revive_low_max < t.cpr.stabilize_floor);
     assert!(t.treatment("oxy").is_some(), "the oxy canister is a treatment");
+
+#[test]
+fn a_treatment_suits_the_injuries_it_reduces() {
+    // The bandage reduces the burn, the deglow the radiation; neither suits the oxygen, and an
+    // unknown treatment suits nothing (#300: the medic view's highlight).
+    let t = shipped();
+    assert!(t.suits("bandage", "burn"));
+    assert!(!t.suits("bandage", "radiation"));
+    assert!(t.suits("deglow", "radiation"));
+    assert!(!t.suits("deglow", "oxygen_low"));
+    assert!(!t.suits("nothing", "burn"));
 }

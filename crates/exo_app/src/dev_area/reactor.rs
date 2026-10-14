@@ -4,6 +4,8 @@
 //! (`ReactorNews`, about 4 times a second while it changes) into `Items::reactor`.
 //!
 //! - Values: `content/gameplay/reactor/reactor.json` (`reactor_core::Tuning`, strict loader).
+//! - No automatic safety: SCRAM (`ReactorAsk::Scram`) cuts fission and the power; the power switch
+//!   starts it again. Breakers and the pump's switch are asks too.
 //! - The room's alarm drives `ShipAlarm` while the reactor is not calm (Warn, Danger); while it is
 //!   calm the test console's alarm button may set it.
 //! - Fires, sparks and meltdowns are logged (`info!`/`warn!`) and counted in `ReactorCounts` for
@@ -14,8 +16,9 @@ use super::*;
 use crate::dev_area::engine_room::{EngineAir, ShipAlarm};
 use crate::dev_area::fire::{self, FireAlarm, FireConfig};
 use crate::items::{Items, NetOut, Role};
-use item_core::wire::{Alarm, PartNews, ReactorAsk, ReactorFault, ReactorNews};
-use reactor_core::{AlarmLevel, EngineRoom, Fault, Input, ReactorEvent, RoomEvent, Source, Tuning};
+use crate::dev_area::engine_room::ROOM;
+use item_core::wire::{Alarm, BreakerGroup, ReactorAsk, ReactorFault, ReactorNews};
+use reactor_core::{AlarmLevel, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning};
 
 /// Seconds between two sends of a changed snapshot (4 Hz).
 pub const SEND_EVERY_S: f64 = 0.25;
@@ -32,7 +35,6 @@ pub struct ReactorCounts {
     pub fires: u32,
     pub sparks: u32,
     pub meltdowns: u32,
-    pub shutdowns: u32,
 }
 
 /// The host's reactor: the room, the manual targets, and what was last sent.
@@ -91,34 +93,54 @@ impl ReactorSim {
                 *self = ReactorSim { sent: None, since_send: f64::MAX, alarmed, ..ReactorSim::new(cfg) };
                 info!("reactor: reset");
             }
+            ReactorAsk::Scram => {
+                self.room.reactor_mut().scram();
+                info!("reactor: SCRAM");
+            }
+            ReactorAsk::SetPower(on) => {
+                if !self.room.set_power(on) {
+                    info!("reactor: power on refused (broken)");
+                }
+            }
+            ReactorAsk::SetBreaker(g, on) => self.room.set_breaker(group_of(g), on),
+            ReactorAsk::SetPump(on) => self.room.set_pump(on),
         }
     }
 
-    /// The snapshot as the wire carries it.
-    pub fn news(&self) -> ReactorNews {
+    /// The snapshot as the wire carries it; `oxygen` is the engine room's air (0..1).
+    pub fn news(&self, oxygen: f64) -> ReactorNews {
         let r = self.room.reactor();
         let b = r.bands();
-        let (fire, melt) = r.timers();
         let (set_fission, set_turbine) = r.targets();
+        let grid = self.room.grid();
         ReactorNews {
             power_on: r.power_on(),
             manual: self.manual,
+            melted: r.melted(),
             temp: r.temperature(),
-            fission: r.fission(),
-            turbine: r.turbine(),
             set_fission,
             set_turbine,
             output_kw: r.output_kw(),
-            load_kw: self.room.grid().request_kw(),
+            load_kw: grid.request_kw(),
             optimal: [b.temp_optimal.lo, b.temp_optimal.hi],
             allowed: [b.temp_allowed.lo, b.temp_allowed.hi],
-            pump: part(self.room.pump().condition().fraction(), self.room.pump().condition().functioning()),
-            junction: part(self.room.junction().condition().fraction(), self.room.junction().condition().functioning()),
-            alarm: alarm_of(self.room.level()),
-            fire_timer: fire.clamp(0.0, 1.0),
-            meltdown_timer: melt.clamp(0.0, 1.0),
-            rods: r.rods().iter().filter(|x| !x.spent()).count() as u8,
+            powered: self.room.powered(),
+            breakers: Group::ALL.map(|g| grid.breaker(g)),
+            pump_on: self.room.pump().on(),
+            flow: self.room.flow(),
+            overvolt: self.room.junction().overvolted(),
+            oxygen,
+            fuel: [0, 1].map(|i| r.rods().get(i).map_or(0.0, |x| x.life)),
         }
+    }
+}
+
+/// The grid's group of a wire breaker.
+pub fn group_of(g: BreakerGroup) -> Group {
+    match g {
+        BreakerGroup::Engines => Group::Engines,
+        BreakerGroup::LifeSupport => Group::LifeSupport,
+        BreakerGroup::Lights => Group::Lights,
     }
 }
 
@@ -130,11 +152,6 @@ fn fault(f: ReactorFault) -> Option<Fault> {
         ReactorFault::Surge => Some(Fault::Surge),
         ReactorFault::Fire => None,
     }
-}
-
-/// A part's condition for the readout: its share of full condition and whether it works.
-fn part(share: f64, working: bool) -> PartNews {
-    PartNews { share, working }
 }
 
 /// The room's alarm as the ship's alarm.
@@ -164,10 +181,6 @@ pub fn route(e: RoomEvent, counts: &mut ReactorCounts) {
         RoomEvent::Reactor(ReactorEvent::Meltdown) => {
             counts.meltdowns += 1;
             warn!("reactor: MELTDOWN");
-        }
-        RoomEvent::Reactor(ReactorEvent::Shutdown) => {
-            counts.shutdowns += 1;
-            info!("reactor: safety shutdown");
         }
         _ => {}
     }
@@ -219,7 +232,8 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     }
     sim.alarmed = level != Alarm::None;
 
-    let now = sim.news();
+    let oxygen = (air.oxygen_at(ROOM.centre) * 100.0).round() / 100.0;
+    let now = sim.news(oxygen);
     items.reactor = Some(now);
     sim.since_send += dt;
     if items.role == Role::Host && sim.sent != Some(now) && sim.since_send >= SEND_EVERY_S {
@@ -238,10 +252,56 @@ mod tests {
     }
 
     #[test]
+    fn scram_and_the_power_switch_ask_the_room() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.apply(ReactorAsk::Scram, &cfg(), &mut k);
+        let n = s.news(1.0);
+        assert!(!n.power_on && !n.powered && n.output_kw == 0.0, "{n:?}");
+        for _ in 0..60 {
+            s.room.step(0.1, Input::auto());
+        }
+        assert!(s.news(1.0).temp < 40.0, "the temperature falls");
+        s.apply(ReactorAsk::SetPower(true), &cfg(), &mut k);
+        assert!(s.news(1.0).power_on);
+    }
+
+    #[test]
+    fn breakers_and_the_pump_switch_are_on_the_snapshot() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.apply(ReactorAsk::SetBreaker(BreakerGroup::Lights, false), &cfg(), &mut k);
+        let n = s.news(1.0);
+        assert_eq!(n.breakers, [true, true, false]);
+        assert!(n.load_kw < 500.0);
+        s.apply(ReactorAsk::SetPump(false), &cfg(), &mut k);
+        let n = s.news(1.0);
+        assert!(!n.pump_on && n.flow == 0.0);
+        s.apply(ReactorAsk::SetPump(true), &cfg(), &mut k);
+        assert!(s.news(1.0).pump_on && s.news(1.0).flow == 1.0);
+    }
+
+    #[test]
+    fn a_melted_core_is_on_the_snapshot_and_a_reset_clears_it() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.room.reactor_mut().set_targets(100.0, 30.0);
+        for _ in 0..(200.0 / 0.1) as usize {
+            s.room.step(0.1, Input::manual(100.0, 30.0));
+            if s.room.reactor().melted() {
+                break;
+            }
+        }
+        assert!(s.news(1.0).melted);
+        s.apply(ReactorAsk::Reset, &cfg(), &mut k);
+        assert!(!s.news(1.0).melted);
+    }
+
+    #[test]
     fn a_new_reactor_is_on_auto_with_the_power_on() {
         let s = ReactorSim::new(&cfg());
         assert!(!s.manual && s.room.reactor().power_on());
-        assert_eq!(s.news().rods, 2);
+        assert!(!s.news(1.0).melted && s.news(1.0).powered);
     }
 
     #[test]
@@ -278,6 +338,6 @@ mod tests {
         route(RoomEvent::Reactor(ReactorEvent::Fire { size: 0.1 }), &mut k);
         route(RoomEvent::Fire { size: 0.05, source: reactor_core::Source::Junction }, &mut k);
         route(RoomEvent::Reactor(ReactorEvent::Meltdown), &mut k);
-        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, meltdowns: 1, shutdowns: 0 });
+        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, meltdowns: 1 });
     }
 }

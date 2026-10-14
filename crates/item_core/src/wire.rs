@@ -175,6 +175,8 @@ pub struct ReactorNews {
     pub overvolt: bool,
     /// The engine room's air, 0..1 (the host rounds it to whole percent).
     pub oxygen: f64,
+    /// Life (0..100) of the rods in the first two slots (the two fuel tubes); 0 for an empty slot.
+    pub fuel: [f64; 2],
 }
 
 /// The engine room's state (#296): the door's target and the alarm level.
@@ -290,6 +292,7 @@ mod tests {
             flow: 0.4,
             overvolt: true,
             oxygen: 0.21,
+            fuel: [80.0, 12.5],
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {
             ToClient::Reactor(r) => r,

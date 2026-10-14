@@ -25,7 +25,7 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use grab_core::CrateSize;
 use item_core::container::Stack;
-use item_core::wire::{ReactorAsk, ReactorNews, RoomAsk, RoomNews, Vitals};
+use item_core::wire::{FireNews, ReactorAsk, ReactorNews, RoomAsk, RoomNews, SprayAsk, Vitals};
 use item_core::{Action, Client, Event, FrameRef, Host, ItemDefs, LooseId, Placement, PlayerId, Reject, Request};
 use walker_core::Frame;
 
@@ -92,6 +92,10 @@ pub enum NetOut {
     Reactor { to: Option<PlayerId>, r: ReactorNews },
     /// Client to host: a request about the reactor (#297).
     ReactorAsk(ReactorAsk),
+    /// Host to one player (`to` Some) or all: the fires and the sprays (#298).
+    Fire { to: Option<PlayerId>, f: FireNews },
+    /// Client to host: the extinguisher's spray (#298).
+    SprayAsk(SprayAsk),
 }
 
 #[derive(Resource)]
@@ -123,6 +127,11 @@ pub struct Items {
     pub reactor: Option<ReactorNews>,
     /// Requests about the reactor, as `room_asks` (#297).
     pub reactor_asks: Vec<ReactorAsk>,
+    /// The fires and sprays as this process has them: the host sets it, a client takes it from the
+    /// wire (#298). None until the first one.
+    pub fire: Option<FireNews>,
+    /// Spray requests by player, to apply here (host and one process); a client sends its own.
+    pub spray_asks: Vec<(PlayerId, SprayAsk)>,
 }
 
 /// Whether the host can simulate an action's placement: a cabin is the host's ship. (Other
@@ -137,7 +146,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new() }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new() }
     }
 
     /// The local player's slot.
@@ -191,6 +200,15 @@ impl Items {
     /// A request about the reactor (#297): applied on the host, sent from a client.
     pub fn ask_reactor(&mut self, a: ReactorAsk) {
         self.reactor_asks.push(a);
+    }
+
+    /// The extinguisher's spray, from the local player: applied here, or sent from a client.
+    pub fn ask_spray(&mut self, a: SprayAsk) {
+        if self.role == Role::Client {
+            self.net_out.push(NetOut::SprayAsk(a));
+        } else {
+            self.spray_asks.push((self.me(), a));
+        }
     }
 
     /// The host sends a player its vitals (#295), over the reliable channel.

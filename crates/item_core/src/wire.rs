@@ -37,7 +37,7 @@ pub enum ToClient {
 }
 
 /// The alarm level of the ship (#296). A dev toggle for now; the reactor drives it later.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Alarm {
     #[default]
     None,

@@ -91,7 +91,7 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
             let mut v = vitals(w);
             v.health = 0.8;
             v.oxygen = Some(0.7);
-            v.burn = Some(0.4);
+            v.burn_level = 2;
         }
         c.v.insert("set", 1.0);
         true
@@ -105,7 +105,7 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
         {
             let mut v = vitals(w);
             v.oxygen = None;
-            v.burn = None;
+            v.burn_level = 0;
         }
         true
     }));
@@ -186,7 +186,8 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
         let mut v = vitals(w);
         v.health = 0.58;
         v.oxygen = Some(1.0);
-        v.burn = Some(0.6);
+        v.burn_level = 2;
+        v.burning = true;
         true
     }));
     s.push(Box::new(|w, c| {
@@ -201,13 +202,14 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
         let mut v = vitals(w);
         v.health = 0.23;
         v.oxygen = Some(0.18);
-        v.burn = Some(0.95);
+        v.burn_level = 3;
+        v.burning = true;
         true
     }));
     s.push(wait(0.2));
     s.push(Box::new(|w, c| {
         let h = hud(w);
-        check(c, h.vitals[0].burn_text() == "■ BURN III" && h.vitals.iter().all(|l| l.tone == Tone::Bad), format!("hud: critical reads bad on every line ({:?})", h.vitals));
+        check(c, h.vitals[0].burn_text() == "■ BURN III · ON FIRE" && h.vitals.iter().all(|l| l.tone == Tone::Bad), format!("hud: critical reads bad on every line ({:?})", h.vitals));
         true
     }));
     s.push(shot_step("hud_crit"));
@@ -215,7 +217,8 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
         let mut v = vitals(w);
         v.health = 0.58;
         v.oxygen = Some(0.45);
-        v.burn = Some(0.6);
+        v.burn_level = 2;
+        v.burning = false;
         true
     }));
     // Tab: the inventory open, the held name at the left.

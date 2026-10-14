@@ -1,24 +1,29 @@
 //! #295, health: at the dev area's table a bandage is collected; the walker stands on the hot plate
-//! and burns; LMB uses the bandage on oneself (the burn drops, one less in the stack); the walker
-//! stands in the no-air booth until the HUD shows the air, then in the glowing barrel's zone until
-//! dead; five seconds later the walker is back on the pad with full health. Without a window.
-//! Run with `--start=dev_area`.
+//! and catches a light burn per tick, then the buildup fills and the walker is on fire (the burn
+//! rises in steps, once per tick); off the plate, LMB uses the bandage on oneself (the burn drops,
+//! one less in the stack); the walker stands in the no-air booth until the HUD shows the air, then
+//! in the glowing barrel's zone, where nausea shows and the walk slows, until dead; five seconds
+//! later the walker is back on the pad with full health. Without a window. Run with
+//! `--start=dev_area`.
 use super::items::{collect, items, outside, tap_then};
 use super::*;
 use crate::controls::Controls;
 use crate::crew_hud::Vitals;
 use crate::dev_area::hazards::{GLOW_BARREL, HOT_PLATE, NO_AIR};
 use crate::dev_area::{area_of, DevArea, ENGINEERING, PAD_MAIN};
-use crate::health::{HealthState, OwnVitals};
+use crate::health::{HealthState, OwnMobility, OwnVitals};
 use crate::items::{Items, LOCAL};
 use health_core::Life;
 
-/// The walker's burn and radiation on the host, and whether it is down.
+/// The walker's burn and radiation on the host, whether it is on fire, and whether it is down.
 fn burn(w: &World) -> f64 {
     w.resource::<HealthState>().bodies.get(&LOCAL).map_or(0.0, |b| b.health.strength("burn"))
 }
 fn radiation(w: &World) -> f64 {
     w.resource::<HealthState>().bodies.get(&LOCAL).map_or(0.0, |b| b.health.strength("radiation"))
+}
+fn on_fire(w: &World) -> bool {
+    w.resource::<HealthState>().bodies.get(&LOCAL).is_some_and(|b| b.health.burning())
 }
 fn dead(w: &World) -> bool {
     w.resource::<HealthState>().bodies.get(&LOCAL).is_some_and(|b| b.health.state() == Life::Dead)
@@ -60,27 +65,39 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
     s.extend(collect("bandage", "Bandage"));
     s.push(tap_then("health: 1 takes the bandage into the hand", KeyCode::Digit1, |w| items(w).in_hand(0).is_some_and(|s| s.item.kind.as_str() == "bandage")));
 
-    // The hot plate burns.
+    // The hot plate: a light burn per tick from the first tick; the buildup fills in 3 s, then the
+    // walker is on fire. The burn changes once per tick (a step per second), never between.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "health: onto the hot plate");
             let p = ground_at(w, HOT_PLATE.centre);
             place_walker(w, p);
+            c.v.insert("last", burn(w));
+            c.v.insert("steps", 0.0);
             return false;
         }
-        if c.t < 3.0 {
+        let b = burn(w);
+        if (b - c.v["last"]).abs() > 1e-9 {
+            c.v.insert("steps", c.v["steps"] + 1.0);
+            c.v.insert("last", b);
+        }
+        if c.t < 4.5 {
             return false;
         }
-        let shown = w.resource::<Vitals>().burn.is_some();
-        check(c, burn(w) > 20.0 && shown, format!("health: 3 s on the hot plate: burn {:.1}, shown on the HUD ({shown})", burn(w)));
+        let shown = w.resource::<Vitals>().burning;
+        let steps = c.v["steps"];
+        check(c, on_fire(w) && burn(w) > 10.0 && shown, format!("health: 4.5 s on the hot plate: on fire ({}), burn {:.1}, shown on the HUD ({shown})", on_fire(w), burn(w)));
+        check(c, (3.0..=5.0).contains(&steps), format!("health: the burn rose in steps, once per tick: {steps} changes in 4.5 s"));
         end(w, c, format!("burn {:.1}", burn(w)));
         true
     }));
 
-    // LMB uses the bandage on oneself: the burn drops, one less in the stack.
+    // Off the plate, the bandage on oneself (LMB): the burn drops, one less in the stack.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
-            begin(w, c, "health: LMB uses the bandage");
+            begin(w, c, "health: off the plate, LMB uses the bandage");
+            let p = ground_at(w, [ENGINEERING.centre[0] - 3.0, 1.6]);
+            place_walker(w, p);
             c.v.insert("burn0", burn(w));
             c.v.insert("n0", items(w).client.confirmed.count("bandage") as f64);
             w.resource_mut::<Controls>().click = true;
@@ -91,7 +108,7 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
         }
         let (burn1, n1) = (burn(w), items(w).client.confirmed.count("bandage"));
         let (b0, n0) = (c.v["burn0"], c.v["n0"] as u32);
-        check(c, n1 + 1 == n0 && burn1 < b0 - 5.0, format!("health: LMB on the plate: burn {b0:.1} to {burn1:.1}, bandages {n0} to {n1}"));
+        check(c, n1 + 1 == n0 && burn1 < b0 - 5.0, format!("health: LMB on oneself: burn {b0:.1} to {burn1:.1}, bandages {n0} to {n1}"));
         end(w, c, "used".into());
         true
     }));
@@ -113,7 +130,7 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The glowing barrel: radiation until dead, and the respawn starts.
+    // The glowing barrel: radiation, nausea and the slower walk, until dead; the respawn starts.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "health: into the glowing barrel's zone");
@@ -121,7 +138,12 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
             place_walker(w, p);
             return false;
         }
-        if !dead(w) && c.t < 60.0 {
+        if !c.v.contains_key("sick") && radiation(w) > 60.0 {
+            c.v.insert("sick", 1.0);
+            let (sick, m) = (w.resource::<Vitals>().sick, w.resource::<OwnMobility>().0);
+            check(c, sick && m.walk < 1.0, format!("health: nausea at radiation {:.0}: SICK on the HUD ({sick}), walk {:.2}", radiation(w), m.walk));
+        }
+        if !dead(w) && c.t < 120.0 {
             return false;
         }
         check(c, dead(w) && down(w).is_some(), format!("health: dead by radiation ({:.0}) after {:.1} s, the respawn counts ({:?} s)", radiation(w), c.t, down(w)));
@@ -146,9 +168,15 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
         let at = area_of_walker(w);
         let (dx, dy) = (at[0] - PAD_MAIN[0], at[1] - PAD_MAIN[1]);
         let v = w.resource::<Vitals>().clone();
+        let m = w.resource::<OwnMobility>().0;
         check(c, down(w).is_none() && !dead(w), format!("health: up again after {:.1} s", c.t));
         check(c, (dx * dx + dy * dy).sqrt() < 2.0, format!("health: on the pad, {:.1} m from it", (dx * dx + dy * dy).sqrt()));
-        check(c, v.health == 1.0 && v.burn.is_none() && v.radiation == 0.0 && radiation(w) == 0.0 && burn(w) == 0.0, format!("health: full health, no burn, no radiation ({:.2})", v.health));
+        check(
+            c,
+            v.health == 1.0 && v.max_share == 1.0 && v.burn_level == 0 && !v.burning && v.buildup == 0.0 && v.radiation == 0.0 && !v.sick && radiation(w) == 0.0 && burn(w) == 0.0,
+            format!("health: full health, no burn, no radiation, no nausea ({:.2})", v.health),
+        );
+        check(c, m.walk == 1.0 && m.sprint, "health: the walk is back to full, sprint too".into());
         check(c, items(w).client.confirmed.count("bandage") == 3, format!("health: the items stay, one bandage less ({} left)", items(w).client.confirmed.count("bandage")));
         end(w, c, format!("{:.1} s", c.t));
         true

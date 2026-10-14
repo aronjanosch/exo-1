@@ -317,6 +317,6 @@ fn a_bandage_used_by_a_client_on_the_host_heals_the_host_and_the_stack_shrinks()
     // The host told the client its own vitals: no burn, full health.
     p.until(10.0, "the client has its vitals from the host", |p| items(&p.client).vitals_in.is_some());
     let v = items(&p.client).vitals_in.expect("vitals");
-    assert!(v.burn.is_none() && v.down.is_none() && v.health > 0.99, "the client's own vitals are calm: {v:?}");
+    assert!(v.burn_level == 0 && !v.burning && v.down.is_none() && v.health > 0.99, "the client's own vitals are calm: {v:?}");
     println!("[{:5.1} s] done; the host's burn {:.1}", p.start.elapsed().as_secs_f64(), burn(&p));
 }

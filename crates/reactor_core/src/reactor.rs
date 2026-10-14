@@ -128,7 +128,7 @@ impl Default for ReactorTuning {
             fuel_low: 20.0,
             cooling_max: 40.0,
             decay_heat: 150.0,
-            coolant_coast_s: 60.0,
+            coolant_coast_s: 10.0,
             temp_stiffness: 0.06,
             temp_damping: 0.2,
             heat_output_factor: 10.0,

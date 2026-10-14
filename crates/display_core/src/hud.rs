@@ -29,6 +29,8 @@ pub struct HudLook {
     pub reticle: ReticleLook,
     pub credits: CreditsLook,
     pub text: TextLook,
+    /// The medic view's panel (#300).
+    pub target: crate::target::TargetLook,
 }
 
 /// The dark gradient along the bottom edge that keeps the lower HUD readable.

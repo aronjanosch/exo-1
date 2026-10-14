@@ -158,6 +158,8 @@ pub enum ReactorAsk {
     SetBreaker(BreakerGroup, bool),
     /// The coolant pump's control: Off, Low or High.
     SetPumpMode(PumpMode),
+    /// The temperature boost: up (true) or down (false), as the core takes it (#300).
+    Boost(bool),
 }
 
 /// The coolant pump's mode (#300): off, a low or a high stream.
@@ -320,6 +322,41 @@ pub struct ReactorNews {
     pub reactor: PartNews,
     pub pump: PartNews,
     pub junction: PartNews,
+    /// The warning lamps that are on, by `Lamp::index` (the status board, #300). Steady here: the
+    /// blink is the screen's.
+    pub lamps: [bool; Lamp::COUNT],
+    /// The temperature boost, degrees (-25..25 at the shipped tuning; 0 when none).
+    pub boost: f64,
+    /// A boost press would pass now: the core's rule with the power on and the reactor working.
+    pub boost_ok: bool,
+    /// Seconds to the implosion at the current rate, while the meltdown timer runs; None otherwise.
+    pub meltdown_eta_s: Option<f64>,
+}
+
+/// A warning lamp of the reactor's status board (#300), in the order the panel shows them. The
+/// conditions are the core's `Warnings`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Lamp {
+    Hot,
+    CritHeat,
+    Cold,
+    LowTemp,
+    HighOut,
+    CritOut,
+    LowOut,
+    FuelLow,
+    NoFuel,
+    Meltdown,
+    Scram,
+}
+
+impl Lamp {
+    pub const COUNT: usize = 11;
+
+    /// Position in `ReactorNews::lamps`.
+    pub fn index(self) -> usize {
+        self as usize
+    }
 }
 
 /// The engine room's state (#296): the door's target and the alarm level.
@@ -445,6 +482,10 @@ mod tests {
             overvolt: true,
             oxygen: 0.21,
             fuel: [80.0, 12.5],
+            lamps: [true, false, false, false, false, false, false, true, false, false, true],
+            boost: -12.5,
+            boost_ok: true,
+            meltdown_eta_s: Some(42.0),
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {
             ToClient::Reactor(r) => r,

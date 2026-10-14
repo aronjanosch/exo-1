@@ -17,8 +17,8 @@ use crate::dev_area::engine_room::{EngineAir, ShipAlarm};
 use crate::dev_area::fire::{self, FireAlarm, FireConfig, FireGrid, FireModel};
 use crate::items::{Items, NetOut, Role};
 use crate::dev_area::engine_room::ROOM;
-use item_core::wire::{Alarm, BreakerGroup, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews};
-use reactor_core::{AlarmLevel, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning};
+use item_core::wire::{Alarm, BreakerGroup, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews};
+use reactor_core::{AlarmLevel, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
 
 /// Seconds between two sends of a changed snapshot (4 Hz).
 pub const SEND_EVERY_S: f64 = 0.25;
@@ -111,6 +111,11 @@ impl ReactorSim {
             }
             ReactorAsk::SetBreaker(g, on) => self.room.set_breaker(group_of(g), on),
             ReactorAsk::SetPumpMode(m) => self.room.set_pump_mode(pump_of(m)),
+            ReactorAsk::Boost(up) => {
+                if !self.room.reactor_mut().boost(up) {
+                    info!("reactor: boost refused (off, broken, or not allowed now)");
+                }
+            }
         }
     }
 
@@ -145,8 +150,45 @@ impl ReactorSim {
             reactor: part(r.condition().fraction(), r.condition().functioning()),
             pump: part(self.room.pump().condition().fraction(), self.room.pump().condition().functioning()),
             junction: part(self.room.junction().condition().fraction(), self.room.junction().condition().functioning()),
+            lamps: lamps_of(&self.room.warnings()),
+            boost: r.temperature_boost(),
+            boost_ok: r.power_on() && r.condition().functioning() && r.boost_allowed(),
+            meltdown_eta_s: meltdown_eta(r.timers().1, r.tuning().meltdown_delay_s, r.melted()),
         }
     }
+}
+
+/// The lamps of the core's warnings, by `Lamp::index`.
+pub fn lamps_of(w: &Warnings) -> [bool; Lamp::COUNT] {
+    let mut lamps = [false; Lamp::COUNT];
+    for (lamp, on) in [
+        (Lamp::Hot, w.overheat),
+        (Lamp::CritHeat, w.critical_heat),
+        (Lamp::Cold, w.cold),
+        (Lamp::LowTemp, w.low_temp),
+        (Lamp::HighOut, w.high_output),
+        (Lamp::CritOut, w.critical_output),
+        (Lamp::LowOut, w.low_output),
+        (Lamp::FuelLow, w.low_fuel),
+        (Lamp::NoFuel, w.fuel_out),
+        (Lamp::Meltdown, w.meltdown),
+        (Lamp::Scram, w.scram),
+    ] {
+        lamps[lamp.index()] = on;
+    }
+    lamps
+}
+
+/// Seconds to the implosion at the current rate: the meltdown timer (0..1 of its delay) has
+/// `(1 - timer) * delay` left. None while the timer is at 0 and once the core has melted.
+pub fn meltdown_eta(timer: f64, delay_s: f64, melted: bool) -> Option<f64> {
+    (timer > 0.0 && !melted).then(|| (1.0 - timer.clamp(0.0, 1.0)) * delay_s)
+}
+
+/// Whether the blinking lamps are lit at a time: 2 Hz, lit for the first quarter of each half
+/// second (Barotrauma's `TotalTime % 0.5 < 0.25`).
+pub fn lamp_blink_on(t: f64) -> bool {
+    t.rem_euclid(0.5) < 0.25
 }
 
 /// The grid's group of a wire breaker.
@@ -304,6 +346,53 @@ mod tests {
             s.room.step(0.1, Input::auto());
         }
         panic!("the snapshot never settled");
+    }
+
+    #[test]
+    fn the_news_carries_the_lamps_the_boost_and_the_countdown() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        // Warm with the power off after SCRAM: the SCRAM lamp is on, the others off.
+        s.apply(ReactorAsk::Scram, &cfg(), &mut k);
+        let n = s.news(1.0);
+        assert!(n.lamps[Lamp::Scram.index()], "warm with the power off");
+        assert!(!n.lamps[Lamp::Hot.index()] && !n.lamps[Lamp::Meltdown.index()]);
+        assert!(!n.boost_ok, "no boost with the power off");
+        assert_eq!(n.meltdown_eta_s, None);
+        // Power on: the boost passes; a boost that is up at its amount refuses the next press.
+        s.apply(ReactorAsk::SetPower(true), &cfg(), &mut k);
+        s.apply(ReactorAsk::Boost(true), &cfg(), &mut k);
+        let amount = s.room.reactor().tuning().boost_amount;
+        let n = s.news(1.0);
+        assert_eq!(n.boost, amount, "the boost is up");
+        assert!(!n.boost_ok, "a boost at its amount is not allowed again");
+        s.apply(ReactorAsk::Boost(false), &cfg(), &mut k);
+        assert_eq!(s.news(1.0).boost, amount, "refused: the boost stays up");
+    }
+
+    #[test]
+    fn the_boost_ask_is_refused_when_the_core_refuses_it() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.apply(ReactorAsk::Scram, &cfg(), &mut k);
+        s.apply(ReactorAsk::Boost(true), &cfg(), &mut k);
+        assert_eq!(s.room.reactor().temperature_boost(), 0.0, "the power is needed");
+        assert_eq!(s.news(1.0).boost, 0.0);
+    }
+
+    #[test]
+    fn the_meltdown_countdown_is_the_seconds_left_while_the_timer_runs() {
+        assert_eq!(meltdown_eta(0.0, 120.0, false), None, "no timer, no countdown");
+        assert_eq!(meltdown_eta(0.25, 120.0, false), Some(90.0), "a quarter run: 90 s left");
+        assert_eq!(meltdown_eta(0.25, 120.0, true), None, "melted: the view says so, no countdown");
+    }
+
+    #[test]
+    fn the_lamps_blink_at_two_hertz_and_scram_does_not() {
+        // On for a quarter of each half second (Barotrauma's TotalTime % 0.5 < 0.25).
+        assert!(lamp_blink_on(0.0) && lamp_blink_on(0.2));
+        assert!(!lamp_blink_on(0.25) && !lamp_blink_on(0.49));
+        assert!(lamp_blink_on(0.5));
     }
 
     #[test]

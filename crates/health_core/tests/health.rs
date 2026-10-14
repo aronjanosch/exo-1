@@ -387,3 +387,135 @@ fn unconscious_at_zero_and_awake_again_above() {
     assert_eq!(h.state(), Life::Conscious, "awake above zero: vitality {}", h.vitality());
     assert!(h.vitality() > 0.0);
 }
+
+/// A body that is unconscious from oxygen low `s` alone (no other harm).
+fn unconscious_at(t: &HealthTuning, s: f64) -> Health {
+    let mut h = Health::new(t, 7);
+    h.add(t, "oxygen_low", s);
+    h.step(t, 0.0, air(1.0));
+    assert_eq!(h.state(), Life::Unconscious, "oxygen low {s} is unconscious");
+    h
+}
+
+/// One CPR step of `dt` seconds.
+fn pump(h: &mut Health, t: &HealthTuning, dt: f64, skill: f64, air_ok: bool) -> Vec<HealthEvent> {
+    h.cpr(t, dt, true, skill, air_ok)
+}
+
+#[test]
+fn the_unconscious_line_is_below_the_cpr_floor() {
+    // Bisect the oxygen low at which a body with nothing else wrong is unconscious: the CPR's floor
+    // must sit above it, so CPR alone stabilises the body and never wakes it.
+    let t = shipped();
+    let (mut lo, mut hi) = (100.0, 200.0);
+    for _ in 0..60 {
+        let mid = (lo + hi) / 2.0;
+        let mut h = Health::new(&t, 7);
+        h.add(&t, "oxygen_low", mid);
+        h.step(&t, 0.0, air(1.0));
+        if h.state() == Life::Unconscious {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    assert!((hi - 125.0).abs() < 0.01, "the line is 125 with the shipped numbers: {hi}");
+    assert!(t.cpr.stabilize_floor > hi, "the floor {} sits above the line {hi}", t.cpr.stabilize_floor);
+}
+
+#[test]
+fn cpr_takes_oxygen_low_off_per_second_in_good_air() {
+    let t = shipped();
+    let mut h = unconscious_at(&t, 150.0);
+    // 1.5 s: before the first revive roll (after 2 s of CPR).
+    for _ in 0..15 {
+        pump(&mut h, &t, 0.1, 50.0, true);
+    }
+    // Relief 0.5 a second, plus the stabilisation above the floor (skill 50 x 0.02 = 1.0): 1.5 a second.
+    assert!(close(h.strength("oxygen_low"), 147.75), "1.5 s of CPR at 150: {}", h.strength("oxygen_low"));
+    assert_eq!(h.state(), Life::Unconscious, "still unconscious");
+    assert!(close(h.cpr_seconds(), 1.5), "CPR has run 1.5 s: {}", h.cpr_seconds());
+}
+
+#[test]
+fn cpr_does_nothing_in_bad_air_and_nothing_when_nobody_pumps() {
+    let t = shipped();
+    let mut h = unconscious_at(&t, 150.0);
+    for _ in 0..20 {
+        pump(&mut h, &t, 0.1, 50.0, false);
+    }
+    assert!(close(h.strength("oxygen_low"), 150.0), "no relief in bad air: {}", h.strength("oxygen_low"));
+    assert!(close(h.cpr_seconds(), 2.0), "the time still counts: {}", h.cpr_seconds());
+    h.cpr(&t, 0.1, false, 50.0, true);
+    assert_eq!(h.cpr_seconds(), 0.0, "nobody pumps: the count is reset");
+    assert!(close(h.strength("oxygen_low"), 150.0));
+}
+
+#[test]
+fn cpr_stabilises_at_the_floor_and_never_wakes_the_body_by_itself() {
+    let t = shipped();
+    let floor = t.cpr.stabilize_floor;
+    let mut h = unconscious_at(&t, 150.0);
+    let mut woke = false;
+    for _ in 0..600 {
+        let ev = pump(&mut h, &t, 0.1, 50.0, true);
+        if ev.contains(&HealthEvent::Woke) {
+            woke = true;
+            break;
+        }
+        assert!(h.strength("oxygen_low") >= floor - 1e-9, "never below the floor while unconscious: {}", h.strength("oxygen_low"));
+        assert_eq!(h.burn_level(&t), 0, "skill 50 costs no burn");
+    }
+    // The revive roll may wake it; the floor is what it holds without one.
+    if !woke {
+        assert!(close(h.strength("oxygen_low"), floor) || h.strength("oxygen_low") > floor, "held at the floor: {}", h.strength("oxygen_low"));
+    }
+}
+
+#[test]
+fn a_revive_roll_wakes_the_body_after_two_seconds_and_lowers_the_oxygen_low() {
+    let t = shipped();
+    let mut h = unconscious_at(&t, t.cpr.stabilize_floor);
+    let mut woke_at = None;
+    for i in 1..=1200 {
+        let ev = pump(&mut h, &t, 0.1, 50.0, true);
+        if ev.contains(&HealthEvent::Woke) {
+            woke_at = Some(i as f64 * 0.1);
+            break;
+        }
+    }
+    let at = woke_at.expect("the revive roll wakes it within 120 s (seeded)");
+    assert!(at >= t.cpr.revive_after_s - 1e-6, "no revive before {} s of CPR: woke at {at:.1}", t.cpr.revive_after_s);
+    assert_eq!(h.state(), Life::Conscious);
+    assert!(h.strength("oxygen_low") <= t.cpr.revive_low_max + 1e-9, "the revive leaves at most {}: {}", t.cpr.revive_low_max, h.strength("oxygen_low"));
+    assert!(h.vitality() > 0.0, "awake with vitality {}", h.vitality());
+}
+
+#[test]
+fn a_low_skill_rescuer_hurts_the_body_with_burn_each_pump() {
+    let t = shipped();
+    let mut h = unconscious_at(&t, t.cpr.stabilize_floor);
+    // One whole pump (at 1 s), before the first revive roll (after 2 s of CPR).
+    for _ in 0..15 {
+        pump(&mut h, &t, 0.1, 30.0, true);
+    }
+    let want = (t.cpr.damage_below_skill - 30.0) * t.cpr.damage_per_point;
+    assert!(close(h.strength("burn"), want), "one pump at skill 30 costs {want} burn: {}", h.strength("burn"));
+}
+
+#[test]
+fn an_oxy_canister_takes_forty_off_the_oxygen_low() {
+    let t = shipped();
+    let mut h = unconscious_at(&t, 150.0);
+    let r = h.treat(&t, "oxy", 50.0).expect("the oxy treatment");
+    assert!(r.success && close(r.reduced, 40.0), "a canister at skill 50: {r:?}");
+    assert!(close(h.strength("oxygen_low"), 110.0), "150 - 40: {}", h.strength("oxygen_low"));
+    assert_eq!(h.state(), Life::Conscious, "the canister alone wakes the body (110 is above the line)");
+}
+
+#[test]
+fn the_cpr_numbers_are_in_the_shipped_file_and_checked() {
+    let t = shipped();
+    assert!(t.cpr.start_s > 0.0 && t.cpr.revive_after_s == 2.0 && t.cpr.revive_low_max < t.cpr.stabilize_floor);
+    assert!(t.treatment("oxy").is_some(), "the oxy canister is a treatment");
+}

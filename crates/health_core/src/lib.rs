@@ -14,6 +14,9 @@
 //!   a table. From 50 up it makes nausea (a derived strength), which costs no vitality but slows
 //!   the walk (`Mobility`).
 //! - Oxygen low: bad air adds per tick, good air removes; from 50 it takes vitality by band.
+//! - CPR (#300 polish): a rescuer pumps an unconscious body. In good air it takes oxygen low off per
+//!   second, but never below the stabilisation floor (still unconscious); each second after two of
+//!   CPR is a revive roll that brings the body back. Below the skill line each pump hurts (burn).
 //! - Headache: oxygen low above `headache.oxygen_above` for `headache.after_s` in a row gives a
 //!   headache (strength 100). It costs no vitality but lowers the maximum (`max_share`).
 //! - A treatment (a bandage, a deglow) reduces one affliction per use, scaled by the treater's
@@ -21,7 +24,7 @@
 //!
 //! Taken from Barotrauma: vitality as the maximum minus the afflictions' banded vitality loss,
 //! unconscious at zero and dead below zero, the burn and oxygen-low bands, the oxygen and burn
-//! rules, and the skill-based success roll.
+//! rules, the skill-based success roll, and CPR's stabilise-then-revive (`Health::cpr`).
 //!
 //! - `HealthTuning`: everything from `content/gameplay/health/health.json` (strict loader).
 //! - `Health`: `add`, `step`, `treat`, `respawn`; `HealthEvent`s out of `step` and `treat`.
@@ -183,6 +186,37 @@ pub struct NauseaTuning {
     pub mobility: Vec<MobilityBand>,
 }
 
+/// CPR on an unconscious body (Barotrauma's `CPRSettings`, scaled: its oxygen points are ours, 1 to
+/// 1, since both run 200 wide). Per second in good air the oxygen low falls by `relief_per_s`, and
+/// by more above the floor, but never below it; the floor is just past the unconscious line.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CprTuning {
+    /// LMB held this long before the rescue starts (the ring), in seconds.
+    pub start_s: f64,
+    /// Oxygen low taken off per second in good air (Barotrauma: +0.5 oxygen per second).
+    pub relief_per_s: f64,
+    /// Above the floor, the extra per second is the skill x `stabilize_per_skill`, clamped.
+    pub stabilize_floor: f64,
+    pub stabilize_per_skill: f64,
+    pub stabilize_min: f64,
+    pub stabilize_max: f64,
+    /// Revive chance per pump (a second): (skill x `revive_per_skill`) ^ `revive_exponent`, clamped.
+    pub revive_per_skill: f64,
+    pub revive_exponent: f64,
+    pub revive_min: f64,
+    pub revive_max: f64,
+    /// Seconds of CPR before the first revive roll (it looks wrong sooner).
+    pub revive_after_s: f64,
+    /// A revive takes this much oxygen low off, and leaves it at most `revive_low_max`.
+    pub revive_gain: f64,
+    pub revive_low_max: f64,
+    /// Below this skill each pump costs the body burn: (this - skill) x `damage_per_point`
+    /// (Barotrauma's internal damage on the torso; TODO(initiator): which affliction).
+    pub damage_below_skill: f64,
+    pub damage_per_point: f64,
+}
+
 /// Every health number, from `health/health.json`. TODO(initiator): all values are starting points.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -203,6 +237,7 @@ pub struct HealthTuning {
     pub radiation: RadiationTuning,
     pub headache: HeadacheTuning,
     pub nausea: NauseaTuning,
+    pub cpr: CprTuning,
     pub afflictions: Vec<AfflictionKind>,
     pub treatments: Vec<Treatment>,
 }
@@ -249,6 +284,13 @@ impl HealthTuning {
         need((0.0..=1.0).contains(&self.headache.max_share), "headache.max_share".into(), "must be in 0..1");
         need(self.nausea.max > 0.0 && self.nausea.from_radiation >= 0.0 && self.nausea.from_radiation < rad_max, "nausea".into(), "from_radiation must be below the radiation's max, max > 0");
         need(!self.nausea.mobility.is_empty(), "nausea.mobility".into(), "needs a band");
+        let c = &self.cpr;
+        need(c.start_s >= 0.0 && c.relief_per_s >= 0.0 && c.stabilize_per_skill >= 0.0, "cpr".into(), "start_s, relief_per_s and stabilize_per_skill must be >= 0");
+        need(c.stabilize_min >= 0.0 && c.stabilize_min <= c.stabilize_max, "cpr.stabilize_min".into(), "must be in 0..=stabilize_max");
+        need(c.revive_min >= 0.0 && c.revive_min <= c.revive_max && c.revive_max <= 1.0, "cpr.revive_min".into(), "must be in 0..=revive_max, revive_max at most 1");
+        need(c.revive_per_skill >= 0.0 && c.revive_exponent > 0.0, "cpr.revive_exponent".into(), "revive_per_skill >= 0, exponent > 0");
+        need(c.revive_after_s >= 0.0 && c.revive_gain > 0.0 && c.revive_low_max >= 0.0, "cpr.revive_gain".into(), "revive_after_s >= 0, gain > 0, revive_low_max >= 0");
+        need(c.damage_below_skill >= 0.0 && c.damage_per_point >= 0.0, "cpr.damage_below_skill".into(), "must be >= 0");
         need(self.nausea.mobility.iter().all(|m| m.walk > 0.0 && m.walk <= 1.0), "nausea.mobility".into(), "walk must be in (0..1]");
         let mut seen = std::collections::HashSet::new();
         for (i, a) in self.afflictions.iter().enumerate() {
@@ -386,6 +428,9 @@ pub struct Health {
     tick_acc: f64,
     /// Seconds in a row the oxygen low has been above the headache's line.
     oxygen_high_s: f64,
+    /// Seconds of CPR so far (reset when nobody pumps), and seconds into the current pump.
+    cpr_s: f64,
+    pump_s: f64,
 }
 
 impl Health {
@@ -401,6 +446,8 @@ impl Health {
             fire: 0.0,
             tick_acc: 0.0,
             oxygen_high_s: 0.0,
+            cpr_s: 0.0,
+            pump_s: 0.0,
         }
     }
 
@@ -631,6 +678,50 @@ impl Health {
         Some(TreatResult { success, reduced })
     }
 
+    /// Seconds of CPR so far on this body (0 when nobody pumps it).
+    pub fn cpr_seconds(&self) -> f64 {
+        self.cpr_s
+    }
+
+    /// One step of CPR on this body by a rescuer of `skill`, if `active` (someone pumps it now)
+    /// and the body is unconscious. In good air (`air_ok`) the oxygen low falls per second, and
+    /// more above the floor, but never below the floor. Each whole second is a pump: below the
+    /// skill line it costs burn, and after `revive_after_s` of CPR it may revive (a roll). Returns
+    /// `Woke` when the body is awake again.
+    pub fn cpr(&mut self, t: &HealthTuning, dt: f64, active: bool, skill: f64, air_ok: bool) -> Vec<HealthEvent> {
+        if !active || self.life != Life::Unconscious {
+            self.cpr_s = 0.0;
+            self.pump_s = 0.0;
+            return Vec::new();
+        }
+        let c = &t.cpr;
+        self.cpr_s += dt;
+        self.pump_s += dt;
+        if air_ok {
+            let s = self.strength("oxygen_low");
+            let extra = if s > c.stabilize_floor { (skill * c.stabilize_per_skill).clamp(c.stabilize_min, c.stabilize_max) } else { 0.0 };
+            let drop = ((c.relief_per_s + extra) * dt).min((s - c.stabilize_floor).max(0.0));
+            self.change(t, "oxygen_low", -drop);
+        }
+        while self.pump_s >= 1.0 - 1e-9 {
+            self.pump_s -= 1.0;
+            if skill < c.damage_below_skill {
+                let hurt = (c.damage_below_skill - skill) * c.damage_per_point;
+                self.change(t, "burn", hurt);
+            }
+            if air_ok && self.cpr_s > c.revive_after_s - 1e-9 {
+                let chance = (skill * c.revive_per_skill).powf(c.revive_exponent).clamp(c.revive_min, c.revive_max);
+                if self.rng.chance(chance) {
+                    let s = self.strength("oxygen_low");
+                    let new = (s - c.revive_gain).min(c.revive_low_max);
+                    self.change(t, "oxygen_low", new - s);
+                }
+            }
+        }
+        self.recalc(t);
+        self.update_life(t)
+    }
+
     /// Back to full health, conscious, cold and sober.
     pub fn respawn(&mut self, t: &HealthTuning) {
         self.afflictions.clear();
@@ -639,6 +730,8 @@ impl Health {
         self.fire = 0.0;
         self.tick_acc = 0.0;
         self.oxygen_high_s = 0.0;
+        self.cpr_s = 0.0;
+        self.pump_s = 0.0;
         self.recalc(t);
     }
 }

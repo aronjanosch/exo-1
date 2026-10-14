@@ -15,6 +15,8 @@ pub enum ToHost {
     Action(Action),
     /// A request about the engine room (#296): the host decides.
     Room(RoomAsk),
+    /// A request about the reactor (#297): the host decides.
+    Reactor(ReactorAsk),
 }
 
 /// Host to client.
@@ -26,6 +28,8 @@ pub enum ToClient {
     Vitals(Vitals),
     /// The engine room's shared state as the host has it (#296): every player gets it.
     Room(RoomNews),
+    /// The reactor's snapshot (#297), about 4 times a second while it changes.
+    Reactor(ReactorNews),
 }
 
 /// The alarm level of the ship (#296). A dev toggle for now; the reactor drives it later.
@@ -55,6 +59,63 @@ pub enum RoomAsk {
     ToggleDoor,
     /// The dev toggle: the next alarm level.
     CycleAlarm,
+}
+
+/// A request to the host about the reactor (#297). Set fission and set turbine only count on
+/// Manual; a fault and a reset are the dev console's.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ReactorAsk {
+    /// Manual when true, Auto when false.
+    SetManual(bool),
+    /// Fission target, 0..100.
+    SetFission(f64),
+    /// Turbine target, 0..100.
+    SetTurbine(f64),
+    /// A dev fault (`engine_room::Fault` on the host).
+    Trigger(ReactorFault),
+    /// A fresh engine room: cold, the start rods, Auto.
+    Reset,
+}
+
+/// The faults the dev console asks for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReactorFault {
+    PumpBreak,
+    LoadDrop,
+    Surge,
+}
+
+/// A part's condition for the readout: its share of full condition (0..1) and whether it works.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PartNews {
+    pub share: f64,
+    pub working: bool,
+}
+
+/// The reactor's snapshot (#297): what the readout shows, as the host has it. Temperature,
+/// fission and turbine are 0..100; power is kW; the bands are (low, high) on the temperature
+/// gauge; the timers are 0..1 of their way to a fire or a shutdown (meltdown without the safety).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ReactorNews {
+    pub power_on: bool,
+    pub manual: bool,
+    pub temp: f64,
+    pub fission: f64,
+    pub turbine: f64,
+    /// The targets as set (Manual) or as Auto has them.
+    pub set_fission: f64,
+    pub set_turbine: f64,
+    pub output_kw: f64,
+    pub load_kw: f64,
+    pub optimal: [f64; 2],
+    pub allowed: [f64; 2],
+    pub pump: PartNews,
+    pub junction: PartNews,
+    pub alarm: Alarm,
+    pub fire_timer: f64,
+    pub meltdown_timer: f64,
+    /// Rods not spent.
+    pub rods: u8,
 }
 
 /// The engine room's state (#296): the door's target and the alarm level.
@@ -144,5 +205,51 @@ mod tests {
             _ => panic!("the vitals message"),
         }).expect("decodes");
         assert_eq!(back, v);
+    }
+
+    #[test]
+    fn reactor_news_travels_as_it_is() {
+        let news = ReactorNews {
+            power_on: true,
+            manual: true,
+            temp: 61.25,
+            fission: 43.75,
+            turbine: 50.0,
+            set_fission: 40.0,
+            set_turbine: 48.0,
+            output_kw: 500.0,
+            load_kw: 500.0,
+            optimal: [35.0, 65.0],
+            allowed: [20.0, 80.0],
+            pump: PartNews { share: 0.4, working: true },
+            junction: PartNews { share: 1.0, working: true },
+            alarm: Alarm::Warn,
+            fire_timer: 0.5,
+            meltdown_timer: 0.0,
+            rods: 2,
+        };
+        let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {
+            ToClient::Reactor(r) => r,
+            _ => panic!("the reactor message"),
+        };
+        assert_eq!(back, news);
+    }
+
+    #[test]
+    fn reactor_asks_travel_as_they_are() {
+        for ask in [ReactorAsk::SetManual(true), ReactorAsk::SetFission(12.5), ReactorAsk::SetTurbine(0.0), ReactorAsk::Trigger(ReactorFault::LoadDrop), ReactorAsk::Reset] {
+            let back = match decode::<ToHost>(&encode(&ToHost::Reactor(ask))).expect("decodes") {
+                ToHost::Reactor(a) => a,
+                _ => panic!("the reactor request"),
+            };
+            assert_eq!(back, ask);
+        }
+    }
+
+    #[test]
+    fn a_reactor_message_is_not_a_room_message() {
+        // The two enums keep their variants apart on the wire.
+        assert!(decode::<ToHost>(&encode(&ToHost::Room(RoomAsk::CycleAlarm))).is_some_and(|m| matches!(m, ToHost::Room(_))));
+        assert!(decode::<ToClient>(&encode(&ToClient::Reactor(ReactorNews::default()))).is_some_and(|m| matches!(m, ToClient::Reactor(_))));
     }
 }

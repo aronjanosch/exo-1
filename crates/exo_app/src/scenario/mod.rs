@@ -26,6 +26,7 @@ mod boost;
 mod camera_g;
 mod cargo;
 mod coolant;
+mod rods;
 mod dev_area;
 mod dev_menu;
 mod displays;
@@ -712,6 +713,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "reactor" => reactor::reactor_steps(&mut s),
         // #300: coolant: the tank runs dry, the temperature climbs, a canister refills it by hand.
         "coolant" => coolant::coolant_steps(&mut s),
+        // #300: fuel rods: a rod from the rack is loaded into the reactor, the brake pulls one, G drops it.
+        "rods" => rods::rods_steps(&mut s),
         // #298: fire: a fire at the reactor grows, burns, is sprayed out; the alarm follows.
         "fire" => fire::fire_steps(&mut s),
         // #300: the same fire on the cell grid: the switch, the spread, the corridor, the spray.

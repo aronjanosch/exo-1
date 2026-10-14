@@ -62,12 +62,13 @@ pub enum Doing {
     Spraying,
 }
 
-/// A player's status for the others (#300): burning, down (waiting for the respawn) and what
-/// they do.
+/// A player's status for the others (#300): burning, down (waiting for the respawn), unconscious
+/// (vitality at zero or below, awake again above) and what they do.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicStatus {
     pub burning: bool,
     pub down: bool,
+    pub unconscious: bool,
     pub doing: Doing,
 }
 
@@ -286,6 +287,8 @@ pub struct Vitals {
     pub sprint: bool,
     /// Seconds until the respawn while the player is down; None while standing.
     pub down: Option<f64>,
+    /// Unconscious: vitality at zero or below (not dead). Controls frozen, lying down for the others.
+    pub unconscious: bool,
     /// What each injury costs the health now, in vitality points: the burn, the oxygen low and
     /// the headache's part of the maximum (#295).
     pub burn_cost: f64,
@@ -296,7 +299,7 @@ pub struct Vitals {
 impl Vitals {
     /// Calm and healthy: nothing to show but the health, walking at full speed.
     pub fn healthy() -> Vitals {
-        Vitals { health: 1.0, max_share: 1.0, oxygen: None, burn_level: 0, buildup: 0.0, burning: false, radiation: 0.0, sick: false, walk: 1.0, sprint: true, down: None, burn_cost: 0.0, oxygen_cost: 0.0, headache_cost: 0.0 }
+        Vitals { health: 1.0, max_share: 1.0, oxygen: None, burn_level: 0, buildup: 0.0, burning: false, radiation: 0.0, sick: false, walk: 1.0, sprint: true, down: None, unconscious: false, burn_cost: 0.0, oxygen_cost: 0.0, headache_cost: 0.0 }
     }
 }
 
@@ -340,7 +343,7 @@ mod tests {
 
     #[test]
     fn vitals_travel_as_they_are() {
-        let v = Vitals { burn_level: 2, buildup: 0.4, burning: true, sick: true, walk: 0.7, sprint: false, max_share: 0.8, burn_cost: 12.5, oxygen_cost: 3.0, headache_cost: 20.0, ..Vitals::healthy() };
+        let v = Vitals { burn_level: 2, buildup: 0.4, burning: true, sick: true, walk: 0.7, sprint: false, max_share: 0.8, unconscious: true, burn_cost: 12.5, oxygen_cost: 3.0, headache_cost: 20.0, ..Vitals::healthy() };
         let back: Vitals = decode(&encode(&ToClient::Vitals(v)).as_slice()).map(|m: ToClient| match m {
             ToClient::Vitals(v) => v,
             _ => panic!("the vitals message"),
@@ -436,10 +439,11 @@ mod tests {
     #[test]
     fn public_status_travels_as_it_is() {
         let status = vec![
-            (1, PublicStatus { burning: true, down: false, doing: Doing::Treating(2) }),
-            (2, PublicStatus { burning: false, down: true, doing: Doing::Nothing }),
-            (3, PublicStatus { burning: false, down: false, doing: Doing::Repairing(RepairDevice::CoolantPump) }),
-            (4, PublicStatus { burning: false, down: false, doing: Doing::Spraying }),
+            (1, PublicStatus { burning: true, down: false, unconscious: false, doing: Doing::Treating(2) }),
+            (2, PublicStatus { burning: false, down: true, unconscious: false, doing: Doing::Nothing }),
+            (3, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Repairing(RepairDevice::CoolantPump) }),
+            (4, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Spraying }),
+            (5, PublicStatus { burning: false, down: false, unconscious: true, doing: Doing::Nothing }),
         ];
         let back = match decode::<ToClient>(&encode(&ToClient::Status(status.clone()))).expect("decodes") {
             ToClient::Status(s) => s,

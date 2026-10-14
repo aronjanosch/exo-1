@@ -28,7 +28,7 @@ use avian3d::prelude::{Position, Rotation};
 use bevy::math::DVec3;
 use gameplay_core::notice::{Notice, NoticeKind};
 use item_core::container::Stack;
-use item_core::wire::{FuelKind, RepairDevice};
+use item_core::wire::{FuelKind, ReactorAsk, RepairDevice};
 use item_core::{FrameRef, ItemDef, Placement, Request};
 use reactor_core::FuelRod;
 use walker_core::Frame;
@@ -163,9 +163,10 @@ mod tests {
     }
 }
 
-/// Client: a fuel rod in the selected slot and the look on the reactor within reach, LMB held
-/// `HOLD_S` seconds: `Request::Use` goes to the host, which loads the rod. A reactor with no free
-/// slot (its snapshot) refuses with a notice and no request. Any other state ends the hold.
+/// Client: the look on the reactor within reach, LMB held `HOLD_S` seconds, with a fuel rod in the
+/// selected slot (load: `Request::Use` goes to the host) or the hands empty (the brake:
+/// `ReactorAsk::PullRod` goes to the host). A load into a reactor with no free slot (its snapshot)
+/// is refused with a notice and no request. Any other state ends the hold.
 #[allow(clippy::too_many_arguments)]
 fn rod_hands(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMut<Items>, cfg: Res<RepairConfig>, reactor: Res<crate::dev_area::reactor::ReactorConfig>, active: Res<ActiveDisplay>, mut hold: ResMut<RodHold>, mut gp: ResMut<Gameplay>, players: Query<&Player>, machines: Query<(&DevBox, &Position, &Rotation)>) {
     let dt = time.delta_secs_f64();
@@ -174,11 +175,14 @@ fn rod_hands(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMut<
         return;
     };
     let slot = items.client.view.selected;
-    let rod = items.client.view.slot(slot).and_then(|s| items.defs.of(s)).is_some_and(|d| d.use_effect.as_deref() == Some(LOAD));
+    let in_hand = items.client.view.slot(slot).and_then(|s| items.defs.of(s)).map(|d| d.use_effect.as_deref() == Some(LOAD));
     let eye = pl.w.pos + pl.up * EYE_HEIGHT;
     let at_reactor = aimed(eye, pl.world_look(Frame::IDENTITY), &machines, cfg.0.reach_m) == Some(RepairDevice::Reactor);
     let on_foot = pl.ship.is_none() && !pl.seated && !pl.fly && active.using().is_none() && !controls.free_cursor;
-    if !(rod && at_reactor && on_foot) || !controls.primary_held {
+    // A rod in hand loads it; empty hands pull. Any other item in hand does nothing here.
+    let load = in_hand == Some(true);
+    let pull = in_hand.is_none();
+    if !(at_reactor && on_foot && (load || pull)) || !controls.primary_held {
         hold.held = 0.0;
         return;
     }
@@ -188,6 +192,11 @@ fn rod_hands(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMut<
     }
     hold.held = 0.0;
     controls.click = false;
+    if pull {
+        let me = items.me();
+        items.ask_reactor(ReactorAsk::PullRod(me));
+        return;
+    }
     let slots = reactor.0.reactor.slots;
     let used = items.reactor.map_or(0, |r| r.fuel.iter().filter(|t| t.rod.is_some()).count());
     if used >= slots {

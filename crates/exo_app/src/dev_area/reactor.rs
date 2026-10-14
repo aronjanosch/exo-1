@@ -277,7 +277,7 @@ pub fn plugin(app: &mut App) {
 /// alarm (the room's or the fire's, the higher), the snapshot out. A client only forwards its
 /// requests.
 #[allow(clippy::too_many_arguments)]
-fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut alarm: ResMut<ShipAlarm>, mut air: ResMut<EngineAir>, fires: Res<FireConfig>, fire_alarm: Res<FireAlarm>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, area: Res<DevArea>, planet: Res<PlanetRes>) {
+fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut alarm: ResMut<ShipAlarm>, mut air: ResMut<EngineAir>, fires: Res<FireConfig>, fire_alarm: Res<FireAlarm>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, area: Res<DevArea>, planet: Res<PlanetRes>, repair: Res<crate::repair::RepairConfig>, mut health: Option<ResMut<crate::health::HealthState>>) {
     let asks = std::mem::take(&mut items.reactor_asks);
     if items.role == Role::Client {
         for a in asks {
@@ -286,8 +286,11 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
         return;
     }
     let mut events = Vec::new();
+    let mut pulls = Vec::new();
     for a in asks {
-        if a == ReactorAsk::Trigger(ReactorFault::Fire) {
+        if let ReactorAsk::PullRod(player) = a {
+            pulls.push(player);
+        } else if a == ReactorAsk::Trigger(ReactorFault::Fire) {
             info!("reactor: dev fire");
             events.push(RoomEvent::Fire { size: fires.0.start_size, source: Source::Reactor });
         } else {
@@ -302,6 +305,33 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     for _ in 0..items.take_refills() {
         let added = sim.room.pump_mut().refill(cfg.0.room.coolant_canister);
         info!("reactor: coolant canister, the tank gains {added:.0} %");
+    }
+    // The brake (`ReactorAsk::PullRod`): the rod with the most life comes out into the puller's hands,
+    // and the core's heat above its optimal band burns the hand once (the reactor's miss burn, as
+    // repair's miss does it, `hurt_of`). The rod keeps its kind and life.
+    for player in pulls {
+        let Some(i) = rods::pull_index(sim.room.reactor().rods()) else {
+            info!("reactor: the brake, no rod in a slot");
+            continue;
+        };
+        let Some((rod, temp)) = sim.room.reactor_mut().pull_rod(i) else { continue };
+        let band = sim.room.reactor().bands().temp_optimal;
+        if temp > band.hi {
+            let burn = device_core::minigame::hurt_of(device_core::minigame::Machine::Hot, device_core::minigame::Press::Miss, &repair.0).burn;
+            if let Some(st) = health.as_deref_mut()
+                && let Some(b) = st.bodies.get_mut(&player)
+            {
+                b.health.add(&st.tuning, "burn", burn);
+            }
+        }
+        info!("reactor: the brake pulled the {} rod ({:.0} life) at {temp:.0} degrees", rod.kind, rod.life);
+        let Some(def) = rods::item_of_kind(&rod.kind).and_then(|id| items.defs.get(id)).cloned() else { continue };
+        let now = time.elapsed_secs_f64();
+        if let Err(stack) = items.give(now, player, rods::rod_stack(&def, rod.life))
+            && let Some(at) = rods::reactor_front(&area, &planet)
+        {
+            items.spawn(now, stack, at);
+        }
     }
     // Fuel rods the host took out of a hand (`dev_area::rods`): each goes into a free slot. A reactor
     // with no free slot gives it back to its owner (the client checks first, so this is a race).

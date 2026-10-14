@@ -4,8 +4,9 @@
 //!
 //! - The reactor (M, on the east wall): the core temperature arc (zones from the sim's bands), the
 //!   output against the load, two fuel tubes, the fission and turbine sliders, MAN/AUTO, POWER, SCRAM.
-//!   Above the allowed band with the power on it is the CORE CRITICAL view (`effects::is_critical`,
-//!   the same test as the red lamp); after a meltdown it says MELTDOWN. The readout
+//!   Above the allowed band with the power on it is the same readout with one hazard stripe at its
+//!   top and the header word CRITICAL (`effects::is_critical`, the same test as the red lamp); the
+//!   controls stay. After a meltdown it is the MELTDOWN view, with no button. The readout
 //!   has its own start-up supply, so POWER can come back after a SCRAM even with the machines dark
 //!   (TODO(initiator): confirm).
 //! - The coolant pump (S, on the pump block): a picture of the pump, the flow, the status word, the
@@ -21,8 +22,9 @@
 //! snapshot it has (`Items::reactor`); the clicks ask the host (`ReactorAsk`).
 //!
 //! One meaning of CRITICAL: the zones, the HOT and CRITICAL words, the door screen's band, the
-//! readout's takeover and the lamp all read the sim's bands from `ReactorNews` (`optimal`,
-//! `allowed`). The output scale is the room's maximum, 1000 kW (`ReactorTuning`; the spec drew 5000).
+//! readout's stripe and the lamp all read the sim's bands from `ReactorNews` (`optimal`,
+//! `allowed`). The output scale is the room's maximum, `max_output_kw` in `reactor.json` (2000 kW;
+//! the spec drew 5000).
 //! TODO(initiator): the glow of the critical text and the scanlines' look are not drawn yet.
 use super::*;
 use crate::displays::{DisplayAction, Panels};
@@ -229,32 +231,21 @@ fn hazard(w: f64) -> Item {
     canvas(w, 14.0, vec![Shape::Rect { x: 0.0, y: 0.0, w, h: 14.0, fill: Some(Ink::Bg0), outline: None }, Shape::Hatch { x: 0.0, y: 0.0, w, h: 14.0, ink: Ink::Bad }], None).fixed(14.0)
 }
 
-/// The critical view (CORE CRITICAL with the temperature, or MELTDOWN): the stripes, the words and,
-/// with `scram`, the full-width SCRAM button (no button after a meltdown).
-fn critical(r: &ReactorNews, melted: bool) -> Panel {
-    let words = if melted {
-        vec![text(0.0, 60.0, 624.0, 72.0, "MELTDOWN", 56.0, TextFace::DisplayBold, Ink::Bad, true)]
-    } else {
-        vec![text(0.0, 14.0, 624.0, 72.0, "CORE CRITICAL", 56.0, TextFace::DisplayBold, Ink::Bad, true), text(0.0, 96.0, 624.0, 48.0, &format!("{:.0} °C", r.temp), 40.0, TextFace::Mono, Ink::Bad, true)]
-    };
-    let mut items = vec![hazard(624.0), canvas(624.0, 200.0, words, None).fixed(200.0)];
-    if !melted {
-        items.push(button("SCRAM", "scram").tone(Tone::Bad).fixed(ctl::LG));
-    }
-    items.push(hazard(624.0));
-    Panel::screen(Tier::M, READOUT_NAME, "RX-01", column(8.0, items)).status(if melted { "MELTDOWN" } else { "CRITICAL" }, Tone::Bad).with_padding(8.0)
+/// The meltdown view (M): the stripes and the word MELTDOWN, no button. The core stays broken
+/// until a repair brings it back (`Reactor::melted`).
+fn meltdown_view() -> Panel {
+    let word = canvas(624.0, 200.0, vec![text(0.0, 60.0, 624.0, 72.0, "MELTDOWN", 56.0, TextFace::DisplayBold, Ink::Bad, true)], None).fixed(200.0);
+    Panel::screen(Tier::M, READOUT_NAME, "RX-01", column(8.0, vec![hazard(624.0), word, hazard(624.0)])).status("MELTDOWN", Tone::Bad).with_padding(8.0)
 }
 
 /// The reactor readout (M): the top row of gauges and fuel, the sliders and the switches below.
-/// Above the allowed band with the power on it is the critical view; after a meltdown MELTDOWN. The
-/// status word in the header.
+/// Above the allowed band with the power on, one hazard stripe at the top of the body (the flexible
+/// part gives up its height, the gauges keep theirs) and the header word CRITICAL. After a
+/// meltdown the MELTDOWN view.
 /// The readout panel; `max_kw` is the scale of the power gauge (the reactor's `max_output_kw`).
 pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
-    if let Some(r) = r.filter(|r| r.melted) {
-        return critical(r, true);
-    }
-    if let Some(r) = r.filter(|r| crate::effects::is_critical(Some(r))) {
-        return critical(r, false);
+    if r.is_some_and(|r| r.melted) {
+        return meltdown_view();
     }
     let on = r.is_some_and(|r| r.power_on);
     let manual = r.is_some_and(|r| r.manual);
@@ -280,7 +271,13 @@ pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     );
     let (optimal, allowed) = bands(r);
     let gauges = row(8.0, vec![temp_gauge(r.map_or(0.0, |r| r.temp), optimal, allowed), power_gauge(r, max_kw), fuel(r)]).fixed(152.0);
-    let body = column(8.0, vec![gauges, row(16.0, vec![bottom_left.flex(1.0), switches.fixed(200.0)]).flex(1.0)]);
+    let mut rows = Vec::new();
+    if crate::effects::is_critical(r) {
+        rows.push(hazard(624.0));
+    }
+    rows.push(gauges);
+    rows.push(row(16.0, vec![bottom_left.flex(1.0), switches.fixed(200.0)]).flex(1.0));
+    let body = column(8.0, rows);
     Panel::screen(Tier::M, READOUT_NAME, "RX-01", body).status(word, tone).with_padding(8.0)
 }
 
@@ -581,7 +578,13 @@ mod tests {
 
     /// The readout at the shipped scale (`reactor.json`'s `max_output_kw`).
     fn shipped_panel(r: Option<&ReactorNews>) -> Panel {
-        readout_panel(r, 1000.0)
+        let shipped = reactor_core::Tuning::parse(include_str!("../../../../content/gameplay/reactor/reactor.json")).expect("the shipped reactor.json");
+        readout_panel(r, shipped.reactor.max_output_kw)
+    }
+
+    /// The header's status word and tone of a panel with a plate.
+    fn header(p: &Panel) -> Option<(String, Tone)> {
+        p.plate.as_ref()?.status.clone()
     }
 
     fn news() -> ReactorNews {
@@ -660,18 +663,24 @@ mod tests {
     }
 
     #[test]
-    fn the_critical_view_is_the_lamps_critical_and_none_without_power() {
-        // Above the allowed band with the power on: the takeover with SCRAM, as the lamp is lit.
+    fn the_critical_readout_keeps_its_controls_and_says_critical() {
+        // Above the allowed band with the power on: the same readout with the controls, the header
+        // CRITICAL, as the lamp is lit.
         let hot = ReactorNews { temp: 85.0, ..news() };
         assert!(crate::effects::is_critical(Some(&hot)));
-        let takeover = shipped_panel(Some(&hot));
-        assert!(takeover.find("scram").is_some() && takeover.find("fis_set").is_none(), "the takeover view");
-        // Scrammed at 85 °C: the normal view with the header OFF (the needle shows the hot core).
+        let crit = shipped_panel(Some(&hot));
+        for a in ["scram", "power", "mode", "fis_set", "tur_set"] {
+            assert!(crit.find(a).is_some(), "{a} while critical");
+        }
+        assert_eq!(header(&crit), Some(("CRITICAL".to_string(), Tone::Bad)));
+        assert!(crit.overflowing().is_empty());
+        // Scrammed at 85 °C: not critical any more, the header OFF (the needle shows the hot core).
         let off = ReactorNews { power_on: false, ..hot };
         assert!(!crate::effects::is_critical(Some(&off)));
         let normal = shipped_panel(Some(&off));
         assert!(normal.find("fis_set").is_some(), "scrammed: the normal view");
         assert_eq!(reactor_status(Some(&off)), ("OFF", Tone::Dim));
+        assert_eq!(header(&normal), Some(("OFF".to_string(), Tone::Dim)));
     }
 
     #[test]
@@ -679,16 +688,19 @@ mod tests {
         // A widened band: 85 is HOT (not CRITICAL) for this operator, on the readout and the lamp.
         for (allowed, temp) in [([20.0, 80.0], 85.0), ([10.0, 90.0], 85.0), ([10.0, 90.0], 95.0)] {
             let r = ReactorNews { allowed, temp, ..news() };
-            let takeover = shipped_panel(Some(&r)).find("fis_set").is_none();
-            assert_eq!(takeover, crate::effects::is_critical(Some(&r)), "allowed {allowed:?}, temp {temp}");
-            assert_eq!(reactor_status(Some(&r)).0 == "CRITICAL", takeover, "word at {temp} with {allowed:?}");
+            let p = shipped_panel(Some(&r));
+            let critical = crate::effects::is_critical(Some(&r));
+            assert_eq!(header(&p).is_some_and(|h| h.0 == "CRITICAL"), critical, "allowed {allowed:?}, temp {temp}");
+            assert_eq!(reactor_status(Some(&r)).0 == "CRITICAL", critical, "word at {temp} with {allowed:?}");
+            assert!(p.find("fis_set").is_some() && p.find("scram").is_some(), "the controls stay at {temp}");
         }
     }
 
     #[test]
     fn a_melted_core_says_meltdown_without_a_button() {
         let p = shipped_panel(Some(&ReactorNews { melted: true, ..news() }));
-        assert!(p.find("scram").is_none() && p.find("power").is_none());
+        assert!(p.find("scram").is_none() && p.find("power").is_none() && p.find("fis_set").is_none());
+        assert_eq!(header(&p), Some(("MELTDOWN".to_string(), Tone::Bad)));
         assert!(p.overflowing().is_empty());
     }
 

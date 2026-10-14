@@ -66,8 +66,9 @@ pub struct ReactorTuning {
     /// Heat the pump takes away at full output, as an offset of the temperature target (degrees).
     /// TODO(initiator): value. Two rods are needed to hold the optimal band with it at full load.
     pub cooling_max: f64,
-    /// Residual (decay) heat in degrees of temperature target: it is there only without coolant,
-    /// the coolant takes it away (`(1 - flow) * decay_heat`). The turbine does not take it.
+    /// Residual (decay) heat in degrees of temperature target: it is there only without coolant
+    /// and while fission runs (`(1 - flow) * fission / 100 * decay_heat`), so a SCRAM lets the core
+    /// cool. The turbine does not take it.
     /// TODO(initiator): value. Without coolant it keeps the core hot after a SCRAM and above the
     /// allowed band when fission is cut to nothing.
     pub decay_heat: f64,
@@ -105,11 +106,11 @@ fn inertia_on() -> bool {
 impl Default for ReactorTuning {
     fn default() -> ReactorTuning {
         ReactorTuning {
-            max_output_kw: 1000.0,
+            max_output_kw: 2000.0,
             slots: 4,
             fuel_burn: 0.2,
             temp_rate: 10.0,
-            fire_delay_s: 20.0,
+            fire_delay_s: 30.0,
             meltdown_delay_s: 120.0,
             auto_turbine_speed: 4.0,
             auto_fission_speed: 0.5,
@@ -294,8 +295,8 @@ impl AlarmKind {
 pub enum ReactorEvent {
     /// Start a fire of `size` metres at the reactor (`fire_core`).
     Fire { size: f64 },
-    /// The core melted. The reactor is broken and its rods are spent; what it does to the ship is
-    /// the glue's.
+    /// The core melted. The reactor is broken and cold until a repair brings it back to
+    /// functioning; what it does to the ship is the glue's.
     Meltdown,
     Alarm { kind: AlarmKind, on: bool },
     /// The reactor's own condition crossed a line.
@@ -464,7 +465,8 @@ impl Reactor {
     pub fn power_on(&self) -> bool {
         self.power_on
     }
-    /// The core has melted (for the screen's MELTDOWN); stays true after a repair.
+    /// The core has melted: the screen shows MELTDOWN until the reactor is repaired back to
+    /// functioning, and then it is a reactor again (the rods keep their life).
     pub fn melted(&self) -> bool {
         self.melted
     }
@@ -565,6 +567,10 @@ impl Reactor {
         let k = dt.min(1.0);
         let coast = (dt / t.coolant_coast_s.max(1e-9)).min(1.0);
         self.coolant += (self.coolant_target - self.coolant) * coast;
+        // Repaired back to functioning after a meltdown: the core is a reactor again.
+        if self.melted && self.condition.functioning() {
+            self.melted = false;
+        }
 
         self.heat_in = 0.0;
         if !self.condition.functioning() {
@@ -600,7 +606,8 @@ impl Reactor {
         let heat = self.heat_at(self.fission);
         self.heat_in = heat;
         let cool = t.cooling_max * self.coolant;
-        let residual = t.decay_heat * (1.0 - self.coolant);
+        // Decay heat is there only while fission runs: a SCRAM lets the core cool.
+        let residual = t.decay_heat * (1.0 - self.coolant) * (self.fission / 100.0);
         // The output of the last step makes heat too.
         let output_heat = if t.inertia && t.max_output_kw > 0.0 { t.heat_output_factor * self.output / t.max_output_kw } else { 0.0 };
         self.step_temp(dt, heat + residual + output_heat - self.turbine - cool);
@@ -737,9 +744,11 @@ impl Reactor {
         self.melted = true;
         self.fire_timer = 0.0;
         self.overheat_timer = 0.0;
-        for r in &mut self.rods {
-            r.life = 0.0;
-        }
+        // Nothing runs in the melted core: fission and turbine stop, the rods keep their life.
+        self.fission = 0.0;
+        self.turbine = 0.0;
+        self.target_fission = 0.0;
+        self.target_turbine = 0.0;
         ev.push(ReactorEvent::Meltdown);
         if before >= self.condition.tuning().broken_below {
             ev.push(ReactorEvent::Device(DeviceEvent::Broke));

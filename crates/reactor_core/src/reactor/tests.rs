@@ -78,7 +78,7 @@ fn overheating_starts_a_fire_and_nothing_shuts_the_reactor_down() {
         "manual fission 100, turbine 30: above {:.0} at {high:.1} s, fire at {fire:.1} s, above {:.0} at {crit:.1} s, meltdown at {melt:.1} s",
         b.temp_optimal.hi, b.temp_allowed.hi
     );
-    assert!((fire - high - 20.0).abs() < 0.2);
+    assert!((fire - high - 30.0).abs() < 0.2);
     assert!((melt - crit - 120.0).abs() < 0.2);
     assert!(fire < melt);
     // No automatic shutdown: the reactor stays on, hot, until it melts.
@@ -128,7 +128,7 @@ fn left_hot_it_melts_down() {
     let melt = first(&ev, |e| *e == ReactorEvent::Meltdown).expect("a meltdown");
     println!("critical at {crit:.1} s, meltdown at {melt:.1} s");
     assert!((melt - crit - 120.0).abs() < 0.2);
-    assert!(!r.condition().functioning() && r.rods().iter().all(|r| r.spent()));
+    assert!(!r.condition().functioning() && r.rods().iter().all(|r| !r.spent()), "the rods keep their life");
     assert!(r.melted());
     assert!(!r.set_power(true));
     assert_eq!(r.output_kw(), 0.0);
@@ -170,7 +170,7 @@ fn low_condition_speeds_up_the_fire_timer() {
         times.push(fire - high);
     }
     println!("fire after overheating: {:.1} s at condition 100, {:.1} s at 30", times[0], times[1]);
-    assert!((times[1] - 20.0 / 1.7).abs() < 0.2);
+    assert!((times[1] - 30.0 / 1.7).abs() < 0.2);
 }
 
 #[test]
@@ -422,4 +422,50 @@ fn a_spent_rod_makes_no_heat() {
     run(&mut r, 10.0, 500.0);
     assert_eq!(r.available_fuel(), 0.0);
     assert!(r.fission() < 1e-9 && r.heat_input() < 1e-9, "fission {} heat {}", r.fission(), r.heat_input());
+}
+
+#[test]
+fn a_melted_reactor_is_restarted_by_a_full_repair() {
+    let mut r = reactor(50.0);
+    r.set_targets(100.0, 30.0);
+    let ev = run(&mut r, 200.0, 500.0);
+    assert!(first(&ev, |e| *e == ReactorEvent::Meltdown).is_some());
+    assert!(r.melted() && !r.set_power(true), "broken and cold after the meltdown");
+    // The rods keep their life (the core is gone, the fuel is not).
+    assert!(r.rods().iter().all(|rod| rod.life > 0.0), "{:?}", r.rods());
+    // Repaired from zero to full: the melted flag clears and the switch works again.
+    r.condition_mut().restore(100.0);
+    run(&mut r, 1.0, 0.0);
+    assert!(!r.melted(), "the screen goes back to the normal view");
+    assert!(r.set_power(true), "power can be switched on");
+    assert_eq!(r.fission(), 0.0, "the core restarts cold");
+    r.set_mode(Mode::Auto);
+    let ev = run(&mut r, 240.0, 300.0);
+    assert!(!ev.iter().any(|(_, e)| matches!(e, ReactorEvent::Meltdown | ReactorEvent::Fire { .. })), "{ev:?}");
+    println!("restarted after a meltdown: fission {:.1}, output {:.1} kW, temp {:.1}", r.fission(), r.output_kw(), r.temperature());
+    assert!(r.fission() > 0.0 && (r.output_kw() - 300.0).abs() < 15.0, "back on the load: {:.1}", r.output_kw());
+}
+
+#[test]
+fn scram_without_coolant_lets_the_core_cool_below_the_allowed_band() {
+    // The pump is gone and the flow has run down; the core runs critical; then SCRAM.
+    let mut r = reactor(50.0);
+    r.set_coolant(0.0);
+    r.coolant = 0.0;
+    r.set_targets(100.0, 30.0);
+    let mut ev = Vec::new();
+    while !r.alarm(AlarmKind::TempCritical) {
+        ev.extend(run(&mut r, 1.0, 500.0));
+        assert!(r.temperature() < 200.0 && !r.melted(), "no critical line reached");
+    }
+    run(&mut r, 20.0, 500.0);
+    let (_, timer_at_scram) = r.timers();
+    assert!(timer_at_scram > 0.1, "the meltdown timer is running: {timer_at_scram}");
+    r.scram();
+    let ev = run(&mut r, 15.0, 500.0);
+    let b = r.bands();
+    assert!(r.temperature() < b.temp_allowed.hi, "temperature {:.1} after 15 s, allowed up to {:.1}", r.temperature(), b.temp_allowed.hi);
+    let (_, timer_now) = r.timers();
+    assert!(timer_now < timer_at_scram, "the meltdown timer counts down: {timer_at_scram:.3} -> {timer_now:.3}");
+    assert!(!ev.iter().any(|(_, e)| *e == ReactorEvent::Meltdown) && !r.melted());
 }

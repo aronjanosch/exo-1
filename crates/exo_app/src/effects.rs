@@ -305,7 +305,7 @@ fn particle_material(kind: Kind) -> StandardMaterial {
     match kind {
         Kind::Steam => StandardMaterial { base_color: Color::srgba(0.95, 0.95, 0.97, 0.0), alpha_mode: AlphaMode::Blend, perceptual_roughness: 1.0, ..default() },
         Kind::Smoke => StandardMaterial { base_color: Color::srgba(0.42, 0.43, 0.45, 0.0), alpha_mode: AlphaMode::Blend, perceptual_roughness: 1.0, ..default() },
-        Kind::Spark => StandardMaterial { base_color: Color::srgb(1.0, 0.95, 0.6), emissive: LinearRgba::rgb(9.0, 8.0, 3.0), unlit: true, ..default() },
+        Kind::Spark => StandardMaterial { base_color: Color::srgb(1.0, 0.7, 0.3), emissive: LinearRgba::rgb(14.0, 7.0, 2.0), unlit: true, ..default() },
     }
 }
 
@@ -361,7 +361,7 @@ fn device_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: O
             em.smoke[i] = 0.0;
             if let Some((p, up)) = area.ground(&planet, at, lift) {
                 let seed = (t * 1000.0) as u64 ^ (i as u64) << 40;
-                spawn_particle(&mut commands, &assets, &mut mats, Kind::Smoke, p, jet(up, seed, 0.8, 0.25), 0.0, 0.3, 3.0);
+                spawn_particle(&mut commands, &assets, &mut mats, Kind::Smoke, p, jet(up, seed, 1.0, 0.3), 0.0, 0.3, 3.0);
             }
         }
     }
@@ -377,7 +377,7 @@ fn device_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: O
             if let Some((p, up)) = area.ground(&planet, ignition_at(Source::Junction), SPARK_HEIGHT) {
                 for k in 0..SPARKS_PER_BURST {
                     let seed = ((t * 1000.0) as u64).wrapping_mul(31).wrapping_add(k as u64);
-                    spawn_particle(&mut commands, &assets, &mut mats, Kind::Spark, p, jet(up, seed, 1.5, 1.2), 9.8, SPARK_SIZE, SPARK_LIFE);
+                    spawn_particle(&mut commands, &assets, &mut mats, Kind::Spark, p, jet(up, seed, 1.5, 2.5), 9.8, SPARK_SIZE, SPARK_LIFE);
                 }
             }
         }

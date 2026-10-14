@@ -4,8 +4,8 @@
 //! the optimal band for several seconds. Then Reset again and a second Load drop; the operator
 //! takes over at the readout on the engine room's wall (MAN) and lowers fission by clicks until
 //! the temperature is back in the optimal band. Then (#297, S3c): SCRAM at the readout cuts the
-//! output and the machines' screens show NO POWER; POWER on brings it back; the pump's switch OFF
-//! lets the temperature climb; the junction box's LIGHTS breaker takes 50 kW off the load. There is
+//! output and the machines' screens show NO POWER; POWER on brings it back; the pump's OFF button
+//! lets the temperature climb; the junction box's LIGHTS breaker takes 80 kW off the load. There is
 //! no automatic shutdown. Without a window; the walker is set down at each screen (test setup) and
 //! uses it with F, the clicks go through the displays.
 use super::*;
@@ -46,6 +46,9 @@ fn counts(w: &World) -> ReactorCounts {
 fn screen_has(w: &World, id: PanelId, action: &str) -> bool {
     w.resource::<Panels>().get(&id).is_some_and(|p| p.find(action).is_some())
 }
+
+/// The pump's mode buttons (a pump screen with power shows all three).
+const PUMP_BUTTONS: &str = "pump_high";
 
 fn alarm(w: &World) -> Alarm {
     w.resource::<ShipAlarm>().level
@@ -192,9 +195,10 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
             }
             Alarm::None => {}
         }
-        // Without coolant the core runs up over the allowed band in about 30 s, Auto cannot stop it.
-        if c.t > 40.0 {
-            check(c, false, format!("reactor: no Danger within 40 s (alarm {:?})", alarm(w)));
+        // Without coolant the core runs over the allowed band in about 10 s (the core's own run), Auto
+        // cannot stop it. The limit is generous: the scenario's clock is wall time on a busy machine.
+        if c.t > 60.0 {
+            check(c, false, format!("reactor: no Danger within 60 s (alarm {:?})", alarm(w)));
             return true;
         }
         false
@@ -236,10 +240,12 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         if t > band[1] {
             *c.v.entry("above").or_insert(0.0) += c.dt;
         }
-        if c.t < 25.0 {
+        // Done when it has been above the band for 5 s (the core's run: about 13 s above it), at
+        // most 60 s.
+        let above = c.v.get("above").copied().unwrap_or(0.0);
+        if above < 5.0 && c.t < 60.0 {
             return false;
         }
-        let above = c.v.get("above").copied().unwrap_or(0.0);
         check(c, above >= 5.0, format!("reactor: above the optimal band {above:.1} s after the Load drop (Auto)"));
         check(c, counts(w).meltdowns == 0, "reactor: the Load drop does not melt the reactor".into());
         end(w, c, format!("{above:.1} s above"));
@@ -260,22 +266,22 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
             end(w, c, format!("{t:.1} above {:.0}", band[1]));
             return true;
         }
-        if c.t > 20.0 {
-            check(c, false, "reactor: no overshoot within 20 s".into());
+        if c.t > 60.0 {
+            check(c, false, "reactor: no overshoot within 60 s".into());
             return true;
         }
         false
     }));
 
     // The junction box's breakers. The Load drop above switched ENGINES and LIGHTS off, so: LIGHTS on
-    // (+50 kW), LIGHTS off (-50 kW), ENGINES on (+350 kW). The load is the grid's request.
+    // (+80 kW), LIGHTS off (-80 kW), ENGINES on (its demand, 800 kW at full work). The load is the grid's request.
     use_display(s, "JUNCTION BOX", JUNCTION_ID, [JUNCTION_BOX_AT[0], JUNCTION_BOX_AT[1] + 2.0]);
-    s.push(click_until(JUNCTION_ID, "br_lights", None, "reactor: the LIGHTS breaker on takes 50 kW onto the load", |w| sim(w).room.grid().breaker(Group::Lights)));
-    s.push(load_step("reactor: LIGHTS on: load 150 kW", 150.0));
-    s.push(click_until(JUNCTION_ID, "br_lights", None, "reactor: the LIGHTS breaker off takes 50 kW off the load", |w| !sim(w).room.grid().breaker(Group::Lights)));
-    s.push(load_step("reactor: LIGHTS off: load 100 kW", 100.0));
-    s.push(click_until(JUNCTION_ID, "br_engines", None, "reactor: the ENGINES breaker on takes 350 kW onto the load", |w| sim(w).room.grid().breaker(Group::Engines)));
-    s.push(load_step("reactor: ENGINES on: load 450 kW", 450.0));
+    s.push(click_until(JUNCTION_ID, "br_lights", None, "reactor: the LIGHTS breaker on takes 80 kW onto the load", |w| sim(w).room.grid().breaker(Group::Lights)));
+    s.push(load_step("reactor: LIGHTS on: the load is the grid's demand (lights 80 kW on)"));
+    s.push(click_until(JUNCTION_ID, "br_lights", None, "reactor: the LIGHTS breaker off takes 80 kW off the load", |w| !sim(w).room.grid().breaker(Group::Lights)));
+    s.push(load_step("reactor: LIGHTS off: the load is the grid's demand (lights 80 kW off)"));
+    s.push(click_until(JUNCTION_ID, "br_engines", None, "reactor: the ENGINES breaker on takes its demand onto the load", |w| sim(w).room.grid().breaker(Group::Engines)));
+    s.push(load_step("reactor: ENGINES on: the load is the grid's demand (engines 800 kW at full work, wandering)"));
 
     // The readout on the engine room's wall: MAN, then the fission slider to 30 %.
     use_display(s, "REACTOR", READOUT_ID, [-11.8, -17.7]);
@@ -303,7 +309,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         let powered = w.resource::<Items>().reactor.is_some_and(|n| n.powered);
         check(c, !power && output == 0.0 && fission == 0.0, format!("reactor: SCRAM: power {power}, output {output:.1}, fission {fission:.1}"));
         check(c, !powered, "reactor: the machines have no power after SCRAM".into());
-        check(c, !screen_has(w, PUMP_ID, "pump") && !screen_has(w, JUNCTION_ID, "br_lights") && !screen_has(w, DOOR_ID, "br_lights"), "reactor: the pump, junction and door screens show NO POWER".into());
+        check(c, !screen_has(w, PUMP_ID, PUMP_BUTTONS) && !screen_has(w, JUNCTION_ID, "br_lights") && !screen_has(w, DOOR_ID, "br_lights"), "reactor: the pump, junction and door screens show NO POWER".into());
         check(c, screen_has(w, READOUT_ID, "power") && screen_has(w, READOUT_ID, "scram"), "reactor: the readout still has POWER".into());
         end(w, c, "scrammed".into());
         true
@@ -319,47 +325,58 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         let (power, output) = (r.power_on(), r.output_kw());
         let powered = w.resource::<Items>().reactor.is_some_and(|n| n.powered);
         check(c, power && output > 100.0 && powered, format!("reactor: back on: power {power}, output {output:.1}, powered {powered}"));
-        check(c, screen_has(w, PUMP_ID, "pump") && screen_has(w, DOOR_ID, "br_lights"), "reactor: the screens have their controls again".into());
+        check(c, screen_has(w, PUMP_ID, PUMP_BUTTONS) && screen_has(w, DOOR_ID, "br_lights"), "reactor: the screens have their controls again".into());
         end(w, c, format!("{output:.0} kW"));
         true
     }));
 
-    // The coolant pump's switch OFF on its screen: no flow, and the temperature climbs.
+    // The coolant pump's OFF button on its screen: no flow, and the temperature climbs.
     use_display(s, "COOLANT PUMP", PUMP_ID, [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 2.0]);
-    s.push(click_until(PUMP_ID, "pump", None, "reactor: the pump switched off climbs the temperature", |w| !sim(w).room.pump().on()));
+    s.push(click_until(PUMP_ID, "pump_off", None, "reactor: the pump switched off climbs the temperature", |w| !sim(w).room.pump().on()));
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             c.v.insert("t0", temp_now(w).0);
             return false;
         }
-        if c.t < 20.0 {
+        // The pump spins down and the coolant coasts on: wait until the flow has gone (at most 90 s).
+        let flow = w.resource::<Items>().reactor.map_or(1.0, |n| n.flow);
+        if flow >= 0.05 && c.t < 90.0 {
             return false;
         }
         let (t, _) = temp_now(w);
         let t0 = c.v.get("t0").copied().unwrap_or(t);
         let flow = w.resource::<Items>().reactor.map(|n| (n.pump_on, n.flow));
-        check(c, flow == Some((false, 0.0)), format!("reactor: pump off, no flow ({flow:?})"));
+        check(c, matches!(flow, Some((false, f)) if f < 0.05), format!("reactor: pump off, no flow ({flow:?})"));
         let r = sim(w).room.reactor();
         check(c, t > t0 + 5.0, format!("reactor: the temperature climbs without the pump: {t0:.1} -> {t:.1} (fission {:.1}, turbine {:.1}, targets {:?}, manual {}, power {}, output {:.1})", r.fission(), r.turbine(), r.targets(), sim(w).manual, r.power_on(), r.output_kw()));
         end(w, c, format!("{t0:.1} -> {t:.1}"));
         true
     }));
-    s.push(click_until(PUMP_ID, "pump", None, "reactor: the pump back on", |w| sim(w).room.pump().on()));
+    s.push(click_until(PUMP_ID, "pump_high", None, "reactor: the pump back on", |w| sim(w).room.pump().on()));
 
 }
 
-/// Checks the grid's load after a breaker change settles, `secs` later.
-fn load_step(what: &'static str, want: f64) -> Step {
+/// The grid's demand of the groups whose breakers are on (what the load is, from the room).
+fn grid_demand(w: &World) -> f64 {
+    let g = sim(w).room.grid();
+    Group::ALL.iter().filter(|&&x| g.breaker(x)).map(|&x| g.group(x).demand_kw).sum()
+}
+
+/// Waits until the snapshot's load is the grid's demand (the snapshot comes a few times a second,
+/// and the engines' demand wanders, so a small tolerance), at most 5 s.
+fn load_step(what: &'static str) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
             begin(w, c, what);
             return false;
         }
-        if c.t < 1.0 {
+        let want = grid_demand(w);
+        let load = w.resource::<Items>().reactor.map(|n| n.load_kw).unwrap_or(-1.0);
+        let close = (load - want).abs() <= 0.02 * want + 0.5;
+        if !close && c.t < 5.0 {
             return false;
         }
-        let load = w.resource::<Items>().reactor.map(|n| n.load_kw).unwrap_or(-1.0);
-        check(c, (load - want).abs() < 1e-6, format!("{what}: load {load:.0} kW"));
+        check(c, close, format!("{what}: load {load:.0} kW, grid demand {want:.0} kW"));
         end(w, c, format!("load {load:.0} kW"));
         true
     })

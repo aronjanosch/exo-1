@@ -79,7 +79,7 @@ impl Default for DeviceTuning {
             fail_cost: 5.0,
             fail_lockout_s: 2.0,
             wear_rate: 0.125,
-            wear_floor: 10.0,
+            wear_floor: 50.0,
             wear_delay_s: (120.0, 720.0),
             idle_wear: 0.0,
             overload_wear: 4.0,
@@ -96,6 +96,8 @@ pub struct Tool {
 impl Tool {
     /// The standard repair tool.
     pub const WRENCH: Tool = Tool { speed: 1.0 };
+    /// The screwdriver (junction box). TODO(initiator): speed.
+    pub const SCREWDRIVER: Tool = Tool { speed: 0.8 };
     /// No tool. TODO(initiator): allowed at all, and how slow?
     pub const HANDS: Tool = Tool { speed: 0.5 };
 }
@@ -214,13 +216,34 @@ impl Condition {
         }
         let mult = if load > 0.0 { 1.0 } else { t.idle_wear };
         if mult > 0.0 {
+            // Normal wear never goes below the floor, and never below the broken limit either: wear
+            // alone can ask for repair, it cannot break the device.
+            let floor = t.wear_floor.max(t.broken_below);
             if self.wear_delay > 0.0 {
                 self.wear_delay = (self.wear_delay - dt).max(0.0);
-            } else if self.value > t.wear_floor {
-                self.value = (self.value - t.wear_rate * mult * dt).max(t.wear_floor);
+            } else if self.value > floor {
+                self.value = (self.value - t.wear_rate * mult * dt).max(floor);
             }
         }
         self.change(before)
+    }
+
+    /// Raises the condition by `amount` (a hit of the repair minigame, or a repair step). The
+    /// delay of the next wear is drawn again when it reaches full. Returns `Works` when it crosses
+    /// back over the broken limit.
+    pub fn restore(&mut self, amount: f64) -> Option<DeviceEvent> {
+        let before = self.value;
+        self.value = (self.value + amount.max(0.0)).min(self.tuning.max);
+        if before < self.tuning.max && self.value >= self.tuning.max {
+            self.wear_delay = draw(&mut self.rng, self.tuning.wear_delay_s);
+        }
+        self.change(before)
+    }
+
+    /// One repair step of `dt` seconds at `skill` with `tool`: `restore` by the rate of a full
+    /// repair. Returns the same as `restore`.
+    pub fn repair_rise(&mut self, dt: f64, skill: f64, tool: Tool) -> Option<DeviceEvent> {
+        self.restore(dt * self.tuning.max / self.repair_seconds(skill, tool))
     }
 
     /// One step of hold-to-repair, `skill` 0..100. Call it every frame while the button is held,
@@ -245,10 +268,9 @@ impl Condition {
             self.repairing = true;
             self.gains_skill = self.needs_repair();
         }
-        self.value = (self.value + dt * t.max / self.repair_seconds(skill, tool)).min(t.max);
+        self.repair_rise(dt, skill, tool);
         if self.value >= t.max {
             self.repairing = false;
-            self.wear_delay = draw(&mut self.rng, t.wear_delay_s);
             let skill_gain = if self.gains_skill { skill_gain(REPAIR_SKILL_GAIN, skill) } else { 0.0 };
             return RepairOutcome::Done { skill_gain };
         }

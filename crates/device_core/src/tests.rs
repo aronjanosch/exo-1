@@ -106,7 +106,7 @@ fn wear_only_after_delay() {
     for _ in 0..2000 {
         c.deteriorate(1.0, 1.0);
     }
-    assert_eq!(c.value(), 10.0);
+    assert_eq!(c.value(), 50.0);
 }
 
 #[test]
@@ -157,4 +157,62 @@ fn skill_grows_only_from_real_repairs() {
     let (_, o) = hold(&mut c, 40.0, Tool::WRENCH);
     assert_eq!(o, RepairOutcome::Done { skill_gain: 0.0 });
     assert!(skill_gain(40.0, 0.0) <= 2.0 && skill_gain(40.0, 90.0) < skill_gain(40.0, 20.0));
+}
+
+#[test]
+fn normal_wear_never_breaks_the_device_even_with_a_low_floor() {
+    // A floor below the broken limit is clamped: wear alone stops at the broken limit.
+    let t = DeviceTuning { wear_floor: 10.0, ..DeviceTuning::default() };
+    let mut c = Condition::new(t, 7);
+    let mut events = Vec::new();
+    for _ in 0..20_000 {
+        events.extend(c.deteriorate(1.0, 1.0));
+    }
+    assert!(c.functioning(), "broke by wear at {}", c.value());
+    assert_eq!(c.value(), t.broken_below);
+    assert!(!events.contains(&DeviceEvent::Broke), "{events:?}");
+}
+
+#[test]
+fn overload_still_breaks_the_device() {
+    let mut c = Condition::new(DeviceTuning { wear_floor: 50.0, ..DeviceTuning::default() }, 7);
+    let mut events = Vec::new();
+    for _ in 0..600 {
+        events.extend(c.deteriorate(1.0, 2.0));
+    }
+    assert!(!c.functioning());
+    assert!(events.contains(&DeviceEvent::Broke), "{events:?}");
+}
+
+#[test]
+fn restore_reports_works_again_and_redraws_the_wear_delay() {
+    let mut c = safe();
+    c.set_value(15.0);
+    assert!(!c.functioning());
+    // Each rise is one step; crossing the broken limit gives Works once.
+    assert_eq!(c.restore(4.0), None);
+    assert_eq!(c.restore(2.0), Some(DeviceEvent::Works));
+    assert_eq!(c.restore(1.0), None);
+    // A full repair (by rise) draws a new delay.
+    c.set_value(0.0);
+    c.wear_delay = 0.0;
+    let o = c.repair_rise(1000.0, 50.0, Tool::WRENCH);
+    assert_eq!(o, Some(DeviceEvent::Works));
+    assert_eq!(c.value(), 100.0);
+    assert!((120.0..=720.0).contains(&c.wear_delay_left()), "{}", c.wear_delay_left());
+}
+
+#[test]
+fn the_screwdriver_repairs_slower_than_the_wrench() {
+    let c = safe();
+    assert!(c.repair_seconds(50.0, Tool::SCREWDRIVER) > c.repair_seconds(50.0, Tool::WRENCH));
+    let mut w = safe();
+    let mut s = safe();
+    w.set_value(10.0);
+    s.set_value(10.0);
+    for _ in 0..5 {
+        w.repair_rise(1.0, 50.0, Tool::WRENCH);
+        s.repair_rise(1.0, 50.0, Tool::SCREWDRIVER);
+    }
+    assert!(w.value() > s.value(), "wrench {} screwdriver {}", w.value(), s.value());
 }

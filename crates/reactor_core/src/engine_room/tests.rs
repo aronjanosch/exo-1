@@ -298,3 +298,31 @@ fn overvolt_is_seen_by_the_box() {
     run(&mut r, 1.0, Input::manual(43.75, 50.0));
     assert!(r.junction().overvolted(), "100 kW demand, 470 kW supply");
 }
+
+/// Keeps four fresh rods in the slots (the spent ones go), so a long run is not cut by the fuel.
+fn refuel(r: &mut EngineRoom) {
+    while let Some(i) = r.reactor().rods().iter().position(|x| x.spent()) {
+        r.reactor_mut().remove_rod(i);
+    }
+    while r.reactor_mut().insert_rod(FuelRod::standard()).is_ok() {}
+}
+
+#[test]
+fn normal_running_wears_the_machines_to_the_floor_and_never_breaks_them() {
+    // The shipped values: 30 minutes of normal running at about 500 kW.
+    let shipped: Tuning = Tuning::load(&[content_core::File { path: crate::tuning::REACTOR_PATH.into(), text: include_str!("../../../../content/gameplay/reactor/reactor.json").into() }]).unwrap_or_else(|e| panic!("{e:?}"));
+    let mut r = EngineRoom::new(shipped.room, shipped.reactor, 11);
+    assert!(r.set_power(true));
+    let mut broke = Vec::new();
+    for _ in 0..6 {
+        refuel(&mut r);
+        let (ev, _) = run(&mut r, 300.0, Input::auto());
+        broke.extend(ev.into_iter().filter(|(_, e)| matches!(e, RoomEvent::Device { event: DeviceEvent::Broke, .. })));
+    }
+    assert!(broke.is_empty(), "{broke:?}");
+    for (name, c) in [("reactor", r.reactor().condition()), ("pump", r.pump().condition()), ("junction", r.junction().condition())] {
+        println!("{name}: {:.1}", c.value());
+        assert!(c.functioning(), "{name} broke by wear");
+        assert!(c.value() >= c.tuning().repair_threshold - 1e-9, "{name} asks for repair after normal running: {}", c.value());
+    }
+}

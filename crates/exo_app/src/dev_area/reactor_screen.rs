@@ -269,7 +269,9 @@ pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
 pub fn no_power(title: &str, tag: &str, tier: Tier) -> Panel {
     let size = tier.canvas();
     let (w, h) = (size.x - 40.0, size.y - 80.0);
-    let shapes = vec![Shape::Rect { x: 0.0, y: 0.0, w, h, fill: Some(Ink::Bg0), outline: None }, text(0.0, 0.0, w, h, "○  NO POWER", 28.0, TextFace::DisplayBold, Ink::Fg3, true)];
+    // A ring above the word (drawn, not a glyph: the display font has no ○).
+    let ring = Shape::Circle { cx: w * 0.5, cy: h * 0.5 - 36.0, r: 14.0, fill: None, stroke: Some((Ink::Fg3, 3.0)) };
+    let shapes = vec![Shape::Rect { x: 0.0, y: 0.0, w, h, fill: Some(Ink::Bg0), outline: None }, ring, text(0.0, 12.0, w, h - 12.0, "NO POWER", 28.0, TextFace::DisplayBold, Ink::Fg3, true)];
     Panel::screen(tier, title, tag, canvas(w, h, shapes, None).flex(1.0))
 }
 

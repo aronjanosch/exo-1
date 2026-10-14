@@ -2526,6 +2526,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "device_core"
+version = "0.1.0"
+dependencies = [
+ "gameplay_core",
+]
+
+[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4993,6 +5000,14 @@ dependencies = [
  "partition",
  "tikv-jemallocator",
  "voracious_radix_sort",
+]
+
+[[package]]
+name = "reactor_core"
+version = "0.1.0"
+dependencies = [
+ "device_core",
+ "gameplay_core",
 ]
 
 [[package]]

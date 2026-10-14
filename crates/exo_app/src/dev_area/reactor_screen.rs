@@ -239,8 +239,8 @@ fn meltdown_view() -> Panel {
 }
 
 /// The reactor readout (M): the top row of gauges and fuel, the sliders and the switches below.
-/// Above the allowed band with the power on, one hazard stripe at the top of the body (the flexible
-/// part gives up its height, the gauges keep theirs) and the header word CRITICAL. After a
+/// Above the allowed band with the power on, one hazard stripe under the sliders, inside the bottom-left
+/// column (in place of its filler, so the body gets no new row), and the header word CRITICAL. After a
 /// meltdown the MELTDOWN view.
 /// The readout panel; `max_kw` is the scale of the power gauge (the reactor's `max_output_kw`).
 pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
@@ -251,14 +251,18 @@ pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     let manual = r.is_some_and(|r| r.manual);
     let (fis, tur) = r.map_or((0.0, 0.0), |r| (r.set_fission, r.set_turbine));
     let (word, tone) = reactor_status(r);
+    // Critical: the stripe is as wide as the bottom-left column (624 content - 16 gap - 200 switches)
+    // and the spacing tightens by 18 px so the stripe fits (TODO(initiator): the readout's height budget).
+    let critical = crate::effects::is_critical(r);
+    let (filler, gap) = if critical { (hazard(408.0), 6.0) } else { (space(), 10.0) };
     let bottom_left = column(
-        10.0,
+        gap,
         vec![
             row(8.0, vec![micro("FISSION RATE").flex(1.0), readout(format!("{fis:.0} %")).text_size(font::LABEL).tone(if manual { Tone::Normal } else { Tone::Dim })]).fixed(24.0),
             slider(fis / 100.0, "", "fis_set").enabled(manual).fixed(ctl::MD),
             row(8.0, vec![micro("TURBINE OUTPUT").flex(1.0), readout(format!("{tur:.0} %")).text_size(font::LABEL).tone(if manual { Tone::Normal } else { Tone::Dim })]).fixed(24.0),
             slider(tur / 100.0, "", "tur_set").enabled(manual).fixed(ctl::MD),
-            space(),
+            filler,
         ],
     );
     let switches = column(
@@ -271,13 +275,7 @@ pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     );
     let (optimal, allowed) = bands(r);
     let gauges = row(8.0, vec![temp_gauge(r.map_or(0.0, |r| r.temp), optimal, allowed), power_gauge(r, max_kw), fuel(r)]).fixed(152.0);
-    let mut rows = Vec::new();
-    if crate::effects::is_critical(r) {
-        rows.push(hazard(624.0));
-    }
-    rows.push(gauges);
-    rows.push(row(16.0, vec![bottom_left.flex(1.0), switches.fixed(200.0)]).flex(1.0));
-    let body = column(8.0, rows);
+    let body = column(if critical { 4.0 } else { 8.0 }, vec![gauges, row(16.0, vec![bottom_left.flex(1.0), switches.fixed(200.0)]).flex(1.0)]);
     Panel::screen(Tier::M, READOUT_NAME, "RX-01", body).status(word, tone).with_padding(8.0)
 }
 

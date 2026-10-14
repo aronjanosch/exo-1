@@ -990,6 +990,22 @@ mod tests {
     }
 
     #[test]
+    fn the_low_air_case_shows_the_oxygen_cost_and_a_zero_health_with_its_bar_all_lost() {
+        let v = look().vitals;
+        // oxygen_low costs 73 points, the burn 45, no headache: the vitality is below 0 (read 0).
+        let l = vital_lines(&VitalsIn { oxygen: Some(0.476), burn_level: 2, buildup: 0.4, max_share: 1.0, costs: Costs { burn: 45.0, oxygen: 73.0, headache: 0.0 }, ..vin(0.0) }, &v);
+        let (o2, health) = (&l[l.len() - 2], &l[l.len() - 1]);
+        assert_eq!((o2.kind, health.kind), (VitalKind::Oxygen, VitalKind::Health));
+        assert_eq!((o2.cost_text(), o2.value()), ("\u{2212}73".to_string(), String::new()), "the air costs 73 points: the cost in place of the percent");
+        assert_eq!((health.cost_text(), health.value()), (String::new(), "0%".to_string()), "no headache: the health reads its share, 0 %");
+        let seg = health_segments(health);
+        assert!((seg.burn.1 - 1.0).abs() < 1e-9 && (seg.oxygen.0 - 0.0).abs() < 1e-9, "the lost part is the whole bar: burn {:?} oxygen {:?}", seg.burn, seg.oxygen);
+        assert!((seg.oxygen.1 - seg.burn.0).abs() < 1e-9, "the two causes meet");
+        // The oxygen's bar fill is the air left, about half.
+        assert_eq!(o2.value(), "", "fill 48 % shown by the bar, not as text while it costs");
+    }
+
+    #[test]
     fn the_health_bar_splits_its_lost_part_by_cause_from_the_cap_inward() {
         let v = look().vitals;
         let l = vital_lines(&VitalsIn { max_share: 0.8, costs: Costs { burn: 10.0, oxygen: 30.0, headache: 20.0 }, ..vin(0.6) }, &v);

@@ -30,6 +30,7 @@ pub mod hazards;
 pub mod item_table;
 pub mod reactor;
 pub mod reactor_screen;
+pub mod rods;
 pub mod test_console;
 
 /// The place (`content/place/dev_area.json`).
@@ -154,6 +155,7 @@ pub fn plugin(app: &mut App) {
     app.add_plugins(hazards::plugin);
     app.add_plugins(engine_room::plugin);
     app.add_plugins(coolant::plugin);
+    app.add_plugins(rods::plugin);
     app.add_plugins(reactor::plugin);
     app.add_plugins(reactor_screen::plugin);
     app.add_plugins(fire::plugin);

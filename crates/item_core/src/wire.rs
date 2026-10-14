@@ -26,6 +26,8 @@ pub enum ToHost {
     Treat(Option<PlayerId>),
     /// The CPR hold (#300 polish): the player is pumping this player (`Some`), or has stopped (`None`).
     Rescue(Option<PlayerId>),
+    /// The brake (#300): pull the rod with the most life into the sender's hands.
+    Pull,
 }
 
 /// Host to client.
@@ -281,6 +283,24 @@ pub struct PartNews {
     pub working: bool,
 }
 
+/// The fuel tubes on the readout (#300): one per slot, `FUEL_TUBES` at most.
+pub const FUEL_TUBES: usize = 4;
+
+/// The kind of a fuel rod (`reactor.json` `rods`: standard, hot, spicy), as the readout colours it.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FuelKind {
+    Standard,
+    Hot,
+    Spicy,
+}
+
+/// One fuel tube: the rod in a slot (its kind and life, 0..100), None for an empty slot (#300).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct FuelTube {
+    pub rod: Option<FuelKind>,
+    pub life: f64,
+}
+
 /// The reactor's snapshot (#297): what the screens show, as the host has it. Temperature,
 /// fission and turbine are 0..100; power is kW; the bands are (low, high) on the temperature
 /// gauge. The screens show little: no condition values, the pump gives its flow only.
@@ -317,8 +337,8 @@ pub struct ReactorNews {
     pub overvolt: bool,
     /// The engine room's air, 0..1 (the host rounds it to whole percent).
     pub oxygen: f64,
-    /// Life (0..100) of the rods in the first two slots (the two fuel tubes); 0 for an empty slot.
-    pub fuel: [f64; 2],
+    /// The fuel tubes, one per slot (the first `FUEL_TUBES`): the rod in it, None when empty (#300).
+    pub fuel: [FuelTube; FUEL_TUBES],
     pub reactor: PartNews,
     pub pump: PartNews,
     pub junction: PartNews,
@@ -481,7 +501,7 @@ mod tests {
             coolant_low: false,
             overvolt: true,
             oxygen: 0.21,
-            fuel: [80.0, 12.5],
+            fuel: [FuelTube { rod: Some(FuelKind::Hot), life: 80.0 }, FuelTube { rod: None, life: 0.0 }, FuelTube::default(), FuelTube { rod: Some(FuelKind::Spicy), life: 12.5 }],
             lamps: [true, false, false, false, false, false, false, true, false, false, true],
             boost: -12.5,
             boost_ok: true,

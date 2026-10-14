@@ -1,0 +1,13 @@
+{
+  "_comment": "A standard fuel rod (#300, lane rods). One rod per slot, carried in one hand; its condition is its life (100 new, 0 spent, kept when carried or pulled). Loaded into an empty fuel slot of the reactor (look on it, LMB held 3 s with it selected). Barotrauma reactor.xml: the uranium rod, 80 available fuel. TODO(initiator): shape, mass.",
+  "id": "fuel_rod",
+  "name": "Fuel rod",
+  "code": "FRD",
+  "take": "collect",
+  "hands": 1,
+  "stack": 1,
+  "use": "load_rod",
+  "condition": true,
+  "tags": ["medium"],
+  "shape": { "extents": [0.06, 0.6, 0.06], "mass": 3.0, "colour": [0.2, 0.75, 0.3] }
+}

@@ -1,5 +1,6 @@
 //! Rules for the engine room: auto and manual, pump, junction box, faults and alarm levels.
 use super::*;
+use crate::reactor::Blast;
 
 const DT: f64 = 1.0 / 30.0;
 
@@ -885,4 +886,46 @@ fn a_scram_with_a_broken_pump_lets_the_core_cool() {
     // Was < 5.0 before the decay state (decay_lag_s 90 s) and < 6.0 with coast 60: with the flow
     // following the pump in 10 s, the core is at 34 a minute after the SCRAM (from about 50), still falling.
     assert!(*temps.last().unwrap() < 40.0, "cooling after a minute: {:.1}", temps.last().unwrap());
+}
+
+/// The blast breaks the coolant pump and the junction box at once (`device_damage` 500 each), and
+/// the room passes the blast on as `Reactor(Blast)` for the glue.
+#[test]
+fn a_blast_breaks_the_pump_and_the_junction_box() {
+    let mut r = room();
+    let ev = r.melt_now();
+    assert!(ev.contains(&RoomEvent::Reactor(ReactorEvent::Blast(Blast::default()))), "{ev:?}");
+    assert!(ev.contains(&RoomEvent::Device { source: Source::Pump, event: DeviceEvent::Broke }), "{ev:?}");
+    assert!(ev.contains(&RoomEvent::Device { source: Source::Junction, event: DeviceEvent::Broke }), "{ev:?}");
+    assert!(!r.pump().condition().functioning() && !r.junction().condition().functioning());
+}
+
+/// Without fuel the melt is only the melt: the pump and the junction box keep working.
+#[test]
+fn a_melt_without_fuel_leaves_the_pump_and_the_junction_box_alone() {
+    let mut r = room();
+    assert!(r.reactor_mut().pull_rod(0).is_some() && r.reactor_mut().pull_rod(0).is_some());
+    let ev = r.melt_now();
+    assert!(ev.contains(&RoomEvent::Reactor(ReactorEvent::Meltdown)), "{ev:?}");
+    assert!(!ev.iter().any(|e| matches!(e, RoomEvent::Reactor(ReactorEvent::Blast(_)) | RoomEvent::Device { .. })), "{ev:?}");
+    assert!(r.pump().condition().functioning() && r.junction().condition().functioning());
+}
+
+/// The natural meltdown through `step` (pump broken, both rods at 100 on the brake) blasts in the
+/// same step as the melt, and the devices break in that step too.
+#[test]
+fn a_natural_meltdown_blasts_in_its_step() {
+    let mut r = room();
+    r.trigger(Fault::PumpBreak);
+    let mut melt_step = None;
+    for i in 0..(900.0 / DT) as usize {
+        let ev = r.step(DT, Input::manual(100.0, 100.0));
+        if ev.contains(&RoomEvent::Reactor(ReactorEvent::Meltdown)) {
+            assert!(ev.contains(&RoomEvent::Reactor(ReactorEvent::Blast(Blast::default()))), "{ev:?}");
+            assert!(ev.contains(&RoomEvent::Device { source: Source::Junction, event: DeviceEvent::Broke }), "{ev:?}");
+            melt_step = Some(i);
+            break;
+        }
+    }
+    assert!(melt_step.is_some(), "the core melts within 900 s");
 }

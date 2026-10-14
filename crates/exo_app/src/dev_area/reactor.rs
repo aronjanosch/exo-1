@@ -17,7 +17,8 @@ use crate::dev_area::engine_room::{EngineAir, ShipAlarm};
 use crate::dev_area::fire::{self, FireAlarm, FireConfig, FireGrid, FireModel};
 use crate::items::{Items, NetOut, Role};
 use crate::dev_area::engine_room::ROOM;
-use item_core::wire::{Alarm, BreakerGroup, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews};
+use crate::dev_area::rods;
+use item_core::wire::{Alarm, BreakerGroup, FuelTube, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews};
 use reactor_core::{AlarmLevel, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
 
 /// Seconds between two sends of a changed snapshot (4 Hz).
@@ -146,7 +147,7 @@ impl ReactorSim {
             coolant_low: self.room.pump().tank() < self.room.tuning().coolant_low,
             overvolt: self.room.junction().overvolted(),
             oxygen,
-            fuel: [0, 1].map(|i| r.rods().get(i).map_or(0.0, |x| x.life)),
+            fuel: std::array::from_fn(|i| r.rods().get(i).map_or_else(FuelTube::default, |x| FuelTube { rod: Some(rods::fuel_kind(&x.kind)), life: x.life })),
             reactor: part(r.condition().fraction(), r.condition().functioning()),
             pump: part(self.room.pump().condition().fraction(), self.room.pump().condition().functioning()),
             junction: part(self.room.junction().condition().fraction(), self.room.junction().condition().functioning()),
@@ -274,7 +275,7 @@ pub fn plugin(app: &mut App) {
 /// alarm (the room's or the fire's, the higher), the snapshot out. A client only forwards its
 /// requests.
 #[allow(clippy::too_many_arguments)]
-fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut alarm: ResMut<ShipAlarm>, mut air: ResMut<EngineAir>, fires: Res<FireConfig>, fire_alarm: Res<FireAlarm>, mut grid: ResMut<FireGrid>, model: Res<FireModel>) {
+fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut alarm: ResMut<ShipAlarm>, mut air: ResMut<EngineAir>, fires: Res<FireConfig>, fire_alarm: Res<FireAlarm>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, area: Res<DevArea>, planet: Res<PlanetRes>, repair: Res<crate::repair::RepairConfig>, mut health: Option<ResMut<crate::health::HealthState>>) {
     let asks = std::mem::take(&mut items.reactor_asks);
     if items.role == Role::Client {
         for a in asks {
@@ -299,6 +300,52 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     for _ in 0..items.take_refills() {
         let added = sim.room.pump_mut().refill(cfg.0.room.coolant_canister);
         info!("reactor: coolant canister, the tank gains {added:.0} %");
+    }
+    // The brake (`Items::pull_asks`, by the sender): the rod with the most life comes out into the puller's hands,
+    // and the core's heat above its optimal band burns the hand once (the reactor's miss burn, as
+    // repair's miss does it, `hurt_of`). The rod keeps its kind and life.
+    for player in std::mem::take(&mut items.pull_asks) {
+        let Some(i) = rods::pull_index(sim.room.reactor().rods()) else {
+            info!("reactor: the brake, no rod in a slot");
+            continue;
+        };
+        let Some((rod, temp)) = sim.room.reactor_mut().pull_rod(i) else { continue };
+        let band = sim.room.reactor().bands().temp_optimal;
+        if temp > band.hi {
+            let burn = device_core::minigame::hurt_of(device_core::minigame::Machine::Hot, device_core::minigame::Press::Miss, &repair.0).burn;
+            if let Some(st) = health.as_deref_mut()
+                && let Some(b) = st.bodies.get_mut(&player)
+            {
+                b.health.add(&st.tuning, "burn", burn);
+            }
+        }
+        info!("reactor: the brake pulled the {} rod ({:.0} life) at {temp:.0} degrees", rod.kind, rod.life);
+        let Some(def) = rods::item_of_kind(&rod.kind).and_then(|id| items.defs.get(id)).cloned() else { continue };
+        let now = time.elapsed_secs_f64();
+        if let Err(stack) = items.give(now, player, rods::rod_stack(&def, rod.life))
+            && let Some(at) = rods::reactor_front(&area, &planet)
+        {
+            items.spawn(now, stack, at);
+        }
+    }
+    // Fuel rods the host took out of a hand (`dev_area::rods`): each goes into a free slot. A reactor
+    // with no free slot gives it back to its owner (the client checks first, so this is a race).
+    for load in items.take_rod_loads() {
+        let Some(mut rod) = rods::kind_of_item(&load.item).and_then(|k| cfg.0.rods.rod(k)) else { continue };
+        rod.life = load.life;
+        let kind = rod.kind.clone();
+        if let Err(rod) = sim.room.reactor_mut().insert_rod(rod) {
+            info!("reactor: no free slot for the {} rod, it goes back", rod.kind);
+            let Some(def) = items.defs.get(&load.item).cloned() else { continue };
+            if let Err(stack) = items.give(time.elapsed_secs_f64(), load.player, rods::rod_stack(&def, rod.life)) {
+                // The hands are full too: the rod lies at the reactor's front.
+                if let Some(at) = rods::reactor_front(&area, &planet) {
+                    items.spawn(time.elapsed_secs_f64(), stack, at);
+                }
+            }
+        } else {
+            info!("reactor: the {kind} rod is in a slot ({:.0} life)", load.life);
+        }
     }
     let dt = time.delta_secs_f64();
     let input = if sim.manual { Input::manual(sim.fission, sim.turbine) } else { Input::auto() };

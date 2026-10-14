@@ -106,6 +106,8 @@ pub enum NetOut {
     Treat(Option<PlayerId>),
     /// Client to host: the CPR hold on this player, or none (#300 polish).
     Rescue(Option<PlayerId>),
+    /// Client to host: the brake on the reactor (#300); the host knows the sender.
+    Pull,
     /// Host to one client: its repair start was refused (#299).
     RepairRefused { to: PlayerId },
 }
@@ -130,6 +132,9 @@ pub struct Items {
     pub used: Vec<(PlayerId, PlayerId, String)>,
     /// Coolant canisters the host applied since the last `take_refills` (#300).
     pub refills: u32,
+    /// Fuel rods the host took out of an inventory into the reactor since the last
+    /// `take_rod_loads` (#300): the player, the rod's item id and its life.
+    pub rod_loads: Vec<RodLoad>,
     /// The latest vitals the host sent this client (#295), taken by the health system.
     pub vitals_in: Option<Vitals>,
     /// The engine room as the host has it (#296): the host sets it, a client takes it from the wire.
@@ -155,6 +160,8 @@ pub struct Items {
     pub public: Vec<(PlayerId, PublicStatus)>,
     /// Treatment holds by player, to apply here (host and one process); a client sends its own (#300).
     pub treat_asks: Vec<(PlayerId, Option<PlayerId>)>,
+    /// Brakes by player (#300), to apply here; a client sends its own. The rod goes to that player.
+    pub pull_asks: Vec<PlayerId>,
     /// CPR holds by player (the rescuer's patient, or none), to apply here (host and one process);
     /// a client sends its own (#300 polish).
     pub rescue_asks: Vec<(PlayerId, Option<PlayerId>)>,
@@ -172,7 +179,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), rescue_asks: Vec::new() }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, rod_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new() }
     }
 
     /// The local player's slot.
@@ -246,6 +253,15 @@ impl Items {
         }
     }
 
+    /// The brake of the local player (#300): sent from a client, kept here on the host.
+    pub fn ask_pull(&mut self) {
+        if self.role == Role::Client {
+            self.net_out.push(NetOut::Pull);
+        } else {
+            self.pull_asks.push(self.me());
+        }
+    }
+
     /// The treatment hold of the local player (#300): sent from a client, kept here on the host.
     pub fn ask_treat(&mut self, target: Option<PlayerId>) {
         if self.role == Role::Client {
@@ -272,6 +288,22 @@ impl Items {
     /// The canisters the host applied since the last call (#300).
     pub fn take_refills(&mut self) -> u32 {
         std::mem::take(&mut self.refills)
+    }
+
+    /// The fuel rods the host loaded since the last call (#300).
+    pub fn take_rod_loads(&mut self) -> Vec<RodLoad> {
+        std::mem::take(&mut self.rod_loads)
+    }
+
+    /// Host: a stack goes into a player's inventory (a fuel rod the brake pulled, or one the
+    /// reactor had no room for). Gives it back when the inventory has no room (#300).
+    pub fn give(&mut self, now: f64, player: PlayerId, stack: Stack) -> Result<(), Stack> {
+        if self.role == Role::Client {
+            return Ok(());
+        }
+        let ev = self.host.give(player, stack)?;
+        self.publish(now, ev, None);
+        Ok(())
     }
 
     /// The uses the host applied since the last call (#295).
@@ -340,12 +372,22 @@ impl Items {
                 self.net_out.push(NetOut::Action(a));
                 continue;
             }
+            // What the slot held before the use: a fuel rod's kind and life go with it (#300).
+            let held = match &a.req {
+                Request::Use { slot, .. } => self.host.inventory(a.player).slot(*slot).map(|s| (s.item.kind.as_str().to_string(), s.item.condition.unwrap_or(0.0))),
+                _ => None,
+            };
             let evs = if placement_ok(&a) { self.host.handle(&a) } else { vec![Event::Rejected { player: a.player, seq: a.seq, why: Reject::Invalid }] };
             for ev in evs {
                 if let Event::Used { player, target, effect } = &ev {
                     self.used.push((*player, *target, effect.clone()));
                     if effect == crate::dev_area::coolant::REFILL {
                         self.refills += 1;
+                    }
+                    if effect == crate::dev_area::rods::LOAD
+                        && let Some((item, life)) = held.clone()
+                    {
+                        self.rod_loads.push(RodLoad { player: *player, item, life });
                     }
                 }
                 self.publish(now, ev, Some(a.player));
@@ -369,6 +411,16 @@ impl Items {
     pub fn name(&self, s: &Stack) -> String {
         self.defs.of(s).map_or_else(|| s.item.kind.to_string(), |d| d.name.clone())
     }
+}
+
+/// A fuel rod the host took out of a player's hand into the reactor (#300).
+#[derive(Clone, Debug, PartialEq)]
+pub struct RodLoad {
+    pub player: PlayerId,
+    /// The rod's item id (`fuel_rod`, `fuel_rod_hot`, `fuel_rod_spicy`).
+    pub item: String,
+    /// Its life when it was loaded (0..100).
+    pub life: f64,
 }
 
 /// A loose item entity: the host's id once known; a drop shown before the host confirmed it
@@ -1049,6 +1101,21 @@ fn draw_bar(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_brake_is_asked_by_its_sender_not_by_the_message() {
+        // #300: a pull names no player; the host takes the sender (the local player's id here, a
+        // remote one's slot from its connection, `items_net`), so the rod goes to the one who asked.
+        let mut host = Items::load();
+        host.role = Role::Host;
+        host.ask_pull();
+        assert_eq!(host.pull_asks, vec![host.me()]);
+        let mut client = Items::load();
+        client.role = Role::Client;
+        client.ask_pull();
+        assert!(client.pull_asks.is_empty(), "a client sends it, it does not apply it");
+        assert!(client.net_out.iter().any(|n| matches!(n, NetOut::Pull)));
+    }
 
     #[test]
     fn a_two_handed_item_sits_lower_more_centred_and_further_off_than_a_one_handed_one() {

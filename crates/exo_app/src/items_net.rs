@@ -163,6 +163,10 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                         items.repair_asks.push((slot, a));
                         true
                     }
+                    Some(ToHost::Pull) => {
+                        items.pull_asks.push(slot);
+                        true
+                    }
                     Some(ToHost::Treat(t)) => {
                         items.treat_asks.push((slot, t));
                         true
@@ -333,6 +337,9 @@ pub fn items_net_out(
             }
             NetOut::Status { to, s } => {
                 net.send_reliable(to, &wire::encode(&ToClient::Status(s)));
+            }
+            NetOut::Pull => {
+                net.send_reliable(None, &wire::encode(&ToHost::Pull));
             }
             NetOut::Treat(t) => {
                 net.send_reliable(None, &wire::encode(&ToHost::Treat(t)));

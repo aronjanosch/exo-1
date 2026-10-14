@@ -183,6 +183,19 @@ impl Host {
         Event::Rack { rack: id, contents }
     }
 
+    /// Puts a stack into a player's inventory, as a pulled or refused fuel rod comes back (#300).
+    /// The stack comes back when it does not fit.
+    pub fn give(&mut self, player: PlayerId, stack: Stack) -> Result<Event, Stack> {
+        let mut inv = self.inventory(player);
+        match inv.collect(&self.defs, stack.clone()) {
+            Ok(()) => {
+                self.inventories.insert(player, inv.clone());
+                Ok(Event::Inventory { player, inv })
+            }
+            Err(_) => Err(stack),
+        }
+    }
+
     /// The condition (percent) of the item in a slot, if it wears.
     pub fn condition(&self, player: PlayerId, slot: usize) -> Option<f64> {
         self.inventories.get(&player)?.slot(slot)?.item.condition

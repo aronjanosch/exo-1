@@ -47,6 +47,11 @@
 //! - `AlarmLevel` is derived each step for the glue: `Warn` above the optimal band or with a part
 //!   that needs repair, `Danger` above the allowed band.
 //!
+//! Meltdown blast (Barotrauma reactor.xml:45-58, `reactor` module doc): a meltdown with fuel left
+//! raises `Reactor(Blast)`, and the pump and the junction box take `blast.device_damage` at once
+//! (they break). The room has no positions, so every device in it is in range. The burn, stun and
+//! radiation for the players are the glue's.
+//!
 //! Meltdown leaves the reactor broken with spent rods (`reactor`); repair and restart are the
 //! glue's and use `device_core` repair. No explosion logic here.
 use device_core::{Condition, DeviceEvent, DeviceTuning};
@@ -633,7 +638,9 @@ impl EngineRoom {
         }
         self.grid.set_demand(Group::Engines, self.engines_full_kw * self.throttle);
         let load = self.grid.request_kw();
-        ev.extend(self.reactor.step(dt, load).into_iter().map(RoomEvent::Reactor));
+        let reactor_ev = self.reactor.step(dt, load);
+        ev.extend(reactor_ev.iter().map(|e| RoomEvent::Reactor(*e)));
+        ev.extend(self.blast_damage(&reactor_ev));
         self.pump.use_coolant(dt, stream, self.reactor.heat_input(), &t);
 
         let (through, junction_ev) = self.junction.pass(dt, self.reactor.output_kw(), load, &t);
@@ -646,6 +653,34 @@ impl EngineRoom {
         }
 
         self.level = self.compute_level();
+        ev
+    }
+
+    /// Melts the core now (`Reactor::force_meltdown`), with the room's blast damage. The harness's
+    /// forced melt; the events are those of a melt in `step`.
+    pub fn melt_now(&mut self) -> Vec<RoomEvent> {
+        let reactor_ev = self.reactor.force_meltdown();
+        let mut ev: Vec<RoomEvent> = reactor_ev.iter().map(|e| RoomEvent::Reactor(*e)).collect();
+        ev.extend(self.blast_damage(&reactor_ev));
+        ev
+    }
+
+    /// A blast in the reactor's events takes `device_damage` from the pump and the junction box:
+    /// every device in the room is in range. Returns their device events.
+    fn blast_damage(&mut self, reactor_ev: &[ReactorEvent]) -> Vec<RoomEvent> {
+        let Some(blast) = reactor_ev.iter().find_map(|e| match e {
+            ReactorEvent::Blast(b) => Some(*b),
+            _ => None,
+        }) else {
+            return Vec::new();
+        };
+        let mut ev = Vec::new();
+        if let Some(e) = self.pump.condition.damage(blast.device_damage) {
+            ev.push(RoomEvent::Device { source: Source::Pump, event: e });
+        }
+        if let Some(e) = self.junction.condition.damage(blast.device_damage) {
+            ev.push(RoomEvent::Device { source: Source::Junction, event: e });
+        }
         ev
     }
 

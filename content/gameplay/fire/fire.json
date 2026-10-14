@@ -1,5 +1,5 @@
 {
-  "_comment": "Fire (#298). Every number is a starting value, TODO(initiator). fire: the fire_core values (metres, m3 of air, seconds; see fire_core::FireTuning). alarm_danger_size: a fire this big (m) in the engine room or the corridor sets the ship's alarm to Danger, under it Warn. start_size: the dev button's fire (m). spray_reach and spray_half_angle_deg: the extinguisher's cone (m, degrees).",
+  "_comment": "Fire (#298). grid: the cell model (#300, fire_core::grid), values TODO(initiator).  Every number is a starting value, TODO(initiator). fire: the fire_core values (metres, m3 of air, seconds; see fire_core::FireTuning). alarm_danger_size: a fire this big (m) in the engine room or the corridor sets the ship's alarm to Danger, under it Warn. start_size: the dev button's fire (m). spray_reach and spray_half_angle_deg: the extinguisher's cone (m, degrees).",
   "fire": {
     "growth": 0.2,
     "grow_full": 0.2,
@@ -23,5 +23,25 @@
   "alarm_danger_size": 1.0,
   "start_size": 0.5,
   "spray_reach": 4.0,
-  "spray_half_angle_deg": 20.0
+  "spray_half_angle_deg": 20.0,
+  "grid": {
+    "cell_m": 1.0,
+    "growth": 0.05,
+    "grow_full": 0.2,
+    "stall": 0.1,
+    "oxygen_use": 0.05,
+    "out_below": 0.05,
+    "start_intensity": 0.6,
+    "spread_min": 0.5,
+    "spread_intensity": 0.3,
+    "spread_interval_s": 5.0,
+    "spread_chance": 0.15,
+    "gap_reach": 1.0,
+    "door_closed": 0.1,
+    "burn_person": 10.0,
+    "burn_device": 2.0,
+    "extinguish": 0.6,
+    "spray_radius": 1.0,
+    "alarm_danger_total": 1.5
+  }
 }

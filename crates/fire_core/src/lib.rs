@@ -22,6 +22,7 @@ use gameplay_core::rng::Rng;
 use glam::{DVec2, DVec3};
 use serde::{Deserialize, Serialize};
 
+pub mod grid;
 pub mod tuning;
 
 #[cfg(test)]
@@ -277,6 +278,10 @@ impl Deck {
     /// For life support, breathing, venting.
     pub fn room_mut(&mut self, r: RoomId) -> &mut Room {
         &mut self.rooms[r.0]
+    }
+
+    pub fn gaps(&self) -> &[Gap] {
+        &self.gaps
     }
 
     pub fn gap(&self, g: GapId) -> &Gap {

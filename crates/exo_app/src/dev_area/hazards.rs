@@ -1,13 +1,9 @@
 //! The dev area's hazards (#295): three greybox floor pads along the north wall, in the storage
 //! strip. A hot plate burns whoever stands on it, a glowing barrel gives radiation, and the
 //! no-air booth takes the air away. `health` reads the zones; the boxes are the look.
-//! TODO(initiator): the rates and the booth's shape (a flat pad for now, not yet a walled booth).
+//! The rates are in `content/gameplay/health/health.json`. TODO(initiator): the booth's shape (a
+//! flat pad for now, not yet a walled booth).
 use super::*;
-
-/// Burn per second on the hot plate (strength, before the bands).
-pub const BURN_PER_S: f64 = 8.0;
-/// Radiation per second beside the glowing barrel.
-pub const RADIATION_PER_S: f64 = 6.0;
 
 pub const HOT_PLATE: Zone = Zone { name: "hot plate", centre: [-12.0, 16.0], half: [1.5, 1.5] };
 pub const GLOW_BARREL: Zone = Zone { name: "glowing barrel", centre: [0.0, 16.0], half: [1.5, 1.5] };

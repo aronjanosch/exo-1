@@ -12,7 +12,7 @@
 //!   (`own_sync`); while down, the controls are frozen and a centred line counts the respawn.
 //! - A respawn puts the walker on the dev area's pad with clean health. A client moves its own
 //!   walker when the host's vitals say it is up again.
-use crate::dev_area::hazards::{BURN_PER_S, GLOW_BARREL, HOT_PLATE, NO_AIR, RADIATION_PER_S};
+use crate::dev_area::hazards::{GLOW_BARREL, HOT_PLATE, NO_AIR};
 use crate::dev_area::{area_of, DevArea, Zone, PAD_MAIN};
 use crate::controls::{Actions, Controls};
 use crate::env::PlanetRes;
@@ -22,7 +22,7 @@ use crate::origin::WorldPose;
 use crate::walker::{Player, EYE_HEIGHT};
 use bevy::math::{DVec2, DVec3};
 use bevy::prelude::*;
-use health_core::{Env, Health, HealthEvent, HealthTuning, Life};
+use health_core::{Env, Health, HealthEvent, HealthTuning, Life, Mobility};
 use item_core::wire::Vitals;
 use item_core::{PlayerId, Request};
 use std::collections::BTreeMap;
@@ -39,7 +39,7 @@ const CAPSULE_RADIUS: f64 = 0.4;
 pub fn plugin(app: &mut App) {
     let files = crate::content_files("gameplay");
     let tuning = HealthTuning::load(&files).unwrap_or_else(|e| panic!("health: {e:?}"));
-    app.insert_resource(HealthState::new(tuning)).init_resource::<OwnVitals>();
+    app.insert_resource(HealthState::new(tuning)).init_resource::<OwnVitals>().insert_resource(OwnMobility(Mobility { walk: 1.0, sprint: true }));
     // The use takes the click before the displays do (they take every click), once the script's
     // input is in.
     app.add_systems(FixedUpdate, use_input.after(crate::scenario::run_script).before(crate::displays::use_display));
@@ -87,19 +87,29 @@ pub struct OwnVitals {
     pub last: Option<Vitals>,
 }
 
-/// What the player's body shows: shares of the maximum, the burn's level as the HUD reads it.
+/// How the local player walks now (the nausea's share, sprint or not): the walker reads it. The
+/// host's own body, or what the host sent a client.
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct OwnMobility(pub Mobility);
+
+/// What the player's body shows (the wire's vitals): shares of the maximum before a headache, the
+/// burn's level, the buildup and the fire, the nausea and the walk.
 pub fn vitals_of(t: &HealthTuning, b: &Body) -> Vitals {
-    let share = |id: &str| t.affliction(id).map_or(0.0, |k| (b.health.strength(id) / k.max).clamp(0.0, 1.0));
-    let burn = b.health.strength("burn");
-    let burn_level = t.affliction("burn").map(|k| k.band_index(burn) + 1);
-    let oxygen = b.health.strength("oxygen_low") > 0.0;
+    let h = &b.health;
+    let share = |id: &str| t.affliction(id).map_or(0.0, |k| (h.strength(id) / k.max).clamp(0.0, 1.0));
+    let m = h.mobility(t);
     Vitals {
-        health: (b.health.vitality() / b.health.max_vitality()).clamp(0.0, 1.0),
+        health: (h.vitality() / h.max_vitality()).clamp(0.0, 1.0),
+        max_share: h.max_share(t),
         // The bar shows the air left: full when the air is good, falling as the low grows.
-        oxygen: oxygen.then(|| 1.0 - share("oxygen_low")),
-        // The HUD's three burn levels are the thirds of its share: a level's middle.
-        burn: (burn > 0.0).then(|| (burn_level.unwrap_or(1) as f64 - 0.5) / 3.0),
+        oxygen: (h.strength("oxygen_low") > 0.0).then(|| 1.0 - share("oxygen_low")),
+        burn_level: h.burn_level(t),
+        buildup: h.buildup(),
+        burning: h.burning(),
         radiation: share("radiation"),
+        sick: h.nausea(t) > 0.0,
+        walk: m.walk,
+        sprint: m.sprint,
         down: b.respawn_in,
     }
 }
@@ -114,9 +124,15 @@ pub fn noticeably(a: &Vitals, b: &Vitals) -> bool {
         }
     }
     (a.health - b.health).abs() > 0.005
+        || (a.max_share - b.max_share).abs() > 0.005
         || (a.radiation - b.radiation).abs() > 0.005
+        || (a.buildup - b.buildup).abs() > 0.02
         || moved(a.oxygen, b.oxygen, 0.01)
-        || moved(a.burn, b.burn, 1e-9)
+        || a.burn_level != b.burn_level
+        || a.burning != b.burning
+        || a.sick != b.sick
+        || (a.walk - b.walk).abs() > 1e-9
+        || a.sprint != b.sprint
         || moved(a.down.map(f64::floor), b.down.map(f64::floor), 0.0)
 }
 
@@ -161,14 +177,9 @@ fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea
         }
         let here = area_pos(area.as_deref(), &planet, at.get(id).copied());
         let inside = |z: &Zone| here.is_some_and(|p| z.contains(p));
-        if inside(&HOT_PLATE) {
-            b.health.add(t, "burn", BURN_PER_S * dt);
-        }
-        if inside(&GLOW_BARREL) {
-            b.health.add(t, "radiation", RADIATION_PER_S * dt);
-        }
-        let oxygen = if inside(&NO_AIR) { 0.0 } else { 1.0 };
-        for ev in b.health.step(t, dt, Env { oxygen }) {
+        // The hot plate and the glow feed the body's own rules, per tick or into the buildup.
+        let env = Env { oxygen: if inside(&NO_AIR) { 0.0 } else { 1.0 }, hot: inside(&HOT_PLATE), glow: inside(&GLOW_BARREL) };
+        for ev in b.health.step(t, dt, env) {
             if matches!(ev, HealthEvent::Died { .. }) {
                 b.respawn_in = Some(t.respawn_s);
             }
@@ -252,7 +263,7 @@ fn use_input(time: Res<Time>, planet: Res<PlanetRes>, mut controls: ResMut<Contr
 /// Every process: its own vitals into the HUD; frozen controls and a walk to the pad when down or
 /// back up.
 #[allow(clippy::too_many_arguments)]
-fn own_sync(items: Res<Items>, st: Res<HealthState>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut own: ResMut<OwnVitals>, mut hud: ResMut<crate::crew_hud::Vitals>, mut actions: ResMut<Actions>, mut players: Query<&mut Player>) {
+fn own_sync(items: Res<Items>, st: Res<HealthState>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut own: ResMut<OwnVitals>, mut mobility: ResMut<OwnMobility>, mut hud: ResMut<crate::crew_hud::Vitals>, mut actions: ResMut<Actions>, mut players: Query<&mut Player>) {
     let v = match items.role {
         Role::Client => items.vitals_in,
         _ => st.bodies.get(&LOCAL).map(|b| vitals_of(&st.tuning, b)),
@@ -267,12 +278,10 @@ fn own_sync(items: Res<Items>, st: Res<HealthState>, planet: Res<PlanetRes>, are
             to_pad(&mut pl, &planet, area);
         }
     }
+    mobility.0 = Mobility { walk: v.walk, sprint: v.sprint };
     // The HUD is written when the vitals change, so a scenario's own readings stay until then.
     if prev != Some(v) {
-        hud.health = v.health;
-        hud.oxygen = v.oxygen;
-        hud.burn = v.burn;
-        hud.radiation = v.radiation;
+        *hud = crate::crew_hud::Vitals { health: v.health, max_share: v.max_share, oxygen: v.oxygen, burn_level: v.burn_level, buildup: v.buildup, burning: v.burning, radiation: v.radiation, sick: v.sick };
     }
     own.last = Some(v);
     if v.down.is_some() {

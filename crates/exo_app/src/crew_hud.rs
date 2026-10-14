@@ -24,28 +24,36 @@ use bevy::math::{DVec2, DVec3};
 use bevy::prelude::*;
 use display_core::hud::{
     compass_ticks, credits_number, delta_text, heading_deg, heading_text, hints, north_at, prompt_anchor, reference, vital_lines, BarIdle, CreditsFlash, CreditsView, Hint, HintAction, HudLook,
-    PromptKind, Reference, TickLen, VitalKind, VitalLine,
+    PromptKind, Reference, TickLen, VitalKind, VitalLine, VitalSymbol, VitalsIn,
 };
 use display_core::{Rgb, Tone};
 
 /// Health, oxygen, burn and radiation of the local player. The health system (`health`) writes
-/// them (the host's own, or what the host sends a client); a scenario can too. Oxygen and burn are
-/// `None` while they do not apply, and radiation is 0 then; the HUD shows none of them.
+/// them (the host's own, or what the host sends a client); a scenario can too. Oxygen is `None`
+/// while it does not apply, the burn is level 0 without burn, radiation is 0 without (#295).
 #[derive(Resource, Clone, Debug, PartialEq)]
 pub struct Vitals {
-    /// 0..1.
+    /// Vitality's share of the maximum before a headache.
     pub health: f64,
+    /// The maximum now, as a share of that (a headache lowers it); 1 without.
+    pub max_share: f64,
     /// 0..1 while the air runs out or the suit has a tank; `None` when breathing is no issue.
     pub oxygen: Option<f64>,
-    /// 0..1, how hard the burn is; `None` when not burning.
-    pub burn: Option<f64>,
-    /// 0..1, how much radiation the body has; the line shows only above 0 (#295).
+    /// The burn's level 1 to 3; 0 without burn (or only building up).
+    pub burn_level: u8,
+    /// The burning buildup, 0..1.
+    pub buildup: f64,
+    /// On fire now.
+    pub burning: bool,
+    /// 0..1, how much radiation the body has; the line shows only above 0.
     pub radiation: f64,
+    /// Radiation makes nausea (the RAD label says SICK).
+    pub sick: bool,
 }
 
 impl Default for Vitals {
     fn default() -> Self {
-        Vitals { health: 1.0, oxygen: None, burn: None, radiation: 0.0 }
+        Vitals { health: 1.0, max_share: 1.0, oxygen: None, burn_level: 0, buildup: 0.0, burning: false, radiation: 0.0, sick: false }
     }
 }
 
@@ -105,7 +113,17 @@ fn update_compass(
 }
 
 fn update_vitals(vitals: Res<Vitals>, look: Res<DisplayLook>, mut hud: ResMut<CrewHud>) {
-    let lines = vital_lines(vitals.health, vitals.oxygen, vitals.burn, vitals.radiation, &look.0.hud.vitals);
+    let input = VitalsIn {
+        health: vitals.health,
+        max_share: vitals.max_share,
+        oxygen: vitals.oxygen,
+        burn_level: vitals.burn_level,
+        buildup: vitals.buildup,
+        burning: vitals.burning,
+        radiation: vitals.radiation,
+        sick: vitals.sick,
+    };
+    let lines = vital_lines(&input, &look.0.hud.vitals);
     if hud.vitals != lines {
         hud.vitals = lines;
     }
@@ -394,13 +412,17 @@ enum CompassPart {
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 enum VitalPart {
     Row(VitalKind),
-    /// The label line above a bar (hidden while the bar is calm).
+    /// The label line above a bar (hidden while the bar is calm; the health's always shows).
     Head(VitalKind),
     Glyph(VitalKind),
     Name(VitalKind),
     Value(VitalKind),
     Track(VitalKind),
     Fill(VitalKind),
+    /// The health bar's dimmed end: above the reduced maximum (a headache).
+    Cap(VitalKind),
+    /// The burn's circle that fills with the buildup.
+    Ring,
 }
 
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
@@ -440,6 +462,49 @@ enum CreditsPart {
     Delta,
 }
 
+/// A 16 px symbol drawn from plain shapes (placeholder): a heart, a bubble, a trefoil or a flame.
+fn spawn_symbol(p: &mut ChildSpawnerCommands, sym: VitalSymbol, colour: Color) {
+    p.spawn(Node { width: px(16), height: px(16), flex_shrink: 0.0, ..default() }).with_children(|b| {
+        // A circle (or square) at (x, y) of size w x h; `hollow` draws only its outline.
+        let shape = |b: &mut ChildSpawnerCommands, (x, y, w, h): (f32, f32, f32, f32), round: bool, hollow: bool, rot: f32| {
+            let mut node = Node { left: px(x), top: px(y), width: px(w), height: px(h), border_radius: if round { BorderRadius::MAX } else { BorderRadius::ZERO }, ..abs() };
+            let (fill, edge) = if hollow {
+                node.border = UiRect::all(px(2));
+                (Color::NONE, BorderColor::all(colour))
+            } else {
+                (colour, BorderColor::all(Color::NONE))
+            };
+            b.spawn((node, BackgroundColor(fill), edge, UiTransform::from_rotation(Rot2::degrees(rot))));
+        };
+        match sym {
+            VitalSymbol::Heart => {
+                shape(b, (1.0, 2.0, 8.0, 8.0), true, false, 0.0);
+                shape(b, (7.0, 2.0, 8.0, 8.0), true, false, 0.0);
+                shape(b, (4.0, 6.0, 8.0, 8.0), false, false, 45.0);
+            }
+            VitalSymbol::Bubble => {
+                shape(b, (1.0, 1.0, 14.0, 14.0), true, true, 0.0);
+                shape(b, (4.0, 4.0, 4.0, 4.0), true, false, 0.0);
+            }
+            VitalSymbol::Trefoil => {
+                shape(b, (5.0, 0.0, 6.0, 6.0), true, false, 0.0);
+                shape(b, (0.0, 9.0, 6.0, 6.0), true, false, 0.0);
+                shape(b, (10.0, 9.0, 6.0, 6.0), true, false, 0.0);
+                shape(b, (6.0, 6.0, 4.0, 4.0), true, false, 0.0);
+            }
+            VitalSymbol::Flame => shape(b, (3.5, 3.5, 9.0, 9.0), false, false, 45.0),
+        }
+    });
+}
+
+/// The buildup ring's fill: a conic gradient filled from the top round to `frac` of a turn.
+fn ring_fill(colour: Color, frac: f64) -> BackgroundGradient {
+    let end = frac.clamp(0.0, 1.0) as f32 * std::f32::consts::TAU;
+    let clear = colour.with_alpha(0.0);
+    let stops = vec![AngularColorStop::new(colour, 0.0), AngularColorStop::new(colour, end), AngularColorStop::new(clear, end), AngularColorStop::new(clear, std::f32::consts::TAU)];
+    BackgroundGradient::from(ConicGradient::new(UiPosition::CENTER, stops))
+}
+
 fn spawn_hud(commands: &mut Commands, theme: &display_core::Theme, fonts: &HudFonts) {
     let (k, h) = (&theme.colours, &theme.hud);
     let m = h.margin as f32;
@@ -476,16 +541,25 @@ fn spawn_hud(commands: &mut Commands, theme: &display_core::Theme, fonts: &HudFo
             }
         });
 
-    // Vitals, bottom left: burn line, oxygen bar, radiation bar, health bar; each only while it applies.
+    // Vitals, bottom left: the burn line (flame, text, the buildup's ring), oxygen, radiation and
+    // health bars; each only while it applies, the health always.
     let v = &h.vitals;
     commands.spawn((HudPart, Node { left: px(edge), bottom: px(edge), width: px(v.width as f32), flex_direction: FlexDirection::Column, row_gap: px(v.gap as f32), ..abs() })).with_children(|root| {
-        root.spawn((VitalPart::Row(VitalKind::Burn), Node { display: Display::None, ..default() })).with_children(|row| {
+        root.spawn((VitalPart::Row(VitalKind::Burn), Node { display: Display::None, align_items: AlignItems::Center, column_gap: px(6), ..default() })).with_children(|row| {
+            spawn_symbol(row, VitalSymbol::Flame, col(k.warn));
             row.spawn((VitalPart::Name(VitalKind::Burn), hud_caps(&fonts.semibold, "", v.label_size, col(k.warn), h, 0.1)));
+            row.spawn((
+                VitalPart::Ring,
+                Node { width: px(16), height: px(16), border: UiRect::all(px(2)), border_radius: BorderRadius::MAX, margin: UiRect::left(px(6)), ..default() },
+                BorderColor::all(col(k.fg_title)),
+                BackgroundGradient::default(),
+            ));
         });
         for kind in [VitalKind::Oxygen, VitalKind::Radiation, VitalKind::Health] {
             root.spawn((VitalPart::Row(kind), Node { flex_direction: FlexDirection::Column, row_gap: px(v.label_gap as f32), display: Display::None, ..default() })).with_children(|row| {
                 row.spawn((VitalPart::Head(kind), Node { justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Baseline, display: Display::None, ..default() })).with_children(|head| {
-                    head.spawn(Node { column_gap: px(6), align_items: AlignItems::Baseline, ..default() }).with_children(|label| {
+                    head.spawn(Node { column_gap: px(6), align_items: AlignItems::Center, ..default() }).with_children(|label| {
+                        spawn_symbol(label, kind.symbol(), col(k.fg_title));
                         label.spawn((VitalPart::Glyph(kind), hud_text(&fonts.semibold, "", v.label_size, col(k.warn), h)));
                         label.spawn((VitalPart::Name(kind), hud_caps(&fonts.semibold, "", v.label_size, col(k.fg_title), h, 0.1)));
                     });
@@ -500,6 +574,7 @@ fn spawn_hud(commands: &mut Commands, theme: &display_core::Theme, fonts: &HudFo
                 ))
                 .with_children(|track| {
                     track.spawn((VitalPart::Fill(kind), Node { width: percent(100.0), height: percent(100.0), ..default() }, BackgroundColor(col(k.fg_1))));
+                    track.spawn((VitalPart::Cap(kind), Node { display: Display::None, height: percent(100.0), ..abs() }, BackgroundColor(col_a(k.fg_1, 0.3))));
                 });
             });
         }
@@ -706,6 +781,7 @@ fn update_vitals_ui(
     mut nodes: Query<(&VitalPart, &mut Node)>,
     mut fills: Query<(&VitalPart, &mut BackgroundColor)>,
     mut glows: Query<(&VitalPart, &mut BoxShadow)>,
+    mut rings: Query<(&VitalPart, &mut BackgroundGradient)>,
     mut texts: Query<(&VitalPart, &mut Text, &mut TextColor)>,
 ) {
     let (theme, v) = (&look.0, &look.0.hud.vitals);
@@ -713,12 +789,21 @@ fn update_vitals_ui(
     for (part, mut n) in &mut nodes {
         match *part {
             VitalPart::Row(k) => set_display(&mut n, if line(k).is_some() { Display::Flex } else { Display::None }),
-            VitalPart::Head(k) => set_display(&mut n, if line(k).is_some_and(|l| !l.calm()) { Display::Flex } else { Display::None }),
+            VitalPart::Head(k) => set_display(&mut n, if line(k).is_some_and(|l| l.labelled()) { Display::Flex } else { Display::None }),
             VitalPart::Fill(k) => {
                 if let Some(l) = line(k) {
                     edit(&mut n, |n| n.width = percent(l.frac as f32 * 100.0));
                 }
             }
+            VitalPart::Cap(k) => match line(k) {
+                // The part above the reduced maximum: from the cap to the end of the bar.
+                Some(l) if l.cap < 1.0 => edit(&mut n, |n| {
+                    n.display = Display::Flex;
+                    n.left = percent(l.cap as f32 * 100.0);
+                    n.width = percent((1.0 - l.cap) as f32 * 100.0);
+                }),
+                _ => set_display(&mut n, Display::None),
+            },
             _ => {}
         }
     }
@@ -727,6 +812,13 @@ fn update_vitals_ui(
             && let Some(l) = line(k)
         {
             set_bg(&mut bg, col(tone_colour(theme, l.tone)));
+        }
+    }
+    for (part, mut g) in &mut rings {
+        if let VitalPart::Ring = *part
+            && let Some(l) = line(VitalKind::Burn)
+        {
+            *g = ring_fill(col(tone_colour(theme, l.tone)), l.frac);
         }
     }
     for (part, mut shadow) in &mut glows {
@@ -754,9 +846,10 @@ fn update_vitals_ui(
                 }
             }
             VitalPart::Name(k) => {
-                if line(k).is_some() {
+                if let Some(l) = line(k) {
                     set_text(&mut t, match k {
-                        VitalKind::Oxygen => "OXYGEN",
+                        VitalKind::Oxygen => "O2",
+                        VitalKind::Radiation if l.sick => "RAD · SICK",
                         VitalKind::Radiation => "RAD",
                         _ => "HEALTH",
                     });

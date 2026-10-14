@@ -230,7 +230,7 @@ pub fn walker_step(
     remotes: Query<(Entity, &Position, &Rotation, &LinearVelocity, &RemoteShip)>,
     floors: Query<(&ChildOf, &Position, &Rotation, &ColliderTransform), With<CabinFloor>>,
     colliders: Query<(Entity, &ColliderOf)>,
-    grab: Res<crate::grab::Grab>,
+    (grab, mobility): (Res<crate::grab::Grab>, Res<crate::health::OwnMobility>),
     warp: Res<crate::warp::WarpDrive>,
 ) {
     let dt = time.delta_secs_f64();
@@ -316,10 +316,11 @@ pub fn walker_step(
         pl.pitch = (pl.pitch + pitch).clamp(-cfg.pitch_limit, cfg.pitch_limit);
         WalkInput {
             dir: DVec2::new(actions.move_dir.x, -actions.move_dir.z),
-            run: actions.run && carry.can_run,
+            // Nausea slows the walk and takes the sprint away (#295).
+            run: actions.run && carry.can_run && mobility.0.sprint,
             jump: actions.jump && carry.can_jump,
             yaw,
-            slow: 1.0 - carry.speed_share,
+            slow: 1.0 - carry.speed_share * mobility.0.walk,
             ..default()
         }
     };

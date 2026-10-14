@@ -169,7 +169,7 @@ fn overvoltage_damages_the_junction_box_and_can_spark() {
     let sparks = ev.iter().filter(|(_, e)| *e == RoomEvent::Sparks).count();
     let value = r.junction().condition().value();
     println!("overvolt 60 s: junction {value:.1}, sparks {sparks}, output {:.1} kW, demand {:.0} kW", r.reactor().output_kw(), r.grid().request_kw());
-    // 2 per second of overvoltage: broken after 50 s.
+    // 4.7x the demand: random hits, a full box breaks in about 14 s on average (see first_break).
     assert!(!r.junction().condition().functioning(), "junction {value}");
     assert!(sparks > 0, "seeded: expected sparks in 60 s");
 }
@@ -501,4 +501,148 @@ fn a_canister_refills_the_tank_up_to_full_and_brings_the_flow_back() {
     assert_eq!(r.flow(), 0.0);
     r.pump_mut().refill(50.0);
     assert!(r.flow() > 0.0, "the flow comes back with coolant in the tank");
+}
+
+/// Seconds until the box breaks at `supply` on `demand` from `condition`, stepping `dt`, and whether
+/// a fire came with the break. None when it does not break within `max_s`.
+fn first_break(seed: u64, condition: f64, supply: f64, demand: f64, max_s: f64) -> Option<(f64, bool)> {
+    let t = RoomTuning::default();
+    let mut jb = JunctionBox::new(&t, seed);
+    jb.condition_mut().set_value(condition);
+    let dt = 0.1;
+    for k in 0..(max_s / dt).round() as usize {
+        let (_, ev) = jb.pass(dt, supply, demand, &t);
+        if ev.iter().any(|e| matches!(e, RoomEvent::Device { event: DeviceEvent::Broke, .. })) {
+            let fire = ev.iter().any(|e| matches!(e, RoomEvent::Fire { source: Source::Junction, .. }));
+            return Some(((k + 1) as f64 * dt, fire));
+        }
+    }
+    None
+}
+
+#[test]
+fn three_times_demand_breaks_a_full_box_in_about_the_measured_time_on_average() {
+    let times: Vec<f64> = (0..200).filter_map(|s| first_break(s, 100.0, 300.0, 100.0, 600.0).map(|b| b.0)).collect();
+    assert_eq!(times.len(), 200, "every box breaks within 600 s");
+    let mean = times.iter().sum::<f64>() / times.len() as f64;
+    println!("3x demand, full box, 200 seeds: mean {mean:.1} s, min {:.1}, max {:.1}", times.iter().cloned().fold(f64::MAX, f64::min), times.iter().cloned().fold(f64::MIN, f64::max));
+    // Analytic: 0.6 hits/s x mean hit 255/60 x lerp(5, 1, fraction), from 100 down to 20: about 14 s.
+    // The ticket's "a few minutes" does not follow from these values (see the report, TODO(initiator)).
+    assert!((10.0..19.0).contains(&mean), "mean {mean}");
+}
+
+#[test]
+fn a_box_at_30_percent_breaks_much_faster_than_a_full_one() {
+    let full: f64 = (0..100).filter_map(|s| first_break(s, 100.0, 300.0, 100.0, 600.0).map(|b| b.0)).sum::<f64>() / 100.0;
+    let worn: f64 = (0..100).filter_map(|s| first_break(s, 30.0, 300.0, 100.0, 600.0).map(|b| b.0)).sum::<f64>() / 100.0;
+    println!("mean break: full {full:.1} s, at 30 % {worn:.2} s");
+    assert!(worn * 5.0 < full, "30 %: {worn}, full: {full}");
+}
+
+#[test]
+fn no_damage_at_1_9_times_demand() {
+    let t = RoomTuning::default();
+    for seed in 0..50 {
+        let mut jb = JunctionBox::new(&t, seed);
+        for _ in 0..6000 {
+            let (_, ev) = jb.pass(0.1, 190.0, 100.0, &t);
+            assert!(ev.is_empty(), "seed {seed}: {ev:?}");
+        }
+        assert_eq!(jb.condition().value(), 100.0);
+        assert!(!jb.overvolted());
+    }
+}
+
+#[test]
+fn about_one_break_in_seven_starts_a_fire() {
+    let breaks: Vec<bool> = (0..2000).filter_map(|s| first_break(s, 100.0, 300.0, 100.0, 600.0).map(|b| b.1)).collect();
+    assert_eq!(breaks.len(), 2000);
+    let share = breaks.iter().filter(|f| **f).count() as f64 / breaks.len() as f64;
+    println!("fire share at break: {share:.3} over {} breaks", breaks.len());
+    assert!((0.11..0.19).contains(&share), "share {share}");
+}
+
+#[test]
+fn undervoltage_is_seen_and_damages_nothing() {
+    let t = RoomTuning::default();
+    let mut jb = JunctionBox::new(&t, 3);
+    let (through, ev) = jb.pass(0.1, 50.0, 100.0, &t);
+    assert_eq!(through, 50.0);
+    assert!(jb.undervolted());
+    assert!(ev.is_empty());
+    assert_eq!(jb.condition().value(), 100.0);
+    jb.pass(0.1, 100.0, 100.0, &t);
+    assert!(!jb.undervolted());
+    jb.pass(0.1, 0.0, 0.0, &t);
+    assert!(!jb.undervolted(), "no demand is not undervoltage");
+}
+
+#[test]
+fn a_room_with_demand_and_no_power_is_undervolted_and_one_with_no_demand_is_not() {
+    let mut r = EngineRoom::new(RoomTuning::default(), ReactorTuning::default(), 11);
+    r.step(DT, Input::auto());
+    assert_eq!(r.voltage(), 0.0);
+    assert!(r.junction().undervolted());
+    for g in Group::ALL {
+        r.set_breaker(g, false);
+    }
+    r.step(DT, Input::auto());
+    assert_eq!(r.voltage(), 1.0);
+    assert!(!r.junction().undervolted());
+}
+
+#[test]
+fn the_engine_throttle_scales_the_engines_demand() {
+    let mut r = room();
+    let full = r.grid().group(Group::Engines).demand_kw;
+    r.set_engine_throttle(0.5);
+    r.step(DT, Input::auto());
+    assert_eq!(r.grid().group(Group::Engines).demand_kw, full * 0.5);
+    assert_eq!(r.engine_throttle(), 0.5);
+    r.set_engine_throttle(1.7);
+    assert_eq!(r.engine_throttle(), 1.0, "clamped to 0..1");
+}
+
+#[test]
+fn wander_keeps_the_throttle_in_range_and_moves_the_engines_demand() {
+    let t = RoomTuning { engine_wander: true, ..RoomTuning::default() };
+    let mut r = EngineRoom::new(t, ReactorTuning::default(), 5);
+    assert!(r.set_power(true));
+    let (mut lo, mut hi) = (f64::MAX, f64::MIN);
+    let mut demands = Vec::new();
+    for _ in 0..(300.0 / DT) as usize {
+        r.step(DT, Input::auto());
+        let th = r.engine_throttle();
+        assert!((0.3..=1.0).contains(&th), "throttle {th}");
+        lo = lo.min(th);
+        hi = hi.max(th);
+        demands.push(r.grid().group(Group::Engines).demand_kw);
+    }
+    println!("wander 300 s: throttle {lo:.2}..{hi:.2}");
+    assert!(lo < 0.6 && hi > 0.9, "lo {lo}, hi {hi}");
+    let first = demands[0];
+    assert!(demands.iter().any(|d| *d != first));
+    // Off: the throttle stays where it is.
+    r.set_engine_wander(false);
+    let held = r.engine_throttle();
+    for _ in 0..(60.0 / DT) as usize {
+        r.step(DT, Input::auto());
+    }
+    assert_eq!(r.engine_throttle(), held);
+}
+
+#[test]
+fn wander_is_the_same_for_the_same_seed() {
+    let t = RoomTuning { engine_wander: true, ..RoomTuning::default() };
+    let run_one = |seed: u64| {
+        let mut r = EngineRoom::new(t, ReactorTuning::default(), seed);
+        let mut v = Vec::new();
+        for _ in 0..600 {
+            r.step(DT, Input::auto());
+            v.push(r.engine_throttle());
+        }
+        v
+    };
+    assert_eq!(run_one(9), run_one(9));
+    assert_ne!(run_one(9), run_one(10));
 }

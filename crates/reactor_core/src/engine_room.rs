@@ -6,9 +6,20 @@
 //!   temperature climb, and without flow the core climbs whatever Auto does. Heat above the optimal
 //!   band wears a running pump as overload.
 //! - The junction box sits between the reactor and the consumers. Supply above `overvolt_ratio`
-//!   times the demand is overvoltage: the box takes damage per second, and while overvolted each
-//!   second may bring sparks, and sparks may start a fire. A broken box passes nothing. Its
-//!   breakers (one per group) are the only switches the box has.
+//!   times the demand is overvoltage (Barotrauma `PowerTransfer.cs:245-292`, `UpdateOvervoltage`:
+//!   `Overload = Voltage > max(OverloadVoltage, 1)`). While overvolted, random hits take condition
+//!   (Barotrauma: 1 % per 60 Hz frame, here `overvolt_hits_per_s`; each hit `rand(10..500) / 60 *
+//!   lerp(5, 1, condition fraction)`, so a damaged box is more sensitive). A hit that breaks the box
+//!   gives sparks and, with `break_fire_chance`, a fire (Barotrauma `FireProbability` 0.15, here
+//!   fixed, not the intensity lerp; the 5 s `OverloadCooldown` after a break is kept). Sparks also
+//!   come now and then while overvolted (`sparks_per_s`, our touch: the screen shows it coming).
+//!   Undervoltage (supply delivered below the request) is seen (`voltage`, `undervolted`) and
+//!   damages nothing; Barotrauma does not damage on undervoltage either. A broken box passes
+//!   nothing. Its breakers (one per group) are the only switches the box has.
+//! - The engines' load follows a throttle, 0..1, which scales the Engines group's demand (ours:
+//!   Barotrauma `Engine.cs:190` has the consumption follow the force, with exponent 1.5; ours is
+//!   linear). `set_engine_wander` is the dev stand-in for a helm: the throttle random-walks between
+//!   `wander_min` and 1, a new target every `wander_every_s`, moving at `wander_rate` per second.
 //! - `powered`: the machines have power when the box is working and the reactor delivers.
 //! - `Fault`s are the dev button's: `PumpBreak`, `LoadDrop` (engines and lights breakers off at
 //!   once, so overvoltage and the Auto overshoot follow), `Surge` (the box takes a hit).
@@ -41,13 +52,13 @@ pub struct RoomTuning {
     pub junction: DeviceTuning,
     /// Supply above this multiple of the demand is overvoltage.
     pub overvolt_ratio: f64,
-    /// Condition the junction box loses per second while overvolted.
-    pub overvolt_damage_s: f64,
+    /// Hits per second while overvolted (Barotrauma rolls 1 % per 60 Hz frame: 0.6). TODO(initiator).
+    pub overvolt_hits_per_s: f64,
+    /// Chance that the hit which breaks the box starts a fire. Barotrauma `FireProbability` 0.15.
+    pub break_fire_chance: f64,
     /// Chance per second of sparks while overvolted.
     pub sparks_per_s: f64,
-    /// Chance that a spark starts a fire.
-    pub spark_fire_chance: f64,
-    /// Size of a fire started by sparks, metres.
+    /// Size of a fire from the junction box (a break), metres.
     pub spark_fire_size: f64,
     /// Condition a `Fault::Surge` takes from the junction box.
     pub surge_damage: f64,
@@ -61,6 +72,15 @@ pub struct RoomTuning {
     pub coolant_low: f64,
     /// What one coolant canister adds to the tank, %.
     pub coolant_canister: f64,
+    /// Dev stand-in for a helm: the engines' throttle random-walks while on. Off in code, on in
+    /// `reactor.json`.
+    pub engine_wander: bool,
+    /// Seconds between two new wander targets.
+    pub wander_every_s: f64,
+    /// The lowest wander target, 0..1.
+    pub wander_min: f64,
+    /// How fast the throttle moves to its target, per second.
+    pub wander_rate: f64,
 }
 
 impl Default for RoomTuning {
@@ -72,18 +92,25 @@ impl Default for RoomTuning {
             heat_wear_degrees: 10.0,
             junction: DeviceTuning { repair_threshold: 80.0, ..DeviceTuning::default() },
             overvolt_ratio: 2.0,
-            overvolt_damage_s: 2.0,
+            overvolt_hits_per_s: 0.6,
+            break_fire_chance: 0.15,
             sparks_per_s: 0.1,
-            spark_fire_chance: 0.2,
             spark_fire_size: 0.05,
             surge_damage: 30.0,
             coolant_use_base: 0.04,
             coolant_use_per_heat: 0.0013,
             coolant_low: 25.0,
             coolant_canister: 50.0,
+            engine_wander: false,
+            wander_every_s: 6.0,
+            wander_min: 0.3,
+            wander_rate: 0.15,
         }
     }
 }
+
+/// Barotrauma's `OverloadCooldown` (`PowerTransfer.cs:22`): no hits for this long after a break.
+const OVERLOAD_COOLDOWN_S: f64 = 5.0;
 
 /// What the engineer sets each step.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -223,16 +250,36 @@ pub struct JunctionBox {
     condition: Condition,
     rng: Rng,
     overvolt: bool,
+    /// Delivered supply over the request, 1 with no request (last step).
+    voltage: f64,
+    /// Barotrauma's `overloadCooldownTimer`, s.
+    cooldown: f64,
 }
 
 impl JunctionBox {
     pub fn new(tuning: &RoomTuning, seed: u64) -> JunctionBox {
-        JunctionBox { condition: Condition::new(tuning.junction, seed), rng: Rng::new(seed ^ 0x05ba_43e5), overvolt: false }
+        JunctionBox {
+            condition: Condition::new(tuning.junction, seed),
+            rng: Rng::new(seed ^ 0x05ba_43e5),
+            overvolt: false,
+            voltage: 1.0,
+            cooldown: 0.0,
+        }
     }
 
     /// Whether the last step had overvoltage (the screen's OVERVOLT word).
     pub fn overvolted(&self) -> bool {
         self.overvolt
+    }
+
+    /// The last step's delivered supply over the request, 1 when nothing was asked for.
+    pub fn voltage(&self) -> f64 {
+        self.voltage
+    }
+
+    /// The grid got less than it asked for (the screen's LOW VOLTAGE word). Damages nothing.
+    pub fn undervolted(&self) -> bool {
+        self.voltage < 1.0
     }
 
     pub fn condition(&self) -> &Condition {
@@ -249,20 +296,48 @@ impl JunctionBox {
     fn pass(&mut self, dt: f64, supply_kw: f64, demand_kw: f64, t: &RoomTuning) -> (f64, Vec<RoomEvent>) {
         let mut ev = Vec::new();
         let supply = supply_kw.max(0.0);
+        let demand = demand_kw.max(0.0);
         let through = if self.condition.functioning() { supply } else { 0.0 };
-        self.overvolt = supply > 0.0 && supply > t.overvolt_ratio * demand_kw;
+        // Barotrauma `PowerTransfer.cs:250`: Overload = Voltage > max(OverloadVoltage, 1). Voltage is
+        // supply / load, so a load of 0 with supply counts as overvoltage.
+        self.overvolt = supply > 0.0 && supply > t.overvolt_ratio.max(1.0) * demand;
         if self.overvolt {
-            if let Some(e) = self.condition.damage(t.overvolt_damage_s * dt) {
-                ev.push(RoomEvent::Device { source: Source::Junction, event: e });
-            }
+            ev.extend(self.overload(dt, t));
             if self.rng.unit() < t.sparks_per_s * dt {
                 ev.push(RoomEvent::Sparks);
-                if self.rng.unit() < t.spark_fire_chance {
-                    ev.push(RoomEvent::Fire { size: t.spark_fire_size, source: Source::Junction });
+            }
+        }
+        // The voltage the grid sees: what the box passes over what the grid asked for.
+        self.voltage = if demand > 0.0 { through / demand } else { 1.0 };
+        (through, ev)
+    }
+
+    /// Barotrauma `UpdateOvervoltage` (`PowerTransfer.cs:257-291`): while overloaded, random hits.
+    fn overload(&mut self, dt: f64, t: &RoomTuning) -> Vec<RoomEvent> {
+        let mut ev = Vec::new();
+        if self.cooldown > 0.0 {
+            self.cooldown -= dt;
+            return ev;
+        }
+        // Barotrauma rolls `Rand.Range(0, 1) < 0.01` per 60 Hz frame; here a rate per second.
+        if self.rng.unit() < t.overvolt_hits_per_s * dt {
+            // Damaged boxes are more sensitive to overvoltage (Barotrauma `:270-272`).
+            let sensitivity = 5.0 + (1.0 - 5.0) * self.condition.fraction();
+            let amount = (10.0 + self.rng.unit() * 490.0) / 60.0 * sensitivity;
+            if let Some(e) = self.condition.damage(amount) {
+                let broke = e == DeviceEvent::Broke;
+                ev.push(RoomEvent::Device { source: Source::Junction, event: e });
+                if broke {
+                    // Barotrauma `:276-290`: zap and sparks; a fire with `FireProbability`.
+                    self.cooldown = OVERLOAD_COOLDOWN_S;
+                    ev.push(RoomEvent::Sparks);
+                    if self.rng.unit() < t.break_fire_chance {
+                        ev.push(RoomEvent::Fire { size: t.spark_fire_size, source: Source::Junction });
+                    }
                 }
             }
         }
-        (through, ev)
+        ev
     }
 }
 
@@ -275,6 +350,14 @@ pub struct EngineRoom {
     junction: JunctionBox,
     grid: Grid,
     level: AlarmLevel,
+    /// The Engines group's demand at full throttle, kW (from the tuning).
+    engines_full_kw: f64,
+    /// Engines throttle 0..1.
+    throttle: f64,
+    wander: bool,
+    wander_rng: Rng,
+    wander_target: f64,
+    wander_left: f64,
 }
 
 impl EngineRoom {
@@ -298,6 +381,12 @@ impl EngineRoom {
             reactor,
             grid: Grid::from_tuning(&t.grid),
             level: AlarmLevel::None,
+            engines_full_kw: t.grid.engines.demand_kw,
+            throttle: 1.0,
+            wander: t.room.engine_wander,
+            wander_rng: Rng::new(seed ^ 0x7a1d_e51a),
+            wander_target: 1.0,
+            wander_left: t.room.wander_every_s,
         }
     }
 
@@ -348,6 +437,33 @@ impl EngineRoom {
         &mut self.grid
     }
 
+    /// The junction box's voltage: what the grid got over what it asked for, 0..1 (1 with no
+    /// request). Below 1 the grid is short (`junction().undervolted()`).
+    pub fn voltage(&self) -> f64 {
+        self.junction.voltage()
+    }
+
+    /// The engines' throttle, 0..1 (scales the Engines group's demand).
+    pub fn engine_throttle(&self) -> f64 {
+        self.throttle
+    }
+
+    /// Sets the engines' throttle, 0..1, and the Engines demand with it. While wander is on, the
+    /// next step moves it on.
+    pub fn set_engine_throttle(&mut self, f: f64) {
+        self.throttle = f.clamp(0.0, 1.0);
+        self.grid.set_demand(Group::Engines, self.engines_full_kw * self.throttle);
+    }
+
+    pub fn engine_wander(&self) -> bool {
+        self.wander
+    }
+
+    /// The dev stand-in for a helm: while on, `step` moves the throttle with a random walk.
+    pub fn set_engine_wander(&mut self, on: bool) {
+        self.wander = on;
+    }
+
     /// The machines have power: the junction box works and the reactor delivers (output above 0).
     pub fn powered(&self) -> bool {
         self.junction.condition.functioning() && self.reactor.output_kw() > 0.0
@@ -385,6 +501,10 @@ impl EngineRoom {
         let flow = self.flow();
         self.reactor.set_coolant(flow);
 
+        if self.wander {
+            self.wander_step(dt, &t);
+        }
+        self.grid.set_demand(Group::Engines, self.engines_full_kw * self.throttle);
         let load = self.grid.request_kw();
         ev.extend(self.reactor.step(dt, load).into_iter().map(RoomEvent::Reactor));
         self.pump.use_coolant(dt, flow, self.reactor.heat_input(), &t);
@@ -420,6 +540,19 @@ impl EngineRoom {
                 self.junction.condition.damage(amount).map(|e| RoomEvent::Device { source: Source::Junction, event: e }).into_iter().collect()
             }
         }
+    }
+
+    /// One step of the wander: a new target every `wander_every_s` in [wander_min, 1], the throttle
+    /// moves to it at `wander_rate` per second.
+    fn wander_step(&mut self, dt: f64, t: &RoomTuning) {
+        let lo = t.wander_min.clamp(0.0, 1.0);
+        self.wander_left -= dt;
+        if self.wander_left <= 0.0 {
+            self.wander_target = lo + self.wander_rng.unit() * (1.0 - lo);
+            self.wander_left = t.wander_every_s;
+        }
+        let step = t.wander_rate * dt;
+        self.throttle = (self.throttle + (self.wander_target - self.throttle).clamp(-step, step)).clamp(lo, 1.0);
     }
 
     fn compute_level(&self) -> AlarmLevel {

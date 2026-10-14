@@ -53,6 +53,7 @@ mod sc_flight_hud;
 mod sc_hud;
 mod sc_lift;
 mod sc_turn;
+mod slice_look;
 mod savefile;
 mod space;
 mod swap;
@@ -694,6 +695,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
             dev_area::dev_area_steps(&mut s, &shot_step);
             dev_area::look_sample_steps(&mut s, &shot_step);
         }
+        // The slice's picture check: `--start=dev_area --dev-area`, shots with a window.
+        "slice_look" => slice_look::slice_look_steps(&mut s, out_dir, windowed),
         "displays" => displays::displays_steps(&mut s),
         // C1: items at the dev area's item table, through the request path with 75 ms each way.
         "items" => items::items_steps(&mut s, &shot_step),

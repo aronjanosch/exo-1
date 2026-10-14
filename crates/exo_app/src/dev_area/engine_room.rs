@@ -82,7 +82,7 @@ pub const SCREENS: [Mount; 4] = [
     Mount { id: reactor_screen::PUMP_ID, name: reactor_screen::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::JUNCTION_ID, name: reactor_screen::JUNCTION_NAME, at: [JUNCTION_BOX_AT[0], -18.98], lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::DOOR_ID, name: reactor_screen::DOOR_NAME, at: [-13.04, -10.0], lift: 1.3, size: SMALL_SCREEN_SIZE, turn: -90.0 },
-    Mount { id: reactor_screen::FAULTS_ID, name: reactor_screen::FAULTS_NAME, at: [-17.5, -11.04], lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 0.0 },
+    Mount { id: reactor_screen::FAULTS_ID, name: reactor_screen::FAULTS_NAME, at: reactor_screen::FAULTS_AT, lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 0.0 },
 ];
 
 /// The device ids of the parts (`DevBox::id`).

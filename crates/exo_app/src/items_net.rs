@@ -126,6 +126,8 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                 if let Some(f) = items.fire.clone() {
                     items.net_out.push(NetOut::Fire { to: Some(slot), f });
                 }
+                let s = items.public.clone();
+                items.net_out.push(NetOut::Status { to: Some(slot), s });
             }
             for (slot, msg) in net.take_messages() {
                 let ok = match wire::decode::<ToHost>(&msg) {
@@ -144,6 +146,10 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                     }
                     Some(ToHost::Repair(a)) => {
                         items.repair_asks.push((slot, a));
+                        true
+                    }
+                    Some(ToHost::Treat(t)) => {
+                        items.treat_asks.push((slot, t));
                         true
                     }
                     None => false,
@@ -165,6 +171,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                     Some(ToClient::Reactor(r)) => items.reactor = Some(r),
                     Some(ToClient::Fire(f)) => items.fire = Some(f),
                     Some(ToClient::RepairDone) => items.repair_done = true,
+                    Some(ToClient::Status(s)) => items.public = s,
                     None => net.st.invalid += 1,
                 }
             }
@@ -304,6 +311,12 @@ pub fn items_net_out(
             }
             NetOut::RepairDone { to } => {
                 net.send_reliable(Some(to), &wire::encode(&ToClient::RepairDone));
+            }
+            NetOut::Status { to, s } => {
+                net.send_reliable(to, &wire::encode(&ToClient::Status(s)));
+            }
+            NetOut::Treat(t) => {
+                net.send_reliable(None, &wire::encode(&ToHost::Treat(t)));
             }
         }
     }

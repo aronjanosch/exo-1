@@ -10,6 +10,10 @@ use exo_app::cargo::Crate;
 use exo_app::controls::Controls;
 use exo_app::interact::Interaction;
 use exo_app::health::HealthState;
+use exo_app::public_status::RemoteStatus;
+use exo_app::repair::{HostSession, RepairSessions};
+use health_core::Env;
+use item_core::wire::{Doing, PublicStatus, RepairDevice};
 use exo_app::items::{Items, LooseItem, Role};
 use exo_app::menu::{start_session_with, Session};
 use exo_app::net_live::Net;
@@ -320,3 +324,70 @@ fn a_bandage_used_by_a_client_on_the_host_heals_the_host_and_the_stack_shrinks()
     assert!(v.burn_level == 0 && !v.burning && v.down.is_none() && v.health > 0.99, "the client's own vitals are calm: {v:?}");
     println!("[{:5.1} s] done; the host's burn {:.1}", p.start.elapsed().as_secs_f64(), burn(&p));
 }
+
+fn status(app: &App, id: u32) -> PublicStatus {
+    items(app).public.iter().find(|(p, _)| *p == id).map(|(_, s)| *s).unwrap_or_default()
+}
+
+/// The figure of `owner` as this process has it (its `RemoteStatus`).
+fn figure(app: &mut App, owner: u32) -> Option<PublicStatus> {
+    let w = app.world_mut();
+    let mut q = w.query::<(&exo_app::net_live::RemoteWalker, &RemoteStatus)>();
+    q.iter(w).find(|(rw, _)| rw.owner == owner).map(|(_, s)| s.0)
+}
+
+/// The host's own body catches fire: heat per tick until the buildup is full.
+fn ignite(app: &mut App) {
+    let mut st = app.world_mut().resource_mut::<HealthState>();
+    let st = &mut *st;
+    let b = st.bodies.get_mut(&exo_app::items::LOCAL).expect("the host's body");
+    for _ in 0..10_000 {
+        if b.health.burning() {
+            return;
+        }
+        b.health.step(&st.tuning, 0.1, Env { oxygen: 1.0, hot: true, glow: false });
+    }
+    panic!("the host's body did not catch fire");
+}
+
+fn set_down(app: &mut App, down: bool) {
+    let mut st = app.world_mut().resource_mut::<HealthState>();
+    st.bodies.get_mut(&exo_app::items::LOCAL).expect("the host's body").respawn_in = down.then_some(5.0);
+}
+
+#[test]
+fn the_client_sees_the_host_burning_down_and_repairing() {
+    // The host's public status (#300): burning, down and a repair session, as the client's figure
+    // of the host shows them.
+    let port = 21000 + (std::process::id() % 1000) as u16;
+    let o = Options { headless: true, ..Default::default() };
+    let mut host = build_app(&o);
+    let mut client = build_app(&o);
+    for app in [&mut host, &mut client] {
+        app.finish();
+        app.cleanup();
+        app.update();
+    }
+    start_session_with(host.world_mut(), &Session::Host { port }, &sim_args()).expect("host");
+    start_session_with(client.world_mut(), &Session::Join { address: format!("127.0.0.1:{port}"), slot: 2 }, &sim_args()).expect("join");
+    let start = Instant::now();
+    let mut p = Pair { host, client, start };
+    p.until(30.0, "connected, the client has the host's figure", |p| {
+        p.client.world_mut().query::<&exo_app::net_live::RemoteWalker>().iter(p.client.world()).count() == 1
+    });
+
+    ignite(&mut p.host);
+    p.until(15.0, "the client's figure of the host burns", |p| figure(&mut p.client, LOCAL_HOST).is_some_and(|s| s.burning));
+
+    set_down(&mut p.host, true);
+    p.until(15.0, "the client's figure of the host is down", |p| figure(&mut p.client, LOCAL_HOST).is_some_and(|s| s.down));
+    assert!(status(&p.client, LOCAL_HOST).down, "the public status says down too");
+    set_down(&mut p.host, false);
+
+    p.host.world_mut().resource_mut::<RepairSessions>().sessions.push(HostSession { player: LOCAL_HOST, device: RepairDevice::Reactor, hits: 0, gated: false });
+    p.until(15.0, "the client's figure of the host repairs the reactor", |p| figure(&mut p.client, LOCAL_HOST).is_some_and(|s| s.doing == Doing::Repairing(RepairDevice::Reactor)));
+    assert_eq!(figure(&mut p.client, LOCAL_HOST), Some(status(&p.client, LOCAL_HOST)), "the figure carries the public status");
+    assert!(!status(&p.client, LOCAL_HOST).down, "up again after the down");
+}
+
+const LOCAL_HOST: u32 = exo_app::items::LOCAL;

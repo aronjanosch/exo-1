@@ -12,8 +12,9 @@
 //!   the sprays) goes to the clients about 4 times a second while it changes.
 //! - A client sends its spray's aim (`spray_input`, at most about 10 times a second while it
 //!   changes) and draws the snapshot. Its own air is not stepped.
-//! - Window only: a flickering flame and a point light per fire, and a few white puffs in front of
-//!   each spray. The crackle is not made yet (`TODO`: a quiet noise sound in `audio.rs`).
+//! - Window only: a flickering flame and a point light per fire (`effects`: the light flickers per
+//!   frame and reaches further as the fire grows), a few white puffs in front of each spray, and
+//!   steam where a spray lands (`effects`). The crackle is not made yet (`TODO`: a quiet noise sound in `audio.rs`).
 //! - No ammo for the extinguisher yet (`TODO(initiator)`).
 use crate::controls::Controls;
 use crate::dev_area::engine_room::{place_of, source_at, EngineAir};
@@ -111,6 +112,25 @@ fn device_id(s: Source) -> u64 {
 /// The floor point of the fire's centre in the world, with its lift (`area`: the dev area is on).
 fn flame_world(area: &DevArea, planet: &PlanetRes, p: [f64; 2]) -> Option<(DVec3, DVec3)> {
     area.ground(planet, p, FLAME_LIFT)
+}
+
+/// Window: where a spray lands on the fires in a snapshot (the same cone as `spray_step`), the
+/// point of its aim nearest the fire it hits first. The steam puffs sit there.
+pub(crate) fn landing_of(area: &DevArea, planet: &PlanetRes, s: &SprayNew, fires: &[FireNew]) -> Option<DVec3> {
+    let eye = DVec3::from_array(s.eye);
+    let dir = DVec3::from_array(s.dir).normalize_or_zero();
+    if dir == DVec3::ZERO {
+        return None;
+    }
+    let half = SPRAY_HALF_ANGLE_DEG.to_radians();
+    let best = fires
+        .iter()
+        .filter_map(|f| {
+            let (centre, _) = flame_world(area, planet, f.pos)?;
+            cone_landing(eye, dir, centre, f.size * 0.5, SPRAY_REACH, half)
+        })
+        .fold(None, |b: Option<f64>, d| Some(b.map_or(d, |b| b.min(d))));
+    best.map(|d| eye + dir * d)
 }
 
 pub fn plugin(app: &mut App) {
@@ -343,13 +363,16 @@ fn flames_sync(
         let k = (0.9 + 0.1 * (t * 17.0 + f.id as f64).sin()) as f32;
         let rot = frame.rotation(up, 0.0).as_quat();
         let scale = Vec3::new(f.size as f32 * 1.2, (f.size as f32 * 1.6 * k).max(0.05), f.size as f32 * 1.2);
-        let light = 30_000.0 * f.size as f32 * k;
+        // The light flickers per frame (0.8 to 1.0) and reaches further as the fire grows.
+        let light = 30_000.0 * f.size as f32 * crate::effects::flame_flicker(t.to_bits() ^ f.id.wrapping_mul(0x9E37_79B9));
+        let range = crate::effects::flame_range(f.size);
         if let Some(&e) = vis.by_id.get(&f.id) {
             if let Ok((_, mut tr, mut l)) = flames.get_mut(e) {
                 tr.translation = to_render(ground);
                 tr.rotation = rot;
                 tr.scale = scale;
                 l.intensity = light;
+                l.range = range;
             }
         } else {
             let mesh = meshes.add(Cone::new(0.5, 1.0));
@@ -360,7 +383,7 @@ fn flames_sync(
                     Mesh3d(mesh),
                     MeshMaterial3d(mat),
                     Transform { translation: to_render(ground), rotation: rot, scale, ..default() },
-                    PointLight { color: Color::srgb(1.0, 0.7, 0.35), intensity: light, range: 8.0, shadow_maps_enabled: false, ..default() },
+                    PointLight { color: Color::srgb(1.0, 0.7, 0.35), intensity: light, range, shadow_maps_enabled: false, ..default() },
                 ))
                 .id();
             vis.by_id.insert(f.id, e);

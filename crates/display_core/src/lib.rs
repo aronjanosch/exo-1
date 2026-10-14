@@ -15,8 +15,10 @@
 use glam::{DQuat, DVec2, DVec3};
 use std::borrow::Cow;
 
+pub mod canvas;
 pub mod hud;
 pub mod theme;
+pub use canvas::{arc_points, Ink, Shape, TextFace};
 pub use theme::{Rgb, Theme};
 
 // ---------- ids ----------
@@ -142,6 +144,10 @@ pub enum Widget {
     Column { gap: f64, items: Vec<Item> },
     /// Takes room, draws nothing.
     Space,
+    /// A drawn picture in its box (`Shape`s in its own pixels from the top left, `w` by `h` as
+    /// designed: `Panel::overflowing` checks every shape inside). With an `action` the whole box is
+    /// a button: a click gives the action with no value.
+    Canvas { w: f64, h: f64, shapes: Vec<Shape>, action: Option<String> },
 }
 
 impl Widget {
@@ -151,6 +157,7 @@ impl Widget {
         match self {
             Widget::Button { enabled: true, action, .. } | Widget::Toggle { enabled: true, action, .. } | Widget::Slider { enabled: true, action, .. } => Some(action),
             Widget::List { action: Some(a), .. } => Some(a),
+            Widget::Canvas { action: Some(a), .. } => Some(a),
             _ => None,
         }
     }
@@ -160,6 +167,7 @@ impl Widget {
         match self {
             Widget::Button { action, .. } | Widget::Toggle { action, .. } | Widget::Slider { action, .. } => Some(action),
             Widget::List { action: Some(a), .. } => Some(a),
+            Widget::Canvas { action: Some(a), .. } => Some(a),
             _ => None,
         }
     }
@@ -514,13 +522,21 @@ impl Panel {
 
     /// What does not fit: every leaf widget whose rectangle is not inside the content area, named by
     /// its action (or "label" for a widget without one). Empty when everything fits.
+    /// A canvas with a shape outside its designed box counts too (named "shape").
     pub fn overflowing(&self) -> Vec<String> {
         let c = self.content();
-        self.layout()
+        let mut out: Vec<String> = self
+            .layout()
             .into_iter()
             .filter(|w| !(w.rect.min.cmpge(c.min).all() && w.rect.max().cmple(c.max()).all()))
             .map(|w| w.widget.action_id().unwrap_or("label").to_string())
-            .collect()
+            .collect();
+        for w in self.layout() {
+            if let Widget::Canvas { w: cw, h: ch, shapes, .. } = w.widget {
+                out.extend(shapes.iter().filter(|s| !s.inside(*cw, *ch)).map(|_| "shape".to_string()));
+            }
+        }
+        out
     }
 }
 
@@ -603,6 +619,7 @@ impl Pointer {
                     match h.widget {
                         Widget::Button { .. } => out.push(Click { action: p, value: None }),
                         Widget::Toggle { on, .. } => out.push(Click { action: p, value: Some(if *on { 0.0 } else { 1.0 }) }),
+                        Widget::Canvas { .. } => out.push(Click { action: p, value: None }),
                         Widget::List { rows, row_h, .. } => {
                             if let Some(i) = at.and_then(|at| list_row_at(&h.rect, *row_h, rows.len(), at)) {
                                 out.push(Click { action: p, value: Some(i as f64) });
@@ -693,3 +710,8 @@ pub fn panel_point(centre: DVec3, rot: DQuat, size_m: DVec2, uv: DVec2) -> DVec3
 
 #[cfg(test)]
 mod tests;
+
+/// A drawn picture of `w` by `h` pixels; with `action` the box is a button.
+pub fn canvas(w: f64, h: f64, shapes: Vec<Shape>, action: Option<&str>) -> Item {
+    item(Widget::Canvas { w, h, shapes, action: action.map(str::to_string) })
+}

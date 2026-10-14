@@ -316,3 +316,24 @@ fn every_button_of_a_screen_is_inside_it() {
     }
     assert!(p.overflowing().is_empty());
 }
+
+#[test]
+fn a_canvas_shape_outside_its_box_is_an_overflow() {
+    use crate::{canvas, Ink, Shape};
+    let ok = Panel::screen(Tier::S, "T", "X", canvas(100.0, 50.0, vec![Shape::Rect { x: 0.0, y: 0.0, w: 100.0, h: 50.0, fill: Some(Ink::Bg0), outline: None }], None).flex(1.0));
+    assert!(ok.overflowing().is_empty(), "{:?}", ok.overflowing());
+    let out = Panel::screen(Tier::S, "T", "X", canvas(100.0, 50.0, vec![Shape::Line { a: [50.0, 10.0], b: [120.0, 10.0], width: 2.0, ink: Ink::Hud, dash: None }], None).flex(1.0));
+    assert!(out.overflowing().iter().any(|n| n == "shape"), "{:?}", out.overflowing());
+}
+
+#[test]
+fn a_canvas_with_an_action_is_a_button_that_clicks_with_no_value() {
+    use crate::{canvas, Ink, Shape};
+    let mut p = Pointer::default();
+    let panel = Panel::screen(Tier::S, "T", "X", canvas(100.0, 50.0, vec![Shape::Circle { cx: 50.0, cy: 25.0, r: 20.0, fill: Some(Ink::Hud), stroke: None }], Some("lever")).flex(1.0));
+    let at = panel.find("lever").map(|w| w.rect.centre());
+    assert!(at.is_some());
+    assert!(p.step(&panel, at, true).is_empty());
+    let out = p.step(&panel, at, false);
+    assert_eq!(out, vec![Click { action: "lever".into(), value: None }]);
+}

@@ -33,6 +33,7 @@ mod flight;
 mod help;
 mod engine_room;
 mod fire;
+mod fire_grid;
 mod repair;
 mod reactor;
 mod health;
@@ -709,6 +710,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "reactor" => reactor::reactor_steps(&mut s),
         // #298: fire: a fire at the reactor grows, burns, is sprayed out; the alarm follows.
         "fire" => fire::fire_steps(&mut s),
+        // #300: the same fire on the cell grid: the switch, the spread, the corridor, the spray.
+        "fire_grid" => fire_grid::fire_grid_steps(&mut s),
         "repair" => repair::repair_steps(&mut s),
         // #135: save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),

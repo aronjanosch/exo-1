@@ -466,11 +466,12 @@ pub fn faults_panel() -> Panel {
         column(
             4.0,
             vec![
-                button("Pump break", "pump_break").fixed(28.0),
-                button("Load drop", "load_drop").fixed(28.0),
-                button("Surge", "surge").fixed(28.0),
-                button("Start fire", "fire").fixed(28.0),
-                button("Reset reactor", "reset").fixed(28.0),
+                button("Pump break", "pump_break").fixed(24.0),
+                button("Load drop", "load_drop").fixed(24.0),
+                button("Surge", "surge").fixed(24.0),
+                button("Start fire", "fire").fixed(24.0),
+                button("Fire: point/grid", "fire_model").fixed(24.0),
+                button("Reset reactor", "reset").fixed(24.0),
                 space(),
             ],
         ),

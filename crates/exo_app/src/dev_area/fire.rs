@@ -16,12 +16,19 @@
 //! - Window only: a flickering flame, a warm glow on the floor and a point light per fire (`effects`:
 //!   the light flickers per frame and reaches further as the fire grows), a white jet from each
 //!   spray's nozzle to where it lands, and steam where a spray lands (`effects`). The crackle is not made yet (`TODO`: a quiet noise sound in `audio.rs`).
+//! - Two models (#300, `FireModel`, a dev switch on the faults screen): the point fires above, or
+//!   the cells of `fire_core::grid` (`FireGrid`, the engine room's and the corridor's cells, one
+//!   per metre). The host decides and the snapshot says which (`FireNews::grid`); the grid's
+//!   burning cells are its `cells`, and in the grid model `fires` lists them as cell-wide fires
+//!   for the aim and the steam. Its flames are the placeholder blocks of `grid_sync`.
 //! - No ammo for the extinguisher yet (`TODO(initiator)`).
 use crate::controls::Controls;
 use crate::dev_area::engine_room::{footprint_of, ignition_at, place_of, source_at, EngineAir};
 use crate::dev_area::reactor::ReactorSim;
+use crate::dev_area::reactor_screen::FAULTS_ID;
+use crate::dev_area::engine_room::{CORRIDOR, ROOM};
 use crate::dev_area::{area_of, DevArea};
-use crate::displays::ActiveDisplay;
+use crate::displays::{ActiveDisplay, DisplayAction};
 use crate::env::PlanetRes;
 use crate::health::{area_pos, walker_points};
 use crate::items::{Items, NetOut, Role};
@@ -31,8 +38,9 @@ use crate::walker::{Player, EYE_HEIGHT};
 use bevy::math::{DVec2, DVec3};
 use bevy::prelude::*;
 use fire_core::tuning::FireSettings;
-use fire_core::{cone_landing, Fire, FireEvent, FireId, Target, TargetKind};
-use item_core::wire::{Alarm, FireNew, FireNews, SprayAsk, SprayNew};
+use fire_core::grid::{BurningCell, Grid, GridEvent};
+use fire_core::{cone_landing, Fire, FireEvent, Target, TargetKind};
+use item_core::wire::{Alarm, CellNew, FireNew, FireNews, SprayAsk, SprayNew};
 use item_core::PlayerId;
 use reactor_core::{ReactorEvent, RoomEvent, Source};
 use std::collections::{BTreeMap, BTreeSet};
@@ -58,6 +66,33 @@ pub struct FireConfig(pub FireSettings);
 /// or the corridor).
 #[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FireAlarm(pub Alarm);
+
+/// Which fire model runs (#300): the point fires of `Deck` or the cells of `fire_core::grid`. A dev
+/// switch on the faults screen; the host decides, and its snapshot says which one it runs.
+#[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FireModel {
+    #[default]
+    Point,
+    Grid,
+}
+
+impl FireModel {
+    pub fn toggled(self) -> FireModel {
+        match self {
+            FireModel::Point => FireModel::Grid,
+            FireModel::Grid => FireModel::Point,
+        }
+    }
+}
+
+/// The cells of the engine room and the corridor (#300): their rooms' rectangles, set up once.
+#[derive(Resource)]
+pub struct FireGrid(pub Grid);
+
+/// A cell's id in the snapshot's `fires` (the grid model): its room and its index.
+fn cell_id(c: &BurningCell) -> u64 {
+    ((c.room.0 as u64) << 32) | c.index as u64
+}
 
 /// The burn of the fire on each player this step, per second (`fire_core`'s rate): their body
 /// takes it (`health`).
@@ -99,10 +134,20 @@ pub fn start_of(e: &RoomEvent) -> Option<(Source, f64)> {
     }
 }
 
-/// Starts a fire at a source's front face in the engine room (or joins one it touches).
-pub fn ignite(air: &mut EngineAir, source: Source, size: f64) -> FireId {
+/// Starts a fire at a source's front face in the engine room (or joins one it touches): a point
+/// fire of `size` in the point model, a burning cell at the grid's start intensity in the grid.
+pub fn ignite(air: &mut EngineAir, grid: &mut FireGrid, model: FireModel, source: Source, size: f64) {
     let p = ignition_at(source);
-    air.deck.ignite(air.engine, DVec3::new(p[0], p[1], 0.0), size)
+    let at = DVec3::new(p[0], p[1], 0.0);
+    match model {
+        FireModel::Point => {
+            air.deck.ignite(air.engine, at, size);
+        }
+        FireModel::Grid => {
+            let start = grid.0.tuning().start_intensity;
+            grid.0.ignite(air.engine, at, start);
+        }
+    }
 }
 
 fn device_id(s: Source) -> u64 {
@@ -141,14 +186,31 @@ pub(crate) fn landing_of(area: &DevArea, planet: &PlanetRes, cfg: &FireSettings,
 pub fn plugin(app: &mut App) {
     let files = crate::content_files("gameplay");
     let settings = FireSettings::load(&files).unwrap_or_else(|e| panic!("fire: {e:?}"));
+    let mut grid = Grid::new(settings.grid, 0x300);
+    let ids = EngineAir::new();
+    for (room, zone) in [(ids.engine, ROOM), (ids.corridor, CORRIDOR)] {
+        grid.add_room(room, DVec2::new(zone.centre[0] - zone.half[0], zone.centre[1] - zone.half[1]), DVec2::new(zone.half[0] * 2.0, zone.half[1] * 2.0));
+    }
     app.insert_resource(FireConfig(settings))
+        .insert_resource(FireGrid(grid))
+        .init_resource::<FireModel>()
         .init_resource::<FireAlarm>()
         .init_resource::<FireHeat>()
         .init_resource::<Sprays>()
         .init_resource::<FireSend>()
         .init_resource::<SprayClient>();
     app.add_systems(FixedUpdate, spray_input.after(crate::scenario::run_script).in_set(crate::phases::Fx::Input));
+    app.add_systems(FixedUpdate, model_click.in_set(crate::phases::Fx::Effects));
     app.add_systems(FixedUpdate, (spray_step, fire_step).chain().after(super::engine_room::room_step).after(spray_input).after(crate::items_net::items_net_in).in_set(crate::phases::Fx::Input));
+}
+
+/// The faults screen's model button: toggles the model. A client's snapshot sets it again.
+fn model_click(mut clicks: MessageReader<DisplayAction>, mut model: ResMut<FireModel>) {
+    for c in clicks.read() {
+        if c.panel == FAULTS_ID && c.action == "fire_model" {
+            *model = model.toggled();
+        }
+    }
 }
 
 /// The extinguisher's aim as this process has it now: LMB held, the mouse captured, no display in
@@ -195,7 +257,7 @@ fn spray_input(time: Res<Time>, controls: Res<Controls>, active: Res<ActiveDispl
 
 /// Host: the sprays' requests, then each spray in reach puts out the fires it lands on, for this
 /// tick. The spray lands at the point of its aim nearest the fire it hits first.
-fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut items: ResMut<Items>, mut sprays: ResMut<Sprays>, mut air: ResMut<EngineAir>, cfg: Res<FireConfig>) {
+fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut items: ResMut<Items>, mut sprays: ResMut<Sprays>, mut air: ResMut<EngineAir>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, cfg: Res<FireConfig>) {
     if items.role == Role::Client {
         return;
     }
@@ -213,7 +275,11 @@ fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>
     let dt = time.delta_secs_f64();
     let half = cfg.0.spray_half_angle_deg.to_radians();
     let reach = cfg.0.spray_reach;
-    let fires: Vec<([f64; 2], f64)> = air.deck.fires().iter().map(|f| ([f.pos.x, f.pos.y], f.size)).collect();
+    // What a spray aims at: the point fires, or each burning cell as a square of its width.
+    let fires: Vec<([f64; 2], f64)> = match *model {
+        FireModel::Point => air.deck.fires().iter().map(|f| ([f.pos.x, f.pos.y], f.size)).collect(),
+        FireModel::Grid => grid.0.burning().map(|c| ([c.centre.x, c.centre.y], cfg.0.grid.cell_m)).collect(),
+    };
     let mut landings = Vec::new();
     for s in sprays.0.values() {
         let eye = DVec3::from_array(s.eye);
@@ -234,7 +300,15 @@ fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>
         }
     }
     for p in landings {
-        let _ = air.deck.spray(DVec3::new(p[0], p[1], 0.0), dt);
+        let at = DVec3::new(p[0], p[1], 0.0);
+        match *model {
+            FireModel::Point => {
+                let _ = air.deck.spray(at, dt);
+            }
+            FireModel::Grid => {
+                let _ = grid.0.spray(at, dt);
+            }
+        }
     }
 }
 
@@ -251,12 +325,53 @@ fn burn_device(sim: &mut ReactorSim, id: u64, amount: f64) {
     }
 }
 
+/// One burn of the fire: a person's heat for this step (`FireHeat`), or a device's condition.
+fn burn(target: u64, kind: TargetKind, amount: f64, dt: f64, heat: &mut FireHeat, sim: &mut ReactorSim) {
+    match kind {
+        TargetKind::Person if amount > 0.0 && dt > 0.0 => {
+            *heat.0.entry(target as PlayerId).or_insert(0.0) += amount / dt;
+        }
+        TargetKind::Person => {}
+        TargetKind::Device => burn_device(sim, target, amount),
+    }
+}
+
+/// The snapshot's fires and cells of this step: the point fires, or the grid's burning cells.
+fn news_of(model: FireModel, air: &EngineAir, grid: &FireGrid, sprays: &Sprays) -> FireNews {
+    let sprays: Vec<SprayNew> = sprays.0.values().copied().collect();
+    match model {
+        FireModel::Point => FireNews {
+            fires: air.deck.fires().iter().map(|f| FireNew { id: f.id.0, pos: [f.pos.x, f.pos.y], size: (f.size * 100.0).round() / 100.0 }).collect(),
+            sprays,
+            grid: false,
+            cells: Vec::new(),
+        },
+        FireModel::Grid => {
+            let cells: Vec<BurningCell> = grid.0.burning().collect();
+            let cell_m = grid.0.tuning().cell_m;
+            FireNews {
+                fires: cells.iter().map(|c| FireNew { id: cell_id(c), pos: [c.centre.x, c.centre.y], size: cell_m }).collect(),
+                sprays,
+                grid: true,
+                cells: cells.iter().map(|c| CellNew { room: c.room.0 as u32, cell: c.index as u32, heat: (c.intensity * 1000.0).round() as u16 }).collect(),
+            }
+        }
+    }
+}
+
 /// Host: the people and the devices in reach are targets; the air steps; the burns go to the
-/// players' heat and to the devices; the alarm and the snapshot. A client only draws the snapshot.
+/// players' heat and to the devices; the alarm and the snapshot. A client only takes the model
+/// and draws the snapshot. Its own air is not stepped.
 #[allow(clippy::too_many_arguments)]
-fn fire_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut air: ResMut<EngineAir>, cfg: Res<FireConfig>, mut sim: ResMut<ReactorSim>, mut items: ResMut<Items>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, mut heat: ResMut<FireHeat>, mut alarm: ResMut<FireAlarm>, sprays: Res<Sprays>, mut send: ResMut<FireSend>) {
+fn fire_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut air: ResMut<EngineAir>, cfg: Res<FireConfig>, mut sim: ResMut<ReactorSim>, mut items: ResMut<Items>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, mut heat: ResMut<FireHeat>, mut alarm: ResMut<FireAlarm>, sprays: Res<Sprays>, mut send: ResMut<FireSend>, mut model: ResMut<FireModel>, mut grid: ResMut<FireGrid>) {
     heat.0.clear();
     if items.role == Role::Client {
+        if let Some(n) = items.fire.as_ref() {
+            let m = if n.grid { FireModel::Grid } else { FireModel::Point };
+            if *model != m {
+                *model = m;
+            }
+        }
         return;
     }
     let dt = time.delta_secs_f64();
@@ -273,29 +388,47 @@ fn fire_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>
         let h = footprint_of(s);
         targets.push(Target { id: device_id(s), kind: TargetKind::Device, room: air.engine, pos: DVec3::new(p[0], p[1], 0.0), half: DVec2::new(h[0], h[1]) });
     }
-    for e in air.deck.step(dt, &targets) {
+    // The point fires burn the targets in `Deck::step`; the cells burn them in `Grid::step`, after
+    // the air has moved (`Deck::step` with no fires only moves it).
+    let point = *model == FireModel::Point;
+    let point_targets: &[Target] = if point { &targets } else { &[] };
+    for e in air.deck.step(dt, point_targets) {
         match e {
-            FireEvent::Damage { target, kind: TargetKind::Person, amount } if amount > 0.0 && dt > 0.0 => {
-                *heat.0.entry(target as PlayerId).or_insert(0.0) += amount / dt;
-            }
-            FireEvent::Damage { target, kind: TargetKind::Device, amount } => burn_device(&mut sim, target, amount),
-            FireEvent::Damage { .. } => {}
+            FireEvent::Damage { target, kind, amount } => burn(target, kind, amount, dt, &mut heat, &mut sim),
             FireEvent::Spread { room, .. } => info!("fire: spread into room {room:?}"),
             FireEvent::Out { room, .. } => info!("fire: out in room {room:?}"),
         }
     }
-
-    let inside = |f: &Fire| f.room == air.engine || f.room == air.corridor;
-    let mut level = Alarm::None;
-    for f in air.deck.fires().iter().filter(|f| inside(f)) {
-        level = level.max(if f.size >= cfg.0.alarm_danger_size { Alarm::Danger } else { Alarm::Warn });
+    if !point {
+        for e in grid.0.step(&mut air.deck, dt, &targets) {
+            match e {
+                GridEvent::Damage { target, kind, amount } => burn(target, kind, amount, dt, &mut heat, &mut sim),
+                GridEvent::Spread { room, cell } => info!("fire: a cell caught in room {room:?}, cell {cell}"),
+                GridEvent::Out { room, cell } => info!("fire: a cell out in room {room:?}, cell {cell}"),
+            }
+        }
     }
+
+    let level = if point {
+        let inside = |f: &Fire| f.room == air.engine || f.room == air.corridor;
+        let mut level = Alarm::None;
+        for f in air.deck.fires().iter().filter(|f| inside(f)) {
+            level = level.max(if f.size >= cfg.0.alarm_danger_size { Alarm::Danger } else { Alarm::Warn });
+        }
+        level
+    } else {
+        let total = grid.0.total(air.engine) + grid.0.total(air.corridor);
+        if total <= 0.0 {
+            Alarm::None
+        } else if total >= cfg.0.grid.alarm_danger_total {
+            Alarm::Danger
+        } else {
+            Alarm::Warn
+        }
+    };
     alarm.0 = level;
 
-    let news = FireNews {
-        fires: air.deck.fires().iter().map(|f| FireNew { id: f.id.0, pos: [f.pos.x, f.pos.y], size: (f.size * 100.0).round() / 100.0 }).collect(),
-        sprays: sprays.0.values().copied().collect(),
-    };
+    let news = news_of(*model, &air, &grid, &sprays);
     items.fire = Some(news.clone());
     send.since += dt;
     if items.role == Role::Host && send.sent.as_ref() != Some(&news) && send.since >= SEND_EVERY_S {
@@ -380,6 +513,18 @@ pub fn jet_sprays(snapshot: &[SprayNew], local: Option<SprayNew>) -> Vec<SprayNe
 #[cfg(test)]
 mod visual_tests {
     use super::*;
+
+    #[test]
+    fn the_model_switch_toggles_and_a_cell_block_is_at_most_a_metre() {
+        assert_eq!(FireModel::default(), FireModel::Point);
+        assert_eq!(FireModel::Point.toggled(), FireModel::Grid);
+        assert_eq!(FireModel::Grid.toggled(), FireModel::Point);
+        for i in 0..50 {
+            let h = cell_height(1.0, i as f64 * 0.1, i);
+            assert!((0.0..=1.0).contains(&h), "{h}");
+        }
+        assert_eq!(cell_height(0.0, 1.0, 3), 0.0, "a cell out has no block");
+    }
 
     #[test]
     fn flames_have_a_minimum_and_grow_with_the_fire() {
@@ -478,8 +623,8 @@ struct FlameVisuals {
 }
 
 pub fn window_plugin(app: &mut App) {
-    app.init_resource::<FlameVisuals>();
-    app.add_systems(Update, flames_sync.in_set(crate::phases::Frame::Sync));
+    app.init_resource::<FlameVisuals>().init_resource::<GridVisuals>();
+    app.add_systems(Update, (flames_sync, grid_sync).in_set(crate::phases::Frame::Sync));
 }
 
 /// Window: each fire is a flickering flame on a warm glow, scaled by its size, with a flickering
@@ -501,7 +646,11 @@ fn flames_sync(
     mut glows: Query<&mut Transform, (With<Glow>, Without<Flame>, Without<Jet>)>,
     mut jets: Query<(&mut Transform, &mut Visibility), (With<Jet>, Without<Flame>, Without<Glow>)>,
 ) {
-    let fires: &[FireNew] = items.fire.as_ref().map_or(&[], |n| n.fires.as_slice());
+    // In the grid model the flames are the cells (`grid_sync`); the snapshot's fires are the cells
+    // then, kept for the sprays' aim and the steam.
+    let all: &[FireNew] = items.fire.as_ref().map_or(&[], |n| n.fires.as_slice());
+    let grid = items.fire.as_ref().is_some_and(|n| n.grid);
+    let fires: &[FireNew] = if grid { &[] } else { all };
     let snapshot: &[SprayNew] = items.fire.as_ref().map_or(&[], |n| n.sprays.as_slice());
     let (Some(area), Some(frame)) = (area.as_deref(), area.as_deref().and_then(|a| a.frame)) else { return };
     let t = time.elapsed_secs_f64();
@@ -601,7 +750,7 @@ fn flames_sync(
         }
         let up = area.ground(&planet, area_of(&frame, &planet, eye), 0.0).map_or(DVec3::Z, |g| g.1);
         let nozzle = nozzle_of(eye, dir, up);
-        let end = landing_of(area, &planet, &cfg.0, s, fires).unwrap_or(eye + dir * cfg.0.spray_reach);
+        let end = landing_of(area, &planet, &cfg.0, s, all).unwrap_or(eye + dir * cfg.0.spray_reach);
         for i in 0..JET_PARTICLES {
             let idx = si * JET_PARTICLES + i;
             let phase = jet_phase(t, i);
@@ -623,3 +772,110 @@ fn flames_sync(
         }
     }
 }
+
+/// Window, grid model (#300): the placeholders of the cells. Each burning cell is a flickering
+/// orange block (its height by its intensity, at most 1 m) on a dark red tint of the floor, and
+/// each room with burning cells has one point light at the centroid of them. The cells are made
+/// again every frame (a few dozen at most): a placeholder until the real fire art.
+#[derive(Resource, Default)]
+struct GridVisuals {
+    spawned: Vec<Entity>,
+    handles: Option<GridHandles>,
+}
+
+#[derive(Clone)]
+struct GridHandles {
+    block_mesh: Handle<Mesh>,
+    block_mat: Handle<StandardMaterial>,
+    tint_mesh: Handle<Mesh>,
+    tint_mat: Handle<StandardMaterial>,
+}
+
+/// A cell's block, its floor tint, and a room's light: markers of `grid_sync`'s entities.
+#[derive(Component)]
+struct CellBlock;
+
+#[derive(Component)]
+struct CellTint;
+
+#[derive(Component)]
+struct CellLight;
+
+/// The height (m) of a cell's block at intensity `v`, flickering by `t` and the cell's index: at
+/// most 1 m.
+pub fn cell_height(v: f64, t: f64, index: usize) -> f64 {
+    let flicker = 0.85 + 0.15 * (t * 17.0 + index as f64 * 1.7).sin();
+    (v.clamp(0.0, 1.0) * flicker).clamp(0.0, 1.0)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn grid_sync(
+    mut commands: Commands,
+    time: Res<Time>,
+    planet: Res<PlanetRes>,
+    area: Option<Res<DevArea>>,
+    items: Res<Items>,
+    cfg: Res<FireConfig>,
+    origin: Res<RenderOrigin>,
+    mut vis: ResMut<GridVisuals>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for e in vis.spawned.drain(..) {
+        commands.entity(e).despawn();
+    }
+    let Some(news) = items.fire.as_ref().filter(|n| n.grid) else { return };
+    let (Some(area), Some(frame)) = (area.as_deref(), area.as_deref().and_then(|a| a.frame)) else { return };
+    let handles = vis.handles.get_or_insert_with(|| GridHandles {
+        block_mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+        block_mat: materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.45, 0.1), emissive: LinearRgba::rgb(3.0, 1.0, 0.2), unlit: true, ..default() }),
+        tint_mesh: meshes.add(Circle::new(1.0)),
+        tint_mat: materials.add(StandardMaterial { base_color: Color::srgba(0.35, 0.02, 0.01, 0.55), unlit: true, alpha_mode: AlphaMode::Blend, ..default() }),
+    })
+    .clone();
+    let t = time.elapsed_secs_f64();
+    let to_render = |w: DVec3| (w - origin.origin).as_vec3();
+    let cell_m = cfg.0.grid.cell_m;
+    let mut per_room: BTreeMap<u32, (DVec3, f64, u32)> = BTreeMap::new();
+    for c in &news.cells {
+        let Some(id) = news.fires.iter().find(|f| f.id == (((c.room as u64) << 32) | c.cell as u64)).map(|f| f.pos) else { continue };
+        let Some((ground, up)) = area.ground(&planet, id, 0.0) else { continue };
+        let v = c.heat as f64 / 1000.0;
+        let h = cell_height(v, t, c.cell as usize);
+        let rot = frame.rotation(up, 0.0).as_quat();
+        let block = commands
+            .spawn((
+                CellBlock,
+                Mesh3d(handles.block_mesh.clone()),
+                MeshMaterial3d(handles.block_mat.clone()),
+                Transform { translation: to_render(ground + up * (h * 0.5)), rotation: rot, scale: Vec3::new(cell_m as f32 * 0.9, h.max(0.02) as f32, cell_m as f32 * 0.9), ..default() },
+            ))
+            .id();
+        let tint = commands
+            .spawn((
+                CellTint,
+                Mesh3d(handles.tint_mesh.clone()),
+                MeshMaterial3d(handles.tint_mat.clone()),
+                Transform { translation: to_render(ground + up * 0.03), rotation: rot * Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2), scale: Vec3::splat((cell_m * 0.5) as f32), ..default() },
+            ))
+            .id();
+        vis.spawned.push(block);
+        vis.spawned.push(tint);
+        let r = per_room.entry(c.room).or_insert((DVec3::ZERO, 0.0, 0));
+        r.0 += ground + up * 1.5;
+        r.1 += v;
+        r.2 += 1;
+    }
+    for (room, (sum, heat, n)) in per_room {
+        let centre = sum / n as f64;
+        let light = commands
+            .spawn((
+                CellLight,
+                PointLight { color: Color::srgb(1.0, 0.6, 0.3), intensity: (30_000.0 * heat.min(3.0)) as f32 * crate::effects::flame_flicker(t.to_bits() ^ room as u64), range: crate::effects::flame_range(heat), shadow_maps_enabled: false, ..default() },
+                Transform::from_translation(to_render(centre)),
+            ))
+            .id();
+        vis.spawned.push(light);
+    }
+}
+

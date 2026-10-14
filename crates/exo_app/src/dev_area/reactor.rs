@@ -14,7 +14,7 @@
 //! - The readout and the dev fault screen are `reactor_screen`.
 use super::*;
 use crate::dev_area::engine_room::{EngineAir, ShipAlarm};
-use crate::dev_area::fire::{self, FireAlarm, FireConfig};
+use crate::dev_area::fire::{self, FireAlarm, FireConfig, FireGrid, FireModel};
 use crate::items::{Items, NetOut, Role};
 use crate::dev_area::engine_room::ROOM;
 use item_core::wire::{Alarm, BreakerGroup, PartNews, ReactorAsk, ReactorFault, ReactorNews};
@@ -201,7 +201,7 @@ pub fn plugin(app: &mut App) {
 /// alarm (the room's or the fire's, the higher), the snapshot out. A client only forwards its
 /// requests.
 #[allow(clippy::too_many_arguments)]
-fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut alarm: ResMut<ShipAlarm>, mut air: ResMut<EngineAir>, fires: Res<FireConfig>, fire_alarm: Res<FireAlarm>) {
+fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut alarm: ResMut<ShipAlarm>, mut air: ResMut<EngineAir>, fires: Res<FireConfig>, fire_alarm: Res<FireAlarm>, mut grid: ResMut<FireGrid>, model: Res<FireModel>) {
     let asks = std::mem::take(&mut items.reactor_asks);
     if items.role == Role::Client {
         for a in asks {
@@ -223,7 +223,7 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     events.extend(sim.room.step(dt, input));
     for e in events {
         if let Some((source, size)) = fire::start_of(&e) {
-            fire::ignite(&mut air, source, size);
+            fire::ignite(&mut air, &mut grid, *model, source, size);
         }
         route(e, &mut counts);
     }

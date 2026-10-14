@@ -21,6 +21,8 @@
 //! are starting points for the playtest (`TODO(initiator)`).
 use gameplay_core::rng::Rng;
 
+pub mod minigame;
+
 #[cfg(test)]
 mod tests;
 

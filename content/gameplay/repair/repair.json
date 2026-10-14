@@ -1,0 +1,16 @@
+{
+  "_comment": "The repair minigame (#299). TODO(initiator): every number is a starting value for the playtest.",
+  "skill": 50.0,
+  "hit_share": 0.08,
+  "miss_share": 0.02,
+  "pointer_deg_s": 180.0,
+  "boost": 2.0,
+  "zones_max": 2,
+  "zone_deg": 40.0,
+  "zone_life_s": 3.0,
+  "respawn_s": 0.8,
+  "spawn_min_deg": 60.0,
+  "reach_m": 1.8,
+  "walk_away_m": 2.5,
+  "flash_s": 0.3
+}

@@ -2,13 +2,15 @@
 //! zones as brighter arcs, the pointer as a short tick, a flash on a hit (good) or a miss (bad),
 //! and a thin progress arc on the outer edge. Drawn with the reticle's own parts: conic gradients
 //! and a dark disc inside (`crew_hud::ring_fill`'s style). No condition readout.
+//! A hurt from a miss (`RepairHurt`) flashes the screen's edge: white-blue for the shock, orange
+//! for the hot machine; the knock flashes nothing.
 use crate::crew_hud::{col, col_a, dark};
 use crate::displays::DisplayLook;
-use crate::repair::RepairPlay;
+use crate::repair::{RepairConfig, RepairHurt, RepairPlay};
 use bevy::math::Rot2;
 use bevy::prelude::*;
-use bevy::ui::{AngularColorStop, ConicGradient, UiPosition};
-use device_core::minigame::{minigame_on, Press};
+use bevy::ui::{AngularColorStop, BackgroundGradient, ColorStop, ConicGradient, RadialGradient, RadialGradientShape, UiPosition};
+use device_core::minigame::{minigame_on, Machine, Press};
 
 /// Zones the ring can show at once (the maximum of the rules; a spare slot stays hidden).
 const ZONE_SLOTS: usize = 4;
@@ -49,6 +51,51 @@ enum RepairPart {
 pub fn window_plugin(app: &mut App) {
     use crate::phases::Frame;
     app.add_systems(Update, (spawn_ring, update_ring).chain().in_set(Frame::Hud));
+    app.add_systems(Update, (spawn_hurt, update_hurt).chain().in_set(Frame::Hud));
+}
+
+/// The screen's edge flash of a hurt: the full-screen node, under the HUD.
+#[derive(Component)]
+struct HurtEdge;
+
+/// The flash's colour by the machine: white-blue for the shock, orange for the hot machine, none
+/// for the knock.
+pub fn hurt_colour(m: Machine) -> Option<Color> {
+    match m {
+        Machine::Electrical => Some(Color::srgb(0.7, 0.9, 1.0)),
+        Machine::Hot => Some(Color::srgb(1.0, 0.45, 0.1)),
+        Machine::Mechanical => None,
+    }
+}
+
+/// The flash's alpha at an age: 0.7 at the start, 0 at `flash_s`.
+pub fn hurt_alpha(age: f64, flash_s: f64) -> f32 {
+    if flash_s <= 0.0 {
+        return 0.0;
+    }
+    (0.7 * (1.0 - age / flash_s)).clamp(0.0, 0.7) as f32
+}
+
+fn spawn_hurt(mut commands: Commands, existing: Query<(), With<HurtEdge>>) {
+    if existing.is_empty() {
+        let full = Node { position_type: PositionType::Absolute, left: px(0), right: px(0), top: px(0), bottom: px(0), ..default() };
+        commands.spawn((HurtEdge, GlobalZIndex(-2), full, BackgroundGradient::default()));
+    }
+}
+
+fn update_hurt(time: Res<Time>, hurt: Res<RepairHurt>, cfg: Res<RepairConfig>, mut edges: Query<&mut BackgroundGradient, With<HurtEdge>>) {
+    let now = time.elapsed_secs_f64();
+    let (colour, flash) = match (hurt.machine.and_then(hurt_colour), hurt.at) {
+        (Some(c), Some(at)) => (c, hurt_alpha(now - at, cfg.0.hurt_flash_s)),
+        _ => (Color::NONE, 0.0),
+    };
+    for mut gradient in &mut edges {
+        *gradient = BackgroundGradient::from(RadialGradient::new(
+            UiPosition::CENTER,
+            RadialGradientShape::FarthestCorner,
+            vec![ColorStop::new(colour.with_alpha(0.0), percent(55.0)), ColorStop::new(colour.with_alpha(flash), percent(100.0))],
+        ));
+    }
 }
 
 /// A disc of radius `r` centred on the dial.

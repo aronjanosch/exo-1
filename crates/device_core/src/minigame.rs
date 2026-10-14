@@ -43,6 +43,50 @@ pub struct Tuning {
     pub minigame_below: f64,
     /// A broken device (not functioning) makes no progress until this many hits in the session.
     pub broken_hits: u32,
+    /// A miss at the electrical machine (the junction box) burns the repairer: strength of the
+    /// `burn` affliction added.
+    pub shock_burn: f64,
+    /// Seconds the repairer is stunned after a miss at the electrical machine: controls frozen,
+    /// the ring keeps running.
+    pub shock_stun_s: f64,
+    /// A miss at the hot machine (the reactor) burns the repairer: strength of `burn` added.
+    pub hot_burn: f64,
+    /// Seconds the repairer is stunned after a miss at the mechanical machine (the pump). No
+    /// health is lost there.
+    pub knock_stun_s: f64,
+    /// Seconds the screen-edge flash of a hurt shows.
+    pub hurt_flash_s: f64,
+}
+
+/// What kind of machine a repair is at: each hurts a miss in its own way.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Machine {
+    /// The junction box: an electric shock.
+    Electrical,
+    /// The reactor: a hot surface.
+    Hot,
+    /// The coolant pump: a knock.
+    Mechanical,
+}
+
+/// What a miss does to the repairer: strength of `burn` added (host) and a stun in seconds (the
+/// client). Zero is no hurt.
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct Hurt {
+    pub burn: f64,
+    pub stun_s: f64,
+}
+
+/// The hurt of a press at a machine. Only a miss hurts; a hit never does.
+pub fn hurt_of(machine: Machine, press: Press, t: &Tuning) -> Hurt {
+    if press == Press::Hit {
+        return Hurt::default();
+    }
+    match machine {
+        Machine::Electrical => Hurt { burn: t.shock_burn, stun_s: t.shock_stun_s },
+        Machine::Hot => Hurt { burn: t.hot_burn, stun_s: 0.0 },
+        Machine::Mechanical => Hurt { burn: 0.0, stun_s: t.knock_stun_s },
+    }
 }
 
 /// Whether the minigame runs at this condition (a share of max, 0..1).
@@ -261,6 +305,11 @@ mod tests {
             flash_s: 0.3,
             minigame_below: 0.5,
             broken_hits: 3,
+            shock_burn: 6.0,
+            shock_stun_s: 0.5,
+            hot_burn: 4.0,
+            knock_stun_s: 0.3,
+            hurt_flash_s: 0.4,
         }
     }
 
@@ -455,6 +504,34 @@ mod tests {
         }
         assert_eq!(s.hits, 3, "three hits are made");
         assert!(may_rise(true, s.hits, &t));
+    }
+
+    #[test]
+    fn a_miss_hurts_each_machine_its_own_way() {
+        let t = tuning();
+        let shock = hurt_of(Machine::Electrical, Press::Miss, &t);
+        assert!(shock.burn > 0.0 && shock.stun_s > 0.0, "the junction box burns and stuns");
+        let hot = hurt_of(Machine::Hot, Press::Miss, &t);
+        assert!(hot.burn > 0.0 && hot.stun_s == 0.0, "the reactor burns, no stun");
+        let knock = hurt_of(Machine::Mechanical, Press::Miss, &t);
+        assert!(knock.burn == 0.0 && knock.stun_s > 0.0, "the pump stuns and burns nothing");
+        assert!(hot.burn < shock.burn, "the reactor's burn is milder than the shock");
+    }
+
+    #[test]
+    fn a_hit_never_hurts() {
+        let t = tuning();
+        for m in [Machine::Electrical, Machine::Hot, Machine::Mechanical] {
+            assert_eq!(hurt_of(m, Press::Hit, &t), Hurt::default(), "{m:?}");
+        }
+    }
+
+    #[test]
+    fn a_miss_while_the_minigame_is_off_is_no_press_at_all() {
+        // The session gives no press at 60 % condition, so no hurt comes from it either.
+        let mut s = Session::new(tuning(), 3);
+        s.ring.pointer_deg = 0.0;
+        assert_eq!(s.press(0.6), None);
     }
 
     #[test]

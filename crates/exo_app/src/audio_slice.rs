@@ -12,13 +12,13 @@ use crate::dev_area::DevArea;
 use crate::env::PlanetRes;
 use crate::health::{OwnVitals, UseHold};
 use crate::items::Items;
-use crate::repair::RepairPlay;
+use crate::repair::{RepairHurt, RepairPlay};
 use crate::settings::Settings;
 use crate::walker::Player;
 use bevy::audio::{AudioSinkPlayback, PlaybackMode, Volume};
 use bevy::math::DVec3;
 use bevy::prelude::*;
-use device_core::minigame::Press;
+use device_core::minigame::{Machine, Press};
 use item_core::wire::{ReactorNews, RepairDevice};
 use reactor_core::Source;
 use std::collections::BTreeMap;
@@ -47,6 +47,8 @@ pub const REPAIR_LOOP_VOL: f32 = 0.05;
 pub const BLIP_VOL: f32 = 0.07;
 pub const MISS_VOL: f32 = 0.06;
 pub const CHIME_VOL: f32 = 0.08;
+/// The repair hurt's hiss at the hot machine (the steam's sound, quieter than a puff).
+pub const HISS_VOL: f32 = 0.07;
 /// The junction box's zap, at most this often while overvolted (s).
 pub const ZAP_VOL: f32 = 0.09;
 pub const ZAP_EVERY_S: f64 = 2.0;
@@ -364,6 +366,20 @@ fn pump_loop(players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes>,
     }
 }
 
+/// The repair hurt (a miss this process made): the junction box's zap, the reactor's hiss (the
+/// steam), the pump's clank. A new hurt is a new `at`.
+fn repair_hurt_sounds(mut commands: Commands, s: Res<SliceSounds>, hurt: Res<RepairHurt>, mut prev: Local<Option<f64>>) {
+    if hurt.at.is_some() && hurt.at != *prev {
+        match hurt.machine {
+            Some(Machine::Electrical) => one_shot(&mut commands, &s.zap, ZAP_VOL),
+            Some(Machine::Hot) => one_shot(&mut commands, &s.steam, HISS_VOL),
+            Some(Machine::Mechanical) => one_shot(&mut commands, &s.clunk, CLUNK_VOL),
+            None => {}
+        }
+    }
+    *prev = hurt.at;
+}
+
 /// The door's slide when its state changes. Every process has the door state (`Items::room`).
 /// TODO(initiator): the slide is not positional yet: it is the same in the whole ship.
 fn door_sound(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mut prev: Local<Option<bool>>) {
@@ -416,7 +432,7 @@ fn health_sounds(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, o
 /// Windowed runs: the slice's sounds, from the plugin of `audio`.
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, setup);
-    app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, electric_sounds, pump_loop, door_sound, health_sounds).in_set(crate::phases::Frame::Input));
+    app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, repair_hurt_sounds, electric_sounds, pump_loop, door_sound, health_sounds).in_set(crate::phases::Frame::Input));
 }
 
 #[cfg(test)]

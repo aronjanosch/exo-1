@@ -16,6 +16,7 @@
 //!   walker when the host's vitals say it is up again.
 use crate::dev_area::hazards::{GLOW_BARREL, HOT_PLATE, NO_AIR};
 use crate::dev_area::engine_room::EngineAir;
+use crate::dev_area::fire::FireHeat;
 use crate::dev_area::{area_of, DevArea, Zone, PAD_MAIN};
 use crate::controls::{Actions, Controls};
 use crate::env::PlanetRes;
@@ -166,27 +167,34 @@ pub fn noticeably(a: &Vitals, b: &Vitals) -> bool {
 }
 
 /// A player's place in the area (metres), if on foot on the planet and the dev area is there.
-fn area_pos(area: Option<&DevArea>, planet: &PlanetRes, p: Option<DVec3>) -> Option<[f64; 2]> {
+pub(crate) fn area_pos(area: Option<&DevArea>, planet: &PlanetRes, p: Option<DVec3>) -> Option<[f64; 2]> {
     let (f, p) = (area?.frame?, p?);
     Some(area_of(&f, planet, p))
 }
 
-/// Host: the hazards and the air under every body, one step, the respawn countdown.
-#[allow(clippy::too_many_arguments)]
-fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, air: Option<Res<EngineAir>>, items: Res<Items>, mut st: ResMut<HealthState>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, net: Option<Res<Net>>) {
-    if items.role == Role::Client {
-        return;
-    }
-    let dt = time.delta_secs_f64();
+/// Every player who is on foot in the world (the local one and the peers): where they stand.
+pub(crate) fn walker_points(players: &Query<&Player>, remotes: &Query<(&RemoteWalker, &WorldPose)>) -> BTreeMap<PlayerId, DVec3> {
     let mut at: BTreeMap<PlayerId, DVec3> = BTreeMap::new();
     if let Ok(pl) = players.single()
         && pl.ship.is_none()
     {
         at.insert(LOCAL, pl.w.pos);
     }
-    for (rw, wp) in &remotes {
+    for (rw, wp) in remotes {
         at.insert(rw.owner, wp.pos);
     }
+    at
+}
+
+/// Host: the hazards and the air under every body, one step, the respawn countdown. The fire's
+/// heat (`FireHeat`, set by the fire step before this one) is a hot place under that body.
+#[allow(clippy::too_many_arguments)]
+fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, air: Option<Res<EngineAir>>, items: Res<Items>, mut st: ResMut<HealthState>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, net: Option<Res<Net>>, heat: Option<Res<FireHeat>>) {
+    if items.role == Role::Client {
+        return;
+    }
+    let dt = time.delta_secs_f64();
+    let at = walker_points(&players, &remotes);
     st.body(LOCAL);
     for slot in net.map(|n| n.peer_slots()).unwrap_or_default() {
         st.body(slot);
@@ -213,7 +221,7 @@ fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea
             (Some(p), Some(a)) => a.oxygen_at(p),
             _ => 1.0,
         };
-        let env = Env { oxygen: if inside(&NO_AIR) { 0.0 } else { room_air }, hot: inside(&HOT_PLATE), glow: inside(&GLOW_BARREL) };
+        let env = Env { oxygen: if inside(&NO_AIR) { 0.0 } else { room_air }, hot: inside(&HOT_PLATE) || heat.as_ref().is_some_and(|h| h.0.contains(id)), glow: inside(&GLOW_BARREL) };
         for ev in b.health.step(t, dt, env) {
             if matches!(ev, HealthEvent::Died { .. }) {
                 b.respawn_in = Some(t.respawn_s);

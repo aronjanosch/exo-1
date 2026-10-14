@@ -23,6 +23,7 @@ use crate::items::{Items, NetOut, Role};
 use crate::origin::WorldPos;
 use crate::Layer;
 use fire_core::{Deck, FireTuning, GapId, RoomId};
+use reactor_core::Source;
 use item_core::wire::{Alarm, RoomAsk, RoomNews};
 
 /// The room's interior and the corridor's, as zones (area metres).
@@ -259,8 +260,9 @@ pub(super) fn room_state(mut items: ResMut<Items>, mut alarm: ResMut<ShipAlarm>,
     }
 }
 
-/// Every process: the door slides towards its target; the host's air follows the slide and steps.
-fn room_step(time: Res<Time>, door: Res<EngineDoor>, mut air: ResMut<EngineAir>, mut slabs: Query<(&mut Slab, &mut Position)>) {
+/// Every process: the door slides towards its target and the air's gap follows it. The air is
+/// stepped by `fire::fire_step` (host), after this.
+pub(super) fn room_step(time: Res<Time>, door: Res<EngineDoor>, mut air: ResMut<EngineAir>, mut slabs: Query<(&mut Slab, &mut Position)>) {
     let dt = time.delta_secs_f64();
     let goal = if door.open { 1.0 } else { 0.0 };
     let step = dt / DOOR_TIME;
@@ -270,7 +272,15 @@ fn room_step(time: Res<Time>, door: Res<EngineDoor>, mut air: ResMut<EngineAir>,
         let door = air.door;
         air.deck.set_open(door, slab.progress);
     }
-    let _ = air.deck.step(dt, &[]);
+}
+
+/// Where a fire of each source starts (area metres): the machine's centre on the floor.
+pub fn source_at(s: Source) -> [f64; 2] {
+    match s {
+        Source::Reactor => REACTOR_AT,
+        Source::Pump => COOLANT_PUMP_AT,
+        Source::Junction => JUNCTION_BOX_AT,
+    }
 }
 
 /// Every process: the room's parts as colliders, and the door as a kinematic slab, once per planet

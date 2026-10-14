@@ -7,13 +7,15 @@
 //! - The room's alarm drives `ShipAlarm` while the reactor is not calm (Warn, Danger); while it is
 //!   calm the test console's alarm button may set it.
 //! - Fires, sparks and meltdowns are logged (`info!`/`warn!`) and counted in `ReactorCounts` for
-//!   the scenarios. Their effects come with the fire and meltdown slices.
+//!   the scenarios. A fire starts in the engine room's air (`fire`, #298); the meltdown's effects
+//!   come with their slice. The dev faults screen's Fire asks for a fire at the reactor.
 //! - The readout and the dev fault screen are `reactor_screen`.
 use super::*;
-use crate::dev_area::engine_room::ShipAlarm;
+use crate::dev_area::engine_room::{EngineAir, ShipAlarm};
+use crate::dev_area::fire::{self, FireAlarm, FireConfig};
 use crate::items::{Items, NetOut, Role};
 use item_core::wire::{Alarm, PartNews, ReactorAsk, ReactorFault, ReactorNews};
-use reactor_core::{AlarmLevel, EngineRoom, Fault, Input, ReactorEvent, RoomEvent, Tuning};
+use reactor_core::{AlarmLevel, EngineRoom, Fault, Input, ReactorEvent, RoomEvent, Source, Tuning};
 
 /// Seconds between two sends of a changed snapshot (4 Hz).
 pub const SEND_EVERY_S: f64 = 0.25;
@@ -74,10 +76,13 @@ impl ReactorSim {
             ReactorAsk::SetTurbine(v) if self.manual => self.turbine = v.clamp(0.0, 100.0),
             ReactorAsk::SetFission(_) | ReactorAsk::SetTurbine(_) => {}
             ReactorAsk::Trigger(f) => {
-                let events = self.room.trigger(fault(f));
-                info!("reactor: dev fault {f:?}");
-                for e in events {
-                    route(e, counts);
+                // The fire is started by `reactor_step`, which owns the air (`fault` is None for it).
+                if let Some(f) = fault(f) {
+                    let events = self.room.trigger(f);
+                    info!("reactor: dev fault {f:?}");
+                    for e in events {
+                        route(e, counts);
+                    }
                 }
             }
             ReactorAsk::Reset => {
@@ -117,11 +122,13 @@ impl ReactorSim {
     }
 }
 
-fn fault(f: ReactorFault) -> Fault {
+/// The room's fault for a dev request; None for the fire, which the air takes.
+fn fault(f: ReactorFault) -> Option<Fault> {
     match f {
-        ReactorFault::PumpBreak => Fault::PumpBreak,
-        ReactorFault::LoadDrop => Fault::LoadDrop,
-        ReactorFault::Surge => Fault::Surge,
+        ReactorFault::PumpBreak => Some(Fault::PumpBreak),
+        ReactorFault::LoadDrop => Some(Fault::LoadDrop),
+        ReactorFault::Surge => Some(Fault::Surge),
+        ReactorFault::Fire => None,
     }
 }
 
@@ -139,7 +146,7 @@ pub fn alarm_of(l: AlarmLevel) -> Alarm {
     }
 }
 
-/// Logs the events the effects of later slices will use, and counts them.
+/// Logs the events and counts them; the fires start in the air (`fire::start_of`), not here.
 pub fn route(e: RoomEvent, counts: &mut ReactorCounts) {
     match e {
         RoomEvent::Reactor(ReactorEvent::Fire { size }) => {
@@ -173,9 +180,11 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, reactor_step.before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
 }
 
-/// Host and one process: the requests, one step, the events, the ship's alarm, the snapshot out.
-/// A client only forwards its requests.
-fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut alarm: ResMut<ShipAlarm>) {
+/// Host and one process: the requests, one step, the events (fires start in the air), the ship's
+/// alarm (the room's or the fire's, the higher), the snapshot out. A client only forwards its
+/// requests.
+#[allow(clippy::too_many_arguments)]
+fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut alarm: ResMut<ShipAlarm>, mut air: ResMut<EngineAir>, fires: Res<FireConfig>, fire_alarm: Res<FireAlarm>) {
     let asks = std::mem::take(&mut items.reactor_asks);
     if items.role == Role::Client {
         for a in asks {
@@ -183,16 +192,28 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
         }
         return;
     }
+    let mut events = Vec::new();
     for a in asks {
-        sim.apply(a, &cfg.0, &mut counts);
+        if a == ReactorAsk::Trigger(ReactorFault::Fire) {
+            info!("reactor: dev fire");
+            events.push(RoomEvent::Fire { size: fires.0.start_size, source: Source::Reactor });
+        } else {
+            sim.apply(a, &cfg.0, &mut counts);
+        }
     }
     let dt = time.delta_secs_f64();
     let input = if sim.manual { Input::manual(sim.fission, sim.turbine) } else { Input::auto() };
-    for e in sim.room.step(dt, input) {
+    events.extend(sim.room.step(dt, input));
+    for e in events {
+        if let Some((source, size)) = fire::start_of(&e) {
+            fire::ignite(&mut air, source, size);
+        }
         route(e, &mut counts);
     }
-    // Not calm: the room's alarm is the ship's. Calm after an alarm: back to none.
-    let level = alarm_of(sim.room.level());
+    // Not calm: the room's alarm (or the fire's, the higher) is the ship's. Calm after an alarm:
+    // back to none.
+    let room_level = alarm_of(sim.room.level());
+    let level = room_level.max(fire_alarm.0);
     if level != Alarm::None || sim.alarmed {
         alarm.level = level;
     }

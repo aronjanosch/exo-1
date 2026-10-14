@@ -1,4 +1,4 @@
-//! The SC model's tuning: one file per stage (`content/tuning/sc_<stage>.json`), so each stage's
+//! The SC model's tuning: one file per stage in each `content/ship/<type>/` folder, so each stage's
 //! lane edits only its own file. All values TODO(initiator); none are taken from Star Citizen.
 use super::{air::AirTuning, angular::AngularTuning, drive::DriveTuning, linear::LinearTuning, modes::ModeTuning};
 use crate::limits::{Dirs, Rot};

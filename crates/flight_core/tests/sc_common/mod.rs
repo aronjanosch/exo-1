@@ -8,15 +8,15 @@ use glam::DVec3;
 pub const DT: f64 = 1.0 / 60.0;
 
 pub fn tuning() -> ScTuning {
-    ScTuning::from_json([
-        include_str!("../../../../content/tuning/sc_ship.json"),
-        include_str!("../../../../content/tuning/sc_modes.json"),
-        include_str!("../../../../content/tuning/sc_linear.json"),
-        include_str!("../../../../content/tuning/sc_angular.json"),
-        include_str!("../../../../content/tuning/sc_drive.json"),
-        include_str!("../../../../content/tuning/sc_air.json"),
+    flight_core::ship_type::ShipType::from_json(include_str!("../../../../content/ship/kackfass_1/type.json"), [
+        include_str!("../../../../content/ship/kackfass_1/sc_ship.json"),
+        include_str!("../../../../content/ship/kackfass_1/sc_modes.json"),
+        include_str!("../../../../content/ship/kackfass_1/sc_linear.json"),
+        include_str!("../../../../content/ship/kackfass_1/sc_angular.json"),
+        include_str!("../../../../content/ship/kackfass_1/sc_drive.json"),
+        include_str!("../../../../content/ship/kackfass_1/sc_air.json"),
     ])
-    .unwrap()
+    .unwrap().flight
 }
 
 /// The tuning with thrusters that answer at once (no spool, jerk or boost ramp, #198), for

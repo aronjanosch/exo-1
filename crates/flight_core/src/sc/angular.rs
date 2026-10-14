@@ -13,16 +13,16 @@
 //! 4. Roll is first order towards its target; release (target 0) is a constant deceleration of
 //!    `roll_release_share` of the box, stopping at zero.
 //! 5. Rates follow the speed (`rate_over_speed`, speed over the cap) and boost (`boost_rate`).
-//! 6. G-safe (`Modes::g_safe`, coupled): pitch and yaw scale so rate x velocity stays inside the
-//!    G limit per direction (own copy of the values).
+//! 6. Coupled turn coordination: pitch and yaw scale so rate x velocity plus holds and drift
+//!    correction fits the usable thrust budget. G-safe further reduces that budget.
 //! 7. Landing mode: the rates times `landing_rate_share` near the ground.
 //! 8. Brake to level (`Env::level`, X held while hovering): pitch and roll turn the ship's up onto
 //!    the planet's up, at `brake_level_gain` times the angle, unless the pilot steers that axis.
 //!
-//! All values are TODO(initiator) (`content/tuning/sc_angular.json`).
+//! All values are TODO(initiator) (`content/ship/<type>/sc_angular.json`).
 use super::modes::Modes;
 use super::StepState;
-use crate::limits::{Dirs, Rot, G0};
+use crate::limits::{Dirs, Rot, G0, G_SAFE_MAX_G};
 use crate::{lerp, smoothstep, Curve, FlightInput, Interp};
 use glam::{DVec2, DVec3};
 use serde::Deserialize;
@@ -121,7 +121,7 @@ impl Default for AngularTuning {
             landing_rate_share: 0.5,
             landing_full_below: 5.0,
             landing_off_above: 40.0,
-            g_limit: Dirs { forward: 8.0, backward: 6.0, left: 4.0, right: 4.0, up: 6.0, down: 3.0 },
+            g_limit: Dirs::splat(G_SAFE_MAX_G),
             brake_level_below: 3.0,
             brake_level_gain: 2.0,
         }
@@ -137,8 +137,10 @@ pub struct Env {
     pub boost: f64,
     /// m/s: the linear speed cap in force.
     pub cap: f64,
-    /// m/s² the thrusters give per direction (for a G-safe turn cap).
+    /// m/s² available after translation's G-safe and strafe taper.
     pub thrust_box: Dirs,
+    /// m/s², ship space: thrust reserved for gravity, air and across-goal drift correction.
+    pub linear_hold: DVec3,
     /// rad/s², ship space: what the air turns that the flight computer holds against
     /// (`AirOut::angular_hold`).
     pub air_hold: DVec3,
@@ -159,7 +161,7 @@ pub struct AngularState {
 pub struct AngularOut {
     /// rad/s², ship space.
     pub accel: DVec3,
-    /// G-safe or comstab lowered the rate.
+    /// Coupled turn coordination lowered the rate (thrust or G-safe budget).
     pub rate_capped: bool,
 }
 
@@ -249,12 +251,13 @@ pub fn step(s: &mut AngularState, f: &StepState, input: &FlightInput, m: &Modes,
         }
     }
 
-    // 6. G-safe turn cap: rate x velocity (the centripetal push of a coupled turn) plus the gravity
-    // hold stays inside the limit per direction. Scales pitch and yaw only.
+    // 6. Coordinate body rotation with the flight path, even with G-safe off:
+    // rate x velocity is the acceleration needed to turn that velocity with the body.
+    // Reserve the holds and drift correction first, then scale pitch and yaw together.
     let mut rate_capped = false;
-    if m.g_safe && m.coupling > 0.0 {
-        let g = t.g_limit.scaled(G0);
-        let hold_up = f.inv * -f.gravity;
+    if m.coupling > 0.0 {
+        let g = if m.g_safe { e.thrust_box.min(&t.g_limit.scaled(G0)) } else { e.thrust_box };
+        let hold_up = e.linear_hold;
         let turn = DVec3::new(req.x, req.y, 0.0).cross(f.lv);
         let mut k_scale: f64 = 1.0;
         for (k, base, pos, neg) in [(turn.x, hold_up.x, g.right, g.left), (turn.y, hold_up.y, g.up, g.down), (turn.z, hold_up.z, g.backward, g.forward)] {
@@ -263,6 +266,16 @@ pub fn step(s: &mut AngularState, f: &StepState, input: &FlightInput, m: &Modes,
             } else if k < -1e-12 {
                 k_scale = k_scale.min((neg + base) / -k);
             }
+        }
+        if m.g_safe && turn.length_squared() > 1e-18 {
+            // Holds and turn forces share one spherical 4 g budget. Gravity itself
+            // is not a load; only the thruster force needed to oppose it is reserved.
+            let a = turn.length_squared();
+            let b = 2.0 * hold_up.dot(turn);
+            let c = hold_up.length_squared() - (G_SAFE_MAX_G * G0).powi(2);
+            let discriminant = b * b - 4.0 * a * c;
+            let upper = if discriminant >= 0.0 { (-b + discriminant.sqrt()) / (2.0 * a) } else { 0.0 };
+            k_scale = k_scale.min(upper);
         }
         let scale = lerp(1.0, k_scale.clamp(0.0, 1.0), m.coupling);
         rate_capped = scale < 1.0 - 1e-9;
@@ -273,8 +286,19 @@ pub fn step(s: &mut AngularState, f: &StepState, input: &FlightInput, m: &Modes,
     // 2 and 3. Pitch and yaw: the reversal, then the spring. 4. Roll.
     let b = &e.accel_box;
     let (mut rev, mut acc) = (s.reversing, s.accel);
-    let pitch = pitch_yaw_axis(&mut rev.x, &mut acc.x, w.x, req.x, dt, (t.natural_frequency.pitch, t.damping_ratio.pitch, b.pitch, t.reversal_share));
-    let yaw = pitch_yaw_axis(&mut rev.y, &mut acc.y, w.y, req.y, dt, (t.natural_frequency.yaw, t.damping_ratio.yaw, b.yaw, t.reversal_share));
+    let mut pitch = pitch_yaw_axis(&mut rev.x, &mut acc.x, w.x, req.x, dt, (t.natural_frequency.pitch, t.damping_ratio.pitch, b.pitch, t.reversal_share));
+    let mut yaw = pitch_yaw_axis(&mut rev.y, &mut acc.y, w.y, req.y, dt, (t.natural_frequency.yaw, t.damping_ratio.yaw, b.yaw, t.reversal_share));
+    if rate_capped {
+        // Ordinary stick targets may overshoot; sustainable turn limits must not.
+        // Brake through torque, without snapping the body's angular velocity.
+        let limit = |a: f64, spin: f64, target: f64, box_: f64| {
+            let stop = ((target - spin) / dt).clamp(-box_, box_);
+            if target > 0.0 { a.min(stop) } else if target < 0.0 { a.max(stop) } else { stop }
+        };
+        pitch = limit(pitch, w.x, req.x, b.pitch);
+        yaw = limit(yaw, w.y, req.y, b.yaw);
+        acc = DVec2::new(pitch, yaw);
+    }
     s.reversing = rev;
     s.accel = acc;
     let roll = roll_axis(w.z, req.z, dt, t.roll_decay, t.roll_release_share, b.roll);

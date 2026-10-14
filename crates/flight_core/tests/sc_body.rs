@@ -38,6 +38,8 @@ fn run(ship: &mut ScShip, body: &mut BodyState, input: &FlightInput, secs: f64) 
 }
 
 fn run_in(ship: &mut ScShip, body: &mut BodyState, input: &FlightInput, env: &impl PlanetEnv, secs: f64) -> Vec<DVec3> {
+    // These tests measure unconstrained hardware, not the pilot's 4 g safety ceiling.
+    ship.modes.g_safe = false;
     let n = (secs / DT).round() as usize;
     let mut acc = Vec::with_capacity(n);
     for _ in 0..n {

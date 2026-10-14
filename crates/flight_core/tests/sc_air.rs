@@ -109,7 +109,8 @@ fn wind_held_with_wind_compensation_and_pushes_without() {
     println!("wind {:.2} m/s at rest: held {:.3} m/s², pushed {:.3} m/s²", on.wind.length(), on.accel.length(), off.push.length());
     assert!(on.wind.length() > 5.0, "the 10 m/s base wind (gusts aside): {:?}", on.wind);
     assert!(on.push == DVec3::ZERO, "with wind compensation nothing is pushed");
-    assert!(on.accel.length() > 0.1, "the wind force is held: {:?}", on.accel);
+    let expected = DVec3::new(t.drag.x * on.wind.x * on.wind.x.abs(), t.drag.y * on.wind.y * on.wind.y.abs(), t.drag.z * on.wind.z * on.wind.z.abs()) * env.density;
+    assert!((on.accel - expected).length() < 1e-12 && expected.length() > 0.0, "the weak wind force is held: {:?}, expected {expected:?}", on.accel);
     assert!(off.accel == DVec3::ZERO, "without wind compensation the wind is not held");
     assert!((off.push - on.accel).length() < 1e-9, "the same force, on the other list");
 }

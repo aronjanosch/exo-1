@@ -1163,7 +1163,7 @@ pub fn update_hud(
         // What the flight model did (felt G, thrusters at a limit, the turn cap).
         let s = &ship.sc.status;
         let flags = format!("{}{}{}", if s.saturated { "  sat" } else { "" }, if s.rate_capped { "  g-cap" } else { "" }, if s.braking { "  BRAKE (X)" } else { "" });
-        format!("SHIP  {}  {} m/s  cap {:.0}  {:.1} g{flags}{height}", lag_text(ship), speed_text(sv.0.length()), s.cap, s.felt_g)
+        format!("SHIP {}  {}  {} m/s  cap {:.0}  {:.1} g{flags}{height}", ship.model.name, lag_text(ship), speed_text(sv.0.length()), s.cap, s.felt_g)
     } else {
         // Velocity relative to the planet centre, and its part along "up" (negative = towards the
         // planet): the cabin carries the ship's velocity (own ship), outside it is the walker's own.

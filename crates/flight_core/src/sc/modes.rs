@@ -1,7 +1,7 @@
 //! The pilot's switches of the SC model, after the flight-control switches in Star Citizen's
 //! records (structure only): coupled or decoupled, gravity compensation, G-safe, comstab,
 //! proximity assist, landing, wind compensation, master mode (SCM or NAV) and the speed limiter.
-//! Each tap flips one; coupled and decoupled blend over `decouple_time`.
+//! Each tap flips one. Decoupling releases velocity control immediately; recoupling blends in.
 use serde::Deserialize;
 
 /// The master mode: SCM flies at combat speeds, NAV is the faster travel mode.
@@ -16,7 +16,7 @@ pub enum Master {
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ModeTuning {
-    /// Seconds over which coupled and decoupled blend (both directions).
+    /// Seconds over which coupled velocity control blends back in. Decoupling is immediate.
     pub decouple_time: f64,
     /// Share of the cap one limiter step moves (`ModeCmds::limiter_steps`).
     pub limiter_step: f64,
@@ -118,7 +118,7 @@ impl Modes {
         }
         let target = if self.coupled { 1.0 } else { 0.0 };
         let step = if t.decouple_time > 0.0 { dt / t.decouple_time } else { 1.0 };
-        self.coupling += (target - self.coupling).clamp(-step, step);
+        self.coupling = if self.coupled { self.coupling + (target - self.coupling).clamp(-step, step) } else { 0.0 };
     }
 }
 
@@ -127,11 +127,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn taps_flip_and_the_blend_takes_decouple_time() {
+    fn decoupling_is_immediate_and_recoupling_blends_over_decouple_time() {
         let t = ModeTuning::default();
         let mut m = Modes::default();
         m.update(&ModeCmds { decoupled: true, grav_comp: true, master: true, ..Default::default() }, &t, 0.0);
         assert!(!m.coupled && !m.grav_comp && m.master == Master::Nav);
+        assert_eq!(m.coupling, 0.0, "decoupling must not retain automatic velocity braking");
+        m.update(&ModeCmds { decoupled: true, ..Default::default() }, &t, 0.0);
         for _ in 0..120 {
             m.update(&ModeCmds::default(), &t, 1.0 / 60.0);
         }

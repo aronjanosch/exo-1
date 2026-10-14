@@ -10,6 +10,7 @@ pub mod ground;
 pub mod hud;
 pub mod limits;
 pub mod sc;
+pub mod ship_type;
 
 pub use ground::{GroundHold, GroundRules, GroundTuning};
 pub use limits::{Dirs, Rot, G0};

@@ -6,6 +6,9 @@ use serde::Deserialize;
 /// m/s²: one g, for the G-safety limits.
 pub const G0: f64 = 9.81;
 
+/// G-safe's total translational load ceiling, not a separate allowance per axis.
+pub const G_SAFE_MAX_G: f64 = 4.0;
+
 /// One number per axis and direction in ship space: forward is -Z, right +X, up +Y.
 #[derive(Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]

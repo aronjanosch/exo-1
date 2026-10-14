@@ -6,6 +6,7 @@ use avian3d::prelude::*;
 use bevy::math::{DMat3, DQuat, DVec2, DVec3};
 use bevy::prelude::*;
 use flight_core::sc::{ModeCmds, ScShip};
+use flight_core::ship_type::{HullKind, ShipModel};
 use flight_core::{BodyState, FlightInput, GroundRules, Lag, VirtualStick};
 
 pub fn plugin(app: &mut App) {
@@ -20,6 +21,8 @@ pub const SEAT_POS: DVec3 = DVec3::new(0.0, 0.6, -3.0);
 
 #[derive(Component)]
 pub struct Ship {
+    /// Named type identity; mutable flight state lives in `sc`.
+    pub model: ShipModel,
     pub piloted: bool,
     /// Parked: static until someone first sits down.
     pub parked: bool,
@@ -89,40 +92,55 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, tuning: &crate::t
     }
     let pos = planet.centre + dir * (planet.radius + ground + 0.05);
     // Mass properties are f32 in Avian even with f64 positions.
-    let m = 2000.0f32;
-    let (w, h, d) = (4.6f32, 3.2f32, 8.3f32);
+    let definition = &tuning.ship_type;
+    let body = &definition.flight.ship;
+    let m = body.mass as f32;
+    let inertia = body.inertia;
     let ship = commands
         .spawn((
             Ship {
+                model: definition.model.clone(),
                 piloted: false,
                 parked: true,
                 test_input: FlightInput::default(),
                 lag: Lag::default(),
                 stick: VirtualStick::default(),
                 grounded: false,
-                sc: ScShip::new(tuning.sc.clone()),
+                sc: ScShip::new(definition.flight.clone()),
                 ground: GroundRules::new(tuning.ground.clone()),
             },
+            Name::new(definition.model.name.clone()),
             RigidBody::Static,
             Position(pos),
             Rotation(rot),
             Transform::default(),
             // Explicit mass: the ramp and the visuals must not add any.
             Mass(m),
-            AngularInertia::new(Vec3::new(m / 12.0 * (h * h + d * d), m / 12.0 * (w * w + d * d), m / 12.0 * (w * w + h * h))),
+            AngularInertia::new(Vec3::new(inertia.pitch as f32, inertia.yaw as f32, inertia.roll as f32)),
             CenterOfMass(Vec3::new(0.0, 1.4, -0.3)),
             (NoAutoMass, NoAutoAngularInertia, NoAutoCenterOfMass),
             (LinearDamping(0.0), AngularDamping(0.0), SweptCcd::default(), SleepingDisabled),
             Visibility::default(),
         ))
         .id();
-    add_hull(commands, ship, Layer::Ship);
+    add_hull_for(commands, ship, Layer::Ship, definition.model.hull);
     ship
 }
 
 /// Greybox cabin: visual parts, hull colliders, ramp. Shared by the own ship and the remote proxies.
 /// `layer` is `Layer::Ship` for the own ship; remote proxies use `Layer::Remote` (no ship contact).
 pub fn add_hull(commands: &mut Commands, ship: Entity, layer: Layer) {
+    add_hull_for(commands, ship, layer, HullKind::Kackfass1);
+}
+
+/// A type selects its matching visuals and collision layout together.
+pub fn add_hull_for(commands: &mut Commands, ship: Entity, layer: Layer, hull: HullKind) {
+    match hull {
+        HullKind::Kackfass1 => add_kackfass_1_hull(commands, ship, layer),
+    }
+}
+
+fn add_kackfass_1_hull(commands: &mut Commands, ship: Entity, layer: Layer) {
     let hull = Color::srgb(0.95, 0.5, 0.15);
     let inner = Color::srgb(0.55, 0.55, 0.6);
     // See-through: the tunnel streaks show through the window.
@@ -186,14 +204,26 @@ pub fn ship_control(
     controls: Res<crate::controls::Controls>,
     bindings: Res<Bindings>,
     warp: Res<crate::warp::WarpDrive>,
-    mut q: Query<(Entity, &mut Ship, &Position, &Rotation, &mut LinearVelocity, &mut AngularVelocity)>,
+    mut q: Query<(Entity, &mut Ship, &Position, &Rotation, &mut LinearVelocity, &mut AngularVelocity, &mut Mass, &mut AngularInertia)>,
     collisions: Collisions,
     colliders: Query<(Entity, &ColliderOf)>,
     crates: Query<&crate::cargo::Crate>,
     table: Res<crate::cargo::Crates>,
 ) {
     let dt = time.delta_secs_f64();
-    for (e, mut ship, pos, rot, mut lv, mut av) in &mut q {
+    for (e, mut ship, pos, rot, mut lv, mut av, mut mass, mut inertia) in &mut q {
+        // Contact physics uses the same type/cargo mass as the flight model, also after reloads.
+        let cargo: f64 = crates.iter().filter(|c| c.locked && c.ship == Some(e)).map(|c| table.0.sizes[c.size].mass).sum();
+        ship.sc.set_cargo_mass(cargo);
+        let kg = ship.sc.mass() as f32;
+        if mass.0 != kg {
+            mass.0 = kg;
+        }
+        let i = ship.sc.inertia();
+        let tensor = AngularInertia::new(Vec3::new(i.pitch as f32, i.yaw as f32, i.roll as f32));
+        if *inertia != tensor {
+            *inertia = tensor;
+        }
         // A crate body leaning on the hull is not the ground.
         ship.grounded = colliders.iter().any(|(c, of)| of.body == e && collisions.collisions_with(c).any(|p| !crates.contains(p.collider1) && !crates.contains(p.collider2)));
         let clearance = ship.ground.clearance_at(planet.as_ref(), pos.0);
@@ -252,8 +282,6 @@ pub fn ship_control(
         let ground = input.grounded && still && lv.0.length() < GroundRules::GROUND_HOLD_SPEED && ship.sc.modes.grav_comp;
         // Cargo locked on this ship's plates is part of the ship (#84, #88): its mass and inertia
         // count in the SC model. The locks of the last step (the crates step after the ship).
-        let cargo: f64 = crates.iter().filter(|c| c.locked && c.ship == Some(e)).map(|c| table.0.sizes[c.size].mass).sum();
-        ship.sc.set_cargo_mass(cargo);
         let (v, w) = if ground {
             // The switches still apply on the ground, and the boost meter runs on.
             ship.sc.modes.update(&cmds, &ship.sc.tuning.modes, dt);

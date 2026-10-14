@@ -273,6 +273,17 @@ mod tests {
         Tuning::default()
     }
 
+    /// Steps the room until the snapshot says so (the pump's speed moves with inertia), at most 300 s.
+    fn settle(s: &mut ReactorSim, done: impl Fn(&ReactorNews) -> bool) {
+        for _ in 0..3000 {
+            if done(&s.news(1.0)) {
+                return;
+            }
+            s.room.step(0.1, Input::auto());
+        }
+        panic!("the snapshot never settled");
+    }
+
     #[test]
     fn scram_and_the_power_switch_ask_the_room() {
         let mut s = ReactorSim::new(&cfg());
@@ -292,15 +303,19 @@ mod tests {
     fn breakers_and_the_pump_switch_are_on_the_snapshot() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
+        let before = s.news(1.0).load_kw;
         s.apply(ReactorAsk::SetBreaker(BreakerGroup::Lights, false), &cfg(), &mut k);
         let n = s.news(1.0);
         assert_eq!(n.breakers, [true, true, false]);
-        assert!(n.load_kw < 500.0);
+        let lights = s.room.grid().group(Group::Lights).demand_kw;
+        assert!((before - n.load_kw - lights).abs() < 1e-9, "the load drops by the lights' demand");
         s.apply(ReactorAsk::SetPump(false), &cfg(), &mut k);
+        settle(&mut s, |n| n.flow < 1e-3);
         let n = s.news(1.0);
-        assert!(!n.pump_on && n.flow == 0.0);
+        assert!(!n.pump_on && n.flow < 1e-3, "the pump spins down");
         s.apply(ReactorAsk::SetPump(true), &cfg(), &mut k);
-        assert!(s.news(1.0).pump_on && s.news(1.0).flow == 1.0);
+        settle(&mut s, |n| n.flow >= 0.99);
+        assert!(s.news(1.0).pump_on && s.news(1.0).flow >= 0.99);
     }
 
     #[test]

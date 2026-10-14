@@ -316,6 +316,16 @@ pub fn scripts() -> Vec<Script> {
                 (10.0, Action::Manual { fission: 100.0, turbine: 100.0 }),
             ],
         },
+        // The operator holds 100/100, the pump breaks, and the SCRAM comes at TempHigh (the early one).
+        Script {
+            name: "scram_at_temp_high",
+            duration_s: 300.0,
+            steps: vec![
+                (10.0, Action::Manual { fission: 100.0, turbine: 100.0 }),
+                (10.0, Action::Fault(Fault::PumpBreak)),
+                (0.0, Action::OnAlarm(AlarmKind::TempHigh, Box::new(Action::Scram))),
+            ],
+        },
         // Auto, and at 10 s one standard rod comes out and a spicy one goes in.
         Script {
             name: "spicy_rod",

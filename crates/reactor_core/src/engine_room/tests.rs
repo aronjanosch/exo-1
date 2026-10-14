@@ -881,5 +881,7 @@ fn a_scram_with_a_broken_pump_lets_the_core_cool() {
     let (_, _, temps) = auto_pump_break(true, 60.0);
     println!("pump broken, SCRAM: start {:.1}, end {:.1}", temps[0], temps.last().unwrap());
     assert!(temps[0] > 40.0, "the core was hot before the SCRAM: {:.1}", temps[0]);
-    assert!(*temps.last().unwrap() < 5.0, "cold after a minute: {:.1}", temps.last().unwrap());
+    // Was < 5.0 before the decay state (decay_lag_s 90 s): the decay heat fades over minutes, so a minute
+    // after the SCRAM the core is at 5.5 (measured), still cooling.
+    assert!(*temps.last().unwrap() < 6.0, "cold after a minute: {:.1}", temps.last().unwrap());
 }

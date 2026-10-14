@@ -20,6 +20,12 @@
 //! step's fuel (Barotrauma uses the last step's, `prevAvailableFuel`). `fuel_need` ports
 //! Barotrauma's NeedMoreFuel(1.0) and TooMuchFuel for the screen. Values: TODO(initiator).
 //!
+//! Decay heat (ours, like a real reactor's decay heat; Barotrauma has none): the core keeps making
+//! heat after its fission stops, without coolant. `decay` follows fission / 100 with the time
+//! constant `decay_lag_s` (90 s), so a SCRAM stops fission at once and the residual heat fades over
+//! minutes; a meltdown resets it. It only heats without coolant (`(1 - flow) * decay * decay_heat`).
+//! Values: TODO(initiator).
+//!
 //! Overheat: above the optimal band a fire timer runs, and each time it is full the reactor starts
 //! a fire (`ReactorEvent::Fire`). Above the allowed band a second timer runs; when it is full the
 //! core melts (`ReactorEvent::Meltdown`). There is no automatic safety: the operator's SCRAM cuts
@@ -67,8 +73,7 @@ pub struct ReactorTuning {
     /// TODO(initiator): value. Two rods are needed to hold the optimal band with it at full load.
     pub cooling_max: f64,
     /// Residual (decay) heat in degrees of temperature target: it is there only without coolant
-    /// and while fission runs (`(1 - flow) * fission / 100 * decay_heat`), so a SCRAM lets the core
-    /// cool. The turbine does not take it.
+    /// (`(1 - flow) * decay * decay_heat`, see `decay_lag_s`). The turbine does not take it.
     /// TODO(initiator): value. Without coolant it keeps the core hot after a SCRAM and above the
     /// allowed band when fission is cut to nothing.
     pub decay_heat: f64,
@@ -86,6 +91,10 @@ pub struct ReactorTuning {
     pub heat_output_factor: f64,
     /// Seconds for fission to follow its target (a time constant). Barotrauma: 1. TODO(initiator): value.
     pub fission_lag_s: f64,
+    /// Seconds for the decay heat to follow fission (a time constant): the core's decay state
+    /// rises with fission and fades after a SCRAM over minutes. Ours, not Barotrauma's (it has no
+    /// decay heat). TODO(initiator): value.
+    pub decay_lag_s: f64,
     /// Auto looks this many seconds ahead: it compares the temperature it predicts (temp + speed *
     /// this) with the band, so the spring's swing is not chased. TODO(initiator): value.
     pub auto_lookahead_s: f64,
@@ -124,6 +133,7 @@ impl Default for ReactorTuning {
             temp_damping: 0.2,
             heat_output_factor: 10.0,
             fission_lag_s: 4.0,
+            decay_lag_s: 90.0,
             auto_lookahead_s: 8.0,
             inertia: true,
             condition: DeviceTuning { repair_threshold: 50.0, wear_floor: 10.0, ..DeviceTuning::default() },
@@ -337,6 +347,9 @@ pub struct Reactor {
     heat_in: f64,
     /// Speed of the temperature, degrees per second (see the module doc).
     temp_vel: f64,
+    /// Decay state, 0..1: follows fission / 100 with `decay_lag_s`; it drives the residual heat.
+    /// Kept through a SCRAM, reset by a meltdown.
+    decay: f64,
 }
 
 impl Reactor {
@@ -366,6 +379,7 @@ impl Reactor {
             coolant: 1.0,
             heat_in: 0.0,
             temp_vel: 0.0,
+            decay: 0.0,
         }
     }
 
@@ -472,6 +486,10 @@ impl Reactor {
     }
     pub fn temperature(&self) -> f64 {
         self.temp
+    }
+    /// The decay state, 0..1: the residual heat's share (follows fission / 100 with `decay_lag_s`).
+    pub fn decay(&self) -> f64 {
+        self.decay
     }
     /// Speed of the temperature, degrees per second (positive while it rises).
     pub fn temp_velocity(&self) -> f64 {
@@ -606,8 +624,16 @@ impl Reactor {
         let heat = self.heat_at(self.fission);
         self.heat_in = heat;
         let cool = t.cooling_max * self.coolant;
-        // Decay heat is there only while fission runs: a SCRAM lets the core cool.
-        let residual = t.decay_heat * (1.0 - self.coolant) * (self.fission / 100.0);
+        // Decay heat follows fission with a slow lag (`decay`): a SCRAM stops fission at once and the
+        // decay heat fades over minutes. Inertia off: the old path, the heat with fission at once.
+        let decay_level = if t.inertia {
+            let lag = t.decay_lag_s.max(1e-9);
+            self.decay += (self.fission / 100.0 - self.decay) * (dt / lag).min(1.0);
+            self.decay
+        } else {
+            self.fission / 100.0
+        };
+        let residual = t.decay_heat * (1.0 - self.coolant) * decay_level;
         // The output of the last step makes heat too.
         let output_heat = if t.inertia && t.max_output_kw > 0.0 { t.heat_output_factor * self.output / t.max_output_kw } else { 0.0 };
         self.step_temp(dt, heat + residual + output_heat - self.turbine - cool);
@@ -749,6 +775,7 @@ impl Reactor {
         self.turbine = 0.0;
         self.target_fission = 0.0;
         self.target_turbine = 0.0;
+        self.decay = 0.0;
         ev.push(ReactorEvent::Meltdown);
         if before >= self.condition.tuning().broken_below {
             ev.push(ReactorEvent::Device(DeviceEvent::Broke));

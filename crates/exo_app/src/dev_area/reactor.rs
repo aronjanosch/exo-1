@@ -17,7 +17,7 @@ use crate::dev_area::engine_room::{EngineAir, ShipAlarm};
 use crate::dev_area::fire::{self, FireAlarm, FireConfig};
 use crate::items::{Items, NetOut, Role};
 use crate::dev_area::engine_room::ROOM;
-use item_core::wire::{Alarm, BreakerGroup, ReactorAsk, ReactorFault, ReactorNews};
+use item_core::wire::{Alarm, BreakerGroup, PartNews, ReactorAsk, ReactorFault, ReactorNews};
 use reactor_core::{AlarmLevel, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning};
 
 /// Seconds between two sends of a changed snapshot (4 Hz).
@@ -131,6 +131,9 @@ impl ReactorSim {
             overvolt: self.room.junction().overvolted(),
             oxygen,
             fuel: [0, 1].map(|i| r.rods().get(i).map_or(0.0, |x| x.life)),
+            reactor: part(r.condition().fraction(), r.condition().functioning()),
+            pump: part(self.room.pump().condition().fraction(), self.room.pump().condition().functioning()),
+            junction: part(self.room.junction().condition().fraction(), self.room.junction().condition().functioning()),
         }
     }
 }
@@ -340,4 +343,8 @@ mod tests {
         route(RoomEvent::Reactor(ReactorEvent::Meltdown), &mut k);
         assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, meltdowns: 1 });
     }
+}
+
+fn part(share: f64, working: bool) -> PartNews {
+    PartNews { share, working }
 }

@@ -280,7 +280,7 @@ fn aim_target(eye: DVec3, dir: DVec3, planet: &PlanetRes, remotes: &Query<(&Remo
 /// on oneself. A treatment with `use_s` needs LMB held that long; letting go, switching slot or
 /// the aim moving to another target cancels it.
 #[allow(clippy::too_many_arguments)]
-fn use_input(time: Res<Time>, planet: Res<PlanetRes>, mut controls: ResMut<Controls>, mut items: ResMut<Items>, st: Res<HealthState>, active: Res<crate::displays::ActiveDisplay>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, mut hold: ResMut<UseHold>) {
+pub(crate) fn use_input(time: Res<Time>, planet: Res<PlanetRes>, mut controls: ResMut<Controls>, mut items: ResMut<Items>, st: Res<HealthState>, active: Res<crate::displays::ActiveDisplay>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, mut hold: ResMut<UseHold>) {
     let Ok(pl) = players.single() else {
         hold.0 = None;
         return;

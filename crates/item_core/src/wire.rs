@@ -19,6 +19,8 @@ pub enum ToHost {
     Reactor(ReactorAsk),
     /// The extinguisher's spray, aimed while LMB is held (#298): the host decides.
     Spray(SprayAsk),
+    /// A repair session at a machine (#299): the host decides what it does to the condition.
+    Repair(RepairAsk),
 }
 
 /// Host to client.
@@ -34,6 +36,8 @@ pub enum ToClient {
     Reactor(ReactorNews),
     /// The fires and the sprays as the host has them (#298), about 4 times a second while they change.
     Fire(FireNews),
+    /// The host ended this player's repair session (#299): the machine is full.
+    RepairDone,
 }
 
 /// The alarm level of the ship (#296). A dev toggle for now; the reactor drives it later.
@@ -104,6 +108,36 @@ impl BreakerGroup {
     }
 }
 
+/// A machine the repair minigame works on (#299).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RepairDevice {
+    Reactor,
+    CoolantPump,
+    JunctionBox,
+}
+
+/// The tool in hand for a repair (#299): the wrench for the reactor and the pump, the screwdriver
+/// for the junction box.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RepairTool {
+    Wrench,
+    Screwdriver,
+}
+
+/// A repair session as the client asks for it (#299). The client runs the timing ring; the host
+/// applies what the ring says and keeps the condition.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RepairAsk {
+    /// A session starts on this machine with this tool.
+    Start { device: RepairDevice, tool: RepairTool },
+    /// LMB inside a zone: a chunk of condition.
+    Hit,
+    /// LMB outside every zone: a little condition lost.
+    Miss,
+    /// The session ends (done, looked away, walked off, switched slot, F or ESC).
+    Stop,
+}
+
 /// The faults the dev console asks for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReactorFault {
@@ -147,6 +181,13 @@ pub struct FireNews {
     pub sprays: Vec<SprayNew>,
 }
 
+/// A part's condition for the repair ring: its share of full condition (0..1) and whether it works.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PartNews {
+    pub share: f64,
+    pub working: bool,
+}
+
 /// The reactor's snapshot (#297): what the screens show, as the host has it. Temperature,
 /// fission and turbine are 0..100; power is kW; the bands are (low, high) on the temperature
 /// gauge. The screens show little: no condition values, the pump gives its flow only.
@@ -177,6 +218,9 @@ pub struct ReactorNews {
     pub oxygen: f64,
     /// Life (0..100) of the rods in the first two slots (the two fuel tubes); 0 for an empty slot.
     pub fuel: [f64; 2],
+    pub reactor: PartNews,
+    pub pump: PartNews,
+    pub junction: PartNews,
 }
 
 /// The engine room's state (#296): the door's target and the alarm level.
@@ -276,6 +320,9 @@ mod tests {
     #[test]
     fn reactor_news_travels_as_it_is() {
         let news = ReactorNews {
+            reactor: PartNews { share: 0.9, working: true },
+            pump: PartNews { share: 0.4, working: true },
+            junction: PartNews { share: 1.0, working: true },
             power_on: true,
             manual: true,
             melted: false,
@@ -353,6 +400,22 @@ mod tests {
             _ => panic!("the fault"),
         };
         assert_eq!(fault, ReactorFault::Fire);
+    }
+
+    #[test]
+    fn repair_done_travels() {
+        assert!(decode::<ToClient>(&encode(&ToClient::RepairDone)).is_some_and(|m| matches!(m, ToClient::RepairDone)));
+    }
+
+    #[test]
+    fn repair_asks_travel_as_they_are() {
+        for ask in [RepairAsk::Start { device: RepairDevice::JunctionBox, tool: RepairTool::Screwdriver }, RepairAsk::Start { device: RepairDevice::CoolantPump, tool: RepairTool::Wrench }, RepairAsk::Hit, RepairAsk::Miss, RepairAsk::Stop] {
+            let back = match decode::<ToHost>(&encode(&ToHost::Repair(ask))).expect("decodes") {
+                ToHost::Repair(a) => a,
+                _ => panic!("the repair request"),
+            };
+            assert_eq!(back, ask);
+        }
     }
 
     #[test]

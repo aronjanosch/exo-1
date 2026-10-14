@@ -25,7 +25,7 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use grab_core::CrateSize;
 use item_core::container::Stack;
-use item_core::wire::{FireNews, ReactorAsk, ReactorNews, RepairAsk, RoomAsk, RoomNews, SprayAsk, Vitals};
+use item_core::wire::{FireNews, PublicStatus, ReactorAsk, ReactorNews, RepairAsk, RoomAsk, RoomNews, SprayAsk, Vitals};
 use item_core::{Action, Client, Event, FrameRef, Host, ItemDefs, LooseId, Placement, PlayerId, Reject, Request};
 use walker_core::Frame;
 
@@ -100,6 +100,10 @@ pub enum NetOut {
     RepairAsk(RepairAsk),
     /// Host to one client: its repair session ended, the machine is full (#299).
     RepairDone { to: PlayerId },
+    /// Host to one player (`to` Some) or all: every player's public status (#300).
+    Status { to: Option<PlayerId>, s: Vec<(PlayerId, PublicStatus)> },
+    /// Client to host: the treatment hold on this player, or none (#300).
+    Treat(Option<PlayerId>),
 }
 
 #[derive(Resource)]
@@ -140,6 +144,11 @@ pub struct Items {
     pub repair_asks: Vec<(PlayerId, RepairAsk)>,
     /// The host ended this process's repair session (#299); the client's ring takes it and stops.
     pub repair_done: bool,
+    /// Every player's public status as this process has it: the host sets it when one changes, a
+    /// client takes it from the wire (#300). Sorted by player.
+    pub public: Vec<(PlayerId, PublicStatus)>,
+    /// Treatment holds by player, to apply here (host and one process); a client sends its own (#300).
+    pub treat_asks: Vec<(PlayerId, Option<PlayerId>)>,
 }
 
 /// Whether the host can simulate an action's placement: a cabin is the host's ship. (Other
@@ -154,7 +163,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new() }
     }
 
     /// The local player's slot.
@@ -225,6 +234,15 @@ impl Items {
             self.net_out.push(NetOut::RepairAsk(a));
         } else {
             self.repair_asks.push((self.me(), a));
+        }
+    }
+
+    /// The treatment hold of the local player (#300): sent from a client, kept here on the host.
+    pub fn ask_treat(&mut self, target: Option<PlayerId>) {
+        if self.role == Role::Client {
+            self.net_out.push(NetOut::Treat(target));
+        } else {
+            self.treat_asks.push((self.me(), target));
         }
     }
 

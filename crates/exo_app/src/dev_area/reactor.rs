@@ -273,14 +273,15 @@ pub fn plugin(app: &mut App) {
     let files = crate::content_files("gameplay");
     let tuning = Tuning::load(&files).unwrap_or_else(|e| panic!("reactor: {e:?}"));
     app.insert_resource(ReactorSim::new(&tuning)).insert_resource(ReactorConfig(tuning)).init_resource::<ReactorCounts>();
-    app.add_systems(FixedUpdate, reactor_step.before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
+    app.init_resource::<super::blast::PendingBlasts>().init_resource::<super::blast::BlastFlash>();
+    app.add_systems(FixedUpdate, (reactor_step, super::blast::reactor_blast).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
 }
 
 /// Host and one process: the requests, one step, the events (fires start in the air), the ship's
 /// alarm (the room's or the fire's, the higher), the snapshot out. A client only forwards its
 /// requests.
 #[allow(clippy::too_many_arguments)]
-fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut alarm: ResMut<ShipAlarm>, mut air: ResMut<EngineAir>, fires: Res<FireConfig>, fire_alarm: Res<FireAlarm>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, area: Res<DevArea>, planet: Res<PlanetRes>, repair: Res<crate::repair::RepairConfig>, mut health: Option<ResMut<crate::health::HealthState>>) {
+fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut alarm: ResMut<ShipAlarm>, mut air: ResMut<EngineAir>, fires: Res<FireConfig>, fire_alarm: Res<FireAlarm>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, area: Res<DevArea>, planet: Res<PlanetRes>, repair: Res<crate::repair::RepairConfig>, mut health: Option<ResMut<crate::health::HealthState>>, mut blasts: ResMut<super::blast::PendingBlasts>) {
     let asks = std::mem::take(&mut items.reactor_asks);
     if items.role == Role::Client {
         for a in asks {
@@ -358,6 +359,10 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     for e in events {
         if let Some((source, size)) = fire::start_of(&e) {
             fire::ignite(&mut air, &mut grid, *model, source, size);
+        }
+        // The blast's rules run in `blast::reactor_blast` (the bodies, the fires, the news).
+        if let RoomEvent::Reactor(ReactorEvent::Blast(b)) = e {
+            blasts.0.push(b);
         }
         route(e, &mut counts);
     }

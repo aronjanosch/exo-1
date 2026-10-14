@@ -509,6 +509,10 @@
     "{title} is a loss. A total, complete loss.",
     "Failed: {title}. The customer had other ideas."
   ],
+  "notice.reactor.blast": [
+    "REACTOR BLAST. The core has left the building, in pieces.",
+    "REACTOR BLAST. Whoever was standing near the core is now standing somewhere else."
+  ],
   "notice.rods.full": [
     "Every slot is full. The reactor is not hungry any more.",
     "No room in the reactor. Pull a rod first, if you dare.",

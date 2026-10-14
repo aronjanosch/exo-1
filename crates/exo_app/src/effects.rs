@@ -267,6 +267,8 @@ enum ScreenPart {
     Bad,
     Dark,
     Flash,
+    /// The meltdown blast's white flash (`dev_area::blast`).
+    White,
     Grain(usize),
 }
 
@@ -443,6 +445,7 @@ fn build_screen(commands: &mut Commands) {
     commands.spawn((ScreenPart::Burn, GlobalZIndex(-2), full(), BackgroundGradient::default()));
     commands.spawn((ScreenPart::Bad, GlobalZIndex(-2), full(), BackgroundGradient::default()));
     commands.spawn((ScreenPart::Flash, GlobalZIndex(-2), full(), BackgroundGradient::default()));
+    commands.spawn((ScreenPart::White, GlobalZIndex(-2), full(), BackgroundColor(Color::NONE)));
     for i in 0..GRAIN_DOTS {
         commands.spawn((ScreenPart::Grain(i), GlobalZIndex(-2), Node { position_type: PositionType::Absolute, width: px(2), height: px(2), ..default() }, BackgroundColor(Color::NONE)));
     }
@@ -457,7 +460,7 @@ fn edge(c: Color, a: f32, clear: f32) -> BackgroundGradient {
 /// The screen: the burning edge, the bad air, the grain and the treatment flash, from the local
 /// vitals and the local hold (every process). Under the HUD (`GlobalZIndex` -2).
 #[allow(clippy::too_many_arguments)]
-fn screen_sync(mut commands: Commands, time: Res<Time>, vitals: Res<Vitals>, hold: Res<UseHold>, mut st: ResMut<ScreenState>, mut parts: Query<(&ScreenPart, &mut BackgroundColor, &mut BackgroundGradient, &mut Node)>) {
+fn screen_sync(mut commands: Commands, time: Res<Time>, vitals: Res<Vitals>, hold: Res<UseHold>, blast: Res<crate::dev_area::blast::BlastFlash>, mut st: ResMut<ScreenState>, mut parts: Query<(&ScreenPart, &mut BackgroundColor, &mut BackgroundGradient, &mut Node)>) {
     if !st.built {
         st.built = true;
         build_screen(&mut commands);
@@ -473,12 +476,14 @@ fn screen_sync(mut commands: Commands, time: Res<Time>, vitals: Res<Vitals>, hol
     st.hold = hold.0;
     let fx = screen_fx(vitals.burning, vitals.oxygen, vitals.radiation, now);
     let flash = st.flash_at.map_or(0.0, |at| flash_alpha(now - at));
+    let white = blast.0.map_or(0.0, |at| crate::dev_area::blast::flash_alpha(now - at));
     for (part, mut bg, mut gradient, mut node) in &mut parts {
         match *part {
             ScreenPart::Dark => *bg = BackgroundColor(Color::srgba(0.0, 0.0, 0.0, fx.dark)),
             ScreenPart::Burn => *gradient = edge(Color::srgb(0.95, 0.35, 0.05), fx.burn, BURN_CLEAR),
             ScreenPart::Bad => *gradient = edge(Color::BLACK, fx.vignette, VIGNETTE_CLEAR),
             ScreenPart::Flash => *gradient = edge(Color::srgb(0.3, 1.0, 0.4), 0.6 * flash, 55.0),
+            ScreenPart::White => *bg = BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.9 * white)),
             ScreenPart::Grain(i) => {
                 // The dots move every 1/20 s, spread by their noise.
                 let slot = (now * 20.0).floor() as u64;

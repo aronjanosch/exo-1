@@ -1,0 +1,13 @@
+{
+  "_comment": "Spicy rod — do not lick (#300, lane rods). The fulgurium rod of Barotrauma: 150 available fuel. Handle with the hand, not the tongue. Carried and loaded like the standard rod. TODO(initiator): values, shape.",
+  "id": "fuel_rod_spicy",
+  "name": "Spicy fuel rod",
+  "code": "FRS",
+  "take": "collect",
+  "hands": 1,
+  "stack": 1,
+  "use": "load_rod",
+  "condition": true,
+  "tags": ["medium"],
+  "shape": { "extents": [0.06, 0.6, 0.06], "mass": 3.0, "colour": [0.85, 0.2, 0.8] }
+}

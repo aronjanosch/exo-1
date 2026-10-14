@@ -152,10 +152,13 @@ fn two_players_share_items_over_150_ms_and_2_percent_loss() {
     p.until(10.0, "the late joiner has the wrench lying there", |p| loose(&mut p.client).len() == 1);
     let w0 = loose(&mut p.host)[0].id.expect("id");
     assert_eq!(loose(&mut p.client)[0].id, Some(w0), "the same item id on both");
-    p.run(2.0);
-    // It settled on the host and the client shows it at the same spot.
-    let (h, c) = (loose(&mut p.host)[0].pos, loose(&mut p.client)[0].pos);
-    assert!(h.distance(c) < 0.01, "late joiner shows the wrench {:.3} m from the host's", h.distance(c));
+    // It settled on the host and the client shows it at the same spot. Wait for that instead of a
+    // fixed time: the physics runs on sim time, which follows the frames, so under load a fixed
+    // two seconds of real time can end before the wrench lies still.
+    p.until(30.0, "the late joiner's wrench came to rest at the host's spot", |p| {
+        let (h, c) = (loose(&mut p.host)[0], loose(&mut p.client)[0]);
+        h.asleep && h.pos.distance(c.pos) < 0.01
+    });
 
     // 2. Both reach for the wrench in the same instant: the host's own request is at the host at
     // once, the client's needs 150 ms to cross, so the host's is first and wins.
@@ -259,14 +262,16 @@ fn two_players_share_items_over_150_ms_and_2_percent_loss() {
     assert_eq!(count(&p.client, "bandage"), 0);
     p.until(10.0, "the refused drop rolled back", |p| count(&p.client, "bandage") == 1);
     assert_eq!(items(&p.client).client.rejected.last(), Some(&(seq, Reject::Invalid)));
-    // 8. And the other way round: the client reaches first and the host half a second later
-    // (its request crossed in 150 ms): the item is gone for the host already.
+    // 8. And the other way round: the client reaches first, the host's request comes after: the
+    // item is gone for the host already.
     let at = in_front(&mut p.host, |_, _| DVec3::ZERO);
     spawn(&mut p.host, "extinguisher", at);
     p.until(10.0, "both see the extinguisher", |p| loose(&mut p.client).len() == 1 && loose(&mut p.host).len() == 1);
     let e1 = loose(&mut p.client)[0].id.expect("id");
     request(&mut p.client, Request::Collect { item: e1 }).expect("predicted");
-    p.run(0.5);
+    // The host's own request comes once its world has the client's (the item is gone there). A
+    // fixed delay would race the client's send, which follows the frames and so the load.
+    p.until(10.0, "the host took the extinguisher for the client's request", |p| loose(&mut p.host).is_empty());
     assert_eq!(request(&mut p.host, Request::Collect { item: e1 }), Err(Reject::Gone), "the client was first at the host");
     p.until(10.0, "the client's extinguisher is confirmed", |p| confirmed(&p.client, "extinguisher") == 1);
     assert_eq!(confirmed(&p.host, "extinguisher"), 0);

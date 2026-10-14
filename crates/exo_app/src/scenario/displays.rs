@@ -41,6 +41,12 @@ fn act_until(what: &'static str, mut act: impl FnMut(&mut World) + Send + Sync +
 pub(super) fn displays_steps(s: &mut Vec<Step>) {
     s.extend(approach("displays: walk to the console", 4.0));
     s.push(use_console("displays: F uses the console"));
+    // While the console is in use the key hints read LEAVE (F or Escape), not the item hints.
+    s.push(act_until("displays: the hint reads LEAVE while in use", |_w: &mut World| {}, |w| {
+        let hud = w.resource::<crate::crew_hud::CrewHud>();
+        let labels: Vec<&str> = hud.hints.iter().map(|h| display_core::hud::hint_label(h.action)).collect();
+        labels == ["LEAVE"] && hud.hints.iter().all(|h| h.action == display_core::hud::HintAction::Leave)
+    }));
     s.push(act_until("displays: hover names the + button", |w| point_at(w, "inc", None), |w| pointer(w).hover.as_deref() == Some("inc")));
     s.push(act_until("displays: the padding is no widget", |w| {
         let d = super::dev_area::console_display(w);

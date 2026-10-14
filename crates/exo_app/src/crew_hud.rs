@@ -24,7 +24,7 @@ use avian3d::prelude::{Position, Rotation};
 use bevy::math::{DVec2, DVec3};
 use bevy::prelude::*;
 use display_core::hud::{
-    compass_ticks, credits_number, delta_text, heading_deg, heading_text, hints, north_at, prompt_anchor, reference, vital_lines, BarIdle, CreditsFlash, CreditsView, Hint, HintAction, HudLook,
+    compass_ticks, credits_number, delta_text, heading_deg, heading_text, display_hints, hint_label, hints, north_at, prompt_anchor, reference, vital_lines, BarIdle, CreditsFlash, CreditsView, Hint, HintAction, HudLook,
     display_prompt_top, health_segments, PromptKind, Reference, TickLen, VitalKind, VitalLine, VitalSymbol, VitalsIn,
 };
 use display_core::hud::Costs;
@@ -152,6 +152,7 @@ fn update_bar(
     look: Res<DisplayLook>,
     items: Res<Items>,
     grab: Res<Grab>,
+    active: Res<crate::displays::ActiveDisplay>,
     mut ui: ResMut<InventoryUi>,
     mut idle: Local<BarIdle>,
     mut seen: Local<Option<BarState>>,
@@ -172,7 +173,8 @@ fn update_bar(
     }
     let held = items.in_hand(carrying);
     let usable = held.is_some_and(|s| items.defs.of(s).is_some_and(|d| d.use_effect.is_some()));
-    let want = hints(held.is_some(), usable, carrying > 0);
+    // A display in use takes the hints: the one key that leaves it.
+    let want = if active.using().is_some() { display_hints() } else { hints(held.is_some(), usable, carrying > 0) };
     if hud.hints != want {
         hud.hints = want;
     }
@@ -1024,6 +1026,11 @@ fn update_prompt_ui(
 }
 
 #[allow(clippy::type_complexity)]
+/// The keycap of a leave hint: the bound key and Escape, one cap ("F / ESC").
+fn leave_keys(bound: &str) -> String {
+    if bound == "ESC" { bound.to_string() } else { format!("{bound} / ESC") }
+}
+
 fn update_hints_ui(
     hud: Res<CrewHud>,
     look: Res<DisplayLook>,
@@ -1057,17 +1064,14 @@ fn update_hints_ui(
                         HintAction::Use => "LMB".to_string(),
                         HintAction::Drop => key_cap(&bindings, Tap::Drop),
                         HintAction::Throw => key_cap(&bindings, Tap::Throw),
+                        HintAction::Leave => leave_keys(&key_cap(&bindings, Tap::DisplayLeave)),
                     });
                     set_text_colour(&mut c, col_a(k.fg_title, if h.dim { 0.5 } else { 1.0 }));
                 }
             }
             HintPart::Label(i) => {
                 if let Some(h) = hint(i) {
-                    set_text(&mut t, match h.action {
-                        HintAction::Use => "USE",
-                        HintAction::Drop => "DROP",
-                        HintAction::Throw => "THROW",
-                    });
+                    set_text(&mut t, hint_label(h.action));
                     set_text_colour(&mut c, col_a(k.fg_1, if h.dim { 0.5 } else { 1.0 }));
                 }
             }

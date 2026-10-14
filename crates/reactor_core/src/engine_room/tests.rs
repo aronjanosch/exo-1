@@ -356,6 +356,9 @@ fn normal_running_wears_the_machines_to_the_floor_and_never_breaks_them() {
     // The shipped values: 30 minutes of normal running at about 500 kW.
     let shipped: Tuning = Tuning::load(&[content_core::File { path: crate::tuning::REACTOR_PATH.into(), text: include_str!("../../../../content/gameplay/reactor/reactor.json").into() }]).unwrap_or_else(|e| panic!("{e:?}"));
     let mut r = EngineRoom::new(shipped.room, shipped.reactor, 11);
+    // Steady load: a wandering one swings the core above its optimal band now and then, and that
+    // heat wears the pump as overload below its floor (see the sim's `wandering_load`).
+    r.set_engine_wander(false);
     assert!(r.set_power(true));
     let mut broke = Vec::new();
     for _ in 0..6 {

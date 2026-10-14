@@ -11,7 +11,7 @@ use crate::items::{Items, LooseItem};
 use crate::ship::{Ship, SEAT_POS};
 use crate::walker::{cabin_frame, CabinFloor, Player, EYE_HEIGHT};
 use avian3d::prelude::*;
-use bevy::math::DVec3;
+use bevy::math::{DVec2, DVec3};
 use bevy::prelude::*;
 use display_core::hud::{PromptKind, PromptView};
 use display_core::Tone;
@@ -61,6 +61,8 @@ pub struct Interaction {
     pub view: PromptView,
     /// The target's place in the world, if it has one: the prompt hangs 16 px above it on screen.
     pub at: Option<DVec3>,
+    /// A display's two bottom corners in the world, if the target is one: its prompt goes under them.
+    pub edge: Option<[DVec3; 2]>,
     /// Every target the tap was used on (scenario checks).
     pub used: Vec<Target>,
 }
@@ -262,6 +264,13 @@ pub fn interaction(
         Some(Target::SeatLocked) => PromptKind::Blocked,
         Some(Target::Crate(e, Reach::Hands)) if !hands_free(&items, &crates, &table, *e) => PromptKind::Blocked,
         _ => PromptKind::Use,
+    };
+    inter.edge = match &target {
+        Some(Target::Panel(e)) => displays.get(*e).ok().map(|(_, d)| {
+            let corner = |u: f64| display_core::panel_point(d.centre, d.rot, d.size_m, DVec2::new(u, 1.0));
+            [corner(0.0), corner(1.0)]
+        }),
+        _ => None,
     };
     inter.at = match &target {
         Some(Target::Crate(e, _)) => crates.get(*e).ok().map(|(_, c)| crate_world(c, &frame).0),

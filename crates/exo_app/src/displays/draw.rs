@@ -19,7 +19,7 @@ use bevy::camera::{ClearColorConfig, RenderTarget};
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages};
 use bevy::window::PrimaryWindow;
-use display_core::{level, list_row_at, Glyph, Level, ListRow, Rect, Rgb, Theme, Tone, Widget};
+use display_core::{level, list_row_at, Glyph, Level, ListRow, Rect, Rgb, Shape, TextFace, Theme, Tone, Widget};
 
 /// The window's size and the camera's world ray through the cursor (None without a cursor in the
 /// window or a camera).
@@ -67,6 +67,14 @@ fn col(c: Rgb) -> Color {
 
 fn col_a(c: Rgb, a: f32) -> Color {
     Color::srgba(c.0[0], c.0[1], c.0[2], a)
+}
+
+/// Whether the stroke at `at` px along it is on: `dash` is (on, off) px, None is always on.
+fn on_dash(at: f64, dash: Option<(f64, f64)>) -> bool {
+    match dash {
+        None => true,
+        Some((on, off)) => at.rem_euclid((on + off).max(1e-9)) < on,
+    }
 }
 
 /// Materials the quads share.
@@ -501,6 +509,7 @@ impl Pen<'_> {
                     self.list(c, r, rows, *selected, hover_row, *row_h);
                 }
                 Widget::Row { .. } | Widget::Column { .. } | Widget::Space => {}
+                Widget::Canvas { shapes, .. } => self.canvas(c, r.min, shapes),
             }
         }
         // Scanlines on the glass.
@@ -512,6 +521,83 @@ impl Pen<'_> {
             while ly < area.max().y {
                 self.rect(c, area.min.x, ly, area.size.x, 1.0, shade);
                 ly += every;
+            }
+        }
+    }
+
+    /// A canvas: its shapes in its own pixels from `o` (the box's top left). Arcs and dashes are
+    /// short turned bars (`line`), a circle is a bordered node, a rect is its fill and outline.
+    fn canvas(&self, c: &mut ChildSpawnerCommands, o: DVec2, shapes: &[Shape]) {
+        let face = |f: TextFace| match f {
+            TextFace::Display => Face::Display,
+            TextFace::DisplayBold => Face::Bold,
+            TextFace::Mono => Face::Mono,
+        };
+        for s in shapes {
+            match s {
+                Shape::Arc { cx, cy, r, from, to, stroke, ink, dash } => {
+                    let colour = col(self.theme.ink(*ink));
+                    let len = r * (to - from).abs().to_radians();
+                    let n = ((len / 2.0).ceil() as usize).clamp(4, 400);
+                    let at = |a: f64| DVec2::new(o.x + cx + r * a.to_radians().cos(), o.y + cy + r * a.to_radians().sin());
+                    for i in 0..n {
+                        let t0 = i as f64 / n as f64;
+                        let t1 = (i as f64 + 1.0) / n as f64;
+                        if !on_dash(len * (t0 + t1) * 0.5, *dash) {
+                            continue;
+                        }
+                        self.line(c, at(from + (to - from) * t0), at(from + (to - from) * t1), *stroke, colour);
+                    }
+                }
+                Shape::Line { a, b, width, ink, dash } => {
+                    let colour = col(self.theme.ink(*ink));
+                    let (a, b) = (o + DVec2::new(a[0], a[1]), o + DVec2::new(b[0], b[1]));
+                    let len = (b - a).length();
+                    match dash {
+                        None => self.line(c, a, b, *width, colour),
+                        Some(d) => {
+                            let n = ((len / 2.0).ceil() as usize).clamp(1, 400);
+                            for i in 0..n {
+                                let t0 = i as f64 / n as f64;
+                                let t1 = (i as f64 + 1.0) / n as f64;
+                                if on_dash(len * (t0 + t1) * 0.5, Some(*d)) {
+                                    self.line(c, a + (b - a) * t0, a + (b - a) * t1, *width, colour);
+                                }
+                            }
+                        }
+                    }
+                }
+                Shape::Circle { cx, cy, r, fill, stroke } => {
+                    let mut n = self.node(o.x + cx - r, o.y + cy - r, r * 2.0, r * 2.0);
+                    n.border_radius = BorderRadius::all(percent(50));
+                    let bg = fill.map_or(Color::NONE, |f| col(self.theme.ink(f)));
+                    match stroke {
+                        Some((ink, w)) => {
+                            n.border = UiRect::all(px(*w as f32 * self.scale));
+                            c.spawn((n, BackgroundColor(bg), BorderColor::all(col(self.theme.ink(*ink)))));
+                        }
+                        None => {
+                            c.spawn((n, BackgroundColor(bg)));
+                        }
+                    }
+                }
+                Shape::Rect { x, y, w, h, fill, outline } => {
+                    let (x, y) = (o.x + x, o.y + y);
+                    if let Some(f) = fill {
+                        self.rect(c, x, y, *w, *h, col(self.theme.ink(*f)));
+                    }
+                    if let Some((ink, t)) = outline {
+                        let k = col(self.theme.ink(*ink));
+                        self.rect(c, x, y, *w, *t, k);
+                        self.rect(c, x, y + h - t, *w, *t, k);
+                        self.rect(c, x, y, *t, *h, k);
+                        self.rect(c, x + w - t, y, *t, *h, k);
+                    }
+                }
+                Shape::Hatch { x, y, w, h, ink } => self.hatch(c, o.x + x, o.y + y, *w, *h, col(self.theme.ink(*ink))),
+                Shape::Text { x, y, w, h, text, size, face: f, ink, centred } => {
+                    self.text(c, o.x + x, o.y + y, *w, *h, text, *size, face(*f), col(self.theme.ink(*ink)), false, *centred);
+                }
             }
         }
     }

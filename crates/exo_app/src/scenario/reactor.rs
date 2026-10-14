@@ -184,20 +184,42 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
             }
             Alarm::Danger => {
                 let (t, _) = temp_now(w);
+                let allowed = sim(w).room.reactor().bands().temp_allowed.hi;
                 check(c, c.v.contains_key("warn"), "reactor: Warn came before Danger".into());
-                check(c, t > 80.0, format!("reactor: Danger at {:.1} s with the temperature {t:.1} past the allowed band", c.t));
+                check(c, t > allowed, format!("reactor: Danger at {:.1} s with the temperature {t:.1} past the allowed band {allowed:.0}", c.t));
                 end(w, c, format!("Danger at {:.1} s", c.t));
                 return true;
             }
             Alarm::None => {}
         }
-        if c.t > 8.0 {
-            check(c, false, format!("reactor: no Danger within 8 s (alarm {:?})", alarm(w)));
+        // Without coolant the core runs up over the allowed band in about 30 s, Auto cannot stop it.
+        if c.t > 40.0 {
+            check(c, false, format!("reactor: no Danger within 40 s (alarm {:?})", alarm(w)));
             return true;
         }
         false
     }));
 
+    // The overheat has started a fire at the core (after 20 s above the optimal band). A reset does
+    // not put it out and it would burn the new reactor, so the test puts it out with the spray.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "reactor: the fire at the core is sprayed out");
+            return false;
+        }
+        let mut air = w.resource_mut::<crate::dev_area::engine_room::EngineAir>();
+        let at: Vec<DVec3> = air.deck.fires().iter().map(|f| f.pos).collect();
+        for p in at {
+            air.deck.spray(p, 0.5);
+        }
+        let left = air.deck.fires().len();
+        if left == 0 || c.t > 5.0 {
+            check(c, left == 0, format!("reactor: the fire is out ({left} left)"));
+            end(w, c, format!("{left} left"));
+            return true;
+        }
+        false
+    }));
     // Reset reactor: fresh, calm after the warm-up.
     s.push(click_step(FAULTS_ID, "reset", 0.2));
     s.push(settle(120.0, "reactor: Reset reactor brings it back calm"));

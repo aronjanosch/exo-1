@@ -2,9 +2,10 @@
 //! "EXO-1 Crew HUD", spec `engine-room-screens-spec.md` in the session scratchpad). The screens show
 //! little, in the ship's fiction: no condition values, sensors instead.
 //!
-//! - The reactor (M, on the east wall): the core temperature arc (zones 30/45/65/80), the output
-//!   against the load, two fuel tubes, the fission and turbine sliders, MAN/AUTO, POWER, SCRAM. Above
-//!   80 with the power on it is the CORE CRITICAL view; after a meltdown it says MELTDOWN. The readout
+//! - The reactor (M, on the east wall): the core temperature arc (zones from the sim's bands), the
+//!   output against the load, two fuel tubes, the fission and turbine sliders, MAN/AUTO, POWER, SCRAM.
+//!   Above the allowed band with the power on it is the CORE CRITICAL view (`effects::is_critical`,
+//!   the same test as the red lamp); after a meltdown it says MELTDOWN. The readout
 //!   has its own start-up supply, so POWER can come back after a SCRAM even with the machines dark
 //!   (TODO(initiator): confirm).
 //! - The coolant pump (S, on the pump block): a picture of the pump, the flow, the status word, the
@@ -19,8 +20,9 @@
 //! The machines' screens show NO POWER unless the snapshot says `powered`. Every process shows the
 //! snapshot it has (`Items::reactor`); the clicks ask the host (`ReactorAsk`).
 //!
-//! TODO(initiator): the zone limits are the skill-50 bands (30/45/65/80) as the spec has them; the
-//! output scale is the room's maximum, 1000 kW (`ReactorTuning`; the spec drew 5000).
+//! One meaning of CRITICAL: the zones, the HOT and CRITICAL words, the door screen's band, the
+//! readout's takeover and the lamp all read the sim's bands from `ReactorNews` (`optimal`,
+//! `allowed`). The output scale is the room's maximum, 1000 kW (`ReactorTuning`; the spec drew 5000).
 //! TODO(initiator): the glow of the critical text and the scanlines' look are not drawn yet.
 use super::*;
 use crate::displays::{DisplayAction, Panels};
@@ -57,7 +59,8 @@ fn angle(v: f64) -> f64 {
     ARC_START + ARC_SWEEP * v.clamp(0.0, 100.0) / 100.0
 }
 
-/// The temperature zones: the limits (30, 45, 65, 80) of the spec.
+/// The temperature zones of the sim's bands: `Good` is the optimal band, `Low` and `High` the
+/// rest of the allowed band, `Crit` above it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Zone {
     Cold,
@@ -67,17 +70,32 @@ pub enum Zone {
     Crit,
 }
 
-pub fn zone(t: f64) -> Zone {
-    if t < 30.0 {
-        Zone::Cold
-    } else if t < 45.0 {
-        Zone::Low
-    } else if t <= 65.0 {
-        Zone::Good
-    } else if t < 80.0 {
-        Zone::High
-    } else {
+/// The bands `(optimal, allowed)` the screens show: the news' (the sim's, from the operator's
+/// skill). Without news the skill-50 bands, so the screens stay readable.
+pub fn bands(r: Option<&ReactorNews>) -> ([f64; 2], [f64; 2]) {
+    match r {
+        Some(r) if r.optimal[1] > r.optimal[0] => (r.optimal, r.allowed),
+        _ => (SKILL_50_OPTIMAL, SKILL_50_ALLOWED),
+    }
+}
+
+/// The sim's bands at skill 50 (`reactor_core::Bands::new`).
+const SKILL_50_OPTIMAL: [f64; 2] = [35.0, 65.0];
+const SKILL_50_ALLOWED: [f64; 2] = [20.0, 80.0];
+
+/// The zone of `t` against the bands. The lines are the sim's alarm lines: above the optimal top
+/// is HOT, above the allowed top is CRITICAL.
+pub fn zone(t: f64, optimal: [f64; 2], allowed: [f64; 2]) -> Zone {
+    if t > allowed[1] {
         Zone::Crit
+    } else if t > optimal[1] {
+        Zone::High
+    } else if t >= optimal[0] {
+        Zone::Good
+    } else if t >= allowed[0] {
+        Zone::Low
+    } else {
+        Zone::Cold
     }
 }
 
@@ -97,16 +115,16 @@ fn arc(cx: f64, cy: f64, r: f64, from: f64, to: f64, stroke: f64, ink: Ink, dash
 }
 
 /// The temperature gauge (216 x 152): the arc with its zones, the needle, the value and caption.
-fn temp_gauge(temp: f64) -> Item {
+fn temp_gauge(temp: f64, optimal: [f64; 2], allowed: [f64; 2]) -> Item {
     let (cx, cy, r, sw) = (108.0, 70.0, 60.0, 14.0);
-    let z = zone(temp);
+    let z = zone(temp, optimal, allowed);
     let t = temp.clamp(0.0, 100.0);
     let mut s = vec![
-        arc(cx, cy, r, angle(0.0), angle(30.0), sw, Ink::Line2, None),
-        arc(cx, cy, r, angle(30.0), angle(45.0), sw, Ink::Warn, Some((9.0, 4.0))),
-        arc(cx, cy, r, angle(45.0), angle(65.0), sw, Ink::Good, None),
-        arc(cx, cy, r, angle(65.0), angle(80.0), sw, Ink::Warn, Some((9.0, 4.0))),
-        arc(cx, cy, r, angle(80.0), angle(100.0), sw, Ink::Bad, Some((3.0, 2.0))),
+        arc(cx, cy, r, angle(0.0), angle(allowed[0]), sw, Ink::Line2, None),
+        arc(cx, cy, r, angle(allowed[0]), angle(optimal[0]), sw, Ink::Warn, Some((9.0, 4.0))),
+        arc(cx, cy, r, angle(optimal[0]), angle(optimal[1]), sw, Ink::Good, None),
+        arc(cx, cy, r, angle(optimal[1]), angle(allowed[1]), sw, Ink::Warn, Some((9.0, 4.0))),
+        arc(cx, cy, r, angle(allowed[1]), angle(100.0), sw, Ink::Bad, Some((3.0, 2.0))),
     ];
     let a = angle(t).to_radians();
     s.push(Shape::Line { a: [cx, cy], b: [cx + 46.0 * a.cos(), cy + 46.0 * a.sin()], width: 5.0, ink: Ink::FgTitle, dash: None });
@@ -197,7 +215,7 @@ fn text(x: f64, y: f64, w: f64, h: f64, s: &str, size: f64, face: TextFace, ink:
 /// The status word of the reactor header: OFF, STABLE, HOT or CRITICAL.
 pub fn reactor_status(r: Option<&ReactorNews>) -> (&'static str, Tone) {
     match r {
-        Some(r) if r.power_on => match zone(r.temp) {
+        Some(r) if r.power_on => match zone(r.temp, r.optimal, r.allowed) {
             Zone::Crit => ("CRITICAL", Tone::Bad),
             Zone::High => ("HOT", Tone::Warn),
             _ => ("STABLE", Tone::Good),
@@ -228,14 +246,14 @@ fn critical(r: &ReactorNews, melted: bool) -> Panel {
 }
 
 /// The reactor readout (M): the top row of gauges and fuel, the sliders and the switches below.
-/// Above 80 with the power on it is the critical view; after a meltdown MELTDOWN. The status word
-/// in the header.
+/// Above the allowed band with the power on it is the critical view; after a meltdown MELTDOWN. The
+/// status word in the header.
 /// The readout panel; `max_kw` is the scale of the power gauge (the reactor's `max_output_kw`).
 pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     if let Some(r) = r.filter(|r| r.melted) {
         return critical(r, true);
     }
-    if let Some(r) = r.filter(|r| r.power_on && r.temp >= 80.0) {
+    if let Some(r) = r.filter(|r| crate::effects::is_critical(Some(r))) {
         return critical(r, false);
     }
     let on = r.is_some_and(|r| r.power_on);
@@ -260,7 +278,8 @@ pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
             button("SCRAM", "scram").tone(Tone::Bad).fixed(ctl::LG),
         ],
     );
-    let gauges = row(8.0, vec![temp_gauge(r.map_or(0.0, |r| r.temp)), power_gauge(r, max_kw), fuel(r)]).fixed(152.0);
+    let (optimal, allowed) = bands(r);
+    let gauges = row(8.0, vec![temp_gauge(r.map_or(0.0, |r| r.temp), optimal, allowed), power_gauge(r, max_kw), fuel(r)]).fixed(152.0);
     let body = column(8.0, vec![gauges, row(16.0, vec![bottom_left.flex(1.0), switches.fixed(200.0)]).flex(1.0)]);
     Panel::screen(Tier::M, READOUT_NAME, "RX-01", body).status(word, tone).with_padding(8.0)
 }
@@ -392,7 +411,7 @@ pub fn oxygen_tone(o: f64) -> Tone {
 
 /// The band under the temperature (200 wide): the zones as the gauge has them, the marker at the
 /// temperature.
-fn band(temp: f64) -> Item {
+fn band(temp: f64, optimal: [f64; 2], allowed: [f64; 2]) -> Item {
     let x = |v: f64| v * 2.0;
     let seg = |a: f64, b: f64, ink: Option<Ink>, fill: Ink| {
         let mut v = vec![Shape::Rect { x: x(a), y: 7.0, w: x(b) - x(a), h: 8.0, fill: Some(fill), outline: None }];
@@ -402,11 +421,11 @@ fn band(temp: f64) -> Item {
         v
     };
     let mut s = Vec::new();
-    s.extend(seg(0.0, 30.0, None, Ink::Line2));
-    s.extend(seg(30.0, 45.0, Some(Ink::Warn), Ink::Bg3));
-    s.extend(seg(45.0, 65.0, None, Ink::GoodDim));
-    s.extend(seg(65.0, 80.0, Some(Ink::Warn), Ink::Bg3));
-    s.extend(seg(80.0, 100.0, Some(Ink::Bad), Ink::Bg3));
+    s.extend(seg(0.0, allowed[0], None, Ink::Line2));
+    s.extend(seg(allowed[0], optimal[0], Some(Ink::Warn), Ink::Bg3));
+    s.extend(seg(optimal[0], optimal[1], None, Ink::GoodDim));
+    s.extend(seg(optimal[1], allowed[1], Some(Ink::Warn), Ink::Bg3));
+    s.extend(seg(allowed[1], 100.0, Some(Ink::Bad), Ink::Bg3));
     let m = temp.clamp(0.0, 100.0);
     s.push(Shape::Rect { x: x(m) - 2.0, y: 0.0, w: 4.0, h: 22.0, fill: Some(Ink::FgTitle), outline: None });
     canvas(200.0, 22.0, s, None).fixed(200.0)
@@ -419,11 +438,12 @@ pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
         return no_power(DOOR_NAME, "ER-01", Tier::S);
     }
     let r = r.copied().unwrap_or_default();
-    let z = zone_tone(zone(r.temp));
+    let (optimal, allowed) = bands(Some(&r));
+    let z = zone_tone(zone(r.temp, optimal, allowed));
     let (word, word_tone) = reactor_status(Some(&r));
     // The screen's content is 288 x 180 px: the rows fit it.
     let temp = row(6.0, vec![readout(format!("{:.0}", r.temp)).text_size(72.0).tone(z), readout("°C").text_size(28.0).tone(z)]).fixed(70.0);
-    let bandrow = row(8.0, vec![band(r.temp), readout(word).text_size(font::SMALL).tone(word_tone).flex(1.0)]).fixed(18.0);
+    let bandrow = row(8.0, vec![band(r.temp, optimal, allowed), readout(word).text_size(font::SMALL).tone(word_tone).flex(1.0)]).fixed(18.0);
     // Each caption has its own line above its value or switch, so no caption touches a control.
     let air = row(
         8.0,
@@ -576,26 +596,51 @@ mod tests {
     }
 
     #[test]
-    fn the_zones_follow_the_spec_limits() {
-        assert_eq!(zone(20.0), Zone::Cold);
-        assert_eq!(zone(40.0), Zone::Low);
-        assert_eq!(zone(54.0), Zone::Good);
-        assert_eq!(zone(70.0), Zone::High);
-        assert_eq!(zone(85.0), Zone::Crit);
+    fn the_zones_are_the_sim_bands() {
+        // The news' bands at skill 50: optimal 35..65, allowed 20..80.
+        let (o, a) = ([35.0, 65.0], [20.0, 80.0]);
+        assert_eq!(zone(15.0, o, a), Zone::Cold);
+        assert_eq!(zone(25.0, o, a), Zone::Low);
+        assert_eq!(zone(54.0, o, a), Zone::Good);
+        assert_eq!(zone(70.0, o, a), Zone::High);
+        assert_eq!(zone(85.0, o, a), Zone::Crit);
         assert_eq!(reactor_status(Some(&news())).0, "STABLE");
         assert_eq!(reactor_status(Some(&ReactorNews { temp: 70.0, ..news() })).0, "HOT");
         assert_eq!(reactor_status(Some(&ReactorNews { temp: 85.0, ..news() })).0, "CRITICAL");
         assert_eq!(reactor_status(Some(&ReactorNews { power_on: false, ..news() })).0, "OFF");
+        // A skilled operator's wider bands move the words with them: 70 is inside the optimal band.
+        let skilled = ReactorNews { optimal: [30.0, 70.0], allowed: [10.0, 90.0], temp: 70.0, ..news() };
+        assert_eq!(reactor_status(Some(&skilled)).0, "STABLE");
+        assert_eq!(reactor_status(Some(&ReactorNews { temp: 85.0, ..skilled })).0, "HOT");
+        // Without news the skill-50 bands.
+        assert_eq!(bands(None), ([35.0, 65.0], [20.0, 80.0]));
+        assert_eq!(bands(Some(&ReactorNews::default())), ([35.0, 65.0], [20.0, 80.0]));
     }
 
     #[test]
-    fn above_80_with_the_power_on_is_the_critical_view_with_scram_and_none_without() {
-        let hot = shipped_panel(Some(&ReactorNews { temp: 85.0, ..news() }));
-        assert!(hot.find("scram").is_some() && hot.find("fis_set").is_none(), "the takeover view");
-        let off = shipped_panel(Some(&ReactorNews { temp: 85.0, power_on: false, ..news() }));
-        assert!(off.find("fis_set").is_some(), "scrammed: the normal view");
+    fn the_critical_view_is_the_lamps_critical_and_none_without_power() {
+        // Above the allowed band with the power on: the takeover with SCRAM, as the lamp is lit.
+        let hot = ReactorNews { temp: 85.0, ..news() };
+        assert!(crate::effects::is_critical(Some(&hot)));
+        let takeover = shipped_panel(Some(&hot));
+        assert!(takeover.find("scram").is_some() && takeover.find("fis_set").is_none(), "the takeover view");
         // Scrammed at 85 °C: the normal view with the header OFF (the needle shows the hot core).
-        assert_eq!(reactor_status(Some(&ReactorNews { temp: 85.0, power_on: false, ..news() })), ("OFF", Tone::Dim));
+        let off = ReactorNews { power_on: false, ..hot };
+        assert!(!crate::effects::is_critical(Some(&off)));
+        let normal = shipped_panel(Some(&off));
+        assert!(normal.find("fis_set").is_some(), "scrammed: the normal view");
+        assert_eq!(reactor_status(Some(&off)), ("OFF", Tone::Dim));
+    }
+
+    #[test]
+    fn critical_is_the_same_at_every_temperature_on_the_readout_and_the_lamp() {
+        // A widened band: 85 is HOT (not CRITICAL) for this operator, on the readout and the lamp.
+        for (allowed, temp) in [([20.0, 80.0], 85.0), ([10.0, 90.0], 85.0), ([10.0, 90.0], 95.0)] {
+            let r = ReactorNews { allowed, temp, ..news() };
+            let takeover = shipped_panel(Some(&r)).find("fis_set").is_none();
+            assert_eq!(takeover, crate::effects::is_critical(Some(&r)), "allowed {allowed:?}, temp {temp}");
+            assert_eq!(reactor_status(Some(&r)).0 == "CRITICAL", takeover, "word at {temp} with {allowed:?}");
+        }
     }
 
     #[test]

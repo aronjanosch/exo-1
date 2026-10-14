@@ -1,5 +1,5 @@
 {
-  "_comment": "Two-handed: held, it fills both hands. Spraying comes after C1. TODO(initiator): shape, mass.",
+  "_comment": "Two-handed: held, it fills both hands. Using it sprays fire (#298). TODO(initiator): shape, mass.",
   "id": "extinguisher",
   "name": "Extinguisher",
   "code": "EXT",

@@ -14,12 +14,14 @@
 //! - Values: `content/gameplay/repair/repair.json` (`device_core::minigame::Tuning`, strict loader).
 //!   TODO(initiator): starting values.
 //!
-//! Other players see nothing yet (later: an animation). The host confirms a start only by acting
-//! on it; a refused start (another player at the same machine) leaves the ring running with its
-//! hits dropped, see the TODO in `repair_client`.
+//! Other players see nothing yet (later: an animation). A start the host refuses (another player
+//! at the same machine, the wrong tool, a full machine) is told back (`ToClient::RepairRefused`,
+//! or the flag for this process), and the client's ring ends.
+//! - A player who leaves (the channel's Bye or a dead channel) loses their session, spray and
+//!   body (`items_net_in`, `RepairSessions::forget`).
 use crate::controls::{Actions, Controls, Tap};
 use crate::dev_area::engine_room::{COOLANT_PUMP, JUNCTION_BOX, REACTOR};
-use crate::dev_area::reactor::ReactorSim;
+use crate::dev_area::reactor::{route, ReactorCounts, ReactorSim};
 use crate::dev_area::DevBox;
 use crate::displays::ActiveDisplay;
 use crate::items::{Items, NetOut, Role};
@@ -28,10 +30,10 @@ use avian3d::prelude::{Position, Rotation};
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use device_core::minigame::{may_rise, minigame_on, ray_hits_box, Press, Session, Tuning};
-use device_core::{Condition, Tool};
+use device_core::{Condition, DeviceEvent, Tool};
 use item_core::wire::{PartNews, ReactorNews, RepairAsk, RepairDevice, RepairTool};
 use item_core::PlayerId;
-use reactor_core::EngineRoom;
+use reactor_core::{EngineRoom, RoomEvent, Source};
 use walker_core::Frame;
 
 /// The values file, relative to `content/gameplay`.
@@ -107,6 +109,23 @@ fn condition_mut(room: &mut EngineRoom, d: RepairDevice) -> &mut Condition {
     }
 }
 
+/// The room's source of a machine, for its events.
+fn source_of(d: RepairDevice) -> Source {
+    match d {
+        RepairDevice::Reactor => Source::Reactor,
+        RepairDevice::CoolantPump => Source::Pump,
+        RepairDevice::JunctionBox => Source::Junction,
+    }
+}
+
+/// The device's tool speed for a session's tool.
+fn tool_speed(t: RepairTool) -> Tool {
+    match t {
+        RepairTool::Wrench => Tool::WRENCH,
+        RepairTool::Screwdriver => Tool::SCREWDRIVER,
+    }
+}
+
 /// The machine's part of the snapshot (what the client sees of it).
 fn part_of(r: &ReactorNews, d: RepairDevice) -> PartNews {
     match d {
@@ -121,6 +140,8 @@ fn part_of(r: &ReactorNews, d: RepairDevice) -> PartNews {
 pub struct HostSession {
     pub player: PlayerId,
     pub device: RepairDevice,
+    /// The tool the session started with: it sets the rise.
+    pub tool: RepairTool,
     pub hits: u32,
     /// The session began on a broken machine: no rise before its hits.
     pub gated: bool,
@@ -138,6 +159,12 @@ impl RepairSessions {
     /// The session of this player, if one runs.
     pub fn of_mut(&mut self, player: PlayerId) -> Option<&mut HostSession> {
         self.sessions.iter_mut().find(|h| h.player == player)
+    }
+
+    /// The player left: their session ends (a disconnect, `health` and `fire` do the same for
+    /// their body and spray).
+    pub fn forget(&mut self, player: PlayerId) {
+        self.sessions.retain(|h| h.player != player);
     }
 }
 
@@ -254,15 +281,26 @@ fn repair_client(time: Res<Time>, mut controls: ResMut<Controls>, mut actions: R
     }
 }
 
+/// Tells a player that the host refused its start: this process's own flag, or a message to the
+/// client. The client's ring ends (as at a full machine).
+fn refuse(items: &mut Items, player: PlayerId) {
+    if player == items.me() {
+        items.repair_done = true;
+    } else {
+        items.net_out.push(NetOut::RepairRefused { to: player });
+    }
+}
+
 /// Host and one process: the requests, one step of every session (the hits and misses while the
 /// minigame is on, the rise by itself where the rules let it), the full ones end. A client does
-/// nothing here (its requests went out).
-fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>, sim: Option<ResMut<ReactorSim>>, mut sessions: ResMut<RepairSessions>) {
+/// nothing here (its requests went out). A refused start is told to its player.
+fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>, sim: Option<ResMut<ReactorSim>>, mut sessions: ResMut<RepairSessions>, counts: Option<ResMut<ReactorCounts>>) {
     let asks = std::mem::take(&mut items.repair_asks);
     if items.role == Role::Client {
         return;
     }
     let Some(mut sim) = sim else { return };
+    let Some(mut counts) = counts else { return };
     let t = cfg.0;
     for (player, a) in asks {
         match a {
@@ -270,11 +308,12 @@ fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>
                 // The tool must be the machine's, the machine must need it, and no one else may work on it.
                 let busy = sessions.sessions.iter().any(|h| h.device == device && h.player != player);
                 if tool != tool_for(device) || busy || condition(&sim.room, device).fraction() >= 1.0 {
+                    refuse(&mut items, player);
                     continue;
                 }
                 let gated = !condition(&sim.room, device).functioning();
                 sessions.sessions.retain(|h| h.player != player);
-                sessions.sessions.push(HostSession { player, device, hits: 0, gated });
+                sessions.sessions.push(HostSession { player, device, tool, hits: 0, gated });
             }
             RepairAsk::Hit => {
                 let Some(h) = sessions.of_mut(player) else { continue };
@@ -283,10 +322,10 @@ fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>
                 if !minigame_on(c.fraction(), &t) {
                     continue;
                 }
-                let v = c.value() + t.hit_share * c.tuning().max;
-                c.set_value(v);
+                let e = c.restore(t.hit_share * c.tuning().max);
                 h.hits += 1;
                 sessions.hits += 1;
+                emit(&mut counts, d, e);
             }
             RepairAsk::Miss => {
                 let Some(h) = sessions.of_mut(player) else { continue };
@@ -295,8 +334,9 @@ fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>
                 if !minigame_on(c.fraction(), &t) {
                     continue;
                 }
-                let _ = c.damage(t.miss_share * c.tuning().max);
+                let e = c.damage(t.miss_share * c.tuning().max);
                 sessions.misses += 1;
+                emit(&mut counts, d, e);
             }
             RepairAsk::Stop => sessions.sessions.retain(|h| h.player != player),
         }
@@ -304,14 +344,12 @@ fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>
     let dt = time.delta_secs_f64();
     let mut full = Vec::new();
     for h in sessions.sessions.clone() {
-        let c = condition_mut(&mut sim.room, h.device);
-        // A broken machine waits for its hits; otherwise the rise runs at the skill's repair time.
+        // A broken machine waits for its hits; otherwise the rise runs at the session's tool's repair time.
         if may_rise(h.gated, h.hits, &t) {
-            let rate = c.tuning().max / c.repair_seconds(t.skill, Tool::WRENCH);
-            let v = c.value() + rate * dt;
-            c.set_value(v);
+            let e = condition_mut(&mut sim.room, h.device).repair_rise(dt, t.skill, tool_speed(h.tool));
+            emit(&mut counts, h.device, e);
         }
-        if c.fraction() >= 1.0 {
+        if condition(&sim.room, h.device).fraction() >= 1.0 {
             full.push(h.player);
         }
     }
@@ -323,6 +361,14 @@ fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>
         } else {
             items.net_out.push(NetOut::RepairDone { to: player });
         }
+    }
+}
+
+/// A change of the machine's state from a repair (works again, needs repair, broke) goes to the
+/// room's event log, as the room's own events do.
+fn emit(counts: &mut ReactorCounts, d: RepairDevice, e: Option<DeviceEvent>) {
+    if let Some(event) = e {
+        route(RoomEvent::Device { source: source_of(d), event }, counts);
     }
 }
 
@@ -351,6 +397,19 @@ mod tests {
         let e = load_tuning(&[content_core::File { path: REPAIR_PATH.into(), text: bad }]).unwrap_err();
         assert!(e.iter().any(|m| m.contains("zones_max")), "{e:?}");
         assert!(load_tuning(&[]).unwrap_err()[0].contains("missing"));
+    }
+
+    #[test]
+    fn a_player_who_left_loses_only_their_session() {
+        let h = |player| HostSession { player, device: RepairDevice::Reactor, tool: RepairTool::Wrench, hits: 0, gated: false };
+        let mut s = RepairSessions { sessions: vec![h(2), h(3)], ..Default::default() };
+        s.forget(2);
+        assert_eq!(s.sessions.iter().map(|h| h.player).collect::<Vec<_>>(), vec![3]);
+    }
+
+    #[test]
+    fn the_session_tool_sets_the_rise() {
+        assert!(tool_speed(RepairTool::Screwdriver).speed < tool_speed(RepairTool::Wrench).speed);
     }
 
     #[test]

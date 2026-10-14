@@ -4,9 +4,10 @@
   "dead_at": -1.0,
   "respawn_s": 5.0,
   "tick_s": 1.0,
+  "use_reach": 2.0,
   "oxygen": { "low_below": 0.3, "fall_per_tick": 5.0, "rise_per_tick": 10.0, "unconscious_per_tick": 1.0 },
   "treat": { "skill_low": 0.75, "skill_high": 1.25 },
-  "heat": { "burn_per_tick": 1.5 },
+  "heat": { "burn_per_tick": 1.5, "fire_per_unit": 0.2 },
   "burning": { "fill_s": 3.0, "cool_s": 2.0, "drain_s": 4.0, "burn_per_tick": 6.0 },
   "radiation": {
     "glow_per_tick": 8.0,

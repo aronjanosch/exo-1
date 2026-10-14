@@ -29,7 +29,7 @@
       "fail_cost": 5.0,
       "fail_lockout_s": 2.0,
       "wear_rate": 0.125,
-      "wear_floor": 10.0,
+      "wear_floor": 50.0,
       "wear_delay_s": [120.0, 720.0],
       "idle_wear": 0.0,
       "overload_wear": 4.0
@@ -46,7 +46,7 @@
       "fail_cost": 5.0,
       "fail_lockout_s": 2.0,
       "wear_rate": 0.125,
-      "wear_floor": 10.0,
+      "wear_floor": 50.0,
       "wear_delay_s": [120.0, 720.0],
       "idle_wear": 0.0,
       "overload_wear": 4.0

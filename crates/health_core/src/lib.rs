@@ -7,7 +7,8 @@
 //! `tick_s` (1 s): a source adds its amount once per tick, so the bar drops in steps.
 //!
 //! - Heat: standing on a hot plate adds a little burn per tick, and fills the burning buildup
-//!   (0..1). Full, the body is on fire: a bigger burn per tick, and the fire drains out over
+//!   (0..1). A fire touching the body fills the buildup too, and adds burn per tick by its rate
+//!   (`Env::fire`), not the plate's. Full, the body is on fire: a bigger burn per tick, and the fire drains out over
 //!   `burning.drain_s` after the heat is left.
 //! - Radiation: builds per tick in the glow, decays by its band, and from 25 up burns per tick by
 //!   a table. From 50 up it makes nausea (a derived strength), which costs no vitality but slows
@@ -113,11 +114,14 @@ pub struct TreatTuning {
     pub skill_high: f64,
 }
 
-/// Standing on the hot plate: burn per tick from the first tick.
+/// Standing on the hot plate: burn per tick from the first tick. A fire's burn (the rate per
+/// second that `fire_core` gives a person) becomes burn per tick at `fire_per_unit` of it.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HeatTuning {
     pub burn_per_tick: f64,
+    /// Burn per tick per unit of the fire's burn rate (per second).
+    pub fire_per_unit: f64,
 }
 
 /// The burning buildup (0..1) and the fire.
@@ -190,6 +194,8 @@ pub struct HealthTuning {
     pub respawn_s: f64,
     /// Damage over time comes in ticks of this many seconds.
     pub tick_s: f64,
+    /// How far the aim reaches for another player to treat them (m).
+    pub use_reach: f64,
     pub oxygen: OxygenTuning,
     pub treat: TreatTuning,
     pub heat: HeatTuning,
@@ -226,6 +232,8 @@ impl HealthTuning {
         need((0.0..=1.0).contains(&self.oxygen.low_below), "oxygen.low_below".into(), "must be in 0..1");
         need(self.treat.skill_low > 0.0 && self.treat.skill_high >= self.treat.skill_low, "treat.skill_high".into(), "must be at least skill_low > 0");
         need(self.heat.burn_per_tick >= 0.0, "heat.burn_per_tick".into(), "must be >= 0");
+        need(self.heat.fire_per_unit >= 0.0, "heat.fire_per_unit".into(), "must be >= 0");
+        need(self.use_reach > 0.0, "use_reach".into(), "must be > 0");
         need(self.burning.fill_s > 0.0 && self.burning.cool_s > 0.0 && self.burning.drain_s > 0.0, "burning".into(), "fill_s, cool_s and drain_s must be > 0");
         need(self.burning.burn_per_tick >= 0.0, "burning.burn_per_tick".into(), "must be >= 0");
         need(self.radiation.glow_per_tick >= 0.0, "radiation.glow_per_tick".into(), "must be >= 0");
@@ -343,6 +351,8 @@ pub struct Env {
     pub oxygen: f64,
     pub hot: bool,
     pub glow: bool,
+    /// The fire's burn rate on the body, per second (0 when no fire touches it).
+    pub fire: f64,
 }
 
 /// How the body walks: a share of the walking speed and whether it may sprint.
@@ -517,8 +527,11 @@ impl Health {
             return Vec::new();
         }
         let b = &t.burning;
-        self.buildup = if env.hot { (self.buildup + dt / b.fill_s).min(1.0) } else { (self.buildup - dt / b.cool_s).max(0.0) };
-        if env.hot && self.buildup >= 1.0 - 1e-9 {
+        // A fire touching the body fills the buildup like the plate does; only the plate adds its
+        // own burn per tick (`tick`), the fire adds its rate.
+        let heating = env.hot || env.fire > 0.0;
+        self.buildup = if heating { (self.buildup + dt / b.fill_s).min(1.0) } else { (self.buildup - dt / b.cool_s).max(0.0) };
+        if heating && self.buildup >= 1.0 - 1e-9 {
             self.fire = 1.0;
         } else if self.fire > 0.0 {
             self.fire = (self.fire - dt / b.drain_s).max(0.0);
@@ -555,6 +568,9 @@ impl Health {
         self.change(t, "oxygen_low", air);
         if env.hot {
             self.change(t, "burn", t.heat.burn_per_tick);
+        }
+        if env.fire > 0.0 {
+            self.change(t, "burn", env.fire * t.heat.fire_per_unit * t.tick_s);
         }
         if env.glow {
             self.change(t, "radiation", t.radiation.glow_per_tick);

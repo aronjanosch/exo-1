@@ -13,7 +13,7 @@ use exo_app::health::HealthState;
 use exo_app::public_status::RemoteStatus;
 use exo_app::repair::{HostSession, RepairSessions};
 use health_core::Env;
-use item_core::wire::{Doing, PublicStatus, RepairDevice};
+use item_core::wire::{Doing, PublicStatus, RepairDevice, RepairTool};
 use exo_app::items::{Items, LooseItem, Role};
 use exo_app::menu::{start_session_with, Session};
 use exo_app::net_live::Net;
@@ -345,7 +345,7 @@ fn ignite(app: &mut App) {
         if b.health.burning() {
             return;
         }
-        b.health.step(&st.tuning, 0.1, Env { oxygen: 1.0, hot: true, glow: false });
+        b.health.step(&st.tuning, 0.1, Env { oxygen: 1.0, hot: true, glow: false, fire: 0.0 });
     }
     panic!("the host's body did not catch fire");
 }
@@ -384,7 +384,7 @@ fn the_client_sees_the_host_burning_down_and_repairing() {
     assert!(status(&p.client, LOCAL_HOST).down, "the public status says down too");
     set_down(&mut p.host, false);
 
-    p.host.world_mut().resource_mut::<RepairSessions>().sessions.push(HostSession { player: LOCAL_HOST, device: RepairDevice::Reactor, hits: 0, gated: false });
+    p.host.world_mut().resource_mut::<RepairSessions>().sessions.push(HostSession { player: LOCAL_HOST, device: RepairDevice::Reactor, tool: RepairTool::Wrench, hits: 0, gated: false });
     p.until(15.0, "the client's figure of the host repairs the reactor", |p| figure(&mut p.client, LOCAL_HOST).is_some_and(|s| s.doing == Doing::Repairing(RepairDevice::Reactor)));
     assert_eq!(figure(&mut p.client, LOCAL_HOST), Some(status(&p.client, LOCAL_HOST)), "the figure carries the public status");
     assert!(!status(&p.client, LOCAL_HOST).down, "up again after the down");

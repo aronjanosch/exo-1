@@ -16,11 +16,11 @@ fn close(a: f64, b: f64) -> bool {
 }
 
 fn air(oxygen: f64) -> Env {
-    Env { oxygen, hot: false, glow: false }
+    Env { oxygen, hot: false, glow: false, fire: 0.0 }
 }
 
 fn hot() -> Env {
-    Env { oxygen: 1.0, hot: true, glow: false }
+    Env { oxygen: 1.0, hot: true, glow: false, fire: 0.0 }
 }
 
 /// Steps `secs` in 0.1 s steps with the given surroundings.
@@ -145,7 +145,7 @@ fn radiation_below_25_does_not_burn_and_decays_slowly() {
 fn the_glow_builds_radiation_per_tick() {
     let t = shipped();
     let mut h = Health::new(&t, 1);
-    let glow = Env { oxygen: 1.0, hot: false, glow: true };
+    let glow = Env { oxygen: 1.0, hot: false, glow: true, fire: 0.0 };
     run(&mut h, &t, 0.9, glow);
     assert_eq!(h.strength("radiation"), 0.0, "no tick yet");
     run(&mut h, &t, 0.1, glow);
@@ -253,7 +253,7 @@ fn respawn_clears_the_body() {
     let mut h = Health::new(&t, 1);
     h.add(&t, "burn", 90.0);
     h.add(&t, "radiation", 150.0);
-    run(&mut h, &t, 1.0, Env { oxygen: 0.0, hot: true, glow: false });
+    run(&mut h, &t, 1.0, Env { oxygen: 0.0, hot: true, glow: false, fire: 0.0 });
     h.respawn(&t);
     assert_eq!(h.state(), Life::Conscious);
     assert_eq!(h.vitality(), t.max_vitality);
@@ -278,7 +278,7 @@ fn the_dead_take_nothing_and_respawn_time_is_shipped() {
     h.add(&t, "burn", 50.0);
     assert_eq!(h.strength("burn"), burn, "the dead take nothing");
     assert_eq!(h.treat(&t, "deglow", 50.0).unwrap().reduced, 0.0);
-    let ev = run(&mut h, &t, 2.0, Env { oxygen: 1.0, hot: true, glow: true });
+    let ev = run(&mut h, &t, 2.0, Env { oxygen: 1.0, hot: true, glow: true, fire: 0.0 });
     assert!(ev.is_empty() && h.buildup() == 0.0, "the dead do not burn or glow");
 }
 
@@ -331,4 +331,26 @@ fn each_injury_costs_its_vitality_share_of_the_maximum() {
     h.add(&t, "headache", 100.0);
     assert!(close(h.cost(&t, "headache"), 20.0), "a full headache takes the cap's 20 points: {}", h.cost(&t, "headache"));
     assert_eq!(h.cost(&t, "radiation"), 0.0, "radiation costs no vitality");
+}
+
+/// The burn of two seconds in one surrounding (the plate's buildup is not full before 3 s, so
+/// only its own burn counts).
+fn burn_after(t: &HealthTuning, env: Env) -> f64 {
+    let mut h = Health::new(t, 5);
+    run(&mut h, t, 2.0, env);
+    h.strength("burn")
+}
+
+#[test]
+fn a_fire_burns_by_its_amount_against_the_hot_plate() {
+    let t = HealthTuning::load(&[File { path: "health/health.json".into(), text: include_str!("../../../content/gameplay/health/health.json").into() }]).unwrap_or_else(|e| panic!("{e:?}"));
+    let plate = burn_after(&t, Env { oxygen: 1.0, hot: true, glow: false, fire: 0.0 });
+    // A size 0.5 m fire (the dev button's): 10 x sqrt(0.5) per second on the body.
+    let small = burn_after(&t, Env { oxygen: 1.0, hot: false, glow: false, fire: 10.0 * 0.5f64.sqrt() });
+    // A size 2 m fire: 10 x sqrt(2) per second.
+    let big = burn_after(&t, Env { oxygen: 1.0, hot: false, glow: false, fire: 10.0 * 2f64.sqrt() });
+    println!("burn after 2 s: plate {plate:.1}, small fire {small:.1}, big fire {big:.1}");
+    assert!(small < plate, "{small} vs {plate}");
+    assert!(big > plate, "{big} vs {plate}");
+    assert!(burn_after(&t, Env { oxygen: 1.0, hot: false, glow: false, fire: 0.0 }) == 0.0);
 }

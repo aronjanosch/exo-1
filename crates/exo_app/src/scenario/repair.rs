@@ -13,7 +13,7 @@ use crate::dev_area::engine_room::{COOLANT_PUMP_AT, JUNCTION_BOX_AT};
 use crate::dev_area::{DevArea, ENGINEERING};
 use crate::items::Items;
 use crate::repair::{RepairPlay, RepairSessions};
-use item_core::wire::{ReactorAsk, ReactorFault, ReactorNews};
+use item_core::wire::{RepairAsk, RepairDevice, RepairTool, ReactorAsk, ReactorFault, ReactorNews};
 
 const DIGITS: [KeyCode; 8] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8];
 
@@ -352,5 +352,22 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
             return Some(format!("full at {:.1} s", full_at));
         }
         None
+    }));
+
+    // A refused start: the host refuses the wrench at the junction box (the wrong tool, and full),
+    // so no session starts, and the refusal reaches the client's flag on the next tick (the
+    // client reads it before it asks again).
+    s.push(run("repair: a refused start (the wrong tool at a full box) is told to the client", 3.0, |w, c| {
+        if c.t == 0.0 {
+            w.resource_mut::<Items>().repair_asks.push((crate::items::LOCAL, RepairAsk::Start { device: RepairDevice::JunctionBox, tool: RepairTool::Wrench }));
+            return None;
+        }
+        let told = w.resource::<Items>().repair_done;
+        if !told && c.t < 0.5 {
+            return None;
+        }
+        check(c, told, "repair: the refusal reaches the client (its ring ends)".into());
+        check(c, sessions(w) == 0 && ring(w).is_none(), "repair: a refused start opens no session".into());
+        Some("refused".into())
     }));
 }

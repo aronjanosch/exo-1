@@ -16,11 +16,14 @@ pub struct FireSettings {
     pub alarm_danger_size: f64,
     /// The size (m) of the dev button's fire.
     pub start_size: f64,
+    /// The extinguisher's spray reach (m) and half-angle (degrees). TODO(initiator): start values.
+    pub spray_reach: f64,
+    pub spray_half_angle_deg: f64,
 }
 
 impl Default for FireSettings {
     fn default() -> FireSettings {
-        FireSettings { fire: FireTuning::default(), alarm_danger_size: 1.0, start_size: 0.5 }
+        FireSettings { fire: FireTuning::default(), alarm_danger_size: 1.0, start_size: 0.5, spray_reach: 4.0, spray_half_angle_deg: 20.0 }
     }
 }
 
@@ -56,6 +59,8 @@ impl FireSettings {
         need(t.air_flow >= 0.0 && t.leak_flow >= 0.0, "fire.air_flow", "must be >= 0");
         need(self.alarm_danger_size > 0.0, "alarm_danger_size", "must be > 0");
         need(self.start_size > t.out_below && self.start_size <= t.max_size, "start_size", "must be above out_below and within max_size");
+        need(self.spray_reach > 0.0, "spray_reach", "must be > 0");
+        need(self.spray_half_angle_deg > 0.0 && self.spray_half_angle_deg < 90.0, "spray_half_angle_deg", "must be between 0 and 90 degrees");
     }
 }
 

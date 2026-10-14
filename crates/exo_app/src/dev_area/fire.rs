@@ -1,11 +1,12 @@
 //! The fire (#298): fires start in the engine room's air (`fire_core::Deck`, stepped by the host),
-//! burn the people in reach (their health takes it as heat: a contact burn, then the buildup and
-//! the fire), burn the pump, the junction box and the reactor's condition by the fire's size, and
+//! burn the people in reach (their health takes the burn at the fire's rate, by its size: a
+//! small fire less than the hot plate, a big one more, `health_core::HeatTuning::fire_per_unit`),
+//! burn the pump, the junction box and the reactor's condition by the fire's size, and
 //! spread through the open door. The extinguisher sprays while LMB is held with the aim in hand:
 //! a cone from the eye, about 4 m, half-angle 20 degrees, and the host puts out what it lands on.
 //!
 //! - Values: `content/gameplay/fire/fire.json` (`fire_core::tuning`, strict loader). The spray's
-//!   reach and angle are `SPRAY_REACH` and `SPRAY_HALF_ANGLE_DEG` here (`TODO(initiator)`).
+//!   reach and half-angle are in the same file (`spray_reach`, `spray_half_angle_deg`).
 //! - Host and one process: `spray_step` takes the sprays' requests (`Items::spray_asks`), `fire_step`
 //!   steps the air, applies the burns and sets the ship's fire alarm (`FireAlarm`, which the reactor
 //!   step takes the higher of). The snapshot (`items.fire`: fires as id, floor point and size, and
@@ -39,9 +40,6 @@ use walker_core::Frame as WalkFrame;
 
 /// The extinguisher's `use` in its item file.
 pub const EXTINGUISH: &str = "extinguish";
-/// The spray's reach (m) and half-angle (degrees). TODO(initiator): start values.
-pub const SPRAY_REACH: f64 = 4.0;
-pub const SPRAY_HALF_ANGLE_DEG: f64 = 20.0;
 /// The flame's centre above the floor (m), and the spray's puffs per spray.
 const FLAME_LIFT: f64 = 0.3;
 const PUFFS: usize = 3;
@@ -62,13 +60,21 @@ pub struct FireConfig(pub FireSettings);
 #[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FireAlarm(pub Alarm);
 
-/// The players the fire burnt this step: their body takes it as heat (`health`).
+/// The burn of the fire on each player this step, per second (`fire_core`'s rate): their body
+/// takes it (`health`).
 #[derive(Resource, Default, Debug)]
-pub struct FireHeat(pub BTreeSet<PlayerId>);
+pub struct FireHeat(pub BTreeMap<PlayerId, f64>);
 
 /// Host: the sprays in progress, by player (their nozzle and aim).
 #[derive(Resource, Default, Debug)]
 pub struct Sprays(pub BTreeMap<PlayerId, SprayNew>);
+
+impl Sprays {
+    /// The player left: their spray goes.
+    pub fn forget(&mut self, player: PlayerId) {
+        self.0.remove(&player);
+    }
+}
 
 /// Host: what the last snapshot sent was, and when.
 #[derive(Resource, Default)]
@@ -116,18 +122,18 @@ fn flame_world(area: &DevArea, planet: &PlanetRes, p: [f64; 2]) -> Option<(DVec3
 
 /// Window: where a spray lands on the fires in a snapshot (the same cone as `spray_step`), the
 /// point of its aim nearest the fire it hits first. The steam puffs sit there.
-pub(crate) fn landing_of(area: &DevArea, planet: &PlanetRes, s: &SprayNew, fires: &[FireNew]) -> Option<DVec3> {
+pub(crate) fn landing_of(area: &DevArea, planet: &PlanetRes, cfg: &FireSettings, s: &SprayNew, fires: &[FireNew]) -> Option<DVec3> {
     let eye = DVec3::from_array(s.eye);
     let dir = DVec3::from_array(s.dir).normalize_or_zero();
     if dir == DVec3::ZERO {
         return None;
     }
-    let half = SPRAY_HALF_ANGLE_DEG.to_radians();
+    let half = cfg.spray_half_angle_deg.to_radians();
     let best = fires
         .iter()
         .filter_map(|f| {
             let (centre, _) = flame_world(area, planet, f.pos)?;
-            cone_landing(eye, dir, centre, f.size * 0.5, SPRAY_REACH, half)
+            cone_landing(eye, dir, centre, f.size * 0.5, cfg.spray_reach, half)
         })
         .fold(None, |b: Option<f64>, d| Some(b.map_or(d, |b| b.min(d))));
     best.map(|d| eye + dir * d)
@@ -190,7 +196,7 @@ fn spray_input(time: Res<Time>, controls: Res<Controls>, active: Res<ActiveDispl
 
 /// Host: the sprays' requests, then each spray in reach puts out the fires it lands on, for this
 /// tick. The spray lands at the point of its aim nearest the fire it hits first.
-fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut items: ResMut<Items>, mut sprays: ResMut<Sprays>, mut air: ResMut<EngineAir>) {
+fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut items: ResMut<Items>, mut sprays: ResMut<Sprays>, mut air: ResMut<EngineAir>, cfg: Res<FireConfig>) {
     if items.role == Role::Client {
         return;
     }
@@ -206,7 +212,8 @@ fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>
     }
     let (Some(area), Some(frame)) = (area.as_deref(), area.as_deref().and_then(|a| a.frame)) else { return };
     let dt = time.delta_secs_f64();
-    let half = SPRAY_HALF_ANGLE_DEG.to_radians();
+    let half = cfg.0.spray_half_angle_deg.to_radians();
+    let reach = cfg.0.spray_reach;
     let fires: Vec<([f64; 2], f64)> = air.deck.fires().iter().map(|f| ([f.pos.x, f.pos.y], f.size)).collect();
     let mut landings = Vec::new();
     for s in sprays.0.values() {
@@ -218,7 +225,7 @@ fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>
         let mut best: Option<f64> = None;
         for (p, size) in &fires {
             let Some((centre, _)) = flame_world(area, &planet, *p) else { continue };
-            if let Some(d) = cone_landing(eye, dir, centre, size * 0.5, SPRAY_REACH, half) {
+            if let Some(d) = cone_landing(eye, dir, centre, size * 0.5, reach, half) {
                 best = Some(best.map_or(d, |b: f64| b.min(d)));
             }
         }
@@ -268,8 +275,8 @@ fn fire_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>
     }
     for e in air.deck.step(dt, &targets) {
         match e {
-            FireEvent::Damage { target, kind: TargetKind::Person, amount } if amount > 0.0 => {
-                heat.0.insert(target as PlayerId);
+            FireEvent::Damage { target, kind: TargetKind::Person, amount } if amount > 0.0 && dt > 0.0 => {
+                *heat.0.entry(target as PlayerId).or_insert(0.0) += amount / dt;
             }
             FireEvent::Damage { target, kind: TargetKind::Device, amount } => burn_device(&mut sim, target, amount),
             FireEvent::Damage { .. } => {}

@@ -34,8 +34,6 @@ use walker_core::Frame;
 
 /// Skill of every treater for now (TODO(initiator): skills per crew role).
 pub const TREAT_SKILL: f64 = 50.0;
-/// How far the aim reaches for another player (m).
-pub const USE_REACH: f64 = 2.0;
 /// A player's capsule: feet to head (m) and its radius.
 const CAPSULE_HEIGHT: f64 = 1.8;
 const CAPSULE_RADIUS: f64 = 0.4;
@@ -77,6 +75,12 @@ pub struct HealthState {
 impl HealthState {
     pub fn new(tuning: HealthTuning) -> HealthState {
         HealthState { tuning, bodies: BTreeMap::new(), sent: BTreeMap::new() }
+    }
+
+    /// The player left: their body goes.
+    pub fn forget(&mut self, id: PlayerId) {
+        self.bodies.remove(&id);
+        self.sent.remove(&id);
     }
 
     fn body(&mut self, id: PlayerId) -> &mut Body {
@@ -187,7 +191,7 @@ pub(crate) fn walker_points(players: &Query<&Player>, remotes: &Query<(&RemoteWa
 }
 
 /// Host: the hazards and the air under every body, one step, the respawn countdown. The fire's
-/// heat (`FireHeat`, set by the fire step before this one) is a hot place under that body.
+/// burn on a body (`FireHeat`, set by the fire step before this one) is its rate per second.
 #[allow(clippy::too_many_arguments)]
 fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, air: Option<Res<EngineAir>>, items: Res<Items>, mut st: ResMut<HealthState>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, net: Option<Res<Net>>, heat: Option<Res<FireHeat>>) {
     if items.role == Role::Client {
@@ -221,7 +225,8 @@ fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea
             (Some(p), Some(a)) => a.oxygen_at(p),
             _ => 1.0,
         };
-        let env = Env { oxygen: if inside(&NO_AIR) { 0.0 } else { room_air }, hot: inside(&HOT_PLATE) || heat.as_ref().is_some_and(|h| h.0.contains(id)), glow: inside(&GLOW_BARREL) };
+        let fire = heat.as_ref().and_then(|h| h.0.get(id)).copied().unwrap_or(0.0);
+        let env = Env { oxygen: if inside(&NO_AIR) { 0.0 } else { room_air }, hot: inside(&HOT_PLATE), glow: inside(&GLOW_BARREL), fire };
         for ev in b.health.step(t, dt, env) {
             if matches!(ev, HealthEvent::Died { .. }) {
                 b.respawn_in = Some(t.respawn_s);
@@ -262,12 +267,12 @@ fn vitals_out(mut items: ResMut<Items>, mut st: ResMut<HealthState>) {
 }
 
 /// The first hit of the aim on another player's capsule, within reach: the player's slot.
-fn aim_target(eye: DVec3, dir: DVec3, planet: &PlanetRes, remotes: &Query<(&RemoteWalker, &WorldPose)>) -> Option<PlayerId> {
+fn aim_target(eye: DVec3, dir: DVec3, planet: &PlanetRes, remotes: &Query<(&RemoteWalker, &WorldPose)>, reach: f64) -> Option<PlayerId> {
     let arr = |v: DVec3| [v.x, v.y, v.z];
     let mut best: Option<(f64, PlayerId)> = None;
     for (rw, wp) in remotes {
         let up = (wp.pos - planet.centre).normalize();
-        if let Some(t) = health_core::capsule_hit(arr(eye), arr(dir), USE_REACH, arr(wp.pos), arr(up), CAPSULE_HEIGHT, CAPSULE_RADIUS)
+        if let Some(t) = health_core::capsule_hit(arr(eye), arr(dir), reach, arr(wp.pos), arr(up), CAPSULE_HEIGHT, CAPSULE_RADIUS)
             && best.is_none_or(|(bt, _)| t < bt)
         {
             best = Some((t, rw.owner));
@@ -302,7 +307,7 @@ pub(crate) fn use_input(time: Res<Time>, planet: Res<PlanetRes>, mut controls: R
     };
     let target = if pl.ship.is_none() {
         let eye = pl.w.pos + pl.up * EYE_HEIGHT;
-        aim_target(eye, pl.world_look(Frame::IDENTITY), &planet, &remotes).unwrap_or(LOCAL)
+        aim_target(eye, pl.world_look(Frame::IDENTITY), &planet, &remotes, st.tuning.use_reach).unwrap_or(LOCAL)
     } else {
         LOCAL
     };

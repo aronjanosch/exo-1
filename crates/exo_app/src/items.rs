@@ -104,6 +104,8 @@ pub enum NetOut {
     Status { to: Option<PlayerId>, s: Vec<(PlayerId, PublicStatus)> },
     /// Client to host: the treatment hold on this player, or none (#300).
     Treat(Option<PlayerId>),
+    /// Host to one client: its repair start was refused (#299).
+    RepairRefused { to: PlayerId },
 }
 
 #[derive(Resource)]

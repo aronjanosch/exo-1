@@ -348,7 +348,7 @@ fn device_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: O
 }
 
 /// Where each spray lands on a fire this frame: a steam puff per landing, every 0.12 s.
-fn steam_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, assets: Option<Res<FxAssets>>, mut em: ResMut<Emitters>, mut commands: Commands) {
+fn steam_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, cfg: Res<crate::dev_area::fire::FireConfig>, assets: Option<Res<FxAssets>>, mut em: ResMut<Emitters>, mut commands: Commands) {
     let (Some(news), Some(area), Some(assets)) = (items.fire.as_ref(), area.as_deref(), assets) else { return };
     em.steam += time.delta_secs_f64();
     if em.steam < 0.12 {
@@ -357,7 +357,7 @@ fn steam_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: Op
     em.steam = 0.0;
     let t = time.elapsed_secs_f64();
     for (i, s) in news.sprays.iter().enumerate() {
-        let Some(at) = crate::dev_area::fire::landing_of(area, &planet, s, &news.fires) else { continue };
+        let Some(at) = crate::dev_area::fire::landing_of(area, &planet, &cfg.0, s, &news.fires) else { continue };
         let seed = ((t * 1000.0) as u64).wrapping_add(i as u64 * 977);
         let jitter = jet(DVec3::Y, seed, 0.0, 0.2);
         spawn_particle(&mut commands, &assets, Kind::Steam, at + jitter, DVec3::Y * 0.6, 0.0, 0.25, 1.2);

@@ -1,15 +1,26 @@
 //! health_core: a character's health (#295, from the dev-area round #254, #287), without engine
 //! types, in f64.
 //!
-//! Afflictions (burn, oxygen low, radiation) each have a strength; its strength band sets how much
-//! vitality it takes and how fast it heals by itself. Vitality is the maximum minus what the
-//! afflictions take. At 0 the character is unconscious, at `dead_at` x the maximum dead. A
-//! treatment (a bandage, a deglow) reduces one affliction per use, scaled by the treater's skill,
-//! with a success roll. Respawn clears the body.
+//! Vitality is the maximum minus what the afflictions take (no HP pool). Afflictions (burn, oxygen
+//! low, radiation, headache) each have a strength; its strength band sets how much vitality it
+//! takes and how fast the strength heals by itself, per tick. Damage over time comes in ticks of
+//! `tick_s` (1 s): a source adds its amount once per tick, so the bar drops in steps.
+//!
+//! - Heat: standing on a hot plate adds a little burn per tick, and fills the burning buildup
+//!   (0..1). Full, the body is on fire: a bigger burn per tick, and the fire drains out over
+//!   `burning.drain_s` after the heat is left.
+//! - Radiation: builds per tick in the glow, decays by its band, and from 25 up burns per tick by
+//!   a table. From 50 up it makes nausea (a derived strength), which costs no vitality but slows
+//!   the walk (`Mobility`).
+//! - Oxygen low: bad air adds per tick, good air removes; from 50 it takes vitality by band.
+//! - Headache: oxygen low above `headache.oxygen_above` for `headache.after_s` in a row gives a
+//!   headache (strength 100). It costs no vitality but lowers the maximum (`max_share`).
+//! - A treatment (a bandage, a deglow) reduces one affliction per use, scaled by the treater's
+//!   skill, with a success roll. Death below `dead_at` x the maximum; respawn clears the body.
 //!
 //! Taken from Barotrauma: vitality as the maximum minus the afflictions' banded vitality loss,
-//! unconscious at zero and dead below zero, the burn and oxygen-low bands, oxygen falling in bad
-//! air and while unconscious, and the skill-based success roll.
+//! unconscious at zero and dead below zero, the burn and oxygen-low bands, the oxygen and burn
+//! rules, and the skill-based success roll.
 //!
 //! - `HealthTuning`: everything from `content/gameplay/health/health.json` (strict loader).
 //! - `Health`: `add`, `step`, `treat`, `respawn`; `HealthEvent`s out of `step` and `treat`.
@@ -28,8 +39,8 @@ pub struct Band {
     pub to: f64,
     /// Vitality lost at the band's start and end, as a share of the maximum.
     pub vitality: [f64; 2],
-    /// The strength's own change per second (negative heals).
-    pub change_per_s: f64,
+    /// The strength's own change per tick (negative heals).
+    pub change_per_tick: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -86,12 +97,12 @@ pub struct Treatment {
 pub struct OxygenTuning {
     /// Air below this fraction is bad.
     pub low_below: f64,
-    /// Oxygen low grows by this per second in bad air (conscious).
-    pub fall_per_s: f64,
-    /// And falls by this in good air.
-    pub rise_per_s: f64,
-    /// Unconscious, it grows by this whatever the air.
-    pub unconscious_per_s: f64,
+    /// Oxygen low grows by this per tick in bad air (conscious or not).
+    pub fall_per_tick: f64,
+    /// And falls by this per tick in good air.
+    pub rise_per_tick: f64,
+    /// Unconscious in good air, it grows by this per tick.
+    pub unconscious_per_tick: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -100,6 +111,72 @@ pub struct TreatTuning {
     /// Reduction factor at skill 0 and at skill 100.
     pub skill_low: f64,
     pub skill_high: f64,
+}
+
+/// Standing on the hot plate: burn per tick from the first tick.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeatTuning {
+    pub burn_per_tick: f64,
+}
+
+/// The burning buildup (0..1) and the fire.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BurningTuning {
+    /// In heat, the buildup fills in this many seconds; full, the body is on fire.
+    pub fill_s: f64,
+    /// Out of heat, the buildup cools in this many seconds.
+    pub cool_s: f64,
+    /// The fire goes out over this many seconds after the heat is left.
+    pub drain_s: f64,
+    /// Burn per tick while on fire.
+    pub burn_per_tick: f64,
+}
+
+/// A radiation band from the previous band's `to` (0 for the first): burn per tick there.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RadiationBurnBand {
+    pub to: f64,
+    pub burn_per_tick: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RadiationTuning {
+    /// Radiation built per tick in the glow.
+    pub glow_per_tick: f64,
+    /// Burn per tick by radiation band (a strength below `to` takes that band's rate).
+    pub burn_bands: Vec<RadiationBurnBand>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeadacheTuning {
+    /// Seconds in a row that oxygen low must stay above `oxygen_above`.
+    pub after_s: f64,
+    pub oxygen_above: f64,
+    /// The maximum is lowered by this share at headache strength 100 (scaled by strength).
+    pub max_share: f64,
+}
+
+/// The walk from the nausea: the first band whose `above` the nausea exceeds applies.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MobilityBand {
+    pub above: f64,
+    pub walk: f64,
+    pub sprint: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NauseaTuning {
+    /// Radiation at which the nausea starts; it grows to `max` at the radiation's maximum.
+    pub from_radiation: f64,
+    pub max: f64,
+    pub mobility: Vec<MobilityBand>,
 }
 
 /// Every health number, from `health/health.json`. TODO(initiator): all values are starting points.
@@ -111,8 +188,15 @@ pub struct HealthTuning {
     pub dead_at: f64,
     /// Seconds a dead player waits before the respawn.
     pub respawn_s: f64,
+    /// Damage over time comes in ticks of this many seconds.
+    pub tick_s: f64,
     pub oxygen: OxygenTuning,
     pub treat: TreatTuning,
+    pub heat: HeatTuning,
+    pub burning: BurningTuning,
+    pub radiation: RadiationTuning,
+    pub headache: HeadacheTuning,
+    pub nausea: NauseaTuning,
     pub afflictions: Vec<AfflictionKind>,
     pub treatments: Vec<Treatment>,
 }
@@ -138,8 +222,26 @@ impl HealthTuning {
         need(self.max_vitality > 0.0, "max_vitality".into(), "must be > 0");
         need(self.dead_at < 0.0, "dead_at".into(), "must be below 0");
         need(self.respawn_s >= 0.0, "respawn_s".into(), "must be >= 0");
+        need(self.tick_s > 0.0, "tick_s".into(), "must be > 0");
         need((0.0..=1.0).contains(&self.oxygen.low_below), "oxygen.low_below".into(), "must be in 0..1");
         need(self.treat.skill_low > 0.0 && self.treat.skill_high >= self.treat.skill_low, "treat.skill_high".into(), "must be at least skill_low > 0");
+        need(self.heat.burn_per_tick >= 0.0, "heat.burn_per_tick".into(), "must be >= 0");
+        need(self.burning.fill_s > 0.0 && self.burning.cool_s > 0.0 && self.burning.drain_s > 0.0, "burning".into(), "fill_s, cool_s and drain_s must be > 0");
+        need(self.burning.burn_per_tick >= 0.0, "burning.burn_per_tick".into(), "must be >= 0");
+        need(self.radiation.glow_per_tick >= 0.0, "radiation.glow_per_tick".into(), "must be >= 0");
+        let rad_max = self.affliction("radiation").map_or(0.0, |k| k.max);
+        let mut from = 0.0;
+        for (j, b) in self.radiation.burn_bands.iter().enumerate() {
+            need(b.to > from, format!("radiation.burn_bands[{j}].to"), "must be above the band before");
+            need(b.burn_per_tick >= 0.0, format!("radiation.burn_bands[{j}].burn_per_tick"), "must be >= 0");
+            from = b.to;
+        }
+        need((from - rad_max).abs() < 1e-9, "radiation.burn_bands".into(), "the last band must end at the radiation's max");
+        need(self.headache.after_s >= 0.0, "headache.after_s".into(), "must be >= 0");
+        need((0.0..=1.0).contains(&self.headache.max_share), "headache.max_share".into(), "must be in 0..1");
+        need(self.nausea.max > 0.0 && self.nausea.from_radiation >= 0.0 && self.nausea.from_radiation < rad_max, "nausea".into(), "from_radiation must be below the radiation's max, max > 0");
+        need(!self.nausea.mobility.is_empty(), "nausea.mobility".into(), "needs a band");
+        need(self.nausea.mobility.iter().all(|m| m.walk > 0.0 && m.walk <= 1.0), "nausea.mobility".into(), "walk must be in (0..1]");
         let mut seen = std::collections::HashSet::new();
         for (i, a) in self.afflictions.iter().enumerate() {
             need(seen.insert(a.id.clone()), format!("afflictions[{i}].id"), "used twice");
@@ -160,7 +262,9 @@ impl HealthTuning {
                 need(*v > 0.0, format!("treatments[{i}].reduce.{k}"), "must be > 0");
             }
         }
-        need(self.affliction("oxygen_low").is_some(), "afflictions".into(), "needs 'oxygen_low'");
+        for id in ["burn", "oxygen_low", "radiation", "headache"] {
+            need(self.affliction(id).is_some(), "afflictions".into(), &format!("needs '{id}'"));
+        }
     }
 
     pub fn affliction(&self, id: &str) -> Option<&AfflictionKind> {
@@ -175,6 +279,20 @@ impl HealthTuning {
     pub fn skill_factor(&self, skill: f64) -> f64 {
         let k = (skill / 100.0).clamp(0.0, 1.0);
         self.treat.skill_low + (self.treat.skill_high - self.treat.skill_low) * k
+    }
+
+    /// The nausea at a radiation strength: 0 up to `from_radiation`, `max` at the radiation's max.
+    pub fn nausea_of(&self, radiation: f64) -> f64 {
+        let Some(k) = self.affliction("radiation") else { return 0.0 };
+        let span = k.max - self.nausea.from_radiation;
+        ((radiation - self.nausea.from_radiation).max(0.0) / span * self.nausea.max).min(self.nausea.max)
+    }
+}
+
+impl RadiationTuning {
+    /// Burn per tick at a radiation strength: the band it falls in (`s < to`), the last one at most.
+    pub fn burn_for(&self, s: f64) -> f64 {
+        self.burn_bands.iter().find(|b| s < b.to).or(self.burn_bands.last()).map_or(0.0, |b| b.burn_per_tick)
     }
 }
 
@@ -218,10 +336,20 @@ pub enum HealthEvent {
     Died { cause: String },
 }
 
-/// The surroundings for one step: the air's oxygen fraction (0..1).
+/// The surroundings for one step: the air's oxygen fraction (0..1), whether the body stands on
+/// the hot plate and whether it is in the glow.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Env {
     pub oxygen: f64,
+    pub hot: bool,
+    pub glow: bool,
+}
+
+/// How the body walks: a share of the walking speed and whether it may sprint.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Mobility {
+    pub walk: f64,
+    pub sprint: bool,
 }
 
 /// What a treatment did.
@@ -240,17 +368,36 @@ pub struct Health {
     max: f64,
     life: Life,
     rng: Rng,
+    /// The burning buildup, 0..1.
+    buildup: f64,
+    /// The fire, 0..1: 1 while the buildup is full in heat, draining after.
+    fire: f64,
+    /// Seconds into the tick, not yet a whole tick.
+    tick_acc: f64,
+    /// Seconds in a row the oxygen low has been above the headache's line.
+    oxygen_high_s: f64,
 }
 
 impl Health {
     /// A healthy character; `seed` for its rolls.
     pub fn new(t: &HealthTuning, seed: u64) -> Health {
-        Health { afflictions: BTreeMap::new(), vitality: t.max_vitality, max: t.max_vitality, life: Life::Conscious, rng: Rng::new(seed) }
+        Health {
+            afflictions: BTreeMap::new(),
+            vitality: t.max_vitality,
+            max: t.max_vitality,
+            life: Life::Conscious,
+            rng: Rng::new(seed),
+            buildup: 0.0,
+            fire: 0.0,
+            tick_acc: 0.0,
+            oxygen_high_s: 0.0,
+        }
     }
 
     pub fn vitality(&self) -> f64 {
         self.vitality
     }
+    /// The maximum before any headache.
     pub fn max_vitality(&self) -> f64 {
         self.max
     }
@@ -263,23 +410,79 @@ impl Health {
         self.afflictions.get(id).copied().unwrap_or(0.0)
     }
 
+    /// The burning buildup, 0..1.
+    pub fn buildup(&self) -> f64 {
+        self.buildup
+    }
+
+    /// The fire, 0..1 (draining after the heat).
+    pub fn fire(&self) -> f64 {
+        self.fire
+    }
+
+    /// Whether the body is on fire.
+    pub fn burning(&self) -> bool {
+        self.fire > 0.0
+    }
+
+    /// The burn's level 1 to 3 by its band (0 without burn).
+    pub fn burn_level(&self, t: &HealthTuning) -> u8 {
+        let s = self.strength("burn");
+        t.affliction("burn").map_or(0, |k| if s > 0.0 { (k.band_index(s) + 1) as u8 } else { 0 })
+    }
+
+    /// The maximum now, as a share of the maximum before any headache (1 without).
+    pub fn max_share(&self, t: &HealthTuning) -> f64 {
+        let full = t.affliction("headache").map_or(100.0, |k| k.max);
+        1.0 - t.headache.max_share * (self.strength("headache") / full).clamp(0.0, 1.0)
+    }
+
+    /// The nausea from the radiation (0 without), no vitality.
+    pub fn nausea(&self, t: &HealthTuning) -> f64 {
+        t.nausea_of(self.strength("radiation"))
+    }
+
+    /// How the body walks now: the nausea's bands, the healthy walk without nausea.
+    pub fn mobility(&self, t: &HealthTuning) -> Mobility {
+        let n = self.nausea(t);
+        let mut m = Mobility { walk: 1.0, sprint: true };
+        for b in &t.nausea.mobility {
+            if n > b.above {
+                m = Mobility { walk: b.walk, sprint: b.sprint };
+            }
+        }
+        m
+    }
+
     /// Adds strength to an affliction, capped at its max. False for an unknown id. The dead take
     /// nothing.
     pub fn add(&mut self, t: &HealthTuning, id: &str, amount: f64) -> bool {
-        let Some(k) = t.affliction(id) else { return false };
+        if t.affliction(id).is_none() {
+            return false;
+        }
         if self.life == Life::Dead || amount <= 0.0 {
             return true;
         }
-        let s = self.afflictions.entry(id.to_string()).or_insert(0.0);
-        *s = (*s + amount).min(k.max);
+        self.change(t, id, amount);
         self.recalc(t);
         true
+    }
+
+    /// Strength change, capped at the affliction's max, never below zero.
+    fn change(&mut self, t: &HealthTuning, id: &str, delta: f64) {
+        let Some(k) = t.affliction(id) else { return };
+        if delta > 0.0 {
+            let s = self.afflictions.entry(id.to_string()).or_insert(0.0);
+            *s = (*s + delta).min(k.max);
+        } else if let Some(s) = self.afflictions.get_mut(id) {
+            *s = (*s + delta).max(0.0);
+        }
     }
 
     fn recalc(&mut self, t: &HealthTuning) {
         self.afflictions.retain(|_, s| *s > 0.0);
         let lost: f64 = self.afflictions.iter().filter_map(|(id, s)| t.affliction(id).map(|k| k.vitality_share(*s))).sum();
-        self.vitality = self.max - lost * self.max;
+        self.vitality = self.max * (self.max_share(t) - lost);
     }
 
     /// The affliction that takes the most vitality.
@@ -293,31 +496,68 @@ impl Health {
             .map(|(id, _)| id.as_str())
     }
 
-    /// One step: oxygen from the air, each band's own change, then vitality and the state.
+    /// One step: the buildup and the fire (continuous), the headache's count, every whole tick
+    /// that the step completes, then vitality and the state.
     pub fn step(&mut self, t: &HealthTuning, dt: f64, env: Env) -> Vec<HealthEvent> {
         if self.life == Life::Dead {
             return Vec::new();
         }
+        let b = &t.burning;
+        self.buildup = if env.hot { (self.buildup + dt / b.fill_s).min(1.0) } else { (self.buildup - dt / b.cool_s).max(0.0) };
+        if env.hot && self.buildup >= 1.0 - 1e-9 {
+            self.fire = 1.0;
+        } else if self.fire > 0.0 {
+            self.fire = (self.fire - dt / b.drain_s).max(0.0);
+        }
+        if self.strength("oxygen_low") > t.headache.oxygen_above {
+            self.oxygen_high_s += dt;
+        } else {
+            self.oxygen_high_s = 0.0;
+        }
+        if self.oxygen_high_s >= t.headache.after_s - 1e-9 {
+            self.oxygen_high_s = 0.0;
+            if let Some(k) = t.affliction("headache") {
+                self.afflictions.insert("headache".to_string(), k.max);
+            }
+        }
+        self.tick_acc += dt;
+        while self.tick_acc >= t.tick_s - 1e-9 {
+            self.tick_acc -= t.tick_s;
+            self.tick(t, env);
+        }
+        self.recalc(t);
+        self.update_life(t)
+    }
+
+    /// One tick: the sources add their amounts, then every strength heals or falls by its band.
+    fn tick(&mut self, t: &HealthTuning, env: Env) {
         let o = &t.oxygen;
         // Bad air takes its rate whether awake or not; unconscious in good air still loses some.
         let air = match self.life {
-            _ if env.oxygen < o.low_below => o.fall_per_s,
-            Life::Unconscious => o.unconscious_per_s,
-            _ => -o.rise_per_s,
+            _ if env.oxygen < o.low_below => o.fall_per_tick,
+            Life::Unconscious => o.unconscious_per_tick,
+            _ => -o.rise_per_tick,
         };
-        if air > 0.0 {
-            self.add(t, "oxygen_low", air * dt);
-        } else if let Some(s) = self.afflictions.get_mut("oxygen_low") {
-            *s = (*s + air * dt).max(0.0);
+        self.change(t, "oxygen_low", air);
+        if env.hot {
+            self.change(t, "burn", t.heat.burn_per_tick);
+        }
+        if env.glow {
+            self.change(t, "radiation", t.radiation.glow_per_tick);
+        }
+        let from_radiation = t.radiation.burn_for(self.strength("radiation"));
+        if from_radiation > 0.0 {
+            self.change(t, "burn", from_radiation);
+        }
+        if self.fire > 0.0 {
+            self.change(t, "burn", t.burning.burn_per_tick);
         }
         for (id, s) in self.afflictions.iter_mut() {
             if let Some(k) = t.affliction(id) {
                 let (_, b) = k.band(*s);
-                *s = (*s + b.change_per_s * dt).clamp(0.0, k.max);
+                *s = (*s + b.change_per_tick).clamp(0.0, k.max);
             }
         }
-        self.recalc(t);
-        self.update_life(t)
     }
 
     fn update_life(&mut self, t: &HealthTuning) -> Vec<HealthEvent> {
@@ -361,10 +601,14 @@ impl Health {
         Some(TreatResult { success, reduced })
     }
 
-    /// Back to full health, conscious.
+    /// Back to full health, conscious, cold and sober.
     pub fn respawn(&mut self, t: &HealthTuning) {
         self.afflictions.clear();
         self.life = Life::Conscious;
+        self.buildup = 0.0;
+        self.fire = 0.0;
+        self.tick_acc = 0.0;
+        self.oxygen_high_s = 0.0;
         self.recalc(t);
     }
 }

@@ -12,6 +12,10 @@
 //! - The host sends each client its own vitals when they change noticeably (`vitals_out`, over
 //!   the reliable channel). Every process writes its own vitals into the HUD's `crew_hud::Vitals`
 //!   (`own_sync`); while down, the controls are frozen and a centred line counts the respawn.
+//! - Unconscious (vitality at zero or below, #300): the controls are frozen and no item is used,
+//!   the screen fades to near black (`Faint`, about a second) and a centred line says so; awake
+//!   again (vitality above zero, a treatment or the air) the screen fades back. Others see the
+//!   player lying down (`public_status`).
 //! - A respawn puts the walker on the dev area's pad with clean health. A client moves its own
 //!   walker when the host's vitals say it is up again.
 use crate::dev_area::hazards::{GLOW_BARREL, HOT_PLATE, NO_AIR};
@@ -41,7 +45,7 @@ const CAPSULE_RADIUS: f64 = 0.4;
 pub fn plugin(app: &mut App) {
     let files = crate::content_files("gameplay");
     let tuning = HealthTuning::load(&files).unwrap_or_else(|e| panic!("health: {e:?}"));
-    app.insert_resource(HealthState::new(tuning)).init_resource::<OwnVitals>().init_resource::<UseHold>().insert_resource(OwnMobility(Mobility { walk: 1.0, sprint: true }));
+    app.insert_resource(HealthState::new(tuning)).init_resource::<OwnVitals>().init_resource::<UseHold>().init_resource::<Faint>().insert_resource(OwnMobility(Mobility { walk: 1.0, sprint: true }));
     // The use takes the click before the displays do (they take every click), once the script's
     // input is in.
     app.add_systems(FixedUpdate, use_input.after(crate::scenario::run_script).before(crate::displays::use_display));
@@ -115,6 +119,17 @@ impl UseHold {
     }
 }
 
+/// How far the screen has faded to black for an unconscious player, 0..1 (the window draws it at
+/// `FAINT_ALPHA` of black). The fade takes `FADE_S` each way.
+#[derive(Resource, Default, Clone, Copy, Debug, PartialEq)]
+pub struct Faint {
+    pub level: f64,
+}
+
+/// The fade's time, each way (s), and the black it reaches (alpha: almost black).
+pub const FADE_S: f64 = 1.0;
+pub const FAINT_ALPHA: f32 = 0.95;
+
 /// How the local player walks now (the nausea's share, sprint or not): the walker reads it. The
 /// host's own body, or what the host sent a client.
 #[derive(Resource, Clone, Copy, Debug)]
@@ -139,6 +154,7 @@ pub fn vitals_of(t: &HealthTuning, b: &Body) -> Vitals {
         walk: m.walk,
         sprint: m.sprint,
         down: b.respawn_in,
+        unconscious: h.state() == Life::Unconscious,
         burn_cost: h.cost(t, "burn"),
         oxygen_cost: h.cost(t, "oxygen_low"),
         headache_cost: h.cost(t, "headache"),
@@ -165,6 +181,7 @@ pub fn noticeably(a: &Vitals, b: &Vitals) -> bool {
         || (a.walk - b.walk).abs() > 1e-9
         || a.sprint != b.sprint
         || moved(a.down.map(f64::floor), b.down.map(f64::floor), 0.0)
+        || a.unconscious != b.unconscious
         || (a.burn_cost - b.burn_cost).abs() > 0.5
         || (a.oxygen_cost - b.oxygen_cost).abs() > 0.5
         || (a.headache_cost - b.headache_cost).abs() > 0.5
@@ -266,13 +283,22 @@ fn vitals_out(mut items: ResMut<Items>, mut st: ResMut<HealthState>) {
     }
 }
 
-/// The first hit of the aim on another player's capsule, within reach: the player's slot.
-fn aim_target(eye: DVec3, dir: DVec3, planet: &PlanetRes, remotes: &Query<(&RemoteWalker, &WorldPose)>, reach: f64) -> Option<PlayerId> {
+/// The first hit of the aim on another player's capsule, within reach: the player's slot. A
+/// player who is down or unconscious lies: the aim meets a capsule along the ground, from the
+/// feet on the figure's side (`lying`), where the upright one would miss it.
+fn aim_target(eye: DVec3, dir: DVec3, planet: &PlanetRes, remotes: &Query<(&RemoteWalker, &WorldPose)>, lying: &dyn Fn(PlayerId) -> bool, reach: f64) -> Option<PlayerId> {
     let arr = |v: DVec3| [v.x, v.y, v.z];
     let mut best: Option<(f64, PlayerId)> = None;
     for (rw, wp) in remotes {
         let up = (wp.pos - planet.centre).normalize();
-        if let Some(t) = health_core::capsule_hit(arr(eye), arr(dir), reach, arr(wp.pos), arr(up), CAPSULE_HEIGHT, CAPSULE_RADIUS)
+        let hit = if lying(rw.owner) {
+            let side = (wp.rot * DVec3::X).normalize();
+            let feet = wp.pos + up * CAPSULE_RADIUS;
+            health_core::capsule_hit(arr(eye), arr(dir), reach, arr(feet), arr(side), CAPSULE_HEIGHT, CAPSULE_RADIUS)
+        } else {
+            health_core::capsule_hit(arr(eye), arr(dir), reach, arr(wp.pos), arr(up), CAPSULE_HEIGHT, CAPSULE_RADIUS)
+        };
+        if let Some(t) = hit
             && best.is_none_or(|(bt, _)| t < bt)
         {
             best = Some((t, rw.owner));
@@ -285,11 +311,17 @@ fn aim_target(eye: DVec3, dir: DVec3, planet: &PlanetRes, remotes: &Query<(&Remo
 /// on oneself. A treatment with `use_s` needs LMB held that long; letting go, switching slot or
 /// the aim moving to another target cancels it.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn use_input(time: Res<Time>, planet: Res<PlanetRes>, mut controls: ResMut<Controls>, mut items: ResMut<Items>, st: Res<HealthState>, active: Res<crate::displays::ActiveDisplay>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, mut hold: ResMut<UseHold>) {
+pub(crate) fn use_input(time: Res<Time>, planet: Res<PlanetRes>, mut controls: ResMut<Controls>, mut items: ResMut<Items>, st: Res<HealthState>, own: Res<OwnVitals>, active: Res<crate::displays::ActiveDisplay>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, mut hold: ResMut<UseHold>) {
     let Ok(pl) = players.single() else {
         hold.0 = None;
         return;
     };
+    if own.last.is_some_and(|v| v.unconscious) {
+        // Unconscious: no use, and a click made now does not fire when awake.
+        controls.click = false;
+        hold.0 = None;
+        return;
+    }
     if controls.free_cursor || active.using().is_some() || pl.seated || pl.fly {
         hold.0 = None;
         return;
@@ -307,7 +339,8 @@ pub(crate) fn use_input(time: Res<Time>, planet: Res<PlanetRes>, mut controls: R
     };
     let target = if pl.ship.is_none() {
         let eye = pl.w.pos + pl.up * EYE_HEIGHT;
-        aim_target(eye, pl.world_look(Frame::IDENTITY), &planet, &remotes, st.tuning.use_reach).unwrap_or(LOCAL)
+        let lying = |id: PlayerId| items.public.iter().any(|(p, s)| *p == id && (s.down || s.unconscious));
+        aim_target(eye, pl.world_look(Frame::IDENTITY), &planet, &remotes, &lying, st.tuning.use_reach).unwrap_or(LOCAL)
     } else {
         LOCAL
     };
@@ -342,14 +375,17 @@ pub(crate) fn use_input(time: Res<Time>, planet: Res<PlanetRes>, mut controls: R
 }
 
 /// Every process: its own vitals into the HUD; frozen controls and a walk to the pad when down or
-/// back up.
+/// back up; the fade when unconscious.
 #[allow(clippy::too_many_arguments)]
-fn own_sync(items: Res<Items>, st: Res<HealthState>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut own: ResMut<OwnVitals>, mut mobility: ResMut<OwnMobility>, mut hud: ResMut<crate::crew_hud::Vitals>, mut actions: ResMut<Actions>, mut players: Query<&mut Player>) {
+fn own_sync(items: Res<Items>, st: Res<HealthState>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, time: Res<Time>, mut own: ResMut<OwnVitals>, mut faint: ResMut<Faint>, mut mobility: ResMut<OwnMobility>, mut hud: ResMut<crate::crew_hud::Vitals>, mut actions: ResMut<Actions>, mut players: Query<&mut Player>) {
     let v = match items.role {
         Role::Client => items.vitals_in,
         _ => st.bodies.get(&LOCAL).map(|b| vitals_of(&st.tuning, b)),
     };
     let Some(v) = v else { return };
+    let want = if v.unconscious { 1.0 } else { 0.0 };
+    let step = time.delta_secs_f64() / FADE_S;
+    faint.level = if faint.level < want { (faint.level + step).min(want) } else { (faint.level - step).max(want) };
     let prev = own.last;
     let was_down = prev.is_some_and(|l| l.down.is_some());
     if was_down && v.down.is_none()
@@ -377,12 +413,13 @@ fn own_sync(items: Res<Items>, st: Res<HealthState>, planet: Res<PlanetRes>, are
         };
     }
     own.last = Some(v);
-    if v.down.is_some() {
-        // Down: no walking, no turning, no looking.
+    if v.down.is_some() || v.unconscious {
+        // Down or unconscious: no walking, no turning, no looking, no jump.
         actions.move_dir = DVec3::ZERO;
         actions.look = Vec2::ZERO;
         actions.turn = DVec2::ZERO;
         actions.roll = 0.0;
+        actions.jump = false;
     }
 }
 
@@ -405,6 +442,10 @@ fn to_pad(pl: &mut Player, planet: &PlanetRes, area: &DevArea) {
 #[derive(Component)]
 struct DownRoot;
 
+/// The full-screen black of the fade (under the line).
+#[derive(Component)]
+struct FaintRoot;
+
 #[derive(Component)]
 struct DownText;
 
@@ -415,25 +456,35 @@ fn spawn_down_line(mut commands: Commands, fonts: Option<Res<crate::crew_hud::Hu
         return;
     }
     let size = 34.0;
+    let full = Node { position_type: PositionType::Absolute, left: px(0), right: px(0), top: px(0), bottom: px(0), ..default() };
+    commands.spawn((FaintRoot, GlobalZIndex(0), full, BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0))));
     commands
-        .spawn((DownRoot, Node { position_type: PositionType::Absolute, left: px(0), right: px(0), top: percent(40.0), justify_content: JustifyContent::Center, display: Display::None, ..default() }))
+        .spawn((DownRoot, GlobalZIndex(1), Node { position_type: PositionType::Absolute, left: px(0), right: px(0), top: percent(40.0), justify_content: JustifyContent::Center, display: Display::None, ..default() }))
         .with_children(|root| {
             root.spawn((DownText, crate::crew_hud::hud_caps(&fonts.display, "", size, crate::crew_hud::col(look.0.colours.fg_title), &look.0.hud, 0.1)));
         });
 }
 
-/// Window: the line while down, its count rounded up.
-fn update_down_line(own: Res<OwnVitals>, mut roots: Query<&mut Node, With<DownRoot>>, mut texts: Query<&mut Text, With<DownText>>) {
+/// Window: the line while down (its count rounded up) or unconscious; the fade's black.
+fn update_down_line(own: Res<OwnVitals>, faint: Res<Faint>, mut roots: Query<&mut Node, With<DownRoot>>, mut texts: Query<&mut Text, With<DownText>>, mut fades: Query<&mut BackgroundColor, With<FaintRoot>>) {
     let down = own.last.and_then(|l| l.down);
+    let unconscious = own.last.is_some_and(|l| l.unconscious);
     for mut n in &mut roots {
-        n.display = if down.is_some() { Display::Flex } else { Display::None };
+        n.display = if down.is_some() || unconscious { Display::Flex } else { Display::None };
     }
-    if let Some(left) = down {
-        for mut t in &mut texts {
-            let s = format!("DOWN — back in {} s", left.ceil().max(0.0) as u32);
-            if t.0 != s {
-                t.0 = s;
-            }
+    let s = match down {
+        Some(left) => format!("DOWN — back in {} s", left.ceil().max(0.0) as u32),
+        None => "UNCONSCIOUS".to_string(),
+    };
+    for mut t in &mut texts {
+        if t.0 != s && (down.is_some() || unconscious) {
+            t.0 = s.clone();
+        }
+    }
+    let black = Color::srgba(0.0, 0.0, 0.0, FAINT_ALPHA * faint.level as f32);
+    for mut bg in &mut fades {
+        if bg.0 != black {
+            bg.0 = black;
         }
     }
 }

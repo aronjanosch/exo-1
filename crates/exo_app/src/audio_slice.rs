@@ -392,7 +392,9 @@ fn health_sounds(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, o
             _ => {}
         }
         *down = Some(is_down);
-        match heartbeat_every(v.oxygen) {
+        // Unconscious: the heartbeat at its slowest, whatever the air.
+        let beat = if v.unconscious { Some(HEART_SLOWEST_S) } else { heartbeat_every(v.oxygen) };
+        match beat {
             Some(every) => {
                 if next_beat.is_none_or(|t| now >= t) {
                     one_shot(&mut commands, &s.heart, HEART_VOL);

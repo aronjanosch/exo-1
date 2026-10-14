@@ -12,6 +12,8 @@ use crate::walker::{cabin_frame, CabinFloor, Player, EYE_HEIGHT};
 use avian3d::prelude::*;
 use bevy::math::DVec3;
 use bevy::prelude::*;
+use display_core::hud::{PromptKind, PromptView};
+use display_core::Tone;
 use grab_core::{in_cone, Reach};
 use walker_core::Frame;
 
@@ -50,6 +52,12 @@ pub struct Interaction {
     pub target: Option<Target>,
     /// What the HUD shows, e.g. "[F] sit". Empty when there is nothing to do.
     pub prompt: String,
+    /// What F does there, for the prompt's look (blocked is drawn dashed with an amber line).
+    pub kind: display_core::hud::PromptKind,
+    /// The same prompt in parts for the HUD: verb over name, a status, a note line.
+    pub view: PromptView,
+    /// The target's place in the world, if it has one: the prompt hangs 16 px above it on screen.
+    pub at: Option<DVec3>,
     /// Every target the tap was used on (scenario checks).
     pub used: Vec<Target>,
 }
@@ -64,6 +72,14 @@ pub fn key_label(bindings: &Bindings, t: Tap) -> String {
         .find_map(|i| if let Input::Key(k) = i { Some(format!("{k:?}")) } else { None })
         .map(|k| k.trim_start_matches("Key").trim_start_matches("Digit").to_string())
         .unwrap_or_else(|| "?".into())
+}
+
+/// A tap's key as it reads on a keycap: `F`, `ESC`, `TAB`.
+pub fn key_cap(bindings: &Bindings, t: Tap) -> String {
+    match key_label(bindings, t).as_str() {
+        "Escape" => "ESC".into(),
+        k => k.to_uppercase(),
+    }
 }
 
 /// "  [key] verb" for a tap, or nothing when the tap has no key (`Tap::KEYLESS`).
@@ -234,6 +250,20 @@ pub fn interaction(
         (!gp.offers_of(&giver).is_empty()).then_some(Target::Counter(giver))
     });
     inter.target = target.clone();
+    inter.kind = match &target {
+        Some(Target::Item(_)) => PromptKind::Collect,
+        Some(Target::StandUp | Target::LeavePanel(_)) => PromptKind::Leave,
+        Some(Target::SeatLocked) => PromptKind::Blocked,
+        Some(Target::Crate(e, Reach::Hands)) if !hands_free(&items, &crates, &table, *e) => PromptKind::Blocked,
+        _ => PromptKind::Use,
+    };
+    inter.at = match &target {
+        Some(Target::Crate(e, _)) => crates.get(*e).ok().map(|(_, c)| crate_world(c, &frame).0),
+        Some(Target::Item(e)) => loose.get(*e).ok().map(|(_, c, _)| crate_world(c, &frame).0),
+        Some(Target::Panel(e)) => displays.get(*e).ok().map(|(_, d)| d.centre),
+        Some(Target::Seat | Target::SeatLocked) => Some(frame.to_world(SEAT_POS)),
+        _ => None,
+    };
     inter.prompt = match &target {
         None => String::new(),
         Some(t) => {
@@ -269,6 +299,69 @@ pub fn interaction(
                 p.push_str(&format!("  [{}] throw", key_label(&bindings, Tap::Throw)));
             }
             p
+        }
+    };
+
+    inter.view = match &target {
+        None => PromptView::default(),
+        Some(t) => {
+            let size = match t {
+                Target::Crate(e, _) | Target::Drop(e) => size_of(*e),
+                _ => String::new(),
+            };
+            let (drop_key, throw_key) = (key_cap(&bindings, Tap::Drop), key_cap(&bindings, Tap::Throw));
+            let mut v = PromptView::default();
+            let mut set = |verb: &str, name: String| {
+                v.verb = verb.into();
+                v.name = name;
+            };
+            let mut note = (String::new(), Tone::Normal);
+            match t {
+                Target::Seat => set("Sit", "Pilot seat".into()),
+                Target::SeatLocked => {
+                    set("Sit", "Pilot seat".into());
+                    note = (format!("▲ {}", gp.licence_hint()), Tone::Warn);
+                }
+                Target::StandUp => set("Leave", "Pilot seat".into()),
+                Target::Crate(e, Reach::Hands) => {
+                    set("Pick up", format!("{size} crate"));
+                    if !hands_free(&items, &crates, &table, *e) {
+                        note = (format!("▲ Hands full · {drop_key} drop"), Tone::Warn);
+                    }
+                }
+                Target::Crate(_, Reach::Tool) => {
+                    set("Pull", format!("{size} crate"));
+                    note = ("Grab tool".into(), Tone::Normal);
+                }
+                Target::Drop(_) => {
+                    set("Set down", format!("{size} crate"));
+                    note = (format!("{throw_key} throw"), Tone::Normal);
+                }
+                Target::Counter(g) => set("Talk to", gp.jobs_content.givers.get(g).map(|g| gp.text(&g.record.name)).unwrap_or_default()),
+                Target::Accept(j) => {
+                    set("Take job", gp.offer_label(*j));
+                    let hints: Vec<String> = [(Tap::NextOffer, "next"), (Tap::Decline, "decline")]
+                        .into_iter()
+                        .filter(|(t, _)| key_label(&bindings, *t) != "?")
+                        .map(|(t, verb)| format!("{} {verb}", key_cap(&bindings, t)))
+                        .collect();
+                    note = (hints.join(" · "), Tone::Normal);
+                }
+                Target::Panel(e) => set("Use", displays.get(*e).map(|(_, d)| d.name.clone()).unwrap_or_default()),
+                Target::LeavePanel(e) => {
+                    set("Leave", displays.get(*e).map(|(_, d)| d.name.clone()).unwrap_or_default());
+                    note = (format!("or {}", key_cap(&bindings, Tap::DisplayLeave)), Tone::Normal);
+                }
+                Target::Item(e) => {
+                    if let Ok((_, _, li)) = loose.get(*e) {
+                        let name = items.defs.get(&li.def).map_or(li.def.clone(), |d| d.name.clone());
+                        set("Collect", if li.count > 1 { format!("{name} ×{}", li.count) } else { name });
+                    }
+                }
+            }
+            v.note = note.0;
+            v.note_tone = note.1;
+            v
         }
     };
 

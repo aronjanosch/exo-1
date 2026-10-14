@@ -36,6 +36,10 @@ pub struct ItemDef {
     pub id: String,
     /// Shown in prompts and the inventory.
     pub name: String,
+    /// Three capital letters that stand for it in the action bar (`WRN`); empty: the first three
+    /// letters of the id (`short_code`).
+    #[serde(default)]
+    pub code: String,
     pub take: Take,
     /// 1 or 2: the hands it fills while held.
     pub hands: u8,
@@ -54,6 +58,11 @@ pub struct ItemDef {
 }
 
 impl ItemDef {
+    /// The three letters that stand for the item in the action bar.
+    pub fn short_code(&self) -> String {
+        if self.code.is_empty() { self.id.chars().take(3).collect::<String>().to_uppercase() } else { self.code.clone() }
+    }
+
     /// The item as the containers see it.
     pub fn item(&self) -> Item {
         let tags: Vec<&str> = self.tags.iter().map(String::as_str).collect();
@@ -85,6 +94,9 @@ impl ItemDefs {
             let stem = path.rsplit('/').next().unwrap_or(path).trim_end_matches(".json");
             if stem != d.id {
                 return Err(format!("{at}: the file must be named {}.json", d.id));
+            }
+            if !d.code.is_empty() && !(d.code.len() == 3 && d.code.chars().all(|c| c.is_ascii_uppercase())) {
+                return Err(format!("{at}: code must be three capital letters"));
             }
             if !(1..=2).contains(&d.hands) {
                 return Err(format!("{at}: hands must be 1 or 2"));

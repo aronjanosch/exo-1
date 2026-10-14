@@ -31,6 +31,7 @@ mod displays;
 mod figure;
 mod flight;
 mod help;
+mod hud;
 mod items;
 mod first_person_settings;
 mod landing;
@@ -691,6 +692,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "displays" => displays::displays_steps(&mut s),
         // C1: items at the dev area's item table, through the request path with 75 ms each way.
         "items" => items::items_steps(&mut s, &shot_step),
+        // Crew HUD v3: compass in both frames, vitals, credits flash, prompt, bar, hints.
+        "hud" => hud::hud_steps(&mut s, &shot_step),
         // #135: save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),
         // #169: the seat refuses without the licence; the exam; the licence.

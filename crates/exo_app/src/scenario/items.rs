@@ -12,13 +12,13 @@ use crate::items::{slot_at, slot_rect, HudWindow, InventoryUi, Items, LooseItem}
 use item_core::{Action, Reject, Request};
 
 /// One-way delay of every item message in this scenario (s).
-const DELAY: f64 = 0.075;
+pub(super) const DELAY: f64 = 0.075;
 
-fn items(w: &World) -> &Items {
+pub(super) fn items(w: &World) -> &Items {
     w.resource::<Items>()
 }
 
-fn prompt(w: &World) -> String {
+pub(super) fn prompt(w: &World) -> String {
     w.resource::<Interaction>().prompt.clone()
 }
 
@@ -33,12 +33,12 @@ fn loose_of(w: &mut World, def: &str) -> Vec<(Entity, Option<u64>, DVec3, bool)>
 }
 
 /// The one loose item of a kind outside the ship.
-fn outside(w: &mut World, def: &str) -> Option<(Entity, Option<u64>, DVec3)> {
+pub(super) fn outside(w: &mut World, def: &str) -> Option<(Entity, Option<u64>, DVec3)> {
     loose_of(w, def).into_iter().find(|x| !x.3).map(|(e, id, p, _)| (e, id, p))
 }
 
 /// Turn heading and pitch to look at a world point.
-fn look_at(w: &mut World, target: DVec3) {
+pub(super) fn look_at(w: &mut World, target: DVec3) {
     face_towards(w, target);
     let f = ship_frame_of(w);
     with_player(w, |p| {
@@ -51,7 +51,7 @@ fn look_at(w: &mut World, target: DVec3) {
 
 /// Look at the item of a kind lying outside, check the prompt, tap F: shown in the bar at once,
 /// confirmed by the host after the round trip, gone from the world.
-fn collect(def: &'static str, name: &'static str) -> Vec<Step> {
+pub(super) fn collect(def: &'static str, name: &'static str) -> Vec<Step> {
     vec![
         Box::new(move |w, c| {
             let Some((_, _, at)) = outside(w, def) else {
@@ -90,7 +90,9 @@ fn collect(def: &'static str, name: &'static str) -> Vec<Step> {
     ]
 }
 
-pub(super) fn items_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
+/// To the item table in the dev area: the items lie there, the walker stands in front of it and
+/// looks at it. The item messages take 75 ms each way.
+pub(super) fn at_the_table(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         begin(w, c, "items: the table and the cabin");
         w.resource_mut::<Items>().delay = DELAY;
@@ -123,6 +125,10 @@ pub(super) fn items_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) ->
         true
     }));
     s.push(wait(0.2));
+}
+
+pub(super) fn items_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
+    at_the_table(s);
     s.push(shot_step("table"));
     s.extend(collect("wrench", "Wrench"));
     s.extend(collect("extinguisher", "Extinguisher"));
@@ -255,7 +261,7 @@ pub(super) fn items_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) ->
 }
 
 /// Tap a key, then wait (at most 1 s) until a condition holds.
-fn tap_then(what: &'static str, k: KeyCode, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
+pub(super) fn tap_then(what: &'static str, k: KeyCode, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
             tap(w, k);
@@ -277,8 +283,9 @@ fn tap_then(what: &'static str, k: KeyCode, mut done: impl FnMut(&mut World) -> 
 fn drag(from: usize, to: usize) -> Step {
     Box::new(move |w, c| {
         let win = w.resource::<HudWindow>().0;
+        let bar = w.resource::<crate::displays::DisplayLook>().0.hud.bar.clone();
         let centre = |i: usize| {
-            let (at, size) = slot_rect(i, true, win);
+            let (at, size) = slot_rect(i, true, win, &bar);
             at + Vec2::splat(size * 0.5)
         };
         let (a, b) = (centre(from), centre(to));
@@ -293,7 +300,7 @@ fn drag(from: usize, to: usize) -> Step {
             return false;
         }
         ctl.pointer_down = false;
-        check(c, slot_at(b, true, win) == Some(to), format!("items: drag from slot {} to slot {}", from + 1, to + 1));
+        check(c, slot_at(b, true, win, &bar) == Some(to), format!("items: drag from slot {} to slot {}", from + 1, to + 1));
         true
     })
 }

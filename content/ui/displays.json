@@ -1,5 +1,5 @@
 {
-  "_comment": "The look of the display panels (display_core::Theme). Colours, fonts and sizes from the initiator's Claude Design system 'EXO-1 Ship Displays' (2026-10-13): green-black glass, phosphor text, one sky-blue accent, status teal/amber/red-pink always with a glyph. Fonts: Chakra Petch and Share Tech Mono (SIL OFL, files and licences in content/fonts/). screen_idle and bezel are the screen in the world when it shows nothing and its frame (not in the system). The tiers (S 320x240, M 640x400, L 1280x720 panel pixels) are the canvas the panel is drawn on. world: screens nearer than range_m draw their panel live (the screen in use every frame, the others at most once per redraw_s), texture_scale texture pixels per panel pixel. Dev builds reload this file while running.",
+  "_comment": "The look of the display panels (display_core::Theme). Colours, fonts and sizes from the initiator's Claude Design system 'EXO-1 Ship Displays' (2026-10-13): green-black glass, phosphor text, one sky-blue accent, status teal/amber/red-pink always with a glyph. Fonts: Chakra Petch and Share Tech Mono (SIL OFL, files and licences in content/fonts/). screen_idle and bezel are the screen in the world when it shows nothing and its frame (not in the system). The tiers (S 320x240, M 640x400, L 1280x720 panel pixels) are the canvas the panel is drawn on. world: screens nearer than range_m draw their panel live (the screen in use every frame, the others at most once per redraw_s), texture_scale texture pixels per panel pixel. Dev builds reload this file while running. hud: the crew HUD v3 (Claude Design: EXO-1 Crew HUD v3), sizes in screen pixels, colours and fonts are the tokens above; shares are 0..1.",
   "source": "Claude Design: EXO-1 Ship Displays",
   "colours": {
     "bg_0": "#060a0d",
@@ -41,5 +41,42 @@
     "scanline_every": 3.0,
     "caps_tracking": 0.08
   },
-  "world": { "range_m": 12.0, "redraw_s": 0.2, "texture_scale": 2.0 }
+  "world": { "range_m": 12.0, "redraw_s": 0.2, "texture_scale": 2.0 },
+  "hud": {
+    "margin": 16.0,
+    "edge": 40.0,
+    "soft": "#eaf7f1",
+    "scrim": { "colour": "#04080a", "height": 200.0, "alpha": 0.5, "open_height": 300.0, "open_alpha": 0.55 },
+    "compass": {
+      "width": 640.0, "height": 74.0, "top": 24.0, "span_deg": 128.0, "tick_every_deg": 5.0, "label_every_deg": 30.0, "fade": 0.24,
+      "heading_size": 22.0, "pointer_w": 12.0, "pointer_h": 8.0, "pointer_y": 27.0,
+      "line_y": 38.0, "line_px": 2.0, "line_alpha": 0.55,
+      "tick_y": 40.0, "tick_w": 2.0, "tick_major_px": 14.0, "tick_mid_px": 10.0, "tick_px": 5.0, "tick_alpha": 0.7,
+      "cardinal_size": 18.0, "cardinal_top": 56.0, "label_size": 14.0, "label_top": 54.0, "label_alpha": 0.8
+    },
+    "vitals": {
+      "width": 220.0, "gap": 12.0, "label_gap": 4.0, "track_h": 6.0, "track_alpha": 0.22, "label_size": 16.0, "value_size": 18.0,
+      "glow_px": 8.0, "glow_alpha": 0.8, "warn_below": 0.6, "bad_below": 0.25
+    },
+    "prompt": {
+      "gap": 16.0, "key_px": 40.0, "key_border": 2.0, "key_size": 22.0, "key_bg_alpha": 0.5, "blocked_alpha": 0.4,
+      "key_gap": 12.0, "line_gap": 4.0, "note_gap": 6.0, "verb_size": 16.0, "verb_alpha": 0.85, "name_size": 20.0, "sub_size": 18.0, "note_size": 16.0,
+      "dash": 4.0, "dash_gap": 3.0
+    },
+    "bar": {
+      "closed": { "size": 56.0, "gap": 8.0, "border": 2.0, "border_selected": 2.0, "num_size": 14.0, "num_x": 4.0, "num_y": 2.0, "num_alpha": 0.75, "code_size": 18.0, "code_top": 18.0, "tag_size": 14.0, "tag_pad": 4.0 },
+      "open": { "size": 88.0, "gap": 8.0, "border": 2.0, "border_selected": 3.0, "num_size": 14.0, "num_x": 6.0, "num_y": 4.0, "num_alpha": 0.8, "code_size": 28.0, "code_top": 30.0, "tag_size": 16.0, "tag_pad": 6.0 },
+      "lift": 6.0, "bottom": 40.0, "name_h": 20.0, "name_gap": 8.0, "name_size": 16.0,
+      "open_bottom": 44.0, "row_h": 28.0, "row_gap": 16.0, "row_size": 16.0,
+      "scrim_w": 1100.0, "scrim_h": 420.0, "scrim_alpha": 0.7, "scrim_mid_alpha": 0.48, "scrim_mid_at": 0.45, "scrim_end_at": 0.72,
+      "idle_s": 3.0, "idle_fade_s": 0.4, "idle_contrast": 0.55, "name_idle_contrast": 0.7, "carry_contrast": 0.45,
+      "filled_border": 0.6, "filled_bg": 0.5, "empty_border": 0.22, "empty_bg": 0.25, "carry_border": 0.4, "carry_bg": 0.35,
+      "selected_bg": 0.16, "hover_bg": 0.16,
+      "ghost_bg": "#1e2830", "ghost_bg_alpha": 0.85, "ghost_tilt_deg": 4.0, "drop_offset": 7.0, "origin_alpha": 0.5
+    },
+    "hints": { "gap": 8.0, "key_gap": 10.0, "size": 16.0, "spacing": 0.1, "key_min_w": 30.0, "key_h": 28.0, "key_border": 2.0, "key_alpha": 0.75, "key_bg_alpha": 0.45, "key_size": 16.0 },
+    "reticle": { "dot_px": 8.0, "ring_px": 16.0, "ring_stroke_px": 2.0, "outline_px": 1.0, "outline_alpha": 0.7 },
+    "credits": { "show_s": 1.5, "fade_s": 0.5, "size": 22.0, "unit_size": 16.0, "unit_alpha": 0.85, "delta_size": 16.0 },
+    "text": { "shadow_px": 1.5, "shadow_alpha": 0.85 }
+  }
 }

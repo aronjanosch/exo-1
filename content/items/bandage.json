@@ -2,6 +2,7 @@
   "_comment": "Stacks to four. Using it (treat a burn) comes after C1. TODO(initiator): stack size.",
   "id": "bandage",
   "name": "Bandage",
+  "code": "BDG",
   "take": "collect",
   "hands": 1,
   "stack": 4,

@@ -46,15 +46,12 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, (update_pads, watch_pads, gameplay_step, update_readout).chain().after(crate::cargo::budget_step).in_set(crate::phases::Fx::Cargo));
 }
 
-/// Window only: pad rings and the job line.
+/// Window only: pad rings and the giver's briefing panel.
 pub fn window_plugin(app: &mut App) {
     app.init_resource::<PadRings>();
-    app.add_systems(Startup, (spawn_job_line, spawn_panel));
+    app.add_systems(Startup, spawn_panel);
     app.add_systems(Update, update_panel.in_set(crate::phases::Frame::Hud));
     app.add_systems(Update, update_pad_rings.in_set(crate::phases::Frame::World));
-    app.add_systems(Update, update_job_line.in_set(crate::phases::Frame::Hud));
-    app.add_systems(Startup, spawn_arrow);
-    app.add_systems(Update, update_arrow.in_set(crate::phases::Frame::Hud));
 }
 
 /// The host's own sender id in events until the network sends each client's (#134); the folder's
@@ -731,90 +728,9 @@ pub fn update_readout(
     gp.readout = s;
 }
 
-#[derive(Component)]
-struct JobLine;
-
-fn spawn_job_line(mut commands: Commands) {
-    commands.spawn((
-        JobLine,
-        Text::new(""),
-        TextFont { font_size: FontSize::Px(crate::ui_theme::BODY), ..default() },
-        TextColor(crate::ui_theme::GOLD),
-        TextShadow { offset: Vec2::splat(1.5), color: crate::ui_theme::SHADOW },
-        Node { position_type: PositionType::Absolute, top: px(8), right: px(crate::ui_theme::MARGIN), ..default() },
-        TextLayout::justify(Justify::Right),
-    ));
-}
-
-/// The job line; the credits count towards a new total instead of jumping, green going up and
-/// red going down (round 6b).
-fn update_job_line(time: Res<Time>, gp: Res<Gameplay>, mut shown: Local<Option<f64>>, mut q: Query<(&mut Text, &mut TextColor), With<JobLine>>) {
-    let Ok((mut t, mut c)) = q.single_mut() else { return };
-    let money = gp.progress.wallet();
-    let v = shown.get_or_insert(money as f64);
-    let gap = money as f64 - *v;
-    *v = if gap.abs() < 1.0 { money as f64 } else { *v + gap * (time.delta_secs_f64() * 5.0).min(1.0) + gap.signum() };
-    let now = v.round() as i64;
-    c.0 = if now == money { crate::ui_theme::GOLD } else if gap > 0.0 { crate::ui_theme::GOOD } else { crate::ui_theme::BAD };
-    let text = gp.readout.replacen(&format!("{money} "), &format!("{now} "), 1);
-    if **t != text {
-        **t = text;
-    }
-}
-
-/// The target arrow at the top of the screen: a head and a shaft turned towards the target, the
-/// distance under it; red to a pickup, green to a dropoff, as the map's pins (#166).
-/// TODO(initiator): look, size and place.
-#[derive(Component)]
-struct ArrowUi;
-
-#[derive(Component)]
-struct ArrowPart;
-
-#[derive(Component)]
-struct ArrowDist;
-
-const ARROW_PICKUP: Color = Color::srgb(0.95, 0.35, 0.3);
-const ARROW_DROPOFF: Color = Color::srgb(0.35, 0.9, 0.4);
-
-fn spawn_arrow(mut commands: Commands) {
-    commands.spawn((Node { position_type: PositionType::Absolute, top: px(10), left: percent(50), margin: UiRect::left(px(-30)), width: px(60), flex_direction: FlexDirection::Column, align_items: AlignItems::Center, display: Display::None, ..default() }, ArrowUi)).with_children(|c| {
-        c.spawn((Node { width: px(44), height: px(44), flex_direction: FlexDirection::Column, align_items: AlignItems::Center, ..default() }, UiTransform::IDENTITY, ArrowUi)).with_children(|a| {
-            a.spawn((Node { width: px(16), height: px(16), margin: UiRect::top(px(4)), ..default() }, UiTransform { rotation: Rot2::degrees(45.0), ..UiTransform::IDENTITY }, BackgroundColor(ARROW_DROPOFF), ArrowPart));
-            a.spawn((Node { width: px(5), height: px(22), margin: UiRect::top(px(-8)), ..default() }, BackgroundColor(ARROW_DROPOFF), ArrowPart));
-        });
-        c.spawn((Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgb(1.0, 0.92, 0.55)), ArrowDist));
-    });
-}
-
-#[allow(clippy::type_complexity)]
-fn update_arrow(gp: Res<Gameplay>, mut nodes: Query<(&mut Node, Option<&mut UiTransform>), With<ArrowUi>>, mut parts: Query<&mut BackgroundColor, With<ArrowPart>>, mut dist: Query<&mut Text, With<ArrowDist>>) {
-    for (mut node, turn) in &mut nodes {
-        match (&gp.arrow, turn) {
-            // The outer node shows or hides the whole arrow.
-            (a, None) => {
-                let d = if a.is_some() { Display::Flex } else { Display::None };
-                if node.display != d {
-                    node.display = d;
-                }
-            }
-            // The inner one turns: UI rotation is clockwise, the bearing is + to the left.
-            (Some(a), Some(mut t)) => t.rotation = Rot2::degrees(-a.bearing_deg as f32),
-            (None, Some(_)) => {}
-        }
-    }
-    let Some(a) = &gp.arrow else { return };
-    let colour = if a.stop == jobs_core::map::Stop::Pickup { ARROW_PICKUP } else { ARROW_DROPOFF };
-    for mut b in &mut parts {
-        b.0 = colour;
-    }
-    if let Ok(mut t) = dist.single_mut() {
-        let text = if a.dist_m >= 1000.0 { format!("{:.1} km", a.dist_m / 1000.0) } else { format!("{:.0} m", a.dist_m) };
-        if **t != text {
-            **t = text;
-        }
-    }
-}
+// The job line (credits, jobs, where to next) and the target arrow left the HUD (Crew HUD v3,
+// decision "Minimal HUD"): the credits flash up on a change (`crew_hud`), the crew knows where
+// things are, the map screen (M) keeps the pins. `Gameplay::readout` and `arrow` stay as data.
 
 #[derive(Component)]
 struct PanelText;

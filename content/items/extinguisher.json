@@ -2,6 +2,7 @@
   "_comment": "Two-handed: held, it fills both hands. Spraying comes after C1. TODO(initiator): shape, mass.",
   "id": "extinguisher",
   "name": "Extinguisher",
+  "code": "EXT",
   "take": "collect",
   "hands": 2,
   "stack": 1,

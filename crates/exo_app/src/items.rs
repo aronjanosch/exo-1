@@ -106,6 +106,8 @@ pub enum NetOut {
     Treat(Option<PlayerId>),
     /// Client to host: the CPR hold on this player, or none (#300 polish).
     Rescue(Option<PlayerId>),
+    /// Client to host: the brake on the reactor (#300); the host knows the sender.
+    Pull,
     /// Host to one client: its repair start was refused (#299).
     RepairRefused { to: PlayerId },
 }
@@ -158,6 +160,8 @@ pub struct Items {
     pub public: Vec<(PlayerId, PublicStatus)>,
     /// Treatment holds by player, to apply here (host and one process); a client sends its own (#300).
     pub treat_asks: Vec<(PlayerId, Option<PlayerId>)>,
+    /// Brakes by player (#300), to apply here; a client sends its own. The rod goes to that player.
+    pub pull_asks: Vec<PlayerId>,
     /// CPR holds by player (the rescuer's patient, or none), to apply here (host and one process);
     /// a client sends its own (#300 polish).
     pub rescue_asks: Vec<(PlayerId, Option<PlayerId>)>,
@@ -175,7 +179,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, rod_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), rescue_asks: Vec::new() }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, rod_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new() }
     }
 
     /// The local player's slot.
@@ -246,6 +250,15 @@ impl Items {
             self.net_out.push(NetOut::RepairAsk(a));
         } else {
             self.repair_asks.push((self.me(), a));
+        }
+    }
+
+    /// The brake of the local player (#300): sent from a client, kept here on the host.
+    pub fn ask_pull(&mut self) {
+        if self.role == Role::Client {
+            self.net_out.push(NetOut::Pull);
+        } else {
+            self.pull_asks.push(self.me());
         }
     }
 
@@ -1088,6 +1101,21 @@ fn draw_bar(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_brake_is_asked_by_its_sender_not_by_the_message() {
+        // #300: a pull names no player; the host takes the sender (the local player's id here, a
+        // remote one's slot from its connection, `items_net`), so the rod goes to the one who asked.
+        let mut host = Items::load();
+        host.role = Role::Host;
+        host.ask_pull();
+        assert_eq!(host.pull_asks, vec![host.me()]);
+        let mut client = Items::load();
+        client.role = Role::Client;
+        client.ask_pull();
+        assert!(client.pull_asks.is_empty(), "a client sends it, it does not apply it");
+        assert!(client.net_out.iter().any(|n| matches!(n, NetOut::Pull)));
+    }
 
     #[test]
     fn a_two_handed_item_sits_lower_more_centred_and_further_off_than_a_one_handed_one() {

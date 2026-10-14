@@ -117,8 +117,6 @@ impl ReactorSim {
                     info!("reactor: boost refused (off, broken, or not allowed now)");
                 }
             }
-            // The brake takes the player's hands into account: `reactor_step` does it (#300).
-            ReactorAsk::PullRod(_) => {}
         }
     }
 
@@ -286,11 +284,8 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
         return;
     }
     let mut events = Vec::new();
-    let mut pulls = Vec::new();
     for a in asks {
-        if let ReactorAsk::PullRod(player) = a {
-            pulls.push(player);
-        } else if a == ReactorAsk::Trigger(ReactorFault::Fire) {
+        if a == ReactorAsk::Trigger(ReactorFault::Fire) {
             info!("reactor: dev fire");
             events.push(RoomEvent::Fire { size: fires.0.start_size, source: Source::Reactor });
         } else {
@@ -306,10 +301,10 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
         let added = sim.room.pump_mut().refill(cfg.0.room.coolant_canister);
         info!("reactor: coolant canister, the tank gains {added:.0} %");
     }
-    // The brake (`ReactorAsk::PullRod`): the rod with the most life comes out into the puller's hands,
+    // The brake (`Items::pull_asks`, by the sender): the rod with the most life comes out into the puller's hands,
     // and the core's heat above its optimal band burns the hand once (the reactor's miss burn, as
     // repair's miss does it, `hurt_of`). The rod keeps its kind and life.
-    for player in pulls {
+    for player in std::mem::take(&mut items.pull_asks) {
         let Some(i) = rods::pull_index(sim.room.reactor().rods()) else {
             info!("reactor: the brake, no rod in a slot");
             continue;

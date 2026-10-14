@@ -10,7 +10,7 @@
 //!   and the item is gone. Refused with a notice when all slots are full (the client checks its
 //!   snapshot first; the host gives the rod back if it was full after all).
 //! - Pull (the emergency brake, `reactor_core` `pull_rod`): empty hands, the look on the reactor,
-//!   LMB held `HOLD_S` seconds: `ReactorAsk::PullRod` goes to the host, which pulls the rod with the
+//!   LMB held `HOLD_S` seconds: `Pull` goes to the host, which pulls the rod with the
 //!   most life. The rod comes back as an item with its kind and life. A core above its optimal band
 //!   burns the hand once (the reactor's miss burn, `device_core::minigame::hurt_of`, as repair uses it).
 //!
@@ -28,7 +28,7 @@ use avian3d::prelude::{Position, Rotation};
 use bevy::math::DVec3;
 use gameplay_core::notice::{Notice, NoticeKind};
 use item_core::container::Stack;
-use item_core::wire::{FuelKind, ReactorAsk, RepairDevice};
+use item_core::wire::{FuelKind, RepairDevice};
 use item_core::{FrameRef, ItemDef, Placement, Request};
 use reactor_core::FuelRod;
 use walker_core::Frame;
@@ -165,7 +165,7 @@ mod tests {
 
 /// Client: the look on the reactor within reach, LMB held `HOLD_S` seconds, with a fuel rod in the
 /// selected slot (load: `Request::Use` goes to the host) or the hands empty (the brake:
-/// `ReactorAsk::PullRod` goes to the host). A load into a reactor with no free slot (its snapshot)
+/// `Pull` goes to the host). A load into a reactor with no free slot (its snapshot)
 /// is refused with a notice and no request. Any other state ends the hold.
 #[allow(clippy::too_many_arguments)]
 fn rod_hands(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMut<Items>, cfg: Res<RepairConfig>, reactor: Res<crate::dev_area::reactor::ReactorConfig>, active: Res<ActiveDisplay>, mut hold: ResMut<RodHold>, mut gp: ResMut<Gameplay>, players: Query<&Player>, machines: Query<(&DevBox, &Position, &Rotation)>) {
@@ -193,8 +193,7 @@ fn rod_hands(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMut<
     hold.held = 0.0;
     controls.click = false;
     if pull {
-        let me = items.me();
-        items.ask_reactor(ReactorAsk::PullRod(me));
+        items.ask_pull();
         return;
     }
     let slots = reactor.0.reactor.slots;

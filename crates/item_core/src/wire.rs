@@ -26,6 +26,8 @@ pub enum ToHost {
     Treat(Option<PlayerId>),
     /// The CPR hold (#300 polish): the player is pumping this player (`Some`), or has stopped (`None`).
     Rescue(Option<PlayerId>),
+    /// The brake (#300): pull the rod with the most life into the sender's hands.
+    Pull,
 }
 
 /// Host to client.
@@ -160,8 +162,6 @@ pub enum ReactorAsk {
     SetPumpMode(PumpMode),
     /// The temperature boost: up (true) or down (false), as the core takes it (#300).
     Boost(bool),
-    /// The brake (#300): pull the rod with the most life; the player's hands take it.
-    PullRod(PlayerId),
 }
 
 /// The coolant pump's mode (#300): off, a low or a high stream.

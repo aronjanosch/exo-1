@@ -26,6 +26,7 @@ use crate::controls::{Actions, Controls};
 use crate::env::PlanetRes;
 use crate::items::{Items, Role, LOCAL};
 use crate::net_live::{Net, RemoteWalker};
+use crate::rescue::{freeze as rescue_freeze, rescue_step};
 use crate::origin::WorldPose;
 use crate::walker::{Player, EYE_HEIGHT};
 use bevy::math::{DVec2, DVec3};
@@ -51,8 +52,9 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, use_input.after(crate::scenario::run_script).before(crate::displays::use_display));
     app.add_systems(
         FixedUpdate,
-        (apply_uses, health_step, vitals_out, own_sync).chain().after(crate::items::deliver).before(crate::walker::walker_step).in_set(crate::phases::Fx::Walker),
+        (apply_uses, health_step, rescue_step, vitals_out, own_sync, rescue_freeze).chain().after(crate::items::deliver).before(crate::walker::walker_step).in_set(crate::phases::Fx::Walker),
     );
+    crate::rescue::plugin(app);
 }
 
 /// Window only: the centred down line.
@@ -73,17 +75,20 @@ pub struct Body {
 pub struct HealthState {
     pub tuning: HealthTuning,
     pub bodies: BTreeMap<PlayerId, Body>,
+    /// The air each body stood in this step (its oxygen fraction, 0..1): a CPR needs good air.
+    pub air: BTreeMap<PlayerId, f64>,
     sent: BTreeMap<PlayerId, Vitals>,
 }
 
 impl HealthState {
     pub fn new(tuning: HealthTuning) -> HealthState {
-        HealthState { tuning, bodies: BTreeMap::new(), sent: BTreeMap::new() }
+        HealthState { tuning, bodies: BTreeMap::new(), air: BTreeMap::new(), sent: BTreeMap::new() }
     }
 
     /// The player left: their body goes.
     pub fn forget(&mut self, id: PlayerId) {
         self.bodies.remove(&id);
+        self.air.remove(&id);
         self.sent.remove(&id);
     }
 
@@ -244,6 +249,7 @@ fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea
         };
         let fire = heat.as_ref().and_then(|h| h.0.get(id)).copied().unwrap_or(0.0);
         let env = Env { oxygen: if inside(&NO_AIR) { 0.0 } else { room_air }, hot: inside(&HOT_PLATE), glow: inside(&GLOW_BARREL), fire };
+        st.air.insert(*id, env.oxygen);
         for ev in b.health.step(t, dt, env) {
             if matches!(ev, HealthEvent::Died { .. }) {
                 b.respawn_in = Some(t.respawn_s);
@@ -286,7 +292,7 @@ fn vitals_out(mut items: ResMut<Items>, mut st: ResMut<HealthState>) {
 /// The first hit of the aim on another player's capsule, within reach: the player's slot. A
 /// player who is down or unconscious lies: the aim meets a capsule along the ground, from the
 /// feet on the figure's side (`lying`), where the upright one would miss it.
-fn aim_target(eye: DVec3, dir: DVec3, planet: &PlanetRes, remotes: &Query<(&RemoteWalker, &WorldPose)>, lying: &dyn Fn(PlayerId) -> bool, reach: f64) -> Option<PlayerId> {
+pub(crate) fn aim_target(eye: DVec3, dir: DVec3, planet: &PlanetRes, remotes: &Query<(&RemoteWalker, &WorldPose)>, lying: &dyn Fn(PlayerId) -> bool, reach: f64) -> Option<PlayerId> {
     let arr = |v: DVec3| [v.x, v.y, v.z];
     let mut best: Option<(f64, PlayerId)> = None;
     for (rw, wp) in remotes {

@@ -31,6 +31,7 @@ mod scenario_help;
 mod scenario_engine_room;
 mod scenario_fire;
 mod scenario_repair;
+mod scenario_rescue;
 mod scenario_reactor;
 mod scenario_health;
 mod scenario_hud;

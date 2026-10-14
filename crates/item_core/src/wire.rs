@@ -24,6 +24,8 @@ pub enum ToHost {
     Repair(RepairAsk),
     /// The treatment hold (#300): the player is treating this player (`Some`), or has stopped (`None`).
     Treat(Option<PlayerId>),
+    /// The CPR hold (#300 polish): the player is pumping this player (`Some`), or has stopped (`None`).
+    Rescue(Option<PlayerId>),
 }
 
 /// Host to client.
@@ -60,6 +62,8 @@ pub enum Doing {
     Repairing(RepairDevice),
     /// The extinguisher's spray is on.
     Spraying,
+    /// Pumping this unconscious player (CPR, #300 polish).
+    Reviving(PlayerId),
 }
 
 /// A player's status for the others (#300): burning, down (waiting for the respawn), unconscious

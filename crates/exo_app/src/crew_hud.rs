@@ -1086,6 +1086,7 @@ fn update_reticle(
     inter: Res<Interaction>,
     controls: Res<Controls>,
     hold: Res<UseHold>,
+    rescue: Res<crate::rescue::RescueHold>,
     look: Res<DisplayLook>,
     players: Query<&Player>,
     mut nodes: Query<(&ReticlePart, &mut Node)>,
@@ -1093,7 +1094,8 @@ fn update_reticle(
 ) {
     let seated = players.single().is_ok_and(|p| p.seated);
     let usable = inter.target.is_some() && inter.kind != PromptKind::Blocked;
-    let progress = hold.progress().filter(|p| *p > 0.0);
+    // The ring of a treatment or of the CPR's start (#300 polish).
+    let progress = hold.progress().or(rescue.progress()).filter(|p| *p > 0.0);
     for (part, mut n) in &mut nodes {
         match *part {
             ReticlePart::Root => set_display(&mut n, if seated || controls.free_cursor { Display::None } else { Display::Flex }),

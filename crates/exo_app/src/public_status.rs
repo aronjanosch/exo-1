@@ -14,6 +14,7 @@ use crate::dev_area::fire::Sprays;
 use crate::health::{HealthState, UseHold};
 use health_core::Life;
 use crate::items::{Items, NetOut, Role};
+use crate::rescue::Rescuers;
 use crate::net_live::{Net, RemoteWalker};
 use crate::repair::RepairSessions;
 use bevy::prelude::*;
@@ -55,7 +56,7 @@ fn treat_out(mut items: ResMut<Items>, hold: Res<UseHold>, mut st: ResMut<TreatS
 /// Host: every player's status from its own state; sent to all when the list changed. The sprays
 /// exist with the dev area only.
 #[allow(clippy::too_many_arguments)]
-fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>, sprays: Option<Res<Sprays>>, repairs: Res<RepairSessions>, mut treat: ResMut<TreatState>) {
+fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>, sprays: Option<Res<Sprays>>, repairs: Res<RepairSessions>, rescue: Res<Rescuers>, mut treat: ResMut<TreatState>) {
     if items.role != Role::Host {
         return;
     }
@@ -77,6 +78,8 @@ fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>
                 Doing::Repairing(s.device)
             } else if sprays.as_ref().is_some_and(|s| s.0.contains_key(id)) {
                 Doing::Spraying
+            } else if let Some(patient) = rescue.by_rescuer.get(id) {
+                Doing::Reviving(*patient)
             } else if let Some(Some(target)) = treat.by_player.get(id) {
                 Doing::Treating(*target)
             } else {
@@ -216,6 +219,7 @@ fn label_of(s: &PublicStatus) -> Option<(&'static str, Color)> {
         Doing::Treating(_) => Some(("TREATING", Color::srgb(0.5, 0.9, 1.0))),
         Doing::Repairing(_) => Some(("REPAIRING", Color::srgb(1.0, 0.85, 0.4))),
         Doing::Spraying => Some(("SPRAYING", Color::srgb(0.6, 0.85, 1.0))),
+        Doing::Reviving(_) => Some(("REVIVING", Color::srgb(0.95, 0.5, 0.9))),
         Doing::Nothing if s.burning => Some(("BURNING", Color::srgb(1.0, 0.5, 0.2))),
         Doing::Nothing => None,
     }

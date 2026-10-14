@@ -365,7 +365,7 @@ pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64) -> Panel {
                 10.0,
                 vec![
                     pump_picture(r.pump_on && r.flow > 0.0, angle),
-                    column(4.0, vec![micro("FLOW").fixed(14.0), readout(format!("{:.0}", r.flow * 100.0)).text_size(font::TITLE).tone(tone).fixed(46.0), readout(word).text_size(font::LABEL).tone(tone)]).flex(1.0),
+                    column(4.0, vec![micro("FLOW").fixed(14.0), readout(format!("{:.0}", r.flow * 100.0)).text_size(font::LABEL).tone(tone).fixed(46.0), readout(word).text_size(font::LABEL).tone(tone)]).flex(1.0),
                     coolant_tube(&r).fixed(60.0),
                 ],
             )
@@ -801,8 +801,11 @@ mod tests {
 
     #[test]
     fn every_readout_fits_its_box() {
-        // A readout is set in the mono font, about 0.6 of its size a character.
-        for (i, p) in all_panels().into_iter().enumerate() {
+        // A readout is set in the mono font: at most 0.6 of its size a character (the font's advance
+        // is 0.54; the flow's 28 px digits were clipped on the screen, so the flow is 20 px now).
+        let mut panels = all_panels();
+        panels.push(pump_panel(Some(&ReactorNews { flow: 1.0, coolant: 100.0, ..news() })));
+        for (i, p) in panels.into_iter().enumerate() {
             for w in p.layout() {
                 if let display_core::Widget::Label { text, size, mono: true, .. } = w.widget {
                     let width = text.chars().count() as f64 * size * 0.6;

@@ -19,7 +19,7 @@
 //!
 //! All values are starting points for the playtest (`TODO(initiator)`).
 use gameplay_core::rng::Rng;
-use glam::DVec3;
+use glam::{DVec2, DVec3};
 use serde::{Deserialize, Serialize};
 
 pub mod tuning;
@@ -205,7 +205,20 @@ pub struct Target {
     pub id: u64,
     pub kind: TargetKind,
     pub room: RoomId,
+    /// Centre, ship space (the floor's x and y; z is not used).
     pub pos: DVec3,
+    /// Half the footprint on the floor, m (x and y): a device's box. Zero for a person, who is a
+    /// point.
+    pub half: DVec2,
+}
+
+impl Target {
+    /// From `p` to the nearest point of the footprint on the floor, m (0 inside it); to the
+    /// centre for a point.
+    pub fn distance_to(&self, p: DVec3) -> f64 {
+        let gap = ((p.truncate() - self.pos.truncate()).abs() - self.half).max(DVec2::ZERO);
+        gap.length()
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -394,7 +407,7 @@ impl Deck {
 
         for f in self.fires.iter().filter(|f| f.size >= t.out_below) {
             let range = f.range(&t);
-            for x in targets.iter().filter(|x| x.room == f.room && f.reaches(x.pos, range)) {
+            for x in targets.iter().filter(|x| x.room == f.room && x.distance_to(f.pos) <= f.size * 0.5 + range) {
                 let rate = match x.kind {
                     TargetKind::Person => t.burn_person * f.size.min(t.burn_cap_size).sqrt(),
                     TargetKind::Device => t.burn_device * f.size.min(t.burn_cap_size).sqrt(),

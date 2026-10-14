@@ -1,5 +1,6 @@
 //! Rules of #286 for fire and air, with numbers.
 use super::*;
+use glam::DVec2;
 
 const DT: f64 = 1.0 / 30.0;
 
@@ -101,10 +102,10 @@ fn extinguisher_reduces_size() {
 fn burns_people_and_devices_in_range() {
     let (mut d, a, b, _) = two_rooms(0.0);
     d.ignite(a, DVec3::ZERO, 1.0);
-    let near = Target { id: 1, kind: TargetKind::Person, room: a, pos: DVec3::new(1.2, 0.0, 0.0) };
-    let far = Target { id: 2, kind: TargetKind::Person, room: a, pos: DVec3::new(4.0, 0.0, 0.0) };
-    let device = Target { id: 3, kind: TargetKind::Device, room: a, pos: DVec3::new(0.0, 0.0, 1.0) };
-    let next_door = Target { id: 4, kind: TargetKind::Person, room: b, pos: DVec3::new(0.5, 0.0, 0.0) };
+    let near = Target { id: 1, kind: TargetKind::Person, room: a, pos: DVec3::new(1.2, 0.0, 0.0), half: DVec2::ZERO };
+    let far = Target { id: 2, kind: TargetKind::Person, room: a, pos: DVec3::new(4.0, 0.0, 0.0), half: DVec2::ZERO };
+    let device = Target { id: 3, kind: TargetKind::Device, room: a, pos: DVec3::new(0.0, 0.0, 1.0), half: DVec2::ZERO };
+    let next_door = Target { id: 4, kind: TargetKind::Person, room: b, pos: DVec3::new(0.5, 0.0, 0.0), half: DVec2::ZERO };
     let ev = d.step(1.0 / 60.0, &[near, far, device, next_door]);
     let dmg = |id| ev.iter().filter_map(|e| match e { FireEvent::Damage { target, amount, .. } if *target == id => Some(*amount), _ => None }).sum::<f64>();
     println!("one 60th of a second at size 1: near {:.4}, far {:.4}, device {:.4}, next room {:.4}", dmg(1), dmg(2), dmg(3), dmg(4));
@@ -223,4 +224,33 @@ fn a_spray_lands_on_a_fire_in_the_cone_and_not_outside() {
     assert!(cone_landing(eye, dir, DVec3::new(0.0, 0.0, -9.0), 0.5, 4.0, half).is_none());
     // Beyond the reach but its edge in reach: the spray lands at the reach.
     assert!((cone_landing(eye, dir, DVec3::new(0.0, 0.0, -4.8), 1.0, 4.0, half).unwrap() - 4.0).abs() < 1e-9);
+}
+
+#[test]
+fn a_target_is_measured_to_the_nearest_point_of_its_footprint() {
+    // A 2 m by 2 m box on the floor, centred at the origin: a point is at 0 inside it.
+    let box_ = Target { id: 1, kind: TargetKind::Device, room: RoomId(0), pos: DVec3::ZERO, half: DVec2::splat(1.0) };
+    assert_eq!(box_.distance_to(DVec3::new(0.5, -0.2, 0.0)), 0.0);
+    assert!((box_.distance_to(DVec3::new(1.3, 0.0, 0.0)) - 0.3).abs() < 1e-12, "0.3 m out of the east face");
+    assert!((box_.distance_to(DVec3::new(2.0, 2.0, 0.0)) - 2f64.sqrt()).abs() < 1e-12, "to the corner");
+    // A person is a point: the distance to its centre.
+    let person = Target { half: DVec2::ZERO, ..box_ };
+    assert!((person.distance_to(DVec3::new(3.0, 4.0, 0.0)) - 5.0).abs() < 1e-12);
+}
+
+#[test]
+fn a_fire_at_a_device_face_burns_it_at_once_and_one_further_out_by_its_range() {
+    // Size 1 m: the reach past the fire's edge is sqrt(1) x 1.0 = 1.0 m, so 0.5 + 1.0 = 1.5 m
+    // from the fire's centre to the footprint.
+    let device = |id| Target { id, kind: TargetKind::Device, room: RoomId(0), pos: DVec3::ZERO, half: DVec2::splat(1.0) };
+    let burn = |gap: f64| {
+        let (mut d, a, _, _) = two_rooms(0.0);
+        // The fire sits `gap` m out from the device's east face, 0.3 m for a machine's front face.
+        d.ignite(a, DVec3::new(1.0 + gap, 0.0, 0.0), 1.0);
+        let ev = d.step(DT, &[Target { room: a, ..device(3) }]);
+        ev.iter().filter_map(|e| match e { FireEvent::Damage { target: 3, amount, .. } => Some(*amount), _ => None }).sum::<f64>()
+    };
+    assert!(burn(0.3) > 0.0, "at the face, the same step");
+    assert!(burn(1.4) > 0.0, "inside the range");
+    assert_eq!(burn(1.6), 0.0, "beyond the range");
 }

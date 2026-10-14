@@ -17,6 +17,8 @@ pub enum ToHost {
     Room(RoomAsk),
     /// A request about the reactor (#297): the host decides.
     Reactor(ReactorAsk),
+    /// The extinguisher's spray, aimed while LMB is held (#298): the host decides.
+    Spray(SprayAsk),
 }
 
 /// Host to client.
@@ -30,6 +32,8 @@ pub enum ToClient {
     Room(RoomNews),
     /// The reactor's snapshot (#297), about 4 times a second while it changes.
     Reactor(ReactorNews),
+    /// The fires and the sprays as the host has them (#298), about 4 times a second while they change.
+    Fire(FireNews),
 }
 
 /// The alarm level of the ship (#296). A dev toggle for now; the reactor drives it later.
@@ -83,6 +87,41 @@ pub enum ReactorFault {
     PumpBreak,
     LoadDrop,
     Surge,
+    /// A fire at the reactor (#298).
+    Fire,
+}
+
+/// The extinguisher's spray, as its holder asks for it (#298).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum SprayAsk {
+    /// Spraying along this aim now: the nozzle's point and the look direction (world metres, the
+    /// direction a unit vector). Sent when the aim moves, about 10 times a second at most.
+    Aim { eye: [f64; 3], dir: [f64; 3] },
+    /// LMB let go, or the extinguisher put down.
+    Stop,
+}
+
+/// A fire as the host has it (#298): its id, its centre on the engine room's floor (area metres)
+/// and its diameter (m).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FireNew {
+    pub id: u64,
+    pub pos: [f64; 2],
+    pub size: f64,
+}
+
+/// A spray in progress: the nozzle's point and the aim (world metres, unit direction).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SprayNew {
+    pub eye: [f64; 3],
+    pub dir: [f64; 3],
+}
+
+/// The fires and the sprays (#298), as the host has them.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct FireNews {
+    pub fires: Vec<FireNew>,
+    pub sprays: Vec<SprayNew>,
 }
 
 /// A part's condition for the readout: its share of full condition (0..1) and whether it works.
@@ -249,6 +288,37 @@ mod tests {
             };
             assert_eq!(back, ask);
         }
+    }
+
+    #[test]
+    fn fires_and_sprays_travel_as_they_are() {
+        let news = FireNews {
+            fires: vec![FireNew { id: 7, pos: [-14.0, -15.25], size: 0.75 }, FireNew { id: 9, pos: [-12.5, -16.0], size: 0.1 }],
+            sprays: vec![SprayNew { eye: [1.0, 2.0, 3.0], dir: [0.0, 0.0, -1.0] }],
+        };
+        let back = match decode::<ToClient>(&encode(&ToClient::Fire(news.clone()))).expect("decodes") {
+            ToClient::Fire(f) => f,
+            _ => panic!("the fire message"),
+        };
+        assert_eq!(back, news);
+        let empty = FireNews::default();
+        assert_eq!(decode::<ToClient>(&encode(&ToClient::Fire(empty.clone()))).is_some_and(|m| matches!(m, ToClient::Fire(f) if f == empty)), true);
+    }
+
+    #[test]
+    fn spray_asks_travel_as_they_are() {
+        for ask in [SprayAsk::Aim { eye: [0.5, 1.6, -2.0], dir: [0.6, -0.8, 0.0] }, SprayAsk::Stop] {
+            let back = match decode::<ToHost>(&encode(&ToHost::Spray(ask))).expect("decodes") {
+                ToHost::Spray(a) => a,
+                _ => panic!("the spray request"),
+            };
+            assert_eq!(back, ask);
+        }
+        let fault = match decode::<ToHost>(&encode(&ToHost::Reactor(ReactorAsk::Trigger(ReactorFault::Fire)))).expect("decodes") {
+            ToHost::Reactor(ReactorAsk::Trigger(f)) => f,
+            _ => panic!("the fault"),
+        };
+        assert_eq!(fault, ReactorFault::Fire);
     }
 
     #[test]

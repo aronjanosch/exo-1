@@ -64,11 +64,11 @@ pub struct ReactorTuning {
 impl Default for ReactorTuning {
     fn default() -> ReactorTuning {
         ReactorTuning {
-            max_output_kw: 1000.0,
+            max_output_kw: 2000.0,
             slots: 4,
             fuel_burn: 0.2,
             temp_rate: 10.0,
-            fire_delay_s: 20.0,
+            fire_delay_s: 30.0,
             meltdown_delay_s: 120.0,
             auto_turbine_speed: 4.0,
             auto_fission_speed: 0.5,

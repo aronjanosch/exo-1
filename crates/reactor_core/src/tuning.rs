@@ -88,7 +88,7 @@ mod tests {
         let typo = good.replacen("\"start_rods\"", "\"start_rod\"", 1);
         let e = Tuning::parse(&typo).unwrap_err();
         assert!(e[0].contains(REACTOR_PATH) && e[0].contains("start_rod"), "{e:?}");
-        let bad = good.replacen("\"max_output_kw\": 1000.0", "\"max_output_kw\": 0.0", 1);
+        let bad = good.replacen("\"max_output_kw\": 2000.0", "\"max_output_kw\": 0.0", 1);
         let e = Tuning::parse(&bad).unwrap_err();
         assert!(e.iter().any(|m| m.contains("reactor.max_output_kw")), "{e:?}");
         let missing = Tuning::load(&[]).unwrap_err();

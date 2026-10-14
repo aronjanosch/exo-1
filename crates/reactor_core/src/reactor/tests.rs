@@ -78,7 +78,7 @@ fn overheating_starts_a_fire_and_nothing_shuts_the_reactor_down() {
         "manual fission 100, turbine 30: above {:.0} at {high:.1} s, fire at {fire:.1} s, above {:.0} at {crit:.1} s, meltdown at {melt:.1} s",
         b.temp_optimal.hi, b.temp_allowed.hi
     );
-    assert!((fire - high - 20.0).abs() < 0.2);
+    assert!((fire - high - 30.0).abs() < 0.2);
     assert!((melt - crit - 120.0).abs() < 0.2);
     assert!(fire < melt);
     // No automatic shutdown: the reactor stays on, hot, until it melts.
@@ -169,7 +169,7 @@ fn low_condition_speeds_up_the_fire_timer() {
         times.push(fire - high);
     }
     println!("fire after overheating: {:.1} s at condition 100, {:.1} s at 30", times[0], times[1]);
-    assert!((times[1] - 20.0 / 1.7).abs() < 0.2);
+    assert!((times[1] - 30.0 / 1.7).abs() < 0.2);
 }
 
 #[test]

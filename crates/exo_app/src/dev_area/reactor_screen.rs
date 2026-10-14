@@ -34,7 +34,7 @@ use crate::displays::{DisplayAction, Panels};
 use crate::dev_area::reactor::{lamp_blink_on, ReactorConfig};
 use crate::items::Items;
 use display_core::{button, canvas, column, ctl, font, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Shape, Tier, TextFace, Tone};
-use item_core::wire::{BreakerGroup, Lamp, PumpMode, ReactorAsk, ReactorFault, ReactorNews};
+use item_core::wire::{BreakerGroup, FuelKind, FuelTube, Lamp, PumpMode, ReactorAsk, ReactorFault, ReactorNews, FUEL_TUBES};
 
 /// The status board's lamps, in the panel's order (three to a row).
 const LAMPS: [Lamp; Lamp::COUNT] = [Lamp::Hot, Lamp::CritHeat, Lamp::Cold, Lamp::LowTemp, Lamp::HighOut, Lamp::CritOut, Lamp::LowOut, Lamp::FuelLow, Lamp::NoFuel, Lamp::Meltdown, Lamp::Scram];
@@ -196,29 +196,42 @@ pub fn power_ink(out: f64, load: f64) -> Ink {
     }
 }
 
-/// The fuel tubes (176 x 152): two tubes with their fill (life), hatched when low.
+/// The fuel tubes (176 x 152): one per slot (`FUEL_TUBES`), each filled to its rod's life and
+/// coloured by its kind (standard green, hot amber, spicy red, #300); an empty slot is a hollow
+/// tube. Hatched when the life is low.
 fn fuel(r: Option<&ReactorNews>) -> Item {
-    let life = r.map_or([0.0, 0.0], |r| [r.fuel[0].life, r.fuel[1].life]);
+    let tubes = r.map_or([FuelTube::default(); FUEL_TUBES], |r| r.fuel);
     let mut s = Vec::new();
-    for (i, &l) in life.iter().enumerate() {
-        let x = 40.0 + 66.0 * i as f64;
+    for (i, t) in tubes.iter().enumerate() {
+        let x = 12.0 + 40.0 * i as f64;
         let (top, h) = (10.0, 100.0);
-        s.push(Shape::Rect { x, y: top, w: 30.0, h, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) });
-        let fill_h = h * (l / 100.0).clamp(0.0, 1.0);
+        let fill = t.rod.is_some().then_some(Ink::Bg3);
+        s.push(Shape::Rect { x, y: top, w: 26.0, h, fill, outline: Some((Ink::HudDim, 2.0)) });
+        let fill_h = h * (t.life / 100.0).clamp(0.0, 1.0);
         let fy = top + h - fill_h;
-        if fill_h > 0.0 {
-            if l <= 10.0 {
-                s.push(Shape::Hatch { x: x + 2.0, y: fy, w: 26.0, h: fill_h, ink: Ink::Bad });
-            } else if l <= 25.0 {
-                s.push(Shape::Hatch { x: x + 2.0, y: fy, w: 26.0, h: fill_h, ink: Ink::Warn });
+        if let Some(kind) = t.rod.filter(|_| fill_h > 0.0) {
+            if t.life <= 10.0 {
+                s.push(Shape::Hatch { x: x + 2.0, y: fy, w: 22.0, h: fill_h, ink: Ink::Bad });
+            } else if t.life <= 25.0 {
+                s.push(Shape::Hatch { x: x + 2.0, y: fy, w: 22.0, h: fill_h, ink: Ink::Warn });
             } else {
-                s.push(Shape::Rect { x: x + 2.0, y: fy, w: 26.0, h: fill_h, fill: Some(Ink::Good), outline: None });
+                s.push(Shape::Rect { x: x + 2.0, y: fy, w: 22.0, h: fill_h, fill: Some(tube_ink(kind)), outline: None });
             }
         }
-        s.push(text(x - 10.0, 116.0, 50.0, 16.0, &format!("R{}", i + 1), 16.0, TextFace::Mono, Ink::Fg2, true));
+        s.push(text(x - 7.0, 116.0, 40.0, 16.0, &format!("R{}", i + 1), 16.0, TextFace::Mono, Ink::Fg2, true));
     }
     s.push(text(0.0, 136.0, 176.0, 16.0, "FUEL", 16.0, TextFace::Display, Ink::HudDim, true));
     canvas(176.0, 152.0, s, None).flex(1.0)
+}
+
+/// A rod kind's colour on the tube (the palette has no magenta: spicy takes the danger red,
+/// TODO(initiator): a colour of its own in `display_core`).
+fn tube_ink(kind: FuelKind) -> Ink {
+    match kind {
+        FuelKind::Standard => Ink::Good,
+        FuelKind::Hot => Ink::Warn,
+        FuelKind::Spicy => Ink::Bad,
+    }
 }
 
 /// A shape's text in a box.

@@ -48,10 +48,13 @@ pub struct ReactorSim {
 }
 
 impl ReactorSim {
-    /// A cold room on Auto with the power on: it warms up on its own.
+    /// A room on Auto with the power on, already warmed up (a cold start takes 60 to 90 s).
     pub fn new(cfg: &Tuning) -> ReactorSim {
         let mut room = EngineRoom::from_tuning(cfg, SEED);
         room.set_power(true);
+        for _ in 0..1500 {
+            let _ = room.step(0.1, Input::auto());
+        }
         ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, sent: None, since_send: f64::MAX }
     }
 

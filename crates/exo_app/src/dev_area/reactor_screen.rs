@@ -16,6 +16,9 @@
 //! - The reactor room's door screen (S, in the corridor by the door): the reactor temperature, its
 //!   zone band, the room's oxygen, the lights breaker. TODO(captain): the emergency view with the
 //!   captain role.
+//! - The RX STATUS screen (S, on the south wall beside the readout, to its east): the warning lamps,
+//!   the temperature boost (two buttons) and the implosion's countdown while the meltdown timer runs.
+//!   NO POWER like the others.
 //! - The dev faults screen (S, next to the test console): always powered.
 //!
 //! The machines' screens show NO POWER unless the snapshot says `powered`. Every process shows the
@@ -28,10 +31,17 @@
 //! TODO(initiator): the glow of the critical text and the scanlines' look are not drawn yet.
 use super::*;
 use crate::displays::{DisplayAction, Panels};
-use crate::dev_area::reactor::ReactorConfig;
+use crate::dev_area::reactor::{lamp_blink_on, ReactorConfig};
 use crate::items::Items;
 use display_core::{button, canvas, column, ctl, font, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Shape, Tier, TextFace, Tone};
-use item_core::wire::{BreakerGroup, PumpMode, ReactorAsk, ReactorFault, ReactorNews};
+use item_core::wire::{BreakerGroup, Lamp, PumpMode, ReactorAsk, ReactorFault, ReactorNews};
+
+/// The status board's lamps, in the panel's order (three to a row).
+const LAMPS: [Lamp; Lamp::COUNT] = [Lamp::Hot, Lamp::CritHeat, Lamp::Cold, Lamp::LowTemp, Lamp::HighOut, Lamp::CritOut, Lamp::LowOut, Lamp::FuelLow, Lamp::NoFuel, Lamp::Meltdown, Lamp::Scram];
+/// A lamp's cell (px) and the gap between the cells.
+const LAMP_W: f64 = 96.0;
+const LAMP_H: f64 = 20.0;
+const LAMP_GAP: f64 = 3.0;
 
 pub const READOUT_ID: PanelId = PanelId::new("reactor_readout");
 pub const READOUT_NAME: &str = "REACTOR";
@@ -43,6 +53,8 @@ pub const DOOR_ID: PanelId = PanelId::new("engine_door_screen");
 pub const DOOR_NAME: &str = "REACTOR ROOM";
 pub const FAULTS_ID: PanelId = PanelId::new("reactor_faults");
 pub const FAULTS_NAME: &str = "Dev faults";
+pub const STATUS_ID: PanelId = PanelId::new("reactor_status");
+pub const STATUS_NAME: &str = "RX STATUS";
 /// The dev faults screen's mount point (area metres, the engine room's north wall, the room side).
 pub const FAULTS_AT: [f64; 2] = [-17.5, -11.04];
 
@@ -294,11 +306,12 @@ fn powered(r: Option<&ReactorNews>) -> bool {
     r.is_some_and(|r| r.powered)
 }
 
-/// The pump's status word and its tone: OFF, LOW or HIGH by the mode, NO COOLANT with an empty tank.
+/// The pump's status word and its tone: OFF, LOW or HIGH by the mode, DRY with an empty tank (the
+/// column is 60 px: "NO COOLANT" does not fit it).
 pub fn pump_status(mode: PumpMode, coolant: f64) -> (&'static str, Tone) {
     match mode {
         PumpMode::Off => ("OFF", Tone::Dim),
-        _ if coolant <= 0.0 => ("NO COOLANT", Tone::Bad),
+        _ if coolant <= 0.0 => ("DRY", Tone::Bad),
         PumpMode::Low => ("LOW", Tone::Normal),
         PumpMode::High => ("HIGH", Tone::Good),
     }
@@ -352,7 +365,7 @@ pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64) -> Panel {
                 10.0,
                 vec![
                     pump_picture(r.pump_on && r.flow > 0.0, angle),
-                    column(4.0, vec![micro("FLOW").fixed(14.0), readout(format!("{:.0}%", r.flow * 100.0)).text_size(font::VALUE).tone(tone).fixed(46.0), readout(word).text_size(font::LABEL).tone(tone)]).flex(1.0),
+                    column(4.0, vec![micro("FLOW").fixed(14.0), readout(format!("{:.0}", r.flow * 100.0)).text_size(font::LABEL).tone(tone).fixed(46.0), readout(word).text_size(font::LABEL).tone(tone)]).flex(1.0),
                     coolant_tube(&r).fixed(60.0),
                 ],
             )
@@ -497,18 +510,80 @@ pub fn faults_panel() -> Panel {
                     button("Pump break", "pump_break").fixed(32.0),
                     button("Load drop", "load_drop").fixed(32.0),
                     button("Surge", "surge").fixed(32.0),
-                    button("Drain coolant", "drain_coolant").fixed(32.0),
+                    button("Drain tank", "drain_coolant").fixed(32.0),
                     space(),
                 ]),
                 col(vec![
                     button("Start fire", "fire").fixed(32.0),
-                    button("Fire: point/grid", "fire_model").fixed(32.0),
-                    button("Reset reactor", "reset").fixed(32.0),
+                    button("Fire mode", "fire_model").fixed(32.0),
+                    button("Reset RX", "reset").fixed(32.0),
                     space(),
                 ]),
             ],
         ),
     )
+}
+
+/// A lamp's word and its ink when lit: warn, or bad for the critical ones.
+fn lamp_word(l: Lamp) -> (&'static str, Ink) {
+    match l {
+        Lamp::Hot => ("HOT", Ink::Warn),
+        Lamp::CritHeat => ("CRIT HEAT", Ink::Bad),
+        Lamp::Cold => ("COLD", Ink::Warn),
+        Lamp::LowTemp => ("LOW TEMP", Ink::Warn),
+        Lamp::HighOut => ("HIGH OUT", Ink::Warn),
+        Lamp::CritOut => ("CRIT OUT", Ink::Bad),
+        Lamp::LowOut => ("LOW OUT", Ink::Warn),
+        Lamp::FuelLow => ("FUEL LOW", Ink::Warn),
+        Lamp::NoFuel => ("NO FUEL", Ink::Bad),
+        Lamp::Meltdown => ("MELTDOWN", Ink::Bad),
+        Lamp::Scram => ("SCRAM", Ink::Warn),
+    }
+}
+
+/// One lamp: lit in its ink with the word dark on it, or dark with the word dim.
+fn lamp_cell(l: Lamp, lit: bool) -> Item {
+    let (word, ink) = lamp_word(l);
+    let shapes = if lit {
+        vec![Shape::Rect { x: 0.0, y: 0.0, w: LAMP_W, h: LAMP_H, fill: Some(ink), outline: None }, text(0.0, 0.0, LAMP_W, LAMP_H, word, 14.0, TextFace::Display, Ink::Bg0, true)]
+    } else {
+        vec![Shape::Rect { x: 0.0, y: 0.0, w: LAMP_W, h: LAMP_H, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) }, text(0.0, 0.0, LAMP_W, LAMP_H, word, 14.0, TextFace::Display, Ink::Fg3, true)]
+    };
+    canvas(LAMP_W, LAMP_H, shapes, None).flex(1.0)
+}
+
+/// A countdown's clock: minutes and seconds, the seconds rounded up.
+pub fn clock(s: f64) -> String {
+    let s = s.max(0.0).ceil() as u64;
+    format!("{}:{:02}", s / 60, s % 60)
+}
+
+/// The RX STATUS panel (S, beside the readout): the warning lamps in a grid (the ones that are on
+/// lit, the warn or bad ink; the 2 Hz blink is `blink_on`, SCRAM stays lit), the temperature boost
+/// with its two buttons (disabled while a press would not pass), and the implosion's countdown
+/// along the bottom while the meltdown timer runs.
+pub fn status_panel(r: Option<&ReactorNews>, blink_on: bool) -> Panel {
+    if !powered(r) {
+        return no_power(STATUS_NAME, "RX-02", Tier::S);
+    }
+    let r = r.copied().unwrap_or_default();
+    let lit = |l: Lamp| r.lamps[l.index()] && (l == Lamp::Scram || blink_on);
+    let mut grid = Vec::new();
+    for chunk in LAMPS.chunks(3) {
+        let mut cells: Vec<Item> = chunk.iter().map(|&l| lamp_cell(l, lit(l))).collect();
+        while cells.len() < 3 {
+            cells.push(space());
+        }
+        grid.push(row(LAMP_GAP, cells).fixed(LAMP_H));
+    }
+    let lamps = column(LAMP_GAP, grid).fixed(4.0 * LAMP_H + 3.0 * LAMP_GAP);
+    let boost = row(8.0, vec![micro("BOOST").flex(1.0), readout(format!("{:+.0}", r.boost)).text_size(font::SMALL).tone(Tone::Normal)]).fixed(16.0);
+    let presses = row(6.0, vec![button("UP", "boost_up").enabled(r.boost_ok).flex(1.0), button("DOWN", "boost_down").enabled(r.boost_ok).flex(1.0)]).fixed(ctl::SM);
+    let countdown = match r.meltdown_eta_s {
+        Some(s) => readout(format!("IMPLOSION {}", clock(s))).text_size(font::LABEL).tone(Tone::Bad).fixed(22.0),
+        None => space().fixed(22.0),
+    };
+    Panel::screen(Tier::S, STATUS_NAME, "RX-02", column(5.0, vec![lamps, boost, presses, countdown])).with_padding(6.0)
 }
 
 /// The clicks: the readout asks for the reactor (the toggles give the new state as the value, the
@@ -542,6 +617,12 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 _ => None,
             };
             group.and_then(|g| snap.map(|r| ReactorAsk::SetBreaker(g, new_state(r.breakers[g.index()]))))
+        } else if c.panel == STATUS_ID {
+            match c.action.as_str() {
+                "boost_up" => Some(ReactorAsk::Boost(true)),
+                "boost_down" => Some(ReactorAsk::Boost(false)),
+                _ => None,
+            }
         } else if c.panel == FAULTS_ID {
             match c.action.as_str() {
                 "pump_break" => Some(ReactorAsk::Trigger(ReactorFault::PumpBreak)),
@@ -575,6 +656,7 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     panels.set(JUNCTION_ID, junction_panel(items.reactor.as_ref()));
     panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));
     panels.set(FAULTS_ID, faults_panel());
+    panels.set(STATUS_ID, status_panel(items.reactor.as_ref(), lamp_blink_on(time.elapsed_secs_f64())));
 }
 
 #[cfg(test)]
@@ -615,6 +697,11 @@ mod tests {
             v.push(door_panel(Some(&ReactorNews { temp, ..news() })));
         }
         v.push(junction_panel(Some(&ReactorNews { overvolt: true, ..news() })));
+        for blink in [false, true] {
+            for r in [None, Some(status_news()), Some(ReactorNews { lamps: [true; Lamp::COUNT], meltdown_eta_s: Some(42.0), ..status_news() }), Some(ReactorNews { powered: false, ..status_news() })] {
+                v.push(status_panel(r.as_ref(), blink));
+            }
+        }
         v.push(faults_panel());
         v
     }
@@ -623,6 +710,108 @@ mod tests {
     fn no_widget_and_no_shape_of_any_screen_overflows() {
         for (i, p) in all_panels().into_iter().enumerate() {
             assert!(p.overflowing().is_empty(), "panel {i}: {:?}", p.overflowing());
+        }
+    }
+
+    /// The lit lamps of a status panel: the words of the lamps drawn in the warn or bad ink.
+    fn lit_lamps(p: &Panel) -> Vec<String> {
+        let mut out = Vec::new();
+        for w in p.layout() {
+            if let display_core::Widget::Canvas { shapes, .. } = w.widget {
+                let lit = shapes.iter().any(|s| matches!(s, Shape::Rect { fill: Some(Ink::Warn | Ink::Bad), .. }));
+                if lit {
+                    for s in shapes {
+                        if let Shape::Text { text, .. } = s {
+                            out.push(text.clone());
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    fn status_news() -> ReactorNews {
+        ReactorNews { lamps: [false; Lamp::COUNT], boost_ok: true, ..news() }
+    }
+
+    #[test]
+    fn the_status_board_lights_the_lamps_of_the_news() {
+        let mut r = status_news();
+        r.lamps[Lamp::Hot.index()] = true;
+        r.lamps[Lamp::NoFuel.index()] = true;
+        r.lamps[Lamp::Scram.index()] = true;
+        let lit = lit_lamps(&status_panel(Some(&r), true));
+        assert!(lit.contains(&"HOT".to_string()) && lit.contains(&"NO FUEL".to_string()) && lit.contains(&"SCRAM".to_string()), "{lit:?}");
+        assert_eq!(lit.len(), 3, "only the three lamps on: {lit:?}");
+    }
+
+    #[test]
+    fn the_lamps_blink_but_scram_stays_lit() {
+        let mut r = status_news();
+        r.lamps[Lamp::Cold.index()] = true;
+        r.lamps[Lamp::Scram.index()] = true;
+        let dark = lit_lamps(&status_panel(Some(&r), false));
+        assert_eq!(dark, vec!["SCRAM".to_string()], "the blink's off phase: only SCRAM is lit");
+        assert_eq!(lit_lamps(&status_panel(Some(&r), true)).len(), 2, "the blink's on phase: both lit");
+    }
+
+    #[test]
+    fn the_boost_buttons_are_disabled_when_a_press_would_not_pass() {
+        let p = status_panel(Some(&status_news()), true);
+        assert!(p.find("boost_up").is_some_and(|b| matches!(b.widget, display_core::Widget::Button { enabled: true, .. })));
+        let off = status_panel(Some(&ReactorNews { boost_ok: false, ..status_news() }), true);
+        for a in ["boost_up", "boost_down"] {
+            assert!(matches!(off.find(a).unwrap().widget, display_core::Widget::Button { enabled: false, .. }), "{a}");
+        }
+    }
+
+    #[test]
+    fn the_implosion_countdown_shows_only_with_an_eta() {
+        let label = |p: &Panel, t: &str| p.layout().into_iter().any(|w| matches!(&w.widget, display_core::Widget::Label { text, .. } if text == t));
+        let counting = status_panel(Some(&ReactorNews { meltdown_eta_s: Some(42.0), ..status_news() }), true);
+        assert!(label(&counting, "IMPLOSION 0:42"));
+        assert!(!label(&status_panel(Some(&status_news()), true), "IMPLOSION 0:42"), "no countdown without an eta");
+        assert_eq!(clock(125.0), "2:05");
+        assert_eq!(clock(-1.0), "0:00");
+    }
+
+    #[test]
+    fn the_status_board_says_no_power_and_has_nothing_to_press_without_power() {
+        let off = status_panel(Some(&ReactorNews { powered: false, ..status_news() }), true);
+        assert!(off.find("boost_up").is_none() && off.find("boost_down").is_none());
+        assert!(off.overflowing().is_empty());
+        assert!(status_panel(None, true).find("boost_up").is_none());
+    }
+
+    #[test]
+    fn every_button_label_fits_its_button() {
+        // The draw sets a button's label at LABEL (20 px) or 55 % of the button's height, in caps
+        // with the caps tracking: about 0.72 of the size a letter. It must fit the button's width.
+        for (i, p) in all_panels().into_iter().enumerate() {
+            for w in p.layout() {
+                if let display_core::Widget::Button { label, .. } = w.widget {
+                    let size = display_core::font::LABEL.min(w.rect.size.y * 0.55);
+                    let width = label.to_uppercase().chars().count() as f64 * size * 0.72;
+                    assert!(width <= w.rect.size.x, "panel {i}: {label:?} is {width:.0} px, its button {:.0} px", w.rect.size.x);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_readout_fits_its_box() {
+        // A readout is set in the mono font: at most 0.6 of its size a character (the font's advance
+        // is 0.54; the flow's 28 px digits were clipped on the screen, so the flow is 20 px now).
+        let mut panels = all_panels();
+        panels.push(pump_panel(Some(&ReactorNews { flow: 1.0, coolant: 100.0, ..news() })));
+        for (i, p) in panels.into_iter().enumerate() {
+            for w in p.layout() {
+                if let display_core::Widget::Label { text, size, mono: true, .. } = w.widget {
+                    let width = text.chars().count() as f64 * size * 0.6;
+                    assert!(width <= w.rect.size.x, "panel {i}: {text:?} is {width:.0} px, its box {:.0} px", w.rect.size.x);
+                }
+            }
         }
     }
 
@@ -731,7 +920,7 @@ mod tests {
     fn the_pump_words_follow_the_flow_and_the_switch() {
         assert_eq!(pump_status(PumpMode::High, 100.0).0, "HIGH");
         assert_eq!(pump_status(PumpMode::Low, 100.0).0, "LOW");
-        assert_eq!(pump_status(PumpMode::High, 0.0).0, "NO COOLANT");
+        assert_eq!(pump_status(PumpMode::High, 0.0).0, "DRY");
         assert_eq!(pump_status(PumpMode::Off, 0.0).0, "OFF");
         assert_eq!(pump_status(PumpMode::Off, 100.0).0, "OFF");
         let p = pump_panel(Some(&news()));
@@ -739,6 +928,16 @@ mod tests {
             assert!(p.find(a).is_some(), "{a}");
         }
         assert!(p.find("br_lights").is_none());
+    }
+
+    #[test]
+    fn the_active_pump_mode_is_the_selected_button() {
+        let p = pump_panel(Some(&ReactorNews { pump_mode: PumpMode::Low, ..news() }));
+        let tone = |a: &str| match &p.find(a).expect(a).widget {
+            display_core::Widget::Button { tone, .. } => *tone,
+            _ => panic!("{a} is a button"),
+        };
+        assert_eq!((tone("pump_off"), tone("pump_low"), tone("pump_high")), (Tone::Normal, Tone::Good, Tone::Normal));
     }
 
     #[test]

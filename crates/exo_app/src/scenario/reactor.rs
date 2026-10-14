@@ -7,12 +7,13 @@
 //! output and the machines' screens show NO POWER; POWER on brings it back; the pump's OFF button
 //! lets the temperature climb; the junction box's LIGHTS breaker takes 80 kW off the load. There is
 //! no automatic shutdown. Without a window; the walker is set down at each screen (test setup) and
-//! uses it with F, the clicks go through the displays.
+//! uses it with F, the clicks go through the displays. #300: BOOST UP on the RX STATUS screen raises the
+//! temperature boost.
 use super::*;
 use crate::dev_area::engine_room::ShipAlarm;
 use crate::dev_area::reactor::{ReactorCounts, ReactorSim};
 use crate::dev_area::engine_room::{COOLANT_PUMP_AT, JUNCTION_BOX_AT};
-use crate::dev_area::reactor_screen::{DOOR_ID, FAULTS_ID, JUNCTION_ID, PUMP_ID, READOUT_ID};
+use crate::dev_area::reactor_screen::{DOOR_ID, FAULTS_ID, JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID};
 use crate::dev_area::DevArea;
 use super::{ship_frame_of, with_player};
 use super::dev_area::tap_until;
@@ -354,6 +355,10 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
     }));
     s.push(click_until(PUMP_ID, "pump_high", None, "reactor: the pump back on", |w| sim(w).room.pump().on()));
 
+    // #300: the RX STATUS screen beside the readout: BOOST UP (the walker uses the screen) raises the
+    // temperature boost to its amount (25, past 20).
+    use_display(s, "RX STATUS", STATUS_ID, [-9.6, -17.6]);
+    s.push(click_until(STATUS_ID, "boost_up", None, "reactor: BOOST UP on the status screen raises the boost", |w| sim(w).room.reactor().temperature_boost() > 20.0));
 }
 
 /// The grid's demand of the groups whose breakers are on (what the load is, from the room).

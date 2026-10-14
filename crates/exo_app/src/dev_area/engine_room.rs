@@ -58,6 +58,10 @@ pub const JUNCTION_BOX_SIZE: [f64; 3] = [0.6, 0.9, 0.3];
 /// its height from the floor.
 pub const REACTOR_SCREEN_AT: [f64; 2] = [-11.8, -18.96];
 pub const REACTOR_SCREEN_LIFT: f64 = 0.9;
+/// The RX STATUS screen's spot: the readout's east side on the same wall (its centre, m), with its
+/// centre at the readout's centre height (the readout's centre is `REACTOR_SCREEN_LIFT` + half its height).
+pub const STATUS_AT: [f64; 2] = [-10.4, -18.96];
+pub const STATUS_LIFT: f64 = REACTOR_SCREEN_LIFT + (READOUT_SIZE[1] - SMALL_SCREEN_SIZE[1]) * 0.5;
 /// The readout's size on the wall (m): the M screen's 1.6 : 1 aspect.
 pub const READOUT_SIZE: [f64; 2] = [1.6, 1.0];
 /// The S screens' size (m): the 4 : 3 canvas.
@@ -78,11 +82,12 @@ pub struct Mount {
 /// The coolant pump's screen on its north face (the walker's side), the junction box's on the
 /// south wall above the box, and the door's in the corridor on the east wall by the doorway, at
 /// eye height; the dev faults screen inside the room on the north wall, west of the door.
-pub const SCREENS: [Mount; 4] = [
+pub const SCREENS: [Mount; 5] = [
     Mount { id: reactor_screen::PUMP_ID, name: reactor_screen::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::JUNCTION_ID, name: reactor_screen::JUNCTION_NAME, at: [JUNCTION_BOX_AT[0], -18.98], lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::DOOR_ID, name: reactor_screen::DOOR_NAME, at: [-13.04, -10.0], lift: 1.3, size: SMALL_SCREEN_SIZE, turn: -90.0 },
     Mount { id: reactor_screen::FAULTS_ID, name: reactor_screen::FAULTS_NAME, at: reactor_screen::FAULTS_AT, lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 0.0 },
+    Mount { id: reactor_screen::STATUS_ID, name: reactor_screen::STATUS_NAME, at: STATUS_AT, lift: STATUS_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
 ];
 
 /// The device ids of the parts (`DevBox::id`).
@@ -428,6 +433,19 @@ fn alarm_lights(time: Res<Time>, alarm: Res<ShipAlarm>, mut lights: Query<(&Room
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_status_screen_sits_beside_the_readout_on_the_same_wall() {
+        let screens: &[Mount] = &SCREENS;
+        let m = screens.iter().find(|m| m.id == reactor_screen::STATUS_ID).expect("the status screen is mounted");
+        let readout_east = REACTOR_SCREEN_AT[0] + READOUT_SIZE[0] * 0.5;
+        let status_west = m.at[0] - m.size[0] * 0.5;
+        assert!(status_west > readout_east + 0.2, "a gap between the readout and the status screen: {readout_east} and {status_west}");
+        assert_eq!(m.at[1], REACTOR_SCREEN_AT[1], "on the same wall");
+        assert_eq!(m.turn, 180.0, "facing into the room, as the readout does");
+        assert!((m.lift + m.size[1] * 0.5 - (REACTOR_SCREEN_LIFT + READOUT_SIZE[1] * 0.5)).abs() < 1e-9, "centred at the readout's height");
+        assert!(m.at[0] + m.size[0] * 0.5 < ROOM.centre[0] + ROOM.half[0], "inside the room's east wall");
+    }
 
     #[test]
     fn the_room_and_the_corridor_are_where_the_layout_says() {

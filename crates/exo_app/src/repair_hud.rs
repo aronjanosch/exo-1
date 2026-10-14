@@ -1,6 +1,6 @@
 //! The repair ring (#299, window only): a thin ring round the reticle while a session runs, the
 //! zones as brighter arcs, the pointer as a short tick, a flash on a hit (good) or a miss (bad),
-//! and a thin progress arc on the outer edge. Drawn with the reticle's own parts: conic gradients
+//! and the hold's progress as a thin arc on the same ring. Drawn with the reticle's own parts: conic gradients
 //! and a dark disc inside (`crew_hud::ring_fill`'s style). No condition readout.
 //! A hurt from a miss (`RepairHurt`) flashes the screen's edge: white-blue for the shock, orange
 //! for the hot machine; the knock flashes nothing.
@@ -9,17 +9,16 @@ use crate::displays::DisplayLook;
 use crate::repair::{RepairConfig, RepairHurt, RepairPlay};
 use bevy::math::Rot2;
 use bevy::prelude::*;
-use bevy::ui::{AngularColorStop, BackgroundGradient, ColorStop, ConicGradient, RadialGradient, RadialGradientShape, UiPosition};
+use bevy::ui::{AngularColorStop, BackgroundGradient, BorderGradient, ColorStop, ConicGradient, RadialGradient, RadialGradientShape, UiPosition};
 use device_core::minigame::{minigame_on, Machine, Press};
 
 /// Zones the ring can show at once (the maximum of the rules; a spare slot stays hidden).
 const ZONE_SLOTS: usize = 4;
 /// The ring's radius (px, on the 1600 x 900 frame, scaled with the HUD like the rest), its stroke,
-/// the zone band's width and the progress arc's place.
+/// the zone band's width and the progress arc's stroke (the arc sits on the ring's line).
 const RADIUS: f32 = 110.0;
 const STROKE: f32 = 2.0;
 const ZONE_BAND: f32 = 14.0;
-const ARC_OUT: f32 = 10.0;
 const ARC_STROKE: f32 = 4.0;
 /// The pointer's tick: its length (px) inside the ring, and its width.
 const TICK_LEN: f32 = 26.0;
@@ -35,7 +34,6 @@ enum RepairPart {
     /// A zero-size node at the screen's centre: the disc parts are placed from it.
     Dial,
     Progress,
-    ProgressMask,
     Base,
     Zone(usize),
     Mask,
@@ -105,9 +103,19 @@ fn disc(r: f32) -> Node {
 
 /// A conic fill from the top, clockwise, to `frac` of the full turn: the progress arc's look.
 fn conic(colour: Color, start: f32, end: f32) -> BackgroundGradient {
+    BackgroundGradient::from(ConicGradient::new(UiPosition::CENTER, arc_stops(colour, start, end)))
+}
+
+/// The stops of a conic from `start` to `end` (radians from the top, clockwise): the colour there,
+/// clear after `end` to the full turn.
+fn arc_stops(colour: Color, start: f32, end: f32) -> Vec<AngularColorStop> {
     let clear = colour.with_alpha(0.0);
-    let stops = vec![AngularColorStop::new(colour, start), AngularColorStop::new(colour, end), AngularColorStop::new(clear, end), AngularColorStop::new(clear, std::f32::consts::TAU)];
-    BackgroundGradient::from(ConicGradient::new(UiPosition::CENTER, stops))
+    vec![AngularColorStop::new(colour, start), AngularColorStop::new(colour, end), AngularColorStop::new(clear, end), AngularColorStop::new(clear, std::f32::consts::TAU)]
+}
+
+/// The hold's progress as the arc's end (radians from the top, clockwise): the share of a full turn.
+pub fn arc_end(share: f64) -> f32 {
+    (share.clamp(0.0, 1.0) as f32) * std::f32::consts::TAU
 }
 
 /// The machine's part of the snapshot.
@@ -130,9 +138,9 @@ fn spawn_ring(mut commands: Commands, look: Res<DisplayLook>, mut done: Local<bo
     let fg = col(k.fg_title);
     commands.spawn((RepairPart::Root, Node { position_type: PositionType::Absolute, left: px(0), top: px(0), width: percent(100.0), height: percent(100.0), display: Display::None, ..default() })).with_children(|root| {
         root.spawn((RepairPart::Dial, Node { position_type: PositionType::Absolute, left: percent(50.0), top: percent(50.0), width: px(0), height: px(0), ..default() })).with_children(|dial| {
-            // The progress arc (outside the ring) and its dark inside, so only the arc shows.
-            dial.spawn((RepairPart::Progress, disc(RADIUS + ARC_OUT), BackgroundGradient::default()));
-            dial.spawn((RepairPart::ProgressMask, disc(RADIUS + ARC_OUT - ARC_STROKE), BackgroundColor(dark(0.25))));
+            // The progress arc: a border of the disc on the ring's radius, painted by a conic gradient
+            // that is clear past the progress, so only a stroke along the circle shows (no fill).
+            dial.spawn((RepairPart::Progress, Node { border: UiRect::all(px(ARC_STROKE)), ..disc(RADIUS) }, BorderGradient::default()));
             // The ring itself, thin and dim.
             dial.spawn((RepairPart::Base, Node { border: UiRect::all(px(STROKE)), ..disc(RADIUS) }, BorderColor::all(col_a(k.fg_title, 0.35))));
             for i in 0..ZONE_SLOTS {
@@ -161,6 +169,7 @@ fn update_ring(
     mut turns: Query<(&RepairPart, &mut UiTransform)>,
     mut grads: Query<(&RepairPart, &mut BackgroundGradient)>,
     mut borders: Query<(&RepairPart, &mut BorderColor)>,
+    mut arcs: Query<(&RepairPart, &mut BorderGradient)>,
     items: Res<crate::items::Items>,
     mut pips: Query<(&RepairPart, &mut BackgroundColor)>,
 ) {
@@ -208,13 +217,14 @@ fn update_ring(
                     *g = conic(col(k.fg_title), 0.0, w);
                 }
             }
-            (RepairPart::Progress, Some(_)) => {
-                let p = share.unwrap_or(0.0).clamp(0.0, 1.0);
-                let end = p as f32 * std::f32::consts::TAU;
-                let [r, g_, b] = crate::effects::progress_rgb(p);
-                *g = conic(Color::srgb(r, g_, b), 0.0, end);
-            }
             _ => {}
+        }
+    }
+    for (part, mut g) in &mut arcs {
+        if let (RepairPart::Progress, Some(_)) = (*part, session) {
+            let p = share.unwrap_or(0.0).clamp(0.0, 1.0);
+            let [r, g_, b] = crate::effects::progress_rgb(p);
+            *g = BorderGradient::from(ConicGradient::new(UiPosition::CENTER, arc_stops(Color::srgb(r, g_, b), 0.0, arc_end(p))));
         }
     }
     for (part, mut b) in &mut borders {
@@ -228,5 +238,22 @@ fn update_ring(
             let fade = (1.0 - age / cfg.0.flash_s.max(1e-6)).clamp(0.0, 1.0);
             *b = BorderColor::all(col_a(colour, fade));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_progress_is_a_stroke_from_the_top_by_its_share() {
+        assert_eq!(arc_end(0.0), 0.0);
+        assert!((arc_end(0.5) - std::f32::consts::PI).abs() < 1e-6, "half a turn at half");
+        assert!((arc_end(1.5) - std::f32::consts::TAU).abs() < 1e-6, "clamped at a full turn");
+        // The stops: the colour from the top to the end, clear after it (nothing else is filled).
+        let stops = arc_stops(Color::WHITE, 0.0, arc_end(0.25));
+        assert_eq!(stops.len(), 4);
+        assert!(stops[0].color.alpha() > 0.99 && stops[1].color.alpha() > 0.99, "the arc is drawn");
+        assert!(stops[2].color.alpha() == 0.0 && stops[3].color.alpha() == 0.0, "clear past the end");
     }
 }

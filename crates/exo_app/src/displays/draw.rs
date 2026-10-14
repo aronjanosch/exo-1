@@ -616,6 +616,9 @@ impl Pen<'_> {
             (k.line_1, k.bg_1, 0.0, k.fg_3, 0.0)
         } else if pressed {
             (hue, hue, 1.0, k.fg_on_accent, st.press_drop)
+        } else if tone == Tone::Good {
+            // The selected look (the active mode of a switch row): the toggle's accent segment.
+            (k.accent, k.accent, 0.0, k.fg_on_accent, 0.0)
         } else if hover {
             (if plain { k.hud } else { hue }, self.theme.tone_dim(tone), st.edge, k.fg_title, 0.0)
         } else {

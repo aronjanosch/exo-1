@@ -573,3 +573,18 @@ fn boost_matches_barotrauma_without_inertia() {
     assert!(worst < 1e-4, "temperature differs by {worst}");
     assert!(ours.temperature_boost().abs() < 1e-9, "the boost faded away");
 }
+
+/// The melt with fuel left blasts once, right with the melt; the dry melt (both rods pulled first)
+/// melts and makes no blast.
+#[test]
+fn a_melt_with_fuel_blasts_and_a_dry_melt_does_not() {
+    let (wet, _) = trace_of("turbine_max_fission_max", 5.0);
+    assert!(wet.melted);
+    assert_eq!(wet.count("Blast"), 1, "{}", wet.table());
+    assert_eq!(wet.first("Blast"), wet.first("Meltdown"));
+    let (dry, room) = trace_of("meltdown_dry", 5.0);
+    assert!(dry.melted);
+    assert_eq!(dry.count("Meltdown"), 1, "{}", dry.table());
+    assert_eq!(dry.count("Blast"), 0, "{}", dry.table());
+    assert!(room.reactor().rods().iter().all(|r| r.life > 0.0), "the dry melt keeps the rods' life");
+}

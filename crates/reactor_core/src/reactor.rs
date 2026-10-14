@@ -38,6 +38,13 @@
 //! (client 619, `TotalTime % 0.5 < 0.25`); the reactor reports them steady and the glue blinks.
 //! Values: TODO(initiator).
 //!
+//! Meltdown blast (Barotrauma reactor.xml:45-58): a meltdown with more than `blast.min_fuel`
+//! available fuel also raises `ReactorEvent::Blast` right after `Meltdown`, with the blast's values
+//! (Barotrauma's Conditional AvailableFuel > 1). The room takes `device_damage` from the pump and
+//! the junction box; the burn, stun and radiation for the players are the glue's. A melt with no
+//! fuel left is a melt without a blast. The rods keep their life (the initiator's decision).
+//! Values: TODO(initiator), Barotrauma's.
+//!
 //! Overheat: above the optimal band a fire timer runs, and each time it is full the reactor starts
 //! a fire (`ReactorEvent::Fire`). Above the allowed band a second timer runs; when it is full the
 //! core melts (`ReactorEvent::Meltdown`). There is no automatic safety: the operator's SCRAM cuts
@@ -51,6 +58,33 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 mod tests;
+
+/// The meltdown blast (Barotrauma reactor.xml:45-58): what a meltdown does when the core still has
+/// fuel. The same values travel in `ReactorEvent::Blast`. TODO(initiator): Barotrauma's values.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Blast {
+    /// The blast only happens with more available fuel than this (Barotrauma: AvailableFuel > 1).
+    pub min_fuel: f64,
+    /// Range of the blast's burn and stun for the players, metres (Barotrauma 750 units, 100 per m).
+    pub range_m: f64,
+    /// Burn damage to the players in range.
+    pub burn: f64,
+    /// Seconds the players in range are stunned.
+    pub stun_s: f64,
+    /// Damage to the devices in the room (the pump and the junction box), their condition.
+    pub device_damage: f64,
+    /// Range of the radiation for the players, metres (Barotrauma 2000 units, 20 m), ignores cover.
+    pub radiation_range_m: f64,
+    /// Radiation sickness, scaled by the players' max vitality (Barotrauma: 75).
+    pub radiation: f64,
+}
+
+impl Default for Blast {
+    fn default() -> Blast {
+        Blast { min_fuel: 1.0, range_m: 7.5, burn: 500.0, stun_s: 15.0, device_damage: 500.0, radiation_range_m: 20.0, radiation: 75.0 }
+    }
+}
 
 /// Reactor values. TODO(initiator): starting values. Delays, burn rate, temperature rate and
 /// controller speed follow the original; the output, the meltdown delay, the alarm
@@ -115,6 +149,8 @@ pub struct ReactorTuning {
     pub boost_amount: f64,
     /// How fast a boost fades back to 0, per second (Barotrauma: 1). TODO(initiator): value.
     pub boost_decay: f64,
+    /// The meltdown blast (`Blast`). TODO(initiator): values.
+    pub blast: Blast,
     /// Inertia on (the default): the temperature is the damped spring, the output makes heat and
     /// fission lags by `fission_lag_s`. Off: the first-order path of Barotrauma (the temperature moves
     /// at `temp_rate` towards its target, fission lags 1 s, no output heat), for the oracle tests.
@@ -154,6 +190,7 @@ impl Default for ReactorTuning {
             auto_lookahead_s: 8.0,
             boost_amount: 25.0,
             boost_decay: 1.0,
+            blast: Blast::default(),
             inertia: true,
             condition: DeviceTuning { repair_threshold: 50.0, wear_floor: 10.0, ..DeviceTuning::default() },
         }
@@ -327,6 +364,9 @@ pub enum ReactorEvent {
     /// The core melted. The reactor is broken and cold until a repair brings it back to
     /// functioning; what it does to the ship is the glue's.
     Meltdown,
+    /// The meltdown blast: sent right after `Meltdown` when the core had more than `blast.min_fuel`
+    /// available fuel. The values are the reactor's `blast` tuning.
+    Blast(Blast),
     Alarm { kind: AlarmKind, on: bool },
     /// The reactor's own condition crossed a line.
     Device(DeviceEvent),
@@ -472,6 +512,17 @@ impl Reactor {
         self.fission = 0.0;
         self.target_fission = 0.0;
         self.target_turbine = 0.0;
+    }
+
+    /// Melts the core now, as if its meltdown timer had run out (the harness's forced melt, for a
+    /// melt with no fuel or a script that does not wait for the timer). Nothing when the reactor is
+    /// broken already. The events are those of a melt in `step`.
+    pub fn force_meltdown(&mut self) -> Vec<ReactorEvent> {
+        let mut ev = Vec::new();
+        if self.condition.functioning() {
+            self.meltdown(&mut ev);
+        }
+        ev
     }
 
     pub fn set_mode(&mut self, mode: Mode) {
@@ -904,6 +955,8 @@ impl Reactor {
     }
 
     fn meltdown(&mut self, ev: &mut Vec<ReactorEvent>) {
+        // The fuel at the moment of the melt (Barotrauma's Conditional: AvailableFuel > 1).
+        let fuel = self.available_fuel();
         let before = self.condition.value();
         self.condition.set_value(0.0);
         self.power_on = false;
@@ -917,6 +970,9 @@ impl Reactor {
         self.target_turbine = 0.0;
         self.decay = 0.0;
         ev.push(ReactorEvent::Meltdown);
+        if fuel > self.tuning.blast.min_fuel {
+            ev.push(ReactorEvent::Blast(self.tuning.blast));
+        }
         if before >= self.condition.tuning().broken_below {
             ev.push(ReactorEvent::Device(DeviceEvent::Broke));
         }

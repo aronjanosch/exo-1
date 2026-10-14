@@ -245,10 +245,12 @@ fn a_pump_switched_off_takes_no_heat_away_and_the_temperature_climbs() {
     r.set_pump(true);
     assert_eq!(r.flow(), 1.0);
     let (_, temps) = run(&mut r, 120.0, input);
-    // The climb turns within 40 s of the restart; the pump is worn by the overheat (it runs
-    // as an overload while the core is above the optimal band), so the level it holds is not `before`.
+    // The flow coasts back over about a minute, and the fission runs on meanwhile (the decay heat
+    // is there while it runs), so the turn comes later than it did with a flat decay heat. The
+    // pump is worn by the overheat (it runs as an overload while the core is above the optimal
+    // band), so the level it holds is not `before`.
     let turn = temps.iter().position(|&t| t < peak - 20.0);
-    assert!(turn.is_some_and(|i| (i as f64) * DT < 40.0), "the temperature turns down: {turn:?}");
+    assert!(turn.is_some_and(|i| (i as f64) * DT < 90.0), "the temperature turns down: {turn:?}");
     assert!(peak > before + 10.0);
 }
 
@@ -383,40 +385,40 @@ fn auto_pump_break(scram: bool, secs: f64) -> (Option<f64>, Option<f64>, Vec<f64
 }
 
 #[test]
-fn broken_pump_under_auto_climbs_past_both_bands() {
-    // No coolant: the core runs hot whatever Auto does (it cuts fission, the decay heat stays).
+fn broken_pump_under_auto_cuts_fission_and_holds_the_core() {
+    // No coolant: the decay heat is there only while fission runs, so Auto cuts fission and the
+    // core settles in the optimal band instead of climbing (TODO(initiator): is that the feel we
+    // want? A pump failure no longer runs away under Auto).
     let (opt, allowed, temps) = auto_pump_break(false, 60.0);
     let peak = temps.iter().cloned().fold(f64::MIN, f64::max);
     println!("auto, pump broken: above optimal at {opt:?} s, above allowed at {allowed:?} s, peak {peak:.1}, at 60 s {:.1}", temps.last().unwrap());
-    assert!(opt.is_some_and(|t| t <= 15.0), "above optimal at {opt:?}");
-    assert!(allowed.is_some_and(|t| t <= 40.0), "above allowed at {allowed:?}");
-    // Auto cuts fission all the time, and the core is still above the optimal band a minute on.
-    assert!(*temps.last().unwrap() > 65.0, "still hot: {:.1}", temps.last().unwrap());
+    assert!(opt.is_none() && allowed.is_none(), "above optimal at {opt:?}, above allowed at {allowed:?}");
+    assert!(peak < 55.0, "peak {peak:.1}");
 }
 
 #[test]
-fn a_scram_with_a_broken_pump_buys_time_but_the_climb_goes_on() {
-    let (opt_free, allowed_free, _) = auto_pump_break(false, 60.0);
-    let (opt_scram, allowed_scram, temps) = auto_pump_break(true, 60.0);
-    println!("pump broken, auto: optimal {opt_free:?} s, allowed {allowed_free:?} s; with SCRAM: optimal {opt_scram:?} s, allowed {allowed_scram:?} s, end {:.1}", temps.last().unwrap());
-    let free = allowed_free.expect("no SCRAM passes the allowed band");
-    // Slower: later over the allowed band, or never there in the minute.
-    assert!(allowed_scram.map_or(true, |t| t > free), "SCRAM {allowed_scram:?} vs free {free}");
-    // Still climbing: the decay heat goes on without coolant.
-    assert!(temps.last().unwrap() > &temps[temps.len() / 2], "SCRAM core should still climb");
+fn a_scram_with_a_broken_pump_lets_the_core_cool() {
+    // Fission and the decay heat go to zero at the SCRAM: the broken pump has nothing to add.
+    let (_, _, temps) = auto_pump_break(true, 60.0);
+    println!("pump broken, SCRAM: start {:.1}, end {:.1}", temps[0], temps.last().unwrap());
+    assert!(temps[0] > 40.0, "the core was hot before the SCRAM: {:.1}", temps[0]);
+    assert!(*temps.last().unwrap() < 5.0, "cold after a minute: {:.1}", temps.last().unwrap());
 }
 
 #[test]
 fn a_repaired_pump_at_20_seconds_brings_the_temperature_back_into_the_band() {
-    let mut r = room();
-    run(&mut r, 120.0, Input::auto());
+    // Manual fission keeps the decay heat running, so the broken pump climbs; the repair brings
+    // the flow back and the temperature comes down.
+    let input = Input::manual(43.75, 50.0);
+    let mut r = safe_room();
+    run(&mut r, 120.0, input);
     r.trigger(Fault::PumpBreak);
-    run(&mut r, 20.0, Input::auto());
+    run(&mut r, 20.0, input);
     let at_repair = r.reactor().temperature();
     assert!(at_repair > r.reactor().bands().temp_optimal.hi, "the climb before the repair: {at_repair:.1}");
     r.pump_mut().condition_mut().set_value(100.0);
-    let (_, temps) = run(&mut r, 90.0, Input::auto());
-    let back = temps.iter().position(|&t| r.reactor().bands().temp_optimal.contains(t) || t < r.reactor().bands().temp_optimal.hi);
+    let (_, temps) = run(&mut r, 90.0, input);
+    let back = temps.iter().position(|&t| t < r.reactor().bands().temp_optimal.hi);
     println!("pump repaired at 20 s from {at_repair:.1}: back under the optimal top after {:?} s, end {:.1}", back.map(|i| (i + 1) as f64 * DT), temps.last().unwrap());
     assert!(back.is_some_and(|i| (i as f64 + 1.0) * DT < 60.0), "back into the band");
     assert!(temps.last().unwrap() < &r.reactor().bands().temp_optimal.hi);

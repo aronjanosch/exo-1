@@ -242,3 +242,27 @@ fn slots_are_limited() {
     assert!(r.insert_rod(FuelRod::standard()).is_err());
     assert_eq!(r.available_fuel(), 320.0);
 }
+
+#[test]
+fn scram_without_coolant_lets_the_core_cool_below_the_allowed_band() {
+    // The pump is gone and the flow has run down; the core runs critical; then SCRAM.
+    let mut r = reactor(50.0);
+    r.set_coolant(0.0);
+    r.coolant = 0.0;
+    r.set_targets(100.0, 30.0);
+    let mut ev = Vec::new();
+    while !r.alarm(AlarmKind::TempCritical) {
+        ev.extend(run(&mut r, 1.0, 500.0));
+        assert!(r.temperature() < 200.0 && !r.melted(), "no critical line reached");
+    }
+    run(&mut r, 20.0, 500.0);
+    let (_, timer_at_scram) = r.timers();
+    assert!(timer_at_scram > 0.1, "the meltdown timer is running: {timer_at_scram}");
+    r.scram();
+    let ev = run(&mut r, 15.0, 500.0);
+    let b = r.bands();
+    assert!(r.temperature() < b.temp_allowed.hi, "temperature {:.1} after 15 s, allowed up to {:.1}", r.temperature(), b.temp_allowed.hi);
+    let (_, timer_now) = r.timers();
+    assert!(timer_now < timer_at_scram, "the meltdown timer counts down: {timer_at_scram:.3} -> {timer_now:.3}");
+    assert!(!ev.iter().any(|(_, e)| *e == ReactorEvent::Meltdown) && !r.melted());
+}

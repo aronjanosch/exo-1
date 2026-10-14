@@ -47,8 +47,9 @@ pub struct ReactorTuning {
     /// Heat the pump takes away at full output, as an offset of the temperature target (degrees).
     /// TODO(initiator): value. Two rods are needed to hold the optimal band with it at full load.
     pub cooling_max: f64,
-    /// Residual (decay) heat in degrees of temperature target: it is there only without coolant,
-    /// the coolant takes it away (`(1 - flow) * decay_heat`). The turbine does not take it.
+    /// Residual (decay) heat in degrees of temperature target: it is there only without coolant
+    /// and while fission runs (`(1 - flow) * fission / 100 * decay_heat`), so a SCRAM lets the core
+    /// cool. The turbine does not take it.
     /// TODO(initiator): value. Without coolant it keeps the core hot after a SCRAM and above the
     /// allowed band when fission is cut to nothing.
     pub decay_heat: f64,
@@ -430,7 +431,8 @@ impl Reactor {
         let heat = self.fission * (self.fuel / 100.0) * 2.0;
         self.heat_in = heat;
         let cool = t.cooling_max * self.coolant;
-        let residual = t.decay_heat * (1.0 - self.coolant);
+        // Decay heat is there only while fission runs: a SCRAM lets the core cool.
+        let residual = t.decay_heat * (1.0 - self.coolant) * (self.fission / 100.0);
         let diff = (heat + residual - self.turbine - cool) - self.temp;
         self.temp = (self.temp + (diff.signum() * t.temp_rate * dt).clamp(-diff.abs(), diff.abs())).clamp(0.0, 100.0);
         self.fission += (self.target_fission.min(fuel) - self.fission) * k;

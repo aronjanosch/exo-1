@@ -14,5 +14,10 @@
   "walk_away_m": 2.5,
   "flash_s": 0.3,
   "minigame_below": 0.5,
-  "broken_hits": 3
+  "broken_hits": 3,
+  "shock_burn": 6.0,
+  "shock_stun_s": 0.5,
+  "hot_burn": 4.0,
+  "knock_stun_s": 0.3,
+  "hurt_flash_s": 0.4
 }

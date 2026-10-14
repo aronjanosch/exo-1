@@ -1,5 +1,5 @@
 {
-  "_comment": "Stacks to four. Using it (treat a burn) comes after C1. TODO(initiator): stack size.",
+  "_comment": "Stacks to four. Using it treats a burn (#295, health). TODO(initiator): stack size.",
   "id": "bandage",
   "name": "Bandage",
   "code": "BDG",

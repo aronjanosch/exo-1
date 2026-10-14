@@ -1,5 +1,5 @@
 {
-  "_comment": "A one-handed tool. Using it (repair) comes after C1. TODO(initiator): shape, mass.",
+  "_comment": "A one-handed tool. Using it repairs the reactor or the coolant pump (#299, repair at the machine). TODO(initiator): shape, mass.",
   "id": "wrench",
   "name": "Wrench",
   "code": "WRN",

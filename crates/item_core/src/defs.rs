@@ -48,7 +48,7 @@ pub struct ItemDef {
     /// Slots of its own (a toolbox, a bag); 0 for most.
     #[serde(default)]
     pub slots: u32,
-    /// What using it does, an effect id. Inert until items are used (after C1).
+    /// What using it does, an effect id (the repair, the spray, the treatment).
     #[serde(rename = "use", default)]
     pub use_effect: Option<String>,
     /// Seconds the use takes while LMB is held (#295); None: the use is instant.

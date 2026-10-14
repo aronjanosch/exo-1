@@ -54,16 +54,26 @@ pub struct Item<P = ()> {
     /// How many of it fit in one slot (at least 1).
     pub max_stack: u32,
     pub payload: Option<P>,
+    /// Condition in percent (0..=100) for an item that wears (an extinguisher, #300); None for
+    /// one that does not. Two items with different conditions do not stack.
+    #[serde(default)]
+    pub condition: Option<f64>,
 }
 
 impl<P> Item<P> {
     /// An item without payload. A `max_stack` of 0 counts as 1.
     pub fn new(kind: &str, tags: &[&str], max_stack: u32) -> Item<P> {
-        Item { kind: ItemKind::new(kind), tags: tags.iter().map(|t| Tag::new(*t)).collect(), max_stack: max_stack.max(1), payload: None }
+        Item { kind: ItemKind::new(kind), tags: tags.iter().map(|t| Tag::new(*t)).collect(), max_stack: max_stack.max(1), payload: None, condition: None }
     }
 
     pub fn with_payload(mut self, p: P) -> Item<P> {
         self.payload = Some(p);
+        self
+    }
+
+    /// The item wears: it starts at `percent` (0..=100).
+    pub fn with_condition(mut self, percent: f64) -> Item<P> {
+        self.condition = Some(percent.clamp(0.0, 100.0));
         self
     }
 
@@ -196,6 +206,11 @@ impl<P: Clone + PartialEq> Container<P> {
 
     pub fn slot(&self, slot: usize) -> Option<&Stack<P>> {
         self.slots.get(slot)?.as_ref()
+    }
+
+    /// The stack in a slot, to change it in place (its item's condition, say).
+    pub fn slot_mut(&mut self, slot: usize) -> Option<&mut Stack<P>> {
+        self.slots.get_mut(slot)?.as_mut()
     }
 
     pub fn access(&self) -> &Access {

@@ -34,6 +34,7 @@ mod help;
 mod engine_room;
 mod fire;
 mod fire_grid;
+mod extinguisher;
 mod repair;
 mod reactor;
 mod health;
@@ -712,6 +713,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "fire" => fire::fire_steps(&mut s),
         // #300: the same fire on the cell grid: the switch, the spread, the corridor, the spray.
         "fire_grid" => fire_grid::fire_grid_steps(&mut s),
+        // #300: the extinguisher wears down, runs empty, and a rack gives a full one.
+        "extinguisher" => extinguisher::extinguisher_steps(&mut s),
         "repair" => repair::repair_steps(&mut s),
         // #135: save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),

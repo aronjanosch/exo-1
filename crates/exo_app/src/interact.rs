@@ -4,6 +4,7 @@
 //! says. Targets: seat, crates, on a pad the job offered there (#133), and displays.
 use crate::cargo::{crate_world, Crate, Crates};
 use crate::dev_area::engine_room::{EngineDoor, Slab, DOOR_REACH};
+use crate::dev_area::DevBox;
 use crate::controls::{Actions, Bindings, Input, Tap};
 use crate::displays::{ActiveDisplay, DisplayPanel, USE_RANGE};
 use crate::grab::Grab;
@@ -48,6 +49,8 @@ pub enum Target {
     Item(Entity),
     /// The engine room's door (#296): a request to slide it to the other state (`open` is now).
     Door { open: bool },
+    /// The wall rack: hang the selected item and take a spare, or take one into an empty hand (#300).
+    Rack(item_core::RackId),
 }
 
 #[derive(Resource, Default, Debug)]
@@ -113,6 +116,7 @@ fn verb(t: &Target, size: &str) -> String {
         Target::Panel(_) => "use ".into(),
         Target::LeavePanel(_) => "leave ".into(),
         Target::Item(_) => "pick up ".into(),
+        Target::Rack(_) => "swap at the rack".into(),
         Target::Door { open } => if *open { "close ".into() } else { "open ".into() },
     }
 }
@@ -134,6 +138,7 @@ pub fn interaction(
     mut gp: ResMut<crate::gameplay::Gameplay>,
     (mut active, displays): (ResMut<ActiveDisplay>, Query<(Entity, &DisplayPanel)>),
     (time, mut items, loose, door, doors): (Res<Time>, ResMut<Items>, Query<(Entity, &Crate, &LooseItem)>, Option<Res<EngineDoor>>, Query<&Position, With<Slab>>),
+    (boxes, supply): (Query<(&DevBox, &Position)>, Option<Res<crate::dev_area::extinguisher::Supply>>),
 ) {
     let Ok(mut pl) = players.single_mut() else { return };
     let Some((ship_e, sp, sr)) = ships.iter().next().map(|(e, _, p, r)| (e, *p, *r)) else { return };
@@ -249,7 +254,11 @@ pub fn interaction(
             Some((_, e, Reach::Hands)) => Some(Target::Crate(e, Reach::Hands)),
             _ if at_seat => Some(if gp.may_pilot(crate::gameplay::HOST) { Target::Seat } else { Target::SeatLocked }),
             Some((_, e, r)) => Some(Target::Crate(e, r)),
-            None => item_target.map(Target::Item).or(panel_pick.map(Target::Panel)).or(door_pick),
+            None => {
+                // A wall rack in reach, on foot, after the rest (#300).
+                let rack_pick = pl.ship.is_none().then(|| supply.as_ref().and_then(|sup| boxes.iter().find_map(|(b, p)| sup.0.rack_in(&b.id).filter(|_| in_cone(eye, look, p.0, half, USE_RANGE).is_some()).map(Target::Rack)))).flatten();
+                item_target.map(Target::Item).or(panel_pick.map(Target::Panel)).or(door_pick).or(rack_pick)
+            }
         }
     };
     // At a giver's counter with something to offer, and nothing else to do: talk to the giver.
@@ -278,6 +287,7 @@ pub fn interaction(
         Some(Target::Panel(e)) => displays.get(*e).ok().map(|(_, d)| d.centre),
         Some(Target::Seat | Target::SeatLocked) => Some(frame.to_world(SEAT_POS)),
         Some(Target::Door { .. }) => doors.iter().next().map(|p| p.0),
+        Some(Target::Rack(r)) => supply.as_ref().and_then(|sup| boxes.iter().find(|(b, _)| sup.0.rack_in(&b.id) == Some(*r)).map(|(_, p)| p.0)),
         _ => None,
     };
     inter.prompt = match &target {
@@ -354,6 +364,7 @@ pub fn interaction(
                     note = (format!("{throw_key} throw"), Tone::Normal);
                 }
                 Target::Door { open } => set(if *open { "Close" } else { "Open" }, "Engine room door".into()),
+                Target::Rack(_) => set("Swap", "Extinguisher rack".into()),
                 Target::Counter(g) => set("Talk to", gp.jobs_content.givers.get(g).map(|g| gp.text(&g.record.name)).unwrap_or_default()),
                 Target::Accept(j) => {
                     set("Take job", gp.offer_label(*j));
@@ -431,5 +442,9 @@ pub fn interaction(
         }
         Target::LeavePanel(_) => *active = ActiveDisplay::Idle,
         Target::Door { .. } => items.ask_room(item_core::wire::RoomAsk::ToggleDoor),
+        Target::Rack(rack) => {
+            let slot = items.client.view.selected;
+            let _ = items.request(time.elapsed_secs_f64(), item_core::Request::Swap { slot, rack });
+        }
     }
 }

@@ -57,6 +57,9 @@ pub struct ItemDef {
     /// Labels for slot rules (`small`, `tool`, `medical`).
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Wears: its condition (0..100 %) starts at 100 and what it does can run it down (#300).
+    #[serde(default)]
+    pub condition: bool,
     pub shape: Shape,
 }
 
@@ -69,13 +72,19 @@ impl ItemDef {
     /// The item as the containers see it.
     pub fn item(&self) -> Item {
         let tags: Vec<&str> = self.tags.iter().map(String::as_str).collect();
-        Item::new(&self.id, &tags, self.stack)
+        let item = Item::new(&self.id, &tags, self.stack);
+        if self.condition { item.with_condition(100.0) } else { item }
     }
 
     /// `n` of it.
     pub fn stack_of(&self, n: u32) -> Stack {
         Stack::new(self.item(), n)
     }
+}
+
+/// Parses one content file (`path`, `text`), strictly; the error names the file.
+pub(crate) fn parse_content<T: serde::de::DeserializeOwned>(path: &str, text: &str) -> Result<T, String> {
+    content_core::parse_strict(path, text)
 }
 
 /// Every item definition, by id.

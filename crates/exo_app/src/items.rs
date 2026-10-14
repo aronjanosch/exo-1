@@ -272,6 +272,26 @@ impl Items {
         std::mem::take(&mut self.used)
     }
 
+    /// Host: a rack on the wall gets its stock (#300). A client does not: the host's events bring it.
+    pub fn add_rack(&mut self, now: f64, id: item_core::RackId, tag: &str, slots: usize, stock: Vec<Stack>) {
+        if self.role == Role::Client {
+            return;
+        }
+        let ev = self.host.add_rack(id, tag, slots, stock);
+        self.publish(now, ev, None);
+    }
+
+    /// Host: the item in a player's slot wears by `amount` percent (the spray, #300); the change
+    /// goes out when a whole percent changes or the item runs out.
+    pub fn wear(&mut self, now: f64, player: PlayerId, slot: usize, amount: f64) {
+        if self.role == Role::Client {
+            return;
+        }
+        if let Some(ev) = self.host.wear(player, slot, amount) {
+            self.publish(now, ev, None);
+        }
+    }
+
     /// A loose item came to rest (host, from the physics): remembered, and told to everybody.
     pub fn rest(&mut self, now: f64, item: LooseId, at: Placement, rot: [f64; 4], t: f64) {
         if let Some(ev) = self.host.rest(item, at, rot, t) {
@@ -659,6 +679,8 @@ enum BarPart {
     Code(usize),
     Count(usize),
     Hands(usize),
+    /// The condition bar under a slot's item, if it wears (#300): its width is the condition.
+    Condition(usize),
     /// A dashed frame that follows a slot: the dragged slot's and the drop target's.
     Float(u32),
     Ghost,
@@ -702,6 +724,7 @@ pub(crate) fn spawn_bar(commands: &mut Commands, theme: &display_core::Theme, fo
                 });
                 p.spawn((BarPart::Hands(i), Node { left: Val::Px(cl.tag_pad as f32), bottom: Val::Px(cl.tag_pad as f32 * 0.5), ..abs() }, hud_text(&fonts.mono, "", cl.tag_size, soft(0.85), h)));
                 p.spawn((BarPart::Count(i), Node { right: Val::Px(cl.tag_pad as f32), bottom: Val::Px(cl.tag_pad as f32 * 0.5), ..abs() }, hud_text(&fonts.mono, "", cl.tag_size, col(k.fg_1), h)));
+                p.spawn((BarPart::Condition(i), Node { left: Val::Px(cl.tag_pad as f32), bottom: Val::Px(cl.tag_pad as f32 * 0.25), height: Val::Px(3.0), width: percent(0.0), display: Display::None, ..abs() }, BackgroundColor(col(k.accent))));
                 spawn_dashes(p, i as u32, (cl.size as f32, cl.size as f32), cl.border as f32, cl.border as f32, h, soft(b.carry_border));
             });
     }
@@ -846,6 +869,13 @@ fn draw_bar(
                 n.left = Val::Px(sl.tag_pad as f32);
                 n.bottom = Val::Px(sl.tag_pad as f32 * 0.5);
             }),
+            BarPart::Condition(i) => {
+                let cond = stack_of(i).and_then(|st| st.item.condition);
+                edit(&mut n, |n| {
+                    n.display = if cond.is_some() { Display::Flex } else { Display::None };
+                    n.width = percent(cond.unwrap_or(0.0).clamp(0.0, 100.0) as f32);
+                });
+            }
             BarPart::Float(id) => {
                 let (at, show) = match (id, drag, drop_on) {
                     (ORIGIN_DASHES, Some(f), _) => (slot_rect(f, true, win, b).0, true),

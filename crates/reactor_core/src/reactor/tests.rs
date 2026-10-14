@@ -128,7 +128,7 @@ fn left_hot_it_melts_down() {
     let melt = first(&ev, |e| *e == ReactorEvent::Meltdown).expect("a meltdown");
     println!("critical at {crit:.1} s, meltdown at {melt:.1} s");
     assert!((melt - crit - 120.0).abs() < 0.2);
-    assert!(!r.condition().functioning() && r.rods().iter().all(|r| r.spent()));
+    assert!(!r.condition().functioning() && r.rods().iter().all(|r| !r.spent()), "the rods keep their life");
     assert!(r.melted());
     assert!(!r.set_power(true));
     assert_eq!(r.output_kw(), 0.0);
@@ -265,4 +265,26 @@ fn scram_without_coolant_lets_the_core_cool_below_the_allowed_band() {
     let (_, timer_now) = r.timers();
     assert!(timer_now < timer_at_scram, "the meltdown timer counts down: {timer_at_scram:.3} -> {timer_now:.3}");
     assert!(!ev.iter().any(|(_, e)| *e == ReactorEvent::Meltdown) && !r.melted());
+}
+
+#[test]
+fn a_melted_reactor_is_restarted_by_a_full_repair() {
+    let mut r = reactor(50.0);
+    r.set_targets(100.0, 30.0);
+    let ev = run(&mut r, 200.0, 500.0);
+    assert!(first(&ev, |e| *e == ReactorEvent::Meltdown).is_some());
+    assert!(r.melted() && !r.set_power(true), "broken and cold after the meltdown");
+    // The rods keep their life (the core is gone, the fuel is not).
+    assert!(r.rods().iter().all(|rod| rod.life > 0.0), "{:?}", r.rods());
+    // Repaired from zero to full: the melted flag clears and the switch works again.
+    r.condition_mut().restore(100.0);
+    run(&mut r, 1.0, 0.0);
+    assert!(!r.melted(), "the screen goes back to the normal view");
+    assert!(r.set_power(true), "power can be switched on");
+    assert_eq!(r.fission(), 0.0, "the core restarts cold");
+    r.set_mode(Mode::Auto);
+    let ev = run(&mut r, 240.0, 300.0);
+    assert!(!ev.iter().any(|(_, e)| matches!(e, ReactorEvent::Meltdown | ReactorEvent::Fire { .. })), "{ev:?}");
+    println!("restarted after a meltdown: fission {:.1}, output {:.1} kW, temp {:.1}", r.fission(), r.output_kw(), r.temperature());
+    assert!(r.fission() > 0.0 && (r.output_kw() - 300.0).abs() < 15.0, "back on the load: {:.1}", r.output_kw());
 }

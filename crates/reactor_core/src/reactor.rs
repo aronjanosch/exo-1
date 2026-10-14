@@ -199,8 +199,8 @@ impl AlarmKind {
 pub enum ReactorEvent {
     /// Start a fire of `size` metres at the reactor (`fire_core`).
     Fire { size: f64 },
-    /// The core melted. The reactor is broken and its rods are spent; what it does to the ship is
-    /// the glue's.
+    /// The core melted. The reactor is broken and cold until a repair brings it back to
+    /// functioning; what it does to the ship is the glue's.
     Meltdown,
     Alarm { kind: AlarmKind, on: bool },
     /// The reactor's own condition crossed a line.
@@ -343,7 +343,8 @@ impl Reactor {
     pub fn power_on(&self) -> bool {
         self.power_on
     }
-    /// The core has melted (for the screen's MELTDOWN); stays true after a repair.
+    /// The core has melted: the screen shows MELTDOWN until the reactor is repaired back to
+    /// functioning, and then it is a reactor again (the rods keep their life).
     pub fn melted(&self) -> bool {
         self.melted
     }
@@ -399,6 +400,10 @@ impl Reactor {
         let k = dt.min(1.0);
         let coast = (dt / t.coolant_coast_s.max(1e-9)).min(1.0);
         self.coolant += (self.coolant_target - self.coolant) * coast;
+        // Repaired back to functioning after a meltdown: the core is a reactor again.
+        if self.melted && self.condition.functioning() {
+            self.melted = false;
+        }
 
         self.heat_in = 0.0;
         if !self.condition.functioning() {
@@ -540,9 +545,11 @@ impl Reactor {
         self.melted = true;
         self.fire_timer = 0.0;
         self.overheat_timer = 0.0;
-        for r in &mut self.rods {
-            r.life = 0.0;
-        }
+        // Nothing runs in the melted core: fission and turbine stop, the rods keep their life.
+        self.fission = 0.0;
+        self.turbine = 0.0;
+        self.target_fission = 0.0;
+        self.target_turbine = 0.0;
         ev.push(ReactorEvent::Meltdown);
         if before >= self.condition.tuning().broken_below {
             ev.push(ReactorEvent::Device(DeviceEvent::Broke));

@@ -123,9 +123,9 @@ fn pump_break_climbs_to_fire_then_meltdown() {
     );
     assert!(fire < melt);
     assert!((melt - crit - 120.0).abs() < 0.2, "meltdown {melt} crit {crit}");
-    // The reactor sits broken with spent rods until repaired and restarted.
+    // The reactor sits broken and cold until repaired and restarted; the rods keep their life.
     assert!(!r.reactor().condition().functioning());
-    assert!(r.reactor().rods().iter().all(|rod| rod.spent()));
+    assert!(r.reactor().rods().iter().all(|rod| !rod.spent()));
     assert_eq!(r.reactor().output_kw(), 0.0);
     assert!(!r.set_power(true));
 }

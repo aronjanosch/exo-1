@@ -10,7 +10,7 @@ use super::items::{collect, items, look_at, outside, tap_then, DELAY};
 use super::*;
 use crate::controls::Controls;
 use crate::dev_area::engine_room::{ignition_at, EngineAir, ShipAlarm};
-use crate::dev_area::fire::{ignite, Sprays};
+use crate::dev_area::fire::{ignite, FireGrid, FireModel, Sprays};
 use crate::dev_area::reactor::{ReactorCounts, ReactorSim};
 use crate::dev_area::{DevArea, ENGINEERING};
 use crate::health::HealthState;
@@ -103,8 +103,9 @@ fn spray_out(name: &'static str, at: [f64; 2], stand: [f64; 2]) -> Vec<Step> {
     vec![step]
 }
 
-pub(super) fn fire_steps(s: &mut Vec<Step>) {
-    // The table: the walker in front of it, the extinguisher taken into the hand.
+/// The table, the walker in front of it, and the extinguisher taken into the hand (1). Shared with
+/// `fire_grid` (#300).
+pub(super) fn take_extinguisher(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         begin(w, c, "fire: the table and the host's body for the walker");
         // The item messages take the same 75 ms each way as in the items scenario.
@@ -121,6 +122,10 @@ pub(super) fn fire_steps(s: &mut Vec<Step>) {
     }));
     s.extend(collect("extinguisher", "Extinguisher"));
     s.push(tap_then("fire: 1 takes the extinguisher into the hand", KeyCode::Digit1, |w| items(w).in_hand(0).is_some_and(|s| s.item.kind.as_str() == "extinguisher")));
+}
+
+pub(super) fn fire_steps(s: &mut Vec<Step>) {
+    take_extinguisher(s);
 
     // The dev fault: a fire at the reactor. It is in the air, the room's oxygen falls, the alarm
     // goes to Warn and then to Danger once the fire is a metre across.
@@ -193,10 +198,12 @@ pub(super) fn fire_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "fire: the pump, the junction box and the reactor lose condition");
-            let mut a = w.resource_mut::<EngineAir>();
-            ignite(&mut a, Source::Pump, START);
-            ignite(&mut a, Source::Junction, START);
-            drop(a);
+            let model = *w.resource::<FireModel>();
+            w.resource_scope(|w, mut grid: Mut<FireGrid>| {
+                let mut a = w.resource_mut::<EngineAir>();
+                ignite(&mut a, &mut grid, model, Source::Pump, START);
+                ignite(&mut a, &mut grid, model, Source::Junction, START);
+            });
             let s = sim(w);
             c.v.insert("pump0", s.room.pump().condition().value());
             c.v.insert("junction0", s.room.junction().condition().value());

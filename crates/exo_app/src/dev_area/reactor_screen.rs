@@ -294,11 +294,12 @@ fn powered(r: Option<&ReactorNews>) -> bool {
     r.is_some_and(|r| r.powered)
 }
 
-/// The pump's status word and its tone: OFF, LOW or HIGH by the mode, NO COOLANT with an empty tank.
+/// The pump's status word and its tone: OFF, LOW or HIGH by the mode, DRY with an empty tank (the
+/// column is 60 px: "NO COOLANT" does not fit it).
 pub fn pump_status(mode: PumpMode, coolant: f64) -> (&'static str, Tone) {
     match mode {
         PumpMode::Off => ("OFF", Tone::Dim),
-        _ if coolant <= 0.0 => ("NO COOLANT", Tone::Bad),
+        _ if coolant <= 0.0 => ("DRY", Tone::Bad),
         PumpMode::Low => ("LOW", Tone::Normal),
         PumpMode::High => ("HIGH", Tone::Good),
     }
@@ -352,7 +353,7 @@ pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64) -> Panel {
                 10.0,
                 vec![
                     pump_picture(r.pump_on && r.flow > 0.0, angle),
-                    column(4.0, vec![micro("FLOW").fixed(14.0), readout(format!("{:.0}%", r.flow * 100.0)).text_size(font::VALUE).tone(tone).fixed(46.0), readout(word).text_size(font::LABEL).tone(tone)]).flex(1.0),
+                    column(4.0, vec![micro("FLOW").fixed(14.0), readout(format!("{:.0}", r.flow * 100.0)).text_size(font::TITLE).tone(tone).fixed(46.0), readout(word).text_size(font::LABEL).tone(tone)]).flex(1.0),
                     coolant_tube(&r).fixed(60.0),
                 ],
             )
@@ -642,6 +643,19 @@ mod tests {
     }
 
     #[test]
+    fn every_readout_fits_its_box() {
+        // A readout is set in the mono font, about 0.6 of its size a character.
+        for (i, p) in all_panels().into_iter().enumerate() {
+            for w in p.layout() {
+                if let display_core::Widget::Label { text, size, mono: true, .. } = w.widget {
+                    let width = text.chars().count() as f64 * size * 0.6;
+                    assert!(width <= w.rect.size.x, "panel {i}: {text:?} is {width:.0} px, its box {:.0} px", w.rect.size.x);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn the_manual_sliders_are_only_on_when_manual() {
         let auto = shipped_panel(Some(&news()));
         assert!(matches!(auto.find("fis_set").unwrap().widget, display_core::Widget::Slider { enabled: false, .. }));
@@ -746,7 +760,7 @@ mod tests {
     fn the_pump_words_follow_the_flow_and_the_switch() {
         assert_eq!(pump_status(PumpMode::High, 100.0).0, "HIGH");
         assert_eq!(pump_status(PumpMode::Low, 100.0).0, "LOW");
-        assert_eq!(pump_status(PumpMode::High, 0.0).0, "NO COOLANT");
+        assert_eq!(pump_status(PumpMode::High, 0.0).0, "DRY");
         assert_eq!(pump_status(PumpMode::Off, 0.0).0, "OFF");
         assert_eq!(pump_status(PumpMode::Off, 100.0).0, "OFF");
         let p = pump_panel(Some(&news()));
@@ -754,6 +768,16 @@ mod tests {
             assert!(p.find(a).is_some(), "{a}");
         }
         assert!(p.find("br_lights").is_none());
+    }
+
+    #[test]
+    fn the_active_pump_mode_is_the_selected_button() {
+        let p = pump_panel(Some(&ReactorNews { pump_mode: PumpMode::Low, ..news() }));
+        let tone = |a: &str| match &p.find(a).expect(a).widget {
+            display_core::Widget::Button { tone, .. } => *tone,
+            _ => panic!("{a} is a button"),
+        };
+        assert_eq!((tone("pump_off"), tone("pump_low"), tone("pump_high")), (Tone::Normal, Tone::Good, Tone::Normal));
     }
 
     #[test]

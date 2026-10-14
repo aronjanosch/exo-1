@@ -9,7 +9,7 @@
 //! Everything is cheap: one shared mesh and one material per kind, short-lived particles that move
 //! with `WorldPos`, and a few UI nodes for the screen.
 use crate::crew_hud::Vitals;
-use crate::dev_area::engine_room::{COOLANT_PUMP_AT, JUNCTION_BOX_AT, JUNCTION_BOX_SIZE, REACTOR_AT, REACTOR_SIZE};
+use crate::dev_area::engine_room::{ignition_at, COOLANT_PUMP_AT, JUNCTION_BOX_AT, JUNCTION_BOX_SIZE, REACTOR_AT, REACTOR_SIZE};
 use crate::dev_area::DevArea;
 use crate::env::PlanetRes;
 use crate::health::UseHold;
@@ -20,6 +20,7 @@ use bevy::prelude::*;
 use bevy::math::DVec3;
 use bevy::ui::{ColorStop, RadialGradient, RadialGradientShape, UiPosition, BackgroundGradient};
 use item_core::wire::ReactorNews;
+use reactor_core::Source;
 use std::f64::consts::TAU;
 
 // ---------- the rules (pure) ----------
@@ -64,8 +65,12 @@ pub fn spark_every(overvolt: bool, broken: bool) -> Option<f64> {
     }
 }
 
-/// Sparks in one burst.
+/// Sparks in one burst, their diameter at birth (m, 4 cm), their life (s) and the height of the
+/// burst above the floor (m, the box's front at 1 m).
 pub const SPARKS_PER_BURST: usize = 6;
+pub const SPARK_SIZE: f32 = 0.045;
+pub const SPARK_LIFE: f32 = 0.6;
+pub const SPARK_HEIGHT: f64 = 1.0;
 
 /// The reactor's critical lamp: lit while the power is on and the core is above its allowed band.
 pub fn is_critical(r: Option<&ReactorNews>) -> bool {
@@ -148,10 +153,12 @@ pub struct ScreenFx {
 }
 
 pub fn screen_fx(burning: bool, oxygen: Option<f64>, radiation: f64, t: f64) -> ScreenFx {
-    let burn = if burning { 0.35 + 0.25 * (0.5 + 0.5 * (TAU * t / 0.7).sin()) as f32 } else { 0.0 };
+    let burn = if burning { 0.25 + 0.25 * (0.5 + 0.5 * (TAU * t / 0.7).sin()) as f32 } else { 0.0 };
     let low = oxygen.map_or(0.0, |o| ((0.5 - o) / 0.5).clamp(0.0, 1.0)) as f32;
+    // Under half the edge shows at once (half its strength), then grows to the full strength at no air.
+    let edge = if low > 0.0 { 0.5 + 0.5 * low } else { 0.0 };
     let grain = if radiation > 0.25 { (0.06 + 0.06 * ((radiation - 0.25) / 0.75).clamp(0.0, 1.0)) as f32 } else { 0.0 };
-    ScreenFx { burn, dark: 0.35 * low, vignette: 0.85 * low, grain }
+    ScreenFx { burn, dark: 0.35 * edge, vignette: 0.85 * edge, grain }
 }
 
 /// The treatment flash's length (s) and its alpha at an age: 1 at the start, 0 at the end.
@@ -199,9 +206,22 @@ pub fn scale_of(kind: Kind, size: f32, t: f32) -> f32 {
     }
 }
 
+/// A particle's alpha by its age share: steam and smoke fade in fast and out to nothing, sparks
+/// stay bright until they go (their emissive does the work).
+pub fn fade_of(kind: Kind, t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    let ramp = (t * 5.0).min(1.0) * (1.0 - t);
+    match kind {
+        Kind::Steam => 0.55 * ramp,
+        Kind::Smoke => 0.5 * ramp,
+        Kind::Spark => 1.0,
+    }
+}
+
 // ---------- window ----------
 
-/// A short-lived particle: its velocity (world m/s), its gravity, its life and its age (s).
+/// A short-lived particle: its velocity (world m/s), its gravity, its life and its age (s), and
+/// its own material (its alpha fades with its age; removed with the particle).
 #[derive(Component)]
 struct Particle {
     vel: DVec3,
@@ -210,23 +230,27 @@ struct Particle {
     size: f32,
     life: f32,
     age: f32,
+    mat: Handle<StandardMaterial>,
 }
 
-/// The shared mesh and the materials of the particles, made once.
+/// The shared mesh of the particles, made once (a unit sphere, scaled per particle).
 #[derive(Resource)]
 struct FxAssets {
     mesh: Handle<Mesh>,
-    steam: Handle<StandardMaterial>,
-    smoke: Handle<StandardMaterial>,
-    spark: Handle<StandardMaterial>,
 }
 
 /// The emitters' clocks: the smoke per device (reactor, pump, junction), the sparks, the steam.
-#[derive(Resource, Default)]
+#[derive(Resource)]
 struct Emitters {
     smoke: [f64; 3],
     spark: f64,
     steam: f64,
+}
+
+impl Default for Emitters {
+    fn default() -> Emitters {
+        Emitters { smoke: [0.0; 3], spark: f64::INFINITY, steam: 0.0 }
+    }
 }
 
 /// The critical lamp: its light and its sphere (one entity, once per planet).
@@ -255,6 +279,10 @@ struct ScreenState {
 }
 
 const GRAIN_DOTS: usize = 48;
+/// Where the burn's and the vignette's clear centre ends (percent of the farthest corner): the
+/// burn is an edge only, the vignette a wider rim.
+const BURN_CLEAR: f32 = 72.0;
+const VIGNETTE_CLEAR: f32 = 55.0;
 
 pub fn window_plugin(app: &mut App) {
     app.init_resource::<Emitters>().init_resource::<ScreenState>();
@@ -263,42 +291,48 @@ pub fn window_plugin(app: &mut App) {
 }
 
 /// Once: the particles' mesh and materials, and the critical lamp's parts beside the reactor.
-fn spawn_assets(mut commands: Commands, mut done: Local<bool>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>) {
+fn spawn_assets(mut commands: Commands, mut done: Local<bool>, mut meshes: ResMut<Assets<Mesh>>) {
     if *done {
         return;
     }
     *done = true;
-    let mat = |c: Color, a: f32| StandardMaterial { base_color: c, unlit: true, alpha_mode: if a < 1.0 { AlphaMode::Blend } else { AlphaMode::Opaque }, ..default() };
-    commands.insert_resource(FxAssets {
-        mesh: meshes.add(Sphere::new(0.5)),
-        steam: mats.add(mat(Color::srgba(0.95, 0.95, 0.97, 0.55), 0.55)),
-        smoke: mats.add(mat(Color::srgba(0.45, 0.46, 0.48, 0.6), 0.6)),
-        spark: mats.add(StandardMaterial { base_color: Color::srgb(1.0, 0.95, 0.6), emissive: LinearRgba::rgb(9.0, 8.0, 3.0), unlit: true, ..default() }),
-    });
+    commands.insert_resource(FxAssets { mesh: meshes.add(Sphere::new(0.5)) });
+}
+
+/// A particle's material: steam and smoke are lit soft puffs (not unlit, so a sphere shades like a
+/// puff and does not read as a flat disc); sparks are unlit and emissive.
+fn particle_material(kind: Kind) -> StandardMaterial {
+    match kind {
+        Kind::Steam => StandardMaterial { base_color: Color::srgba(0.95, 0.95, 0.97, 0.0), alpha_mode: AlphaMode::Blend, perceptual_roughness: 1.0, ..default() },
+        Kind::Smoke => StandardMaterial { base_color: Color::srgba(0.42, 0.43, 0.45, 0.0), alpha_mode: AlphaMode::Blend, perceptual_roughness: 1.0, ..default() },
+        Kind::Spark => StandardMaterial { base_color: Color::srgb(1.0, 0.7, 0.3), emissive: LinearRgba::rgb(14.0, 7.0, 2.0), unlit: true, ..default() },
+    }
 }
 
 /// A particle at a world point (window only; `WorldPos` puts it on the render origin).
-fn spawn_particle(commands: &mut Commands, assets: &FxAssets, kind: Kind, at: DVec3, vel: DVec3, gravity: f64, size: f32, life: f32) {
-    let material = match kind {
-        Kind::Steam => assets.steam.clone(),
-        Kind::Smoke => assets.smoke.clone(),
-        Kind::Spark => assets.spark.clone(),
-    };
-    commands.spawn((Particle { vel, gravity, kind, size, life, age: 0.0 }, WorldPos(at), Mesh3d(assets.mesh.clone()), MeshMaterial3d(material), Transform::from_scale(Vec3::splat(0.001))));
+fn spawn_particle(commands: &mut Commands, assets: &FxAssets, mats: &mut Assets<StandardMaterial>, kind: Kind, at: DVec3, vel: DVec3, gravity: f64, size: f32, life: f32) {
+    let mat = mats.add(particle_material(kind));
+    commands.spawn((Particle { vel, gravity, kind, size, life, age: 0.0, mat: mat.clone() }, WorldPos(at), Mesh3d(assets.mesh.clone()), MeshMaterial3d(mat), Transform::from_scale(Vec3::splat(0.001))));
 }
 
-/// Every frame: the particles move, grow or shrink by their kind, and go at their life's end.
-fn particles_step(mut commands: Commands, time: Res<Time>, mut parts: Query<(Entity, &mut Particle, &mut WorldPos, &mut Transform)>) {
+/// Every frame: the particles move, grow or shrink by their kind and fade, and go at their life's
+/// end (with their material).
+fn particles_step(mut commands: Commands, time: Res<Time>, mut mats: ResMut<Assets<StandardMaterial>>, mut parts: Query<(Entity, &mut Particle, &mut WorldPos, &mut Transform)>) {
     let dt = time.delta_secs_f64();
     for (e, mut p, mut pos, mut tr) in &mut parts {
         p.age += dt as f32;
         if p.age >= p.life {
+            mats.remove(&p.mat);
             commands.entity(e).despawn();
             continue;
         }
         p.vel.y -= p.gravity * dt;
         pos.0 += p.vel * dt;
-        tr.scale = Vec3::splat(scale_of(p.kind, p.size, p.age / p.life));
+        let t = p.age / p.life;
+        tr.scale = Vec3::splat(scale_of(p.kind, p.size, t));
+        if let Some(mut m) = mats.get_mut(&p.mat) {
+            m.base_color.set_alpha(fade_of(p.kind, t));
+        }
     }
 }
 
@@ -312,7 +346,7 @@ fn jet(up: DVec3, seed: u64, speed: f64, side: f64) -> DVec3 {
 }
 
 /// The devices' smoke and the junction box's sparks, from the snapshot (every process).
-fn device_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, assets: Option<Res<FxAssets>>, mut em: ResMut<Emitters>, mut commands: Commands) {
+fn device_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, assets: Option<Res<FxAssets>>, mut mats: ResMut<Assets<StandardMaterial>>, mut em: ResMut<Emitters>, mut commands: Commands) {
     let (Some(r), Some(area), Some(assets)) = (items.reactor, area.as_deref(), assets) else { return };
     let dt = time.delta_secs_f64();
     let t = time.elapsed_secs_f64();
@@ -327,28 +361,33 @@ fn device_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: O
             em.smoke[i] = 0.0;
             if let Some((p, up)) = area.ground(&planet, at, lift) {
                 let seed = (t * 1000.0) as u64 ^ (i as u64) << 40;
-                spawn_particle(&mut commands, &assets, Kind::Smoke, p, jet(up, seed, 0.5, 0.15), 0.0, 0.35, 2.5);
+                spawn_particle(&mut commands, &assets, &mut mats, Kind::Smoke, p, jet(up, seed, 1.0, 0.3), 0.0, 0.3, 3.0);
             }
         }
     }
     if let Some(every) = spark_every(r.overvolt, !r.junction.working) {
+        // The first burst comes at once (the clock is idle, `INFINITY`, while nothing sparks).
+        if !em.spark.is_finite() {
+            em.spark = every;
+        }
         em.spark += dt;
         if em.spark >= every {
             em.spark = 0.0;
-            if let Some((p, up)) = area.ground(&planet, JUNCTION_BOX_AT, JUNCTION_BOX_SIZE[1] + 0.2) {
+            // The burst leaves the box's front face (the side the room's centre is on), 1 m up.
+            if let Some((p, up)) = area.ground(&planet, ignition_at(Source::Junction), SPARK_HEIGHT) {
                 for k in 0..SPARKS_PER_BURST {
                     let seed = ((t * 1000.0) as u64).wrapping_mul(31).wrapping_add(k as u64);
-                    spawn_particle(&mut commands, &assets, Kind::Spark, p, jet(up, seed, 2.0, 1.5), 9.8, 0.03, 0.35);
+                    spawn_particle(&mut commands, &assets, &mut mats, Kind::Spark, p, jet(up, seed, 1.5, 2.5), 9.8, SPARK_SIZE, SPARK_LIFE);
                 }
             }
         }
     } else {
-        em.spark = 0.0;
+        em.spark = f64::INFINITY;
     }
 }
 
 /// Where each spray lands on a fire this frame: a steam puff per landing, every 0.12 s.
-fn steam_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, cfg: Res<crate::dev_area::fire::FireConfig>, assets: Option<Res<FxAssets>>, mut em: ResMut<Emitters>, mut commands: Commands) {
+fn steam_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, cfg: Res<crate::dev_area::fire::FireConfig>, assets: Option<Res<FxAssets>>, mut mats: ResMut<Assets<StandardMaterial>>, mut em: ResMut<Emitters>, mut commands: Commands) {
     let (Some(news), Some(area), Some(assets)) = (items.fire.as_ref(), area.as_deref(), assets) else { return };
     em.steam += time.delta_secs_f64();
     if em.steam < 0.12 {
@@ -360,7 +399,7 @@ fn steam_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: Op
         let Some(at) = crate::dev_area::fire::landing_of(area, &planet, &cfg.0, s, &news.fires) else { continue };
         let seed = ((t * 1000.0) as u64).wrapping_add(i as u64 * 977);
         let jitter = jet(DVec3::Y, seed, 0.0, 0.2);
-        spawn_particle(&mut commands, &assets, Kind::Steam, at + jitter, DVec3::Y * 0.6, 0.0, 0.25, 1.2);
+        spawn_particle(&mut commands, &assets, &mut mats, Kind::Steam, at + jitter, DVec3::Y * 0.6, 0.0, 0.25, 1.2);
     }
 }
 
@@ -409,9 +448,10 @@ fn build_screen(commands: &mut Commands) {
     }
 }
 
-/// The edge gradient: clear inside, the colour at the rim.
-fn edge(c: Color, a: f32) -> BackgroundGradient {
-    BackgroundGradient::from(RadialGradient::new(UiPosition::CENTER, RadialGradientShape::FarthestCorner, vec![ColorStop::new(c.with_alpha(0.0), percent(55.0)), ColorStop::new(c.with_alpha(a), percent(100.0))]))
+/// The edge gradient: clear inside `clear` percent of the way to the farthest corner, the colour
+/// at the rim.
+fn edge(c: Color, a: f32, clear: f32) -> BackgroundGradient {
+    BackgroundGradient::from(RadialGradient::new(UiPosition::CENTER, RadialGradientShape::FarthestCorner, vec![ColorStop::new(c.with_alpha(0.0), percent(clear)), ColorStop::new(c.with_alpha(a), percent(100.0))]))
 }
 
 /// The screen: the burning edge, the bad air, the grain and the treatment flash, from the local
@@ -436,9 +476,9 @@ fn screen_sync(mut commands: Commands, time: Res<Time>, vitals: Res<Vitals>, hol
     for (part, mut bg, mut gradient, mut node) in &mut parts {
         match *part {
             ScreenPart::Dark => *bg = BackgroundColor(Color::srgba(0.0, 0.0, 0.0, fx.dark)),
-            ScreenPart::Burn => *gradient = edge(Color::srgb(0.85, 0.12, 0.05), fx.burn),
-            ScreenPart::Bad => *gradient = edge(Color::BLACK, fx.vignette),
-            ScreenPart::Flash => *gradient = edge(Color::srgb(0.3, 1.0, 0.4), 0.6 * flash),
+            ScreenPart::Burn => *gradient = edge(Color::srgb(0.95, 0.35, 0.05), fx.burn, BURN_CLEAR),
+            ScreenPart::Bad => *gradient = edge(Color::BLACK, fx.vignette, VIGNETTE_CLEAR),
+            ScreenPart::Flash => *gradient = edge(Color::srgb(0.3, 1.0, 0.4), 0.6 * flash, 55.0),
             ScreenPart::Grain(i) => {
                 // The dots move every 1/20 s, spread by their noise.
                 let slot = (now * 20.0).floor() as u64;
@@ -523,12 +563,16 @@ mod tests {
     fn the_screen_edges_follow_burning_air_and_radiation() {
         let quiet = screen_fx(false, None, 0.0, 0.0);
         assert_eq!(quiet, ScreenFx { burn: 0.0, dark: 0.0, vignette: 0.0, grain: 0.0 });
-        assert!(screen_fx(true, None, 0.0, 0.2).burn > 0.3);
+        assert!(screen_fx(true, None, 0.0, 0.2).burn > 0.25);
         let half = screen_fx(false, Some(0.5), 0.0, 0.0);
         assert!(half.dark.abs() < 1e-6 && half.vignette.abs() < 1e-6, "half the air is the edge of the rule");
+        // Just under half is already clearly visible: the edge starts at half its strength.
+        let just = screen_fx(false, Some(0.475), 0.0, 0.0);
+        assert!(just.vignette > 0.4 && just.dark > 0.15, "{just:?}");
         let low = screen_fx(false, Some(0.1), 0.0, 0.0);
-        assert!(low.dark > 0.2 && low.vignette > 0.6, "{low:?}");
+        assert!(low.dark > 0.3 && low.vignette > 0.6, "{low:?}");
         assert!(screen_fx(false, Some(0.0), 0.0, 0.0).vignette > low.vignette, "grows as the air falls");
+        assert!(low.vignette > just.vignette, "stronger towards 0");
         assert_eq!(screen_fx(false, None, 0.25, 0.0).grain, 0.0, "grain only above a quarter");
         assert!(screen_fx(false, None, 0.9, 0.0).grain > screen_fx(false, None, 0.3, 0.0).grain);
     }

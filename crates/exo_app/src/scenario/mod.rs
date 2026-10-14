@@ -25,6 +25,7 @@ use crate::ship::RemoteShip;
 mod boost;
 mod camera_g;
 mod cargo;
+mod coolant;
 mod dev_area;
 mod dev_menu;
 mod displays;
@@ -707,6 +708,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         // #296: the engine room: the corridor, the wall, the door, the air, the alarm.
         "engine_room" => engine_room::engine_room_steps(&mut s),
         "reactor" => reactor::reactor_steps(&mut s),
+        // #300: coolant: the tank runs dry, the temperature climbs, a canister refills it by hand.
+        "coolant" => coolant::coolant_steps(&mut s),
         // #298: fire: a fire at the reactor grows, burns, is sprayed out; the alarm follows.
         "fire" => fire::fire_steps(&mut s),
         "repair" => repair::repair_steps(&mut s),

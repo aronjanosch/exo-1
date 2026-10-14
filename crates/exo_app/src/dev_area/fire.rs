@@ -18,7 +18,7 @@
 //!   spray's nozzle to where it lands, and steam where a spray lands (`effects`). The crackle is not made yet (`TODO`: a quiet noise sound in `audio.rs`).
 //! - No ammo for the extinguisher yet (`TODO(initiator)`).
 use crate::controls::Controls;
-use crate::dev_area::engine_room::{ignition_at, place_of, source_at, EngineAir};
+use crate::dev_area::engine_room::{footprint_of, ignition_at, place_of, source_at, EngineAir};
 use crate::dev_area::reactor::ReactorSim;
 use crate::dev_area::{area_of, DevArea};
 use crate::displays::ActiveDisplay;
@@ -28,7 +28,7 @@ use crate::items::{Items, NetOut, Role};
 use crate::net_live::RemoteWalker;
 use crate::origin::{RenderOrigin, WorldPose};
 use crate::walker::{Player, EYE_HEIGHT};
-use bevy::math::DVec3;
+use bevy::math::{DVec2, DVec3};
 use bevy::prelude::*;
 use fire_core::tuning::FireSettings;
 use fire_core::{cone_landing, Fire, FireEvent, FireId, Target, TargetKind};
@@ -264,13 +264,14 @@ fn fire_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>
     if let Some(area) = area.as_deref() {
         for (id, p) in walker_points(&players, &remotes) {
             if let Some(q) = area_pos(Some(area), &planet, Some(p)) {
-                targets.push(Target { id: id as u64, kind: TargetKind::Person, room: air.room_of(place_of(q)), pos: DVec3::new(q[0], q[1], 0.0) });
+                targets.push(Target { id: id as u64, kind: TargetKind::Person, room: air.room_of(place_of(q)), pos: DVec3::new(q[0], q[1], 0.0), half: DVec2::ZERO });
             }
         }
     }
     for s in [Source::Pump, Source::Junction, Source::Reactor] {
         let p = source_at(s);
-        targets.push(Target { id: device_id(s), kind: TargetKind::Device, room: air.engine, pos: DVec3::new(p[0], p[1], 0.0) });
+        let h = footprint_of(s);
+        targets.push(Target { id: device_id(s), kind: TargetKind::Device, room: air.engine, pos: DVec3::new(p[0], p[1], 0.0), half: DVec2::new(h[0], h[1]) });
     }
     for e in air.deck.step(dt, &targets) {
         match e {

@@ -52,9 +52,8 @@ impl Tuning {
         need(self.start_rods <= r.slots, "start_rods", "must fit in reactor.slots");
         need(r.max_output_kw > 0.0, "reactor.max_output_kw", "must be > 0");
         need(r.fuel_burn >= 0.0 && r.temp_rate > 0.0, "reactor.temp_rate", "must be > 0, fuel_burn >= 0");
-        need(r.fire_delay_s > 0.0 && r.shutdown_delay_s > 0.0 && r.meltdown_delay_s > 0.0, "reactor.*_delay_s", "must be > 0");
-        need(r.restart_lockout_s >= 0.0, "reactor.restart_lockout_s", "must be >= 0");
-        need(r.auto_turbine_speed > 0.0 && r.auto_fission_speed > 0.0, "reactor.auto_*_speed", "must be > 0");
+        need(r.fire_delay_s > 0.0 && r.meltdown_delay_s > 0.0, "reactor.*_delay_s", "must be > 0");
+                need(r.auto_turbine_speed > 0.0 && r.auto_fission_speed > 0.0, "reactor.auto_*_speed", "must be > 0");
         need(r.alarm_hysteresis >= 0.0 && (0.0..=100.0).contains(&r.fuel_low), "reactor.fuel_low", "must be 0..100");
         for (name, d) in [("room.pump", &self.room.pump), ("room.junction", &self.room.junction)] {
             need(d.max > 0.0 && d.broken_below >= 0.0 && d.broken_below < d.repair_threshold && d.repair_threshold <= d.max, name, "must be 0 <= broken_below < repair_threshold <= max");

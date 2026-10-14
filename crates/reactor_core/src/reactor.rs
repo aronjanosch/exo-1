@@ -5,8 +5,9 @@
 //!
 //! Overheat: above the optimal band a fire timer runs, and each time it is full the reactor starts
 //! a fire (`ReactorEvent::Fire`). Above the allowed band a second timer runs; when it is full the
-//! safety shuts the reactor down for a while. With the safety off it runs on to a meltdown. Low
-//! condition makes both timers run up to twice as fast.
+//! core melts (`ReactorEvent::Meltdown`). There is no automatic safety: the operator's SCRAM cuts
+//! fission and the power at once (`Reactor::scram`). Low condition makes both timers run up to
+//! twice as fast.
 use device_core::{Condition, DeviceEvent, DeviceTuning};
 use gameplay_core::notice::{Notice, NoticeKind};
 use serde::{Deserialize, Serialize};
@@ -15,7 +16,7 @@ use serde::{Deserialize, Serialize};
 mod tests;
 
 /// Reactor values. TODO(initiator): starting values. Delays, burn rate, temperature rate and
-/// controller speed follow the original; the output, the shutdown delay, the lockout, the alarm
+/// controller speed follow the original; the output, the meltdown delay, the alarm
 /// lines and the fire size are guesses.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -30,12 +31,8 @@ pub struct ReactorTuning {
     pub temp_rate: f64,
     /// Seconds above the optimal band per fire (at full condition).
     pub fire_delay_s: f64,
-    /// Seconds above the allowed band until the safety shuts the reactor down.
-    pub shutdown_delay_s: f64,
-    /// Seconds above the allowed band until a meltdown, with the safety off.
+    /// Seconds above the allowed band until a meltdown.
     pub meltdown_delay_s: f64,
-    /// Seconds after a safety shutdown before the reactor can be started again.
-    pub restart_lockout_s: f64,
     /// Turbine target change per second of the automatic controller (it follows the load).
     pub auto_turbine_speed: f64,
     /// Fission target change per second of the automatic controller. Slower than the turbine, so
@@ -60,9 +57,7 @@ impl Default for ReactorTuning {
             fuel_burn: 0.2,
             temp_rate: 10.0,
             fire_delay_s: 20.0,
-            shutdown_delay_s: 30.0,
             meltdown_delay_s: 120.0,
-            restart_lockout_s: 15.0,
             auto_turbine_speed: 4.0,
             auto_fission_speed: 0.5,
             fire_size: 0.1,
@@ -160,15 +155,13 @@ impl Bands {
 pub enum AlarmKind {
     /// Above the optimal band: the fire timer runs.
     TempHigh,
-    /// Above the allowed band: the shutdown (or meltdown) timer runs.
+    /// Above the allowed band: the meltdown timer runs.
     TempCritical,
     FuelLow,
-    /// The safety shut the reactor down; off once it runs again.
-    Shutdown,
 }
 
 impl AlarmKind {
-    pub const ALL: [AlarmKind; 4] = [AlarmKind::TempHigh, AlarmKind::TempCritical, AlarmKind::FuelLow, AlarmKind::Shutdown];
+    pub const ALL: [AlarmKind; 3] = [AlarmKind::TempHigh, AlarmKind::TempCritical, AlarmKind::FuelLow];
 
     /// The notice for this alarm switching on. Text keys `reactor.<kind>`; the text pools are
     /// the glue's (TODO(initiator): wording).
@@ -177,7 +170,6 @@ impl AlarmKind {
             AlarmKind::TempHigh => "reactor.temp_high",
             AlarmKind::TempCritical => "reactor.temp_critical",
             AlarmKind::FuelLow => "reactor.fuel_low",
-            AlarmKind::Shutdown => "reactor.shutdown",
         };
         Notice::new(NoticeKind::Warning, key)
     }
@@ -192,10 +184,8 @@ impl AlarmKind {
 pub enum ReactorEvent {
     /// Start a fire of `size` metres at the reactor (`fire_core`).
     Fire { size: f64 },
-    /// The safety shut the reactor down after overheating.
-    Shutdown,
-    /// The core melted (safety off). The reactor is broken and its rods are spent; what it does
-    /// to the ship is the glue's.
+    /// The core melted. The reactor is broken and its rods are spent; what it does to the ship is
+    /// the glue's.
     Meltdown,
     Alarm { kind: AlarmKind, on: bool },
     /// The reactor's own condition crossed a line.
@@ -208,7 +198,8 @@ pub struct Reactor {
     tuning: ReactorTuning,
     mode: Mode,
     power_on: bool,
-    safety: bool,
+    /// The core melted: the reactor stays broken and cold.
+    melted: bool,
     target_fission: f64,
     target_turbine: f64,
     fission: f64,
@@ -222,22 +213,21 @@ pub struct Reactor {
     fuel: f64,
     fire_timer: f64,
     overheat_timer: f64,
-    lockout: f64,
     output: f64,
-    alarms: [bool; 4],
+    alarms: [bool; 3],
     condition: Condition,
     /// Output factor of the coolant pump, 0..1 (set by the engine room each step).
     coolant: f64,
 }
 
 impl Reactor {
-    /// A cold reactor, off, empty, in Auto, safety on, at full condition.
+    /// A cold reactor, off, empty, in Auto, at full condition.
     pub fn new(tuning: ReactorTuning, device: DeviceTuning, seed: u64) -> Reactor {
         Reactor {
             tuning,
             mode: Mode::Auto,
             power_on: false,
-            safety: true,
+            melted: false,
             target_fission: 0.0,
             target_turbine: 0.0,
             fission: 0.0,
@@ -249,9 +239,8 @@ impl Reactor {
             fuel: 0.0,
             fire_timer: 0.0,
             overheat_timer: 0.0,
-            lockout: 0.0,
             output: 0.0,
-            alarms: [false; 4],
+            alarms: [false; 3],
             condition: Condition::new(device, seed),
             coolant: 1.0,
         }
@@ -259,14 +248,22 @@ impl Reactor {
 
     // ---------- controls ----------
 
-    /// Switches the reactor on or off. Refused (false) during the lockout after a safety shutdown
-    /// or while the reactor is broken.
+    /// Switches the reactor on or off. Refused (false) while the reactor is broken.
     pub fn set_power(&mut self, on: bool) -> bool {
-        if on && (self.lockout > 0.0 || !self.condition.functioning()) {
+        if on && !self.condition.functioning() {
             return false;
         }
         self.power_on = on;
         true
+    }
+
+    /// SCRAM: fission to 0 and the power off at once. The turbine and the targets run down with
+    /// it; the temperature falls. Back on is `set_power(true)`, the normal switch.
+    pub fn scram(&mut self) {
+        self.power_on = false;
+        self.fission = 0.0;
+        self.target_fission = 0.0;
+        self.target_turbine = 0.0;
     }
 
     pub fn set_mode(&mut self, mode: Mode) {
@@ -283,11 +280,6 @@ impl Reactor {
     /// Output factor of the coolant pump, 0..1: scales the cooling offset.
     pub fn set_coolant(&mut self, factor: f64) {
         self.coolant = factor.clamp(0.0, 1.0);
-    }
-
-    /// The safety shuts the reactor down when it overheats. Off, it runs on to a meltdown.
-    pub fn set_safety(&mut self, on: bool) {
-        self.safety = on;
     }
 
     /// Skill (0..100) of whoever runs the reactor; it widens the bands. 0 when nobody does.
@@ -319,8 +311,9 @@ impl Reactor {
     pub fn power_on(&self) -> bool {
         self.power_on
     }
-    pub fn safety(&self) -> bool {
-        self.safety
+    /// The core has melted (for the screen's MELTDOWN); stays true after a repair.
+    pub fn melted(&self) -> bool {
+        self.melted
     }
     pub fn temperature(&self) -> f64 {
         self.temp
@@ -346,14 +339,9 @@ impl Reactor {
     pub fn available_fuel(&self) -> f64 {
         self.rods.iter().filter(|r| !r.spent()).map(|r| r.heat).sum()
     }
-    /// Seconds left of the restart lockout.
-    pub fn lockout_s(&self) -> f64 {
-        self.lockout
-    }
-    /// 0..1 of the fire timer and the shutdown (or meltdown) timer, for the panel.
+    /// 0..1 of the fire timer and the meltdown timer (for the tests and the logs).
     pub fn timers(&self) -> (f64, f64) {
-        let over = if self.safety { self.tuning.shutdown_delay_s } else { self.tuning.meltdown_delay_s };
-        (self.fire_timer / self.tuning.fire_delay_s, self.overheat_timer / over)
+        (self.fire_timer / self.tuning.fire_delay_s, self.overheat_timer / self.tuning.meltdown_delay_s)
     }
     pub fn bands(&self) -> Bands {
         Bands::new(self.skill, self.turbine_for_load, self.fuel)
@@ -388,7 +376,6 @@ impl Reactor {
             self.target_turbine = (self.target_turbine - 10.0 * dt).max(0.0);
             self.fire_timer = 0.0;
             self.overheat_timer = 0.0;
-            self.lockout = (self.lockout - dt).max(0.0);
             self.update_alarms(&mut ev);
             return ev;
         }
@@ -421,7 +408,6 @@ impl Reactor {
             }
         }
         self.fuel = fuel;
-        self.lockout = (self.lockout - dt).max(0.0);
 
         self.overheat(dt, &bands, &mut ev);
         self.output = self.output_for(load_kw, &bands);
@@ -440,6 +426,9 @@ impl Reactor {
     }
 
     fn range(&self, b: &Bands) -> (f64, f64) {
+        if !self.power_on {
+            return (0.0, 0.0);
+        }
         let p = self.tuning.max_output_kw;
         let tol = if b.turbine_optimal.contains(self.turbine) && b.temp_optimal.contains(self.temp) { 3.0 } else { 1.0 };
         let tf = (self.temp / 50.0).min(1.0);
@@ -483,15 +472,7 @@ impl Reactor {
         let step = dt * (2.0 - self.condition.fraction());
         if self.temp > b.temp_allowed.hi {
             self.overheat_timer += step;
-            if self.safety && self.overheat_timer >= t.shutdown_delay_s {
-                self.power_on = false;
-                self.target_fission = 0.0;
-                self.target_turbine = 0.0;
-                self.overheat_timer = 0.0;
-                self.lockout = t.restart_lockout_s;
-                self.set_alarm(AlarmKind::Shutdown, true, ev);
-                ev.push(ReactorEvent::Shutdown);
-            } else if !self.safety && self.overheat_timer >= t.meltdown_delay_s {
+            if self.overheat_timer >= t.meltdown_delay_s {
                 self.meltdown(ev);
                 return;
             }
@@ -513,6 +494,7 @@ impl Reactor {
         let before = self.condition.value();
         self.condition.set_value(0.0);
         self.power_on = false;
+        self.melted = true;
         self.fire_timer = 0.0;
         self.overheat_timer = 0.0;
         for r in &mut self.rods {
@@ -536,9 +518,6 @@ impl Reactor {
         self.set_alarm(AlarmKind::TempHigh, high, ev);
         self.set_alarm(AlarmKind::TempCritical, crit, ev);
         self.set_alarm(AlarmKind::FuelLow, fuel_low, ev);
-        if self.power_on {
-            self.set_alarm(AlarmKind::Shutdown, false, ev);
-        }
     }
 
     fn set_alarm(&mut self, kind: AlarmKind, on: bool, ev: &mut Vec<ReactorEvent>) {

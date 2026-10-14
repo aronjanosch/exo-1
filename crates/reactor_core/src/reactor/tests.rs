@@ -33,7 +33,7 @@ fn auto_holds_a_stable_optimal_temperature() {
     let mut r = reactor(50.0);
     let load = 500.0;
     let ev = run(&mut r, 240.0, load);
-    assert!(!ev.iter().any(|(_, e)| matches!(e, ReactorEvent::Fire { .. } | ReactorEvent::Shutdown)), "{ev:?}");
+    assert!(!ev.iter().any(|(_, e)| matches!(e, ReactorEvent::Fire { .. })), "{ev:?}");
     // The last minute: temperature and output.
     let (mut tmin, mut tmax, mut omin, mut omax) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
     for _ in 0..(60.0 / DT) as usize {
@@ -58,57 +58,74 @@ fn auto_follows_a_load_change() {
     let mut r = reactor(50.0);
     run(&mut r, 180.0, 300.0);
     let ev = run(&mut r, 180.0, 800.0);
-    assert!(!ev.iter().any(|(_, e)| matches!(e, ReactorEvent::Fire { .. } | ReactorEvent::Shutdown)), "{ev:?}");
+    assert!(!ev.iter().any(|(_, e)| matches!(e, ReactorEvent::Fire { .. })), "{ev:?}");
     println!("auto after a step 300 -> 800 kW: output {:.1} kW, temp {:.2}", r.output_kw(), r.temperature());
     assert!((r.output_kw() - 800.0).abs() < 25.0);
 }
 
 #[test]
-fn bad_manual_setting_overheats_starts_a_fire_and_shuts_down() {
+fn overheating_starts_a_fire_and_nothing_shuts_the_reactor_down() {
     let mut r = reactor(50.0);
     r.set_targets(100.0, 30.0);
     assert_eq!(r.mode(), Mode::Manual);
-    let mut ev = Vec::new();
-    let mut t = 0.0;
-    while !ev.iter().any(|(_, e)| *e == ReactorEvent::Shutdown) && t < 120.0 {
-        t += DT;
-        ev.extend(r.step(DT, 500.0).into_iter().map(|e| (t, e)));
-    }
+    let ev = run(&mut r, 130.0, 500.0);
     let b = r.bands();
-    let fire = first(&ev, |e| matches!(e, ReactorEvent::Fire { .. })).expect("a fire");
-    let shut = first(&ev, |e| *e == ReactorEvent::Shutdown).expect("a shutdown");
     let high = first(&ev, |e| *e == ReactorEvent::Alarm { kind: AlarmKind::TempHigh, on: true }).unwrap();
+    let fire = first(&ev, |e| matches!(e, ReactorEvent::Fire { .. })).expect("a fire");
     let crit = first(&ev, |e| *e == ReactorEvent::Alarm { kind: AlarmKind::TempCritical, on: true }).unwrap();
+    let melt = first(&ev, |e| *e == ReactorEvent::Meltdown).expect("a meltdown");
     println!(
-        "manual fission 100, turbine 30: above {:.0} at {high:.1} s, fire at {fire:.1} s, above {:.0} at {crit:.1} s, shutdown at {shut:.1} s",
+        "manual fission 100, turbine 30: above {:.0} at {high:.1} s, fire at {fire:.1} s, above {:.0} at {crit:.1} s, meltdown at {melt:.1} s",
         b.temp_optimal.hi, b.temp_allowed.hi
     );
     assert!((fire - high - 20.0).abs() < 0.2);
-    assert!((shut - crit - 30.0).abs() < 0.2);
-    assert!(ev.iter().any(|(t, e)| *t == shut && *e == ReactorEvent::Alarm { kind: AlarmKind::Shutdown, on: true }));
-    assert!(!r.power_on());
-    // Locked for a while, then it may start again; output and temperature fall meanwhile.
-    assert!(!r.set_power(true));
-    let ev = run(&mut r, 60.0, 500.0);
-    assert!(!ev.iter().any(|(_, e)| *e == ReactorEvent::Shutdown));
-    println!("60 s after the shutdown: temp {:.2}, output {:.1} kW", r.temperature(), r.output_kw());
-    assert!(r.temperature() < 5.0 && r.output_kw() < 1.0);
-    assert!(r.set_power(true));
-    assert!(r.step(DT, 500.0).contains(&ReactorEvent::Alarm { kind: AlarmKind::Shutdown, on: false }));
+    assert!((melt - crit - 120.0).abs() < 0.2);
+    assert!(fire < melt);
+    // No automatic shutdown: the reactor stays on, hot, until it melts.
+    assert!(r.melted() && !r.power_on() && r.output_kw() == 0.0);
 }
 
 #[test]
-fn without_safety_it_melts_down() {
+fn scram_drops_fission_and_power_at_once_and_the_temperature_falls() {
     let mut r = reactor(50.0);
-    r.set_safety(false);
+    run(&mut r, 120.0, 500.0);
+    assert!(r.output_kw() > 400.0);
+    r.scram();
+    assert!(!r.power_on());
+    assert_eq!(r.fission(), 0.0);
+    r.step(DT, 500.0);
+    assert_eq!(r.output_kw(), 0.0, "output at once");
+    let hot = r.temperature();
+    run(&mut r, 60.0, 500.0);
+    println!("scram at {hot:.1}: 60 s later {:.2}", r.temperature());
+    assert!(r.temperature() < hot - 20.0 && r.temperature() < 5.0);
+    assert_eq!(r.output_kw(), 0.0);
+    assert!(!r.melted());
+}
+
+#[test]
+fn after_a_scram_the_power_switch_starts_it_again() {
+    let mut r = reactor(50.0);
+    run(&mut r, 60.0, 300.0);
+    r.scram();
+    run(&mut r, 5.0, 300.0);
+    assert!(r.set_power(true), "no lockout after a scram");
+    let ev = run(&mut r, 120.0, 300.0);
+    assert!(!ev.iter().any(|(_, e)| matches!(e, ReactorEvent::Fire { .. } | ReactorEvent::Meltdown)));
+    assert!((r.output_kw() - 300.0).abs() < 15.0, "back on the load: {:.1}", r.output_kw());
+}
+
+#[test]
+fn left_hot_it_melts_down() {
+    let mut r = reactor(50.0);
     r.set_targets(100.0, 30.0);
     let ev = run(&mut r, 200.0, 500.0);
     let crit = first(&ev, |e| *e == ReactorEvent::Alarm { kind: AlarmKind::TempCritical, on: true }).unwrap();
     let melt = first(&ev, |e| *e == ReactorEvent::Meltdown).expect("a meltdown");
-    println!("safety off: critical at {crit:.1} s, meltdown at {melt:.1} s");
+    println!("critical at {crit:.1} s, meltdown at {melt:.1} s");
     assert!((melt - crit - 120.0).abs() < 0.2);
-    assert!(!ev.iter().any(|(_, e)| *e == ReactorEvent::Shutdown));
     assert!(!r.condition().functioning() && r.rods().iter().all(|r| r.spent()));
+    assert!(r.melted());
     assert!(!r.set_power(true));
     assert_eq!(r.output_kw(), 0.0);
 }

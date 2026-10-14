@@ -1,12 +1,12 @@
 //! The power grid: the junction box's supply shared between three consumer groups.
 //!
-//! Each group has a demand (what its devices draw at full work, set by the glue), a limit 0..1
-//! that the engineer sets on the power board (it asks for `demand * limit`), a priority and a
-//! minimum supply ratio. Groups are served from the highest priority down; groups of equal
+//! Each group has a demand (what its devices draw at full work, set by the glue), a breaker (on or
+//! off, set on the junction box: an off group asks for nothing), a priority and a minimum supply
+//! ratio. Groups are served from the highest priority down; groups of equal
 //! priority share a shortfall in proportion. A group whose share falls below its minimum ratio
 //! switches off and leaves its power to the rest, so under a brownout low priorities go first.
-//! A group works at `factor = delivered / demand`: a lower limit or less power makes it slower,
-//! not off, down to its minimum ratio.
+//! A group works at `factor = delivered / demand`: less power makes it slower, not off, down to
+//! its minimum ratio.
 //!
 //! Trimmed from the dev-area grid (five groups) to the three the engine room slice needs.
 #[cfg(test)]
@@ -35,8 +35,8 @@ impl Group {
 pub struct GroupState {
     /// kW its devices draw at full work.
     pub demand_kw: f64,
-    /// 0..1, set on the power board.
-    pub limit: f64,
+    /// The breaker: an off group asks for nothing.
+    pub breaker: bool,
     /// Higher is served first.
     pub priority: u8,
     /// Below this share of its request the group switches off.
@@ -46,7 +46,7 @@ pub struct GroupState {
 /// What one group got in the last distribution.
 #[derive(Copy, Clone, Debug, PartialEq, Default)]
 pub struct Supply {
-    /// kW asked for: `demand * limit`.
+    /// kW asked for: `demand` when the breaker is on, 0 when off.
     pub request_kw: f64,
     pub delivered_kw: f64,
     /// `delivered / request` (1 when nothing was asked for).
@@ -111,9 +111,9 @@ impl Default for Grid {
 }
 
 impl Grid {
-    /// The grid with every group at full limit and the tuning's demands.
+    /// The grid with every breaker on and the tuning's demands.
     pub fn from_tuning(t: &GridTuning) -> Grid {
-        let g = |s: GroupTuning| GroupState { demand_kw: s.demand_kw, limit: 1.0, priority: s.priority, min_ratio: s.min_ratio };
+        let g = |s: GroupTuning| GroupState { demand_kw: s.demand_kw, breaker: true, priority: s.priority, min_ratio: s.min_ratio };
         Grid {
             groups: [g(t.engines), g(t.life_support), g(t.lights)],
             supply: [Supply::default(); N],
@@ -134,16 +134,20 @@ impl Grid {
         self.groups[g.index()].demand_kw = kw.max(0.0);
     }
 
-    /// The power board slider, 0..1.
-    pub fn set_limit(&mut self, g: Group, limit: f64) {
-        self.groups[g.index()].limit = limit.clamp(0.0, 1.0);
+    /// Switches a group's breaker on the junction box.
+    pub fn set_breaker(&mut self, g: Group, on: bool) {
+        self.groups[g.index()].breaker = on;
+    }
+
+    pub fn breaker(&self, g: Group) -> bool {
+        self.groups[g.index()].breaker
     }
 
     pub fn set_priority(&mut self, g: Group, priority: u8) {
         self.groups[g.index()].priority = priority;
     }
 
-    /// kW all groups ask for together: the load on the reactor.
+    /// kW all groups ask for together (the breakers' demands): the load on the reactor.
     pub fn request_kw(&self) -> f64 {
         self.groups.iter().map(request).sum()
     }
@@ -217,5 +221,5 @@ impl Grid {
 }
 
 fn request(g: &GroupState) -> f64 {
-    g.demand_kw * g.limit
+    if g.breaker { g.demand_kw } else { 0.0 }
 }

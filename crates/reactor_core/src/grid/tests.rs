@@ -8,15 +8,30 @@ fn default_request_is_the_500_kw_load() {
 }
 
 #[test]
-fn full_supply_runs_every_group_at_its_limit() {
+fn a_breaker_off_asks_for_nothing_and_its_group_is_dark() {
     let mut g = Grid::default();
-    g.set_limit(Group::Engines, 0.3);
-    assert!((g.request_kw() - 255.0).abs() < 1e-9);
+    g.set_breaker(Group::Lights, false);
+    assert!(!g.breaker(Group::Lights));
+    assert_eq!(g.group(Group::Lights).demand_kw, 50.0, "the demand is the device's, the breaker is the switch");
+    assert!((g.request_kw() - 450.0).abs() < 1e-9);
     let left = g.distribute(1000.0);
-    assert!((left - 745.0).abs() < 1e-9, "left {left}");
-    assert!((g.factor(Group::Engines) - 0.3).abs() < 1e-9);
+    assert!((left - 550.0).abs() < 1e-9, "left {left}");
+    assert_eq!(g.factor(Group::Lights), 0.0);
+    assert!(!g.supply(Group::Lights).on);
+    assert_eq!(g.factor(Group::Engines), 1.0);
     assert_eq!(g.factor(Group::LifeSupport), 1.0);
-    assert_eq!(g.factor(Group::Lights), 1.0);
+    g.set_breaker(Group::Lights, true);
+    assert_eq!(g.request_kw(), 500.0);
+}
+
+#[test]
+fn all_breakers_off_is_no_load() {
+    let mut g = Grid::default();
+    for x in Group::ALL {
+        g.set_breaker(x, false);
+    }
+    assert_eq!(g.request_kw(), 0.0);
+    assert_eq!(g.distribute(300.0), 300.0, "nothing is taken");
 }
 
 #[test]

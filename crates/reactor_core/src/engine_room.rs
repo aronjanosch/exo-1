@@ -1,13 +1,15 @@
 //! The engine room: reactor, coolant pump, junction box and the grid of consumers, stepped together.
 //!
-//! - The pump's output factor (`device_core`, 1 when working, 0 when broken) scales the reactor's
-//!   cooling offset, so a broken pump lets the temperature climb. Heat above the optimal band
-//!   wears the pump as overload.
+//! - The pump's flow (`EngineRoom::flow`: 0 when off or the reactor does not run, else the pump's
+//!   factor from `device_core`, 1 working, 0 broken) scales the reactor's cooling offset, so off or
+//!   broken lets the temperature climb. Heat above the optimal band wears a running pump as overload.
 //! - The junction box sits between the reactor and the consumers. Supply above `overvolt_ratio`
 //!   times the demand is overvoltage: the box takes damage per second, and while overvolted each
-//!   second may bring sparks, and sparks may start a fire. A broken box passes nothing.
-//! - `Fault`s are the dev button's: `PumpBreak`, `LoadDrop` (most consumers off at once, so
-//!   overvoltage and the Auto overshoot follow), `Surge` (the box takes a hit).
+//!   second may bring sparks, and sparks may start a fire. A broken box passes nothing. Its
+//!   breakers (one per group) are the only switches the box has.
+//! - `powered`: the machines have power when the box is working and the reactor delivers.
+//! - `Fault`s are the dev button's: `PumpBreak`, `LoadDrop` (engines and lights breakers off at
+//!   once, so overvoltage and the Auto overshoot follow), `Surge` (the box takes a hit).
 //! - `AlarmLevel` is derived each step for the glue: `Warn` above the optimal band or with a part
 //!   that needs repair, `Danger` above the allowed band.
 //!
@@ -95,7 +97,7 @@ pub enum Source {
 /// What happened in one step. The glue routes them.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum RoomEvent {
-    /// Reactor events as the reactor raises them (fire, shutdown, meltdown, alarms).
+    /// Reactor events as the reactor raises them (fire, meltdown, alarms).
     Reactor(ReactorEvent),
     /// A device crossed a line (needs repair, broke, works again).
     Device { source: Source, event: DeviceEvent },
@@ -122,19 +124,30 @@ pub enum AlarmLevel {
     None,
     /// Above the optimal band, or a part needs repair.
     Warn,
-    /// Above the allowed band: the fire and shutdown timers run close to their end.
+    /// Above the allowed band: the meltdown timer runs.
     Danger,
 }
 
-/// The coolant pump. Its factor scales the reactor's cooling.
+/// The coolant pump. Its flow scales the reactor's cooling.
 #[derive(Clone, Debug)]
 pub struct Pump {
     condition: Condition,
+    on: bool,
 }
 
 impl Pump {
+    /// A pump that is on.
     pub fn new(tuning: &RoomTuning, seed: u64) -> Pump {
-        Pump { condition: Condition::new(tuning.pump, seed) }
+        Pump { condition: Condition::new(tuning.pump, seed), on: true }
+    }
+
+    /// The switch on the pump's screen. Off, it takes no heat away.
+    pub fn on(&self) -> bool {
+        self.on
+    }
+
+    pub fn set_on(&mut self, on: bool) {
+        self.on = on;
     }
 
     pub fn condition(&self) -> &Condition {
@@ -151,7 +164,7 @@ impl Pump {
         self.condition.factor()
     }
 
-    /// Running pumps wear as overload while the reactor is above its optimal band.
+    /// A running pump wears as overload while the reactor is above its optimal band.
     fn wear(&mut self, dt: f64, running: bool, excess_degrees: f64, t: &RoomTuning) -> Option<DeviceEvent> {
         let load = if running { 1.0 + excess_degrees.max(0.0) / t.heat_wear_degrees.max(1e-9) } else { 0.0 };
         self.condition.deteriorate(dt, load)
@@ -163,11 +176,17 @@ impl Pump {
 pub struct JunctionBox {
     condition: Condition,
     rng: Rng,
+    overvolt: bool,
 }
 
 impl JunctionBox {
     pub fn new(tuning: &RoomTuning, seed: u64) -> JunctionBox {
-        JunctionBox { condition: Condition::new(tuning.junction, seed), rng: Rng::new(seed ^ 0x05ba_43e5) }
+        JunctionBox { condition: Condition::new(tuning.junction, seed), rng: Rng::new(seed ^ 0x05ba_43e5), overvolt: false }
+    }
+
+    /// Whether the last step had overvoltage (the screen's OVERVOLT word).
+    pub fn overvolted(&self) -> bool {
+        self.overvolt
     }
 
     pub fn condition(&self) -> &Condition {
@@ -185,7 +204,8 @@ impl JunctionBox {
         let mut ev = Vec::new();
         let supply = supply_kw.max(0.0);
         let through = if self.condition.functioning() { supply } else { 0.0 };
-        if supply > 0.0 && supply > t.overvolt_ratio * demand_kw {
+        self.overvolt = supply > 0.0 && supply > t.overvolt_ratio * demand_kw;
+        if self.overvolt {
             if let Some(e) = self.condition.damage(t.overvolt_damage_s * dt) {
                 ev.push(RoomEvent::Device { source: Source::Junction, event: e });
             }
@@ -235,7 +255,7 @@ impl EngineRoom {
         }
     }
 
-    /// Starts or stops the reactor. Refused during the restart lockout or while it is broken.
+    /// Starts or stops the reactor. Refused while it is broken.
     pub fn set_power(&mut self, on: bool) -> bool {
         self.reactor.set_power(on)
     }
@@ -252,7 +272,7 @@ impl EngineRoom {
         &self.reactor
     }
 
-    /// For rods, safety and the like.
+    /// For rods and the like.
     pub fn reactor_mut(&mut self) -> &mut Reactor {
         &mut self.reactor
     }
@@ -277,9 +297,29 @@ impl EngineRoom {
         &self.grid
     }
 
-    /// For the power board (limits, priorities).
+    /// For priorities and the like.
     pub fn grid_mut(&mut self) -> &mut Grid {
         &mut self.grid
+    }
+
+    /// The machines have power: the junction box works and the reactor delivers (output above 0).
+    pub fn powered(&self) -> bool {
+        self.junction.condition.functioning() && self.reactor.output_kw() > 0.0
+    }
+
+    /// The coolant flow, 0..1: the pump's factor while it is on and the reactor runs, else 0.
+    pub fn flow(&self) -> f64 {
+        if self.pump.on && self.reactor.power_on() { self.pump.factor() } else { 0.0 }
+    }
+
+    /// Switches a consumer group's breaker on the junction box.
+    pub fn set_breaker(&mut self, g: Group, on: bool) {
+        self.grid.set_breaker(g, on);
+    }
+
+    /// Switches the coolant pump on or off.
+    pub fn set_pump(&mut self, on: bool) {
+        self.pump.set_on(on);
     }
 
     /// The room's alarm, as of the last step.
@@ -296,7 +336,7 @@ impl EngineRoom {
         if input.mode == Mode::Manual {
             self.reactor.set_targets(input.fission, input.turbine);
         }
-        self.reactor.set_coolant(self.pump.factor());
+        self.reactor.set_coolant(self.flow());
 
         let load = self.grid.request_kw();
         ev.extend(self.reactor.step(dt, load).into_iter().map(RoomEvent::Reactor));
@@ -306,7 +346,7 @@ impl EngineRoom {
         self.grid.distribute(through);
 
         let excess = self.reactor.temperature() - self.reactor.bands().temp_optimal.hi;
-        if let Some(e) = self.pump.wear(dt, self.reactor.power_on(), excess, &t) {
+        if let Some(e) = self.pump.wear(dt, self.pump.on && self.reactor.power_on(), excess, &t) {
             ev.push(RoomEvent::Device { source: Source::Pump, event: e });
         }
 
@@ -323,8 +363,8 @@ impl EngineRoom {
                 self.pump.condition.damage(amount).map(|e| RoomEvent::Device { source: Source::Pump, event: e }).into_iter().collect()
             }
             Fault::LoadDrop => {
-                self.grid.set_limit(Group::Engines, 0.0);
-                self.grid.set_limit(Group::Lights, 0.0);
+                self.grid.set_breaker(Group::Engines, false);
+                self.grid.set_breaker(Group::Lights, false);
                 Vec::new()
             }
             Fault::Surge => {

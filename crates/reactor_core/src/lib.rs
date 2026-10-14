@@ -7,13 +7,13 @@
 //! maximum set by turbine and temperature, an optimal and an allowed band widened by the operator's
 //! skill, its automatic controller, and two overheat timers (fire, meltdown) that run faster at low
 //! condition. Taken from Barotrauma's grid: a minimum supply ratio per consumer. Taken from PULSAR:
-//! a limit slider per consumer group. Our own code: the safety shutdown, the restart lockout, the
-//! alarm hysteresis, the coolant offset, the junction box overvoltage and sparks, and the faults
+//! a breaker per consumer group. Our own code: the SCRAM, the alarm hysteresis, the coolant offset,
+//! the pump's on and off, the junction box overvoltage and sparks, and the faults
 //! (`research/barotrauma-mech-power.md`, `pulsar-mech-conduits.md` in the concept repo).
 //!
 //! - `reactor`: `Reactor` with `Mode::Auto` and `Mode::Manual`, `FuelRod`, `ReactorEvent`
-//!   (fire, shutdown, meltdown, alarms) for the glue to route.
-//! - `grid`: `Grid` with three consumer groups, a limit, priority and minimum ratio per group.
+//!   (fire, meltdown, alarms) for the glue to route; `scram`.
+//! - `grid`: `Grid` with three consumer groups, a breaker, priority and minimum ratio per group.
 //! - `engine_room`: `EngineRoom` ties reactor, coolant pump, junction box and grid together:
 //!   `step` returns `RoomEvent`s, `trigger` runs a `Fault`, `level` gives the `AlarmLevel`.
 //!

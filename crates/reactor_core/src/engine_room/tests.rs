@@ -52,7 +52,7 @@ fn alarm_on(kind: AlarmKind) -> impl Fn(&RoomEvent) -> bool {
 fn auto_holds_steady_at_constant_load() {
     let mut r = room();
     let (ev, _) = run(&mut r, 240.0, Input::auto());
-    assert!(!ev.iter().any(|(_, e)| is_fire(e) || *e == RoomEvent::Reactor(ReactorEvent::Shutdown)), "{ev:?}");
+    assert!(!ev.iter().any(|(_, e)| is_fire(e)), "{ev:?}");
     let (_, temps) = run(&mut r, 60.0, Input::auto());
     let (tmin, tmax) = temps.iter().fold((f64::MAX, f64::MIN), |(a, b), &t| (a.min(t), b.max(t)));
     let b = r.reactor().bands();
@@ -79,14 +79,13 @@ fn auto_overshoots_after_a_load_drop() {
     // No fire: the fire timer needs 20 s above the band.
     let mut r = room();
     settle_then_drop(&mut r);
-    let (ev, temps) = run(&mut r, 150.0, Input::auto());
+    let (_, temps) = run(&mut r, 150.0, Input::auto());
     let hi = r.reactor().bands().temp_optimal.hi;
     let peak = temps.iter().cloned().fold(f64::MIN, f64::max);
     let above = temps.iter().filter(|&&t| t > hi).count() as f64 * DT;
     println!("auto after LoadDrop: peak {peak:.1}, above {hi:.0} for {above:.1} s, output {:.1} kW", r.reactor().output_kw());
     assert!(above >= 5.0, "above the optimal band for {above:.1} s");
     assert!(peak < r.reactor().bands().temp_allowed.hi, "the overshoot stays short of the allowed band: {peak}");
-    assert!(!ev.iter().any(|(_, e)| *e == RoomEvent::Reactor(ReactorEvent::Shutdown)));
 }
 
 #[test]
@@ -105,7 +104,6 @@ fn manual_with_a_good_input_avoids_the_overshoot() {
 #[test]
 fn pump_break_climbs_to_fire_then_meltdown() {
     let mut r = room();
-    r.reactor_mut().set_safety(false);
     // Fission 43.75 with two rods and the pump on: the temperature settles at 50.
     let input = Input::manual(43.75, 50.0);
     run(&mut r, 30.0, input);
@@ -188,7 +186,7 @@ fn no_overvoltage_no_damage() {
 fn a_broken_junction_box_cuts_its_consumers() {
     let mut r = room();
     run(&mut r, 30.0, Input::auto());
-    assert!(r.grid().group(Group::Engines).limit > 0.0);
+    assert!(r.grid().breaker(Group::Engines));
     let ev = r.trigger(Fault::Surge);
     assert!(ev.is_empty() || matches!(ev.as_slice(), [RoomEvent::Device { .. }]));
     r.junction_mut().condition_mut().set_value(0.0);
@@ -229,4 +227,74 @@ fn alarm_level_follows_the_room() {
     }
     run(&mut r, 60.0, input);
     assert_eq!(r.level(), AlarmLevel::None, "temp {}", r.reactor().temperature());
+}
+
+#[test]
+fn a_pump_switched_off_takes_no_heat_away_and_the_temperature_climbs() {
+    let mut r = safe_room();
+    let input = Input::manual(43.75, 50.0);
+    run(&mut r, 30.0, input);
+    let before = r.reactor().temperature();
+    assert!((before - 50.0).abs() < 1.0, "{before}");
+    r.set_pump(false);
+    assert_eq!(r.flow(), 0.0);
+    let (_, temps) = run(&mut r, 20.0, input);
+    assert!(*temps.last().unwrap() > before + 10.0, "climbs: {before} -> {:?}", temps.last());
+    // On again: the flow is back and the climb stops.
+    r.set_pump(true);
+    assert_eq!(r.flow(), 1.0);
+    let (_, temps) = run(&mut r, 60.0, input);
+    assert!(temps.windows(2).rev().take(300).all(|w| w[1] <= w[0] + 1e-9), "falls back once on");
+}
+
+#[test]
+fn the_flow_needs_a_running_reactor() {
+    let mut r = room();
+    assert_eq!(r.flow(), 1.0, "the pump is on from the start");
+    r.reactor_mut().scram();
+    assert_eq!(r.flow(), 0.0, "no reactor, no coolant");
+    run(&mut r, 1.0, Input::auto());
+    assert!(r.set_power(true));
+    assert_eq!(r.flow(), 1.0);
+}
+
+#[test]
+fn the_machines_have_power_only_through_a_working_box_and_a_running_reactor() {
+    let mut r = room();
+    assert!(!r.powered(), "cold, output 0");
+    run(&mut r, 120.0, Input::auto());
+    assert!(r.powered());
+    r.reactor_mut().scram();
+    run(&mut r, 1.0, Input::auto());
+    assert!(!r.powered(), "scrammed: no output, no power");
+    assert!(r.set_power(true));
+    run(&mut r, 120.0, Input::auto());
+    assert!(r.powered());
+    r.junction_mut().condition_mut().set_value(0.0);
+    run(&mut r, 1.0, Input::auto());
+    assert!(!r.powered(), "a broken box passes nothing");
+}
+
+#[test]
+fn breakers_are_the_only_switch_of_the_consumers() {
+    let mut r = room();
+    run(&mut r, 120.0, Input::auto());
+    let load = r.grid().request_kw();
+    r.set_breaker(Group::Lights, false);
+    assert_eq!(r.grid().request_kw(), load - 50.0);
+    run(&mut r, 60.0, Input::auto());
+    assert!((r.reactor().output_kw() - (load - 50.0)).abs() < 20.0, "the load drops: {:.1}", r.reactor().output_kw());
+    assert_eq!(r.grid().factor(Group::Lights), 0.0);
+    r.set_breaker(Group::Lights, true);
+    assert_eq!(r.grid().request_kw(), load);
+}
+
+#[test]
+fn overvolt_is_seen_by_the_box() {
+    let mut r = room();
+    run(&mut r, 60.0, Input::manual(43.75, 50.0));
+    assert!(!r.junction().overvolted());
+    r.trigger(Fault::LoadDrop);
+    run(&mut r, 1.0, Input::manual(43.75, 50.0));
+    assert!(r.junction().overvolted(), "100 kW demand, 470 kW supply");
 }

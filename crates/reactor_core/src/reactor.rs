@@ -9,6 +9,7 @@
 //! condition makes both timers run up to twice as fast.
 use device_core::{Condition, DeviceEvent, DeviceTuning};
 use gameplay_core::notice::{Notice, NoticeKind};
+use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 mod tests;
@@ -16,7 +17,8 @@ mod tests;
 /// Reactor values. TODO(initiator): starting values. Delays, burn rate, temperature rate and
 /// controller speed follow the original; the output, the shutdown delay, the lockout, the alarm
 /// lines and the fire size are guesses.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReactorTuning {
     /// Output at full turbine and temperature, kW.
     pub max_output_kw: f64,

@@ -12,6 +12,8 @@
 #[cfg(test)]
 mod tests;
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Group {
     Engines,
@@ -63,17 +65,57 @@ pub struct Grid {
     supply: [Supply; N],
 }
 
+/// One group's values in the content file.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroupTuning {
+    pub demand_kw: f64,
+    pub priority: u8,
+    pub min_ratio: f64,
+}
+
+/// The grid's demands, priorities and minimum ratios. TODO(initiator): placeholder values; the
+/// demands add up to the default 500 kW load.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GridTuning {
+    pub engines: GroupTuning,
+    pub life_support: GroupTuning,
+    pub lights: GroupTuning,
+}
+
+impl Default for GridTuning {
+    fn default() -> GridTuning {
+        GridTuning {
+            engines: GroupTuning { demand_kw: 350.0, priority: 2, min_ratio: 0.5 },
+            life_support: GroupTuning { demand_kw: 100.0, priority: 3, min_ratio: 0.3 },
+            lights: GroupTuning { demand_kw: 50.0, priority: 1, min_ratio: 0.3 },
+        }
+    }
+}
+
+impl GridTuning {
+    pub fn group(&self, g: Group) -> GroupTuning {
+        match g {
+            Group::Engines => self.engines,
+            Group::LifeSupport => self.life_support,
+            Group::Lights => self.lights,
+        }
+    }
+}
+
 impl Default for Grid {
-    /// TODO(initiator): placeholder demands (they add up to the default 500 kW load), priorities
-    /// and minimum ratios.
     fn default() -> Grid {
-        let g = |demand_kw, priority, min_ratio| GroupState { demand_kw, limit: 1.0, priority, min_ratio };
+        Grid::from_tuning(&GridTuning::default())
+    }
+}
+
+impl Grid {
+    /// The grid with every group at full limit and the tuning's demands.
+    pub fn from_tuning(t: &GridTuning) -> Grid {
+        let g = |s: GroupTuning| GroupState { demand_kw: s.demand_kw, limit: 1.0, priority: s.priority, min_ratio: s.min_ratio };
         Grid {
-            groups: [
-                g(350.0, 2, 0.5), // engines
-                g(100.0, 3, 0.3), // life support
-                g(50.0, 1, 0.3),  // lights
-            ],
+            groups: [g(t.engines), g(t.life_support), g(t.lights)],
             supply: [Supply::default(); N],
         }
     }

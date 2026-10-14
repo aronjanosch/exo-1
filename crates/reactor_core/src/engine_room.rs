@@ -18,13 +18,16 @@ use gameplay_core::rng::Rng;
 
 use crate::grid::{Grid, Group};
 use crate::reactor::{AlarmKind, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning};
+use crate::tuning::Tuning;
+use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 mod tests;
 
 /// Values of the engine room beyond the reactor. TODO(initiator): every number is a starting
 /// value; later from data.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RoomTuning {
     /// The coolant pump's device values.
     pub pump: DeviceTuning,
@@ -209,20 +212,25 @@ pub struct EngineRoom {
 }
 
 impl EngineRoom {
-    /// A cold room with two standard rods, the operator at skill 50, the default grid. Power is
-    /// off: `set_power(true)` starts the reactor.
+    /// A cold room with the default values (two standard rods). See `from_tuning`.
     pub fn new(tuning: RoomTuning, reactor_tuning: ReactorTuning, seed: u64) -> EngineRoom {
-        let mut reactor = Reactor::new(reactor_tuning, DeviceTuning::default(), seed.wrapping_add(2));
-        for _ in 0..2 {
+        EngineRoom::from_tuning(&Tuning { room: tuning, reactor: reactor_tuning, ..Tuning::default() }, seed)
+    }
+
+    /// A cold room from the loaded values: `start_rods` standard rods, the operator at skill 50,
+    /// the grid's demands. Power is off: `set_power(true)` starts the reactor.
+    pub fn from_tuning(t: &Tuning, seed: u64) -> EngineRoom {
+        let mut reactor = Reactor::new(t.reactor, DeviceTuning::default(), seed.wrapping_add(2));
+        for _ in 0..t.start_rods {
             let _ = reactor.insert_rod(FuelRod::standard());
         }
         reactor.set_operator_skill(50.0);
         EngineRoom {
-            pump: Pump::new(&tuning, seed),
-            junction: JunctionBox::new(&tuning, seed.wrapping_add(1)),
-            tuning,
+            pump: Pump::new(&t.room, seed),
+            junction: JunctionBox::new(&t.room, seed.wrapping_add(1)),
+            tuning: t.room,
             reactor,
-            grid: Grid::default(),
+            grid: Grid::from_tuning(&t.grid),
             level: AlarmLevel::None,
         }
     }

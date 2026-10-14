@@ -25,7 +25,8 @@ use gameplay_core::rng::Rng;
 mod tests;
 
 /// Values of one device kind. TODO(initiator): every number is a starting value; later from data.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct DeviceTuning {
     /// Full condition.
     pub max: f64,

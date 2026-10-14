@@ -17,12 +17,17 @@
 //! - `engine_room`: `EngineRoom` ties reactor, coolant pump, junction box and grid together:
 //!   `step` returns `RoomEvent`s, `trigger` runs a `Fault`, `level` gives the `AlarmLevel`.
 //!
+//! - `tuning`: `Tuning`, every value above from `content/gameplay/reactor/reactor.json` (strict
+//!   loader, like `health_core`).
+//!
 //! Temperature, fission and turbine are 0..100 as on the panel; power is kW. All values are
 //! starting points for the playtest (`TODO(initiator)`).
 pub mod engine_room;
 pub mod grid;
 pub mod reactor;
+pub mod tuning;
 
 pub use engine_room::{AlarmLevel, EngineRoom, Fault, Input, JunctionBox, Pump, RoomEvent, RoomTuning, Source};
 pub use grid::{Grid, Group, GroupState, Supply};
 pub use reactor::{AlarmKind, Band, Bands, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning};
+pub use tuning::{Tuning, REACTOR_PATH};

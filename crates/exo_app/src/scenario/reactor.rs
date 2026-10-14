@@ -91,7 +91,7 @@ fn pitch_towards(w: &mut World, target: DVec3) {
 }
 
 /// Stand the walker at a point on the ground (test setup) facing a display, then use it with F.
-fn use_display(s: &mut Vec<Step>, name: &'static str, id: PanelId, stand: [f64; 2]) {
+pub(super) fn use_display(s: &mut Vec<Step>, name: &'static str, id: PanelId, stand: [f64; 2]) {
     s.push(Box::new(move |w, c| {
         if c.t == 0.0 {
             begin(w, c, &format!("reactor: use the {name}"));
@@ -345,7 +345,7 @@ fn load_step(what: &'static str, want: f64) -> Step {
 
 /// Clicks an action until `done` holds, a retry each second, five at most (a click can be lost
 /// to another system taking the press). `frac` aims at that fraction across the widget (a slider).
-fn click_until(id: PanelId, action: &'static str, frac: Option<f64>, what: &'static str, done: fn(&World) -> bool) -> Step {
+pub(super) fn click_until(id: PanelId, action: &'static str, frac: Option<f64>, what: &'static str, done: fn(&World) -> bool) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
             begin(w, c, what);

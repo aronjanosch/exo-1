@@ -12,9 +12,9 @@
 //!   the sprays) goes to the clients about 4 times a second while it changes.
 //! - A client sends its spray's aim (`spray_input`, at most about 10 times a second while it
 //!   changes) and draws the snapshot. Its own air is not stepped.
-//! - Window only: a flickering flame and a point light per fire (`effects`: the light flickers per
-//!   frame and reaches further as the fire grows), a few white puffs in front of each spray, and
-//!   steam where a spray lands (`effects`). The crackle is not made yet (`TODO`: a quiet noise sound in `audio.rs`).
+//! - Window only: a flickering flame, a warm glow on the floor and a point light per fire (`effects`:
+//!   the light flickers per frame and reaches further as the fire grows), a white jet from each
+//!   spray's nozzle to where it lands, and steam where a spray lands (`effects`). The crackle is not made yet (`TODO`: a quiet noise sound in `audio.rs`).
 //! - No ammo for the extinguisher yet (`TODO(initiator)`).
 use crate::controls::Controls;
 use crate::dev_area::engine_room::{ignition_at, place_of, source_at, EngineAir};
@@ -42,9 +42,8 @@ pub const EXTINGUISH: &str = "extinguish";
 /// The spray's reach (m) and half-angle (degrees). TODO(initiator): start values.
 pub const SPRAY_REACH: f64 = 4.0;
 pub const SPRAY_HALF_ANGLE_DEG: f64 = 20.0;
-/// The flame's centre above the floor (m), and the spray's puffs per spray.
+/// The flame's centre above the floor (m), for the spray's aim at it.
 const FLAME_LIFT: f64 = 0.3;
-const PUFFS: usize = 3;
 /// Most sprays drawn at once.
 const MAX_SPRAYS: usize = 4;
 /// Seconds between two snapshots of changed fires (4 Hz), and between two spray aims (10 Hz).
@@ -298,21 +297,163 @@ fn fire_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>
     }
 }
 
+/// A flame's half width (m) and height (m) by its size: 0.6 and 1.6 times the size, never under
+/// 0.3 m wide or 0.6 m tall, so a small fire still shows from 3 to 5 m away.
+pub fn flame_dims(size: f64) -> (f64, f64) {
+    ((size * 0.6).max(0.3), (size * 1.6).max(0.6))
+}
+
+/// The warm glow on the floor under a fire: its radius (m), never under 0.6 m.
+pub fn glow_radius(size: f64) -> f64 {
+    (size * 1.5).max(0.6)
+}
+
+/// The jet's particles per spray, and the seconds one particle takes to cross it.
+pub const JET_PARTICLES: usize = 8;
+pub const JET_LIFE_S: f64 = 0.4;
+
+/// The nozzle: the held extinguisher's tip, about 0.5 m ahead of the eye and 0.3 m down (`up`:
+/// the local up). An approximation of the hand (`TODO`: the held item's own tip, `items`).
+pub fn nozzle_of(eye: DVec3, dir: DVec3, up: DVec3) -> DVec3 {
+    eye + dir * 0.5 - up * 0.3
+}
+
+/// A jet particle's place: `phase` (0 at the nozzle, 1 at `end`) along the jet from `nozzle` to
+/// `end`, its cone widening to `half_angle` (radians), turned `spin` radians round the jet. At
+/// phase 0 the particle is at the nozzle; a jet with no length stays there.
+pub fn jet_point(nozzle: DVec3, end: DVec3, half_angle: f64, phase: f64, spin: f64) -> DVec3 {
+    let axis = end - nozzle;
+    let dir = axis.normalize_or_zero();
+    if dir == DVec3::ZERO {
+        return nozzle;
+    }
+    let along = axis.length() * phase;
+    let u = dir.any_orthonormal_vector();
+    let v = dir.cross(u);
+    let r = along * half_angle.tan();
+    nozzle + dir * along + (u * spin.cos() + v * spin.sin()) * r
+}
+
+/// Particle `i` of a jet at time `t` (s): its phase 0..1, a new one each `JET_LIFE_S / JET_PARTICLES`.
+pub fn jet_phase(t: f64, i: usize) -> f64 {
+    (t / JET_LIFE_S + i as f64 / JET_PARTICLES as f64).fract()
+}
+
+/// Particle `i`'s turn round its jet (radians): the golden angle apart, so they fill the cone.
+pub fn jet_spin(i: usize) -> f64 {
+    i as f64 * 2.399_963_229_728_653
+}
+
+/// The sprays to draw: the snapshot's, with this process's own spray (its local aim, a snapshot
+/// behind) replacing the entry whose nozzle is within 0.5 m of its eye, or added when there is none.
+pub fn jet_sprays(snapshot: &[SprayNew], local: Option<SprayNew>) -> Vec<SprayNew> {
+    let mut out = snapshot.to_vec();
+    if let Some(l) = local {
+        let le = DVec3::from_array(l.eye);
+        match out.iter().position(|s| DVec3::from_array(s.eye).distance(le) < 0.5) {
+            Some(i) => out[i] = l,
+            None => out.push(l),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod visual_tests {
+    use super::*;
+
+    #[test]
+    fn flames_have_a_minimum_and_grow_with_the_fire() {
+        let (hw, h) = flame_dims(0.5);
+        assert!(h >= 0.6 && hw >= 0.3, "the start flame is {h:.2} m tall");
+        assert_eq!(flame_dims(0.05), (0.3, 0.6), "a tiny fire is at the minimum");
+        assert!(flame_dims(2.0).1 > flame_dims(0.5).1);
+        assert!(glow_radius(0.05) >= 0.6 && glow_radius(2.0) > glow_radius(0.5));
+    }
+
+    #[test]
+    fn a_jet_starts_at_the_nozzle_and_reaches_its_end_along_the_axis() {
+        let nozzle = DVec3::new(1.0, 2.0, 0.5);
+        let end = nozzle + DVec3::new(0.0, 0.0, 4.0);
+        assert_eq!(jet_point(nozzle, end, 0.3, 0.0, 1.0), nozzle);
+        let far = jet_point(nozzle, end, 0.3, 1.0, 0.0);
+        assert!((far.z - (nozzle.z + 4.0)).abs() < 1e-9, "the far particle is at the jet's length");
+        let lateral = (far.x - nozzle.x).hypot(far.y - nozzle.y);
+        assert!((lateral - 4.0 * 0.3f64.tan()).abs() < 1e-9, "its radius is the cone's at the end");
+    }
+
+    #[test]
+    fn jet_particles_stay_in_the_cone_and_widen() {
+        let nozzle = DVec3::ZERO;
+        let end = DVec3::new(3.0, 0.0, 0.0);
+        let half = 20f64.to_radians();
+        let mut last_r = 0.0;
+        for k in 1..=10 {
+            let phase = k as f64 / 10.0;
+            for i in 0..JET_PARTICLES {
+                let p = jet_point(nozzle, end, half, phase, jet_spin(i));
+                let r = (p.y * p.y + p.z * p.z).sqrt();
+                assert!((p.x - 3.0 * phase).abs() < 1e-9);
+                assert!(r <= p.x * half.tan() + 1e-9, "outside the cone at phase {phase}");
+            }
+            let r = (jet_point(nozzle, end, half, phase, 0.0).y).abs();
+            assert!(r > last_r, "the cone widens with the phase");
+            last_r = r;
+        }
+        // A jet with no length stays at the nozzle.
+        assert_eq!(jet_point(nozzle, nozzle, half, 0.5, 0.3), nozzle);
+    }
+
+    #[test]
+    fn jet_particles_are_spread_in_time_and_round_the_jet() {
+        let mut phases: Vec<f64> = (0..JET_PARTICLES).map(|i| jet_phase(1.0, i)).collect();
+        assert!(phases.iter().all(|p| (0.0..1.0).contains(p)));
+        phases.sort_by(|a, b| a.total_cmp(b));
+        phases.dedup();
+        assert_eq!(phases.len(), JET_PARTICLES, "no two particles share a phase");
+        assert!(jet_spin(1) - jet_spin(0) > 1.0);
+    }
+
+    #[test]
+    fn the_nozzle_is_in_front_of_and_below_the_eye() {
+        let eye = DVec3::new(0.0, 0.0, 1.6);
+        let n = nozzle_of(eye, DVec3::X, DVec3::Z);
+        assert!((n.x - 0.5).abs() < 1e-9 && (n.z - 1.3).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_local_spray_replaces_its_snapshot_entry_or_is_added() {
+        let a = SprayNew { eye: [0.0, 0.0, 1.6], dir: [1.0, 0.0, 0.0] };
+        let b = SprayNew { eye: [10.0, 0.0, 1.6], dir: [0.0, 1.0, 0.0] };
+        let snap = [a, b];
+        let local = SprayNew { eye: [0.1, 0.0, 1.6], dir: [0.0, 0.0, 1.0] };
+        assert_eq!(jet_sprays(&snap, Some(local)), vec![local, b], "the snapshot's own entry is replaced");
+        let far = SprayNew { eye: [5.0, 5.0, 1.6], dir: [1.0, 0.0, 0.0] };
+        assert_eq!(jet_sprays(&snap, Some(far)).len(), 3);
+        assert_eq!(jet_sprays(&snap, None), snap.to_vec());
+    }
+}
+
 // ---------- window only ----------
 
 /// A flame on screen: one per fire, found by the fire's id in `FlameVisuals`.
 #[derive(Component)]
 struct Flame;
 
-/// A puff of a spray on screen.
+/// The warm glow on the floor under a flame.
 #[derive(Component)]
-struct Puff;
+struct Glow;
 
-/// Window: the flames by fire id, and the puffs (made once).
+/// A particle of a spray's jet on screen.
+#[derive(Component)]
+struct Jet;
+
+/// Window: the flames and their glows by fire id, and the jet particles (made once).
 #[derive(Resource, Default)]
 struct FlameVisuals {
     by_id: BTreeMap<u64, Entity>,
-    puffs: Vec<Entity>,
+    glows: BTreeMap<u64, Entity>,
+    jets: Vec<Entity>,
 }
 
 pub fn window_plugin(app: &mut App) {
@@ -320,8 +461,9 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, flames_sync.in_set(crate::phases::Frame::Sync));
 }
 
-/// Window: each fire is a flickering flame scaled by its size with a flickering light; each spray
-/// shows a few white puffs along its aim. Positions follow the render origin.
+/// Window: each fire is a flickering flame on a warm glow, scaled by its size, with a flickering
+/// light. Each spray shows a jet of white particles from its nozzle along the aim to where it
+/// lands. Positions follow the render origin.
 #[allow(clippy::too_many_arguments)]
 fn flames_sync(
     mut commands: Commands,
@@ -329,19 +471,22 @@ fn flames_sync(
     planet: Res<PlanetRes>,
     area: Option<Res<DevArea>>,
     items: Res<Items>,
+    client: Res<SprayClient>,
     origin: Res<RenderOrigin>,
     mut vis: ResMut<FlameVisuals>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut flames: Query<(&Flame, &mut Transform, &mut PointLight), Without<Puff>>,
-    mut puffs: Query<(&mut Transform, &mut Visibility), With<Puff>>,
+    mut flames: Query<(&mut Transform, &mut PointLight), (With<Flame>, Without<Glow>, Without<Jet>)>,
+    mut glows: Query<&mut Transform, (With<Glow>, Without<Flame>, Without<Jet>)>,
+    mut jets: Query<(&mut Transform, &mut Visibility), (With<Jet>, Without<Flame>, Without<Glow>)>,
 ) {
-    let Some(news) = items.fire.as_ref() else { return };
+    let fires: &[FireNew] = items.fire.as_ref().map_or(&[], |n| n.fires.as_slice());
+    let snapshot: &[SprayNew] = items.fire.as_ref().map_or(&[], |n| n.sprays.as_slice());
     let (Some(area), Some(frame)) = (area.as_deref(), area.as_deref().and_then(|a| a.frame)) else { return };
     let t = time.elapsed_secs_f64();
     let to_render = |w: DVec3| (w - origin.origin).as_vec3();
 
-    let alive: BTreeSet<u64> = news.fires.iter().map(|f| f.id).collect();
+    let alive: BTreeSet<u64> = fires.iter().map(|f| f.id).collect();
     vis.by_id.retain(|id, e| {
         if alive.contains(id) {
             true
@@ -350,63 +495,107 @@ fn flames_sync(
             false
         }
     });
-    if vis.puffs.is_empty() {
-        let mesh = meshes.add(Sphere::new(0.07));
-        let mat = materials.add(StandardMaterial { base_color: Color::srgba(1.0, 1.0, 1.0, 0.45), unlit: true, alpha_mode: AlphaMode::Blend, ..default() });
-        for _ in 0..MAX_SPRAYS * PUFFS {
-            let e = commands.spawn((Puff, Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::default(), Visibility::Hidden)).id();
-            vis.puffs.push(e);
+    vis.glows.retain(|id, e| {
+        if alive.contains(id) {
+            true
+        } else {
+            commands.entity(*e).despawn();
+            false
+        }
+    });
+    if vis.jets.is_empty() {
+        let mesh = meshes.add(Sphere::new(1.0));
+        let mat = materials.add(StandardMaterial { base_color: Color::srgba(1.0, 1.0, 1.0, 0.4), unlit: true, alpha_mode: AlphaMode::Blend, ..default() });
+        for _ in 0..MAX_SPRAYS * JET_PARTICLES {
+            let e = commands.spawn((Jet, Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::default(), Visibility::Hidden)).id();
+            vis.jets.push(e);
         }
     }
-    for f in &news.fires {
+    for f in fires {
         let Some((ground, up)) = flame_world(area, &planet, f.pos) else { continue };
-        let k = (0.9 + 0.1 * (t * 17.0 + f.id as f64).sin()) as f32;
+        let k = 0.9 + 0.1 * (t * 17.0 + f.id as f64).sin();
+        let (hw, h) = flame_dims(f.size);
+        let h = h * k;
         let rot = frame.rotation(up, 0.0).as_quat();
-        let scale = Vec3::new(f.size as f32 * 1.2, (f.size as f32 * 1.6 * k).max(0.05), f.size as f32 * 1.2);
+        // The flame's base sits on the floor; the cone's mesh is centred and 1 m tall.
+        let centre = ground + up * (h * 0.5 - 0.05);
+        let scale = Vec3::new((2.0 * hw) as f32, h as f32, (2.0 * hw) as f32);
         // The light flickers per frame (0.8 to 1.0) and reaches further as the fire grows.
         let light = 30_000.0 * f.size as f32 * crate::effects::flame_flicker(t.to_bits() ^ f.id.wrapping_mul(0x9E37_79B9));
         let range = crate::effects::flame_range(f.size);
+        // The glow: a flat disc on the floor, flickering in size (the disc's mesh has radius 1).
+        let glow_r = (glow_radius(f.size) * k) as f32;
+        let glow_tr = Transform {
+            translation: to_render(ground + up * 0.03),
+            rotation: rot * Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
+            scale: Vec3::splat(glow_r),
+            ..default()
+        };
         if let Some(&e) = vis.by_id.get(&f.id) {
-            if let Ok((_, mut tr, mut l)) = flames.get_mut(e) {
-                tr.translation = to_render(ground);
+            if let Ok((mut tr, mut l)) = flames.get_mut(e) {
+                tr.translation = to_render(centre);
                 tr.rotation = rot;
                 tr.scale = scale;
                 l.intensity = light;
                 l.range = range;
             }
+            if let Some(&g) = vis.glows.get(&f.id)
+                && let Ok(mut tr) = glows.get_mut(g)
+            {
+                *tr = glow_tr;
+            }
         } else {
             let mesh = meshes.add(Cone::new(0.5, 1.0));
-            let mat = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.6, 0.15), emissive: LinearRgba::rgb(6.0, 2.4, 0.4), unlit: true, ..default() });
+            // Lit, with a strong emissive: the flame reads from the far side of the room.
+            let mat = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.55, 0.12), emissive: LinearRgba::rgb(9.0, 3.0, 0.5), ..default() });
             let e = commands
                 .spawn((
                     Flame,
                     Mesh3d(mesh),
                     MeshMaterial3d(mat),
-                    Transform { translation: to_render(ground), rotation: rot, scale, ..default() },
+                    Transform { translation: to_render(centre), rotation: rot, scale, ..default() },
                     PointLight { color: Color::srgb(1.0, 0.7, 0.35), intensity: light, range, shadow_maps_enabled: false, ..default() },
                 ))
                 .id();
             vis.by_id.insert(f.id, e);
+            let glow_mesh = meshes.add(Circle::new(1.0));
+            let glow_mat = materials.add(StandardMaterial { base_color: Color::srgba(1.0, 0.5, 0.12, 0.35), emissive: LinearRgba::rgb(2.0, 0.8, 0.2), unlit: true, alpha_mode: AlphaMode::Blend, ..default() });
+            let g = commands.spawn((Glow, Mesh3d(glow_mesh), MeshMaterial3d(glow_mat), glow_tr)).id();
+            vis.glows.insert(f.id, g);
         }
     }
 
-    // The puffs: the sprays' first few, along the aim, flickering.
-    let mut shown = vec![false; vis.puffs.len()];
-    for (si, s) in news.sprays.iter().take(MAX_SPRAYS).enumerate() {
+    // The jets: the snapshot's sprays, and this process's own from its local aim.
+    let local = match client.last {
+        Some(SprayAsk::Aim { eye, dir }) if client.on => Some(SprayNew { eye, dir }),
+        _ => None,
+    };
+    let sprays = jet_sprays(snapshot, local);
+    let half = SPRAY_HALF_ANGLE_DEG.to_radians();
+    let mut shown = vec![false; vis.jets.len()];
+    for (si, s) in sprays.iter().take(MAX_SPRAYS).enumerate() {
         let (eye, dir) = (DVec3::from_array(s.eye), DVec3::from_array(s.dir).normalize_or_zero());
-        for j in 0..PUFFS {
-            let i = si * PUFFS + j;
-            let d = 0.8 + j as f64 * 0.9 + 0.1 * (t * 11.0 + j as f64).sin();
-            shown[i] = true;
-            if let Ok((mut tr, mut v)) = puffs.get_mut(vis.puffs[i]) {
-                tr.translation = to_render(eye + dir * d);
+        if dir == DVec3::ZERO {
+            continue;
+        }
+        let up = area.ground(&planet, area_of(&frame, &planet, eye), 0.0).map_or(DVec3::Z, |g| g.1);
+        let nozzle = nozzle_of(eye, dir, up);
+        let end = landing_of(area, &planet, s, fires).unwrap_or(eye + dir * SPRAY_REACH);
+        for i in 0..JET_PARTICLES {
+            let idx = si * JET_PARTICLES + i;
+            let phase = jet_phase(t, i);
+            let p = jet_point(nozzle, end, half, phase, jet_spin(i));
+            if let Ok((mut tr, mut v)) = jets.get_mut(vis.jets[idx]) {
+                tr.translation = to_render(p);
+                tr.scale = Vec3::splat((0.03 + 0.05 * phase) as f32);
                 *v = Visibility::Inherited;
+                shown[idx] = true;
             }
         }
     }
-    for (i, e) in vis.puffs.iter().enumerate() {
+    for (i, e) in vis.jets.iter().enumerate() {
         if !shown[i]
-            && let Ok((_, mut v)) = puffs.get_mut(*e)
+            && let Ok((_, mut v)) = jets.get_mut(*e)
         {
             *v = Visibility::Hidden;
         }

@@ -3,20 +3,26 @@
 //! goes Warn, then Danger; Reset reactor brings it back calm; Load drop on Auto overshoots above
 //! the optimal band for several seconds. Then Reset again and a second Load drop; the operator
 //! takes over at the readout on the engine room's wall (MAN) and lowers fission by clicks until
-//! the temperature is back in the optimal band. Without a window; the walker is set down at each
-//! screen (test setup) and uses it with F, the clicks go through the displays.
+//! the temperature is back in the optimal band. Then (#297, S3c): SCRAM at the readout cuts the
+//! output and the machines' screens show NO POWER; POWER on brings it back; the pump's switch OFF
+//! lets the temperature climb; the junction box's LIGHTS breaker takes 50 kW off the load. There is
+//! no automatic shutdown. Without a window; the walker is set down at each screen (test setup) and
+//! uses it with F, the clicks go through the displays.
 use super::*;
 use crate::dev_area::engine_room::{ShipAlarm, ROOM};
 use crate::dev_area::reactor::{ReactorCounts, ReactorSim};
-use crate::dev_area::reactor_screen::{FAULTS_ID, READOUT_ID};
+use crate::dev_area::engine_room::{COOLANT_PUMP_AT, JUNCTION_BOX_AT};
+use crate::dev_area::reactor_screen::{DOOR_ID, FAULTS_ID, JUNCTION_ID, PUMP_ID, READOUT_ID};
 use crate::dev_area::{DevArea, LAB};
+use super::{ship_frame_of, with_player};
 use super::dev_area::tap_until;
-use crate::displays::{aim_at, world_point_of, ActiveDisplay, DisplayPanel};
+use crate::displays::{aim_at, world_point_of, ActiveDisplay, DisplayPanel, Panels};
 use crate::interact::Interaction;
 use crate::items::Items;
 use bevy::math::DVec3;
 use display_core::PanelId;
 use item_core::wire::Alarm;
+use reactor_core::Group;
 
 /// The display entity with this panel id.
 fn display(w: &mut World, id: PanelId) -> DisplayPanel {
@@ -34,6 +40,11 @@ fn sim(w: &World) -> &ReactorSim {
 
 fn counts(w: &World) -> ReactorCounts {
     *w.resource::<ReactorCounts>()
+}
+
+/// Whether a screen shows a control with this action (a screen with NO POWER shows none).
+fn screen_has(w: &World, id: PanelId, action: &str) -> bool {
+    w.resource::<Panels>().get(&id).is_some_and(|p| p.find(action).is_some())
 }
 
 fn alarm(w: &World) -> Alarm {
@@ -65,6 +76,20 @@ fn click_step(id: PanelId, action: &'static str, wait: f64) -> Step {
     })
 }
 
+/// Looks at a point up or down as well as across (`face_towards` keeps the view level): the
+/// screens low on a machine are seen from above.
+fn pitch_towards(w: &mut World, target: DVec3) {
+    let f = ship_frame_of(w);
+    with_player(w, |p| {
+        let up = p.world_up(f);
+        let eye = p.world_pos(f) + up * crate::walker::EYE_HEIGHT;
+        let d = target - eye;
+        let v = d.dot(up);
+        let h = (d - up * v).length();
+        p.pitch = v.atan2(h);
+    });
+}
+
 /// Stand the walker at a point on the ground (test setup) facing a display, then use it with F.
 fn use_display(s: &mut Vec<Step>, name: &'static str, id: PanelId, stand: [f64; 2]) {
     s.push(Box::new(move |w, c| {
@@ -82,6 +107,7 @@ fn use_display(s: &mut Vec<Step>, name: &'static str, id: PanelId, stand: [f64; 
         place_walker(w, at);
         let target = display(w, id.clone()).centre;
         face_towards(w, target);
+        pitch_towards(w, target);
         true
     }));
     s.push(Box::new(move |w, c| {
@@ -118,7 +144,7 @@ fn settle(secs: f64, what: &'static str) -> Step {
         let (t, band) = temp_now(w);
         let k = counts(w);
         check(c, alarm(w) == Alarm::None && t > band[0] && t < band[1], format!("{what}: calm, temperature {t:.1} in {band:?}, alarm {:?}", alarm(w)));
-        check(c, k.shutdowns == 0 && k.meltdowns == 0, format!("{what}: no shutdown or meltdown ({k:?})"));
+        check(c, k.meltdowns == 0, format!("{what}: no meltdown ({k:?})"));
         end(w, c, format!("{t:.1}"));
         true
     })
@@ -138,7 +164,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         let k = counts(w);
         check(c, !sim(w).manual && sim(w).room.reactor().power_on(), "reactor: on Auto with the power on".into());
         check(c, t > band[0] && t < band[1], format!("reactor: the temperature {t:.1} is in the optimal band {band:?}"));
-        check(c, alarm(w) == Alarm::None && k.fires == 0 && k.shutdowns == 0 && k.meltdowns == 0, format!("reactor: calm ({k:?}, alarm {:?})", alarm(w)));
+        check(c, alarm(w) == Alarm::None && k.fires == 0 && k.meltdowns == 0, format!("reactor: calm ({k:?}, alarm {:?})", alarm(w)));
         check(c, w.resource::<Items>().reactor.is_some(), "reactor: the snapshot is there".into());
         end(w, c, format!("{t:.1}"));
         true
@@ -193,7 +219,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         }
         let above = c.v.get("above").copied().unwrap_or(0.0);
         check(c, above >= 5.0, format!("reactor: above the optimal band {above:.1} s after the Load drop (Auto)"));
-        check(c, counts(w).shutdowns == 0, "reactor: the Load drop does not shut the reactor down".into());
+        check(c, counts(w).meltdowns == 0, "reactor: the Load drop does not melt the reactor".into());
         end(w, c, format!("{above:.1} s above"));
         true
     }));
@@ -219,50 +245,136 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         false
     }));
 
-    // The readout on the engine room's wall: MAN, then fission down by clicks until it is back.
-    use_display(s, "Reactor", READOUT_ID, [ROOM.centre[0] + 3.0, ROOM.centre[1]]);
-    s.push(click_step(READOUT_ID, "mode", 0.3));
-    s.push(Box::new(|w, c| {
-        if c.t == 0.0 {
-            begin(w, c, "reactor: the operator switches to MAN from the readout");
-            return false;
-        }
-        check(c, sim(w).manual, "reactor: the readout's button puts the reactor on manual".into());
-        end(w, c, "manual".into());
-        true
-    }));
-    s.push(Box::new(|w, c| {
-        // Each click lowers fission by 5, 2.5 s apart (the temperature answers in seconds), until
-        // the temperature is 3 degrees under the optimal band's top (or 10 clicks).
-        if c.t == 0.0 {
-            begin(w, c, "reactor: fission lowered from the readout brings the temperature back");
-            c.v.insert("clicks", 0.0);
-            return false;
-        }
-        let (t, band) = temp_now(w);
-        let n = c.v.get("clicks").copied().unwrap_or(0.0);
-        if t < band[1] - 3.0 {
-            end(w, c, format!("{t:.1} after {n:.0} clicks"));
-            return true;
-        }
-        if n >= 10.0 {
-            check(c, false, format!("reactor: still {t:.1} after 10 clicks"));
-            return true;
-        }
-        if c.t >= 2.5 * n {
-            click_now(w, READOUT_ID, "fis_dn");
-            c.v.insert("clicks", n + 1.0);
-        }
-        false
-    }));
+    // The junction box's breakers. The Load drop above switched ENGINES and LIGHTS off, so: LIGHTS on
+    // (+50 kW), LIGHTS off (-50 kW), ENGINES on (+350 kW). The load is the grid's request.
+    use_display(s, "JUNCTION BOX", JUNCTION_ID, [JUNCTION_BOX_AT[0], JUNCTION_BOX_AT[1] + 2.0]);
+    s.push(click_until(JUNCTION_ID, "br_lights", None, "reactor: the LIGHTS breaker on takes 50 kW onto the load", |w| sim(w).room.grid().breaker(Group::Lights)));
+    s.push(load_step("reactor: LIGHTS on: load 150 kW", 150.0));
+    s.push(click_until(JUNCTION_ID, "br_lights", None, "reactor: the LIGHTS breaker off takes 50 kW off the load", |w| !sim(w).room.grid().breaker(Group::Lights)));
+    s.push(load_step("reactor: LIGHTS off: load 100 kW", 100.0));
+    s.push(click_until(JUNCTION_ID, "br_engines", None, "reactor: the ENGINES breaker on takes 350 kW onto the load", |w| sim(w).room.grid().breaker(Group::Engines)));
+    s.push(load_step("reactor: ENGINES on: load 450 kW", 450.0));
+
+    // The readout on the engine room's wall: MAN, then the fission slider to 30 %.
+    use_display(s, "REACTOR", READOUT_ID, [ROOM.centre[0] + 3.0, ROOM.centre[1]]);
+    s.push(click_until(READOUT_ID, "mode", None, "reactor: the operator switches to MAN from the readout", |w| sim(w).manual));
+    s.push(click_until(READOUT_ID, "fis_set", Some(0.3), "reactor: fission set to 30 % on the slider brings the temperature back", |w| (sim(w).fission - 30.0).abs() < 1.0));
     s.push(Box::new(|w, c| {
         if c.t < 15.0 {
             return false;
         }
         let (t, band) = temp_now(w);
         check(c, t < band[1] && t > band[0] - 10.0, format!("reactor: the temperature {t:.1} is back under the optimal band's top {:.0} after 15 s on MAN", band[1]));
-        check(c, sim(w).manual && counts(w).shutdowns == 0, "reactor: on MAN with no shutdown".into());
+        check(c, sim(w).manual && counts(w).meltdowns == 0, "reactor: on MAN, no meltdown".into());
         end(w, c, format!("{t:.1}"));
         true
     }));
+
+    // SCRAM at the readout: fission and the power off at once, the output 0, the machines dark.
+    s.push(click_until(READOUT_ID, "scram", None, "reactor: SCRAM from the readout cuts the output and the power", |w| !sim(w).room.reactor().power_on()));
+    s.push(Box::new(|w, c| {
+        if c.t < 3.0 {
+            return false;
+        }
+        let r = sim(w).room.reactor();
+        let (power, output, fission) = (r.power_on(), r.output_kw(), r.fission());
+        let powered = w.resource::<Items>().reactor.is_some_and(|n| n.powered);
+        check(c, !power && output == 0.0 && fission == 0.0, format!("reactor: SCRAM: power {power}, output {output:.1}, fission {fission:.1}"));
+        check(c, !powered, "reactor: the machines have no power after SCRAM".into());
+        check(c, !screen_has(w, PUMP_ID, "pump") && !screen_has(w, JUNCTION_ID, "br_lights") && !screen_has(w, DOOR_ID, "br_lights"), "reactor: the pump, junction and door screens show NO POWER".into());
+        check(c, screen_has(w, READOUT_ID, "power") && screen_has(w, READOUT_ID, "scram"), "reactor: the readout still has POWER".into());
+        end(w, c, "scrammed".into());
+        true
+    }));
+
+    // POWER on at the readout: the reactor runs again, the machines have power.
+    s.push(click_until(READOUT_ID, "power", None, "reactor: POWER on at the readout brings the reactor back", |w| sim(w).room.reactor().power_on()));
+    s.push(Box::new(|w, c| {
+        if c.t < 30.0 {
+            return false;
+        }
+        let r = sim(w).room.reactor();
+        let (power, output) = (r.power_on(), r.output_kw());
+        let powered = w.resource::<Items>().reactor.is_some_and(|n| n.powered);
+        check(c, power && output > 100.0 && powered, format!("reactor: back on: power {power}, output {output:.1}, powered {powered}"));
+        check(c, screen_has(w, PUMP_ID, "pump") && screen_has(w, DOOR_ID, "br_lights"), "reactor: the screens have their controls again".into());
+        end(w, c, format!("{output:.0} kW"));
+        true
+    }));
+
+    // The coolant pump's switch OFF on its screen: no flow, and the temperature climbs.
+    use_display(s, "COOLANT PUMP", PUMP_ID, [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 2.0]);
+    s.push(click_until(PUMP_ID, "pump", None, "reactor: the pump switched off climbs the temperature", |w| !sim(w).room.pump().on()));
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            c.v.insert("t0", temp_now(w).0);
+            return false;
+        }
+        if c.t < 20.0 {
+            return false;
+        }
+        let (t, _) = temp_now(w);
+        let t0 = c.v.get("t0").copied().unwrap_or(t);
+        let flow = w.resource::<Items>().reactor.map(|n| (n.pump_on, n.flow));
+        check(c, flow == Some((false, 0.0)), format!("reactor: pump off, no flow ({flow:?})"));
+        let r = sim(w).room.reactor();
+        check(c, t > t0 + 5.0, format!("reactor: the temperature climbs without the pump: {t0:.1} -> {t:.1} (fission {:.1}, turbine {:.1}, targets {:?}, manual {}, power {}, output {:.1})", r.fission(), r.turbine(), r.targets(), sim(w).manual, r.power_on(), r.output_kw()));
+        end(w, c, format!("{t0:.1} -> {t:.1}"));
+        true
+    }));
+    s.push(click_until(PUMP_ID, "pump", None, "reactor: the pump back on", |w| sim(w).room.pump().on()));
+
+}
+
+/// Checks the grid's load after a breaker change settles, `secs` later.
+fn load_step(what: &'static str, want: f64) -> Step {
+    Box::new(move |w, c| {
+        if c.t == 0.0 {
+            begin(w, c, what);
+            return false;
+        }
+        if c.t < 1.0 {
+            return false;
+        }
+        let load = w.resource::<Items>().reactor.map(|n| n.load_kw).unwrap_or(-1.0);
+        check(c, (load - want).abs() < 1e-6, format!("{what}: load {load:.0} kW"));
+        end(w, c, format!("load {load:.0} kW"));
+        true
+    })
+}
+
+/// Clicks an action until `done` holds, a retry each second, five at most (a click can be lost
+/// to another system taking the press). `frac` aims at that fraction across the widget (a slider).
+fn click_until(id: PanelId, action: &'static str, frac: Option<f64>, what: &'static str, done: fn(&World) -> bool) -> Step {
+    Box::new(move |w, c| {
+        if c.t == 0.0 {
+            begin(w, c, what);
+            c.v.insert("tries", 0.0);
+            return false;
+        }
+        if done(w) {
+            end(w, c, format!("{} tries", c.v.get("tries").copied().unwrap_or(0.0) as u32));
+            return true;
+        }
+        let last = c.v.get("last").copied().unwrap_or(-1.0);
+        if last >= 0.0 && c.t < last + 1.0 {
+            return false;
+        }
+        let tries = c.v.get("tries").copied().unwrap_or(0.0);
+        if tries >= 5.0 {
+            check(c, false, format!("{what}: not done after 5 clicks"));
+            return true;
+        }
+        let d = display(w, id.clone());
+        let Some(at) = world_point_of(w, &d, action, frac) else {
+            let n = w.resource::<Items>().reactor;
+            check(c, false, format!("{what}: no widget '{action}' (snapshot {n:?})"));
+            return true;
+        };
+        aim_at(w, at);
+        w.resource_mut::<Controls>().click = true;
+        c.v.insert("tries", tries + 1.0);
+        c.v.insert("last", c.t);
+        false
+    })
 }

@@ -24,6 +24,7 @@ use crate::origin::WorldPos;
 use crate::Layer;
 use fire_core::{Deck, FireTuning, GapId, RoomId};
 use reactor_core::Source;
+use display_core::PanelId;
 use item_core::wire::{Alarm, RoomAsk, RoomNews};
 
 /// The room's interior and the corridor's, as zones (area metres).
@@ -59,6 +60,29 @@ pub const REACTOR_SCREEN_SIZE: [f64; 3] = [0.06, 1.2, 1.6];
 pub const REACTOR_SCREEN_LIFT: f64 = 0.9;
 /// The readout's size on the wall (m): the M screen's 1.6 : 1 aspect.
 pub const READOUT_SIZE: [f64; 2] = [1.6, 1.0];
+/// The S screens' size (m): the 4 : 3 canvas.
+pub const SMALL_SCREEN_SIZE: [f64; 2] = [0.48, 0.36];
+
+/// A screen standing on a machine or a wall: its panel, the area point it stands at, the height
+/// of its bottom (m), its size (m, width and height) and its turn (degrees, 0 south, counter-
+/// clockwise, so it faces where the walker comes from).
+pub struct Mount {
+    pub id: PanelId,
+    pub name: &'static str,
+    pub at: [f64; 2],
+    pub lift: f64,
+    pub size: [f64; 2],
+    pub turn: f64,
+}
+
+/// The coolant pump's screen on its north face (the walker's side), the junction box's on the
+/// south wall above the box, and the door's in the corridor on the east wall by the doorway, at
+/// eye height.
+pub const SCREENS: [Mount; 3] = [
+    Mount { id: reactor_screen::PUMP_ID, name: reactor_screen::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: reactor_screen::JUNCTION_ID, name: reactor_screen::JUNCTION_NAME, at: [JUNCTION_BOX_AT[0], -18.98], lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: reactor_screen::DOOR_ID, name: reactor_screen::DOOR_NAME, at: [-12.98, -10.0], lift: 1.3, size: SMALL_SCREEN_SIZE, turn: -90.0 },
+];
 
 /// The device ids of the parts (`DevBox::id`).
 pub const DOOR: &str = "engine_door";
@@ -225,9 +249,11 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, (room_state.after(crate::items_net::items_net_in), room_step).chain().in_set(crate::phases::Fx::Input));
 }
 
-/// Window only: the lights of the room and the corridor, and the alarm's pulse.
+/// Window only: the lights of the room and the corridor (on when the lights breaker is on and the
+/// machines have power, else dark; the red alarm lights stay on emergency power), and the alarm's
+/// pulse.
 pub fn window_plugin(app: &mut App) {
-    app.add_systems(Update, (spawn_lights, alarm_lights).after(super::spawn_devices).in_set(crate::phases::Frame::World));
+    app.add_systems(Update, (spawn_lights, (room_lights, alarm_lights).after(spawn_lights)).after(super::spawn_devices).in_set(crate::phases::Frame::World));
 }
 
 /// The state of the room: the requests (host and one process apply them, a client sends them),
@@ -317,6 +343,14 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
     let centre = ground + up * (REACTOR_SCREEN_LIFT + READOUT_SIZE[1] * 0.5);
     let e = commands.spawn(DisplayPanel { id: reactor_screen::READOUT_ID, name: reactor_screen::READOUT_NAME.into(), size_m: DVec2::from(READOUT_SIZE), centre, rot }).id();
     area.entities.push(e);
+    // The machines' screens (S tier), each on its mount.
+    for m in &SCREENS {
+        let (ground, up) = frame.ground(&planet, m.at[0], m.at[1], 0.0);
+        let rot = frame.rotation(up, m.turn);
+        let centre = ground + up * (m.lift + m.size[1] * 0.5);
+        let e = commands.spawn(DisplayPanel { id: m.id.clone(), name: m.name.into(), size_m: DVec2::from(m.size), centre, rot }).id();
+        area.entities.push(e);
+    }
     // The door: a kinematic slab in the room's side of the north wall, slid as the host says.
     let d = DOOR_SIZE;
     let (ground, up) = frame.ground(&planet, DOOR_AT[0], DOOR_AT[1], 0.0);
@@ -366,6 +400,16 @@ fn spawn_lights(mut commands: Commands, planet: Res<PlanetRes>, area: Res<DevAre
                 .spawn((PointLight { color: colour, intensity, range: 12.0, shadow_maps_enabled: false, ..default() }, Transform::default(), WorldPos(at(p, h)), RoomLight { alarm }))
                 .id(),
         );
+    }
+}
+
+/// Window: the room's white lights follow the lights breaker and the power (the snapshot).
+fn room_lights(items: Res<Items>, mut lights: Query<(&RoomLight, &mut PointLight)>) {
+    let on = items.reactor.is_some_and(|r| r.powered && r.breakers[item_core::wire::BreakerGroup::Lights.index()]);
+    for (l, mut light) in &mut lights {
+        if !l.alarm {
+            light.intensity = if on { 60_000.0 } else { 0.0 };
+        }
     }
 }
 

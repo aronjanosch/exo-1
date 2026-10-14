@@ -511,6 +511,17 @@ impl Panel {
     pub fn find(&self, action: &str) -> Option<Placed<'_>> {
         self.layout().into_iter().find(|w| w.widget.action_id() == Some(action))
     }
+
+    /// What does not fit: every leaf widget whose rectangle is not inside the content area, named by
+    /// its action (or "label" for a widget without one). Empty when everything fits.
+    pub fn overflowing(&self) -> Vec<String> {
+        let c = self.content();
+        self.layout()
+            .into_iter()
+            .filter(|w| !(w.rect.min.cmpge(c.min).all() && w.rect.max().cmple(c.max()).all()))
+            .map(|w| w.widget.action_id().unwrap_or("label").to_string())
+            .collect()
+    }
 }
 
 fn place<'a>(w: &'a Widget, r: Rect, out: &mut Vec<Placed<'a>>) {

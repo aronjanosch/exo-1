@@ -2530,6 +2530,7 @@ name = "device_core"
 version = "0.1.0"
 dependencies = [
  "gameplay_core",
+ "serde",
 ]
 
 [[package]]
@@ -2739,6 +2740,7 @@ dependencies = [
  "net_core",
  "planet_core",
  "production_core",
+ "reactor_core",
  "serde_json",
  "walker_core",
  "warp_core",
@@ -5006,8 +5008,10 @@ dependencies = [
 name = "reactor_core"
 version = "0.1.0"
 dependencies = [
+ "content_core",
  "device_core",
  "gameplay_core",
+ "serde",
 ]
 
 [[package]]

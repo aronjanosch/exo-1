@@ -25,7 +25,7 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use grab_core::CrateSize;
 use item_core::container::Stack;
-use item_core::wire::{RoomAsk, RoomNews, Vitals};
+use item_core::wire::{ReactorAsk, ReactorNews, RoomAsk, RoomNews, Vitals};
 use item_core::{Action, Client, Event, FrameRef, Host, ItemDefs, LooseId, Placement, PlayerId, Reject, Request};
 use walker_core::Frame;
 
@@ -88,6 +88,10 @@ pub enum NetOut {
     Room { to: Option<PlayerId>, r: RoomNews },
     /// Client to host: a request about the engine room (#296).
     Ask(RoomAsk),
+    /// Host to one player (`to` Some) or all: the reactor's snapshot (#297).
+    Reactor { to: Option<PlayerId>, r: ReactorNews },
+    /// Client to host: a request about the reactor (#297).
+    ReactorAsk(ReactorAsk),
 }
 
 #[derive(Resource)]
@@ -114,6 +118,11 @@ pub struct Items {
     pub room: RoomNews,
     /// Requests about the engine room, to apply here (host and one process) or to send (client).
     pub room_asks: Vec<RoomAsk>,
+    /// The reactor's snapshot as this process has it: the host sets it, a client takes it from
+    /// the wire (#297). None until the first one.
+    pub reactor: Option<ReactorNews>,
+    /// Requests about the reactor, as `room_asks` (#297).
+    pub reactor_asks: Vec<ReactorAsk>,
 }
 
 /// Whether the host can simulate an action's placement: a cabin is the host's ship. (Other
@@ -128,7 +137,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new() }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new() }
     }
 
     /// The local player's slot.
@@ -177,6 +186,11 @@ impl Items {
     /// A request about the engine room (#296): applied on the host, sent from a client.
     pub fn ask_room(&mut self, a: RoomAsk) {
         self.room_asks.push(a);
+    }
+
+    /// A request about the reactor (#297): applied on the host, sent from a client.
+    pub fn ask_reactor(&mut self, a: ReactorAsk) {
+        self.reactor_asks.push(a);
     }
 
     /// The host sends a player its vitals (#295), over the reliable channel.

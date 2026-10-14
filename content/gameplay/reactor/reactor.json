@@ -1,0 +1,68 @@
+{
+  "_comment": "Engine room (#297). Every number is a starting value, TODO(initiator). reactor: the reactor (fission and turbine 0..100, output kW). auto_turbine_speed and auto_fission_speed are the Auto controller's target change per second: the turbine follows the load faster than fission is cut, so a load drop overshoots. room: the coolant pump and the junction box use the device values (device_core: max, repair_threshold, broken_below, factor_at_broken, fix times in s, required_skill, fail_chance, fail_cost, fail_lockout_s, wear_rate, wear_floor, wear_delay_s as a [from, to] range, idle_wear, overload_wear). grid: demand kW at full work, priority (higher is served first) and min_ratio (0..1, the share below which the group switches off).",
+  "start_rods": 2,
+  "reactor": {
+    "max_output_kw": 1000.0,
+    "slots": 4,
+    "fuel_burn": 0.2,
+    "temp_rate": 10.0,
+    "fire_delay_s": 20.0,
+    "shutdown_delay_s": 30.0,
+    "meltdown_delay_s": 120.0,
+    "restart_lockout_s": 15.0,
+    "auto_turbine_speed": 4.0,
+    "auto_fission_speed": 0.5,
+    "fire_size": 0.1,
+    "alarm_hysteresis": 3.0,
+    "fuel_low": 20.0,
+    "cooling_max": 40.0
+  },
+  "room": {
+    "heat_wear_degrees": 10.0,
+    "pump": {
+      "max": 100.0,
+      "repair_threshold": 50.0,
+      "broken_below": 20.0,
+      "factor_at_broken": 0.5,
+      "fix_slow_s": 25.0,
+      "fix_fast_s": 5.0,
+      "required_skill": 50.0,
+      "fail_chance": 0.3,
+      "fail_cost": 5.0,
+      "fail_lockout_s": 2.0,
+      "wear_rate": 0.125,
+      "wear_floor": 10.0,
+      "wear_delay_s": [120.0, 720.0],
+      "idle_wear": 0.0,
+      "overload_wear": 4.0
+    },
+    "junction": {
+      "max": 100.0,
+      "repair_threshold": 50.0,
+      "broken_below": 20.0,
+      "factor_at_broken": 0.5,
+      "fix_slow_s": 25.0,
+      "fix_fast_s": 5.0,
+      "required_skill": 50.0,
+      "fail_chance": 0.3,
+      "fail_cost": 5.0,
+      "fail_lockout_s": 2.0,
+      "wear_rate": 0.125,
+      "wear_floor": 10.0,
+      "wear_delay_s": [120.0, 720.0],
+      "idle_wear": 0.0,
+      "overload_wear": 4.0
+    },
+    "overvolt_ratio": 2.0,
+    "overvolt_damage_s": 2.0,
+    "sparks_per_s": 0.1,
+    "spark_fire_chance": 0.2,
+    "spark_fire_size": 0.05,
+    "surge_damage": 30.0
+  },
+  "grid": {
+    "engines": { "demand_kw": 350.0, "priority": 2, "min_ratio": 0.5 },
+    "life_support": { "demand_kw": 100.0, "priority": 3, "min_ratio": 0.3 },
+    "lights": { "demand_kw": 50.0, "priority": 1, "min_ratio": 0.3 }
+  }
+}

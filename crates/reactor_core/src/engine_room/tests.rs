@@ -73,19 +73,20 @@ fn settle_then_drop(r: &mut EngineRoom) {
 }
 
 #[test]
-fn auto_follows_a_load_drop_with_a_small_overshoot() {
-    // TODO(initiator): the brief expects Auto to overshoot above the optimal band for a while
-    // after a LoadDrop. With the gains here (fission and turbine both 2 per second, heat 1.6 per
-    // fission unit at two rods) Auto keeps up: the peak stays just above its dead band. Gains or
-    // the brief need a decision before this becomes the overshoot test.
+fn auto_overshoots_after_a_load_drop() {
+    // The controller follows the turbine fast and cuts fission slowly, so after a sudden drop
+    // the temperature climbs above the optimal band for several seconds before it turns back.
+    // No fire: the fire timer needs 20 s above the band.
     let mut r = room();
     settle_then_drop(&mut r);
-    let (ev, temps) = run(&mut r, 120.0, Input::auto());
+    let (ev, temps) = run(&mut r, 150.0, Input::auto());
+    let hi = r.reactor().bands().temp_optimal.hi;
     let peak = temps.iter().cloned().fold(f64::MIN, f64::max);
-    let high = first(&ev, alarm_on(AlarmKind::TempHigh));
-    println!("auto after LoadDrop: peak {peak:.2}, first TempHigh {high:?}, output {:.1} kW", r.reactor().output_kw());
-    assert!(peak < r.reactor().bands().temp_optimal.hi, "peak {peak}");
-    assert!(peak > r.reactor().bands().temp_optimal.mid(), "the drop should push the temperature up: {peak}");
+    let above = temps.iter().filter(|&&t| t > hi).count() as f64 * DT;
+    println!("auto after LoadDrop: peak {peak:.1}, above {hi:.0} for {above:.1} s, output {:.1} kW", r.reactor().output_kw());
+    assert!(above >= 5.0, "above the optimal band for {above:.1} s");
+    assert!(peak < r.reactor().bands().temp_allowed.hi, "the overshoot stays short of the allowed band: {peak}");
+    assert!(!ev.iter().any(|(_, e)| *e == RoomEvent::Reactor(ReactorEvent::Shutdown)));
 }
 
 #[test]
@@ -98,6 +99,7 @@ fn manual_with_a_good_input_avoids_the_overshoot() {
     let peak = temps.iter().cloned().fold(f64::MIN, f64::max);
     println!("manual after LoadDrop: peak {peak:.1}, output {:.1} kW", r.reactor().output_kw());
     assert!(peak < r.reactor().bands().temp_optimal.hi, "manual peak {peak}");
+    assert!(temps.iter().all(|&t| t < r.reactor().bands().temp_optimal.hi), "manual stays inside the optimal band");
 }
 
 #[test]

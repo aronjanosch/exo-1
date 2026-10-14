@@ -1,0 +1,98 @@
+//! The engine room's values, from `content/gameplay/reactor/reactor.json` (strict loader: unknown
+//! fields and wrong types are errors, errors name the file and the field).
+use content_core::{parse_strict, File};
+use serde::{Deserialize, Serialize};
+
+use crate::engine_room::RoomTuning;
+use crate::grid::GridTuning;
+use crate::reactor::ReactorTuning;
+
+/// The file's path under `content/gameplay/`.
+pub const REACTOR_PATH: &str = "reactor/reactor.json";
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Tuning {
+    /// Fuel rods in the room at the start and after a reset.
+    pub start_rods: usize,
+    pub reactor: ReactorTuning,
+    pub room: RoomTuning,
+    pub grid: GridTuning,
+}
+
+impl Default for Tuning {
+    fn default() -> Tuning {
+        Tuning { start_rods: 2, reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default() }
+    }
+}
+
+impl Tuning {
+    /// Parses and checks `reactor/reactor.json` from `files`. Every error names the field.
+    pub fn load(files: &[File]) -> Result<Tuning, Vec<String>> {
+        let Some(f) = files.iter().find(|f| f.path == REACTOR_PATH) else { return Err(vec![format!("{REACTOR_PATH}: missing")]) };
+        Tuning::parse(&f.text)
+    }
+
+    /// Parses and checks the file's text.
+    pub fn parse(text: &str) -> Result<Tuning, Vec<String>> {
+        let t = parse_strict::<Tuning>(REACTOR_PATH, text).map_err(|m| vec![m])?;
+        let mut e = Vec::new();
+        t.check(&mut e);
+        if e.is_empty() { Ok(t) } else { Err(e) }
+    }
+
+    fn check(&self, e: &mut Vec<String>) {
+        let mut need = |ok: bool, field: &str, rule: &str| {
+            if !ok {
+                e.push(format!("{REACTOR_PATH}: {field}: {rule}"));
+            }
+        };
+        let r = &self.reactor;
+        need(r.slots >= 1, "reactor.slots", "must be at least 1");
+        need(self.start_rods <= r.slots, "start_rods", "must fit in reactor.slots");
+        need(r.max_output_kw > 0.0, "reactor.max_output_kw", "must be > 0");
+        need(r.fuel_burn >= 0.0 && r.temp_rate > 0.0, "reactor.temp_rate", "must be > 0, fuel_burn >= 0");
+        need(r.fire_delay_s > 0.0 && r.shutdown_delay_s > 0.0 && r.meltdown_delay_s > 0.0, "reactor.*_delay_s", "must be > 0");
+        need(r.restart_lockout_s >= 0.0, "reactor.restart_lockout_s", "must be >= 0");
+        need(r.auto_turbine_speed > 0.0 && r.auto_fission_speed > 0.0, "reactor.auto_*_speed", "must be > 0");
+        need(r.alarm_hysteresis >= 0.0 && (0.0..=100.0).contains(&r.fuel_low), "reactor.fuel_low", "must be 0..100");
+        for (name, d) in [("room.pump", &self.room.pump), ("room.junction", &self.room.junction)] {
+            need(d.max > 0.0 && d.broken_below >= 0.0 && d.broken_below < d.repair_threshold && d.repair_threshold <= d.max, name, "must be 0 <= broken_below < repair_threshold <= max");
+            need((0.0..=1.0).contains(&d.fail_chance), &format!("{name}.fail_chance"), "must be 0..1");
+        }
+        need(self.room.overvolt_ratio > 0.0, "room.overvolt_ratio", "must be > 0");
+        need((0.0..=1.0).contains(&self.room.spark_fire_chance), "room.spark_fire_chance", "must be 0..1");
+        for g in crate::grid::Group::ALL {
+            let s = self.grid.group(g);
+            let name = format!("grid.{g:?}");
+            need(s.demand_kw >= 0.0, &format!("{name}.demand_kw"), "must be >= 0");
+            need((0.0..=1.0).contains(&s.min_ratio), &format!("{name}.min_ratio"), "must be 0..1");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The shipped file parses and checks, and holds the defaults.
+    #[test]
+    fn the_shipped_file_loads_and_is_the_default() {
+        let text = include_str!("../../../content/gameplay/reactor/reactor.json");
+        let t = Tuning::parse(text).unwrap_or_else(|e| panic!("{e:#?}"));
+        assert_eq!(t, Tuning::default());
+    }
+
+    #[test]
+    fn unknown_fields_and_bad_values_are_named() {
+        let good = include_str!("../../../content/gameplay/reactor/reactor.json");
+        let typo = good.replacen("\"start_rods\"", "\"start_rod\"", 1);
+        let e = Tuning::parse(&typo).unwrap_err();
+        assert!(e[0].contains(REACTOR_PATH) && e[0].contains("start_rod"), "{e:?}");
+        let bad = good.replacen("\"max_output_kw\": 1000.0", "\"max_output_kw\": 0.0", 1);
+        let e = Tuning::parse(&bad).unwrap_err();
+        assert!(e.iter().any(|m| m.contains("reactor.max_output_kw")), "{e:?}");
+        let missing = Tuning::load(&[]).unwrap_err();
+        assert!(missing[0].contains("missing"));
+    }
+}

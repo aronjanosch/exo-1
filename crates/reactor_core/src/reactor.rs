@@ -9,6 +9,7 @@
 //! condition makes both timers run up to twice as fast.
 use device_core::{Condition, DeviceEvent, DeviceTuning};
 use gameplay_core::notice::{Notice, NoticeKind};
+use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 mod tests;
@@ -16,7 +17,8 @@ mod tests;
 /// Reactor values. TODO(initiator): starting values. Delays, burn rate, temperature rate and
 /// controller speed follow the original; the output, the shutdown delay, the lockout, the alarm
 /// lines and the fire size are guesses.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReactorTuning {
     /// Output at full turbine and temperature, kW.
     pub max_output_kw: f64,
@@ -34,8 +36,11 @@ pub struct ReactorTuning {
     pub meltdown_delay_s: f64,
     /// Seconds after a safety shutdown before the reactor can be started again.
     pub restart_lockout_s: f64,
-    /// Target change per second of the automatic controller.
-    pub auto_speed: f64,
+    /// Turbine target change per second of the automatic controller (it follows the load).
+    pub auto_turbine_speed: f64,
+    /// Fission target change per second of the automatic controller. Slower than the turbine, so
+    /// after a load drop the temperature climbs before fission catches up.
+    pub auto_fission_speed: f64,
     /// Size of a fire the reactor starts, metres (`fire_core`).
     pub fire_size: f64,
     /// Temperature alarms switch off this far below their line.
@@ -58,7 +63,8 @@ impl Default for ReactorTuning {
             shutdown_delay_s: 30.0,
             meltdown_delay_s: 120.0,
             restart_lockout_s: 15.0,
-            auto_speed: 2.0,
+            auto_turbine_speed: 4.0,
+            auto_fission_speed: 0.5,
             fire_size: 0.1,
             alarm_hysteresis: 3.0,
             fuel_low: 20.0,
@@ -453,9 +459,13 @@ impl Reactor {
     ///
     /// Changed from the original, which also pulls fission towards the middle of its fission band
     /// and so settles at the lowest temperature that covers the load, often below the green zone.
+    /// The turbine follows the load faster than fission is cut, so a load drop overshoots above
+    /// the optimal band for some seconds (`auto_overshoots_after_a_load_drop`); a manual operator
+    /// who sets both at once does not.
     fn auto(&mut self, dt: f64, b: &Bands, load_kw: f64) {
-        let s = self.tuning.auto_speed;
-        self.target_turbine += (b.turbine_optimal.mid() - self.target_turbine).clamp(-s, s) * dt;
+        let st = self.tuning.auto_turbine_speed;
+        let s = self.tuning.auto_fission_speed;
+        self.target_turbine += (b.turbine_optimal.mid() - self.target_turbine).clamp(-st, st) * dt;
         self.target_turbine = self.target_turbine.clamp(0.0, 100.0);
         let mid = b.temp_optimal.mid();
         if self.temp > mid + AUTO_DEAD_BAND {

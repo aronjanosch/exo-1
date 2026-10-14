@@ -291,3 +291,28 @@ fn the_shipped_theme_parses_and_bad_ones_are_refused() {
     let unknown = src.replacen("\"source\"", "\"surprise\": 1, \"source\"", 1);
     assert!(Theme::from_json(&unknown).is_err());
 }
+
+#[test]
+fn a_panel_that_fits_has_no_overflow() {
+    assert!(console(3, true).overflowing().is_empty(), "{:?}", console(3, true).overflowing());
+}
+
+#[test]
+fn a_row_too_tall_for_the_screen_is_reported_by_its_action() {
+    // Four fixed rows of 150 px in an M screen (400 px high, about 332 of them usable).
+    let rows = (0..4).map(|i| row(0.0, vec![button("x", format!("b{i}"))]).fixed(150.0)).collect();
+    let p = Panel::screen(Tier::M, "T", "T-01", column(0.0, rows));
+    let over = p.overflowing();
+    assert!(!over.is_empty() && over.iter().all(|a| a.starts_with('b')), "{over:?}");
+}
+
+#[test]
+fn every_button_of_a_screen_is_inside_it() {
+    let p = Panel::screen(Tier::S, "T", "T-01", column(6.0, vec![button("A", "a").fixed(36.0), button("B", "b").fixed(36.0), space()]));
+    for w in p.layout() {
+        if w.widget.action().is_some() {
+            assert!(w.rect.min.x >= 0.0 && w.rect.max().x <= p.size.x && w.rect.max().y <= p.size.y, "{:?}", w.rect);
+        }
+    }
+    assert!(p.overflowing().is_empty());
+}

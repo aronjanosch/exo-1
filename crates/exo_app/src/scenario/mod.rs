@@ -32,6 +32,7 @@ mod figure;
 mod flight;
 mod help;
 mod engine_room;
+mod reactor;
 mod health;
 mod hud;
 mod items;
@@ -700,6 +701,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "health" => health::health_steps(&mut s),
         // #296: the engine room: the corridor, the wall, the door, the air, the alarm.
         "engine_room" => engine_room::engine_room_steps(&mut s),
+        "reactor" => reactor::reactor_steps(&mut s),
         // #135: save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),
         // #169: the seat refuses without the licence; the exam; the licence.

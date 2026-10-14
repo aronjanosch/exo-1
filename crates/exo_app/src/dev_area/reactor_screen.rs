@@ -96,19 +96,20 @@ pub fn readout_panel(r: Option<&ReactorNews>) -> Panel {
     )
 }
 
-/// The dev fault screen: the three faults and the reset, one button a row.
+/// The dev fault screen: the three faults, a fire at the reactor and the reset, one button a row.
 pub fn faults_panel() -> Panel {
     Panel::screen(
         Tier::S,
         FAULTS_NAME,
         "DEV-02",
         column(
-            6.0,
+            4.0,
             vec![
-                button("Pump break", "pump_break").fixed(36.0),
-                button("Load drop", "load_drop").fixed(36.0),
-                button("Surge", "surge").fixed(36.0),
-                button("Reset reactor", "reset").fixed(36.0),
+                button("Pump break", "pump_break").fixed(28.0),
+                button("Load drop", "load_drop").fixed(28.0),
+                button("Surge", "surge").fixed(28.0),
+                button("Start fire", "fire").fixed(28.0),
+                button("Reset reactor", "reset").fixed(28.0),
                 space(),
             ],
         ),
@@ -143,6 +144,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "pump_break" => Some(ReactorAsk::Trigger(ReactorFault::PumpBreak)),
                 "load_drop" => Some(ReactorAsk::Trigger(ReactorFault::LoadDrop)),
                 "surge" => Some(ReactorAsk::Trigger(ReactorFault::Surge)),
+                "fire" => Some(ReactorAsk::Trigger(ReactorFault::Fire)),
                 "reset" => Some(ReactorAsk::Reset),
                 _ => None,
             }
@@ -180,5 +182,6 @@ mod tests {
         assert!(matches!(man.find("fis_up").unwrap().widget, display_core::Widget::Button { enabled: true, .. }));
         assert!(man.find("mode").is_some() && man.find("reset").is_none());
         assert!(faults_panel().find("reset").is_some() && faults_panel().find("pump_break").is_some());
+        assert!(faults_panel().overflowing().is_empty() && faults_panel().find("fire").is_some());
     }
 }

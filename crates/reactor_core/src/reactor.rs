@@ -261,6 +261,7 @@ impl Reactor {
     /// it; the temperature falls. Back on is `set_power(true)`, the normal switch.
     pub fn scram(&mut self) {
         self.power_on = false;
+        self.output = 0.0;
         self.fission = 0.0;
         self.target_fission = 0.0;
         self.target_turbine = 0.0;
@@ -387,6 +388,12 @@ impl Reactor {
         }
         let bands = Bands::new(self.skill, self.turbine_for_load, fuel);
 
+        // Off: the targets are zero before the rods and the turbine follow them (a manual setting
+        // the glue sends every step does not bring fission back).
+        if !self.power_on {
+            self.target_fission = 0.0;
+            self.target_turbine = 0.0;
+        }
         let heat = self.fission * (self.fuel / 100.0) * 2.0;
         let cool = t.cooling_max * self.coolant;
         let diff = (heat - self.turbine - cool) - self.temp;
@@ -395,8 +402,7 @@ impl Reactor {
         self.turbine += (self.target_turbine - self.turbine) * k;
 
         if !self.power_on {
-            self.target_fission = 0.0;
-            self.target_turbine = 0.0;
+            // Nothing to control: the targets stay zero.
         } else if self.mode == Mode::Auto {
             self.auto(dt, &bands, load_kw);
         }

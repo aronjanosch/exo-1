@@ -96,6 +96,10 @@ fn scram_drops_fission_and_power_at_once_and_the_temperature_falls() {
     r.step(DT, 500.0);
     assert_eq!(r.output_kw(), 0.0, "output at once");
     let hot = r.temperature();
+    // The glue sends its manual setting every step: with the power off it does not bring fission back.
+    r.set_targets(80.0, 50.0);
+    run(&mut r, 5.0, 500.0);
+    assert!(r.fission() < 1e-6, "fission {}", r.fission());
     run(&mut r, 60.0, 500.0);
     println!("scram at {hot:.1}: 60 s later {:.2}", r.temperature());
     assert!(r.temperature() < hot - 20.0 && r.temperature() < 5.0);

@@ -206,11 +206,24 @@ pub struct SprayNew {
     pub dir: [f64; 3],
 }
 
-/// The fires and the sprays (#298), as the host has them.
+/// A burning cell of the grid model (#300): its room's index, its index in the room's grid, and
+/// its intensity in thousandths (0..=1000).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CellNew {
+    pub room: u32,
+    pub cell: u32,
+    pub heat: u16,
+}
+
+/// The fires and the sprays (#298), as the host has them. In the grid model (#300, `grid`) the
+/// burning cells are in `cells`, and `fires` lists each one as a fire of a cell's width, for the
+/// sprays' aim and the steam; the flames are not drawn then.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct FireNews {
     pub fires: Vec<FireNew>,
     pub sprays: Vec<SprayNew>,
+    pub grid: bool,
+    pub cells: Vec<CellNew>,
 }
 
 /// A part's condition for the repair ring: its share of full condition (0..1) and whether it works.
@@ -410,6 +423,8 @@ mod tests {
         let news = FireNews {
             fires: vec![FireNew { id: 7, pos: [-14.0, -15.25], size: 0.75 }, FireNew { id: 9, pos: [-12.5, -16.0], size: 0.1 }],
             sprays: vec![SprayNew { eye: [1.0, 2.0, 3.0], dir: [0.0, 0.0, -1.0] }],
+            grid: true,
+            cells: vec![CellNew { room: 1, cell: 42, heat: 730 }],
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Fire(news.clone()))).expect("decodes") {
             ToClient::Fire(f) => f,

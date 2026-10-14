@@ -22,7 +22,7 @@
 //! (`auto_compared_with_barotrauma`). Our Auto differs on purpose (see `reactor::Reactor::auto`).
 use std::fmt::Write;
 
-use crate::engine_room::{EngineRoom, Fault, Input, RoomEvent, Source};
+use crate::engine_room::{EngineRoom, Fault, Input, PumpMode, RoomEvent, Source};
 use crate::grid::Group;
 use crate::reactor::{FuelRod, ReactorEvent};
 use crate::tuning::Tuning;
@@ -45,8 +45,10 @@ pub enum Action {
     Power(bool),
     /// SCRAM: fission and power off at once.
     Scram,
-    /// The coolant pump's switch.
+    /// The coolant pump's switch: on is High, off is Off.
     Pump(bool),
+    /// The coolant pump's mode: Off, Low or High.
+    PumpMode(PumpMode),
     Breaker(Group, bool),
     Fault(Fault),
     /// Coolant tank level, %.
@@ -89,6 +91,10 @@ pub struct Row {
     pub flow: f64,
     /// Coolant tank, %.
     pub tank: f64,
+    /// The coolant pump's mode.
+    pub pump_mode: PumpMode,
+    /// The coolant pump's speed, 0..1 (inertia; the flow is this times the stream).
+    pub pump_speed: f64,
     /// Fire timer, 0..1 of its delay.
     pub fire: f64,
     /// Meltdown timer, 0..1 of its delay.
@@ -121,13 +127,13 @@ impl Trace {
         let mut s = String::new();
         let _ = writeln!(
             s,
-            "{:>6} {:>6} {:>6} {:>6} {:>8} {:>7} {:>5} {:>6} {:>5} {:>5} {:>5} {:>6} {:>6} {:>6} {:>5}  {}",
-            "t", "fis", "turb", "temp", "output", "load", "flow", "tank", "fire", "melt", "volt", "junc", "react", "pump", "on", "events"
+            "{:>6} {:>6} {:>6} {:>6} {:>8} {:>7} {:>5} {:>6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>6} {:>6} {:>6} {:>5}  {}",
+            "t", "fis", "turb", "temp", "output", "load", "flow", "tank", "pmode", "pspd", "fire", "melt", "volt", "junc", "react", "pump", "on", "events"
         );
         for r in &self.rows {
             let _ = writeln!(
                 s,
-                "{:>6.1} {:>6.1} {:>6.1} {:>6.1} {:>8.1} {:>7.1} {:>5.2} {:>6.1} {:>5.2} {:>5.2} {:>5.2} {:>6.1} {:>6.1} {:>6.1} {:>5}  {}",
+                "{:>6.1} {:>6.1} {:>6.1} {:>6.1} {:>8.1} {:>7.1} {:>5.2} {:>6.1} {:>5} {:>5.2} {:>5.2} {:>5.2} {:>5.2} {:>6.1} {:>6.1} {:>6.1} {:>5}  {}",
                 r.t,
                 r.fission,
                 r.turbine,
@@ -136,6 +142,8 @@ impl Trace {
                 r.load_kw,
                 r.flow,
                 r.tank,
+                format!("{:?}", r.pump_mode),
+                r.pump_speed,
                 r.fire,
                 r.melt,
                 r.volt,
@@ -188,7 +196,7 @@ pub fn warm_room(tuning: &Tuning, seed: u64) -> EngineRoom {
     room
 }
 
-/// The seven scripts the playtest looks at.
+/// The eight scripts the playtest looks at.
 pub fn scripts() -> Vec<Script> {
     vec![
         Script {
@@ -254,6 +262,17 @@ pub fn scripts() -> Vec<Script> {
                     Action::AfterMeltdown(5.0, Box::new(Action::Power(true))),
                 ),
                 (0.0, Action::AfterMeltdown(5.0, Box::new(Action::Auto))),
+            ],
+        },
+        // The pump in Low at full load: the speed settles at Low, the tank drains slowly.
+        Script {
+            name: "pump_low_full_load",
+            duration_s: 300.0,
+            steps: vec![
+                (0.0, Action::Breaker(Group::Engines, true)),
+                (0.0, Action::Breaker(Group::LifeSupport, true)),
+                (0.0, Action::Breaker(Group::Lights, true)),
+                (10.0, Action::PumpMode(PumpMode::Low)),
             ],
         },
         // The engines' load wanders (a dev stand-in for a helm) and Auto follows it for five minutes.
@@ -365,6 +384,7 @@ impl Runner {
             }
             Action::Scram => room.reactor_mut().scram(),
             Action::Pump(on) => room.set_pump(*on),
+            Action::PumpMode(mode) => room.set_pump_mode(*mode),
             Action::Breaker(g, on) => room.set_breaker(*g, *on),
             Action::Fault(f) => {
                 for e in room.trigger(*f) {
@@ -401,6 +421,8 @@ fn sample(room: &EngineRoom, t: f64, events: Vec<String>) -> Row {
         load_kw: room.grid().request_kw(),
         flow: room.flow(),
         tank: room.pump().tank(),
+        pump_mode: room.pump().mode(),
+        pump_speed: room.pump().speed(),
         fire,
         melt,
         volt: room.voltage(),

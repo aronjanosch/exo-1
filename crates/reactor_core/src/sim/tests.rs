@@ -1,7 +1,7 @@
 //! The harness runs the six scripts, the facts they show today, and the Barotrauma oracle checks.
 use super::barotrauma::Baro;
 use super::*;
-use crate::engine_room::EngineRoom;
+use crate::engine_room::{EngineRoom, PumpMode};
 use crate::reactor::{FuelRod, Mode, Reactor, ReactorTuning};
 
 const DT: f64 = 0.1;
@@ -257,6 +257,28 @@ fn a_broken_pump_with_no_operator_melts_the_core_after_fires() {
         .all(|r| r.flow < 1e-9));
 }
 
+/// With no operator a broken pump at full load takes the core to the critical band, and the core
+/// is not cooled from then on (the alarm is the first sign; the fires and the melt follow).
+#[test]
+fn a_broken_pump_at_full_load_reaches_temp_critical() {
+    let (trace, _) = trace_of("pump_fail_full_load", 5.0);
+    let t = trace.first("Alarm TempCritical on").expect("TempCritical");
+    assert!(t > 10.0 && t < 300.0, "TempCritical at {t}");
+    assert!(trace.melted);
+}
+
+/// The Low pump runs at its low speed from 10 s on, the flow follows it, and the tank drains.
+#[test]
+fn a_low_pump_at_full_load_runs_at_its_low_speed_and_drains_slowly() {
+    let (trace, room) = trace_of("pump_low_full_load", 5.0);
+    let at = row_at(&trace, 100.0);
+    assert_eq!(at.pump_mode, PumpMode::Low);
+    assert!((at.pump_speed - 0.5).abs() < 0.01, "speed {}", at.pump_speed);
+    assert!((at.flow - 0.5).abs() < 0.01, "flow {}", at.flow);
+    assert!(at.tank > 0.0 && at.tank < 100.0, "tank {}", at.tank);
+    assert_eq!(room.pump().mode(), PumpMode::Low);
+}
+
 /// An empty tank is no flow for the rest of the run, and the core melts.
 #[test]
 fn an_empty_tank_stops_the_flow_and_the_core_melts() {
@@ -316,11 +338,17 @@ fn a_meltdown_spends_every_rod() {
 /// reports the peak temperature, the seconds the box is overvolted and its condition at the end.
 #[test]
 fn wandering_load_stays_out_of_temp_critical_over_300_s() {
-    let (trace, room) = trace_of("wandering_load", 5.0);
+    // The warm-up leaves about 75 % in the tank, and High (`pump_use_high`) runs it dry before
+    // 300 s: the run starts with a full tank, as the test was written for.
+    let script = scripts().into_iter().find(|s| s.name == "wandering_load").expect("the script");
+    let mut room = warm_room(&shipped(), 7);
+    room.pump_mut().set_tank(100.0);
+    let trace = run(&mut room, &script, DT, 5.0);
     assert!(!trace.melted);
     assert_eq!(trace.count("Alarm TempCritical on"), 0, "{}", trace.table());
     // The same run again, stepped by hand, to count the seconds of overvoltage.
     let mut probe = warm_room(&shipped(), 7);
+    probe.pump_mut().set_tank(100.0);
     probe.set_engine_wander(true);
     let mut overvolt_s = 0.0;
     for _ in 0..3000 {

@@ -202,7 +202,7 @@ pub fn warm_room(tuning: &Tuning, seed: u64) -> EngineRoom {
     room
 }
 
-/// The eight scripts the playtest looks at.
+/// The scripts the playtest looks at.
 pub fn scripts() -> Vec<Script> {
     vec![
         Script {
@@ -287,11 +287,13 @@ pub fn scripts() -> Vec<Script> {
             duration_s: 300.0,
             steps: vec![(0.0, Action::Wander(true))],
         },
-        // The brake (no SCRAM): the pump breaks at full load, and at TempCritical both rods come out.
+        // The brake (no SCRAM): the operator holds fission and turbine at 100 (Manual), the pump breaks
+        // at 10 s, and at TempCritical both rods come out.
         Script {
             name: "pull_rods_brake",
             duration_s: 300.0,
             steps: vec![
+                (10.0, Action::Manual { fission: 100.0, turbine: 100.0 }),
                 (10.0, Action::Fault(Fault::PumpBreak)),
                 (
                     0.0,
@@ -301,6 +303,17 @@ pub fn scripts() -> Vec<Script> {
                     0.0,
                     Action::OnAlarm(AlarmKind::TempCritical, Box::new(Action::PullRod(0))),
                 ),
+            ],
+        },
+        // Full turbine and fission with only life support on: the grid asks for 400 kW of 2000 and the
+        // junction box sees the surplus (more than twice the load).
+        Script {
+            name: "overvolt_turbine_max",
+            duration_s: 120.0,
+            steps: vec![
+                (0.0, Action::Breaker(Group::Engines, false)),
+                (0.0, Action::Breaker(Group::Lights, false)),
+                (10.0, Action::Manual { fission: 100.0, turbine: 100.0 }),
             ],
         },
         // Auto, and at 10 s one standard rod comes out and a spicy one goes in.

@@ -87,9 +87,9 @@ pub struct GridTuning {
 impl Default for GridTuning {
     fn default() -> GridTuning {
         GridTuning {
-            engines: GroupTuning { demand_kw: 350.0, priority: 2, min_ratio: 0.5 },
-            life_support: GroupTuning { demand_kw: 100.0, priority: 3, min_ratio: 0.3 },
-            lights: GroupTuning { demand_kw: 50.0, priority: 1, min_ratio: 0.3 },
+            engines: GroupTuning { demand_kw: 800.0, priority: 2, min_ratio: 0.5 },
+            life_support: GroupTuning { demand_kw: 400.0, priority: 3, min_ratio: 0.3 },
+            lights: GroupTuning { demand_kw: 80.0, priority: 1, min_ratio: 0.3 },
         }
     }
 }

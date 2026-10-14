@@ -233,14 +233,14 @@ fn row_at(trace: &Trace, t: f64) -> &Row {
         .unwrap_or_else(|| panic!("no row at {t}"))
 }
 
-/// The warm-up leaves the reactor on, running on the grid's 500 kW, in its optimal band.
+/// The warm-up leaves the reactor on, running on the grid's 1280 kW, in its optimal band.
 #[test]
 fn warm_room_runs_on_the_grid_in_the_band() {
     let room = warm_room(&shipped(), 7);
     let r = room.reactor();
     assert!(r.power_on() && !r.melted());
     assert!(
-        (r.output_kw() - 500.0).abs() < 1.0,
+        (r.output_kw() - 1280.0).abs() < 1.0,
         "output {}",
         r.output_kw()
     );
@@ -264,7 +264,7 @@ fn load_drop_overvolts_the_junction_box_and_auto_overshoots() {
 
 /// With no operator action a broken pump takes the flow away, fires come first, and the core melts.
 #[test]
-#[ignore = "meaning broke with r8: a broken pump at full load (500 kW of 2000) no longer melts the core; peak 62.1, no fires"]
+#[ignore = "meaning broke with r8: a pump failure under Auto (pump_fail_full_load, 1280 kW) does not melt the core; peak 62.7, no fires"]
 fn a_broken_pump_with_no_operator_melts_the_core_after_fires() {
     let (trace, room) = trace_of("pump_fail_full_load", 5.0);
     assert!(trace.melted && room.reactor().melted());
@@ -281,7 +281,7 @@ fn a_broken_pump_with_no_operator_melts_the_core_after_fires() {
 /// With no operator a broken pump at full load takes the core to the critical band, and the core
 /// is not cooled from then on (the alarm is the first sign; the fires and the melt follow).
 #[test]
-#[ignore = "feel goal fails with r8: a pump failure at full load does not reach TempCritical without help (peak 62.1, limit 80)"]
+#[ignore = "with Auto (pump_fail_full_load) the core settles at about 51 and peaks at 62.7: no TempCritical; the operator-at-full-fission version is a_broken_pump_at_manual_full_fission_reaches_temp_critical"]
 fn a_broken_pump_at_full_load_reaches_temp_critical() {
     let (trace, _) = trace_of("pump_fail_full_load", 5.0);
     let t = trace.first("Alarm TempCritical on").expect("TempCritical");
@@ -418,12 +418,10 @@ fn pulled_rods_stop_the_fission_at_once_and_the_core_cools() {
     assert!(!trace.melted);
 }
 
-/// The brake, on the alarm: at TempCritical both rods are pulled (no SCRAM), and the core must not
-/// melt within 300 s. Ignored: with r8's dynamics the pump failure never reaches TempCritical
-/// (peak 62.1), so the test would pass without the brake ever acting. The asserted TempCritical
-/// makes it fail honestly until a scenario reaches the alarm (TODO(initiator): which one).
+/// The brake, on the alarm: the operator holds fission and turbine at 100, the pump breaks, and at
+/// TempCritical both rods are pulled (no SCRAM). The core must not melt within 300 s. The alarm
+/// must be reached, or the test would pass without the brake acting.
 #[test]
-#[ignore = "not exercised with r8: TempCritical is never reached (peak 62.1), so the brake never pulls; un-ignore once a pump failure reaches TempCritical"]
 fn pulling_both_rods_at_temp_critical_brakes_the_core() {
     let (trace, room) = trace_of("pull_rods_brake", 5.0);
     // Without this the test passes for nothing: TempCritical is not reached with r8's dynamics.
@@ -454,4 +452,36 @@ fn a_spicy_rod_replaces_a_standard_one() {
     );
     assert_eq!(kinds, ["standard", "spicy"]);
     assert_eq!(room.reactor().available_fuel(), 230.0);
+}
+
+/// The overvolt: full turbine and fission with the engines and lights off (400 kW asked, 2000 made):
+/// the junction box sees more than twice its load and takes damage.
+#[test]
+fn overvolt_turbine_max_damages_the_junction_box() {
+    let (trace, room) = trace_of("overvolt_turbine_max", 5.0);
+    let vmax = trace.rows.iter().map(|r| r.volt).fold(0.0, f64::max);
+    println!("overvolt_turbine_max: max volt {vmax:.2}, junction at end {:.1}", room.junction().condition().value());
+    assert!(vmax > 2.0, "the surplus is {vmax:.2} times the load");
+    assert!(room.junction().condition().value() < 100.0, "the box is not damaged");
+}
+
+/// The feel goal without the coolant and without Auto: the operator holds full fission and turbine,
+/// the pump breaks, and the core reaches TempCritical and melts with nobody pulling the rods. (With
+/// Auto the same failure stays under the optimal top: see `a_broken_pump_at_full_load_reaches_temp_critical`.)
+#[test]
+fn a_broken_pump_at_manual_full_fission_reaches_temp_critical() {
+    let script = Script {
+        name: "manual_pump_fail",
+        duration_s: 300.0,
+        steps: vec![
+            (10.0, Action::Manual { fission: 100.0, turbine: 100.0 }),
+            (10.0, Action::Fault(Fault::PumpBreak)),
+        ],
+    };
+    let mut room = warm_room(&shipped(), 7);
+    let trace = run(&mut room, &script, DT, 5.0);
+    let t = trace.first("Alarm TempCritical on").expect("TempCritical");
+    println!("manual pump fail: TempCritical at {t} s, melted {} at {:?}", trace.melted, trace.first("Meltdown"));
+    assert!(t < 60.0, "TempCritical at {t}");
+    assert!(trace.melted);
 }

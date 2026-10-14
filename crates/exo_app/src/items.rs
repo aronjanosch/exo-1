@@ -100,6 +100,8 @@ pub enum NetOut {
     RepairAsk(RepairAsk),
     /// Host to one client: its repair session ended, the machine is full (#299).
     RepairDone { to: PlayerId },
+    /// Host to one client: its repair start was refused (#299).
+    RepairRefused { to: PlayerId },
 }
 
 #[derive(Resource)]

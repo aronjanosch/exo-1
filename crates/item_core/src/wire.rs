@@ -38,6 +38,9 @@ pub enum ToClient {
     Fire(FireNews),
     /// The host ended this player's repair session (#299): the machine is full.
     RepairDone,
+    /// The host refused this player's repair start (another player works there, the wrong tool,
+    /// or the machine is full): the client's ring ends.
+    RepairRefused,
 }
 
 /// The alarm level of the ship (#296). A dev toggle for now; the reactor drives it later.
@@ -405,6 +408,11 @@ mod tests {
     #[test]
     fn repair_done_travels() {
         assert!(decode::<ToClient>(&encode(&ToClient::RepairDone)).is_some_and(|m| matches!(m, ToClient::RepairDone)));
+    }
+
+    #[test]
+    fn repair_refused_travels() {
+        assert!(decode::<ToClient>(&encode(&ToClient::RepairRefused)).is_some_and(|m| matches!(m, ToClient::RepairRefused)));
     }
 
     #[test]

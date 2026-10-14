@@ -24,6 +24,7 @@
 //! TODO(initiator): the glow of the critical text and the scanlines' look are not drawn yet.
 use super::*;
 use crate::displays::{DisplayAction, Panels};
+use crate::dev_area::reactor::ReactorConfig;
 use crate::items::Items;
 use display_core::{button, canvas, column, ctl, font, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Shape, Tier, TextFace, Tone};
 use item_core::wire::{BreakerGroup, ReactorAsk, ReactorFault, ReactorNews};
@@ -38,8 +39,6 @@ pub const DOOR_ID: PanelId = PanelId::new("engine_door_screen");
 pub const DOOR_NAME: &str = "REACTOR ROOM";
 pub const FAULTS_ID: PanelId = PanelId::new("reactor_faults");
 pub const FAULTS_NAME: &str = "Dev faults";
-/// The output scale of the power gauge, kW (the spec's).
-pub const POWER_MAX_KW: f64 = 1000.0;
 
 pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, (read_clicks, write_panels).chain().in_set(crate::phases::Fx::Effects));
@@ -126,16 +125,16 @@ fn zone_ink(z: Zone) -> Ink {
 
 /// The POWER gauge (216 x 152): output against the scale, its colour by the shortage of the load,
 /// a notch at the load.
-fn power_gauge(r: Option<&ReactorNews>) -> Item {
+fn power_gauge(r: Option<&ReactorNews>, max_kw: f64) -> Item {
     let (cx, cy, rr, sw) = (108.0, 70.0, 60.0, 14.0);
     let (out, load) = r.map_or((0.0, 0.0), |r| (r.output_kw, r.load_kw));
-    let frac = (out / POWER_MAX_KW * 100.0).clamp(0.0, 100.0);
+    let frac = (out / max_kw * 100.0).clamp(0.0, 100.0);
     let ink = power_ink(out, load);
     let mut s = vec![arc(cx, cy, rr, angle(0.0), angle(100.0), sw, Ink::Bg3, None)];
     if frac > 0.0 {
         s.push(arc(cx, cy, rr, angle(0.0), angle(frac), sw, ink, None));
     }
-    let n = (load / POWER_MAX_KW * 100.0).clamp(0.0, 100.0);
+    let n = (load / max_kw * 100.0).clamp(0.0, 100.0);
     let (a, p0, p1) = (angle(n).to_radians(), 50.0, 70.0);
     s.push(Shape::Line { a: [cx + p0 * a.cos(), cy + p0 * a.sin()], b: [cx + p1 * a.cos(), cy + p1 * a.sin()], width: 4.0, ink: Ink::FgTitle, dash: None });
     s.push(text(0.0, 62.0, 216.0, 32.0, &format!("{out:.0}"), 28.0, TextFace::Mono, ink, true));
@@ -229,7 +228,8 @@ fn critical(r: &ReactorNews, melted: bool) -> Panel {
 /// The reactor readout (M): the top row of gauges and fuel, the sliders and the switches below.
 /// Above 80 with the power on it is the critical view; after a meltdown MELTDOWN. The status word
 /// in the header.
-pub fn readout_panel(r: Option<&ReactorNews>) -> Panel {
+/// The readout panel; `max_kw` is the scale of the power gauge (the reactor's `max_output_kw`).
+pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     if let Some(r) = r.filter(|r| r.melted) {
         return critical(r, true);
     }
@@ -258,7 +258,7 @@ pub fn readout_panel(r: Option<&ReactorNews>) -> Panel {
             button("SCRAM", "scram").tone(Tone::Bad).fixed(ctl::LG),
         ],
     );
-    let gauges = row(8.0, vec![temp_gauge(r.map_or(0.0, |r| r.temp)), power_gauge(r), fuel(r)]).fixed(152.0);
+    let gauges = row(8.0, vec![temp_gauge(r.map_or(0.0, |r| r.temp)), power_gauge(r, max_kw), fuel(r)]).fixed(152.0);
     let body = column(8.0, vec![gauges, row(16.0, vec![bottom_left.flex(1.0), switches.fixed(200.0)]).flex(1.0)]);
     Panel::screen(Tier::M, READOUT_NAME, "RX-01", body).status(word, tone).with_padding(8.0)
 }
@@ -490,8 +490,8 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
 }
 
 /// Every panel from the state, every tick (`Panels::set` skips an unchanged one).
-pub fn write_panels(items: Res<Items>, mut panels: ResMut<Panels>) {
-    panels.set(READOUT_ID, readout_panel(items.reactor.as_ref()));
+pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, mut panels: ResMut<Panels>) {
+    panels.set(READOUT_ID, readout_panel(items.reactor.as_ref(), cfg.0.reactor.max_output_kw));
     panels.set(PUMP_ID, pump_panel(items.reactor.as_ref()));
     panels.set(JUNCTION_ID, junction_panel(items.reactor.as_ref()));
     panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));
@@ -502,6 +502,11 @@ pub fn write_panels(items: Res<Items>, mut panels: ResMut<Panels>) {
 mod tests {
     use super::*;
 
+    /// The readout at the shipped scale (`reactor.json`'s `max_output_kw`).
+    fn shipped_panel(r: Option<&ReactorNews>) -> Panel {
+        readout_panel(r, 1000.0)
+    }
+
     fn news() -> ReactorNews {
         ReactorNews { powered: true, power_on: true, pump_on: true, flow: 1.0, breakers: [true; 3], optimal: [35.0, 65.0], allowed: [20.0, 80.0], temp: 54.0, output_kw: 500.0, load_kw: 500.0, fuel: [80.0, 12.0], ..Default::default() }
     }
@@ -509,7 +514,7 @@ mod tests {
     fn all_panels() -> Vec<Panel> {
         let mut v = Vec::new();
         for r in [None, Some(ReactorNews::default()), Some(ReactorNews { manual: true, ..news() }), Some(ReactorNews { melted: true, ..news() }), Some(ReactorNews { temp: 85.0, ..news() })] {
-            v.push(readout_panel(r.as_ref()));
+            v.push(shipped_panel(r.as_ref()));
             v.push(pump_panel(r.as_ref()));
             v.push(junction_panel(r.as_ref()));
             v.push(door_panel(r.as_ref()));
@@ -534,9 +539,9 @@ mod tests {
 
     #[test]
     fn the_manual_sliders_are_only_on_when_manual() {
-        let auto = readout_panel(Some(&news()));
+        let auto = shipped_panel(Some(&news()));
         assert!(matches!(auto.find("fis_set").unwrap().widget, display_core::Widget::Slider { enabled: false, .. }));
-        let man = readout_panel(Some(&ReactorNews { manual: true, ..news() }));
+        let man = shipped_panel(Some(&ReactorNews { manual: true, ..news() }));
         assert!(matches!(man.find("fis_set").unwrap().widget, display_core::Widget::Slider { enabled: true, .. }));
         assert!(man.find("mode").is_some() && man.find("reset").is_none());
         assert!(faults_panel().find("reset").is_some() && faults_panel().find("pump_break").is_some());
@@ -544,7 +549,7 @@ mod tests {
 
     #[test]
     fn the_readout_has_power_mode_and_scram() {
-        let p = readout_panel(Some(&news()));
+        let p = shipped_panel(Some(&news()));
         assert!(p.find("power").is_some() && p.find("scram").is_some() && p.find("mode").is_some());
         for gone in ["fire_timer", "meltdown_timer", "pump", "junction", "alarm", "reset"] {
             assert!(p.find(gone).is_none(), "{gone}");
@@ -566,15 +571,15 @@ mod tests {
 
     #[test]
     fn above_80_with_the_power_on_is_the_critical_view_with_scram_and_none_without() {
-        let hot = readout_panel(Some(&ReactorNews { temp: 85.0, ..news() }));
+        let hot = shipped_panel(Some(&ReactorNews { temp: 85.0, ..news() }));
         assert!(hot.find("scram").is_some() && hot.find("fis_set").is_none(), "the takeover view");
-        let off = readout_panel(Some(&ReactorNews { temp: 85.0, power_on: false, ..news() }));
+        let off = shipped_panel(Some(&ReactorNews { temp: 85.0, power_on: false, ..news() }));
         assert!(off.find("fis_set").is_some(), "scrammed: the normal view");
     }
 
     #[test]
     fn a_melted_core_says_meltdown_without_a_button() {
-        let p = readout_panel(Some(&ReactorNews { melted: true, ..news() }));
+        let p = shipped_panel(Some(&ReactorNews { melted: true, ..news() }));
         assert!(p.find("scram").is_none() && p.find("power").is_none());
         assert!(p.overflowing().is_empty());
     }

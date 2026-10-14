@@ -151,6 +151,8 @@ pub struct Net {
     rx_link: Option<Link<(SocketAddr, Vec<u8>)>>,
     /// Peers that joined since the last `take_new_peers` (the host sends them the item state).
     new_peers: Vec<u32>,
+    /// Peers that left since the last `take_left_peers` (a Bye, or a channel that went dead).
+    left_peers: Vec<u32>,
     /// Client: poses of moving loose items received since the last `take_bodies`.
     bodies_in: Vec<BodyDatagram>,
     /// Sequence of the body datagrams this host sends.
@@ -233,6 +235,7 @@ impl Net {
             host_chan: Reliable::new(),
             rx_link,
             new_peers: Vec::new(),
+            left_peers: Vec::new(),
             bodies_in: Vec::new(),
             body_seq: 0,
         })
@@ -337,6 +340,7 @@ impl Net {
             Packet::Bye { slot } => {
                 if self.peers.get(&(slot as u32)).is_some_and(|p| p.addr == from) {
                     self.peers.remove(&(slot as u32));
+                    self.left_peers.push(slot as u32);
                 }
             }
             _ => {}
@@ -385,6 +389,12 @@ impl Net {
     /// Slots of the clients that joined since the last call (host).
     pub fn take_new_peers(&mut self) -> Vec<u32> {
         std::mem::take(&mut self.new_peers)
+    }
+
+    /// Slots of the clients that left since the last call (host): a Bye, or no answer on the
+    /// reliable channel any more.
+    pub fn take_left_peers(&mut self) -> Vec<u32> {
+        std::mem::take(&mut self.left_peers)
     }
 
     /// Slots of the connected clients (host).
@@ -460,6 +470,7 @@ impl Net {
             let dead: Vec<u32> = self.peers.iter().filter(|(_, p)| p.chan.stalled(now, PEER_STALL) || p.chan.broken()).map(|(s, _)| *s).collect();
             for slot in dead {
                 self.peers.remove(&slot);
+                self.left_peers.push(slot);
                 println!("NET DROP slot={slot} (no answer on the reliable channel)");
             }
             for p in self.peers.values_mut() {

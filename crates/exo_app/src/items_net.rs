@@ -19,8 +19,11 @@
 //! - The held item of another player shows in the hand of its figure (placeholder box).
 use crate::cargo::Crate;
 use crate::env::PlanetRes;
+use crate::dev_area::fire::Sprays;
+use crate::health::HealthState;
 use crate::items::{Items, LooseItem, NetOut, Role};
 use crate::net_live::Net;
+use crate::repair::RepairSessions;
 use crate::ship::Ship;
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
@@ -97,7 +100,7 @@ impl RemoteBodies {
 
 /// Role setup on the first tick of a session, then the messages that arrived this tick.
 #[allow(clippy::too_many_arguments)]
-pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net>, mut items: ResMut<Items>, mut bodies: ResMut<RemoteBodies>, loose: Query<Entity, With<LooseItem>>) {
+pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net>, mut items: ResMut<Items>, mut bodies: ResMut<RemoteBodies>, loose: Query<Entity, With<LooseItem>>, mut repairs: Option<ResMut<RepairSessions>>, mut sprays: Option<ResMut<Sprays>>, mut health: Option<ResMut<HealthState>>) {
     let now = time.elapsed_secs_f64();
     if items.role == Role::Local {
         items.role = if net.cfg.host { Role::Host } else { Role::Client };
@@ -116,6 +119,18 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
     }
     match items.role {
         Role::Host => {
+            // A player who left: their repair session, spray and body go (the host owns them).
+            for slot in net.take_left_peers() {
+                if let Some(r) = repairs.as_mut() {
+                    r.forget(slot);
+                }
+                if let Some(s) = sprays.as_mut() {
+                    s.forget(slot);
+                }
+                if let Some(h) = health.as_mut() {
+                    h.forget(slot);
+                }
+            }
             for slot in net.take_new_peers() {
                 items.send_state(slot);
                 let r = items.room;
@@ -164,7 +179,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                     Some(ToClient::Room(r)) => items.room = r,
                     Some(ToClient::Reactor(r)) => items.reactor = Some(r),
                     Some(ToClient::Fire(f)) => items.fire = Some(f),
-                    Some(ToClient::RepairDone) => items.repair_done = true,
+                    Some(ToClient::RepairDone) | Some(ToClient::RepairRefused) => items.repair_done = true,
                     None => net.st.invalid += 1,
                 }
             }
@@ -304,6 +319,9 @@ pub fn items_net_out(
             }
             NetOut::RepairDone { to } => {
                 net.send_reliable(Some(to), &wire::encode(&ToClient::RepairDone));
+            }
+            NetOut::RepairRefused { to } => {
+                net.send_reliable(Some(to), &wire::encode(&ToClient::RepairRefused));
             }
         }
     }

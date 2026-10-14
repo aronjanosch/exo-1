@@ -185,6 +185,7 @@ pub fn route(e: RoomEvent, counts: &mut ReactorCounts) {
             counts.meltdowns += 1;
             warn!("reactor: MELTDOWN");
         }
+        RoomEvent::Device { source, event } => info!("engine room: {source:?} {event:?} (the machine's condition crossed a line)"),
         _ => {}
     }
 }

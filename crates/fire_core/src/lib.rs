@@ -1,0 +1,471 @@
+//! fire_core: fire in the ship's rooms, without engine types, in f64 (#286, part of #174 and
+//! #248). The seed of the rooms as air cells: each room has a scalar oxygen amount, rooms meet at
+//! gaps (doors, vents) with an open fraction, and leaks to space (hull breaches) that let air out
+//! with the room's pressure (its air fraction). Nothing more: one gas, no water, no heat; the
+//! rest comes with #174.
+//!
+//! Taken from Barotrauma's fire sources: a fire grows while the room has enough oxygen, stalls
+//! lower down and shrinks below that, uses oxygen in proportion to its size, burns people and
+//! devices within a range that grows with the square root of its size, tries to spread through
+//! open gaps on a fixed interval with a small chance, and shrinks under an extinguisher's spray.
+//! Our own code in metres; the point-and-size fire shape, the gap air exchange and the merge rule
+//! are ours (`research/barotrauma-mech-damage-repair.md` in the concept repo).
+//!
+//! - `Deck`: rooms, gaps and fires. `step` exchanges air, grows and starves fires, returns damage,
+//!   spread and out events. `spray` is the extinguisher, `set_open` a door.
+//! - A closed gap (open 0) stops both air and fire.
+//! - Oxygen moves only through gaps and is conserved there; fires use it up, the glue adds it
+//!   (life support) or takes it (breathing) through `room_mut`.
+//!
+//! All values are starting points for the playtest (`TODO(initiator)`).
+use gameplay_core::rng::Rng;
+use glam::DVec3;
+
+#[cfg(test)]
+mod tests;
+
+/// Fire values. TODO(initiator): starting values. Growth, oxygen lines, spread interval and
+/// chance, the burn curve and the spray rate follow the original (converted at 100 px = 1 m);
+/// oxygen use, the size cap, the device burn and the air flow are guesses for our room sizes.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct FireTuning {
+    /// Metres of size per second with plenty of oxygen; the same rate shrinks it without any.
+    pub growth: f64,
+    /// Oxygen fraction from which a fire grows at full speed.
+    pub grow_full: f64,
+    /// Oxygen fraction at which it neither grows nor shrinks; below it shrinks.
+    pub stall: f64,
+    /// m³ of oxygen per metre of fire per second.
+    pub oxygen_use: f64,
+    /// Largest size, metres.
+    pub max_size: f64,
+    /// Below this size a fire is out.
+    pub out_below: f64,
+    /// Size of a new fire that spread through a gap.
+    pub spread_size: f64,
+    /// Seconds between spread tries of one fire.
+    pub spread_interval_s: f64,
+    /// Chance per try and open gap in reach.
+    pub spread_chance: f64,
+    /// Burn range beyond the fire's edge at size 1 m; it grows with the square root of the size.
+    pub range: f64,
+    pub max_range: f64,
+    /// Burn per second to a person at size 1 m; grows with the square root of the size.
+    pub burn_person: f64,
+    /// Sizes above this burn no harder.
+    pub burn_cap_size: f64,
+    /// Condition per second a device in range loses.
+    pub burn_device: f64,
+    /// Metres of size per second an extinguisher takes off.
+    pub extinguish: f64,
+    /// A spray hits fires whose edge is this close to where it lands.
+    pub spray_radius: f64,
+    /// m³ per second through 1 m² of open gap per unit of oxygen fraction difference.
+    pub air_flow: f64,
+    /// m³ per second through 1 m² of open leak to space per unit of the room's air fraction
+    /// (space has none). TODO(initiator): a guess.
+    pub leak_flow: f64,
+}
+
+impl Default for FireTuning {
+    fn default() -> FireTuning {
+        FireTuning {
+            growth: 0.2,
+            grow_full: 0.2,
+            stall: 0.1,
+            oxygen_use: 0.5,
+            max_size: 5.0,
+            out_below: 0.01,
+            spread_size: 0.1,
+            spread_interval_s: 5.0,
+            spread_chance: 0.15,
+            range: 1.0,
+            max_range: 2.5,
+            burn_person: 10.0,
+            burn_cap_size: 5.0,
+            burn_device: 2.0,
+            extinguish: 0.6,
+            spray_radius: 1.0,
+            air_flow: 2.0,
+            leak_flow: 4.0,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct RoomId(pub usize);
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct GapId(pub usize);
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct FireId(pub u64);
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct LeakId(pub usize);
+
+/// A hole from a room to space (a hull breach): air leaves through it, nothing comes in.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Leak {
+    pub room: RoomId,
+    /// Where it is, ship space.
+    pub pos: DVec3,
+    /// m² when fully open.
+    pub area: f64,
+    /// 0 closed .. 1 open.
+    pub open: f64,
+    /// m³ per second that left in the last exchange.
+    pub flow: f64,
+}
+
+/// One room as an air cell.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Room {
+    /// m³.
+    pub volume: f64,
+    /// m³ of breathable air; `volume` is full.
+    pub oxygen: f64,
+}
+
+impl Room {
+    /// 0..1.
+    pub fn oxygen_fraction(&self) -> f64 {
+        if self.volume > 0.0 { self.oxygen / self.volume } else { 0.0 }
+    }
+
+    /// The room's pressure against space, 0..1: the same as its air fraction here (one gas).
+    pub fn pressure(&self) -> f64 {
+        self.oxygen_fraction()
+    }
+}
+
+/// An opening between two rooms: a door, a vent.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Gap {
+    pub a: RoomId,
+    pub b: RoomId,
+    /// Where it is, ship space, metres.
+    pub pos: DVec3,
+    /// m² when fully open.
+    pub area: f64,
+    /// 0 closed .. 1 open.
+    pub open: f64,
+}
+
+impl Gap {
+    fn other(&self, r: RoomId) -> Option<RoomId> {
+        if self.a == r {
+            Some(self.b)
+        } else if self.b == r {
+            Some(self.a)
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Fire {
+    pub id: FireId,
+    pub room: RoomId,
+    /// Centre, ship space.
+    pub pos: DVec3,
+    /// Diameter, metres.
+    pub size: f64,
+    spread_timer: f64,
+}
+
+impl Fire {
+    /// Burn range beyond its edge.
+    pub fn range(&self, t: &FireTuning) -> f64 {
+        (self.size.max(0.0).sqrt() * t.range).min(t.max_range)
+    }
+
+    /// Whether `p` is within its edge plus `extra`.
+    fn reaches(&self, p: DVec3, extra: f64) -> bool {
+        self.pos.distance(p) <= self.size * 0.5 + extra
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TargetKind {
+    Person,
+    Device,
+}
+
+/// Something fire can hurt. The glue lists them each step.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Target {
+    /// The glue's own id.
+    pub id: u64,
+    pub kind: TargetKind,
+    pub room: RoomId,
+    pub pos: DVec3,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum FireEvent {
+    /// Burn damage this step: health for a person, condition for a device.
+    Damage { target: u64, kind: TargetKind, amount: f64 },
+    /// A fire spread through an open gap and started (or fed) `to` in `room`.
+    Spread { from: FireId, to: FireId, room: RoomId },
+    Out { fire: FireId, room: RoomId },
+}
+
+/// The rooms, the gaps between them, and the fires in them.
+#[derive(Clone, Debug)]
+pub struct Deck {
+    tuning: FireTuning,
+    rooms: Vec<Room>,
+    gaps: Vec<Gap>,
+    fires: Vec<Fire>,
+    next_fire: u64,
+    rng: Rng,
+    leaks: Vec<Leak>,
+    lost: f64,
+}
+
+impl Deck {
+    /// An empty deck; `seed` makes spread rolls repeatable.
+    pub fn new(tuning: FireTuning, seed: u64) -> Deck {
+        Deck { tuning, rooms: Vec::new(), gaps: Vec::new(), fires: Vec::new(), next_fire: 0, rng: Rng::new(seed), leaks: Vec::new(), lost: 0.0 }
+    }
+
+    pub fn tuning(&self) -> &FireTuning {
+        &self.tuning
+    }
+
+    /// A room of `volume` m³, full of air.
+    pub fn add_room(&mut self, volume: f64) -> RoomId {
+        self.rooms.push(Room { volume, oxygen: volume });
+        RoomId(self.rooms.len() - 1)
+    }
+
+    /// A gap of `area` m² between two rooms at `pos`, `open` 0..1.
+    pub fn add_gap(&mut self, a: RoomId, b: RoomId, pos: DVec3, area: f64, open: f64) -> GapId {
+        self.gaps.push(Gap { a, b, pos, area, open: open.clamp(0.0, 1.0) });
+        GapId(self.gaps.len() - 1)
+    }
+
+    /// Opens or closes a gap (a door), 0..1.
+    pub fn set_open(&mut self, gap: GapId, open: f64) {
+        self.gaps[gap.0].open = open.clamp(0.0, 1.0);
+    }
+
+    pub fn room(&self, r: RoomId) -> &Room {
+        &self.rooms[r.0]
+    }
+
+    /// For life support, breathing, venting.
+    pub fn room_mut(&mut self, r: RoomId) -> &mut Room {
+        &mut self.rooms[r.0]
+    }
+
+    pub fn gap(&self, g: GapId) -> &Gap {
+        &self.gaps[g.0]
+    }
+
+    /// A hole to space of `area` m² in a room at `pos`, `open` 0..1 (a breach; `hull_core` sets
+    /// its size from the hull's damage).
+    pub fn add_leak(&mut self, room: RoomId, pos: DVec3, area: f64, open: f64) -> LeakId {
+        self.leaks.push(Leak { room, pos, area: area.max(0.0), open: open.clamp(0.0, 1.0), flow: 0.0 });
+        LeakId(self.leaks.len() - 1)
+    }
+
+    /// Resizes a leak (a patch closes it with `open` 0).
+    pub fn set_leak(&mut self, leak: LeakId, area: f64, open: f64) {
+        let l = &mut self.leaks[leak.0];
+        l.area = area.max(0.0);
+        l.open = open.clamp(0.0, 1.0);
+        if l.open <= 0.0 || l.area <= 0.0 {
+            l.flow = 0.0;
+        }
+    }
+
+    pub fn leak(&self, leak: LeakId) -> &Leak {
+        &self.leaks[leak.0]
+    }
+
+    pub fn leaks(&self) -> &[Leak] {
+        &self.leaks
+    }
+
+    /// m³ of air lost to space through leaks so far.
+    pub fn lost_to_space(&self) -> f64 {
+        self.lost
+    }
+
+    pub fn fires(&self) -> &[Fire] {
+        &self.fires
+    }
+
+    pub fn fire(&self, id: FireId) -> Option<&Fire> {
+        self.fires.iter().find(|f| f.id == id)
+    }
+
+    pub fn fires_in(&self, r: RoomId) -> impl Iterator<Item = &Fire> {
+        self.fires.iter().filter(move |f| f.room == r)
+    }
+
+    /// Oxygen in all rooms together, m³.
+    pub fn total_oxygen(&self) -> f64 {
+        self.rooms.iter().map(|r| r.oxygen).sum()
+    }
+
+    /// Starts a fire of `size` metres (the reactor overheating, a hit, a short). A fire it
+    /// touches in the same room takes it in instead; that one's id comes back.
+    pub fn ignite(&mut self, room: RoomId, pos: DVec3, size: f64) -> FireId {
+        let size = size.clamp(0.0, self.tuning.max_size);
+        if let Some(f) = self.fires.iter_mut().find(|f| f.room == room && f.reaches(pos, size * 0.5)) {
+            merge(f, pos, size, self.tuning.max_size);
+            return f.id;
+        }
+        let id = FireId(self.next_fire);
+        self.next_fire += 1;
+        self.fires.push(Fire { id, room, pos, size, spread_timer: self.tuning.spread_interval_s });
+        id
+    }
+
+    /// The extinguisher's spray lands at `at` for `dt` seconds (the glue finds the point along
+    /// the nozzle's aim). Returns how many fires it hit.
+    pub fn spray(&mut self, at: DVec3, dt: f64) -> usize {
+        let t = self.tuning;
+        let mut hit = 0;
+        for f in self.fires.iter_mut().filter(|f| f.reaches(at, t.spray_radius)) {
+            f.size -= t.extinguish * dt;
+            hit += 1;
+        }
+        hit
+    }
+
+    /// Moves air through the open gaps for `dt` seconds. Each gap moves oxygen from the richer
+    /// room to the poorer one, never past even, so the total stays the same. Open leaks then let
+    /// air out to space (`lost_to_space`).
+    pub fn exchange_air(&mut self, dt: f64) {
+        for g in &self.gaps {
+            if g.open <= 0.0 || g.a == g.b {
+                continue;
+            }
+            let (ra, rb) = (self.rooms[g.a.0], self.rooms[g.b.0]);
+            if ra.volume <= 0.0 || rb.volume <= 0.0 {
+                continue;
+            }
+            let diff = ra.oxygen_fraction() - rb.oxygen_fraction();
+            // What would make both fractions equal.
+            let even = (ra.oxygen * rb.volume - rb.oxygen * ra.volume) / (ra.volume + rb.volume);
+            let flow = self.tuning.air_flow * g.area * g.open * diff * dt;
+            let moved = if even >= 0.0 { flow.clamp(0.0, even) } else { flow.clamp(even, 0.0) };
+            self.rooms[g.a.0].oxygen -= moved;
+            self.rooms[g.b.0].oxygen += moved;
+        }
+        // Leaks to space: out with the room's pressure (space has none), never below empty.
+        for l in &mut self.leaks {
+            let room = &mut self.rooms[l.room.0];
+            if l.open <= 0.0 || l.area <= 0.0 || room.volume <= 0.0 {
+                l.flow = 0.0;
+                continue;
+            }
+            let out = (self.tuning.leak_flow * l.area * l.open * room.pressure() * dt).clamp(0.0, room.oxygen);
+            room.oxygen -= out;
+            self.lost += out;
+            l.flow = if dt > 0.0 { out / dt } else { 0.0 };
+        }
+    }
+
+    /// One step: air through gaps, fires grow or starve and use oxygen, burn `targets`, try to
+    /// spread, go out, touching fires merge.
+    pub fn step(&mut self, dt: f64, targets: &[Target]) -> Vec<FireEvent> {
+        let t = self.tuning;
+        let mut ev = Vec::new();
+        self.exchange_air(dt);
+
+        for f in &mut self.fires {
+            let room = &mut self.rooms[f.room.0];
+            let gm = ((room.oxygen_fraction() - t.stall) / (t.grow_full - t.stall)).min(1.0);
+            room.oxygen = (room.oxygen - f.size.max(0.0) * t.oxygen_use * dt).max(0.0);
+            f.size = (f.size + t.growth * gm * dt).min(t.max_size);
+            f.spread_timer -= dt;
+        }
+
+        for f in self.fires.iter().filter(|f| f.size >= t.out_below) {
+            let range = f.range(&t);
+            for x in targets.iter().filter(|x| x.room == f.room && f.reaches(x.pos, range)) {
+                let rate = match x.kind {
+                    TargetKind::Person => t.burn_person * f.size.min(t.burn_cap_size).sqrt(),
+                    TargetKind::Device => t.burn_device,
+                };
+                ev.push(FireEvent::Damage { target: x.id, kind: x.kind, amount: rate * dt });
+            }
+        }
+
+        self.spread(&mut ev);
+
+        let mut i = 0;
+        while i < self.fires.len() {
+            if self.fires[i].size < t.out_below {
+                let f = self.fires.remove(i);
+                ev.push(FireEvent::Out { fire: f.id, room: f.room });
+            } else {
+                i += 1;
+            }
+        }
+        self.merge_touching();
+        ev
+    }
+
+    fn spread(&mut self, ev: &mut Vec<FireEvent>) {
+        let t = self.tuning;
+        let mut new = Vec::new();
+        for f in &mut self.fires {
+            if f.spread_timer > 0.0 || f.size < t.out_below {
+                continue;
+            }
+            f.spread_timer = t.spread_interval_s;
+            let reach = f.range(&t);
+            for g in &self.gaps {
+                let Some(other) = g.other(f.room) else { continue };
+                if g.open <= 0.0 || !f.reaches(g.pos, reach) {
+                    continue;
+                }
+                if self.rng.unit() < t.spread_chance {
+                    new.push((f.id, other, g.pos));
+                }
+            }
+        }
+        for (from, room, pos) in new {
+            let to = self.ignite(room, pos, t.spread_size);
+            ev.push(FireEvent::Spread { from, to, room });
+        }
+    }
+
+    /// Fires in one room that touch become one (the older keeps its id).
+    fn merge_touching(&mut self) {
+        let max = self.tuning.max_size;
+        let mut i = 0;
+        while i < self.fires.len() {
+            let mut j = i + 1;
+            while j < self.fires.len() {
+                let (a, b) = (self.fires[i], self.fires[j]);
+                if a.room == b.room && a.reaches(b.pos, b.size * 0.5) {
+                    merge(&mut self.fires[i], b.pos, b.size, max);
+                    self.fires.remove(j);
+                } else {
+                    j += 1;
+                }
+            }
+            i += 1;
+        }
+    }
+}
+
+/// Takes a fire of `size` at `pos` into `f`: the span both cover on the line between their
+/// centres, centred on that span.
+fn merge(f: &mut Fire, pos: DVec3, size: f64, max: f64) {
+    let d = f.pos.distance(pos);
+    let lo = (-f.size * 0.5).min(d - size * 0.5);
+    let hi = (f.size * 0.5).max(d + size * 0.5);
+    if d > 1e-9 {
+        f.pos += (pos - f.pos) / d * ((lo + hi) * 0.5);
+    }
+    f.size = (hi - lo).min(max);
+}

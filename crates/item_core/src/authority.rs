@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::container::{Refusal, Stack};
+use crate::container::{Access, Container, Refusal, SlotRule, Stack};
 use crate::defs::ItemDefs;
 use crate::inventory::{Inventory, BAR_SLOTS};
 
@@ -23,6 +23,8 @@ use crate::inventory::{Inventory, BAR_SLOTS};
 pub type PlayerId = u32;
 /// A loose item in the world, numbered by the host.
 pub type LooseId = u64;
+/// A rack on the wall (a bracket for extinguishers, #300), numbered by the level.
+pub type RackId = u32;
 
 /// The frame a loose item lives in, like the walker: a planet, or a ship's cabin (its owner's
 /// slot).
@@ -76,6 +78,9 @@ pub enum Request {
     /// Use one item of a slot on `target` (a player's slot; the user's own for itself). What the
     /// item does is the host's to apply (`Event::Used`).
     Use { slot: usize, target: PlayerId },
+    /// Hang the item of a slot on a rack and take a spare from it (Barotrauma's extinguisher
+    /// bracket): the spare with the best condition of the same kind. An empty slot takes one.
+    Swap { slot: usize, rack: RackId },
 }
 
 /// A request on its way to the host: who, their running number, what.
@@ -101,6 +106,10 @@ pub enum Reject {
     Invalid,
     /// The item has no use.
     NotUsable,
+    /// No such rack here.
+    NoRack,
+    /// The rack has no spare of that kind.
+    NoSpare,
 }
 
 impl From<Refusal> for Reject {
@@ -135,6 +144,8 @@ pub enum Event {
     Rest { item: LooseId, at: Placement, rot: [f64; 4], t: f64 },
     Confirmed { player: PlayerId, seq: u32 },
     Rejected { player: PlayerId, seq: u32, why: Reject },
+    /// A rack's stock as the host has it now.
+    Rack { rack: RackId, contents: Container },
 }
 
 /// The shared state and the one place that changes it.
@@ -143,6 +154,7 @@ pub struct Host {
     pub defs: ItemDefs,
     pub loose: BTreeMap<LooseId, Loose>,
     pub inventories: BTreeMap<PlayerId, Inventory>,
+    pub racks: BTreeMap<RackId, Container>,
     next: LooseId,
 }
 
@@ -158,6 +170,35 @@ impl Host {
         let loose = Loose { stack, at };
         self.loose.insert(item, loose.clone());
         Event::Spawned { item, loose, by }
+    }
+
+    /// Puts a rack on the wall: `slots` slots taking items of the kind tagged `tag`, and the
+    /// spares it starts with. The event tells the clients its stock.
+    pub fn add_rack(&mut self, id: RackId, tag: &str, slots: usize, stock: Vec<Stack>) -> Event {
+        let mut contents = Container::new(vec![SlotRule::tagged(1, &[tag], &[]); slots], Access::Open);
+        for s in stock {
+            let _ = contents.try_insert(&[], s);
+        }
+        self.racks.insert(id, contents.clone());
+        Event::Rack { rack: id, contents }
+    }
+
+    /// The condition (percent) of the item in a slot, if it wears.
+    pub fn condition(&self, player: PlayerId, slot: usize) -> Option<f64> {
+        self.inventories.get(&player)?.slot(slot)?.item.condition
+    }
+
+    /// Wears the item in a slot by `amount` percent (not below 0), as the spray does while it
+    /// runs. The event (the inventory as now) comes only when the whole percent changes or the
+    /// item runs out, so the clients hear it a few times a second at most.
+    pub fn wear(&mut self, player: PlayerId, slot: usize, amount: f64) -> Option<Event> {
+        let inv = self.inventories.get_mut(&player)?;
+        let item = &mut inv.bar.slot_mut(slot)?.item;
+        let before = item.condition?;
+        let after = (before - amount).max(0.0);
+        item.condition = Some(after);
+        let changed = before.floor() != after.floor() || (before > 0.0 && after == 0.0);
+        changed.then(|| Event::Inventory { player, inv: inv.clone() })
     }
 
     /// The host's physics reports where a loose item is now (no event; a client that joins later
@@ -181,7 +222,8 @@ impl Host {
     pub fn state(&self) -> Vec<Event> {
         let loose = self.loose.iter().map(|(id, l)| Event::Spawned { item: *id, loose: l.clone(), by: None });
         let inventories = self.inventories.iter().map(|(p, inv)| Event::Inventory { player: *p, inv: inv.clone() });
-        loose.chain(inventories).collect()
+        let racks = self.racks.iter().map(|(id, c)| Event::Rack { rack: *id, contents: c.clone() });
+        loose.chain(inventories).chain(racks).collect()
     }
 
     pub fn inventory(&self, p: PlayerId) -> Inventory {
@@ -217,6 +259,13 @@ impl Host {
             Request::Use { slot, target } => use_one(&self.defs, &mut inv, *slot).map(|effect| {
                 out.push(Event::Used { player: a.player, target: *target, effect });
             }),
+            Request::Swap { slot, rack } => match self.racks.get(rack).cloned() {
+                None => Err(Reject::NoRack),
+                Some(mut contents) => swap(&mut inv, &mut contents, *slot).map(|()| {
+                    self.racks.insert(*rack, contents.clone());
+                    out.push(Event::Rack { rack: *rack, contents });
+                }),
+            },
         };
         match result {
             Ok(()) => {
@@ -237,6 +286,8 @@ pub struct Client {
     pub defs: ItemDefs,
     /// Loose items as the host announced them.
     pub loose: BTreeMap<LooseId, Loose>,
+    /// The racks' stock as the host announced it.
+    pub racks: BTreeMap<RackId, Container>,
     /// The own inventory as the host last sent it.
     pub confirmed: Inventory,
     /// The other players' inventories as the host last sent them (their held items show).
@@ -262,7 +313,7 @@ impl Client {
     pub fn request(&mut self, req: Request) -> Result<Action, Reject> {
         let mut view = self.view.clone();
         let mut hidden = self.hidden.clone();
-        predict(&self.defs, &self.loose, &mut view, &mut hidden, &req)?;
+        predict(&self.defs, &self.loose, &self.racks, &mut view, &mut hidden, &req)?;
         self.seq += 1;
         let a = Action { player: self.player, seq: self.seq, req };
         self.pending.push(a.clone());
@@ -285,6 +336,9 @@ impl Client {
                     l.at = *at;
                 }
             }
+            Event::Rack { rack, contents } => {
+                self.racks.insert(*rack, contents.clone());
+            }
             Event::Inventory { player, inv } if *player == self.player => self.confirmed = inv.clone(),
             Event::Inventory { player, inv } => {
                 self.others.insert(*player, inv.clone());
@@ -305,7 +359,7 @@ impl Client {
         let mut view = self.confirmed.clone();
         let mut hidden = BTreeSet::new();
         for a in &self.pending {
-            let _ = predict(&self.defs, &self.loose, &mut view, &mut hidden, &a.req);
+            let _ = predict(&self.defs, &self.loose, &self.racks, &mut view, &mut hidden, &a.req);
         }
         self.view = view;
         self.hidden = hidden;
@@ -324,7 +378,7 @@ impl Client {
 }
 
 /// Applies a request to a view, as the host would.
-fn predict(defs: &ItemDefs, loose: &BTreeMap<LooseId, Loose>, view: &mut Inventory, hidden: &mut BTreeSet<LooseId>, req: &Request) -> Result<(), Reject> {
+fn predict(defs: &ItemDefs, loose: &BTreeMap<LooseId, Loose>, racks: &BTreeMap<RackId, Container>, view: &mut Inventory, hidden: &mut BTreeSet<LooseId>, req: &Request) -> Result<(), Reject> {
     match req {
         Request::Collect { item } => {
             let l = loose.get(item).filter(|_| !hidden.contains(item)).ok_or(Reject::Gone)?;
@@ -339,7 +393,39 @@ fn predict(defs: &ItemDefs, loose: &BTreeMap<LooseId, Loose>, view: &mut Invento
         Request::Use { slot, .. } => {
             use_one(defs, view, *slot)?;
         }
+        Request::Swap { slot, rack } => {
+            let mut contents = racks.get(rack).cloned().ok_or(Reject::NoRack)?;
+            swap(view, &mut contents, *slot)?;
+        }
     }
+    Ok(())
+}
+
+/// Hangs the stack of `slot` on the rack and takes the best spare of its kind from it (or any
+/// spare into an empty slot). Nothing changes unless all of it works.
+fn swap(inv: &mut Inventory, rack: &mut Container, slot: usize) -> Result<(), Reject> {
+    if slot >= BAR_SLOTS {
+        return Err(Reject::NoSuchSlot);
+    }
+    let own = inv.slot(slot).cloned();
+    let kind = own.as_ref().map(|s| s.item.kind.clone());
+    let spare = (0..rack.len())
+        .filter(|i| rack.slot(*i).is_some_and(|s| kind.as_ref().is_none_or(|k| *k == s.item.kind)))
+        .max_by(|a, b| {
+            let c = |i: &usize| rack.slot(*i).and_then(|s| s.item.condition).unwrap_or(0.0);
+            c(a).total_cmp(&c(b)).then(b.cmp(a))
+        })
+        .ok_or(Reject::NoSpare)?;
+    let mut trial_inv = inv.clone();
+    let mut trial_rack = rack.clone();
+    let taken = trial_rack.take(&[], spare, 1).map_err(Reject::from)?;
+    if own.is_some() {
+        let mine = trial_inv.take_slot(slot)?;
+        trial_rack.insert_at(&[], spare, mine).map_err(|r| Reject::from(r.why))?;
+    }
+    trial_inv.bar.insert_at(&[], slot, taken).map_err(|r| Reject::from(r.why))?;
+    *inv = trial_inv;
+    *rack = trial_rack;
     Ok(())
 }
 

@@ -38,21 +38,10 @@ pub const DOOR_ID: PanelId = PanelId::new("engine_door_screen");
 pub const DOOR_NAME: &str = "REACTOR ROOM";
 pub const FAULTS_ID: PanelId = PanelId::new("reactor_faults");
 pub const FAULTS_NAME: &str = "Dev faults";
-/// The dev fault screen's place next to the test console (zone local metres, as `PlaceholderBox`).
-pub const FAULTS_AT: [f64; 2] = [1.9, -4.5];
 /// The output scale of the power gauge, kW (the spec's).
 pub const POWER_MAX_KW: f64 = 1000.0;
 
 pub fn plugin(app: &mut App) {
-    app.world_mut().resource_mut::<DevAreaDevices>().add(PlaceholderBox {
-        id: "dev_faults".into(),
-        zone: LAB,
-        local_pos: FAULTS_AT,
-        size: [0.6, 1.0, 0.6],
-        turn_deg: 0.0,
-        colour: [0.32, 0.36, 0.42],
-        panel: Some(PanelSpec { id: FAULTS_ID, name: FAULTS_NAME.into(), size_m: [0.48, 0.36], at: [0.0, 1.4, 0.2], tilt_deg: 15.0 }),
-    });
     app.add_systems(FixedUpdate, (read_clicks, write_panels).chain().in_set(crate::phases::Fx::Effects));
 }
 

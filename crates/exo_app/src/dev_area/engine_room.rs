@@ -54,9 +54,9 @@ pub const COOLANT_PUMP_AT: [f64; 2] = [-10.5, -17.5];
 pub const COOLANT_PUMP_SIZE: [f64; 3] = [1.0, 1.2, 1.0];
 pub const JUNCTION_BOX_AT: [f64; 2] = [-17.0, -18.85];
 pub const JUNCTION_BOX_SIZE: [f64; 3] = [0.6, 0.9, 0.3];
-/// The M-tier screen's spot: its centre on the east wall's inner face, its height from the floor.
-pub const REACTOR_SCREEN_AT: [f64; 2] = [-9.03, -15.0];
-pub const REACTOR_SCREEN_SIZE: [f64; 3] = [0.06, 1.2, 1.6];
+/// The M-tier screen's spot: on the south wall's inner face next to the reactor (east of it),
+/// its height from the floor.
+pub const REACTOR_SCREEN_AT: [f64; 2] = [-11.8, -18.96];
 pub const REACTOR_SCREEN_LIFT: f64 = 0.9;
 /// The readout's size on the wall (m): the M screen's 1.6 : 1 aspect.
 pub const READOUT_SIZE: [f64; 2] = [1.6, 1.0];
@@ -77,11 +77,12 @@ pub struct Mount {
 
 /// The coolant pump's screen on its north face (the walker's side), the junction box's on the
 /// south wall above the box, and the door's in the corridor on the east wall by the doorway, at
-/// eye height.
-pub const SCREENS: [Mount; 3] = [
+/// eye height; the dev faults screen inside the room on the north wall, west of the door.
+pub const SCREENS: [Mount; 4] = [
     Mount { id: reactor_screen::PUMP_ID, name: reactor_screen::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::JUNCTION_ID, name: reactor_screen::JUNCTION_NAME, at: [JUNCTION_BOX_AT[0], -18.98], lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: reactor_screen::DOOR_ID, name: reactor_screen::DOOR_NAME, at: [-12.98, -10.0], lift: 1.3, size: SMALL_SCREEN_SIZE, turn: -90.0 },
+    Mount { id: reactor_screen::DOOR_ID, name: reactor_screen::DOOR_NAME, at: [-13.04, -10.0], lift: 1.3, size: SMALL_SCREEN_SIZE, turn: -90.0 },
+    Mount { id: reactor_screen::FAULTS_ID, name: reactor_screen::FAULTS_NAME, at: [-17.5, -11.04], lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 0.0 },
 ];
 
 /// The device ids of the parts (`DevBox::id`).
@@ -217,11 +218,10 @@ const PARTS: [Part; 8] = [
 
 /// The machines and the screen, standing in the room (not in `PARTS` only because they are
 /// named constants above).
-const MACHINES: [Part; 4] = [
+const MACHINES: [Part; 3] = [
     Part { id: REACTOR, at: REACTOR_AT, size: REACTOR_SIZE, lift: 0.0, colour: [0.55, 0.3, 0.2] },
     Part { id: COOLANT_PUMP, at: COOLANT_PUMP_AT, size: COOLANT_PUMP_SIZE, lift: 0.0, colour: DEVICE_COLOUR },
     Part { id: JUNCTION_BOX, at: JUNCTION_BOX_AT, size: JUNCTION_BOX_SIZE, lift: 0.0, colour: [0.85, 0.7, 0.2] },
-    Part { id: REACTOR_SCREEN, at: REACTOR_SCREEN_AT, size: REACTOR_SCREEN_SIZE, lift: REACTOR_SCREEN_LIFT, colour: [0.04, 0.05, 0.07] },
 ];
 
 /// The bottom and the top of a part above the ground (m): on the ground the bottom is sunk.
@@ -336,10 +336,10 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
             .id();
         area.entities.push(e);
     }
-    // The reactor's readout: on the east wall, facing west into the room (turn -90 from the pads'
-    // south), its centre 0.9 m up plus half its height.
+    // The reactor's readout: on the south wall next to the reactor, facing north into the room
+    // (turn 180 from the pads' south), its centre 0.9 m up plus half its height.
     let (ground, up) = frame.ground(&planet, REACTOR_SCREEN_AT[0], REACTOR_SCREEN_AT[1], 0.0);
-    let rot = frame.rotation(up, -90.0);
+    let rot = frame.rotation(up, 180.0);
     let centre = ground + up * (REACTOR_SCREEN_LIFT + READOUT_SIZE[1] * 0.5);
     let e = commands.spawn(DisplayPanel { id: reactor_screen::READOUT_ID, name: reactor_screen::READOUT_NAME.into(), size_m: DVec2::from(READOUT_SIZE), centre, rot }).id();
     area.entities.push(e);

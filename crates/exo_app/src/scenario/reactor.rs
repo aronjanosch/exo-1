@@ -9,11 +9,11 @@
 //! no automatic shutdown. Without a window; the walker is set down at each screen (test setup) and
 //! uses it with F, the clicks go through the displays.
 use super::*;
-use crate::dev_area::engine_room::{ShipAlarm, ROOM};
+use crate::dev_area::engine_room::ShipAlarm;
 use crate::dev_area::reactor::{ReactorCounts, ReactorSim};
 use crate::dev_area::engine_room::{COOLANT_PUMP_AT, JUNCTION_BOX_AT};
 use crate::dev_area::reactor_screen::{DOOR_ID, FAULTS_ID, JUNCTION_ID, PUMP_ID, READOUT_ID};
-use crate::dev_area::{DevArea, LAB};
+use crate::dev_area::DevArea;
 use super::{ship_frame_of, with_player};
 use super::dev_area::tap_until;
 use crate::displays::{aim_at, world_point_of, ActiveDisplay, DisplayPanel, Panels};
@@ -171,7 +171,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
     }));
 
     // The dev faults screen: Pump break, Warn, then Danger.
-    use_display(s, "Dev faults", FAULTS_ID, LAB.point([1.9, -4.5 - 1.2]));
+    use_display(s, "Dev faults", FAULTS_ID, [-17.5, -12.2]);
     s.push(click_step(FAULTS_ID, "pump_break", 0.2));
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
@@ -256,7 +256,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
     s.push(load_step("reactor: ENGINES on: load 450 kW", 450.0));
 
     // The readout on the engine room's wall: MAN, then the fission slider to 30 %.
-    use_display(s, "REACTOR", READOUT_ID, [ROOM.centre[0] + 3.0, ROOM.centre[1]]);
+    use_display(s, "REACTOR", READOUT_ID, [-11.8, -17.7]);
     s.push(click_until(READOUT_ID, "mode", None, "reactor: the operator switches to MAN from the readout", |w| sim(w).manual));
     s.push(click_until(READOUT_ID, "fis_set", Some(0.3), "reactor: fission set to 30 % on the slider brings the temperature back", |w| (sim(w).fission - 30.0).abs() < 1.0));
     s.push(Box::new(|w, c| {

@@ -36,6 +36,8 @@ pub struct ReactorCounts {
     pub fires: u32,
     pub sparks: u32,
     pub meltdowns: u32,
+    /// The meltdown blasts (`dev_area::blast`).
+    pub blasts: u32,
 }
 
 /// The host's reactor: the room, the manual targets, and what was last sent.
@@ -258,6 +260,9 @@ pub fn route(e: RoomEvent, counts: &mut ReactorCounts) {
         RoomEvent::Reactor(ReactorEvent::Meltdown) => {
             counts.meltdowns += 1;
             warn!("reactor: MELTDOWN");
+        }
+        RoomEvent::Reactor(ReactorEvent::Blast(_)) => {
+            counts.blasts += 1;
         }
         RoomEvent::Device { source, event } => info!("engine room: {source:?} {event:?} (the machine's condition crossed a line)"),
         _ => {}
@@ -569,7 +574,9 @@ mod tests {
         route(RoomEvent::Reactor(ReactorEvent::Fire { size: 0.1 }), &mut k);
         route(RoomEvent::Fire { size: 0.05, source: reactor_core::Source::Junction }, &mut k);
         route(RoomEvent::Reactor(ReactorEvent::Meltdown), &mut k);
-        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, meltdowns: 1 });
+        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, meltdowns: 1, blasts: 0 });
+        route(RoomEvent::Reactor(ReactorEvent::Blast(reactor_core::Blast::default())), &mut k);
+        assert_eq!(k.blasts, 1, "the blast is counted");
     }
 }
 

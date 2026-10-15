@@ -62,7 +62,7 @@ pub fn vent_panel(r: Option<&ReactorNews>, i: usize) -> Panel {
 }
 
 /// The bridge door's panel (r44, BD-01): the door's state and the toggle, as the vent panels show their valve.
-/// Press asks the host (`RoomAsk::ToggleBridgeDoor`); the room's news carries the state.
+/// Press asks the host (`RoomAsk::SetBridgeDoor`); the room's news carries the state.
 pub fn bridge_door_panel(room: Option<&RoomNews>) -> Panel {
     let open = room.is_some_and(|r| r.bridge_door);
     let word = if open { "OPEN" } else { "SHUT" };

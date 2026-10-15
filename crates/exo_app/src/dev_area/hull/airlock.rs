@@ -7,10 +7,10 @@
 //! wet room between two doors (`content/Items/Assemblies/AutomaticHorizontalAirlock.xml`, and
 //! `Hull.IsWetRoom` at `IndoorsSteeringManager.cs:776`); the door's open state is `Door.cs:176-186`.
 //! The cycle is ours (`reactor_core/src/airlock.rs` has the sources of the rules). The doors sink
-//! into the floor when open, as the engine room's door slides away; the air is in `engine_room.rs`.
+//! into the floor when open, as the engine room's door slides away; the air is `ShipAir` in `hull/air.rs`.
 //!
 //! Host and clients: the host runs the cycle and the air; a client shows the host's doors (the news).
-//! The suit rack is the extinguisher racks' kind (`extinguisher.rs`, `extinguisher.json`).
+//! The suit rack in the airlock is gear's (`gear.rs`, `content/gameplay/gear/gear.json`).
 use crate::dev_area::{hull::ShipAir, layout::{AIRLOCK_DOOR_SIZE, DOOR_TIME, INNER_DOOR_AT, OUTER_DOOR_AT}};
 use crate::dev_area::*;
 use crate::items::{Items, Role};
@@ -27,7 +27,7 @@ pub struct AirlockSlab {
     pub progress: f64,
 }
 
-/// The two doors' slabs, spawned with the room (`engine_room::spawn_room`). Like the engine room's
+/// The two doors' slabs, spawned by `hull::doors::spawn_doors`. Like the engine room's
 /// door, the collider is the wall's; the slab is a dev box.
 pub(super) fn spawn_doors(commands: &mut Commands, frame: &Frame, planet: &PlanetRes, area: &mut DevArea) {
     for (door, at, name) in [(Door::Inner, INNER_DOOR_AT, "engine_airlock_inner_door"), (Door::Outer, OUTER_DOOR_AT, "engine_airlock_outer_door")] {

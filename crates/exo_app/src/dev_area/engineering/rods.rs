@@ -1,3 +1,11 @@
+//! Fuel rods by hand. A rod is an item you carry (`fuel_rod`, `fuel_rod_hot`, `fuel_rod_spicy`,
+//! `content/items/fuel_rod*.json`); its item condition is the rod's life (100 new, 0 spent), kept when
+//! it is carried, loaded or pulled. The reactor is an item container with fuel slots (Barotrauma style):
+//! a rod in a slot is its available fuel.
+//! A rack in the corridor holds loose rods. Load: a rod in hand, LMB held `HOLD_S` on the reactor, and
+//! `Request::Use` puts it into a free slot (`insert_rod`); a full reactor refuses it with a notice.
+//! Pull (the emergency brake, `pull_rod`): empty hands, LMB held `HOLD_S` on the reactor; the rod with
+//! the most life comes back as an item. A core above its optimal band burns the hand once (`device_core::minigame::hurt_of`).
 //! Values: TODO(initiator) (the rack's stock, the burn rule, hold times).
 use crate::dev_area::*;
 use crate::controls::Controls;

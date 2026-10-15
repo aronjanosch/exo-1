@@ -1,5 +1,6 @@
-//! - Values: `content/gameplay/fire/fire.json` (`fire_core::tuning`, strict loader). The spray's
-//!   reach and half-angle are in the same file (`spray_reach`, `spray_half_angle_deg`).
+//! The fire in the ship's air (`ShipAir`, stepped by the host), or the cells of `fire_core::grid` in the grid model (`FireGrid`). Fires burn the people in reach, the pump, the junction box and the reactor by their size, and spread through open doors.
+//! The extinguisher sprays while LMB is held with the aim in hand; the host puts out what it lands on. Host: `spray_step` and `fire_step`; the snapshot goes to clients about 4 times a second while it changes. Client: `spray_input` sends the aim and draws the snapshot.
+//! Values: `content/gameplay/fire/fire.json` (`fire_core::tuning`, strict loader); the spray's reach and half-angle are in the same file (`spray_reach`, `spray_half_angle_deg`).
 pub mod extinguisher;
 
 use crate::controls::Controls;

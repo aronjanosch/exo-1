@@ -51,6 +51,7 @@ mod reload;
 mod sc_linear;
 mod sc_flight_hud;
 mod savefile;
+mod ship_ambush;
 mod space;
 mod swap;
 mod town;
@@ -77,6 +78,10 @@ pub fn plugin(name: &str, headless: bool) -> impl Plugin {
             if headless {
                 app.add_systems(Update, swap::headless_view.in_set(crate::phases::Frame::Camera));
             }
+        }
+        if name == "ship_ambush" {
+            app.init_resource::<ship_ambush::AmbushAudit>();
+            app.add_systems(FixedLast, ship_ambush::ambush_audit);
         }
         if name == "first-person-settings" && headless {
             app.init_resource::<ViewState>().init_resource::<ClearColor>().init_resource::<bevy::light::GlobalAmbientLight>();
@@ -625,6 +630,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "hud" => hud::hud_steps(&mut s, &shot_step),
         "health" => health::health_steps(&mut s),
         "engine_room" => engine_room::engine_room_steps(&mut s),
+        "ship_ambush" => ship_ambush::ship_ambush_steps(&mut s),
         "reactor" => reactor::reactor_steps(&mut s),
         "coolant" => coolant::coolant_steps(&mut s),
         "rods" => rods::rods_steps(&mut s),

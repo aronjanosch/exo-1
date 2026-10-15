@@ -12,8 +12,8 @@
 //!   `Condition` 1.0 a second to a tank it holds, while it has power. That is 1.0 / 100 = 0.01 of a
 //!   full tank a second: empty to full in 100 s.
 //! - An empty tank: Barotrauma skips the effect at condition 0 (`Items/Components/ItemContainer.cs:717`,
-//!   `ExcludeBroken`), so the body falls back to the hull's air. This module follows the ticket
-//!   instead: worn and empty breathes nothing, which is worse than the room. TODO(initiator).
+//!   `ExcludeBroken`), so the body falls back to the hull's air. Ported as that: worn and empty
+//!   breathes the room.
 //!
 //! The rates are starting values taken from those numbers; the initiator plays them. Units: the
 //! tank is a fraction (0..1), the rates are fractions a second.
@@ -31,21 +31,17 @@ pub struct Mask {
 }
 
 impl Mask {
-    /// Whether the body breathes the room's air this step. Worn, it breathes from the mask (good
-    /// air or none), so it takes nothing from the room, whatever the tank holds.
+    /// Whether the body breathes the room's air this step: off, or worn with an empty tank
+    /// (Barotrauma's broken tank, `ItemContainer.cs:717`).
     pub fn takes_room_air(&self) -> bool {
-        !self.worn
+        !self.worn || self.tank <= 0.0
     }
 
-    /// One step of breathing: None when the mask is off (the body breathes the room, the caller
-    /// decides). Worn, the body breathes the oxygen fraction this returns: 1.0 while the tank has
-    /// air (the tank drains by `dt`), 0.0 once it is empty.
+    /// One step of breathing: None when the body breathes the room (the mask is off or its tank
+    /// empty; the caller decides). Worn with air in the tank it returns 1.0 and drains the tank by `dt`.
     pub fn breathe(&mut self, dt: f64) -> Option<f64> {
-        if !self.worn {
+        if self.takes_room_air() {
             return None;
-        }
-        if self.tank <= 0.0 {
-            return Some(0.0);
         }
         self.tank = (self.tank - DRAIN_PER_S * dt).max(0.0);
         Some(1.0)
@@ -90,11 +86,11 @@ mod tests {
     }
 
     #[test]
-    fn worn_and_empty_breathes_nothing() {
+    fn worn_and_empty_breathes_the_room() {
         let mut m = Mask { worn: true, tank: 0.0 };
-        assert_eq!(m.breathe(TICK), Some(0.0));
+        assert_eq!(m.breathe(TICK), None);
         assert_eq!(m.tank, 0.0);
-        assert!(!m.takes_room_air(), "worn, it takes no room air either");
+        assert!(m.takes_room_air(), "Barotrauma: an empty tank falls back to the hull's air");
     }
 
     #[test]

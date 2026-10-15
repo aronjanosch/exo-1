@@ -195,8 +195,10 @@ fn mask_breath(time: Res<Time>, mut items: ResMut<Items>, mut worn: ResMut<MaskW
         }
         let before = items.host.condition(who, slot).unwrap_or(0.0) / 100.0;
         let mut m = Mask { worn: true, tank: before };
-        let breathed = m.breathe(dt).unwrap_or(0.0);
-        air.0.insert(who, breathed);
+        // An empty tank breathes the room (Barotrauma), so the body gets no mask entry.
+        if let Some(breathed) = m.breathe(dt) {
+            air.0.insert(who, breathed);
+        }
         let drop = (before - m.tank) * 100.0;
         if drop > 0.0 {
             items.wear(now, who, slot, drop);

@@ -32,7 +32,7 @@
 //! the spec drew 5000).
 //! TODO(initiator): the glow of the critical text and the scanlines' look are not drawn yet.
 use super::*;
-use crate::displays::{DisplayAction, Panels};
+use crate::displays::{ActiveDisplay, DisplayAction, Panels};
 use crate::dev_area::reactor::{lamp_blink_on, ReactorConfig};
 use crate::items::Items;
 use display_core::{button, canvas, column, ctl, font, label, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Shape, Tier, TextFace, Tone};
@@ -60,7 +60,16 @@ pub const STATUS_NAME: &str = "RX STATUS";
 /// The dev faults screen's mount point (area metres, the engine room's north wall, the room side).
 pub const FAULTS_AT: [f64; 2] = [-17.5, -11.04];
 
+/// The action of the readout's "?" button (and of the help view's close).
+pub const HELP_ACTION: &str = "help";
+
+/// Whether this player has the readout's help view open. Local UI state: it is not sent, and each
+/// process draws its own panels. Closed when the player leaves the display (`write_panels`).
+#[derive(Resource, Default, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReactorHelp(pub bool);
+
 pub fn plugin(app: &mut App) {
+    app.init_resource::<ReactorHelp>();
     app.add_systems(FixedUpdate, (read_clicks, write_panels).chain().in_set(crate::phases::Fx::Effects));
 }
 
@@ -312,7 +321,8 @@ pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
         vec![
             toggle(manual, "", "mode").labels("AUTO", "MAN").fixed(ctl::MD),
             toggle(on, "", "power").labels("OFF", "ON").fixed(ctl::MD),
-            button("SCRAM", "scram").tone(Tone::Bad).fixed(ctl::LG),
+            // The help button sits beside SCRAM: the header plate has no room for buttons.
+            row(8.0, vec![button("SCRAM", "scram").tone(Tone::Bad).flex(1.0), button("?", HELP_ACTION).fixed(ctl::SM)]).fixed(ctl::LG),
         ],
     );
     let (optimal, allowed) = bands(r);
@@ -694,12 +704,16 @@ pub fn cover_word(r: &ReactorNews) -> Item {
 /// The clicks: the readout asks for the reactor (the toggles give the new state as the value, the
 /// sliders the value 0..1), the machines' screens for their switches, the fault screen for the
 /// faults and the reset.
-pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<Items>) {
+pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<Items>, mut help: ResMut<ReactorHelp>) {
     for c in clicks.read() {
         let snap = items.reactor;
         let new_state = |current: bool| c.value.map(|v| v >= 0.5).unwrap_or(!current);
         let ask = if c.panel == READOUT_ID {
             match c.action.as_str() {
+                HELP_ACTION => {
+                    help.0 = !help.0;
+                    None
+                }
                 "mode" => snap.map(|r| ReactorAsk::SetManual(new_state(r.manual))),
                 "power" => snap.map(|r| ReactorAsk::SetPower(new_state(r.power_on))),
                 "scram" => Some(ReactorAsk::Scram),
@@ -756,7 +770,10 @@ const IMPELLER_STEP: f64 = 6.0;
 
 /// Every panel from the state, every tick (`Panels::set` skips an unchanged one). The impeller
 /// turns with the pump's flow (`effects::impeller_angle`), from the fixed step's time.
-pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>, mut spin: Local<f64>, mut panels: ResMut<Panels>) {
+pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>, active: Res<ActiveDisplay>, mut help: ResMut<ReactorHelp>, mut spin: Local<f64>, mut panels: ResMut<Panels>) {
+    if active.using().is_none() {
+        help.0 = false;
+    }
     let speed = items.reactor.map_or(0.0, |r| r.pump_speed);
     *spin = crate::effects::impeller_angle(*spin, speed, time.delta_secs_f64());
     let angle = (*spin / IMPELLER_STEP).round() * IMPELLER_STEP;
@@ -989,6 +1006,16 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn the_readout_has_a_help_button_beside_scram() {
+        let p = shipped_panel(Some(&news()));
+        let help = p.find(HELP_ACTION).expect("the ? button");
+        assert!(matches!(help.widget, display_core::Widget::Button { enabled: true, .. }));
+        let scram = p.find("scram").expect("SCRAM");
+        assert!((help.rect.min.y - scram.rect.min.y).abs() < 1e-9 && help.rect.min.x > scram.rect.min.x, "? sits to the right of SCRAM");
+        assert!(shipped_panel(None).find(HELP_ACTION).is_some(), "the ? is there with no snapshot too");
     }
 
     #[test]

@@ -737,6 +737,12 @@ impl EngineRoom {
         ev
     }
 
+    /// Throws the core out (`Reactor::eject`, PULSAR's core eject). The events are the reactor's:
+    /// `CoreEjected` alone, or none when the core is out already. No blast: an ejected core cannot melt.
+    pub fn eject_core(&mut self) -> Vec<RoomEvent> {
+        self.reactor.eject().into_iter().map(RoomEvent::Reactor).collect()
+    }
+
     /// A blast in the reactor's events takes `device_damage` from the pump and the junction box:
     /// every device in the room is in range. Returns their device events.
     fn blast_damage(&mut self, reactor_ev: &[ReactorEvent]) -> Vec<RoomEvent> {

@@ -75,6 +75,8 @@ pub enum Action {
     Boost(bool),
     /// Melts the core now, as if the meltdown timer had run out (`EngineRoom::melt_now`).
     MeltNow,
+    /// Throws the core out (`EngineRoom::eject_core`, PULSAR's core eject). The events are logged.
+    Eject,
 }
 
 /// A named run: the actions, and how long the run lasts.
@@ -250,6 +252,17 @@ pub fn scripts() -> Vec<Script> {
             steps: vec![
                 (0.0, Action::ScramWhenMeltdownAbove(0.9)),
                 (10.0, Action::Fault(Fault::PumpBreak)),
+            ],
+        },
+        // The core eject (#300 r22): the operator holds fission and turbine at 100 (Manual), the pump
+        // breaks at 10 s, and at TempCritical the core is thrown out. No meltdown follows.
+        Script {
+            name: "eject_in_time",
+            duration_s: 300.0,
+            steps: vec![
+                (0.0, Action::Manual { fission: 100.0, turbine: 100.0 }),
+                (10.0, Action::Fault(Fault::PumpBreak)),
+                (0.0, Action::OnAlarm(AlarmKind::TempCritical, Box::new(Action::Eject))),
             ],
         },
         Script {
@@ -530,6 +543,11 @@ impl Runner {
                     self.pending.push(label(&e));
                 }
             }
+            Action::Eject => {
+                for e in room.eject_core() {
+                    self.pending.push(label(&e));
+                }
+            }
             Action::ScramWhenMeltdownAbove(_) | Action::AfterMeltdown(..) | Action::OnAlarm(..) => {}
         }
     }
@@ -567,6 +585,7 @@ fn label(e: &RoomEvent) -> String {
         RoomEvent::Reactor(ReactorEvent::Fire { .. }) => "Fire".into(),
         RoomEvent::Reactor(ReactorEvent::Meltdown) => "Meltdown".into(),
         RoomEvent::Reactor(ReactorEvent::Blast(_)) => "Blast".into(),
+        RoomEvent::Reactor(ReactorEvent::CoreEjected) => "CoreEjected".into(),
         RoomEvent::Reactor(ReactorEvent::Alarm { kind, on }) => {
             format!("Alarm {kind:?} {}", if *on { "on" } else { "off" })
         }

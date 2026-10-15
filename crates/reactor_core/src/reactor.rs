@@ -20,6 +20,11 @@
 //! step's fuel (Barotrauma uses the last step's, `prevAvailableFuel`). `fuel_need` ports
 //! Barotrauma's NeedMoreFuel(1.0) and TooMuchFuel for the screen. Values: TODO(initiator).
 //!
+//! Core eject (PULSAR manual 367-369, `pulsar-mech-conduits.md`; #300 r22): a lever on every
+//! reactor throws the core out through the bottom of the ship. The rods leave with it, the reactor
+//! is dead (`eject`, `ejected`), and nothing can melt or blast while the core is out. Repaired
+//! back to functioning, the reactor has a new, empty core. Values and rules: TODO(initiator).
+//!
 //! Decay heat (ours, like a real reactor's decay heat; Barotrauma has none): the core keeps making
 //! heat after its fission stops, without coolant. `decay` follows fission / 100 with the time
 //! constant `decay_lag_s` (90 s), so a SCRAM stops fission at once and the residual heat fades over
@@ -149,6 +154,9 @@ pub struct ReactorTuning {
     pub boost_amount: f64,
     /// How fast a boost fades back to 0, per second (Barotrauma: 1). TODO(initiator): value.
     pub boost_decay: f64,
+    /// Seconds the EJECT cover stays open after ARM EJECT (the second press must come inside it).
+    /// The host keeps the timer (the glue's). TODO(initiator): value.
+    pub eject_arm_s: f64,
     /// The meltdown blast (`Blast`). TODO(initiator): values.
     pub blast: Blast,
     /// Inertia on (the default): the temperature is the damped spring, the output makes heat and
@@ -190,6 +198,7 @@ impl Default for ReactorTuning {
             auto_lookahead_s: 8.0,
             boost_amount: 25.0,
             boost_decay: 1.0,
+            eject_arm_s: 5.0,
             blast: Blast::default(),
             inertia: true,
             condition: DeviceTuning { repair_threshold: 50.0, wear_floor: 10.0, ..DeviceTuning::default() },
@@ -368,6 +377,8 @@ pub enum ReactorEvent {
     /// available fuel. The values are the reactor's `blast` tuning.
     Blast(Blast),
     Alarm { kind: AlarmKind, on: bool },
+    /// The core was thrown out (`Reactor::eject`). No melt and no blast follow it.
+    CoreEjected,
     /// The reactor's own condition crossed a line.
     Device(DeviceEvent),
 }
@@ -404,6 +415,8 @@ pub struct Reactor {
     coolant: f64,
     /// Heat the fission makes this step (the pump's coolant use follows it).
     heat_in: f64,
+    /// The core was ejected: no core, no rods, no melt. Cleared by a repair (a new core).
+    ejected: bool,
     /// Speed of the temperature, degrees per second (see the module doc).
     temp_vel: f64,
     /// Decay state, 0..1: follows fission / 100 with `decay_lag_s`; it drives the residual heat.
@@ -490,6 +503,7 @@ impl Reactor {
             coolant_target: 1.0,
             coolant: 1.0,
             heat_in: 0.0,
+            ejected: false,
             temp_vel: 0.0,
             decay: 0.0,
             boost: 0.0,
@@ -523,7 +537,7 @@ impl Reactor {
     /// broken already. The events are those of a melt in `step`.
     pub fn force_meltdown(&mut self) -> Vec<ReactorEvent> {
         let mut ev = Vec::new();
-        if self.condition.functioning() {
+        if self.condition.functioning() && !self.ejected {
             self.meltdown(&mut ev);
         }
         ev
@@ -582,7 +596,7 @@ impl Reactor {
 
     /// Puts a rod into a free slot; gives it back when all slots are full.
     pub fn insert_rod(&mut self, rod: FuelRod) -> Result<(), FuelRod> {
-        if self.rods.len() >= self.tuning.slots {
+        if self.ejected || self.rods.len() >= self.tuning.slots {
             return Err(rod);
         }
         self.rods.push(rod);
@@ -603,6 +617,36 @@ impl Reactor {
     pub fn pull_rod(&mut self, slot: usize) -> Option<(FuelRod, f64)> {
         let rod = self.remove_rod(slot)?;
         Some((rod, self.temp))
+    }
+
+    /// Throws the core out (PULSAR's core eject). Everything the core did stops at once: fission,
+    /// turbine, temperature, output, decay, boost, both timers and the targets go to 0, the power
+    /// goes off, and every rod leaves with the core (not given back). The reactor is broken
+    /// (condition 0) and `ejected` until a repair installs a new, empty core. Ejecting an ejected
+    /// reactor does nothing; the events are `CoreEjected` alone, or none.
+    pub fn eject(&mut self) -> Vec<ReactorEvent> {
+        if self.ejected {
+            return Vec::new();
+        }
+        self.ejected = true;
+        self.melted = false;
+        self.power_on = false;
+        self.rods.clear();
+        self.fuel = 0.0;
+        self.fission = 0.0;
+        self.turbine = 0.0;
+        self.target_fission = 0.0;
+        self.target_turbine = 0.0;
+        self.temp = 0.0;
+        self.temp_vel = 0.0;
+        self.output = 0.0;
+        self.heat_in = 0.0;
+        self.decay = 0.0;
+        self.boost = 0.0;
+        self.fire_timer = 0.0;
+        self.overheat_timer = 0.0;
+        self.condition.set_value(0.0);
+        vec![ReactorEvent::CoreEjected]
     }
 
     /// Brings the available fuel up to the rods and caps fission to it at once. Barotrauma caps
@@ -646,6 +690,10 @@ impl Reactor {
     }
     pub fn power_on(&self) -> bool {
         self.power_on
+    }
+    /// The core was ejected (`eject`): the screen shows NO CORE until a repair installs a new one.
+    pub fn ejected(&self) -> bool {
+        self.ejected
     }
     /// The core has melted: the screen shows MELTDOWN until the reactor is repaired back to
     /// functioning, and then it is a reactor again (the rods keep their life).
@@ -793,6 +841,10 @@ impl Reactor {
         // Repaired back to functioning after a meltdown: the core is a reactor again.
         if self.melted && self.condition.functioning() {
             self.melted = false;
+        }
+        // Repaired back to functioning after an eject: a new, empty core (the rods are not back).
+        if self.ejected && self.condition.functioning() {
+            self.ejected = false;
         }
 
         self.heat_in = 0.0;
@@ -979,6 +1031,10 @@ impl Reactor {
     }
 
     fn meltdown(&mut self, ev: &mut Vec<ReactorEvent>) {
+        // No core, no melt (an ejected core is out of the reactor, whatever the temperature was).
+        if self.ejected {
+            return;
+        }
         // The fuel at the moment of the melt (Barotrauma's Conditional: AvailableFuel > 1).
         let fuel = self.available_fuel();
         let before = self.condition.value();

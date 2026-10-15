@@ -13,7 +13,7 @@ use super::*;
 use crate::dev_area::engine_room::ShipAlarm;
 use crate::dev_area::reactor::{ReactorCounts, ReactorSim};
 use crate::dev_area::engine_room::{COOLANT_PUMP_AT, JUNCTION_BOX_AT};
-use crate::dev_area::reactor_screen::{DOOR_ID, FAULTS_ID, JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID};
+use crate::dev_area::reactor_screen::{reactor_status, DOOR_ID, FAULTS_ID, JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID};
 use crate::dev_area::DevArea;
 use super::{ship_frame_of, with_player};
 use super::dev_area::tap_until;
@@ -22,7 +22,7 @@ use crate::interact::Interaction;
 use crate::items::Items;
 use bevy::math::DVec3;
 use display_core::PanelId;
-use item_core::wire::Alarm;
+use item_core::wire::{Alarm, ReactorAsk};
 use reactor_core::Group;
 
 /// The display entity with this panel id.
@@ -359,6 +359,80 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
     // temperature boost to its amount (25, past 20).
     use_display(s, "RX STATUS", STATUS_ID, [-9.6, -17.6]);
     s.push(click_until(STATUS_ID, "boost_up", None, "reactor: BOOST UP on the status screen raises the boost", |w| sim(w).room.reactor().temperature_boost() > 20.0));
+
+    // #300 r22, PULSAR's core eject: ARM EJECT opens the cover, EJECT inside its window throws the core
+    // out. Then nothing follows: no melt, no blast, the readout says NO CORE, the rods are gone. The
+    // overheat above has broken the old core (its status screen is dark), so a fresh room comes first
+    // (the dev faults' Reset, as the host applies it).
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "reactor: a fresh core for the eject");
+            let k = counts(w);
+            c.v.insert("ejects0", k.ejects as f64);
+            c.v.insert("melts0", k.meltdowns as f64);
+            c.v.insert("blasts0", k.blasts as f64);
+            w.resource_mut::<Items>().ask_reactor(ReactorAsk::Reset);
+            return false;
+        }
+        // One second for the reset to be applied and the snapshot to show the new room.
+        if c.t < 1.0 {
+            return false;
+        }
+        let ok = w.resource::<Items>().reactor.is_some_and(|n| n.powered && n.output_kw > 0.0);
+        if !ok && c.t < 10.0 {
+            return false;
+        }
+        check(c, ok, "reactor: the fresh core runs on the load".into());
+        end(w, c, "fresh core".into());
+        true
+    }));
+    // One step for both presses: the button is ARM EJECT while the cover is shut and EJECT while it is
+    // open, so each retry (half a second) clicks what the snapshot shows now. The window is 5 s.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "reactor: ARM EJECT, then EJECT inside the window, on the status screen");
+            return false;
+        }
+        if sim(w).room.reactor().ejected() {
+            end(w, c, "ejected".into());
+            return true;
+        }
+        if c.t > 20.0 {
+            check(c, false, "reactor: the core was not ejected within 20 s".into());
+            end(w, c, "timed out".into());
+            return true;
+        }
+        let last = c.v.get("last").copied().unwrap_or(-1.0);
+        if last >= 0.0 && c.t < last + 0.5 {
+            return false;
+        }
+        let armed = w.resource::<Items>().reactor.is_some_and(|n| n.eject_armed);
+        let action = if armed { "eject" } else { "arm_eject" };
+        let d = display(w, STATUS_ID);
+        if let Some(at) = world_point_of(w, &d, action, None) {
+            aim_at(w, at);
+            w.resource_mut::<Controls>().click = true;
+            c.v.insert("last", c.t);
+        }
+        false
+    }));
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "reactor: after the eject nothing follows");
+            return false;
+        }
+        if c.t < 10.0 {
+            return false;
+        }
+        let k = *w.resource::<ReactorCounts>();
+        let (e0, m0, b0) = (c.v["ejects0"] as u32, c.v["melts0"] as u32, c.v["blasts0"] as u32);
+        check(c, k.ejects == e0 + 1 && k.meltdowns == m0 && k.blasts == b0, format!("reactor: one eject, no melt, no blast ({} / {} / {})", k.ejects - e0, k.meltdowns - m0, k.blasts - b0));
+        let n = w.resource::<Items>().reactor;
+        check(c, reactor_status(n.as_ref()).0 == "NO CORE", format!("reactor: the readout says NO CORE ({:?})", reactor_status(n.as_ref()).0));
+        check(c, sim(w).room.reactor().rods().is_empty() && !sim(w).room.reactor().melted(), "reactor: the rods went with the core, and nothing melted".into());
+        end(w, c, format!("{} eject", k.ejects - e0));
+        true
+    }));
 }
 
 /// The grid's demand of the groups whose breakers are on (what the load is, from the room).

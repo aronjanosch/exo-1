@@ -677,3 +677,80 @@ fn a_melt_keeps_the_rods_life() {
     assert_eq!(before, after);
     assert_eq!(r.available_fuel(), fuel);
 }
+
+/// PULSAR's core eject (manual 367-369, #300 r22): the core leaves through the bottom, the rods
+/// with it, the reactor is dead. Our values; the rules are the ticket's.
+fn hot_reactor() -> Reactor {
+    let mut r = reactor(50.0);
+    r.set_targets(100.0, 100.0);
+    run(&mut r, 60.0, 500.0);
+    r
+}
+
+#[test]
+fn eject_resets_the_core_and_takes_the_rods_with_it() {
+    let mut r = hot_reactor();
+    assert!(r.fission() > 0.0 && r.temperature() > 0.0);
+    let ev = r.eject();
+    assert_eq!(ev, vec![ReactorEvent::CoreEjected]);
+    assert!(r.ejected());
+    assert!(r.rods().is_empty(), "the rods leave with the core");
+    assert_eq!(r.available_fuel(), 0.0);
+    assert_eq!((r.fission(), r.turbine(), r.temperature(), r.output_kw()), (0.0, 0.0, 0.0, 0.0));
+    assert_eq!(r.timers(), (0.0, 0.0));
+    assert_eq!(r.condition().value(), 0.0, "the reactor is broken");
+    assert!(!r.power_on());
+    assert!(!r.set_power(true), "no power while the core is out");
+}
+
+#[test]
+fn eject_is_once_and_refuses_a_second_core_in_the_slots() {
+    let mut r = hot_reactor();
+    assert_eq!(r.eject(), vec![ReactorEvent::CoreEjected]);
+    assert!(r.eject().is_empty(), "a second eject does nothing");
+    assert!(r.insert_rod(FuelRod::standard()).is_err(), "no rods go into an empty core");
+}
+
+#[test]
+fn an_ejected_reactor_never_melts_or_blasts_even_with_manual_100_and_no_coolant() {
+    let mut r = hot_reactor();
+    r.eject();
+    r.set_targets(100.0, 100.0);
+    r.set_coolant(0.0);
+    let ev = run(&mut r, 600.0, 500.0);
+    assert!(!ev.iter().any(|(_, e)| matches!(e, ReactorEvent::Meltdown | ReactorEvent::Blast(_) | ReactorEvent::Fire { .. })), "{ev:?}");
+    assert!(!r.melted());
+    assert_eq!(r.temperature(), 0.0);
+}
+
+#[test]
+fn an_ejected_core_is_not_melted_by_a_forced_melt_even_once_repaired_before_the_next_step() {
+    let mut r = hot_reactor();
+    r.eject();
+    r.condition_mut().restore(100.0);
+    assert!(r.force_meltdown().is_empty(), "the core is gone: nothing to melt");
+    assert!(!r.melted());
+}
+
+#[test]
+fn a_repair_installs_an_empty_core_that_takes_rods_again() {
+    let mut r = hot_reactor();
+    r.eject();
+    r.condition_mut().restore(100.0);
+    run(&mut r, 1.0, 0.0);
+    assert!(!r.ejected(), "a repaired reactor has a core again");
+    assert!(r.rods().is_empty(), "the new core is empty");
+    assert!(r.set_power(true));
+    assert!(r.insert_rod(FuelRod::standard()).is_ok(), "the crew loads rods");
+    assert_eq!(r.fission(), 0.0, "the new core starts cold");
+}
+
+#[test]
+fn a_melted_core_that_is_ejected_is_no_longer_melted() {
+    let mut r = reactor(50.0);
+    r.force_meltdown();
+    assert!(r.melted());
+    r.eject();
+    assert!(!r.melted(), "the core is out: the MELTDOWN lamp goes with it");
+    assert!(r.ejected());
+}

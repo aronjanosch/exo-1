@@ -1,17 +1,9 @@
-//! Flight events for the licence exam: the ship's moments as domain events, nothing more.
-//! `TookOff` when the ship leaves the ground under the pilot, `PadReached` when it comes over a
-//! pad, `Landed` when it touches down, with the speed towards the ground just before. The exam
-//! reads these events and never how the ship flies, so the flight model can change under it.
-//!
-//! The state machine is `FlightWatch`, plain data without Bevy, so it can be tested; the system
-//! feeds it once per fixed step.
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use gameplay_core::{LocationId, WorldEvent};
 
 use crate::gameplay::{Gameplay, HOST};
 
-/// A ship this near a pad (m above its centre plane) in the air counts as having reached it.
 /// TODO(initiator): a starting value.
 pub const PAD_OVERFLIGHT_M: f64 = 120.0;
 /// How many fixed steps the approach speed is remembered: the contact comes a step after the
@@ -23,7 +15,6 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, watch_flight.after(crate::cargo::budget_step).in_set(crate::phases::Fx::Effects));
 }
 
-/// A pad the ship may be over.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PadView {
     pub location: LocationId,
@@ -36,7 +27,6 @@ pub struct PadView {
 #[derive(Resource, Debug)]
 pub struct FlightWatch {
     landed: bool,
-    /// The last approach speeds, newest last.
     recent: Vec<f64>,
     /// Pads reached and not left since.
     over: Vec<LocationId>,
@@ -67,7 +57,6 @@ impl FlightWatch {
         if self.landed && !landed {
             out.push(WorldEvent::TookOff);
         }
-        // Over a pad: in the air within its radius and the overflight height; once per visit.
         let here: Vec<&PadView> = pads.iter().filter(|p| !landed && p.across_m <= p.radius_m && (0.0..=PAD_OVERFLIGHT_M).contains(&p.height_m)).collect();
         for p in &here {
             if !self.over.contains(&p.location) {
@@ -122,10 +111,8 @@ mod tests {
         assert!(w.step(true, true, 0.0, &none).is_empty(), "sitting on the ground is nothing");
         assert_eq!(w.step(true, false, -3.0, &none), vec![WorldEvent::TookOff]);
         assert!(w.step(true, false, -3.0, &none).is_empty(), "once");
-        // Over the pad at 40 m: reached, once.
         assert_eq!(w.step(true, false, 0.0, &pad(5.0, 40.0)), vec![WorldEvent::PadReached { at: LocationId::new("drip_rock") }]);
         assert!(w.step(true, false, 2.0, &pad(5.0, 30.0)).is_empty());
-        // Down at 4.5 m/s, then contact: landed on the pad with the approach just before.
         w.step(true, false, 4.5, &pad(3.0, 5.0));
         let ev = w.step(true, true, 0.0, &pad(3.0, 1.0));
         assert_eq!(ev, vec![WorldEvent::Landed { at: Some(LocationId::new("drip_rock")), speed: 4.5 }]);
@@ -155,9 +142,7 @@ mod tests {
         let mut w = FlightWatch::default();
         let none: Vec<PadView> = Vec::new();
         assert!(w.step(false, false, 0.0, &none).is_empty(), "a drifting ship nobody flies");
-        // The pilot sits down in the air: not a take-off.
         assert!(w.step(true, false, 0.0, &none).is_empty());
-        // Climbing speed is no approach.
         w.step(true, false, -50.0, &none);
         let ev = w.step(true, true, 0.0, &pad(1.0, 1.0));
         assert!(matches!(ev.as_slice(), [WorldEvent::Landed { speed, .. }] if *speed == 0.0), "{ev:?}");

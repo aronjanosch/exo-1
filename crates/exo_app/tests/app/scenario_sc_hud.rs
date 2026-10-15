@@ -1,4 +1,3 @@
-//! The flight panel (badges, coupling blend, toast) through `Controls`, both models.
 use crate::common;
 use exo_app::Options;
 

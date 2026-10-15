@@ -1,9 +1,4 @@
-//! Two app instances in one process, a real UDP session on loopback, and the internet in
-//! between: every datagram a process receives is delayed 150 ms (so 300 ms round trip) with a
-//! little jitter and lost with 2 % (`--sim-delay`, `--sim-jitter`, `--sim-loss`). The host (slot 1)
-//! owns the items. Two players reach for one item, one drops and the other picks it up, a thrown
-//! item lands at the same spot on both, an item in the host's cabin is in the same place of the
-//! host's ship on both, and a late joiner sees what was there. Headless, in real time (about 15 s).
+//! Two app instances in one process over a UDP loopback with simulated link delay and loss.
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use exo_app::cargo::Crate;
@@ -134,7 +129,6 @@ fn two_players_share_items_over_150_ms_and_2_percent_loss() {
         app.update();
     }
     let start = Instant::now();
-    // The host's world has an item before the client comes: the late joiner is told about it.
     let at0 = in_front(&mut host, |_, _| DVec3::ZERO);
     spawn(&mut host, "wrench", at0);
     host.update();
@@ -142,7 +136,6 @@ fn two_players_share_items_over_150_ms_and_2_percent_loss() {
     start_session_with(client.world_mut(), &Session::Join { address: format!("127.0.0.1:{port}"), slot: 2 }, &sim_args()).expect("join");
     let mut p = Pair { host, client, start };
 
-    // 1. The session: roles, the late joiner's state, the other's figure.
     p.until(30.0, "connected, both see each other", |p| {
         p.host.world_mut().query::<&exo_app::net_live::RemoteWalker>().iter(p.host.world()).count() == 1
             && p.client.world_mut().query::<&exo_app::net_live::RemoteWalker>().iter(p.client.world()).count() == 1
@@ -160,8 +153,7 @@ fn two_players_share_items_over_150_ms_and_2_percent_loss() {
         h.asleep && h.pos.distance(c.pos) < 0.01
     });
 
-    // 2. Both reach for the wrench in the same instant: the host's own request is at the host at
-    // once, the client's needs 150 ms to cross, so the host's is first and wins.
+// The client's request needs 150 ms to cross, so the host's is first and wins.
     let seq_b = request(&mut p.client, Request::Collect { item: w0 }).expect("predicted");
     assert_eq!(count(&p.client, "wrench"), 1, "the client shows it at once");
     assert_eq!(confirmed(&p.client, "wrench"), 0);
@@ -172,10 +164,8 @@ fn two_players_share_items_over_150_ms_and_2_percent_loss() {
     assert_eq!(items(&p.client).client.rejected, vec![(seq_b, Reject::Gone)], "the second request was told it was gone");
     assert_eq!(confirmed(&p.client, "wrench"), 0);
     assert!(loose(&mut p.client).is_empty() && loose(&mut p.host).is_empty(), "the wrench is gone from both worlds");
-    // The host's hand shows on the client (what the figure holds).
     p.until(10.0, "the client knows the host holds the wrench", |p| items(&p.client).client.held_by(1).is_some_and(|s| s.item.kind.as_str() == "wrench"));
 
-    // 3. The host drops it, the client picks it up.
     let at = in_front(&mut p.host, |_, _| DVec3::ZERO);
     request(&mut p.host, Request::Drop { slot: 0, at }).expect("drop");
     assert_eq!(count(&p.host, "wrench"), 0);
@@ -191,7 +181,6 @@ fn two_players_share_items_over_150_ms_and_2_percent_loss() {
     assert_eq!(confirmed(&p.host, "wrench"), 0, "the host's bar is empty again");
     assert!(items(&p.client).client.rejected.len() == 1, "no new refusals");
 
-    // 4. The client throws it; the host simulates the flight; both agree where it lies.
     let slot = items(&p.client).client.view.selected;
     let at = in_front(&mut p.client, |fwd, up| fwd * 7.0 + up * 3.0);
     request(&mut p.client, Request::Throw { slot, at }).expect("throw");
@@ -216,12 +205,10 @@ fn two_players_share_items_over_150_ms_and_2_percent_loss() {
     });
     assert!(seen_c.len() >= 4, "the client watched it fly through {} places", seen_c.len());
     let thrown = loose(&mut p.client)[0].id.unwrap();
-    // The host picks it up again: gone from both.
     request(&mut p.host, Request::Collect { item: thrown }).expect("host collects");
     p.until(10.0, "gone from both again", |p| loose(&mut p.host).is_empty() && loose(&mut p.client).is_empty());
     assert_eq!(confirmed(&p.host, "wrench"), 1);
 
-    // 5. An item in the host's cabin: ship-local on the host, shown on the proxy of the host's ship.
     let in_cabin = Placement { frame: FrameRef::Ship(1), pos: [-1.3, exo_app::cargo::FLOOR_Y + 0.05, 0.8], vel: [0.0; 3], forward: [0.0, 0.0, -1.0] };
     spawn(&mut p.host, "bandage", in_cabin);
     p.until(10.0, "the client has the item from the cabin", |p| loose(&mut p.client).len() == 1);
@@ -231,14 +218,12 @@ fn two_players_share_items_over_150_ms_and_2_percent_loss() {
     });
     let proxy = p.client.world().resource::<Net>().proxy_of(1).expect("the host's ship is a proxy on the client");
     assert_eq!(loose(&mut p.client)[0].ship, Some(proxy), "the client's item rides the proxy of the host's ship");
-    // Nothing moves any more: the host sends no poses.
     p.run(1.0);
     let sent = p.host.world().resource::<Net>().st.bodies_tx;
     assert!(sent > 10, "poses were streamed while items moved ({sent} datagrams)");
     p.run(1.5);
     assert_eq!(p.host.world().resource::<Net>().st.bodies_tx, sent, "no poses while everything lies still");
 
-    // 6. The client walks into the host's cabin, looks at the bandage and presses F.
     let proxy = p.client.world().resource::<Net>().proxy_of(1).unwrap();
     {
         let w = p.client.world_mut();
@@ -256,14 +241,11 @@ fn two_players_share_items_over_150_ms_and_2_percent_loss() {
     p.until(10.0, "the bandage is gone from the cabin on both", |p| loose(&mut p.host).is_empty() && loose(&mut p.client).is_empty());
     assert_eq!(items(&p.host).host.inventory(2).count("bandage"), 1, "the host has it in player 2's bar");
 
-    // 7. A drop into the client's own ship cannot be simulated by the host: refused, rolled back.
     let slot = items(&p.client).client.view.selected;
     let seq = request(&mut p.client, Request::Drop { slot, at: Placement { frame: FrameRef::Ship(2), pos: [0.0, 1.0, 0.0], vel: [0.0; 3], forward: [0.0, 0.0, -1.0] } }).expect("predicted");
     assert_eq!(count(&p.client, "bandage"), 0);
     p.until(10.0, "the refused drop rolled back", |p| count(&p.client, "bandage") == 1);
     assert_eq!(items(&p.client).client.rejected.last(), Some(&(seq, Reject::Invalid)));
-    // 8. And the other way round: the client reaches first, the host's request comes after: the
-    // item is gone for the host already.
     let at = in_front(&mut p.host, |_, _| DVec3::ZERO);
     spawn(&mut p.host, "extinguisher", at);
     p.until(10.0, "both see the extinguisher", |p| loose(&mut p.client).len() == 1 && loose(&mut p.host).len() == 1);
@@ -279,8 +261,6 @@ fn two_players_share_items_over_150_ms_and_2_percent_loss() {
     println!("[{:5.1} s] done; host rx {} B, tx {} B", p.start.elapsed().as_secs_f64(), p.host.world().resource::<Net>().st.wire_rx, p.host.world().resource::<Net>().st.wire_tx);
 }
 
-/// The client uses a bandage on the host's player over the slow link: the client's stack
-/// shrinks at once and at the answer, the host's burn drops, the client's own vitals stay calm.
 #[test]
 fn a_bandage_used_by_a_client_on_the_host_heals_the_host_and_the_stack_shrinks() {
     let port = 20000 + (std::process::id() % 1000) as u16;
@@ -300,7 +280,6 @@ fn a_bandage_used_by_a_client_on_the_host_heals_the_host_and_the_stack_shrinks()
         p.host.world_mut().query::<&exo_app::net_live::RemoteWalker>().iter(p.host.world()).count() == 1
             && p.client.world_mut().query::<&exo_app::net_live::RemoteWalker>().iter(p.client.world()).count() == 1
     });
-    // The host's player is burning: 60 of burn on its body (the host's health system runs each tick).
     p.until(5.0, "the host has a body for its player", |p| p.host.world().resource::<HealthState>().bodies.contains_key(&1));
     {
         let st = p.host.world_mut().resource_mut::<HealthState>().into_inner();
@@ -308,14 +287,12 @@ fn a_bandage_used_by_a_client_on_the_host_heals_the_host_and_the_stack_shrinks()
     }
     let burn = |p: &Pair| p.host.world().resource::<HealthState>().bodies.get(&1).map_or(0.0, |b| b.health.strength("burn"));
     assert!(burn(&p) >= 59.0, "the host burns: {}", burn(&p));
-    // The client picks up one bandage from the host's world (the host spawns it in front of the client's walker).
     let at = in_front(&mut p.client, |_, _| DVec3::ZERO);
     spawn(&mut p.host, "bandage", at);
     p.until(10.0, "the client sees the bandage", |p| loose(&mut p.client).len() == 1);
     let b1 = loose(&mut p.client)[0].id.expect("id");
     request(&mut p.client, Request::Collect { item: b1 }).expect("predicted");
     p.until(10.0, "the host confirmed the client's bandage", |p| confirmed(&p.client, "bandage") == 1);
-    // The client uses it (slot 0, the first free) on the host's player.
     assert_eq!(items(&p.client).client.view.slot(0).map(|s| s.item.kind.as_str()), Some("bandage"));
     let burn_before = burn(&p);
     request(&mut p.client, Request::Use { slot: 0, target: 1 }).expect("predicted");
@@ -323,7 +300,6 @@ fn a_bandage_used_by_a_client_on_the_host_heals_the_host_and_the_stack_shrinks()
     p.until(10.0, "the host applied the bandage", |p| burn(p) < burn_before - 10.0);
     p.until(10.0, "the host confirmed the use", |p| confirmed(&p.client, "bandage") == 0 && items(&p.client).client.pending.is_empty());
     assert_eq!(items(&p.host).host.inventory(2).count("bandage"), 0, "the host's record of the client's stack");
-    // The host told the client its own vitals: no burn, full health.
     p.until(10.0, "the client has its vitals from the host", |p| items(&p.client).vitals_in.is_some());
     let v = items(&p.client).vitals_in.expect("vitals");
     assert!(v.burn_level == 0 && !v.burning && v.down.is_none() && v.health > 0.99, "the client's own vitals are calm: {v:?}");
@@ -334,14 +310,12 @@ fn status(app: &App, id: u32) -> PublicStatus {
     items(app).public.iter().find(|(p, _)| *p == id).map(|(_, s)| *s).unwrap_or_default()
 }
 
-/// The figure of `owner` as this process has it (its `RemoteStatus`).
 fn figure(app: &mut App, owner: u32) -> Option<PublicStatus> {
     let w = app.world_mut();
     let mut q = w.query::<(&exo_app::net_live::RemoteWalker, &RemoteStatus)>();
     q.iter(w).find(|(rw, _)| rw.owner == owner).map(|(_, s)| s.0)
 }
 
-/// The host's own body catches fire: heat per tick until the buildup is full.
 fn ignite(app: &mut App) {
     let mut st = app.world_mut().resource_mut::<HealthState>();
     let st = &mut *st;
@@ -362,8 +336,6 @@ fn set_down(app: &mut App, down: bool) {
 
 #[test]
 fn the_client_sees_the_host_burning_down_and_repairing() {
-    // The host's public status: burning, down and a repair session, as the client's figure
-    // of the host shows them.
     let port = 21000 + (std::process::id() % 1000) as u16;
     let o = Options { headless: true, ..Default::default() };
     let mut host = build_app(&o);
@@ -394,8 +366,6 @@ fn the_client_sees_the_host_burning_down_and_repairing() {
     assert_eq!(figure(&mut p.client, LOCAL_HOST), Some(status(&p.client, LOCAL_HOST)), "the figure carries the public status");
     assert!(!status(&p.client, LOCAL_HOST).down, "up again after the down");
 
-    // Unconscious: the host's vitality at zero, not dead. The client's figure lies down and
-    // is labelled as unconscious (not down); a treatment on the host wakes it.
     p.host.world_mut().resource_mut::<RepairSessions>().sessions.clear();
     {
         let mut st = p.host.world_mut().resource_mut::<HealthState>();
@@ -422,9 +392,6 @@ const LOCAL_HOST: u32 = exo_app::items::LOCAL;
 
 #[test]
 fn the_client_looking_at_the_burning_host_gets_the_medic_panel_and_the_bandage_highlight() {
-    // The medic view: the client looks at the host's player from 2 m. The panel names the burn
-    // ("■ BURN · ON FIRE"), the hint is the bandage on the client's slot 0, and only that slot is
-    // highlighted. The host is the patient: its own status, sent to the client, is what it reads.
     let port = 20500 + (std::process::id() % 1000) as u16;
     let o = Options { headless: true, ..Default::default() };
     let mut host = build_app(&o);
@@ -447,7 +414,6 @@ fn the_client_looking_at_the_burning_host_gets_the_medic_panel_and_the_bandage_h
         let st = p.host.world_mut().resource_mut::<HealthState>().into_inner();
         st.bodies.get_mut(&LOCAL_HOST).unwrap().health.add(&st.tuning, "burn", 60.0);
     }
-    // The client holds one bandage in slot 0 (the host spawns it in front of the client's walker).
     let at = in_front(&mut p.client, |_, _| DVec3::ZERO);
     spawn(&mut p.host, "bandage", at);
     p.until(10.0, "the client sees the bandage", |p| loose(&mut p.client).len() == 1);
@@ -456,7 +422,6 @@ fn the_client_looking_at_the_burning_host_gets_the_medic_panel_and_the_bandage_h
     p.until(10.0, "the host confirmed the client's bandage", |p| confirmed(&p.client, "bandage") == 1);
     assert_eq!(items(&p.client).client.view.slot(0).map(|s| s.item.kind.as_str()), Some("bandage"));
 
-    // The client stands 2 m from the host's player and looks at it.
     let (hp, hup) = walker(&mut p.host);
     let tangent = hup.any_orthonormal_vector();
     {

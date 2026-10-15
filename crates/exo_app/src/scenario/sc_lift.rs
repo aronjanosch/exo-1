@@ -1,5 +1,4 @@
-//! Scenario `sc-lift`: the SC model from the seat: the ship lifts off,
-//! holds its height, flies forward and shows the SC mode word.
+//! The SC model from the seat: lift off, hover, forward flight, mode word.
 use crate::hud::HudReadout;
 use crate::scenario::{check, hold_until, planet, put_at_seat, ship_e, ship_vel, sit, Step};
 use avian3d::prelude::{Position, Rotation};
@@ -30,7 +29,6 @@ pub fn sc_lift_steps(s: &mut Vec<Step>) {
         check(c, up > 5.0, format!("lift off: {up:.1} m up after 2 s of Space"));
         true
     }));
-    // Let the climb settle, then measure a hover.
     s.push(hold_until("settle 2 s", &[], 2.0, |_| false));
     s.push(Box::new(|w, c| {
         c.v.insert("h1", height(w));

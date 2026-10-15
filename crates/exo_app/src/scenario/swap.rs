@@ -5,7 +5,6 @@ use super::*;
 /// and the ship is still about 1000 km out (only the new planet's roots, no refinement yet).
 const SWAP_AUDIT_DELAY: u64 = 30;
 
-/// What one planet swap left behind, counted `SWAP_AUDIT_DELAY` ticks after it.
 #[derive(Clone, Debug)]
 pub struct SwapRow {
     pub from: PlanetId,
@@ -26,7 +25,6 @@ pub struct SwapRow {
     pub rss_mb: Option<f64>,
 }
 
-/// Scenario `swap`: watches `WarpTelemetry::swaps` and counts what each swap left behind.
 #[derive(Resource, Default)]
 pub struct SwapAudit {
     tick: u64,
@@ -125,7 +123,6 @@ pub(super) fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
         at = to;
     }
     let other = if at == HEARTH { CINDER } else { HEARTH };
-    // Late drop (past the middle): the nearest planet is the target, it becomes the simulation's.
     s.push(warp_flight(name(format!("swap {}: late emergency exit {} -> {}", rounds + 1, pname(at), pname(other))), "swap-late", Some(at), other, Flight::Emergency, dir.to_path_buf(), windowed));
     s.push(Box::new(move |w, c| {
         let now = w.resource::<PlanetRes>().id;
@@ -133,8 +130,6 @@ pub(super) fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
         true
     }));
     s.push(wait_drive_idle());
-    // Early drop (a fifth into the path): the nearest planet is the one left, it stays; the
-    // target is kept generated for a jump on.
     s.push(Box::new(|w, c| {
         c.v.insert("swaps_before_early", tel(w).swaps.len() as f64);
         true
@@ -148,7 +143,6 @@ pub(super) fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
         true
     }));
     s.push(wait_drive_idle());
-    // On from the drop point: the kept target, swapped in when the ship enters its zone.
     s.push(warp_flight(name(format!("swap {}: warp on from the drop point to {}", rounds + 2, pname(at))), "swap-on", None, at, Flight::Seated, dir.to_path_buf(), windowed));
     s.push(wait(1.0));
     s.push(Box::new(move |w, c| {

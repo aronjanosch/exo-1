@@ -1,11 +1,5 @@
-//! The dev area's hazards: three greybox floor pads along the north wall, in the storage
-//! strip. A hot plate burns whoever stands on it, a glowing barrel gives radiation, and the
-//! no-air booth takes the air away. `health` reads the zones; the boxes are the look.
 //! The rates are in `content/gameplay/health/health.json`. TODO(initiator): the booth's shape (a
 //! flat pad for now, not yet a walled booth).
-//!
-//! The spicy fuel rod (Barotrauma's volatile fulgurium rod) is a radiating item: while it
-//! is carried, in a slot, or lying in the world within `SPICY_RADIUS_M` of a body, that body gets
 //! `SPICY_RAD_PER_S` radiation per second. Inside the reactor it is shielded. The values are
 //! consts, the item format has no custom fields: TODO(initiator).
 use super::*;
@@ -20,7 +14,6 @@ pub const HOT_PLATE: Zone = Zone { name: "hot plate", centre: [-12.0, 16.0], hal
 pub const GLOW_BARREL: Zone = Zone { name: "glowing barrel", centre: [0.0, 16.0], half: [1.5, 1.5] };
 pub const NO_AIR: Zone = Zone { name: "no air", centre: [12.0, 16.0], half: [1.5, 1.5] };
 
-/// The spicy rod's item (`content/items/fuel_rod_spicy.json`).
 pub const SPICY_ITEM: &str = "fuel_rod_spicy";
 /// The spicy rod's reach (m) and its radiation (per second) on each body in reach. TODO(initiator).
 pub const SPICY_RADIUS_M: f64 = 1.25;
@@ -29,14 +22,12 @@ pub const SPICY_RAD_PER_S: f64 = 1.0;
 /// on the pad's east edge, so a walker one step further east stands outside the barrel's glow.
 pub const SPICY_AT: [f64; 2] = [1.45, 0.0];
 
-/// Where a spicy rod is: its point in the planet frame, and whether the reactor shields it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RodSpot {
     pub at: DVec3,
     pub shielded: bool,
 }
 
-/// Whether a point (area coordinates) is inside the reactor: a rod there is shielded.
 pub fn shielded_at(p: [f64; 2]) -> bool {
     Zone { name: "reactor", centre: REACTOR_AT, half: [REACTOR_SIZE[0] * 0.5, REACTOR_SIZE[2] * 0.5] }.contains(p)
 }
@@ -47,8 +38,6 @@ pub fn spicy_light() -> PointLight {
     PointLight { color: Color::srgb(0.235, 0.784, 0.588), intensity: 6_000.0, range: 3.0, shadow_maps_enabled: false, ..default() }
 }
 
-/// Who gets the spicy rods' radiation: every body within `radius` of an unshielded rod. A rod in a
-/// hand or a slot is at its holder's place (the caller passes that point).
 pub fn spicy_irradiated(rods: &[RodSpot], bodies: &[(PlayerId, DVec3)], radius: f64) -> BTreeSet<PlayerId> {
     bodies.iter().filter(|(_, b)| rods.iter().any(|r| !r.shielded && r.at.distance(*b) <= radius)).map(|(id, _)| *id).collect()
 }
@@ -69,7 +58,6 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, put_spicy_rod.in_set(crate::phases::Fx::Effects));
 }
 
-/// Once: one spicy rod lies on the pad by the glowing barrel (planet frame), for testers to try.
 fn put_spicy_rod(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, mut items: ResMut<Items>, ships: Query<(), With<crate::ship::Ship>>, mut done: Local<bool>) {
     if *done || ships.is_empty() {
         return;

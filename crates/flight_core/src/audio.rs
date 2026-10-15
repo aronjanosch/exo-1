@@ -1,9 +1,6 @@
 //! Thruster audio: one thrust signal drives the sound layers, each with its own attack and
 //! release (exponential slew). Pure math, no Bevy types; `exo_app::audio` only plays the levels.
 //!
-//! Layers: the rumble (main engine: forward/backward thrust and the overall share, plus a faint
-//! idle while the ship is on), six manoeuvre hisses (+x, -x, +y, -y, +z, -z), the boost roar
-//! (spools up while boost runs, down after), and the boost-start one-shot (a count of rising edges).
 //!
 //! All tuning values are start values: `TODO(initiator)`, to tune by ear.
 
@@ -12,7 +9,6 @@
 pub struct ThrusterSignal {
     /// Signed thrust share per axis (x, y, z), each -1..1; z negative is forward.
     pub thrust: [f64; 3],
-    /// Boost is running.
     pub boost: bool,
     /// The ship is parked (static, nobody has sat down): every layer falls to 0.
     pub parked: bool,
@@ -32,19 +28,15 @@ pub struct LayerLevels {
 /// Time constants in seconds (`TODO(initiator)`: start values, tune by ear).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ThrusterAudioTuning {
-    /// Rumble from a thrust level up and down (fast attack, slow release).
     pub rumble_attack: f64,
     pub rumble_release: f64,
-    /// Rumble with the ship on and no thrust.
     pub idle: f64,
     /// Rumble added per unit of forward/backward (z) thrust.
     pub rumble_forward: f64,
     /// Rumble added per unit of overall thrust share (the length of the thrust vector, max 1).
     pub rumble_share: f64,
-    /// Manoeuvre hiss: short attack, medium release.
     pub hiss_attack: f64,
     pub hiss_release: f64,
-    /// Boost roar: slow swell up, slow fall after.
     pub spool_up: f64,
     pub spool_down: f64,
 }
@@ -74,7 +66,6 @@ fn slew(level: f64, target: f64, dt: f64, tau: f64) -> f64 {
     level + (target - level) * k
 }
 
-/// The thruster layers, stepped with the simulation.
 #[derive(Clone, Debug, Default)]
 pub struct ThrusterAudio {
     pub tuning: ThrusterAudioTuning,
@@ -87,7 +78,6 @@ impl ThrusterAudio {
         ThrusterAudio { tuning, levels: LayerLevels::default(), boosting: false }
     }
 
-    /// The levels after the last step.
     pub fn levels(&self) -> LayerLevels {
         self.levels
     }
@@ -99,12 +89,10 @@ impl ThrusterAudio {
         let on = !input.parked;
         let share = (thrust[0] * thrust[0] + thrust[1] * thrust[1] + thrust[2] * thrust[2]).sqrt().min(1.0);
 
-        // Rumble: idle while on, plus the forward and overall thrust.
         let rumble_target = if on { (t.idle + t.rumble_forward * thrust[2].abs() + t.rumble_share * share).min(1.0) } else { 0.0 };
         let rumble_tau = if rumble_target > self.levels.rumble { t.rumble_attack } else { t.rumble_release };
         self.levels.rumble = slew(self.levels.rumble, rumble_target, dt, rumble_tau);
 
-        // Hisses: one per direction, the thrust in that direction.
         for axis in 0..3 {
             for (side, sign) in [(0, 1.0), (1, -1.0)] {
                 let i = axis * 2 + side;
@@ -114,7 +102,6 @@ impl ThrusterAudio {
             }
         }
 
-        // Boost roar: the boost running, not parked.
         let roar_target = if on && input.boost { 1.0 } else { 0.0 };
         let roar_tau = if roar_target > self.levels.boost { t.spool_up } else { t.spool_down };
         self.levels.boost = slew(self.levels.boost, roar_target, dt, roar_tau);

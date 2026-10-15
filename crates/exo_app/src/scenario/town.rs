@@ -1,12 +1,9 @@
-//! The town, headless: the city stands on its place with box colliders for its buildings,
-//! the plan's characters stand on the ground, a walker who walks at the company tower stops at its
-//! wall, and every pad of the new towns is on the planet.
+//! The town, headless: buildings' colliders, characters, and the new towns' pads.
 use super::jobs_helpers::{gp, pad};
 use super::*;
 use crate::town::Town;
 use gameplay_core::LocationId;
 
-/// The town pads, one per town and kind.
 const PADS: [&str; 8] = ["drip_rock_north", "drip_rock_inspect", "bent_spoon_east", "bent_spoon_inspect", "noodle_town", "gulch_freeport", "bent_spoon_scrub", "noodle_scrub"];
 
 fn tower(w: &World) -> (DVec3, DVec3) {
@@ -36,7 +33,6 @@ pub fn town_steps(s: &mut Vec<Step>) {
         let (a, b) = (pad(w, "drip_rock").centre, pad(w, "bent_spoon").centre);
         c.v.insert("bent_km", (a - b).length() / 1000.0);
         check(c, (a - b).length() > 1500.0, format!("town: Bent Spoon is a flight away from Drip Rock ({:.2} km at radius {:.0} m)", (a - b).length() / 1000.0, pl.radius));
-        // The walker 22 m south of the tower's centre, facing it.
         let (centre, up) = tower(w);
         let east = up.any_orthonormal_vector();
         let start = centre - up.cross(east).normalize() * 22.0;

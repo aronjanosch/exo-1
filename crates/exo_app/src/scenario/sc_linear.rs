@@ -1,8 +1,4 @@
-//! Scenario `sc-linear`: the SC model's linear law, driven through `Controls` from
-//! 400 m: D then W with boost (the peak stays under the boost cap), W+D then X (the heading holds
-//! while braking), H off (the ship falls with g), H on (it holds), B then W (NAV flies above the
-//! SCM cap, and bleeds back to it), PageDown five times (half the cap). Each line is a check with
-//! its numbers. Comstab off: brake in space, turn on the spot, launch along the new nose.
+//! The SC model's linear law: caps, brake, gravity compensation, master modes, limiter.
 use crate::controls::Controls;
 use crate::scenario::{altitude, begin, check, end, keys, planet, put_at_seat, ship_e, ship_vel, sit, tap, teleport_ship, with_ship, wait, Ctx, Step};
 use crate::ship::basis_for_up;
@@ -14,8 +10,6 @@ use flight_core::PlanetEnv;
 /// m above the ground the manoeuvres start from.
 const LIFT_HEIGHT: f64 = 400.0;
 
-/// Teleports the ship to `LIFT_HEIGHT` above the spot it stands on, level, at rest, the switches
-/// as at the start (test setup).
 fn lift(w: &mut World) {
     let e = ship_e(w);
     let p = w.get::<Position>(e).unwrap().0;
@@ -44,7 +38,6 @@ fn timed(name: &'static str, ks: Vec<KeyCode>, secs: f64, mut tick: impl FnMut(&
     })
 }
 
-/// The up direction of the planet at the ship.
 fn ship_up(w: &mut World) -> DVec3 {
     let e = ship_e(w);
     let p = w.get::<Position>(e).unwrap().0;
@@ -68,7 +61,6 @@ pub fn sc_linear_steps(s: &mut Vec<Step>) {
     }));
     s.push(wait(1.0));
 
-    // D then W with boost: sideways to the cap, then forward under the boost cap.
     s.push(timed("D to the sideways cap, 8 s", vec![KeyCode::KeyD], 8.0, |w, c| {
         let speed = ship_vel(w).length();
         c.v.insert("sideways", speed);
@@ -94,7 +86,6 @@ pub fn sc_linear_steps(s: &mut Vec<Step>) {
     }));
     s.push(wait(1.0));
 
-    // W+D to the cruise, then X: the heading holds while the ship stops.
     s.push(timed("W+D to the cruise, 6 s", vec![KeyCode::KeyW, KeyCode::KeyD], 6.0, |_, _| {}));
     let mut h0: Option<DVec3> = None;
     let mut max_turn = 0.0_f64;
@@ -149,7 +140,6 @@ pub fn sc_linear_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // H on: the flight computer holds the ship again.
     s.push(Box::new(|w, _| {
         tap(w, KeyCode::KeyH);
         true
@@ -164,7 +154,6 @@ pub fn sc_linear_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // B then W: NAV flies above the SCM cap; back to SCM it bleeds to the cap.
     s.push(Box::new(|w, _| {
         tap(w, KeyCode::KeyB);
         true
@@ -190,7 +179,6 @@ pub fn sc_linear_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // PageDown five times: the limiter at half, the ship holds half the cap.
     for _ in 0..5 {
         s.push(Box::new(|w, _| {
             tap(w, KeyCode::PageDown);
@@ -209,7 +197,6 @@ pub fn sc_linear_steps(s: &mut Vec<Step>) {
     }));
 
     // Playtest regression: coupled, comstab off, brake to rest, turn, then W. In vacuum the
-    // old heading cannot be confused with wind, gravity or a curved planetary horizon.
     s.push(Box::new(|w, _| {
         lift(w);
         let e = ship_e(w);

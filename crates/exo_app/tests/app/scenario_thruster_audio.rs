@@ -1,4 +1,3 @@
-//! The thruster sound layers follow strafe, boost and rest, driven through `Controls`.
 use crate::common;
 use exo_app::Options;
 

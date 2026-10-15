@@ -1,4 +1,3 @@
-//! Feel: input ramp, virtual-joystick mouse, boost, decoupled flight.
 use crate::common;
 use exo_app::Options;
 

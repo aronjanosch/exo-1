@@ -12,13 +12,11 @@ pub const RECIPES: &[(&str, &str)] = &[
     ("cinder", include_str!("../../../content/planet/cinder.json")),
 ];
 
-/// The recipe a planet of the system names, with the planet's seed and radius.
 pub fn recipe_for(def: &PlanetDef) -> Result<Recipe, String> {
     let text = RECIPES.iter().find(|(id, _)| *id == def.recipe).map(|(_, t)| *t).ok_or_else(|| format!("planet {}: no recipe '{}' in content/planet", def.name, def.recipe))?;
     Recipe::for_planet(text, def.seed, def.radius).map_err(|e| format!("content/planet/{}.json: {e}", def.recipe))
 }
 
-/// The hand-placed places of a planet recipe (`content/place/*.json`).
 pub fn places_for(recipe: &str) -> Vec<planet_core::Place> {
     crate::content_files("place")
         .iter()
@@ -50,17 +48,13 @@ pub struct PlanetRes {
     pub relief: f64,
     pub field: Field,
     pub bake_ms: f64,
-    /// The planet in the system registry.
     pub id: PlanetId,
 }
 
 impl PlanetRes {
-    /// A planet of the registry: the recipe with its seed and radius, at its centre, with its
-    /// atmosphere height.
     pub fn load(id: PlanetId, def: &PlanetDef) -> PlanetRes {
         Self::load_with_stats(id, def).0
     }
-    /// `load`, with the bake's statistics.
     pub fn load_with_stats(id: PlanetId, def: &PlanetDef) -> (PlanetRes, BakeStats) {
         let recipe = recipe_for(def).unwrap_or_else(|e| panic!("{e}"));
         let mut p = Planet::new(recipe);
@@ -90,14 +84,12 @@ impl PlanetRes {
         };
         (res, st)
     }
-    /// Distance from the centre to the ground along a direction.
     pub fn surface(&self, dir: DVec3) -> f64 {
         self.radius + self.pgen.height_at(to_v3(dir.normalize()))
     }
     pub fn up(&self, world: DVec3) -> DVec3 {
         (world - self.centre).normalize()
     }
-    /// Height of a world point above the ground below it.
     pub fn above_ground(&self, world: DVec3) -> f64 {
         let p = world - self.centre;
         p.length() - self.surface(p)

@@ -1,26 +1,3 @@
-//! Coolant by hand. The pump's tank runs down while it runs (`reactor_core`,
-//! `Pump`, the use in proportion to the heat it carries away); a dry tank is no flow. The refill is
-//! hands-on:
-//!
-//! - A storage rack in the corridor holds a stack of three coolant canisters (`coolant_canister`,
-//!   `content/items/coolant_canister.json`, use `refill_coolant`).
-//! - Client: a canister in the selected slot, the look on the coolant pump within reach, LMB held
-//!   for `HOLD_S` seconds: `Request::Use` goes to the host, which takes one canister from the stack.
-//! - Host: `reactor_step` takes the applied canisters (`Items::take_refills`) and refills the tank
-//!   by `RoomTuning::coolant_canister`.
-//!
-//! Research (where the rules come from; we take the tank from PULSAR and the hand refill from
-//! Barotrauma, no files copied):
-//! - PULSAR: a coolant level in % and a pump state Off, Low, High; coolant is bought in 5 % steps and
-//!   used up. `~/Work/exo-research/pulsar/assets/textassets/manual_plain.txt` ("The Coolant
-//!   Screen"); `~/Work/exo-research/pulsar/cpp2il/metadata-dump/Assembly-CSharp.txt`
-//!   (`ReactorCoolantLevelPercent`, `ReactorCoolingPumpState`, `PLContainmentScreen_Coolant`);
-//!   report `~/Work/exo-research/reports/pulsar.md` section 3.2.
-//! - Barotrauma: no coolant; the reactor burns fuel rods put into its slots by hand, a consumable.
-//!   `~/Work/exo-research/barotrauma/content/Items/Reactor/reactor.xml` (`ItemContainer`, fuel slots);
-//!   `~/Work/exo-research/barotrauma/source/Barotrauma/BarotraumaShared/SharedSource/Items/Components/Machines/Reactor.cs`
-//!   (`FuelConsumptionRate`, the rods' condition goes down).
-//!
 //! Not yet: the hold has no ring on the reticle (TODO(initiator)), other players see no refill, the
 //! pump states Low and High (later, with the pump's second setting).
 use super::*;
@@ -36,17 +13,13 @@ use item_core::wire::RepairDevice;
 use item_core::{FrameRef, Placement, Request};
 use walker_core::Frame;
 
-/// The `use` effect of a coolant canister.
 pub const REFILL: &str = "refill_coolant";
-/// Seconds LMB is held on the pump to refill it with one canister.
 pub const HOLD_S: f64 = 3.0;
 /// The rack in the corridor, relative to the corridor's centre (m), its size (m).
 pub const RACK_AT: [f64; 2] = [0.6, -1.5];
 pub const RACK_SIZE: [f64; 3] = [0.5, 0.9, 0.5];
-/// Canisters on the rack when the area is made.
 pub const ON_RACK: u32 = 3;
 
-/// The client's hold on the pump: seconds so far.
 #[derive(Resource, Default, Debug)]
 pub struct CoolantHold {
     pub held: f64,
@@ -75,7 +48,6 @@ pub fn plugin(app: &mut App) {
     );
 }
 
-/// Once: the stack of canisters on the rack (planet frame, on top of the rack).
 fn put_canisters(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, mut items: ResMut<Items>, ships: Query<(), With<crate::ship::Ship>>, mut done: Local<bool>) {
     if *done || ships.is_empty() {
         return;
@@ -90,11 +62,8 @@ fn put_canisters(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, mu
     items.spawn(time.elapsed_secs_f64(), d.stack_of(ON_RACK), at);
 }
 
-/// The item's id in `content/items`.
 pub const REFILL_ITEM: &str = "coolant_canister";
 
-/// Client: a canister in the selected slot, the look on the pump, LMB held `HOLD_S` seconds: one
-/// use goes to the host. Any other state ends the hold.
 #[allow(clippy::too_many_arguments)]
 fn coolant_use(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMut<Items>, cfg: Res<RepairConfig>, active: Res<ActiveDisplay>, mut hold: ResMut<CoolantHold>, players: Query<&Player>, machines: Query<(&DevBox, &Position, &Rotation)>) {
     let dt = time.delta_secs_f64();

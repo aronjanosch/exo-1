@@ -1,13 +1,5 @@
-//! Visual feedback (window only; the logic is the same in every process): the smoke and the
-//! sparks of the broken machines, the reactor's critical lamp, the engine room's lights in a power
-//! loss, the steam where a spray lands on a fire, and the screen's edges for burning, bad air,
-//! radiation and a finished treatment.
-//!
-//! The rules are pure functions with unit tests (`smoke_level`, `spark_every`, `lamp_lit`,
-//! `screen_fx`, ...). The systems only draw them: they read the snapshots (`Items::reactor`,
+//! The systems only draw the effects: they read the snapshots (`Items::reactor`,
 //! `Items::fire`) and the local vitals (`crew_hud::Vitals`), so a client shows the same as the host.
-//! Everything is cheap: one shared mesh and one material per kind, short-lived particles that move
-//! with `WorldPos`, and a few UI nodes for the screen.
 use crate::crew_hud::Vitals;
 use crate::dev_area::engine_room::{ignition_at, COOLANT_PUMP_AT, JUNCTION_BOX_AT, JUNCTION_BOX_SIZE, REACTOR_AT, REACTOR_SIZE};
 use crate::dev_area::DevArea;
@@ -25,7 +17,6 @@ use std::f64::consts::TAU;
 
 // ---------- the rules (pure) ----------
 
-/// A device's smoke by its condition: none, thin grey puffs below half, heavy below 15 %.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Smoke {
     None,
@@ -72,12 +63,10 @@ pub const SPARK_SIZE: f32 = 0.045;
 pub const SPARK_LIFE: f32 = 0.6;
 pub const SPARK_HEIGHT: f64 = 1.0;
 
-/// The reactor's critical lamp: lit while the power is on and the core is above its allowed band.
 pub fn is_critical(r: Option<&ReactorNews>) -> bool {
     r.is_some_and(|r| r.power_on && r.temp > r.allowed[1])
 }
 
-/// The lamp's blink: on for half of each second (1 Hz) while critical, else off.
 pub fn critical_lamp_lit(critical: bool, t: f64) -> bool {
     critical && t.rem_euclid(1.0) < 0.5
 }
@@ -91,33 +80,26 @@ pub fn noise(seed: u64) -> f64 {
     (z >> 11) as f64 / (1u64 << 53) as f64
 }
 
-/// A flame's light factor this frame: 0.8 to 1.0, random per frame and per flame.
 pub fn flame_flicker(seed: u64) -> f32 {
     (0.8 + 0.2 * noise(seed)) as f32
 }
 
-/// A flame's light range (m) by its size: it grows with the fire, 4 m for a small one, 14 m at most.
 pub fn flame_range(size: f64) -> f32 {
     (4.0 + 5.0 * size).min(14.0) as f32
 }
 
-/// The power loss and the return: the room's lights flicker for a moment, then go to their state.
-/// Going dark takes 1 s of flicker, coming back on 0.6 s.
 pub const DARK_FLICKER_S: f64 = 1.0;
 pub const LIGHT_FLICKER_S: f64 = 0.6;
 
-/// Whether a lamp is lit, given its target state, the time the target last changed and the time.
 pub fn lamp_lit(target: bool, since: f64, now: f64) -> bool {
     let dur = if target { LIGHT_FLICKER_S } else { DARK_FLICKER_S };
     if now - since >= dur {
         target
     } else {
-        // A flicker: each 1/30 s the lamp is on or off by its noise.
         noise((now * 30.0).floor() as u64) < 0.5
     }
 }
 
-/// The room's lamp state as the systems keep it: the target and when it last changed.
 #[derive(Debug, Clone, Copy)]
 pub struct LampFlicker {
     target: bool,
@@ -131,7 +113,6 @@ impl Default for LampFlicker {
 }
 
 impl LampFlicker {
-    /// The lamp's light this frame for the target (the first target sets no flicker).
     pub fn update(&mut self, target: bool, now: f64) -> bool {
         if target != self.target {
             self.target = target;
@@ -141,8 +122,6 @@ impl LampFlicker {
     }
 }
 
-/// The screen's edges and wash this frame: the red edge while burning (pulsing), the dark wash and
-/// the black edge as the air runs out below half, and the grain above a quarter of radiation.
 /// Alphas are 0..1. `oxygen` is the vitals' air left (1 is full; None when the air is no issue).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScreenFx {
@@ -155,20 +134,17 @@ pub struct ScreenFx {
 pub fn screen_fx(burning: bool, oxygen: Option<f64>, radiation: f64, t: f64) -> ScreenFx {
     let burn = if burning { 0.25 + 0.25 * (0.5 + 0.5 * (TAU * t / 0.7).sin()) as f32 } else { 0.0 };
     let low = oxygen.map_or(0.0, |o| ((0.5 - o) / 0.5).clamp(0.0, 1.0)) as f32;
-    // Under half the edge shows at once (half its strength), then grows to the full strength at no air.
     let edge = if low > 0.0 { 0.5 + 0.5 * low } else { 0.0 };
     let grain = if radiation > 0.25 { (0.06 + 0.06 * ((radiation - 0.25) / 0.75).clamp(0.0, 1.0)) as f32 } else { 0.0 };
     ScreenFx { burn, dark: 0.35 * edge, vignette: 0.85 * edge, grain }
 }
 
-/// The treatment flash's length (s) and its alpha at an age: 1 at the start, 0 at the end.
 pub const TREAT_FLASH_S: f64 = 0.6;
 
 pub fn flash_alpha(age: f64) -> f32 {
     (1.0 - age / TREAT_FLASH_S).clamp(0.0, 1.0) as f32
 }
 
-/// The repair ring's progress colour: red at 0, orange at half, green at the full (rgb 0..1).
 pub fn progress_rgb(p: f64) -> [f32; 3] {
     const RED: [f32; 3] = [0.9, 0.2, 0.2];
     const ORANGE: [f32; 3] = [1.0, 0.6, 0.1];
@@ -178,15 +154,12 @@ pub fn progress_rgb(p: f64) -> [f32; 3] {
     [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]
 }
 
-/// The coolant pump impeller's angle (degrees, 0..60: the six blades are alike) after `dt` at a
-/// flow (0..1). At full flow it turns 240 degrees a second; at 0 it stops.
 pub const IMPELLER_DEG_PER_S: f64 = 240.0;
 
 pub fn impeller_angle(prev: f64, flow: f64, dt: f64) -> f64 {
     (prev + IMPELLER_DEG_PER_S * flow.clamp(0.0, 1.0) * dt).rem_euclid(60.0)
 }
 
-/// The particles: the kind's scale over its life (`t` 0..1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Steam,
@@ -197,11 +170,8 @@ pub enum Kind {
 pub fn scale_of(kind: Kind, size: f32, t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
     match kind {
-        // Steam swells and thins out.
         Kind::Steam => size * (0.4 + 0.8 * t) * (1.0 - t * 0.6),
-        // Smoke grows as it rises.
         Kind::Smoke => size * (0.5 + t),
-        // A spark is small and goes out.
         Kind::Spark => size * (1.0 - t),
     }
 }
@@ -233,13 +203,11 @@ struct Particle {
     mat: Handle<StandardMaterial>,
 }
 
-/// The shared mesh of the particles, made once (a unit sphere, scaled per particle).
 #[derive(Resource)]
 struct FxAssets {
     mesh: Handle<Mesh>,
 }
 
-/// The emitters' clocks: the smoke per device (reactor, pump, junction), the sparks, the steam.
 #[derive(Resource)]
 struct Emitters {
     smoke: [f64; 3],
@@ -253,14 +221,12 @@ impl Default for Emitters {
     }
 }
 
-/// The critical lamp: its light and its sphere (one entity, once per planet).
 #[derive(Component)]
 struct CriticalLamp {
     light: Entity,
     lens: Entity,
 }
 
-/// The screen's parts: the root, the edges and the wash, the grain dots and the flash.
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 enum ScreenPart {
     Burn,
@@ -275,7 +241,6 @@ enum ScreenPart {
 #[derive(Resource, Default)]
 struct ScreenState {
     built: bool,
-    /// The last hold, to see a treatment finish.
     hold: Option<crate::health::Hold>,
     flash_at: Option<f64>,
 }
@@ -292,7 +257,6 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, screen_sync.in_set(Frame::Hud));
 }
 
-/// Once: the particles' mesh and materials, and the critical lamp's parts beside the reactor.
 fn spawn_assets(mut commands: Commands, mut done: Local<bool>, mut meshes: ResMut<Assets<Mesh>>) {
     if *done {
         return;
@@ -311,14 +275,11 @@ fn particle_material(kind: Kind) -> StandardMaterial {
     }
 }
 
-/// A particle at a world point (window only; `WorldPos` puts it on the render origin).
 fn spawn_particle(commands: &mut Commands, assets: &FxAssets, mats: &mut Assets<StandardMaterial>, kind: Kind, at: DVec3, vel: DVec3, gravity: f64, size: f32, life: f32) {
     let mat = mats.add(particle_material(kind));
     commands.spawn((Particle { vel, gravity, kind, size, life, age: 0.0, mat: mat.clone() }, WorldPos(at), Mesh3d(assets.mesh.clone()), MeshMaterial3d(mat), Transform::from_scale(Vec3::splat(0.001))));
 }
 
-/// Every frame: the particles move, grow or shrink by their kind and fade, and go at their life's
-/// end (with their material).
 fn particles_step(mut commands: Commands, time: Res<Time>, mut mats: ResMut<Assets<StandardMaterial>>, mut parts: Query<(Entity, &mut Particle, &mut WorldPos, &mut Transform)>) {
     let dt = time.delta_secs_f64();
     for (e, mut p, mut pos, mut tr) in &mut parts {
@@ -338,7 +299,6 @@ fn particles_step(mut commands: Commands, time: Res<Time>, mut mats: ResMut<Asse
     }
 }
 
-/// A random direction in the device's frame: a little sideways, mostly up along `up`.
 fn jet(up: DVec3, seed: u64, speed: f64, side: f64) -> DVec3 {
     let a = noise(seed) * TAU;
     let s = noise(seed.wrapping_add(7)) * side;
@@ -347,7 +307,6 @@ fn jet(up: DVec3, seed: u64, speed: f64, side: f64) -> DVec3 {
     up * speed + (t * a.cos() + b * a.sin()) * s
 }
 
-/// The devices' smoke and the junction box's sparks, from the snapshot (every process).
 fn device_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, assets: Option<Res<FxAssets>>, mut mats: ResMut<Assets<StandardMaterial>>, mut em: ResMut<Emitters>, mut commands: Commands) {
     let (Some(r), Some(area), Some(assets)) = (items.reactor, area.as_deref(), assets) else { return };
     let dt = time.delta_secs_f64();
@@ -388,7 +347,6 @@ fn device_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: O
     }
 }
 
-/// Where each spray lands on a fire this frame: a steam puff per landing, every 0.12 s.
 fn steam_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, cfg: Res<crate::dev_area::fire::FireConfig>, assets: Option<Res<FxAssets>>, mut mats: ResMut<Assets<StandardMaterial>>, mut em: ResMut<Emitters>, mut commands: Commands) {
     let (Some(news), Some(area), Some(assets)) = (items.fire.as_ref(), area.as_deref(), assets) else { return };
     em.steam += time.delta_secs_f64();
@@ -405,8 +363,6 @@ fn steam_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: Op
     }
 }
 
-/// Once per planet: the critical lamp on the reactor's top (a red sphere and its light), then the
-/// sphere shows and the light blinks while the reactor is critical.
 #[allow(clippy::too_many_arguments)]
 fn critical_lamp_sync(mut commands: Commands, time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, items: Res<Items>, mut done: Local<Option<warp_core::PlanetId>>, lamps: Query<&CriticalLamp>, mut lights: Query<&mut PointLight>, mut vis: Query<&mut Visibility>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>) {
     let Some(area) = area.as_deref() else { return };
@@ -451,14 +407,10 @@ fn build_screen(commands: &mut Commands) {
     }
 }
 
-/// The edge gradient: clear inside `clear` percent of the way to the farthest corner, the colour
-/// at the rim.
 fn edge(c: Color, a: f32, clear: f32) -> BackgroundGradient {
     BackgroundGradient::from(RadialGradient::new(UiPosition::CENTER, RadialGradientShape::FarthestCorner, vec![ColorStop::new(c.with_alpha(0.0), percent(clear)), ColorStop::new(c.with_alpha(a), percent(100.0))]))
 }
 
-/// The screen: the burning edge, the bad air, the grain and the treatment flash, from the local
-/// vitals and the local hold (every process). Under the HUD (`GlobalZIndex` -2).
 #[allow(clippy::too_many_arguments)]
 fn screen_sync(mut commands: Commands, time: Res<Time>, vitals: Res<Vitals>, hold: Res<UseHold>, blast: Res<crate::dev_area::blast::BlastFlash>, mut st: ResMut<ScreenState>, mut parts: Query<(&ScreenPart, &mut BackgroundColor, &mut BackgroundGradient, &mut Node)>) {
     if !st.built {
@@ -485,7 +437,6 @@ fn screen_sync(mut commands: Commands, time: Res<Time>, vitals: Res<Vitals>, hol
             ScreenPart::Flash => *gradient = edge(Color::srgb(0.3, 1.0, 0.4), 0.6 * flash, 55.0),
             ScreenPart::White => *bg = BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.9 * white)),
             ScreenPart::Grain(i) => {
-                // The dots move every 1/20 s, spread by their noise.
                 let slot = (now * 20.0).floor() as u64;
                 let x = noise(slot * 131 + i as u64) * 100.0;
                 let y = noise(slot * 977 + i as u64 + 5) * 100.0;
@@ -549,13 +500,10 @@ mod tests {
 
     #[test]
     fn a_power_loss_flickers_for_a_second_then_goes_dark_and_back_on_after_its_flicker() {
-        // Off: a flicker for 1 s, then dark for good.
         assert!(!lamp_lit(false, 10.0, 11.0), "dark after the flicker");
         assert!(!lamp_lit(false, 10.0, 15.0));
-        // On: flicker for 0.6 s, then on.
         assert!(lamp_lit(true, 20.0, 20.6));
         assert!(lamp_lit(true, 20.0, 25.0));
-        // The flicker really flickers: some frames on and some off in the first second.
         let on = (0..60).filter(|k| lamp_lit(false, 10.0, 10.0 + *k as f64 / 60.0)).count();
         assert!(on > 5 && on < 55, "{on}");
         let mut f = LampFlicker::default();
@@ -571,7 +519,6 @@ mod tests {
         assert!(screen_fx(true, None, 0.0, 0.2).burn > 0.25);
         let half = screen_fx(false, Some(0.5), 0.0, 0.0);
         assert!(half.dark.abs() < 1e-6 && half.vignette.abs() < 1e-6, "half the air is the edge of the rule");
-        // Just under half is already clearly visible: the edge starts at half its strength.
         let just = screen_fx(false, Some(0.475), 0.0, 0.0);
         assert!(just.vignette > 0.4 && just.dark > 0.15, "{just:?}");
         let low = screen_fx(false, Some(0.1), 0.0, 0.0);

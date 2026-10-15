@@ -1,5 +1,3 @@
-//! The collision patch's fixed-point steps stop once settled: the patch then matches a
-//! long fixed-point run to well under a millimetre, over steep and flat ground.
 use planet_core::*;
 
 const HEARTH: &str = include_str!("../../../content/planet/hearth.json");

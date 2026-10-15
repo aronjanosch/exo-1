@@ -1,22 +1,8 @@
-//! Items over the network (concept repo `decisions/crew-ship.md`,
-//! "Interaction model", and `design/interaction.md`, "Who owns what in co-op").
-//!
-//! - The host (slot 1) owns every loose item and every inventory: it runs `item_core::Host` and
-//!   simulates the loose items as bodies (the cargo code), in the host's ship or on the planet.
-//!   Each client simulates only its own walker and shows its requests at once; the host confirms
-//!   or rejects them.
-//! - Requests (client to host) and events (host to clients) travel over the reliable, ordered
-//!   channel of `net_core::reliable`, as `item_core::wire` messages. The host takes the player
-//!   from the connection, not from the message. A client that joins gets the state as events.
 //! - A loose item sends its pose (`net_core::loose`, unreliable, at the snapshot rate) only while
 //!   it moves; when it comes to rest the host sends one `Event::Rest` with the final pose, and
 //!   nothing more until it moves again. Poses are in the item's frame: the planet (world
 //!   coordinates) or the host's ship (ship-local, so items in the cabin stay where they lie).
-//! - A client does not simulate loose items. Its item entities are pictures (`LooseView`):
-//!   interpolated at the shared playout time like the other players' ships, riding the host's ship
-//!   proxy for items in the cabin. Until the host's first pose arrives a dropped item shows where
 //!   it was let go (TODO(initiator): a client-side flight of a throw before the host's answer).
-//! - The held item of another player shows in the hand of its figure (placeholder box).
 use crate::cargo::Crate;
 use crate::env::PlanetRes;
 use crate::dev_area::fire::Sprays;
@@ -43,13 +29,11 @@ pub fn plugin(app: &mut App) {
     );
 }
 
-/// Window only: the other players' held items, and no loose item before it has a place.
 pub fn window_plugin(app: &mut App) {
     use crate::phases::Frame;
     app.add_systems(Update, (remote_held, hide_unplaced.after(crate::items::hide_items)).in_set(Frame::World));
 }
 
-/// A client's picture of a loose item (the entity also carries the `Crate` the rest of the game
 /// reads, which `crate_step` leaves alone).
 #[derive(Component, Debug, Clone)]
 pub struct LooseView {
@@ -65,7 +49,6 @@ impl LooseView {
     }
 }
 
-/// The poses of moving loose items a client has received, by the host's item id. They arrive
 /// before or after the item's `Spawned` event, so they live apart from the entities.
 #[derive(Resource, Default)]
 pub struct RemoteBodies {
@@ -80,7 +63,6 @@ pub fn body_frame(f: FrameRef) -> BodyFrame {
 }
 
 impl RemoteBodies {
-    /// What an event of the host says about a body's track.
     fn on_event(&mut self, ev: &Event) {
         match ev {
             // The resting pose is the last pose of the track (and the only one of an item that
@@ -98,14 +80,12 @@ impl RemoteBodies {
     }
 }
 
-/// Role setup on the first tick of a session, then the messages that arrived this tick.
 #[allow(clippy::too_many_arguments)]
 pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net>, mut items: ResMut<Items>, mut bodies: ResMut<RemoteBodies>, loose: Query<Entity, With<LooseItem>>, mut repairs: Option<ResMut<RepairSessions>>, mut sprays: Option<ResMut<Sprays>>, mut health: Option<ResMut<HealthState>>) {
     let now = time.elapsed_secs_f64();
     if items.role == Role::Local {
         items.role = if net.cfg.host { Role::Host } else { Role::Client };
         if !net.cfg.host {
-            // This process is a client: the host's events bring the world. What the one-process
             // game had here (level content) is the host's to put there.
             let defs = items.defs.clone();
             items.client = item_core::Client::new(net.cfg.slot, defs.clone());
@@ -119,7 +99,6 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
     }
     match items.role {
         Role::Host => {
-            // A player who left: their repair session, spray and body go (the host owns them).
             for slot in net.take_left_peers() {
                 if let Some(r) = repairs.as_mut() {
                     r.forget(slot);
@@ -208,8 +187,6 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
     }
 }
 
-/// Client: every loose item is shown where the host's poses put it at the playout time. Items in
-/// a ship are in that ship's frame: the own ship, or the proxy of the host's.
 #[allow(clippy::too_many_arguments)]
 pub fn loose_views(
     net: Res<Net>,
@@ -259,8 +236,6 @@ pub fn loose_views(
     }
 }
 
-/// Host: drains what `Items` has for the network, and streams the poses of the loose items that
-/// move (at the snapshot rate); an item that stopped gets its `Rest` event, then nothing.
 #[allow(clippy::too_many_arguments)]
 pub fn items_net_out(
     time: Res<Time>,
@@ -357,7 +332,6 @@ pub fn items_net_out(
 /// Where the item sits in a figure's hand (figure-local, metres; -z is forward).
 const HAND: Vec3 = Vec3::new(0.34, 1.0, -0.4);
 
-/// The item a remote player holds, a placeholder box in the hand of its figure.
 #[derive(Component)]
 struct HeldOnRemote(Option<String>);
 
@@ -395,7 +369,6 @@ fn remote_held(
     }
 }
 
-/// A picture of a loose item whose frame is not there yet stays hidden.
 fn hide_unplaced(mut q: Query<(&LooseView, &mut Visibility)>) {
     for (v, mut vis) in &mut q {
         if !v.placed && *vis != Visibility::Hidden {

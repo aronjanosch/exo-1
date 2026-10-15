@@ -1,10 +1,4 @@
-//! Repair at the machine. With the ring off (`minigame_below` 0, repair by holding): at
-//! the dev area's engine room the coolant pump breaks (the dev fault). With the screwdriver at it,
-//! nothing happens. With the wrench, LMB starts a session on the broken pump, and it rises at once
-//! while the session is open: no ring, no hits, no misses. The rise runs at the normal speed; the
-//! full pump ends the session. The junction box takes a surge (70 %): with the screwdriver, the
-//! session rises slowly; F ends it and keeps the progress; then it runs to full. A click below half
-//! does nothing (no ring, no burn, no stun). Without a window; run with `--start=dev_area`.
+//! Repair at the machine, with the ring off (repair by holding).
 use super::items::{collect, items, outside};
 use walker_core::Frame as WalkFrame;
 use super::*;
@@ -23,7 +17,6 @@ fn ground(w: &mut World, p: [f64; 2], lift: f64) -> DVec3 {
     w.resource::<DevArea>().ground(&pl, p, lift).expect("the dev area is there").0
 }
 
-/// The pump's or the junction box's share of full condition, as the snapshot has it.
 fn pump(w: &World) -> f64 {
     items(w).reactor.as_ref().map_or(1.0, |r: &ReactorNews| r.pump.share)
 }
@@ -65,7 +58,6 @@ fn lmb(w: &mut World) {
     w.resource_mut::<Controls>().click = true;
 }
 
-/// The host's burn strength on the walker's body (0 without a body).
 fn burn(w: &World) -> f64 {
     w.resource::<crate::health::HealthState>().bodies.get(&crate::items::LOCAL).map_or(0.0, |b| b.health.strength("burn"))
 }
@@ -111,7 +103,6 @@ fn run(name: &'static str, limit: f64, mut body: impl FnMut(&mut World, &mut Ctx
     })
 }
 
-/// Selects the slot that holds the item, and checks it is selected.
 fn select(name: &'static str, def: &'static str) -> Step {
     let mut slot = 0;
     run(name, 2.0, move |w, c| {
@@ -130,7 +121,6 @@ fn select(name: &'static str, def: &'static str) -> Step {
 }
 
 pub(super) fn repair_steps(s: &mut Vec<Step>) {
-    // The table: the walker in front of it, the wrench and the screwdriver taken.
     s.push(Box::new(|w, c| {
         begin(w, c, "repair: the table and the host's body for the walker");
         w.resource_mut::<Items>().delay = super::items::DELAY;
@@ -148,7 +138,6 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
     s.extend(collect("screwdriver", "Screwdriver"));
     s.push(select("repair: the wrench is selected", "wrench"));
 
-    // The dev fault: the pump breaks (below its broken limit, under 20 %).
     s.push(run("repair: the dev fault breaks the coolant pump", 5.0, |w, c| {
         if c.t == 0.0 {
             w.resource_mut::<Items>().ask_reactor(ReactorAsk::Trigger(ReactorFault::PumpBreak));
@@ -163,7 +152,6 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         Some(format!("share {share:.2}"))
     }));
 
-    // Walk up to the pump: on foot, 1.4 m off its middle, looking at it.
     s.push(run("repair: the walker stands at the pump", 3.0, |w, c| {
         if c.t == 0.0 {
             let feet = ground(w, [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 1.4], 0.0);
@@ -176,7 +164,6 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         Some("at the pump".into())
     }));
 
-    // The wrong tool: the screwdriver at the pump does nothing.
     s.push(select("repair: the screwdriver is selected", "screwdriver"));
     s.push(run("repair: the screwdriver at the pump does nothing", 3.0, |w, c| {
         look(w, COOLANT_PUMP_AT);
@@ -200,7 +187,6 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         Some("nothing happens".into())
     }));
 
-    // The right tool: the wrench starts a session on the broken pump.
     s.push(select("repair: the wrench is selected again", "wrench"));
     s.push(run("repair: the wrench at the pump starts a session", 3.0, |w, c| {
         look(w, COOLANT_PUMP_AT);
@@ -222,7 +208,6 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         Some("session on".into())
     }));
 
-    // Broken: the ring is off (no zones), and holding raises the broken pump at once (no hits needed).
     s.push(run("repair: a broken pump rises at once by holding (no ring, no hits)", 4.0, |w, c| {
         look(w, COOLANT_PUMP_AT);
         let zones = ring(w).map_or(0, |p| p.session.ring.zones.len()) as f64;
@@ -238,7 +223,6 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         Some("held".into())
     }));
 
-    // Held: the rise at the normal speed, about 1/15 of max a second at skill 50.
     s.push(run("repair: the pump rises at the normal speed while held", 5.0, |w, c| {
         look(w, COOLANT_PUMP_AT);
         if c.t < 0.2 {
@@ -253,7 +237,6 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         Some(format!("rise {rise:.3}"))
     }));
 
-    // To full: holding does it all. The host ends the session at full, and wear takes a hair off
     // straight after, so the step watches for the session's end with the pump near full, having been full.
     s.push(run("repair: the pump is repaired to full and the session ends", 90.0, |w, c| {
         look(w, COOLANT_PUMP_AT);
@@ -268,7 +251,6 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         None
     }));
 
-    // The junction box takes a surge (70 %): with the screwdriver there is no ring.
     s.push(run("repair: a surge takes the junction box to 70 %", 5.0, |w, c| {
         if c.t == 0.0 {
             w.resource_mut::<Items>().ask_reactor(ReactorAsk::Trigger(ReactorFault::Surge));
@@ -309,7 +291,6 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         }
         let started = ring(w).is_some() && sessions(w) == 1;
         check(c, started, "repair: the session starts at 70 %".into());
-        // Clicks do nothing while the minigame is off: no zones, no pointer, no hits.
         if c.t > 0.6 && c.t < 3.6 {
             lmb(w);
         }
@@ -323,7 +304,6 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         check(c, rise > 0.15, format!("repair: the box rises at the normal speed ({rise:.3} in 3 s)"));
         Some("no ring, slow repair".into())
     }));
-    // F ends the session; the progress stays.
     s.push(run("repair: F ends the session and keeps the progress", 2.0, |w, c| {
         if c.t == 0.0 {
             let share = junction(w);
@@ -339,7 +319,6 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         check(c, junction(w) >= c.v["before_f"], "repair: the progress is kept".into());
         Some("ended".into())
     }));
-    // Again, to full: no ring the whole way, the slow repair finishes it.
     s.push(run("repair: the slow repair takes the junction box to full", 60.0, |w, c| {
         look(w, JUNCTION_BOX_AT);
         if ring(w).is_none() && sessions(w) == 0 && c.t < 1.0 && !c.v.contains_key("again") {
@@ -358,7 +337,6 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         None
     }));
 
-    // A refused start: the host refuses the wrench at the junction box (the wrong tool, and full),
     // so no session starts, and the refusal reaches the client's flag on the next tick (the
     // client reads it before it asks again).
     s.push(run("repair: a refused start (the wrong tool at a full box) is told to the client", 3.0, |w, c| {
@@ -375,7 +353,6 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         Some("refused".into())
     }));
 
-    // The junction box below half (the dev console has no fault for it: a knock on the host's room).
     s.push(run("repair: a dev fault knocks the junction box below half", 3.0, |w, c| {
         if c.t == 0.0 {
             knock_junction(w, 0.4);
@@ -388,8 +365,6 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         Some(format!("junction {:.2}", junction(w)))
     }));
     s.push(select("repair: the screwdriver is selected for the click", "screwdriver"));
-    // Below half with the ring off: a click at the junction box does nothing (no ring, no burn, no
-    // stun, no flash), and the session still holds the rise.
     s.push(run("repair: a click at the junction box below half does nothing (no ring, no burn, no stun)", 12.0, |w, c| {
         look(w, JUNCTION_BOX_AT);
         if !c.v.contains_key("j_started") {
@@ -425,7 +400,6 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         Some(format!("burn {burn0:.2} to {burn_now:.2}"))
     }));
 
-    // The pump (the mechanical machine) below half: the click test below.
     s.push(run("repair: the fault knocks the coolant pump below half", 3.0, |w, c| {
         if c.t == 0.0 {
             knock_pump(w, 0.4);

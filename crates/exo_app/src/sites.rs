@@ -1,7 +1,3 @@
-//! Sites on screen: the kit pieces of the sites near the camera (`planet_core::site_pieces`,
-//! props from `art/props/props.py`, city pieces as glTF scenes). Streamed by distance: a
-//! 100 km planet has about 12 000 sites and 120 000 pieces, and every mesh entity costs the
-//! renderer time on each origin shift. Despawned with the planet's scene.
 use crate::env::{from_v3, PlanetRes};
 use crate::origin::{RenderOrigin, WorldPos};
 use crate::terrain::PlanetScene;
@@ -14,7 +10,6 @@ use std::collections::HashMap;
 /// meant to be seen from afar. TODO(initiator): values.
 const SITE_RANGE_M: f64 = 6000.0;
 const LANDMARK_RANGE_M: f64 = 20000.0;
-/// Shown sites stay until this factor beyond their range.
 const KEEP_FACTOR: f64 = 1.25;
 /// The set of sites is checked again after the camera moved this far (m).
 const RECHECK_M: f64 = 250.0;
@@ -27,7 +22,6 @@ pub struct SiteView {
     /// Entities of the sites on screen, by site index.
     shown: HashMap<usize, Vec<Entity>>,
     checked_at: Option<DVec3>,
-    /// Pieces on screen.
     pub pieces: usize,
 }
 

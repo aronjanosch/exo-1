@@ -1,5 +1,3 @@
-//! F1: the keys that apply right now, as a panel (on foot, in the suit, in the ship). The keys come from the live `Bindings`, so a rebind shows at once. The fixed
-//! step fills `HelpPanel` (headless too, so scenarios check it); the window draws it.
 //! TODO(initiator): the words, the order and the look; `KEYS.md` is the full list.
 use crate::controls::{Actions, Axis, Bindings, Button, Slot, Tap};
 use crate::walker::Player;
@@ -16,14 +14,11 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, draw_help.in_set(crate::phases::Frame::Hud));
 }
 
-/// What the player is doing, for the keys that apply.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HelpContext {
     /// Walking, also in a cabin.
     Foot,
-    /// Outside a ship in space.
     Suit,
-    /// Seated in the ship.
     Ship,
 }
 
@@ -37,8 +32,6 @@ impl HelpContext {
     }
 }
 
-/// The panel's content: shown or not, the context's title and one line per action (keys, what
-/// it does).
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
 pub struct HelpPanel {
     pub shown: bool,
@@ -46,7 +39,6 @@ pub struct HelpPanel {
     pub lines: Vec<(String, &'static str)>,
 }
 
-/// One help line: the slots whose keys are shown together, and what they do.
 type Entry = (&'static [Slot], &'static str);
 
 const MOVE: [Slot; 4] = [Slot::Negative(Axis::MoveZ), Slot::Negative(Axis::MoveX), Slot::Positive(Axis::MoveZ), Slot::Positive(Axis::MoveX)];
@@ -104,7 +96,6 @@ const SHIP_END: &[Entry] = &[
 
 const ALWAYS: &[Entry] = &[(&[Slot::Tap(Tap::Help)], "This help"), (&[Slot::Tap(Tap::DebugHud)], "Debug lines")];
 
-/// The entries for a context, in order.
 pub fn entries(ctx: HelpContext) -> Vec<Entry> {
     let mut v: Vec<Entry> = Vec::new();
     match ctx {
@@ -147,7 +138,6 @@ pub fn lines(ctx: HelpContext, b: &Bindings) -> Vec<(String, &'static str)> {
         .collect()
 }
 
-/// F1 flips the panel; the context follows the player every step.
 pub fn update_help(mut actions: ResMut<Actions>, bindings: Res<Bindings>, mut help: ResMut<HelpPanel>, players: Query<&Player>) {
     let flip = actions.take_tap(Tap::Help);
     let Ok(pl) = players.single() else { return };

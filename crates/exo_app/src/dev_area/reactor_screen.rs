@@ -1,42 +1,4 @@
-//! The engine room's screens, drawn to the initiator's design (Claude Design, "EXO-1 Crew HUD",
-//! spec `engine-room-screens-spec.md`). The screens show little, in the ship's fiction: no
-//! condition values, sensors instead.
-//!
-//! - The reactor (M, on the east wall): the core temperature arc (zones from the sim's bands), the
-//!   output against the load, two fuel tubes, the fission and turbine sliders, MAN/AUTO, POWER, SCRAM.
-//!   Above the allowed band with the power on it is the same readout with one hazard stripe at its
-//!   top and the header word CRITICAL (`effects::is_critical`, the same test as the red lamp); the
-//!   controls stay. After a meltdown it is the MELTDOWN view, with no button. The readout
-//!   has its own start-up supply, so POWER can come back after a SCRAM even with the machines dark
 //!   (TODO(initiator): confirm).
-//!   The "?" beside SCRAM opens the help view for this player: the readout dimmed, a callout over each
-//!   control, a CLOSE box (`readout_help_panel`, `ReactorHelp`). Leaving the display closes it.
-//! - The coolant pump (S, on the pump block): a picture of the pump, the flow, the status word, the
-//!   three mode buttons OFF / LOW / HIGH. The impeller turns with the pump's speed (`effects::impeller_angle`).
-//! - The junction box (taller than S, on the wall above it): three breaker levers; under each
-//!   a bar (the fill is delivered over demand, the triangle is the limit) and its limit slider; under the
-//!   three the TOTAL bar (delivered over the output range's top). Overvolt shows in the world (sparks).
-//! - The AUX screen (S, AX-01, beside the junction box's screen on the south wall): AUX OFFLINE with the
-//!   aux reactor off; on, the LIFE SUPPORT and LIGHTS switches (levers, like the breakers) and the
-//!   boost the aux output gives the main reactor (`aux_panel`). The junction and AUX screens are the same
-//!   size, one tier taller than S (`TALL_CANVAS`).
-//! - The reactor room's door screen (S, in the corridor by the door): the reactor temperature, its
-//!   zone band, the room's oxygen, the lights breaker. TODO(captain): the emergency view with the
-//!   captain role.
-//! - The RX STATUS screen (S, on the south wall beside the readout, to its east): the warning lamps,
-//!   the temperature boost (two buttons), the core eject (PULSAR's lever: ARM EJECT opens
-//!   the cover, EJECT inside its window throws the core out; the cover's state sits by the boost) and
-//!   the implosion's countdown while the meltdown timer runs. It has its own start-up supply like the
-//!   readout: no NO POWER here, so EJECT works with the machines dark (the boost is off then).
-//! - The dev faults screen (S, next to the test console): always powered.
-//!
-//! The machines' screens show NO POWER unless the snapshot says `powered`. Every process shows the
-//! snapshot it has (`Items::reactor`); the clicks ask the host (`ReactorAsk`).
-//!
-//! One meaning of CRITICAL: the zones, the HOT and CRITICAL words, the door screen's band, the
-//! readout's stripe and the lamp all read the sim's bands from `ReactorNews` (`optimal`,
-//! `allowed`). The output scale is the room's maximum, `max_output_kw` in `reactor.json` (2000 kW;
-//! the spec drew 5000).
 //! TODO(initiator): the glow of the critical text and the scanlines' look are not drawn yet.
 use super::*;
 use crate::displays::{ActiveDisplay, DisplayAction, Panels};
@@ -45,7 +7,6 @@ use crate::items::Items;
 use display_core::{button, canvas, column, ctl, font, label, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Rect, Shape, Tier, TextFace, Tone, Widget};
 use item_core::wire::{BreakerGroup, FuelKind, FuelTube, Lamp, PumpMode, ReactorAsk, ReactorFault, ReactorNews, FUEL_TUBES};
 
-/// The status board's lamps, in the panel's order (three to a row).
 const LAMPS: [Lamp; Lamp::COUNT] = [Lamp::Hot, Lamp::CritHeat, Lamp::Cold, Lamp::LowTemp, Lamp::HighOut, Lamp::CritOut, Lamp::LowOut, Lamp::FuelLow, Lamp::NoFuel, Lamp::Meltdown, Lamp::Scram];
 /// A lamp's cell (px) and the gap between the cells.
 const LAMP_W: f64 = 96.0;
@@ -69,7 +30,6 @@ pub const STATUS_NAME: &str = "RX STATUS";
 /// The dev faults screen's mount point (area metres, the engine room's north wall, the room side).
 pub const FAULTS_AT: [f64; 2] = [-17.5, -11.04];
 
-/// The action of the readout's "?" button (and of the help view's close).
 pub const HELP_ACTION: &str = "help";
 
 /// Whether this player has the readout's help view open. Local UI state: it is not sent, and each
@@ -123,8 +83,6 @@ pub fn bands(r: Option<&ReactorNews>) -> ([f64; 2], [f64; 2]) {
 const SKILL_50_OPTIMAL: [f64; 2] = [35.0, 65.0];
 const SKILL_50_ALLOWED: [f64; 2] = [20.0, 80.0];
 
-/// The zone of `t` against the bands. The lines are the sim's alarm lines: above the optimal top
-/// is HOT, above the allowed top is CRITICAL.
 pub fn zone(t: f64, optimal: [f64; 2], allowed: [f64; 2]) -> Zone {
     if t > allowed[1] {
         Zone::Crit
@@ -139,7 +97,6 @@ pub fn zone(t: f64, optimal: [f64; 2], allowed: [f64; 2]) -> Zone {
     }
 }
 
-/// The zone's tone for text: cold dim, the warn zones warn, good, the critical zone bad.
 pub fn zone_tone(z: Zone) -> Tone {
     match z {
         Zone::Cold => Tone::Dim,
@@ -149,12 +106,10 @@ pub fn zone_tone(z: Zone) -> Tone {
     }
 }
 
-/// An arc stroke of the gauge.
 fn arc(cx: f64, cy: f64, r: f64, from: f64, to: f64, stroke: f64, ink: Ink, dash: Option<(f64, f64)>) -> Shape {
     Shape::Arc { cx, cy, r, from, to, stroke, ink, dash }
 }
 
-/// The temperature gauge (216 x 152): the arc with its zones, the needle, the value and caption.
 fn temp_gauge(temp: f64, optimal: [f64; 2], allowed: [f64; 2]) -> Item {
     let (cx, cy, r, sw) = (108.0, 70.0, 60.0, 14.0);
     let z = zone(temp, optimal, allowed);
@@ -183,8 +138,6 @@ fn zone_ink(z: Zone) -> Ink {
     }
 }
 
-/// The POWER gauge (216 x 152): output against the scale, its colour by the shortage of the load,
-/// a notch at the load.
 fn power_gauge(r: Option<&ReactorNews>, max_kw: f64) -> Item {
     let (cx, cy, rr, sw) = (108.0, 70.0, 60.0, 14.0);
     let (out, load) = r.map_or((0.0, 0.0), |r| (r.output_kw, r.load_kw));
@@ -203,8 +156,6 @@ fn power_gauge(r: Option<&ReactorNews>, max_kw: f64) -> Item {
     canvas(216.0, 152.0, s, None).fixed(216.0)
 }
 
-/// The output's colour: none when off, good while it covers the load, warn when it falls short by
-/// more than 5 %, bad by more than 40 %.
 pub fn power_ink(out: f64, load: f64) -> Ink {
     if out <= 0.0 {
         return Ink::Fg3;
@@ -222,9 +173,6 @@ pub fn power_ink(out: f64, load: f64) -> Ink {
     }
 }
 
-/// The fuel tubes (176 x 152): one per slot (`FUEL_TUBES`), each filled to its rod's life and
-/// coloured by its kind (standard green, hot amber, spicy red); an empty slot is a hollow
-/// tube. Hatched when the life is low.
 fn fuel(r: Option<&ReactorNews>) -> Item {
     let tubes = r.map_or([FuelTube::default(); FUEL_TUBES], |r| r.fuel);
     let mut s = Vec::new();
@@ -260,13 +208,10 @@ fn tube_ink(kind: FuelKind) -> Ink {
     }
 }
 
-/// A shape's text in a box.
 fn text(x: f64, y: f64, w: f64, h: f64, s: &str, size: f64, face: TextFace, ink: Ink, centred: bool) -> Shape {
     Shape::Text { x, y, w, h, text: s.to_string(), size, face, ink, centred }
 }
 
-/// The status word of the reactor header: NO CORE after an eject (like OFF, dim), OFF, STABLE, HOT
-/// or CRITICAL.
 pub fn reactor_status(r: Option<&ReactorNews>) -> (&'static str, Tone) {
     match r {
         Some(r) if r.ejected => ("NO CORE", Tone::Dim),
@@ -279,12 +224,10 @@ pub fn reactor_status(r: Option<&ReactorNews>) -> (&'static str, Tone) {
     }
 }
 
-/// A full-width hazard stripe (14 high): diagonal bad stripes on the dark ground.
 fn hazard(w: f64) -> Item {
     canvas(w, 14.0, vec![Shape::Rect { x: 0.0, y: 0.0, w, h: 14.0, fill: Some(Ink::Bg0), outline: None }, Shape::Hatch { x: 0.0, y: 0.0, w, h: 14.0, ink: Ink::Bad }], None).fixed(14.0)
 }
 
-/// The meltdown view (M): the stripes and the word MELTDOWN, no button. The core stays broken
 /// until a repair brings it back (`Reactor::melted`).
 fn meltdown_view() -> Panel {
     let word = canvas(624.0, 200.0, vec![text(0.0, 60.0, 624.0, 72.0, "MELTDOWN", 56.0, TextFace::DisplayBold, Ink::Bad, true)], None).fixed(200.0);
@@ -308,7 +251,6 @@ pub fn fission_wobble(r: &ReactorNews, t: f64) -> f64 {
     amount * 0.5 * ((t * 9.0).sin() + (t * 13.7).sin()) * 0.5
 }
 
-/// A band strip under a slider: the allowed band in yellow, the optimal band in green on top, and
 /// the actual value as a marker. A band with `hi <= lo` (no news) is not drawn.
 fn band_strip(optimal: [f64; 2], allowed: [f64; 2], actual: Option<f64>) -> Item {
     let at = |v: f64| v.clamp(0.0, 100.0) / 100.0 * STRIP_W;
@@ -329,7 +271,6 @@ fn band_strip(optimal: [f64; 2], allowed: [f64; 2], actual: Option<f64>) -> Item
     canvas(STRIP_W, STRIP_H, shapes, None).fixed(STRIP_H)
 }
 
-/// A set point (on the readout) and the actual value beside it, small and dim: "41 %  -> 38".
 /// The arrow is ASCII: the mono font has no U+2192.
 fn set_and_actual(set: f64, actual: f64, manual: bool) -> Item {
     row(
@@ -341,16 +282,11 @@ fn set_and_actual(set: f64, actual: f64, manual: bool) -> Item {
     )
 }
 
-/// The reactor readout (M): the top row of gauges and fuel, the sliders and the switches below.
-/// Above the allowed band with the power on, one hazard stripe under the sliders, inside the bottom-left
-/// column (in place of its filler, so the body gets no new row), and the header word CRITICAL. After a
-/// meltdown the MELTDOWN view.
 /// The readout panel; `max_kw` is the scale of the power gauge (the reactor's `max_output_kw`).
 pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     readout_panel_at(r, max_kw, 0.0)
 }
 
-/// The readout at display time `t` (seconds): the fission needle wobbles near the allowed top (`fission_wobble`).
 pub fn readout_panel_at(r: Option<&ReactorNews>, max_kw: f64, t: f64) -> Panel {
     if r.is_some_and(|r| r.melted) {
         return meltdown_view();
@@ -396,11 +332,9 @@ pub fn readout_panel_at(r: Option<&ReactorNews>, max_kw: f64, t: f64) -> Panel {
 
 // ---------- the help view ----------
 
-/// A callout box (panel pixels in the content area): 256 by 44, two lines of 14 px.
 const CALLOUT_W: f64 = 256.0;
 const CALLOUT_H: f64 = 44.0;
 const CALLOUT_SIZE: f64 = 14.0;
-/// The left and the right column of the callout boxes (the readout's content is 608 wide).
 const LEFT: f64 = 0.0;
 const RIGHT: f64 = 352.0;
 
@@ -412,8 +346,6 @@ enum Target {
     Action(&'static str),
 }
 
-/// The help view's callouts: where the box goes (column, top), the two lines and the target. The
-/// boxes sit over the dimmed readout; the pointer line runs from the box to the target.
 const CALLOUTS: [(f64, f64, [&str; 2], Target); 8] = [
     (LEFT, 4.0, ["keep the needle in the green", "red too long: core goes bang"], Target::Leaf(0)),
     (RIGHT, 4.0, ["what you make", "vs. what the ship wants"], Target::Leaf(1)),
@@ -424,10 +356,8 @@ const CALLOUTS: [(f64, f64, [&str; 2], Target); 8] = [
     (RIGHT, 200.0, ["the big on switch", "nothing turns without it"], Target::Action("power")),
     (RIGHT, 292.0, ["the big red no", ""], Target::Action("scram")),
 ];
-/// The CLOSE box's place (left column, under the fuel's callout's row).
 const CLOSE_AT: (f64, f64) = (LEFT, 104.0);
 
-/// The ink of a readout drawn dimmed in the help view: the same picture in the dim tokens.
 fn dim_ink(i: Ink) -> Ink {
     match i {
         Ink::Hud | Ink::HudDim => Ink::HudDim,
@@ -484,8 +414,6 @@ fn shifted_dim(s: &Shape, dx: f64, dy: f64, right: f64) -> Shape {
     t
 }
 
-/// The dimmed picture of one readout leaf, at its place in the content area (`o`, the content's top left;
-/// `right` its width).
 fn dimmed_leaf(w: &Widget, r: Rect, o: DVec2, right: f64, out: &mut Vec<Shape>) {
     let (x, y, bw, bh) = (r.min.x - o.x, r.min.y - o.y, r.size.x, r.size.y);
     let frame = Shape::Rect { x, y, w: bw, h: bh, fill: None, outline: Some((Ink::Line2, 2.0)) };
@@ -511,7 +439,6 @@ fn dimmed_leaf(w: &Widget, r: Rect, o: DVec2, right: f64, out: &mut Vec<Shape>) 
     }
 }
 
-/// A text in a box, dimmed (the help view's labels and button captions).
 fn text_shape(x: f64, y: f64, w: f64, h: f64, s: &str, size: f64, mono: bool, centred: bool) -> Shape {
     let face = if mono { TextFace::Mono } else { TextFace::Display };
     Shape::Text { x, y, w, h, text: s.to_string(), size, face, ink: Ink::Fg3, centred }
@@ -531,9 +458,7 @@ fn callout_shapes(x: f64, y: f64, lines: &[&str; 2], target: Rect, o: DVec2, out
     }
 }
 
-/// The readout's help view (the "?" button): the readout drawn dimmed, a callout over each control and
 /// a CLOSE box. The whole picture is the close button (`HELP_ACTION`), so a click anywhere closes it.
-/// The same header and status as the readout. A melted core has no help.
 pub fn readout_help_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     let base = readout_panel(r, max_kw);
     if r.is_some_and(|r| r.melted) {
@@ -561,7 +486,6 @@ pub fn readout_help_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     panel
 }
 
-/// The NO POWER panel: a dark screen with the word centred.
 pub fn no_power(title: &str, tag: &str, tier: Tier) -> Panel {
     let size = tier.canvas();
     let (w, h) = (size.x - 40.0, size.y - 80.0);
@@ -571,7 +495,6 @@ pub fn no_power(title: &str, tag: &str, tier: Tier) -> Panel {
     Panel::screen(tier, title, tag, canvas(w, h, shapes, None).flex(1.0))
 }
 
-/// Whether the machines have power on this snapshot (none yet: no).
 fn powered(r: Option<&ReactorNews>) -> bool {
     r.is_some_and(|r| r.powered)
 }
@@ -587,15 +510,12 @@ pub fn pump_status(mode: PumpMode, coolant: f64) -> (&'static str, Tone) {
     }
 }
 
-/// The pump's three mode buttons: the active one in the good tone, the others normal.
 fn pump_modes(mode: PumpMode, r: &ReactorNews) -> Item {
     let mode_button = |label: &str, action: &str, m: PumpMode| button(label, action).tone(if mode == m { Tone::Good } else { Tone::Normal });
     // E-COOL is the fourth cell: the panel has no room for a row of its own (see `ecool_button`).
     row(6.0, vec![mode_button("OFF", "pump_off", PumpMode::Off).flex(1.0), mode_button("LOW", "pump_low", PumpMode::Low).flex(1.0), mode_button("HIGH", "pump_high", PumpMode::High).flex(1.0), ecool_button(r).flex(1.4)]).fixed(ctl::MD)
 }
 
-/// PULSAR's emergency cooling, the fourth cell of the pump's mode row. The panel body is
-/// 192 px and the picture takes 109, so the button cannot have a row of its own; its label is E-COOL
 /// when a press would be taken, the cooldown as m:ss greyed while it runs (TODO(initiator): the
 /// label "E-COOL 0:42" does not fit a cell of this row), COOL greyed while the extra cooling runs.
 pub fn ecool_button(r: &ReactorNews) -> Item {
@@ -609,8 +529,6 @@ pub fn ecool_button(r: &ReactorNews) -> Item {
     button("E-COOL", "ecool").enabled(r.ecool_ok)
 }
 
-/// The pump's picture (152 x 109): the inlet and the outlet pipes with the fluid, the housing and the
-/// six-blade impeller, turned by `angle` degrees (`effects::impeller_angle`).
 fn pump_picture(flow_on: bool, angle: f64) -> Item {
     let fluid = if flow_on { Ink::Fg1 } else { Ink::Fg3 };
     let (cx, cy) = (76.0, 60.0);
@@ -631,13 +549,10 @@ fn pump_picture(flow_on: bool, angle: f64) -> Item {
     canvas(152.0, 109.0, s, None).fixed(152.0)
 }
 
-/// The coolant pump's screen (S) with the impeller at 0 degrees.
 pub fn pump_panel(r: Option<&ReactorNews>) -> Panel {
     pump_panel_at(r, 0.0)
 }
 
-/// The coolant pump's screen (S): the picture with the impeller at `angle`, the flow and its word,
-/// the switch.
 pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64) -> Panel {
     if !powered(r) {
         return no_power(PUMP_NAME, "CP-01", Tier::S);
@@ -663,7 +578,6 @@ pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64) -> Panel {
     Panel::screen(Tier::S, PUMP_NAME, "CP-01", body).with_padding(6.0)
 }
 
-/// The coolant tank as a tube beside the flow (60 x 109): its level, LOW under the line (a warn
 /// fill) and EMPTY at none (the word in bad). The sim's level and line (`ReactorNews::coolant`).
 fn coolant_tube(r: &ReactorNews) -> Item {
     let (x, top, w, h) = (14.0, 16.0, 32.0, 70.0);
@@ -690,14 +604,10 @@ fn coolant_tube(r: &ReactorNews) -> Item {
     canvas(60.0, 109.0, s, None)
 }
 
-/// One breaker lever (94 wide, the junction box's): its name, the slot, the handle at the top when on,
-/// at the bottom when off. The whole lever is the button.
 fn lever(lines: &[&str], on: bool, action: &str) -> Item {
     lever_in(94.0, lines, on, action, if on { Ink::Fg1 } else { Ink::Fg3 })
 }
 
-/// A breaker lever `w` wide with its name in `name_ink`: the slot and the handle sit on the middle of
-/// the lever, so a name centred over it lines up with them.
 fn lever_in(w: f64, lines: &[&str], on: bool, action: &str, name_ink: Ink) -> Item {
     // The names are set in lines of 17 px, bottom-aligned on the slot's top (y 36): a name too wide
     // for the lever is split over two lines rather than cut.
@@ -711,19 +621,14 @@ fn lever_in(w: f64, lines: &[&str], on: bool, action: &str, name_ink: Ink) -> It
     canvas(w, 168.0, s, Some(action)).flex(1.0)
 }
 
-/// The junction box's and the AUX screen's canvas (px): the S width and one tier taller,
-/// so the junction box's bars and the TOTAL bar fit under its levers.
 pub const TALL_CANVAS: f64 = 320.0;
 
-/// An S-width screen made one tier taller (`TALL_CANVAS`); the mount's size (`engine_room::SCREENS`) is
-/// the same aspect.
 fn tall(mut p: Panel) -> Panel {
     p.size.y = TALL_CANVAS;
     p
 }
 
 /// A group's bar under its lever (94 wide, 18 high): the fill is `delivered / demand` (0 with no demand)
-/// and the triangle sits on the limit (0..1 along the bar, its centre kept 5 px in from the ends).
 fn group_bar(delivered: f64, demand: f64, limit: f64) -> Item {
     let (w, top, h) = (94.0, 6.0, 12.0);
     let frac = if demand > 0.0 { (delivered / demand).clamp(0.0, 1.0) } else { 0.0 };
@@ -731,7 +636,6 @@ fn group_bar(delivered: f64, demand: f64, limit: f64) -> Item {
     if frac > 0.0 {
         s.push(Shape::Rect { x: 2.0, y: top + 2.0, w: (w - 4.0) * frac, h: h - 4.0, fill: Some(Ink::Hud), outline: None });
     }
-    // The limit marker: a triangle pointing down onto the bar.
     let cx = (limit.clamp(0.0, 1.0) * w).clamp(5.0, w - 5.0);
     // The sides start 1 px down: a 2 px stroke at the canvas's top edge would stick out of it.
     s.push(Shape::Line { a: [cx - 4.0, 1.0], b: [cx, top], width: 2.0, ink: Ink::FgTitle, dash: None });
@@ -739,8 +643,6 @@ fn group_bar(delivered: f64, demand: f64, limit: f64) -> Item {
     canvas(w, 18.0, s, None).fixed(18.0)
 }
 
-/// The TOTAL bar (292 wide, 18 high) under the levers: the label, the bar and the kW. The fill is the
-/// total delivered over the output range's top (`max_kw`).
 fn total_bar(total: f64, max_kw: f64) -> Item {
     let (w, bar_x, bar_w) = (292.0, 60.0, 140.0);
     let frac = if max_kw > 0.0 { (total / max_kw).clamp(0.0, 1.0) } else { 0.0 };
@@ -755,7 +657,6 @@ fn total_bar(total: f64, max_kw: f64) -> Item {
     canvas(w, 18.0, s, None).fixed(18.0)
 }
 
-/// One lever with its bar and its limit slider (action `limit`), 94 wide: 234 high in all.
 fn junction_lever(r: &ReactorNews, g: BreakerGroup, names: &[&str], action: &str, limit: &str) -> Item {
     let i = g.index();
     column(
@@ -769,8 +670,6 @@ fn junction_lever(r: &ReactorNews, g: BreakerGroup, names: &[&str], action: &str
     .fixed(94.0)
 }
 
-/// The junction box's screen (one tier taller than S): three breaker levers, each with its
-/// bar and its limit slider, and the TOTAL bar under them. `max_kw` is the reactor's output range top.
 pub fn junction_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     if !powered(r) {
         return tall(no_power(JUNCTION_NAME, "JB-01", Tier::S));
@@ -790,19 +689,14 @@ pub fn junction_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     tall(Panel::screen(Tier::S, JUNCTION_NAME, "JB-01", body).with_padding(6.0))
 }
 
-/// The AUX screen (S): the aux reactor's two switches and the boost it gives the main
-/// reactor. With the aux reactor off it says AUX OFFLINE and nothing else. Not gated on the machines'
 /// power: the aux reactor has its own supply. TODO(initiator): confirm.
 pub fn aux_panel(r: Option<&ReactorNews>) -> Panel {
     let r = r.copied().unwrap_or_default();
-    // The content is 292 x 264 on the tall screen (`TALL_CANVAS` less the plate and the padding).
     if !r.aux_on {
         let (w, h) = (292.0, 264.0);
         let shapes = vec![text(0.0, h * 0.5 - 10.0, w, 20.0, "AUX OFFLINE", 22.0, TextFace::DisplayBold, Ink::Fg3, true)];
         return tall(Panel::screen(Tier::S, AUX_NAME, "AX-01", canvas(w, h, shapes, None).flex(1.0)));
     }
-    // Two levers of 76 px side by side (152 px, the names in one tone whatever the switch), the boost
-    // beside them in what is left: "BOOST +320 kW" in the mono font needs about 125 px.
     let name = Ink::Fg1;
     let switches = row(
         0.0,
@@ -810,12 +704,10 @@ pub fn aux_panel(r: Option<&ReactorNews>) -> Panel {
     )
     .fixed(152.0);
     let boost = column(4.0, vec![micro("AUX OUTPUT").fixed(14.0), readout(format!("BOOST +{:.0} kW", r.aux_boost_kw)).text_size(font::SMALL).tone(Tone::Normal)]);
-    // Centred down the tall screen: the switches' 168 px in the middle.
     let body = column(0.0, vec![space().flex(1.0), row(10.0, vec![switches, boost.flex(1.0)]).fixed(168.0), space().flex(1.0)]);
     tall(Panel::screen(Tier::S, AUX_NAME, "AX-01", body)).with_padding(6.0)
 }
 
-/// The oxygen's tone: bad at 40 % or less, warn at 70 % or less, else good.
 pub fn oxygen_tone(o: f64) -> Tone {
     let p = o * 100.0;
     if p <= 40.0 {
@@ -827,8 +719,6 @@ pub fn oxygen_tone(o: f64) -> Tone {
     }
 }
 
-/// The band under the temperature (200 wide): the zones as the gauge has them, the marker at the
-/// temperature.
 fn band(temp: f64, optimal: [f64; 2], allowed: [f64; 2]) -> Item {
     let x = |v: f64| v * 2.0;
     let seg = |a: f64, b: f64, ink: Option<Ink>, fill: Ink| {
@@ -849,8 +739,6 @@ fn band(temp: f64, optimal: [f64; 2], allowed: [f64; 2]) -> Item {
     canvas(200.0, 22.0, s, None).fixed(200.0)
 }
 
-/// The engine room's door screen (S): the reactor's temperature big, its band, the oxygen, the
-/// lights breaker. TODO(captain): the emergency view comes with the captain role.
 pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
     if !powered(r) {
         return no_power(DOOR_NAME, "ER-01", Tier::S);
@@ -859,10 +747,8 @@ pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
     let (optimal, allowed) = bands(Some(&r));
     let z = zone_tone(zone(r.temp, optimal, allowed));
     let (word, word_tone) = reactor_status(Some(&r));
-    // The screen's content is 288 x 180 px: the rows fit it.
     let temp = row(6.0, vec![readout(format!("{:.0}", r.temp)).text_size(72.0).tone(z), readout("°C").text_size(28.0).tone(z)]).fixed(70.0);
     let bandrow = row(8.0, vec![band(r.temp, optimal, allowed), readout(word).text_size(font::SMALL).tone(word_tone).flex(1.0)]).fixed(18.0);
-    // Each caption has its own line above its value or switch, so no caption touches a control.
     let air = row(
         8.0,
         vec![
@@ -875,11 +761,8 @@ pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
     Panel::screen(Tier::S, DOOR_NAME, "ER-01", body).with_padding(8.0)
 }
 
-/// The dev fault screen: the faults, the drain and the warm start, a fire at the reactor and the resets.
 pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
-    // The AUX button shows the aux reactor's state (the press flips it).
     let aux = if r.is_some_and(|r| r.aux_on) { "AUX ON" } else { "AUX OFF" };
-    // Two columns: the faults on the left, the fire and the resets on the right.
     let col = |items: Vec<_>| column(4.0, items);
     Panel::screen(
         Tier::S,
@@ -907,7 +790,6 @@ pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
     )
 }
 
-/// A lamp's word and its ink when lit: warn, or bad for the critical ones.
 fn lamp_word(l: Lamp) -> (&'static str, Ink) {
     match l {
         Lamp::Hot => ("HOT", Ink::Warn),
@@ -924,7 +806,6 @@ fn lamp_word(l: Lamp) -> (&'static str, Ink) {
     }
 }
 
-/// One lamp: lit in its ink with the word dark on it, or dark with the word dim.
 fn lamp_cell(l: Lamp, lit: bool) -> Item {
     let (word, ink) = lamp_word(l);
     let shapes = if lit {
@@ -968,12 +849,10 @@ pub fn graph_shapes(r: Option<&ReactorNews>, max_kw: f64, w: f64, h: f64) -> Vec
     s
 }
 
-/// The graph as an item: a fixed strip under the status board's controls.
 fn graph_item(r: Option<&ReactorNews>, max_kw: f64) -> Item {
     canvas(GRAPH_W, GRAPH_H, graph_shapes(r, max_kw, GRAPH_W, GRAPH_H), None).fixed(GRAPH_H)
 }
 
-/// The stability bar's height (px) under its label.
 const BAR_H: f64 = 8.0;
 
 /// The stability bar's fill (0..1, the percent) and tone: good above 75 %, warn from 40 to 75 %, bad
@@ -989,7 +868,6 @@ pub fn stability_bar(pct: u8) -> (f64, Tone) {
     (f64::from(pct.min(100)) / 100.0, tone)
 }
 
-/// The STABILITY bar: a label row with the percent, and the bar under it, full width of the
 /// status board's strip. No news yet: the percent is a dash and the bar is empty.
 fn stability_item(r: Option<&ReactorNews>) -> Item {
     let (fill, tone, word) = match r {
@@ -1012,16 +890,11 @@ fn stability_item(r: Option<&ReactorNews>) -> Item {
     column(3.0, vec![head, canvas(GRAPH_W, BAR_H, bar, None).fixed(BAR_H)]).fixed(16.0 + 3.0 + BAR_H)
 }
 
-/// A countdown's clock: minutes and seconds, the seconds rounded up.
 pub fn clock(s: f64) -> String {
     let s = s.max(0.0).ceil() as u64;
     format!("{}:{:02}", s / 60, s % 60)
 }
 
-/// The RX STATUS panel (S, beside the readout): the warning lamps in a grid (the ones that are on
-/// lit, the warn or bad ink; the 2 Hz blink is `blink_on`, SCRAM stays lit), the temperature boost
-/// with its two buttons (disabled while a press would not pass), and the implosion's countdown
-/// along the bottom while the meltdown timer runs.
 pub fn status_panel(r: Option<&ReactorNews>, max_kw: f64, blink_on: bool) -> Panel {
     // No NO POWER here: like the readout, the panel has its own start-up supply (the module doc), so
     // EJECT works with the machines dark. The boost is refused without power, so its buttons are off.
@@ -1047,16 +920,11 @@ pub fn status_panel(r: Option<&ReactorNews>, max_kw: f64, blink_on: bool) -> Pan
     Panel::screen(Tier::M, STATUS_NAME, "RX-02", column(5.0, vec![lamps, boost, presses, countdown, stability, graph])).with_padding(6.0)
 }
 
-/// The core eject (PULSAR's lever): a guarded two-press. ARM EJECT opens the safety cover;
-/// the second press, EJECT in the bad tone, throws the core out, inside the host's window
-/// (`eject_arm_s`). Nothing to press once the core is out.
 pub fn eject_button(r: &ReactorNews) -> Item {
     let press = if r.eject_armed { button("EJECT", "eject").tone(Tone::Bad) } else { button("ARM EJECT", "arm_eject") };
     press.enabled(!r.ejected)
 }
 
-/// The cover's state beside the boost: COVER SHUT, COVER OPEN (bad tone while the window runs), NO
-/// CORE once the core is out.
 pub fn cover_word(r: &ReactorNews) -> Item {
     let (word, tone) = if r.ejected {
         ("NO CORE", Tone::Dim)
@@ -1068,7 +936,6 @@ pub fn cover_word(r: &ReactorNews) -> Item {
     readout(word).text_size(font::SMALL).tone(tone)
 }
 
-/// The group of a junction box limit slider's action (`lim_engines`, `lim_life`, `lim_lights`).
 pub fn limit_group(action: &str) -> Option<BreakerGroup> {
     match action {
         "lim_engines" => Some(BreakerGroup::Engines),
@@ -1078,9 +945,6 @@ pub fn limit_group(action: &str) -> Option<BreakerGroup> {
     }
 }
 
-/// The clicks: the readout asks for the reactor (the toggles give the new state as the value, the
-/// sliders the value 0..1), the machines' screens for their switches, the fault screen for the
-/// faults and the reset.
 pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<Items>, mut help: ResMut<ReactorHelp>) {
     for c in clicks.read() {
         let snap = items.reactor;
@@ -1155,7 +1019,6 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
 const IMPELLER_STEP: f64 = 6.0;
 
 /// Every panel from the state, every tick (`Panels::set` skips an unchanged one). The impeller
-/// turns with the pump's flow (`effects::impeller_angle`), from the fixed step's time.
 pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>, active: Res<ActiveDisplay>, mut help: ResMut<ReactorHelp>, mut spin: Local<f64>, mut panels: ResMut<Panels>) {
     if active.using().is_none() {
         help.0 = false;
@@ -1178,20 +1041,17 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
 mod tests {
     use item_core::wire::{FuelKind, FuelTube};
 
-    /// A standard rod at `life`, for a readout test.
     fn tube(life: f64) -> FuelTube {
         FuelTube { rod: Some(FuelKind::Standard), life }
     }
 
     use super::*;
 
-    /// The readout at the shipped scale (`reactor.json`'s `max_output_kw`).
     fn shipped_panel(r: Option<&ReactorNews>) -> Panel {
         let shipped = reactor_core::Tuning::parse(include_str!("../../../../content/gameplay/reactor/reactor.json")).expect("the shipped reactor.json");
         readout_panel(r, shipped.reactor.max_output_kw)
     }
 
-    /// The header's status word and tone of a panel with a plate.
     fn header(p: &Panel) -> Option<(String, Tone)> {
         p.plate.as_ref()?.status.clone()
     }
@@ -1213,7 +1073,6 @@ mod tests {
         for flow in [0.0, 0.5, 1.0] {
             v.push(pump_panel(Some(&ReactorNews { flow, ..news() })));
         }
-        // The coolant tube: full, LOW (warn) and EMPTY (bad).
         for (coolant, coolant_low) in [(100.0, false), (20.0, true), (0.0, true)] {
             v.push(pump_panel(Some(&ReactorNews { coolant, coolant_low, ..news() })));
         }
@@ -1237,7 +1096,6 @@ mod tests {
         }
     }
 
-    /// The lit lamps of a status panel: the words of the lamps drawn in the warn or bad ink.
     fn lit_lamps(p: &Panel) -> Vec<String> {
         let mut out = Vec::new();
         for w in p.layout() {
@@ -1255,8 +1113,6 @@ mod tests {
         out
     }
 
-    /// The graph's lines: two polylines of `graph_points` points (24 segments each at 25), none
-    /// without curves or without news.
     #[test]
     fn the_graph_draws_two_curves_of_graph_points_or_none() {
         let lines = |r: Option<&ReactorNews>| graph_shapes(r, 2000.0, GRAPH_W, GRAPH_H).iter().filter(|s| matches!(s, Shape::Line { .. })).count();
@@ -1331,7 +1187,6 @@ mod tests {
         assert!((fill - 0.6).abs() < 1e-9 && tone == Tone::Warn, "60: {fill} {tone:?}");
         let (fill, tone) = stability_bar(20);
         assert!((fill - 0.2).abs() < 1e-9 && tone == Tone::Bad, "20: {fill} {tone:?}");
-        // The edges: good above 75, warn from 40 to 75, bad below 40.
         assert_eq!(stability_bar(75).1, Tone::Warn);
         assert_eq!(stability_bar(76).1, Tone::Good);
         assert_eq!(stability_bar(40).1, Tone::Warn);
@@ -1370,7 +1225,6 @@ mod tests {
 
     #[test]
     fn the_status_board_has_its_own_supply_so_eject_works_with_the_machines_dark() {
-        // The host's snapshot without power: no boost (boost_ok false), the rest as it is.
         let off = status_panel(Some(&ReactorNews { powered: false, boost_ok: false, ..status_news() }), 2000.0, true);
         for a in ["boost_up", "boost_down"] {
             assert!(matches!(off.find(a).unwrap().widget, display_core::Widget::Button { enabled: false, .. }), "{a}");
@@ -1426,8 +1280,6 @@ mod tests {
         }
     }
 
-    /// The text lines of a panel's canvas (its shapes), in order.
-    /// The texts of every canvas on the panel (the root's or any placed one's).
     fn all_canvas_texts(p: &Panel) -> Vec<String> {
         let mut out = Vec::new();
         for w in p.layout() {
@@ -1524,7 +1376,6 @@ mod tests {
         assert!(texts.iter().any(|t| t == "50 %") && texts.iter().any(|t| t == "-> 47"), "{texts:?}");
     }
 
-    /// The band strips of a readout: every canvas of the strip size, in layout order (fission, turbine).
     fn strips(p: &Panel) -> Vec<Vec<Shape>> {
         p.layout().into_iter().filter_map(|w| match w.widget {
             display_core::Widget::Canvas { w: cw, h: ch, shapes, .. } if *cw == STRIP_W && *ch == STRIP_H => Some(shapes.clone()),
@@ -1532,7 +1383,6 @@ mod tests {
         }).collect()
     }
 
-    /// The (x, w) of the box filled with `ink`, if the strip has one.
     fn box_of(shapes: &[Shape], ink: Ink) -> Option<(f64, f64)> {
         shapes.iter().find_map(|s| match s {
             Shape::Rect { x, w, fill: Some(i), .. } if *i == ink => Some((*x, *w)),
@@ -1619,7 +1469,6 @@ mod tests {
 
     #[test]
     fn the_zones_are_the_sim_bands() {
-        // The news' bands at skill 50: optimal 35..65, allowed 20..80.
         let (o, a) = ([35.0, 65.0], [20.0, 80.0]);
         assert_eq!(zone(15.0, o, a), Zone::Cold);
         assert_eq!(zone(25.0, o, a), Zone::Low);
@@ -1630,19 +1479,15 @@ mod tests {
         assert_eq!(reactor_status(Some(&ReactorNews { temp: 70.0, ..news() })).0, "HOT");
         assert_eq!(reactor_status(Some(&ReactorNews { temp: 85.0, ..news() })).0, "CRITICAL");
         assert_eq!(reactor_status(Some(&ReactorNews { power_on: false, ..news() })).0, "OFF");
-        // A skilled operator's wider bands move the words with them: 70 is inside the optimal band.
         let skilled = ReactorNews { optimal: [30.0, 70.0], allowed: [10.0, 90.0], temp: 70.0, ..news() };
         assert_eq!(reactor_status(Some(&skilled)).0, "STABLE");
         assert_eq!(reactor_status(Some(&ReactorNews { temp: 85.0, ..skilled })).0, "HOT");
-        // Without news the skill-50 bands.
         assert_eq!(bands(None), ([35.0, 65.0], [20.0, 80.0]));
         assert_eq!(bands(Some(&ReactorNews::default())), ([35.0, 65.0], [20.0, 80.0]));
     }
 
     #[test]
     fn the_critical_readout_keeps_its_controls_and_says_critical() {
-        // Above the allowed band with the power on: the same readout with the controls, the header
-        // CRITICAL, as the lamp is lit.
         let hot = ReactorNews { temp: 85.0, ..news() };
         assert!(crate::effects::is_critical(Some(&hot)));
         let crit = shipped_panel(Some(&hot));
@@ -1651,7 +1496,6 @@ mod tests {
         }
         assert_eq!(header(&crit), Some(("CRITICAL".to_string(), Tone::Bad)));
         assert!(crit.overflowing().is_empty());
-        // Scrammed at 85 °C: not critical, the header OFF (the needle shows the hot core).
         let off = ReactorNews { power_on: false, ..hot };
         assert!(!crate::effects::is_critical(Some(&off)));
         let normal = shipped_panel(Some(&off));
@@ -1662,7 +1506,6 @@ mod tests {
 
     #[test]
     fn critical_is_the_same_at_every_temperature_on_the_readout_and_the_lamp() {
-        // A widened band: 85 is HOT (not CRITICAL) for this operator, on the readout and the lamp.
         for (allowed, temp) in [([20.0, 80.0], 85.0), ([10.0, 90.0], 85.0), ([10.0, 90.0], 95.0)] {
             let r = ReactorNews { allowed, temp, ..news() };
             let p = shipped_panel(Some(&r));
@@ -1724,8 +1567,6 @@ mod tests {
         assert!(aux_panel(Some(&ReactorNews { aux_on: true, aux_boost_kw: 0.0, ..news() })).overflowing().is_empty());
     }
 
-    /// The boxes of a panel's lever names (every canvas text but the ON / OFF on the handles), in the
-    /// panel's own coordinates.
     fn name_boxes(p: &Panel) -> Vec<(String, Ink, Rect)> {
         let mut out = Vec::new();
         for w in p.layout() {
@@ -1830,8 +1671,6 @@ mod tests {
 
     #[test]
     fn a_group_bar_fills_with_delivered_over_demand_and_marks_the_limit() {
-        // 400 of 800 kW (half) with the limit at 0.6: the fill is half of the 90 px inside, the triangle
-        // sits at 0.6 of the 94 px bar.
         let s = bar_shapes(group_bar(400.0, 800.0, 0.6));
         let fill = s.iter().find_map(|x| match x {
             Shape::Rect { x, w, fill: Some(Ink::Hud), .. } => Some((*x, *w)),
@@ -1848,7 +1687,6 @@ mod tests {
             .collect();
         assert_eq!(apexes.len(), 2, "the triangle's two sides");
         assert!(apexes.iter().all(|x| (x - 0.6 * 94.0).abs() < 1e-9), "the marker is on the limit: {apexes:?}");
-        // No demand: no fill. A limit at the end is kept 5 px in (the triangle's side and its stroke).
         assert!(!bar_shapes(group_bar(0.0, 0.0, 1.0)).iter().any(|x| matches!(x, Shape::Rect { fill: Some(Ink::Hud), .. })));
         let end = bar_shapes(group_bar(800.0, 800.0, 1.0));
         assert!(end.iter().any(|x| matches!(x, Shape::Line { b, .. } if (b[0] - 89.0).abs() < 1e-9)), "the marker at the end is 5 px in");
@@ -1859,7 +1697,6 @@ mod tests {
         let s = bar_shapes(total_bar(1000.0, 2000.0));
         assert!(s.iter().any(|x| matches!(x, Shape::Rect { w, fill: Some(Ink::Hud), .. } if (w - 68.0).abs() < 1e-9)), "half of the 136 px inside: {s:?}");
         assert!(s.iter().any(|x| matches!(x, Shape::Text { text, .. } if text == "1000 kW")), "the kW");
-        // The panel's total is the sum of the groups' delivered kW.
         let r = ReactorNews { delivered_kw: [400.0, 300.0, 80.0], ..news() };
         assert!(all_canvas_texts(&junction_panel(Some(&r), 2000.0)).iter().any(|t| t == "780 kW"));
     }
@@ -1868,11 +1705,9 @@ mod tests {
     fn the_names_on_the_screens_are_labels_and_do_not_collide() {
         let label = |p: &Panel, t: &str| p.layout().into_iter().find(|w| matches!(&w.widget, display_core::Widget::Label { text, .. } if text == t)).map(|w| w.rect);
         assert!(label(&pump_panel(Some(&news())), "FLOW").is_some(), "the pump names its flow");
-        // The door's caption sits above its switch, not on it.
         let door = door_panel(Some(&news()));
         let (cap, sw) = (label(&door, "LIGHT").expect("LIGHT caption"), door.find("br_lights").expect("the switch").rect);
         assert!(cap.max().y <= sw.min.y, "the caption is above the switch: {cap:?} {sw:?}");
-        // The junction's lever names: above the slot, apart from each other, and inside their lever.
         let junction = junction_panel(Some(&news()), 2000.0);
         for a in ["br_engines", "br_life", "br_lights"] {
             let display_core::Widget::Canvas { shapes, .. } = &junction.find(a).unwrap().widget else { panic!("{a} is a canvas") };

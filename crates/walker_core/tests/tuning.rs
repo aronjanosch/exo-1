@@ -1,4 +1,3 @@
-//! Walker and suit tuning as data.
 use walker_core::{SuitConfig, WalkerConfig};
 
 const WALKER: &str = include_str!("../../../content/tuning/walker.json");

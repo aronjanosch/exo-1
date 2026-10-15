@@ -1,4 +1,3 @@
-//! Item definitions, the action bar, hands, and the request path with prediction and rollback.
 use item_core::container::Refusal;
 use item_core::*;
 
@@ -125,7 +124,6 @@ fn hands_limit_what_is_held_next_to_cargo() {
     assert!(inv.in_hand(&d, 1).is_some(), "a wrench fits next to a one-handed crate");
 }
 
-/// One host, two clients, messages delivered by hand in the order a test wants.
 struct Session {
     host: Host,
     a: Client,
@@ -304,7 +302,6 @@ fn a_placement_that_cannot_be_is_refused() {
 
 #[test]
 fn a_use_takes_one_from_the_stack_and_the_host_names_the_effect() {
-    // A bandage used on player 1 is one less in the user's slot; the host says what to apply.
     let mut host = Host::new(defs());
     let mut inv = Inventory::default();
     inv.collect(&defs(), stack("bandage", 3)).unwrap();
@@ -328,7 +325,6 @@ fn an_empty_slot_or_an_item_without_a_use_is_refused() {
     let mut host = Host::new(defs());
     let a = Action { player: 2, seq: 1, req: Request::Use { slot: 0, target: 2 } };
     assert_eq!(host.handle(&a), vec![Event::Rejected { player: 2, seq: 1, why: Reject::EmptySlot }]);
-    // A rag that names no use is refused.
     const RAG: &str = r#"{ "id": "rag", "name": "Rag", "take": "collect", "hands": 1, "stack": 1, "shape": { "extents": [0.2, 0.01, 0.2], "mass": 0.05, "colour": [0.5, 0.5, 0.5] } }"#;
     let rags = ItemDefs::from_files([("rag.json", RAG)]).unwrap();
     let mut host = Host::new(rags.clone());

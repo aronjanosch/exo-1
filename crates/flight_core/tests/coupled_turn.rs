@@ -1,4 +1,3 @@
-//! Flight-path coordination through the real flight step, including spool and jerk.
 mod sc_common;
 use flight_core::FlightInput;
 use flight_core::sc::{Master, ModeCmds, ScShip};

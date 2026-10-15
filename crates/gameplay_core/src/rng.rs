@@ -1,5 +1,4 @@
 //! A tiny seeded generator (splitmix64) for picks that must be the same for the same seed:
-//! text pools, offers, orders. Plain integers, no dependency.
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -23,7 +22,6 @@ impl Rng {
         (self.next_u64() % n as u64) as usize
     }
 
-    /// 0..1.
     pub fn unit(&mut self) -> f64 {
         (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
     }

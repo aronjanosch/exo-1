@@ -1,7 +1,4 @@
 //! The item messages as bytes. They travel over a reliable, ordered channel
-//! (`net_core::reliable`), so none is lost, doubled or overtaken; the encoding is compact JSON
-//! (serde), which is easy to read in a capture and plenty for the few messages items send.
-//! Loose items' poses while they move are not here: they are datagrams (`net_core::loose`).
 use serde::{Deserialize, Serialize};
 
 use crate::authority::{Action, Event};
@@ -10,17 +7,13 @@ use crate::PlayerId;
 /// Biggest message accepted on receipt (bytes); a late joiner's whole state comes as many events.
 pub const MAX_MESSAGE: usize = 32 * 1024;
 
-/// Client to host.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ToHost {
     Action(Action),
-    /// A request about the engine room: the host decides.
     Room(RoomAsk),
-    /// A request about the reactor: the host decides.
     Reactor(ReactorAsk),
     /// The extinguisher's spray, aimed while LMB is held: the host decides.
     Spray(SprayAsk),
-    /// A repair session at a machine: the host decides what it does to the condition.
     Repair(RepairAsk),
     /// The treatment hold: the player is treating this player (`Some`), or has stopped (`None`).
     Treat(Option<PlayerId>),
@@ -30,20 +23,15 @@ pub enum ToHost {
     Pull,
 }
 
-/// Host to client.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ToClient {
     Event(Event),
-    /// The player's own vitals, as the host has them; not an item event, but it travels
-    /// the same reliable channel.
     Vitals(Vitals),
-    /// The engine room's shared state as the host has it: every player gets it.
     Room(RoomNews),
     /// The reactor's snapshot, about 4 times a second while it changes.
     Reactor(ReactorNews),
     /// The fires and the sprays as the host has them, about 4 times a second while they change.
     Fire(FireNews),
-    /// The host ended this player's repair session: the machine is full.
     RepairDone,
     /// The host refused this player's repair start (another player works there, the wrong tool,
     /// or the machine is full): the client's ring ends.
@@ -53,18 +41,13 @@ pub enum ToClient {
     Status(Vec<(PlayerId, PublicStatus)>),
 }
 
-/// What a player is doing that the others see.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Doing {
     #[default]
     Nothing,
-    /// Holding a treatment on this player (themselves included).
     Treating(PlayerId),
-    /// A repair session at this machine.
     Repairing(RepairDevice),
-    /// The extinguisher's spray is on.
     Spraying,
-    /// Pumping this unconscious player (CPR).
     Reviving(PlayerId),
 }
 
@@ -76,7 +59,6 @@ pub struct PublicStatus {
     pub down: bool,
     pub unconscious: bool,
     pub doing: Doing,
-    /// The injuries the others see: what a medic reads when they look at the player.
     pub hurt: Injuries,
 }
 
@@ -87,7 +69,6 @@ pub struct PublicStatus {
 pub struct Injuries {
     /// Vitality's share of the maximum before a headache, 0..=100 (steps of 5).
     pub health: u8,
-    /// The burn's level 1 to 3; 0 without burn (or only building up).
     pub burn_level: u8,
     /// Radiation's share, 0..=100 (steps of 5); 0 without.
     pub radiation: u8,
@@ -119,7 +100,6 @@ pub enum Alarm {
 }
 
 impl Alarm {
-    /// The dev toggle's next step: None, Warn, Danger, and None again.
     pub fn next(self) -> Alarm {
         match self {
             Alarm::None => Alarm::Warn,
@@ -129,12 +109,9 @@ impl Alarm {
     }
 }
 
-/// A request to the host about the engine room.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RoomAsk {
-    /// Open the door if it is shut, shut it if it is open.
     ToggleDoor,
-    /// The dev toggle: the next alarm level.
     CycleAlarm,
 }
 
@@ -142,23 +119,17 @@ pub enum RoomAsk {
 /// Manual; a fault and a reset are the dev console's.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ReactorAsk {
-    /// Manual when true, Auto when false.
     SetManual(bool),
     /// Fission target, 0..100.
     SetFission(f64),
     /// Turbine target, 0..100.
     SetTurbine(f64),
-    /// A dev fault (`engine_room::Fault` on the host).
     Trigger(ReactorFault),
-    /// A fresh engine room: cold, the start rods, Auto.
     Reset,
-    /// SCRAM: fission to 0 and the power off at once.
     Scram,
     /// The power switch: on starts the reactor again after a SCRAM.
     SetPower(bool),
-    /// A consumer group's breaker on the junction box.
     SetBreaker(BreakerGroup, bool),
-    /// The coolant pump's control: Off, Low or High.
     SetPumpMode(PumpMode),
     /// The temperature boost: up (true) or down (false), as the core takes it.
     Boost(bool),
@@ -177,7 +148,6 @@ pub enum ReactorAsk {
     SetLimit(BreakerGroup, f64),
 }
 
-/// The coolant pump's mode: off, a low or a high stream.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PumpMode {
     #[default]
@@ -186,7 +156,6 @@ pub enum PumpMode {
     High,
 }
 
-/// The junction box's consumer groups (the breakers on its screen).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BreakerGroup {
     Engines,
@@ -195,13 +164,11 @@ pub enum BreakerGroup {
 }
 
 impl BreakerGroup {
-    /// Position in `ReactorNews::breakers`.
     pub fn index(self) -> usize {
         self as usize
     }
 }
 
-/// A machine the repair minigame works on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RepairDevice {
     Reactor,
@@ -221,7 +188,6 @@ pub enum RepairTool {
 /// applies what the ring says and keeps the condition.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RepairAsk {
-    /// A session starts on this machine with this tool.
     Start { device: RepairDevice, tool: RepairTool },
     /// LMB inside a zone: a chunk of condition.
     Hit,
@@ -231,29 +197,23 @@ pub enum RepairAsk {
     Stop,
 }
 
-/// The faults the dev console asks for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReactorFault {
     PumpBreak,
     LoadDrop,
     Surge,
-    /// A fire at the reactor.
     Fire,
-    /// The coolant tank runs dry (the dev drain for the coolant).
     DrainCoolant,
     /// The reactor's warm start (`EngineRoom::warm_start`): settled at once, no supplies used.
     WarmStart,
-    /// The aux reactor on or off (`EngineRoom::set_aux`): the host flips it.
     Aux,
 }
 
-/// The extinguisher's spray, as its holder asks for it.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SprayAsk {
     /// Spraying along this aim now: the nozzle's point and the look direction (world metres, the
     /// direction a unit vector). Sent when the aim moves, about 10 times a second at most.
     Aim { eye: [f64; 3], dir: [f64; 3] },
-    /// LMB let go, or the extinguisher put down.
     Stop,
 }
 
@@ -300,7 +260,6 @@ pub struct PartNews {
     pub working: bool,
 }
 
-/// The fuel tubes on the readout: one per slot, `FUEL_TUBES` at most.
 pub const FUEL_TUBES: usize = 4;
 
 /// The kind of a fuel rod (`reactor.json` `rods`: standard, hot, spicy), as the readout colours it.
@@ -325,7 +284,6 @@ pub struct FuelTube {
 pub struct ReactorNews {
     pub power_on: bool,
     pub manual: bool,
-    /// The core melted: the readout shows MELTDOWN.
     pub melted: bool,
     /// Core stability in whole percent, 100 when cold and off, 0 when melted or ejected.
     pub stability: u8,
@@ -354,9 +312,7 @@ pub struct ReactorNews {
     pub limits: [f64; 3],
     pub delivered_kw: [f64; 3],
     pub demand_kw: [f64; 3],
-    /// The aux reactor is on (`EngineRoom::aux_enabled`).
     pub aux_on: bool,
-    /// The aux switches of Life Support and Lights (on when the aux reactor feeds them).
     pub aux_life_support: bool,
     pub aux_lights: bool,
     /// kW the main reactor gets from the aux output the aux groups leave (`EngineRoom::aux_boost_kw`).
@@ -366,20 +322,17 @@ pub struct ReactorNews {
     pub pump_mode: PumpMode,
     /// The pump's speed, 0..1: it follows the mode with inertia (the impeller turns with it).
     pub pump_speed: f64,
-    /// Coolant flow, 0..1.
     pub flow: f64,
     /// Coolant in the pump's tank, 0..100 %.
     pub coolant: f64,
     /// The tank is below its LOW line (`RoomTuning::coolant_low`).
     pub coolant_low: bool,
-    /// Overvoltage at the junction box now.
     pub overvolt: bool,
     /// The engine room's air, 0..1 (the host rounds it to whole percent).
     pub oxygen: f64,
     /// The meltdown blasts the host has applied so far (`ReactorCounts::blasts`). A process that
     /// sees it go up shows the blast (the flash, the notice) once; the host applies the effects.
     pub blasts: u32,
-    /// The fuel tubes, one per slot (the first `FUEL_TUBES`): the rod in it, None when empty.
     pub fuel: [FuelTube; FUEL_TUBES],
     pub reactor: PartNews,
     pub pump: PartNews,
@@ -398,14 +351,11 @@ pub struct ReactorNews {
     pub graph_points: u8,
     pub graph_output: [u16; GRAPH_POINTS],
     pub graph_load: [u16; GRAPH_POINTS],
-    /// The core was ejected: the readout shows NO CORE, the rods are gone.
     pub ejected: bool,
-    /// The EJECT safety cover is open (ARM EJECT pressed, the window still running).
     pub eject_armed: bool,
     /// The core ejects the host has applied so far (`ReactorCounts::ejects`). A process that sees
     /// it go up shows the CORE EJECTED notice once, as the blasts do.
     pub ejects: u32,
-    /// The emergency cooling runs now.
     pub ecool_active: bool,
     /// Seconds until the emergency cooling can be pressed again (0 when it can).
     pub ecool_ready_in_s: f64,
@@ -440,13 +390,11 @@ pub enum Lamp {
 impl Lamp {
     pub const COUNT: usize = 11;
 
-    /// Position in `ReactorNews::lamps`.
     pub fn index(self) -> usize {
         self as usize
     }
 }
 
-/// The engine room's state: the door's target and the alarm level.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoomNews {
     pub door_open: bool,
@@ -457,7 +405,6 @@ pub struct RoomNews {
 /// headache; `None` where the affliction is not there.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Vitals {
-    /// Vitality's share of the maximum before any headache.
     pub health: f64,
     /// The maximum now as a share of that (a headache lowers it); 1 without.
     pub max_share: f64,
@@ -467,7 +414,6 @@ pub struct Vitals {
     pub burn_level: u8,
     /// The burning buildup, 0..1 (the hot plate fills it).
     pub buildup: f64,
-    /// Whether the body is on fire now.
     pub burning: bool,
     /// Radiation's share, 0 without.
     pub radiation: f64,
@@ -488,7 +434,6 @@ pub struct Vitals {
 }
 
 impl Vitals {
-    /// Calm and healthy: nothing to show but the health, walking at full speed.
     pub fn healthy() -> Vitals {
         Vitals { health: 1.0, max_share: 1.0, oxygen: None, burn_level: 0, buildup: 0.0, burning: false, radiation: 0.0, sick: false, walk: 1.0, sprint: true, down: None, unconscious: false, burn_cost: 0.0, oxygen_cost: 0.0, headache_cost: 0.0 }
     }

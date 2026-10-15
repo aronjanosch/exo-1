@@ -1,5 +1,3 @@
-//! The crew's progress: track values, owned tags, bought unlocks, raised flags. Applies the
-//! world events that touch it; the rest belong to the systems.
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -18,7 +16,6 @@ pub struct Progress {
     flags: BTreeSet<Flag>,
 }
 
-/// Why an event was not applied. The state is unchanged.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Refusal {
     UnknownUnlock,
@@ -26,12 +23,10 @@ pub enum Refusal {
     ConditionNotMet,
     NotEnoughMoney { price: i64, wallet: i64 },
     UnknownTrack,
-    /// A personal track changed without naming the player.
     NoPlayer,
 }
 
 impl Progress {
-    /// A new crew: crew tracks at their start values.
     pub fn new(content: &Content) -> Progress {
         let crew = content.tracks.values().filter(|t| t.record.owner == Owner::Crew).map(|t| (t.record.id.clone(), t.record.start)).collect();
         Progress { crew, ..Progress::default() }
@@ -47,7 +42,6 @@ impl Progress {
         }
     }
 
-    /// How many thresholds the value has reached (0 below the first).
     pub fn level(&self, content: &Content, track: &TrackId, player: Option<ClientId>) -> usize {
         let (Some(t), Some(v)) = (content.tracks.get(track), self.value(content, track, player)) else { return 0 };
         t.record.thresholds.iter().take_while(|th| v >= **th).count()
@@ -69,7 +63,6 @@ impl Progress {
         self.unlocks.contains(u)
     }
 
-    /// Whether the crew may use a location now.
     pub fn location_available(&self, content: &Content, id: &LocationId) -> bool {
         content.locations.get(id).is_some_and(|l| l.record.available.as_ref().is_none_or(|c| c.holds(content, self, None)))
     }

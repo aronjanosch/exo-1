@@ -1,6 +1,4 @@
 //! Replay matrix without sockets: a recorded 60 Hz path of one player (ship and
-//! walker) goes through encode, fault-injected links, decode, buffer and playout, and the shown
-//! pose is compared with the sender's path at the same delayed timestamp.
 use crate::buffer::{between, Buffer, Mode};
 use crate::link::Link;
 use crate::metrics::{mean, percentile, rms};
@@ -11,7 +9,6 @@ use std::time::Instant;
 
 pub const DT: f64 = 1.0 / 60.0;
 
-/// Recorded states at 60 Hz. `flags` of each state is the index of its phase in `phases`.
 pub struct Trajectory {
     pub phases: Vec<String>,
     pub states: Vec<Snapshot>,
@@ -105,7 +102,6 @@ pub struct PhaseMetrics {
 pub struct CaseResult {
     pub case: Case,
     pub phases: Vec<(String, PhaseMetrics)>,
-    /// All phases together.
     pub all: PhaseMetrics,
     pub payload_tx_kb_s: f64,
     pub cpu_mean_ms: f64,

@@ -1,4 +1,3 @@
-//! The harness runs the six scripts, the facts they show today, and the Barotrauma oracle checks.
 use super::barotrauma::Baro;
 use super::*;
 use crate::engine_room::{EngineRoom, PumpMode};
@@ -11,8 +10,6 @@ fn shipped() -> Tuning {
     Tuning::parse(text).unwrap_or_else(|e| panic!("{e:#?}"))
 }
 
-/// Prints every script's table (`cargo test -p reactor_core sim -- --nocapture`). Asserts only
-/// that each run finished and has rows.
 #[test]
 fn print_all_traces() {
     let t = shipped();
@@ -54,7 +51,6 @@ fn comparable_reactor() -> Reactor {
     comparable_reactor_with(true)
 }
 
-/// `comparable_reactor` with the inertia switched on or off (off is the oracle's own path).
 fn comparable_reactor_with(inertia: bool) -> Reactor {
     let t = shipped();
     let rt = ReactorTuning {
@@ -203,7 +199,6 @@ fn auto_compared_with_barotrauma() {
     }
 }
 
-/// One named script on the warmed room, with its rows every `sample_every_s`, and the room.
 fn trace_of(name: &str, sample_every_s: f64) -> (Trace, EngineRoom) {
     let t = shipped();
     let script = scripts()
@@ -223,7 +218,6 @@ fn row_at(trace: &Trace, t: f64) -> &Row {
         .unwrap_or_else(|| panic!("no row at {t}"))
 }
 
-/// The warm-up leaves the reactor on, running on the grid's 1280 kW, in its optimal band.
 #[test]
 fn warm_room_runs_on_the_grid_in_the_band() {
     let room = warm_room(&shipped(), 7);
@@ -242,7 +236,6 @@ fn warm_room_runs_on_the_grid_in_the_band() {
     assert_eq!(room.flow(), 1.0);
 }
 
-/// The load drop overvolts the junction box (it loses condition), and Auto overshoots above the
 /// optimal band for a while. No meltdown.
 #[test]
 fn load_drop_overvolts_the_junction_box_and_auto_overshoots() {
@@ -276,7 +269,6 @@ fn a_broken_pump_at_full_load_reaches_temp_critical() {
     assert!(t > 10.0 && t < 300.0, "TempCritical at {t}");
 }
 
-/// The Low pump runs at its low speed from 10 s on, the flow follows it, and the tank drains.
 #[test]
 fn a_low_pump_at_full_load_runs_at_its_low_speed_and_drains_slowly() {
     let (trace, room) = trace_of("pump_low_full_load", 5.0);
@@ -316,13 +308,10 @@ fn scram_last_second_under_auto_never_reaches_the_meltdown_timer() {
     assert!(!trace.melted);
 }
 
-/// After the repair and the restart at melt + 5 s the reactor runs on the grid again. A repaired
-/// core is a reactor again: `melted()` is false after the repair.
 #[test]
 fn a_repaired_and_restarted_core_runs_again() {
     let (trace, room) = trace_of("meltdown_repair_restart", 5.0);
     assert!(trace.first("Meltdown").is_some());
-    // The core restarts at about 160 s (cold until then).
     let at = row_at(&trace, 180.0);
     assert!(at.power && at.output_kw > 0.0, "{at:?}");
     assert!(!room.reactor().melted(), "a repaired core is a reactor again");
@@ -340,7 +329,6 @@ fn wandering_load_stays_out_of_temp_critical_over_300_s() {
     let trace = run(&mut room, &script, DT, 5.0);
     assert!(!trace.melted);
     assert_eq!(trace.count("Alarm TempCritical on"), 0, "{}", trace.table());
-    // The same run again, stepped by hand, to count the seconds of overvoltage.
     let mut probe = warm_room(&shipped(), 7);
     probe.pump_mut().set_tank(100.0);
     probe.set_engine_wander(true);
@@ -422,7 +410,6 @@ fn a_spicy_rod_replaces_a_standard_one() {
 }
 
 /// The overvolt: full turbine and fission with the engines and lights off (400 kW asked, 2000 made):
-/// the junction box sees more than twice its load and takes damage.
 #[test]
 fn overvolt_turbine_max_damages_the_junction_box() {
     let (trace, room) = trace_of("overvolt_turbine_max", 5.0);
@@ -497,7 +484,6 @@ fn boost_kick_takes_both_boosts_and_the_lamp_shows_the_overheat() {
     assert!((end.temp - 43.8).abs() < 1.0, "settled at {}", end.temp);
 }
 
-/// A boost within 90 % of the amount is refused and logged, the one after it is not.
 #[test]
 fn a_boost_too_soon_is_refused_and_logged() {
     let t = shipped();
@@ -513,7 +499,6 @@ fn a_boost_too_soon_is_refused_and_logged() {
     assert!(room.reactor().temperature_boost() > 0.0, "the first boost stays");
 }
 
-/// The boost does nothing with the power off: refused, logged, and the room stays cold.
 #[test]
 fn a_boost_with_the_power_off_is_refused() {
     let t = shipped();

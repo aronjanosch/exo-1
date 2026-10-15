@@ -1,13 +1,5 @@
 //! Stage 4 of the SC step: the thrust the flight computer asks for (ship space, m/s²), inside the
 //! thrust box.
-//!
-//! Coupled flies a velocity goal from the stick (`cruise` sideways and vertical, the caps along Z
-//! at boost); decoupled pushes along the stick; `Modes::coupling` blends them. The cap refuses the
-//! thrust along the velocity above it (A3), the brake takes one deceleration along the velocity
-//! (B2), anti-drift keeps the path straight while an axis saturates, gravity compensation holds
-//! against gravity and air (off: the ship falls in a frame that falls with it), G-safe cuts the
-//! box, the strafe tapers with forward speed, comstab keeps the goal on the nose, and proximity
-//! and landing mode limit the descent and the speed near the ground.
 use super::modes::{Master, Modes};
 use super::StepState;
 use crate::limits::{Dirs, G0, G_SAFE_MAX_G};
@@ -21,7 +13,6 @@ use serde::Deserialize;
 pub struct Caps {
     /// Coupled speed for full stick in any direction.
     pub cruise: f64,
-    /// Forward and backward at full boost (at least `cruise`).
     pub boost_forward: f64,
     pub boost_backward: f64,
 }
@@ -38,7 +29,6 @@ impl Caps {
     }
 }
 
-/// The landing mode's precision band (K).
 #[derive(Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LandingBand {
@@ -70,7 +60,6 @@ pub struct LinearTuning {
     pub strafe_taper_boost: Curve,
     /// g per direction of the thrust while G-safe is on.
     pub g_limit: Dirs,
-    /// The boost lifts G-safe.
     pub boost_disables_g_safe: bool,
     /// m/s: below this the brake's rate is proportional to the speed.
     pub brake_ease_speed: f64,
@@ -152,7 +141,6 @@ impl Default for LinearTuning {
     }
 }
 
-/// What the other stages give this one.
 #[derive(Clone, Copy, Debug)]
 pub struct Env {
     /// m/s² per direction the thrusters can give this step (air and boost included).
@@ -176,13 +164,10 @@ pub struct LinearState {
     /// m/s, world: the fall gravity adds while gravity compensation is off. The goal moves with it,
     /// so the assist does not fight the fall. Dropped when compensation comes back on.
     pub fall: DVec3,
-    /// The frame the goal turns in: the nose at rest or with comstab on, lagging while moving
-    /// with comstab off.
     pub aim: DQuat,
 }
 
 /// m/s: below this the precise HUD rounds to 0.00. At rest the goal has no old heading;
-/// active braking also finishes at exact zero (unbraked slow movement is not cut).
 pub(super) const STOP_SPEED: f64 = 0.005;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -191,7 +176,6 @@ pub struct LinearOut {
     pub accel: DVec3,
     /// m/s: the forward speed cap in force (master mode, boost, limiter, air, landing band).
     pub cap: f64,
-    /// The request did not fit the box.
     pub saturated: bool,
     /// Ship-space acceleration reserved for holds and catching across-goal drift.
     pub turn_reserve: DVec3,
@@ -225,8 +209,6 @@ fn anti_drift(b: &Dirs, lv: DVec3, g: DVec3, goal: DVec3, hold: DVec3, decay: f6
     if n < ANTI_DRIFT_MIN {
         return None;
     }
-    // The thrust points along the velocity error, as far as the box reaches that way: the across
-    // speed and the error along the goal die together and the path stays straight. A large error
     // along the goal throttles the across part to its share instead of every axis running full.
     let err = goal - lv;
     let l = err.length();
@@ -237,11 +219,9 @@ fn anti_drift(b: &Dirs, lv: DVec3, g: DVec3, goal: DVec3, hold: DVec3, decay: f6
     // Fit the complete thrust, hold + correction, rather than fitting correction
     // about zero and adding the hold afterwards. Otherwise entering saturation
     // abruptly loses thrust when the gravity/air hold opposes the turn.
-    // Do not exceed the velocity controller's request when the hold helps it fit.
     Some(u * brake_ceiling(b, hold, u).max(0.0).min(l * decay))
 }
 
-/// Translation and coupled turn coordination share the same usable acceleration budget.
 pub(super) fn motion_box(f: &StepState, m: &Modes, e: &Env, t: &LinearTuning) -> Dirs {
     let mut b = e.thrust_box;
     if m.g_safe && !(t.boost_disables_g_safe && e.boost > 0.0) {
@@ -298,7 +278,6 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
         s.fall += f.gravity * f.dt;
     }
 
-    // The box: the thrusters' box, G-safe cut, the strafe taper on the lateral and vertical sides.
     let b = motion_box(f, m, e, t);
 
     let sink = (-f.v.dot(f.up)).max(0.0);
@@ -306,7 +285,6 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
 
     if e.braking {
         // B2: one deceleration along the velocity, the weakest axis as the ceiling, gravity and air
-        // held; the rate eases to zero with the speed.
         let hold_l = b.clamp(f.inv * -(f.gravity + e.air_accel));
         let speed = f.lv.length();
         let thrust = if speed > 1e-9 {
@@ -321,7 +299,6 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
         return LinearOut { accel, cap: forward, saturated: (thrust - accel).length() > 1e-6, turn_reserve: hold_l };
     }
 
-    // The goal from the stick, with the fall; the landing band and the descent limit cut it.
     let mut goal = goal_stick + fall + e.drift;
     let mut forward_cap = forward;
     let mut descent = DVec3::ZERO;
@@ -347,7 +324,6 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
             goal -= f.up * (vertical + safe);
             descent = f.up * (a * sink / safe);
         }
-        // Flying at the ground: the downward part of the goal is cut.
         if sink > 1e-9 && f.clearance / sink < t.proximity_time {
             let vertical = goal.dot(f.up);
             if vertical < 0.0 {
@@ -356,8 +332,6 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
         }
     }
 
-    // Coupled: the velocity goal, the hold and the descent brake; decoupled: the stick's thrust
-    // and the hold. The blend runs between them.
     let motion_l = f.inv * ((goal - f.v) * t.decay + descent);
     let hold_l = f.inv * hold;
     let direction = (goal - fall - e.drift).normalize_or_zero();

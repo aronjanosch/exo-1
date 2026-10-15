@@ -1,9 +1,4 @@
 //! Drainage: rivers and lakes on the macro grid, the mapgen4 approach on a sphere. Runs
-//! once in the bake, never at runtime. The water is routed downhill over the ground with its
-//! sinks filled (priority flood from the sea), the rain is summed along the routes, a few
-//! erosion steps lower the ground along them (stream power), the water is routed again, deep
-//! and large sinks stay as lakes and river beds are cut where enough rain gathers. The bake keeps
-//! two macro channels from it: the change of the ground and the water surface.
 use crate::math::*;
 use crate::recipe::{DrainageSpec, Erosion, SinkCrossing};
 use std::cmp::Reverse;
@@ -18,7 +13,6 @@ pub const DRY_BELOW: f64 = -1.0e3;
 
 /// The graph the water runs on.
 pub trait Mesh: Sync {
-    /// Index range of the nodes.
     fn len(&self) -> usize;
     /// False for an index that is no node (a duplicate entry on a face edge).
     fn is_node(&self, _v: usize) -> bool {
@@ -26,9 +20,7 @@ pub trait Mesh: Sync {
     }
     /// Neighbours of a node, into `out` (cleared first).
     fn neighbours(&self, v: usize, out: &mut Vec<usize>);
-    /// Distance between two nodes along the ground (m).
     fn dist_m(&self, a: usize, b: usize) -> f64;
-    /// Ground area a node stands for (m²).
     fn area_m2(&self, v: usize) -> f64;
 }
 
@@ -43,12 +35,9 @@ pub struct Routing {
     pub sink: Vec<bool>,
 }
 
-/// Where a river node's water goes.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Mouth {
-    /// Index into the rivers.
     River(u32),
-    /// Index into the lakes.
     Lake(u32),
     Sea,
 }
@@ -56,7 +45,6 @@ pub enum Mouth {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RiverNode {
     pub node: u32,
-    /// Rain-weighted catchment (m²).
     pub catchment_m2: f64,
     /// Bed and water surface (m above the base radius).
     pub bed_m: f32,
@@ -94,16 +82,13 @@ pub struct Drained {
     pub lakes: Vec<LakeOut>,
     /// Lake index per node (NONE outside a lake).
     pub lake_of: Vec<u32>,
-    /// The largest rain-weighted catchment of any land node (m²).
     pub max_catchment_m2: f64,
     /// The longest river from its source to its mouth (m), and the longest waterway that goes on
     /// through lakes that spill (each crossing counted straight to the outlet).
     pub longest_river_m: f64,
     pub longest_waterway_m: f64,
-    /// Lowering by the erosion steps alone over land (m).
     pub erosion_max_m: f64,
     pub erosion_mean_m: f64,
-    /// Time per step (ms).
     pub phases_ms: Vec<(&'static str, f64)>,
 }
 
@@ -235,7 +220,6 @@ pub fn route(mesh: &impl Mesh, h: &[f32], ocean: &[bool], outlets: &[(u32, f32)]
     Routing { rcv, order, level, sink: sea }
 }
 
-/// Rain summed downstream.
 pub fn accumulate(r: &Routing, rain: &[f32]) -> Vec<f32> {
     let mut flow = rain.to_vec();
     for &v in r.order.iter().rev() {
@@ -277,17 +261,14 @@ pub fn erode(mesh: &impl Mesh, r: &Routing, flow: &[f32], h: &mut [f32], sea_lev
     }
 }
 
-/// Connected nodes under one filled level: where water pools.
 struct Sink {
     level: f32,
     members: Vec<usize>,
     deepest: usize,
     area: f64,
-    /// Rain-weighted catchment flowing in (m²): what leaves it towards the spill.
     inflow: f64,
 }
 
-/// Every sink of a routing, in node order.
 fn sinks(mesh: &impl Mesh, r: &Routing, h: &[f32], flow: &[f32]) -> Vec<Sink> {
     let n = mesh.len();
     let flooded = |v: usize| !r.sink[v] && r.level[v] > h[v];
@@ -324,10 +305,8 @@ fn sinks(mesh: &impl Mesh, r: &Routing, h: &[f32], flow: &[f32]) -> Vec<Sink> {
 /// vertices wanders by about this much, and a flat right at the sea level freckled with sea.
 const FILL_ABOVE_SEA_M: f32 = 2.0;
 
-/// Hops a river's cross-section reaches at most.
 const SECTION_HOPS: u32 = 4;
 
-/// Everything: erosion, routing, lakes, river beds and the water surface.
 pub fn drain(mesh: &impl Mesh, h0: &[f32], rain: &[f32], sea_level: f32, s: &DrainageSpec) -> Drained {
     let n = mesh.len();
     let mut phases_ms = Vec::new();
@@ -541,7 +520,6 @@ pub fn drain(mesh: &impl Mesh, h0: &[f32], rain: &[f32], sea_level: f32, s: &Dra
             }
         }
     }
-    // Lakes: flat at their level, one ring beyond for the shore.
     let mut lake_water = vec![NO_WATER; n];
     for v in 0..n {
         let id = lake_of[v];
@@ -686,7 +664,6 @@ impl MacroGrid {
         v3(d[0] as f64, d[1] as f64, d[2] as f64)
     }
 
-    /// The node an entry belongs to.
     pub fn canon(&self, k: usize) -> usize {
         self.canon[k] as usize
     }
@@ -754,7 +731,6 @@ impl Mesh for MacroGrid {
 mod tests {
     use super::*;
 
-    /// A flat grid with 8 neighbours, `cell` metres apart.
     struct Grid {
         w: usize,
         h: usize,
@@ -1017,7 +993,6 @@ mod tests {
         }
         let sphere = 4.0 * std::f64::consts::PI * 1e6;
         assert!((total_area / sphere - 1.0).abs() < 0.02, "areas sum to the sphere: {}", total_area / sphere);
-        // Every entry belongs to a node at the same spot.
         assert!((0..6 * w * w).all(|k| g.dist_m(k, g.canon(k)) < 1e-3));
     }
 }

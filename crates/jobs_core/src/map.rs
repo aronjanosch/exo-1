@@ -1,7 +1,4 @@
 //! The map's pin list, without engine types: which places the crew may use, where the
-//! tracked job leads next, and where the players are. The window draws the list on a picture of
-//! the ground (`planet_core`'s local map); the same list feeds the job line's pointer and later
-//! the HUD arrow.
 use gameplay_core::{ClientId, Content, LocationId, Progress, TextKey};
 
 use crate::id::JobId;
@@ -23,19 +20,15 @@ pub struct PlayerPos {
     pub dir: [f64; 3],
 }
 
-/// What the tracked job asks for next.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Stop {
-    /// Crates still wait to be picked up there.
     Pickup,
-    /// Everything is carried: bring it there.
     Dropoff,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PinKind {
     Place,
-    /// The tracked job's next stop.
     Target(Stop),
     Player { own: bool },
 }

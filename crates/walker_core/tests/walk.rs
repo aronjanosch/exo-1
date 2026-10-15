@@ -1,4 +1,3 @@
-//! Walker checks against an analytic world (half-spaces), no engine.
 use glam::{DQuat, DVec2, DVec3};
 use walker_core::*;
 
@@ -20,7 +19,6 @@ impl Planes {
             .iter()
             .map(|&(n, d)| {
                 let wn = self.frame.rot * n;
-                // point on the plane: n * d in local space
                 (wn, wn.dot(self.frame.to_world(n * d)))
             })
             .collect()
@@ -125,7 +123,6 @@ fn jump_leaves_and_returns_to_ground() {
     assert!((peak - 25.0 / (2.0 * 9.81)).abs() < 0.1 && w.grounded);
 }
 
-/// Stand and walk in a cabin floor of a frame flying at 400 m/s while rolling.
 #[test]
 fn walking_in_a_fast_rolling_frame_has_no_drift() {
     let mut world = Planes { planes: vec![(DVec3::Y, 0.0)], frame: Frame::IDENTITY };
@@ -194,7 +191,6 @@ fn weightless_walker_keeps_its_velocity() {
     assert!((w.pos - DVec3::new(0.0, -6.0, 4.0)).length() < 1e-9, "position {:?}", w.pos);
     assert!(!w.grounded);
 
-    // Drifting into a floor: the part into it stops, the part along it stays.
     let world = flat();
     let mut w = Walker::new(DVec3::new(0.0, 0.5, 0.0), DVec3::NEG_Z);
     w.vel = DVec3::new(2.0, -1.0, 0.0);
@@ -205,7 +201,6 @@ fn weightless_walker_keeps_its_velocity() {
     assert!(w.pos.y >= 0.0 && w.pos.x > 3.9, "position {:?}", w.pos);
 }
 
-/// Re-splitting the look direction about a tilted up keeps it in the world.
 #[test]
 fn split_look_keeps_the_world_direction() {
     let up = DVec3::Y;
@@ -220,7 +215,6 @@ fn split_look_keeps_the_world_direction() {
     assert!((f - DVec3::NEG_Z).length() < 1e-12 && (pitch - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
 }
 
-/// Suit thrusters push along the body axes, the brake comes to rest without overshoot within 4 s.
 #[test]
 fn suit_thrusts_along_the_body_and_brakes_to_rest() {
     let cfg = SuitConfig::default();
@@ -256,15 +250,12 @@ fn tap_is_a_slow_step() {
     walk(&world, &mut w, 10, DVec2::ZERO);
     assert!(w.vel.length() < 1e-9, "comes to rest, {}", w.vel.length());
     assert!(w.pos.x < 0.2, "a tap moves only a little: {}", w.pos.x);
-    // Held: step-off speed after 0.1 s, full walk speed right after.
     walk(&world, &mut w, 6, DVec2::new(0.0, 1.0));
     assert!((w.vel.length() - cfg.start_speed).abs() < 1e-6, "after 0.1 s {}", w.vel.length());
     walk(&world, &mut w, 1, DVec2::new(0.0, 1.0));
     assert!((w.vel.length() - cfg.walk_speed).abs() < 1e-6, "then full {}", w.vel.length());
 }
 
-/// The view helpers: `look_rot` looks exactly along `look`, `turn_towards` rights smoothly and
-/// arrives, `turn_body` turns about the body's own axes.
 #[test]
 fn view_helpers() {
     let look = DVec3::new(1.0, 0.3, -0.2).normalize();
@@ -287,8 +278,6 @@ fn view_helpers() {
     assert!((b * DVec3::NEG_Z - DVec3::NEG_Z).length() < 1e-12, "roll keeps the look");
 }
 
-/// Touching a surface that moves along with the walker (a ship it drifts with) does not
-/// stop it; a standing surface does.
 #[test]
 fn moving_surface_stops_only_the_relative_velocity() {
     struct Wall(DVec3);

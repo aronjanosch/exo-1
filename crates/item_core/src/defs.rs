@@ -1,20 +1,13 @@
 //! Item definitions (`content/items/*.json`), one file per item, unknown fields rejected.
-//!
-//! Like Barotrauma's item components, an item is a mix of a few building blocks: how it is taken
-//! (`take`), the hands it needs while held, how many stack in one slot, slots of its own (a box,
-//! a bag; 0 for most), what using it does (`use`, an effect id) and its shape as a
-//! loose body in the world.
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
 use crate::container::{Item, Stack};
 
-/// How the player takes it with F.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Take {
-    /// Into the inventory (the action bar).
     Collect,
     /// Held in the hands, which are busy meanwhile; it never goes into the inventory (cargo).
     Carry,
@@ -34,7 +27,6 @@ pub struct Shape {
 pub struct ItemDef {
     /// Lower case letters, digits and `_`; the file is `<id>.json`.
     pub id: String,
-    /// Shown in prompts and the inventory.
     pub name: String,
     /// Three capital letters that stand for it in the action bar (`WRN`); empty: the first three
     /// letters of the id (`short_code`).
@@ -48,13 +40,11 @@ pub struct ItemDef {
     /// Slots of its own (a toolbox, a bag); 0 for most.
     #[serde(default)]
     pub slots: u32,
-    /// What using it does, an effect id (the repair, the spray, the treatment).
     #[serde(rename = "use", default)]
     pub use_effect: Option<String>,
     /// Seconds the use takes while LMB is held; None: the use is instant.
     #[serde(default)]
     pub use_s: Option<f64>,
-    /// Labels for slot rules (`small`, `tool`, `medical`).
     #[serde(default)]
     pub tags: Vec<String>,
     /// Wears: its condition (0..100 %) starts at 100 and what it does can run it down.
@@ -64,19 +54,16 @@ pub struct ItemDef {
 }
 
 impl ItemDef {
-    /// The three letters that stand for the item in the action bar.
     pub fn short_code(&self) -> String {
         if self.code.is_empty() { self.id.chars().take(3).collect::<String>().to_uppercase() } else { self.code.clone() }
     }
 
-    /// The item as the containers see it.
     pub fn item(&self) -> Item {
         let tags: Vec<&str> = self.tags.iter().map(String::as_str).collect();
         let item = Item::new(&self.id, &tags, self.stack);
         if self.condition { item.with_condition(100.0) } else { item }
     }
 
-    /// `n` of it.
     pub fn stack_of(&self, n: u32) -> Stack {
         Stack::new(self.item(), n)
     }
@@ -87,7 +74,6 @@ pub(crate) fn parse_content<T: serde::de::DeserializeOwned>(path: &str, text: &s
     content_core::parse_strict(path, text)
 }
 
-/// Every item definition, by id.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ItemDefs(pub BTreeMap<String, ItemDef>);
 
@@ -133,7 +119,6 @@ impl ItemDefs {
         self.0.get(id)
     }
 
-    /// The definition of a stack's items.
     pub fn of(&self, s: &Stack) -> Option<&ItemDef> {
         self.get(s.item.kind.as_str())
     }

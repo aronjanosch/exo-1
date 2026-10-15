@@ -1,6 +1,3 @@
-//! The SC model's linear law: the cap that refuses thrust, the brake along the
-//! velocity, anti-drift, the strafe taper, gravity compensation, G-safe, comstab, the master modes,
-//! the speed limiter, proximity and landing mode. Numbers are printed; values are placeholders.
 mod sc_common;
 use flight_core::sc::{ModeCmds, ScShip};
 use flight_core::{BodyState, FlightInput, PlanetEnv};
@@ -9,7 +6,6 @@ use sc_common::*;
 
 const G0: f64 = 9.81;
 
-/// A piloted input with the thrust, boost and brake as given.
 fn input(t: DVec3, boost: bool, brake: bool) -> FlightInput {
     FlightInput { thrust: t, boost, brake, piloted: true, ..FlightInput::default() }
 }
@@ -29,7 +25,6 @@ fn a3_the_cap_refuses_thrust_above_it() {
     let space = Space::default();
     // Decoupled, so nothing damps the thrust along the stick and the cap is what holds the speed
     // (coupled, the goal already sits inside the cap). D to the sideways cap, then decouple and
-    // full W with boost.
     let peak = |refuse: bool| {
         let mut t = tuning();
         t.linear.refuse_thrust = refuse;
@@ -126,7 +121,6 @@ fn release_from_the_boost_cap_bleeds_without_a_plateau() {
     let mut ship = ScShip::new(tuning());
     ship.modes.g_safe = false; // Measure the release law, not the 4 g acceleration ceiling.
     let mut body = body_at(DVec3::ZERO);
-    // The boost drains in 3 s; 2.5 s of it builds speed past the cruise cap.
     fly(&mut ship, &mut body, &input(DVec3::NEG_Z, true, false), &ModeCmds::default(), &space, 2.5);
     assert!(body.lin_vel.length() > 155.0, "boosted above the cruise cap first: {:.1}", body.lin_vel.length());
     let mut speeds = Vec::new();
@@ -146,7 +140,6 @@ fn release_from_the_boost_cap_bleeds_without_a_plateau() {
 #[test]
 fn strafe_tapers_with_forward_speed_under_boost_only() {
     let space = Space::default();
-    // The sideways acceleration of one step with D and the given velocity.
     let side = |v: DVec3, boost: bool| {
         let mut ship = ScShip::new(instant());
         ship.modes.g_safe = false; // Isolate strafe taper from the shared G budget.
@@ -168,7 +161,6 @@ fn gravity_compensation_off_falls_with_g_and_on_again_holds() {
     let env = Air::default();
     let mut ship = ScShip::new(tuning());
     let mut body = body_at(DVec3::new(0.0, 500.0, 0.0));
-    // The first step taps H: compensation off.
     fly(&mut ship, &mut body, &FlightInput::default(), &ModeCmds { grav_comp: true, ..Default::default() }, &env, 1.0);
     assert!(!ship.status.grav_comp);
     let (fallen, speed) = (500.0 - body.pos.y, -body.lin_vel.y);
@@ -205,7 +197,6 @@ fn g_safe_keeps_the_forward_felt_g_under_the_limit_in_a_boost() {
     let peak = |g_safe: bool| {
         let mut ship = ScShip::new(tuning());
         let mut body = body_at(DVec3::ZERO);
-        // The first step taps F8 when G-safe is to go off.
         let first = if g_safe { ModeCmds::default() } else { ModeCmds { g_safe: true, ..Default::default() } };
         let mut peak: f64 = 0.0;
         for i in 0..(3.0 / DT) as usize {

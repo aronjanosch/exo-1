@@ -57,7 +57,6 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
     s.extend(sit());
     s.push(hold_until("climb to 300 m above ground", &[KeyCode::Space, KeyCode::ShiftLeft], 60.0, |w| above_ground(w) > 300.0));
     s.push(hold_until("hover", &[], 10.0, |w| ship_vel(w).length() < 0.5));
-    // Virtual joystick: yaw rate is deflection times turn rate; inside the dead zone nothing.
     s.push(stick_yaw("stick: full right", 1.0));
     s.push(shot_step("stick-full-right"));
     s.push(Box::new(|w, c| {
@@ -89,7 +88,6 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
         }
         false
     }));
-    // The pad's right stick through the same axes, without a device.
     s.push(Box::new(|w, c| {
         let stick = 0.8f32;
         if c.t == 0.0 {
@@ -122,7 +120,6 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
             keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft], true);
         }
         if c.t >= 0.5 * w.resource::<crate::tuning::Tuning>().ship_type.flight.drive.boost_capacitor.drain_time {
-            // Screenshot while boost is still held, so the HUD shows it.
             shot(w, c, &dir, windowed, "boost");
             keys(w, &[KeyCode::ShiftLeft], false);
             let (l0, v0) = (c.v["limit0"], c.v["v0"]);
@@ -211,9 +208,7 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
         false
     }));
     s.push(hold_until("firm brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 0.5));
-    // Down to 120 m (Ctrl and Shift, as the camera scenario does). A test hook levels the ship first:
-    // the SC's Ctrl is the hull's down, so a nose-up hull after the cruise flies off (open question,
-    // see the report); the axis model's landing did not depend on the attitude.
+// A test hook levels the ship first: a nose-up hull after the cruise flies off.
     s.push(Box::new(|w, _| {
         let e = ship_e(w);
         let (p, up) = (w.get::<Position>(e).unwrap().0, planet(w).up(ship_frame_of(w).origin));
@@ -240,6 +235,5 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
     }));
     s.push(wait(0.3));
     s.push(shot_step("debug-hud-f3"));
-    // Screenshots are written a few frames later.
     s.push(wait(1.0));
 }

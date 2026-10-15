@@ -1,4 +1,3 @@
-//! Crates far away wake as Avian bodies once the walker comes and the patch is built. Without a window.
 use crate::common;
 use exo_app::Options;
 

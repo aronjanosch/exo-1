@@ -18,7 +18,6 @@ fn key(c: [i64; 3]) -> u64 {
 }
 
 impl Grid {
-    /// An empty grid of cells `cell_m` wide on a planet of `radius`.
     pub fn new(cell_m: f64, radius: f64) -> Grid {
         Grid { cell: cell_m.max(1.0), radius, map: HashMap::new() }
     }
@@ -40,7 +39,6 @@ impl Grid {
         }
     }
 
-    /// Item `i` as a point (in its own cell only).
     pub fn insert_point(&mut self, i: u32, dir: V3) {
         let p = dir * self.radius;
         self.map.entry(key([self.cell_of(p.x), self.cell_of(p.y), self.cell_of(p.z)])).or_default().push(i);

@@ -1,22 +1,4 @@
 //! device_core: the condition of a ship device, without engine types, in f64. Every machine the engineer keeps alive (reactor, engines, shield generator, oxygen
-//! generator) carries one `Condition`.
-//!
-//! Taken from Barotrauma's repairable devices: a condition bar with a repair threshold, repair time
-//! between a slow and a fast duration by skill, a skill roll that can fail, slow wear after a random
-//! delay, and skill gain divided by skill^1.5. Our own code; the broken limit, the output factor and
-//! the overload wear are ours (`research/barotrauma-mech-damage-repair.md` in the concept repo).
-//!
-//! - Condition runs from 0 to `max`. Below `repair_threshold` the device asks for repair (HUD,
-//!   orders), below `broken_below` it stops working.
-//! - `factor()` is what the device puts out: 1 above the repair threshold, falling to
-//!   `factor_at_broken` at the broken limit, 0 when broken.
-//! - Hold-to-repair: `repair_step` while the button is held, `stop_repair` on release. Each attempt
-//!   starts with one roll; a failure costs condition, locks repair for a moment, and the glue
-//!   shocks the repairer.
-//! - Wear: `deteriorate(dt, load)`. Normal wear starts after a random delay and stops at a floor;
-//!   overload (`load > 1`) wears at once and down to 0.
-//!
-//! Skill is the player's value 0..100 (`skills-and-talents.md`: mechanical for repair). All values
 //! are starting points for the playtest (`TODO(initiator)`).
 use gameplay_core::rng::Rng;
 
@@ -29,29 +11,23 @@ mod tests;
 #[derive(Copy, Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeviceTuning {
-    /// Full condition.
     pub max: f64,
     /// Below this the device asks for repair. Only full repairs from below it give skill.
     pub repair_threshold: f64,
-    /// Below this the device does not work at all.
     pub broken_below: f64,
     /// Output factor just above the broken limit; it rises linearly to 1 at the repair threshold.
     pub factor_at_broken: f64,
     /// Seconds from 0 to full at skill 0 with a standard tool.
     pub fix_slow_s: f64,
-    /// Seconds from 0 to full at skill 100.
     pub fix_fast_s: f64,
     /// Skill at and above which a repair never fails.
     pub required_skill: f64,
     /// Chance that an attempt fails at skill 0; falls linearly to 0 at `required_skill`.
     pub fail_chance: f64,
-    /// Condition lost by a failed attempt.
     pub fail_cost: f64,
-    /// Seconds repair is locked after a failure.
     pub fail_lockout_s: f64,
     /// Condition per second of normal wear.
     pub wear_rate: f64,
-    /// Normal wear stops here.
     pub wear_floor: f64,
     /// Seconds of use before normal wear starts, drawn from this range after each full repair.
     pub wear_delay_s: (f64, f64),
@@ -93,7 +69,6 @@ pub struct Tool {
 }
 
 impl Tool {
-    /// The standard repair tool.
     pub const WRENCH: Tool = Tool { speed: 1.0 };
     /// The screwdriver (junction box). TODO(initiator): speed.
     pub const SCREWDRIVER: Tool = Tool { speed: 0.8 };
@@ -101,34 +76,27 @@ impl Tool {
     pub const HANDS: Tool = Tool { speed: 0.5 };
 }
 
-/// What one `repair_step` did.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum RepairOutcome {
     /// Condition rose; `progress` (0..1) is the bar to show.
     Working { progress: f64 },
     /// The attempt failed at its start: `lost` condition; the glue shocks or burns the repairer.
     Failed { lost: f64 },
-    /// Repair is locked after a failure.
     Locked { remaining_s: f64 },
     /// The device is full. `skill_gain` goes to the repairer's skill (0 if the device did not
     /// need repair when the attempt started).
     Done { skill_gain: f64 },
-    /// Nothing to repair.
     Full,
 }
 
-/// A change of state the glue may show or sound.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum DeviceEvent {
-    /// Fell below the repair threshold.
     NeedsRepair,
-    /// Fell below the broken limit: the device stops.
     Broke,
     /// Rose above the broken limit again: it works (at `factor()`).
     Works,
 }
 
-/// The condition of one device.
 #[derive(Clone, Debug)]
 pub struct Condition {
     tuning: DeviceTuning,
@@ -158,12 +126,10 @@ impl Condition {
         self.value
     }
 
-    /// 0..1.
     pub fn fraction(&self) -> f64 {
         self.value / self.tuning.max
     }
 
-    /// Sets the value directly (debug menu, scenarios, save).
     pub fn set_value(&mut self, v: f64) {
         self.value = v.clamp(0.0, self.tuning.max);
     }
@@ -176,7 +142,6 @@ impl Condition {
         self.value >= self.tuning.broken_below
     }
 
-    /// Output factor 0..1 of the device at this condition.
     pub fn factor(&self) -> f64 {
         let t = &self.tuning;
         if !self.functioning() {
@@ -190,7 +155,6 @@ impl Condition {
         t.factor_at_broken + (1.0 - t.factor_at_broken) * x
     }
 
-    /// Seconds of use before normal wear starts.
     pub fn wear_delay_left(&self) -> f64 {
         self.wear_delay
     }
@@ -281,14 +245,12 @@ impl Condition {
         self.repairing = false;
     }
 
-    /// Seconds a repair from 0 to full takes at this skill with this tool.
     pub fn repair_seconds(&self, skill: f64, tool: Tool) -> f64 {
         let t = &self.tuning;
         let d = (skill / 100.0).clamp(0.0, 1.0);
         (t.fix_slow_s + (t.fix_fast_s - t.fix_slow_s) * d) / tool.speed.max(1e-6)
     }
 
-    /// Chance that an attempt fails at this skill.
     pub fn fail_chance(&self, skill: f64) -> f64 {
         let t = &self.tuning;
         if t.required_skill <= 0.0 {

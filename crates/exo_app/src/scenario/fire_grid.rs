@@ -1,8 +1,4 @@
-//! Fire grid: the dev switch on the faults screen turns the fire to the cell model. A fire
-//! at the reactor starts one burning cell, which spreads cell to cell within 30 s while the
-//! engine room's oxygen falls. With the door open the fire catches in the corridor. The
-//! extinguisher, from 3 m north, puts the cell at the reactor's front face out. Without a window;
-//! run with `--start=dev_area`.
+//! Fire grid: the cell model of the engine-room fire, switched on at the faults screen.
 use super::fire::take_extinguisher;
 use super::items::look_at;
 use super::*;
@@ -30,7 +26,6 @@ fn grid(w: &World) -> &FireGrid {
     w.resource::<FireGrid>()
 }
 
-/// The burning cells, in all rooms.
 fn burning(w: &World) -> usize {
     grid(w).0.burning().count()
 }
@@ -41,7 +36,6 @@ fn ground(w: &mut World, p: [f64; 2], lift: f64) -> DVec3 {
     w.resource::<DevArea>().ground(&pl, p, lift).expect("the dev area is there").0
 }
 
-/// The cell index of an area point in the engine room.
 fn cell_of(w: &World, p: [f64; 2]) -> usize {
     let a = air(w);
     grid(w).0.cell_at(a.engine, DVec3::new(p[0], p[1], 0.0)).expect("the engine room has cells")
@@ -54,7 +48,6 @@ fn intensity_at(w: &World, p: [f64; 2]) -> f64 {
 
 pub(super) fn fire_grid_steps(s: &mut Vec<Step>) {
     take_extinguisher(s);
-    // The dev switch: a click on the faults screen's model button, as the screen sends it.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "fire grid: the faults screen's button switches the fire to the cells");
@@ -74,7 +67,6 @@ pub(super) fn fire_grid_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The fire at the reactor: one burning cell at the front face, the alarm at Warn.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "fire grid: the dev fault starts one burning cell at the reactor");
@@ -97,7 +89,6 @@ pub(super) fn fire_grid_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // Within 30 s the fire spreads to more cells, and the room's oxygen falls.
     s.push(Box::new(|w, c| {
         if c.t < 30.0 {
             return false;
@@ -110,7 +101,6 @@ pub(super) fn fire_grid_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The extinguisher, from 3 m north of the reactor's front cell, held until that cell is out.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "fire grid: the spray puts the reactor's front cell out");
@@ -136,7 +126,6 @@ pub(super) fn fire_grid_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The door opens; a cell at the door burns and the corridor catches.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "fire grid: with the door open the fire catches in the corridor");

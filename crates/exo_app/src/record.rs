@@ -1,6 +1,3 @@
-//! `--record=<file>`: write the local ship and walker of a scripted run as a 60 Hz path
-//! (net_core `Trajectory`) for the replay matrix. One state per physics tick, phase name of the
-//! scenario step in `flags`.
 use crate::env::PlanetRes;
 use crate::scenario::Script;
 use crate::walker::Player;

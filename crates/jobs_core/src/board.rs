@@ -13,16 +13,13 @@ use crate::template::{CommoditySpec, JobTemplate, ObjectiveSpec, PlaceSpec};
 /// Lifetime of an offer before it rotates, in seconds. TODO(initiator): initial value.
 pub const OFFER_LIFETIME_S: f64 = 600.0;
 
-/// Board state per location: which offers are active and their lifetimes.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Board {
-    /// Per location, the offers currently shown.
     pub offers_per_location: BTreeMap<String, BoardLocation>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BoardLocation {
-    /// Job ids currently on this board. The jobs themselves are in Jobs.jobs.
     pub offer_ids: Vec<JobId>,
     /// Seconds since these offers were generated (used for lifetime rotation).
     pub age_s: f64,
@@ -30,7 +27,6 @@ pub struct BoardLocation {
     pub seed: u64,
 }
 
-/// Generate concrete legs from a template's deliver objectives, picking amount from the range.
 /// Returns the legs, or an error if tag search fails.
 pub fn generate_legs(
     template: &JobTemplate,
@@ -46,7 +42,6 @@ pub fn generate_legs(
                 let pickup = resolve_place_spec(from, kernel, progress, rng)?;
                 let mut dropoff = resolve_place_spec(to, kernel, progress, rng)?;
 
-                // Ensure pickup != dropoff
                 let mut attempts = 0;
                 while pickup == dropoff && attempts < 10 {
                     dropoff = resolve_place_spec(to, kernel, progress, rng)?;
@@ -57,7 +52,6 @@ pub fn generate_legs(
                     return Err("could not find different pickup/dropoff locations".into());
                 }
 
-                // Pick a commodity from the pool
                 let CommoditySpec::OneOf(pool) = commodity;
                 if pool.is_empty() {
                     return Err("commodity pool is empty".into());
@@ -65,7 +59,6 @@ pub fn generate_legs(
                 let commodity_idx = rng.below(pool.len());
                 let commodity = pool[commodity_idx].clone();
 
-                // Pick amount from the range [amount[0], amount[1]]
                 let min = amount[0] as u64;
                 let max = amount[1] as u64;
                 let range = (max - min).max(1);
@@ -75,7 +68,6 @@ pub fn generate_legs(
                 legs.push(Leg::new(pickup, dropoff, commodity, amt));
             }
             _ => {
-                // Non-deliver objectives are not handled in board generation
             }
         }
     }
@@ -83,7 +75,6 @@ pub fn generate_legs(
     Ok(legs)
 }
 
-/// Resolve a place spec to a concrete location.
 /// For fixed locations, return it if available.
 /// For tags, pick a random available location with that tag.
 fn resolve_place_spec(
@@ -94,7 +85,6 @@ fn resolve_place_spec(
 ) -> Result<LocationId, String> {
     match place {
         PlaceSpec::Location(loc) => {
-            // Check if this location is available
             if progress.location_available(kernel, loc) {
                 Ok(loc.clone())
             } else {
@@ -102,7 +92,6 @@ fn resolve_place_spec(
             }
         }
         PlaceSpec::Tagged(tag) => {
-            // Find all available locations with this tag
             let mut candidates: Vec<LocationId> = kernel
                 .locations
                 .values()
@@ -122,7 +111,6 @@ fn resolve_place_spec(
     }
 }
 
-/// Filter templates that can appear on a board at a given location.
 /// Excludes: exams, customer_order, templates with givers at other locations.
 /// Templates without a giver appear at all boards. TODO(initiator): clarify if templates without
 /// a giver and fixed places at specific locations should be restricted to those locations.
@@ -137,19 +125,16 @@ pub fn templates_for_location<'a>(
         .filter_map(|t| {
             let template = &t.record;
 
-            // Check template availability condition
             if let Some(cond) = &template.available {
                 if !cond.holds(kernel, progress, None) {
                     return None;
                 }
             }
 
-            // Exclude exams (those with an exam block)
             if template.exam.is_some() {
                 return None;
             }
 
-            // Exclude customer_order (offered only by OrderPlaced)
             if template.id.as_str() == "customer_order" {
                 return None;
             }
@@ -161,18 +146,15 @@ pub fn templates_for_location<'a>(
                         return None;
                     }
                 } else {
-                    // Giver not found, skip
                     return None;
                 }
             }
 
-            // Template with no giver can appear at any board
             Some(template)
         })
         .collect()
 }
 
-/// Derive the next seed from current seed for deterministic rotation.
 pub fn next_seed(seed: u64) -> u64 {
     let mut rng = Rng::new(seed);
     rng.next_u64()

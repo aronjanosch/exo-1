@@ -23,7 +23,6 @@ pub struct Node {
     pub column: u8,
     pub kind: SystemKind,
     pub danger: u8,
-    /// The system's seed for the star system generator.
     pub seed: u64,
     pub name: String,
     pub forward: Vec<NodeId>,

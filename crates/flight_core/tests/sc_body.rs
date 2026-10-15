@@ -1,5 +1,3 @@
-//! The SC model's body: spool per thruster group, jerk, the boost ramp, the
-//! aligned versus countering boost, the capacitor's idle cost and the cargo mass.
 //! Numbers are printed (`cargo test -p flight_core --test sc_body -- --nocapture`).
 mod sc_common;
 
@@ -170,7 +168,6 @@ fn fresh_lateral_press_has_no_wait() {
 fn held_boost_skips_the_spool() {
     let mut ship = ScShip::new(tuning());
     let mut body = body_at(DVec3::ZERO);
-    // Boost held alone first: past its pre-delay, the ramp is running and the boost is on.
     run(&mut ship, &mut body, &input(DVec3::ZERO, true), 0.5);
     let acc = run(&mut ship, &mut body, &input(FWD, true), 0.1);
     println!("boost held, W: first step {:.3} m/s2", acc[0].z);
@@ -241,7 +238,6 @@ fn boosted_forward_against_a_backward_drift_gives_the_counter_share() {
     let share = ship.tuning.drive.boost_counter_share;
     let mut body = BodyState { lin_vel: DVec3::new(0.0, 0.0, 200.0), ..body_at(DVec3::ZERO) };
     let acc = run(&mut ship, &mut body, &input(FWD, true), 1.2);
-    // Second 1.0 is past the ramp; the drift is still backward (the speed falls by ~70 m/s²).
     let step = 60;
     assert!(body.lin_vel.z > 0.0, "the drift ended before the measurement");
     assert!(acc[step].z < 0.0);
@@ -307,8 +303,6 @@ fn asked_thrust_is_shaped_inside_the_box_per_group() {
     assert!((prev.angular.x - 50.0).abs() < 1e-9, "the angular request reached: {}", prev.angular.x);
 }
 
-/// Countering boost never runs the axis past zero in one step: a small backward drift under a
-/// boosted forward push ends at rest on that axis, not moving the other way.
 #[test]
 fn countering_boost_lands_on_zero_not_past_it() {
     let t = sc_common::instant();

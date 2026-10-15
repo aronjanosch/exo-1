@@ -1,4 +1,3 @@
-//! Statistics of the replay matrix: mean and percentile.
 pub fn mean(v: &[f64]) -> f64 {
     v.iter().sum::<f64>() / v.len().max(1) as f64
 }

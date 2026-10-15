@@ -1,8 +1,3 @@
-//! The map: M opens a north-up picture of the ground around the player with pins for the
-//! places the crew may use, the tracked job's next stop and the players. The pin list is
-//! `jobs_core::map` (no engine types); this module feeds it from the game and draws it. T tracks
-//! the next active job. The map takes no input and blocks nothing; it only covers the middle of
-//! the screen.
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use gameplay_core::ClientId;
@@ -14,7 +9,6 @@ use crate::gameplay::{Gameplay, HOST};
 
 /// Metres from the map's centre to its edge (the map shows twice this across). TODO(initiator).
 pub const MAP_RADIUS_M: f64 = 1000.0;
-/// Pixels of the picture across.
 pub const MAP_PX: usize = 256;
 
 #[derive(Resource, Default, Debug)]
@@ -39,7 +33,6 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, toggle_map.after(crate::gameplay::gameplay_step).in_set(crate::phases::Fx::Cargo));
 }
 
-/// Where the player is (feet or the seat), world space.
 fn player_world(players: &Query<&crate::walker::Player>, ships: &Query<(&avian3d::prelude::Position, &avian3d::prelude::Rotation), With<crate::ship::Ship>>) -> Option<DVec3> {
     players.single().ok().zip(ships.iter().next()).map(|(pl, (p, r))| pl.world_pos(crate::walker::ship_frame(p, r)))
 }
@@ -55,7 +48,6 @@ fn toggle_map(
     if actions.take_tap(Tap::TrackJob) {
         gp.track_next();
     }
-    // A finished picture comes in from its worker thread.
     let arrived = map.pending.as_ref().and_then(|rx| rx.lock().ok()?.try_recv().ok());
     if let Some((rgb, ms)) = arrived {
         map.rgb = rgb;
@@ -89,7 +81,6 @@ fn toggle_map(
     }
 }
 
-/// The pins for the planet the player is on. Places come from the pads of this planet.
 pub fn current_pins(gp: &Gameplay, planet: &PlanetRes, player: Option<DVec3>) -> Vec<Pin> {
     let id = planet.id.0 as u32;
     let places: Vec<PlacePos> = gp.pads.iter().map(|p| PlacePos { location: p.location.clone(), planet: id, dir: dir_of(planet, p.centre) }).collect();
@@ -115,9 +106,6 @@ pub fn pin_px(planet: &PlanetRes, centre: DVec3, pin: &Pin, size_px: f64) -> Opt
     ((0.0..size_px).contains(&x) && (0.0..size_px).contains(&y)).then_some((x, y))
 }
 
-// ---------- the window ----------
-
-/// The picture is drawn this many pixels across on screen.
 const DRAW_PX: f64 = 640.0;
 const POOL: usize = 24;
 
@@ -195,7 +183,6 @@ fn draw_map(
         }
     }
     let list = current_pins(&gp, &planet, player_world(&players, &ships));
-    // Targets last so they are drawn on top.
     let mut ordered: Vec<&Pin> = list.iter().collect();
     ordered.sort_by_key(|p| matches!(p.kind, PinKind::Target(_)));
     let mut slots: Vec<Option<(f64, f64, Color, f32, String)>> = vec![None; POOL];

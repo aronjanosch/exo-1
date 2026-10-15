@@ -27,7 +27,6 @@ fn a_column_stacks_fixed_and_flexible_items_with_gaps() {
     let p = Panel::new(200.0, 100.0, column(10.0, vec![label("a").fixed(20.0), label("b"), label("c").flex(3.0)]));
     let l = p.layout();
     assert_eq!(l.len(), 3);
-    // Inside the 16 px padding: 168 x 68; 20 fixed, two gaps, 28 left for flex 1 : 3.
     assert_eq!(l[0].rect, Rect::new(16.0, 16.0, 168.0, 20.0));
     assert_eq!(l[1].rect, Rect::new(16.0, 46.0, 168.0, 7.0));
     assert_eq!(l[2].rect, Rect::new(16.0, 63.0, 168.0, 21.0));
@@ -85,7 +84,6 @@ fn release_elsewhere_or_off_the_panel_is_no_click() {
     assert!(ptr.step(&p, Some(centre_of(&p, "lights")), false).is_empty(), "released over another widget");
     ptr.step(&p, Some(centre_of(&p, "inc")), true);
     assert!(ptr.step(&p, None, false).is_empty(), "released off the panel");
-    // Pressed elsewhere, released over the button: no click either.
     ptr.step(&p, Some(DVec2::new(1.0, 1.0)), true);
     assert!(ptr.step(&p, Some(centre_of(&p, "inc")), false).is_empty());
 }
@@ -125,7 +123,6 @@ fn a_slider_reports_its_value_on_press_and_while_dragged() {
     assert!(ptr.step(&p, at(0.25), true).is_empty(), "no repeat without a change");
     let c = ptr.step(&p, at(0.75), true);
     assert!((c[0].value.unwrap() - 0.75).abs() < 1e-9);
-    // Beside the slider while held: clamped to its end; off the panel: no change.
     let c = ptr.step(&p, Some(DVec2::new(r.max().x + 50.0, 10.0)), true);
     assert_eq!(c[0].value, Some(1.0));
     assert!(ptr.step(&p, None, true).is_empty());
@@ -136,11 +133,9 @@ fn a_slider_reports_its_value_on_press_and_while_dragged() {
 #[test]
 fn bar_levels_for_high_and_low_bad_values() {
     assert_eq!(level(0.5, None, None), Level::Normal);
-    // Heat: warn 0.7, crit 0.9.
     assert_eq!(level(0.6, Some(0.7), Some(0.9)), Level::Normal);
     assert_eq!(level(0.7, Some(0.7), Some(0.9)), Level::Warn);
     assert_eq!(level(0.95, Some(0.7), Some(0.9)), Level::Crit);
-    // Fuel: warn 0.3, crit 0.1.
     assert_eq!(level(0.5, Some(0.3), Some(0.1)), Level::Normal);
     assert_eq!(level(0.2, Some(0.3), Some(0.1)), Level::Warn);
     assert_eq!(level(0.05, Some(0.3), Some(0.1)), Level::Crit);
@@ -172,15 +167,12 @@ fn a_ray_meets_the_front_of_a_turned_panel() {
     }
     let front = centre + rot * DVec3::new(0.0, 0.0, 2.0);
     assert!(ray_to_panel(front, centre - front, centre, rot, size).is_some());
-    // From behind, pointing away, parallel, or beside the quad: no hit.
     let back = centre + rot * DVec3::new(0.0, 0.0, -2.0);
     assert!(ray_to_panel(back, centre - back, centre, rot, size).is_none());
     assert!(ray_to_panel(front, front - centre, centre, rot, size).is_none());
     assert!(ray_to_panel(front, rot * DVec3::X, centre, rot, size).is_none());
     let beside = panel_point(centre, rot, size, DVec2::new(1.2, 0.5));
     assert!(ray_to_panel(front, beside - front, centre, rot, size).is_none());
-    // The plane version still gives the point beside the quad (a held slider follows it), but not
-    // from behind.
     let hit = ray_to_panel_plane(front, beside - front, centre, rot, size).expect("the plane is there");
     assert!((hit.uv - DVec2::new(1.2, 0.5)).length() < 1e-9);
     assert!(ray_to_panel_plane(back, centre - back, centre, rot, size).is_none());
@@ -190,7 +182,6 @@ fn a_ray_meets_the_front_of_a_turned_panel() {
 fn the_pointer_ray_and_the_window_point_are_inverses() {
     let rot = DQuat::from_rotation_y(0.4) * DQuat::from_rotation_x(-0.2);
     let (pos, window, fov) = (DVec3::new(1.0, 2.0, 3.0), DVec2::new(1600.0, 900.0), 1.1);
-    // The window's centre looks straight ahead.
     let (o, d) = pointer_ray(pos, rot, fov, window, window * 0.5);
     assert!(o == pos && (d - rot * DVec3::NEG_Z).length() < 1e-9);
     for p in [DVec2::new(10.0, 20.0), DVec2::new(800.0, 450.0), DVec2::new(1500.0, 700.0)] {
@@ -265,7 +256,6 @@ fn a_list_click_gives_the_row_index() {
     assert_eq!(ptr.step(&p, at, false), vec![Click { action: "pick".into(), value: Some(1.0) }]);
     assert_eq!(list_row_at(&r, 40.0, 3, DVec2::new(r.centre().x, r.min.y + 1.0)), Some(0));
     assert_eq!(list_row_at(&r, 40.0, 3, DVec2::new(r.centre().x, r.max().y - 1.0)), None, "below the last row");
-    // Without an action the list is only a readout.
     let q = Panel::new(232.0, 200.0, list(vec![list_row("a", "", Tone::Good)]));
     assert!(q.hit(q.content().centre()).is_none());
 }

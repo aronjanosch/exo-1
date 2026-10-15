@@ -88,7 +88,6 @@ fn measure() {
     }
 }
 
-/// The recipe without landforms and sites: the coarse layer alone (what the 1000 km dry run is).
 fn without_content(text: &str) -> String {
     fn zero(v: &mut serde_json::Value) {
         match v {
@@ -110,7 +109,6 @@ fn without_content(text: &str) -> String {
     serde_json::to_string(&v).unwrap()
 }
 
-/// Size and bake time of the coarse layer alone at 1000 km (no landforms, no sites).
 #[test]
 #[ignore]
 fn dry_run_1000_km() {

@@ -1,4 +1,3 @@
-//! Two runs of the same test at once (two lanes) must not share an output folder.
 use crate::common;
 
 const CHILD: &str = "EXO_OUT_DIRS_CHILD";

@@ -1,4 +1,3 @@
-//! Kernel rules against the fixture set in `tests/fixtures/valid`.
 use std::path::Path;
 
 use gameplay_core::*;
@@ -8,7 +7,6 @@ const HOST: ClientId = ClientId(1);
 const ANA: ClientId = ClientId(7);
 const BO: ClientId = ClientId(8);
 
-/// The valid set, every file with its path relative to the set's root.
 fn valid_files() -> Vec<File> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/valid");
     let mut out = Vec::new();
@@ -28,14 +26,12 @@ fn content() -> Content {
     Content::load(&valid_files(), &SIZES).unwrap()
 }
 
-/// The valid set with one file replaced or added.
 fn errors_with(path: &str, text: &str) -> Vec<String> {
     let mut files: Vec<File> = valid_files().into_iter().filter(|f| f.path != path).collect();
     files.push(File::new(path, text));
     Content::load(&files, &SIZES).unwrap_err()
 }
 
-/// Exactly one error, naming the file and the field.
 fn one_error(errors: &[String], path: &str, field: &str) {
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert!(errors[0].starts_with(path) && errors[0].contains(field), "expected {path} and {field} in {errors:?}");
@@ -145,14 +141,12 @@ fn wallet_must_be_a_crew_track() {
 fn wallet_missing() {
     let files: Vec<File> = valid_files().into_iter().filter(|f| f.path != "progress_track/wallet.json").collect();
     let e = Content::load(&files, &SIZES).unwrap_err();
-    // The bent spoon's `has_tag` still resolves; only the wallet is missing.
     one_error(&e, "progress_track", "wallet");
 }
 
 #[test]
 fn unlock_grants_nothing() {
     let e = errors_with("unlock/bent_spoon_permit.json", r#"{ "id": "bent_spoon_permit", "name": "n", "price": 150, "grants": [] }"#);
-    // The bent spoon now asks for a tag nobody grants, too.
     assert!(e.iter().any(|m| m.starts_with("unlock/bent_spoon_permit.json") && m.contains("grants")), "{e:?}");
 }
 
@@ -386,7 +380,6 @@ fn a_track_with_a_floor_never_drops_below_it_and_recovers() {
     assert_eq!(p.value(&c, &t, None), Some(0), "a failure lowers standing, not below the floor");
     change(&mut p, 2, 15);
     assert_eq!(p.value(&c, &t, None), Some(15), "work brings it back from the floor");
-    // The wallet has no floor.
     p.apply(&c, &ev(HOST, 3, WorldEvent::TrackChanged { track: TrackId::new("wallet"), delta: -500, player: None })).unwrap();
     assert_eq!(p.wallet(), -300);
 }

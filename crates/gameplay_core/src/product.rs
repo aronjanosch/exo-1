@@ -1,5 +1,3 @@
-//! A made product: a base good, the effects the mix gave it and the quality of the brew.
-//! Production makes it, crates carry it, buyers judge it.
 use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
@@ -8,9 +6,7 @@ use crate::id::{CommodityId, EffectId};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ProductSpec {
-    /// The good it is sold as (a `commodity` record, usually tagged `contraband`).
     pub base: CommodityId,
-    /// What it does, at most a few.
     pub effects: BTreeSet<EffectId>,
     /// 0..1, from the brew.
     pub quality: f64,

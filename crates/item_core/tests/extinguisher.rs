@@ -1,5 +1,3 @@
-//! Condition: an item that wears keeps its condition through the inventory, the floor, the
-//! wire, and a rack swap takes the best spare of its kind.
 use item_core::authority::{Action, Client, Event, FrameRef, Host, Placement, Request};
 use item_core::container::{Item, Stack};
 use item_core::defs::{Shape, Take};
@@ -80,7 +78,6 @@ fn condition_survives_drop_and_pick_up_and_the_wire() {
     act(&mut host, 1, 2, Request::Drop { slot: 0, at: at() });
     let (&loose_id, loose) = host.loose.iter().next().unwrap();
     assert_eq!(loose.stack.item.condition, Some(40.0), "the loose item keeps it");
-    // The loose item is sent over the wire and read back.
     let ev = Event::Spawned { item: loose_id, loose: loose.clone(), by: None };
     let back: Event = wire::decode(&wire::encode(&ev)).expect("round trip");
     assert_eq!(back, ev);

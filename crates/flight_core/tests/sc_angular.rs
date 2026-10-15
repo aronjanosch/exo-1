@@ -1,6 +1,3 @@
-//! The SC model's angular stage: one budget, a second-order
-//! pitch and yaw, reversal and roll release as constant decelerations, rate over speed, the G-safe
-//! turn cap, landing mode and the strong and weak axes. Numbers are printed (`--nocapture`).
 mod sc_common;
 use flight_core::sc::angular::{self, AngularState, AngularTuning, Env};
 use flight_core::sc::modes::Modes;
@@ -60,7 +57,6 @@ fn reversal_is_a_constant_deceleration_at_the_reversal_share() {
     let share = ship.tuning.angular.reversal_share;
     let before = body.rot.inverse() * body.ang_vel;
     let spins = run(&mut ship, &mut body, &stick(-1.0, 0.0, 0.0), &env, 2.0);
-    // Per tick decelerations while the spin is still on its side (before it crosses zero).
     let mut prev = before.x;
     let mut decel = Vec::new();
     for s in &spins {
@@ -269,7 +265,6 @@ fn acceleration_stays_inside_the_box() {
     assert!(out.accel.x.abs() <= 0.5 && out.accel.y.abs() <= 0.25 && out.accel.z.abs() <= 0.75);
 }
 
-/// X while hovering levels a tilted ship against the planet's up; yaw stays.
 #[test]
 fn brake_while_hovering_levels_the_ship() {
     let mut ship = ScShip::new(tuning());

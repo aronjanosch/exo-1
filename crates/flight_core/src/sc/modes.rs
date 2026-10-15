@@ -1,6 +1,3 @@
-//! The pilot's switches of the SC model, after the flight-control switches in Star Citizen's
-//! records (structure only): coupled or decoupled, gravity compensation, G-safe, comstab,
-//! proximity assist, landing, wind compensation, master mode (SCM or NAV) and the speed limiter.
 //! Each tap flips one. Decoupling releases velocity control immediately; recoupling blends in.
 use serde::Deserialize;
 
@@ -20,7 +17,6 @@ pub struct ModeTuning {
     pub decouple_time: f64,
     /// Share of the cap one limiter step moves (`ModeCmds::limiter_steps`).
     pub limiter_step: f64,
-    /// Lowest limiter share.
     pub limiter_min: f64,
 }
 
@@ -59,24 +55,18 @@ pub struct ModeCmds {
     pub limiter_steps: i32,
 }
 
-/// The switches' state.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Modes {
     /// Coupled flight wanted (C); `coupling` follows it.
     pub coupled: bool,
     /// 1 = coupled, 0 = decoupled.
     pub coupling: f64,
-    /// The flight computer holds the ship against gravity (H).
     pub grav_comp: bool,
-    /// Thrust and turns stay inside the pilot's G tolerance.
     pub g_safe: bool,
     /// The flight computer tightens turns (holds the velocity on the nose).
     pub comstab: bool,
-    /// Looks ahead along the flight path for the ground and slows a dive.
     pub proximity: bool,
-    /// Landing mode: the precision band near the ground.
     pub landing: bool,
-    /// The flight computer holds against the wind.
     pub wind_comp: bool,
     pub master: Master,
     /// Speed limiter, share of the cap; 1 = off.
@@ -91,7 +81,6 @@ impl Default for Modes {
 }
 
 impl Modes {
-    /// Applies this step's taps and runs the coupling blend.
     pub fn update(&mut self, c: &ModeCmds, t: &ModeTuning, dt: f64) {
         let flip = |b: &mut bool, tap: bool| {
             if tap {

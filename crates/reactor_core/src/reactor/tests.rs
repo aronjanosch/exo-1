@@ -1,4 +1,3 @@
-//! Rules for the reactor, with numbers.
 use super::*;
 
 const DT: f64 = 1.0 / 30.0;
@@ -13,7 +12,6 @@ fn reactor(skill: f64) -> Reactor {
     r
 }
 
-/// Runs `secs` at a constant load; returns every event with its time.
 fn run(r: &mut Reactor, secs: f64, load: f64) -> Vec<(f64, ReactorEvent)> {
     let mut out = Vec::new();
     let mut t = 0.0;
@@ -34,7 +32,6 @@ fn auto_holds_a_stable_optimal_temperature() {
     let load = 500.0;
     let ev = run(&mut r, 240.0, load);
     assert!(!ev.iter().any(|(_, e)| matches!(e, ReactorEvent::Fire { .. })), "{ev:?}");
-    // The last minute: temperature and output.
     let (mut tmin, mut tmax, mut omin, mut omax) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
     for _ in 0..(60.0 / DT) as usize {
         r.step(DT, load);
@@ -81,7 +78,6 @@ fn overheating_starts_a_fire_and_nothing_shuts_the_reactor_down() {
     assert!((fire - high - 30.0).abs() < 0.2);
     assert!((melt - crit - 120.0).abs() < 0.2);
     assert!(fire < melt);
-    // No automatic shutdown: the reactor stays on, hot, until it melts.
     assert!(r.melted() && !r.power_on() && r.output_kw() == 0.0);
 }
 
@@ -144,7 +140,6 @@ fn high_skill_widens_the_safe_band() {
     );
     assert!(hi.temp_optimal.hi > lo.temp_optimal.hi && hi.temp_allowed.hi > lo.temp_allowed.hi);
     assert!(hi.turbine_optimal.hi - hi.turbine_optimal.lo > lo.turbine_optimal.hi - lo.turbine_optimal.lo);
-    // The same setting starts fires for an unskilled operator only.
     let mut fires = Vec::new();
     for skill in [0.0, 100.0] {
         let mut r = reactor(skill);
@@ -257,7 +252,6 @@ fn a_step_in_fission_overshoots_and_settles() {
     r.set_targets(40.0, 50.0);
     run(&mut r, 300.0, 500.0);
     let before = r.temperature();
-    // The final value: the new setting held long enough, on a copy.
     let mut end = r.clone();
     end.set_targets(45.0, 50.0);
     run(&mut end, 600.0, 500.0);
@@ -396,7 +390,6 @@ fn fuel_need_is_less_with_more_rods_than_the_load_needs() {
     assert_eq!(r.fuel_need(), FuelNeed::Less);
 }
 
-/// Fuel use is proportional to fission: twice the fission burns twice the life.
 #[test]
 fn burn_rate_doubles_when_fission_doubles() {
     let burnt = |fission: f64| {
@@ -412,7 +405,6 @@ fn burn_rate_doubles_when_fission_doubles() {
     assert!(low > 0.5 && (high / low - 2.0).abs() < 0.01, "{high} vs {low}");
 }
 
-/// A spent rod gives no heat: fission has nothing to take and the heat is zero.
 #[test]
 fn a_spent_rod_makes_no_heat() {
     let mut r = Reactor::new(ReactorTuning::default(), 3);
@@ -448,7 +440,6 @@ fn a_melted_reactor_is_restarted_by_a_full_repair() {
 
 #[test]
 fn scram_without_coolant_lets_the_core_cool_below_the_allowed_band() {
-    // The pump is gone and the flow has run down; the core runs critical; then SCRAM.
     let mut r = reactor(50.0);
     r.set_coolant(0.0);
     r.coolant = 0.0;
@@ -469,8 +460,6 @@ fn scram_without_coolant_lets_the_core_cool_below_the_allowed_band() {
     assert!(timer_now < timer_at_scram, "the meltdown timer counts down: {timer_at_scram:.3} -> {timer_now:.3}");
     assert!(!ev.iter().any(|(_, e)| *e == ReactorEvent::Meltdown) && !r.melted());
 }
-
-// ---------- temperature boost (Barotrauma Reactor.cs 14, 52, 327, 502) ----------
 
 /// A reactor on with two rods, fission and turbine held at 25 by hand, settled.
 fn settled_boost_test_reactor() -> Reactor {
@@ -505,7 +494,6 @@ fn a_boost_adds_its_amount_to_the_heat_and_fades_to_zero_in_25_s() {
     assert_eq!(r.temperature_boost(), 0.0, "it never overshoots past 0");
 }
 
-/// The minus boost is the same, with the sign turned, and it fades up to 0.
 #[test]
 fn a_minus_boost_fades_up_to_zero() {
     let mut r = reactor(50.0);
@@ -532,7 +520,6 @@ fn a_second_boost_is_refused_while_the_boost_is_at_least_90_percent_of_its_amoun
     assert_eq!(r.temperature_boost(), -25.0);
 }
 
-/// With the power off, or the reactor broken, a boost does nothing: refused, the boost stays 0.
 #[test]
 fn a_boost_does_nothing_while_the_power_is_off_or_the_reactor_is_broken() {
     let mut r = Reactor::new(ReactorTuning::default(), 3);
@@ -545,8 +532,6 @@ fn a_boost_does_nothing_while_the_power_is_off_or_the_reactor_is_broken() {
     assert_eq!(r.temperature_boost(), 0.0);
 }
 
-// ---------- warning lamps (client Reactor.cs 621-632) ----------
-
 /// A reactor on, with every lamp off: 500 kW asked, output 500, fission 50 on 160 fuel, the core
 /// at 50 (inside the skill-50 optimal band, 35..65).
 fn calm() -> Reactor {
@@ -557,7 +542,6 @@ fn calm() -> Reactor {
     r
 }
 
-/// The lamps of `calm` after `change`, as their short letters.
 fn lamps_after(change: impl FnOnce(&mut Reactor)) -> String {
     let mut r = calm();
     change(&mut r);
@@ -570,7 +554,6 @@ fn the_lamps_are_all_off_in_a_calm_reactor() {
     assert_eq!(lamps_after(|_| {}), "");
 }
 
-/// Each lamp switches on in its own situation, and only then.
 #[test]
 fn each_lamp_switches_on_in_its_own_situation() {
     assert_eq!(lamps_after(|r| r.temp = 70.0), "OH", "above 65");
@@ -623,8 +606,6 @@ fn critical_heat_and_cold_need_the_power_on() {
     }), "SC", "off: no cold, the SCRAM lamp only");
 }
 
-/// The SCRAM lamp is on while the power is off and the temperature is above 0.1, and on with the
-/// power on never.
 #[test]
 fn scram_lamp_is_on_when_warm_with_the_power_off() {
     let off = |t: f64| lamps_after(|r| {

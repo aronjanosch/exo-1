@@ -1,17 +1,13 @@
-//! The fire's values, from `content/gameplay/fire/fire.json` (strict loader, like `reactor_core`:
-//! unknown fields and wrong types are errors, and every error names the file and the field).
 use crate::grid::GridTuning;
 use crate::FireTuning;
 use content_core::{parse_strict, File};
 use serde::{Deserialize, Serialize};
 
-/// The file's path under `content/gameplay/`.
 pub const FIRE_PATH: &str = "fire/fire.json";
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct FireSettings {
-    /// The fire's physics (`fire_core::FireTuning`).
     pub fire: FireTuning,
     /// A fire this big (m) in the engine room or the corridor sets the ship's alarm to Danger.
     pub alarm_danger_size: f64,
@@ -20,7 +16,6 @@ pub struct FireSettings {
     /// The extinguisher's spray reach (m) and half-angle (degrees). TODO(initiator): start values.
     pub spray_reach: f64,
     pub spray_half_angle_deg: f64,
-    /// The cell model's values (`fire_core::grid`), used when the model is Grid.
     pub grid: GridTuning,
 }
 

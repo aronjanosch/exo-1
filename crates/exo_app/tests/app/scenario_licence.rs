@@ -1,5 +1,3 @@
-//! The flight licence. The seat refuses without it, the exam is taken and passed, the seat
-//! works. Without a window.
 use crate::common;
 use exo_app::Options;
 

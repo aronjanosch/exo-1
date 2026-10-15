@@ -1,23 +1,6 @@
 //! Stage 5 of the SC step: the angular acceleration the flight computer asks for (ship space,
 //! rad/s²: x pitch, y yaw, z roll), inside the torque box.
 //!
-//! The law (after the rotation of Star Citizen's flight control, structure only; own values):
-//!
-//! 1. One budget: the pitch, yaw and roll requests (stick and direct mouse) are scaled together
-//!    so their normalised rates stay on one ellipsoid.
-//! 2. Pitch and yaw are a second-order underdamped spring on the rate: they overshoot the target
-//!    and settle; the overshoot is not clamped away.
-//! 3. A reversal (target opposite to the spin) is a constant deceleration of `reversal_share` of
-//!    the box until the spin has crossed zero, then item 2.
-//! 4. Roll is first order towards its target; release (target 0) is a constant deceleration of
-//!    `roll_release_share` of the box, stopping at zero.
-//! 5. Rates follow the speed (`rate_over_speed`, speed over the cap) and boost (`boost_rate`).
-//! 6. Coupled turn coordination: pitch and yaw scale so rate x velocity plus holds and drift
-//!    correction fits the usable thrust budget. G-safe further reduces that budget.
-//! 7. Landing mode: the rates times `landing_rate_share` near the ground.
-//! 8. Brake to level (`Env::level`, X held while hovering): pitch and roll turn the ship's up onto
-//!    the planet's up, at `brake_level_gain` times the angle, unless the pilot steers that axis.
-//!
 //! All values are TODO(initiator) (`content/ship/<type>/sc_angular.json`).
 use super::modes::Modes;
 use super::StepState;
@@ -40,14 +23,12 @@ pub struct PitchYaw {
 pub struct AngularTuning {
     /// rad/s at full stick.
     pub rate: Rot,
-    /// Multipliers on `rate` at full boost.
     pub boost_rate: Rot,
     /// Share of the rates (y) over the speed as a share of the cap (x): a corner speed in the
     /// middle, slower at rest and at the top.
     pub rate_over_speed: Curve,
     /// 1/s: the natural frequency of the pitch and yaw spring.
     pub natural_frequency: PitchYaw,
-    /// The damping ratio of the pitch and yaw spring (below 1 overshoots).
     pub damping_ratio: PitchYaw,
     /// Share of the box for a reversal (the spin brought to zero at a constant rate).
     pub reversal_share: f64,
@@ -55,7 +36,6 @@ pub struct AngularTuning {
     pub roll_decay: f64,
     /// Share of the box for a roll release (target 0): a constant deceleration to zero.
     pub roll_release_share: f64,
-    /// Share of the rates at full landing mode (near the ground).
     pub landing_rate_share: f64,
     /// m: full landing share at and below this clearance.
     pub landing_full_below: f64,
@@ -127,7 +107,6 @@ impl Default for AngularTuning {
     }
 }
 
-/// What the other stages give this one.
 #[derive(Clone, Copy, Debug)]
 pub struct Env {
     /// rad/s² per axis the torque gives.
@@ -143,7 +122,6 @@ pub struct Env {
     /// rad/s², ship space: what the air turns that the flight computer holds against
     /// (`AirOut::angular_hold`).
     pub air_hold: DVec3,
-    /// The brake is held while hovering: level the ship (item 8).
     pub level: bool,
 }
 
@@ -160,7 +138,6 @@ pub struct AngularState {
 pub struct AngularOut {
     /// rad/s², ship space.
     pub accel: DVec3,
-    /// Coupled turn coordination lowered the rate (thrust or G-safe budget).
     pub rate_capped: bool,
 }
 
@@ -170,12 +147,10 @@ const REVERSAL_EPS: f64 = 1e-9;
 
 /// One pitch or yaw axis: the reversal in front of the spring. `reversing` is the spin's sign when a
 /// reversal started (0 = none); `accel` is the spring's acceleration last step. Returns this step's
-/// acceleration: the reversal's constant deceleration, or the spring
 /// `a' = wn² (target - spin) - 2 zeta wn a` integrated over `dt` (the rate overshoots and settles).
 fn pitch_yaw_axis(reversing: &mut f64, accel: &mut f64, spin: f64, target: f64, dt: f64, p: (f64, f64, f64, f64)) -> f64 {
     let (wn, zeta, box_, share) = p;
     if *reversing != 0.0 && spin * *reversing > 0.0 {
-        // Still on the side the reversal started from: a constant deceleration to zero.
         *accel = -*reversing * share * box_;
     } else if target * spin < -REVERSAL_EPS {
         *reversing = spin.signum();
@@ -207,7 +182,6 @@ fn roll_axis(spin: f64, target: f64, dt: f64, decay: f64, release_share: f64, bo
     }
 }
 
-/// Landing mode's share of the landing rates: 1 at and below the full band, 0 above the off band.
 fn landing_share(t: &AngularTuning, clearance: f64) -> f64 {
     1.0 - smoothstep(t.landing_full_below, t.landing_off_above, clearance)
 }
@@ -216,7 +190,6 @@ pub fn step(s: &mut AngularState, f: &StepState, input: &FlightInput, m: &Modes,
     let dt = f.dt;
     let w = f.w_local;
 
-    // The rates this step: the corner over the speed, boost and landing mode.
     let speed_share = if e.cap > 0.0 { f.v.length() / e.cap } else { 0.0 };
     let over_speed = t.rate_over_speed.eval(speed_share);
     let landing = if m.landing { lerp(1.0, t.landing_rate_share, landing_share(t, f.clearance)) } else { 1.0 };
@@ -224,16 +197,12 @@ pub fn step(s: &mut AngularState, f: &StepState, input: &FlightInput, m: &Modes,
     let r = &t.rate;
     let rates = DVec3::new(rate(r.pitch, t.boost_rate.pitch), rate(r.yaw, t.boost_rate.yaw), rate(r.roll, t.boost_rate.roll));
 
-    // 1. One budget: the requests (direct mouse as a rate, stick times the rate) scaled together
-    // onto the ellipsoid of the three rates.
     let mut req = DVec3::new(-input.mouse.y / dt + input.turn.x * rates.x, -input.mouse.x / dt + input.turn.y * rates.y, input.roll * rates.z);
     let norm = (req / rates).length();
     if norm > 1.0 {
         req /= norm;
     }
 
-    // 8. Brake to level: the turn that brings the ship's up onto the planet's up, on the axes the
-    // pilot leaves alone.
     if e.level {
         let up = f.inv * f.up;
         let axis = DVec3::new(up.z, 0.0, -up.x);
@@ -250,7 +219,6 @@ pub fn step(s: &mut AngularState, f: &StepState, input: &FlightInput, m: &Modes,
         }
     }
 
-    // 6. Coordinate body rotation with the flight path, even with G-safe off:
     // rate x velocity is the acceleration needed to turn that velocity with the body.
     // Reserve the holds and drift correction first, then scale pitch and yaw together.
     let mut rate_capped = false;
@@ -282,7 +250,6 @@ pub fn step(s: &mut AngularState, f: &StepState, input: &FlightInput, m: &Modes,
         req.y *= scale;
     }
 
-    // 2 and 3. Pitch and yaw: the reversal, then the spring. 4. Roll.
     let b = &e.accel_box;
     let (mut rev, mut acc) = (s.reversing, s.accel);
     let mut pitch = pitch_yaw_axis(&mut rev.x, &mut acc.x, w.x, req.x, dt, (t.natural_frequency.pitch, t.damping_ratio.pitch, b.pitch, t.reversal_share));
@@ -302,7 +269,6 @@ pub fn step(s: &mut AngularState, f: &StepState, input: &FlightInput, m: &Modes,
     s.accel = acc;
     let roll = roll_axis(w.z, req.z, dt, t.roll_decay, t.roll_release_share, b.roll);
 
-    // The air's known moments are held on top, inside the box.
     let held = DVec3::new(pitch, yaw, roll) - e.air_hold;
     let held = held.clamp(DVec3::new(-b.pitch, -b.yaw, -b.roll), DVec3::new(b.pitch, b.yaw, b.roll));
     AngularOut { accel: held, rate_capped }

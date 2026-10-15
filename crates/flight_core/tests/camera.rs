@@ -1,5 +1,3 @@
-//! Camera effects from speed, turn and touchdown: trauma shake, spring lag and
-//! field of view from G.
 use flight_core::limits::G0;
 use flight_core::camera::{CameraFx, CameraTuning, FxInput};
 use glam::{DVec2, DVec3};
@@ -70,8 +68,6 @@ fn touchdown_bumps_once_and_dies_out() {
     assert_eq!(fx.bumps, 1, "resting does not bump again");
 }
 
-/// A pull-up near the ground without contact does not bump; a touch does, also
-/// when the centre is high (a corner on a steep slope).
 #[test]
 fn bump_on_contact_not_on_a_pull_up() {
     let t = CameraTuning::default();
@@ -85,7 +81,6 @@ fn bump_on_contact_not_on_a_pull_up() {
     fx.step(&t, 3.0, DVec2::ZERO, 3.0, false, DT);
     fx.step(&t, 3.0, DVec2::ZERO, 3.0, true, DT);
     assert_eq!(fx.bumps, 1, "contact");
-    // A slow touch (below the threshold) does not bump.
     let mut fx = CameraFx::default();
     fx.step(&t, 0.1, DVec2::ZERO, 0.1, false, DT);
     fx.step(&t, 0.1, DVec2::ZERO, 0.1, true, DT);
@@ -220,7 +215,6 @@ fn shake_setting_zero_gives_no_shake_and_cabin_gets_less() {
     assert!(cabin.g_fov == 0.0 && cabin.lag == DVec3::ZERO, "the walker has no lag and no G field of view");
 }
 
-/// Touchdowns: a contact at 3 m/s adds trauma, a slower one (below the bump threshold) none.
 #[test]
 fn touchdown_adds_trauma_above_threshold_only() {
     let t = CameraTuning::default();
@@ -236,7 +230,6 @@ fn touchdown_adds_trauma_above_threshold_only() {
     assert_eq!(slow.trauma, 0.0, "a touch below the threshold gives no shake");
 }
 
-/// Spring: a 2 g forward step trails backwards, stays within lag_max, settles and barely swings back.
 #[test]
 fn spring_trails_under_g_and_settles() {
     let t = CameraTuning::default();
@@ -253,7 +246,6 @@ fn spring_trails_under_g_and_settles() {
     println!("2 g forward: lag peak {peak:.3} m at {peak_t:.2} s, target {:.3} m", 2.0 * t.lag_per_g);
     assert!(peak > 0.5 * 2.0 * t.lag_per_g, "trails backwards (+z): {peak}");
     assert!(max_len <= t.lag_max + 1e-12, "never past lag_max: {max_len}");
-    // G ends: swings back past the centre and settles.
     let (mut settle, mut opposite, mut t_settle) = (f64::NAN, 0.0_f64, 0.0);
     for k in 0..240 {
         fx.step_with(&t, &flying(100.0, DVec3::ZERO, false));

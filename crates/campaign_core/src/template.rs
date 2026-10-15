@@ -184,7 +184,6 @@ impl Template {
         Ok(())
     }
 
-    /// Every recipe id of the template is in the set.
     pub fn check_set(&self, set: &PlanetSet) -> Result<(), String> {
         for id in &self.planets.recipes {
             if set.get(id).is_none() {

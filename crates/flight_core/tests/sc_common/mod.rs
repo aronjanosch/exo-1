@@ -1,5 +1,3 @@
-//! Shared fixtures for the SC model's tests: the six tuning files, a deep-space and a
-//! flat air planet, and a loop that flies the ship for a while. `mod sc_common;` in a test file.
 #![allow(dead_code)]
 use flight_core::sc::{ModeCmds, ScShip, ScTuning};
 use flight_core::{BodyState, Field, FlightInput, PlanetEnv};
@@ -19,8 +17,6 @@ pub fn tuning() -> ScTuning {
     .unwrap().flight
 }
 
-/// The tuning with thrusters that answer at once (no spool, jerk or boost ramp), for
-/// checks of one step of the linear law.
 pub fn instant() -> flight_core::sc::ScTuning {
     let mut t = tuning();
     let d = &mut t.drive;
@@ -33,7 +29,6 @@ pub fn instant() -> flight_core::sc::ScTuning {
     t
 }
 
-/// Deep space: no gravity, no air.
 pub struct Space {
     pub field: Field,
 }
@@ -102,7 +97,6 @@ impl PlanetEnv for Air {
     }
 }
 
-/// A ship at rest at `pos`, level, nose along -Z.
 pub fn body_at(pos: DVec3) -> BodyState {
     BodyState { pos, ..BodyState::default() }
 }

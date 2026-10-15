@@ -1,8 +1,4 @@
-//! The meltdown blast reaches the players. The core melts with fuel in it (the
-//! harness's forced melt; the blast follows the melt in the same event list); the walker two metres
-//! from the reactor takes burn and radiation, the local screen flashes, and three fires start round
-//! the core. (A walker at 25 m takes nothing: the falloff is a unit test in `dev_area::blast`; the
-//! scenario has one body.) Without a window; the walker is set down at the reactor (test setup).
+//! The meltdown blast reaches a walker two metres off, not one at 25 m (a unit test covers the falloff).
 use super::*;
 use crate::dev_area::blast::{fire_points, BlastFlash, PendingBlasts};
 use crate::dev_area::reactor::{route, ReactorSim};
@@ -27,7 +23,6 @@ fn strength(w: &World, id: &str) -> f64 {
     w.resource::<HealthState>().bodies.get(&LOCAL).map_or(0.0, |b| b.health.strength(id))
 }
 
-/// A step that runs `body` each frame until it returns a note (then ends) or the limit passes.
 fn run(name: &'static str, limit: f64, mut body: impl FnMut(&mut World, &mut Ctx) -> Option<String> + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -47,7 +42,6 @@ fn run(name: &'static str, limit: f64, mut body: impl FnMut(&mut World, &mut Ctx
 }
 
 pub(super) fn blast_steps(s: &mut Vec<Step>) {
-    // The walker's body and the dev area are there; the walker stands two metres north of the reactor.
     s.push(Box::new(|w, c| {
         begin(w, c, "blast: the walker's body and the dev area");
         w.resource_mut::<Items>().delay = super::items::DELAY;
@@ -62,9 +56,6 @@ pub(super) fn blast_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The melt: the harness's forced melt (`force_meltdown`, the timer does not run out in a script),
-    // with the reactor's fuel in it. The events go the way `reactor_step` sends them: counted by
-    // `route`, the blast queued for `reactor_blast` (the next tick).
     s.push(run("blast: the core melts with fuel in it", 5.0, |w, c| {
         if c.t == 0.0 {
             c.v.insert("burn0", strength(w, "burn"));

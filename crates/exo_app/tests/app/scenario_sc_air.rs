@@ -1,5 +1,3 @@
-//! The SC model's air. Wind compensation holds the hover, turbulence near the
-//! ground, none at 1000 m.
 use crate::common;
 use exo_app::Options;
 

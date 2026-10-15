@@ -13,12 +13,10 @@ pub(super) fn t5_starts() -> Vec<(&'static str, DVec3, DVec3)> {
     if let Some(s) = pg.spot("basin") {
         out.push(("basin shore, heading to the centre", crate::env::from_v3(s.dir), crate::env::from_v3(s.facing)));
     }
-    // The rim spot stands on top facing down: start 300 m below it, heading up the step.
     if let Some(s) = pg.spot("rim") {
         let start = back(s, 300.0);
         out.push(("escarpment foot, heading up the step", start, (crate::env::from_v3(s.dir) - start).normalize()));
     }
-    // The plateau spot is near its edge facing out: start 400 m outside, heading in.
     if let Some(s) = pg.spot("plateau") {
         let start = back(s, 400.0);
         out.push(("plateau approach, heading to the centre", start, (crate::env::from_v3(s.dir) - start).normalize()));

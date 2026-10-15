@@ -1,9 +1,4 @@
-//! The pump's coolant tank. The dev faults screen's Drain coolant empties it:
-//! the pump screen says EMPTY, the flow stops and the temperature climbs. The walker takes a
-//! canister from the corridor rack (a stack of three), holds LMB on the pump for 3 s with it in the
-//! selected slot: the tank gains a canister's worth, one canister is gone, the flow comes back.
-//! Without a window; the walker is set down at each place (test setup). Then E-COOL on
-//! the pump takes its tank cost and starts the cooldown.
+//! The pump's coolant tank: the drain, the refill by hand and E-COOL.
 use super::*;
 use crate::controls::Controls;
 use crate::dev_area::coolant::{CoolantHold, HOLD_S, RACK_AT};
@@ -36,7 +31,6 @@ fn temp(w: &World) -> f64 {
 
 const DIGITS: [KeyCode; 8] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8];
 
-/// A step that runs `body` each frame until it returns a note (then ends) or the limit passes.
 fn run(name: &'static str, limit: f64, mut body: impl FnMut(&mut World, &mut Ctx) -> Option<String> + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -55,7 +49,6 @@ fn run(name: &'static str, limit: f64, mut body: impl FnMut(&mut World, &mut Ctx
     })
 }
 
-/// Selects the slot that holds the item (as the repair scenario does).
 fn select(name: &'static str, def: &'static str) -> Step {
     let mut slot = 0;
     run(name, 2.0, move |w, c| {
@@ -73,7 +66,6 @@ fn select(name: &'static str, def: &'static str) -> Step {
 }
 
 pub(super) fn coolant_steps(s: &mut Vec<Step>) {
-    // The rack: the walker in the corridor, the canisters on it (a stack of three).
     s.push(Box::new(|w, c| {
         begin(w, c, "coolant: the rack and the host's body for the walker");
         w.resource_mut::<Items>().delay = super::items::DELAY;
@@ -91,7 +83,6 @@ pub(super) fn coolant_steps(s: &mut Vec<Step>) {
     s.push(run("coolant: the stack of three is in the bar", 2.0, |w, _| (items(w).client.view.count("coolant_canister") == 3).then(|| "three canisters".into())));
     s.push(select("coolant: the canisters are selected", "coolant_canister"));
 
-    // The drain: the dev faults screen's button (here the host's ask, as the button sends it).
     s.push(run("coolant: the dev drain empties the tank", 3.0, |w, c| {
         if c.t == 0.0 {
             w.resource_mut::<Items>().ask_reactor(ReactorAsk::Trigger(ReactorFault::DrainCoolant));
@@ -106,8 +97,7 @@ pub(super) fn coolant_steps(s: &mut Vec<Step>) {
         c.v.insert("t0", temp(w));
         Some(format!("tank {:.0} %", tank(w)))
     }));
-    // Short on purpose: about 12 s without flow the core passes the optimal band, and 20 s above it
-    // starts a fire at the reactor (that fire takes the machines down: the next slice's story).
+// Short on purpose: 20 s above the optimal band starts a fire at the reactor.
     s.push(wait(6.0));
     s.push(run("coolant: the core climbs without coolant", 2.0, |w, c| {
         let (t0, t1) = (c.v["t0"], temp(w));
@@ -115,7 +105,6 @@ pub(super) fn coolant_steps(s: &mut Vec<Step>) {
         Some(format!("{t0:.1} -> {t1:.1}"))
     }));
 
-    // Walk to the pump, look at it, hold LMB for the refill.
     s.push(run("coolant: the walker stands at the pump", 3.0, |w, c| {
         if c.t == 0.0 {
             let feet = ground(w, [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 1.4], 0.0);
@@ -154,8 +143,6 @@ pub(super) fn coolant_steps(s: &mut Vec<Step>) {
         check(c, n == 2, format!("coolant: two canisters are left ({n})"));
         Some(format!("{n} left"))
     }));
-    // E-COOL: the press takes the tank cost at once and starts the cooldown, which the
-    // pump's mode row shows. Asked as the button sends it (the host's ask).
     s.push(run("coolant: E-COOL takes its tank cost and starts the cooldown", 3.0, |w, c| {
         if c.t == 0.0 {
             c.v.insert("tank", tank(w));

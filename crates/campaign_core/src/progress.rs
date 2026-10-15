@@ -11,7 +11,6 @@ pub struct Progress {
 }
 
 impl Progress {
-    /// The crew starts at `Map::START`, which is visited.
     pub fn start(map: &Map) -> Progress {
         Progress {
             seed: map.seed,
@@ -54,7 +53,6 @@ impl Progress {
         Ok(())
     }
 
-    /// Checks a loaded state against its map: seed matches, ids exist, `current` is visited, `visited` sorted and unique, `START` visited.
     pub fn check(&self, map: &Map) -> Result<(), String> {
         if map.seed != self.seed {
             return Err(format!("progress is for map {}, not {}", self.seed, map.seed));

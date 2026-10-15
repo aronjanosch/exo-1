@@ -1,7 +1,3 @@
-//! Audio minimum: sounds synthesized in code, no files. Thrust hum by the ship's
-//! thrust, wind by airspeed in the atmosphere, a thud on touchdown, a click on UI toggles.
-//! Cargo: a fwip on grabbing a crate, a whoosh on a throw, a ka-chunk when a
-//! crate locks onto the plates.
 //! Windowed runs only; headless runs have no audio. The settings menu sets the volume and switches
 //! the sound off (`Settings::master`).
 use crate::controls::{Actions, Tap};
@@ -18,79 +14,42 @@ pub enum Sound {
     /// Loop: a low rumble, noise through two low-pass stages with a faint 38 Hz under it. (The
     /// first try, a 55 Hz tone with overtones and a wobble, sounded like a toy duck.)
     Hum,
-    /// Loop: noise through a one-pole low-pass, slowly breathing.
     Wind,
-    /// 0.35 s: a falling low sine with a noise burst.
     Thud,
-    /// 30 ms: a short high blip.
     Click,
-    /// 0.12 s: a rising chirp with a breath of noise ("fwip"), taking hold of a crate.
     Grab,
-    /// 0.35 s: noise swelling and falling through a sweeping low-pass, a throw.
     Throw,
-    /// 0.25 s: a soft two-tone beep, the ship's alarm. Quiet on purpose.
     AlarmBeep,
-    /// 0.2 s: a low clunk, then a bright ping 60 ms later ("ka-chunk"), a crate locks.
     Lock,
-    /// Loop: noise through a band-pass (a fast low-pass minus a slow one), the thrusters' hiss
-    /// per direction.
     Hiss,
-    /// Loop: a low body and noise through a low-pass, the boost roar.
     Roar,
-    /// 0.4 s: a falling low punch with a noise crack, the boost starts.
     BoostStart,
-    /// 0.1 s: a soft two-note blip, something small happened.
     Ping,
-    /// 0.25 s: two rising notes, a job taken.
     Accept,
-    /// 0.35 s: a bright double ping like a coin, one payout line.
     Coin,
-    /// 0.9 s: a major arpeggio, a job done, a rank, an unlock.
     Fanfare,
-    /// 0.25 s: a low two-tone buzz, a warning or a failure.
     Buzz,
-    /// Loop: a crackle of filtered noise with random pops, the fire. The level (0..2)
-    /// is the fire's size: lower and a little darker with the bigger fire.
     Crackle(u8),
-    /// Loop: a soft hiss of the extinguisher's spray.
     Spray,
-    /// 0.35 s: a soft steam puff, a spray hits a fire.
     Steam,
-    /// Loop: a mechanical ratchet at the device while a repair runs.
     RepairLoop,
-    /// 0.07 s: a short rising blip, a repair hit.
     Blip,
-    /// 0.35 s: two bright notes, a repair done.
     Chime,
-    /// 0.12 s: a short electric crack, the junction box overvolted.
     Zap,
-    /// 0.09 s: a small low clunk, a breaker moved.
     Clunk,
-    /// 0.6 s: a falling tone, the power goes down.
     SweepDown,
-    /// 0.6 s: a rising tone, the power comes back.
     SweepUp,
-    /// Loop: a low pump hum, pitch and level by the flow (played at speed).
     PumpHum,
-    /// Loop: the reactor's drone, 55 Hz with a little 110 Hz and a slow wobble, the level by the
-    /// fission and the pitch by the temperature (played at speed). Quiet on purpose.
     ReactorHum,
-    /// 0.3 s: filtered noise sweeping, a door slides.
     Slide,
-    /// 0.5 s: a soft low whoomp, the body catches fire.
     Whoomp,
-    /// 0.4 s: two low thumps, a heartbeat.
     Heart,
-    /// 0.25 s: a soft two-note confirmation, a treatment done.
     Confirm,
-    /// 0.6 s: a muffled low tone, going down.
     Muffled,
-    /// 0.5 s: a gentle rising tone, back up.
     Gentle,
 }
 
 impl Sound {
-    /// The sound of a notice kind's sound id (`gameplay_core::notice::NoticeKind::sound`).
     pub fn of_notice(id: &str) -> Sound {
         match id {
             "accept" => Sound::Accept,
@@ -133,7 +92,6 @@ impl Sound {
     }
 }
 
-/// Sample generator: plain math, testable without a device.
 #[derive(Clone, Debug)]
 pub struct Synth {
     sound: Sound,
@@ -141,7 +99,6 @@ pub struct Synth {
     noise: u32,
     lp: f32,
     lp2: f32,
-    /// The fire's crackle: a pop decaying from its peak.
     pop: f32,
 }
 
@@ -190,14 +147,12 @@ impl Iterator for Synth {
             }
             Sound::Click => (-t * 180.0).exp() * (tau * 1400.0 * t).sin(),
             Sound::AlarmBeep => {
-                // 660 Hz, then 880 Hz from 0.12 s: a soft two-tone, each note fading.
                 let n1 = (-t * 18.0).exp() * (tau * 660.0 * t).sin();
                 let t2 = t - 0.12;
                 let n2 = if t2 > 0.0 { (-t2 * 18.0).exp() * (tau * 880.0 * t2).sin() } else { 0.0 };
                 0.4 * (n1 + n2)
             }
             Sound::Grab => {
-                // 300 Hz to 900 Hz over the sound: phase of a linear sweep.
                 let phase = tau * (300.0 * t + 0.5 * (600.0 / 0.12) * t * t);
                 let env = (t / 0.01).min(1.0) * (-t * 25.0).exp();
                 env * (0.7 * phase.sin() + 0.15 * self.white())
@@ -229,7 +184,6 @@ impl Iterator for Synth {
                 self.lp * 2.5 + 0.25 * (tau * 55.0 * t).sin()
             }
             Sound::BoostStart => {
-                // 160 Hz falling to 60 Hz, a fast decay, and a noise crack at the front.
                 let phase = tau * (160.0 * t - 0.5 * (100.0 / 0.4) * t * t);
                 let env = (t / 0.004).min(1.0) * (-t * 9.0).exp();
                 env * (0.8 * phase.sin() + 0.35 * self.white() * (-t * 35.0).exp())
@@ -239,7 +193,6 @@ impl Iterator for Synth {
                 (-t * 30.0).exp() * (0.5 * a.sin() + 0.3 * b.sin())
             }
             Sound::Accept => {
-                // Two notes, 392 Hz then 523 Hz from 0.1 s.
                 let n1 = (-t * 14.0).exp() * (tau * 392.0 * t).sin();
                 let t2 = t - 0.1;
                 let n2 = if t2 > 0.0 { (-t2 * 12.0).exp() * (tau * 523.0 * t2).sin() } else { 0.0 };
@@ -250,7 +203,6 @@ impl Iterator for Synth {
                 0.35 * (ping(t, 1318.0) + ping(t - 0.07, 1760.0))
             }
             Sound::Fanfare => {
-                // C, E, G, then C an octave up, a note each 0.15 s, the last one rings.
                 let notes = [(0.0, 523.0), (0.15, 659.0), (0.3, 784.0), (0.45, 1047.0)];
                 let mut x = 0.0;
                 for (start, f) in notes {
@@ -277,7 +229,6 @@ impl Iterator for Synth {
                 };
                 let w = self.white();
                 self.lp += (w - self.lp) * k;
-                // A pop now and then: a short click, decaying in a few milliseconds.
                 let r = self.white();
                 if r > 0.9993 {
                     self.pop = 0.3;
@@ -298,7 +249,6 @@ impl Iterator for Synth {
                 env * self.lp * 2.0
             }
             Sound::RepairLoop => {
-                // Ratchet clicks at 9 Hz over a soft 170 Hz tone.
                 let ratchet = (tau * 9.0 * t).sin().max(0.0).powi(6);
                 0.6 * ratchet * (0.6 * (tau * 170.0 * t).sin() + 0.3 * self.white())
             }
@@ -319,7 +269,6 @@ impl Iterator for Synth {
             }
             Sound::Clunk => (-t * 45.0).exp() * (tau * 90.0 * t).sin() * 0.9 + (-t * 120.0).exp() * self.white() * 0.3,
             Sound::SweepDown | Sound::SweepUp => {
-                // 330 Hz of sweep, from 440 down to 110 Hz or up from 110 to 440 Hz.
                 let (f0, df) = if self.sound == Sound::SweepDown { (440.0, -330.0) } else { (110.0, 330.0) };
                 let phase = tau * (f0 * t + 0.5 * (df / 0.6) * t * t);
                 let env = (t / 0.02).min(1.0) * (1.0 - t / 0.6);
@@ -398,24 +347,18 @@ struct Sounds {
     alarm: Handle<SynthAudio>,
     lock: Handle<SynthAudio>,
     boost_start: Handle<SynthAudio>,
-    /// Notice sounds by `Sound`.
     notice: Vec<(Sound, Handle<SynthAudio>)>,
 }
 
-/// What a loop plays: the thruster layers or the wind.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Feed {
-    /// The main engine (the `Hum` synth).
     Rumble,
-    /// Wind by airspeed in the atmosphere.
     Wind,
     /// Manoeuvre hiss of one axis pair: 0 = x, 1 = y, 2 = z (both directions).
     Hiss(usize),
-    /// The boost roar.
     Roar,
 }
 
-/// A looping sound and the level that feeds it.
 #[derive(Component)]
 struct Loop(Feed);
 
@@ -428,11 +371,9 @@ struct Heard {
     bumps: u32,
     throws: usize,
     locks: u32,
-    /// Boost starts heard so far (`ThrusterLevels`).
     boost_starts: u32,
     /// The crate held last frame: a new one is a grab.
     held: Option<Entity>,
-    /// How many of `Gameplay::shown` have been played.
     notices: usize,
 }
 
@@ -459,7 +400,6 @@ fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
     });
 }
 
-/// Fixed step, right after the actions are resolved: UI toggles click.
 pub fn count_clicks(actions: Res<Actions>, mut clicks: ResMut<Clicks>) {
     let ui = [Tap::Help, Tap::DevMenu, Tap::HoverAssist, Tap::Decoupled, Tap::DebugHud, Tap::WarpTarget, Tap::OrbitCamera, Tap::Lag, Tap::LandingMode, Tap::TurnCap, Tap::CameraFx, Tap::MasterMode, Tap::Comstab, Tap::ProximityAssist, Tap::WindComp, Tap::LimiterUp, Tap::LimiterDown];
     clicks.0 += actions.taps().iter().filter(|t| ui.contains(t)).count() as u32;
@@ -570,7 +510,6 @@ pub(crate) fn loop_volume(level: f32, settings: &crate::settings::Settings) -> f
     level * settings.master()
 }
 
-/// Windowed runs: the synthesized sources and the systems that play them.
 pub fn plugin(app: &mut App) {
     app.add_audio_source::<SynthAudio>().init_resource::<Clicks>().init_resource::<Heard>();
     app.add_systems(Startup, setup);

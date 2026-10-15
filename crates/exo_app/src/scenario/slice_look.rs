@@ -1,14 +1,4 @@
-//! The slice's picture check: the engine room, the walker's HUD and this round's effects, shot from
-//! fixed viewpoints into the scenario's out dir as `slice_<letter>_<what>.png` (with a window;
-//! headless it runs the same states and the same checks without shots). Run with
-//! `--start=dev_area --dev-area`. The steps set the states the pictures need, and check them:
-//! the reactor warm-starts (the dev faults button), the corridor and the room are viewed, each screen is viewed from
-//! 1.2 m, the pump breaks and the readout goes HOT, the readout's ? help view is shot and closed, the critical lamp lights, SCRAM (the walker
-//! uses the readout, the click is retried until the reactor is off), 2 s of dark, then POWER on; a
-//! fire at the reactor is sprayed from 2.5 m; the pump breaks again (smoke), the wrench starts the
-//! hold repair (the minigame is off: the pump rises while held); the reactor on manual at 100 % with
-//! the engines and lights off overvolts the junction box (sparks); the walker stands
-//! inside the hot plate (burn, edge), the no-air booth (dark edge) and the glowing barrel (grain).
+//! Picture check: the engine-room states, shot from fixed viewpoints with a window.
 use super::items::{collect, items, outside, tap_then, DELAY};
 use super::reactor::{click_until, use_display};
 use super::*;
@@ -67,7 +57,6 @@ fn look_at(w: &mut World, target: DVec3) -> (f64, bool) {
 }
 
 /// Turns the walker on foot to a point: level heading, then the pitch (the screens low on a
-/// machine are seen from above). World frame, as the repair scenario does it.
 fn aim(w: &mut World, target: DVec3) {
     with_player(w, |p| {
         let up = p.world_up(WalkFrame::IDENTITY);
@@ -92,7 +81,6 @@ fn snap(w: &mut World, dir: &Path, windowed: bool, name: &str) {
     w.spawn(Screenshot::primary_window()).observe(save_to_disk(path));
 }
 
-/// The same, once per tag: a step runs every tick, the capture only on the first.
 fn snap_once(c: &mut Ctx, w: &mut World, dir: &Path, windowed: bool, tag: &'static str) {
     if !c.v.contains_key(tag) {
         c.v.insert(tag, 1.0);
@@ -100,7 +88,6 @@ fn snap_once(c: &mut Ctx, w: &mut World, dir: &Path, windowed: bool, tag: &'stat
     }
 }
 
-/// Whether the readout's ? help view is open for this player.
 fn help_open(w: &World) -> bool {
     w.resource::<ReactorHelp>().0
 }
@@ -174,7 +161,6 @@ fn aux_boost(w: &World) -> f64 {
     items(w).reactor.as_ref().map_or(0.0, |r| r.aux_boost_kw)
 }
 
-/// Checks a state (one tick): the news after a click poll, as a PASS or FAIL line.
 fn check_now(name: &'static str, what: &'static str, ok: fn(&World) -> bool) -> Step {
     Box::new(move |w, c| {
         begin(w, c, name);
@@ -184,7 +170,6 @@ fn check_now(name: &'static str, what: &'static str, ok: fn(&World) -> bool) -> 
     })
 }
 
-/// Asks the host to flip the aux reactor (the dev fault, as the other faults are asked) and ends.
 fn ask_aux(name: &'static str) -> Step {
     Box::new(move |w, c| {
         begin(w, c, name);
@@ -194,14 +179,11 @@ fn ask_aux(name: &'static str) -> Step {
     })
 }
 
-/// The screen's edges (the HUD's burn, bad air and radiation alphas).
 fn edges(w: &World) -> effects::ScreenFx {
     let v = w.resource::<Vitals>();
     effects::screen_fx(v.burning, v.oxygen, v.radiation, w.resource::<Time>().elapsed_secs_f64())
 }
 
-/// The walker stands at a point facing a look target; on the first tick it is placed and turned,
-/// then (after `settle` s) it takes the picture and holds for the screenshot to be taken.
 fn view(name: &'static str, stand: [f64; 2], look: Look, shot: Option<&'static str>, dir: PathBuf, windowed: bool) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -226,8 +208,6 @@ fn view(name: &'static str, stand: [f64; 2], look: Look, shot: Option<&'static s
     })
 }
 
-/// Asks for the reactor's warm start (the dev faults' button), waits for the host to apply it, then
-/// checks that the reactor is warm: on, settled (temperature in the band, output at the load).
 fn warm_start(name: &'static str) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -247,7 +227,6 @@ fn warm_start(name: &'static str) -> Step {
     })
 }
 
-/// Waits `secs`, then checks `ok` (the step's states are the checks).
 fn wait_check(name: &'static str, secs: f64, what: &'static str, ok: fn(&World) -> bool) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -263,7 +242,6 @@ fn wait_check(name: &'static str, secs: f64, what: &'static str, ok: fn(&World) 
     })
 }
 
-/// Waits until `done` holds (a PASS with the time), or fails at `limit` seconds.
 fn until(name: &'static str, limit: f64, what: &'static str, done: fn(&World) -> bool) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -284,7 +262,6 @@ fn until(name: &'static str, limit: f64, what: &'static str, done: fn(&World) ->
     })
 }
 
-/// Takes the walker out of a display it uses (F leaves), then waits for the hands to be free.
 fn leave_display(name: &'static str) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -302,7 +279,6 @@ fn leave_display(name: &'static str) -> Step {
     })
 }
 
-/// Selects the inventory slot that holds an item (as the repair scenario does), and checks it.
 fn select_item(name: &'static str, def: &'static str) -> Step {
     let mut slot = 0usize;
     Box::new(move |w, c| {
@@ -325,7 +301,6 @@ fn select_item(name: &'static str, def: &'static str) -> Step {
     })
 }
 
-/// True once per tag: a check in a step that runs every tick is made on the first tick only.
 fn first(c: &mut Ctx, tag: &'static str) -> bool {
     if c.v.contains_key(tag) {
         return false;
@@ -381,17 +356,12 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
     // Auto takes about a minute), then the check that the reactor is warm.
     s.push(warm_start("slice: the reactor warm-starts from the dev faults"));
 
-    // a. The corridor, looking at the engine-room door and its screen (the door shut).
     s.push(shot_view("slice a: corridor at the door", [CORRIDOR.centre[0], -6.3], Look::Ground(DOOR_AT, 1.5), "slice_a_corridor_door"));
 
-    // b. Inside the room from the door: overview with the reactor, pump, junction box and screens.
     s.push(shot_view("slice b: the room from the door", [DOOR_AT[0], -12.4], Look::Ground([-13.6, -17.0], 1.0), "slice_b_room_overview"));
 
-    // c. Close-ups at about 1.2 m, each screen in front of its machine or wall. The normal states first.
     s.push(shot_view("slice c: reactor readout, normal", [-11.8, -17.76], Look::Screen(READOUT_ID), "slice_c_readout_normal"));
 
-    // The readout's ? help view: the walker uses the readout, the ? is pressed (retried until the
-    // help is open), the help is shot, then CLOSE (its picture) brings the normal readout back.
     use_display(s, "REACTOR", READOUT_ID, [-11.8, -17.7]);
     s.push(click_until(READOUT_ID, HELP_ACTION, None, "slice c: the ? opens the readout's help view", help_open));
     let help_dir = out_dir.to_path_buf();
@@ -419,9 +389,7 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
     s.push(shot_view("slice c: coolant pump screen", [COOLANT_PUMP_AT[0], -15.75], Look::Screen(PUMP_ID), "slice_c_pump_screen"));
     s.push(shot_view("slice c: junction box screen", [JUNCTION_BOX_AT[0], -17.78], Look::Screen(JUNCTION_ID), "slice_c_junction_screen"));
 
-    // The aux reactor (AX-01): switched on at the dev faults (the ask, as the other faults), the
-    // AUX screen shot, LIGHTS off on it (the aux output boosts the main reactor), then LIGHTS on and
-    // AUX off again so the later steps see today's grid.
+// AUX off again: later steps see today's grid.
     s.push(ask_aux("slice c: the dev faults switch the aux reactor on"));
     s.push(until("slice c: the news says aux is enabled", 30.0, "slice c: aux is enabled", aux_on));
     s.push(shot_view("slice c: AUX screen, aux on", [AUX_AT[0], -17.78], Look::Screen(AUX_ID), "slice_c_aux_screen"));
@@ -457,8 +425,6 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
     s.push(shot_view("slice c: dev faults screen", [-17.5, -12.24], Look::Screen(FAULTS_ID), "slice_c_faults_screen"));
     s.push(shot_view("slice c: RX status screen, normal", [-9.6, -17.6], Look::Screen(STATUS_ID), "slice_c_status_screen"));
 
-    // The pump breaks from the dev faults button (the ask), the reactor heats; the readout is shot
-    // once it reads HOT.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "slice c: the pump breaks (dev fault), the readout heats");
@@ -485,8 +451,6 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
         c.t > 1.0
     }));
 
-    // The critical lamp on the reactor's top (above the allowed band), then SCRAM at the readout:
-    // the walker uses the readout, the click is retried until the reactor is off.
     s.push(critical_lamp(dir.clone(), windowed, 60.0));
     let critical_dir = dir.clone();
     s.push(Box::new(move |w, c| {
@@ -516,19 +480,15 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
     s.push(wait_check("slice: 2 s after SCRAM, the lights are dark", 2.0, "slice: the machines have no power after SCRAM", |w| !machines_powered(w) && !sim(w).room.reactor().power_on()));
     s.push(leave_display("slice: leave the readout after SCRAM"));
 
-    // d. After SCRAM: the room and the pump screen (NO POWER, lights off).
     let dir_d = out_dir.to_path_buf();
     s.push(view("slice d: the room after SCRAM", [DOOR_AT[0], -12.4], Look::Ground([-13.6, -17.0], 1.0), Some("slice_d_scram_room"), dir_d.clone(), windowed));
     s.push(view("slice d: the pump screen after SCRAM", [COOLANT_PUMP_AT[0], -15.75], Look::Screen(PUMP_ID), Some("slice_d_scram_pump_screen"), dir_d, windowed));
 
-    // POWER on at the readout, then the reactor settles before the fire and the repair.
     use_display(s, "REACTOR", READOUT_ID, [-11.8, -17.7]);
     s.push(click_until(READOUT_ID, "power", None, "slice: POWER on at the readout brings the reactor back", |w| sim(w).room.reactor().power_on()));
     s.push(leave_display("slice: leave the readout after POWER"));
     s.push(until("slice: the reactor runs again", 60.0, "slice: the reactor on and the machines powered", |w| sim(w).room.reactor().power_on() && machines_powered(w)));
 
-    // e. The table and the extinguisher, then a fire at the reactor: the walker 2.5 m north of it,
-    // the extinguisher held and sprayed at it (the steam where it lands).
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "slice e: the table and the extinguisher");
@@ -604,8 +564,6 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
         true
     }));
 
-    // f. The repair ring: the extinguisher down, the wrench from the table, the dev fault breaks the
-    // coolant pump again; smoke above it, then the wrench's hold session (the pump rises while held).
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "slice f: the extinguisher down, the table and the wrench");
@@ -700,17 +658,12 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
         false
     }));
 
-    // h. The engines and the lights off, the reactor on manual at 100 % fission and turbine (the core
-    // harness's overvolt_turbine_max, the manual set at 10 s): the supply runs above the demand, so
-    // the junction box is overvolted and throws sparks (the stand is in the room, 1.2 m off the box).
     s.push(Box::new(move |w, c| {
         if c.t == 0.0 {
             begin(w, c, "slice h: the engines and lights off, the reactor at 100 % on manual");
             let mut items = w.resource_mut::<Items>();
             items.ask_reactor(ReactorAsk::SetBreaker(BreakerGroup::Engines, false));
             items.ask_reactor(ReactorAsk::SetBreaker(BreakerGroup::Lights, false));
-            // The stand 2 m north of the box, in the room, as the screen shots stand (the walker is
-            // placed on the first tick and turned at the box every tick).
             let at = ground(w, [JUNCTION_BOX_AT[0], JUNCTION_BOX_AT[1] + 2.0], 0.0);
             place_walker(w, at);
             return false;
@@ -754,8 +707,6 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
         true
     }));
 
-    // g. The HUD. The walker stands inside each zone (the effect needs it), 1 m short of the middle,
-    // and looks past it at the storage strip's north wall (the edge of the area, y 20 m).
     let wall = |z: [f64; 2]| [z[0], z[1] + 3.5];
     s.push(Box::new(move |w, c| {
         if c.t == 0.0 {

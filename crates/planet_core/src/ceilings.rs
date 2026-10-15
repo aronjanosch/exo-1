@@ -24,7 +24,6 @@ pub struct Ceilings {
 }
 
 impl Ceilings {
-    /// The rule's atmosphere for a radius.
     pub fn atmosphere_for(radius: f64) -> f64 {
         (radius * ATMOSPHERE_PER_RADIUS).max(ATMOSPHERE_MIN_M)
     }
@@ -33,7 +32,6 @@ impl Ceilings {
         Ceilings::with_atmosphere(radius, Ceilings::atmosphere_for(radius))
     }
 
-    /// The other ceilings of a radius with the atmosphere given.
     pub fn with_atmosphere(radius: f64, atmosphere_height: f64) -> Ceilings {
         Ceilings {
             radius,

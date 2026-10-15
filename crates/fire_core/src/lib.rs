@@ -1,22 +1,4 @@
 //! fire_core: fire in the ship's rooms, without engine types, in f64. The seed of the rooms as air
-//! cells: each room has a scalar oxygen amount, rooms meet at gaps (doors, vents) with an open
-//! fraction, and leaks to space (hull breaches) that let air out with the room's pressure (its air
-//! fraction). Nothing more: one gas, no water, no heat.
-//!
-//! Taken from Barotrauma's fire sources: a fire grows while the room has enough oxygen, stalls
-//! lower down and shrinks below that, uses oxygen in proportion to its size, burns people and
-//! devices within a range that grows with the square root of its size, tries to spread through
-//! open gaps on a fixed interval with a small chance, and shrinks under an extinguisher's spray.
-//! Our own code in metres; the point-and-size fire shape, the gap air exchange and the merge rule
-//! are ours (`research/barotrauma-mech-damage-repair.md` in the concept repo).
-//!
-//! - `Deck`: rooms, gaps and fires. `step` exchanges air, grows and starves fires, returns damage,
-//!   spread and out events. `spray` is the extinguisher, `set_open` a door.
-//! - A closed gap (open 0) stops both air and fire.
-//! - `grid`: the other fire model, cells per room on this deck's rooms and gaps.
-//! - Oxygen moves only through gaps and is conserved there; fires use it up, the glue adds it
-//!   (life support) or takes it (breathing) through `room_mut`.
-//!
 //! All values are starting points for the playtest (`TODO(initiator)`).
 use gameplay_core::rng::Rng;
 use glam::{DVec2, DVec3};
@@ -44,11 +26,9 @@ pub struct FireTuning {
     pub oxygen_use: f64,
     /// Largest size, metres.
     pub max_size: f64,
-    /// Below this size a fire is out.
     pub out_below: f64,
     /// Size of a new fire that spread through a gap.
     pub spread_size: f64,
-    /// Seconds between spread tries of one fire.
     pub spread_interval_s: f64,
     /// Chance per try and open gap in reach.
     pub spread_chance: f64,
@@ -114,7 +94,6 @@ pub struct LeakId(pub usize);
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Leak {
     pub room: RoomId,
-    /// Where it is, ship space.
     pub pos: DVec3,
     /// m² when fully open.
     pub area: f64,
@@ -124,7 +103,6 @@ pub struct Leak {
     pub flow: f64,
 }
 
-/// One room as an air cell.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Room {
     /// m³.
@@ -134,7 +112,6 @@ pub struct Room {
 }
 
 impl Room {
-    /// 0..1.
     pub fn oxygen_fraction(&self) -> f64 {
         if self.volume > 0.0 { self.oxygen / self.volume } else { 0.0 }
     }
@@ -145,16 +122,13 @@ impl Room {
     }
 }
 
-/// An opening between two rooms: a door, a vent.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Gap {
     pub a: RoomId,
     pub b: RoomId,
-    /// Where it is, ship space, metres.
     pub pos: DVec3,
     /// m² when fully open.
     pub area: f64,
-    /// 0 closed .. 1 open.
     pub open: f64,
 }
 
@@ -174,7 +148,6 @@ impl Gap {
 pub struct Fire {
     pub id: FireId,
     pub room: RoomId,
-    /// Centre, ship space.
     pub pos: DVec3,
     /// Diameter, metres.
     pub size: f64,
@@ -182,12 +155,10 @@ pub struct Fire {
 }
 
 impl Fire {
-    /// Burn range beyond its edge.
     pub fn range(&self, t: &FireTuning) -> f64 {
         (self.size.max(0.0).sqrt() * t.range).min(t.max_range)
     }
 
-    /// Whether `p` is within its edge plus `extra`.
     fn reaches(&self, p: DVec3, extra: f64) -> bool {
         self.pos.distance(p) <= self.size * 0.5 + extra
     }
@@ -202,7 +173,6 @@ pub enum TargetKind {
 /// Something fire can hurt. The glue lists them each step.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Target {
-    /// The glue's own id.
     pub id: u64,
     pub kind: TargetKind,
     pub room: RoomId,
@@ -231,7 +201,6 @@ pub enum FireEvent {
     Out { fire: FireId, room: RoomId },
 }
 
-/// The rooms, the gaps between them, and the fires in them.
 #[derive(Clone, Debug)]
 pub struct Deck {
     tuning: FireTuning,
@@ -254,19 +223,16 @@ impl Deck {
         &self.tuning
     }
 
-    /// A room of `volume` m³, full of air.
     pub fn add_room(&mut self, volume: f64) -> RoomId {
         self.rooms.push(Room { volume, oxygen: volume });
         RoomId(self.rooms.len() - 1)
     }
 
-    /// A gap of `area` m² between two rooms at `pos`, `open` 0..1.
     pub fn add_gap(&mut self, a: RoomId, b: RoomId, pos: DVec3, area: f64, open: f64) -> GapId {
         self.gaps.push(Gap { a, b, pos, area, open: open.clamp(0.0, 1.0) });
         GapId(self.gaps.len() - 1)
     }
 
-    /// Opens or closes a gap (a door), 0..1.
     pub fn set_open(&mut self, gap: GapId, open: f64) {
         self.gaps[gap.0].open = open.clamp(0.0, 1.0);
     }
@@ -275,7 +241,6 @@ impl Deck {
         &self.rooms[r.0]
     }
 
-    /// For life support, breathing, venting.
     pub fn room_mut(&mut self, r: RoomId) -> &mut Room {
         &mut self.rooms[r.0]
     }
@@ -313,7 +278,6 @@ impl Deck {
         &self.leaks
     }
 
-    /// m³ of air lost to space through leaks so far.
     pub fn lost_to_space(&self) -> f64 {
         self.lost
     }
@@ -330,7 +294,6 @@ impl Deck {
         self.fires.iter().filter(move |f| f.room == r)
     }
 
-    /// Oxygen in all rooms together, m³.
     pub fn total_oxygen(&self) -> f64 {
         self.rooms.iter().map(|r| r.oxygen).sum()
     }
@@ -374,7 +337,6 @@ impl Deck {
                 continue;
             }
             let diff = ra.oxygen_fraction() - rb.oxygen_fraction();
-            // What would make both fractions equal.
             let even = (ra.oxygen * rb.volume - rb.oxygen * ra.volume) / (ra.volume + rb.volume);
             let flow = self.tuning.air_flow * g.area * g.open * diff * dt;
             let moved = if even >= 0.0 { flow.clamp(0.0, even) } else { flow.clamp(even, 0.0) };

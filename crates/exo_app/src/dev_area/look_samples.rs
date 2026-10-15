@@ -1,8 +1,3 @@
-//! Two sample screens from the design system "EXO-1 Ship Displays", to judge the look: a small
-//! lab display (S tier, a warmer: temperature, time, start) in the lab zone and a reactor panel
-//! (M tier: output dial, core temperature, trend, auto/manual, setpoint, SCRAM) in the engineering
-//! zone. Placeholders without mechanics: the values are dummies, the controls only change what the
-//! screen shows.
 use super::*;
 use crate::displays::{DisplayAction, Panels};
 use display_core::{bar, button, column, ctl, dial, label, level, micro, readout, row, slider, space, toggle, trend, Panel, Tier, Tone};
@@ -10,7 +5,6 @@ use display_core::{bar, button, column, ctl, dial, label, level, micro, readout,
 pub const LAB_ID: PanelId = PanelId::new("sample_lab");
 pub const REACTOR_ID: PanelId = PanelId::new("sample_reactor");
 
-/// The warmer's dummy state.
 #[derive(Resource, Debug, Clone, PartialEq)]
 pub struct Warmer {
     pub temp: i32,
@@ -24,7 +18,6 @@ impl Default for Warmer {
     }
 }
 
-/// The reactor panel's dummy state.
 #[derive(Resource, Debug, Clone, PartialEq)]
 pub struct ReactorSample {
     pub auto: bool,
@@ -88,7 +81,6 @@ pub fn lab_panel(s: &Warmer) -> Panel {
     .status(if s.run { "RUN" } else { "IDLE" }, if s.run { Tone::Good } else { Tone::Micro })
 }
 
-/// A fixed history for the trend (dummy).
 const HISTORY: [f64; 12] = [380.0, 384.0, 390.0, 395.0, 402.0, 410.0, 415.0, 420.0, 426.0, 430.0, 436.0, 492.0];
 
 pub fn reactor_panel(s: &ReactorSample) -> Panel {

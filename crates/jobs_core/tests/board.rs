@@ -1,4 +1,3 @@
-//! Board generation: offers per location from templates, seeded, with lifetime rotation.
 use std::path::Path;
 
 use gameplay_core::{ClientId, Content, Event, File, Progress, WorldEvent};
@@ -184,11 +183,9 @@ fn board_state_survives_save_and_load() {
     h.generate_at("drip_rock", 333);
     let initial_count = h.jobs.all().filter(|j| j.state == JobState::Offered).count();
 
-    // Save
     let mut env = gameplay_core::save::Envelope::new();
     h.jobs.save(&mut env);
 
-    // Load
     let back = Jobs::load(&gameplay_core::save::Envelope::from_json(&env.to_json()).unwrap())
         .unwrap()
         .unwrap();
@@ -211,14 +208,11 @@ fn rotation_removes_unaccepted_offers_and_generates_new_ones() {
 
     let job1_id = offers1[0];
 
-    // Tick past lifetime
     h.jobs.tick_board(&h.jc, &h.k, &h.progress, "drip_rock", 600.1);
 
-    // Check that old unaccepted offers are gone
     let job1_after = h.jobs.get(job1_id);
     assert!(job1_after.is_none(), "unaccepted offers should be removed after rotation");
 
-    // Check that there are new offers (if template allows regeneration)
     // Note: with one template available, we might not get new offers after rotation
 }
 
@@ -233,13 +227,10 @@ fn accepted_offers_survive_rotation() {
 
     let job1_id = offers1[0];
 
-    // Accept the offer
     let _ = h.jobs.apply_job(&h.jc, &h.k, &h.progress, &Event::new(ClientId(7), 1000, JobEvent::OfferAccepted { job: job1_id }));
 
-    // Tick past lifetime
     h.jobs.tick_board(&h.jc, &h.k, &h.progress, "drip_rock", 600.1);
 
-    // Check that accepted job still exists and is active
     let job1_after = h.jobs.get(job1_id).unwrap();
     assert_eq!(
         job1_after.state,

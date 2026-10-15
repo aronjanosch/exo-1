@@ -1,8 +1,3 @@
-//! The first city and the town dressing: the city plan (`content/city/plan.json`,
-//! exported from `art/city/city_plan.py`) placed on the place `city`, box colliders for its
-//! buildings, landing-pad models on every pad, and placeholder characters (NPCs) where the plan
-//! and the gameplay put someone to talk to.
-//!
 //! Buildings stand on the ground below their own centre (no flattening yet: TODO(initiator)).
 //! Colliders exist headless too, so the walker and the ship meet the same walls in scenarios;
 //! models are window-only.
@@ -15,7 +10,6 @@ use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 use std::collections::BTreeMap;
 
-/// The place the plan's origin sits on (`content/place/city.json`).
 pub const CITY_PLACE: &str = "city";
 
 #[derive(Clone, Debug)]
@@ -40,7 +34,6 @@ pub struct Placement {
 }
 
 impl Placement {
-    /// The model's file under `content/`, e.g. `city/row_slant.glb` or `props/x.glb`.
     pub fn model_path(&self) -> String {
         format!("{}/{}.glb", self.folder.as_deref().unwrap_or("city"), self.model)
     }
@@ -133,7 +126,6 @@ pub fn solid(model: &str) -> bool {
     SOLID.iter().any(|p| model.starts_with(p))
 }
 
-/// The tangent frame of a place: origin on the ground, east, north, up (planet space directions).
 #[derive(Clone, Copy, Debug)]
 pub struct Frame {
     pub dir: DVec3,
@@ -171,7 +163,6 @@ impl Frame {
     }
 }
 
-/// A placeholder character: who, where (world, on the ground), and the up there.
 #[derive(Clone, Debug)]
 pub struct Npc {
     pub id: String,
@@ -184,10 +175,8 @@ pub struct Town {
     for_planet: Option<warp_core::PlanetId>,
     colliders: Vec<Entity>,
     pub plan: Option<Plan>,
-    /// The dress plans (`content/city/dress/`) with the place each one stands on.
     pub dress: Vec<(String, Plan)>,
     pub frame: Option<Frame>,
-    /// Characters from the plan (quest spots).
     pub npcs: Vec<Npc>,
     pub solid_count: usize,
 }
@@ -198,7 +187,6 @@ impl Town {
     }
 }
 
-/// Builds the colliders and the character list once per planet (headless too).
 pub fn update_town(mut commands: Commands, planet: Res<PlanetRes>, mut town: ResMut<Town>) {
     if town.for_planet == Some(planet.id) {
         return;
@@ -264,7 +252,6 @@ fn spawn_colliders(commands: &mut Commands, planet: &PlanetRes, frame: &Frame, p
     colliders
 }
 
-/// Spawns the models of a plan's placements on `frame` (window only); returns how many.
 fn spawn_models(commands: &mut Commands, planet: &PlanetRes, assets: &AssetServer, frame: &Frame, plan: &Plan) -> usize {
     for p in &plan.placements {
         let (ground, up) = frame.ground(planet, p.at[0], p.at[1], p.at[2]);
@@ -282,7 +269,6 @@ fn spawn_models(commands: &mut Commands, planet: &PlanetRes, assets: &AssetServe
 #[derive(Component)]
 pub struct TownCollider;
 
-/// Which planet the city models were spawned for.
 #[derive(Resource, Default)]
 pub struct TownView {
     for_planet: Option<warp_core::PlanetId>,
@@ -290,7 +276,6 @@ pub struct TownView {
     pub models: usize,
 }
 
-/// A character's marker; `pos` and `up` are where it stands .
 #[derive(Component)]
 pub struct NpcModel {
     pub id: String,
@@ -298,7 +283,6 @@ pub struct NpcModel {
     pub up: bevy::math::DVec3,
 }
 
-/// The city's models and the characters' markers (window only).
 fn update_town_view(mut commands: Commands, planet: Res<PlanetRes>, town: Res<Town>, assets: Res<AssetServer>, mut view: ResMut<TownView>, npcs: Query<Entity, With<NpcModel>>) {
     let npc_total = town.npcs.len();
     if town.for_planet != Some(planet.id) {

@@ -1,12 +1,3 @@
-//! daynight_core: time of day on static planets, without Bevy types, in f64. There is
-//! one star per system. A planet stays still; its day comes from its own spin: the direction
-//! from the planet to the star turns around the planet's axis once per `day_length_s`. Declination
-//! and the hour at the spawn point follow from the geometry (axis and star position), they are not
-//! configured. Far from every planet the light comes from the star's true direction (one light, all
-//! planets lit consistently); near a planet it blends to that planet's rotating one. The light
-//! (sun, night light, ambient, sky and fog) comes from keys sorted by the sun's elevation at the
-//! viewer, shared by planets through light archetypes ("looks").
-//!
 //! All values in `content/daynight/daynight.json` are placeholders (TODO(initiator)).
 use glam::{DQuat, DVec3};
 use serde::Deserialize;
@@ -16,13 +7,11 @@ use std::f64::consts::TAU;
 /// Planet-space direction of the spawn point; its local hour at clock 0 follows from the geometry.
 pub const SPAWN_UP: DVec3 = DVec3::Y;
 
-/// The whole file: light archetypes and the sun of every planet (by recipe id).
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct DayNight {
     #[serde(rename = "_comment", default)]
     pub comment: Option<String>,
-    /// Distances at which the light leaves a planet's rotating day for the star's true direction.
     #[serde(default)]
     pub space_blend: SpaceBlend,
     pub looks: BTreeMap<String, Look>,
@@ -66,7 +55,6 @@ impl SpaceBlend {
     }
 }
 
-/// Unit direction from a planet's centre to the star.
 pub fn to_star(star: DVec3, centre: DVec3) -> DVec3 {
     (star - centre).try_normalize().unwrap_or(DVec3::Z)
 }
@@ -116,7 +104,6 @@ impl DayNight {
     }
 }
 
-/// The spin of one planet. With the direction to the star it gives the sun's path.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct PlanetSun {
@@ -127,7 +114,6 @@ pub struct PlanetSun {
     /// Spin axis in planet space (normalised on use). The sun turns around it. Its angle to the
     /// star sets the season (declination).
     pub axis: [f64; 3],
-    /// Light archetype (a key of `looks`).
     pub look: String,
 }
 
@@ -221,12 +207,10 @@ impl PlanetSun {
     }
 }
 
-/// Hour angle (rad) of a local hour: 0 at noon.
 fn hour_angle(hour: f64) -> f64 {
     (hour - 12.0) / 24.0 * TAU
 }
 
-/// A light archetype: keys sorted by sun elevation, interpolated linearly, clamped at the ends.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Look {
@@ -278,7 +262,6 @@ impl Look {
     }
 }
 
-/// The light at one sun elevation.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LightKey {

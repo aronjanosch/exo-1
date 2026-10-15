@@ -1,6 +1,4 @@
-//! The heightfield patches Avian collides with agree with
-//! planet_core's height function (rays at every interior patch sample, own patch only;
-//! the parked ship stands in the way of rays from above).
+//! Avian's heightfield patches agree with planet_core's height function.
 use avian3d::prelude::*;
 use bevy::ecs::system::SystemState;
 use bevy::math::DVec3;

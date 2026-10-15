@@ -1,33 +1,4 @@
 //! health_core: a character's health, without engine types, in f64.
-//!
-//! Vitality is the maximum minus what the afflictions take (no HP pool). Afflictions (burn, oxygen
-//! low, radiation, headache) each have a strength; its strength band sets how much vitality it
-//! takes and how fast the strength heals by itself, per tick. Damage over time comes in ticks of
-//! `tick_s` (1 s): a source adds its amount once per tick, so the bar drops in steps.
-//!
-//! - Heat: standing on a hot plate adds a little burn per tick, and fills the burning buildup
-//!   (0..1). A fire touching the body fills the buildup too, and adds burn per tick by its rate
-//!   (`Env::fire`), not the plate's. Full, the body is on fire: a bigger burn per tick, and the fire drains out over
-//!   `burning.drain_s` after the heat is left.
-//! - Radiation: builds per tick in the glow or next to a radioactive item, decays by its band, and from 25 up burns per tick by
-//!   a table. From 50 up it makes nausea (a derived strength), which costs no vitality but slows
-//!   the walk (`Mobility`).
-//! - Oxygen low: bad air adds per tick, good air removes; from 50 it takes vitality by band.
-//! - CPR: a rescuer pumps an unconscious body. In good air it takes oxygen low off per
-//!   second, but never below the stabilisation floor (still unconscious); each second after two of
-//!   CPR is a revive roll that brings the body back. Below the skill line each pump hurts (burn).
-//! - Headache: oxygen low above `headache.oxygen_above` for `headache.after_s` in a row gives a
-//!   headache (strength 100). It costs no vitality but lowers the maximum (`max_share`).
-//! - A treatment (a bandage, a deglow) reduces one affliction per use, scaled by the treater's
-//!   skill, with a success roll. Death below `dead_at` x the maximum; respawn clears the body.
-//!
-//! Taken from Barotrauma: vitality as the maximum minus the afflictions' banded vitality loss,
-//! unconscious at zero and dead below zero, the burn and oxygen-low bands, the oxygen and burn
-//! rules, the skill-based success roll, and CPR's stabilise-then-revive (`Health::cpr`).
-//!
-//! - `HealthTuning`: everything from `content/gameplay/health/health.json` (strict loader).
-//! - `Health`: `add`, `step`, `treat`, `respawn`; `HealthEvent`s out of `step` and `treat`.
-//! - `Rng`: a seeded xorshift64 for the treatment rolls (no crate dependency).
 use std::collections::BTreeMap;
 
 use content_core::{parse_strict, File};
@@ -55,7 +26,6 @@ pub struct AfflictionKind {
 }
 
 impl AfflictionKind {
-    /// The band a strength falls in, with the strength where that band starts.
     pub fn band(&self, s: f64) -> (f64, &Band) {
         let mut from = 0.0;
         for b in &self.bands {
@@ -68,7 +38,6 @@ impl AfflictionKind {
         (self.bands.len().checked_sub(2).map(|i| self.bands[i].to).unwrap_or(0.0), last)
     }
 
-    /// Vitality lost at strength `s` (share of the maximum).
     pub fn vitality_share(&self, s: f64) -> f64 {
         let (from, b) = self.band(s);
         let t = if b.to > from { ((s - from) / (b.to - from)).clamp(0.0, 1.0) } else { 1.0 };
@@ -81,28 +50,23 @@ impl AfflictionKind {
     }
 }
 
-/// What a treatment reduces per use.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Treatment {
-    /// An item kind (`bandage`, `deglow`).
     pub id: String,
     /// At this skill it always works; each point below loses 1 % chance.
     pub required_skill: f64,
     /// A failure multiplies the reduction by this.
     pub fail_factor: f64,
-    /// Affliction id to strength removed per use.
     pub reduce: BTreeMap<String, f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OxygenTuning {
-    /// Air below this fraction is bad.
     pub low_below: f64,
     /// Oxygen low grows by this per tick in bad air (conscious or not).
     pub fall_per_tick: f64,
-    /// And falls by this per tick in good air.
     pub rise_per_tick: f64,
     /// Unconscious in good air, it grows by this per tick.
     pub unconscious_per_tick: f64,
@@ -126,7 +90,6 @@ pub struct HeatTuning {
     pub fire_per_unit: f64,
 }
 
-/// The burning buildup (0..1) and the fire.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BurningTuning {
@@ -136,7 +99,6 @@ pub struct BurningTuning {
     pub cool_s: f64,
     /// The fire goes out over this many seconds after the heat is left.
     pub drain_s: f64,
-    /// Burn per tick while on fire.
     pub burn_per_tick: f64,
 }
 
@@ -151,7 +113,6 @@ pub struct RadiationBurnBand {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RadiationTuning {
-    /// Radiation built per tick in the glow.
     pub glow_per_tick: f64,
     /// Burn per tick by radiation band (a strength below `to` takes that band's rate).
     pub burn_bands: Vec<RadiationBurnBand>,
@@ -223,9 +184,7 @@ pub struct HealthTuning {
     pub max_vitality: f64,
     /// Dead at this share of the maximum (negative).
     pub dead_at: f64,
-    /// Seconds a dead player waits before the respawn.
     pub respawn_s: f64,
-    /// Damage over time comes in ticks of this many seconds.
     pub tick_s: f64,
     /// How far the aim reaches for another player to treat them (m).
     pub use_reach: f64,
@@ -360,7 +319,6 @@ impl Rng {
         Rng(if seed == 0 { 0x9E37_79B9_7F4A_7C15 } else { seed })
     }
 
-    /// The next number in 0..1.
     pub fn next_f64(&mut self) -> f64 {
         let mut x = self.0;
         x ^= x << 13;
@@ -370,7 +328,6 @@ impl Rng {
         (x >> 11) as f64 / (1u64 << 53) as f64
     }
 
-    /// True with probability `p` (0..1).
     pub fn chance(&mut self, p: f64) -> bool {
         self.next_f64() < p
     }
@@ -387,7 +344,6 @@ pub enum Life {
 pub enum HealthEvent {
     Unconscious,
     Woke,
-    /// The affliction that took the most vitality.
     Died { cause: String },
 }
 
@@ -405,18 +361,15 @@ pub struct Env {
     pub rod_per_s: f64,
 }
 
-/// How the body walks: a share of the walking speed and whether it may sprint.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Mobility {
     pub walk: f64,
     pub sprint: bool,
 }
 
-/// What a treatment did.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TreatResult {
     pub success: bool,
-    /// Strength removed in total.
     pub reduced: f64,
 }
 
@@ -428,7 +381,6 @@ pub struct Health {
     max: f64,
     life: Life,
     rng: Rng,
-    /// The burning buildup, 0..1.
     buildup: f64,
     /// The fire, 0..1: 1 while the buildup is full in heat, draining after.
     fire: f64,
@@ -442,7 +394,6 @@ pub struct Health {
 }
 
 impl Health {
-    /// A healthy character; `seed` for its rolls.
     pub fn new(t: &HealthTuning, seed: u64) -> Health {
         Health {
             afflictions: BTreeMap::new(),
@@ -462,7 +413,6 @@ impl Health {
     pub fn vitality(&self) -> f64 {
         self.vitality
     }
-    /// The maximum before any headache.
     pub fn max_vitality(&self) -> f64 {
         self.max
     }
@@ -470,22 +420,18 @@ impl Health {
         self.life
     }
 
-    /// Strength of an affliction (0 if none).
     pub fn strength(&self, id: &str) -> f64 {
         self.afflictions.get(id).copied().unwrap_or(0.0)
     }
 
-    /// The burning buildup, 0..1.
     pub fn buildup(&self) -> f64 {
         self.buildup
     }
 
-    /// The fire, 0..1 (draining after the heat).
     pub fn fire(&self) -> f64 {
         self.fire
     }
 
-    /// Whether the body is on fire.
     pub fn burning(&self) -> bool {
         self.fire > 0.0
     }
@@ -564,7 +510,6 @@ impl Health {
         self.vitality = self.max * (self.max_share(t) - lost);
     }
 
-    /// The affliction that takes the most vitality.
     pub fn worst(&self, t: &HealthTuning) -> Option<&str> {
         self.afflictions
             .iter()
@@ -689,7 +634,6 @@ impl Health {
         Some(TreatResult { success, reduced })
     }
 
-    /// Seconds of CPR so far on this body (0 when nobody pumps it).
     pub fn cpr_seconds(&self) -> f64 {
         self.cpr_s
     }
@@ -733,7 +677,6 @@ impl Health {
         self.update_life(t)
     }
 
-    /// Back to full health, conscious, cold and sober.
     pub fn respawn(&mut self, t: &HealthTuning) {
         self.afflictions.clear();
         self.life = Life::Conscious;

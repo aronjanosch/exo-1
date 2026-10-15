@@ -1,4 +1,3 @@
-//! Timestamp-ordered, bounded history in shared coordinates. No extrapolation. Hermite for
 //! position (uses velocity), slerp for rotation.
 use crate::snapshot::Snapshot;
 use glam::DVec3;
@@ -8,7 +7,6 @@ pub const MAX_HISTORY: usize = 128;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Mode {
-    /// Asked for a time before the first entry: show the first one.
     Startup,
     Interpolate,
     /// Asked for a time after the last entry (an underrun): hold the last one.

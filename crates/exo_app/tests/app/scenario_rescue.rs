@@ -1,11 +1,4 @@
-//! Rescue: two app instances over loopback, no delay. The host's player breathes bad
-//! air until it faints (oxygen low past the unconscious line); the client, standing by, pumps it
-//! (CPR, `ToHost::Rescue`) until a revive roll wakes it. The host and the client both see the
-//! rescuer as REVIVING (`Doing::Reviving`). Then the host faints again and the client's O2 canister
-//! (`oxy`, from the host's world, collected and used on the host) wakes it at once.
-//!
-//! The aim and the ring (`rescue_input`) need a walker in front of a lying figure, which a headless
-//! run does not stage; this test sends the hold the way the aim would (`Items::ask_rescue`).
+//! Headless: the rescue hold is sent directly (no aim or ring without a window).
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use exo_app::cargo::Crate;
@@ -63,7 +56,6 @@ fn status(app: &App, id: u32) -> PublicStatus {
     items(app).public.iter().find(|(p, _)| *p == id).map(|(_, s)| *s).unwrap_or_default()
 }
 
-/// The figure of `owner` as this process has it.
 fn figure(app: &mut App, owner: u32) -> Option<PublicStatus> {
     let w = app.world_mut();
     let mut q = w.query::<(&RemoteWalker, &RemoteStatus)>();
@@ -78,7 +70,6 @@ fn lies(app: &App) -> bool {
     app.world().resource::<HealthState>().bodies.get(&LOCAL).is_some_and(|b| b.health.state() == Life::Unconscious)
 }
 
-/// The host's body breathes bad air (the no-air booth) until it faints: one second at a time.
 fn faint_in_bad_air(app: &mut App) {
     let mut st = app.world_mut().resource_mut::<HealthState>();
     let st = &mut *st;
@@ -129,13 +120,11 @@ fn a_client_revives_the_host_from_bad_air_and_the_oxy_canister_wakes_it_again() 
     });
     p.until(5.0, "the host has a body for its player", |p| p.host.world().resource::<HealthState>().bodies.contains_key(&LOCAL));
 
-    // The host faints in bad air: its oxygen low climbs past the unconscious line.
     faint_in_bad_air(&mut p.host);
     assert!(lies(&p.host), "the host lies unconscious");
     let low = oxygen_low(&p.host);
     p.until(15.0, "the client's figure of the host is unconscious", |p| figure(&mut p.client, LOCAL).is_some_and(|s| s.unconscious));
 
-    // The client pumps (the hold, as the aim would send it).
     {
         let mut it = p.client.world_mut().resource_mut::<Items>();
         it.ask_rescue(Some(LOCAL));
@@ -153,7 +142,6 @@ fn a_client_revives_the_host_from_bad_air_and_the_oxy_canister_wakes_it_again() 
     p.client.world_mut().resource_mut::<Items>().ask_rescue(None);
     p.until(10.0, "the client's status is nothing again", |p| status(&p.host, 2).doing == Doing::Nothing);
 
-    // The host faints again; the client's O2 canister is collected in front of the client and used on the host.
     faint_in_bad_air(&mut p.host);
     p.until(15.0, "the client sees the host unconscious again", |p| figure(&mut p.client, LOCAL).is_some_and(|s| s.unconscious));
     let at = in_front(&mut p.client);

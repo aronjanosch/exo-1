@@ -1,5 +1,3 @@
-//! The camera shake, spring lag and G field of view, and F9 through the bindings,
-//! driven through `Controls`.
 use crate::common;
 use exo_app::Options;
 

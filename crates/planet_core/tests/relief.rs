@@ -1,6 +1,3 @@
-//! The relief at 100 km. Hearth and Cinder at 100 km: the tallest ground, the plain
-//! share, the land share against the bake, the biome count (the shape statistics), and the
-//! same statistics on a second bake (determinism).
 use planet_core::*;
 use std::sync::OnceLock;
 
@@ -84,7 +81,6 @@ fn cinder_has_readable_relief_at_100_km() {
 
 #[test]
 fn relief_is_repeatable_at_100_km() {
-    // A second, separate bake of Hearth must give the same statistics as the shared one.
     let (a, _) = shared("Hearth");
     let (b, _) = baked(HEARTH, 1337);
     let sa = serde_json::to_string(&a.shape_stats(4000, 0)).unwrap();

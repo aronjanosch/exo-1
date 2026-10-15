@@ -11,7 +11,6 @@ fn planet(radius: f64) -> Planet {
     p
 }
 
-/// Direction `m` metres from `d` along the tangent `t`.
 fn at(d: V3, t: V3, m: f64, radius: f64) -> V3 {
     planet_core::look::walk(d, t, m, radius)
 }
@@ -23,7 +22,6 @@ fn a_river_is_carved_between_the_coarse_vertices_and_is_wet() {
     assert!(big.len() >= 5, "a wet planet has rivers: {}", big.len());
     let (mut carved, mut wet) = (0, 0);
     for &(i, r) in &big {
-        // The middle of the segment's curve, and a point across the river, 6 half widths out.
         let on = |t: f64| p.river_idx.curve_point(&p.coarse.rivers, p.radius, i, t).normalized();
         let mid = on(0.5);
         let along = (on(0.55) - on(0.45)).normalized();
@@ -49,8 +47,6 @@ fn the_channel_has_no_seam_across_chunk_borders() {
     let r = p.coarse.rivers.iter().filter(|r| r.catchment_km2 > 3.0).max_by(|a, b| a.catchment_km2.total_cmp(&b.catchment_km2)).unwrap();
     let face = face_of(r.dir);
     let (a0, b0) = sphere_to_face_ab(face, r.dir);
-    // Two chunks side by side at the river, one level deeper than the root: their shared edge is
-    // a = a_edge. Heights at the shared vertices agree to float precision.
     let size = 0.0625;
     let ca = (a0 / size).floor() * size;
     let cb = (b0 / size).floor() * size;
@@ -97,7 +93,6 @@ fn a_river_bends_instead_of_turning_at_right_angles() {
         if rivers.iter().any(|o| o.next == drainage::Mouth::River(j) && o.catchment_km2 > r.catchment_km2) {
             continue;
         }
-        // This segment and the next, so the turn at the vertex between them counts too.
         let on = |s: usize, t: f64| p.river_idx.curve_point(rivers, p.radius, s, t);
         let pts: Vec<V3> = (0..=8).map(|k| on(i, k as f64 / 8.0)).chain((1..=8).map(|k| on(j as usize, k as f64 / 8.0))).collect();
         for w in pts.windows(3) {

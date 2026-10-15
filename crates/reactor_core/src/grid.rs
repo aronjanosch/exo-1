@@ -1,14 +1,4 @@
 //! The power grid: the junction box's supply shared between three consumer groups.
-//!
-//! Each group has a demand (what its devices draw at full work, set by the glue), a breaker (on or
-//! off, set on the junction box: an off group asks for nothing), a priority and a minimum supply
-//! ratio. Groups are served from the highest priority down; groups of equal
-//! priority share a shortfall in proportion. A group whose share falls below its minimum ratio
-//! switches off and leaves its power to the rest, so under a brownout low priorities go first.
-//! A group works at `factor = delivered / demand`: less power makes it slower, not off, down to
-//! its minimum ratio. Each group also has a limit, 0..1 (default 1): it caps the group's request at
-//! `demand × limit`, so the limit scales the group's efficiency (PULSAR's conduit limit).
-//! A limit of 0 is off. Lowering a limit frees power for the groups below it.
 #[cfg(test)]
 mod tests;
 
@@ -18,7 +8,6 @@ use serde::{Deserialize, Serialize};
 pub enum Group {
     Engines,
     LifeSupport,
-    /// Lights and other small things.
     Lights,
 }
 
@@ -30,12 +19,9 @@ impl Group {
     }
 }
 
-/// Settings of one group.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct GroupState {
-    /// kW its devices draw at full work.
     pub demand_kw: f64,
-    /// The breaker: an off group asks for nothing.
     pub breaker: bool,
     /// Higher is served first.
     pub priority: u8,
@@ -45,10 +31,8 @@ pub struct GroupState {
     pub limit: f64,
 }
 
-/// What one group got in the last distribution.
 #[derive(Copy, Clone, Debug, PartialEq, Default)]
 pub struct Supply {
-    /// kW asked for: `demand × limit` when the breaker is on, 0 when off.
     pub request_kw: f64,
     pub delivered_kw: f64,
     /// `delivered / request` (1 when nothing was asked for).
@@ -68,7 +52,6 @@ pub struct Grid {
     supply: [Supply; N],
 }
 
-/// One group's values in the content file.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GroupTuning {
@@ -121,7 +104,6 @@ impl Default for Grid {
 }
 
 impl Grid {
-    /// The grid with every breaker on and the tuning's demands.
     pub fn from_tuning(t: &GridTuning) -> Grid {
         let g = |s: GroupTuning| GroupState { demand_kw: s.demand_kw, breaker: true, priority: s.priority, min_ratio: s.min_ratio, limit: s.limit };
         Grid {
@@ -144,7 +126,6 @@ impl Grid {
         self.groups[g.index()].demand_kw = kw.max(0.0);
     }
 
-    /// Switches a group's breaker on the junction box.
     pub fn set_breaker(&mut self, g: Group, on: bool) {
         self.groups[g.index()].breaker = on;
     }
@@ -176,17 +157,14 @@ impl Grid {
         request(&self.groups[g.index()])
     }
 
-    /// Every group's request, in `Group::ALL` order.
     pub fn requests(&self) -> [f64; N] {
         std::array::from_fn(|i| request(&self.groups[i]))
     }
 
-    /// Result of the last `distribute` for one group.
     pub fn supply(&self, g: Group) -> Supply {
         self.supply[g.index()]
     }
 
-    /// How hard a group works, 0..1 (its `Supply::factor`): `delivered / demand`.
     pub fn factor(&self, g: Group) -> f64 {
         self.supply[g.index()].factor
     }

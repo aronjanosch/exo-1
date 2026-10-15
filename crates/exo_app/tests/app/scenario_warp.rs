@@ -1,4 +1,3 @@
-//! Two planets and the quantum drive between them, without a window.
 use crate::common;
 use exo_app::Options;
 

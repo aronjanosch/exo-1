@@ -1,6 +1,4 @@
-//! Scenario `sc-hud`: the flight panel through `Controls`. Sit, C decouples (the blend runs
-//! 4 s), H drops gravity compensation, B takes NAV, Page Down lowers the limiter, X brakes. Each
-//! change shows as a toast and as a badge; the blend bar is shown only while the coupling moves.
+//! The flight panel: badges, the coupling blend and the toast.
 use crate::hud::HudReadout;
 use crate::scenario::{check, hold_until, keys, put_at_seat, sit, tap, Step};
 use bevy::prelude::*;
@@ -18,7 +16,6 @@ fn toast(r: &HudReadout) -> &str {
     r.toast.as_deref().unwrap_or("")
 }
 
-/// One step after a tap: the toast and the badge state the change caused.
 fn after_tap(name: &'static str, want_toast: &'static str, check_badges: fn(&HudReadout) -> bool, what: &'static str) -> Vec<Step> {
     vec![
         hold_until(name, &[], 0.2, |_| false),
@@ -44,7 +41,6 @@ pub fn sc_hud_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // C: decouple. The toast is on at once, the blend runs from 1 to 0 over 4 s and is gone after.
     s.push(Box::new(|w, _| {
         tap(w, KeyCode::KeyC);
         true
@@ -65,28 +61,24 @@ pub fn sc_hud_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // H: gravity compensation off (the SC meaning of H).
     s.push(Box::new(|w, _| {
         tap(w, KeyCode::KeyH);
         true
     }));
     s.extend(after_tap("H", "GRAV COMP OFF", |r| badge(r, "GRAV COMP") == Some((false, "GRAV COMP".into())), "H"));
 
-    // B: master mode NAV, SCM dimmed.
     s.push(Box::new(|w, _| {
         tap(w, KeyCode::KeyB);
         true
     }));
     s.extend(after_tap("B", "NAV", |r| badge(r, "NAV") == Some((true, "NAV".into())) && badge(r, "SCM") == Some((false, "SCM".into())), "B"));
 
-    // Page Down: the limiter to 90 %, its badge appears.
     s.push(Box::new(|w, _| {
         tap(w, KeyCode::PageDown);
         true
     }));
     s.extend(after_tap("PageDown", "LIMIT 90 %", |r| badge(r, "LIMIT") == Some((true, "LIMIT 90 %".into())), "PageDown"));
 
-    // X held: the brake badge is on while it is held.
     s.push(Box::new(|w, _| {
         keys(w, &[KeyCode::KeyX], true);
         true

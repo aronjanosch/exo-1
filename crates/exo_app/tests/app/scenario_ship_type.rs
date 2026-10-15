@@ -1,4 +1,3 @@
-//! The named type goes through the real spawn and a Controls-driven flight scenario.
 use crate::common;
 use avian3d::prelude::Mass;
 use bevy::prelude::Name;

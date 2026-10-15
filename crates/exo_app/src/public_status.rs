@@ -1,14 +1,7 @@
-//! Public status: what the others see of a player. Burning, down (waiting for the respawn)
-//! and what the player does (treating, repairing, spraying).
-//!
 //! - The host works it out from its own state (`HealthState`, the repair sessions, the sprays) and
 //!   sends the whole list to every client when it changes (`NetOut::Status`); a client that joins
 //!   gets the list as it is. The host's own treatment hold is read here, a client's comes over the
 //!   wire (`ToHost::Treat`, sent when the hold starts, moves to another player or stops).
-//! - Every process puts the status of each other player on its figure as `RemoteStatus`
-//!   (`remote_status_in`, headless too; the scenario reads it). The window draws it
-//!   (`window_plugin`): flames and a light while burning, the figure lying down while down or
-//!   unconscious, and a label above the head.
 //! - Not public: the vitals (only the owner gets them) and the reactor's and fires' own values.
 use crate::dev_area::fire::Sprays;
 use crate::health::{HealthState, UseHold};
@@ -30,18 +23,15 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, remote_status_in.run_if(resource_exists::<Net>).after(crate::items_net::items_net_in).in_set(Fx::Input));
 }
 
-/// The treatment holds: by player on the host (its own included), and the one this client sent.
 #[derive(Resource, Default)]
 struct TreatState {
     by_player: BTreeMap<PlayerId, Option<PlayerId>>,
     sent: Option<PlayerId>,
 }
 
-/// A figure's public status as this process has it.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
 pub struct RemoteStatus(pub PublicStatus);
 
-/// Client: the local treatment hold, sent when it starts, moves or stops.
 fn treat_out(mut items: ResMut<Items>, hold: Res<UseHold>, mut st: ResMut<TreatState>) {
     if items.role != Role::Client {
         return;
@@ -53,7 +43,6 @@ fn treat_out(mut items: ResMut<Items>, hold: Res<UseHold>, mut st: ResMut<TreatS
     }
 }
 
-/// Host: every player's status from its own state; sent to all when the list changed. The sprays
 /// exist with the dev area only.
 #[allow(clippy::too_many_arguments)]
 fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>, sprays: Option<Res<Sprays>>, repairs: Res<RepairSessions>, rescue: Res<Rescuers>, mut treat: ResMut<TreatState>) {
@@ -71,7 +60,6 @@ fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>
         .map(|(id, b)| {
             let down = b.respawn_in.is_some();
             let unconscious = b.health.state() == Life::Unconscious;
-            // A player who is down or unconscious does nothing; the others' work is what they show.
             let doing = if down || unconscious {
                 Doing::Nothing
             } else if let Some(s) = repairs.sessions.iter().find(|s| s.player == *id) {
@@ -97,7 +85,6 @@ fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>
     }
 }
 
-/// Every process: each figure gets its owner's status from `Items::public`.
 fn remote_status_in(mut commands: Commands, items: Res<Items>, mut q: Query<(Entity, &RemoteWalker, Option<&mut RemoteStatus>)>) {
     for (e, rw, status) in &mut q {
         let want = items.public.iter().find(|(id, _)| *id == rw.owner).map(|(_, s)| *s).unwrap_or_default();
@@ -114,7 +101,6 @@ fn remote_status_in(mut commands: Commands, items: Res<Items>, mut q: Query<(Ent
     }
 }
 
-/// Window only: the flames, the light, the lying figure and the label of each figure's status.
 pub fn window_plugin(app: &mut App) {
     use crate::phases::Frame;
     app.add_systems(Update, (add_status_visuals, tag_parts, pose_parts, flames, status_tags).chain().in_set(Frame::World));
@@ -123,14 +109,12 @@ pub fn window_plugin(app: &mut App) {
 /// Where the three flames sit on the figure (figure-local, metres).
 const FLAME_AT: [Vec3; 3] = [Vec3::new(-0.28, 1.25, 0.05), Vec3::new(0.26, 1.45, -0.05), Vec3::new(0.0, 1.9, 0.0)];
 
-/// A flame on a burning figure, flickering.
 #[derive(Component)]
 struct Flame {
     walker: Entity,
     index: f32,
 }
 
-/// The orange light of a burning figure.
 #[derive(Component)]
 struct FlameLight {
     walker: Entity,
@@ -141,14 +125,11 @@ struct FlameLight {
 #[derive(Component)]
 struct Upright(Transform);
 
-/// The status label of a figure, placed over its name tag.
 #[derive(Component)]
 struct StatusTag(Entity);
 
-/// The figure lies on its side from its feet when down.
 const LYING: f32 = -std::f32::consts::FRAC_PI_2;
 
-/// A new figure: its flames and light (hidden until it burns) and its label (hidden until it has one).
 fn add_status_visuals(mut commands: Commands, q: Query<Entity, Added<RemoteWalker>>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
     if q.is_empty() {
         return;
@@ -166,7 +147,6 @@ fn add_status_visuals(mut commands: Commands, q: Query<Entity, Added<RemoteWalke
     }
 }
 
-/// The figure's own parts take their upright pose the first time they are seen.
 fn tag_parts(mut commands: Commands, figures: Query<(), With<RemoteWalker>>, parts: Query<(Entity, &ChildOf, &Transform), (With<Mesh3d>, Without<Flame>, Without<Upright>)>) {
     for (e, parent, t) in &parts {
         if figures.contains(parent.parent()) {
@@ -175,7 +155,6 @@ fn tag_parts(mut commands: Commands, figures: Query<(), With<RemoteWalker>>, par
     }
 }
 
-/// Down or unconscious: each part lies over from the feet; up again: it stands.
 fn pose_parts(statuses: Query<&RemoteStatus>, mut parts: Query<(&ChildOf, &Upright, &mut Transform), Without<Flame>>) {
     let lie = Quat::from_rotation_z(LYING);
     for (parent, up, mut t) in &mut parts {
@@ -187,7 +166,6 @@ fn pose_parts(statuses: Query<&RemoteStatus>, mut parts: Query<(&ChildOf, &Uprig
     }
 }
 
-/// Burning (and not down): the flames flicker and the light is on.
 fn flames(time: Res<Time>, statuses: Query<&RemoteStatus>, mut flames: Query<(&Flame, &mut Transform, &mut Visibility), Without<FlameLight>>, mut lights: Query<(&FlameLight, &mut Visibility), Without<Flame>>) {
     let t = time.elapsed_secs();
     let burning = |w: Entity| statuses.get(w).is_ok_and(|s| s.0.burning && !s.0.down && !s.0.unconscious);

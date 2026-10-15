@@ -1,4 +1,3 @@
-//! Rules for fire and air, with numbers.
 use super::*;
 use glam::DVec2;
 
@@ -80,7 +79,6 @@ fn closed_door_stops_the_spread() {
 fn extinguisher_reduces_size() {
     let (mut d, a, _, _) = two_rooms(0.0);
     let f = d.ignite(a, DVec3::ZERO, 1.0);
-    // Off target: 3 m away, nothing happens.
     assert_eq!(d.spray(DVec3::new(3.0, 0.0, 0.0), 1.0), 0);
     assert_eq!(d.fire(f).unwrap().size, 1.0);
     let mut t = 0.0;
@@ -138,12 +136,10 @@ fn oxygen_is_conserved_across_a_gap() {
     // From 1.0 / 0.08 / 0.4 at the start: the spread has at least halved.
     let spread = f.iter().cloned().fold(f64::MIN, f64::max) - f.iter().cloned().fold(f64::MAX, f64::min);
     assert!(spread < 0.46, "{spread}");
-    // A huge step must not overshoot past even.
     d.set_open(bc, 1.0);
     d.room_mut(c).oxygen = 0.0;
     d.exchange_air(1000.0);
     assert!(d.room(b).oxygen_fraction() >= d.room(c).oxygen_fraction() - 1e-9);
-    // Closed: nothing moves.
     let mut d2 = Deck::new(FireTuning::default(), 1);
     let x = d2.add_room(10.0);
     let y = d2.add_room(10.0);
@@ -181,7 +177,6 @@ fn a_leak_drains_its_room_exponentially() {
     println!("leak: tau {tau:.1} s, after 40 s {:.3} (exp {:.3}), lost {:.2} m³, flow now {:.3} m³/s", f, (-40.0 / tau).exp(), d.lost_to_space(), d.leak(leak).flow);
     assert!((f - (-40.0f64 / tau).exp()).abs() < 0.01);
     assert!((d.lost_to_space() + d.room(r).oxygen - 80.0).abs() < 1e-9, "what left went to space");
-    // Closed: nothing leaves.
     d.set_leak(leak, 1.0, 0.0);
     let before = d.room(r).oxygen;
     d.exchange_air(10.0);
@@ -212,14 +207,12 @@ fn a_spray_lands_on_a_fire_in_the_cone_and_not_outside() {
     let eye = DVec3::ZERO;
     let dir = DVec3::new(0.0, 0.0, -1.0);
     let half = 20.0f64.to_radians();
-    // Straight ahead, 3 m: lands at 3 m.
     let ahead = DVec3::new(0.0, 0.0, -3.0);
     assert!((cone_landing(eye, dir, ahead, 0.5, 4.0, half).unwrap() - 3.0).abs() < 1e-9);
     // Beside the aim at 3 m, 2 m off: out of a 20 degree cone (tan 20 * 3 = 1.09 m, plus the radius).
     assert!(cone_landing(eye, dir, DVec3::new(2.0, 0.0, -3.0), 0.5, 4.0, half).is_none());
     // A fire of 1 m radius at 2 m off with 3 m along is in (1.09 + 1.0 = 2.09 m).
     assert!(cone_landing(eye, dir, DVec3::new(2.0, 0.0, -3.0), 1.0, 4.0, half).is_some());
-    // Behind the nozzle, and beyond the reach.
     assert!(cone_landing(eye, dir, DVec3::new(0.0, 0.0, 2.0), 0.5, 4.0, half).is_none());
     assert!(cone_landing(eye, dir, DVec3::new(0.0, 0.0, -9.0), 0.5, 4.0, half).is_none());
     // Beyond the reach but its edge in reach: the spray lands at the reach.

@@ -90,7 +90,6 @@ pub enum FieldName {
     Moisture,
     Landform,
     Weirdness,
-    /// Erosion, see `MacroSpec::erosion`.
     Erosion,
     /// Peaks and valleys, derived from weirdness: 1 - |3|W| - 2|, -1..1.
     Peaks,
@@ -158,7 +157,6 @@ pub struct Band {
     pub noise: NoiseSpec,
     #[serde(default)]
     pub warp: Option<Warp>,
-    /// Scaled by the shape's stretch or roughness.
     #[serde(default)]
     pub scale: BandScale,
     /// With `relief`: a detail band, metres scale, kept and multiplied by the flatness.
@@ -206,7 +204,6 @@ impl Relief {
         (radius / self.radius_m).powf(self.scale_exponent)
     }
 
-    /// The factor on the lake depth at this radius.
     pub fn lake_scale_at(&self, radius: f64) -> f64 {
         (radius / self.radius_m).powf(self.lake_scale_exponent.unwrap_or(self.scale_exponent))
     }
@@ -247,21 +244,16 @@ impl Span {
 #[derive(Deserialize, Clone, Debug)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum StampShape {
-    /// A smooth bowl.
     Basin { radius_m: Span, depth_m: Span },
     /// A straight step: the upper shelf on one side, a slope, the lower ground on the other.
     Escarpment { length_m: Span, height_m: Span, slope_width_m: Span, shelf_depth_m: Span, end_taper_m: Span },
-    /// A flat-topped rise.
     Plateau { radius_m: Span, height_m: Span, falloff_m: Span },
-    /// A bowl with a raised rim.
     Crater { radius_m: Span, depth_m: Span, rim_height_m: Span, rim_width_m: Span },
     /// A cut with walls and a floor, along a meandering line.
     Canyon { length_m: Span, floor_width_m: Span, wall_width_m: Span, depth_m: Span, meander_m: Span, end_taper_m: Span },
     /// Several flat-topped buttes inside a radius.
     MesaField { radius_m: Span, buttes: [u32; 2], butte_radius_m: Span, height_m: Span, falloff_m: Span },
-    /// A solitary needle, a silhouette to walk towards.
     Spire { height_m: Span, base_radius_m: Span },
-    /// A ring mountain with a sunken centre.
     Caldera { ring_radius_m: Span, ring_height_m: Span, ring_width_m: Span, centre_depth_m: Span },
 }
 
@@ -281,8 +273,6 @@ pub struct Where {
     pub weirdness: Option<[f64; 2]>,
 }
 
-/// One kind of landform in the planet's budget: how many (a range), how far from every
-/// other stamp, where.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct LandformKind {
@@ -308,9 +298,7 @@ pub struct LandformKind {
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Landforms {
-    /// Placement tries (each with its own seed) before the bake gives up.
     pub retry_limit: u32,
-    /// Random candidate spots per try.
     pub candidates: u32,
     pub kinds: Vec<LandformKind>,
 }
@@ -398,8 +386,6 @@ pub struct Palette {
     pub cap: f32,
 }
 
-/// The terrain material's planet-wide values: where rock takes over, the strata bands on
-/// steep faces, the cap high up, the detail pattern near the camera.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct TerrainLook {
@@ -438,7 +424,6 @@ pub struct Sky {
     pub haze_color: [f32; 3],
     /// Exponential distance fog density per metre at the ground (fades out with height).
     pub haze_density: f32,
-    /// A cloud layer; none when absent.
     #[serde(default)]
     pub clouds: Option<Clouds>,
 }
@@ -501,7 +486,6 @@ pub enum SinkCrossing {
     Fill,
 }
 
-/// Rivers and lakes from drainage on the macro grid, cut in the bake.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct DrainageSpec {
@@ -572,11 +556,9 @@ fn default_edge() -> f32 {
 }
 
 /// A storey of the scatter: its own grid spacing and view range. Ground cover, shrubs and
-/// rocks, trees.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Storey {
-    /// Grid spacing of the candidate spots (m).
     pub spacing_m: f64,
     /// Drawn up to this distance from the camera on the ground (m)...
     pub range_m: f64,
@@ -726,7 +708,6 @@ impl Edit {
     }
 }
 
-/// Pieces scattered around a kit piece's spot.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct PieceScatter {
@@ -748,7 +729,6 @@ pub struct KitPiece {
     pub scale: Span,
     #[serde(default)]
     pub sink_m: f64,
-    /// 0 = upright along the radius, 1 = along the ground's normal.
     #[serde(default)]
     pub align: f64,
     pub tint: [f32; 3],
@@ -801,7 +781,6 @@ pub struct SiteKind {
     #[serde(default)]
     pub edits: Vec<Edit>,
     pub kit: String,
-    /// Expected count range per 100 km2 of surface; when present replaces `count`.
     #[serde(default)]
     pub per_100_km2: Option<[f64; 2]>,
 }
@@ -832,7 +811,6 @@ pub struct Budget {
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SiteRule {
-    /// Candidates compared per placed site (best-candidate sampling).
     pub best_of: u32,
     /// Random spots tried per site kind before it gives up.
     pub candidates: u32,
@@ -864,7 +842,6 @@ pub struct Recipe {
     pub material: TerrainLook,
     pub sky: Sky,
     pub water: Water,
-    /// Rivers and lakes; missing = none.
     #[serde(default)]
     pub drainage: Option<DrainageSpec>,
     /// The relief; missing = the shape and large bands are the whole ground.
@@ -876,7 +853,6 @@ pub struct Recipe {
 }
 
 impl Recipe {
-    /// A recipe file for a planet of the system: its seed and radius.
     pub fn for_planet(s: &str, seed: i32, radius: f64) -> Result<Recipe, String> {
         let mut r = Recipe::from_json(s)?;
         r.seed = seed;

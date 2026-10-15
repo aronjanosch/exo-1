@@ -46,7 +46,6 @@ pub struct Near {
     pub north_m: f64,
 }
 
-/// A landing pad of a place.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PadSpec {

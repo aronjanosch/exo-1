@@ -1,17 +1,4 @@
 //! The cell grid: fire as cells per room, the other model next to the point model of
-//! `Deck`'s fires. Each room with cells is a grid of square cells (`cell_m`, 1 m) over its floor
-//! rectangle; a cell has an intensity 0..1, and 0 is no fire. The grid works on the `Deck`'s
-//! rooms and gaps (the air stays the deck's): a burning cell grows while its room has enough
-//! oxygen, stalls lower and shrinks below that (Barotrauma's growth modifier, the same lines as
-//! the point model), uses oxygen by its intensity, and goes out at 0. Every `spread_interval_s`
-//! each burning cell with at least `spread_min` rolls for each 4-neighbour and for each gap it
-//! touches: through an open gap the chance is scaled by the gap's open fraction (a closed door
-//! by `door_closed`, not 0: FTL's doors slow a fire rather than stop it). People in the 3x3 cells
-//! around a burning cell burn at the intensity of the hottest one there; devices whose footprint
-//! touches a burning cell lose condition by its intensity; a spray takes intensity off the cells
-//! near where it lands.
-//!
-//! Values: `content/gameplay/fire/fire.json` under `grid` (`GridTuning`, strict loader in
 //! `tuning`). Guesses for the playtest, `TODO(initiator)`.
 use crate::{Deck, RoomId, Target, TargetKind};
 use gameplay_core::rng::Rng;
@@ -42,7 +29,6 @@ pub struct GridTuning {
     pub spread_min: f64,
     /// Intensity of a cell the fire spreads into.
     pub spread_intensity: f64,
-    /// Seconds between spread rolls.
     pub spread_interval_s: f64,
     /// Chance per roll and open gap (or neighbour).
     pub spread_chance: f64,
@@ -88,17 +74,13 @@ impl Default for GridTuning {
     }
 }
 
-/// A burning cell, for the glue to show.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct BurningCell {
     pub room: RoomId,
-    /// Row-major index in the room's grid.
     pub index: usize,
     pub col: usize,
     pub row: usize,
-    /// Centre, ship space (x and y).
     pub centre: DVec2,
-    /// 0 < intensity <= 1.
     pub intensity: f64,
 }
 
@@ -135,7 +117,6 @@ impl Layout {
         r * self.cols + c
     }
 
-    /// Distance (m) from a point to a cell's square (0 inside it).
     fn distance_to(&self, index: usize, p: DVec2) -> f64 {
         rect_distance(self.centre(index), DVec2::splat(self.cell * 0.5), p, DVec2::ZERO)
     }
@@ -151,7 +132,6 @@ fn rect_distance(c1: DVec2, h1: DVec2, c2: DVec2, h2: DVec2) -> f64 {
     ((c1 - c2).abs() - h1 - h2).max(DVec2::ZERO).length()
 }
 
-/// The cells of the rooms, and the rolls for their spread.
 #[derive(Clone, Debug)]
 pub struct Grid {
     tuning: GridTuning,
@@ -161,7 +141,6 @@ pub struct Grid {
 }
 
 impl Grid {
-    /// An empty grid; `seed` makes the spread rolls repeatable.
     pub fn new(tuning: GridTuning, seed: u64) -> Grid {
         Grid { tuning, rooms: Vec::new(), rng: Rng::new(seed), spread_timer: tuning.spread_interval_s }
     }
@@ -192,7 +171,6 @@ impl Grid {
         self.layout(room).map(|l| (l.cols, l.rows))
     }
 
-    /// The index of the cell a point is in, if the room has cells.
     pub fn cell_at(&self, room: RoomId, p: DVec3) -> Option<usize> {
         self.layout(room).map(|l| l.index_of(p.truncate()))
     }
@@ -212,12 +190,10 @@ impl Grid {
         Some(i)
     }
 
-    /// Every burning cell.
     pub fn burning(&self) -> impl Iterator<Item = BurningCell> + '_ {
         self.rooms.iter().flat_map(|l| (0..l.intensity.len()).filter(|&i| l.intensity[i] > 0.0).map(move |i| l.burning_cell(i)))
     }
 
-    /// The sum of a room's intensities (its burning, in cell units).
     pub fn total(&self, room: RoomId) -> f64 {
         self.layout(room).map_or(0.0, |l| l.intensity.iter().sum())
     }
@@ -369,14 +345,12 @@ mod tests {
 
     const DT: f64 = 1.0 / 30.0;
 
-    /// A deck with one room of `volume` m³ (full of air), its id.
     fn one_room(volume: f64) -> (Deck, RoomId) {
         let mut d = Deck::new(FireTuning::default(), 1);
         let r = d.add_room(volume);
         (d, r)
     }
 
-    /// A grid over the room: 4 by 4 cells from the origin.
     fn grid_on(room: RoomId, seed: u64) -> Grid {
         let mut g = Grid::new(GridTuning::default(), seed);
         g.add_room(room, DVec2::ZERO, DVec2::new(4.0, 4.0));
@@ -526,9 +500,7 @@ mod tests {
         let (mut d, r) = one_room(1000.0);
         let mut g = grid_on(r, 0);
         g.ignite(r, DVec3::new(1.5, 1.5, 0.0), 1.0);
-        // A box of 1 m x 1 m centred on the cell's east edge: it overlaps the cell.
         let near = Target { id: 7, kind: TargetKind::Device, room: r, pos: DVec3::new(2.5, 1.5, 0.0), half: DVec2::new(0.5, 0.5) };
-        // A box two metres off the cell: no damage.
         let far = Target { id: 8, kind: TargetKind::Device, room: r, pos: DVec3::new(5.0, 1.5, 0.0), half: DVec2::new(0.5, 0.5) };
         let ev = g.step(&mut d, 1.0, &[near, far]);
         let dmg: Vec<(u64, f64)> = ev.iter().filter_map(|e| if let GridEvent::Damage { target, amount, .. } = e { Some((*target, *amount)) } else { None }).collect();

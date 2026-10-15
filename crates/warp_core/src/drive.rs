@@ -1,11 +1,4 @@
-//! The quantum drive as a state machine. The caller feeds the ship's pose every tick; while the
-//! drive is on rails (`RampUp` to `RampDown`, and an emergency drop) it returns the pose to put
-//! the ship at.
-//!
-//! Sequence: `Spooling` -> `Calibrating` (aim held, gauge fills) -> `PreRamp` -> `RampUp` (two
-//! acceleration stages) -> `Cruise` -> `RampDown` -> `PostRampDown` -> `Cooldown` -> `Idle`.
-//! Aborts are their own transitions back to `Idle`; each has a reason. During the flight the
-//! pilot can hold the exit key: `EmergencyDrop` brakes to the exit speed within a few seconds and
+//! The pilot can hold the exit key: `EmergencyDrop` brakes to the exit speed within a few seconds and
 //! leaves the ship in open space, then `PostRampDown` and `Cooldown` as after an arrival.
 use crate::path::{blocked_at, Blocker, Path};
 use crate::system::{DriveConfig, Obstacle, PlanetId, System};
@@ -29,7 +22,6 @@ pub enum Phase {
 }
 
 impl Phase {
-    /// The ship is moved by the drive along the path (not by the pilot).
     pub fn on_rails(self) -> bool {
         matches!(self, Phase::RampUp | Phase::Cruise | Phase::RampDown | Phase::EmergencyDrop)
     }
@@ -50,7 +42,6 @@ pub enum Abort {
     Obstructed(Blocker),
     /// Start refused: drive still cooling down or busy.
     NotReady,
-    /// The pilot cancelled while spooling or calibrating.
     Cancelled,
     /// The aim left the warning angle during calibration.
     CalibrationLost,
@@ -60,13 +51,10 @@ pub enum Abort {
 pub enum Event {
     Phase(Phase),
     Aborted(Abort),
-    /// Reached the exit point.
     Arrived,
-    /// An emergency drop ended: the ship is in open space at the exit speed.
     DroppedOut,
 }
 
-/// What the drive needs to know about the ship each tick.
 #[derive(Clone, Copy, Debug)]
 pub struct ShipView {
     pub pos: DVec3,
@@ -97,7 +85,6 @@ pub struct Drive {
     /// Arc length where the rails end: the exit point, a drop point, or short of either when a
     /// ship is there. 0 until the ramp-up.
     end: f64,
-    /// Emergency drop: its deceleration.
     drop: Option<f64>,
 }
 
@@ -130,7 +117,6 @@ impl Drive {
         if self.phase.on_rails() { self.v } else { 0.0 }
     }
 
-    /// 1 below the stage switch speed, 2 above (while on rails).
     pub fn stage(&self) -> u8 {
         if self.v < self.cfg.stage_switch_speed { 1 } else { 2 }
     }
@@ -147,11 +133,9 @@ impl Drive {
         // Leaving along the tangent only matters at a planet; in open space the path starts straight.
         let from_up = sys.frame_of(from).map(|o| (from - sys.planet(o).centre()).normalize_or_zero());
         let exit = Self::exit_point(sys, target, from);
-        // The last part comes in radially: towards the target's centre.
         Path::new(from, from_up, exit, sys.planet(target).centre() - exit, self.cfg.spline_tension)
     }
 
-    /// Pick `target` and start spooling. Refused (and nothing changes) when not ready, too low,
     /// or the path is blocked.
     pub fn begin(&mut self, target: PlanetId, ship: &ShipView, sys: &System, obstacles: &[Obstacle]) -> Result<(), Abort> {
         if self.phase != Phase::Idle {
@@ -181,7 +165,6 @@ impl Drive {
         Ok(())
     }
 
-    /// The pilot cancels. Only spooling and calibrating can be cancelled.
     pub fn cancel(&mut self) -> Option<Event> {
         match self.phase {
             Phase::Spooling | Phase::Calibrating => Some(self.abort(Abort::Cancelled)),
@@ -223,7 +206,6 @@ impl Drive {
         Some(Event::Phase(Phase::EmergencyDrop))
     }
 
-    /// Where an emergency drop ends (while dropping and after it).
     pub fn drop_point(&self) -> Option<DVec3> {
         self.drop?;
         Some(self.path.as_ref()?.at(self.end).0)
@@ -271,7 +253,6 @@ impl Drive {
         }
     }
 
-    /// One tick. Returns the events of this tick; `pose()` has the ship's place on rails.
     pub fn step(&mut self, dt: f64, ship: &ShipView, sys: &System, obstacles: &[Obstacle]) -> Vec<Event> {
         let mut ev = Vec::new();
         self.timer += dt;

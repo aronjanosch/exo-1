@@ -1,17 +1,4 @@
 //! display_core: what a display panel shows and how a pointer works on it, without engine types
-//! A `Panel` is a size in panel pixels and a tree of `Widget`s (labels, buttons, bars,
-//! toggles, sliders, dials, trends and lists in rows and columns). The widget set and the look
-//! come from the design system "EXO-1 Ship Displays" (2026-10-13); colours and fonts are data
-//! (`theme`, `content/ui/displays.json`). `Panel::layout` stacks them into rectangles, a `Pointer`
-//! turns a position and a held button into hover, press and `Click`s with the widget's action id,
-//! screens come in the design system's tiers (S, M, L) on a plate with a header (the tier is the
-//! panel's canvas, drawn into the display's texture), and `ray_to_panel` finds where a ray (the
-//! view through the cursor) meets a display's quad in the world; `Panel::from_uv` turns that hit
-//! into panel pixels.
-//!
-//! Panel pixels: origin top left, x right, y down (like screen UI). A role builds its panel each
-//! tick from its own state; widgets are plain data, so the panel can be compared, drawn on the
-//! screen and hit-tested headless the same way.
 use glam::{DQuat, DVec2, DVec3};
 use std::borrow::Cow;
 
@@ -22,9 +9,6 @@ pub mod theme;
 pub use canvas::{arc_points, Ink, Shape, TextFace};
 pub use theme::{Rgb, Theme};
 
-// ---------- ids ----------
-
-/// Which panel: a short stable name (`test_console`). Const-constructible for role code.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct PanelId(pub Cow<'static, str>);
 
@@ -49,8 +33,6 @@ impl std::fmt::Display for PanelId {
     }
 }
 
-// ---------- widgets ----------
-
 /// Colour role of a label (and of a button). The glue maps it to colours from the theme
 /// (`content/ui/displays.json`). Good, Warn and Bad always draw with their glyph (● ▲ ■) beside the
 /// text, so the state never rests on colour alone.
@@ -59,7 +41,6 @@ pub enum Tone {
     #[default]
     Normal,
     Dim,
-    /// Small caps captions ("CORE TEMP", "MODE").
     Micro,
     Title,
     Good,
@@ -68,7 +49,6 @@ pub enum Tone {
 }
 
 impl Tone {
-    /// The status glyph a tone draws beside its text, if any.
     pub fn glyph(self) -> Option<Glyph> {
         match self {
             Tone::Good => Some(Glyph::Circle),
@@ -79,7 +59,6 @@ impl Tone {
     }
 }
 
-/// The status shapes: ● good, ▲ warn, ■ bad (drawn as shapes, not font glyphs).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Glyph {
     Circle,
@@ -87,7 +66,6 @@ pub enum Glyph {
     Square,
 }
 
-/// A bar's state against its thresholds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Level {
     Normal,
@@ -144,7 +122,6 @@ pub enum Widget {
     List { rows: Vec<ListRow>, selected: Option<usize>, action: Option<String>, row_h: f64 },
     Row { gap: f64, items: Vec<Item> },
     Column { gap: f64, items: Vec<Item> },
-    /// Takes room, draws nothing.
     Space,
     /// A drawn picture in its box (`Shape`s in its own pixels from the top left, `w` by `h` as
     /// designed: `Panel::overflowing` checks every shape inside). With an `action` the whole box is
@@ -153,8 +130,6 @@ pub enum Widget {
 }
 
 impl Widget {
-    /// The action id of a widget the pointer can use (enabled buttons, toggles and sliders, lists
-    /// with an action).
     pub fn action(&self) -> Option<&str> {
         match self {
             Widget::Button { enabled: true, action, .. } | Widget::Toggle { enabled: true, action, .. } | Widget::Slider { enabled: true, action, .. } => Some(action),
@@ -164,7 +139,6 @@ impl Widget {
         }
     }
 
-    /// The action id, enabled or not.
     fn action_id(&self) -> Option<&str> {
         match self {
             Widget::Button { action, .. } | Widget::Toggle { action, .. } | Widget::Slider { action, .. } => Some(action),
@@ -189,14 +163,12 @@ pub fn level(value: f64, warn: Option<f64>, crit: Option<f64>) -> Level {
     }
 }
 
-/// Room along the parent's stacking axis: fixed pixels, or a share of what is left.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Size {
     Fixed(f64),
     Flex(f64),
 }
 
-/// A widget with its size in the parent's stack.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Item {
     pub widget: Widget,
@@ -271,7 +243,6 @@ fn item(widget: Widget) -> Item {
     Item { widget, size: Size::Flex(1.0) }
 }
 
-/// Font sizes of the design system (panel pixels): small, label, title, value, hero.
 pub mod font {
     pub const SMALL: f64 = 16.0;
     pub const LABEL: f64 = 20.0;
@@ -286,7 +257,6 @@ pub mod ctl {
     pub const SM: f64 = 40.0;
     pub const MD: f64 = 48.0;
     pub const LG: f64 = 64.0;
-    /// A bar with its caption.
     pub const BAR: f64 = 44.0;
 }
 
@@ -348,8 +318,6 @@ pub fn list_row_at(rect: &Rect, row_h: f64, rows: usize, p: DVec2) -> Option<usi
     (i >= 0.0 && (i as usize) < rows).then_some(i as usize)
 }
 
-// ---------- screens ----------
-
 /// The design system's screen tiers: S 320 x 240 (one machine: a readout and one or two
 /// controls), M 640 x 400 (a control panel), L 1280 x 720 (a bridge overview). A machine's display
 /// picks the tier that fits it; the canvas is in panel pixels.
@@ -383,20 +351,14 @@ pub struct Plate {
     pub status: Option<(String, Tone)>,
 }
 
-/// Plate geometry (panel pixels), from the design system: outline width, header height, the
-/// well's inset from the plate edge and its own border.
 pub mod plate {
     pub const BORDER: f64 = 2.0;
     pub const HEADER: f64 = 32.0;
     pub const INSET: f64 = 4.0;
     pub const WELL_BORDER: f64 = 2.0;
-    /// The cut corner (top right).
     pub const CUT: f64 = 16.0;
 }
 
-// ---------- layout ----------
-
-/// A rectangle in panel pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rect {
     pub min: DVec2,
@@ -413,7 +375,6 @@ impl Rect {
     pub fn centre(&self) -> DVec2 {
         self.min + self.size * 0.5
     }
-    /// Inside or on the edge.
     pub fn contains(&self, p: DVec2) -> bool {
         p.cmpge(self.min).all() && p.cmple(self.max()).all()
     }
@@ -423,7 +384,6 @@ impl Rect {
     }
 }
 
-/// A leaf widget and where it is.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Placed<'a> {
     pub rect: Rect,
@@ -474,17 +434,14 @@ impl Panel {
         self
     }
 
-    /// The tier nearest to this panel's size.
     pub fn tier(&self) -> Tier {
         Tier::nearest(self.size)
     }
 
-    /// The header strip, with a plate.
     pub fn header(&self) -> Option<Rect> {
         self.plate.as_ref().map(|_| Rect::new(plate::BORDER, plate::BORDER, (self.size.x - 2.0 * plate::BORDER).max(0.0), plate::HEADER))
     }
 
-    /// The recessed well (outer edge of its border), with a plate.
     pub fn well(&self) -> Option<Rect> {
         self.plate.as_ref().map(|_| {
             let x = plate::BORDER + plate::INSET;
@@ -493,7 +450,6 @@ impl Panel {
         })
     }
 
-    /// Where the widgets go: inside the padding, and inside the well's border on a plate.
     pub fn content(&self) -> Rect {
         let p = self.padding;
         match self.well() {
@@ -512,12 +468,10 @@ impl Panel {
         out
     }
 
-    /// The usable widget under a point, if any.
     pub fn hit(&self, p: DVec2) -> Option<Placed<'_>> {
         self.layout().into_iter().find(|w| w.widget.action().is_some() && w.rect.contains(p))
     }
 
-    /// The first widget with this action (enabled or not).
     pub fn find(&self, action: &str) -> Option<Placed<'_>> {
         self.layout().into_iter().find(|w| w.widget.action_id() == Some(action))
     }
@@ -570,9 +524,6 @@ fn place<'a>(w: &'a Widget, r: Rect, out: &mut Vec<Placed<'a>>) {
     }
 }
 
-// ---------- pointer ----------
-
-/// A use of a widget: its action id and, for toggles and sliders, the value.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Click {
     pub action: String,
@@ -584,9 +535,7 @@ pub struct Click {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Pointer {
     pub at: Option<DVec2>,
-    /// The usable widget under the pointer.
     pub hover: Option<String>,
-    /// The widget the button went down on, while it is held.
     pub pressed: Option<String>,
     down: bool,
     slider_last: Option<f64>,
@@ -649,8 +598,6 @@ impl Pointer {
         out
     }
 }
-
-// ---------- the quad in the world ----------
 
 /// Where a ray meets a panel's quad: texture coordinates (u right, v down, 0..1) and the distance
 /// along the ray.

@@ -1,18 +1,3 @@
-//! Items (concept repo `design/interaction.md`): small things the
-//! player collects into the action bar, holds, drops and throws. `item_core` holds the rules and
-//! the request path; this is the glue.
-//!
-//! - Every change goes as a request from the local `Client` to the `Host` (`Items::request`).
-//!   Host and client run in this process alone (`Role::Local`); `Items::delay` holds each message
-//!   back as the internet would (the scenario plays with 75 ms each way). In a network session
-//!   (`items_net`) the host process runs the `Host` and sends its events to the clients, a
-//!   client process sends its actions to the host and hears the events (`Role`). The client shows
-//!   its request at once; the world (loose item entities) follows the events the client receives.
-//! - A loose item is a `cargo::Crate` body flagged `item`: it falls, slides, sleeps and lives in
-//!   the ship's frame like a crate, but thrust does not push it around.
-//! - Keys: F collects (the interact target), 1 to 8 take a slot into the hand, G drops (a held
-//!   crate is set down instead), R throws (the crate first), Tab opens the inventory with a mouse
-//!   cursor: a click takes a slot into the hand, a drag moves, stacks or swaps.
 use crate::dev_area::hazards::{spicy_light, SPICY_ITEM};
 use crate::cargo::{item_body_bundle, Crate};
 use crate::crew_hud::{Dash, DashFrame};
@@ -30,7 +15,6 @@ use item_core::wire::{FireNews, PublicStatus, ReactorAsk, ReactorNews, RepairAsk
 use item_core::{Action, Client, Event, FrameRef, Host, ItemDefs, LooseId, Placement, PlayerId, Reject, Request};
 use walker_core::Frame;
 
-/// The local player in a one-process game, and the host's own in a session. Slot of the ship
 /// everybody boards: items in a cabin live in the host's ship.
 pub const LOCAL: PlayerId = 1;
 /// A dropped item appears this far in front of the eye (m).
@@ -49,7 +33,6 @@ pub fn plugin(app: &mut App) {
     );
 }
 
-/// Window only: item looks, the held item, the action bar.
 pub fn window_plugin(app: &mut App) {
     use crate::phases::Frame;
     app.add_systems(Update, (dress_items, hide_items).chain().in_set(Frame::Sync));
@@ -57,13 +40,11 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, (window_size, draw_bar).chain().after(crate::crew_hud::build_hud).in_set(Frame::Hud));
 }
 
-/// Every item file under `content/items/`.
 pub fn load_defs() -> ItemDefs {
     let files = crate::content_files("items");
     ItemDefs::from_files(files.iter().map(|f| (f.path.as_str(), f.text.as_str()))).unwrap_or_else(|e| panic!("items: {e}"))
 }
 
-/// Which side of a session this process is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Role {
     /// No network: host and client in this process.
@@ -76,32 +57,21 @@ pub enum Role {
     Client,
 }
 
-/// What `Items` hands to the network glue (`items_net`).
 #[derive(Clone, Debug, PartialEq)]
 pub enum NetOut {
-    /// Client to host.
     Action(Action),
     /// Host to the clients: one player (an answer to their action) or all (`to` None).
     Event { to: Option<PlayerId>, ev: Event },
-    /// Host to one client: its own vitals.
     Vitals { to: PlayerId, v: Vitals },
-    /// Host to one player (`to` Some) or all: the engine room's state.
     Room { to: Option<PlayerId>, r: RoomNews },
-    /// Client to host: a request about the engine room.
     Ask(RoomAsk),
-    /// Host to one player (`to` Some) or all: the reactor's snapshot.
     Reactor { to: Option<PlayerId>, r: ReactorNews },
-    /// Client to host: a request about the reactor.
     ReactorAsk(ReactorAsk),
-    /// Host to one player (`to` Some) or all: the fires and the sprays.
     Fire { to: Option<PlayerId>, f: FireNews },
-    /// Client to host: the extinguisher's spray.
     SprayAsk(SprayAsk),
-    /// Client to host: a repair request.
     RepairAsk(RepairAsk),
     /// Host to one client: its repair session ended, the machine is full.
     RepairDone { to: PlayerId },
-    /// Host to one player (`to` Some) or all: every player's public status.
     Status { to: Option<PlayerId>, s: Vec<(PlayerId, PublicStatus)> },
     /// Client to host: the treatment hold on this player, or none.
     Treat(Option<PlayerId>),
@@ -109,7 +79,6 @@ pub enum NetOut {
     Rescue(Option<PlayerId>),
     /// Client to host: the brake on the reactor; the host knows the sender.
     Pull,
-    /// Host to one client: its repair start was refused.
     RepairRefused { to: PlayerId },
 }
 
@@ -121,50 +90,32 @@ pub struct Items {
     /// One-way delay of every message (s): 0 in one process, the internet's in tests.
     pub delay: f64,
     pub role: Role,
-    /// Actions on the way to the host and events on the way back, with their arrival time.
     outbox: Vec<(f64, Action)>,
     inbox: Vec<(f64, Event)>,
-    /// Messages for the network, drained by `items_net`.
     pub net_out: Vec<NetOut>,
-    /// Every event the local client received (scenario checks).
     pub received: Vec<Event>,
-    /// Uses the host applied since the last `take_uses`: (user, target, effect). The health
     /// system applies the effect.
     pub used: Vec<(PlayerId, PlayerId, String)>,
-    /// Coolant canisters the host applied since the last `take_refills`.
     pub refills: u32,
-    /// Fuel rods the host took out of an inventory into the reactor since the last
-    /// `take_rod_loads`: the player, the rod's item id and its life.
     pub rod_loads: Vec<RodLoad>,
-    /// The latest vitals the host sent this client, taken by the health system.
     pub vitals_in: Option<Vitals>,
     /// The engine room as the host has it: the host sets it, a client takes it from the wire.
     pub room: RoomNews,
-    /// Requests about the engine room, to apply here (host and one process) or to send (client).
     pub room_asks: Vec<RoomAsk>,
-    /// The reactor's snapshot as this process has it: the host sets it, a client takes it from
     /// the wire. None until the first one.
     pub reactor: Option<ReactorNews>,
-    /// Requests about the reactor, as `room_asks`.
     pub reactor_asks: Vec<ReactorAsk>,
-    /// The fires and sprays as this process has them: the host sets it, a client takes it from the
     /// wire. None until the first one.
     pub fire: Option<FireNews>,
-    /// Spray requests by player, to apply here (host and one process); a client sends its own.
     pub spray_asks: Vec<(PlayerId, SprayAsk)>,
-    /// Repair requests by player, as `spray_asks`.
     pub repair_asks: Vec<(PlayerId, RepairAsk)>,
-    /// The host ended this process's repair session; the client's ring takes it and stops.
     pub repair_done: bool,
-    /// Every player's public status as this process has it: the host sets it when one changes, a
     /// client takes it from the wire. Sorted by player.
     pub public: Vec<(PlayerId, PublicStatus)>,
     /// Treatment holds by player, to apply here (host and one process); a client sends its own.
     pub treat_asks: Vec<(PlayerId, Option<PlayerId>)>,
     /// Brakes by player, to apply here; a client sends its own. The rod goes to that player.
     pub pull_asks: Vec<PlayerId>,
-    /// CPR holds by player (the rescuer's patient, or none), to apply here (host and one process);
-    /// a client sends its own.
     pub rescue_asks: Vec<(PlayerId, Option<PlayerId>)>,
 }
 
@@ -183,7 +134,6 @@ impl Items {
         Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, rod_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new() }
     }
 
-    /// The local player's slot.
     pub fn me(&self) -> PlayerId {
         self.client.player
     }
@@ -196,12 +146,10 @@ impl Items {
         Ok(seq)
     }
 
-    /// Another player's action arriving at the host (scenarios; the network uses `from_peer`).
     pub fn remote(&mut self, now: f64, a: Action) {
         self.outbox.push((now, a));
     }
 
-    /// An action from the client in `slot`, arriving over the network at the host. The player is
     /// the connection's, not what the message says: anything else is dropped.
     pub fn from_peer(&mut self, now: f64, slot: PlayerId, a: Action) -> bool {
         if self.role != Role::Host || a.player != slot {
@@ -211,7 +159,6 @@ impl Items {
         true
     }
 
-    /// An event from the host arriving at a client over the network.
     pub fn hear(&mut self, now: f64, ev: Event) {
         self.inbox.push((now, ev));
     }
@@ -226,17 +173,14 @@ impl Items {
         self.publish(now, ev, None);
     }
 
-    /// A request about the engine room: applied on the host, sent from a client.
     pub fn ask_room(&mut self, a: RoomAsk) {
         self.room_asks.push(a);
     }
 
-    /// A request about the reactor: applied on the host, sent from a client.
     pub fn ask_reactor(&mut self, a: ReactorAsk) {
         self.reactor_asks.push(a);
     }
 
-    /// The extinguisher's spray, from the local player: applied here, or sent from a client.
     pub fn ask_spray(&mut self, a: SprayAsk) {
         if self.role == Role::Client {
             self.net_out.push(NetOut::SprayAsk(a));
@@ -245,7 +189,6 @@ impl Items {
         }
     }
 
-    /// A repair request from the local player: applied here, or sent from a client.
     pub fn ask_repair(&mut self, a: RepairAsk) {
         if self.role == Role::Client {
             self.net_out.push(NetOut::RepairAsk(a));
@@ -254,7 +197,6 @@ impl Items {
         }
     }
 
-    /// The brake of the local player: sent from a client, kept here on the host.
     pub fn ask_pull(&mut self) {
         if self.role == Role::Client {
             self.net_out.push(NetOut::Pull);
@@ -263,7 +205,6 @@ impl Items {
         }
     }
 
-    /// The treatment hold of the local player: sent from a client, kept here on the host.
     pub fn ask_treat(&mut self, target: Option<PlayerId>) {
         if self.role == Role::Client {
             self.net_out.push(NetOut::Treat(target));
@@ -272,7 +213,6 @@ impl Items {
         }
     }
 
-    /// The CPR hold of the local player: sent from a client, kept here on the host.
     pub fn ask_rescue(&mut self, patient: Option<PlayerId>) {
         if self.role == Role::Client {
             self.net_out.push(NetOut::Rescue(patient));
@@ -286,12 +226,10 @@ impl Items {
         self.net_out.push(NetOut::Vitals { to, v });
     }
 
-    /// The canisters the host applied since the last call.
     pub fn take_refills(&mut self) -> u32 {
         std::mem::take(&mut self.refills)
     }
 
-    /// The fuel rods the host loaded since the last call.
     pub fn take_rod_loads(&mut self) -> Vec<RodLoad> {
         std::mem::take(&mut self.rod_loads)
     }
@@ -307,7 +245,6 @@ impl Items {
         Ok(())
     }
 
-    /// The uses the host applied since the last call.
     pub fn take_uses(&mut self) -> Vec<(PlayerId, PlayerId, String)> {
         std::mem::take(&mut self.used)
     }
@@ -332,14 +269,12 @@ impl Items {
         }
     }
 
-    /// A loose item came to rest (host, from the physics): remembered, and told to everybody.
     pub fn rest(&mut self, now: f64, item: LooseId, at: Placement, rot: [f64; 4], t: f64) {
         if let Some(ev) = self.host.rest(item, at, rot, t) {
             self.publish(now, ev, None);
         }
     }
 
-    /// An event of the host: to the local client, and over the network to the others.
     /// `actor`: the player whose action it answers.
     fn publish(&mut self, now: f64, ev: Event, actor: Option<PlayerId>) {
         self.inbox.push((now + self.delay, ev.clone()));
@@ -356,7 +291,6 @@ impl Items {
         }
     }
 
-    /// What a client that joins needs: the world and every inventory as events, for it alone.
     pub fn send_state(&mut self, to: PlayerId) {
         for ev in self.host.state() {
             self.net_out.push(NetOut::Event { to: Some(to), ev });
@@ -414,7 +348,6 @@ impl Items {
     }
 }
 
-/// A fuel rod the host took out of a player's hand into the reactor.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RodLoad {
     pub player: PlayerId,
@@ -434,11 +367,9 @@ pub struct LooseItem {
     pub pending: Option<u32>,
 }
 
-/// The inventory screen (Tab) and a drag in it.
 #[derive(Resource, Default, Debug, Clone)]
 pub struct InventoryUi {
     pub open: bool,
-    /// Slot under the pointer when the button went down.
     pub drag_from: Option<usize>,
     was_down: bool,
     /// A slot key, drop or throw was pressed since the HUD last looked (it wakes the dimmed bar).
@@ -463,7 +394,6 @@ pub fn slot_rect(i: usize, open: bool, window: Vec2, look: &display_core::hud::B
     (at.as_vec2(), size as f32)
 }
 
-/// The slot under a window point.
 pub fn slot_at(p: Vec2, open: bool, window: Vec2, look: &display_core::hud::BarLook) -> Option<usize> {
     (0..item_core::BAR_SLOTS).find(|&i| {
         let (at, s) = slot_rect(i, open, window, look);
@@ -495,7 +425,6 @@ fn hand_placement(pl: &Player, f: &Frame, planet: &PlanetRes, ship_owner: Player
     Placement { frame: if in_cabin { FrameRef::Ship(ship_owner) } else { FrameRef::Planet(planet.id.0 as u32) }, pos: pos.to_array(), vel: vel.to_array(), forward: fwd.to_array() }
 }
 
-/// The keys and the inventory screen.
 #[allow(clippy::too_many_arguments)]
 pub fn item_input(
     mut commands: Commands,
@@ -558,7 +487,6 @@ pub fn item_input(
             }
         }
     }
-    // The inventory screen: the cursor is free; a click takes a slot into the hand, a drag moves.
     controls.free_cursor |= ui.open;
     let down = controls.pointer_down || controls.click;
     if ui.open {
@@ -593,7 +521,6 @@ fn spawn_loose(commands: &mut Commands, defs: &ItemDefs, li: LooseItem, at: &Pla
     }
 }
 
-/// Messages arrive; the world follows what the client hears.
 pub fn deliver(mut commands: Commands, time: Res<Time>, mut items: ResMut<Items>, ships: Query<Entity, With<Ship>>, mut loose: Query<(Entity, &mut LooseItem)>) {
     let evs = items.step(time.elapsed_secs_f64());
     let Some(ship_e) = ships.iter().next() else { return };
@@ -640,7 +567,6 @@ pub fn visible(items: &Items, li: &LooseItem) -> bool {
     li.id.is_none_or(|id| !items.client.hidden.contains(&id))
 }
 
-/// Window: a box in the item's colour.
 fn dress_items(mut commands: Commands, items: Res<Items>, new: Query<(Entity, &LooseItem), Added<LooseItem>>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
     for (e, li) in &new {
         let Some(d) = items.defs.get(&li.def) else { continue };
@@ -666,7 +592,6 @@ pub(crate) fn hide_items(items: Res<Items>, mut q: Query<(&LooseItem, &mut Visib
     }
 }
 
-/// The item in the hand, in front of the camera (lower right).
 #[derive(Component)]
 struct HeldModel(Option<String>);
 
@@ -691,7 +616,6 @@ fn held_item(
     };
     if m.0 != want {
         m.0 = want.clone();
-        // The spicy rod in hand glows; any other item has no light.
         if want.as_deref() == Some(SPICY_ITEM) {
             commands.entity(e).insert(spicy_light());
         } else {
@@ -711,15 +635,11 @@ fn held_item(
 }
 
 /// How big a held item is drawn, against its own size: one hand at full size; two hands at 0.6,
-/// so the item takes about a tenth of the screen (it was about a tenth of the width and most of
-/// the height at full size).
 fn held_scale(hands: u8) -> f64 {
     if hands >= 2 { 0.6 } else { 1.0 }
 }
 
 /// Where a held item sits in the view, camera space (x right, y up, -z forward): one hand low
-/// on the right; two hands lower, nearer the middle and further off, so the item takes about
-/// half the screen it did and the floor in front stays in view.
 fn held_offset(hands: u8) -> DVec3 {
     if hands >= 2 { DVec3::new(0.16, -0.40, -0.99) } else { DVec3::new(0.34, -0.34, -0.7) }
 }
@@ -733,16 +653,6 @@ fn window_size(windows: Query<&Window, With<bevy::window::PrimaryWindow>>, mut s
     }
 }
 
-// ---------- the action bar on screen (Crew HUD v3) ----------
-//
-// Eight 56 px slots at the bottom centre. The held slot lifts and has a white outline; a slot
-// shows the item's three-letter code, its stack count ("×4") and "2H" for two hands; only the held
-// item's name is written, under the bar at the left. After a few idle seconds everything but the
-// held slot dims; while the hands carry cargo the slots are dashed and dimmed. Tab: the slots grow
-// to 88 px with a dark ellipse behind them, a hovered slot lights up, a drag carries a tilted
-// ghost and outlines the slot it would drop on; below the slots stand the name (left) and the
-// keys (right).
-
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 enum BarPart {
     Slot(usize),
@@ -751,14 +661,11 @@ enum BarPart {
     Code(usize),
     Count(usize),
     Hands(usize),
-    /// The condition bar under a slot's item, if it wears: its width is the condition.
     Condition(usize),
-    /// A dashed frame that follows a slot: the dragged slot's and the drop target's.
     Float(u32),
     Ghost,
     GhostCode,
     GhostCount,
-    /// The row under the slots: the held name at the left, the keys of the open bar at the right.
     Row,
     Name,
     Keys,
@@ -800,13 +707,11 @@ pub(crate) fn spawn_bar(commands: &mut Commands, theme: &display_core::Theme, fo
                 spawn_dashes(p, i as u32, (cl.size as f32, cl.size as f32), cl.border as f32, cl.border as f32, h, soft(b.carry_border));
             });
     }
-    // The dashed frames of a drag: around the dragged slot and 7 px outside the drop target.
     for (id, edge, thick, colour) in [(ORIGIN_DASHES, op.size, op.border, soft(b.origin_alpha)), (DROP_DASHES, op.size + 2.0 * b.drop_offset, op.border, col(k.accent))] {
         commands.spawn((HudPart, BarPart::Float(id), Node { display: Display::Flex, ..abs() })).with_children(|p| {
             spawn_dashes(p, id, (edge as f32, edge as f32), 0.0, thick as f32, h, colour);
         });
     }
-    // Under the slots: the held name; open, the name and the keys.
     commands.spawn((HudPart, BarPart::Row, Node { height: Val::Px(b.name_h as f32), justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Center, ..abs() })).with_children(|row| {
         row.spawn((BarPart::Name, hud_caps(&fonts.bold, "", b.name_size, col(k.fg_title), h, 0.1)));
         row.spawn((BarPart::Keys, Node { align_items: AlignItems::Center, column_gap: Val::Px(18.0), display: Display::None, ..default() })).with_children(|keys| {
@@ -913,7 +818,6 @@ fn draw_bar(
     let (last, _) = slot_rect(item_core::BAR_SLOTS - 1, open, win, b);
     let row_top = display_core::hud::bar_row_top(open, win.as_dvec2(), &theme.hud.bar) as f32;
 
-    // The slot boxes, the floating dashes, the row and the ghost.
     for (part, mut n) in &mut nodes {
         match *part {
             BarPart::Slot(i) => {
@@ -983,7 +887,6 @@ fn draw_bar(
         }
     }
 
-    // The slot's state: held, hovered, empty, filled, carrying cargo, dragged.
     for (part, mut border) in &mut borders {
         if let BarPart::Slot(i) = *part {
             let c = contrast_of(i == selected);
@@ -1038,7 +941,6 @@ fn draw_bar(
         set_dashes(i as u32, dashed_closed, soft(b.carry_border * contrast_of(i == selected)), &mut frames, &mut dashes);
     }
 
-    // Texts: numbers, codes, counts, the name, the keys, the ghost.
     let held_name = &hud.held_name;
     let (shown, shown_accent) = if let Some(f) = drag {
         (stack_of(f).map(|st| items.name(st)).unwrap_or_default(), false)
@@ -1132,7 +1034,6 @@ mod tests {
         let (one, two) = (held_offset(1), held_offset(2));
         assert!(two.y < one.y && two.x < one.x, "lower and more centred");
         assert!(two.z.abs() > one.z.abs(), "further off, so it looks smaller");
-        // Its screen area: about half of the one-handed pose (the size falls with the distance squared).
         let share = (one.z / two.z).powi(2);
         assert!((0.45..0.55).contains(&share), "area share {share}");
     }
@@ -1144,7 +1045,6 @@ mod tests {
         // Screen area against a one-handed item of the same size: the scale squared over the distance squared.
         let area = (held_scale(2) * one.z / two.z).powi(2);
         assert!(area < 0.2, "the two-handed item takes {area:.2} of the one-handed footprint");
-        // The old pose (full size, nearer the middle) covered about 11 % of the screen; this is ~4 %.
         assert!(0.11 * area / 0.5 <= 0.10 + 1e-9, "screen share {:.3}", 0.11 * area / 0.5);
     }
 }

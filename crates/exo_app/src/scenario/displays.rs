@@ -1,7 +1,4 @@
-//! The pointer on a display through the app (display_core behind `Controls`): hover names
-//! the widget under the pointer, a press on one widget released over another is no click, a
-//! disabled button neither hovers nor clicks, a press off the panel does nothing, the slider
-//! reports its value at the press and while dragged. On the dev area's test console.
+//! The pointer on a display: hover, press and release rules, the slider value.
 use super::dev_area::{active, approach, click_on, console_state, use_console};
 use super::*;
 use crate::dev_area::test_console;
@@ -19,7 +16,6 @@ fn set_down(w: &mut World, down: bool) {
     w.resource_mut::<Controls>().pointer_down = down;
 }
 
-/// Run `act` once, then wait until `done` (at most 1 s) and check it.
 fn act_until(what: &'static str, mut act: impl FnMut(&mut World) + Send + Sync + 'static, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -41,7 +37,6 @@ fn act_until(what: &'static str, mut act: impl FnMut(&mut World) + Send + Sync +
 pub(super) fn displays_steps(s: &mut Vec<Step>) {
     s.extend(approach("displays: walk to the console", 4.0));
     s.push(use_console("displays: F uses the console"));
-    // While the console is in use the key hints read LEAVE (F or Escape), not the item hints.
     s.push(act_until("displays: the hint reads LEAVE while in use", |_w: &mut World| {}, |w| {
         let hud = w.resource::<crate::crew_hud::CrewHud>();
         let labels: Vec<&str> = hud.hints.iter().map(|h| display_core::hud::hint_label(h.action)).collect();
@@ -54,7 +49,6 @@ pub(super) fn displays_steps(s: &mut Vec<Step>) {
         aim_at(w, at);
     }, |w| pointer(w).at.is_some() && pointer(w).hover.is_none()));
     s.push(act_until("displays: a disabled button (- at zero) has no hover", |w| point_at(w, "dec", None), |w| pointer(w).at.is_some() && pointer(w).hover.is_none()));
-    // Pressed on +, released over the toggle: no click on either.
     s.push(act_until("displays: press on +", |w| {
         point_at(w, "inc", None);
         set_down(w, true);
@@ -66,7 +60,6 @@ pub(super) fn displays_steps(s: &mut Vec<Step>) {
         check(c, st.count == 0 && !st.lights, format!("displays: press and release elsewhere is no click (count {}, lights {})", st.count, st.lights));
         true
     }));
-    // A click on the disabled minus does nothing; the pointer comes up from it.
     s.push(act_until("displays: a click on the disabled - button", |w| click_on(w, "dec", None), |w| pointer(w).pressed.is_none() && !w.resource::<Controls>().click));
     s.push(wait(0.05));
     s.push(Box::new(|w, c| {
@@ -74,7 +67,6 @@ pub(super) fn displays_steps(s: &mut Vec<Step>) {
         check(c, n == 0, format!("displays: the disabled button does not click (count {n})"));
         true
     }));
-    // Off the screen: the cursor hits nothing, a click there does nothing either.
     s.push(act_until("displays: a click off the screen", |w| {
         aim_off(w);
         w.resource_mut::<Controls>().click = true;
@@ -84,7 +76,6 @@ pub(super) fn displays_steps(s: &mut Vec<Step>) {
         check(c, st == test_console::TestConsole::default(), format!("displays: the console is untouched ({st:?})"));
         true
     }));
-    // The slider: its value at the press, then while dragged, kept after the release.
     s.push(act_until("displays: a press at a quarter of the slider", |w| {
         point_at(w, "trim", Some(0.25));
         set_down(w, true);
@@ -96,7 +87,6 @@ pub(super) fn displays_steps(s: &mut Vec<Step>) {
         check(c, (t - 0.75).abs() < 0.01, format!("displays: the slider reads {t:.3} (0.75)"));
         true
     }));
-    // The buttons still click: + once, then - is enabled and counts down.
     s.push(act_until("displays: + clicks", |w| click_on(w, "inc", None), |w| console_state(w).count == 1));
     s.push(act_until("displays: - is enabled at 1 and clicks", |w| click_on(w, "dec", None), |w| console_state(w).count == 0));
     s.push(act_until("displays: Escape leaves", |w| tap(w, KeyCode::Escape), |w| active(w) == ActiveDisplay::Idle));

@@ -1,5 +1,3 @@
-//! A remote ship through the real snapshot path: the walker in its cabin and beside it, also at
-//! warp speed.
 use crate::common;
 use exo_app::Options;
 

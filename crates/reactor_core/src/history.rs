@@ -1,10 +1,3 @@
-//! The status board's graph history: output and load (and the core's temperature) sampled every
-//! `interval_s` seconds, newest first, a fixed number of points.
-//!
-//! Taken from Barotrauma's reactor (`BarotraumaClient/.../Machines/Reactor.cs`, lines 20-22 and
-//! 543-575): `GraphSize` 25 points, one sample every 500 ms (`updateGraphInterval`), the newest value
-//! in front and the oldest dropped. Both curves share one scale on the panel, which is the glue's
-//! business. Values are ours to tune: `graph_points` and `graph_interval_s` in `reactor.json`
 //! (TODO(initiator)).
 
 /// The sampled history. Index 0 is the newest sample. All three rows always have `size` entries.
@@ -14,11 +7,8 @@ pub struct History {
     interval_s: f64,
     /// Time since the last sample, s (carried over, so the period holds over any step size).
     elapsed: f64,
-    /// Reactor output, kW.
     pub output: Vec<f64>,
-    /// The grid's request (the load), kW.
     pub load: Vec<f64>,
-    /// The reactor's temperature, 0..100.
     pub temp: Vec<f64>,
 }
 
@@ -75,10 +65,8 @@ mod tests {
     #[test]
     fn samples_once_per_interval() {
         let mut h = History::new(25, 0.5);
-        // 0.4 s: no sample yet.
         h.push_sample(0.4, 100.0, 50.0, 10.0);
         assert_eq!(h.output[0], 0.0);
-        // 0.2 s more: the period is 0.5 s, so exactly one sample, with the values given.
         h.push_sample(0.2, 100.0, 50.0, 10.0);
         assert_eq!(h.output[0], 100.0);
         assert_eq!(h.load[0], 50.0);

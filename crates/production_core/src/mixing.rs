@@ -1,5 +1,3 @@
-//! The pure rules of a brew: what a mix gives, where the needle sits, how good the
-//! brew is and what the product sells for. No state and no events.
 use std::collections::BTreeSet;
 
 use gameplay_core::{Content, EffectId, ProductSpec};
@@ -34,7 +32,6 @@ pub fn needle(t: f64, period: f64) -> f64 {
     if phase < 0.5 { 2.0 * phase } else { 2.0 * (1.0 - phase) }
 }
 
-/// 1 at the sweet spot, falling linearly to 0 at `sweet_width` away (never below 0).
 pub fn quality(pos: f64, t: &Tuning) -> f64 {
     (1.0 - (pos - t.sweet_spot).abs() / t.sweet_width).clamp(0.0, 1.0)
 }

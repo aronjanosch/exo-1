@@ -36,7 +36,6 @@ fn interior() -> impl Iterator<Item = (usize, usize, usize)> {
 fn t1_one_height_function() {
     let (p, _) = planet();
     let mut rng = Rng(0x1234_5678_9abc_def1);
-    // (a) random directions: face-coordinate path versus direction path
     let mut worst: f64 = 0.0;
     for _ in 0..1000 {
         let z = rng.next() * 2.0 - 1.0;
@@ -55,7 +54,6 @@ fn t1_one_height_function() {
     println!("T1 random directions: max |height_ab - height_at| = {:.3e} m", worst);
     assert!(worst < 1e-3);
 
-    // (b) every vertex of 50 random chunks at several depths: mesh radius versus height_at
     let mut worst_mesh: f64 = 0.0;
     let mut worst_store: f64 = 0.0;
     let mut n_vert = 0;
@@ -165,7 +163,6 @@ fn t3_macro_statistics() {
 
 #[test]
 fn t1_collision_patches_core() {
-    // patches in tangent frames over steep ground (escarpment, plateau edge, basin rim) and flat ground
     let (p, _) = planet();
     // The patch against the height function with the frame origin in f64 (the generator's own
     // error), and rounded to f32 like the scene (adds the rounding, up to about 0.4 mm along the
@@ -198,7 +195,6 @@ fn t1_collision_patches_core() {
         }
     }
     println!("T1 collision patches (core): {n} samples, max |patch - height_at| = {worst64:.3e} m (f64 origin), {worst32:.3e} m (origin rounded to f32 like the scene)");
-    // f32 noise input, as in t1_one_height_function.
     assert!(worst64 < 2e-3);
     assert!(worst32 < 2e-3);
 }

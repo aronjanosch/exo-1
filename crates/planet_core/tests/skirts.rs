@@ -16,7 +16,6 @@ fn check(radius: f64, depth: u32) -> (usize, usize, f64, f64) {
     p.bake_with(0, None, false);
     let size = 2.0 / (1u64 << depth) as f64;
     let (mut gaps, mut open, mut worst, mut biggest) = (0, 0, 0.0f64, 0.0f64);
-    // A spread of parents over the six faces.
     for face in 0..6 {
         for k in 0..12 {
             let n = 1u64 << depth;

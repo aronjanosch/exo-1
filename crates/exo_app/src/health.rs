@@ -1,23 +1,4 @@
 //! Health: players have health, hazards hurt them, items heal them, death respawns them.
-//! `health_core` holds the rules; this is the glue.
-//!
-//! - The host (slot 1; in one process the local player) owns every player's `Health`. Each fixed
-//!   tick it adds the hazards under each player (the dev area's pads, `dev_area::hazards`), steps
-//!   the body with the air at its place, and counts down a dead player's respawn.
-//! - A use (LMB with a bandage or deglow in hand) is a request like any item request
-//!   (`Request::Use`): the client aims at another player within 2 m (or itself), the host takes
-//!   one from the stack and applies the treatment (`apply_uses`). A treatment with `use_s` takes
-//!   that long with LMB held (`UseHold`, the reticle's ring); letting go, switching slot or the
-//!   aim moving to another target cancels it.
-//! - The host sends each client its own vitals when they change noticeably (`vitals_out`, over
-//!   the reliable channel). Every process writes its own vitals into the HUD's `crew_hud::Vitals`
-//!   (`own_sync`); while down, the controls are frozen and a centred line counts the respawn.
-//! - Unconscious (vitality at zero or below): the controls are frozen and no item is used,
-//!   the screen fades to near black (`Faint`, about a second) and a centred line says so; awake
-//!   again (vitality above zero, a treatment or the air) the screen fades back. Others see the
-//!   player lying down (`public_status`).
-//! - A respawn puts the walker on the dev area's pad with clean health. A client moves its own
-//!   walker when the host's vitals say it is up again.
 use crate::dev_area::hazards::{shielded_at, spicy_irradiated, RodSpot, GLOW_BARREL, HOT_PLATE, NO_AIR, SPICY_ITEM, SPICY_RADIUS_M, SPICY_RAD_PER_S};
 use crate::dev_area::engine_room::EngineAir;
 use crate::dev_area::fire::FireHeat;
@@ -57,12 +38,10 @@ pub fn plugin(app: &mut App) {
     crate::rescue::plugin(app);
 }
 
-/// Window only: the centred down line.
 pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, (spawn_down_line, update_down_line).chain().in_set(crate::phases::Frame::Hud));
 }
 
-/// One player's body on the host.
 #[derive(Clone, Debug)]
 pub struct Body {
     pub health: Health,
@@ -70,7 +49,6 @@ pub struct Body {
     pub respawn_in: Option<f64>,
 }
 
-/// Host: every player's body. Also what the host last sent each client.
 #[derive(Resource)]
 pub struct HealthState {
     pub tuning: HealthTuning,
@@ -85,7 +63,6 @@ impl HealthState {
         HealthState { tuning, bodies: BTreeMap::new(), air: BTreeMap::new(), sent: BTreeMap::new() }
     }
 
-    /// The player left: their body goes.
     pub fn forget(&mut self, id: PlayerId) {
         self.bodies.remove(&id);
         self.air.remove(&id);
@@ -98,13 +75,11 @@ impl HealthState {
     }
 }
 
-/// This process's own vitals as the HUD and the controls read them.
 #[derive(Resource, Default)]
 pub struct OwnVitals {
     pub last: Option<Vitals>,
 }
 
-/// A use in progress: LMB held on a treatment that takes time (`use_s`), for the reticle's ring.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Hold {
     pub slot: usize,
@@ -113,19 +88,15 @@ pub struct Hold {
     pub need: f64,
 }
 
-/// The local use in progress, if any.
 #[derive(Resource, Default, Clone, Copy, Debug)]
 pub struct UseHold(pub Option<Hold>);
 
 impl UseHold {
-    /// How far the hold has got, 0..1; None when nothing is held.
     pub fn progress(&self) -> Option<f64> {
         self.0.map(|h| (h.elapsed / h.need).clamp(0.0, 1.0))
     }
 }
 
-/// How far the screen has faded to black for an unconscious player, 0..1 (the window draws it at
-/// `FAINT_ALPHA` of black). The fade takes `FADE_S` each way.
 #[derive(Resource, Default, Clone, Copy, Debug, PartialEq)]
 pub struct Faint {
     pub level: f64,
@@ -135,13 +106,9 @@ pub struct Faint {
 pub const FADE_S: f64 = 1.0;
 pub const FAINT_ALPHA: f32 = 0.95;
 
-/// How the local player walks (the nausea's share, sprint or not): the walker reads it. The
-/// host's own body, or what the host sent a client.
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct OwnMobility(pub Mobility);
 
-/// What the player's body shows (the wire's vitals): shares of the maximum before a headache, the
-/// burn's level, the buildup and the fire, the nausea and the walk.
 pub fn vitals_of(t: &HealthTuning, b: &Body) -> Vitals {
     let h = &b.health;
     let share = |id: &str| t.affliction(id).map_or(0.0, |k| (h.strength(id) / k.max).clamp(0.0, 1.0));
@@ -149,7 +116,6 @@ pub fn vitals_of(t: &HealthTuning, b: &Body) -> Vitals {
     Vitals {
         health: (h.vitality() / h.max_vitality()).clamp(0.0, 1.0),
         max_share: h.max_share(t),
-        // The bar shows the air left: full when the air is good, falling as the low grows.
         oxygen: (h.strength("oxygen_low") > 0.0).then(|| 1.0 - share("oxygen_low")),
         burn_level: h.burn_level(t),
         buildup: h.buildup(),
@@ -166,7 +132,6 @@ pub fn vitals_of(t: &HealthTuning, b: &Body) -> Vitals {
     }
 }
 
-/// Whether a vitals change is worth a message: a few per cent, a band, a second of the countdown.
 pub fn noticeably(a: &Vitals, b: &Vitals) -> bool {
     fn moved(a: Option<f64>, b: Option<f64>, eps: f64) -> bool {
         match (a, b) {
@@ -198,7 +163,6 @@ pub(crate) fn area_pos(area: Option<&DevArea>, planet: &PlanetRes, p: Option<DVe
     Some(area_of(&f, planet, p))
 }
 
-/// Every player who is on foot in the world (the local one and the peers): where they stand.
 pub(crate) fn walker_points(players: &Query<&Player>, remotes: &Query<(&RemoteWalker, &WorldPose)>) -> BTreeMap<PlayerId, DVec3> {
     let mut at: BTreeMap<PlayerId, DVec3> = BTreeMap::new();
     if let Ok(pl) = players.single()
@@ -212,7 +176,6 @@ pub(crate) fn walker_points(players: &Query<&Player>, remotes: &Query<(&RemoteWa
     at
 }
 
-/// Host: the hazards and the air under every body, one step, the respawn countdown. The fire's
 /// burn on a body (`FireHeat`, set by the fire step before this one) is its rate per second.
 #[allow(clippy::too_many_arguments)]
 fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, air: Option<Res<EngineAir>>, items: Res<Items>, mut st: ResMut<HealthState>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, net: Option<Res<Net>>, heat: Option<Res<FireHeat>>) {
@@ -243,8 +206,6 @@ fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea
         }
         let here = area_pos(area.as_deref(), &planet, at.get(id).copied());
         let inside = |z: &Zone| here.is_some_and(|p| z.contains(p));
-        // The air is the room's (the engine room's deck); the no-air booth takes it all away. The
-        // hot plate and the glow feed the body's own rules, per tick or into the buildup.
         // Without the dev area's engine room there is no deck: the air is full.
         let room_air = match (here, air.as_deref()) {
             (Some(p), Some(a)) => a.oxygen_at(p),
@@ -262,9 +223,6 @@ fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea
     }
 }
 
-/// Host: where the spicy rods are. A loose one lies at its placement on the planet; one in
-/// a player's slots is at that player's place (a player off foot has none). Shielded inside the
-/// reactor.
 fn spicy_spots(items: &Items, planet: &PlanetRes, at: &BTreeMap<PlayerId, DVec3>, area: Option<&DevArea>) -> Vec<RodSpot> {
     let frame = FrameRef::Planet(planet.id.0 as u32);
     let spot = |p: DVec3| RodSpot { at: p, shielded: area_pos(area, planet, Some(p)).is_some_and(shielded_at) };
@@ -278,7 +236,6 @@ fn spicy_spots(items: &Items, planet: &PlanetRes, at: &BTreeMap<PlayerId, DVec3>
     out
 }
 
-/// Host: a use the host applied (`Items::take_uses`) treats its target.
 fn apply_uses(mut items: ResMut<Items>, mut st: ResMut<HealthState>) {
     if items.role == Role::Client {
         return;
@@ -293,7 +250,6 @@ fn apply_uses(mut items: ResMut<Items>, mut st: ResMut<HealthState>) {
     }
 }
 
-/// Host: each client gets its own vitals when they change noticeably.
 fn vitals_out(mut items: ResMut<Items>, mut st: ResMut<HealthState>) {
     if items.role != Role::Host {
         return;
@@ -309,7 +265,6 @@ fn vitals_out(mut items: ResMut<Items>, mut st: ResMut<HealthState>) {
     }
 }
 
-/// The first hit of the aim on another player's capsule, within reach: the player's slot. A
 /// player who is down or unconscious lies: the aim meets a capsule along the ground, from the
 /// feet on the figure's side (`lying`), where the upright one would miss it.
 pub(crate) fn aim_target(eye: DVec3, dir: DVec3, planet: &PlanetRes, remotes: &Query<(&RemoteWalker, &WorldPose)>, lying: &dyn Fn(PlayerId) -> bool, reach: f64) -> Option<PlayerId> {
@@ -333,9 +288,6 @@ pub(crate) fn aim_target(eye: DVec3, dir: DVec3, planet: &PlanetRes, remotes: &Q
     best.map(|(_, id)| id)
 }
 
-/// Client and host: LMB with a treatment in the hand asks for its use on the player aimed at, or
-/// on oneself. A treatment with `use_s` needs LMB held that long; letting go, switching slot or
-/// the aim moving to another target cancels it.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn use_input(time: Res<Time>, planet: Res<PlanetRes>, mut controls: ResMut<Controls>, mut items: ResMut<Items>, st: Res<HealthState>, own: Res<OwnVitals>, active: Res<crate::displays::ActiveDisplay>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, mut hold: ResMut<UseHold>) {
     let Ok(pl) = players.single() else {
@@ -400,8 +352,6 @@ pub(crate) fn use_input(time: Res<Time>, planet: Res<PlanetRes>, mut controls: R
     }
 }
 
-/// Every process: its own vitals into the HUD; frozen controls and a walk to the pad when down or
-/// back up; the fade when unconscious.
 #[allow(clippy::too_many_arguments)]
 fn own_sync(items: Res<Items>, st: Res<HealthState>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, time: Res<Time>, mut own: ResMut<OwnVitals>, mut faint: ResMut<Faint>, mut mobility: ResMut<OwnMobility>, mut hud: ResMut<crate::crew_hud::Vitals>, mut actions: ResMut<Actions>, mut players: Query<&mut Player>) {
     let v = match items.role {
@@ -440,7 +390,6 @@ fn own_sync(items: Res<Items>, st: Res<HealthState>, planet: Res<PlanetRes>, are
     }
     own.last = Some(v);
     if v.down.is_some() || v.unconscious {
-        // Down or unconscious: no walking, no turning, no looking, no jump.
         actions.move_dir = DVec3::ZERO;
         actions.look = Vec2::ZERO;
         actions.turn = DVec2::ZERO;
@@ -449,7 +398,6 @@ fn own_sync(items: Res<Items>, st: Res<HealthState>, planet: Res<PlanetRes>, are
     }
 }
 
-/// Puts the walker on the dev area's pad, on foot, with its feet on the ground.
 fn to_pad(pl: &mut Player, planet: &PlanetRes, area: &DevArea) {
     let Some((feet, up)) = area.ground(planet, PAD_MAIN, 2.0) else { return };
     pl.ship = None;
@@ -468,14 +416,12 @@ fn to_pad(pl: &mut Player, planet: &PlanetRes, area: &DevArea) {
 #[derive(Component)]
 struct DownRoot;
 
-/// The full-screen black of the fade (under the line).
 #[derive(Component)]
 struct FaintRoot;
 
 #[derive(Component)]
 struct DownText;
 
-/// Window: the centred line, once the HUD's fonts are there.
 fn spawn_down_line(mut commands: Commands, fonts: Option<Res<crate::crew_hud::HudFonts>>, look: Res<crate::displays::DisplayLook>, existing: Query<(), With<DownRoot>>) {
     let Some(fonts) = fonts else { return };
     if !existing.is_empty() {
@@ -491,7 +437,6 @@ fn spawn_down_line(mut commands: Commands, fonts: Option<Res<crate::crew_hud::Hu
         });
 }
 
-/// Window: the line while down (its count rounded up) or unconscious; the fade's black.
 fn update_down_line(own: Res<OwnVitals>, faint: Res<Faint>, mut roots: Query<&mut Node, With<DownRoot>>, mut texts: Query<&mut Text, With<DownText>>, mut fades: Query<&mut BackgroundColor, With<FaintRoot>>) {
     let down = own.last.and_then(|l| l.down);
     let unconscious = own.last.is_some_and(|l| l.unconscious);

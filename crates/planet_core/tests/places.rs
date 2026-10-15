@@ -1,4 +1,3 @@
-//! Hand-placed places on the planet, their ground and their pads.
 use planet_core::*;
 
 const HEARTH: &str = include_str!("../../../content/planet/hearth.json");
@@ -28,7 +27,6 @@ fn a_place_flattens_its_pad_and_generated_sites_keep_away() {
     let p = hearth(vec![pl.clone()]).unwrap();
     let pad = p.pad("drip_rock", "main").unwrap();
     assert!(dist(&p, pad.centre.normalized(), pl.dir()) < 1e-6);
-    // Flat within the flatten radius: heights along two diameters differ by millimetres.
     let (e, n) = planet_core::look::tangent_frame(pad.up);
     let mut hs = Vec::new();
     for t in [e, n, e * -1.0, n * -1.0] {
@@ -95,8 +93,6 @@ fn place_checks() {
     assert!(serde_json::from_str::<Place>(&PAD.replace("\"turn_deg\"", "\"x\"").replace("\"lon_deg\": 90.0,", "\"lon_deg\": 90.0, \"colour\": 1,")).is_err());
 }
 
-// ---------- near: metres from another place, so distances survive a radius change ----------
-
 const NEAR: &str = r#"{ "id": "post_box", "planet": "hearth",
   "near": { "place": "drip_rock", "east_m": 120.0, "north_m": -160.0 },
   "edits": [ { "type": "flatten", "order": 0, "radius_m": 10.0, "rolloff_m": 10.0 } ],
@@ -136,7 +132,6 @@ fn a_near_place_still_flattens_its_pad_and_sites_keep_away() {
 
 #[test]
 fn near_checks() {
-    // Unknown reference, a reference that is itself near, both ways at once, neither.
     let unknown = NEAR.replace("\"drip_rock\"", "\"nowhere\"");
     let e = hearth(vec![place(PAD), place(&unknown)]).err().unwrap();
     assert!(e.contains("post_box") && e.contains("near") && e.contains("nowhere"), "{e}");

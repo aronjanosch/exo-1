@@ -1,17 +1,14 @@
-//! Rules for the engine room: auto and manual, pump, junction box, faults and alarm levels.
 use super::*;
 use crate::reactor::Blast;
 
 const DT: f64 = 1.0 / 30.0;
 
-/// Two rods, skill 50, power on, nothing else changed.
 fn room() -> EngineRoom {
     let mut r = EngineRoom::new(RoomTuning::default(), ReactorTuning::default(), 11);
     assert!(r.set_power(true));
     r
 }
 
-/// Same room, but the pump and the junction box never fail a repair roll (for timing tests).
 fn safe_room() -> EngineRoom {
     let tuning = RoomTuning {
         pump: DeviceTuning { fail_chance: 0.0, ..DeviceTuning::default() },
@@ -33,8 +30,6 @@ fn settle(r: &mut EngineRoom) {
     r.pump_mut().set_tank(100.0);
 }
 
-/// Steps `secs` with `input`, returns every event with its time and the room's temperature
-/// trace, sampled each step.
 fn run(r: &mut EngineRoom, secs: f64, input: Input) -> (Vec<(f64, RoomEvent)>, Vec<f64>) {
     let mut ev = Vec::new();
     let mut temps = Vec::new();
@@ -77,7 +72,6 @@ fn auto_holds_steady_at_constant_load() {
     assert_eq!(r.level(), AlarmLevel::None);
 }
 
-/// Steady state at 500 kW, then the load drops to the life support alone.
 fn settle_then_drop(r: &mut EngineRoom) {
     settle(r);
     r.trigger(Fault::LoadDrop);
@@ -109,7 +103,6 @@ fn auto_overshoots_after_a_load_drop_and_comes_back() {
         "auto after LoadDrop: peak {peak:.1}, above {:.0} for {above:.1} s, last above allowed {last_allowed:.1} s, meltdown timer max {melt_max:.2}",
         b.temp_optimal.hi
     );
-    // About 2.8 s at 2000 kW max (the same shape: above, then back).
     assert!(above >= 2.0, "above the optimal band for {above:.1} s");
     assert!(last_allowed < 30.0, "still above the allowed top at {last_allowed:.1} s");
     assert!(melt_max < 0.5, "the meltdown timer reached {melt_max:.2}");
@@ -152,7 +145,6 @@ fn pump_break_climbs_to_fire_then_meltdown() {
     );
     assert!(fire < melt);
     assert!((melt - crit - 120.0).abs() < 0.2, "meltdown {melt} crit {crit}");
-    // The reactor sits broken and cold until repaired and restarted; the rods keep their life.
     assert!(!r.reactor().condition().functioning());
     assert!(r.reactor().rods().iter().all(|rod| !rod.spent()));
     assert_eq!(r.reactor().output_kw(), 0.0);
@@ -165,7 +157,6 @@ fn repairing_the_pump_stops_the_climb() {
     // 15 s after the break, whichever comes first: the core peaks, comes back into the optimal
     // band and does not melt within 180 s.
     let mut r = safe_room();
-    // Settle on Auto first: a manual start from cold has no flow until the output rises (below).
     settle(&mut r);
     let input = Input::manual(47.0, 64.0);
     run(&mut r, 1.0, input);
@@ -253,11 +244,9 @@ fn alarm_level_follows_the_room() {
     let input = Input::manual(47.0, 64.0);
     run(&mut r, 120.0, input);
     assert_eq!(r.level(), AlarmLevel::None);
-    // A broken pump needs repair at once: Warn.
     r.trigger(Fault::PumpBreak);
     run(&mut r, DT * 2.0, input);
     assert_eq!(r.level(), AlarmLevel::Warn);
-    // Above the allowed band: Danger (within about 20 s of the break).
     let mut secs = 0.0;
     while r.level() != AlarmLevel::Danger && secs < 40.0 {
         run(&mut r, DT, input);
@@ -282,14 +271,12 @@ fn alarm_level_follows_the_room() {
 #[test]
 fn a_pump_switched_off_takes_no_heat_away_and_the_temperature_climbs() {
     let mut r = safe_room();
-    // Settle on Auto first: a manual start from cold has no flow until the output rises (below).
     settle(&mut r);
     let input = Input::manual(47.0, 64.0);
     run(&mut r, 1.0, input);
     let before = r.reactor().temperature();
     // The output makes 4.9 degrees of heat at 980 kW, so about 48.9.
     assert!((before - 50.0).abs() < 2.0, "{before}");
-    // Off: the speed runs down over about 12 s, so the flow does not stop at once.
     r.set_pump(false);
     assert!(r.flow() > 0.9, "the flow runs down, not off at once: {}", r.flow());
     run(&mut r, 60.0, input);
@@ -297,7 +284,6 @@ fn a_pump_switched_off_takes_no_heat_away_and_the_temperature_climbs() {
     let (_, temps) = run(&mut r, 20.0, input);
     assert!(*temps.last().unwrap() > before + 10.0, "climbs: {before} -> {:?}", temps.last());
     let peak = temps.iter().cloned().fold(f64::MIN, f64::max);
-    // On again: the flow is back, but it coasts up over about a minute, and the climb turns at once.
     r.set_pump(true);
     run(&mut r, 10.0, input);
     assert!(r.flow() >= 0.95, "the pump spins up again within 10 s: {}", r.flow());
@@ -383,7 +369,6 @@ fn overvolt_is_seen_by_the_box() {
     assert!(r.junction().overvolted(), "100 kW demand, 470 kW supply");
 }
 
-/// Keeps four fresh rods in the slots (the spent ones go), so a long run is not cut by the fuel.
 fn refuel(r: &mut EngineRoom) {
     while let Some(i) = r.reactor().rods().iter().position(|x| x.spent()) {
         r.reactor_mut().remove_rod(i);
@@ -446,7 +431,6 @@ fn a_running_reactor_without_steam_gives_no_power_and_says_so() {
     assert!(!r.powered(), "the machines are dark while the reactor reads on");
 }
 
-/// Steady Auto at 500 kW, then the pump breaks. Returns the first time above each band's top.
 fn auto_pump_break(scram: bool, secs: f64) -> (Option<f64>, Option<f64>, Vec<f64>) {
     let mut r = room();
     settle(&mut r);
@@ -512,9 +496,6 @@ fn a_cold_start_warms_up_and_gives_output() {
     assert!((r.reactor().output_kw() - 1280.0).abs() < 5.0, "output {}", r.reactor().output_kw());
 }
 
-// ---------- coolant tank ----------
-
-/// Steps in auto until the tank is dry; the seconds it took, or None.
 fn secs_until_dry(r: &mut EngineRoom, max_secs: f64) -> Option<f64> {
     let mut t = 0.0;
     while t < max_secs {
@@ -713,7 +694,6 @@ fn wander_keeps_the_throttle_in_range_and_moves_the_engines_demand() {
     assert!(lo < 0.6 && hi > 0.9, "lo {lo}, hi {hi}");
     let first = demands[0];
     assert!(demands.iter().any(|d| *d != first));
-    // Off: the throttle stays where it is.
     r.set_engine_wander(false);
     let held = r.engine_throttle();
     for _ in 0..(60.0 / DT) as usize {
@@ -738,9 +718,6 @@ fn wander_is_the_same_for_the_same_seed() {
     assert_ne!(run_one(9), run_one(10));
 }
 
-// ---------- pump modes ----------
-
-/// Pump-level steps: the speed follows the mode's target with the spin-up and run-down constants.
 fn spin(p: &mut Pump, secs: f64, t: &RoomTuning) {
     for _ in 0..(secs / DT).round() as usize {
         p.spin(DT, t);
@@ -856,7 +833,6 @@ fn a_short_grid_slows_the_pump_and_no_output_does_not() {
     let mut r = room();
     settle(&mut r);
     assert!((r.flow() - 1.0).abs() < 1e-9, "full power, full flow");
-    // A grid demand above the reactor's maximum (1000 kW): the box passes what it can.
     r.grid_mut().set_demand(Group::Lights, 2000.0);
     run(&mut r, 20.0, Input::auto());
     let v = r.voltage();
@@ -869,7 +845,6 @@ fn a_short_grid_slows_the_pump_and_no_output_does_not() {
 
 #[test]
 fn the_power_factor_on_the_backup_is_one_with_no_output() {
-    // A cold room, reactor off: no output, the pump runs on its backup at full factor.
     let r = EngineRoom::new(RoomTuning::default(), ReactorTuning::default(), 11);
     assert_eq!(r.power_factor(), 1.0);
     assert_eq!(r.flow(), 1.0);

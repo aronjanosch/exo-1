@@ -1,60 +1,10 @@
 //! The reactor. Fission makes heat (as much as the fuel allows), the turbine turns heat into power
-//! and takes it away. Temperature follows `heat - turbine` at a limited rate. The output lies
-//! between a minimum and a maximum set by turbine and temperature; inside that range it follows
-//! the load.
-//!
-//! Inertia (PULSAR m_ReactorTempVel, m_ReactorHeatOutputFactor, pulsar-mech-conduits.md:52): the
-//! temperature is a damped second-order system, a spring towards its target with a speed of its
-//! own (`temp_velocity`), so a correction takes seconds and a step overshoots by about a quarter
-//! before it settles. The delivered output makes heat too (`heat_output_factor`), so a reactor
-//! running hot output costs heat. Fission follows its target with a time constant
-//! (`fission_lag_s`, 4 s; Barotrauma has 1 s). The turbine keeps its 1 s lag. Values:
 //! TODO(initiator).
-//!
-//! Fuel (Barotrauma reactor.xml:113-135, Reactor.cs:345-366, 504-543): each rod kind allows its
-//! `heat` (the original's uranium, thorium and fulgurium rods give 80, 100 and 150 available fuel;
-//! ours are "standard", "hot" and "spicy" in `reactor.json`). The rods together cap fission and
-//! scale the heat (`fission * fuel / 100 * 2`). Every live rod burns at `fission / 100 * fuel_burn`
-//! per second. Pulling a rod is the emergency brake (`pull_rod`, Barotrauma has no SCRAM): the fuel
-//! it allowed goes at once, fission is capped to the rest in that step, and the heat uses this
-//! step's fuel (Barotrauma uses the last step's, `prevAvailableFuel`). `fuel_need` ports
 //! Barotrauma's NeedMoreFuel(1.0) and TooMuchFuel for the screen. Values: TODO(initiator).
-//!
-//! Core eject (PULSAR manual 367-369, `pulsar-mech-conduits.md`): a lever on every
-//! reactor throws the core out through the bottom of the ship. The rods leave with it, the reactor
-//! is dead (`eject`, `ejected`), and nothing can melt or blast while the core is out. Repaired
 //! back to functioning, the reactor has a new, empty core. Values and rules: TODO(initiator).
-//!
-//! Decay heat (ours, like a real reactor's decay heat; Barotrauma has none): the core keeps making
-//! heat after its fission stops, without coolant. `decay` follows fission / 100 with the time
-//! constant `decay_lag_s` (90 s), so a SCRAM stops fission at once and the residual heat fades over
-//! minutes; a meltdown resets it. It only heats without coolant (`(1 - flow) * decay * decay_heat`).
 //! Values: TODO(initiator).
-//!
-//! Boost and lamps (Barotrauma Reactor.cs shared 14/52/327/502, client 469-483 for the boost,
-//! 615-632 for the lamps): `boost` adds `boost_amount` (25) or minus it to the heat, as the
-//! operator's plus and minus buttons do. A second boost is refused while the boost is 90 % of it
-//! or more (`boost_allowed`, |boost| < 22.5). The boost fades to 0 at `boost_decay` (1 per second)
-//! without overshooting. A boost does nothing while the power is off or the reactor is broken: it
-//! is refused (`boost` returns false), and the boost already set still fades. `warnings` gives the
-//! lamps of the panel, each ported from the client's lines with the conditions in its comment; they
-//! are off while the power is off, except the meltdown lamp (also on when the core melted) and the
-//! SCRAM lamp (on while the power is off and the core is warm). Barotrauma blinks the lamps at 2 Hz
-//! (client 619, `TotalTime % 0.5 < 0.25`); the reactor reports them steady and the glue blinks.
 //! Values: TODO(initiator).
-//!
-//! Meltdown blast (Barotrauma reactor.xml:45-58): a meltdown with more than `blast.min_fuel`
-//! available fuel also raises `ReactorEvent::Blast` right after `Meltdown`, with the blast's values
-//! (Barotrauma's Conditional AvailableFuel > 1). The room takes `device_damage` from the pump and
-//! the junction box; the burn, stun and radiation for the players are the glue's. A melt with no
-//! fuel left is a melt without a blast. The rods keep their life (the initiator's decision).
 //! Values: TODO(initiator), Barotrauma's.
-//!
-//! Overheat: above the optimal band a fire timer runs, and each time it is full the reactor starts
-//! a fire (`ReactorEvent::Fire`). Above the allowed band a second timer runs; when it is full the
-//! core melts (`ReactorEvent::Meltdown`). There is no automatic safety: the operator's SCRAM cuts
-//! fission and the power at once (`Reactor::scram`). Low condition makes both timers run up to
-//! twice as fast.
 use std::collections::BTreeMap;
 
 use device_core::{Condition, DeviceEvent, DeviceTuning};
@@ -64,7 +14,6 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 mod tests;
 
-/// The meltdown blast (Barotrauma reactor.xml:45-58): what a meltdown does when the core still has
 /// fuel. The same values travel in `ReactorEvent::Blast`. TODO(initiator): Barotrauma's values.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -73,11 +22,8 @@ pub struct Blast {
     pub min_fuel: f64,
     /// Range of the blast's burn and stun for the players, metres (Barotrauma 750 units, 100 per m).
     pub range_m: f64,
-    /// Burn damage to the players in range.
     pub burn: f64,
-    /// Seconds the players in range are stunned.
     pub stun_s: f64,
-    /// Damage to the devices in the room (the pump and the junction box), their condition.
     pub device_damage: f64,
     /// Range of the radiation for the players, metres (Barotrauma 2000 units, 20 m), ignores cover.
     pub radiation_range_m: f64,
@@ -97,9 +43,7 @@ impl Default for Blast {
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReactorTuning {
-    /// Output at full turbine and temperature, kW.
     pub max_output_kw: f64,
-    /// Fuel rod slots.
     pub slots: usize,
     /// Rod life (0..100) used per second at fission 100.
     pub fuel_burn: f64,
@@ -107,7 +51,6 @@ pub struct ReactorTuning {
     pub temp_rate: f64,
     /// Seconds above the optimal band per fire (at full condition).
     pub fire_delay_s: f64,
-    /// Seconds above the allowed band until a meltdown.
     pub meltdown_delay_s: f64,
     /// Turbine target change per second of the automatic controller (it follows the load).
     pub auto_turbine_speed: f64,
@@ -213,14 +156,12 @@ const AUTO_DEAD_BAND: f64 = 1.0;
 /// about 10 degrees); 20 settles.
 const AUTO_FULL_SPEED_AT: f64 = 20.0;
 
-/// A fuel rod: an item that goes into a slot and burns down.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FuelRod {
     /// The kind's id in `reactor.json` (`rods`): "standard", "hot" or "spicy".
     pub kind: String,
     /// How much fission it allows (the sum over all rods caps fission and scales heat).
     pub heat: f64,
-    /// 100 when new, burnt out at 0.
     pub life: f64,
 }
 
@@ -235,7 +176,6 @@ impl FuelRod {
     }
 }
 
-/// One rod kind of `reactor.json`'s `rods` table: what it allows and its life when new.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RodKind {
@@ -279,13 +219,10 @@ pub enum FuelNeed {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Mode {
-    /// The controller sets the targets.
     Auto,
-    /// The operator sets the targets.
     Manual,
 }
 
-/// A range `lo..hi` on a gauge.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Band {
     pub lo: f64,
@@ -302,7 +239,6 @@ impl Band {
     }
 }
 
-/// The bands the panel shows. Optimal is the green zone, allowed the yellow one.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Bands {
     pub temp_optimal: Band,
@@ -339,9 +275,7 @@ impl Bands {
 /// Alarm kinds the reactor raises. Each switches on and off with hysteresis.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AlarmKind {
-    /// Above the optimal band: the fire timer runs.
     TempHigh,
-    /// Above the allowed band: the meltdown timer runs.
     TempCritical,
     FuelLow,
 }
@@ -365,10 +299,8 @@ impl AlarmKind {
     }
 }
 
-/// What happened in one step. The glue routes them.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ReactorEvent {
-    /// Start a fire of `size` metres at the reactor (`fire_core`).
     Fire { size: f64 },
     /// The core melted. The reactor is broken and cold until a repair brings it back to
     /// functioning; what it does to the ship is the glue's.
@@ -379,24 +311,20 @@ pub enum ReactorEvent {
     Alarm { kind: AlarmKind, on: bool },
     /// The core was thrown out (`Reactor::eject`). No melt and no blast follow it.
     CoreEjected,
-    /// The reactor's own condition crossed a line.
     Device(DeviceEvent),
 }
 
-/// The reactor.
 #[derive(Clone, Debug)]
 pub struct Reactor {
     tuning: ReactorTuning,
     mode: Mode,
     power_on: bool,
-    /// The core melted: the reactor stays broken and cold.
     melted: bool,
     target_fission: f64,
     target_turbine: f64,
     fission: f64,
     turbine: f64,
     temp: f64,
-    /// Turbine set point that matches the load, smoothed.
     turbine_for_load: f64,
     skill: f64,
     rods: Vec<FuelRod>,
@@ -413,11 +341,10 @@ pub struct Reactor {
     coolant_target: f64,
     /// The coolant flow that takes heat away now, 0..1: follows `coolant_target` with a coast.
     coolant: f64,
-    /// Heat the fission makes this step (the pump's coolant use follows it).
     heat_in: f64,
     /// The core was ejected: no core, no rods, no melt. Cleared by a repair (a new core).
     ejected: bool,
-    /// Speed of the temperature, degrees per second (see the module doc).
+    /// Speed of the temperature, degrees per second.
     temp_vel: f64,
     /// Decay state, 0..1: follows fission / 100 with `decay_lag_s`; it drives the residual heat.
     /// Kept through a SCRAM, reset by a meltdown.
@@ -438,25 +365,17 @@ pub struct Reactor {
 /// or off, steady (the blink is the glue's); `short` gives the letters for a trace.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Warnings {
-    /// Temperature above the optimal band.
     pub overheat: bool,
     /// Temperature above the allowed band (client 621, critical heat). Power on only.
     pub critical_heat: bool,
-    /// Temperature below the optimal band.
     pub low_temp: bool,
     /// Temperature below the allowed band (client 622, cold). Power on only.
     pub cold: bool,
-    /// Output above 110 % of the load.
     pub high_output: bool,
-    /// Output above 150 % of the load.
     pub critical_output: bool,
-    /// Output below 90 % of the load.
     pub low_output: bool,
-    /// No fuel for the fission: available fuel below 1 % of the fission.
     pub fuel_out: bool,
-    /// Available fuel below the fission.
     pub low_fuel: bool,
-    /// The meltdown timer is over half its delay, or the core melted.
     pub meltdown: bool,
     /// Warm (above 0.1) with the power off: SCRAM was pressed or the reactor is off (client 632).
     pub scram: bool,
@@ -483,7 +402,6 @@ impl Warnings {
 }
 
 impl Reactor {
-    /// A cold reactor, off, empty, in Auto, at full condition.
     pub fn new(tuning: ReactorTuning, seed: u64) -> Reactor {
         Reactor {
             tuning,
@@ -517,8 +435,6 @@ impl Reactor {
             extra_cool: 0.0,
         }
     }
-
-    // ---------- controls ----------
 
     /// Switches the reactor on or off. Refused (false) while the reactor is broken.
     pub fn set_power(&mut self, on: bool) -> bool {
@@ -577,7 +493,6 @@ impl Reactor {
         self.extra_cool = degrees.max(0.0);
     }
 
-    /// Heat the fission makes in the last step (0 when broken or off).
     pub fn heat_input(&self) -> f64 {
         self.heat_in
     }
@@ -695,8 +610,6 @@ impl Reactor {
 
     // ---------- readouts ----------
 
-    /// The boost now, degrees of heat (-amount..amount; 0 when none). Named apart from `boost`,
-    /// the setter.
     pub fn temperature_boost(&self) -> f64 {
         self.boost
     }
@@ -726,7 +639,6 @@ impl Reactor {
     pub fn decay(&self) -> f64 {
         self.decay
     }
-    /// Speed of the temperature, degrees per second (positive while it rises).
     pub fn temp_velocity(&self) -> f64 {
         self.temp_vel
     }
@@ -736,18 +648,15 @@ impl Reactor {
     pub fn turbine(&self) -> f64 {
         self.turbine
     }
-    /// (fission, turbine) targets.
     pub fn targets(&self) -> (f64, f64) {
         (self.target_fission, self.target_turbine)
     }
-    /// Output of the last step, kW.
     pub fn output_kw(&self) -> f64 {
         self.output
     }
     pub fn rods(&self) -> &[FuelRod] {
         &self.rods
     }
-    /// Sum of the heat of the rods that are not spent.
     pub fn available_fuel(&self) -> f64 {
         self.rods.iter().filter(|r| !r.spent()).map(|r| r.heat).sum()
     }
@@ -800,7 +709,6 @@ impl Reactor {
         }
         (1.0 - self.timers().1).clamp(0.0, 1.0)
     }
-    /// 0..1 of the fire timer and the meltdown timer (for the tests and the logs).
     pub fn timers(&self) -> (f64, f64) {
         (self.fire_timer / self.tuning.fire_delay_s, self.overheat_timer / self.tuning.meltdown_delay_s)
     }
@@ -850,12 +758,9 @@ impl Reactor {
     pub fn condition(&self) -> &Condition {
         &self.condition
     }
-    /// For repair and damage.
     pub fn condition_mut(&mut self) -> &mut Condition {
         &mut self.condition
     }
-
-    // ---------- simulation ----------
 
     /// Advances `dt` seconds with the grid asking for `load_kw`. Returns what happened; the
     /// output is `output_kw()`.
@@ -865,7 +770,6 @@ impl Reactor {
         let k = dt.min(1.0);
         let coast = (dt / t.coolant_coast_s.max(1e-9)).min(1.0);
         self.coolant += (self.coolant_target - self.coolant) * coast;
-        // Repaired back to functioning after a meltdown: the core is a reactor again.
         if self.melted && self.condition.functioning() {
             self.melted = false;
         }
@@ -920,7 +824,6 @@ impl Reactor {
             self.fission / 100.0
         };
         let residual = t.decay_heat * (1.0 - self.coolant) * decay_level;
-        // The output of the last step makes heat too.
         let output_heat = if t.inertia && t.max_output_kw > 0.0 { t.heat_output_factor * self.output / t.max_output_kw } else { 0.0 };
         self.step_temp(dt, heat + residual + output_heat - self.turbine - cool);
         self.fade_boost(dt);
@@ -929,7 +832,6 @@ impl Reactor {
         self.turbine += (self.target_turbine - self.turbine) * k;
 
         if !self.power_on {
-            // Nothing to control: the targets stay zero.
         } else if self.mode == Mode::Auto {
             self.auto(dt, &bands, load_kw);
         }
@@ -983,7 +885,6 @@ impl Reactor {
         }
     }
 
-    /// The output range for the current turbine and temperature, kW.
     pub fn output_range(&self) -> (f64, f64) {
         self.range(&self.bands())
     }
@@ -1021,7 +922,6 @@ impl Reactor {
         self.target_turbine = self.target_turbine.clamp(0.0, 100.0);
         let mid = b.temp_optimal.mid();
         let pred = self.temp + self.temp_vel * self.tuning.auto_lookahead_s;
-        // Proportional to the predicted distance from the middle, full speed beyond AUTO_FULL_SPEED_AT.
         let gain = ((pred - mid).abs() / AUTO_FULL_SPEED_AT).min(1.0);
         if pred > mid + AUTO_DEAD_BAND {
             self.target_fission = (self.target_fission - s * gain * dt).min(b.fission_allowed.hi);
@@ -1035,7 +935,6 @@ impl Reactor {
 
     fn overheat(&mut self, dt: f64, b: &Bands, ev: &mut Vec<ReactorEvent>) {
         let t = self.tuning;
-        // Twice as fast at condition 0, normal at full.
         let step = dt * (2.0 - self.condition.fraction());
         if self.temp > b.temp_allowed.hi {
             self.overheat_timer += step;

@@ -1,14 +1,7 @@
-//! The quantum drive in the game: the `warp_core` state machine driven by the piloted
-//! ship, the ship carried along the path, the planets swapped when the ship enters another
-//! planet's frame zone. Real movement through the shared f64 world, no loading screen.
-//!
 //! J starts a warp to the selected planet (N selects) and cancels while spooling or calibrating.
 //! Holding J during the flight drops out early (emergency exit). J works for whoever is aboard:
 //! the pilot, or a walker in the cabin who stood up mid-warp (standing up stays allowed,
 //! initiator 2026-10-09).
-//!
-//! Four fixed-step systems in a chain: `warp_input` (keys), `warp_drive` (state machine and the
-//! ship on rails), `planet_swap` (simulation's planet), `warp_telemetry` (scenario numbers only).
 use crate::controls::{Actions, Tap};
 use crate::env::PlanetRes;
 use crate::ring::Ring;
@@ -88,9 +81,7 @@ pub struct WarpDrive {
     pub drive: Drive,
     /// Planet selected as the target (N); the jump goes to `System::effective_target` of it.
     pub selected: PlanetId,
-    /// Why the last start was refused or the last warp aborted.
     pub last_abort: Option<Abort>,
-    /// Events of this tick (input and drive), for the systems after `warp_drive`.
     pub events: Vec<Event>,
 }
 
@@ -100,7 +91,6 @@ impl WarpDrive {
     }
 }
 
-/// Numbers for the scenario reports (only present in scripted runs), and its test hook.
 #[derive(Resource, Default)]
 pub struct WarpTelemetry {
     /// Every event with the simulated time it happened.
@@ -112,7 +102,6 @@ pub struct WarpTelemetry {
     /// Distance of the ship from the drive's end point (exit or drop point) on the tick it got
     /// there, after the ship was placed (m).
     pub end_error: Option<f64>,
-    /// Obstacles added by hand, besides remote ships.
     pub extra_obstacles: Vec<Obstacle>,
     /// Every planet swap: time, old planet, new planet, at an emergency drop.
     pub swaps: Vec<(f64, PlanetId, PlanetId, bool)>,
@@ -146,7 +135,6 @@ impl PendingPlanet {
         ));
     }
 
-    /// A generation is running or waiting to be taken.
     pub fn busy(&self) -> bool {
         self.task.is_some()
     }
@@ -155,7 +143,6 @@ impl PendingPlanet {
         self.task.as_ref().is_some_and(|(_, t)| t.is_finished())
     }
 
-    /// Waits (wall time) until the running generation is done.
     fn finish(&self) {
         while self.task.as_ref().is_some_and(|(_, t)| !t.is_finished()) {
             std::thread::sleep(std::time::Duration::from_millis(1));
@@ -186,8 +173,6 @@ impl PendingPlanet {
     }
 }
 
-/// Swaps the simulation's planet: the resource, and the collision ring (its patches belong to
-/// the old planet). The view rebuilds its terrain when it sees the id change.
 pub fn swap_planet(commands: &mut Commands, ring: &mut Ring, new: PlanetRes) {
     for (_, (e, ..)) in ring.patches.drain() {
         commands.entity(e).despawn();
@@ -200,7 +185,6 @@ pub fn swap_planet(commands: &mut Commands, ring: &mut Ring, new: PlanetRes) {
 
 fn course_quat(from: DQuat, dir: DVec3, max_angle: f64) -> DQuat {
     let nose = from * DVec3::NEG_Z;
-    // A zero or broken direction keeps the rotation.
     if !dir.is_finite() || dir.length_squared() < 1e-24 {
         return from;
     }
@@ -212,7 +196,6 @@ fn course_quat(from: DQuat, dir: DVec3, max_angle: f64) -> DQuat {
     DQuat::IDENTITY.slerp(turn, (max_angle / angle).min(1.0)) * from
 }
 
-/// Other ships, and the scenario's extra obstacles.
 fn obstacles(remotes: &Query<&Position, (With<RemoteShip>, Without<Ship>)>, tel: Option<&WarpTelemetry>) -> Vec<Obstacle> {
     let mut o: Vec<Obstacle> = remotes.iter().map(|p| Obstacle { centre: p.0, radius: SHIP_OBSTACLE_RADIUS }).collect();
     if let Some(t) = tel {
@@ -271,7 +254,6 @@ pub fn warp_input(
     }
 }
 
-/// One tick of the drive; on rails the ship is put at the path's pose.
 #[allow(clippy::too_many_arguments)]
 pub fn warp_drive(
     mut commands: Commands,
@@ -376,7 +358,6 @@ pub fn planet_swap(
     }
 }
 
-/// Scenario numbers: event log with times, warps, largest step per tick, end point error.
 pub fn warp_telemetry(time: Res<Time>, wd: Res<WarpDrive>, mut tel: ResMut<WarpTelemetry>, ships: Query<&Position, With<Ship>>) {
     let tel = tel.as_mut();
     tel.clock += time.delta_secs_f64();

@@ -1,6 +1,3 @@
-//! The flight licence exam: a job template with checks (take off, reach a pad, land) next to
-//! the delivery, a fee, grades (pass, honours), retries at half price, a personal licence track.
-//! The checks read only the events `TookOff`, `PadReached` and `Landed`; nothing of how the ship flies.
 use std::path::Path;
 
 use gameplay_core::notice::NoticeKind;
@@ -54,7 +51,6 @@ impl Host {
         for who in [ANA, BO] {
             progress.apply(&k, &Event::new(who, 0, WorldEvent::PlayerJoined)).unwrap();
         }
-        // Enough for a few tries.
         progress.apply(&k, &Event::new(HOST, 0, WorldEvent::TrackChanged { track: TrackId::new("wallet"), delta: 800, player: None })).unwrap();
         Host { k, jc, progress, jobs: Jobs::default(), seq: 100, next_crate: 1, notices: Vec::new() }
     }
@@ -158,7 +154,6 @@ fn loader_errors_name_file_and_field() {
         let e = replace(p, from, to);
         assert!(e.iter().any(|m| m.starts_with(p) && m.contains(field)), "{field}: {e:?}");
     }
-    // A job that is no exam still needs a positive reward.
     let orig = files("tests/fixtures").into_iter().find(|f| f.path == "job_template/slow_mud.json").unwrap();
     let mut f: Vec<File> = files("tests/fixtures").into_iter().filter(|f| f.path != orig.path).collect();
     f.push(File::new(&orig.path, orig.text.replace("\"reward\": 100", "\"reward\": 0")));
@@ -227,16 +222,13 @@ fn the_checks_come_in_order_and_only_from_the_examinee_on_the_right_pad() {
     let mut h = Host::new();
     let j = h.offer();
     h.accept(ANA, j).unwrap();
-    // Out of order: reaching the pad or landing before taking off counts for nothing.
     h.world(ANA, WorldEvent::PadReached { at: LocationId::new("bent_spoon") });
     h.world(ANA, WorldEvent::Landed { at: Some(LocationId::new("bent_spoon")), speed: 1.0 });
     assert!(h.jobs.get(j).unwrap().checks.iter().all(|c| c.state == CheckState::Pending));
-    // Someone else's flight is not the exam.
     h.world(BO, WorldEvent::TookOff);
     assert_eq!(h.jobs.get(j).unwrap().checks[0].state, CheckState::Pending);
     h.world(ANA, WorldEvent::TookOff);
     assert!(matches!(h.jobs.get(j).unwrap().checks[0].state, CheckState::Done { .. }));
-    // The wrong pad, or no pad.
     h.world(ANA, WorldEvent::PadReached { at: LocationId::new("drip_rock") });
     assert_eq!(h.jobs.get(j).unwrap().checks[1].state, CheckState::Pending);
     h.world(ANA, WorldEvent::PadReached { at: LocationId::new("bent_spoon") });
@@ -258,7 +250,6 @@ fn a_crash_landing_fails_the_exam_and_a_retry_costs_half() {
     assert!(h.keys().contains(&"notice.exam.failed".to_string()), "{:?}", h.keys());
     assert!(h.notices.iter().any(|n| n.kind == NoticeKind::Failed));
     assert!(!h.progress.has_flag(&Flag::new("job_completed:flight_exam")));
-    // Try again: half the fee.
     let j2 = h.offer();
     h.accept(ANA, j2).unwrap();
     assert_eq!(h.progress.wallet(), wallet - 150 - 75);
@@ -266,7 +257,6 @@ fn a_crash_landing_fails_the_exam_and_a_retry_costs_half() {
     h.deliver(j2, ANA, 1.0);
     assert_eq!(h.state(j2), JobState::Completed);
     assert_eq!(h.licence(ANA), 1);
-    // The fee counts per player: Bo's first try is the full price.
     let mut h = Host::new();
     let wallet = h.progress.wallet();
     let j = h.offer();

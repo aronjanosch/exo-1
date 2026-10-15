@@ -1,8 +1,3 @@
-//! The terrain material: `StandardMaterial` lighting with the base colour from
-//! `content/shaders/terrain.wgsl`. Per vertex the mesh carries the biome palette (ground and
-//! cap share in the vertex colour, the share below 0 under a lake or river, rock in UV0 +
-//! UV1.x, strata share in UV1.y); the planet-wide values (strata bands, cap, detail) and the
-//! planet centre in render space are a uniform.
 use crate::env::PlanetRes;
 use crate::origin::RenderOrigin;
 use bevy::mesh::{MeshVertexAttribute, MeshVertexBufferLayoutRef, VertexFormat};
@@ -99,7 +94,6 @@ fn lin(c: [f32; 3]) -> Vec4 {
     Vec4::new(srgb_to_linear(c[0]), srgb_to_linear(c[1]), srgb_to_linear(c[2]), 1.0)
 }
 
-/// The uniform for a planet, with its centre at `centre_render` (render space).
 pub fn look_uniform(planet: &PlanetRes, centre_render: Vec3) -> TerrainLookUniform {
     let m = &planet.pgen.recipe.material;
     let s = |i: usize| lin(m.strata_colors[i.min(m.strata_colors.len() - 1)]);
@@ -127,7 +121,6 @@ pub fn new_material(planet: &PlanetRes, origin: &RenderOrigin) -> TerrainMateria
     }
 }
 
-/// Keeps the planet centre in the uniform at its render position (after an origin shift).
 pub fn follow_origin(
     origin: Res<RenderOrigin>,
     planet: Res<PlanetRes>,

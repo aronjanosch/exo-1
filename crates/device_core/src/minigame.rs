@@ -1,8 +1,4 @@
 //! The repair minigame's rules: a pointer circles a ring around the reticle; zones on the
-//! ring appear, shrink and vanish. LMB inside a zone hits it (the zone goes) and every LMB turns
-//! the pointer round; RMB speeds it up. Pure f64, no engine types: the glue draws the ring, runs it
-//! on the client and sends the hits and misses to the host, which applies them to the condition.
-//!
 //! Angles are degrees, clockwise from the top of the ring. All values are starting points for the
 //! playtest (`TODO(initiator)`); they come from `content/gameplay/repair/repair.json`.
 use gameplay_core::rng::Rng;
@@ -12,7 +8,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Tuning {
-    /// The repairer's skill, 0..100, for the session's duration (all players 50 in this build).
     pub skill: f64,
     /// A hit adds this share of the device's max condition.
     pub hit_share: f64,
@@ -20,9 +15,7 @@ pub struct Tuning {
     pub miss_share: f64,
     /// The pointer's speed, degrees per second.
     pub pointer_deg_s: f64,
-    /// The pointer's speed factor while RMB is held.
     pub boost: f64,
-    /// Zones on the ring at once.
     pub zones_max: usize,
     /// A zone's width when it appears, degrees.
     pub zone_deg: f64,
@@ -36,7 +29,6 @@ pub struct Tuning {
     pub reach_m: f64,
     /// Walking further than this from where the session began ends it, metres.
     pub walk_away_m: f64,
-    /// Seconds the hit or miss flash shows on the HUD.
     pub flash_s: f64,
     /// The minigame runs only while the condition is below this share of max (more than half
     /// damaged). Above it the repair is the slow one, with no ring.
@@ -54,11 +46,9 @@ pub struct Tuning {
     /// Seconds the repairer is stunned after a miss at the mechanical machine (the pump). No
     /// health is lost there.
     pub knock_stun_s: f64,
-    /// Seconds the screen-edge flash of a hurt shows.
     pub hurt_flash_s: f64,
 }
 
-/// What kind of machine a repair is at: each hurts a miss in its own way.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Machine {
     /// The junction box: an electric shock.
@@ -106,7 +96,6 @@ pub fn may_rise(gated: bool, hits: u32, fraction: f64, t: &Tuning) -> bool {
 #[derive(Clone, Debug)]
 pub struct Session {
     pub ring: Ring,
-    /// Hits this session has made.
     pub hits: u32,
 }
 
@@ -158,16 +147,12 @@ impl Zone {
     }
 }
 
-/// What one LMB press did.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Press {
-    /// The pointer was in a zone: the zone is gone.
     Hit,
-    /// The pointer was in no zone.
     Miss,
 }
 
-/// The ring while a session runs.
 #[derive(Clone, Debug)]
 pub struct Ring {
     pub tuning: Tuning,
@@ -189,8 +174,6 @@ impl Ring {
         Ring { tuning, pointer_deg: 0.0, dir: 1.0, zones: Vec::new(), respawn_left: tuning.respawn_s, rng: Rng::new(seed) }
     }
 
-    /// One step of `dt` seconds: the pointer moves (faster while `boosted`), the zones age and
-    /// vanish, and a new zone appears when the count is below the maximum and the wait is over.
     pub fn step(&mut self, dt: f64, boosted: bool) {
         let t = self.tuning;
         let speed = t.pointer_deg_s * if boosted { t.boost } else { 1.0 };
@@ -212,8 +195,6 @@ impl Ring {
         }
     }
 
-    /// LMB: a zone the pointer is in is hit and gone, else it is a miss. Either way the pointer
-    /// turns round.
     pub fn press(&mut self) -> Press {
         self.dir = -self.dir;
         let t = self.tuning;
@@ -231,7 +212,6 @@ impl Ring {
         }
     }
 
-    /// Whether the pointer is inside a zone: an LMB would hit.
     pub fn in_zone(&self) -> bool {
         let t = self.tuning;
         self.zones.iter().any(|z| {
@@ -240,7 +220,6 @@ impl Ring {
         })
     }
 
-    /// A zone at a random centre at least `spawn_min_deg` away from the pointer.
     fn spawn(&mut self) {
         let t = self.tuning;
         let span = (360.0 - 2.0 * t.spawn_min_deg).max(0.0);
@@ -249,12 +228,10 @@ impl Ring {
     }
 }
 
-/// An angle in 0..360.
 pub fn wrap(a: f64) -> f64 {
     a.rem_euclid(360.0)
 }
 
-/// The smaller angle between two angles, 0..180.
 pub fn angle_dist(a: f64, b: f64) -> f64 {
     let d = (a - b).rem_euclid(360.0);
     d.min(360.0 - d)
@@ -314,7 +291,6 @@ mod tests {
         }
     }
 
-    /// A ring with one zone at `centre` and the pointer at `pointer`.
     fn with_zone(pointer: f64, centre: f64) -> Ring {
         let mut r = Ring::new(tuning(), 1);
         r.pointer_deg = pointer;
@@ -383,7 +359,6 @@ mod tests {
         r.pointer_deg = 10.0;
         r.press();
         r.step(0.1, false);
-        // 9 degrees back in 0.1 s at 90 degrees a second: 1.
         assert!((r.pointer_deg - 1.0).abs() < 1e-9);
     }
 
@@ -397,7 +372,6 @@ mod tests {
         assert!(r.zones.is_empty() || r.zones[0].width(&t) < 1e-6, "at the end: nothing");
         let mut gone = with_zone(0.0, 180.0);
         gone.step(3.0, false);
-        // The old zone (age 3 s) is gone; a fresh one may have come in its place (the wait is over).
         assert!(gone.zones.iter().all(|z| z.age_s == 0.0), "vanished at the life's end");
     }
 
@@ -433,7 +407,6 @@ mod tests {
             r.step(DT, false);
             t += DT;
         }
-        // The wait runs from the vanish: 0.8 s less the 0.02 s step that took the zone away.
         assert!((t - 0.78).abs() < DT * 1.5, "the next zone after about 0.8 s, at {t}");
     }
 
@@ -492,7 +465,6 @@ mod tests {
         assert!(may_rise(false, 0, 0.0, &t), "a session that did not start on a broken device always rises");
         let mut s = Session::new(t, 5);
         let mut hits = 0;
-        // Hits land whenever the pointer is in a zone; the session counts them.
         for _ in 0..(60 * 60) {
             s.step(DT, false, 0.1);
             if s.ring.in_zone() && hits < 3 {

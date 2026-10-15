@@ -1,4 +1,3 @@
-//! Rules with numbers, plus the crate table and the crate body.
 use super::*;
 use glam::{DQuat, DVec3};
 
@@ -86,7 +85,6 @@ fn lag_grows_with_mass() {
     let errs: Vec<f64> = t.sizes.iter().map(|s| pull(&c, s.mass, s.holders as usize, 0.4)).collect();
     println!("error after 0.4 s per size: {errs:?}");
     assert!(errs[0] < errs[1] && errs[1] < errs[2], "{errs:?}");
-    // The small crate is close to the hand by then; all reach the hold point in the end.
     assert!(errs[0] < 0.15, "{errs:?}");
     for s in &t.sizes {
         assert!(pull(&c, s.mass, s.holders as usize, 4.0) < 0.05, "{} settles", s.name);
@@ -104,10 +102,8 @@ fn speed_cap_falls_with_mass() {
 #[test]
 fn falloff_curve() {
     let c = cfg();
-    // Hands: full force to hand_range, nothing beyond.
     assert_eq!(falloff(&c, Reach::Hands, c.hand_range), 1.0);
     assert_eq!(falloff(&c, Reach::Hands, c.hand_range + 0.01), 0.0);
-    // Tool: full to full_range, linear to zero at max_range.
     assert_eq!(falloff(&c, Reach::Tool, 0.5), 1.0);
     assert_eq!(falloff(&c, Reach::Tool, c.tool_full_range), 1.0);
     let mid = 0.5 * (c.tool_full_range + c.tool_max_range);
@@ -133,10 +129,8 @@ fn one_holder_cannot_lift_large_two_can() {
     let one = pull(&c, large.mass, 1, 3.0);
     let two = pull(&c, large.mass, 2, 3.0);
     println!("large crate error after 3 s: one holder {one:.2} m, two {two:.3} m");
-    // One holder: it falls (no floor here), far below the hold point.
     assert!(one > 5.0, "{one}");
     assert!(two < 0.05, "{two}");
-    // And the cap rule itself: one holder's force is below the weight, two are above.
     assert!(c.hand_force < large.mass * G && 2.0 * c.hand_force > large.mass * G);
 }
 
@@ -155,7 +149,6 @@ fn shared_carry_splits_reaction() {
 fn reaction_pushes_holder_in_zero_g() {
     let c = cfg();
     let h = Holder { target: DVec3::new(0.0, 0.0, -1.0), target_vel: DVec3::ZERO, source: DVec3::ZERO, reach: Reach::Hands };
-    // Crate 2 m ahead pulled in to 1 m: the holder is pulled forward.
     let out = hold_force(&c, 60.0, DVec3::new(0.0, 0.0, -2.0), DVec3::ZERO, DVec3::ZERO, &[h]);
     assert!(out.force.z > 0.0);
     let a = holder_accel(&c, out.reactions[0]);
@@ -167,13 +160,11 @@ fn break_timer() {
     let c = cfg();
     let dt = 1.0 / 60.0;
     let mut b = BreakTimer::default();
-    // A snag shorter than the break time does not drop the crate.
     for _ in 0..(0.5 / dt) as usize {
         assert!(!b.step(&c, c.break_distance + 0.1, false, dt));
     }
     assert!(!b.step(&c, 0.1, false, dt));
     assert_eq!(b.t, 0.0, "back in range resets");
-    // Sustained error drops it after break_time.
     let mut ticks = 0;
     while !b.step(&c, c.break_distance + 0.1, false, dt) {
         ticks += 1;
@@ -182,7 +173,6 @@ fn break_timer() {
     let t = (ticks + 1) as f64 * dt;
     println!("break after {t:.3} s");
     assert!((t - c.break_time).abs() <= dt + 1e-9, "{t}");
-    // Standing on the crate drops it at once.
     assert!(BreakTimer::default().step(&c, 0.0, true, dt));
 }
 
@@ -195,10 +185,8 @@ fn throw_speed_per_size() {
     println!("throw speed per size: {speeds:?}");
     assert!((speeds[0] - c.throw_max_speed.min(c.throw_impulse / t.sizes[0].mass)).abs() < 1e-9);
     assert!(speeds[0] > speeds[1] && speeds[1] > speeds[2]);
-    // The hand's velocity carries over.
     let v = throw_velocity(&c, 15.0, DVec3::new(1.0, 0.0, 0.0), dir);
     assert!((v.x - 1.0).abs() < 1e-9);
-    // The holder gets the opposite impulse.
     let kick = throw_kick(&c, t.sizes[0].mass, dir);
     assert!(kick.z > 0.0 && (kick.length() * c.holder_mass - speeds[0] * t.sizes[0].mass).abs() < 1e-9);
 }
@@ -365,7 +353,6 @@ fn crate_stays_in_room() {
     let room = Room { walls: Some((1.95, 4.0)) };
     let mut b = small_body();
     let dt = 1.0 / 60.0;
-    // Hard sideways push for 3 s, then the other way, turning.
     for i in 0..360 {
         let a = if i < 180 { DVec3::new(30.0, 0.0, 20.0) } else { DVec3::new(-30.0, 0.0, -20.0) };
         b.step(&c, &walker_core::Frame::IDENTITY, DVec3::Y, G, a, 2.0, &room, dt);
@@ -383,12 +370,10 @@ fn change_frame_keeps_world_pose_and_hands_over_velocity() {
     b.vel = DVec3::new(0.0, 0.0, 1.0);
     let world = ship.to_world(b.pos);
     let ship_vel = DVec3::new(50.0, 0.0, 0.0);
-    // Out of the cabin: world velocity = local velocity turned + the ship's velocity.
     let local_vel_world = ship.rot * b.vel;
     b.change_frame(&ship, &walker_core::Frame::IDENTITY, ship_vel);
     assert!((b.pos - world).length() < 1e-9);
     assert!((b.vel - (local_vel_world + ship_vel)).length() < 1e-9);
-    // And back.
     b.change_frame(&walker_core::Frame::IDENTITY, &ship, -ship_vel);
     assert!((ship.to_world(b.pos) - world).length() < 1e-9);
     assert!((ship.rot * b.vel - local_vel_world).length() < 1e-9);
@@ -414,10 +399,8 @@ fn budget_parses_and_rejects() {
 fn budget_cap_drops_longest_untouched_loose() {
     let row = budget::BudgetRow { cap: 3, persistence_cap: 1, timeout_s: 100.0, far_m: 1000.0 };
     let mut objs: Vec<budget::Obj> = (0..5).map(|i| obj(i, i as f64)).collect();
-    // The longest untouched one is held: it stays, the next two go.
     objs[4].protected = true;
     assert_eq!(budget::over_budget(&row, &objs), vec![3, 2]);
-    // All protected: nothing goes, even over the cap.
     let all: Vec<budget::Obj> = (0..5).map(|i| budget::Obj { protected: true, ..obj(i, 50.0) }).collect();
     assert!(budget::over_budget(&row, &all).is_empty());
 }
@@ -429,7 +412,6 @@ fn budget_timeout_and_far() {
         obj(1, 101.0),
         obj(2, 99.0),
         budget::Obj { resting: false, distance: 1001.0, ..obj(3, 0.0) },
-        // Resting far away: only the timeout counts for it.
         budget::Obj { distance: 5000.0, ..obj(4, 5.0) },
         budget::Obj { protected: true, ..obj(5, 1000.0) },
     ];
@@ -440,12 +422,10 @@ fn budget_timeout_and_far() {
 fn budget_keeps_persistence_cap_on_a_planet_left_behind() {
     let row = budget::BudgetRow { cap: 10, persistence_cap: 2, timeout_s: 100.0, far_m: 1000.0 };
     let mut objs: Vec<budget::Obj> = (0..5).map(|i| budget::Obj { here: false, ..obj(i, 10.0 * i as f64) }).collect();
-    // Left behind, the timeout does not apply: they are frozen.
     objs[4].idle = 1e6;
     let mut gone = budget::over_budget(&row, &objs);
     gone.sort();
     assert_eq!(gone, vec![2, 3, 4], "the two most recently touched stay");
-    // Over the cap, those left behind go before the ones here (the longer untouched first).
     let row = budget::BudgetRow { cap: 3, persistence_cap: 2, timeout_s: 100.0, far_m: 1000.0 };
     let objs = [obj(1, 50.0), obj(2, 60.0), budget::Obj { here: false, ..obj(3, 1.0) }, budget::Obj { here: false, ..obj(4, 2.0) }];
     assert_eq!(budget::over_budget(&row, &objs), vec![4]);
@@ -484,7 +464,6 @@ fn on_slope(deg: f64) -> (CrateBody, f64) {
     let dt = 1.0 / 60.0;
     let mut start = b.pos;
     for i in 0..240 {
-        // Measured from 1 s on, after the drop onto the slope.
         if i == 60 {
             start = b.pos;
         }

@@ -1,5 +1,3 @@
-//! Landforms placed by budget: deterministic, separated, never over a site, retries with a
-//! clear error, every kind somewhere.
 use planet_core::*;
 
 const HEARTH: &str = include_str!("../../../content/planet/hearth.json");

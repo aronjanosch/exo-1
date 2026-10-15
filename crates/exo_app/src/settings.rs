@@ -1,14 +1,8 @@
-//! Player settings: mouse sensitivity, field of view, volume, sound on/off, and the key bindings, in the
-//! game's own `settings/` folder (next to where it runs; `--settings-dir` picks another).
-//! `settings.json` holds the numbers; rebinding writes `bindings.json` there, which then wins over
-//! the shipped `content/tuning/bindings.json`. A file that does not parse falls back to the
-//! defaults with a message. Scripted runs never read or write them.
 use crate::controls::Bindings;
 use bevy::prelude::*;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
-/// Window only.
 pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, apply_volume.in_set(crate::phases::Frame::Input));
 }
@@ -38,7 +32,6 @@ pub const FOV_RANGE: (f64, f64) = (40.0, 90.0);
 pub const M_YAW_DEG: f64 = 0.022;
 pub const SHAKE_RANGE: (f64, f64) = (0.0, 1.0);
 
-/// Convert vertical to horizontal FOV for a width/height aspect ratio.
 pub fn horizontal_fov(vfov_deg: f64, aspect: f64) -> f64 {
     2.0 * ((vfov_deg.to_radians() * 0.5).tan() * aspect).atan().to_degrees()
 }
@@ -69,7 +62,6 @@ impl Settings {
         Ok(Settings { mouse_sensitivity: num("mouse_sensitivity", MOUSE_RANGE)?, fov_deg, volume: num("volume", (0.0, 1.0))?, sound, camera_shake })
     }
 
-    /// The factor on every sound: the volume, or 0 with the sound off.
     pub fn master(&self) -> f32 {
         if self.sound { self.volume as f32 } else { 0.0 }
     }
@@ -79,7 +71,6 @@ impl Settings {
     }
 }
 
-/// Where the settings live.
 #[derive(Resource, Clone, Debug)]
 pub struct SettingsDir(pub PathBuf);
 
@@ -189,7 +180,6 @@ mod tests {
         assert_eq!((s.volume, s.sound), (0.3, true));
     }
 
-    /// A settings file from before the camera shake loads at full shake; 0 is allowed.
     #[test]
     fn a_settings_file_from_before_the_camera_shake_still_loads() {
         let s = Settings::from_json(r#"{ "mouse_sensitivity": 1.2, "fov_deg": 80, "volume": 0.3, "sound": true }"#).unwrap();

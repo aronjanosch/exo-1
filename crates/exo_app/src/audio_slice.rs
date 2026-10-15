@@ -1,13 +1,3 @@
-//! Slice sounds: the fire, the extinguisher, the repair, the electrics, the pump, the door
-//! and the health. Synthesized in `audio.rs` (`Sound`), played here from the state every process
-//! has: the fire and the reactor snapshots (`Items`), the repair session (`RepairPlay`), the door
-//! (`Items::room`) and the local player's vitals (`OwnVitals`). Nothing here reads host-only state.
-//!
-//! Quiet on purpose: the alarm tone (0.12) is the reference loudness, and no volume here is above
-//! it. Distances are the walker's to the source, in metres; a source beyond its range is silent.
-//! Reactor: a drone at the reactor, level by the set fission and pitch by the heat; a
-//! beep on each 2 Hz blink on-phase while a bad lamp (critical heat or output, no fuel, meltdown) is
-//! on; a rising whoop on a boost press. Barotrauma's sounds, our synth.
 //! The sounds can not be heard in a test: the window part is untested by ear (`TODO(initiator)`s
 //! below; the reactor's drone, beep and whoop are untested by ear: TODO(initiator), levels to tune).
 use crate::audio::{loop_volume, Sound, SynthAudio};
@@ -30,38 +20,26 @@ use std::collections::BTreeMap;
 
 // ---- Values (TODO(initiator): start values, to be tuned by ear) ----
 
-/// The alarm tone's volume: the reference loudness every slice sound stays at or under.
 pub const ALARM_REF: f32 = 0.12;
-/// The crackle per fire size level (0 small, 1 middle, 2 big), at the fire.
 pub const CRACKLE_VOL: [f32; 3] = [0.04, 0.07, 0.10];
-/// A fire size from which the level goes up: below `FIRE_LEVEL_M[0]` level 0, below `[1]` level 1.
 pub const FIRE_LEVEL_M: [f64; 2] = [1.0, 2.5];
-/// Crackle and spray are silent beyond these ranges (m).
 pub const FIRE_RANGE_M: f64 = 10.0;
 pub const SPRAY_RANGE_M: f64 = 10.0;
 pub const PUMP_RANGE_M: f64 = 10.0;
-/// The spray's hiss at the nozzle.
 pub const SPRAY_VOL: f32 = 0.06;
-/// A steam puff where a spray shrinks a fire: its volume and at least this many seconds apart.
 pub const STEAM_VOL: f32 = 0.08;
 pub const STEAM_EVERY_S: f64 = 0.5;
-/// A fire smaller by more than this (m) since the last snapshot has been sprayed.
 pub const SHRINK_M: f64 = 0.01;
-/// The repair ratchet at the device while a session runs, and the hit, miss and done sounds.
 pub const REPAIR_LOOP_VOL: f32 = 0.05;
 pub const BLIP_VOL: f32 = 0.07;
 pub const MISS_VOL: f32 = 0.06;
 pub const CHIME_VOL: f32 = 0.08;
-/// The repair hurt's hiss at the hot machine (the steam's sound, quieter than a puff).
 pub const HISS_VOL: f32 = 0.07;
-/// The junction box's zap, at most this often while overvolted (s).
 pub const ZAP_VOL: f32 = 0.09;
 pub const ZAP_EVERY_S: f64 = 2.0;
-/// The breaker's clunk, the power's sweep and the SCRAM's thud.
 pub const CLUNK_VOL: f32 = 0.09;
 pub const SWEEP_VOL: f32 = 0.08;
 pub const SCRAM_VOL: f32 = 0.12;
-/// The pump's hum at full flow.
 pub const PUMP_VOL: f32 = 0.06;
 /// The reactor's drone at fission 100 (Barotrauma's reactor loop: base 0.02, here on our synth's
 /// scale), audible within `REACTOR_RANGE_M` of the reactor. Its pitch rises from `REACTOR_PITCH.0`
@@ -70,26 +48,18 @@ pub const REACTOR_HUM_VOL: f32 = 0.05;
 pub const REACTOR_RANGE_M: f64 = 20.0;
 pub const REACTOR_PITCH: (f32, f32) = (1.0, 1.15);
 pub const REACTOR_PITCH_T: (f64, f64) = (50.0, 100.0);
-/// The alarm beep at the reactor: one per 2 Hz blink on-phase while a bad lamp is on. Below the
-/// alarm's reference, as the rest. The boost's whoop (the reused `Grab` chirp) on a press.
 pub const REACTOR_BEEP_VOL: f32 = 0.08;
 pub const BOOST_WHOOP_VOL: f32 = 0.07;
 /// A boost press moves the boost by the whole amount (25 degrees at the shipped tuning); the fade
 /// moves it a degree a second. A move of this many degrees between two snapshots is a press.
 pub const BOOST_JUMP_DEG: f64 = 10.0;
-/// The pump's playback speed at no flow and at full flow.
 pub const PUMP_SPEED: (f32, f32) = (0.8, 1.2);
-/// The door's slide.
 pub const SLIDE_VOL: f32 = 0.07;
-/// Health: whoomp on catching fire, muffled on going down, gentle on respawn, a confirmation.
 pub const WHOOMP_VOL: f32 = 0.10;
 pub const MUFFLED_VOL: f32 = 0.07;
 pub const GENTLE_VOL: f32 = 0.07;
 pub const CONFIRM_VOL: f32 = 0.06;
-/// A treatment counts as done when its hold was at least this far when it ended.
 pub const CONFIRM_FROM: f64 = 0.9;
-/// The heartbeat: none while the air is at least `HEART_O2_BELOW` (share of good air), then
-/// every `HEART_SLOWEST_S` at the edge of it and every `HEART_FASTEST_S` with no air.
 pub const HEART_O2_BELOW: f64 = 0.5;
 pub const HEART_SLOWEST_S: f64 = 1.4;
 pub const HEART_FASTEST_S: f64 = 0.5;
@@ -110,12 +80,10 @@ pub fn falloff(dist: f64, range: f64) -> f32 {
     (1.0 - dist / range).powi(2) as f32
 }
 
-/// The crackle's volume of a fire at `dist` m.
 pub fn crackle_volume(level: usize, dist: f64) -> f32 {
     CRACKLE_VOL[level.min(2)] * falloff(dist, FIRE_RANGE_M)
 }
 
-/// Whether a fire shrank since the last snapshot: the spray hit it.
 pub fn shrank(prev: f64, now: f64) -> bool {
     now < prev - SHRINK_M
 }
@@ -131,7 +99,6 @@ pub fn heartbeat_every(air: Option<f64>) -> Option<f64> {
     Some(HEART_SLOWEST_S + (HEART_FASTEST_S - HEART_SLOWEST_S) * t)
 }
 
-/// Whether a zap is due: the junction box is overvolted and the last zap is at least `ZAP_EVERY_S` ago.
 pub fn zap_due(overvolt: bool, now: f64, last: Option<f64>) -> bool {
     overvolt && last.is_none_or(|l| now - l >= ZAP_EVERY_S)
 }
@@ -171,12 +138,10 @@ pub fn alarm_lamp_on(r: &ReactorNews) -> bool {
     [Lamp::CritHeat, Lamp::CritOut, Lamp::NoFuel, Lamp::Meltdown].iter().any(|l| r.lamps[l.index()])
 }
 
-/// Whether an alarm beep is due: a bad lamp is on and the blink has just come on (the on-phase's start).
 pub fn alarm_beep_due(bad_lamp: bool, blink_on: bool, prev_blink_on: bool) -> bool {
     bad_lamp && blink_on && !prev_blink_on
 }
 
-/// A boost press since the last snapshot: the boost moved by at least `BOOST_JUMP_DEG`.
 pub fn boost_jump(prev: f64, now: f64) -> bool {
     (now - prev).abs() >= BOOST_JUMP_DEG
 }
@@ -267,24 +232,20 @@ fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
     commands.insert_resource(s);
 }
 
-/// A one-shot at `volume`, despawned when it ends.
 fn one_shot(commands: &mut Commands, h: &Handle<SynthAudio>, volume: f32) {
     commands.spawn((AudioPlayer(h.clone()), PlaybackSettings { mode: PlaybackMode::Despawn, volume: Volume::Linear(volume), ..default() }));
 }
 
-/// The player's position, if one walks.
 fn walker_pos(players: &Query<&Player>) -> Option<DVec3> {
     players.single().ok().map(|p| p.w.pos)
 }
 
-/// A fire's place in the world, on its floor (`DevArea::ground`).
 fn fire_world(area: Option<&DevArea>, planet: &PlanetRes, p: [f64; 2]) -> Option<DVec3> {
     area?.ground(planet, p, 0.0).map(|g| g.0)
 }
 
 // ---- Systems ----
 
-/// The fire's crackle: the loudest fire in range, its level's loop; the others fade out.
 #[allow(clippy::too_many_arguments)]
 fn fire_loop(time: Res<Time>, players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, settings: Res<Settings>, mut loops: Query<(&FireLoop, &mut AudioSink)>, mut now: Local<[f32; 3]>) {
     let mut target = [0.0f32; 3];
@@ -307,7 +268,6 @@ fn fire_loop(time: Res<Time>, players: Query<&Player>, items: Res<Items>, planet
     }
 }
 
-/// The extinguisher's hiss at the nearest spray, local or remote.
 #[allow(clippy::too_many_arguments)]
 fn spray_loop(time: Res<Time>, players: Query<&Player>, items: Res<Items>, settings: Res<Settings>, mut loops: Query<&mut AudioSink, With<SprayLoop>>, mut now: Local<f32>) {
     let mut target = 0.0f32;
@@ -323,7 +283,6 @@ fn spray_loop(time: Res<Time>, players: Query<&Player>, items: Res<Items>, setti
     }
 }
 
-/// A steam puff where a fire shrinks while a spray is out.
 #[allow(clippy::too_many_arguments)]
 fn steam_puffs(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut prev: Local<BTreeMap<u64, f64>>, mut last: Local<Option<f64>>) {
     let Some(news) = items.fire.as_ref() else {
@@ -387,8 +346,6 @@ fn repair_sounds(mut commands: Commands, s: Res<SliceSounds>, play: Res<RepairPl
     }
 }
 
-/// The reactor's electrics: a zap while overvolted, a clunk per breaker, a sweep when the power
-/// goes or comes, a thud on SCRAM (power off with both targets at 0).
 #[allow(clippy::too_many_arguments)]
 fn electric_sounds(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, items: Res<Items>, mut prev: Local<Option<ReactorNews>>, mut zap_at: Local<Option<f64>>) {
     let Some(now_r) = items.reactor else {
@@ -418,7 +375,6 @@ fn electric_sounds(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>,
     *prev = Some(now_r);
 }
 
-/// The coolant pump's hum: its level and speed follow the flow, positional at the pump.
 #[allow(clippy::too_many_arguments)]
 fn pump_loop(players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, settings: Res<Settings>, mut loops: Query<&mut AudioSink, With<PumpLoop>>) {
     let flow = items.reactor.map_or(0.0, |r| r.flow.clamp(0.0, 1.0));
@@ -433,8 +389,6 @@ fn pump_loop(players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes>,
     }
 }
 
-/// The reactor's alarm: a beep on each blink on-phase while a bad lamp is on, and a rising whoop
-/// when a boost is pressed. Both at the reactor, by the walker's distance (`REACTOR_RANGE_M`).
 #[allow(clippy::too_many_arguments)]
 fn reactor_alarms(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut prev_blink: Local<bool>, mut prev_boost: Local<Option<f64>>) {
     let Some(r) = items.reactor else {
@@ -460,8 +414,6 @@ fn reactor_alarms(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, 
     }
 }
 
-/// The reactor's drone: its level by the set fission and the power, its pitch by the temperature,
-/// positional at the reactor. Every process has the snapshot (`Items::reactor`).
 /// The drone follows the actual fission (Barotrauma's `volumeproperty="FissionRate"`). TODO(initiator):
 /// the level curve and the pitch are start values, to be tuned by ear.
 #[allow(clippy::too_many_arguments)]
@@ -484,8 +436,6 @@ fn reactor_hum(players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes
     }
 }
 
-/// The emergency cooling's steam: a hiss at the reactor on every process when a press lands
-/// (the news' `ecools`, the notice's counter).
 fn ecool_hiss(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mut seen: Local<Option<u32>>) {
     let Some(r) = items.reactor else { return };
     if crate::dev_area::reactor::counter_fresh(&mut seen, r.ecools) {
@@ -507,7 +457,6 @@ fn repair_hurt_sounds(mut commands: Commands, s: Res<SliceSounds>, hurt: Res<Rep
     *prev = hurt.at;
 }
 
-/// The door's slide when its state changes. Every process has the door state (`Items::room`).
 /// TODO(initiator): the slide is not positional yet: it is the same in the whole ship.
 fn door_sound(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mut prev: Local<Option<bool>>) {
     let open = items.room.door_open;
@@ -517,8 +466,6 @@ fn door_sound(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mu
     *prev = Some(open);
 }
 
-/// The local player's health: a whoomp on catching fire, a muffled tone going down, a gentle one
-/// on the way back up, a confirmation when a treatment completes, and the heartbeat by the air.
 #[allow(clippy::too_many_arguments)]
 fn health_sounds(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, own: Res<OwnVitals>, hold: Res<UseHold>, mut prev_hold: Local<Option<f64>>, mut burning: Local<Option<bool>>, mut down: Local<Option<bool>>, mut next_beat: Local<Option<f64>>) {
     let now = time.elapsed_secs_f64();
@@ -556,7 +503,6 @@ fn health_sounds(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, o
     *prev_hold = progress;
 }
 
-/// Windowed runs: the slice's sounds, from the plugin of `audio`.
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, setup);
     app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, repair_hurt_sounds, electric_sounds, pump_loop, door_sound, health_sounds, reactor_hum, reactor_alarms, ecool_hiss).in_set(crate::phases::Frame::Input));

@@ -1,6 +1,5 @@
 use serde::Deserialize;
 
-/// One recipe of the planet set: what it fixes for every planet made from it.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct RecipeInfo {

@@ -1,4 +1,3 @@
-//! The SC flight model lifts off, hovers and flies.
 use crate::common;
 use exo_app::Options;
 

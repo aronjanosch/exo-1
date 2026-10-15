@@ -85,7 +85,6 @@ impl Viewpoints {
     }
 }
 
-/// One atlas layer.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AtlasLayer {
     Height,
@@ -124,7 +123,6 @@ pub struct Spot {
     pub facing: V3,
 }
 
-/// Direction of an equirectangular pixel centre.
 pub fn pixel_dir(x: usize, y: usize, w: usize, h: usize) -> V3 {
     let lon = (x as f64 + 0.5) / w as f64 * std::f64::consts::TAU - std::f64::consts::PI;
     let lat = std::f64::consts::FRAC_PI_2 - (y as f64 + 0.5) / h as f64 * std::f64::consts::PI;
@@ -138,7 +136,6 @@ pub fn tangent_frame(d: V3) -> (V3, V3) {
     (east, d.cross(east))
 }
 
-/// Move `metres` along the surface from `d` in tangent direction `t`.
 pub fn walk(d: V3, t: V3, metres: f64, radius: f64) -> V3 {
     let a = metres / radius;
     (d * a.cos() + t * a.sin()).normalized()
@@ -176,12 +173,10 @@ impl Planet {
             for x in 0..px {
                 let s = self.sample(local_map_dir(centre, self.radius, radius_m, px, x, y));
                 let c = if s.water_depth > 0.0 {
-                    // Shallow water light, deep water dark.
                     let k = (1.0 - (s.water_depth / 40.0).min(1.0) * 0.6) as f32;
                     [0.10 * k, 0.32 * k, 0.78 * k + 0.1]
                 } else {
                     let b = self.biome_color(s.biome.clamp(0, 255) as u8);
-                    // Higher is lighter, steep is darker.
                     let shade = (0.85 + (s.height_above_sea / 600.0).clamp(-0.2, 0.3) - (s.slope_deg / 60.0).min(0.35)) as f32;
                     [b[0] * shade, b[1] * shade, b[2] * shade]
                 };
@@ -268,7 +263,6 @@ impl Planet {
         let mut land = Vec::with_capacity(w * h * 3);
         let mut scatter = Vec::with_capacity(w * h * 3);
         let mut water = Vec::with_capacity(w * h * 3);
-        // Metres per pixel along a parallel / meridian, for the hillshade.
         let my = std::f64::consts::PI * self.radius / h as f64;
         for y in 0..h {
             let lat = std::f64::consts::FRAC_PI_2 - (y as f64 + 0.5) / h as f64 * std::f64::consts::PI;
@@ -318,8 +312,6 @@ impl Planet {
             mark_n(&mut biome, w, h, s.dir, [0, 0, 0], if big { 5 } else { 3 });
             mark_n(&mut biome, w, h, s.dir, KIND[s.kind.unwrap_or(0) % KIND.len()], if big { 4 } else { 2 });
         }
-        // Rivers on the water layer, thicker and darker with the catchment; the lakes' deepest
-        // points as dots.
         for rv in &self.coarse.rivers {
             let k = (rv.catchment_km2.max(1e-3).log10() / 2.0).clamp(0.0, 1.0);
             let c = lerp3([0.45, 0.85, 1.0], [0.05, 0.30, 0.90], k as f32);
@@ -349,7 +341,6 @@ impl Planet {
         let r = self.radius;
         match kind {
             "basin" | "rim" | "plateau" | "crater" | "canyon" | "mesa" | "spire" | "caldera" | "signature" => {
-                // Stand at `m` metres from the stamp centre, facing it.
                 let towards = |c: V3, m: f64| {
                     let (e, _) = tangent_frame(c);
                     let d = walk(c, e, m, r);
@@ -382,7 +373,6 @@ impl Planet {
                             return Some(Spot { dir: d, facing: (e - d * e.dot(d)).normalized() });
                         }
                         ("crater", ShapeRt::Crater { r: cr, .. }) => return Some(towards(c, *cr)),
-                        // On the floor in the middle, looking along the cut.
                         ("canyon", ShapeRt::Canyon { t, .. }) => return Some(Spot { dir: c, facing: *t }),
                         ("mesa", ShapeRt::Mesa { .. }) => return Some(towards(c, s.reach_m + 150.0)),
                         ("spire", ShapeRt::Spire { r: sr, .. }) if !s.signature => return Some(towards(c, sr * 3.0 + 150.0)),
@@ -428,7 +418,6 @@ impl Planet {
                 let ahead = downstream(i, 6);
                 let down = (ahead - c * c.dot(ahead)).normalized();
                 let side = c.cross(down).normalized();
-                // Sideways until the ground is dry and above the water.
                 let mut m = 5.0;
                 let mut d = walk(c, side, m, r);
                 while m < 150.0 && (self.sample(d).water_depth > 0.0 || self.height_at(d) < rv.level_m + 0.5) {

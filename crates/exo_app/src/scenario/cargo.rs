@@ -1,11 +1,9 @@
-//! Scenarios for the crates (grab, lock grid, budget). They drive the game through
-//! `Controls` like the others; crates are placed by test hooks.
+//! Scenarios for the crates.
 use crate::cargo::{cabin_floor_pos, crate_bundle, CargoStats, Crate, CrateWatch, Crates};
 use super::*;
 use crate::ship::{basis_for_up, cabin_contains};
 use bevy::math::DVec3;
 
-/// Removes every crate (scenarios start from a known set).
 pub(crate) fn clear_crates(w: &mut World) {
     let es: Vec<Entity> = w.query_filtered::<Entity, With<Crate>>().iter(w).collect();
     for e in es {
@@ -13,7 +11,7 @@ pub(crate) fn clear_crates(w: &mut World) {
     }
 }
 
-/// Spawns a crate of `size` resting on the own cabin floor at (x, z), ship-local.
+/// Crate on the cabin floor at (x, z), ship-local.
 pub(crate) fn cabin_crate(w: &mut World, size: &str, x: f64, z: f64) -> Entity {
     let ship = ship_e(w);
     let t = w.resource::<Crates>().0.clone();
@@ -29,7 +27,6 @@ fn watch(w: &World) -> &CrateWatch {
     w.resource::<CrateWatch>()
 }
 
-/// Starts watching these crates (drift from where they are now, ever outside the cabin).
 pub(crate) fn watch_crates(w: &mut World, es: &[Entity]) {
     let crates = es
         .iter()
@@ -38,8 +35,6 @@ pub(crate) fn watch_crates(w: &mut World, es: &[Entity]) {
     w.insert_resource(CrateWatch { crates, ticks: 0 });
 }
 
-/// A test crate on the cabin floor through take-off, flight, warp and landing; a second one
-/// pushed out over the ramp of the flying ship.
 pub fn crate_ride_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
     s.push(Box::new(|w, c| {
         clear_crates(w);
@@ -61,7 +56,6 @@ pub fn crate_ride_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool
         // It rests on the plates, so it also locks and snaps to them: up to half a plate
         // along each axis, 0.354 m on the diagonal.
         check(c, asleep && drift < 0.36, format!("crate-ride: the crate comes to rest on the floor (drift {:.1} mm, snapped to the plates: {locked})", drift * 1000.0));
-        // Reset the watch: from here on the crate must not move.
         watch_crates(w, &[e]);
         true
     }));
@@ -72,7 +66,6 @@ pub fn crate_ride_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool
     s.extend(sit());
     s.push(hold_until("crate-ride: take off, climb to 300 m above ground", &[KeyCode::Space, KeyCode::ShiftLeft], 120.0, |w| above_ground(w) > 300.0));
     s.push(hold_until("crate-ride: firm brake", &[KeyCode::KeyX], 20.0, |w| ship_vel(w).length() < 0.5));
-    // Push a second crate out over the ramp while the ship flies forward.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "crate-ride: push a crate out over the ramp in flight");
@@ -84,7 +77,6 @@ pub fn crate_ride_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool
         let e = Entity::from_bits(c.v["pushed"] as u64);
         if c.t > 0.8 {
             // Keep flying forward (the ship's acceleration pushes loose crates back too).
-            // Shove it backwards, harder than friction (test hook: what a hand does).
             if let Some(mut cr) = w.get_mut::<Crate>(e) {
                 cr.push = DVec3::new(0.0, 0.0, 8.0);
             }
@@ -113,7 +105,6 @@ pub fn crate_ride_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool
     s.push(Box::new(|w, c| {
         let held = w.resource::<CargoStats>().held;
         check(c, held > 0, format!("crate-ride: the crate was held to the ship during the warp ({held} crate steps)"));
-        // Above Cinder's ground, level, for the landing (test hook like the warp scenario's).
         let pl = planet(w);
         let up = DVec3::Y;
         teleport_ship(w, pl.centre + up * (pl.surface(up) + 40.0), basis_for_up(up));
@@ -136,7 +127,7 @@ pub fn crate_ride_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool
     }));
 }
 
-/// Test hook: put the walker at rest in the own cabin at `pos` (ship space, feet).
+/// `pos` is ship space, feet.
 pub(crate) fn walker_in_cabin(w: &mut World, pos: DVec3) {
     put_at_seat(w);
     with_player(w, |p| {
@@ -145,7 +136,6 @@ pub(crate) fn walker_in_cabin(w: &mut World, pos: DVec3) {
     });
 }
 
-/// Turn the walker to look at a world point (heading and pitch).
 pub(crate) fn look_at(w: &mut World, target: DVec3) {
     let f = ship_frame_of(w);
     with_player(w, |p| {
@@ -177,7 +167,6 @@ fn held(w: &World) -> Option<Entity> {
     w.resource::<crate::grab::Grab>().held.map(|h| h.crate_e)
 }
 
-/// One tap (F) for a crate and for the seat; the HUD prompt says which.
 pub fn interact_steps(s: &mut Vec<Step>) {
     use crate::interact::Target;
     s.push(Box::new(|w, c| {
@@ -250,7 +239,7 @@ pub fn interact_steps(s: &mut Vec<Step>) {
     }));
 }
 
-/// Spawns a crate resting on the planet's ground at the world point `at` (planet frame).
+/// `at`: planet frame.
 pub(crate) fn ground_crate(w: &mut World, size: &str, at: DVec3) -> Entity {
     let pl = planet(w);
     let t = w.resource::<Crates>().0.clone();
@@ -272,7 +261,6 @@ fn crate_above_ground(w: &mut World, e: Entity) -> f64 {
     planet(w).above_ground(p) - half
 }
 
-/// Walker on open ground 25 m behind the parked ship, facing away from it, at rest.
 fn walker_on_ground(w: &mut World) {
     let f = ship_frame_of(w);
     place_walker(w, f.to_world(DVec3::new(8.0, 0.0, 25.0)));
@@ -287,8 +275,6 @@ fn ahead(w: &mut World, d: f64) -> DVec3 {
     p + fwd * d
 }
 
-/// Picks up a fresh `size` crate 1.3 m ahead, then walks 3 s holding W (and Shift); checks the
-/// walking speed of this carry state and that the crate stays in the hands.
 fn carry_walk(size: &'static str, want_speed: fn(&walker_core::WalkerConfig, &grab_core::GrabConfig) -> f64, try_jump: bool) -> Vec<Step> {
     vec![
         Box::new(move |w, c| {
@@ -313,9 +299,7 @@ fn carry_walk(size: &'static str, want_speed: fn(&walker_core::WalkerConfig, &gr
             true
         }),
         wait(1.0),
-        // Look ahead before checking the lift: the hold follows the view, and looking down at a
-        // crate on flat ground keeps a heavy one just off the floor (it passed on a 20 degree
-        // slope; the drainage made the spawn flat).
+// Look ahead first: looking down at a crate on flat ground keeps a heavy one just off the floor.
         Box::new(|w, _| {
             with_player(w, |p| p.pitch = 0.0);
             true
@@ -367,8 +351,7 @@ fn carry_walk(size: &'static str, want_speed: fn(&walker_core::WalkerConfig, &gr
         }),
         wait(0.3),
         // The hold error is the crate's centre against the hold point, so a crate tipped on a
-        // slope does not count against the servo. The walk's start and the turn lag it (old
-        // sweep model: rms 0.17 / 0.13 m, max 0.65 / 0.64 m; Avian bodies: rms +0.015 / +0.006 m, max +0.07 / +0.04 m).
+// The walk's start and the turn lag it.
         Box::new(move |w, c| {
             let h = w.resource::<crate::grab::Grab>().last_hold.expect("a finished hold");
             check(c, h.rms() < 0.25 && h.max < 0.9, format!("crate-carry: the {size} crate stayed at the hold point (centre error rms {:.3} m, max {:.3} m)", h.rms(), h.max));
@@ -377,14 +360,10 @@ fn carry_walk(size: &'static str, want_speed: fn(&walker_core::WalkerConfig, &gr
     ]
 }
 
-/// Hands and the grab tool.
 pub fn crate_carry_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
-    // One hand: no cost, sprint allowed.
     s.extend(carry_walk("small", |wc, _| wc.run_speed, false));
-    // Two hands: slower, no sprint, no jump.
     s.extend(carry_walk("medium", |wc, gc| wc.walk_speed * gc.two_hand_speed_share, true));
 
-    // The large crate does not lift with one holder.
     s.push(Box::new(|w, c| {
         clear_crates(w);
         walker_on_ground(w);
@@ -427,7 +406,6 @@ pub fn crate_carry_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
     }));
     s.push(wait(0.3));
 
-    // Throw the small crate.
     s.push(Box::new(|w, c| {
         clear_crates(w);
         walker_on_ground(w);
@@ -451,7 +429,6 @@ pub fn crate_carry_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
     }));
     s.push(wait(1.0));
     s.push(Box::new(|w, c| {
-        // Look 25 degrees up and throw.
         with_player(w, |p| p.pitch = 25f64.to_radians());
         let e = crate_e(c, "crate");
         c.p.insert("from", crate_world_pos(w, e));
@@ -481,7 +458,6 @@ pub fn crate_carry_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
         false
     }));
 
-    // A hard landing costs condition: dropped from 3 m, the crate hits at about 7 m/s.
     s.push(Box::new(|w, c| {
         clear_crates(w);
         walker_on_ground(w);
@@ -509,7 +485,6 @@ pub fn crate_carry_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
         true
     }));
 
-    // The grab tool pulls a crate from 8 m.
     s.push(Box::new(|w, c| {
         clear_crates(w);
         walker_on_ground(w);
@@ -539,7 +514,6 @@ pub fn crate_carry_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
     }));
     let dir = dir.join("crate-carry");
     s.push(Box::new(move |w, c| {
-        // Windowed: the grab tool's beam mid-pull.
         if c.t >= 1.5 && !c.v.contains_key("beam_shot") {
             c.v.insert("beam_shot", 1.0);
             shot(w, c, &dir, windowed, "grab-beam");
@@ -566,9 +540,6 @@ fn plates(w: &World) -> (usize, usize) {
     (g.count(crate::cargo::Plate::Lit), g.count(crate::cargo::Plate::Blocked))
 }
 
-/// One crate locked on the plates, one loose off them, one partly on (red). Hard
-/// acceleration and a warp: the locked one does not move, the loose one slides and stays in the
-/// cabin; grabbing unlocks.
 pub fn crate_lock_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
     s.push(Box::new(|w, c| {
         clear_crates(w);
@@ -623,7 +594,6 @@ pub fn crate_lock_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool
         check(c, xa.max_drift == 0.0 && crate_of(w, a).unwrap().locked, format!("crate-lock: after the warp the locked crate is still locked and has not moved ({:.4} m)", xa.max_drift));
         let catches = w.resource::<CargoStats>().wall_catches;
         check(c, !xb.left_cabin && inside(w, b), format!("crate-lock: after the warp the loose crate is still in the cabin (largest drift {:.2} m, cabin safety net caught it {catches} times)", xb.max_drift));
-        // Down on Cinder for the grab: ship level on the ground.
         let pl = planet(w);
         let up = DVec3::Y;
         teleport_ship(w, pl.centre + up * (pl.surface(up) + 40.0), crate::ship::basis_for_up(up));
@@ -676,8 +646,7 @@ fn budget_row(w: &World) -> grab_core::budget::BudgetRow {
     w.resource::<crate::cargo::ObjectBudget>().0.crates
 }
 
-/// Spawns `n` small crates on the ground in rows 6 m ahead of the walker, one per tick from
-/// `c.v["spawned"]` on; true when all are out.
+/// Spawns one small crate per tick, counted in `c.v["spawned"]`; true when `n` are out.
 fn spawn_rows(w: &mut World, c: &mut Ctx, n: usize) -> bool {
     let i = c.v.get("spawned").copied().unwrap_or(0.0) as usize;
     if i >= n {
@@ -697,8 +666,6 @@ fn spawn_rows(w: &mut World, c: &mut Ctx, n: usize) -> bool {
     false
 }
 
-/// Past the cap, sleeping at rest, a planet swap keeps the persistence cap, the timeout and
-/// the distance rule.
 pub fn crate_budget_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool) {
     s.push(Box::new(|w, c| {
         clear_crates(w);
@@ -741,7 +708,6 @@ pub fn crate_budget_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bo
         check(c, steps == 0.0, format!("crate-budget: sleeping crates cost no steps ({steps} crate steps in 0.5 s)"));
         true
     }));
-    // Leave them on Hearth: warp to Cinder.
     s.push(Box::new(|w, _| {
         put_at_seat(w);
         true
@@ -755,7 +721,6 @@ pub fn crate_budget_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bo
         let frozen = w.resource::<CargoStats>().frozen;
         let on_hearth = w.query::<&Crate>().iter(w).filter(|c| c.planet == Some(HEARTH)).count();
         check(c, n == keep && on_hearth == keep && frozen > 0, format!("crate-budget: after the swap {n} crates are left on Hearth (persistence cap {keep}), frozen ({frozen} skipped steps)"));
-        // Down on Cinder, walker outside.
         let pl = planet(w);
         let up = DVec3::Y;
         teleport_ship(w, pl.centre + up * (pl.surface(up) + 40.0), crate::ship::basis_for_up(up));
@@ -771,7 +736,6 @@ pub fn crate_budget_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bo
     s.push(Box::new(|w, c| {
         walker_on_ground(w);
         c.v.remove("spawned");
-        // Test hook: a short timeout.
         w.resource_mut::<crate::cargo::ObjectBudget>().0.crates.timeout_s = 2.0;
         begin(w, c, "crate-budget: timeout on Cinder");
         true
@@ -793,7 +757,6 @@ pub fn crate_budget_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bo
         w.resource_mut::<crate::cargo::ObjectBudget>().0 = crate::cargo::ObjectBudget::default().0;
         true
     }));
-    // A crate falling far above every player and ship goes (distance rule for moving crates).
     s.push(Box::new(|w, c| {
         let p = player_world(w);
         let up = planet(w).up(p);
@@ -811,7 +774,6 @@ pub fn crate_budget_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bo
     }));
 }
 
-/// Walk with keys held for `secs`, then stop (heading as set before).
 fn walk_for(keys_held: &'static [KeyCode], secs: f64) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -825,10 +787,7 @@ fn walk_for(keys_held: &'static [KeyCode], secs: f64) -> Step {
     })
 }
 
-/// `walk_for`, and meanwhile the crate's largest per-tick jump: world position against the last
-/// tick's position plus velocity (`jump`, m), its velocity change (`dv`, m/s) and how often it
-/// switched between `CrateBody` and Avian body (`flips`, with the jump and the velocity change in
-/// the tick it happened: `flip_jump`, `flip_dv`), in `c.v`.
+/// `walk_for`, plus per tick in `c.v`: `jump` (m), `dv` (m/s), `flips` (CrateBody and Avian body switches), with `flip_jump` and `flip_dv` at each switch.
 fn walk_tracked(keys_held: &'static [KeyCode], secs: f64) -> Step {
     let mut walk = walk_for(keys_held, secs);
     Box::new(move |w, c| {
@@ -860,9 +819,6 @@ fn walk_tracked(keys_held: &'static [KeyCode], secs: f64) -> Step {
     })
 }
 
-/// Unload the parked ship by hand and load it again: a crate from the plates
-/// down the ramp onto the ground, set down there, picked up again and carried back up onto the
-/// plates, where it locks. Once with the small crate, once with the medium one (two hands).
 pub fn crate_unload_steps(s: &mut Vec<Step>) {
     for size in ["small", "medium"] {
         s.push(Box::new(move |w, c| {
@@ -887,7 +843,6 @@ pub fn crate_unload_steps(s: &mut Vec<Step>) {
             true
         }));
         s.push(wait(0.8));
-        // Out the back: face the ramp, walk down it and on 6 m.
         s.push(Box::new(|w, _| {
             let f = ship_frame_of(w);
             look_at(w, f.to_world(DVec3::new(0.0, 0.0, 14.0)));
@@ -909,8 +864,7 @@ pub fn crate_unload_steps(s: &mut Vec<Step>) {
             let (flips, fj, fdv) = (c.v["flips"], c.v["flip_jump"], c.v["flip_dv"]);
             check(c, body && flips == 1.0, format!("crate-unload: past the ramp's end the {size} crate is an Avian body (body {body}, {flips} state changes on the way)"));
             check(c, fj < 0.01 && fdv < 0.3, format!("crate-unload: no jump at the ramp's end (position {:.1} mm off the last tick's prediction, velocity {fdv:.2} m/s)", fj * 1e3));
-            // The whole walk, hold and the cabin edge included, as the sweep model had it (small
-            // crate 32 mm / 1.5 m/s in both models).
+// Limits: small crate 32 mm and 1.5 m/s per tick, the same in both models.
             let (jump, dv) = (c.v["jump"], c.v["dv"]);
             check(c, jump < 0.06 && dv < 2.0, format!("crate-unload: the whole way down no tick jumps more than {:.1} mm / {dv:.2} m/s", jump * 1e3));
             tap(w, KeyCode::KeyF);
@@ -922,7 +876,6 @@ pub fn crate_unload_steps(s: &mut Vec<Step>) {
             let h = crate_above_ground(w, e);
             let asleep = crate_of(w, e).unwrap().body.asleep;
             check(c, h.abs() < 0.35 && asleep, format!("crate-unload: set down, the {size} crate rests on the ground ({h:.2} m above it, asleep {asleep})"));
-            // Pick it up again, facing it.
             let at = crate_world_pos(w, e);
             look_at(w, at);
             true
@@ -933,7 +886,6 @@ pub fn crate_unload_steps(s: &mut Vec<Step>) {
             true
         }));
         s.push(wait(0.8));
-        // Back up the ramp into the cabin, onto the plates.
         s.push(Box::new(|w, _| {
             let f = ship_frame_of(w);
             look_at(w, f.to_world(DVec3::new(0.0, 1.5, -1.5)));
@@ -979,9 +931,7 @@ pub fn crate_unload_steps(s: &mut Vec<Step>) {
     }
 }
 
-/// Crates resting 500 m away (frozen `CrateBody`, no collision patch there), then the
-/// walker appears 3 m next to them and the patches stream in. A crate becomes a body only over a
-/// patch, so none falls through the ground, and at rest each sleeps on it.
+/// A crate becomes an Avian body only over a collision patch, so none falls through the ground.
 pub fn crate_wake_stream_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         clear_crates(w);
@@ -1017,7 +967,6 @@ pub fn crate_wake_stream_steps(s: &mut Vec<Step>) {
         let patch = w.resource::<crate::ring::Ring>().has_patch_near(at);
         end(w, c, format!("frozen: bodies {bodies}, asleep {asleep}, patch under them {patch}"));
         check(c, bodies == 0 && asleep && !patch, "crate-wake-stream: far crates are frozen sweep crates without a patch under them".into());
-        // The walker appears 3 m away.
         let p = crate_world_pos(w, a);
         let side = planet(w).up(p).any_orthonormal_vector();
         place_walker(w, p - side * 3.0);
@@ -1027,7 +976,6 @@ pub fn crate_wake_stream_steps(s: &mut Vec<Step>) {
     }));
     s.push(Box::new(|w, c| {
         let (a, b) = (crate_e(c, "a"), crate_e(c, "b"));
-        // The first tick each crate is a body, and when the patch under it arrives.
         for (k, kp, e) in [("wake_a", "patch_a", a), ("wake_b", "patch_b", b)] {
             if !c.v.contains_key(k) && w.get::<crate::avian_crates::AvianCrate>(e).is_some() {
                 c.v.insert(k, c.t);
@@ -1040,8 +988,7 @@ pub fn crate_wake_stream_steps(s: &mut Vec<Step>) {
         let low = crate_above_ground(w, a).min(crate_above_ground(w, b));
         let m = c.v.entry("low").or_insert(f64::MAX);
         *m = m.min(low);
-        // At least 3 s, then up to 3 s more until both sleep (the patches come from worker
-        // threads; on a busy machine they settle a little later).
+// The patches come from worker threads, so on a busy machine they settle later.
         let both_asleep = crate_of(w, a).unwrap().body.asleep && crate_of(w, b).unwrap().body.asleep;
         if c.t < 3.0 || (!both_asleep && c.t < 6.0) {
             return false;
@@ -1105,8 +1052,7 @@ pub fn crate_ramp_steps(s: &mut Vec<Step>) {
     }));
 }
 
-/// A crate thrown at the parked ship's side wall at throw speed stops outside the hull: its
-/// centre never gets past the wall's outer face (x 2.3 m ship-local), so it is never in the cabin.
+/// Wall face: x 2.3 m, ship-local.
 pub fn crate_hull_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         clear_crates(w);
@@ -1133,7 +1079,6 @@ pub fn crate_hull_steps(s: &mut Vec<Step>) {
     }));
     s.push(wait(1.0));
     s.push(Box::new(|w, c| {
-        // Level look at the wall, then throw; track how far in the centre gets.
         with_player(w, |p| p.pitch = 0.1);
         c.v.insert("min_x", f64::MAX);
         tap(w, KeyCode::KeyR);

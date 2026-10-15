@@ -1,8 +1,4 @@
-//! Scenario `sc-turn`: the SC model's rotation, driven through the pad
-//! stick and Q. Sit, 400 m above the ground; a full pitch for 2 s (the overshoot and the
-//! settling), a full reversal (a constant deceleration until the spin crosses zero), roll and its
-//! release, then a turn at cruise with the G-safe turn cap (F8) on and off. Each check prints its
-//! numbers.
+//! The SC model's rotation: pitch, reversal, roll release and the G-safe turn cap.
 use crate::controls::Controls;
 use crate::hud::HudReadout;
 use crate::scenario::{begin, check, end, hold_until, keys, planet, put_at_seat, ship_e, ship_vel, sit, tap, teleport_ship, with_ship, Ctx, Step};
@@ -73,7 +69,6 @@ fn fly_for(name: &'static str, secs: f64, ks: &'static [KeyCode], pitch: f32, lo
     })
 }
 
-/// Checks on the samples of one phase (taken out of the log), with the ticks' numbers printed.
 fn analyse(name: &'static str, log: Log, f: impl FnOnce(&mut Ctx, &[Sample]) + Send + Sync + 'static) -> Step {
     let mut f = Some(f);
     Box::new(move |_, c| {
@@ -151,7 +146,6 @@ pub fn sc_turn_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // Full pitch 2 s: the overshoot and the settling.
     s.push(fly_for("full pitch 2 s", 2.0, &[], 1.0, pitch.clone()));
     s.push(analyse("pitch", pitch.clone(), |c, samples| {
         let target = c.v["target"];
@@ -162,7 +156,6 @@ pub fn sc_turn_steps(s: &mut Vec<Step>) {
         check(c, (at2 / target - 1.0).abs() < 0.02, format!("pitch 2 s after the stick: {:+.2} % of the target", (at2 / target - 1.0) * 100.0));
     }));
 
-    // Full opposite: a constant deceleration until the spin crosses zero.
     s.push(fly_for("full reverse 1.5 s", 1.5, &[], -1.0, pitch.clone()));
     s.push(analyse("reversal", pitch.clone(), |c, samples| {
         let decel = decelerations(samples, |v| v.x);
@@ -173,7 +166,6 @@ pub fn sc_turn_steps(s: &mut Vec<Step>) {
     }));
     s.push(hold_until("settle 1 s", &[], 1.0, |_| false));
 
-    // Roll: full for 1 s, then released.
     s.push(fly_for("roll 1 s", 1.0, &[KeyCode::KeyQ], 0.0, roll.clone()));
     s.push(analyse("roll", roll.clone(), |c, samples| {
         let rolled = samples.last().map_or(0.0, |s| s.spin.z);
@@ -191,7 +183,6 @@ pub fn sc_turn_steps(s: &mut Vec<Step>) {
         check(c, stop.is_some() && lowest > -0.01, format!("roll stops at tick {stop:?}, lowest spin {lowest:+.4} rad/s"));
     }));
 
-    // A turn at cruise: W held for speed, then a full pitch with the G-safe turn cap on and off (F8).
     s.push(hold_until("speed up with W", &[KeyCode::KeyW], 15.0, |w| ship_vel(w).length() > 140.0));
     let (on, off) = (new_log(), new_log());
     s.push(fly_for("turn at cruise, G-safe on", 3.0, &[KeyCode::KeyW], 1.0, on.clone()));

@@ -1,9 +1,7 @@
-//! Ids of the jobs system.
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-/// A `job_template` record.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct TemplateId(pub String);

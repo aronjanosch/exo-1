@@ -1,14 +1,6 @@
 //! grab_core: crates and how hands and the grab tool move them, without engine types, in f64
 //! Learned from the hold-point regulators of other games
 //! (`research/grab-and-cargo.md` in the concept repo); our own implementation and numbers.
-//!
-//! - `CrateTable`: the standard crate sizes (`content/cargo/crates.json`).
-//! - Hold: a velocity servo towards a hold point with a force cap per holder and a speed cap
-//!   that falls with mass, so heavy crates lag. Several holders add their caps (shared carry).
-//! - `budget`: which loose objects go (cap, persistence cap, timeout, distance).
-//! - `CrateBody`: a box that falls, slides with friction and sleeps at rest, moved by sweeps
-//!   through a `BoxWorld`. It lives in a frame like the walker (planet or ship cabin).
-//!
 //! All values are starting points for the playtest (`TODO(initiator)` in the data).
 pub mod budget;
 
@@ -16,16 +8,12 @@ use glam::{DMat3, DQuat, DVec3};
 use serde::Deserialize;
 use walker_core::{Frame, Hit};
 
-// ---------- data ----------
-
-/// One standard crate size.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CrateSize {
     pub name: String,
     /// Full edge lengths (x, y, z), metres.
     pub extents: [f64; 3],
-    /// kg.
     pub mass: f64,
     /// 1 = one hand, 2 = both hands (carry state, `carry`).
     pub hands: u8,
@@ -115,11 +103,9 @@ pub struct GrabConfig {
     pub holder_mass: f64,
     /// Turn rate of a held crate (rad/s), falls with mass like the speed cap.
     pub max_turn_rate: f64,
-    /// Share of the turn rate left while the crate touches something.
     pub contact_turn_share: f64,
     /// The view turns at `turn_ref_mass / (turn_ref_mass + mass)` of its rate while holding.
     pub turn_ref_mass: f64,
-    /// Walking speed share with both hands busy.
     pub two_hand_speed_share: f64,
     /// Friction coefficient of a crate on any floor, also as an impulse at each impact.
     /// TODO(initiator): start value 0.8 (was 0.5; crates slid too far in the playtest).
@@ -167,14 +153,10 @@ pub enum Reach {
     Tool,
 }
 
-/// One player holding a crate. All vectors in one frame.
 #[derive(Copy, Clone, Debug)]
 pub struct Holder {
-    /// Where this holder wants the crate's centre.
     pub target: DVec3,
-    /// Velocity of the hold point (the holder's own).
     pub target_vel: DVec3,
-    /// The hand or tool tip the force falls off from (the eye).
     pub source: DVec3,
     pub reach: Reach,
 }
@@ -187,7 +169,6 @@ pub struct HoldOutput {
     pub reactions: Vec<DVec3>,
 }
 
-/// Share of the force cap left at `distance` from the source.
 pub fn falloff(cfg: &GrabConfig, reach: Reach, distance: f64) -> f64 {
     match reach {
         Reach::Hands => (distance <= cfg.hand_range) as u8 as f64,
@@ -195,12 +176,10 @@ pub fn falloff(cfg: &GrabConfig, reach: Reach, distance: f64) -> f64 {
     }
 }
 
-/// Speed cap of the hold for a crate of `mass`.
 pub fn speed_cap(cfg: &GrabConfig, mass: f64) -> f64 {
     (cfg.max_speed * (cfg.ref_mass / mass).min(1.0)).max(cfg.min_speed)
 }
 
-/// Force on a crate (`mass`, `pos`, `vel`) from its holders, in gravity `g` (acceleration vector).
 /// The holders aim for the mean of their targets; their caps add up, each scaled by its falloff.
 pub fn hold_force(cfg: &GrabConfig, mass: f64, pos: DVec3, vel: DVec3, g: DVec3, holders: &[Holder]) -> HoldOutput {
     if holders.is_empty() {
@@ -229,20 +208,16 @@ pub fn turn_rate(cfg: &GrabConfig, mass: f64, want: f64, contact: bool) -> f64 {
     want.clamp(-cap, cap)
 }
 
-/// Share of the view's turn rate left while holding a crate of `mass`.
 pub fn view_turn_share(cfg: &GrabConfig, mass: f64) -> f64 {
     cfg.turn_ref_mass / (cfg.turn_ref_mass + mass)
 }
 
-/// Drops the hold after a sustained error, or at once when the holder stands on the crate.
 #[derive(Copy, Clone, Debug, Default)]
 pub struct BreakTimer {
-    /// Seconds the error has stayed above `break_distance`.
     pub t: f64,
 }
 
 impl BreakTimer {
-    /// True when the hold breaks this step.
     pub fn step(&mut self, cfg: &GrabConfig, error: f64, standing_on: bool, dt: f64) -> bool {
         if standing_on {
             return true;
@@ -257,13 +232,11 @@ pub fn throw_velocity(cfg: &GrabConfig, mass: f64, vel: DVec3, dir: DVec3) -> DV
     vel + dir.normalize() * (cfg.throw_impulse / mass).min(cfg.throw_max_speed)
 }
 
-/// Velocity change of the thrower (the opposite impulse).
 pub fn throw_kick(cfg: &GrabConfig, mass: f64, dir: DVec3) -> DVec3 {
     let dv = (cfg.throw_impulse / mass).min(cfg.throw_max_speed);
     -dir.normalize() * dv * mass / cfg.holder_mass
 }
 
-/// What carrying costs the walker.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Carry {
     pub speed_share: f64,
@@ -271,7 +244,6 @@ pub struct Carry {
     pub can_jump: bool,
 }
 
-/// Carry state for a crate that takes `hands` hands (0 = nothing held).
 pub fn carry(cfg: &GrabConfig, hands: u8) -> Carry {
     if hands >= 2 {
         Carry { speed_share: cfg.two_hand_speed_share, can_run: false, can_jump: false }
@@ -312,14 +284,10 @@ pub struct CrateBody {
     pub mass: f64,
     pub pos: DVec3,
     pub vel: DVec3,
-    /// Heading (local -z), frame coordinates, perpendicular to `up`.
     pub forward: DVec3,
-    /// Up of the frame at the crate, frame coordinates (last step's).
     pub up: DVec3,
     pub grounded: bool,
-    /// Normal of the floor it stood on in the last step, frame coordinates.
     pub floor_normal: DVec3,
-    /// Touched anything in the last step.
     pub contact: bool,
     pub asleep: bool,
     /// Largest impact speed (m/s into a surface) in the last step; 0 without one.

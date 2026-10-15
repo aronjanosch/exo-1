@@ -1,4 +1,3 @@
-//! The map's pins and M. Without a window.
 use crate::common;
 use exo_app::Options;
 

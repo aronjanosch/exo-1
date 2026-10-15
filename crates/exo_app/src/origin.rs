@@ -11,22 +11,18 @@ pub struct RenderOrigin {
     /// 0 disables shifting (origin stays where it started).
     pub threshold: f64,
     pub shifts: u32,
-    /// World position of the active camera, written by the view each frame.
     pub view: DVec3,
 }
 
-/// Static render entity at a fixed world position (terrain chunks, water, markers).
 #[derive(Component)]
 pub struct WorldPos(pub DVec3);
 
-/// Moving render entity without a body (the camera): world pose, written every frame.
 #[derive(Component, Default)]
 pub struct WorldPose {
     pub pos: DVec3,
     pub rot: DQuat,
 }
 
-/// Pose of a body before and after the last physics step, for rendering between steps.
 #[derive(Component, Default)]
 pub struct BodyInterp {
     pub prev: (DVec3, DQuat),

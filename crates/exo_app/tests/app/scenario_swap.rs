@@ -1,4 +1,3 @@
-//! Three planet swaps and an emergency drop leave nothing of the departed planet behind.
 use crate::common;
 use exo_app::Options;
 

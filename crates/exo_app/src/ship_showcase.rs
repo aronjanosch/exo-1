@@ -1,11 +1,3 @@
-//! `--showcase` (dev, window only): ship models stand next to the spawn for a walk test of size and
-//! dimensions. Each model gets one static trimesh collider from its real meshes, so the walker meets
-//! walls, floors and ramps. Foreign comparison models (`content/local/`, gitignored) are skipped
-//! when they are missing.
-//!
-//! The collider is built once the scene is in: mesh vertices are taken into the model root's space
-//! through the local `Transform`s of the scene's nodes (render transforms are origin-shifted, so the
-//! physics side never reads them), then the model is lifted so its lowest vertex sits on the ground.
 use crate::env::{from_v3, to_v3, PlanetRes};
 use crate::origin::{RenderOrigin, WorldPos};
 use crate::terrain::PlanetScene;
@@ -33,10 +25,8 @@ const MODELS: [(&str, f64, f64, f64); 4] = [
 /// root after the Blender scene, which may contain these words).
 const SKIP: [&str; 6] = ["ShadowCaster", "FlightRing", "SheildBubble", "Exterior", "Shield", "WorldRoot"];
 
-/// Lift above the lowest vertex (m), so the model does not start in the ground.
 const LIFT: f64 = 0.05;
 
-/// Where the walker spawns (planet up there); set by `build_app`.
 #[derive(Resource, Clone, Copy)]
 pub struct ShowcaseStart(pub DVec3);
 
@@ -48,7 +38,6 @@ pub struct ShowcaseReady {
     pub radius: f64,
 }
 
-/// A showcase model root, waiting for its scene.
 #[derive(Component)]
 pub struct Showcase {
     pub path: &'static str,
@@ -109,7 +98,6 @@ fn on_ready(
     let mut tris: Vec<[u32; 3]> = Vec::new();
     let mut stack: Vec<(Entity, DAffine3)> = children.get(root).map(|c| c.iter().map(|e| (e, DAffine3::IDENTITY)).collect()).unwrap_or_default();
     while let Some((e, parent)) = stack.pop() {
-        // A node without a transform (a grouping entity) passes its parent's on.
         let Ok((t, name, mesh)) = nodes.get(e) else {
             if let Ok(c) = children.get(e) {
                 stack.extend(c.iter().map(|k| (k, parent)));

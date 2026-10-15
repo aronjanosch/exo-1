@@ -1,4 +1,3 @@
-//! Ground hold: a ship set down below the slope limit keeps its spot until thrust.
 use flight_core::*;
 use glam::DVec3;
 
@@ -15,7 +14,6 @@ impl Slope {
     fn new(deg: f64) -> Slope {
         Slope { slope: deg.to_radians(), field: Field::default() }
     }
-    /// Normal of the plane at the top (planet frame, centre at the origin).
     fn normal(&self) -> DVec3 {
         DVec3::new(-self.slope.sin(), self.slope.cos(), 0.0)
     }
@@ -126,12 +124,10 @@ fn at_rest_it_returns_to_its_spot_until_thrust() {
     let mut c = GroundRules::default();
     let (_, mut b) = settle(&mut c, &env, 3.0, 0.5);
     let rest = c.ground_hold.and_then(|h| h.rest).expect("at rest");
-    // A push moved it 3 cm (another contact, a bump): it goes back within one step.
     b.pos += DVec3::new(0.03, 0.01, -0.02);
     let none = FlightInput { grounded: true, piloted: true, ..Default::default() };
     let (v, _) = c.step(&b, &none, &env, DT);
     assert!((b.pos + v * DT - rest).length() < 1e-9, "back to the spot: {v}");
-    // Contact lost (a flicker) and Ctrl held: still held.
     let (v, _) = c.step(&b, &FlightInput { grounded: false, ..down() }, &env, DT);
     assert!((b.pos + v * DT - rest).length() < 1e-9, "held without contact: {v}");
     // Thrust up lets go; the lift is the SC model's (the ground rules do not fly the ship).
@@ -182,8 +178,6 @@ fn moved_far_away_or_released_lets_go() {
     assert!(c.ground_hold.is_none(), "the SC model flying the ship (or gravity compensation off) lets go");
 }
 
-/// One step of hull contact with a crest at speed, neutral input, starts no hold;
-/// the ship keeps its speed and flies on.
 #[test]
 fn brushing_a_crest_at_speed_keeps_flying() {
     let env = Slope::new(0.0);
@@ -227,8 +221,6 @@ fn contact_lost_while_settling_ends_the_hold() {
     assert!(c.ground_hold.is_some(), "resting: held without contact");
 }
 
-/// A rested ship lifted 20 m straight up (a teleport, a depenetration) is not
-/// pulled back into the ground in one step.
 #[test]
 fn lifted_straight_up_it_is_not_pulled_back() {
     let env = Slope::new(10.0);
@@ -252,8 +244,6 @@ fn a_corner_touch_on_a_steep_slope_below_the_limit_is_held() {
     assert!(c.ground_hold.is_some(), "clearance {:.2} m", c.clearance_at(&env, b.pos));
 }
 
-/// The ground rules without a hold: sliding sideways on flat ground with Ctrl held, only a gentle
-/// settle straight down remains, then no push at rest.
 #[test]
 fn grounded_with_down_input_settles_without_sliding() {
     let env = Slope::new(0.0);
@@ -266,7 +256,6 @@ fn grounded_with_down_input_settles_without_sliding() {
     }
     assert!((v - up * v.dot(up)).length() < 1e-9, "no sideways speed on the ground: {v}");
     assert!(v.dot(up) < 0.0 && v.dot(up) > -0.6, "gentle settle: {v}");
-    // The ground stops the sinking (what the contact does); resting a moment, the push ends.
     for _ in 0..120 {
         v = c.step(&BodyState { lin_vel: v, ..b }, &down(), &env, DT).0;
         v -= up * v.dot(up).min(0.0);

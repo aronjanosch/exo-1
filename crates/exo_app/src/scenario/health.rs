@@ -1,13 +1,4 @@
-//! Health: at the dev area's table a bandage is collected; the walker stands on the hot plate
-//! and catches a light burn per tick, then the buildup fills and the walker is on fire (the burn
-//! rises in steps, once per tick); off the plate, the bandage takes 1.5 s with LMB held on oneself
-//! (let go after 0.5 s, nothing is used; held 1.5 s, the burn drops and one less is in the stack);
-//! the walker stands in the no-air booth until the HUD shows the air, with its O2 line labelled, then
-//! in the glowing barrel's zone, where nausea shows and the walk slows, until dead; five seconds
-//! later the walker is back on the pad with full health. Between the booth and the barrel the hot
-//! plate's burn takes the walker unconscious: the walk key does nothing and the fade is near
-//! black; the host's bandages take the burn down and the walker wakes up. Without a window. Run with
-//! `--start=dev_area`.
+//! Health scenario at the dev area.
 use super::items::{collect, items, outside, tap_then};
 use super::*;
 use crate::controls::Controls;
@@ -38,7 +29,6 @@ fn down(w: &World) -> Option<f64> {
     w.resource::<OwnVitals>().last.and_then(|v| v.down)
 }
 
-/// LMB down (a press starts a use) or up, as a player's hand does it with the mouse captured.
 fn lmb(w: &mut World, down: bool) {
     let mut c = w.resource_mut::<Controls>();
     c.primary_held = down;
@@ -47,7 +37,6 @@ fn lmb(w: &mut World, down: bool) {
     }
 }
 
-/// A point on the ground at area metres.
 fn ground_at(w: &mut World, p: [f64; 2]) -> DVec3 {
     let pl = planet(w);
     w.resource::<DevArea>().ground(&pl, p, 0.0).expect("the dev area is there").0
@@ -62,7 +51,6 @@ fn area_of_walker(w: &mut World) -> [f64; 2] {
 }
 
 pub(super) fn health_steps(s: &mut Vec<Step>) {
-    // The table: stand in front of it, the bandages on it.
     s.push(Box::new(|w, c| {
         begin(w, c, "health: the table and the health state");
         // The item messages take the same 75 ms each way as in the items scenario.
@@ -80,8 +68,7 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
     s.extend(collect("bandage", "Bandage"));
     s.push(tap_then("health: 1 takes the bandage into the hand", KeyCode::Digit1, |w| items(w).in_hand(0).is_some_and(|s| s.item.kind.as_str() == "bandage")));
 
-    // The hot plate: a light burn per tick from the first tick; the buildup fills in 3 s, then the
-    // walker is on fire. The burn changes once per tick (a step per second), never between.
+// The burn changes once per tick, never between.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "health: onto the hot plate");
@@ -107,8 +94,6 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // Off the plate, the bandage on oneself: LMB held for 1.5 s. Let go after 0.5 s: nothing is
-    // used. Pressed again and held: the ring is filling at 1.0 s, and the bandage is used at 1.5 s.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "health: off the plate, LMB held on the bandage");
@@ -119,7 +104,6 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
             return false;
         }
         let n0 = c.v["n0"] as u32;
-        // Let go at 0.5 s; the next step (a frame later) checks nothing was used, then presses again.
         if !c.v.contains_key("let_go") {
             if c.t < 0.5 {
                 return false;
@@ -159,7 +143,6 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The no-air booth: oxygen low shows on the HUD; out again before it costs health.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "health: into the no-air booth");
@@ -172,7 +155,6 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
         }
         let o2 = w.resource::<Vitals>().oxygen;
         check(c, o2.is_some_and(|o| o < 1.0), format!("health: the booth's air shows on the HUD ({o2:?})"));
-        // The HUD's lines, top to bottom: burn, radiation, oxygen, health; the O2 line has its label.
         let lines = w.resource::<CrewHud>().vitals.clone();
         let kinds: Vec<_> = lines.iter().map(|l| l.kind).collect();
         let o2_label = lines.iter().find(|l| l.kind == display_core::hud::VitalKind::Oxygen).map(|l| l.label());
@@ -181,11 +163,8 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // Unconscious by burn: on the hot plate the burn takes the vitality to zero (not dead yet).
-    // The walk key does nothing, the fade reaches near black and the HUD's health reads zero. Off the
-    // plate, the host treats the walker with bandages (each takes 18.75 of burn at full skill) until
-    // the burn is gone: the walker wakes up and the fade goes. (The air is no cure: unconscious in
-    // bad air the oxygen keeps falling, so the booth is not a way back up.)
+// Unconscious by burn: the vitality reaches zero, not dead.
+// Unconscious in bad air the oxygen keeps falling, so the booth is no way back up.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "health: the hot plate until unconscious");
@@ -225,7 +204,6 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
             check(c, fade > 0.9, format!("health: unconscious: the screen fades to near black ({fade:.2})"));
             check(c, health == 0.0 && line, format!("health: unconscious: the HUD's health reads zero and stays on the HUD ({health:.2}, line {line})"));
             c.v.insert("frozen", c.t);
-            // Off the plate: the fire drains; the host's treatments start.
             let p = ground_at(w, [ENGINEERING.centre[0] - 3.0, 1.6]);
             place_walker(w, p);
             return false;
@@ -258,7 +236,6 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The glowing barrel: radiation, nausea and the slower walk, until dead; the respawn starts.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "health: into the glowing barrel's zone");
@@ -279,7 +256,6 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // Five seconds later: back on the pad, full health.
     s.push(Box::new(|w, c| {
         if c.t < 2.0 {
             return false;

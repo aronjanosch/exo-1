@@ -1,14 +1,4 @@
-//! The reactor runs on Auto and stays calm. From the dev faults screen (next to
-//! the test console): Pump break takes the temperature past the allowed band and the ship's alarm
-//! goes Warn, then Danger; Reset reactor brings it back calm; Load drop on Auto overshoots above
-//! the optimal band for several seconds. Then Reset again and a second Load drop; the operator
-//! takes over at the readout on the engine room's wall (MAN) and lowers fission by clicks until
-//! the temperature is back in the optimal band. Then SCRAM at the readout cuts the
-//! output and the machines' screens show NO POWER; POWER on brings it back; the pump's OFF button
-//! lets the temperature climb; the junction box's LIGHTS breaker takes 80 kW off the load. There is
-//! no automatic shutdown. Without a window; the walker is set down at each screen (test setup) and
-//! uses it with F, the clicks go through the displays. BOOST UP on the RX STATUS screen raises the
-//! temperature boost.
+//! Reactor scenario on the engine room's screens.
 use super::*;
 use crate::dev_area::engine_room::ShipAlarm;
 use crate::dev_area::reactor::{ReactorCounts, ReactorSim};
@@ -25,7 +15,6 @@ use display_core::PanelId;
 use item_core::wire::{Alarm, ReactorAsk};
 use reactor_core::Group;
 
-/// The display entity with this panel id.
 fn display(w: &mut World, id: PanelId) -> DisplayPanel {
     w.query::<&DisplayPanel>().iter(w).find(|d| d.id == id).cloned().unwrap_or_else(|| panic!("no display {id:?}"))
 }
@@ -43,12 +32,10 @@ fn counts(w: &World) -> ReactorCounts {
     *w.resource::<ReactorCounts>()
 }
 
-/// Whether a screen shows a control with this action (a screen with NO POWER shows none).
 fn screen_has(w: &World, id: PanelId, action: &str) -> bool {
     w.resource::<Panels>().get(&id).is_some_and(|p| p.find(action).is_some())
 }
 
-/// The pump's mode buttons (a pump screen with power shows all three).
 const PUMP_BUTTONS: &str = "pump_high";
 
 fn alarm(w: &World) -> Alarm {
@@ -61,7 +48,6 @@ fn temp_now(w: &World) -> (f64, [f64; 2]) {
     (r.temperature(), [r.bands().temp_optimal.lo, r.bands().temp_optimal.hi])
 }
 
-/// One click on a widget of a display (the cursor goes there, the click is for this frame).
 fn click_now(w: &mut World, id: PanelId, action: &str) {
     let d = display(w, id);
     let at = world_point_of(w, &d, action, None).unwrap_or_else(|| panic!("no widget '{action}'"));
@@ -69,7 +55,6 @@ fn click_now(w: &mut World, id: PanelId, action: &str) {
     w.resource_mut::<Controls>().click = true;
 }
 
-/// A click on a widget, then `wait` seconds.
 fn click_step(id: PanelId, action: &'static str, wait: f64) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -94,7 +79,6 @@ fn pitch_towards(w: &mut World, target: DVec3) {
     });
 }
 
-/// Stand the walker at a point on the ground (test setup) facing a display, then use it with F.
 pub(super) fn use_display(s: &mut Vec<Step>, name: &'static str, id: PanelId, stand: [f64; 2]) {
     s.push(Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -135,7 +119,6 @@ fn active(w: &World) -> ActiveDisplay {
     *w.resource::<ActiveDisplay>()
 }
 
-/// Waits `secs` (the step checks nothing), then runs `then` on the last frame.
 fn settle(secs: f64, what: &'static str) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -155,7 +138,6 @@ fn settle(secs: f64, what: &'static str) -> Step {
 }
 
 pub(super) fn reactor_steps(s: &mut Vec<Step>) {
-    // Auto, calm: the cold room warms up on Auto (about a minute), then 60 s with the power on.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "reactor: Auto runs calm");
@@ -196,8 +178,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
             }
             Alarm::None => {}
         }
-        // Without coolant the core runs over the allowed band in about 10 s (the core's own run), Auto
-        // cannot stop it. The limit is generous: the scenario's clock is wall time on a busy machine.
+// Wall-time limit: a busy machine runs slow.
         if c.t > 60.0 {
             check(c, false, format!("reactor: no Danger within 60 s (alarm {:?})", alarm(w)));
             return true;
@@ -225,11 +206,9 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         }
         false
     }));
-    // Reset reactor: fresh, calm after the warm-up.
     s.push(click_step(FAULTS_ID, "reset", 0.2));
     s.push(settle(120.0, "reactor: Reset reactor brings it back calm"));
 
-    // Load drop on Auto: above the optimal band for several seconds.
     s.push(click_step(FAULTS_ID, "load_drop", 0.2));
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
@@ -241,8 +220,6 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         if t > band[1] {
             *c.v.entry("above").or_insert(0.0) += c.dt;
         }
-        // Done when it has been above the band for 5 s (the core's run: about 13 s above it), at
-        // most 60 s.
         let above = c.v.get("above").copied().unwrap_or(0.0);
         if above < 5.0 && c.t < 60.0 {
             return false;
@@ -253,7 +230,6 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // Second pass: reset, then a Load drop, and the operator takes over while it is above.
     s.push(click_step(FAULTS_ID, "reset", 0.2));
     s.push(settle(120.0, "reactor: a second reset is calm"));
     s.push(click_step(FAULTS_ID, "load_drop", 0.2));
@@ -284,7 +260,6 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
     s.push(click_until(JUNCTION_ID, "br_engines", None, "reactor: the ENGINES breaker on takes its demand onto the load", |w| sim(w).room.grid().breaker(Group::Engines)));
     s.push(load_step("reactor: ENGINES on: the load is the grid's demand (engines 800 kW at full work, wandering)"));
 
-    // The readout on the engine room's wall: MAN, then the fission slider to 30 %.
     use_display(s, "REACTOR", READOUT_ID, [-11.8, -17.7]);
     s.push(click_until(READOUT_ID, "mode", None, "reactor: the operator switches to MAN from the readout", |w| sim(w).manual));
     s.push(click_until(READOUT_ID, "fis_set", Some(0.3), "reactor: fission set to 30 % on the slider brings the temperature back", |w| (sim(w).fission - 30.0).abs() < 1.0));
@@ -299,7 +274,6 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // SCRAM at the readout: fission and the power off at once, the output 0, the machines dark.
     s.push(click_until(READOUT_ID, "scram", None, "reactor: SCRAM from the readout cuts the output and the power", |w| !sim(w).room.reactor().power_on()));
     s.push(Box::new(|w, c| {
         if c.t < 3.0 {
@@ -316,7 +290,6 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // POWER on at the readout: the reactor runs again, the machines have power.
     s.push(click_until(READOUT_ID, "power", None, "reactor: POWER on at the readout brings the reactor back", |w| sim(w).room.reactor().power_on()));
     s.push(Box::new(|w, c| {
         if c.t < 30.0 {
@@ -331,7 +304,6 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The coolant pump's OFF button on its screen: no flow, and the temperature climbs.
     use_display(s, "COOLANT PUMP", PUMP_ID, [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 2.0]);
     s.push(click_until(PUMP_ID, "pump_off", None, "reactor: the pump switched off climbs the temperature", |w| !sim(w).room.pump().on()));
     s.push(Box::new(|w, c| {
@@ -339,7 +311,6 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
             c.v.insert("t0", temp_now(w).0);
             return false;
         }
-        // The pump spins down and the coolant coasts on: wait until the flow has gone (at most 90 s).
         let flow = w.resource::<Items>().reactor.map_or(1.0, |n| n.flow);
         if flow >= 0.05 && c.t < 90.0 {
             return false;
@@ -355,15 +326,10 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
     }));
     s.push(click_until(PUMP_ID, "pump_high", None, "reactor: the pump back on", |w| sim(w).room.pump().on()));
 
-    // The RX STATUS screen beside the readout: BOOST UP (the walker uses the screen) raises the
-    // temperature boost to its amount (25, past 20).
     use_display(s, "RX STATUS", STATUS_ID, [-9.6, -17.6]);
     s.push(click_until(STATUS_ID, "boost_up", None, "reactor: BOOST UP on the status screen raises the boost", |w| sim(w).room.reactor().temperature_boost() > 20.0));
 
-    // PULSAR's core eject: ARM EJECT opens the cover, EJECT inside its window throws the core
-    // out. Then nothing follows: no melt, no blast, the readout says NO CORE, the rods are gone. The
-    // overheat above has broken the old core (its status screen is dark), so a fresh room comes first
-    // (the dev faults' Reset, as the host applies it).
+// The overheat above broke the old core, so a fresh room comes first.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "reactor: a fresh core for the eject");

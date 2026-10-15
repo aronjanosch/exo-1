@@ -1,7 +1,4 @@
-//! Scenario `sc-air`: the SC model's air through `Controls`. Sit, then
-//! 50 m over the ground at rest: hover 5 s with wind compensation off (I) and the ship drifts
-//! downwind; on again (I), it holds. Down to 40 m, fly forward at speed: the turbulence shows. Climb
-//! to 1000 m with Space: no turbulence up there. Each result is a check line with its numbers.
+//! The SC model's air: wind compensation hover and turbulence low and high.
 use crate::controls::Controls;
 use crate::scenario::{altitude, begin, check, end, keys, hold_until, planet, put_at_seat, ship_e, ship_vel, sit, tap, teleport_ship, with_ship, Step};
 use crate::ship::basis_for_up;
@@ -14,7 +11,6 @@ fn ship_pos(w: &mut World) -> DVec3 {
     w.get::<Position>(e).unwrap().0
 }
 
-/// Test setup: level and at rest `height` m above the ground under the ship, no key held.
 fn place(w: &mut World, height: f64) {
     let p = ship_pos(w);
     let pl = planet(w);
@@ -69,7 +65,6 @@ pub fn sc_air_steps(s: &mut Vec<Step>) {
     }));
     s.push(hold_until("settle 2 s (wind compensation on)", &[], 2.0, |_| false));
 
-    // Wind compensation off: the wind pushes the ship downwind.
     s.push(Box::new(|w, c| {
         c.p.insert("h0", ship_pos(w));
         tap(w, KeyCode::KeyI);
@@ -83,7 +78,6 @@ pub fn sc_air_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // Wind compensation on again: the flight computer holds against the wind.
     s.push(tap_y());
     s.push(hold_until("settle 4 s (wind compensation on)", &[], 4.0, |_| false));
     s.push(Box::new(|w, c| {
@@ -98,7 +92,6 @@ pub fn sc_air_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // Low and fast: the turbulence near the ground.
     // 40 m: inside the full turbulence band (`turbulence_height`), high enough that a gust over
     // rising ground does not end the pass in the terrain at 90 m/s.
     s.push(Box::new(|w, _| {
@@ -112,8 +105,7 @@ pub fn sc_air_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // Up to 1000 m: no turbulence there. The low pass left the ship turned by the gusts (the SC
-    // model does not level itself); a test hook sets it level again.
+// The gusts turn the ship; the SC model does not level itself, so a test hook does.
     s.push(Box::new(|w, _| {
         place(w, 60.0);
         true

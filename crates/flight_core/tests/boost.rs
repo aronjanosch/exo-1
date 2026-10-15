@@ -1,4 +1,3 @@
-//! Boost as a capacitor: drain, recharge after a delay, start threshold, strength curve.
 use flight_core::{BoostCapacitor, BoostCapacitorTuning, Curve, Interp};
 use glam::DVec2;
 
@@ -94,7 +93,6 @@ fn held_on_empty_recharges_and_starts_again_at_the_start_charge() {
     let mut c = BoostCapacitor::default();
     run(&mut c, &t, true, 3.5);
     assert!(!c.active);
-    // Empty at 3.0 s, delay 1 s, then 0.2 of 6 s = 1.2 s: starts at 5.2 s.
     run(&mut c, &t, true, 1.6);
     assert!(!c.active, "not yet: {}", c.charge);
     run(&mut c, &t, true, 0.2);
@@ -133,8 +131,6 @@ fn tuning_rejects_bad_values() {
     }
 }
 
-/// Holding boost through an empty capacitor gives no more pulses; a new press
-/// boosts again once the start charge is back (`restart_while_held: false`).
 #[test]
 fn after_empty_a_new_press_is_needed() {
     let t = tuning();
@@ -151,7 +147,6 @@ fn after_empty_a_new_press_is_needed() {
     assert!(run(&mut c, &t, true, DT) > 0.0, "a new press boosts");
 }
 
-/// Tapping the brake while holding boost through empty does not count as a new press.
 #[test]
 fn the_brake_does_not_rearm_an_empty_boost() {
     let t = tuning();

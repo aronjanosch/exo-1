@@ -1,5 +1,4 @@
-//! Scenario `slope-landing`: set down on a slope below the slope limit, the ship stays on
-//! its touchdown spot until thrust.
+//! Slope landing: the ship stays on its touchdown spot until thrust.
 use crate::env::PlanetRes;
 use crate::scenario::{above_ground, begin, check, end, hold_until, land, planet, put_at_seat, ship_frame_of, sit, teleport_ship, wait, with_ship, Step};
 use crate::ship::basis_for_up;
@@ -57,7 +56,6 @@ pub fn slope_landing_steps(s: &mut Vec<Step>) {
             check(c, false, "slope-landing: a slope to land on".into());
             return true;
         };
-        // Level, 12 m above the highest ground under the hull.
         let rot = basis_for_up(dir);
         let top = [DVec3::ZERO, DVec3::new(2.3, 0.0, 4.2), DVec3::new(-2.3, 0.0, 4.2), DVec3::new(2.3, 0.0, -4.2), DVec3::new(-2.3, 0.0, -4.2)]
             .into_iter()

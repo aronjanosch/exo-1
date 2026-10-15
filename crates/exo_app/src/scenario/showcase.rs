@@ -1,10 +1,7 @@
-//! Scenario `showcase` (window only, the models' meshes need the renderer's assets): waits for
-//! every showcase model's collider, takes a picture of each from outside, then stands the walker on
-//! the starting ship's deck and checks that the floor holds it.
+//! Showcase models from outside, and the starting ship's deck (window only).
 use super::*;
 use crate::ship_showcase::{Showcase, ShowcaseReady};
 
-/// Path of the own starting ship among the showcase models.
 const OWN: &str = "ship/starting-ship-study.glb";
 
 fn ready(w: &mut World) -> Vec<(&'static str, ShowcaseReady)> {
@@ -13,7 +10,6 @@ fn ready(w: &mut World) -> Vec<(&'static str, ShowcaseReady)> {
     v
 }
 
-/// Where the walker started (the showcase is laid out around it).
 fn player_spawn(w: &mut World) -> DVec3 {
     let pl = planet(w);
     let up = w.resource::<crate::ship_showcase::ShowcaseStart>().0;
@@ -34,14 +30,12 @@ pub fn showcase_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bo
         }
         false
     }));
-    // Each model from outside: the walker a little beyond its radius, towards the spawn side.
     let n = MODEL_SHOTS;
     for i in 0..n {
         s.push(Box::new(move |w, c| {
             let models = ready(w);
             let Some((path, r)) = models.get(i).copied() else { return true };
             let pl = planet(w);
-            // From the spawn side of the model (the spawn stands at the frame's origin).
             let spawn = player_spawn(w);
             let up = pl.up(r.origin);
             let mut away = spawn - r.origin;
@@ -63,7 +57,6 @@ pub fn showcase_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bo
         }));
         s.push(wait(0.3));
     }
-    // On the starting ship's deck (model y = 0 is the cabin floor), looking aft (-x).
     s.push(Box::new(|w, c| {
         let Some((_, r)) = ready(w).into_iter().find(|(p, _)| *p == OWN) else {
             check(c, false, "showcase: the starting ship is there".into());
@@ -95,5 +88,4 @@ pub fn showcase_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bo
     s.push(wait(0.5));
 }
 
-/// Pictures from outside, at most one per model.
 const MODEL_SHOTS: usize = 4;

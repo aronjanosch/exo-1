@@ -139,7 +139,6 @@ fn sun_turns_once_per_day_around_the_axis() {
         assert!((d.length() - 1.0).abs() < 1e-12);
         assert!((d.dot(a).asin().to_degrees() - 20.0).abs() < 1e-9, "declination holds at t={t}");
     }
-    // A quarter day turns the sun's equator projection by 90 degrees.
     let eq = |v: DVec3| (v - a * a.dot(v)).normalize();
     let q = eq(s.sun_dir(ts, 0.0)).dot(eq(s.sun_dir(ts, 250.0)));
     assert!(q.abs() < 1e-9);
@@ -193,7 +192,6 @@ fn time_for_elevation_finds_dusk_and_dawn() {
     let dawn = s.time_for_elevation(up, ts, -2.0, false, 0.0).unwrap();
     assert!((s.elevation_deg(up, ts, dusk) + 2.0).abs() < 1e-6);
     assert!((s.elevation_deg(up, ts, dawn) + 2.0).abs() < 1e-6);
-    // Setting in the evening: a moment later the sun is lower; rising at dawn: higher.
     assert!(s.elevation_deg(up, ts, dusk + 1.0) < -2.0);
     assert!(s.elevation_deg(up, ts, dawn + 1.0) > -2.0);
     assert!(s.local_hour(up, ts, dusk).unwrap() > 12.0 && s.local_hour(up, ts, dawn).unwrap() < 12.0);

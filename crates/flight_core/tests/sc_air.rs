@@ -1,5 +1,3 @@
-//! The SC model's air stage: drag per axis, lift over the angle of attack,
-//! weathervaning, wind with wind compensation, turbulence near the ground, and space.
 //! Numbers are printed (`cargo test -p flight_core sc_air -- --nocapture`).
 mod sc_common;
 
@@ -17,7 +15,6 @@ fn air_at(pos: DVec3, vel: DVec3, env: &Air, t: &flight_core::sc::air::AirTuning
     air::step(&mut AirState::default(), &f, &Modes::default(), t)
 }
 
-/// Air with no gravity, no wind and no drag or lift, to read one term at a time.
 fn quiet() -> flight_core::sc::air::AirTuning {
     let mut t = tuning().air;
     t.wind_speed = 0.0;
@@ -77,14 +74,12 @@ fn lift_rises_to_the_stall_angle_and_drops_after_it() {
     assert!(lift_at(0.0).abs() < 1e-9, "no lift at zero angle");
     assert!(lift_at(5.0) < lift_at(10.0) && lift_at(10.0) < lift_at(stall), "lift rises up to the stall angle");
     assert!(lift_at(stall + 10.0) < lift_at(stall) - 1.0, "10 deg past the stall the lift is lower: {} vs {}", lift_at(stall + 10.0), lift_at(stall));
-    // Negative angle: lift points down.
     assert!(lift_at(-10.0) < -lift_at(10.0) + 1e-9 && lift_at(-10.0) < 0.0, "lift is odd in the angle");
 }
 
 #[test]
 fn weathervaning_turns_the_nose_towards_the_airspeed() {
     let env = no_gravity();
-    // No wind: the airspeed is the ship's velocity.
     let t = quiet();
     // Moving right of the nose (airspeed to +x): the nose must turn right, a negative yaw rate.
     let right = air_at(DVec3::Y * 100.0, DVec3::new(10.0, 0.0, -50.0), &env, &t).angular_hold;

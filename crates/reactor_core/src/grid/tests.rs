@@ -50,8 +50,6 @@ fn brownout_sheds_low_priority_first() {
 #[test]
 fn below_the_minimum_ratio_a_group_switches_off_and_frees_its_power() {
     let mut g = Grid::default();
-    // 700 kW: life support takes 400, 300 are left for 800 asked (0.375 < 0.5). Engines drop out
-    // and the 300 go to lights (80 asked).
     g.distribute(700.0);
     assert!(!g.supply(Group::Engines).on);
     assert_eq!(g.factor(Group::Engines), 0.0);
@@ -62,7 +60,6 @@ fn below_the_minimum_ratio_a_group_switches_off_and_frees_its_power() {
 fn equal_priority_shares_in_proportion() {
     let mut g = Grid::default();
     g.set_priority(Group::Lights, 2);
-    // Engines 800 and lights 80 share the 440 kW left after life support: ratio 440 / 880 each.
     g.distribute(400.0 + 440.0);
     assert!((g.supply(Group::Engines).ratio - 0.5).abs() < 1e-9);
     assert!((g.supply(Group::Lights).ratio - 0.5).abs() < 1e-9);
@@ -130,7 +127,6 @@ fn a_short_reactor_with_limits_at_one_sheds_by_priority() {
 #[test]
 fn lowering_the_engines_limit_lets_the_lowest_priority_keep_its_minimum_ratio() {
     let mut g = Grid::default();
-    // 850 kW, limits 1: engines take the 450 left, lights (prio 1) are shed.
     g.set_limit(Group::Engines, 0.5);
     // Engines ask 400: life support 400 and engines 400 are served in full, the 50 left go to
     // lights (80 asked, share 0.625 >= its 0.3 minimum), so lights stay on.

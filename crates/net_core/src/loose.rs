@@ -1,10 +1,4 @@
 //! Loose bodies (items lying in the world) on the unreliable side: the host sends the poses of the
-//! bodies that move, at the snapshot rate, and stops when they sleep (their resting pose goes as a
-//! reliable event, which is the game's business, not this module's). Clients keep a short history
-//! per body and interpolate it at the shared playout time, like the snapshot buffer does for ships.
-//!
-//! Poses are in the body's frame: a planet (world coordinates, f64) or a ship's cabin (ship-local).
-//! On the wire: positions f64, velocities and rotations f32, like the snapshot fields.
 use crate::buffer::{hermite, Mode};
 use glam::{DQuat, DVec3};
 use std::collections::VecDeque;
@@ -25,7 +19,6 @@ pub struct BodyState {
     pub rot: DQuat,
 }
 
-/// The bodies that moved in one tick, with the shared (host) time of that tick.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BodyDatagram {
     pub t: f64,
@@ -104,7 +97,6 @@ impl BodyDatagram {
     }
 }
 
-/// One pose of a body at a shared time.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Pose {
     pub t: f64,
@@ -120,7 +112,6 @@ impl Pose {
     }
 }
 
-/// Most poses kept per body.
 pub const MAX_HISTORY: usize = 64;
 
 /// The history of one body: poses ordered by time, interpolated at a playout time. No
@@ -301,8 +292,6 @@ mod tests {
         assert_eq!((p.frame, p.pos.x), (BodyFrame::Ship(1), 9.0));
     }
 
-    /// A thrown item (parabola) streamed at 30 Hz through 150 ms of delay, 40 ms of jitter and 10 %
-    /// loss, shown 150 ms behind: the shown path stays close to the truth at the shown time.
     #[test]
     fn a_thrown_body_streamed_over_a_bad_link_shows_close_to_the_truth() {
         let truth = |t: f64| (DVec3::new(4.0 * t, 1.5 + 6.0 * t - 4.905 * t * t, 0.0), DVec3::new(4.0, 6.0 - 9.81 * t, 0.0));

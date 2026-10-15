@@ -1,9 +1,3 @@
-//! Hot reload of general tuning and the starting ship profile in dev builds.
-//! Every 250 ms of wall time the files
-//! are read and compared with what is loaded; when one changed and all parse, the new values take
-//! effect at once (ship and walker get them, the suit, camera, grab, HUD and bindings are read every step).
-//! A file that does not parse is reported and the old values stay. Polling instead of Bevy's
-//! `file_watcher` keeps the feature set as it is.
 use crate::controls::Bindings;
 use crate::ship::Ship;
 use crate::tuning::Tuning;
@@ -12,7 +6,6 @@ use bevy::prelude::*;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-/// Dev builds only: watches `dir` and applies changed tuning files.
 pub fn plugin(dir: PathBuf) -> impl Plugin {
     move |app: &mut App| {
         if cfg!(debug_assertions) {
@@ -58,7 +51,6 @@ impl HotReload {
         HotReload { dir, loaded, next: Instant::now(), reloads: 0, last_error: None }
     }
 
-    /// The repo's own content root (general tuning and ship-type folders).
     pub fn source_dir() -> PathBuf {
         PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../content"))
     }

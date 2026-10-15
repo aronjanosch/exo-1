@@ -1,9 +1,3 @@
-//! The meltdown blast: what `ReactorEvent::Blast` does to the people in the engine
-//! room. The rules and the values are `reactor_core::Blast` (the core, unchanged). The host applies
-//! it (`reactor_blast`, after the reactor step): the burn and the radiation fall off with the
-//! distance from the reactor (`falloff`), three fires start round the core, the local screen flashes
-//! white when the local walker is in the radiation's range, and the news says REACTOR BLAST.
-//! The other processes see it on the news (`ReactorNews::blasts`, `client_blast_news`): the same flash and notice.
 //! Open: the stun (no health affliction carries it yet, `TODO(initiator)`), the device damage.
 use super::*;
 use crate::dev_area::engine_room::{ignition_at, IGNITION_OUT, REACTOR_AT, REACTOR_SIZE};
@@ -21,14 +15,11 @@ use bevy::math::DVec2;
 use gameplay_core::notice::{Notice, NoticeKind};
 use reactor_core::{Blast, Source};
 
-/// The white flash's length, s: full at the blast, gone at the end.
 pub const BLAST_FLASH_S: f64 = 1.0;
 
-/// The blasts the reactor step queued this tick, for `reactor_blast` (host only).
 #[derive(Resource, Default, Debug)]
 pub struct PendingBlasts(pub Vec<Blast>);
 
-/// When the local screen's blast flash began (`effects`), None when it is over.
 #[derive(Resource, Default, Debug)]
 pub struct BlastFlash(pub Option<f64>);
 
@@ -59,7 +50,6 @@ pub fn fire_points() -> [[f64; 2]; 3] {
     [ignition_at(Source::Reactor), [REACTOR_AT[0] - side, REACTOR_AT[1]], [REACTOR_AT[0] + side, REACTOR_AT[1]]]
 }
 
-/// The flash's alpha `age` seconds after the blast: 1 at the start, 0 from `BLAST_FLASH_S` on.
 pub fn flash_alpha(age: f64) -> f32 {
     if !(0.0..BLAST_FLASH_S).contains(&age) {
         return 0.0;
@@ -67,9 +57,6 @@ pub fn flash_alpha(age: f64) -> f32 {
     (1.0 - age / BLAST_FLASH_S) as f32
 }
 
-/// Host: the blasts the reactor step queued. Every body takes its burn and radiation by the falloff
-/// (the afflictions cap them), three fires start round the core, the local screen flashes if the
-/// local walker is in the radiation's range, and the news says REACTOR BLAST.
 #[allow(clippy::too_many_arguments)]
 pub fn reactor_blast(time: Res<Time>, mut pending: ResMut<PendingBlasts>, items: Res<Items>, cfg: Res<ReactorConfig>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, mut health: Option<ResMut<HealthState>>, mut air: ResMut<EngineAir>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, mut gp: ResMut<Gameplay>, mut flash: ResMut<BlastFlash>) {
     let blasts = std::mem::take(&mut pending.0);
@@ -101,7 +88,6 @@ pub fn reactor_blast(time: Res<Time>, mut pending: ResMut<PendingBlasts>, items:
     }
 }
 
-/// Client (and every process but the host): a news snapshot's blast counter against the last one this
 /// process saw. True when it went up (the notice shows); the first news only sets the baseline, so a
 /// late joiner does not replay old blasts. The flash is the radiation's range (as `reactor_blast`):
 /// full at the blast when `dist` (this process's own walker, metres from the reactor) is inside it.

@@ -1,8 +1,6 @@
-//! Text keys used by the glue layer (exo_app) that must be in the text table.
 //! TODO(initiator): text key placeholders.
 use gameplay_core::text::TextTable;
 
-/// Keys the glue layer (`exo_app`) uses that must exist in the text table; keep in step with
 /// `grep -rhoE '"(notice|track)\.[a-z_.]+"' crates/exo_app/src`.
 pub const GLUE_KEYS: &[&str] = &[
     "track.wallet.name",
@@ -23,7 +21,6 @@ pub const GLUE_KEYS: &[&str] = &[
     "notice.refused.cannot_afford",
 ];
 
-/// Checks that all glue keys exist in the text table.
 pub fn check_glue_keys(table: &TextTable) -> Vec<String> {
     let mut errors = Vec::new();
     for key in GLUE_KEYS {

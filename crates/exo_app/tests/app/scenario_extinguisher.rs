@@ -1,5 +1,3 @@
-//! The extinguisher wears down while it sprays, an empty one stops, and the corridor's rack
-//! swaps it for a full spare. Without a window.
 use crate::common;
 use exo_app::Options;
 

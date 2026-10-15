@@ -1,7 +1,4 @@
-//! Every integration test of the app in one binary: each file in `tests/` is its own binary
-//! that links Bevy (260 MB dynamic, about 900 MB static), so 27 of them cost 27 links per change.
-//! nextest still runs each test in its own process. A new scenario test is a module here;
-//! `perf.rs` stays its own binary for its nextest profile.
+//! One test binary: each file in tests/ would link Bevy again.
 mod common;
 
 mod collision_t1;
@@ -68,7 +65,6 @@ mod scenario_warp;
 mod items_net;
 mod session;
 
-/// The binary count does not creep back: `tests/` holds only this folder and `perf.rs`.
 #[test]
 fn tests_folder_holds_one_app_binary_and_perf() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");

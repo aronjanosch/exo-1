@@ -1,4 +1,3 @@
-//! Givers: records, briefings from parts, standing and rank, mood by history.
 use std::path::Path;
 
 use gameplay_core::text::{Picker, TextTable};
@@ -30,7 +29,6 @@ fn table() -> TextTable {
     TextTable::from_json(&f.path, &f.text).unwrap()
 }
 
-/// A template of the courier giver: two crates from Drip Rock to Bent Spoon.
 fn tmpl(id: &str, extra: &str) -> File {
     File::new(
         format!("job_template/{id}.json"),
@@ -121,7 +119,6 @@ impl Host {
         self.route(out);
     }
 
-    /// Delivers every crate of the job.
     fn deliver_all(&mut self, job: JobId) {
         let crates: Vec<CrateId> = self.jobs.get(job).unwrap().legs.iter().flat_map(|l| l.crates.keys().copied()).collect();
         for c in crates {
@@ -130,7 +127,6 @@ impl Host {
         }
     }
 
-    /// Lets the job run out of time with nothing delivered.
     fn fail(&mut self, job: JobId) {
         let c = *self.jobs.get(job).unwrap().legs[0].crates.keys().next().unwrap();
         self.world(WorldEvent::CratePickedUp { crate_id: c, at: LocationId::new("drip_rock") });
@@ -185,15 +181,12 @@ fn missing_and_thin_pools_are_reported_with_file_and_field() {
     let jc = load_with(vec![]).unwrap();
     let t = table();
     assert!(jc.check_texts(&t).is_empty());
-    // A voice key with no pool.
     let without = TextTable::from_json("t", &std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/text/en.json")).unwrap().replace("\"g.courier.signoff\"", "\"g.courier.signoff_x\"")).unwrap();
     let e = jc.check_texts(&without);
     assert!(e.iter().any(|m| m.starts_with("giver/courier.json") && m.contains("voice.sign_off") && m.contains("g.courier.signoff")), "{e:?}");
-    // A pool of one line would repeat at once.
     let thin = TextTable::from_json("t", &std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/text/en.json")).unwrap().replace("[\"Hi, new face.\", \"Welcome, stranger.\", \"First day? Sit down.\"]", "\"Hi.\"")).unwrap();
     let e = jc.check_texts(&thin);
     assert!(e.iter().any(|m| m.starts_with("giver/courier.json") && m.contains("voice.greeting.first_job") && m.contains("at least")), "{e:?}");
-    // A template's title key must exist too.
     let e = load_with(vec![tmpl("run_a", "")]).unwrap().check_texts(&TextTable::default());
     assert!(e.iter().any(|m| m.starts_with("job_template/run_a.json") && m.contains("title")), "{e:?}");
 }
@@ -218,7 +211,6 @@ fn a_briefing_is_assembled_from_parts_and_is_deterministic_for_a_seed() {
     assert!(b.paragraph.contains("fizzy mud") && b.paragraph.contains("Drip Rock") && b.paragraph.contains("Bent Spoon") && b.paragraph.contains('2'), "{}", b.paragraph);
     assert!(table().lines("g.courier.signoff").unwrap().contains(&b.sign_off));
     assert_eq!(b.giver, "Parcel Pals");
-    // Seeds differ somewhere.
     let others: Vec<Briefing> = (6..12).map(|s| brief(&h, &mut Picker::new(s), "run_a", &hist)).collect();
     assert!(others.iter().any(|o| *o != b));
 }
@@ -227,7 +219,6 @@ fn a_briefing_is_assembled_from_parts_and_is_deterministic_for_a_seed() {
 fn the_reason_follows_the_cargo_then_the_route_then_the_giver() {
     let h = Host::new(vec![tmpl("run_a", "")]);
     let b = brief(&h, &mut Picker::new(1), "run_a", &GiverHistory::default());
-    // fizzy_mud has its own reason line.
     assert_eq!(b.reason, "The mud must stay fizzy.");
     // No cargo reason: the destination's route tag (Bent Spoon is dusty), then the giver's own pool.
     let t = &h.jc.templates[&TemplateId::new("run_a")].record;
@@ -352,7 +343,6 @@ fn history_survives_a_save() {
 fn the_ritual_names_the_standing_gained_or_lost() {
     let mut h = Host::new(vec![tmpl("run_a", ""), tmpl("run_t", TIMED)]);
     let notes = |out: &[Outcome]| out.iter().filter_map(|o| if let Outcome::Notice(n) = o { Some(n.key.to_string()) } else { None }).collect::<Vec<_>>();
-    // Run a delivery by hand to see the outcomes of the last event.
     let j = h.accept("run_a").unwrap();
     let crates: Vec<CrateId> = h.jobs.get(j).unwrap().legs[0].crates.keys().copied().collect();
     let mut last = Vec::new();

@@ -1,6 +1,3 @@
-//! Fuel rods by hand. A rod from the corridor rack is loaded into the reactor (LMB held on
-//! it), the dev drain heats the core, the brake (empty hands, LMB held) pulls the rod with the most
-//! life into the hand and burns it once, G drops it. Without a window.
 use crate::common;
 use exo_app::Options;
 

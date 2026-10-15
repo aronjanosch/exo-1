@@ -1,7 +1,5 @@
-//! Scenario `camera-g`: the chase camera trails a boost and swings back, the trauma
-//! shakes under boost and calms at rest, and F9 (through the bindings) switches all of it off and
-//! back on. Driven through `Controls`. The HUD line is not in a headless run; its words are
-//! checked in `view::tests`.
+//! The chase camera's lag, trauma shake and G field of view, and F9 to switch them off.
+//! The HUD line is not in a headless run; its words are checked in `view::tests`.
 use crate::scenario::{above_ground, check, hold_until, land, planet, put_at_seat, ship_e, ship_frame_of, ship_vel, sit, tap, teleport_ship, wait, with_ship, Step};
 use crate::ship::basis_for_up;
 use avian3d::prelude::Position;
@@ -40,7 +38,6 @@ pub fn camera_g_steps(s: &mut Vec<Step>) {
         true
     }));
     s.push(hold_until("brake to a stop (X)", &[KeyCode::KeyX], 40.0, |w| ship_vel(w).length() < 1.0));
-    // F9 off: no shake, lag or G field of view, the HUD says so, and a boost stays shake-free.
     s.push(Box::new(|w, _| {
         tap(w, KeyCode::F9);
         true
@@ -61,7 +58,6 @@ pub fn camera_g_steps(s: &mut Vec<Step>) {
         true
     }));
     s.push(hold_until("brake to a stop (X)", &[KeyCode::KeyX], 40.0, |w| ship_vel(w).length() < 1.0));
-    // F9 on again, then down to the ground and rest.
     s.push(Box::new(|w, _| {
         tap(w, KeyCode::F9);
         true
@@ -72,8 +68,6 @@ pub fn camera_g_steps(s: &mut Vec<Step>) {
         check(c, f.enabled, format!("F9 on again: {}", crate::view::camera_fx_text(f.enabled)));
         true
     }));
-    // Hover in the air, no input, assist on: the hover thrust holds the ship and feels nothing.
-    // Settle 3 s from the stop, then the 2 s window: the largest lag and G field of view.
     s.push(wait(3.0));
     s.push(Box::new(|w, c| {
         c.v.insert("hover_lag", 0.0);
@@ -98,7 +92,7 @@ pub fn camera_g_steps(s: &mut Vec<Step>) {
     // Brake to rest first: the descent at 66 m/s still moves sideways at touchdown (SC has no
     // landing gear), which is not what this scenario checks. Then a test hook levels the
     // ship at its spot: the SC's down input follows the hull, so a tilted hull slides on the way
-    // down (the axis model's fix does not carry over to SC; open question).
+// down (the axis model's fix does not carry over to SC).
     s.push(hold_until("firm brake before the landing", &[KeyCode::KeyX], 20.0, |w| ship_vel(w).length() < 0.5));
     s.push(Box::new(|w, _| {
         let e = ship_e(w);

@@ -1,11 +1,4 @@
-//! Fire: at the dev area's engine room a fire starts at the reactor (the dev fault, asked
-//! through the reactor's request as the dev button would). It grows, uses the room's air, and the
-//! ship's alarm goes to Warn, then Danger. A walker beside it catches fire through the heat. Then a
-//! fire starts at the pump and at the junction box too, and the three parts lose condition. The
-//! extinguisher is taken from the table, selected, and sprayed at each fire from 3 m, LMB held:
-//! each goes out, and the alarm is back to the reactor's level (none). Not checked: the spread
-//! through the door (it needs a fire at the gap; the seeded rolls are not worth a check here).
-//! Without a window; run with `--start=dev_area`.
+//! Fires at the engine room, sprayed out with the extinguisher.
 use super::items::{collect, items, look_at, outside, tap_then, DELAY};
 use super::*;
 use crate::controls::Controls;
@@ -60,16 +53,11 @@ fn ground(w: &mut World, p: [f64; 2], lift: f64) -> DVec3 {
     w.resource::<DevArea>().ground(&pl, p, lift).expect("the dev area is there").0
 }
 
-/// LMB held or let go: the spray runs while it is held (the mouse is captured, no display in use).
 fn lmb(w: &mut World, down: bool) {
     w.resource_mut::<Controls>().primary_held = down;
 }
 
-/// Walks the walker to a point beside a fire, aims at the fire's centre, sprays while LMB is held
-/// until the fire is out (or 25 s), then lets go. The fire must be out, and the spray must reach
-/// the host.
 fn spray_out(name: &'static str, at: [f64; 2], stand: [f64; 2]) -> Vec<Step> {
-    // The size before the spray and whether its checks ran are this step's own state.
     let mut size0 = 0.0;
     let mut checked = false;
     let step = Box::new(move |w: &mut World, c: &mut Ctx| {
@@ -80,7 +68,6 @@ fn spray_out(name: &'static str, at: [f64; 2], stand: [f64; 2]) -> Vec<Step> {
             size0 = fire_at(w, at).unwrap_or(0.0);
             lmb(w, true);
         }
-        // The aim follows the flame's centre while the spray runs.
         let target = ground(w, at, FLAME_LIFT);
         look_at(w, target);
         if c.t < 1.0 {
@@ -103,8 +90,7 @@ fn spray_out(name: &'static str, at: [f64; 2], stand: [f64; 2]) -> Vec<Step> {
     vec![step]
 }
 
-/// The table, the walker in front of it, and the extinguisher taken into the hand (1). Shared with
-/// `fire_grid`.
+/// Shared with `fire_grid`.
 pub(super) fn take_extinguisher(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         begin(w, c, "fire: the table and the host's body for the walker");
@@ -127,8 +113,6 @@ pub(super) fn take_extinguisher(s: &mut Vec<Step>) {
 pub(super) fn fire_steps(s: &mut Vec<Step>) {
     take_extinguisher(s);
 
-    // The dev fault: a fire at the reactor. It is in the air, the room's oxygen falls, the alarm
-    // goes to Warn and then to Danger once the fire is a metre across.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "fire: the dev fault starts a fire at the reactor");
@@ -173,7 +157,6 @@ pub(super) fn fire_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // A walker 1.2 m from the fire: the heat burns, the buildup fills, the walker is on fire.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "fire: a walker beside it catches fire");
@@ -194,7 +177,6 @@ pub(super) fn fire_steps(s: &mut Vec<Step>) {
         false
     }));
 
-    // The pump and the junction box get fires of their own; the three parts lose condition.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "fire: the pump, the junction box and the reactor lose condition");
@@ -222,7 +204,6 @@ pub(super) fn fire_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The extinguisher, from 3 m north of each fire: the reactor's, the pump's, the junction box's.
     let spray_names = [
         (Source::Reactor, "fire: the spray puts out the reactor's fire"),
         (Source::Pump, "fire: the spray puts out the pump's fire"),
@@ -233,7 +214,6 @@ pub(super) fn fire_steps(s: &mut Vec<Step>) {
         s.extend(spray_out(name, at, [at[0], at[1] + 3.0]));
     }
 
-    // No fire left: the alarm is back to the reactor's level, which is calm.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "fire: no fire left, the alarm is back to the reactor's level");

@@ -1,8 +1,6 @@
-//! The walker in the cabin at speed and outside in space: stepping out, the suit, drifting behind a
-//! moving ship, cabin gravity by hand.
+//! Walker in the cabin at speed and outside in space.
 use super::*;
 
-/// Cabin at speed: stand, then walk, while the ship boosts and rolls with the assist off.
 pub(super) fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: f64) -> Vec<Step> {
     let mut steps: Vec<Step> = vec![
         Box::new(|w, _| {
@@ -28,7 +26,6 @@ pub(super) fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: 
             let e = ship_e(w);
             let (pos, inside, grounded) = with_player(w, |p| (p.w.pos, p.ship == Some(e), p.w.grounded));
             let half = secs * 0.5;
-            // First half stand, then walk forward 1.5 s and back 1 s.
             let walk_t = c.t - half;
             keys(w, &[KeyCode::KeyW], (0.0..1.5).contains(&walk_t));
             keys(w, &[KeyCode::KeyS], (1.5..2.5).contains(&walk_t));
@@ -45,7 +42,6 @@ pub(super) fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: 
             let v = ship_vel(w).length();
             *c.v.get_mut("vmax").unwrap() = c.v["vmax"].max(v);
             if v > 400.0 {
-                // Keep rolling, stop boosting at 400 m/s.
                 with_ship(w, |s| s.test_input.thrust = DVec3::ZERO);
             }
             if c.t >= secs {
@@ -70,7 +66,6 @@ pub(super) fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: 
     steps
 }
 
-/// Stand up in space, walk out of the back and drift. Outside the field the walker
 /// keeps the velocity it left the cabin with (ship velocity plus its walking speed) and nothing
 /// pulls it. `drift` gives the ship a speed towards the planet first (stopped not exactly).
 /// `careful`: W only in 0.1 s taps every 0.5 s, a careful step out: the walker leaves at step-off
@@ -134,7 +129,6 @@ pub(super) fn step_out_in_space(name: &'static str, drift: f64, careful: bool) -
                 let ok = if careful { rel <= 3.01 } else { (rel - 5.0).abs() < 0.01 };
                 check(c, ok && dv < 1e-6,
                     format!("{name}: walker keeps the ship's velocity plus its own and drifts ({rel:.3} m/s relative, change {dv:.6} m/s)"));
-                // The ship's nose is 30 deg up: leaving keeps the cabin's orientation.
                 check_steady(c, name);
                 return true;
             }
@@ -149,8 +143,6 @@ pub(super) fn step_out_in_space(name: &'static str, drift: f64, careful: bool) -
     steps
 }
 
-/// The suit in space. Walk out of the stopped ship, brake to rest (X), roll (Q), turn
-/// to the ship with the mouse and fly back into the cabin (W), all through `Controls`.
 pub(super) fn suit_in_space() -> Vec<Step> {
     let mut steps: Vec<Step> = vec![
         Box::new(|w, _| {
@@ -171,7 +163,6 @@ pub(super) fn suit_in_space() -> Vec<Step> {
             if outside && !c.v.contains_key("out_t") {
                 c.v.insert("out_t", c.t);
             }
-            // The suit takes over on the next step after leaving the cabin.
             if c.v.get("out_t").is_some_and(|t| c.t - t > 0.05) || c.t > 10.0 {
                 keys(w, &[KeyCode::KeyW], false);
                 end(w, c, format!("outside {outside}, suit mode {suit}"));
@@ -213,9 +204,6 @@ pub(super) fn suit_in_space() -> Vec<Step> {
             }
             false
         }),
-        // Back into the field (test setup: put the walker 3000 m above the ground for a moment):
-        // the suit hands over to walking, the look direction stays, gravity pulls, and the walker
-        // rights itself from the rolled suit orientation without a step.
         Box::new(|w, c| {
             track_look(w, c);
             if c.t == 0.0 {
@@ -264,8 +252,6 @@ pub(super) fn suit_in_space() -> Vec<Step> {
                 return true;
             }
             let Some(b) = b else { return false };
-            // Aim at the middle of the cabin like a player with the mouse (rate proportional to
-            // the error), thrust once roughly on target.
             let l = b.inverse() * (f.to_world(DVec3::new(0.0, 1.2, 0.0)) - pos).normalize();
             let yaw_err = (-l.x).atan2(-l.z);
             let pitch_err = l.y.atan2((l.x * l.x + l.z * l.z).sqrt());
@@ -281,7 +267,6 @@ pub(super) fn suit_in_space() -> Vec<Step> {
     steps
 }
 
-/// The ship coasts at 20 m/s, the walker drifts with it in the suit 0.4 m behind the
 /// end of its ramp. The ship's colliders sit one tick (0.33 m) behind its body; swept as if they
 /// stood still they stopped the walker. It must drift on with the ship.
 pub(super) fn drift_behind_moving_ship() -> Vec<Step> {
@@ -347,8 +332,6 @@ pub(super) fn drift_behind_moving_ship() -> Vec<Step> {
     steps
 }
 
-/// Cabin gravity by hand in the landed ship (the keyless `lag`, later the captain's terminal): it comes up (up turns to the floor's up over 1 s, no step),
-/// and goes down again (up back to the planet's).
 pub(super) fn lag_by_hand() -> Vec<Step> {
     let toggle = |name: &'static str, on: bool| -> Step {
         Box::new(move |w, c| {

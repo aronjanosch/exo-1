@@ -1,6 +1,3 @@
-//! Repair at the machine. The broken coolant pump makes no progress before three hits in
-//! the timing ring, then rises; the screwdriver does nothing at the pump; the junction box at 70 %
-//! has no ring and a slow repair that F ends and keeps; full ends the session. Without a window.
 use crate::common;
 use exo_app::Options;
 

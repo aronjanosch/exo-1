@@ -1,8 +1,3 @@
-//! The test console: a box at the lab zone's front edge, facing the pads, with a display
-//! that proves the loop, and the pattern a role module follows. It is an M screen on the design
-//! system's widgets. A counter with - and + (the minus is disabled at
-//! zero, the plus at the top), a bar that fills with the counter, a toggle and a slider. Its two
-//! systems are what a role writes: one builds the panel from the state, one reads the clicks.
 use super::*;
 use crate::displays::{DisplayAction, Panels};
 use crate::dev_area::engine_room::ShipAlarm;
@@ -12,13 +7,11 @@ use item_core::wire::{Alarm, RoomAsk};
 
 pub const ID: PanelId = PanelId::new("test_console");
 pub const NAME: &str = "Test console";
-/// The counter's top (the bar is full there).
 pub const MAX: u32 = 10;
 /// Where it stands in the lab zone (m from the zone's centre): at its south edge, facing the walkway
 /// and the pads.
 pub const AT: [f64; 2] = [0.0, -4.5];
 
-/// The console's state.
 #[derive(Resource, Debug, Clone, PartialEq)]
 pub struct TestConsole {
     pub count: u32,
@@ -46,7 +39,6 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, (read_clicks, write_panel).chain().in_set(crate::phases::Fx::Effects));
 }
 
-/// What the console shows: an M screen (640 x 400 panel pixels) on the design system's widgets.
 pub fn panel(s: &TestConsole, alarm: Alarm) -> Panel {
     Panel::screen(
         Tier::M,
@@ -66,7 +58,6 @@ pub fn panel(s: &TestConsole, alarm: Alarm) -> Panel {
     .status(if s.lights { "LIT" } else { "DARK" }, if s.lights { Tone::Good } else { Tone::Micro })
 }
 
-/// The alarm's name on the button (the dev toggle: None, Warn, Danger).
 pub fn alarm_name(a: Alarm) -> &'static str {
     match a {
         Alarm::None => "none",

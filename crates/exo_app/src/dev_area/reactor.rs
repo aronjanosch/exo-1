@@ -1,21 +1,4 @@
-//! The reactor: the host steps the engine room's `EngineRoom` each fixed tick,
-//! on Auto by default with the power on. Clients send their requests (`ReactorAsk`: manual or
-//! Auto, fission and turbine targets, a dev fault, a reset) and take the host's snapshot
-//! (`ReactorNews`, about 4 times a second while it changes) into `Items::reactor`.
-//!
 //! - Values: `content/gameplay/reactor/reactor.json` (`reactor_core::Tuning`, strict loader).
-//! - No automatic safety: SCRAM (`ReactorAsk::Scram`) cuts fission and the power; the power switch
-//!   starts it again. Breakers and the pump's switch are asks too.
-//! - The room's alarm drives `ShipAlarm` while the reactor is not calm (Warn, Danger); while it is
-//!   calm the test console's alarm button may set it.
-//! - Fires, sparks and meltdowns are logged (`info!`/`warn!`) and counted in `ReactorCounts` for
-//!   the scenarios. A fire starts in the engine room's air (`fire`); the meltdown's effects are in
-//!   `blast`. The dev faults screen's Fire asks for a fire at the reactor.
-//! - The core eject (PULSAR's lever): ARM EJECT opens the EJECT cover for `eject_arm_s`
-//!   (the host keeps the timer); a second Eject inside it throws the core out (`EngineRoom::eject_core`):
-//!   the rods leave with it, no melt, the reactor is dead until a repair installs an empty core. The
-//!   notice (CORE EJECTED) shows on every process from the news' `ejects` counter.
-//! - The readout and the dev fault screen are `reactor_screen`.
 use super::*;
 use crate::dev_area::engine_room::{EngineAir, ShipAlarm};
 use crate::dev_area::fire::{self, FireAlarm, FireConfig, FireGrid, FireModel};
@@ -27,40 +10,30 @@ use gameplay_core::notice::{Notice, NoticeKind};
 use item_core::wire::{Alarm, BreakerGroup, FuelTube, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, GRAPH_POINTS};
 use reactor_core::{AlarmLevel, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
 
-/// Seconds between two sends of a changed snapshot (4 Hz).
 pub const SEND_EVERY_S: f64 = 0.25;
 /// The room's seed: the same room every start (its rolls are seeded).
 pub const SEED: u64 = 0x297;
 
-/// The loaded values.
 #[derive(Resource, Clone, Debug)]
 pub struct ReactorConfig(pub Tuning);
 
-/// What the reactor's events added up to on this host (scenarios and logs read it).
 #[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReactorCounts {
     pub fires: u32,
     pub sparks: u32,
     pub meltdowns: u32,
-    /// The meltdown blasts (`dev_area::blast`).
     pub blasts: u32,
-    /// The core ejects (PULSAR's core eject).
     pub ejects: u32,
-    /// The emergency coolings pressed (PULSAR's manual button).
     pub ecools: u32,
 }
 
-/// The host's reactor: the room, the manual targets, and what was last sent.
 #[derive(Resource, Debug)]
 pub struct ReactorSim {
     pub room: EngineRoom,
-    /// Manual when true: the room gets `fission` and `turbine` each step; Auto otherwise.
     pub manual: bool,
     pub fission: f64,
     pub turbine: f64,
-    /// Whether the room's alarm had been on (Warn or Danger) at the last step.
     alarmed: bool,
-    /// The EJECT cover's time left, seconds, while it is open (ARM EJECT pressed); None when shut.
     /// The host keeps it: a second Eject inside the window ejects.
     eject_left: Option<f64>,
     sent: Option<ReactorNews>,
@@ -73,12 +46,10 @@ pub struct ReactorSim {
 pub struct WarmAtCreation;
 
 impl ReactorSim {
-    /// A room on Auto with the power on, already warmed up (a cold start takes 60 to 90 s).
     pub fn new(cfg: &Tuning) -> ReactorSim {
         ReactorSim::created(cfg, false)
     }
 
-    /// A new room, warmed up by `EngineRoom::warm_start` when `warm`, else by 150 s on Auto.
     pub fn created(cfg: &Tuning, warm: bool) -> ReactorSim {
         let mut room = EngineRoom::from_tuning(cfg, SEED);
         room.set_power(true);
@@ -95,14 +66,12 @@ impl ReactorSim {
         ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX }
     }
 
-    /// Runs the EJECT cover's timer down by `dt`: it shuts again when the window is over.
     pub fn tick_eject(&mut self, dt: f64) {
         if let Some(left) = self.eject_left {
             self.eject_left = (left - dt > 0.0).then_some(left - dt);
         }
     }
 
-    /// One request, applied on this host. Set fission and turbine only count on Manual.
     pub fn apply(&mut self, a: ReactorAsk, cfg: &Tuning, counts: &mut ReactorCounts) {
         match a {
             ReactorAsk::SetManual(on) => {
@@ -261,7 +230,6 @@ fn graph_row(row: &[f64]) -> [u16; GRAPH_POINTS] {
     std::array::from_fn(|i| row.get(i).map_or(0, |v| v.round().clamp(0.0, f64::from(u16::MAX)) as u16))
 }
 
-/// The lamps of the core's warnings, by `Lamp::index`.
 pub fn lamps_of(w: &Warnings) -> [bool; Lamp::COUNT] {
     let mut lamps = [false; Lamp::COUNT];
     for (lamp, on) in [
@@ -297,7 +265,6 @@ pub fn counter_fresh(seen: &mut Option<u32>, ejects: u32) -> bool {
     fresh
 }
 
-/// The CORE EJECTED notice, once per ejection, on every process (the host's news is its own).
 pub fn eject_notice(items: Res<Items>, mut seen: Local<Option<u32>>, mut gp: ResMut<Gameplay>) {
     let Some(news) = items.reactor else { return };
     if counter_fresh(&mut seen, news.ejects) {
@@ -311,7 +278,6 @@ pub fn lamp_blink_on(t: f64) -> bool {
     t.rem_euclid(0.5) < 0.25
 }
 
-/// The grid's group of a wire breaker.
 pub fn group_of(g: BreakerGroup) -> Group {
     match g {
         BreakerGroup::Engines => Group::Engines,
@@ -320,7 +286,6 @@ pub fn group_of(g: BreakerGroup) -> Group {
     }
 }
 
-/// The wire's pump mode as the room's.
 pub fn pump_of(m: PumpMode) -> reactor_core::engine_room::PumpMode {
     use reactor_core::engine_room::PumpMode as Core;
     match m {
@@ -330,7 +295,6 @@ pub fn pump_of(m: PumpMode) -> reactor_core::engine_room::PumpMode {
     }
 }
 
-/// The room's pump mode on the wire.
 pub fn wire_pump(m: reactor_core::engine_room::PumpMode) -> PumpMode {
     use reactor_core::engine_room::PumpMode as Core;
     match m {
@@ -340,7 +304,6 @@ pub fn wire_pump(m: reactor_core::engine_room::PumpMode) -> PumpMode {
     }
 }
 
-/// The room's fault for a dev request; None for the fire, which the air takes.
 fn fault(f: ReactorFault) -> Option<Fault> {
     match f {
         ReactorFault::PumpBreak => Some(Fault::PumpBreak),
@@ -350,7 +313,6 @@ fn fault(f: ReactorFault) -> Option<Fault> {
     }
 }
 
-/// The room's alarm as the ship's alarm.
 pub fn alarm_of(l: AlarmLevel) -> Alarm {
     match l {
         AlarmLevel::None => Alarm::None,
@@ -359,7 +321,6 @@ pub fn alarm_of(l: AlarmLevel) -> Alarm {
     }
 }
 
-/// Logs the events and counts them; the fires start in the air (`fire::start_of`), not here.
 pub fn route(e: RoomEvent, counts: &mut ReactorCounts) {
     match e {
         RoomEvent::Reactor(ReactorEvent::Fire { size }) => {
@@ -394,7 +355,6 @@ pub fn route(e: RoomEvent, counts: &mut ReactorCounts) {
     }
 }
 
-/// The EMERGENCY COOLING notice, once per press, on every process (the host's news is its own).
 pub fn ecool_notice(items: Res<Items>, mut seen: Local<Option<u32>>, mut gp: ResMut<Gameplay>) {
     let Some(news) = items.reactor else { return };
     if counter_fresh(&mut seen, news.ecools) {
@@ -411,9 +371,6 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, (reactor_step, super::blast::reactor_blast, super::blast::client_blast_news, eject_notice, ecool_notice).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
 }
 
-/// Host and one process: the requests, one step, the events (fires start in the air), the ship's
-/// alarm (the room's or the fire's, the higher), the snapshot out. A client only forwards its
-/// requests.
 #[allow(clippy::too_many_arguments)]
 fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut alarm: ResMut<ShipAlarm>, mut air: ResMut<EngineAir>, fires: Res<FireConfig>, fire_alarm: Res<FireAlarm>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, area: Res<DevArea>, planet: Res<PlanetRes>, repair: Res<crate::repair::RepairConfig>, mut health: Option<ResMut<crate::health::HealthState>>, mut blasts: ResMut<super::blast::PendingBlasts>) {
     let asks = std::mem::take(&mut items.reactor_asks);
@@ -436,14 +393,10 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
             sim.apply(a, &cfg.0, &mut counts);
         }
     }
-    // Canisters the host applied (`dev_area::coolant`): each refills the tank by a canister's worth.
     for _ in 0..items.take_refills() {
         let added = sim.room.pump_mut().refill(cfg.0.room.coolant_canister);
         info!("reactor: coolant canister, the tank gains {added:.0} %");
     }
-    // The brake (`Items::pull_asks`, by the sender): the rod with the most life comes out into the puller's hands,
-    // and the core's heat above its optimal band burns the hand once (the reactor's miss burn, as
-    // repair's miss does it, `hurt_of`). The rod keeps its kind and life.
     for player in std::mem::take(&mut items.pull_asks) {
         let Some(i) = rods::pull_index(sim.room.reactor().rods()) else {
             info!("reactor: the brake, no rod in a slot");
@@ -469,7 +422,6 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
         }
     }
     // Fuel rods the host took out of a hand (`dev_area::rods`): each goes into a free slot. A reactor
-    // with no free slot gives it back to its owner (the client checks first, so this is a race).
     for load in items.take_rod_loads() {
         let Some(mut rod) = rods::kind_of_item(&load.item).and_then(|k| cfg.0.rods.rod(k)) else { continue };
         rod.life = load.life;
@@ -478,7 +430,6 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
             info!("reactor: no free slot for the {} rod, it goes back", rod.kind);
             let Some(def) = items.defs.get(&load.item).cloned() else { continue };
             if let Err(stack) = items.give(time.elapsed_secs_f64(), load.player, rods::rod_stack(&def, rod.life)) {
-                // The hands are full too: the rod lies at the reactor's front.
                 if let Some(at) = rods::reactor_front(&area, &planet) {
                     items.spawn(time.elapsed_secs_f64(), stack, at);
                 }
@@ -495,14 +446,11 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
         if let Some((source, size)) = fire::start_of(&e) {
             fire::ignite(&mut air, &mut grid, *model, source, size);
         }
-        // The blast's rules run in `blast::reactor_blast` (the bodies, the fires, the news).
         if let RoomEvent::Reactor(ReactorEvent::Blast(b)) = e {
             blasts.0.push(b);
         }
         route(e, &mut counts);
     }
-    // Not calm: the room's alarm (or the fire's, the higher) is the ship's. Calm after an alarm:
-    // back to none.
     let room_level = alarm_of(sim.room.level());
     let level = room_level.max(fire_alarm.0);
     if level != Alarm::None || sim.alarmed {
@@ -546,7 +494,6 @@ mod tests {
         assert!(n.graph_output[..10].iter().any(|&v| v > 0));
     }
 
-    /// Steps the room until the snapshot says so (the pump's speed moves with inertia), at most 300 s.
     fn settle(s: &mut ReactorSim, done: impl Fn(&ReactorNews) -> bool) {
         for _ in 0..3000 {
             if done(&s.news(1.0)) {
@@ -561,14 +508,12 @@ mod tests {
     fn the_news_carries_the_lamps_the_boost_and_the_countdown() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        // Warm with the power off after SCRAM: the SCRAM lamp is on, the others off.
         s.apply(ReactorAsk::Scram, &cfg(), &mut k);
         let n = s.news(1.0);
         assert!(n.lamps[Lamp::Scram.index()], "warm with the power off");
         assert!(!n.lamps[Lamp::Hot.index()] && !n.lamps[Lamp::Meltdown.index()]);
         assert!(!n.boost_ok, "no boost with the power off");
         assert_eq!(n.meltdown_eta_s, None);
-        // Power on: the boost passes; a boost that is up at its amount refuses the next press.
         s.apply(ReactorAsk::SetPower(true), &cfg(), &mut k);
         s.apply(ReactorAsk::Boost(true), &cfg(), &mut k);
         let amount = s.room.reactor().tuning().boost_amount;
@@ -598,7 +543,6 @@ mod tests {
 
     #[test]
     fn the_lamps_blink_at_two_hertz_and_scram_does_not() {
-        // On for a quarter of each half second (Barotrauma's TotalTime % 0.5 < 0.25).
         assert!(lamp_blink_on(0.0) && lamp_blink_on(0.2));
         assert!(!lamp_blink_on(0.25) && !lamp_blink_on(0.49));
         assert!(lamp_blink_on(0.5));
@@ -779,7 +723,6 @@ mod tests {
         let tank = s.room.pump().tank();
         s.apply(ReactorAsk::EmergencyCool, &cfg(), &mut k);
         assert_eq!(s.room.pump().tank(), tank, "a second press in the cooldown takes nothing");
-        // The step reports the press once, and the route counts it: the notice and the steam follow the count.
         for e in s.room.step(1.0 / 30.0, Input::auto()) {
             route(e, &mut k);
         }

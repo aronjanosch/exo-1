@@ -1,13 +1,7 @@
-//! Landform library: stamp shapes and their placement by budget. The global pass places
-//! every stamp from the seed before anything else (it needs only the macro noise): the
-//! signature first, then each kind in recipe order, a random candidate at a time, kept when its
-//! fields fit and it is far enough from every stamp so far. A try that misses a kind's minimum
-//! count starts over with the next sub-seed, up to `retry_limit`; then the bake fails.
 use crate::math::*;
 use crate::planet::*;
 use crate::recipe::*;
 
-/// A placed stamp, sizes drawn.
 pub(crate) enum ShapeRt {
     Basin { r: f64, d: f64 },
     /// t along the step, n towards the upper shelf.
@@ -31,7 +25,6 @@ pub(crate) struct StampRt {
     pub shape: ShapeRt,
 }
 
-/// What a placed stamp is, for the atlas, the look harness and tests.
 #[derive(Clone, Debug)]
 pub struct PlacedStamp {
     pub kind: String,
@@ -57,7 +50,6 @@ impl Rng {
         let rr = (1.0 - z * z).sqrt();
         v3(rr * phi.cos(), z, rr * phi.sin())
     }
-    /// A random unit tangent at `c`.
     fn tangent(&mut self, c: V3) -> V3 {
         let (e, n) = crate::look::tangent_frame(c);
         let a = self.next() * std::f64::consts::TAU;
@@ -160,7 +152,6 @@ impl StampRt {
     }
 }
 
-/// Draws a kind's sizes at centre `c` and builds the stamp.
 fn build(k: &LandformKind, c: V3, rng: &mut Rng, radius: f64) -> StampRt {
     let mut p = |s: &Span| s.pick(rng.next());
     let (shape, reach) = match &k.shape {
@@ -230,11 +221,9 @@ impl Planet {
             let mut near = crate::grid::Grid::new(widest, self.radius);
             let mut miss = None;
             for k in &order {
-                // How many of this kind this try wants, then candidates until they are placed.
                 let (min_count, _) = self.count_range(k.count, k.per_100_km2);
                 let want = self.count_pick(k.count, k.per_100_km2, rng.next());
                 let mut got = 0;
-                // The candidate budget grows with the wanted count.
                 let scaled_candidates = ((lf.candidates as f64) * (want as f64 / 10.0).max(1.0)) as u32;
                 for _ in 0..scaled_candidates {
                     if got >= want {
@@ -270,7 +259,6 @@ impl Planet {
         (Vec::new(), lf.retry_limit, Err(format!("{last_miss} after {} tries (landforms.retry_limit)", lf.retry_limit)))
     }
 
-    /// The placed stamps.
     pub fn stamps(&self) -> Vec<PlacedStamp> {
         self.stamps
             .iter()

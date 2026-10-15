@@ -1,14 +1,8 @@
-//! Banners and toasts: what `Gameplay::shown` releases, drawn over the game. One banner at
-//! a time in the upper middle (a payout counts up), toasts in a short stack below it. They never
-//! take input; Enter (`Tap::SkipNotices`) runs the rest of a ritual fast (in `gameplay_step`).
-//! Window only; the logic is in `ScreenNotices` so it can be tested.
 use bevy::prelude::*;
 
 use crate::gameplay::{Gameplay, ShownLine};
 
-/// Seconds a payout takes to count up in its banner.
 pub const COUNT_UP_S: f64 = 1.2;
-/// Toasts on screen at most; older ones go first.
 const MAX_TOASTS: usize = 4;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -29,7 +23,6 @@ pub struct ScreenNotices {
 }
 
 impl ScreenNotices {
-    /// Takes in the lines released since last time, at time `now`.
     pub fn absorb(&mut self, shown: &[ShownLine], now: f64) {
         for l in shown.get(self.seen..).unwrap_or_default() {
             if l.banner {

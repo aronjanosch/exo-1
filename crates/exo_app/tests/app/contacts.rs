@@ -1,6 +1,4 @@
-//! Ship-ship contact under client authority. Two independent Avian worlds, each owns one dynamic
-//! ship and shows the other ship as a delayed kinematic proxy, head-on at 15 m/s. Who owns a
-//! contact is open; proxies do not touch ships at all.
+//! Ship-ship contact with two independent Avian worlds, each owning one ship.
 use avian3d::physics_transform::PhysicsTransformConfig;
 use avian3d::prelude::*;
 use bevy::math::{DQuat, DVec3};
@@ -45,7 +43,6 @@ fn world(own_x: f64, ghost_x: f64, speed: f64, ghost_layer: exo_app::Layer) -> W
         .spawn((RemoteShip { owner: 2, lag: 1.0 }, RigidBody::Kinematic, Position(DVec3::new(ghost_x, 100.0, 0.0)), Rotation::default(), SleepingDisabled, Transform::default()))
         .id();
     let mut commands = app.world_mut().commands();
-    // The proxy hull layer is what the test varies.
     add_hull(&mut commands, own, exo_app::Layer::Ship);
     add_hull(&mut commands, ghost, ghost_layer);
     app.world_mut().flush();
@@ -110,8 +107,7 @@ fn head_on_with(lag: (usize, usize), ticks: usize, layer: exo_app::Layer) -> Out
     Outcome { contact_ticks: (first[0], first[1]), final_vel: (w[0].own_vel().x, w[1].own_vel().x) }
 }
 
-/// Decided for the first playable (initiator, 2026-10-07): no ship-ship contact. The proxy hull
-/// is on `Layer::Remote`: ships fly through it, nothing changes their velocity.
+/// Proxies are on `Layer::Remote`: ships fly through them, nothing changes their velocity.
 #[test]
 fn remote_hull_does_not_touch_ships() {
     let o = head_on_with((9, 3), 180, exo_app::Layer::Remote);

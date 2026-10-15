@@ -1,15 +1,6 @@
-//! The crew HUD's rules without engine types (Claude Design project "EXO-1 Ship
-//! Displays"; decision "Minimal HUD" in the concept repo). Six elements: compass, vitals, the
-//! interaction prompt, the action bar, the key hints and the reticle, plus the credits that show
-//! for a moment after a change. This file holds what can be tested without a window: the sizes
-//! (`HudLook`, the `hud` section of `content/ui/displays.json`), the compass strip, the vitals
-//! lines, the credits flash, the bar's idle fade, the bar's layout, the key hints and the prompt's
-//! anchor. The glue (`exo_app::crew_hud`) draws what these return.
 use crate::{Rgb, Tone};
 use glam::{DVec2, DVec3};
 use serde::Deserialize;
-
-// ---------- the look (data) ----------
 
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -29,18 +20,15 @@ pub struct HudLook {
     pub reticle: ReticleLook,
     pub credits: CreditsLook,
     pub text: TextLook,
-    /// The medic view's panel.
     pub target: crate::target::TargetLook,
 }
 
-/// The dark gradient along the bottom edge that keeps the lower HUD readable.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ScrimLook {
     pub colour: Rgb,
     pub height: f64,
     pub alpha: f64,
-    /// With the inventory (Tab) open.
     pub open_height: f64,
     pub open_alpha: f64,
 }
@@ -49,7 +37,6 @@ pub struct ScrimLook {
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CompassLook {
-    /// Box width and height, and its distance from the screen's top.
     pub width: f64,
     pub height: f64,
     pub top: f64,
@@ -60,24 +47,19 @@ pub struct CompassLook {
     pub label_every_deg: f64,
     /// The strip is opaque in the middle and fades out over this share of the width at each end.
     pub fade: f64,
-    /// The current heading as a number.
     pub heading_size: f64,
-    /// The pointer triangle (down), its width, height and top.
     pub pointer_w: f64,
     pub pointer_h: f64,
     pub pointer_y: f64,
-    /// The base line: top, thickness, alpha.
     pub line_y: f64,
     pub line_px: f64,
     pub line_alpha: f64,
-    /// Ticks: top, width, length at multiples of 90, of 15, otherwise, alpha at the minor ones.
     pub tick_y: f64,
     pub tick_w: f64,
     pub tick_major_px: f64,
     pub tick_mid_px: f64,
     pub tick_px: f64,
     pub tick_alpha: f64,
-    /// N E S W (bold) and the other labels: size, top, and alpha of the others.
     pub cardinal_size: f64,
     pub cardinal_top: f64,
     pub label_size: f64,
@@ -88,7 +70,6 @@ pub struct CompassLook {
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct VitalsLook {
-    /// Width of the column, the gap between its lines and between a label line and its track.
     pub width: f64,
     pub gap: f64,
     pub label_gap: f64,
@@ -109,13 +90,11 @@ pub struct VitalsLook {
 pub struct PromptLook {
     /// The prompt's bottom edge sits this far above its target (px).
     pub gap: f64,
-    /// The F keycap: edge, border, letter size, background alpha, border alpha when blocked.
     pub key_px: f64,
     pub key_border: f64,
     pub key_size: f64,
     pub key_bg_alpha: f64,
     pub blocked_alpha: f64,
-    /// Gap between keycap and text, between the text lines, and above the note line.
     pub key_gap: f64,
     pub line_gap: f64,
     pub note_gap: f64,
@@ -129,22 +108,18 @@ pub struct PromptLook {
     pub dash_gap: f64,
 }
 
-/// One size of action bar slot: closed (bottom centre) or open (Tab).
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SlotLook {
     pub size: f64,
     pub gap: f64,
     pub border: f64,
-    /// The selected slot's border.
     pub border_selected: f64,
-    /// The slot's number (top left) and its distance from the corner.
     pub num_size: f64,
     pub num_x: f64,
     pub num_y: f64,
     /// Alpha of the number of an unselected slot (the selected one is white).
     pub num_alpha: f64,
-    /// The item's code, centred: size and top.
     pub code_size: f64,
     pub code_top: f64,
     /// Count (bottom right) and two-hand mark (bottom left) size, and their distance from the side
@@ -158,16 +133,11 @@ pub struct SlotLook {
 pub struct BarLook {
     pub closed: SlotLook,
     pub open: SlotLook,
-    /// How far the held slot lifts (closed).
     pub lift: f64,
-    /// Closed bar: its bottom edge's distance from the screen and the held name's line (height,
-    /// gap above it, size).
     pub bottom: f64,
     pub name_h: f64,
     pub name_gap: f64,
     pub name_size: f64,
-    /// Open bar: bottom distance of the row below the slots (name left, keys right), its height, the gap
-    /// between slots and row, text size.
     pub open_bottom: f64,
     pub row_h: f64,
     pub row_gap: f64,
@@ -186,10 +156,7 @@ pub struct BarLook {
     pub idle_fade_s: f64,
     pub idle_contrast: f64,
     pub name_idle_contrast: f64,
-    /// Contrast of the slots while the hands carry cargo (dashed frames).
     pub carry_contrast: f64,
-    /// Alphas of the slot states (soft border / fill): filled, empty, carrying, selected fill,
-    /// hovered fill.
     pub filled_border: f64,
     pub filled_bg: f64,
     pub empty_border: f64,
@@ -210,13 +177,11 @@ pub struct BarLook {
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HintsLook {
-    /// Gap between the rows, and between a row's text and its keycap.
     pub gap: f64,
     pub key_gap: f64,
     pub size: f64,
     /// Letter spacing in em.
     pub spacing: f64,
-    /// Keycap: minimum width, height, border, border alpha, fill alpha, letter size.
     pub key_min_w: f64,
     pub key_h: f64,
     pub key_border: f64,
@@ -231,7 +196,6 @@ pub struct ReticleLook {
     pub dot_px: f64,
     pub ring_px: f64,
     pub ring_stroke_px: f64,
-    /// The dark outline around dot and ring, and its alpha.
     pub outline_px: f64,
     pub outline_alpha: f64,
 }
@@ -239,7 +203,6 @@ pub struct ReticleLook {
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CreditsLook {
-    /// Seconds shown at full strength after a change, then the fade.
     pub show_s: f64,
     pub fade_s: f64,
     pub size: f64,
@@ -248,7 +211,6 @@ pub struct CreditsLook {
     pub delta_size: f64,
 }
 
-/// The dark shadow behind every HUD text, for legibility on bright ground.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TextLook {
@@ -280,9 +242,6 @@ impl HudLook {
     }
 }
 
-// ---------- compass ----------
-
-/// What the compass measures against.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reference {
     /// The planet's north (on a planet, also in a landed ship).
@@ -327,7 +286,6 @@ pub fn heading_text(h: f64) -> String {
     format!("{:03}°", (normalize_deg(h).round() as i64) % 360)
 }
 
-/// How long a mark's tick is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TickLen {
     /// Multiples of 90 degrees.
@@ -337,7 +295,6 @@ pub enum TickLen {
     Minor,
 }
 
-/// One mark of the strip.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Tick {
     /// Degrees right (+) or left (-) of the current heading.
@@ -356,7 +313,6 @@ pub struct Tick {
     pub alpha: f64,
 }
 
-/// The marks of the strip around `heading`.
 pub fn compass_ticks(heading: f64, reference: Reference, c: &CompassLook) -> Vec<Tick> {
     let half = c.span_deg * 0.5;
     let first = ((heading - half) / c.tick_every_deg).ceil() as i64;
@@ -399,8 +355,6 @@ pub fn compass_ticks(heading: f64, reference: Reference, c: &CompassLook) -> Vec
         .collect()
 }
 
-// ---------- vitals ----------
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VitalKind {
     Health,
@@ -439,7 +393,6 @@ pub struct Costs {
     pub headache: f64,
 }
 
-/// What the vitals block reads, the health system's numbers as the HUD takes them.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VitalsIn {
     /// Vitality's share of the maximum before any headache.
@@ -452,13 +405,10 @@ pub struct VitalsIn {
     pub burn_level: u8,
     /// The burning buildup, 0..1.
     pub buildup: f64,
-    /// On fire now.
     pub burning: bool,
     /// Radiation's share, 0 without.
     pub radiation: f64,
-    /// Radiation makes nausea.
     pub sick: bool,
-    /// What each injury costs the health now.
     pub costs: Costs,
 }
 
@@ -473,14 +423,9 @@ pub struct VitalLine {
     pub tone: Tone,
     /// Where the bar's usable part ends (the health's reduced maximum); 1 otherwise.
     pub cap: f64,
-    /// The burn's level 1 to 3; 0 while only building up.
     pub level: u8,
-    /// On fire now (the burn line only).
     pub on_fire: bool,
-    /// Nausea from radiation (the radiation line only).
     pub sick: bool,
-    /// What each injury costs the health now (every line carries them: the health bar's segments
-    /// and the cost texts read them).
     pub costs: Costs,
 }
 
@@ -536,12 +481,10 @@ impl VitalLine {
         }
     }
 
-    /// The burn's level 1 to 3 (0 while only building up).
     pub fn burn_level(&self) -> u8 {
         self.level
     }
 
-    /// The burn line: `▲ BURN II`, `▲ BURN` while only building up, `■ BURN III · ON FIRE`.
     pub fn burn_text(&self) -> String {
         let mut s = format!("{} BURN", self.glyph());
         if self.level > 0 {
@@ -611,9 +554,6 @@ pub fn vital_lines(v: &VitalsIn, look: &VitalsLook) -> Vec<VitalLine> {
     out
 }
 
-// ---------- credits ----------
-
-/// What the credits element shows right now.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CreditsView {
     pub value: i64,
@@ -632,7 +572,6 @@ pub struct CreditsFlash {
 }
 
 impl CreditsFlash {
-    /// One step of `dt` seconds with the current wallet.
     pub fn step(&mut self, wallet: i64, dt: f64, c: &CreditsLook) -> Option<CreditsView> {
         match self.last {
             None => {}
@@ -668,12 +607,9 @@ pub fn credits_number(v: i64) -> String {
     format!("{}{s}", if v < 0 { "-" } else { "" })
 }
 
-/// `+300` or `-40`.
 pub fn delta_text(d: i64) -> String {
     format!("{}{}", if d < 0 { "-" } else { "+" }, d.unsigned_abs())
 }
-
-// ---------- the action bar ----------
 
 /// The bar's contrast clock: full while something happens, `idle_contrast` after `idle_s` without
 /// it (the held slot stays at full contrast in the glue).
@@ -690,12 +626,10 @@ impl BarIdle {
     pub fn step(&mut self, dt: f64) {
         self.idle += dt;
     }
-    /// 1 down to `idle_contrast`, over `idle_fade_s` after `idle_s`.
     pub fn contrast(&self, b: &BarLook) -> f64 {
         1.0 - self.dim(b) * (1.0 - b.idle_contrast)
     }
 
-    /// The held name's alpha: 1 down to `name_idle_contrast` over the same time.
     pub fn name_contrast(&self, b: &BarLook) -> f64 {
         1.0 - self.dim(b) * (1.0 - b.name_idle_contrast)
     }
@@ -731,15 +665,11 @@ pub fn bar_row_top(open: bool, window: DVec2, b: &BarLook) -> f64 {
     }
 }
 
-// ---------- key hints ----------
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HintAction {
-    /// The left mouse button uses the held item.
     Use,
     Drop,
     Throw,
-    /// A display is in use: F or Escape leaves it.
     Leave,
 }
 
@@ -762,12 +692,10 @@ pub fn hints(held_item: bool, item_usable: bool, carrying: bool) -> Vec<Hint> {
     vec![Hint { action: HintAction::Use, dim: !item_usable }, Hint { action: HintAction::Drop, dim: false }, Hint { action: HintAction::Throw, dim: false }]
 }
 
-/// The hints while a display is in use: the only key shown is the one that leaves it.
 pub fn display_hints() -> Vec<Hint> {
     vec![Hint { action: HintAction::Leave, dim: false }]
 }
 
-/// The word beside a key hint.
 pub fn hint_label(action: HintAction) -> &'static str {
     match action {
         HintAction::Use => "USE",
@@ -777,12 +705,10 @@ pub fn hint_label(action: HintAction) -> &'static str {
     }
 }
 
-/// What the open inventory is doing: the keys it shows follow.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TabMode {
     Browse,
     Drag,
-    /// The hands carry cargo.
     Carrying,
 }
 
@@ -797,7 +723,6 @@ pub enum TabKey {
     Cancel,
 }
 
-/// The hints under the open bar, keycap then text.
 pub fn tab_hints(mode: TabMode) -> Vec<(TabKey, &'static str)> {
     match mode {
         TabMode::Browse => vec![(TabKey::Click, "HOLD"), (TabKey::Drag, "MOVE"), (TabKey::Drop, "DROP"), (TabKey::Throw, "THROW"), (TabKey::Close, "CLOSE")],
@@ -806,15 +731,12 @@ pub fn tab_hints(mode: TabMode) -> Vec<(TabKey, &'static str)> {
     }
 }
 
-// ---------- the prompt ----------
-
 /// What F does at the target; the glue draws each its own way.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PromptKind {
     #[default]
     Use,
     Collect,
-    /// Stand up, leave a screen.
     Leave,
     /// F does nothing now (hands full, no licence): dashed key, amber line.
     Blocked,
@@ -899,7 +821,6 @@ mod tests {
 
     #[test]
     fn the_true_frame_on_a_planet_and_the_bow_in_flight() {
-        // Walking outside near a planet, and in a landed ship: true. Flying and in space: bow.
         assert_eq!(reference(false, false, true), Reference::True);
         assert_eq!(reference(true, true, true), Reference::True);
         assert_eq!(reference(true, false, true), Reference::Bow);
@@ -921,7 +842,6 @@ mod tests {
 
     #[test]
     fn north_follows_the_ground_towards_the_pole() {
-        // On the equator at +x, north is +y; at 45 degrees it leans back towards the pole.
         let n = north_at(DVec3::X);
         assert!((n - DVec3::Y).length() < 1e-9);
         let up = DVec3::new(1.0, 1.0, 0.0).normalize();
@@ -950,13 +870,11 @@ mod tests {
         assert!(at(0).bold && !at(30).bold && !at(45).bold);
         assert!(at(15).label.is_none());
         assert_eq!((at(0).len, at(30).len, at(45).len, at(5).len), (TickLen::Major, TickLen::Mid, TickLen::Mid, TickLen::Minor));
-        // Across the wrap; in the bow frame the main marks are numbers and there are no letters.
         let t = compass_ticks(355.0, Reference::Bow, &c);
         let zero = t.iter().find(|k| k.deg == 0).unwrap();
         assert_eq!(zero.label.as_deref(), Some("0"));
         assert!((zero.offset_deg - 5.0).abs() < 1e-9 && zero.bold);
         assert!(t.iter().filter_map(|k| k.label.as_deref()).all(|l| l.chars().all(|c| c.is_ascii_digit())));
-        // The mark under the heading sits in the middle at full strength; the strip is opaque from
         // 24 % to 76 % of its width and fades to nothing at both ends.
         let t = compass_ticks(90.0, Reference::True, &c);
         let e = t.iter().find(|k| k.deg == 90).unwrap();
@@ -1020,7 +938,6 @@ mod tests {
         let seg = health_segments(health);
         assert!((seg.burn.1 - 1.0).abs() < 1e-9 && (seg.oxygen.0 - 0.0).abs() < 1e-9, "the lost part is the whole bar: burn {:?} oxygen {:?}", seg.burn, seg.oxygen);
         assert!((seg.oxygen.1 - seg.burn.0).abs() < 1e-9, "the two causes meet");
-        // The oxygen's bar fill is the air left, about half.
         assert_eq!(o2.value(), "", "fill 48 % shown by the bar, not as text while it costs");
     }
 
@@ -1082,10 +999,8 @@ mod tests {
         assert!(f.step(500, 0.1, &c).is_none());
         let v = f.step(800, 0.1, &c).unwrap();
         assert_eq!((v.value, v.delta, v.alpha), (800, 300, 1.0));
-        // A second change while it shows adds up and restarts the time.
         let v = f.step(750, 0.1, &c).unwrap();
         assert_eq!(v.delta, 250);
-        // Full for show_s, then fading, then gone.
         let mut t = 0.0;
         let mut last = None;
         while let Some(v) = f.step(750, 0.05, &c) {
@@ -1096,7 +1011,6 @@ mod tests {
         assert!((t - (c.show_s + c.fade_s)).abs() < 0.11, "gone after {t} s");
         assert!(last.unwrap().alpha < 0.3);
         assert!(f.step(750, 0.05, &c).is_none());
-        // A new change starts a new delta.
         assert_eq!(f.step(700, 0.05, &c).unwrap().delta, -50);
     }
 
@@ -1182,7 +1096,6 @@ mod tests {
         assert_eq!(l.prompt.gap, 16.0);
         let a = prompt_anchor(Some(DVec2::new(700.0, 400.0)), w, &l);
         assert_eq!(a, DVec2::new(700.0, 384.0));
-        // Off the screen's edge it stays inside the margin; without a point it sits below the reticle.
         let a = prompt_anchor(Some(DVec2::new(-50.0, 2.0)), w, &l);
         assert_eq!(a, DVec2::new(l.margin, l.margin));
         assert_eq!(prompt_anchor(None, w, &l), DVec2::new(800.0, 900.0 * 0.58));
@@ -1195,12 +1108,10 @@ mod tests {
         // The screen's bottom edge at y 500 (both corners): the prompt's top is 16 px under it.
         let edge = [DVec2::new(600.0, 500.0), DVec2::new(1000.0, 500.0)];
         assert_eq!(display_prompt_top(Some(edge), w, &l), 516.0);
-        // The lower corner decides.
         assert_eq!(display_prompt_top(Some([DVec2::new(600.0, 420.0), DVec2::new(1000.0, 500.0)]), w, &l), 516.0);
         // The edge too low for the prompt to fit: 120 px under the reticle (the centre, y 450).
         let low = [DVec2::new(600.0, 800.0), DVec2::new(1000.0, 800.0)];
         assert_eq!(display_prompt_top(Some(low), w, &l), 450.0 + PROMPT_RETICLE_DROP);
-        // A corner behind the camera (no projection) is the same fallback.
         assert_eq!(display_prompt_top(Some([DVec2::new(f64::NAN, 0.0), DVec2::new(1000.0, 500.0)]), w, &l), 450.0 + PROMPT_RETICLE_DROP);
         assert_eq!(display_prompt_top(None, w, &l), 450.0 + PROMPT_RETICLE_DROP);
     }

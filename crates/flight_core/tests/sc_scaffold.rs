@@ -1,5 +1,3 @@
-//! The SC model's scaffold: the tuning files load, the ship holds its height with
-//! gravity compensation and falls without it, and full forward thrust reaches the SCM cap.
 mod sc_common;
 use flight_core::sc::{ModeCmds, ScShip};
 use flight_core::FlightInput;

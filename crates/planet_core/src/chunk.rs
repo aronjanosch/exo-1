@@ -76,7 +76,6 @@ impl ChunkOut {
 }
 
 impl Planet {
-    /// Chunk edge length in metres (along an edge of the chunk, base sphere).
     pub fn chunk_edge_m(&self, face: usize, a0: f64, b0: f64, size: f64) -> f64 {
         (cube_to_sphere(face, a0, b0) - cube_to_sphere(face, a0 + size, b0)).length() * self.radius
     }

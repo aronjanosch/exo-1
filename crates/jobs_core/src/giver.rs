@@ -1,6 +1,3 @@
-//! Givers: the few named contacts jobs come from. A giver has a counter at a location, a
-//! voice (pools of lines, with greetings by mood), a standing track and a history with the crew.
-//! Standing rises with completed jobs and falls with failures, never below its floor: a mistake
 //! does not lock a giver for good (research: "one mistake locking a whole faction").
 use std::fmt;
 
@@ -9,7 +6,6 @@ use gameplay_core::text::TextTable;
 use gameplay_core::{Condition, LocationId, TextKey, TrackId};
 use serde::{Deserialize, Serialize};
 
-/// A `giver` record.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct GiverId(pub String);
@@ -29,7 +25,6 @@ impl fmt::Display for GiverId {
     }
 }
 
-/// The folder this reads.
 pub const FOLDER: &str = "giver";
 
 /// Pools of a voice need this many lines, so a line never comes twice in a row by lack of choice.
@@ -39,11 +34,9 @@ pub const MIN_POOL: usize = 3;
 #[serde(rename_all = "snake_case")]
 pub enum GiverKind {
     Legal,
-    /// The small odd crime family; its jobs are not offered yet.
     Family,
 }
 
-/// The keys of the greeting pools by mood.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Greetings {
@@ -52,13 +45,11 @@ pub struct Greetings {
     pub after_failure: TextKey,
 }
 
-/// A giver's voice: text keys of pools in the text table.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Voice {
     pub greeting: Greetings,
     pub intro: TextKey,
-    /// The reason when neither the cargo nor the route has one of its own.
     pub reason: TextKey,
     pub sign_off: TextKey,
 }
@@ -69,14 +60,12 @@ pub struct Giver {
     pub id: GiverId,
     pub name: TextKey,
     pub kind: GiverKind,
-    /// Where the counter is (a marker with a prompt that opens the briefing).
     pub location: LocationId,
     /// The crew track of its standing (a floor keeps it from going negative); its thresholds are
     /// the ranks that conditions of templates ask for.
     pub standing: TrackId,
     /// Standing gained per completed job. TODO(initiator): a starting value.
     pub gain: i64,
-    /// Standing lost per failed job (expired, or nothing delivered).
     pub loss: i64,
     /// When the giver offers jobs at all; none means always.
     #[serde(default)]
@@ -91,7 +80,6 @@ impl Record for Giver {
     }
 }
 
-/// How the giver feels about the crew.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Mood {
     FirstJob,
@@ -99,11 +87,9 @@ pub enum Mood {
     AfterFailure,
 }
 
-/// What happened between the crew and one giver.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GiverHistory {
     pub completed: u32,
-    /// Failed jobs since the last completed one.
     pub failure_streak: u32,
 }
 
@@ -129,7 +115,6 @@ impl Greetings {
     }
 }
 
-/// Errors for voice keys without a pool or with too few lines.
 pub(crate) fn check_texts(g: &Loaded<Giver>, table: &TextTable, e: &mut Vec<String>) {
     let v = &g.record.voice;
     let keys = [
@@ -152,7 +137,6 @@ pub(crate) fn check_texts(g: &Loaded<Giver>, table: &TextTable, e: &mut Vec<Stri
     }
 }
 
-/// Errors for voice pools with too few lines.
 pub(crate) fn check_pool_sizes(g: &Loaded<Giver>, table: &TextTable, e: &mut Vec<String>) {
     let v = &g.record.voice;
     let keys = [

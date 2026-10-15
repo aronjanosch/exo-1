@@ -1,5 +1,3 @@
-//! The dev area and the test console: walk to it, use it with F, click, leave with F and
-//! Escape. Without a window.
 use crate::common;
 use exo_app::Options;
 

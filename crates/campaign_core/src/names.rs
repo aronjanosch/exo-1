@@ -3,7 +3,6 @@ use serde::Deserialize;
 
 const KEY_NAME: u64 = 0x4E41_4D45;
 
-/// Name pools. A system is `<first> <second>`; planets and stations come from their own pools.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Names {

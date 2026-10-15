@@ -1,6 +1,3 @@
-//! Terrain collision only near anchors (walker, ship): one heightfield patch per cube-face cell
-//! at `patch_depth`, in the cell's tangent frame, heights from planet_core::patch_heights
-//! Built on the async compute pool.
 use crate::env::{from_v3, to_v3, PlanetRes};
 use crate::Layer;
 use avian3d::prelude::*;
@@ -59,7 +56,6 @@ impl Ring {
         self.pending.len()
     }
 
-    /// True if a built patch covers this world position.
     pub fn has_patch_near(&self, world: DVec3) -> bool {
         let half = PATCH_SAMPLES as f64 * 0.5 - 1.0;
         self.patches.values().any(|(_, c, r)| {
@@ -75,7 +71,6 @@ impl Ring {
     fn collect(&self, planet: &PlanetRes, face: usize, a0: f64, b0: f64, size: f64, depth: u32, points: &[DVec3], out: &mut HashMap<Key, (f64, f64, f64, f64)>) {
         let r = planet.radius;
         let centre = from_v3(cube_to_sphere(face, a0 + size * 0.5, b0 + size * 0.5)) * r;
-        // Bound = farthest corner.
         let mut bound: f64 = 0.0;
         for (a, b) in [(a0, b0), (a0 + size, b0), (a0, b0 + size), (a0 + size, b0 + size)] {
             bound = bound.max(centre.distance(from_v3(cube_to_sphere(face, a, b)) * r));
@@ -104,7 +99,6 @@ pub fn update_ring(mut commands: Commands, time: Res<Time>, planet: Res<PlanetRe
     let planet = planet.as_ref();
     // Nobody took last frame's times (no --perf): drop them.
     ring.built_ms.clear();
-    // Collect finished jobs, a few per frame.
     let mut adds = 0;
     let keys: Vec<Key> = ring.pending.keys().copied().collect();
     for key in keys {

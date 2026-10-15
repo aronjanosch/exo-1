@@ -20,7 +20,6 @@ pub const STAMP: f32 = 46.0;
 /// Space between the screen edge and the HUD (px).
 pub const MARGIN: f32 = 16.0;
 
-/// A colour with its alpha scaled (fades).
 pub fn faded(c: Color, a: f32) -> Color {
     let mut s = c.to_srgba();
     s.alpha *= a.clamp(0.0, 1.0);

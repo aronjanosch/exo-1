@@ -1,5 +1,3 @@
-//! The SC model's linear law through `Controls` (cap, brake, gravity compensation,
-//! master modes, speed limiter); the checks are in the scenario.
 use crate::common;
 use exo_app::Options;
 

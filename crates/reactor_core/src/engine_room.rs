@@ -1,64 +1,8 @@
 //! The engine room: reactor, coolant pump, junction box and the grid of consumers, stepped together.
-//!
-//! - The coolant pump has PULSAR's three modes (manual, `pulsar-mech-conduits.md` 1.4): Off takes no
-//!   coolant; Low is a steady small stream that drains the tank slowly; High a large stream that
-//!   cools strongly and drains it quickly. Names and states are PULSAR's; every number is ours
 //!   (`pump_low`, the time constants, `pump_use_low` and `pump_use_high`), TODO(initiator).
-//! - The pump's speed (0..1) follows the mode's target with inertia: Off 0, Low `pump_low`, High 1;
-//!   up with `pump_spin_up_s`, down with `pump_run_down_s` (an exponential approach, ours; Barotrauma
-//!   has the setting follow at once).
-//! - The flow is speed x condition factor x power factor (`EngineRoom::flow`, `stream`), 0 with an
-//!   empty tank. Condition: `device_core`, 1 working, 0 broken (Barotrauma `Pump.cs:162` lerps
-//!   the flow 0.5..1 with the condition; ours is the device's factor). Power: Barotrauma
-//!   `Pump.cs:152` multiplies the flow by the voltage (`powerFactor`), and `Pump.cs:97` needs
-//!   `Voltage >= MinVoltage` for `HasPower`: a Barotrauma pump needs grid power. Ours is a backup
-//!   supply (our touch, coordinator decision for the initiator to confirm): with the reactor
-//!   delivering nothing (off, cold start, SCRAM, broken) the pump runs on the backup at factor 1.
-//!   While the reactor delivers, the factor is the junction box's voltage of the last step,
-//!   clamped to 0..1, so a short grid (demand above the reactor's maximum) slows the pump, which
-//!   cools less and runs hotter (the brownout death spiral, the point). The pump draws no kW from
 //!   the grid here: TODO(initiator), pump as a grid consumer.
-//! - The flow is the coolant: it sets the reactor's cooling offset, which follows it with a coast
-//!   (`coolant_coast_s`, reactor.rs). Off or broken lets the temperature climb; with no flow the core
-//!   climbs whatever Auto does. Heat above the optimal band wears a running pump as overload.
-//! - The coolant tank: a mode in Low or High drains it at (`coolant_use_base` + `coolant_use_per_heat`
-//!   x heat) x its use factor (`pump_use_low` 0.6, `pump_use_high` 1.5) x the stream (condition and
-//!   power, not the speed). So High drains 2.5 times as fast as Low at the same heat, as PULSAR says
-//!   "quickly" against "slowly". Off drains nothing; its speed runs down over `pump_run_down_s`.
 //!   TODO(initiator): pump run-down and the reactor's coolant coast now stack after a switch-off.
-//! - Emergency cooling (PULSAR's manual button; PULSAR's automatic safety is not ours, the
-//!   initiator decided no automatic safety): `emergency_cool` takes `ecool_tank_cost` of the tank at
-//!   once and adds `ecool_strength` degrees of cooling to the reactor for `ecool_duration_s`, then a
-//!   cooldown of `ecool_cooldown_s` from the press. Refused during the cooldown, with the tank below
 //!   the cost, or with the pump broken. All values TODO(initiator).
-//! - The junction box sits between the reactor and the consumers. Supply above `overvolt_ratio`
-//!   times the demand is overvoltage (Barotrauma `PowerTransfer.cs:245-292`, `UpdateOvervoltage`:
-//!   `Overload = Voltage > max(OverloadVoltage, 1)`). While overvolted, random hits take condition
-//!   (Barotrauma: 1 % per 60 Hz frame, here `overvolt_hits_per_s`; each hit `rand(10..500) / 60 *
-//!   lerp(5, 1, condition fraction)`, so a damaged box is more sensitive). A hit that breaks the box
-//!   gives sparks and, with `break_fire_chance`, a fire (Barotrauma `FireProbability` 0.15, here
-//!   fixed, not the intensity lerp; the 5 s `OverloadCooldown` after a break is kept). Sparks also
-//!   come now and then while overvolted (`sparks_per_s`, our touch: the screen shows it coming).
-//!   Undervoltage (supply delivered below the request) is seen (`voltage`, `undervolted`) and
-//!   damages nothing; Barotrauma does not damage on undervoltage either. A broken box passes
-//!   nothing. Its breakers (one per group) are the only switches the box has.
-//! - The engines' load follows a throttle, 0..1, which scales the Engines group's demand (ours:
-//!   Barotrauma `Engine.cs:190` has the consumption follow the force, with exponent 1.5; ours is
-//!   linear). `set_engine_wander` is the dev stand-in for a helm: the throttle random-walks between
-//!   `wander_min` and 1, a new target every `wander_every_s`, moving at `wander_rate` per second.
-//! - `powered`: the machines have power when the box is working and the reactor delivers.
-//! - `Fault`s are the dev button's: `PumpBreak`, `LoadDrop` (engines and lights breakers off at
-//!   once, so overvoltage and the Auto overshoot follow), `Surge` (the box takes a hit).
-//! - `AlarmLevel` is derived each step for the glue: `Warn` above the optimal band or with a part
-//!   that needs repair, `Danger` above the allowed band.
-//!
-//! Meltdown blast (Barotrauma reactor.xml:45-58, `reactor` module doc): a meltdown with fuel left
-//! raises `Reactor(Blast)`, and the pump and the junction box take `blast.device_damage` at once
-//! (they break). The room has no positions, so every device in it is in range. The burn, stun and
-//! radiation for the players are the glue's.
-//!
-//! Meltdown leaves the reactor broken with spent rods (`reactor`); repair and restart are the
-//! glue's and use `device_core` repair. No explosion logic here.
 use device_core::{Condition, DeviceEvent, DeviceTuning};
 use gameplay_core::rng::Rng;
 
@@ -76,11 +20,9 @@ mod tests;
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoomTuning {
-    /// The coolant pump's device values.
     pub pump: DeviceTuning,
     /// Degrees above the optimal band's top that add one unit of load (overload wear) to the pump.
     pub heat_wear_degrees: f64,
-    /// The junction box's device values.
     pub junction: DeviceTuning,
     /// Supply above this multiple of the demand is overvoltage.
     pub overvolt_ratio: f64,
@@ -88,11 +30,9 @@ pub struct RoomTuning {
     pub overvolt_hits_per_s: f64,
     /// Chance that the hit which breaks the box starts a fire. Barotrauma `FireProbability` 0.15.
     pub break_fire_chance: f64,
-    /// Chance per second of sparks while overvolted.
     pub sparks_per_s: f64,
     /// Size of a fire from the junction box (a break), metres.
     pub spark_fire_size: f64,
-    /// Condition a `Fault::Surge` takes from the junction box.
     pub surge_damage: f64,
     /// Coolant tank use while the pump runs, % of the tank per second, before any heat.
     /// TODO(initiator): value. Full tank at normal running lasts about 6.5 min with the rest.
@@ -127,7 +67,6 @@ pub struct RoomTuning {
     /// Dev stand-in for a helm: the engines' throttle random-walks while on. Off in code, on in
     /// `reactor.json`.
     pub engine_wander: bool,
-    /// Seconds between two new wander targets.
     pub wander_every_s: f64,
     /// The lowest wander target, 0..1.
     pub wander_min: f64,
@@ -190,7 +129,6 @@ const WARM_START_HOLD_S: f64 = 5.0;
 const WARM_START_CAP_S: f64 = 600.0;
 const WARM_START_TOLERANCE: f64 = 0.02;
 
-/// What the engineer sets each step.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Input {
     /// Auto sets the targets; Manual uses `fission` and `turbine`.
@@ -209,7 +147,6 @@ impl Input {
     }
 }
 
-/// Where a device event or a fire comes from.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Source {
     Reactor,
@@ -217,39 +154,30 @@ pub enum Source {
     Junction,
 }
 
-/// What happened in one step. The glue routes them.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum RoomEvent {
-    /// Reactor events as the reactor raises them (fire, meltdown, alarms).
     Reactor(ReactorEvent),
     /// The operator pressed the emergency cooling (`EngineRoom::emergency_cool`) in the last step.
     EmergencyCool,
-    /// A device crossed a line (needs repair, broke, works again).
     Device { source: Source, event: DeviceEvent },
-    /// The junction box threw sparks (overvoltage).
     Sparks,
     /// A fire started outside the reactor (from sparks). Reactor fires come as `Reactor(Fire)`.
     Fire { size: f64, source: Source },
 }
 
-/// The dev button's faults.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Fault {
     /// The coolant pump goes to just below its broken limit.
     PumpBreak,
     /// Engines and lights go off at once: overvoltage at the junction box, and Auto overshoots.
     LoadDrop,
-    /// The junction box takes `surge_damage`.
     Surge,
 }
 
-/// The alarm the glue shows for the whole room.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AlarmLevel {
     None,
-    /// Above the optimal band, or a part needs repair.
     Warn,
-    /// Above the allowed band: the meltdown timer runs.
     Danger,
 }
 
@@ -263,7 +191,6 @@ pub enum PumpMode {
     High,
 }
 
-/// The coolant pump. Its flow scales the reactor's cooling.
 #[derive(Clone, Debug)]
 pub struct Pump {
     condition: Condition,
@@ -275,12 +202,10 @@ pub struct Pump {
 }
 
 impl Pump {
-    /// A pump in High, running at full speed (as a pump that is on always was).
     pub fn new(tuning: &RoomTuning, seed: u64) -> Pump {
         Pump { condition: Condition::new(tuning.pump, seed), mode: PumpMode::High, speed: 1.0, tank: 100.0 }
     }
 
-    /// The switch's mode.
     pub fn mode(&self) -> PumpMode {
         self.mode
     }
@@ -298,7 +223,6 @@ impl Pump {
         }
     }
 
-    /// The pump's speed, 0..1 (inertia: it runs up and down toward the mode's target).
     pub fn speed(&self) -> f64 {
         self.speed
     }
@@ -311,7 +235,6 @@ impl Pump {
         self.speed += (target - self.speed) * (dt / tau.max(1e-9)).min(1.0);
     }
 
-    /// Coolant use factor of the mode: Off 0, Low `pump_use_low`, High `pump_use_high`.
     fn use_factor(&self, t: &RoomTuning) -> f64 {
         match self.mode {
             PumpMode::Off => 0.0,
@@ -320,17 +243,14 @@ impl Pump {
         }
     }
 
-    /// Coolant left in the tank, 0..100 %.
     pub fn tank(&self) -> f64 {
         self.tank
     }
 
-    /// Sets the tank level (0..100 %). For the dev drain and the tests.
     pub fn set_tank(&mut self, pct: f64) {
         self.tank = pct.clamp(0.0, 100.0);
     }
 
-    /// Adds `pct` to the tank up to full. Returns what was added.
     pub fn refill(&mut self, pct: f64) -> f64 {
         let before = self.tank;
         self.tank = (self.tank + pct.max(0.0)).min(100.0);
@@ -348,7 +268,6 @@ impl Pump {
         }
     }
 
-    /// The mode is Low or High. Off takes no coolant and runs its speed down.
     pub fn on(&self) -> bool {
         self.mode != PumpMode::Off
     }
@@ -362,12 +281,10 @@ impl Pump {
         &self.condition
     }
 
-    /// For repair and damage.
     pub fn condition_mut(&mut self) -> &mut Condition {
         &mut self.condition
     }
 
-    /// Output factor 0..1: 1 working, 0 broken.
     pub fn factor(&self) -> f64 {
         self.condition.factor()
     }
@@ -379,7 +296,6 @@ impl Pump {
     }
 }
 
-/// The junction box between reactor and consumers.
 #[derive(Clone, Debug)]
 pub struct JunctionBox {
     condition: Condition,
@@ -421,7 +337,6 @@ impl JunctionBox {
         &self.condition
     }
 
-    /// For repair and damage.
     pub fn condition_mut(&mut self) -> &mut Condition {
         &mut self.condition
     }
@@ -442,7 +357,6 @@ impl JunctionBox {
                 ev.push(RoomEvent::Sparks);
             }
         }
-        // The voltage the grid sees: what the box passes over what the grid asked for.
         self.voltage = if demand > 0.0 { through / demand } else { 1.0 };
         (through, ev)
     }
@@ -476,7 +390,6 @@ impl JunctionBox {
     }
 }
 
-/// Reactor, pump, junction box and grid, stepped together.
 #[derive(Clone, Debug)]
 pub struct EngineRoom {
     tuning: RoomTuning,
@@ -485,17 +398,13 @@ pub struct EngineRoom {
     junction: JunctionBox,
     grid: Grid,
     level: AlarmLevel,
-    /// The Engines group's demand at full throttle, kW (from the tuning).
     engines_full_kw: f64,
-    /// Engines throttle 0..1.
     throttle: f64,
     wander: bool,
     wander_rng: Rng,
     wander_target: f64,
     wander_left: f64,
-    /// The rod kinds of the loaded values, for `rod_of`.
     rods: RodKinds,
-    /// Output, load and temperature over the last points (the status board's graph).
     history: History,
     /// Seconds of emergency cooling left (0 when none runs).
     ecool_left: f64,
@@ -503,7 +412,6 @@ pub struct EngineRoom {
     ecool_cd: f64,
     /// A press since the last step: the next step reports `RoomEvent::EmergencyCool`.
     ecool_pressed: bool,
-    /// The aux reactor is on (`set_aux`).
     aux: bool,
     /// The aux switches of Life Support and Lights (indexed by `Group`; Engines is never aux-fed).
     aux_switch: [bool; Group::ALL.len()],
@@ -569,7 +477,6 @@ impl EngineRoom {
         self.ecool_cd <= 0.0 && self.pump.condition.functioning() && self.pump.tank >= self.tuning.ecool_tank_cost
     }
 
-    /// The emergency cooling is running now.
     pub fn ecool_active(&self) -> bool {
         self.ecool_left > 0.0
     }
@@ -606,7 +513,6 @@ impl EngineRoom {
         &self.reactor
     }
 
-    /// For rods and the like.
     pub fn reactor_mut(&mut self) -> &mut Reactor {
         &mut self.reactor
     }
@@ -631,7 +537,6 @@ impl EngineRoom {
         &self.grid
     }
 
-    /// For priorities and the like.
     pub fn grid_mut(&mut self) -> &mut Grid {
         &mut self.grid
     }
@@ -642,7 +547,6 @@ impl EngineRoom {
         self.junction.voltage()
     }
 
-    /// The engines' throttle, 0..1 (scales the Engines group's demand).
     pub fn engine_throttle(&self) -> f64 {
         self.throttle
     }
@@ -712,7 +616,6 @@ impl EngineRoom {
         g == Group::Engines || self.aux_switch[g.index()]
     }
 
-    /// Whether the aux reactor feeds this group now: aux on, not Engines, and its switch on.
     fn aux_fed(&self, g: Group) -> bool {
         self.aux && g != Group::Engines && self.aux_switch[g.index()]
     }
@@ -732,22 +635,18 @@ impl EngineRoom {
         if self.aux { self.grid.request_of(Group::Engines) } else { self.grid.request_kw() }
     }
 
-    /// Hands the aux boost to the reactor (its output range's top).
     fn sync_aux(&mut self) {
         self.reactor.set_output_boost_kw(self.aux_boost_kw());
     }
 
-    /// Switches a consumer group's breaker on the junction box.
     pub fn set_breaker(&mut self, g: Group, on: bool) {
         self.grid.set_breaker(g, on);
     }
 
-    /// Switches the coolant pump on (High) or off (Off).
     pub fn set_pump(&mut self, on: bool) {
         self.pump.set_on(on);
     }
 
-    /// Sets the coolant pump's mode (Off, Low or High).
     pub fn set_pump_mode(&mut self, mode: PumpMode) {
         self.pump.set_mode(mode);
     }
@@ -757,7 +656,6 @@ impl EngineRoom {
         self.reactor.warnings(self.main_load_kw())
     }
 
-    /// The room's alarm, as of the last step.
     pub fn level(&self) -> AlarmLevel {
         self.level
     }
@@ -910,7 +808,6 @@ impl EngineRoom {
         ev
     }
 
-    /// Runs a dev-button fault. Returns the device events it caused.
     pub fn trigger(&mut self, fault: Fault) -> Vec<RoomEvent> {
         match fault {
             Fault::PumpBreak => {

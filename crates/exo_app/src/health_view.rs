@@ -1,30 +1,8 @@
 //! The medic view: look at another player within 3 m and see their injuries.
-//!
-//! Research (Barotrauma, `~/Work/exo-research/barotrauma/source/`, read for the rules only):
-//! - `BarotraumaClient/ClientSource/Characters/Health/CharacterHealth.cs`, `DrawHealthWindow`
-//!   (about line 1826): the health window of any character shows the limbs, tinted by the
-//!   afflictions that show (negative orange to red, positive orange to lime).
-//! - Same file, `afflictionIconList` (about line 345): the afflictions as icons; an icon shows
-//!   while `Affliction.ShouldShowIcon` says so (`BarotraumaShared/.../Afflictions/Affliction.cs`,
-//!   line 544): strength at or above `ShowIconThreshold` for yourself, `ShowIconToOthersThreshold`
-//!   for others (`AfflictionPrefab.cs`, lines 755 and 760; both default 0.05, per affliction in XML).
-//! - Same file, "Suitable treatments" (`SuitableTreatments` text about line 356, filled about line
-//!   1430): `GetSuitableTreatments(ignoreHiddenAfflictions: true, checkTreatmentSuggestionThreshold:
-//!   true, checkTreatmentThreshold: false)`. The list is the treatments in `TreatmentSuitabilities`
-//!   of the shown afflictions, times strength (`BarotraumaShared/.../Health/CharacterHealth.cs`,
-//!   line 1239); negative ones are not listed, and an item the viewer carries counts times ten
-//!   (prefer what you have).
-//! - The affliction XML files are not in this checkout (no `ShowIconThreshold` outside the .cs).
-//!
 //! What we take: the injuries others see are the ones a treatment can reduce (burn, radiation, oxygen
 //! low); the suggestion is an item in our action bar that suits one of them, shown as an outline on
 //! its slot and named in the panel (`BANDAGE ▶ BURN`). Not taken: the limb pictures and the
 //! thresholds (every injury above zero shows, the health sends them in 5 % steps).
-//!
-//! The host sends every player's injuries with the public status (`public_status`), so a client
-//! reads them from `Items::public`. This module finds the player aimed at (`health::aim_target`,
-//! reach `MEDIC_REACH`), holds `MedicView` for the window to draw (`window_plugin`) and says "TREATED
-//! BY" to the patient. The panel stays on a player while a treatment is held on them.
 use crate::controls::Controls;
 use crate::crew_hud::{col, col_a, dark, hud_text, HudFonts};
 use crate::displays::{ActiveDisplay, DisplayLook};
@@ -47,7 +25,6 @@ pub const MEDIC_REACH: f64 = 3.0;
 /// The most injury lines the panel has rows for (burn, radiation, oxygen, down or unconscious).
 const ROWS: usize = 4;
 
-/// The name a player has in the HUD and over the figure (the name tags say the same).
 pub fn pilot_name(id: PlayerId) -> String {
     format!("Pilot {id}")
 }
@@ -61,15 +38,11 @@ fn affliction_of(i: Injury) -> &'static str {
     }
 }
 
-/// What the medic view shows (written every fixed step; headless too).
 #[derive(Resource, Default, Clone, Debug, PartialEq)]
 pub struct MedicView {
-    /// The player the panel is about: the one aimed at, or the one a treatment is held on.
     pub target: Option<PlayerId>,
     pub view: Option<TargetView>,
-    /// Action-bar slots whose treatment suits an injury of the target.
     pub suitable: Vec<usize>,
-    /// Someone is treating this player (their name), for the patient's own HUD.
     pub treated_by: Option<String>,
 }
 
@@ -78,12 +51,10 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, look_out.in_set(Fx::Effects));
 }
 
-/// Window only: the panel, the outlines on suitable slots, the patient's line.
 pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, (build_panel, update_panel).chain().in_set(Frame::Hud));
 }
 
-/// The player the medic view is about, and what it shows of them. Only on foot: a player in a ship
 /// cabin is not aimed at (the cabin's frame is not the world's).
 #[allow(clippy::too_many_arguments)]
 fn look_out(
@@ -144,7 +115,6 @@ fn look_out(
     }
 }
 
-/// A node of the panel, by its part (the rows and the outlines are numbered).
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 enum PanelPart {
     Root,
@@ -160,7 +130,6 @@ enum PanelPart {
     TreatedBy,
 }
 
-/// Builds the panel and the outlines once the fonts and the look exist.
 fn build_panel(mut commands: Commands, fonts: Option<Res<HudFonts>>, look: Option<Res<DisplayLook>>, existing: Query<(), With<PanelPart>>, mut built: Local<bool>) {
     let (Some(fonts), Some(look)) = (fonts, look) else { return };
     if *built || !existing.is_empty() {
@@ -203,7 +172,6 @@ fn tone_colour(k: &Colours, tone: Tone) -> Color {
     }
 }
 
-/// Every frame: the panel's place and text, the rows, the health bar, the outlines, the patient's line.
 #[allow(clippy::type_complexity)]
 fn update_panel(
     view: Res<MedicView>,
@@ -290,7 +258,6 @@ fn update_panel(
     }
 }
 
-/// Changes the text only when it differs (a touched `Text` lays out again).
 fn set(text: Option<Mut<Text>>, s: &str) {
     if let Some(mut t) = text
         && t.0 != s

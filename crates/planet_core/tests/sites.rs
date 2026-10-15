@@ -1,4 +1,3 @@
-//! Site kinds placed by the global pass, ground edits, kit pieces.
 use planet_core::recipe::{Edit, SiteCategory};
 use planet_core::*;
 

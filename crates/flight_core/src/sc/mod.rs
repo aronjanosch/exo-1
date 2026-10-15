@@ -3,17 +3,6 @@
 //! IFCS switches of the local records); own names, code and values. Thrust is a force on the
 //! ship's mass, torque turns it against its inertia.
 //!
-//! One step runs stages in this order, each in its own file:
-//!
-//! 1. `modes`: the pilot's switches (coupled, gravity compensation, G-safe, comstab, master mode,
-//!    speed limiter, ...).
-//! 2. `drive::begin`: the boost this step.
-//! 3. `air`: what the atmosphere does (drag, lift, wind, turbulence, thrust lost in air).
-//!    The proximity assist (`Modes::proximity`) is `linear`'s: it limits the descent near the ground.
-//! 4. `linear`: the thrust the flight computer asks for, inside the thrust box.
-//! 5. `angular`: the angular acceleration it asks for, inside the torque box.
-//! 6. `drive::shape`: what the thrusters really give (spool, jerk, boost).
-//! 7. Integration: force over mass and torque over inertia, plus gravity and air.
 //!
 //! Per-type values live in `content/ship/<type>/sc_*.json` (tuned by playtest).
 pub mod air;
@@ -35,7 +24,6 @@ use glam::{DQuat, DVec3};
 pub struct StepState {
     pub rot: DQuat,
     pub inv: DQuat,
-    /// World position and velocity.
     pub pos: DVec3,
     pub v: DVec3,
     /// The velocity in ship space (x right, y up, z back).
@@ -44,7 +32,6 @@ pub struct StepState {
     pub w_local: DVec3,
     /// World gravity at the ship (m/s²).
     pub gravity: DVec3,
-    /// The planet's up at the ship.
     pub up: DVec3,
     /// Air density 0..1 (1 at the surface).
     pub density: f64,
@@ -78,11 +65,9 @@ impl StepState {
     }
 }
 
-/// What the ship shows and what sound, camera and HUD read (the only state they read).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ScStatus {
     pub coupled: bool,
-    /// 1 = fully coupled, 0 = decoupled; between: coupled control blends back in.
     pub coupling: f64,
     pub grav_comp: bool,
     pub g_safe: bool,
@@ -98,7 +83,6 @@ pub struct ScStatus {
     pub speed: f64,
     /// The felt acceleration (the thrust over the mass), g.
     pub felt_g: f64,
-    /// The thrusters gave less than the flight computer asked.
     pub saturated: bool,
     pub braking: bool,
     pub boost_charge: f64,
@@ -110,7 +94,6 @@ pub struct ScStatus {
     pub wind: DVec3,
     /// 0..1: how hard the air shakes the ship (camera trauma source).
     pub turbulence: f64,
-    /// Coupled turn coordination lowered the rate (thrust or G-safe budget).
     pub rate_capped: bool,
 }
 
@@ -153,7 +136,6 @@ pub struct ScOut {
     pub torque: DVec3,
 }
 
-/// The SC flight model: tuning, the state of each stage and the status.
 #[derive(Clone, Debug)]
 pub struct ScShip {
     pub tuning: ScTuning,
@@ -210,7 +192,6 @@ impl ScShip {
         Rot { pitch: i.pitch + c.pitch, yaw: i.yaw + c.yaw, roll: i.roll + c.roll }
     }
 
-    /// Test setup after placing the ship by hand: switches as at the start, no state left.
     pub fn reset_state(&mut self) {
         let t = self.tuning.clone();
         *self = ScShip::new(t);
@@ -244,7 +225,6 @@ impl ScShip {
         Rot { pitch: s.torque.pitch / i.pitch, yaw: s.torque.yaw / i.yaw, roll: s.torque.roll / i.roll }
     }
 
-    /// One physics step.
     pub fn step(&mut self, body: &BodyState, input: &FlightInput, cmds: &ModeCmds, env: &impl PlanetEnv, dt: f64) -> ScOut {
         let f = StepState::new(body, env, dt);
         self.modes.update(cmds, &self.tuning.modes, dt);
@@ -256,7 +236,6 @@ impl ScShip {
         let lin = linear::step(&mut self.linear, &f, input, &self.modes, &linear_env, &self.tuning.linear);
         let turn_box = linear::motion_box(&f, &self.modes, &linear_env, &self.tuning.linear);
         let torque_box = self.torque_box();
-        // X while hovering in a planet's field also levels the ship.
         let level = braking && f.v.length() < self.tuning.angular.brake_level_below && f.gravity.length_squared() > 1e-6;
         let mut angular_modes = self.modes;
         if self.tuning.linear.boost_disables_g_safe && boost > 0.0 {

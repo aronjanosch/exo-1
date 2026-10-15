@@ -1,4 +1,3 @@
-//! A tuning file edited while the game runs takes effect (dev builds).
 use crate::common;
 use exo_app::Options;
 

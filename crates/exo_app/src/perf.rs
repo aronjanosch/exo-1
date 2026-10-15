@@ -1,11 +1,3 @@
-//! `--perf`: per scenario phase the simulation step time (FixedFirst to FixedLast, physics
-//! included), the render frame time (windowed only, without vsync, screenshot frames left out),
-//! the build time of the ring's terrain patches and the resident memory, written as JSON when the
-//! script ends. With a baseline file every phase's step p95 is checked against it: a phase fails
-//! when it is slower than the baseline by more than the tolerance.
-//!
-//! Windowed, also per planet swap the frames around it, and every frame slower than one
-//! 60 Hz frame with its phase and warp phase. Reported, not checked.
 use crate::scenario::Script;
 use bevy::prelude::*;
 use serde_json::{json, Value};
@@ -16,7 +8,6 @@ use std::time::Instant;
 pub struct PerfOptions {
     /// Baseline to compare against; missing file: no comparison (the run says so).
     pub baseline: PathBuf,
-    /// Write this run as the new baseline instead of comparing.
     pub save_baseline: bool,
     /// Allowed slowdown of a phase's step p95: relative share and absolute milliseconds on top.
     pub tolerance: f64,
@@ -40,19 +31,15 @@ struct Phase {
     rss_mb: Option<f64>,
 }
 
-/// Frames kept before a planet swap, and counted after it.
 const SWAP_BEFORE: usize = 30;
 const SWAP_AFTER: usize = 60;
-/// A frame slower than this goes into the spike list (one 60 Hz frame).
 const SPIKE_MS: f64 = 1000.0 / 60.0;
-/// The spike list stops growing here.
 const MAX_SPIKES: usize = 500;
 
 /// The frames around one planet swap. A frame's time is measured at the start of the next one,
 /// and the render runs a frame behind, so the swap's cost shows a frame or two after it.
 struct SwapWindow {
     label: String,
-    /// Frame number of the swap.
     frame: u64,
     /// (frame number, ms), from `SWAP_BEFORE` frames before to `SWAP_AFTER` after.
     frames: Vec<(u64, f64)>,
@@ -72,7 +59,6 @@ pub struct Perf {
     phases: Vec<Phase>,
     step_start: Option<Instant>,
     frame_no: u64,
-    /// The last `SWAP_BEFORE` frames.
     recent: std::collections::VecDeque<(u64, f64)>,
     swaps_seen: usize,
     swaps: Vec<SwapWindow>,
@@ -87,7 +73,6 @@ impl Perf {
     fn phase(&mut self, name: &str) -> &mut Phase {
         let name = if name.is_empty() { "other" } else { name };
         if self.phases.last().is_none_or(|p| p.name != name) {
-            // A phase name seen before (a repeated step) continues its own entry.
             if let Some(i) = self.phases.iter().position(|p| p.name == name) {
                 let p = self.phases.remove(i);
                 self.phases.push(p);
@@ -119,8 +104,6 @@ pub fn step_end(mut perf: ResMut<Perf>, script: Option<Res<Script>>) {
     p.rss_mb = rss_mb().or(p.rss_mb);
 }
 
-/// Update, after the ring: frame time (windowed) and the patches built since the last frame;
-/// the frames around planet swaps and the slow frames.
 #[allow(clippy::too_many_arguments)]
 pub fn frame(
     mut perf: ResMut<Perf>,
@@ -214,7 +197,6 @@ fn stats(v: &[f64]) -> Value {
     json!({ "n": s.len(), "p50": at(0.5), "p95": at(0.95), "max": s[s.len() - 1] })
 }
 
-/// When the script ends: write `<out>/perf-<scenario>.json`, then save it as the baseline or check
 /// it against the baseline. Returns (passed, line) per checked phase.
 pub fn finish(perf: &Perf, scenario: &str, out_dir: &std::path::Path) -> Vec<(bool, String)> {
     let phases: Vec<Value> = perf

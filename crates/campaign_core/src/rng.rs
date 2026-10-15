@@ -17,8 +17,6 @@ impl Rng {
         Rng(seed)
     }
 
-    /// An independent stream for (seed, key): one stream per concern, so changing one part of a
-    /// generator does not shift the others.
     pub fn derive(seed: u64, key: u64) -> Rng {
         Rng::new(mix(seed ^ mix(key)))
     }

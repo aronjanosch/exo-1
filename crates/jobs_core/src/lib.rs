@@ -1,20 +1,3 @@
-//! jobs_core: jobs and their objectives as a system on top of `gameplay_core`, without engine
-//! types.
-//!
-//! - `template`: the `job_template` record (objectives, reward, grading, deadline, modifiers,
-//!   track, availability, once-only, follow-up) and its checked loader.
-//! - `job`: offers and jobs as a state machine over domain events; the deliver objective as a
-//!   reducer over crate events. Results are `Outcome`s for the host: spawn or release crates, and
-//!   new domain events (payout, XP, the flag `job_completed:<template>`).
-//! - `board`: seeded board generator per location, 3-5 offers, lifetime rotation.
-//! - save section: `Jobs::save` and `Jobs::load`, versioned on their own.
-//! - `giver`, `briefing`: the named contacts jobs come from (voice, standing, history) and briefings
-//!   assembled from their parts.
-//! - `licence`: licences, per player, earned with an exam (an exam is a job template with checks:
-//!   take off, reach a pad, land).
-//! - `map`: the map's pin list and the tracked job's next stop.
-//! - `grading`: payout = reward × band(delivered share) × condition factor × hazard factor.
-//!
 //! This crate reads only domain events and kernel state; it never calls another system.
 pub mod board;
 pub mod briefing;

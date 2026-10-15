@@ -1,27 +1,5 @@
-//! The fire: fires start in the engine room's air (`fire_core::Deck`, stepped by the host),
-//! burn the people in reach (their health takes the burn at the fire's rate, by its size: a
-//! small fire less than the hot plate, a big one more, `health_core::HeatTuning::fire_per_unit`),
-//! burn the pump, the junction box and the reactor's condition by the fire's size, and
-//! spread through the open door. The extinguisher sprays while LMB is held with the aim in hand:
-//! a cone from the eye, about 4 m, half-angle 20 degrees, and the host puts out what it lands on.
-//!
 //! - Values: `content/gameplay/fire/fire.json` (`fire_core::tuning`, strict loader). The spray's
 //!   reach and half-angle are in the same file (`spray_reach`, `spray_half_angle_deg`).
-//! - Host and one process: `spray_step` takes the sprays' requests (`Items::spray_asks`), `fire_step`
-//!   steps the air, applies the burns and sets the ship's fire alarm (`FireAlarm`, which the reactor
-//!   step takes the higher of). The snapshot (`items.fire`: fires as id, floor point and size, and
-//!   the sprays) goes to the clients about 4 times a second while it changes.
-//! - A client sends its spray's aim (`spray_input`, at most about 10 times a second while it
-//!   changes) and draws the snapshot. Its own air is not stepped.
-//! - Window only: a flickering flame, a warm glow on the floor and a point light per fire (`effects`:
-//!   the light flickers per frame and reaches further as the fire grows), a white jet from each
-//!   spray's nozzle to where it lands, and steam where a spray lands (`effects`). The crackle is not made yet (`TODO`: a quiet noise sound in `audio.rs`).
-//! - Two models (`FireModel`, a dev switch on the faults screen): the point fires above, or
-//!   the cells of `fire_core::grid` (`FireGrid`, the engine room's and the corridor's cells, one
-//!   per metre). The host decides and the snapshot says which (`FireNews::grid`); the grid's
-//!   burning cells are its `cells`, and in the grid model `fires` lists them as cell-wide fires
-//!   for the aim and the steam. Its flames are the placeholder blocks of `grid_sync`.
-//! - The extinguisher wears down while it sprays and an empty one does not spray; the racks give full ones (`dev_area::extinguisher`).
 use crate::controls::Controls;
 use crate::dev_area::engine_room::{footprint_of, ignition_at, place_of, source_at, EngineAir};
 use crate::dev_area::reactor::ReactorSim;
@@ -46,11 +24,9 @@ use reactor_core::{ReactorEvent, RoomEvent, Source};
 use std::collections::{BTreeMap, BTreeSet};
 use walker_core::Frame as WalkFrame;
 
-/// The extinguisher's `use` in its item file.
 pub const EXTINGUISH: &str = "extinguish";
 /// The flame's centre above the floor (m), for the spray's aim at it.
 const FLAME_LIFT: f64 = 0.3;
-/// Most sprays drawn at once.
 const MAX_SPRAYS: usize = 4;
 /// Seconds between two snapshots of changed fires (4 Hz), and between two spray aims (10 Hz).
 pub const SEND_EVERY_S: f64 = 0.25;
@@ -58,7 +34,6 @@ pub const AIM_EVERY_S: f64 = 0.1;
 /// The deck's targets for the devices: ids above any player's.
 const DEVICE_ID: u64 = 1 << 32;
 
-/// The fire values as loaded.
 #[derive(Resource, Clone, Debug)]
 pub struct FireConfig(pub FireSettings);
 
@@ -85,11 +60,9 @@ impl FireModel {
     }
 }
 
-/// The cells of the engine room and the corridor: their rooms' rectangles, set up once.
 #[derive(Resource)]
 pub struct FireGrid(pub Grid);
 
-/// A cell's id in the snapshot's `fires` (the grid model): its room and its index.
 fn cell_id(c: &BurningCell) -> u64 {
     ((c.room.0 as u64) << 32) | c.index as u64
 }
@@ -99,25 +72,21 @@ fn cell_id(c: &BurningCell) -> u64 {
 #[derive(Resource, Default, Debug)]
 pub struct FireHeat(pub BTreeMap<PlayerId, f64>);
 
-/// Host: the sprays in progress, by player (their nozzle and aim).
 #[derive(Resource, Default, Debug)]
 pub struct Sprays(pub BTreeMap<PlayerId, SprayNew>);
 
 impl Sprays {
-    /// The player left: their spray goes.
     pub fn forget(&mut self, player: PlayerId) {
         self.0.remove(&player);
     }
 }
 
-/// Host: what the last snapshot sent was, and when.
 #[derive(Resource, Default)]
 struct FireSend {
     sent: Option<FireNews>,
     since: f64,
 }
 
-/// Client: whether this process is spraying, the aim it last sent, and when.
 #[derive(Resource, Default)]
 struct SprayClient {
     on: bool,
@@ -125,7 +94,6 @@ struct SprayClient {
     since: f64,
 }
 
-/// The fire a reactor or room event starts: its source and size.
 pub fn start_of(e: &RoomEvent) -> Option<(Source, f64)> {
     match *e {
         RoomEvent::Reactor(ReactorEvent::Fire { size }) => Some((Source::Reactor, size)),
@@ -134,13 +102,10 @@ pub fn start_of(e: &RoomEvent) -> Option<(Source, f64)> {
     }
 }
 
-/// Starts a fire at a source's front face in the engine room (or joins one it touches): a point
-/// fire of `size` in the point model, a burning cell at the grid's start intensity in the grid.
 pub fn ignite(air: &mut EngineAir, grid: &mut FireGrid, model: FireModel, source: Source, size: f64) {
     ignite_at(air, grid, model, ignition_at(source), size);
 }
 
-/// The same at a point of the deck (`p`, metres); the blast starts its three fires with it.
 pub fn ignite_at(air: &mut EngineAir, grid: &mut FireGrid, model: FireModel, p: [f64; 2], size: f64) {
     let at = DVec3::new(p[0], p[1], 0.0);
     match model {
@@ -163,7 +128,6 @@ fn device_id(s: Source) -> u64 {
         }
 }
 
-/// The floor point of the fire's centre in the world, with its lift (`area`: the dev area is on).
 fn flame_world(area: &DevArea, planet: &PlanetRes, p: [f64; 2]) -> Option<(DVec3, DVec3)> {
     area.ground(planet, p, FLAME_LIFT)
 }
@@ -208,7 +172,6 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, (spray_step, fire_step).chain().after(super::engine_room::room_step).after(spray_input).after(crate::items_net::items_net_in).in_set(crate::phases::Fx::Input));
 }
 
-/// The faults screen's model button: toggles the model. A client's snapshot sets it again.
 fn model_click(mut clicks: MessageReader<DisplayAction>, mut model: ResMut<FireModel>) {
     for c in clicks.read() {
         if c.panel == FAULTS_ID && c.action == "fire_model" {
@@ -217,8 +180,6 @@ fn model_click(mut clicks: MessageReader<DisplayAction>, mut model: ResMut<FireM
     }
 }
 
-/// The extinguisher's aim as this process has it: LMB held, the mouse captured, no display in
-/// use, on foot outside a ship, and the extinguisher in the selected slot. None otherwise.
 fn spray_aim(controls: &Controls, active: &ActiveDisplay, players: &Query<&Player>, items: &Items) -> Option<SprayAsk> {
     if controls.free_cursor || !controls.primary_held || active.using().is_some() {
         return None;
@@ -232,7 +193,6 @@ fn spray_aim(controls: &Controls, active: &ActiveDisplay, players: &Query<&Playe
     if items.defs.of(stack)?.use_effect.as_deref() != Some(EXTINGUISH) {
         return None;
     }
-    // An empty one does not spray.
     if !stack.item.condition.is_some_and(|c| c > 0.0) {
         return None;
     }
@@ -241,8 +201,6 @@ fn spray_aim(controls: &Controls, active: &ActiveDisplay, players: &Query<&Playe
     Some(SprayAsk::Aim { eye: eye.to_array(), dir: dir.to_array() })
 }
 
-/// Every process: a spray's start and aim go to the host (a client sends them), and its stop
-/// when LMB is let go. The aim is sent at most every `AIM_EVERY_S` while it changes.
 fn spray_input(time: Res<Time>, controls: Res<Controls>, active: Res<ActiveDisplay>, players: Query<&Player>, mut items: ResMut<Items>, mut client: ResMut<SprayClient>) {
     let now = time.elapsed_secs_f64();
     match spray_aim(&controls, &active, &players, &items) {
@@ -263,8 +221,6 @@ fn spray_input(time: Res<Time>, controls: Res<Controls>, active: Res<ActiveDispl
     }
 }
 
-/// Host: the sprays' requests, then each spray in reach puts out the fires it lands on, for this
-/// tick. The spray lands at the point of its aim nearest the fire it hits first.
 fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut items: ResMut<Items>, mut sprays: ResMut<Sprays>, mut air: ResMut<EngineAir>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, cfg: Res<FireConfig>, supply: Res<super::extinguisher::Supply>) {
     if items.role == Role::Client {
         return;
@@ -280,8 +236,6 @@ fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>
         }
     }
     let dt = time.delta_secs_f64();
-    // The extinguisher runs down while it sprays; an empty one (or anything that does not wear)
-    // stops the spray.
     let now = time.elapsed_secs_f64();
     for who in sprays.0.keys().copied().collect::<Vec<_>>() {
         let slot = items.host.inventories.get(&who).map_or(0, |i| i.selected);
@@ -295,7 +249,6 @@ fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>
     let (Some(area), Some(frame)) = (area.as_deref(), area.as_deref().and_then(|a| a.frame)) else { return };
     let half = cfg.0.spray_half_angle_deg.to_radians();
     let reach = cfg.0.spray_reach;
-    // What a spray aims at: the point fires, or each burning cell as a square of its width.
     let fires: Vec<([f64; 2], f64)> = match *model {
         FireModel::Point => air.deck.fires().iter().map(|f| ([f.pos.x, f.pos.y], f.size)).collect(),
         FireModel::Grid => grid.0.burning().map(|c| ([c.centre.x, c.centre.y], cfg.0.grid.cell_m)).collect(),
@@ -332,7 +285,6 @@ fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>
     }
 }
 
-/// The burns of a device (the deck's damage is its condition lost this step).
 fn burn_device(sim: &mut ReactorSim, id: u64, amount: f64) {
     let event = match id - DEVICE_ID {
         1 => sim.room.pump_mut().condition_mut().damage(amount),
@@ -345,7 +297,6 @@ fn burn_device(sim: &mut ReactorSim, id: u64, amount: f64) {
     }
 }
 
-/// One burn of the fire: a person's heat for this step (`FireHeat`), or a device's condition.
 fn burn(target: u64, kind: TargetKind, amount: f64, dt: f64, heat: &mut FireHeat, sim: &mut ReactorSim) {
     match kind {
         TargetKind::Person if amount > 0.0 && dt > 0.0 => {
@@ -356,7 +307,6 @@ fn burn(target: u64, kind: TargetKind, amount: f64, dt: f64, heat: &mut FireHeat
     }
 }
 
-/// The snapshot's fires and cells of this step: the point fires, or the grid's burning cells.
 fn news_of(model: FireModel, air: &EngineAir, grid: &FireGrid, sprays: &Sprays) -> FireNews {
     let sprays: Vec<SprayNew> = sprays.0.values().copied().collect();
     match model {
@@ -379,9 +329,6 @@ fn news_of(model: FireModel, air: &EngineAir, grid: &FireGrid, sprays: &Sprays) 
     }
 }
 
-/// Host: the people and the devices in reach are targets; the air steps; the burns go to the
-/// players' heat and to the devices; the alarm and the snapshot. A client only takes the model
-/// and draws the snapshot. Its own air is not stepped.
 #[allow(clippy::too_many_arguments)]
 fn fire_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut air: ResMut<EngineAir>, cfg: Res<FireConfig>, mut sim: ResMut<ReactorSim>, mut items: ResMut<Items>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, mut heat: ResMut<FireHeat>, mut alarm: ResMut<FireAlarm>, sprays: Res<Sprays>, mut send: ResMut<FireSend>, mut model: ResMut<FireModel>, mut grid: ResMut<FireGrid>) {
     heat.0.clear();
@@ -468,7 +415,6 @@ pub fn flame_dims(size: f64) -> (f64, f64) {
 /// physical size keeps its `flame_dims`). `TODO(initiator)`: the start value.
 pub const FLAME_VIEW_MAX_H: f64 = 2.0;
 
-/// A flame's drawn half width and height (m): `flame_dims`, scaled down to `FLAME_VIEW_MAX_H`.
 pub fn flame_view(size: f64) -> (f64, f64) {
     let (hw, h) = flame_dims(size);
     let k = (FLAME_VIEW_MAX_H / h).min(1.0);
@@ -480,7 +426,6 @@ pub fn glow_radius(size: f64) -> f64 {
     (size * 1.5).max(0.6)
 }
 
-/// The jet's particles per spray, and the seconds one particle takes to cross it.
 pub const JET_PARTICLES: usize = 8;
 pub const JET_LIFE_S: f64 = 0.4;
 
@@ -490,9 +435,6 @@ pub fn nozzle_of(eye: DVec3, dir: DVec3, up: DVec3) -> DVec3 {
     eye + dir * 0.5 - up * 0.3
 }
 
-/// A jet particle's place: `phase` (0 at the nozzle, 1 at `end`) along the jet from `nozzle` to
-/// `end`, its cone widening to `half_angle` (radians), turned `spin` radians round the jet. At
-/// phase 0 the particle is at the nozzle; a jet with no length stays there.
 pub fn jet_point(nozzle: DVec3, end: DVec3, half_angle: f64, phase: f64, spin: f64) -> DVec3 {
     let axis = end - nozzle;
     let dir = axis.normalize_or_zero();
@@ -586,7 +528,6 @@ mod visual_tests {
             assert!(r > last_r, "the cone widens with the phase");
             last_r = r;
         }
-        // A jet with no length stays at the nozzle.
         assert_eq!(jet_point(nozzle, nozzle, half, 0.5, 0.3), nozzle);
     }
 
@@ -622,19 +563,15 @@ mod visual_tests {
 
 // ---------- window only ----------
 
-/// A flame on screen: one per fire, found by the fire's id in `FlameVisuals`.
 #[derive(Component)]
 struct Flame;
 
-/// The warm glow on the floor under a flame.
 #[derive(Component)]
 struct Glow;
 
-/// A particle of a spray's jet on screen.
 #[derive(Component)]
 struct Jet;
 
-/// Window: the flames and their glows by fire id, and the jet particles (made once).
 #[derive(Resource, Default)]
 struct FlameVisuals {
     by_id: BTreeMap<u64, Entity>,
@@ -647,9 +584,6 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, (flames_sync, grid_sync).in_set(crate::phases::Frame::Sync));
 }
 
-/// Window: each fire is a flickering flame on a warm glow, scaled by its size, with a flickering
-/// light. Each spray shows a jet of white particles from its nozzle along the aim to where it
-/// lands. Positions follow the render origin.
 #[allow(clippy::too_many_arguments)]
 fn flames_sync(
     mut commands: Commands,
@@ -707,13 +641,10 @@ fn flames_sync(
         let (hw, h) = flame_view(f.size);
         let h = h * k;
         let rot = frame.rotation(up, 0.0).as_quat();
-        // The flame's base sits on the floor; the cone's mesh is centred and 1 m tall.
         let centre = ground + up * (h * 0.5 - 0.05);
         let scale = Vec3::new((2.0 * hw) as f32, h as f32, (2.0 * hw) as f32);
-        // The light flickers per frame (0.8 to 1.0) and reaches further as the fire grows.
         let light = 30_000.0 * f.size as f32 * crate::effects::flame_flicker(t.to_bits() ^ f.id.wrapping_mul(0x9E37_79B9));
         let range = crate::effects::flame_range(f.size);
-        // The glow: a flat disc on the floor, flickering in size (the disc's mesh has radius 1).
         let glow_r = (glow_radius(f.size) * k) as f32;
         let glow_tr = Transform {
             translation: to_render(ground + up * 0.03),
@@ -736,7 +667,6 @@ fn flames_sync(
             }
         } else {
             let mesh = meshes.add(Cone::new(0.5, 1.0));
-            // Lit, with a strong emissive: the flame reads from the far side of the room.
             let mat = materials.add(StandardMaterial { base_color: Color::srgba(1.0, 0.45, 0.1, 0.7), emissive: LinearRgba::rgb(3.0, 1.0, 0.2), alpha_mode: AlphaMode::Blend, unlit: true, ..default() });
             let e = commands
                 .spawn((
@@ -755,7 +685,6 @@ fn flames_sync(
         }
     }
 
-    // The jets: the snapshot's sprays, and this process's own from its local aim.
     let local = match client.last {
         Some(SprayAsk::Aim { eye, dir }) if client.on => Some(SprayNew { eye, dir }),
         _ => None,
@@ -777,7 +706,6 @@ fn flames_sync(
             let p = jet_point(nozzle, end, half, phase, jet_spin(i));
             if let Ok((mut tr, mut v)) = jets.get_mut(vis.jets[idx]) {
                 tr.translation = to_render(p);
-                // A drop of 5 to 10 cm across, the far ones the larger.
                 tr.scale = Vec3::splat((0.025 + 0.025 * phase) as f32);
                 *v = Visibility::Inherited;
                 shown[idx] = true;
@@ -793,10 +721,6 @@ fn flames_sync(
     }
 }
 
-/// Window, grid model: the placeholders of the cells. Each burning cell is a flickering
-/// orange block (its height by its intensity, at most 1 m) on a dark red tint of the floor, and
-/// each room with burning cells has one point light at the centroid of them. The cells are made
-/// again every frame (a few dozen at most): a placeholder until the real fire art.
 #[derive(Resource, Default)]
 struct GridVisuals {
     spawned: Vec<Entity>,
@@ -811,7 +735,6 @@ struct GridHandles {
     tint_mat: Handle<StandardMaterial>,
 }
 
-/// A cell's block, its floor tint, and a room's light: markers of `grid_sync`'s entities.
 #[derive(Component)]
 struct CellBlock;
 

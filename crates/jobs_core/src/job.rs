@@ -1,5 +1,3 @@
-//! Jobs as a state machine over domain events: offered → active → completed, expired or
-//! abandoned. Each deliver leg is a reducer over the crate events of its own crates.
 use std::collections::{BTreeMap, BTreeSet};
 
 use gameplay_core::notice::{Arg, Notice, NoticeKind};
@@ -12,18 +10,14 @@ use crate::grading::{Grade, grade};
 use crate::id::{JobId, TemplateId};
 use crate::template::{CommoditySpec, JobContent, JobTemplate, ObjectiveSpec, PlaceSpec};
 
-/// Active jobs per crew at most (initiator, 2026-10-09).
 pub const MAX_ACTIVE: usize = 2;
 
-/// Events of the jobs system.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum JobEvent {
-    /// The sender takes the offer for the crew.
     OfferAccepted { job: JobId },
     /// Anyone in the crew drops the job; its crates lose their value.
     JobAbandoned { job: JobId },
-    /// The host spawned the crates a `SpawnCrates` outcome asked for, with their stable ids.
     CratesSpawned { job: JobId, leg: usize, crates: Vec<CrateId> },
 }
 
@@ -39,7 +33,6 @@ pub enum JobState {
     Failed,
 }
 
-/// A check of an exam: something the player's ship has to do (not a delivery).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckKind {
@@ -63,7 +56,6 @@ pub struct Check {
     pub state: CheckState,
 }
 
-/// What a crate of a leg went through.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CrateMark {
@@ -74,7 +66,6 @@ pub enum CrateMark {
     Lost,
 }
 
-/// One concrete deliver objective.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Leg {
     pub from: LocationId,
@@ -98,7 +89,6 @@ impl Leg {
         self.crates.values().map(|m| if let CrateMark::Delivered { condition } = m { *condition } else { 0.0 }).sum()
     }
 
-    /// Spawned, and every crate delivered or lost: nothing more can happen.
     pub fn resolved(&self) -> bool {
         self.crates.len() as u32 == self.amount && self.crates.values().all(|m| matches!(m, CrateMark::Delivered { .. } | CrateMark::Lost))
     }
@@ -108,7 +98,6 @@ impl Leg {
 /// show up; its places, commodity, amount, reward and deadline are replaced by the order's).
 pub const ORDER_TEMPLATE: &str = "customer_order";
 
-/// What a customer order asks of its job.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct OrderTerms {
     pub order: OrderId,
@@ -130,10 +119,8 @@ pub struct Job {
     pub participants: BTreeSet<ClientId>,
     /// Seconds since the first pickup; none before it.
     pub clock_s: Option<f64>,
-    /// Set for a job that came from a customer's order.
     #[serde(default)]
     pub order: Option<OrderTerms>,
-    /// What an exam asks of the ship besides the delivery, in order.
     #[serde(default)]
     pub checks: Vec<Check>,
 }
@@ -143,7 +130,6 @@ impl Job {
         self.legs.iter().map(Leg::delivered).sum()
     }
 
-    /// Every delivery is resolved and every check done: nothing more can happen.
     fn finished(&self) -> bool {
         self.legs.iter().all(Leg::resolved) && self.checks.iter().all(|c| matches!(c.state, CheckState::Done { .. }))
     }
@@ -165,12 +151,10 @@ impl Job {
         Some((self.deadline_s(t)? - self.clock_s?).max(0.0))
     }
 
-    /// `time_left` with the template looked up in `jc`.
     pub fn time_left_of(&self, jc: &JobContent) -> Option<f64> {
         self.time_left(&jc.templates.get(&self.template)?.record)
     }
 
-    /// The text key of the title: a customer's order has its own (`customer.<by>.order_title`).
     pub fn title_key(&self, t: &JobTemplate) -> TextKey {
         match &self.order {
             Some(o) => TextKey::new(format!("customer.{}.order_title", o.by)),
@@ -187,15 +171,12 @@ impl Job {
 /// players.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Outcome {
-    /// Spawn `count` crates of `commodity` at the pad of `at`, then send `CratesSpawned`.
     SpawnCrates { job: JobId, leg: usize, commodity: CommodityId, count: u32, at: LocationId },
     /// These crates belong to no job any more and are worth nothing.
     ReleaseCrates { crates: Vec<CrateId> },
     /// A job ended; `grade` is none for an abandoned job.
     Ended { job: JobId, state: JobState, grade: Option<Grade> },
-    /// A domain event for every system (payout, XP, flag); the host gives it an id and applies it.
     Emit(WorldEvent),
-    /// Something the players should hear about; the host queues it.
     Notice(Notice),
 }
 
@@ -208,13 +189,10 @@ pub enum Refusal {
     TooManyActive,
     /// The template's `available` condition does not hold for the accepting player.
     NotAvailable,
-    /// `CratesSpawned` for an unknown leg, twice, or with the wrong count.
     BadSpawn,
-    /// An exam costs more than the crew has.
     CannotAfford { price: i64, wallet: i64 },
 }
 
-/// The crew's offers and jobs.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Jobs {
     next_id: u64,
@@ -225,12 +203,10 @@ pub struct Jobs {
     /// Paid tries of an exam per player and template (`"<client>:<template>"`): the retry fee.
     #[serde(default)]
     attempts: BTreeMap<String, u32>,
-    /// Board state per location.
     #[serde(default)]
     pub board: crate::board::Board,
 }
 
-/// The jobs section of a save.
 pub const SECTION: &str = "jobs";
 pub const SECTION_VERSION: u32 = 1;
 
@@ -244,12 +220,10 @@ impl Jobs {
         env.get(SECTION, SECTION_VERSION)
     }
 
-    /// Makes an offer from a template and concrete legs (the board's job).
     pub fn offer(&mut self, template: &TemplateId, legs: Vec<Leg>) -> JobId {
         self.offer_with(template, legs, Vec::new())
     }
 
-    /// `offer` with the checks of an exam.
     pub fn offer_with(&mut self, template: &TemplateId, legs: Vec<Leg>, checks: Vec<Check>) -> JobId {
         let id = JobId(self.next_id);
         self.next_id += 1;
@@ -257,7 +231,6 @@ impl Jobs {
         id
     }
 
-    /// How many paid tries of an exam the player has made.
     pub fn attempts(&self, who: ClientId, template: &TemplateId) -> u32 {
         self.attempts.get(&format!("{}:{template}", who.0)).copied().unwrap_or(0)
     }
@@ -280,13 +253,11 @@ impl Jobs {
         Some(self.offer_with(&t.id, legs, checks))
     }
 
-    /// Like `offer_fixed`, but only if all locations in the legs are available.
     pub fn offer_fixed_if_available(&mut self, t: &JobTemplate, kernel: &Content, progress: &Progress) -> Option<JobId> {
         let (mut legs, mut checks) = (Vec::new(), Vec::new());
         for o in &t.objectives {
             match o {
                 ObjectiveSpec::Deliver { from: PlaceSpec::Location(a), to: PlaceSpec::Location(b), commodity: CommoditySpec::OneOf(pool), amount } if pool.len() == 1 && amount[0] == amount[1] => {
-                    // Check if both locations are available
                     if !progress.location_available(kernel, a) || !progress.location_available(kernel, b) {
                         return None;
                     }
@@ -320,8 +291,6 @@ impl Jobs {
         Some(self.offer_with(&t.id, legs, Vec::new()))
     }
 
-    /// Generate board offers for a location with a given seed.
-    /// Returns a list of job ids that are now offered.
     pub fn generate_board_at(&mut self, jc: &JobContent, kernel: &Content, progress: &Progress, location: &str, seed: u64) -> Vec<JobId> {
         use crate::board::{BoardLocation, templates_for_location};
         use gameplay_core::rng::Rng;
@@ -330,12 +299,10 @@ impl Jobs {
         let mut job_ids = Vec::new();
         let mut used_templates = BTreeSet::new();
 
-        // Collect templates for this location (filtered by giver location, excludes exams/orders)
         let available_templates: Vec<&JobTemplate> =
             templates_for_location(jc, kernel, progress, location)
                 .into_iter()
                 .filter(|t| {
-                    // Don't offer once_only templates that already have completed jobs
                     if t.once_only {
                         let flag = Flag::new(format!("job_completed:{}", t.id));
                         !progress.has_flag(&flag)
@@ -343,7 +310,6 @@ impl Jobs {
                         true
                     }
                 })
-                // A follow-up waits for the job it follows.
                 .filter(|t| prerequisites(jc, &t.id).all(|p| completed(progress, p)))
                 .collect();
 
@@ -372,20 +338,17 @@ impl Jobs {
             available_templates.len()
         };
 
-        // Try to generate offers, allowing at most 1 per template (no duplicates)
         let mut attempts = 0;
         let max_attempts = available_templates.len() * 3;
         while job_ids.len() < target_count && attempts < max_attempts && !available_templates.is_empty() {
             let template_idx = rng.below(available_templates.len());
             let template = available_templates[template_idx];
 
-            // Skip if we already used this template on this board
             if used_templates.contains(&template.id) {
                 attempts += 1;
                 continue;
             }
 
-            // Try fixed offer first (for templates with all fixed locations and single commodity)
             let created = if let Some(id) = self.offer_from_template(template, kernel, progress, &mut rng) {
                 job_ids.push(id);
                 true
@@ -399,7 +362,6 @@ impl Jobs {
             attempts += 1;
         }
 
-        // Track board state
         self.board.offers_per_location.insert(location.to_string(), BoardLocation {
             offer_ids: job_ids.clone(),
             age_s: 0.0,
@@ -427,14 +389,12 @@ impl Jobs {
             return Vec::new();
         }
 
-        // Find which offers to remove (those that are still offered, not accepted)
         let to_remove: Vec<JobId> = if let Some(board_loc) = self.board.offers_per_location.get(location) {
             board_loc
                 .offer_ids
                 .iter()
                 .filter(|id| {
                     if let Some(job) = self.jobs.get(id) {
-                        // Remove only if still offered (not accepted)
                         job.state == JobState::Offered
                     } else {
                         true // Remove if job not found
@@ -446,12 +406,10 @@ impl Jobs {
             Vec::new()
         };
 
-        // Remove the expired offers from Jobs
         for id in to_remove {
             self.jobs.remove(&id);
         }
 
-        // Generate new offers with a deterministic next seed
         let (new_seed, location_str) = {
             let board_loc = self.board.offers_per_location.get_mut(location).unwrap();
             let old_seed = board_loc.seed;
@@ -464,7 +422,6 @@ impl Jobs {
         self.generate_board_at(jc, kernel, progress, &location_str, new_seed)
     }
 
-    /// What happened between the crew and a giver; nothing yet for a new one.
     pub fn history(&self, g: &GiverId) -> GiverHistory {
         self.history.get(g).cloned().unwrap_or_default()
     }
@@ -683,14 +640,12 @@ impl Jobs {
                 }
             }
             WorldEvent::PlayerJoined | WorldEvent::UnlockBought { .. } | WorldEvent::TrackChanged { .. } | WorldEvent::FlagRaised { .. } | WorldEvent::OrderSettled { .. } => {}
-            // Events oftraffic, heat, production, buyers and the empire ladder.
             _ => {}
         }
         notes.extend(ended.into_iter().flat_map(|(id, state)| self.end(jc, id, state)));
         notes
     }
 
-    /// The active job a crate belongs to.
     fn job_with(&mut self, c: CrateId) -> Option<&mut Job> {
         self.jobs.values_mut().find(|j| j.state == JobState::Active && j.legs.iter().any(|l| l.crates.contains_key(&c)))
     }
@@ -700,7 +655,6 @@ impl Jobs {
     fn end(&mut self, jc: &JobContent, id: JobId, state: JobState) -> Vec<Outcome> {
         let Some(j) = self.jobs.get_mut(&id) else { return Vec::new() };
         let Some(t) = jc.templates.get(&j.template).map(|t| &t.record) else { return Vec::new() };
-        // A customer's order pays its own reward.
         let mut t_order;
         let t = match &j.order {
             Some(o) => {
@@ -756,7 +710,6 @@ impl Jobs {
             }
             standing = Some((giver.name.clone(), delta));
         }
-        // Passing the exam: the examinee's personal licence track, and honours' standing bonus.
         let mut exam_result = None;
         if let Some(x) = &exam {
             if state == JobState::Completed {
@@ -842,7 +795,6 @@ fn end_notices(t: &JobTemplate, title: &TextKey, state: JobState, g: &Grade, del
     out
 }
 
-/// How an exam ended.
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum ExamResult {
     Passed,
@@ -859,7 +811,6 @@ fn settle_order(j: &Job, in_time: bool) -> Option<Outcome> {
     Some(Outcome::Emit(WorldEvent::OrderSettled { order: o.order, delivered, asked: j.asked(), condition, in_time }))
 }
 
-/// Templates whose `follow_up` is `id`.
 fn prerequisites<'a>(jc: &'a JobContent, id: &'a TemplateId) -> impl Iterator<Item = &'a TemplateId> + 'a {
     jc.templates.values().filter(move |t| t.record.follow_up.as_ref() == Some(id)).map(|t| &t.record.id)
 }

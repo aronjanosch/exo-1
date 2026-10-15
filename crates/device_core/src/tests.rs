@@ -1,4 +1,3 @@
-//! Rules for device condition, with numbers.
 use super::*;
 
 const DT: f64 = 1.0 / 60.0;
@@ -7,12 +6,10 @@ fn dev() -> Condition {
     Condition::new(DeviceTuning::default(), 7)
 }
 
-/// A device that never fails a repair roll, for timing tests.
 fn safe() -> Condition {
     Condition::new(DeviceTuning { fail_chance: 0.0, ..DeviceTuning::default() }, 7)
 }
 
-/// Holds repair until done; returns seconds and the outcome that ended it.
 fn hold(c: &mut Condition, skill: f64, tool: Tool) -> (f64, RepairOutcome) {
     let mut t = 0.0;
     loop {
@@ -69,7 +66,6 @@ fn repaired_device_works_at_condition_factor() {
     let f = c.factor();
     println!("works again at condition {:.2}, factor {f:.3}", c.value());
     assert!(f > 0.49 && f < 0.52);
-    // Up to 35: half-way from broken to threshold.
     while c.value() < 35.0 {
         c.repair_step(DT, 50.0, Tool::WRENCH);
     }
@@ -85,13 +81,11 @@ fn wear_only_after_delay() {
     let delay = c.wear_delay_left();
     println!("wear delay {delay:.1} s");
     assert!((120.0..=720.0).contains(&delay));
-    // Idle: no wear and the delay does not run.
     for _ in 0..600 {
         c.deteriorate(1.0, 0.0);
     }
     assert_eq!(c.value(), 100.0);
     assert_eq!(c.wear_delay_left(), delay);
-    // In use: nothing until the delay is over.
     let mut t = 0.0;
     while c.wear_delay_left() > 0.0 {
         c.deteriorate(1.0, 1.0);
@@ -102,7 +96,6 @@ fn wear_only_after_delay() {
         c.deteriorate(1.0, 1.0);
     }
     assert!((c.value() - (100.0 - 12.5)).abs() < 1e-9, "{}", c.value());
-    // Normal wear stops at the floor.
     for _ in 0..2000 {
         c.deteriorate(1.0, 1.0);
     }
@@ -136,7 +129,6 @@ fn failure_costs_condition_and_locks() {
     println!("skill 0: {fails}/200 attempts failed");
     assert!((40..80).contains(&fails), "{fails}");
     assert_eq!(lost_total, 5.0 * fails as f64);
-    // At the required skill no attempt fails.
     for seed in 0..200 {
         let mut c = Condition::new(DeviceTuning::default(), seed);
         c.set_value(30.0);

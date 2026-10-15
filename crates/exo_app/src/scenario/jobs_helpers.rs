@@ -1,5 +1,4 @@
-//! Helpers the job scenarios share (savefile, licence, map, town): the gameplay resource, pads,
-//! goods crates, the walker on a pad, the counter's offers.
+//! Helpers the job scenarios share.
 use super::*;
 use crate::cargo::Crate;
 use crate::gameplay::{Gameplay, Goods};
@@ -24,7 +23,6 @@ pub(super) fn prompt(w: &World) -> String {
     w.resource::<crate::interact::Interaction>().prompt.clone()
 }
 
-/// The walker on a pad, 2 m past its centre, facing the row the crates spawn in (4 m ahead).
 pub(super) fn walker_on_pad(w: &mut World, l: &str) {
     let p = pad(w, l);
     let north = p.up.cross(p.up.any_orthonormal_vector());
@@ -32,7 +30,6 @@ pub(super) fn walker_on_pad(w: &mut World, l: &str) {
     face_towards(w, p.centre + north * 10.0);
 }
 
-/// Every goods crate of `job` to a spot above the pad of `l`, `height` m over the ground, in a row.
 pub(super) fn crates_above(w: &mut World, l: &str, height: f64) {
     let p = pad(w, l);
     let east = p.up.any_orthonormal_vector();
@@ -54,8 +51,7 @@ pub(super) fn job_state(w: &World, template: &str) -> Option<JobState> {
     gp(w).jobs.all().filter(|j| j.template == t).last().map(|j| j.state)
 }
 
-/// With the counter open: page through the offers (the keyless `next_offer`) until the panel shows the template (the next
-/// tap only after the last one was seen, a few ticks apart).
+/// Tap only after the last offer was seen, a few ticks apart.
 pub(super) fn show_offer(template: &'static str) -> Step {
     Box::new(move |w, c| {
         let shown = gp(w).panel_offer().and_then(|j| gp(w).jobs.get(j).map(|j| j.template.as_str() == template));

@@ -1,6 +1,4 @@
-//! The map: the pin list from the game's state (places, the tracked job's next stop, the
-//! player), M opens a north-up picture of the ground and closes it again, and with a window the
-//! picture is shot (`<out>/shot-*-map.png`). Headless it checks the pins and the picture's data.
+//! The map: pin list from the game's state, and the north-up picture of the ground.
 use super::jobs_helpers::{gp, goods_of, show_offer, walker_on_pad};
 use super::*;
 use crate::map::{current_pins, pin_px, MapView, MAP_PX};
@@ -53,7 +51,6 @@ pub fn map_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool) {
         end(w, c, String::new());
         true
     }));
-    // Take a courier job, track it.
     s.push(Box::new(|w, c| {
         begin(w, c, "map: the tracked job's pin");
         tap(w, KeyCode::KeyF);
@@ -85,7 +82,6 @@ pub fn map_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool) {
         check(c, t == Some((Stop::Dropoff, "Lint Trap".into())), format!("map: the crate carried off, the pin moves to the dropoff ({t:?})"));
         let line = gp(w).readout.clone();
         check(c, line.contains("deliver to: Lint Trap"), format!("map: the job line's pointer follows the same stop ('{}')", line.replace('\n', " | ")));
-        // T with one active job keeps it.
         tap(w, KeyCode::KeyT);
         true
     }));
@@ -95,14 +91,12 @@ pub fn map_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool) {
         end(w, c, String::new());
         true
     }));
-    // M opens the map, a picture of the ground around the player is made, M closes it.
     s.push(Box::new(|w, c| {
         begin(w, c, "map: M opens and closes it");
         check(c, !w.resource::<MapView>().open, "map: closed at first".into());
         tap(w, KeyCode::KeyM);
         true
     }));
-    // The picture is made on a worker thread: wait for it.
     s.push(Box::new(|w, c| {
         let done = !w.resource::<MapView>().rgb.is_empty();
         assert!(done || c.t < 20.0, "the map picture never came");

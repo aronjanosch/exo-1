@@ -1,6 +1,3 @@
-//! Sites: kinds placed by the bake's global pass (best-candidate sampling, separation,
-//! filters, budgets per category), the ground edits under them (part of the height function)
-//! and the pieces of their kits. A site is a pure function of the seed and the recipe.
 use crate::look::{tangent_frame, walk};
 use crate::math::*;
 use crate::planet::*;
@@ -13,7 +10,6 @@ pub(crate) enum EditRt {
     Raise { r: f64, roll: f64, amount: f64, rim: f64, rim_w: f64 },
 }
 
-/// A placed site.
 #[derive(Clone)]
 pub struct Site {
     /// Index into `recipe.sites.kinds`; None for a hand-placed place.
@@ -34,7 +30,6 @@ pub struct Site {
     pub(crate) edits: std::sync::Arc<Vec<EditRt>>,
 }
 
-/// A piece of a site's kit, ready to draw: planet-space position and unit basis (x, up, z).
 #[derive(Clone, Debug)]
 pub struct Piece {
     pub prop: String,
@@ -176,7 +171,6 @@ impl Planet {
         let mut tries = vec![0u32; kinds.len()];
         let mut got = vec![0u32; kinds.len()];
         let dist = |a: V3, b: V3| self.radius * a.dot(b).clamp(-1.0, 1.0).acos();
-        // Landmarks first, then the others in round-robin turns.
         let mut order: Vec<usize> = (0..kinds.len()).filter(|&i| kinds[i].prefer_high).collect();
         order.extend((0..kinds.len()).filter(|&i| !kinds[i].prefer_high));
         let scaled_candidates = ((rule.candidates as f64) * (want.iter().sum::<u32>() as f64 / 30.0).max(1.0)) as u32;
@@ -217,7 +211,6 @@ impl Planet {
                     }) {
                         continue;
                     }
-                    // Budgets of the kind's category.
                     if rule.budgets.iter().any(|b| {
                         let mut n = 0u32;
                         b.category == k.category
@@ -289,7 +282,6 @@ impl Planet {
         (placed, misses, generated)
     }
 
-    /// A generated site of kind `ki` at `d`, turned by `yaw`, on ground `ground` (m).
     pub(crate) fn make_site(&self, ki: usize, d: V3, yaw: f64, ground: f64) -> Site {
         let k = &self.recipe.sites.kinds[ki];
         let (e0, n0) = tangent_frame(d);
@@ -349,7 +341,6 @@ impl Planet {
                 let m = at[0].hypot(at[1]);
                 let dir = if m > 1e-9 { walk(s.dir, off * (1.0 / m), m, self.radius) } else { s.dir };
                 let ground = self.height_at(dir);
-                // Normal from the edited height function.
                 let (e, n) = tangent_frame(dir);
                 let hh = |v: V3| v.normalized() * (self.radius + self.height_at(v.normalized()));
                 let eps = 0.5 / self.radius;

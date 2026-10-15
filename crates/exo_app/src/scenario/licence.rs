@@ -1,9 +1,5 @@
-//! The flight licence, headless: without the licence the seat refuses (with a pointer to the
-//! exam), the exam is taken at the flight school's counter for a fee, the ship is lent for it, the
-//! exam's events (take-off, pad reached, landing) are set by test hooks (the exam reads only
-//! these events, never the flight model), the crate is set down on the Drip Rock pad, and the
-//! pilot has the licence: the seat works, the exam is closed to them, the courier office gives a
-//! standing bonus for honours.
+//! The flight licence, headless: the seat refuses without it, the exam gives it.
+//! The exam reads only the events, never the flight model: test hooks send them.
 use super::jobs_helpers::{crates_above, goods_of, gp, prompt, show_offer, walker_on_pad};
 use super::*;
 use crate::gameplay::{Gameplay, HOST};
@@ -44,13 +40,11 @@ pub fn licence_steps(s: &mut Vec<Step>) {
         let sat = seated(w);
         check(c, !sat, "licence: the seat refuses".into());
         check(c, gp(w).notices.len() > 0 || gp(w).shown.iter().any(|l| l.key == "notice.licence.needed"), "licence: and says why".into());
-        // Riding along works: the walker is in the cabin and may walk about (no licence needed).
         let inside = with_player(w, |p| p.ship.is_some());
         check(c, inside, "licence: riding along in the cabin is allowed".into());
         end(w, c, String::new());
         true
     }));
-    // Money for the fee: a few courier jobs in play, a test hook here.
     s.push(Box::new(|w, c| {
         begin(w, c, "licence: take the exam at the school's counter");
         w.resource_mut::<Gameplay>().push_world(HOST, WorldEvent::TrackChanged { track: TrackId::new("wallet"), delta: 200, player: None });
@@ -101,7 +95,6 @@ pub fn licence_steps(s: &mut Vec<Step>) {
         end(w, c, String::new());
         true
     }));
-    // The flight: the three events by test hook, the player's client as sender.
     s.push(Box::new(|w, c| {
         begin(w, c, "licence: the exam's events (take-off, pad reached, landing)");
         w.resource_mut::<Gameplay>().push_world(HOST, WorldEvent::TookOff);
@@ -125,7 +118,6 @@ pub fn licence_steps(s: &mut Vec<Step>) {
         let done = g.jobs.active().next().map(|j| j.checks.iter().filter(|c| matches!(c.state, jobs_core::CheckState::Done { .. })).count());
         check(c, done == Some(3) && exam_state(w) == Some(JobState::Active), format!("licence: the landing is checked off, the crate is still to set down ({done:?})"));
         c.v.insert("standing0", g.progress.value(&g.kernel, &TrackId::new("standing_courier_office"), None).unwrap_or(0) as f64);
-        // The pilot gets up from the seat; then goes to the Drip Rock pad where the crate comes.
         tap(w, KeyCode::KeyF);
         true
     }));
@@ -151,7 +143,6 @@ pub fn licence_steps(s: &mut Vec<Step>) {
         check(c, g.may_pilot(HOST) && g.offers_of(&jobs_core::GiverId::new("flight_school")).is_empty(), "licence: the licence stays, the exam is closed to its holder".into());
         let flag = g.progress.has_flag(&gameplay_core::Flag::new("exam_honours:flight_exam"));
         check(c, flag, "licence: the honours are on record".into());
-        // Back at the seat (the exam's ship is returned, the licence opens it).
         put_at_seat(w);
         true
     }));

@@ -1,4 +1,3 @@
-//! The lab: mixing, the brew timing, the kettles, the recipe book, the save.
 //! Every test loads the shipped `content/gameplay` unless it says it builds its own records.
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -50,7 +49,6 @@ fn set(xs: &[&str]) -> BTreeSet<EffectId> {
     xs.iter().map(|x| eid(x)).collect()
 }
 
-/// The shipped files with one replaced (or added) and an optional one removed.
 fn with_file(path: &str, text: Option<&str>) -> Vec<File> {
     let mut f: Vec<File> = shipped_files().into_iter().filter(|f| f.path != path).collect();
     if let Some(t) = text {
@@ -63,7 +61,6 @@ fn load_with(path: &str, text: &str) -> Vec<String> {
     LabContent::load(&with_file(path, Some(text)), &kernel()).unwrap_err()
 }
 
-/// The brewed event and the notice of a release: (product, crates, discovered).
 fn brewed_of(out: &[LabOutcome]) -> (ProductSpec, u32, bool) {
     out.iter()
         .find_map(|o| match o {

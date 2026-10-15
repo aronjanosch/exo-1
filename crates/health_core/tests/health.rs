@@ -1,5 +1,3 @@
-//! health_core: heat, fire and burn in ticks, radiation, nausea and mobility, oxygen,
-//! headache, treatments, death and respawn, on the shipped file.
 use std::path::Path;
 
 use content_core::File;
@@ -23,7 +21,6 @@ fn hot() -> Env {
     Env { oxygen: 1.0, hot: true, glow: false, fire: 0.0, rod_per_s: 0.0 }
 }
 
-/// Steps `secs` in 0.1 s steps with the given surroundings.
 fn run(h: &mut Health, t: &HealthTuning, secs: f64, env: Env) -> Vec<HealthEvent> {
     let mut ev = Vec::new();
     for _ in 0..(secs * 10.0).round() as usize {
@@ -388,13 +385,11 @@ fn the_low_air_case_costs_73_of_oxygen_and_the_burn_takes_the_rest_so_health_rea
 fn unconscious_at_zero_and_awake_again_above() {
     let t = shipped();
     let mut h = Health::new(&t, 1);
-    // Burn 110 is 110 points of the maximum: vitality -10, unconscious but not dead.
     h.add(&t, "burn", 110.0);
     let seen = run(&mut h, &t, 0.1, air(1.0));
     assert_eq!(seen, vec![HealthEvent::Unconscious], "unconscious once, not dead: {seen:?}");
     assert_eq!(h.state(), Life::Unconscious);
     assert!(h.vitality() < 0.0 && h.vitality() > -100.0, "below zero, above the dead line: {}", h.vitality());
-    // A bandage at full skill takes 18.75 of burn: vitality is above zero again, awake.
     h.treat(&t, "bandage", 100.0).expect("a bandage");
     assert_eq!(h.state(), Life::Conscious, "awake above zero: vitality {}", h.vitality());
     assert!(h.vitality() > 0.0);
@@ -439,7 +434,6 @@ fn the_unconscious_line_is_below_the_cpr_floor() {
 fn cpr_takes_oxygen_low_off_per_second_in_good_air() {
     let t = shipped();
     let mut h = unconscious_at(&t, 150.0);
-    // 1.5 s: before the first revive roll (after 2 s of CPR).
     for _ in 0..15 {
         pump(&mut h, &t, 0.1, 50.0, true);
     }
@@ -507,7 +501,6 @@ fn a_revive_roll_wakes_the_body_after_two_seconds_and_lowers_the_oxygen_low() {
 fn a_low_skill_rescuer_hurts_the_body_with_burn_each_pump() {
     let t = shipped();
     let mut h = unconscious_at(&t, t.cpr.stabilize_floor);
-    // One whole pump (at 1 s), before the first revive roll (after 2 s of CPR).
     for _ in 0..15 {
         pump(&mut h, &t, 0.1, 30.0, true);
     }

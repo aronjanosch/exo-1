@@ -1,7 +1,3 @@
-//! Texts the player reads: a table of keys to one line or a pool of lines, and a picker
-//! that takes a line from a pool by seed and never the same line twice in a row (research:
-//! "the same bark again and again"). English only for now; the table is meant to become checked
-//! localisation tables.
 use std::collections::BTreeMap;
 
 use serde::Deserialize;
@@ -17,7 +13,6 @@ enum Lines {
     Pool(Vec<String>),
 }
 
-/// Key to lines. A pool has at least one line.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TextTable {
     lines: BTreeMap<String, Vec<String>>,
@@ -70,12 +65,10 @@ impl Picker {
         Picker { rng: Rng::new(seed), last: BTreeMap::new() }
     }
 
-    /// A line of `key`; the key itself when the table has none.
     pub fn pick(&mut self, table: &TextTable, key: &str) -> String {
         let Some(lines) = table.lines(key) else { return key.to_string() };
         let i = match (lines.len(), self.last.get(key)) {
             (1, _) => 0,
-            // Draw from the others: skip the last index.
             (n, Some(&last)) => {
                 let i = self.rng.below(n - 1);
                 if i >= last { i + 1 } else { i }
@@ -86,7 +79,6 @@ impl Picker {
         lines[i].clone()
     }
 
-    /// The notice's text: a line of its key with `{name}` filled from its arguments.
     pub fn render(&mut self, table: &TextTable, n: &Notice) -> String {
         let mut s = self.pick(table, n.key.as_str());
         for (name, arg) in &n.args {
@@ -100,7 +92,6 @@ impl Picker {
         s
     }
 
-    /// A key as text.
     pub fn text(&mut self, table: &TextTable, key: &TextKey) -> String {
         self.pick(table, key.as_str())
     }

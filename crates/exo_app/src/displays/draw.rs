@@ -1,16 +1,3 @@
-//! Drawing the panels (window only): on the screens in the world the panel live, rendered into
-//! the quad's texture by a UI camera of its own; the screen in use also shows hover and press and
-//! a small cursor mark at the pointer.
-//!
-//! The look is the design system "EXO-1 Ship Displays" (2026-10-13): every screen a physical
-//! plate with a 2 px steel outline and one cut corner, a header strip (accent lamp, caps title,
-//! mono machine tag, status at the right) over a darker recessed well; controls are raised plates
-//! with a dark bottom edge and cut corners; hard strokes, no soft shadows; status always with its
-//! shape (● ▲ ■) beside the colour. Every colour, font and stroke comes from `DisplayLook`
-//! (`content/ui/displays.json`).
-//!
-//! Shapes: Bevy UI draws axis-aligned boxes, so a cut corner or a status triangle is a 45° turned
-//! square inside a clipping box, and the dial's arc and the trend's line are short turned bars.
 use super::*;
 use crate::origin::{RenderOrigin, WorldPos, WorldPose};
 use crate::view::MainCamera;
@@ -21,8 +8,6 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, T
 use bevy::window::PrimaryWindow;
 use display_core::{level, list_row_at, Glyph, Level, ListRow, Rect, Rgb, Shape, TextFace, Theme, Tone, Widget};
 
-/// The window's size and the camera's world ray through the cursor (None without a cursor in the
-/// window or a camera).
 pub fn update_view(mut view: ResMut<DisplayView>, windows: Query<&Window, With<PrimaryWindow>>, controls: Res<Controls>, cam: Query<(&WorldPose, &Projection), With<MainCamera>>) {
     if let Ok(w) = windows.single()
         && w.size() != view.window
@@ -42,7 +27,6 @@ pub fn update_view(mut view: ResMut<DisplayView>, windows: Query<&Window, With<P
     }
 }
 
-/// The panel fonts, loaded from the paths in the theme (again when a path changes).
 #[derive(Resource, Clone, Debug, PartialEq)]
 pub struct DisplayFonts {
     paths: [String; 4],
@@ -77,14 +61,12 @@ fn on_dash(at: f64, dash: Option<(f64, f64)>) -> bool {
     }
 }
 
-/// Materials the quads share.
 #[derive(Resource)]
 pub struct ScreenLook {
     idle: Handle<StandardMaterial>,
     bezel: Handle<StandardMaterial>,
 }
 
-/// Gives every new display its quad (a screen with a dark frame behind it).
 pub fn add_quads(
     mut commands: Commands,
     new: Query<(Entity, &DisplayPanel), Added<DisplayPanel>>,
@@ -126,8 +108,6 @@ fn draw_key(panel: &Panel, ptr: Option<&Pointer>, scale: f32) -> DrawKey {
     (panel.clone(), ptr.and_then(|p| p.hover.clone()), ptr.and_then(|p| p.pressed.clone()), list_at, scale)
 }
 
-/// A display's texture, the UI camera that draws into it, the UI root, the cursor mark, and when
-/// it last drew.
 #[derive(Component)]
 pub struct ScreenTarget {
     camera: Entity,
@@ -142,8 +122,6 @@ pub struct ScreenTarget {
     frames_left: u8,
 }
 
-/// The cursor mark: a crosshair with a dark outline, in a zero-sized node that moves with the
-/// pointer (so moving it redraws nothing else).
 fn spawn_cursor(commands: &mut Commands, camera: Entity, theme: &Theme, scale: f32) -> Entity {
     let k = &theme.colours;
     let (arm, thick, edge) = (10.0 * scale, 2.0 * scale, 1.5 * scale);
@@ -159,11 +137,6 @@ fn spawn_cursor(commands: &mut Commands, camera: Entity, theme: &Theme, scale: f
         .id()
 }
 
-/// Screens near the camera and not behind it show their panel live. The screen in use redraws as
-/// soon as its hover, press or panel change and carries the cursor mark; the others redraw a
-/// changed panel at most every `world.redraw_s`. The texture's camera renders only for a few frames
-/// after a redraw or a cursor move, so an unchanged screen costs nothing. Far or behind: the idle
-/// glow.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_world(
     mut commands: Commands,
@@ -203,7 +176,6 @@ pub fn draw_world(
                 let camera = commands.spawn((Camera2d, Camera { order: -1, clear_color: ClearColorConfig::Custom(col(look.0.colours.bg_0)), ..default() }, RenderTarget::Image(image.clone().into()))).id();
                 let root = commands.spawn((Node { width: percent(100), height: percent(100), ..default() }, UiTargetCamera(camera))).id();
                 let cursor = spawn_cursor(&mut commands, camera, &look.0, ts);
-                // Unlit: the screen glows the same by day and by night.
                 let material = materials.add(StandardMaterial { base_color_texture: Some(image), unlit: true, ..default() });
                 mat.0 = material.clone();
                 commands.entity(e).insert(ScreenTarget { camera, root, cursor, material, drawn: None, cursor_at: None, last: f64::NEG_INFINITY, frames_left: 0 });
@@ -227,7 +199,6 @@ pub fn draw_world(
                     t.last = now;
                     t.frames_left = 3;
                 }
-                // The cursor mark follows the pointer on the screen in use.
                 let at = ptr.and_then(|p| p.at).map(|a| ((a.x as f32 * ts).round() as i32, (a.y as f32 * ts).round() as i32));
                 if t.cursor_at != at {
                     t.cursor_at = at;
@@ -257,7 +228,6 @@ pub fn draw_world(
                 {
                     cam.is_active = false;
                 }
-                // Back in range it draws fresh.
                 t.drawn = None;
                 t.cursor_at = None;
                 if let Ok(mut n) = cursors.get_mut(t.cursor) {
@@ -274,14 +244,12 @@ pub fn draw_world(
 
 // ---------- the pen: panel pixels to UI nodes ----------
 
-/// Draws panel pixels into UI nodes: panel pixel `p` lands at `p * scale`.
 struct Pen<'a> {
     theme: &'a Theme,
     fonts: &'a DisplayFonts,
     scale: f32,
 }
 
-/// Which corners of a plate are cut.
 #[derive(Clone, Copy)]
 struct Cuts {
     tl: bool,
@@ -293,7 +261,6 @@ struct Cuts {
 const CUT_TR: Cuts = Cuts { tl: false, tr: true, br: false, bl: false };
 const CUT_TL_BR: Cuts = Cuts { tl: true, tr: false, br: true, bl: false };
 
-/// Which font a text uses.
 #[derive(Clone, Copy)]
 enum Face {
     Display,
@@ -307,7 +274,6 @@ impl Pen<'_> {
         &self.theme.colours
     }
 
-    /// An absolute node at panel rectangle `(x, y, w, h)`.
     fn node(&self, x: f64, y: f64, w: f64, h: f64) -> Node {
         let s = self.scale;
         Node { position_type: PositionType::Absolute, left: px(x as f32 * s), top: px(y as f32 * s), width: px(w as f32 * s), height: px(h as f32 * s), ..default() }
@@ -319,7 +285,6 @@ impl Pen<'_> {
         }
     }
 
-    /// A bar from `a` to `b` (panel pixels), `thick` wide.
     fn line(&self, c: &mut ChildSpawnerCommands, a: DVec2, b: DVec2, thick: f64, colour: Color) {
         let d = b - a;
         let len = d.length();
@@ -350,14 +315,11 @@ impl Pen<'_> {
         });
     }
 
-    /// The half of a `size` box at `(x, y)` that lies towards `inner` (true: the box's right or
-    /// bottom side faces the plate's middle).
     fn corner_fill(&self, c: &mut ChildSpawnerCommands, x: f64, y: f64, size: f64, inner: (bool, bool), colour: Color) {
         let (cx, cy) = (if inner.0 { size } else { 0.0 }, if inner.1 { size } else { 0.0 });
         self.clipped_diamond(c, x, y, size, size, cx, cy, size * std::f64::consts::SQRT_2, colour);
     }
 
-    /// A filled box with cut corners.
     #[allow(clippy::too_many_arguments)]
     fn cut_box(&self, c: &mut ChildSpawnerCommands, x: f64, y: f64, w: f64, h: f64, cut: f64, cuts: Cuts, colour: Color) {
         let k = cut.min(w * 0.5).min(h * 0.5).max(0.0);
@@ -379,7 +341,6 @@ impl Pen<'_> {
         }
     }
 
-    /// A plate: the outline colour's cut box with the fill's cut box inside it (as the design does).
     #[allow(clippy::too_many_arguments)]
     fn plate(&self, c: &mut ChildSpawnerCommands, x: f64, y: f64, w: f64, h: f64, cut: f64, cuts: Cuts, outline: Color, fill: Color) {
         let b = self.theme.strokes.border;
@@ -387,7 +348,6 @@ impl Pen<'_> {
         self.cut_box(c, x + b, y + b, w - 2.0 * b, h - 2.0 * b, (cut - b * 0.6).max(0.0), cuts, fill);
     }
 
-    /// Diagonal stripes over a box (disabled controls).
     fn hatch(&self, c: &mut ChildSpawnerCommands, x: f64, y: f64, w: f64, h: f64, colour: Color) {
         let stripe = self.theme.strokes.hatch;
         if stripe <= 0.0 || w <= 0.0 || h <= 0.0 {
@@ -405,7 +365,6 @@ impl Pen<'_> {
         });
     }
 
-    /// Text in a box, left or centred, vertically centred, clipped to the box.
     #[allow(clippy::too_many_arguments)]
     fn text(&self, c: &mut ChildSpawnerCommands, x: f64, y: f64, w: f64, h: f64, s: &str, size: f64, face: Face, colour: Color, caps: bool, centred: bool) {
         if w <= 0.0 || h <= 0.0 {
@@ -429,7 +388,6 @@ impl Pen<'_> {
         });
     }
 
-    /// A status shape, `size` across, centred on `at`.
     fn glyph(&self, c: &mut ChildSpawnerCommands, g: Glyph, at: DVec2, size: f64, colour: Color) {
         let h = size * 0.5;
         match g {
@@ -439,12 +397,10 @@ impl Pen<'_> {
                 n.border_radius = BorderRadius::all(percent(50));
                 c.spawn((n, BackgroundColor(colour)));
             }
-            // A turned square clipped to its upper half: base `size`, height size / 2.
             Glyph::Triangle => self.clipped_diamond(c, at.x - h, at.y - h * 0.5, size, h, h, h, h * std::f64::consts::SQRT_2, colour),
         }
     }
 
-    /// A label with its glyph (status tones), left aligned in its box.
     #[allow(clippy::too_many_arguments)]
     fn label(&self, c: &mut ChildSpawnerCommands, x: f64, y: f64, w: f64, h: f64, s: &str, tone: Tone, size: f64, mono: bool) {
         let colour = col(self.theme.tone(tone));
@@ -512,7 +468,6 @@ impl Pen<'_> {
                 Widget::Canvas { shapes, .. } => self.canvas(c, r.min, shapes),
             }
         }
-        // Scanlines on the glass.
         let every = self.theme.strokes.scanline_every;
         if every >= 2.0 {
             let area = panel.well().unwrap_or(Rect::new(0.0, 0.0, w, h));
@@ -617,7 +572,6 @@ impl Pen<'_> {
         } else if pressed {
             (hue, hue, 1.0, k.fg_on_accent, st.press_drop)
         } else if tone == Tone::Good {
-            // The selected look (the active mode of a switch row): the toggle's accent segment.
             (k.accent, k.accent, 0.0, k.fg_on_accent, 0.0)
         } else if hover {
             (if plain { k.hud } else { hue }, self.theme.tone_dim(tone), st.edge, k.fg_title, 0.0)
@@ -637,7 +591,6 @@ impl Pen<'_> {
         self.text(c, r.min.x, y, r.size.x, h - edge, label, size, Face::Semibold, col(fg), true, true);
     }
 
-    /// The caption above a bar or slider when there is room; returns the rest of the box.
     fn caption(&self, c: &mut ChildSpawnerCommands, r: Rect, label: &str, min_rest: f64) -> Rect {
         let cap = display_core::font::SMALL + 2.0;
         if label.is_empty() || r.size.y < min_rest + cap {
@@ -659,7 +612,6 @@ impl Pen<'_> {
     fn bar(&self, c: &mut ChildSpawnerCommands, r: Rect, value: f64, label: &str, warn: Option<f64>, crit: Option<f64>) {
         let k = self.c();
         let r = self.caption(c, r, label, 20.0);
-        // Room under the bar for the threshold marks.
         let marks = 8.0_f64.min(r.size.y * 0.25);
         let (x, y, w, h) = (r.min.x, r.min.y, r.size.x, r.size.y - marks);
         let b = self.theme.strokes.border;
@@ -751,7 +703,6 @@ impl Pen<'_> {
         let r = self.caption(c, r, label, 40.0);
         let (x, y, w, h) = (r.min.x, r.min.y, r.size.x, r.size.y);
         let f = value.clamp(0.0, 1.0);
-        // Track near the top, ticks under it, the handle over both (the design's proportions of 48 px).
         let u = h / 48.0;
         let edge = if enabled { k.hud_dim } else { k.line_1 };
         self.rect(c, x, y + 14.0 * u, w, 2.0, col(edge));
@@ -774,7 +725,6 @@ impl Pen<'_> {
         let hw = if pressed { 14.0 } else { 16.0 };
         let hx = x + w * f - hw * 0.5;
         self.rect(c, hx, y + 2.0 * u + hw * 0.5, hw, 34.0 * u - hw * 0.5, col(handle));
-        // The pointed top.
         self.clipped_diamond(c, hx, y + 2.0 * u, hw, hw * 0.5, hw * 0.5, hw * 0.5, hw * 0.5 * std::f64::consts::SQRT_2, col(handle));
     }
 
@@ -792,13 +742,11 @@ impl Pen<'_> {
         let lvl = level(value, warn, crit);
         let at = |deg: f64, rr: f64| centre + DVec2::new(deg.to_radians().cos(), deg.to_radians().sin()) * rr;
         let (a0, sweep) = (135.0, 270.0);
-        // The scale ring outside the arc.
         for i in 0..28 {
             let a = a0 + sweep * i as f64 / 27.0;
             let len = if i % 3 == 0 { 7.0 } else { 4.0 };
             self.line(c, at(a, rad + 16.0), at(a, rad + 16.0 + len), 2.0, col(k.hud_dim));
         }
-        // The arc as segments: an unlit track, lit up to the value in its level's colour.
         let segs = 30;
         let thick = match lvl {
             Level::Normal => 12.0,
@@ -817,7 +765,6 @@ impl Pen<'_> {
                 self.line(c, at(a, rad - 12.0), at(a, rad + 13.0), 4.0, col(colour));
             }
         }
-        // Needle and hub.
         self.line(c, centre, at(a0 + sweep * f, rad - 16.0), 3.0, col(k.hud));
         let mut hub = self.node(centre.x - 6.0, centre.y - 6.0, 12.0, 12.0);
         hub.border = UiRect::all(px(2.0 * self.scale));
@@ -888,7 +835,6 @@ impl Pen<'_> {
                     gc
                 }
                 None => {
-                    // ○: a hollow dim ring.
                     let gc = col(k.fg_3);
                     let mut n = self.node(rx + 12.0, ry + row_h * 0.5 - gs * 0.5, gs, gs);
                     n.border = UiRect::all(px(2.0 * self.scale));

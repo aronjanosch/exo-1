@@ -1,12 +1,9 @@
-//! Glue shared by the recorder and the live network: building a snapshot of the local
-//! ship and walker in the shared frame (planet id plus planet-relative f64).
 use crate::env::PlanetRes;
 use crate::walker::Player;
 use avian3d::prelude::*;
 use bevy::math::{DQuat, DVec3};
 use net_core::snapshot::{FrameKind, Snapshot};
 
-/// Orientation of a walker from its heading and up (camera axes, like the view).
 pub fn walker_quat(forward: DVec3, up: DVec3) -> DQuat {
     walker_core::look_rot(forward - up * forward.dot(up), up)
 }

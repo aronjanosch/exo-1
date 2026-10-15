@@ -1,6 +1,3 @@
-//! The planetary field (gravity, influence by altitude) on the game's planet model, and the cabin's
-//! LAG state. The controller's own checks are the SC model's (`sc_*.rs`) and the ground rules'
-//! (`ground_hold.rs`).
 use flight_core::*;
 use glam::DVec3;
 
@@ -8,7 +5,6 @@ fn check(ok: bool, msg: String) {
     assert!(ok, "{msg}");
 }
 
-/// The game's planet model (centre, radius 5000, default field).
 struct MainModel {
     centre: DVec3,
     field: Field,
@@ -83,10 +79,8 @@ fn lag_follows_landing_and_the_manual_switch() {
     assert_eq!(lag.level, 1.0);
     lag.toggle();
     assert!(lag.is_on() && !lag.manual_on, "G does nothing in flight");
-    // Hovering still and low without contact is flying.
     run(&mut lag, false, 1.4, 0.0, 1.0);
     assert!(!lag.landed && lag.level == 1.0, "hovering at 1.4 m is not landed");
-    // Touching down slowly: landed, the field goes down.
     run(&mut lag, true, 1.0, 0.1, 1.1);
     assert_eq!((lag.landed, lag.level), (true, 0.0));
     // Parked with its centre over a dip deeper than 2 m: the hull touches, still landed.

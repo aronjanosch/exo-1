@@ -16,7 +16,6 @@
 //! Its power-off step (targets to zero) comes after the lerps, as in Barotrauma; `reactor::Reactor`
 //! zeroes the targets before the lerps. The difference shows only with power off.
 
-/// Barotrauma's `MathHelper.Lerp`.
 fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t
 }
@@ -32,7 +31,6 @@ fn sign(v: f64) -> f64 {
     }
 }
 
-/// The reactor as Barotrauma runs it, for one reactor on one grid.
 #[derive(Clone, Debug)]
 pub struct Baro {
     /// `MaxPowerOutput` (`GetMaxOutput`, line 890).
@@ -40,7 +38,7 @@ pub struct Baro {
     /// `FireDelay` (line 113 default 30) and `MeltdownDelay` (line 105 default 120).
     fire_delay: f64,
     meltdown_delay: f64,
-    /// `AvailableFuel`, held constant (see the module doc).
+    /// `AvailableFuel`, held constant.
     fuel: f64,
     /// `degreeOfSuccess` (line 41), 0..1: the operator's skill.
     degree: f64,
@@ -82,7 +80,6 @@ pub struct Baro {
 }
 
 impl Baro {
-    /// A reactor that is off, cold, with the given values. `degree` is the skill as 0..1.
     pub fn new(
         max_output: f64,
         fire_delay: f64,

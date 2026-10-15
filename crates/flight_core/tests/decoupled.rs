@@ -1,4 +1,3 @@
-//! Momentum preservation through the actual flight controller, including mode switches and mouse.
 mod sc_common;
 use flight_core::sc::{ModeCmds, ScShip};
 use flight_core::{BodyState, FlightInput, PlanetEnv};

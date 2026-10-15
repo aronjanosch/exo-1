@@ -20,7 +20,6 @@ fn time_level(p: &Planet, depth: u32) -> (f64, f64, f64) {
         let ib = (k as u64 * 5 + 1) % n;
         picks.push((face, -1.0 + ia as f64 * size, -1.0 + ib as f64 * size));
     }
-    // One warm-up build so the first chunk does not pay for cold caches.
     std::hint::black_box(p.build_chunk(picks[0].0, picks[0].1, picks[0].2, size));
     let t = Instant::now();
     for &(face, a0, b0) in &picks {

@@ -1,5 +1,3 @@
-//! The engine room's values, from `content/gameplay/reactor/reactor.json` (strict loader: unknown
-//! fields and wrong types are errors, errors name the file and the field).
 use content_core::{parse_strict, File};
 use serde::{Deserialize, Serialize};
 
@@ -7,13 +5,11 @@ use crate::engine_room::RoomTuning;
 use crate::grid::GridTuning;
 use crate::reactor::{ReactorTuning, RodKinds};
 
-/// The file's path under `content/gameplay/`.
 pub const REACTOR_PATH: &str = "reactor/reactor.json";
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Tuning {
-    /// Fuel rods in the room at the start and after a reset.
     pub start_rods: usize,
     /// The fuel rod kinds by id (`standard` is the one `start_rods` puts in).
     pub rods: RodKinds,

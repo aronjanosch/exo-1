@@ -1,6 +1,3 @@
-//! Rivers and lakes from drainage on the macro grid. On the baked planets the water runs
-//! downhill, lakes sit in sinks, rivers end in the sea or a lake, the same seed gives the same
-//! water. The algorithm's own cases on a flat test grid are in `src/drainage.rs`.
 use planet_core::drainage::Mouth;
 use planet_core::look::{tangent_frame, walk};
 use planet_core::*;
@@ -186,7 +183,6 @@ fn nothing_grows_or_builds_in_the_water() {
     for s in &p.sites {
         assert!(p.sample(s.dir).water_depth == 0.0, "site {} stands in water", s.id);
     }
-    // Trees and shrubs keep out of lakes and rivers; scatter cells along the biggest rivers.
     let mut checked = 0;
     for rv in p.coarse.rivers.iter().filter(|r| r.catchment_km2 > 1.0).step_by(20) {
         let face = face_of(rv.dir);

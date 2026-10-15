@@ -1,6 +1,3 @@
-//! walker_core: first-person walker without engine types (radial gravity, floor snap, 50 degree
-//! floor limit) with its own move-and-slide over a `World` that only answers sweeps and overlaps.
-//! The engine side (Avian shape casts) lives in the Bevy crate.
 //!
 //! The walker lives in a frame: the planet (identity frame, world coordinates) or a ship
 //! cabin (the ship's pose). Position and velocity are stored in that frame, so a moving
@@ -12,7 +9,6 @@ use serde::Deserialize;
 /// Result of a sweep, world space.
 #[derive(Copy, Clone, Debug)]
 pub struct Hit {
-    /// Distance travelled along the motion direction before contact.
     pub distance: f64,
     /// Surface normal of what was hit, pointing towards the walker.
     pub normal: DVec3,
@@ -29,7 +25,6 @@ pub trait World {
     fn depenetrate(&self, feet: DVec3, up: DVec3) -> DVec3;
 }
 
-/// Local-to-world transform of the frame the walker lives in.
 #[derive(Copy, Clone, Debug)]
 pub struct Frame {
     pub origin: DVec3,
@@ -96,7 +91,6 @@ pub fn turn_body(body: DQuat, yaw: f64, pitch: f64, roll: f64) -> DQuat {
     (body * DQuat::from_rotation_y(yaw) * DQuat::from_rotation_x(pitch) * DQuat::from_rotation_z(roll)).normalize()
 }
 
-/// Suit thrusters for weightless movement. Assumed values, tune by feel.
 /// `content/tuning/suit.json`.
 #[derive(Deserialize, Copy, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -134,7 +128,6 @@ pub struct SuitInput {
 }
 
 /// Acceleration from the suit, world space. `rot` is the body orientation, `vel` the velocity the
-/// brake stops (world space). The brake overrides thrust, like the ship's firm brake.
 pub fn suit_accel(cfg: &SuitConfig, rot: DQuat, vel: DVec3, input: &SuitInput) -> DVec3 {
     if input.brake {
         return (-vel / cfg.brake_time).clamp_length_max(cfg.brake);
@@ -154,7 +147,6 @@ pub struct WalkerConfig {
     pub run_speed: f64,
     pub jump_speed: f64,
     /// Step-off: below this speed (m/s) walking and stopping ease over `start_time`, above it
-    /// the walker is at full speed at once. So a short tap of W is a slow step.
     pub start_speed: f64,
     pub start_time: f64,
     pub floor_max_angle_deg: f64,
@@ -172,14 +164,12 @@ pub struct WalkerConfig {
 
 impl Default for WalkerConfig {
     fn default() -> Self {
-        // Test values; skin and slide count assumed.
         WalkerConfig {
             radius: 0.35,
             height: 1.8,
             walk_speed: 5.0,
             run_speed: 12.0,
             jump_speed: 5.0,
-            // 0 to 3 m/s within 0.1 s, then full speed.
             start_speed: 3.0,
             start_time: 0.1,
             floor_max_angle_deg: 50.0,
@@ -225,7 +215,6 @@ pub struct Walker {
     pub cfg: WalkerConfig,
     /// Feet, frame coordinates.
     pub pos: DVec3,
-    /// Frame coordinates (relative to the frame, not to the world).
     pub vel: DVec3,
     /// Velocity the legs aim for (frame coordinates, horizontal part used). Collisions change
     /// `vel` only, so walking up a slope does not lose speed every step.
@@ -253,7 +242,6 @@ impl Walker {
         normal.dot(up) >= self.cfg.floor_max_angle_deg.to_radians().cos()
     }
 
-    /// Keep the heading, make it perpendicular to `up`.
     pub fn align(&mut self, up: DVec3, yaw: f64) {
         let mut f = self.forward;
         if yaw != 0.0 {
@@ -266,7 +254,6 @@ impl Walker {
         self.forward = f.normalize();
     }
 
-    /// Stops the walker at once (teleports, sitting down).
     pub fn halt(&mut self) {
         self.vel = DVec3::ZERO;
         self.move_vel = DVec3::ZERO;
@@ -311,7 +298,6 @@ impl Walker {
             let current = self.move_vel - up * self.move_vel.dot(up);
             let start = self.cfg.start_speed;
             let horizontal = if current.length() < start - 1e-9 || target.length() < 1e-9 && current.length() <= start {
-                // Stepping off or coming to a stop: ease below the step-off speed.
                 let step = target.clamp_length_max(start);
                 current + (step - current).clamp_length_max(start / self.cfg.start_time * dt)
             } else {
@@ -358,7 +344,6 @@ impl Walker {
                 self.floor_normal = n;
                 motion = rest - n * rest.dot(n).min(0.0);
                 if !jumping {
-                    // Standing on it: no further fall, slide horizontal speed along the floor.
                     self.vel -= into(self.vel);
                 }
             } else if n.dot(up) > -0.1 {
@@ -373,7 +358,6 @@ impl Walker {
             }
         }
 
-        // Floor snap: stay on the ground over small steps and crests.
         if !self.grounded && was_grounded && !jumping && self.vel.dot(up) <= 1e-6 {
             let probe = -world_up * self.cfg.snap_length;
             if let Some(hit) = world.sweep(frame.to_world(self.pos), world_up, probe) {

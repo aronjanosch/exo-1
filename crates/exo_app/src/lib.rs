@@ -1,5 +1,3 @@
-//! EXO-1 game crate: Bevy glue around planet_core, flight_core, walker_core and net_core.
-//! Rendering, input, camera, HUD, physics bodies, network transport and scripted scenarios.
 //! All game values are test values, not designed.
 pub mod audio;
 pub mod audio_slice;
@@ -73,76 +71,52 @@ pub enum Layer {
     World,
     Ship,
     Ramp,
-    /// Hull of another player's ship (proxy): the walker stands on it, ships do not hit it.
     Remote,
-    /// Crates that are Avian bodies: the walker, other crates and the hull hit them, ships do not.
     Crate,
 }
 
-/// Sideways spawn offset in metres (players of one network session start 20 m apart).
 #[derive(Resource)]
 pub struct SpawnOffset(pub f64);
 
-/// One physics tick at 60 Hz.
 pub const TICK: Duration = Duration::from_nanos(16_666_667);
 
 #[derive(Clone, Debug)]
 pub struct Options {
     pub scenario: Option<String>,
     pub headless: bool,
-    /// Window not shown (screenshots without any visible window), if the platform renders it.
     pub hidden: bool,
     /// Present without vsync (frame time measurements; with vsync a frame takes the display's period).
     pub no_vsync: bool,
     /// Radius of the first planet in metres (default: `content/system/system.json`).
     pub radius: Option<f64>,
-    /// Start at this place's main pad instead of the pole (`--start drip_rock`, the
-    /// city's spaceport): the ship parks on the pad, the walker beside it.
     pub start: Option<String>,
     /// Atmosphere height of the first planet in metres (default: the ceilings rule for the radius
     /// with `--radius`, else the file's).
     pub atmosphere: Option<f64>,
     /// Render-origin shift threshold in metres, 0 = off.
     pub origin_shift: f64,
-    /// Scenario reports and screenshots.
     pub out_dir: PathBuf,
-    /// Write the scripted run's ship and walker path (net_core Trajectory) to this file.
     pub record: Option<PathBuf>,
     pub spawn_offset: f64,
     /// Distance between the planet centres in metres (default: `content/system/system.json`).
     pub distance: Option<f64>,
     /// Headless run paced at 60 physics ticks per wall second (network runs).
     pub realtime: bool,
-    /// `--all-planets`: `--radius`/`--atmosphere` apply to every planet, not only the first
-    /// (`planet-look` of both planets at one size).
     pub all_planets: bool,
     /// `--spike-ms=`: frames slower than this print a `spike:` line.
     pub spike_ms: f64,
-    /// `--mute`: no sound (windowed measurement runs).
     pub mute: bool,
     pub net: Option<net_live::NetConfig>,
-    /// `--perf`: step and frame timings per phase.
     pub perf: Option<perf::PerfOptions>,
-    /// Dev builds: the tuning files to watch (default the repo's `content/tuning`).
     pub tuning_dir: Option<PathBuf>,
-    /// Player settings and user bindings (default `settings/`).
     pub settings_dir: Option<PathBuf>,
-    /// `--menu`: the menus also in a scripted windowed run (screenshots of them).
     pub force_menu: bool,
     /// `--swap-rounds=<n>`: planet swaps by warp in the `swap` scenario (default and least 3).
     pub swap_rounds: usize,
-    /// `--dev-area`: spawn the dev area's devices wherever the run starts; `--start=dev_area` does
-    /// it too.
     pub dev_area: bool,
-    /// `--warm-reactor`: the engine room is warm-started once when it is created (`warm_start`).
     pub warm_reactor: bool,
-    /// `--showcase`: ship models with colliders next to the spawn, for a walk test (window only).
     pub showcase: bool,
-    /// `--system-seed=<u64>`: the run's star system is generated from this seed instead of
-    /// `content/system/system.json` (debug switch). Default: the file.
     pub system_seed: Option<u64>,
-    /// `--system-kind=<harbour|normal|hostile>`: the template of a generated system, used only
-    /// with `--system-seed` (default normal).
     pub system_kind: campaign_core::SystemKind,
 }
 
@@ -232,7 +206,6 @@ impl Options {
             }
         }
         o.net = net_live::NetConfig::parse(&net_args);
-        // The dev area's scenarios start there.
         if matches!(o.scenario.as_deref(), Some("dev_area" | "displays" | "items" | "health")) && o.start.is_none() {
             o.start = Some(dev_area::PLACE.into());
         }
@@ -256,24 +229,19 @@ impl Options {
 }
 
 impl Options {
-    /// The dev area's devices are spawned.
     pub fn dev_area(&self) -> bool {
         self.dev_area || self.start.as_deref() == Some(dev_area::PLACE)
     }
-    /// Players start in the menu: a window, no script, no network flags.
     pub fn menu(&self) -> bool {
         !self.headless && (self.force_menu || self.scenario.is_none() && self.net.is_none())
     }
 }
 
-/// Bevy's asset root, `content/` (props). Dev builds read the repo's folder wherever the binary
 /// runs from; release builds expect `content/` next to the executable.
 pub fn content_dir() -> String {
     if cfg!(debug_assertions) { concat!(env!("CARGO_MANIFEST_DIR"), "/../../content").to_string() } else { "content".to_string() }
 }
 
-/// Every `.json` file under `content/<sub>/` (one folder deep), with its path relative to
-/// `content/<sub>/` (`commodity/fizzy_mud.json`), sorted. A missing folder gives none.
 pub fn content_files(sub: &str) -> Vec<content_core::File> {
     let root = std::path::Path::new(&content_dir()).join(sub);
     let mut out = Vec::new();
@@ -331,8 +299,6 @@ pub fn build_app(o: &Options) -> App {
             Err(e) => panic!("--distance refused: {e}"),
         }
     }
-    // The file wins; --radius only when given (first planet, or all with --all-planets).
-    // A radius or an atmosphere from the command line brings the ceilings that follow from it
     // (obstruction and arrival radius) with it, or the warp checks refuse the planet.
     let n_planets = if o.all_planets { sys.planets.len() } else { 1 };
     for p in sys.planets.iter_mut().take(n_planets).filter(|_| o.radius.is_some() || o.atmosphere.is_some()) {
@@ -355,7 +321,6 @@ pub fn build_app(o: &Options) -> App {
     let planet = env::PlanetRes::load(home, sys.planet(home));
     println!("planet: radius {} m, sea {:.2} m, bake {:.0} ms", planet.radius, planet.sea, planet.bake_ms);
     // The start direction: the pole, or 15 m south of a place's main pad, so the ship (parked 15 m
-    // ahead of the walker) stands on the pad.
     let start_up = match &o.start {
         None => DVec3::Y,
         Some(place) => {
@@ -365,7 +330,6 @@ pub fn build_app(o: &Options) -> App {
     };
     let start = planet.centre + start_up * planet.surface(start_up);
     app.insert_resource(origin::RenderOrigin {
-        // Without shifting the origin stays at the world origin.
         origin: if o.origin_shift > 0.0 { start.round() } else { DVec3::ZERO },
         threshold: o.origin_shift,
         shifts: 0,
@@ -418,7 +382,6 @@ pub fn build_app(o: &Options) -> App {
         });
     }
 
-    // Domain plugins. The order between phases is in `phases`; inside a phase each plugin orders its own systems.
     app.insert_resource(frame_cost::FrameSpikes::with_threshold(o.spike_ms));
     app.add_plugins(frame_cost::plugin);
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
@@ -431,7 +394,6 @@ pub fn build_app(o: &Options) -> App {
         app.add_plugins(dev_area::plugin);
     }
     // The save belongs to players: scripted and headless runs keep theirs in the output
-    // folder and start new.
     let player_run = o.scenario.is_none() && !o.headless;
     savefile::plugin(&mut app, if player_run { savefile::SaveDir::default_dir() } else { o.out_dir.join("saves") }, player_run);
     app.add_plugins((flight_events::plugin, map::plugin, help::plugin, dev::plugin));
@@ -448,7 +410,6 @@ pub fn build_app(o: &Options) -> App {
         walker::spawn_player_at(&mut commands, &planet, &tuning.walker, start_up, off.0);
         let ship = ship::spawn_ship(&mut commands, &planet, &tuning, start_up, off.0);
         if test_crates {
-            // The first object: a test crate on the cabin floor, behind the seat on the right.
             let t = &crates.0;
             commands.spawn(cargo::crate_bundle(t, "small", Some(ship), cargo::cabin_floor_pos(t, "small", 1.2, 1.5), DVec3::NEG_Z));
         }
@@ -468,13 +429,10 @@ pub fn build_app(o: &Options) -> App {
             app.add_plugins(ship_showcase::plugin);
         }
     } else if o.scenario.as_deref() == Some("swap") {
-        // The terrain too, headless, to count what a swap leaves behind.
         app.init_asset::<StandardMaterial>().init_asset::<terrain_material::TerrainMaterial>().init_asset::<sky::WaterMaterial>();
         app.add_plugins(terrain::plugin);
     } else if o.scenario.as_deref() == Some("planet-flight") {
-        // The streaming work headless (terrain, scatter, sites), to measure its main-thread cost.
         app.init_asset::<StandardMaterial>().init_asset::<terrain_material::TerrainMaterial>().init_asset::<sky::WaterMaterial>();
-        // City pieces of the settlements are glTF scenes.
         app.init_asset::<bevy::world_serialization::WorldAsset>();
         app.add_plugins((terrain::plugin, scatter::plugin, sites::plugin));
     }

@@ -1,7 +1,4 @@
-//! Scripted runs: a list of steps, each called once per fixed tick until it returns true. Steps
-//! drive the game only through `Controls` and a few test hooks (teleport for test setup, ship
-//! test input). A run exits non-zero when a check fails. One module per topic; this one
-//! holds the shared script interface (`Step`, `Ctx`, helpers, step builders), `build` and `run_script`.
+//! Scripted runs: a list of steps, each called once per fixed tick until it returns true.
 use crate::controls::{Bindings, Controls};
 use crate::env::PlanetRes;
 use crate::origin::RenderOrigin;
@@ -72,7 +69,6 @@ pub use self::{cargo::*, net::*, swap::*};
 pub(crate) use self::warp::*;
 use self::{figure::*, flight::*, reload::*, space::*, walk::*};
 
-/// The script driver and what single scenarios add (`foreign`, `swap`). Not added without a scenario.
 pub fn plugin(name: &str, headless: bool) -> impl Plugin {
     let name = name.to_string();
     move |app: &mut App| {
@@ -85,7 +81,6 @@ pub fn plugin(name: &str, headless: bool) -> impl Plugin {
             app.add_systems(Update, swap::headless_view.in_set(crate::phases::Frame::Camera));
         }
         if name == "swap" {
-            // Count what a planet swap leaves behind; headless with the terrain too.
             app.init_resource::<swap::SwapAudit>();
             app.add_systems(FixedUpdate, swap::swap_audit.after(crate::warp::warp_telemetry).in_set(crate::phases::Fx::Drive));
             if headless {
@@ -93,7 +88,6 @@ pub fn plugin(name: &str, headless: bool) -> impl Plugin {
             }
         }
         if name == "first-person-settings" && headless {
-            // The real projection system, without a renderer or a window.
             app.init_resource::<ViewState>().init_resource::<ClearColor>().init_resource::<bevy::light::GlobalAmbientLight>();
             app.add_systems(Startup, |mut commands: Commands| {
                 commands.spawn((crate::view::MainCamera, crate::origin::WorldPose::default(), bevy::pbr::DistanceFog::default(), Projection::Perspective(default())));
@@ -115,7 +109,6 @@ pub type Step = Box<dyn FnMut(&mut World, &mut Ctx) -> bool + Send + Sync>;
 
 #[derive(Default)]
 pub struct Ctx {
-    /// Simulated seconds since the step started.
     pub t: f64,
     pub dt: f64,
     pub ticks: u64,
@@ -127,7 +120,6 @@ pub struct Ctx {
     stats0: WalkStats,
     pub failures: u32,
     shot_n: u32,
-    /// Frames a scenario collects for its report (`planet-flight`).
     pub frames: Vec<crate::frame_cost::FrameRec>,
 }
 
@@ -140,8 +132,6 @@ pub struct Script {
     pub out_dir: std::path::PathBuf,
     pub done: bool,
 }
-
-// ---------- helpers ----------
 
 pub fn keys(w: &mut World, ks: &[KeyCode], on: bool) {
     let mut c = w.resource_mut::<Controls>();
@@ -184,7 +174,6 @@ pub(crate) fn player_world(w: &mut World) -> DVec3 {
     let f = ship_frame_of(w);
     with_player(w, |p| p.world_pos(f))
 }
-/// Position of whatever the player controls (ship when seated).
 pub(crate) fn active_pos(w: &mut World) -> DVec3 {
     if with_player(w, |p| p.seated) { ship_frame_of(w).origin } else { player_world(w) }
 }
@@ -197,7 +186,6 @@ pub(crate) fn altitude(w: &mut World) -> f64 {
     let pl = planet(w);
     (p - pl.centre).length() - pl.radius
 }
-/// Put the walker on the ground at a world point (test setup).
 pub(crate) fn place_walker(w: &mut World, at: DVec3) {
     let pl = planet(w);
     let dir = pl.up(at);
@@ -209,7 +197,6 @@ pub(crate) fn place_walker(w: &mut World, at: DVec3) {
         p.w.grounded = false;
     });
 }
-/// Turn the walker towards a world point (heading only, pitch level).
 pub(crate) fn face_towards(w: &mut World, target: DVec3) {
     let f = ship_frame_of(w);
     with_player(w, |p| {
@@ -223,7 +210,6 @@ pub(crate) fn face_towards(w: &mut World, target: DVec3) {
     });
 }
 
-/// Where the walker looks, world space (camera direction without interpolation).
 fn world_look(w: &mut World) -> DVec3 {
     let f = ship_frame_of(w);
     with_player(w, |p| p.world_look(f))
@@ -256,14 +242,11 @@ fn track_look(w: &mut World, c: &mut Ctx) {
     c.p.insert("feet", feet);
 }
 
-/// No step in the view: no tick turns the look by more than 0.5 deg or the camera's up by more
-/// than 1 deg, or moves the eye more than 3 cm against the feet (entering a 6 deg tilted ship
-/// once turned up by 5.6 deg in one tick at the cabin edge).
+/// No tick turns the look by more than 0.5 deg or the camera's up by more than 1 deg, or moves the eye more than 3 cm against the feet.
 fn check_steady(c: &mut Ctx, what: &str) {
     check_steady_within(c, what, 0.5);
 }
 
-/// `check_steady` with another largest look step (deg per tick).
 fn check_steady_within(c: &mut Ctx, what: &str, look_max: f64) {
     let (look, up, eye) = (c.v["look_jump"], c.v["up_jump"], c.v["eye_jump"]);
     check(c, look < look_max && up < 1.0 && eye < 0.03,
@@ -310,8 +293,6 @@ pub(crate) fn shot(w: &mut World, c: &mut Ctx, script_dir: &std::path::Path, win
     let path = script_dir.join(format!("shot-{:02}-{tag}.png", c.shot_n));
     w.spawn(Screenshot::primary_window()).observe(save_to_disk(path));
 }
-
-// ---------- step builders ----------
 
 pub(crate) fn wait(sec: f64) -> Step {
     Box::new(move |_, c| c.t >= sec)
@@ -395,7 +376,6 @@ fn walk(name: &'static str, secs: f64, away_from_ship: bool) -> Step {
     })
 }
 
-/// Walk from 12 m behind the ship up the ramp to the seat.
 fn board(name: &'static str, from_outside: bool) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -422,7 +402,6 @@ fn board(name: &'static str, from_outside: bool) -> Step {
             check(c, at_seat, format!("{name}: reached the seat over the ramp"));
             end(w, c, format!("in cabin {inside}, at seat {at_seat}, ramp end {:.2} m above ground, ship tilt {tilt:.0} deg", pl.above_ground(ramp_end)));
             if !at_seat {
-                // Keep the run going: put the walker at the seat.
                 put_at_seat(w);
             }
             return true;
@@ -431,7 +410,7 @@ fn board(name: &'static str, from_outside: bool) -> Step {
     })
 }
 
-/// Test shortcut: put the walker at rest in the own cabin, just behind the seat.
+/// Test shortcut, not a game path.
 pub(crate) fn put_at_seat(w: &mut World) {
     let e = ship_e(w);
     let fr = ship_frame_of(w);
@@ -446,7 +425,6 @@ pub(crate) fn put_at_seat(w: &mut World) {
     });
 }
 
-/// Back to the seat (test shortcut) and sit.
 fn back_to_seat() -> Vec<Step> {
     vec![
         Box::new(|w, _| {
@@ -476,7 +454,6 @@ pub(crate) fn sit() -> Vec<Step> {
     ]
 }
 
-/// Hold keys until a condition or a time limit.
 pub(crate) fn hold_until(name: &'static str, ks: &'static [KeyCode], limit: f64, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -493,14 +470,10 @@ pub(crate) fn hold_until(name: &'static str, ks: &'static [KeyCode], limit: f64,
     })
 }
 
-/// How far a landed ship may settle from its touchdown spot. The residue depends on the
-/// ground under the hull: 0.56 mm on the slope the scenario found before the drainage,
-/// 1.1 mm on the one the eroded terrain offers; without the landing fix a ship slid 553 mm.
+/// Settle allowed after touchdown: the measured residue is 0.56 to 1.1 mm on the test slopes.
 pub(crate) const LANDING_SETTLE_M: f64 = 0.002;
 
-/// Hold Ctrl until the ship rests (well below the landed check's 0.05 m/s). From the first hull
-/// contact on it must not slide: pressed down onto a slope it slid for 20 s without the fix, and tipping
-/// from the first corner onto a 33 degree slope 0.55 m. The touchdown spot is left in `c.p`.
+/// Hold Ctrl until the ship rests; the touchdown spot is left in `c.p`.
 pub(crate) fn land(name: &'static str) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -535,8 +508,7 @@ pub(crate) fn land(name: &'static str) -> Step {
     })
 }
 
-/// Point the nose like a player with the mouse: yaw/pitch rate proportional to the error,
-/// at most the controller's turn rate. `elevation` is the wanted angle above the horizon.
+/// `elevation` is the wanted angle above the horizon, degrees.
 pub(crate) fn aim(name: &'static str, elevation_deg: f64, secs: f64) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -558,7 +530,6 @@ pub(crate) fn aim(name: &'static str, elevation_deg: f64, secs: f64) -> Step {
         let pitch_err = l.y.atan2((l.x * l.x + l.z * l.z).sqrt());
         let dt = c.dt.max(1e-6);
         let rate = |err: f64| (err * 2.0).clamp(-2.0, 2.0) * dt; // rad this tick
-        // Roll the ship's up towards the planet's up (Q/E, bang-bang with a dead band).
         let back = f.rot * DVec3::Z;
         let ship_up = f.rot * DVec3::Y;
         let up_proj = (up - back * up.dot(back)).normalize_or_zero();
@@ -614,7 +585,6 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
     };
     let mut s: Vec<Step> = vec![settle()];
     match name {
-        // Walking only.
         "walk" => {
             s.extend(stand_still("stand still 5 s (walker)"));
             s.push(walk("walk 20 s (run)", 20.0, true));
@@ -624,7 +594,6 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
                 s.extend(t5_walk(n, d, h, 300.0));
             }
         }
-        // Network bot: sit in the parked ship (test shortcut) and fly cycles until the run ends.
         "net" => {
             s.push(Box::new(|w, _| {
                 put_at_seat(w);
@@ -636,111 +605,63 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
             }
         }
         "foreign" => foreign_steps(&mut s),
-        // A warping remote ship (about 1e6 m/s) right next to the walking walker.
         "foreign_warp" => foreign_warp_steps(&mut s),
-        // Another player's figure outside and in the cabin; with --menu the menus.
         "figure" => figure_steps(&mut s, &shot_step),
-        // Input ramp, virtual-joystick mouse, boost, decoupled flight.
         "flight" => flight_steps(&mut s, &shot_step, out_dir, windowed),
         "first-person-settings" => first_person_settings::steps(&mut s),
-        // The boost capacitor drains, cuts out and recharges; the HUD shows it.
         "boost-hud" => boost::boost_hud_steps(&mut s),
         "thruster-audio" => thruster_audio::thruster_audio_steps(&mut s),
-        // The SC model lifts off, hovers and flies (sc-lift).
         "sc-body" => sc_body::sc_body_steps(&mut s),
         "sc-lift" => sc_lift::sc_lift_steps(&mut s),
-        // F1 shows the keys that apply right now.
         "help" => help::help_steps(&mut s),
-        // F10 dev menu: licence, credits, boost.
         "dev-menu" => dev_menu::dev_menu_steps(&mut s),
-        // The SC linear law: cap, brake, gravity compensation, master modes, limiter.
         "sc-linear" => sc_linear::sc_linear_steps(&mut s),
-        // The SC model's air: wind compensation hover, turbulence low and high.
         "sc-air" => sc_air::sc_air_steps(&mut s),
-        // The flight panel: badges, the coupling blend, the toast.
         "sc-hud" => sc_hud::sc_hud_steps(&mut s),
-        // The flight HUD (speed tape, thrust cross, G bar, horizon, velocity marker), SC model.
         "sc-flight-hud" => sc_flight_hud::sc_flight_hud_steps(&mut s),
-        // The SC model's rotation (overshoot, reversal, roll release, G-safe turn cap).
         "sc-turn" => sc_turn::sc_turn_steps(&mut s),
-        // The camera shake, spring lag and G field of view, and F9 (through the bindings).
         "camera-g" => camera_g::camera_g_steps(&mut s),
-        // Land on a slope below the limit; no drift from touchdown until thrust.
         "slope-landing" => landing::slope_landing_steps(&mut s),
-        // Edit a tuning file while running (dev builds).
         "reload" => reload_steps(&mut s, out_dir),
         "warp" => warp_steps(&mut s, out_dir, windowed),
-        // A fixed flight over a big planet; frame time and the streaming work per frame.
         "planet-flight" => planet_flight::planet_flight_steps(&mut s, out_dir),
-        // A low flight with a screenshot every 0.25 s, to compare geomorphing on and off.
         "lod-morph" => planet_flight::lod_morph_steps(&mut s, out_dir, windowed),
-        // Three planet swaps and an emergency drop; what each swap leaves behind.
         "swap" => swap_steps(&mut s, out_dir, windowed, swap_rounds.max(3)),
-        // A crate in the cabin through take-off, flight, warp and landing; one out over the ramp.
         "crate-ride" => cargo::crate_ride_steps(&mut s, out_dir, windowed),
-        // One tap for a crate and the seat, with the HUD prompt.
         "interact" => cargo::interact_steps(&mut s),
-        // Carry each size, throw, the grab tool from 8 m, the large crate alone.
         "crate-carry" => cargo::crate_carry_steps(&mut s, out_dir, windowed),
-        // Lock grid: locked, loose and blocked crates through hard acceleration and a warp.
         "crate-lock" => cargo::crate_lock_steps(&mut s, out_dir, windowed),
-        // Object budget: cap, sleep, persistence cap over a planet swap, timeout, distance.
         "crate-budget" => cargo::crate_budget_steps(&mut s, out_dir, windowed),
-        // Unload the parked ship down the ramp by hand and load it again.
         "crate-unload" => cargo::crate_unload_steps(&mut s),
-        // Crates 500 m away wake as Avian bodies when the walker comes and the patch is built.
         "crate-wake-stream" => cargo::crate_wake_stream_steps(&mut s),
-        // A crate on the ramp is ship: it stays a sweep crate and stays on the ground at take-off.
         "crate-ramp" => cargo::crate_ramp_steps(&mut s),
-        // A crate thrown at the hull's side wall stops outside it.
         "crate-hull" => cargo::crate_hull_steps(&mut s),
-        // The city with colliders, its characters, the new towns' pads.
         "town" => town::town_steps(&mut s),
-        // The dev area and its test console, with `--start=dev_area`.
         "dev_area" => {
             dev_area::dev_area_steps(&mut s, &shot_step);
             dev_area::look_sample_steps(&mut s, &shot_step);
         }
-        // The slice's picture check: `--start=dev_area --dev-area`, shots with a window.
         "slice_look" => slice_look::slice_look_steps(&mut s, out_dir, windowed),
         "displays" => displays::displays_steps(&mut s),
-        // Items at the dev area's item table, through the request path with 75 ms each way.
         "items" => items::items_steps(&mut s, &shot_step),
-        // Compass in both frames, vitals, credits flash, prompt, bar, hints.
         "hud" => hud::hud_steps(&mut s, &shot_step),
-        // Health: hazards, a bandage on oneself, down and respawn.
         "health" => health::health_steps(&mut s),
-        // The engine room: the corridor, the wall, the door, the air, the alarm.
         "engine_room" => engine_room::engine_room_steps(&mut s),
         "reactor" => reactor::reactor_steps(&mut s),
-        // Coolant: the tank runs dry, the temperature climbs, a canister refills it by hand.
         "coolant" => coolant::coolant_steps(&mut s),
-        // Fuel rods: a rod from the rack is loaded into the reactor, the brake pulls one, G drops it.
         "rods" => rods::rods_steps(&mut s),
-        // The meltdown blast: the drain melts the core, the walker two metres off is burned and irradiated.
         "blast" => blast::blast_steps(&mut s),
-        // Fire: a fire at the reactor grows, burns, is sprayed out; the alarm follows.
         "fire" => fire::fire_steps(&mut s),
-        // The same fire on the cell grid: the switch, the spread, the corridor, the spray.
         "fire_grid" => fire_grid::fire_grid_steps(&mut s),
-        // The extinguisher wears down, runs empty, and a rack gives a full one.
         "extinguisher" => extinguisher::extinguisher_steps(&mut s),
         "repair" => repair::repair_steps(&mut s),
-        // Window only: the showcase models (`--showcase`) from outside and the starting ship's deck.
         "showcase" => showcase::showcase_steps(&mut s, out_dir, windowed),
-        // Save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),
-        // The seat refuses without the licence; the exam; the licence.
         "licence" => licence::licence_steps(&mut s),
-        // The map's pins from the game's state, M opens the picture (a screenshot with a window).
         "map" => mapview::map_steps(&mut s, out_dir, windowed),
-        // Fixed viewpoints and an atlas per planet (headless: atlas and statistics only).
         "planet-look" => crate::look::steps(&mut s, out_dir, windowed),
-        // Walk from outside into a site; the walker stands on its flattened ground.
         "site-walk" => crate::look::site_walk_steps(&mut s),
-        // Fast-forward a day on every planet; sun direction and brightness against the core.
         "daynight" => crate::daynight::scenario_steps(&mut s),
-        // Step out of the ship in space (seat by test shortcut, then fly up).
         "space" => {
             s.push(Box::new(|w, _| {
                 put_at_seat(w);
@@ -830,7 +751,6 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
             s.push(hold_until("climb to 400 m above ground", &[KeyCode::Space, KeyCode::ShiftLeft], 60.0, |w| above_ground(w) > 400.0));
             s.push(wait(3.0));
             s.extend(cabin_at_speed("in atmosphere: stand + walk, boost + roll, assist on", 8.0, true, 0.3));
-            // The test crate rode along the whole flight in the cabin.
             s.push(Box::new(|w, c| {
                 let ship = ship_e(w);
                 let crates: Vec<(Option<Entity>, DVec3)> = w.query::<&crate::cargo::Crate>().iter(w).map(|c| (c.ship, c.body.pos)).collect();

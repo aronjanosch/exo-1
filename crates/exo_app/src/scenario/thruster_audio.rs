@@ -1,7 +1,5 @@
-//! Scenario `thruster-audio`: the thruster sound layers follow the controls. A strafe
-//! right raises the +x hiss most, a boost raises the roar and counts one boost start, and after
-//! release the ship hovers: the SC model's thrusters hold it against gravity (a tilted ship holds
-//! part of it sideways), so the rest is not silent (the axis model was, its thrust was the input).
+//! The thruster sound layers follow the controls.
+//! Hover is not silent: the SC thrusters hold the ship against gravity.
 use crate::scenario::{begin, check, end, hold_until, keys, planet, put_at_seat, ship_e, ship_vel, sit, Step};
 use crate::ship::ThrusterLevels;
 use avian3d::prelude::{LinearVelocity, Position, Rotation};
@@ -41,8 +39,6 @@ pub fn thruster_audio_steps(s: &mut Vec<Step>) {
         check(c, l.rumble >= idle, format!("rest: the hover thrust keeps the rumble at or above idle ({:.3}, idle {idle})", l.rumble));
         true
     }));
-    // Brake (X) with no movement key: the thrusters fire against the forward motion (-z), so the
-    // +z hiss and the rumble rise; at standstill they fall again.
     // Setup, a test hook like the teleports: the ship on the ground does not pick up speed from
     // thrust here (1.5 m/s after 2 s of W, 1.6 m/s with boost), so it is lifted 60 m and set
     // moving forward; lower, the 30 m/s hits the terrain within 0.2 s and the motion turns sideways.
@@ -68,7 +64,6 @@ pub fn thruster_audio_steps(s: &mut Vec<Step>) {
         let speed = ship_vel(w).length();
         let ms = c.v["max_speed"].max(speed);
         c.v.insert("max_speed", ms);
-        // While still moving: the brake is the only input, so its layers show the braking.
         if c.t > 0.2 && speed > 3.0 {
             let other = (0..6).filter(|i| *i != 4).map(|i| l.hiss[i]).fold(0.0, f64::max);
             let (hz, r, o) = (c.v["max_hiss_z"].max(l.hiss[4]), c.v["max_rumble"].max(l.rumble), c.v["max_other_hiss"].max(other));

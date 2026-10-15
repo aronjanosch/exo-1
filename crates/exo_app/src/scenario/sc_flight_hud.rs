@@ -1,7 +1,4 @@
-//! Scenario `sc-flight-hud`: the flight HUD's readout through `Controls`, SC model. Sit,
-//! lift and hover; D strafes right (the velocity points along +x, the right thrust bar is the
-//! longest); W flies forward (the tape fills, the velocity points forward); Page Down x5 sets the
-//! limiter to 50 % (its mark on the tape); released, the horizon is level.
+//! The flight HUD's readout (SC model): strafe, forward, limiter and level horizon.
 use crate::hud::HudReadout;
 use crate::scenario::{check, hold_until, keys, planet, put_at_seat, ship_e, sit, tap, teleport_ship, Step};
 use avian3d::prelude::Position;
@@ -28,7 +25,6 @@ pub fn sc_flight_hud_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // Lift and hover on the ground's horizon.
     s.push(hold_until("lift 2 s", &[KeyCode::Space], 2.0, |_| false));
     s.push(hold_until("settle 2 s", &[], 2.0, |_| false));
     s.push(Box::new(|w, c| {
@@ -38,7 +34,6 @@ pub fn sc_flight_hud_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // D: strafe right 1 s. The velocity points along +x, the right bar is the longest.
     s.push(Box::new(|w, _| {
         keys(w, &[KeyCode::KeyD], true);
         true
@@ -55,7 +50,6 @@ pub fn sc_flight_hud_steps(s: &mut Vec<Step>) {
     }));
     s.push(hold_until("strafe settle 2 s", &[], 2.0, |_| false));
 
-    // W: forward 3 s. The tape fills, the velocity points forward (-z in ship space).
     s.push(Box::new(|w, c| {
         c.v.insert("fill0", flight(w).speed_tape.fill);
         keys(w, &[KeyCode::KeyW], true);
@@ -72,7 +66,6 @@ pub fn sc_flight_hud_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // Page Down x5: the limiter at 50 %, its mark on the tape at cruise x 0.5 over the boost cap.
     for _ in 0..5 {
         s.push(Box::new(|w, _| {
             tap(w, KeyCode::PageDown);
@@ -90,7 +83,6 @@ pub fn sc_flight_hud_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // Released: the ship is level, the horizon's roll is within 2 deg.
     s.push(hold_until("level 4 s", &[], 4.0, |_| false));
     s.push(Box::new(|w, c| {
         let f = flight(w);
@@ -99,7 +91,6 @@ pub fn sc_flight_hud_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // Above the atmosphere the horizon goes (a test hook lifts the ship out of it).
     s.push(Box::new(|w, _| {
         let pl = planet(w);
         let e = ship_e(w);

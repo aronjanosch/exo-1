@@ -1,8 +1,4 @@
-//! Cube-sphere terrain with a quadtree LOD per face. Chunks (data and finished meshes) come
-//! from planet_core::build_chunk on the async compute pool, nearest first, with the camera
-//! projected along its motion as prefetch; the main thread only adds the ready meshes
-//! and spawns, within a time and byte budget per frame. Merged chunks wait in a small LRU
-//! cache, so a merge then split does not rebuild. View only: collision comes from the ring.
+//! Terrain chunk meshes. View only: collision comes from the ring.
 use crate::env::{from_v3, PlanetRes};
 use crate::origin::{RenderOrigin, WorldPos};
 use bevy::asset::RenderAssetUsages;
@@ -14,7 +10,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use planet_core::{cube_to_sphere, ChunkOut, M};
 
-/// One owner of the terrain: the window, and the headless `swap` scenario (which counts what a swap leaves behind).
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, setup_terrain);
     app.add_systems(Update, update_terrain.in_set(crate::phases::Frame::World));
@@ -50,7 +45,6 @@ const BOUND_PAD_M: f64 = 4.0;
 const BOUND_PAD_EDGE: f64 = 0.05;
 const SPLIT_FACTOR: f64 = 1.5;
 const MERGE_FACTOR: f64 = 1.8;
-/// Main-thread time per frame for adding ready chunks (at least one chunk is always added).
 /// TODO(initiator): value and feel.
 const UPLOAD_BUDGET_MS: f64 = 1.5;
 /// Mesh bytes handed to the renderer per frame; the render thread's mesh allocator copies them
@@ -74,7 +68,6 @@ const CACHE_MAX: usize = 256;
 
 type CacheKey = (usize, u64, u64, u64);
 
-/// A chunk's meshes on the GPU side of the asset system, from the pool or the cache.
 #[derive(Clone)]
 struct Meshes {
     centre: DVec3,
@@ -85,7 +78,6 @@ struct Meshes {
     inland: Option<Handle<Mesh>>,
 }
 
-/// What a chunk job returns: the meshes, built on the pool.
 pub struct BuiltChunk {
     centre: DVec3,
     h: (f64, f64),
@@ -101,7 +93,6 @@ enum Job {
     /// Wanted, not started (waits for a job slot, nearest first).
     Queued,
     Running(Task<BuiltChunk>),
-    /// From the cache, spawns without a rebuild.
     Cached(Meshes),
 }
 
@@ -119,12 +110,10 @@ struct Node {
     /// the chunk itself is built, then its own (a planet-wide relief would make every node
     /// split a kilometre too early at 100 km).
     h: (f64, f64),
-    /// Middle of that range above `centre`, and the bounding radius around it.
     mid: DVec3,
     bound: f64,
     children: Vec<usize>,
     entity: Option<Entity>,
-    /// Handles of the spawned chunk (and its water, lakes and rivers), kept for the cache.
     meshes: Option<Meshes>,
     job: Job,
     /// Whether the entity is set to `Visibility::Inherited` (else Hidden): written on change only.
@@ -137,7 +126,6 @@ struct Node {
 #[derive(Component)]
 pub struct PlanetScene(pub warp_core::PlanetId);
 
-/// A terrain chunk (root or refined) of a planet.
 #[derive(Component)]
 pub struct TerrainChunk;
 
@@ -152,14 +140,12 @@ pub struct PrebuiltRoots {
 /// The root chunk of each cube face.
 const ROOT: (f64, f64, f64) = (-1.0, -1.0, 2.0);
 
-/// The six root chunks of `planet` (also called on the pool, see `PrebuiltRoots`).
 pub fn build_roots(planet: &PlanetRes) -> Vec<ChunkOut> {
     (0..6).map(|face| planet.pgen.build_chunk(face, ROOT.0, ROOT.1, ROOT.2)).collect()
 }
 
 #[derive(Resource)]
 pub struct Terrain {
-    /// Registry id of the planet these chunks belong to.
     pub for_planet: warp_core::PlanetId,
     nodes: Vec<Node>,
     free: Vec<usize>,
@@ -177,9 +163,7 @@ pub struct Terrain {
     pub pending: usize,
     /// Geomorphing on (F4 in the window toggles it; `EXO_NO_MORPH` starts it off).
     pub morph_on: bool,
-    /// Seconds of this frame.
     dt: f64,
-    /// Chunk jobs started this frame.
     pub started: u32,
     /// The camera's nadir on the cube (face, a, b), set each frame for `lod_debt`.
     nadir: Option<(usize, f64, f64)>,
@@ -192,7 +176,6 @@ pub struct Terrain {
 
 use crate::terrain_material::{srgb_to_linear, TerrainMaterial, ATTRIBUTE_MORPH_DELTA, ATTRIBUTE_MORPH_NORMAL};
 
-/// The index pattern every chunk shares.
 fn chunk_indices() -> Vec<u16> {
     let mut indices = Vec::with_capacity((M - 1) * (M - 1) * 6);
     for j in 0..M - 1 {
@@ -219,8 +202,6 @@ fn water_surface(out: &ChunkOut, w: &[[f32; 3]], tris: &[u32]) -> Mesh {
         .with_inserted_indices(Indices::U16(tris.iter().map(|&k| k as u16).collect()))
 }
 
-/// The meshes of a chunk (pure, runs on the pool): the terrain, its sea, and lakes and rivers
-/// (their own vertices and triangles, the sea's material).
 pub fn build_meshes(out: &ChunkOut, indices: &[u16]) -> BuiltChunk {
     // The biome palette: ground + cap share as the colour, rock in UV0 + UV1.x, strata
     // share in UV1.y (see terrain_material.rs).
@@ -301,7 +282,6 @@ impl Terrain {
         }
     }
 
-    /// A node wants its chunk: from the cache at once, else it waits for a job slot.
     fn want(&mut self, i: usize) {
         let job = match self.cache.remove(&Self::key(&self.nodes[i])) {
             Some((_, m)) => Job::Cached(m),
@@ -310,13 +290,11 @@ impl Terrain {
         self.nodes[i].job = job;
     }
 
-    /// Distance to the nearer of the camera and its projection, minus the chunk's bound.
     fn dist(&self, i: usize) -> f64 {
         let n = &self.nodes[i];
         (self.cam.distance(n.mid).min(self.pred.distance(n.mid)) - n.bound).max(0.0)
     }
 
-    /// Starts jobs for the nearest queued chunks while there are free slots.
     fn start_jobs(&mut self, planet: &PlanetRes) {
         let pool = AsyncComputeTaskPool::get();
         let cap = pool.thread_num() * JOBS_PER_THREAD;
@@ -364,13 +342,10 @@ impl Terrain {
         live.chain(cached).flat_map(|m| std::iter::once(m.mesh.id()).chain(m.water.as_ref().map(|h| h.id())).chain(m.inland.as_ref().map(|h| h.id()))).collect()
     }
 
-    /// Adds the meshes of a built chunk to the assets.
     fn add_meshes(meshes: &mut Assets<Mesh>, b: BuiltChunk) -> Meshes {
         Meshes { centre: b.centre, h: b.h, mesh: meshes.add(b.mesh), water: b.water.map(|m| meshes.add(m)), inland: b.inland.map(|m| meshes.add(m)) }
     }
 
-    /// Spawns the chunk entity of node `i`, and its sea, lake and river surfaces as children
-    /// (shown and dropped with it).
     fn spawn_chunk(&mut self, commands: &mut Commands, planet: &PlanetRes, i: usize, m: Meshes, visible: bool) -> Entity {
         let mut e = commands.spawn((
             Mesh3d(m.mesh.clone()),
@@ -432,7 +407,6 @@ impl Terrain {
         }
     }
 
-    /// Returns true when this node (or its children) is on screen.
     fn update_node(&mut self, commands: &mut Commands, planet: &PlanetRes, i: usize) {
         let n = &self.nodes[i];
         let d_real = (self.cam.distance(n.mid) - n.bound).max(0.0);
@@ -496,8 +470,6 @@ pub fn setup_terrain(
     commands.insert_resource(t);
 }
 
-/// Root chunks (prebuilt, or here and now so there is always a planet), water and site markers
-/// of `planet`.
 pub fn build_terrain(
     commands: &mut Commands,
     planet: &PlanetRes,
@@ -547,7 +519,6 @@ pub fn update_terrain(
 ) {
     let t_sys = std::time::Instant::now();
     if terrain.for_planet != planet.id {
-        // The simulation's planet changed (warp or teleport): free the old terrain, build the new.
         for e in &scene {
             commands.entity(e).despawn();
         }
@@ -569,7 +540,6 @@ pub fn update_terrain(
     }
     let t = terrain.as_mut();
     t.dt = time.delta_secs_f64();
-    // Dev toggle: F4 flips the geomorphing, to compare by feel.
     if keys.is_some_and(|k| k.just_pressed(KeyCode::F4)) {
         t.morph_on = !t.morph_on;
         let on = f32::from(t.morph_on);
@@ -577,7 +547,6 @@ pub fn update_terrain(
             m.extension.morph.on.x = on;
         }
     }
-    // The camera and where it will be in a moment (smoothed velocity), for priority and prefetch.
     let cam = origin.view - planet.centre;
     let dt = time.delta_secs_f64();
     let vel = match *motion {
@@ -590,7 +559,6 @@ pub fn update_terrain(
     t.cam = cam;
     t.pred = cam + vel * PREFETCH_S;
 
-    // Add finished chunks (nearest first) within the time and byte budget.
     let t_up = std::time::Instant::now();
     let mut ready: Vec<(f64, usize)> = (0..t.nodes.len())
         .filter(|&i| t.nodes[i].alive && match &t.nodes[i].job {

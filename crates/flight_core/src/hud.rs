@@ -1,7 +1,5 @@
-//! HUD values that are data (`content/tuning/hud.json`) and the altitude rule. Plain Rust.
 use serde::Deserialize;
 
-/// HUD values (`content/tuning/hud.json`).
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HudTuning {
@@ -13,7 +11,6 @@ pub struct HudTuning {
     pub g_full: f64,
     /// m/s: below this speed the flight path marker is hidden.
     pub velocity_min: f64,
-    /// deg: at or below this tilt against the planet's up the horizon shows the ship as level.
     pub level_deg: f64,
     /// deg: at or below this tilt the horizon shows the ship as nearly level.
     pub near_level_deg: f64,
@@ -41,7 +38,6 @@ impl HudTuning {
     }
 }
 
-/// How level the ship sits against the planet's up, for the horizon's colour.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Level {
     Level,
@@ -54,7 +50,6 @@ pub fn tilt_deg(pitch_deg: f64, roll_deg: f64) -> f64 {
     (pitch_deg.to_radians().cos() * roll_deg.to_radians().cos()).clamp(-1.0, 1.0).acos().to_degrees()
 }
 
-/// Level, nearly level or off, by the tilt (deg) and the bands in `t`.
 pub fn level(tilt: f64, t: &HudTuning) -> Level {
     if tilt <= t.level_deg {
         Level::Level
@@ -75,7 +70,6 @@ pub enum Height {
 }
 
 impl Height {
-    /// AGL below `agl_below` m above the ground, else ALT.
     pub fn pick(above_ground: f64, above_sphere: f64, agl_below: f64) -> Height {
         if above_ground < agl_below { Height::Agl(above_ground) } else { Height::Alt(above_sphere) }
     }

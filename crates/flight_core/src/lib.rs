@@ -1,6 +1,4 @@
-//! flight_core: the SC flight model (`sc`), the ship's ground rules (`ground`), the arcade planet
-//! field and the ship's own values. Plain Rust,
-//! f64, glam; no Bevy types. Conventions: Y up, -Z forward, right-handed, angular velocity in
+//! Flight model in f64 with glam, no Bevy types. Conventions: Y up, -Z forward, right-handed, angular velocity in
 //! world space.
 //!
 //! All numbers are test values (assumptions for testing, not design).
@@ -18,11 +16,9 @@ pub use limits::{Dirs, Rot, G0};
 use glam::{DQuat, DVec2, DVec3};
 use serde::Deserialize;
 
-/// The chase camera sits at (0, 5.5, 17) in ship space, pitched by this.
 pub const CHASE_CAMERA_PITCH_DEG: f64 = -10.0;
 pub const CHASE_CAMERA_OFFSET: DVec3 = DVec3::new(0.0, 5.5, 17.0);
 
-/// Hermite step, clamped.
 pub fn smoothstep(from: f64, to: f64, x: f64) -> f64 {
     if (from - to).abs() < 1e-9 {
         return if x <= from { 0.0 } else { 1.0 };
@@ -31,7 +27,6 @@ pub fn smoothstep(from: f64, to: f64, x: f64) -> f64 {
     s * s * (3.0 - 2.0 * s)
 }
 
-/// `v` shortened to at most `max`, direction kept.
 pub fn limit_length(v: DVec3, max: f64) -> DVec3 {
     let l = v.length();
     if l > 0.0 && max < l { v / l * max } else { v }
@@ -41,7 +36,6 @@ fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t
 }
 
-/// Arcade planetary influence: full inside atmosphere, smoothly absent in space.
 /// Heights are metres above the reference sphere, independent of terrain.
 #[derive(Clone, Copy, Debug)]
 pub struct Field {
@@ -64,7 +58,6 @@ impl Field {
     }
 }
 
-/// What the controller needs from a planet. Positions are world positions
 /// unless a name says otherwise; `to_planet` converts to planet-relative.
 pub trait PlanetEnv {
     fn to_planet(&self, world: DVec3) -> DVec3;
@@ -73,16 +66,13 @@ pub trait PlanetEnv {
     fn height_at(&self, dir: DVec3) -> f64;
     fn field(&self) -> &Field;
 
-    /// Shared gravity/planet-follow envelope.
     fn field_strength_at(&self, world: DVec3) -> f64 {
         let altitude = self.to_planet(world).length() - self.radius();
         self.field().strength(altitude)
     }
-    /// Arcade radial gravity: full in atmosphere, softly fading to zero in space.
     fn gravity_at(&self, world: DVec3) -> DVec3 {
         -self.to_planet(world).normalize_or_zero() * self.field().surface_gravity * self.field_strength_at(world)
     }
-    /// Atmosphere density 0..1: full at the surface, gone at atmosphere_height.
     fn density_at(&self, world: DVec3) -> f64 {
         let alt = self.to_planet(world).length() - self.radius();
         1.0 - smoothstep(0.0, self.field().atmosphere_height, alt)
@@ -91,13 +81,11 @@ pub trait PlanetEnv {
 
 /// Localized artificial gravity (LAG) in the cabin. Off while the ship is landed, so a parked ship
 /// on a slope is just a slope under planet gravity; on in flight. G switches it by hand while
-/// landed (later one of the ship systems). The field comes up and goes down over `ramp_time`.
 #[derive(Clone, Copy, Debug)]
 pub struct Lag {
     /// 0..1, share of the ship's gravity in the cabin (the rest is planet gravity).
     pub level: f64,
     pub landed: bool,
-    /// Switched on by hand while landed; cleared when the ship takes off or lands.
     pub manual_on: bool,
     pub ramp_time: f64,
     pub g: f64,
@@ -105,7 +93,6 @@ pub struct Lag {
 
 impl Default for Lag {
     fn default() -> Self {
-        // Assumed values: 1 s ramp 1 s ramp, Earth gravity.
         Lag { level: 0.0, landed: true, manual_on: false, ramp_time: 1.0, g: 9.81 }
     }
 }
@@ -125,7 +112,6 @@ impl Lag {
         !self.landed || self.manual_on
     }
 
-    /// G: switches the field by hand, only while landed.
     pub fn toggle(&mut self) {
         if self.landed {
             self.manual_on = !self.manual_on;
@@ -145,7 +131,6 @@ impl Lag {
         self.level = move_towards(self.level, target, dt / self.ramp_time);
     }
 
-    /// Gravity in the cabin, world space: the planet's turned towards the ship's floor by `level`,
     /// strength blended. Turning instead of adding keeps an upside-down ship from cancelling the
     /// two halfway.
     pub fn gravity(&self, ship_up: DVec3, planet_gravity: DVec3) -> DVec3 {
@@ -220,7 +205,6 @@ impl Default for BoostCapacitorTuning {
 pub struct BoostCapacitor {
     /// 0..1, starts full.
     pub charge: f64,
-    /// A boost is running (started at or above the start charge, ends when released or empty).
     pub active: bool,
     /// Seconds since the last use.
     idle: f64,
@@ -239,7 +223,6 @@ impl BoostCapacitor {
         BoostCapacitor { charge, ..BoostCapacitor::default() }
     }
 
-    /// A boost runs or could start now (charge at or above the start charge).
     pub fn ready(&self, t: &BoostCapacitorTuning) -> bool {
         self.active || self.charge > 0.0 && self.charge >= t.start_charge
     }
@@ -325,7 +308,6 @@ pub struct FlightInput {
     /// `turn_rate` (virtual-joystick mouse, pad).
     pub turn: DVec2,
     pub piloted: bool,
-    /// The hull touches the ground (contacts, from the physics).
     pub grounded: bool,
 }
 

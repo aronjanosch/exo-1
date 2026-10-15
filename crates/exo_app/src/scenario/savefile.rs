@@ -1,7 +1,4 @@
-//! The save file, headless: take the first haul, deliver one of its three crates, knock
-//! another about, save to the file, restart the gameplay state and load it; wallet, tracks, flags,
-//! the active job and the crates (with their condition) come back, and the job finishes. The
-//! crates move by test hooks, as in `deliver`.
+//! The save file, headless: save, restart, load, and the state that must survive.
 use super::jobs_helpers::{goods_of, gp, job_state, pad, walker_on_pad};
 use super::*;
 use crate::cargo::Crate;
@@ -25,7 +22,6 @@ fn crate_above(w: &mut World, e: Entity, l: &str, side: f64, height: f64) {
     c.body.wake();
 }
 
-/// The state before the restart, to compare after it.
 #[derive(Resource)]
 struct Before(String);
 
@@ -49,7 +45,6 @@ pub(super) fn savefile_steps(s: &mut Vec<Step>) {
         crate::scenario::cargo::clear_crates(w);
         begin(w, c, "savefile: a job half done survives a restart (#135)");
         walker_on_pad(w, "drip_rock");
-        // The first haul is on offer at the courier office; take it.
         let t = TemplateId::new("first_haul");
         let id = gp(w).jobs.all().find(|j| j.template == t && j.state == JobState::Offered).map(|j| j.id).expect("first haul on offer");
         c.v.insert("wallet0", gp(w).progress.wallet() as f64);
@@ -60,9 +55,7 @@ pub(super) fn savefile_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         let g = goods_of(w);
         check(c, job_state(w, "first_haul") == Some(JobState::Active) && g.len() == 3, format!("savefile: the job is active with its 3 crates ({} crates)", g.len()));
-        // One crate to Bent Spoon, set down gently: one of three delivered.
         crate_above(w, g[0].0, "bent_spoon", 0.0, 0.4);
-        // Another knocked about on the pickup pad: a little worse for wear.
         w.get_mut::<Crate>(g[1].0).unwrap().condition = 0.8;
         true
     }));
@@ -76,7 +69,6 @@ pub(super) fn savefile_steps(s: &mut Vec<Step>) {
         let r = savefile::save_now(w);
         check(c, r.is_ok(), format!("savefile: saved to the file ({r:?})"));
         w.insert_resource(Before(before));
-        // The restart: a fresh gameplay state as at start, no goods crates, then the file read back.
         let fresh = Gameplay::load(w.resource::<crate::cargo::Crates>());
         w.insert_resource(fresh);
         let goods: Vec<Entity> = goods_of(w).into_iter().map(|(e, _)| e).collect();
@@ -102,7 +94,6 @@ pub(super) fn savefile_steps(s: &mut Vec<Step>) {
         check(c, loaded && after == before, format!("savefile: wallet, tracks, the job and the crates are as saved\n  before {before}\n  after  {after}"));
         let worn = { let mut q = w.query::<(&Crate, &Goods)>(); q.iter(w).filter(|(c, _)| (c.condition - 0.8).abs() < 1e-6).count() };
         check(c, worn == 1, format!("savefile: the worn crate kept its condition ({worn} at 0.8)"));
-        // Finish the job: the other two to Bent Spoon.
         let g = goods_of(w);
         let rest: Vec<Entity> = g.iter().filter(|(_, g)| g.on_pad.as_ref().is_none_or(|l| l.as_str() != "bent_spoon")).map(|(e, _)| *e).collect();
         check(c, rest.len() == 2, format!("savefile: two crates still to carry ({})", rest.len()));

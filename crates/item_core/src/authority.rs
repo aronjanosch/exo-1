@@ -1,16 +1,5 @@
 //! The path every item change takes (concept repo `decisions/crew-ship.md`, "Interaction model";
 //! `decisions/project.md`, "Played over the internet").
-//!
-//! A player's action is a `Request`. The acting `Client` shows it at once (prediction) and sends
-//! it as an `Action` to the `Host`, which owns the shared state (loose items, every inventory),
-//! applies it or refuses it, and answers with `Event`s: what changed, then `Confirmed` or
-//! `Rejected` for the action. The client keeps the host's last word (`confirmed`) and the actions
-//! still in flight (`pending`); its `view` is always the confirmed state with the pending actions
-//! replayed on top, so a rejected action simply drops out of it. Barotrauma works the same way
-//! over the internet: the server owns items, clients predict their own actions.
-//!
-//! Host and client may live in one process or on two machines (the network routes the same
-//! messages); nothing here knows which.
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -19,11 +8,8 @@ use crate::container::{Access, Container, Refusal, SlotRule, Stack};
 use crate::defs::ItemDefs;
 use crate::inventory::{Inventory, BAR_SLOTS};
 
-/// A player's slot in the session (1 is the host's own player).
 pub type PlayerId = u32;
-/// A loose item in the world, numbered by the host.
 pub type LooseId = u64;
-/// A rack on the wall (a bracket for extinguishers), numbered by the level.
 pub type RackId = u32;
 
 /// The frame a loose item lives in, like the walker: a planet, or a ship's cabin (its owner's
@@ -56,7 +42,6 @@ impl Placement {
 /// Fastest a placement may move (m/s): well above a throw, far below a ship.
 pub const MAX_THROW_SPEED: f64 = 100.0;
 
-/// A loose item: what it is and where the host put it (where it lies now is the physics').
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Loose {
     pub stack: Stack,
@@ -65,15 +50,11 @@ pub struct Loose {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Request {
-    /// F on a loose item: into the inventory.
     Collect { item: LooseId },
-    /// Let the stack of a slot fall at `at`.
     Drop { slot: usize, at: Placement },
     /// Throw it: the same as a drop, `at` carries the throw's velocity.
     Throw { slot: usize, at: Placement },
-    /// Take a slot into the hand.
     Select { slot: usize },
-    /// Move, stack or swap within the own inventory.
     Move { from: usize, to: usize },
     /// Use one item of a slot on `target` (a player's slot; the user's own for itself). What the
     /// item does is the host's to apply (`Event::Used`).
@@ -83,7 +64,6 @@ pub enum Request {
     Swap { slot: usize, rack: RackId },
 }
 
-/// A request on its way to the host: who, their running number, what.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Action {
     pub player: PlayerId,
@@ -91,24 +71,17 @@ pub struct Action {
     pub req: Request,
 }
 
-/// Why the host refused an action.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Reject {
-    /// The loose item is gone (someone else was first).
     Gone,
-    /// It does not fit into the inventory.
     Full,
     /// Not something that goes into an inventory (cargo is carried).
     NotCollectable,
     EmptySlot,
     NoSuchSlot,
-    /// The move is not possible (same slot, nothing to move).
     Invalid,
-    /// The item has no use.
     NotUsable,
-    /// No such rack here.
     NoRack,
-    /// The rack has no spare of that kind.
     NoSpare,
 }
 
@@ -124,15 +97,12 @@ impl From<Refusal> for Reject {
     }
 }
 
-/// What the host tells every client.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Event {
     /// A loose item appeared; `by` names the action that dropped it, so that client can keep the
     /// item it already shows instead of adding a second one.
     Spawned { item: LooseId, loose: Loose, by: Option<(PlayerId, u32)> },
-    /// A loose item is gone (collected).
     Removed { item: LooseId },
-    /// A player's inventory as the host has it now.
     Inventory { player: PlayerId, inv: Inventory },
     /// An item of `player` was used on `target` (one was taken from the stack); the host applies
     /// `effect` to the target.
@@ -144,11 +114,9 @@ pub enum Event {
     Rest { item: LooseId, at: Placement, rot: [f64; 4], t: f64 },
     Confirmed { player: PlayerId, seq: u32 },
     Rejected { player: PlayerId, seq: u32, why: Reject },
-    /// A rack's stock as the host has it now.
     Rack { rack: RackId, contents: Container },
 }
 
-/// The shared state and the one place that changes it.
 #[derive(Clone, Debug, Default)]
 pub struct Host {
     pub defs: ItemDefs,
@@ -163,7 +131,6 @@ impl Host {
         Host { defs, ..Default::default() }
     }
 
-    /// Puts a loose item into the world (level content, a drop): its id and the event.
     pub fn spawn(&mut self, stack: Stack, at: Placement, by: Option<(PlayerId, u32)>) -> Event {
         self.next += 1;
         let item = self.next;
@@ -243,7 +210,6 @@ impl Host {
         self.inventories.get(&p).cloned().unwrap_or_default()
     }
 
-    /// Applies one action, or refuses it; the events in the order clients should apply them.
     pub fn handle(&mut self, a: &Action) -> Vec<Event> {
         let mut inv = self.inventory(a.player);
         let mut out = Vec::new();
@@ -292,20 +258,15 @@ impl Host {
     }
 }
 
-/// One player's side: the host's last word, the actions in flight, and the predicted view.
 #[derive(Clone, Debug, Default)]
 pub struct Client {
     pub player: PlayerId,
     pub defs: ItemDefs,
-    /// Loose items as the host announced them.
     pub loose: BTreeMap<LooseId, Loose>,
-    /// The racks' stock as the host announced it.
     pub racks: BTreeMap<RackId, Container>,
-    /// The own inventory as the host last sent it.
     pub confirmed: Inventory,
     /// The other players' inventories as the host last sent them (their held items show).
     pub others: BTreeMap<PlayerId, Inventory>,
-    /// Sent, not yet answered.
     pub pending: Vec<Action>,
     /// What the player sees: `confirmed` with `pending` replayed.
     pub view: Inventory,
@@ -335,7 +296,6 @@ impl Client {
         Ok(a)
     }
 
-    /// An event from the host.
     pub fn apply(&mut self, ev: &Event) {
         match ev {
             Event::Spawned { item, loose, .. } => {
@@ -384,13 +344,11 @@ impl Client {
         self.others.get(&player)?.in_hand(&self.defs, 0)
     }
 
-    /// A drop or throw of this client still waiting for the host (the glue shows its item).
     pub fn pending_drop(&self, seq: u32) -> bool {
         self.pending.iter().any(|a| a.seq == seq && matches!(a.req, Request::Drop { .. } | Request::Throw { .. }))
     }
 }
 
-/// Applies a request to a view, as the host would.
 fn predict(defs: &ItemDefs, loose: &BTreeMap<LooseId, Loose>, racks: &BTreeMap<RackId, Container>, view: &mut Inventory, hidden: &mut BTreeSet<LooseId>, req: &Request) -> Result<(), Reject> {
     match req {
         Request::Collect { item } => {
@@ -442,7 +400,6 @@ fn swap(inv: &mut Inventory, rack: &mut Container, slot: usize) -> Result<(), Re
     Ok(())
 }
 
-/// Takes one item out of a slot for its use: the effect it names, or why it cannot be used.
 fn use_one(defs: &ItemDefs, inv: &mut Inventory, slot: usize) -> Result<String, Reject> {
     let stack = inv.slot(slot).ok_or(if slot < BAR_SLOTS { Reject::EmptySlot } else { Reject::NoSuchSlot })?;
     let effect = defs.of(stack).and_then(|d| d.use_effect.clone()).ok_or(Reject::NotUsable)?;

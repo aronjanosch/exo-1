@@ -1,9 +1,4 @@
-//! Fuel rods by hand. The corridor's rod rack holds two standard rods and a hot
-//! one; the walker takes the hot rod (F: the only one of its kind), it is selected, LMB held on the reactor with it loads it (the
-//! rods in the reactor go from two to three, the rod is gone from the hand). The dev drain makes
-//! the core hot; with empty hands and LMB held on the reactor the brake pulls the rod with the most
-//! life into the hand (the reactor's available fuel falls, the hand burns once). G drops it.
-//! Without a window; the walker is set down at each place (test setup).
+//! Fuel rods by hand: load, brake pull, and the spicy rod's radiation.
 use super::*;
 use crate::controls::Controls;
 use crate::dev_area::coolant::HOLD_S;
@@ -53,7 +48,6 @@ fn burn(w: &World) -> f64 {
 
 const DIGITS: [KeyCode; 8] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8];
 
-/// A step that runs `body` each frame until it returns a note (then ends) or the limit passes.
 fn run(name: &'static str, limit: f64, mut body: impl FnMut(&mut World, &mut Ctx) -> Option<String> + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -93,7 +87,6 @@ fn select(name: &'static str, def: Option<&'static str>) -> Step {
 }
 
 pub(super) fn rods_steps(s: &mut Vec<Step>) {
-    // The rack: the walker beside it in the walkway, the rods on it (two standard, one hot).
     s.push(Box::new(|w, c| {
         begin(w, c, "rods: the rack and the host's body for the walker");
         w.resource_mut::<Items>().delay = super::items::DELAY;
@@ -115,7 +108,6 @@ pub(super) fn rods_steps(s: &mut Vec<Step>) {
     }));
     s.push(select("rods: the rod is selected", Some("fuel_rod_hot")));
 
-    // Load: the walker at the reactor's front, the look on it, LMB held.
     s.push(run("rods: the walker stands at the reactor", 3.0, |w, c| {
         if c.t == 0.0 {
             let feet = ground(w, [REACTOR_AT[0], REACTOR_AT[1] + 1.4], 0.0);
@@ -150,7 +142,6 @@ pub(super) fn rods_steps(s: &mut Vec<Step>) {
         }
     }));
 
-    // The brake: the core heats up without coolant (the dev drain), empty hands, LMB held.
     s.push(run("rods: the dev drain heats the core", 2.0, |w, c| {
         if c.t == 0.0 {
             w.resource_mut::<Items>().ask_reactor(ReactorAsk::Trigger(ReactorFault::DrainCoolant));
@@ -229,8 +220,6 @@ pub(super) fn rods_steps(s: &mut Vec<Step>) {
         Some("dropped".into())
     }));
 
-    // The spicy rod: it lies on the pad by the glowing barrel. The walker stands east of it,
-    // outside the barrel's glow, takes it (F), and holds it 3 s: the radiation rises by about 3.
     s.push(run("rods: the spicy rod lies by the barrel", 8.0, |w, c| {
         if outside(w, "fuel_rod_spicy").is_none() {
             return None;

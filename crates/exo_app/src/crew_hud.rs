@@ -1,13 +1,5 @@
-//! The crew HUD (Crew HUD v3, Claude Design project "EXO-1 Ship Displays", decision "Minimal HUD"
-//! in the concept repo): as little on screen as possible. Six elements: the compass (top centre),
-//! the vitals (bottom left), the interaction prompt (16 px above its target), the action bar
-//! (`items.rs`), the key hints (bottom right) and the reticle; the credits show for a moment after
-//! a change. Sizes come from the `hud` section of `content/ui/displays.json`, colours and fonts
-//! from the same file's tokens (`display_core::Theme`).
-//!
 //! The simulation half (`plugin`, headless too) fills `CrewHud` every fixed step from the world, so
 //! scenarios check what the player would read; the window half only draws it. The rules are in
-//! `display_core::hud`.
 use crate::controls::{Bindings, Controls, Tap};
 use crate::displays::DisplayLook;
 use crate::env::PlanetRes;
@@ -30,8 +22,6 @@ use display_core::hud::{
 use display_core::hud::Costs;
 use display_core::{Rgb, Tone};
 
-/// Health, oxygen, burn and radiation of the local player. The health system (`health`) writes
-/// them (the host's own, or what the host sends a client); a scenario can too. Oxygen is `None`
 /// while it does not apply, the burn is level 0 without burn, radiation is 0 without.
 #[derive(Resource, Clone, Debug, PartialEq)]
 pub struct Vitals {
@@ -45,7 +35,6 @@ pub struct Vitals {
     pub burn_level: u8,
     /// The burning buildup, 0..1.
     pub buildup: f64,
-    /// On fire.
     pub burning: bool,
     /// 0..1, how much radiation the body has; the line shows only above 0.
     pub radiation: f64,
@@ -64,7 +53,6 @@ impl Default for Vitals {
     }
 }
 
-/// What the HUD shows, written every fixed step (headless too).
 #[derive(Resource, Clone, Debug, PartialEq)]
 pub struct CrewHud {
     /// Degrees 0..360 in `reference`'s frame.
@@ -75,7 +63,6 @@ pub struct CrewHud {
     /// Contrast of every slot but the held one, 1 down to the idle level.
     pub contrast: f64,
     pub hints: Vec<Hint>,
-    /// The held item's name (empty with nothing in hand).
     pub held_name: String,
 }
 
@@ -144,7 +131,6 @@ fn update_credits(time: Res<Time>, gp: Res<Gameplay>, look: Res<DisplayLook>, mu
     }
 }
 
-/// What counts as the bar being used: the slots, the hand, cargo in the hands, Tab.
 type BarState = (usize, Vec<Option<(String, u32)>>, u8, bool);
 
 fn update_bar(
@@ -184,8 +170,6 @@ fn update_bar(
     }
 }
 
-// ---------- window: look helpers ----------
-
 pub(crate) fn col(c: Rgb) -> Color {
     Color::srgb(c.0[0], c.0[1], c.0[2])
 }
@@ -194,12 +178,10 @@ pub(crate) fn col_a(c: Rgb, a: f64) -> Color {
     Color::srgba(c.0[0], c.0[1], c.0[2], a.clamp(0.0, 1.0) as f32)
 }
 
-/// The dark outline and shadow colour.
 pub(crate) fn dark(a: f64) -> Color {
     Color::srgba(0.0, 0.0, 0.0, a.clamp(0.0, 1.0) as f32)
 }
 
-/// The label's colour: the tone's colour, the title colour for the calm lines.
 fn label_colour(theme: &display_core::Theme, l: &VitalLine) -> Rgb {
     if l.calm() {
         theme.colours.fg_title
@@ -217,10 +199,8 @@ fn tone_colour(theme: &display_core::Theme, t: Tone) -> Rgb {
     }
 }
 
-/// The HUD's fonts, from the display design system (the same files the screens use).
 #[derive(Resource, Clone)]
 pub struct HudFonts {
-    /// Chakra Petch medium (500), semibold (600) and bold (700), and Share Tech Mono.
     pub display: Handle<Font>,
     pub semibold: Handle<Font>,
     pub bold: Handle<Font>,
@@ -233,7 +213,6 @@ impl HudFonts {
     }
 }
 
-/// A HUD text: the font, a size, a colour and the dark shadow that keeps it legible on bright ground.
 pub(crate) fn hud_text(font: &Handle<Font>, s: &str, size: f64, colour: Color, look: &HudLook) -> impl Bundle + use<> {
     (
         Text::new(s),
@@ -249,7 +228,6 @@ pub(crate) fn hud_caps(font: &Handle<Font>, s: &str, size: f64, colour: Color, l
     (hud_text(font, &s.to_uppercase(), size, colour, look), bevy::text::LetterSpacing::Rem(em as f32))
 }
 
-/// Every root node of the HUD (and the bar): they are despawned and built again when the look
 /// file changes, so every size in `displays.json` follows a hot reload.
 #[derive(Component)]
 pub(crate) struct HudPart;
@@ -307,13 +285,11 @@ pub(crate) fn set_display(n: &mut Mut<Node>, d: Display) {
     }
 }
 
-/// A dashed frame's container; `Dash` parts carry the same id.
 #[derive(Component)]
 pub(crate) struct DashFrame(pub u32);
 #[derive(Component)]
 pub(crate) struct Dash(pub u32);
 
-/// Dashes along the edges of a `w` x `h` box, `thick` px thick, hidden until `DashFrame(id)` is
 /// shown. They sit over the box's border (offset by `border`).
 pub(crate) fn spawn_dashes(p: &mut ChildSpawnerCommands, id: u32, (w, h): (f32, f32), border: f32, thick: f32, look: &HudLook, colour: Color) {
     let (dash, step) = (look.prompt.dash as f32, (look.prompt.dash + look.prompt.dash_gap) as f32);
@@ -338,7 +314,6 @@ pub(crate) fn spawn_dashes(p: &mut ChildSpawnerCommands, id: u32, (w, h): (f32, 
     });
 }
 
-/// Shows a dashed frame and sets the colour of its dashes (only touched when it changes).
 pub(crate) fn set_dashes<F: bevy::ecs::query::QueryFilter, G: bevy::ecs::query::QueryFilter>(
     id: u32,
     on: bool,
@@ -370,15 +345,11 @@ fn spawn_triangle(p: &mut ChildSpawnerCommands, (left, top): (f32, f32), (w, h):
     }
 }
 
-/// A horizontal gradient that is `colour` between `fade` and `1 - fade` of the width and clear at
-/// both ends (the compass strip's mask).
 fn fade_across(colour: Color, fade: f64) -> BackgroundGradient {
     let clear = colour.with_alpha(0.0);
     let f = (fade * 100.0) as f32;
     BackgroundGradient::from(LinearGradient::to_right(vec![ColorStop::new(clear, percent(0.0)), ColorStop::new(colour, percent(f)), ColorStop::new(colour, percent(100.0 - f)), ColorStop::new(clear, percent(100.0))]))
 }
-
-// ---------- window: the elements ----------
 
 pub fn window_plugin(app: &mut App) {
     use crate::phases::Frame;
@@ -393,7 +364,6 @@ pub fn window_plugin(app: &mut App) {
     );
 }
 
-/// Builds the HUD, and again after every change of the look file (hot reload).
 pub(crate) fn build_hud(mut commands: Commands, look: Res<DisplayLook>, assets: Res<AssetServer>, parts: Query<Entity, With<HudPart>>, mut built: Local<bool>) {
     if *built && !look.is_changed() {
         return;
@@ -408,7 +378,6 @@ pub(crate) fn build_hud(mut commands: Commands, look: Res<DisplayLook>, assets: 
     crate::items::spawn_bar(&mut commands, &look.0, &fonts);
 }
 
-/// The bottom gradient and the dark ellipse behind the open inventory.
 #[derive(Component)]
 enum ScrimPart {
     Bottom,
@@ -421,7 +390,6 @@ const TICK_BOX: f32 = 44.0;
 #[derive(Component, Clone, Copy)]
 enum CompassPart {
     Heading,
-    /// Mark `i` of the strip: the wrapper, its tick, the label's box and the label.
     Tick(usize),
     Bar(usize),
     LabelBox(usize),
@@ -431,24 +399,18 @@ enum CompassPart {
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 enum VitalPart {
     Row(VitalKind),
-    /// The label line above a bar (with its symbol, name and cost, shown with the bar).
     Head(VitalKind),
     Glyph(VitalKind),
     Name(VitalKind),
-    /// What the injury costs the health (or the radiation's strength), at the label line's right.
     Cost(VitalKind),
     Value(VitalKind),
     Track(VitalKind),
     Fill(VitalKind),
-    /// The health bar's coloured part of the lost health, per cause.
     Segment(VitalKind, Cause),
-    /// The health bar's dimmed end: above the reduced maximum (a headache).
     Cap(VitalKind),
-    /// The burn's circle that fills with the buildup.
     Ring,
 }
 
-/// What took the health (the bar's segments).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Cause {
     Burn,
@@ -482,7 +444,6 @@ enum ReticlePart {
     Dot,
     Ring,
     RingInner,
-    /// The hold's progress ring: a pie that fills, with a dark disc inside.
     Hold,
     HoldInner,
 }
@@ -498,7 +459,6 @@ enum CreditsPart {
 /// A 16 px symbol drawn from plain shapes (placeholder): a heart, a bubble, a trefoil or a flame.
 fn spawn_symbol(p: &mut ChildSpawnerCommands, sym: VitalSymbol, colour: Color) {
     p.spawn(Node { width: px(16), height: px(16), flex_shrink: 0.0, ..default() }).with_children(|b| {
-        // A circle (or square) at (x, y) of size w x h; `hollow` draws only its outline.
         let shape = |b: &mut ChildSpawnerCommands, (x, y, w, h): (f32, f32, f32, f32), round: bool, hollow: bool, rot: f32| {
             let mut node = Node { left: px(x), top: px(y), width: px(w), height: px(h), border_radius: if round { BorderRadius::MAX } else { BorderRadius::ZERO }, ..abs() };
             let (fill, edge) = if hollow {
@@ -530,7 +490,6 @@ fn spawn_symbol(p: &mut ChildSpawnerCommands, sym: VitalSymbol, colour: Color) {
     });
 }
 
-/// The buildup ring's fill: a conic gradient filled from the top round to `frac` of a turn.
 fn ring_fill(colour: Color, frac: f64) -> BackgroundGradient {
     let end = frac.clamp(0.0, 1.0) as f32 * std::f32::consts::TAU;
     let clear = colour.with_alpha(0.0);
@@ -548,7 +507,6 @@ fn spawn_hud(commands: &mut Commands, theme: &display_core::Theme, fonts: &HudFo
     commands.spawn((HudPart, ScrimPart::Bottom, GlobalZIndex(-1), Node { left: px(0), right: px(0), bottom: px(0), height: px(h.scrim.height as f32), ..abs() }, BackgroundGradient::default()));
     commands.spawn((HudPart, ScrimPart::Tab, GlobalZIndex(-1), Node { width: px(h.bar.scrim_w as f32), height: px(h.bar.scrim_h as f32), display: Display::None, ..abs() }, BackgroundGradient::default()));
 
-    // Compass: the heading number, a pointer, the strip with its base line, ticks and labels.
     let c = &h.compass;
     commands
         .spawn((HudPart, Node { top: px(c.top as f32), left: percent(50.0), margin: UiRect::left(px(-(c.width as f32) * 0.5)), width: px(c.width as f32), height: px(c.height as f32), ..abs() }))
@@ -574,7 +532,6 @@ fn spawn_hud(commands: &mut Commands, theme: &display_core::Theme, fonts: &HudFo
             }
         });
 
-    // Vitals, bottom left: the burn line (flame, text, the buildup's ring), oxygen, radiation and
     // health bars; each only while it applies, the health always.
     let v = &h.vitals;
     commands.spawn((HudPart, Node { left: px(edge), bottom: px(edge), width: px(v.width as f32), flex_direction: FlexDirection::Column, row_gap: px(v.gap as f32), ..abs() })).with_children(|root| {
@@ -620,7 +577,6 @@ fn spawn_hud(commands: &mut Commands, theme: &display_core::Theme, fonts: &HudFo
         }
     });
 
-    // The prompt: the F key, verb over name, an optional note line. Placed each frame.
     let p = &h.prompt;
     let key = p.key_px as f32;
     commands.spawn((HudPart, PromptPart::Root, Node { left: px(0), width: px(600), bottom: px(0), justify_content: JustifyContent::Center, display: Display::None, ..abs() })).with_children(|root| {
@@ -648,7 +604,6 @@ fn spawn_hud(commands: &mut Commands, theme: &display_core::Theme, fonts: &HudFo
         });
     });
 
-    // Key hints, bottom right: a column, text then keycap; the keys of the held item.
     let hi = &h.hints;
     commands.spawn((HudPart, Node { right: px(edge), bottom: px(edge), flex_direction: FlexDirection::Column, align_items: AlignItems::FlexEnd, row_gap: px(hi.gap as f32), ..abs() })).with_children(|root| {
         for i in 0..3 {
@@ -667,7 +622,6 @@ fn spawn_hud(commands: &mut Commands, theme: &display_core::Theme, fonts: &HudFo
         }
     });
 
-    // Reticle: a dot; on anything F can use a ring instead.
     let r = &h.reticle;
     let (ring, dot) = (r.ring_px as f32, r.dot_px as f32);
     commands.spawn((HudPart, ReticlePart::Root, Node { left: px(0), top: px(0), width: percent(100.0), height: percent(100.0), justify_content: JustifyContent::Center, align_items: AlignItems::Center, ..abs() })).with_children(|root| {
@@ -688,12 +642,10 @@ fn spawn_hud(commands: &mut Commands, theme: &display_core::Theme, fonts: &HudFo
             Outline::new(px(r.outline_px as f32), px(0), dark(r.outline_alpha)),
         ))
         .with_children(|ring| {
-            // The dark line inside the ring.
             ring.spawn((ReticlePart::RingInner, Node { width: percent(100.0), height: percent(100.0), border: UiRect::all(px(r.outline_px as f32)), border_radius: BorderRadius::MAX, ..default() }, BorderColor::all(dark(r.outline_alpha))));
         });
     });
 
-    // Credits, top right, only for a moment after a change: value and unit, the change below.
     let cr = &h.credits;
     commands.spawn((HudPart, CreditsPart::Root, Node { right: px(m), top: px(m), flex_direction: FlexDirection::Column, align_items: AlignItems::FlexEnd, display: Display::None, ..abs() })).with_children(|root| {
         root.spawn(Node { align_items: AlignItems::Baseline, column_gap: px(6), ..default() }).with_children(|row| {
@@ -723,7 +675,6 @@ fn update_scrims(
         match part {
             ScrimPart::Bottom => edit(&mut n, |n| n.height = px(if ui.open { s.open_height } else { s.height } as f32)),
             ScrimPart::Tab => {
-                // Centred on the open bar and the row below it.
                 let (first, size) = crate::items::slot_rect(0, true, window.0, &h.bar);
                 let (top, bottom) = (first.y, window.0.y - h.bar.open_bottom as f32);
                 let (cx, cy) = (window.0.x * 0.5, (top + bottom) * 0.5);
@@ -857,7 +808,6 @@ fn update_vitals_ui(
                 None => set_display(&mut n, Display::None),
             },
             VitalPart::Cap(k) => match line(k) {
-                // The part above the reduced maximum: from the cap to the end of the bar.
                 Some(l) if l.cap < 1.0 => edit(&mut n, |n| {
                     n.display = Display::Flex;
                     n.left = percent(l.cap as f32 * 100.0);
@@ -986,7 +936,6 @@ fn update_prompt_ui(
     }
     for (part, mut b) in &mut borders {
         if *part == PromptPart::Key {
-            // A blocked key has no solid outline: it is drawn dashed.
             set_border(&mut b, if blocked { Color::NONE } else { col(k.fg_title) });
         }
     }
@@ -1027,7 +976,6 @@ fn update_prompt_ui(
 }
 
 #[allow(clippy::type_complexity)]
-/// The keycap of a leave hint: the bound key and Escape, one cap ("F / ESC").
 fn leave_keys(bound: &str) -> String {
     if bound == "ESC" { bound.to_string() } else { format!("{bound} / ESC") }
 }
@@ -1043,7 +991,6 @@ fn update_hints_ui(
 ) {
     let (k, hi) = (&look.0.colours, &look.0.hud.hints);
     let soft = |a: f64| col_a(look.0.hud.soft, a);
-    // Open, the inventory shows its own keys under the slots.
     let hint = |i: usize| hud.hints.get(i).filter(|_| !ui.open);
     for (part, mut n) in &mut nodes {
         if let HintPart::Row(i) = *part {
@@ -1094,7 +1041,6 @@ fn update_reticle(
 ) {
     let seated = players.single().is_ok_and(|p| p.seated);
     let usable = inter.target.is_some() && inter.kind != PromptKind::Blocked;
-    // The ring of a treatment or of the CPR's start.
     let progress = hold.progress().or(rescue.progress()).filter(|p| *p > 0.0);
     for (part, mut n) in &mut nodes {
         match *part {
@@ -1149,8 +1095,6 @@ fn update_credits_ui(
     }
 }
 
-/// The old top-left readout (mode, speed, altitude, boost): gone from the HUD, shown while seated
-/// (the flight HUD still needs it) and in the F3 debug view.
 fn update_readout_row(view: Res<ViewState>, players: Query<&Player>, mut row: Query<&mut Node, With<ReadoutRow>>) {
     let show = view.debug_hud || players.single().is_ok_and(|p| p.seated);
     if let Ok(mut n) = row.single_mut() {

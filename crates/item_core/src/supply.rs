@@ -1,18 +1,13 @@
-//! Supply: how fast a wearing item runs down while it is used, and the racks on the wall
 //! that give a full one for an empty one (Barotrauma's extinguisher bracket). The values are in
-//! `content/gameplay/fire/extinguisher.json`; the racks' places are the level's (`exo_app`).
 use serde::Deserialize;
 
 use crate::authority::RackId;
 
-/// The file, relative to the gameplay content.
 pub const FILE: &str = "fire/extinguisher.json";
 
-/// The drain and the racks, from `FILE`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SupplyConfig {
-    /// The file's note (`_comment`), read by people only.
     #[serde(default, rename = "_comment")]
     pub comment: Option<String>,
     /// Condition (percent) lost per second while the item is used (sprayed).
@@ -20,7 +15,6 @@ pub struct SupplyConfig {
     pub racks: Vec<RackSpec>,
 }
 
-/// One rack: its id in the world, the level's box it stands in, its slots and its starting stock.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct RackSpec {
@@ -32,7 +26,6 @@ pub struct RackSpec {
 }
 
 impl SupplyConfig {
-    /// Parses the file's text and checks it.
     pub fn parse(text: &str) -> Result<SupplyConfig, String> {
         let c: SupplyConfig = crate::defs::parse_content(FILE, text)?;
         if !(c.drain_per_s > 0.0) {
@@ -46,7 +39,6 @@ impl SupplyConfig {
         Ok(c)
     }
 
-    /// The rack standing in a box, if any.
     pub fn rack_in(&self, box_id: &str) -> Option<RackId> {
         self.racks.iter().find(|r| r.box_id == box_id).map(|r| r.id)
     }

@@ -1,13 +1,4 @@
 //! The medic view: what the player sees of the other player they look at, within 3 m. A
-//! compact panel beside the reticle: the name, a health bar, the injuries with the vitals' symbols
-//! (BURN II, RAD 40 %, O2, UNCONSCIOUS) and the suitable treatment (`BANDAGE ▶ BURN`), the same
-//! words the player's own vitals use. The glue (`exo_app::health_view`) finds the target, the
-//! treatments in the action bar and draws what these functions return.
-//!
-//! The medic view's rules as data (`exo_app::health_view` has the research and the glue).
-//! An injury others see is one a treatment can reduce (burn, radiation, oxygen low); the lines
-//! read the vitals' words (`▲ BURN II`, `■ RAD 40 %`), and the suggestion names the item and the
-//! injury (`BANDAGE ▶ BURN`).
 use crate::hud::VitalKind;
 use crate::Tone;
 use serde::Deserialize;
@@ -40,7 +31,6 @@ pub enum Injury {
 }
 
 impl Injury {
-    /// The word the hint names it by (`BANDAGE ▶ BURN`).
     pub fn name(self) -> &'static str {
         match self {
             Injury::Burn => "BURN",
@@ -49,7 +39,6 @@ impl Injury {
         }
     }
 
-    /// The vital it stands for (its symbol is the vitals' symbol).
     pub fn vital(self) -> VitalKind {
         match self {
             Injury::Burn => VitalKind::Burn,
@@ -59,7 +48,6 @@ impl Injury {
     }
 }
 
-/// What the glue knows of the player looked at (from their public status).
 #[derive(Clone, Debug, PartialEq)]
 pub struct TargetIn {
     pub name: String,
@@ -70,7 +58,6 @@ pub struct TargetIn {
     pub burning: bool,
     /// The burn's level 1 to 3, 0 without.
     pub burn_level: u8,
-    /// Radiation's share, 0 without.
     pub radiation: f64,
     /// Oxygen low's share (bad air), 0 without; the air left is the rest.
     pub oxygen_low: f64,
@@ -93,7 +80,6 @@ impl TargetIn {
     }
 }
 
-/// One line of the panel: the label at the left, the value at the right, its colour role.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TargetLine {
     pub label: String,
@@ -112,7 +98,6 @@ pub struct TargetView {
     pub hint: Option<String>,
 }
 
-/// The status glyph of a tone (the same as the vitals': ▲ warn, ■ bad, none when calm).
 fn glyph(tone: Tone) -> &'static str {
     match tone {
         Tone::Warn => "▲",
@@ -161,7 +146,6 @@ pub fn target_lines(t: &TargetIn) -> Vec<TargetLine> {
     out
 }
 
-/// The hint that names the suitable treatment: `BANDAGE ▶ BURN`.
 pub fn suit_hint(item: &str, injury: Injury) -> String {
     format!("{} ▶ {}", item.to_uppercase(), injury.name())
 }

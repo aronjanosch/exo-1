@@ -1,7 +1,4 @@
-//! The engine room: the walker walks into the corridor and a wall stops it; F opens the door
-//! (the gap is open); the walker goes into the room; the room's air runs low and the health shows
-//! it, then the air comes back; F shuts the door from inside; the alarm cycles None, Warn, Danger
-//! (the console's button asks the same way). Without a window. Run with `--start=dev_area`.
+//! Engine room: the corridor, the door, the room's air and the alarm.
 use super::*;
 use crate::crew_hud::Vitals;
 use crate::dev_area::engine_room::{self, EngineAir, EngineDoor, Place, ShipAlarm, Slab, CORRIDOR, DOOR_AT, ROOM};
@@ -34,19 +31,16 @@ fn prompt(w: &World) -> String {
     w.resource::<Interaction>().prompt.clone()
 }
 
-/// The door's gap in the deck: its open fraction.
 fn gap_open(w: &World) -> f64 {
     let a = w.resource::<EngineAir>();
     a.deck.gap(a.door).open
 }
 
-/// The engine room's air fraction, as the deck has it.
 fn room_air(w: &World) -> f64 {
     let a = w.resource::<EngineAir>();
     a.oxygen_at(ROOM.centre)
 }
 
-/// The door's slab centre in the world (it moves when it slides).
 fn door_centre(w: &mut World) -> DVec3 {
     w.query::<(&Slab, &Position)>().iter(w).next().map(|(_, p)| p.0).expect("the door is there")
 }
@@ -57,7 +51,6 @@ fn oxygen_shown(w: &World) -> Option<f64> {
 }
 
 pub(super) fn engine_room_steps(s: &mut Vec<Step>) {
-    // The corridor: the walker stands in it, the area is there.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "engine room: into the corridor");
@@ -77,7 +70,6 @@ pub(super) fn engine_room_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // A wall stops the walker: west from the corridor, held for 2 s, it stays east of the wall's face.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "engine room: walls block");
@@ -101,7 +93,6 @@ pub(super) fn engine_room_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The door: from the corridor, F opens it (the prompt says so); the gap is open 1.0 at the end.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "engine room: F opens the door");
@@ -134,7 +125,6 @@ pub(super) fn engine_room_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The room: the walker goes in; the air there is the room's.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "engine room: into the room");
@@ -151,7 +141,6 @@ pub(super) fn engine_room_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The air runs low: the room's oxygen to nothing; the walker's health shows the loss.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "engine room: the air runs low");
@@ -168,7 +157,6 @@ pub(super) fn engine_room_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The air comes back: the room full again, the walker breathes it.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "engine room: the air comes back");
@@ -187,7 +175,6 @@ pub(super) fn engine_room_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The door from inside: F shuts it; the gap closes.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "engine room: F shuts the door from inside");
@@ -220,7 +207,6 @@ pub(super) fn engine_room_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The alarm: the console's button asks for the next level each time; None, Warn, Danger.
     for (name, want) in [("Warn", Alarm::Warn), ("Danger", Alarm::Danger), ("None", Alarm::None)] {
         s.push(Box::new(move |w, c| {
             if c.t == 0.0 {

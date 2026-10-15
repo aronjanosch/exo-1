@@ -68,7 +68,6 @@ pub fn open_sky(_: &PlanetDef, _: DVec3) -> bool {
     true
 }
 
-/// A copy of `pool` in random order (partial Fisher-Yates).
 fn shuffled<T: Clone>(rng: &mut Rng, pool: &[T]) -> Vec<T> {
     let mut v = pool.to_vec();
     let n = v.len();
@@ -237,7 +236,6 @@ fn layout(t: &Template, seed: u64, planets: &[PlanetDef], sky_ok: &dyn Fn(&Plane
     Err("no layout and star position the sky allows".into())
 }
 
-/// A point above a planet's atmosphere at a random altitude in `altitude_m`.
 fn above(rng: &mut Rng, p: &PlanetDef, altitude_m: [f64; 2]) -> [f64; 3] {
     let dir = rng.direction();
     let alt = rng.range(altitude_m[0], altitude_m[1]);

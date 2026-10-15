@@ -1,13 +1,4 @@
-//! How many fixed ticks each `update()` of the headless app runs.
-//!
-//! bevy_time 0.19.1, `real.rs` `Time<Real>::update_with_instant`: the first call only records
-//! the instant (`first_update`, `last_update`) and leaves the delta at zero. Under
-//! `TimeUpdateStrategy::ManualDuration` the first `update()` therefore advances time by 0 and
-//! runs no `FixedUpdate`; every later `update()` advances exactly one `TICK` and runs one.
-//!
-//! Nothing in the scenarios counts updates: the script (`Ctx::ticks`), the walker statistics and
-//! the `--record` path all count fixed steps, which start with the second update. So the scenario
-//! numbers do not depend on it and no warm-up update is needed.
+//! The first `update()` runs no fixed tick: `Time<Real>` only records the instant.
 use bevy::prelude::*;
 use exo_app::{build_app, Options};
 

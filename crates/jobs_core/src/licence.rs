@@ -11,7 +11,6 @@ use crate::id::TemplateId;
 
 pub const FOLDER: &str = "licence";
 
-/// A `licence` record.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct LicenceId(pub String);
@@ -36,9 +35,7 @@ impl fmt::Display for LicenceId {
 pub struct Licence {
     pub id: LicenceId,
     pub name: TextKey,
-    /// The personal track that is 1 once the licence is earned (the exam grants it).
     pub track: TrackId,
-    /// The job template of the exam.
     pub exam: TemplateId,
     /// What it allows, as tags the game asks for (`pilot_ship`).
     pub allows: Vec<Tag>,

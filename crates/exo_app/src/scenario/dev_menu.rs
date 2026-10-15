@@ -1,8 +1,4 @@
-//! Scenario `dev-menu`: F10 opens the dev menu (dev builds); 1 grants the flight
-//! licence (the seat takes the pilot), 2 adds the credits, 3 refills the boost, 4 and 5 hold day
-//! or night, 6 and 7 jump to day or night with the cycle running, 8 puts the ship above the next
-//! settlement, 9 toggles noclip; F10 closes it.
-//! Starts without the licences, like a new player.
+//! Scenario dev-menu: the F10 dev menu's keys, from a new player's start.
 use crate::daynight::{DayClock, Sun};
 use crate::dev::{DevMenu, DAY_HOUR, JUMP_ABOVE_M, MONEY, NIGHT_HOUR};
 use crate::env::{from_v3, PlanetRes};
@@ -52,7 +48,6 @@ pub fn dev_menu_steps(s: &mut Vec<Step>) {
         check(c, b > 0.99, format!("3: boost full ({b:.2})"));
         true
     }));
-    // The day: 4 always day, 5 always night (the clock stands), 6 and 7 jump and the cycle runs.
     for (key, hour, stands, what) in [(KeyCode::Digit4, DAY_HOUR, true, "4: always day"), (KeyCode::Digit5, NIGHT_HOUR, true, "5: always night"), (KeyCode::Digit6, DAY_HOUR, false, "6: jump to day"), (KeyCode::Digit7, NIGHT_HOUR, false, "7: jump to night")] {
         s.push(press(key));
         s.push(Box::new(|w, c| {
@@ -81,7 +76,6 @@ pub fn dev_menu_steps(s: &mut Vec<Step>) {
         if settlements.is_empty() {
             check(c, last == "no settlement on this planet", format!("8 without settlements: \"{last}\""));
         } else {
-            // Over one of them (the ship may have drifted a little in 0.1 s), about JUMP_ABOVE_M up.
             let up = (ship - planet.centre).normalize();
             let (near, s) = settlements.iter().map(|s| (from_v3(s.dir).dot(up).clamp(-1.0, 1.0).acos() * planet.radius, *s)).min_by(|a, b| a.0.total_cmp(&b.0)).unwrap();
             let above = (ship - planet.centre).length() - planet.radius - s.ground_m;
@@ -89,7 +83,6 @@ pub fn dev_menu_steps(s: &mut Vec<Step>) {
         }
         true
     }));
-    // 9: noclip on, and off again.
     for (on, what) in [(true, "9: noclip on"), (false, "9 again: noclip off")] {
         s.push(press(KeyCode::Digit9));
         s.push(wait(0.1));

@@ -1,27 +1,3 @@
-//! The extinguisher's supply: it wears down while it sprays, an empty one does not spray,
-//! and a rack on the wall gives a full one for the empty one (Barotrauma's bracket). Two racks in
-//! the dev area: one in the corridor outside the engine room, one inside by the door. The host
-//! holds the stock (`item_core`, `Host::racks`); the clients get it as events.
-//!
-//! Research (`~/Work/exo-research`, 15 min):
-//! - Barotrauma `barotrauma/content/Items/Tools/tools.xml`, item `extinguisher`: a RepairTool with
-//!   `extinguishamount="60"` and an OnUse StatusEffect `Condition="-2.0"`, i.e. -2 condition per
-//!   second while it sprays (`barotrauma/source/.../StatusEffects/StatusEffect.cs`, `GetModifiedValue`:
-//!   `currValue + newValue * deltaTime`), so a full one lasts 50 s. Its tags are `fireextinguisher`
-//!   and `PreferredContainer` `extinguisherholder`, plus `engcab`/`reactorcab` as secondary.
-//! - Barotrauma `barotrauma/content/Items/Containers/containers.xml`, item `extinguisherbracket`:
-//!   an ItemContainer of capacity 1 with `AutoInteractWithContained` and `Containable items="extinguisher"`.
-//!   Barotrauma refills nothing: you hang the empty one and take a full one from the bracket
-//!   (`barotrauma/content/ContainerTags.xml`, tag `extinguisherholder`, RecommendedAmount 1).
-//! - Barotrauma `barotrauma/source/.../Items/Components/Holdable/RepairTool.cs`: a target item with
-//!   Condition <= 0 is not hit (lines 443-447, 691-695); the extinguisher's spray goes through
-//!   `ExtinguishAmount` and `hull.FireSources` (line 458 on).
-//! - PULSAR `~/Work/exo-research/pulsar/assets/textassets/manual_plain.txt` line 133: repair raises
-//!   a system's condition, the extinguisher puts out fires. The metadata
-//!   (`pulsar/cpp2il/metadata-dump/Assembly-CSharp.txt`) has `GetNearestAmmoWithSupply`,
-//!   `TickGoToNearestAmmoSupply`, `PLAmmoRefill`, `PlayerRequestsAmmoClip`: the refill is a supply
-//!   point you walk to and take from, not a refill of the item itself. No per-extinguisher refill
-//!   name exists; `FireExtinguisherPS` is only the spray's particle system.
 //! So: wear while spraying, empty at 0, swap at a rack. Values in `content/gameplay/fire/extinguisher.json`
 //! (`item_core::supply`).
 use super::engine_room::{CORRIDOR, ROOM};
@@ -30,12 +6,10 @@ use crate::items::Items;
 use crate::ship::Ship;
 use item_core::supply::SupplyConfig;
 
-/// The item's id and the slot tag its racks take.
 pub const ITEM: &str = "extinguisher";
 pub const TAG: &str = "extinguisher";
 
 /// The two wall boxes: the corridor's west wall (faces east) and the engine room's east wall.
-/// The supply's values and racks, as a resource.
 #[derive(Resource, Clone, Debug)]
 pub struct Supply(pub SupplyConfig);
 

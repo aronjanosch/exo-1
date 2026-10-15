@@ -1,4 +1,3 @@
-//! Orders on the jobs side: an `OrderPlaced` event becomes an offer with the order's
 //! places, goods, reward and deadline; the end of the job raises `OrderSettled`.
 use std::path::Path;
 
@@ -111,7 +110,6 @@ fn an_order_becomes_an_offer_with_its_own_terms() {
     assert_eq!((leg.from.as_str(), leg.to.as_str(), leg.commodity.as_str(), leg.amount), ("wholesale_yard", "drip_rock", "sock_dust", 3));
     let o = j.order.as_ref().unwrap();
     assert_eq!((o.order, o.by.as_str(), o.reward, o.deadline_s), (OrderId(7), "old_nib", 90, Some(300.0)));
-    // The same order again is not a second offer.
     h.place(7, 3, 90, Some(300.0));
     assert_eq!(h.offered().len(), 1);
 }

@@ -1,8 +1,4 @@
-//! Scenario `sc-body`: the SC body through the controls. The ship lifts to 400 m
-//! and hovers; W from the hover gives the forward thrust with its
-//! spool and jerk (times to 50 % and to the peak of `thrust_share.z`); after a brake to rest, W
-//! with boost gives the boosted forward thrust (times to 50 % and 95 % of its peak, the forward
-//! part of the felt acceleration).
+//! The SC body: forward thrust spool, jerk and boosted thrust, through the controls.
 use crate::scenario::{begin, check, end, hold_until, keys, put_at_seat, ship_e, ship_vel, sit, with_ship, Step};
 use avian3d::prelude::Position;
 use bevy::prelude::*;
@@ -20,7 +16,6 @@ fn forward_g(felt: f64) -> f64 {
     (felt * felt - 1.0).max(0.0).sqrt()
 }
 
-/// The first time in a run at which column `col` reaches `level`.
 fn first(rec: &[(f64, [f64; 2])], col: usize, level: f64) -> Option<f64> {
     rec.iter().find(|(_, v)| v[col] >= level).map(|(t, _)| *t)
 }
@@ -29,8 +24,6 @@ fn fmt(t: Option<f64>) -> String {
     t.map_or("never".to_string(), |t| format!("{t:.2} s"))
 }
 
-/// Holds `ks` for `limit` s and records (time, [thrust share, forward g]) every step. At the end
-/// it checks the times to 50 % and to the peak (share) or to 50 % and 95 % of the peak (g).
 fn thrust_run(name: &'static str, ks: &'static [KeyCode], limit: f64, boost: bool) -> Step {
     let mut rec: Vec<(f64, [f64; 2])> = Vec::new();
     Box::new(move |w, c| {

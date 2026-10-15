@@ -1,4 +1,3 @@
-//! Ship body (Avian rigid body, greybox cabin) driven by flight_core.
 use crate::controls::{Actions, Bindings, ShipMouse, Tap};
 use crate::env::PlanetRes;
 use crate::Layer;
@@ -16,7 +15,6 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, thruster_fx.in_set(crate::phases::Fx::Effects));
 }
 
-/// Seat position in ship space.
 pub const SEAT_POS: DVec3 = DVec3::new(0.0, 0.6, -3.0);
 
 #[derive(Component)]
@@ -24,7 +22,6 @@ pub struct Ship {
     /// Named type identity; mutable flight state lives in `sc`.
     pub model: ShipModel,
     pub piloted: bool,
-    /// Parked: static until someone first sits down.
     pub parked: bool,
     /// Drive while nobody pilots (scenarios only).
     pub test_input: FlightInput,
@@ -34,9 +31,7 @@ pub struct Ship {
     pub stick: VirtualStick,
     /// A hull collider touches something (the ground; ships do not touch each other).
     pub grounded: bool,
-    /// The SC flight model (`flight_core::sc`).
     pub sc: ScShip,
-    /// The ground rules: the ship on the ground while the SC model does not fly it.
     pub ground: GroundRules,
 }
 
@@ -46,7 +41,6 @@ impl Ship {
         self.sc.status.thrust_share
     }
 
-    /// A boost is running.
     pub fn boost_active(&self) -> bool {
         self.sc.status.boost_active
     }
@@ -60,14 +54,12 @@ pub struct RemoteShip {
     pub lag: f64,
 }
 
-/// Visual-only part (the view plugin adds meshes for these).
 #[derive(Component, Clone)]
 pub struct ShipPart {
     pub size: Vec3,
     pub color: Color,
 }
 
-/// True if a point in ship space (the walker's feet) is inside the cabin.
 pub fn cabin_contains(p: DVec3, margin: f64) -> bool {
     p.x.abs() < 1.95 + margin && p.y > -margin && p.y < 2.9 + margin && p.z.abs() < 4.0 + margin
 }
@@ -127,13 +119,11 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, tuning: &crate::t
     ship
 }
 
-/// Greybox cabin: visual parts, hull colliders, ramp. Shared by the own ship and the remote proxies.
 /// `layer` is `Layer::Ship` for the own ship; remote proxies use `Layer::Remote` (no ship contact).
 pub fn add_hull(commands: &mut Commands, ship: Entity, layer: Layer) {
     add_hull_for(commands, ship, layer, HullKind::Kackfass1);
 }
 
-/// A type selects its matching visuals and collision layout together.
 pub fn add_hull_for(commands: &mut Commands, ship: Entity, layer: Layer, hull: HullKind) {
     match hull {
         HullKind::Kackfass1 => add_kackfass_1_hull(commands, ship, layer),
@@ -143,7 +133,6 @@ pub fn add_hull_for(commands: &mut Commands, ship: Entity, layer: Layer, hull: H
 fn add_kackfass_1_hull(commands: &mut Commands, ship: Entity, layer: Layer) {
     let hull = Color::srgb(0.95, 0.5, 0.15);
     let inner = Color::srgb(0.55, 0.55, 0.6);
-    // See-through: the tunnel streaks show through the window.
     let glass = Color::srgba(0.3, 0.8, 0.9, 0.12);
     // [size, position, colour, collides, drawn] in ship space; origin at the floor bottom.
     // The front wall collides as one block; it is drawn as four pieces around the window opening
@@ -234,7 +223,6 @@ pub fn ship_control(
         if !ship.piloted || controls.released {
             ship.stick = VirtualStick::default();
         }
-        // From the pre-ramp on the drive holds the ship.
         if ship.parked || warp.drive.phase.holds_ship() {
             if ship.piloted {
                 // Mouse movement during the hold is dropped, not applied at once afterwards
@@ -283,7 +271,6 @@ pub fn ship_control(
         // Cargo locked on this ship's plates is part of the ship: its mass and inertia
         // count in the SC model. The locks of the last step (the crates step after the ship).
         let (v, w) = if ground {
-            // The switches still apply on the ground, and the boost meter runs on.
             ship.sc.modes.update(&cmds, &ship.sc.tuning.modes, dt);
             ship.sc.skip_step(dt);
             ship.ground.step(&body, &input, planet.as_ref(), dt)
@@ -301,8 +288,6 @@ pub fn ship_control(
     }
 }
 
-/// Camera effects of the own ship, stepped with the simulation so scenarios can
-/// check them; the view only applies them.
 #[derive(Resource, Default)]
 pub struct CameraEffects(pub flight_core::camera::CameraFx);
 
@@ -336,7 +321,6 @@ pub fn camera_fx(
     let input = flight_core::camera::FxInput {
         speed: lv.0.length(),
         turn: DVec2::new(local.x, local.y),
-        // The bump comes with the first hull contact.
         approach: -lv.0.dot(up),
         grounded: ship.grounded,
         accel,
@@ -350,8 +334,6 @@ pub fn camera_fx(
     fx.0.step_with(&tuning.camera, &input);
 }
 
-/// Thruster sound layers of the own ship, stepped with the simulation so scenarios can
-/// read the levels; the audio plays them.
 #[derive(Resource, Default)]
 pub struct ThrusterLevels(pub flight_core::audio::ThrusterAudio);
 

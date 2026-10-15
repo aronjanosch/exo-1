@@ -559,7 +559,6 @@ fn eight_planets_fit_on_their_rings() {
     }
 }
 
-// Pinned: a change here changes every saved campaign.
 #[test]
 fn normal_seed_42_orbit_is_pinned() {
     let out = gen_at(&generator(), &template(NORMAL), 42);
@@ -911,7 +910,6 @@ fn map_rules_reject_bad_values() {
 
 #[test]
 fn map_seed_42_is_pinned() {
-    // Pinned: a change here changes every saved campaign.
     use SystemKind::{Harbour, Hostile, Normal};
     let m = gen_map(42, &map_rules(), &map_names());
     let columns: Vec<u8> = m.nodes.iter().map(|n| n.column).collect();

@@ -1,5 +1,4 @@
-//! Scenario `boost-hud`: the boost capacitor drains, cuts out and recharges, and the
-//! minimal HUD shows it with speed and altitude, all driven through `Controls`.
+//! Boost capacitor: drain, cut-out, recharge, and the minimal HUD readout.
 use crate::hud::HudReadout;
 use crate::scenario::{above_ground, altitude, begin, check, end, hold_until, keys, put_at_seat, ship_vel, sit, with_ship, Ctx, Step};
 use bevy::prelude::*;
@@ -17,7 +16,6 @@ fn number(t: &str) -> Option<f64> {
     t.split_whitespace().find_map(|p| p.parse().ok())
 }
 
-/// Speed and altitude in the HUD match the ship; no debug words in any permanent element.
 fn check_readout(w: &mut World, c: &mut Ctx, when: &str) {
     let r = readout(w);
     let (v, agl_below) = (ship_vel(w).length(), w.resource::<crate::tuning::Tuning>().hud.agl_below);
@@ -53,7 +51,6 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
         let charge = with_ship(w, |s| s.sc.drive.boost.charge);
         check(c, charge == 1.0, format!("capacitor full before the boost: {charge:.3}"));
         check(c, readout(w).texts[2].starts_with("AGL"), format!("hud at 300 m above ground: AGL ({:?})", readout(w).texts[2]));
-        // Above the threshold ALT: lowered under the ship for one step, no long climb.
         let keep = w.resource::<crate::tuning::Tuning>().hud.agl_below;
         c.v.insert("agl_below", keep);
         w.resource_mut::<crate::tuning::Tuning>().hud.agl_below = 100.0;
@@ -66,8 +63,6 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
         w.resource_mut::<crate::tuning::Tuning>().hud.agl_below = c.v["agl_below"];
         true
     }));
-    // Hold W + Shift until the meter is empty: it lasts the drain time, the limit is raised while
-    // it runs and drops back although Shift is still held.
     s.push(Box::new(|w, c| {
         let (limit, active, charge) = with_ship(w, |s| (s.sc.status.cap, s.sc.drive.boost.active, s.sc.drive.boost.charge));
         if c.t == 0.0 {
@@ -100,7 +95,6 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
         false
     }));
     s.push(Box::new(|w, c| {
-        // Shift still held on the empty meter: no boost, the limit falls back.
         if c.t == 0.0 {
             begin(w, c, "boost held on empty");
         }
@@ -118,8 +112,6 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
         }
         false
     }));
-    // Released: nothing during the rest of the delay (it counts from the last use), then full in
-    // the recharge time.
     s.push(Box::new(|w, c| {
         let t = cap(w);
         let charge = with_ship(w, |s| s.sc.drive.boost.charge);
@@ -129,7 +121,6 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
             let at_release = (0.8 - t.recharge_delay) / t.recharge_time;
             check(c, (charge - at_release).abs() < 0.005, format!("recharge: charge {charge:.4} at release, want {at_release:.4} (the delay ran while held)"));
         }
-        // 0.8 s of the delay passed while Shift was still held on empty.
         let since_empty = c.t + 0.8;
         if charge >= 1.0 || c.t > t.recharge_delay + t.recharge_time + 2.0 {
             let full = since_empty;

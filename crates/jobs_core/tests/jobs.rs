@@ -1,6 +1,3 @@
-//! Jobs rules. Kernel content: the fixture set of `gameplay_core`; job templates:
-//! `tests/fixtures/job_template`. `Host` plays the glue: it deduplicates, routes every event to
-//! the systems, and applies the events the jobs system emits.
 use std::path::Path;
 
 use gameplay_core::{ClientId, Content, CrateId, Dedup, Event, File, LocationId, Progress, TrackId, WorldEvent};
@@ -39,7 +36,6 @@ struct Host {
     dedup: Dedup,
     seq: u64,
     next_crate: u64,
-    /// Every outcome so far, for checks.
     log: Vec<Outcome>,
 }
 
@@ -56,7 +52,6 @@ impl Host {
         self.jobs.offer_fixed(t).unwrap()
     }
 
-    /// A jobs event from `who`; spawns crates the way the glue would.
     fn job(&mut self, who: ClientId, seq: u64, e: JobEvent) -> Result<(), Refusal> {
         let ev = Event::new(who, seq, e);
         if !self.dedup.first_time(ev.id) {
@@ -118,7 +113,6 @@ impl Host {
         })
     }
 
-    /// `who` carries crate `c` from the job's pickup to `to` and sets it down with `cond`.
     fn carry(&mut self, who: ClientId, seq: u64, c: CrateId, from: &str, to: &str, cond: f64) {
         self.world(who, seq, WorldEvent::CratePickedUp { crate_id: c, at: LocationId::new(from) });
         self.world(who, seq + 1, WorldEvent::CrateDelivered { crate_id: c, at: LocationId::new(to), condition: cond });
@@ -276,7 +270,6 @@ fn abandon_with_crates_on_board() {
     assert_eq!(h.state(j), JobState::Abandoned);
     assert_eq!(h.progress.wallet(), 200, "no pay, no penalty");
     assert!(h.log.iter().any(|o| matches!(o, Outcome::ReleaseCrates { crates: cs } if cs.len() == 4)));
-    // Delivering a released crate afterwards changes nothing.
     h.world(ANA, 2, WorldEvent::CrateDelivered { crate_id: crates[0], at: LocationId::new("bent_spoon"), condition: 1.0 });
     assert_eq!(h.progress.wallet(), 200);
     assert_eq!(h.job(ANA, 3, JobEvent::JobAbandoned { job: j }), Err(Refusal::NotActive));
@@ -401,7 +394,6 @@ fn jobs_section_round_trips_and_a_loaded_game_finishes_the_same() {
     h.world(ANA, 20, WorldEvent::CratePickedUp { crate_id: crates[1], at: LocationId::new("drip_rock") });
     h.world(HOST, 21, WorldEvent::TimePassed { dt: 12.5 });
 
-    // Save the kernel and the jobs section, load them into a second host.
     let mut env = Envelope::new();
     KernelState { progress: h.progress.clone(), dedup: h.dedup.clone() }.save(&mut env);
     h.jobs.save(&mut env);
@@ -417,7 +409,6 @@ fn jobs_section_round_trips_and_a_loaded_game_finishes_the_same() {
     g.next_crate = h.next_crate;
     g.seq = h.seq;
 
-    // The rest of the delivery on both: the same result.
     for host in [&mut h, &mut g] {
         host.world(ANA, 22, WorldEvent::CrateDelivered { crate_id: crates[1], at: LocationId::new("bent_spoon"), condition: 1.0 });
         host.carry(BO, 30, crates[2], "drip_rock", "bent_spoon", 1.0);
@@ -428,7 +419,6 @@ fn jobs_section_round_trips_and_a_loaded_game_finishes_the_same() {
     assert_eq!(g.progress, h.progress);
     assert_eq!(g.jobs.get(j).unwrap().participants, h.jobs.get(j).unwrap().participants);
 
-    // A save of an unknown jobs version is refused, a save without the section loads as none.
     let mut bad = Envelope::new();
     bad.put("jobs", 99, &h.jobs);
     assert!(matches!(Jobs::load(&bad), Err(SaveError::SectionVersion { found: 99, .. })));

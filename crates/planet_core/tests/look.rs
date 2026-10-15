@@ -1,4 +1,3 @@
-//! Atlas and look spots.
 use planet_core::*;
 
 fn hearth() -> Planet {
@@ -35,8 +34,6 @@ fn viewpoints_parse_and_every_spot_exists_on_hearth() {
     assert!(Viewpoints::from_json(r#"{"sun_elevation_deg":1,"sun_azimuth_deg":1,"atlas_width":8,"viewpoints":[{"id":"x","spot":"nowhere","height_m":1}]}"#).is_err());
 }
 
-// ---------- local map: a north-up picture of the ground around a point ----------
-
 #[test]
 fn a_local_map_has_its_size_and_north_is_up() {
     let p = hearth();
@@ -52,7 +49,6 @@ fn a_local_map_has_its_size_and_north_is_up() {
     assert!((at(mid, mid) - c).length() < 800.0 / p.radius / px as f64 * 1.5, "the middle is the centre");
     assert!((at(mid, 4) - c).dot(n) > 0.0 && (at(mid, 4) - c).dot(e).abs() < 4e-3, "up is north");
     assert!((at(px - 4, mid) - c).dot(e) > 0.0 && (at(px - 4, mid) - c).dot(n).abs() < 4e-3, "right is east");
-    // The metres are metres: the map's edge is its radius from the centre.
     let edge = at(px - 1, mid);
     let d = p.radius * c.dot(edge).clamp(-1.0, 1.0).acos();
     assert!((d - 800.0 * (1.0 - 1.0 / px as f64)).abs() < 800.0 / px as f64 * 1.5, "{d}");
@@ -66,7 +62,6 @@ fn local_offsets_are_the_inverse_of_the_map_directions() {
     for (x, y) in [(10, 20), (50, 12), (32, 32), (60, 58)] {
         let d = planet_core::look::local_map_dir(c, p.radius, 800.0, px, x, y);
         let (east, north) = planet_core::look::local_offset(c, p.radius, d);
-        // Pixel centre in metres from the map's centre.
         let (ex, ny) = ((x as f64 + 0.5 - px as f64 / 2.0) * 800.0 / (px as f64 / 2.0), (px as f64 / 2.0 - y as f64 - 0.5) * 800.0 / (px as f64 / 2.0));
         assert!((east - ex).abs() < 0.5 && (north - ny).abs() < 0.5, "({x},{y}): {east:.1}, {north:.1} vs {ex:.1}, {ny:.1}");
     }
@@ -112,7 +107,6 @@ fn orbit_map_has_its_size_and_its_dryness_marks_the_sea() {
             let (a, b) = sphere_to_face_ab(face, d);
             let (hh, _) = p.height_ab(face, a, b, d);
             let alpha = m[(y * 128 + x) * 4 + 3];
-            // A metre below the sea is wet; land that high above any water is dry.
             let wet_at = planet_core::look::ORBIT_SHORE_M * p.look_scale();
             if hh - p.sea < -wet_at {
                 ns += 1;

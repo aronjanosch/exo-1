@@ -1,5 +1,3 @@
-//! Planet: bake (coarse global layer, sites, statistics), the one height
-//! function, and point queries. Chunk build lives in chunk.rs.
 use crate::math::*;
 use crate::recipe::*;
 use fastnoise_lite::{FastNoiseLite, FractalType, NoiseType};
@@ -36,7 +34,6 @@ const RIDGE_NOISE_TOP: f64 = 0.8;
 enum RidgeSplit {
     AllCoarse,
     AllFine,
-    /// The coarse octaves alone.
     Coarse(FastNoiseLite),
 }
 
@@ -47,7 +44,6 @@ struct ReliefRt {
     /// high band.
     ridge_split: RidgeSplit,
     warp: Option<(FastNoiseLite, f64)>,
-    /// The factor on the relief's metres at this radius (`Relief::scale_at`).
     scale: f64,
 }
 
@@ -63,7 +59,6 @@ struct BandRt {
 
 use crate::landform::{ShapeRt, StampRt};
 
-/// Macro fields at one point.
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Fields {
     pub elev: f64, // macro elevation field (noise, -1..1), stamps not included
@@ -138,22 +133,15 @@ pub struct BakeStats {
     /// median (m). The worst is the largest hole: what a hike to the next site can take.
     pub site_cover_worst_m: f64,
     pub site_cover_median_m: f64,
-    /// Placed per site kind, and the landmarks among them.
     pub site_kind_counts: BTreeMap<String, usize>,
     pub landmark_count: usize,
-    /// Rows below their `min_share`.
     pub quota_misses: Vec<String>,
-    /// Stamps placed per landform kind, and the placement try that succeeded.
     pub landform_counts: BTreeMap<String, usize>,
     pub landform_tries: u32,
     /// Share of 200 random straight walks of 540 m (5 min at 1.8 m/s, on land) that cross at
     /// least two biome rows, and the median number of rows per walk (sizes by walking).
     pub walks_two_biomes_share: f64,
     pub walk_biomes_median: f64,
-    /// Drainage: river nodes (macro vertices on a river) and their length, the river ends
-    /// at the sea and at a lake, the biggest rain-weighted catchment of any land vertex, lakes
-    /// (area share of the whole surface),
-    /// the lowering by erosion alone and the deepest cut of all (m).
     pub river_nodes: usize,
     pub river_length_km: f64,
     pub rivers_to_sea: usize,
@@ -170,10 +158,7 @@ pub struct BakeStats {
     pub erosion_max_m: f64,
     pub erosion_mean_m: f64,
     pub carve_max_m: f64,
-    /// Drainage time per step (ms): the grid, the noise ground, then the steps of `drain`.
     pub drainage_phases_ms: BTreeMap<String, f64>,
-    /// The coarse global layer: loaded from the cache or baked, the time it took (ms) and
-    /// its size in memory (bytes).
     pub coarse_from_cache: bool,
     pub coarse_ms: f64,
     pub coarse_bytes: usize,
@@ -196,7 +181,6 @@ pub struct River {
     pub half_width_m: f64,
 }
 
-/// A lake: its level, size, deepest point and where it spills.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Lake {
     pub level_m: f64,
@@ -206,7 +190,6 @@ pub struct Lake {
     pub outlet: Option<V3>,
 }
 
-/// The four grid vertices of the coarse layer around a point and its place between them.
 struct MacroCell {
     k: [usize; 4],
     fu: f64,
@@ -241,14 +224,11 @@ pub struct Planet {
     bands: Vec<BandRt>,
     pub(crate) scatter: crate::scatter::ScatterRt,
     pub(crate) stamps: Vec<StampRt>,
-    /// The stamps by place (their reach) and the sites by place (their edits' reach).
     pub(crate) stamp_grid: crate::grid::Grid,
     pub(crate) site_grid: crate::grid::Grid,
     landform_tries: u32,
     placement_error: Option<String>,
-    /// The coarse global layer: the sea, the drainage's cut and water, rivers and lakes.
     pub coarse: Coarse,
-    /// The rivers' polylines indexed by place, built from the coarse layer.
     pub river_idx: crate::rivers::RiverIndex,
     pub sea: f64,
     pub sites: Vec<crate::site::Site>,
@@ -259,13 +239,9 @@ pub struct Planet {
     pub ceiling_m: f64,
     /// (min, max) crust height above the base radius found by the bake statistics.
     pub height_range: (f64, f64),
-    /// The biome palettes by biome id: a table, built once, for the chunk build's per-vertex
-    /// lookup. Ids no row names hold the magenta fallback.
     palettes: Vec<Palette>,
 }
 
-/// Collision patches: the fixed-point steps per sample at most, and the step (m) that counts as
-/// settled.
 const PATCH_MAX_STEPS: usize = 8;
 const PATCH_SETTLED_M: f64 = 1e-3;
 
@@ -388,7 +364,6 @@ impl Planet {
         }
     }
 
-    /// The stamps into their grid: cells about twice the median reach.
     pub(crate) fn index_stamps(&mut self) {
         let mut reaches: Vec<f64> = self.stamps.iter().map(|s| s.reach_m).collect();
         reaches.sort_by(f64::total_cmp);
@@ -514,8 +489,6 @@ impl Planet {
         }
     }
 
-    /// The mountains of the relief (metres, 0 without relief): the ridge spline on the peaks
-    /// and valleys, gated to land, flattened by erosion, times a warped ridged fBm.
     /// The relief's ridges (m): the part the coarse grid resolves, and the finer rest.
     fn relief_ridge(&self, p: [f32; 3], f: &Fields) -> (f64, f64) {
         let (Some(r), Some(rt)) = (&self.recipe.relief, &self.relief_rt) else {
@@ -625,7 +598,6 @@ impl Planet {
         false
     }
 
-    /// Depth of any water over the ground at face coordinates, given the ground height there.
     pub fn water_depth_ab(&self, face: usize, a: f64, b: f64, h: f64) -> f64 {
         let lake = self.water_level_ab(face, a, b).unwrap_or(f64::MIN);
         (lake.max(self.sea) - h).max(0.0)
@@ -653,12 +625,10 @@ impl Planet {
         if h <= knee || !c.is_finite() { h } else { knee + 0.3 * c * ((h - knee) / (0.3 * c)).tanh() }
     }
 
-    /// The height function without the site edits: the noise ground and the drainage's cut.
     pub fn base_height_ab(&self, face: usize, a: f64, b: f64, dir: V3) -> (f64, Fields) {
         self.base_height_with(face, a, b, dir, self.stamp_height(dir).0)
     }
 
-    /// `base_height_ab` given the stamps' height at `dir`.
     fn base_height_with(&self, face: usize, a: f64, b: f64, dir: V3, stamp_m: f64) -> (f64, Fields) {
         let f = self.fields_at(dir);
         let (lo, hi) = self.bands_split(self.p32(dir), &f);
@@ -685,7 +655,6 @@ impl Planet {
         self.base_height_ab(face, a, b, d).0
     }
 
-    /// THE height function, from a unit direction (inverts the cube mapping first).
     pub fn height_at(&self, dir: V3) -> f64 {
         let d = dir.normalized();
         let face = face_of(d);
@@ -693,7 +662,6 @@ impl Planet {
         self.height_ab(face, a, b, d).0
     }
 
-    /// Temperature at a point: the field less the lapse with height above the sea.
     pub fn temperature_at(&self, f: &Fields, h_above_sea: f64) -> f64 {
         f.temp - self.recipe.macro_.temperature.lapse_per_m / self.biome_scale * h_above_sea.max(0.0)
     }
@@ -705,7 +673,6 @@ impl Planet {
         self.biome_pair(h_above_sea, f, forced_landform).nearest
     }
 
-    /// The nearest two biome rows and how far the point is into their border band.
     pub fn biome_pair(&self, h_above_sea: f64, f: &Fields, forced_landform: Option<f64>) -> BiomePair {
         let temp = self.temperature_at(f, h_above_sea);
         let land = forced_landform.unwrap_or(f.land);
@@ -731,7 +698,6 @@ impl Planet {
         BiomePair::new(best.1, second.1, second.0 - best.0, self.recipe.biome_space.blend)
     }
 
-    /// Everything the bot interface wants to know about one spot.
     pub fn sample(&self, dir: V3) -> Sample {
         let d = dir.normalized();
         let face = face_of(d);
@@ -804,7 +770,6 @@ impl Planet {
         self.palettes[id as usize].clone()
     }
 
-    /// The palette of a biome id, by reference (the chunk build's per-vertex lookup).
     pub(crate) fn palette_ref(&self, id: u8) -> &Palette {
         &self.palettes[id as usize]
     }
@@ -833,7 +798,6 @@ impl Planet {
         let n = self.recipe.macro_.resolution;
         let w = n + 1;
 
-        // 1-3. the coarse global layer: sea level, rivers and lakes; from the cache when it fits
         let t0 = Instant::now();
         let places_hash = coarse::fnv(format!("{:?}", self.places).as_bytes(), coarse::FNV_START);
         let key = coarse::cache_key(self.recipe.source_hash, self.recipe.seed, self.radius, n, places_hash);
@@ -858,7 +822,6 @@ impl Planet {
         st.coarse_ms = t0.elapsed().as_secs_f64() * 1e3;
         st.coarse_bytes = self.coarse.bytes();
 
-        // 4. sites: placed on the noise ground, then their edits join the height function
         let t0 = Instant::now();
         // The placement is the slowest part at a large radius: the cache keeps what it found.
         let (sites, misses) = match self.coarse.sites.clone() {
@@ -883,7 +846,6 @@ impl Planet {
         st.sites_ms = t0.elapsed().as_secs_f64() * 1e3;
 
         let hr;
-        // 5. statistics of the full height function on a stride-2 grid
         let t0 = Instant::now();
         {
             let this = &*self;
@@ -966,12 +928,10 @@ impl Planet {
         self.bake_checked_with(threads, None, true)
     }
 
-    /// What went wrong placing the landforms, if anything.
     pub fn placement_error(&self) -> Option<&str> {
         self.placement_error.as_deref()
     }
 
-    /// `bake_with`, failing like `bake_checked`.
     pub fn bake_checked_with(&mut self, threads: usize, cache: Option<&Path>, full_stats: bool) -> Result<BakeStats, String> {
         let st = self.bake_with(threads, cache, full_stats);
         if let Some(e) = &self.placement_error {
@@ -980,7 +940,6 @@ impl Planet {
         if st.quota_misses.is_empty() { Ok(st) } else { Err(format!("bake: {}", st.quota_misses.join("; "))) }
     }
 
-    /// The polylines of the coarse layer's rivers, indexed by place.
     fn index_rivers(&mut self) {
         let spacing = std::f64::consts::FRAC_PI_2 * self.radius / self.recipe.macro_.resolution as f64;
         let fill = self.recipe.drainage.as_ref().map_or(0.0, |d| d.river_fill);
@@ -1041,8 +1000,6 @@ impl Planet {
         st.drainage_ms = t0.elapsed().as_secs_f64() * 1e3;
     }
 
-    /// Rivers and lakes on the coarse grid: the cut and the water surface go into the
-    /// coarse layer, the rivers and lakes into its lists.
     fn drain(&mut self, spec: &DrainageSpec, threads: usize, st: &mut BakeStats) {
         use crate::drainage::{self, Mesh, Mouth};
         let n = self.recipe.macro_.resolution;
@@ -1192,7 +1149,6 @@ impl Planet {
         for k in &self.recipe.landforms.kinds {
             st.landform_counts.insert(k.id.clone(), self.stamps.iter().filter(|s| s.kind == k.id).count());
         }
-        // The first basin, plateau and escarpment.
         let first = |name: &str| self.stamps.iter().find(|s| match (&s.shape, name) {
             (ShapeRt::Basin { .. }, "basin") | (ShapeRt::Plateau { .. }, "plateau") | (ShapeRt::Esc { .. }, "esc") => true,
             _ => false,
@@ -1357,7 +1313,6 @@ impl Planet {
 mod grid_tests {
     use super::*;
 
-    /// The grids give the same height as a scan over every stamp and every site.
     #[test]
     fn the_grids_give_the_linear_scan_s_heights() {
         let text = include_str!("../../../content/planet/hearth.json").replace("\"resolution\": 512", "\"resolution\": 64");
@@ -1373,7 +1328,6 @@ mod grid_tests {
         };
         let mut near_site = 0;
         for k in 0..4000 {
-            // Half the points at a stamp or a site, half anywhere.
             let d = match k % 4 {
                 0 => p.stamps[(next() * p.stamps.len() as f64) as usize].c,
                 1 => p.sites[(next() * p.sites.len() as f64) as usize].dir,
@@ -1394,7 +1348,6 @@ mod grid_tests {
                 }
             }
             assert_eq!((h, lf), p.stamp_height(d), "stamps at {d:?}");
-            // The sites' edits: the same loop over every site, without the grid.
             let mut linear = 5.0;
             for s in &p.sites {
                 if d.dot(s.dir) > s.cos_reach {

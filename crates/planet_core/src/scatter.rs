@@ -1,18 +1,8 @@
-//! Scatter: instances of props on the ground, per cell of the cube-sphere quadtree and
-//! storey. A cell's instances are a pure function of the seed, the cell and the recipe, so the
-//! same seed gives the same instances whatever order cells load in.
-//!
-//! Per candidate spot of a storey's jittered grid: every entry of that storey gets a weight
-//! (group weight x entry weight x the biome row's multipliers x its mask), filters say no
-//! (slope, height above sea, a site's clear radius), then one roll picks at most one entry
-//! (weights are chances; their sum above 1 means always one). A picked entry may cluster
-//! (its preset), and each placed instance gets a second roll for its rare look.
 use crate::math::*;
 use crate::planet::*;
 use crate::recipe::*;
 use fastnoise_lite::FastNoiseLite;
 
-/// Placement rules of one entry, resolved to indices.
 pub(crate) struct EntryRt {
     pub storey: usize,
     pub mask: Option<usize>,
@@ -95,7 +85,6 @@ pub struct ScatterCell {
     pub instances: Vec<Instance>,
 }
 
-/// What the app needs to know about one entry.
 #[derive(Clone, Debug)]
 pub struct EntryInfo {
     pub id: String,
@@ -138,7 +127,6 @@ impl Planet {
         self.scatter.mult.iter().find(|(id, _)| *id == biome).map(|(_, m)| m.as_slice()).unwrap_or(&[])
     }
 
-    /// Ground at face coordinates: direction, height, normal (from the height function), biome.
     fn ground(&self, face: usize, a: f64, b: f64, step: f64) -> Ground {
         let a = a.clamp(-1.0, 1.0);
         let b = b.clamp(-1.0, 1.0);

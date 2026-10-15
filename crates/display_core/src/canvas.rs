@@ -1,13 +1,8 @@
-//! Drawn pictures for the panels: a `Canvas` widget holds shapes in its own pixels (origin at its
-//! top left). The window draws them with the same helpers as the other widgets (boxes, turned bars
-//! for lines and arcs, hatch, text), so a shape here is a plain description, no Bevy types.
-//!
 //! Angles are degrees on screen: 0 points right, 90 down (y grows downwards), so an increasing
 //! angle turns clockwise as the player sees it. A point is `(cx + r cos a, cy + r sin a)`.
 use crate::theme::Rgb;
 use crate::Theme;
 
-/// A colour token of the theme (`Theme::ink`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ink {
     Hud,
@@ -29,7 +24,6 @@ pub enum Ink {
     BadDim,
 }
 
-/// The face of a drawn text: the display face (regular or bold) or the readout's mono.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextFace {
     Display,
@@ -43,13 +37,9 @@ pub enum Shape {
     /// A stroke along a circle of radius `r` from angle `from` to `to` (degrees; to may be above
     /// 360 for a sweep past the top).
     Arc { cx: f64, cy: f64, r: f64, from: f64, to: f64, stroke: f64, ink: Ink, dash: Option<(f64, f64)> },
-    /// A straight stroke from `a` to `b`.
     Line { a: [f64; 2], b: [f64; 2], width: f64, ink: Ink, dash: Option<(f64, f64)> },
-    /// A disc or a ring: a fill, and/or an outline of `(ink, width)` on the edge.
     Circle { cx: f64, cy: f64, r: f64, fill: Option<Ink>, stroke: Option<(Ink, f64)> },
-    /// A box: a fill, and/or an outline of `(ink, width)` inside its edge.
     Rect { x: f64, y: f64, w: f64, h: f64, fill: Option<Ink>, outline: Option<(Ink, f64)> },
-    /// Diagonal stripes in a box (the warning and critical hatch).
     Hatch { x: f64, y: f64, w: f64, h: f64, ink: Ink },
     /// A text in a box, vertically centred; `centred` centres it across the box, else left.
     Text { x: f64, y: f64, w: f64, h: f64, text: String, size: f64, face: TextFace, ink: Ink, centred: bool },
@@ -59,7 +49,6 @@ pub enum Shape {
 pub type Extent = (f64, f64, f64, f64);
 
 impl Shape {
-    /// The box the shape covers, strokes included.
     pub fn extent(&self) -> Extent {
         match self {
             Shape::Arc { cx, cy, r, stroke, .. } => (cx - r - stroke * 0.5, cy - r - stroke * 0.5, cx + r + stroke * 0.5, cy + r + stroke * 0.5),
@@ -80,7 +69,6 @@ impl Shape {
 }
 
 impl Theme {
-    /// The colour of a token.
     pub fn ink(&self, i: Ink) -> Rgb {
         let c = &self.colours;
         match i {
@@ -121,7 +109,6 @@ mod tests {
 
     #[test]
     fn an_arc_runs_clockwise_from_the_bottom_left_to_the_bottom_right() {
-        // The temperature gauge's arc: 135 degrees (bottom left) through the top to 405 (bottom right).
         let p = arc_points(108.0, 70.0, 60.0, 135.0, 405.0, 4);
         assert!((p[0][0] - (108.0 - 60.0 * 0.5f64.sqrt())).abs() < 1e-9 && p[0][1] > 70.0, "bottom left {:?}", p[0]);
         assert!((p[2][1] - (70.0 - 60.0)).abs() < 1e-9, "the top in the middle: {:?}", p[2]);

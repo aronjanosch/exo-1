@@ -6,6 +6,10 @@
 //! damage ratio (0 up to 0.1; lerp 0 to 0.35 up to 0.7; lerp 0.35 to 0.75 up to 1). The walls take
 //! a hit as `Map/Explosion.cs:655` RangedStructureDamage does: structure * (1 - distance / range)
 //! inside the range (`distanceFalloff`). The openness feeds `fire_core` (one leak per section).
+//! Repairs (r43): a hold takes a section's damage down with `Hull::hold`. Barotrauma's repair is
+//! `Items/Components/Holdable/RepairTool.cs:562-576` (`StructureFixAmount` through `AddDamage`, the
+//! same from either side) and `Map/Structure.cs:961-965` tells a leak from outside (its gap is not
+//! room to room). Ours splits by side: `Side::Inside` stops at `PATCH_LINE`, `Side::Outside` goes to 0.
 use serde::{Deserialize, Serialize};
 
 use crate::engine_room::Source;
@@ -18,6 +22,19 @@ pub const LEAK_BELOW: f64 = 0.1;
 pub const BIG_GAP_ABOVE: f64 = 0.7;
 pub const SMALL_GAP_OPEN: f64 = 0.35;
 pub const LARGE_GAP_OPEN: f64 = 0.75;
+
+/// The patch line (r43, TODO(initiator)): a hold from inside mends a section down to this damage and
+/// no lower. At 0.3 the section's openness is `openness(0.3)` = 0.35 * 0.2 / 0.6 = 0.117, so a
+/// patched wall still leaks a little. Only a hold from outside (`Side::Outside`) closes it.
+pub const PATCH_LINE: f64 = 0.3;
+
+/// Which side of the wall the hold is on (r43). Barotrauma's `RepairTool.cs:576` repairs a section
+/// from either side with the same `AddDamage`; here the two sides differ (TODO(initiator): the split).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Side {
+    Inside,
+    Outside,
+}
 
 /// The engine room's inner walls in area metres (mirrors `dev_area::engine_room::ROOM`, centre
 /// (-14, -15), half (5, 4); the glue checks it). South-west corner and north-east corner.
@@ -121,6 +138,21 @@ impl Hull {
     pub fn mend(&mut self, i: usize, amount: f64) {
         let s = &mut self.sections[i];
         s.damage = (s.damage - amount.max(0.0)).max(0.0);
+    }
+
+    /// A hold of `amount` on section `i` from `side` (r43). From outside it takes the damage down to 0.
+    /// From inside it takes the damage down to `PATCH_LINE` and stops there; a section at or below the
+    /// line is left as it is.
+    pub fn hold(&mut self, i: usize, amount: f64, side: Side) {
+        match side {
+            Side::Outside => self.mend(i, amount),
+            Side::Inside => {
+                let s = &mut self.sections[i];
+                if s.damage > PATCH_LINE {
+                    s.damage = (s.damage - amount.max(0.0)).max(PATCH_LINE);
+                }
+            }
+        }
     }
 
     /// The section whose centre is nearest `point` (ties to the lower index).
@@ -262,6 +294,50 @@ mod tests {
         assert_eq!(h.nearest_damaged([-16.4, -18.9]), None, "intact walls have no damaged section");
         h.set(5, 0.2);
         assert_eq!(h.nearest_damaged([-16.4, -18.9]), Some(5));
+    }
+
+    #[test]
+    fn an_inside_hold_stops_at_the_patch_line() {
+        let mut h = Hull::default();
+        h.set(2, 0.6);
+        h.hold(2, 100.0, Side::Inside);
+        assert_eq!(h.damage(2), PATCH_LINE, "a patch from inside takes the section to the line and no further");
+        assert!(h.open(2) > 0.0 && h.leaking(), "a patched section still leaks a little");
+        h.hold(2, 100.0, Side::Inside);
+        assert_eq!(h.damage(2), PATCH_LINE, "holding on longer does nothing more");
+    }
+
+    #[test]
+    fn an_outside_hold_reaches_zero() {
+        let mut h = Hull::default();
+        h.set(2, 0.6);
+        h.hold(2, 100.0, Side::Outside);
+        assert_eq!(h.damage(2), 0.0, "from outside the section is whole");
+        assert_eq!(h.open(2), 0.0, "and closed");
+        h.set(4, 0.3);
+        h.hold(4, 100.0, Side::Outside);
+        assert_eq!(h.damage(4), 0.0, "the outside also takes a patched section down");
+    }
+
+    #[test]
+    fn an_inside_hold_leaves_a_section_below_the_line_alone() {
+        let mut h = Hull::default();
+        h.set(5, 0.2);
+        h.hold(5, 100.0, Side::Inside);
+        assert_eq!(h.damage(5), 0.2, "below the patch line an inside hold does nothing");
+        h.set(6, PATCH_LINE);
+        h.hold(6, 100.0, Side::Inside);
+        assert_eq!(h.damage(6), PATCH_LINE, "at the line it does nothing either");
+    }
+
+    #[test]
+    fn a_hold_takes_at_most_its_amount_per_call() {
+        let mut h = Hull::default();
+        h.set(1, 0.6);
+        h.hold(1, 0.1, Side::Inside);
+        assert!((h.damage(1) - 0.5).abs() < 1e-12, "a short hold takes a short bite");
+        h.hold(1, 0.1, Side::Outside);
+        assert!((h.damage(1) - 0.4).abs() < 1e-12, "the outside takes the same bite");
     }
 
     #[test]

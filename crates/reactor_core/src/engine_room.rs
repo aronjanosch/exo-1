@@ -26,7 +26,7 @@ use gameplay_core::save::{Envelope, SaveError};
 use crate::enemy::{EnemyTuning, Encounter, Outcome};
 use crate::weapons::{Weapons, WeaponsSave};
 use crate::engine::Engine;
-use crate::hull::{Hit, HitsTuning, Hull, DEVICES, REACTOR_AT};
+use crate::hull::{Hit, HitsTuning, Hull, Side, DEVICES, REACTOR_AT};
 use crate::grid::{Grid, Group};
 use crate::history::History;
 use crate::jump::{JumpDrive, JumpSave};
@@ -806,11 +806,12 @@ impl EngineRoom {
         &self.hull
     }
 
-    /// The wrench's hold on section `i`: `dt` seconds take its damage down at the pump's fix speed
-    /// (`pump.fix_slow_s` for a whole section, 25 s), so a 0.6 section is mended in 15 s of hold.
-    pub fn mend_section(&mut self, i: usize, dt: f64) {
+    /// The wrench's hold on section `i` from `side` (r43): `dt` seconds take its damage down at the
+    /// pump's fix speed (`pump.fix_slow_s` for a whole section, 25 s), so a 0.6 section is mended in
+    /// 15 s of hold. From inside the hold stops at the patch line; from outside it goes to 0.
+    pub fn mend_section(&mut self, i: usize, dt: f64, side: Side) {
         let whole = self.tuning.pump.fix_slow_s.max(1e-6);
-        self.hull.mend(i, dt.max(0.0) / whole);
+        self.hull.hold(i, dt.max(0.0) / whole, side);
     }
 
     /// A hit (r40, Barotrauma's damage as data): the walls take `structure` by the falloff, the

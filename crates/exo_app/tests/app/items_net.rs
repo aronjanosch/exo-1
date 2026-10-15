@@ -349,7 +349,7 @@ fn the_client_sees_the_host_burning_down_and_repairing() {
     assert!(status(&p.client, LOCAL_HOST).down, "the public status says down too");
     set_down(&mut p.host, false);
 
-    p.host.world_mut().resource_mut::<RepairSessions>().sessions.push(HostSession { player: LOCAL_HOST, device: RepairDevice::Reactor, tool: RepairTool::Wrench, hits: 0, gated: false, holding: false, section: 0, gains: false });
+    p.host.world_mut().resource_mut::<RepairSessions>().sessions.push(HostSession { player: LOCAL_HOST, device: RepairDevice::Reactor, tool: RepairTool::Wrench, hits: 0, gated: false, holding: false, section: 0, gains: false, outside: false });
     p.until(15.0, "the client's figure of the host repairs the reactor", |p| figure(&mut p.client, LOCAL_HOST).is_some_and(|s| s.doing == Doing::Repairing(RepairDevice::Reactor)));
     assert_eq!(figure(&mut p.client, LOCAL_HOST), Some(status(&p.client, LOCAL_HOST)), "the figure carries the public status");
     assert!(!status(&p.client, LOCAL_HOST).down, "up again after the down");

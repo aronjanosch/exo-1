@@ -358,6 +358,9 @@ pub enum RepairAsk {
     /// The wrench is aimed at the engine room's wall section `i` (r40): sent when the aim moves
     /// onto another section while the hold is on, and the hold mends the damaged section nearest it.
     Aim(u8),
+    /// The hold is from outside the ship's wall (`true`) or from inside (`false`, r43): sent with the
+    /// aim when it changes, before the hold starts. The host mends from outside to 0, inside to the patch line.
+    Outside(bool),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1021,7 +1024,7 @@ mod tests {
 
     #[test]
     fn repair_asks_travel_as_they_are() {
-        for ask in [RepairAsk::Start { device: RepairDevice::JunctionBox, tool: RepairTool::Screwdriver }, RepairAsk::Start { device: RepairDevice::CoolantPump, tool: RepairTool::Wrench }, RepairAsk::Start { device: RepairDevice::OxygenGenerator, tool: RepairTool::Wrench }, RepairAsk::Start { device: RepairDevice::HullBreach, tool: RepairTool::Wrench }, RepairAsk::Hit, RepairAsk::Miss, RepairAsk::Stop, RepairAsk::Hold(true), RepairAsk::Hold(false), RepairAsk::Aim(5)] {
+        for ask in [RepairAsk::Start { device: RepairDevice::JunctionBox, tool: RepairTool::Screwdriver }, RepairAsk::Start { device: RepairDevice::CoolantPump, tool: RepairTool::Wrench }, RepairAsk::Start { device: RepairDevice::OxygenGenerator, tool: RepairTool::Wrench }, RepairAsk::Start { device: RepairDevice::HullBreach, tool: RepairTool::Wrench }, RepairAsk::Hit, RepairAsk::Miss, RepairAsk::Stop, RepairAsk::Hold(true), RepairAsk::Hold(false), RepairAsk::Aim(5), RepairAsk::Outside(true), RepairAsk::Outside(false)] {
             let back = match decode::<ToHost>(&encode(&ToHost::Repair(ask))).expect("decodes") {
                 ToHost::Repair(a) => a,
                 _ => panic!("the repair request"),

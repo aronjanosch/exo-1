@@ -1,6 +1,7 @@
 use super::*;
 use crate::dev_area::captain_screen;
 use crate::dev_area::reactor_screen;
+use crate::dev_area::startup_screen;
 use crate::dev_area::status_monitor;
 use crate::displays::DisplayPanel;
 use crate::env::PlanetRes;
@@ -108,6 +109,8 @@ pub const SCREENS: &[Mount] = &[
     // corridor), the outer one on the airlock's west wall (inside, by the outer door). Both show IN, OUT, CYCLE.
     Mount { id: reactor_screen::AIRLOCK_INNER_ID, name: reactor_screen::AIRLOCK_INNER_NAME, at: AIRLOCK_PANEL_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
     Mount { id: reactor_screen::AIRLOCK_OUTER_ID, name: reactor_screen::AIRLOCK_OUTER_NAME, at: AIRLOCK_PANEL_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
+    // The ship's power panel (r42, SP-01): the cold start's checklist, on the corridor's east wall between the gunnery and the reactor room's panel.
+    Mount { id: startup_screen::ID, name: startup_screen::NAME, at: startup_screen::AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: startup_screen::TURN },
     // The captain's console (r41, CP-01): on the corridor's west wall, between JD-01 and the corridor's south end.
     Mount { id: captain_screen::ID, name: captain_screen::NAME, at: captain_screen::AT, lift: VENT_LIFT, size: captain_screen::SIZE, turn: captain_screen::TURN },
 ];

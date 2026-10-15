@@ -1,4 +1,4 @@
-//! C2: the item path over the real wire format, without sockets: a host and clients joined by
+//! The item path over the real wire format, without sockets: a host and clients joined by
 //! `net_core`'s reliable channel (item requests and events) and body datagrams (poses of a moving
 //! loose item), through `link` at the internet's numbers: 150 ms each way, jitter, 2 % loss.
 //! Time is virtual, 60 ticks a second, so this runs in milliseconds.

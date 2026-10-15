@@ -1,5 +1,5 @@
-//! The save model (#128): an envelope with a version and one section per system, each section with
-//! its own version. No file I/O here: the glue reads and writes the text (#135). A system brings
+//! The save model: an envelope with a version and one section per system, each section with
+//! its own version. No file I/O here: the glue reads and writes the text. A system brings
 //! its own section (`jobs_core::Jobs::save`); the kernel and the world are below.
 //!
 //! Loading a version this build does not know is a clear error, never a guess.

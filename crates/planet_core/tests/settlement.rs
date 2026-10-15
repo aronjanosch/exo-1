@@ -1,4 +1,4 @@
-//! #223: settlements. A settlement sits only on a plain (the ground rises less than the rule
+//! Settlements. A settlement sits only on a plain (the ground rises less than the rule
 //! allows across its span, before any edits), its town plot and landing pad are level, and its kit
 //! stands on the level ground: a landing pad at the centre, 6 to 12 city pieces around it and a
 //! beacon.

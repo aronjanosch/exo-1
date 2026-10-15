@@ -1,4 +1,4 @@
-//! #177 (spike 14): skirts hide the cracks between quadtree levels. Where a chunk meets a chunk of
+//! Skirts hide the cracks between quadtree levels. Where a chunk meets a chunk of
 //! the next finer level, the surface of one lies above the other by some metres along the shared
 //! edge; the skirt that hangs from the higher chunk's edge covers that gap when it is deeper than
 //! the gap. Checked on the parent's bottom edge against its first child, at several radii.

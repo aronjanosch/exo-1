@@ -1,4 +1,4 @@
-//! Rules of #286 for device condition, with numbers.
+//! Rules for device condition, with numbers.
 use super::*;
 
 const DT: f64 = 1.0 / 60.0;

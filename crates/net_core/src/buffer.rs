@@ -72,7 +72,7 @@ impl Buffer {
 
     /// Like `sample`, but an underrun shows the last state moved on with its velocity for at most
     /// `max_extrapolation` seconds (display only, never for collision). Rotation is held.
-    /// 0 is the spike 4 rule: hold.
+    /// 0 means hold.
     pub fn sample_extrapolated(&self, t: f64, max_extrapolation: f64) -> Option<Sample> {
         let mut s = self.sample(t)?;
         if s.mode == Mode::Hold && max_extrapolation > 0.0 {

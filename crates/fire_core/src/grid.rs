@@ -1,4 +1,4 @@
-//! The cell grid (#300): fire as cells per room, the other model next to the point model of
+//! The cell grid: fire as cells per room, the other model next to the point model of
 //! `Deck`'s fires. Each room with cells is a grid of square cells (`cell_m`, 1 m) over its floor
 //! rectangle; a cell has an intensity 0..1, and 0 is no fire. The grid works on the `Deck`'s
 //! rooms and gaps (the air stays the deck's): a burning cell grows while its room has enough

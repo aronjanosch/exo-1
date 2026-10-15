@@ -1,4 +1,4 @@
-//! Grab (#82, #83): the crate the walker holds, with the hands (to 2 m) or the grab tool (full
+//! Grab: the crate the walker holds, with the hands (to 2 m) or the grab tool (full
 //! force to 6 m, none at 10 m; it reels the crate in to 3 m). Each step `grab_step` pulls the
 //! crate towards a hold point in front of the eye through `grab_core::hold_force`; heavy crates
 //! lag, one holder cannot lift the large one. The crate keeps its heading relative to the
@@ -153,7 +153,7 @@ pub fn grab_step(
     let drop = if held.reach == Reach::Hands { c.body.half.y } else { 0.0 };
     let target = cf.to_local(eye + look * held.dist - up_w * drop);
     let holder = Holder { target, target_vel: to_local * (walker_vel - cf_vel), source: cf.to_local(eye), reach: held.reach };
-    // Grabbing unlocks a crate from the plates (#84).
+    // Grabbing unlocks a crate from the plates.
     if c.locked {
         c.locked = false;
     }
@@ -211,7 +211,7 @@ pub fn grab_step(
     grab.held = Some(held);
 }
 
-/// The grab tool's beam (night extra E3): a thin glowing rod from the tool, low right in front
+/// The grab tool's beam: a thin glowing rod from the tool, low right in front
 /// of the eye, to the crate's centre, only while the tool holds. It turns from cyan to hot
 /// orange as the hold strains towards breaking. Render only; headless runs never spawn it.
 #[derive(Component)]

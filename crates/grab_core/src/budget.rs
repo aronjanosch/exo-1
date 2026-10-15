@@ -1,4 +1,4 @@
-//! Object budget (#85): which loose objects go, per category. Pure rules; the game feeds the
+//! Object budget: which loose objects go, per category. Pure rules; the game feeds the
 //! objects in and despawns what comes back.
 use serde::Deserialize;
 

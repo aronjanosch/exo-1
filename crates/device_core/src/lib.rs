@@ -1,5 +1,4 @@
-//! device_core: the condition of a ship device, without engine types, in f64 (#286, part of #174
-//! and #248). Every machine the engineer keeps alive (reactor, engines, shield generator, oxygen
+//! device_core: the condition of a ship device, without engine types, in f64. Every machine the engineer keeps alive (reactor, engines, shield generator, oxygen
 //! generator) carries one `Condition`.
 //!
 //! Taken from Barotrauma's repairable devices: a condition bar with a repair threshold, repair time
@@ -111,7 +110,7 @@ pub enum RepairOutcome {
     Failed { lost: f64 },
     /// Repair is locked after a failure.
     Locked { remaining_s: f64 },
-    /// The device is full now. `skill_gain` goes to the repairer's skill (0 if the device did not
+    /// The device is full. `skill_gain` goes to the repairer's skill (0 if the device did not
     /// need repair when the attempt started).
     Done { skill_gain: f64 },
     /// Nothing to repair.

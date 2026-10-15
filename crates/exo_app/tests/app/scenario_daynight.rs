@@ -1,4 +1,4 @@
-//! #48: a fast-forwarded day on every planet; sun direction and brightness as the core says.
+//! A fast-forwarded day on every planet; sun direction and brightness as the core says.
 use crate::common;
 use exo_app::Options;
 

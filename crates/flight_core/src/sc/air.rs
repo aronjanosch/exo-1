@@ -1,5 +1,4 @@
-//! Stage 3 of the SC step: what the atmosphere does to the ship. Lane `sc-air` (round 5, #199)
-//! owns this file.
+//! Stage 3 of the SC step: what the atmosphere does to the ship.
 //!
 //! Airspeed is the ship's velocity minus the wind. Drag acts per ship axis (sideways brakes more
 //! than nose first), lift along the ship's up from the forward airspeed and the angle of attack

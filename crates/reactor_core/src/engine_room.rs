@@ -26,7 +26,7 @@
 //!   power, not the speed). So High drains 2.5 times as fast as Low at the same heat, as PULSAR says
 //!   "quickly" against "slowly". Off drains nothing; its speed runs down over `pump_run_down_s`.
 //!   TODO(initiator): pump run-down and the reactor's coolant coast now stack after a switch-off.
-//! - Emergency cooling (PULSAR's manual button, #300 r24; PULSAR's automatic safety is not ours, the
+//! - Emergency cooling (PULSAR's manual button; PULSAR's automatic safety is not ours, the
 //!   initiator decided no automatic safety): `emergency_cool` takes `ecool_tank_cost` of the tank at
 //!   once and adds `ecool_strength` degrees of cooling to the reactor for `ecool_duration_s`, then a
 //!   cooldown of `ecool_cooldown_s` from the press. Refused during the cooldown, with the tank below

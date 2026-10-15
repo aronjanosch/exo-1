@@ -2,7 +2,7 @@
 //!
 //! Like Barotrauma's item components, an item is a mix of a few building blocks: how it is taken
 //! (`take`), the hands it needs while held, how many stack in one slot, slots of its own (a box,
-//! a bag; 0 for most), what using it does (`use`, an effect id; inert in C1) and its shape as a
+//! a bag; 0 for most), what using it does (`use`, an effect id) and its shape as a
 //! loose body in the world.
 use std::collections::BTreeMap;
 
@@ -51,13 +51,13 @@ pub struct ItemDef {
     /// What using it does, an effect id (the repair, the spray, the treatment).
     #[serde(rename = "use", default)]
     pub use_effect: Option<String>,
-    /// Seconds the use takes while LMB is held (#295); None: the use is instant.
+    /// Seconds the use takes while LMB is held; None: the use is instant.
     #[serde(default)]
     pub use_s: Option<f64>,
     /// Labels for slot rules (`small`, `tool`, `medical`).
     #[serde(default)]
     pub tags: Vec<String>,
-    /// Wears: its condition (0..100 %) starts at 100 and what it does can run it down (#300).
+    /// Wears: its condition (0..100 %) starts at 100 and what it does can run it down.
     #[serde(default)]
     pub condition: bool,
     pub shape: Shape,

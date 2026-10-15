@@ -1,5 +1,5 @@
 //! display_core: what a display panel shows and how a pointer works on it, without engine types
-//! (#285). A `Panel` is a size in panel pixels and a tree of `Widget`s (labels, buttons, bars,
+//! A `Panel` is a size in panel pixels and a tree of `Widget`s (labels, buttons, bars,
 //! toggles, sliders, dials, trends and lists in rows and columns). The widget set and the look
 //! come from the design system "EXO-1 Ship Displays" (2026-10-13); colours and fonts are data
 //! (`theme`, `content/ui/displays.json`). `Panel::layout` stacks them into rectangles, a `Pointer`

@@ -1,4 +1,4 @@
-//! Conditions from the data, shared by unlocks, locations, job templates and encounters (#125).
+//! Conditions from the data, shared by unlocks, locations, job templates and encounters.
 //! Small on purpose: systems express their own facts as flags.
 use serde::{Deserialize, Serialize};
 

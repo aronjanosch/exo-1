@@ -1,4 +1,4 @@
-//! Ground hold (#92): a ship set down below the slope limit keeps its spot until thrust.
+//! Ground hold: a ship set down below the slope limit keeps its spot until thrust.
 use flight_core::*;
 use glam::DVec3;
 
@@ -182,7 +182,7 @@ fn moved_far_away_or_released_lets_go() {
     assert!(c.ground_hold.is_none(), "the SC model flying the ship (or gravity compensation off) lets go");
 }
 
-/// #104 point 1: one step of hull contact with a crest at speed, neutral input, starts no hold;
+/// One step of hull contact with a crest at speed, neutral input, starts no hold;
 /// the ship keeps its speed and flies on.
 #[test]
 fn brushing_a_crest_at_speed_keeps_flying() {
@@ -203,7 +203,7 @@ fn brushing_a_crest_at_speed_keeps_flying() {
     assert!(c.ground_hold.is_none(), "no hold after the brush: {}", b.lin_vel);
 }
 
-/// #104 point 1: a settling hold whose contact stays lost lets go (the ground fell away); a
+/// A settling hold whose contact stays lost lets go (the ground fell away); a
 /// flicker of one step does not (see `at_rest_it_returns_to_its_spot_until_thrust`), and a resting
 /// hold keeps the ship on its spot without contact (the physics drops a contact without push).
 #[test]
@@ -227,7 +227,7 @@ fn contact_lost_while_settling_ends_the_hold() {
     assert!(c.ground_hold.is_some(), "resting: held without contact");
 }
 
-/// #104 point 2: a rested ship lifted 20 m straight up (a teleport, a depenetration) is not
+/// A rested ship lifted 20 m straight up (a teleport, a depenetration) is not
 /// pulled back into the ground in one step.
 #[test]
 fn lifted_straight_up_it_is_not_pulled_back() {
@@ -241,7 +241,7 @@ fn lifted_straight_up_it_is_not_pulled_back() {
 }
 
 /// A level ship touching a slope just under the limit with a hull corner has its centre ~2.7 m
-/// above the terrain: still on the ground, held (review of the #104 point 1 gate).
+/// above the terrain: still on the ground, held.
 #[test]
 fn a_corner_touch_on_a_steep_slope_below_the_limit_is_held() {
     let env = Slope::new(34.0);

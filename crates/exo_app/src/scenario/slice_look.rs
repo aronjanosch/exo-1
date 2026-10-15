@@ -174,7 +174,7 @@ fn aux_boost(w: &World) -> f64 {
     items(w).reactor.as_ref().map_or(0.0, |r| r.aux_boost_kw)
 }
 
-/// Checks a state now (one tick): the news after a click poll, as a PASS or FAIL line.
+/// Checks a state (one tick): the news after a click poll, as a PASS or FAIL line.
 fn check_now(name: &'static str, what: &'static str, ok: fn(&World) -> bool) -> Step {
     Box::new(move |w, c| {
         begin(w, c, name);
@@ -194,7 +194,7 @@ fn ask_aux(name: &'static str) -> Step {
     })
 }
 
-/// The screen's edges now (the HUD's burn, bad air and radiation alphas).
+/// The screen's edges (the HUD's burn, bad air and radiation alphas).
 fn edges(w: &World) -> effects::ScreenFx {
     let v = w.resource::<Vitals>();
     effects::screen_fx(v.burning, v.oxygen, v.radiation, w.resource::<Time>().elapsed_secs_f64())

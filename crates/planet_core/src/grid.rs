@@ -1,4 +1,4 @@
-//! A hash grid over 3D space for things standing on the planet (#177, spike 14): stamps, sites and
+//! A hash grid over 3D space for things standing on the planet: stamps, sites and
 //! the points the placement keeps apart. Density rules give a planet of any radius thousands of
 //! features; a linear scan per height query or per candidate would not survive that. Items keep
 //! their insertion order inside a cell, so a sum over a cell's items adds in the same order as a

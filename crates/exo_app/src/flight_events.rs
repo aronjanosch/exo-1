@@ -1,4 +1,4 @@
-//! Flight events for the licence exam (#169): the ship's moments as domain events, nothing more.
+//! Flight events for the licence exam: the ship's moments as domain events, nothing more.
 //! `TookOff` when the ship leaves the ground under the pilot, `PadReached` when it comes over a
 //! pad, `Landed` when it touches down, with the speed towards the ground just before. The exam
 //! reads these events and never how the ship flies, so the flight model can change under it.

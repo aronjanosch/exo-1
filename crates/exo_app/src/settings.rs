@@ -1,4 +1,4 @@
-//! Player settings (#31): mouse sensitivity, field of view, volume, sound on/off, and the key bindings, in the
+//! Player settings: mouse sensitivity, field of view, volume, sound on/off, and the key bindings, in the
 //! game's own `settings/` folder (next to where it runs; `--settings-dir` picks another).
 //! `settings.json` holds the numbers; rebinding writes `bindings.json` there, which then wins over
 //! the shipped `content/tuning/bindings.json`. A file that does not parse falls back to the
@@ -23,7 +23,7 @@ pub struct Settings {
     pub volume: f64,
     /// Off silences every sound and keeps the volume for when it comes back on.
     pub sound: bool,
-    /// Scales the camera shake (#148): 0 none, 1 as tuned.
+    /// Scales the camera shake: 0 none, 1 as tuned.
     pub camera_shake: f64,
 }
 
@@ -62,7 +62,7 @@ impl Settings {
             None => true,
             Some(v) => v.as_bool().ok_or("settings.json: `sound` must be true or false")?,
         };
-        // Optional: files written before the camera shake setting (#148) keep loading at 1.
+        // Optional: files written before the camera shake setting keep loading at 1.
         let camera_shake = if o.contains_key("camera_shake") { num("camera_shake", SHAKE_RANGE)? } else { 1.0 };
         // The old menu allowed up to 100 degrees. Keep its files, cap just the FOV at 90.
         let fov_deg = num("fov_deg", (FOV_RANGE.0, 100.0))?.min(FOV_RANGE.1);
@@ -189,7 +189,7 @@ mod tests {
         assert_eq!((s.volume, s.sound), (0.3, true));
     }
 
-    /// #148: a settings file from before the camera shake loads at full shake; 0 is allowed.
+    /// A settings file from before the camera shake loads at full shake; 0 is allowed.
     #[test]
     fn a_settings_file_from_before_the_camera_shake_still_loads() {
         let s = Settings::from_json(r#"{ "mouse_sensitivity": 1.2, "fov_deg": 80, "volume": 0.3, "sound": true }"#).unwrap();

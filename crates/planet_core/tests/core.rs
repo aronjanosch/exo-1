@@ -1,4 +1,4 @@
-//! T1 (core part), T2, T3 of the planet generation spike. Run: cargo test --profile fast -- --nocapture
+//! Core checks T1 (core part), T2, T3. Run: cargo test --profile fast -- --nocapture
 use planet_core::*;
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -89,7 +89,7 @@ fn t1_one_height_function() {
     assert!(worst_store < 1e-4, "stored vertex {worst_store} m off the exact position");
     println!("T1 mesh vertices: {} vertices of 50 chunks (depths 2,4,6,8), max |mesh - height_at| = {:.3e} m", n_vert, worst_mesh);
     // The noise reads its input as f32 at the planet's radius, so height_at at the f32 vertex
-    // position is a staircase of steps slope x radius x 6e-8 (#221: about 1.4 mm at 5 km with
+    // position is a staircase of steps slope x radius x 6e-8 (about 1.4 mm at 5 km with
     // the relief's steeper ground); the exact contract is the strict check above.
     assert!(worst_mesh < 2e-3);
 }
@@ -198,7 +198,7 @@ fn t1_collision_patches_core() {
         }
     }
     println!("T1 collision patches (core): {n} samples, max |patch - height_at| = {worst64:.3e} m (f64 origin), {worst32:.3e} m (origin rounded to f32 like the scene)");
-    // f32 noise input, as in t1_one_height_function (#221).
+    // f32 noise input, as in t1_one_height_function.
     assert!(worst64 < 2e-3);
     assert!(worst32 < 2e-3);
 }

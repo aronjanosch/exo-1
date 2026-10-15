@@ -29,7 +29,7 @@ pub struct Player {
     pub fly: bool,
     /// Dev menu noclip: like `fly`, at walking speeds, to look through walls of models.
     pub noclip: bool,
-    /// Body orientation while weightless outside a cabin (issue #8), world space, camera axes
+    /// Body orientation while weightless outside a cabin, world space, camera axes
     /// (-z looks, +y is the head). Free in all axes; `w.forward` follows it, `pitch` is 0.
     pub body: Option<DQuat>,
     /// Up in the cabin, cabin coordinates: the floor's up with LAG on, the planet's with LAG off.
@@ -62,7 +62,7 @@ struct AvianWorld<'a, 'w, 's> {
     half_height: f64,
     filter: SpatialQueryFilter,
     /// Outside a cabin: ship colliders with their ship's velocity. They sit one tick behind the
-    /// body and move, so they are swept with the motion relative to their ship (issue #9).
+    /// body and move, so they are swept with the motion relative to their ship.
     /// Empty in a cabin, where the motion is relative to the cabin already.
     ship_colliders: Vec<(Entity, DVec3)>,
     dt: f64,
@@ -118,7 +118,7 @@ pub fn spawn_player(commands: &mut Commands, planet: &PlanetRes, cfg: &WalkerCon
     spawn_player_at(commands, planet, cfg, DVec3::Y, offset_x)
 }
 
-/// `spawn_player` at another start direction (`--start <place>`, round 6).
+/// `spawn_player` at another start direction (`--start <place>`).
 pub fn spawn_player_at(commands: &mut Commands, planet: &PlanetRes, cfg: &WalkerConfig, start_up: DVec3, offset_x: f64) -> Entity {
     let up = (start_up * planet.radius + DVec3::new(offset_x, 0.0, 0.0)).normalize();
     let pos = planet.centre + up * (planet.surface(up) + 2.0);
@@ -249,7 +249,7 @@ pub fn walker_step(
         Ok((e, p, r, v, _)) => (cabin_frame(e, (p, r), &floors), *v),
         Err(_) => (own_frame, own_v),
     };
-    // Cabin gravity of the own ship, or what another player's snapshots say (issue #11).
+    // Cabin gravity of the own ship, or what another player's snapshots say.
     let lag_of = |e: Entity| match remotes.get(e) {
         Ok((.., rs)) => flight_core::Lag { level: rs.lag, ..flight_core::Lag::full() },
         Err(_) => own_lag,
@@ -264,7 +264,7 @@ pub fn walker_step(
         pl.w.halt();
     }
     let world_pos = if pl.ship.is_some() { frame_ship.to_world(pl.w.pos) } else { pl.w.pos };
-    // On rails the anchors would reach for patches along the way (#111).
+    // On rails the anchors would reach for patches along the way.
     if !warp.drive.phase.on_rails() {
         ring.anchors = vec![(world_pos, if pl.ship.is_some() { slv.0 } else { pl.w.vel }), (sp.0, own_v.0)];
     }
@@ -276,14 +276,14 @@ pub fn walker_step(
     let sens = settings.mouse_radians_per_count();
     // The pad's stick (turn: x pitch up, y yaw left) turns the view at a rate.
     let stick = actions.turn * bindings.pad.look_rate * dt;
-    // A held crate slows the view's turn, more for heavy ones (#83).
+    // A held crate slows the view's turn, more for heavy ones.
     let turn_share = grab.held.map_or(1.0, |h| grab_core::view_turn_share(&tuning.grab, h.mass));
     let yaw = (-m.x as f64 * sens + stick.y) * turn_share;
     let pitch = (-m.y as f64 * sens + stick.x) * turn_share;
     let carry = grab.carry(&tuning.grab);
     let cfg = pl.w.cfg;
 
-    // Weightless outside a cabin: the body turns freely and the suit thrusters move it (issue #8).
+    // Weightless outside a cabin: the body turns freely and the suit thrusters move it.
     let in_gravity = |at: DVec3| flight_core::PlanetEnv::gravity_at(planet.as_ref(), at) != DVec3::ZERO;
     let weightless = pl.ship.is_none() && !pl.fly && !pl.noclip && !in_gravity(world_pos);
     if pl.ship.is_none() {
@@ -322,7 +322,7 @@ pub fn walker_step(
         pl.pitch = (pl.pitch + pitch).clamp(-cfg.pitch_limit, cfg.pitch_limit);
         WalkInput {
             dir: DVec2::new(actions.move_dir.x, -actions.move_dir.z),
-            // Nausea slows the walk and takes the sprint away (#295).
+            // Nausea slows the walk and takes the sprint away.
             run: actions.run && carry.can_run && mobility.0.sprint,
             jump: actions.jump && carry.can_jump,
             yaw,
@@ -414,7 +414,7 @@ pub fn walker_step(
     }
 
     // Enter or leave the cabin: box test with hysteresis. The cabin can
-    // be the own ship or the proxy of another player's ship (spike 4: walker in a foreign ship).
+    // be the own ship or the proxy of another player's ship.
     match pl.ship {
         None => {
             let own = (ship_e, own_frame, own_v);
@@ -430,7 +430,7 @@ pub fn walker_step(
             }
         }
         // While the drive holds the own ship the cabin keeps the walker: out there it would be
-        // left behind at the ship's velocity, which is zero on rails (#111).
+        // left behind at the ship's velocity, which is zero on rails.
         Some(e) if e == ship_e && warp.drive.phase.holds_ship() && !cabin_contains(pl.w.pos, 0.3) => {
             pl.w = before;
             pl.w.halt();
@@ -461,7 +461,7 @@ pub fn walker_step(
 }
 
 /// After a frame change: heading and pitch about the new up (world space), so the walker keeps
-/// looking where it looked (issue #7).
+/// looking where it looked.
 fn keep_look(pl: &mut Player, look: DVec3, frame: &Frame, up: DVec3) {
     let (f, pitch) = walker_core::split_look(look, up, frame.rot * pl.w.forward);
     pl.w.forward = frame.rot.inverse() * f;

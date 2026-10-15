@@ -1,4 +1,4 @@
-//! C2: two app instances in one process, a real UDP session on loopback, and the internet in
+//! Two app instances in one process, a real UDP session on loopback, and the internet in
 //! between: every datagram a process receives is delayed 150 ms (so 300 ms round trip) with a
 //! little jitter and lost with 2 % (`--sim-delay`, `--sim-jitter`, `--sim-loss`). The host (slot 1)
 //! owns the items. Two players reach for one item, one drops and the other picks it up, a thrown
@@ -152,7 +152,7 @@ fn two_players_share_items_over_150_ms_and_2_percent_loss() {
     p.until(10.0, "the late joiner has the wrench lying there", |p| loose(&mut p.client).len() == 1);
     let w0 = loose(&mut p.host)[0].id.expect("id");
     assert_eq!(loose(&mut p.client)[0].id, Some(w0), "the same item id on both");
-    // It settled on the host and the client shows it at the same spot. Wait for that instead of a
+    // It settled on the host and the client shows it at the same spot. Wait for that, not for a
     // fixed time: the physics runs on sim time, which follows the frames, so under load a fixed
     // two seconds of real time can end before the wrench lies still.
     p.until(30.0, "the late joiner's wrench came to rest at the host's spot", |p| {
@@ -279,7 +279,7 @@ fn two_players_share_items_over_150_ms_and_2_percent_loss() {
     println!("[{:5.1} s] done; host rx {} B, tx {} B", p.start.elapsed().as_secs_f64(), p.host.world().resource::<Net>().st.wire_rx, p.host.world().resource::<Net>().st.wire_tx);
 }
 
-/// #295: the client uses a bandage on the host's player over the slow link: the client's stack
+/// The client uses a bandage on the host's player over the slow link: the client's stack
 /// shrinks at once and at the answer, the host's burn drops, the client's own vitals stay calm.
 #[test]
 fn a_bandage_used_by_a_client_on_the_host_heals_the_host_and_the_stack_shrinks() {
@@ -362,7 +362,7 @@ fn set_down(app: &mut App, down: bool) {
 
 #[test]
 fn the_client_sees_the_host_burning_down_and_repairing() {
-    // The host's public status (#300): burning, down and a repair session, as the client's figure
+    // The host's public status: burning, down and a repair session, as the client's figure
     // of the host shows them.
     let port = 21000 + (std::process::id() % 1000) as u16;
     let o = Options { headless: true, ..Default::default() };
@@ -394,7 +394,7 @@ fn the_client_sees_the_host_burning_down_and_repairing() {
     assert_eq!(figure(&mut p.client, LOCAL_HOST), Some(status(&p.client, LOCAL_HOST)), "the figure carries the public status");
     assert!(!status(&p.client, LOCAL_HOST).down, "up again after the down");
 
-    // Unconscious (#300): the host's vitality at zero, not dead. The client's figure lies down and
+    // Unconscious: the host's vitality at zero, not dead. The client's figure lies down and
     // is labelled as unconscious (not down); a treatment on the host wakes it.
     p.host.world_mut().resource_mut::<RepairSessions>().sessions.clear();
     {
@@ -422,7 +422,7 @@ const LOCAL_HOST: u32 = exo_app::items::LOCAL;
 
 #[test]
 fn the_client_looking_at_the_burning_host_gets_the_medic_panel_and_the_bandage_highlight() {
-    // #300, the medic view: the client looks at the host's player from 2 m. The panel names the burn
+    // The medic view: the client looks at the host's player from 2 m. The panel names the burn
     // ("■ BURN · ON FIRE"), the hint is the bandage on the client's slot 0, and only that slot is
     // highlighted. The host is the patient: its own status, sent to the client, is what it reads.
     let port = 20500 + (std::process::id() % 1000) as u16;

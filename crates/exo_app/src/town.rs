@@ -1,4 +1,4 @@
-//! The first city and the town dressing (round 6): the city plan (`content/city/plan.json`,
+//! The first city and the town dressing: the city plan (`content/city/plan.json`,
 //! exported from `art/city/city_plan.py`) placed on the place `city`, box colliders for its
 //! buildings, landing-pad models on every pad, and placeholder characters (NPCs) where the plan
 //! and the gameplay put someone to talk to.

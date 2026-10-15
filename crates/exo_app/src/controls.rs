@@ -4,7 +4,7 @@
 //! Two layers: `Controls` is the raw input (held keys, tapped keys, mouse pixels) that the keyboard
 //! and the scenario scripts write. Once per fixed step `resolve_actions` turns it into `Actions`
 //! through the `Bindings` (`content/tuning/bindings.json`); the ship, walker, warp and view read
-//! only `Actions`. A gamepad or joystick (#29) is a third source next to keyboard and scripts:
+//! only `Actions`. A gamepad or joystick is a third source next to keyboard and scripts:
 //! its axes and buttons land in `Controls` too, and the bindings map them like keys.
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::math::{DVec2, DVec3};
@@ -28,7 +28,7 @@ pub fn window_plugin(app: &mut App) {
 pub const BINDINGS: &str = include_str!("../../../content/tuning/bindings.json");
 
 /// Actions that existed once: a player's saved `bindings.json` may still name them, and they are
-/// skipped instead of throwing away the whole file (the axis flight model's F7, F6 and L, #206).
+/// skipped instead of throwing away the whole file (the axis flight model's F7, F6 and L).
 const REMOVED_ACTIONS: [&str; 4] = ["flight_model", "thrust_law", "boost_mode", "horizon_follow"];
 
 /// Raw input, written by the keyboard and mouse (`read_input`) or by a scenario script.
@@ -45,7 +45,7 @@ pub struct Controls {
     pub pad_axes: HashMap<GamepadAxis, f32>,
     pub scripted: bool,
     /// The game does not have the mouse: a menu is open or the cursor is free. The virtual stick
-    /// centres (#110 point 2).
+    /// centres.
     pub released: bool,
     /// A display is in use: the cursor stays free (a click does not grab it) and the mouse does
     /// not turn the view. Set by the game (`displays`), read by `read_input`.
@@ -57,16 +57,16 @@ pub struct Controls {
     pub pointer: Option<Vec2>,
     /// The primary mouse button is held.
     pub pointer_down: bool,
-    /// The primary mouse button is held with the mouse captured (a use's hold, #295). Set by
+    /// The primary mouse button is held with the mouse captured (a use's hold). Set by
     /// `read_input` like `click`.
     pub primary_held: bool,
-    /// The secondary mouse button is held with the mouse captured (the repair ring's speed-up,
-    /// #299). Set by `read_input` like `primary_held`.
+    /// The secondary mouse button is held with the mouse captured (the repair ring's speed-up).
+    /// Set by `read_input` like `primary_held`.
     pub secondary_held: bool,
     /// The primary mouse button went down since the last fixed step (a tap: a press and release
     /// between two steps still counts). Taken by `displays`.
     pub click: bool,
-    /// Actions fired without a key (`Tap::KEYLESS`): scripts now, terminals later. Resolved with
+    /// Actions fired without a key (`Tap::KEYLESS`): scripts, terminals later. Resolved with
     /// the next fixed step like a key tap.
     pub actions: Vec<Tap>,
 }
@@ -104,9 +104,9 @@ pub enum Button {
 /// One-shot actions. A tap lives until the end of the next fixed step; unconsumed it is dropped.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tap {
-    /// The one verb (#82): sit, stand up, pick up or set down a crate, whatever is targeted.
+    /// The one verb: sit, stand up, pick up or set down a crate, whatever is targeted.
     Interact,
-    /// Throw the held crate (#83).
+    /// Throw the held crate.
     Throw,
     /// Gravity compensation on or off (H, SC model).
     HoverAssist,
@@ -115,13 +115,13 @@ pub enum Tap {
     OrbitCamera,
     WarpTarget,
     Warp,
-    /// Coupled or decoupled flight (C, SC model; #26).
+    /// Coupled or decoupled flight (C, SC model).
     Decoupled,
     /// The debug lines of the HUD (F3).
     DebugHud,
     /// Landing mode (K, SC model). TODO(initiator): the key (K for now).
     LandingMode,
-    /// G-safe on or off (F8, #118, SC model).
+    /// G-safe on or off (F8, SC model).
     TurnCap,
     /// F1: the keys that apply right now, as a panel (`help.rs`).
     Help,
@@ -149,19 +149,19 @@ pub enum Tap {
     /// Down for now; the mouse wheel later).
     LimiterUp,
     LimiterDown,
-    /// Playtest switch: the camera's shake, spring lag and G field of view (F9, #148, #149).
+    /// Playtest switch: the camera's shake, spring lag and G field of view (F9).
     CameraFx,
-    /// Run the queued banners and toasts (the arrival ritual) fast (#165).
+    /// Run the queued banners and toasts (the arrival ritual) fast.
     SkipNotices,
-    /// Close a giver's counter without taking the job (#167).
+    /// Close a giver's counter without taking the job.
     Decline,
-    /// The next offer at the open counter (#167).
+    /// The next offer at the open counter.
     NextOffer,
-    /// Open or close the map (#166).
+    /// Open or close the map.
     Map,
-    /// Track the next active job: its next stop is the pointer and the map's target (#166).
+    /// Track the next active job: its next stop is the pointer and the map's target.
     TrackJob,
-    /// Drop the tracked job: the first press asks, a second within a few seconds drops it (#132).
+    /// Drop the tracked job: the first press asks, a second within a few seconds drops it.
     AbandonJob,
     /// Leave the display in use (Escape, besides the interact key).
     DisplayLeave,
@@ -495,23 +495,23 @@ impl Bindings {
             axes.push((a, AxisBinding { positive, negative, pad, deadzone, curve }));
         }
         let buttons = Button::ALL.iter().map(|&b| Ok((b, keys(b.name(), get(b.name())?)?))).collect::<Result<_, String>>()?;
-        // Files from before #82 call the one verb `seat` and have no `throw`: they keep working.
+        // Saves with `seat` and no `throw` still load.
         let tap_keys = |t: Tap| -> Result<Vec<Input>, String> {
             match (t, obj.get(t.name())) {
                 (_, Some(v)) if Tap::KEYLESS.contains(&t) => inputs(t.name(), v),
                 (_, Some(v)) => keys(t.name(), v),
-                // ... and no keyless actions, or the item keys (C1).
+                // ... and no keyless actions, or the item keys.
                 (_, None) if Tap::KEYLESS.contains(&t) => Ok(Vec::new()),
                 (Tap::Drop, None) => Ok(vec![Input::Key(KeyCode::KeyG)]),
                 (Tap::Inventory, None) => Ok(vec![Input::Key(KeyCode::Tab)]),
                 (_, None) if Tap::SLOTS.contains(&t) => Ok(vec![Input::Key([KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8][Tap::SLOTS.iter().position(|x| *x == t).unwrap()])]),
                 (Tap::Interact, None) if obj.contains_key("seat") => keys("seat", &obj["seat"]),
                 (Tap::Throw, None) => Ok(vec![Input::Key(KeyCode::KeyR)]),
-                // Files from before spike 13 have no `landing_mode`.
+                // Older files have no `landing_mode`.
                 (Tap::LandingMode, None) => Ok(vec![Input::Key(KeyCode::KeyK)]),
-                // ... and no `turn_cap` (#118).
+                // ... and no `turn_cap`.
                 (Tap::TurnCap, None) => Ok(vec![Input::Key(KeyCode::F8)]),
-                // ... and no `help` (round 5).
+                // ... and no `help`.
                 (Tap::Help, None) => Ok(vec![Input::Key(KeyCode::F1)]),
                 (Tap::DevMenu, None) => Ok(vec![Input::Key(KeyCode::F10)]),
                 (Tap::Dev1, None) => Ok(vec![Input::Key(KeyCode::Digit1)]),
@@ -523,23 +523,23 @@ impl Bindings {
                 (Tap::Dev7, None) => Ok(vec![Input::Key(KeyCode::Digit7)]),
                 (Tap::Dev8, None) => Ok(vec![Input::Key(KeyCode::Digit8)]),
                 (Tap::Dev9, None) => Ok(vec![Input::Key(KeyCode::Digit9)]),
-                // ... and no `camera_fx` (#148, #149).
+                // ... and no `camera_fx`.
                 (Tap::CameraFx, None) => Ok(vec![Input::Key(KeyCode::F9)]),
-                // ... and none of the SC model's switches (round 5).
+                // ... and none of the SC model's switches.
                 (Tap::MasterMode, None) => Ok(vec![Input::Key(KeyCode::KeyB)]),
                 (Tap::Comstab, None) => Ok(vec![Input::Key(KeyCode::KeyU)]),
                 (Tap::ProximityAssist, None) => Ok(vec![Input::Key(KeyCode::KeyP)]),
                 (Tap::WindComp, None) => Ok(vec![Input::Key(KeyCode::KeyI)]),
                 (Tap::LimiterUp, None) => Ok(vec![Input::Key(KeyCode::PageUp)]),
                 (Tap::LimiterDown, None) => Ok(vec![Input::Key(KeyCode::PageDown)]),
-                // ... and no `skip_notices` (#165).
+                // ... and no `skip_notices`.
                 (Tap::SkipNotices, None) => Ok(vec![Input::Key(KeyCode::Enter)]),
-                // ... and no `decline` or `next_offer` (#167).
+                // ... and no `decline` or `next_offer`.
                 (Tap::Decline, None) => Ok(vec![Input::Key(KeyCode::Backspace)]),
-                // ... and no `map` or `track_job` (#166).
+                // ... and no `map` or `track_job`.
                 (Tap::Map, None) => Ok(vec![Input::Key(KeyCode::KeyM)]),
                 (Tap::TrackJob, None) => Ok(vec![Input::Key(KeyCode::KeyT)]),
-                // ... and no `abandon_job` (#132).
+                // ... and no `abandon_job`.
                 (Tap::AbandonJob, None) => Ok(vec![Input::Key(KeyCode::KeyY)]),
                 // ... and no displays.
                 (Tap::DisplayLeave, None) => Ok(vec![Input::Key(KeyCode::Escape)]),
@@ -973,7 +973,7 @@ mod tests {
         assert!(!a.take_tap(Tap::HoverAssist));
     }
 
-    /// #82: a player's file from before the one verb (`seat`, no `throw`) still loads.
+    /// A player's file with `seat` and no `throw` still loads.
     #[test]
     fn old_seat_binding_still_loads() {
         let old = BINDINGS.replace("\"interact\"", "\"seat\"").replace("  \"throw\": [\"KeyR\", \"Pad:RightThumb\"],\n", "");
@@ -983,7 +983,7 @@ mod tests {
         assert!(a.take_tap(Tap::Interact) && a.take_tap(Tap::Throw));
     }
 
-    /// #148, #149: a player's file from before the camera switch still loads, with F9.
+    /// A player's file without the camera switch still loads, with F9.
     #[test]
     fn old_file_without_camera_fx_gets_f9() {
         let old = BINDINGS.replace("  \"camera_fx\": [\"F9\"],\n", "");
@@ -992,7 +992,7 @@ mod tests {
         assert!(a.take_tap(Tap::CameraFx));
     }
 
-    /// Spike 13: a player's file from before the landing mode and the turn cap still loads, with
+    /// A player's file without the landing mode and the turn cap still loads, with
     /// K and F8.
     #[test]
     fn old_file_without_landing_mode_gets_k() {
@@ -1006,7 +1006,7 @@ mod tests {
         assert!(a.take_tap(Tap::TurnCap));
     }
 
-    /// Round 5: a player's file without the SC switches gets B, U, P, I and the page keys.
+    /// A player's file without the SC switches gets B, U, P, I and the page keys.
     #[test]
     fn old_files_get_the_sc_switches() {
         let mut old = BINDINGS.to_string();
@@ -1092,7 +1092,7 @@ mod tests {
     #[test]
     fn validation_names_the_action() {
         rejects("\"boost\":", "\"bost\": [\"KeyB\"], \"boost\":", "`bost`: unknown action");
-        // A saved file from before #206 still loads; its removed actions are skipped.
+        // A saved file with removed actions still loads; those actions are skipped.
         let old = BINDINGS.replacen("\"boost\":", "\"flight_model\": [\"F7\"], \"horizon_follow\": [\"KeyL\"], \"boost\":", 1);
         assert!(Bindings::from_json(&old).is_ok(), "removed actions are skipped");
         rejects("\"drop\": [\"KeyG\"]", "\"drop\": [\"KeyGG\"]", "`drop`: unknown key name `KeyGG`");

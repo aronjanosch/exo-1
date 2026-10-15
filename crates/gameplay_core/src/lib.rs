@@ -1,4 +1,4 @@
-//! gameplay_core: the kernel every gameplay system builds on, without engine types (#122, #125).
+//! gameplay_core: the kernel every gameplay system builds on, without engine types.
 //! It knows no system: jobs, encounters and later farming or mining are crates of their own
 //! (`DECISIONS.md` in the concept repo, "Gameplay crates and build order (D)").
 //!

@@ -3,7 +3,7 @@
 //! f64, glam; no Bevy types. Conventions: Y up, -Z forward, right-handed, angular velocity in
 //! world space.
 //!
-//! All numbers are spike test values (assumptions for testing, not design).
+//! All numbers are test values (assumptions for testing, not design).
 pub mod audio;
 pub mod camera;
 pub mod ground;
@@ -105,7 +105,7 @@ pub struct Lag {
 
 impl Default for Lag {
     fn default() -> Self {
-        // Assumed values: 1 s ramp (initiator agreed to "about 1 s"), Earth gravity.
+        // Assumed values: 1 s ramp 1 s ramp, Earth gravity.
         Lag { level: 0.0, landed: true, manual_on: false, ramp_time: 1.0, g: 9.81 }
     }
 }
@@ -164,11 +164,11 @@ fn move_towards(x: f64, target: f64, step: f64) -> f64 {
     x + (target - x).clamp(-step, step)
 }
 
-/// Boost capacitor tuning (`ground.json`, `boost_capacitor`, #90). Starting values, not design.
+/// Boost capacitor tuning (`ground.json`, `boost_capacitor`). Starting values, not design.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct BoostCapacitorTuning {
-    /// Seconds from full to empty while boosting; 0 = no capacitor, boost is always there (#24).
+    /// Seconds from full to empty while boosting; 0 = no capacitor, boost is always there.
     pub drain_time: f64,
     /// Seconds from empty to full.
     pub recharge_time: f64,
@@ -215,7 +215,7 @@ impl Default for BoostCapacitorTuning {
     }
 }
 
-/// The boost's charge meter (#90): drains while boosting, recharges after a pause.
+/// The boost's charge meter: drains while boosting, recharges after a pause.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BoostCapacitor {
     /// 0..1, starts full.
@@ -244,8 +244,8 @@ impl BoostCapacitor {
         self.active || self.charge > 0.0 && self.charge >= t.start_charge
     }
 
-    /// The speed stage of #24 (no capacitor, `drain_time` 0): full boost while held; the meter stays
-    /// as it is (it must not refill it, #104 point 8).
+    /// The speed stage (no capacitor, `drain_time` 0): full boost while held; the meter stays
+    /// as it is (it must not refill it).
     pub fn stage(&mut self, want: bool) -> f64 {
         self.active = want;
         if want { 1.0 } else { 0.0 }

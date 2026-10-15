@@ -1,4 +1,4 @@
-//! Main menu and pause menu (#30): Host, Join (address, slot), Settings, Quit; Escape in game
+//! Main menu and pause menu: Host, Join (address, slot), Settings, Quit; Escape in game
 //! pauses (the world keeps running: the others are still flying). Players start here; the
 //! `--net-host` / `--net-connect` flags stay for scenarios and bots and skip the menu, as does every
 //! scripted or headless run. Simple look, few elements.

@@ -1,4 +1,4 @@
-//! #177 (spike 14): ceilings first. With a ceiling the tallest terrain stays below the share of the
+//! Ceilings first. With a ceiling the tallest terrain stays below the share of the
 //! atmosphere height it is given, at every radius; without one the planet is as before.
 use planet_core::ceilings::TERRAIN_SHARE;
 use planet_core::*;

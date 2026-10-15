@@ -1,4 +1,4 @@
-//! The repair minigame's rules (#299): a pointer circles a ring around the reticle; zones on the
+//! The repair minigame's rules: a pointer circles a ring around the reticle; zones on the
 //! ring appear, shrink and vanish. LMB inside a zone hits it (the zone goes) and every LMB turns
 //! the pointer round; RMB speeds it up. Pure f64, no engine types: the glue draws the ring, runs it
 //! on the client and sends the hits and misses to the host, which applies them to the condition.
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Tuning {
-    /// The repairer's skill, 0..100, for the session's duration (all players 50 for now).
+    /// The repairer's skill, 0..100, for the session's duration (all players 50 in this build).
     pub skill: f64,
     /// A hit adds this share of the device's max condition.
     pub hit_share: f64,
@@ -94,7 +94,7 @@ pub fn minigame_on(fraction: f64, t: &Tuning) -> bool {
     fraction < t.minigame_below
 }
 
-/// Whether a session may raise the condition now. A session that began on a broken device (`gated`)
+/// Whether a session may raise the condition. A session that began on a broken device (`gated`)
 /// waits for its hits while the minigame is on, and stays open once it has them. With the minigame
 /// off (`minigame_below` 0) holding raises a broken device at once.
 pub fn may_rise(gated: bool, hits: u32, fraction: f64, t: &Tuning) -> bool {
@@ -146,12 +146,12 @@ pub struct Zone {
 }
 
 impl Zone {
-    /// Width now, degrees: `zone_deg` at the start, 0 at `zone_life_s`.
+    /// Width, degrees: `zone_deg` at the start, 0 at `zone_life_s`.
     pub fn width(&self, t: &Tuning) -> f64 {
         t.zone_deg * (1.0 - self.age_s / t.zone_life_s).clamp(0.0, 1.0)
     }
 
-    /// Start and end angle of the zone now, degrees (the start may be past the end when it wraps).
+    /// Start and end angle of the zone, degrees (the start may be past the end when it wraps).
     pub fn arc(&self, t: &Tuning) -> (f64, f64) {
         let half = self.width(t) * 0.5;
         (wrap(self.centre_deg - half), wrap(self.centre_deg + half))
@@ -175,7 +175,7 @@ pub struct Ring {
     pub pointer_deg: f64,
     /// +1 clockwise, -1 anticlockwise.
     pub dir: f64,
-    /// The zones now, oldest first.
+    /// The zones, oldest first.
     pub zones: Vec<Zone>,
     /// Seconds until the next zone may appear (counts only while below the maximum).
     respawn_left: f64,
@@ -231,7 +231,7 @@ impl Ring {
         }
     }
 
-    /// Whether the pointer is inside a zone now: an LMB now would hit.
+    /// Whether the pointer is inside a zone: an LMB would hit.
     pub fn in_zone(&self) -> bool {
         let t = self.tuning;
         self.zones.iter().any(|z| {

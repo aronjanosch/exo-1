@@ -1,4 +1,4 @@
-//! Health (#295): players have health, hazards hurt them, items heal them, death respawns them.
+//! Health: players have health, hazards hurt them, items heal them, death respawns them.
 //! `health_core` holds the rules; this is the glue.
 //!
 //! - The host (slot 1; in one process the local player) owns every player's `Health`. Each fixed
@@ -12,7 +12,7 @@
 //! - The host sends each client its own vitals when they change noticeably (`vitals_out`, over
 //!   the reliable channel). Every process writes its own vitals into the HUD's `crew_hud::Vitals`
 //!   (`own_sync`); while down, the controls are frozen and a centred line counts the respawn.
-//! - Unconscious (vitality at zero or below, #300): the controls are frozen and no item is used,
+//! - Unconscious (vitality at zero or below): the controls are frozen and no item is used,
 //!   the screen fades to near black (`Faint`, about a second) and a centred line says so; awake
 //!   again (vitality above zero, a treatment or the air) the screen fades back. Others see the
 //!   player lying down (`public_status`).
@@ -37,7 +37,7 @@ use item_core::{FrameRef, PlayerId, Request, BAR_SLOTS};
 use std::collections::BTreeMap;
 use walker_core::Frame;
 
-/// Skill of every treater for now (TODO(initiator): skills per crew role).
+/// Skill of every treater (TODO(initiator): skills per crew role).
 pub const TREAT_SKILL: f64 = 50.0;
 /// A player's capsule: feet to head (m) and its radius.
 const CAPSULE_HEIGHT: f64 = 1.8;
@@ -113,7 +113,7 @@ pub struct Hold {
     pub need: f64,
 }
 
-/// The local use in progress, if any (#295).
+/// The local use in progress, if any.
 #[derive(Resource, Default, Clone, Copy, Debug)]
 pub struct UseHold(pub Option<Hold>);
 
@@ -135,7 +135,7 @@ pub struct Faint {
 pub const FADE_S: f64 = 1.0;
 pub const FAINT_ALPHA: f32 = 0.95;
 
-/// How the local player walks now (the nausea's share, sprint or not): the walker reads it. The
+/// How the local player walks (the nausea's share, sprint or not): the walker reads it. The
 /// host's own body, or what the host sent a client.
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct OwnMobility(pub Mobility);
@@ -262,7 +262,7 @@ fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea
     }
 }
 
-/// Host: where the spicy rods are (#300). A loose one lies at its placement on the planet; one in
+/// Host: where the spicy rods are. A loose one lies at its placement on the planet; one in
 /// a player's slots is at that player's place (a player off foot has none). Shielded inside the
 /// reactor.
 fn spicy_spots(items: &Items, planet: &PlanetRes, at: &BTreeMap<PlayerId, DVec3>, area: Option<&DevArea>) -> Vec<RodSpot> {
@@ -343,7 +343,7 @@ pub(crate) fn use_input(time: Res<Time>, planet: Res<PlanetRes>, mut controls: R
         return;
     };
     if own.last.is_some_and(|v| v.unconscious) {
-        // Unconscious: no use, and a click made now does not fire when awake.
+        // Unconscious: no use, and a click made meanwhile does not fire when awake.
         controls.click = false;
         hold.0 = None;
         return;

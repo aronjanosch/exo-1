@@ -1,8 +1,8 @@
-//! The engine room (#296, slice S2 of the reactor): a greybox room in the dev area's south strip,
+//! The engine room: a greybox room in the dev area's south strip,
 //! 10 x 8 m and 3.2 m high, with a short corridor to the open dev area and a door between the two.
 //! The room has its air (`fire_core::Deck`: the room, the corridor and "outside", the door as a
-//! gap), an alarm light and a quiet alarm tone (`audio`). The reactor and the fire come later; the
-//! placeholders stand where the machines go.
+//! gap), an alarm light and a quiet alarm tone (`audio`). The reactor and the fire have their own
+//! modules; the placeholders stand where the machines go.
 //!
 //! - Area metres (x east, y north from the place's centre, `dev_area`). The room's zone is
 //!   x -19..-9, y -19..-11; the corridor x -15..-13, y -10.7..-4.7 and it opens to the walkway at
@@ -68,9 +68,9 @@ pub const REACTOR_SCREEN_LIFT: f64 = 0.9;
 pub const READOUT_SIZE: [f64; 2] = [1.6, 1.0];
 /// The S screens' size (m): the 4 : 3 canvas.
 pub const SMALL_SCREEN_SIZE: [f64; 2] = [0.48, 0.36];
-/// The junction box's and AUX screens' size (m): the S width, one tier taller (320 x 320 px, #300 r34).
+/// The junction box's and AUX screens' size (m): the S width, one tier taller (320 x 320 px).
 pub const TALL_SCREEN_SIZE: [f64; 2] = [0.48, 0.48];
-/// The RX STATUS screen (M tier, as big as the readout, #300 r20): its size (m), and the gap to the
+/// The RX STATUS screen (M tier, as big as the readout): its size (m), and the gap to the
 /// readout's east edge. It sits east of the readout on the same wall, between the readout and the
 /// room's east corner (the room's east wall at x = -9; the reactor fills the wall west of the readout).
 pub const STATUS_SIZE: [f64; 2] = READOUT_SIZE;

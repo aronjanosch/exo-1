@@ -1,13 +1,13 @@
 //! The full scripted run (walk, ramp, space and back, landing, cabin at speed) without a window.
-//! The run records the ship and walker path; the 96 network cases of spike 4 then replay on it.
+//! The run records the ship and walker path; the 96 network cases then replay on it.
 use crate::common;
 use exo_app::{record::Recorder, Options};
 use net_core::replay::{matrix_cases, run_case_extrapolated, run_matrix};
 
-/// Spike 4 acceptance at 30 Hz with a 150 ms buffer: p95 position error under 10 mm.
+/// Acceptance at 30 Hz with a 150 ms buffer: p95 position error under 10 mm.
 const PASS_BOUND_MM: f64 = 10.0;
-/// Spike 4 asserted exactly 0 underruns for its seeds; another RNG gives a rare hold (four or
-/// more lost snapshots in a row at 10 % loss), so the bound is small instead of zero.
+/// Asserted exactly 0 underruns for its seeds; another RNG gives a rare hold (four or
+/// more lost snapshots in a row at 10 % loss), so the bound is small, not zero.
 const HOLD_BOUND_PERCENT: f64 = 0.05;
 
 #[test]

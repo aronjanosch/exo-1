@@ -1,5 +1,4 @@
-//! health_core: a character's health (#295, from the dev-area round #254, #287), without engine
-//! types, in f64.
+//! health_core: a character's health, without engine types, in f64.
 //!
 //! Vitality is the maximum minus what the afflictions take (no HP pool). Afflictions (burn, oxygen
 //! low, radiation, headache) each have a strength; its strength band sets how much vitality it
@@ -14,7 +13,7 @@
 //!   a table. From 50 up it makes nausea (a derived strength), which costs no vitality but slows
 //!   the walk (`Mobility`).
 //! - Oxygen low: bad air adds per tick, good air removes; from 50 it takes vitality by band.
-//! - CPR (#300 polish): a rescuer pumps an unconscious body. In good air it takes oxygen low off per
+//! - CPR: a rescuer pumps an unconscious body. In good air it takes oxygen low off per
 //!   second, but never below the stabilisation floor (still unconscious); each second after two of
 //!   CPR is a revive roll that brings the body back. Below the skill line each pump hurts (burn).
 //! - Headache: oxygen low above `headache.oxygen_above` for `headache.after_s` in a row gives a
@@ -326,7 +325,7 @@ impl HealthTuning {
     }
 
     /// Whether a treatment reduces this affliction (its `reduce` names it with more than zero): the
-    /// medic view highlights the items that suit an injury someone has (#300).
+    /// medic view highlights the items that suit an injury someone has.
     pub fn suits(&self, treatment: &str, affliction: &str) -> bool {
         self.treatment(treatment).is_some_and(|t| t.reduce.get(affliction).is_some_and(|r| *r > 0.0))
     }
@@ -402,7 +401,7 @@ pub struct Env {
     /// The fire's burn rate on the body, per second (0 when no fire touches it).
     pub fire: f64,
     /// Radiation per second from a radioactive item the body carries or stands next to (the
-    /// spicy rod, #300). Added per tick like the glow: `rate * tick_s` each tick.
+    /// spicy rod). Added per tick like the glow: `rate * tick_s` each tick.
     pub rod_per_s: f64,
 }
 

@@ -1,4 +1,4 @@
-//! Scenario `boost-hud` (#90, #91): the boost capacitor drains, cuts out and recharges, and the
+//! Scenario `boost-hud`: the boost capacitor drains, cuts out and recharges, and the
 //! minimal HUD shows it with speed and altitude, all driven through `Controls`.
 use crate::hud::HudReadout;
 use crate::scenario::{above_ground, altitude, begin, check, end, hold_until, keys, put_at_seat, ship_vel, sit, with_ship, Ctx, Step};
@@ -53,7 +53,7 @@ pub fn boost_hud_steps(s: &mut Vec<Step>) {
         let charge = with_ship(w, |s| s.sc.drive.boost.charge);
         check(c, charge == 1.0, format!("capacitor full before the boost: {charge:.3}"));
         check(c, readout(w).texts[2].starts_with("AGL"), format!("hud at 300 m above ground: AGL ({:?})", readout(w).texts[2]));
-        // Above the threshold ALT: lowered under the ship for one step instead of a long climb.
+        // Above the threshold ALT: lowered under the ship for one step, no long climb.
         let keep = w.resource::<crate::tuning::Tuning>().hud.agl_below;
         c.v.insert("agl_below", keep);
         w.resource_mut::<crate::tuning::Tuning>().hud.agl_below = 100.0;

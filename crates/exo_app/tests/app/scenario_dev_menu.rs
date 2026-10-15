@@ -1,4 +1,4 @@
-//! Round 5: the F10 dev menu grants the licence, adds credits and refills the boost.
+//! The F10 dev menu grants the licence, adds credits and refills the boost.
 use crate::common;
 use exo_app::Options;
 

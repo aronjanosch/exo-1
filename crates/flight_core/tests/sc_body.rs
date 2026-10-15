@@ -1,4 +1,4 @@
-//! The SC model's body (round 5, #198): spool per thruster group, jerk, the boost ramp, the
+//! The SC model's body: spool per thruster group, jerk, the boost ramp, the
 //! aligned versus countering boost, the capacitor's idle cost and the cargo mass.
 //! Numbers are printed (`cargo test -p flight_core --test sc_body -- --nocapture`).
 mod sc_common;
@@ -308,7 +308,7 @@ fn asked_thrust_is_shaped_inside_the_box_per_group() {
 }
 
 /// Countering boost never runs the axis past zero in one step: a small backward drift under a
-/// boosted forward push ends at rest on that axis, not moving the other way (#203).
+/// boosted forward push ends at rest on that axis, not moving the other way.
 #[test]
 fn countering_boost_lands_on_zero_not_past_it() {
     let t = sc_common::instant();

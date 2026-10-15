@@ -1,4 +1,4 @@
-//! Coolant by hand (#300, lane coolant). The pump's tank runs down while it runs (`reactor_core`,
+//! Coolant by hand. The pump's tank runs down while it runs (`reactor_core`,
 //! `Pump`, the use in proportion to the heat it carries away); a dry tank is no flow. The refill is
 //! hands-on:
 //!

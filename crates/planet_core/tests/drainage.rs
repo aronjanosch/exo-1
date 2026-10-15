@@ -1,4 +1,4 @@
-//! #72: rivers and lakes from drainage on the macro grid. On the baked planets the water runs
+//! Rivers and lakes from drainage on the macro grid. On the baked planets the water runs
 //! downhill, lakes sit in sinks, rivers end in the sea or a lake, the same seed gives the same
 //! water. The algorithm's own cases on a flat test grid are in `src/drainage.rs`.
 use planet_core::drainage::Mouth;
@@ -58,7 +58,7 @@ fn hearth_has_rivers_and_lakes() {
 #[test]
 fn water_flows_downhill() {
     let (p, _) = hearth();
-    // The river's vertex on its drawn curve (#235: smoothed and meandered off the grid vertex).
+    // The river's vertex on its drawn curve (smoothed and meandered off the grid vertex).
     let on = |i: usize| p.river_idx.curve_point(&p.coarse.rivers, p.radius, i, 0.0).normalized();
     let mut cut_deeper = 0;
     for (i, rv) in p.coarse.rivers.iter().enumerate() {

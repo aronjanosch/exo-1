@@ -1,8 +1,8 @@
-//! #300 (lane coolant): the pump's coolant tank. The dev faults screen's Drain coolant empties it:
+//! The pump's coolant tank. The dev faults screen's Drain coolant empties it:
 //! the pump screen says EMPTY, the flow stops and the temperature climbs. The walker takes a
 //! canister from the corridor rack (a stack of three), holds LMB on the pump for 3 s with it in the
 //! selected slot: the tank gains a canister's worth, one canister is gone, the flow comes back.
-//! Without a window; the walker is set down at each place (test setup). #300 r24: then E-COOL on
+//! Without a window; the walker is set down at each place (test setup). Then E-COOL on
 //! the pump takes its tank cost and starts the cooldown.
 use super::*;
 use crate::controls::Controls;
@@ -154,7 +154,7 @@ pub(super) fn coolant_steps(s: &mut Vec<Step>) {
         check(c, n == 2, format!("coolant: two canisters are left ({n})"));
         Some(format!("{n} left"))
     }));
-    // E-COOL (#300 r24): the press takes the tank cost at once and starts the cooldown, which the
+    // E-COOL: the press takes the tank cost at once and starts the cooldown, which the
     // pump's mode row shows. Asked as the button sends it (the host's ask).
     s.push(run("coolant: E-COOL takes its tank cost and starts the cooldown", 3.0, |w, c| {
         if c.t == 0.0 {

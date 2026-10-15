@@ -151,7 +151,7 @@ pub fn toggle_noclip(mut menu: ResMut<DevMenu>, mut players: Query<&mut crate::w
     }
 }
 
-/// Command 8 (#238): the ship, stopped and level, `JUMP_ABOVE_M` above the nearest settlement
+/// Command 8: the ship, stopped and level, `JUMP_ABOVE_M` above the nearest settlement
 /// farther than `JUMP_SKIP_M`, its landing pad straight below.
 pub fn jump_to_settlement(mut menu: ResMut<DevMenu>, planet: Res<PlanetRes>, mut ships: Query<(&mut Position, &mut Rotation, &mut LinearVelocity, &mut AngularVelocity), With<Ship>>) {
     if !menu.jump {

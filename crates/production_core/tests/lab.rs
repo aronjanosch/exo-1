@@ -1,4 +1,4 @@
-//! The lab of round 6 (#228): mixing, the brew timing, the kettles, the recipe book, the save.
+//! The lab: mixing, the brew timing, the kettles, the recipe book, the save.
 //! Every test loads the shipped `content/gameplay` unless it says it builds its own records.
 use std::collections::BTreeSet;
 use std::path::Path;

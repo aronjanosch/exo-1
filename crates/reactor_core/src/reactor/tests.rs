@@ -1,4 +1,4 @@
-//! Rules of #286 for the reactor, with numbers.
+//! Rules for the reactor, with numbers.
 use super::*;
 
 const DT: f64 = 1.0 / 30.0;
@@ -678,8 +678,8 @@ fn a_melt_keeps_the_rods_life() {
     assert_eq!(r.available_fuel(), fuel);
 }
 
-/// PULSAR's core eject (manual 367-369, #300 r22): the core leaves through the bottom, the rods
-/// with it, the reactor is dead. Our values; the rules are the ticket's.
+/// PULSAR's core eject (manual 367-369): the core leaves through the bottom, the rods
+/// with it, the reactor is dead. Our values.
 fn hot_reactor() -> Reactor {
     let mut r = reactor(50.0);
     r.set_targets(100.0, 100.0);

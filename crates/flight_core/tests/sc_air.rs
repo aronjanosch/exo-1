@@ -1,4 +1,4 @@
-//! The SC model's air stage (round 5, #199): drag per axis, lift over the angle of attack,
+//! The SC model's air stage: drag per axis, lift over the angle of attack,
 //! weathervaning, wind with wind compensation, turbulence near the ground, and space.
 //! Numbers are printed (`cargo test -p flight_core sc_air -- --nocapture`).
 mod sc_common;

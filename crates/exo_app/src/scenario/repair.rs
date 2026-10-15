@@ -1,4 +1,4 @@
-//! #299, repair at the machine. With the ring off (#300: `minigame_below` 0, repair by holding): at
+//! Repair at the machine. With the ring off (`minigame_below` 0, repair by holding): at
 //! the dev area's engine room the coolant pump breaks (the dev fault). With the screwdriver at it,
 //! nothing happens. With the wrench, LMB starts a session on the broken pump, and it rises at once
 //! while the session is open: no ring, no hits, no misses. The rise runs at the normal speed; the

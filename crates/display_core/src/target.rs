@@ -1,4 +1,4 @@
-//! The medic view (#300): what the player sees of the other player they look at, within 3 m. A
+//! The medic view: what the player sees of the other player they look at, within 3 m. A
 //! compact panel beside the reticle: the name, a health bar, the injuries with the vitals' symbols
 //! (BURN II, RAD 40 %, O2, UNCONSCIOUS) and the suitable treatment (`BANDAGE ▶ BURN`), the same
 //! words the player's own vitals use. The glue (`exo_app::health_view`) finds the target, the

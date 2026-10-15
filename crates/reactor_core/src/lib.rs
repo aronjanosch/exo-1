@@ -1,4 +1,4 @@
-//! reactor_core: the engine room of the ship (#297, part of #174 and #248), without engine types,
+//! reactor_core: the engine room of the ship, without engine types,
 //! in f64. The engineer keeps the reactor in its band by hand or leaves it on Auto; a coolant pump
 //! takes heat away, a junction box feeds the consumers, and faults can be triggered for testing.
 //!

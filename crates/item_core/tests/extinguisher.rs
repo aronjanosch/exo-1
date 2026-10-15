@@ -1,4 +1,4 @@
-//! Condition (#300): an item that wears keeps its condition through the inventory, the floor, the
+//! Condition: an item that wears keeps its condition through the inventory, the floor, the
 //! wire, and a rack swap takes the best spare of its kind.
 use item_core::authority::{Action, Client, Event, FrameRef, Host, Placement, Request};
 use item_core::container::{Item, Stack};

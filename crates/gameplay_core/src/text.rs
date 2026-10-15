@@ -1,6 +1,6 @@
-//! Texts the player reads (#165): a table of keys to one line or a pool of lines, and a picker
+//! Texts the player reads: a table of keys to one line or a pool of lines, and a picker
 //! that takes a line from a pool by seed and never the same line twice in a row (research:
-//! "the same bark again and again"). English only in D; #131 turns the table into checked
+//! "the same bark again and again"). English only for now; the table is meant to become checked
 //! localisation tables.
 use std::collections::BTreeMap;
 

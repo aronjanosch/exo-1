@@ -1,4 +1,4 @@
-//! Licences (#169): per player, earned with an exam. A licence is a personal track (0 or 1) that
+//! Licences: per player, earned with an exam. A licence is a personal track (0 or 1) that
 //! its exam job template grants; conditions ask for it like for any track. The seat of the ship
 //! refuses without a licence that allows piloting; riding along and carrying never needs one.
 use std::fmt;

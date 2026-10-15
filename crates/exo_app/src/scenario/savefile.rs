@@ -1,4 +1,4 @@
-//! #135, the save file, headless: take the first haul, deliver one of its three crates, knock
+//! The save file, headless: take the first haul, deliver one of its three crates, knock
 //! another about, save to the file, restart the gameplay state and load it; wallet, tracks, flags,
 //! the active job and the crates (with their condition) come back, and the job finishes. The
 //! crates move by test hooks, as in `deliver`.

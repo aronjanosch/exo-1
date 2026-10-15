@@ -1,4 +1,4 @@
-//! #169, the flight licence, headless: without the licence the seat refuses (with a pointer to the
+//! The flight licence, headless: without the licence the seat refuses (with a pointer to the
 //! exam), the exam is taken at the flight school's counter for a fee, the ship is lent for it, the
 //! exam's events (take-off, pad reached, landing) are set by test hooks (the exam reads only
 //! these events, never the flight model), the crate is set down on the Drip Rock pad, and the
@@ -151,7 +151,7 @@ pub fn licence_steps(s: &mut Vec<Step>) {
         check(c, g.may_pilot(HOST) && g.offers_of(&jobs_core::GiverId::new("flight_school")).is_empty(), "licence: the licence stays, the exam is closed to its holder".into());
         let flag = g.progress.has_flag(&gameplay_core::Flag::new("exam_honours:flight_exam"));
         check(c, flag, "licence: the honours are on record".into());
-        // Back at the seat (the exam's ship is no longer lent, the licence opens it).
+        // Back at the seat (the exam's ship is returned, the licence opens it).
         put_at_seat(w);
         true
     }));

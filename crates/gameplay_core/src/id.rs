@@ -40,9 +40,9 @@ text_id! {
     Tag;
     /// A fact a system raised at runtime (`job_completed:first_haul`); conditions can ask for it.
     Flag;
-    /// A key into the localisation table (#131); never shown text itself.
+    /// A key into the localisation table; never shown text itself.
     TextKey;
-    /// An `effect` record: what a made product does to whoever takes it (round 6).
+    /// An `effect` record: what a made product does to whoever takes it.
     EffectId;
 }
 
@@ -52,12 +52,12 @@ text_id! {
 #[serde(transparent)]
 pub struct ClientId(pub u64);
 
-/// A crate's stable id (not the engine entity), #130.
+/// A crate's stable id (not the engine entity).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct CrateId(pub u64);
 
-/// A customer's order, numbered by the customers system in the order they are placed (#168).
+/// A customer's order, numbered by the customers system in the order they are placed.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct OrderId(pub u64);

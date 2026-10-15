@@ -1,4 +1,4 @@
-//! Round 5: F1 shows the keys that apply right now (on foot, ship axis, ship SC) and hides again.
+//! F1 shows the keys that apply right now (on foot, ship axis, ship SC) and hides again.
 use crate::common;
 use exo_app::Options;
 

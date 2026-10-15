@@ -1,4 +1,4 @@
-//! Kernel rules of #122 and #125 against the fixture set in `tests/fixtures/valid`.
+//! Kernel rules against the fixture set in `tests/fixtures/valid`.
 use std::path::Path;
 
 use gameplay_core::*;
@@ -45,7 +45,7 @@ fn ev(sender: ClientId, seq: u64, payload: WorldEvent) -> Event<WorldEvent> {
     Event::new(sender, seq, payload)
 }
 
-// ---------- loader (#122) ----------
+// ---------- loader ----------
 
 #[test]
 fn valid_set_loads() {
@@ -165,7 +165,7 @@ fn all_errors_are_reported_at_once() {
     assert_eq!(e.len(), 3, "{e:?}");
 }
 
-// ---------- events (#122) ----------
+// ---------- events ----------
 
 #[test]
 fn a_duplicate_event_id_changes_nothing() {
@@ -203,7 +203,7 @@ fn events_round_trip_as_json() {
     assert_eq!(serde_json::from_str::<Event<WorldEvent>>(&s).unwrap(), e);
 }
 
-// ---------- conditions (#125) ----------
+// ---------- conditions ----------
 
 fn holds(c: &Content, p: &Progress, json: &str, player: Option<ClientId>) -> bool {
     let cond: Condition = serde_json::from_str(json).unwrap();
@@ -253,7 +253,7 @@ fn all_any_not() {
     assert!(!holds(&c, &p, r#"{ "any": [] }"#, None));
 }
 
-// ---------- tracks and unlocks (#125) ----------
+// ---------- tracks and unlocks ----------
 
 #[test]
 fn crew_tracks_start_at_their_start_value() {
@@ -373,7 +373,7 @@ fn progress_round_trips_as_json() {
     assert_eq!(serde_json::from_str::<Progress>(&s).unwrap(), p);
 }
 
-// ---------- track floor (#167) ----------
+// ---------- track floor ----------
 
 #[test]
 fn a_track_with_a_floor_never_drops_below_it_and_recovers() {
@@ -397,7 +397,7 @@ fn a_floor_above_the_start_is_a_content_error() {
     one_error(&e, "progress_track/standing_courier.json", "min");
 }
 
-// ---------- order events (#168) ----------
+// ---------- order events ----------
 
 #[test]
 fn order_events_are_plain_domain_events_that_progress_ignores_and_that_round_trip() {

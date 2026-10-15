@@ -1,7 +1,7 @@
-//! `planet-look` scenario (#63): for every planet in `content/system/system.json` an atlas
+//! `planet-look` scenario: for every planet in `content/system/system.json` an atlas
 //! (equirectangular height, biome, landform and scatter maps) and the bake statistics, and in a
 //! window a screenshot from each fixed viewpoint of `content/look/viewpoints.json`. Same seed,
-//! same spots, same sun: two runs compare side by side. The `times` shots (#48) stop the clock at
+//! same spots, same sun: two runs compare side by side. The `times` shots stop the clock at
 //! a time of day (noon, dusk, night) and use its sun instead of the fixed one.
 //!
 //! Output: `<out>/look/<planet>/atlas-<layer>.png`, `stats.json`, `<viewpoint>.png`, `<time>.png`.
@@ -91,7 +91,7 @@ fn set_sun(w: &mut World, towards: DVec3) {
     w.resource_mut::<crate::daynight::Sun>().fixed = Some(towards);
 }
 
-/// The round goal of #214 for a 100 km planet: tallest ground above the base radius (m), plain
+/// Shape goal for a 100 km planet: tallest ground above the base radius (m), plain
 /// share of the land, biomes present. Reported for every planet, met only at that size.
 const SHAPE_MAX_M: (f64, f64) = (900.0, 1170.0);
 const SHAPE_PLAIN: (f64, f64) = (0.20, 0.40);
@@ -117,7 +117,7 @@ fn atlas_step(out: PathBuf, vps: Viewpoints) -> Step {
                 }
             }
             let _ = std::fs::write(dir.join("stats.json"), serde_json::to_string_pretty(&st).unwrap_or_default());
-            // #214: the shape goal of the 100 km round (tallest ground, plains, biomes).
+            // Shape goal of a 100 km planet (tallest ground, plains, biomes).
             let sh = p.pgen.shape_stats(SHAPE_SAMPLES, 0);
             let _ = std::fs::write(dir.join("shape.json"), serde_json::to_string_pretty(&sh).unwrap_or_default());
             let met = (SHAPE_MAX_M.0..=SHAPE_MAX_M.1).contains(&sh.max_above_radius_m)
@@ -311,7 +311,7 @@ pub fn steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool) {
     s.push(wait(1.0));
 }
 
-/// `site-walk` (#70): the walker starts 40 m from the first ruin (a flat pad), walks in at 1.8 m/s and
+/// `site-walk`: the walker starts 40 m from the first ruin (a flat pad), walks in at 1.8 m/s and
 /// stops at its centre. Checks it stands on the ground of the edited height function and that
 /// the ground there is flat.
 pub fn site_walk_steps(s: &mut Vec<Step>) {

@@ -1,4 +1,4 @@
-//! Jobs as a state machine over domain events (#123): offered → active → completed, expired or
+//! Jobs as a state machine over domain events: offered → active → completed, expired or
 //! abandoned. Each deliver leg is a reducer over the crate events of its own crates.
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -35,7 +35,7 @@ pub enum JobState {
     Completed,
     Expired,
     Abandoned,
-    /// An exam that went wrong: a crash landing, a crate too damaged (#169).
+    /// An exam that went wrong: a crash landing, a crate too damaged.
     Failed,
 }
 
@@ -108,7 +108,7 @@ impl Leg {
 /// show up; its places, commodity, amount, reward and deadline are replaced by the order's).
 pub const ORDER_TEMPLATE: &str = "customer_order";
 
-/// What a customer order asks of its job (#168).
+/// What a customer order asks of its job.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct OrderTerms {
     pub order: OrderId,
@@ -195,7 +195,7 @@ pub enum Outcome {
     Ended { job: JobId, state: JobState, grade: Option<Grade> },
     /// A domain event for every system (payout, XP, flag); the host gives it an id and applies it.
     Emit(WorldEvent),
-    /// Something the players should hear about (#165); the host queues it.
+    /// Something the players should hear about; the host queues it.
     Notice(Notice),
 }
 
@@ -210,7 +210,7 @@ pub enum Refusal {
     NotAvailable,
     /// `CratesSpawned` for an unknown leg, twice, or with the wrong count.
     BadSpawn,
-    /// An exam costs more than the crew has (#169).
+    /// An exam costs more than the crew has.
     CannotAfford { price: i64, wallet: i64 },
 }
 
@@ -219,18 +219,18 @@ pub enum Refusal {
 pub struct Jobs {
     next_id: u64,
     jobs: BTreeMap<JobId, Job>,
-    /// How the crew stands with each giver (#167): drives the mood of the briefings.
+    /// How the crew stands with each giver: drives the mood of the briefings.
     #[serde(default)]
     history: BTreeMap<GiverId, GiverHistory>,
     /// Paid tries of an exam per player and template (`"<client>:<template>"`): the retry fee.
     #[serde(default)]
     attempts: BTreeMap<String, u32>,
-    /// Board state per location (#126).
+    /// Board state per location.
     #[serde(default)]
     pub board: crate::board::Board,
 }
 
-/// The jobs section of a save (#128).
+/// The jobs section of a save.
 pub const SECTION: &str = "jobs";
 pub const SECTION_VERSION: u32 = 1;
 
@@ -244,7 +244,7 @@ impl Jobs {
         env.get(SECTION, SECTION_VERSION)
     }
 
-    /// Makes an offer from a template and concrete legs (the board's job, #126).
+    /// Makes an offer from a template and concrete legs (the board's job).
     pub fn offer(&mut self, template: &TemplateId, legs: Vec<Leg>) -> JobId {
         self.offer_with(template, legs, Vec::new())
     }
@@ -343,7 +343,7 @@ impl Jobs {
                         true
                     }
                 })
-                // A follow-up waits for the job it follows (#126).
+                // A follow-up waits for the job it follows.
                 .filter(|t| prerequisites(jc, &t.id).all(|p| completed(progress, p)))
                 .collect();
 
@@ -683,7 +683,7 @@ impl Jobs {
                 }
             }
             WorldEvent::PlayerJoined | WorldEvent::UnlockBought { .. } | WorldEvent::TrackChanged { .. } | WorldEvent::FlagRaised { .. } | WorldEvent::OrderSettled { .. } => {}
-            // Round 6 events belong to traffic, heat, production, buyers and the empire ladder.
+            // Events oftraffic, heat, production, buyers and the empire ladder.
             _ => {}
         }
         notes.extend(ended.into_iter().flat_map(|(id, state)| self.end(jc, id, state)));
@@ -790,7 +790,7 @@ impl Jobs {
     }
 }
 
-/// The notices of a finished job (#165): the banner, then the payout itemised (base, share,
+/// The notices of a finished job: the banner, then the payout itemised (base, share,
 /// condition, hazard; the lines add up to the pay), then XP.
 fn end_notices(t: &JobTemplate, title: &TextKey, state: JobState, g: &Grade, delivered: u32, asked: u32, standing: Option<(TextKey, i64)>, exam: Option<ExamResult>) -> Vec<Notice> {
     let title = Arg::Key(title.clone());

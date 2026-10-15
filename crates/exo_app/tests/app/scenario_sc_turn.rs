@@ -1,4 +1,4 @@
-//! Round 5, #196: the SC model's rotation (overshoot, reversal, roll release, G-safe turn cap).
+//! The SC model's rotation (overshoot, reversal, roll release, G-safe turn cap).
 use crate::common;
 use exo_app::Options;
 

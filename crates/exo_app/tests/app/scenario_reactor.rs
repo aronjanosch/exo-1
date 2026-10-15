@@ -1,4 +1,4 @@
-//! #297: the reactor in the engine room: Auto runs calm; the dev faults screen's Pump break goes
+//! The reactor in the engine room: Auto runs calm; the dev faults screen's Pump break goes
 //! Warn then Danger; Reset reactor brings it back; Load drop on Auto overshoots above the optimal
 //! band; the readout's MAN and fission clicks bring it back. Without a window.
 use crate::common;

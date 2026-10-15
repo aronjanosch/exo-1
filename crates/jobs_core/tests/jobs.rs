@@ -1,4 +1,4 @@
-//! Jobs rules of #123 and #124. Kernel content: the fixture set of `gameplay_core`; job templates:
+//! Jobs rules. Kernel content: the fixture set of `gameplay_core`; job templates:
 //! `tests/fixtures/job_template`. `Host` plays the glue: it deduplicates, routes every event to
 //! the systems, and applies the events the jobs system emits.
 use std::path::Path;
@@ -180,7 +180,7 @@ fn only_fully_named_templates_make_fixed_offers() {
     assert_eq!((job.legs[0].from.as_str(), job.legs[0].to.as_str(), job.legs[0].amount), ("drip_rock", "bent_spoon", 4));
 }
 
-// ---------- state machine (#123) ----------
+// ---------- state machine ----------
 
 #[test]
 fn full_delivery_completes_and_pays() {
@@ -340,7 +340,7 @@ fn jobs_round_trip_as_json() {
     assert_eq!(serde_json::from_str::<Jobs>(&s).unwrap(), h.jobs);
 }
 
-// ---------- grading and payout (#124) ----------
+// ---------- grading and payout ----------
 
 #[test]
 fn bands_at_their_edges() {
@@ -387,7 +387,7 @@ fn two_participants_get_xp_and_the_wallet_is_paid_once() {
     assert_eq!((h.xp(ANA), h.xp(BO), h.xp(ClientId(99))), (10, 10, 0));
 }
 
-// ---------- save section (#128) ----------
+// ---------- save section ----------
 
 #[test]
 fn jobs_section_round_trips_and_a_loaded_game_finishes_the_same() {
@@ -435,7 +435,7 @@ fn jobs_section_round_trips_and_a_loaded_game_finishes_the_same() {
     assert_eq!(Jobs::load(&Envelope::new()).unwrap(), None);
 }
 
-// ---------- notices (#165) ----------
+// ---------- notices ----------
 
 fn notices(h: &Host) -> Vec<gameplay_core::notice::Notice> {
     h.log.iter().filter_map(|o| if let Outcome::Notice(n) = o { Some(n.clone()) } else { None }).collect()

@@ -1,4 +1,4 @@
-//! Grading and payout (#124): base reward × band(delivered share) × condition factor × hazard
+//! Grading and payout: base reward × band(delivered share) × condition factor × hazard
 //! factor. XP follows the band only (TODO(initiator): starting rule, the playtest decides).
 use crate::template::{JobTemplate, ModifierKind};
 

@@ -1,4 +1,4 @@
-//! Spike 14 (#177): the headless measurements per radius. Ignored by default; run
+//! The headless measurements per radius. Ignored by default; run
 //! `cargo test --release -p planet_core --test spike14_measure -- --ignored --nocapture`
 //! (`SPIKE14_RADII_KM=30,100,300` picks the radii). One markdown row per radius.
 use planet_core::*;

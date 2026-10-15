@@ -1,6 +1,5 @@
 //! Stages 2 and 6 of the SC step: the boost (`begin`) and what the thrusters really give
-//! (`shape`). Lane `sc-body` (round 5, #198) owns this file, `tuning.rs` (`ShipBody`) and the
-//! force glue in the app.
+//! (`shape`). The force glue lives in the app.
 //!
 //! `begin`: the boost is held for `boost_pre_delay`, ramps up over `boost_ramp_up`, runs on the
 //! capacitor (with the idle cost while held) and ramps down over `boost_ramp_down` after release.
@@ -206,7 +205,7 @@ pub fn shape(s: &mut DriveState, a: &Asked, t: &DriveTuning, dt: f64) -> Given {
         }
     }
     // Spool per group: a pilot request that has not lasted `spool_delay` keeps the group's current
-    // thrust, capped at its target (#208), so it gives nothing new yet. The flight computer's own
+    // thrust, capped at its target, so it gives nothing new yet. The flight computer's own
     // thrust in a group with no request (the hold against gravity) passes.
     let targets = [want[2].min(0.0), want[2].max(0.0), want[1], want[0]];
     let st = a.stick.to_array();
@@ -233,7 +232,7 @@ pub fn shape(s: &mut DriveState, a: &Asked, t: &DriveTuning, dt: f64) -> Given {
             grp.waited >= delays[g] || a.boost > 0.0
         };
         // A group still spooling keeps what it gives now, never more than its target: the hold
-        // against gravity stays up while the pilot's press waits (#208).
+        // against gravity stays up while the pilot's press waits.
         goals[g] = if passing {
             targets[g]
         } else {
@@ -247,7 +246,7 @@ pub fn shape(s: &mut DriveState, a: &Asked, t: &DriveTuning, dt: f64) -> Given {
     }
     // Jerk: a group cuts its thrust at once (a thruster stops when told) and builds it up at most
     // at its jerk; the groups that build up share one factor, so the thrust keeps its direction
-    // while it grows (#146, time to full thrust).
+    // while it grows (time to full thrust).
     let mut k: f64 = 1.0;
     for g in 0..4 {
         let (cur, goal) = (s.groups[g].value, goals[g]);

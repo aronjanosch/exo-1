@@ -1,4 +1,4 @@
-//! Rules of #81 with numbers, plus the crate table (#80) and the crate body.
+//! Rules with numbers, plus the crate table and the crate body.
 use super::*;
 use glam::{DQuat, DVec3};
 
@@ -30,7 +30,7 @@ fn pull(cfg: &GrabConfig, mass: f64, holders: usize, secs: f64) -> f64 {
     pos.distance(target)
 }
 
-// ---------- crate table (#80) ----------
+// ---------- crate table ----------
 
 #[test]
 fn table_has_three_doubling_sizes() {
@@ -70,7 +70,7 @@ fn table_rejects_bad_rows() {
     assert!(CrateTable::from_json(unknown).is_err());
 }
 
-// ---------- hold (#81) ----------
+// ---------- hold ----------
 
 #[test]
 fn grab_tuning_parses() {
@@ -394,7 +394,7 @@ fn change_frame_keeps_world_pose_and_hands_over_velocity() {
     assert!((ship.rot * b.vel - local_vel_world).length() < 1e-9);
 }
 
-// ---------- object budget (#85) ----------
+// ---------- object budget ----------
 
 const BUDGET: &str = include_str!("../../../content/cargo/budget.json");
 
@@ -506,7 +506,7 @@ fn crate_holds_on_a_gentle_slope_and_slides_on_a_steep_one() {
     assert!(!b.asleep && moved > 1.0, "slides: moved {moved}");
 }
 
-// ---------- condition (#130) ----------
+// ---------- condition ----------
 
 /// Largest impact speed while a small crate falls from `height` (bottom above the floor) and rests.
 fn drop_impact(height: f64) -> f64 {

@@ -1,4 +1,4 @@
-//! Givers of #167: records, briefings from parts, standing and rank, mood by history.
+//! Givers: records, briefings from parts, standing and rank, mood by history.
 use std::path::Path;
 
 use gameplay_core::text::{Picker, TextTable};

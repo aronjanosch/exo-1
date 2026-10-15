@@ -1,4 +1,4 @@
-//! #300 (lane r19): the meltdown blast reaches the players. The core melts with fuel in it (the
+//! The meltdown blast reaches the players. The core melts with fuel in it (the
 //! harness's forced melt; the blast follows the melt in the same event list); the walker two metres
 //! from the reactor takes burn and radiation, the local screen flashes, and three fires start round
 //! the core. (A walker at 25 m takes nothing: the falloff is a unit test in `dev_area::blast`; the

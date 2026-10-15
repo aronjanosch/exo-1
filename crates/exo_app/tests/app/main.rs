@@ -1,4 +1,4 @@
-//! Every integration test of the app in one binary (#186): each file in `tests/` is its own binary
+//! Every integration test of the app in one binary: each file in `tests/` is its own binary
 //! that links Bevy (260 MB dynamic, about 900 MB static), so 27 of them cost 27 links per change.
 //! nextest still runs each test in its own process. A new scenario test is a module here;
 //! `perf.rs` stays its own binary for its nextest profile.

@@ -1,6 +1,6 @@
-//! Audio minimum (#28): sounds synthesized in code, no files. Thrust hum by the ship's
+//! Audio minimum: sounds synthesized in code, no files. Thrust hum by the ship's
 //! thrust, wind by airspeed in the atmosphere, a thud on touchdown, a click on UI toggles.
-//! Cargo (night extra E4): a fwip on grabbing a crate, a whoosh on a throw, a ka-chunk when a
+//! Cargo: a fwip on grabbing a crate, a whoosh on a throw, a ka-chunk when a
 //! crate locks onto the plates.
 //! Windowed runs only; headless runs have no audio. The settings menu sets the volume and switches
 //! the sound off (`Settings::master`).
@@ -28,18 +28,18 @@ pub enum Sound {
     Grab,
     /// 0.35 s: noise swelling and falling through a sweeping low-pass, a throw.
     Throw,
-    /// 0.25 s: a soft two-tone beep, the ship's alarm (#296). Quiet on purpose.
+    /// 0.25 s: a soft two-tone beep, the ship's alarm. Quiet on purpose.
     AlarmBeep,
     /// 0.2 s: a low clunk, then a bright ping 60 ms later ("ka-chunk"), a crate locks.
     Lock,
     /// Loop: noise through a band-pass (a fast low-pass minus a slow one), the thrusters' hiss
-    /// per direction (#150).
+    /// per direction.
     Hiss,
-    /// Loop: a low body and noise through a low-pass, the boost roar (#150).
+    /// Loop: a low body and noise through a low-pass, the boost roar.
     Roar,
-    /// 0.4 s: a falling low punch with a noise crack, the boost starts (#150).
+    /// 0.4 s: a falling low punch with a noise crack, the boost starts.
     BoostStart,
-    /// 0.1 s: a soft two-note blip, something small happened (#165).
+    /// 0.1 s: a soft two-note blip, something small happened.
     Ping,
     /// 0.25 s: two rising notes, a job taken.
     Accept,
@@ -49,43 +49,43 @@ pub enum Sound {
     Fanfare,
     /// 0.25 s: a low two-tone buzz, a warning or a failure.
     Buzz,
-    /// Loop: a crackle of filtered noise with random pops, the fire (#300). The level (0..2)
+    /// Loop: a crackle of filtered noise with random pops, the fire. The level (0..2)
     /// is the fire's size: lower and a little darker with the bigger fire.
     Crackle(u8),
-    /// Loop: a soft hiss of the extinguisher's spray (#300).
+    /// Loop: a soft hiss of the extinguisher's spray.
     Spray,
-    /// 0.35 s: a soft steam puff, a spray hits a fire (#300).
+    /// 0.35 s: a soft steam puff, a spray hits a fire.
     Steam,
-    /// Loop: a mechanical ratchet at the device while a repair runs (#300).
+    /// Loop: a mechanical ratchet at the device while a repair runs.
     RepairLoop,
-    /// 0.07 s: a short rising blip, a repair hit (#300).
+    /// 0.07 s: a short rising blip, a repair hit.
     Blip,
-    /// 0.35 s: two bright notes, a repair done (#300).
+    /// 0.35 s: two bright notes, a repair done.
     Chime,
-    /// 0.12 s: a short electric crack, the junction box overvolted (#300).
+    /// 0.12 s: a short electric crack, the junction box overvolted.
     Zap,
-    /// 0.09 s: a small low clunk, a breaker moved (#300).
+    /// 0.09 s: a small low clunk, a breaker moved.
     Clunk,
-    /// 0.6 s: a falling tone, the power goes down (#300).
+    /// 0.6 s: a falling tone, the power goes down.
     SweepDown,
-    /// 0.6 s: a rising tone, the power comes back (#300).
+    /// 0.6 s: a rising tone, the power comes back.
     SweepUp,
-    /// Loop: a low pump hum, pitch and level by the flow (played at speed, #300).
+    /// Loop: a low pump hum, pitch and level by the flow (played at speed).
     PumpHum,
     /// Loop: the reactor's drone, 55 Hz with a little 110 Hz and a slow wobble, the level by the
-    /// fission and the pitch by the temperature (played at speed, #300 r23). Quiet on purpose.
+    /// fission and the pitch by the temperature (played at speed). Quiet on purpose.
     ReactorHum,
-    /// 0.3 s: filtered noise sweeping, a door slides (#300).
+    /// 0.3 s: filtered noise sweeping, a door slides.
     Slide,
-    /// 0.5 s: a soft low whoomp, the body catches fire (#300).
+    /// 0.5 s: a soft low whoomp, the body catches fire.
     Whoomp,
-    /// 0.4 s: two low thumps, a heartbeat (#300).
+    /// 0.4 s: two low thumps, a heartbeat.
     Heart,
-    /// 0.25 s: a soft two-note confirmation, a treatment done (#300).
+    /// 0.25 s: a soft two-note confirmation, a treatment done.
     Confirm,
-    /// 0.6 s: a muffled low tone, going down (#300).
+    /// 0.6 s: a muffled low tone, going down.
     Muffled,
-    /// 0.5 s: a gentle rising tone, back up (#300).
+    /// 0.5 s: a gentle rising tone, back up.
     Gentle,
 }
 
@@ -398,11 +398,11 @@ struct Sounds {
     alarm: Handle<SynthAudio>,
     lock: Handle<SynthAudio>,
     boost_start: Handle<SynthAudio>,
-    /// Notice sounds by `Sound` (#165).
+    /// Notice sounds by `Sound`.
     notice: Vec<(Sound, Handle<SynthAudio>)>,
 }
 
-/// What a loop plays: the thruster layers (#150) or the wind.
+/// What a loop plays: the thruster layers or the wind.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Feed {
     /// The main engine (the `Hum` synth).
@@ -432,7 +432,7 @@ struct Heard {
     boost_starts: u32,
     /// The crate held last frame: a new one is a grab.
     held: Option<Entity>,
-    /// How many of `Gameplay::shown` have been played (#165).
+    /// How many of `Gameplay::shown` have been played.
     notices: usize,
 }
 
@@ -484,7 +484,7 @@ fn update(
     settings: Res<crate::settings::Settings>,
     gp: Res<crate::gameplay::Gameplay>,
 ) {
-    // A sound per notice released (#165). TODO(initiator): volumes are start values.
+    // A sound per notice released. TODO(initiator): volumes are start values.
     for l in gp.shown.get(heard.notices..).unwrap_or_default() {
         let s = Sound::of_notice(l.kind.sound());
         if let Some((_, h)) = sounds.notice.iter().find(|(x, _)| *x == s) {
@@ -526,7 +526,7 @@ fn update(
             commands.spawn((AudioPlayer(sounds.thud.clone()), PlaybackSettings { mode: PlaybackMode::Despawn, volume: Volume::Linear(0.8), ..default() }));
         }
     }
-    // Cargo, E4. TODO(initiator): volumes are start values.
+    // Cargo. TODO(initiator): volumes are start values.
     let one_shot = |commands: &mut Commands, h: &Handle<SynthAudio>, v: f32| {
         commands.spawn((AudioPlayer(h.clone()), PlaybackSettings { mode: PlaybackMode::Despawn, volume: Volume::Linear(v), ..default() }));
     };
@@ -548,7 +548,7 @@ fn update(
     }
 }
 
-/// Every process with a window: the ship's alarm tone (#296), quiet, while the walker is in the
+/// Every process with a window: the ship's alarm tone, quiet, while the walker is in the
 /// engine room or its corridor: every 2 s at Warn, every second at Danger.
 #[allow(clippy::too_many_arguments)]
 fn alarm_tone(mut commands: Commands, sounds: Res<Sounds>, alarm: Res<crate::dev_area::engine_room::ShipAlarm>, time: Res<Time>, area: Option<Res<crate::dev_area::DevArea>>, planet: Res<crate::env::PlanetRes>, players: Query<&Player>, mut next: Local<f64>) {

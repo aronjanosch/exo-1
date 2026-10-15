@@ -1,4 +1,4 @@
-//! Live network: plain UDP (std::net, no dependency), host relay, client authority (spike 10).
+//! Live network: plain UDP (std::net, no dependency), host relay, client authority.
 //! Every process simulates its own ship and walker; snapshots (net_core) go to the host, the host
 //! relays them to the other clients; everybody interpolates the others from a buffer and drives a
 //! kinematic proxy ship (hull colliders) and a walker marker from it.
@@ -27,13 +27,13 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedLast, net_channels.run_if(resource_exists::<Net>).after(net_post));
 }
 
-/// Last of the tick: the reliable channels send (item messages queued this tick go out now).
+/// Last of the tick: the reliable channels send (item messages queued this tick go out).
 pub fn net_channels(mut net: ResMut<Net>) {
     net.flush_channels();
 }
 
 const TICK_S: f64 = 1.0 / 60.0;
-/// A remote owner without snapshots for this long is removed (spike 4: 2 s).
+/// A remote owner without snapshots for this long is removed (2 s).
 const EXPIRY: f64 = 2.0;
 
 #[derive(Clone, Debug)]
@@ -47,7 +47,7 @@ pub struct NetConfig {
     pub rate: f64,
     /// Playout buffer in seconds.
     pub buffer: f64,
-    /// Display-only extrapolation during an underrun, ms (default 100; 0 = hold, spike 4 rule).
+    /// Display-only extrapolation during an underrun, ms (default 100; 0 = hold).
     pub extrapolate_ms: f64,
     /// Fly the scripted network bot (scenario `net`).
     pub bot: bool,
@@ -361,7 +361,7 @@ impl Net {
         self.hist.entry(s.owner).or_default().push(s);
     }
 
-    /// The host's clock now: what snapshot and body times are stamped with.
+    /// The host's clock: what snapshot and body times are stamped with.
     pub fn server_now(&self) -> f64 {
         self.clock.server_now(self.now())
     }
@@ -461,7 +461,7 @@ impl Net {
         std::mem::take(&mut self.bodies_in)
     }
 
-    /// Sends what the reliable channels have to send now (new frames, resends, acks) and drops
+    /// Sends what the reliable channels have to send (new frames, resends, acks) and drops
     /// peers whose channel has gone dead.
     pub fn flush_channels(&mut self) {
         let now = self.now();

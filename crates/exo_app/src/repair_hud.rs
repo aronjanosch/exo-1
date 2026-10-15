@@ -1,4 +1,4 @@
-//! The repair ring (#299, window only): a thin ring round the reticle while a session runs, the
+//! The repair ring (window only): a thin ring round the reticle while a session runs, the
 //! zones as brighter arcs, the pointer as a short tick, a flash on a hit (good) or a miss (bad),
 //! and the hold's progress as a thin arc on the same ring. Drawn with the reticle's own parts: conic gradients
 //! and a dark disc inside (`crew_hud::ring_fill`'s style). No condition readout.

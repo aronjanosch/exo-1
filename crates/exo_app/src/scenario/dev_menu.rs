@@ -1,7 +1,7 @@
-//! Scenario `dev-menu` (round 5): F10 opens the dev menu (dev builds); 1 grants the flight
+//! Scenario `dev-menu`: F10 opens the dev menu (dev builds); 1 grants the flight
 //! licence (the seat takes the pilot), 2 adds the credits, 3 refills the boost, 4 and 5 hold day
 //! or night, 6 and 7 jump to day or night with the cycle running, 8 puts the ship above the next
-//! settlement (#238), 9 toggles noclip; F10 closes it.
+//! settlement, 9 toggles noclip; F10 closes it.
 //! Starts without the licences, like a new player.
 use crate::daynight::{DayClock, Sun};
 use crate::dev::{DevMenu, DAY_HOUR, JUMP_ABOVE_M, MONEY, NIGHT_HOUR};

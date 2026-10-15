@@ -6,7 +6,7 @@ use planet_core::{BakeStats, Planet, Recipe, V3};
 use std::sync::Arc;
 use warp_core::{PlanetDef, PlanetId};
 
-/// Every planet recipe, embedded at build time: `content/planet/<id>.json` (#64).
+/// Every planet recipe, embedded at build time: `content/planet/<id>.json`.
 pub const RECIPES: &[(&str, &str)] = &[
     ("hearth", include_str!("../../../content/planet/hearth.json")),
     ("cinder", include_str!("../../../content/planet/cinder.json")),
@@ -18,7 +18,7 @@ pub fn recipe_for(def: &PlanetDef) -> Result<Recipe, String> {
     Recipe::for_planet(text, def.seed, def.radius).map_err(|e| format!("content/planet/{}.json: {e}", def.recipe))
 }
 
-/// The hand-placed places of a planet recipe (`content/place/*.json`, #129).
+/// The hand-placed places of a planet recipe (`content/place/*.json`).
 pub fn places_for(recipe: &str) -> Vec<planet_core::Place> {
     crate::content_files("place")
         .iter()
@@ -27,7 +27,7 @@ pub fn places_for(recipe: &str) -> Vec<planet_core::Place> {
         .collect()
 }
 
-/// Where the coarse layers are cached (#177): `EXO_CACHE_DIR`, else `target/terrain-cache`.
+/// Where the coarse layers are cached:`EXO_CACHE_DIR`, else `target/terrain-cache`.
 pub fn cache_dir() -> std::path::PathBuf {
     std::env::var_os("EXO_CACHE_DIR").map(Into::into).unwrap_or_else(|| "target/terrain-cache".into())
 }
@@ -71,7 +71,7 @@ impl PlanetRes {
             panic!("content/planet/{}.json: bake: {e}", def.recipe);
         }
         // The quotas are tuned to 5 km (landform counts do not grow with the area until the density
-        // rules of #177 step 5); at another radius a miss is a warning, `cargo test -p planet_core` checks them at 5 km.
+        // rules step 5); at another radius a miss is a warning, `cargo test -p planet_core` checks them at 5 km.
         for m in &st.quota_misses {
             eprintln!("content/planet/{}.json: {m}", def.recipe);
         }
@@ -82,7 +82,7 @@ impl PlanetRes {
             relief: lo.abs().max(hi.abs()),
             pgen: Arc::new(p),
             centre: def.centre(),
-            // Gravity reaches at least two atmospheres up (#177): a drive starts at 1.5 atmospheres, and a
+            // Gravity reaches at least two atmospheres up: a drive starts at 1.5 atmospheres, and a
             // walker in the cabin needs the field there (6000 m ends inside the atmosphere of a big planet).
             field: Field { atmosphere_height: def.atmosphere_height, gravity_end_height: Field::default().gravity_end_height.max(2.0 * def.atmosphere_height), ..Field::default() },
             bake_ms: st.bake_ms,

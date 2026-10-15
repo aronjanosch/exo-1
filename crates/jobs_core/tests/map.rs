@@ -1,4 +1,4 @@
-//! The map's pin list of #166, without Bevy: places the crew may use, the tracked job's next stop,
+//! The map's pin list, without Bevy: places the crew may use, the tracked job's next stop,
 //! the players.
 use std::path::Path;
 

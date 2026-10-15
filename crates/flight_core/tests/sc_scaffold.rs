@@ -1,4 +1,4 @@
-//! The SC model's scaffold (round 5): the tuning files load, the ship holds its height with
+//! The SC model's scaffold: the tuning files load, the ship holds its height with
 //! gravity compensation and falls without it, and full forward thrust reaches the SCM cap.
 mod sc_common;
 use flight_core::sc::{ModeCmds, ScShip};
@@ -22,7 +22,7 @@ fn gravity_compensation_holds_and_off_falls() {
 
     fly(&mut ship, &mut body, &FlightInput { piloted: true, ..Default::default() }, &ModeCmds { grav_comp: true, ..Default::default() }, &env, 1.0);
     assert!(!ship.status.grav_comp);
-    // The scaffold's coupled damping still fights the fall; lane `sc-linear` makes it ballistic.
+    // The coupled damping still fights the fall.
     let fallen = 500.0 - body.pos.y;
     assert!(fallen > 1.0, "1 s without compensation sinks: {fallen:.2} m");
 }

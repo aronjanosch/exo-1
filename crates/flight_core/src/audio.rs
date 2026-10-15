@@ -1,4 +1,4 @@
-//! Thruster audio (#150): one thrust signal drives the sound layers, each with its own attack and
+//! Thruster audio: one thrust signal drives the sound layers, each with its own attack and
 //! release (exponential slew). Pure math, no Bevy types; `exo_app::audio` only plays the levels.
 //!
 //! Layers: the rumble (main engine: forward/backward thrust and the overall share, plus a faint

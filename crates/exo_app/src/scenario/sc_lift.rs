@@ -1,4 +1,4 @@
-//! Scenario `sc-lift` (round 5, renamed with #206): the SC model from the seat: the ship lifts off,
+//! Scenario `sc-lift`: the SC model from the seat: the ship lifts off,
 //! holds its height, flies forward and shows the SC mode word.
 use crate::hud::HudReadout;
 use crate::scenario::{check, hold_until, planet, put_at_seat, ship_e, ship_vel, sit, Step};

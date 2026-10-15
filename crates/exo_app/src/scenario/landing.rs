@@ -1,4 +1,4 @@
-//! Scenario `slope-landing` (#92): set down on a slope below the slope limit, the ship stays on
+//! Scenario `slope-landing`: set down on a slope below the slope limit, the ship stays on
 //! its touchdown spot until thrust.
 use crate::env::PlanetRes;
 use crate::scenario::{above_ground, begin, check, end, hold_until, land, planet, put_at_seat, ship_frame_of, sit, teleport_ship, wait, with_ship, Step};

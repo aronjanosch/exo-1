@@ -1,9 +1,9 @@
-//! The extinguisher's supply (#300): it wears down while it sprays, an empty one does not spray,
+//! The extinguisher's supply: it wears down while it sprays, an empty one does not spray,
 //! and a rack on the wall gives a full one for the empty one (Barotrauma's bracket). Two racks in
 //! the dev area: one in the corridor outside the engine room, one inside by the door. The host
 //! holds the stock (`item_core`, `Host::racks`); the clients get it as events.
 //!
-//! Research (`~/Work/exo-research`, 15 min, #300):
+//! Research (`~/Work/exo-research`, 15 min):
 //! - Barotrauma `barotrauma/content/Items/Tools/tools.xml`, item `extinguisher`: a RepairTool with
 //!   `extinguishamount="60"` and an OnUse StatusEffect `Condition="-2.0"`, i.e. -2 condition per
 //!   second while it sprays (`barotrauma/source/.../StatusEffects/StatusEffect.cs`, `GetModifiedValue`:

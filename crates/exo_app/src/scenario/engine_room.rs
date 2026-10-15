@@ -1,4 +1,4 @@
-//! #296, the engine room: the walker walks into the corridor and a wall stops it; F opens the door
+//! The engine room: the walker walks into the corridor and a wall stops it; F opens the door
 //! (the gap is open); the walker goes into the room; the room's air runs low and the health shows
 //! it, then the air comes back; F shuts the door from inside; the alarm cycles None, Warn, Danger
 //! (the console's button asks the same way). Without a window. Run with `--start=dev_area`.

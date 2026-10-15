@@ -1,4 +1,4 @@
-//! Scenario `help` (round 5): F1 (through the bindings) shows the keys that apply right now: on
+//! Scenario `help`: F1 (through the bindings) shows the keys that apply right now: on
 //! foot the walking keys, seated the ship's switches; F1 again hides the panel.
 use crate::help::HelpPanel;
 use crate::scenario::{check, put_at_seat, sit, tap, Step};

@@ -1,4 +1,4 @@
-//! Scenario `sc-air` (#199): the SC model's air through `Controls`. Sit, then
+//! Scenario `sc-air`: the SC model's air through `Controls`. Sit, then
 //! 50 m over the ground at rest: hover 5 s with wind compensation off (I) and the ship drifts
 //! downwind; on again (I), it holds. Down to 40 m, fly forward at speed: the turbulence shows. Climb
 //! to 1000 m with Space: no turbulence up there. Each result is a check line with its numbers.

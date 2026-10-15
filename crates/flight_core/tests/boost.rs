@@ -1,4 +1,4 @@
-//! Boost as a capacitor (#90): drain, recharge after a delay, start threshold, strength curve.
+//! Boost as a capacitor: drain, recharge after a delay, start threshold, strength curve.
 use flight_core::{BoostCapacitor, BoostCapacitorTuning, Curve, Interp};
 use glam::DVec2;
 
@@ -133,7 +133,7 @@ fn tuning_rejects_bad_values() {
     }
 }
 
-/// #104 point 9: holding boost through an empty capacitor gives no more pulses; a new press
+/// Holding boost through an empty capacitor gives no more pulses; a new press
 /// boosts again once the start charge is back (`restart_while_held: false`).
 #[test]
 fn after_empty_a_new_press_is_needed() {

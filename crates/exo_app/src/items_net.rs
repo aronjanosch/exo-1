@@ -1,4 +1,4 @@
-//! Items over the network (C2 of the interaction model; concept repo `decisions/crew-ship.md`,
+//! Items over the network (concept repo `decisions/crew-ship.md`,
 //! "Interaction model", and `design/interaction.md`, "Who owns what in co-op").
 //!
 //! - The host (slot 1) owns every loose item and every inventory: it runs `item_core::Host` and

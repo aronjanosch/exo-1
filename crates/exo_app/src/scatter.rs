@@ -1,9 +1,9 @@
-//! Scatter on screen (#65): the instances of `planet_core::build_scatter` as props
+//! Scatter on screen: the instances of `planet_core::build_scatter` as props
 //! (`content/props/<id>.glb`, from `art/props/props.py`), per cell and storey, built on the async
 //! compute pool around the camera. Each storey has its own cell size and range (recipe
 //! `scatter.storeys`); trees reach further when the camera is high. View only: no collision.
 //!
-//! One entity per cell and prop (#217): the task merges every instance of a prop in the cell into
+//! One entity per cell and prop: the task merges every instance of a prop in the cell into
 //! one mesh (the prop's vertices moved by the instance transform, its vertex colour times the
 //! instance tint), so a dense cell is a few draw calls and a few entities instead of thousands.
 //! Merging beats GPU instancing here: it needs no custom pipeline, culls per cell, and the cost
@@ -29,7 +29,7 @@ const MAX_UPLOADS_PER_FRAME: usize = 8;
 /// Cell builds running on the pool at once; the rest wait, nearest first.
 const MAX_TASKS: usize = 8;
 /// A cell fades in (dithered, by the camera's distance to its centre) over the outer share of its
-/// storey's range, so a cell that appears at the edge does not pop (#237). TODO(initiator): value.
+/// storey's range, so a cell that appears at the edge does not pop. TODO(initiator): value.
 const FADE_FROM: f32 = 0.9;
 /// The cell walk runs again after the camera moved this far (m) or its height changed by as much.
 const WALK_MOVE_M: f64 = 6.0;
@@ -199,7 +199,7 @@ impl ScatterView {
 }
 
 /// Merges the instances of a cell into one mesh: every prop shares the white vertex-colour
-/// material, so one entity per cell is enough (#214: every mesh entity is reprocessed by the
+/// material, so one entity per cell is enough (every mesh entity is reprocessed by the
 /// renderer on an origin shift, so fewer entities mean shorter shift frames).
 fn build_cell(geoms: &HashMap<String, PropGeom>, props: &[(String, Option<String>)], center: [f64; 3], instances: &[Instance]) -> CellOut {
     let geom = |inst: &Instance| {
@@ -235,7 +235,7 @@ fn build_cell(geoms: &HashMap<String, PropGeom>, props: &[(String, Option<String
     let mut center = center;
     if !pos.is_empty() {
         // The mesh's origin in the middle of its bounds, on the ground: the cell's centre is on
-        // the base sphere, and the distance fade (#237) measures from the origin on the GPU.
+        // the base sphere, and the distance fade measures from the origin on the GPU.
         let mid = (lo + hi) * 0.5;
         for p in &mut pos {
             *p = (Vec3::from_array(*p) - mid).to_array();
@@ -265,7 +265,7 @@ fn visit(planet: &PlanetRes, cam: DVec3, face: usize, a0: f64, b0: f64, size: f6
         bound = bound.max(centre.distance(c(a, b)));
     }
     // `cam` is the point under the camera on the base sphere: the height is the caller's
-    // (#214: the planet-wide relief here made every storey walk and keep cells a kilometre out).
+    // (a planet-wide relief here would make every storey walk and keep cells a kilometre out).
     if cam.distance(centre) - bound > range {
         return;
     }
@@ -470,7 +470,7 @@ mod tests {
         let mesh = &out.parts[0].0;
         assert_eq!(mesh.count_vertices(), 3 * n);
         // Instances at x = 0, 10, 20, scaled by 2 (placeholder radius 1): x spans -2..22. The mesh's
-        // origin moves to the middle of that (#237), x = 10 from the cell's centre.
+        // origin moves to the middle of that, x = 10 from the cell's centre.
         let a = out.parts[0].1;
         assert!(a.center.x.abs() < 0.1 && (a.half_extents.x - 12.0).abs() < 0.1, "{a:?}");
         assert!((out.center[0] - 10.0).abs() < 0.1, "origin at {:?}", out.center);

@@ -1,4 +1,4 @@
-//! Scenario `thruster-audio` (#150): the thruster sound layers follow the controls. A strafe
+//! Scenario `thruster-audio`: the thruster sound layers follow the controls. A strafe
 //! right raises the +x hiss most, a boost raises the roar and counts one boost start, and after
 //! release the ship hovers: the SC model's thrusters hold it against gravity (a tilted ship holds
 //! part of it sideways), so the rest is not silent (the axis model was, its thrust was the input).

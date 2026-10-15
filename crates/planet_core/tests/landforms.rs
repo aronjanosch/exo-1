@@ -1,4 +1,4 @@
-//! #69: landforms placed by budget: deterministic, separated, never over a site, retries with a
+//! Landforms placed by budget: deterministic, separated, never over a site, retries with a
 //! clear error, every kind somewhere.
 use planet_core::*;
 

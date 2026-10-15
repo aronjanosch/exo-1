@@ -1,5 +1,5 @@
-//! Containers: the player's inventory, and later cabinets and lockers (#287). A container is a row of slots; each slot
-//! has a rule (stack cap, allowed and denied tags) and holds at most one stack of equal items.
+//! Containers: the player's inventory, and later cabinets and lockers. A container is a row of slots;
+//! each slot has a rule (stack cap, allowed and denied tags) and holds at most one stack of equal items.
 //! Access is open, locked, or needs a key tag that the user carries.
 //!
 //! Taken from Barotrauma: a stack is capped by the smaller of the slot's and the item's cap, slots
@@ -54,7 +54,7 @@ pub struct Item<P = ()> {
     /// How many of it fit in one slot (at least 1).
     pub max_stack: u32,
     pub payload: Option<P>,
-    /// Condition in percent (0..=100) for an item that wears (an extinguisher, #300); None for
+    /// Condition in percent (0..=100) for an item that wears (an extinguisher); None for
     /// one that does not. Two items with different conditions do not stack.
     #[serde(default)]
     pub condition: Option<f64>,

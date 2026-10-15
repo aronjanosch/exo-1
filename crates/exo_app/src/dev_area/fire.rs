@@ -1,4 +1,4 @@
-//! The fire (#298): fires start in the engine room's air (`fire_core::Deck`, stepped by the host),
+//! The fire: fires start in the engine room's air (`fire_core::Deck`, stepped by the host),
 //! burn the people in reach (their health takes the burn at the fire's rate, by its size: a
 //! small fire less than the hot plate, a big one more, `health_core::HeatTuning::fire_per_unit`),
 //! burn the pump, the junction box and the reactor's condition by the fire's size, and
@@ -16,12 +16,12 @@
 //! - Window only: a flickering flame, a warm glow on the floor and a point light per fire (`effects`:
 //!   the light flickers per frame and reaches further as the fire grows), a white jet from each
 //!   spray's nozzle to where it lands, and steam where a spray lands (`effects`). The crackle is not made yet (`TODO`: a quiet noise sound in `audio.rs`).
-//! - Two models (#300, `FireModel`, a dev switch on the faults screen): the point fires above, or
+//! - Two models (`FireModel`, a dev switch on the faults screen): the point fires above, or
 //!   the cells of `fire_core::grid` (`FireGrid`, the engine room's and the corridor's cells, one
 //!   per metre). The host decides and the snapshot says which (`FireNews::grid`); the grid's
 //!   burning cells are its `cells`, and in the grid model `fires` lists them as cell-wide fires
 //!   for the aim and the steam. Its flames are the placeholder blocks of `grid_sync`.
-//! - The extinguisher wears down while it sprays and an empty one does not spray; the racks give full ones (`dev_area::extinguisher`, #300).
+//! - The extinguisher wears down while it sprays and an empty one does not spray; the racks give full ones (`dev_area::extinguisher`).
 use crate::controls::Controls;
 use crate::dev_area::engine_room::{footprint_of, ignition_at, place_of, source_at, EngineAir};
 use crate::dev_area::reactor::ReactorSim;
@@ -67,7 +67,7 @@ pub struct FireConfig(pub FireSettings);
 #[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FireAlarm(pub Alarm);
 
-/// Which fire model runs (#300): the point fires of `Deck` or the cells of `fire_core::grid`. A dev
+/// Which fire model runs: the point fires of `Deck` or the cells of `fire_core::grid`. A dev
 /// switch on the faults screen; the host decides, and its snapshot says which one it runs.
 #[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FireModel {
@@ -85,7 +85,7 @@ impl FireModel {
     }
 }
 
-/// The cells of the engine room and the corridor (#300): their rooms' rectangles, set up once.
+/// The cells of the engine room and the corridor: their rooms' rectangles, set up once.
 #[derive(Resource)]
 pub struct FireGrid(pub Grid);
 
@@ -217,7 +217,7 @@ fn model_click(mut clicks: MessageReader<DisplayAction>, mut model: ResMut<FireM
     }
 }
 
-/// The extinguisher's aim as this process has it now: LMB held, the mouse captured, no display in
+/// The extinguisher's aim as this process has it: LMB held, the mouse captured, no display in
 /// use, on foot outside a ship, and the extinguisher in the selected slot. None otherwise.
 fn spray_aim(controls: &Controls, active: &ActiveDisplay, players: &Query<&Player>, items: &Items) -> Option<SprayAsk> {
     if controls.free_cursor || !controls.primary_held || active.using().is_some() {
@@ -232,7 +232,7 @@ fn spray_aim(controls: &Controls, active: &ActiveDisplay, players: &Query<&Playe
     if items.defs.of(stack)?.use_effect.as_deref() != Some(EXTINGUISH) {
         return None;
     }
-    // An empty one does not spray (#300).
+    // An empty one does not spray.
     if !stack.item.condition.is_some_and(|c| c > 0.0) {
         return None;
     }
@@ -281,7 +281,7 @@ fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>
     }
     let dt = time.delta_secs_f64();
     // The extinguisher runs down while it sprays; an empty one (or anything that does not wear)
-    // stops the spray (#300).
+    // stops the spray.
     let now = time.elapsed_secs_f64();
     for who in sprays.0.keys().copied().collect::<Vec<_>>() {
         let slot = items.host.inventories.get(&who).map_or(0, |i| i.selected);
@@ -793,7 +793,7 @@ fn flames_sync(
     }
 }
 
-/// Window, grid model (#300): the placeholders of the cells. Each burning cell is a flickering
+/// Window, grid model: the placeholders of the cells. Each burning cell is a flickering
 /// orange block (its height by its intensity, at most 1 m) on a dark red tint of the floor, and
 /// each room with burning cells has one point light at the centroid of them. The cells are made
 /// again every frame (a few dozen at most): a placeholder until the real fire art.

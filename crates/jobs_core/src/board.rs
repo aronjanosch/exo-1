@@ -1,4 +1,4 @@
-//! Board generation (#126): per location, 3 to 5 offers from templates whose availability
+//! Board generation: per location, 3 to 5 offers from templates whose availability
 //! condition holds; offers rotate after a lifetime (TODO(initiator) default 600s).
 use std::collections::BTreeMap;
 

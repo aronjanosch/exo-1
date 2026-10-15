@@ -1,4 +1,4 @@
-//! Save model of #128: the envelope, the kernel section and the world section. Each system's own
+//! Save model: the envelope, the kernel section and the world section. Each system's own
 //! section is tested in its crate.
 use std::path::Path;
 

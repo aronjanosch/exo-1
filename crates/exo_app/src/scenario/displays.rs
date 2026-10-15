@@ -1,4 +1,4 @@
-//! #285: the pointer on a display through the app (display_core behind `Controls`): hover names
+//! The pointer on a display through the app (display_core behind `Controls`): hover names
 //! the widget under the pointer, a press on one widget released over another is no click, a
 //! disabled button neither hovers nor clicks, a press off the panel does nothing, the slider
 //! reports its value at the press and while dragged. On the dev area's test console.
@@ -96,7 +96,7 @@ pub(super) fn displays_steps(s: &mut Vec<Step>) {
         check(c, (t - 0.75).abs() < 0.01, format!("displays: the slider reads {t:.3} (0.75)"));
         true
     }));
-    // The buttons still click: + once, now - is enabled and counts down.
+    // The buttons still click: + once, then - is enabled and counts down.
     s.push(act_until("displays: + clicks", |w| click_on(w, "inc", None), |w| console_state(w).count == 1));
     s.push(act_until("displays: - is enabled at 1 and clicks", |w| click_on(w, "dec", None), |w| console_state(w).count == 0));
     s.push(act_until("displays: Escape leaves", |w| tap(w, KeyCode::Escape), |w| active(w) == ActiveDisplay::Idle));

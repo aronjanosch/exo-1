@@ -1,11 +1,11 @@
-//! Slice sounds (#300): the fire, the extinguisher, the repair, the electrics, the pump, the door
+//! Slice sounds: the fire, the extinguisher, the repair, the electrics, the pump, the door
 //! and the health. Synthesized in `audio.rs` (`Sound`), played here from the state every process
 //! has: the fire and the reactor snapshots (`Items`), the repair session (`RepairPlay`), the door
 //! (`Items::room`) and the local player's vitals (`OwnVitals`). Nothing here reads host-only state.
 //!
 //! Quiet on purpose: the alarm tone (0.12) is the reference loudness, and no volume here is above
 //! it. Distances are the walker's to the source, in metres; a source beyond its range is silent.
-//! Reactor (#300 r23): a drone at the reactor, level by the set fission and pitch by the heat; a
+//! Reactor: a drone at the reactor, level by the set fission and pitch by the heat; a
 //! beep on each 2 Hz blink on-phase while a bad lamp (critical heat or output, no fuel, meltdown) is
 //! on; a rising whoop on a boost press. Barotrauma's sounds, our synth.
 //! The sounds can not be heard in a test: the window part is untested by ear (`TODO(initiator)`s
@@ -131,7 +131,7 @@ pub fn heartbeat_every(air: Option<f64>) -> Option<f64> {
     Some(HEART_SLOWEST_S + (HEART_FASTEST_S - HEART_SLOWEST_S) * t)
 }
 
-/// A zap now: the junction box is overvolted and the last zap is at least `ZAP_EVERY_S` ago.
+/// Whether a zap is due: the junction box is overvolted and the last zap is at least `ZAP_EVERY_S` ago.
 pub fn zap_due(overvolt: bool, now: f64, last: Option<f64>) -> bool {
     overvolt && last.is_none_or(|l| now - l >= ZAP_EVERY_S)
 }
@@ -171,7 +171,7 @@ pub fn alarm_lamp_on(r: &ReactorNews) -> bool {
     [Lamp::CritHeat, Lamp::CritOut, Lamp::NoFuel, Lamp::Meltdown].iter().any(|l| r.lamps[l.index()])
 }
 
-/// An alarm beep now: a bad lamp is on and the blink has just come on (the on-phase's start).
+/// Whether an alarm beep is due: a bad lamp is on and the blink has just come on (the on-phase's start).
 pub fn alarm_beep_due(bad_lamp: bool, blink_on: bool, prev_blink_on: bool) -> bool {
     bad_lamp && blink_on && !prev_blink_on
 }
@@ -484,7 +484,7 @@ fn reactor_hum(players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes
     }
 }
 
-/// The emergency cooling's steam (#300 r24): a hiss at the reactor on every process when a press lands
+/// The emergency cooling's steam: a hiss at the reactor on every process when a press lands
 /// (the news' `ecools`, the notice's counter).
 fn ecool_hiss(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mut seen: Local<Option<u32>>) {
     let Some(r) = items.reactor else { return };

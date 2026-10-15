@@ -1,8 +1,8 @@
-//! Sky, haze and water per planet (#67), from the recipe's `sky` and `water`. The sky is Bevy's
+//! Sky, haze and water per planet, from the recipe's `sky` and `water`. The sky is Bevy's
 //! `Atmosphere` on an entity at the planet centre (it follows the render origin like the terrain),
 //! the camera renders it (`AtmosphereSettings`); the clear colour stays black space. The water is
 //! drawn per terrain chunk (`terrain.rs`) with `WaterMaterial`. Every density tuned at the 1.2 km
-//! reference atmosphere scales with the planet's atmosphere height (`atmo_scale`, #224). Far
+//! reference atmosphere scales with the planet's atmosphere height (`atmo_scale`). Far
 //! away the planet is the impostor sphere with a colour map baked from the recipe
 //! (`ImpostorMaterial`), under a cloud shell (`CloudMaterial`, recipe `sky.clouds`).
 use crate::env::PlanetRes;
@@ -76,14 +76,14 @@ pub fn new_water(planet: &PlanetRes, origin: &RenderOrigin) -> WaterMaterial {
 pub const REFERENCE_ATMOSPHERE_M: f64 = 1200.0;
 
 /// Dev switch for before/after shots: `EXO_SKY_LEGACY` brings back the 5 km tuning, no clouds and
-/// the flat impostor (#224).
+/// the flat impostor.
 fn legacy() -> bool {
     std::env::var("EXO_SKY_LEGACY").is_ok()
 }
 
 /// Factor for every density tuned at the reference atmosphere (scattering, haze): a planet with
 /// an atmosphere `k` times as high gets `1/k` of the density per metre, so the optical depth
-/// straight up stays the same and the ground stays readable over the longer distances (#224).
+/// straight up stays the same and the ground stays readable over the longer distances.
 pub fn atmo_scale(planet: &PlanetRes) -> f32 {
     if legacy() {
         return 1.0;
@@ -190,7 +190,7 @@ pub fn tune_atmosphere(planet: Res<PlanetRes>, mut cams: Query<&mut AtmosphereSe
 }
 
 
-// ---- Impostor colour map (#224) ----
+// ---- Impostor colour map ----
 
 /// Pixels of the equirectangular colour map of the planet seen from far away (width; the height
 /// is half of it).
@@ -207,7 +207,7 @@ pub struct ImpostorExt {
     pub water: ImpostorWater,
 }
 
-/// The water the impostor shader draws over the map's dryness (#235): linear colours, and in
+/// The water the impostor shader draws over the map's dryness: linear colours, and in
 /// `surface.w` the planet's radius (m, for the shore's noise).
 #[derive(Clone, Copy, Debug, Default, ShaderType, Reflect)]
 pub struct ImpostorWater {
@@ -273,7 +273,7 @@ pub fn update_impostor_map(
     }
 }
 
-// ---- Clouds (#224) ----
+// ---- Clouds ----
 
 #[derive(Clone, Copy, Debug, Default, ShaderType, Reflect)]
 pub struct CloudLookUniform {

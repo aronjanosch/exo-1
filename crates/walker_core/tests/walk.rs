@@ -125,7 +125,7 @@ fn jump_leaves_and_returns_to_ground() {
     assert!((peak - 25.0 / (2.0 * 9.81)).abs() < 0.1 && w.grounded);
 }
 
-/// Spike 3: stand and walk in a cabin floor of a frame flying at 400 m/s while rolling.
+/// Stand and walk in a cabin floor of a frame flying at 400 m/s while rolling.
 #[test]
 fn walking_in_a_fast_rolling_frame_has_no_drift() {
     let mut world = Planes { planes: vec![(DVec3::Y, 0.0)], frame: Frame::IDENTITY };
@@ -164,7 +164,7 @@ fn change_frame_keeps_world_state() {
     assert!(((new.rot * w.vel) - DVec3::new(1.0, 0.0, 0.0)).length() < 1e-9);
 }
 
-/// Spike 9 bug: in the air against a steep slope, sliding along it lifted the walker.
+/// In the air against a steep slope, sliding along it lifted the walker.
 #[test]
 fn airborne_walker_does_not_climb_steep_slope() {
     let world = slope(57.0);
@@ -178,7 +178,7 @@ fn airborne_walker_does_not_climb_steep_slope() {
     assert!(top < 0.3);
 }
 
-/// Issue #5: weightless the walker keeps the velocity it brought (e.g. from the ship), input does
+/// Weightless the walker keeps the velocity it brought (e.g. from the ship), input does
 /// not move it, and a floor it drifts along does not stop it.
 #[test]
 fn weightless_walker_keeps_its_velocity() {
@@ -205,7 +205,7 @@ fn weightless_walker_keeps_its_velocity() {
     assert!(w.pos.y >= 0.0 && w.pos.x > 3.9, "position {:?}", w.pos);
 }
 
-/// Issue #7: re-splitting the look direction about a tilted up keeps it in the world.
+/// Re-splitting the look direction about a tilted up keeps it in the world.
 #[test]
 fn split_look_keeps_the_world_direction() {
     let up = DVec3::Y;
@@ -220,7 +220,7 @@ fn split_look_keeps_the_world_direction() {
     assert!((f - DVec3::NEG_Z).length() < 1e-12 && (pitch - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
 }
 
-/// Issue #8: suit thrusters push along the body axes, the brake comes to rest without overshoot within 4 s.
+/// Suit thrusters push along the body axes, the brake comes to rest without overshoot within 4 s.
 #[test]
 fn suit_thrusts_along_the_body_and_brakes_to_rest() {
     let cfg = SuitConfig::default();
@@ -242,7 +242,7 @@ fn suit_thrusts_along_the_body_and_brakes_to_rest() {
     assert!(ticks < 240, "brake took {ticks} ticks");
 }
 
-/// A short tap of W is a slow step: 0 to 3 m/s within 0.1 s, then full speed (initiator), so a
+/// A short tap of W is a slow step: 0 to 3 m/s within 0.1 s, then full speed, so a
 /// player can step out of a ship carefully instead of always leaving at walk speed.
 #[test]
 fn tap_is_a_slow_step() {
@@ -287,7 +287,7 @@ fn view_helpers() {
     assert!((b * DVec3::NEG_Z - DVec3::NEG_Z).length() < 1e-12, "roll keeps the look");
 }
 
-/// Issue #9: touching a surface that moves along with the walker (a ship it drifts with) does not
+/// Touching a surface that moves along with the walker (a ship it drifts with) does not
 /// stop it; a standing surface does.
 #[test]
 fn moving_surface_stops_only_the_relative_velocity() {

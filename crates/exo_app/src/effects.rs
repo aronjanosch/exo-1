@@ -1,4 +1,4 @@
-//! Visual feedback (#300, window only; the logic is the same in every process): the smoke and the
+//! Visual feedback (window only; the logic is the same in every process): the smoke and the
 //! sparks of the broken machines, the reactor's critical lamp, the engine room's lights in a power
 //! loss, the steam where a spray lands on a fire, and the screen's edges for burning, bad air,
 //! radiation and a finished treatment.

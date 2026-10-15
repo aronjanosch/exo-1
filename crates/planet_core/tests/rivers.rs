@@ -1,4 +1,4 @@
-//! #177 (spike 14): rivers as polylines with width. On a planet whose coarse grid is far wider than
+//! Rivers as polylines with width. On a planet whose coarse grid is far wider than
 //! a river, the channel is still carved, continuous along the river and across chunk borders.
 use planet_core::*;
 
@@ -23,7 +23,7 @@ fn a_river_is_carved_between_the_coarse_vertices_and_is_wet() {
     assert!(big.len() >= 5, "a wet planet has rivers: {}", big.len());
     let (mut carved, mut wet) = (0, 0);
     for &(i, r) in &big {
-        // The middle of the segment's curve (#235), and a point across the river, 6 half widths out.
+        // The middle of the segment's curve, and a point across the river, 6 half widths out.
         let on = |t: f64| p.river_idx.curve_point(&p.coarse.rivers, p.radius, i, t).normalized();
         let mid = on(0.5);
         let along = (on(0.55) - on(0.45)).normalized();
@@ -85,7 +85,7 @@ fn the_channel_has_no_seam_across_chunk_borders() {
 
 #[test]
 fn a_river_bends_instead_of_turning_at_right_angles() {
-    // #235: flow on the grid goes one of 8 ways; the drawn curve is smoothed, so along a long
+    // Flow on the grid goes one of 8 ways; the drawn curve is smoothed, so along a long
     // river the turn between neighbouring pieces stays well below a right angle.
     let p = planet(30_000.0);
     let rivers = &p.coarse.rivers;

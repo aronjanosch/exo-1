@@ -1,4 +1,4 @@
-//! The crew HUD's rules without engine types (Crew HUD v3, Claude Design project "EXO-1 Ship
+//! The crew HUD's rules without engine types (Claude Design project "EXO-1 Ship
 //! Displays"; decision "Minimal HUD" in the concept repo). Six elements: compass, vitals, the
 //! interaction prompt, the action bar, the key hints and the reticle, plus the credits that show
 //! for a moment after a change. This file holds what can be tested without a window: the sizes
@@ -29,7 +29,7 @@ pub struct HudLook {
     pub reticle: ReticleLook,
     pub credits: CreditsLook,
     pub text: TextLook,
-    /// The medic view's panel (#300).
+    /// The medic view's panel.
     pub target: crate::target::TargetLook,
 }
 
@@ -406,7 +406,7 @@ pub enum VitalKind {
     Health,
     Oxygen,
     Burn,
-    /// Radiation (#295): a bar, only while it is above zero.
+    /// Radiation: a bar, only while it is above zero.
     Radiation,
 }
 
@@ -430,7 +430,7 @@ impl VitalKind {
     }
 }
 
-/// What each injury takes off the health now, in vitality points (#295): the burn, the oxygen
+/// What each injury takes off the health, in vitality points: the burn, the oxygen
 /// low, and the headache's part of the maximum (the cap).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Costs {

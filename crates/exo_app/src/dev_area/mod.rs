@@ -1,4 +1,4 @@
-//! The dev area (#284): a small level rectangle on Hearth (`content/place/dev_area.json`) where
+//! The dev area: a small level rectangle on Hearth (`content/place/dev_area.json`) where
 //! each role's placeholder devices and displays stand, to try mechanics without the finished ship
 //! (decision "Dev area first": a mechanic goes into the ship once it works here). Spawned only
 //! with `--start=dev_area` or `--dev-area`, so other runs stay as they were.
@@ -297,7 +297,7 @@ mod tests {
         }
         assert!(CAPTAIN.centre[0] < LAB.centre[0] && LAB.centre[0] < ENGINEERING.centre[0] && STORAGE.centre[1] > LAB.centre[1]);
         assert!(PADS.contains(PAD_MAIN), "the pad 'main' is in the pad strip");
-        // A short walk apart (#284: the first area was too spread out): the lab in the middle is at
+        // A short walk apart (the first area was too spread out): the lab in the middle is at
         // most 15 m from every other zone, and the far ends are within 30 m.
         let apart = |a: &Zone, b: &Zone| ((a.centre[0] - b.centre[0]).powi(2) + (a.centre[1] - b.centre[1]).powi(2)).sqrt();
         for z in [CAPTAIN, ENGINEERING, STORAGE] {

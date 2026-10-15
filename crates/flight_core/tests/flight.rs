@@ -1,5 +1,5 @@
 //! The planetary field (gravity, influence by altitude) on the game's planet model, and the cabin's
-//! LAG state (#110). The controller's own checks are the SC model's (`sc_*.rs`) and the ground rules'
+//! LAG state. The controller's own checks are the SC model's (`sc_*.rs`) and the ground rules'
 //! (`ground_hold.rs`).
 use flight_core::*;
 use glam::DVec3;
@@ -83,7 +83,7 @@ fn lag_follows_landing_and_the_manual_switch() {
     assert_eq!(lag.level, 1.0);
     lag.toggle();
     assert!(lag.is_on() && !lag.manual_on, "G does nothing in flight");
-    // #110 point 1: hovering still and low without contact is flying.
+    // Hovering still and low without contact is flying.
     run(&mut lag, false, 1.4, 0.0, 1.0);
     assert!(!lag.landed && lag.level == 1.0, "hovering at 1.4 m is not landed");
     // Touching down slowly: landed, the field goes down.

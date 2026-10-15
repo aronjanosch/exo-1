@@ -1,6 +1,6 @@
-//! The terrain material (#66): `StandardMaterial` lighting with the base colour from
+//! The terrain material: `StandardMaterial` lighting with the base colour from
 //! `content/shaders/terrain.wgsl`. Per vertex the mesh carries the biome palette (ground and
-//! cap share in the vertex colour, the share below 0 under a lake or river (#72), rock in UV0 +
+//! cap share in the vertex colour, the share below 0 under a lake or river, rock in UV0 +
 //! UV1.x, strata share in UV1.y); the planet-wide values (strata bands, cap, detail) and the
 //! planet centre in render space are a uniform.
 use crate::env::PlanetRes;
@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError};
 use bevy::shader::ShaderRef;
 
-/// Geomorphing (#220): the delta to the vertex's position in the parent chunk's mesh, and the
+/// Geomorphing: the delta to the vertex's position in the parent chunk's mesh, and the
 /// parent's normal (see `terrain_vertex.wgsl`).
 pub const ATTRIBUTE_MORPH_DELTA: MeshVertexAttribute = MeshVertexAttribute::new("MorphDelta", 0x4c34_0a01, VertexFormat::Float32x3);
 pub const ATTRIBUTE_MORPH_NORMAL: MeshVertexAttribute = MeshVertexAttribute::new("MorphNormal", 0x4c34_0a02, VertexFormat::Snorm8x4);
@@ -103,7 +103,7 @@ fn lin(c: [f32; 3]) -> Vec4 {
 pub fn look_uniform(planet: &PlanetRes, centre_render: Vec3) -> TerrainLookUniform {
     let m = &planet.pgen.recipe.material;
     let s = |i: usize| lin(m.strata_colors[i.min(m.strata_colors.len() - 1)]);
-    // The recipe's metres are for the radius it was tuned on; a taller relief stretches them (#236).
+    // The recipe's metres are for the radius it was tuned on; a taller relief stretches them.
     let k = planet.pgen.look_scale() as f32;
     TerrainLookUniform {
         centre: centre_render.extend(planet.radius as f32),

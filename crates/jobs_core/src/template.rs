@@ -1,5 +1,5 @@
-//! The `job_template` record (#123): what a job asks for, before the board picks concrete places
-//! and goods (#126). One JSON file each in `job_template/`.
+//! The `job_template` record: what a job asks for, before the board picks concrete places
+//! and goods. One JSON file each in `job_template/`.
 use std::collections::BTreeMap;
 
 use content_core::{File, Loaded, Record, check_id, load_records};
@@ -24,7 +24,7 @@ pub struct JobTemplate {
     /// Who offers it (a `giver` record); none for a job nobody in particular gives.
     #[serde(default)]
     pub giver: Option<GiverId>,
-    /// At least one. Milestone D has only `deliver`.
+    /// At least one. Only `deliver` exists yet.
     pub objectives: Vec<ObjectiveSpec>,
     /// Money at full grade, before modifiers.
     pub reward: i64,
@@ -45,7 +45,7 @@ pub struct JobTemplate {
     /// Offered until it is completed once (story and targeted jobs).
     #[serde(default)]
     pub once_only: bool,
-    /// Offered once this one is completed (#126).
+    /// Offered once this one is completed.
     #[serde(default)]
     pub follow_up: Option<TemplateId>,
     /// Set for a licence exam.
@@ -67,7 +67,7 @@ pub enum ObjectiveSpec {
     /// Carry `amount` crates of a commodity from one place to another.
     Deliver { from: PlaceSpec, to: PlaceSpec, commodity: CommoditySpec, amount: [u32; 2] },
     /// The ship leaves the ground under the player's hands (the event `TookOff`). Checks come in
-    /// the order of the objectives, and only from the player who took the job (#169).
+    /// the order of the objectives, and only from the player who took the job.
     TakeOff {},
     /// The ship comes over the pad of a location (`PadReached`).
     ReachPad { at: LocationId },
@@ -76,7 +76,7 @@ pub enum ObjectiveSpec {
     Land { at: LocationId, max_mps: f64 },
 }
 
-/// A job that is a licence exam (#169): it costs a fee to take, grants a personal track when
+/// A job that is a licence exam: it costs a fee to take, grants a personal track when
 /// passed, and may give honours.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -140,7 +140,7 @@ pub struct Band {
 }
 
 /// A warning or upside shown on the offer. Encounters with the same tag come more often on its
-/// flights (#127); a warning's bonus raises the pay.
+/// flights; a warning's bonus raises the pay.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Modifier {

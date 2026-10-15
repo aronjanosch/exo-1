@@ -1,4 +1,4 @@
-//! Scatter (#65): instances of props on the ground, per cell of the cube-sphere quadtree and
+//! Scatter: instances of props on the ground, per cell of the cube-sphere quadtree and
 //! storey. A cell's instances are a pure function of the seed, the cell and the recipe, so the
 //! same seed gives the same instances whatever order cells load in.
 //!
@@ -108,7 +108,7 @@ struct Ground {
     dir: V3,
     h: f64,
     /// The water surface the entry's height band counts from: the sea, or a lake or river
-    /// above it (#72).
+    /// above it.
     water: f64,
     nrm: V3,
     biome: u8,

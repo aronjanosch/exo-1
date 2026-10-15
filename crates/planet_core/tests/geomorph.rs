@@ -1,4 +1,4 @@
-//! #220: the morph target of a chunk is the parent's mesh. At full morph a child has exactly the
+//! The morph target of a chunk is the parent's mesh. At full morph a child has exactly the
 //! parent's surface (positions), so a split shows no pop.
 use planet_core::*;
 

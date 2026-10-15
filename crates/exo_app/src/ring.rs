@@ -75,7 +75,7 @@ impl Ring {
     fn collect(&self, planet: &PlanetRes, face: usize, a0: f64, b0: f64, size: f64, depth: u32, points: &[DVec3], out: &mut HashMap<Key, (f64, f64, f64, f64)>) {
         let r = planet.radius;
         let centre = from_v3(cube_to_sphere(face, a0 + size * 0.5, b0 + size * 0.5)) * r;
-        // Bound = farthest corner (spike 5 fix).
+        // Bound = farthest corner.
         let mut bound: f64 = 0.0;
         for (a, b) in [(a0, b0), (a0 + size, b0), (a0, b0 + size), (a0 + size, b0 + size)] {
             bound = bound.max(centre.distance(from_v3(cube_to_sphere(face, a, b)) * r));
@@ -177,7 +177,7 @@ pub fn update_ring(mut commands: Commands, time: Res<Time>, planet: Res<PlanetRe
             started += 1;
         }
     }
-    // Jobs no longer wanted (the anchor moved on) are cancelled by dropping their task.
+    // Jobs out of the wanted set (the anchor moved on) are cancelled by dropping their task.
     ring.pending.retain(|k, _| want.get(k).is_some_and(|w| w.3 < ring.ring_radius));
     let stale: Vec<Key> = ring.patches.keys().filter(|k| !want.contains_key(k)).copied().collect();
     for k in stale {

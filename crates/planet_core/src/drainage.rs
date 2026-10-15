@@ -1,4 +1,4 @@
-//! Drainage (#72): rivers and lakes on the macro grid, the mapgen4 approach on a sphere. Runs
+//! Drainage: rivers and lakes on the macro grid, the mapgen4 approach on a sphere. Runs
 //! once in the bake, never at runtime. The water is routed downhill over the ground with its
 //! sinks filled (priority flood from the sea), the rain is summed along the routes, a few
 //! erosion steps lower the ground along them (stream power), the water is routed again, deep

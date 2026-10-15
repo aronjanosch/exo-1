@@ -1,4 +1,4 @@
-//! #13: how many fixed ticks each `update()` of the headless app runs.
+//! How many fixed ticks each `update()` of the headless app runs.
 //!
 //! bevy_time 0.19.1, `real.rs` `Time<Real>::update_with_instant`: the first call only records
 //! the instant (`first_update`, `last_update`) and leaves the delta at zero. Under

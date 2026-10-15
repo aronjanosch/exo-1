@@ -1,4 +1,4 @@
-//! Round 6, the town, headless: the city stands on its place with box colliders for its buildings,
+//! The town, headless: the city stands on its place with box colliders for its buildings,
 //! the plan's characters stand on the ground, a walker who walks at the company tower stops at its
 //! wall, and every pad of the new towns is on the planet.
 use super::jobs_helpers::{gp, pad};
@@ -6,7 +6,7 @@ use super::*;
 use crate::town::Town;
 use gameplay_core::LocationId;
 
-/// The new round-6 pads, one per town and kind.
+/// The town pads, one per town and kind.
 const PADS: [&str; 8] = ["drip_rock_north", "drip_rock_inspect", "bent_spoon_east", "bent_spoon_inspect", "noodle_town", "gulch_freeport", "bent_spoon_scrub", "noodle_scrub"];
 
 fn tower(w: &World) -> (DVec3, DVec3) {

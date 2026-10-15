@@ -1,4 +1,4 @@
-//! #285: the dev area and the test console. The walker starts on the level rectangle, walks to the
+//! The dev area and the test console. The walker starts on the level rectangle, walks to the
 //! console, the prompt names it, F frees the cursor (the walker stands still with W held), three
 //! clicks on + count to 3 and fill the bar to 0.3, the toggle switches, F leaves and the walker
 //! walks again; the same with Escape. Then the two sample screens of the design system: the

@@ -36,7 +36,7 @@ pub struct Ship {
     pub grounded: bool,
     /// The SC flight model (`flight_core::sc`).
     pub sc: ScShip,
-    /// The ground rules (#92): the ship on the ground while the SC model does not fly it.
+    /// The ground rules: the ship on the ground while the SC model does not fly it.
     pub ground: GroundRules,
 }
 
@@ -56,7 +56,7 @@ impl Ship {
 #[derive(Component)]
 pub struct RemoteShip {
     pub owner: u32,
-    /// Cabin gravity (LAG) level from the owner's snapshots, 0..1 (issue #11).
+    /// Cabin gravity (LAG) level from the owner's snapshots, 0..1.
     pub lag: f64,
 }
 
@@ -238,7 +238,7 @@ pub fn ship_control(
         if ship.parked || warp.drive.phase.holds_ship() {
             if ship.piloted {
                 // Mouse movement during the hold is dropped, not applied at once afterwards
-                // (#110 point 3); the stick starts centred.
+                // the stick starts centred.
                 actions.look = Vec2::ZERO;
                 ship.stick = VirtualStick::default();
             }
@@ -275,12 +275,12 @@ pub fn ship_control(
         };
         let body = BodyState { pos: pos.0, rot: rot.0, lin_vel: lv.0, ang_vel: av.0 };
         let ship = &mut *ship;
-        // The SC model has no landing gear yet (#162): resting on the ground with gravity
-        // compensation on and no thrust but down, the ground rules (settle, hold on a slope, #92,
+        // The SC model has no landing gear yet: resting on the ground with gravity
+        // compensation on and no thrust but down, the ground rules (settle, hold on a slope,
         // turning on the ground) keep the ship in place.
         let still = input.thrust.x.abs() < 1e-5 && input.thrust.z.abs() < 1e-5 && input.thrust.y <= 1e-5;
         let ground = input.grounded && still && lv.0.length() < GroundRules::GROUND_HOLD_SPEED && ship.sc.modes.grav_comp;
-        // Cargo locked on this ship's plates is part of the ship (#84, #88): its mass and inertia
+        // Cargo locked on this ship's plates is part of the ship: its mass and inertia
         // count in the SC model. The locks of the last step (the crates step after the ship).
         let (v, w) = if ground {
             // The switches still apply on the ground, and the boost meter runs on.
@@ -289,7 +289,7 @@ pub fn ship_control(
             ship.ground.step(&body, &input, planet.as_ref(), dt)
         } else {
             // Thrust, gravity compensation off or speed ends the ground state. A one-step loss of
-            // contact while still does not (the ground rules let it through, #92).
+            // contact while still does not (the ground rules let it through).
             if !still || !ship.sc.modes.grav_comp || lv.0.length() >= GroundRules::GROUND_HOLD_SPEED {
                 ship.ground.release();
             }
@@ -301,12 +301,12 @@ pub fn ship_control(
     }
 }
 
-/// Camera effects of the own ship (#27, #148, #149), stepped with the simulation so scenarios can
+/// Camera effects of the own ship, stepped with the simulation so scenarios can
 /// check them; the view only applies them.
 #[derive(Resource, Default)]
 pub struct CameraEffects(pub flight_core::camera::CameraFx);
 
-/// F9 switches the camera effects (#148, #149). The felt acceleration is the change of velocity in
+/// F9 switches the camera effects. The felt acceleration is the change of velocity in
 /// ship space (no gravity term: a hover thrust that holds the ship feels nothing), zero on the
 /// ground; the walker in a flying cabin gets the cabin's share.
 pub fn camera_fx(
@@ -336,7 +336,7 @@ pub fn camera_fx(
     let input = flight_core::camera::FxInput {
         speed: lv.0.length(),
         turn: DVec2::new(local.x, local.y),
-        // The bump comes with the first hull contact (#110 point 4).
+        // The bump comes with the first hull contact.
         approach: -lv.0.dot(up),
         grounded: ship.grounded,
         accel,
@@ -350,7 +350,7 @@ pub fn camera_fx(
     fx.0.step_with(&tuning.camera, &input);
 }
 
-/// Thruster sound layers of the own ship (#150), stepped with the simulation so scenarios can
+/// Thruster sound layers of the own ship, stepped with the simulation so scenarios can
 /// read the levels; the audio plays them.
 #[derive(Resource, Default)]
 pub struct ThrusterLevels(pub flight_core::audio::ThrusterAudio);

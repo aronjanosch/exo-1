@@ -1,4 +1,4 @@
-//! The test console (#285): a box at the lab zone's front edge, facing the pads, with a display
+//! The test console: a box at the lab zone's front edge, facing the pads, with a display
 //! that proves the loop, and the pattern a role module follows. It is an M screen on the design
 //! system's widgets. A counter with - and + (the minus is disabled at
 //! zero, the plus at the top), a bar that fills with the counter, a toggle and a slider. Its two

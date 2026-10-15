@@ -1,4 +1,4 @@
-//! Scenario `sc-hud` (#197): the flight panel through `Controls`. Sit, C decouples (the blend runs
+//! Scenario `sc-hud`: the flight panel through `Controls`. Sit, C decouples (the blend runs
 //! 4 s), H drops gravity compensation, B takes NAV, Page Down lowers the limiter, X brakes. Each
 //! change shows as a toast and as a badge; the blend bar is shown only while the coupling moves.
 use crate::hud::HudReadout;

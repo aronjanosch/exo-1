@@ -1,4 +1,4 @@
-//! The virtual stick (the mouse as a joystick, #25 feel).
+//! The virtual stick (the mouse as a joystick).
 use flight_core::*;
 use glam::DVec2;
 

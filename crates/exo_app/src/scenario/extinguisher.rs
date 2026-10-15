@@ -1,4 +1,4 @@
-//! #300, the extinguisher's supply: at the dev area's table the extinguisher is taken and sprayed
+//! The extinguisher's supply: at the dev area's table the extinguisher is taken and sprayed
 //! in the open: it wears down (2 % a second). Worn to empty, the spray stops and does not start
 //! again. At the rack in the corridor the empty one hangs and a full spare comes to the hand; the
 //! spray works again, and the empty one is on the rack. Without a window; `--start=dev_area`.

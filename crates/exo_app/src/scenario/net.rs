@@ -16,9 +16,9 @@ pub struct ForeignDriver {
     pub parked: Option<(DVec3, bevy::math::DQuat)>,
     pub max_pos_err: f64,
     pub max_rot_err_deg: f64,
-    /// #16: the received velocity is replaced by this one (a ship at warp speed held in place).
+    /// The received velocity is replaced by this one (a ship at warp speed held in place).
     pub hold_vel: Option<DVec3>,
-    /// #16: the ship warps along its nose (wins over `parked`).
+    /// The ship warps along its nose (wins over `parked`).
     pub warp: Option<ForeignWarp>,
 }
 
@@ -300,7 +300,7 @@ pub(super) fn foreign_steps(s: &mut Vec<Step>) {
         }
         false
     }));
-    // 6. Issue #11: the parked (landed) foreign ship stands 8 deg tilted and sends its cabin
+    // 6. The parked (landed) foreign ship stands 8 deg tilted and sends its cabin
     //    gravity off; a walker in its cabin stands about the planet's up, not the tilted floor's.
     s.push(Box::new(|w, _| {
         let mut d = w.resource_mut::<ForeignDriver>();
@@ -344,7 +344,7 @@ pub(super) fn foreign_steps(s: &mut Vec<Step>) {
 /// The same speed as `foreign_warp`: the drive's top speed (1e6 m/s).
 const FOREIGN_WARP_SPEED: f64 = 1.0e6;
 
-/// #16 without a network: a remote ship at warp speed next to the walking walker, then warping
+/// Without a network: a remote ship at warp speed next to the walking walker, then warping
 /// with the walker in its cabin. Through the real snapshot path like the rest of `foreign`.
 fn foreign_warp_extra_steps(s: &mut Vec<Step>) {
     // 7. The landed ship carries 1e6 m/s along its nose while it stands (a 17 km swept AABB and
@@ -497,7 +497,7 @@ fn foreign_warp_extra_steps(s: &mut Vec<Step>) {
     }));
 }
 
-/// #16: a remote proxy held 40 m beside the walker with the velocity of a ship in a warp
+/// A remote proxy held 40 m beside the walker with the velocity of a ship in a warp
 /// (1e6 m/s): its collider AABB grows to kilometres and the walker's moving-collider sweep sees
 /// 16.7 km of relative motion per tick. The walk must be the same as without it.
 pub(super) fn foreign_warp_steps(s: &mut Vec<Step>) {

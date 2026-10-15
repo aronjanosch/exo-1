@@ -1,5 +1,5 @@
 //! The kernel's content records, one JSON file each, in the folders `commodity/`, `location/`,
-//! `progress_track/` and `unlock/` (#122). Systems load their own folders with `content_core` and
+//! `progress_track/` and `unlock/`. Systems load their own folders with `content_core` and
 //! check their references against `Content`.
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -31,7 +31,7 @@ pub struct Commodity {
     pub tags: Vec<Tag>,
 }
 
-/// What a made product does (round 6): production mixes them in, buyers ask for them.
+/// What a made product does: production mixes them in, buyers ask for them.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Effect {
@@ -43,7 +43,7 @@ pub struct Effect {
     pub tags: Vec<Tag>,
 }
 
-/// A place with content: a pad of a hand-placed place (`content/place/`, #129), with a name,
+/// A place with content: a pad of a hand-placed place (`content/place/`), with a name,
 /// goods and jobs. A city is one place with many pads, so many locations.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]

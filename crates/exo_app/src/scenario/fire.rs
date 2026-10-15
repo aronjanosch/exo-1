@@ -1,4 +1,4 @@
-//! #298, fire: at the dev area's engine room a fire starts at the reactor (the dev fault, asked
+//! Fire: at the dev area's engine room a fire starts at the reactor (the dev fault, asked
 //! through the reactor's request as the dev button would). It grows, uses the room's air, and the
 //! ship's alarm goes to Warn, then Danger. A walker beside it catches fire through the heat. Then a
 //! fire starts at the pump and at the junction box too, and the three parts lose condition. The
@@ -104,7 +104,7 @@ fn spray_out(name: &'static str, at: [f64; 2], stand: [f64; 2]) -> Vec<Step> {
 }
 
 /// The table, the walker in front of it, and the extinguisher taken into the hand (1). Shared with
-/// `fire_grid` (#300).
+/// `fire_grid`.
 pub(super) fn take_extinguisher(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         begin(w, c, "fire: the table and the host's body for the walker");

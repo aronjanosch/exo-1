@@ -32,12 +32,12 @@ use display_core::{Rgb, Tone};
 
 /// Health, oxygen, burn and radiation of the local player. The health system (`health`) writes
 /// them (the host's own, or what the host sends a client); a scenario can too. Oxygen is `None`
-/// while it does not apply, the burn is level 0 without burn, radiation is 0 without (#295).
+/// while it does not apply, the burn is level 0 without burn, radiation is 0 without.
 #[derive(Resource, Clone, Debug, PartialEq)]
 pub struct Vitals {
     /// Vitality's share of the maximum before a headache.
     pub health: f64,
-    /// The maximum now, as a share of that (a headache lowers it); 1 without.
+    /// The maximum, as a share of that (a headache lowers it); 1 without.
     pub max_share: f64,
     /// 0..1 while the air runs out or the suit has a tank; `None` when breathing is no issue.
     pub oxygen: Option<f64>,
@@ -45,13 +45,13 @@ pub struct Vitals {
     pub burn_level: u8,
     /// The burning buildup, 0..1.
     pub buildup: f64,
-    /// On fire now.
+    /// On fire.
     pub burning: bool,
     /// 0..1, how much radiation the body has; the line shows only above 0.
     pub radiation: f64,
     /// Radiation makes nausea (the RAD label says SICK).
     pub sick: bool,
-    /// What each injury costs the health now, in vitality points (#295): the burn, the oxygen low,
+    /// What each injury costs the health, in vitality points: the burn, the oxygen low,
     /// and the headache's part of the maximum.
     pub burn_cost: f64,
     pub oxygen_cost: f64,
@@ -64,7 +64,7 @@ impl Default for Vitals {
     }
 }
 
-/// What the HUD shows now, written every fixed step (headless too).
+/// What the HUD shows, written every fixed step (headless too).
 #[derive(Resource, Clone, Debug, PartialEq)]
 pub struct CrewHud {
     /// Degrees 0..360 in `reference`'s frame.
@@ -440,7 +440,7 @@ enum VitalPart {
     Value(VitalKind),
     Track(VitalKind),
     Fill(VitalKind),
-    /// The health bar's coloured part of the lost health, per cause (#295).
+    /// The health bar's coloured part of the lost health, per cause.
     Segment(VitalKind, Cause),
     /// The health bar's dimmed end: above the reduced maximum (a headache).
     Cap(VitalKind),
@@ -482,7 +482,7 @@ enum ReticlePart {
     Dot,
     Ring,
     RingInner,
-    /// The hold's progress ring (#295): a pie that fills, with a dark disc inside.
+    /// The hold's progress ring: a pie that fills, with a dark disc inside.
     Hold,
     HoldInner,
 }
@@ -1094,7 +1094,7 @@ fn update_reticle(
 ) {
     let seated = players.single().is_ok_and(|p| p.seated);
     let usable = inter.target.is_some() && inter.kind != PromptKind::Blocked;
-    // The ring of a treatment or of the CPR's start (#300 polish).
+    // The ring of a treatment or of the CPR's start.
     let progress = hold.progress().or(rescue.progress()).filter(|p| *p > 0.0);
     for (part, mut n) in &mut nodes {
         match *part {

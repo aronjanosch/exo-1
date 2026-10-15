@@ -392,7 +392,7 @@ fn trips_of_every_length_arrive() {
     }
 }
 
-// ---- Edge cases and validation (#111, #106 points 1-2, #113 point 3) ----
+// ---- Edge cases and validation ----
 
 use crate::load::{Load, Loader, Pending};
 use serde_json::{json, Value};
@@ -520,7 +520,7 @@ fn zero_clear_step_does_not_hang_the_drop() {
     probe.hold_exit(true, DT, &s, &[]).unwrap();
     let other = Obstacle { centre: probe.drop_point().unwrap(), radius: 50.0 };
     d.cfg.emergency_clear_step = 0.0;
-    // Returns (it used to loop forever).
+    // Must return: a loop here never ends.
     assert!(d.hold_exit(true, DT, &s, &[other]).is_some());
 }
 
@@ -757,7 +757,7 @@ fn after_a_drop_the_wait_ends_with_the_post_ramp() {
     assert_eq!(l.step(&s, HEARTH, open, &d, false, Pending::Running(THIRD)), Load::Swap(THIRD));
 }
 
-// ---- Building a System from parts (#274) ----
+// ---- Building a System from parts ----
 
 #[test]
 fn a_system_rebuilt_from_its_parts_is_valid() {

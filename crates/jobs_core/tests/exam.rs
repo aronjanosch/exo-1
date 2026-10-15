@@ -1,4 +1,4 @@
-//! The flight licence exam of #169: a job template with checks (take off, reach a pad, land) next to
+//! The flight licence exam: a job template with checks (take off, reach a pad, land) next to
 //! the delivery, a fee, grades (pass, honours), retries at half price, a personal licence track.
 //! The checks read only the events `TookOff`, `PadReached` and `Landed`; nothing of how the ship flies.
 use std::path::Path;

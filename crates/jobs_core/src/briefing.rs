@@ -1,4 +1,4 @@
-//! Briefings from parts (#167): title formula, the giver's greeting (by mood) and intro, a
+//! Briefings from parts: title formula, the giver's greeting (by mood) and intro, a
 //! paragraph for the shape of the job, a reason keyed to cargo or route, the giver's sign-off.
 //! The picker decides every pick, so the same picker state gives the same briefing, and a picker
 //! kept across briefings never repeats a line twice in a row.

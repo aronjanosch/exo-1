@@ -1,11 +1,11 @@
-//! `--perf` (#19): per scenario phase the simulation step time (FixedFirst to FixedLast, physics
+//! `--perf`: per scenario phase the simulation step time (FixedFirst to FixedLast, physics
 //! included), the render frame time (windowed only, without vsync, screenshot frames left out),
 //! the build time of the ring's terrain patches and the resident memory, written as JSON when the
 //! script ends. With a baseline file every phase's step p95 is checked against it: a phase fails
 //! when it is slower than the baseline by more than the tolerance.
 //!
-//! Windowed, also per planet swap the frames around it (#34), and every frame slower than one
-//! 60 Hz frame with its phase and warp phase (#15). Reported, not checked.
+//! Windowed, also per planet swap the frames around it, and every frame slower than one
+//! 60 Hz frame with its phase and warp phase. Reported, not checked.
 use crate::scenario::Script;
 use bevy::prelude::*;
 use serde_json::{json, Value};

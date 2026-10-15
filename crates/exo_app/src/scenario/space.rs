@@ -70,7 +70,7 @@ pub(super) fn cabin_at_speed(name: &'static str, secs: f64, assist: bool, roll: 
     steps
 }
 
-/// Issue #5: stand up in space, walk out of the back and drift. Outside the field the walker
+/// Stand up in space, walk out of the back and drift. Outside the field the walker
 /// keeps the velocity it left the cabin with (ship velocity plus its walking speed) and nothing
 /// pulls it. `drift` gives the ship a speed towards the planet first (stopped not exactly).
 /// `careful`: W only in 0.1 s taps every 0.5 s, a careful step out: the walker leaves at step-off
@@ -149,7 +149,7 @@ pub(super) fn step_out_in_space(name: &'static str, drift: f64, careful: bool) -
     steps
 }
 
-/// Issue #8: the suit in space. Walk out of the stopped ship, brake to rest (X), roll (Q), turn
+/// The suit in space. Walk out of the stopped ship, brake to rest (X), roll (Q), turn
 /// to the ship with the mouse and fly back into the cabin (W), all through `Controls`.
 pub(super) fn suit_in_space() -> Vec<Step> {
     let mut steps: Vec<Step> = vec![
@@ -281,7 +281,7 @@ pub(super) fn suit_in_space() -> Vec<Step> {
     steps
 }
 
-/// Issue #9: the ship coasts at 20 m/s, the walker drifts with it in the suit 0.4 m behind the
+/// The ship coasts at 20 m/s, the walker drifts with it in the suit 0.4 m behind the
 /// end of its ramp. The ship's colliders sit one tick (0.33 m) behind its body; swept as if they
 /// stood still they stopped the walker. It must drift on with the ship.
 pub(super) fn drift_behind_moving_ship() -> Vec<Step> {

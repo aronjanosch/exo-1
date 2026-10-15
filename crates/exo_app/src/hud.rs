@@ -1,9 +1,9 @@
-//! The minimal HUD's content (#91): mode, speed, altitude and the boost gauge. The simulation
+//! The minimal HUD's content: mode, speed, altitude and the boost gauge. The simulation
 //! fills `HudReadout` every fixed step, headless too, so scenarios check what the player sees;
 //! the view only copies it into the text nodes (`view::update_flight_hud`).
 //!
 //! TODO(initiator): which elements, their words (one decimal on the speed, "SHIP  DECOUPLED")
-//! and the gauge look are starting points (#91).
+//! and the gauge look are starting points.
 use crate::env::PlanetRes;
 use crate::ship::Ship;
 use crate::walker::Player;
@@ -35,13 +35,13 @@ pub enum Boost {
     None,
     /// The suit has no meter (decided "no fuel"): only whether boost is held.
     Held(bool),
-    /// The ship's speed stage of #24 (no capacitor: `drain_time` 0): held or not.
+    /// The ship's speed stage (no capacitor: `drain_time` 0): held or not.
     Stage(bool),
-    /// The ship's capacitor (#90): charge 0..1, a boost is running, enough charge to start one.
+    /// The ship's capacitor: charge 0..1, a boost is running, enough charge to start one.
     Ship { charge: f64, active: bool, ready: bool },
 }
 
-/// The flight panel's switches and numbers (#197), plain values. `None` off the seat.
+/// The flight panel's switches and numbers, plain values. `None` off the seat.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Panel {
     None,
@@ -136,7 +136,7 @@ pub struct HudReadout {
     pub g_text: String,
     /// The last change, for `TOAST_TIME` s; set by `Toaster::step` in `update_readout`.
     pub toast: Option<String>,
-    /// The flight HUD (#200): seated or in a cabin; `None` otherwise.
+    /// The flight HUD: seated or in a cabin; `None` otherwise.
     pub flight: Option<FlightHud>,
 }
 
@@ -145,7 +145,7 @@ pub fn landing_word(landing: bool) -> &'static str {
     if landing { "LANDING" } else { "" }
 }
 
-/// Two decimals below 1 m/s, so a ship at rest can be told from a slow drift (issue #6).
+/// Two decimals below 1 m/s, so a ship at rest can be told from a slow drift.
 pub fn speed_text(v: f64) -> String {
     if v < 1.0 { format!("{v:.2}") } else { format!("{v:.1}") }
 }
@@ -204,7 +204,7 @@ fn coupling_badges(b: &mut Vec<Badge>, coupled: bool) {
     b.push(Badge::half("DECOUPLED", !coupled));
 }
 
-/// The panel's badges in order (#197): the coupling pair, the switches, the limiter
+/// The panel's badges in order: the coupling pair, the switches, the limiter
 /// (only below 100 %), landing and brake.
 pub fn badges(i: &HudIn) -> Vec<Badge> {
     let mut b = Vec::new();
@@ -251,7 +251,7 @@ fn first_change(prev: &[Badge], now: &[Badge]) -> Option<String> {
     changes.into_iter().next()
 }
 
-/// Turns the badges' changes into toasts (#197). The first step only records the state. A later
+/// Turns the badges' changes into toasts. The first step only records the state. A later
 /// change replaces the toast.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Toaster {
@@ -261,7 +261,7 @@ pub struct Toaster {
 }
 
 impl Toaster {
-    /// One fixed step of `dt` s; returns the toast to show now.
+    /// One fixed step of `dt` s; returns the toast to show.
     pub fn step(&mut self, badges: &[Badge], dt: f64, time: f64) -> Option<String> {
         let change = match &self.prev {
             None => None,
@@ -284,7 +284,7 @@ impl Toaster {
     }
 }
 
-/// The flight HUD's inputs from the ship (#200), plain values of the model's own numbers.
+/// The flight HUD's inputs from the ship, plain values of the model's own numbers.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FlightIn {
     /// m/s, ship space (x right, y up, z back): the ship's velocity.
@@ -324,7 +324,7 @@ pub struct GBar {
     pub over: bool,
 }
 
-/// The flight HUD's plain values (#200): the speed tape, the thrust cross, the G bar, the
+/// The flight HUD's plain values: the speed tape, the thrust cross, the G bar, the
 /// horizon and the flight path marker's direction in ship space.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FlightHud {
@@ -377,7 +377,7 @@ pub fn horizon_angles(rot: DQuat, planet_up: DVec3) -> (f64, f64) {
     (pitch, roll)
 }
 
-/// The flight HUD's plain values from the ship's numbers (#200).
+/// The flight HUD's plain values from the ship's numbers.
 pub fn flight_hud(i: &FlightIn, t: &HudTuning) -> FlightHud {
     FlightHud {
         speed_tape: speed_tape(i.lv.length(), i.cruise, i.limiter, i.boost),

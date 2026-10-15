@@ -1,4 +1,4 @@
-//! C1, items: at the item table in the dev area collect the wrench, the extinguisher and the
+//! Items: at the item table in the dev area collect the wrench, the extinguisher and the
 //! bandages (each shows in the action bar at once and the host confirms it one round trip later,
 //! 75 ms each way), take the extinguisher into the hand, drop it, throw the wrench, lose the
 //! extinguisher to another player who reached for it first (the prediction rolls back), sort the

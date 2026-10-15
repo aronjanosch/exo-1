@@ -1,4 +1,4 @@
-//! Hot reload of general tuning and the starting ship profile in dev builds (#21).
+//! Hot reload of general tuning and the starting ship profile in dev builds.
 //! Every 250 ms of wall time the files
 //! are read and compared with what is loaded; when one changed and all parse, the new values take
 //! effect at once (ship and walker get them, the suit, camera, grab, HUD and bindings are read every step).

@@ -1,4 +1,4 @@
-//! Round 5 (#198): the SC body through the controls: the spool and jerk of the forward thrust, the
+//! The SC body through the controls: the spool and jerk of the forward thrust, the
 //! boost ramp, from a hover at 400 m.
 use crate::common;
 use exo_app::Options;

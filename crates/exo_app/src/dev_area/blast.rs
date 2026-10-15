@@ -1,4 +1,4 @@
-//! The meltdown blast (#300, lane r19): what `ReactorEvent::Blast` does to the people in the engine
+//! The meltdown blast: what `ReactorEvent::Blast` does to the people in the engine
 //! room. The rules and the values are `reactor_core::Blast` (the core, unchanged). The host applies
 //! it (`reactor_blast`, after the reactor step): the burn and the radiation fall off with the
 //! distance from the reactor (`falloff`), three fires start round the core, the local screen flashes

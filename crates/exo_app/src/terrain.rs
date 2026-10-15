@@ -1,6 +1,6 @@
 //! Cube-sphere terrain with a quadtree LOD per face. Chunks (data and finished meshes) come
 //! from planet_core::build_chunk on the async compute pool, nearest first, with the camera
-//! projected along its motion as prefetch (#215); the main thread only adds the ready meshes
+//! projected along its motion as prefetch; the main thread only adds the ready meshes
 //! and spawns, within a time and byte budget per frame. Merged chunks wait in a small LRU
 //! cache, so a merge then split does not rebuild. View only: collision comes from the ring.
 use crate::env::{from_v3, PlanetRes};
@@ -19,7 +19,7 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Startup, setup_terrain);
     app.add_systems(Update, update_terrain.in_set(crate::phases::Frame::World));
     // Streaming adds and frees meshes all the time: start the GPU slabs large and grow them in
-    // big steps, so the allocator rarely regrows and copies a slab mid-flight (#214).
+    // big steps, so the allocator rarely regrows and copies a slab mid-flight.
     // `EXO_SLAB_MB=0` keeps Bevy's defaults (1 MiB, x1.5) for comparison.
     let mb: u64 = std::env::var("EXO_SLAB_MB").ok().and_then(|v| v.parse().ok()).unwrap_or(SLAB_MB);
     if mb > 0
@@ -35,7 +35,7 @@ pub fn plugin(app: &mut App) {
 /// First size of a GPU mesh slab (MiB). TODO(initiator): value.
 const SLAB_MB: u64 = 64;
 
-/// More async threads than Bevy's default 4 for the chunk jobs (#215: the pool was the limit of
+/// More async threads than Bevy's default 4 for the chunk jobs (the pool was the limit of
 /// the streaming at 800 m/s). TODO(initiator): value; the render and main threads need cores too.
 pub fn task_pools() -> bevy::app::TaskPoolOptions {
     let mut o = bevy::app::TaskPoolOptions::default();
@@ -63,7 +63,7 @@ const JOBS_PER_THREAD: usize = 2;
 const PREFETCH_S: f64 = 1.5;
 /// Speed limit of the projection, so a teleport does not prefetch the far side.
 const PREFETCH_MAX_SPEED: f64 = 2000.0;
-/// Geomorphing (#220): a chunk is at its own detail while the camera is nearer than
+/// Geomorphing: a chunk is at its own detail while the camera is nearer than
 /// `MORPH_NEAR x edge` from its bounding sphere (the distance a chunk merges back into its
 /// parent) and in its parent's shape from `MORPH_FAR x edge` (twice the child edge x the split
 /// factor: where the parent splits, so a new child appears in the parent's shape).
@@ -116,7 +116,7 @@ struct Node {
     /// Distance from `centre` to the farthest corner on the base sphere.
     horiz: f64,
     /// Height range the chunk's ground lies in (m above the base radius): the parent's until
-    /// the chunk itself is built, then its own (#214: the planet-wide relief made every node
+    /// the chunk itself is built, then its own (a planet-wide relief would make every node
     /// split a kilometre too early at 100 km).
     h: (f64, f64),
     /// Middle of that range above `centre`, and the bounding radius around it.
@@ -124,7 +124,7 @@ struct Node {
     bound: f64,
     children: Vec<usize>,
     entity: Option<Entity>,
-    /// Handles of the spawned chunk (and its water, lakes and rivers #72), kept for the cache.
+    /// Handles of the spawned chunk (and its water, lakes and rivers), kept for the cache.
     meshes: Option<Meshes>,
     job: Job,
     /// Whether the entity is set to `Visibility::Inherited` (else Hidden): written on change only.
@@ -133,7 +133,7 @@ struct Node {
 }
 
 /// Everything the terrain spawns for one planet (chunks, water, markers): despawned together
-/// when the simulation's planet changes (#14: refined chunks used to miss it and stayed behind).
+/// when the simulation's planet changes (refined chunks are freed too, or they stay behind).
 #[derive(Component)]
 pub struct PlanetScene(pub warp_core::PlanetId);
 
@@ -141,7 +141,7 @@ pub struct PlanetScene(pub warp_core::PlanetId);
 #[derive(Component)]
 pub struct TerrainChunk;
 
-/// The six root chunks of a planet, built on the pool while the ship flies there (#34), so the
+/// The six root chunks of a planet, built on the pool while the ship flies there, so the
 /// frame of the planet swap does not build them.
 #[derive(Resource)]
 pub struct PrebuiltRoots {
@@ -184,7 +184,7 @@ pub struct Terrain {
     /// The camera's nadir on the cube (face, a, b), set each frame for `lod_debt`.
     nadir: Option<(usize, f64, f64)>,
     /// This frame the chunk under the camera wanted to split but its children were still
-    /// building (#213: the shown ground is coarser than wanted).
+    /// building (the shown ground is coarser than wanted).
     pub lod_debt: bool,
     /// Root chunks built on the main thread when this terrain was built (6 without prebuilt roots).
     pub roots_built_here: usize,
@@ -220,14 +220,14 @@ fn water_surface(out: &ChunkOut, w: &[[f32; 3]], tris: &[u32]) -> Mesh {
 }
 
 /// The meshes of a chunk (pure, runs on the pool): the terrain, its sea, and lakes and rivers
-/// (#72, their own vertices and triangles, the sea's material).
+/// (their own vertices and triangles, the sea's material).
 pub fn build_meshes(out: &ChunkOut, indices: &[u16]) -> BuiltChunk {
-    // The biome palette (#66): ground + cap share as the colour, rock in UV0 + UV1.x, strata
+    // The biome palette: ground + cap share as the colour, rock in UV0 + UV1.x, strata
     // share in UV1.y (see terrain_material.rs).
     let colors: Vec<[f32; 4]> = out.colors.iter().map(|c| [srgb_to_linear(c[0]), srgb_to_linear(c[1]), srgb_to_linear(c[2]), c[3]]).collect();
     let uv0: Vec<[f32; 2]> = out.rock.iter().map(|c| [srgb_to_linear(c[0]), srgb_to_linear(c[1])]).collect();
     let uv1: Vec<[f32; 2]> = out.rock.iter().map(|c| [srgb_to_linear(c[2]), c[3]]).collect();
-    // The other biome at a border (#235): its ground and its share, in the tangent slot (the
+    // The other biome at a border: its ground and its share, in the tangent slot (the
     // terrain has no normal map, so the slot is free; terrain.wgsl reads it).
     let ground_b: Vec<[f32; 4]> = out.ground_b.iter().map(|c| [srgb_to_linear(c[0]), srgb_to_linear(c[1]), srgb_to_linear(c[2]), c[3]]).collect();
     let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
@@ -357,7 +357,7 @@ impl Terrain {
         }
     }
 
-    /// Every mesh this terrain holds (chunks and their water, cached ones too), for the swap check (#14).
+    /// Every mesh this terrain holds (chunks and their water, cached ones too), for the swap check.
     pub fn mesh_ids(&self) -> Vec<AssetId<Mesh>> {
         let live = self.nodes.iter().filter(|n| n.alive).filter_map(|n| n.meshes.as_ref());
         let cached = self.cache.values().map(|(_, m)| m);
@@ -398,10 +398,10 @@ impl Terrain {
         e
     }
 
-    /// The chunk's geomorph inputs for the vertex shader (#220), fixed for its life: its edge and
+    /// The chunk's geomorph inputs for the vertex shader, fixed for its life: its edge and
     /// its bounding radius around the chunk's origin, each as log2(m) x 4096 in 16 bits. The shader
-    /// takes the morph factor from the camera distance, so no tag changes per frame (#214: every
-    /// tag change re-queued the chunk, 6-10 ms in the render queue at speed). Roots: 0, no morph.
+    /// takes the morph factor from the camera distance, so no tag changes per frame (every tag
+    /// change re-queued the chunk, 6-10 ms in the render queue at speed). Roots: 0, no morph.
     fn morph_tag(n: &Node, origin: DVec3) -> u32 {
         if n.depth == 0 {
             return 0;
@@ -515,7 +515,7 @@ pub fn build_terrain(
         cam: DVec3::ZERO, pred: DVec3::ZERO,
         visible: 0, pending: 0, morph_on: crate::terrain_material::morph_default(), dt: 0.0, started: 0, nadir: None, lod_debt: false, roots_built_here: 0,
     };
-    // Roots synchronously (or prebuilt on the pool, #34), so there is always a planet.
+    // Roots synchronously (or prebuilt on the pool), so there is always a planet.
     let roots = prebuilt.filter(|r| r.len() == 6).unwrap_or_else(|| {
         t.roots_built_here = 6;
         build_roots(planet)
@@ -569,7 +569,7 @@ pub fn update_terrain(
     }
     let t = terrain.as_mut();
     t.dt = time.delta_secs_f64();
-    // Dev toggle (#220): F4 flips the geomorphing, to compare by feel.
+    // Dev toggle: F4 flips the geomorphing, to compare by feel.
     if keys.is_some_and(|k| k.just_pressed(KeyCode::F4)) {
         t.morph_on = !t.morph_on;
         let on = f32::from(t.morph_on);

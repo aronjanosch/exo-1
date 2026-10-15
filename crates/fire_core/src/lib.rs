@@ -1,8 +1,7 @@
-//! fire_core: fire in the ship's rooms, without engine types, in f64 (#286, part of #174 and
-//! #248). The seed of the rooms as air cells: each room has a scalar oxygen amount, rooms meet at
-//! gaps (doors, vents) with an open fraction, and leaks to space (hull breaches) that let air out
-//! with the room's pressure (its air fraction). Nothing more: one gas, no water, no heat; the
-//! rest comes with #174.
+//! fire_core: fire in the ship's rooms, without engine types, in f64. The seed of the rooms as air
+//! cells: each room has a scalar oxygen amount, rooms meet at gaps (doors, vents) with an open
+//! fraction, and leaks to space (hull breaches) that let air out with the room's pressure (its air
+//! fraction). Nothing more: one gas, no water, no heat.
 //!
 //! Taken from Barotrauma's fire sources: a fire grows while the room has enough oxygen, stalls
 //! lower down and shrinks below that, uses oxygen in proportion to its size, burns people and
@@ -14,7 +13,7 @@
 //! - `Deck`: rooms, gaps and fires. `step` exchanges air, grows and starves fires, returns damage,
 //!   spread and out events. `spray` is the extinguisher, `set_open` a door.
 //! - A closed gap (open 0) stops both air and fire.
-//! - `grid`: the other fire model (#300), cells per room on this deck's rooms and gaps.
+//! - `grid`: the other fire model, cells per room on this deck's rooms and gaps.
 //! - Oxygen moves only through gaps and is conserved there; fires use it up, the glue adds it
 //!   (life support) or takes it (breathing) through `room_mut`.
 //!

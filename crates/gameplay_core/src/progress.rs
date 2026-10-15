@@ -1,4 +1,4 @@
-//! The crew's progress: track values, owned tags, bought unlocks, raised flags (#125). Applies the
+//! The crew's progress: track values, owned tags, bought unlocks, raised flags. Applies the
 //! world events that touch it; the rest belong to the systems.
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -80,7 +80,7 @@ impl Progress {
         self.apply_with_notices(content, ev).map(|_| ())
     }
 
-    /// `apply`, and the notices the event raises (#165): an unlock bought, a track level reached.
+    /// `apply`, and the notices the event raises: an unlock bought, a track level reached.
     pub fn apply_with_notices(&mut self, content: &Content, ev: &Event<WorldEvent>) -> Result<Vec<Notice>, Refusal> {
         let level_before = match &ev.payload {
             WorldEvent::TrackChanged { track, player, .. } => Some(self.level(content, track, *player)),
@@ -123,7 +123,7 @@ impl Progress {
                 Ok(())
             }
             WorldEvent::CratePickedUp { .. } | WorldEvent::CrateDelivered { .. } | WorldEvent::CrateLost { .. } | WorldEvent::TimePassed { .. } | WorldEvent::OrderPlaced { .. } | WorldEvent::OrderSettled { .. } | WorldEvent::TookOff | WorldEvent::PadReached { .. } | WorldEvent::Landed { .. } => Ok(()),
-            // Round 6: the systems that own these turn them into `TrackChanged`, `FlagRaised` and `UnlockBought`.
+            // The systems that own these turn them into `TrackChanged`, `FlagRaised` and `UnlockBought`.
             _ => Ok(()),
         }
     }

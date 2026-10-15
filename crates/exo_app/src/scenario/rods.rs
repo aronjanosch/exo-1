@@ -1,4 +1,4 @@
-//! #300 (lane rods): fuel rods by hand. The corridor's rod rack holds two standard rods and a hot
+//! Fuel rods by hand. The corridor's rod rack holds two standard rods and a hot
 //! one; the walker takes the hot rod (F: the only one of its kind), it is selected, LMB held on the reactor with it loads it (the
 //! rods in the reactor go from two to three, the rod is gone from the hand). The dev drain makes
 //! the core hot; with empty hands and LMB held on the reactor the brake pulls the rod with the most
@@ -229,7 +229,7 @@ pub(super) fn rods_steps(s: &mut Vec<Step>) {
         Some("dropped".into())
     }));
 
-    // The spicy rod (#300): it lies on the pad by the glowing barrel. The walker stands east of it,
+    // The spicy rod: it lies on the pad by the glowing barrel. The walker stands east of it,
     // outside the barrel's glow, takes it (F), and holds it 3 s: the radiation rises by about 3.
     s.push(run("rods: the spicy rod lies by the barrel", 8.0, |w, c| {
         if outside(w, "fuel_rod_spicy").is_none() {

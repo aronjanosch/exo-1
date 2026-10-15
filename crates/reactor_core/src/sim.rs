@@ -254,7 +254,7 @@ pub fn scripts() -> Vec<Script> {
                 (10.0, Action::Fault(Fault::PumpBreak)),
             ],
         },
-        // The core eject (#300 r22): the operator holds fission and turbine at 100 (Manual), the pump
+        // The core eject: the operator holds fission and turbine at 100 (Manual), the pump
         // breaks at 10 s, and at TempCritical the core is thrown out. No meltdown follows.
         Script {
             name: "eject_in_time",
@@ -277,7 +277,7 @@ pub fn scripts() -> Vec<Script> {
                         turbine: 100.0,
                     },
                 ),
-                // Armed now, they run at melt + 5 s, in this order.
+                // Armed, they run at melt + 5 s, in this order.
                 (
                     0.0,
                     Action::AfterMeltdown(5.0, Box::new(Action::RepairReactor)),

@@ -26,7 +26,7 @@ pub const SC: [&str; 6] = [
 
 #[derive(Resource, Clone, Debug)]
 pub struct Tuning {
-    /// The ground rules of the ship (`ground.json`, #92).
+    /// The ground rules of the ship (`ground.json`).
     pub ground: GroundTuning,
     pub walker: WalkerConfig,
     pub suit: SuitConfig,

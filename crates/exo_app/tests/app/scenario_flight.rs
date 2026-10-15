@@ -1,4 +1,4 @@
-//! Sprint 2 feel (#24, #25, #26): input ramp, virtual-joystick mouse, boost, decoupled flight.
+//! Feel: input ramp, virtual-joystick mouse, boost, decoupled flight.
 use crate::common;
 use exo_app::Options;
 

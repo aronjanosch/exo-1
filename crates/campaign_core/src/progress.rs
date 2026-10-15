@@ -24,7 +24,7 @@ impl Progress {
         self.visited.binary_search(&id).is_ok()
     }
 
-    /// The systems the captain may pick now: the forward targets of `current`; with `allow_back` also the systems that link forward to it. Ascending, no duplicates.
+    /// The systems the captain may pick: the forward targets of `current`; with `allow_back` also the systems that link forward to it. Ascending, no duplicates.
     // TODO(initiator): jumping back is open (Barotrauma: possible, but brings little); the game passes allow_back = false until decided.
     pub fn targets(&self, map: &Map, allow_back: bool) -> Vec<NodeId> {
         let mut ts = map.forward(self.current).to_vec();

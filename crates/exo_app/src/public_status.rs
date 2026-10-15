@@ -1,4 +1,4 @@
-//! Public status (#300): what the others see of a player. Burning, down (waiting for the respawn)
+//! Public status: what the others see of a player. Burning, down (waiting for the respawn)
 //! and what the player does (treating, repairing, spraying).
 //!
 //! - The host works it out from its own state (`HealthState`, the repair sessions, the sprays) and
@@ -85,7 +85,7 @@ fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>
             } else {
                 Doing::Nothing
             };
-            // The injuries the others see (the medic view, #300): the same numbers as the owner's vitals.
+            // The injuries the others see (the medic view): the same numbers as the owner's vitals.
             let v = crate::health::vitals_of(&st.tuning, b);
             let hurt = Injuries::from_shares(v.health, v.burn_level, v.radiation, v.oxygen.map_or(0.0, |air| 1.0 - air));
             (*id, PublicStatus { burning: b.health.burning(), down, unconscious, doing, hurt })

@@ -1,4 +1,4 @@
-//! #27: camera effects from speed, turn and touchdown. #148: trauma shake. #149: spring lag and
+//! Camera effects from speed, turn and touchdown: trauma shake, spring lag and
 //! field of view from G.
 use flight_core::limits::G0;
 use flight_core::camera::{CameraFx, CameraTuning, FxInput};
@@ -70,7 +70,7 @@ fn touchdown_bumps_once_and_dies_out() {
     assert_eq!(fx.bumps, 1, "resting does not bump again");
 }
 
-/// #110 point 4: a pull-up near the ground without contact does not bump; a touch does, also
+/// A pull-up near the ground without contact does not bump; a touch does, also
 /// when the centre is high (a corner on a steep slope).
 #[test]
 fn bump_on_contact_not_on_a_pull_up() {
@@ -92,7 +92,7 @@ fn bump_on_contact_not_on_a_pull_up() {
     assert_eq!(fx.bumps, 0);
 }
 
-/// #106 point 6: values that make the bump unbounded or NaN are refused.
+/// Values that make the bump unbounded or NaN are refused.
 #[test]
 fn rejects_bad_values() {
     let cam = include_str!("../../../content/tuning/camera.json");
@@ -169,7 +169,7 @@ fn trauma_rises_under_boost_stays_in_range_and_decays() {
 
 #[test]
 fn thrust_adds_trauma_in_proportion_to_the_share() {
-    // The shipped value is 0 since round 5 (no shake from plain thrust); the source still works.
+    // The shipped value is 0 (no shake from plain thrust); the source still works.
     let t = CameraTuning { shake_trauma_thrust: 0.8, ..CameraTuning::default() };
     let (mut half, mut full) = (CameraFx::default(), CameraFx::default());
     for _ in 0..60 {

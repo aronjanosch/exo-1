@@ -1,4 +1,4 @@
-//! The lab's records (round 6, #228): `ingredient/`, `product_base/` and `lab/tuning.json`, loaded
+//! The lab's records: `ingredient/`, `product_base/` and `lab/tuning.json`, loaded
 //! by `content_core` and checked against the kernel's commodities and effects.
 use std::collections::BTreeMap;
 

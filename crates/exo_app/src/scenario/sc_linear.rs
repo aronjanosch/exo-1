@@ -1,4 +1,4 @@
-//! Scenario `sc-linear` (round 5, #195): the SC model's linear law, driven through `Controls` from
+//! Scenario `sc-linear`: the SC model's linear law, driven through `Controls` from
 //! 400 m: D then W with boost (the peak stays under the boost cap), W+D then X (the heading holds
 //! while braking), H off (the ship falls with g), H on (it holds), B then W (NAV flies above the
 //! SCM cap, and bleeds back to it), PageDown five times (half the cap). Each line is a check with
@@ -78,7 +78,7 @@ pub fn sc_linear_steps(s: &mut Vec<Step>) {
         let (cap, boost_cap) = with_ship(w, |s| (s.sc.status.cap, s.sc.tuning.linear.scm.boost_forward));
         let speed = c.v["sideways"];
         // In air the sideways drag (sc_air.json) eats the weak side thrusters before the cap: the
-        // strafe settles well below it (#199), so the check asks for a real strafe, not the cap.
+        // strafe settles well below it, so the check asks for a real strafe, not the cap.
         check(c, speed > 30.0 && speed <= cap + 0.5, format!("D: {speed:.1} m/s sideways after 8 s (cap in force {cap:.1}, air-limited)"));
         c.v.insert("boost_cap", boost_cap);
         true
@@ -115,7 +115,7 @@ pub fn sc_linear_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         let (turn, stop) = (c.v["turn"], c.v["stop"]);
         let _ = w;
-        // In air the brake's thrust builds up at its jerk (#198) while drag still pulls: about a
+        // In air the brake's thrust builds up at its jerk while drag still pulls: about a
         // degree of turn (in space the core test holds it under 0.5 deg).
         check(c, turn < 2.0, format!("X: the heading turned {turn:.3} deg until 1 m/s"));
         check(c, stop >= 0.0, format!("X: stopped after {stop:.2} s"));

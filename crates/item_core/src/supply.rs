@@ -1,4 +1,4 @@
-//! Supply (#300): how fast a wearing item runs down while it is used, and the racks on the wall
+//! Supply: how fast a wearing item runs down while it is used, and the racks on the wall
 //! that give a full one for an empty one (Barotrauma's extinguisher bracket). The values are in
 //! `content/gameplay/fire/extinguisher.json`; the racks' places are the level's (`exo_app`).
 use serde::Deserialize;

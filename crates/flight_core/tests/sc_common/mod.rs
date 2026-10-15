@@ -1,4 +1,4 @@
-//! Shared fixtures for the SC model's tests (round 5): the six tuning files, a deep-space and a
+//! Shared fixtures for the SC model's tests: the six tuning files, a deep-space and a
 //! flat air planet, and a loop that flies the ship for a while. `mod sc_common;` in a test file.
 #![allow(dead_code)]
 use flight_core::sc::{ModeCmds, ScShip, ScTuning};
@@ -19,7 +19,7 @@ pub fn tuning() -> ScTuning {
     .unwrap().flight
 }
 
-/// The tuning with thrusters that answer at once (no spool, jerk or boost ramp, #198), for
+/// The tuning with thrusters that answer at once (no spool, jerk or boost ramp), for
 /// checks of one step of the linear law.
 pub fn instant() -> flight_core::sc::ScTuning {
     let mut t = tuning();

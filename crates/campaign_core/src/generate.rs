@@ -1,4 +1,4 @@
-//! The star system generator (#274): a template and a seed give one concrete system. Every
+//! The star system generator: a template and a seed give one concrete system. Every
 //! concern draws from its own stream (`Rng::derive`), so a change in one part does not shift the
 //! others.
 use crate::names::Names;

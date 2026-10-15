@@ -1,4 +1,4 @@
-//! Camera effects (#27, #148, #149): field of view and streaks from speed through curves, a
+//! Camera effects: field of view and streaks from speed through curves, a
 //! look-ahead that turns the pilot's view a little into the turn, a short bump on touchdown; the
 //! trauma shake (boost, thrust, touchdown), the spring lag of the chase camera and the field of
 //! view from forward G. Plain math for the view; values in `content/tuning/camera.json`.
@@ -72,7 +72,7 @@ impl CameraTuning {
         Ok(t)
     }
 
-    /// Everything finite; gains, limits, times and the bump not negative (#106 point 6).
+    /// Everything finite; gains, limits, times and the bump not negative.
     pub fn validate(&self) -> Result<(), String> {
         if let Some(v) = self.chase_offset.iter().find(|v| !v.is_finite()) {
             return Err(format!("chase_offset {v} not finite"));
@@ -170,7 +170,7 @@ pub struct FxInput {
     pub thrust: f64,
     /// Boost active.
     pub boost: bool,
-    /// Turbulence (#147): trauma per s, 0..1. No source yet, so 0.
+    /// Turbulence: trauma per s, 0..1. No source yet, so 0.
     pub turbulence: f64,
     /// The walker in a flying ship's cabin: shake only, no lag, no G field of view.
     pub cabin: bool,
@@ -267,7 +267,7 @@ impl CameraFx {
     /// One step with the view inputs only (no ship inputs: no spring, no G field of view, the
     /// player's shake setting at full). `turn` is the ship's turn rate in its own axes (x pitch,
     /// y yaw, rad/s), `approach` its speed towards the ground (m/s), `grounded` whether the hull
-    /// touches; the bump comes when contact starts (#110 point 4).
+    /// touches; the bump comes when contact starts.
     pub fn step(&mut self, t: &CameraTuning, speed: f64, turn: DVec2, approach: f64, grounded: bool, dt: f64) {
         self.step_with(t, &FxInput { speed, turn, approach, grounded, shake_scale: 1.0, dt, ..FxInput::default() });
     }

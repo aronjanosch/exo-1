@@ -1,5 +1,5 @@
-//! production_core: recipes and stations, groundwork for production chains (G), and the round 6
-//! lab (#228). A station transforms commodities: it has a recipe, state, and inputs/outputs inventory.
+//! production_core: recipes and stations, groundwork for production chains, and the
+//! lab. A station transforms commodities: it has a recipe, state, and inputs/outputs inventory.
 //! A recipe defines inputs (commodity id + amount), outputs, station kind, and time.
 //!
 //! - `recipe`: the `recipe` record, validated loader, RecipeId and StationKind.

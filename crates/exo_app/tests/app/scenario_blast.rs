@@ -1,4 +1,4 @@
-//! #300 (lane r19): the meltdown blast reaches the players. The dev drain melts the core with fuel in
+//! The meltdown blast reaches the players. The dev drain melts the core with fuel in
 //! it; the walker two metres off takes burn and radiation, the local flash is on, three fires start.
 //! Without a window.
 use crate::common;

@@ -11,7 +11,7 @@ struct FixedTicks(u32);
 fn app() -> App {
     let o = Options { headless: true, scenario: Some("first-person-settings".into()), out_dir: common::out_dir("raw-mouse-look"), ..default() };
     let mut app = exo_app::build_app(&o);
-    // Keep the scenario's renderer-free camera harness, drive live input instead of its script.
+    // Keep the renderer-free camera harness, drive live input, not its script.
     app.world_mut().remove_resource::<Script>();
     app.world_mut().resource_mut::<Controls>().scripted = false;
     app.add_plugins((InputPlugin, exo_app::menu::plugin, exo_app::controls::window_plugin));

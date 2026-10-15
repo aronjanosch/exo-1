@@ -20,7 +20,7 @@
 //! step's fuel (Barotrauma uses the last step's, `prevAvailableFuel`). `fuel_need` ports
 //! Barotrauma's NeedMoreFuel(1.0) and TooMuchFuel for the screen. Values: TODO(initiator).
 //!
-//! Core eject (PULSAR manual 367-369, `pulsar-mech-conduits.md`; #300 r22): a lever on every
+//! Core eject (PULSAR manual 367-369, `pulsar-mech-conduits.md`): a lever on every
 //! reactor throws the core out through the bottom of the ship. The rods leave with it, the reactor
 //! is dead (`eject`, `ejected`), and nothing can melt or blast while the core is out. Repaired
 //! back to functioning, the reactor has a new, empty core. Values and rules: TODO(initiator).

@@ -1,4 +1,4 @@
-//! Scenario `sc-body` (round 5, #198): the SC body through the controls. The ship lifts to 400 m
+//! Scenario `sc-body`: the SC body through the controls. The ship lifts to 400 m
 //! and hovers; W from the hover gives the forward thrust with its
 //! spool and jerk (times to 50 % and to the peak of `thrust_share.z`); after a brake to rest, W
 //! with boost gives the boosted forward thrust (times to 50 % and 95 % of its peak, the forward

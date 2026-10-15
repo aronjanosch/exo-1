@@ -1,4 +1,4 @@
-//! The item table (C1): a table in the engineering zone with a fire extinguisher, a wrench, a screwdriver and a
+//! The item table: a table in the engineering zone with a fire extinguisher, a wrench, a screwdriver and a
 //! stack of bandages, two deglows and two O2 canisters on it, and one wrench lying in the parked ship's cabin, to try collecting,
 //! holding, dropping and throwing. The host puts them into the world once the area and the ship
 //! are there.

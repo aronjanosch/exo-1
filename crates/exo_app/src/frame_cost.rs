@@ -1,4 +1,4 @@
-//! Frame spikes (#213): what each frame cost on the main thread and which streaming work happened
+//! Frame spikes: what each frame cost on the main thread and which streaming work happened
 //! in it. The suspects (terrain uploads, collision ring patches, scatter cells, origin shifts,
 //! transform propagation, fixed steps) add their count and time to `FrameCost`; `frame_end`
 //! closes the frame into a `FrameRec`. Always on (a few `Instant` reads per frame).

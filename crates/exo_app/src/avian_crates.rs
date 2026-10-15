@@ -1,4 +1,4 @@
-//! Crates outside near the walker as Avian rigid bodies (#210, spike 12). Three states: a body
+//! Crates outside near the walker as Avian rigid bodies. Three states: a body
 //! (here), a `CrateBody` that sweeps (the cabin, the ramp, far or frozen crates) and a locked one
 //! on the plates. `avian_pre` decides the state and puts gravity and the hold in as accelerations;
 //! `avian_post` copies the pose back into `CrateBody`, so grab, interaction, budget and rendering
@@ -15,7 +15,7 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use walker_core::Frame;
 
-/// Marks a crate that is an Avian body now.
+/// Marks a crate that is an Avian body.
 #[derive(Component)]
 pub struct AvianCrate {
     /// Velocity before the physics step.

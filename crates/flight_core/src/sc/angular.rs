@@ -1,6 +1,5 @@
 //! Stage 5 of the SC step: the angular acceleration the flight computer asks for (ship space,
-//! rad/s²: x pitch, y yaw, z roll), inside the torque box. Lane `sc-angular` (round 5) owns this
-//! file.
+//! rad/s²: x pitch, y yaw, z roll), inside the torque box.
 //!
 //! The law (after the rotation of Star Citizen's flight control, structure only; own values):
 //!
@@ -184,7 +183,7 @@ fn pitch_yaw_axis(reversing: &mut f64, accel: &mut f64, spin: f64, target: f64, 
     } else {
         // A reversal that just crossed zero hands over to the spring from rest: its constant
         // deceleration is not the spring's state, and kept, it shoots a small target several
-        // times over (#239).
+        // times over.
         if *reversing != 0.0 {
             *accel = 0.0;
         }

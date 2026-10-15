@@ -1,4 +1,4 @@
-//! Rules of #286 for fire and air, with numbers.
+//! Rules for fire and air, with numbers.
 use super::*;
 use glam::DVec2;
 

@@ -1,7 +1,7 @@
-//! The host's save file (#135): the #128 envelope as JSON in `saves/` in the game's own folder
+//! The host's save file: the envelope as JSON in `saves/` in the game's own folder
 //! (next to where it runs; scripted and headless runs use `<out_dir>/saves`). Autosave after job
 //! events and on an interval, on the game clock; the save is loaded once at start. A client id is
-//! made once per game folder (`saves/client_id`). No network here: sending the state on join is #134.
+//! made once per game folder (`saves/client_id`). No network here.
 //!
 //! A load is a restart of the gameplay state: the goods crates go, progress and jobs
 //! come from the save, the crates of active jobs come back where they were, with their condition.
@@ -32,8 +32,7 @@ impl SaveDir {
     }
 }
 
-/// This game folder's client id (#134 will send it on join; until then the host plays as
-/// `gameplay::HOST`).
+/// This game folder's client id (sent on join). The host plays as `gameplay::HOST` until then.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct LocalClient(pub ClientId);
 

@@ -1,4 +1,4 @@
-//! Banners and toasts (#165): what `Gameplay::shown` releases, drawn over the game. One banner at
+//! Banners and toasts: what `Gameplay::shown` releases, drawn over the game. One banner at
 //! a time in the upper middle (a payout counts up), toasts in a short stack below it. They never
 //! take input; Enter (`Tap::SkipNotices`) runs the rest of a ritual fast (in `gameplay_step`).
 //! Window only; the logic is in `ScreenNotices` so it can be tested.

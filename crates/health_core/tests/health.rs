@@ -1,4 +1,4 @@
-//! health_core (#295): heat, fire and burn in ticks, radiation, nausea and mobility, oxygen,
+//! health_core: heat, fire and burn in ticks, radiation, nausea and mobility, oxygen,
 //! headache, treatments, death and respawn, on the shipped file.
 use std::path::Path;
 
@@ -535,7 +535,7 @@ fn the_cpr_numbers_are_in_the_shipped_file_and_checked() {
 #[test]
 fn a_treatment_suits_the_injuries_it_reduces() {
     // The bandage reduces the burn, the deglow the radiation; neither suits the oxygen, and an
-    // unknown treatment suits nothing (#300: the medic view's highlight).
+    // unknown treatment suits nothing (the medic view's highlight).
     let t = shipped();
     assert!(t.suits("bandage", "burn"));
     assert!(!t.suits("bandage", "radiation"));

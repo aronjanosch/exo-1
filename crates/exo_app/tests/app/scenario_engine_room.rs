@@ -1,4 +1,4 @@
-//! #296: the engine room at the dev area: the corridor and its wall, the door opened and shut with
+//! The engine room at the dev area: the corridor and its wall, the door opened and shut with
 //! F, the room's air low and back (the health shows it), the alarm cycled to Warn and Danger.
 //! Without a window.
 use crate::common;

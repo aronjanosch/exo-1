@@ -1,4 +1,4 @@
-//! #285: the pointer on a display through the app: hover, press and release elsewhere, a disabled
+//! The pointer on a display through the app: hover, press and release elsewhere, a disabled
 //! button, a click off the panel, the slider. Without a window.
 use crate::common;
 use exo_app::Options;

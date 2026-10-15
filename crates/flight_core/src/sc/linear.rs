@@ -1,5 +1,5 @@
 //! Stage 4 of the SC step: the thrust the flight computer asks for (ship space, m/s²), inside the
-//! thrust box. Lane `sc-linear` (round 5, #195) owns this file and `modes.rs`.
+//! thrust box.
 //!
 //! Coupled flies a velocity goal from the stick (`cruise` sideways and vertical, the caps along Z
 //! at boost); decoupled pushes along the stick; `Modes::coupling` blends them. The cap refuses the
@@ -7,8 +7,7 @@
 //! (B2), anti-drift keeps the path straight while an axis saturates, gravity compensation holds
 //! against gravity and air (off: the ship falls in a frame that falls with it), G-safe cuts the
 //! box, the strafe tapers with forward speed, comstab keeps the goal on the nose, and proximity
-//! and landing mode limit the descent and the speed near the ground. The first flight model's
-//! ideas (`refuse_thrust`, `brake_along`, the precision band, the descent limit) live on here.
+//! and landing mode limit the descent and the speed near the ground.
 use super::modes::{Master, Modes};
 use super::StepState;
 use crate::limits::{Dirs, G0, G_SAFE_MAX_G};
@@ -215,7 +214,7 @@ fn brake_ceiling(b: &Dirs, hold: DVec3, u: DVec3) -> f64 {
 /// m/s: anti-drift acts only on an across speed above this.
 const ANTI_DRIFT_MIN: f64 = 0.5;
 
-/// Anti-drift (notes section 1, "Anti-drift"; #203): with the velocity across the goal direction
+/// Anti-drift (notes section 1, "Anti-drift"): with the velocity across the goal direction
 /// `g` (ship space), the thrust takes the direction of the velocity error at the most the box
 /// gives that way, so the path to the goal stays straight. `None` when the velocity has no part
 /// across the goal (the plain law then applies).

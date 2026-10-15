@@ -1,7 +1,7 @@
-//! Interaction (#82): one verb (`Tap::Interact`, F) and one prompt. Each step the target is
+//! Interaction: one verb (`Tap::Interact`, F) and one prompt. Each step the target is
 //! chosen from what the walker looks at: the crate nearest the centre of the view cone, or the
 //! seat when the walker stands at it. The HUD shows `Interaction::prompt`; the tap does what it
-//! says. Targets: seat, crates, on a pad the job offered there (#133), and displays.
+//! says. Targets: seat, crates, on a pad the job offered there, and displays.
 use crate::cargo::{crate_world, Crate, Crates};
 use crate::dev_area::engine_room::{EngineDoor, Slab, DOOR_REACH};
 use crate::dev_area::DevBox;
@@ -24,20 +24,20 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, interaction.before(crate::walker::walker_step).in_set(crate::phases::Fx::Walker));
 }
 
-/// The walker sits down when its feet are this close to the seat (m), as before #82.
+/// The walker sits down when its feet are this close to the seat (m).
 pub const SEAT_RANGE: f64 = 1.8;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Target {
     Seat,
-    /// The seat, but the player has no flight licence: the prompt says where to get one (#169).
+    /// The seat, but the player has no flight licence: the prompt says where to get one.
     SeatLocked,
     StandUp,
     /// Pick up a crate with the hands or pull it with the grab tool.
     Crate(Entity, Reach),
     /// Set the held crate down (let go).
     Drop(Entity),
-    /// Talk to the giver whose counter is at this pad: opens the briefing (#167).
+    /// Talk to the giver whose counter is at this pad: opens the briefing.
     Counter(jobs_core::GiverId),
     /// Take the job the open counter shows, for the crew.
     Accept(jobs_core::JobId),
@@ -47,9 +47,9 @@ pub enum Target {
     LeavePanel(Entity),
     /// Collect a loose item into the action bar.
     Item(Entity),
-    /// The engine room's door (#296): a request to slide it to the other state (`open` is now).
+    /// The engine room's door: a request to slide it to the other state (`open` is the current state).
     Door { open: bool },
-    /// The wall rack: hang the selected item and take a spare, or take one into an empty hand (#300).
+    /// The wall rack: hang the selected item and take a spare, or take one into an empty hand.
     Rack(item_core::RackId),
 }
 
@@ -144,13 +144,13 @@ pub fn interaction(
     let Some((ship_e, sp, sr)) = ships.iter().next().map(|(e, _, p, r)| (e, *p, *r)) else { return };
     let frame = cabin_frame(ship_e, (&sp, &sr), &floors);
     let cfg = &tuning.grab;
-    // A held crate that is gone (despawned) is no longer held.
+    // A held crate that is gone (despawned) is released.
     if grab.held.is_some_and(|h| crates.get(h.crate_e).is_err()) {
         grab.held = None;
     }
     let size_of = |e: Entity| crates.get(e).map(|(_, c)| table.0.sizes[c.size].name.clone()).unwrap_or_default();
 
-    // In another player's cabin only loose items are offered yet (#86); the cabin is that ship's.
+    // In another player's cabin only loose items are offered yet; the cabin is that ship's.
     let own_frame = match pl.ship {
         None => true,
         Some(e) => e == ship_e,
@@ -255,7 +255,7 @@ pub fn interaction(
             _ if at_seat => Some(if gp.may_pilot(crate::gameplay::HOST) { Target::Seat } else { Target::SeatLocked }),
             Some((_, e, r)) => Some(Target::Crate(e, r)),
             None => {
-                // A wall rack in reach, on foot, after the rest (#300).
+                // A wall rack in reach, on foot, after the rest.
                 let rack_pick = pl.ship.is_none().then(|| supply.as_ref().and_then(|sup| boxes.iter().find_map(|(b, p)| sup.0.rack_in(&b.id).filter(|_| in_cone(eye, look, p.0, half, USE_RANGE).is_some()).map(Target::Rack)))).flatten();
                 item_target.map(Target::Item).or(panel_pick.map(Target::Panel)).or(door_pick).or(rack_pick)
             }

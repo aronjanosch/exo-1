@@ -1,4 +1,4 @@
-//! Feedback beats of #165: notices, the pacing queue, text pools without immediate repeats, and
+//! Feedback beats: notices, the pacing queue, text pools without immediate repeats, and
 //! the notices the kernel itself raises (unlock, rank).
 use std::path::Path;
 

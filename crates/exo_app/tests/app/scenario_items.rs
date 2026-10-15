@@ -1,4 +1,4 @@
-//! C1: items at the dev area's item table: collect, hold, drop, throw, a lost race for an item,
+//! Items at the dev area's item table: collect, hold, drop, throw, a lost race for an item,
 //! the inventory drag, and a wrench riding the cabin through a take-off. Without a window.
 use crate::common;
 use exo_app::Options;

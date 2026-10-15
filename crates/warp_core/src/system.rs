@@ -30,7 +30,7 @@ impl std::fmt::Display for PlanetId {
 #[serde(deny_unknown_fields)]
 pub struct PlanetDef {
     pub name: String,
-    /// Surface recipe: `content/planet/<recipe>.json` (#64). Seed and radius stay here.
+    /// Surface recipe: `content/planet/<recipe>.json`. Seed and radius stay here.
     #[serde(default)]
     pub recipe: String,
     pub seed: i32,
@@ -49,7 +49,7 @@ pub struct PlanetDef {
     pub arrival_radius: f64,
     /// Zone where a ship belongs to this planet's frame (render and load), from the centre.
     pub frame_radius: f64,
-    /// Highest ground above the radius (m), when the planet is held to a ceiling (#177); none =
+    /// Highest ground above the radius (m), when the planet is held to a ceiling; none =
     /// the recipe's own relief.
     #[serde(default)]
     pub terrain_ceiling_m: Option<f64>,
@@ -163,21 +163,21 @@ impl StarDef {
 pub struct System {
     #[serde(rename = "_comment", default)]
     _comment: String,
-    /// The one star of the system (#104).
+    /// The one star of the system.
     pub star: StarDef,
     pub planets: Vec<PlanetDef>,
     pub drive: DriveConfig,
 }
 
 impl System {
-    /// Builds a system from its parts (#274, for generators) and checks it like a file.
+    /// Builds a system from its parts (for generators) and checks it like a file.
     pub fn new(star: StarDef, planets: Vec<PlanetDef>, drive: DriveConfig) -> Result<System, String> {
         let sys = System { _comment: String::new(), star, planets, drive };
         sys.validate()?;
         Ok(sys)
     }
 
-    /// Reads and checks the system file (#106): unknown fields and values the drive or the
+    /// Reads and checks the system file: unknown fields and values the drive or the
     /// registry cannot work with are errors, never panics or hangs later.
     pub fn from_json(s: &str) -> Result<System, String> {
         let sys: System = serde_json::from_str(s).map_err(|e| e.to_string())?;
@@ -281,7 +281,7 @@ impl System {
 
 impl DriveConfig {
     /// Speeds, accelerations and the steps > 0 (a zero exit speed or clear step hangs the drive,
-    /// #111), exit <= stage switch <= top speed, the warning band outside the calibration angle.
+    /// exit <= stage switch <= top speed, the warning band outside the calibration angle.
     pub fn validate(&self) -> Result<(), String> {
         for (k, v) in [
             ("top_speed", self.top_speed),

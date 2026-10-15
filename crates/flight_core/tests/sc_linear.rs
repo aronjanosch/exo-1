@@ -1,4 +1,4 @@
-//! The SC model's linear law (round 5, #195): the cap that refuses thrust, the brake along the
+//! The SC model's linear law: the cap that refuses thrust, the brake along the
 //! velocity, anti-drift, the strafe taper, gravity compensation, G-safe, comstab, the master modes,
 //! the speed limiter, proximity and landing mode. Numbers are printed; values are placeholders.
 mod sc_common;
@@ -435,7 +435,7 @@ fn anti_drift_leaves_a_straight_burn_alone() {
 }
 
 /// Anti-drift with a large error along the goal and a small drift across it: the thrust points
-/// along the velocity error (a straight path to the goal), not every axis full (a kink, #203).
+/// along the velocity error (a straight path to the goal), not every axis full (a kink).
 #[test]
 fn anti_drift_with_a_large_along_error_keeps_the_error_direction() {
     let mut ship = ScShip::new(instant());

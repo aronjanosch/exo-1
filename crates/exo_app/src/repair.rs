@@ -1,4 +1,4 @@
-//! Repair at the machine (#299): the wrench or the screwdriver in hand, a timing ring around the
+//! Repair at the machine: the wrench or the screwdriver in hand, a timing ring around the
 //! reticle. No repair screen.
 //!
 //! - Start (client): the right tool in the selected slot, on foot in the dev area, the machine's

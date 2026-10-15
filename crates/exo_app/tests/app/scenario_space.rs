@@ -1,4 +1,4 @@
-//! Issue #5 and #8: stepping out of the ship in space and the suit, without a window.
+//! Stepping out of the ship in space and the suit, without a window.
 use crate::common;
 use exo_app::Options;
 

@@ -1,9 +1,9 @@
-//! Long walks over the planet (spike 8 T5).
+//! Long walks over the planet.
 use super::*;
 
-/// Long walks (spike 8 T5): 1.8 m/s for 300 s from four starts; steep slopes may stop the walker.
+/// Long walks: 1.8 m/s for 300 s from four starts; steep slopes may stop the walker.
 pub(super) fn t5_starts() -> Vec<(&'static str, DVec3, DVec3)> {
-    // The stamps are placed by the planet's budget (#69): starts come from its look spots.
+    // The stamps are placed by the planet's budget: starts come from its look spots.
     let sys = warp_core::System::from_json(crate::warp::SYSTEM).expect("system.json");
     let home = PlanetRes::load(PlanetId(0), sys.planet(PlanetId(0)));
     let pg = &home.pgen;
@@ -57,7 +57,7 @@ pub(super) fn t5_walk(name: &'static str, dir: DVec3, heading: DVec3, secs: f64)
             *c.v.get_mut("hmax").unwrap() = c.v["hmax"].max(h);
             let here = pl.pgen.sample(crate::env::to_v3(pl.up(p)));
             let slope = here.slope_deg;
-            // Biome rows walked through (#68), as a bit set.
+            // Biome rows walked through, as a bit set.
             let seen = c.v.entry("biomes").or_insert(0.0);
             *seen = (*seen as u64 | 1u64 << here.biome.clamp(0, 63)) as f64;
             let e = c.v.entry("slope").or_insert(0.0);

@@ -1,4 +1,4 @@
-//! Containers (from the dev-area round, #287): stack caps, allowed kinds, access, moving, conservation.
+//! Containers: stack caps, allowed kinds, access, moving, conservation.
 use std::collections::BTreeMap;
 
 use item_core::container::*;

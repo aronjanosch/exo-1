@@ -1,4 +1,4 @@
-//! Givers (#167): the few named contacts jobs come from. A giver has a counter at a location, a
+//! Givers: the few named contacts jobs come from. A giver has a counter at a location, a
 //! voice (pools of lines, with greetings by mood), a standing track and a history with the crew.
 //! Standing rises with completed jobs and falls with failures, never below its floor: a mistake
 //! does not lock a giver for good (research: "one mistake locking a whole faction").
@@ -39,7 +39,7 @@ pub const MIN_POOL: usize = 3;
 #[serde(rename_all = "snake_case")]
 pub enum GiverKind {
     Legal,
-    /// The small odd crime family; its jobs are not offered in milestone D.
+    /// The small odd crime family; its jobs are not offered yet.
     Family,
 }
 

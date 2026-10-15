@@ -1,11 +1,11 @@
-//! #295, health: at the dev area's table a bandage is collected; the walker stands on the hot plate
+//! Health: at the dev area's table a bandage is collected; the walker stands on the hot plate
 //! and catches a light burn per tick, then the buildup fills and the walker is on fire (the burn
 //! rises in steps, once per tick); off the plate, the bandage takes 1.5 s with LMB held on oneself
 //! (let go after 0.5 s, nothing is used; held 1.5 s, the burn drops and one less is in the stack);
 //! the walker stands in the no-air booth until the HUD shows the air, with its O2 line labelled, then
 //! in the glowing barrel's zone, where nausea shows and the walk slows, until dead; five seconds
 //! later the walker is back on the pad with full health. Between the booth and the barrel the hot
-//! plate's burn takes the walker unconscious (#300): the walk key does nothing and the fade is near
+//! plate's burn takes the walker unconscious: the walk key does nothing and the fade is near
 //! black; the host's bandages take the burn down and the walker wakes up. Without a window. Run with
 //! `--start=dev_area`.
 use super::items::{collect, items, outside, tap_then};
@@ -181,7 +181,7 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // Unconscious by burn (#300): on the hot plate the burn takes the vitality to zero (not dead yet).
+    // Unconscious by burn: on the hot plate the burn takes the vitality to zero (not dead yet).
     // The walk key does nothing, the fade reaches near black and the HUD's health reads zero. Off the
     // plate, the host treats the walker with bandages (each takes 18.75 of burn at full skill) until
     // the burn is gone: the walker wakes up and the fade goes. (The air is no cure: unconscious in

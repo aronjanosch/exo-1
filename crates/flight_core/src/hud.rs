@@ -1,4 +1,4 @@
-//! HUD values that are data (`content/tuning/hud.json`, #91) and the altitude rule. Plain Rust.
+//! HUD values that are data (`content/tuning/hud.json`) and the altitude rule. Plain Rust.
 use serde::Deserialize;
 
 /// HUD values (`content/tuning/hud.json`).
@@ -7,11 +7,11 @@ use serde::Deserialize;
 pub struct HudTuning {
     /// m: below this height above the ground the altitude element shows AGL, above it ALT.
     pub agl_below: f64,
-    /// s: a flight panel toast stays this long after the last switch change (#197).
+    /// s: a flight panel toast stays this long after the last switch change.
     pub toast_time: f64,
-    /// g: the G bar's full scale (#200).
+    /// g: the G bar's full scale.
     pub g_full: f64,
-    /// m/s: below this speed the flight path marker is hidden (#200).
+    /// m/s: below this speed the flight path marker is hidden.
     pub velocity_min: f64,
     /// deg: at or below this tilt against the planet's up the horizon shows the ship as level.
     pub level_deg: f64,

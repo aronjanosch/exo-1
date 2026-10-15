@@ -1,4 +1,4 @@
-//! #295: health at the dev area: the hot plate burns, a bandage on oneself, the glowing barrel and
+//! Health at the dev area: the hot plate burns, a bandage on oneself, the glowing barrel and
 //! the no-air booth take the walker down, the respawn on the pad after five seconds. Without a window.
 use crate::common;
 use exo_app::Options;

@@ -1,4 +1,4 @@
-//! #166, the map: the pin list from the game's state (places, the tracked job's next stop, the
+//! The map: the pin list from the game's state (places, the tracked job's next stop, the
 //! player), M opens a north-up picture of the ground and closes it again, and with a window the
 //! picture is shot (`<out>/shot-*-map.png`). Headless it checks the pins and the picture's data.
 use super::jobs_helpers::{gp, goods_of, show_offer, walker_on_pad};

@@ -1,9 +1,9 @@
-//! The SC flight model (round 5, epic #143; the only flight model since #206). Built after the structure of Star Citizen's flight control as far as our research reaches
+//! The SC flight model. Built after the structure of Star Citizen's flight control as far as our research reaches
 //! (concept repo `docs/research/flight-feel.md`, `docs/research/flight-controller-notes.md`, the
 //! IFCS switches of the local records); own names, code and values. Thrust is a force on the
 //! ship's mass, torque turns it against its inertia.
 //!
-//! One step runs stages in this order, each in its own file (one lane owns each in round 5):
+//! One step runs stages in this order, each in its own file:
 //!
 //! 1. `modes`: the pilot's switches (coupled, gravity compensation, G-safe, comstab, master mode,
 //!    speed limiter, ...).
@@ -163,7 +163,7 @@ pub struct ScShip {
     pub drive: drive::DriveState,
     pub air: air::AirState,
     pub status: ScStatus,
-    /// kg of cargo locked on the cabin's plates (#88), on top of `tuning.ship.mass`.
+    /// kg of cargo locked on the cabin's plates, on top of `tuning.ship.mass`.
     pub cargo_mass: f64,
     /// kg m² the cargo adds about the ship's axes (a point mass at `ShipBody::cargo_point`).
     pub cargo_inertia: Rot,
@@ -190,7 +190,7 @@ impl ScShip {
         }
     }
 
-    /// Cargo locked on the plates, kg (#198, #88): the mass and the inertia of the cargo, as a
+    /// Cargo locked on the plates, kg: the mass and the inertia of the cargo, as a
     /// point at the cabin floor's centre, count from the next step on.
     pub fn set_cargo_mass(&mut self, kg: f64) {
         let m = kg.max(0.0);
@@ -256,7 +256,7 @@ impl ScShip {
         let lin = linear::step(&mut self.linear, &f, input, &self.modes, &linear_env, &self.tuning.linear);
         let turn_box = linear::motion_box(&f, &self.modes, &linear_env, &self.tuning.linear);
         let torque_box = self.torque_box();
-        // X while hovering in a planet's field also levels the ship (initiator, 2026-10-11).
+        // X while hovering in a planet's field also levels the ship.
         let level = braking && f.v.length() < self.tuning.angular.brake_level_below && f.gravity.length_squared() > 1e-6;
         let mut angular_modes = self.modes;
         if self.tuning.linear.boost_disables_g_safe && boost > 0.0 {
@@ -274,7 +274,7 @@ impl ScShip {
         let linear_world = f.rot * shaped.linear;
         let mut v = f.v + (linear_world + f.gravity + air.accel + air.push) * dt;
         // A push against the velocity on an axis lands on zero there, not one step past it; the
-        // next step the push is aligned and gets its full thrust (#203).
+        // next step the push is aligned and gets its full thrust.
         let (before, mut after) = (f.lv.to_array(), (f.inv * v).to_array());
         let st = stick.to_array();
         let mut landed = false;

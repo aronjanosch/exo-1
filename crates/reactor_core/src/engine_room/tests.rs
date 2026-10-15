@@ -109,7 +109,7 @@ fn auto_overshoots_after_a_load_drop_and_comes_back() {
         "auto after LoadDrop: peak {peak:.1}, above {:.0} for {above:.1} s, last above allowed {last_allowed:.1} s, meltdown timer max {melt_max:.2}",
         b.temp_optimal.hi
     );
-    // Was 5.0 s before r8; the overshoot is 2.8 s now at 2000 kW max (the same shape: above, then back).
+    // About 2.8 s at 2000 kW max (the same shape: above, then back).
     assert!(above >= 2.0, "above the optimal band for {above:.1} s");
     assert!(last_allowed < 30.0, "still above the allowed top at {last_allowed:.1} s");
     assert!(melt_max < 0.5, "the meltdown timer reached {melt_max:.2}");
@@ -120,7 +120,7 @@ fn manual_with_a_good_input_avoids_the_overshoot() {
     let mut r = room();
     settle_then_drop(&mut r);
     // The good player sees the drop at once and sets fission and turbine for the new load (400 kW):
-    // turbine 20 gives the output near the load (was turbine 10 for 100 kW before the demands changed).
+    // turbine 20 gives the output near the load.
     let (_, temps) = run(&mut r, 120.0, Input::manual(31.0, 20.0));
     let peak = temps.iter().cloned().fold(f64::MIN, f64::max);
     println!("manual after LoadDrop: peak {peak:.1}, output {:.1} kW", r.reactor().output_kw());
@@ -133,12 +133,10 @@ fn pump_break_climbs_to_fire_then_meltdown() {
     let mut r = room();
     // Settle on Auto first: a manual start from cold has no flow until the output rises.
     settle(&mut r);
-    // Manual 47 / 64 until the fission lag (4 s) and the temperature spring have settled: 53
-    // (r10 read 56.5 thirty seconds from cold at 500 kW; its settled value was 55.0).
+    // Manual 47 / 64 settles at 53 once the fission lag (4 s) and the temperature spring have settled.
     let input = Input::manual(47.0, 64.0);
     run(&mut r, 120.0, input);
     let before = r.reactor().temperature();
-    // Was 55.0 at 500 kW; the same setting (47 / 64) settles at 53 at 1280 kW.
     assert!((before - 53.0).abs() < 1.5, "{before}");
     let ev_now = r.trigger(Fault::PumpBreak);
     assert!(matches!(ev_now.as_slice(), [RoomEvent::Device { source: Source::Pump, event: DeviceEvent::Broke }]), "{ev_now:?}");
@@ -289,7 +287,7 @@ fn a_pump_switched_off_takes_no_heat_away_and_the_temperature_climbs() {
     let input = Input::manual(47.0, 64.0);
     run(&mut r, 1.0, input);
     let before = r.reactor().temperature();
-    // Was 1.0 before r8 (50.0 exactly); the output now makes 4.9 degrees of heat at 980 kW, so 48.9.
+    // The output makes 4.9 degrees of heat at 980 kW, so about 48.9.
     assert!((before - 50.0).abs() < 2.0, "{before}");
     // Off: the speed runs down over about 12 s, so the flow does not stop at once.
     r.set_pump(false);
@@ -307,9 +305,9 @@ fn a_pump_switched_off_takes_no_heat_away_and_the_temperature_climbs() {
     // The climb turns within a minute of the restart: the reactor's coolant coast (60 s) brings the
     // flow back, the pump itself runs up in 3 s. The pump is worn by the overheat (it runs as an
     // overload while the core is above the optimal band), so the level it holds is not `before`.
-    // 10 degrees down (the peak is higher now that the climb overshoots, #300).
+    // 10 degrees down (the peak is higher because the climb overshoots).
     let turn = temps.iter().position(|&t| t < peak - 10.0);
-    // Was within 60 s before r8; it turns at 60.8 s now (decay heat only with fission, the Manual 43.75 keeps it up).
+    // Turns at 60.8 s (decay heat only with fission, the Manual 43.75 keeps it up).
     assert!(turn.is_some_and(|i| (i as f64) * DT < 70.0), "the temperature turns down: {turn:?}");
     assert!(peak > before + 10.0);
 }
@@ -494,7 +492,7 @@ fn a_repaired_pump_at_20_seconds_brings_the_temperature_back_into_the_band() {
     let (_, temps) = run(&mut r, 90.0, input);
     let back = temps.iter().position(|&t| t < r.reactor().bands().temp_optimal.hi);
     println!("pump repaired at 20 s from {at_repair:.1}: back under the optimal top after {:?} s, end {:.1}", back.map(|i| (i + 1) as f64 * DT), temps.last().unwrap());
-    // Was 60 s before r8; the fall from 82 takes about 70 s now (decay heat only with fission).
+    // The fall from 82 takes about 70 s (decay heat only with fission).
     assert!(back.is_some_and(|i| (i as f64 + 1.0) * DT < 80.0), "back into the band");
     assert!(temps.last().unwrap() < &r.reactor().bands().temp_optimal.hi);
 }
@@ -510,11 +508,11 @@ fn a_cold_start_warms_up_and_gives_output() {
     // after 180 s the core sits in its optimal band and gives the load.
     let (_, tail) = run(&mut r, 30.0, Input::auto());
     assert!(r.reactor().bands().temp_optimal.contains(*tail.last().unwrap()), "{:?}", tail.last());
-    // Was 500 kW before the demands were scaled to 1280 kW (800 + 400 + 80).
+    // 1280 kW is 800 + 400 + 80 (engines, life support, lights).
     assert!((r.reactor().output_kw() - 1280.0).abs() < 5.0, "output {}", r.reactor().output_kw());
 }
 
-// ---------- coolant tank (#300, lane coolant) ----------
+// ---------- coolant tank ----------
 
 /// Steps in auto until the tank is dry; the seconds it took, or None.
 fn secs_until_dry(r: &mut EngineRoom, max_secs: f64) -> Option<f64> {
@@ -576,8 +574,8 @@ fn an_empty_tank_is_no_flow_and_the_core_stays_alive() {
     let (_, td) = run(&mut dry, 120.0, Input::auto());
     assert!(!dry.reactor().melted() && !full.reactor().melted(), "both stay alive for the comparison");
     assert!(tf.last().unwrap() > &30.0, "the full room is hot, not cold: {:?}", tf.last());
-    // Under Auto the dry room is not hotter: it ends colder (dry 45.3 vs full 53.0 in the run that
-    // wrote this). Not asserted; the empty tank's heat is the sim's coolant_empty at full load.
+    // Under Auto the dry room ends colder (dry 45.3 vs full 53.0 measured). Not asserted; the empty
+    // tank's heat is the sim's coolant_empty at full load.
     assert!(td.last().unwrap() > &30.0, "the dry room is hot, not cold: {:?}", td.last());
 }
 
@@ -740,7 +738,7 @@ fn wander_is_the_same_for_the_same_seed() {
     assert_ne!(run_one(9), run_one(10));
 }
 
-// ---------- pump modes (#300, lane pump) ----------
+// ---------- pump modes ----------
 
 /// Pump-level steps: the speed follows the mode's target with the spin-up and run-down constants.
 fn spin(p: &mut Pump, secs: f64, t: &RoomTuning) {
@@ -816,8 +814,8 @@ fn low_and_high_on_auto_both_stay_alive_and_low_has_half_the_flow() {
     assert!(!high.reactor().melted() && !low.reactor().melted(), "neither melts");
     // Both alive: the means are the settled band, not a cold or melted room.
     assert!(mh > 30.0 && ml > 30.0, "both hot: high {mh:.1} low {ml:.1}");
-    // Auto holds both rooms close together now (low 49.2 vs high 49.9 in the run that wrote this):
-    // Low no longer holds the core clearly hotter, so only the closeness is asserted.
+    // Auto holds both rooms close together (low 49.2 vs high 49.9 measured):
+    // Low does not hold the core clearly hotter, so only the closeness is asserted.
     assert!((ml - mh).abs() < 2.0, "Auto holds both within 2 degrees: low {ml:.1} vs high {mh:.1}");
     assert!(low.flow() < high.flow());
 }
@@ -883,8 +881,8 @@ fn a_scram_with_a_broken_pump_lets_the_core_cool() {
     let (_, _, temps) = auto_pump_break(true, 60.0);
     println!("pump broken, SCRAM: start {:.1}, end {:.1}", temps[0], temps.last().unwrap());
     assert!(temps[0] > 40.0, "the core was hot before the SCRAM: {:.1}", temps[0]);
-    // Was < 5.0 before the decay state (decay_lag_s 90 s) and < 6.0 with coast 60: with the flow
-    // following the pump in 10 s, the core is at 34 a minute after the SCRAM (from about 50), still falling.
+    // With the flow following the pump in 10 s, the core is at 34 a minute after the SCRAM (from about
+    // 50), still falling.
     assert!(*temps.last().unwrap() < 40.0, "cooling after a minute: {:.1}", temps.last().unwrap());
 }
 
@@ -982,7 +980,7 @@ fn a_warm_start_leaves_no_fire_and_no_alarm_events() {
     assert!(!ev.iter().any(|e| matches!(e, RoomEvent::Reactor(ReactorEvent::Alarm { .. }))), "alarm during warm start: {ev:?}");
 }
 
-// ---------- Emergency cooling (PULSAR's manual button; #300 r24) ----------
+// ---------- Emergency cooling (PULSAR's manual button) ----------
 
 /// A settled room on Auto with a full tank (the settle in `settle`).
 fn settled_room() -> EngineRoom {

@@ -1,4 +1,4 @@
-//! #200: the flight HUD's readout (speed tape, thrust cross, G bar, horizon, velocity marker) through `Controls`.
+//! The flight HUD's readout (speed tape, thrust cross, G bar, horizon, velocity marker) through `Controls`.
 use crate::common;
 use exo_app::Options;
 

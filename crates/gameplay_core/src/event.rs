@@ -56,9 +56,9 @@ pub enum WorldEvent {
     /// A system states a fact that conditions can ask for (`job_completed:<template>`).
     FlagRaised { flag: Flag },
     /// A customer (`by`: the id used for texts) wants goods: pick up `amount` of `commodity` at `from`, bring them to `to` for
-    /// `reward`. The jobs system turns it into an offer (#168).
+    /// `reward`. The jobs system turns it into an offer.
     OrderPlaced { order: OrderId, by: String, from: LocationId, to: LocationId, commodity: CommodityId, amount: u32, reward: i64, deadline_s: Option<f64> },
-    /// The sender's ship left the ground under their hands (#169). The exam asks for it; nothing
+    /// The sender's ship left the ground under their hands. The exam asks for it; nothing
     /// here depends on how the ship flies.
     TookOff,
     /// The sender's ship came over the pad of a location.

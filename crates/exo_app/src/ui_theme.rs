@@ -1,4 +1,4 @@
-//! One look for the round-6 HUD (round 6b): colours, font sizes and the screen margin, so the
+//! One look for the HUD: colours, font sizes and the screen margin, so the
 //! panels, stamps and lines agree. TODO(initiator): the look itself.
 use bevy::prelude::*;
 

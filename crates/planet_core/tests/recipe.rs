@@ -1,4 +1,4 @@
-//! #64: one recipe per planet, data only, unknown fields rejected.
+//! One recipe per planet, data only, unknown fields rejected.
 use planet_core::*;
 
 const HEARTH: &str = include_str!("../../../content/planet/hearth.json");

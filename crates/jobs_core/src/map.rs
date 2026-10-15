@@ -1,7 +1,7 @@
-//! The map's pin list (#166), without engine types: which places the crew may use, where the
+//! The map's pin list, without engine types: which places the crew may use, where the
 //! tracked job leads next, and where the players are. The window draws the list on a picture of
 //! the ground (`planet_core`'s local map); the same list feeds the job line's pointer and later
-//! the HUD arrow (#136).
+//! the HUD arrow.
 use gameplay_core::{ClientId, Content, LocationId, Progress, TextKey};
 
 use crate::id::JobId;

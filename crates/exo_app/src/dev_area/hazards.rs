@@ -1,10 +1,10 @@
-//! The dev area's hazards (#295): three greybox floor pads along the north wall, in the storage
+//! The dev area's hazards: three greybox floor pads along the north wall, in the storage
 //! strip. A hot plate burns whoever stands on it, a glowing barrel gives radiation, and the
 //! no-air booth takes the air away. `health` reads the zones; the boxes are the look.
 //! The rates are in `content/gameplay/health/health.json`. TODO(initiator): the booth's shape (a
 //! flat pad for now, not yet a walled booth).
 //!
-//! The spicy fuel rod (#300, Barotrauma's volatile fulgurium rod) is a radiating item: while it
+//! The spicy fuel rod (Barotrauma's volatile fulgurium rod) is a radiating item: while it
 //! is carried, in a slot, or lying in the world within `SPICY_RADIUS_M` of a body, that body gets
 //! `SPICY_RAD_PER_S` radiation per second. Inside the reactor it is shielded. The values are
 //! consts, the item format has no custom fields: TODO(initiator).

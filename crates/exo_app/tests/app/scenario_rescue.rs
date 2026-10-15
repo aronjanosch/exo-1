@@ -1,4 +1,4 @@
-//! #300 polish, rescue: two app instances over loopback, no delay. The host's player breathes bad
+//! Rescue: two app instances over loopback, no delay. The host's player breathes bad
 //! air until it faints (oxygen low past the unconscious line); the client, standing by, pumps it
 //! (CPR, `ToHost::Rescue`) until a revive roll wakes it. The host and the client both see the
 //! rescuer as REVIVING (`Doing::Reviving`). Then the host faints again and the client's O2 canister

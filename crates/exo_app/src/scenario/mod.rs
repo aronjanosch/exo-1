@@ -1,6 +1,6 @@
 //! Scripted runs: a list of steps, each called once per fixed tick until it returns true. Steps
 //! drive the game only through `Controls` and a few test hooks (teleport for test setup, ship
-//! test input). A run exits non-zero when a check fails. One module per topic (#52); this one
+//! test input). A run exits non-zero when a check fails. One module per topic; this one
 //! holds the shared script interface (`Step`, `Ctx`, helpers, step builders), `build` and `run_script`.
 use crate::controls::{Bindings, Controls};
 use crate::env::PlanetRes;
@@ -85,7 +85,7 @@ pub fn plugin(name: &str, headless: bool) -> impl Plugin {
             app.add_systems(Update, swap::headless_view.in_set(crate::phases::Frame::Camera));
         }
         if name == "swap" {
-            // #14: count what a planet swap leaves behind; headless with the terrain too.
+            // Count what a planet swap leaves behind; headless with the terrain too.
             app.init_resource::<swap::SwapAudit>();
             app.add_systems(FixedUpdate, swap::swap_audit.after(crate::warp::warp_telemetry).in_set(crate::phases::Fx::Drive));
             if headless {
@@ -229,7 +229,7 @@ fn world_look(w: &mut World) -> DVec3 {
     with_player(w, |p| p.world_look(f))
 }
 
-/// Issue #7: largest change from one tick to the next of the look direction and of the camera's
+/// Largest change from one tick to the next of the look direction and of the camera's
 /// up (degrees) and of the eye position less the walk (m), in `c.v["look_jump"]`, `["up_jump"]`,
 /// `["eye_jump"]`. Call every tick of a step; the first tick only starts it (setup turns).
 fn track_look(w: &mut World, c: &mut Ctx) {
@@ -395,7 +395,7 @@ fn walk(name: &'static str, secs: f64, away_from_ship: bool) -> Step {
     })
 }
 
-/// Walk from 12 m behind the ship up the ramp to the seat (spike 3).
+/// Walk from 12 m behind the ship up the ramp to the seat.
 fn board(name: &'static str, from_outside: bool) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -493,13 +493,13 @@ pub(crate) fn hold_until(name: &'static str, ks: &'static [KeyCode], limit: f64,
     })
 }
 
-/// How far a landed ship may settle from its touchdown spot (#92). The residue depends on the
-/// ground under the hull: 0.56 mm on the slope the scenario found before the drainage (#72),
-/// 1.1 mm on the one the eroded terrain offers; before #92 a ship slid 553 mm.
+/// How far a landed ship may settle from its touchdown spot. The residue depends on the
+/// ground under the hull: 0.56 mm on the slope the scenario found before the drainage,
+/// 1.1 mm on the one the eroded terrain offers; without the landing fix a ship slid 553 mm.
 pub(crate) const LANDING_SETTLE_M: f64 = 0.002;
 
 /// Hold Ctrl until the ship rests (well below the landed check's 0.05 m/s). From the first hull
-/// contact on it must not slide (#92): pressed down onto a slope it used to slide 20 s, and tipping
+/// contact on it must not slide: pressed down onto a slope it slid for 20 s without the fix, and tipping
 /// from the first corner onto a 33 degree slope 0.55 m. The touchdown spot is left in `c.p`.
 pub(crate) fn land(name: &'static str) -> Step {
     Box::new(move |w, c| {
@@ -636,65 +636,65 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
             }
         }
         "foreign" => foreign_steps(&mut s),
-        // #16: a warping remote ship (about 1e6 m/s) right next to the walking walker.
+        // A warping remote ship (about 1e6 m/s) right next to the walking walker.
         "foreign_warp" => foreign_warp_steps(&mut s),
-        // #32 and #30: another player's figure outside and in the cabin; with --menu the menus.
+        // Another player's figure outside and in the cabin; with --menu the menus.
         "figure" => figure_steps(&mut s, &shot_step),
-        // Sprint 2 feel: input ramp, virtual-joystick mouse, boost, decoupled (#24, #25, #26).
+        // Input ramp, virtual-joystick mouse, boost, decoupled flight.
         "flight" => flight_steps(&mut s, &shot_step, out_dir, windowed),
         "first-person-settings" => first_person_settings::steps(&mut s),
-        // #90, #91: the boost capacitor drains, cuts out and recharges; the HUD shows it.
+        // The boost capacitor drains, cuts out and recharges; the HUD shows it.
         "boost-hud" => boost::boost_hud_steps(&mut s),
         "thruster-audio" => thruster_audio::thruster_audio_steps(&mut s),
-        // Round 5: the SC model lifts off, hovers and flies (sc-lift).
+        // The SC model lifts off, hovers and flies (sc-lift).
         "sc-body" => sc_body::sc_body_steps(&mut s),
         "sc-lift" => sc_lift::sc_lift_steps(&mut s),
-        // Round 5: F1 shows the keys that apply right now.
+        // F1 shows the keys that apply right now.
         "help" => help::help_steps(&mut s),
-        // Round 5: F10 dev menu: licence, credits, boost.
+        // F10 dev menu: licence, credits, boost.
         "dev-menu" => dev_menu::dev_menu_steps(&mut s),
-        // #195: the SC linear law: cap, brake, gravity compensation, master modes, limiter.
+        // The SC linear law: cap, brake, gravity compensation, master modes, limiter.
         "sc-linear" => sc_linear::sc_linear_steps(&mut s),
-        // #199: the SC model's air: wind compensation hover, turbulence low and high.
+        // The SC model's air: wind compensation hover, turbulence low and high.
         "sc-air" => sc_air::sc_air_steps(&mut s),
-        // #197: the flight panel: badges, the coupling blend, the toast.
+        // The flight panel: badges, the coupling blend, the toast.
         "sc-hud" => sc_hud::sc_hud_steps(&mut s),
-        // #200: the flight HUD (speed tape, thrust cross, G bar, horizon, velocity marker), SC model.
+        // The flight HUD (speed tape, thrust cross, G bar, horizon, velocity marker), SC model.
         "sc-flight-hud" => sc_flight_hud::sc_flight_hud_steps(&mut s),
-        // Round 5, #196: the SC model's rotation (overshoot, reversal, roll release, G-safe turn cap).
+        // The SC model's rotation (overshoot, reversal, roll release, G-safe turn cap).
         "sc-turn" => sc_turn::sc_turn_steps(&mut s),
-        // #148, #149: the camera shake, spring lag and G field of view, and F9 (through the bindings).
+        // The camera shake, spring lag and G field of view, and F9 (through the bindings).
         "camera-g" => camera_g::camera_g_steps(&mut s),
-        // #92: land on a slope below the limit; no drift from touchdown until thrust.
+        // Land on a slope below the limit; no drift from touchdown until thrust.
         "slope-landing" => landing::slope_landing_steps(&mut s),
-        // #21: edit a tuning file while running (dev builds).
+        // Edit a tuning file while running (dev builds).
         "reload" => reload_steps(&mut s, out_dir),
         "warp" => warp_steps(&mut s, out_dir, windowed),
-        // #213: a fixed flight over a big planet; frame time and the streaming work per frame.
+        // A fixed flight over a big planet; frame time and the streaming work per frame.
         "planet-flight" => planet_flight::planet_flight_steps(&mut s, out_dir),
-        // #220: a low flight with a screenshot every 0.25 s, to compare geomorphing on and off.
+        // A low flight with a screenshot every 0.25 s, to compare geomorphing on and off.
         "lod-morph" => planet_flight::lod_morph_steps(&mut s, out_dir, windowed),
-        // #14 and #34: three planet swaps and an emergency drop; what each swap leaves behind.
+        // Three planet swaps and an emergency drop; what each swap leaves behind.
         "swap" => swap_steps(&mut s, out_dir, windowed, swap_rounds.max(3)),
-        // #80: a crate in the cabin through take-off, flight, warp and landing; one out over the ramp.
+        // A crate in the cabin through take-off, flight, warp and landing; one out over the ramp.
         "crate-ride" => cargo::crate_ride_steps(&mut s, out_dir, windowed),
-        // #82: one tap for a crate and the seat, with the HUD prompt.
+        // One tap for a crate and the seat, with the HUD prompt.
         "interact" => cargo::interact_steps(&mut s),
-        // #83: carry each size, throw, the grab tool from 8 m, the large crate alone.
+        // Carry each size, throw, the grab tool from 8 m, the large crate alone.
         "crate-carry" => cargo::crate_carry_steps(&mut s, out_dir, windowed),
-        // #84: lock grid: locked, loose and blocked crates through hard acceleration and a warp.
+        // Lock grid: locked, loose and blocked crates through hard acceleration and a warp.
         "crate-lock" => cargo::crate_lock_steps(&mut s, out_dir, windowed),
-        // #85: object budget: cap, sleep, persistence cap over a planet swap, timeout, distance.
+        // Object budget: cap, sleep, persistence cap over a planet swap, timeout, distance.
         "crate-budget" => cargo::crate_budget_steps(&mut s, out_dir, windowed),
-        // Night extra E1: unload the parked ship down the ramp by hand and load it again.
+        // Unload the parked ship down the ramp by hand and load it again.
         "crate-unload" => cargo::crate_unload_steps(&mut s),
-        // #210: crates 500 m away wake as Avian bodies when the walker comes and the patch is built.
+        // Crates 500 m away wake as Avian bodies when the walker comes and the patch is built.
         "crate-wake-stream" => cargo::crate_wake_stream_steps(&mut s),
-        // #210: a crate on the ramp is ship: it stays a sweep crate and stays on the ground at take-off.
+        // A crate on the ramp is ship: it stays a sweep crate and stays on the ground at take-off.
         "crate-ramp" => cargo::crate_ramp_steps(&mut s),
-        // #210: a crate thrown at the hull's side wall stops outside it.
+        // A crate thrown at the hull's side wall stops outside it.
         "crate-hull" => cargo::crate_hull_steps(&mut s),
-        // Round 6: the city with colliders, its characters, the new towns' pads.
+        // The city with colliders, its characters, the new towns' pads.
         "town" => town::town_steps(&mut s),
         // The dev area and its test console, with `--start=dev_area`.
         "dev_area" => {
@@ -704,43 +704,43 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         // The slice's picture check: `--start=dev_area --dev-area`, shots with a window.
         "slice_look" => slice_look::slice_look_steps(&mut s, out_dir, windowed),
         "displays" => displays::displays_steps(&mut s),
-        // C1: items at the dev area's item table, through the request path with 75 ms each way.
+        // Items at the dev area's item table, through the request path with 75 ms each way.
         "items" => items::items_steps(&mut s, &shot_step),
-        // Crew HUD v3: compass in both frames, vitals, credits flash, prompt, bar, hints.
+        // Compass in both frames, vitals, credits flash, prompt, bar, hints.
         "hud" => hud::hud_steps(&mut s, &shot_step),
-        // #295: health: hazards, a bandage on oneself, down and respawn.
+        // Health: hazards, a bandage on oneself, down and respawn.
         "health" => health::health_steps(&mut s),
-        // #296: the engine room: the corridor, the wall, the door, the air, the alarm.
+        // The engine room: the corridor, the wall, the door, the air, the alarm.
         "engine_room" => engine_room::engine_room_steps(&mut s),
         "reactor" => reactor::reactor_steps(&mut s),
-        // #300: coolant: the tank runs dry, the temperature climbs, a canister refills it by hand.
+        // Coolant: the tank runs dry, the temperature climbs, a canister refills it by hand.
         "coolant" => coolant::coolant_steps(&mut s),
-        // #300: fuel rods: a rod from the rack is loaded into the reactor, the brake pulls one, G drops it.
+        // Fuel rods: a rod from the rack is loaded into the reactor, the brake pulls one, G drops it.
         "rods" => rods::rods_steps(&mut s),
-        // #300: the meltdown blast: the drain melts the core, the walker two metres off is burned and irradiated.
+        // The meltdown blast: the drain melts the core, the walker two metres off is burned and irradiated.
         "blast" => blast::blast_steps(&mut s),
-        // #298: fire: a fire at the reactor grows, burns, is sprayed out; the alarm follows.
+        // Fire: a fire at the reactor grows, burns, is sprayed out; the alarm follows.
         "fire" => fire::fire_steps(&mut s),
-        // #300: the same fire on the cell grid: the switch, the spread, the corridor, the spray.
+        // The same fire on the cell grid: the switch, the spread, the corridor, the spray.
         "fire_grid" => fire_grid::fire_grid_steps(&mut s),
-        // #300: the extinguisher wears down, runs empty, and a rack gives a full one.
+        // The extinguisher wears down, runs empty, and a rack gives a full one.
         "extinguisher" => extinguisher::extinguisher_steps(&mut s),
         "repair" => repair::repair_steps(&mut s),
         // Window only: the showcase models (`--showcase`) from outside and the starting ship's deck.
         "showcase" => showcase::showcase_steps(&mut s, out_dir, windowed),
-        // #135: save file: deliver halfway, save, restart, load, finish.
+        // Save file: deliver halfway, save, restart, load, finish.
         "savefile" => savefile::savefile_steps(&mut s),
-        // #169: the seat refuses without the licence; the exam; the licence.
+        // The seat refuses without the licence; the exam; the licence.
         "licence" => licence::licence_steps(&mut s),
-        // #166: the map's pins from the game's state, M opens the picture (a screenshot with a window).
+        // The map's pins from the game's state, M opens the picture (a screenshot with a window).
         "map" => mapview::map_steps(&mut s, out_dir, windowed),
-        // #63: fixed viewpoints and an atlas per planet (headless: atlas and statistics only).
+        // Fixed viewpoints and an atlas per planet (headless: atlas and statistics only).
         "planet-look" => crate::look::steps(&mut s, out_dir, windowed),
-        // #70: walk from outside into a site; the walker stands on its flattened ground.
+        // Walk from outside into a site; the walker stands on its flattened ground.
         "site-walk" => crate::look::site_walk_steps(&mut s),
-        // #48: fast-forward a day on every planet; sun direction and brightness against the core.
+        // Fast-forward a day on every planet; sun direction and brightness against the core.
         "daynight" => crate::daynight::scenario_steps(&mut s),
-        // Issue #5: step out of the ship in space (seat by test shortcut, then fly up).
+        // Step out of the ship in space (seat by test shortcut, then fly up).
         "space" => {
             s.push(Box::new(|w, _| {
                 put_at_seat(w);
@@ -777,7 +777,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
             s.push(hold_until("firm brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 0.5));
             s.push(aim("level out", 0.0, 3.0));
             // A test hook sets the ship back over its parked spot, level: the dive can end on a slope,
-            // and the walk-in checks a flat floor (the SC model has no landing gear, #162).
+            // and the walk-in checks a flat floor (the SC model has no landing gear).
             s.push(Box::new(|w, c| {
                 let park = c.p["park"];
                 let up = planet(w).up(park);
@@ -830,7 +830,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
             s.push(hold_until("climb to 400 m above ground", &[KeyCode::Space, KeyCode::ShiftLeft], 60.0, |w| above_ground(w) > 400.0));
             s.push(wait(3.0));
             s.extend(cabin_at_speed("in atmosphere: stand + walk, boost + roll, assist on", 8.0, true, 0.3));
-            // #80: the test crate rode along the whole flight in the cabin.
+            // The test crate rode along the whole flight in the cabin.
             s.push(Box::new(|w, c| {
                 let ship = ship_e(w);
                 let crates: Vec<(Option<Entity>, DVec3)> = w.query::<&crate::cargo::Crate>().iter(w).map(|c| (c.ship, c.body.pos)).collect();

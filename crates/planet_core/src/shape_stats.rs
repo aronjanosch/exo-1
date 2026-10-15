@@ -1,4 +1,4 @@
-//! Terrain shape statistics for the 100 km round (#214): how tall the ground gets, how much of
+//! Terrain shape statistics for the 100 km planet: how tall the ground gets, how much of
 //! the land is plain enough for a settlement, how many biomes show up. Sampled on a Fibonacci
 //! lattice of the sphere, so the numbers are area-weighted and the same on every run.
 use crate::look::{tangent_frame, walk};
@@ -7,7 +7,7 @@ use crate::planet::Planet;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-/// Slope limit and baseline of a "plain" (round goal: under 5 degrees over 500 m).
+/// Slope limit and baseline of a "plain" (goal: under 5 degrees over 500 m).
 pub const PLAIN_DEG: f64 = 5.0;
 pub const PLAIN_BASE_M: f64 = 500.0;
 /// A biome counts as present above this share of the land samples.

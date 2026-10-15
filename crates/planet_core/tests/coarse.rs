@@ -1,4 +1,4 @@
-//! #177 (spike 14): the coarse global layer. Same hash with one and many threads and across runs,
+//! The coarse global layer. Same hash with one and many threads and across runs,
 //! cached under a hash of recipe, seed, radius and code version.
 use planet_core::*;
 use std::path::PathBuf;

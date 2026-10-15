@@ -1,4 +1,4 @@
-//! #300: the fire grid: the faults screen's switch to the cells, a fire at the reactor spreads
+//! The fire grid: the faults screen's switch to the cells, a fire at the reactor spreads
 //! cell to cell within 30 s while the oxygen falls, the corridor catches with the door open, and
 //! the extinguisher puts the reactor's front cell out. Without a window.
 use crate::common;

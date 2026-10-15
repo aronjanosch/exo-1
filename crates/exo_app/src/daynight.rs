@@ -1,4 +1,4 @@
-//! Day and night (#48): the clock, the sun of the current planet and the light it gives. The
+//! Day and night: the clock, the sun of the current planet and the light it gives. The
 //! numbers come from `daynight_core` and `content/daynight/daynight.json`; this module only
 //! advances the clock in the fixed step, keeps `Sun` up to date for the player's spot and, with a
 //! window, drives the sun and night lights (the camera's ambient, fog and clear colour follow in
@@ -24,7 +24,7 @@ pub const DAYNIGHT: &str = include_str!("../../../content/daynight/daynight.json
 pub struct DayNightRes(pub DayNight);
 
 /// The global clock (simulated seconds). Everything that changes with the time of day reads it.
-/// Co-op: every player runs their own for now (open in #48).
+/// Co-op: every player runs their own (open question).
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct DayClock {
     pub t: f64,
@@ -166,7 +166,7 @@ struct Sample {
     night_lux: f64,
 }
 
-/// `daynight` scenario (#48): on every planet the walker stands at the spawn point while the clock
+/// `daynight` scenario: on every planet the walker stands at the spawn point while the clock
 /// runs one day in `FAST_DAY_SECS`. Checks every tick's sun against `daynight_core`, that the sun
 /// comes back after `day_length_s`, the highest and lowest sun, and noon brighter than dusk
 /// brighter than night, with the night light on and the sun off at night.

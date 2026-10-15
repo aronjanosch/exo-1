@@ -61,7 +61,7 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
     s.push(stick_yaw("stick: full right", 1.0));
     s.push(shot_step("stick-full-right"));
     s.push(Box::new(|w, c| {
-        // Still at full right: the view leads the turn to the right (#27): the look-ahead of the
+        // Still at full right: the view leads the turn to the right: the look-ahead of the
         // turn rate, (rate - dead zone) x gain, capped. The SC model's full-stick rate (0.9 rad/s)
         // is under the cap's rate (about 1.1 rad/s), so the cap is not what this checks.
         let look = w.resource::<crate::tuning::Tuning>().camera.clone();
@@ -89,7 +89,7 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
         }
         false
     }));
-    // #29: the pad's right stick through the same axes, without a device.
+    // The pad's right stick through the same axes, without a device.
     s.push(Box::new(|w, c| {
         let stick = 0.8f32;
         if c.t == 0.0 {
@@ -108,7 +108,7 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
         false
     }));
     s.push(stick_yaw("stick: centred", 0.0));
-    // Boost raises the limit and drops back on release (#24); with the capacitor (#90) while the
+    // Boost raises the limit and drops back on release; with the capacitor while the
     // charge lasts, so Shift is held for half the drain time.
     s.push(hold_until("cruise", &[KeyCode::KeyW], 6.0, |_| false));
     {
@@ -222,7 +222,7 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
     }));
     s.push(hold_until("descend to 120 m above ground", &[KeyCode::ControlLeft, KeyCode::ShiftLeft], 240.0, |w| above_ground(w) < 120.0));
     s.push(hold_until("firm brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 0.5));
-    // Touchdown gives a camera bump (#27); on a slope the second side may give another.
+    // Touchdown gives a camera bump; on a slope the second side may give another.
     s.push(Box::new(|w, c| {
         c.v.insert("bumps0", w.resource::<crate::ship::CameraEffects>().0.bumps as f64);
         true

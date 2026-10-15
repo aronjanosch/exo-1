@@ -78,7 +78,7 @@ mod tests {
         // 0.4 s: no sample yet.
         h.push_sample(0.4, 100.0, 50.0, 10.0);
         assert_eq!(h.output[0], 0.0);
-        // 0.2 s more: the period is 0.5 s, so exactly one sample now, with the values given now.
+        // 0.2 s more: the period is 0.5 s, so exactly one sample, with the values given.
         h.push_sample(0.2, 100.0, 50.0, 10.0);
         assert_eq!(h.output[0], 100.0);
         assert_eq!(h.load[0], 50.0);

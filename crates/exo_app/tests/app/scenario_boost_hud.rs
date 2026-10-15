@@ -1,4 +1,4 @@
-//! #90, #91: the boost capacitor and the minimal HUD, driven through `Controls`.
+//! The boost capacitor and the minimal HUD, driven through `Controls`.
 use crate::common;
 use exo_app::Options;
 

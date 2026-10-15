@@ -1,4 +1,4 @@
-//! Notices (#165): every system reports its moments as `Notice`s instead of log lines. A
+//! Notices: every system reports its moments as `Notice`s instead of log lines. A
 //! notice names a kind, a text key (a pool, see `text`), arguments and a weight; the glue shows
 //! it as a banner or a toast with the sound of its kind.
 //!

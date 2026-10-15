@@ -1,5 +1,5 @@
 //! A reliable, ordered message channel next to the unreliable snapshots, over any datagram
-//! transport (C2 of the interaction model: item requests and events must not be lost, doubled or
+//! transport (item requests and events must not be lost, doubled or
 //! reordered, while snapshots may be). No sockets here: the glue sends what `poll` returns and
 //! feeds what arrives into `on_datagram`; time is passed in, so tests run under `link`.
 //!

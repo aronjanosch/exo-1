@@ -1,4 +1,4 @@
-//! A made product (round 6): a base good, the effects the mix gave it and the quality of the brew.
+//! A made product: a base good, the effects the mix gave it and the quality of the brew.
 //! Production makes it, crates carry it, buyers judge it.
 use std::collections::BTreeSet;
 

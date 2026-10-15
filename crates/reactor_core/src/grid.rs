@@ -7,10 +7,8 @@
 //! switches off and leaves its power to the rest, so under a brownout low priorities go first.
 //! A group works at `factor = delivered / demand`: less power makes it slower, not off, down to
 //! its minimum ratio. Each group also has a limit, 0..1 (default 1): it caps the group's request at
-//! `demand × limit`, so the limit scales the group's efficiency (PULSAR's conduit limit, #300).
+//! `demand × limit`, so the limit scales the group's efficiency (PULSAR's conduit limit).
 //! A limit of 0 is off. Lowering a limit frees power for the groups below it.
-//!
-//! Trimmed from the dev-area grid (five groups) to the three the engine room slice needs.
 #[cfg(test)]
 mod tests;
 

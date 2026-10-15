@@ -1,4 +1,4 @@
-//! #129: hand-placed places on the planet, their ground and their pads.
+//! Hand-placed places on the planet, their ground and their pads.
 use planet_core::*;
 
 const HEARTH: &str = include_str!("../../../content/planet/hearth.json");
@@ -95,7 +95,7 @@ fn place_checks() {
     assert!(serde_json::from_str::<Place>(&PAD.replace("\"turn_deg\"", "\"x\"").replace("\"lon_deg\": 90.0,", "\"lon_deg\": 90.0, \"colour\": 1,")).is_err());
 }
 
-// ---------- near (#170): metres from another place, so distances survive a radius change ----------
+// ---------- near: metres from another place, so distances survive a radius change ----------
 
 const NEAR: &str = r#"{ "id": "post_box", "planet": "hearth",
   "near": { "place": "drip_rock", "east_m": 120.0, "north_m": -160.0 },

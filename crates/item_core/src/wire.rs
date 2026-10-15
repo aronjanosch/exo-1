@@ -1,4 +1,4 @@
-//! The item messages as bytes (C2). They travel over a reliable, ordered channel
+//! The item messages as bytes. They travel over a reliable, ordered channel
 //! (`net_core::reliable`), so none is lost, doubled or overtaken; the encoding is compact JSON
 //! (serde), which is easy to read in a capture and plenty for the few messages items send.
 //! Loose items' poses while they move are not here: they are datagrams (`net_core::loose`).
@@ -14,19 +14,19 @@ pub const MAX_MESSAGE: usize = 32 * 1024;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ToHost {
     Action(Action),
-    /// A request about the engine room (#296): the host decides.
+    /// A request about the engine room: the host decides.
     Room(RoomAsk),
-    /// A request about the reactor (#297): the host decides.
+    /// A request about the reactor: the host decides.
     Reactor(ReactorAsk),
-    /// The extinguisher's spray, aimed while LMB is held (#298): the host decides.
+    /// The extinguisher's spray, aimed while LMB is held: the host decides.
     Spray(SprayAsk),
-    /// A repair session at a machine (#299): the host decides what it does to the condition.
+    /// A repair session at a machine: the host decides what it does to the condition.
     Repair(RepairAsk),
-    /// The treatment hold (#300): the player is treating this player (`Some`), or has stopped (`None`).
+    /// The treatment hold: the player is treating this player (`Some`), or has stopped (`None`).
     Treat(Option<PlayerId>),
-    /// The CPR hold (#300 polish): the player is pumping this player (`Some`), or has stopped (`None`).
+    /// The CPR hold: the player is pumping this player (`Some`), or has stopped (`None`).
     Rescue(Option<PlayerId>),
-    /// The brake (#300): pull the rod with the most life into the sender's hands.
+    /// The brake: pull the rod with the most life into the sender's hands.
     Pull,
 }
 
@@ -34,26 +34,26 @@ pub enum ToHost {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ToClient {
     Event(Event),
-    /// The player's own vitals, as the host has them (#295); not an item event, but it travels
+    /// The player's own vitals, as the host has them; not an item event, but it travels
     /// the same reliable channel.
     Vitals(Vitals),
-    /// The engine room's shared state as the host has it (#296): every player gets it.
+    /// The engine room's shared state as the host has it: every player gets it.
     Room(RoomNews),
-    /// The reactor's snapshot (#297), about 4 times a second while it changes.
+    /// The reactor's snapshot, about 4 times a second while it changes.
     Reactor(ReactorNews),
-    /// The fires and the sprays as the host has them (#298), about 4 times a second while they change.
+    /// The fires and the sprays as the host has them, about 4 times a second while they change.
     Fire(FireNews),
-    /// The host ended this player's repair session (#299): the machine is full.
+    /// The host ended this player's repair session: the machine is full.
     RepairDone,
     /// The host refused this player's repair start (another player works there, the wrong tool,
     /// or the machine is full): the client's ring ends.
     RepairRefused,
-    /// Every player's public status (#300), as the host has it: sent when one changes, and to a
+    /// Every player's public status, as the host has it: sent when one changes, and to a
     /// client that joins.
     Status(Vec<(PlayerId, PublicStatus)>),
 }
 
-/// What a player is doing that the others see (#300).
+/// What a player is doing that the others see.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Doing {
     #[default]
@@ -64,11 +64,11 @@ pub enum Doing {
     Repairing(RepairDevice),
     /// The extinguisher's spray is on.
     Spraying,
-    /// Pumping this unconscious player (CPR, #300 polish).
+    /// Pumping this unconscious player (CPR).
     Reviving(PlayerId),
 }
 
-/// A player's status for the others (#300): burning, down (waiting for the respawn), unconscious
+/// A player's status for the others: burning, down (waiting for the respawn), unconscious
 /// (vitality at zero or below, awake again above) and what they do.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicStatus {
@@ -76,11 +76,11 @@ pub struct PublicStatus {
     pub down: bool,
     pub unconscious: bool,
     pub doing: Doing,
-    /// The injuries the others see (#300): what a medic reads when they look at the player.
+    /// The injuries the others see: what a medic reads when they look at the player.
     pub hurt: Injuries,
 }
 
-/// A player's injuries as the others see them (#300): the health and the injuries that treatments
+/// A player's injuries as the others see them: the health and the injuries that treatments
 /// reduce, each a whole percent in steps of 5 so a change is a small message. The burn is its level
 /// (0 without). Default: healthy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,7 +109,7 @@ impl Injuries {
     }
 }
 
-/// The alarm level of the ship (#296). A dev toggle for now; the reactor drives it later.
+/// The alarm level of the ship. A dev toggle for now; the reactor drives it later.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Alarm {
     #[default]
@@ -129,7 +129,7 @@ impl Alarm {
     }
 }
 
-/// A request to the host about the engine room (#296).
+/// A request to the host about the engine room.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RoomAsk {
     /// Open the door if it is shut, shut it if it is open.
@@ -138,7 +138,7 @@ pub enum RoomAsk {
     CycleAlarm,
 }
 
-/// A request to the host about the reactor (#297). Set fission and set turbine only count on
+/// A request to the host about the reactor. Set fission and set turbine only count on
 /// Manual; a fault and a reset are the dev console's.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ReactorAsk {
@@ -160,24 +160,24 @@ pub enum ReactorAsk {
     SetBreaker(BreakerGroup, bool),
     /// The coolant pump's control: Off, Low or High.
     SetPumpMode(PumpMode),
-    /// The temperature boost: up (true) or down (false), as the core takes it (#300).
+    /// The temperature boost: up (true) or down (false), as the core takes it.
     Boost(bool),
     /// First press of the core eject: the safety cover opens for `eject_arm_s` (the host's timer).
     ArmEject,
-    /// Second press, inside the arm window: the core is thrown out (PULSAR's core eject, #300 r22).
+    /// Second press, inside the arm window: the core is thrown out (PULSAR's core eject).
     Eject,
-    /// The emergency cooling (PULSAR's manual button, #300 r24): the tank pays, the extra cooling runs
+    /// The emergency cooling (PULSAR's manual button): the tank pays, the extra cooling runs
     /// for its duration, then the cooldown. Refused when the host has no press to give.
     EmergencyCool,
-    /// The AUX screen's switch for Life Support or Lights (`EngineRoom::set_aux_switch`, #300 r32).
+    /// The AUX screen's switch for Life Support or Lights (`EngineRoom::set_aux_switch`).
     /// Engines is not aux-fed: the host ignores it.
     SetAuxSwitch(BreakerGroup, bool),
-    /// A consumer group's limit on the junction box (PULSAR's conduit limit, #300 r34): 0..1, the
+    /// A consumer group's limit on the junction box (PULSAR's conduit limit): 0..1, the
     /// host clamps it. The group asks for its demand times the limit.
     SetLimit(BreakerGroup, f64),
 }
 
-/// The coolant pump's mode (#300): off, a low or a high stream.
+/// The coolant pump's mode: off, a low or a high stream.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PumpMode {
     #[default]
@@ -201,7 +201,7 @@ impl BreakerGroup {
     }
 }
 
-/// A machine the repair minigame works on (#299).
+/// A machine the repair minigame works on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RepairDevice {
     Reactor,
@@ -209,7 +209,7 @@ pub enum RepairDevice {
     JunctionBox,
 }
 
-/// The tool in hand for a repair (#299): the wrench for the reactor and the pump, the screwdriver
+/// The tool in hand for a repair: the wrench for the reactor and the pump, the screwdriver
 /// for the junction box.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RepairTool {
@@ -217,7 +217,7 @@ pub enum RepairTool {
     Screwdriver,
 }
 
-/// A repair session as the client asks for it (#299). The client runs the timing ring; the host
+/// A repair session as the client asks for it. The client runs the timing ring; the host
 /// applies what the ring says and keeps the condition.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RepairAsk {
@@ -237,17 +237,17 @@ pub enum ReactorFault {
     PumpBreak,
     LoadDrop,
     Surge,
-    /// A fire at the reactor (#298).
+    /// A fire at the reactor.
     Fire,
-    /// The coolant tank runs dry (the dev drain for the coolant lane, #300).
+    /// The coolant tank runs dry (the dev drain for the coolant).
     DrainCoolant,
-    /// The reactor's warm start (`EngineRoom::warm_start`, #300): settled at once, no supplies used.
+    /// The reactor's warm start (`EngineRoom::warm_start`): settled at once, no supplies used.
     WarmStart,
-    /// The aux reactor on or off (`EngineRoom::set_aux`, #300 r32): the host flips it.
+    /// The aux reactor on or off (`EngineRoom::set_aux`): the host flips it.
     Aux,
 }
 
-/// The extinguisher's spray, as its holder asks for it (#298).
+/// The extinguisher's spray, as its holder asks for it.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SprayAsk {
     /// Spraying along this aim now: the nozzle's point and the look direction (world metres, the
@@ -257,7 +257,7 @@ pub enum SprayAsk {
     Stop,
 }
 
-/// A fire as the host has it (#298): its id, its centre on the engine room's floor (area metres)
+/// A fire as the host has it: its id, its centre on the engine room's floor (area metres)
 /// and its diameter (m).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FireNew {
@@ -273,7 +273,7 @@ pub struct SprayNew {
     pub dir: [f64; 3],
 }
 
-/// A burning cell of the grid model (#300): its room's index, its index in the room's grid, and
+/// A burning cell of the grid model: its room's index, its index in the room's grid, and
 /// its intensity in thousandths (0..=1000).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CellNew {
@@ -282,7 +282,7 @@ pub struct CellNew {
     pub heat: u16,
 }
 
-/// The fires and the sprays (#298), as the host has them. In the grid model (#300, `grid`) the
+/// The fires and the sprays, as the host has them. In the grid model (`grid`) the
 /// burning cells are in `cells`, and `fires` lists each one as a fire of a cell's width, for the
 /// sprays' aim and the steam; the flames are not drawn then.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -300,7 +300,7 @@ pub struct PartNews {
     pub working: bool,
 }
 
-/// The fuel tubes on the readout (#300): one per slot, `FUEL_TUBES` at most.
+/// The fuel tubes on the readout: one per slot, `FUEL_TUBES` at most.
 pub const FUEL_TUBES: usize = 4;
 
 /// The kind of a fuel rod (`reactor.json` `rods`: standard, hot, spicy), as the readout colours it.
@@ -311,14 +311,14 @@ pub enum FuelKind {
     Spicy,
 }
 
-/// One fuel tube: the rod in a slot (its kind and life, 0..100), None for an empty slot (#300).
+/// One fuel tube: the rod in a slot (its kind and life, 0..100), None for an empty slot.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct FuelTube {
     pub rod: Option<FuelKind>,
     pub life: f64,
 }
 
-/// The reactor's snapshot (#297): what the screens show, as the host has it. Temperature,
+/// The reactor's snapshot: what the screens show, as the host has it. Temperature,
 /// fission and turbine are 0..100; power is kW; the bands are (low, high) on the temperature
 /// gauge. The screens show little: no condition values, the pump gives its flow only.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -327,21 +327,21 @@ pub struct ReactorNews {
     pub manual: bool,
     /// The core melted: the readout shows MELTDOWN.
     pub melted: bool,
-    /// Core stability in whole percent, 100 when cold and off, 0 when melted or ejected (#300 r29).
+    /// Core stability in whole percent, 100 when cold and off, 0 when melted or ejected.
     pub stability: u8,
     pub temp: f64,
     /// The targets as set (Manual) or as Auto has them.
     pub set_fission: f64,
     pub set_turbine: f64,
     /// The actual fission rate and turbine output, 0..100: they follow the set points with inertia
-    /// (the reactor hum follows the actual fission, #300 r25).
+    /// (the reactor hum follows the actual fission).
     pub fission: f64,
     pub turbine: f64,
     pub output_kw: f64,
     pub load_kw: f64,
     pub optimal: [f64; 2],
     pub allowed: [f64; 2],
-    /// The fission and turbine bands (optimal, allowed; lo and hi) of the readout's sliders (#300 r30).
+    /// The fission and turbine bands (optimal, allowed; lo and hi) of the readout's sliders.
     pub fission_optimal: [f64; 2],
     pub fission_allowed: [f64; 2],
     pub turbine_optimal: [f64; 2],
@@ -350,11 +350,11 @@ pub struct ReactorNews {
     pub powered: bool,
     /// The breakers, by `BreakerGroup::index`: engines, life support, lights.
     pub breakers: [bool; 3],
-    /// The limits (0..1), the kW each group gets and its demand kW, by `BreakerGroup::index` (#300 r34).
+    /// The limits (0..1), the kW each group gets and its demand kW, by `BreakerGroup::index`.
     pub limits: [f64; 3],
     pub delivered_kw: [f64; 3],
     pub demand_kw: [f64; 3],
-    /// The aux reactor is on (`EngineRoom::aux_enabled`, #300 r32).
+    /// The aux reactor is on (`EngineRoom::aux_enabled`).
     pub aux_on: bool,
     /// The aux switches of Life Support and Lights (on when the aux reactor feeds them).
     pub aux_life_support: bool,
@@ -377,14 +377,14 @@ pub struct ReactorNews {
     /// The engine room's air, 0..1 (the host rounds it to whole percent).
     pub oxygen: f64,
     /// The meltdown blasts the host has applied so far (`ReactorCounts::blasts`). A process that
-    /// sees it go up shows the blast (the flash, the notice) once; the host applies the effects (#300).
+    /// sees it go up shows the blast (the flash, the notice) once; the host applies the effects.
     pub blasts: u32,
-    /// The fuel tubes, one per slot (the first `FUEL_TUBES`): the rod in it, None when empty (#300).
+    /// The fuel tubes, one per slot (the first `FUEL_TUBES`): the rod in it, None when empty.
     pub fuel: [FuelTube; FUEL_TUBES],
     pub reactor: PartNews,
     pub pump: PartNews,
     pub junction: PartNews,
-    /// The warning lamps that are on, by `Lamp::index` (the status board, #300). Steady here: the
+    /// The warning lamps that are on, by `Lamp::index` (the status board). Steady here: the
     /// blink is the screen's.
     pub lamps: [bool; Lamp::COUNT],
     /// The temperature boost, degrees (-25..25 at the shipped tuning; 0 when none).
@@ -393,19 +393,19 @@ pub struct ReactorNews {
     pub boost_ok: bool,
     /// Seconds to the implosion at the current rate, while the meltdown timer runs; None otherwise.
     pub meltdown_eta_s: Option<f64>,
-    /// The status board's graph (#300, Barotrauma's reactor graph): `graph_points` valid points
+    /// The status board's graph (Barotrauma's reactor graph): `graph_points` valid points
     /// of output and load in kW, newest first; 0 means no curves (the panel draws none).
     pub graph_points: u8,
     pub graph_output: [u16; GRAPH_POINTS],
     pub graph_load: [u16; GRAPH_POINTS],
-    /// The core was ejected: the readout shows NO CORE, the rods are gone (#300 r22).
+    /// The core was ejected: the readout shows NO CORE, the rods are gone.
     pub ejected: bool,
     /// The EJECT safety cover is open (ARM EJECT pressed, the window still running).
     pub eject_armed: bool,
     /// The core ejects the host has applied so far (`ReactorCounts::ejects`). A process that sees
     /// it go up shows the CORE EJECTED notice once, as the blasts do.
     pub ejects: u32,
-    /// The emergency cooling runs now (#300 r24).
+    /// The emergency cooling runs now.
     pub ecool_active: bool,
     /// Seconds until the emergency cooling can be pressed again (0 when it can).
     pub ecool_ready_in_s: f64,
@@ -420,7 +420,7 @@ pub struct ReactorNews {
 /// `ReactorNews` `Copy`.
 pub const GRAPH_POINTS: usize = 25;
 
-/// A warning lamp of the reactor's status board (#300), in the order the panel shows them. The
+/// A warning lamp of the reactor's status board, in the order the panel shows them. The
 /// conditions are the core's `Warnings`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Lamp {
@@ -446,14 +446,14 @@ impl Lamp {
     }
 }
 
-/// The engine room's state (#296): the door's target and the alarm level.
+/// The engine room's state: the door's target and the alarm level.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoomNews {
     pub door_open: bool,
     pub alarm: Alarm,
 }
 
-/// A player's vitals for their own display (#295). Shares are 0..1 of the maximum before any
+/// A player's vitals for their own display. Shares are 0..1 of the maximum before any
 /// headache; `None` where the affliction is not there.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Vitals {
@@ -481,7 +481,7 @@ pub struct Vitals {
     /// Unconscious: vitality at zero or below (not dead). Controls frozen, lying down for the others.
     pub unconscious: bool,
     /// What each injury costs the health now, in vitality points: the burn, the oxygen low and
-    /// the headache's part of the maximum (#295).
+    /// the headache's part of the maximum.
     pub burn_cost: f64,
     pub oxygen_cost: f64,
     pub headache_cost: f64,

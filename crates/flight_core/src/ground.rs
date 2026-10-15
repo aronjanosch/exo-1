@@ -1,7 +1,7 @@
-//! The ground rules (#92): what a ship does while it rests on the ground and the SC model does not
+//! The ground rules: what a ship does while it rests on the ground and the SC model does not
 //! fly it (no thrust but down, gravity compensation on, slow). It settles straight down until
 //! resting, keeps its spot on a slope below the limit until thrust, and turns at the rates of the
-//! ground. The SC model has no landing gear yet (#162); this piece stands in for it.
+//! ground. The SC model has no landing gear yet; this piece stands in for it.
 //!
 //! The values are `content/tuning/ground.json`, all placeholders (TODO(initiator)).
 use crate::limits::Rot;
@@ -72,7 +72,7 @@ impl Default for GroundTuning {
     }
 }
 
-/// A ship set down below `landing_slope_limit` keeps its spot until thrust (#92). Positions are
+/// A ship set down below `landing_slope_limit` keeps its spot until thrust. Positions are
 /// planet frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GroundHold {
@@ -89,7 +89,7 @@ pub struct GroundRules {
     pub tuning: GroundTuning,
     /// Seconds the hull has rested on the ground (touching, not sinking) without a break.
     pub ground_time: f64,
-    /// Set down below `landing_slope_limit`: held to the spot until thrust (#92).
+    /// Set down below `landing_slope_limit`: held to the spot until thrust.
     pub ground_hold: Option<GroundHold>,
     /// Seconds without hull contact; a hold lets go after `GROUND_HOLD_RELEASE_TIME`.
     contact_lost: f64,
@@ -123,7 +123,7 @@ impl GroundRules {
     /// teleport, a depenetration); the hold lets go instead of pulling it back.
     pub const GROUND_HOLD_REACH: f64 = 1.0;
     /// m/s: the ground rules (settle, hold) start only this slow along the ground; a brush at speed
-    /// is not a landing (#104 point 1).
+    /// is not a landing.
     pub const GROUND_HOLD_SPEED: f64 = 5.0;
     /// m: half the hull's length; a level ship touching a slope with a corner has its centre up to
     /// this times the slope's tangent above the terrain.
@@ -163,7 +163,7 @@ impl GroundRules {
         normal.dot(up).abs().min(1.0).acos()
     }
 
-    /// Ground hold (#92), the part of the step before the velocity goal. `thrusting`: any stick
+    /// Ground hold, the part of the step before the velocity goal. `thrusting`: any stick
     /// input but down. Returns `hold` (low, slow and touching without thrust: settle straight
     /// down) and whether the step settles or rests (`hold` or a ground hold).
     fn ground_rules(&mut self, env: &impl PlanetEnv, origin: DVec3, v: DVec3, up: DVec3, thrusting: bool, grounded: bool, dt: f64) -> (bool, bool) {

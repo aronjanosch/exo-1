@@ -1,6 +1,6 @@
-//! The engine room's screens (#297, slice S3c), drawn to the initiator's design (Claude Design,
-//! "EXO-1 Crew HUD", spec `engine-room-screens-spec.md` in the session scratchpad). The screens show
-//! little, in the ship's fiction: no condition values, sensors instead.
+//! The engine room's screens, drawn to the initiator's design (Claude Design, "EXO-1 Crew HUD",
+//! spec `engine-room-screens-spec.md`). The screens show little, in the ship's fiction: no
+//! condition values, sensors instead.
 //!
 //! - The reactor (M, on the east wall): the core temperature arc (zones from the sim's bands), the
 //!   output against the load, two fuel tubes, the fission and turbine sliders, MAN/AUTO, POWER, SCRAM.
@@ -13,7 +13,7 @@
 //!   control, a CLOSE box (`readout_help_panel`, `ReactorHelp`). Leaving the display closes it.
 //! - The coolant pump (S, on the pump block): a picture of the pump, the flow, the status word, the
 //!   three mode buttons OFF / LOW / HIGH. The impeller turns with the pump's speed (`effects::impeller_angle`).
-//! - The junction box (taller than S, on the wall above it, #300 r34): three breaker levers; under each
+//! - The junction box (taller than S, on the wall above it): three breaker levers; under each
 //!   a bar (the fill is delivered over demand, the triangle is the limit) and its limit slider; under the
 //!   three the TOTAL bar (delivered over the output range's top). Overvolt shows in the world (sparks).
 //! - The AUX screen (S, AX-01, beside the junction box's screen on the south wall): AUX OFFLINE with the
@@ -24,7 +24,7 @@
 //!   zone band, the room's oxygen, the lights breaker. TODO(captain): the emergency view with the
 //!   captain role.
 //! - The RX STATUS screen (S, on the south wall beside the readout, to its east): the warning lamps,
-//!   the temperature boost (two buttons), the core eject (PULSAR's lever, #300 r22: ARM EJECT opens
+//!   the temperature boost (two buttons), the core eject (PULSAR's lever: ARM EJECT opens
 //!   the cover, EJECT inside its window throws the core out; the cover's state sits by the boost) and
 //!   the implosion's countdown while the meltdown timer runs. It has its own start-up supply like the
 //!   readout: no NO POWER here, so EJECT works with the machines dark (the boost is off then).
@@ -223,7 +223,7 @@ pub fn power_ink(out: f64, load: f64) -> Ink {
 }
 
 /// The fuel tubes (176 x 152): one per slot (`FUEL_TUBES`), each filled to its rod's life and
-/// coloured by its kind (standard green, hot amber, spicy red, #300); an empty slot is a hollow
+/// coloured by its kind (standard green, hot amber, spicy red); an empty slot is a hollow
 /// tube. Hatched when the life is low.
 fn fuel(r: Option<&ReactorNews>) -> Item {
     let tubes = r.map_or([FuelTube::default(); FUEL_TUBES], |r| r.fuel);
@@ -329,7 +329,7 @@ fn band_strip(optimal: [f64; 2], allowed: [f64; 2], actual: Option<f64>) -> Item
     canvas(STRIP_W, STRIP_H, shapes, None).fixed(STRIP_H)
 }
 
-/// A set point (the readout, as before) and the actual value beside it, small and dim: "41 %  -> 38".
+/// A set point (on the readout) and the actual value beside it, small and dim: "41 %  -> 38".
 /// The arrow is ASCII: the mono font has no U+2192.
 fn set_and_actual(set: f64, actual: f64, manual: bool) -> Item {
     row(
@@ -594,7 +594,7 @@ fn pump_modes(mode: PumpMode, r: &ReactorNews) -> Item {
     row(6.0, vec![mode_button("OFF", "pump_off", PumpMode::Off).flex(1.0), mode_button("LOW", "pump_low", PumpMode::Low).flex(1.0), mode_button("HIGH", "pump_high", PumpMode::High).flex(1.0), ecool_button(r).flex(1.4)]).fixed(ctl::MD)
 }
 
-/// PULSAR's emergency cooling (#300 r24), the fourth cell of the pump's mode row. The panel body is
+/// PULSAR's emergency cooling, the fourth cell of the pump's mode row. The panel body is
 /// 192 px and the picture takes 109, so the button cannot have a row of its own; its label is E-COOL
 /// when a press would be taken, the cooldown as m:ss greyed while it runs (TODO(initiator): the
 /// label "E-COOL 0:42" does not fit a cell of this row), COOL greyed while the extra cooling runs.
@@ -711,7 +711,7 @@ fn lever_in(w: f64, lines: &[&str], on: bool, action: &str, name_ink: Ink) -> It
     canvas(w, 168.0, s, Some(action)).flex(1.0)
 }
 
-/// The junction box's and the AUX screen's canvas (px): the S width and one tier taller (#300 r34),
+/// The junction box's and the AUX screen's canvas (px): the S width and one tier taller,
 /// so the junction box's bars and the TOTAL bar fit under its levers.
 pub const TALL_CANVAS: f64 = 320.0;
 
@@ -769,7 +769,7 @@ fn junction_lever(r: &ReactorNews, g: BreakerGroup, names: &[&str], action: &str
     .fixed(94.0)
 }
 
-/// The junction box's screen (one tier taller than S, #300 r34): three breaker levers, each with its
+/// The junction box's screen (one tier taller than S): three breaker levers, each with its
 /// bar and its limit slider, and the TOTAL bar under them. `max_kw` is the reactor's output range top.
 pub fn junction_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     if !powered(r) {
@@ -790,7 +790,7 @@ pub fn junction_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     tall(Panel::screen(Tier::S, JUNCTION_NAME, "JB-01", body).with_padding(6.0))
 }
 
-/// The AUX screen (S, #300 r32): the aux reactor's two switches and the boost it gives the main
+/// The AUX screen (S): the aux reactor's two switches and the boost it gives the main
 /// reactor. With the aux reactor off it says AUX OFFLINE and nothing else. Not gated on the machines'
 /// power: the aux reactor has its own supply. TODO(initiator): confirm.
 pub fn aux_panel(r: Option<&ReactorNews>) -> Panel {
@@ -877,7 +877,7 @@ pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
 
 /// The dev fault screen: the faults, the drain and the warm start, a fire at the reactor and the resets.
 pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
-    // The AUX button shows the aux reactor's state now (the press flips it).
+    // The AUX button shows the aux reactor's state (the press flips it).
     let aux = if r.is_some_and(|r| r.aux_on) { "AUX ON" } else { "AUX OFF" };
     // Two columns: the faults on the left, the fire and the resets on the right.
     let col = |items: Vec<_>| column(4.0, items);
@@ -937,7 +937,7 @@ fn lamp_cell(l: Lamp, lit: bool) -> Item {
 
 /// The graph's cell (px) on the M panel (640 x 400): the width less the well and padding, and the
 /// height the lamps, boost, presses, countdown and the stability bar leave (TODO(initiator): the status
-/// board's budget: the bar took 25 px of it, #300 r29).
+/// board's budget: the bar took 25 px of it).
 const GRAPH_W: f64 = 600.0;
 const GRAPH_H: f64 = 125.0;
 
@@ -973,11 +973,11 @@ fn graph_item(r: Option<&ReactorNews>, max_kw: f64) -> Item {
     canvas(GRAPH_W, GRAPH_H, graph_shapes(r, max_kw, GRAPH_W, GRAPH_H), None).fixed(GRAPH_H)
 }
 
-/// The stability bar's height (px) under its label (#300 r29).
+/// The stability bar's height (px) under its label.
 const BAR_H: f64 = 8.0;
 
 /// The stability bar's fill (0..1, the percent) and tone: good above 75 %, warn from 40 to 75 %, bad
-/// below 40 % (PULSAR's core stability, #300 r29). Pure, for the tests.
+/// below 40 % (PULSAR's core stability). Pure, for the tests.
 pub fn stability_bar(pct: u8) -> (f64, Tone) {
     let tone = if pct > 75 {
         Tone::Good
@@ -1047,7 +1047,7 @@ pub fn status_panel(r: Option<&ReactorNews>, max_kw: f64, blink_on: bool) -> Pan
     Panel::screen(Tier::M, STATUS_NAME, "RX-02", column(5.0, vec![lamps, boost, presses, countdown, stability, graph])).with_padding(6.0)
 }
 
-/// The core eject (PULSAR's lever, #300 r22): a guarded two-press. ARM EJECT opens the safety cover;
+/// The core eject (PULSAR's lever): a guarded two-press. ARM EJECT opens the safety cover;
 /// the second press, EJECT in the bad tone, throws the core out, inside the host's window
 /// (`eject_arm_s`). Nothing to press once the core is out.
 pub fn eject_button(r: &ReactorNews) -> Item {
@@ -1413,7 +1413,7 @@ mod tests {
     #[test]
     fn every_readout_fits_its_box() {
         // A readout is set in the mono font: at most 0.6 of its size a character (the font's advance
-        // is 0.54; the flow's 28 px digits were clipped on the screen, so the flow is 20 px now).
+        // is 0.54; the flow's 28 px digits were clipped on the screen, so the flow is 20 px).
         let mut panels = all_panels();
         panels.push(pump_panel(Some(&ReactorNews { flow: 1.0, coolant: 100.0, ..news() })));
         for (i, p) in panels.into_iter().enumerate() {
@@ -1651,7 +1651,7 @@ mod tests {
         }
         assert_eq!(header(&crit), Some(("CRITICAL".to_string(), Tone::Bad)));
         assert!(crit.overflowing().is_empty());
-        // Scrammed at 85 °C: not critical any more, the header OFF (the needle shows the hot core).
+        // Scrammed at 85 °C: not critical, the header OFF (the needle shows the hot core).
         let off = ReactorNews { power_on: false, ..hot };
         assert!(!crate::effects::is_critical(Some(&off)));
         let normal = shipped_panel(Some(&off));

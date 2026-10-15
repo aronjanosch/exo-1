@@ -1,4 +1,4 @@
-//! #30: the menu's Host and Join start a session; two players find each other on loopback.
+//! The menu's Host and Join start a session; two players find each other on loopback.
 //! Headless, no window: the menu's buttons call `start_session`, which is what this drives.
 use exo_app::menu::{start_session, Session};
 use exo_app::net_live::RemoteWalker;

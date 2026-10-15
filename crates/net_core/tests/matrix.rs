@@ -1,10 +1,10 @@
-//! Replay matrix of spike 4 without sockets, on a synthetic path. The recorded path of the full
+//! Replay matrix without sockets, on a synthetic path. The recorded path of the full
 //! scenario runs in `exo_app/tests/app/scenario_full.rs`.
 use net_core::replay::{matrix_cases, run_matrix, synthetic_path};
 
 const PASS_BOUND_MM: f64 = 10.0;
-/// Spike 4 asserted exactly 0 underruns for its seeds; another RNG gives a rare hold (four or
-/// more lost snapshots in a row at 10 % loss), so the bound here is small instead of zero.
+/// Exactly 0 underruns for the fixed seeds; another RNG gives a rare hold (four or
+/// more lost snapshots in a row at 10 % loss), so the bound here is small, not zero.
 const HOLD_BOUND_PERCENT: f64 = 0.05;
 
 #[test]

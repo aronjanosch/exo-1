@@ -1,4 +1,4 @@
-//! Orders of #168 on the jobs side: an `OrderPlaced` event becomes an offer with the order's
+//! Orders on the jobs side: an `OrderPlaced` event becomes an offer with the order's
 //! places, goods, reward and deadline; the end of the job raises `OrderSettled`.
 use std::path::Path;
 

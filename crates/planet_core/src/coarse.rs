@@ -1,4 +1,4 @@
-//! The coarse global layer (#177, spike 14): what only a whole-planet pass can give. The sea level,
+//! The coarse global layer: what only a whole-planet pass can give. The sea level,
 //! the drainage's change of the ground and the water surface per vertex of the cube-sphere grid
 //! (heights as i16 / u16 in tenths of a metre), and the rivers and lakes. It is baked once per
 //! client from recipe, seed and radius, and cached on disk under a hash of those and the code

@@ -4,8 +4,8 @@
 //!
 //! The walker lives in a frame: the planet (identity frame, world coordinates) or a ship
 //! cabin (the ship's pose). Position and velocity are stored in that frame, so a moving
-//! ship carries the walker without any velocity of its own (spike 3 pattern).
-//! All numbers are spike test values (assumptions), not designed.
+//! ship carries the walker without any velocity of its own.
+//! All numbers are test values (assumptions), not designed.
 use glam::{DQuat, DVec2, DVec3};
 use serde::Deserialize;
 
@@ -52,7 +52,7 @@ pub fn look_dir(forward: DVec3, up: DVec3, pitch: f64) -> DVec3 {
 }
 
 /// Inverse of `look_dir` about another `up`: heading and pitch that give `look`. Used on a frame
-/// change, so the view keeps its direction in the world (issue #7). Looking straight along `up`
+/// change, so the view keeps its direction in the world. Looking straight along `up`
 /// has no heading; then `fallback` (projected) is used.
 pub fn split_look(look: DVec3, up: DVec3, fallback: DVec3) -> (DVec3, f64) {
     let look = look.normalize();
@@ -91,12 +91,12 @@ pub fn turn_towards(from: DVec3, to: DVec3, dt: f64, time: f64, max_rate: f64) -
 }
 
 /// Free body orientation after this step's mouse yaw and pitch and roll (radians), each about the
-/// body's own axes (issue #8).
+/// body's own axes.
 pub fn turn_body(body: DQuat, yaw: f64, pitch: f64, roll: f64) -> DQuat {
     (body * DQuat::from_rotation_y(yaw) * DQuat::from_rotation_x(pitch) * DQuat::from_rotation_z(roll)).normalize()
 }
 
-/// Suit thrusters for weightless movement (issue #8). Assumed values, tune by feel.
+/// Suit thrusters for weightless movement. Assumed values, tune by feel.
 /// `content/tuning/suit.json`.
 #[derive(Deserialize, Copy, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -172,14 +172,14 @@ pub struct WalkerConfig {
 
 impl Default for WalkerConfig {
     fn default() -> Self {
-        // Spike values; skin and slide count assumed.
+        // Test values; skin and slide count assumed.
         WalkerConfig {
             radius: 0.35,
             height: 1.8,
             walk_speed: 5.0,
             run_speed: 12.0,
             jump_speed: 5.0,
-            // Initiator: 0 to 3 m/s within 0.1 s, then full speed.
+            // 0 to 3 m/s within 0.1 s, then full speed.
             start_speed: 3.0,
             start_time: 0.1,
             floor_max_angle_deg: 50.0,
@@ -209,7 +209,7 @@ pub struct WalkInput {
     pub yaw: f64,
     /// Weightless only: acceleration from equipment (suit thrusters), frame coordinates.
     pub accel: DVec3,
-    /// Share of the walking speed taken away (carrying a crate in both hands, #83); 0 = none.
+    /// Share of the walking speed taken away (carrying a crate in both hands); 0 = none.
     pub slow: f64,
 }
 
@@ -298,7 +298,7 @@ impl Walker {
         }
 
         // Weightless: nothing presses the feet onto a floor, so the walker can neither stand nor
-        // push off; it keeps its velocity (issue #5) and only equipment changes it (#8).
+        // push off; it keeps its velocity and only equipment changes it.
         let weightless = gravity == 0.0;
         let mut jumping = false;
         if weightless {
@@ -347,7 +347,7 @@ impl Walker {
             self.pos += dir * travel;
             let n = frame.rot.inverse() * hit.normal;
             let rest = motion - dir * travel;
-            // Into the surface relative to its own motion (issue #9: a moving ship).
+            // Into the surface relative to its own motion (a moving ship).
             let surface_v = frame.rot.inverse() * hit.velocity;
             let into = |v: DVec3| n * (v - surface_v).dot(n).min(0.0);
             if weightless {

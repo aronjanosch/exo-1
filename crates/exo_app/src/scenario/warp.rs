@@ -177,7 +177,7 @@ pub(crate) fn warp_flight(name: &'static str, tag: &'static str, start: Option<P
                 check(c, in_cabin && g / n > 0.99 && far > 2.0 && back.abs() < 3.0, format!("{name}: walking in the cabin at {:.0} km/s at the end: {far:.2} m back, {back:.2} m from the start after walking forward again, deck contact {:.1} % of {n:.0} steps", w.resource::<WarpDrive>().drive.speed() / 1000.0, 100.0 * g / n));
             }
         }
-        // Then walk back onto the ramp until the rails end: the cabin keeps the walker (#111).
+        // Then walk back onto the ramp until the rails end: the cabin keeps the walker.
         if how == Flight::Passenger && c.v.contains_key("walk_done") && !c.v.contains_key("ramp_done") {
             if phase.on_rails() {
                 c.v.entry("ramp_t0".into()).or_insert(c.t);
@@ -315,7 +315,7 @@ pub(crate) fn warp_flight(name: &'static str, tag: &'static str, start: Option<P
                     format!("{name}: at the exit the nose is {:.3} deg off {}'s centre (tolerance {NOSE_TOLERANCE} deg), {:.0} m from the centre, {alt:.0} m above the radius ({:.0} m above the atmosphere top)", c.v["nose"], p.name, pos.distance(p.centre()), alt - p.atmosphere_height),
                 );
                 if c.v["planet0"] == to.0 as f64 {
-                    // On from a drop point: the target became the simulation's planet at the drop (#14).
+                    // On from a drop point: the target became the simulation's planet at the drop.
                     let (busy, swaps) = (w.resource::<PendingPlanet>().busy(), tel(w).swaps.len() as f64 - c.v["swaps0"]);
                     check(c, !busy && swaps == 0.0, format!("{name}: target loaded since the drop: nothing generated (busy {busy}), {swaps} planet swaps"));
                 } else {
@@ -360,7 +360,7 @@ pub(crate) fn wait_drive_idle() -> Step {
 }
 
 /// A start refused below the jump altitude, or allowed above it (then cancelled). `alt` is
-/// metres at Hearth's 1200 m atmosphere and scales with the planet's atmosphere height (#177).
+/// metres at Hearth's 1200 m atmosphere and scales with the planet's atmosphere height.
 fn start_at_altitude(name: &'static str, alt: f64, refused: bool) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -532,7 +532,7 @@ pub(super) fn warp_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
         }
         false
     }));
-    // Stood up while calibrating: J from the cabin still cancels (#111).
+    // Stood up while calibrating: J from the cabin still cancels.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "stand up while calibrating, J from the cabin cancels");

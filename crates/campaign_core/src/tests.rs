@@ -5,7 +5,7 @@ use std::cell::Cell;
 use std::collections::HashSet;
 use warp_core::{DriveConfig, PlanetDef};
 
-// Rng (#274)
+// Rng
 
 #[test]
 fn splitmix_of_zero_matches_the_reference_values() {
@@ -80,7 +80,7 @@ fn pick_of_an_empty_slice_is_none() {
     assert!([1, 2, 3].contains(r.pick(&[1, 2, 3]).unwrap()));
 }
 
-// Data (#274)
+// Data
 
 const PLANET_SET: &str = include_str!("../../../content/campaign/planet_set.json");
 const NAMES: &str = include_str!("../../../content/campaign/names.json");
@@ -192,7 +192,7 @@ fn system_name_is_deterministic_and_varies() {
     assert!(distinct.len() >= 20, "{}", distinct.len());
 }
 
-// Generator (#274)
+// Generator
 
 const SYSTEM: &str = include_str!("../../../content/system/system.json");
 const SEEDS: u64 = 300;
@@ -401,7 +401,7 @@ fn normal_seed_42_is_pinned() {
     assert_eq!(planets, [("Mumble", "cinder", 801_617), ("Sprocket", "cinder", 544_030)]);
 }
 
-// Orbit rings (#279)
+// Orbit rings
 
 fn star_of(out: &Generated) -> [f64; 3] {
     out.system.star.position
@@ -573,7 +573,7 @@ fn normal_seed_42_orbit_is_pinned() {
     assert_eq!(tilt, 26.81);
 }
 
-// Campaign map (#275)
+// Campaign map
 
 const MAP_RULES: &str = include_str!("../../../content/campaign/map.json");
 const MAP_SEEDS: u64 = 500;
@@ -941,7 +941,7 @@ fn map_seed_42_is_pinned() {
     );
 }
 
-// Progress (#275)
+// Progress
 
 fn progress_walk(map: &Map, mut pick: impl FnMut(&[NodeId], usize) -> NodeId) -> Progress {
     let mut p = Progress::start(map);

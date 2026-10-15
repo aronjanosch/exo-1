@@ -1,4 +1,4 @@
-//! The medic view (#300): look at another player within 3 m and see their injuries.
+//! The medic view: look at another player within 3 m and see their injuries.
 //!
 //! Research (Barotrauma, `~/Work/exo-research/barotrauma/source/`, read for the rules only):
 //! - `BarotraumaClient/ClientSource/Characters/Health/CharacterHealth.cs`, `DrawHealthWindow`
@@ -61,7 +61,7 @@ fn affliction_of(i: Injury) -> &'static str {
     }
 }
 
-/// What the medic view shows now (written every fixed step; headless too).
+/// What the medic view shows (written every fixed step; headless too).
 #[derive(Resource, Default, Clone, Debug, PartialEq)]
 pub struct MedicView {
     /// The player the panel is about: the one aimed at, or the one a treatment is held on.

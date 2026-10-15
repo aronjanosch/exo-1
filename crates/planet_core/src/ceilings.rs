@@ -1,8 +1,8 @@
-//! Ceilings first (#177, spike 14): radius, atmosphere height and the tallest terrain are planet
+//! Ceilings first: radius, atmosphere height and the tallest terrain are planet
 //! data, and the heights a path or a jump depends on follow from them by one rule.
 //!
 //! The rule (TODO(initiator): start values, KSP's ratio is a reference, not a rule):
-//! - atmosphere: 1.2 km at 5 km radius (today's Hearth), then 1/8.57 of the radius (35 km at 300 km);
+//! - atmosphere: 1.2 km at 5 km radius (the Hearth planet), then 1/8.57 of the radius (35 km at 300 km);
 //! - the tallest terrain is 1/10 of the atmosphere;
 //! - the obstruction radius is the radius plus a third of the atmosphere (400 m at Hearth);
 //! - the arrival radius is the radius plus the larger of 7 km and two atmospheres.

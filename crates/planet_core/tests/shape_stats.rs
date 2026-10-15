@@ -1,4 +1,4 @@
-//! #214: terrain shape statistics (plain share, tallest ground, biomes) on Hearth at 5 km.
+//! Terrain shape statistics (plain share, tallest ground, biomes) on Hearth at 5 km.
 use planet_core::*;
 
 fn hearth() -> (Planet, BakeStats) {

@@ -1,4 +1,4 @@
-//! #63: atlas and look spots.
+//! Atlas and look spots.
 use planet_core::*;
 
 fn hearth() -> Planet {
@@ -35,7 +35,7 @@ fn viewpoints_parse_and_every_spot_exists_on_hearth() {
     assert!(Viewpoints::from_json(r#"{"sun_elevation_deg":1,"sun_azimuth_deg":1,"atlas_width":8,"viewpoints":[{"id":"x","spot":"nowhere","height_m":1}]}"#).is_err());
 }
 
-// ---------- local map (#166): a north-up picture of the ground around a point ----------
+// ---------- local map: a north-up picture of the ground around a point ----------
 
 #[test]
 fn a_local_map_has_its_size_and_north_is_up() {
@@ -81,7 +81,7 @@ fn water_is_blue_in_a_local_map_and_land_is_not() {
     let a = p.atlas(128, 0);
     let _ = a;
     let wet = (0..200).map(|i| planet_core::look::pixel_dir((i * 7) % 128, 5 + (i * 3) % 50, 128, 64)).find(|d| p.sample(*d).water_depth > 1.0).expect("water somewhere");
-    // Not the violet glass row (#222): its ground is purple by design, so the land check needs other land.
+    // Not the violet glass row: its ground is purple by design, so the land check needs other land.
     let dry = (0..200).map(|i| planet_core::look::pixel_dir((i * 11) % 128, 5 + (i * 5) % 50, 128, 64)).find(|d| {
         let s = p.sample(*d);
         s.water_depth == 0.0 && s.height_above_sea > 20.0 && s.biome != 7
@@ -99,7 +99,7 @@ fn water_is_blue_in_a_local_map_and_land_is_not() {
 
 #[test]
 fn orbit_map_has_its_size_and_its_dryness_marks_the_sea() {
-    // #235: the map holds the land colour everywhere and in alpha how dry the point is (0.5 at a
+    // The map holds the land colour everywhere and in alpha how dry the point is (0.5 at a
     // shore); the impostor shader draws the water from it.
     let p = hearth();
     let m = p.orbit_map(128, 0);

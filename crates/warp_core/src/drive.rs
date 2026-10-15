@@ -231,7 +231,7 @@ impl Drive {
 
     /// A ship at the end of the rails (one that got to the exit first, or drifted onto the drop
     /// point): the end moves back along the path by `emergency_clear_step` until clear, never
-    /// behind the ship (#111). Only ships: the path keeps out of planets.
+    /// behind the ship. Only ships: the path keeps out of planets.
     fn clear_end(&mut self, obstacles: &[Obstacle]) {
         let Some(path) = self.path.as_ref() else { return };
         let step = self.cfg.emergency_clear_step;

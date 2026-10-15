@@ -1,4 +1,4 @@
-//! Spike 10 glue shared by the recorder and the live network: building a snapshot of the local
+//! Glue shared by the recorder and the live network: building a snapshot of the local
 //! ship and walker in the shared frame (planet id plus planet-relative f64).
 use crate::env::PlanetRes;
 use crate::walker::Player;

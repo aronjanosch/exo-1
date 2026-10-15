@@ -304,7 +304,7 @@ fn a_placement_that_cannot_be_is_refused() {
 
 #[test]
 fn a_use_takes_one_from_the_stack_and_the_host_names_the_effect() {
-    // #295: a bandage used on player 1 is one less in the user's slot; the host says what to apply.
+    // A bandage used on player 1 is one less in the user's slot; the host says what to apply.
     let mut host = Host::new(defs());
     let mut inv = Inventory::default();
     inv.collect(&defs(), stack("bandage", 3)).unwrap();
@@ -343,7 +343,7 @@ fn an_empty_slot_or_an_item_without_a_use_is_refused() {
 
 #[test]
 fn a_given_rod_keeps_its_life_and_a_full_bar_hands_it_back() {
-    // #300: the brake gives a pulled rod back to its player with its life (the item condition).
+    // The brake gives a pulled rod back to its player with its life (the item condition).
     const ROD: &str = r#"{ "id": "fuel_rod", "name": "Fuel rod", "take": "collect", "hands": 1, "stack": 1, "use": "load_rod", "condition": true, "shape": { "extents": [0.06, 0.6, 0.06], "mass": 3.0, "colour": [0.2, 0.75, 0.3] } }"#;
     let d = ItemDefs::from_files([("fuel_rod.json", ROD), ("wrench.json", WRENCH)]).unwrap();
     let mut host = Host::new(d.clone());

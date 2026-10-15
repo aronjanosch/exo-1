@@ -1,4 +1,4 @@
-//! Scenario `sc-turn` (round 5, lane `sc-angular`): the SC model's rotation, driven through the pad
+//! Scenario `sc-turn`: the SC model's rotation, driven through the pad
 //! stick and Q. Sit, 400 m above the ground; a full pitch for 2 s (the overshoot and the
 //! settling), a full reversal (a constant deceleration until the spin crosses zero), roll and its
 //! release, then a turn at cruise with the G-safe turn cap (F8) on and off. Each check prints its
@@ -186,7 +186,7 @@ pub fn sc_turn_steps(s: &mut Vec<Step>) {
         let stop = samples.iter().position(|s| s.spin.z.abs() < 1e-9);
         let lowest = samples.iter().map(|s| s.spin.z).fold(f64::MAX, f64::min);
         let want = -c.v["roll_share"] * c.v["roll_box"];
-        // The mean includes the build-up at the angular jerk (#198, 0.1 s to full): within 15 %.
+        // The mean includes the build-up at the angular jerk (0.1 s to full): within 15 %.
         check(c, decel.len() > 5 && (mean / want - 1.0).abs() < 0.15, format!("roll release: {} ticks, decel {mean:.3} rad/s^2 (want {want:.3})", decel.len()));
         check(c, stop.is_some() && lowest > -0.01, format!("roll stops at tick {stop:?}, lowest spin {lowest:+.4} rad/s"));
     }));

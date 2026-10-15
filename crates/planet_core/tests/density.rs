@@ -1,4 +1,4 @@
-//! #177 (spike 14): landforms and sites by density rules. The count grows with the surface at a
+//! Landforms and sites by density rules. The count grows with the surface at a
 //! fixed rule, no two of a kind stand closer than their separation, and the bake stays small.
 use planet_core::*;
 use std::time::Instant;

@@ -1,4 +1,4 @@
-//! The SC model's angular stage (round 5, lane `sc-angular`, issue #196): one budget, a second-order
+//! The SC model's angular stage: one budget, a second-order
 //! pitch and yaw, reversal and roll release as constant decelerations, rate over speed, the G-safe
 //! turn cap, landing mode and the strong and weak axes. Numbers are printed (`--nocapture`).
 mod sc_common;
@@ -78,7 +78,7 @@ fn reversal_is_a_constant_deceleration_at_the_reversal_share() {
     assert!(spread < 0.05, "decel spread {:.2} % over 5 %", spread * 100.0);
 }
 
-/// #239: up, down, then slightly up (small mouse moves at rest). The reversal hands over to the
+/// Up, down, then slightly up (small mouse moves at rest). The reversal hands over to the
 /// spring at the zero crossing; the spring must not start with the reversal's deceleration, or a
 /// small target overshoots several times over (it reached 3.2 times the target).
 #[test]

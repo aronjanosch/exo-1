@@ -1,4 +1,4 @@
-//! daynight_core: time of day on static planets (#48, #104), without Bevy types, in f64. There is
+//! daynight_core: time of day on static planets, without Bevy types, in f64. There is
 //! one star per system. A planet stays still; its day comes from its own spin: the direction
 //! from the planet to the star turns around the planet's axis once per `day_length_s`. Declination
 //! and the hour at the spawn point follow from the geometry (axis and star position), they are not

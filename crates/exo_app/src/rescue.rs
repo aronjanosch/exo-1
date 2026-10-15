@@ -1,4 +1,4 @@
-//! Rescue (#300 polish): CPR on an unconscious player. `health_core` holds the rules (`Health::cpr`);
+//! Rescue: CPR on an unconscious player. `health_core` holds the rules (`Health::cpr`);
 //! this is the glue: the hold, the wire, the host's pumping and the freeze.
 //!
 //! ## What Barotrauma does (checked in `~/Work/exo-research/barotrauma/`)

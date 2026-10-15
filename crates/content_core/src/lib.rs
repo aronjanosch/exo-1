@@ -1,5 +1,5 @@
 //! content_core: strict loading of JSON content, shared by the tuning loaders and the gameplay
-//! systems, without engine types (#122).
+//! systems, without engine types.
 //!
 //! - `parse_strict`: one JSON object, every field as its type says, unknown fields rejected
 //!   (`deny_unknown_fields` on the type), except an optional top-level `_comment` string.

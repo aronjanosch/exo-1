@@ -1,4 +1,4 @@
-//! #300, fire grid: the dev switch on the faults screen turns the fire to the cell model. A fire
+//! Fire grid: the dev switch on the faults screen turns the fire to the cell model. A fire
 //! at the reactor starts one burning cell, which spreads cell to cell within 30 s while the
 //! engine room's oxygen falls. With the door open the fire catches in the corridor. The
 //! extinguisher, from 3 m north, puts the cell at the reactor's front face out. Without a window;

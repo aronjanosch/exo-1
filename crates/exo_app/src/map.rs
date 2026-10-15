@@ -1,4 +1,4 @@
-//! The map (#166): M opens a north-up picture of the ground around the player with pins for the
+//! The map: M opens a north-up picture of the ground around the player with pins for the
 //! places the crew may use, the tracked job's next stop and the players. The pin list is
 //! `jobs_core::map` (no engine types); this module feeds it from the game and draws it. T tracks
 //! the next active job. The map takes no input and blocks nothing; it only covers the middle of
@@ -89,7 +89,7 @@ fn toggle_map(
     }
 }
 
-/// The pins now, for the planet the player is on. Places come from the pads of this planet.
+/// The pins for the planet the player is on. Places come from the pads of this planet.
 pub fn current_pins(gp: &Gameplay, planet: &PlanetRes, player: Option<DVec3>) -> Vec<Pin> {
     let id = planet.id.0 as u32;
     let places: Vec<PlacePos> = gp.pads.iter().map(|p| PlacePos { location: p.location.clone(), planet: id, dir: dir_of(planet, p.centre) }).collect();

@@ -132,7 +132,7 @@ fn lowering_the_engines_limit_lets_the_lowest_priority_keep_its_minimum_ratio() 
     let mut g = Grid::default();
     // 850 kW, limits 1: engines take the 450 left, lights (prio 1) are shed.
     g.set_limit(Group::Engines, 0.5);
-    // Engines ask 400 now: life support 400 and engines 400 are served in full, the 50 left go to
+    // Engines ask 400: life support 400 and engines 400 are served in full, the 50 left go to
     // lights (80 asked, share 0.625 >= its 0.3 minimum), so lights stay on.
     g.distribute(850.0);
     assert_eq!(g.factor(Group::Engines), 0.5);

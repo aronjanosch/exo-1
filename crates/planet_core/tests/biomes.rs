@@ -1,4 +1,4 @@
-//! #68: biomes v2: nearest row, chunk and point query agree, quotas fail the bake.
+//! Biomes: nearest row, chunk and point query agree, quotas fail the bake.
 use planet_core::*;
 
 const HEARTH: &str = include_str!("../../../content/planet/hearth.json");
@@ -61,7 +61,7 @@ fn nearest_row_wins() {
     assert_eq!(p.biome_for(20.0, &f(0.6), Some(1.0)), 2);
 }
 
-/// #222: the same climate on taller ground. At 100 km the relief is 4.47 times taller than at
+/// The same climate on taller ground. At 100 km the relief is 4.47 times taller than at
 /// 5 km (scale exponent 0.5), so a point at 4.47 times the height has the same row as at 5 km.
 #[test]
 fn the_climate_pattern_scales_with_the_relief() {

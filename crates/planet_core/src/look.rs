@@ -1,4 +1,4 @@
-//! The look harness's planet side (#63): an equirectangular atlas per layer (height, biome,
+//! The look harness's planet side: an equirectangular atlas per layer (height, biome,
 //! landform, scatter density) and named spots for fixed viewpoints. No window, no GPU.
 use crate::math::*;
 use crate::landform::ShapeRt;
@@ -10,7 +10,7 @@ use serde::Deserialize;
 /// looking at the centre. On the ground the camera stands `back_m` behind the spot (against its
 /// facing), `height_m` above the ground there, turned by `turn_deg` and pitched by `pitch_deg`
 /// (in orbit `pitch_deg` turns the view up from the centre towards the horizon). An orbit
-/// viewpoint with `radii` stands that many planet radii from the centre instead (#214: the
+/// viewpoint with `radii` stands that many planet radii from the centre instead (the
 /// same picture at 5 and 100 km).
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
@@ -41,7 +41,7 @@ pub struct Viewpoints {
     pub sun_azimuth_deg: f64,
     pub atlas_width: usize,
     pub viewpoints: Vec<Viewpoint>,
-    /// Time-of-day shots (#48): one viewpoint per planet at clock times instead of the fixed sun.
+    /// Time-of-day shots: one viewpoint per planet at clock times instead of the fixed sun.
     #[serde(default)]
     pub times: Vec<TimeShot>,
 }
@@ -92,7 +92,7 @@ pub enum AtlasLayer {
     Biome,
     Landform,
     Scatter,
-    /// Sea, lakes and rivers (#72): rivers drawn by catchment over a grey hillshade.
+    /// Sea, lakes and rivers: rivers drawn by catchment over a grey hillshade.
     Water,
 }
 
@@ -168,7 +168,7 @@ pub const ORBIT_SHORE_M: f64 = 10.0;
 
 impl Planet {
     /// A north-up picture (RGB8, `px` x `px`) of the ground within `radius_m` of `centre`: water
-    /// by depth, land in its biome colour shaded by height and slope (#166). Meant for a small
+    /// by depth, land in its biome colour shaded by height and slope. Meant for a small
     /// area (a map of what is around the player), so it is cheap to make when the map opens.
     pub fn local_map(&self, centre: V3, radius_m: f64, px: usize) -> Vec<u8> {
         let mut out = Vec::with_capacity(px * px * 3);
@@ -191,12 +191,12 @@ impl Planet {
         out
     }
 
-    /// The planet seen from far away (#224): one equirectangular colour map of `width` x
+    /// The planet seen from far away: one equirectangular colour map of `width` x
     /// `width / 2` RGBA8 pixels (sRGB, rows from the north pole down, longitude -180..180) with
     /// what the terrain would show from orbit: the land's biome ground colour (rock where the
     /// landform is steep, the cap colour on the heights), under water too, and in alpha how dry
     /// the point is: 0.5 at a shore, 1 from `ORBIT_SHORE_M` above any water, 0 from as deep below
-    /// (#235). The impostor shader draws the water and its shore per pixel from that, so a coast
+    /// The impostor shader draws the water and its shore per pixel from that, so a coast
     /// is no stair step of the map's pixels. No sites, no hillshade.
     pub fn orbit_map(&self, width: usize, threads: usize) -> Vec<u8> {
         let (w, h) = (width, width / 2);
@@ -217,8 +217,8 @@ impl Planet {
                     let dry = (0.5 - wet / (ORBIT_SHORE_M * self.look_scale())).clamp(0.0, 1.0);
                     let ha = ha.max(0.0);
                     let c = {
-                        // The two nearest biomes blended by their share (#235), as the terrain
-                        // does at its borders; the snow line in the look's scaled metres (#236).
+                        // The two nearest biomes blended by their share, as the terrain
+                        // does at its borders; the snow line in the look's scaled metres.
                         let pair = self.biome_pair(ha, &f, lf);
                         let rock = lf.unwrap_or(f.land).clamp(0.0, 1.0) as f32 * 0.5;
                         let (pa, pb) = (self.palette_ref(pair.lo), self.palette_ref(pair.hi));
@@ -502,7 +502,7 @@ impl Planet {
 }
 
 /// The direction of pixel (x, y) of a local map: `px` x `px` pixels covering `radius_m` metres to
-/// each side of `centre`, north up, east to the right (#166). Metres are metres on the surface:
+/// each side of `centre`, north up, east to the right. Metres are metres on the surface:
 /// the pixel is walked to from the centre along its bearing.
 pub fn local_map_dir(centre: V3, planet_radius: f64, radius_m: f64, px: usize, x: usize, y: usize) -> V3 {
     let half = px as f64 / 2.0;

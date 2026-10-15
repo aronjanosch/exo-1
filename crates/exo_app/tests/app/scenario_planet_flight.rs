@@ -1,4 +1,4 @@
-//! #213: the `planet-flight` measurement flight at 100 km radius, headless and paced at 60 frames
+//! The `planet-flight` measurement flight at 100 km radius, headless and paced at 60 frames
 //! per wall second like a window, so terrain jobs arrive per frame as in play. Reports frame time
 //! and the streaming work of the worst frames (main thread only, no GPU); not a timing check.
 //! `cargo ts scenario_planet_flight -- --run-ignored all --nocapture`

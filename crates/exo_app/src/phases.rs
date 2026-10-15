@@ -1,4 +1,4 @@
-//! Schedule phases (#97): every domain plugin puts its systems into one of these sets, and the
+//! Schedule phases: every domain plugin puts its systems into one of these sets, and the
 //! order between phases lives here, once. Order inside a phase is the plugin's own business.
 //!
 //! Avian runs in `FixedPostUpdate`; all `Fx` phases stay in `FixedUpdate`, so `ship_control`

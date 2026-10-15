@@ -1,4 +1,4 @@
-//! The pure rules of a brew (round 6, #228): what a mix gives, where the needle sits, how good the
+//! The pure rules of a brew: what a mix gives, where the needle sits, how good the
 //! brew is and what the product sells for. No state and no events.
 use std::collections::BTreeSet;
 

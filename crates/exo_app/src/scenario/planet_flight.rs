@@ -1,4 +1,4 @@
-//! `planet-flight` (#213): a repeatable flight for frame spikes on a big planet (run it with
+//! `planet-flight`: a repeatable flight for frame spikes on a big planet (run it with
 //! `--radius=100000 --atmosphere=11670`). The ship is moved on a fixed path (teleport per tick,
 //! velocity set so the ring and the camera look ahead as in flight), not by the flight model, so
 //! every run streams the same terrain:
@@ -11,7 +11,7 @@
 //! Each leg starts after a hold (the warm-up, not measured) that lets its start load, with the
 //! ship pinned at the start point but already given the leg's velocity. Per leg it reports frame
 //! time p50, p99, max, the frames above the spike threshold, the LOD debt (share of frames whose
-//! chunk under the ship is coarser than wanted), a `target:` line against the round's goal
+//! chunk under the ship is coarser than wanted), a `target:` line against the frame goal
 //! (p99 <= 8.3 ms, max <= 25 ms, LOD debt <= 2 %) and the work in the worst frames
 //! (`frame_cost`); all frames go to `<out>/frames-planet-flight.csv`. Headless it measures the
 //! main thread only (no GPU). Report only: timings are not checked (a shared machine is noisy).
@@ -59,7 +59,7 @@ fn pose_ship(w: &mut World, pos: DVec3, vel: DVec3) {
     w.get_mut::<LinearVelocity>(e).unwrap().0 = vel;
 }
 
-/// The round's frame goal (#213, round planets-100km): p99 and worst frame (ms), LOD debt (%).
+/// The frame goal: p99 and worst frame (ms), LOD debt (%).
 const TARGET_P99: f64 = 8.3;
 const TARGET_MAX: f64 = 25.0;
 const TARGET_DEBT: f64 = 2.0;
@@ -202,7 +202,7 @@ pub(super) fn planet_flight_steps(s: &mut Vec<Step>, out_dir: &std::path::Path) 
     }));
 }
 
-/// `lod-morph` (#220): a fixed slow descent (700 m down to 80 m above the ground in 21 s, 30 m/s) over a big planet
+/// `lod-morph`: a fixed slow descent (700 m down to 80 m above the ground in 21 s, 30 m/s) over a big planet
 /// with a screenshot every 0.25 s (windowed), to compare the LOD steps with geomorphing on and
 /// off: run it twice, the second time with `EXO_NO_MORPH=1`. Shots land in `<out>/lod-morph/`;
 /// `EXO_LOD_DENSE=1` shoots every 1/30 s instead, for a frame-difference check of the pops.

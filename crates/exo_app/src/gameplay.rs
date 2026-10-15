@@ -1,10 +1,9 @@
-//! Gameplay glue (#129, #130, #133): the kernel (`gameplay_core`) and the jobs system
+//! Gameplay glue: the kernel (`gameplay_core`) and the jobs system
 //! (`jobs_core`) in the game. This module holds their state, turns crates on pads into domain
 //! events, applies every event once (host), and carries out the outcomes: spawn the crates of an
 //! accepted job, release crates, route payouts and flags back in as events.
 //!
-//! Content: `content/gameplay/` (records), `content/place/` (where the pads are). One client for
-//! now: this game is the host and the only sender (network: #134, client id and save: #135).
+//! Content: `content/gameplay/` (records), `content/place/` (where the pads are). Single client for now: this game is the host and the only sender.
 //!
 //! A crate is on a pad when it rests outside any cabin, not held, within the pad's radius. Leaving
 //! a pad is a pickup, coming to rest on one a delivery (the jobs system decides whether it counts).
@@ -21,7 +20,7 @@ use crate::cargo::{crate_bundle, Crate, Crates};
 use crate::env::{from_v3, PlanetRes};
 use crate::grab::Grab;
 
-/// The game's own section of the save (#135): its seed.
+/// The game's own section of the save: its seed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GameSave {
     pub seed: u64,
@@ -54,10 +53,10 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, update_pad_rings.in_set(crate::phases::Frame::World));
 }
 
-/// The host's own sender id in events until the network sends each client's (#134); the folder's
-/// id is `savefile::LocalClient` (#135).
+/// The host's own sender id in events until the network sends each client's; the folder's
+/// id is `savefile::LocalClient`.
 pub const HOST: ClientId = ClientId(1);
-/// Seed of a new game: the text picks (#135 keeps it in the save). TODO(initiator): a new game
+/// Seed of a new game: the text picks (the save keeps it). TODO(initiator): a new game
 /// draws its own; fixed keeps the scenarios repeatable.
 const NEW_GAME_SEED: u64 = 0x5EED_0001;
 
@@ -105,7 +104,7 @@ pub struct Gameplay {
     pub jobs_content: JobContent,
     text: TextTable,
     picker: Picker,
-    /// What the players are told: queued by the systems, released with pauses (#165).
+    /// What the players are told: queued by the systems, released with pauses.
     pub notices: NoticeQueue,
     /// Every notice shown so far, oldest first (the window draws them, scenario checks read them).
     pub shown: Vec<ShownLine>,
@@ -122,20 +121,20 @@ pub struct Gameplay {
     /// The job line as shown: money, the active job.
     pub readout: String,
     clock: f64,
-    /// The job whose next stop is the pointer and the map's target (#166).
+    /// The job whose next stop is the pointer and the map's target.
     pub tracked: Option<JobId>,
-    /// The counter the player has open: a giver's briefing with accept and decline (#167).
+    /// The counter the player has open: a giver's briefing with accept and decline.
     pub panel: Option<Panel>,
     /// Briefings already assembled, by offer and the giver's mood then: an offer reads the same
     /// each time it is opened.
     briefings: std::collections::BTreeMap<JobId, (jobs_core::Mood, Briefing)>,
-    /// The first press of abandon: which job and when (game clock), until confirmed (#132).
+    /// The first press of abandon: which job and when (game clock), until confirmed.
     abandon_asked: Option<(JobId, f64)>,
-    /// The target arrow (#136): the tracked job's next stop as the player sees it.
+    /// The target arrow: the tracked job's next stop as the player sees it.
     pub arrow: Option<Arrow>,
-    /// This game's seed (#135, in the save).
+    /// This game's seed (in the save).
     pub seed: u64,
-    /// Something happened to a job since the last save: the autosave writes soon (#135).
+    /// Something happened to a job since the last save: the autosave writes soon.
     pub save_wanted: bool,
 }
 
@@ -147,7 +146,7 @@ pub struct Panel {
     pub page: usize,
 }
 
-/// The HUD's target arrow (#136).
+/// The HUD's target arrow.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Arrow {
     pub target: LocationId,
@@ -174,7 +173,7 @@ pub struct ShownLine {
 
 impl Gameplay {
     /// Loads and checks `content/gameplay/` and the places the locations name; panics with every
-    /// error, like the planet recipes. Offers the fixed jobs (#133: no board yet).
+    /// error, like the planet recipes. Offers the fixed jobs (no board yet).
     pub fn load(crates: &Crates) -> Gameplay {
         let files = crate::content_files("gameplay");
         let sizes: Vec<&str> = crates.0.sizes.iter().map(|s| s.name.as_str()).collect();
@@ -209,7 +208,7 @@ impl Gameplay {
         g
     }
 
-    /// The gameplay sections of a save (#135): kernel, jobs and the game's seed. The
+    /// The gameplay sections of a save: kernel, jobs and the game's seed. The
     /// world (crates, ship) is `savefile::snapshot`'s.
     pub fn save_to(&self, env: &mut Envelope) {
         KernelState { progress: self.progress.clone(), dedup: self.dedup.clone() }.save(env);
@@ -222,7 +221,7 @@ impl Gameplay {
         self.next_crate
     }
 
-    /// A restart from a save (#135): progress, jobs and seed from `env`; notices, the
+    /// A restart from a save: progress, jobs and seed from `env`; notices, the
     /// panel and anything queued are gone. Content and pads stay (same build, same planet).
     pub fn restore(&mut self, env: &Envelope, next_crate: u64) -> Result<(), SaveError> {
         let kernel = KernelState::load(env)?.ok_or_else(|| SaveError::Parse("no kernel section".into()))?;
@@ -251,8 +250,7 @@ impl Gameplay {
         self.jobs.all().flat_map(|j| j.legs.iter().flat_map(|l| l.crates.keys().map(|c| c.0 + 1))).max().unwrap_or(1)
     }
 
-    /// English text for a key (the first line of a pool); the key itself when it has none (#131
-    /// adds checked tables).
+    /// English text for a key (the first line of a pool); the key itself when it has none (the tables are not checked yet).
     pub fn text(&self, key: &TextKey) -> String {
         self.text.lines(key.as_str()).and_then(|l| l.first().cloned()).unwrap_or_else(|| key.to_string())
     }
@@ -277,7 +275,7 @@ impl Gameplay {
     }
 
     /// Makes sure every giver's fixed job is on offer: one offer per template while it is not
-    /// active, and none for a once-only job that was completed. (No board yet, #126.)
+    /// active, and none for a once-only job that was completed. (No board yet.)
     pub fn refresh_offers(&mut self) {
         let ids: Vec<_> = self.jobs_content.templates.values().filter(|t| t.record.giver.is_some()).map(|t| t.record.id.clone()).collect();
         for id in ids {
@@ -297,7 +295,7 @@ impl Gameplay {
         self.jobs_content.givers.values().find(|g| g.record.location == pad.location).map(|g| g.record.id.clone())
     }
 
-    /// The giver's offers the crew may take now: open giver, template condition holds.
+    /// The giver's offers the crew may take: open giver, template condition holds.
     pub fn offers_of(&self, giver: &GiverId) -> Vec<JobId> {
         let Some(g) = self.jobs_content.givers.get(giver) else { return Vec::new() };
         if g.record.available.as_ref().is_some_and(|c| !c.holds(&self.kernel, &self.progress, Some(HOST))) {
@@ -343,7 +341,7 @@ impl Gameplay {
     }
 
     /// Whether the player may take the seat: with a licence that allows piloting, or while taking
-    /// its exam (the exam lends the ship). Without any such licence in the data, always (#169).
+    /// its exam (the exam lends the ship). Without any such licence in the data, always.
     pub fn may_pilot(&self, who: ClientId) -> bool {
         let needed = self.jobs_content.licences_allowing("pilot_ship");
         needed.is_empty()
@@ -378,7 +376,7 @@ impl Gameplay {
         self.tracked = Some(active[at.map_or(0, |i| (i + 1) % active.len())]);
     }
 
-    /// Abandon, pressed (#132): the first press names the tracked job and asks; a second press
+    /// Abandon, pressed: the first press names the tracked job and asks; a second press
     /// within `ABANDON_CONFIRM_S` drops it. Nothing tracked, nothing happens.
     pub fn press_abandon(&mut self) {
         let Some(job) = self.tracked.filter(|j| self.jobs.get(*j).is_some_and(|j| j.state == JobState::Active)) else { return };
@@ -499,7 +497,7 @@ pub fn grant_starting_licences(mut gp: ResMut<Gameplay>) {
     }
 }
 
-/// Pads of the current planet, when it changes (#129).
+/// Pads of the current planet, when it changes.
 pub fn update_pads(planet: Res<PlanetRes>, mut gp: ResMut<Gameplay>) {
     if gp.pads_for == Some(planet.id) {
         return;
@@ -589,7 +587,7 @@ pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>
                     }
                 }
             };
-            // A job changed: the autosave writes soon (#135).
+            // A job changed: the autosave writes soon.
             g.save_wanted |= !outcomes.is_empty();
             for o in outcomes {
                 carry_out(&mut commands, &table, g, &goods, o);
@@ -646,7 +644,7 @@ fn carry_out(commands: &mut Commands, table: &Crates, gp: &mut Gameplay, goods: 
 }
 
 /// "Bent Spoon 1.9 km, left": distance and rough side of a pad from where the player looks. A
-/// stand-in until the target arrow (#136).
+/// stand-in until the target arrow.
 pub fn pointer(name: &str, from: DVec3, look: DVec3, to: DVec3, up: DVec3) -> String {
     let (ang, dist) = bearing(from, look, to, up);
     let side = if dist < 40.0 {
@@ -689,7 +687,7 @@ pub fn update_readout(
         let name = gp.kernel.locations.get(l).map(|r| gp.text(&r.record.name))?;
         Some(pointer(&name, pos, look, pad.centre, planet.up(pos)))
     };
-    // The arrow points at the tracked job's next stop (#136).
+    // The arrow points at the tracked job's next stop.
     let arrow = gp.tracked.and_then(|t| gp.jobs.get(t)).filter(|j| j.state == JobState::Active).and_then(jobs_core::map::next_stop).and_then(|(target, stop)| {
         let (pos, look) = view?;
         let pad = gp.pad_of(&target)?;
@@ -766,7 +764,7 @@ fn update_panel(mut gp: ResMut<Gameplay>, bindings: Res<crate::controls::Binding
 pub struct PadRings(Option<warp_core::PlanetId>);
 
 /// Every pad: the landing-pad model (`props/landing_pad.glb`, a 20 m disc, scaled to the pad) and
-/// a glowing ring at its edge (round 6; the ring alone before).
+/// a glowing ring at its edge.
 fn update_pad_rings(mut commands: Commands, planet: Res<PlanetRes>, gp: Res<Gameplay>, mut rings: ResMut<PadRings>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>, assets: Res<AssetServer>) {
     if rings.0 == Some(planet.id) || gp.pads_for != Some(planet.id) {
         return;
@@ -797,7 +795,7 @@ fn update_pad_rings(mut commands: Commands, planet: Res<PlanetRes>, gp: Res<Game
 mod tests {
     use super::*;
 
-    /// #129: the shipped content loads, and every location on Hearth has its pad on the ground.
+    /// The shipped content loads, and every location on Hearth has its pad on the ground.
     #[test]
     fn every_location_finds_its_pad_on_the_planet() {
         let gp = Gameplay::load(&Crates::default());
@@ -816,7 +814,7 @@ mod tests {
         assert!(gp.jobs.all().any(|j| j.state == JobState::Offered), "the fixed job is offered at the start");
     }
 
-    /// #170: the courier drops lie 150 to 400 m from the start pad (the Drip Rock counter). They
+    /// The courier drops lie 150 to 400 m from the start pad (the Drip Rock counter). They
     /// are placed in metres from it, so a bigger planet keeps the distances (`planet_core`'s
     /// places tests check that at several radii).
     #[test]
@@ -835,7 +833,7 @@ mod tests {
         }
     }
 
-    /// Probe (round 6, run by hand): dry, flat spots for a town near a latitude and longitude.
+    /// Probe (run by hand): dry, flat spots for a town near a latitude and longitude.
     #[test]
     #[ignore]
     fn probe_town_spots() {
@@ -905,7 +903,7 @@ mod tests {
         }
     }
 
-    /// #167: the family is a giver of the cast but offers nothing in D; the courier office does.
+    /// The family is a giver of the cast but offers nothing in D; the courier office does.
     #[test]
     fn the_family_offers_nothing_yet_and_the_courier_office_does() {
         let gp = Gameplay::load(&Crates::default());
@@ -924,7 +922,7 @@ mod tests {
         assert_eq!(pointer("A", DVec3::ZERO, look, DVec3::new(10.0, 0.0, 0.0), up), "A 10 m, here");
     }
 
-    /// #136: the arrow's turn is + to the left, 0 ahead, 180 behind, flat on the ground.
+    /// The arrow's turn is + to the left, 0 ahead, 180 behind, flat on the ground.
     #[test]
     fn bearing_turns_left_positive_and_ignores_height() {
         let (up, look) = (DVec3::Y, DVec3::NEG_Z);

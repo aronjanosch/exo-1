@@ -1,6 +1,6 @@
 //! Ship-ship contact under client authority. Two independent Avian worlds, each owns one dynamic
 //! ship and shows the other ship as a delayed kinematic proxy, head-on at 15 m/s. Who owns a
-//! contact is open (spike 10 report); for now proxies do not touch ships at all.
+//! contact is open; proxies do not touch ships at all.
 use avian3d::physics_transform::PhysicsTransformConfig;
 use avian3d::prelude::*;
 use bevy::math::{DQuat, DVec3};
@@ -75,7 +75,7 @@ struct Outcome {
     final_vel: (f64, f64),
 }
 
-/// `lag` in ticks: how old the other ship's pose is in each world (spike 4: 9 and 3).
+/// `lag` in ticks: how old the other ship's pose is in each world (9 and 3).
 fn head_on_with(lag: (usize, usize), ticks: usize, layer: exo_app::Layer) -> Outcome {
     let mut w = [world(-12.0, 12.0, 15.0, layer), world(12.0, -12.0, -15.0, layer)];
     let mut first = [-1i32; 2];

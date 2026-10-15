@@ -88,8 +88,7 @@ fn oracle_for(r: &Reactor) -> Baro {
 
 /// Manual targets, power on, constant load: our `Reactor` and the Barotrauma port agree in
 /// temperature, fission, turbine and output at every step, on the oracle's own path
-/// (`inertia: false`). The default path with inertia (#300) is not compared with the first-order
-/// oracle: the test for it was deleted as superseded by this one.
+/// (`inertia: false`). The default path with inertia is not compared with the first-order oracle.
 #[test]
 fn manual_matches_barotrauma_without_inertia() {
     assert_manual_matches(comparable_reactor_with(false));
@@ -267,7 +266,7 @@ fn a_broken_pump_with_no_operator_fires_and_does_not_melt() {
         .all(|r| r.flow < 1e-9));
 }
 
-/// Goal 1: with no operator, a broken pump at full load (Auto, all breakers on) reaches TempCritical
+/// With no operator, a broken pump at full load (Auto, all breakers on) reaches TempCritical
 /// within 300 s. (It does not melt: Auto cuts fission and the peak is 99.1 with one fire.)
 #[test]
 fn a_broken_pump_at_full_load_reaches_temp_critical() {
@@ -318,12 +317,12 @@ fn scram_last_second_under_auto_never_reaches_the_meltdown_timer() {
 }
 
 /// After the repair and the restart at melt + 5 s the reactor runs on the grid again. A repaired
-/// core is a reactor again (r8): `melted()` is false after the repair.
+/// core is a reactor again: `melted()` is false after the repair.
 #[test]
 fn a_repaired_and_restarted_core_runs_again() {
     let (trace, room) = trace_of("meltdown_repair_restart", 5.0);
     assert!(trace.first("Meltdown").is_some());
-    // Was 150 s before r8; the core restarts at about 160 s now (cold until then).
+    // The core restarts at about 160 s (cold until then).
     let at = row_at(&trace, 180.0);
     assert!(at.power && at.output_kw > 0.0, "{at:?}");
     assert!(!room.reactor().melted(), "a repaired core is a reactor again");
@@ -334,7 +333,7 @@ fn a_repaired_and_restarted_core_runs_again() {
 #[test]
 fn wandering_load_stays_out_of_temp_critical_over_300_s() {
     // The warm-up leaves about 75 % in the tank, and High (`pump_use_high`) runs it dry before
-    // 300 s: the run starts with a full tank, as the test was written for.
+    // 300 s: the run starts with a full tank.
     let script = scripts().into_iter().find(|s| s.name == "wandering_load").expect("the script");
     let mut room = warm_room(&shipped(), 7);
     room.pump_mut().set_tank(100.0);
@@ -392,7 +391,7 @@ fn pulled_rods_stop_the_fission_at_once_and_the_core_cools() {
 #[test]
 fn pulling_both_rods_at_temp_critical_brakes_the_core() {
     let (trace, room) = trace_of("pull_rods_brake", 5.0);
-    // Without this the test passes for nothing: TempCritical is not reached with r8's dynamics.
+    // Without this the test passes for nothing: TempCritical is not reached with these dynamics.
     assert!(trace.count("Alarm TempCritical on") > 0, "the brake is never reached: peak {:.1}", trace.peak_temp());
     println!(
         "pull_rods_brake: peak {:.1}, fires {}, melted {}, TempCritical at {:?}, rods left {}",
@@ -570,7 +569,7 @@ fn a_melt_with_fuel_blasts_and_a_dry_melt_does_not() {
     assert!(room.reactor().rods().iter().all(|r| r.life > 0.0), "the dry melt keeps the rods' life");
 }
 
-/// #300 r22, PULSAR's core eject: the pump breaks with Manual 100/100, the operator ejects at
+/// PULSAR's core eject: the pump breaks with Manual 100/100, the operator ejects at
 /// TempCritical, and no meltdown follows in the 300 s (the core is out, the rods with it).
 #[test]
 fn eject_in_time() {

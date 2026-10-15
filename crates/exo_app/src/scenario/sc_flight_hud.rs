@@ -1,4 +1,4 @@
-//! Scenario `sc-flight-hud` (#200): the flight HUD's readout through `Controls`, SC model. Sit,
+//! Scenario `sc-flight-hud`: the flight HUD's readout through `Controls`, SC model. Sit,
 //! lift and hover; D strafes right (the velocity points along +x, the right thrust bar is the
 //! longest); W flies forward (the tape fills, the velocity points forward); Page Down x5 sets the
 //! limiter to 50 % (its mark on the tape); released, the horizon is level.

@@ -1,4 +1,4 @@
-//! Scenario `camera-g` (#148, #149): the chase camera trails a boost and swings back, the trauma
+//! Scenario `camera-g`: the chase camera trails a boost and swings back, the trauma
 //! shakes under boost and calms at rest, and F9 (through the bindings) switches all of it off and
 //! back on. Driven through `Controls`. The HUD line is not in a headless run; its words are
 //! checked in `view::tests`.
@@ -96,9 +96,9 @@ pub fn camera_g_steps(s: &mut Vec<Step>) {
     }));
     s.push(hold_until("descend to 120 m above ground", &[KeyCode::ControlLeft, KeyCode::ShiftLeft], 180.0, |w| above_ground(w) < 120.0));
     // Brake to rest first: the descent at 66 m/s still moves sideways at touchdown (SC has no
-    // landing gear, #162), which is not what this scenario checks. Then a test hook levels the
+    // landing gear), which is not what this scenario checks. Then a test hook levels the
     // ship at its spot: the SC's down input follows the hull, so a tilted hull slides on the way
-    // down (the axis model's #144 fix does not carry over to SC; open question, see the report).
+    // down (the axis model's fix does not carry over to SC; open question).
     s.push(hold_until("firm brake before the landing", &[KeyCode::KeyX], 20.0, |w| ship_vel(w).length() < 0.5));
     s.push(Box::new(|w, _| {
         let e = ship_e(w);

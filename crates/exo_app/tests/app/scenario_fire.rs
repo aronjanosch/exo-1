@@ -1,4 +1,4 @@
-//! #298: fire at the reactor: it grows and uses the air, the alarm follows its size, a walker beside
+//! Fire at the reactor: it grows and uses the air, the alarm follows its size, a walker beside
 //! it catches fire, the pump, the junction box and the reactor lose condition, and the extinguisher
 //! puts the three fires out; the alarm is back to none. Without a window.
 use crate::common;

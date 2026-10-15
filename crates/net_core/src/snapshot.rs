@@ -1,5 +1,5 @@
 //! Fixed data-only wire format, 148 bytes, little endian. Planet-relative f64 positions, f32
-//! velocities and quaternions (as in spike 4). Never anything but plain numbers.
+//! velocities and quaternions. Never anything but plain numbers.
 use crate::MAX_OWNER;
 use glam::{DQuat, DVec3};
 

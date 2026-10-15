@@ -1,13 +1,13 @@
-//! #297, slice S3b: the reactor runs on Auto and stays calm. From the dev faults screen (next to
+//! The reactor runs on Auto and stays calm. From the dev faults screen (next to
 //! the test console): Pump break takes the temperature past the allowed band and the ship's alarm
 //! goes Warn, then Danger; Reset reactor brings it back calm; Load drop on Auto overshoots above
 //! the optimal band for several seconds. Then Reset again and a second Load drop; the operator
 //! takes over at the readout on the engine room's wall (MAN) and lowers fission by clicks until
-//! the temperature is back in the optimal band. Then (#297, S3c): SCRAM at the readout cuts the
+//! the temperature is back in the optimal band. Then SCRAM at the readout cuts the
 //! output and the machines' screens show NO POWER; POWER on brings it back; the pump's OFF button
 //! lets the temperature climb; the junction box's LIGHTS breaker takes 80 kW off the load. There is
 //! no automatic shutdown. Without a window; the walker is set down at each screen (test setup) and
-//! uses it with F, the clicks go through the displays. #300: BOOST UP on the RX STATUS screen raises the
+//! uses it with F, the clicks go through the displays. BOOST UP on the RX STATUS screen raises the
 //! temperature boost.
 use super::*;
 use crate::dev_area::engine_room::ShipAlarm;
@@ -55,7 +55,7 @@ fn alarm(w: &World) -> Alarm {
     w.resource::<ShipAlarm>().level
 }
 
-/// The temperature now and the optimal band (low, high).
+/// The temperature and the optimal band (low, high).
 fn temp_now(w: &World) -> (f64, [f64; 2]) {
     let r = sim(w).room.reactor();
     (r.temperature(), [r.bands().temp_optimal.lo, r.bands().temp_optimal.hi])
@@ -253,7 +253,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // Second round: reset, then a Load drop, and the operator takes over while it is above.
+    // Second pass: reset, then a Load drop, and the operator takes over while it is above.
     s.push(click_step(FAULTS_ID, "reset", 0.2));
     s.push(settle(120.0, "reactor: a second reset is calm"));
     s.push(click_step(FAULTS_ID, "load_drop", 0.2));
@@ -355,12 +355,12 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
     }));
     s.push(click_until(PUMP_ID, "pump_high", None, "reactor: the pump back on", |w| sim(w).room.pump().on()));
 
-    // #300: the RX STATUS screen beside the readout: BOOST UP (the walker uses the screen) raises the
+    // The RX STATUS screen beside the readout: BOOST UP (the walker uses the screen) raises the
     // temperature boost to its amount (25, past 20).
     use_display(s, "RX STATUS", STATUS_ID, [-9.6, -17.6]);
     s.push(click_until(STATUS_ID, "boost_up", None, "reactor: BOOST UP on the status screen raises the boost", |w| sim(w).room.reactor().temperature_boost() > 20.0));
 
-    // #300 r22, PULSAR's core eject: ARM EJECT opens the cover, EJECT inside its window throws the core
+    // PULSAR's core eject: ARM EJECT opens the cover, EJECT inside its window throws the core
     // out. Then nothing follows: no melt, no blast, the readout says NO CORE, the rods are gone. The
     // overheat above has broken the old core (its status screen is dark), so a fresh room comes first
     // (the dev faults' Reset, as the host applies it).
@@ -387,7 +387,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         true
     }));
     // One step for both presses: the button is ARM EJECT while the cover is shut and EJECT while it is
-    // open, so each retry (half a second) clicks what the snapshot shows now. The window is 5 s.
+    // open, so each retry (half a second) clicks what the snapshot shows. The window is 5 s.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "reactor: ARM EJECT, then EJECT inside the window, on the status screen");

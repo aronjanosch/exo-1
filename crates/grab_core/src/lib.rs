@@ -1,11 +1,11 @@
 //! grab_core: crates and how hands and the grab tool move them, without engine types, in f64
-//! (milestone C, #80 and #81). Learned from the hold-point regulators of other games
+//! Learned from the hold-point regulators of other games
 //! (`research/grab-and-cargo.md` in the concept repo); our own implementation and numbers.
 //!
 //! - `CrateTable`: the standard crate sizes (`content/cargo/crates.json`).
 //! - Hold: a velocity servo towards a hold point with a force cap per holder and a speed cap
 //!   that falls with mass, so heavy crates lag. Several holders add their caps (shared carry).
-//! - `budget`: which loose objects go (cap, persistence cap, timeout, distance), #85.
+//! - `budget`: which loose objects go (cap, persistence cap, timeout, distance).
 //! - `CrateBody`: a box that falls, slides with friction and sleeps at rest, moved by sweeps
 //!   through a `BoxWorld`. It lives in a frame like the walker (planet or ship cabin).
 //!
@@ -18,7 +18,7 @@ use walker_core::{Frame, Hit};
 
 // ---------- data ----------
 
-/// One standard crate size (#80).
+/// One standard crate size.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CrateSize {
@@ -134,7 +134,7 @@ pub struct GrabConfig {
     /// The tool reels a crate in to this distance from the eye (m), at `tool_reel_speed` (m/s).
     pub tool_hold_distance: f64,
     pub tool_reel_speed: f64,
-    /// Impacts up to this speed (m/s) leave a crate's condition alone (#130).
+    /// Impacts up to this speed (m/s) leave a crate's condition alone.
     pub impact_safe_speed: f64,
     /// Condition lost per m/s of impact speed above the safe speed (condition runs 1 to 0).
     pub impact_loss_per_speed: f64,
@@ -154,7 +154,7 @@ impl GrabConfig {
 }
 
 /// Condition a crate loses in one impact at `speed` (m/s into the surface): nothing up to the
-/// safe speed, then linear in the excess (#130).
+/// safe speed, then linear in the excess.
 pub fn impact_loss(cfg: &GrabConfig, speed: f64) -> f64 {
     (speed - cfg.impact_safe_speed).max(0.0) * cfg.impact_loss_per_speed
 }
@@ -322,7 +322,7 @@ pub struct CrateBody {
     /// Touched anything in the last step.
     pub contact: bool,
     pub asleep: bool,
-    /// Largest impact speed (m/s into a surface) in the last step; 0 without one (#130).
+    /// Largest impact speed (m/s into a surface) in the last step; 0 without one.
     pub impact: f64,
     rest_t: f64,
 }

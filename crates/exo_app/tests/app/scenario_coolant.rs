@@ -1,4 +1,4 @@
-//! #300: the coolant tank: the dev drain empties it (the pump screen says EMPTY, the temperature
+//! The coolant tank: the dev drain empties it (the pump screen says EMPTY, the temperature
 //! climbs); a canister from the corridor rack, held on the pump for 3 s, refills it and the flow
 //! comes back. Without a window.
 use crate::common;

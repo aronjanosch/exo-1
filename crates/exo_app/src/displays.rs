@@ -1,4 +1,4 @@
-//! Display panels (#285): screens in the world, operated where they hang (decision "Screens you
+//! Display panels: screens in the world, operated where they hang (decision "Screens you
 //! touch", 2026-10-13, as in Star Citizen). The walker stands at a machine; looking at its screen
 //! shows "[F] use <name>". F frees the mouse cursor, and the cursor is then the pointer on the
 //! screen in the world: the ray from the camera through the cursor meets the display's quad, and

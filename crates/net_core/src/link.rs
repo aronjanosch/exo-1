@@ -41,7 +41,7 @@ pub struct Link<T> {
 }
 
 impl<T> Link<T> {
-    /// Milliseconds and percent, as on the command line of spike 4.
+    /// Milliseconds and percent, as on the command line.
     pub fn new(delay_ms: f64, jitter_ms: f64, loss_percent: f64, seed: u64) -> Link<T> {
         Link {
             delay: delay_ms.clamp(0.0, 5000.0) / 1000.0,

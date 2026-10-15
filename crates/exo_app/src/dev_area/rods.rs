@@ -1,4 +1,4 @@
-//! Fuel rods by hand (#300, lane rods). A rod is an item you carry (`fuel_rod`, `fuel_rod_hot`,
+//! Fuel rods by hand. A rod is an item you carry (`fuel_rod`, `fuel_rod_hot`,
 //! `fuel_rod_spicy`, `content/items/fuel_rod*.json`); its item condition is the rod's life (100 new,
 //! 0 spent), kept when it is carried, loaded or pulled. Barotrauma style: the reactor is an item
 //! container with fuel slots, a rod in a slot is its available fuel.
@@ -38,7 +38,7 @@ pub const LOAD: &str = "load_rod";
 /// The rack in the corridor, relative to the corridor's centre (m), its size (m). On the extinguisher
 /// rack's side (x = -0.6), but north of it (y = 1.5): from the walkway south of the extinguisher
 /// rack, the aim ray runs through this rack's loose rods, and `interact` takes a loose item in the
-/// cone before a rack (#300, `scenario_extinguisher`).
+/// cone before a rack (`scenario_extinguisher`).
 pub const RACK_AT: [f64; 2] = [-0.6, 1.5];
 pub const RACK_SIZE: [f64; 3] = [0.5, 0.9, 0.5];
 /// The rods on the rack when the area is made: (item id, how many), in a row across the rack.

@@ -1,4 +1,4 @@
-//! The reactor (#297, slice S3b): the host steps the engine room's `EngineRoom` each fixed tick,
+//! The reactor: the host steps the engine room's `EngineRoom` each fixed tick,
 //! on Auto by default with the power on. Clients send their requests (`ReactorAsk`: manual or
 //! Auto, fission and turbine targets, a dev fault, a reset) and take the host's snapshot
 //! (`ReactorNews`, about 4 times a second while it changes) into `Items::reactor`.
@@ -9,9 +9,9 @@
 //! - The room's alarm drives `ShipAlarm` while the reactor is not calm (Warn, Danger); while it is
 //!   calm the test console's alarm button may set it.
 //! - Fires, sparks and meltdowns are logged (`info!`/`warn!`) and counted in `ReactorCounts` for
-//!   the scenarios. A fire starts in the engine room's air (`fire`, #298); the meltdown's effects
-//!   come with their slice. The dev faults screen's Fire asks for a fire at the reactor.
-//! - The core eject (PULSAR's lever, #300 r22): ARM EJECT opens the EJECT cover for `eject_arm_s`
+//!   the scenarios. A fire starts in the engine room's air (`fire`); the meltdown's effects are in
+//!   `blast`. The dev faults screen's Fire asks for a fire at the reactor.
+//! - The core eject (PULSAR's lever): ARM EJECT opens the EJECT cover for `eject_arm_s`
 //!   (the host keeps the timer); a second Eject inside it throws the core out (`EngineRoom::eject_core`):
 //!   the rods leave with it, no melt, the reactor is dead until a repair installs an empty core. The
 //!   notice (CORE EJECTED) shows on every process from the news' `ejects` counter.
@@ -44,9 +44,9 @@ pub struct ReactorCounts {
     pub meltdowns: u32,
     /// The meltdown blasts (`dev_area::blast`).
     pub blasts: u32,
-    /// The core ejects (PULSAR's core eject, #300 r22).
+    /// The core ejects (PULSAR's core eject).
     pub ejects: u32,
-    /// The emergency coolings pressed (PULSAR's manual button, #300 r24).
+    /// The emergency coolings pressed (PULSAR's manual button).
     pub ecools: u32,
 }
 

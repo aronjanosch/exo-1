@@ -1,4 +1,4 @@
-//! The lab (round 6, #228): kettles by station and the recipe book. A kettle takes a base and up
+//! The lab: kettles by station and the recipe book. A kettle takes a base and up
 //! to `max_ingredients`, brews for `brew_s`, then waits for the release. The needle position at the
 //! release sets the quality. The first brew of a mix goes into the book.
 //!

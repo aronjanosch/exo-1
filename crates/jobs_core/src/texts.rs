@@ -1,4 +1,4 @@
-//! Text keys used by the glue layer (exo_app) that must be in the text table (#131).
+//! Text keys used by the glue layer (exo_app) that must be in the text table.
 //! TODO(initiator): text key placeholders.
 use gameplay_core::text::TextTable;
 

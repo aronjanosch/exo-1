@@ -1,11 +1,11 @@
-//! Items (C1 of the interaction model; concept repo `design/interaction.md`): small things the
+//! Items (concept repo `design/interaction.md`): small things the
 //! player collects into the action bar, holds, drops and throws. `item_core` holds the rules and
 //! the request path; this is the glue.
 //!
 //! - Every change goes as a request from the local `Client` to the `Host` (`Items::request`).
 //!   Host and client run in this process alone (`Role::Local`); `Items::delay` holds each message
 //!   back as the internet would (the scenario plays with 75 ms each way). In a network session
-//!   (C2, `items_net`) the host process runs the `Host` and sends its events to the clients, a
+//!   (`items_net`) the host process runs the `Host` and sends its events to the clients, a
 //!   client process sends its actions to the host and hears the events (`Role`). The client shows
 //!   its request at once; the world (loose item entities) follows the events the client receives.
 //! - A loose item is a `cargo::Crate` body flagged `item`: it falls, slides, sleeps and lives in
@@ -83,33 +83,33 @@ pub enum NetOut {
     Action(Action),
     /// Host to the clients: one player (an answer to their action) or all (`to` None).
     Event { to: Option<PlayerId>, ev: Event },
-    /// Host to one client: its own vitals (#295).
+    /// Host to one client: its own vitals.
     Vitals { to: PlayerId, v: Vitals },
-    /// Host to one player (`to` Some) or all: the engine room's state (#296).
+    /// Host to one player (`to` Some) or all: the engine room's state.
     Room { to: Option<PlayerId>, r: RoomNews },
-    /// Client to host: a request about the engine room (#296).
+    /// Client to host: a request about the engine room.
     Ask(RoomAsk),
-    /// Host to one player (`to` Some) or all: the reactor's snapshot (#297).
+    /// Host to one player (`to` Some) or all: the reactor's snapshot.
     Reactor { to: Option<PlayerId>, r: ReactorNews },
-    /// Client to host: a request about the reactor (#297).
+    /// Client to host: a request about the reactor.
     ReactorAsk(ReactorAsk),
-    /// Host to one player (`to` Some) or all: the fires and the sprays (#298).
+    /// Host to one player (`to` Some) or all: the fires and the sprays.
     Fire { to: Option<PlayerId>, f: FireNews },
-    /// Client to host: the extinguisher's spray (#298).
+    /// Client to host: the extinguisher's spray.
     SprayAsk(SprayAsk),
-    /// Client to host: a repair request (#299).
+    /// Client to host: a repair request.
     RepairAsk(RepairAsk),
-    /// Host to one client: its repair session ended, the machine is full (#299).
+    /// Host to one client: its repair session ended, the machine is full.
     RepairDone { to: PlayerId },
-    /// Host to one player (`to` Some) or all: every player's public status (#300).
+    /// Host to one player (`to` Some) or all: every player's public status.
     Status { to: Option<PlayerId>, s: Vec<(PlayerId, PublicStatus)> },
-    /// Client to host: the treatment hold on this player, or none (#300).
+    /// Client to host: the treatment hold on this player, or none.
     Treat(Option<PlayerId>),
-    /// Client to host: the CPR hold on this player, or none (#300 polish).
+    /// Client to host: the CPR hold on this player, or none.
     Rescue(Option<PlayerId>),
-    /// Client to host: the brake on the reactor (#300); the host knows the sender.
+    /// Client to host: the brake on the reactor; the host knows the sender.
     Pull,
-    /// Host to one client: its repair start was refused (#299).
+    /// Host to one client: its repair start was refused.
     RepairRefused { to: PlayerId },
 }
 
@@ -129,42 +129,42 @@ pub struct Items {
     /// Every event the local client received (scenario checks).
     pub received: Vec<Event>,
     /// Uses the host applied since the last `take_uses`: (user, target, effect). The health
-    /// system applies the effect (#295).
+    /// system applies the effect.
     pub used: Vec<(PlayerId, PlayerId, String)>,
-    /// Coolant canisters the host applied since the last `take_refills` (#300).
+    /// Coolant canisters the host applied since the last `take_refills`.
     pub refills: u32,
     /// Fuel rods the host took out of an inventory into the reactor since the last
-    /// `take_rod_loads` (#300): the player, the rod's item id and its life.
+    /// `take_rod_loads`: the player, the rod's item id and its life.
     pub rod_loads: Vec<RodLoad>,
-    /// The latest vitals the host sent this client (#295), taken by the health system.
+    /// The latest vitals the host sent this client, taken by the health system.
     pub vitals_in: Option<Vitals>,
-    /// The engine room as the host has it (#296): the host sets it, a client takes it from the wire.
+    /// The engine room as the host has it: the host sets it, a client takes it from the wire.
     pub room: RoomNews,
     /// Requests about the engine room, to apply here (host and one process) or to send (client).
     pub room_asks: Vec<RoomAsk>,
     /// The reactor's snapshot as this process has it: the host sets it, a client takes it from
-    /// the wire (#297). None until the first one.
+    /// the wire. None until the first one.
     pub reactor: Option<ReactorNews>,
-    /// Requests about the reactor, as `room_asks` (#297).
+    /// Requests about the reactor, as `room_asks`.
     pub reactor_asks: Vec<ReactorAsk>,
     /// The fires and sprays as this process has them: the host sets it, a client takes it from the
-    /// wire (#298). None until the first one.
+    /// wire. None until the first one.
     pub fire: Option<FireNews>,
     /// Spray requests by player, to apply here (host and one process); a client sends its own.
     pub spray_asks: Vec<(PlayerId, SprayAsk)>,
-    /// Repair requests by player, as `spray_asks` (#299).
+    /// Repair requests by player, as `spray_asks`.
     pub repair_asks: Vec<(PlayerId, RepairAsk)>,
-    /// The host ended this process's repair session (#299); the client's ring takes it and stops.
+    /// The host ended this process's repair session; the client's ring takes it and stops.
     pub repair_done: bool,
     /// Every player's public status as this process has it: the host sets it when one changes, a
-    /// client takes it from the wire (#300). Sorted by player.
+    /// client takes it from the wire. Sorted by player.
     pub public: Vec<(PlayerId, PublicStatus)>,
-    /// Treatment holds by player, to apply here (host and one process); a client sends its own (#300).
+    /// Treatment holds by player, to apply here (host and one process); a client sends its own.
     pub treat_asks: Vec<(PlayerId, Option<PlayerId>)>,
-    /// Brakes by player (#300), to apply here; a client sends its own. The rod goes to that player.
+    /// Brakes by player, to apply here; a client sends its own. The rod goes to that player.
     pub pull_asks: Vec<PlayerId>,
     /// CPR holds by player (the rescuer's patient, or none), to apply here (host and one process);
-    /// a client sends its own (#300 polish).
+    /// a client sends its own.
     pub rescue_asks: Vec<(PlayerId, Option<PlayerId>)>,
 }
 
@@ -226,12 +226,12 @@ impl Items {
         self.publish(now, ev, None);
     }
 
-    /// A request about the engine room (#296): applied on the host, sent from a client.
+    /// A request about the engine room: applied on the host, sent from a client.
     pub fn ask_room(&mut self, a: RoomAsk) {
         self.room_asks.push(a);
     }
 
-    /// A request about the reactor (#297): applied on the host, sent from a client.
+    /// A request about the reactor: applied on the host, sent from a client.
     pub fn ask_reactor(&mut self, a: ReactorAsk) {
         self.reactor_asks.push(a);
     }
@@ -245,7 +245,7 @@ impl Items {
         }
     }
 
-    /// A repair request from the local player (#299): applied here, or sent from a client.
+    /// A repair request from the local player: applied here, or sent from a client.
     pub fn ask_repair(&mut self, a: RepairAsk) {
         if self.role == Role::Client {
             self.net_out.push(NetOut::RepairAsk(a));
@@ -254,7 +254,7 @@ impl Items {
         }
     }
 
-    /// The brake of the local player (#300): sent from a client, kept here on the host.
+    /// The brake of the local player: sent from a client, kept here on the host.
     pub fn ask_pull(&mut self) {
         if self.role == Role::Client {
             self.net_out.push(NetOut::Pull);
@@ -263,7 +263,7 @@ impl Items {
         }
     }
 
-    /// The treatment hold of the local player (#300): sent from a client, kept here on the host.
+    /// The treatment hold of the local player: sent from a client, kept here on the host.
     pub fn ask_treat(&mut self, target: Option<PlayerId>) {
         if self.role == Role::Client {
             self.net_out.push(NetOut::Treat(target));
@@ -272,7 +272,7 @@ impl Items {
         }
     }
 
-    /// The CPR hold of the local player (#300 polish): sent from a client, kept here on the host.
+    /// The CPR hold of the local player: sent from a client, kept here on the host.
     pub fn ask_rescue(&mut self, patient: Option<PlayerId>) {
         if self.role == Role::Client {
             self.net_out.push(NetOut::Rescue(patient));
@@ -281,23 +281,23 @@ impl Items {
         }
     }
 
-    /// The host sends a player its vitals (#295), over the reliable channel.
+    /// The host sends a player its vitals, over the reliable channel.
     pub fn send_vitals(&mut self, to: PlayerId, v: Vitals) {
         self.net_out.push(NetOut::Vitals { to, v });
     }
 
-    /// The canisters the host applied since the last call (#300).
+    /// The canisters the host applied since the last call.
     pub fn take_refills(&mut self) -> u32 {
         std::mem::take(&mut self.refills)
     }
 
-    /// The fuel rods the host loaded since the last call (#300).
+    /// The fuel rods the host loaded since the last call.
     pub fn take_rod_loads(&mut self) -> Vec<RodLoad> {
         std::mem::take(&mut self.rod_loads)
     }
 
     /// Host: a stack goes into a player's inventory (a fuel rod the brake pulled, or one the
-    /// reactor had no room for). Gives it back when the inventory has no room (#300).
+    /// reactor had no room for). Gives it back when the inventory has no room.
     pub fn give(&mut self, now: f64, player: PlayerId, stack: Stack) -> Result<(), Stack> {
         if self.role == Role::Client {
             return Ok(());
@@ -307,12 +307,12 @@ impl Items {
         Ok(())
     }
 
-    /// The uses the host applied since the last call (#295).
+    /// The uses the host applied since the last call.
     pub fn take_uses(&mut self) -> Vec<(PlayerId, PlayerId, String)> {
         std::mem::take(&mut self.used)
     }
 
-    /// Host: a rack on the wall gets its stock (#300). A client does not: the host's events bring it.
+    /// Host: a rack on the wall gets its stock. A client does not: the host's events bring it.
     pub fn add_rack(&mut self, now: f64, id: item_core::RackId, tag: &str, slots: usize, stock: Vec<Stack>) {
         if self.role == Role::Client {
             return;
@@ -321,7 +321,7 @@ impl Items {
         self.publish(now, ev, None);
     }
 
-    /// Host: the item in a player's slot wears by `amount` percent (the spray, #300); the change
+    /// Host: the item in a player's slot wears by `amount` percent (the spray); the change
     /// goes out when a whole percent changes or the item runs out.
     pub fn wear(&mut self, now: f64, player: PlayerId, slot: usize, amount: f64) {
         if self.role == Role::Client {
@@ -356,7 +356,7 @@ impl Items {
         }
     }
 
-    /// What a client that joins now needs: the world and every inventory as events, for it alone.
+    /// What a client that joins needs: the world and every inventory as events, for it alone.
     pub fn send_state(&mut self, to: PlayerId) {
         for ev in self.host.state() {
             self.net_out.push(NetOut::Event { to: Some(to), ev });
@@ -373,7 +373,7 @@ impl Items {
                 self.net_out.push(NetOut::Action(a));
                 continue;
             }
-            // What the slot held before the use: a fuel rod's kind and life go with it (#300).
+            // What the slot held before the use: a fuel rod's kind and life go with it.
             let held = match &a.req {
                 Request::Use { slot, .. } => self.host.inventory(a.player).slot(*slot).map(|s| (s.item.kind.as_str().to_string(), s.item.condition.unwrap_or(0.0))),
                 _ => None,
@@ -414,7 +414,7 @@ impl Items {
     }
 }
 
-/// A fuel rod the host took out of a player's hand into the reactor (#300).
+/// A fuel rod the host took out of a player's hand into the reactor.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RodLoad {
     pub player: PlayerId,
@@ -751,7 +751,7 @@ enum BarPart {
     Code(usize),
     Count(usize),
     Hands(usize),
-    /// The condition bar under a slot's item, if it wears (#300): its width is the condition.
+    /// The condition bar under a slot's item, if it wears: its width is the condition.
     Condition(usize),
     /// A dashed frame that follows a slot: the dragged slot's and the drop target's.
     Float(u32),
@@ -1114,7 +1114,7 @@ mod tests {
 
     #[test]
     fn the_brake_is_asked_by_its_sender_not_by_the_message() {
-        // #300: a pull names no player; the host takes the sender (the local player's id here, a
+        // A pull names no player; the host takes the sender (the local player's id here, a
         // remote one's slot from its connection, `items_net`), so the rod goes to the one who asked.
         let mut host = Items::load();
         host.role = Role::Host;

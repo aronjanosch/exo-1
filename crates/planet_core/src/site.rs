@@ -1,4 +1,4 @@
-//! Sites (#70): kinds placed by the bake's global pass (best-candidate sampling, separation,
+//! Sites: kinds placed by the bake's global pass (best-candidate sampling, separation,
 //! filters, budgets per category), the ground edits under them (part of the height function)
 //! and the pieces of their kits. A site is a pure function of the seed and the recipe.
 use crate::look::{tangent_frame, walk};
@@ -125,7 +125,7 @@ impl Planet {
         h
     }
 
-    /// The largest rise of the noise ground (before edits, #223) across the span of `2 * radius_m`
+    /// The largest rise of the noise ground (before edits) across the span of `2 * radius_m`
     /// through `dir`, in its two tangent directions (m). A plain is a small value.
     pub fn plain_rise_m(&self, dir: V3, radius_m: f64) -> f64 {
         let d = dir.normalized();
@@ -141,7 +141,7 @@ impl Planet {
             && self.recipe.biomes.iter().find(|r| r.id == biome).is_none_or(|r| r.sites.as_ref().is_none_or(|l| l.contains(&k.id)))
     }
 
-    /// The global pass (#70): landmarks first (highest candidate), then the site kinds in turns,
+    /// The global pass: landmarks first (highest candidate), then the site kinds in turns,
     /// each new site the candidate farthest from all sites so far. Returns the sites and the kinds
     /// that missed their minimum count.
     pub(crate) fn place_sites_v2(&self) -> (Vec<Site>, Vec<String>, Vec<(u32, V3, f64, f64)>) {
@@ -240,7 +240,7 @@ impl Planet {
                     if k.plain.as_ref().is_some_and(|pl| self.plain_rise_m(d, pl.radius_m) > pl.max_rise_m) {
                         continue;
                     }
-                    // No lake or river within the edits' reach, so they do not dam one (#72).
+                    // No lake or river within the edits' reach, so they do not dam one.
                     if self.water_within(d, reach_k) {
                         continue;
                     }

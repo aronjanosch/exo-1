@@ -1,4 +1,4 @@
-//! Round 5: the SC flight model lifts off, hovers and flies.
+//! The SC flight model lifts off, hovers and flies.
 use crate::common;
 use exo_app::Options;
 

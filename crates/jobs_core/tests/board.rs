@@ -1,4 +1,4 @@
-//! Board generation (#126): offers per location from templates, seeded, with lifetime rotation.
+//! Board generation: offers per location from templates, seeded, with lifetime rotation.
 use std::path::Path;
 
 use gameplay_core::{ClientId, Content, Event, File, Progress, WorldEvent};

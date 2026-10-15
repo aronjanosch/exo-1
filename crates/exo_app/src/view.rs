@@ -98,7 +98,7 @@ pub struct ViewState {
     horizon: Option<(DQuat, DVec3, f64)>,
 }
 
-/// Time the horizon takes to turn into the new frame (issue #7). Start value, tune by feel.
+/// Time the horizon takes to turn into the new frame. Start value, tune by feel.
 const HORIZON_BLEND_SECS: f64 = 0.4;
 
 /// Share of the old view still shown: 1 at the change, eases to 0.
@@ -113,7 +113,7 @@ fn horizon_offset(offset: DQuat, age: f64) -> DQuat {
 }
 
 /// Far plane of the camera: the larger of today's 120 km and 2.5 radii of the biggest planet, so a
-/// planet seen from orbit is not cut (#177).
+/// planet seen from orbit is not cut.
 pub fn far_plane(sys: Option<&crate::warp::SystemRes>) -> f32 {
     let r = sys.map_or(0.0, |s| s.0.planets.iter().map(|p| p.radius).fold(0.0, f64::max));
     (r * 2.5).max(120_000.0) as f32
@@ -136,13 +136,13 @@ pub fn setup_view(mut commands: Commands, sys: Option<Res<crate::warp::SystemRes
     ));
     commands.insert_resource(GlobalAmbientLight { color: Color::srgb(0.55, 0.65, 0.8), brightness: 400.0, ..default() });
     // At most four permanent elements: mode, speed, altitude, boost with the capacitor's bar
-    // (#24, #91). TODO(initiator): placement, size and colours are placeholders.
+    // TODO(initiator): placement, size and colours are placeholders.
     // Crew HUD v3: this row (mode, speed, altitude, boost) shows only while seated or in the F3
     // debug view (`crew_hud::update_readout_row`).
     commands
         .spawn((ReadoutRow, Node { position_type: PositionType::Absolute, top: px(8), left: px(8), column_gap: px(28), align_items: AlignItems::Center, display: Display::None, ..default() }))
         .with_children(|c| {
-            // Mode, speed with its cap and G (#197), altitude, boost.
+            // Mode, speed with its cap and G, altitude, boost.
             c.spawn((HudItem(0), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
             c.spawn((HudItem(1), Text::new(""), TextFont { font_size: FontSize::Px(20.0), ..default() }));
             c.spawn((HudItem(CAP_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
@@ -158,12 +158,12 @@ pub fn setup_view(mut commands: Commands, sys: Option<Res<crate::warp::SystemRes
             .with_children(|b| {
                 b.spawn((BoostFill, Node { width: percent(100), height: percent(100), ..default() }, BackgroundColor(BOOST_READY)));
             });
-            // Next to the bar: CAPACITOR or STAGE (no capacitor, #90).
+            // Next to the bar: CAPACITOR or STAGE (no capacitor).
             c.spawn((HudItem(BOOST_MODE_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
             // Then LANDING in landing mode (K).
             c.spawn((HudItem(LANDING_ITEM), Text::new(""), TextFont { font_size: FontSize::Px(14.0), ..default() }, TextColor(Color::srgba(0.9, 0.95, 1.0, 0.7))));
         });
-    // The flight panel (#197): one slot per badge, with the coupling blend's bar in the COUPLED slot.
+    // The flight panel: one slot per badge, with the coupling blend's bar in the COUPLED slot.
     // TODO(initiator): the position, size and colours are placeholders.
     commands
         .spawn(Node { position_type: PositionType::Absolute, top: px(36), left: px(8), column_gap: px(6), ..default() })
@@ -184,7 +184,7 @@ pub fn setup_view(mut commands: Commands, sys: Option<Res<crate::warp::SystemRes
                 });
             }
         });
-    // The toast (#197): the last change, large, in the upper centre for `TOAST_TIME` s.
+    // The toast: the last change, large, in the upper centre for `TOAST_TIME` s.
     commands.spawn((
         ToastLine,
         Text::new(""),
@@ -222,7 +222,7 @@ pub fn setup_view(mut commands: Commands, sys: Option<Res<crate::warp::SystemRes
     spawn_flight_hud(&mut commands);
 }
 
-/// The flight HUD's sizes and colours (#200). TODO(initiator): every value is a placeholder.
+/// The flight HUD's sizes and colours. TODO(initiator): every value is a placeholder.
 const FL_TAPE_PX: f32 = 200.0;
 const FL_TAPE_W: f32 = 10.0;
 /// From the screen centre to the speed tape's and the G bar's edge (px).
@@ -242,7 +242,7 @@ const FL_MARK: Color = Color::srgb(1.0, 0.85, 0.35);
 const FL_LEVEL: Color = Color::srgb(0.35, 1.0, 0.45);
 const FL_NEAR_LEVEL: Color = Color::srgb(1.0, 0.85, 0.35);
 
-/// The flight HUD (#200): one full-screen layer, shown while the readout has a flight part.
+/// The flight HUD: one full-screen layer, shown while the readout has a flight part.
 #[derive(Component)]
 pub struct FlightLayer;
 
@@ -264,7 +264,7 @@ pub enum FlightPart {
     GMark,
 }
 
-/// Spawns the flight HUD's layer and its parts (#200), hidden until the readout has a flight part.
+/// Spawns the flight HUD's layer and its parts, hidden until the readout has a flight part.
 fn spawn_flight_hud(commands: &mut Commands) {
     let line = |w: f32, h: f32| Node { position_type: PositionType::Absolute, width: px(w), height: px(h), ..default() };
     commands
@@ -316,7 +316,7 @@ pub struct HudItem(u8);
 /// The top-left row of `HudItem`s.
 #[derive(Component)]
 pub struct ReadoutRow;
-/// The boost capacitor's bar (#91) and its fill.
+/// The boost capacitor's bar and its fill.
 #[derive(Component)]
 pub struct BoostBar;
 #[derive(Component)]
@@ -330,7 +330,7 @@ const LANDING_ITEM: u8 = 5;
 const CAP_ITEM: u8 = 6;
 const G_ITEM: u8 = 7;
 
-/// One badge slot of the flight panel (#197); `BadgeText` and `BlendBar` carry its index.
+/// One badge slot of the flight panel; `BadgeText` and `BlendBar` carry its index.
 #[derive(Component)]
 pub struct BadgeSlot(pub usize);
 #[derive(Component)]
@@ -340,7 +340,7 @@ pub struct BadgeText(pub usize);
 pub struct BlendBar(pub usize);
 #[derive(Component)]
 pub struct BlendFill(pub usize);
-/// The toast line (#197).
+/// The toast line.
 #[derive(Component)]
 pub struct ToastLine;
 const BADGE_ON: Color = Color::srgb(0.55, 0.95, 1.0);
@@ -373,7 +373,7 @@ pub fn debug_hud_toggle(mut actions: ResMut<Actions>, mut view: ResMut<ViewState
     }
 }
 
-/// Mode, speed, altitude and the boost gauge from `HudReadout` (#91); the stick marker while piloting with the virtual joystick.
+/// Mode, speed, altitude and the boost gauge from `HudReadout`; the stick marker while piloting with the virtual joystick.
 #[allow(clippy::too_many_arguments)]
 pub fn update_flight_hud(
     readout: Res<crate::hud::HudReadout>,
@@ -397,7 +397,7 @@ pub fn update_flight_hud(
     (origin, fixed): (Res<RenderOrigin>, Res<Time<Fixed>>),
 ) {
     let (Ok(pl), Ok((ship, sp, si))) = (players.single(), ships.single()) else { return };
-    // Only touch a Text whose content changed (#24).
+    // Only touch a Text whose content changed.
     for (item, mut t) in &mut items {
         let want = match item.0 {
             BOOST_MODE_ITEM => readout.boost_mode,
@@ -466,7 +466,7 @@ pub fn update_flight_hud(
     }
 }
 
-/// The flight panel and the toast from `HudReadout` (#197). Only touches what changed.
+/// The flight panel and the toast from `HudReadout`. Only touches what changed.
 pub fn update_flight_panel(
     readout: Res<crate::hud::HudReadout>,
     mut slots: Query<(&BadgeSlot, &mut Visibility), (Without<BlendBar>, Without<ToastLine>)>,
@@ -507,7 +507,7 @@ pub fn update_flight_panel(
     }
 }
 
-/// The flight HUD's parts from `HudReadout::flight` (#200): the flight path marker, the speed tape,
+/// The flight HUD's parts from `HudReadout::flight`: the flight path marker, the speed tape,
 /// the thrust cross, the G bar and the horizon, at the nose point (the chase camera's aim).
 #[allow(clippy::too_many_arguments)]
 pub fn update_flight_visuals(
@@ -670,7 +670,7 @@ pub fn setup_warp_view(
         WorldPose::default(),
         Visibility::Hidden,
     ));
-    // Speed dust (#27): fixed in the world, the ship flies past it.
+    // Speed dust: fixed in the world, the ship flies past it.
     let dust = meshes.add(Cuboid::new(0.05, 0.05, 1.0));
     let dust_mat = materials.add(StandardMaterial { base_color: Color::srgba(0.9, 0.95, 1.0, 0.5), unlit: true, alpha_mode: AlphaMode::Blend, ..default() });
     for i in 0..DUST {
@@ -784,7 +784,7 @@ pub fn update_impostors(
         let p = sys.0.planet(imp.0);
         let to = p.centre() - origin.view;
         let dist = to.length();
-        // The planet in play brings the terrain as far as two atmospheres up (#224); every other
+        // The planet in play brings the terrain as far as two atmospheres up; every other
         // planet uses the rule's atmosphere for its radius.
         let atm = if imp.0 == planet.id { planet.field.atmosphere_height } else { planet_core::Ceilings::atmosphere_for(p.radius) };
         if dist < crate::sky::impostor_from(p.radius, atm) {
@@ -859,7 +859,7 @@ const DUST: usize = 160;
 /// Edge of the box around the camera the dust fills (m).
 const DUST_BOX: f64 = 120.0;
 
-/// Speed dust (#27, replaces streaks from the warp tunnel, which moved with the camera and turned
+/// Speed dust (the warp tunnel's streaks moved with the camera and turned
 /// with the course): world-fixed specks the ship flies past; leaving the box around the camera a
 /// speck comes back on the other side. Each is stretched along the ship's velocity by the distance
 /// it covers in 1/30 s; the camera effects' streak curve thickens them in with speed.
@@ -916,7 +916,7 @@ pub fn add_ship_visuals(
 const FIGURE_COLOURS: [(f32, f32, f32); 8] = [(0.95, 0.55, 0.15), (0.15, 0.75, 0.7), (0.6, 0.35, 0.85), (0.95, 0.85, 0.2), (0.95, 0.45, 0.65), (0.55, 0.85, 0.25), (0.35, 0.65, 0.95), (0.9, 0.25, 0.25)];
 
 /// Box parts of the figure in its own space: feet at the origin, face towards -z. A chunky
-/// low-poly figure built from code (#32): stubby legs, a block body, a big head with googly eyes
+/// low-poly figure built from code: stubby legs, a block body, a big head with googly eyes
 /// and an antenna. No rig, no animation. (size, centre, colour slot: 0 body, 1 dark, 2 white, 3 black)
 pub const FIGURE_PARTS: [(Vec3, Vec3, u8); 12] = [
     (Vec3::new(0.22, 0.7, 0.26), Vec3::new(-0.15, 0.35, 0.0), 1),
@@ -1052,7 +1052,7 @@ pub fn update_camera(
     let Ok((pl, pi)) = players.single() else { return };
     let Ok(si) = ships.single() else { return };
     let Ok((mut pose, mut fog, mut proj)) = cam.single_mut() else { return };
-    // The shake (#148) applies to the seated view and to the walker in a flying cabin only.
+    // The shake applies to the seated view and to the walker in a flying cabin only.
     let mut shaken = false;
     if let Some((p, r)) = view.look {
         (pose.pos, pose.rot) = (p, r);
@@ -1062,8 +1062,8 @@ pub fn update_camera(
         let up = if d.y.abs() < 0.99 { DVec3::Y } else { DVec3::X };
         pose.rot = walker_core::look_rot(-d, up);
     } else if pl.seated {
-        // Look-ahead into the turn, the touchdown bump along the ship's down (#27), the spring
-        // lag of the chase camera (#149).
+        // Look-ahead into the turn, the touchdown bump along the ship's down, the spring
+        // lag of the chase camera.
         let (sp, sr) = si.at(f);
         let fx = &fx.0;
         let ct = &tuning.camera;
@@ -1115,7 +1115,7 @@ pub fn update_camera(
     }
     origin.view = pose.pos;
     // The sky is the planet's atmosphere (sky.rs); the clear colour is space or the night sky's
-    // glow. Haze per planet (#67), ambient, fog and sky by the time of day (#48).
+    // glow. Haze per planet, ambient, fog and sky by the time of day.
     let density = planet.density_at(pose.pos) as f32;
     let s = &planet.pgen.recipe.sky;
     let (amb_color, amb, fog_color, fog_density, sky) = crate::daynight::camera_light(&sun, s.haze_color, crate::sky::haze_density(&planet), density);
@@ -1126,7 +1126,7 @@ pub fn update_camera(
     ambient.brightness = amb;
 }
 
-/// The HUD's word for the camera switch (#148, #149).
+/// The HUD's word for the camera switch.
 pub fn camera_fx_text(on: bool) -> &'static str {
     if on { "camera fx on (F9)" } else { "camera fx off (F9)" }
 }
@@ -1186,7 +1186,7 @@ pub fn update_hud(
             format!("walk  grounded {}  {speed}", pl.w.grounded)
         }
     };
-    // The camera switch (F9, #148, #149) is on the debug line, so a playtest can compare with it off.
+    // The camera switch (F9) is on the debug line, so a playtest can compare with it off.
     let camera = camera_fx_text(fx.0.enabled);
     **text = format!(
         "{mode}\n{:.1} ms | chunks {} pending {} | patches {} pending {} | rescues {} | {camera} | morph {} (F4)",
@@ -1198,7 +1198,7 @@ pub fn update_hud(
         stats.rescues,
         if terrain.morph_on { "on" } else { "off" },
     );
-    // Frame spikes (#213): worst and p99 of the last seconds.
+    // Frame spikes: worst and p99 of the last seconds.
     text.0.push('\n');
     text.0.push_str(&spikes.hud_line());
     text.0.push('\n');
@@ -1271,7 +1271,7 @@ mod tests {
         assert_eq!(camera_fx_text(false), "camera fx off (F9)");
     }
 
-    /// Issue #7: the horizon starts where it was and ends in the new frame, without a step.
+    /// The horizon starts where it was and ends in the new frame, without a step.
     #[test]
     fn horizon_blend_starts_at_the_old_view_and_ends_in_the_new() {
         let offset = DQuat::from_rotation_z(0.5);

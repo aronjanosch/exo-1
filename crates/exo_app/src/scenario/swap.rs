@@ -1,4 +1,4 @@
-//! Planet swaps (#14, #34): what a warp to another planet frees and keeps.
+//! Planet swaps: what a warp to another planet frees and keeps.
 use super::*;
 
 /// Ticks between a planet swap and its count: the freed meshes leave `Assets` a frame later,
@@ -21,7 +21,7 @@ pub struct SwapRow {
     pub chunks: usize,
     pub entities: u32,
     pub meshes: usize,
-    /// Root chunks built on the main thread on the swap frame (#34).
+    /// Root chunks built on the main thread on the swap frame.
     pub roots_built_here: usize,
     pub rss_mb: Option<f64>,
 }
@@ -106,7 +106,7 @@ pub fn headless_view(mut origin: ResMut<RenderOrigin>, ships: Query<&Position, W
 }
 
 /// Share the counts after a later swap may differ from the first swap to the same planet's
-/// (#14; the planets differ, e.g. in lake and river meshes, #72).
+/// (the planets differ, e.g. in lake and river meshes).
 const SWAP_COUNT_TOLERANCE: f64 = 0.05;
 
 pub(super) fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool, rounds: usize) {
@@ -163,7 +163,7 @@ pub(super) fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
                 format!("swap {}: departed planet {} left {} terrain chunks, {} entities, {} meshes; generator freed {}", i + 1, r.from, r.old_chunks, r.old_entities, r.old_meshes, r.old_freed));
             check(c, near(r.chunks as f64, first.chunks as f64) && near(r.entities as f64, first.entities as f64) && near(r.meshes as f64, first.meshes as f64),
                 format!("swap {}: world {} terrain chunks, {} entities, {} meshes; within {:.0} % of the first swap to the same planet's {}, {}, {}", i + 1, r.chunks, r.entities, r.meshes, SWAP_COUNT_TOLERANCE * 100.0, first.chunks, first.entities, first.meshes));
-            // #34: the roots come from the pool, built during the flight.
+            // The roots come from the pool, built during the flight.
             check(c, r.roots_built_here == 0, format!("swap {}: {} root chunks built on the swap frame (prebuilt on the pool)", i + 1, r.roots_built_here));
         }
         let rss: Vec<String> = rows.iter().map(|r| r.rss_mb.map_or("n/a".into(), |m| format!("{m:.0}"))).collect();

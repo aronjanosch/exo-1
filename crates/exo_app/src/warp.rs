@@ -4,7 +4,7 @@
 //!
 //! J starts a warp to the selected planet (N selects) and cancels while spooling or calibrating.
 //! Holding J during the flight drops out early (emergency exit). J works for whoever is aboard:
-//! the pilot, or a walker in the cabin who stood up mid-warp (#111; standing up stays allowed,
+//! the pilot, or a walker in the cabin who stood up mid-warp (standing up stays allowed,
 //! initiator 2026-10-09).
 //!
 //! Four fixed-step systems in a chain: `warp_input` (keys), `warp_drive` (state machine and the
@@ -38,7 +38,7 @@ const CAMPAIGN_NORMAL: &str = include_str!("../../../content/campaign/template_n
 const CAMPAIGN_HOSTILE: &str = include_str!("../../../content/campaign/template_hostile.json");
 
 /// The run's star system: `content/system/system.json`, or with `--system-seed` a generated one
-/// (#274, debug switch). Generated planets get the file's drive and must pass the day/night checks.
+/// (debug switch). Generated planets get the file's drive and must pass the day/night checks.
 pub fn build_system(o: &Options) -> System {
     let Some(seed) = o.system_seed else { return System::from_json(SYSTEM).expect("system.json") };
     let template = match o.system_kind {
@@ -120,7 +120,7 @@ pub struct WarpTelemetry {
 }
 
 /// The target planet being generated in the background while the ship flies, with its root
-/// terrain chunks (#34). `warp_core::Loader` decides what is generated and when it is swapped in.
+/// terrain chunks. `warp_core::Loader` decides what is generated and when it is swapped in.
 #[derive(Resource, Default)]
 pub struct PendingPlanet {
     task: Option<(PlanetId, Task<(PlanetRes, Vec<ChunkOut>, f64)>)>,
@@ -173,7 +173,7 @@ impl PendingPlanet {
     /// The finished planet and its roots; a running generation is waited for, and without one the
     /// planet is generated here and now without roots. Only when the loader swaps off rails in a
     /// frame zone (a teleport, an arrival before the generation is done): no flight to hide it in.
-    /// A "materialising" state instead of this hitch: #140.
+    /// A "materialising" state instead of this hitch.
     fn take(&mut self, id: PlanetId, sys: &System) -> (PlanetRes, Option<Vec<ChunkOut>>) {
         match self.task.take() {
             Some((t, task)) if t == id => {
@@ -200,7 +200,7 @@ pub fn swap_planet(commands: &mut Commands, ring: &mut Ring, new: PlanetRes) {
 
 fn course_quat(from: DQuat, dir: DVec3, max_angle: f64) -> DQuat {
     let nose = from * DVec3::NEG_Z;
-    // A zero or broken direction keeps the rotation (#111).
+    // A zero or broken direction keeps the rotation.
     if !dir.is_finite() || dir.length_squared() < 1e-24 {
         return from;
     }
@@ -329,9 +329,9 @@ pub fn warp_drive(
 }
 
 /// The ship comes into another planet's frame zone: that planet becomes the simulation's. An
-/// emergency drop outside every frame zone makes the nearest planet the simulation's (#14: the
-/// old one always stayed, with its terrain). `warp_core::Loader` has the rules: on rails only the
-/// target counts and the swap waits for its background generation (#111, #113).
+/// emergency drop outside every frame zone makes the nearest planet the simulation's (the
+/// old one goes with its terrain). `warp_core::Loader` has the rules: on rails only the
+/// target counts and the swap waits for its background generation.
 #[allow(clippy::too_many_arguments)]
 pub fn planet_swap(
     mut commands: Commands,

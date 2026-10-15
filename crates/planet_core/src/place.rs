@@ -1,4 +1,4 @@
-//! Hand-placed places (pads now, the city and outposts later): a fixed spot on the planet with the
+//! Hand-placed places (pads, the city, outposts): a fixed spot on the planet with the
 //! ground edits under it and its pads, one JSON file each in `content/place/` (DECISIONS.md,
 //! "Places (hand-placed)"). The bake puts them before the generated sites, which keep away.
 //!
@@ -24,7 +24,7 @@ pub struct Place {
     #[serde(default)]
     pub lon_deg: Option<f64>,
     /// Metres from another place instead of a latitude and longitude, so the distance between
-    /// the two stays the same when the planet's radius changes (#170, #177).
+    /// the two stays the same when the planet's radius changes.
     #[serde(default)]
     pub near: Option<Near>,
     #[serde(default)]

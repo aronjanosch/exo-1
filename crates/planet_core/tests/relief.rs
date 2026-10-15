@@ -1,5 +1,5 @@
-//! #221: the relief of the 100 km round. Hearth and Cinder at 100 km: the tallest ground, the plain
-//! share, the land share against the bake, the biome count (the statistics of #214), and the
+//! The relief at 100 km. Hearth and Cinder at 100 km: the tallest ground, the plain
+//! share, the land share against the bake, the biome count (the shape statistics), and the
 //! same statistics on a second bake (determinism).
 use planet_core::*;
 use std::sync::OnceLock;
@@ -92,7 +92,7 @@ fn relief_is_repeatable_at_100_km() {
     assert_eq!(sa, sb);
 }
 
-/// #222: the biome rows at 100 km. No row takes more than 30 % of the land, the snow row only the
+/// The biome rows at 100 km. No row takes more than 30 % of the land, the snow row only the
 /// high ground (10 % at most), and six or more rows show.
 #[test]
 fn hearth_biome_rows_share_the_land_at_100_km() {
@@ -107,8 +107,8 @@ fn hearth_biome_rows_share_the_land_at_100_km() {
     assert!(sh.biomes_present >= 6, "Hearth: {} rows present", sh.biomes_present);
 }
 
-/// #222: the instances of 24 cells of 0.3 km (4 per face, Hearth at 100 km) per storey. The
-/// density budget: the foliage may add at most 30 % over the count before the lane.
+/// The instances of 24 cells of 0.3 km (4 per face, Hearth at 100 km) per storey. The
+/// density budget: the foliage may add at most 30 % over the count below.
 fn sample_instances(p: &Planet) -> Vec<(String, usize)> {
     let mut out = Vec::new();
     for (st, (name, _)) in p.storeys().iter().enumerate() {
@@ -123,7 +123,7 @@ fn sample_instances(p: &Planet) -> Vec<(String, usize)> {
     out
 }
 
-/// The count before the #222 lane (Hearth, 100 km, the same 24 cells): 114062 instances.
+/// The count recorded here (Hearth, 100 km, the same 24 cells): 114062 instances.
 const SCATTER_BEFORE_L6: f64 = 114_062.0;
 
 #[test]

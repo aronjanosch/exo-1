@@ -9,8 +9,8 @@
 //! replayed on top, so a rejected action simply drops out of it. Barotrauma works the same way
 //! over the internet: the server owns items, clients predict their own actions.
 //!
-//! Host and client may live in one process (C1) or on two machines (C2 routes the same messages
-//! through the network); nothing here knows which.
+//! Host and client may live in one process or on two machines (the network routes the same
+//! messages); nothing here knows which.
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -23,7 +23,7 @@ use crate::inventory::{Inventory, BAR_SLOTS};
 pub type PlayerId = u32;
 /// A loose item in the world, numbered by the host.
 pub type LooseId = u64;
-/// A rack on the wall (a bracket for extinguishers, #300), numbered by the level.
+/// A rack on the wall (a bracket for extinguishers), numbered by the level.
 pub type RackId = u32;
 
 /// The frame a loose item lives in, like the walker: a planet, or a ship's cabin (its owner's
@@ -94,7 +94,7 @@ pub struct Action {
 /// Why the host refused an action.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Reject {
-    /// The loose item is no longer there (someone else was first).
+    /// The loose item is gone (someone else was first).
     Gone,
     /// It does not fit into the inventory.
     Full,
@@ -183,7 +183,7 @@ impl Host {
         Event::Rack { rack: id, contents }
     }
 
-    /// Puts a stack into a player's inventory, as a pulled or refused fuel rod comes back (#300).
+    /// Puts a stack into a player's inventory, as a pulled or refused fuel rod comes back.
     /// The stack comes back when it does not fit.
     pub fn give(&mut self, player: PlayerId, stack: Stack) -> Result<Event, Stack> {
         let mut inv = self.inventory(player);

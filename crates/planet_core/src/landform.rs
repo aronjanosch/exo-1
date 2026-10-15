@@ -1,4 +1,4 @@
-//! Landform library (#69): stamp shapes and their placement by budget. The global pass places
+//! Landform library: stamp shapes and their placement by budget. The global pass places
 //! every stamp from the seed before anything else (it needs only the macro noise): the
 //! signature first, then each kind in recipe order, a random candidate at a time, kept when its
 //! fields fit and it is far enough from every stamp so far. A try that misses a kind's minimum

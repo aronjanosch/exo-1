@@ -18,7 +18,7 @@ pub struct NoiseSpec {
     /// Absolute frequency (per metre). Either this or `wavelength_radii` is given.
     #[serde(default)]
     pub frequency: f32,
-    /// Wavelength in planet radii (#221): the frequency becomes 1 / (wavelength_radii * radius),
+    /// Wavelength in planet radii: the frequency becomes 1 / (wavelength_radii * radius),
     /// so the features scale with the planet. Set once by `Recipe::for_planet`.
     #[serde(default)]
     pub wavelength_radii: Option<f32>,
@@ -28,7 +28,7 @@ pub struct NoiseSpec {
 
 impl NoiseSpec {
     /// The frequency from the wavelength in radii, if one is given: the radii are `length_m` long
-    /// (the planet's radius for the macro fields, #221).
+    /// (the planet's radius for the macro fields).
     pub fn resolve(&mut self, length_m: f64) {
         if let Some(wl) = self.wavelength_radii {
             self.frequency = (1.0 / (wl as f64 * length_m)) as f32;
@@ -74,14 +74,14 @@ pub struct MacroSpec {
     pub moisture: Moisture,
     pub temperature: Temperature,
     pub landform: Landform,
-    /// Variants (#68): odd places where this field is high.
+    /// Variants: odd places where this field is high.
     pub weirdness: Weirdness,
-    /// Erosion (#221): how rugged the ground is, 1 rugged .. -1 smooth. Needed by `relief`.
+    /// Erosion: how rugged the ground is, 1 rugged .. -1 smooth. Needed by `relief`.
     #[serde(default)]
     pub erosion: Option<Elevation>,
 }
 
-/// One of the shared macro fields (#68). All are about -1..1 except temperature (its own scale).
+/// One of the shared macro fields. All are about -1..1 except temperature (its own scale).
 #[derive(Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum FieldName {
@@ -90,9 +90,9 @@ pub enum FieldName {
     Moisture,
     Landform,
     Weirdness,
-    /// Erosion (#221), see `MacroSpec::erosion`.
+    /// Erosion, see `MacroSpec::erosion`.
     Erosion,
-    /// Peaks and valleys (#221), derived from weirdness: 1 - |3|W| - 2|, -1..1.
+    /// Peaks and valleys, derived from weirdness: 1 - |3|W| - 2|, -1..1.
     Peaks,
 }
 
@@ -120,7 +120,7 @@ impl Spline {
     }
 }
 
-/// How the shared fields shape the ground (#68): a height offset, a vertical stretch of the
+/// How the shared fields shape the ground: a height offset, a vertical stretch of the
 /// bands marked `stretch`, a roughness of the bands marked `roughness`. Biomes read the same
 /// fields, so a mountain biome and a mountain shape come together.
 #[derive(Deserialize, Clone, Debug)]
@@ -158,16 +158,16 @@ pub struct Band {
     pub noise: NoiseSpec,
     #[serde(default)]
     pub warp: Option<Warp>,
-    /// Scaled by the shape's stretch or roughness (#68).
+    /// Scaled by the shape's stretch or roughness.
     #[serde(default)]
     pub scale: BandScale,
-    /// With `relief` (#221): a detail band, metres scale, kept and multiplied by the flatness.
-    /// The other bands are the old large-scale ground and are dropped when `relief` is given.
+    /// With `relief`: a detail band, metres scale, kept and multiplied by the flatness.
+    /// The other bands are the large-scale ground and are dropped when `relief` is given.
     #[serde(default)]
     pub detail: bool,
 }
 
-/// The relief of a planet (#221, draft "terrain v2" section 3): the ground from continentalness
+/// The relief of a planet (draft "terrain v2" section 3): the ground from continentalness
 /// (metres), flattened by erosion, plus ridged mountains on the peaks and valleys of weirdness
 /// and gated to land. Each spline gives metres or a factor, linear between points.
 #[derive(Deserialize, Clone, Debug)]
@@ -187,7 +187,7 @@ pub struct Relief {
     #[serde(default)]
     pub ridge_warp: Option<Warp>,
     /// The radius (m) at which the metres above are as written. Other radii scale every metre
-    /// by radius / this (#221): the ground grows with the planet, as the ceilings do.
+    /// by radius / this: the ground grows with the planet, as the ceilings do.
     #[serde(default = "default_relief_radius")]
     pub radius_m: f64,
     /// Exponent k of the scale: the metres are multiplied by (radius / radius_m)^k (TODO(initiator):
@@ -201,12 +201,12 @@ pub struct Relief {
 }
 
 impl Relief {
-    /// The factor on the metres of the relief and on its wavelengths at this radius (#221).
+    /// The factor on the metres of the relief and on its wavelengths at this radius.
     pub fn scale_at(&self, radius: f64) -> f64 {
         (radius / self.radius_m).powf(self.scale_exponent)
     }
 
-    /// The factor on the lake depth at this radius (#221).
+    /// The factor on the lake depth at this radius.
     pub fn lake_scale_at(&self, radius: f64) -> f64 {
         (radius / self.radius_m).powf(self.lake_scale_exponent.unwrap_or(self.scale_exponent))
     }
@@ -243,7 +243,7 @@ impl Span {
     }
 }
 
-/// The shape of a landform stamp (#69); every size is drawn per placement from its span.
+/// The shape of a landform stamp; every size is drawn per placement from its span.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum StampShape {
@@ -281,7 +281,7 @@ pub struct Where {
     pub weirdness: Option<[f64; 2]>,
 }
 
-/// One kind of landform in the planet's budget (#69): how many (a range), how far from every
+/// One kind of landform in the planet's budget: how many (a range), how far from every
 /// other stamp, where.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
@@ -339,7 +339,7 @@ impl Range {
     }
 }
 
-/// Where a biome row sits in parameter space (#68). Missing axes do not count.
+/// Where a biome row sits in parameter space. Missing axes do not count.
 #[derive(Deserialize, Clone, Debug, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Climate {
@@ -353,7 +353,7 @@ pub struct Climate {
     pub landform: Option<Range>,
     #[serde(default)]
     pub weirdness: Option<Range>,
-    /// Field `erosion` (#222): -1..1, the flat ground's field.
+    /// Field `erosion`: -1..1, the flat ground's field.
     #[serde(default)]
     pub erosion: Option<Range>,
     /// Metres; divided by `biome_space.height_scale_m` before it counts.
@@ -366,7 +366,7 @@ pub struct Climate {
 pub struct BiomeSpace {
     /// Metres of height above sea that weigh like one unit of a field, at `tuned_radius_m`.
     pub height_scale_m: f64,
-    /// The radius (m) at which `height_scale_m` and the temperature lapse were tuned (#222). At
+    /// The radius (m) at which `height_scale_m` and the temperature lapse were tuned. At
     /// other radii both scale with the relief's factor (`Relief::scale_at`), so the same climate
     /// pattern sits on the taller ground of a bigger planet.
     #[serde(default = "default_tuned_radius_m")]
@@ -387,7 +387,7 @@ fn default_biome_blend() -> f64 {
     0.004
 }
 
-/// Terrain colours of a biome row (#66): flat ground, steep rock, and how much of the planet's
+/// Terrain colours of a biome row: flat ground, steep rock, and how much of the planet's
 /// strata and cap shows (0..1). Blended at borders by the mesh.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
@@ -398,7 +398,7 @@ pub struct Palette {
     pub cap: f32,
 }
 
-/// The terrain material's planet-wide values (#66): where rock takes over, the strata bands on
+/// The terrain material's planet-wide values: where rock takes over, the strata bands on
 /// steep faces, the cap high up, the detail pattern near the camera.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
@@ -419,7 +419,7 @@ pub struct TerrainLook {
     pub detail_far_m: f32,
 }
 
-/// Sky and haze of a planet (#67), for Bevy's `Atmosphere`: scattering per kilometre (our
+/// Sky and haze of a planet, for Bevy's `Atmosphere`: scattering per kilometre (our
 /// atmosphere is 1.2 km, so about 80 times Earth's per-metre values for a similar look), the
 /// share of the atmosphere height each term falls off over, and a distance haze.
 #[derive(Deserialize, Clone, Debug)]
@@ -438,12 +438,12 @@ pub struct Sky {
     pub haze_color: [f32; 3],
     /// Exponential distance fog density per metre at the ground (fades out with height).
     pub haze_density: f32,
-    /// A cloud layer (#224); none when absent.
+    /// A cloud layer; none when absent.
     #[serde(default)]
     pub clouds: Option<Clouds>,
 }
 
-/// A cheap cloud layer (#224): a shell around the planet with noise in the fragment shader.
+/// A cheap cloud layer: a shell around the planet with noise in the fragment shader.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Clouds {
@@ -462,7 +462,7 @@ pub struct Clouds {
     pub min_radius_m: f64,
 }
 
-/// Water of a planet (#67): surface colour and opacity, the ground tint below it by depth
+/// Water of a planet: surface colour and opacity, the ground tint below it by depth
 /// (shallow lighter), a wet band along the shore, the ripple of the surface.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
@@ -479,7 +479,7 @@ pub struct Water {
     pub ripple_speed: f32,
 }
 
-/// Erosion steps on the macro shell (#72), stream power: per step a node sinks towards its
+/// Erosion steps on the macro shell, stream power: per step a node sinks towards its
 /// downstream neighbour by `strength * catchment^area_exponent / distance` (implicit, catchment
 /// in m²), never more than `max_m` in all and never below the sea.
 #[derive(Deserialize, Clone, Debug)]
@@ -491,7 +491,7 @@ pub struct Erosion {
     pub max_m: f64,
 }
 
-/// How a river crosses a sink that holds no lake (#72).
+/// How a river crosses a sink that holds no lake.
 #[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SinkCrossing {
@@ -501,7 +501,7 @@ pub enum SinkCrossing {
     Fill,
 }
 
-/// Rivers and lakes from drainage on the macro grid (#72), cut in the bake.
+/// Rivers and lakes from drainage on the macro grid, cut in the bake.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct DrainageSpec {
@@ -541,10 +541,10 @@ pub struct BiomeRow {
     pub palette: Palette,
     #[serde(default)]
     pub tints: HashMap<String, [f32; 3]>,
-    /// Scatter multipliers by entry or group id (0 = off, missing = 1), #65.
+    /// Scatter multipliers by entry or group id (0 = off, missing = 1).
     #[serde(default)]
     pub scatter: BTreeMap<String, f32>,
-    /// Its point or intervals in parameter space; the nearest row wins (#68).
+    /// Its point or intervals in parameter space; the nearest row wins.
     pub climate: Climate,
     /// Added to the row's distance (a row that should win less often gets a positive offset).
     #[serde(default)]
@@ -552,7 +552,7 @@ pub struct BiomeRow {
     /// Smallest area share the bake accepts for this row (quota), 0..1.
     #[serde(default)]
     pub min_share: Option<f64>,
-    /// Site kinds allowed in this row (#70); missing = all.
+    /// Site kinds allowed in this row; missing = all.
     #[serde(default)]
     pub sites: Option<Vec<String>>,
 }
@@ -571,7 +571,7 @@ fn default_edge() -> f32 {
     0.05
 }
 
-/// A storey of the scatter (#65): its own grid spacing and view range. Ground cover, shrubs and
+/// A storey of the scatter: its own grid spacing and view range. Ground cover, shrubs and
 /// rocks, trees.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
@@ -670,7 +670,7 @@ pub struct ScatterGroup {
     pub entries: Vec<ScatterEntry>,
 }
 
-/// The planet's scatter (#65): planet-wide groups of entries; biome rows only multiply them.
+/// The planet's scatter: planet-wide groups of entries; biome rows only multiply them.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ScatterSpec {
@@ -682,7 +682,7 @@ pub struct ScatterSpec {
     pub groups: Vec<ScatterGroup>,
 }
 
-/// A ground edit under a site (#70), applied after the noise in `order`. The height function
+/// A ground edit under a site, applied after the noise in `order`. The height function
 /// includes it, so mesh, collision and scatter agree.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -767,11 +767,11 @@ pub enum SiteCategory {
     Find,
     /// A hand-placed place (`content/place/`), not from a kind.
     Place,
-    /// A small town on a plain: a level plot, a landing pad and city pieces (#223).
+    /// A small town on a plain: a level plot, a landing pad and city pieces.
     Settlement,
 }
 
-/// A kind of site (#70). Placeholder kinds until the initiator picks (ids, no fiction names).
+/// A kind of site. Placeholder kinds until the initiator picks (ids, no fiction names).
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct SiteKind {
@@ -795,7 +795,7 @@ pub struct SiteKind {
     /// one farthest from all sites so far.
     #[serde(default)]
     pub prefer_high: bool,
-    /// The ground must be a plain (#223): see `PlainRule`. Missing = no requirement.
+    /// The ground must be a plain: see `PlainRule`. Missing = no requirement.
     #[serde(default)]
     pub plain: Option<PlainRule>,
     #[serde(default)]
@@ -805,7 +805,7 @@ pub struct SiteKind {
     #[serde(default)]
     pub per_100_km2: Option<[f64; 2]>,
 }
-/// A plain (#223): the noise ground (before edits) rises by at most `max_rise_m` across the span
+/// A plain: the noise ground (before edits) rises by at most `max_rise_m` across the span
 /// of `2 * radius_m` through the site's centre, in each of its two tangent directions.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
@@ -820,7 +820,7 @@ fn height_land() -> [f64; 2] {
     [2.0, 1.0e9]
 }
 
-/// At most `max` sites of `category` within `radius_m` of each other (#70).
+/// At most `max` sites of `category` within `radius_m` of each other.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Budget {
@@ -864,10 +864,10 @@ pub struct Recipe {
     pub material: TerrainLook,
     pub sky: Sky,
     pub water: Water,
-    /// Rivers and lakes (#72); missing = none.
+    /// Rivers and lakes; missing = none.
     #[serde(default)]
     pub drainage: Option<DrainageSpec>,
-    /// The relief (#221); missing = the old shape and large bands.
+    /// The relief; missing = the shape and large bands are the whole ground.
     #[serde(default)]
     pub relief: Option<Relief>,
     pub biomes: Vec<BiomeRow>,
@@ -885,8 +885,7 @@ impl Recipe {
         Ok(r)
     }
 
-    /// Relative wavelengths become frequencies at this radius (#221).
-    /// Relative wavelengths become frequencies at this radius (#221). The relief is self-similar:
+    /// Relative wavelengths become frequencies at this radius. The relief is self-similar:
     /// its wavelengths and its detail bands scale with the same factor s as its metres (so the
     /// slopes do not change with the radius); the macro fields stay relative to the radius.
     fn resolve_wavelengths(&mut self, radius: f64) {

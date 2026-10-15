@@ -1,4 +1,4 @@
-//! Rivers as curves with width (#177, spike 14; curves #235). The drainage runs on the coarse grid
+//! Rivers as curves with width. The drainage runs on the coarse grid
 //! and leaves, per river vertex, a bed, a water level, a depth and a width. Flow between grid
 //! vertices goes one of 8 ways, so the polyline through them runs straight and turns at right
 //! angles; the drawn river is a smoothed, meandering curve through them instead: each vertex moves

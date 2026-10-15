@@ -1,4 +1,4 @@
-//! #70: a walk reaches a site and the walker stands on its flattened ground.
+//! A walk reaches a site and the walker stands on its flattened ground.
 use crate::common;
 use exo_app::Options;
 

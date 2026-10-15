@@ -18,7 +18,7 @@
 //!   player lying down (`public_status`).
 //! - A respawn puts the walker on the dev area's pad with clean health. A client moves its own
 //!   walker when the host's vitals say it is up again.
-use crate::dev_area::hazards::{GLOW_BARREL, HOT_PLATE, NO_AIR};
+use crate::dev_area::hazards::{shielded_at, spicy_irradiated, RodSpot, GLOW_BARREL, HOT_PLATE, NO_AIR, SPICY_ITEM, SPICY_RADIUS_M, SPICY_RAD_PER_S};
 use crate::dev_area::engine_room::EngineAir;
 use crate::dev_area::fire::FireHeat;
 use crate::dev_area::{area_of, DevArea, Zone, PAD_MAIN};
@@ -33,7 +33,7 @@ use bevy::math::{DVec2, DVec3};
 use bevy::prelude::*;
 use health_core::{Env, Health, HealthEvent, HealthTuning, Life, Mobility};
 use item_core::wire::Vitals;
-use item_core::{PlayerId, Request};
+use item_core::{FrameRef, PlayerId, Request, BAR_SLOTS};
 use std::collections::BTreeMap;
 use walker_core::Frame;
 
@@ -221,6 +221,9 @@ fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea
     }
     let dt = time.delta_secs_f64();
     let at = walker_points(&players, &remotes);
+    let bodies: Vec<(PlayerId, DVec3)> = at.iter().map(|(id, p)| (*id, *p)).collect();
+    let rods = spicy_spots(&items, &planet, &at, area.as_deref());
+    let irradiated = spicy_irradiated(&rods, &bodies, SPICY_RADIUS_M);
     st.body(LOCAL);
     for slot in net.map(|n| n.peer_slots()).unwrap_or_default() {
         st.body(slot);
@@ -248,7 +251,8 @@ fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea
             _ => 1.0,
         };
         let fire = heat.as_ref().and_then(|h| h.0.get(id)).copied().unwrap_or(0.0);
-        let env = Env { oxygen: if inside(&NO_AIR) { 0.0 } else { room_air }, hot: inside(&HOT_PLATE), glow: inside(&GLOW_BARREL), fire };
+        let rod_per_s = if irradiated.contains(id) { SPICY_RAD_PER_S } else { 0.0 };
+        let env = Env { oxygen: if inside(&NO_AIR) { 0.0 } else { room_air }, hot: inside(&HOT_PLATE), glow: inside(&GLOW_BARREL), fire, rod_per_s };
         st.air.insert(*id, env.oxygen);
         for ev in b.health.step(t, dt, env) {
             if matches!(ev, HealthEvent::Died { .. }) {
@@ -256,6 +260,22 @@ fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea
             }
         }
     }
+}
+
+/// Host: where the spicy rods are (#300). A loose one lies at its placement on the planet; one in
+/// a player's slots is at that player's place (a player off foot has none). Shielded inside the
+/// reactor.
+fn spicy_spots(items: &Items, planet: &PlanetRes, at: &BTreeMap<PlayerId, DVec3>, area: Option<&DevArea>) -> Vec<RodSpot> {
+    let frame = FrameRef::Planet(planet.id.0 as u32);
+    let spot = |p: DVec3| RodSpot { at: p, shielded: area_pos(area, planet, Some(p)).is_some_and(shielded_at) };
+    let mut out: Vec<RodSpot> = items.host.loose.values().filter(|l| l.stack.item.kind.as_str() == SPICY_ITEM && l.at.frame == frame).map(|l| spot(DVec3::from_array(l.at.pos))).collect();
+    for (player, inv) in &items.host.inventories {
+        let Some(&p) = at.get(player) else { continue };
+        if (0..BAR_SLOTS).any(|i| inv.slot(i).is_some_and(|s| s.item.kind.as_str() == SPICY_ITEM)) {
+            out.push(spot(p));
+        }
+    }
+    out
 }
 
 /// Host: a use the host applied (`Items::take_uses`) treats its target.

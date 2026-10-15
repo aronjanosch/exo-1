@@ -10,7 +10,7 @@
 //!   (0..1). A fire touching the body fills the buildup too, and adds burn per tick by its rate
 //!   (`Env::fire`), not the plate's. Full, the body is on fire: a bigger burn per tick, and the fire drains out over
 //!   `burning.drain_s` after the heat is left.
-//! - Radiation: builds per tick in the glow, decays by its band, and from 25 up burns per tick by
+//! - Radiation: builds per tick in the glow or next to a radioactive item, decays by its band, and from 25 up burns per tick by
 //!   a table. From 50 up it makes nausea (a derived strength), which costs no vitality but slows
 //!   the walk (`Mobility`).
 //! - Oxygen low: bad air adds per tick, good air removes; from 50 it takes vitality by band.
@@ -401,6 +401,9 @@ pub struct Env {
     pub glow: bool,
     /// The fire's burn rate on the body, per second (0 when no fire touches it).
     pub fire: f64,
+    /// Radiation per second from a radioactive item the body carries or stands next to (the
+    /// spicy rod, #300). Added per tick like the glow: `rate * tick_s` each tick.
+    pub rod_per_s: f64,
 }
 
 /// How the body walks: a share of the walking speed and whether it may sprint.
@@ -627,6 +630,9 @@ impl Health {
         }
         if env.glow {
             self.change(t, "radiation", t.radiation.glow_per_tick);
+        }
+        if env.rod_per_s > 0.0 {
+            self.change(t, "radiation", env.rod_per_s * t.tick_s);
         }
         let from_radiation = t.radiation.burn_for(self.strength("radiation"));
         if from_radiation > 0.0 {

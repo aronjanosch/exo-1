@@ -1,4 +1,4 @@
-//! The captain's console CP-01 (r41, #246 "The station in 0.1"): one screen on the bridge's south wall that
+//! The captain's console CP-01 (r41, #246 "The station in 0.1"): one screen on the bridge's east wall that
 //! shows the captain the ship (hull, shield, the three rooms' air and alarms, the systems that are down,
 //! power, the jump drive, the guns) and the threat word, and has four presses: the engine room's door and
 //! the bridge door (CLOSE / OPEN), the airlock's SEAL, and SILENCE. The captain decides; the crew acts. The rows are `display_core::captain`.
@@ -9,7 +9,7 @@
 //! `set_state` takes a signal and sets the door's state directly (Door.cs:846-850, `IsOpen` at 176-185), so
 //! the console closes it without wiring; here the press sends `RoomAsk::SetDoor` to the host.
 //!
-//! Placement (r44): the bridge's south wall, beside GN-01, facing north into the bridge. TODO(initiator): the
+//! Placement: the bridge's east wall, facing west into the bridge. TODO(initiator): the
 //! spot on the wall and the screen's size are start values. The presses (r44): the engine door, the bridge
 //! door (`RoomAsk::SetBridgeDoor`), the airlock's SEAL and SILENCE.
 use display_core::captain::{self, CaptainView, Threat};
@@ -19,11 +19,8 @@ use item_core::wire::{BotStation, JumpStage, ReactorNews};
 
 pub const ID: PanelId = PanelId::new("captain_console");
 pub const NAME: &str = "CP-01";
-/// The screen's wall spot (area metres) and size (m): a 640 x 400 canvas on the bridge's south wall, turned
-/// to face north into the bridge (0.04 m inside the wall's face at y -10.7).
-pub const AT: [f64; 2] = [-6.5, -10.66];
+/// The screen's size (m): a 640 x 400 canvas; its spot is on the bridge's east wall (`layout::CAPTAIN_AT`).
 pub const SIZE: [f64; 2] = [0.8, 0.5];
-pub const TURN: f64 = 180.0;
 /// The presses' actions (`crate::dev_area::engineering::panels::read_clicks`).
 pub const DOOR_ACTION: &str = "door";
 pub const BRIDGE_DOOR_ACTION: &str = "bridge_door";

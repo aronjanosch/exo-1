@@ -56,7 +56,7 @@ impl Default for OverviewUi {
 }
 
 pub fn plugin(app: &mut App) {
-    app.world_mut().resource_mut::<DevAreaDevices>().add(console(ID, NAME, -5.75, [0.25, 0.32, 0.55]));
+    add_console(app, 0, ID, NAME, [0.25, 0.32, 0.55]);
     app.init_resource::<OverviewUi>();
     app.add_systems(FixedUpdate, (read_clicks, write_panel).chain().in_set(crate::phases::Fx::Effects));
 }

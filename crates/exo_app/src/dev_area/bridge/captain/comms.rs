@@ -33,7 +33,7 @@ pub struct CommsUi {
 }
 
 pub fn plugin(app: &mut App) {
-    app.world_mut().resource_mut::<DevAreaDevices>().add(console(ID, NAME, 3.45, [0.3, 0.26, 0.45]));
+    add_console(app, 4, ID, NAME, [0.3, 0.26, 0.45]);
     app.init_resource::<CommsUi>();
     app.add_systems(FixedUpdate, (read_clicks, write_panel).chain().in_set(crate::phases::Fx::Effects).after(super::overview::read_clicks));
 }

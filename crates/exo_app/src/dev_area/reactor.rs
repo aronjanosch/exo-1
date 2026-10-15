@@ -211,8 +211,8 @@ impl ReactorSim {
                     info!("reactor: gun refused (reloading or no shot's energy)");
                 }
             }
-            // The airlock and the VACUUM switch need the air: `reactor_step` takes them.
-            ReactorAsk::Airlock(_) | ReactorAsk::SetVacuum(_) => {}
+            // The airlock, its SEAL and the VACUUM switch need the air: `reactor_step` takes them.
+            ReactorAsk::Airlock(_) | ReactorAsk::SetVacuum(_) | ReactorAsk::SealAirlock => {}
         }
     }
 
@@ -503,6 +503,11 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
         if a == ReactorAsk::Trigger(ReactorFault::Fire) {
             info!("reactor: dev fire");
             events.push(RoomEvent::Fire { size: fires.0.start_size, source: Source::Reactor });
+        } else if a == ReactorAsk::SealAirlock {
+            // The captain's SEAL (r41, CP-01): shuts the inner door when it is open and no cycle runs.
+            if !air.seal_inner() {
+                info!("reactor: seal refused (the inner door is shut, or a cycle runs)");
+            }
         } else if let ReactorAsk::Airlock(ask) = a {
             // The airlock's panels (r40): the interlock refuses what it must (`EngineAir::request`).
             if !air.request(airlock::ask_of(ask)) {

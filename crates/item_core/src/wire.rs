@@ -228,6 +228,8 @@ pub enum ReactorFault {
     Fire,
     /// The coolant tank runs dry (the dev drain for the coolant lane, #300).
     DrainCoolant,
+    /// The reactor's warm start (`EngineRoom::warm_start`, #300): settled at once, no supplies used.
+    WarmStart,
 }
 
 /// The extinguisher's spray, as its holder asks for it (#298).

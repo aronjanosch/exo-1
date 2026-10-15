@@ -667,7 +667,7 @@ impl EngineRoom {
         while steps < cap_steps {
             ev.extend(self.step(WARM_START_DT, Input::auto()));
             steps += 1;
-            if self.is_settled() {
+            if self.settled() {
                 held += 1;
                 if held >= hold_steps {
                     break;
@@ -684,7 +684,7 @@ impl EngineRoom {
 
     /// The temperature inside its optimal band and the output within `WARM_START_TOLERANCE` of the
     /// load the grid asks for.
-    fn is_settled(&self) -> bool {
+    pub fn settled(&self) -> bool {
         let load = self.grid.request_kw();
         self.reactor.bands().temp_optimal.contains(self.reactor.temperature())
             && (self.reactor.output_kw() - load).abs() <= WARM_START_TOLERANCE * load

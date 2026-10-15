@@ -13,7 +13,7 @@
 use super::*;
 use super::reactor::{click_until, use_display};
 use crate::dev_area::{hull::ShipAir, layout::{GUNNERY_AT, JUMP_AT}};
-use crate::dev_area::reactor::ReactorSim;
+use crate::dev_area::ship::ReactorSim;
 use crate::dev_area::reactor_screen::{ambush_running, FAULTS_ID, FAULTS_NAME, GUNNERY_ID, GUNNERY_NAME, JUMP_ID, JUMP_NAME};
 use crate::displays::{aim_at, world_point_of, DisplayPanel};
 use crate::items::Items;
@@ -254,7 +254,7 @@ pub(super) fn ship_ambush_steps(s: &mut Vec<Step>) {
         let room = sim.room.encounter().map(|e| (e.shots(), e.outcome()));
         let snap = news(w).and_then(|r| r.enemy);
         let synced = match (snap, room) {
-            (Some(s), Some((shots, out))) => s.shots <= shots && (s.outcome == EnemyOutcome::None || s.outcome == crate::dev_area::reactor::enemy_outcome(out)),
+            (Some(s), Some((shots, out))) => s.shots <= shots && (s.outcome == EnemyOutcome::None || s.outcome == crate::dev_area::ship::enemy_outcome(out)),
             _ => true,
         };
         check(c, synced, format!("ship ambush: the snapshot is the room's, or behind it (snapshot {snap:?}, room {room:?})"));

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use crate::cargo::{crate_bundle, Crate, Crates};
 use crate::dev_area::hull::ShipAir;
-use crate::dev_area::reactor::{apply_engine_section, engine_section, ReactorConfig, ReactorSim};
+use crate::dev_area::ship::{apply_engine_section, engine_section, ReactorConfig, ReactorSim};
 use crate::env::PlanetRes;
 use crate::gameplay::{Gameplay, Goods};
 

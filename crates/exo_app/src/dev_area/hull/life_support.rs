@@ -22,7 +22,7 @@ pub(super) fn ambient_step(planet: Res<PlanetRes>, area: Option<Res<DevArea>>, m
 /// (the body has no oxygen store here). The outside has no end, so nobody drains it. Unconscious
 /// players breathe too: every body that is not dead counts. A body in its mask (r38) breathes
 /// the mask while its tank has air (`dev_area/mask.rs`, Barotrauma `Character.cs:3851` with `UseHullOxygen` false).
-pub(super) fn breath_step(time: Res<Time>, items: Res<Items>, cfg: Res<super::reactor::ReactorConfig>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, health: Option<Res<crate::health::HealthState>>, masked: Option<Res<crate::dev_area::gear::MaskAir>>, mut air: ResMut<ShipAir>) {
+pub(super) fn breath_step(time: Res<Time>, items: Res<Items>, cfg: Res<crate::dev_area::ship::ReactorConfig>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, health: Option<Res<crate::health::HealthState>>, masked: Option<Res<crate::dev_area::gear::MaskAir>>, mut air: ResMut<ShipAir>) {
     if items.role == Role::Client {
         return;
     }

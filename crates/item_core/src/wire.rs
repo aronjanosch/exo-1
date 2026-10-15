@@ -187,8 +187,6 @@ pub enum ReactorAsk {
     /// The airlock's panels (r40): a door's press (closes it when open, else starts its cycle), or the
     /// CYCLE press (the pump alone; a press while it runs stops it). The host refuses what the interlock refuses.
     Airlock(AirlockAsk),
-    /// The dev faults screen's VACUUM switch (r40): true makes the outside vacuum, false breathable air.
-    SetVacuum(bool),
     /// The dev faults screen's AMBUSH switch (r41): true starts an enemy encounter, false ends it.
     Ambush(bool),
     /// The captain's SEAL on CP-01 (r41): shuts the airlock's inner door when it is open and no cycle
@@ -610,7 +608,7 @@ pub struct ReactorNews {
     pub jumps: u32,
     /// The airlock's doors and cycle (r40).
     pub airlock: AirlockNews,
-    /// The outside is vacuum (r40; the dev faults screen's VACUUM switch shows it).
+    /// The outside of the hull is vacuum: the world's air at the ship (`PlanetRes::ambient_air`).
     pub vacuum: bool,
     /// The enemy ship of the ambush (r41), None when no encounter has started.
     pub enemy: Option<EnemyNews>,
@@ -940,7 +938,6 @@ mod tests {
             ReactorAsk::Ambush(false),
             ReactorAsk::Airlock(AirlockAsk::Outer),
             ReactorAsk::Airlock(AirlockAsk::Cycle),
-            ReactorAsk::SetVacuum(false),
             ReactorAsk::SealAirlock,
             ReactorAsk::MasterBreaker(true),
             ReactorAsk::MasterBreaker(false),

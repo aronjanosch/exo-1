@@ -1,7 +1,7 @@
 //! Reactor scenario on the engine room's screens.
 use super::*;
 use crate::dev_area::hull::alarms::ShipAlarm;
-use crate::dev_area::reactor::{ReactorCounts, ReactorSim};
+use crate::dev_area::ship::{ReactorCounts, ReactorSim};
 use crate::dev_area::{layout::{COOLANT_PUMP_AT, JUNCTION_BOX_AT}};
 use crate::dev_area::reactor_screen::{FAULTS_ID, JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID};
 use crate::dev_area::DevArea;

@@ -27,9 +27,10 @@ pub mod hull;
 pub mod lab;
 pub mod layout;
 pub mod medbay;
-pub mod reactor;
 pub mod reactor_screen;
+pub mod ship;
 pub mod storage;
+pub mod turrets;
 
 pub const PLACE: &str = "dev_area";
 /// Half the rectangle's size, east and north (m). The place's flatten edit reaches a little further.
@@ -136,8 +137,8 @@ pub fn plugin(app: &mut App) {
     app.init_resource::<DevAreaDevices>().init_resource::<DevArea>();
     app.add_systems(Update, spawn_devices.in_set(crate::phases::Frame::World));
     // One plugin per owner; the layout spawns the inner ship's walls and screens.
-    app.add_plugins((layout::plugin, hull::plugin, engineering::plugin, reactor::plugin, reactor_screen::plugin, bridge::plugin));
-    app.add_plugins((gear::plugin, fire::plugin, lab::plugin, medbay::plugin, storage::plugin, hazards::plugin, dev::plugin));
+    app.add_plugins((ship::plugin, layout::plugin, hull::plugin, engineering::plugin, reactor_screen::plugin, bridge::plugin, turrets::plugin));
+    app.add_plugins((crew::plugin, gear::plugin, fire::plugin, lab::plugin, medbay::plugin, storage::plugin, hazards::plugin, dev::plugin));
 }
 
 pub fn window_plugin(app: &mut App) {

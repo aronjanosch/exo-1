@@ -386,7 +386,7 @@ pub fn build_app(o: &Options) -> App {
     app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, avian_crates::plugin, cargo::plugin, hud::plugin, net_live::plugin));
     app.add_plugins((gameplay::plugin, town::plugin, displays::plugin, items::plugin, crew_hud::plugin, items_net::plugin, health::plugin, repair::plugin, public_status::plugin, health_view::plugin, gameover::plugin));
     if o.warm_reactor {
-        app.insert_resource(dev_area::reactor::WarmAtCreation);
+        app.insert_resource(dev_area::ship::WarmAtCreation);
     }
     if o.dev_area() {
         app.add_plugins(dev_area::plugin);

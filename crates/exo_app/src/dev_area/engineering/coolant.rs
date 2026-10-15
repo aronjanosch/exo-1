@@ -42,6 +42,7 @@ impl CoolantHold {
 }
 
 pub fn plugin(app: &mut App) {
+    app.add_systems(FixedUpdate, host_refills.in_set(crate::dev_area::ship::ShipSet::Asks));
     app.world_mut().resource_mut::<DevAreaDevices>().add(PlaceholderBox {
         id: "coolant_rack".into(),
         zone: CORRIDOR,
@@ -106,4 +107,16 @@ fn coolant_use(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMu
     }
     // Still running after a refill: the others keep seeing REFILLING, no flicker at the end.
     hold.sync(&mut items, true);
+}
+
+/// Host: each canister a hand emptied at the pump (`Items::take_refills`) fills the tank by
+/// `coolant_canister` per cent.
+fn host_refills(mut items: ResMut<Items>, cfg: Res<crate::dev_area::ship::ReactorConfig>, mut sim: ResMut<crate::dev_area::ship::ReactorSim>) {
+    if items.role == crate::items::Role::Client {
+        return;
+    }
+    for _ in 0..items.take_refills() {
+        let added = sim.room.pump_mut().refill(cfg.0.room.coolant_canister);
+        info!("reactor: coolant canister, the tank gains {added:.0} %");
+    }
 }

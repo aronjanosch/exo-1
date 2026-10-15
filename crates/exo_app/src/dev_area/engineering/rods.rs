@@ -63,6 +63,7 @@ pub struct RodHold {
 }
 
 pub fn plugin(app: &mut App) {
+    app.add_systems(FixedUpdate, host_rods.in_set(crate::dev_area::ship::ShipSet::Asks));
     app.init_resource::<RodHold>();
     app.add_systems(
         FixedUpdate,
@@ -121,7 +122,7 @@ mod tests {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn rod_hands(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMut<Items>, cfg: Res<RepairConfig>, reactor: Res<crate::dev_area::reactor::ReactorConfig>, active: Res<ActiveDisplay>, mut hold: ResMut<RodHold>, mut gp: ResMut<Gameplay>, players: Query<&Player>, machines: Query<(&DevBox, &Position, &Rotation)>) {
+fn rod_hands(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMut<Items>, cfg: Res<RepairConfig>, reactor: Res<crate::dev_area::ship::ReactorConfig>, active: Res<ActiveDisplay>, mut hold: ResMut<RodHold>, mut gp: ResMut<Gameplay>, players: Query<&Player>, machines: Query<(&DevBox, &Position, &Rotation)>) {
     let dt = time.delta_secs_f64();
     let Ok(pl) = players.single() else {
         hold.held = 0.0;
@@ -155,4 +156,54 @@ fn rod_hands(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMut<
         return;
     }
     let _ = items.request(time.elapsed_secs_f64(), Request::Use { slot, target: LOCAL });
+}
+
+/// Host: the brake's pulls (a rod out of the reactor into the hand, a burn when the core is hot)
+/// and the rods a hand loaded (each into a free slot, or back to the hand when none is free).
+#[allow(clippy::too_many_arguments)]
+fn host_rods(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<crate::dev_area::ship::ReactorConfig>, mut sim: ResMut<crate::dev_area::ship::ReactorSim>, area: Res<DevArea>, planet: Res<PlanetRes>, repair: Res<RepairConfig>, mut health: Option<ResMut<crate::health::HealthState>>) {
+    if items.role == crate::items::Role::Client {
+        return;
+    }
+    for player in std::mem::take(&mut items.pull_asks) {
+        let Some(i) = pull_index(sim.room.reactor().rods()) else {
+            info!("reactor: the brake, no rod in a slot");
+            continue;
+        };
+        let Some((rod, temp)) = sim.room.reactor_mut().pull_rod(i) else { continue };
+        let band = sim.room.reactor().bands().temp_optimal;
+        if temp > band.hi {
+            let burn = device_core::minigame::hurt_of(device_core::minigame::Machine::Hot, device_core::minigame::Press::Miss, &repair.0).burn;
+            if let Some(st) = health.as_deref_mut()
+                && let Some(b) = st.bodies.get_mut(&player)
+            {
+                b.health.add(&st.tuning, "burn", burn);
+            }
+        }
+        info!("reactor: the brake pulled the {} rod ({:.0} life) at {temp:.0} degrees", rod.kind, rod.life);
+        let Some(def) = item_of_kind(&rod.kind).and_then(|id| items.defs.get(id)).cloned() else { continue };
+        let now = time.elapsed_secs_f64();
+        if let Err(stack) = items.give(now, player, rod_stack(&def, rod.life))
+            && let Some(at) = reactor_front(&area, &planet)
+        {
+            items.spawn(now, stack, at);
+        }
+    }
+    // Fuel rods the host took out of a hand (`dev_area::engineering::rods`): each goes into a free slot. A reactor
+    for load in items.take_rod_loads() {
+        let Some(mut rod) = kind_of_item(&load.item).and_then(|k| cfg.0.rods.rod(k)) else { continue };
+        rod.life = load.life;
+        let kind = rod.kind.clone();
+        if let Err(rod) = sim.room.reactor_mut().insert_rod(rod) {
+            info!("reactor: no free slot for the {} rod, it goes back", rod.kind);
+            let Some(def) = items.defs.get(&load.item).cloned() else { continue };
+            if let Err(stack) = items.give(time.elapsed_secs_f64(), load.player, rod_stack(&def, rod.life)) {
+                if let Some(at) = reactor_front(&area, &planet) {
+                    items.spawn(time.elapsed_secs_f64(), stack, at);
+                }
+            }
+        } else {
+            info!("reactor: the {kind} rod is in a slot ({:.0} life)", load.life);
+        }
+    }
 }

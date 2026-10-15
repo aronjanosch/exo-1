@@ -4,12 +4,12 @@ use super::*;
 use crate::controls::Controls;
 use crate::dev_area::{layout::ignition_at, hull::ShipAir, hull::alarms::ShipAlarm};
 use crate::dev_area::fire::{ignite, FireGrid, FireModel, Sprays};
-use crate::dev_area::reactor::{ReactorCounts, ReactorSim};
+use crate::dev_area::ship::{ReactorCounts, ReactorSim};
 use crate::dev_area::{DevArea, ENGINEERING};
 use crate::health::HealthState;
 use crate::items::{Items, LOCAL};
 use health_core::Life;
-use crate::dev_area::reactor::alarm_of;
+use crate::dev_area::ship::alarm_of;
 use item_core::wire::{Alarm, ReactorAsk, ReactorFault};
 use reactor_core::Source;
 

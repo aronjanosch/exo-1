@@ -4,7 +4,7 @@ pub mod extinguisher;
 
 use crate::controls::Controls;
 use crate::dev_area::{layout::{footprint_of, ignition_at, place_of, source_at}, hull::ShipAir};
-use crate::dev_area::reactor::ReactorSim;
+use crate::dev_area::ship::ReactorSim;
 use crate::dev_area::reactor_screen::FAULTS_ID;
 use crate::dev_area::{layout::{CORRIDOR, ROOM}};
 use crate::dev_area::{area_of, DevArea};
@@ -96,6 +96,18 @@ struct SprayClient {
     since: f64,
 }
 
+/// Host: the room's events of this tick that start a fire (a device's, the reactor's, a hit's).
+fn ship_fires(events: Res<crate::dev_area::ship::ShipEvents>, mut air: ResMut<ShipAir>, mut grid: ResMut<FireGrid>, model: Res<FireModel>) {
+    for e in &events.0 {
+        if let Some((source, size)) = start_of(e) {
+            ignite(&mut air, &mut grid, *model, source, size);
+        }
+        if let RoomEvent::HitFire { size, at } = *e {
+            ignite_at(&mut air, &mut grid, *model, at, size);
+        }
+    }
+}
+
 pub fn start_of(e: &RoomEvent) -> Option<(Source, f64)> {
     match *e {
         RoomEvent::Reactor(ReactorEvent::Fire { size }) => Some((Source::Reactor, size)),
@@ -155,6 +167,7 @@ pub(crate) fn landing_of(area: &DevArea, planet: &PlanetRes, cfg: &FireSettings,
 }
 
 pub fn plugin(app: &mut App) {
+    app.add_systems(FixedUpdate, ship_fires.in_set(crate::dev_area::ship::ShipSet::React));
     app.add_plugins(extinguisher::plugin);
     let files = crate::content_files("gameplay");
     let settings = FireSettings::load(&files).unwrap_or_else(|e| panic!("fire: {e:?}"));

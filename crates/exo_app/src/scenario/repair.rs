@@ -6,7 +6,7 @@ use crate::controls::Controls;
 use crate::dev_area::{layout::{COOLANT_PUMP_AT, JUNCTION_BOX_AT}};
 use crate::dev_area::{DevArea, ENGINEERING};
 use crate::items::Items;
-use crate::dev_area::reactor::ReactorSim;
+use crate::dev_area::ship::ReactorSim;
 use crate::repair::{RepairHurt, RepairPlay, RepairSessions};
 use item_core::wire::{RepairAsk, RepairDevice, RepairTool, ReactorAsk, ReactorFault, ReactorNews};
 

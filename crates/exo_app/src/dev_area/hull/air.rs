@@ -32,10 +32,8 @@ pub struct ShipAir {
     pub outer_leak: LeakId,
     /// The airlock's cycle and doors (`reactor_core::Airlock`).
     pub lock: Airlock,
-    /// The outside is vacuum: the world's (`set_ambient`) or the dev VACUUM switch's (`forced`).
+    /// The outside is vacuum: the world's air at the ship (`set_ambient`).
     pub vacuum: bool,
-    /// The dev VACUUM switch (r40): it empties the outside whatever the world has.
-    pub forced: bool,
     /// The air outside the hull at the area (0..1), from the planet's atmosphere and the height.
     ambient: f64,
     /// m³ the running cycle moves at its full share: the air at its start (see `request`).
@@ -57,9 +55,8 @@ impl ShipAir {
         ShipAir::with_tuning(&AirlockTuning::default())
     }
 
-    /// The air at the start: the rooms full, the doors shut, the outside breathable (the planet has an
-    /// atmosphere). The dev VACUUM switch (`set_vacuum`) empties the outside; nothing flows to it then
-    /// but through the outer door's leak.
+    /// The air at the start: the rooms full, the doors shut, the outside breathable until the world's
+    /// air says otherwise (`set_ambient`); in vacuum nothing flows out but through the outer door's leak.
     pub fn with_tuning(t: &AirlockTuning) -> ShipAir {
         let mut deck = Deck::new(FireTuning::default(), 0x296);
         let engine = deck.add_room(ROOM_VOLUME);
@@ -74,7 +71,7 @@ impl ShipAir {
         let outer_leak = deck.add_leak(airlock, DVec3::new(OUTER_DOOR_AT[0], OUTER_DOOR_AT[1], 0.0), 0.0, 0.0);
         // Shut at the start: the area and the openness come from the reactor each step.
         let breaches = SECTION_CENTRES.map(|c| deck.add_leak(engine, DVec3::new(c[0], c[1], 0.0), 0.0, 0.0));
-        ShipAir { deck, engine, corridor, airlock, outside, bridge, door, bridge_door, breaches, inner, outer, outer_leak, lock: Airlock::new(t), vacuum: false, forced: false, ambient: 1.0, cycle_air: 0.0, door_open: [0.0; 2] }
+        ShipAir { deck, engine, corridor, airlock, outside, bridge, door, bridge_door, breaches, inner, outer, outer_leak, lock: Airlock::new(t), vacuum: false, ambient: 1.0, cycle_air: 0.0, door_open: [0.0; 2] }
     }
 
     pub fn room_of(&self, place: Place) -> RoomId {
@@ -157,18 +154,11 @@ impl ShipAir {
         self.deck.set_leak(self.outer_leak, DOOR_AREA, leak);
     }
 
-    /// The dev VACUUM switch (r40): the outside becomes empty (vacuum) or full of breathable air. The
-    /// doors' openings follow at once.
-    pub fn set_vacuum(&mut self, on: bool) {
-        self.forced = on;
-        self.set_ambient(self.ambient);
-    }
-
     /// The world's air outside the hull (0..1): the outside room is a source of it, not a finite
     /// volume, so every step sets it again. The doors follow at once.
     pub fn set_ambient(&mut self, density: f64) {
         self.ambient = density;
-        let d = if self.forced { 0.0 } else { density };
+        let d = density;
         self.vacuum = health_core::vacuum::in_vacuum(d);
         let outside = self.outside;
         let volume = self.deck.room(outside).volume;
@@ -232,11 +222,10 @@ impl ShipAir {
     }
 
     /// What a body breathes: its room's air when it stands in one of the area's rooms, else the
-    /// world's `ambient` (0..1), or nothing while the dev VACUUM switch is on.
+    /// world's `ambient` (0..1).
     pub fn air_at(&self, area_point: Option<[f64; 2]>, ambient: f64) -> f64 {
         match area_point.map(place_of) {
             Some(place) if place != Place::Outside => self.deck.room(self.room_of(place)).oxygen_fraction(),
-            _ if self.forced => 0.0,
             _ => ambient,
         }
     }
@@ -376,7 +365,7 @@ mod tests {
         assert_eq!(a.oxygen_at(AIRLOCK.centre), a.deck.room(a.airlock).oxygen_fraction());
     }
 
-    /// r40: with the outside breathable (the dev VACUUM off), the outer door is a
+    /// r40: with the outside breathable, the outer door is a
     /// gap to a full outside: the airlock takes air from it.
     #[test]
     fn a_breathable_outside_gives_air_through_the_outer_door() {
@@ -388,8 +377,6 @@ mod tests {
             a.deck.exchange_air(1.0 / 30.0);
         }
         assert!(a.deck.room(a.airlock).oxygen_fraction() > 0.9, "the airlock takes the outside's air");
-        a.set_vacuum(true);
-        assert_eq!(a.deck.room(a.outside).oxygen, 0.0, "the dev VACUUM empties the outside");
     }
 
     /// r40: a press while the cycle runs is refused, and a press stops it.

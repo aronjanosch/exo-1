@@ -6,7 +6,7 @@ use crate::controls::{Actions, Controls, Tap};
 use crate::dev_area::{layout::{walker_place, Place, COOLANT_PUMP, JUNCTION_BOX, OXYGEN_GENERATOR, REACTOR}, hull::breach::{BREACH_IDS, BREACH_OUT_IDS}};
 use crate::dev_area::DevArea;
 use crate::env::PlanetRes;
-use crate::dev_area::reactor::{route, ReactorCounts, ReactorSim};
+use crate::dev_area::ship::{route, ReactorCounts, ReactorSim};
 use crate::dev_area::DevBox;
 use crate::displays::ActiveDisplay;
 use crate::health::HealthState;

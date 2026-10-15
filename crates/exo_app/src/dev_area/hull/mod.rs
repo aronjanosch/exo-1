@@ -6,6 +6,7 @@ use reactor_core::Tuning;
 
 pub mod air;
 pub mod airlock;
+pub mod asks;
 pub mod alarms;
 pub mod breach;
 pub mod doors;
@@ -21,7 +22,8 @@ pub fn plugin(app: &mut App) {
     let tuning = Tuning::load(&crate::content_files("gameplay")).unwrap_or_else(|e| panic!("hull: {e:?}"));
     app.init_resource::<ShipAlarm>().init_resource::<EngineDoor>().init_resource::<BridgeDoor>().insert_resource(ShipAir::with_tuning(&tuning.airlock));
     app.add_systems(Update, (doors::spawn_doors, breach::spawn_patches).after(super::spawn_devices).in_set(crate::phases::Frame::World));
-    app.add_systems(FixedUpdate, (doors::room_state.after(crate::items_net::items_net_in), doors::room_step, doors::bridge_step, life_support::ambient_step, airlock::airlock_step, life_support::breath_step).chain().in_set(crate::phases::Fx::Input));
+    app.add_plugins(asks::plugin);
+    app.add_systems(FixedUpdate, (doors::room_state.after(crate::items_net::items_net_in), doors::room_step, doors::bridge_step, life_support::ambient_step, airlock::airlock_step, life_support::breath_step).chain().in_set(crate::dev_area::ship::ShipSet::Rooms));
 }
 
 pub fn window_plugin(app: &mut App) {

@@ -1,23 +1,20 @@
+//! The ship's simulation glue: the one `reactor_core::EngineRoom` the host steps (`ReactorSim`), its
+//! tuning (`ReactorConfig`), the event counters and the order of a ship tick (`ShipSet`). Each owner
+//! module takes its own asks (`host_asks`) and reacts to the room's events (`ShipEvents`); this
+//! module steps the room, runs the incident director, builds the news and sends them.
 //! - Values: `content/gameplay/{engineering,bridge,gunnery,hull,crew,incidents}/` (`reactor_core::Tuning`, strict loader, one file per owner).
-use super::*;
-use crate::dev_area::{hull::ShipAir, hull::alarms::ShipAlarm};
-use crate::dev_area::fire::{self, FireAlarm, FireConfig, FireGrid, FireModel};
-use crate::items::{Items, NetOut, Role};
-use crate::dev_area::hull::airlock;
-use crate::dev_area::layout::ROOM;
+//! - TODO(initiator): the incident director stays in the ship's step until it has an owner of its own (#306, Annahmen).
+use crate::dev_area::*;
 use crate::dev_area::engineering::rods;
-use crate::gameplay::Gameplay;
-use gameplay_core::notice::{Notice, NoticeKind};
-use item_core::wire::{Alarm, AlarmNews, BotNews, BreakerGroup, EnemyNews, EnemyOutcome, FuelTube, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, RoomAir, RoomAlarmKind, StartupStage, GRAPH_POINTS, ROOMS};
-use reactor_core::room_alarm::{AlarmState, Kind};
-use reactor_core::RoomAlarm;
+use crate::dev_area::fire::{FireGrid, FireModel};
+use crate::dev_area::hull::ShipAir;
+use crate::items::{Items, NetOut, Role};
+use item_core::wire::{Alarm, BotNews, BreakerGroup, EnemyNews, EnemyOutcome, FuelTube, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, StartupStage, GRAPH_POINTS, ROOMS};
 use reactor_core::bots::{Bots, Row};
 use reactor_core::director::Situation;
 use reactor_core::engine_room::EngineSave;
-use reactor_core::{AlarmLevel, Director, EngineRoom, Fault, Group, Input, Outcome, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
-
-/// The dev fault SHIELD HIT's hit, points (`EngineRoom::absorb_hit`). TODO(initiator): a dev value.
-const DEV_SHIELD_HIT: f64 = 300.0;
+use reactor_core::RoomAlarm;
+use reactor_core::{AlarmLevel, Director, EngineRoom, Fault, Group, Input, Outcome, ReactorEvent, RoomEvent, Tuning, Warnings};
 
 pub const SEND_EVERY_S: f64 = 0.25;
 /// The room's seed: the same room every start (its rolls are seeded).
@@ -44,11 +41,11 @@ pub struct ReactorSim {
     pub manual: bool,
     pub fission: f64,
     pub turbine: f64,
-    alarmed: bool,
+    pub alarmed: bool,
     /// The host keeps it: a second Eject inside the window ejects.
-    eject_left: Option<f64>,
-    sent: Option<ReactorNews>,
-    since_send: f64,
+    pub eject_left: Option<f64>,
+    pub sent: Option<ReactorNews>,
+    pub since_send: f64,
     /// The three vents' valves (r38, r44; index 0 the engine room's, 1 the corridor's, 2 the bridge's).
     /// The host keeps them; a new room starts with all open.
     pub vents: [bool; ROOMS],
@@ -58,7 +55,7 @@ pub struct ReactorSim {
     /// the bridge (r44). The host steps them in `reactor_step`; SILENCE mutes them.
     pub alarms: [RoomAlarm; ROOMS],
     /// GN-01's CLEAR JAM hold is on (r41): the host counts it in `tick_jam` while the gun is jammed.
-    clearing: bool,
+    pub clearing: bool,
     /// The bots (r42, #253): the count and the captain's list survive a reset; the host steps them in `bots::bots_step`.
     pub bots: Bots,
 }
@@ -124,168 +121,15 @@ impl ReactorSim {
         }
     }
 
-    pub fn apply(&mut self, a: ReactorAsk, cfg: &Tuning, counts: &mut ReactorCounts) {
-        match a {
-            ReactorAsk::SetManual(on) => {
-                if on && !self.manual {
-                    // Start from where the reactor is, not from zero.
-                    let (f, t) = self.room.reactor().targets();
-                    self.fission = f;
-                    self.turbine = t;
-                }
-                self.manual = on;
-            }
-            ReactorAsk::SetFission(v) if self.manual => self.fission = v.clamp(0.0, 100.0),
-            ReactorAsk::SetTurbine(v) if self.manual => self.turbine = v.clamp(0.0, 100.0),
-            ReactorAsk::SetFission(_) | ReactorAsk::SetTurbine(_) => {}
-            ReactorAsk::Trigger(ReactorFault::DrainCoolant) => {
-                self.room.pump_mut().set_tank(0.0);
-                info!("reactor: dev drain of the coolant tank");
-            }
-            ReactorAsk::Trigger(ReactorFault::WarmStart) => {
-                let secs = self.room.warm_start();
-                info!("reactor: warm start, settled after {secs:.1} s of sim time");
-            }
-            ReactorAsk::Trigger(ReactorFault::ShieldHit) => {
-                let hull = self.room.absorb_hit(DEV_SHIELD_HIT);
-                info!("reactor: dev shield hit of {DEV_SHIELD_HIT} points, {hull:.1} past the shield");
-            }
-            ReactorAsk::Trigger(ReactorFault::JumpFull) => {
-                self.room.jump_mut().fill();
-                info!("reactor: dev jump drive full");
-            }
-            ReactorAsk::MasterBreaker(on) => {
-                if !self.room.master_breaker(on) {
-                    info!("reactor: master breaker refused (already on)");
-                }
-            }
-            ReactorAsk::Boot => {
-                if !self.room.startup_boot() {
-                    info!("reactor: boot refused (the breaker is not on, or the OS is booting)");
-                }
-            }
-            ReactorAsk::Override => {
-                if !self.room.startup_override() {
-                    info!("reactor: override refused (the steps before it are not done)");
-                }
-            }
-            ReactorAsk::Trigger(ReactorFault::ColdShip) => {
-                self.room.cold_ship();
-                info!("reactor: dev COLD SHIP");
-            }
-            ReactorAsk::JumpArm => {
-                if !self.room.jump_mut().arm() {
-                    info!("reactor: jump arm refused (the drive is not cold)");
-                }
-            }
-            ReactorAsk::JumpGo => {
-                if self.room.jump_go() {
-                    counts.jumps += 1;
-                    info!("reactor: JUMP");
-                } else {
-                    info!("reactor: jump refused (the charge is not full)");
-                }
-            }
-            ReactorAsk::Trigger(ReactorFault::Aux) => {
-                let on = !self.room.aux_enabled();
-                self.room.set_aux(on);
-                info!("reactor: dev aux reactor {}", if on { "on" } else { "off" });
-            }
-            ReactorAsk::Trigger(f) => {
-                // The fire is started by `reactor_step`, which owns the air (`fault` is None for it).
-                if let Some(f) = fault(f) {
-                    let events = self.room.trigger(f);
-                    info!("reactor: dev fault {f:?}");
-                    for e in events {
-                        route(e, counts);
-                    }
-                }
-            }
-            ReactorAsk::Reset => {
-                // The alarm the old room set stays until the new room says otherwise.
-                let alarmed = self.alarmed;
-                let director = self.director.enabled();
-                // The bots' count and list are the operator's too (r42): a fresh room keeps them, with no bot at a station.
-                *self = ReactorSim { sent: None, since_send: f64::MAX, alarmed, bots: self.bots.fresh(), ..ReactorSim::new(cfg) };
-                // The dev toggle is the operator's: a reset keeps it.
-                self.director.set_enabled(director);
-                info!("reactor: reset");
-            }
-            ReactorAsk::ArmEject => {
-                if !self.room.reactor().ejected() && self.eject_left.is_none() {
-                    self.eject_left = Some(cfg.reactor.eject_arm_s);
-                    info!("reactor: EJECT cover open for {} s", cfg.reactor.eject_arm_s);
-                }
-            }
-            ReactorAsk::Eject => {
-                if self.eject_left.take().is_some() {
-                    for e in self.room.eject_core() {
-                        route(e, counts);
-                    }
-                } else {
-                    info!("reactor: eject refused (the cover is shut)");
-                }
-            }
-            ReactorAsk::EmergencyCool => {
-                if !self.room.emergency_cool() {
-                    info!("reactor: emergency cooling refused (cooldown, tank or pump)");
-                }
-            }
-            ReactorAsk::SetPower(on) => {
-                if !self.room.set_power(on) {
-                    info!("reactor: power on refused (broken)");
-                }
-            }
-            ReactorAsk::SetBreaker(g, on) => self.room.set_breaker(group_of(g), on),
-            ReactorAsk::SetAuxSwitch(g, on) => {
-                // Engines is never aux-fed: the room ignores its switch.
-                self.room.set_aux_switch(group_of(g), on);
-            }
-            ReactorAsk::SetLimit(g, v) => self.room.grid_mut().set_limit(group_of(g), v),
-            ReactorAsk::SetBatteryRecharge(v) => self.room.battery_mut().set_recharge(v),
-            ReactorAsk::SetVent(i, open) => match self.vents.get_mut(i as usize) {
-                Some(v) => *v = open,
-                None => info!("reactor: no vent {i}"),
-            },
-            ReactorAsk::SetPumpMode(m) => self.room.set_pump_mode(pump_of(m)),
-            // The HELM's slider (r38): the engines' target, the room's clamp (-100..100) and the host's.
-            ReactorAsk::SetThrottle(pct) => self.room.set_engine_throttle(pct.clamp(-100.0, 100.0)),
-            ReactorAsk::SetDirector(on) => {
-                self.director.set_enabled(on);
-                info!("reactor: dev director {}", if on { "on" } else { "off" });
-            }
-            ReactorAsk::Boost(up) => {
-                if !self.room.reactor_mut().boost(up) {
-                    info!("reactor: boost refused (off, broken, or not allowed now)");
-                }
-            }
-            ReactorAsk::SilenceAlarms => self.alarms.iter_mut().for_each(RoomAlarm::silence),
-            // The GN-01's FIRE (r40): one shot, refused while reloading or without a shot's energy.
-            ReactorAsk::Fire => {
-                if !self.room.fire_weapon() {
-                    info!("reactor: gun refused (reloading or no shot's energy)");
-                }
-            }
-            // The dev AMBUSH (r41): a new encounter, refused while one runs; off ends it.
-            ReactorAsk::Ambush(true) => {
-                if !self.room.start_ambush() {
-                    info!("reactor: ambush refused (an encounter runs)");
-                }
-            }
-            ReactorAsk::Ambush(false) => self.room.stop_ambush(),
-            // GN-01's CLEAR JAM hold (r41): letting go restarts the count.
-            ReactorAsk::ClearJam(on) => {
-                self.clearing = on;
-                if !on {
-                    self.room.weapons_mut().stop_clearing();
-                }
-            }
-            // The captain's priority list (r42, CP-01) and the dev BOTS count.
-            ReactorAsk::SetBotPriority(s, level) => self.bots.set_level(crate::dev_area::crew::row_of(s), level),
-            ReactorAsk::SetBots(n) => self.bots.set_count(n),
-            // The airlock, its SEAL and the VACUUM switch need the air: `reactor_step` takes them.
-            ReactorAsk::Airlock(_) | ReactorAsk::SetVacuum(_) | ReactorAsk::SealAirlock => {}
-        }
+
+    /// A fresh room (the dev reset): the alarm the old room set stays until the new room says
+    /// otherwise, and the operator's settings stay: the director's toggle and the bots' count and
+    /// list (with no bot at a station).
+    pub fn reset(&mut self, cfg: &Tuning) {
+        let alarmed = self.alarmed;
+        let director = self.director.enabled();
+        *self = ReactorSim { sent: None, since_send: f64::MAX, alarmed, bots: self.bots.fresh(), ..ReactorSim::new(cfg) };
+        self.director.set_enabled(director);
     }
 
     /// The snapshot as the wire carries it; `oxygen` is the engine room's air (0..1).
@@ -469,13 +313,6 @@ pub fn counter_fresh(seen: &mut Option<u32>, ejects: u32) -> bool {
     fresh
 }
 
-pub fn eject_notice(items: Res<Items>, mut seen: Local<Option<u32>>, mut gp: ResMut<Gameplay>) {
-    let Some(news) = items.reactor else { return };
-    if counter_fresh(&mut seen, news.ejects) {
-        gp.notify(Notice::new(NoticeKind::Warning, "notice.reactor.eject"));
-    }
-}
-
 /// Whether the blinking lamps are lit at a time: 2 Hz, lit for the first quarter of each half
 /// second (Barotrauma's `TotalTime % 0.5 < 0.25`).
 pub fn lamp_blink_on(t: f64) -> bool {
@@ -511,7 +348,7 @@ pub fn wire_pump(m: reactor_core::engine_room::PumpMode) -> PumpMode {
     }
 }
 
-fn fault(f: ReactorFault) -> Option<Fault> {
+pub fn fault(f: ReactorFault) -> Option<Fault> {
     match f {
         ReactorFault::PumpBreak => Some(Fault::PumpBreak),
         ReactorFault::OxygenGeneratorBreak => Some(Fault::OxygenGeneratorBreak),
@@ -571,34 +408,57 @@ pub fn route(e: RoomEvent, counts: &mut ReactorCounts) {
     }
 }
 
-pub fn ecool_notice(items: Res<Items>, mut seen: Local<Option<u32>>, mut gp: ResMut<Gameplay>) {
-    let Some(news) = items.reactor else { return };
-    if counter_fresh(&mut seen, news.ecools) {
-        gp.notify(Notice::new(NoticeKind::Warning, "notice.reactor.ecool"));
-    }
+/// The order of a ship tick in `FixedUpdate` (`Fx::Input`): the bots, the owners' asks, the room's
+/// step, the owners' reactions to its events, the counts and the alarm, the news, the owners' parts
+/// of the news, the send, the effects every process shows, and the rooms' doors and air.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ShipSet {
+    Crew,
+    Asks,
+    Step,
+    React,
+    Settle,
+    News,
+    Fill,
+    Send,
+    Effects,
+    Rooms,
 }
 
-/// The jump's notice and flash, on every process (the news counter `jumps`, as the ejects): the
-/// white flash at half the blast's strength (`JUMP_FLASH`) and the JUMP line.
-pub fn jump_notice(time: Res<Time>, items: Res<Items>, mut seen: Local<Option<u32>>, mut gp: ResMut<Gameplay>, mut flash: ResMut<crate::dev_area::engineering::blast::BlastFlash>) {
-    let Some(news) = items.reactor else { return };
-    if counter_fresh(&mut seen, news.jumps) {
-        flash.jump(time.elapsed_secs_f64());
-        gp.notify(Notice::new(NoticeKind::Warning, "notice.reactor.jump"));
+/// The room's events of this tick, host only: the owners read them in `ShipSet::React`, the counts
+/// take them in `ShipSet::Settle`. A dev fault may add one before the step (`ShipSet::Asks`).
+#[derive(Resource, Default, Debug)]
+pub struct ShipEvents(pub Vec<RoomEvent>);
+
+/// Host only: takes the asks an owner handles out of the queue and leaves the rest. A client keeps
+/// them all, `ship_step` sends them to the host.
+pub fn host_asks(items: &mut Items, mine: fn(&ReactorAsk) -> bool) -> Vec<ReactorAsk> {
+    if items.role == Role::Client {
+        return Vec::new();
     }
+    let (taken, rest) = std::mem::take(&mut items.reactor_asks).into_iter().partition(mine);
+    items.reactor_asks = rest;
+    taken
 }
 
 pub fn plugin(app: &mut App) {
     let files = crate::content_files("gameplay");
-    let tuning = Tuning::load(&files).unwrap_or_else(|e| panic!("reactor: {e:?}"));
+    let tuning = Tuning::load(&files).unwrap_or_else(|e| panic!("ship: {e:?}"));
     let warm = app.world().contains_resource::<WarmAtCreation>();
-    app.insert_resource(ReactorSim::created(&tuning, warm)).insert_resource(ReactorConfig(tuning)).init_resource::<ReactorCounts>();
-    app.init_resource::<crate::dev_area::engineering::blast::PendingBlasts>().init_resource::<crate::dev_area::engineering::blast::BlastFlash>();
-    app.add_systems(FixedUpdate, (crate::dev_area::crew::bots_step, crate::dev_area::crew::body_step, reactor_step, crate::dev_area::engineering::blast::reactor_blast, crate::dev_area::engineering::blast::client_blast_news, eject_notice, ecool_notice, jump_notice).chain().before(crate::dev_area::hull::doors::room_state).in_set(crate::phases::Fx::Input));
+    app.insert_resource(ReactorSim::created(&tuning, warm)).insert_resource(ReactorConfig(tuning)).init_resource::<ReactorCounts>().init_resource::<ShipEvents>();
+    use ShipSet::*;
+    app.configure_sets(FixedUpdate, (Crew, Asks, Step, React, Settle, News, Fill, Send, Effects, Rooms).chain().in_set(crate::phases::Fx::Input));
+    app.add_systems(FixedUpdate, ship_step.in_set(Step));
+    app.add_systems(FixedUpdate, count_events.in_set(Settle));
+    app.add_systems(FixedUpdate, ship_news.in_set(News));
+    app.add_systems(FixedUpdate, ship_send.in_set(Send));
 }
 
+/// The room's step on the host: what is left of the asks has no owner; the room steps on the
+/// reactor's controls, the director may break a device, and the events go to `ShipEvents`. A client
+/// sends its asks to the host.
 #[allow(clippy::too_many_arguments)]
-fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut alarm: ResMut<ShipAlarm>, mut air: ResMut<ShipAir>, fires: Res<FireConfig>, fire_alarm: Res<FireAlarm>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, area: Res<DevArea>, planet: Res<PlanetRes>, repair: Res<crate::repair::RepairConfig>, mut health: Option<ResMut<crate::health::HealthState>>, mut blasts: ResMut<crate::dev_area::engineering::blast::PendingBlasts>) {
+fn ship_step(time: Res<Time>, mut items: ResMut<Items>, mut sim: ResMut<ReactorSim>, mut events: ResMut<ShipEvents>, air: Res<ShipAir>, grid: Res<FireGrid>, model: Res<FireModel>) {
     let asks = std::mem::take(&mut items.reactor_asks);
     if items.role == Role::Client {
         for a in asks {
@@ -606,147 +466,55 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
         }
         return;
     }
-    let mut events = Vec::new();
     for a in asks {
-        if a == ReactorAsk::Trigger(ReactorFault::Fire) {
-            info!("reactor: dev fire");
-            events.push(RoomEvent::Fire { size: fires.0.start_size, source: Source::Reactor });
-        } else if a == ReactorAsk::SealAirlock {
-            // The captain's SEAL (r41, CP-01): shuts the inner door when it is open and no cycle runs.
-            if !air.seal_inner() {
-                info!("reactor: seal refused (the inner door is shut, or a cycle runs)");
-            }
-        } else if let ReactorAsk::Airlock(ask) = a {
-            // The airlock's panels (r40): the interlock refuses what it must (`ShipAir::request`).
-            if !air.request(airlock::ask_of(ask)) {
-                info!("reactor: airlock {ask:?} refused (a door is open, or a cycle runs)");
-            }
-        } else if let ReactorAsk::SetVacuum(on) = a {
-            air.set_vacuum(on);
-            info!("reactor: dev vacuum {}", if on { "on" } else { "off" });
-        } else {
-            if a == ReactorAsk::Reset {
-                // The fires are the air's: a fresh room starts with a fresh air (no fire survives).
-                // The dev VACUUM switch is the operator's, as the director's is: a reset keeps it.
-                let vacuum = air.forced;
-                *air = ShipAir::with_tuning(&cfg.0.airlock);
-                air.set_vacuum(vacuum);
-            }
-            sim.apply(a, &cfg.0, &mut counts);
-        }
-    }
-    for _ in 0..items.take_refills() {
-        let added = sim.room.pump_mut().refill(cfg.0.room.coolant_canister);
-        info!("reactor: coolant canister, the tank gains {added:.0} %");
-    }
-    for player in std::mem::take(&mut items.pull_asks) {
-        let Some(i) = rods::pull_index(sim.room.reactor().rods()) else {
-            info!("reactor: the brake, no rod in a slot");
-            continue;
-        };
-        let Some((rod, temp)) = sim.room.reactor_mut().pull_rod(i) else { continue };
-        let band = sim.room.reactor().bands().temp_optimal;
-        if temp > band.hi {
-            let burn = device_core::minigame::hurt_of(device_core::minigame::Machine::Hot, device_core::minigame::Press::Miss, &repair.0).burn;
-            if let Some(st) = health.as_deref_mut()
-                && let Some(b) = st.bodies.get_mut(&player)
-            {
-                b.health.add(&st.tuning, "burn", burn);
-            }
-        }
-        info!("reactor: the brake pulled the {} rod ({:.0} life) at {temp:.0} degrees", rod.kind, rod.life);
-        let Some(def) = rods::item_of_kind(&rod.kind).and_then(|id| items.defs.get(id)).cloned() else { continue };
-        let now = time.elapsed_secs_f64();
-        if let Err(stack) = items.give(now, player, rods::rod_stack(&def, rod.life))
-            && let Some(at) = rods::reactor_front(&area, &planet)
-        {
-            items.spawn(now, stack, at);
-        }
-    }
-    // Fuel rods the host took out of a hand (`dev_area::engineering::rods`): each goes into a free slot. A reactor
-    for load in items.take_rod_loads() {
-        let Some(mut rod) = rods::kind_of_item(&load.item).and_then(|k| cfg.0.rods.rod(k)) else { continue };
-        rod.life = load.life;
-        let kind = rod.kind.clone();
-        if let Err(rod) = sim.room.reactor_mut().insert_rod(rod) {
-            info!("reactor: no free slot for the {} rod, it goes back", rod.kind);
-            let Some(def) = items.defs.get(&load.item).cloned() else { continue };
-            if let Err(stack) = items.give(time.elapsed_secs_f64(), load.player, rods::rod_stack(&def, rod.life)) {
-                if let Some(at) = rods::reactor_front(&area, &planet) {
-                    items.spawn(time.elapsed_secs_f64(), stack, at);
-                }
-            }
-        } else {
-            info!("reactor: the {kind} rod is in a slot ({:.0} life)", load.life);
-        }
+        warn!("ship: no owner takes {a:?}");
     }
     let dt = time.delta_secs_f64();
-    sim.tick_eject(dt);
-    sim.tick_jam(dt);
     let input = if sim.manual { Input::manual(sim.fission, sim.turbine) } else { Input::auto() };
-    events.extend(sim.room.step(dt, input));
-    // The incident director (r38): the host's only. Its report is the room's devices and temperature,
-    // the fires in the two rooms and the engine room's oxygen; it breaks at most one device here.
+    let stepped = sim.room.step(dt, input);
+    events.0.extend(stepped);
+    // The incident director (r38): its report is the room's devices and temperature, the fires in
+    // the rooms and the engine room's oxygen; it breaks at most one device here.
     let fires = match *model {
         FireModel::Point => [air.engine, air.corridor, air.bridge].into_iter().map(|room| air.deck.fires_in(room).count()).sum::<usize>(),
         FireModel::Grid => grid.0.burning().count(),
     } as u32;
     let situation = Situation::of_room(&sim.room, fires, air.deck.room(air.engine).oxygen_fraction());
     if let Some(f) = sim.director.step(dt, &situation) {
-        info!("reactor: director {f:?}");
-        events.extend(sim.room.trigger(f));
+        info!("ship: director {f:?}");
+        let broke = sim.room.trigger(f);
+        events.0.extend(broke);
     }
-    // Life support's air: the oxygen generator feeds the air through its vents (r38; the engine room's
-    // and the corridor's, `ShipAir::add_oxygen_through_vents`). `EngineRoom::oxygen_flow` is the flow:
-    // the life support's power and the generator's condition squared (`fire_core::oxygen`).
-    let o2 = sim.room.oxygen_flow(cfg.0.life_support.oxygen_generator_rate);
-    air.add_oxygen_through_vents(o2 * dt, sim.vents);
-    // The hull (r37, by section in r40): each section's hole leaks the room's air to space at its openness.
-    let holes = air.breaches;
-    for (i, hole) in holes.into_iter().enumerate() {
-        air.deck.set_leak(hole, cfg.0.hull.breach_area_m2, sim.room.hull().open(i));
-    }
-    for e in events {
-        if let Some((source, size)) = fire::start_of(&e) {
-            fire::ignite(&mut air, &mut grid, *model, source, size);
-        }
-        if let RoomEvent::HitFire { size, at } = e {
-            fire::ignite_at(&mut air, &mut grid, *model, at, size);
-        }
-        if let RoomEvent::Reactor(ReactorEvent::Blast(b)) = e {
-            blasts.0.push(b);
-        }
+}
+
+/// Host: the tick's events are counted (and logged), after the owners have reacted to them.
+fn count_events(mut events: ResMut<ShipEvents>, mut counts: ResMut<ReactorCounts>) {
+    for e in events.0.drain(..) {
         route(e, &mut counts);
     }
-    let room_level = alarm_of(sim.room.level());
-    let level = room_level.max(fire_alarm.0);
-    if level != Alarm::None || sim.alarmed {
-        alarm.level = level;
-    }
-    sim.alarmed = level != Alarm::None;
+}
 
-    let oxygen = (air.oxygen_at(ROOM.centre) * 100.0).round() / 100.0;
-    let mut now = sim.news(oxygen);
-    now.airlock = air.airlock_news();
-    now.vacuum = air.vacuum;
+/// Host: the snapshot from the room and the counts. The hull fills in the air, the airlock and the
+/// room alarms next (`ShipSet::Fill`).
+fn ship_news(mut items: ResMut<Items>, sim: Res<ReactorSim>, counts: Res<ReactorCounts>) {
+    if items.role == Role::Client {
+        return;
+    }
+    let mut now = sim.news(0.0);
     now.blasts = counts.blasts;
     now.ejects = counts.ejects;
     now.ecools = counts.ecools;
     now.jumps = counts.jumps;
-    // The status monitor's rooms (r38, r44): the engine room, the corridor, then the bridge.
-    now.rooms = [air.engine, air.corridor, air.bridge].map(|room| RoomAir {
-        o2: (air.deck.room(room).oxygen_fraction() * 100.0).round() / 100.0,
-        fire: match *model {
-            FireModel::Point => air.deck.fires_in(room).next().is_some(),
-            FireModel::Grid => grid.0.burning().any(|c| c.room == room),
-        },
-    });
-    // The room alarms (r40, #165): the fire and the air from the rooms just set, the breach on the
-    // engine room only (any hull section whose leak is open; the corridor and the bridge have no hull sections).
-    let breaching = now.breaches.iter().any(|&d| reactor_core::hull::openness(d) > 0.0);
-    now.alarms = std::array::from_fn(|i| alarm_news(sim.alarms[i].step(now.rooms[i].fire, i == 0 && breaching, now.rooms[i].o2, dt)));
     items.reactor = Some(now);
-    sim.since_send += dt;
+}
+
+/// Host: sends the snapshot when it changed, at most every `SEND_EVERY_S`.
+fn ship_send(time: Res<Time>, mut items: ResMut<Items>, mut sim: ResMut<ReactorSim>) {
+    if items.role == Role::Client {
+        return;
+    }
+    sim.since_send += time.delta_secs_f64();
+    let Some(now) = items.reactor else { return };
     if items.role == Role::Host && sim.sent != Some(now) && sim.since_send >= SEND_EVERY_S {
         items.net_out.push(NetOut::Reactor { to: None, r: now });
         sim.sent = Some(now);
@@ -754,20 +522,18 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     }
 }
 
-/// The wire's alarm of a room (r40): the core's kind and flags as they travel.
-pub fn alarm_news(a: AlarmState) -> AlarmNews {
-    let kind = match a.kind {
-        Kind::Clear => RoomAlarmKind::Clear,
-        Kind::Fire => RoomAlarmKind::Fire,
-        Kind::Breach => RoomAlarmKind::Breach,
-        Kind::LowO2 => RoomAlarmKind::LowO2,
-    };
-    AlarmNews { kind, sounding: a.sounding, silenced: a.silenced }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dev_area::hull::asks::alarm_news;
+    use crate::dev_area::{bridge, crew, dev, engineering, hull, turrets};
+    use item_core::wire::{AlarmNews, RoomAlarmKind};
+
+    /// The asks as the owners take them on the host, in one place for these tests.
+    fn apply_any(s: &mut ReactorSim, a: ReactorAsk, cfg: &Tuning, counts: &mut ReactorCounts) {
+        let taken = engineering::asks::apply(s, a, cfg, counts) || bridge::apply(s, a, counts) || turrets::apply(s, a) || hull::asks::apply_sim(s, a) || crew::apply(s, a) || dev::faults::apply_sim(s, a, cfg, counts);
+        assert!(taken, "no owner takes {a:?}");
+    }
     use item_core::wire::BotStation;
     use reactor_core::bots::Station;
 
@@ -783,7 +549,7 @@ mod tests {
         let mut counts = ReactorCounts::default();
         s.alarms[0].step(true, false, 0.9, 0.1);
         assert!(s.alarms[0].state().sounding, "a fire sounds");
-        s.apply(ReactorAsk::SilenceAlarms, &c, &mut counts);
+        apply_any(&mut s, ReactorAsk::SilenceAlarms, &c, &mut counts);
         assert_eq!(alarm_news(s.alarms[0].state()), AlarmNews { kind: RoomAlarmKind::Fire, sounding: false, silenced: true });
         assert_eq!(alarm_news(s.alarms[1].state()), AlarmNews::default(), "the corridor is clear");
     }
@@ -816,19 +582,19 @@ mod tests {
     fn the_news_carries_the_lamps_the_boost_and_the_countdown() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::SetPower(false), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetPower(false), &cfg(), &mut k);
         let n = s.news(1.0);
         assert!(n.lamps[Lamp::Scram.index()], "warm with the power off");
         assert!(!n.lamps[Lamp::Hot.index()] && !n.lamps[Lamp::Meltdown.index()]);
         assert!(!n.boost_ok, "no boost with the power off");
         assert_eq!(n.meltdown_eta_s, None);
-        s.apply(ReactorAsk::SetPower(true), &cfg(), &mut k);
-        s.apply(ReactorAsk::Boost(true), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetPower(true), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Boost(true), &cfg(), &mut k);
         let amount = s.room.reactor().tuning().boost_amount;
         let n = s.news(1.0);
         assert_eq!(n.boost, amount, "the boost is up");
         assert!(!n.boost_ok, "a boost at its amount is not allowed again");
-        s.apply(ReactorAsk::Boost(false), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Boost(false), &cfg(), &mut k);
         assert_eq!(s.news(1.0).boost, amount, "refused: the boost stays up");
     }
 
@@ -836,8 +602,8 @@ mod tests {
     fn the_boost_ask_is_refused_when_the_core_refuses_it() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::SetPower(false), &cfg(), &mut k);
-        s.apply(ReactorAsk::Boost(true), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetPower(false), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Boost(true), &cfg(), &mut k);
         assert_eq!(s.room.reactor().temperature_boost(), 0.0, "the power is needed");
         assert_eq!(s.news(1.0).boost, 0.0);
     }
@@ -848,11 +614,11 @@ mod tests {
         let mut k = ReactorCounts::default();
         // The app's room is created powered and warmed up (`created`), so the capacitor starts full.
         assert_eq!(s.news(1.0).weapon_shots, 6, "a powered room starts with a full capacitor");
-        s.apply(ReactorAsk::Fire, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Fire, &cfg(), &mut k);
         let n = s.news(1.0);
         assert_eq!(n.weapon_shots, 5);
         assert!(n.weapon_reload_s > 0.0, "the reload shows on GN-01");
-        s.apply(ReactorAsk::Fire, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Fire, &cfg(), &mut k);
         assert_eq!(s.news(1.0).weapon_shots, 5, "refused while reloading");
     }
 
@@ -860,8 +626,8 @@ mod tests {
     fn the_captains_priority_ask_sets_the_level_and_the_dev_count_clamps() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::SetBotPriority(BotStation::Helm, 4), &cfg(), &mut k);
-        s.apply(ReactorAsk::SetBots(7), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetBotPriority(BotStation::Helm, 4), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetBots(7), &cfg(), &mut k);
         let n = s.news(1.0);
         assert_eq!(n.bots[BotStation::Helm.index()].level, 4);
         assert_eq!(n.bot_count, 3, "the count is clamped to 3");
@@ -888,7 +654,7 @@ mod tests {
         let n = s.news(1.0);
         assert!(n.bots[BotStation::Gunnery.index()].manned, "the bots man GN-01 at the start (two bots, GUNNERY first), once they have walked there");
         assert_eq!(s.room.weapons().jam_chance(), 0.03 * (1.0 - 20.0 / 50.0), "the bot's skill sets the jam chance");
-        s.apply(ReactorAsk::SetBots(0), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetBots(0), &cfg(), &mut k);
         s.bots.tick(0.5, [false; 4], &s.room.clone(), &crate::dev_area::crew::layout(), &[]);
         s.tick_jam(0.0);
         assert_eq!(s.room.weapons().jam_chance(), 0.03, "no bot, no skill: a player's gun");
@@ -898,10 +664,10 @@ mod tests {
     fn a_reset_keeps_the_bot_settings_and_no_bot_is_at_a_station() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::SetBotPriority(BotStation::Power, 0), &cfg(), &mut k);
-        s.apply(ReactorAsk::SetBots(1), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetBotPriority(BotStation::Power, 0), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetBots(1), &cfg(), &mut k);
         s.bots.tick(0.5, [false; 4], &s.room.clone(), &crate::dev_area::crew::layout(), &[]);
-        s.apply(ReactorAsk::Reset, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Reset, &cfg(), &mut k);
         let n = s.news(1.0);
         assert_eq!((n.bot_count, n.bots[BotStation::Power.index()].level), (1, 0));
         assert!(n.bots.iter().all(|b| !b.manned));
@@ -913,12 +679,12 @@ mod tests {
         c.weapons.jam_chance = 1.0;
         let mut s = ReactorSim::new(&c);
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::Fire, &c, &mut k);
+        apply_any(&mut s, ReactorAsk::Fire, &c, &mut k);
         assert!(s.news(1.0).weapon_jammed, "the shot jams (the chance is 1 here)");
-        s.apply(ReactorAsk::ClearJam(true), &c, &mut k);
+        apply_any(&mut s, ReactorAsk::ClearJam(true), &c, &mut k);
         s.tick_jam(2.0);
-        s.apply(ReactorAsk::ClearJam(false), &c, &mut k);
-        s.apply(ReactorAsk::ClearJam(true), &c, &mut k);
+        apply_any(&mut s, ReactorAsk::ClearJam(false), &c, &mut k);
+        apply_any(&mut s, ReactorAsk::ClearJam(true), &c, &mut k);
         s.tick_jam(2.0);
         assert!(s.news(1.0).weapon_jammed, "the release started the count over: 2 s is not enough");
         s.tick_jam(1.0);
@@ -929,13 +695,13 @@ mod tests {
     fn the_limit_ask_sets_the_group_limit_and_the_news_carry_the_kw() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::SetLimit(BreakerGroup::Engines, 0.5), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetLimit(BreakerGroup::Engines, 0.5), &cfg(), &mut k);
         let n = s.news(1.0);
         assert_eq!(n.limits, [0.5, 1.0, 1.0, 1.0, 1.0, 1.0]);
         let demand = s.room.grid().group(Group::Engines).demand_kw;
         assert_eq!(n.demand_kw[0], demand, "the demand is the full demand, not the limited request");
         assert!((n.delivered_kw[0] - s.room.grid().supply(Group::Engines).delivered_kw).abs() < 1e-9);
-        s.apply(ReactorAsk::SetLimit(BreakerGroup::Lights, 7.0), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetLimit(BreakerGroup::Lights, 7.0), &cfg(), &mut k);
         assert_eq!(s.news(1.0).limits[2], 1.0, "the host clamps it to 0..1");
     }
 
@@ -943,7 +709,7 @@ mod tests {
     fn power_off_and_the_power_switch_ask_the_room() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::SetPower(false), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetPower(false), &cfg(), &mut k);
         // The output stops with the next step; fission follows with its lag (seconds).
         for _ in 0..10 {
             s.room.step(0.1, Input::auto());
@@ -954,7 +720,7 @@ mod tests {
             s.room.step(0.1, Input::auto());
         }
         assert!(s.news(1.0).temp < 40.0, "the temperature falls");
-        s.apply(ReactorAsk::SetPower(true), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetPower(true), &cfg(), &mut k);
         assert!(s.news(1.0).power_on);
     }
 
@@ -963,16 +729,16 @@ mod tests {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
         let before = s.news(1.0).load_kw;
-        s.apply(ReactorAsk::SetBreaker(BreakerGroup::Lights, false), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetBreaker(BreakerGroup::Lights, false), &cfg(), &mut k);
         let n = s.news(1.0);
         assert_eq!(n.breakers, [true, true, false, true, true, true]);
         let lights = s.room.grid().group(Group::Lights).demand_kw;
         assert!((before - n.load_kw - lights).abs() < 1e-9, "the load drops by the lights' demand");
-        s.apply(ReactorAsk::SetPumpMode(PumpMode::Off), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetPumpMode(PumpMode::Off), &cfg(), &mut k);
         settle(&mut s, |n| n.flow < 1e-3);
         let n = s.news(1.0);
         assert!(!n.pump_on && n.flow < 1e-3, "the pump spins down");
-        s.apply(ReactorAsk::SetPumpMode(PumpMode::High), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetPumpMode(PumpMode::High), &cfg(), &mut k);
         settle(&mut s, |n| n.flow >= 0.99);
         assert!(s.news(1.0).pump_on && s.news(1.0).flow >= 0.99);
     }
@@ -982,7 +748,7 @@ mod tests {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
         assert!(s.news(0.0).coolant > 99.0, "a new room has a full tank");
-        s.apply(ReactorAsk::Trigger(ReactorFault::DrainCoolant), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Trigger(ReactorFault::DrainCoolant), &cfg(), &mut k);
         let n = s.news(0.0);
         assert_eq!(n.coolant, 0.0);
         assert!(n.coolant_low && n.flow == 0.0, "an empty tank is no flow");
@@ -993,10 +759,10 @@ mod tests {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
         assert!(!s.room.aux_enabled());
-        s.apply(ReactorAsk::Trigger(ReactorFault::Aux), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Trigger(ReactorFault::Aux), &cfg(), &mut k);
         assert!(s.room.aux_enabled(), "the first press turns the aux reactor on");
         assert!(s.news(0.2).aux_on);
-        s.apply(ReactorAsk::Trigger(ReactorFault::Aux), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Trigger(ReactorFault::Aux), &cfg(), &mut k);
         assert!(!s.room.aux_enabled(), "the second press turns it off");
         assert!(!s.news(0.2).aux_on);
     }
@@ -1005,11 +771,11 @@ mod tests {
     fn the_aux_switch_asks_reach_the_room_and_engines_is_not_aux_fed() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::Trigger(ReactorFault::Aux), &cfg(), &mut k);
-        s.apply(ReactorAsk::SetAuxSwitch(BreakerGroup::Lights, false), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Trigger(ReactorFault::Aux), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetAuxSwitch(BreakerGroup::Lights, false), &cfg(), &mut k);
         assert!(!s.room.aux_switch(Group::Lights));
         assert!(!s.news(0.2).aux_lights);
-        s.apply(ReactorAsk::SetAuxSwitch(BreakerGroup::Engines, false), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetAuxSwitch(BreakerGroup::Engines, false), &cfg(), &mut k);
         assert!(s.room.aux_switch(Group::Engines), "Engines reads on whatever it is asked");
     }
 
@@ -1017,11 +783,11 @@ mod tests {
     fn the_warm_start_fault_settles_the_room_and_costs_no_coolant_or_rod_life() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::Trigger(ReactorFault::DrainCoolant), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Trigger(ReactorFault::DrainCoolant), &cfg(), &mut k);
         s.room.pump_mut().refill(100.0);
         let tank = s.room.pump().tank();
         let lives = s.room.reactor().rod_lives();
-        s.apply(ReactorAsk::Trigger(ReactorFault::WarmStart), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Trigger(ReactorFault::WarmStart), &cfg(), &mut k);
         assert!(s.room.settled(), "the room is settled after the warm start");
         assert_eq!(s.room.pump().tank(), tank);
         assert_eq!(s.room.reactor().rod_lives(), lives);
@@ -1032,8 +798,8 @@ mod tests {
     fn a_reset_refills_the_tank() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::Trigger(ReactorFault::DrainCoolant), &cfg(), &mut k);
-        s.apply(ReactorAsk::Reset, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Trigger(ReactorFault::DrainCoolant), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Reset, &cfg(), &mut k);
         assert!(s.news(0.0).coolant > 99.0);
     }
 
@@ -1049,7 +815,7 @@ mod tests {
             }
         }
         assert!(s.news(1.0).melted);
-        s.apply(ReactorAsk::Reset, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Reset, &cfg(), &mut k);
         assert!(!s.news(1.0).melted);
     }
 
@@ -1057,15 +823,15 @@ mod tests {
     fn targets_count_only_on_manual_and_manual_starts_from_where_the_reactor_is() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::SetFission(70.0), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetFission(70.0), &cfg(), &mut k);
         assert!(!s.manual && s.fission == 0.0, "ignored on Auto");
         for _ in 0..30 * 60 {
             s.room.step(1.0 / 30.0, Input::auto());
         }
         let (f, t) = s.room.reactor().targets();
-        s.apply(ReactorAsk::SetManual(true), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetManual(true), &cfg(), &mut k);
         assert!(s.manual && (s.fission - f).abs() < 1e-9 && (s.turbine - t).abs() < 1e-9);
-        s.apply(ReactorAsk::SetFission(150.0), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetFission(150.0), &cfg(), &mut k);
         assert_eq!(s.fission, 100.0, "clamped");
     }
 
@@ -1074,12 +840,12 @@ mod tests {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
         let full = s.room.pump().tank();
-        s.apply(ReactorAsk::EmergencyCool, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::EmergencyCool, &cfg(), &mut k);
         let news = s.news(1.0);
         assert!(news.ecool_active && news.ecool_ready_in_s > 0.0 && !news.ecool_ok, "{news:?}");
         assert!(s.room.pump().tank() < full, "the press takes the tank cost");
         let tank = s.room.pump().tank();
-        s.apply(ReactorAsk::EmergencyCool, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::EmergencyCool, &cfg(), &mut k);
         assert_eq!(s.room.pump().tank(), tank, "a second press in the cooldown takes nothing");
         for e in s.room.step(1.0 / 30.0, Input::auto()) {
             route(e, &mut k);
@@ -1094,8 +860,8 @@ mod tests {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
         s.alarmed = true;
-        s.apply(ReactorAsk::Trigger(ReactorFault::PumpBreak), &cfg(), &mut k);
-        s.apply(ReactorAsk::Reset, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Trigger(ReactorFault::PumpBreak), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Reset, &cfg(), &mut k);
         assert!(s.alarmed, "the ship's alarm is cleared by the next step, not by the reset");
         assert!(s.room.pump().condition().functioning() && s.room.reactor().power_on() && !s.manual);
     }
@@ -1104,13 +870,13 @@ mod tests {
     fn the_eject_needs_the_cover_open_and_a_second_press_inside_its_window() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::Eject, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Eject, &cfg(), &mut k);
         assert!(!s.room.reactor().ejected(), "a press with the cover shut does nothing");
-        s.apply(ReactorAsk::ArmEject, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::ArmEject, &cfg(), &mut k);
         assert!(s.news(1.0).eject_armed && !s.news(1.0).ejected);
         s.tick_eject(4.0);
         assert!(s.news(1.0).eject_armed, "still inside the 5 s window");
-        s.apply(ReactorAsk::Eject, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Eject, &cfg(), &mut k);
         assert!(s.room.reactor().ejected() && s.news(1.0).ejected && !s.news(1.0).eject_armed);
         assert_eq!(k.ejects, 1);
         assert!(s.room.reactor().rods().is_empty());
@@ -1120,10 +886,10 @@ mod tests {
     fn the_cover_shuts_again_after_its_window_and_the_eject_is_refused() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::ArmEject, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::ArmEject, &cfg(), &mut k);
         s.tick_eject(5.1);
         assert!(!s.news(1.0).eject_armed, "the cover shut after 5 s");
-        s.apply(ReactorAsk::Eject, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Eject, &cfg(), &mut k);
         assert!(!s.room.reactor().ejected() && k.ejects == 0);
     }
 
@@ -1131,9 +897,9 @@ mod tests {
     fn a_second_arm_does_not_restart_the_window() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::ArmEject, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::ArmEject, &cfg(), &mut k);
         s.tick_eject(3.0);
-        s.apply(ReactorAsk::ArmEject, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::ArmEject, &cfg(), &mut k);
         s.tick_eject(2.5);
         assert!(!s.news(1.0).eject_armed, "the first window ran out; the second press did not extend it");
     }
@@ -1153,9 +919,9 @@ mod tests {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
         assert_eq!(s.news(1.0).throttle, 100.0, "full throttle at the start");
-        s.apply(ReactorAsk::SetThrottle(-35.0), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetThrottle(-35.0), &cfg(), &mut k);
         assert_eq!(s.news(1.0).throttle, -35.0);
-        s.apply(ReactorAsk::SetThrottle(400.0), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetThrottle(400.0), &cfg(), &mut k);
         assert_eq!(s.news(1.0).throttle, 100.0, "clamped");
     }
 
@@ -1165,16 +931,16 @@ mod tests {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
         assert_eq!(s.news(1.0).vents, [true, true, true], "all open at the start");
-        s.apply(ReactorAsk::SetVent(0, false), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetVent(0, false), &cfg(), &mut k);
         assert_eq!(s.news(1.0).vents, [false, true, true]);
-        s.apply(ReactorAsk::SetVent(1, false), &cfg(), &mut k);
-        s.apply(ReactorAsk::SetVent(2, false), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetVent(1, false), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetVent(2, false), &cfg(), &mut k);
         assert_eq!(s.news(1.0).vents, [false, false, false], "all shut is a state too");
-        s.apply(ReactorAsk::SetVent(3, true), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetVent(3, true), &cfg(), &mut k);
         assert_eq!(s.news(1.0).vents, [false, false, false], "no fourth vent");
-        s.apply(ReactorAsk::SetVent(2, true), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetVent(2, true), &cfg(), &mut k);
         assert_eq!(s.news(1.0).vents, [false, false, true], "the bridge's vent (r44)");
-        s.apply(ReactorAsk::SetVent(1, true), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::SetVent(1, true), &cfg(), &mut k);
         assert_eq!(s.news(1.0).vents, [false, true, true]);
     }
 
@@ -1195,13 +961,13 @@ mod tests {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
         assert!(s.news(1.0).enemy.is_none(), "no encounter until the ask");
-        s.apply(ReactorAsk::Ambush(true), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Ambush(true), &cfg(), &mut k);
         let e = s.news(1.0).enemy.expect("the ambush is on");
         assert_eq!((e.outcome, e.hull), (EnemyOutcome::None, 1.0));
-        s.apply(ReactorAsk::Trigger(ReactorFault::JumpFull), &cfg(), &mut k);
-        s.apply(ReactorAsk::JumpGo, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Trigger(ReactorFault::JumpFull), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::JumpGo, &cfg(), &mut k);
         assert_eq!(s.news(1.0).enemy.map(|e| e.outcome), Some(EnemyOutcome::Escaped));
-        s.apply(ReactorAsk::Ambush(false), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Ambush(false), &cfg(), &mut k);
         assert!(s.news(1.0).enemy.is_none());
     }
 
@@ -1209,7 +975,7 @@ mod tests {
     fn an_enemy_shot_is_the_count_going_up_in_an_encounter() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::Ambush(true), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Ambush(true), &cfg(), &mut k);
         let before = s.news(1.0);
         // The first shot comes 10 s into the encounter (incidents/enemy.json enemy.first_shot_s).
         for _ in 0..20 {
@@ -1224,11 +990,11 @@ mod tests {
     fn a_jump_needs_the_full_charge_and_counts_once() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::JumpGo, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::JumpGo, &cfg(), &mut k);
         assert_eq!(k.jumps, 0, "a cold drive does not jump");
-        s.apply(ReactorAsk::Trigger(ReactorFault::JumpFull), &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::Trigger(ReactorFault::JumpFull), &cfg(), &mut k);
         assert_eq!(s.news(1.0).jump_stage, JumpStage::Ready);
-        s.apply(ReactorAsk::JumpGo, &cfg(), &mut k);
+        apply_any(&mut s, ReactorAsk::JumpGo, &cfg(), &mut k);
         assert_eq!(k.jumps, 1);
         let n = s.news(1.0);
         assert_eq!((n.jump_stage, n.jump_charge), (JumpStage::Active, 0.0), "the jump empties the charge");

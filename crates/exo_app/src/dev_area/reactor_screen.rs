@@ -5,7 +5,7 @@ use crate::displays::{ActiveDisplay, DisplayAction, DisplayPanel, DisplayPointer
 use crate::dev_area::bridge::captain_screen;
 use crate::dev_area::{layout::{GUNNERY_AT, VENT_LIFT}};
 use crate::dev_area::crew::bot_tagged;
-use crate::dev_area::reactor::{lamp_blink_on, ReactorConfig};
+use crate::dev_area::ship::{lamp_blink_on, ReactorConfig};
 use crate::dev_area::engineering::startup_screen;
 use crate::dev_area::hull::status_monitor;
 use crate::items::Items;
@@ -1108,7 +1108,6 @@ pub fn off(p: Panel) -> Panel {
 pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
     let aux = if r.is_some_and(|r| r.aux_on) { "AUX ON" } else { "AUX OFF" };
     let director = if r.is_some_and(|r| r.director) { "DIRECTOR ON" } else { "DIRECTOR OFF" };
-    let vacuum = if r.is_some_and(|r| r.vacuum) { "VACUUM ON" } else { "VACUUM OFF" };
     let ambush = if r.is_some_and(ambush_running) { "AMBUSH ON" } else { "AMBUSH OFF" };
     let bots = r.map_or(0, |r| r.bot_count);
     let col = |items: Vec<_>| column(4.0, items);
@@ -1139,7 +1138,7 @@ pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
                     button("Shield hit", "shield_hit").fixed(24.0),
                     button("Jump full", "jump_full").fixed(24.0),
                 ]),
-                col(vec![button(ambush, "ambush").fixed(24.0), button(vacuum, "vacuum").fixed(28.0), button("COLD SHIP", "cold_ship").fixed(24.0), button(format!("BOTS {bots}"), "bots").fixed(24.0)]),
+                col(vec![button(ambush, "ambush").fixed(24.0), button("COLD SHIP", "cold_ship").fixed(24.0), button(format!("BOTS {bots}"), "bots").fixed(24.0)]),
             ],
         ),
     )
@@ -1415,7 +1414,6 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "aux" => Some(ReactorAsk::Trigger(ReactorFault::Aux)),
                 "director" => snap.map(|r| ReactorAsk::SetDirector(!r.director)),
                 "jump_full" => Some(ReactorAsk::Trigger(ReactorFault::JumpFull)),
-                "vacuum" => snap.map(|r| ReactorAsk::SetVacuum(!r.vacuum)),
                 "ambush" => snap.map(|r| ReactorAsk::Ambush(!ambush_running(&r))),
                 // The dev BOTS count, 0..3 in turn (r42, #253).
                 "bots" => snap.map(|r| ReactorAsk::SetBots((r.bot_count + 1) % (reactor_core::bots::MAX_BOTS + 1))),
@@ -1538,7 +1536,6 @@ mod tests {
         assert!(matches!(man.find("fis_set").unwrap().widget, display_core::Widget::Slider { enabled: true, .. }));
         assert!(man.find("mode").is_some() && man.find("reset").is_none());
         assert!(faults_panel(None).find("reset").is_some() && faults_panel(None).find("pump_break").is_some() && faults_panel(None).find("oxygen_break").is_some() && faults_panel(None).find("director").is_some());
-        assert!(faults_panel(None).find("vacuum").is_some(), "the dev VACUUM switch is on the faults screen");
         assert!(airlock_panel(None, AIRLOCK_INNER_NAME, "AL-01").find("cycle").is_some(), "the airlock panels have IN, OUT and CYCLE");
     }
 

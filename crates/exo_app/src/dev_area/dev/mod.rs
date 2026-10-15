@@ -2,10 +2,11 @@
 //! in the dev area to try things; none of them is a part of the ship.
 use crate::dev_area::*;
 
+pub mod faults;
 pub mod item_table;
 pub mod look_samples;
 pub mod test_console;
 
 pub fn plugin(app: &mut App) {
-    app.add_plugins((test_console::plugin, look_samples::plugin, item_table::plugin));
+    app.add_plugins((faults::plugin, test_console::plugin, look_samples::plugin, item_table::plugin));
 }

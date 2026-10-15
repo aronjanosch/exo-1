@@ -32,7 +32,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use walker_core::Frame;
 
 use crate::dev_area::layout::ROOM;
-use super::reactor::{ReactorConfig, ReactorSim};
+use crate::dev_area::ship::{ReactorConfig, ReactorSim};
 
 pub const ITEM: &str = "o2_mask";
 /// The use that puts the mask on or takes it off (`use` in the item's file).

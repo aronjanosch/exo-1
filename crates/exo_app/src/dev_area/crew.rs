@@ -18,7 +18,7 @@
 //! (`public_status.rs` labels the net figures only; TODO(initiator)). It walks in a straight line through
 //! walls (TODO(initiator): pathing).
 use crate::dev_area::{layout::{GUNNERY_AT, HELM_AT, JUNCTION_AT, REACTOR_SCREEN_AT}};
-use super::reactor::{wire_pump, ReactorSim};
+use crate::dev_area::ship::{wire_pump, ReactorSim};
 use super::{DevArea, PADS};
 use crate::displays::{ActiveDisplay, DisplayPanel};
 use crate::env::PlanetRes;
@@ -167,6 +167,26 @@ fn add_body_mesh(mut commands: Commands, added: Query<Entity, Added<BotBody>>, m
     for e in &added {
         commands.entity(e).insert((Mesh3d(meshes.add(Cuboid::new(0.6, 1.7, 0.6))), MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(0.85, 0.2, 0.85), ..default() }))));
     }
+}
+
+pub fn plugin(app: &mut App) {
+    app.add_systems(FixedUpdate, (bots_step, body_step).chain().in_set(crate::dev_area::ship::ShipSet::Crew));
+    app.add_systems(FixedUpdate, asks.in_set(crate::dev_area::ship::ShipSet::Asks));
+}
+
+fn asks(mut items: ResMut<Items>, mut sim: ResMut<ReactorSim>) {
+    for a in crate::dev_area::ship::host_asks(&mut items, |a| matches!(a, ReactorAsk::SetBotPriority(..))) {
+        apply(&mut sim, a);
+    }
+}
+
+/// The captain's priority list (r42, CP-01) on the bots; false for an ask that is not the crew's.
+pub fn apply(s: &mut ReactorSim, a: ReactorAsk) -> bool {
+    match a {
+        ReactorAsk::SetBotPriority(st, level) => s.bots.set_level(row_of(st), level),
+        _ => return false,
+    }
+    true
 }
 
 pub fn window_plugin(app: &mut App) {

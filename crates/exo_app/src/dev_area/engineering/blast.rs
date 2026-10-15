@@ -3,7 +3,7 @@ use crate::dev_area::*;
 use crate::dev_area::{layout::{ignition_at, IGNITION_OUT, REACTOR_AT, REACTOR_SIZE}};
 use crate::dev_area::fire::{self, FireGrid, FireModel};
 use crate::dev_area::hull::ShipAir;
-use crate::dev_area::reactor::ReactorConfig;
+use crate::dev_area::ship::ReactorConfig;
 use crate::gameplay::Gameplay;
 use crate::health::{area_pos, walker_points, HealthState};
 use crate::items::{Items, Role};
@@ -159,5 +159,14 @@ mod tests {
         assert_eq!(flash.0, None, "25 m is out of the radiation's range");
         assert!(client_blast(&mut seen, 2, None, 20.0, 4.0, &mut flash), "no walker of its own, still the notice");
         assert_eq!(flash.0, None);
+    }
+}
+
+/// Host: the core's blasts of this tick (`ShipEvents`), for `reactor_blast`.
+pub fn collect_blasts(events: Res<crate::dev_area::ship::ShipEvents>, mut pending: ResMut<PendingBlasts>) {
+    for e in &events.0 {
+        if let reactor_core::RoomEvent::Reactor(reactor_core::ReactorEvent::Blast(b)) = e {
+            pending.0.push(b.clone());
+        }
     }
 }

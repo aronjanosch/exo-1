@@ -4,7 +4,7 @@ use crate::controls::Controls;
 use crate::dev_area::engineering::coolant::HOLD_S;
 use crate::dev_area::{layout::{CORRIDOR, REACTOR_AT}};
 use crate::dev_area::hazards::{GLOW_BARREL, SPICY_AT};
-use crate::dev_area::reactor::ReactorSim;
+use crate::dev_area::ship::ReactorSim;
 use crate::dev_area::engineering::rods::RACK_AT;
 use crate::dev_area::DevArea;
 use super::items::{collect, items, look_at, outside};

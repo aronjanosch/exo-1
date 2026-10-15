@@ -5,7 +5,7 @@ use crate::dev_area::layout::source_at;
 use crate::dev_area::fire::EXTINGUISH;
 use crate::dev_area::DevArea;
 use crate::env::PlanetRes;
-use crate::dev_area::reactor::lamp_blink_on;
+use crate::dev_area::ship::lamp_blink_on;
 use crate::health::{OwnVitals, UseHold};
 use crate::items::Items;
 use crate::repair::{RepairHurt, RepairPlay};
@@ -511,7 +511,7 @@ fn reactor_hum(players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes
 
 fn ecool_hiss(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mut seen: Local<Option<u32>>) {
     let Some(r) = items.reactor else { return };
-    if crate::dev_area::reactor::counter_fresh(&mut seen, r.ecools) {
+    if crate::dev_area::ship::counter_fresh(&mut seen, r.ecools) {
         one_shot(&mut commands, &s.steam, HISS_VOL);
     }
 }

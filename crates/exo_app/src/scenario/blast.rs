@@ -1,9 +1,9 @@
 //! The meltdown blast reaches a walker two metres off, not one at 25 m (a unit test covers the falloff).
 use super::*;
 use crate::dev_area::engineering::blast::{fire_points, BlastFlash, PendingBlasts};
-use crate::dev_area::reactor::{route, ReactorSim};
+use crate::dev_area::ship::{route, ReactorSim};
 use crate::dev_area::{hull::ShipAir, layout::REACTOR_AT};
-use crate::dev_area::reactor::ReactorCounts;
+use crate::dev_area::ship::ReactorCounts;
 use crate::dev_area::DevArea;
 use crate::health::HealthState;
 use crate::items::{Items, LOCAL};

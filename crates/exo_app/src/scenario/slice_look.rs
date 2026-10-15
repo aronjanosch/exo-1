@@ -2,7 +2,7 @@
 //! fixed viewpoints into the scenario's out dir as `slice_<letter>_<what>.png` (with a window;
 //! headless it runs the same states and the same checks without shots). Run with
 //! `--start=dev_area --dev-area`. The steps set the states the pictures need, and check them:
-//! the reactor warms up on Auto, the corridor and the room are viewed, each screen is viewed from
+//! the reactor warm-starts (the dev faults button), the corridor and the room are viewed, each screen is viewed from
 //! 1.2 m, the pump breaks and the readout goes HOT, the critical lamp lights, SCRAM (the walker
 //! uses the readout, the click is retried until the reactor is off), 2 s of dark, then POWER on; a
 //! fire at the reactor is sprayed from 2.5 m; the pump breaks again (smoke), the wrench starts the
@@ -188,18 +188,23 @@ fn view(name: &'static str, stand: [f64; 2], look: Look, shot: Option<&'static s
     })
 }
 
-/// Waits `secs` of game time, with a note of the reactor's temperature.
-fn wait_for(name: &'static str, secs: f64) -> Step {
+/// Asks for the reactor's warm start (the dev faults' button), waits for the host to apply it, then
+/// checks that the reactor is warm: on, settled (temperature in the band, output at the load).
+fn warm_start(name: &'static str) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
             begin(w, c, name);
+            w.resource_mut::<Items>().ask_reactor(ReactorAsk::Trigger(ReactorFault::WarmStart));
             return false;
         }
-        if c.t < secs {
+        // The host applies the ask in its next fixed step.
+        if c.t < 0.2 {
             return false;
         }
-        let t = sim(w).room.reactor().temperature();
-        end(w, c, format!("{t:.1} C"));
+        let room = &sim(w).room;
+        let warm = room.reactor().power_on() && room.settled();
+        check(c, warm, format!("slice: the reactor is warm (temperature {:.1} C, output {:.1} kW)", room.reactor().temperature(), room.reactor().output_kw()));
+        end(w, c, format!("{:.1} C", room.reactor().temperature()));
         true
     })
 }
@@ -334,8 +339,9 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
     let (hot_dir, booth_dir, barrel_dir, junction_dir) = (out_dir.to_path_buf(), out_dir.to_path_buf(), out_dir.to_path_buf(), out_dir.to_path_buf());
     let shot_view = |name: &'static str, stand: [f64; 2], look: Look, tag: &'static str| view(name, stand, look, Some(tag), dir.clone(), windowed);
 
-    // Warm-up on Auto (the reactor's cold start takes about a minute).
-    s.push(wait_for("slice: the reactor warms up on Auto", 90.0));
+    // Warm start from the faults screen's button (the host's `EngineRoom::warm_start`; a cold start on
+    // Auto takes about a minute), then the check that the reactor is warm.
+    s.push(warm_start("slice: the reactor warm-starts from the dev faults"));
 
     // a. The corridor, looking at the engine-room door and its screen (the door shut).
     s.push(shot_view("slice a: corridor at the door", [CORRIDOR.centre[0], -6.3], Look::Ground(DOOR_AT, 1.5), "slice_a_corridor_door"));

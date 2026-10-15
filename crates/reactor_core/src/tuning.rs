@@ -77,6 +77,8 @@ impl Tuning {
             need(d.max > 0.0 && d.broken_below >= 0.0 && d.broken_below < d.repair_threshold && d.repair_threshold <= d.max, name, "must be 0 <= broken_below < repair_threshold <= max");
             need((0.0..=1.0).contains(&d.fail_chance), &format!("{name}.fail_chance"), "must be 0..1");
         }
+        need((0.0..=100.0).contains(&self.room.ecool_tank_cost) && self.room.ecool_duration_s > 0.0, "room.ecool_*", "ecool_tank_cost in 0..=100, ecool_duration_s > 0");
+        need(self.room.ecool_strength >= 0.0 && self.room.ecool_cooldown_s >= 0.0, "room.ecool_*", "ecool_strength and ecool_cooldown_s >= 0");
         need(self.room.overvolt_ratio > 0.0, "room.overvolt_ratio", "must be > 0");
         need((0.0..=1.0).contains(&self.room.break_fire_chance), "room.break_fire_chance", "must be 0..1");
         need(self.room.overvolt_hits_per_s >= 0.0, "room.overvolt_hits_per_s", "must be >= 0");

@@ -592,6 +592,7 @@ fn label(e: &RoomEvent) -> String {
         RoomEvent::Reactor(ReactorEvent::Device(d)) => format!("Reactor {d:?}"),
         RoomEvent::Device { source, event } => format!("{source:?} {event:?}"),
         RoomEvent::Sparks => "Sparks".into(),
+        RoomEvent::EmergencyCool => "EmergencyCool".into(),
         RoomEvent::Fire { source, .. } => match source {
             Source::Reactor => "Fire Reactor".into(),
             s => format!("Fire {s:?}"),

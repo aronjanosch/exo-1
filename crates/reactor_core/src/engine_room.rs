@@ -26,6 +26,11 @@
 //!   power, not the speed). So High drains 2.5 times as fast as Low at the same heat, as PULSAR says
 //!   "quickly" against "slowly". Off drains nothing; its speed runs down over `pump_run_down_s`.
 //!   TODO(initiator): pump run-down and the reactor's coolant coast now stack after a switch-off.
+//! - Emergency cooling (PULSAR's manual button, #300 r24; PULSAR's automatic safety is not ours, the
+//!   initiator decided no automatic safety): `emergency_cool` takes `ecool_tank_cost` of the tank at
+//!   once and adds `ecool_strength` degrees of cooling to the reactor for `ecool_duration_s`, then a
+//!   cooldown of `ecool_cooldown_s` from the press. Refused during the cooldown, with the tank below
+//!   the cost, or with the pump broken. All values TODO(initiator).
 //! - The junction box sits between the reactor and the consumers. Supply above `overvolt_ratio`
 //!   times the demand is overvoltage (Barotrauma `PowerTransfer.cs:245-292`, `UpdateOvervoltage`:
 //!   `Overload = Voltage > max(OverloadVoltage, 1)`). While overvolted, random hits take condition
@@ -109,6 +114,16 @@ pub struct RoomTuning {
     pub pump_use_high: f64,
     /// What one coolant canister adds to the tank, %.
     pub coolant_canister: f64,
+    /// Emergency cooling (PULSAR's manual button, `EngineRoom::emergency_cool`): the tank it takes
+    /// at once, %. TODO(initiator): value.
+    pub ecool_tank_cost: f64,
+    /// Seconds the emergency cooling runs. TODO(initiator): value (PULSAR's is not in the manual).
+    pub ecool_duration_s: f64,
+    /// Extra cooling while it runs, degrees of the reactor's temperature target, on top of the
+    /// normal cooling. TODO(initiator): value.
+    pub ecool_strength: f64,
+    /// Seconds from the press until it can be pressed again (PULSAR's EmergencyCooldownTime). TODO(initiator): value.
+    pub ecool_cooldown_s: f64,
     /// Dev stand-in for a helm: the engines' throttle random-walks while on. Off in code, on in
     /// `reactor.json`.
     pub engine_wander: bool,
@@ -138,6 +153,10 @@ impl Default for RoomTuning {
             coolant_use_per_heat: 0.0013,
             coolant_low: 25.0,
             coolant_canister: 50.0,
+            ecool_tank_cost: 25.0,
+            ecool_duration_s: 10.0,
+            ecool_strength: 60.0,
+            ecool_cooldown_s: 90.0,
             pump_low: 0.5,
             pump_spin_up_s: 3.0,
             pump_run_down_s: 12.0,
@@ -195,6 +214,8 @@ pub enum Source {
 pub enum RoomEvent {
     /// Reactor events as the reactor raises them (fire, meltdown, alarms).
     Reactor(ReactorEvent),
+    /// The operator pressed the emergency cooling (`EngineRoom::emergency_cool`) in the last step.
+    EmergencyCool,
     /// A device crossed a line (needs repair, broke, works again).
     Device { source: Source, event: DeviceEvent },
     /// The junction box threw sparks (overvoltage).
@@ -468,6 +489,12 @@ pub struct EngineRoom {
     rods: RodKinds,
     /// Output, load and temperature over the last points (the status board's graph).
     history: History,
+    /// Seconds of emergency cooling left (0 when none runs).
+    ecool_left: f64,
+    /// Seconds until the emergency cooling can be pressed again (0 when ready).
+    ecool_cd: f64,
+    /// A press since the last step: the next step reports `RoomEvent::EmergencyCool`.
+    ecool_pressed: bool,
 }
 
 impl EngineRoom {
@@ -500,7 +527,36 @@ impl EngineRoom {
             wander_rng: Rng::new(seed ^ 0x7a1d_e51a),
             wander_target: 1.0,
             wander_left: t.room.wander_every_s,
+            ecool_left: 0.0,
+            ecool_cd: 0.0,
+            ecool_pressed: false,
         }
+    }
+
+    /// PULSAR's emergency cooling, pressed by the operator: takes `ecool_tank_cost` of the tank at
+    /// once and runs `ecool_duration_s` with `ecool_strength` extra cooling, then the cooldown of
+    /// `ecool_cooldown_s` starts at the press. Refused (false, nothing taken) during the cooldown, with
+    /// the tank below the cost, or with the pump broken.
+    pub fn emergency_cool(&mut self) -> bool {
+        let t = self.tuning;
+        if self.ecool_cd > 0.0 || !self.pump.condition.functioning() || self.pump.tank < t.ecool_tank_cost {
+            return false;
+        }
+        self.pump.tank -= t.ecool_tank_cost;
+        self.ecool_left = t.ecool_duration_s;
+        self.ecool_cd = t.ecool_cooldown_s;
+        self.ecool_pressed = true;
+        true
+    }
+
+    /// The emergency cooling is running now.
+    pub fn ecool_active(&self) -> bool {
+        self.ecool_left > 0.0
+    }
+
+    /// Seconds until the emergency cooling can be pressed again (0 when it can).
+    pub fn ecool_ready_in_s(&self) -> f64 {
+        self.ecool_cd
     }
 
     /// Starts or stops the reactor. Refused while it is broken.
@@ -694,6 +750,14 @@ impl EngineRoom {
     pub fn step(&mut self, dt: f64, input: Input) -> Vec<RoomEvent> {
         let t = self.tuning;
         let mut ev = Vec::new();
+        if std::mem::take(&mut self.ecool_pressed) {
+            ev.push(RoomEvent::EmergencyCool);
+        }
+        // The emergency cooling runs for the whole step it is active at its start, then its timers run down.
+        let cooling = self.ecool_left > 0.0;
+        self.ecool_left = (self.ecool_left - dt).max(0.0);
+        self.ecool_cd = (self.ecool_cd - dt).max(0.0);
+        self.reactor.set_extra_cooling(if cooling { t.ecool_strength } else { 0.0 });
 
         self.reactor.set_mode(input.mode);
         if input.mode == Mode::Manual {

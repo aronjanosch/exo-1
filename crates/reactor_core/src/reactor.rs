@@ -427,6 +427,9 @@ pub struct Reactor {
     /// Factor on Auto's two speeds, 1 in play. The engine room's warm start raises it (Barotrauma's
     /// `UpdateAutoTemp(100, …)`) and sets it back to 1 after.
     auto_boost: f64,
+    /// Extra cooling in degrees of target, on top of the pump's (`cooling_max`). The engine room sets
+    /// it while an emergency cooling runs (`EngineRoom::emergency_cool`), 0 otherwise.
+    extra_cool: f64,
 }
 
 /// The lamps of the panel (Barotrauma's warning lights, client Reactor.cs 621-632). Each is on
@@ -508,6 +511,7 @@ impl Reactor {
             decay: 0.0,
             boost: 0.0,
             auto_boost: 1.0,
+            extra_cool: 0.0,
         }
     }
 
@@ -562,6 +566,12 @@ impl Reactor {
     /// The coolant flow that takes heat away now, 0..1 (lags the pump's factor).
     pub fn coolant_flow(&self) -> f64 {
         self.coolant
+    }
+
+    /// Extra cooling, degrees of temperature target, on top of the pump's cooling (0 with none). The
+    /// engine room's emergency cooling sets it for its duration; nothing else reads it.
+    pub fn set_extra_cooling(&mut self, degrees: f64) {
+        self.extra_cool = degrees.max(0.0);
     }
 
     /// Heat the fission makes in the last step (0 when broken or off).
@@ -882,7 +892,7 @@ impl Reactor {
         // The boost adds to the heat (Barotrauma GetGeneratedHeat, Reactor.cs:502).
         let heat = self.heat_at(self.fission) + self.boost;
         self.heat_in = heat;
-        let cool = t.cooling_max * self.coolant;
+        let cool = t.cooling_max * self.coolant + self.extra_cool;
         // Decay heat follows fission with a slow lag (`decay`): a SCRAM stops fission at once and the
         // decay heat fades over minutes. Inertia off: the old path, the heat with fission at once.
         let decay_level = if t.inertia {

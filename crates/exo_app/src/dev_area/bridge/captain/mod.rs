@@ -1,5 +1,4 @@
-//! The captain's console in the dev area (#288, part of #284, ported into the CAPTAIN zone in r44):
-//! five displays in the captain zone, built on `crew_core` (the logic) and `display_core` (the
+//! The captain's console in the dev area (#288, part of #284): five displays on the bridge, with a mirror each in the bridge zone, built on `crew_core` (the logic) and `display_core` (the
 //! widgets). Each display is a module with the test console's two systems (one writes the panel,
 //! one reads its clicks):
 //!
@@ -91,23 +90,38 @@ pub const KEYS: &[&str] = &[
 pub const PANEL_PX: [f64; 2] = [1280.0, 760.0];
 pub const PANEL_M: [f64; 2] = [1.6, 0.95];
 
-/// A console box in the captain zone with a big display, facing south.
-pub fn console(id: PanelId, name: &str, x: f64, colour: [f32; 3]) -> PlaceholderBox {
-    PlaceholderBox {
-        id: id.as_str().to_string(),
-        zone: CAPTAIN,
-        local_pos: [x, CONSOLE_Y],
-        size: [1.8, 1.0, 0.8],
-        turn_deg: 0.0,
-        colour,
-        panel: Some(PanelSpec { id, name: name.into(), size_m: PANEL_M, at: [0.0, 1.55, 0.25], tilt_deg: 15.0 }),
-    }
-}
+/// Where each console stands inside the bridge: (position relative to the room's centre, turn), by slot.
+/// Clear of the wall screens and of a 1 m walk from the door to each. TODO(initiator): start values (#306).
+const INSIDE: [([f64; 2], f64); 5] = [
+    ([-2.4, -2.4], 180.0), // south-west corner, faces north
+    ([1.8, -2.5], 180.0),  // south wall east of the door
+    ([2.0, 2.5], 0.0),     // north wall east of the helm, faces south
+    ([3.4, 1.4], -90.0),   // east side, faces west
+    ([3.4, -2.0], -90.0),
+];
+/// The mirrors stand in one row facing south, `MIRROR_STEP` apart (a panel is 1.6 m wide), this far
+/// south of the zone's centre, clear of the mirrored wall screens.
+const MIRROR_STEP: f64 = 2.2;
+const MIRROR_Y: f64 = -3.0;
 
-/// The consoles stand in a row this far south of the zone's centre (m). The zone is 14 m wide, so six
-/// boxes of 1.8 m at 2.3 m apart fit with the outer edges 0.35 m inside it; the captain zone's last
-/// place (x 5.75) is free for the bots' lane.
-pub const CONSOLE_Y: f64 = -3.0;
+/// Adds the console of a slot (0..5) inside the bridge and its mirror in the bridge zone: a box with a
+/// big display. The boxes are narrower than the 1.6 m panel, which overhangs above head height.
+pub fn add_console(app: &mut App, slot: usize, id: PanelId, name: &str, colour: [f32; 3]) {
+    let (at, turn_deg) = INSIDE[slot];
+    let inside = PlaceholderBox {
+        id: id.as_str().to_string(),
+        zone: layout::BRIDGE,
+        local_pos: at,
+        size: [0.9, 1.0, 0.6],
+        turn_deg,
+        colour,
+        panel: Some(PanelSpec { id, name: name.into(), size_m: PANEL_M, at: [0.0, 1.55, 0.15], tilt_deg: 15.0 }),
+    };
+    let mirror = PlaceholderBox { turn_deg: 0.0, ..inside.clone() };
+    let mut devices = app.world_mut().resource_mut::<DevAreaDevices>();
+    devices.add(inside);
+    devices.add_mirror(&mirror, BRIDGE_ZONE, [(slot as f64 - 2.0) * MIRROR_STEP, MIRROR_Y]);
+}
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<DevRole>().init_resource::<CrewState>().init_resource::<live_status::LiveShip>();

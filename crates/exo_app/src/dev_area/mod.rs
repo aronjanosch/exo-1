@@ -66,8 +66,6 @@ pub const MEDBAY: Zone = Zone { name: "medbay", centre: [-18.0, 15.5], half: ZON
 pub const STORAGE: Zone = Zone { name: "storage", centre: [-6.0, 15.5], half: ZONE_HALF };
 pub const HAZARDS: Zone = Zone { name: "hazards", centre: [6.0, 15.5], half: ZONE_HALF };
 pub const DEV: Zone = Zone { name: "dev", centre: [18.0, 15.5], half: ZONE_HALF };
-/// The captain's consoles stand in the bridge's zone. TODO(initiator): and on the bridge inside (#306).
-pub const CAPTAIN: Zone = BRIDGE_ZONE;
 /// The landing pad east of the ship, by the airlock's outer door: the flight ship parks here
 /// (`content/place/dev_area.json`, pad "main").
 pub const PADS: Zone = Zone { name: "pads", centre: [15.0, -12.0], half: [7.0, 7.0] };

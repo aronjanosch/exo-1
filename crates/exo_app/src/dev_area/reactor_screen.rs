@@ -19,7 +19,8 @@
 //! - The RX STATUS screen (S, on the south wall beside the readout, to its east): the warning lamps,
 //!   the temperature boost (two buttons), the core eject (PULSAR's lever, #300 r22: ARM EJECT opens
 //!   the cover, EJECT inside its window throws the core out; the cover's state sits by the boost) and
-//!   the implosion's countdown while the meltdown timer runs. NO POWER like the others.
+//!   the implosion's countdown while the meltdown timer runs. It has its own start-up supply like the
+//!   readout: no NO POWER here, so EJECT works with the machines dark (the boost is off then).
 //! - The dev faults screen (S, next to the test console): always powered.
 //!
 //! The machines' screens show NO POWER unless the snapshot says `powered`. Every process shows the
@@ -617,9 +618,8 @@ pub fn clock(s: f64) -> String {
 /// with its two buttons (disabled while a press would not pass), and the implosion's countdown
 /// along the bottom while the meltdown timer runs.
 pub fn status_panel(r: Option<&ReactorNews>, max_kw: f64, blink_on: bool) -> Panel {
-    if !powered(r) {
-        return no_power(STATUS_NAME, "RX-02", Tier::M);
-    }
+    // No NO POWER here: like the readout, the panel has its own start-up supply (the module doc), so
+    // EJECT works with the machines dark. The boost is refused without power, so its buttons are off.
     let r = r.copied().unwrap_or_default();
     let lit = |l: Lamp| r.lamps[l.index()] && (l == Lamp::Scram || blink_on);
     let mut grid = Vec::new();
@@ -904,11 +904,17 @@ mod tests {
     }
 
     #[test]
-    fn the_status_board_says_no_power_and_has_nothing_to_press_without_power() {
-        let off = status_panel(Some(&ReactorNews { powered: false, ..status_news() }), 2000.0, true);
-        assert!(off.find("boost_up").is_none() && off.find("boost_down").is_none());
+    fn the_status_board_has_its_own_supply_so_eject_works_with_the_machines_dark() {
+        // The host's snapshot without power: no boost (boost_ok false), the rest as it is.
+        let off = status_panel(Some(&ReactorNews { powered: false, boost_ok: false, ..status_news() }), 2000.0, true);
+        for a in ["boost_up", "boost_down"] {
+            assert!(matches!(off.find(a).unwrap().widget, display_core::Widget::Button { enabled: false, .. }), "{a}");
+        }
         assert!(off.overflowing().is_empty());
-        assert!(status_panel(None, 2000.0, true).find("boost_up").is_none());
+        assert!(matches!(off.find("arm_eject").expect("ARM EJECT with no power").widget, display_core::Widget::Button { enabled: true, .. }));
+        let dark = status_panel(Some(&ReactorNews { powered: false, eject_armed: true, ..status_news() }), 2000.0, true);
+        assert!(dark.find("eject").is_some(), "EJECT with the cover open and no power");
+        assert!(status_panel(None, 2000.0, true).find("arm_eject").is_some(), "no snapshot yet: the button still works");
     }
 
     #[test]

@@ -50,10 +50,17 @@ fn hover(over: [f64; 2], height: f64, look: [f64; 2]) -> Step {
     })
 }
 
-/// `zones_only` false: the start, the rooms and the area from above (`dev_tour`); true: the role
-/// zones and the pad (`dev_tour_zones`). Two runs, because a software-rendered run of both can run
-/// out of memory on a small machine.
-pub(super) fn dev_tour_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step, zones_only: bool) {
+/// Which pictures a run takes: the start and the rooms (`dev_tour`), the area from above
+/// (`dev_tour_air`), the role zones and the pad (`dev_tour_zones`). Three runs, because a
+/// software-rendered run of all of them can run out of memory on a small machine.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Part {
+    Rooms,
+    Air,
+    Zones,
+}
+
+pub(super) fn dev_tour_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step, part: Part) {
     s.push(Box::new(|w, c| {
         begin(w, c, "dev tour: the walker starts in the mini ship");
         let pl = planet(w);
@@ -64,7 +71,7 @@ pub(super) fn dev_tour_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str)
         end(w, c, "start".into());
         true
     }));
-    if !zones_only {
+    if part == Part::Rooms {
         s.push(Box::new(|w, _| {
             let target = at(w, [CORRIDOR.centre[0] + CORRIDOR.half[0], CORRIDOR.centre[1]], 1.2);
             face_towards(w, target);
@@ -97,6 +104,8 @@ pub(super) fn dev_tour_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str)
         s.push(wait(3.0));
         s.push(shot_step("tour-03c-bridge-cp01"));
         s.push(wait(3.0));
+    }
+    if part == Part::Air {
         s.push(hover([0.0, -30.0], 24.0, [0.0, 0.0]));
         s.push(wait(3.0));
         s.push(shot_step("tour-08-overview"));
@@ -110,7 +119,7 @@ pub(super) fn dev_tour_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str)
         s.push(shot_step("tour-10-zones-from-above"));
         s.push(wait(3.0));
     }
-    if !zones_only {
+    if part != Part::Zones {
         return;
     }
     const ZONE_TAGS: [&str; 8] = ["tour-11-zone-engineering", "tour-12-zone-bridge", "tour-13-zone-turrets", "tour-14-zone-lab", "tour-15-zone-medbay", "tour-16-zone-storage", "tour-17-zone-hazards", "tour-18-zone-dev"];

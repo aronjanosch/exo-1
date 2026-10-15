@@ -626,8 +626,9 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
             dev_area::dev_area_steps(&mut s, &shot_step);
             dev_area::look_sample_steps(&mut s, &shot_step);
         }
-        "dev_tour" => dev_tour::dev_tour_steps(&mut s, &shot_step, false),
-        "dev_tour_zones" => dev_tour::dev_tour_steps(&mut s, &shot_step, true),
+        "dev_tour" => dev_tour::dev_tour_steps(&mut s, &shot_step, dev_tour::Part::Rooms),
+        "dev_tour_air" => dev_tour::dev_tour_steps(&mut s, &shot_step, dev_tour::Part::Air),
+        "dev_tour_zones" => dev_tour::dev_tour_steps(&mut s, &shot_step, dev_tour::Part::Zones),
         "displays" => displays::displays_steps(&mut s),
         "items" => items::items_steps(&mut s, &shot_step),
         "hud" => hud::hud_steps(&mut s, &shot_step),

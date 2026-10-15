@@ -36,6 +36,10 @@ pub const COOLANT_PUMP_AT: [f64; 2] = [-10.5, -17.5];
 pub const COOLANT_PUMP_SIZE: [f64; 3] = [1.0, 1.2, 1.0];
 pub const JUNCTION_BOX_AT: [f64; 2] = [-17.0, -18.85];
 pub const JUNCTION_BOX_SIZE: [f64; 3] = [0.6, 0.9, 0.3];
+/// The oxygen generator (r37): a box on the east wall (inner face x -9.0), off the walk from the
+/// door (x -14) to the machines and clear of the reactor, pump and junction box screens.
+pub const OXYGEN_GENERATOR_AT: [f64; 2] = [-9.4, -13.0];
+pub const OXYGEN_GENERATOR_SIZE: [f64; 3] = [0.8, 1.2, 0.8];
 pub const JUNCTION_AT: [f64; 2] = [JUNCTION_BOX_AT[0], -18.98];
 pub const JUNCTION_LIFT: f64 = 1.2;
 pub const AUX_GAP: f64 = 0.05;
@@ -77,6 +81,7 @@ pub const DOOR: &str = "engine_door";
 pub const REACTOR: &str = "engine_reactor";
 pub const COOLANT_PUMP: &str = "engine_coolant_pump";
 pub const JUNCTION_BOX: &str = "engine_junction_box";
+pub const OXYGEN_GENERATOR: &str = "engine_oxygen_generator";
 pub const REACTOR_SCREEN: &str = "engine_reactor_screen";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -195,10 +200,11 @@ const PARTS: [Part; 8] = [
 
 /// The machines and the screen, standing in the room (not in `PARTS` only because they are
 /// named constants above).
-const MACHINES: [Part; 3] = [
+const MACHINES: [Part; 4] = [
     Part { id: REACTOR, at: REACTOR_AT, size: REACTOR_SIZE, lift: 0.0, colour: [0.55, 0.3, 0.2] },
     Part { id: COOLANT_PUMP, at: COOLANT_PUMP_AT, size: COOLANT_PUMP_SIZE, lift: 0.0, colour: DEVICE_COLOUR },
     Part { id: JUNCTION_BOX, at: JUNCTION_BOX_AT, size: JUNCTION_BOX_SIZE, lift: 0.0, colour: [0.85, 0.7, 0.2] },
+    Part { id: OXYGEN_GENERATOR, at: OXYGEN_GENERATOR_AT, size: OXYGEN_GENERATOR_SIZE, lift: 0.0, colour: [0.3, 0.5, 0.45] },
 ];
 
 fn span(lift: f64, height: f64) -> (f64, f64) {
@@ -303,6 +309,7 @@ pub fn source_at(s: Source) -> [f64; 2] {
         Source::Reactor => REACTOR_AT,
         Source::Pump => COOLANT_PUMP_AT,
         Source::Junction => JUNCTION_BOX_AT,
+        Source::OxygenGenerator => OXYGEN_GENERATOR_AT,
     }
 }
 
@@ -481,6 +488,7 @@ fn machine_of(s: Source) -> ([f64; 2], [f64; 3]) {
         Source::Reactor => (REACTOR_AT, REACTOR_SIZE),
         Source::Pump => (COOLANT_PUMP_AT, COOLANT_PUMP_SIZE),
         Source::Junction => (JUNCTION_BOX_AT, JUNCTION_BOX_SIZE),
+        Source::OxygenGenerator => (OXYGEN_GENERATOR_AT, OXYGEN_GENERATOR_SIZE),
     }
 }
 

@@ -778,7 +778,7 @@ pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
                     button("Load drop", "load_drop").fixed(28.0),
                     button("Surge", "surge").fixed(28.0),
                     button("Drain tank", "drain_coolant").fixed(28.0),
-                    space(),
+                    button("O2 gen break", "oxygen_break").fixed(28.0),
                 ]),
                 col(vec![
                     button("Start fire", "fire").fixed(28.0),
@@ -998,6 +998,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
         } else if c.panel == FAULTS_ID {
             match c.action.as_str() {
                 "pump_break" => Some(ReactorAsk::Trigger(ReactorFault::PumpBreak)),
+                "oxygen_break" => Some(ReactorAsk::Trigger(ReactorFault::OxygenGeneratorBreak)),
                 "load_drop" => Some(ReactorAsk::Trigger(ReactorFault::LoadDrop)),
                 "surge" => Some(ReactorAsk::Trigger(ReactorFault::Surge)),
                 "fire" => Some(ReactorAsk::Trigger(ReactorFault::Fire)),
@@ -1085,7 +1086,7 @@ mod tests {
         let man = shipped_panel(Some(&ReactorNews { manual: true, ..news() }));
         assert!(matches!(man.find("fis_set").unwrap().widget, display_core::Widget::Slider { enabled: true, .. }));
         assert!(man.find("mode").is_some() && man.find("reset").is_none());
-        assert!(faults_panel(None).find("reset").is_some() && faults_panel(None).find("pump_break").is_some());
+        assert!(faults_panel(None).find("reset").is_some() && faults_panel(None).find("pump_break").is_some() && faults_panel(None).find("oxygen_break").is_some());
     }
 
     #[test]

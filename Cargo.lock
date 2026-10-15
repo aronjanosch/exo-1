@@ -5024,6 +5024,7 @@ version = "0.1.0"
 dependencies = [
  "content_core",
  "device_core",
+ "fire_core",
  "gameplay_core",
  "serde",
 ]

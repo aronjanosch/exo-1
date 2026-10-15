@@ -125,6 +125,7 @@ fn device_id(s: Source) -> u64 {
             Source::Pump => 1,
             Source::Junction => 2,
             Source::Reactor => 3,
+            Source::OxygenGenerator => 4,
         }
 }
 
@@ -350,7 +351,7 @@ fn fire_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>
             }
         }
     }
-    for s in [Source::Pump, Source::Junction, Source::Reactor] {
+    for s in [Source::Pump, Source::Junction, Source::Reactor, Source::OxygenGenerator] {
         let p = source_at(s);
         let h = footprint_of(s);
         targets.push(Target { id: device_id(s), kind: TargetKind::Device, room: air.engine, pos: DVec3::new(p[0], p[1], 0.0), half: DVec2::new(h[0], h[1]) });

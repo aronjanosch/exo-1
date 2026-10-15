@@ -176,6 +176,8 @@ pub enum RepairDevice {
     Reactor,
     CoolantPump,
     JunctionBox,
+    /// The oxygen generator (r37): the wrench, as the pump.
+    OxygenGenerator,
 }
 
 /// The tool in hand for a repair: the wrench for the reactor and the pump, the screwdriver
@@ -202,6 +204,7 @@ pub enum RepairAsk {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReactorFault {
     PumpBreak,
+    OxygenGeneratorBreak,
     LoadDrop,
     Surge,
     Fire,
@@ -345,6 +348,8 @@ pub struct ReactorNews {
     pub reactor: PartNews,
     pub pump: PartNews,
     pub junction: PartNews,
+    /// The oxygen generator's condition (r37), as the pump's.
+    pub oxygen_generator: PartNews,
     /// The warning lamps that are on, by `Lamp::index` (the status board). Steady here: the
     /// blink is the screen's.
     pub lamps: [bool; Lamp::COUNT],
@@ -497,6 +502,7 @@ mod tests {
             reactor: PartNews { share: 0.9, working: true },
             pump: PartNews { share: 0.4, working: true },
             junction: PartNews { share: 1.0, working: true },
+            oxygen_generator: PartNews { share: 0.6, working: true },
             aux_on: true,
             aux_life_support: false,
             aux_lights: true,
@@ -657,7 +663,7 @@ mod tests {
 
     #[test]
     fn repair_asks_travel_as_they_are() {
-        for ask in [RepairAsk::Start { device: RepairDevice::JunctionBox, tool: RepairTool::Screwdriver }, RepairAsk::Start { device: RepairDevice::CoolantPump, tool: RepairTool::Wrench }, RepairAsk::Hit, RepairAsk::Miss, RepairAsk::Stop] {
+        for ask in [RepairAsk::Start { device: RepairDevice::JunctionBox, tool: RepairTool::Screwdriver }, RepairAsk::Start { device: RepairDevice::CoolantPump, tool: RepairTool::Wrench }, RepairAsk::Start { device: RepairDevice::OxygenGenerator, tool: RepairTool::Wrench }, RepairAsk::Hit, RepairAsk::Miss, RepairAsk::Stop] {
             let back = match decode::<ToHost>(&encode(&ToHost::Repair(ask))).expect("decodes") {
                 ToHost::Repair(a) => a,
                 _ => panic!("the repair request"),

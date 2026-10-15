@@ -111,6 +111,7 @@ fn part_of(r: &item_core::wire::ReactorNews, d: item_core::wire::RepairDevice) -
         Reactor => r.reactor,
         CoolantPump => r.pump,
         JunctionBox => r.junction,
+        OxygenGenerator => r.oxygen_generator,
     }
 }
 

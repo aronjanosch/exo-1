@@ -204,6 +204,7 @@ impl ReactorSim {
             reactor: part(r.condition().fraction(), r.condition().functioning()),
             pump: part(self.room.pump().condition().fraction(), self.room.pump().condition().functioning()),
             junction: part(self.room.junction().condition().fraction(), self.room.junction().condition().functioning()),
+            oxygen_generator: part(self.room.oxygen_generator().condition().fraction(), self.room.oxygen_generator().condition().functioning()),
             lamps: lamps_of(&self.room.warnings()),
             boost: r.temperature_boost(),
             boost_ok: r.power_on() && r.condition().functioning() && r.boost_allowed(),
@@ -305,6 +306,7 @@ pub fn wire_pump(m: reactor_core::engine_room::PumpMode) -> PumpMode {
 fn fault(f: ReactorFault) -> Option<Fault> {
     match f {
         ReactorFault::PumpBreak => Some(Fault::PumpBreak),
+        ReactorFault::OxygenGeneratorBreak => Some(Fault::OxygenGeneratorBreak),
         ReactorFault::LoadDrop => Some(Fault::LoadDrop),
         ReactorFault::Surge => Some(Fault::Surge),
         ReactorFault::Fire | ReactorFault::DrainCoolant | ReactorFault::WarmStart | ReactorFault::Aux => None,
@@ -440,9 +442,9 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     sim.tick_eject(dt);
     let input = if sim.manual { Input::manual(sim.fission, sim.turbine) } else { Input::auto() };
     events.extend(sim.room.step(dt, input));
-    // Life support's air: the oxygen generator refills the engine room at the grid's life support
-    // factor (`fire_core::oxygen`, Barotrauma OxygenGenerator). Its condition is 1 for now.
-    let o2 = fire_core::generator_flow(sim.room.grid().factor(Group::LifeSupport), cfg.0.room.oxygen_generator_rate, 1.0);
+    // Life support's air: the oxygen generator refills the engine room (`EngineRoom::oxygen_flow`,
+    // `fire_core::oxygen`: the life support's power and the generator's condition squared).
+    let o2 = sim.room.oxygen_flow(cfg.0.room.oxygen_generator_rate);
     let engine = air.engine;
     air.deck.add_oxygen(engine, o2 * dt);
     for e in events {

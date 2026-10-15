@@ -3,7 +3,7 @@
 //! - Values: `content/gameplay/repair/repair.json` (`device_core::minigame::Tuning`, strict loader).
 //!   TODO(initiator): starting values.
 use crate::controls::{Actions, Controls, Tap};
-use crate::dev_area::engine_room::{COOLANT_PUMP, JUNCTION_BOX, OXYGEN_GENERATOR, REACTOR};
+use crate::dev_area::engine_room::{BREACH, COOLANT_PUMP, JUNCTION_BOX, OXYGEN_GENERATOR, REACTOR};
 use crate::dev_area::reactor::{route, ReactorCounts, ReactorSim};
 use crate::dev_area::DevBox;
 use crate::displays::ActiveDisplay;
@@ -51,7 +51,7 @@ pub fn load_tuning(files: &[content_core::File]) -> Result<Tuning, Vec<String>> 
 
 pub fn tool_for(device: RepairDevice) -> RepairTool {
     match device {
-        RepairDevice::Reactor | RepairDevice::CoolantPump | RepairDevice::OxygenGenerator => RepairTool::Wrench,
+        RepairDevice::Reactor | RepairDevice::CoolantPump | RepairDevice::OxygenGenerator | RepairDevice::HullBreach => RepairTool::Wrench,
         RepairDevice::JunctionBox => RepairTool::Screwdriver,
     }
 }
@@ -60,7 +60,7 @@ pub fn machine_of(device: RepairDevice) -> Machine {
     match device {
         RepairDevice::JunctionBox => Machine::Electrical,
         RepairDevice::Reactor => Machine::Hot,
-        RepairDevice::CoolantPump | RepairDevice::OxygenGenerator => Machine::Mechanical,
+        RepairDevice::CoolantPump | RepairDevice::OxygenGenerator | RepairDevice::HullBreach => Machine::Mechanical,
     }
 }
 
@@ -78,34 +78,48 @@ fn device_of(id: &str) -> Option<RepairDevice> {
         COOLANT_PUMP => Some(RepairDevice::CoolantPump),
         JUNCTION_BOX => Some(RepairDevice::JunctionBox),
         OXYGEN_GENERATOR => Some(RepairDevice::OxygenGenerator),
+        BREACH => Some(RepairDevice::HullBreach),
         _ => None,
     }
 }
 
-fn condition(room: &EngineRoom, d: RepairDevice) -> &Condition {
+/// A machine's condition. The breach has none: its damage is `Breach` (see `fraction_of`), and
+/// the minigame and the hurt rules never see it (its hold is not a press).
+fn condition(room: &EngineRoom, d: RepairDevice) -> Option<&Condition> {
     match d {
-        RepairDevice::Reactor => room.reactor().condition(),
-        RepairDevice::CoolantPump => room.pump().condition(),
-        RepairDevice::JunctionBox => room.junction().condition(),
-        RepairDevice::OxygenGenerator => room.oxygen_generator().condition(),
+        RepairDevice::Reactor => Some(room.reactor().condition()),
+        RepairDevice::CoolantPump => Some(room.pump().condition()),
+        RepairDevice::JunctionBox => Some(room.junction().condition()),
+        RepairDevice::OxygenGenerator => Some(room.oxygen_generator().condition()),
+        RepairDevice::HullBreach => None,
     }
 }
 
-fn condition_mut(room: &mut EngineRoom, d: RepairDevice) -> &mut Condition {
+fn condition_mut(room: &mut EngineRoom, d: RepairDevice) -> Option<&mut Condition> {
     match d {
-        RepairDevice::Reactor => room.reactor_mut().condition_mut(),
-        RepairDevice::CoolantPump => room.pump_mut().condition_mut(),
-        RepairDevice::JunctionBox => room.junction_mut().condition_mut(),
-        RepairDevice::OxygenGenerator => room.oxygen_generator_mut().condition_mut(),
+        RepairDevice::Reactor => Some(room.reactor_mut().condition_mut()),
+        RepairDevice::CoolantPump => Some(room.pump_mut().condition_mut()),
+        RepairDevice::JunctionBox => Some(room.junction_mut().condition_mut()),
+        RepairDevice::OxygenGenerator => Some(room.oxygen_generator_mut().condition_mut()),
+        RepairDevice::HullBreach => None,
     }
 }
 
-fn source_of(d: RepairDevice) -> Source {
+/// The share of full (1 sound, 0 broken or the breach's whole damage) of any repairable device.
+fn fraction_of(room: &EngineRoom, d: RepairDevice) -> f64 {
     match d {
-        RepairDevice::Reactor => Source::Reactor,
-        RepairDevice::CoolantPump => Source::Pump,
-        RepairDevice::JunctionBox => Source::Junction,
-        RepairDevice::OxygenGenerator => Source::OxygenGenerator,
+        RepairDevice::HullBreach => 1.0 - room.breach().damage(),
+        _ => condition(room, d).map_or(1.0, |c| c.fraction()),
+    }
+}
+
+fn source_of(d: RepairDevice) -> Option<Source> {
+    match d {
+        RepairDevice::Reactor => Some(Source::Reactor),
+        RepairDevice::CoolantPump => Some(Source::Pump),
+        RepairDevice::JunctionBox => Some(Source::Junction),
+        RepairDevice::OxygenGenerator => Some(Source::OxygenGenerator),
+        RepairDevice::HullBreach => None,
     }
 }
 
@@ -122,6 +136,7 @@ fn part_of(r: &ReactorNews, d: RepairDevice) -> PartNews {
         RepairDevice::CoolantPump => r.pump,
         RepairDevice::JunctionBox => r.junction,
         RepairDevice::OxygenGenerator => r.oxygen_generator,
+        RepairDevice::HullBreach => PartNews { share: 1.0 - r.breach, working: true },
     }
 }
 
@@ -133,6 +148,8 @@ pub struct HostSession {
     pub hits: u32,
     /// The session began on a broken machine: no rise before its hits.
     pub gated: bool,
+    /// The breach's hold is on (`RepairAsk::Hold`): the wall mends while it is.
+    pub holding: bool,
 }
 
 #[derive(Resource, Default, Debug)]
@@ -171,6 +188,8 @@ pub struct Play {
     pub flash: Option<(Press, f64)>,
     /// Seconds left of the stun after a miss: the controls are frozen, the ring keeps running.
     pub stun: f64,
+    /// The breach's hold as sent (`RepairAsk::Hold`), so only a change is sent.
+    pub holding: bool,
 }
 
 #[derive(Resource, Default)]
@@ -232,7 +251,7 @@ fn repair_client(time: Res<Time>, mut controls: ResMut<Controls>, mut actions: R
             items.repair_done = false;
             items.ask_repair(RepairAsk::Start { device: d, tool: tool_for(d) });
             let seed = (time.elapsed_secs_f64() * 1e6) as u64 ^ 0x299;
-            play.0 = Some(Play { device: d, slot, start: pl.w.pos, session: Session::new(t, seed), gated, flash: None, stun: 0.0 });
+            play.0 = Some(Play { device: d, slot, start: pl.w.pos, session: Session::new(t, seed), gated, flash: None, stun: 0.0, holding: false });
         }
         Some(mut p) => {
             // The key is taken here so that F ends the session and does nothing else.
@@ -258,7 +277,15 @@ fn repair_client(time: Res<Time>, mut controls: ResMut<Controls>, mut actions: R
                 actions.roll = 0.0;
                 actions.jump = false;
             }
-            if controls.click {
+            if p.device == RepairDevice::HullBreach {
+                // The breach has no ring and no hurt: the wrench is held on it while LMB is.
+                controls.click = false;
+                let on = controls.primary_held;
+                if on != p.holding {
+                    p.holding = on;
+                    items.ask_repair(RepairAsk::Hold(on));
+                }
+            } else if controls.click {
                 controls.click = false;
                 // With the minigame off (half or more condition) LMB does nothing here.
                 if let Some(press) = p.session.press(fraction) {
@@ -304,18 +331,18 @@ fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>
             RepairAsk::Start { device, tool } => {
                 // The tool must be the machine's, the machine must need it, and no one else may work on it.
                 let busy = sessions.sessions.iter().any(|h| h.device == device && h.player != player);
-                if tool != tool_for(device) || busy || condition(&sim.room, device).fraction() >= 1.0 {
+                if tool != tool_for(device) || busy || fraction_of(&sim.room, device) >= 1.0 {
                     refuse(&mut items, player);
                     continue;
                 }
-                let gated = !condition(&sim.room, device).functioning();
+                let gated = condition(&sim.room, device).is_some_and(|c| !c.functioning());
                 sessions.sessions.retain(|h| h.player != player);
-                sessions.sessions.push(HostSession { player, device, tool, hits: 0, gated });
+                sessions.sessions.push(HostSession { player, device, tool, hits: 0, gated, holding: false });
             }
             RepairAsk::Hit => {
                 let Some(h) = sessions.of_mut(player) else { continue };
                 let d = h.device;
-                let c = condition_mut(&mut sim.room, d);
+                let Some(c) = condition_mut(&mut sim.room, d) else { continue };
                 if !minigame_on(c.fraction(), &t) {
                     continue;
                 }
@@ -327,7 +354,7 @@ fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>
             RepairAsk::Miss => {
                 let Some(h) = sessions.of_mut(player) else { continue };
                 let d = h.device;
-                let c = condition_mut(&mut sim.room, d);
+                let Some(c) = condition_mut(&mut sim.room, d) else { continue };
                 if !minigame_on(c.fraction(), &t) {
                     continue;
                 }
@@ -343,17 +370,33 @@ fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>
                 }
             }
             RepairAsk::Stop => sessions.sessions.retain(|h| h.player != player),
+            RepairAsk::Hold(on) => {
+                if let Some(h) = sessions.of_mut(player)
+                    && h.device == RepairDevice::HullBreach
+                {
+                    h.holding = on;
+                }
+            }
         }
     }
     let dt = time.delta_secs_f64();
     let mut full = Vec::new();
     for h in sessions.sessions.clone() {
-        // A broken machine waits for its hits; otherwise the rise runs at the session's tool's repair time.
-        if may_rise(h.gated, h.hits, condition(&sim.room, h.device).fraction(), &t) {
-            let e = condition_mut(&mut sim.room, h.device).repair_rise(dt, t.skill, tool_speed(h.tool));
-            emit(&mut counts, h.device, e);
+        if h.device == RepairDevice::HullBreach {
+            // The hold mends the wall at the pump's fix speed (`EngineRoom::mend_breach`).
+            if h.holding {
+                sim.room.mend_breach(dt);
+            }
+        } else {
+            // A broken machine waits for its hits; otherwise the rise runs at the session's tool's repair time.
+            if may_rise(h.gated, h.hits, fraction_of(&sim.room, h.device), &t)
+                && let Some(c) = condition_mut(&mut sim.room, h.device)
+            {
+                let e = c.repair_rise(dt, t.skill, tool_speed(h.tool));
+                emit(&mut counts, h.device, e);
+            }
         }
-        if condition(&sim.room, h.device).fraction() >= 1.0 {
+        if fraction_of(&sim.room, h.device) >= 1.0 {
             full.push(h.player);
         }
     }
@@ -368,8 +411,8 @@ fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>
 }
 
 fn emit(counts: &mut ReactorCounts, d: RepairDevice, e: Option<DeviceEvent>) {
-    if let Some(event) = e {
-        route(RoomEvent::Device { source: source_of(d), event }, counts);
+    if let (Some(event), Some(source)) = (e, source_of(d)) {
+        route(RoomEvent::Device { source, event }, counts);
     }
 }
 
@@ -391,7 +434,7 @@ mod tests {
 
     #[test]
     fn a_player_who_left_loses_only_their_session() {
-        let h = |player| HostSession { player, device: RepairDevice::Reactor, tool: RepairTool::Wrench, hits: 0, gated: false };
+        let h = |player| HostSession { player, device: RepairDevice::Reactor, tool: RepairTool::Wrench, hits: 0, gated: false, holding: false };
         let mut s = RepairSessions { sessions: vec![h(2), h(3)], ..Default::default() };
         s.forget(2);
         assert_eq!(s.sessions.iter().map(|h| h.player).collect::<Vec<_>>(), vec![3]);

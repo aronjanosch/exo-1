@@ -205,6 +205,7 @@ impl ReactorSim {
             pump: part(self.room.pump().condition().fraction(), self.room.pump().condition().functioning()),
             junction: part(self.room.junction().condition().fraction(), self.room.junction().condition().functioning()),
             oxygen_generator: part(self.room.oxygen_generator().condition().fraction(), self.room.oxygen_generator().condition().functioning()),
+            breach: self.room.breach().damage(),
             lamps: lamps_of(&self.room.warnings()),
             boost: r.temperature_boost(),
             boost_ok: r.power_on() && r.condition().functioning() && r.boost_allowed(),
@@ -309,6 +310,7 @@ fn fault(f: ReactorFault) -> Option<Fault> {
         ReactorFault::OxygenGeneratorBreak => Some(Fault::OxygenGeneratorBreak),
         ReactorFault::LoadDrop => Some(Fault::LoadDrop),
         ReactorFault::Surge => Some(Fault::Surge),
+        ReactorFault::HullBreach => Some(Fault::HullBreach),
         ReactorFault::Fire | ReactorFault::DrainCoolant | ReactorFault::WarmStart | ReactorFault::Aux => None,
     }
 }
@@ -447,6 +449,10 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     let o2 = sim.room.oxygen_flow(cfg.0.room.oxygen_generator_rate);
     let engine = air.engine;
     air.deck.add_oxygen(engine, o2 * dt);
+    // The hull breach (r37): its hole leaks the room's air to space at the breach's openness.
+    let breach = sim.room.breach().open();
+    let hole = air.breach;
+    air.deck.set_leak(hole, cfg.0.room.breach_area_m2, breach);
     for e in events {
         if let Some((source, size)) = fire::start_of(&e) {
             fire::ignite(&mut air, &mut grid, *model, source, size);

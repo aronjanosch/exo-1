@@ -2,9 +2,8 @@
 //! builds it from the engine room's reactor news. Read only: the captain sees the ship, the crew
 //! acts on it (the faults screen forces states, the reactor screens press the buttons).
 //!
-//! Phase 2's dev buttons (force a fire, a breach, a hot reactor) and the rod pack purchase are not
-//! here: they forced states on the placeholder ship, which is gone, and our rods are items with no
-//! crate to fill. TODO(initiator): a supply line for rods once the rack has a purchase rule.
+//! The rod pack purchase is not here: our rods are items with no crate to fill. TODO(initiator): a
+//! supply line for rods once the rack has a purchase rule.
 use super::*;
 use crate::displays::Panels;
 use crew_core::status::{ShipStatus, ShipSystem, SYSTEM_MAX};
@@ -28,7 +27,7 @@ fn clock(s: f64) -> String {
 
 pub fn plugin(app: &mut App) {
     app.world_mut().resource_mut::<DevAreaDevices>().add(console(ID, NAME, -1.15, [0.28, 0.36, 0.48]));
-    app.add_systems(FixedUpdate, write_panel.in_set(crate::phases::Fx::Effects));
+    app.add_systems(FixedUpdate, write_panel.in_set(crate::phases::Fx::Effects).after(super::overview::read_clicks));
 }
 
 pub fn panel(s: &ShipStatus, mission: Option<String>) -> Panel {

@@ -5,8 +5,7 @@
 //! - `priorities`: the bot priority table (five levels per task and bot class, overrides) and the
 //!   pure choice a bot makes from open tasks, with hysteresis and station claims.
 //! - `budget`: money the captain releases to each role in steps of 100.
-//! - `status`: the ship snapshot for the overview and ship state displays, and a seeded
-//!   placeholder generator for the dev area.
+//! - `status`: the ship snapshot for the overview and ship state displays.
 //! - `mission_view`: display rows over `jobs_core` and the captain-only mission actions.
 //!
 //! Every function here is plain data in, plain data out; the glue keeps the state in resources,
@@ -27,7 +26,7 @@ pub use budget::Budget;
 pub use mission_view::{Filter, MissionCommand, MissionRow, ObjectiveRow};
 pub use orders::{Addressee, Order, OrderEvent, OrderKind, OrderLine, OrderPriority, Orders, TargetKind};
 pub use priorities::{BotId, BotView, Choice, Claims, Level, Pick, PriorityTable, Situation, Task, TaskId, TaskKind, Taker, choose};
-pub use status::{PlaceholderStatus, ShipStatus};
+pub use status::ShipStatus;
 
 /// The five crew roles. One player or bot fills each slot.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

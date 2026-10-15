@@ -9,18 +9,14 @@
 //! - `ship_state`: the ship as `live_status` builds it from `ReactorNews`.
 //! - `starmap`: places with distances and a destination; `comms`: a hail with one canned dialogue.
 //!
-//! Not here (later lane, r44): the bot priority table and the bodied bots (`captain/bots.rs`,
-//! `captain/bot_work.rs` in `origin/round/dev-area`). `CrewState::table` stays for them.
-//!
-//! The crew-wide state (`CrewState`) lives here: alert, orders, budget, the bot table, the comms
-//! threat flag. Only the captain may change it; the dev area plays the captain by default, and
+//! The crew-wide state (`CrewState`) lives here: alert, orders, budget, the comms threat flag. Only the captain may change it; the dev area plays the captain by default, and
 //! `DevRole` lets the overview's dev button play another role to see the refusals. Orders, alert
 //! changes and refusals become notices (#165); the order that applies to the player's role shows
 //! as a line under the interaction prompt.
 use crate::dev_area::*;
 use crate::gameplay::Gameplay;
 use crew_core::orders::OrderKind;
-use crew_core::{Alert, AlertEvent, Budget, Order, Orders, PriorityTable, Refusal, Role, Target};
+use crew_core::{Alert, AlertEvent, Budget, Order, Orders, Refusal, Role, Target};
 use gameplay_core::notice::{Arg, Notice, NoticeKind};
 use gameplay_core::TextKey;
 
@@ -47,8 +43,6 @@ pub struct CrewState {
     pub alert: Alert,
     pub orders: Orders,
     pub budget: Budget,
-    /// The bot priority table: no display here yet (the bots' lane). Saved with the crew.
-    pub table: PriorityTable,
     /// A hostile answer on comms: the threat flag for the automatic yellow, with the ship's trouble
     /// (`live_status::threat`).
     pub hostile: bool,
@@ -56,7 +50,7 @@ pub struct CrewState {
 
 impl Default for CrewState {
     fn default() -> Self {
-        CrewState { alert: Alert::default(), orders: Orders::default(), budget: Budget::default(), table: PriorityTable::default(), hostile: false }
+        CrewState { alert: Alert::default(), orders: Orders::default(), budget: Budget::default(), hostile: false }
     }
 }
 

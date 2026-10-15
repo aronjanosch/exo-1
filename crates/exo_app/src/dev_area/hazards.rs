@@ -39,6 +39,12 @@ pub fn shielded_at(p: [f64; 2]) -> bool {
     Zone { name: "reactor", centre: REACTOR_AT, half: [REACTOR_SIZE[0] * 0.5, REACTOR_SIZE[2] * 0.5] }.contains(p)
 }
 
+/// The spicy rod's light, when it lies in the world or is in hand: green-cyan, dim, 3 m. The
+/// colour is the fulgurium's (60, 200, 150). TODO(initiator): the intensity and the look.
+pub fn spicy_light() -> PointLight {
+    PointLight { color: Color::srgb(0.235, 0.784, 0.588), intensity: 6_000.0, range: 3.0, shadow_maps_enabled: false, ..default() }
+}
+
 /// Who gets the spicy rods' radiation: every body within `radius` of an unshielded rod. A rod in a
 /// hand or a slot is at its holder's place (the caller passes that point).
 pub fn spicy_irradiated(rods: &[RodSpot], bodies: &[(PlayerId, DVec3)], radius: f64) -> BTreeSet<PlayerId> {

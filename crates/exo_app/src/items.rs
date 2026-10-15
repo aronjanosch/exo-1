@@ -13,6 +13,7 @@
 //! - Keys: F collects (the interact target), 1 to 8 take a slot into the hand, G drops (a held
 //!   crate is set down instead), R throws (the crate first), Tab opens the inventory with a mouse
 //!   cursor: a click takes a slot into the hand, a drag moves, stacks or swaps.
+use crate::dev_area::hazards::{spicy_light, SPICY_ITEM};
 use crate::cargo::{item_body_bundle, Crate};
 use crate::crew_hud::{Dash, DashFrame};
 use crate::controls::{Actions, Controls, Tap};
@@ -650,6 +651,9 @@ fn dress_items(mut commands: Commands, items: Res<Items>, new: Query<(Entity, &L
             MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(r, g, b), perceptual_roughness: 0.6, ..default() })),
             crate::origin::WorldPose::default(),
         ));
+        if li.def == SPICY_ITEM {
+            commands.entity(e).insert(spicy_light());
+        }
     }
 }
 
@@ -687,6 +691,12 @@ fn held_item(
     };
     if m.0 != want {
         m.0 = want.clone();
+        // The spicy rod in hand glows; any other item has no light.
+        if want.as_deref() == Some(SPICY_ITEM) {
+            commands.entity(e).insert(spicy_light());
+        } else {
+            commands.entity(e).remove::<PointLight>();
+        }
         if let Some(d) = want.as_deref().and_then(|id| items.defs.get(id)) {
             let k = held_scale(d.hands) as f32;
             let [x, y, z] = d.shape.extents.map(|v| v as f32 * k);

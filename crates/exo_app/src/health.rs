@@ -12,6 +12,7 @@ use crate::origin::WorldPose;
 use crate::walker::{Player, EYE_HEIGHT};
 use bevy::math::{DVec2, DVec3};
 use bevy::prelude::*;
+use health_core::skills::{CrewSkills, SKILL_LOSS_ON_DEATH_PCT};
 use health_core::{Env, Health, HealthEvent, HealthTuning, Life, Mobility};
 use item_core::wire::Vitals;
 use item_core::{FrameRef, PlayerId, Request, BAR_SLOTS};
@@ -55,18 +56,28 @@ pub struct HealthState {
     pub bodies: BTreeMap<PlayerId, Body>,
     /// The air each body stood in this step (its oxygen fraction, 0..1): a CPR needs good air.
     pub air: BTreeMap<PlayerId, f64>,
+    /// Every player's skills (#254): a death takes a share of what is above the start level; a respawn keeps them.
+    pub skills: CrewSkills<PlayerId>,
     sent: BTreeMap<PlayerId, Vitals>,
 }
 
 impl HealthState {
     pub fn new(tuning: HealthTuning) -> HealthState {
-        HealthState { tuning, bodies: BTreeMap::new(), air: BTreeMap::new(), sent: BTreeMap::new() }
+        HealthState { tuning, bodies: BTreeMap::new(), air: BTreeMap::new(), skills: CrewSkills::new(), sent: BTreeMap::new() }
     }
 
     pub fn forget(&mut self, id: PlayerId) {
         self.bodies.remove(&id);
         self.air.remove(&id);
         self.sent.remove(&id);
+    }
+
+    /// A new crew after a game over: every body is back at full health, no skill is kept.
+    pub fn new_crew(&mut self) {
+        self.bodies.clear();
+        self.air.clear();
+        self.skills.clear();
+        self.sent.clear();
     }
 
     fn body(&mut self, id: PlayerId) -> &mut Body {
@@ -227,6 +238,7 @@ pub(crate) fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<
         for ev in b.health.step(t, dt, env) {
             if matches!(ev, HealthEvent::Died { .. }) {
                 b.respawn_in = Some(t.respawn_s);
+                st.skills.died(*id, SKILL_LOSS_ON_DEATH_PCT);
             }
         }
     }

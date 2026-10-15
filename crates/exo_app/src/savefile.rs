@@ -147,6 +147,10 @@ pub fn save_now(world: &mut World) -> Result<(), String> {
 }
 
 fn autosave(world: &mut World) {
+    // During GAME OVER the last save is the one to come back to: nothing overwrites it (#254).
+    if world.contains_resource::<crate::gameover::GameOver>() {
+        return;
+    }
     let dt = world.resource::<Time>().delta_secs_f64();
     let wanted = world.resource::<Gameplay>().save_wanted;
     if !world.resource_mut::<Autosave>().due(dt, wanted) {

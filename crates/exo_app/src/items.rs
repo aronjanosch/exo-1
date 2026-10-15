@@ -85,6 +85,8 @@ pub enum NetOut {
     RepairRefused { to: PlayerId },
     /// Client to host: the station the active display shows, or none (r43, the bots' occupancy).
     Using(Option<BotStation>),
+    /// Host to every client: the crew is dead (#254).
+    GameOver,
 }
 
 #[derive(Resource)]
@@ -115,6 +117,8 @@ pub struct Items {
     pub spray_asks: Vec<(PlayerId, SprayAsk)>,
     pub repair_asks: Vec<(PlayerId, RepairAsk)>,
     pub repair_done: bool,
+    /// The host said the crew is dead; `gameover` takes it (#254).
+    pub game_over_seen: bool,
     /// client takes it from the wire. Sorted by player.
     pub public: Vec<(PlayerId, PublicStatus)>,
     /// Treatment holds by player, to apply here (host and one process); a client sends its own.
@@ -145,7 +149,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, rod_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new(), refill_asks: Vec::new(), refilling: BTreeSet::new(), using: BTreeMap::new(), mask_uses: Vec::new() }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, rod_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new(), refill_asks: Vec::new(), refilling: BTreeSet::new(), using: BTreeMap::new(), mask_uses: Vec::new(), game_over_seen: false }
     }
 
     pub fn me(&self) -> PlayerId {
@@ -280,6 +284,10 @@ impl Items {
     /// The host sends a player its vitals, over the reliable channel.
     pub fn send_vitals(&mut self, to: PlayerId, v: Vitals) {
         self.net_out.push(NetOut::Vitals { to, v });
+    }
+
+    pub fn send_game_over(&mut self) {
+        self.net_out.push(NetOut::GameOver);
     }
 
     pub fn take_refills(&mut self) -> u32 {

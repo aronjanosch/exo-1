@@ -14,7 +14,8 @@ use avian3d::prelude::{Position, Rotation};
 use bevy::math::{DVec2, DVec3};
 use bevy::prelude::*;
 use device_core::minigame::{hurt_of, may_rise, minigame_on, ray_hits_box, Hurt, Machine, Press, Session, Tuning};
-use device_core::{Condition, DeviceEvent, Tool};
+use device_core::{skill_gain, Condition, DeviceEvent, Tool, REPAIR_SKILL_GAIN};
+use health_core::skills::{Skill, START_SKILL};
 use item_core::wire::{PartNews, ReactorNews, RepairAsk, RepairDevice, RepairTool, HULL_SECTIONS};
 use item_core::PlayerId;
 use reactor_core::hull::SECTION_CENTRES;
@@ -163,6 +164,8 @@ pub struct HostSession {
     /// The wall section the wrench is aimed at (`RepairAsk::Aim`, r40): the hold mends the damaged
     /// section nearest it.
     pub section: usize,
+    /// The machine needed repair when the session began: its finish gives the mechanical skill (#254).
+    pub gains: bool,
 }
 
 #[derive(Resource, Default, Debug)]
@@ -373,8 +376,9 @@ fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>
                     continue;
                 }
                 let gated = condition(&sim.room, device).is_some_and(|c| !c.functioning());
+                let gains = condition(&sim.room, device).is_some_and(|c| c.needs_repair());
                 sessions.sessions.retain(|h| h.player != player);
-                sessions.sessions.push(HostSession { player, device, tool, hits: 0, gated, holding: false, section: 0 });
+                sessions.sessions.push(HostSession { player, device, tool, hits: 0, gated, holding: false, section: 0, gains });
             }
             RepairAsk::Hit => {
                 let Some(h) = sessions.of_mut(player) else { continue };
@@ -424,7 +428,7 @@ fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>
         }
     }
     let dt = time.delta_secs_f64();
-    let mut full = Vec::new();
+    let mut full: Vec<HostSession> = Vec::new();
     for h in sessions.sessions.clone() {
         if h.device == RepairDevice::HullBreach {
             // The hold mends the damaged section nearest the one aimed at, at the pump's fix speed
@@ -439,16 +443,25 @@ fn repair_host(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<RepairConfig>
             if may_rise(h.gated, h.hits, fraction_of(&sim.room, h.device), &t)
                 && let Some(c) = condition_mut(&mut sim.room, h.device)
             {
-                let e = c.repair_rise(dt, t.skill, tool_speed(h.tool));
+                // The repairer's mechanical skill sets the rise (#254); the start level before any record.
+                let skill = health.as_deref().map_or(START_SKILL, |st| st.skills.of(h.player).mechanical);
+                let e = c.repair_rise(dt, skill, tool_speed(h.tool));
                 emit(&mut counts, h.device, e);
             }
         }
         if fraction_of(&sim.room, h.device) >= 1.0 {
-            full.push(h.player);
+            full.push(h);
         }
     }
-    sessions.sessions.retain(|h| !full.contains(&h.player));
-    for player in full {
+    sessions.sessions.retain(|h| !full.iter().any(|f| f.player == h.player));
+    for h in full {
+        let player = h.player;
+        if h.gains
+            && let Some(st) = health.as_deref_mut()
+        {
+            let gain = skill_gain(REPAIR_SKILL_GAIN, st.skills.of(player).mechanical);
+            st.skills.gain(player, Skill::Mechanical, gain);
+        }
         if player == items.me() {
             items.repair_done = true;
         } else {
@@ -481,7 +494,7 @@ mod tests {
 
     #[test]
     fn a_player_who_left_loses_only_their_session() {
-        let h = |player| HostSession { player, device: RepairDevice::Reactor, tool: RepairTool::Wrench, hits: 0, gated: false, holding: false, section: 0 };
+        let h = |player| HostSession { player, device: RepairDevice::Reactor, tool: RepairTool::Wrench, hits: 0, gated: false, holding: false, section: 0, gains: false };
         let mut s = RepairSessions { sessions: vec![h(2), h(3)], ..Default::default() };
         s.forget(2);
         assert_eq!(s.sessions.iter().map(|h| h.player).collect::<Vec<_>>(), vec![3]);

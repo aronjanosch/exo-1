@@ -28,8 +28,7 @@ pub(super) fn figure_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
     }
     s.extend(menu_shot(Screen::Paused, "menu-paused", shot_step));
     s.extend(menu_shot(Screen::None, "menu-closed", shot_step));
-    // Another player's figure 4 m in front, facing the walker (test hook: a remote walker without
-    // a network).
+// Test hook: a remote walker, no network.
     s.push(Box::new(|w, _| {
         let p = player_world(w);
         let own = ship_frame_of(w).origin;
@@ -43,7 +42,6 @@ pub(super) fn figure_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
     s.push(shot_step("figure-outside"));
     // A screenshot is taken a few frames later; keep the scene until then.
     s.push(wait(0.5));
-    // In the cabin: the walker stands at the seat, the figure near the back, both looking at it.
     s.push(Box::new(|w, _| {
         put_at_seat(w);
         let f = ship_frame_of(w);

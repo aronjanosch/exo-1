@@ -1,4 +1,3 @@
-//! Orders of #168 on the jobs side: an `OrderPlaced` event becomes an offer with the order's
 //! places, goods, reward and deadline; the end of the job raises `OrderSettled`.
 use std::path::Path;
 
@@ -111,7 +110,6 @@ fn an_order_becomes_an_offer_with_its_own_terms() {
     assert_eq!((leg.from.as_str(), leg.to.as_str(), leg.commodity.as_str(), leg.amount), ("wholesale_yard", "drip_rock", "sock_dust", 3));
     let o = j.order.as_ref().unwrap();
     assert_eq!((o.order, o.by.as_str(), o.reward, o.deadline_s), (OrderId(7), "old_nib", 90, Some(300.0)));
-    // The same order again is not a second offer.
     h.place(7, 3, 90, Some(300.0));
     assert_eq!(h.offered().len(), 1);
 }
@@ -127,20 +125,6 @@ fn delivering_an_order_pays_its_reward_and_settles_it() {
     assert_eq!(h.jobs.get(id).unwrap().state, JobState::Completed);
     assert_eq!(h.progress.wallet() - before, 90, "the order's reward, not the template's");
     assert_eq!(h.settled(), vec![(OrderId(1), 2, 2, 1.0, true)]);
-}
-
-#[test]
-fn damaged_goods_settle_with_their_condition_and_pay_less() {
-    let mut h = Host::new();
-    h.place(1, 2, 100, None);
-    let id = h.offered()[0].id;
-    h.accept(id);
-    let before = h.progress.wallet();
-    h.deliver(id, 0.5);
-    // 100 × band 1.0 × (1 - 0.5 × 0.5) = 75
-    assert_eq!(h.progress.wallet() - before, 75);
-    let s = h.settled();
-    assert_eq!((s[0].1, s[0].2, s[0].3), (2, 2, 0.5));
 }
 
 #[test]

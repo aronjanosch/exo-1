@@ -1,8 +1,3 @@
-//! Day and night (#48): the clock, the sun of the current planet and the light it gives. The
-//! numbers come from `daynight_core` and `content/daynight/daynight.json`; this module only
-//! advances the clock in the fixed step, keeps `Sun` up to date for the player's spot and, with a
-//! window, drives the sun and night lights (the camera's ambient, fog and clear colour follow in
-//! `view::update_camera`).
 use crate::env::PlanetRes;
 use crate::ship::Ship;
 use crate::walker::Player;
@@ -12,7 +7,6 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use daynight_core::{DayNight, LightKey};
 
-/// Window only: the lights.
 pub fn window_plugin(app: &mut App) {
     app.add_systems(Startup, setup_lights);
     app.add_systems(Update, apply_lights.in_set(crate::phases::Frame::Sync));
@@ -23,8 +17,7 @@ pub const DAYNIGHT: &str = include_str!("../../../content/daynight/daynight.json
 #[derive(Resource, Clone)]
 pub struct DayNightRes(pub DayNight);
 
-/// The global clock (simulated seconds). Everything that changes with the time of day reads it.
-/// Co-op: every player runs their own for now (open in #48).
+/// Co-op: every player runs their own (open question).
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct DayClock {
     pub t: f64,
@@ -38,7 +31,6 @@ impl Default for DayClock {
     }
 }
 
-/// The sun as the player sees it this step.
 #[derive(Resource, Clone, Debug)]
 pub struct Sun {
     /// Towards the sun (world space, unit).
@@ -52,13 +44,11 @@ pub struct Sun {
     pub fixed: Option<DVec3>,
 }
 
-/// Marks the sun's and the night light's directional lights.
 #[derive(Component)]
 pub struct SunLight;
 #[derive(Component)]
 pub struct NightLight;
 
-/// Where the player is (world): the ship when seated or in its cabin, the walker otherwise.
 pub(crate) fn viewer(players: &Query<&Player>, ships: &Query<&Position, With<Ship>>) -> Option<DVec3> {
     let p = players.single().ok()?;
     if p.seated || p.ship.is_some() { ships.single().ok().map(|s| s.0) } else { Some(p.w.pos) }
@@ -78,7 +68,6 @@ pub fn sun_at(dn: &DayNightRes, sys: &SystemRes, planet: &PlanetRes, t: f64, at:
     Sun { dir, elevation_deg, hour, light: look.sample(elevation_deg), fixed }
 }
 
-/// Advance the clock and recompute the sun (end of the fixed step, after the walker moved).
 pub fn tick(
     time: Res<Time>,
     mut clock: ResMut<DayClock>,
@@ -98,18 +87,15 @@ fn rgb(c: [f64; 3]) -> Color {
     Color::srgb(c[0] as f32, c[1] as f32, c[2] as f32)
 }
 
-/// Point a directional light along `-towards` (it shines away from where it sits).
 fn aim(t: &mut Transform, towards: DVec3) {
     let up = if towards.y.abs() < 0.99 { DVec3::Y } else { DVec3::X };
     t.rotation = walker_core::look_rot(-towards, up).as_quat();
 }
 
-/// The night light next to the sun of `view::setup_view`.
 pub fn setup_lights(mut commands: Commands) {
     commands.spawn((NightLight, DirectionalLight { illuminance: 0.0, shadow_maps_enabled: false, ..default() }, Transform::default()));
 }
 
-/// The sun and night lights from `Sun` (with a window).
 pub fn apply_lights(
     sun: Res<Sun>,
     mut suns: Query<(&mut DirectionalLight, &mut Transform), (With<SunLight>, Without<NightLight>)>,
@@ -153,10 +139,8 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, tick.in_set(crate::phases::Fx::Effects));
 }
 
-/// Simulated seconds the `daynight` scenario takes for one day.
 const FAST_DAY_SECS: f64 = 12.0;
 
-/// One tick of the fast-forwarded day: elevation, ground brightness and local hour.
 #[derive(Clone, Copy)]
 struct Sample {
     elevation: f64,
@@ -166,7 +150,7 @@ struct Sample {
     night_lux: f64,
 }
 
-/// `daynight` scenario (#48): on every planet the walker stands at the spawn point while the clock
+/// `daynight` scenario: on every planet the walker stands at the spawn point while the clock
 /// runs one day in `FAST_DAY_SECS`. Checks every tick's sun against `daynight_core`, that the sun
 /// comes back after `day_length_s`, the highest and lowest sun, and noon brighter than dusk
 /// brighter than night, with the night light on and the sun off at night.
@@ -212,7 +196,6 @@ pub fn scenario_steps(s: &mut Vec<crate::scenario::Step>) {
             let name = &def.name;
             check(c, max_err < 0.01, format!("daynight {name}: sun matches daynight_core every tick (worst {max_err:.4} deg)"));
             check(c, (c.t - FAST_DAY_SECS).abs() < 0.2, format!("daynight {name}: one day of {:.0} s fast-forwarded in {:.2} s", ps.day_length_s, c.t));
-            // One tick of the clock turns the sun by at most this much.
             let step = c.dt * ps.day_length_s / FAST_DAY_SECS * ps.omega();
             let back = dir0.angle_between(ps.sun_dir(ts, t0 + ps.day_length_s));
             let end = sun.dir.angle_between(dir0);
@@ -236,7 +219,6 @@ pub fn scenario_steps(s: &mut Vec<crate::scenario::Step>) {
             true
         }));
     }
-    // One star for all: lit sides of every planet agree with the star direction.
     s.push(Box::new(|w, c| {
         let sys = w.resource::<SystemRes>().0.clone();
         let dn = w.resource::<DayNightRes>().0.clone();
@@ -252,7 +234,6 @@ pub fn scenario_steps(s: &mut Vec<crate::scenario::Step>) {
             let want = bevy::math::DQuat::from_axis_angle(ps.axis(), turn) * ts;
             check(c, dir.angle_between(want) < 1e-9 && dir.dot((at - def.centre()).normalize()) > 1.0 - 1e-9, format!("daynight {}: at its subsolar point the sun is overhead and its direction is the star's turned by the day ({:.1} deg turned)", def.name.to_lowercase(), (turn % std::f64::consts::TAU).to_degrees()));
         }
-        // In space, between the planets: one direction for everybody, the star's.
         let mid = sys.planets.iter().map(|p| p.centre()).sum::<DVec3>() / sys.planets.len() as f64 + DVec3::new(0.0, 4.0e6, 3.0e6);
         let dirs: Vec<DVec3> = sys.planets.iter().map(|p| dn.planet(&p.recipe).unwrap().0.light_dir(&dn.space_blend, star, p.centre(), mid, t)).collect();
         let truth = daynight_core::to_star(star, mid);

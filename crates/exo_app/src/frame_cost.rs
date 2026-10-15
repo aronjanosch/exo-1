@@ -1,13 +1,7 @@
-//! Frame spikes (#213): what each frame cost on the main thread and which streaming work happened
+//! Frame spikes: what each frame cost on the main thread and which streaming work happened
 //! in it. The suspects (terrain uploads, collision ring patches, scatter cells, origin shifts,
 //! transform propagation, fixed steps) add their count and time to `FrameCost`; `frame_end`
 //! closes the frame into a `FrameRec`. Always on (a few `Instant` reads per frame).
-//!
-//! - F3 shows worst and p99 of the last `WINDOW_S` seconds and the last spike.
-//! - Every frame slower than `FrameSpikes::threshold_ms` (25 ms, `--spike-ms=`) prints a
-//!   `spike:` line naming what ran in it.
-//! - Scenarios set `keep_all` and read every frame for their report (`planet-flight`).
-//!
 //! Frame time is wall time from one frame's start (`First`) to the next one's, measured with
 //! `Instant` (headless runs advance `Time<Real>` by a fixed tick). In a window the render thread
 //! runs a frame behind: a frame whose main-thread cost is small but whose time is long waited for
@@ -16,11 +10,8 @@ use bevy::prelude::*;
 use std::collections::VecDeque;
 use std::time::Instant;
 
-/// Seconds of frames behind the F3 worst and p99.
 pub const WINDOW_S: f64 = 5.0;
-/// Default spike threshold (ms).
 pub const DEFAULT_THRESHOLD_MS: f64 = 25.0;
-/// Worst frames kept for the run.
 const WORST_KEPT: usize = 16;
 
 /// Work of one suspect in one frame: items done and main-thread milliseconds.
@@ -37,29 +28,22 @@ impl Work {
     }
 }
 
-/// The current frame's costs, written by the systems that do the work.
 #[derive(Resource, Clone, Debug, Default)]
 pub struct FrameCost {
-    /// Terrain chunks uploaded (mesh + entities) and the upload time.
     pub terrain_up: Work,
     /// The whole terrain system (quadtree walk, task starts, uploads); n = tasks started.
     pub terrain_sys: Work,
-    /// Collision patches turned into heightfield colliders.
     pub ring_up: Work,
     /// The whole ring system; n = patch jobs started.
     pub ring_sys: Work,
     /// Scatter cells spawned; n = cells, `scatter_inst` = instances spawned.
     pub scatter_up: Work,
     pub scatter_inst: u32,
-    /// Entities spawned for the scatter cells (one per cell and prop).
     pub scatter_ents: u32,
-    /// The whole scatter system (cell walk, task starts, uploads).
     pub scatter_sys: Work,
     /// Render-origin shift: n = transforms moved.
     pub shift: Work,
-    /// Transform propagation (PostUpdate).
     pub propagate: Work,
-    /// Fixed steps (physics and simulation) run in this frame.
     pub fixed: Work,
     /// Avian step stages in this frame (ms): start..broad phase, narrow phase, solver, sleeping and
     /// finalize.
@@ -67,15 +51,10 @@ pub struct FrameCost {
     /// Avian's prepare (colliders, mass properties, transforms) and writeback sets, outside the step.
     pub prep_ms: f64,
     pub wb_ms: f64,
-    /// Of the solver stage: swept CCD (Avian's own timer).
     pub ccd_ms: f64,
-    /// Of the fixed step: the `FixedUpdate` schedule (game systems).
     pub fixed_update_ms: f64,
-    /// The Update schedule.
     pub update: Work,
-    /// The chunk under the camera is coarser than wanted (its children are still building).
     pub lod_debt: bool,
-    /// Chunk jobs in flight or waiting for upload.
     pub terrain_pending: u32,
     /// GPU time of the top-level render passes (ms) as last reported, with `EXO_GPU_DIAG` set
     /// (Bevy's render diagnostics; arrives a few frames late).
@@ -90,40 +69,31 @@ pub struct RenderCost {
     /// Render frames finished since the last main frame (0: none, the main thread did not wait).
     pub frames: u32,
     pub total_ms: f64,
-    /// Extract commands, asset and mesh preparation (GPU uploads of new meshes).
     pub assets_ms: f64,
     /// Views (swapchain acquire) and specialisation.
     pub views_ms: f64,
     pub queue_ms: f64,
-    /// Sort, prepare resources and bind groups.
     pub prepare_ms: f64,
-    /// The render graph (encoding, submit, present).
     pub graph_ms: f64,
     pub cleanup_ms: f64,
 }
 
-/// Shared between the main world and the render world.
 #[derive(Resource, Clone, Default)]
 pub struct RenderShared(pub std::sync::Arc<std::sync::Mutex<(RenderCost, [Option<Instant>; 7])>>);
 
-/// One closed frame.
 #[derive(Clone, Debug, Default)]
 pub struct FrameRec {
     pub frame: u64,
-    /// Seconds since the first frame.
     pub t: f64,
-    /// Wall time to the next frame's start.
     pub dt_ms: f64,
     /// Main thread from `First` to the end of `Last`.
     pub main_ms: f64,
     pub cost: FrameCost,
     pub render: RenderCost,
-    /// Scenario phase, if a script runs.
     pub phase: String,
 }
 
 impl FrameRec {
-    /// The `spike:` line: frame time and what ran in the frame.
     pub fn line(&self) -> String {
         let c = &self.cost;
         let mut s = format!(
@@ -171,14 +141,11 @@ impl FrameRec {
 #[derive(Resource)]
 pub struct FrameSpikes {
     pub threshold_ms: f64,
-    /// Print a `spike:` line for each frame above the threshold.
     pub log: bool,
-    /// Keep every frame in `all` (scenarios).
     pub keep_all: bool,
     pub all: Vec<FrameRec>,
     /// Frames of the last `WINDOW_S` seconds: (t, dt_ms).
     recent: VecDeque<(f64, f64)>,
-    /// The worst frames of the run, slowest first.
     pub worst: Vec<FrameRec>,
     pub over: u32,
     pub frames: u64,
@@ -212,7 +179,6 @@ impl FrameSpikes {
         FrameSpikes { threshold_ms, ..default() }
     }
 
-    /// Worst and p99 (ms) of the last `WINDOW_S` seconds.
     pub fn window(&self) -> (f64, f64) {
         let mut v: Vec<f64> = self.recent.iter().map(|x| x.1).collect();
         if v.is_empty() {
@@ -222,7 +188,6 @@ impl FrameSpikes {
         (v[v.len() - 1], percentile(&v, 0.99))
     }
 
-    /// The F3 line.
     pub fn hud_line(&self) -> String {
         let (worst, p99) = self.window();
         let last = self.last_spike.as_ref().map(|r| format!("  last spike {:.0} ms {:.0} s ago", r.dt_ms, self.recent.back().map_or(0.0, |x| x.0) - r.t)).unwrap_or_default();
@@ -252,7 +217,6 @@ impl FrameSpikes {
         }
     }
 
-    /// Forget the frames so far (a scenario's measurement starts).
     pub fn reset(&mut self) {
         let keep = (self.threshold_ms, self.log, self.keep_all);
         *self = FrameSpikes::default();
@@ -268,7 +232,6 @@ pub fn percentile(sorted: &[f64], q: f64) -> f64 {
     sorted[((sorted.len() - 1) as f64 * q).round() as usize]
 }
 
-/// p50, p99, max and the count above `over` of a list of frame times.
 pub fn summary(ms: &[f64], over: f64) -> (f64, f64, f64, usize) {
     let mut v = ms.to_vec();
     v.sort_by(f64::total_cmp);
@@ -322,7 +285,6 @@ struct Marks {
     prep: Option<Instant>,
 }
 
-/// Closes one Avian stage: the time since the previous mark goes to `phys[N]`.
 fn phys_mark<const N: usize>(mut m: ResMut<Marks>, mut cost: ResMut<FrameCost>) {
     let now = Instant::now();
     if let Some(t) = m.phys.replace(now) {

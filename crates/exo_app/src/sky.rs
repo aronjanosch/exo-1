@@ -1,10 +1,3 @@
-//! Sky, haze and water per planet (#67), from the recipe's `sky` and `water`. The sky is Bevy's
-//! `Atmosphere` on an entity at the planet centre (it follows the render origin like the terrain),
-//! the camera renders it (`AtmosphereSettings`); the clear colour stays black space. The water is
-//! drawn per terrain chunk (`terrain.rs`) with `WaterMaterial`. Every density tuned at the 1.2 km
-//! reference atmosphere scales with the planet's atmosphere height (`atmo_scale`, #224). Far
-//! away the planet is the impostor sphere with a colour map baked from the recipe
-//! (`ImpostorMaterial`), under a cloud shell (`CloudMaterial`, recipe `sky.clouds`).
 use crate::env::PlanetRes;
 use crate::origin::{RenderOrigin, WorldPos, WorldPose};
 use crate::terrain::PlanetScene;
@@ -76,14 +69,14 @@ pub fn new_water(planet: &PlanetRes, origin: &RenderOrigin) -> WaterMaterial {
 pub const REFERENCE_ATMOSPHERE_M: f64 = 1200.0;
 
 /// Dev switch for before/after shots: `EXO_SKY_LEGACY` brings back the 5 km tuning, no clouds and
-/// the flat impostor (#224).
+/// the flat impostor.
 fn legacy() -> bool {
     std::env::var("EXO_SKY_LEGACY").is_ok()
 }
 
 /// Factor for every density tuned at the reference atmosphere (scattering, haze): a planet with
 /// an atmosphere `k` times as high gets `1/k` of the density per metre, so the optical depth
-/// straight up stays the same and the ground stays readable over the longer distances (#224).
+/// straight up stays the same and the ground stays readable over the longer distances.
 pub fn atmo_scale(planet: &PlanetRes) -> f32 {
     if legacy() {
         return 1.0;
@@ -91,13 +84,10 @@ pub fn atmo_scale(planet: &PlanetRes) -> f32 {
     (REFERENCE_ATMOSPHERE_M / planet.field.atmosphere_height.max(1.0)) as f32
 }
 
-/// The haze density per metre of this planet (before the time of day): the recipe's value scaled
-/// to the planet's atmosphere height.
 pub fn haze_density(planet: &PlanetRes) -> f32 {
     planet.pgen.recipe.sky.haze_density * atmo_scale(planet)
 }
 
-/// The planet's atmosphere: inner radius at the sea, outer at the atmosphere height.
 fn medium(planet: &PlanetRes) -> ScatteringMedium {
     let s = &planet.pgen.recipe.sky;
     let km = 1e-3 * atmo_scale(planet);
@@ -124,8 +114,6 @@ pub struct SkyState {
     entity: Option<Entity>,
 }
 
-/// (Re)spawns the atmosphere when the simulation's planet changes; keeps the water uniform's
-/// centre at the render position.
 #[allow(clippy::too_many_arguments)]
 pub fn update_sky(
     mut commands: Commands,
@@ -172,14 +160,12 @@ fn aerial_distance(planet: &PlanetRes) -> f32 {
     (20_000.0 * planet.field.atmosphere_height / REFERENCE_ATMOSPHERE_M) as f32
 }
 
-/// The main camera renders the atmosphere.
 pub fn add_to_camera(mut commands: Commands, cams: Query<Entity, Added<MainCamera>>, planet: Res<PlanetRes>) {
     for e in &cams {
         commands.entity(e).insert(AtmosphereSettings { aerial_view_lut_max_distance: aerial_distance(&planet), ..default() });
     }
 }
 
-/// Keeps the aerial view's reach at the planet's atmosphere (a planet swap changes it).
 pub fn tune_atmosphere(planet: Res<PlanetRes>, mut cams: Query<&mut AtmosphereSettings, With<MainCamera>>) {
     if !planet.is_changed() {
         return;
@@ -190,7 +176,7 @@ pub fn tune_atmosphere(planet: Res<PlanetRes>, mut cams: Query<&mut AtmosphereSe
 }
 
 
-// ---- Impostor colour map (#224) ----
+// ---- Impostor colour map ----
 
 /// Pixels of the equirectangular colour map of the planet seen from far away (width; the height
 /// is half of it).
@@ -207,7 +193,7 @@ pub struct ImpostorExt {
     pub water: ImpostorWater,
 }
 
-/// The water the impostor shader draws over the map's dryness (#235): linear colours, and in
+/// The water the impostor shader draws over the map's dryness: linear colours, and in
 /// `surface.w` the planet's radius (m, for the shore's noise).
 #[derive(Clone, Copy, Debug, Default, ShaderType, Reflect)]
 pub struct ImpostorWater {
@@ -221,7 +207,6 @@ impl MaterialExtension for ImpostorExt {
     }
 }
 
-/// The map's bake runs on a task; when it is done the planet's impostor gets it.
 #[derive(Resource, Default)]
 pub struct ImpostorMapState {
     for_planet: Option<warp_core::PlanetId>,
@@ -273,7 +258,7 @@ pub fn update_impostor_map(
     }
 }
 
-// ---- Clouds (#224) ----
+// ---- Clouds ----
 
 #[derive(Clone, Copy, Debug, Default, ShaderType, Reflect)]
 pub struct CloudLookUniform {
@@ -343,7 +328,6 @@ fn cloud_uniform(planet: &PlanetRes, sun: DVec3) -> Option<(CloudLookUniform, f6
     ))
 }
 
-/// (Re)spawns the cloud shell when the planet changes; none on a planet without `sky.clouds`.
 #[derive(Resource, Default)]
 pub struct CloudState {
     for_planet: Option<warp_core::PlanetId>,

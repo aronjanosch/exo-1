@@ -1,10 +1,9 @@
 //! Fixed data-only wire format, 148 bytes, little endian. Planet-relative f64 positions, f32
-//! velocities and quaternions (as in spike 4). Never anything but plain numbers.
+//! velocities and quaternions. Never anything but plain numbers.
 use crate::MAX_OWNER;
 use glam::{DQuat, DVec3};
 
 pub const SIZE: usize = 148;
-/// 2: cabin gravity (`lag`) added.
 pub const VERSION: u32 = 2;
 /// A walker is always within its planet's own range (or a cabin); anything beyond is absurd.
 const MAX_WALKER_RANGE: f64 = 1.0e6;
@@ -20,17 +19,14 @@ pub struct Limits {
 }
 
 impl Limits {
-    /// Known planet, ship within range and speed.
     pub fn admits(&self, s: &Snapshot) -> bool {
         s.planet < self.planets && s.p.length() <= self.ship_position && s.v.length() <= self.ship_speed
     }
 }
 
-/// Which frame the walker pose is in.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum FrameKind {
     Planet = 0,
-    /// Cabin of the ship owned by `frame_id`.
     Ship = 1,
 }
 
@@ -44,7 +40,6 @@ pub struct Snapshot {
     pub seq: u32,
     /// Shared (server) time in seconds.
     pub t: f64,
-    /// Ship, planet-relative.
     pub p: DVec3,
     pub v: DVec3,
     pub q: DQuat,
@@ -211,7 +206,6 @@ mod tests {
         assert!(lim.admits(&at(DVec3::new(6.0e6, 7000.0, 0.0), DVec3::new(1.0e6, 0.0, 0.0))));
         assert!(!lim.admits(&at(DVec3::new(2.0e8, 0.0, 0.0), DVec3::ZERO)));
         assert!(!lim.admits(&at(DVec3::ZERO, DVec3::new(5.0e6, 0.0, 0.0))));
-        // Unknown planet: decodes, is not admitted, and cannot be re-framed.
         let mut s = at(DVec3::ZERO, DVec3::ZERO);
         s.planet = 7;
         let mut r = Snapshot::decode(&s.encode()).unwrap();
@@ -221,7 +215,6 @@ mod tests {
         assert_eq!(r.planet, 7);
         r.planet = u32::MAX;
         assert!(!r.to_frame_of(&centres, 0));
-        // The walker keeps the tight limit.
         let mut w = Snapshot::new(1, 1.0, DVec3::ZERO, DVec3::ZERO, DQuat::IDENTITY);
         w.wp = DVec3::new(5.0e6, 0.0, 0.0);
         assert!(Snapshot::decode(&w.encode()).is_none());
@@ -237,7 +230,6 @@ mod tests {
         assert!(s.to_frame_of(&centres, 0));
         assert_eq!(s.planet, 0);
         assert_eq!((s.p, s.wp), world);
-        // A walker in a cabin is in ship coordinates: unchanged.
         let mut c = Snapshot::new(1, 1.0, DVec3::ZERO, DVec3::ZERO, DQuat::IDENTITY);
         c.planet = 1;
         c.frame = FrameKind::Ship;

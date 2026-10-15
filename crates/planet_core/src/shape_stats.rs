@@ -1,4 +1,4 @@
-//! Terrain shape statistics for the 100 km round (#214): how tall the ground gets, how much of
+//! Terrain shape statistics for the 100 km planet: how tall the ground gets, how much of
 //! the land is plain enough for a settlement, how many biomes show up. Sampled on a Fibonacci
 //! lattice of the sphere, so the numbers are area-weighted and the same on every run.
 use crate::look::{tangent_frame, walk};
@@ -7,10 +7,9 @@ use crate::planet::Planet;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-/// Slope limit and baseline of a "plain" (round goal: under 5 degrees over 500 m).
+/// Slope limit and baseline of a "plain" (goal: under 5 degrees over 500 m).
 pub const PLAIN_DEG: f64 = 5.0;
 pub const PLAIN_BASE_M: f64 = 500.0;
-/// A biome counts as present above this share of the land samples.
 pub const BIOME_MIN_SHARE: f64 = 0.005;
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -23,15 +22,11 @@ pub struct ShapeStats {
     /// Highest sampled ground above the base radius and above the sea (m).
     pub max_above_radius_m: f64,
     pub max_above_sea_m: f64,
-    /// 99th percentile of land height above the sea (m).
     pub p99_land_above_sea_m: f64,
-    /// Share of the land samples per biome row.
     pub biome_share_land: BTreeMap<u8, f64>,
-    /// Biome rows above `BIOME_MIN_SHARE` of the land.
     pub biomes_present: usize,
 }
 
-/// Point `i` of `n` on a Fibonacci lattice of the unit sphere.
 fn lattice(i: usize, n: usize) -> V3 {
     let golden = std::f64::consts::PI * (3.0 - 5f64.sqrt());
     let y = 1.0 - 2.0 * (i as f64 + 0.5) / n as f64;

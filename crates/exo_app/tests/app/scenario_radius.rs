@@ -1,5 +1,3 @@
-//! #177 (spike 14): the warp scenario on a planet of 30 km radius, with the ceilings that follow
-//! from it (`--radius=`): the orbit start, the camera and the obstruction check follow the radius.
 use crate::common;
 use exo_app::Options;
 
@@ -16,7 +14,6 @@ fn warp_scenario_passes_at_100_km() {
 }
 
 /// The first run bakes the sites of a 300 km planet (about 100 s); the cache keeps them.
-/// `cargo ts scenario_radius -- --run-ignored all`
 #[test]
 #[ignore]
 fn warp_scenario_passes_at_300_km() {

@@ -1,11 +1,3 @@
-//! Rivers as curves with width (#177, spike 14; curves #235). The drainage runs on the coarse grid
-//! and leaves, per river vertex, a bed, a water level, a depth and a width. Flow between grid
-//! vertices goes one of 8 ways, so the polyline through them runs straight and turns at right
-//! angles; the drawn river is a smoothed, meandering curve through them instead: each vertex moves
-//! towards its neighbours along the river and across the flow by a noise, and each segment is a
-//! Catmull-Rom curve of `CURVE_STEPS` pieces. Its cross-section is evaluated per point of a chunk
-//! from these numbers, so a river a few metres wide is carved on a grid a kilometre wide, and the
-//! channel is the same function of the position in every chunk (no seams).
 use crate::drainage::Mouth;
 use crate::math::*;
 use crate::planet::River;
@@ -16,7 +8,6 @@ use std::collections::HashMap;
 pub const REACH_HALF_WIDTHS: f64 = 6.0;
 /// The water is defined this far (m) beyond the half width, so a chunk's quads see the bank.
 pub const SHORE_M: f64 = 3.0;
-/// Pieces of a segment's curve.
 pub const CURVE_STEPS: usize = 4;
 /// How far a river vertex moves across the flow, at most, in grid spacings (the river stays in
 /// the valley the drainage cut along the grid). TODO(initiator): value.
@@ -36,7 +27,6 @@ pub struct RiverIndex {
     up: Vec<Option<u32>>,
 }
 
-/// What the rivers did to a point of the ground.
 #[derive(Copy, Clone, Debug)]
 pub struct Carved {
     /// The ground after the rivers' cross-sections (m above the base radius).
@@ -92,7 +82,6 @@ fn catmull(p0: V3, p1: V3, p2: V3, p3: V3, t: f64) -> V3 {
 }
 
 impl RiverIndex {
-    /// The index of a planet's rivers. `spacing_m` is the coarse grid's cell size.
     pub fn build(rivers: &[River], radius: f64, spacing_m: f64, fill: f64) -> RiverIndex {
         let n = rivers.len();
         let mut up: Vec<Option<u32>> = vec![None; n];
@@ -182,7 +171,6 @@ impl RiverIndex {
         catmull(p0, p1, p2, p3, t).normalized() * radius
     }
 
-    /// Piece `k` of river `i`'s curve.
     fn seg(&self, rivers: &[River], radius: f64, i: usize, k: usize) -> Seg {
         let r = &rivers[i];
         let va = values(r);

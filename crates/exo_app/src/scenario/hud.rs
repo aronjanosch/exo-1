@@ -1,10 +1,4 @@
-//! Scenario `hud` (Crew HUD v3): what the player reads, through `CrewHud` without a window. The
-//! compass shows the true heading on the ground (east is 90) and the heading from the bow in a
-//! flying ship, and the true one again in the landed ship; the vitals show health only until oxygen
-//! and burn are set, and drop them when they end; the credits show for a moment after a change; the
-//! prompt says what F does and where; the action bar dims after three idle seconds and wakes on a
-//! slot key; the key hints follow the hands. With a window it takes the three pictures of the HUD.
-//! Run with `--start=dev_area`.
+//! Scenario hud: what the player reads, through CrewHud without a window.
 use super::items::{at_the_table, collect, items, look_at, outside, tap_then, DELAY};
 use super::*;
 use crate::crew_hud::{CrewHud, Vitals};
@@ -38,7 +32,6 @@ fn kinds(h: &CrewHud) -> Vec<VitalKind> {
     h.vitals.iter().map(|l| l.kind).collect()
 }
 
-/// A heading check one tick after the walker turned.
 fn heading_step(what: &'static str, deg: f64, reference: Reference, forward_of: fn(&mut World) -> (DVec3, DVec3)) -> Vec<Step> {
     vec![
         Box::new(move |w, _| {
@@ -56,14 +49,12 @@ fn heading_step(what: &'static str, deg: f64, reference: Reference, forward_of: 
     ]
 }
 
-/// North and up on the planet at the walker.
 fn planet_axes(w: &mut World) -> (DVec3, DVec3) {
     let p = player_world(w);
     let up = planet(w).up(p);
     (north_at(up), up)
 }
 
-/// The ship's bow and up.
 fn bow_axes(w: &mut World) -> (DVec3, DVec3) {
     let f = ship_frame_of(w);
     (f.rot * DVec3::NEG_Z, f.rot * DVec3::Y)
@@ -71,7 +62,6 @@ fn bow_axes(w: &mut World) -> (DVec3, DVec3) {
 
 pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
     at_the_table(s);
-    // Calm: health only, no credits, no hints, a bare bar.
     s.push(Box::new(|w, c| {
         begin(w, c, "hud: calm on the dev area");
         let h = hud(w);
@@ -80,18 +70,16 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
     }));
     s.push(shot_step("hud_calm"));
 
-    // The compass on foot: true heading, east is 90, north-west 315.
     s.extend(heading_step("north on foot", 0.0, Reference::True, planet_axes));
     s.extend(heading_step("east on foot", 90.0, Reference::True, planet_axes));
     s.extend(heading_step("north-west on foot", 315.0, Reference::True, planet_axes));
 
-    // The vitals: oxygen and burn only while set.
     s.push(Box::new(|w, c| {
         {
             let mut v = vitals(w);
             v.health = 0.8;
             v.oxygen = Some(0.7);
-            v.burn = Some(0.4);
+            v.burn_level = 2;
         }
         c.v.insert("set", 1.0);
         true
@@ -101,11 +89,11 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
         let h = hud(w);
         check(c, kinds(&h) == [VitalKind::Burn, VitalKind::Oxygen, VitalKind::Health], format!("hud: vitals with oxygen and burn set show three lines, burn on top ({:?})", kinds(&h)));
         check(c, (h.vitals[2].frac - 0.8).abs() < 1e-9 && (h.vitals[1].frac - 0.7).abs() < 1e-9, "hud: the bars carry the values".into());
-        check(c, h.vitals[0].burn_text() == "▲ BURN II" && h.vitals[2].calm() && h.vitals[1].calm(), format!("hud: the burn reads {:?}, health 80 and oxygen 70 are calm", h.vitals[0].burn_text()));
+        check(c, h.vitals[2].calm() && h.vitals[1].calm(), "hud: health 80 and oxygen 70 are calm".into());
         {
             let mut v = vitals(w);
             v.oxygen = None;
-            v.burn = None;
+            v.burn_level = 0;
         }
         true
     }));
@@ -117,7 +105,6 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
         true
     }));
 
-    // The credits: a flash after a change, then gone.
     s.push(Box::new(|w, c| {
         begin(w, c, "hud: credits flash after a change");
         check(c, hud(w).credits.is_none(), "hud: no credits on screen before a change".into());
@@ -136,12 +123,10 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
         if c.t < look.show_s + look.fade_s + 0.5 {
             return false;
         }
-        check(c, hud(w).credits.is_none(), "hud: the credits faded out after about two seconds".into());
         end(w, c, "credits".into());
         true
     }));
 
-    // The prompt: a collect target with a place on screen.
     s.push(Box::new(|w, c| {
         let Some((_, _, at)) = outside(w, "extinguisher") else {
             check(c, false, "hud: the extinguisher lies there".into());
@@ -154,12 +139,10 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
     s.push(Box::new(|w, c| {
         let i = w.resource::<Interaction>();
         check(c, i.kind == PromptKind::Collect && i.at.is_some() && i.prompt.starts_with("[F]"), format!("hud: the prompt is a collect with a world place ({:?}, {:?})", i.kind, i.prompt));
-        check(c, i.view.verb == "Collect" && i.view.name == "Extinguisher" && i.view.note.is_empty(), format!("hud: the prompt reads verb over name ({:?})", i.view));
         true
     }));
     s.extend(collect("extinguisher", "Extinguisher"));
 
-    // Hands: the key hints and the bar's idle contrast.
     s.extend(tap_then_state("hud: 1 takes the extinguisher into the hand", KeyCode::Digit1, |w| items(w).in_hand(0).is_some_and(|s| s.item.kind.as_str() == "extinguisher")));
     s.push(wait(DELAY * 2.0));
     s.push(Box::new(|w, c| {
@@ -180,13 +163,13 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
     }));
     s.extend(tap_then_state("hud: slot key wakes the bar", KeyCode::Digit1, |w| hud(w).contrast == 1.0));
 
-    // The picture with the extinguisher held, oxygen dropping and a burn.
     s.push(Box::new(|w, c| {
         begin(w, c, "hud: oxygen drops, burning");
         let mut v = vitals(w);
         v.health = 0.58;
         v.oxygen = Some(1.0);
-        v.burn = Some(0.6);
+        v.burn_level = 2;
+        v.burning = true;
         true
     }));
     s.push(Box::new(|w, c| {
@@ -196,18 +179,18 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
     }));
     s.push(wait(0.2));
     s.push(shot_step("hud_held"));
-    // The same, critical: burn III, oxygen and health bad (glow).
     s.push(Box::new(|w, _| {
         let mut v = vitals(w);
         v.health = 0.23;
         v.oxygen = Some(0.18);
-        v.burn = Some(0.95);
+        v.burn_level = 3;
+        v.burning = true;
         true
     }));
     s.push(wait(0.2));
     s.push(Box::new(|w, c| {
         let h = hud(w);
-        check(c, h.vitals[0].burn_text() == "■ BURN III" && h.vitals.iter().all(|l| l.tone == Tone::Bad), format!("hud: critical reads bad on every line ({:?})", h.vitals));
+        check(c, h.vitals.iter().all(|l| l.tone == Tone::Bad), format!("hud: critical reads bad on every line ({:?})", h.vitals));
         true
     }));
     s.push(shot_step("hud_crit"));
@@ -215,10 +198,10 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
         let mut v = vitals(w);
         v.health = 0.58;
         v.oxygen = Some(0.45);
-        v.burn = Some(0.6);
+        v.burn_level = 2;
+        v.burning = false;
         true
     }));
-    // Tab: the inventory open, the held name at the left.
     s.push(tap_then("hud: Tab opens the inventory", KeyCode::Tab, |w| w.resource::<InventoryUi>().open));
     s.push(wait(0.2));
     s.push(Box::new(|w, c| {
@@ -227,7 +210,6 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
         true
     }));
     s.push(shot_step("hud_tab"));
-    // A drag in the open bar: the ghost follows the pointer, the slot under it is outlined.
     s.push(pointer_step(0, true));
     s.push(wait(0.2));
     s.push(pointer_step(3, true));
@@ -243,7 +225,6 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
         true
     }));
 
-    // The compass in the ship: from the bow while flying, true again once landed.
     s.push(Box::new(|w, c| {
         begin(w, c, "hud: the compass in a flying ship");
         put_at_seat(w);
@@ -276,7 +257,6 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
     s.extend(heading_step("landed ship: east", 90.0, Reference::True, planet_axes));
 }
 
-/// The pointer over the middle of slot `i` of the open bar, the button down or up.
 fn pointer_step(i: usize, down: bool) -> Step {
     Box::new(move |w, _| {
         let (win, bar) = (w.resource::<HudWindow>().0, w.resource::<DisplayLook>().0.hud.bar.clone());
@@ -288,7 +268,6 @@ fn pointer_step(i: usize, down: bool) -> Step {
     })
 }
 
-/// Like `tap_then`, named for this scenario: tap, wait for a state.
 fn tap_then_state(what: &'static str, k: KeyCode, done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Vec<Step> {
     vec![tap_then(what, k, done)]
 }

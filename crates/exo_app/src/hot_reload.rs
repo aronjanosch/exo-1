@@ -1,8 +1,3 @@
-//! Hot reload of `content/tuning/*.json` in dev builds (#21): every 250 ms of wall time the files
-//! are read and compared with what is loaded; when one changed and all parse, the new values take
-//! effect at once (ship and walker get them, the suit, camera, grab, HUD and bindings are read every step).
-//! A file that does not parse is reported and the old values stay. Polling instead of Bevy's
-//! `file_watcher` keeps the feature set as it is.
 use crate::controls::Bindings;
 use crate::ship::Ship;
 use crate::tuning::Tuning;
@@ -11,7 +6,6 @@ use bevy::prelude::*;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-/// Dev builds only: watches `dir` and applies changed tuning files.
 pub fn plugin(dir: PathBuf) -> impl Plugin {
     move |app: &mut App| {
         if cfg!(debug_assertions) {
@@ -21,20 +15,21 @@ pub fn plugin(dir: PathBuf) -> impl Plugin {
     }
 }
 
-const FILES: [&str; 13] = [
-    "ground.json",
-    "walker.json",
-    "suit.json",
-    "camera.json",
-    "bindings.json",
-    "grab.json",
-    "hud.json",
-    "sc_ship.json",
-    "sc_modes.json",
-    "sc_linear.json",
-    "sc_angular.json",
-    "sc_drive.json",
-    "sc_air.json",
+const FILES: [&str; 14] = [
+    "tuning/ground.json",
+    "tuning/walker.json",
+    "tuning/suit.json",
+    "tuning/camera.json",
+    "tuning/bindings.json",
+    "tuning/grab.json",
+    "tuning/hud.json",
+    "ship/kackfass_1/sc_ship.json",
+    "ship/kackfass_1/sc_modes.json",
+    "ship/kackfass_1/sc_linear.json",
+    "ship/kackfass_1/sc_angular.json",
+    "ship/kackfass_1/sc_drive.json",
+    "ship/kackfass_1/sc_air.json",
+    "ship/kackfass_1/type.json",
 ];
 const POLL: Duration = Duration::from_millis(250);
 
@@ -52,12 +47,12 @@ impl HotReload {
     pub fn new(dir: PathBuf) -> HotReload {
         let mut loaded = [crate::tuning::GROUND, crate::tuning::WALKER, crate::tuning::SUIT, crate::tuning::CAMERA, crate::controls::BINDINGS, crate::tuning::GRAB, crate::tuning::HUD].map(String::from).to_vec();
         loaded.extend(crate::tuning::SC.map(String::from));
+        loaded.push(crate::tuning::SHIP_MODEL.to_string());
         HotReload { dir, loaded, next: Instant::now(), reloads: 0, last_error: None }
     }
 
-    /// The repo's own `content/tuning` (dev builds run from the source tree).
     pub fn source_dir() -> PathBuf {
-        PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../content/tuning"))
+        PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../content"))
     }
 }
 
@@ -70,7 +65,7 @@ fn parse(texts: &[String]) -> Result<(Tuning, Bindings), String> {
             camera: flight_core::camera::CameraTuning::from_json(&texts[3])?,
             grab: grab_core::GrabConfig::from_json(&texts[5])?,
             hud: crate::hud::HudTuning::from_json(&texts[6])?,
-            sc: flight_core::sc::ScTuning::from_json([&texts[7], &texts[8], &texts[9], &texts[10], &texts[11], &texts[12]])?,
+            ship_type: flight_core::ship_type::ShipType::from_json(&texts[13], [&texts[7], &texts[8], &texts[9], &texts[10], &texts[11], &texts[12]])?,
         },
         Bindings::from_json(&texts[4])?,
     ))
@@ -82,7 +77,7 @@ pub fn poll(
     mut tuning: ResMut<Tuning>,
     mut bindings: ResMut<Bindings>,
     controls: Res<crate::controls::Controls>,
-    mut ships: Query<&mut Ship>,
+    mut ships: Query<(&mut Ship, &mut Name)>,
     mut players: Query<&mut Player>,
 ) {
     let now = Instant::now();
@@ -98,13 +93,23 @@ pub fn poll(
     hr.loaded = texts.clone();
     match parse(&texts) {
         Ok((t, mut b)) => {
+            if t.ship_type.model.id != tuning.ship_type.model.id || t.ship_type.model.hull != tuning.ship_type.model.hull {
+                let error = "ship type identity or hull changed: restart to apply it".to_string();
+                println!("tuning: reload refused, old values stay: {error}");
+                hr.last_error = Some(error);
+                return;
+            }
             // Scripted runs pin their mouse mode; a reload keeps it.
             if controls.scripted {
                 b.mouse.ship_mode = bindings.mouse.ship_mode;
             }
-            for mut s in &mut ships {
+            for (mut s, mut name) in &mut ships {
                 s.ground.tuning = t.ground.clone();
-                s.sc.tuning = t.sc.clone();
+                if s.model.id == t.ship_type.model.id {
+                    s.model = t.ship_type.model.clone();
+                    *name = Name::new(s.model.name.clone());
+                    s.sc.tuning = t.ship_type.flight.clone();
+                }
             }
             for mut p in &mut players {
                 p.w.cfg = t.walker;

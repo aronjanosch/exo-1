@@ -1,14 +1,7 @@
-//! The quantum drive in the game: the `warp_core` state machine driven by the piloted
-//! ship, the ship carried along the path, the planets swapped when the ship enters another
-//! planet's frame zone. Real movement through the shared f64 world, no loading screen.
-//!
 //! J starts a warp to the selected planet (N selects) and cancels while spooling or calibrating.
 //! Holding J during the flight drops out early (emergency exit). J works for whoever is aboard:
-//! the pilot, or a walker in the cabin who stood up mid-warp (#111; standing up stays allowed,
+//! the pilot, or a walker in the cabin who stood up mid-warp (standing up stays allowed,
 //! initiator 2026-10-09).
-//!
-//! Four fixed-step systems in a chain: `warp_input` (keys), `warp_drive` (state machine and the
-//! ship on rails), `planet_swap` (simulation's planet), `warp_telemetry` (scenario numbers only).
 use crate::controls::{Actions, Tap};
 use crate::env::PlanetRes;
 use crate::ring::Ring;
@@ -19,6 +12,9 @@ use avian3d::prelude::*;
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 use bevy::tasks::{block_on, AsyncComputeTaskPool, Task};
+use campaign_core::{Generator, Names, PlanetSet, SystemKind, Template};
+use crate::Options;
+use daynight_core::DayNight;
 use planet_core::ChunkOut;
 use warp_core::{Abort, Drive, Event, Load, Loader, Obstacle, Pending, Phase, PlanetDef, PlanetId, ShipView, System};
 
@@ -28,6 +24,49 @@ pub fn plugin(app: &mut App) {
 }
 
 pub const SYSTEM: &str = include_str!("../../../content/system/system.json");
+const CAMPAIGN_SET: &str = include_str!("../../../content/campaign/planet_set.json");
+const CAMPAIGN_NAMES: &str = include_str!("../../../content/campaign/names.json");
+const CAMPAIGN_HARBOUR: &str = include_str!("../../../content/campaign/template_harbour.json");
+const CAMPAIGN_NORMAL: &str = include_str!("../../../content/campaign/template_normal.json");
+const CAMPAIGN_HOSTILE: &str = include_str!("../../../content/campaign/template_hostile.json");
+
+/// The run's star system: `content/system/system.json`, or with `--system-seed` a generated one
+/// (debug switch). Generated planets get the file's drive and must pass the day/night checks.
+pub fn build_system(o: &Options) -> System {
+    let Some(seed) = o.system_seed else { return System::from_json(SYSTEM).expect("system.json") };
+    let template = match o.system_kind {
+        SystemKind::Harbour => CAMPAIGN_HARBOUR,
+        SystemKind::Normal => CAMPAIGN_NORMAL,
+        SystemKind::Hostile => CAMPAIGN_HOSTILE,
+    };
+    fn or_panic<T>(r: Result<T, String>, seed: u64) -> T {
+        r.unwrap_or_else(|e| panic!("--system-seed {seed}: {e}"))
+    }
+    let set = or_panic(PlanetSet::from_json(CAMPAIGN_SET), seed);
+    let names = or_panic(Names::from_json(CAMPAIGN_NAMES), seed);
+    let template = or_panic(Template::from_json(template), seed);
+    let drive = System::from_json(SYSTEM).expect("system.json").drive;
+    let dn = DayNight::from_json(crate::daynight::DAYNIGHT).unwrap_or_else(|e| panic!("{e}"));
+    let sky_ok = |p: &PlanetDef, star: DVec3| dn.check_geometry(&p.recipe, p.centre(), star).is_ok();
+    let g = or_panic(Generator::new(set, names, drive).generate(&template, seed, &sky_ok), seed);
+    let recipes: Vec<&str> = g.system.planets.iter().map(|p| p.recipe.as_str()).collect();
+    let kind = match g.kind {
+        SystemKind::Harbour => "harbour",
+        SystemKind::Normal => "normal",
+        SystemKind::Hostile => "hostile",
+    };
+    println!(
+        "system: generated '{}' ({kind}, seed {}): {} planets ({}), {} stations, {} enemy, {} sites; stations, sites and enemies are not placed in the world yet",
+        g.name,
+        g.seed,
+        g.system.planets.len(),
+        recipes.join(", "),
+        g.stations.len(),
+        g.enemy.is_some() as usize,
+        g.sites.len()
+    );
+    g.system
+}
 
 /// Radius of the sphere other ships block the path with (m).
 const SHIP_OBSTACLE_RADIUS: f64 = 20.0;
@@ -42,9 +81,7 @@ pub struct WarpDrive {
     pub drive: Drive,
     /// Planet selected as the target (N); the jump goes to `System::effective_target` of it.
     pub selected: PlanetId,
-    /// Why the last start was refused or the last warp aborted.
     pub last_abort: Option<Abort>,
-    /// Events of this tick (input and drive), for the systems after `warp_drive`.
     pub events: Vec<Event>,
 }
 
@@ -54,7 +91,6 @@ impl WarpDrive {
     }
 }
 
-/// Numbers for the scenario reports (only present in scripted runs), and its test hook.
 #[derive(Resource, Default)]
 pub struct WarpTelemetry {
     /// Every event with the simulated time it happened.
@@ -66,7 +102,6 @@ pub struct WarpTelemetry {
     /// Distance of the ship from the drive's end point (exit or drop point) on the tick it got
     /// there, after the ship was placed (m).
     pub end_error: Option<f64>,
-    /// Obstacles added by hand, besides remote ships.
     pub extra_obstacles: Vec<Obstacle>,
     /// Every planet swap: time, old planet, new planet, at an emergency drop.
     pub swaps: Vec<(f64, PlanetId, PlanetId, bool)>,
@@ -74,7 +109,7 @@ pub struct WarpTelemetry {
 }
 
 /// The target planet being generated in the background while the ship flies, with its root
-/// terrain chunks (#34). `warp_core::Loader` decides what is generated and when it is swapped in.
+/// terrain chunks. `warp_core::Loader` decides what is generated and when it is swapped in.
 #[derive(Resource, Default)]
 pub struct PendingPlanet {
     task: Option<(PlanetId, Task<(PlanetRes, Vec<ChunkOut>, f64)>)>,
@@ -100,7 +135,6 @@ impl PendingPlanet {
         ));
     }
 
-    /// A generation is running or waiting to be taken.
     pub fn busy(&self) -> bool {
         self.task.is_some()
     }
@@ -109,7 +143,6 @@ impl PendingPlanet {
         self.task.as_ref().is_some_and(|(_, t)| t.is_finished())
     }
 
-    /// Waits (wall time) until the running generation is done.
     fn finish(&self) {
         while self.task.as_ref().is_some_and(|(_, t)| !t.is_finished()) {
             std::thread::sleep(std::time::Duration::from_millis(1));
@@ -127,7 +160,7 @@ impl PendingPlanet {
     /// The finished planet and its roots; a running generation is waited for, and without one the
     /// planet is generated here and now without roots. Only when the loader swaps off rails in a
     /// frame zone (a teleport, an arrival before the generation is done): no flight to hide it in.
-    /// A "materialising" state instead of this hitch: #140.
+    /// A "materialising" state instead of this hitch.
     fn take(&mut self, id: PlanetId, sys: &System) -> (PlanetRes, Option<Vec<ChunkOut>>) {
         match self.task.take() {
             Some((t, task)) if t == id => {
@@ -140,8 +173,6 @@ impl PendingPlanet {
     }
 }
 
-/// Swaps the simulation's planet: the resource, and the collision ring (its patches belong to
-/// the old planet). The view rebuilds its terrain when it sees the id change.
 pub fn swap_planet(commands: &mut Commands, ring: &mut Ring, new: PlanetRes) {
     for (_, (e, ..)) in ring.patches.drain() {
         commands.entity(e).despawn();
@@ -154,7 +185,6 @@ pub fn swap_planet(commands: &mut Commands, ring: &mut Ring, new: PlanetRes) {
 
 fn course_quat(from: DQuat, dir: DVec3, max_angle: f64) -> DQuat {
     let nose = from * DVec3::NEG_Z;
-    // A zero or broken direction keeps the rotation (#111).
     if !dir.is_finite() || dir.length_squared() < 1e-24 {
         return from;
     }
@@ -166,7 +196,6 @@ fn course_quat(from: DQuat, dir: DVec3, max_angle: f64) -> DQuat {
     DQuat::IDENTITY.slerp(turn, (max_angle / angle).min(1.0)) * from
 }
 
-/// Other ships, and the scenario's extra obstacles.
 fn obstacles(remotes: &Query<&Position, (With<RemoteShip>, Without<Ship>)>, tel: Option<&WarpTelemetry>) -> Vec<Obstacle> {
     let mut o: Vec<Obstacle> = remotes.iter().map(|p| Obstacle { centre: p.0, radius: SHIP_OBSTACLE_RADIUS }).collect();
     if let Some(t) = tel {
@@ -225,7 +254,6 @@ pub fn warp_input(
     }
 }
 
-/// One tick of the drive; on rails the ship is put at the path's pose.
 #[allow(clippy::too_many_arguments)]
 pub fn warp_drive(
     mut commands: Commands,
@@ -283,9 +311,9 @@ pub fn warp_drive(
 }
 
 /// The ship comes into another planet's frame zone: that planet becomes the simulation's. An
-/// emergency drop outside every frame zone makes the nearest planet the simulation's (#14: the
-/// old one always stayed, with its terrain). `warp_core::Loader` has the rules: on rails only the
-/// target counts and the swap waits for its background generation (#111, #113).
+/// emergency drop outside every frame zone makes the nearest planet the simulation's (the
+/// old one goes with its terrain). `warp_core::Loader` has the rules: on rails only the
+/// target counts and the swap waits for its background generation.
 #[allow(clippy::too_many_arguments)]
 pub fn planet_swap(
     mut commands: Commands,
@@ -330,7 +358,6 @@ pub fn planet_swap(
     }
 }
 
-/// Scenario numbers: event log with times, warps, largest step per tick, end point error.
 pub fn warp_telemetry(time: Res<Time>, wd: Res<WarpDrive>, mut tel: ResMut<WarpTelemetry>, ships: Query<&Position, With<Ship>>) {
     let tel = tel.as_mut();
     tel.clock += time.delta_secs_f64();
@@ -348,4 +375,48 @@ pub fn warp_telemetry(time: Res<Time>, wd: Res<WarpDrive>, mut tel: ResMut<WarpT
         tel.max_tick_move = tel.max_tick_move.max(pos.0.distance(last));
     }
     tel.last_pos = Some(pos.0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seeded(seed: u64, kind: campaign_core::SystemKind) -> Options {
+        Options { system_seed: Some(seed), system_kind: kind, ..Options::default() }
+    }
+
+    fn planets(sys: &System) -> Vec<(String, i32, [f64; 3])> {
+        sys.planets.iter().map(|p| (p.name.clone(), p.seed, p.centre)).collect()
+    }
+
+    #[test]
+    fn without_a_seed_the_system_is_the_file() {
+        let sys = build_system(&Options::default());
+        let file = System::from_json(SYSTEM).unwrap();
+        assert_eq!(planets(&sys), planets(&file));
+    }
+
+    #[test]
+    fn generated_systems_are_valid_and_pass_the_game_checks() {
+        let dn = daynight_core::DayNight::from_json(crate::daynight::DAYNIGHT).unwrap();
+        for kind in campaign_core::SystemKind::ALL {
+            for seed in 0..60 {
+                let sys = build_system(&seeded(seed, kind));
+                sys.validate().unwrap_or_else(|e| panic!("{kind:?} seed {seed}: {e}"));
+                for p in &sys.planets {
+                    assert!(crate::env::RECIPES.iter().any(|(id, _)| *id == p.recipe), "{kind:?} seed {seed}: recipe {}", p.recipe);
+                    dn.check_geometry(&p.recipe, p.centre(), sys.star.position()).unwrap_or_else(|e| panic!("{kind:?} seed {seed}: {e}"));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_same_seed_gives_the_same_planets() {
+        for kind in campaign_core::SystemKind::ALL {
+            for seed in [1, 7, 42] {
+                assert_eq!(planets(&build_system(&seeded(seed, kind))), planets(&build_system(&seeded(seed, kind))));
+            }
+        }
+    }
 }

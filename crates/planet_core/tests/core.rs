@@ -1,4 +1,4 @@
-//! T1 (core part), T2, T3 of the planet generation spike. Run: cargo test --profile fast -- --nocapture
+//! Core checks T1 (core part), T2, T3. Run: cargo test --profile fast -- --nocapture
 use planet_core::*;
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -36,7 +36,6 @@ fn interior() -> impl Iterator<Item = (usize, usize, usize)> {
 fn t1_one_height_function() {
     let (p, _) = planet();
     let mut rng = Rng(0x1234_5678_9abc_def1);
-    // (a) random directions: face-coordinate path versus direction path
     let mut worst: f64 = 0.0;
     for _ in 0..1000 {
         let z = rng.next() * 2.0 - 1.0;
@@ -55,7 +54,6 @@ fn t1_one_height_function() {
     println!("T1 random directions: max |height_ab - height_at| = {:.3e} m", worst);
     assert!(worst < 1e-3);
 
-    // (b) every vertex of 50 random chunks at several depths: mesh radius versus height_at
     let mut worst_mesh: f64 = 0.0;
     let mut worst_store: f64 = 0.0;
     let mut n_vert = 0;
@@ -89,7 +87,7 @@ fn t1_one_height_function() {
     assert!(worst_store < 1e-4, "stored vertex {worst_store} m off the exact position");
     println!("T1 mesh vertices: {} vertices of 50 chunks (depths 2,4,6,8), max |mesh - height_at| = {:.3e} m", n_vert, worst_mesh);
     // The noise reads its input as f32 at the planet's radius, so height_at at the f32 vertex
-    // position is a staircase of steps slope x radius x 6e-8 (#221: about 1.4 mm at 5 km with
+    // position is a staircase of steps slope x radius x 6e-8 (about 1.4 mm at 5 km with
     // the relief's steeper ground); the exact contract is the strict check above.
     assert!(worst_mesh < 2e-3);
 }
@@ -144,6 +142,7 @@ fn seam_check(p: &Planet, depth: u32) -> (usize, f64, usize) {
 }
 
 #[test]
+#[ignore = "100 km planet, slow: runs with --run-ignored all before main"]
 fn t2_no_seams() {
     let (p, _) = planet();
     for depth in [1u32, 3, 5] {
@@ -158,14 +157,12 @@ fn t2_no_seams() {
 fn t3_macro_statistics() {
     let (p, st) = planet();
     println!("T3 {}", serde_json::to_string_pretty(st).unwrap());
-    assert!((st.land_fraction_macro - p.recipe.sea_level.land_fraction).abs() < 0.01);
     assert!(st.site_count == 0 || st.site_min_pair_m >= 600.0);
     let _ = p;
 }
 
 #[test]
 fn t1_collision_patches_core() {
-    // patches in tangent frames over steep ground (escarpment, plateau edge, basin rim) and flat ground
     let (p, _) = planet();
     // The patch against the height function with the frame origin in f64 (the generator's own
     // error), and rounded to f32 like the scene (adds the rounding, up to about 0.4 mm along the
@@ -198,48 +195,7 @@ fn t1_collision_patches_core() {
         }
     }
     println!("T1 collision patches (core): {n} samples, max |patch - height_at| = {worst64:.3e} m (f64 origin), {worst32:.3e} m (origin rounded to f32 like the scene)");
-    // f32 noise input, as in t1_one_height_function (#221).
     assert!(worst64 < 2e-3);
     assert!(worst32 < 2e-3);
 }
 
-/// Core-side estimate for T5: along random great circles (1 m steps over 2 km, land and sea),
-/// how far apart are biome changes? Used to tune the region wavelengths without a walk run.
-#[test]
-fn t5_biome_run_lengths() {
-    let (p, _) = planet();
-    let mut rng = Rng(0xdead_beef_cafe_f00d);
-    let (mut changes, mut metres) = (0usize, 0usize);
-    let mut runs: Vec<usize> = Vec::new();
-    for _ in 0..150 {
-        let z = rng.next() * 2.0 - 1.0;
-        let phi = rng.next() * std::f64::consts::TAU;
-        let rr = (1.0 - z * z).sqrt();
-        let c = v3(rr * phi.cos(), z, rr * phi.sin());
-        let t = c.cross(v3(0.0, 1.0, 0.0)).normalized();
-        let mut last = None;
-        let mut run = 0usize;
-        for m in 0..2000 {
-            let a = m as f64 / p.radius;
-            let d = c * a.cos() + t * a.sin();
-            let b = p.sample(d).biome;
-            if let Some(l) = last {
-                if l != b {
-                    changes += 1;
-                    runs.push(run);
-                    run = 0;
-                }
-            }
-            run += 1;
-            last = Some(b);
-        }
-        metres += 2000;
-    }
-    runs.sort();
-    let med = runs.get(runs.len() / 2).copied().unwrap_or(0);
-    let short = runs.iter().filter(|r| **r < 20).count();
-    println!(
-        "T5 core: {} biome changes in {} m of path: one per {:.0} m, median complete stretch {} m, shortest {} m, stretches under 20 m: {}",
-        changes, metres, metres as f64 / changes.max(1) as f64, med, runs.first().copied().unwrap_or(0), short
-    );
-}

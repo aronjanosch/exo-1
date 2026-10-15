@@ -1,9 +1,3 @@
-//! The coarse global layer (#177, spike 14): what only a whole-planet pass can give. The sea level,
-//! the drainage's change of the ground and the water surface per vertex of the cube-sphere grid
-//! (heights as i16 / u16 in tenths of a metre), and the rivers and lakes. It is baked once per
-//! client from recipe, seed and radius, and cached on disk under a hash of those and the code
-//! version. The fine detail (noise, stamps, bands) never lives here: it is a function of the
-//! position, evaluated per chunk.
 use crate::drainage::Mouth;
 use crate::math::*;
 use crate::planet::{Lake, River};
@@ -13,7 +7,6 @@ use std::path::{Path, PathBuf};
 /// ignored and baked again.
 pub const CODE_VERSION: u32 = 3;
 
-/// Unit of the stored heights (m).
 pub const UNIT_M: f32 = 0.1;
 /// Stored water level 0 = none; otherwise (level + WATER_OFFSET_M) / UNIT_M.
 const WATER_OFFSET_M: f32 = 1000.0;
@@ -70,7 +63,6 @@ pub fn fnv(bytes: &[u8], mut h: u64) -> u64 {
 }
 pub const FNV_START: u64 = 0xcbf2_9ce4_8422_2325;
 
-/// Cache key of a planet's coarse layer: recipe text, seed, radius, grid size and code version.
 pub fn cache_key(recipe_hash: u64, seed: i32, radius: f64, n: usize, places_hash: u64) -> u64 {
     let mut h = recipe_hash;
     for part in [&seed.to_le_bytes()[..], &radius.to_bits().to_le_bytes(), &(n as u64).to_le_bytes(), &CODE_VERSION.to_le_bytes(), &places_hash.to_le_bytes()] {
@@ -152,7 +144,6 @@ fn get_mouth(r: &mut R) -> Result<Mouth, String> {
 }
 
 impl Coarse {
-    /// Bytes of the layer in memory (the arrays and the lists).
     pub fn bytes(&self) -> usize {
         self.carve.len() * 2 + self.water.len() * 2 + self.rivers.len() * std::mem::size_of::<River>() + self.lakes.len() * std::mem::size_of::<Lake>()
     }
@@ -224,7 +215,6 @@ impl Coarse {
         w.0
     }
 
-    /// A hash of the whole layer: equal layers hash equal, whatever made them.
     pub fn hash(&self) -> u64 {
         fnv(&self.encode(0), FNV_START)
     }

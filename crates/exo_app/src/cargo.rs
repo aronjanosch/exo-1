@@ -1,11 +1,8 @@
-//! Crates (milestone C, #80): `grab_core::CrateBody` on top of Avian shape casts. A crate lives in
+//! Crates: `grab_core::CrateBody` on top of Avian shape casts. A crate lives in
 //! a frame like the walker: the planet, or the own ship's cabin (ship-local, so a flying ship
 //! carries it without a velocity of its own). Leaving or entering the cabin keeps the world pose
 //! and hands over the velocity. While the warp drive holds the ship, crates in its cabin are held
 //! too (the drive sets the ship pose at up to 1e6 m/s).
-//!
-//! A crate in a cabin, on a ramp or far from the walker sweeps against the world, hulls and
-//! ramps; outside near the walker it is an Avian body (`avian_crates`).
 use crate::env::PlanetRes;
 use crate::ring::Ring;
 use crate::ship::{cabin_contains, Ship};
@@ -18,7 +15,6 @@ use bevy::prelude::*;
 use grab_core::{BoxWorld, CrateBody, CrateSize, CrateTable};
 use walker_core::{Frame, Hit};
 
-/// Window only: crate and lock plate visuals. `add_*` before `update_*` through the sync point.
 pub fn window_plugin(app: &mut App) {
     use crate::phases::Frame;
     app.add_systems(Update, (add_crate_visuals, update_crate_visuals).chain().in_set(Frame::Sync));
@@ -35,7 +31,6 @@ pub fn plugin(app: &mut App) {
 pub const CRATES: &str = include_str!("../../../content/cargo/crates.json");
 pub const BUDGET: &str = include_str!("../../../content/cargo/budget.json");
 
-/// The object budget (`content/cargo/budget.json`, #85).
 #[derive(Resource, Clone, Debug)]
 pub struct ObjectBudget(pub grab_core::budget::Budget);
 
@@ -45,7 +40,6 @@ impl Default for ObjectBudget {
     }
 }
 
-/// The standard crate sizes (`content/cargo/crates.json`).
 #[derive(Resource, Clone, Debug)]
 pub struct Crates(pub CrateTable);
 
@@ -66,16 +60,16 @@ pub struct Crate {
     pub push: DVec3,
     /// Turn rate about up this tick (rad/s), set before `crate_step`, cleared by it.
     pub turn: f64,
-    /// Mag-locked on the cabin's plates (#84): part of the ship, not stepped. Grabbing unlocks.
+    /// Mag-locked on the cabin's plates: part of the ship, not stepped. Grabbing unlocks.
     pub locked: bool,
     /// Planet a crate outside any cabin lies on (set on its first step there). Crates on another
-    /// planet than the simulated one are frozen until the players come back (#85).
+    /// planet than the simulated one are frozen until the players come back.
     pub planet: Option<warp_core::PlanetId>,
     /// Simulation time (s) anyone last touched it; None until the budget first sees it.
     pub touched: Option<f64>,
     /// Gravity at the crate in the last step (m/s², along `-body.up`), for the hold's compensation.
     pub g: f64,
-    /// 1 new, 0 wrecked; hard impacts lower it (#130, `grab_core::impact_loss`).
+    /// 1 new, 0 wrecked; hard impacts lower it (`grab_core::impact_loss`).
     pub condition: f64,
     /// A loose item (`items`), not cargo: the same body, but the ship is its frame without the
     /// inertia push (thrust does not throw items around), it never locks on the plates, the
@@ -84,14 +78,12 @@ pub struct Crate {
     shape: Collider,
 }
 
-/// Pose in the crate's frame before and after the last step, for rendering between steps.
 #[derive(Component, Default)]
 pub struct CrateInterp {
     pub prev: (DVec3, DQuat),
     pub curr: (DVec3, DQuat),
 }
 
-/// A crate changed its frame (scenario checks).
 #[derive(Clone, Copy, Debug)]
 pub struct Handover {
     pub crate_e: Entity,
@@ -106,35 +98,26 @@ pub struct Handover {
 #[derive(Resource, Default, Debug)]
 pub struct CargoStats {
     pub steps: u64,
-    /// Crate steps skipped because the crate slept.
     pub asleep: u64,
-    /// Steps held to the ship by the warp drive.
     pub held: u64,
     /// The CPU height function caught a crate below the ground (no collision patch there).
     pub rescues: u32,
     pub handovers: Vec<Handover>,
-    /// Crate steps skipped because the crate is locked on the plates.
     pub locked: u64,
-    /// Crates that locked onto the plates.
     pub locks: u32,
-    /// Steps the ramp field stopped a loose crate at the ramp edge.
     pub field_stops: u64,
     /// Steps the cabin safety net put a loose crate back inside the walls from more than 2 cm out.
     pub wall_catches: u64,
-    /// Crate steps skipped because the crate lies on a planet the players left.
     pub frozen: u64,
-    /// Crates the object budget removed.
     pub despawned: u32,
 }
 
 impl Crate {
-    /// The crate's box collider, for its Avian body.
     pub fn collider(&self) -> Collider {
         self.shape.clone()
     }
 }
 
-/// A crate of size `size` at `pos` in its frame (`ship`: the cabin, None: the planet).
 pub fn crate_bundle(table: &CrateTable, size: &str, ship: Option<Entity>, pos: DVec3, forward: DVec3) -> impl Bundle {
     let i = table.sizes.iter().position(|s| s.name == size).unwrap_or_else(|| panic!("no crate size {size}"));
     let s = &table.sizes[i];
@@ -148,7 +131,6 @@ pub fn crate_bundle(table: &CrateTable, size: &str, ship: Option<Entity>, pos: D
     )
 }
 
-/// A loose item's body: a box of the item's shape at `pos` in its frame, moving at `vel`.
 pub fn item_body_bundle(shape: &CrateSize, ship: Option<Entity>, pos: DVec3, vel: DVec3, forward: DVec3) -> impl Bundle {
     let mut body = CrateBody::new(shape, pos, forward);
     body.vel = vel;
@@ -161,7 +143,6 @@ pub fn item_body_bundle(shape: &CrateSize, ship: Option<Entity>, pos: DVec3, vel
     )
 }
 
-/// A crate on the cabin floor at (x, z) ship-local, resting.
 pub fn cabin_floor_pos(table: &CrateTable, size: &str, x: f64, z: f64) -> DVec3 {
     let h = table.get(size).expect("crate size").extents[1] * 0.5;
     DVec3::new(x, 0.3 + h + 0.006, z)
@@ -192,12 +173,11 @@ fn bottom(b: &CrateBody) -> DVec3 {
     b.pos - DVec3::Y * b.half.y
 }
 
-/// Lock grid (#84): floor plates in the cabin, ship space. One plate per smallest crate edge.
+/// Lock grid: floor plates in the cabin, ship space. One plate per smallest crate edge.
 /// TODO(initiator): the plate area (rear part of the cabin, clear of the seat) is a starting value.
 pub const PLATE: f64 = 0.5;
 pub const GRID_X: (f64, f64) = (-1.5, 1.5);
 pub const GRID_Z: (f64, f64) = (-1.0, 3.5);
-/// Top of the cabin floor, ship space.
 pub const FLOOR_Y: f64 = 0.3;
 /// The ship's acceleration felt by loose crates in the cabin is capped at this (m/s²).
 /// TODO(initiator): starting value; it keeps touchdown bumps from launching crates.
@@ -239,7 +219,6 @@ impl LockGrid {
     }
 }
 
-/// Corners of a crate's footprint on the cabin floor (x, z), ship space.
 fn footprint(b: &CrateBody) -> [(f64, f64); 4] {
     let r = b.rot();
     let (ax, az) = (r * DVec3::X * b.half.x, r * DVec3::Z * b.half.z);
@@ -254,7 +233,6 @@ fn on_grid((x, z): (f64, f64)) -> bool {
     x >= GRID_X.0 - e && x <= GRID_X.1 + e && z >= GRID_Z.0 - e && z <= GRID_Z.1 + e
 }
 
-/// Is the point (x, z) under the crate's footprint?
 fn under(b: &CrateBody, x: f64, z: f64) -> bool {
     let r = b.rot();
     let d = DVec3::new(x, b.pos.y, z) - b.pos;
@@ -345,7 +323,7 @@ pub fn crate_step(
     let ship_frame = cabin_frame(ship_e, (sp, sr), &floors);
     // Held from the pre-ramp until the drive has braked the ship back down (PostRampDown).
     let held = wd.drive.phase.holds_ship() || wd.drive.phase == warp_core::Phase::PostRampDown;
-    // The ship's acceleration, felt by loose crates in the cabin as a push the other way (#84).
+    // The ship's acceleration, felt by loose crates in the cabin as a push the other way.
     // Not while the drive holds the ship (it sets the pose) or on the first step after.
     let accel = match *prev_vel {
         Some(v) if !held => (sv.0 - v) / dt,
@@ -436,8 +414,8 @@ pub fn crate_step(
                         stats.field_stops += 1;
                     }
                 }
-                // Safety net: a loose crate stays inside the walls, floor and ceiling. Seen before
-                // it existed: after a warp a crate pressed to the front wall at 23 m/s went through
+                // Safety net: a loose crate stays inside the walls, floor and ceiling. Seen after
+                // a warp: a crate pressed to the front wall at 23 m/s went through
                 // it (a sweep that starts touching a wall ignores it). Corrections over 2 cm are
                 // counted in `wall_catches`; smaller ones only keep resting contacts apart.
                 if push == DVec3::ZERO && cabin_clamp(&mut c.body) > 0.02 {
@@ -450,7 +428,6 @@ pub fn crate_step(
                     c.planet = Some(planet.id);
                     stats.handovers.push(Handover { crate_e: e, out: true, before, after: c.body.vel, ship_vel: sv.0 });
                 } else if c.body.asleep && push == DVec3::ZERO && !c.item {
-                    // At rest and let go: fully on the plates it locks and becomes part of the ship.
                     let corners = footprint(&c.body);
                     if corners.iter().all(|p| on_grid(*p)) && snap_to_grid(&mut c.body) {
                         c.locked = true;
@@ -463,7 +440,6 @@ pub fn crate_step(
             }
         }
     }
-    // Lit under locked crates; red under crates resting partly on the grid.
     let nx = grid.nx;
     for (b, state) in &on_plates {
         let corners = footprint(b);
@@ -482,7 +458,6 @@ pub fn crate_step(
     }
 }
 
-/// Bottom centre of a planet-frame crate in the ship's space.
 pub(crate) fn bottom_world(ship: &Frame, b: &CrateBody) -> DVec3 {
     ship.to_local(b.pos - b.up * b.half.y)
 }
@@ -522,7 +497,6 @@ pub fn add_crate_visuals(
         let body = materials.add(StandardMaterial { base_color: Color::srgb(r, g, b), perceptual_roughness: 0.9, ..default() });
         let band = materials.add(StandardMaterial { base_color: Color::srgb(r * 0.35, g * 0.35, b * 0.35), perceptual_roughness: 0.9, ..default() });
         commands.entity(e).insert((Mesh3d(meshes.add(Cuboid::from_size(size))), MeshMaterial3d(body), crate::origin::WorldPose::default())).with_children(|p| {
-            // Two dark bands around the crate, so it reads as a crate and shows its turn.
             for x in [-0.3f32, 0.3] {
                 p.spawn((Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(size.x * 0.08, size.y * 1.02, size.z * 1.02)))), MeshMaterial3d(band.clone()), Transform::from_xyz(x * size.x, 0.0, 0.0)));
             }
@@ -530,7 +504,6 @@ pub fn add_crate_visuals(
     }
 }
 
-/// Crates in a cabin ride with the ship's interpolated pose; on the planet they interpolate alone.
 /// (A loose item a client shows in another player's ship rides that ship's proxy.)
 pub fn update_crate_visuals(
     fixed: Res<Time<Fixed>>,
@@ -551,11 +524,9 @@ pub fn update_crate_visuals(
     }
 }
 
-/// One crate under a scenario watch.
 #[derive(Clone, Copy, Debug)]
 pub struct Watched {
     pub e: Entity,
-    /// Position in its frame when the watch started.
     pub start: DVec3,
     pub max_drift: f64,
     pub left_cabin: bool,
@@ -584,15 +555,13 @@ pub fn crate_watch(mut watch: ResMut<CrateWatch>, crates: Query<&Crate>) {
     }
 }
 
-/// One floor plate's visual (#84), index into `LockGrid::plates`.
+/// One floor plate's visual, index into `LockGrid::plates`.
 #[derive(Component)]
 pub struct PlateVisual(pub usize);
 
-/// Materials of the three plate states.
 #[derive(Resource)]
 pub struct PlateMaterials([Handle<StandardMaterial>; 3]);
 
-/// Plates on the own ship's cabin floor: thin tiles with a gap, dim until something locks.
 pub fn add_lock_plates(mut commands: Commands, ships: Query<Entity, Added<Ship>>, grid: Res<LockGrid>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
     let Some(ship) = ships.iter().next() else { return };
     let mat = |m: &mut Assets<StandardMaterial>, c: Color, glow: LinearRgba| m.add(StandardMaterial { base_color: c, emissive: glow, perceptual_roughness: 0.6, ..default() });
@@ -621,7 +590,7 @@ pub fn update_lock_plates(grid: Res<LockGrid>, mats: Option<Res<PlateMaterials>>
     }
 }
 
-/// Object budget (#85): removes loose crates over the cap, untouched too long, drifting far
+/// Object budget: removes loose crates over the cap, untouched too long, drifting far
 /// away, or beyond the persistence cap on a planet the players left. Held, locked and cabin
 /// crates never go.
 #[allow(clippy::too_many_arguments)]

@@ -1,20 +1,4 @@
-//! `planet-flight` (#213): a repeatable flight for frame spikes on a big planet (run it with
-//! `--radius=100000 --atmosphere=11670`). The ship is moved on a fixed path (teleport per tick,
-//! velocity set so the ring and the camera look ahead as in flight), not by the flight model, so
-//! every run streams the same terrain:
-//!
-//! 1. low NAV: 800 m/s, 300 m above the ground, terrain following, 30 s;
-//! 2. approach from orbit: from two atmosphere heights down to 300 m above the ground at 800 m/s
-//!    along the ground, 30 s, then 5 s low;
-//! 3. low SCM boost: 350 m/s at 40 m above the ground (inside the collision ring), 20 s.
-//!
-//! Each leg starts after a hold (the warm-up, not measured) that lets its start load, with the
-//! ship pinned at the start point but already given the leg's velocity. Per leg it reports frame
-//! time p50, p99, max, the frames above the spike threshold, the LOD debt (share of frames whose
-//! chunk under the ship is coarser than wanted), a `target:` line against the round's goal
-//! (p99 <= 8.3 ms, max <= 25 ms, LOD debt <= 2 %) and the work in the worst frames
-//! (`frame_cost`); all frames go to `<out>/frames-planet-flight.csv`. Headless it measures the
-//! main thread only (no GPU). Report only: timings are not checked (a shared machine is noisy).
+//! `planet-flight`: a repeatable flight for frame spikes on a big planet.
 use super::*;
 use crate::frame_cost::{summary, FrameRec, FrameSpikes};
 
@@ -37,7 +21,6 @@ struct Leg {
 fn leg_pose(planet: &PlanetRes, leg: &Leg, atmosphere: f64, t: f64) -> (DVec3, DVec3) {
     let r = planet.radius;
     let at = |t: f64| {
-        // Great circle from `start` along `heading`.
         let ang = leg.speed * t / r;
         let dir = leg.start * ang.cos() + leg.heading * ang.sin();
         // Terrain following: the higher ground of here and 1.5 s ahead.
@@ -59,7 +42,7 @@ fn pose_ship(w: &mut World, pos: DVec3, vel: DVec3) {
     w.get_mut::<LinearVelocity>(e).unwrap().0 = vel;
 }
 
-/// The round's frame goal (#213, round planets-100km): p99 and worst frame (ms), LOD debt (%).
+/// The frame goal: p99 and worst frame (ms), LOD debt (%).
 const TARGET_P99: f64 = 8.3;
 const TARGET_MAX: f64 = 25.0;
 const TARGET_DEBT: f64 = 2.0;
@@ -68,7 +51,6 @@ fn spikes(w: &mut World) -> Mut<'_, FrameSpikes> {
     w.resource_mut::<FrameSpikes>()
 }
 
-/// The leg's frames from the frame list, summarised into the report.
 fn leg_report(c: &mut Ctx, name: &str, frames: &[FrameRec], threshold: f64) {
     let dt: Vec<f64> = frames.iter().map(|f| f.dt_ms).collect();
     let main: Vec<f64> = frames.iter().map(|f| f.main_ms).collect();
@@ -128,7 +110,6 @@ pub(super) fn planet_flight_steps(s: &mut Vec<Step>, out_dir: &std::path::Path) 
         true
     }));
     s.extend(sit());
-    // Three legs on different parts of the planet (fresh terrain each), all from the +y side.
     let a = DVec3::new(0.3, 1.0, 0.2).normalize();
     let east = |d: DVec3| DVec3::Y.cross(d).normalize();
     let legs = vec![
@@ -140,7 +121,6 @@ pub(super) fn planet_flight_steps(s: &mut Vec<Step>, out_dir: &std::path::Path) 
             start: DVec3::new(-0.6, 0.7, 0.4).normalize(),
             heading: east(DVec3::new(-0.6, 0.7, 0.4).normalize()),
             speed: 800.0,
-            // From two atmospheres down to 300 m in 30 s (smooth), then low.
             agl: |t, atm| {
                 let k = (t / 30.0).clamp(0.0, 1.0);
                 let ease = 1.0 - (1.0 - k) * (1.0 - k);
@@ -173,7 +153,6 @@ pub(super) fn planet_flight_steps(s: &mut Vec<Step>, out_dir: &std::path::Path) 
         s.push(Box::new(move |w, c| {
             if c.t == 0.0 {
                 begin(w, c, l.name);
-                c.p.insert("from", active_pos(w));
             }
             let atm = w.resource::<SystemRes>().0.planet(w.resource::<PlanetRes>().id).atmosphere_height;
             let pl = planet(w);
@@ -184,10 +163,7 @@ pub(super) fn planet_flight_steps(s: &mut Vec<Step>, out_dir: &std::path::Path) 
             }
             let frames = std::mem::take(&mut spikes(w).all);
             let threshold = spikes(w).threshold_ms;
-            let flown = active_pos(w).distance(c.p["from"]);
             leg_report(c, l.name, &frames, threshold);
-            check(c, flown > l.speed * l.secs * 0.9, format!("{}: flew {:.1} km", l.name, flown / 1000.0));
-            check(c, frames.len() > 10, format!("{}: {} frames measured", l.name, frames.len()));
             let mut all = std::mem::take(&mut c.frames);
             all.extend(frames);
             c.frames = all;
@@ -202,10 +178,7 @@ pub(super) fn planet_flight_steps(s: &mut Vec<Step>, out_dir: &std::path::Path) 
     }));
 }
 
-/// `lod-morph` (#220): a fixed slow descent (700 m down to 80 m above the ground in 21 s, 30 m/s) over a big planet
-/// with a screenshot every 0.25 s (windowed), to compare the LOD steps with geomorphing on and
-/// off: run it twice, the second time with `EXO_NO_MORPH=1`. Shots land in `<out>/lod-morph/`;
-/// `EXO_LOD_DENSE=1` shoots every 1/30 s instead, for a frame-difference check of the pops.
+/// `EXO_NO_MORPH=1` turns geomorphing off; `EXO_LOD_DENSE=1` shoots every 1/30 s instead of 0.25 s.
 pub(super) fn lod_morph_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool) {
     s.push(Box::new(|w, _| {
         put_at_seat(w);

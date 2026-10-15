@@ -1,17 +1,8 @@
 //! Stage 4 of the SC step: the thrust the flight computer asks for (ship space, m/s²), inside the
-//! thrust box. Lane `sc-linear` (round 5, #195) owns this file and `modes.rs`.
-//!
-//! Coupled flies a velocity goal from the stick (`cruise` sideways and vertical, the caps along Z
-//! at boost); decoupled pushes along the stick; `Modes::coupling` blends them. The cap refuses the
-//! thrust along the velocity above it (A3), the brake takes one deceleration along the velocity
-//! (B2), anti-drift keeps the path straight while an axis saturates, gravity compensation holds
-//! against gravity and air (off: the ship falls in a frame that falls with it), G-safe cuts the
-//! box, the strafe tapers with forward speed, comstab keeps the goal on the nose, and proximity
-//! and landing mode limit the descent and the speed near the ground. The first flight model's
-//! ideas (`refuse_thrust`, `brake_along`, the precision band, the descent limit) live on here.
+//! thrust box.
 use super::modes::{Master, Modes};
 use super::StepState;
-use crate::limits::{Dirs, G0};
+use crate::limits::{Dirs, G0, G_SAFE_MAX_G};
 use crate::{lerp, limit_length, smoothstep, Curve, FlightInput, Interp};
 use glam::{DQuat, DVec2, DVec3};
 use serde::Deserialize;
@@ -22,7 +13,6 @@ use serde::Deserialize;
 pub struct Caps {
     /// Coupled speed for full stick in any direction.
     pub cruise: f64,
-    /// Forward and backward at full boost (at least `cruise`).
     pub boost_forward: f64,
     pub boost_backward: f64,
 }
@@ -39,7 +29,6 @@ impl Caps {
     }
 }
 
-/// The landing mode's precision band (K).
 #[derive(Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LandingBand {
@@ -71,7 +60,6 @@ pub struct LinearTuning {
     pub strafe_taper_boost: Curve,
     /// g per direction of the thrust while G-safe is on.
     pub g_limit: Dirs,
-    /// The boost lifts G-safe.
     pub boost_disables_g_safe: bool,
     /// m/s: below this the brake's rate is proportional to the speed.
     pub brake_ease_speed: f64,
@@ -142,7 +130,7 @@ impl Default for LinearTuning {
             anti_drift: true,
             strafe_taper: curve(&[(0.0, 1.0), (1.0, 1.0), (1.5, 0.5)]),
             strafe_taper_boost: curve(&[(0.0, 1.0), (1.0, 0.6), (1.7, 0.35)]),
-            g_limit: Dirs { forward: 8.0, backward: 6.0, left: 4.0, right: 4.0, up: 6.0, down: 3.0 },
+            g_limit: Dirs::splat(G_SAFE_MAX_G),
             boost_disables_g_safe: false,
             brake_ease_speed: 3.0,
             comstab_off_lag: 3.0,
@@ -153,7 +141,6 @@ impl Default for LinearTuning {
     }
 }
 
-/// What the other stages give this one.
 #[derive(Clone, Copy, Debug)]
 pub struct Env {
     /// m/s² per direction the thrusters can give this step (air and boost included).
@@ -163,6 +150,8 @@ pub struct Env {
     pub braking: bool,
     /// m/s², world: what the air does to the ship (drag, lift, wind).
     pub air_accel: DVec3,
+    /// m/s², world: own-motion drag, left unopposed when decoupled.
+    pub passive_drag: DVec3,
     /// Share of the caps the air leaves (1 in space).
     pub cap_scale: f64,
     /// m/s, world: the velocity the coupled goal moves with: the wind while wind compensation is
@@ -175,13 +164,10 @@ pub struct LinearState {
     /// m/s, world: the fall gravity adds while gravity compensation is off. The goal moves with it,
     /// so the assist does not fight the fall. Dropped when compensation comes back on.
     pub fall: DVec3,
-    /// The frame the goal turns in: the nose at rest or with comstab on, lagging while moving
-    /// with comstab off.
     pub aim: DQuat,
 }
 
 /// m/s: below this the precise HUD rounds to 0.00. At rest the goal has no old heading;
-/// active braking also finishes at exact zero (unbraked slow movement is not cut).
 pub(super) const STOP_SPEED: f64 = 0.005;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -190,8 +176,9 @@ pub struct LinearOut {
     pub accel: DVec3,
     /// m/s: the forward speed cap in force (master mode, boost, limiter, air, landing band).
     pub cap: f64,
-    /// The request did not fit the box.
     pub saturated: bool,
+    /// Ship-space acceleration reserved for holds and catching across-goal drift.
+    pub turn_reserve: DVec3,
 }
 
 /// The largest k that keeps `hold + u * k` inside the box: the weakest axis in that direction
@@ -211,19 +198,17 @@ fn brake_ceiling(b: &Dirs, hold: DVec3, u: DVec3) -> f64 {
 /// m/s: anti-drift acts only on an across speed above this.
 const ANTI_DRIFT_MIN: f64 = 0.5;
 
-/// Anti-drift (notes section 1, "Anti-drift"; #203): with the velocity across the goal direction
+/// Anti-drift (notes section 1, "Anti-drift"): with the velocity across the goal direction
 /// `g` (ship space), the thrust takes the direction of the velocity error at the most the box
 /// gives that way, so the path to the goal stays straight. `None` when the velocity has no part
 /// across the goal (the plain law then applies).
-fn anti_drift(b: &Dirs, lv: DVec3, g: DVec3, goal: DVec3) -> Option<DVec3> {
+fn anti_drift(b: &Dirs, lv: DVec3, g: DVec3, goal: DVec3, hold: DVec3, decay: f64) -> Option<DVec3> {
     let across = lv - g * lv.dot(g);
     let n = across.length();
     // Below this the across speed is the ship settling, not drift.
     if n < ANTI_DRIFT_MIN {
         return None;
     }
-    // The thrust points along the velocity error, as far as the box reaches that way: the across
-    // speed and the error along the goal die together and the path stays straight. A large error
     // along the goal throttles the across part to its share instead of every axis running full.
     let err = goal - lv;
     let l = err.length();
@@ -231,13 +216,39 @@ fn anti_drift(b: &Dirs, lv: DVec3, g: DVec3, goal: DVec3) -> Option<DVec3> {
         return None;
     }
     let u = err / l;
-    Some(u * reach(b, u))
+    // Fit the complete thrust, hold + correction, rather than fitting correction
+    // about zero and adding the hold afterwards. Otherwise entering saturation
+    // abruptly loses thrust when the gravity/air hold opposes the turn.
+    Some(u * brake_ceiling(b, hold, u).max(0.0).min(l * decay))
 }
 
-/// How far the box reaches along the unit vector `u` (the largest `s` with `s * u` inside it).
-fn reach(b: &Dirs, u: DVec3) -> f64 {
-    let lim = b.along(u.signum());
-    [(u.x, lim.x), (u.y, lim.y), (u.z, lim.z)].iter().filter(|(c, _)| c.abs() > 1e-12).map(|(c, m)| m.abs() / c.abs()).fold(f64::INFINITY, f64::min)
+pub(super) fn motion_box(f: &StepState, m: &Modes, e: &Env, t: &LinearTuning) -> Dirs {
+    let mut b = e.thrust_box;
+    if m.g_safe && !(t.boost_disables_g_safe && e.boost > 0.0) {
+        b = b.min(&t.g_limit.scaled(G0));
+    }
+    let cruise = t.caps(m.master).cruise * e.cap_scale * m.limiter;
+    let x = (-f.lv.z).max(0.0) / cruise;
+    let tap = lerp(t.strafe_taper.eval(x), t.strafe_taper_boost.eval(x), e.boost);
+    Dirs { left: b.left * tap, right: b.right * tap, up: b.up * tap, down: b.down * tap, ..b }
+}
+
+/// Limit the combined thrust without sacrificing a feasible gravity/air hold.
+fn limit_g_load(thrust: DVec3, hold: DVec3) -> DVec3 {
+    let limit = G_SAFE_MAX_G * G0;
+    if thrust.length_squared() <= limit * limit {
+        return thrust;
+    }
+    let base = limit_length(hold, limit);
+    let delta = thrust - base;
+    let a = delta.length_squared();
+    if a < 1e-18 {
+        return base;
+    }
+    let b = 2.0 * base.dot(delta);
+    let c = base.length_squared() - limit * limit;
+    let scale = ((-b + (b * b - 4.0 * a * c).max(0.0).sqrt()) / (2.0 * a)).clamp(0.0, 1.0);
+    base + delta * scale
 }
 
 pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, e: &Env, t: &LinearTuning) -> LinearOut {
@@ -254,11 +265,11 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
     let goal_loc = DVec3::new(stick.x * cruise, stick.y * cruise, stick.z * if stick.z < 0.0 { forward } else { backward });
     let goal_stick = s.aim * goal_loc;
 
-    // Gravity compensation: on, thrust holds against gravity and air; off, the fall is integrated
-    // into the goal instead (the ship falls with g).
-    // The air (drag, lift, the wind with wind compensation on) is held either way; gravity only
-    // with compensation on.
-    let hold = if m.grav_comp { -f.gravity } else { DVec3::ZERO } - e.air_accel;
+    // Gravity compensation is independent of coupling. Air lift and compensated wind
+    // are opposed in either mode, within thrust limits. Decoupled leaves passive drag
+    // unopposed; coupled progressively holds it as velocity control blends back in.
+    let held_air = e.air_accel - e.passive_drag * (1.0 - m.coupling);
+    let hold = if m.grav_comp { -f.gravity } else { DVec3::ZERO } - held_air;
     // The goal uses the fall of the start of the step: the velocity then follows it with no lag.
     let fall = s.fall;
     if m.grav_comp || e.braking {
@@ -267,21 +278,13 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
         s.fall += f.gravity * f.dt;
     }
 
-    // The box: the thrusters' box, G-safe cut, the strafe taper on the lateral and vertical sides.
-    let mut b = e.thrust_box;
-    if m.g_safe && !(t.boost_disables_g_safe && e.boost > 0.0) {
-        b = b.min(&t.g_limit.scaled(G0));
-    }
-    let x = (-f.lv.z).max(0.0) / cruise;
-    let tap = lerp(t.strafe_taper.eval(x), t.strafe_taper_boost.eval(x), e.boost);
-    b = Dirs { left: b.left * tap, right: b.right * tap, up: b.up * tap, down: b.down * tap, ..b };
+    let b = motion_box(f, m, e, t);
 
     let sink = (-f.v.dot(f.up)).max(0.0);
     let brake_up = (b.support(f.inv * f.up) - f.gravity.length()).max(1.0);
 
     if e.braking {
         // B2: one deceleration along the velocity, the weakest axis as the ceiling, gravity and air
-        // held; the rate eases to zero with the speed.
         let hold_l = b.clamp(f.inv * -(f.gravity + e.air_accel));
         let speed = f.lv.length();
         let thrust = if speed > 1e-9 {
@@ -292,10 +295,10 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
             hold_l
         };
         let accel = b.clamp(thrust);
-        return LinearOut { accel, cap: forward, saturated: (thrust - accel).length() > 1e-6 };
+        let accel = if m.g_safe { limit_g_load(accel, hold_l) } else { accel };
+        return LinearOut { accel, cap: forward, saturated: (thrust - accel).length() > 1e-6, turn_reserve: hold_l };
     }
 
-    // The goal from the stick, with the fall; the landing band and the descent limit cut it.
     let mut goal = goal_stick + fall + e.drift;
     let mut forward_cap = forward;
     let mut descent = DVec3::ZERO;
@@ -321,7 +324,6 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
             goal -= f.up * (vertical + safe);
             descent = f.up * (a * sink / safe);
         }
-        // Flying at the ground: the downward part of the goal is cut.
         if sink > 1e-9 && f.clearance / sink < t.proximity_time {
             let vertical = goal.dot(f.up);
             if vertical < 0.0 {
@@ -330,14 +332,17 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
         }
     }
 
-    // Coupled: the velocity goal, the hold and the descent brake; decoupled: the stick's thrust
-    // and the hold. The blend runs between them.
     let motion_l = f.inv * ((goal - f.v) * t.decay + descent);
     let hold_l = f.inv * hold;
+    let direction = (goal - fall - e.drift).normalize_or_zero();
+    let relative_v = f.v - fall - e.drift;
+    let across = if direction.length_squared() > 0.0 { relative_v - direction * relative_v.dot(direction) } else { DVec3::ZERO };
+    let correction = -across * t.decay;
+    let correction_dir = correction.normalize_or_zero();
     let mut coupled = motion_l + hold_l;
     if t.anti_drift && goal_stick.length_squared() > 1e-18 && b.clamp(coupled) != coupled {
         let g = f.inv * goal_stick.normalize();
-        if let Some(biased) = anti_drift(&b, f.lv, g, f.inv * goal) {
+        if let Some(biased) = anti_drift(&b, f.lv, g, f.inv * goal, hold_l, t.decay) {
             coupled = biased + hold_l;
         }
     }
@@ -369,5 +374,12 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
     }
 
     let accel = b.clamp(asked);
-    LinearOut { accel, cap: forward_cap, saturated: (asked - accel).length() > 1e-6 }
+    let accel = if m.g_safe && !(t.boost_disables_g_safe && e.boost > 0.0) { limit_g_load(accel, b.clamp(hold_l)) } else { accel };
+    // Translation already supplies the ongoing curve's push. Only a correction
+    // that exceeds its delivered budget needs extra reserve; counting all of it
+    // again halves the usable curve acceleration.
+    let delivered = (f.rot * (accel - hold_l)).dot(correction_dir);
+    let extra = (correction.length() - delivered).max(0.0);
+    let turn_reserve = hold_l + f.inv * correction_dir * extra;
+    LinearOut { accel, cap: forward_cap, saturated: (asked - accel).length() > 1e-6, turn_reserve }
 }

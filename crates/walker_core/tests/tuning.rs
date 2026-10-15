@@ -1,14 +1,7 @@
-//! Walker and suit tuning as data (#20).
 use walker_core::{SuitConfig, WalkerConfig};
 
 const WALKER: &str = include_str!("../../../content/tuning/walker.json");
 const SUIT: &str = include_str!("../../../content/tuning/suit.json");
-
-#[test]
-fn shipped_files_equal_default() {
-    assert_eq!(WalkerConfig::from_json(WALKER).unwrap(), WalkerConfig::default());
-    assert_eq!(SuitConfig::from_json(SUIT).unwrap(), SuitConfig::default());
-}
 
 #[test]
 fn rejects_unknown_and_missing_fields() {

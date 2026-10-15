@@ -1,4 +1,3 @@
-//! Ship body (Avian rigid body, greybox cabin) driven by flight_core.
 use crate::controls::{Actions, Bindings, ShipMouse, Tap};
 use crate::env::PlanetRes;
 use crate::Layer;
@@ -6,6 +5,7 @@ use avian3d::prelude::*;
 use bevy::math::{DMat3, DQuat, DVec2, DVec3};
 use bevy::prelude::*;
 use flight_core::sc::{ModeCmds, ScShip};
+use flight_core::ship_type::{HullKind, ShipModel};
 use flight_core::{BodyState, FlightInput, GroundRules, Lag, VirtualStick};
 
 pub fn plugin(app: &mut App) {
@@ -15,13 +15,13 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, thruster_fx.in_set(crate::phases::Fx::Effects));
 }
 
-/// Seat position in ship space.
 pub const SEAT_POS: DVec3 = DVec3::new(0.0, 0.6, -3.0);
 
 #[derive(Component)]
 pub struct Ship {
+    /// Named type identity; mutable flight state lives in `sc`.
+    pub model: ShipModel,
     pub piloted: bool,
-    /// Parked: static until someone first sits down.
     pub parked: bool,
     /// Drive while nobody pilots (scenarios only).
     pub test_input: FlightInput,
@@ -31,9 +31,7 @@ pub struct Ship {
     pub stick: VirtualStick,
     /// A hull collider touches something (the ground; ships do not touch each other).
     pub grounded: bool,
-    /// The SC flight model (`flight_core::sc`).
     pub sc: ScShip,
-    /// The ground rules (#92): the ship on the ground while the SC model does not fly it.
     pub ground: GroundRules,
 }
 
@@ -43,7 +41,6 @@ impl Ship {
         self.sc.status.thrust_share
     }
 
-    /// A boost is running.
     pub fn boost_active(&self) -> bool {
         self.sc.status.boost_active
     }
@@ -53,18 +50,16 @@ impl Ship {
 #[derive(Component)]
 pub struct RemoteShip {
     pub owner: u32,
-    /// Cabin gravity (LAG) level from the owner's snapshots, 0..1 (issue #11).
+    /// Cabin gravity (LAG) level from the owner's snapshots, 0..1.
     pub lag: f64,
 }
 
-/// Visual-only part (the view plugin adds meshes for these).
 #[derive(Component, Clone)]
 pub struct ShipPart {
     pub size: Vec3,
     pub color: Color,
 }
 
-/// True if a point in ship space (the walker's feet) is inside the cabin.
 pub fn cabin_contains(p: DVec3, margin: f64) -> bool {
     p.x.abs() < 1.95 + margin && p.y > -margin && p.y < 2.9 + margin && p.z.abs() < 4.0 + margin
 }
@@ -89,43 +84,55 @@ pub fn spawn_ship(commands: &mut Commands, planet: &PlanetRes, tuning: &crate::t
     }
     let pos = planet.centre + dir * (planet.radius + ground + 0.05);
     // Mass properties are f32 in Avian even with f64 positions.
-    let m = 2000.0f32;
-    let (w, h, d) = (4.6f32, 3.2f32, 8.3f32);
+    let definition = &tuning.ship_type;
+    let body = &definition.flight.ship;
+    let m = body.mass as f32;
+    let inertia = body.inertia;
     let ship = commands
         .spawn((
             Ship {
+                model: definition.model.clone(),
                 piloted: false,
                 parked: true,
                 test_input: FlightInput::default(),
                 lag: Lag::default(),
                 stick: VirtualStick::default(),
                 grounded: false,
-                sc: ScShip::new(tuning.sc.clone()),
+                sc: ScShip::new(definition.flight.clone()),
                 ground: GroundRules::new(tuning.ground.clone()),
             },
+            Name::new(definition.model.name.clone()),
             RigidBody::Static,
             Position(pos),
             Rotation(rot),
             Transform::default(),
             // Explicit mass: the ramp and the visuals must not add any.
             Mass(m),
-            AngularInertia::new(Vec3::new(m / 12.0 * (h * h + d * d), m / 12.0 * (w * w + d * d), m / 12.0 * (w * w + h * h))),
+            AngularInertia::new(Vec3::new(inertia.pitch as f32, inertia.yaw as f32, inertia.roll as f32)),
             CenterOfMass(Vec3::new(0.0, 1.4, -0.3)),
             (NoAutoMass, NoAutoAngularInertia, NoAutoCenterOfMass),
             (LinearDamping(0.0), AngularDamping(0.0), SweptCcd::default(), SleepingDisabled),
             Visibility::default(),
         ))
         .id();
-    add_hull(commands, ship, Layer::Ship);
+    add_hull_for(commands, ship, Layer::Ship, definition.model.hull);
     ship
 }
 
-/// Greybox cabin: visual parts, hull colliders, ramp. Shared by the own ship and the remote proxies.
 /// `layer` is `Layer::Ship` for the own ship; remote proxies use `Layer::Remote` (no ship contact).
 pub fn add_hull(commands: &mut Commands, ship: Entity, layer: Layer) {
+    add_hull_for(commands, ship, layer, HullKind::Kackfass1);
+}
+
+pub fn add_hull_for(commands: &mut Commands, ship: Entity, layer: Layer, hull: HullKind) {
+    match hull {
+        HullKind::Kackfass1 => add_kackfass_1_hull(commands, ship, layer),
+    }
+}
+
+fn add_kackfass_1_hull(commands: &mut Commands, ship: Entity, layer: Layer) {
     let hull = Color::srgb(0.95, 0.5, 0.15);
     let inner = Color::srgb(0.55, 0.55, 0.6);
-    // See-through: the tunnel streaks show through the window.
     let glass = Color::srgba(0.3, 0.8, 0.9, 0.12);
     // [size, position, colour, collides, drawn] in ship space; origin at the floor bottom.
     // The front wall collides as one block; it is drawn as four pieces around the window opening
@@ -186,14 +193,26 @@ pub fn ship_control(
     controls: Res<crate::controls::Controls>,
     bindings: Res<Bindings>,
     warp: Res<crate::warp::WarpDrive>,
-    mut q: Query<(Entity, &mut Ship, &Position, &Rotation, &mut LinearVelocity, &mut AngularVelocity)>,
+    mut q: Query<(Entity, &mut Ship, &Position, &Rotation, &mut LinearVelocity, &mut AngularVelocity, &mut Mass, &mut AngularInertia)>,
     collisions: Collisions,
     colliders: Query<(Entity, &ColliderOf)>,
     crates: Query<&crate::cargo::Crate>,
     table: Res<crate::cargo::Crates>,
 ) {
     let dt = time.delta_secs_f64();
-    for (e, mut ship, pos, rot, mut lv, mut av) in &mut q {
+    for (e, mut ship, pos, rot, mut lv, mut av, mut mass, mut inertia) in &mut q {
+        // Contact physics uses the same type/cargo mass as the flight model, also after reloads.
+        let cargo: f64 = crates.iter().filter(|c| c.locked && c.ship == Some(e)).map(|c| table.0.sizes[c.size].mass).sum();
+        ship.sc.set_cargo_mass(cargo);
+        let kg = ship.sc.mass() as f32;
+        if mass.0 != kg {
+            mass.0 = kg;
+        }
+        let i = ship.sc.inertia();
+        let tensor = AngularInertia::new(Vec3::new(i.pitch as f32, i.yaw as f32, i.roll as f32));
+        if *inertia != tensor {
+            *inertia = tensor;
+        }
         // A crate body leaning on the hull is not the ground.
         ship.grounded = colliders.iter().any(|(c, of)| of.body == e && collisions.collisions_with(c).any(|p| !crates.contains(p.collider1) && !crates.contains(p.collider2)));
         let clearance = ship.ground.clearance_at(planet.as_ref(), pos.0);
@@ -204,11 +223,10 @@ pub fn ship_control(
         if !ship.piloted || controls.released {
             ship.stick = VirtualStick::default();
         }
-        // From the pre-ramp on the drive holds the ship.
         if ship.parked || warp.drive.phase.holds_ship() {
             if ship.piloted {
                 // Mouse movement during the hold is dropped, not applied at once afterwards
-                // (#110 point 3); the stick starts centred.
+                // the stick starts centred.
                 actions.look = Vec2::ZERO;
                 ship.stick = VirtualStick::default();
             }
@@ -245,23 +263,20 @@ pub fn ship_control(
         };
         let body = BodyState { pos: pos.0, rot: rot.0, lin_vel: lv.0, ang_vel: av.0 };
         let ship = &mut *ship;
-        // The SC model has no landing gear yet (#162): resting on the ground with gravity
-        // compensation on and no thrust but down, the ground rules (settle, hold on a slope, #92,
+        // The SC model has no landing gear yet: resting on the ground with gravity
+        // compensation on and no thrust but down, the ground rules (settle, hold on a slope,
         // turning on the ground) keep the ship in place.
         let still = input.thrust.x.abs() < 1e-5 && input.thrust.z.abs() < 1e-5 && input.thrust.y <= 1e-5;
         let ground = input.grounded && still && lv.0.length() < GroundRules::GROUND_HOLD_SPEED && ship.sc.modes.grav_comp;
-        // Cargo locked on this ship's plates is part of the ship (#84, #88): its mass and inertia
+        // Cargo locked on this ship's plates is part of the ship: its mass and inertia
         // count in the SC model. The locks of the last step (the crates step after the ship).
-        let cargo: f64 = crates.iter().filter(|c| c.locked && c.ship == Some(e)).map(|c| table.0.sizes[c.size].mass).sum();
-        ship.sc.set_cargo_mass(cargo);
         let (v, w) = if ground {
-            // The switches still apply on the ground, and the boost meter runs on.
             ship.sc.modes.update(&cmds, &ship.sc.tuning.modes, dt);
             ship.sc.skip_step(dt);
             ship.ground.step(&body, &input, planet.as_ref(), dt)
         } else {
             // Thrust, gravity compensation off or speed ends the ground state. A one-step loss of
-            // contact while still does not (the ground rules let it through, #92).
+            // contact while still does not (the ground rules let it through).
             if !still || !ship.sc.modes.grav_comp || lv.0.length() >= GroundRules::GROUND_HOLD_SPEED {
                 ship.ground.release();
             }
@@ -273,12 +288,10 @@ pub fn ship_control(
     }
 }
 
-/// Camera effects of the own ship (#27, #148, #149), stepped with the simulation so scenarios can
-/// check them; the view only applies them.
 #[derive(Resource, Default)]
 pub struct CameraEffects(pub flight_core::camera::CameraFx);
 
-/// F9 switches the camera effects (#148, #149). The felt acceleration is the change of velocity in
+/// F9 switches the camera effects. The felt acceleration is the change of velocity in
 /// ship space (no gravity term: a hover thrust that holds the ship feels nothing), zero on the
 /// ground; the walker in a flying cabin gets the cabin's share.
 pub fn camera_fx(
@@ -308,7 +321,6 @@ pub fn camera_fx(
     let input = flight_core::camera::FxInput {
         speed: lv.0.length(),
         turn: DVec2::new(local.x, local.y),
-        // The bump comes with the first hull contact (#110 point 4).
         approach: -lv.0.dot(up),
         grounded: ship.grounded,
         accel,
@@ -322,8 +334,6 @@ pub fn camera_fx(
     fx.0.step_with(&tuning.camera, &input);
 }
 
-/// Thruster sound layers of the own ship (#150), stepped with the simulation so scenarios can
-/// read the levels; the audio plays them.
 #[derive(Resource, Default)]
 pub struct ThrusterLevels(pub flight_core::audio::ThrusterAudio);
 

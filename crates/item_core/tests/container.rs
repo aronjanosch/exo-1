@@ -1,4 +1,3 @@
-//! Containers (from the dev-area round, #287): stack caps, allowed kinds, access, moving, conservation.
 use std::collections::BTreeMap;
 
 use item_core::container::*;
@@ -12,12 +11,10 @@ fn gauze() -> Item {
     Item::new("space_gauze", &["small", "medical"], 8)
 }
 
-/// A medium tool that does not stack.
 fn wrench() -> Item {
     Item::new("bendy_wrench", &["medium", "tool"], 1)
 }
 
-/// A carrier (a bag) that only goes into the carrier slots.
 fn bag() -> Item {
     Item::new("wobble_bag", &["medium", "carrier"], 1)
 }
@@ -139,7 +136,6 @@ fn a_stack_moves_between_two_containers_and_the_rest_stays() {
     assert_eq!(moved, 5);
     assert_eq!(cabinet.slot(0).unwrap().count, 3, "what did not fit stays where it was");
     assert_eq!(crate_.count(&ItemKind::new("space_gauze")), 8);
-    // Nothing fits any more: a refusal and no change.
     assert_eq!(move_between(&mut cabinet, &mut crate_, &[], 0, 3).unwrap_err(), Refusal::Full);
     assert_eq!(cabinet.slot(0).unwrap().count, 3);
 }

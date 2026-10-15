@@ -1,14 +1,3 @@
-//! Stages 2 and 6 of the SC step: the boost (`begin`) and what the thrusters really give
-//! (`shape`). Lane `sc-body` (round 5, #198) owns this file, `tuning.rs` (`ShipBody`) and the
-//! force glue in the app.
-//!
-//! `begin`: the boost is held for `boost_pre_delay`, ramps up over `boost_ramp_up`, runs on the
-//! capacitor (with the idle cost while held) and ramps down over `boost_ramp_down` after release.
-//! `shape`: four thruster groups (main forward, retro backward, vertical up and down, lateral
-//! left and right) each wait `spool_delay` after a fresh request, keeping what they give meanwhile
-//! (a running boost skips the wait),
-//! countering boost gets a share of the aligned boost, and every group's thrust and the angular
-//! acceleration build up at most at their jerk (cutting is immediate).
 use crate::limits::{Dirs, Rot};
 use crate::{lerp, BoostCapacitor, BoostCapacitorTuning};
 use glam::DVec3;
@@ -43,7 +32,6 @@ impl Groups {
 #[serde(deny_unknown_fields)]
 pub struct DriveTuning {
     pub boost_capacitor: BoostCapacitorTuning,
-    /// Multipliers on the thrust per direction at full boost.
     pub boost_thrust: Dirs,
     /// s: a fresh request in a group gives no more than the group gives now until it has lasted
     /// this long (a running boost skips it).
@@ -102,7 +90,6 @@ impl Default for DriveTuning {
     }
 }
 
-/// One thruster group's spool and jerk state.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct Group {
     /// Sign of the current request (0: no request).
@@ -125,14 +112,12 @@ pub struct DriveState {
     press: f64,
     /// The boost's ramp, 0..1.
     level: f64,
-    /// Strength of the last running boost (the ramp down fades it).
     strength: f64,
     groups: [Group; 4],
     /// The angular acceleration given now (rad/s², ship space).
     angular: DVec3,
 }
 
-/// The box `b` with the boost's multipliers at strength `boost` (0..1).
 pub fn boosted(b: &Dirs, t: &DriveTuning, boost: f64) -> Dirs {
     let m = |x: f64| lerp(1.0, x, boost);
     let k = &t.boost_thrust;
@@ -157,7 +142,6 @@ pub fn begin(s: &mut DriveState, boost: bool, braking: bool, t: &DriveTuning, dt
     s.level * s.strength
 }
 
-/// What the flight computer asked of the thrusters this step.
 #[derive(Clone, Copy, Debug)]
 pub struct Asked {
     /// m/s², ship space.
@@ -173,14 +157,12 @@ pub struct Asked {
     pub stick: DVec3,
 }
 
-/// What the thrusters give.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Given {
     pub linear: DVec3,
     pub angular: DVec3,
 }
 
-/// The box side along one axis (0 x, 1 y, 2 z) in the direction of `positive`.
 fn side(b: &Dirs, axis: usize, positive: bool) -> f64 {
     match (axis, positive) {
         (0, true) => b.right,
@@ -192,7 +174,6 @@ fn side(b: &Dirs, axis: usize, positive: bool) -> f64 {
     }
 }
 
-/// What the thrusters really give: the countering cap, the spool per group, then the jerk.
 pub fn shape(s: &mut DriveState, a: &Asked, t: &DriveTuning, dt: f64) -> Given {
     // Countering: pushing against the velocity on an axis gets the share of the aligned boost,
     // faded in with the boost's strength (unboosted: the plain box).
@@ -206,14 +187,13 @@ pub fn shape(s: &mut DriveState, a: &Asked, t: &DriveTuning, dt: f64) -> Given {
         }
     }
     // Spool per group: a pilot request that has not lasted `spool_delay` keeps the group's current
-    // thrust, capped at its target (#208), so it gives nothing new yet. The flight computer's own
+    // thrust, capped at its target, so it gives nothing new yet. The flight computer's own
     // thrust in a group with no request (the hold against gravity) passes.
     let targets = [want[2].min(0.0), want[2].max(0.0), want[1], want[0]];
     let st = a.stick.to_array();
     let requests = [st[2].min(0.0), st[2].max(0.0), st[1], st[0]];
     let delays = [t.spool_delay.main, t.spool_delay.retro, t.spool_delay.vertical, t.spool_delay.lateral];
     let jerks = [t.jerk.main, t.jerk.retro, t.jerk.vertical, t.jerk.lateral];
-    // Spool: what each group may give now (a request still spooling holds its current thrust).
     let mut goals = [0.0; 4];
     for g in 0..4 {
         let grp = &mut s.groups[g];
@@ -233,7 +213,7 @@ pub fn shape(s: &mut DriveState, a: &Asked, t: &DriveTuning, dt: f64) -> Given {
             grp.waited >= delays[g] || a.boost > 0.0
         };
         // A group still spooling keeps what it gives now, never more than its target: the hold
-        // against gravity stays up while the pilot's press waits (#208).
+        // against gravity stays up while the pilot's press waits.
         goals[g] = if passing {
             targets[g]
         } else {
@@ -247,7 +227,7 @@ pub fn shape(s: &mut DriveState, a: &Asked, t: &DriveTuning, dt: f64) -> Given {
     }
     // Jerk: a group cuts its thrust at once (a thruster stops when told) and builds it up at most
     // at its jerk; the groups that build up share one factor, so the thrust keeps its direction
-    // while it grows (#146, time to full thrust).
+    // while it grows (time to full thrust).
     let mut k: f64 = 1.0;
     for g in 0..4 {
         let (cur, goal) = (s.groups[g].value, goals[g]);
@@ -265,7 +245,6 @@ pub fn shape(s: &mut DriveState, a: &Asked, t: &DriveTuning, dt: f64) -> Given {
     }
     let g = &s.groups;
     let linear = DVec3::new(g[LATERAL].value, g[VERTICAL].value, g[MAIN].value + g[RETRO].value);
-    // Angular: the same rule per axis, one factor for the axes that build up.
     let aj = [t.angular_jerk.pitch, t.angular_jerk.yaw, t.angular_jerk.roll];
     let asked = a.angular.to_array();
     let mut ang = s.angular.to_array();

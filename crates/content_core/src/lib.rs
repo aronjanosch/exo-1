@@ -1,12 +1,4 @@
 //! content_core: strict loading of JSON content, shared by the tuning loaders and the gameplay
-//! systems, without engine types (#122).
-//!
-//! - `parse_strict`: one JSON object, every field as its type says, unknown fields rejected
-//!   (`deny_unknown_fields` on the type), except an optional top-level `_comment` string.
-//! - `File` and `load_records`: one file per record, grouped by folder (`commodity/…`), keyed by
-//!   the record's id; duplicate ids are errors. Errors name the file and the field.
-//!
-//! No file I/O here: the glue reads the files and hands over path and text.
 use std::collections::BTreeMap;
 
 use serde::de::DeserializeOwned;
@@ -38,19 +30,16 @@ impl File {
         File { path: path.into(), text: text.into() }
     }
 
-    /// The first path component: the record kind (`commodity`).
     pub fn folder(&self) -> &str {
         self.path.split('/').next().unwrap_or("")
     }
 }
 
-/// A record with an id, loaded one per file.
 pub trait Record {
     type Id: Ord + Clone + std::fmt::Display;
     fn id(&self) -> &Self::Id;
 }
 
-/// A loaded record and the file it came from (for error messages in later checks).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Loaded<T> {
     pub path: String,

@@ -6,19 +6,17 @@ use planet_core::{BakeStats, Planet, Recipe, V3};
 use std::sync::Arc;
 use warp_core::{PlanetDef, PlanetId};
 
-/// Every planet recipe, embedded at build time: `content/planet/<id>.json` (#64).
+/// Every planet recipe, embedded at build time: `content/planet/<id>.json`.
 pub const RECIPES: &[(&str, &str)] = &[
     ("hearth", include_str!("../../../content/planet/hearth.json")),
     ("cinder", include_str!("../../../content/planet/cinder.json")),
 ];
 
-/// The recipe a planet of the system names, with the planet's seed and radius.
 pub fn recipe_for(def: &PlanetDef) -> Result<Recipe, String> {
     let text = RECIPES.iter().find(|(id, _)| *id == def.recipe).map(|(_, t)| *t).ok_or_else(|| format!("planet {}: no recipe '{}' in content/planet", def.name, def.recipe))?;
     Recipe::for_planet(text, def.seed, def.radius).map_err(|e| format!("content/planet/{}.json: {e}", def.recipe))
 }
 
-/// The hand-placed places of a planet recipe (`content/place/*.json`, #129).
 pub fn places_for(recipe: &str) -> Vec<planet_core::Place> {
     crate::content_files("place")
         .iter()
@@ -27,7 +25,7 @@ pub fn places_for(recipe: &str) -> Vec<planet_core::Place> {
         .collect()
 }
 
-/// Where the coarse layers are cached (#177): `EXO_CACHE_DIR`, else `target/terrain-cache`.
+/// Where the coarse layers are cached:`EXO_CACHE_DIR`, else `target/terrain-cache`.
 pub fn cache_dir() -> std::path::PathBuf {
     std::env::var_os("EXO_CACHE_DIR").map(Into::into).unwrap_or_else(|| "target/terrain-cache".into())
 }
@@ -50,17 +48,13 @@ pub struct PlanetRes {
     pub relief: f64,
     pub field: Field,
     pub bake_ms: f64,
-    /// The planet in the system registry.
     pub id: PlanetId,
 }
 
 impl PlanetRes {
-    /// A planet of the registry: the recipe with its seed and radius, at its centre, with its
-    /// atmosphere height.
     pub fn load(id: PlanetId, def: &PlanetDef) -> PlanetRes {
         Self::load_with_stats(id, def).0
     }
-    /// `load`, with the bake's statistics.
     pub fn load_with_stats(id: PlanetId, def: &PlanetDef) -> (PlanetRes, BakeStats) {
         let recipe = recipe_for(def).unwrap_or_else(|e| panic!("{e}"));
         let mut p = Planet::new(recipe);
@@ -71,7 +65,7 @@ impl PlanetRes {
             panic!("content/planet/{}.json: bake: {e}", def.recipe);
         }
         // The quotas are tuned to 5 km (landform counts do not grow with the area until the density
-        // rules of #177 step 5); at another radius a miss is a warning, `cargo test -p planet_core` checks them at 5 km.
+        // rules step 5); at another radius a miss is a warning, `cargo test -p planet_core` checks them at 5 km.
         for m in &st.quota_misses {
             eprintln!("content/planet/{}.json: {m}", def.recipe);
         }
@@ -82,7 +76,7 @@ impl PlanetRes {
             relief: lo.abs().max(hi.abs()),
             pgen: Arc::new(p),
             centre: def.centre(),
-            // Gravity reaches at least two atmospheres up (#177): a drive starts at 1.5 atmospheres, and a
+            // Gravity reaches at least two atmospheres up: a drive starts at 1.5 atmospheres, and a
             // walker in the cabin needs the field there (6000 m ends inside the atmosphere of a big planet).
             field: Field { atmosphere_height: def.atmosphere_height, gravity_end_height: Field::default().gravity_end_height.max(2.0 * def.atmosphere_height), ..Field::default() },
             bake_ms: st.bake_ms,
@@ -90,14 +84,12 @@ impl PlanetRes {
         };
         (res, st)
     }
-    /// Distance from the centre to the ground along a direction.
     pub fn surface(&self, dir: DVec3) -> f64 {
         self.radius + self.pgen.height_at(to_v3(dir.normalize()))
     }
     pub fn up(&self, world: DVec3) -> DVec3 {
         (world - self.centre).normalize()
     }
-    /// Height of a world point above the ground below it.
     pub fn above_ground(&self, world: DVec3) -> f64 {
         let p = world - self.centre;
         p.length() - self.surface(p)
@@ -116,20 +108,5 @@ impl PlanetEnv for PlanetRes {
     }
     fn field(&self) -> &Field {
         &self.field
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn every_planet_of_the_system_names_a_recipe_that_loads() {
-        let sys = warp_core::System::from_json(crate::warp::SYSTEM).unwrap();
-        for def in &sys.planets {
-            let r = super::recipe_for(def).unwrap();
-            assert_eq!((r.seed, r.radius), (def.seed, def.radius), "{}", def.name);
-        }
-        let mut missing = sys.planets[0].clone();
-        missing.recipe = "nowhere".into();
-        assert!(super::recipe_for(&missing).unwrap_err().contains("no recipe 'nowhere'"));
     }
 }

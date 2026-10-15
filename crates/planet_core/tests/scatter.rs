@@ -1,5 +1,3 @@
-//! #65: scatter is deterministic per cell, stands along the radius, and the recipe's references
-//! are checked.
 use planet_core::*;
 
 const HEARTH: &str = include_str!("../../../content/planet/hearth.json");

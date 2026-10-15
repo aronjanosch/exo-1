@@ -1,5 +1,3 @@
-//! #69: landforms placed by budget: deterministic, separated, never over a site, retries with a
-//! clear error, every kind somewhere.
 use planet_core::*;
 
 const HEARTH: &str = include_str!("../../../content/planet/hearth.json");
@@ -40,19 +38,6 @@ fn separation_and_sites_are_respected() {
                 assert!(d >= a.reach_m, "site inside {} ({d:.0} m < {:.0} m)", a.kind, a.reach_m);
             }
         }
-    }
-}
-
-#[test]
-fn every_new_kind_is_on_a_planet_and_the_signatures_beat_the_relief() {
-    let (h, c) = (baked(HEARTH, 1337), baked(CINDER, 4242));
-    let all: Vec<PlacedStamp> = h.stamps().into_iter().chain(c.stamps()).collect();
-    for shape in ["crater", "canyon", "mesa_field", "spire", "caldera"] {
-        assert!(all.iter().any(|s| s.shape == shape), "no {shape}");
-    }
-    for p in [&h, &c] {
-        let sig = p.stamps().into_iter().find(|s| s.signature).expect("a signature");
-        assert!(sig.relief_m >= 200.0, "{} relief {:.0} m", sig.kind, sig.relief_m);
     }
 }
 

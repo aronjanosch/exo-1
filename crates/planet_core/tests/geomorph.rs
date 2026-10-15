@@ -1,4 +1,4 @@
-//! #220: the morph target of a chunk is the parent's mesh. At full morph a child has exactly the
+//! The morph target of a chunk is the parent's mesh. At full morph a child has exactly the
 //! parent's surface (positions), so a split shows no pop.
 use planet_core::*;
 
@@ -75,7 +75,6 @@ fn even_vertices_do_not_morph_and_skirts_follow_their_edge() {
             assert!((skirt[a] - edge[a]).abs() < 1e-3);
         }
     }
-    // Normals are unit and point up-ish.
     for n in &c.morph_normals {
         let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
         assert!((l - 1.0).abs() < 1e-3);

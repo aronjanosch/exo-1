@@ -1,7 +1,3 @@
-//! The warp path: a cubic Hermite spline from the ship to the exit point. It leaves along the
-//! planet's tangent when the straight line would run into the planet, and comes in radially at
-//! the end (the ship arrives facing the target's centre). The obstruction check walks the same
-//! curve, so a path can go around a body the line would hit.
 use crate::system::{Obstacle, PlanetDef, PlanetId};
 use glam::DVec3;
 
@@ -75,7 +71,6 @@ impl Path {
         (i - 1) as f64 / TABLE as f64 + f / TABLE as f64
     }
 
-    /// Position at arc length `s` and the unit direction of travel there.
     pub fn at(&self, s: f64) -> (DVec3, DVec3) {
         let u = self.u_at(s);
         let pos = self.at_u(u);
@@ -116,7 +111,6 @@ impl Path {
     }
 }
 
-/// What is at `p`: a planet whose keep-out sphere holds it, or an obstacle closer than its radius.
 pub fn blocked_at(p: DVec3, planets: &[PlanetDef], obstacles: &[Obstacle]) -> Option<Blocker> {
     if let Some(k) = planets.iter().position(|pl| pl.centre().distance(p) < pl.keep_out()) {
         return Some(Blocker::Planet(PlanetId(k as u8)));
@@ -130,7 +124,6 @@ pub enum Blocker {
     Obstacle(usize),
 }
 
-/// Does the segment a..b come closer than `r` to `c`?
 pub fn segment_hits_sphere(a: DVec3, b: DVec3, c: DVec3, r: f64) -> bool {
     let ab = b - a;
     let l2 = ab.length_squared();

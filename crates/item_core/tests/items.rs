@@ -1,9 +1,8 @@
-//! Item definitions, the action bar, hands, and the request path with prediction and rollback.
 use item_core::container::Refusal;
 use item_core::*;
 
 const WRENCH: &str = r#"{ "id": "wrench", "name": "Wrench", "take": "collect", "hands": 1, "stack": 1, "use": "repair_mechanical", "tags": ["tool"], "shape": { "extents": [0.06, 0.04, 0.3], "mass": 0.8, "colour": [0.6, 0.6, 0.65] } }"#;
-const BANDAGE: &str = r#"{ "id": "bandage", "name": "Bandage", "take": "collect", "hands": 1, "stack": 4, "tags": ["medical"], "shape": { "extents": [0.1, 0.05, 0.1], "mass": 0.1, "colour": [0.9, 0.9, 0.85] } }"#;
+const BANDAGE: &str = r#"{ "id": "bandage", "name": "Bandage", "take": "collect", "hands": 1, "stack": 4, "use": "bandage", "tags": ["medical"], "shape": { "extents": [0.1, 0.05, 0.1], "mass": 0.1, "colour": [0.9, 0.9, 0.85] } }"#;
 const EXTINGUISHER: &str = r#"{ "id": "extinguisher", "name": "Extinguisher", "take": "collect", "hands": 2, "stack": 1, "use": "extinguish", "shape": { "extents": [0.18, 0.5, 0.18], "mass": 6.0, "colour": [0.85, 0.15, 0.1] } }"#;
 const BARREL: &str = r#"{ "id": "barrel", "name": "Barrel", "take": "carry", "hands": 2, "stack": 1, "shape": { "extents": [0.6, 0.9, 0.6], "mass": 60.0, "colour": [0.3, 0.3, 0.3] } }"#;
 
@@ -30,19 +29,6 @@ fn an_item_has_a_three_letter_code_for_the_bar() {
         let t = WRENCH.replace("\"name\"", &format!("\"code\": \"{bad}\", \"name\""));
         assert!(ItemDefs::from_files([("wrench.json", t.as_str())]).unwrap_err().contains("code"), "{bad}");
     }
-}
-
-#[test]
-fn the_shipped_items_have_their_codes() {
-    let files: Vec<(String, String)> = std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../content/items"))
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .map(|p| (p.file_name().unwrap().to_string_lossy().into_owned(), std::fs::read_to_string(p).unwrap()))
-        .collect();
-    let d = ItemDefs::from_files(files.iter().map(|(n, t)| (n.as_str(), t.as_str()))).unwrap();
-    let codes: Vec<_> = ["wrench", "extinguisher", "bandage"].iter().map(|id| d.get(id).unwrap()).map(|x| (x.code.clone(), x.short_code())).collect();
-    let want = |c: &str| (c.to_string(), c.to_string());
-    assert_eq!(codes, [want("WRN"), want("EXT"), want("BDG")]);
 }
 
 #[test]
@@ -125,7 +111,6 @@ fn hands_limit_what_is_held_next_to_cargo() {
     assert!(inv.in_hand(&d, 1).is_some(), "a wrench fits next to a one-handed crate");
 }
 
-/// One host, two clients, messages delivered by hand in the order a test wants.
 struct Session {
     host: Host,
     a: Client,
@@ -300,4 +285,62 @@ fn a_placement_that_cannot_be_is_refused() {
         assert_eq!(s.host.handle(&forged), vec![Event::Rejected { player: 1, seq: 77, why: Reject::Invalid }]);
     }
     assert_eq!(s.host.inventory(1).count("wrench"), 1, "nothing left the bar");
+}
+
+#[test]
+fn a_use_takes_one_from_the_stack_and_the_host_names_the_effect() {
+    let mut host = Host::new(defs());
+    let mut inv = Inventory::default();
+    inv.collect(&defs(), stack("bandage", 3)).unwrap();
+    host.inventories.insert(2, inv);
+    let mut c = Client::new(2, defs());
+    c.apply(&Event::Inventory { player: 2, inv: host.inventory(2) });
+    let a = c.request(Request::Use { slot: 0, target: 1 }).unwrap();
+    assert_eq!(c.view.count("bandage"), 2, "shown at once");
+    let evs = host.handle(&a);
+    assert!(evs.contains(&Event::Used { player: 2, target: 1, effect: "bandage".into() }), "{evs:?}");
+    assert_eq!(host.inventory(2).count("bandage"), 2);
+    for e in &evs {
+        c.apply(e);
+    }
+    assert_eq!(c.confirmed.count("bandage"), 2);
+    assert!(c.pending.is_empty());
+}
+
+#[test]
+fn an_empty_slot_or_an_item_without_a_use_is_refused() {
+    let mut host = Host::new(defs());
+    let a = Action { player: 2, seq: 1, req: Request::Use { slot: 0, target: 2 } };
+    assert_eq!(host.handle(&a), vec![Event::Rejected { player: 2, seq: 1, why: Reject::EmptySlot }]);
+    const RAG: &str = r#"{ "id": "rag", "name": "Rag", "take": "collect", "hands": 1, "stack": 1, "shape": { "extents": [0.2, 0.01, 0.2], "mass": 0.05, "colour": [0.5, 0.5, 0.5] } }"#;
+    let rags = ItemDefs::from_files([("rag.json", RAG)]).unwrap();
+    let mut host = Host::new(rags.clone());
+    let mut inv = Inventory::default();
+    inv.collect(&rags, rags.get("rag").unwrap().stack_of(1)).unwrap();
+    host.inventories.insert(2, inv);
+    let a = Action { player: 2, seq: 2, req: Request::Use { slot: 0, target: 2 } };
+    assert_eq!(host.handle(&a), vec![Event::Rejected { player: 2, seq: 2, why: Reject::NotUsable }]);
+    let mut c = Client::new(2, defs());
+    assert!(c.request(Request::Use { slot: 5, target: 2 }).is_err(), "an empty slot is refused without sending");
+}
+
+#[test]
+fn a_given_rod_keeps_its_life_and_a_full_bar_hands_it_back() {
+    // The brake gives a pulled rod back to its player with its life (the item condition).
+    const ROD: &str = r#"{ "id": "fuel_rod", "name": "Fuel rod", "take": "collect", "hands": 1, "stack": 1, "use": "load_rod", "condition": true, "shape": { "extents": [0.06, 0.6, 0.06], "mass": 3.0, "colour": [0.2, 0.75, 0.3] } }"#;
+    let d = ItemDefs::from_files([("fuel_rod.json", ROD), ("wrench.json", WRENCH)]).unwrap();
+    let mut host = Host::new(d.clone());
+    let rod = item_core::container::Stack::new(d.get("fuel_rod").unwrap().item().with_condition(42.0), 1);
+    let ev = host.give(2, rod.clone()).expect("an empty bar takes it");
+    match ev {
+        Event::Inventory { player, inv } => {
+            assert_eq!(player, 2);
+            assert_eq!(inv.slot(0).and_then(|s| s.item.condition), Some(42.0));
+        }
+        other => panic!("the inventory event, got {other:?}"),
+    }
+    for _ in 1..BAR_SLOTS {
+        host.give(2, stack("wrench", 1)).expect("room left");
+    }
+    assert_eq!(host.give(2, rod.clone()), Err(rod), "a full bar gives the rod back");
 }

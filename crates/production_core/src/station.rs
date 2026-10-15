@@ -1,4 +1,3 @@
-//! Station state machine: Idle, Loading, Running, Done, Blocked.
 use std::collections::BTreeMap;
 
 use gameplay_core::CommodityId;
@@ -8,11 +7,8 @@ use crate::recipe::{RecipeId, StationKind};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Refusal {
-    /// The station has no recipe set.
     NoRecipe,
-    /// The commodity is not an input of the recipe.
     NotAnInput,
-    /// The amount given would exceed the input quota.
     ExceedsQuota,
     /// A cycle is running or waiting for outputs to be taken.
     Busy,
@@ -23,15 +19,12 @@ enum StationState {
     Idle,
     /// Inputs partially filled; progress is (filled, total).
     Loading { progress: (u32, u32) },
-    /// Time remaining.
     Running { time_remaining_s: f64 },
-    /// Outputs waiting to be taken.
     Done,
     /// Outputs not taken, second cycle requested: next recipe or input insert refused.
     Blocked,
 }
 
-/// A station: kind, current recipe, state, and inventories.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Station {
     pub kind: StationKind,
@@ -108,37 +101,30 @@ impl Station {
             return Err(Refusal::Busy);
         }
 
-        // Find the input in the recipe.
         let Some(input) = recipe.inputs.iter().find(|i| i.id == commodity) else {
             return Err(Refusal::NotAnInput);
         };
 
-        // Check quota.
         let current = self.inputs.get(&commodity).copied().unwrap_or(0);
         if current + amount > input.amount {
             return Err(Refusal::ExceedsQuota);
         }
 
-        // Insert and transition if loading completes.
         *self.inputs.entry(commodity).or_insert(0) += amount;
 
-        // Check if all inputs are now satisfied.
         let all_filled = recipe.inputs.iter().all(|inp| {
             let filled = self.inputs.get(&inp.id).copied().unwrap_or(0);
             filled >= inp.amount
         });
 
         if all_filled {
-            // Transition to Running.
             self.expected_outputs = recipe.outputs.clone();
             self.state = StationState::Running { time_remaining_s: recipe.time_s };
         } else if self.state == StationState::Idle {
-            // Transition to Loading with progress.
             let total: u32 = recipe.inputs.iter().map(|i| i.amount).sum();
             let filled: u32 = self.inputs.values().sum();
             self.state = StationState::Loading { progress: (filled, total) };
         } else if let StationState::Loading { progress } = &mut self.state {
-            // Update progress.
             let total: u32 = recipe.inputs.iter().map(|i| i.amount).sum();
             let filled: u32 = self.inputs.values().sum();
             *progress = (filled, total);
@@ -147,13 +133,11 @@ impl Station {
         Ok(())
     }
 
-    /// Advance time. Returns whether the cycle completed.
     pub fn step(&mut self, dt: f64) -> bool {
         match &mut self.state {
             StationState::Running { time_remaining_s } => {
                 *time_remaining_s -= dt;
                 if *time_remaining_s <= 0.0 {
-                    // Populate outputs from the recipe
                     for output in &self.expected_outputs {
                         *self.outputs.entry(output.id.clone()).or_insert(0) += output.amount;
                     }

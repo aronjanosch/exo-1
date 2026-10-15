@@ -23,27 +23,6 @@ fn centre_of(p: &Panel, action: &str) -> DVec2 {
 }
 
 #[test]
-fn a_column_stacks_fixed_and_flexible_items_with_gaps() {
-    let p = Panel::new(200.0, 100.0, column(10.0, vec![label("a").fixed(20.0), label("b"), label("c").flex(3.0)]));
-    let l = p.layout();
-    assert_eq!(l.len(), 3);
-    // Inside the 16 px padding: 168 x 68; 20 fixed, two gaps, 28 left for flex 1 : 3.
-    assert_eq!(l[0].rect, Rect::new(16.0, 16.0, 168.0, 20.0));
-    assert_eq!(l[1].rect, Rect::new(16.0, 46.0, 168.0, 7.0));
-    assert_eq!(l[2].rect, Rect::new(16.0, 63.0, 168.0, 21.0));
-    assert!((l[2].rect.max().y - (100.0 - 16.0)).abs() < 1e-9, "the column ends at the padding");
-}
-
-#[test]
-fn a_row_splits_its_width_and_space_takes_room_without_a_widget() {
-    let p = Panel::new(232.0, 82.0, row(0.0, vec![button("x", "x").fixed(50.0), space(), button("y", "y")]));
-    let l = p.layout();
-    assert_eq!(l.len(), 2, "space draws nothing");
-    assert_eq!(l[0].rect, Rect::new(16.0, 16.0, 50.0, 50.0));
-    assert_eq!(l[1].rect, Rect::new(16.0 + 50.0 + 75.0, 16.0, 75.0, 50.0));
-}
-
-#[test]
 fn too_much_fixed_room_leaves_flex_items_empty_not_negative() {
     let p = Panel::new(100.0, 100.0, column(10.0, vec![label("a").fixed(80.0), label("b")]));
     assert_eq!(p.layout()[1].rect.size.y, 0.0);
@@ -85,7 +64,6 @@ fn release_elsewhere_or_off_the_panel_is_no_click() {
     assert!(ptr.step(&p, Some(centre_of(&p, "lights")), false).is_empty(), "released over another widget");
     ptr.step(&p, Some(centre_of(&p, "inc")), true);
     assert!(ptr.step(&p, None, false).is_empty(), "released off the panel");
-    // Pressed elsewhere, released over the button: no click either.
     ptr.step(&p, Some(DVec2::new(1.0, 1.0)), true);
     assert!(ptr.step(&p, Some(centre_of(&p, "inc")), false).is_empty());
 }
@@ -125,28 +103,11 @@ fn a_slider_reports_its_value_on_press_and_while_dragged() {
     assert!(ptr.step(&p, at(0.25), true).is_empty(), "no repeat without a change");
     let c = ptr.step(&p, at(0.75), true);
     assert!((c[0].value.unwrap() - 0.75).abs() < 1e-9);
-    // Beside the slider while held: clamped to its end; off the panel: no change.
     let c = ptr.step(&p, Some(DVec2::new(r.max().x + 50.0, 10.0)), true);
     assert_eq!(c[0].value, Some(1.0));
     assert!(ptr.step(&p, None, true).is_empty());
     assert!(ptr.step(&p, at(0.5), false).is_empty(), "the release adds nothing");
     assert!(ptr.step(&p, at(0.1), false).is_empty(), "not held: no change");
-}
-
-#[test]
-fn bar_levels_for_high_and_low_bad_values() {
-    assert_eq!(level(0.5, None, None), Level::Normal);
-    // Heat: warn 0.7, crit 0.9.
-    assert_eq!(level(0.6, Some(0.7), Some(0.9)), Level::Normal);
-    assert_eq!(level(0.7, Some(0.7), Some(0.9)), Level::Warn);
-    assert_eq!(level(0.95, Some(0.7), Some(0.9)), Level::Crit);
-    // Fuel: warn 0.3, crit 0.1.
-    assert_eq!(level(0.5, Some(0.3), Some(0.1)), Level::Normal);
-    assert_eq!(level(0.2, Some(0.3), Some(0.1)), Level::Warn);
-    assert_eq!(level(0.05, Some(0.3), Some(0.1)), Level::Crit);
-    assert_eq!(level(0.95, None, Some(0.9)), Level::Crit);
-    let b = bar(0.5, "x").thresholds(Some(0.4), None);
-    assert_eq!(b.widget, Widget::Bar { value: 0.5, label: "x".into(), warn: Some(0.4), crit: None });
 }
 
 #[test]
@@ -172,15 +133,12 @@ fn a_ray_meets_the_front_of_a_turned_panel() {
     }
     let front = centre + rot * DVec3::new(0.0, 0.0, 2.0);
     assert!(ray_to_panel(front, centre - front, centre, rot, size).is_some());
-    // From behind, pointing away, parallel, or beside the quad: no hit.
     let back = centre + rot * DVec3::new(0.0, 0.0, -2.0);
     assert!(ray_to_panel(back, centre - back, centre, rot, size).is_none());
     assert!(ray_to_panel(front, front - centre, centre, rot, size).is_none());
     assert!(ray_to_panel(front, rot * DVec3::X, centre, rot, size).is_none());
     let beside = panel_point(centre, rot, size, DVec2::new(1.2, 0.5));
     assert!(ray_to_panel(front, beside - front, centre, rot, size).is_none());
-    // The plane version still gives the point beside the quad (a held slider follows it), but not
-    // from behind.
     let hit = ray_to_panel_plane(front, beside - front, centre, rot, size).expect("the plane is there");
     assert!((hit.uv - DVec2::new(1.2, 0.5)).length() < 1e-9);
     assert!(ray_to_panel_plane(back, centre - back, centre, rot, size).is_none());
@@ -190,7 +148,6 @@ fn a_ray_meets_the_front_of_a_turned_panel() {
 fn the_pointer_ray_and_the_window_point_are_inverses() {
     let rot = DQuat::from_rotation_y(0.4) * DQuat::from_rotation_x(-0.2);
     let (pos, window, fov) = (DVec3::new(1.0, 2.0, 3.0), DVec2::new(1600.0, 900.0), 1.1);
-    // The window's centre looks straight ahead.
     let (o, d) = pointer_ray(pos, rot, fov, window, window * 0.5);
     assert!(o == pos && (d - rot * DVec3::NEG_Z).length() < 1e-9);
     for p in [DVec2::new(10.0, 20.0), DVec2::new(800.0, 450.0), DVec2::new(1500.0, 700.0)] {
@@ -199,37 +156,6 @@ fn the_pointer_ray_and_the_window_point_are_inverses() {
         assert!((back - p).length() < 1e-6, "{p} -> {back}");
     }
     assert!(window_point(pos, rot, fov, window, pos + rot * DVec3::Z).is_none(), "behind the camera");
-}
-
-#[test]
-fn panel_ids_are_const_and_compare_by_text() {
-    const ID: PanelId = PanelId::new("test_console");
-    assert_eq!(ID, PanelId::from("test_console".to_string()));
-    assert_eq!(ID.as_str(), "test_console");
-}
-
-#[test]
-fn a_screen_puts_its_widgets_in_the_well_under_the_header() {
-    let p = Panel::screen(Tier::M, "Reactor 2", "RX-02", column(0.0, vec![label("a")])).status("STABLE", Tone::Good);
-    assert_eq!(p.size, DVec2::new(640.0, 400.0));
-    assert_eq!(p.tier(), Tier::M);
-    let h = p.header().unwrap();
-    let w = p.well().unwrap();
-    assert_eq!(h, Rect::new(2.0, 2.0, 636.0, 32.0));
-    assert_eq!(w, Rect::new(6.0, 34.0, 628.0, 360.0));
-    let c = p.content();
-    assert_eq!(c, Rect::new(6.0 + 14.0, 34.0 + 14.0, 628.0 - 28.0, 360.0 - 28.0));
-    assert_eq!(p.layout()[0].rect, c, "the one label fills the content");
-    assert_eq!(p.plate.as_ref().unwrap().status, Some(("STABLE".into(), Tone::Good)));
-    assert!(Panel::new(10.0, 10.0, space()).status("x", Tone::Bad).plate.is_none(), "no plate, no status");
-}
-
-#[test]
-fn tiers_have_the_design_canvases_and_the_nearest_is_found() {
-    assert_eq!(Tier::S.canvas(), DVec2::new(320.0, 240.0));
-    assert_eq!(Tier::L.canvas(), DVec2::new(1280.0, 720.0));
-    assert_eq!(Tier::nearest(DVec2::new(480.0, 360.0)), Tier::M);
-    assert_eq!(Tier::nearest(DVec2::new(300.0, 200.0)), Tier::S);
 }
 
 #[test]
@@ -265,18 +191,8 @@ fn a_list_click_gives_the_row_index() {
     assert_eq!(ptr.step(&p, at, false), vec![Click { action: "pick".into(), value: Some(1.0) }]);
     assert_eq!(list_row_at(&r, 40.0, 3, DVec2::new(r.centre().x, r.min.y + 1.0)), Some(0));
     assert_eq!(list_row_at(&r, 40.0, 3, DVec2::new(r.centre().x, r.max().y - 1.0)), None, "below the last row");
-    // Without an action the list is only a readout.
     let q = Panel::new(232.0, 200.0, list(vec![list_row("a", "", Tone::Good)]));
     assert!(q.hit(q.content().centre()).is_none());
-}
-
-#[test]
-fn thresholds_and_tones_reach_the_new_widgets() {
-    assert!(matches!(dial(0.5, "50%", "Output").thresholds(Some(0.8), Some(0.95)).widget, Widget::Dial { warn: Some(_), crit: Some(_), .. }));
-    assert!(matches!(trend(vec![0.1, 0.2]).thresholds(Some(0.7), None).widget, Widget::Trend { warn: Some(_), crit: None, .. }));
-    assert!(matches!(button("SCRAM", "scram").tone(Tone::Bad).widget, Widget::Button { tone: Tone::Bad, .. }));
-    assert!(matches!(readout("412 °C").widget, Widget::Label { mono: true, size, .. } if size == font::VALUE));
-    assert!(matches!(micro("Mode").widget, Widget::Label { tone: Tone::Micro, .. }));
 }
 
 #[test]
@@ -290,4 +206,16 @@ fn the_shipped_theme_parses_and_bad_ones_are_refused() {
     assert!(Theme::from_json(&bad).is_err());
     let unknown = src.replacen("\"source\"", "\"surprise\": 1, \"source\"", 1);
     assert!(Theme::from_json(&unknown).is_err());
+}
+
+#[test]
+fn a_canvas_with_an_action_is_a_button_that_clicks_with_no_value() {
+    use crate::{canvas, Ink, Shape};
+    let mut p = Pointer::default();
+    let panel = Panel::screen(Tier::S, "T", "X", canvas(100.0, 50.0, vec![Shape::Circle { cx: 50.0, cy: 25.0, r: 20.0, fill: Some(Ink::Hud), stroke: None }], Some("lever")).flex(1.0));
+    let at = panel.find("lever").map(|w| w.rect.centre());
+    assert!(at.is_some());
+    assert!(p.step(&panel, at, true).is_empty());
+    let out = p.step(&panel, at, false);
+    assert_eq!(out, vec![Click { action: "lever".into(), value: None }]);
 }

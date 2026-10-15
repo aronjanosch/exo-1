@@ -1,5 +1,3 @@
-//! The `job_template` record (#123): what a job asks for, before the board picks concrete places
-//! and goods (#126). One JSON file each in `job_template/`.
 use std::collections::BTreeMap;
 
 use content_core::{File, Loaded, Record, check_id, load_records};
@@ -12,7 +10,6 @@ use crate::giver::{self, Giver, GiverId};
 use crate::licence::{self, Licence, LicenceId};
 use crate::id::TemplateId;
 
-/// The folder this system reads.
 pub const FOLDER: &str = "job_template";
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -24,7 +21,6 @@ pub struct JobTemplate {
     /// Who offers it (a `giver` record); none for a job nobody in particular gives.
     #[serde(default)]
     pub giver: Option<GiverId>,
-    /// At least one. Milestone D has only `deliver`.
     pub objectives: Vec<ObjectiveSpec>,
     /// Money at full grade, before modifiers.
     pub reward: i64,
@@ -32,10 +28,8 @@ pub struct JobTemplate {
     /// Seconds from the first pickup; none means no deadline.
     #[serde(default)]
     pub deadline_s: Option<f64>,
-    /// At most one warning and one upside.
     #[serde(default)]
     pub modifiers: Vec<Modifier>,
-    /// The personal track the participants' XP goes to.
     pub track: TrackId,
     /// XP at full grade for each participant.
     pub xp: i64,
@@ -45,10 +39,9 @@ pub struct JobTemplate {
     /// Offered until it is completed once (story and targeted jobs).
     #[serde(default)]
     pub once_only: bool,
-    /// Offered once this one is completed (#126).
+    /// Offered once this one is completed.
     #[serde(default)]
     pub follow_up: Option<TemplateId>,
-    /// Set for a licence exam.
     #[serde(default)]
     pub exam: Option<Exam>,
 }
@@ -60,30 +53,26 @@ impl Record for JobTemplate {
     }
 }
 
-/// One objective kind; each is a reducer over domain events. New kinds come with their systems.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum ObjectiveSpec {
-    /// Carry `amount` crates of a commodity from one place to another.
     Deliver { from: PlaceSpec, to: PlaceSpec, commodity: CommoditySpec, amount: [u32; 2] },
     /// The ship leaves the ground under the player's hands (the event `TookOff`). Checks come in
-    /// the order of the objectives, and only from the player who took the job (#169).
+    /// the order of the objectives, and only from the player who took the job.
     TakeOff {},
-    /// The ship comes over the pad of a location (`PadReached`).
     ReachPad { at: LocationId },
     /// The ship touches down on the pad of a location (`Landed`); faster than `max_mps` towards the
     /// ground is a crash and fails the job. Only these events are read, never the flight model.
     Land { at: LocationId, max_mps: f64 },
 }
 
-/// A job that is a licence exam (#169): it costs a fee to take, grants a personal track when
+/// A job that is a licence exam: it costs a fee to take, grants a personal track when
 /// passed, and may give honours.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Exam {
     /// Paid on the first try. TODO(initiator): a starting value.
     pub fee: i64,
-    /// Paid for every later try of the same player.
     pub retry_fee: i64,
     /// The personal track set to 1 when passed.
     pub grants: TrackId,
@@ -104,7 +93,6 @@ pub struct Honours {
     pub standing: i64,
 }
 
-/// A fixed location or any location with a tag (the board picks one, never the same for both ends).
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum PlaceSpec {
@@ -119,7 +107,6 @@ pub enum CommoditySpec {
     OneOf(Vec<CommodityId>),
 }
 
-/// How the payout follows the delivered share and the crates' condition.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Grading {
@@ -135,12 +122,11 @@ pub struct Grading {
 pub struct Band {
     /// Delivered share 0..1 (delivered crates / asked crates).
     pub share: f64,
-    /// Factor on the reward and the XP.
     pub pays: f64,
 }
 
 /// A warning or upside shown on the offer. Encounters with the same tag come more often on its
-/// flights (#127); a warning's bonus raises the pay.
+/// flights; a warning's bonus raises the pay.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Modifier {
@@ -158,7 +144,6 @@ pub enum ModifierKind {
     Upside,
 }
 
-/// All job templates, checked against the kernel content.
 #[derive(Clone, Debug, PartialEq)]
 pub struct JobContent {
     pub templates: BTreeMap<TemplateId, Loaded<JobTemplate>>,
@@ -223,7 +208,6 @@ impl JobContent {
         }
     }
 
-    /// The licences that allow something (`pilot_ship`).
     pub fn licences_allowing(&self, tag: &str) -> Vec<&Licence> {
         self.licences.values().map(|l| &l.record).filter(|l| l.allows.iter().any(|t| t.as_str() == tag)).collect()
     }
@@ -295,7 +279,6 @@ impl JobContent {
                 }
             }
         }
-        // An exam costs a fee instead of paying a reward.
         if t.reward < 0 || t.reward == 0 && t.exam.is_none() {
             e.push(format!("{path}: reward: must be positive (zero only for an exam)"));
         }

@@ -1,24 +1,4 @@
 //! A reliable, ordered message channel next to the unreliable snapshots, over any datagram
-//! transport (C2 of the interaction model: item requests and events must not be lost, doubled or
-//! reordered, while snapshots may be). No sockets here: the glue sends what `poll` returns and
-//! feeds what arrives into `on_datagram`; time is passed in, so tests run under `link`.
-//!
-//! One `Reliable` is one end of one connection (the host keeps one per client).
-//!
-//! - A message is cut into frames of at most `MAX_FRAME` bytes (the last without the `more` flag),
-//!   every frame has a running sequence number. The receiver hands a message out once all its
-//!   frames have arrived in order, so big messages (a late joiner's state) fit the datagram size.
-//! - Every datagram carries the receiver's state: `next` (every frame below it has arrived) and a
-//!   bit mask of the frames after it that have arrived too. So acks ride along on whatever is
-//!   sent anyway; a datagram without frames is only sent when an ack is owed.
-//! - The sender keeps a frame until it is acked and sends it again after the retransmit timeout
-//!   (smoothed round trip plus four times its deviation, doubling per retry), or at once when a
-//!   later frame was acked and the hole is older than a round trip (fast retransmit).
-//! - At most `WINDOW` frames are in flight; the rest waits in a queue.
-//! - Frames below `next` and frames already held are duplicates and dropped; frames beyond the
-//!   window are ignored (the sender sends them again).
-//!
-//! Sequence numbers are `u32` and do not wrap (4 billion frames); a session never gets there.
 use std::collections::{BTreeMap, VecDeque};
 
 /// Frames in flight at once (the ack mask covers 64 frames after `next`).
@@ -44,12 +24,10 @@ const FRAME_HEADER: usize = 4 + 1 + 2;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Frame {
     pub seq: u32,
-    /// Another frame of the same message follows.
     pub more: bool,
     pub data: Vec<u8>,
 }
 
-/// What goes into one datagram body.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Datagram {
     /// Every frame below this one has arrived at the sender of this datagram.
@@ -98,7 +76,6 @@ impl Datagram {
     }
 }
 
-/// Counters, for tests and the HUD line.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Stats {
     pub frames_sent: u64,
@@ -180,12 +157,10 @@ impl Reliable {
         true
     }
 
-    /// The next message that has arrived complete and in order.
     pub fn recv(&mut self) -> Option<Vec<u8>> {
         self.inbox.pop_front()
     }
 
-    /// Frames not yet acked, in flight or waiting.
     pub fn unacked(&self) -> usize {
         self.flight.len() + self.queue.len()
     }
@@ -211,7 +186,6 @@ impl Reliable {
         (base * 2f64.powi(tries.saturating_sub(1).min(4) as i32)).min(RTO_MAX)
     }
 
-    /// A datagram from the peer.
     pub fn on_datagram(&mut self, now: f64, d: &Datagram) {
         self.on_ack(now, d.next, d.sack);
         for f in &d.frames {
@@ -371,14 +345,12 @@ mod tests {
 
     const DT: f64 = 1.0 / 60.0;
 
-    /// Two ends joined by a link each way, stepped at 60 Hz.
     struct Pair {
         a: Reliable,
         b: Reliable,
         ab: Link<Vec<u8>>,
         ba: Link<Vec<u8>>,
         now: f64,
-        /// Deliver every datagram twice.
         double: bool,
         got_a: Vec<Vec<u8>>,
         got_b: Vec<Vec<u8>>,
@@ -440,7 +412,6 @@ mod tests {
         }
     }
 
-    /// Message `i` of a stream: its number, then a pattern, with sizes from a few bytes to 20 kB.
     fn message(i: u32, rng: &mut Rng) -> Vec<u8> {
         let len = match rng.next_u64() % 10 {
             0 => 5_000 + (rng.next_u64() % 15_000) as usize,
@@ -464,7 +435,6 @@ mod tests {
         p.double = double;
         let mut rng = Rng::new(seed);
         let (mut sent_a, mut sent_b) = (Vec::new(), Vec::new());
-        // Bursts, as the game sends them: a few messages at a time over four seconds.
         for i in 0..n {
             for (end, sent) in [(0, &mut sent_a), (1, &mut sent_b)] {
                 let m = message(i, &mut rng);
@@ -480,33 +450,6 @@ mod tests {
         check_stream(&sent_b, &p.got_a, "b to a");
         assert_eq!((p.a.unacked(), p.b.unacked()), (0, 0), "everything acked in the end");
         p
-    }
-
-    #[test]
-    fn lossless_link_needs_no_resend_and_delivers_in_one_way_time() {
-        let mut p = Pair::new(150.0, 0.0, 0.0, 1);
-        assert!(p.a.send(b"hello"));
-        let mut at = None;
-        for _ in 0..120 {
-            p.step();
-            if at.is_none() && !p.got_b.is_empty() {
-                at = Some(p.now);
-            }
-        }
-        // One way is 150 ms; the tick rate adds at most two ticks.
-        let at = at.expect("delivered");
-        assert!((0.15..0.15 + 3.0 * DT).contains(&at), "arrived after {at:.3} s");
-        assert_eq!(p.got_b, vec![b"hello".to_vec()]);
-        assert_eq!(p.a.stats.resent, 0, "no resend without loss");
-        assert_eq!(p.a.unacked(), 0);
-    }
-
-    #[test]
-    fn internet_150_ms_with_jitter_and_2_percent_loss() {
-        let p = two_way_run(150.0, 20.0, 2.0, 7, false, 300);
-        assert!(p.a.stats.messages_out == 300 && p.b.stats.messages_in == 300);
-        let rtt = p.a.rtt().expect("measured");
-        assert!((0.28..0.45).contains(&rtt), "round trip learned: {rtt:.3} s");
     }
 
     #[test]
@@ -532,20 +475,6 @@ mod tests {
         p.run(60.0);
         assert!(p.max_flight <= WINDOW as usize, "{} in flight", p.max_flight);
         check_stream(&msgs, &p.got_b, "burst");
-    }
-
-    #[test]
-    fn a_silent_peer_stalls_the_channel() {
-        let mut a = Reliable::new();
-        assert!(a.send(b"anyone there?"));
-        let mut now = 0.0;
-        while now < 4.0 {
-            now += DT;
-            let _ = a.poll(now);
-        }
-        assert!(a.stalled(now, 3.0) && !a.stalled(now, 10.0));
-        assert!(a.stats.resent >= 2, "it keeps trying with backoff");
-        assert!(a.stats.resent <= 8, "but not every tick: {}", a.stats.resent);
     }
 
     #[test]

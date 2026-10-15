@@ -1,4 +1,3 @@
-//! #16: a remote ship at warp speed next to the walking walker leaves the walk unchanged.
 use crate::common;
 use exo_app::Options;
 

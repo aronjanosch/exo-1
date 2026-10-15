@@ -1,5 +1,3 @@
-//! The lab's records (round 6, #228): `ingredient/`, `product_base/` and `lab/tuning.json`, loaded
-//! by `content_core` and checked against the kernel's commodities and effects.
 use std::collections::BTreeMap;
 
 use content_core::{File, Loaded, Record, check_id, load_records, parse_strict};
@@ -9,10 +7,8 @@ use serde::{Deserialize, Serialize};
 pub const INGREDIENT_FOLDER: &str = "ingredient";
 pub const BASE_FOLDER: &str = "product_base";
 pub const TUNING_PATH: &str = "lab/tuning.json";
-/// The tag of the goods sold as product bases (illegal).
 pub const CONTRABAND_TAG: &str = "contraband";
 
-/// Turns one effect into another in the mix, when `from` is in it and `to` is not.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Transform {
@@ -40,12 +36,10 @@ impl Record for Ingredient {
     }
 }
 
-/// A contraband good that the kettle starts from.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProductBase {
     pub id: CommodityId,
-    /// Effects the base starts with (may be empty).
     #[serde(default)]
     pub effects: Vec<EffectId>,
     /// At most this many effects in a mix. TODO(initiator): 6 is a starting value.
@@ -73,7 +67,6 @@ pub struct Tuning {
     pub sweet_spot: f64,
     /// Distance from the sweet spot at which the quality is 0.
     pub sweet_width: f64,
-    /// Ingredients per kettle, after the base.
     pub max_ingredients: u8,
 }
 
@@ -85,7 +78,6 @@ pub struct LabContent {
 }
 
 impl LabContent {
-    /// Loads `ingredient/`, `product_base/` and `lab/tuning.json` from `files` and checks them
     /// against the kernel. Returns every error, each naming the file and the field.
     pub fn load(files: &[File], kernel: &Content) -> Result<LabContent, Vec<String>> {
         let mut e = Vec::new();

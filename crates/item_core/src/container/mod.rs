@@ -1,12 +1,6 @@
-//! Containers: the player's inventory, and later cabinets and lockers (#287). A container is a row of slots; each slot
-//! has a rule (stack cap, allowed and denied tags) and holds at most one stack of equal items.
-//! Access is open, locked, or needs a key tag that the user carries.
-//!
 //! Taken from Barotrauma: a stack is capped by the smaller of the slot's and the item's cap, slots
 //! filter items by tag lists, a container can be locked or need a carried key item, and the preset
 //! slot counts follow its cabinets and crates (`presets`, for the cabinet step).
-//!
-//! Items are plain data with an optional payload `P` (a product, a syringe), chosen by the glue.
 //! Every operation either succeeds or hands everything back: nothing is lost or duplicated.
 use std::collections::BTreeSet;
 use std::fmt;
@@ -40,9 +34,7 @@ macro_rules! text_id {
 }
 
 text_id! {
-    /// What an item is (`space_gauze`).
     ItemKind;
-    /// A label on an item or a slot rule (`small`, `medical`, `id_card`).
     Tag;
 }
 
@@ -54,16 +46,26 @@ pub struct Item<P = ()> {
     /// How many of it fit in one slot (at least 1).
     pub max_stack: u32,
     pub payload: Option<P>,
+    /// Condition in percent (0..=100) for an item that wears (an extinguisher); None for
+    /// one that does not. Two items with different conditions do not stack.
+    #[serde(default)]
+    pub condition: Option<f64>,
 }
 
 impl<P> Item<P> {
     /// An item without payload. A `max_stack` of 0 counts as 1.
     pub fn new(kind: &str, tags: &[&str], max_stack: u32) -> Item<P> {
-        Item { kind: ItemKind::new(kind), tags: tags.iter().map(|t| Tag::new(*t)).collect(), max_stack: max_stack.max(1), payload: None }
+        Item { kind: ItemKind::new(kind), tags: tags.iter().map(|t| Tag::new(*t)).collect(), max_stack: max_stack.max(1), payload: None, condition: None }
     }
 
     pub fn with_payload(mut self, p: P) -> Item<P> {
         self.payload = Some(p);
+        self
+    }
+
+    /// The item wears: it starts at `percent` (0..=100).
+    pub fn with_condition(mut self, percent: f64) -> Item<P> {
+        self.condition = Some(percent.clamp(0.0, 100.0));
         self
     }
 
@@ -84,7 +86,6 @@ impl<P: Clone> Stack<P> {
         Stack { item, count }
     }
 
-    /// Splits off `n` (at most all): the part and the rest, if any is left.
     pub fn split(self, n: u32) -> (Stack<P>, Option<Stack<P>>) {
         let n = n.min(self.count);
         let rest = (n < self.count).then(|| Stack { item: self.item.clone(), count: self.count - n });
@@ -101,12 +102,10 @@ pub struct SlotRule {
 }
 
 impl SlotRule {
-    /// A slot that takes anything, up to `max_stack` per stack.
     pub fn any(max_stack: u32) -> SlotRule {
         SlotRule { max_stack, allow: BTreeSet::new(), deny: BTreeSet::new() }
     }
 
-    /// A slot that takes items with one of `allow` and none of `deny`.
     pub fn tagged(max_stack: u32, allow: &[&str], deny: &[&str]) -> SlotRule {
         SlotRule { max_stack, allow: allow.iter().map(|t| Tag::new(*t)).collect(), deny: deny.iter().map(|t| Tag::new(*t)).collect() }
     }
@@ -115,17 +114,14 @@ impl SlotRule {
         (self.allow.is_empty() || self.allow.iter().any(|t| item.has_tag(t))) && !self.deny.iter().any(|t| item.has_tag(t))
     }
 
-    /// How many of `item` one stack in this slot holds.
     pub fn cap<P>(&self, item: &Item<P>) -> u32 {
         self.max_stack.min(item.max_stack)
     }
 }
 
-/// Who may open the container.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Access {
     Open,
-    /// Nobody, until unlocked.
     Locked,
     /// Whoever carries an item with this tag (an id card).
     NeedsKey(Tag),
@@ -135,29 +131,23 @@ pub enum Access {
 pub enum Refusal {
     Locked,
     NeedsKey(Tag),
-    /// No slot of the container takes this item.
     NotAllowed,
-    /// The slots that take it are full.
     Full,
     NoSuchSlot,
     EmptySlot,
-    /// A count of 0.
     NothingToMove,
 }
 
-/// A refused insert: why, and the stack given back unchanged.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Refused<P = ()> {
     pub why: Refusal,
     pub stack: Stack<P>,
 }
 
-/// The fill state for a panel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Capacity {
     pub slots: usize,
     pub used_slots: usize,
-    /// Items in all stacks.
     pub items: u32,
 }
 
@@ -175,13 +165,11 @@ pub struct Container<P = ()> {
 }
 
 impl<P: Clone + PartialEq> Container<P> {
-    /// An empty container with one slot per rule.
     pub fn new(rules: Vec<SlotRule>, access: Access) -> Container<P> {
         let slots = vec![None; rules.len()];
         Container { rules, slots, access }
     }
 
-    /// Number of slots.
     pub fn len(&self) -> usize {
         self.slots.len()
     }
@@ -198,6 +186,11 @@ impl<P: Clone + PartialEq> Container<P> {
         self.slots.get(slot)?.as_ref()
     }
 
+    /// The stack in a slot, to change it in place (its item's condition, say).
+    pub fn slot_mut(&mut self, slot: usize) -> Option<&mut Stack<P>> {
+        self.slots.get_mut(slot)?.as_mut()
+    }
+
     pub fn access(&self) -> &Access {
         &self.access
     }
@@ -206,7 +199,6 @@ impl<P: Clone + PartialEq> Container<P> {
         self.access = a;
     }
 
-    /// Whether a user carrying items with the tags `carried` may open it.
     pub fn check_access(&self, carried: &[Tag]) -> Result<(), Refusal> {
         match &self.access {
             Access::Open => Ok(()),
@@ -216,7 +208,6 @@ impl<P: Clone + PartialEq> Container<P> {
         }
     }
 
-    /// How many items of `kind` it holds.
     pub fn count(&self, kind: &ItemKind) -> u32 {
         self.slots.iter().flatten().filter(|s| &s.item.kind == kind).map(|s| s.count).sum()
     }
@@ -267,7 +258,6 @@ impl<P: Clone + PartialEq> Container<P> {
         }
     }
 
-    /// Takes up to `count` items out of one slot.
     pub fn take(&mut self, carried: &[Tag], slot: usize, count: u32) -> Result<Stack<P>, Refusal> {
         self.check_access(carried)?;
         let cell = self.slots.get_mut(slot).ok_or(Refusal::NoSuchSlot)?;

@@ -1,21 +1,10 @@
-//! The SC flight model (round 5, epic #143; the only flight model since #206). Built after the structure of Star Citizen's flight control as far as our research reaches
+//! The SC flight model. Built after the structure of Star Citizen's flight control as far as our research reaches
 //! (concept repo `docs/research/flight-feel.md`, `docs/research/flight-controller-notes.md`, the
 //! IFCS switches of the local records); own names, code and values. Thrust is a force on the
 //! ship's mass, torque turns it against its inertia.
 //!
-//! One step runs stages in this order, each in its own file (one lane owns each in round 5):
 //!
-//! 1. `modes`: the pilot's switches (coupled, gravity compensation, G-safe, comstab, master mode,
-//!    speed limiter, ...).
-//! 2. `drive::begin`: the boost this step.
-//! 3. `air`: what the atmosphere does (drag, lift, wind, turbulence, thrust lost in air).
-//!    The proximity assist (`Modes::proximity`) is `linear`'s: it limits the descent near the ground.
-//! 4. `linear`: the thrust the flight computer asks for, inside the thrust box.
-//! 5. `angular`: the angular acceleration it asks for, inside the torque box.
-//! 6. `drive::shape`: what the thrusters really give (spool, jerk, boost).
-//! 7. Integration: force over mass and torque over inertia, plus gravity and air.
-//!
-//! All values are TODO(initiator) (`content/tuning/sc_*.json`).
+//! Per-type values live in `content/ship/<type>/sc_*.json` (tuned by playtest).
 pub mod air;
 pub mod angular;
 pub mod drive;
@@ -26,7 +15,7 @@ pub mod tuning;
 pub use modes::{Master, ModeCmds, Modes};
 pub use tuning::ScTuning;
 
-use crate::limits::{Dirs, Rot, G0};
+use crate::limits::{Dirs, Rot, G0, G_SAFE_MAX_G};
 use crate::{limit_length, BodyState, FlightInput, PlanetEnv};
 use glam::{DQuat, DVec3};
 
@@ -35,7 +24,6 @@ use glam::{DQuat, DVec3};
 pub struct StepState {
     pub rot: DQuat,
     pub inv: DQuat,
-    /// World position and velocity.
     pub pos: DVec3,
     pub v: DVec3,
     /// The velocity in ship space (x right, y up, z back).
@@ -44,7 +32,6 @@ pub struct StepState {
     pub w_local: DVec3,
     /// World gravity at the ship (m/s²).
     pub gravity: DVec3,
-    /// The planet's up at the ship.
     pub up: DVec3,
     /// Air density 0..1 (1 at the surface).
     pub density: f64,
@@ -78,11 +65,9 @@ impl StepState {
     }
 }
 
-/// What the ship shows and what sound, camera and HUD read (the only state they read).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ScStatus {
     pub coupled: bool,
-    /// 1 = fully coupled, 0 = fully decoupled; between: the blend runs (`modes::ModeTuning::decouple_time`).
     pub coupling: f64,
     pub grav_comp: bool,
     pub g_safe: bool,
@@ -98,7 +83,6 @@ pub struct ScStatus {
     pub speed: f64,
     /// The felt acceleration (the thrust over the mass), g.
     pub felt_g: f64,
-    /// The thrusters gave less than the flight computer asked.
     pub saturated: bool,
     pub braking: bool,
     pub boost_charge: f64,
@@ -110,7 +94,6 @@ pub struct ScStatus {
     pub wind: DVec3,
     /// 0..1: how hard the air shakes the ship (camera trauma source).
     pub turbulence: f64,
-    /// G-safe or comstab lowered the turn rate.
     pub rate_capped: bool,
 }
 
@@ -153,7 +136,6 @@ pub struct ScOut {
     pub torque: DVec3,
 }
 
-/// The SC flight model: tuning, the state of each stage and the status.
 #[derive(Clone, Debug)]
 pub struct ScShip {
     pub tuning: ScTuning,
@@ -163,7 +145,7 @@ pub struct ScShip {
     pub drive: drive::DriveState,
     pub air: air::AirState,
     pub status: ScStatus,
-    /// kg of cargo locked on the cabin's plates (#88), on top of `tuning.ship.mass`.
+    /// kg of cargo locked on the cabin's plates, on top of `tuning.ship.mass`.
     pub cargo_mass: f64,
     /// kg m² the cargo adds about the ship's axes (a point mass at `ShipBody::cargo_point`).
     pub cargo_inertia: Rot,
@@ -190,7 +172,7 @@ impl ScShip {
         }
     }
 
-    /// Cargo locked on the plates, kg (#198, #88): the mass and the inertia of the cargo, as a
+    /// Cargo locked on the plates, kg: the mass and the inertia of the cargo, as a
     /// point at the cabin floor's centre, count from the next step on.
     pub fn set_cargo_mass(&mut self, kg: f64) {
         let m = kg.max(0.0);
@@ -210,7 +192,6 @@ impl ScShip {
         Rot { pitch: i.pitch + c.pitch, yaw: i.yaw + c.yaw, roll: i.roll + c.roll }
     }
 
-    /// Test setup after placing the ship by hand: switches as at the start, no state left.
     pub fn reset_state(&mut self) {
         let t = self.tuning.clone();
         *self = ScShip::new(t);
@@ -244,7 +225,6 @@ impl ScShip {
         Rot { pitch: s.torque.pitch / i.pitch, yaw: s.torque.yaw / i.yaw, roll: s.torque.roll / i.roll }
     }
 
-    /// One physics step.
     pub fn step(&mut self, body: &BodyState, input: &FlightInput, cmds: &ModeCmds, env: &impl PlanetEnv, dt: f64) -> ScOut {
         let f = StepState::new(body, env, dt);
         self.modes.update(cmds, &self.tuning.modes, dt);
@@ -252,19 +232,28 @@ impl ScShip {
         let boost = drive::begin(&mut self.drive, input.boost, braking, &self.tuning.drive, dt);
         let air = air::step(&mut self.air, &f, &self.modes, &self.tuning.air);
         let thrust_box = self.thrust_box(air.thrust_scale, if braking { 1.0 } else { boost });
-        let lin = linear::step(&mut self.linear, &f, input, &self.modes, &linear::Env { thrust_box, boost, braking, air_accel: air.accel, cap_scale: air.cap_scale, drift: if self.modes.wind_comp { DVec3::ZERO } else { air.wind } }, &self.tuning.linear);
+        let linear_env = linear::Env { thrust_box, boost, braking, air_accel: air.accel, passive_drag: air.passive_drag, cap_scale: air.cap_scale, drift: if self.modes.wind_comp { DVec3::ZERO } else { air.wind } };
+        let lin = linear::step(&mut self.linear, &f, input, &self.modes, &linear_env, &self.tuning.linear);
+        let turn_box = linear::motion_box(&f, &self.modes, &linear_env, &self.tuning.linear);
         let torque_box = self.torque_box();
-        // X while hovering in a planet's field also levels the ship (initiator, 2026-10-11).
         let level = braking && f.v.length() < self.tuning.angular.brake_level_below && f.gravity.length_squared() > 1e-6;
-        let ang = angular::step(&mut self.angular, &f, input, &self.modes, &angular::Env { accel_box: torque_box, boost, cap: lin.cap, thrust_box, air_hold: air.angular_hold, level }, &self.tuning.angular);
+        let mut angular_modes = self.modes;
+        if self.tuning.linear.boost_disables_g_safe && boost > 0.0 {
+            angular_modes.g_safe = false;
+        }
+        let ang = angular::step(&mut self.angular, &f, input, &angular_modes, &angular::Env { accel_box: torque_box, boost, cap: lin.cap, thrust_box: turn_box, linear_hold: lin.turn_reserve, air_hold: air.angular_hold, level }, &self.tuning.angular);
         let stick = if braking { DVec3::ZERO } else { limit_length(input.thrust, 1.0) };
-        let shaped = drive::shape(&mut self.drive, &drive::Asked { linear: lin.accel, angular: ang.accel, boost, thrust_box, velocity: f.lv, stick }, &self.tuning.drive, dt);
+        let mut shaped = drive::shape(&mut self.drive, &drive::Asked { linear: lin.accel, angular: ang.accel, boost, thrust_box, velocity: f.lv, stick }, &self.tuning.drive, dt);
+        if self.modes.g_safe && !(self.tuning.linear.boost_disables_g_safe && boost > 0.0 && !braking) {
+            // A safety toggle must also constrain residual spool/jerk output immediately.
+            shaped.linear = limit_length(shaped.linear, G_SAFE_MAX_G * G0);
+        }
 
         let (mass, inertia) = (self.mass(), self.inertia());
         let linear_world = f.rot * shaped.linear;
         let mut v = f.v + (linear_world + f.gravity + air.accel + air.push) * dt;
         // A push against the velocity on an axis lands on zero there, not one step past it; the
-        // next step the push is aligned and gets its full thrust (#203).
+        // next step the push is aligned and gets its full thrust.
         let (before, mut after) = (f.lv.to_array(), (f.inv * v).to_array());
         let st = stick.to_array();
         let mut landed = false;

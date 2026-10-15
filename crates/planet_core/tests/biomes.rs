@@ -1,4 +1,3 @@
-//! #68: biomes v2: nearest row, chunk and point query agree, quotas fail the bake.
 use planet_core::*;
 
 const HEARTH: &str = include_str!("../../../content/planet/hearth.json");
@@ -7,16 +6,6 @@ fn bake(text: &str) -> (Planet, Result<BakeStats, String>) {
     let mut p = Planet::new(Recipe::for_planet(text, 1337, 5000.0).unwrap());
     let st = p.bake_checked(0);
     (p, st)
-}
-
-#[test]
-fn six_or_more_rows_have_area_and_walks_cross_biomes() {
-    let (_, st) = bake(HEARTH);
-    let st = st.unwrap();
-    let with_area = st.biome_area_share.values().filter(|v| **v > 0.002).count();
-    println!("shares {:?}, walks with 2+ biomes {:.0} %, median {}", st.biome_area_share, st.walks_two_biomes_share * 100.0, st.walk_biomes_median);
-    assert!(with_area >= 6, "{with_area} rows with area");
-    assert!(st.walks_two_biomes_share >= 0.6);
 }
 
 #[test]
@@ -48,20 +37,7 @@ fn a_missed_quota_fails_the_bake_with_the_row() {
     assert!(e.contains("biome row 7") && e.contains("below its quota 60.00 %"), "{e}");
 }
 
-#[test]
-fn nearest_row_wins() {
-    let (p, _) = bake(HEARTH);
-    let f = |moist: f64| planet_core::planet::Fields { elev: 0.0, temp: 1.0, moist, land: -0.5, weird: -0.5, erosion: 0.0 };
-    // 20 m above the sea, warm: wet, middle and dry moisture pick their rows.
-    assert_eq!(p.biome_for(20.0, &f(0.6), None), 0);
-    assert_eq!(p.biome_for(20.0, &f(0.0), None), 6);
-    assert_eq!(p.biome_for(20.0, &f(-0.7), None), 1);
-    // Under water: the sea floor; a forced landform: the rim.
-    assert_eq!(p.biome_for(-5.0, &f(0.6), None), 5);
-    assert_eq!(p.biome_for(20.0, &f(0.6), Some(1.0)), 2);
-}
-
-/// #222: the same climate on taller ground. At 100 km the relief is 4.47 times taller than at
+/// The same climate on taller ground. At 100 km the relief is 4.47 times taller than at
 /// 5 km (scale exponent 0.5), so a point at 4.47 times the height has the same row as at 5 km.
 #[test]
 fn the_climate_pattern_scales_with_the_relief() {

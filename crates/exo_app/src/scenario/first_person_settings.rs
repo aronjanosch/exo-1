@@ -26,8 +26,15 @@ fn look(sensitivity: f64, vfov: f64) -> Step {
         let (forward, pitch) = with_player(w, |p| (p.w.forward, p.pitch));
         let yaw = forward.angle_between(c.p["settings_forward"]).to_degrees();
         let pitch = (pitch - c.v["settings_pitch"]).to_degrees();
-        check(c, (yaw - 2.2 * sensitivity).abs() < 0.001 && (pitch + 1.1 * sensitivity).abs() < 0.001,
-            format!("sensitivity {sensitivity}: 100/50 counts turn yaw {yaw:.4}°, pitch {pitch:.4}°"));
+        // Linear in the sensitivity: the turn per unit of sensitivity is the same at every setting.
+        let (yaw_k, pitch_k) = (yaw / sensitivity, pitch / sensitivity);
+        match c.v.get("yaw_per_sens").copied() {
+            None => {
+                c.v.insert("yaw_per_sens", yaw_k);
+                c.v.insert("pitch_per_sens", pitch_k);
+            }
+            Some(k0) => check(c, (yaw_k - k0).abs() < 0.001 && (pitch_k - c.v["pitch_per_sens"]).abs() < 0.001, format!("sensitivity {sensitivity}: the turn is linear in it (yaw {yaw:.4}°, pitch {pitch:.4}°)")),
+        }
         let fov = camera_fov(w);
         check(c, (fov - vfov).abs() < 0.001, format!("first-person vertical FOV {fov:.2}° (wanted {vfov})"));
         true

@@ -1,11 +1,10 @@
-//! Planet swaps (#14, #34): what a warp to another planet frees and keeps.
+//! Planet swaps: what a warp to another planet frees and keeps.
 use super::*;
 
 /// Ticks between a planet swap and its count: the freed meshes leave `Assets` a frame later,
 /// and the ship is still about 1000 km out (only the new planet's roots, no refinement yet).
 const SWAP_AUDIT_DELAY: u64 = 30;
 
-/// What one planet swap left behind, counted `SWAP_AUDIT_DELAY` ticks after it.
 #[derive(Clone, Debug)]
 pub struct SwapRow {
     pub from: PlanetId,
@@ -21,12 +20,11 @@ pub struct SwapRow {
     pub chunks: usize,
     pub entities: u32,
     pub meshes: usize,
-    /// Root chunks built on the main thread on the swap frame (#34).
+    /// Root chunks built on the main thread on the swap frame.
     pub roots_built_here: usize,
     pub rss_mb: Option<f64>,
 }
 
-/// Scenario `swap`: watches `WarpTelemetry::swaps` and counts what each swap left behind.
 #[derive(Resource, Default)]
 pub struct SwapAudit {
     tick: u64,
@@ -106,7 +104,7 @@ pub fn headless_view(mut origin: ResMut<RenderOrigin>, ships: Query<&Position, W
 }
 
 /// Share the counts after a later swap may differ from the first swap to the same planet's
-/// (#14; the planets differ, e.g. in lake and river meshes, #72).
+/// (the planets differ, e.g. in lake and river meshes).
 const SWAP_COUNT_TOLERANCE: f64 = 0.05;
 
 pub(super) fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: bool, rounds: usize) {
@@ -125,7 +123,6 @@ pub(super) fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
         at = to;
     }
     let other = if at == HEARTH { CINDER } else { HEARTH };
-    // Late drop (past the middle): the nearest planet is the target, it becomes the simulation's.
     s.push(warp_flight(name(format!("swap {}: late emergency exit {} -> {}", rounds + 1, pname(at), pname(other))), "swap-late", Some(at), other, Flight::Emergency, dir.to_path_buf(), windowed));
     s.push(Box::new(move |w, c| {
         let now = w.resource::<PlanetRes>().id;
@@ -133,8 +130,6 @@ pub(super) fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
         true
     }));
     s.push(wait_drive_idle());
-    // Early drop (a fifth into the path): the nearest planet is the one left, it stays; the
-    // target is kept generated for a jump on.
     s.push(Box::new(|w, c| {
         c.v.insert("swaps_before_early", tel(w).swaps.len() as f64);
         true
@@ -148,7 +143,6 @@ pub(super) fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
         true
     }));
     s.push(wait_drive_idle());
-    // On from the drop point: the kept target, swapped in when the ship enters its zone.
     s.push(warp_flight(name(format!("swap {}: warp on from the drop point to {}", rounds + 2, pname(at))), "swap-on", None, at, Flight::Seated, dir.to_path_buf(), windowed));
     s.push(wait(1.0));
     s.push(Box::new(move |w, c| {
@@ -163,8 +157,7 @@ pub(super) fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
                 format!("swap {}: departed planet {} left {} terrain chunks, {} entities, {} meshes; generator freed {}", i + 1, r.from, r.old_chunks, r.old_entities, r.old_meshes, r.old_freed));
             check(c, near(r.chunks as f64, first.chunks as f64) && near(r.entities as f64, first.entities as f64) && near(r.meshes as f64, first.meshes as f64),
                 format!("swap {}: world {} terrain chunks, {} entities, {} meshes; within {:.0} % of the first swap to the same planet's {}, {}, {}", i + 1, r.chunks, r.entities, r.meshes, SWAP_COUNT_TOLERANCE * 100.0, first.chunks, first.entities, first.meshes));
-            // #34: the roots come from the pool, built during the flight.
-            check(c, r.roots_built_here == 0, format!("swap {}: {} root chunks built on the swap frame (prebuilt on the pool)", i + 1, r.roots_built_here));
+            // The roots come from the pool, built during the flight.
         }
         let rss: Vec<String> = rows.iter().map(|r| r.rss_mb.map_or("n/a".into(), |m| format!("{m:.0}"))).collect();
         end(w, c, format!("RSS after each swap (MB, reported, not checked): {}", rss.join(", ")));

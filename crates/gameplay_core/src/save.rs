@@ -1,7 +1,3 @@
-//! The save model (#128): an envelope with a version and one section per system, each section with
-//! its own version. No file I/O here: the glue reads and writes the text (#135). A system brings
-//! its own section (`jobs_core::Jobs::save`); the kernel and the world are below.
-//!
 //! Loading a version this build does not know is a clear error, never a guess.
 use std::collections::BTreeMap;
 use std::fmt;
@@ -14,10 +10,8 @@ use crate::event::{Dedup, Event, WorldEvent};
 use crate::id::{CommodityId, CrateId};
 use crate::progress::{Progress, Refusal};
 
-/// Version of the envelope itself (its shape: version plus named sections).
 pub const ENVELOPE_VERSION: u32 = 1;
 
-/// Section names and versions of the kernel and the world.
 pub const KERNEL: &str = "kernel";
 pub const KERNEL_VERSION: u32 = 1;
 pub const WORLD: &str = "world";
@@ -25,7 +19,6 @@ pub const WORLD_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SaveError {
-    /// The text is not a save, or a section's data does not fit its type.
     Parse(String),
     EnvelopeVersion { found: u32, supported: u32 },
     SectionVersion { section: String, found: u32, supported: u32 },
@@ -49,7 +42,6 @@ struct Section {
     data: serde_json::Value,
 }
 
-/// The whole save: sections by name.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Envelope {
     version: u32,
@@ -67,7 +59,6 @@ impl Envelope {
         Envelope { version: ENVELOPE_VERSION, sections: BTreeMap::new() }
     }
 
-    /// Stores a section, replacing one of the same name.
     pub fn put<T: Serialize>(&mut self, name: &str, version: u32, data: &T) {
         let data = serde_json::to_value(data).expect("section data is plain data");
         self.sections.insert(name.to_string(), Section { version, data });
@@ -125,7 +116,6 @@ impl KernelState {
         env.put(KERNEL, KERNEL_VERSION, self);
     }
 
-    /// None if the save has no kernel section.
     pub fn load(env: &Envelope) -> Result<Option<KernelState>, SaveError> {
         env.get(KERNEL, KERNEL_VERSION)
     }
@@ -140,7 +130,6 @@ pub enum CratePlace {
     Ship { pos: [f64; 3] },
 }
 
-/// A crate that belongs to an active job.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CrateSave {
     pub id: CrateId,
@@ -152,20 +141,16 @@ pub struct CrateSave {
     pub place: CratePlace,
 }
 
-/// The ship's pose in the planet's frame.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ShipPose {
     pub planet: u32,
     pub pos: [f64; 3],
-    /// Quaternion x, y, z, w.
     pub rot: [f64; 4],
     pub vel: [f64; 3],
 }
 
-/// The world's part of a save: the crates of active jobs and the ship.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct WorldSave {
-    /// The next crate id to hand out.
     pub next_crate: u64,
     pub crates: Vec<CrateSave>,
     pub ship: Option<ShipPose>,

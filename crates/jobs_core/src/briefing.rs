@@ -1,5 +1,3 @@
-//! Briefings from parts (#167): title formula, the giver's greeting (by mood) and intro, a
-//! paragraph for the shape of the job, a reason keyed to cargo or route, the giver's sign-off.
 //! The picker decides every pick, so the same picker state gives the same briefing, and a picker
 //! kept across briefings never repeats a line twice in a row.
 use gameplay_core::notice::Arg;
@@ -13,7 +11,6 @@ use crate::JobContent;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Briefing {
-    /// The giver's name.
     pub giver: String,
     pub title: String,
     pub greeting: String,
@@ -24,7 +21,6 @@ pub struct Briefing {
 }
 
 impl Briefing {
-    /// All parts, one paragraph each, for a panel.
     pub fn text(&self) -> String {
         [&self.greeting, &self.intro, &self.paragraph, &self.reason, &self.sign_off].iter().filter(|s| !s.is_empty()).map(|s| s.as_str()).collect::<Vec<_>>().join(" ")
     }
@@ -94,7 +90,6 @@ pub fn briefing_with(jc: &JobContent, kernel: &Content, table: &TextTable, picke
     out
 }
 
-/// A text key as an argument (the helper the notices use).
 pub fn key_arg(k: &TextKey) -> Arg {
     Arg::Key(k.clone())
 }

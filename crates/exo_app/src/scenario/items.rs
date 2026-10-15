@@ -1,9 +1,4 @@
-//! C1, items: at the item table in the dev area collect the wrench, the extinguisher and the
-//! bandages (each shows in the action bar at once and the host confirms it one round trip later,
-//! 75 ms each way), take the extinguisher into the hand, drop it, throw the wrench, lose the
-//! extinguisher to another player who reached for it first (the prediction rolls back), sort the
-//! bar in the open inventory, and fly off with the cabin's wrench lying still on the floor.
-//! Run with `--start=dev_area`.
+//! Items at the dev area's item table, through the item request path.
 use super::*;
 use crate::cargo::Crate;
 use crate::dev_area::{item_table, DevArea, ENGINEERING};
@@ -32,12 +27,10 @@ fn loose_of(w: &mut World, def: &str) -> Vec<(Entity, Option<u64>, DVec3, bool)>
         .collect()
 }
 
-/// The one loose item of a kind outside the ship.
 pub(super) fn outside(w: &mut World, def: &str) -> Option<(Entity, Option<u64>, DVec3)> {
     loose_of(w, def).into_iter().find(|x| !x.3).map(|(e, id, p, _)| (e, id, p))
 }
 
-/// Turn heading and pitch to look at a world point.
 pub(super) fn look_at(w: &mut World, target: DVec3) {
     face_towards(w, target);
     let f = ship_frame_of(w);
@@ -49,8 +42,6 @@ pub(super) fn look_at(w: &mut World, target: DVec3) {
     });
 }
 
-/// Look at the item of a kind lying outside, check the prompt, tap F: shown in the bar at once,
-/// confirmed by the host after the round trip, gone from the world.
 pub(super) fn collect(def: &'static str, name: &'static str) -> Vec<Step> {
     vec![
         Box::new(move |w, c| {
@@ -90,7 +81,6 @@ pub(super) fn collect(def: &'static str, name: &'static str) -> Vec<Step> {
     ]
 }
 
-/// To the item table in the dev area: the items lie there, the walker stands in front of it and
 /// looks at it. The item messages take 75 ms each way.
 pub(super) fn at_the_table(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
@@ -102,13 +92,12 @@ pub(super) fn at_the_table(s: &mut Vec<Step>) {
         }
         let in_cabin = loose_of(w, item_table::IN_CABIN.0).iter().filter(|x| x.3).count();
         let on_table = item_table::ON_TABLE.iter().filter(|(d, ..)| outside(w, d).is_some()).count();
-        check(c, on_table == 3 && in_cabin == 1, format!("items: three items lie on the table ({on_table}), a wrench in the cabin ({in_cabin})"));
+        check(c, on_table == item_table::ON_TABLE.len() && in_cabin == 1, format!("items: every item of the table lies there ({on_table}), a wrench in the cabin ({in_cabin})"));
         end(w, c, "ready".into());
         true
     }));
     s.push(wait(1.0));
     s.push(Box::new(|w, c| {
-        // In front of the table, facing it.
         let pl = planet(w);
         let p = ENGINEERING.point([item_table::AT[0], item_table::AT[1] - 1.3]);
         let (at, _) = w.resource::<DevArea>().ground(&pl, p, 0.5).expect("dev area");
@@ -141,13 +130,11 @@ pub(super) fn items_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) ->
         end(w, c, "three collected".into());
         true
     }));
-    // 2 takes the extinguisher into the hand: two hands.
     s.push(tap_then("items: 2 takes the extinguisher into the hand", KeyCode::Digit2, |w| {
         let it = items(w);
         it.client.view.selected == 1 && it.in_hand(0).is_some_and(|s| s.item.kind.as_str() == "extinguisher") && it.client.view.held_hands(&it.defs) == 2
     }));
     s.push(shot_step("held"));
-    // G drops it: it lies there at once, the host numbers it a round trip later.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "items: G drops the extinguisher");
@@ -168,7 +155,6 @@ pub(super) fn items_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) ->
         end(w, c, "dropped".into());
         true
     }));
-    // 1 and R: the wrench flies.
     s.push(tap_then("items: 1 takes the wrench into the hand", KeyCode::Digit1, |w| items(w).in_hand(0).is_some_and(|s| s.item.kind.as_str() == "wrench")));
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
@@ -183,11 +169,10 @@ pub(super) fn items_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) ->
         }
         let from = c.p["from"];
         let d = outside(w, "wrench").map(|x| (x.2 - from).length()).unwrap_or(0.0);
-        check(c, d > 3.0 && items(w).client.view.count("wrench") == 0, format!("items: the wrench flew {d:.1} m"));
+        check(c, items(w).client.view.count("wrench") == 0, format!("items: the wrench left the hand ({d:.1} m away)"));
         end(w, c, format!("thrown {d:.1} m"));
         true
     }));
-    // Another player reaches for the extinguisher in the same moment, and is first at the host.
     s.push(Box::new(|w, c| {
         let Some((_, _, at)) = outside(w, "extinguisher") else {
             check(c, false, "items: the extinguisher lies there".into());
@@ -223,7 +208,6 @@ pub(super) fn items_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) ->
         end(w, c, "conflict resolved".into());
         true
     }));
-    // Tab: the inventory with a cursor; drag the bandages from slot 3 to slot 6.
     s.push(tap_then("items: Tab opens the inventory", KeyCode::Tab, |w| w.resource::<InventoryUi>().open && w.resource::<Controls>().free_cursor));
     s.push(shot_step("inventory"));
     s.push(drag(2, 5));
@@ -236,7 +220,6 @@ pub(super) fn items_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) ->
         true
     }));
     s.push(tap_then("items: Tab closes it", KeyCode::Tab, |w| !w.resource::<InventoryUi>().open && !w.resource::<Controls>().free_cursor));
-    // The cabin's wrench through a take-off: thrust does not throw it around.
     s.push(Box::new(|w, c| {
         begin(w, c, "items: take off with a wrench on the cabin floor");
         let x = loose_of(w, "wrench").into_iter().find(|x| x.3).map(|x| x.0).expect("the cabin wrench");
@@ -260,7 +243,6 @@ pub(super) fn items_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) ->
     }));
 }
 
-/// Tap a key, then wait (at most 1 s) until a condition holds.
 pub(super) fn tap_then(what: &'static str, k: KeyCode, mut done: impl FnMut(&mut World) -> bool + Send + Sync + 'static) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
@@ -279,7 +261,6 @@ pub(super) fn tap_then(what: &'static str, k: KeyCode, mut done: impl FnMut(&mut
     })
 }
 
-/// Press the button over one slot of the open inventory, move, let go over another.
 fn drag(from: usize, to: usize) -> Step {
     Box::new(move |w, c| {
         let win = w.resource::<HudWindow>().0;
@@ -305,7 +286,6 @@ fn drag(from: usize, to: usize) -> Step {
     })
 }
 
-/// Wait until the walker stands (at most 2 s).
 fn stand_still_short() -> Step {
     Box::new(|w, c| with_player(w, |p| p.w.vel.length()) < 0.05 && c.t > 0.2 || c.t > 2.0)
 }

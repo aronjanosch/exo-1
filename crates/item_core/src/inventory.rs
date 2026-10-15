@@ -1,14 +1,9 @@
-//! The player's inventory: the action bar, eight slots on the keys 1 to 8. The selected slot is
-//! in the hand. Hands: two. A held item takes its `hands`; carried cargo takes its own; what does
-//! not fit stays in its slot, lowered (not in the hand, not usable).
 use serde::{Deserialize, Serialize};
 
 use crate::container::{Access, Container, Refusal, SlotRule, Stack};
 use crate::defs::{ItemDefs, Take};
 
-/// Slots of the action bar.
 pub const BAR_SLOTS: usize = 8;
-/// Hands of a player.
 pub const HANDS: u8 = 2;
 /// Most items one bar slot holds (the item's own stack size usually caps it lower).
 const SLOT_CAP: u32 = 64;
@@ -31,14 +26,12 @@ impl Inventory {
         self.bar.slot(i)
     }
 
-    /// Whether the whole stack fits (nothing changes).
     pub fn fits(&self, defs: &ItemDefs, stack: &Stack) -> bool {
         self.clone().collect(defs, stack.clone()).is_ok()
     }
 
     /// Takes a whole stack in, or nothing: equal stacks with room first, then the selected slot
     /// if it is empty (so a collected item lands in the empty hand), then the first free slot.
-    /// Only collectable items go in.
     pub fn collect(&mut self, defs: &ItemDefs, stack: Stack) -> Result<(), Refusal> {
         match defs.of(&stack) {
             Some(d) if d.take == Take::Collect => {}
@@ -59,7 +52,6 @@ impl Inventory {
         Ok(())
     }
 
-    /// Takes the whole stack out of a slot (to drop or throw it).
     pub fn take_slot(&mut self, slot: usize) -> Result<Stack, Refusal> {
         let n = self.bar.slot(slot).ok_or(if slot < BAR_SLOTS { Refusal::EmptySlot } else { Refusal::NoSuchSlot })?.count;
         self.bar.take(&[], slot, n)
@@ -73,12 +65,10 @@ impl Inventory {
         Ok(())
     }
 
-    /// Moves, stacks or swaps within the bar (the mouse in the open inventory).
     pub fn move_slot(&mut self, from: usize, to: usize) -> Result<(), Refusal> {
         self.bar.move_slot(&[], from, to)
     }
 
-    /// Hands the selected item needs (0 for an empty slot or an unknown item).
     pub fn held_hands(&self, defs: &ItemDefs) -> u8 {
         self.slot(self.selected).and_then(|s| defs.of(s)).map_or(0, |d| d.hands)
     }
@@ -90,12 +80,10 @@ impl Inventory {
         (d.hands + carrying <= HANDS).then_some(s)
     }
 
-    /// Whether cargo needing `hands` can be picked up next to the held item.
     pub fn may_carry(&self, defs: &ItemDefs, hands: u8) -> bool {
         self.held_hands(defs) + hands <= HANDS
     }
 
-    /// Items of a kind, all slots.
     pub fn count(&self, id: &str) -> u32 {
         (0..BAR_SLOTS).filter_map(|i| self.slot(i)).filter(|s| s.item.kind.as_str() == id).map(|s| s.count).sum()
     }

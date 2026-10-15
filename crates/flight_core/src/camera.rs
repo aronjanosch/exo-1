@@ -1,7 +1,3 @@
-//! Camera effects (#27, #148, #149): field of view and streaks from speed through curves, a
-//! look-ahead that turns the pilot's view a little into the turn, a short bump on touchdown; the
-//! trauma shake (boost, thrust, touchdown), the spring lag of the chase camera and the field of
-//! view from forward G. Plain math for the view; values in `content/tuning/camera.json`.
 use crate::limits::G0;
 use crate::{Curve, CHASE_CAMERA_OFFSET, CHASE_CAMERA_PITCH_DEG};
 use glam::{DVec2, DVec3};
@@ -13,7 +9,6 @@ pub struct CameraTuning {
     /// Chase camera (seated) in ship space: x right, y up, z back (m).
     pub chase_offset: [f64; 3],
     /// Chase camera pitch against the nose (degrees, negative looks down). The HUD's aim circle
-    /// follows the nose wherever the camera looks.
     pub chase_pitch_deg: f64,
     /// Speed (m/s) to field of view (degrees, vertical).
     pub fov_curve: Curve,
@@ -21,7 +16,6 @@ pub struct CameraTuning {
     pub streak_curve: Curve,
     /// Look-ahead angle per turn rate (s): the view leads a turn of 1 rad/s by this many radians.
     pub look_ahead_gain: f64,
-    /// Turn rates below this (rad/s) give no look-ahead.
     pub look_ahead_deadzone: f64,
     pub look_ahead_max_yaw_deg: f64,
     pub look_ahead_max_pitch_deg: f64,
@@ -72,7 +66,6 @@ impl CameraTuning {
         Ok(t)
     }
 
-    /// Everything finite; gains, limits, times and the bump not negative (#106 point 6).
     pub fn validate(&self) -> Result<(), String> {
         if let Some(v) = self.chase_offset.iter().find(|v| !v.is_finite()) {
             return Err(format!("chase_offset {v} not finite"));
@@ -161,16 +154,14 @@ pub struct FxInput {
     pub turn: DVec2,
     /// Speed towards the ground (m/s).
     pub approach: f64,
-    /// The hull touches the ground.
     pub grounded: bool,
     /// Felt acceleration in ship space (forward -Z, up +Y): the change of velocity per s, without a
     /// gravity term, so a hover that holds the ship feels nothing. Zero on the ground.
     pub accel: DVec3,
     /// Thrust share 0..1 (the thrusters' ramp output).
     pub thrust: f64,
-    /// Boost active.
     pub boost: bool,
-    /// Turbulence (#147): trauma per s, 0..1. No source yet, so 0.
+    /// Turbulence: trauma per s, 0..1. No source yet, so 0.
     pub turbulence: f64,
     /// The walker in a flying ship's cabin: shake only, no lag, no G field of view.
     pub cabin: bool,
@@ -191,7 +182,6 @@ pub struct CameraFx {
     pub look: DVec2,
     bump_amp: f64,
     bump_age: f64,
-    /// Touchdowns so far (scenario checks).
     pub bumps: u32,
     /// Recent approach speed, falling off over `APPROACH_MEMORY`: the contact comes a step after
     /// the solver has cut the approach.
@@ -245,7 +235,6 @@ const SPRING_STEP: f64 = 1.0 / 240.0;
 /// Seed of the shake noise: the same inputs give the same offsets.
 const SHAKE_SEED: u64 = 0x5EED_CAFE;
 
-/// A hash of a lattice point to -1..1.
 fn lattice(i: i64, channel: u64) -> f64 {
     let mut z = (i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ channel.wrapping_mul(0xD1B5_4A32_D192_ED03) ^ SHAKE_SEED;
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -265,9 +254,6 @@ fn noise(u: f64, channel: u64) -> f64 {
 
 impl CameraFx {
     /// One step with the view inputs only (no ship inputs: no spring, no G field of view, the
-    /// player's shake setting at full). `turn` is the ship's turn rate in its own axes (x pitch,
-    /// y yaw, rad/s), `approach` its speed towards the ground (m/s), `grounded` whether the hull
-    /// touches; the bump comes when contact starts (#110 point 4).
     pub fn step(&mut self, t: &CameraTuning, speed: f64, turn: DVec2, approach: f64, grounded: bool, dt: f64) {
         self.step_with(t, &FxInput { speed, turn, approach, grounded, shake_scale: 1.0, dt, ..FxInput::default() });
     }
@@ -307,7 +293,6 @@ impl CameraFx {
         self.fov_deg = t.fov_curve.eval(i.speed) + self.g_fov;
     }
 
-    /// The switch on: trauma, shake offset, lag and G field of view.
     fn step_effects(&mut self, t: &CameraTuning, i: &FxInput, touchdown: bool, forward_g: f64) {
         let dt = i.dt;
         // Trauma: sources add, the level decays at a constant rate (Eiserloh, GDC 2016).
@@ -317,7 +302,6 @@ impl CameraFx {
             self.trauma = (self.trauma + self.approach * t.shake_trauma_touchdown).min(1.0);
         }
         self.trauma = (self.trauma - t.shake_decay * dt).max(0.0);
-        // Spring lag: the camera is pushed back against the felt acceleration and swings back.
         let target = if i.cabin { DVec3::ZERO } else { -(self.felt / G0) * t.lag_per_g };
         let n = (dt / SPRING_STEP).ceil().max(1.0);
         let h = dt / n;
@@ -331,7 +315,6 @@ impl CameraFx {
             self.lag_vel = DVec3::ZERO;
         }
         self.g_fov = if i.cabin { 0.0 } else { t.g_fov_curve.eval(forward_g) };
-        // Offset: noise times trauma squared, bounded.
         self.shake_time += dt;
         let u = self.shake_time * t.shake_frequency;
         let scale = if i.cabin { t.shake_scale_cabin } else { t.shake_scale_chase } * i.shake_scale.clamp(0.0, 1.0);

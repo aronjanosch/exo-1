@@ -1,18 +1,4 @@
-//! Items (C1 of the interaction model; concept repo `design/interaction.md`): small things the
-//! player collects into the action bar, holds, drops and throws. `item_core` holds the rules and
-//! the request path; this is the glue.
-//!
-//! - Every change goes as a request from the local `Client` to the `Host` (`Items::request`).
-//!   Host and client run in this process alone (`Role::Local`); `Items::delay` holds each message
-//!   back as the internet would (the scenario plays with 75 ms each way). In a network session
-//!   (C2, `items_net`) the host process runs the `Host` and sends its events to the clients, a
-//!   client process sends its actions to the host and hears the events (`Role`). The client shows
-//!   its request at once; the world (loose item entities) follows the events the client receives.
-//! - A loose item is a `cargo::Crate` body flagged `item`: it falls, slides, sleeps and lives in
-//!   the ship's frame like a crate, but thrust does not push it around.
-//! - Keys: F collects (the interact target), 1 to 8 take a slot into the hand, G drops (a held
-//!   crate is set down instead), R throws (the crate first), Tab opens the inventory with a mouse
-//!   cursor: a click takes a slot into the hand, a drag moves, stacks or swaps.
+use crate::dev_area::hazards::{spicy_light, SPICY_ITEM};
 use crate::cargo::{item_body_bundle, Crate};
 use crate::crew_hud::{Dash, DashFrame};
 use crate::controls::{Actions, Controls, Tap};
@@ -25,10 +11,10 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use grab_core::CrateSize;
 use item_core::container::Stack;
+use item_core::wire::{FireNews, PublicStatus, ReactorAsk, ReactorNews, RepairAsk, RoomAsk, RoomNews, SprayAsk, Vitals};
 use item_core::{Action, Client, Event, FrameRef, Host, ItemDefs, LooseId, Placement, PlayerId, Reject, Request};
 use walker_core::Frame;
 
-/// The local player in a one-process game, and the host's own in a session. Slot of the ship
 /// everybody boards: items in a cabin live in the host's ship.
 pub const LOCAL: PlayerId = 1;
 /// A dropped item appears this far in front of the eye (m).
@@ -47,7 +33,6 @@ pub fn plugin(app: &mut App) {
     );
 }
 
-/// Window only: item looks, the held item, the action bar.
 pub fn window_plugin(app: &mut App) {
     use crate::phases::Frame;
     app.add_systems(Update, (dress_items, hide_items).chain().in_set(Frame::Sync));
@@ -55,13 +40,11 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, (window_size, draw_bar).chain().after(crate::crew_hud::build_hud).in_set(Frame::Hud));
 }
 
-/// Every item file under `content/items/`.
 pub fn load_defs() -> ItemDefs {
     let files = crate::content_files("items");
     ItemDefs::from_files(files.iter().map(|f| (f.path.as_str(), f.text.as_str()))).unwrap_or_else(|e| panic!("items: {e}"))
 }
 
-/// Which side of a session this process is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Role {
     /// No network: host and client in this process.
@@ -74,13 +57,29 @@ pub enum Role {
     Client,
 }
 
-/// What `Items` hands to the network glue (`items_net`).
 #[derive(Clone, Debug, PartialEq)]
 pub enum NetOut {
-    /// Client to host.
     Action(Action),
     /// Host to the clients: one player (an answer to their action) or all (`to` None).
     Event { to: Option<PlayerId>, ev: Event },
+    Vitals { to: PlayerId, v: Vitals },
+    Room { to: Option<PlayerId>, r: RoomNews },
+    Ask(RoomAsk),
+    Reactor { to: Option<PlayerId>, r: ReactorNews },
+    ReactorAsk(ReactorAsk),
+    Fire { to: Option<PlayerId>, f: FireNews },
+    SprayAsk(SprayAsk),
+    RepairAsk(RepairAsk),
+    /// Host to one client: its repair session ended, the machine is full.
+    RepairDone { to: PlayerId },
+    Status { to: Option<PlayerId>, s: Vec<(PlayerId, PublicStatus)> },
+    /// Client to host: the treatment hold on this player, or none.
+    Treat(Option<PlayerId>),
+    /// Client to host: the CPR hold on this player, or none.
+    Rescue(Option<PlayerId>),
+    /// Client to host: the brake on the reactor; the host knows the sender.
+    Pull,
+    RepairRefused { to: PlayerId },
 }
 
 #[derive(Resource)]
@@ -91,13 +90,33 @@ pub struct Items {
     /// One-way delay of every message (s): 0 in one process, the internet's in tests.
     pub delay: f64,
     pub role: Role,
-    /// Actions on the way to the host and events on the way back, with their arrival time.
     outbox: Vec<(f64, Action)>,
     inbox: Vec<(f64, Event)>,
-    /// Messages for the network, drained by `items_net`.
     pub net_out: Vec<NetOut>,
-    /// Every event the local client received (scenario checks).
     pub received: Vec<Event>,
+    /// system applies the effect.
+    pub used: Vec<(PlayerId, PlayerId, String)>,
+    pub refills: u32,
+    pub rod_loads: Vec<RodLoad>,
+    pub vitals_in: Option<Vitals>,
+    /// The engine room as the host has it: the host sets it, a client takes it from the wire.
+    pub room: RoomNews,
+    pub room_asks: Vec<RoomAsk>,
+    /// the wire. None until the first one.
+    pub reactor: Option<ReactorNews>,
+    pub reactor_asks: Vec<ReactorAsk>,
+    /// wire. None until the first one.
+    pub fire: Option<FireNews>,
+    pub spray_asks: Vec<(PlayerId, SprayAsk)>,
+    pub repair_asks: Vec<(PlayerId, RepairAsk)>,
+    pub repair_done: bool,
+    /// client takes it from the wire. Sorted by player.
+    pub public: Vec<(PlayerId, PublicStatus)>,
+    /// Treatment holds by player, to apply here (host and one process); a client sends its own.
+    pub treat_asks: Vec<(PlayerId, Option<PlayerId>)>,
+    /// Brakes by player, to apply here; a client sends its own. The rod goes to that player.
+    pub pull_asks: Vec<PlayerId>,
+    pub rescue_asks: Vec<(PlayerId, Option<PlayerId>)>,
 }
 
 /// Whether the host can simulate an action's placement: a cabin is the host's ship. (Other
@@ -112,10 +131,9 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new() }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, rod_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new() }
     }
 
-    /// The local player's slot.
     pub fn me(&self) -> PlayerId {
         self.client.player
     }
@@ -128,12 +146,10 @@ impl Items {
         Ok(seq)
     }
 
-    /// Another player's action arriving at the host (scenarios; the network uses `from_peer`).
     pub fn remote(&mut self, now: f64, a: Action) {
         self.outbox.push((now, a));
     }
 
-    /// An action from the client in `slot`, arriving over the network at the host. The player is
     /// the connection's, not what the message says: anything else is dropped.
     pub fn from_peer(&mut self, now: f64, slot: PlayerId, a: Action) -> bool {
         if self.role != Role::Host || a.player != slot {
@@ -143,7 +159,6 @@ impl Items {
         true
     }
 
-    /// An event from the host arriving at a client over the network.
     pub fn hear(&mut self, now: f64, ev: Event) {
         self.inbox.push((now, ev));
     }
@@ -158,14 +173,108 @@ impl Items {
         self.publish(now, ev, None);
     }
 
-    /// A loose item came to rest (host, from the physics): remembered, and told to everybody.
+    pub fn ask_room(&mut self, a: RoomAsk) {
+        self.room_asks.push(a);
+    }
+
+    pub fn ask_reactor(&mut self, a: ReactorAsk) {
+        self.reactor_asks.push(a);
+    }
+
+    pub fn ask_spray(&mut self, a: SprayAsk) {
+        if self.role == Role::Client {
+            self.net_out.push(NetOut::SprayAsk(a));
+        } else {
+            self.spray_asks.push((self.me(), a));
+        }
+    }
+
+    pub fn ask_repair(&mut self, a: RepairAsk) {
+        if self.role == Role::Client {
+            self.net_out.push(NetOut::RepairAsk(a));
+        } else {
+            self.repair_asks.push((self.me(), a));
+        }
+    }
+
+    pub fn ask_pull(&mut self) {
+        if self.role == Role::Client {
+            self.net_out.push(NetOut::Pull);
+        } else {
+            self.pull_asks.push(self.me());
+        }
+    }
+
+    pub fn ask_treat(&mut self, target: Option<PlayerId>) {
+        if self.role == Role::Client {
+            self.net_out.push(NetOut::Treat(target));
+        } else {
+            self.treat_asks.push((self.me(), target));
+        }
+    }
+
+    pub fn ask_rescue(&mut self, patient: Option<PlayerId>) {
+        if self.role == Role::Client {
+            self.net_out.push(NetOut::Rescue(patient));
+        } else {
+            self.rescue_asks.push((self.me(), patient));
+        }
+    }
+
+    /// The host sends a player its vitals, over the reliable channel.
+    pub fn send_vitals(&mut self, to: PlayerId, v: Vitals) {
+        self.net_out.push(NetOut::Vitals { to, v });
+    }
+
+    pub fn take_refills(&mut self) -> u32 {
+        std::mem::take(&mut self.refills)
+    }
+
+    pub fn take_rod_loads(&mut self) -> Vec<RodLoad> {
+        std::mem::take(&mut self.rod_loads)
+    }
+
+    /// Host: a stack goes into a player's inventory (a fuel rod the brake pulled, or one the
+    /// reactor had no room for). Gives it back when the inventory has no room.
+    pub fn give(&mut self, now: f64, player: PlayerId, stack: Stack) -> Result<(), Stack> {
+        if self.role == Role::Client {
+            return Ok(());
+        }
+        let ev = self.host.give(player, stack)?;
+        self.publish(now, ev, None);
+        Ok(())
+    }
+
+    pub fn take_uses(&mut self) -> Vec<(PlayerId, PlayerId, String)> {
+        std::mem::take(&mut self.used)
+    }
+
+    /// Host: a rack on the wall gets its stock. A client does not: the host's events bring it.
+    pub fn add_rack(&mut self, now: f64, id: item_core::RackId, tag: &str, slots: usize, stock: Vec<Stack>) {
+        if self.role == Role::Client {
+            return;
+        }
+        let ev = self.host.add_rack(id, tag, slots, stock);
+        self.publish(now, ev, None);
+    }
+
+    /// Host: the item in a player's slot wears by `amount` percent (the spray); the change
+    /// goes out when a whole percent changes or the item runs out.
+    pub fn wear(&mut self, now: f64, player: PlayerId, slot: usize, amount: f64) {
+        if self.role == Role::Client {
+            return;
+        }
+        if let Some(ev) = self.host.wear(player, slot, amount) {
+            self.publish(now, ev, None);
+        }
+    }
+
     pub fn rest(&mut self, now: f64, item: LooseId, at: Placement, rot: [f64; 4], t: f64) {
         if let Some(ev) = self.host.rest(item, at, rot, t) {
             self.publish(now, ev, None);
         }
     }
 
-    /// An event of the host: to the local client, and over the network to the others.
     /// `actor`: the player whose action it answers.
     fn publish(&mut self, now: f64, ev: Event, actor: Option<PlayerId>) {
         self.inbox.push((now + self.delay, ev.clone()));
@@ -182,7 +291,6 @@ impl Items {
         }
     }
 
-    /// What a client that joins now needs: the world and every inventory as events, for it alone.
     pub fn send_state(&mut self, to: PlayerId) {
         for ev in self.host.state() {
             self.net_out.push(NetOut::Event { to: Some(to), ev });
@@ -199,8 +307,24 @@ impl Items {
                 self.net_out.push(NetOut::Action(a));
                 continue;
             }
+            // What the slot held before the use: a fuel rod's kind and life go with it.
+            let held = match &a.req {
+                Request::Use { slot, .. } => self.host.inventory(a.player).slot(*slot).map(|s| (s.item.kind.as_str().to_string(), s.item.condition.unwrap_or(0.0))),
+                _ => None,
+            };
             let evs = if placement_ok(&a) { self.host.handle(&a) } else { vec![Event::Rejected { player: a.player, seq: a.seq, why: Reject::Invalid }] };
             for ev in evs {
+                if let Event::Used { player, target, effect } = &ev {
+                    self.used.push((*player, *target, effect.clone()));
+                    if effect == crate::dev_area::coolant::REFILL {
+                        self.refills += 1;
+                    }
+                    if effect == crate::dev_area::rods::LOAD
+                        && let Some((item, life)) = held.clone()
+                    {
+                        self.rod_loads.push(RodLoad { player: *player, item, life });
+                    }
+                }
                 self.publish(now, ev, Some(a.player));
             }
         }
@@ -224,6 +348,15 @@ impl Items {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct RodLoad {
+    pub player: PlayerId,
+    /// The rod's item id (`fuel_rod`, `fuel_rod_hot`, `fuel_rod_spicy`).
+    pub item: String,
+    /// Its life when it was loaded (0..100).
+    pub life: f64,
+}
+
 /// A loose item entity: the host's id once known; a drop shown before the host confirmed it
 /// carries the number of its action instead.
 #[derive(Component, Clone, Debug)]
@@ -234,11 +367,9 @@ pub struct LooseItem {
     pub pending: Option<u32>,
 }
 
-/// The inventory screen (Tab) and a drag in it.
 #[derive(Resource, Default, Debug, Clone)]
 pub struct InventoryUi {
     pub open: bool,
-    /// Slot under the pointer when the button went down.
     pub drag_from: Option<usize>,
     was_down: bool,
     /// A slot key, drop or throw was pressed since the HUD last looked (it wakes the dimmed bar).
@@ -263,7 +394,6 @@ pub fn slot_rect(i: usize, open: bool, window: Vec2, look: &display_core::hud::B
     (at.as_vec2(), size as f32)
 }
 
-/// The slot under a window point.
 pub fn slot_at(p: Vec2, open: bool, window: Vec2, look: &display_core::hud::BarLook) -> Option<usize> {
     (0..item_core::BAR_SLOTS).find(|&i| {
         let (at, s) = slot_rect(i, open, window, look);
@@ -295,7 +425,6 @@ fn hand_placement(pl: &Player, f: &Frame, planet: &PlanetRes, ship_owner: Player
     Placement { frame: if in_cabin { FrameRef::Ship(ship_owner) } else { FrameRef::Planet(planet.id.0 as u32) }, pos: pos.to_array(), vel: vel.to_array(), forward: fwd.to_array() }
 }
 
-/// The keys and the inventory screen.
 #[allow(clippy::too_many_arguments)]
 pub fn item_input(
     mut commands: Commands,
@@ -358,7 +487,6 @@ pub fn item_input(
             }
         }
     }
-    // The inventory screen: the cursor is free; a click takes a slot into the hand, a drag moves.
     controls.free_cursor |= ui.open;
     let down = controls.pointer_down || controls.click;
     if ui.open {
@@ -393,7 +521,6 @@ fn spawn_loose(commands: &mut Commands, defs: &ItemDefs, li: LooseItem, at: &Pla
     }
 }
 
-/// Messages arrive; the world follows what the client hears.
 pub fn deliver(mut commands: Commands, time: Res<Time>, mut items: ResMut<Items>, ships: Query<Entity, With<Ship>>, mut loose: Query<(Entity, &mut LooseItem)>) {
     let evs = items.step(time.elapsed_secs_f64());
     let Some(ship_e) = ships.iter().next() else { return };
@@ -440,7 +567,6 @@ pub fn visible(items: &Items, li: &LooseItem) -> bool {
     li.id.is_none_or(|id| !items.client.hidden.contains(&id))
 }
 
-/// Window: a box in the item's colour.
 fn dress_items(mut commands: Commands, items: Res<Items>, new: Query<(Entity, &LooseItem), Added<LooseItem>>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
     for (e, li) in &new {
         let Some(d) = items.defs.get(&li.def) else { continue };
@@ -451,6 +577,9 @@ fn dress_items(mut commands: Commands, items: Res<Items>, new: Query<(Entity, &L
             MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(r, g, b), perceptual_roughness: 0.6, ..default() })),
             crate::origin::WorldPose::default(),
         ));
+        if li.def == SPICY_ITEM {
+            commands.entity(e).insert(spicy_light());
+        }
     }
 }
 
@@ -463,7 +592,6 @@ pub(crate) fn hide_items(items: Res<Items>, mut q: Query<(&LooseItem, &mut Visib
     }
 }
 
-/// The item in the hand, in front of the camera (lower right).
 #[derive(Component)]
 struct HeldModel(Option<String>);
 
@@ -488,15 +616,32 @@ fn held_item(
     };
     if m.0 != want {
         m.0 = want.clone();
+        if want.as_deref() == Some(SPICY_ITEM) {
+            commands.entity(e).insert(spicy_light());
+        } else {
+            commands.entity(e).remove::<PointLight>();
+        }
         if let Some(d) = want.as_deref().and_then(|id| items.defs.get(id)) {
-            let [x, y, z] = d.shape.extents.map(|v| v as f32);
+            let k = held_scale(d.hands) as f32;
+            let [x, y, z] = d.shape.extents.map(|v| v as f32 * k);
             let [r, g, b] = d.shape.colour;
             commands.entity(e).insert((Mesh3d(meshes.add(Cuboid::new(x, y, z))), MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(r, g, b), perceptual_roughness: 0.6, ..default() }))));
         }
     }
     *vis = if m.0.is_some() { Visibility::Inherited } else { Visibility::Hidden };
-    pose.pos = c.pos + c.rot * DVec3::new(0.34, -0.34, -0.7);
+    let hands = m.0.as_deref().and_then(|id| items.defs.get(id)).map_or(1, |d| d.hands);
+    pose.pos = c.pos + c.rot * held_offset(hands);
     pose.rot = c.rot;
+}
+
+/// How big a held item is drawn, against its own size: one hand at full size; two hands at 0.6,
+fn held_scale(hands: u8) -> f64 {
+    if hands >= 2 { 0.6 } else { 1.0 }
+}
+
+/// Where a held item sits in the view, camera space (x right, y up, -z forward): one hand low
+fn held_offset(hands: u8) -> DVec3 {
+    if hands >= 2 { DVec3::new(0.16, -0.40, -0.99) } else { DVec3::new(0.34, -0.34, -0.7) }
 }
 
 fn window_size(windows: Query<&Window, With<bevy::window::PrimaryWindow>>, mut size: ResMut<HudWindow>) {
@@ -508,16 +653,6 @@ fn window_size(windows: Query<&Window, With<bevy::window::PrimaryWindow>>, mut s
     }
 }
 
-// ---------- the action bar on screen (Crew HUD v3) ----------
-//
-// Eight 56 px slots at the bottom centre. The held slot lifts and has a white outline; a slot
-// shows the item's three-letter code, its stack count ("×4") and "2H" for two hands; only the held
-// item's name is written, under the bar at the left. After a few idle seconds everything but the
-// held slot dims; while the hands carry cargo the slots are dashed and dimmed. Tab: the slots grow
-// to 88 px with a dark ellipse behind them, a hovered slot lights up, a drag carries a tilted
-// ghost and outlines the slot it would drop on; below the slots stand the name (left) and the
-// keys (right).
-
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 enum BarPart {
     Slot(usize),
@@ -526,12 +661,11 @@ enum BarPart {
     Code(usize),
     Count(usize),
     Hands(usize),
-    /// A dashed frame that follows a slot: the dragged slot's and the drop target's.
+    Condition(usize),
     Float(u32),
     Ghost,
     GhostCode,
     GhostCount,
-    /// The row under the slots: the held name at the left, the keys of the open bar at the right.
     Row,
     Name,
     Keys,
@@ -569,16 +703,15 @@ pub(crate) fn spawn_bar(commands: &mut Commands, theme: &display_core::Theme, fo
                 });
                 p.spawn((BarPart::Hands(i), Node { left: Val::Px(cl.tag_pad as f32), bottom: Val::Px(cl.tag_pad as f32 * 0.5), ..abs() }, hud_text(&fonts.mono, "", cl.tag_size, soft(0.85), h)));
                 p.spawn((BarPart::Count(i), Node { right: Val::Px(cl.tag_pad as f32), bottom: Val::Px(cl.tag_pad as f32 * 0.5), ..abs() }, hud_text(&fonts.mono, "", cl.tag_size, col(k.fg_1), h)));
+                p.spawn((BarPart::Condition(i), Node { left: Val::Px(cl.tag_pad as f32), bottom: Val::Px(cl.tag_pad as f32 * 0.25), height: Val::Px(3.0), width: percent(0.0), display: Display::None, ..abs() }, BackgroundColor(col(k.accent))));
                 spawn_dashes(p, i as u32, (cl.size as f32, cl.size as f32), cl.border as f32, cl.border as f32, h, soft(b.carry_border));
             });
     }
-    // The dashed frames of a drag: around the dragged slot and 7 px outside the drop target.
     for (id, edge, thick, colour) in [(ORIGIN_DASHES, op.size, op.border, soft(b.origin_alpha)), (DROP_DASHES, op.size + 2.0 * b.drop_offset, op.border, col(k.accent))] {
         commands.spawn((HudPart, BarPart::Float(id), Node { display: Display::Flex, ..abs() })).with_children(|p| {
             spawn_dashes(p, id, (edge as f32, edge as f32), 0.0, thick as f32, h, colour);
         });
     }
-    // Under the slots: the held name; open, the name and the keys.
     commands.spawn((HudPart, BarPart::Row, Node { height: Val::Px(b.name_h as f32), justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Center, ..abs() })).with_children(|row| {
         row.spawn((BarPart::Name, hud_caps(&fonts.bold, "", b.name_size, col(k.fg_title), h, 0.1)));
         row.spawn((BarPart::Keys, Node { align_items: AlignItems::Center, column_gap: Val::Px(18.0), display: Display::None, ..default() })).with_children(|keys| {
@@ -685,7 +818,6 @@ fn draw_bar(
     let (last, _) = slot_rect(item_core::BAR_SLOTS - 1, open, win, b);
     let row_top = display_core::hud::bar_row_top(open, win.as_dvec2(), &theme.hud.bar) as f32;
 
-    // The slot boxes, the floating dashes, the row and the ghost.
     for (part, mut n) in &mut nodes {
         match *part {
             BarPart::Slot(i) => {
@@ -713,6 +845,13 @@ fn draw_bar(
                 n.left = Val::Px(sl.tag_pad as f32);
                 n.bottom = Val::Px(sl.tag_pad as f32 * 0.5);
             }),
+            BarPart::Condition(i) => {
+                let cond = stack_of(i).and_then(|st| st.item.condition);
+                edit(&mut n, |n| {
+                    n.display = if cond.is_some() { Display::Flex } else { Display::None };
+                    n.width = percent(cond.unwrap_or(0.0).clamp(0.0, 100.0) as f32);
+                });
+            }
             BarPart::Float(id) => {
                 let (at, show) = match (id, drag, drop_on) {
                     (ORIGIN_DASHES, Some(f), _) => (slot_rect(f, true, win, b).0, true),
@@ -748,7 +887,6 @@ fn draw_bar(
         }
     }
 
-    // The slot's state: held, hovered, empty, filled, carrying cargo, dragged.
     for (part, mut border) in &mut borders {
         if let BarPart::Slot(i) = *part {
             let c = contrast_of(i == selected);
@@ -803,7 +941,6 @@ fn draw_bar(
         set_dashes(i as u32, dashed_closed, soft(b.carry_border * contrast_of(i == selected)), &mut frames, &mut dashes);
     }
 
-    // Texts: numbers, codes, counts, the name, the keys, the ghost.
     let held_name = &hud.held_name;
     let (shown, shown_accent) = if let Some(f) = drag {
         (stack_of(f).map(|st| items.name(st)).unwrap_or_default(), false)
@@ -870,5 +1007,25 @@ fn draw_bar(
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_brake_is_asked_by_its_sender_not_by_the_message() {
+        // A pull names no player; the host takes the sender (the local player's id here, a
+        // remote one's slot from its connection, `items_net`), so the rod goes to the one who asked.
+        let mut host = Items::load();
+        host.role = Role::Host;
+        host.ask_pull();
+        assert_eq!(host.pull_asks, vec![host.me()]);
+        let mut client = Items::load();
+        client.role = Role::Client;
+        client.ask_pull();
+        assert!(client.pull_asks.is_empty(), "a client sends it, it does not apply it");
+        assert!(client.net_out.iter().any(|n| matches!(n, NetOut::Pull)));
     }
 }

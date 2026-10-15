@@ -1,6 +1,4 @@
-//! Replay matrix of spike 4 without sockets: a recorded 60 Hz path of one player (ship and
-//! walker) goes through encode, fault-injected links, decode, buffer and playout, and the shown
-//! pose is compared with the sender's path at the same delayed timestamp.
+//! Replay matrix without sockets: a recorded 60 Hz path of one player (ship and
 use crate::buffer::{between, Buffer, Mode};
 use crate::link::Link;
 use crate::metrics::{mean, percentile, rms};
@@ -11,7 +9,6 @@ use std::time::Instant;
 
 pub const DT: f64 = 1.0 / 60.0;
 
-/// Recorded states at 60 Hz. `flags` of each state is the index of its phase in `phases`.
 pub struct Trajectory {
     pub phases: Vec<String>,
     pub states: Vec<Snapshot>,
@@ -72,7 +69,7 @@ pub struct Case {
     pub loss_percent: u32,
 }
 
-/// The 96 cases of spike 4: players 2/8 x rate 20/30 x buffer 100/150 x delay 0/50/150 x loss 0/1/5/10.
+/// The 96 cases: players 2/8 x rate 20/30 x buffer 100/150 x delay 0/50/150 x loss 0/1/5/10.
 pub fn matrix_cases() -> Vec<Case> {
     let mut v = Vec::new();
     for players in [2, 8] {
@@ -105,7 +102,6 @@ pub struct PhaseMetrics {
 pub struct CaseResult {
     pub case: Case,
     pub phases: Vec<(String, PhaseMetrics)>,
-    /// All phases together.
     pub all: PhaseMetrics,
     pub payload_tx_kb_s: f64,
     pub cpu_mean_ms: f64,
@@ -256,7 +252,7 @@ pub fn to_json(tr: &Trajectory, results: &[CaseResult]) -> String {
     s
 }
 
-/// A smooth stand-in path for unit tests: takeoff, cruise, a turn, landing, idle (spike 4 phases,
+/// A smooth stand-in path for unit tests: takeoff, cruise, a turn, landing, idle (phases,
 /// 25 s), analytic positions and velocities.
 pub fn synthetic_path() -> Trajectory {
     use crate::snapshot::Snapshot;

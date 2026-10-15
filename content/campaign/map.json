@@ -1,0 +1,9 @@
+{
+  "_comment": "Campaign map rules (#275). Every number is a TODO(initiator) assumption. `columns`: how many star systems each column holds, left to right; the first column is the start harbour; every system links forward to `forward` systems of the next column, so every column after the first holds at least `forward[0]`, which makes 7 the least total of 4 columns. The last column is where the map ends (0.1 has no goal). `danger` is a rough level 0 to 5 for the map to show later.",
+  "columns": [[1, 1], [2, 3], [2, 3], [2, 2]],
+  "max_nodes": 8,
+  "forward": [2, 3],
+  "weights": { "harbour": 1.0, "normal": 3.0, "hostile": 2.0 },
+  "danger": { "harbour": [0, 0], "normal": [1, 3], "hostile": [3, 5] },
+  "max_harbours": 3
+}

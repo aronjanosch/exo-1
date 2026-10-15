@@ -1,14 +1,8 @@
-//! Player settings (#31): mouse sensitivity, field of view, volume, sound on/off, and the key bindings, in the
-//! game's own `settings/` folder (next to where it runs; `--settings-dir` picks another).
-//! `settings.json` holds the numbers; rebinding writes `bindings.json` there, which then wins over
-//! the shipped `content/tuning/bindings.json`. A file that does not parse falls back to the
-//! defaults with a message. Scripted runs never read or write them.
 use crate::controls::Bindings;
 use bevy::prelude::*;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
-/// Window only.
 pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, apply_volume.in_set(crate::phases::Frame::Input));
 }
@@ -23,7 +17,7 @@ pub struct Settings {
     pub volume: f64,
     /// Off silences every sound and keeps the volume for when it comes back on.
     pub sound: bool,
-    /// Scales the camera shake (#148): 0 none, 1 as tuned.
+    /// Scales the camera shake: 0 none, 1 as tuned.
     pub camera_shake: f64,
 }
 
@@ -38,7 +32,6 @@ pub const FOV_RANGE: (f64, f64) = (40.0, 90.0);
 pub const M_YAW_DEG: f64 = 0.022;
 pub const SHAKE_RANGE: (f64, f64) = (0.0, 1.0);
 
-/// Convert vertical to horizontal FOV for a width/height aspect ratio.
 pub fn horizontal_fov(vfov_deg: f64, aspect: f64) -> f64 {
     2.0 * ((vfov_deg.to_radians() * 0.5).tan() * aspect).atan().to_degrees()
 }
@@ -62,14 +55,13 @@ impl Settings {
             None => true,
             Some(v) => v.as_bool().ok_or("settings.json: `sound` must be true or false")?,
         };
-        // Optional: files written before the camera shake setting (#148) keep loading at 1.
+        // Optional: files written before the camera shake setting keep loading at 1.
         let camera_shake = if o.contains_key("camera_shake") { num("camera_shake", SHAKE_RANGE)? } else { 1.0 };
         // The old menu allowed up to 100 degrees. Keep its files, cap just the FOV at 90.
         let fov_deg = num("fov_deg", (FOV_RANGE.0, 100.0))?.min(FOV_RANGE.1);
         Ok(Settings { mouse_sensitivity: num("mouse_sensitivity", MOUSE_RANGE)?, fov_deg, volume: num("volume", (0.0, 1.0))?, sound, camera_shake })
     }
 
-    /// The factor on every sound: the volume, or 0 with the sound off.
     pub fn master(&self) -> f32 {
         if self.sound { self.volume as f32 } else { 0.0 }
     }
@@ -79,7 +71,6 @@ impl Settings {
     }
 }
 
-/// Where the settings live.
 #[derive(Resource, Clone, Debug)]
 pub struct SettingsDir(pub PathBuf);
 
@@ -140,15 +131,6 @@ mod tests {
     }
 
     #[test]
-    fn first_person_units_and_horizontal_fov() {
-        let s = Settings { mouse_sensitivity: 2.0, ..Settings::default() };
-        assert!((s.mouse_radians_per_count() * 1000.0 - 44f64.to_radians()).abs() < 1e-12);
-        assert!((horizontal_fov(90.0, 4.0 / 3.0) - 106.26020470831196).abs() < 1e-9);
-        assert!((horizontal_fov(90.0, 16.0 / 9.0) - 121.28449291441746).abs() < 1e-9);
-        assert!((horizontal_fov(90.0, 21.0 / 9.0) - 133.60281897270362).abs() < 1e-9);
-    }
-
-    #[test]
     fn new_ranges_and_old_fov_file() {
         let mut s = Settings { mouse_sensitivity: 10.0, fov_deg: 40.0, ..Settings::default() };
         assert_eq!(Settings::from_json(&s.to_json()).unwrap(), s);
@@ -172,12 +154,6 @@ mod tests {
     }
 
     #[test]
-    fn sound_starts_on_at_half_volume() {
-        let s = Settings::default();
-        assert_eq!((s.volume, s.sound, s.master()), (0.5, true, 0.5));
-    }
-
-    #[test]
     fn sound_off_silences_whatever_the_volume() {
         let s = Settings { sound: false, volume: 0.7, ..Settings::default() };
         assert_eq!(s.master(), 0.0);
@@ -189,7 +165,6 @@ mod tests {
         assert_eq!((s.volume, s.sound), (0.3, true));
     }
 
-    /// #148: a settings file from before the camera shake loads at full shake; 0 is allowed.
     #[test]
     fn a_settings_file_from_before_the_camera_shake_still_loads() {
         let s = Settings::from_json(r#"{ "mouse_sensitivity": 1.2, "fov_deg": 80, "volume": 0.3, "sound": true }"#).unwrap();

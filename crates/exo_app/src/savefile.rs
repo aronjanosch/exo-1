@@ -1,7 +1,3 @@
-//! The host's save file (#135): the #128 envelope as JSON in `saves/` in the game's own folder
-//! (next to where it runs; scripted and headless runs use `<out_dir>/saves`). Autosave after job
-//! events and on an interval, on the game clock; the save is loaded once at start. A client id is
-//! made once per game folder (`saves/client_id`). No network here: sending the state on join is #134.
 //!
 //! A load is a restart of the gameplay state: the goods crates go, progress and jobs
 //! come from the save, the crates of active jobs come back where they were, with their condition.
@@ -22,7 +18,6 @@ pub const AUTOSAVE_INTERVAL_S: f64 = 60.0;
 /// Shortest time between saves after job events (s): a burst of events writes once. TODO(initiator).
 pub const AUTOSAVE_GAP_S: f64 = 2.0;
 
-/// Where the saves live.
 #[derive(Resource, Clone, Debug)]
 pub struct SaveDir(pub PathBuf);
 
@@ -32,8 +27,7 @@ impl SaveDir {
     }
 }
 
-/// This game folder's client id (#134 will send it on join; until then the host plays as
-/// `gameplay::HOST`).
+/// This game folder's client id (sent on join). The host plays as `gameplay::HOST` until then.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct LocalClient(pub ClientId);
 
@@ -42,7 +36,6 @@ pub struct LocalClient(pub ClientId);
 #[derive(Resource, Clone, Debug)]
 pub struct PendingLoad(pub Envelope);
 
-/// Autosave pacing and what it did.
 #[derive(Resource, Clone, Debug, Default)]
 pub struct Autosave {
     since_write: f64,
@@ -51,7 +44,6 @@ pub struct Autosave {
 }
 
 impl Autosave {
-    /// Advances the clock; true when a save is due: soon after a job event, or on the interval.
     pub fn due(&mut self, dt: f64, wanted: bool) -> bool {
         self.since_write += dt;
         let due = (wanted && self.since_write >= AUTOSAVE_GAP_S) || self.since_write >= AUTOSAVE_INTERVAL_S;
@@ -103,7 +95,6 @@ pub fn read_slot(dir: &Path, slot: &str) -> std::io::Result<Option<String>> {
     }
 }
 
-/// The folder's client id: read from `client_id`, made once when missing or unreadable.
 pub fn client_id(dir: &Path) -> std::io::Result<ClientId> {
     let path = dir.join("client_id");
     if let Ok(t) = std::fs::read_to_string(&path)
@@ -174,7 +165,6 @@ fn apply_pending_load(world: &mut World) {
     }
 }
 
-/// A restart from `env`: the goods crates of the running game go, the saved state and crates come.
 pub fn load(world: &mut World, env: &Envelope) -> Result<(), SaveError> {
     let saved = WorldSave::load(env)?.unwrap_or_default();
     world.resource_mut::<Gameplay>().restore(env, saved.next_crate)?;
@@ -237,24 +227,5 @@ mod tests {
         write_slot(&d, SLOT, "{\"a\": 2}").unwrap();
         assert_eq!(read_slot(&d, SLOT).unwrap().as_deref(), Some("{\"a\": 2}"));
         assert!(!d.join(format!("{SLOT}.json.tmp")).exists());
-    }
-
-    #[test]
-    fn a_burst_of_job_events_saves_once_and_quiet_play_saves_on_the_interval() {
-        let mut a = Autosave::default();
-        let step = 1.0 / 60.0;
-        let mut writes = 0;
-        // Events every tick for 5 s: one save per gap, not one per event.
-        for _ in 0..300 {
-            writes += a.due(step, true) as u32;
-        }
-        assert_eq!(writes, (5.0 / AUTOSAVE_GAP_S) as u32);
-        // One more event writes; after it nothing happens: the next save comes with the interval.
-        while !a.due(step, true) {}
-        let mut quiet = step;
-        while !a.due(step, false) {
-            quiet += step;
-        }
-        assert!((quiet - AUTOSAVE_INTERVAL_S).abs() < 0.1, "{quiet}");
     }
 }

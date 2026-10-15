@@ -1,18 +1,23 @@
 //! Hot reload of the tuning files mid-run.
 use super::*;
 
-/// Copies the shipped tuning files to `<out>/tuning`, watches that copy, edits it mid-run.
+/// Copies tuning and ship files to `<out>/content`, watches that copy, edits it mid-run.
 pub(super) fn reload_steps(s: &mut Vec<Step>, out_dir: &std::path::Path) {
-    let dir = out_dir.join("tuning");
-    let ground_file = dir.join("ground.json");
+    let dir = out_dir.join("content");
+    let ground_file = dir.join("tuning/ground.json");
     let ground_text = crate::tuning::GROUND.to_string();
     {
         let dir = dir.clone();
         s.push(Box::new(move |w, _| {
-            std::fs::create_dir_all(&dir).expect("tuning copy dir");
+            std::fs::create_dir_all(dir.join("tuning")).expect("tuning copy dir");
+            std::fs::create_dir_all(dir.join("ship/kackfass_1")).expect("ship type copy dir");
             for (f, t) in [("ground.json", crate::tuning::GROUND), ("walker.json", crate::tuning::WALKER), ("suit.json", crate::tuning::SUIT), ("camera.json", crate::tuning::CAMERA), ("bindings.json", crate::controls::BINDINGS)] {
-                std::fs::write(dir.join(f), t).expect("tuning copy");
+                std::fs::write(dir.join("tuning").join(f), t).expect("tuning copy");
             }
+            for (file, text) in flight_core::sc::tuning::FILES.into_iter().zip(crate::tuning::SC) {
+                std::fs::write(dir.join("ship/kackfass_1").join(file), text).expect("ship flight copy");
+            }
+            std::fs::write(dir.join("ship/kackfass_1/type.json"), crate::tuning::SHIP_MODEL).expect("ship model copy");
             w.resource_mut::<crate::hot_reload::HotReload>().dir = dir.clone();
             true
         }));
@@ -58,5 +63,28 @@ pub(super) fn reload_steps(s: &mut Vec<Step>, out_dir: &std::path::Path) {
     s.push(edit("reload: ground.json restored", ground_file, ground_text, |w| {
         let rate = with_ship(w, |s| s.ground.tuning.angular_decay);
         (rate == 12.0 && w.resource::<crate::hot_reload::HotReload>().last_error.is_none()).then(|| format!("angular decay {rate} again"))
+    }));
+    let model_file = dir.join("ship/kackfass_1/type.json");
+    let renamed = crate::tuning::SHIP_MODEL.replace("Kackfass-1", "Kackfass-1 Test");
+    s.push(edit("reload: ship model name", model_file.clone(), renamed, |w| {
+        let name = with_ship(w, |s| s.model.name.clone());
+        (name == "Kackfass-1 Test").then(|| format!("ship name: {name}"))
+    }));
+    let body_file = dir.join("ship/kackfass_1/sc_ship.json");
+    let heavier = crate::tuning::SC[0].replace("\"mass\": 2000.0", "\"mass\": 3500.0");
+    assert_ne!(heavier, crate::tuning::SC[0]);
+    s.push(edit("reload: ship type mass", body_file.clone(), heavier, |w| {
+        let model_mass = with_ship(w, |s| s.sc.mass());
+        let e = ship_e(w);
+        let physics_mass = w.get::<avian3d::prelude::Mass>(e).unwrap().0 as f64;
+        (model_mass == 3500.0 && physics_mass == 3500.0).then(|| format!("flight and contact mass: {model_mass} kg"))
+    }));
+    s.push(edit("reload: ship mass restored", body_file, crate::tuning::SC[0].to_string(), |w| {
+        let mass = with_ship(w, |s| s.sc.mass());
+        (mass == 2000.0).then(|| format!("restored mass {mass} kg"))
+    }));
+    s.push(edit("reload: ship name restored", model_file, crate::tuning::SHIP_MODEL.to_string(), |w| {
+        let name = with_ship(w, |s| s.model.name.clone());
+        (name == "Kackfass-1").then(|| name)
     }));
 }

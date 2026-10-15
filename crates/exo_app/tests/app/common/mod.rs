@@ -20,7 +20,7 @@ pub fn run_scenario(o: &Options) -> bevy::app::App {
     app
 }
 
-/// Output folder for one test run (#117): inside the lane's own target dir, unique per process,
+/// Output folder for one test run: inside the target dir, unique per process,
 /// created fresh. Nothing fixed in /tmp, so lanes running the same test at once do not collide.
 pub fn out_dir(name: &str) -> std::path::PathBuf {
     let d = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("exo-{name}-{}", std::process::id()));

@@ -1,4 +1,3 @@
-//! Production state: stations and save section.
 use std::collections::BTreeMap;
 
 use gameplay_core::save::{Envelope, SaveError};

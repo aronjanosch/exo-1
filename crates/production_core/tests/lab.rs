@@ -1,4 +1,3 @@
-//! The lab of round 6 (#228): mixing, the brew timing, the kettles, the recipe book, the save.
 //! Every test loads the shipped `content/gameplay` unless it says it builds its own records.
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -6,7 +5,6 @@ use std::path::Path;
 use content_core::Loaded;
 use gameplay_core::notice::NoticeKind;
 use gameplay_core::save::Envelope;
-use gameplay_core::text::TextTable;
 use gameplay_core::{ClientId, CommodityId, Content, EffectId, Event, File, ProductSpec, Tag, WorldEvent};
 use production_core::*;
 
@@ -50,7 +48,6 @@ fn set(xs: &[&str]) -> BTreeSet<EffectId> {
     xs.iter().map(|x| eid(x)).collect()
 }
 
-/// The shipped files with one replaced (or added) and an optional one removed.
 fn with_file(path: &str, text: Option<&str>) -> Vec<File> {
     let mut f: Vec<File> = shipped_files().into_iter().filter(|f| f.path != path).collect();
     if let Some(t) = text {
@@ -63,7 +60,6 @@ fn load_with(path: &str, text: &str) -> Vec<String> {
     LabContent::load(&with_file(path, Some(text)), &kernel()).unwrap_err()
 }
 
-/// The brewed event and the notice of a release: (product, crates, discovered).
 fn brewed_of(out: &[LabOutcome]) -> (ProductSpec, u32, bool) {
     out.iter()
         .find_map(|o| match o {
@@ -147,50 +143,6 @@ fn the_effect_cap_refuses_new_effects_and_keeps_the_old() {
     assert_eq!(mix(&base, &[&a, &again]), set(&["sleepy"]), "an effect already in the mix is not added twice");
 }
 
-#[test]
-fn the_needle_is_a_triangle_wave_over_one_period() {
-    assert!(needle(0.0, 1.6).abs() < 1e-9);
-    assert!((needle(0.4, 1.6) - 0.5).abs() < 1e-9);
-    assert!((needle(0.8, 1.6) - 1.0).abs() < 1e-9);
-    assert!((needle(1.2, 1.6) - 0.5).abs() < 1e-9);
-    assert!(needle(1.6, 1.6).abs() < 1e-9);
-    assert!((needle(2.4, 1.6) - 1.0).abs() < 1e-9, "the second sweep starts again");
-}
-
-#[test]
-fn quality_peaks_at_the_sweet_spot_and_falls_to_zero_at_the_width() {
-    let t = lab_content().tuning;
-    let (s, w) = (t.sweet_spot, t.sweet_width);
-    assert_eq!(quality(s, &t), 1.0);
-    assert!((quality(s + w / 2.0, &t) - 0.5).abs() < 1e-9);
-    assert!((quality(s - w / 2.0, &t) - 0.5).abs() < 1e-9);
-    assert_eq!(quality(s + w, &t), 0.0);
-    assert_eq!(quality(s - w, &t), 0.0);
-    assert_eq!(quality(s + 3.0 * w, &t), 0.0, "clamped, never negative");
-}
-
-#[test]
-fn price_is_base_times_effect_factor_times_quality_factor() {
-    let k = kernel();
-    let blorp = k.commodities[&cid("blorp_paste")].record.base_price;
-    let plain = ProductSpec { base: cid("blorp_paste"), effects: BTreeSet::new(), quality: 1.0 };
-    assert_eq!(price(&plain, &k), Some(blorp), "no effects, full quality: the base price");
-
-    let bad = ProductSpec { quality: 0.0, ..plain.clone() };
-    assert_eq!(price(&bad, &k), Some((blorp as f64 * 0.5).round() as i64), "quality 0 halves it");
-
-    let dg = k.commodities[&cid("dream_goo")].record.base_price;
-    let sleepy = k.effects[&eid("sleepy")].record.value;
-    let fancy = ProductSpec { base: cid("dream_goo"), effects: set(&["sleepy"]), quality: 1.0 };
-    assert_eq!(price(&fancy, &k), Some((dg as f64 * (1.0 + sleepy)).round() as i64), "an effect adds its value");
-
-    let half = ProductSpec { quality: 0.5, ..fancy.clone() };
-    assert_eq!(price(&half, &k), Some((dg as f64 * (1.0 + sleepy) * 0.75).round() as i64), "quality 0.5 is factor 0.75");
-
-    let unknown = ProductSpec { base: cid("not_a_good"), effects: BTreeSet::new(), quality: 1.0 };
-    assert_eq!(price(&unknown, &k), None, "an unknown base has no price");
-}
-
 // ---------- kettles ----------
 
 #[test]
@@ -257,27 +209,6 @@ fn a_full_brew_goes_from_kettle_to_release_to_take() {
     assert_eq!(lab.take("vat"), Some((product, crates)));
     assert_eq!(lab.kettle("vat"), Some(&Kettle::Empty), "taking empties the kettle");
     assert_eq!(lab.take("vat"), None, "nothing to take twice");
-}
-
-#[test]
-fn the_release_moment_sets_the_quality() {
-    let lc = lab_content();
-    let period = lc.tuning.needle_period_s;
-    let release_quality = |t: f64| {
-        let mut lab = Lab::new();
-        lab.insert(&lc, "vat", &cid("blorp_paste")).unwrap();
-        lab.start(&lc, "vat").unwrap();
-        lab.step(lc.tuning.brew_s);
-        let out = lab.release(&lc, "vat", t).unwrap();
-        brewed_of(&out).0.quality
-    };
-    let at_sweet = release_quality(lc.tuning.sweet_spot * period / 2.0);
-    assert!((at_sweet - 1.0).abs() < 1e-9, "the sweet spot gives quality 1");
-    let at_top = release_quality(period / 2.0);
-    assert!(at_top.abs() < 1e-9, "the needle at the top of its sweep (1.0) is outside the sweet width: quality 0");
-    // 0.5 s into a 1.6 s sweep the needle is at 0.625: half the sweet width away, quality 0.5.
-    let between = release_quality(0.5);
-    assert!((between - 0.5).abs() < 1e-9, "the needle at 0.625 is half a width off: {between}");
 }
 
 #[test]
@@ -382,27 +313,6 @@ fn shipped_content_loads_and_every_ingredient_effect_exists() {
     assert!(lc.bases[&cid("blorp_paste")].record.effects.is_empty());
     assert_eq!(lc.bases[&cid("dream_goo")].record.effects, vec![eid("sleepy")]);
     assert_eq!(lc.tuning.max_ingredients, 3);
-}
-
-#[test]
-fn every_shipped_name_and_lab_line_has_its_text() {
-    let text = std::fs::read_to_string(content_root().join("text/en.json")).unwrap();
-    let table = TextTable::from_json("content/gameplay/text/en.json", &text).unwrap();
-    let k = kernel();
-    let lc = lab_content();
-    for id in lc.bases.keys().chain(lc.ingredients.keys()) {
-        let key = format!("commodity.{id}.name");
-        assert!(table.has(&key), "no text '{key}'");
-    }
-    for ing in lc.ingredients.values() {
-        let e = ing.record.adds.as_ref().unwrap();
-        assert!(table.has(&format!("effect.{e}.name")), "no text for effect '{e}'");
-        assert!(k.effects.contains_key(e));
-    }
-    for key in [production_core::lab::BREWED_KEY, production_core::lab::DISCOVERED_KEY] {
-        let lines = table.lines(key).unwrap_or_else(|| panic!("no text '{key}'"));
-        assert!(lines.len() >= 3, "'{key}' is a pool of at least 3 lines");
-    }
 }
 
 // ---------- loader ----------

@@ -1,5 +1,3 @@
-//! Round 6: the city, its colliders and characters, the new towns' pads.
-//! Without a window.
 use crate::common;
 use exo_app::Options;
 

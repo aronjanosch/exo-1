@@ -1,5 +1,3 @@
-//! Shared fixtures for the SC model's tests (round 5): the six tuning files, a deep-space and a
-//! flat air planet, and a loop that flies the ship for a while. `mod sc_common;` in a test file.
 #![allow(dead_code)]
 use flight_core::sc::{ModeCmds, ScShip, ScTuning};
 use flight_core::{BodyState, Field, FlightInput, PlanetEnv};
@@ -8,19 +6,17 @@ use glam::DVec3;
 pub const DT: f64 = 1.0 / 60.0;
 
 pub fn tuning() -> ScTuning {
-    ScTuning::from_json([
-        include_str!("../../../../content/tuning/sc_ship.json"),
-        include_str!("../../../../content/tuning/sc_modes.json"),
-        include_str!("../../../../content/tuning/sc_linear.json"),
-        include_str!("../../../../content/tuning/sc_angular.json"),
-        include_str!("../../../../content/tuning/sc_drive.json"),
-        include_str!("../../../../content/tuning/sc_air.json"),
+    flight_core::ship_type::ShipType::from_json(include_str!("../../../../content/ship/kackfass_1/type.json"), [
+        include_str!("../../../../content/ship/kackfass_1/sc_ship.json"),
+        include_str!("../../../../content/ship/kackfass_1/sc_modes.json"),
+        include_str!("../../../../content/ship/kackfass_1/sc_linear.json"),
+        include_str!("../../../../content/ship/kackfass_1/sc_angular.json"),
+        include_str!("../../../../content/ship/kackfass_1/sc_drive.json"),
+        include_str!("../../../../content/ship/kackfass_1/sc_air.json"),
     ])
-    .unwrap()
+    .unwrap().flight
 }
 
-/// The tuning with thrusters that answer at once (no spool, jerk or boost ramp, #198), for
-/// checks of one step of the linear law.
 pub fn instant() -> flight_core::sc::ScTuning {
     let mut t = tuning();
     let d = &mut t.drive;
@@ -33,7 +29,6 @@ pub fn instant() -> flight_core::sc::ScTuning {
     t
 }
 
-/// Deep space: no gravity, no air.
 pub struct Space {
     pub field: Field,
 }
@@ -102,7 +97,6 @@ impl PlanetEnv for Air {
     }
 }
 
-/// A ship at rest at `pos`, level, nose along -Z.
 pub fn body_at(pos: DVec3) -> BodyState {
     BodyState { pos, ..BodyState::default() }
 }

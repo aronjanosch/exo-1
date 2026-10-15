@@ -1,28 +1,16 @@
 //! The path every item change takes (concept repo `decisions/crew-ship.md`, "Interaction model";
 //! `decisions/project.md`, "Played over the internet").
-//!
-//! A player's action is a `Request`. The acting `Client` shows it at once (prediction) and sends
-//! it as an `Action` to the `Host`, which owns the shared state (loose items, every inventory),
-//! applies it or refuses it, and answers with `Event`s: what changed, then `Confirmed` or
-//! `Rejected` for the action. The client keeps the host's last word (`confirmed`) and the actions
-//! still in flight (`pending`); its `view` is always the confirmed state with the pending actions
-//! replayed on top, so a rejected action simply drops out of it. Barotrauma works the same way
-//! over the internet: the server owns items, clients predict their own actions.
-//!
-//! Host and client may live in one process (C1) or on two machines (C2 routes the same messages
-//! through the network); nothing here knows which.
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::container::{Refusal, Stack};
+use crate::container::{Access, Container, Refusal, SlotRule, Stack};
 use crate::defs::ItemDefs;
-use crate::inventory::Inventory;
+use crate::inventory::{Inventory, BAR_SLOTS};
 
-/// A player's slot in the session (1 is the host's own player).
 pub type PlayerId = u32;
-/// A loose item in the world, numbered by the host.
 pub type LooseId = u64;
+pub type RackId = u32;
 
 /// The frame a loose item lives in, like the walker: a planet, or a ship's cabin (its owner's
 /// slot).
@@ -54,7 +42,6 @@ impl Placement {
 /// Fastest a placement may move (m/s): well above a throw, far below a ship.
 pub const MAX_THROW_SPEED: f64 = 100.0;
 
-/// A loose item: what it is and where the host put it (where it lies now is the physics').
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Loose {
     pub stack: Stack,
@@ -63,19 +50,20 @@ pub struct Loose {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Request {
-    /// F on a loose item: into the inventory.
     Collect { item: LooseId },
-    /// Let the stack of a slot fall at `at`.
     Drop { slot: usize, at: Placement },
     /// Throw it: the same as a drop, `at` carries the throw's velocity.
     Throw { slot: usize, at: Placement },
-    /// Take a slot into the hand.
     Select { slot: usize },
-    /// Move, stack or swap within the own inventory.
     Move { from: usize, to: usize },
+    /// Use one item of a slot on `target` (a player's slot; the user's own for itself). What the
+    /// item does is the host's to apply (`Event::Used`).
+    Use { slot: usize, target: PlayerId },
+    /// Hang the item of a slot on a rack and take a spare from it (Barotrauma's extinguisher
+    /// bracket): the spare with the best condition of the same kind. An empty slot takes one.
+    Swap { slot: usize, rack: RackId },
 }
 
-/// A request on its way to the host: who, their running number, what.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Action {
     pub player: PlayerId,
@@ -83,19 +71,18 @@ pub struct Action {
     pub req: Request,
 }
 
-/// Why the host refused an action.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Reject {
-    /// The loose item is no longer there (someone else was first).
     Gone,
-    /// It does not fit into the inventory.
     Full,
     /// Not something that goes into an inventory (cargo is carried).
     NotCollectable,
     EmptySlot,
     NoSuchSlot,
-    /// The move is not possible (same slot, nothing to move).
     Invalid,
+    NotUsable,
+    NoRack,
+    NoSpare,
 }
 
 impl From<Refusal> for Reject {
@@ -110,16 +97,16 @@ impl From<Refusal> for Reject {
     }
 }
 
-/// What the host tells every client.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Event {
     /// A loose item appeared; `by` names the action that dropped it, so that client can keep the
     /// item it already shows instead of adding a second one.
     Spawned { item: LooseId, loose: Loose, by: Option<(PlayerId, u32)> },
-    /// A loose item is gone (collected).
     Removed { item: LooseId },
-    /// A player's inventory as the host has it now.
     Inventory { player: PlayerId, inv: Inventory },
+    /// An item of `player` was used on `target` (one was taken from the stack); the host applies
+    /// `effect` to the target.
+    Used { player: PlayerId, target: PlayerId, effect: String },
     /// A loose item came to rest at `at`, turned as the quaternion `rot` (x, y, z, w; a resting
     /// item may lie on its side, which `at.forward` cannot say), at the shared session time `t`
     /// (the host's clock). While an item moves, its poses go out as datagrams, not events; this is
@@ -127,14 +114,15 @@ pub enum Event {
     Rest { item: LooseId, at: Placement, rot: [f64; 4], t: f64 },
     Confirmed { player: PlayerId, seq: u32 },
     Rejected { player: PlayerId, seq: u32, why: Reject },
+    Rack { rack: RackId, contents: Container },
 }
 
-/// The shared state and the one place that changes it.
 #[derive(Clone, Debug, Default)]
 pub struct Host {
     pub defs: ItemDefs,
     pub loose: BTreeMap<LooseId, Loose>,
     pub inventories: BTreeMap<PlayerId, Inventory>,
+    pub racks: BTreeMap<RackId, Container>,
     next: LooseId,
 }
 
@@ -143,13 +131,54 @@ impl Host {
         Host { defs, ..Default::default() }
     }
 
-    /// Puts a loose item into the world (level content, a drop): its id and the event.
     pub fn spawn(&mut self, stack: Stack, at: Placement, by: Option<(PlayerId, u32)>) -> Event {
         self.next += 1;
         let item = self.next;
         let loose = Loose { stack, at };
         self.loose.insert(item, loose.clone());
         Event::Spawned { item, loose, by }
+    }
+
+    /// Puts a rack on the wall: `slots` slots taking items of the kind tagged `tag`, and the
+    /// spares it starts with. The event tells the clients its stock.
+    pub fn add_rack(&mut self, id: RackId, tag: &str, slots: usize, stock: Vec<Stack>) -> Event {
+        let mut contents = Container::new(vec![SlotRule::tagged(1, &[tag], &[]); slots], Access::Open);
+        for s in stock {
+            let _ = contents.try_insert(&[], s);
+        }
+        self.racks.insert(id, contents.clone());
+        Event::Rack { rack: id, contents }
+    }
+
+    /// Puts a stack into a player's inventory, as a pulled or refused fuel rod comes back.
+    /// The stack comes back when it does not fit.
+    pub fn give(&mut self, player: PlayerId, stack: Stack) -> Result<Event, Stack> {
+        let mut inv = self.inventory(player);
+        match inv.collect(&self.defs, stack.clone()) {
+            Ok(()) => {
+                self.inventories.insert(player, inv.clone());
+                Ok(Event::Inventory { player, inv })
+            }
+            Err(_) => Err(stack),
+        }
+    }
+
+    /// The condition (percent) of the item in a slot, if it wears.
+    pub fn condition(&self, player: PlayerId, slot: usize) -> Option<f64> {
+        self.inventories.get(&player)?.slot(slot)?.item.condition
+    }
+
+    /// Wears the item in a slot by `amount` percent (not below 0), as the spray does while it
+    /// runs. The event (the inventory as now) comes only when the whole percent changes or the
+    /// item runs out, so the clients hear it a few times a second at most.
+    pub fn wear(&mut self, player: PlayerId, slot: usize, amount: f64) -> Option<Event> {
+        let inv = self.inventories.get_mut(&player)?;
+        let item = &mut inv.bar.slot_mut(slot)?.item;
+        let before = item.condition?;
+        let after = (before - amount).max(0.0);
+        item.condition = Some(after);
+        let changed = before.floor() != after.floor() || (before > 0.0 && after == 0.0);
+        changed.then(|| Event::Inventory { player, inv: inv.clone() })
     }
 
     /// The host's physics reports where a loose item is now (no event; a client that joins later
@@ -173,14 +202,14 @@ impl Host {
     pub fn state(&self) -> Vec<Event> {
         let loose = self.loose.iter().map(|(id, l)| Event::Spawned { item: *id, loose: l.clone(), by: None });
         let inventories = self.inventories.iter().map(|(p, inv)| Event::Inventory { player: *p, inv: inv.clone() });
-        loose.chain(inventories).collect()
+        let racks = self.racks.iter().map(|(id, c)| Event::Rack { rack: *id, contents: c.clone() });
+        loose.chain(inventories).chain(racks).collect()
     }
 
     pub fn inventory(&self, p: PlayerId) -> Inventory {
         self.inventories.get(&p).cloned().unwrap_or_default()
     }
 
-    /// Applies one action, or refuses it; the events in the order clients should apply them.
     pub fn handle(&mut self, a: &Action) -> Vec<Event> {
         let mut inv = self.inventory(a.player);
         let mut out = Vec::new();
@@ -206,6 +235,16 @@ impl Host {
             },
             Request::Select { slot } => inv.select(*slot).map_err(Reject::from),
             Request::Move { from, to } => inv.move_slot(*from, *to).map_err(Reject::from),
+            Request::Use { slot, target } => use_one(&self.defs, &mut inv, *slot).map(|effect| {
+                out.push(Event::Used { player: a.player, target: *target, effect });
+            }),
+            Request::Swap { slot, rack } => match self.racks.get(rack).cloned() {
+                None => Err(Reject::NoRack),
+                Some(mut contents) => swap(&mut inv, &mut contents, *slot).map(|()| {
+                    self.racks.insert(*rack, contents.clone());
+                    out.push(Event::Rack { rack: *rack, contents });
+                }),
+            },
         };
         match result {
             Ok(()) => {
@@ -219,18 +258,15 @@ impl Host {
     }
 }
 
-/// One player's side: the host's last word, the actions in flight, and the predicted view.
 #[derive(Clone, Debug, Default)]
 pub struct Client {
     pub player: PlayerId,
     pub defs: ItemDefs,
-    /// Loose items as the host announced them.
     pub loose: BTreeMap<LooseId, Loose>,
-    /// The own inventory as the host last sent it.
+    pub racks: BTreeMap<RackId, Container>,
     pub confirmed: Inventory,
     /// The other players' inventories as the host last sent them (their held items show).
     pub others: BTreeMap<PlayerId, Inventory>,
-    /// Sent, not yet answered.
     pub pending: Vec<Action>,
     /// What the player sees: `confirmed` with `pending` replayed.
     pub view: Inventory,
@@ -251,7 +287,7 @@ impl Client {
     pub fn request(&mut self, req: Request) -> Result<Action, Reject> {
         let mut view = self.view.clone();
         let mut hidden = self.hidden.clone();
-        predict(&self.defs, &self.loose, &mut view, &mut hidden, &req)?;
+        predict(&self.defs, &self.loose, &self.racks, &mut view, &mut hidden, &req)?;
         self.seq += 1;
         let a = Action { player: self.player, seq: self.seq, req };
         self.pending.push(a.clone());
@@ -260,7 +296,6 @@ impl Client {
         Ok(a)
     }
 
-    /// An event from the host.
     pub fn apply(&mut self, ev: &Event) {
         match ev {
             Event::Spawned { item, loose, .. } => {
@@ -274,6 +309,9 @@ impl Client {
                     l.at = *at;
                 }
             }
+            Event::Rack { rack, contents } => {
+                self.racks.insert(*rack, contents.clone());
+            }
             Event::Inventory { player, inv } if *player == self.player => self.confirmed = inv.clone(),
             Event::Inventory { player, inv } => {
                 self.others.insert(*player, inv.clone());
@@ -283,7 +321,7 @@ impl Client {
                 self.pending.retain(|a| a.seq != *seq);
                 self.rejected.push((*seq, why.clone()));
             }
-            Event::Confirmed { .. } | Event::Rejected { .. } => {}
+            Event::Confirmed { .. } | Event::Rejected { .. } | Event::Used { .. } => {}
         }
         self.rebuild();
     }
@@ -294,7 +332,7 @@ impl Client {
         let mut view = self.confirmed.clone();
         let mut hidden = BTreeSet::new();
         for a in &self.pending {
-            let _ = predict(&self.defs, &self.loose, &mut view, &mut hidden, &a.req);
+            let _ = predict(&self.defs, &self.loose, &self.racks, &mut view, &mut hidden, &a.req);
         }
         self.view = view;
         self.hidden = hidden;
@@ -306,14 +344,12 @@ impl Client {
         self.others.get(&player)?.in_hand(&self.defs, 0)
     }
 
-    /// A drop or throw of this client still waiting for the host (the glue shows its item).
     pub fn pending_drop(&self, seq: u32) -> bool {
         self.pending.iter().any(|a| a.seq == seq && matches!(a.req, Request::Drop { .. } | Request::Throw { .. }))
     }
 }
 
-/// Applies a request to a view, as the host would.
-fn predict(defs: &ItemDefs, loose: &BTreeMap<LooseId, Loose>, view: &mut Inventory, hidden: &mut BTreeSet<LooseId>, req: &Request) -> Result<(), Reject> {
+fn predict(defs: &ItemDefs, loose: &BTreeMap<LooseId, Loose>, racks: &BTreeMap<RackId, Container>, view: &mut Inventory, hidden: &mut BTreeSet<LooseId>, req: &Request) -> Result<(), Reject> {
     match req {
         Request::Collect { item } => {
             let l = loose.get(item).filter(|_| !hidden.contains(item)).ok_or(Reject::Gone)?;
@@ -325,6 +361,48 @@ fn predict(defs: &ItemDefs, loose: &BTreeMap<LooseId, Loose>, view: &mut Invento
         }
         Request::Select { slot } => view.select(*slot)?,
         Request::Move { from, to } => view.move_slot(*from, *to)?,
+        Request::Use { slot, .. } => {
+            use_one(defs, view, *slot)?;
+        }
+        Request::Swap { slot, rack } => {
+            let mut contents = racks.get(rack).cloned().ok_or(Reject::NoRack)?;
+            swap(view, &mut contents, *slot)?;
+        }
     }
     Ok(())
+}
+
+/// Hangs the stack of `slot` on the rack and takes the best spare of its kind from it (or any
+/// spare into an empty slot). Nothing changes unless all of it works.
+fn swap(inv: &mut Inventory, rack: &mut Container, slot: usize) -> Result<(), Reject> {
+    if slot >= BAR_SLOTS {
+        return Err(Reject::NoSuchSlot);
+    }
+    let own = inv.slot(slot).cloned();
+    let kind = own.as_ref().map(|s| s.item.kind.clone());
+    let spare = (0..rack.len())
+        .filter(|i| rack.slot(*i).is_some_and(|s| kind.as_ref().is_none_or(|k| *k == s.item.kind)))
+        .max_by(|a, b| {
+            let c = |i: &usize| rack.slot(*i).and_then(|s| s.item.condition).unwrap_or(0.0);
+            c(a).total_cmp(&c(b)).then(b.cmp(a))
+        })
+        .ok_or(Reject::NoSpare)?;
+    let mut trial_inv = inv.clone();
+    let mut trial_rack = rack.clone();
+    let taken = trial_rack.take(&[], spare, 1).map_err(Reject::from)?;
+    if own.is_some() {
+        let mine = trial_inv.take_slot(slot)?;
+        trial_rack.insert_at(&[], spare, mine).map_err(|r| Reject::from(r.why))?;
+    }
+    trial_inv.bar.insert_at(&[], slot, taken).map_err(|r| Reject::from(r.why))?;
+    *inv = trial_inv;
+    *rack = trial_rack;
+    Ok(())
+}
+
+fn use_one(defs: &ItemDefs, inv: &mut Inventory, slot: usize) -> Result<String, Reject> {
+    let stack = inv.slot(slot).ok_or(if slot < BAR_SLOTS { Reject::EmptySlot } else { Reject::NoSuchSlot })?;
+    let effect = defs.of(stack).and_then(|d| d.use_effect.clone()).ok_or(Reject::NotUsable)?;
+    inv.bar.take(&[], slot, 1)?;
+    Ok(effect)
 }

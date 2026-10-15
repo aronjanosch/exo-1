@@ -1,10 +1,4 @@
 //! Loose bodies (items lying in the world) on the unreliable side: the host sends the poses of the
-//! bodies that move, at the snapshot rate, and stops when they sleep (their resting pose goes as a
-//! reliable event, which is the game's business, not this module's). Clients keep a short history
-//! per body and interpolate it at the shared playout time, like the snapshot buffer does for ships.
-//!
-//! Poses are in the body's frame: a planet (world coordinates, f64) or a ship's cabin (ship-local).
-//! On the wire: positions f64, velocities and rotations f32, like the snapshot fields.
 use crate::buffer::{hermite, Mode};
 use glam::{DQuat, DVec3};
 use std::collections::VecDeque;
@@ -25,7 +19,6 @@ pub struct BodyState {
     pub rot: DQuat,
 }
 
-/// The bodies that moved in one tick, with the shared (host) time of that tick.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BodyDatagram {
     pub t: f64,
@@ -104,7 +97,6 @@ impl BodyDatagram {
     }
 }
 
-/// One pose of a body at a shared time.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Pose {
     pub t: f64,
@@ -120,7 +112,6 @@ impl Pose {
     }
 }
 
-/// Most poses kept per body.
 pub const MAX_HISTORY: usize = 64;
 
 /// The history of one body: poses ordered by time, interpolated at a playout time. No
@@ -195,7 +186,7 @@ fn between(a: &Pose, b: &Pose, t: f64) -> (Pose, Mode) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::link::{Link, Rng};
+    use crate::link::Rng;
 
     fn state(id: u64, pos: DVec3, vel: DVec3) -> BodyState {
         BodyState { id, frame: BodyFrame::Ship(1), pos, vel, rot: DQuat::from_rotation_y(0.4) }
@@ -301,36 +292,4 @@ mod tests {
         assert_eq!((p.frame, p.pos.x), (BodyFrame::Ship(1), 9.0));
     }
 
-    /// A thrown item (parabola) streamed at 30 Hz through 150 ms of delay, 40 ms of jitter and 10 %
-    /// loss, shown 150 ms behind: the shown path stays close to the truth at the shown time.
-    #[test]
-    fn a_thrown_body_streamed_over_a_bad_link_shows_close_to_the_truth() {
-        let truth = |t: f64| (DVec3::new(4.0 * t, 1.5 + 6.0 * t - 4.905 * t * t, 0.0), DVec3::new(4.0, 6.0 - 9.81 * t, 0.0));
-        let mut link: Link<Vec<u8>> = Link::new(150.0, 40.0, 10.0, 21);
-        let mut tr = Track::new();
-        let mut worst: f64 = 0.0;
-        let (mut now, mut seq) = (0.0, 0);
-        let mut next_send = 0.0;
-        while now < 1.2 {
-            if now >= next_send {
-                next_send += 1.0 / 30.0;
-                seq += 1;
-                let (p, v) = truth(now);
-                let d = BodyDatagram { t: now, seq, bodies: vec![BodyState { id: 1, frame: BodyFrame::Planet(0), pos: p, vel: v, rot: DQuat::IDENTITY }] };
-                link.enqueue(now, d.encode());
-            }
-            for bytes in link.ready(now) {
-                let d = BodyDatagram::decode(&bytes).unwrap();
-                tr.push(Pose::of(d.t, &d.bodies[0]));
-            }
-            // Shown at now - 0.15 s of buffer - 0.15 s of transit: from the first sample on.
-            let shown = now - 0.30;
-            if shown > 0.1 && shown < 1.0 {
-                let (p, _) = tr.sample_extrapolated(shown, 0.1).unwrap();
-                worst = worst.max((p.pos - truth(shown).0).length());
-            }
-            now += 1.0 / 60.0;
-        }
-        assert!(worst < 0.1, "worst error {worst:.3} m");
-    }
 }

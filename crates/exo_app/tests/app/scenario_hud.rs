@@ -1,5 +1,3 @@
-//! Crew HUD v3: the compass in both frames, the vitals lines, the credits flash, the prompt, the
-//! action bar's idle contrast and the key hints, read from `CrewHud`. Without a window.
 use crate::common;
 use exo_app::Options;
 

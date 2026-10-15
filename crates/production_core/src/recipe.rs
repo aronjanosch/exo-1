@@ -1,4 +1,3 @@
-//! Recipe records: what transforms commodities at a station kind.
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -46,7 +45,6 @@ impl fmt::Display for StationKind {
     }
 }
 
-/// An input or output of a recipe: commodity and amount.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Commodity {
@@ -54,7 +52,6 @@ pub struct Commodity {
     pub amount: u32,
 }
 
-/// A recipe transforms inputs into outputs over a duration at a station kind.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Recipe {
@@ -79,7 +76,6 @@ pub struct RecipeContent {
 }
 
 impl RecipeContent {
-    /// Loads `recipe/` from `files` and checks fields and references.
     /// Returns every error, each naming the file and the field.
     pub fn load(files: &[File], kernel: &Content) -> Result<RecipeContent, Vec<String>> {
         let mut e = Vec::new();

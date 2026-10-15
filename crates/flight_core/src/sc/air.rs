@@ -1,12 +1,4 @@
-//! Stage 3 of the SC step: what the atmosphere does to the ship. Lane `sc-air` (round 5, #199)
-//! owns this file.
-//!
-//! Airspeed is the ship's velocity minus the wind. Drag acts per ship axis (sideways brakes more
-//! than nose first), lift along the ship's up from the forward airspeed and the angle of attack
-//! through a curve that stalls, weathervaning turns the nose into the airspeed, the wind blows
-//! over a base wind and gusts, and turbulence shakes the ship near the ground. Everything goes to
-//! `accel` (held by gravity compensation) or to `push` (never held), see `AirOut`. All values are
-//! TODO(initiator) placeholders in `content/tuning/sc_air.json`.
+//! TODO(initiator) placeholders in `content/ship/<type>/sc_air.json`.
 use super::modes::Modes;
 use super::StepState;
 use crate::{lerp, smoothstep};
@@ -159,7 +151,7 @@ impl Default for AirTuning {
         AirTuning {
             thrust_share: 0.6,
             cap_share: 0.6,
-            drag: Axes { x: 0.008, y: 0.002, z: 0.001 },
+            drag: Axes { x: 0.000008, y: 0.000002, z: 0.000001 },
             lift_k: 0.002,
             lift_curve: vec![[0.0, 0.0], [5.0, 0.5], [10.0, 0.9], [15.0, 1.2], [25.0, 0.6], [45.0, 0.2]],
             weathervane: Axes { x: 0.4, y: 0.4, z: 0.3 },
@@ -179,7 +171,6 @@ impl Default for AirTuning {
     }
 }
 
-/// The air's clock (drives the gusts and the turbulence noise).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AirState {
     /// s since the first step.
@@ -188,20 +179,19 @@ pub struct AirState {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AirOut {
+    /// m/s², world: own-motion drag. Decoupled flight leaves this weak passive force unopposed.
+    pub passive_drag: DVec3,
     /// m/s², world: drag, lift and (with wind compensation on) the wind's drag on the ship; the
-    /// flight computer holds against it (with gravity compensation on). Integrated otherwise.
+    /// flight computer holds against it; decoupled leaves `passive_drag` unopposed.
     pub accel: DVec3,
     /// m/s², world: what the air does that the flight computer does not hold against (the wind's
     /// drag with wind compensation off, the turbulence's push). Integrated, never compensated.
     pub push: DVec3,
-    /// rad/s², ship space: what the air turns (turbulence, weathervaning, damping).
     pub angular: DVec3,
     /// rad/s², ship space: what the air turns that the flight computer holds against (the
     /// weathervaning and the air's damping); felt only when the torque runs out.
     pub angular_hold: DVec3,
-    /// Share of the thrust the air leaves.
     pub thrust_scale: f64,
-    /// Share of the speed caps the air leaves.
     pub cap_scale: f64,
     /// m/s, world.
     pub wind: DVec3,
@@ -224,7 +214,6 @@ fn horizontal_dir(up: DVec3, deg: f64) -> DVec3 {
     DQuat::from_axis_angle(up, deg.to_radians()) * r.normalize()
 }
 
-/// Deterministic lattice hash to -1..1.
 fn hash(i: i64, ch: u64) -> f64 {
     let mut x = (i as u64).wrapping_add(ch.wrapping_mul(0x632B_E59B_D9B4_E019)).wrapping_mul(0x9E37_79B9_7F4A_7C15);
     x ^= x >> 31;
@@ -242,12 +231,10 @@ fn value_noise(u: f64, ch: u64) -> f64 {
     a + (b - a) * s
 }
 
-/// Fractal noise (two octaves) in about -1..1.
 fn fractal(u: f64, ch: u64) -> f64 {
     0.65 * value_noise(u, ch) + 0.35 * value_noise(2.03 * u + 17.0, ch)
 }
 
-/// The wind at the ship (world): base wind plus gusts, both falling with the density.
 fn wind_at(s: &AirState, f: &StepState, t: &AirTuning) -> DVec3 {
     let up = if f.up.length_squared() > 0.5 { f.up } else { DVec3::Y };
     let dir = horizontal_dir(up, t.wind_dir_deg);
@@ -261,7 +248,6 @@ pub fn step(s: &mut AirState, f: &StepState, m: &Modes, t: &AirTuning) -> AirOut
     let d = f.density;
     let wind = wind_at(s, f, t);
 
-    // Airspeed: the ship's velocity through the air, in ship space.
     let av = f.inv * (f.v - wind);
     // Forward airspeed (m/s, the nose is -z).
     let fwd = -av.z;
@@ -285,7 +271,6 @@ pub fn step(s: &mut AirState, f: &StepState, m: &Modes, t: &AirTuning) -> AirOut
     let (accel, pushed) = if m.wind_comp { (own + lift_world + wind_drag, DVec3::ZERO) } else { (own + lift_world, wind_drag) };
 
     // Weathervaning: the nose turns towards the airspeed, in air only (q and the damping are zero
-    // in space). Elevation and azimuth of the airspeed from the nose.
     let q = d * av.length() / t.weathervane_ref_speed;
     let (elev, azim) = if fwd > 0.0 { (av.y.atan2(fwd), av.x.atan2(fwd)) } else { (0.0, 0.0) };
     let w = f.w_local;
@@ -308,6 +293,7 @@ pub fn step(s: &mut AirState, f: &StepState, m: &Modes, t: &AirTuning) -> AirOut
 
     s.time += f.dt;
     AirOut {
+        passive_drag: own,
         accel,
         push,
         angular,

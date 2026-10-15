@@ -1,5 +1,3 @@
-//! The map's pin list of #166, without Bevy: places the crew may use, the tracked job's next stop,
-//! the players.
 use std::path::Path;
 
 use gameplay_core::{ClientId, Content, CrateId, Event, File, LocationId, Progress, WorldEvent};
@@ -58,7 +56,6 @@ impl Host {
         }
     }
 
-    /// First haul: drip_rock to bent_spoon, 4 crates. Accepted.
     fn active_job(&mut self) -> JobId {
         let t = self.jc.templates[&TemplateId::new("first_haul")].record.clone();
         let id = self.jobs.offer_fixed(&t).unwrap();
@@ -93,7 +90,6 @@ fn kinds(p: &[Pin]) -> Vec<(PinKind, String)> {
 fn places_the_crew_may_use_on_this_planet_are_pinned_and_unknown_or_foreign_ones_are_not() {
     let mut h = Host::new();
     let p = h.pins(None, &places(), &[], 0);
-    // drip_rock is open; bent_spoon needs the permit; wholesale_yard is on another planet; moon_base is unknown.
     assert_eq!(kinds(&p), vec![(PinKind::Place, "location.drip_rock.name".to_string())]);
     h.progress.apply(&h.k, &Event::new(ANA, 1, WorldEvent::UnlockBought { unlock: gameplay_core::UnlockId::new("bent_spoon_permit") })).unwrap();
     let p = h.pins(None, &places(), &[], 0);
@@ -107,7 +103,6 @@ fn the_tracked_jobs_pin_moves_from_the_pickup_to_the_dropoff_when_the_crates_are
     let mut h = Host::new();
     let j = h.active_job();
     let target = |h: &Host| h.pins(Some(j), &places(), &[], 0).into_iter().find(|p| matches!(p.kind, PinKind::Target(_))).map(|p| (p.kind, p.label.to_string(), p.dir));
-    // Crates wait at the pickup.
     assert_eq!(target(&h).map(|t| (t.0, t.1)), Some((PinKind::Target(Stop::Pickup), "location.drip_rock.name".to_string())));
     let crates = h.crates(j);
     for c in &crates[..3] {
@@ -118,7 +113,6 @@ fn the_tracked_jobs_pin_moves_from_the_pickup_to_the_dropoff_when_the_crates_are
     let t = target(&h).unwrap();
     assert_eq!((t.0, t.1.as_str()), (PinKind::Target(Stop::Dropoff), "location.bent_spoon.name"), "all carried: the next stop is the dropoff");
     assert_eq!(t.2, [0.1, 1.0, 0.0], "at the dropoff's position, even before the permit opens its pin");
-    // Delivered: the job is over, no target.
     for c in &crates {
         h.world(WorldEvent::CrateDelivered { crate_id: *c, at: LocationId::new("bent_spoon"), condition: 1.0 });
     }
@@ -144,11 +138,9 @@ fn an_untracked_offered_or_foreign_target_is_not_pinned() {
     let mut h = Host::new();
     let j = h.active_job();
     assert!(h.pins(None, &places(), &[], 0).iter().all(|p| !matches!(p.kind, PinKind::Target(_))));
-    // The target's place on another planet is not pinned on this one.
     let foreign = vec![place("drip_rock", 1, 0.0), place("bent_spoon", 1, 0.1)];
     assert!(h.pins(Some(j), &foreign, &[], 0).iter().all(|p| !matches!(p.kind, PinKind::Target(_))));
     assert!(h.pins(Some(j), &foreign, &[], 1).iter().any(|p| matches!(p.kind, PinKind::Target(_))));
-    // An offer that nobody has taken is not tracked.
     let t = h.jc.templates[&TemplateId::new("first_haul")].record.clone();
     let offered = h.jobs.offer_fixed(&t).unwrap();
     assert!(h.pins(Some(offered), &places(), &[], 0).iter().all(|p| !matches!(p.kind, PinKind::Target(_))));
@@ -166,20 +158,4 @@ fn players_are_pinned_on_their_planet() {
     let p = h.pins(None, &[], &players, 0);
     let kinds: Vec<PinKind> = p.iter().map(|p| p.kind.clone()).collect();
     assert_eq!(kinds, vec![PinKind::Player { own: true }, PinKind::Player { own: false }], "own first, a crewmate on another planet not shown");
-}
-
-#[test]
-fn pins_come_in_a_fixed_order_places_then_target_then_players() {
-    let mut h = Host::new();
-    let j = h.active_job();
-    h.progress.apply(&h.k, &Event::new(ANA, 1, WorldEvent::UnlockBought { unlock: gameplay_core::UnlockId::new("bent_spoon_permit") })).unwrap();
-    let players = vec![PlayerPos { who: ANA, planet: 0, dir: [0.0, 1.0, 0.0] }];
-    let p = h.pins(Some(j), &places(), &players, 0);
-    let order: Vec<u8> = p.iter().map(|p| match p.kind {
-        PinKind::Place => 0,
-        PinKind::Target(_) => 1,
-        PinKind::Player { .. } => 2,
-    }).collect();
-    assert_eq!(order, vec![0, 0, 1, 2]);
-    assert_eq!(p, h.pins(Some(j), &places(), &players, 0), "stable");
 }

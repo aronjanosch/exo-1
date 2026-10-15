@@ -12,14 +12,11 @@ pub const UDP_IP_OVERHEAD: usize = 28;
 pub enum Packet {
     Hello { slot: u8, planet: u8 },
     Accepted { slot: u8 },
-    /// Client clock ping (local seconds).
     Ping { sent: f64 },
     Pong { sent: f64, server_time: f64 },
     Snapshot(Snapshot),
     Bye { slot: u8 },
-    /// The reliable, ordered channel (item requests and events): see `reliable`.
     Reliable(Datagram),
-    /// Poses of the loose bodies that move (unreliable): see `loose`.
     Bodies(BodyDatagram),
 }
 

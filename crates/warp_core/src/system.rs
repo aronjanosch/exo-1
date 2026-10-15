@@ -1,4 +1,3 @@
-//! The system registry: planets with their quantum travel radii, and the drive settings.
 //! One JSON file holds everything in metres, set explicitly (`DECISIONS.md`, "World values and
 //! scale"): no global scale factor, no radius derived from another.
 use glam::DVec3;
@@ -14,7 +13,6 @@ impl PlanetId {
         self.0 as usize
     }
 
-    /// The id as sent in snapshots.
     pub fn wire(self) -> u32 {
         self.0 as u32
     }
@@ -30,7 +28,7 @@ impl std::fmt::Display for PlanetId {
 #[serde(deny_unknown_fields)]
 pub struct PlanetDef {
     pub name: String,
-    /// Surface recipe: `content/planet/<recipe>.json` (#64). Seed and radius stay here.
+    /// Surface recipe: `content/planet/<recipe>.json`. Seed and radius stay here.
     #[serde(default)]
     pub recipe: String,
     pub seed: i32,
@@ -43,13 +41,12 @@ pub struct PlanetDef {
     pub jump_altitude_factor: f64,
     /// A path may not come closer than this to the centre (radius plus highest terrain).
     pub obstruction_radius: f64,
-    /// Added to the obstruction radius when checking a path and a drop point.
     pub obstruction_margin: f64,
     /// Exit point distance from the centre (above the atmosphere).
     pub arrival_radius: f64,
     /// Zone where a ship belongs to this planet's frame (render and load), from the centre.
     pub frame_radius: f64,
-    /// Highest ground above the radius (m), when the planet is held to a ceiling (#177); none =
+    /// Highest ground above the radius (m), when the planet is held to a ceiling; none =
     /// the recipe's own relief.
     #[serde(default)]
     pub terrain_ceiling_m: Option<f64>,
@@ -87,18 +84,15 @@ impl PlanetDef {
         DVec3::from_array(self.centre)
     }
 
-    /// Height above the radius below which no jump starts.
     pub fn min_jump_altitude(&self) -> f64 {
         self.atmosphere_height * self.jump_altitude_factor
     }
 
-    /// Radius a path and a drop point must stay out of.
     pub fn keep_out(&self) -> f64 {
         self.obstruction_radius + self.obstruction_margin
     }
 }
 
-/// Something a path must not cross besides planets (another ship).
 #[derive(Clone, Copy, Debug)]
 pub struct Obstacle {
     pub centre: DVec3,
@@ -109,13 +103,11 @@ pub struct Obstacle {
 #[serde(deny_unknown_fields)]
 pub struct DriveConfig {
     pub top_speed: f64,
-    /// Speed where stage one hands over to stage two.
     pub stage_switch_speed: f64,
     pub accel_stage_one: f64,
     pub accel_stage_two: f64,
     pub decel_stage_one: f64,
     pub decel_stage_two: f64,
-    /// Speed the drive takes over at (lower bound of the ramp's start).
     pub engage_speed: f64,
     /// Speed at the exit point and at the end of an emergency drop.
     pub exit_speed: f64,
@@ -134,14 +126,12 @@ pub struct DriveConfig {
     pub cooldown: f64,
     /// Hermite tangent length as a share of the chord.
     pub spline_tension: f64,
-    /// Tunnel effect: starts at this speed, full at the next.
     pub vfx_start_speed: f64,
     pub vfx_full_speed: f64,
     /// Emergency exit: the pilot holds the key this long during the flight, then the ship drops
     /// from its speed to the exit speed in `emergency_drop_time` seconds along the path.
     pub emergency_hold_time: f64,
     pub emergency_drop_time: f64,
-    /// A drop point too close to another ship moves on along the path in steps of this length.
     pub emergency_clear_step: f64,
 }
 
@@ -163,14 +153,20 @@ impl StarDef {
 pub struct System {
     #[serde(rename = "_comment", default)]
     _comment: String,
-    /// The one star of the system (#104).
     pub star: StarDef,
     pub planets: Vec<PlanetDef>,
     pub drive: DriveConfig,
 }
 
 impl System {
-    /// Reads and checks the system file (#106): unknown fields and values the drive or the
+    /// Builds a system from its parts (for generators) and checks it like a file.
+    pub fn new(star: StarDef, planets: Vec<PlanetDef>, drive: DriveConfig) -> Result<System, String> {
+        let sys = System { _comment: String::new(), star, planets, drive };
+        sys.validate()?;
+        Ok(sys)
+    }
+
+    /// Reads and checks the system file: unknown fields and values the drive or the
     /// registry cannot work with are errors, never panics or hangs later.
     pub fn from_json(s: &str) -> Result<System, String> {
         let sys: System = serde_json::from_str(s).map_err(|e| e.to_string())?;
@@ -191,7 +187,6 @@ impl System {
         self.drive.validate().map_err(|e| format!("drive: {e}"))
     }
 
-    /// Checks an id from outside (a snapshot, a file).
     pub fn id(&self, raw: u32) -> Option<PlanetId> {
         ((raw as usize) < self.planets.len()).then_some(PlanetId(raw as u8))
     }
@@ -228,14 +223,12 @@ impl System {
         Ok(notes)
     }
 
-    /// The planet whose frame zone holds `world`, nearest centre first.
     pub fn frame_of(&self, world: DVec3) -> Option<PlanetId> {
         self.ids()
             .filter(|&i| self.planet(i).centre().distance(world) <= self.planet(i).frame_radius)
             .min_by(|&a, &b| self.planet(a).centre().distance(world).total_cmp(&self.planet(b).centre().distance(world)))
     }
 
-    /// Nearest planet by distance to its centre.
     pub fn nearest(&self, world: DVec3) -> PlanetId {
         self.ids()
             .min_by(|&a, &b| self.planet(a).centre().distance(world).total_cmp(&self.planet(b).centre().distance(world)))
@@ -266,7 +259,6 @@ impl System {
         far + self.planets.iter().map(|p| p.frame_radius).fold(0.0, f64::max)
     }
 
-    /// Fastest a ship can move: twice the drive's top speed.
     pub fn max_ship_speed(&self) -> f64 {
         2.0 * self.drive.top_speed
     }
@@ -274,7 +266,7 @@ impl System {
 
 impl DriveConfig {
     /// Speeds, accelerations and the steps > 0 (a zero exit speed or clear step hangs the drive,
-    /// #111), exit <= stage switch <= top speed, the warning band outside the calibration angle.
+    /// exit <= stage switch <= top speed, the warning band outside the calibration angle.
     pub fn validate(&self) -> Result<(), String> {
         for (k, v) in [
             ("top_speed", self.top_speed),

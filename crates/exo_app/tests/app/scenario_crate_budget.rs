@@ -1,4 +1,3 @@
-//! Issue #85: object budget: cap, sleep, persistence cap over a planet swap, timeout, distance. Without a window.
 use crate::common;
 use exo_app::Options;
 

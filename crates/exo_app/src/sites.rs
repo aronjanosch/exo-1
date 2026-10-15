@@ -1,7 +1,3 @@
-//! Sites on screen (#70): the kit pieces of the sites near the camera (`planet_core::site_pieces`,
-//! props from `art/props/props.py`, city pieces as glTF scenes). Streamed by distance (#214): a
-//! 100 km planet has about 12 000 sites and 120 000 pieces, and every mesh entity costs the
-//! renderer time on each origin shift. Despawned with the planet's scene.
 use crate::env::{from_v3, PlanetRes};
 use crate::origin::{RenderOrigin, WorldPos};
 use crate::terrain::PlanetScene;
@@ -14,7 +10,6 @@ use std::collections::HashMap;
 /// meant to be seen from afar. TODO(initiator): values.
 const SITE_RANGE_M: f64 = 6000.0;
 const LANDMARK_RANGE_M: f64 = 20000.0;
-/// Shown sites stay until this factor beyond their range.
 const KEEP_FACTOR: f64 = 1.25;
 /// The set of sites is checked again after the camera moved this far (m).
 const RECHECK_M: f64 = 250.0;
@@ -27,7 +22,6 @@ pub struct SiteView {
     /// Entities of the sites on screen, by site index.
     shown: HashMap<usize, Vec<Entity>>,
     checked_at: Option<DVec3>,
-    /// Pieces on screen.
     pub pieces: usize,
 }
 
@@ -70,7 +64,7 @@ pub fn update_sites(mut commands: Commands, planet: Res<PlanetRes>, origin: Res<
             let transform = Transform { rotation: Quat::from_mat3(&Mat3::from_cols(x, u, z)), scale: Vec3::splat(p.scale as f32), ..default() };
             let at = WorldPos(planet.centre + from_v3(p.pos));
             if p.prop.contains('/') {
-                // A prop id with a '/' names a model under the content root (`city/...`, #223): the
+                // A prop id with a '/' names a model under the content root (`city/...`): the
                 // whole scene with its own parts and colours, not one tinted primitive.
                 let scene = assets.load(GltfAssetLabel::Scene(0).from_asset(format!("{}.glb", p.prop)));
                 entities.push(commands.spawn((bevy::world_serialization::WorldAssetRoot(scene), transform, at, PlanetScene(planet.id))).id());

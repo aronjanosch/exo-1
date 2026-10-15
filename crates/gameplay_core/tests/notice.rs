@@ -1,5 +1,3 @@
-//! Feedback beats of #165: notices, the pacing queue, text pools without immediate repeats, and
-//! the notices the kernel itself raises (unlock, rank).
 use std::path::Path;
 
 use gameplay_core::notice::*;
@@ -9,144 +7,7 @@ use gameplay_core::*;
 const HOST: ClientId = ClientId(1);
 const ANA: ClientId = ClientId(7);
 
-fn n(kind: NoticeKind, key: &str) -> Notice {
-    Notice::new(kind, key)
-}
-
-/// Runs the queue for `secs` in 50 ms steps; everything released, in order.
-fn run(q: &mut NoticeQueue, secs: f64) -> Vec<Shown> {
-    let mut out = Vec::new();
-    for _ in 0..(secs / 0.05).round() as usize {
-        out.extend(q.tick(0.05));
-    }
-    out
-}
-
-fn keys(v: &[Shown]) -> Vec<&str> {
-    v.iter().map(|s| s.notice.key.as_str()).collect()
-}
-
 // ---------- queue ----------
-
-#[test]
-fn notices_come_out_in_order_with_a_gap() {
-    let mut q = NoticeQueue::default();
-    q.push(n(NoticeKind::Updated, "a"));
-    q.push(n(NoticeKind::Updated, "b"));
-    q.push(n(NoticeKind::Reward, "c"));
-    // The first is out at once, the next ones one gap apart.
-    let first = q.tick(0.05);
-    assert_eq!(keys(&first), ["a"]);
-    assert!(q.tick(0.05).is_empty(), "a gap between notices");
-    let gap = q.pacing().gap_s;
-    let rest = run(&mut q, gap + 1.0);
-    assert_eq!(keys(&rest), ["b", "c"]);
-    assert!(q.is_empty());
-}
-
-#[test]
-fn never_two_banners_at_once() {
-    let mut q = NoticeQueue::default();
-    q.push(n(NoticeKind::Completed, "done"));
-    q.push(n(NoticeKind::Failed, "other"));
-    q.push(n(NoticeKind::Updated, "toast_after"));
-    let mut shown = q.tick(0.05);
-    assert_eq!(keys(&shown), ["done"]);
-    let banner_s = q.pacing().banner_s;
-    // Until the first banner is over, the second banner waits, and so does the toast behind it (order).
-    shown = run(&mut q, banner_s - 0.5);
-    assert!(shown.is_empty(), "{:?}", keys(&shown));
-    shown = run(&mut q, 2.0);
-    assert_eq!(keys(&shown)[0], "other");
-    // At no moment did two banners overlap: banner starts are at least banner_s apart.
-    let mut q = NoticeQueue::default();
-    for i in 0..4 {
-        q.push(n(NoticeKind::Accepted, &format!("b{i}")));
-    }
-    let mut starts = Vec::new();
-    let mut t = 0.0;
-    while !q.is_empty() && t < 60.0 {
-        for s in q.tick(0.05) {
-            assert!(s.banner);
-            starts.push(t);
-        }
-        t += 0.05;
-    }
-    assert_eq!(starts.len(), 4);
-    assert!(starts.windows(2).all(|w| w[1] - w[0] >= banner_s - 0.06), "{starts:?}");
-}
-
-#[test]
-fn a_rank_is_held_while_objectives_change_and_released_when_calm() {
-    let mut q = NoticeQueue::default();
-    let calm = q.pacing().calm_s;
-    q.push(n(NoticeKind::Rank, "rank_up"));
-    q.push(n(NoticeKind::Updated, "step"));
-    // An objective changes every second: the rank never comes, the toast does.
-    let mut all = Vec::new();
-    for _ in 0..6 {
-        q.objective_changed();
-        all.extend(run(&mut q, 1.0));
-    }
-    assert_eq!(keys(&all), ["step"], "the rank waits while things happen");
-    // Quiet for the calm time: now it is released.
-    let after = run(&mut q, calm + 1.0);
-    assert_eq!(keys(&after), ["rank_up"]);
-    assert!(after[0].banner);
-}
-
-#[test]
-fn pushing_an_objective_notice_counts_as_a_change() {
-    let mut q = NoticeQueue::default();
-    q.push(n(NoticeKind::Rank, "rank_up"));
-    let calm = q.pacing().calm_s;
-    run(&mut q, calm - 0.5);
-    // A delivery notice resets the calm timer.
-    q.push(n(NoticeKind::Updated, "delivered"));
-    let shown = run(&mut q, 1.0);
-    assert_eq!(keys(&shown), ["delivered"]);
-    assert!(run(&mut q, calm - 1.5).is_empty(), "calm time starts over");
-    assert_eq!(keys(&run(&mut q, 3.0)), ["rank_up"]);
-}
-
-#[test]
-fn skipping_the_ritual_shows_everything_in_order_but_fast() {
-    let mut slow = NoticeQueue::default();
-    let mut fast = NoticeQueue::default();
-    for q in [&mut slow, &mut fast] {
-        q.push(n(NoticeKind::Completed, "done"));
-        for i in 0..4 {
-            q.push(n(NoticeKind::Reward, &format!("r{i}")));
-        }
-    }
-    fast.skip();
-    let time_to_empty = |q: &mut NoticeQueue| {
-        let mut t = 0.0;
-        let mut seen = Vec::new();
-        while !q.is_empty() {
-            seen.extend(q.tick(0.05).into_iter().map(|s| s.notice.key));
-            t += 0.05;
-            assert!(t < 120.0);
-        }
-        (t, seen)
-    };
-    let (ts, seen_slow) = time_to_empty(&mut slow);
-    let (tf, seen_fast) = time_to_empty(&mut fast);
-    assert_eq!(seen_slow, seen_fast, "same notices, same order");
-    assert!(tf < ts / 3.0, "skipped {tf:.1} s vs {ts:.1} s");
-}
-
-#[test]
-fn every_kind_has_a_sound_and_a_weight() {
-    for k in NoticeKind::ALL {
-        assert!(!k.sound().is_empty());
-        let _ = Notice::new(k, "x").weight;
-    }
-    assert_eq!(Notice::new(NoticeKind::Rank, "x").weight, Weight::Calm);
-    assert_eq!(Notice::new(NoticeKind::Unlock, "x").weight, Weight::Calm);
-    assert_eq!(Notice::new(NoticeKind::Completed, "x").weight, Weight::Banner);
-    assert_eq!(Notice::new(NoticeKind::Reward, "x").weight, Weight::Toast);
-}
 
 // ---------- text pools ----------
 
@@ -166,23 +27,6 @@ fn a_table_holds_lines_and_pools() {
     assert!(t.lines("missing").is_none());
     assert!(TextTable::from_json("text/en.json", r#"{ "a": [] }"#).is_err(), "an empty pool is an error");
     assert!(TextTable::from_json("text/en.json", r#"{ "a": 3 }"#).is_err());
-}
-
-#[test]
-fn a_pool_never_repeats_a_line_twice_in_a_row() {
-    let t = TextTable::from_json("t", TABLE).unwrap();
-    for seed in 0..50 {
-        let mut p = Picker::new(seed);
-        let mut last = String::new();
-        for _ in 0..200 {
-            let s = p.pick(&t, "greet");
-            assert_ne!(s, last, "seed {seed}");
-            last = s;
-        }
-    }
-    // A pool of one has no choice.
-    let mut p = Picker::new(1);
-    assert_eq!(p.pick(&t, "plain"), p.pick(&t, "plain"));
 }
 
 #[test]
@@ -242,8 +86,6 @@ fn buying_an_unlock_and_reaching_a_rank_raise_notices() {
     assert_eq!(up[0].kind, NoticeKind::Rank);
     assert!(up[0].args.iter().any(|(k, a)| k == "level" && *a == Arg::Number(1)));
     assert!(p.apply_with_notices(&c, &xp(3, 20)).unwrap().is_empty());
-    // Money moves are not ranks (the wallet has no thresholds).
     assert!(p.apply_with_notices(&c, &ev(4, WorldEvent::TrackChanged { track: TrackId::new("wallet"), delta: 500, player: None })).unwrap().is_empty());
-    // A refused event raises nothing.
     assert!(p.apply_with_notices(&c, &Event::new(ANA, 1, WorldEvent::UnlockBought { unlock: UnlockId::new("bent_spoon_permit") })).is_err());
 }

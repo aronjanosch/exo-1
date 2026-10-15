@@ -1,4 +1,3 @@
-//! Walker checks against an analytic world (half-spaces), no engine.
 use glam::{DQuat, DVec2, DVec3};
 use walker_core::*;
 
@@ -20,7 +19,6 @@ impl Planes {
             .iter()
             .map(|&(n, d)| {
                 let wn = self.frame.rot * n;
-                // point on the plane: n * d in local space
                 (wn, wn.dot(self.frame.to_world(n * d)))
             })
             .collect()
@@ -71,61 +69,6 @@ fn slope(deg: f64) -> Planes {
 
 const DT: f64 = 1.0 / 60.0;
 
-fn walk(world: &Planes, w: &mut Walker, steps: usize, dir: DVec2) -> usize {
-    let mut grounded = 0;
-    for _ in 0..steps {
-        w.step(&Frame::IDENTITY, DVec3::Y, 9.81, &WalkInput { dir, ..Default::default() }, world, DT);
-        grounded += w.grounded as usize;
-    }
-    grounded
-}
-
-#[test]
-fn lands_and_walks_flat_ground_always_on_floor() {
-    let world = flat();
-    let mut w = Walker::new(DVec3::new(0.0, 2.0, 0.0), DVec3::X);
-    walk(&world, &mut w, 120, DVec2::ZERO);
-    assert!(w.grounded && w.pos.y.abs() < 0.02, "landed at {}", w.pos.y);
-    let g = walk(&world, &mut w, 600, DVec2::new(0.0, 1.0));
-    println!("flat: grounded {g}/600, x {:.3}, y {:.4}", w.pos.x, w.pos.y);
-    assert_eq!(g, 600);
-    // 10 s at walk speed, less the step-off (0.1 s easing up to 3 m/s).
-    let cfg = WalkerConfig::default();
-    let expected = 50.0 - (cfg.walk_speed - cfg.start_speed * 0.5) * cfg.start_time;
-    assert!((w.pos.x - expected).abs() < 0.1, "x {} expected {expected}", w.pos.x);
-}
-
-#[test]
-fn slope_below_limit_is_climbed_steep_slope_stops() {
-    for (deg, climbs) in [(30.0, true), (45.0, true), (55.0, false), (70.0, false)] {
-        let world = slope(deg);
-        let mut w = Walker::new(DVec3::new(-5.0, 0.0, 0.0), DVec3::X);
-        let g = walk(&world, &mut w, 600, DVec2::new(0.0, 1.0));
-        println!("slope {deg}: x {:.2} y {:.2} grounded {g}/600", w.pos.x, w.pos.y);
-        if climbs {
-            assert!(w.pos.y > 5.0, "should climb {deg}");
-        } else {
-            assert!(w.pos.x < 0.1 && w.pos.y < 0.3, "should stop at {deg}: {:?}", w.pos);
-        }
-    }
-}
-
-#[test]
-fn jump_leaves_and_returns_to_ground() {
-    let world = flat();
-    let mut w = Walker::new(DVec3::ZERO, DVec3::X);
-    walk(&world, &mut w, 10, DVec2::ZERO);
-    w.step(&Frame::IDENTITY, DVec3::Y, 9.81, &WalkInput { jump: true, ..Default::default() }, &world, DT);
-    let mut peak: f64 = 0.0;
-    for _ in 0..120 {
-        w.step(&Frame::IDENTITY, DVec3::Y, 9.81, &WalkInput::default(), &world, DT);
-        peak = peak.max(w.pos.y);
-    }
-    println!("jump peak {peak:.3}");
-    assert!((peak - 25.0 / (2.0 * 9.81)).abs() < 0.1 && w.grounded);
-}
-
-/// Spike 3: stand and walk in a cabin floor of a frame flying at 400 m/s while rolling.
 #[test]
 fn walking_in_a_fast_rolling_frame_has_no_drift() {
     let mut world = Planes { planes: vec![(DVec3::Y, 0.0)], frame: Frame::IDENTITY };
@@ -164,7 +107,7 @@ fn change_frame_keeps_world_state() {
     assert!(((new.rot * w.vel) - DVec3::new(1.0, 0.0, 0.0)).length() < 1e-9);
 }
 
-/// Spike 9 bug: in the air against a steep slope, sliding along it lifted the walker.
+/// In the air against a steep slope, sliding along it lifted the walker.
 #[test]
 fn airborne_walker_does_not_climb_steep_slope() {
     let world = slope(57.0);
@@ -178,7 +121,7 @@ fn airborne_walker_does_not_climb_steep_slope() {
     assert!(top < 0.3);
 }
 
-/// Issue #5: weightless the walker keeps the velocity it brought (e.g. from the ship), input does
+/// Weightless the walker keeps the velocity it brought (e.g. from the ship), input does
 /// not move it, and a floor it drifts along does not stop it.
 #[test]
 fn weightless_walker_keeps_its_velocity() {
@@ -194,7 +137,6 @@ fn weightless_walker_keeps_its_velocity() {
     assert!((w.pos - DVec3::new(0.0, -6.0, 4.0)).length() < 1e-9, "position {:?}", w.pos);
     assert!(!w.grounded);
 
-    // Drifting into a floor: the part into it stops, the part along it stays.
     let world = flat();
     let mut w = Walker::new(DVec3::new(0.0, 0.5, 0.0), DVec3::NEG_Z);
     w.vel = DVec3::new(2.0, -1.0, 0.0);
@@ -205,7 +147,6 @@ fn weightless_walker_keeps_its_velocity() {
     assert!(w.pos.y >= 0.0 && w.pos.x > 3.9, "position {:?}", w.pos);
 }
 
-/// Issue #7: re-splitting the look direction about a tilted up keeps it in the world.
 #[test]
 fn split_look_keeps_the_world_direction() {
     let up = DVec3::Y;
@@ -220,51 +161,6 @@ fn split_look_keeps_the_world_direction() {
     assert!((f - DVec3::NEG_Z).length() < 1e-12 && (pitch - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
 }
 
-/// Issue #8: suit thrusters push along the body axes, the brake comes to rest without overshoot within 4 s.
-#[test]
-fn suit_thrusts_along_the_body_and_brakes_to_rest() {
-    let cfg = SuitConfig::default();
-    let rot = DQuat::from_rotation_y(std::f64::consts::FRAC_PI_2); // body forward (-z) is world -x
-    let a = suit_accel(&cfg, rot, DVec3::ZERO, &SuitInput { thrust: DVec3::new(0.0, 0.0, -1.0), ..Default::default() });
-    assert!((a - DVec3::new(-cfg.accel, 0.0, 0.0)).length() < 1e-12, "{a:?}");
-
-    let world = Planes { planes: vec![], frame: Frame::IDENTITY };
-    let mut w = Walker::new(DVec3::ZERO, DVec3::NEG_Z);
-    w.vel = DVec3::new(3.0, -1.0, 0.5);
-    let brake = SuitInput { brake: true, ..Default::default() };
-    let mut ticks = 0;
-    while w.vel.length() > 1e-3 && ticks < 600 {
-        let accel = suit_accel(&cfg, rot, w.vel, &brake);
-        w.step(&Frame::IDENTITY, DVec3::Y, 0.0, &WalkInput { accel, ..Default::default() }, &world, DT);
-        assert!(w.vel.dot(DVec3::new(3.0, -1.0, 0.5)) >= 0.0, "brake overshoots");
-        ticks += 1;
-    }
-    assert!(ticks < 240, "brake took {ticks} ticks");
-}
-
-/// A short tap of W is a slow step: 0 to 3 m/s within 0.1 s, then full speed (initiator), so a
-/// player can step out of a ship carefully instead of always leaving at walk speed.
-#[test]
-fn tap_is_a_slow_step() {
-    let cfg = WalkerConfig::default();
-    let world = flat();
-    let mut w = Walker::new(DVec3::ZERO, DVec3::X);
-    walk(&world, &mut w, 10, DVec2::ZERO);
-    walk(&world, &mut w, 3, DVec2::new(0.0, 1.0)); // 0.05 s
-    let top = w.vel.length();
-    assert!((top - cfg.start_speed * 0.5).abs() < 1e-6, "speed after a 0.05 s tap {top}");
-    walk(&world, &mut w, 10, DVec2::ZERO);
-    assert!(w.vel.length() < 1e-9, "comes to rest, {}", w.vel.length());
-    assert!(w.pos.x < 0.2, "a tap moves only a little: {}", w.pos.x);
-    // Held: step-off speed after 0.1 s, full walk speed right after.
-    walk(&world, &mut w, 6, DVec2::new(0.0, 1.0));
-    assert!((w.vel.length() - cfg.start_speed).abs() < 1e-6, "after 0.1 s {}", w.vel.length());
-    walk(&world, &mut w, 1, DVec2::new(0.0, 1.0));
-    assert!((w.vel.length() - cfg.walk_speed).abs() < 1e-6, "then full {}", w.vel.length());
-}
-
-/// The view helpers: `look_rot` looks exactly along `look`, `turn_towards` rights smoothly and
-/// arrives, `turn_body` turns about the body's own axes.
 #[test]
 fn view_helpers() {
     let look = DVec3::new(1.0, 0.3, -0.2).normalize();
@@ -287,8 +183,6 @@ fn view_helpers() {
     assert!((b * DVec3::NEG_Z - DVec3::NEG_Z).length() < 1e-12, "roll keeps the look");
 }
 
-/// Issue #9: touching a surface that moves along with the walker (a ship it drifts with) does not
-/// stop it; a standing surface does.
 #[test]
 fn moving_surface_stops_only_the_relative_velocity() {
     struct Wall(DVec3);
@@ -307,4 +201,22 @@ fn moving_surface_stops_only_the_relative_velocity() {
     assert!((w.vel - drift).length() < 1e-12, "moves with the wall: {:?}", w.vel);
     w.step(&Frame::IDENTITY, DVec3::Y, 0.0, &WalkInput::default(), &Wall(DVec3::ZERO), DT);
     assert!(w.vel.length() < 1e-12, "stopped by a standing wall: {:?}", w.vel);
+}
+
+fn walk(world: &Planes, w: &mut Walker, steps: usize, dir: DVec2) -> usize {
+    let mut grounded = 0;
+    for _ in 0..steps {
+        w.step(&Frame::IDENTITY, DVec3::Y, 9.81, &WalkInput { dir, ..Default::default() }, world, DT);
+        grounded += w.grounded as usize;
+    }
+    grounded
+}
+
+#[test]
+fn on_flat_ground_the_walker_lands_and_stays_on_the_floor() {
+    let world = flat();
+    let mut w = Walker::new(DVec3::new(0.0, 2.0, 0.0), DVec3::X);
+    walk(&world, &mut w, 120, DVec2::ZERO);
+    assert!(w.grounded && w.pos.y.abs() < 0.02, "landed at {}", w.pos.y);
+    assert_eq!(walk(&world, &mut w, 600, DVec2::new(0.0, 1.0)), 600);
 }

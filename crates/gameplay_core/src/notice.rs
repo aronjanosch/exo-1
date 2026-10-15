@@ -1,10 +1,4 @@
-//! Notices (#165): every system reports its moments as `Notice`s instead of log lines. A
-//! notice names a kind, a text key (a pool, see `text`), arguments and a weight; the glue shows
-//! it as a banner or a toast with the sound of its kind.
-//!
-//! `NoticeQueue` paces them: one notice at a time with a short gap, never two banners at once,
-//! and big ones (rank, unlock) held until nothing happened to the objectives for a few seconds.
-//! Nothing here blocks input; `skip` runs the rest of a ritual fast.
+//! Notices: every system reports its moments as `Notice`s instead of log lines. A
 use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
@@ -14,16 +8,12 @@ use crate::id::TextKey;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NoticeKind {
-    /// Something new can be done (an offer, a counter).
     Available,
     Accepted,
-    /// Progress on an objective (picked up, delivered).
     Updated,
     Completed,
     Failed,
-    /// One line of a payout or XP.
     Reward,
-    /// A track reached a new level.
     Rank,
     Unlock,
     Warning,
@@ -70,20 +60,16 @@ impl NoticeKind {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Weight {
-    /// A small line that comes and goes.
     Toast,
-    /// A big line; one at a time.
     Banner,
     /// A banner held until the objectives have been quiet for a while.
     Calm,
 }
 
-/// A value for a `{name}` in the text.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Arg {
     Text(String),
     Number(i64),
-    /// A text key, shown as one of its lines (a job title, a place name).
     Key(TextKey),
 }
 
@@ -119,7 +105,6 @@ impl Notice {
 /// Times of the queue, seconds. TODO(initiator): starting values, the playtest decides.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Pacing {
-    /// Between two notices.
     pub gap_s: f64,
     /// A banner stays this long (and holds the banner slot).
     pub banner_s: f64,
@@ -134,16 +119,13 @@ impl Default for Pacing {
     }
 }
 
-/// A notice released for showing.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Shown {
     pub notice: Notice,
     pub banner: bool,
-    /// How long it stays on screen.
     pub seconds: f64,
 }
 
-/// How much faster a skipped ritual runs.
 const SKIP_SPEED: f64 = 8.0;
 
 #[derive(Clone, Debug)]
@@ -184,7 +166,6 @@ impl NoticeQueue {
         self.last_change = self.clock;
     }
 
-    /// The player skips the ritual: what is queued comes out in order, fast.
     pub fn skip(&mut self) {
         if !self.pending.is_empty() {
             self.speed = SKIP_SPEED;
@@ -199,7 +180,6 @@ impl NoticeQueue {
         self.pending.len()
     }
 
-    /// Advances time by `dt` seconds and releases at most one notice.
     pub fn tick(&mut self, dt: f64) -> Vec<Shown> {
         self.clock += dt;
         if self.clock < self.gap_until {

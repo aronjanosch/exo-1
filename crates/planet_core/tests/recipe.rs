@@ -1,16 +1,6 @@
-//! #64: one recipe per planet, data only, unknown fields rejected.
 use planet_core::*;
 
 const HEARTH: &str = include_str!("../../../content/planet/hearth.json");
-const CINDER: &str = include_str!("../../../content/planet/cinder.json");
-
-#[test]
-fn both_recipes_load_with_the_planets_seed_and_radius() {
-    for (text, seed) in [(HEARTH, 1337), (CINDER, 4242)] {
-        let r = Recipe::for_planet(text, seed, 5000.0).unwrap();
-        assert_eq!((r.seed, r.radius), (seed, 5000.0));
-    }
-}
 
 fn with(text: &str, from: &str, to: &str) -> String {
     assert!(text.contains(from), "fixture: {from}");

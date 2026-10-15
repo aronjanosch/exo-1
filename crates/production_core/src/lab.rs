@@ -1,9 +1,4 @@
-//! The lab (round 6, #228): kettles by station and the recipe book. A kettle takes a base and up
-//! to `max_ingredients`, brews for `brew_s`, then waits for the release. The needle position at the
-//! release sets the quality. The first brew of a mix goes into the book.
-//!
-//! The lab reads `TimePassed` to count brews down; it raises `Brewed` and notices on release. The
-//! glue does the rest (the requests `GoodsBought` and the taking). Nothing here calls another system.
+//! The lab: kettles by station and the recipe book. A kettle takes a base and up
 use std::collections::{BTreeMap, BTreeSet};
 
 use gameplay_core::notice::{Notice, NoticeKind};
@@ -16,28 +11,20 @@ use crate::mixing::{mix, needle, quality};
 
 pub const SECTION: &str = "lab";
 pub const SECTION_VERSION: u32 = 1;
-/// The text pools of the notices (at least 3 lines each).
 pub const BREWED_KEY: &str = "lab.brewed";
 pub const DISCOVERED_KEY: &str = "lab.discovered";
 
-/// A mix in the recipe book: the base and the effects it gave.
 pub type Mix = (CommodityId, BTreeSet<EffectId>);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Refusal {
-    /// Not a base or an ingredient of the lab.
     UnknownGoods,
-    /// The kettle has a base already.
     SecondBase,
-    /// An ingredient before the base.
     IngredientBeforeBase,
-    /// The kettle is full.
     TooManyIngredients,
-    /// No base in the kettle, nothing to start.
     NoBase,
     /// Brewing, done or ready: the kettle takes nothing now.
     Busy,
-    /// The release needs a finished brew.
     NotDone,
 }
 
@@ -48,7 +35,6 @@ pub enum Kettle {
     Brewing { base: CommodityId, ingredients: Vec<CommodityId>, remaining_s: f64 },
     /// Brewed; waits for the release. The needle is read then.
     Done { base: CommodityId, ingredients: Vec<CommodityId> },
-    /// Released; waits for the take.
     Ready { product: ProductSpec, crates: u32 },
 }
 
@@ -64,7 +50,6 @@ impl Kettle {
     }
 }
 
-/// What a lab step did: a domain event for every system, or a notice for the player.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Outcome {
     Emit(WorldEvent),
@@ -82,12 +67,10 @@ impl Lab {
         Lab { kettles: BTreeMap::new(), book: BTreeSet::new() }
     }
 
-    /// The kettle of a station; None until something was put into it.
     pub fn kettle(&self, station: &str) -> Option<&Kettle> {
         self.kettles.get(station)
     }
 
-    /// The mixes the crew has made, for the recipe tab.
     pub fn book(&self) -> &BTreeSet<Mix> {
         &self.book
     }
@@ -121,7 +104,6 @@ impl Lab {
         Ok(())
     }
 
-    /// Starts the brew of a loaded kettle.
     pub fn start(&mut self, lc: &LabContent, station: &str) -> Result<(), Refusal> {
         match self.current(station) {
             Kettle::Loaded { base, ingredients } => {
@@ -133,7 +115,6 @@ impl Lab {
         }
     }
 
-    /// Counts the brewing kettles down by `dt` seconds; a finished brew waits for the release.
     pub fn step(&mut self, dt: f64) {
         for k in self.kettles.values_mut() {
             let old = std::mem::replace(k, Kettle::Empty);
@@ -168,7 +149,6 @@ impl Lab {
         ])
     }
 
-    /// Takes a ready brew out of the kettle, which is empty after it.
     pub fn take(&mut self, station: &str) -> Option<(ProductSpec, u32)> {
         match self.current(station) {
             Kettle::Ready { product, crates } => {
@@ -189,7 +169,6 @@ impl Lab {
         self.book.contains(&(base.clone(), effects.clone())).then_some(effects)
     }
 
-    /// Reads the lab's own time: `TimePassed` counts the brews down. Raises nothing.
     pub fn apply_world(&mut self, ev: &Event<WorldEvent>) -> Vec<Outcome> {
         if let WorldEvent::TimePassed { dt } = &ev.payload {
             self.step(*dt);
@@ -201,7 +180,6 @@ impl Lab {
         env.put(SECTION, SECTION_VERSION, self);
     }
 
-    /// None if the save has no lab section; an error for a version this build does not read.
     pub fn load(env: &Envelope) -> Result<Option<Lab>, SaveError> {
         env.get(SECTION, SECTION_VERSION)
     }

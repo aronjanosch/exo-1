@@ -1,8 +1,3 @@
-//! Crates outside near the walker as Avian rigid bodies (#210, spike 12). Three states: a body
-//! (here), a `CrateBody` that sweeps (the cabin, the ramp, far or frozen crates) and a locked one
-//! on the plates. `avian_pre` decides the state and puts gravity and the hold in as accelerations;
-//! `avian_post` copies the pose back into `CrateBody`, so grab, interaction, budget and rendering
-//! keep reading `Crate::body`, and hands a body entering the cabin back to `CrateBody`.
 //! The hull is a solid obstacle for bodies; the ramp counts as ship: a crate on or over it stays a `CrateBody`.
 use crate::cargo::{bottom_world, CargoStats, Crate};
 use crate::env::PlanetRes;
@@ -15,10 +10,8 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use walker_core::Frame;
 
-/// Marks a crate that is an Avian body now.
 #[derive(Component)]
 pub struct AvianCrate {
-    /// Velocity before the physics step.
     v_pre: DVec3,
     /// An impact under way: its direction, the speed going in and the speed along it after the last step.
     hit: Option<(DVec3, f64, f64)>,
@@ -30,7 +23,6 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedLast, avian_post.before(crate::cargo::record_crate_interp));
 }
 
-/// Counters for scenarios.
 #[derive(Resource, Default, Debug)]
 pub struct AvianStats {
     /// Crates that became bodies, and that went back to a `CrateBody` (cabin, ramp, far, no patch).
@@ -38,7 +30,6 @@ pub struct AvianStats {
     pub sleeps: u32,
     /// Tilt (rad) a body had when it entered the cabin and was set upright again.
     pub cabin_snaps: Vec<f64>,
-    /// Bodies stepped this tick.
     pub bodies: u32,
     /// Largest drop of a body below the CPU ground (m) seen.
     pub worst_sink: f64,
@@ -63,7 +54,6 @@ const IMPACT_SETTLED: f64 = 0.3;
 /// the edge does not flip every tick.
 const RAMP_MARGIN: f64 = 0.4;
 
-/// What a body is made of; removed again when the crate goes back to a `CrateBody`.
 type BodyParts = (AvianCrate, RigidBody, Collider, ColliderDensity, LinearVelocity, AngularVelocity, CollisionLayers, Friction, Restitution, SweptCcd);
 
 /// True if a crate centre `p` (ship space) is on, over or at the ramp (the wedge of `add_hull`) or
@@ -100,7 +90,6 @@ pub fn avian_pre(
         let g = flight_core::PlanetEnv::gravity_at(planet.as_ref(), c.body.pos).length();
         match (marker, forces) {
             (None, _) if outside && near && patch && !at_ramp(RAMP_MARGIN) => {
-                // Wake into a body with the crate's pose and velocity.
                 let rot = c.body.rot();
                 commands.entity(e).insert((
                     AvianCrate { v_pre: c.body.vel, hit: None },
@@ -128,7 +117,6 @@ pub fn avian_pre(
             (Some(mut m), Some(mut f)) => {
                 let moving = f.linear_velocity().length() > FREEZE_SPEED;
                 if !outside || !patch || at_ramp(0.0) || (!near && !moving && c.push == DVec3::ZERO) {
-                    // Back to a `CrateBody` (asleep if it rests), pose already copied by avian_post.
                     commands.entity(e).remove::<BodyParts>();
                     stats.sleeps += 1;
                     continue;
@@ -149,7 +137,6 @@ pub fn avian_pre(
                 let (push, turn) = (std::mem::take(&mut c.push), std::mem::take(&mut c.turn));
                 if push != DVec3::ZERO || turn != 0.0 {
                     f.apply_linear_acceleration(push);
-                    // Held: upright and turning about up.
                     *f.angular_velocity_mut() = c.body.up.cross(up) * UPRIGHT_GAIN + up * turn;
                 }
             }
@@ -158,8 +145,6 @@ pub fn avian_pre(
     }
 }
 
-/// After the physics step: pose back into `CrateBody`, the impact into the crate's condition; a
-/// body whose bottom enters the cabin becomes a cabin crate again (set upright).
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn avian_post(
     mut commands: Commands,

@@ -1,6 +1,3 @@
-//! The kernel's content records, one JSON file each, in the folders `commodity/`, `location/`,
-//! `progress_track/` and `unlock/` (#122). Systems load their own folders with `content_core` and
-//! check their references against `Content`.
 use std::collections::{BTreeMap, BTreeSet};
 
 use content_core::{Loaded, Record, check_id, load_records};
@@ -11,13 +8,10 @@ use crate::id::{CommodityId, EffectId, LocationId, Tag, TextKey, TrackId, Unlock
 
 pub use content_core::File;
 
-/// The folders the kernel reads.
 pub const FOLDERS: [&str; 5] = ["commodity", "effect", "location", "progress_track", "unlock"];
 
-/// The crew track that is money.
 pub const WALLET: &str = "wallet";
 
-/// A kind of good.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Commodity {
@@ -31,7 +25,6 @@ pub struct Commodity {
     pub tags: Vec<Tag>,
 }
 
-/// What a made product does (round 6): production mixes them in, buyers ask for them.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Effect {
@@ -43,7 +36,7 @@ pub struct Effect {
     pub tags: Vec<Tag>,
 }
 
-/// A place with content: a pad of a hand-placed place (`content/place/`, #129), with a name,
+/// A place with content: a pad of a hand-placed place (`content/place/`), with a name,
 /// goods and jobs. A city is one place with many pads, so many locations.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -52,7 +45,6 @@ pub struct Location {
     pub name: TextKey,
     /// The place's id (`content/place/<id>.json`); the glue checks that it exists.
     pub place: String,
-    /// A pad of that place.
     pub pad: String,
     #[serde(default)]
     pub tags: Vec<Tag>,
@@ -64,20 +56,16 @@ pub struct Location {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Owner {
-    /// One value for the whole crew (in the host save).
     Crew,
-    /// One value per player (client id).
     Player,
 }
 
-/// Money, XP, later reputation: a number with thresholds.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProgressTrack {
     pub id: TrackId,
     pub name: TextKey,
     pub owner: Owner,
-    /// Value of a new crew or player.
     #[serde(default)]
     pub start: i64,
     /// The value never drops below this (a standing that a failure lowers but never empties
@@ -89,7 +77,6 @@ pub struct ProgressTrack {
     pub thresholds: Vec<i64>,
 }
 
-/// Something the crew buys with money; it grants tags that conditions ask for.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Unlock {
@@ -118,7 +105,6 @@ record!(Location, LocationId);
 record!(ProgressTrack, TrackId);
 record!(Unlock, UnlockId);
 
-/// All kernel records, checked.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Content {
     pub commodities: BTreeMap<CommodityId, Loaded<Commodity>>,
@@ -205,7 +191,6 @@ impl Content {
         }
     }
 
-    /// Every tag some unlock grants.
     pub fn granted_tags(&self) -> BTreeSet<&Tag> {
         self.unlocks.values().flat_map(|u| &u.record.grants).collect()
     }
@@ -238,14 +223,12 @@ impl Content {
         }
     }
 
-    /// Checks that a commodity exists; for systems' records.
     pub fn check_commodity(&self, path: &str, field: &str, id: &CommodityId, e: &mut Vec<String>) {
         if !self.commodities.contains_key(id) {
             e.push(format!("{path}: {field}: unknown commodity '{id}'"));
         }
     }
 
-    /// Checks that a location exists; for systems' records.
     pub fn check_location(&self, path: &str, field: &str, id: &LocationId, e: &mut Vec<String>) {
         if !self.locations.contains_key(id) {
             e.push(format!("{path}: {field}: unknown location '{id}'"));

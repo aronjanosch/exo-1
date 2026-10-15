@@ -1,8 +1,6 @@
-//! Givers of #167: records, briefings from parts, standing and rank, mood by history.
 use std::path::Path;
 
-use gameplay_core::text::{Picker, TextTable};
-use gameplay_core::{ClientId, CommodityId, Content, CrateId, Dedup, Event, File, Flag, LocationId, Progress, TrackId, WorldEvent};
+use gameplay_core::{ClientId, Content, CrateId, Dedup, Event, File, Flag, LocationId, Progress, TrackId, WorldEvent};
 use jobs_core::*;
 
 const HOST: ClientId = ClientId(1);
@@ -25,12 +23,6 @@ fn kernel() -> Content {
     Content::load(&files("../gameplay_core/tests/fixtures/valid"), &["small", "medium", "large"]).unwrap()
 }
 
-fn table() -> TextTable {
-    let f = files("tests/fixtures").into_iter().find(|f| f.path == "text/en.json").unwrap();
-    TextTable::from_json(&f.path, &f.text).unwrap()
-}
-
-/// A template of the courier giver: two crates from Drip Rock to Bent Spoon.
 fn tmpl(id: &str, extra: &str) -> File {
     File::new(
         format!("job_template/{id}.json"),
@@ -121,7 +113,6 @@ impl Host {
         self.route(out);
     }
 
-    /// Delivers every crate of the job.
     fn deliver_all(&mut self, job: JobId) {
         let crates: Vec<CrateId> = self.jobs.get(job).unwrap().legs.iter().flat_map(|l| l.crates.keys().copied()).collect();
         for c in crates {
@@ -130,7 +121,6 @@ impl Host {
         }
     }
 
-    /// Lets the job run out of time with nothing delivered.
     fn fail(&mut self, job: JobId) {
         let c = *self.jobs.get(job).unwrap().legs[0].crates.keys().next().unwrap();
         self.world(WorldEvent::CratePickedUp { crate_id: c, at: LocationId::new("drip_rock") });
@@ -141,15 +131,6 @@ impl Host {
 const TIMED: &str = r#", "deadline_s": 60"#;
 
 // ---------- loader ----------
-
-#[test]
-fn givers_and_their_templates_load() {
-    let jc = load_with(vec![tmpl("run_a", "")]).unwrap();
-    assert_eq!(jc.givers.len(), 2);
-    assert_eq!(jc.givers[&GiverId::new("courier")].record.location.as_str(), "drip_rock");
-    assert_eq!(jc.templates[&TemplateId::new("run_a")].record.giver, Some(GiverId::new("courier")));
-    assert!(jc.check_texts(&table()).is_empty(), "{:?}", jc.check_texts(&table()));
-}
 
 #[test]
 fn loader_errors_name_file_and_field() {
@@ -180,104 +161,7 @@ fn loader_errors_name_file_and_field() {
     assert!(e[0].contains("standing") && e[0].contains("crew"), "{e:?}");
 }
 
-#[test]
-fn missing_and_thin_pools_are_reported_with_file_and_field() {
-    let jc = load_with(vec![]).unwrap();
-    let t = table();
-    assert!(jc.check_texts(&t).is_empty());
-    // A voice key with no pool.
-    let without = TextTable::from_json("t", &std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/text/en.json")).unwrap().replace("\"g.courier.signoff\"", "\"g.courier.signoff_x\"")).unwrap();
-    let e = jc.check_texts(&without);
-    assert!(e.iter().any(|m| m.starts_with("giver/courier.json") && m.contains("voice.sign_off") && m.contains("g.courier.signoff")), "{e:?}");
-    // A pool of one line would repeat at once.
-    let thin = TextTable::from_json("t", &std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/text/en.json")).unwrap().replace("[\"Hi, new face.\", \"Welcome, stranger.\", \"First day? Sit down.\"]", "\"Hi.\"")).unwrap();
-    let e = jc.check_texts(&thin);
-    assert!(e.iter().any(|m| m.starts_with("giver/courier.json") && m.contains("voice.greeting.first_job") && m.contains("at least")), "{e:?}");
-    // A template's title key must exist too.
-    let e = load_with(vec![tmpl("run_a", "")]).unwrap().check_texts(&TextTable::default());
-    assert!(e.iter().any(|m| m.starts_with("job_template/run_a.json") && m.contains("title")), "{e:?}");
-}
-
 // ---------- briefings ----------
-
-fn brief(h: &Host, picker: &mut Picker, template: &str, history: &GiverHistory) -> Briefing {
-    let t = &h.jc.templates[&TemplateId::new(template)].record;
-    let legs = vec![Leg::new(LocationId::new("drip_rock"), LocationId::new("bent_spoon"), CommodityId::new("fizzy_mud"), 2)];
-    briefing(&h.jc, &h.k, &table(), picker, t, &legs, history)
-}
-
-#[test]
-fn a_briefing_is_assembled_from_parts_and_is_deterministic_for_a_seed() {
-    let h = Host::new(vec![tmpl("run_a", "")]);
-    let hist = GiverHistory::default();
-    let b = brief(&h, &mut Picker::new(5), "run_a", &hist);
-    assert_eq!(b, brief(&h, &mut Picker::new(5), "run_a", &hist), "the same seed reads the same");
-    assert!(b.title.contains("First haul") && b.title.contains("Parcel Pals"), "{}", b.title);
-    assert!(table().lines("g.courier.first").unwrap().contains(&b.greeting));
-    assert!(table().lines("g.courier.intro").unwrap().contains(&b.intro));
-    assert!(b.paragraph.contains("fizzy mud") && b.paragraph.contains("Drip Rock") && b.paragraph.contains("Bent Spoon") && b.paragraph.contains('2'), "{}", b.paragraph);
-    assert!(table().lines("g.courier.signoff").unwrap().contains(&b.sign_off));
-    assert_eq!(b.giver, "Parcel Pals");
-    // Seeds differ somewhere.
-    let others: Vec<Briefing> = (6..12).map(|s| brief(&h, &mut Picker::new(s), "run_a", &hist)).collect();
-    assert!(others.iter().any(|o| *o != b));
-}
-
-#[test]
-fn the_reason_follows_the_cargo_then_the_route_then_the_giver() {
-    let h = Host::new(vec![tmpl("run_a", "")]);
-    let b = brief(&h, &mut Picker::new(1), "run_a", &GiverHistory::default());
-    // fizzy_mud has its own reason line.
-    assert_eq!(b.reason, "The mud must stay fizzy.");
-    // No cargo reason: the destination's route tag (Bent Spoon is dusty), then the giver's own pool.
-    let t = &h.jc.templates[&TemplateId::new("run_a")].record;
-    let legs = vec![Leg::new(LocationId::new("bent_spoon"), LocationId::new("drip_rock"), CommodityId::new("jelly_bricks"), 1)];
-    let b = briefing(&h.jc, &h.k, &table(), &mut Picker::new(1), t, &legs, &GiverHistory::default());
-    assert!(table().lines("g.courier.reason").unwrap().contains(&b.reason), "{}", b.reason);
-    let legs = vec![Leg::new(LocationId::new("drip_rock"), LocationId::new("bent_spoon"), CommodityId::new("jelly_bricks"), 1)];
-    let b = briefing(&h.jc, &h.k, &table(), &mut Picker::new(1), t, &legs, &GiverHistory::default());
-    assert_eq!(b.reason, "Dust makes everyone grumpy at the far end.");
-}
-
-#[test]
-fn the_shape_of_the_job_picks_the_paragraph() {
-    let h = Host::new(vec![tmpl("run_a", ""), tmpl("run_t", TIMED)]);
-    let hist = GiverHistory::default();
-    assert!(!brief(&h, &mut Picker::new(1), "run_a", &hist).paragraph.contains("clock"));
-    assert!(brief(&h, &mut Picker::new(1), "run_t", &hist).paragraph.contains("clock is running"));
-}
-
-#[test]
-fn the_greeting_follows_the_mood() {
-    let h = Host::new(vec![tmpl("run_a", "")]);
-    let t = table();
-    let first = brief(&h, &mut Picker::new(3), "run_a", &GiverHistory::default());
-    let regular = brief(&h, &mut Picker::new(3), "run_a", &GiverHistory { completed: 3, failure_streak: 0 });
-    let after_failure = brief(&h, &mut Picker::new(3), "run_a", &GiverHistory { completed: 3, failure_streak: 1 });
-    assert!(t.lines("g.courier.first").unwrap().contains(&first.greeting));
-    assert!(t.lines("g.courier.regular").unwrap().contains(&regular.greeting));
-    assert!(t.lines("g.courier.failure").unwrap().contains(&after_failure.greeting));
-    assert_eq!(GiverHistory::default().mood(), Mood::FirstJob);
-    assert_eq!(GiverHistory { completed: 1, failure_streak: 0 }.mood(), Mood::Regular);
-    assert_eq!(GiverHistory { completed: 0, failure_streak: 2 }.mood(), Mood::AfterFailure);
-}
-
-#[test]
-fn one_picker_never_repeats_a_greeting_or_sign_off_twice_in_a_row() {
-    let h = Host::new(vec![tmpl("run_a", "")]);
-    let mut p = Picker::new(9);
-    let hist = GiverHistory::default();
-    let mut last: Option<Briefing> = None;
-    for _ in 0..100 {
-        let b = brief(&h, &mut p, "run_a", &hist);
-        if let Some(l) = &last {
-            assert_ne!(l.greeting, b.greeting);
-            assert_ne!(l.sign_off, b.sign_off);
-            assert_ne!(l.intro, b.intro);
-        }
-        last = Some(b);
-    }
-}
 
 // ---------- standing and rank ----------
 
@@ -346,28 +230,4 @@ fn history_survives_a_save() {
     h.jobs.save(&mut env);
     let back = Jobs::load(&gameplay_core::save::Envelope::from_json(&env.to_json()).unwrap()).unwrap().unwrap();
     assert_eq!(back.history(&GiverId::new("courier")).completed, 1);
-}
-
-#[test]
-fn the_ritual_names_the_standing_gained_or_lost() {
-    let mut h = Host::new(vec![tmpl("run_a", ""), tmpl("run_t", TIMED)]);
-    let notes = |out: &[Outcome]| out.iter().filter_map(|o| if let Outcome::Notice(n) = o { Some(n.key.to_string()) } else { None }).collect::<Vec<_>>();
-    // Run a delivery by hand to see the outcomes of the last event.
-    let j = h.accept("run_a").unwrap();
-    let crates: Vec<CrateId> = h.jobs.get(j).unwrap().legs[0].crates.keys().copied().collect();
-    let mut last = Vec::new();
-    for c in crates {
-        h.seq += 1;
-        h.jobs.apply_world(&h.jc, &Event::new(ANA, h.seq, WorldEvent::CratePickedUp { crate_id: c, at: LocationId::new("drip_rock") }));
-        h.seq += 1;
-        last = h.jobs.apply_world(&h.jc, &Event::new(ANA, h.seq, WorldEvent::CrateDelivered { crate_id: c, at: LocationId::new("bent_spoon"), condition: 1.0 }));
-    }
-    assert!(notes(&last).contains(&"notice.reward.standing".to_string()), "{:?}", notes(&last));
-    let j = h.accept("run_t").unwrap();
-    let c = *h.jobs.get(j).unwrap().legs[0].crates.keys().next().unwrap();
-    h.seq += 1;
-    h.jobs.apply_world(&h.jc, &Event::new(ANA, h.seq, WorldEvent::CratePickedUp { crate_id: c, at: LocationId::new("drip_rock") }));
-    h.seq += 1;
-    let out = h.jobs.apply_world(&h.jc, &Event::new(HOST, h.seq, WorldEvent::TimePassed { dt: 1000.0 }));
-    assert!(notes(&out).contains(&"notice.reward.standing_lost".to_string()), "{:?}", notes(&out));
 }

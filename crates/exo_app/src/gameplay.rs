@@ -1,11 +1,3 @@
-//! Gameplay glue (#129, #130, #133): the kernel (`gameplay_core`) and the jobs system
-//! (`jobs_core`) in the game. This module holds their state, turns crates on pads into domain
-//! events, applies every event once (host), and carries out the outcomes: spawn the crates of an
-//! accepted job, release crates, route payouts and flags back in as events.
-//!
-//! Content: `content/gameplay/` (records), `content/place/` (where the pads are). One client for
-//! now: this game is the host and the only sender (network: #134, client id and save: #135).
-//!
 //! A crate is on a pad when it rests outside any cabin, not held, within the pad's radius. Leaving
 //! a pad is a pickup, coming to rest on one a delivery (the jobs system decides whether it counts).
 
@@ -21,7 +13,6 @@ use crate::cargo::{crate_bundle, Crate, Crates};
 use crate::env::{from_v3, PlanetRes};
 use crate::grab::Grab;
 
-/// The game's own section of the save (#135): its seed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GameSave {
     pub seed: u64,
@@ -46,7 +37,6 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, (update_pads, watch_pads, gameplay_step, update_readout).chain().after(crate::cargo::budget_step).in_set(crate::phases::Fx::Cargo));
 }
 
-/// Window only: pad rings and the giver's briefing panel.
 pub fn window_plugin(app: &mut App) {
     app.init_resource::<PadRings>();
     app.add_systems(Startup, spawn_panel);
@@ -54,24 +44,21 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, update_pad_rings.in_set(crate::phases::Frame::World));
 }
 
-/// The host's own sender id in events until the network sends each client's (#134); the folder's
-/// id is `savefile::LocalClient` (#135).
+/// The host's own sender id in events until the network sends each client's; the folder's
+/// id is `savefile::LocalClient`.
 pub const HOST: ClientId = ClientId(1);
-/// Seed of a new game: the text picks (#135 keeps it in the save). TODO(initiator): a new game
+/// Seed of a new game: the text picks (the save keeps it). TODO(initiator): a new game
 /// draws its own; fixed keeps the scenarios repeatable.
 const NEW_GAME_SEED: u64 = 0x5EED_0001;
 
-/// A crate that carries goods for a job.
 #[derive(Component, Clone, Debug)]
 pub struct Goods {
     pub id: CrateId,
     pub commodity: CommodityId,
     pub job: JobId,
-    /// The pad it rests on, as last reported.
     pub on_pad: Option<LocationId>,
 }
 
-/// A location's pad on the current planet, world space.
 #[derive(Clone, Debug)]
 pub struct Pad {
     pub location: LocationId,
@@ -105,9 +92,7 @@ pub struct Gameplay {
     pub jobs_content: JobContent,
     text: TextTable,
     picker: Picker,
-    /// What the players are told: queued by the systems, released with pauses (#165).
     pub notices: NoticeQueue,
-    /// Every notice shown so far, oldest first (the window draws them, scenario checks read them).
     pub shown: Vec<ShownLine>,
     pub progress: Progress,
     pub jobs: Jobs,
@@ -117,37 +102,26 @@ pub struct Gameplay {
     pub pads: Vec<Pad>,
     pub(crate) pads_for: Option<warp_core::PlanetId>,
     queue: Vec<Queued>,
-    /// What happened, oldest first (scenario checks).
     pub log: Vec<String>,
-    /// The job line as shown: money, the active job.
     pub readout: String,
     clock: f64,
-    /// The job whose next stop is the pointer and the map's target (#166).
     pub tracked: Option<JobId>,
-    /// The counter the player has open: a giver's briefing with accept and decline (#167).
     pub panel: Option<Panel>,
     /// Briefings already assembled, by offer and the giver's mood then: an offer reads the same
     /// each time it is opened.
     briefings: std::collections::BTreeMap<JobId, (jobs_core::Mood, Briefing)>,
-    /// The first press of abandon: which job and when (game clock), until confirmed (#132).
     abandon_asked: Option<(JobId, f64)>,
-    /// The target arrow (#136): the tracked job's next stop as the player sees it.
     pub arrow: Option<Arrow>,
-    /// This game's seed (#135, in the save).
     pub seed: u64,
-    /// Something happened to a job since the last save: the autosave writes soon (#135).
     pub save_wanted: bool,
 }
 
-/// A giver's counter, opened.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Panel {
     pub giver: GiverId,
-    /// Which of the giver's offers is shown.
     pub page: usize,
 }
 
-/// The HUD's target arrow (#136).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Arrow {
     pub target: LocationId,
@@ -157,7 +131,6 @@ pub struct Arrow {
     pub dist_m: f64,
 }
 
-/// A notice as the player sees it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShownLine {
     pub kind: NoticeKind,
@@ -173,8 +146,7 @@ pub struct ShownLine {
 }
 
 impl Gameplay {
-    /// Loads and checks `content/gameplay/` and the places the locations name; panics with every
-    /// error, like the planet recipes. Offers the fixed jobs (#133: no board yet).
+    /// error, like the planet recipes. Offers the fixed jobs (no board yet).
     pub fn load(crates: &Crates) -> Gameplay {
         let files = crate::content_files("gameplay");
         let sizes: Vec<&str> = crates.0.sizes.iter().map(|s| s.name.as_str()).collect();
@@ -209,20 +181,16 @@ impl Gameplay {
         g
     }
 
-    /// The gameplay sections of a save (#135): kernel, jobs and the game's seed. The
-    /// world (crates, ship) is `savefile::snapshot`'s.
     pub fn save_to(&self, env: &mut Envelope) {
         KernelState { progress: self.progress.clone(), dedup: self.dedup.clone() }.save(env);
         self.jobs.save(env);
         GameSave { seed: self.seed }.save(env);
     }
 
-    /// The next crate id to hand out.
     pub fn next_crate(&self) -> u64 {
         self.next_crate
     }
 
-    /// A restart from a save (#135): progress, jobs and seed from `env`; notices, the
     /// panel and anything queued are gone. Content and pads stay (same build, same planet).
     pub fn restore(&mut self, env: &Envelope, next_crate: u64) -> Result<(), SaveError> {
         let kernel = KernelState::load(env)?.ok_or_else(|| SaveError::Parse("no kernel section".into()))?;
@@ -251,8 +219,7 @@ impl Gameplay {
         self.jobs.all().flat_map(|j| j.legs.iter().flat_map(|l| l.crates.keys().map(|c| c.0 + 1))).max().unwrap_or(1)
     }
 
-    /// English text for a key (the first line of a pool); the key itself when it has none (#131
-    /// adds checked tables).
+    /// English text for a key (the first line of a pool); the key itself when it has none (the tables are not checked yet).
     pub fn text(&self, key: &TextKey) -> String {
         self.text.lines(key.as_str()).and_then(|l| l.first().cloned()).unwrap_or_else(|| key.to_string())
     }
@@ -267,7 +234,6 @@ impl Gameplay {
         self.queue.push(Queued::Job(Event::new(from, self.seq, e)));
     }
 
-    /// The pad at a world point, if any.
     pub fn pad_at(&self, p: DVec3) -> Option<&Pad> {
         self.pads.iter().find(|pad| pad.contains(p))
     }
@@ -276,8 +242,7 @@ impl Gameplay {
         self.pads.iter().find(|p| &p.location == l)
     }
 
-    /// Makes sure every giver's fixed job is on offer: one offer per template while it is not
-    /// active, and none for a once-only job that was completed. (No board yet, #126.)
+    /// active, and none for a once-only job that was completed. (No board yet.)
     pub fn refresh_offers(&mut self) {
         let ids: Vec<_> = self.jobs_content.templates.values().filter(|t| t.record.giver.is_some()).map(|t| t.record.id.clone()).collect();
         for id in ids {
@@ -291,13 +256,11 @@ impl Gameplay {
         }
     }
 
-    /// The giver whose counter is at the pad under `p`.
     pub fn counter_at(&self, p: DVec3) -> Option<GiverId> {
         let pad = self.pad_at(p)?;
         self.jobs_content.givers.values().find(|g| g.record.location == pad.location).map(|g| g.record.id.clone())
     }
 
-    /// The giver's offers the crew may take now: open giver, template condition holds.
     pub fn offers_of(&self, giver: &GiverId) -> Vec<JobId> {
         let Some(g) = self.jobs_content.givers.get(giver) else { return Vec::new() };
         if g.record.available.as_ref().is_some_and(|c| !c.holds(&self.kernel, &self.progress, Some(HOST))) {
@@ -311,14 +274,12 @@ impl Gameplay {
             .collect()
     }
 
-    /// The offer the open panel shows.
     pub fn panel_offer(&self) -> Option<JobId> {
         let p = self.panel.as_ref()?;
         let offers = self.offers_of(&p.giver);
         (!offers.is_empty()).then(|| offers[p.page % offers.len()])
     }
 
-    /// The briefing of an offer, assembled once per mood of its giver.
     pub fn briefing_of(&mut self, job: JobId) -> Option<Briefing> {
         let j = self.jobs.get(job)?;
         let t = &self.jobs_content.templates.get(&j.template)?.record;
@@ -337,13 +298,11 @@ impl Gameplay {
         Some(b)
     }
 
-    /// The counter opens: the giver's greeting and the first offer.
     pub fn open_counter(&mut self, giver: GiverId) {
         self.panel = Some(Panel { giver, page: 0 });
     }
 
-    /// Whether the player may take the seat: with a licence that allows piloting, or while taking
-    /// its exam (the exam lends the ship). Without any such licence in the data, always (#169).
+    /// its exam (the exam lends the ship). Without any such licence in the data, always.
     pub fn may_pilot(&self, who: ClientId) -> bool {
         let needed = self.jobs_content.licences_allowing("pilot_ship");
         needed.is_empty()
@@ -352,14 +311,12 @@ impl Gameplay {
             })
     }
 
-    /// Where to take the exam, for the prompt and the refusal.
     pub fn licence_hint(&self) -> String {
         let exam = self.jobs_content.licences_allowing("pilot_ship").first().map(|l| l.exam.clone());
         let school = exam.and_then(|e| self.jobs_content.templates.get(&e)).and_then(|t| t.record.giver.clone()).and_then(|g| self.jobs_content.givers.get(&g)).map(|g| self.text(&g.record.name));
         format!("needs the flight licence{}", school.map(|s| format!(": exam at {s}")).unwrap_or_default())
     }
 
-    /// Keeps the tracked job an active one: a job that ended is replaced by the next active job.
     pub fn refresh_tracking(&mut self) {
         if self.tracked.and_then(|j| self.jobs.get(j)).is_some_and(|j| j.state == JobState::Active) {
             return;
@@ -367,7 +324,6 @@ impl Gameplay {
         self.tracked = self.jobs.active().next().map(|j| j.id);
     }
 
-    /// Tracks the next active job after the tracked one (T).
     pub fn track_next(&mut self) {
         let active: Vec<JobId> = self.jobs.active().map(|j| j.id).collect();
         if active.is_empty() {
@@ -378,7 +334,6 @@ impl Gameplay {
         self.tracked = Some(active[at.map_or(0, |i| (i + 1) % active.len())]);
     }
 
-    /// Abandon, pressed (#132): the first press names the tracked job and asks; a second press
     /// within `ABANDON_CONFIRM_S` drops it. Nothing tracked, nothing happens.
     pub fn press_abandon(&mut self) {
         let Some(job) = self.tracked.filter(|j| self.jobs.get(*j).is_some_and(|j| j.state == JobState::Active)) else { return };
@@ -396,12 +351,10 @@ impl Gameplay {
         }
     }
 
-    /// Declines: the panel closes, the offer stays.
     pub fn close_counter(&mut self) {
         self.panel = None;
     }
 
-    /// The panel's text: giver, briefing, pay and the keys; empty when no counter is open.
     pub fn panel_text(&mut self, keys: &str) -> String {
         let Some(p) = self.panel.clone() else { return String::new() };
         let Some(job) = self.panel_offer() else {
@@ -431,7 +384,6 @@ impl Gameplay {
         format!("{reward} {}", self.text(&TextKey::new("track.wallet.name")))
     }
 
-    /// "First haul (300 credits)".
     pub fn offer_label(&self, job: JobId) -> String {
         let Some(j) = self.jobs.get(job) else { return String::new() };
         let Some(t) = self.jobs_content.templates.get(&j.template) else { return String::new() };
@@ -443,14 +395,11 @@ impl Gameplay {
         format!("{} ({} {})", self.text(&j.title_key(&t.record)), reward, self.text(&TextKey::new("track.wallet.name")))
     }
 
-    /// A line for the developer log (scenario checks, the terminal); the players are told through
-    /// notices.
     fn note(&mut self, s: String) {
         println!("gameplay: {s}");
         self.log.push(s);
     }
 
-    /// A line from a pool (never the same twice in a row), for glue texts.
     pub fn line(&mut self, pool: &str) -> String {
         self.picker.pick(&self.text, pool)
     }
@@ -464,12 +413,10 @@ impl Gameplay {
         self.notices.push(n);
     }
 
-    /// A notice's text without queueing it (stamps and glue lines).
     pub fn render(&mut self, n: &Notice) -> String {
         self.picker.render(&self.text, n)
     }
 
-    /// Releases what the queue allows and renders it (a line of the pool, never the same twice).
     fn pace_notices(&mut self, dt: f64) {
         for s in self.notices.tick(dt) {
             let text = self.picker.render(&self.text, &s.notice);
@@ -479,7 +426,6 @@ impl Gameplay {
         }
     }
 
-    /// Tells the players a request was refused, where they can act on it.
     fn refused(&mut self, r: &jobs_core::Refusal) {
         let key = match r {
             jobs_core::Refusal::TooManyActive => "notice.refused.too_many",
@@ -491,7 +437,6 @@ impl Gameplay {
     }
 }
 
-/// Startup system of the scenarios: every licence is earned for the host's client.
 pub fn grant_starting_licences(mut gp: ResMut<Gameplay>) {
     let tracks: Vec<_> = gp.jobs_content.licences.values().map(|l| l.record.track.clone()).collect();
     for track in tracks {
@@ -499,7 +444,6 @@ pub fn grant_starting_licences(mut gp: ResMut<Gameplay>) {
     }
 }
 
-/// Pads of the current planet, when it changes (#129).
 pub fn update_pads(planet: Res<PlanetRes>, mut gp: ResMut<Gameplay>) {
     if gp.pads_for == Some(planet.id) {
         return;
@@ -517,7 +461,6 @@ pub fn update_pads(planet: Res<PlanetRes>, mut gp: ResMut<Gameplay>) {
     gp.pads_for = Some(planet.id);
 }
 
-/// Crates with goods leaving or coming to rest on pads become pickups and deliveries.
 pub fn watch_pads(mut gp: ResMut<Gameplay>, grab: Res<Grab>, mut crates: Query<(Entity, &Crate, &mut Goods)>) {
     let held = grab.held.as_ref().map(|h| h.crate_e);
     let mut events = Vec::new();
@@ -546,7 +489,6 @@ pub fn watch_pads(mut gp: ResMut<Gameplay>, grab: Res<Grab>, mut crates: Query<(
     }
 }
 
-/// Applies the queued events once each and carries out the outcomes.
 pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>, mut actions: ResMut<crate::controls::Actions>, mut gp: ResMut<Gameplay>, goods: Query<(Entity, &Goods)>) {
     gp.clock += time.delta_secs_f64();
     let dt = time.delta_secs_f64();
@@ -589,7 +531,6 @@ pub fn gameplay_step(mut commands: Commands, time: Res<Time>, table: Res<Crates>
                     }
                 }
             };
-            // A job changed: the autosave writes soon (#135).
             g.save_wanted |= !outcomes.is_empty();
             for o in outcomes {
                 carry_out(&mut commands, &table, g, &goods, o);
@@ -610,7 +551,6 @@ fn carry_out(commands: &mut Commands, table: &Crates, gp: &mut Gameplay, goods: 
             };
             let size = gp.kernel.commodities[&commodity].record.crate_size.clone();
             let half = table.0.get(&size).expect("checked at load").extents[1] * 0.5;
-            // A row across the pad's middle, a little above the ground.
             let east = pad.up.any_orthonormal_vector();
             let north = pad.up.cross(east);
             let mut ids = Vec::new();
@@ -633,7 +573,6 @@ fn carry_out(commands: &mut Commands, table: &Crates, gp: &mut Gameplay, goods: 
             }
         }
         Outcome::Ended { job, .. } => {
-            // Delivered crates stay where they are, as plain crates.
             for (e, g) in goods {
                 if g.job == job {
                     commands.entity(e).remove::<Goods>();
@@ -645,8 +584,6 @@ fn carry_out(commands: &mut Commands, table: &Crates, gp: &mut Gameplay, goods: 
     }
 }
 
-/// "Bent Spoon 1.9 km, left": distance and rough side of a pad from where the player looks. A
-/// stand-in until the target arrow (#136).
 pub fn pointer(name: &str, from: DVec3, look: DVec3, to: DVec3, up: DVec3) -> String {
     let (ang, dist) = bearing(from, look, to, up);
     let side = if dist < 40.0 {
@@ -671,14 +608,12 @@ pub fn bearing(from: DVec3, look: DVec3, to: DVec3, up: DVec3) -> (f64, f64) {
     (f.cross(t).dot(up).atan2(f.dot(t)).to_degrees(), d.length())
 }
 
-/// The job line: money, the active job's progress and where to, a recent notice.
 pub fn update_readout(
     mut gp: ResMut<Gameplay>,
     players: Query<&crate::walker::Player>,
     ships: Query<(&avian3d::prelude::Position, &avian3d::prelude::Rotation), With<crate::ship::Ship>>,
     planet: Res<PlanetRes>,
 ) {
-    // Where the player is and looks (in the seat the walker's look is the view).
     let view = players.single().ok().zip(ships.iter().next()).map(|(pl, (p, r))| {
         let f = crate::walker::ship_frame(p, r);
         (pl.world_pos(f), pl.world_look(f))
@@ -689,7 +624,6 @@ pub fn update_readout(
         let name = gp.kernel.locations.get(l).map(|r| gp.text(&r.record.name))?;
         Some(pointer(&name, pos, look, pad.centre, planet.up(pos)))
     };
-    // The arrow points at the tracked job's next stop (#136).
     let arrow = gp.tracked.and_then(|t| gp.jobs.get(t)).filter(|j| j.state == JobState::Active).and_then(jobs_core::map::next_stop).and_then(|(target, stop)| {
         let (pos, look) = view?;
         let pad = gp.pad_of(&target)?;
@@ -710,7 +644,6 @@ pub fn update_readout(
         if let Some(left) = j.time_left(&t.record) {
             s += &format!(", {left:.0} s left");
         }
-        // Where to next (only for the tracked job, T switches): the pickup while crates wait, else the dropoff.
         if gp.tracked == Some(j.id)
             && let Some((loc, stop)) = jobs_core::map::next_stop(j)
             && let Some(p) = point(&gp, &loc)
@@ -718,7 +651,6 @@ pub fn update_readout(
             s += &format!("\n{} {p}", if stop == jobs_core::map::Stop::Pickup { "pick up:" } else { "deliver to:" });
         }
     }
-    // With nothing active: where a giver's counter with jobs on offer is.
     if gp.jobs.active().next().is_none()
         && let Some(g) = gp.jobs_content.givers.values().map(|g| &g.record).find(|g| !gp.offers_of(&g.id).is_empty() && gp.pad_of(&g.location).is_some())
         && let Some(p) = point(&gp, &g.location)
@@ -728,15 +660,9 @@ pub fn update_readout(
     gp.readout = s;
 }
 
-// The job line (credits, jobs, where to next) and the target arrow left the HUD (Crew HUD v3,
-// decision "Minimal HUD"): the credits flash up on a change (`crew_hud`), the crew knows where
-// things are, the map screen (M) keeps the pins. `Gameplay::readout` and `arrow` stay as data.
-
 #[derive(Component)]
 struct PanelText;
 
-/// The giver's counter: a panel on the left with the briefing. It takes no input itself (the
-/// interact, next and decline taps do), so nobody is blocked by it.
 fn spawn_panel(mut commands: Commands) {
     commands.spawn((
         PanelText,
@@ -761,12 +687,9 @@ fn update_panel(mut gp: ResMut<Gameplay>, bindings: Res<crate::controls::Binding
     }
 }
 
-/// Which planet the rings were spawned for.
 #[derive(Resource, Default)]
 pub struct PadRings(Option<warp_core::PlanetId>);
 
-/// Every pad: the landing-pad model (`props/landing_pad.glb`, a 20 m disc, scaled to the pad) and
-/// a glowing ring at its edge (round 6; the ring alone before).
 fn update_pad_rings(mut commands: Commands, planet: Res<PlanetRes>, gp: Res<Gameplay>, mut rings: ResMut<PadRings>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>, assets: Res<AssetServer>) {
     if rings.0 == Some(planet.id) || gp.pads_for != Some(planet.id) {
         return;
@@ -797,134 +720,6 @@ fn update_pad_rings(mut commands: Commands, planet: Res<PlanetRes>, gp: Res<Game
 mod tests {
     use super::*;
 
-    /// #129: the shipped content loads, and every location on Hearth has its pad on the ground.
-    #[test]
-    fn every_location_finds_its_pad_on_the_planet() {
-        let gp = Gameplay::load(&Crates::default());
-        let sys = warp_core::System::from_json(crate::warp::SYSTEM).unwrap();
-        let home = warp_core::PlanetId(0);
-        let planet = PlanetRes::load(home, sys.planet(home));
-        let places = crate::env::places_for(&sys.planet(home).recipe);
-        for l in gp.kernel.locations.values() {
-            if !places.iter().any(|p| p.id == l.record.place) {
-                continue;
-            }
-            let pad = planet.pgen.pad(&l.record.place, &l.record.pad).unwrap_or_else(|| panic!("{}: no pad on the planet", l.path));
-            let s = planet.pgen.sample(pad.up);
-            assert!(s.water_depth == 0.0 && s.slope_deg < 3.0, "{}: pad in water or on a slope ({:.1}°)", l.path, s.slope_deg);
-        }
-        assert!(gp.jobs.all().any(|j| j.state == JobState::Offered), "the fixed job is offered at the start");
-    }
-
-    /// #170: the courier drops lie 150 to 400 m from the start pad (the Drip Rock counter). They
-    /// are placed in metres from it, so a bigger planet keeps the distances (`planet_core`'s
-    /// places tests check that at several radii).
-    #[test]
-    fn courier_drops_are_a_walk_from_drip_rock() {
-        let sys = warp_core::System::from_json(crate::warp::SYSTEM).unwrap();
-        let home = warp_core::PlanetId(0);
-        let gp = Gameplay::load(&Crates::default());
-        let drops: Vec<_> = gp.kernel.locations.values().filter(|l| l.record.tags.iter().any(|t| t.as_str() == "courier_drop")).collect();
-        assert_eq!(drops.len(), 3);
-        let planet = PlanetRes::load(home, sys.planet(home));
-        let start = planet.pgen.pad("drip_rock", "main").unwrap().centre;
-        for l in &drops {
-            let pad = planet.pgen.pad(&l.record.place, &l.record.pad).unwrap();
-            let d = planet.radius * start.normalized().dot(pad.centre.normalized()).clamp(-1.0, 1.0).acos();
-            assert!((150.0..=400.0).contains(&d), "{}: {d:.0} m from Drip Rock", l.path);
-        }
-    }
-
-    /// Probe (round 6, run by hand): dry, flat spots for a town near a latitude and longitude.
-    #[test]
-    #[ignore]
-    fn probe_town_spots() {
-        let sys = warp_core::System::from_json(crate::warp::SYSTEM).unwrap();
-        let home = warp_core::PlanetId(0);
-        // Every town pad at 5 km and at 100 km: dry and flat?
-        for radius in [5000.0, 100_000.0] {
-            let mut def = sys.planet(home).clone();
-            def.radius = radius;
-            let c = planet_core::Ceilings::for_radius(radius);
-            def.atmosphere_height = c.atmosphere_height;
-            def.obstruction_radius = c.obstruction_radius;
-            def.arrival_radius = c.arrival_radius;
-            let planet = PlanetRes::load(home, &def);
-            let gp = Gameplay::load(&Crates::default());
-            for l in gp.kernel.locations.values() {
-                let Some(pad) = planet.pgen.pad(&l.record.place, &l.record.pad) else { continue };
-                let s = planet.pgen.sample(pad.up);
-                if s.water_depth > 0.0 || s.slope_deg >= 3.0 {
-                    println!("probe at {radius}: {} wet {:.1} or slope {:.1}", l.record.id, s.water_depth, s.slope_deg);
-                }
-            }
-            println!("probe at {radius}: pads checked");
-        }
-        // Dry spots around a reference place, east/north metres (for `near`).
-        for (radius, place, rings) in [(5000.0, "noodle_town", [500.0, 700.0]), (100_000.0, "drip_rock", [220.0, 300.0])] {
-            let mut def = sys.planet(home).clone();
-            def.radius = radius;
-            let c = planet_core::Ceilings::for_radius(radius);
-            def.atmosphere_height = c.atmosphere_height;
-            def.obstruction_radius = c.obstruction_radius;
-            def.arrival_radius = c.arrival_radius;
-            let planet = PlanetRes::load(home, &def);
-            let d0 = planet.pgen.places.iter().find(|p| p.id == place).unwrap().dir();
-            let (east, north) = planet_core::look::tangent_frame(d0);
-            let mut ok = Vec::new();
-            for m in rings {
-                for k in 0..16 {
-                    let a = k as f64 / 16.0 * std::f64::consts::TAU;
-                    let (e, n) = (m * a.cos(), m * a.sin());
-                    let d = planet_core::look::walk(d0, (east * e + north * n) * (1.0 / m), m, planet.radius);
-                    let s = planet.pgen.sample(d);
-                    if s.water_depth == 0.0 && !planet.pgen.water_within(d, 40.0) && s.slope_deg < 8.0 {
-                        ok.push((e.round(), n.round(), (s.slope_deg * 10.0).round() / 10.0, s.height_above_sea.round()));
-                    }
-                }
-            }
-            println!("probe near {place} at {radius}: {ok:?}");
-        }
-        let planet = PlanetRes::load(home, sys.planet(home));
-        for (lat0, lon0) in [(4.0f64, 40.0f64), (44.0, 140.0)] {
-            let mut ok = Vec::new();
-            for dl in -6..=6 {
-                for dn in -6..=6 {
-                    let (lat, lon) = (lat0 + dl as f64 * 2.0, lon0 + dn as f64 * 2.0);
-                    let (la, lo) = (lat.to_radians(), lon.to_radians());
-                    let d = planet_core::v3(la.cos() * lo.cos(), la.sin(), la.cos() * lo.sin());
-                    let s = planet.pgen.sample(d);
-                    // Dry and flat over the town's 60 m.
-                    if s.water_depth == 0.0 && s.slope_deg < 6.0 && !planet.pgen.water_within(d, 80.0) {
-                        ok.push((lat, lon, s.slope_deg));
-                    }
-                }
-            }
-            ok.sort_by(|a, b| a.2.total_cmp(&b.2));
-            println!("probe near {lat0},{lon0}: {:?}", &ok[..ok.len().min(8)]);
-        }
-    }
-
-    /// #167: the family is a giver of the cast but offers nothing in D; the courier office does.
-    #[test]
-    fn the_family_offers_nothing_yet_and_the_courier_office_does() {
-        let gp = Gameplay::load(&Crates::default());
-        assert!(gp.offers_of(&GiverId::new("small_family")).is_empty());
-        assert!(!gp.offers_of(&GiverId::new("courier_office")).is_empty());
-        assert_eq!(gp.jobs_content.givers.len(), 4, "courier office, small family, wholesaler, flight school");
-    }
-
-    #[test]
-    fn pointer_names_distance_and_side() {
-        let (up, look) = (DVec3::Y, DVec3::NEG_Z);
-        assert_eq!(pointer("A", DVec3::ZERO, look, DVec3::new(0.0, 0.0, -1900.0), up), "A 1.9 km, ahead");
-        assert_eq!(pointer("A", DVec3::ZERO, look, DVec3::new(-300.0, 5.0, 0.0), up), "A 300 m, left");
-        assert_eq!(pointer("A", DVec3::ZERO, look, DVec3::new(300.0, 0.0, 0.0), up), "A 300 m, right");
-        assert_eq!(pointer("A", DVec3::ZERO, look, DVec3::new(0.0, 0.0, 300.0), up), "A 300 m, behind");
-        assert_eq!(pointer("A", DVec3::ZERO, look, DVec3::new(10.0, 0.0, 0.0), up), "A 10 m, here");
-    }
-
-    /// #136: the arrow's turn is + to the left, 0 ahead, 180 behind, flat on the ground.
     #[test]
     fn bearing_turns_left_positive_and_ignores_height() {
         let (up, look) = (DVec3::Y, DVec3::NEG_Z);

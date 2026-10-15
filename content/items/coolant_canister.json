@@ -1,0 +1,12 @@
+{
+  "_comment": "A blue canister of coolant, stacks of three on the corridor rack (#300). Using it at the coolant pump (look on it, LMB held 3 s) refills the tank by one canister's worth; the canister is used up. TODO(initiator): shape, mass, the hold's ring.",
+  "id": "coolant_canister",
+  "name": "Coolant canister",
+  "code": "CLT",
+  "take": "collect",
+  "hands": 1,
+  "stack": 3,
+  "use": "refill_coolant",
+  "tags": ["medium"],
+  "shape": { "extents": [0.14, 0.26, 0.14], "mass": 2.5, "colour": [0.2, 0.45, 0.9] }
+}

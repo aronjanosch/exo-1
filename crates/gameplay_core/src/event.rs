@@ -1,6 +1,3 @@
-//! Domain events: the messages "something happened" that every system reads. The host applies
-//! them; clients send requests. The envelope is generic over its payload, so each system brings its
-//! own event kinds and the kernel stays unaware of them.
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -16,7 +13,6 @@ pub struct EventId {
     pub seq: u64,
 }
 
-/// A domain event: id (which names the sender) and what happened.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Event<P> {
     pub id: EventId,
@@ -28,27 +24,21 @@ impl<P> Event<P> {
         Event { id: EventId { sender, seq }, payload }
     }
 
-    /// The client that sent it; for events the host raises itself, the host's client.
     pub fn sender(&self) -> ClientId {
         self.id.sender
     }
 }
 
-/// Events about the world and the crew's progress, shared by all systems.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorldEvent {
-    /// A crate left the pad of a location in someone's hands or ship.
     CratePickedUp { crate_id: CrateId, at: LocationId },
     /// A crate was set down on the pad of a location; `condition` 0..1.
     CrateDelivered { crate_id: CrateId, at: LocationId, condition: f64 },
-    /// A crate is gone (destroyed, despawned).
     CrateLost { crate_id: CrateId },
     /// Simulated time went by, seconds.
     TimePassed { dt: f64 },
-    /// The sender joined the session.
     PlayerJoined,
-    /// The sender buys an unlock for the crew.
     UnlockBought { unlock: UnlockId },
     /// A system changes a track, e.g. a payout. `player` names whose personal track; crew tracks
     /// ignore it.
@@ -56,12 +46,11 @@ pub enum WorldEvent {
     /// A system states a fact that conditions can ask for (`job_completed:<template>`).
     FlagRaised { flag: Flag },
     /// A customer (`by`: the id used for texts) wants goods: pick up `amount` of `commodity` at `from`, bring them to `to` for
-    /// `reward`. The jobs system turns it into an offer (#168).
+    /// `reward`. The jobs system turns it into an offer.
     OrderPlaced { order: OrderId, by: String, from: LocationId, to: LocationId, commodity: CommodityId, amount: u32, reward: i64, deadline_s: Option<f64> },
-    /// The sender's ship left the ground under their hands (#169). The exam asks for it; nothing
+    /// The sender's ship left the ground under their hands. The exam asks for it; nothing
     /// here depends on how the ship flies.
     TookOff,
-    /// The sender's ship came over the pad of a location.
     PadReached { at: LocationId },
     /// The sender's ship touched down, at the pad of a location or elsewhere, with this speed
     /// towards the ground in m/s.
@@ -70,11 +59,9 @@ pub enum WorldEvent {
     /// condition 0..1, and whether it was in time. The jobs system raises it when the job ends.
     OrderSettled { order: OrderId, delivered: u32, asked: u32, condition: f64, in_time: bool },
 
-    // Production (`production_core`): brewing and packing.
     /// A station finished a batch: `crates` crates of `product`. `discovered`: the first time the
     /// crew made this mix (it goes into the recipe book).
     Brewed { station: String, product: ProductSpec, crates: u32, discovered: bool },
-    /// Request: the sender buys `amount` crates of a good at a counter (ingredients, supplies).
     GoodsBought { commodity: CommodityId, amount: u32, at: LocationId },
 }
 
@@ -87,14 +74,11 @@ pub struct Dedup {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 struct Window {
-    /// Every seq below this was seen.
     below: u64,
-    /// Seen seqs at or above `below`.
     above: BTreeSet<u64>,
 }
 
 impl Dedup {
-    /// True the first time an id comes by (then it is recorded), false for every repeat.
     pub fn first_time(&mut self, id: EventId) -> bool {
         let w = self.senders.entry(id.sender).or_default();
         if id.seq < w.below || !w.above.insert(id.seq) {
@@ -112,7 +96,6 @@ impl Dedup {
         self.senders.get(&sender).map_or(0, |w| w.above.last().map_or(w.below, |m| m + 1))
     }
 
-    /// Ids held above the low-water marks (a measure of how out of order events arrive).
     pub fn pending(&self) -> usize {
         self.senders.values().map(|w| w.above.len()).sum()
     }

@@ -1,10 +1,11 @@
-//! Per-axis and per-direction limits of the ship: the thrust box (`Dirs`), the turn box (`Rot`)
-//! and one g (`G0`), shared by the SC model and the ground rules.
 use glam::DVec3;
 use serde::Deserialize;
 
 /// m/s²: one g, for the G-safety limits.
 pub const G0: f64 = 9.81;
+
+/// G-safe's total translational load ceiling, not a separate allowance per axis.
+pub const G_SAFE_MAX_G: f64 = 4.0;
 
 /// One number per axis and direction in ship space: forward is -Z, right +X, up +Y.
 #[derive(Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -47,8 +48,6 @@ impl Dirs {
         DVec3::new(v.x.clamp(-self.left, self.right), v.y.clamp(-self.down, self.up), v.z.clamp(-self.forward, self.backward))
     }
 
-    /// Each component of a local vector times the limit in its direction (a stick -1..1 per axis
-    /// to the full thrust that way).
     pub fn along(&self, v: DVec3) -> DVec3 {
         DVec3::new(
             v.x * if v.x >= 0.0 { self.right } else { self.left },
@@ -57,12 +56,10 @@ impl Dirs {
         )
     }
 
-    /// The smaller limit per direction (two boxes overlapped).
     pub fn min(&self, o: &Dirs) -> Dirs {
         self.zip(o, f64::min)
     }
 
-    /// How far the box reaches along a local unit vector (the most thrust that way).
     pub fn support(&self, u: DVec3) -> f64 {
         self.along(u).dot(u)
     }

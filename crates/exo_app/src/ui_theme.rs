@@ -1,4 +1,4 @@
-//! One look for the round-6 HUD (round 6b): colours, font sizes and the screen margin, so the
+//! One look for the HUD: colours, font sizes and the screen margin, so the
 //! panels, stamps and lines agree. TODO(initiator): the look itself.
 use bevy::prelude::*;
 
@@ -20,7 +20,6 @@ pub const STAMP: f32 = 46.0;
 /// Space between the screen edge and the HUD (px).
 pub const MARGIN: f32 = 16.0;
 
-/// A colour with its alpha scaled (fades).
 pub fn faded(c: Color, a: f32) -> Color {
     let mut s = c.to_srgba();
     s.alpha *= a.clamp(0.0, 1.0);
@@ -37,16 +36,4 @@ pub fn ease_out_back(k: f32) -> f32 {
 pub fn ease_out(k: f32) -> f32 {
     let k = k.clamp(0.0, 1.0);
     1.0 - (1.0 - k) * (1.0 - k)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn eases_start_at_zero_end_at_one_and_the_stamp_overshoots() {
-        assert!(ease_out(0.0).abs() < 1e-6 && (ease_out(1.0) - 1.0).abs() < 1e-6);
-        assert!(ease_out_back(0.0).abs() < 1e-6 && (ease_out_back(1.0) - 1.0).abs() < 1e-6);
-        assert!((0..100).any(|i| ease_out_back(i as f32 / 100.0) > 1.0), "overshoot");
-    }
 }

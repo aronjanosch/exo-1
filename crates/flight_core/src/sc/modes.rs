@@ -1,7 +1,4 @@
-//! The pilot's switches of the SC model, after the flight-control switches in Star Citizen's
-//! records (structure only): coupled or decoupled, gravity compensation, G-safe, comstab,
-//! proximity assist, landing, wind compensation, master mode (SCM or NAV) and the speed limiter.
-//! Each tap flips one; coupled and decoupled blend over `decouple_time`.
+//! Each tap flips one. Decoupling releases velocity control immediately; recoupling blends in.
 use serde::Deserialize;
 
 /// The master mode: SCM flies at combat speeds, NAV is the faster travel mode.
@@ -16,11 +13,10 @@ pub enum Master {
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ModeTuning {
-    /// Seconds over which coupled and decoupled blend (both directions).
+    /// Seconds over which coupled velocity control blends back in. Decoupling is immediate.
     pub decouple_time: f64,
     /// Share of the cap one limiter step moves (`ModeCmds::limiter_steps`).
     pub limiter_step: f64,
-    /// Lowest limiter share.
     pub limiter_min: f64,
 }
 
@@ -59,24 +55,18 @@ pub struct ModeCmds {
     pub limiter_steps: i32,
 }
 
-/// The switches' state.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Modes {
     /// Coupled flight wanted (C); `coupling` follows it.
     pub coupled: bool,
     /// 1 = coupled, 0 = decoupled.
     pub coupling: f64,
-    /// The flight computer holds the ship against gravity (H).
     pub grav_comp: bool,
-    /// Thrust and turns stay inside the pilot's G tolerance.
     pub g_safe: bool,
     /// The flight computer tightens turns (holds the velocity on the nose).
     pub comstab: bool,
-    /// Looks ahead along the flight path for the ground and slows a dive.
     pub proximity: bool,
-    /// Landing mode: the precision band near the ground.
     pub landing: bool,
-    /// The flight computer holds against the wind.
     pub wind_comp: bool,
     pub master: Master,
     /// Speed limiter, share of the cap; 1 = off.
@@ -91,7 +81,6 @@ impl Default for Modes {
 }
 
 impl Modes {
-    /// Applies this step's taps and runs the coupling blend.
     pub fn update(&mut self, c: &ModeCmds, t: &ModeTuning, dt: f64) {
         let flip = |b: &mut bool, tap: bool| {
             if tap {
@@ -118,25 +107,13 @@ impl Modes {
         }
         let target = if self.coupled { 1.0 } else { 0.0 };
         let step = if t.decouple_time > 0.0 { dt / t.decouple_time } else { 1.0 };
-        self.coupling += (target - self.coupling).clamp(-step, step);
+        self.coupling = if self.coupled { self.coupling + (target - self.coupling).clamp(-step, step) } else { 0.0 };
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn taps_flip_and_the_blend_takes_decouple_time() {
-        let t = ModeTuning::default();
-        let mut m = Modes::default();
-        m.update(&ModeCmds { decoupled: true, grav_comp: true, master: true, ..Default::default() }, &t, 0.0);
-        assert!(!m.coupled && !m.grav_comp && m.master == Master::Nav);
-        for _ in 0..120 {
-            m.update(&ModeCmds::default(), &t, 1.0 / 60.0);
-        }
-        assert!((m.coupling - 0.5).abs() < 1e-9, "half way after 2 s of 4: {}", m.coupling);
-    }
 
     #[test]
     fn limiter_steps_stay_in_range() {

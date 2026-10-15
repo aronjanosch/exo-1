@@ -1,5 +1,3 @@
-//! #177 (spike 14): ceilings first. With a ceiling the tallest terrain stays below the share of the
-//! atmosphere height it is given, at every radius; without one the planet is as before.
 use planet_core::ceilings::TERRAIN_SHARE;
 use planet_core::*;
 
@@ -26,7 +24,6 @@ fn the_tallest_terrain_stays_below_its_share_of_the_atmosphere() {
         assert!(tallest < c.terrain_max, "{radius}: {tallest} m above the radius, ceiling {} m", c.terrain_max);
         assert!(tallest <= c.atmosphere_height * TERRAIN_SHARE);
         assert!(c.obstruction_radius > radius + tallest, "a path keeps out of the terrain");
-        // A walked line never exceeds it either.
         let mut d = v3(0.1, 0.9, 0.4).normalized();
         let t = look::tangent_frame(d).0;
         for k in 0..2000 {

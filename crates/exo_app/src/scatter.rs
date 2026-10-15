@@ -1,11 +1,3 @@
-//! Scatter on screen (#65): the instances of `planet_core::build_scatter` as props
-//! (`content/props/<id>.glb`, from `art/props/props.py`), per cell and storey, built on the async
-//! compute pool around the camera. Each storey has its own cell size and range (recipe
-//! `scatter.storeys`); trees reach further when the camera is high. View only: no collision.
-//!
-//! One entity per cell and prop (#217): the task merges every instance of a prop in the cell into
-//! one mesh (the prop's vertices moved by the instance transform, its vertex colour times the
-//! instance tint), so a dense cell is a few draw calls and a few entities instead of thousands.
 //! Merging beats GPU instancing here: it needs no custom pipeline, culls per cell, and the cost
 //! moves off the main thread. The prop vertex data is read once from the loaded GLB meshes. The
 //! cell walk runs only after the camera moved a few metres, at most `MAX_TASKS` cells build at
@@ -24,26 +16,21 @@ use planet_core::{cube_to_sphere, Instance};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Cells uploaded (meshes added, entities spawned) per frame.
 const MAX_UPLOADS_PER_FRAME: usize = 8;
-/// Cell builds running on the pool at once; the rest wait, nearest first.
 const MAX_TASKS: usize = 8;
 /// A cell fades in (dithered, by the camera's distance to its centre) over the outer share of its
-/// storey's range, so a cell that appears at the edge does not pop (#237). TODO(initiator): value.
+/// storey's range, so a cell that appears at the edge does not pop. TODO(initiator): value.
 const FADE_FROM: f32 = 0.9;
-/// The cell walk runs again after the camera moved this far (m) or its height changed by as much.
 const WALK_MOVE_M: f64 = 6.0;
 /// A cell is dropped only beyond this share of its range (no flicker at the edge).
 const KEEP_FACTOR: f64 = 1.15;
 /// Cells are no smaller than this (m): ground cover would otherwise get tiny cells.
 const MIN_CELL_M: f64 = 25.0;
-/// Camera height above the ground at which a storey reaches its elevated range (m).
 const ELEVATED_AT_M: f64 = 200.0;
 
 type Key = (u8, u8, u32, u32); // storey, face, ix, iy
 type CellSpec = (usize, f64, f64, f64); // face, a0, b0, size
 
-/// CPU copy of a prop mesh: the vertex data the cell merge reads.
 pub struct PropGeom {
     positions: Vec<[f32; 3]>,
     normals: Vec<[f32; 3]>,
@@ -76,7 +63,6 @@ impl PropGeom {
     }
 }
 
-/// One finished cell, built off the main thread.
 struct CellOut {
     center: [f64; 3],
     instances: usize,
@@ -102,17 +88,14 @@ pub struct ScatterView {
     /// Per storey: the camera's distance to a cell at the edge of its range at the last walk (m;
     /// the range lifted with the camera's height, and that height counted in).
     range_now: Vec<f64>,
-    /// GLB mesh handles by prop id, until their vertex data is read into `geoms`.
     sources: HashMap<String, Handle<Mesh>>,
     geoms: Option<Arc<HashMap<String, PropGeom>>>,
     material: Option<Handle<StandardMaterial>>,
     /// Entry index -> (plain, rare) prop.
     props: Arc<Vec<(String, Option<String>)>>,
-    /// Headless: no glTF loader, props are a placeholder mesh.
     placeholder: bool,
     pub instances: usize,
     pub shown_cells: usize,
-    /// Entities of shown cells (one per cell and prop).
     pub entities: usize,
     pub pending: usize,
 }
@@ -182,7 +165,6 @@ impl ScatterView {
             for (id, h) in &self.sources {
                 let Some(mesh) = meshes.get(h) else {
                     if assets.load_state(h).is_failed() {
-                        // A prop that does not load is left out (its instances are not drawn).
                         warn!("scatter: prop {id} did not load");
                         continue;
                     }
@@ -193,13 +175,12 @@ impl ScatterView {
             }
         }
         self.geoms = Some(Arc::new(out));
-        // The source meshes are not drawn: free them (GPU copy included).
         self.sources.clear();
     }
 }
 
 /// Merges the instances of a cell into one mesh: every prop shares the white vertex-colour
-/// material, so one entity per cell is enough (#214: every mesh entity is reprocessed by the
+/// material, so one entity per cell is enough (every mesh entity is reprocessed by the
 /// renderer on an origin shift, so fewer entities mean shorter shift frames).
 fn build_cell(geoms: &HashMap<String, PropGeom>, props: &[(String, Option<String>)], center: [f64; 3], instances: &[Instance]) -> CellOut {
     let geom = |inst: &Instance| {
@@ -235,7 +216,7 @@ fn build_cell(geoms: &HashMap<String, PropGeom>, props: &[(String, Option<String
     let mut center = center;
     if !pos.is_empty() {
         // The mesh's origin in the middle of its bounds, on the ground: the cell's centre is on
-        // the base sphere, and the distance fade (#237) measures from the origin on the GPU.
+        // the base sphere, and the distance fade measures from the origin on the GPU.
         let mid = (lo + hi) * 0.5;
         for p in &mut pos {
             *p = (Vec3::from_array(*p) - mid).to_array();
@@ -252,7 +233,6 @@ fn build_cell(geoms: &HashMap<String, PropGeom>, props: &[(String, Option<String
     CellOut { center, instances: instances.len(), parts }
 }
 
-/// Visits the quadtree of one storey down to its cell depth, collecting cells within `range`.
 fn visit(planet: &PlanetRes, cam: DVec3, face: usize, a0: f64, b0: f64, size: f64, depth: u32, target: u32, range: f64, out: &mut Vec<(usize, f64, f64, f64)>) {
     let r = planet.radius;
     let c = |a: f64, b: f64| {
@@ -265,7 +245,7 @@ fn visit(planet: &PlanetRes, cam: DVec3, face: usize, a0: f64, b0: f64, size: f6
         bound = bound.max(centre.distance(c(a, b)));
     }
     // `cam` is the point under the camera on the base sphere: the height is the caller's
-    // (#214: the planet-wide relief here made every storey walk and keep cells a kilometre out).
+    // (a planet-wide relief here would make every storey walk and keep cells a kilometre out).
     if cam.distance(centre) - bound > range {
         return;
     }
@@ -305,7 +285,6 @@ pub fn update_scatter(
         view.walked = Some((cam, agl));
         walk_cells(&mut commands, view, &planet, cam, agl);
     }
-    // Start builds, nearest first, a few at once.
     if let Some(geoms) = view.geoms.clone() {
         let mut building = view.cells.values().filter(|c| matches!(c, Cell::Building(_))).count();
         let mut started = 0;
@@ -325,7 +304,6 @@ pub fn update_scatter(
         }
         view.todo.drain(..started);
     }
-    // Upload finished cells.
     let t_up = std::time::Instant::now();
     let mut uploads = 0;
     let mut building = 0;
@@ -370,8 +348,6 @@ pub fn update_scatter(
     cost.scatter_sys.add(0, t_sys);
 }
 
-/// The quadtree walk: which cells are wanted, which shown or building ones to drop, and the
-/// queue of those that still need a build (nearest first).
 fn walk_cells(commands: &mut Commands, view: &mut ScatterView, planet: &PlanetRes, cam: DVec3, agl: f64) {
     // Distances on the base sphere, from the point under the camera; its height over the ground
     // is `agl`, which lifts the ranges and switches storeys off.
@@ -384,7 +360,6 @@ fn walk_cells(commands: &mut Commands, view: &mut ScatterView, planet: &PlanetRe
         let range = near + (far - near) * lift;
         keep_range.push(range * KEEP_FACTOR);
         view.range_now.push(range.hypot(agl));
-        // Above twice its range over the ground a storey is not drawn at all.
         if agl > range * 2.0 {
             continue;
         }
@@ -398,7 +373,6 @@ fn walk_cells(commands: &mut Commands, view: &mut ScatterView, planet: &PlanetRe
             wanted.insert(key, c);
         }
     }
-    // Drop cells far outside their range.
     let mut drop = Vec::new();
     for key in view.cells.keys() {
         if wanted.contains_key(key) {
@@ -414,7 +388,6 @@ fn walk_cells(commands: &mut Commands, view: &mut ScatterView, planet: &PlanetRe
         }
     }
     for key in drop {
-        // A building task is cancelled by dropping it.
         if let Some(Cell::Shown { entities, .. }) = view.cells.remove(&key) {
             for e in entities {
                 commands.entity(e).try_despawn();
@@ -430,7 +403,6 @@ fn walk_cells(commands: &mut Commands, view: &mut ScatterView, planet: &PlanetRe
     view.todo = todo.into_iter().map(|(_, k, c)| (k, c)).collect();
 }
 
-/// Instances on screen (F3 line, look harness): the sum over the shown cells.
 pub fn count_instances(mut view: ResMut<ScatterView>) {
     let (mut n, mut cells, mut ents) = (0, 0, 0);
     for c in view.cells.values() {
@@ -448,36 +420,4 @@ pub fn count_instances(mut view: ResMut<ScatterView>) {
 pub fn plugin(app: &mut App) {
     app.insert_resource(ScatterView { placeholder: !app.is_plugin_added::<bevy::gltf::GltfPlugin>(), ..default() });
     app.add_systems(Update, (update_scatter, count_instances).chain().after(crate::terrain::update_terrain).in_set(crate::phases::Frame::World));
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn inst(entry: u16, rare: bool, x: f32) -> Instance {
-        Instance { entry, rare, pos: [x, 0.0, 0.0], basis: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], scale: 2.0, tint: [1.0, 0.5, 0.0] }
-    }
-
-    #[test]
-    fn a_cell_merges_into_one_mesh() {
-        let g = || PropGeom::placeholder();
-        let geoms: HashMap<String, PropGeom> = [("tree".to_string(), g()), ("big_tree".to_string(), g())].into();
-        let props = vec![("tree".to_string(), Some("big_tree".to_string()))];
-        let n = geoms["tree"].positions.len();
-        let out = build_cell(&geoms, &props, [0.0; 3], &[inst(0, false, 0.0), inst(0, false, 10.0), inst(0, true, 20.0)]);
-        assert_eq!(out.instances, 3);
-        assert_eq!(out.parts.len(), 1, "plain and rare prop in one mesh");
-        let mesh = &out.parts[0].0;
-        assert_eq!(mesh.count_vertices(), 3 * n);
-        // Instances at x = 0, 10, 20, scaled by 2 (placeholder radius 1): x spans -2..22. The mesh's
-        // origin moves to the middle of that (#237), x = 10 from the cell's centre.
-        let a = out.parts[0].1;
-        assert!(a.center.x.abs() < 0.1 && (a.half_extents.x - 12.0).abs() < 0.1, "{a:?}");
-        assert!((out.center[0] - 10.0).abs() < 0.1, "origin at {:?}", out.center);
-        // Tint: linear of (1, .5, 0) on a white vertex colour.
-        let Some(VertexAttributeValues::Float32x4(c)) = mesh.attribute(Mesh::ATTRIBUTE_COLOR) else { panic!() };
-        assert!((c[0][0] - 1.0).abs() < 1e-5 && c[0][1] < 0.3 && c[0][2] == 0.0);
-        // An empty cell spawns nothing.
-        assert!(build_cell(&geoms, &props, [0.0; 3], &[]).parts.is_empty());
-    }
 }

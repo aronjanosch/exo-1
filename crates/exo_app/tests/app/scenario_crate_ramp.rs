@@ -1,4 +1,3 @@
-//! Issue #210: crates on the ramp stay sweep crates and stay on the ground at take-off. Without a window.
 use crate::common;
 use exo_app::Options;
 

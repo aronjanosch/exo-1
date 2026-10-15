@@ -1,26 +1,3 @@
-//! Display panels (#285): screens in the world, operated where they hang (decision "Screens you
-//! touch", 2026-10-13, as in Star Citizen). The walker stands at a machine; looking at its screen
-//! shows "[F] use <name>". F frees the mouse cursor, and the cursor is then the pointer on the
-//! screen in the world: the ray from the camera through the cursor meets the display's quad, and
-//! that point is where the panel is touched. A click acts, a held slider follows the cursor (also
-//! beside the screen), F or Escape leaves. No window opens over the view. The walker stands still
-//! and the world runs on; damage does not pull the walker off (leaving is only F, Escape, or
-//! walking out of reach). One player per screen.
-//!
-//! What a panel shows is a `display_core::Panel` that its owner writes into `Panels` each tick;
-//! clicks come back as `DisplayAction` messages. A role adds a panel with two systems and no
-//! other file: one writes `Panels::set(id, panel)` from its state, one reads `DisplayAction`
-//! for its id. The panel's place in the world is a `DisplayPanel` entity (the dev area spawns
-//! them from its registry).
-//!
-//! Every screen near the camera shows its panel live, rendered into the quad's texture, so others
-//! see a slider move; the one in use redraws every frame and carries a small cursor mark at the
-//! pointer. The size of a tier (S, M, L) is the panel's canvas and the texture's resolution; how
-//! large it looks is the quad's size in metres. The pointer comes through `DisplayView::ray`
-//! (written from the camera and `Controls::pointer` each frame in a window), so scripts drive it
-//! with `aim_at` (a world point, e.g. `world_point_of` a widget) without a mouse; clicks go through
-//! `Controls`.
-//!
 use crate::controls::{Actions, Controls, Tap};
 use crate::origin::WorldPose;
 use crate::view::MainCamera;
@@ -33,10 +10,8 @@ use walker_core::Frame;
 
 /// Reach of the interact key on a display: eye to the panel (m). TODO(initiator): by feel.
 pub const USE_RANGE: f64 = 2.5;
-/// The look of the panels, embedded; dev builds reload it from `content/ui/` while running.
 pub const DISPLAYS_JSON: &str = include_str!("../../../content/ui/displays.json");
 
-/// The displays' theme (`content/ui/displays.json`).
 #[derive(Resource, Clone, Debug)]
 pub struct DisplayLook(pub display_core::Theme);
 
@@ -46,7 +21,6 @@ impl Default for DisplayLook {
     }
 }
 
-/// A display in the world: what it is called (the prompt), which panel it shows, its quad.
 #[derive(Component, Clone, Debug)]
 pub struct DisplayPanel {
     pub id: PanelId,
@@ -59,7 +33,6 @@ pub struct DisplayPanel {
     pub rot: DQuat,
 }
 
-/// The panels by id, written by their owners each tick.
 #[derive(Resource, Default, Debug)]
 pub struct Panels(pub HashMap<PanelId, Panel>);
 
@@ -84,7 +57,6 @@ pub struct DisplayAction {
     pub value: Option<f32>,
 }
 
-/// Which display the player uses.
 #[derive(Resource, Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ActiveDisplay {
     #[default]
@@ -101,7 +73,6 @@ impl ActiveDisplay {
     }
 }
 
-/// The pointer on the display in use (hover and press for drawing; reset on enter and leave).
 #[derive(Resource, Default, Debug)]
 pub struct DisplayPointer(pub Pointer);
 
@@ -127,7 +98,6 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, use_display.after(crate::interact::interaction).before(crate::walker::walker_step).in_set(Fx::Walker));
 }
 
-/// The eye and the view direction of a walker on foot (outside a cabin), or None.
 pub fn eye_on_foot(pl: &Player) -> Option<(DVec3, DVec3)> {
     (pl.ship.is_none() && !pl.seated && !pl.fly && pl.body.is_none()).then(|| (pl.w.pos + pl.world_up(Frame::IDENTITY) * EYE_HEIGHT, pl.world_look(Frame::IDENTITY)))
 }
@@ -162,7 +132,6 @@ pub fn use_display(
     controls.free_cursor = active.using().is_some();
     controls.cursor_on_screen = false;
     let Some(e) = active.using() else { return };
-    // The walker stands: no walking, jumping or turning while the hands are on the panel.
     actions.move_dir = DVec3::ZERO;
     actions.run = false;
     actions.jump = false;
@@ -181,7 +150,6 @@ pub fn use_display(
     }
 }
 
-/// The world point of a panel point (panel pixels) on a display's quad, for scripts.
 pub fn world_point(w: &World, display: &DisplayPanel, at: DVec2) -> Option<DVec3> {
     let p = w.resource::<Panels>().get(&display.id)?;
     Some(display_core::panel_point(display.centre, display.rot, display.size_m, p.to_uv(at)))
@@ -211,7 +179,6 @@ pub fn aim_at(w: &mut World, target: DVec3) {
     w.resource_mut::<DisplayView>().ray = eye.map(|e| (e, (target - e).normalize()));
 }
 
-/// For scripts: the cursor points at nothing (the corner of the window, no ray).
 pub fn aim_off(w: &mut World) {
     w.resource_mut::<Controls>().pointer = Some(Vec2::new(4.0, 4.0));
     w.resource_mut::<DisplayView>().ray = None;
@@ -219,7 +186,6 @@ pub fn aim_off(w: &mut World) {
 
 // ---------- window: drawing ----------
 
-/// Window only: the screen size and pointer ray, the fonts, and the screens in the world.
 pub fn window_plugin(app: &mut App) {
     use crate::phases::Frame;
     app.add_systems(Update, (reload_look, load_fonts, update_view, add_quads, draw_world).chain().in_set(Frame::Hud));

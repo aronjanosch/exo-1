@@ -1,7 +1,5 @@
-//! The displays' look as data (`content/ui/displays.json`), from the design system "EXO-1 Ship
-//! Displays": colours, fonts, the text sizes, stroke widths, and how often screens in the
-//! world redraw and at what texture resolution. Parsed strictly (every field required, unknown ones
-//! refused); colours are `#rrggbb` (sRGB).
+//! Display theme, parsed strictly (every field required, unknown ones refused); colours are
+//! `#rrggbb` (sRGB).
 use crate::Tone;
 use serde::Deserialize;
 
@@ -24,7 +22,6 @@ impl<'de> Deserialize<'de> for Rgb {
     }
 }
 
-/// The palette (names as in the design system's tokens).
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Colours {
@@ -33,60 +30,44 @@ pub struct Colours {
     pub bg_1: Rgb,
     pub bg_2: Rgb,
     pub bg_3: Rgb,
-    /// Strokes: subtle (well border, list lines) and the plate's outline.
     pub line_1: Rgb,
     pub line_2: Rgb,
-    /// Control strokes: bright and dim steel.
     pub hud: Rgb,
     pub hud_dim: Rgb,
-    /// Text: body, dim, disabled, titles, text on the accent.
     pub fg_1: Rgb,
     pub fg_2: Rgb,
     pub fg_3: Rgb,
     pub fg_title: Rgb,
     pub fg_on_accent: Rgb,
-    /// The one interactive colour and its dark fill.
     pub accent: Rgb,
     pub accent_dim: Rgb,
-    /// Status, bright and dark.
     pub good: Rgb,
     pub warn: Rgb,
     pub bad: Rgb,
     pub good_dim: Rgb,
     pub warn_dim: Rgb,
     pub bad_dim: Rgb,
-    /// The screen in the world when nothing is drawn on it, and the frame around it.
     pub screen_idle: Rgb,
     pub bezel: Rgb,
 }
 
-/// Font files under the asset root (`content/`); swapping a file is a change here only.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Fonts {
-    /// Labels and captions.
     pub display: String,
-    /// Buttons and toggles.
     pub display_semibold: String,
-    /// Titles.
     pub display_bold: String,
-    /// Readouts and values.
     pub mono: String,
 }
 
-/// Drawing sizes in panel pixels.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Strokes {
-    /// Outlines of plates and controls.
     pub border: f64,
     /// A raised control's dark bottom edge (it collapses when pressed).
     pub edge: f64,
-    /// How far a pressed control drops.
     pub press_drop: f64,
-    /// The cut corner of controls.
     pub control_cut: f64,
-    /// Stripe width of the hatch on disabled controls.
     pub hatch: f64,
     /// Scanlines on the glass: one dark line every this many panel pixels (0 = off).
     pub scanline_every: f64,
@@ -94,7 +75,6 @@ pub struct Strokes {
     pub caps_tracking: f64,
 }
 
-/// Screens in the world showing their panel live.
 #[derive(Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct WorldScreens {
@@ -114,7 +94,6 @@ pub struct Theme {
     pub fonts: Fonts,
     pub strokes: Strokes,
     pub world: WorldScreens,
-    /// The crew HUD's sizes (`hud::HudLook`).
     pub hud: crate::hud::HudLook,
 }
 
@@ -136,7 +115,6 @@ impl Theme {
         Ok(t)
     }
 
-    /// A label tone's text colour.
     pub fn tone(&self, t: Tone) -> Rgb {
         let c = &self.colours;
         match t {
@@ -150,7 +128,6 @@ impl Theme {
         }
     }
 
-    /// A status tone's dark fill (hovered warn/bad buttons); other tones: the hover fill.
     pub fn tone_dim(&self, t: Tone) -> Rgb {
         let c = &self.colours;
         match t {

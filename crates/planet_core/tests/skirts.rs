@@ -1,4 +1,4 @@
-//! #177 (spike 14): skirts hide the cracks between quadtree levels. Where a chunk meets a chunk of
+//! Skirts hide the cracks between quadtree levels. Where a chunk meets a chunk of
 //! the next finer level, the surface of one lies above the other by some metres along the shared
 //! edge; the skirt that hangs from the higher chunk's edge covers that gap when it is deeper than
 //! the gap. Checked on the parent's bottom edge against its first child, at several radii.
@@ -16,7 +16,6 @@ fn check(radius: f64, depth: u32) -> (usize, usize, f64, f64) {
     p.bake_with(0, None, false);
     let size = 2.0 / (1u64 << depth) as f64;
     let (mut gaps, mut open, mut worst, mut biggest) = (0, 0, 0.0f64, 0.0f64);
-    // A spread of parents over the six faces.
     for face in 0..6 {
         for k in 0..12 {
             let n = 1u64 << depth;
@@ -46,6 +45,7 @@ fn check(radius: f64, depth: u32) -> (usize, usize, f64, f64) {
 }
 
 #[test]
+#[ignore = "100 km planet, slow: runs with --run-ignored all before main"]
 fn skirts_cover_the_gap_between_levels() {
     for (radius, depth) in [(5000.0, 4), (30_000.0, 6), (100_000.0, 8)] {
         let (gaps, open, worst, biggest) = check(radius, depth);

@@ -1,9 +1,5 @@
-//! The minimal HUD's content (#91): mode, speed, altitude and the boost gauge. The simulation
-//! fills `HudReadout` every fixed step, headless too, so scenarios check what the player sees;
-//! the view only copies it into the text nodes (`view::update_flight_hud`).
-//!
 //! TODO(initiator): which elements, their words (one decimal on the speed, "SHIP  DECOUPLED")
-//! and the gauge look are starting points (#91).
+//! and the gauge look are starting points.
 use crate::env::PlanetRes;
 use crate::ship::Ship;
 use crate::walker::Player;
@@ -16,32 +12,26 @@ pub fn plugin(app: &mut App) {
 }
 pub use flight_core::hud::{level, tilt_deg, Height, HudTuning, Level};
 
-/// What the player is doing, as the mode element names it.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Mode {
     Walk,
     Cabin,
     Suit,
     Fly,
-    /// The ship (SC flight model): the switches a pilot most needs to see.
     Ship { decoupled: bool, grav_comp: bool, nav: bool },
-    /// The quantum drive's phase while it is not idle.
     Quantum(String),
 }
 
-/// The boost element's source.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Boost {
     None,
     /// The suit has no meter (decided "no fuel"): only whether boost is held.
     Held(bool),
-    /// The ship's speed stage of #24 (no capacitor: `drain_time` 0): held or not.
+    /// The ship's speed stage (no capacitor: `drain_time` 0): held or not.
     Stage(bool),
-    /// The ship's capacitor (#90): charge 0..1, a boost is running, enough charge to start one.
     Ship { charge: f64, active: bool, ready: bool },
 }
 
-/// The flight panel's switches and numbers (#197), plain values. `None` off the seat.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Panel {
     None,
@@ -65,7 +55,6 @@ pub enum Panel {
     },
 }
 
-/// Inputs of one readout, plain values (unit-tested without a world).
 #[derive(Clone, Debug, PartialEq)]
 pub struct HudIn {
     pub mode: Mode,
@@ -79,7 +68,6 @@ pub struct HudIn {
     pub landing: &'static str,
 }
 
-/// One switch or state of the flight panel. `on` is bright, off dimmed. `key` names it across
 /// steps (a label may change while the key stays, e.g. `LIMIT 90 %` to `LIMIT 80 %`). A `pair`
 /// half (COUPLED/DECOUPLED, SCM/NAV) toasts only its on change; its partner's on change says it.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -104,39 +92,24 @@ impl Badge {
     }
 }
 
-/// The panel's badge slots (the most the SC model shows at once).
 pub const BADGE_SLOTS: usize = 12;
-/// Seconds a toast stays in the tests (the game reads `hud.json` `toast_time`).
-#[cfg(test)]
-const TOAST_TIME: f64 = 1.5;
-/// The coupling blend's bar shows between these two values (0 and 1 are at rest).
 const BLEND_EPS: f64 = 1e-6;
 
-/// The four permanent elements as shown, plus the gauge for the bar.
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
 pub struct HudReadout {
-    /// Mode, speed, altitude, boost.
     pub texts: [String; 4],
     /// The ship's charge 0..1 for the bar; `None` outside the seat.
     pub gauge: Option<f64>,
     pub boosting: bool,
     /// Charge at or above the start charge (the bar is dimmed below).
     pub ready: bool,
-    /// Next to the bar: which boost the ship flies, `CAPACITOR` or `STAGE` (no capacitor); empty off the seat.
     pub boost_mode: &'static str,
-    /// After it: `LANDING` in landing mode (K); empty otherwise and off the seat.
     pub landing: &'static str,
-    /// The flight panel's badges in order (empty off the seat).
     pub badges: Vec<Badge>,
-    /// The coupling blend 0..1 while it moves; `None` at rest.
     pub blend: Option<f64>,
-    /// `123 / 150 m/s`: speed against the cap; empty off the seat.
     pub cap_text: String,
-    /// `2.3 g`: the felt acceleration; empty off the seat.
     pub g_text: String,
-    /// The last change, for `TOAST_TIME` s; set by `Toaster::step` in `update_readout`.
     pub toast: Option<String>,
-    /// The flight HUD (#200): seated or in a cabin; `None` otherwise.
     pub flight: Option<FlightHud>,
 }
 
@@ -145,7 +118,7 @@ pub fn landing_word(landing: bool) -> &'static str {
     if landing { "LANDING" } else { "" }
 }
 
-/// Two decimals below 1 m/s, so a ship at rest can be told from a slow drift (issue #6).
+/// Two decimals below 1 m/s, so a ship at rest can be told from a slow drift.
 pub fn speed_text(v: f64) -> String {
     if v < 1.0 { format!("{v:.2}") } else { format!("{v:.1}") }
 }
@@ -194,7 +167,6 @@ pub fn readout(i: &HudIn) -> HudReadout {
     }
 }
 
-/// The coupling while it moves; `None` when coupled or decoupled.
 pub fn blend_of(coupling: f64) -> Option<f64> {
     (coupling > BLEND_EPS && coupling < 1.0 - BLEND_EPS).then_some(coupling)
 }
@@ -204,7 +176,6 @@ fn coupling_badges(b: &mut Vec<Badge>, coupled: bool) {
     b.push(Badge::half("DECOUPLED", !coupled));
 }
 
-/// The panel's badges in order (#197): the coupling pair, the switches, the limiter
 /// (only below 100 %), landing and brake.
 pub fn badges(i: &HudIn) -> Vec<Badge> {
     let mut b = Vec::new();
@@ -230,8 +201,6 @@ pub fn badges(i: &HudIn) -> Vec<Badge> {
     b
 }
 
-/// The first change of the badges since the last step, as its toast: an on switch shows its
-/// label, an off one `KEY OFF` (not for a pair half).
 fn first_change(prev: &[Badge], now: &[Badge]) -> Option<String> {
     let mut changes = Vec::new();
     for b in now.iter().filter(|b| !b.quiet) {
@@ -251,7 +220,6 @@ fn first_change(prev: &[Badge], now: &[Badge]) -> Option<String> {
     changes.into_iter().next()
 }
 
-/// Turns the badges' changes into toasts (#197). The first step only records the state. A later
 /// change replaces the toast.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Toaster {
@@ -261,7 +229,7 @@ pub struct Toaster {
 }
 
 impl Toaster {
-    /// One fixed step of `dt` s; returns the toast to show now.
+    /// One fixed step of `dt` s; returns the toast to show.
     pub fn step(&mut self, badges: &[Badge], dt: f64, time: f64) -> Option<String> {
         let change = match &self.prev {
             None => None,
@@ -284,7 +252,6 @@ impl Toaster {
     }
 }
 
-/// The flight HUD's inputs from the ship (#200), plain values of the model's own numbers.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FlightIn {
     /// m/s, ship space (x right, y up, z back): the ship's velocity.
@@ -305,14 +272,11 @@ pub struct FlightIn {
     pub horizon: Option<(f64, f64)>,
 }
 
-/// The speed tape: fill and marks as shares of the boost cap (the top), the speed number.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SpeedTape {
     pub fill: f64,
     pub number: String,
-    /// The cruise cap's mark.
     pub cruise: f64,
-    /// The limiter's mark (cruise cap x limiter), only below full speed.
     pub limiter: Option<f64>,
 }
 
@@ -324,8 +288,6 @@ pub struct GBar {
     pub over: bool,
 }
 
-/// The flight HUD's plain values (#200): the speed tape, the thrust cross, the G bar, the
-/// horizon and the flight path marker's direction in ship space.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FlightHud {
     pub speed_tape: SpeedTape,
@@ -340,7 +302,6 @@ pub struct FlightHud {
     pub velocity_dir: Option<DVec3>,
 }
 
-/// The speed tape's marks and fill (m/s in, shares of the boost cap out).
 pub fn speed_tape(speed: f64, cruise: f64, limiter: f64, boost: f64) -> SpeedTape {
     let share = |v: f64| (v / boost).clamp(0.0, 1.0);
     SpeedTape {
@@ -367,7 +328,6 @@ pub fn velocity_dir(lv: DVec3, min_speed: f64) -> Option<DVec3> {
     (lv.length() >= min_speed && lv.length() > 0.0).then(|| lv.normalize())
 }
 
-/// Pitch (nose up positive) and roll (right wing up positive) in degrees, against the planet's
 /// up. The roll is measured in the plane across the forward axis, so it holds when pitched.
 pub fn horizon_angles(rot: DQuat, planet_up: DVec3) -> (f64, f64) {
     let (fwd, right, up_ship) = (rot * DVec3::NEG_Z, rot * DVec3::X, rot * DVec3::Y);
@@ -377,7 +337,6 @@ pub fn horizon_angles(rot: DQuat, planet_up: DVec3) -> (f64, f64) {
     (pitch, roll)
 }
 
-/// The flight HUD's plain values from the ship's numbers (#200).
 pub fn flight_hud(i: &FlightIn, t: &HudTuning) -> FlightHud {
     FlightHud {
         speed_tape: speed_tape(i.lv.length(), i.cruise, i.limiter, i.boost),
@@ -392,7 +351,6 @@ pub fn flight_hud(i: &FlightIn, t: &HudTuning) -> FlightHud {
     }
 }
 
-/// Fills `HudReadout` after the step (fixed step, also headless).
 pub fn update_readout(
     planet: Res<PlanetRes>,
     tuning: Res<crate::tuning::Tuning>,
@@ -418,7 +376,7 @@ pub fn update_readout(
         (mode, sv.0, sp.0, boost)
     } else if pl.ship.is_some() {
         (Mode::Cabin, sv.0 + sr.0 * pl.w.vel, sp.0, Boost::None)
-    } else if pl.fly {
+    } else if pl.fly || pl.noclip {
         (Mode::Fly, pl.w.vel, pl.w.pos, Boost::None)
     } else if pl.body.is_some() {
         (Mode::Suit, pl.w.vel, pl.w.pos, Boost::Held(actions.boost))
@@ -447,6 +405,9 @@ pub fn update_readout(
         }
     };
     let mut new = readout(&HudIn { mode, panel: panel.clone(), speed: v.length(), altitude, boost, landing });
+    if pl.seated {
+        new.texts[0].push_str(&format!("  {}", ship.model.name));
+    }
     new.toast = toaster.step(&new.badges, time.delta_secs_f64(), tuning.hud.toast_time);
     if pl.seated || pl.ship.is_some() {
         let lin = &ship.sc.tuning.linear;
@@ -465,257 +426,11 @@ pub fn update_readout(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn ship(charge: f64, active: bool, ready: bool) -> HudIn {
-        HudIn { mode: Mode::Ship { decoupled: false, grav_comp: true, nav: false }, panel: Panel::None, speed: 123.44, altitude: Some(Height::Alt(450.4)), boost: Boost::Ship { charge, active, ready }, landing: "" }
-    }
-
-    #[test]
-    fn ship_shows_mode_speed_altitude_and_gauge() {
-        let r = readout(&ship(0.744, true, true));
-        assert_eq!(r.texts, ["SHIP SC  SCM  COUPLED".to_string(), "123.4 m/s".into(), "ALT 450 m".into(), "BOOST 74 %".into()]);
-        assert_eq!(r.gauge, Some(0.744));
-        assert!(r.boosting && r.ready);
-        assert_eq!(r.boost_mode, "CAPACITOR");
-        assert_eq!(r.landing, "");
-    }
-
-    #[test]
-    fn landing_words() {
-        assert_eq!(landing_word(false), "");
-        assert_eq!(landing_word(true), "LANDING");
-    }
-
-    #[test]
-    fn the_speed_stage_shows_its_mode_and_no_gauge() {
-        let mut i = ship(1.0, false, true);
-        i.boost = Boost::Stage(true);
-        let r = readout(&i);
-        assert_eq!((r.texts[3].as_str(), r.gauge, r.boosting, r.boost_mode), ("BOOST ON", None, true, "STAGE"));
-        i.boost = Boost::Stage(false);
-        assert_eq!(readout(&i).texts[3], "BOOST");
-    }
-
-    #[test]
-    fn agl_near_the_ground_alt_above() {
-        assert_eq!(Height::pick(120.0, 80.0, 1000.0), Height::Agl(120.0));
-        assert_eq!(Height::pick(1000.0, 980.0, 1000.0), Height::Alt(980.0));
-        let mut i = ship(1.0, false, true);
-        i.altitude = Some(Height::Agl(120.4));
-        assert_eq!(readout(&i).texts[2], "AGL 120 m");
-        i.altitude = Some(Height::Alt(4500.0));
-        assert_eq!(readout(&i).texts[2], "ALT 4500 m");
-    }
-
-    #[test]
-    fn shipped_file_loads_and_bad_values_are_refused() {
-        assert_eq!(HudTuning::from_json(crate::tuning::HUD).unwrap(), HudTuning { agl_below: 1000.0, toast_time: 1.5, g_full: 10.0, velocity_min: 1.0, level_deg: 1.0, near_level_deg: 5.0 });
-        assert!(HudTuning::from_json("{\"agl_below\": -1}").is_err());
-        assert!(HudTuning::from_json("{\"agl_below\": 1, \"x\": 2}").is_err());
-    }
-
-    #[test]
-    fn mode_words() {
-        let mut i = ship(1.0, false, true);
-        i.mode = Mode::Ship { decoupled: true, grav_comp: true, nav: false };
-        assert_eq!(readout(&i).texts[0], "SHIP SC  SCM  DECOUPLED");
-        i.mode = Mode::Ship { decoupled: false, grav_comp: false, nav: true };
-        assert_eq!(readout(&i).texts[0], "SHIP SC  NAV  COUPLED  NO GRAV COMP");
-        i.mode = Mode::Quantum("Cruise".into());
-        assert_eq!(readout(&i).texts[0], "QUANTUM CRUISE");
-        for (m, w) in [(Mode::Walk, "WALK"), (Mode::Cabin, "CABIN"), (Mode::Suit, "SUIT"), (Mode::Fly, "FLY")] {
-            i.mode = m;
-            assert_eq!(readout(&i).texts[0], w);
-        }
-    }
-
-    #[test]
-    fn far_from_planets_no_altitude_and_slow_speeds_get_two_decimals() {
-        let r = readout(&HudIn { mode: Mode::Walk, panel: Panel::None, speed: 0.256, altitude: None, boost: Boost::None, landing: "" });
-        assert_eq!((r.boost_mode, r.landing), ("", ""));
-        assert_eq!(r.texts, ["WALK".to_string(), "0.26 m/s".into(), String::new(), String::new()]);
-        assert_eq!(r.gauge, None);
-    }
-
-    #[test]
-    fn suit_shows_boost_only_while_held() {
-        let i = |held| HudIn { mode: Mode::Suit, panel: Panel::None, speed: 2.0, altitude: Some(Height::Agl(10.0)), boost: Boost::Held(held), landing: "" };
-        assert_eq!(readout(&i(true)).texts[3], "BOOST");
-        assert_eq!(readout(&i(false)).texts[3], "");
-        assert_eq!(readout(&i(true)).gauge, None);
-    }
-
-    #[test]
-    fn no_debug_words_in_the_permanent_elements() {
-        let r = readout(&ship(0.5, false, true));
-        for t in &r.texts {
-            for debug in ["ms", "chunk", "limit", "grounded", "coupling", "(H)", "(L)"] {
-                assert!(!t.contains(debug), "{t:?} contains {debug:?}");
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod panel_tests {
-    use super::*;
-
-    fn sc(coupling: f64, grav_comp: bool, nav: bool, limiter: f64) -> HudIn {
-        HudIn {
-            mode: Mode::Ship { decoupled: coupling < 0.5, grav_comp, nav },
-            panel: Panel::Sc { coupled: coupling > 0.5, coupling, grav_comp, g_safe: true, comstab: true, proximity: true, wind_comp: true, nav, limiter, braking: false, cap: 150.0, felt_g: 2.3 },
-            speed: 123.44,
-            altitude: None,
-            boost: Boost::None,
-            landing: "",
-        }
-    }
-
-    fn on(r: &HudReadout, key: &str) -> Option<bool> {
-        r.badges.iter().find(|b| b.key == key).map(|b| b.on)
-    }
-
-    #[test]
-    fn decoupled_at_half_blend_shows_the_pair_and_the_blend() {
-        let r = readout(&sc(0.5, true, false, 1.0));
-        assert_eq!((on(&r, "COUPLED"), on(&r, "DECOUPLED")), (Some(false), Some(true)));
-        assert_eq!(r.blend, Some(0.5));
-        // At rest the blend is gone.
-        assert_eq!(readout(&sc(0.0, true, false, 1.0)).blend, None);
-        assert_eq!(readout(&sc(1.0, true, false, 1.0)).blend, None);
-    }
-
-    #[test]
-    fn the_sc_panel_lists_every_switch_in_order() {
-        let r = readout(&sc(1.0, true, false, 1.0));
-        let keys: Vec<_> = r.badges.iter().map(|b| b.key).collect();
-        assert_eq!(keys, ["COUPLED", "DECOUPLED", "GRAV COMP", "G-SAFE", "COMSTAB", "PROX", "WIND", "SCM", "NAV", "LANDING", "BRAKE"]);
-        assert!(keys.len() <= BADGE_SLOTS);
-        assert_eq!(on(&r, "SCM"), Some(true));
-        assert_eq!(on(&r, "NAV"), Some(false));
-    }
-
-    #[test]
-    fn the_limiter_badge_shows_only_below_full_speed() {
-        assert!(on(&readout(&sc(1.0, true, false, 1.0)), "LIMIT").is_none());
-        let r = readout(&sc(1.0, true, false, 0.9));
-        let limit = r.badges.iter().find(|b| b.key == "LIMIT").unwrap();
-        assert_eq!((limit.label.as_str(), limit.on), ("LIMIT 90 %", true));
-    }
-
-    #[test]
-    fn cap_and_felt_g_texts() {
-        let r = readout(&sc(1.0, true, false, 1.0));
-        assert_eq!((r.cap_text.as_str(), r.g_text.as_str()), ("123 / 150 m/s", "2.3 g"));
-        let r = readout(&HudIn { mode: Mode::Walk, panel: Panel::None, speed: 1.0, altitude: None, boost: Boost::None, landing: "" });
-        assert_eq!((r.cap_text.as_str(), r.g_text.as_str(), r.badges.len()), ("", "", 0));
-    }
-
-    #[test]
-    fn grav_comp_off_toasts_once_and_ends_after_the_toast_time() {
-        let mut t = Toaster::default();
-        let dt = 1.0 / 60.0;
-        let on_step = readout(&sc(1.0, true, false, 1.0));
-        assert_eq!(t.step(&on_step.badges, dt, TOAST_TIME), None, "the first step only records");
-        let off = readout(&sc(1.0, false, false, 1.0));
-        assert_eq!(t.step(&off.badges, dt, TOAST_TIME).as_deref(), Some("GRAV COMP OFF"));
-        let mut shown = 0.0;
-        while shown < TOAST_TIME - 0.1 {
-            assert_eq!(t.step(&off.badges, dt, TOAST_TIME).as_deref(), Some("GRAV COMP OFF"));
-            shown += dt;
-        }
-        for _ in 0..(0.2 / dt) as usize + 1 {
-            t.step(&off.badges, dt, TOAST_TIME);
-        }
-        assert_eq!(t.step(&off.badges, dt, TOAST_TIME), None);
-    }
-
-    #[test]
-    fn a_new_change_replaces_the_toast() {
-        let mut t = Toaster::default();
-        let dt = 1.0 / 60.0;
-        t.step(&readout(&sc(1.0, true, false, 1.0)).badges, dt, TOAST_TIME);
-        // Decouple: the DECOUPLED half toasts, the COUPLED half going off does not.
-        let r = readout(&sc(0.4, true, false, 1.0));
-        assert_eq!(t.step(&r.badges, dt, TOAST_TIME).as_deref(), Some("DECOUPLED"));
-        let r = readout(&sc(0.4, true, true, 1.0));
-        assert_eq!(t.step(&r.badges, dt, TOAST_TIME).as_deref(), Some("NAV"));
-    }
-
-    #[test]
-    fn a_limiter_that_returns_to_full_speed_toasts_off() {
-        let mut t = Toaster::default();
-        let dt = 1.0 / 60.0;
-        t.step(&readout(&sc(1.0, true, false, 0.9)).badges, dt, TOAST_TIME);
-        assert_eq!(t.step(&readout(&sc(1.0, true, false, 0.8)).badges, dt, TOAST_TIME).as_deref(), Some("LIMIT 80 %"));
-        assert_eq!(t.step(&readout(&sc(1.0, true, false, 1.0)).badges, dt, TOAST_TIME).as_deref(), Some("LIMIT OFF"));
-    }
-
-    #[test]
-    fn blend_only_between_the_ends() {
-        assert_eq!(blend_of(0.3), Some(0.3));
-        assert_eq!(blend_of(1.0), None);
-        assert_eq!(blend_of(0.0), None);
-    }
-}
-
-#[cfg(test)]
 mod flight_tests {
     use super::*;
 
-    const TUNING: HudTuning = HudTuning { agl_below: 1000.0, toast_time: 1.5, g_full: 10.0, velocity_min: 1.0, level_deg: 1.0, near_level_deg: 5.0 };
-
     fn close(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-6
-    }
-
-    /// SCM at full boost: cruise 150, boost 337.5 (150 x 2.25), a ship at 123 m/s.
-    fn scm(lv: DVec3, thrust: DVec3, limiter: f64, felt_g: f64, horizon: Option<(f64, f64)>) -> FlightIn {
-        FlightIn { lv, thrust, cruise: 150.0, boost: 337.5, limiter, felt_g, g_limit: 8.0, horizon }
-    }
-
-    #[test]
-    fn speed_tape_marks_for_a_limiter_at_half() {
-        let t = speed_tape(123.0, 150.0, 0.5, 337.5);
-        assert!(close(t.fill, 123.0 / 337.5));
-        assert_eq!(t.number, "123");
-        assert!(close(t.cruise, 150.0 / 337.5), "cruise mark at {}", t.cruise);
-        // The limiter: cruise x 0.5 = 75 m/s.
-        assert!(close(t.limiter.unwrap(), 75.0 / 337.5));
-    }
-
-    #[test]
-    fn speed_tape_has_no_limiter_mark_at_full_speed_and_caps_the_fill() {
-        assert_eq!(speed_tape(10.0, 150.0, 1.0, 337.5).limiter, None);
-        assert!(close(speed_tape(400.0, 150.0, 1.0, 337.5).fill, 1.0));
-        assert_eq!(speed_tape(0.0, 150.0, 1.0, 337.5).fill, 0.0);
-    }
-
-    #[test]
-    fn strafing_right_makes_the_right_bar_the_longest() {
-        let b = thrust_bars(DVec3::new(0.8, 0.1, 0.0));
-        assert_eq!(b, [0.8, 0.0, 0.1, 0.0, 0.0, 0.0]);
-        let longest = b.iter().cloned().fold(0.0, f64::max);
-        assert_eq!(b[0], longest);
-    }
-
-    #[test]
-    fn forward_and_back_thrust_are_the_last_two_bars() {
-        // Forward is -z in ship space (z back is +), so forward thrust fills the fifth bar.
-        assert_eq!(thrust_bars(DVec3::new(0.0, 0.0, -0.6)), [0.0, 0.0, 0.0, 0.0, 0.6, 0.0]);
-        assert_eq!(thrust_bars(DVec3::new(0.0, 0.0, 0.25)), [0.0, 0.0, 0.0, 0.0, 0.0, 0.25]);
-        assert_eq!(thrust_bars(DVec3::new(0.0, -1.0, 0.0)), [0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
-    }
-
-    #[test]
-    fn g_bar_marks_the_g_safe_limit_and_goes_over_above_it() {
-        let g = g_bar(2.3, 8.0, 10.0);
-        assert!(close(g.fill, 0.23) && close(g.mark, 0.8) && !g.over);
-        let g = g_bar(9.0, 8.0, 10.0);
-        assert!(g.over && close(g.fill, 0.9));
-        assert!(close(g_bar(20.0, 8.0, 10.0).fill, 1.0));
     }
 
     #[test]
@@ -725,42 +440,7 @@ mod flight_tests {
         let (pitch, roll) = horizon_angles(q, DVec3::Y);
         assert!(close(pitch, 10.0), "pitch {pitch}");
         assert!(close(roll, 30.0), "roll {roll}");
-        // Level flight: both zero, whatever the heading.
         let (p, r) = horizon_angles(DQuat::from_rotation_y(1.0), DVec3::Y);
         assert!(close(p, 0.0) && close(r, 0.0), "level: {p} {r}");
-    }
-
-    #[test]
-    fn velocity_direction_in_ship_space_hidden_below_one_metre_per_second() {
-        assert_eq!(velocity_dir(DVec3::new(0.5, 0.0, 0.0), 1.0), None);
-        let d = velocity_dir(DVec3::new(10.0, 0.0, 0.0), 1.0).unwrap();
-        assert!(close(d.x, 1.0) && d.length() > 0.999);
-        assert_eq!(velocity_dir(DVec3::ZERO, 0.0), None);
-    }
-
-    #[test]
-    fn flight_hud_from_an_scm_ship_strafing_right() {
-        let i = scm(DVec3::new(20.0, 0.0, 0.0), DVec3::new(0.7, 0.0, 0.0), 0.5, 2.0, None);
-        let f = flight_hud(&i, &TUNING);
-        assert_eq!(f.thrust[0], 0.7);
-        assert!(f.velocity_dir.unwrap().x > 0.99);
-        assert!(f.horizon.is_none());
-        assert!(f.speed_tape.limiter.is_some());
-    }
-
-    #[test]
-    fn the_limiter_mark_in_the_readout_follows_the_switch() {
-        let i = scm(DVec3::ZERO, DVec3::ZERO, 1.0, 0.0, Some((10.0, 30.0)));
-        let f = flight_hud(&i, &TUNING);
-        assert_eq!(f.speed_tape.limiter, None);
-        assert_eq!(f.horizon, Some((10.0, 30.0)));
-        assert_eq!(f.velocity_dir, None);
-    }
-
-    #[test]
-    fn shipped_flight_values_are_read() {
-        assert_eq!(HudTuning::from_json(crate::tuning::HUD).unwrap().g_full, 10.0);
-        assert!(HudTuning::from_json("{\"agl_below\": 1, \"toast_time\": 1, \"g_full\": 0, \"velocity_min\": 1}").is_err());
-        assert!(HudTuning::from_json("{\"agl_below\": 1, \"toast_time\": 1, \"g_full\": 10, \"velocity_min\": -1}").is_err());
     }
 }

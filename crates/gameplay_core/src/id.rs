@@ -28,21 +28,14 @@ macro_rules! text_id {
 }
 
 text_id! {
-    /// A `commodity` record.
     CommodityId;
-    /// A `location` record.
     LocationId;
-    /// A `progress_track` record.
     TrackId;
-    /// An `unlock` record.
     UnlockId;
     /// A label on content (`dusty`, `route_bent_spoon`). The crew owns the tags its unlocks grant.
     Tag;
-    /// A fact a system raised at runtime (`job_completed:first_haul`); conditions can ask for it.
     Flag;
-    /// A key into the localisation table (#131); never shown text itself.
     TextKey;
-    /// An `effect` record: what a made product does to whoever takes it (round 6).
     EffectId;
 }
 
@@ -52,12 +45,11 @@ text_id! {
 #[serde(transparent)]
 pub struct ClientId(pub u64);
 
-/// A crate's stable id (not the engine entity), #130.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct CrateId(pub u64);
 
-/// A customer's order, numbered by the customers system in the order they are placed (#168).
+/// A customer's order, numbered by the customers system in the order they are placed.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct OrderId(pub u64);

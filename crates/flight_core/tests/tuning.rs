@@ -1,4 +1,3 @@
-//! Ground tuning as data (#20, #92): the shipped file, the parser's rejections and the curve.
 use flight_core::{Curve, GroundTuning, Interp};
 use glam::DVec2;
 
@@ -67,7 +66,6 @@ fn rejects_landing_slope_limit_out_of_range() {
     }
 }
 
-/// #106 point 5: speeds and decays the step divides by or scales with must be positive and finite.
 #[test]
 fn rejects_zero_or_negative_values() {
     let positive = ["cruise_speed", "linear_decay", "angular_decay"];

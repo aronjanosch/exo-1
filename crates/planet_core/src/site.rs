@@ -1,6 +1,3 @@
-//! Sites (#70): kinds placed by the bake's global pass (best-candidate sampling, separation,
-//! filters, budgets per category), the ground edits under them (part of the height function)
-//! and the pieces of their kits. A site is a pure function of the seed and the recipe.
 use crate::look::{tangent_frame, walk};
 use crate::math::*;
 use crate::planet::*;
@@ -13,7 +10,6 @@ pub(crate) enum EditRt {
     Raise { r: f64, roll: f64, amount: f64, rim: f64, rim_w: f64 },
 }
 
-/// A placed site.
 #[derive(Clone)]
 pub struct Site {
     /// Index into `recipe.sites.kinds`; None for a hand-placed place.
@@ -34,7 +30,6 @@ pub struct Site {
     pub(crate) edits: std::sync::Arc<Vec<EditRt>>,
 }
 
-/// A piece of a site's kit, ready to draw: planet-space position and unit basis (x, up, z).
 #[derive(Clone, Debug)]
 pub struct Piece {
     pub prop: String,
@@ -125,7 +120,7 @@ impl Planet {
         h
     }
 
-    /// The largest rise of the noise ground (before edits, #223) across the span of `2 * radius_m`
+    /// The largest rise of the noise ground (before edits) across the span of `2 * radius_m`
     /// through `dir`, in its two tangent directions (m). A plain is a small value.
     pub fn plain_rise_m(&self, dir: V3, radius_m: f64) -> f64 {
         let d = dir.normalized();
@@ -141,7 +136,7 @@ impl Planet {
             && self.recipe.biomes.iter().find(|r| r.id == biome).is_none_or(|r| r.sites.as_ref().is_none_or(|l| l.contains(&k.id)))
     }
 
-    /// The global pass (#70): landmarks first (highest candidate), then the site kinds in turns,
+    /// The global pass: landmarks first (highest candidate), then the site kinds in turns,
     /// each new site the candidate farthest from all sites so far. Returns the sites and the kinds
     /// that missed their minimum count.
     pub(crate) fn place_sites_v2(&self) -> (Vec<Site>, Vec<String>, Vec<(u32, V3, f64, f64)>) {
@@ -176,7 +171,6 @@ impl Planet {
         let mut tries = vec![0u32; kinds.len()];
         let mut got = vec![0u32; kinds.len()];
         let dist = |a: V3, b: V3| self.radius * a.dot(b).clamp(-1.0, 1.0).acos();
-        // Landmarks first, then the others in round-robin turns.
         let mut order: Vec<usize> = (0..kinds.len()).filter(|&i| kinds[i].prefer_high).collect();
         order.extend((0..kinds.len()).filter(|&i| !kinds[i].prefer_high));
         let scaled_candidates = ((rule.candidates as f64) * (want.iter().sum::<u32>() as f64 / 30.0).max(1.0)) as u32;
@@ -217,7 +211,6 @@ impl Planet {
                     }) {
                         continue;
                     }
-                    // Budgets of the kind's category.
                     if rule.budgets.iter().any(|b| {
                         let mut n = 0u32;
                         b.category == k.category
@@ -240,7 +233,7 @@ impl Planet {
                     if k.plain.as_ref().is_some_and(|pl| self.plain_rise_m(d, pl.radius_m) > pl.max_rise_m) {
                         continue;
                     }
-                    // No lake or river within the edits' reach, so they do not dam one (#72).
+                    // No lake or river within the edits' reach, so they do not dam one.
                     if self.water_within(d, reach_k) {
                         continue;
                     }
@@ -289,7 +282,6 @@ impl Planet {
         (placed, misses, generated)
     }
 
-    /// A generated site of kind `ki` at `d`, turned by `yaw`, on ground `ground` (m).
     pub(crate) fn make_site(&self, ki: usize, d: V3, yaw: f64, ground: f64) -> Site {
         let k = &self.recipe.sites.kinds[ki];
         let (e0, n0) = tangent_frame(d);
@@ -349,7 +341,6 @@ impl Planet {
                 let m = at[0].hypot(at[1]);
                 let dir = if m > 1e-9 { walk(s.dir, off * (1.0 / m), m, self.radius) } else { s.dir };
                 let ground = self.height_at(dir);
-                // Normal from the edited height function.
                 let (e, n) = tangent_frame(dir);
                 let hh = |v: V3| v.normalized() * (self.radius + self.height_at(v.normalized()));
                 let eps = 0.5 / self.radius;

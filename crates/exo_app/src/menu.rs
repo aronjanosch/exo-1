@@ -1,7 +1,4 @@
-//! Main menu and pause menu (#30): Host, Join (address, slot), Settings, Quit; Escape in game
-//! pauses (the world keeps running: the others are still flying). Players start here; the
-//! `--net-host` / `--net-connect` flags stay for scenarios and bots and skip the menu, as does every
-//! scripted or headless run. Simple look, few elements.
+//! Main menu and pause menu: Host, Join (address, slot), Settings, Quit; Escape in game
 use crate::controls::{input_name, Bindings, Slot};
 use crate::net_live::{Net, NetConfig};
 use crate::settings::{Settings, SettingsDir, FOV_RANGE, MOUSE_RANGE};
@@ -14,10 +11,8 @@ use bevy::window::{CursorGrabMode, CursorOptions};
 pub enum Screen {
     Main,
     Join,
-    /// Settings, and where Back leads.
     Settings(Back),
     Paused,
-    /// In game, no menu.
     None,
 }
 
@@ -50,7 +45,6 @@ pub struct Menu {
     pub settings_tab: SettingsTab,
     pub address: String,
     pub slot: u32,
-    /// Waiting for a key for this slot.
     pub rebinding: Option<Slot>,
     pub message: Option<String>,
 }
@@ -177,20 +171,17 @@ fn persist(settings: &Settings, dir: &SettingsDir, menu: &mut Menu, scripted: bo
     if menu.message != message { menu.message = message; }
 }
 
-/// How a session starts: host on slot 1, or join an address on a slot.
 #[derive(Clone, Debug)]
 pub enum Session {
     Host { port: u16 },
     Join { address: String, slot: u32 },
 }
 
-/// Starts the network from a menu choice: the `Net` resource, and the own walker and ship moved to
 /// the slot's spawn (players of one session start 20 m apart). Shared with the `menu` scenario.
 pub fn start_session(w: &mut World, s: &Session) -> Result<(), String> {
     start_session_with(w, s, &[])
 }
 
-/// As `start_session`, with more network options (the command line's, like `--sim-delay`).
 pub fn start_session_with(w: &mut World, s: &Session, extra: &[(String, String)]) -> Result<(), String> {
     let mut args: Vec<(String, String)> = extra.to_vec();
     match s {
@@ -249,7 +240,6 @@ fn button(c: &mut ChildSpawnerCommands, text: impl Into<String>, action: Action,
     .with_children(|b| label(b, text, if matches!(action, Action::Rebind(_)) { 14.0 } else { 18.0 })).id()
 }
 
-/// A row: name, value, then -/+ buttons.
 fn stepper(c: &mut ChildSpawnerCommands, name: &str, value: String, down: Action, up: Action) {
     c.spawn(Node { column_gap: px(8), align_items: AlignItems::Center, ..default() }).with_children(|r| {
         r.spawn(Node { width: px(200), ..default() }).with_children(|n| label(n, name, 16.0));
@@ -467,7 +457,6 @@ fn act(w: &mut World, a: Action) {
     }
 }
 
-/// Escape pauses and goes back; typing into the address; the key for a rebind.
 #[allow(clippy::too_many_arguments)]
 fn keys(
     mut menu: ResMut<Menu>,
@@ -537,7 +526,6 @@ fn keys(
             }
         }
     }
-    // A menu needs the pointer.
     if menu.open()
         && let Ok(mut cur) = cursor.single_mut()
         && cur.grab_mode != CursorGrabMode::None
@@ -628,7 +616,6 @@ fn refresh_settings(
     }
 }
 
-/// Windowed player runs: the menus.
 pub fn plugin(app: &mut App) {
     app.init_resource::<Menu>().init_resource::<SettingsInput>();
     app.add_systems(Startup, setup);
@@ -807,7 +794,6 @@ mod tests {
         assert_eq!(w.resource::<Settings>().volume, 0.5, "the volume stays");
     }
 
-    /// Escape at a display leaves it (in `displays`); it must not also open the pause menu.
     #[test]
     fn escape_at_a_display_does_not_pause() {
         let mut app = settings_app("display-escape");

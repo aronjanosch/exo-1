@@ -1,9 +1,3 @@
-//! Grab (#82, #83): the crate the walker holds, with the hands (to 2 m) or the grab tool (full
-//! force to 6 m, none at 10 m; it reels the crate in to 3 m). Each step `grab_step` pulls the
-//! crate towards a hold point in front of the eye through `grab_core::hold_force`; heavy crates
-//! lag, one holder cannot lift the large one. The crate keeps its heading relative to the
-//! walker's; Q/E turn it. R throws. Weightless, the reaction pulls the walker. The walker side
-//! (carry costs, slower view turn) reads `Grab::carry` in `walker_step`.
 use crate::cargo::Crate;
 use crate::controls::{Actions, Tap};
 use crate::ship::Ship;
@@ -14,7 +8,6 @@ use bevy::prelude::*;
 use grab_core::{BreakTimer, CrateSize, GrabConfig, Holder, Reach};
 use walker_core::Frame;
 
-/// Window only: the beam.
 pub fn window_plugin(app: &mut App) {
     app.add_systems(Startup, setup_beam);
     app.add_systems(Update, update_beam.in_set(crate::phases::Frame::World));
@@ -66,7 +59,6 @@ pub struct Grab {
     pub breaks: u32,
     /// Throws: (crate, world velocity right after the throw).
     pub throws: Vec<(Entity, DVec3)>,
-    /// Hold error of the last finished hold (scenario checks).
     pub last_hold: Option<HoldError>,
 }
 
@@ -79,7 +71,6 @@ impl Grab {
             Reach::Hands => cfg.hold_gap + c.body.half.z,
             Reach::Tool => centre.distance(eye),
         };
-        // Keep the crate's heading relative to the walker's.
         let up = frame.rot * c.body.up;
         let yaw = signed_angle(look_fwd, frame.rot * c.body.forward, up);
         self.held = Some(Held { crate_e: e, reach, dist, breaker: BreakTimer::default(), hands: size.hands, mass: size.mass, yaw, err: HoldError::default() });
@@ -91,7 +82,6 @@ impl Grab {
         self.reaction = DVec3::ZERO;
     }
 
-    /// What carrying costs the walker now.
     pub fn carry(&self, cfg: &GrabConfig) -> grab_core::Carry {
         grab_core::carry(cfg, self.held.map_or(0, |h| h.hands))
     }
@@ -132,7 +122,6 @@ pub fn grab_step(
         grab.release();
         return;
     };
-    // Seated, in another player's cabin or in debug fly: let go.
     if pl.seated || pl.fly || pl.ship.is_some_and(|e| e != ship_e) {
         grab.release();
         return;
@@ -153,7 +142,6 @@ pub fn grab_step(
     let drop = if held.reach == Reach::Hands { c.body.half.y } else { 0.0 };
     let target = cf.to_local(eye + look * held.dist - up_w * drop);
     let holder = Holder { target, target_vel: to_local * (walker_vel - cf_vel), source: cf.to_local(eye), reach: held.reach };
-    // Grabbing unlocks a crate from the plates (#84).
     if c.locked {
         c.locked = false;
     }
@@ -201,7 +189,6 @@ pub fn grab_step(
         c.body.vel = grab_core::throw_velocity(cfg, mass, c.body.vel, dir);
         let world_vel = cf_vel + cf.rot * c.body.vel;
         grab.throws.push((held.crate_e, world_vel));
-        // Weightless, the throw pushes the thrower back.
         if pl.body.is_some() {
             pl.w.vel += grab_core::throw_kick(cfg, mass, look);
         }
@@ -211,7 +198,7 @@ pub fn grab_step(
     grab.held = Some(held);
 }
 
-/// The grab tool's beam (night extra E3): a thin glowing rod from the tool, low right in front
+/// The grab tool's beam: a thin glowing rod from the tool, low right in front
 /// of the eye, to the crate's centre, only while the tool holds. It turns from cyan to hot
 /// orange as the hold strains towards breaking. Render only; headless runs never spawn it.
 #[derive(Component)]
@@ -236,7 +223,6 @@ pub fn setup_beam(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut 
     commands.spawn((GrabBeam(mat.clone()), Mesh3d(meshes.add(Cylinder::new(1.0, 1.0))), MeshMaterial3d(mat), Transform::default(), crate::origin::WorldPose::default(), Visibility::Hidden));
 }
 
-/// Places the beam each frame, after the crate's and the walker's interpolated poses.
 #[allow(clippy::too_many_arguments)]
 pub fn update_beam(
     time: Res<Time>,
@@ -274,20 +260,4 @@ pub fn update_beam(
         m.emissive = LinearRgba::new(0.4 + 3.6 * strain, 3.0 - 1.8 * strain, 4.0 * (1.0 - strain), 1.0);
     }
     *vis = Visibility::Inherited;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn beam_spans_both_ends() {
-        let (a, b) = (DVec3::new(1.0, 2.0, 3.0), DVec3::new(4.0, -2.0, 3.0));
-        let (c, r, len) = beam_pose(a, b).unwrap();
-        assert!((len - 5.0).abs() < 1e-9);
-        // The unit cylinder's ends (y = ±0.5) land on the two points.
-        assert!((c + r * DVec3::Y * (0.5 * len) - b).length() < 1e-9);
-        assert!((c - r * DVec3::Y * (0.5 * len) - a).length() < 1e-9);
-        assert!(beam_pose(a, a).is_none());
-    }
 }

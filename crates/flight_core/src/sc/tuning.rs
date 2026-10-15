@@ -1,5 +1,4 @@
-//! The SC model's tuning: one file per stage (`content/tuning/sc_<stage>.json`), so each stage's
-//! lane edits only its own file. All values TODO(initiator); none are taken from Star Citizen.
+//! The SC model's tuning: one file per stage in each `content/ship/<type>/` folder. All values TODO(initiator); none are taken from Star Citizen.
 use super::{air::AirTuning, angular::AngularTuning, drive::DriveTuning, linear::LinearTuning, modes::ModeTuning};
 use crate::limits::{Dirs, Rot};
 use serde::Deserialize;
@@ -17,7 +16,7 @@ pub struct ShipBody {
     /// N m per rotation axis, both directions.
     pub torque: Rot,
     /// m, ship space: where cargo locked on the cabin floor weighs (its centre), for the inertia
-    /// it adds (#198, #88).
+    /// it adds.
     pub cargo_point: [f64; 3],
 }
 
@@ -38,8 +37,6 @@ impl ShipBody {
 
 impl Default for ShipBody {
     fn default() -> Self {
-        // A 2 t hull 4.6 x 3.2 x 8.3 m as a box (the greybox ship), thrust for 60 m/s² forward and
-        // the other accelerations of the greybox, torque for about 8 rad/s² pitch and yaw.
         let m = 2000.0;
         let (w, h, d): (f64, f64, f64) = (4.6, 3.2, 8.3);
         let inertia = Rot { pitch: m / 12.0 * (h * h + d * d), yaw: m / 12.0 * (w * w + d * d), roll: m / 12.0 * (w * w + h * h) };
@@ -53,7 +50,6 @@ impl Default for ShipBody {
     }
 }
 
-/// All stages' tuning.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ScTuning {
     pub ship: ShipBody,
@@ -64,11 +60,9 @@ pub struct ScTuning {
     pub air: AirTuning,
 }
 
-/// The files in the order `ScTuning::from_json` takes them.
 pub const FILES: [&str; 6] = ["sc_ship.json", "sc_modes.json", "sc_linear.json", "sc_angular.json", "sc_drive.json", "sc_air.json"];
 
 impl ScTuning {
-    /// Parses and validates the six files, in the order of `FILES`.
     pub fn from_json(texts: [&str; 6]) -> Result<ScTuning, String> {
         fn one<T: serde::de::DeserializeOwned>(name: &str, s: &str, check: impl Fn(&T) -> Result<(), String>) -> Result<T, String> {
             let t: T = content_core::parse_strict(name, s)?;

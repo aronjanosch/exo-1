@@ -10,33 +10,33 @@ pub struct ChunkOut {
     pub center: [f64; 3],
     pub verts: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
-    /// Biome palette per vertex (#66): ground rgb + cap share, rock rgb + strata share. Under a
+    /// Biome palette per vertex: ground rgb + cap share, rock rgb + strata share. Under a
     /// lake or river the alpha is minus the wetness (0..1, full a metre down) instead of the cap
-    /// share (#72): the terrain shader then leaves out the sea's tint and shore band.
+    /// share: the terrain shader then leaves out the sea's tint and shore band.
     pub colors: Vec<[f32; 4]>,
     pub rock: Vec<[f32; 4]>,
-    /// The biome border (#235): per vertex the two nearest rows in a fixed order, as their ground
+    /// The biome border: per vertex the two nearest rows in a fixed order, as their ground
     /// colours (`colors` holds the lower id's, this the higher id's rgb) and the higher id's share
     /// in alpha (0.5 on the border). The shader picks one per pixel, frayed by noise, so a border
-    /// is no longer a stair step of the vertex grid. Rock, cap and strata blend by the share here.
+    /// is a smooth edge, not a stair step of the vertex grid. Rock, cap and strata blend by the share here.
     pub ground_b: Vec<[f32; 4]>,
     pub uvs: Vec<[f32; 2]>,
     /// Height above the base radius per vertex (M*M, skirt ring included), metres.
     pub heights: Vec<f32>,
     pub biomes: Vec<u8>,
-    /// Sea surface over this chunk (#67), when any vertex is below sea level: M*M positions
+    /// Sea surface over this chunk, when any vertex is below sea level: M*M positions
     /// relative to the centre on the sphere at sea level; the skirt ring sits on its edge
     /// vertex (no area: a dipped skirt showed as a dark line through the transparent water).
     pub water: Option<Vec<[f32; 3]>>,
     /// The sea's triangles (the terrain's layout): every quad but those under a lake or river
-    /// surface above the sea (#72; the sea sheet showed through a lake over a pocket below the
+    /// surface above the sea (the sea sheet would show through a lake over a pocket below the
     /// sea level).
     pub water_tris: Vec<u32>,
-    /// Lakes and rivers over this chunk (#72): M*M positions on their surface relative to the
+    /// Lakes and rivers over this chunk: M*M positions on their surface relative to the
     /// centre, and the triangles of the quads that hold water (all four corners on a surface, one
     /// of them wet; same winding as the terrain). None when the chunk has none.
     pub inland_water: Option<(Vec<[f32; 3]>, Vec<u32>)>,
-    /// Geomorphing (#220): per vertex, what to add to `verts` to get the vertex where the PARENT's
+    /// Geomorphing: per vertex, what to add to `verts` to get the vertex where the PARENT's
     /// mesh has it, the chunk at half resolution (even grid vertices stay, an odd one goes to the
     /// middle of its two even neighbours along the edge, or along the cell's diagonal). A
     /// chunk's children at full morph look exactly like the parent at none. Skirt vertices follow
@@ -76,7 +76,6 @@ impl ChunkOut {
 }
 
 impl Planet {
-    /// Chunk edge length in metres (along an edge of the chunk, base sphere).
     pub fn chunk_edge_m(&self, face: usize, a0: f64, b0: f64, size: f64) -> f64 {
         (cube_to_sphere(face, a0, b0) - cube_to_sphere(face, a0 + size, b0)).length() * self.radius
     }
@@ -147,7 +146,7 @@ impl Planet {
                     rock[c] = mix(pa.rock[c], pb.rock[c]);
                 }
                 // Under a lake or river the ground darkens with depth, as the terrain shader does
-                // under the sea (#72).
+                // under the sea.
                 let depth = levels[k] - hs[k];
                 let mut alpha = mix(pa.cap, pb.cap);
                 if depth > 0.0 {

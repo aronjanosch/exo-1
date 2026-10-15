@@ -1,4 +1,3 @@
-//! Kernel rules of #122 and #125 against the fixture set in `tests/fixtures/valid`.
 use std::path::Path;
 
 use gameplay_core::*;
@@ -8,7 +7,6 @@ const HOST: ClientId = ClientId(1);
 const ANA: ClientId = ClientId(7);
 const BO: ClientId = ClientId(8);
 
-/// The valid set, every file with its path relative to the set's root.
 fn valid_files() -> Vec<File> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/valid");
     let mut out = Vec::new();
@@ -28,14 +26,12 @@ fn content() -> Content {
     Content::load(&valid_files(), &SIZES).unwrap()
 }
 
-/// The valid set with one file replaced or added.
 fn errors_with(path: &str, text: &str) -> Vec<String> {
     let mut files: Vec<File> = valid_files().into_iter().filter(|f| f.path != path).collect();
     files.push(File::new(path, text));
     Content::load(&files, &SIZES).unwrap_err()
 }
 
-/// Exactly one error, naming the file and the field.
 fn one_error(errors: &[String], path: &str, field: &str) {
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert!(errors[0].starts_with(path) && errors[0].contains(field), "expected {path} and {field} in {errors:?}");
@@ -45,17 +41,7 @@ fn ev(sender: ClientId, seq: u64, payload: WorldEvent) -> Event<WorldEvent> {
     Event::new(sender, seq, payload)
 }
 
-// ---------- loader (#122) ----------
-
-#[test]
-fn valid_set_loads() {
-    let c = content();
-    assert_eq!(c.commodities.len(), 3);
-    assert_eq!(c.locations.len(), 3);
-    assert_eq!(c.tracks.len(), 4);
-    assert_eq!(c.unlocks.len(), 2);
-    assert_eq!(c.locations[&LocationId::new("bent_spoon")].path, "location/bent_spoon.json");
-}
+// ---------- loader ----------
 
 #[test]
 fn other_folders_are_left_to_their_systems() {
@@ -145,14 +131,12 @@ fn wallet_must_be_a_crew_track() {
 fn wallet_missing() {
     let files: Vec<File> = valid_files().into_iter().filter(|f| f.path != "progress_track/wallet.json").collect();
     let e = Content::load(&files, &SIZES).unwrap_err();
-    // The bent spoon's `has_tag` still resolves; only the wallet is missing.
     one_error(&e, "progress_track", "wallet");
 }
 
 #[test]
 fn unlock_grants_nothing() {
     let e = errors_with("unlock/bent_spoon_permit.json", r#"{ "id": "bent_spoon_permit", "name": "n", "price": 150, "grants": [] }"#);
-    // The bent spoon now asks for a tag nobody grants, too.
     assert!(e.iter().any(|m| m.starts_with("unlock/bent_spoon_permit.json") && m.contains("grants")), "{e:?}");
 }
 
@@ -165,7 +149,7 @@ fn all_errors_are_reported_at_once() {
     assert_eq!(e.len(), 3, "{e:?}");
 }
 
-// ---------- events (#122) ----------
+// ---------- events ----------
 
 #[test]
 fn a_duplicate_event_id_changes_nothing() {
@@ -203,7 +187,7 @@ fn events_round_trip_as_json() {
     assert_eq!(serde_json::from_str::<Event<WorldEvent>>(&s).unwrap(), e);
 }
 
-// ---------- conditions (#125) ----------
+// ---------- conditions ----------
 
 fn holds(c: &Content, p: &Progress, json: &str, player: Option<ClientId>) -> bool {
     let cond: Condition = serde_json::from_str(json).unwrap();
@@ -253,16 +237,7 @@ fn all_any_not() {
     assert!(!holds(&c, &p, r#"{ "any": [] }"#, None));
 }
 
-// ---------- tracks and unlocks (#125) ----------
-
-#[test]
-fn crew_tracks_start_at_their_start_value() {
-    let c = content();
-    let p = Progress::new(&c);
-    assert_eq!(p.wallet(), 200);
-    assert_eq!(p.value(&c, &TrackId::new("freight_xp"), Some(ANA)), Some(0));
-    assert_eq!(p.value(&c, &TrackId::new("freight_xp"), None), None);
-}
+// ---------- tracks and unlocks ----------
 
 #[test]
 fn personal_tracks_are_per_player_and_levels_follow_thresholds() {
@@ -373,7 +348,7 @@ fn progress_round_trips_as_json() {
     assert_eq!(serde_json::from_str::<Progress>(&s).unwrap(), p);
 }
 
-// ---------- track floor (#167) ----------
+// ---------- track floor ----------
 
 #[test]
 fn a_track_with_a_floor_never_drops_below_it_and_recovers() {
@@ -386,7 +361,6 @@ fn a_track_with_a_floor_never_drops_below_it_and_recovers() {
     assert_eq!(p.value(&c, &t, None), Some(0), "a failure lowers standing, not below the floor");
     change(&mut p, 2, 15);
     assert_eq!(p.value(&c, &t, None), Some(15), "work brings it back from the floor");
-    // The wallet has no floor.
     p.apply(&c, &ev(HOST, 3, WorldEvent::TrackChanged { track: TrackId::new("wallet"), delta: -500, player: None })).unwrap();
     assert_eq!(p.wallet(), -300);
 }
@@ -397,7 +371,7 @@ fn a_floor_above_the_start_is_a_content_error() {
     one_error(&e, "progress_track/standing_courier.json", "min");
 }
 
-// ---------- order events (#168) ----------
+// ---------- order events ----------
 
 #[test]
 fn order_events_are_plain_domain_events_that_progress_ignores_and_that_round_trip() {

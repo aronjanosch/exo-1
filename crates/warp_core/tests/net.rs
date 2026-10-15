@@ -1,6 +1,3 @@
-//! A ship warps, another client sees it through the real snapshot path
-//! (wire format, interpolation buffer, 150 ms playout). Measures the position error against the
-//! truth at the shown time, by phase, and what the swap of the sender's planet does.
 use glam::{DQuat, DVec3};
 use net_core::buffer::{Buffer, Mode};
 use net_core::snapshot::{Limits, Snapshot};
@@ -10,7 +7,6 @@ const DT: f64 = 1.0 / 60.0;
 const PLAYOUT: f64 = 0.15;
 const JSON: &str = include_str!("../../../content/system/system.json");
 
-/// Truth per tick: time, position, velocity, drive phase.
 fn truth(sys: &System) -> Vec<(f64, DVec3, DVec3, Phase)> {
     let start = DVec3::new(0.0, 7000.0, 0.0);
     let mut d = Drive::new(sys.drive.clone());
@@ -19,7 +15,6 @@ fn truth(sys: &System) -> Vec<(f64, DVec3, DVec3, Phase)> {
     ship.forward = d.path().unwrap().start_dir();
     let mut out = Vec::new();
     let mut t = 0.0;
-    // One second at rest, then the whole drive, then 5 s at exit speed along the exit heading.
     for _ in 0..60 {
         out.push((t, start, DVec3::ZERO, Phase::Idle));
         t += DT;
@@ -75,7 +70,6 @@ fn run(sys: &System, loss_every: usize, normalise: bool, label: &str) -> Vec<(Ph
             // Planet-relative on the wire, like the game's sender.
             let mut s = Snapshot::new(2, t, p - centres[active.index()], v, DQuat::IDENTITY);
             s.planet = active.wire();
-            // The walker stands in the cabin.
             s.frame = net_core::snapshot::FrameKind::Ship;
             s.frame_id = 2;
             s.wp = DVec3::new(0.0, 0.3, -2.0);
@@ -132,19 +126,15 @@ fn remote_ship_warping_is_shown_within_metres() {
         assert!(*max < 25.0, "{ph:?}: {max} m");
     }
     println!("worst error without normalising: {worst_before:.0} m (the swap of the sender's planet)");
-    // One packet in ten lost, display-only extrapolation of 100 ms.
     run(&sys, 10, true, "10 % loss, extrapolation 100 ms");
     // What the 150 ms playout means for where the ship is drawn at top speed.
     println!("display lag at top speed: {:.0} km behind the true position", top * PLAYOUT / 1000.0);
 }
 
-/// The receiver's limits as the game derives them from its system.
 fn limits(sys: &System) -> Limits {
     Limits { planets: sys.planets.len() as u32, ship_position: sys.max_ship_offset(), ship_speed: sys.max_ship_speed() }
 }
 
-/// At the longest trip of the research table (187,500 km) every snapshot of the flight is
-/// admitted by limits derived from the loaded system.
 #[test]
 fn longest_trip_snapshots_are_admitted() {
     let mut sys = System::from_json(JSON).unwrap();

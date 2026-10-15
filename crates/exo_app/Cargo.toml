@@ -16,6 +16,7 @@ flight_core = { workspace = true }
 walker_core = { workspace = true }
 net_core = { workspace = true }
 warp_core = { workspace = true }
+campaign_core = { workspace = true }
 daynight_core = { workspace = true }
 grab_core = { workspace = true }
 content_core = { workspace = true }
@@ -24,4 +25,8 @@ jobs_core = { workspace = true }
 production_core = { workspace = true }
 display_core = { workspace = true }
 item_core = { workspace = true }
+fire_core = { workspace = true }
+health_core = { workspace = true }
+reactor_core = { workspace = true }
+device_core = { workspace = true }
 serde_json = { workspace = true }

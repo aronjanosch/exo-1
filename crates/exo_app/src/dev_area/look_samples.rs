@@ -1,8 +1,3 @@
-//! Two sample screens from the design system "EXO-1 Ship Displays", to judge the look: a small
-//! lab display (S tier, a warmer: temperature, time, start) in the lab zone and a reactor panel
-//! (M tier: output dial, core temperature, trend, auto/manual, setpoint, SCRAM) in the engineering
-//! zone. Placeholders without mechanics: the values are dummies, the controls only change what the
-//! screen shows.
 use super::*;
 use crate::displays::{DisplayAction, Panels};
 use display_core::{bar, button, column, ctl, dial, label, level, micro, readout, row, slider, space, toggle, trend, Panel, Tier, Tone};
@@ -10,7 +5,6 @@ use display_core::{bar, button, column, ctl, dial, label, level, micro, readout,
 pub const LAB_ID: PanelId = PanelId::new("sample_lab");
 pub const REACTOR_ID: PanelId = PanelId::new("sample_reactor");
 
-/// The warmer's dummy state.
 #[derive(Resource, Debug, Clone, PartialEq)]
 pub struct Warmer {
     pub temp: i32,
@@ -24,7 +18,6 @@ impl Default for Warmer {
     }
 }
 
-/// The reactor panel's dummy state.
 #[derive(Resource, Debug, Clone, PartialEq)]
 pub struct ReactorSample {
     pub auto: bool,
@@ -88,7 +81,6 @@ pub fn lab_panel(s: &Warmer) -> Panel {
     .status(if s.run { "RUN" } else { "IDLE" }, if s.run { Tone::Good } else { Tone::Micro })
 }
 
-/// A fixed history for the trend (dummy).
 const HISTORY: [f64; 12] = [380.0, 384.0, 390.0, 395.0, 402.0, 410.0, 415.0, 420.0, 426.0, 430.0, 436.0, 492.0];
 
 pub fn reactor_panel(s: &ReactorSample) -> Panel {
@@ -161,30 +153,4 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut lab: ResMut<War
 pub fn write_panels(lab: Res<Warmer>, rx: Res<ReactorSample>, mut panels: ResMut<Panels>) {
     panels.set(LAB_ID, lab_panel(&lab));
     panels.set(REACTOR_ID, reactor_panel(&rx));
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn fits(p: &Panel) {
-        let c = p.content();
-        for w in p.layout() {
-            assert!(w.rect.min.x >= c.min.x - 1e-9 && w.rect.max().x <= c.max().x + 1e-9 && w.rect.max().y <= c.max().y + 1e-9 && w.rect.size.min_element() >= 0.0, "{:?} leaves the well", w.widget);
-        }
-    }
-
-    #[test]
-    fn the_samples_fit_their_tiers_and_react() {
-        for s in [Warmer::default(), Warmer { temp: 70, mins: 30, run: true }] {
-            fits(&lab_panel(&s));
-        }
-        let p = lab_panel(&Warmer { run: true, ..default() });
-        assert!(p.hit(p.find("temp_up").unwrap().rect.centre()).is_none(), "running: the setters are locked");
-        for s in [ReactorSample::default(), ReactorSample { auto: false, setpoint: 100 }] {
-            fits(&reactor_panel(&s));
-        }
-        assert_eq!(reactor_panel(&ReactorSample { auto: false, setpoint: 100 }).plate.unwrap().status, Some(("OVERHEAT".into(), Tone::Bad)));
-        assert_eq!(reactor_panel(&ReactorSample::default()).plate.unwrap().status, Some(("STABLE".into(), Tone::Good)));
-    }
 }

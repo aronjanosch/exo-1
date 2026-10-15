@@ -1,10 +1,3 @@
-//! `planet-look` scenario (#63): for every planet in `content/system/system.json` an atlas
-//! (equirectangular height, biome, landform and scatter maps) and the bake statistics, and in a
-//! window a screenshot from each fixed viewpoint of `content/look/viewpoints.json`. Same seed,
-//! same spots, same sun: two runs compare side by side. The `times` shots (#48) stop the clock at
-//! a time of day (noon, dusk, night) and use its sun instead of the fixed one.
-//!
-//! Output: `<out>/look/<planet>/atlas-<layer>.png`, `stats.json`, `<viewpoint>.png`, `<time>.png`.
 use crate::env::{from_v3, to_v3, PlanetRes};
 use crate::ring::Ring;
 use crate::scenario::{check, place_walker, teleport_ship, wait, Ctx, Step};
@@ -31,7 +24,6 @@ fn planet_dir(out: &Path, name: &str) -> PathBuf {
     out.join("look").join(name.to_lowercase())
 }
 
-/// RGB8 rows to a PNG through Bevy's image support.
 pub fn save_rgb(path: &Path, w: usize, h: usize, rgb: &[u8]) -> Result<(), String> {
     let mut rgba = Vec::with_capacity(w * h * 4);
     for p in rgb.chunks(3) {
@@ -48,7 +40,6 @@ pub fn save_rgb(path: &Path, w: usize, h: usize, rgb: &[u8]) -> Result<(), Strin
     dynamic.to_rgb8().save(path).map_err(|e| e.to_string())
 }
 
-/// World camera pose of a viewpoint on `planet`, or None when the planet has no such spot.
 pub fn camera_pose(planet: &PlanetRes, vp: &Viewpoint) -> Option<(DVec3, DQuat, DVec3)> {
     if vp.spot == "orbit" {
         let from = DVec3::from_array(vp.from?).normalize();
@@ -91,14 +82,13 @@ fn set_sun(w: &mut World, towards: DVec3) {
     w.resource_mut::<crate::daynight::Sun>().fixed = Some(towards);
 }
 
-/// The round goal of #214 for a 100 km planet: tallest ground above the base radius (m), plain
+/// Shape goal for a 100 km planet: tallest ground above the base radius (m), plain
 /// share of the land, biomes present. Reported for every planet, met only at that size.
 const SHAPE_MAX_M: (f64, f64) = (900.0, 1170.0);
 const SHAPE_PLAIN: (f64, f64) = (0.20, 0.40);
 const SHAPE_BIOMES: usize = 6;
 const SHAPE_SAMPLES: usize = 40_000;
 
-/// Atlas and statistics of every planet (a fresh bake from its recipe, as the game loads it).
 fn atlas_step(out: PathBuf, vps: Viewpoints) -> Step {
     Box::new(move |w, c| {
         let sys = w.resource::<SystemRes>().0.clone();
@@ -117,7 +107,6 @@ fn atlas_step(out: PathBuf, vps: Viewpoints) -> Step {
                 }
             }
             let _ = std::fs::write(dir.join("stats.json"), serde_json::to_string_pretty(&st).unwrap_or_default());
-            // #214: the shape goal of the 100 km round (tallest ground, plains, biomes).
             let sh = p.pgen.shape_stats(SHAPE_SAMPLES, 0);
             let _ = std::fs::write(dir.join("shape.json"), serde_json::to_string_pretty(&sh).unwrap_or_default());
             let met = (SHAPE_MAX_M.0..=SHAPE_MAX_M.1).contains(&sh.max_above_radius_m)
@@ -195,7 +184,6 @@ fn shot_time(w: &World, pl: &PlanetRes, ground: DVec3, ts: &TimeShot) -> Option<
     }
 }
 
-/// One viewpoint: camera and sun there, walker on the spot, wait for the terrain, hold, shoot.
 /// With `time` the sun is the clock's, stopped at that time of day, and the shot is `<time id>.png`.
 fn shoot(out: PathBuf, vps: Viewpoints, k: usize, time: Option<TimeShot>) -> Step {
     Box::new(move |w, c: &mut Ctx| {
@@ -311,9 +299,6 @@ pub fn steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool) {
     s.push(wait(1.0));
 }
 
-/// `site-walk` (#70): the walker starts 40 m from the first ruin (a flat pad), walks in at 1.8 m/s and
-/// stops at its centre. Checks it stands on the ground of the edited height function and that
-/// the ground there is flat.
 pub fn site_walk_steps(s: &mut Vec<Step>) {
     use crate::scenario::{face_towards, keys, player_world, with_player};
     s.push(Box::new(|w, c| {

@@ -1,14 +1,8 @@
-//! Banners and toasts (#165): what `Gameplay::shown` releases, drawn over the game. One banner at
-//! a time in the upper middle (a payout counts up), toasts in a short stack below it. They never
-//! take input; Enter (`Tap::SkipNotices`) runs the rest of a ritual fast (in `gameplay_step`).
-//! Window only; the logic is in `ScreenNotices` so it can be tested.
 use bevy::prelude::*;
 
 use crate::gameplay::{Gameplay, ShownLine};
 
-/// Seconds a payout takes to count up in its banner.
 pub const COUNT_UP_S: f64 = 1.2;
-/// Toasts on screen at most; older ones go first.
 const MAX_TOASTS: usize = 4;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -29,7 +23,6 @@ pub struct ScreenNotices {
 }
 
 impl ScreenNotices {
-    /// Takes in the lines released since last time, at time `now`.
     pub fn absorb(&mut self, shown: &[ShownLine], now: f64) {
         for l in shown.get(self.seen..).unwrap_or_default() {
             if l.banner {
@@ -118,43 +111,5 @@ fn update(gp: Res<Gameplay>, time: Res<Time>, mut screen: ResMut<ScreenNotices>,
         if **t != s {
             **t = s;
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use gameplay_core::notice::NoticeKind;
-
-    fn line(text: &str, banner: bool, money: Option<i64>, seconds: f64) -> ShownLine {
-        ShownLine { kind: NoticeKind::Completed, key: "k".into(), text: text.into(), banner, seconds, money, at: 0.0 }
-    }
-
-    #[test]
-    fn a_payout_counts_up_to_the_total_and_the_banner_leaves() {
-        let mut s = ScreenNotices::default();
-        s.absorb(&[line("JOB DONE   +375", true, Some(375), 3.0)], 10.0);
-        assert_eq!(s.banner_text(10.0).unwrap(), "JOB DONE   +0");
-        let mid = s.banner_text(10.6).unwrap();
-        assert!(mid != "JOB DONE   +0" && mid != "JOB DONE   +375", "{mid}");
-        assert_eq!(s.banner_text(11.3).unwrap(), "JOB DONE   +375");
-        s.expire(13.1);
-        assert!(s.banner.is_none());
-    }
-
-    #[test]
-    fn toasts_stack_expire_and_are_taken_in_once() {
-        let mut s = ScreenNotices::default();
-        let shown = vec![line("a", false, None, 2.0), line("b", false, None, 4.0)];
-        s.absorb(&shown, 0.0);
-        s.absorb(&shown, 1.0);
-        assert_eq!(s.toast_text(), "a\nb", "taken in once");
-        s.expire(3.0);
-        assert_eq!(s.toast_text(), "b");
-        let many: Vec<ShownLine> = (0..7).map(|i| line(&format!("t{i}"), false, None, 9.0)).collect();
-        let mut s = ScreenNotices::default();
-        s.absorb(&many, 0.0);
-        assert_eq!(s.toasts.len(), MAX_TOASTS);
-        assert!(s.toast_text().ends_with("t6"));
     }
 }

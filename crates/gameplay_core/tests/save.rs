@@ -1,5 +1,3 @@
-//! Save model of #128: the envelope, the kernel section and the world section. Each system's own
-//! section is tested in its crate.
 use std::path::Path;
 
 use gameplay_core::save::*;
@@ -24,7 +22,6 @@ fn ev(sender: ClientId, seq: u64, payload: WorldEvent) -> Event<WorldEvent> {
     Event::new(sender, seq, payload)
 }
 
-/// A kernel with some history: a joined player, a payout, an XP gain, a flag, an unlock.
 fn played(c: &Content) -> KernelState {
     let mut k = KernelState::new(c);
     let events = [
@@ -48,7 +45,6 @@ fn kernel_section_round_trips_and_continues_the_same() {
     env.put(KERNEL, KERNEL_VERSION, &k);
     let back: KernelState = Envelope::from_json(&env.to_json()).unwrap().get(KERNEL, KERNEL_VERSION).unwrap().unwrap();
     assert_eq!(back, k);
-    // The same events applied afterwards give the same result.
     let (mut a, mut b) = (k, back);
     let more = [
         ev(HOST, 3, WorldEvent::TrackChanged { track: TrackId::new("wallet"), delta: 75, player: None }),

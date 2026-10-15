@@ -1,7 +1,4 @@
-//! The ground rules (#92): what a ship does while it rests on the ground and the SC model does not
-//! fly it (no thrust but down, gravity compensation on, slow). It settles straight down until
-//! resting, keeps its spot on a slope below the limit until thrust, and turns at the rates of the
-//! ground. The SC model has no landing gear yet (#162); this piece stands in for it.
+//! Ground contact: the SC model has no landing gear yet; this piece stands in for it.
 //!
 //! The values are `content/tuning/ground.json`, all placeholders (TODO(initiator)).
 use crate::limits::Rot;
@@ -9,7 +6,6 @@ use crate::{BodyState, Curve, FlightInput, Interp, PlanetEnv};
 use glam::{DVec2, DVec3};
 use serde::Deserialize;
 
-/// The ground rules' values (`content/tuning/ground.json`).
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct GroundTuning {
@@ -38,7 +34,6 @@ impl GroundTuning {
         Ok(t)
     }
 
-    /// Speeds and decays positive, shares above zero, slope limit in range, everything finite.
     pub fn validate(&self) -> Result<(), String> {
         for (what, v) in [("cruise_speed", self.cruise_speed), ("linear_decay", self.linear_decay), ("angular_decay", self.angular_decay)] {
             if !(v > 0.0 && v.is_finite()) {
@@ -72,14 +67,13 @@ impl Default for GroundTuning {
     }
 }
 
-/// A ship set down below `landing_slope_limit` keeps its spot until thrust (#92). Positions are
+/// A ship set down below `landing_slope_limit` keeps its spot until thrust. Positions are
 /// planet frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GroundHold {
     /// The centre at touchdown: settling, the ship may sink and tip onto the slope along the up
     /// through it, not sideways.
     pub at: DVec3,
-    /// Resting, the ship is held at this centre.
     pub rest: Option<DVec3>,
 }
 
@@ -89,7 +83,6 @@ pub struct GroundRules {
     pub tuning: GroundTuning,
     /// Seconds the hull has rested on the ground (touching, not sinking) without a break.
     pub ground_time: f64,
-    /// Set down below `landing_slope_limit`: held to the spot until thrust (#92).
     pub ground_hold: Option<GroundHold>,
     /// Seconds without hull contact; a hold lets go after `GROUND_HOLD_RELEASE_TIME`.
     contact_lost: f64,
@@ -106,7 +99,6 @@ impl GroundRules {
         GroundRules { tuning, ground_time: 0.0, ground_hold: None, contact_lost: 0.0 }
     }
 
-    /// Thrust or the SC model's flight ends the ground state: no hold, no settle time left.
     pub fn release(&mut self) {
         self.ground_time = 0.0;
         self.ground_hold = None;
@@ -123,7 +115,7 @@ impl GroundRules {
     /// teleport, a depenetration); the hold lets go instead of pulling it back.
     pub const GROUND_HOLD_REACH: f64 = 1.0;
     /// m/s: the ground rules (settle, hold) start only this slow along the ground; a brush at speed
-    /// is not a landing (#104 point 1).
+    /// is not a landing.
     pub const GROUND_HOLD_SPEED: f64 = 5.0;
     /// m: half the hull's length; a level ship touching a slope with a corner has its centre up to
     /// this times the slope's tangent above the terrain.
@@ -138,7 +130,6 @@ impl GroundRules {
         Self::HULL_HALF_LENGTH * self.tuning.landing_slope_limit.min(80.0).to_radians().tan() + 0.5
     }
 
-    /// Low and slow enough with the hull touching for the ground rules (settle, hold).
     fn on_ground(&self, grounded: bool, clearance: f64, up: DVec3, v: DVec3) -> bool {
         grounded && clearance < self.ground_clearance() && (v - up * v.dot(up)).length() < Self::GROUND_HOLD_SPEED
     }
@@ -163,7 +154,6 @@ impl GroundRules {
         normal.dot(up).abs().min(1.0).acos()
     }
 
-    /// Ground hold (#92), the part of the step before the velocity goal. `thrusting`: any stick
     /// input but down. Returns `hold` (low, slow and touching without thrust: settle straight
     /// down) and whether the step settles or rests (`hold` or a ground hold).
     fn ground_rules(&mut self, env: &impl PlanetEnv, origin: DVec3, v: DVec3, up: DVec3, thrusting: bool, grounded: bool, dt: f64) -> (bool, bool) {
@@ -205,14 +195,11 @@ impl GroundRules {
         (hold, hold || self.ground_hold.is_some())
     }
 
-    /// The velocity goal while on the ground: settle until it rests, tipping onto the slope; then
     /// no push at all (a push on a slope creeps).
     fn ground_goal(&self, up: DVec3) -> DVec3 {
         if self.ground_time < Self::GROUND_SETTLE_TIME { -up * Self::GROUND_SETTLE_SPEED } else { DVec3::ZERO }
     }
 
-    /// The step's new velocity under the ground rules: a ground hold goes back to its spot within
-    /// one step, whatever the contacts did last step; a hold without one keeps no sideways speed.
     fn ground_velocity(&self, env: &impl PlanetEnv, origin: DVec3, v: DVec3, up: DVec3, hold: bool, dt: f64) -> DVec3 {
         let here = env.to_planet(origin);
         match self.ground_hold {
@@ -228,7 +215,6 @@ impl GroundRules {
 
     /// One step on the ground. Returns the new linear and angular velocity (world); the caller
     /// writes them to the body. The thrusters' share is not modelled: gravity is held and the
-    /// velocity is damped towards the goal (settle or rest).
     pub fn step(&mut self, body: &BodyState, input: &FlightInput, env: &impl PlanetEnv, dt: f64) -> (DVec3, DVec3) {
         let (origin, b) = (body.pos, body.rot);
         let v = body.lin_vel;
@@ -240,7 +226,6 @@ impl GroundRules {
         let v = v + ((goal - v) * self.tuning.linear_decay + body.ang_vel.cross(goal)) * dt;
         let v = self.ground_velocity(env, origin, v, up, hold, dt);
 
-        // Turning: target rate per axis from the mouse and the stick, pitch and yaw in an ellipse.
         let t = &self.tuning;
         let over_speed = t.rate_over_speed.eval(v.length() / t.cruise_speed);
         let rate = Rot { pitch: t.rate.pitch * over_speed, yaw: t.rate.yaw * over_speed, roll: t.rate.roll * over_speed };

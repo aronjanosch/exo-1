@@ -1,4 +1,3 @@
-//! #92: land on a slope below the limit; the ship does not drift from its touchdown spot.
 use crate::common;
 use exo_app::Options;
 

@@ -1,7 +1,4 @@
-//! C2: the item path over the real wire format, without sockets: a host and clients joined by
-//! `net_core`'s reliable channel (item requests and events) and body datagrams (poses of a moving
 //! loose item), through `link` at the internet's numbers: 150 ms each way, jitter, 2 % loss.
-//! Time is virtual, 60 ticks a second, so this runs in milliseconds.
 use std::collections::BTreeMap;
 
 use glam::{DQuat, DVec3};
@@ -14,7 +11,6 @@ use net_core::reliable::{Datagram, Reliable};
 const WRENCH: &str = r#"{ "id": "wrench", "name": "Wrench", "take": "collect", "hands": 1, "stack": 1, "tags": ["tool"], "shape": { "extents": [0.06, 0.04, 0.3], "mass": 0.8, "colour": [0.6, 0.6, 0.65] } }"#;
 const BANDAGE: &str = r#"{ "id": "bandage", "name": "Bandage", "take": "collect", "hands": 1, "stack": 4, "tags": ["medical"], "shape": { "extents": [0.1, 0.05, 0.1], "mass": 0.1, "colour": [0.9, 0.9, 0.85] } }"#;
 const DT: f64 = 1.0 / 60.0;
-/// What the game uses: 150 ms one way, a little jitter, 2 % loss.
 const DELAY: f64 = 150.0;
 const JITTER: f64 = 20.0;
 const LOSS: f64 = 2.0;
@@ -27,7 +23,6 @@ fn at(x: f64) -> Placement {
     Placement { frame: FrameRef::Planet(0), pos: [x, 0.0, 0.0], vel: [0.0; 3], forward: [0.0, 0.0, -1.0] }
 }
 
-/// One client's end: its item state, its side of the channel and its two links.
 struct End {
     client: Client,
     chan: Reliable,
@@ -35,11 +30,9 @@ struct End {
     down: Link<Vec<u8>>,
     bodies: Link<Vec<u8>>,
     tracks: BTreeMap<LooseId, Track>,
-    /// The actions it sent, in order.
     sent: Vec<Action>,
 }
 
-/// Host, its channel per client, and the clients.
 struct Net {
     now: f64,
     host: Host,
@@ -56,7 +49,6 @@ impl Net {
         Net { now: 0.0, host: Host::new(defs()), host_chans: BTreeMap::new(), ends: BTreeMap::new(), seed, streams: 0, stream_seq: 0 }
     }
 
-    /// A client connects now; the host sends it the state as it is.
     fn join(&mut self, player: PlayerId) {
         let s = self.seed + player as u64 * 1000;
         let chan = Reliable::new();
@@ -79,7 +71,6 @@ impl Net {
         self.host_chans.insert(player, hc);
     }
 
-    /// The player asks; it shows at once and the action goes up.
     fn request(&mut self, player: PlayerId, req: Request) -> Result<Action, Reject> {
         let e = self.ends.get_mut(&player).unwrap();
         let a = e.client.request(req)?;
@@ -88,7 +79,6 @@ impl Net {
         Ok(a)
     }
 
-    /// The host puts something into the world (level content); everyone hears.
     fn spawn(&mut self, stack: container::Stack, at: Placement) -> LooseId {
         let ev = self.host.spawn(stack, at, None);
         let Event::Spawned { item, .. } = &ev else { unreachable!() };
@@ -110,7 +100,6 @@ impl Net {
     fn step(&mut self) {
         self.now += DT;
         let now = self.now;
-        // Client side: arrivals, messages, sends.
         for e in self.ends.values_mut() {
             for b in e.down.ready(now) {
                 e.chan.on_datagram(now, &Datagram::decode(&b).unwrap());
@@ -133,7 +122,6 @@ impl Net {
                 e.up.enqueue(now, d.encode());
             }
         }
-        // Host side: arrivals, requests, answers.
         let players: Vec<PlayerId> = self.ends.keys().copied().collect();
         for p in &players {
             let arrived: Vec<Vec<u8>> = self.ends.get_mut(p).unwrap().up.ready(now);
@@ -202,7 +190,6 @@ fn two_players_reach_for_the_same_item_first_at_the_host_wins() {
         assert!(n.ends[&1].client.pending.is_empty() && n.ends[&2].client.pending.is_empty());
         assert!(n.ends.values().all(|e| e.client.loose.is_empty()), "the item is gone for everyone");
         assert_eq!(n.host.inventory(2).count("wrench") + n.host.inventory(1).count("wrench"), 1);
-        // Player 2's inventory is known to player 1 (the held item shows on the figure).
         assert_eq!(n.ends[&1].client.held_by(2).map(|s| s.item.kind.as_str()), Some("wrench"));
     }
 }
@@ -247,7 +234,6 @@ fn a_late_joiner_gets_the_state_as_it_is() {
         n.request(1, Request::Collect { item: a }).unwrap();
         n.request(1, Request::Select { slot: 2 }).unwrap();
         n.run(2.0);
-        // Player 2 comes in late: a wrench and the bandages lie there, player 1 carries a wrench.
         n.join(2);
         n.run(2.0);
         let late = &n.ends[&2].client;
@@ -255,7 +241,6 @@ fn a_late_joiner_gets_the_state_as_it_is() {
         assert_eq!(late.loose.len(), 2);
         assert_eq!(late.others.get(&1), Some(&n.host.inventory(1)), "and what player 1 carries");
         assert_eq!(late.held_by(1), None, "player 1 holds slot 2, which is empty");
-        // The late joiner can act at once.
         let item = *late.loose.keys().next().unwrap();
         n.request(2, Request::Collect { item }).unwrap();
         n.run(2.0);
@@ -294,10 +279,8 @@ fn a_thrown_item_lands_at_the_same_spot_on_both() {
         n.run(1.0);
         n.request(1, Request::Collect { item: w }).unwrap();
         n.run(1.5);
-        // Thrown at 6 m/s forward, 3 up, from 1.5 m up; the host simulates it.
         let throw_at = Placement { pos: [0.0, 1.5, 0.0], vel: [6.0, 3.0, 0.0], ..at(0.0) };
         n.request(1, Request::Throw { slot: 0, at: throw_at }).unwrap();
-        // Run until the host has handled it.
         let item = loop {
             n.step();
             if let Some(id) = n.host.loose.keys().next().copied() {
@@ -313,7 +296,6 @@ fn a_thrown_item_lands_at_the_same_spot_on_both() {
         let mut since = 0.0;
         let t_end = n.now + 4.0;
         while n.now < t_end {
-            // The host's physics, 60 Hz: gravity, a bounce-less landing at y = 0.
             if !resting {
                 vel.y -= 9.81 * DT;
                 pos += vel * DT;
@@ -349,7 +331,6 @@ fn a_thrown_item_lands_at_the_same_spot_on_both() {
                     if shown_t > 0.0 && !resting {
                         let (p, _) = tr.sample_extrapolated(shown_t, 0.1).unwrap();
                         if let Some((_, truth)) = history.iter().rev().find(|(t, _)| *t <= shown_t) {
-                            // Only once the client has had the first datagram for that time.
                             if tr.history.front().is_some_and(|f| f.t <= shown_t) {
                                 worst = worst.max((p.pos - *truth).length());
                             }
@@ -360,7 +341,6 @@ fn a_thrown_item_lands_at_the_same_spot_on_both() {
         }
         assert!(resting && stream_ticks_after_rest > 10, "seed {seed}: it came to rest and the host stopped sending");
         assert!(n.streams > 3, "seed {seed}: it streamed while it flew ({})", n.streams);
-        // Every client has the resting pose, exactly the host's.
         for (p, e) in &n.ends {
             let tr = &e.tracks[&item];
             let (shown, _) = tr.sample(n.now).unwrap();

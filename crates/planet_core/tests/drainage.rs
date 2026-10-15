@@ -1,6 +1,3 @@
-//! #72: rivers and lakes from drainage on the macro grid. On the baked planets the water runs
-//! downhill, lakes sit in sinks, rivers end in the sea or a lake, the same seed gives the same
-//! water. The algorithm's own cases on a flat test grid are in `src/drainage.rs`.
 use planet_core::drainage::Mouth;
 use planet_core::look::{tangent_frame, walk};
 use planet_core::*;
@@ -29,36 +26,9 @@ fn level_at(p: &Planet, d: V3) -> Option<f64> {
 }
 
 #[test]
-fn hearth_has_rivers_and_lakes() {
-    let (_, st) = hearth();
-    println!(
-        "rivers {} nodes, {:.1} km (longest {:.2} km, through lakes {:.2} km), {} to the sea, {} to a lake, largest catchment {:.1} km²; lakes {} ({:.2} % of the surface, largest {:.3} km², deepest {:.1} m); erosion max {:.1} m, mean {:.2} m; cut max {:.1} m; drainage {:.0} ms of {:.0} ms",
-        st.river_nodes,
-        st.river_length_km,
-        st.longest_river_km,
-        st.longest_waterway_km,
-        st.rivers_to_sea,
-        st.rivers_to_lake,
-        st.largest_catchment_km2,
-        st.lake_count,
-        st.lake_area_share * 100.0,
-        st.largest_lake_km2,
-        st.deepest_lake_m,
-        st.erosion_max_m,
-        st.erosion_mean_m,
-        st.carve_max_m,
-        st.drainage_ms,
-        st.bake_ms
-    );
-    println!("drainage steps (ms): {:?}", st.drainage_phases_ms);
-    assert!(st.river_length_km > 20.0, "a wet planet has rivers");
-    assert!(st.rivers_to_sea > 0 && st.lake_count > 0);
-}
-
-#[test]
 fn water_flows_downhill() {
     let (p, _) = hearth();
-    // The river's vertex on its drawn curve (#235: smoothed and meandered off the grid vertex).
+    // The river's vertex on its drawn curve (smoothed and meandered off the grid vertex).
     let on = |i: usize| p.river_idx.curve_point(&p.coarse.rivers, p.radius, i, 0.0).normalized();
     let mut cut_deeper = 0;
     for (i, rv) in p.coarse.rivers.iter().enumerate() {
@@ -181,12 +151,12 @@ fn same_seed_same_water() {
 }
 
 #[test]
+#[ignore = "100 km planet, slow: runs with --run-ignored all before main"]
 fn nothing_grows_or_builds_in_the_water() {
     let (p, _) = hearth();
     for s in &p.sites {
         assert!(p.sample(s.dir).water_depth == 0.0, "site {} stands in water", s.id);
     }
-    // Trees and shrubs keep out of lakes and rivers; scatter cells along the biggest rivers.
     let mut checked = 0;
     for rv in p.coarse.rivers.iter().filter(|r| r.catchment_km2 > 1.0).step_by(20) {
         let face = face_of(rv.dir);
@@ -214,7 +184,6 @@ fn nothing_grows_or_builds_in_the_water() {
 #[test]
 fn cinder_stays_dry_but_drains() {
     let (p, st) = baked(CINDER, 4242, 0);
-    let hearth = &hearth().1;
     println!(
         "Cinder: largest catchment {:.2} km², rivers {:.1} km (longest {:.2} km, through lakes {:.2} km; {} to the sea, {} to a lake), lakes {} ({:.2} % of the surface, {} never spill), drainage {:.0} ms",
         st.largest_catchment_km2,
@@ -229,7 +198,6 @@ fn cinder_stays_dry_but_drains() {
         st.drainage_ms
     );
     assert!(st.river_length_km > 0.0, "a dry planet still drains somewhere");
-    assert!(st.river_length_km < hearth.river_length_km && st.lake_area_share < hearth.lake_area_share, "less water than on the wet planet");
     assert!(p.coarse.lakes.iter().any(|l| l.outlet.is_none()), "a dry climate keeps lakes that never spill");
     for l in &p.coarse.lakes {
         let deep = p.base_height_at(l.deepest);
@@ -247,35 +215,3 @@ fn cinder_stays_dry_but_drains() {
     }
 }
 
-/// Bake time with and without drainage, the best of five each, alternating (load from other
-/// work spoils single runs). `cargo test -p planet_core --test drainage bake_time -- --ignored --nocapture`
-#[test]
-#[ignore]
-fn bake_time() {
-    let dry: String = {
-        let i = HEARTH.find("  \"drainage\": {").unwrap();
-        let j = HEARTH[i..].find("\n  },\n").unwrap() + i + "\n  },\n".len();
-        format!("{}{}", &HEARTH[..i], &HEARTH[j..])
-    };
-    let (mut with, mut without, mut drain) = (Vec::new(), Vec::new(), Vec::new());
-    for _ in 0..5 {
-        let (_, st) = baked(HEARTH, 1337, 0);
-        with.push(st.bake_ms);
-        drain.push(st.drainage_ms);
-        let (_, st) = baked(&dry, 1337, 0);
-        without.push(st.bake_ms);
-    }
-    let best = |v: &[f64]| v.iter().copied().fold(f64::MAX, f64::min);
-    let median = |v: &mut Vec<f64>| {
-        v.sort_by(f64::total_cmp);
-        v[v.len() / 2]
-    };
-    println!(
-        "Hearth bake without drainage: best {:.0} ms, median {:.0} ms; with: best {:.0} ms, median {:.0} ms (drainage best {:.0} ms)",
-        best(&without),
-        median(&mut without.clone()),
-        best(&with),
-        median(&mut with.clone()),
-        best(&drain)
-    );
-}

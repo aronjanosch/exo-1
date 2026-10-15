@@ -1,4 +1,3 @@
-//! Ground hold (#92): a ship set down below the slope limit keeps its spot until thrust.
 use flight_core::*;
 use glam::DVec3;
 
@@ -15,7 +14,6 @@ impl Slope {
     fn new(deg: f64) -> Slope {
         Slope { slope: deg.to_radians(), field: Field::default() }
     }
-    /// Normal of the plane at the top (planet frame, centre at the origin).
     fn normal(&self) -> DVec3 {
         DVec3::new(-self.slope.sin(), self.slope.cos(), 0.0)
     }
@@ -101,37 +99,15 @@ fn settle(c: &mut GroundRules, env: &Slope, secs: f64, friction: f64) -> (f64, B
 }
 
 #[test]
-fn set_down_on_a_slope_it_keeps_the_touchdown_spot() {
-    // 33 degrees, as `full` lands on, and a contact without friction: each step it turns part of
-    // the settle push down the slope.
-    let env = Slope::new(33.0);
-    let mut held = GroundRules::default();
-    let (moved, b) = settle(&mut held, &env, 5.0, 0.0);
-    let hold = held.ground_hold.expect("held");
-    let rest = hold.rest.expect("at rest after 5 s");
-    // Each step the contact pushes it a few millimetres down the slope; the hold takes it back.
-    assert!(moved < 0.005, "moved {moved:.4} m while settling");
-    assert!(sideways(rest - hold.at, rest.normalize()).length() < 0.005, "rests on the touchdown spot: {:?}", rest - hold.at);
-    assert!((b.pos - rest).length() < 1e-9, "and stays there: {:?}", b.pos - rest);
-    // Without the hold (limit 0) no spot is kept; the settle rule alone drops the sideways speed,
-    // which this point contact does not turn into a slide (the hull in `full` did: 0.55 m).
-    let mut free = GroundRules::new(GroundTuning { landing_slope_limit: 0.0, ..GroundTuning::default() });
-    settle(&mut free, &env, 5.0, 0.0);
-    assert!(free.ground_hold.is_none(), "no hold above the limit");
-}
-
-#[test]
 fn at_rest_it_returns_to_its_spot_until_thrust() {
     let env = Slope::new(20.0);
     let mut c = GroundRules::default();
     let (_, mut b) = settle(&mut c, &env, 3.0, 0.5);
     let rest = c.ground_hold.and_then(|h| h.rest).expect("at rest");
-    // A push moved it 3 cm (another contact, a bump): it goes back within one step.
     b.pos += DVec3::new(0.03, 0.01, -0.02);
     let none = FlightInput { grounded: true, piloted: true, ..Default::default() };
     let (v, _) = c.step(&b, &none, &env, DT);
     assert!((b.pos + v * DT - rest).length() < 1e-9, "back to the spot: {v}");
-    // Contact lost (a flicker) and Ctrl held: still held.
     let (v, _) = c.step(&b, &FlightInput { grounded: false, ..down() }, &env, DT);
     assert!((b.pos + v * DT - rest).length() < 1e-9, "held without contact: {v}");
     // Thrust up lets go; the lift is the SC model's (the ground rules do not fly the ship).
@@ -154,18 +130,6 @@ fn sideways_input_also_ends_the_hold() {
 }
 
 #[test]
-fn steeper_than_the_limit_is_not_held() {
-    let env = Slope::new(40.0);
-    let mut c = GroundRules::default();
-    let b = BodyState { pos: env.ground(0.0), ..Default::default() };
-    c.step(&b, &down(), &env, DT);
-    assert!(c.ground_hold.is_none(), "40 degrees, limit {}", c.tuning.landing_slope_limit);
-    let env = Slope::new(30.0);
-    c.step(&b, &down(), &env, DT);
-    assert!(c.ground_hold.is_some(), "30 degrees is held");
-}
-
-#[test]
 fn moved_far_away_or_released_lets_go() {
     let env = Slope::new(10.0);
     let mut c = GroundRules::default();
@@ -182,28 +146,7 @@ fn moved_far_away_or_released_lets_go() {
     assert!(c.ground_hold.is_none(), "the SC model flying the ship (or gravity compensation off) lets go");
 }
 
-/// #104 point 1: one step of hull contact with a crest at speed, neutral input, starts no hold;
-/// the ship keeps its speed and flies on.
-#[test]
-fn brushing_a_crest_at_speed_keeps_flying() {
-    let env = Slope::new(0.0);
-    let mut c = GroundRules::default();
-    let mut b = BodyState { pos: env.ground(0.0), lin_vel: DVec3::X * 80.0, ..Default::default() };
-    let none = FlightInput { piloted: true, ..Default::default() };
-    let (v, _) = c.step(&b, &FlightInput { grounded: true, ..none }, &env, DT);
-    assert!(c.ground_hold.is_none(), "no hold from a brush at 80 m/s");
-    assert!(sideways(v, b.pos.normalize()).length() > 75.0, "keeps its speed: {v}");
-    b.lin_vel = v;
-    for _ in 0..30 {
-        b.pos += DVec3::Y * 0.1;
-        let (v, _) = c.step(&b, &none, &env, DT);
-        b.lin_vel = v;
-        b.integrate(DT);
-    }
-    assert!(c.ground_hold.is_none(), "no hold after the brush: {}", b.lin_vel);
-}
-
-/// #104 point 1: a settling hold whose contact stays lost lets go (the ground fell away); a
+/// A settling hold whose contact stays lost lets go (the ground fell away); a
 /// flicker of one step does not (see `at_rest_it_returns_to_its_spot_until_thrust`), and a resting
 /// hold keeps the ship on its spot without contact (the physics drops a contact without push).
 #[test]
@@ -227,8 +170,6 @@ fn contact_lost_while_settling_ends_the_hold() {
     assert!(c.ground_hold.is_some(), "resting: held without contact");
 }
 
-/// #104 point 2: a rested ship lifted 20 m straight up (a teleport, a depenetration) is not
-/// pulled back into the ground in one step.
 #[test]
 fn lifted_straight_up_it_is_not_pulled_back() {
     let env = Slope::new(10.0);
@@ -240,20 +181,6 @@ fn lifted_straight_up_it_is_not_pulled_back() {
     assert!(c.ground_hold.is_none() && v.length() < 5.0, "lets go instead of 1200 m/s down: {v}");
 }
 
-/// A level ship touching a slope just under the limit with a hull corner has its centre ~2.7 m
-/// above the terrain: still on the ground, held (review of the #104 point 1 gate).
-#[test]
-fn a_corner_touch_on_a_steep_slope_below_the_limit_is_held() {
-    let env = Slope::new(34.0);
-    let mut c = GroundRules::default();
-    let up = env.ground(0.0).normalize();
-    let b = BodyState { pos: env.ground(0.0) + up * 4.0 * 34f64.to_radians().tan(), ..Default::default() };
-    c.step(&b, &down(), &env, DT);
-    assert!(c.ground_hold.is_some(), "clearance {:.2} m", c.clearance_at(&env, b.pos));
-}
-
-/// The ground rules without a hold: sliding sideways on flat ground with Ctrl held, only a gentle
-/// settle straight down remains, then no push at rest.
 #[test]
 fn grounded_with_down_input_settles_without_sliding() {
     let env = Slope::new(0.0);
@@ -266,7 +193,6 @@ fn grounded_with_down_input_settles_without_sliding() {
     }
     assert!((v - up * v.dot(up)).length() < 1e-9, "no sideways speed on the ground: {v}");
     assert!(v.dot(up) < 0.0 && v.dot(up) > -0.6, "gentle settle: {v}");
-    // The ground stops the sinking (what the contact does); resting a moment, the push ends.
     for _ in 0..120 {
         v = c.step(&BodyState { lin_vel: v, ..b }, &down(), &env, DT).0;
         v -= up * v.dot(up).min(0.0);

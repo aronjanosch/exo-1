@@ -1,4 +1,3 @@
-//! Issue #82: one tap for a crate and the seat, the HUD prompt says which. Without a window.
 use crate::common;
 use exo_app::Options;
 

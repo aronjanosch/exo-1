@@ -1,6 +1,4 @@
-//! Spike 8 T1 in Bevy: the heightfield patches Avian collides with agree with
-//! planet_core's height function (rays at every interior patch sample, own patch only;
-//! the parked ship stands in the way of rays from above).
+//! Avian's heightfield patches agree with planet_core's height function.
 use avian3d::prelude::*;
 use bevy::ecs::system::SystemState;
 use bevy::math::DVec3;
@@ -36,7 +34,7 @@ fn collision_patches_match_height_function() {
             for i in 1..31 {
                 let (x, z) = (i as f64 - 15.5, j as f64 - 15.5);
                 // From 50 m above the ground there (the patch's centre lies on the base sphere, the
-                // ground can be far above it: #221 put Hearth's sea 72 m over the base radius).
+                // ground can be far above it: Hearth's sea sits 72 m over the base radius).
                 let top = planet.surface(*c + *r * DVec3::new(x, 0.0, z) - planet.centre) - planet.radius;
                 let from = *c + *r * DVec3::new(x, top + 50.0, z);
                 let dir = Dir3::new((-up).as_vec3()).unwrap();

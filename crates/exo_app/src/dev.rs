@@ -1,6 +1,3 @@
-//! F10: the dev menu, a few cheats for playtests (dev builds only, `debug_assertions`). While it
-//! is open, the digit keys run its commands. A new command is one line in `COMMANDS` and one arm
-//! in `run`. The fixed step fills `DevMenu` (headless too, so scenarios check it); the window draws it.
 use crate::controls::{Actions, Tap};
 use crate::daynight::{DayClock, DayNightRes};
 use crate::env::{from_v3, PlanetRes};
@@ -15,7 +12,7 @@ use gameplay_core::{TrackId, WorldEvent};
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<DevMenu>();
-    app.add_systems(FixedUpdate, (update_dev, jump_to_settlement).chain().in_set(crate::phases::Fx::Effects));
+    app.add_systems(FixedUpdate, (update_dev, jump_to_settlement, toggle_noclip).chain().in_set(crate::phases::Fx::Effects));
 }
 
 pub fn window_plugin(app: &mut App) {
@@ -23,11 +20,9 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, draw_dev.in_set(crate::phases::Frame::Hud));
 }
 
-/// The commands, in key order (1, 2, 3, ...).
-pub const COMMANDS: [&str; 8] = ["Grant every licence", "+1000 credits", "Refill the boost", "Always day", "Always night", "Jump to day (cycle runs)", "Jump to night (cycle runs)", "Ship to the next settlement"];
+pub const COMMANDS: [&str; 9] = ["Grant every licence", "+1000 credits", "Refill the boost", "Always day", "Always night", "Jump to day (cycle runs)", "Jump to night (cycle runs)", "Ship to the next settlement", "Noclip on/off"];
 
-/// The digit taps, in the order of `COMMANDS`.
-const KEYS: [Tap; 8] = [Tap::Dev1, Tap::Dev2, Tap::Dev3, Tap::Dev4, Tap::Dev5, Tap::Dev6, Tap::Dev7, Tap::Dev8];
+const KEYS: [Tap; 9] = [Tap::Dev1, Tap::Dev2, Tap::Dev3, Tap::Dev4, Tap::Dev5, Tap::Dev6, Tap::Dev7, Tap::Dev8, Tap::Dev9];
 
 /// Money one press of the money command adds. TODO(initiator): the amount.
 pub const MONEY: i64 = 1000;
@@ -43,10 +38,9 @@ pub const JUMP_SKIP_M: f64 = 1000.0;
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
 pub struct DevMenu {
     pub open: bool,
-    /// What the last command did, shown under the list.
     pub last: Option<String>,
-    /// Command 8 was pressed; `jump_to_settlement` moves the ship.
     pub jump: bool,
+    pub noclip: bool,
 }
 
 /// Every licence the data has, earned by the host's client (the ones it has stay as they are).
@@ -78,7 +72,6 @@ fn run(i: usize, gp: &mut Gameplay, ships: &mut Query<&mut Ship>, clock: &mut Da
             "boost full".into()
         }
         _ => {
-            // 3 always day, 4 always night (the clock stands), 5 and 6 jump and the cycle runs.
             let (hour, stand) = match i {
                 3 => (DAY_HOUR, true),
                 4 => (NIGHT_HOUR, true),
@@ -125,6 +118,10 @@ pub fn update_dev(
                 menu.jump = true;
                 continue;
             }
+            if i == 8 {
+                menu.noclip = true;
+                continue;
+            }
             let now = clock.t;
             let at_hour = |h: f64| ps.as_ref().zip(up).and_then(|(ps, up)| ps.time_for_hour(up, to_star, h, now));
             menu.last = Some(run(i, &mut gp, &mut ships, &mut clock, at_hour));
@@ -132,8 +129,17 @@ pub fn update_dev(
     }
 }
 
-/// Command 8 (#238): the ship, stopped and level, `JUMP_ABOVE_M` above the nearest settlement
-/// farther than `JUMP_SKIP_M`, its landing pad straight below.
+pub fn toggle_noclip(mut menu: ResMut<DevMenu>, mut players: Query<&mut crate::walker::Player>) {
+    if !std::mem::take(&mut menu.noclip) {
+        return;
+    }
+    for mut pl in &mut players {
+        pl.noclip = !pl.noclip;
+        pl.w.halt();
+        menu.last = Some(if pl.noclip { "noclip on".into() } else { "noclip off".into() });
+    }
+}
+
 pub fn jump_to_settlement(mut menu: ResMut<DevMenu>, planet: Res<PlanetRes>, mut ships: Query<(&mut Position, &mut Rotation, &mut LinearVelocity, &mut AngularVelocity), With<Ship>>) {
     if !menu.jump {
         return;

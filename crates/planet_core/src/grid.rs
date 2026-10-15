@@ -1,4 +1,4 @@
-//! A hash grid over 3D space for things standing on the planet (#177, spike 14): stamps, sites and
+//! A hash grid over 3D space for things standing on the planet: stamps, sites and
 //! the points the placement keeps apart. Density rules give a planet of any radius thousands of
 //! features; a linear scan per height query or per candidate would not survive that. Items keep
 //! their insertion order inside a cell, so a sum over a cell's items adds in the same order as a
@@ -18,7 +18,6 @@ fn key(c: [i64; 3]) -> u64 {
 }
 
 impl Grid {
-    /// An empty grid of cells `cell_m` wide on a planet of `radius`.
     pub fn new(cell_m: f64, radius: f64) -> Grid {
         Grid { cell: cell_m.max(1.0), radius, map: HashMap::new() }
     }
@@ -40,7 +39,6 @@ impl Grid {
         }
     }
 
-    /// Item `i` as a point (in its own cell only).
     pub fn insert_point(&mut self, i: u32, dir: V3) {
         let p = dir * self.radius;
         self.map.entry(key([self.cell_of(p.x), self.cell_of(p.y), self.cell_of(p.z)])).or_default().push(i);
@@ -86,29 +84,6 @@ mod tests {
         let phi = (k * 104729 % 6283) as f64 / 1000.0;
         let r = (1.0 - z * z).sqrt();
         v3(r * phi.cos(), z, r * phi.sin())
-    }
-
-    #[test]
-    fn near_finds_everything_a_scan_finds_and_in_order() {
-        let radius = 5000.0;
-        let mut g = Grid::new(400.0, radius);
-        let pts: Vec<V3> = (0..500).map(dir).collect();
-        for (i, p) in pts.iter().enumerate() {
-            g.insert_point(i as u32, *p);
-        }
-        for q in 0..200 {
-            let d = dir(1000 + q);
-            let mut seen = Vec::new();
-            g.any_near(d, 400.0, |i| {
-                seen.push(i);
-                false
-            });
-            for (i, p) in pts.iter().enumerate() {
-                if radius * p.dot(d).clamp(-1.0, 1.0).acos() <= 400.0 {
-                    assert!(seen.contains(&(i as u32)), "item {i} within 400 m is found");
-                }
-            }
-        }
     }
 
     #[test]

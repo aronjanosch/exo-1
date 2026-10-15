@@ -162,6 +162,10 @@ pub enum ReactorAsk {
     SetPumpMode(PumpMode),
     /// The temperature boost: up (true) or down (false), as the core takes it (#300).
     Boost(bool),
+    /// First press of the core eject: the safety cover opens for `eject_arm_s` (the host's timer).
+    ArmEject,
+    /// Second press, inside the arm window: the core is thrown out (PULSAR's core eject, #300 r22).
+    Eject,
 }
 
 /// The coolant pump's mode (#300): off, a low or a high stream.
@@ -361,6 +365,13 @@ pub struct ReactorNews {
     pub graph_points: u8,
     pub graph_output: [u16; GRAPH_POINTS],
     pub graph_load: [u16; GRAPH_POINTS],
+    /// The core was ejected: the readout shows NO CORE, the rods are gone (#300 r22).
+    pub ejected: bool,
+    /// The EJECT safety cover is open (ARM EJECT pressed, the window still running).
+    pub eject_armed: bool,
+    /// The core ejects the host has applied so far (`ReactorCounts::ejects`). A process that sees
+    /// it go up shows the CORE EJECTED notice once, as the blasts do.
+    pub ejects: u32,
 }
 
 /// The most points the reactor graph carries (the shipped `graph_points`, 25). A fixed size keeps
@@ -524,6 +535,9 @@ mod tests {
             graph_points: 3,
             graph_output: [7; GRAPH_POINTS],
             graph_load: [5; GRAPH_POINTS],
+            ejected: true,
+            eject_armed: true,
+            ejects: 3,
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {
             ToClient::Reactor(r) => r,
@@ -545,6 +559,8 @@ mod tests {
             ReactorAsk::SetBreaker(BreakerGroup::Lights, false),
             ReactorAsk::SetBreaker(BreakerGroup::Engines, true),
             ReactorAsk::SetPumpMode(PumpMode::Low),
+            ReactorAsk::ArmEject,
+            ReactorAsk::Eject,
         ];
         for ask in asks {
             let back = match decode::<ToHost>(&encode(&ToHost::Reactor(ask))).expect("decodes") {

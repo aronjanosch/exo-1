@@ -11,6 +11,10 @@
 //! - Fires, sparks and meltdowns are logged (`info!`/`warn!`) and counted in `ReactorCounts` for
 //!   the scenarios. A fire starts in the engine room's air (`fire`, #298); the meltdown's effects
 //!   come with their slice. The dev faults screen's Fire asks for a fire at the reactor.
+//! - The core eject (PULSAR's lever, #300 r22): ARM EJECT opens the EJECT cover for `eject_arm_s`
+//!   (the host keeps the timer); a second Eject inside it throws the core out (`EngineRoom::eject_core`):
+//!   the rods leave with it, no melt, the reactor is dead until a repair installs an empty core. The
+//!   notice (CORE EJECTED) shows on every process from the news' `ejects` counter.
 //! - The readout and the dev fault screen are `reactor_screen`.
 use super::*;
 use crate::dev_area::engine_room::{EngineAir, ShipAlarm};
@@ -18,6 +22,8 @@ use crate::dev_area::fire::{self, FireAlarm, FireConfig, FireGrid, FireModel};
 use crate::items::{Items, NetOut, Role};
 use crate::dev_area::engine_room::ROOM;
 use crate::dev_area::rods;
+use crate::gameplay::Gameplay;
+use gameplay_core::notice::{Notice, NoticeKind};
 use item_core::wire::{Alarm, BreakerGroup, FuelTube, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, GRAPH_POINTS};
 use reactor_core::{AlarmLevel, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
 
@@ -38,6 +44,8 @@ pub struct ReactorCounts {
     pub meltdowns: u32,
     /// The meltdown blasts (`dev_area::blast`).
     pub blasts: u32,
+    /// The core ejects (PULSAR's core eject, #300 r22).
+    pub ejects: u32,
 }
 
 /// The host's reactor: the room, the manual targets, and what was last sent.
@@ -50,6 +58,9 @@ pub struct ReactorSim {
     pub turbine: f64,
     /// Whether the room's alarm had been on (Warn or Danger) at the last step.
     alarmed: bool,
+    /// The EJECT cover's time left, seconds, while it is open (ARM EJECT pressed); None when shut.
+    /// The host keeps it: a second Eject inside the window ejects.
+    eject_left: Option<f64>,
     sent: Option<ReactorNews>,
     since_send: f64,
 }
@@ -79,7 +90,14 @@ impl ReactorSim {
         // The warm-up runs the tank down; a fresh room starts with a full one (TODO(initiator): later
         // the tank may start where the ship's last run left it).
         room.pump_mut().refill(100.0);
-        ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, sent: None, since_send: f64::MAX }
+        ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX }
+    }
+
+    /// Runs the EJECT cover's timer down by `dt`: it shuts again when the window is over.
+    pub fn tick_eject(&mut self, dt: f64) {
+        if let Some(left) = self.eject_left {
+            self.eject_left = (left - dt > 0.0).then_some(left - dt);
+        }
     }
 
     /// One request, applied on this host. Set fission and turbine only count on Manual.
@@ -120,6 +138,21 @@ impl ReactorSim {
                 let alarmed = self.alarmed;
                 *self = ReactorSim { sent: None, since_send: f64::MAX, alarmed, ..ReactorSim::new(cfg) };
                 info!("reactor: reset");
+            }
+            ReactorAsk::ArmEject => {
+                if !self.room.reactor().ejected() && self.eject_left.is_none() {
+                    self.eject_left = Some(cfg.reactor.eject_arm_s);
+                    info!("reactor: EJECT cover open for {} s", cfg.reactor.eject_arm_s);
+                }
+            }
+            ReactorAsk::Eject => {
+                if self.eject_left.take().is_some() {
+                    for e in self.room.eject_core() {
+                        route(e, counts);
+                    }
+                } else {
+                    info!("reactor: eject refused (the cover is shut)");
+                }
             }
             ReactorAsk::Scram => {
                 self.room.reactor_mut().scram();
@@ -177,6 +210,10 @@ impl ReactorSim {
             boost: r.temperature_boost(),
             boost_ok: r.power_on() && r.condition().functioning() && r.boost_allowed(),
             meltdown_eta_s: meltdown_eta(r.timers().1, r.tuning().meltdown_delay_s, r.melted()),
+            ejected: r.ejected(),
+            eject_armed: self.eject_left.is_some(),
+            // The host's count is set by `reactor_step`, as the blasts are.
+            ejects: 0,
             graph_points: self.room.history().size().min(GRAPH_POINTS) as u8,
             graph_output: graph_row(&self.room.history().output),
             graph_load: graph_row(&self.room.history().load),
@@ -214,6 +251,23 @@ pub fn lamps_of(w: &Warnings) -> [bool; Lamp::COUNT] {
 /// `(1 - timer) * delay` left. None while the timer is at 0 and once the core has melted.
 pub fn meltdown_eta(timer: f64, delay_s: f64, melted: bool) -> Option<f64> {
     (timer > 0.0 && !melted).then(|| (1.0 - timer.clamp(0.0, 1.0)) * delay_s)
+}
+
+/// Every process: the news' eject counter against the last one this process saw. True when it went
+/// up (the notice shows); the first news only sets the baseline, so a late joiner does not replay
+/// old ejections.
+pub fn eject_fresh(seen: &mut Option<u32>, ejects: u32) -> bool {
+    let fresh = matches!(*seen, Some(s) if ejects > s);
+    *seen = Some(ejects);
+    fresh
+}
+
+/// The CORE EJECTED notice, once per ejection, on every process (the host's news is its own).
+pub fn eject_notice(items: Res<Items>, mut seen: Local<Option<u32>>, mut gp: ResMut<Gameplay>) {
+    let Some(news) = items.reactor else { return };
+    if eject_fresh(&mut seen, news.ejects) {
+        gp.notify(Notice::new(NoticeKind::Warning, "notice.reactor.eject"));
+    }
 }
 
 /// Whether the blinking lamps are lit at a time: 2 Hz, lit for the first quarter of each half
@@ -292,6 +346,10 @@ pub fn route(e: RoomEvent, counts: &mut ReactorCounts) {
         RoomEvent::Reactor(ReactorEvent::Blast(_)) => {
             counts.blasts += 1;
         }
+        RoomEvent::Reactor(ReactorEvent::CoreEjected) => {
+            counts.ejects += 1;
+            info!("reactor: CORE EJECTED");
+        }
         RoomEvent::Device { source, event } => info!("engine room: {source:?} {event:?} (the machine's condition crossed a line)"),
         _ => {}
     }
@@ -303,7 +361,7 @@ pub fn plugin(app: &mut App) {
     let warm = app.world().contains_resource::<WarmAtCreation>();
     app.insert_resource(ReactorSim::created(&tuning, warm)).insert_resource(ReactorConfig(tuning)).init_resource::<ReactorCounts>();
     app.init_resource::<super::blast::PendingBlasts>().init_resource::<super::blast::BlastFlash>();
-    app.add_systems(FixedUpdate, (reactor_step, super::blast::reactor_blast, super::blast::client_blast_news).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
+    app.add_systems(FixedUpdate, (reactor_step, super::blast::reactor_blast, super::blast::client_blast_news, eject_notice).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
 }
 
 /// Host and one process: the requests, one step, the events (fires start in the air), the ship's
@@ -383,6 +441,7 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
         }
     }
     let dt = time.delta_secs_f64();
+    sim.tick_eject(dt);
     let input = if sim.manual { Input::manual(sim.fission, sim.turbine) } else { Input::auto() };
     events.extend(sim.room.step(dt, input));
     for e in events {
@@ -407,6 +466,7 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     let oxygen = (air.oxygen_at(ROOM.centre) * 100.0).round() / 100.0;
     let mut now = sim.news(oxygen);
     now.blasts = counts.blasts;
+    now.ejects = counts.ejects;
     items.reactor = Some(now);
     sim.since_send += dt;
     if items.role == Role::Host && sim.sent != Some(now) && sim.since_send >= SEND_EVERY_S {
@@ -632,13 +692,60 @@ mod tests {
     }
 
     #[test]
+    fn the_eject_needs_the_cover_open_and_a_second_press_inside_its_window() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.apply(ReactorAsk::Eject, &cfg(), &mut k);
+        assert!(!s.room.reactor().ejected(), "a press with the cover shut does nothing");
+        s.apply(ReactorAsk::ArmEject, &cfg(), &mut k);
+        assert!(s.news(1.0).eject_armed && !s.news(1.0).ejected);
+        s.tick_eject(4.0);
+        assert!(s.news(1.0).eject_armed, "still inside the 5 s window");
+        s.apply(ReactorAsk::Eject, &cfg(), &mut k);
+        assert!(s.room.reactor().ejected() && s.news(1.0).ejected && !s.news(1.0).eject_armed);
+        assert_eq!(k.ejects, 1);
+        assert!(s.room.reactor().rods().is_empty());
+    }
+
+    #[test]
+    fn the_cover_shuts_again_after_its_window_and_the_eject_is_refused() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.apply(ReactorAsk::ArmEject, &cfg(), &mut k);
+        s.tick_eject(5.1);
+        assert!(!s.news(1.0).eject_armed, "the cover shut after 5 s");
+        s.apply(ReactorAsk::Eject, &cfg(), &mut k);
+        assert!(!s.room.reactor().ejected() && k.ejects == 0);
+    }
+
+    #[test]
+    fn a_second_arm_does_not_restart_the_window() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.apply(ReactorAsk::ArmEject, &cfg(), &mut k);
+        s.tick_eject(3.0);
+        s.apply(ReactorAsk::ArmEject, &cfg(), &mut k);
+        s.tick_eject(2.5);
+        assert!(!s.news(1.0).eject_armed, "the first window ran out; the second press did not extend it");
+    }
+
+    #[test]
+    fn the_eject_notice_shows_once_per_new_count_and_the_first_news_is_the_baseline() {
+        let mut seen = None;
+        assert!(!eject_fresh(&mut seen, 1), "a late joiner's first news is the baseline");
+        assert!(!eject_fresh(&mut seen, 1));
+        assert!(eject_fresh(&mut seen, 2));
+        assert!(!eject_fresh(&mut seen, 2));
+    }
+
+    #[test]
     fn the_events_are_counted() {
         let mut k = ReactorCounts::default();
         route(RoomEvent::Sparks, &mut k);
         route(RoomEvent::Reactor(ReactorEvent::Fire { size: 0.1 }), &mut k);
         route(RoomEvent::Fire { size: 0.05, source: reactor_core::Source::Junction }, &mut k);
         route(RoomEvent::Reactor(ReactorEvent::Meltdown), &mut k);
-        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, meltdowns: 1, blasts: 0 });
+        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, meltdowns: 1, blasts: 0, ejects: 0 });
         route(RoomEvent::Reactor(ReactorEvent::Blast(reactor_core::Blast::default())), &mut k);
         assert_eq!(k.blasts, 1, "the blast is counted");
     }

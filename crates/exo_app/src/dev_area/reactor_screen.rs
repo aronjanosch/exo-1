@@ -17,8 +17,9 @@
 //!   zone band, the room's oxygen, the lights breaker. TODO(captain): the emergency view with the
 //!   captain role.
 //! - The RX STATUS screen (S, on the south wall beside the readout, to its east): the warning lamps,
-//!   the temperature boost (two buttons) and the implosion's countdown while the meltdown timer runs.
-//!   NO POWER like the others.
+//!   the temperature boost (two buttons), the core eject (PULSAR's lever, #300 r22: ARM EJECT opens
+//!   the cover, EJECT inside its window throws the core out; the cover's state sits by the boost) and
+//!   the implosion's countdown while the meltdown timer runs. NO POWER like the others.
 //! - The dev faults screen (S, next to the test console): always powered.
 //!
 //! The machines' screens show NO POWER unless the snapshot says `powered`. Every process shows the
@@ -239,9 +240,11 @@ fn text(x: f64, y: f64, w: f64, h: f64, s: &str, size: f64, face: TextFace, ink:
     Shape::Text { x, y, w, h, text: s.to_string(), size, face, ink, centred }
 }
 
-/// The status word of the reactor header: OFF, STABLE, HOT or CRITICAL.
+/// The status word of the reactor header: NO CORE after an eject (like OFF, dim), OFF, STABLE, HOT
+/// or CRITICAL.
 pub fn reactor_status(r: Option<&ReactorNews>) -> (&'static str, Tone) {
     match r {
+        Some(r) if r.ejected => ("NO CORE", Tone::Dim),
         Some(r) if r.power_on => match zone(r.temp, r.optimal, r.allowed) {
             Zone::Crit => ("CRITICAL", Tone::Bad),
             Zone::High => ("HOT", Tone::Warn),
@@ -628,14 +631,35 @@ pub fn status_panel(r: Option<&ReactorNews>, max_kw: f64, blink_on: bool) -> Pan
         grid.push(row(LAMP_GAP, cells).fixed(LAMP_H));
     }
     let lamps = column(LAMP_GAP, grid).fixed(4.0 * LAMP_H + 3.0 * LAMP_GAP);
-    let boost = row(8.0, vec![micro("BOOST").flex(1.0), readout(format!("{:+.0}", r.boost)).text_size(font::SMALL).tone(Tone::Normal)]).fixed(16.0);
+    let boost = row(8.0, vec![micro("BOOST").flex(1.0), readout(format!("{:+.0}", r.boost)).text_size(font::SMALL).tone(Tone::Normal), cover_word(&r)]).fixed(16.0);
     let countdown = match r.meltdown_eta_s {
         Some(s) => readout(format!("IMPLOSION {}", clock(s))).text_size(font::LABEL).tone(Tone::Bad).fixed(22.0),
         None => space().fixed(22.0),
     };
-    let presses = row(6.0, vec![button("UP", "boost_up").enabled(r.boost_ok).flex(1.0), button("DOWN", "boost_down").enabled(r.boost_ok).flex(1.0)]).fixed(ctl::SM);
+    let presses = row(6.0, vec![button("UP", "boost_up").enabled(r.boost_ok).flex(1.0), button("DOWN", "boost_down").enabled(r.boost_ok).flex(1.0), eject_button(&r).flex(1.0)]).fixed(ctl::SM);
     let graph = graph_item(Some(&r), max_kw);
     Panel::screen(Tier::M, STATUS_NAME, "RX-02", column(5.0, vec![lamps, boost, presses, countdown, graph])).with_padding(6.0)
+}
+
+/// The core eject (PULSAR's lever, #300 r22): a guarded two-press. ARM EJECT opens the safety cover;
+/// the second press, EJECT in the bad tone, throws the core out, inside the host's window
+/// (`eject_arm_s`). Nothing to press once the core is out.
+pub fn eject_button(r: &ReactorNews) -> Item {
+    let press = if r.eject_armed { button("EJECT", "eject").tone(Tone::Bad) } else { button("ARM EJECT", "arm_eject") };
+    press.enabled(!r.ejected)
+}
+
+/// The cover's state beside the boost: COVER SHUT, COVER OPEN (bad tone while the window runs), NO
+/// CORE once the core is out.
+pub fn cover_word(r: &ReactorNews) -> Item {
+    let (word, tone) = if r.ejected {
+        ("NO CORE", Tone::Dim)
+    } else if r.eject_armed {
+        ("COVER OPEN", Tone::Bad)
+    } else {
+        ("COVER SHUT", Tone::Dim)
+    };
+    readout(word).text_size(font::SMALL).tone(tone)
 }
 
 /// The clicks: the readout asks for the reactor (the toggles give the new state as the value, the
@@ -673,6 +697,8 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
             match c.action.as_str() {
                 "boost_up" => Some(ReactorAsk::Boost(true)),
                 "boost_down" => Some(ReactorAsk::Boost(false)),
+                "arm_eject" => Some(ReactorAsk::ArmEject),
+                "eject" => Some(ReactorAsk::Eject),
                 _ => None,
             }
         } else if c.panel == FAULTS_ID {
@@ -857,6 +883,24 @@ mod tests {
         assert!(!label(&status_panel(Some(&status_news()), 2000.0, true), "IMPLOSION 0:42"), "no countdown without an eta");
         assert_eq!(clock(125.0), "2:05");
         assert_eq!(clock(-1.0), "0:00");
+    }
+
+    #[test]
+    fn the_eject_is_two_presses_and_is_gone_once_the_core_is_out() {
+        let shut = status_panel(Some(&status_news()), 2000.0, true);
+        assert!(matches!(shut.find("arm_eject").expect("ARM EJECT").widget, display_core::Widget::Button { enabled: true, .. }));
+        assert!(shut.find("eject").is_none(), "no EJECT with the cover shut");
+        let open = status_panel(Some(&ReactorNews { eject_armed: true, ..status_news() }), 2000.0, true);
+        assert!(open.find("arm_eject").is_none());
+        assert!(matches!(open.find("eject").expect("EJECT with the cover open").widget, display_core::Widget::Button { enabled: true, tone: Tone::Bad, .. }));
+        let out = status_panel(Some(&ReactorNews { ejected: true, ..status_news() }), 2000.0, true);
+        assert!(matches!(out.find("arm_eject").expect("the button is there").widget, display_core::Widget::Button { enabled: false, .. }));
+    }
+
+    #[test]
+    fn the_readout_says_no_core_after_an_eject() {
+        assert_eq!(reactor_status(Some(&ReactorNews { ejected: true, ..news() })), ("NO CORE", Tone::Dim));
+        assert_eq!(reactor_status(Some(&news())).0, "STABLE");
     }
 
     #[test]

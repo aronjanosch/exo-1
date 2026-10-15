@@ -13,7 +13,7 @@ use super::*;
 use crate::dev_area::engine_room::ShipAlarm;
 use crate::dev_area::reactor::{ReactorCounts, ReactorSim};
 use crate::dev_area::engine_room::{COOLANT_PUMP_AT, JUNCTION_BOX_AT};
-use crate::dev_area::reactor_screen::{DOOR_ID, FAULTS_ID, JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID};
+use crate::dev_area::reactor_screen::{reactor_status, DOOR_ID, FAULTS_ID, JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID};
 use crate::dev_area::DevArea;
 use super::{ship_frame_of, with_player};
 use super::dev_area::tap_until;
@@ -359,6 +359,27 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
     // temperature boost to its amount (25, past 20).
     use_display(s, "RX STATUS", STATUS_ID, [-9.6, -17.6]);
     s.push(click_until(STATUS_ID, "boost_up", None, "reactor: BOOST UP on the status screen raises the boost", |w| sim(w).room.reactor().temperature_boost() > 20.0));
+
+    // #300 r22, PULSAR's core eject: ARM EJECT opens the cover, EJECT inside its window throws the core
+    // out. Then nothing follows: no melt, no blast, the readout says NO CORE, the rods are gone.
+    s.push(click_until(STATUS_ID, "arm_eject", None, "reactor: ARM EJECT on the status screen opens the cover", |w| w.resource::<Items>().reactor.is_some_and(|n| n.eject_armed)));
+    s.push(click_until(STATUS_ID, "eject", None, "reactor: EJECT inside the window throws the core out", |w| sim(w).room.reactor().ejected()));
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "reactor: after the eject nothing follows");
+            return false;
+        }
+        if c.t < 10.0 {
+            return false;
+        }
+        let k = *w.resource::<ReactorCounts>();
+        check(c, k.ejects == 1 && k.meltdowns == 0 && k.blasts == 0, format!("reactor: one eject, no melt, no blast ({} / {} / {})", k.ejects, k.meltdowns, k.blasts));
+        let n = w.resource::<Items>().reactor;
+        check(c, reactor_status(n.as_ref()).0 == "NO CORE", format!("reactor: the readout says NO CORE ({:?})", reactor_status(n.as_ref()).0));
+        check(c, sim(w).room.reactor().rods().is_empty() && !sim(w).room.reactor().melted(), "reactor: the rods went with the core, and nothing melted".into());
+        end(w, c, format!("{} eject", k.ejects));
+        true
+    }));
 }
 
 /// The grid's demand of the groups whose breakers are on (what the load is, from the room).

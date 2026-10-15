@@ -163,7 +163,8 @@ fn update_ring(
     let share = session.and_then(|p| items.reactor.as_ref().map(|r| part_of(r, p.device).share));
     // The minigame's parts show only while it runs (half condition or less); the progress arc
     // shows through any session; the pips only for a broken machine under the minigame.
-    let game = session.is_some() && minigame_on(share.unwrap_or(1.0), &cfg.0);
+    // The breach has no ring: its hold is the wrench on the wall, as the plain hold has none (r38).
+    let game = session.is_some_and(|p| p.device != item_core::wire::RepairDevice::HullBreach) && minigame_on(share.unwrap_or(1.0), &cfg.0);
     let broken = session.is_some_and(|p| p.gated);
     let hits = session.map_or(0, |p| p.session.hits);
     for (part, mut n) in &mut nodes {

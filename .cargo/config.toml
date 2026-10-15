@@ -6,7 +6,7 @@ dev = "run -p exo_app --features dynamic --"
 # `scripts/gate` (one gate at a time, low priority). `cargo t -P perf` runs the timing test
 # (.config/nextest.toml); `cargo check --workspace --all-targets` checks the static build.
 t = "nextest run --workspace --features exo_app/dynamic"
-# One app test, dynamically linked like the gate: `cargo ts scenario_warp` (a substring of the
+# One app test, dynamically linked like the gate: `cargo ts scenario_swap` (a substring of the
 # test name, `scenario_<name>::…`). Builds only the app test binary.
 ts = "nextest run --workspace --features exo_app/dynamic --test app"
 # The full scenario alone, for a quick look; `cargo t` already runs it.

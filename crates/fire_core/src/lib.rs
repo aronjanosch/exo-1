@@ -5,7 +5,10 @@ use glam::{DVec2, DVec3};
 use serde::{Deserialize, Serialize};
 
 pub mod grid;
+pub mod oxygen;
 pub mod tuning;
+
+pub use oxygen::generator_flow;
 
 #[cfg(test)]
 mod tests;
@@ -292,6 +295,12 @@ impl Deck {
 
     pub fn fires_in(&self, r: RoomId) -> impl Iterator<Item = &Fire> {
         self.fires.iter().filter(move |f| f.room == r)
+    }
+
+    /// Puts `amount` m³ of air into room `r` (a generator's flow times dt), never past full.
+    pub fn add_oxygen(&mut self, r: RoomId, amount: f64) {
+        let room = &mut self.rooms[r.0];
+        room.oxygen = (room.oxygen + amount.max(0.0)).min(room.volume);
     }
 
     pub fn total_oxygen(&self) -> f64 {

@@ -78,6 +78,9 @@ pub struct RoomTuning {
     pub aux_enabled: bool,
     /// The aux reactor's output, kW. TODO(initiator): value.
     pub aux_output_kw: f64,
+    /// The oxygen generator's air, m³ per second at full life support power (`fire_core::oxygen`).
+    /// TODO(initiator): value; 2.13 refills the 256 m³ engine room from half in about 60 s.
+    pub oxygen_generator_rate: f64,
 }
 
 impl Default for RoomTuning {
@@ -113,6 +116,7 @@ impl Default for RoomTuning {
             wander_rate: 0.15,
             aux_enabled: false,
             aux_output_kw: 500.0,
+            oxygen_generator_rate: 2.13,
         }
     }
 }

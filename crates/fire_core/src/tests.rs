@@ -181,3 +181,52 @@ fn a_fire_at_a_device_face_burns_it_at_once_and_one_further_out_by_its_range() {
     assert!(burn(1.4) > 0.0, "inside the range");
     assert_eq!(burn(1.6), 0.0, "beyond the range");
 }
+
+// The oxygen generator (`oxygen.rs`) and `Deck::add_oxygen`. The engine room is 10 x 8 x 3.2 m.
+const ROOM_M3: f64 = 10.0 * 8.0 * 3.2;
+
+#[test]
+fn full_power_makes_the_rate_and_more_power_than_full_makes_no_more() {
+    assert_eq!(generator_flow(1.0, 2.0, 1.0), 2.0);
+    assert_eq!(generator_flow(1.5, 2.0, 1.0), 2.0, "the voltage is capped at full");
+}
+
+#[test]
+fn half_power_makes_half_and_below_the_minimum_makes_nothing() {
+    assert!((generator_flow(0.5, 2.0, 1.0) - 1.0).abs() < 1e-12);
+    assert_eq!(generator_flow(0.49, 2.0, 1.0), 0.0);
+    assert_eq!(generator_flow(0.0, 2.0, 1.0), 0.0);
+    assert_eq!(generator_flow(f64::NAN, 2.0, 1.0), 0.0, "a NaN voltage makes nothing");
+}
+
+#[test]
+fn the_condition_counts_squared_like_barotrauma() {
+    assert!((generator_flow(1.0, 2.0, 0.5) - 0.5).abs() < 1e-12, "half condition gives a quarter of the air: 2 × 0.5² = 0.5");
+    assert_eq!(generator_flow(1.0, 2.0, 0.0), 0.0);
+}
+
+#[test]
+fn adding_air_tops_the_room_up_and_clamps_at_full() {
+    let mut d = Deck::new(FireTuning::default(), 1);
+    let r = d.add_room(ROOM_M3);
+    d.room_mut(r).oxygen = ROOM_M3 * 0.5;
+    d.add_oxygen(r, 10.0);
+    assert!((d.room(r).oxygen - (ROOM_M3 * 0.5 + 10.0)).abs() < 1e-9);
+    d.add_oxygen(r, 1.0e6);
+    assert_eq!(d.room(r).oxygen, ROOM_M3, "never past full");
+    d.add_oxygen(r, -5.0);
+    assert_eq!(d.room(r).oxygen, ROOM_M3, "a negative amount takes nothing");
+}
+
+#[test]
+fn full_power_refills_the_engine_room_from_half_in_about_a_minute() {
+    // 2.13 m³/s is the shipped `room.oxygen_generator_rate` (reactor.json).
+    let mut d = Deck::new(FireTuning::default(), 1);
+    let r = d.add_room(ROOM_M3);
+    d.room_mut(r).oxygen = ROOM_M3 * 0.5;
+    let rate = generator_flow(1.0, 2.13, 1.0);
+    for _ in 0..60 {
+        d.add_oxygen(r, rate);
+    }
+    assert!(d.room(r).oxygen_fraction() > 0.99, "after 60 s: {}", d.room(r).oxygen_fraction());
+}

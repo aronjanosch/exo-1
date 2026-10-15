@@ -438,6 +438,11 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     sim.tick_eject(dt);
     let input = if sim.manual { Input::manual(sim.fission, sim.turbine) } else { Input::auto() };
     events.extend(sim.room.step(dt, input));
+    // Life support's air: the oxygen generator refills the engine room at the grid's life support
+    // factor (`fire_core::oxygen`, Barotrauma OxygenGenerator). Its condition is 1 for now.
+    let o2 = fire_core::generator_flow(sim.room.grid().factor(Group::LifeSupport), cfg.0.room.oxygen_generator_rate, 1.0);
+    let engine = air.engine;
+    air.deck.add_oxygen(engine, o2 * dt);
     for e in events {
         if let Some((source, size)) = fire::start_of(&e) {
             fire::ignite(&mut air, &mut grid, *model, source, size);

@@ -1,4 +1,5 @@
-//! The medbay in the LAB zone (#287, #254): a console and a bed with a patient. Syringes and first
+//! The medbay in the ship's medbay room, mirrored in the MEDBAY zone outside (#287, #254, #306): a
+//! console and a bed with a patient. Syringes and first
 //! aid from the hands are used on the local player (their body in `HealthState`, the same one the
 //! fire, the air and the death work on) or on the bed patient. A syringe's dose goes through
 //! `Health::dose` (its treatments and status effects, an overdose as poison), first aid through
@@ -19,9 +20,14 @@ use health_core::{DoseResult, Env, Health, HealthTuning, Life};
 use production_core::devices::{Dose, Target};
 
 pub const MEDBAY: PanelId = PanelId::new("lab_medbay");
-/// Where the medbay console and the bed stand in the LAB zone (m from its centre).
-pub const MEDBAY_AT: [f64; 2] = [-4.0, 3.0];
-pub const BED_AT: [f64; 2] = [3.5, 3.0];
+/// Where the console and the bed stand (m from the centre of `MEDBAY_ROOM`): the console against
+/// the east wall facing west, the bed along the west wall, the walkway from the north doorway
+/// (x -5.7) between them.
+pub const MEDBAY_AT: [f64; 2] = [2.4, -0.5];
+pub const BED_AT: [f64; 2] = [-2.0, -0.5];
+/// The same two in the MEDBAY zone outside (m from its centre), laid out in the open.
+pub const MEDBAY_OUT_AT: [f64; 2] = [-3.0, 0.0];
+pub const BED_OUT_AT: [f64; 2] = [2.0, 0.0];
 pub const PANEL_W: f64 = 560.0;
 pub const PANEL_H: f64 = 600.0;
 /// The bed patient's burn at the start. TODO(initiator).
@@ -71,17 +77,23 @@ pub fn plugin(app: &mut App) {
     {
         let mut d = app.world_mut().resource_mut::<DevAreaDevices>();
         let h = PANEL_H / PANEL_W;
-        d.add(PlaceholderBox {
+        let console = PlaceholderBox {
             id: "lab_medbay".into(),
-            zone: LAB,
+            zone: layout::MEDBAY_ROOM,
             local_pos: MEDBAY_AT,
             size: [1.4, 1.0, 0.8],
-            turn_deg: 0.0,
+            turn_deg: -90.0,
             colour: [0.85, 0.92, 0.95],
             panel: Some(PanelSpec { id: MEDBAY, name: "Medbay".into(), size_m: [1.0, h], at: [0.0, 1.0 + 0.5 * h, 0.2], tilt_deg: 15.0 }),
-        });
-        d.add(PlaceholderBox { id: "lab_bed".into(), zone: LAB, local_pos: BED_AT, size: [1.0, 0.6, 2.1], turn_deg: 0.0, colour: [0.92, 0.92, 0.88], panel: None });
-        d.add(PlaceholderBox { id: "lab_bed_patient".into(), zone: LAB, local_pos: [BED_AT[0], BED_AT[1] + 0.1], size: [0.5, 0.85, 1.6], turn_deg: 0.0, colour: [0.95, 0.6, 0.45], panel: None });
+        };
+        let bed = PlaceholderBox { id: "lab_bed".into(), zone: layout::MEDBAY_ROOM, local_pos: BED_AT, size: [1.0, 0.6, 2.1], turn_deg: 0.0, colour: [0.92, 0.92, 0.88], panel: None };
+        let patient = PlaceholderBox { id: "lab_bed_patient".into(), zone: layout::MEDBAY_ROOM, local_pos: [BED_AT[0], BED_AT[1] + 0.1], size: [0.5, 0.85, 1.6], turn_deg: 0.0, colour: [0.95, 0.6, 0.45], panel: None };
+        d.add_mirror(&console, super::MEDBAY, MEDBAY_OUT_AT);
+        d.add_mirror(&bed, super::MEDBAY, BED_OUT_AT);
+        d.add_mirror(&patient, super::MEDBAY, [BED_OUT_AT[0], BED_OUT_AT[1] + 0.1]);
+        d.add(console);
+        d.add(bed);
+        d.add(patient);
     }
     let files = crate::content_files("gameplay");
     let tuning = HealthTuning::load(&files).unwrap_or_else(|e| panic!("content/gameplay (health):\n  {}", e.join("\n  ")));

@@ -221,11 +221,12 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, (room_state.after(crate::items_net::items_net_in), room_step).chain().in_set(crate::phases::Fx::Input));
 }
 
-/// Window only: the lights of the room and the corridor (on when the lights breaker is on and the
-/// machines have power, else dark; the red alarm lights stay on emergency power), and the alarm's
-/// pulse.
+/// Window only: the lights of the room and the corridor follow the grid's lights factor
+/// (`reactor_core::LightState`: Barotrauma's flicker and fade, `lights.rs`), the red emergency
+/// lamps come on below `EMERGENCY_BELOW`, and the alarm's pulse. The red alarm lights stay on
+/// emergency power.
 pub fn window_plugin(app: &mut App) {
-    app.add_systems(Update, (spawn_lights, (room_lights, alarm_lights).after(spawn_lights)).after(super::spawn_devices).in_set(crate::phases::Frame::World));
+    app.add_systems(Update, (spawn_lights, (room_lights, alarm_lights, emergency_lamps).after(spawn_lights)).after(super::spawn_devices).in_set(crate::phases::Frame::World));
 }
 
 pub(super) fn room_state(mut items: ResMut<Items>, mut alarm: ResMut<ShipAlarm>, mut door: ResMut<EngineDoor>) {
@@ -339,6 +340,10 @@ struct RoomLight {
     alarm: bool,
 }
 
+/// Ours: a red lamp that is lit only in an emergency (the lights factor below 0.1).
+#[derive(Component)]
+struct EmergencyLamp;
+
 fn spawn_lights(mut commands: Commands, planet: Res<PlanetRes>, area: Res<DevArea>, mut done: Local<Option<warp_core::PlanetId>>, mut made: Local<Vec<Entity>>) {
     if *done == Some(planet.id) {
         return;
@@ -360,15 +365,56 @@ fn spawn_lights(mut commands: Commands, planet: Res<PlanetRes>, area: Res<DevAre
                 .id(),
         );
     }
+    // Ours: one red emergency lamp in the room and one in the corridor, dark until the lights fail.
+    for c in [ROOM.centre, CORRIDOR.centre] {
+        made.push(
+            commands
+                .spawn((PointLight { color: Color::srgb(1.0, 0.1, 0.05), intensity: 0.0, range: 8.0, shadow_maps_enabled: false, ..default() }, Transform::default(), WorldPos(at(c, 2.6)), EmergencyLamp))
+                .id(),
+        );
+    }
 }
 
-fn room_lights(time: Res<Time>, items: Res<Items>, mut flicker: Local<crate::effects::LampFlicker>, mut lights: Query<(&RoomLight, &mut PointLight)>) {
-    let on = items.reactor.is_some_and(|r| r.powered && r.breakers[item_core::wire::BreakerGroup::Lights.index()]);
-    let lit = flicker.update(on, time.elapsed_secs_f64());
+/// Peak intensity of the room's warm lamps, at full brightness.
+const ROOM_LAMP_INTENSITY: f32 = 60_000.0;
+/// Ours: the emergency lamps' intensity while on. `TODO(initiator)`.
+const EMERGENCY_INTENSITY: f32 = 8_000.0;
+
+/// The grid's lights factor from the snapshot (0 with no snapshot yet: the emergency lamps).
+fn lights_voltage(items: &Items) -> f64 {
+    items.reactor.map_or(0.0, |r| r.lights_factor)
+}
+
+fn room_lights(
+    time: Res<Time>,
+    items: Res<Items>,
+    sounds: Option<Res<crate::audio_slice::SliceSounds>>,
+    mut commands: Commands,
+    mut frame: Local<u64>,
+    mut state: Local<reactor_core::LightState>,
+    mut lights: Query<(&RoomLight, &mut PointLight)>,
+) {
+    let voltage = lights_voltage(&items);
+    *frame = frame.wrapping_add(1);
+    // Each client rolls its own flicker; the voltage is the synced part.
+    let roll = crate::effects::noise(*frame);
+    let brightness = state.step(time.delta_secs_f64(), voltage, roll);
+    if state.flickered() && voltage > reactor_core::lights::ZAP_ABOVE {
+        if let Some(s) = sounds {
+            crate::audio_slice::one_shot(&mut commands, &s.zap, crate::audio_slice::ZAP_VOL);
+        }
+    }
     for (l, mut light) in &mut lights {
         if !l.alarm {
-            light.intensity = if lit { 60_000.0 } else { 0.0 };
+            light.intensity = ROOM_LAMP_INTENSITY * brightness as f32;
         }
+    }
+}
+
+fn emergency_lamps(items: Res<Items>, mut lamps: Query<&mut PointLight, With<EmergencyLamp>>) {
+    let on = reactor_core::LightState::emergency(lights_voltage(&items));
+    for mut light in &mut lamps {
+        light.intensity = if on { EMERGENCY_INTENSITY } else { 0.0 };
     }
 }
 

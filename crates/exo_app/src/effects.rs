@@ -100,28 +100,6 @@ pub fn lamp_lit(target: bool, since: f64, now: f64) -> bool {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct LampFlicker {
-    target: bool,
-    since: f64,
-}
-
-impl Default for LampFlicker {
-    fn default() -> LampFlicker {
-        LampFlicker { target: false, since: f64::NEG_INFINITY }
-    }
-}
-
-impl LampFlicker {
-    pub fn update(&mut self, target: bool, now: f64) -> bool {
-        if target != self.target {
-            self.target = target;
-            self.since = now;
-        }
-        lamp_lit(self.target, self.since, now)
-    }
-}
-
 /// Alphas are 0..1. `oxygen` is the vitals' air left (1 is full; None when the air is no issue).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScreenFx {

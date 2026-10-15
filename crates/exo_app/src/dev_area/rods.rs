@@ -3,7 +3,7 @@
 //! 0 spent), kept when it is carried, loaded or pulled. Barotrauma style: the reactor is an item
 //! container with fuel slots, a rod in a slot is its available fuel.
 //!
-//! - A rod rack in the corridor, next to the coolant rack, holds two standard rods and one hot rod
+//! - A rod rack in the corridor, north of the extinguisher rack, holds two standard rods and one hot rod
 //!   (loose items on the rack, as the coolant canisters are). Taken with F.
 //! - Load: a rod in the selected slot, the look on the reactor within reach, LMB held `HOLD_S`
 //!   seconds: `Request::Use` goes to the host, which puts the rod into a free slot (`insert_rod`)
@@ -35,9 +35,11 @@ use walker_core::Frame;
 
 /// The `use` effect of a fuel rod: loading it into the reactor.
 pub const LOAD: &str = "load_rod";
-/// The rack in the corridor, relative to the corridor's centre (m), its size (m). Beside the
-/// coolant rack (`coolant::RACK_AT` is at x = 0.6); this one sits at x = -0.6, the walkway between.
-pub const RACK_AT: [f64; 2] = [-0.6, -1.5];
+/// The rack in the corridor, relative to the corridor's centre (m), its size (m). On the extinguisher
+/// rack's side (x = -0.6), but north of it (y = 1.5): from the walkway south of the extinguisher
+/// rack, the aim ray runs through this rack's loose rods, and `interact` takes a loose item in the
+/// cone before a rack (#300, `scenario_extinguisher`).
+pub const RACK_AT: [f64; 2] = [-0.6, 1.5];
 pub const RACK_SIZE: [f64; 3] = [0.5, 0.9, 0.5];
 /// The rods on the rack when the area is made: (item id, how many), in a row across the rack.
 pub const ON_RACK: [(&str, u32); 2] = [("fuel_rod", 2), ("fuel_rod_hot", 1)];

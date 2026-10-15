@@ -108,3 +108,20 @@ fn places_bind_to_an_instance() {
     assert!(!authored.binds_to("cinder", 1337, Some(1337)));
     assert!(authored.binds_to("hearth", 5, None), "a recipe without an authored seed: as before");
 }
+
+#[test]
+fn look_spots_face_somewhere_on_varied_planets() {
+    // A varied planet can have a basin whose centre is dry land: the spot stands on the centre, its facing must not be zero.
+    for text in [HEARTH, CINDER] {
+        for seed in 1..=8 {
+            let mut p = Planet::new(recipe(text, seed, 5000.0));
+            p.bake(0);
+            for kind in ["basin", "rim", "plateau", "crater", "canyon", "mesa", "spire", "caldera", "signature"] {
+                if let Some(s) = p.spot(kind) {
+                    let (d, f) = (s.dir, s.facing);
+                    assert!(f.length() > 0.99 && f.length() < 1.01 && f.dot(d).abs() < 1e-6, "seed {seed} {kind}: facing {f:?}");
+                }
+            }
+        }
+    }
+}

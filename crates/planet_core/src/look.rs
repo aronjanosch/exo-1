@@ -341,10 +341,16 @@ impl Planet {
         let r = self.radius;
         match kind {
             "basin" | "rim" | "plateau" | "crater" | "canyon" | "mesa" | "spire" | "caldera" | "signature" => {
+                // Facing from the spot `d` to `c`; along `e` when the two coincide (a basin whose
+                // centre is dry land stands on its centre).
+                let to_centre = |c: V3, d: V3, e: V3| {
+                    let f = c - d * c.dot(d);
+                    if f.length() < 1e-9 { e } else { f.normalized() }
+                };
                 let towards = |c: V3, m: f64| {
                     let (e, _) = tangent_frame(c);
                     let d = walk(c, e, m, r);
-                    Spot { dir: d, facing: (c - d * c.dot(d)).normalized() }
+                    Spot { dir: d, facing: to_centre(c, d, e) }
                 };
                 for s in &self.stamps {
                     let c = s.c;
@@ -356,7 +362,7 @@ impl Planet {
                             while m < br * 1.5 {
                                 let d = walk(c, e, m, r);
                                 if self.height_at(d) - self.sea > 3.0 {
-                                    return Some(Spot { dir: d, facing: (c - d * c.dot(d)).normalized() });
+                                    return Some(Spot { dir: d, facing: to_centre(c, d, e) });
                                 }
                                 m += 10.0;
                             }

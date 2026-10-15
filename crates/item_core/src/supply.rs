@@ -29,6 +29,9 @@ pub struct RackSpec {
     /// The tag a slot takes (r40, "mask" for the suit rack); the extinguisher's tag when left out.
     #[serde(default)]
     pub tag: Option<String>,
+    /// The name the rack's prompt shows (r41, "Suit rack"); "Extinguisher rack" when left out.
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 impl SupplyConfig {
@@ -55,6 +58,13 @@ mod tests {
     use super::*;
 
     const TEXT: &str = r#"{ "drain_per_s": 2.0, "racks": [ { "id": 1, "box": "a", "slots": 3, "stock": 2 } ] }"#;
+
+    #[test]
+    fn a_rack_names_itself_for_its_prompt_when_it_says_so() {
+        let c = SupplyConfig::parse(&TEXT.replace("\"stock\": 2", "\"stock\": 2, \"name\": \"Suit rack\"")).expect("parses");
+        assert_eq!(c.racks[0].name.as_deref(), Some("Suit rack"));
+        assert_eq!(SupplyConfig::parse(TEXT).expect("parses").racks[0].name, None);
+    }
 
     #[test]
     fn a_stock_bigger_than_the_rack_or_no_drain_is_refused() {

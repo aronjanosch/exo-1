@@ -353,7 +353,7 @@ impl Items {
                     if effect == crate::dev_area::coolant::REFILL {
                         self.refills += 1;
                     }
-                    if effect == crate::dev_area::mask::USE
+                    if crate::dev_area::mask::is_gear_use(effect)
                         && let Some(slot) = used_slot
                     {
                         self.mask_uses.push((*player, slot));

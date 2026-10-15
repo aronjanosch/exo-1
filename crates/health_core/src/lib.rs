@@ -5,6 +5,7 @@ use content_core::{parse_strict, File};
 use serde::{Deserialize, Serialize};
 
 pub mod mask;
+pub mod vacuum;
 
 pub const HEALTH_PATH: &str = "health/health.json";
 
@@ -361,6 +362,11 @@ pub struct Env {
     /// Radiation per second from a radioactive item the body carries or stands next to (the
     /// spicy rod). Added per tick like the glow: `rate * tick_s` each tick.
     pub rod_per_s: f64,
+    /// The body is in vacuum (the room's pressure is near 0, `vacuum::in_vacuum`). Not the air it
+    /// breathes: a body in a mask in vacuum is still in vacuum.
+    pub vacuum: bool,
+    /// The body wears a suit (`vacuum::vacuum_damage`: a suit takes no vacuum damage).
+    pub suited: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -549,6 +555,8 @@ impl Health {
                 self.afflictions.insert("headache".to_string(), k.max);
             }
         }
+        // Vacuum: continuous, like the buildup, so the death comes at the rate's time, not on the tick.
+        self.change(t, "decompression", vacuum::decompression_change(dt, env.vacuum, env.suited));
         self.tick_acc += dt;
         while self.tick_acc >= t.tick_s - 1e-9 {
             self.tick_acc -= t.tick_s;

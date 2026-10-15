@@ -178,7 +178,7 @@ pub(crate) fn walker_points(players: &Query<&Player>, remotes: &Query<(&RemoteWa
 
 /// burn on a body (`FireHeat`, set by the fire step before this one) is its rate per second.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, air: Option<Res<EngineAir>>, items: Res<Items>, mut st: ResMut<HealthState>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, net: Option<Res<Net>>, heat: Option<Res<FireHeat>>, masks: Option<Res<crate::dev_area::mask::MaskAir>>) {
+pub(crate) fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, air: Option<Res<EngineAir>>, items: Res<Items>, mut st: ResMut<HealthState>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, net: Option<Res<Net>>, heat: Option<Res<FireHeat>>, masks: Option<Res<crate::dev_area::mask::MaskAir>>, vacuum: Option<Res<crate::dev_area::engine_room::BodyVacuum>>, suits: Option<Res<crate::dev_area::mask::SuitWorn>>) {
     if items.role == Role::Client {
         return;
     }
@@ -219,7 +219,10 @@ pub(crate) fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<
         };
         let fire = heat.as_ref().and_then(|h| h.0.get(id)).copied().unwrap_or(0.0);
         let rod_per_s = if irradiated.contains(id) { SPICY_RAD_PER_S } else { 0.0 };
-        let env = Env { oxygen: room_air, hot: inside(&HOT_PLATE), glow: inside(&GLOW_BARREL), fire, rod_per_s };
+        // Vacuum is the room's (r41), not the mask's air; a suit protects from it (`health_core::vacuum`).
+        let vacuum_here = vacuum.as_ref().is_some_and(|v| v.0.contains(id));
+        let suited = suits.as_ref().is_some_and(|s| s.0.contains(id));
+        let env = Env { oxygen: room_air, hot: inside(&HOT_PLATE), glow: inside(&GLOW_BARREL), fire, rod_per_s, vacuum: vacuum_here, suited };
         st.air.insert(*id, env.oxygen);
         for ev in b.health.step(t, dt, env) {
             if matches!(ev, HealthEvent::Died { .. }) {

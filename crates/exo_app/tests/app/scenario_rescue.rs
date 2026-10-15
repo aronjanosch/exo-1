@@ -78,7 +78,7 @@ fn faint_in_bad_air(app: &mut App) {
         if b.health.state() == Life::Unconscious {
             return;
         }
-        b.health.step(&st.tuning, 0.1, Env { oxygen: 0.0, hot: false, glow: false, fire: 0.0, rod_per_s: 0.0 });
+        b.health.step(&st.tuning, 0.1, Env { oxygen: 0.0, hot: false, glow: false, fire: 0.0, rod_per_s: 0.0, vacuum: false, suited: false });
     }
     panic!("the host did not faint in bad air");
 }

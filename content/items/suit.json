@@ -1,0 +1,14 @@
+{
+  "_comment": "The space suit (r41, #50), after Barotrauma's diving suit (divinggear.xml:135, PressureProtection 4000) and its air (its oxygen tank, the mask's rates in crates/health_core/src/mask.rs). Use toggles it on, as the O2 mask does. Worn: no vacuum damage (crates/health_core/src/vacuum.rs), and its tank is the air the body breathes. TODO(initiator): shape, mass, colour, the helmet's look, the suit's protection against the abyss suit's 6650.",
+  "id": "suit",
+  "name": "Space Suit",
+  "code": "SUT",
+  "take": "collect",
+  "hands": 1,
+  "stack": 1,
+  "use": "wear_suit",
+  "keeps_on_use": true,
+  "tags": ["suit", "tool"],
+  "condition": true,
+  "shape": { "extents": [0.4, 0.5, 0.3], "mass": 6.0, "colour": [0.9, 0.7, 0.2] }
+}

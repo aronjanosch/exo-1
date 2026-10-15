@@ -1,7 +1,7 @@
-//! The captain's console CP-01 (r41, #246 "The station in 0.1"): one screen in the corridor that shows the
-//! captain the ship (hull, shield, the two rooms' air and alarms, the systems that are down, power, the jump
-//! drive, the guns) and the threat word, and has three presses: the engine room's door (CLOSE / OPEN), the
-//! airlock's SEAL, and SILENCE. The captain decides; the crew acts. The rows are `display_core::captain`.
+//! The captain's console CP-01 (r41, #246 "The station in 0.1"): one screen on the bridge's south wall that
+//! shows the captain the ship (hull, shield, the three rooms' air and alarms, the systems that are down,
+//! power, the jump drive, the guns) and the threat word, and has four presses: the engine room's door and
+//! the bridge door (CLOSE / OPEN), the airlock's SEAL, and SILENCE. The captain decides; the crew acts. The rows are `display_core::captain`.
 //!
 //! Sources: PULSAR's captain screen (`docs/research/pulsar-reference.md`, section "Captain": the status, the
 //! alert level, the orders). Barotrauma's status monitor reads the same rows (`display_core::monitor`, ported

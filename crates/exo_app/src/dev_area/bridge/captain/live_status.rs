@@ -7,13 +7,11 @@
 //!   fire; weapons and life support from their breaker group's share of its demand (`factor`).
 //!   Science has no source in the engine room yet: its bar shows "(-)".
 //! - Shields and hull from `ReactorNews::shield` and the wall sections (`display_core::captain`).
-//! - Rooms: the engine room and the corridor, with oxygen, fire and breach. Crew counts: no source
-//!   yet, so 0.
-//! - Oxygen: the mean over the two rooms; its change per second is smoothed (as in the phase-3 glue).
+//! - Rooms: the engine room, the corridor and the bridge, with oxygen, fire and breach. Crew counts:
+//!   no source yet, so 0.
+//! - Oxygen: the mean over the three rooms; its change per second is smoothed (as in the phase-3 glue).
 //!
-//! `crew_core` knows nothing of `item_core`; the mapping lives here. Only the captain's reading is
-//! here: the placeholder ship of phase 2 is gone, and so are its forced states (the faults screen
-//! forces the real ones).
+//! `crew_core` knows nothing of `item_core`; the mapping lives here.
 use super::*;
 use crew_core::orders::OrderKind;
 use crew_core::status::{ReactorMode, ReactorStatus, RoomStatus, ShipSystem, ShipStatus, SystemBar, TempBand, Gauge, Oxygen, SYSTEM_MAX};
@@ -21,9 +19,10 @@ use crew_core::{DeviceId, RoomId, StationId, Target};
 use display_core::captain::{self, Threat};
 use item_core::wire::{BreakerGroup, Lamp, PartNews, ReactorNews, RoomAlarmKind};
 
-/// Room ids of the engine room and the corridor (the two rooms of `ReactorNews::rooms`).
+/// Room ids of the engine room, the corridor and the bridge (the three rooms of `ReactorNews::rooms`).
 pub const ENGINE_ROOM: &str = "engine_room";
 pub const CORRIDOR: &str = "corridor";
+pub const BRIDGE: &str = "bridge";
 /// Device ids of the four devices `ReactorNews` has (the parts, `display_core::captain::SYSTEM_NAMES`).
 pub const REACTOR: &str = "reactor";
 pub const PUMP: &str = "pump";
@@ -70,9 +69,9 @@ fn bar(c: f64) -> Option<u8> {
     Some((c.clamp(0.0, 1.0) * SYSTEM_MAX as f64).round() as u8)
 }
 
-/// The engine room's oxygen share (0..1) as the ship's rooms have it.
+/// The mean oxygen share (0..1) over the ship's rooms.
 fn mean_oxygen(r: &ReactorNews) -> f64 {
-    (r.rooms[0].o2 + r.rooms[1].o2) / 2.0
+    r.rooms.iter().map(|room| room.o2).sum::<f64>() / r.rooms.len() as f64
 }
 
 /// The temperature band from the reactor's own bands (`ReactorNews::optimal`, `allowed`).
@@ -127,7 +126,12 @@ pub fn status(r: &ReactorNews, o2_delta: f64) -> ShipStatus {
         hull: Gauge { value: view.hull * 100.0, max: 100.0 },
         oxygen: Oxygen { level: mean_oxygen(r), delta_per_s: o2_delta },
         reactor: ReactorStatus { temp: r.temp / 100.0, band, fuel, mode, output_kw: Some(r.output_kw), load_kw: Some(r.load_kw) },
-        rooms: vec![room(ENGINE_ROOM, ENGINE_ROOM, 0, Some(ShipSystem::Engineering), engineering), room(CORRIDOR, CORRIDOR, 1, None, view.hull)],
+        // TODO(initiator): the hull share stands in for the room condition; the news has none yet.
+        rooms: vec![
+            room(ENGINE_ROOM, ENGINE_ROOM, 0, Some(ShipSystem::Engineering), engineering),
+            room(CORRIDOR, CORRIDOR, 1, None, view.hull),
+            room(BRIDGE, BRIDGE, 2, None, view.hull),
+        ],
         clock_left_s: None,
         mission: None,
     }

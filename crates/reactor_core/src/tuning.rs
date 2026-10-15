@@ -1,6 +1,7 @@
 use content_core::{parse_strict, File};
 use serde::{Deserialize, Serialize};
 
+use crate::battery::BatteryTuning;
 use crate::engine_room::RoomTuning;
 use crate::grid::GridTuning;
 use crate::reactor::{ReactorTuning, RodKinds};
@@ -16,6 +17,8 @@ pub struct Tuning {
     pub reactor: ReactorTuning,
     pub room: RoomTuning,
     pub grid: GridTuning,
+    /// The battery behind the reactor (`battery` in reactor.json).
+    pub battery: BatteryTuning,
     /// The status board's graph: points per curve (Barotrauma 25).
     pub graph_points: usize,
     /// Seconds between two graph samples (Barotrauma 0.5).
@@ -24,7 +27,7 @@ pub struct Tuning {
 
 impl Default for Tuning {
     fn default() -> Tuning {
-        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), graph_points: 25, graph_interval_s: 0.5 }
+        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5 }
     }
 }
 
@@ -58,6 +61,8 @@ impl Tuning {
             need(k.heat > 0.0 && k.life > 0.0 && k.life <= 100.0, &format!("rods.{id}"), "heat > 0, life in 0..=100");
         }
         need(r.max_output_kw > 0.0, "reactor.max_output_kw", "must be > 0");
+        need(self.battery.capacity_kwmin > 0.0 && self.battery.max_output_kw >= 0.0 && self.battery.max_recharge_kw >= 0.0, "battery", "capacity_kwmin > 0, the powers >= 0");
+        need(self.battery.efficiency > 0.0 && self.battery.efficiency <= 1.0, "battery.efficiency", "must be > 0 and <= 1");
         need(self.room.aux_output_kw >= 0.0, "room.aux_output_kw", "must be >= 0");
         need(self.room.oxygen_generator_rate >= 0.0, "room.oxygen_generator_rate", "must be >= 0");
         need(self.room.breath_m3_per_s >= 0.0, "room.breath_m3_per_s", "must be >= 0");

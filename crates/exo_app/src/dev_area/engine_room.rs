@@ -44,6 +44,8 @@ pub const JUNCTION_AT: [f64; 2] = [JUNCTION_BOX_AT[0], -18.98];
 pub const JUNCTION_LIFT: f64 = 1.2;
 pub const AUX_GAP: f64 = 0.05;
 pub const AUX_AT: [f64; 2] = [JUNCTION_AT[0] + TALL_SCREEN_SIZE[0] + AUX_GAP, JUNCTION_AT[1]];
+/// The battery's screen (r38): beside the AUX screen, on the same line. TODO(initiator): the spot on the wall.
+pub const BATTERY_AT: [f64; 2] = [AUX_AT[0] + TALL_SCREEN_SIZE[0] + AUX_GAP, JUNCTION_AT[1]];
 /// The M-tier screen's spot: on the south wall's inner face next to the reactor (east of it),
 /// its height from the floor.
 pub const REACTOR_SCREEN_AT: [f64; 2] = [-11.8, -18.96];
@@ -68,10 +70,11 @@ pub struct Mount {
     pub turn: f64,
 }
 
-pub const SCREENS: [Mount; 6] = [
+pub const SCREENS: [Mount; 7] = [
     Mount { id: reactor_screen::PUMP_ID, name: reactor_screen::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::JUNCTION_ID, name: reactor_screen::JUNCTION_NAME, at: JUNCTION_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::AUX_ID, name: reactor_screen::AUX_NAME, at: AUX_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: reactor_screen::BATTERY_ID, name: reactor_screen::BATTERY_NAME, at: BATTERY_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::DOOR_ID, name: reactor_screen::DOOR_NAME, at: [-13.04, -10.0], lift: 1.3, size: SMALL_SCREEN_SIZE, turn: -90.0 },
     Mount { id: reactor_screen::FAULTS_ID, name: reactor_screen::FAULTS_NAME, at: reactor_screen::FAULTS_AT, lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 0.0 },
     Mount { id: reactor_screen::STATUS_ID, name: reactor_screen::STATUS_NAME, at: STATUS_AT, lift: STATUS_LIFT, size: STATUS_SIZE, turn: 180.0 },

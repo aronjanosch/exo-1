@@ -146,6 +146,7 @@ impl ReactorSim {
                 self.room.set_aux_switch(group_of(g), on);
             }
             ReactorAsk::SetLimit(g, v) => self.room.grid_mut().set_limit(group_of(g), v),
+            ReactorAsk::SetBatteryRecharge(v) => self.room.battery_mut().set_recharge(v),
             ReactorAsk::SetPumpMode(m) => self.room.set_pump_mode(pump_of(m)),
             ReactorAsk::Boost(up) => {
                 if !self.room.reactor_mut().boost(up) {
@@ -221,6 +222,9 @@ impl ReactorSim {
             graph_points: self.room.history().size().min(GRAPH_POINTS) as u8,
             graph_output: graph_row(&self.room.history().output),
             graph_load: graph_row(&self.room.history().load),
+            battery_charge: self.room.battery().fraction(),
+            battery_recharge: self.room.battery().recharge(),
+            battery_kw: self.room.battery().output_kw(),
         }
     }
 }

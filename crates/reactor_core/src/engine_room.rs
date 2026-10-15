@@ -11,6 +11,7 @@
 use device_core::{Condition, DeviceEvent, DeviceTuning};
 use gameplay_core::rng::Rng;
 
+use crate::battery::Battery;
 use crate::breach::Breach;
 use crate::grid::{Grid, Group};
 use crate::history::History;
@@ -504,6 +505,8 @@ pub struct EngineRoom {
     aux_switch: [bool; Group::ALL.len()],
     /// The hull breach of the room (`breach`): the glue's leak follows it.
     breach: Breach,
+    /// The battery behind the reactor (`battery`): gives the grid's shortfall, takes its surplus.
+    battery: Battery,
 }
 
 impl EngineRoom {
@@ -543,6 +546,7 @@ impl EngineRoom {
             aux: t.room.aux_enabled,
             aux_switch: [true; Group::ALL.len()],
             breach: Breach::default(),
+            battery: Battery::new(t.battery),
         }
     }
 
@@ -663,6 +667,14 @@ impl EngineRoom {
 
     pub fn grid_mut(&mut self) -> &mut Grid {
         &mut self.grid
+    }
+
+    pub fn battery(&self) -> &Battery {
+        &self.battery
+    }
+
+    pub fn battery_mut(&mut self) -> &mut Battery {
+        &mut self.battery
     }
 
     /// The junction box's voltage: what the grid got over what it asked for, 0..1 (1 with no
@@ -873,11 +885,18 @@ impl EngineRoom {
 
         let (through, junction_ev) = self.junction.pass(dt, self.reactor.output_kw(), load, &t);
         ev.extend(junction_ev);
+        // The battery sits behind the reactor: it gives what the main grid lacks, and takes the
+        // surplus only when nothing was short (`load` is the main grid's request in both modes).
+        let shortfall = (load - through).max(0.0);
+        let supply = through + self.battery.supply(shortfall, dt);
         if self.aux {
             // The main grid: the Engines group only. The aux reactor: the aux groups that are switched on.
             let mut main = [0.0; Group::ALL.len()];
             main[Group::Engines.index()] = self.grid.request_of(Group::Engines);
-            self.grid.distribute_with(through, main, [true, false, false]);
+            let left = self.grid.distribute_with(supply, main, [true, false, false]);
+            if shortfall <= 0.0 {
+                self.battery.absorb(left, dt);
+            }
             let mut aux = [0.0; Group::ALL.len()];
             for g in [Group::LifeSupport, Group::Lights] {
                 if self.aux_fed(g) {
@@ -886,7 +905,10 @@ impl EngineRoom {
             }
             self.grid.distribute_with(self.tuning.aux_output_kw, aux, [false, true, true]);
         } else {
-            self.grid.distribute(through);
+            let left = self.grid.distribute(supply);
+            if shortfall <= 0.0 {
+                self.battery.absorb(left, dt);
+            }
         }
 
         let excess = self.reactor.temperature() - self.reactor.bands().temp_optimal.hi;

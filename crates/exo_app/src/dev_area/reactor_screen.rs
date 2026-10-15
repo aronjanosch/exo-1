@@ -20,6 +20,8 @@ pub const PUMP_NAME: &str = "COOLANT PUMP";
 pub const JUNCTION_ID: PanelId = PanelId::new("junction_box");
 pub const JUNCTION_NAME: &str = "JUNCTION BOX";
 pub const AUX_ID: PanelId = PanelId::new("aux_panel");
+pub const BATTERY_ID: PanelId = PanelId::new("battery_panel");
+pub const BATTERY_NAME: &str = "BATTERY";
 pub const AUX_NAME: &str = "AUX";
 pub const DOOR_ID: PanelId = PanelId::new("engine_door_screen");
 pub const DOOR_NAME: &str = "REACTOR ROOM";
@@ -691,6 +693,24 @@ pub fn junction_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     tall(Panel::screen(Tier::S, JUNCTION_NAME, "JB-01", body).with_padding(6.0))
 }
 
+/// BT-01 (r38, Barotrauma PowerContainer): the battery behind the reactor: its charge, the kW it
+/// gives the grid now, and the recharge slider (the share of its max charge speed taken from the surplus).
+pub fn battery_panel(r: Option<&ReactorNews>) -> Panel {
+    let r = r.copied().unwrap_or_default();
+    let bar_w = 200.0;
+    let pct = format!("{:.0} %", r.battery_charge.clamp(0.0, 1.0) * 100.0);
+    let mut s = vec![Shape::Rect { x: 0.0, y: 3.0, w: bar_w, h: 12.0, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) }];
+    if r.battery_charge > 0.0 {
+        s.push(Shape::Rect { x: 2.0, y: 5.0, w: (bar_w - 4.0) * r.battery_charge.clamp(0.0, 1.0), h: 8.0, fill: Some(Ink::Hud), outline: None });
+    }
+    s.push(text(210.0, 0.0, 82.0, 18.0, &pct, 16.0, TextFace::Mono, Ink::Fg2, false));
+    let charge = column(4.0, vec![micro("CHARGE").fixed(14.0), canvas(292.0, 18.0, s, None).fixed(18.0)]);
+    let out = readout(format!("OUTPUT {:.0} kW", r.battery_kw)).text_size(font::SMALL).tone(Tone::Normal);
+    let rate = column(4.0, vec![micro("RECHARGE").fixed(14.0), slider(r.battery_recharge, "", "bat_rate").fixed(40.0)]);
+    let body = column(0.0, vec![space().flex(1.0), column(10.0, vec![charge, out.fixed(20.0), rate]).fixed(120.0), space().flex(1.0)]);
+    tall(Panel::screen(Tier::S, BATTERY_NAME, "BT-01", body)).with_padding(6.0)
+}
+
 /// power: the aux reactor has its own supply. TODO(initiator): confirm.
 pub fn aux_panel(r: Option<&ReactorNews>) -> Panel {
     let r = r.copied().unwrap_or_default();
@@ -988,6 +1008,11 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "aux_lights" => snap.map(|r| ReactorAsk::SetAuxSwitch(BreakerGroup::Lights, new_state(r.aux_lights))),
                 _ => None,
             }
+        } else if c.panel == BATTERY_ID {
+            match c.action.as_str() {
+                "bat_rate" => c.value.map(|v| ReactorAsk::SetBatteryRecharge(v as f64)),
+                _ => None,
+            }
         } else if c.panel == STATUS_ID {
             match c.action.as_str() {
                 "boost_up" => Some(ReactorAsk::Boost(true)),
@@ -1036,6 +1061,7 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     panels.set(PUMP_ID, pump_panel_at(items.reactor.as_ref(), angle, lamp_blink_on(time.elapsed_secs_f64())));
     panels.set(JUNCTION_ID, junction_panel(items.reactor.as_ref(), max_kw));
     panels.set(AUX_ID, aux_panel(items.reactor.as_ref()));
+    panels.set(BATTERY_ID, battery_panel(items.reactor.as_ref()));
     panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));
     panels.set(FAULTS_ID, faults_panel(items.reactor.as_ref()));
     panels.set(STATUS_ID, status_panel(items.reactor.as_ref(), cfg.0.reactor.max_output_kw, lamp_blink_on(time.elapsed_secs_f64())));

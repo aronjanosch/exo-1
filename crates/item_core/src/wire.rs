@@ -148,6 +148,9 @@ pub enum ReactorAsk {
     /// A consumer group's limit on the junction box (PULSAR's conduit limit): 0..1, the
     /// host clamps it. The group asks for its demand times the limit.
     SetLimit(BreakerGroup, f64),
+    /// The battery's recharge setting, 0..1 (the host clamps it): the share of its max charge
+    /// speed it takes from the surplus.
+    SetBatteryRecharge(f64),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -386,6 +389,12 @@ pub struct ReactorNews {
     /// The emergency coolings the host has applied so far (`ReactorCounts::ecools`). A process that
     /// sees it go up shows the EMERGENCY COOLING notice and the steam once, as the ejects do.
     pub ecools: u32,
+    /// The battery's charge, 0..1 of its capacity (`reactor_core::Battery::fraction`).
+    pub battery_charge: f64,
+    /// The battery's recharge setting, 0..1 (the player's slider).
+    pub battery_recharge: f64,
+    /// kW the battery gave in the last step (0 when the grid did not need it).
+    pub battery_kw: f64,
 }
 
 /// The most points the reactor graph carries (the shipped `graph_points`, 25). A fixed size keeps
@@ -562,6 +571,9 @@ mod tests {
             ejected: true,
             eject_armed: true,
             ejects: 3,
+            battery_charge: 0.75,
+            battery_recharge: 0.4,
+            battery_kw: 120.0,
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {
             ToClient::Reactor(r) => r,
@@ -583,6 +595,7 @@ mod tests {
             ReactorAsk::SetBreaker(BreakerGroup::Lights, false),
             ReactorAsk::SetBreaker(BreakerGroup::Engines, true),
             ReactorAsk::SetLimit(BreakerGroup::Lights, 0.6),
+            ReactorAsk::SetBatteryRecharge(0.4),
             ReactorAsk::SetPumpMode(PumpMode::Low),
             ReactorAsk::ArmEject,
             ReactorAsk::Eject,

@@ -125,6 +125,11 @@ impl ReactorSim {
                 let secs = self.room.warm_start();
                 info!("reactor: warm start, settled after {secs:.1} s of sim time");
             }
+            ReactorAsk::Trigger(ReactorFault::Aux) => {
+                let on = !self.room.aux_enabled();
+                self.room.set_aux(on);
+                info!("reactor: dev aux reactor {}", if on { "on" } else { "off" });
+            }
             ReactorAsk::Trigger(f) => {
                 // The fire is started by `reactor_step`, which owns the air (`fault` is None for it).
                 if let Some(f) = fault(f) {
@@ -171,6 +176,10 @@ impl ReactorSim {
                 }
             }
             ReactorAsk::SetBreaker(g, on) => self.room.set_breaker(group_of(g), on),
+            ReactorAsk::SetAuxSwitch(g, on) => {
+                // Engines is never aux-fed: the room ignores its switch.
+                self.room.set_aux_switch(group_of(g), on);
+            }
             ReactorAsk::SetPumpMode(m) => self.room.set_pump_mode(pump_of(m)),
             ReactorAsk::Boost(up) => {
                 if !self.room.reactor_mut().boost(up) {
@@ -197,7 +206,7 @@ impl ReactorSim {
             fission: r.fission(),
             turbine: r.turbine(),
             output_kw: r.output_kw(),
-            load_kw: grid.request_kw(),
+            load_kw: self.room.main_load_kw(),
             optimal: [b.temp_optimal.lo, b.temp_optimal.hi],
             allowed: [b.temp_allowed.lo, b.temp_allowed.hi],
             fission_optimal: [b.fission_optimal.lo, b.fission_optimal.hi],
@@ -206,6 +215,10 @@ impl ReactorSim {
             turbine_allowed: [b.turbine_allowed.lo, b.turbine_allowed.hi],
             powered: self.room.powered(),
             breakers: Group::ALL.map(|g| grid.breaker(g)),
+            aux_on: self.room.aux_enabled(),
+            aux_life_support: self.room.aux_switch(Group::LifeSupport),
+            aux_lights: self.room.aux_switch(Group::Lights),
+            aux_boost_kw: self.room.aux_boost_kw(),
             pump_on: self.room.pump().on(),
             pump_mode: wire_pump(self.room.pump().mode()),
             pump_speed: self.room.pump().speed(),
@@ -329,7 +342,7 @@ fn fault(f: ReactorFault) -> Option<Fault> {
         ReactorFault::PumpBreak => Some(Fault::PumpBreak),
         ReactorFault::LoadDrop => Some(Fault::LoadDrop),
         ReactorFault::Surge => Some(Fault::Surge),
-        ReactorFault::Fire | ReactorFault::DrainCoolant | ReactorFault::WarmStart => None,
+        ReactorFault::Fire | ReactorFault::DrainCoolant | ReactorFault::WarmStart | ReactorFault::Aux => None,
     }
 }
 
@@ -646,6 +659,31 @@ mod tests {
         let n = s.news(0.0);
         assert_eq!(n.coolant, 0.0);
         assert!(n.coolant_low && n.flow == 0.0, "an empty tank is no flow");
+    }
+
+    #[test]
+    fn the_aux_fault_flips_the_aux_reactor_and_the_news_follow() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        assert!(!s.room.aux_enabled());
+        s.apply(ReactorAsk::Trigger(ReactorFault::Aux), &cfg(), &mut k);
+        assert!(s.room.aux_enabled(), "the first press turns the aux reactor on");
+        assert!(s.news(0.2).aux_on);
+        s.apply(ReactorAsk::Trigger(ReactorFault::Aux), &cfg(), &mut k);
+        assert!(!s.room.aux_enabled(), "the second press turns it off");
+        assert!(!s.news(0.2).aux_on);
+    }
+
+    #[test]
+    fn the_aux_switch_asks_reach_the_room_and_engines_is_not_aux_fed() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.apply(ReactorAsk::Trigger(ReactorFault::Aux), &cfg(), &mut k);
+        s.apply(ReactorAsk::SetAuxSwitch(BreakerGroup::Lights, false), &cfg(), &mut k);
+        assert!(!s.room.aux_switch(Group::Lights));
+        assert!(!s.news(0.2).aux_lights);
+        s.apply(ReactorAsk::SetAuxSwitch(BreakerGroup::Engines, false), &cfg(), &mut k);
+        assert!(s.room.aux_switch(Group::Engines), "Engines reads on whatever it is asked");
     }
 
     #[test]

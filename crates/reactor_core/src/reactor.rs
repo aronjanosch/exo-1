@@ -424,6 +424,8 @@ pub struct Reactor {
     decay: f64,
     /// Temperature boost (degrees of heat, -amount..amount), fades to 0 at `boost_decay`.
     boost: f64,
+    /// kW added to the maximum output (the aux reactor's spare, set by the engine room). 0 by default.
+    output_boost_kw: f64,
     /// Factor on Auto's two speeds, 1 in play. The engine room's warm start raises it (Barotrauma's
     /// `UpdateAutoTemp(100, …)`) and sets it back to 1 after.
     auto_boost: f64,
@@ -510,6 +512,7 @@ impl Reactor {
             temp_vel: 0.0,
             decay: 0.0,
             boost: 0.0,
+            output_boost_kw: 0.0,
             auto_boost: 1.0,
             extra_cool: 0.0,
         }
@@ -586,6 +589,12 @@ impl Reactor {
 
     /// Multiplies Auto's turbine and fission speeds by `factor` (1 is the tuning's own). For the
     /// engine room's warm start only.
+    /// Sets the kW added to the maximum output (`max_output_kw + boost` is the range's max); the
+    /// engine room sets it from the aux reactor's spare each step. Negative values count as 0.
+    pub fn set_output_boost_kw(&mut self, kw: f64) {
+        self.output_boost_kw = kw.max(0.0);
+    }
+
     pub fn set_auto_boost(&mut self, factor: f64) {
         self.auto_boost = factor.max(0.0);
     }
@@ -983,7 +992,7 @@ impl Reactor {
         if !self.power_on {
             return (0.0, 0.0);
         }
-        let p = self.tuning.max_output_kw;
+        let p = self.tuning.max_output_kw + self.output_boost_kw;
         let tol = if b.turbine_optimal.contains(self.turbine) && b.temp_optimal.contains(self.temp) { 3.0 } else { 1.0 };
         let tf = (self.temp / 50.0).min(1.0);
         let lo = p * ((self.turbine - tol) / 100.0).min(tf).clamp(0.0, 1.0);

@@ -15,6 +15,9 @@
 //!   three mode buttons OFF / LOW / HIGH. The impeller turns with the pump's speed (`effects::impeller_angle`).
 //! - The junction box (S, on the wall above it): three breaker levers, nothing else. Overvolt shows
 //!   in the world (sparks), not here.
+//! - The AUX screen (S, AX-01, beside the junction box's screen on the south wall): AUX OFFLINE with the
+//!   aux reactor off; on, the LIFE SUPPORT and LIGHTS switches (levers, like the breakers) and the
+//!   boost the aux output gives the main reactor (`aux_panel`).
 //! - The reactor room's door screen (S, in the corridor by the door): the reactor temperature, its
 //!   zone band, the room's oxygen, the lights breaker. TODO(captain): the emergency view with the
 //!   captain role.
@@ -53,6 +56,8 @@ pub const PUMP_ID: PanelId = PanelId::new("coolant_pump");
 pub const PUMP_NAME: &str = "COOLANT PUMP";
 pub const JUNCTION_ID: PanelId = PanelId::new("junction_box");
 pub const JUNCTION_NAME: &str = "JUNCTION BOX";
+pub const AUX_ID: PanelId = PanelId::new("aux_panel");
+pub const AUX_NAME: &str = "AUX";
 pub const DOOR_ID: PanelId = PanelId::new("engine_door_screen");
 pub const DOOR_NAME: &str = "REACTOR ROOM";
 pub const FAULTS_ID: PanelId = PanelId::new("reactor_faults");
@@ -714,6 +719,24 @@ pub fn junction_panel(r: Option<&ReactorNews>) -> Panel {
     Panel::screen(Tier::S, JUNCTION_NAME, "JB-01", body).with_padding(6.0)
 }
 
+/// The AUX screen (S, #300 r32): the aux reactor's two switches and the boost it gives the main
+/// reactor. With the aux reactor off it says AUX OFFLINE and nothing else. Not gated on the machines'
+/// power: the aux reactor has its own supply. TODO(initiator): confirm.
+pub fn aux_panel(r: Option<&ReactorNews>) -> Panel {
+    let r = r.copied().unwrap_or_default();
+    if !r.aux_on {
+        let (w, h) = (300.0, 170.0);
+        let shapes = vec![text(0.0, h * 0.5 - 10.0, w, 20.0, "AUX OFFLINE", 22.0, TextFace::DisplayBold, Ink::Fg3, true)];
+        return Panel::screen(Tier::S, AUX_NAME, "AX-01", canvas(w, h, shapes, None).flex(1.0));
+    }
+    let switches = row(
+        0.0,
+        vec![lever(&["LIFE", "SUPPORT"], r.aux_life_support, "aux_life"), lever(&["LIGHTS"], r.aux_lights, "aux_lights")],
+    );
+    let boost = column(4.0, vec![micro("AUX OUTPUT").fixed(14.0), readout(format!("BOOST +{:.0} kW", r.aux_boost_kw)).text_size(font::SMALL).tone(Tone::Normal)]);
+    Panel::screen(Tier::S, AUX_NAME, "AX-01", row(10.0, vec![switches, boost.flex(1.0)])).with_padding(6.0)
+}
+
 /// The oxygen's tone: bad at 40 % or less, warn at 70 % or less, else good.
 pub fn oxygen_tone(o: f64) -> Tone {
     let p = o * 100.0;
@@ -775,7 +798,9 @@ pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
 }
 
 /// The dev fault screen: the faults, the drain and the warm start, a fire at the reactor and the resets.
-pub fn faults_panel() -> Panel {
+pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
+    // The AUX button shows the aux reactor's state now (the press flips it).
+    let aux = if r.is_some_and(|r| r.aux_on) { "AUX ON" } else { "AUX OFF" };
     // Two columns: the faults on the left, the fire and the resets on the right.
     let col = |items: Vec<_>| column(4.0, items);
     Panel::screen(
@@ -786,18 +811,18 @@ pub fn faults_panel() -> Panel {
             6.0,
             vec![
                 col(vec![
-                    button("Pump break", "pump_break").fixed(32.0),
-                    button("Load drop", "load_drop").fixed(32.0),
-                    button("Surge", "surge").fixed(32.0),
-                    button("Drain tank", "drain_coolant").fixed(32.0),
+                    button("Pump break", "pump_break").fixed(28.0),
+                    button("Load drop", "load_drop").fixed(28.0),
+                    button("Surge", "surge").fixed(28.0),
+                    button("Drain tank", "drain_coolant").fixed(28.0),
                     space(),
                 ]),
                 col(vec![
-                    button("Start fire", "fire").fixed(32.0),
-                    button("Fire mode", "fire_model").fixed(32.0),
-                    button("Warm start", "warm_start").fixed(32.0),
-                    button("Reset RX", "reset").fixed(32.0),
-                    space(),
+                    button("Start fire", "fire").fixed(28.0),
+                    button("Fire mode", "fire_model").fixed(28.0),
+                    button("Warm start", "warm_start").fixed(28.0),
+                    button(aux, "aux").fixed(28.0),
+                    button("Reset RX", "reset").fixed(28.0),
                 ]),
             ],
         ),
@@ -1001,6 +1026,12 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 _ => None,
             };
             group.and_then(|g| snap.map(|r| ReactorAsk::SetBreaker(g, new_state(r.breakers[g.index()]))))
+        } else if c.panel == AUX_ID {
+            match c.action.as_str() {
+                "aux_life" => snap.map(|r| ReactorAsk::SetAuxSwitch(BreakerGroup::LifeSupport, new_state(r.aux_life_support))),
+                "aux_lights" => snap.map(|r| ReactorAsk::SetAuxSwitch(BreakerGroup::Lights, new_state(r.aux_lights))),
+                _ => None,
+            }
         } else if c.panel == STATUS_ID {
             match c.action.as_str() {
                 "boost_up" => Some(ReactorAsk::Boost(true)),
@@ -1018,6 +1049,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "reset" => Some(ReactorAsk::Reset),
                 "drain_coolant" => Some(ReactorAsk::Trigger(ReactorFault::DrainCoolant)),
                 "warm_start" => Some(ReactorAsk::Trigger(ReactorFault::WarmStart)),
+                "aux" => Some(ReactorAsk::Trigger(ReactorFault::Aux)),
                 _ => None,
             }
         } else {
@@ -1046,8 +1078,9 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     panels.set(READOUT_ID, readout);
     panels.set(PUMP_ID, pump_panel_at(items.reactor.as_ref(), angle));
     panels.set(JUNCTION_ID, junction_panel(items.reactor.as_ref()));
+    panels.set(AUX_ID, aux_panel(items.reactor.as_ref()));
     panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));
-    panels.set(FAULTS_ID, faults_panel());
+    panels.set(FAULTS_ID, faults_panel(items.reactor.as_ref()));
     panels.set(STATUS_ID, status_panel(items.reactor.as_ref(), cfg.0.reactor.max_output_kw, lamp_blink_on(time.elapsed_secs_f64())));
 }
 
@@ -1083,6 +1116,7 @@ mod tests {
             v.push(shipped_panel(r.as_ref()));
             v.push(pump_panel(r.as_ref()));
             v.push(junction_panel(r.as_ref()));
+            v.push(aux_panel(r.as_ref()));
             v.push(door_panel(r.as_ref()));
             v.push(readout_help_panel(r.as_ref(), 2000.0));
         }
@@ -1102,7 +1136,7 @@ mod tests {
                 v.push(status_panel(r.as_ref(), 2000.0, blink));
             }
         }
-        v.push(faults_panel());
+        v.push(faults_panel(None));
         v
     }
 
@@ -1467,7 +1501,7 @@ mod tests {
         let man = shipped_panel(Some(&ReactorNews { manual: true, ..news() }));
         assert!(matches!(man.find("fis_set").unwrap().widget, display_core::Widget::Slider { enabled: true, .. }));
         assert!(man.find("mode").is_some() && man.find("reset").is_none());
-        assert!(faults_panel().find("reset").is_some() && faults_panel().find("pump_break").is_some());
+        assert!(faults_panel(None).find("reset").is_some() && faults_panel(None).find("pump_break").is_some());
     }
 
     #[test]
@@ -1558,12 +1592,43 @@ mod tests {
         let full = pump_panel(Some(&ReactorNews { coolant: 100.0, ..news() }));
         assert_ne!(format!("{low:?}"), format!("{full:?}"), "a low tank is drawn");
         assert_ne!(format!("{empty:?}"), format!("{low:?}"), "an empty tank says EMPTY");
-        assert!(faults_panel().find("drain_coolant").is_some());
+        assert!(faults_panel(None).find("drain_coolant").is_some());
     }
 
     #[test]
     fn the_warm_start_is_a_fault_button() {
-        assert!(faults_panel().find("warm_start").is_some());
+        assert!(faults_panel(None).find("warm_start").is_some());
+    }
+
+    #[test]
+    fn the_aux_panel_says_offline_when_the_aux_reactor_is_off() {
+        let p = aux_panel(Some(&ReactorNews { aux_on: false, aux_boost_kw: 300.0, ..news() }));
+        assert!(format!("{p:?}").contains("AUX OFFLINE"));
+        assert!(p.find("aux_life").is_none() && p.find("aux_lights").is_none(), "no switches while off");
+        assert!(!format!("{p:?}").contains("BOOST"), "no boost while off");
+        assert!(format!("{:?}", aux_panel(None)).contains("AUX OFFLINE"), "no snapshot: offline");
+    }
+
+    #[test]
+    fn the_aux_panel_shows_the_two_switches_and_the_boost_when_on() {
+        let on = ReactorNews { aux_on: true, aux_life_support: true, aux_lights: false, aux_boost_kw: 320.0, ..news() };
+        let p = aux_panel(Some(&on));
+        assert!(!format!("{p:?}").contains("AUX OFFLINE"));
+        assert!(p.find("aux_life").is_some() && p.find("aux_lights").is_some(), "both switches");
+        assert!(format!("{p:?}").contains("BOOST +320 kW"), "the boost in kW");
+        assert!(p.overflowing().is_empty(), "{:?}", p.overflowing());
+        assert!(aux_panel(Some(&ReactorNews { aux_on: true, aux_boost_kw: 0.0, ..news() })).overflowing().is_empty());
+    }
+
+    #[test]
+    fn the_aux_fault_button_shows_the_aux_state() {
+        let label = |r: Option<&ReactorNews>| match faults_panel(r).find("aux").expect("the AUX button").widget.clone() {
+            display_core::Widget::Button { label, .. } => label,
+            w => panic!("not a button: {w:?}"),
+        };
+        assert_eq!(label(None), "AUX OFF");
+        assert_eq!(label(Some(&ReactorNews { aux_on: true, ..Default::default() })), "AUX ON");
+        assert_eq!(label(Some(&ReactorNews::default())), "AUX OFF");
     }
 
     #[test]

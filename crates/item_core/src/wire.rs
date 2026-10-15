@@ -169,6 +169,9 @@ pub enum ReactorAsk {
     /// The emergency cooling (PULSAR's manual button, #300 r24): the tank pays, the extra cooling runs
     /// for its duration, then the cooldown. Refused when the host has no press to give.
     EmergencyCool,
+    /// The AUX screen's switch for Life Support or Lights (`EngineRoom::set_aux_switch`, #300 r32).
+    /// Engines is not aux-fed: the host ignores it.
+    SetAuxSwitch(BreakerGroup, bool),
 }
 
 /// The coolant pump's mode (#300): off, a low or a high stream.
@@ -237,6 +240,8 @@ pub enum ReactorFault {
     DrainCoolant,
     /// The reactor's warm start (`EngineRoom::warm_start`, #300): settled at once, no supplies used.
     WarmStart,
+    /// The aux reactor on or off (`EngineRoom::set_aux`, #300 r32): the host flips it.
+    Aux,
 }
 
 /// The extinguisher's spray, as its holder asks for it (#298).
@@ -342,6 +347,13 @@ pub struct ReactorNews {
     pub powered: bool,
     /// The breakers, by `BreakerGroup::index`: engines, life support, lights.
     pub breakers: [bool; 3],
+    /// The aux reactor is on (`EngineRoom::aux_enabled`, #300 r32).
+    pub aux_on: bool,
+    /// The aux switches of Life Support and Lights (on when the aux reactor feeds them).
+    pub aux_life_support: bool,
+    pub aux_lights: bool,
+    /// kW the main reactor gets from the aux output the aux groups leave (`EngineRoom::aux_boost_kw`).
+    pub aux_boost_kw: f64,
     pub pump_on: bool,
     /// The pump's mode as set (`pump_on` is `mode != Off`).
     pub pump_mode: PumpMode,
@@ -529,6 +541,10 @@ mod tests {
             reactor: PartNews { share: 0.9, working: true },
             pump: PartNews { share: 0.4, working: true },
             junction: PartNews { share: 1.0, working: true },
+            aux_on: true,
+            aux_life_support: false,
+            aux_lights: true,
+            aux_boost_kw: 250.0,
             power_on: true,
             manual: true,
             melted: false,

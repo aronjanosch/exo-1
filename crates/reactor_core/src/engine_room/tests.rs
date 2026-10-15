@@ -1113,3 +1113,62 @@ fn ecool_save() {
     );
     assert!(with >= without - DT, "the press must not bring the melt forward: with {with}, without {without}");
 }
+
+/// The aux reactor (PULSAR manual 325-337): aux groups are fed by it, not by the main reactor.
+fn aux_room() -> EngineRoom {
+    let mut r = room();
+    r.set_aux(true);
+    r
+}
+
+#[test]
+fn aux_disabled_keeps_the_main_request_and_the_boost_at_zero() {
+    let mut r = room();
+    assert!(!r.aux_enabled());
+    assert_eq!(r.aux_boost_kw(), 0.0);
+    let _ = r.step(DT, Input::auto());
+    assert_eq!(r.aux_boost_kw(), 0.0);
+    assert!((r.main_load_kw() - r.grid().request_kw()).abs() < 1e-9, "main load is the whole request");
+    assert!((r.main_load_kw() - 1280.0).abs() < 1e-9, "engines 800 + life support 400 + lights 80");
+}
+
+#[test]
+fn aux_on_the_main_request_is_the_engines_demand_only() {
+    let mut r = aux_room();
+    let _ = r.step(DT, Input::auto());
+    assert!((r.main_load_kw() - 800.0).abs() < 1e-9, "main load {}", r.main_load_kw());
+}
+
+#[test]
+fn aux_lights_off_raises_the_boost_and_the_output_range_top_by_the_lights_demand() {
+    let mut r = aux_room();
+    settle(&mut r);
+    // 500 aux output - 400 life support - 80 lights = 20 kW spare.
+    assert!((r.aux_boost_kw() - 20.0).abs() < 1e-9, "boost {}", r.aux_boost_kw());
+    let (_, top_before) = r.reactor().output_range();
+    r.set_aux_switch(Group::Lights, false);
+    assert!((r.aux_boost_kw() - 100.0).abs() < 1e-9, "boost {}", r.aux_boost_kw());
+    let (_, top_after) = r.reactor().output_range();
+    // The top rises by the boost times the turbine's share of the max (the band's top, capped at 1).
+    let share = (top_after - top_before) / 80.0;
+    assert!(share > 0.0 && share <= 1.0 + 1e-9, "range top rose {} kW, share {share}", top_after - top_before);
+}
+
+#[test]
+fn a_melted_main_reactor_with_aux_leaves_life_support_powered() {
+    let mut r = aux_room();
+    let _ = r.step(DT, Input::auto());
+    let _ = r.melt_now();
+    let _ = r.step(DT, Input::auto());
+    assert!(r.reactor().melted(), "the reactor melted");
+    assert!(r.grid().supply(Group::LifeSupport).on, "life support stays on the aux reactor");
+    assert!((r.grid().factor(Group::LifeSupport) - 1.0).abs() < 1e-9);
+    assert_eq!(r.grid().factor(Group::Engines), 0.0, "engines are on the main reactor and get nothing");
+
+    // Control: the same melt with aux off leaves life support without power.
+    let mut c = room();
+    let _ = c.step(DT, Input::auto());
+    let _ = c.melt_now();
+    let _ = c.step(DT, Input::auto());
+    assert_eq!(c.grid().factor(Group::LifeSupport), 0.0);
+}

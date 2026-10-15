@@ -90,6 +90,19 @@ impl Default for WeaponsTuning {
 /// Below this energy (kW·s) the capacitor counts as empty: the float sums of the steps.
 const EPS: f64 = 1e-9;
 
+/// The guns' state as a save holds it: the capacitor, the heat, the jam (the tuning comes back).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WeaponsSave {
+    pub stored: f64,
+    pub reload_left: f64,
+    pub heat: f64,
+    pub overheated: bool,
+    pub jammed: bool,
+    pub skill: f64,
+    pub clearing_s: f64,
+    pub rng: Rng,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Weapons {
     tuning: WeaponsTuning,
@@ -126,6 +139,14 @@ impl Weapons {
     /// Sets the gunner's skill (0..100): the bot's while a bot mans the gun (`bots.rs`), else 0.
     pub fn set_skill(&mut self, skill: f64) {
         self.skill = skill.clamp(0.0, 100.0);
+    }
+
+    pub fn to_save(&self) -> WeaponsSave {
+        WeaponsSave { stored: self.stored, reload_left: self.reload_left, heat: self.heat, overheated: self.overheated, jammed: self.jammed, skill: self.skill, clearing_s: self.clearing_s, rng: self.rng.clone() }
+    }
+
+    pub fn from_save(tuning: WeaponsTuning, s: &WeaponsSave) -> Weapons {
+        Weapons { tuning, stored: s.stored, reload_left: s.reload_left, heat: s.heat, overheated: s.overheated, jammed: s.jammed, skill: s.skill, clearing_s: s.clearing_s, rng: s.rng.clone() }
     }
 
     pub fn tuning(&self) -> &WeaponsTuning {

@@ -1,5 +1,9 @@
 //! The engine room: reactor, coolant pump, junction box and the grid of consumers, stepped together.
 //!
+//! Save (r42, #128): `RoomSave` is the plain data of the machines, `to_save` / `from_save` the way
+//! there and back. The shape is Barotrauma's: each item saves its own condition and each component
+//! its own state (`Item.Save`, Items/Item.cs:4503; `ItemComponent.Save`, Items/Components/ItemComponent.cs:1087).
+//! The values come back from the tuning, not from the save, so a retuned room loads with its new values.
 //! Engines (r38): the crew's throttle is the engine's target (`engine::Engine`, after Barotrauma's
 //! `Engine.cs`); the engine's power draw is the Engines demand, and its thrust is shown on the HELM.
 //! `engine_wander` is a dev driver that sets the target.
@@ -12,20 +16,24 @@
 //!   the grid here: TODO(initiator), pump as a grid consumer.
 //!   TODO(initiator): pump run-down and the reactor's coolant coast now stack after a switch-off.
 //!   the cost, or with the pump broken. All values TODO(initiator).
-use device_core::{Condition, DeviceEvent, DeviceTuning};
+use device_core::{Condition, ConditionSave, DeviceEvent, DeviceTuning};
 use gameplay_core::rng::Rng;
 
-use crate::battery::Battery;
+use crate::airlock::AirlockSave;
+use crate::battery::{Battery, BatterySave};
+use crate::director::DirectorSave;
+use gameplay_core::save::{Envelope, SaveError};
 use crate::enemy::{EnemyTuning, Encounter, Outcome};
-use crate::weapons::Weapons;
+use crate::weapons::{Weapons, WeaponsSave};
 use crate::engine::Engine;
 use crate::hull::{Hit, HitsTuning, Hull, DEVICES, REACTOR_AT};
 use crate::grid::{Grid, Group};
 use crate::history::History;
-use crate::jump::JumpDrive;
+use crate::jump::{JumpDrive, JumpSave};
 use crate::startup::{Checks, Startup};
-use crate::reactor::{AlarmKind, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning, RodKinds};
-use crate::shield::Shield;
+use crate::reactor::{AlarmKind, FuelRod, Mode, Reactor, ReactorEvent, ReactorSave, ReactorTuning, RodKinds};
+use crate::shield::{Shield, ShieldSave};
+use crate::grid::GridSave;
 use crate::tuning::Tuning;
 use serde::{Deserialize, Serialize};
 
@@ -245,11 +253,20 @@ pub enum AlarmLevel {
 /// The coolant pump's switch, PULSAR's three states (manual, `pulsar-mech-conduits.md` 1.4): Off
 /// takes no coolant; Low is a steady small stream that drains the tank slowly; High is a large
 /// stream that cools strongly and drains it quickly.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PumpMode {
     Off,
     Low,
     High,
+}
+
+/// The pump's state as a save holds it (the tuning comes back from the room's values).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PumpSave {
+    pub condition: ConditionSave,
+    pub mode: PumpMode,
+    pub speed: f64,
+    pub tank: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -265,6 +282,14 @@ pub struct Pump {
 impl Pump {
     pub fn new(tuning: &RoomTuning, seed: u64) -> Pump {
         Pump { condition: Condition::new(tuning.pump, seed), mode: PumpMode::High, speed: 1.0, tank: 100.0 }
+    }
+
+    pub fn to_save(&self) -> PumpSave {
+        PumpSave { condition: self.condition.to_save(), mode: self.mode, speed: self.speed, tank: self.tank }
+    }
+
+    pub fn from_save(tuning: &RoomTuning, s: &PumpSave) -> Pump {
+        Pump { condition: Condition::from_save(tuning.pump, &s.condition), mode: s.mode, speed: s.speed, tank: s.tank }
     }
 
     pub fn mode(&self) -> PumpMode {
@@ -376,6 +401,16 @@ impl Pump {
     }
 }
 
+/// The junction box's state as a save holds it (the tuning comes back from the room's values).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct JunctionSave {
+    pub condition: ConditionSave,
+    pub rng: Rng,
+    pub overvolt: bool,
+    pub voltage: f64,
+    pub cooldown: f64,
+}
+
 #[derive(Clone, Debug)]
 pub struct JunctionBox {
     condition: Condition,
@@ -396,6 +431,14 @@ impl JunctionBox {
             voltage: 1.0,
             cooldown: 0.0,
         }
+    }
+
+    pub fn to_save(&self) -> JunctionSave {
+        JunctionSave { condition: self.condition.to_save(), rng: self.rng.clone(), overvolt: self.overvolt, voltage: self.voltage, cooldown: self.cooldown }
+    }
+
+    pub fn from_save(tuning: &RoomTuning, s: &JunctionSave) -> JunctionBox {
+        JunctionBox { condition: Condition::from_save(tuning.junction, &s.condition), rng: s.rng.clone(), overvolt: s.overvolt, voltage: s.voltage, cooldown: s.cooldown }
     }
 
     /// Whether the last step had overvoltage (the screen's OVERVOLT word).
@@ -502,6 +545,63 @@ impl OxygenGenerator {
 /// damage. TODO(initiator).
 const SHIELD_POINTS_PER_STRUCTURE: f64 = 500.0;
 
+/// The engine room's state as a save holds it (r42, #128): the reactor and its rods, the pump, the
+/// junction box, the oxygen generator, the battery, the shield, the guns, the jump drive, the hull
+/// and the grid's switches. Not in it yet: the engines' throttle and wear, the aux switches, the
+/// emergency cooling's timers, the encounter, the graph history. TODO(initiator): the rest.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RoomSave {
+    pub reactor: ReactorSave,
+    pub pump: PumpSave,
+    pub junction: JunctionSave,
+    pub oxygen_generator: ConditionSave,
+    pub battery: BatterySave,
+    pub shield: ShieldSave,
+    pub weapons: WeaponsSave,
+    pub jump: JumpSave,
+    pub hull: Hull,
+    pub grid: GridSave,
+}
+
+/// The engine room's air as a save holds it (the glue's `EngineAir` converts to and from it): each
+/// room's oxygen in m³ (in the order engine room, corridor, airlock, outside), the vacuum flag, the
+/// airlock, the cycle's air and the two airlock doors' openness.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AirSave {
+    pub oxygen: [f64; 4],
+    pub vacuum: bool,
+    pub lock: AirlockSave,
+    pub cycle_air: f64,
+    pub door_open: [f64; 2],
+}
+
+/// The engine room's save section (r42, #128): the room, its air, and the switches the host keeps
+/// beside the room (vents, manual inputs, the director). Its own version; no section means the
+/// start state (an older save).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EngineSave {
+    pub room: RoomSave,
+    pub air: AirSave,
+    pub vents: [bool; 2],
+    pub manual: bool,
+    pub fission: f64,
+    pub turbine: f64,
+    pub director: DirectorSave,
+}
+
+impl EngineSave {
+    pub const SECTION: &'static str = "engine_room";
+    pub const VERSION: u32 = 1;
+
+    pub fn save(&self, env: &mut Envelope) {
+        env.put(Self::SECTION, Self::VERSION, self);
+    }
+
+    pub fn load(env: &Envelope) -> Result<Option<EngineSave>, SaveError> {
+        env.get(Self::SECTION, Self::VERSION)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct EngineRoom {
     tuning: RoomTuning,
@@ -603,6 +703,38 @@ impl EngineRoom {
             enemy_rng: Rng::new(seed ^ 0x3e11_0a5b),
             startup: Startup::ready(t.startup),
         }
+    }
+
+    pub fn to_save(&self) -> RoomSave {
+        RoomSave {
+            reactor: self.reactor.to_save(),
+            pump: self.pump.to_save(),
+            junction: self.junction.to_save(),
+            oxygen_generator: self.oxygen.condition().to_save(),
+            battery: self.battery.to_save(),
+            shield: self.shield.to_save(),
+            weapons: self.weapons.to_save(),
+            jump: self.jump.to_save(),
+            hull: self.hull,
+            grid: self.grid.to_save(),
+        }
+    }
+
+    /// The room of a save, with the values of `t`. The rngs a save does not hold (the wander, the
+    /// enemy's shots) start from a fixed seed, so a loaded room is not the same room in those.
+    pub fn from_save(t: &Tuning, s: &RoomSave) -> EngineRoom {
+        let mut r = EngineRoom::from_tuning(t, 0);
+        r.reactor = Reactor::from_save(t.reactor, &s.reactor);
+        r.pump = Pump::from_save(&t.room, &s.pump);
+        r.junction = JunctionBox::from_save(&t.room, &s.junction);
+        r.oxygen = OxygenGenerator { condition: Condition::from_save(t.room.oxygen_generator, &s.oxygen_generator) };
+        r.battery = Battery::from_save(t.battery, &s.battery);
+        r.shield = Shield::from_save(t.shield, &s.shield);
+        r.weapons = Weapons::from_save(t.weapons, &s.weapons);
+        r.jump = JumpDrive::from_save(t.jump, &s.jump);
+        r.hull = s.hull;
+        r.grid.apply_save(&s.grid);
+        r
     }
 
     /// PULSAR's emergency cooling, pressed by the operator: takes `ecool_tank_cost` of the tank at

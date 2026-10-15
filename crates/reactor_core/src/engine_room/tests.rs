@@ -1,4 +1,5 @@
 use super::*;
+use gameplay_core::save::Envelope;
 use crate::reactor::Blast;
 
 const DT: f64 = 1.0 / 30.0;
@@ -895,4 +896,42 @@ fn the_room_powers_the_jump_drive_only_while_it_charges() {
     r.jump_mut().fill();
     run(&mut r, DT * 3.0, Input::auto());
     assert_eq!(r.grid().group(Group::JumpDrive).demand_kw, 0.0, "a full drive asks nothing");
+}
+
+/// The default tuning with no engine wander: the room's state is then what the save holds.
+fn quiet_tuning() -> Tuning {
+    Tuning { room: RoomTuning { engine_wander: false, ..RoomTuning::default() }, ..Tuning::default() }
+}
+
+/// The save through the envelope's JSON, as the file holds it.
+fn through_json(s: &RoomSave) -> RoomSave {
+    let mut env = Envelope::new();
+    env.put("room", 1, s);
+    Envelope::from_json(&env.to_json()).unwrap().get::<RoomSave>("room", 1).unwrap().unwrap()
+}
+
+#[test]
+fn a_stepped_damaged_charged_room_round_trips_through_json() {
+    let t = quiet_tuning();
+    let mut r = EngineRoom::from_tuning(&t, 11);
+    assert!(r.set_power(true));
+    let _ = run(&mut r, 60.0, Input::manual(0.6, 0.5));
+    let hit = Hit { at: r.hull().sections[0].centre, structure: 0.6, radius: 2.0, device_damage: 0.5, fire_chance: 0.0 };
+    let _ = r.apply_hit(hit, &mut Rng::new(5));
+    let _ = r.junction_mut().condition_mut().damage(40.0);
+    let _ = r.reactor_mut().condition_mut().damage(30.0);
+    r.reactor_mut().set_rod_lives(&[40.0, 70.0]);
+    r.pump_mut().set_mode(PumpMode::Low);
+    r.pump_mut().set_tank(35.0);
+    r.battery_mut().set_charge_kwmin(3000.0);
+    r.battery_mut().set_recharge(0.5);
+    r.weapons_mut().step(3.0, 1.0);
+    r.jump_mut().step(5.0, 1.0);
+    let _ = r.absorb_hit(300.0);
+    let save = r.to_save();
+    assert!(save.battery.charge_kwmin > 0.0 && save.hull.sections[0].damage() > 0.0);
+    let back = through_json(&save);
+    assert_eq!(back, save);
+    let loaded = EngineRoom::from_save(&t, &back);
+    assert_eq!(loaded.to_save(), save);
 }

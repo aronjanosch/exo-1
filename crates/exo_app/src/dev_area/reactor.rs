@@ -13,6 +13,7 @@ use reactor_core::room_alarm::{AlarmState, Kind};
 use reactor_core::RoomAlarm;
 use reactor_core::bots::{Bots, Station};
 use reactor_core::director::Situation;
+use reactor_core::engine_room::EngineSave;
 use reactor_core::{AirlockTuning, AlarmLevel, Director, EngineRoom, Fault, Group, Input, Outcome, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
 
 /// The dev fault SHIELD HIT's hit, points (`EngineRoom::absorb_hit`). TODO(initiator): a dev value.
@@ -60,6 +61,24 @@ pub struct ReactorSim {
     clearing: bool,
     /// The bots (r42, #253): the count and the captain's list survive a reset; the host steps them in `bots::bots_step`.
     pub bots: Bots,
+}
+
+/// The engine room's save section (r42, #128) from the host's state: the room, its air, and the
+/// switches the host keeps beside the room.
+pub fn engine_section(sim: &ReactorSim, air: &EngineAir) -> EngineSave {
+    EngineSave { room: sim.room.to_save(), air: air.to_save(), vents: sim.vents, manual: sim.manual, fission: sim.fission, turbine: sim.turbine, director: sim.director.to_save() }
+}
+
+/// Puts a loaded section into the room, the air and the switches. The alarms and the timers are not
+/// in the save: they keep their values.
+pub fn apply_engine_section(sec: &EngineSave, cfg: &Tuning, sim: &mut ReactorSim, air: &mut EngineAir) {
+    sim.room = EngineRoom::from_save(cfg, &sec.room);
+    sim.vents = sec.vents;
+    sim.manual = sec.manual;
+    sim.fission = sec.fission;
+    sim.turbine = sec.turbine;
+    sim.director = Director::from_save(&cfg.director, &sec.director);
+    *air = EngineAir::from_save(&cfg.airlock, &sec.air);
 }
 
 /// `--warm-reactor`: the room is warm-started when it is created (`ReactorSim::created`), not run 150 s

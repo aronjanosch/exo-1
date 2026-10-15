@@ -33,7 +33,7 @@ impl Default for JumpTuning {
 }
 
 /// PULSAR's warp charge stages (`pulsar-reference.md` section 3).
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum JumpStage {
     ColdStart,
     /// Armed and charging (the prep first, then the charge).
@@ -44,6 +44,15 @@ pub enum JumpStage {
     Ready,
     /// Jumped: the drive is out of its charge and runs down.
     Active,
+}
+
+/// The jump drive's state as a save holds it (the tuning comes back from the values).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct JumpSave {
+    pub stage: JumpStage,
+    pub charge: f64,
+    pub prep_left: f64,
+    pub active_left: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -69,6 +78,14 @@ impl JumpDrive {
         self.charge = 0.0;
         self.prep_left = self.tuning.prep_s;
         self.active_left = 0.0;
+    }
+
+    pub fn to_save(&self) -> JumpSave {
+        JumpSave { stage: self.stage, charge: self.charge, prep_left: self.prep_left, active_left: self.active_left }
+    }
+
+    pub fn from_save(tuning: JumpTuning, s: &JumpSave) -> JumpDrive {
+        JumpDrive { tuning, stage: s.stage, charge: s.charge, prep_left: s.prep_left, active_left: s.active_left }
     }
 
     /// The engineer's start: COLD_START goes to PREPPING. Refused (false) in any other stage.

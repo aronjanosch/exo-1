@@ -110,12 +110,32 @@ pub struct Condition {
     lockout: f64,
 }
 
+/// The state of a `Condition` as a save holds it. The tuning is not saved: the loader gives the
+/// device its values back, so a changed tuning applies to a loaded device too.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ConditionSave {
+    pub value: f64,
+    pub rng: Rng,
+    pub wear_delay: f64,
+    pub repairing: bool,
+    pub gains_skill: bool,
+    pub lockout: f64,
+}
+
 impl Condition {
     /// A device at full condition. `seed` makes rolls and wear delays repeatable.
     pub fn new(tuning: DeviceTuning, seed: u64) -> Condition {
         let mut rng = Rng::new(seed);
         let wear_delay = draw(&mut rng, tuning.wear_delay_s);
         Condition { tuning, value: tuning.max, rng, wear_delay, repairing: false, gains_skill: false, lockout: 0.0 }
+    }
+
+    pub fn to_save(&self) -> ConditionSave {
+        ConditionSave { value: self.value, rng: self.rng.clone(), wear_delay: self.wear_delay, repairing: self.repairing, gains_skill: self.gains_skill, lockout: self.lockout }
+    }
+
+    pub fn from_save(tuning: DeviceTuning, s: &ConditionSave) -> Condition {
+        Condition { tuning, value: s.value, rng: s.rng.clone(), wear_delay: s.wear_delay, repairing: s.repairing, gains_skill: s.gains_skill, lockout: s.lockout }
     }
 
     pub fn tuning(&self) -> &DeviceTuning {

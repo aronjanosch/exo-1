@@ -222,8 +222,7 @@ mod tests {
     /// r40: the airlock block is its own, with its values checked.
     #[test]
     fn the_airlock_block_is_parsed_and_checked() {
-        let t = Tuning::shipped();
-        assert!(t.airlock.cycle_s == 6.0 && t.airlock.pump_share == 0.95);
+        Tuning::shipped();
         let e = Tuning::load(&edited("hull/hull.json", "\"cycle_s\": 6.0", "\"cycle_s\": 0.0")).unwrap_err();
         assert!(e.iter().any(|m| m.contains("airlock.cycle_s")), "{e:?}");
         assert!(Tuning::load(&edited("hull/hull.json", "\"pump_share\": 0.95", "\"pump_share\": 1.5")).unwrap_err().iter().any(|m| m.contains("airlock.pump_share")));

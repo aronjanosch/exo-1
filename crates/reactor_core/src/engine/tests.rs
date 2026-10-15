@@ -13,10 +13,10 @@ fn settled(target: f64) -> Engine {
 #[test]
 fn engine_demand_at_half_throttle_is_the_full_demand_to_the_power_one_and_a_half() {
     let e = settled(50.0);
-    assert!((e.demand_kw(FULL_KW) - 800.0 * 0.5_f64.powf(1.5)).abs() < 1e-9);
-    assert!((e.demand_kw(FULL_KW) - 282.8).abs() < 0.1, "about 283 kW");
-    assert_eq!(settled(100.0).demand_kw(FULL_KW), 800.0);
-    assert_eq!(settled(-100.0).demand_kw(FULL_KW), 800.0, "reverse draws the same");
+    assert!((e.demand_kw(FULL_KW) - FULL_KW * 0.5_f64.powf(1.5)).abs() < 1e-9);
+    assert!(e.demand_kw(FULL_KW) < FULL_KW, "half throttle asks less than full");
+    assert_eq!(settled(100.0).demand_kw(FULL_KW), FULL_KW);
+    assert_eq!(settled(-100.0).demand_kw(FULL_KW), FULL_KW, "reverse draws the same");
 }
 
 #[test]

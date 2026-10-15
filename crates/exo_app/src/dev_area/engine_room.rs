@@ -14,7 +14,7 @@ use crate::Layer;
 use fire_core::{split_by_volume, Deck, FireTuning, GapId, LeakId, RoomId};
 use item_core::PlayerId;
 use std::collections::BTreeSet;
-use reactor_core::hull::{openness, SECTION_CENTRES};
+use reactor_core::hull::{openness, SECTION_CENTRES, WALLS_MAX, WALLS_MIN};
 use reactor_core::engine_room::AirSave;
 use reactor_core::{Airlock, AirlockTuning, Dir, Door, Goal, Source, Tuning};
 use display_core::PanelId;
@@ -406,9 +406,34 @@ struct Part {
 /// blast or a hit opens the wall. Each patch is a dev box so the wrench can aim at it. Section 0 is
 /// the south-west half of the south wall, where r37's breach was.
 pub const BREACH_IDS: [&str; HULL_SECTIONS] = ["engine_breach_0", "engine_breach_1", "engine_breach_2", "engine_breach_3", "engine_breach_4", "engine_breach_5", "engine_breach_6", "engine_breach_7"];
+/// The same patch on each section's outer face (r43), so the wrench aims at it from outside. Same
+/// section index as `BREACH_IDS`.
+pub const BREACH_OUT_IDS: [&str; HULL_SECTIONS] = ["engine_breach_out_0", "engine_breach_out_1", "engine_breach_out_2", "engine_breach_out_3", "engine_breach_out_4", "engine_breach_out_5", "engine_breach_out_6", "engine_breach_out_7"];
 /// A patch's size (m): along the south and north walls, and along the east and west walls.
 const BREACH_SIZE_X: [f64; 3] = [1.0, 1.2, 0.1];
 const BREACH_SIZE_Z: [f64; 3] = [0.1, 1.2, 1.0];
+
+/// The outer face of section `i` (r43): its inside centre pushed out by the wall thickness, along the
+/// wall's outward normal. Sections 0 and 1 are on the south wall, 2 and 3 on the east, 4 and 5 on
+/// the north, 6 and 7 on the west (`SECTION_CENTRES`).
+fn outside_at(i: usize) -> [f64; 2] {
+    let [x, y] = SECTION_CENTRES[i];
+    if y == WALLS_MIN[1] {
+        [x, y - WALL]
+    } else if x == WALLS_MAX[0] {
+        [x + WALL, y]
+    } else if y == WALLS_MAX[1] {
+        [x, y + WALL]
+    } else {
+        [x - WALL, y]
+    }
+}
+
+/// The outside patch of section `i` (r43): the inside patch's size, on the outer face.
+fn outside_part(i: usize) -> Part {
+    let size = if matches!(i, 0 | 1 | 4 | 5) { BREACH_SIZE_X } else { BREACH_SIZE_Z };
+    Part { id: BREACH_OUT_IDS[i], at: outside_at(i), size, lift: 0.0, colour: BREACH_COLOUR }
+}
 const BREACH_COLOUR: [f32; 3] = [0.05, 0.05, 0.06];
 
 const WALL_COLOUR: [f32; 3] = [0.42, 0.44, 0.47];
@@ -663,7 +688,8 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
     }
     let Some(frame) = area.frame else { return };
     *done = Some(planet.id);
-    for p in PARTS.iter().chain(AIRLOCK_WALLS.iter()).chain(MACHINES.iter()) {
+    let outside: Vec<Part> = (0..HULL_SECTIONS).map(outside_part).collect();
+    for p in PARTS.iter().chain(AIRLOCK_WALLS.iter()).chain(MACHINES.iter()).chain(outside.iter()) {
         let (ground, up) = frame.ground(&planet, p.at[0], p.at[1], 0.0);
         let rot = frame.rotation(up, 0.0);
         let (bottom, top) = span(p.lift, p.size[1]);
@@ -677,7 +703,7 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
             CollisionLayers::new(Layer::World, LayerMask::ALL),
             DevBox { id: p.id.into(), colour: p.colour, size },
         ));
-        if let Some(i) = BREACH_IDS.iter().position(|&id| id == p.id) {
+        if let Some(i) = BREACH_IDS.iter().position(|&id| id == p.id).or_else(|| BREACH_OUT_IDS.iter().position(|&id| id == p.id)) {
             e.insert(BreachDecal(i));
         }
         area.entities.push(e.id());

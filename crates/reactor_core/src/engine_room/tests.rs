@@ -738,15 +738,34 @@ fn the_dev_breach_is_mended_by_the_hold_at_the_pump_speed() {
     assert_eq!((0..SECTIONS_N).filter(|&k| r.hull().damage(k) > 0.0).count(), 1, "one section only");
     // The hold of 0.6 damage at 1 / 25 per second takes 15 s.
     for _ in 0..(15.0 * 30.0) as usize {
-        r.mend_section(i, DT);
+        r.mend_section(i, DT, Side::Outside);
     }
     assert!(r.hull().damage(i) < 1e-9, "{}", r.hull().damage(i));
     assert_eq!(r.hull().open(i), 0.0, "a repaired section closes its leak");
-    r.mend_section(i, 10.0);
+    r.mend_section(i, 10.0, Side::Outside);
     assert_eq!(r.hull().damage(i), 0.0, "mending a sound section does nothing");
 }
 
 const SECTIONS_N: usize = crate::hull::SECTIONS;
+
+/// r43: the wrench's hold from inside patches the breach to the patch line and no further, so the
+/// leak stays a little open; the hold from outside closes it (the EVA repair).
+#[test]
+fn an_inside_hold_patches_the_breach_and_only_the_outside_hold_closes_it() {
+    let mut r = room();
+    let _ = r.trigger(Fault::HullBreach);
+    let i = r.hull().nearest(crate::hull::REACTOR_AT);
+    for _ in 0..(60.0 * 30.0) as usize {
+        r.mend_section(i, DT, Side::Inside);
+    }
+    assert_eq!(r.hull().damage(i), crate::hull::PATCH_LINE, "the patch line, not 0");
+    assert!(r.hull().open(i) > 0.0 && r.hull().leaking(), "a patched section still leaks");
+    for _ in 0..(60.0 * 30.0) as usize {
+        r.mend_section(i, DT, Side::Outside);
+    }
+    assert_eq!(r.hull().damage(i), 0.0);
+    assert!(!r.hull().leaking(), "the outside hold closes the leak");
+}
 
 /// A hit (r40) damages the walls and the machines in range by the falloff: a hit on the pump lowers
 /// its condition by the full device damage at its centre, and the wall sections near it take the
@@ -818,7 +837,7 @@ fn a_healed_hull_is_intact() {
     let _ = r.trigger(Fault::HullBreach);
     assert!(r.hull().leaking());
     for i in 0..SECTIONS_N {
-        r.mend_section(i, 100.0);
+        r.mend_section(i, 100.0, Side::Outside);
     }
     assert!(r.hull().intact() && !r.hull().leaking());
 }

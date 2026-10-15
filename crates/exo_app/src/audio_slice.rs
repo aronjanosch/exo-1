@@ -437,14 +437,14 @@ fn pump_loop(players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes>,
 
 /// The room alarms' klaxons (r40, #165): one repeating beep per room whose alarm sounds, louder the
 /// nearer the walker is to the room. A silenced alarm sounds nothing (`ReactorNews::alarms`).
-fn room_klaxons(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut next: Local<[f64; 2]>) {
+fn room_klaxons(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut next: Local<[f64; 3]>) {
     let Some(r) = items.reactor else {
-        *next = [0.0; 2];
+        *next = [0.0; 3];
         return;
     };
     let Some(me) = walker_pos(&players) else { return };
     let now = time.elapsed_secs_f64();
-    let rooms = [crate::dev_area::engine_room::ROOM.centre, crate::dev_area::engine_room::CORRIDOR.centre];
+    let rooms = [crate::dev_area::engine_room::ROOM.centre, crate::dev_area::engine_room::CORRIDOR.centre, crate::dev_area::engine_room::BRIDGE.centre];
     for (i, centre) in rooms.into_iter().enumerate() {
         if !r.alarms[i].sounding {
             next[i] = 0.0;

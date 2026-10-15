@@ -9,8 +9,9 @@
 //! `set_state` takes a signal and sets the door's state directly (Door.cs:846-850, `IsOpen` at 176-185), so
 //! the console closes it without wiring; here the press sends `RoomAsk::SetDoor` to the host.
 //!
-//! Placement: the corridor's west wall at y -9.0, between JD-01 (y -7.0) and the corridor's south end (y -10.7).
-//! TODO(initiator): the spot on the wall and the screen's size are start values.
+//! Placement (r44): the bridge's south wall, beside GN-01, facing north into the bridge. TODO(initiator): the
+//! spot on the wall and the screen's size are start values. The presses (r44): the engine door, the bridge
+//! door (`RoomAsk::SetBridgeDoor`), the airlock's SEAL and SILENCE.
 use display_core::captain::{self, CaptainView, Threat};
 use display_core::monitor::{self, Cell};
 use display_core::{button, column, label, micro, readout, row, Item, Panel, PanelId, Tier, Tone};
@@ -18,13 +19,14 @@ use item_core::wire::{BotStation, JumpStage, ReactorNews};
 
 pub const ID: PanelId = PanelId::new("captain_console");
 pub const NAME: &str = "CP-01";
-/// The screen's wall spot (area metres) and size (m): a 640 x 400 canvas on the corridor's west wall, turned
-/// to face east into the corridor.
-pub const AT: [f64; 2] = [-14.96, -9.0];
+/// The screen's wall spot (area metres) and size (m): a 640 x 400 canvas on the bridge's south wall, turned
+/// to face north into the bridge (0.04 m inside the wall's face at y -10.7).
+pub const AT: [f64; 2] = [-6.5, -10.66];
 pub const SIZE: [f64; 2] = [0.8, 0.5];
-pub const TURN: f64 = 90.0;
+pub const TURN: f64 = 180.0;
 /// The presses' actions (`reactor_screen::read_clicks`).
 pub const DOOR_ACTION: &str = "door";
+pub const BRIDGE_DOOR_ACTION: &str = "bridge_door";
 pub const SEAL_ACTION: &str = "seal";
 pub const SILENCE_ACTION: &str = "silence";
 /// The bot priority buttons' prefix: "bot:<station index>:<level>" (r42, #253).
@@ -38,8 +40,8 @@ const GAP: f64 = 4.0;
 const BUTTON_H: f64 = 24.0;
 
 /// The captain's console as the reactor snapshot and the engine room's door have them. `door_open` is the
-/// engine room's door (`RoomNews::door_open`), which the press flips.
-pub fn captain_panel(r: Option<&ReactorNews>, door_open: bool) -> Panel {
+/// engine room's door (`RoomNews::door_open`), which the press flips; `bridge_door` the bridge door's (r44).
+pub fn captain_panel(r: Option<&ReactorNews>, door_open: bool, bridge_door: bool) -> Panel {
     let Some(news) = r else {
         return Panel::screen(Tier::M, NAME, "CP-01", label("NO SIGNAL")).with_padding(8.0);
     };
@@ -52,6 +54,7 @@ pub fn captain_panel(r: Option<&ReactorNews>, door_open: bool) -> Panel {
         row(6.0, vec![micro("ROOM").flex(2.0), micro("AIR").flex(1.0), micro("FIRE").flex(1.0), micro("ALARM").flex(1.0)]).fixed(ROW_H),
         room_row(&v.rooms[0]),
         room_row(&v.rooms[1]),
+        room_row(&v.rooms[2]),
         row(6.0, vec![label("POWER").flex(2.0), cell(&power_cell(&v))]).fixed(ROW_H),
         row(6.0, vec![label("JUMP").flex(2.0), cell(&jump_cell(&v))]).fixed(ROW_H),
         row(6.0, vec![label("GUNS").flex(2.0), cell(&guns_cell(&v))]).fixed(ROW_H),
@@ -75,6 +78,7 @@ pub fn captain_panel(r: Option<&ReactorNews>, door_open: bool) -> Panel {
         micro("SYSTEMS DOWN").fixed(14.0),
         readout(down).tone(if v.systems_down.is_empty() { Tone::Good } else { Tone::Bad }).fixed(ROW_H),
         row(6.0, vec![button(door_label(door_open), DOOR_ACTION).flex(1.0)]).fixed(BUTTON_H),
+        row(6.0, vec![button(bridge_door_label(bridge_door), BRIDGE_DOOR_ACTION).flex(1.0)]).fixed(BUTTON_H),
         row(6.0, vec![button("SEAL AIRLOCK", SEAL_ACTION).flex(1.0)]).fixed(BUTTON_H),
         row(6.0, vec![button("SILENCE", SILENCE_ACTION).tone(if sounding { Tone::Bad } else { Tone::Normal }).enabled(sounding).flex(1.0)]).fixed(BUTTON_H),
     ];
@@ -89,6 +93,15 @@ pub fn door_label(door_open: bool) -> &'static str {
         "CLOSE ENGINE DOOR"
     } else {
         "OPEN ENGINE DOOR"
+    }
+}
+
+/// The bridge door's press (r44): while it is open the press shuts it, else it opens it.
+pub fn bridge_door_label(open: bool) -> &'static str {
+    if open {
+        "CLOSE BRIDGE DOOR"
+    } else {
+        "OPEN BRIDGE DOOR"
     }
 }
 
@@ -193,6 +206,12 @@ mod tests {
     fn the_door_press_says_what_it_does() {
         assert_eq!(door_label(true), "CLOSE ENGINE DOOR");
         assert_eq!(door_label(false), "OPEN ENGINE DOOR");
+    }
+
+    #[test]
+    fn the_bridge_door_press_says_what_it_does() {
+        assert_eq!(bridge_door_label(true), "CLOSE BRIDGE DOOR");
+        assert_eq!(bridge_door_label(false), "OPEN BRIDGE DOOR");
     }
 
     #[test]

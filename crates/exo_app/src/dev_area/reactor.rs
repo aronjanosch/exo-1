@@ -8,7 +8,7 @@ use crate::dev_area::engine_room::ROOM;
 use crate::dev_area::rods;
 use crate::gameplay::Gameplay;
 use gameplay_core::notice::{Notice, NoticeKind};
-use item_core::wire::{Alarm, AlarmNews, BotNews, BotStation, BreakerGroup, EnemyNews, EnemyOutcome, FuelTube, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, RoomAir, RoomAlarmKind, StartupStage, GRAPH_POINTS};
+use item_core::wire::{Alarm, AlarmNews, BotNews, BotStation, BreakerGroup, EnemyNews, EnemyOutcome, FuelTube, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, RoomAir, RoomAlarmKind, StartupStage, GRAPH_POINTS, ROOMS};
 use reactor_core::room_alarm::{AlarmState, Kind};
 use reactor_core::RoomAlarm;
 use reactor_core::bots::{Bots, Station};
@@ -49,14 +49,14 @@ pub struct ReactorSim {
     eject_left: Option<f64>,
     sent: Option<ReactorNews>,
     since_send: f64,
-    /// The two vents' valves (r38; index 0 the engine room's, 1 the corridor's). The host keeps them;
-    /// a new room starts with both open.
-    pub vents: [bool; 2],
+    /// The three vents' valves (r38, r44; index 0 the engine room's, 1 the corridor's, 2 the bridge's).
+    /// The host keeps them; a new room starts with all open.
+    pub vents: [bool; ROOMS],
     /// The incident director (r38): the host steps it in `reactor_step`; the toggle sets it.
     pub director: Director,
-    /// The rooms' alarms (r40, #165), by the index of `ReactorNews::rooms`: the engine room, the corridor.
-    /// The host steps them in `reactor_step`; SILENCE mutes them.
-    pub alarms: [RoomAlarm; 2],
+    /// The rooms' alarms (r40, #165), by the index of `ReactorNews::rooms`: the engine room, the corridor,
+    /// the bridge (r44). The host steps them in `reactor_step`; SILENCE mutes them.
+    pub alarms: [RoomAlarm; ROOMS],
     /// GN-01's CLEAR JAM hold is on (r41): the host counts it in `tick_jam` while the gun is jammed.
     clearing: bool,
     /// The bots (r42, #253): the count and the captain's list survive a reset; the host steps them in `bots::bots_step`.
@@ -104,7 +104,7 @@ impl ReactorSim {
         // The warm-up runs the tank down; a fresh room starts with a full one (TODO(initiator): later
         // the tank may start where the ship's last run left it).
         room.pump_mut().refill(100.0);
-        ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX, vents: [true; 2], director: Director::new(&cfg.director, SEED), alarms: [RoomAlarm::new(cfg.alarm); 2], clearing: false, bots: Bots::new(&cfg.bots) }
+        ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX, vents: [true; ROOMS], director: Director::new(&cfg.director, SEED), alarms: [RoomAlarm::new(cfg.alarm); ROOMS], clearing: false, bots: Bots::new(&cfg.bots) }
     }
 
     pub fn tick_eject(&mut self, dt: f64) {
@@ -687,7 +687,7 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     // The incident director (r38): the host's only. Its report is the room's devices and temperature,
     // the fires in the two rooms and the engine room's oxygen; it breaks at most one device here.
     let fires = match *model {
-        FireModel::Point => [air.engine, air.corridor].into_iter().map(|room| air.deck.fires_in(room).count()).sum::<usize>(),
+        FireModel::Point => [air.engine, air.corridor, air.bridge].into_iter().map(|room| air.deck.fires_in(room).count()).sum::<usize>(),
         FireModel::Grid => grid.0.burning().count(),
     } as u32;
     let situation = Situation::of_room(&sim.room, fires, air.deck.room(air.engine).oxygen_fraction());
@@ -732,8 +732,8 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     now.ejects = counts.ejects;
     now.ecools = counts.ecools;
     now.jumps = counts.jumps;
-    // The status monitor's rooms (r38): the engine room first, then the corridor.
-    now.rooms = [air.engine, air.corridor].map(|room| RoomAir {
+    // The status monitor's rooms (r38, r44): the engine room, the corridor, then the bridge.
+    now.rooms = [air.engine, air.corridor, air.bridge].map(|room| RoomAir {
         o2: (air.deck.room(room).oxygen_fraction() * 100.0).round() / 100.0,
         fire: match *model {
             FireModel::Point => air.deck.fires_in(room).next().is_some(),
@@ -741,7 +741,7 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
         },
     });
     // The room alarms (r40, #165): the fire and the air from the rooms just set, the breach on the
-    // engine room only (any hull section whose leak is open; the corridor has no hull sections).
+    // engine room only (any hull section whose leak is open; the corridor and the bridge have no hull sections).
     let breaching = now.breaches.iter().any(|&d| reactor_core::hull::openness(d) > 0.0);
     now.alarms = std::array::from_fn(|i| alarm_news(sim.alarms[i].step(now.rooms[i].fire, i == 0 && breaching, now.rooms[i].o2, dt)));
     items.reactor = Some(now);
@@ -1150,15 +1150,18 @@ mod tests {
     fn the_vent_asks_set_the_valves_and_the_news_carry_them() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        assert_eq!(s.news(1.0).vents, [true, true], "both open at the start");
+        assert_eq!(s.news(1.0).vents, [true, true, true], "all open at the start");
         s.apply(ReactorAsk::SetVent(0, false), &cfg(), &mut k);
-        assert_eq!(s.news(1.0).vents, [false, true]);
+        assert_eq!(s.news(1.0).vents, [false, true, true]);
         s.apply(ReactorAsk::SetVent(1, false), &cfg(), &mut k);
-        assert_eq!(s.news(1.0).vents, [false, false], "all shut is a state too");
+        s.apply(ReactorAsk::SetVent(2, false), &cfg(), &mut k);
+        assert_eq!(s.news(1.0).vents, [false, false, false], "all shut is a state too");
+        s.apply(ReactorAsk::SetVent(3, true), &cfg(), &mut k);
+        assert_eq!(s.news(1.0).vents, [false, false, false], "no fourth vent");
         s.apply(ReactorAsk::SetVent(2, true), &cfg(), &mut k);
-        assert_eq!(s.news(1.0).vents, [false, false], "no third vent");
+        assert_eq!(s.news(1.0).vents, [false, false, true], "the bridge's vent (r44)");
         s.apply(ReactorAsk::SetVent(1, true), &cfg(), &mut k);
-        assert_eq!(s.news(1.0).vents, [false, true]);
+        assert_eq!(s.news(1.0).vents, [false, true, true]);
     }
 
     #[test]

@@ -23,7 +23,7 @@ pub const AIR_CRITICAL: f64 = 0.3;
 pub const SHIELD_DAMAGE: f64 = 0.5;
 
 /// The room rows, in the order `ReactorNews::rooms` and `ReactorNews::alarms` have them.
-pub const ROOM_NAMES: [&str; 2] = ["ENGINE ROOM", "CORRIDOR"];
+pub const ROOM_NAMES: [&str; 3] = ["ENGINE ROOM", "CORRIDOR", "BRIDGE"];
 /// The devices, in the order the captain's list names them; `PartNews.working == false` is DOWN.
 pub const SYSTEM_NAMES: [&str; 4] = ["REACTOR", "PUMP", "JUNCTION", "O2 GEN"];
 
@@ -88,7 +88,7 @@ pub struct CaptainView {
     pub hull: f64,
     pub shield: f64,
     pub quantum_up: bool,
-    pub rooms: [RoomView; 2],
+    pub rooms: [RoomView; 3],
     /// The devices below their broken limit, by `SYSTEM_NAMES`.
     pub systems_down: Vec<&'static str>,
     /// The reactor's output and the main load (the demand the grid asks of the reactor).
@@ -124,7 +124,7 @@ pub fn threat(hull: f64, shield: f64, rooms: &[RoomView], any_down: bool) -> Thr
 /// The captain's view of the reactor snapshot.
 pub fn captain_view(r: &ReactorNews) -> CaptainView {
     let hull = hull_integrity(&r.breaches);
-    let rooms = [0, 1].map(|i| RoomView { name: ROOM_NAMES[i], air: r.rooms[i].o2, fire: r.rooms[i].fire, alarm: r.alarms[i] });
+    let rooms = [0, 1, 2].map(|i| RoomView { name: ROOM_NAMES[i], air: r.rooms[i].o2, fire: r.rooms[i].fire, alarm: r.alarms[i] });
     let parts: [PartNews; 4] = [r.reactor, r.pump, r.junction, r.oxygen_generator];
     let systems_down: Vec<&'static str> = parts.iter().zip(SYSTEM_NAMES).filter(|(p, _)| !p.working).map(|(_, name)| name).collect();
     let threat = threat(hull, r.shield, &rooms, !systems_down.is_empty());

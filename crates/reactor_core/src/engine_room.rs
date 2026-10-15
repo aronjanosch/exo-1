@@ -564,11 +564,12 @@ pub struct RoomSave {
 }
 
 /// The engine room's air as a save holds it (the glue's `EngineAir` converts to and from it): each
-/// room's oxygen in m³ (in the order engine room, corridor, airlock, outside), the vacuum flag, the
+/// room's oxygen in m³ (in the order engine room, corridor, airlock, outside, bridge), the vacuum flag, the
 /// airlock, the cycle's air and the two airlock doors' openness.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AirSave {
-    pub oxygen: [f64; 4],
+    /// Each room's oxygen in m³: engine room, corridor, airlock, outside, bridge (r44).
+    pub oxygen: [f64; 5],
     pub vacuum: bool,
     pub lock: AirlockSave,
     pub cycle_air: f64,
@@ -582,7 +583,8 @@ pub struct AirSave {
 pub struct EngineSave {
     pub room: RoomSave,
     pub air: AirSave,
-    pub vents: [bool; 2],
+    /// The three vents' valves: engine room, corridor, bridge (r44).
+    pub vents: [bool; 3],
     pub manual: bool,
     pub fission: f64,
     pub turbine: f64,
@@ -591,7 +593,8 @@ pub struct EngineSave {
 
 impl EngineSave {
     pub const SECTION: &'static str = "engine_room";
-    pub const VERSION: u32 = 1;
+    /// 2 (r44): three vents and the bridge's air; a version 1 section is refused, not read.
+    pub const VERSION: u32 = 2;
 
     pub fn save(&self, env: &mut Envelope) {
         env.put(Self::SECTION, Self::VERSION, self);

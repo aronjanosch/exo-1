@@ -25,6 +25,13 @@ pub const CORRIDOR: Zone = Zone { name: "corridor", centre: [-14.0, -7.7], half:
 /// The airlock (r40, #267): a 2 x 2 m room at the corridor's far end, where the corridor met the
 /// outside. Its inner door is the corridor's north edge (y -4.7), its outer door 2 m further north.
 pub const AIRLOCK: Zone = Zone { name: "airlock", centre: [-14.0, -3.7], half: [1.0, 1.0] };
+/// The bridge (r44): the room east of the corridor, where HM-01, GN-01, JD-01 and CP-01 stand. Its
+/// walls are outside the zone (the corridor's east wall is its west side). TODO(initiator): the layout.
+pub const BRIDGE: Zone = Zone { name: "bridge", centre: [-9.0, -7.7], half: [4.0, 3.0] };
+/// The bridge door (r44): its slab's centre when shut, in the corridor's east wall, 2 m wide. The slab
+/// sinks into the floor when open, as the airlock's doors do.
+pub const BRIDGE_DOOR_AT: [f64; 2] = [-12.85, -7.7];
+pub const BRIDGE_DOOR_SIZE: [f64; 3] = [WALL, ROOM_HEIGHT, 2.0];
 pub const INNER_DOOR_AT: [f64; 2] = [-14.0, -4.7];
 pub const OUTER_DOOR_AT: [f64; 2] = [-14.0, -2.7];
 /// The room's height (m); the room has a ceiling, the corridor is open to the sky.
@@ -42,6 +49,11 @@ pub const DOOR_TIME: f64 = 1.0;
 pub const DOOR_AREA: f64 = 2.0;
 /// Where the walker looks at the door from (m): its reach from the slab's centre.
 pub const DOOR_REACH: f64 = 2.5;
+/// The bridge door's state (r44): open, as the engine room's `EngineDoor`.
+#[derive(Resource, Default, Debug, Clone, Copy, PartialEq)]
+pub struct BridgeDoor {
+    pub open: bool,
+}
 
 pub const REACTOR_AT: [f64; 2] = [-14.0, -17.8];
 pub const REACTOR_SIZE: [f64; 3] = [2.0, 2.5, 2.0];
@@ -95,41 +107,47 @@ pub const SCREENS: &[Mount] = &[
     Mount { id: reactor_screen::FAULTS_ID, name: reactor_screen::FAULTS_NAME, at: reactor_screen::FAULTS_AT, lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 0.0 },
     Mount { id: reactor_screen::STATUS_ID, name: reactor_screen::STATUS_NAME, at: STATUS_AT, lift: STATUS_LIFT, size: STATUS_SIZE, turn: 180.0 },
     Mount { id: status_monitor::ID, name: status_monitor::NAME, at: status_monitor::AT, lift: status_monitor::LIFT, size: status_monitor::SIZE, turn: status_monitor::TURN },
-    // The two vents (r38): each is a small grille panel with a valve on its wall, facing its room.
+    // The vents (r38, r44): each is a small grille panel with a valve on its wall, facing its room.
     // The engine room's on the west wall (turn 90 faces +x), the corridor's on the east wall beside
-    // the door's panel (turn -90 faces -x).
+    // the bridge door's panel (turn -90 faces -x), the bridge's on its north wall (turn 0 faces -y).
     Mount { id: reactor_screen::VENT_ENGINE_ID, name: reactor_screen::VENT_ENGINE_NAME, at: VENT_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
     Mount { id: reactor_screen::VENT_CORRIDOR_ID, name: reactor_screen::VENT_CORRIDOR_NAME, at: VENT_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
-    // The helm (r38, HM-01): in the corridor on its east wall, north of the vent. TODO(initiator): the spot on the wall.
+    // The bridge (r44): the helm on the east wall, the gunnery and the captain's console on the south
+    // wall, the jump drive and the bridge's vent on the north wall. TODO(initiator): the layout.
     Mount { id: reactor_screen::HELM_ID, name: reactor_screen::HELM_NAME, at: HELM_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
-    // The gunnery (r40, GN-01): on the same wall, between the vent and the door's panel.
-    Mount { id: reactor_screen::GUNNERY_ID, name: reactor_screen::GUNNERY_NAME, at: GUNNERY_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
-    // The jump drive (r40, JD-01): on the corridor's west wall, south of the airlock's panel. TODO(initiator): the spot on the wall.
-    Mount { id: reactor_screen::JUMP_ID, name: reactor_screen::JUMP_NAME, at: JUMP_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
+    Mount { id: reactor_screen::GUNNERY_ID, name: reactor_screen::GUNNERY_NAME, at: GUNNERY_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: reactor_screen::JUMP_ID, name: reactor_screen::JUMP_NAME, at: JUMP_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
+    Mount { id: reactor_screen::VENT_BRIDGE_ID, name: reactor_screen::VENT_BRIDGE_NAME, at: BRIDGE_VENT_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
+    // The bridge door's panel (r44, BD-01): on the corridor's east wall beside the door, north of the corridor's vent.
+    Mount { id: reactor_screen::BRIDGE_DOOR_ID, name: reactor_screen::BRIDGE_DOOR_NAME, at: BRIDGE_DOOR_PANEL_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
     // The airlock's two panels (r40): the inner one on the corridor's west wall (faces east, into the
     // corridor), the outer one on the airlock's west wall (inside, by the outer door). Both show IN, OUT, CYCLE.
     Mount { id: reactor_screen::AIRLOCK_INNER_ID, name: reactor_screen::AIRLOCK_INNER_NAME, at: AIRLOCK_PANEL_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
     Mount { id: reactor_screen::AIRLOCK_OUTER_ID, name: reactor_screen::AIRLOCK_OUTER_NAME, at: AIRLOCK_PANEL_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
     // The ship's power panel (r42, SP-01): the cold start's checklist, on the corridor's east wall between the gunnery and the reactor room's panel.
     Mount { id: startup_screen::ID, name: startup_screen::NAME, at: startup_screen::AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: startup_screen::TURN },
-    // The captain's console (r41, CP-01): on the corridor's west wall, between JD-01 and the corridor's south end.
+    // The captain's console (r41, CP-01): on the bridge's south wall, beside the gunnery (r44).
     Mount { id: captain_screen::ID, name: captain_screen::NAME, at: captain_screen::AT, lift: VENT_LIFT, size: captain_screen::SIZE, turn: captain_screen::TURN },
 ];
 /// The airlock panels' wall points (area metres): inner (corridor's west wall), outer (airlock's west wall).
 pub const AIRLOCK_PANEL_AT: [[f64; 2]; 2] = [[-15.04, -5.0], [-15.04, -3.0]];
-/// The helm's wall point (area metres): the corridor's east wall, beyond the vent.
-pub const HELM_AT: [f64; 2] = [-13.04, -5.0];
-/// The gunnery's wall point (r40): the corridor's east wall between the vent (y -7) and the door's
-/// panel (y -10); north of the helm lies the airlock now. TODO(initiator): the spot on the wall.
-pub const GUNNERY_AT: [f64; 2] = [HELM_AT[0], -8.5];
-/// The jump drive's wall point (area metres): the corridor's west wall (x = -14 - 1), 2 m south of
-/// the airlock's inner panel (y -5).
-pub const JUMP_AT: [f64; 2] = [-14.96, -7.0];
-/// The vents' wall points (area metres): the engine room's west wall and the corridor's east wall.
-pub const VENT_AT: [[f64; 2]; 2] = [[-18.9, -14.0], [-13.04, -7.0]];
+/// The bridge's wall points (area metres, r44). The helm stands on the east (front) wall, the gunnery
+/// and the captain's console on the south wall (facing north), the jump drive and the bridge's vent
+/// on the north wall (facing south). The panels sit 0.04 m inside their wall's face.
+pub const HELM_AT: [f64; 2] = [BRIDGE.centre[0] + BRIDGE.half[0] - 0.04, BRIDGE.centre[1]];
+pub const GUNNERY_AT: [f64; 2] = [-9.5, BRIDGE.centre[1] - BRIDGE.half[1] + 0.04];
+pub const JUMP_AT: [f64; 2] = [-9.5, BRIDGE.centre[1] + BRIDGE.half[1] - 0.04];
+pub const BRIDGE_VENT_AT: [f64; 2] = [-12.0, BRIDGE.centre[1] + BRIDGE.half[1] - 0.04];
+/// The bridge door's panel (area metres): the corridor's east wall, in the stretch north of the door's
+/// opening (y -6.7) and clear of the corridor's vent.
+pub const BRIDGE_DOOR_PANEL_AT: [f64; 2] = [-13.04, -6.1];
+/// The vents' wall points (area metres): the engine room's west wall and the corridor's east wall,
+/// north of the bridge door's opening.
+pub const VENT_AT: [[f64; 2]; 2] = [[-18.9, -14.0], [-13.04, -5.0]];
 pub const VENT_LIFT: f64 = 1.3;
 
 pub const DOOR: &str = "engine_door";
+pub const BRIDGE_DOOR: &str = "bridge_door";
 pub const REACTOR: &str = "engine_reactor";
 pub const COOLANT_PUMP: &str = "engine_coolant_pump";
 pub const JUNCTION_BOX: &str = "engine_junction_box";
@@ -141,6 +159,7 @@ pub enum Place {
     Engine,
     Corridor,
     Airlock,
+    Bridge,
     Outside,
 }
 
@@ -151,6 +170,8 @@ pub fn place_of(p: [f64; 2]) -> Place {
         Place::Corridor
     } else if AIRLOCK.contains(p) {
         Place::Airlock
+    } else if BRIDGE.contains(p) {
+        Place::Bridge
     } else {
         Place::Outside
     }
@@ -193,7 +214,10 @@ pub struct EngineAir {
     pub corridor: RoomId,
     pub airlock: RoomId,
     pub outside: RoomId,
+    /// The bridge (r44): its volume is its size, and its door is a gap from the corridor.
+    pub bridge: RoomId,
     pub door: GapId,
+    pub bridge_door: GapId,
     /// One hole per wall section (r37's breach, by section in r40): opened and closed each step
     /// from the hull's openness.
     pub breaches: [LeakId; HULL_SECTIONS],
@@ -218,6 +242,8 @@ const ROOM_VOLUME: f64 = 10.0 * 8.0 * ROOM_HEIGHT;
 const CORRIDOR_VOLUME: f64 = 2.0 * 6.0 * ROOM_HEIGHT;
 const AIRLOCK_VOLUME: f64 = 2.0 * 2.0 * ROOM_HEIGHT;
 const OUTSIDE_VOLUME: f64 = 1.0e6;
+/// m³: the bridge 8 x 6 x 3.2 m (r44).
+const BRIDGE_VOLUME: f64 = 8.0 * 6.0 * ROOM_HEIGHT;
 
 impl EngineAir {
     pub fn new() -> EngineAir {
@@ -232,16 +258,18 @@ impl EngineAir {
         let corridor = deck.add_room(CORRIDOR_VOLUME);
         let airlock = deck.add_room(AIRLOCK_VOLUME);
         let outside = deck.add_room(OUTSIDE_VOLUME);
+        let bridge = deck.add_room(BRIDGE_VOLUME);
         if t.outside_vacuum {
             deck.room_mut(outside).oxygen = 0.0;
         }
         let door = deck.add_gap(engine, corridor, DVec3::new(DOOR_AT[0], DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
+        let bridge_door = deck.add_gap(corridor, bridge, DVec3::new(BRIDGE_DOOR_AT[0], BRIDGE_DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
         let inner = deck.add_gap(corridor, airlock, DVec3::new(INNER_DOOR_AT[0], INNER_DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
         let outer = deck.add_gap(airlock, outside, DVec3::new(OUTER_DOOR_AT[0], OUTER_DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
         let outer_leak = deck.add_leak(airlock, DVec3::new(OUTER_DOOR_AT[0], OUTER_DOOR_AT[1], 0.0), 0.0, 0.0);
         // Shut at the start: the area and the openness come from the reactor each step.
         let breaches = SECTION_CENTRES.map(|c| deck.add_leak(engine, DVec3::new(c[0], c[1], 0.0), 0.0, 0.0));
-        EngineAir { deck, engine, corridor, airlock, outside, door, breaches, inner, outer, outer_leak, lock: Airlock::new(t), vacuum: t.outside_vacuum, cycle_air: 0.0, door_open: [0.0; 2] }
+        EngineAir { deck, engine, corridor, airlock, outside, bridge, door, bridge_door, breaches, inner, outer, outer_leak, lock: Airlock::new(t), vacuum: t.outside_vacuum, cycle_air: 0.0, door_open: [0.0; 2] }
     }
 
     pub fn room_of(&self, place: Place) -> RoomId {
@@ -249,6 +277,7 @@ impl EngineAir {
             Place::Engine => self.engine,
             Place::Corridor => self.corridor,
             Place::Airlock => self.airlock,
+            Place::Bridge => self.bridge,
             Place::Outside => self.outside,
         }
     }
@@ -345,18 +374,20 @@ impl EngineAir {
         item_core::wire::AirlockNews { inner_open: self.lock.is_open(Door::Inner), outer_open: self.lock.is_open(Door::Outer), cycling, progress: self.lock.progress() }
     }
 
-    /// The generator's air (m³) through the two vents (r38): `open[0]` the engine room's, `open[1]`
-    /// the corridor's. Each open vent gets its room's volume share (`fire_core::split_by_volume`,
-    /// Barotrauma `OxygenGenerator.UpdateVents`); with both shut the air goes nowhere.
-    pub fn add_oxygen_through_vents(&mut self, m3: f64, open: [bool; 2]) {
-        let shares = split_by_volume(m3, &[(self.deck.room(self.engine).volume, open[0]), (self.deck.room(self.corridor).volume, open[1])]);
-        self.deck.add_oxygen(self.engine, shares[0]);
-        self.deck.add_oxygen(self.corridor, shares[1]);
+    /// The generator's air (m³) through the three vents (r38, r44): `open[0]` the engine room's, `open[1]`
+    /// the corridor's, `open[2]` the bridge's. Each open vent gets its room's volume share
+    /// (`fire_core::split_by_volume`, Barotrauma `OxygenGenerator.UpdateVents`); with all shut the air goes nowhere.
+    pub fn add_oxygen_through_vents(&mut self, m3: f64, open: [bool; 3]) {
+        let (e, c, b) = (self.engine, self.corridor, self.bridge);
+        let shares = split_by_volume(m3, &[(self.deck.room(e).volume, open[0]), (self.deck.room(c).volume, open[1]), (self.deck.room(b).volume, open[2])]);
+        self.deck.add_oxygen(e, shares[0]);
+        self.deck.add_oxygen(c, shares[1]);
+        self.deck.add_oxygen(b, shares[2]);
     }
 
     /// The air as a save holds it (r42): each room's oxygen in m³ and the airlock.
     pub fn to_save(&self) -> AirSave {
-        let rooms = [self.engine, self.corridor, self.airlock, self.outside];
+        let rooms = [self.engine, self.corridor, self.airlock, self.outside, self.bridge];
         AirSave {
             oxygen: rooms.map(|r| self.deck.room(r).oxygen),
             vacuum: self.vacuum,
@@ -370,7 +401,7 @@ impl EngineAir {
     /// hull and the vacuum at the next step, as they do in a new room.
     pub fn from_save(t: &AirlockTuning, s: &AirSave) -> EngineAir {
         let mut a = EngineAir::with_tuning(t);
-        for (r, ox) in [a.engine, a.corridor, a.airlock, a.outside].into_iter().zip(s.oxygen) {
+        for (r, ox) in [a.engine, a.corridor, a.airlock, a.outside, a.bridge].into_iter().zip(s.oxygen) {
             a.deck.room_mut(r).oxygen = ox;
         }
         a.vacuum = s.vacuum;
@@ -446,7 +477,14 @@ const PARTS: &[Part] = &[
     Part { id: "engine_wall_north_west", at: [-17.15, -10.85], size: [4.3, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "engine_wall_north_east", at: [-10.85, -10.85], size: [4.3, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "engine_corridor_west", at: [-15.15, -7.7], size: [WALL, ROOM_HEIGHT, 6.0], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "engine_corridor_east", at: [-12.85, -7.7], size: [WALL, ROOM_HEIGHT, 6.0], lift: 0.0, colour: WALL_COLOUR },
+    // The corridor's east wall, cut for the bridge door (r44): the opening is -8.7..-6.7.
+    Part { id: "engine_corridor_east_south", at: [-12.85, -9.7], size: [WALL, ROOM_HEIGHT, 2.0], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "engine_corridor_east_north", at: [-12.85, -5.7], size: [WALL, ROOM_HEIGHT, 2.0], lift: 0.0, colour: WALL_COLOUR },
+    // The bridge's walls (r44), outside its zone: the south wall from the engine room's east wall to
+    // the bridge's east wall, the east wall (the front), the north wall to the corridor's east wall.
+    Part { id: "engine_bridge_south", at: [-6.85, -10.85], size: [3.7, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "engine_bridge_east", at: [-4.85, -7.7], size: [WALL, ROOM_HEIGHT, 6.3], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "engine_bridge_north", at: [-8.85, -4.55], size: [7.7, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "engine_ceiling", at: [-14.0, -15.0], size: [10.6, WALL, 8.6], lift: ROOM_HEIGHT, colour: WALL_COLOUR },
 ];
 
@@ -486,6 +524,15 @@ pub struct Slab {
     pub progress: f64,
 }
 
+/// The bridge door's slab (r44): its shut centre, the vector it sinks along when open, and how far it has
+/// sunk (0 shut, 1 open). A separate component so the engine door's walker pick does not take it.
+#[derive(Component, Clone, Debug)]
+pub struct BridgeSlab {
+    pub shut: DVec3,
+    pub sink: DVec3,
+    pub progress: f64,
+}
+
 pub fn walker_place(area: &DevArea, planet: &PlanetRes, p: DVec3) -> Option<Place> {
     let f = area.frame?;
     Some(place_of(area_of(&f, planet, p)))
@@ -493,10 +540,10 @@ pub fn walker_place(area: &DevArea, planet: &PlanetRes, p: DVec3) -> Option<Plac
 
 pub fn plugin(app: &mut App) {
     let tuning = Tuning::load(&crate::content_files("gameplay")).unwrap_or_else(|e| panic!("engine room: {e:?}"));
-    app.init_resource::<ShipAlarm>().init_resource::<EngineDoor>().insert_resource(EngineAir::with_tuning(&tuning.airlock));
+    app.init_resource::<ShipAlarm>().init_resource::<EngineDoor>().init_resource::<BridgeDoor>().insert_resource(EngineAir::with_tuning(&tuning.airlock));
     app.add_systems(Update, spawn_room.after(super::spawn_devices).in_set(crate::phases::Frame::World));
     app.init_resource::<BodyVacuum>();
-    app.add_systems(FixedUpdate, (room_state.after(crate::items_net::items_net_in), room_step, super::airlock::airlock_step, breath_step).chain().in_set(crate::phases::Fx::Input));
+    app.add_systems(FixedUpdate, (room_state.after(crate::items_net::items_net_in), room_step, bridge_step, super::airlock::airlock_step, breath_step).chain().in_set(crate::phases::Fx::Input));
 }
 
 /// Window only: the lights of the room and the corridor follow the grid's lights factor
@@ -509,7 +556,7 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, (spawn_alarm_lamps, alarm_lamps).chain().after(super::spawn_devices).in_set(crate::phases::Frame::World));
 }
 
-/// The room alarm's red lamp (r40, #165): one in the engine room and one in the corridor, at
+/// The room alarm's red lamp (r40, #165): one in the engine room, one in the corridor and one in the bridge (r44), at
 /// `ALARM_LAMP_HEIGHT`. Copies the reactor's critical lamp (`effects::critical_lamp_sync`): a light
 /// and a lens that show while the room's alarm is on. The corridor is open to the sky, so its lamp
 /// hangs on a mast at the same height (TODO(initiator)).
@@ -553,7 +600,7 @@ fn spawn_alarm_lamps(mut commands: Commands, planet: Res<PlanetRes>, area: Res<D
     }
     let mesh = meshes.add(Sphere::new(0.08));
     let mat = mats.add(StandardMaterial { base_color: Color::srgb(1.0, 0.1, 0.05), emissive: LinearRgba::rgb(8.0, 0.3, 0.1), unlit: true, ..default() });
-    for (room, centre) in [ROOM.centre, CORRIDOR.centre].into_iter().enumerate() {
+    for (room, centre) in [ROOM.centre, CORRIDOR.centre, BRIDGE.centre].into_iter().enumerate() {
         let Some((at, _)) = area.ground(&planet, centre, ALARM_LAMP_HEIGHT) else { continue };
         made.push(commands.spawn((WorldPos(at), Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::default(), Visibility::Hidden, RoomAlarmLens { room })).id());
         made.push(commands.spawn((WorldPos(at), PointLight { color: Color::srgb(1.0, 0.1, 0.05), intensity: 0.0, range: 10.0, shadow_maps_enabled: false, ..default() }, Transform::default(), RoomAlarmLamp { room })).id());
@@ -589,7 +636,7 @@ fn breach_decal(items: Res<Items>, mut decals: Query<(&BreachDecal, &mut Visibil
     }
 }
 
-pub(super) fn room_state(mut items: ResMut<Items>, mut alarm: ResMut<ShipAlarm>, mut door: ResMut<EngineDoor>) {
+pub(super) fn room_state(mut items: ResMut<Items>, mut alarm: ResMut<ShipAlarm>, mut door: ResMut<EngineDoor>, mut bridge: ResMut<BridgeDoor>) {
     let asks = std::mem::take(&mut items.room_asks);
     match items.role {
         Role::Client => {
@@ -597,6 +644,7 @@ pub(super) fn room_state(mut items: ResMut<Items>, mut alarm: ResMut<ShipAlarm>,
                 items.net_out.push(NetOut::Ask(a));
             }
             door.open = items.room.door_open;
+            bridge.open = items.room.bridge_door;
             alarm.level = items.room.alarm;
         }
         Role::Host | Role::Local => {
@@ -606,9 +654,12 @@ pub(super) fn room_state(mut items: ResMut<Items>, mut alarm: ResMut<ShipAlarm>,
                     // The captain's CP-01 (r41): the press sets the door, as a signal sets Barotrauma's door.
                     RoomAsk::SetDoor(open) => door.open = open,
                     RoomAsk::CycleAlarm => alarm.level = alarm.level.next(),
+                    // The bridge door (r44): its panel toggles it, CP-01 sets it.
+                    RoomAsk::ToggleBridgeDoor => bridge.open = !bridge.open,
+                    RoomAsk::SetBridgeDoor(open) => bridge.open = open,
                 }
             }
-            let now = RoomNews { door_open: door.open, alarm: alarm.level };
+            let now = RoomNews { door_open: door.open, alarm: alarm.level, bridge_door: bridge.open };
             if now != items.room {
                 items.room = now;
                 if items.role == Role::Host {
@@ -628,6 +679,20 @@ pub(super) fn room_step(time: Res<Time>, door: Res<EngineDoor>, mut air: ResMut<
         pos.0 = slab.shut + slab.slide * slab.progress;
         let door = air.door;
         air.deck.set_open(door, slab.progress);
+    }
+}
+
+/// Every step (r44): the bridge door's slab follows the door's state and sinks into the floor, and its
+/// gap to the corridor opens by the slab's progress, as the engine door's does.
+pub(super) fn bridge_step(time: Res<Time>, bridge: Res<BridgeDoor>, mut air: ResMut<EngineAir>, mut slabs: Query<(&mut BridgeSlab, &mut Position)>) {
+    let dt = time.delta_secs_f64();
+    let goal = if bridge.open { 1.0 } else { 0.0 };
+    let step = dt / DOOR_TIME;
+    for (mut slab, mut pos) in &mut slabs {
+        slab.progress = if slab.progress < goal { (slab.progress + step).min(goal) } else { (slab.progress - step).max(goal) };
+        pos.0 = slab.shut + slab.sink * slab.progress;
+        let gap = air.bridge_door;
+        air.deck.set_open(gap, slab.progress);
     }
 }
 
@@ -682,7 +747,7 @@ pub fn source_at(s: Source) -> [f64; 2] {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<DevArea>, door: Res<EngineDoor>, mut done: Local<Option<warp_core::PlanetId>>) {
+fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<DevArea>, door: Res<EngineDoor>, bridge: Res<BridgeDoor>, mut done: Local<Option<warp_core::PlanetId>>) {
     if *done == Some(planet.id) {
         return;
     }
@@ -739,6 +804,27 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
         ))
         .id();
     area.entities.push(e);
+    // The bridge door (r44): a slab in the corridor's east wall's opening, as the engine door's.
+    let d = BRIDGE_DOOR_SIZE;
+    let (ground, up) = frame.ground(&planet, BRIDGE_DOOR_AT[0], BRIDGE_DOOR_AT[1], 0.0);
+    let rot = frame.rotation(up, 0.0);
+    let (bottom, top) = span(0.0, d[1]);
+    let shut = ground + up * ((bottom + top) * 0.5);
+    let size = DVec3::new(d[0], top - bottom, d[2]);
+    let progress = if bridge.open { 1.0 } else { 0.0 };
+    let sink = -up * d[1];
+    let e = commands
+        .spawn((
+            RigidBody::Kinematic,
+            Collider::cuboid(size.x, size.y, size.z),
+            Position(shut + sink * progress),
+            Rotation(rot),
+            CollisionLayers::new(Layer::World, LayerMask::ALL),
+            DevBox { id: BRIDGE_DOOR.into(), colour: [0.55, 0.42, 0.2], size },
+            BridgeSlab { shut, sink, progress },
+        ))
+        .id();
+    area.entities.push(e);
     super::airlock::spawn_doors(&mut commands, &frame, &planet, &mut area);
 }
 
@@ -762,7 +848,7 @@ fn spawn_lights(mut commands: Commands, planet: Res<PlanetRes>, area: Res<DevAre
     }
     let at = |p: [f64; 2], h: f64| area.ground(&planet, p, h).map(|(w, _)| w).unwrap_or(DVec3::ZERO);
     let warm = Color::srgb(1.0, 0.9, 0.75);
-    let lamps = [([-16.5, -15.5], 2.9, false), ([-11.5, -15.5], 2.9, false), ([-14.0, -7.7], 2.9, false), ([-14.0, -15.0], 2.6, true), ([-14.0, -8.6], 2.6, true), (AIRLOCK.centre, 2.9, false)];
+    let lamps = [([-16.5, -15.5], 2.9, false), ([-11.5, -15.5], 2.9, false), ([-14.0, -7.7], 2.9, false), ([-14.0, -15.0], 2.6, true), ([-14.0, -8.6], 2.6, true), (AIRLOCK.centre, 2.9, false), (BRIDGE.centre, 2.9, false)];
     for (p, h, alarm) in lamps {
         let colour = if alarm { Color::srgb(1.0, 0.1, 0.05) } else { warm };
         let intensity = if alarm { 0.0 } else { 60_000.0 };
@@ -772,8 +858,8 @@ fn spawn_lights(mut commands: Commands, planet: Res<PlanetRes>, area: Res<DevAre
                 .id(),
         );
     }
-    // Ours: one red emergency lamp in the room and one in the corridor, dark until the lights fail.
-    for c in [ROOM.centre, CORRIDOR.centre] {
+    // Ours: one red emergency lamp in the room, the corridor and the bridge, dark until the lights fail.
+    for c in [ROOM.centre, CORRIDOR.centre, BRIDGE.centre] {
         made.push(
             commands
                 .spawn((PointLight { color: Color::srgb(1.0, 0.1, 0.05), intensity: 0.0, range: 8.0, shadow_maps_enabled: false, ..default() }, Transform::default(), WorldPos(at(c, 2.6)), EmergencyLamp))
@@ -869,13 +955,36 @@ mod tests {
         a.deck.breathe(a.engine, 5.0);
         a.deck.breathe(a.corridor, 5.0);
         let (e0, c0) = (a.deck.room(a.engine).oxygen, a.deck.room(a.corridor).oxygen);
-        a.add_oxygen_through_vents(0.5, [false, true]);
+        a.add_oxygen_through_vents(0.5, [false, true, false]);
         assert_eq!(a.deck.room(a.engine).oxygen, e0, "the shut engine vent takes nothing");
         assert!((a.deck.room(a.corridor).oxygen - c0 - 0.5).abs() < 1e-9, "the corridor gets all of it");
-        a.add_oxygen_through_vents(0.5, [true, true]);
+        a.add_oxygen_through_vents(0.5, [true, true, true]);
         let shared = a.deck.room(a.engine).oxygen - e0;
-        let expected = 0.5 * ROOM_VOLUME / (ROOM_VOLUME + CORRIDOR_VOLUME);
-        assert!((shared - expected).abs() < 1e-9, "both open: the engine room takes its volume share ({shared})");
+        let expected = 0.5 * ROOM_VOLUME / (ROOM_VOLUME + CORRIDOR_VOLUME + BRIDGE_VOLUME);
+        assert!((shared - expected).abs() < 1e-9, "all open: the engine room takes its volume share ({shared})");
+    }
+
+    /// r44: the bridge is a fourth room of the deck with its own volume; its door is a gap from the
+    /// corridor that opens with the slab, and the air still adds up while it flows.
+    #[test]
+    fn the_bridge_shares_air_through_its_door_and_the_air_adds_up() {
+        let mut a = EngineAir::new();
+        assert!((a.deck.room(a.bridge).volume - BRIDGE_VOLUME).abs() < 1e-12, "the bridge's volume is its size");
+        assert_eq!(a.room_of(place_of(BRIDGE.centre)), a.bridge, "the bridge's zone is the bridge's room");
+        a.deck.breathe(a.corridor, 5.0);
+        let total = a.deck.total_oxygen();
+        let full = a.deck.room(a.bridge).oxygen;
+        a.deck.set_open(a.bridge_door, 0.0);
+        for _ in 0..60 {
+            a.deck.exchange_air(1.0 / 30.0);
+        }
+        assert_eq!(a.deck.room(a.bridge).oxygen, full, "a shut bridge door keeps the bridge's air");
+        a.deck.set_open(a.bridge_door, 1.0);
+        for _ in 0..300 {
+            a.deck.exchange_air(1.0 / 30.0);
+        }
+        assert!(a.deck.room(a.bridge).oxygen < full * 0.99, "an open bridge door lets the bridge's air flow to the thinner corridor");
+        assert!((a.deck.total_oxygen() - total).abs() < 1e-9, "the air is conserved");
     }
 
     /// Runs the cycle and the air for `secs` at 30 steps a second, with the door's openness fixed.

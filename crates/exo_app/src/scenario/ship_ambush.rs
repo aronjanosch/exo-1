@@ -222,12 +222,14 @@ pub(super) fn ship_ambush_steps(s: &mut Vec<Step>) {
     }));
 
     // GN-01: FIRE until DESTROYED (240 s); CLEAR JAM is held when the gun jams.
-    use_display(s, GUNNERY_NAME, GUNNERY_ID, [GUNNERY_AT[0] - 1.0, GUNNERY_AT[1]]);
+    // GN-01 is on the bridge's south wall facing north (r44): the walker stands 1 m north of it.
+    use_display(s, GUNNERY_NAME, GUNNERY_ID, [GUNNERY_AT[0], GUNNERY_AT[1] + 1.0]);
     s.push(fire_until_end());
 
     // The fallback, only when the enemy is not destroyed: JD-01, ARM, the charge, JUMP.
     let mut jd = Vec::new();
-    use_display(&mut jd, JUMP_NAME, JUMP_ID, [JUMP_AT[0] + 1.4, JUMP_AT[1]]);
+    // JD-01 is on the bridge's north wall facing south (r44): the walker stands 1.4 m south of it.
+    use_display(&mut jd, JUMP_NAME, JUMP_ID, [JUMP_AT[0], JUMP_AT[1] - 1.4]);
     s.extend(jd.into_iter().map(unless_destroyed));
     s.push(unless_destroyed(click_until(JUMP_ID, "jump_arm", None, "ship ambush: ARM the jump drive", |w| news(w).is_some_and(|r| r.jump_stage != JumpStage::ColdStart))));
     s.push(unless_destroyed(poll("ship ambush: the jump charge is READY (240 s)", 240.0, |w| news(w).is_some_and(|r| r.jump_stage == JumpStage::Ready))));

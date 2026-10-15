@@ -1,10 +1,12 @@
 //! - Values: `content/gameplay/fire/fire.json` (`fire_core::tuning`, strict loader). The spray's
 //!   reach and half-angle are in the same file (`spray_reach`, `spray_half_angle_deg`).
+pub mod extinguisher;
+
 use crate::controls::Controls;
-use crate::dev_area::engine_room::{footprint_of, ignition_at, place_of, source_at, EngineAir};
+use crate::dev_area::{layout::{footprint_of, ignition_at, place_of, source_at}, hull::ShipAir};
 use crate::dev_area::reactor::ReactorSim;
 use crate::dev_area::reactor_screen::FAULTS_ID;
-use crate::dev_area::engine_room::{CORRIDOR, ROOM};
+use crate::dev_area::{layout::{CORRIDOR, ROOM}};
 use crate::dev_area::{area_of, DevArea};
 use crate::displays::{ActiveDisplay, DisplayAction};
 use crate::env::PlanetRes;
@@ -102,11 +104,11 @@ pub fn start_of(e: &RoomEvent) -> Option<(Source, f64)> {
     }
 }
 
-pub fn ignite(air: &mut EngineAir, grid: &mut FireGrid, model: FireModel, source: Source, size: f64) {
+pub fn ignite(air: &mut ShipAir, grid: &mut FireGrid, model: FireModel, source: Source, size: f64) {
     ignite_at(air, grid, model, ignition_at(source), size);
 }
 
-pub fn ignite_at(air: &mut EngineAir, grid: &mut FireGrid, model: FireModel, p: [f64; 2], size: f64) {
+pub fn ignite_at(air: &mut ShipAir, grid: &mut FireGrid, model: FireModel, p: [f64; 2], size: f64) {
     let at = DVec3::new(p[0], p[1], 0.0);
     match model {
         FireModel::Point => {
@@ -153,10 +155,11 @@ pub(crate) fn landing_of(area: &DevArea, planet: &PlanetRes, cfg: &FireSettings,
 }
 
 pub fn plugin(app: &mut App) {
+    app.add_plugins(extinguisher::plugin);
     let files = crate::content_files("gameplay");
     let settings = FireSettings::load(&files).unwrap_or_else(|e| panic!("fire: {e:?}"));
     let mut grid = Grid::new(settings.grid, 0x300);
-    let ids = EngineAir::new();
+    let ids = ShipAir::new();
     for (room, zone) in [(ids.engine, ROOM), (ids.corridor, CORRIDOR)] {
         grid.add_room(room, DVec2::new(zone.centre[0] - zone.half[0], zone.centre[1] - zone.half[1]), DVec2::new(zone.half[0] * 2.0, zone.half[1] * 2.0));
     }
@@ -170,7 +173,7 @@ pub fn plugin(app: &mut App) {
         .init_resource::<SprayClient>();
     app.add_systems(FixedUpdate, spray_input.after(crate::scenario::run_script).in_set(crate::phases::Fx::Input));
     app.add_systems(FixedUpdate, model_click.in_set(crate::phases::Fx::Effects));
-    app.add_systems(FixedUpdate, (spray_step, fire_step).chain().after(super::engine_room::room_step).after(spray_input).after(crate::items_net::items_net_in).in_set(crate::phases::Fx::Input));
+    app.add_systems(FixedUpdate, (spray_step, fire_step).chain().after(crate::dev_area::hull::doors::room_step).after(spray_input).after(crate::items_net::items_net_in).in_set(crate::phases::Fx::Input));
 }
 
 fn model_click(mut clicks: MessageReader<DisplayAction>, mut model: ResMut<FireModel>) {
@@ -222,7 +225,7 @@ fn spray_input(time: Res<Time>, controls: Res<Controls>, active: Res<ActiveDispl
     }
 }
 
-fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut items: ResMut<Items>, mut sprays: ResMut<Sprays>, mut air: ResMut<EngineAir>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, cfg: Res<FireConfig>, supply: Res<super::extinguisher::Supply>) {
+fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut items: ResMut<Items>, mut sprays: ResMut<Sprays>, mut air: ResMut<ShipAir>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, cfg: Res<FireConfig>, supply: Res<crate::dev_area::fire::extinguisher::Supply>) {
     if items.role == Role::Client {
         return;
     }
@@ -308,7 +311,7 @@ fn burn(target: u64, kind: TargetKind, amount: f64, dt: f64, heat: &mut FireHeat
     }
 }
 
-fn news_of(model: FireModel, air: &EngineAir, grid: &FireGrid, sprays: &Sprays) -> FireNews {
+fn news_of(model: FireModel, air: &ShipAir, grid: &FireGrid, sprays: &Sprays) -> FireNews {
     let sprays: Vec<SprayNew> = sprays.0.values().copied().collect();
     match model {
         FireModel::Point => FireNews {
@@ -331,7 +334,7 @@ fn news_of(model: FireModel, air: &EngineAir, grid: &FireGrid, sprays: &Sprays) 
 }
 
 #[allow(clippy::too_many_arguments)]
-fn fire_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut air: ResMut<EngineAir>, cfg: Res<FireConfig>, mut sim: ResMut<ReactorSim>, mut items: ResMut<Items>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, mut heat: ResMut<FireHeat>, mut alarm: ResMut<FireAlarm>, sprays: Res<Sprays>, mut send: ResMut<FireSend>, mut model: ResMut<FireModel>, mut grid: ResMut<FireGrid>) {
+fn fire_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut air: ResMut<ShipAir>, cfg: Res<FireConfig>, mut sim: ResMut<ReactorSim>, mut items: ResMut<Items>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, mut heat: ResMut<FireHeat>, mut alarm: ResMut<FireAlarm>, sprays: Res<Sprays>, mut send: ResMut<FireSend>, mut model: ResMut<FireModel>, mut grid: ResMut<FireGrid>) {
     heat.0.clear();
     if items.role == Role::Client {
         if let Some(n) = items.fire.as_ref() {

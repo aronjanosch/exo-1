@@ -7,7 +7,7 @@
 //! Not ported from the parallel line (#287): its fracture from a hard fall and the body parts it
 //! hangs on (`health_core` here has no parts), its bleeding and medkit (no bleeding source yet), and
 //! its own player health and HUD (ours are `crate::health` and `crate::health_view`).
-use super::science::{batch_item, first_aid_item, gain, hands_line, ingredient_item, item_label, key_item, medical_of, syringe_item, Hands, LabItem, ScienceLab};
+use crate::dev_area::lab::{batch_item, first_aid_item, gain, hands_line, ingredient_item, item_label, key_item, medical_of, syringe_item, Hands, LabItem, ScienceLab};
 use super::*;
 use crate::displays::{DisplayAction, Panels};
 use crate::gameplay::Gameplay;
@@ -228,7 +228,7 @@ pub fn medbay_panel(med: &Medbay, me: &Health, me_respawn_in: Option<f64>, hands
 }
 
 pub fn write_panel(med: Res<Medbay>, mut st: ResMut<HealthState>, hands: Res<Hands>, gp: Res<Gameplay>, mut panels: ResMut<Panels>) {
-    let names = |id: &CommodityId| super::science::commodity_name(&gp, id);
+    let names = |id: &CommodityId| crate::dev_area::lab::commodity_name(&gp, id);
     let respawn_in = st.body(LOCAL).respawn_in;
     let me = &st.body(LOCAL).health;
     panels.set(MEDBAY, medbay_panel(&med, me, respawn_in, &hands, &names));

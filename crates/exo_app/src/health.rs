@@ -1,6 +1,6 @@
 //! Health: players have health, hazards hurt them, items heal them, death respawns them.
 use crate::dev_area::hazards::{shielded_at, spicy_irradiated, RodSpot, GLOW_BARREL, HOT_PLATE, NO_AIR, SPICY_ITEM, VACUUM_ROOM, SPICY_RADIUS_M, SPICY_RAD_PER_S};
-use crate::dev_area::engine_room::EngineAir;
+use crate::dev_area::hull::ShipAir;
 use crate::dev_area::fire::FireHeat;
 use crate::dev_area::{area_of, DevArea, Zone, PAD_MAIN};
 use crate::controls::{Actions, Controls};
@@ -204,7 +204,7 @@ pub(crate) fn walker_points(players: &Query<&Player>, remotes: &Query<(&RemoteWa
 
 /// burn on a body (`FireHeat`, set by the fire step before this one) is its rate per second.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, air: Option<Res<EngineAir>>, items: Res<Items>, mut st: ResMut<HealthState>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, net: Option<Res<Net>>, heat: Option<Res<FireHeat>>, masks: Option<Res<crate::dev_area::mask::MaskAir>>, suits: Option<Res<crate::dev_area::mask::SuitWorn>>, god: Option<Res<GodMode>>) {
+pub(crate) fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, air: Option<Res<ShipAir>>, items: Res<Items>, mut st: ResMut<HealthState>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, net: Option<Res<Net>>, heat: Option<Res<FireHeat>>, masks: Option<Res<crate::dev_area::gear::MaskAir>>, suits: Option<Res<crate::dev_area::gear::SuitWorn>>, god: Option<Res<GodMode>>) {
     let god = god.is_some();
     if items.role == Role::Client {
         return;

@@ -1,8 +1,8 @@
 //! The pump's coolant tank: the drain, the refill by hand and E-COOL.
 use super::*;
 use crate::controls::Controls;
-use crate::dev_area::coolant::{HOLD_S, RACK_AT};
-use crate::dev_area::engine_room::{COOLANT_PUMP_AT, CORRIDOR};
+use crate::dev_area::engineering::coolant::{HOLD_S, RACK_AT};
+use crate::dev_area::{layout::{COOLANT_PUMP_AT, CORRIDOR}};
 use crate::dev_area::reactor::ReactorSim;
 use crate::dev_area::reactor_screen::PUMP_ID;
 use crate::displays::Panels;

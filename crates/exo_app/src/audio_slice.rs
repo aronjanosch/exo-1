@@ -1,7 +1,7 @@
 //! The sounds can not be heard in a test: the window part is untested by ear (`TODO(initiator)`s
 //! below; the reactor's drone, beep and whoop are untested by ear: TODO(initiator), levels to tune).
 use crate::audio::{loop_volume, Sound, SynthAudio};
-use crate::dev_area::engine_room::source_at;
+use crate::dev_area::layout::source_at;
 use crate::dev_area::fire::EXTINGUISH;
 use crate::dev_area::DevArea;
 use crate::env::PlanetRes;
@@ -444,7 +444,7 @@ fn room_klaxons(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, pl
     };
     let Some(me) = walker_pos(&players) else { return };
     let now = time.elapsed_secs_f64();
-    let rooms = [crate::dev_area::engine_room::ROOM.centre, crate::dev_area::engine_room::CORRIDOR.centre, crate::dev_area::engine_room::BRIDGE.centre];
+    let rooms = [crate::dev_area::layout::ROOM.centre, crate::dev_area::layout::CORRIDOR.centre, crate::dev_area::layout::BRIDGE.centre];
     for (i, centre) in rooms.into_iter().enumerate() {
         if !r.alarms[i].sounding {
             next[i] = 0.0;

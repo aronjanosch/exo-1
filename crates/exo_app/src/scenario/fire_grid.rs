@@ -3,7 +3,7 @@ use super::fire::take_extinguisher;
 use super::items::look_at;
 use super::*;
 use crate::controls::Controls;
-use crate::dev_area::engine_room::{ignition_at, EngineAir, EngineDoor};
+use crate::dev_area::{layout::ignition_at, hull::ShipAir, hull::doors::EngineDoor};
 use crate::dev_area::fire::{FireGrid, FireModel};
 use crate::dev_area::reactor_screen::FAULTS_ID;
 use crate::dev_area::DevArea;
@@ -18,8 +18,8 @@ const DOOR_CELLS: [[f64; 2]; 2] = [[-14.5, -11.5], [-13.5, -11.5]];
 /// The height of the spray's aim at a cell's floor (m).
 const AIM_LIFT: f64 = 0.3;
 
-fn air(w: &World) -> &EngineAir {
-    w.resource::<EngineAir>()
+fn air(w: &World) -> &ShipAir {
+    w.resource::<ShipAir>()
 }
 
 fn grid(w: &World) -> &FireGrid {
@@ -82,7 +82,7 @@ pub(super) fn fire_grid_steps(s: &mut Vec<Step>) {
         let v = intensity_at(w, at);
         check(c, v > 0.0, format!("fire grid: the ignition cell burns ({v:.2})"));
         check(c, burning(w) == 1, format!("fire grid: one cell burns ({})", burning(w)));
-        let alarm = w.resource::<crate::dev_area::engine_room::ShipAlarm>().level;
+        let alarm = w.resource::<crate::dev_area::hull::alarms::ShipAlarm>().level;
         check(c, alarm >= Alarm::Warn, format!("fire grid: the alarm is at least Warn ({alarm:?})"));
         end(w, c, format!("intensity {v:.2}"));
         true

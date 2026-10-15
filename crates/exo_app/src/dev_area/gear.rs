@@ -14,7 +14,7 @@
 //! own use and breathes from its own tank the same way (`health_core::mask::Mask`, the same rates,
 //! the shelf refills it too). Worn, it also counts as suited (`SuitWorn`): no vacuum damage
 //! (`health_core::vacuum`). One gear is worn at a time, in the one slot the mask uses.
-use super::*;
+use crate::dev_area::*;
 use crate::controls::Controls;
 use crate::displays::ActiveDisplay;
 use crate::health::{health_step, HealthState};
@@ -31,7 +31,7 @@ use item_core::{FrameRef, Placement, PlayerId, Request};
 use std::collections::{BTreeMap, BTreeSet};
 use walker_core::Frame;
 
-use super::engine_room::ROOM;
+use crate::dev_area::layout::ROOM;
 use super::reactor::{ReactorConfig, ReactorSim};
 
 pub const ITEM: &str = "o2_mask";
@@ -121,7 +121,7 @@ fn put_mask(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, mut ite
     let Some(frame) = area.frame else { return };
     *done = true;
     let Some(d) = items.defs.get(ITEM).cloned() else { return };
-    let rack = super::extinguisher::boxes()[0].clone();
+    let rack = crate::dev_area::fire::extinguisher::boxes()[0].clone();
     let p = rack.zone.point(rack.local_pos);
     let (pos, up) = frame.ground(&planet, p[0], p[1], rack.size[1] + d.shape.extents[1] * 0.5 + 0.02);
     let fwd = frame.rotation(up, 0.0) * DVec3::NEG_Z;

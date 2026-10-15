@@ -394,15 +394,15 @@ impl Items {
             for ev in evs {
                 if let Event::Used { player, target, effect } = &ev {
                     self.used.push((*player, *target, effect.clone()));
-                    if effect == crate::dev_area::coolant::REFILL {
+                    if effect == crate::dev_area::engineering::coolant::REFILL {
                         self.refills += 1;
                     }
-                    if crate::dev_area::mask::is_gear_use(effect)
+                    if crate::dev_area::gear::is_gear_use(effect)
                         && let Some(slot) = used_slot
                     {
                         self.mask_uses.push((*player, slot));
                     }
-                    if effect == crate::dev_area::rods::LOAD
+                    if effect == crate::dev_area::engineering::rods::LOAD
                         && let Some((item, life)) = held.clone()
                     {
                         self.rod_loads.push(RodLoad { player: *player, item, life });

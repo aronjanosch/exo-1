@@ -1,8 +1,8 @@
 //! Values: TODO(initiator) (the rack's stock, the burn rule, hold times).
-use super::*;
+use crate::dev_area::*;
 use crate::controls::Controls;
-use crate::dev_area::coolant::HOLD_S;
-use crate::dev_area::engine_room::{CORRIDOR, REACTOR_AT};
+use crate::dev_area::engineering::coolant::HOLD_S;
+use crate::dev_area::{layout::{CORRIDOR, REACTOR_AT}};
 use crate::displays::ActiveDisplay;
 use crate::gameplay::Gameplay;
 use crate::items::{Items, LOCAL};

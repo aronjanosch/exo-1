@@ -1,6 +1,6 @@
 //! The dev area and its test console.
 use super::*;
-use crate::dev_area::{look_samples, test_console, DevArea, Zone, ENGINEERING, HALF_EXTENT, LAB};
+use crate::dev_area::{dev::look_samples, dev::test_console, DevArea, Zone, ENGINEERING, HALF_EXTENT, LAB};
 use crate::displays::{aim_at, world_point_of, ActiveDisplay, DisplayPanel, DisplayPointer};
 use crate::interact::Interaction;
 

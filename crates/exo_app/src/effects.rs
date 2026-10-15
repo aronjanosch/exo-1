@@ -1,7 +1,7 @@
 //! The systems only draw the effects: they read the snapshots (`Items::reactor`,
 //! `Items::fire`) and the local vitals (`crew_hud::Vitals`), so a client shows the same as the host.
 use crate::crew_hud::Vitals;
-use crate::dev_area::engine_room::{ignition_at, COOLANT_PUMP_AT, JUNCTION_BOX_AT, JUNCTION_BOX_SIZE, OXYGEN_GENERATOR_AT, OXYGEN_GENERATOR_SIZE, REACTOR_AT, REACTOR_SIZE};
+use crate::dev_area::{layout::{ignition_at, COOLANT_PUMP_AT, JUNCTION_BOX_AT, JUNCTION_BOX_SIZE, OXYGEN_GENERATOR_AT, OXYGEN_GENERATOR_SIZE, REACTOR_AT, REACTOR_SIZE}};
 use crate::dev_area::DevArea;
 use crate::env::PlanetRes;
 use crate::health::UseHold;
@@ -216,7 +216,7 @@ enum ScreenPart {
     Bad,
     Dark,
     Flash,
-    /// The meltdown blast's white flash (`dev_area::blast`).
+    /// The meltdown blast's white flash (`dev_area::engineering::blast`).
     White,
     Grain(usize),
 }
@@ -426,7 +426,7 @@ fn edge(c: Color, a: f32, clear: f32) -> BackgroundGradient {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn screen_sync(mut commands: Commands, time: Res<Time>, vitals: Res<Vitals>, hold: Res<UseHold>, blast: Res<crate::dev_area::blast::BlastFlash>, mut st: ResMut<ScreenState>, mut parts: Query<(&ScreenPart, &mut BackgroundColor, &mut BackgroundGradient, &mut Node)>) {
+fn screen_sync(mut commands: Commands, time: Res<Time>, vitals: Res<Vitals>, hold: Res<UseHold>, blast: Res<crate::dev_area::engineering::blast::BlastFlash>, mut st: ResMut<ScreenState>, mut parts: Query<(&ScreenPart, &mut BackgroundColor, &mut BackgroundGradient, &mut Node)>) {
     if !st.built {
         st.built = true;
         build_screen(&mut commands);
@@ -442,7 +442,7 @@ fn screen_sync(mut commands: Commands, time: Res<Time>, vitals: Res<Vitals>, hol
     st.hold = hold.0;
     let fx = screen_fx(vitals.burning, vitals.oxygen, vitals.radiation, now);
     let flash = st.flash_at.map_or(0.0, |at| flash_alpha(now - at));
-    let white = blast.0.map_or(0.0, |at| crate::dev_area::blast::flash_alpha(now - at) * blast.1);
+    let white = blast.0.map_or(0.0, |at| crate::dev_area::engineering::blast::flash_alpha(now - at) * blast.1);
     for (part, mut bg, mut gradient, mut node) in &mut parts {
         match *part {
             ScreenPart::Dark => *bg = BackgroundColor(Color::srgba(0.0, 0.0, 0.0, fx.dark)),

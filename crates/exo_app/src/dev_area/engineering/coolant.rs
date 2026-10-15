@@ -1,8 +1,8 @@
 //! The hold shows on the reticle (the ring, as the repair hold) and the others see REFILLING. Not
 //! yet: the pump states Low and High (later, with the pump's second setting).
-use super::*;
+use crate::dev_area::*;
 use crate::controls::Controls;
-use crate::dev_area::engine_room::CORRIDOR;
+use crate::dev_area::layout::CORRIDOR;
 use crate::displays::ActiveDisplay;
 use crate::items::{Items, LOCAL};
 use crate::repair::{aimed, RepairConfig};

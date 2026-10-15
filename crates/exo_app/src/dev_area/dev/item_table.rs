@@ -1,4 +1,4 @@
-use super::*;
+use crate::dev_area::*;
 use crate::items::{Items, LOCAL};
 use crate::ship::Ship;
 use item_core::{FrameRef, Placement};

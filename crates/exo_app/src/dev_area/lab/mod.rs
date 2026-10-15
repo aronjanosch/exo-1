@@ -7,7 +7,7 @@
 //!
 //! Systems as in `test_console`: `read_clicks` for the panels' actions, `tick` for time, and
 //! `write_panels`; the panels are pure functions of the state (`science/panels.rs`).
-use super::*;
+use crate::dev_area::*;
 use crate::displays::{DisplayAction, Panels};
 use crate::gameplay::Gameplay;
 use crate::health::HealthState;

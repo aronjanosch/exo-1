@@ -1,5 +1,5 @@
 use crate::cargo::{crate_world, Crate, Crates};
-use crate::dev_area::engine_room::{BridgeDoor, BridgeSlab, EngineDoor, Slab, DOOR_REACH};
+use crate::dev_area::{hull::doors::{BridgeDoor, BridgeSlab, EngineDoor, Slab}, layout::DOOR_REACH};
 use crate::dev_area::DevBox;
 use crate::controls::{Actions, Bindings, Input, Tap};
 use crate::displays::{ActiveDisplay, DisplayPanel, USE_RANGE};
@@ -124,7 +124,7 @@ pub fn interaction(
     mut gp: ResMut<crate::gameplay::Gameplay>,
     (mut active, displays): (ResMut<ActiveDisplay>, Query<(Entity, &DisplayPanel)>),
     (time, mut items, loose, door, doors, bridge_door, bridge_doors): (Res<Time>, ResMut<Items>, Query<(Entity, &Crate, &LooseItem)>, Option<Res<EngineDoor>>, Query<&Position, With<Slab>>, Option<Res<BridgeDoor>>, Query<&Position, With<BridgeSlab>>),
-    (boxes, supply): (Query<(&DevBox, &Position)>, Option<Res<crate::dev_area::extinguisher::Supply>>),
+    (boxes, supply): (Query<(&DevBox, &Position)>, Option<Res<crate::dev_area::fire::extinguisher::Supply>>),
 ) {
     let Ok(mut pl) = players.single_mut() else { return };
     let Some((ship_e, sp, sr)) = ships.iter().next().map(|(e, _, p, r)| (e, *p, *r)) else { return };

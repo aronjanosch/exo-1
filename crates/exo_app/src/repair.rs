@@ -3,7 +3,7 @@
 //! - Values: `content/gameplay/repair/repair.json` (`device_core::minigame::Tuning`, strict loader).
 //!   TODO(initiator): starting values.
 use crate::controls::{Actions, Controls, Tap};
-use crate::dev_area::engine_room::{walker_place, Place, BREACH_IDS, BREACH_OUT_IDS, COOLANT_PUMP, JUNCTION_BOX, OXYGEN_GENERATOR, REACTOR};
+use crate::dev_area::{layout::{walker_place, Place, COOLANT_PUMP, JUNCTION_BOX, OXYGEN_GENERATOR, REACTOR}, hull::breach::{BREACH_IDS, BREACH_OUT_IDS}};
 use crate::dev_area::DevArea;
 use crate::env::PlanetRes;
 use crate::dev_area::reactor::{route, ReactorCounts, ReactorSim};

@@ -12,7 +12,7 @@
 //! simulated seconds (the fixed step), so a busy machine runs the same ticks as a quiet one.
 use super::*;
 use super::reactor::{click_until, use_display};
-use crate::dev_area::engine_room::{EngineAir, GUNNERY_AT, JUMP_AT};
+use crate::dev_area::{hull::ShipAir, layout::{GUNNERY_AT, JUMP_AT}};
 use crate::dev_area::reactor::ReactorSim;
 use crate::dev_area::reactor_screen::{ambush_running, FAULTS_ID, FAULTS_NAME, GUNNERY_ID, GUNNERY_NAME, JUMP_ID, JUMP_NAME};
 use crate::displays::{aim_at, world_point_of, DisplayPanel};
@@ -61,7 +61,7 @@ fn nan_fields(r: &ReactorNews) -> Vec<&'static str> {
     bad
 }
 
-pub fn ambush_audit(air: Option<Res<EngineAir>>, sim: Option<Res<ReactorSim>>, items: Option<Res<Items>>, mut audit: ResMut<AmbushAudit>) {
+pub fn ambush_audit(air: Option<Res<ShipAir>>, sim: Option<Res<ReactorSim>>, items: Option<Res<Items>>, mut audit: ResMut<AmbushAudit>) {
     audit.samples += 1;
     if let Some(air) = air {
         let n = air.airlock_news();

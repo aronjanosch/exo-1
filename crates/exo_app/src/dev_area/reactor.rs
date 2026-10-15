@@ -1,11 +1,11 @@
 //! - Values: `content/gameplay/{engineering,bridge,gunnery,hull,crew,incidents}/` (`reactor_core::Tuning`, strict loader, one file per owner).
 use super::*;
-use crate::dev_area::engine_room::{EngineAir, ShipAlarm};
+use crate::dev_area::{hull::ShipAir, hull::alarms::ShipAlarm};
 use crate::dev_area::fire::{self, FireAlarm, FireConfig, FireGrid, FireModel};
 use crate::items::{Items, NetOut, Role};
-use crate::dev_area::airlock;
-use crate::dev_area::engine_room::ROOM;
-use crate::dev_area::rods;
+use crate::dev_area::hull::airlock;
+use crate::dev_area::layout::ROOM;
+use crate::dev_area::engineering::rods;
 use crate::gameplay::Gameplay;
 use gameplay_core::notice::{Notice, NoticeKind};
 use item_core::wire::{Alarm, AlarmNews, BotNews, BreakerGroup, EnemyNews, EnemyOutcome, FuelTube, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, RoomAir, RoomAlarmKind, StartupStage, GRAPH_POINTS, ROOMS};
@@ -65,20 +65,20 @@ pub struct ReactorSim {
 
 /// The engine room's save section (r42, #128) from the host's state: the room, its air, and the
 /// switches the host keeps beside the room.
-pub fn engine_section(sim: &ReactorSim, air: &EngineAir) -> EngineSave {
+pub fn engine_section(sim: &ReactorSim, air: &ShipAir) -> EngineSave {
     EngineSave { room: sim.room.to_save(), air: air.to_save(), vents: sim.vents, manual: sim.manual, fission: sim.fission, turbine: sim.turbine, director: sim.director.to_save() }
 }
 
 /// Puts a loaded section into the room, the air and the switches. The alarms and the timers are not
 /// in the save: they keep their values.
-pub fn apply_engine_section(sec: &EngineSave, cfg: &Tuning, sim: &mut ReactorSim, air: &mut EngineAir) {
+pub fn apply_engine_section(sec: &EngineSave, cfg: &Tuning, sim: &mut ReactorSim, air: &mut ShipAir) {
     sim.room = EngineRoom::from_save(cfg, &sec.room);
     sim.vents = sec.vents;
     sim.manual = sec.manual;
     sim.fission = sec.fission;
     sim.turbine = sec.turbine;
     sim.director = Director::from_save(&cfg.director, &sec.director);
-    *air = EngineAir::from_save(&cfg.airlock, &sec.air);
+    *air = ShipAir::from_save(&cfg.airlock, &sec.air);
 }
 
 /// `--warm-reactor`: the room is warm-started when it is created (`ReactorSim::created`), not run 150 s
@@ -281,7 +281,7 @@ impl ReactorSim {
                 }
             }
             // The captain's priority list (r42, CP-01) and the dev BOTS count.
-            ReactorAsk::SetBotPriority(s, level) => self.bots.set_level(super::bots::row_of(s), level),
+            ReactorAsk::SetBotPriority(s, level) => self.bots.set_level(crate::dev_area::crew::row_of(s), level),
             ReactorAsk::SetBots(n) => self.bots.set_count(n),
             // The airlock, its SEAL and the VACUUM switch need the air: `reactor_step` takes them.
             ReactorAsk::Airlock(_) | ReactorAsk::SetVacuum(_) | ReactorAsk::SealAirlock => {}
@@ -580,7 +580,7 @@ pub fn ecool_notice(items: Res<Items>, mut seen: Local<Option<u32>>, mut gp: Res
 
 /// The jump's notice and flash, on every process (the news counter `jumps`, as the ejects): the
 /// white flash at half the blast's strength (`JUMP_FLASH`) and the JUMP line.
-pub fn jump_notice(time: Res<Time>, items: Res<Items>, mut seen: Local<Option<u32>>, mut gp: ResMut<Gameplay>, mut flash: ResMut<super::blast::BlastFlash>) {
+pub fn jump_notice(time: Res<Time>, items: Res<Items>, mut seen: Local<Option<u32>>, mut gp: ResMut<Gameplay>, mut flash: ResMut<crate::dev_area::engineering::blast::BlastFlash>) {
     let Some(news) = items.reactor else { return };
     if counter_fresh(&mut seen, news.jumps) {
         flash.jump(time.elapsed_secs_f64());
@@ -593,12 +593,12 @@ pub fn plugin(app: &mut App) {
     let tuning = Tuning::load(&files).unwrap_or_else(|e| panic!("reactor: {e:?}"));
     let warm = app.world().contains_resource::<WarmAtCreation>();
     app.insert_resource(ReactorSim::created(&tuning, warm)).insert_resource(ReactorConfig(tuning)).init_resource::<ReactorCounts>();
-    app.init_resource::<super::blast::PendingBlasts>().init_resource::<super::blast::BlastFlash>();
-    app.add_systems(FixedUpdate, (super::bots::bots_step, super::bots::body_step, reactor_step, super::blast::reactor_blast, super::blast::client_blast_news, eject_notice, ecool_notice, jump_notice).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
+    app.init_resource::<crate::dev_area::engineering::blast::PendingBlasts>().init_resource::<crate::dev_area::engineering::blast::BlastFlash>();
+    app.add_systems(FixedUpdate, (crate::dev_area::crew::bots_step, crate::dev_area::crew::body_step, reactor_step, crate::dev_area::engineering::blast::reactor_blast, crate::dev_area::engineering::blast::client_blast_news, eject_notice, ecool_notice, jump_notice).chain().before(crate::dev_area::hull::doors::room_state).in_set(crate::phases::Fx::Input));
 }
 
 #[allow(clippy::too_many_arguments)]
-fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut alarm: ResMut<ShipAlarm>, mut air: ResMut<EngineAir>, fires: Res<FireConfig>, fire_alarm: Res<FireAlarm>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, area: Res<DevArea>, planet: Res<PlanetRes>, repair: Res<crate::repair::RepairConfig>, mut health: Option<ResMut<crate::health::HealthState>>, mut blasts: ResMut<super::blast::PendingBlasts>) {
+fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut alarm: ResMut<ShipAlarm>, mut air: ResMut<ShipAir>, fires: Res<FireConfig>, fire_alarm: Res<FireAlarm>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, area: Res<DevArea>, planet: Res<PlanetRes>, repair: Res<crate::repair::RepairConfig>, mut health: Option<ResMut<crate::health::HealthState>>, mut blasts: ResMut<crate::dev_area::engineering::blast::PendingBlasts>) {
     let asks = std::mem::take(&mut items.reactor_asks);
     if items.role == Role::Client {
         for a in asks {
@@ -617,7 +617,7 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
                 info!("reactor: seal refused (the inner door is shut, or a cycle runs)");
             }
         } else if let ReactorAsk::Airlock(ask) = a {
-            // The airlock's panels (r40): the interlock refuses what it must (`EngineAir::request`).
+            // The airlock's panels (r40): the interlock refuses what it must (`ShipAir::request`).
             if !air.request(airlock::ask_of(ask)) {
                 info!("reactor: airlock {ask:?} refused (a door is open, or a cycle runs)");
             }
@@ -629,7 +629,7 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
                 // The fires are the air's: a fresh room starts with a fresh air (no fire survives).
                 // The dev VACUUM switch is the operator's, as the director's is: a reset keeps it.
                 let vacuum = air.forced;
-                *air = EngineAir::with_tuning(&cfg.0.airlock);
+                *air = ShipAir::with_tuning(&cfg.0.airlock);
                 air.set_vacuum(vacuum);
             }
             sim.apply(a, &cfg.0, &mut counts);
@@ -663,7 +663,7 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
             items.spawn(now, stack, at);
         }
     }
-    // Fuel rods the host took out of a hand (`dev_area::rods`): each goes into a free slot. A reactor
+    // Fuel rods the host took out of a hand (`dev_area::engineering::rods`): each goes into a free slot. A reactor
     for load in items.take_rod_loads() {
         let Some(mut rod) = rods::kind_of_item(&load.item).and_then(|k| cfg.0.rods.rod(k)) else { continue };
         rod.life = load.life;
@@ -697,7 +697,7 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
         events.extend(sim.room.trigger(f));
     }
     // Life support's air: the oxygen generator feeds the air through its vents (r38; the engine room's
-    // and the corridor's, `EngineAir::add_oxygen_through_vents`). `EngineRoom::oxygen_flow` is the flow:
+    // and the corridor's, `ShipAir::add_oxygen_through_vents`). `EngineRoom::oxygen_flow` is the flow:
     // the life support's power and the generator's condition squared (`fire_core::oxygen`).
     let o2 = sim.room.oxygen_flow(cfg.0.life_support.oxygen_generator_rate);
     air.add_oxygen_through_vents(o2 * dt, sim.vents);
@@ -874,7 +874,7 @@ mod tests {
             if s.bots.manned(Station::Gunnery) {
                 return;
             }
-            s.bots.tick(0.5, [false; 4], &s.room.clone(), &super::bots::layout(), &[]);
+            s.bots.tick(0.5, [false; 4], &s.room.clone(), &crate::dev_area::crew::layout(), &[]);
         }
         panic!("no bot reached GN-01");
     }
@@ -889,7 +889,7 @@ mod tests {
         assert!(n.bots[BotStation::Gunnery.index()].manned, "the bots man GN-01 at the start (two bots, GUNNERY first), once they have walked there");
         assert_eq!(s.room.weapons().jam_chance(), 0.03 * (1.0 - 20.0 / 50.0), "the bot's skill sets the jam chance");
         s.apply(ReactorAsk::SetBots(0), &cfg(), &mut k);
-        s.bots.tick(0.5, [false; 4], &s.room.clone(), &super::bots::layout(), &[]);
+        s.bots.tick(0.5, [false; 4], &s.room.clone(), &crate::dev_area::crew::layout(), &[]);
         s.tick_jam(0.0);
         assert_eq!(s.room.weapons().jam_chance(), 0.03, "no bot, no skill: a player's gun");
     }
@@ -900,7 +900,7 @@ mod tests {
         let mut k = ReactorCounts::default();
         s.apply(ReactorAsk::SetBotPriority(BotStation::Power, 0), &cfg(), &mut k);
         s.apply(ReactorAsk::SetBots(1), &cfg(), &mut k);
-        s.bots.tick(0.5, [false; 4], &s.room.clone(), &super::bots::layout(), &[]);
+        s.bots.tick(0.5, [false; 4], &s.room.clone(), &crate::dev_area::crew::layout(), &[]);
         s.apply(ReactorAsk::Reset, &cfg(), &mut k);
         let n = s.news(1.0);
         assert_eq!((n.bot_count, n.bots[BotStation::Power.index()].level), (1, 0));

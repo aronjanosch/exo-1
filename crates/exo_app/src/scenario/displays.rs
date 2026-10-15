@@ -1,7 +1,7 @@
 //! The pointer on a display: hover, press and release rules, the slider value.
 use super::dev_area::{active, approach, click_on, console_state, use_console};
 use super::*;
-use crate::dev_area::test_console;
+use crate::dev_area::dev::test_console;
 use crate::displays::{aim_at, aim_off, world_point, ActiveDisplay, DisplayPointer};
 
 fn pointer(w: &World) -> display_core::Pointer {

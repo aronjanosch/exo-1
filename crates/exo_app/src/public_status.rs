@@ -47,7 +47,7 @@ fn treat_out(mut items: ResMut<Items>, hold: Res<UseHold>, mut st: ResMut<TreatS
 
 /// exist with the dev area only.
 #[allow(clippy::too_many_arguments)]
-fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>, sprays: Option<Res<Sprays>>, repairs: Res<RepairSessions>, rescue: Res<Rescuers>, mut treat: ResMut<TreatState>, masks: Option<Res<crate::dev_area::mask::MaskWorn>>, suits: Option<Res<crate::dev_area::mask::SuitWorn>>) {
+fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>, sprays: Option<Res<Sprays>>, repairs: Res<RepairSessions>, rescue: Res<Rescuers>, mut treat: ResMut<TreatState>, masks: Option<Res<crate::dev_area::gear::MaskWorn>>, suits: Option<Res<crate::dev_area::gear::SuitWorn>>) {
     if items.role != Role::Host {
         return;
     }

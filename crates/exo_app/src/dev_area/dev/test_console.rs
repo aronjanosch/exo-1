@@ -1,6 +1,6 @@
-use super::*;
+use crate::dev_area::*;
 use crate::displays::{DisplayAction, Panels};
-use crate::dev_area::engine_room::ShipAlarm;
+use crate::dev_area::hull::alarms::ShipAlarm;
 use crate::items::Items;
 use display_core::{bar, button, column, ctl, micro, readout, row, slider, space, toggle, Panel, Tier, Tone};
 use item_core::wire::{Alarm, RoomAsk};

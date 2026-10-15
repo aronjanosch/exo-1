@@ -1,8 +1,8 @@
 //! Open: the stun (no health affliction carries it yet, `TODO(initiator)`), the device damage.
-use super::*;
-use crate::dev_area::engine_room::{ignition_at, IGNITION_OUT, REACTOR_AT, REACTOR_SIZE};
+use crate::dev_area::*;
+use crate::dev_area::{layout::{ignition_at, IGNITION_OUT, REACTOR_AT, REACTOR_SIZE}};
 use crate::dev_area::fire::{self, FireGrid, FireModel};
-use crate::dev_area::engine_room::EngineAir;
+use crate::dev_area::hull::ShipAir;
 use crate::dev_area::reactor::ReactorConfig;
 use crate::gameplay::Gameplay;
 use crate::health::{area_pos, walker_points, HealthState};
@@ -75,7 +75,7 @@ pub fn flash_alpha(age: f64) -> f32 {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn reactor_blast(time: Res<Time>, mut pending: ResMut<PendingBlasts>, items: Res<Items>, cfg: Res<ReactorConfig>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, mut health: Option<ResMut<HealthState>>, mut air: ResMut<EngineAir>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, mut gp: ResMut<Gameplay>, mut flash: ResMut<BlastFlash>) {
+pub fn reactor_blast(time: Res<Time>, mut pending: ResMut<PendingBlasts>, items: Res<Items>, cfg: Res<ReactorConfig>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, mut health: Option<ResMut<HealthState>>, mut air: ResMut<ShipAir>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, mut gp: ResMut<Gameplay>, mut flash: ResMut<BlastFlash>) {
     let blasts = std::mem::take(&mut pending.0);
     if items.role == Role::Client {
         return;

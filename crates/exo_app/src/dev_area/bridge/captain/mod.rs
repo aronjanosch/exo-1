@@ -17,7 +17,7 @@
 //! `DevRole` lets the overview's dev button play another role to see the refusals. Orders, alert
 //! changes and refusals become notices (#165); the order that applies to the player's role shows
 //! as a line under the interaction prompt.
-use super::*;
+use crate::dev_area::*;
 use crate::gameplay::Gameplay;
 use crew_core::orders::OrderKind;
 use crew_core::{Alert, AlertEvent, Budget, Order, Orders, PriorityTable, Refusal, Role, Target};

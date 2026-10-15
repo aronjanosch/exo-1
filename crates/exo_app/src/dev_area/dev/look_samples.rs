@@ -1,4 +1,4 @@
-use super::*;
+use crate::dev_area::*;
 use crate::displays::{DisplayAction, Panels};
 use display_core::{bar, button, column, ctl, dial, label, level, micro, readout, row, slider, space, toggle, trend, Panel, Tier, Tone};
 

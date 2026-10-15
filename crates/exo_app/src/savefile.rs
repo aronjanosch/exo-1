@@ -9,7 +9,7 @@ use gameplay_core::{ClientId, CrateId};
 use std::path::{Path, PathBuf};
 
 use crate::cargo::{crate_bundle, Crate, Crates};
-use crate::dev_area::engine_room::EngineAir;
+use crate::dev_area::hull::ShipAir;
 use crate::dev_area::reactor::{apply_engine_section, engine_section, ReactorConfig, ReactorSim};
 use crate::env::PlanetRes;
 use crate::gameplay::{Gameplay, Goods};
@@ -136,7 +136,7 @@ pub fn snapshot<'a>(gp: &Gameplay, planet: &PlanetRes, crates: impl Iterator<Ite
 pub fn save_now(world: &mut World) -> Result<(), String> {
     let mut q = world.query::<(&Crate, &Goods)>();
     let mut env = snapshot(world.resource::<Gameplay>(), world.resource::<PlanetRes>(), q.iter(world));
-    if let (Some(sim), Some(air)) = (world.get_resource::<ReactorSim>(), world.get_resource::<EngineAir>()) {
+    if let (Some(sim), Some(air)) = (world.get_resource::<ReactorSim>(), world.get_resource::<ShipAir>()) {
         engine_section(sim, air).save(&mut env);
     }
     let dir = world.resource::<SaveDir>().0.clone();
@@ -181,9 +181,9 @@ pub fn load(world: &mut World, env: &Envelope) -> Result<(), SaveError> {
     let saved = WorldSave::load(env)?.unwrap_or_default();
     world.resource_mut::<Gameplay>().restore(env, saved.next_crate)?;
     if let (Some(sec), Some(cfg)) = (engine, world.get_resource::<ReactorConfig>().map(|c| c.0.clone())) {
-        if world.contains_resource::<ReactorSim>() && world.contains_resource::<EngineAir>() {
+        if world.contains_resource::<ReactorSim>() && world.contains_resource::<ShipAir>() {
             world.resource_scope(|world, mut sim: bevy::ecs::change_detection::Mut<ReactorSim>| {
-                world.resource_scope(|_, mut air: bevy::ecs::change_detection::Mut<EngineAir>| apply_engine_section(&sec, &cfg, &mut sim, &mut air));
+                world.resource_scope(|_, mut air: bevy::ecs::change_detection::Mut<ShipAir>| apply_engine_section(&sec, &cfg, &mut sim, &mut air));
             });
         }
     }
@@ -255,7 +255,7 @@ mod tests {
     fn the_engine_room_section_round_trips_through_the_envelope() {
         let cfg = reactor_core::Tuning::default();
         let mut sim = ReactorSim::created(&cfg, true);
-        let air = EngineAir::with_tuning(&cfg.airlock);
+        let air = ShipAir::with_tuning(&cfg.airlock);
         sim.room.battery_mut().set_charge_kwmin(2000.0);
         sim.vents = [false, true, true];
         let sec = engine_section(&sim, &air);
@@ -264,7 +264,7 @@ mod tests {
         let back = EngineSave::load(&Envelope::from_json(&env.to_json()).unwrap()).unwrap().unwrap();
         assert_eq!(back, sec);
         let mut sim2 = ReactorSim::created(&cfg, true);
-        let mut air2 = EngineAir::new();
+        let mut air2 = ShipAir::new();
         apply_engine_section(&back, &cfg, &mut sim2, &mut air2);
         assert_eq!(engine_section(&sim2, &air2), sec);
     }

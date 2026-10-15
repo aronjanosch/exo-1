@@ -1,7 +1,7 @@
 //! Engine room: the corridor, the door, the room's air and the alarm.
 use super::*;
 use crate::crew_hud::Vitals;
-use crate::dev_area::engine_room::{self, EngineAir, EngineDoor, Place, ShipAlarm, Slab, CORRIDOR, DOOR_AT, ROOM};
+use crate::dev_area::{hull::ShipAir, hull::doors::{EngineDoor, Slab}, layout::{Place, CORRIDOR, DOOR_AT, ROOM}, hull::alarms::ShipAlarm};
 use crate::dev_area::{area_of, DevArea};
 use crate::interact::Interaction;
 use crate::items::Items;
@@ -24,7 +24,7 @@ fn area_of_walker(w: &mut World) -> [f64; 2] {
 }
 
 fn place(w: &mut World) -> Place {
-    engine_room::place_of(area_of_walker(w))
+    crate::dev_area::layout::place_of(area_of_walker(w))
 }
 
 fn prompt(w: &World) -> String {
@@ -32,12 +32,12 @@ fn prompt(w: &World) -> String {
 }
 
 fn gap_open(w: &World) -> f64 {
-    let a = w.resource::<EngineAir>();
+    let a = w.resource::<ShipAir>();
     a.deck.gap(a.door).open
 }
 
 fn room_air(w: &World) -> f64 {
-    let a = w.resource::<EngineAir>();
+    let a = w.resource::<ShipAir>();
     a.oxygen_at(ROOM.centre)
 }
 
@@ -144,8 +144,8 @@ pub(super) fn engine_room_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "engine room: the air runs low");
-            let r = w.resource::<EngineAir>().engine;
-            w.resource_mut::<EngineAir>().deck.room_mut(r).oxygen = 0.0;
+            let r = w.resource::<ShipAir>().engine;
+            w.resource_mut::<ShipAir>().deck.room_mut(r).oxygen = 0.0;
             return false;
         }
         if c.t < 4.0 {
@@ -160,8 +160,8 @@ pub(super) fn engine_room_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "engine room: the air comes back");
-            let r = w.resource::<EngineAir>().engine;
-            let mut a = w.resource_mut::<EngineAir>();
+            let r = w.resource::<ShipAir>().engine;
+            let mut a = w.resource_mut::<ShipAir>();
             let full = a.deck.room(r).volume;
             a.deck.room_mut(r).oxygen = full;
             return false;

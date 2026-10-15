@@ -2,7 +2,7 @@
 use super::items::{collect, items, look_at, outside, tap_then, DELAY};
 use super::*;
 use crate::controls::Controls;
-use crate::dev_area::engine_room::{ignition_at, EngineAir, ShipAlarm};
+use crate::dev_area::{layout::ignition_at, hull::ShipAir, hull::alarms::ShipAlarm};
 use crate::dev_area::fire::{ignite, FireGrid, FireModel, Sprays};
 use crate::dev_area::reactor::{ReactorCounts, ReactorSim};
 use crate::dev_area::{DevArea, ENGINEERING};
@@ -18,8 +18,8 @@ use reactor_core::Source;
 const START: f64 = 0.5;
 const FLAME_LIFT: f64 = 0.3;
 
-fn air(w: &World) -> &EngineAir {
-    w.resource::<EngineAir>()
+fn air(w: &World) -> &ShipAir {
+    w.resource::<ShipAir>()
 }
 
 fn sim(w: &World) -> &ReactorSim {
@@ -175,7 +175,7 @@ pub(super) fn fire_steps(s: &mut Vec<Step>) {
             begin(w, c, "fire: the pump, the junction box and the reactor lose condition");
             let model = *w.resource::<FireModel>();
             w.resource_scope(|w, mut grid: Mut<FireGrid>| {
-                let mut a = w.resource_mut::<EngineAir>();
+                let mut a = w.resource_mut::<ShipAir>();
                 ignite(&mut a, &mut grid, model, Source::Pump, START);
                 ignite(&mut a, &mut grid, model, Source::Junction, START);
             });

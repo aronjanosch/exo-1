@@ -2,7 +2,7 @@
 use super::items::{collect, items, look_at, tap_then, DELAY};
 use super::*;
 use crate::controls::Controls;
-use crate::dev_area::engine_room::CORRIDOR;
+use crate::dev_area::layout::CORRIDOR;
 use crate::dev_area::fire::Sprays;
 use crate::dev_area::{DevArea, ENGINEERING};
 use crate::items::{Items, LOCAL};

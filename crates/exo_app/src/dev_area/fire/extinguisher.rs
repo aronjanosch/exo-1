@@ -1,7 +1,7 @@
 //! So: wear while spraying, empty at 0, swap at a rack. Values in `content/gameplay/fire/extinguisher.json`
 //! (`item_core::supply`).
-use super::engine_room::{AIRLOCK, CORRIDOR, ROOM};
-use super::*;
+use crate::dev_area::{layout::{AIRLOCK, CORRIDOR, ROOM}};
+use crate::dev_area::*;
 use crate::items::Items;
 use crate::ship::Ship;
 use item_core::supply::SupplyConfig;

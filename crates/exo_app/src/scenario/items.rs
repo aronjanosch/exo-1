@@ -1,7 +1,7 @@
 //! Items at the dev area's item table, through the item request path.
 use super::*;
 use crate::cargo::Crate;
-use crate::dev_area::{item_table, DevArea, ENGINEERING};
+use crate::dev_area::{dev::item_table, DevArea, ENGINEERING};
 use crate::interact::Interaction;
 use crate::items::{slot_at, slot_rect, HudWindow, InventoryUi, Items, LooseItem};
 use item_core::{Action, Reject, Request};

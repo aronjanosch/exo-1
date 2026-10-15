@@ -1,8 +1,8 @@
 //! The meltdown blast reaches a walker two metres off, not one at 25 m (a unit test covers the falloff).
 use super::*;
-use crate::dev_area::blast::{fire_points, BlastFlash, PendingBlasts};
+use crate::dev_area::engineering::blast::{fire_points, BlastFlash, PendingBlasts};
 use crate::dev_area::reactor::{route, ReactorSim};
-use crate::dev_area::engine_room::{EngineAir, REACTOR_AT};
+use crate::dev_area::{hull::ShipAir, layout::REACTOR_AT};
 use crate::dev_area::reactor::ReactorCounts;
 use crate::dev_area::DevArea;
 use crate::health::HealthState;
@@ -89,7 +89,7 @@ pub(super) fn blast_steps(s: &mut Vec<Step>) {
         Some("flash".into())
     }));
     s.push(run("blast: three fires start round the core", 1.0, |w, c| {
-        let air = w.resource::<EngineAir>();
+        let air = w.resource::<ShipAir>();
         let missing = fire_points().iter().filter(|p| !air.deck.fires().iter().any(|f| (f.pos.x - p[0]).hypot(f.pos.y - p[1]) < 0.6)).count();
         check(c, missing == 0, format!("blast: a fire at each of the three points ({missing} missing)"));
         Some(format!("{} fires", air.deck.fires().len()))

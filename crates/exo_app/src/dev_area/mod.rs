@@ -16,28 +16,20 @@ use bevy::math::{DQuat, DVec2, DVec3};
 use bevy::prelude::*;
 use display_core::PanelId;
 
-pub mod airlock;
-pub mod blast;
-pub mod bots;
-pub mod captain;
-pub mod captain_screen;
-pub mod coolant;
-pub mod engine_room;
-pub mod extinguisher;
+pub mod bridge;
+pub mod crew;
+pub mod dev;
+pub mod engineering;
 pub mod fire;
-pub mod look_samples;
-pub mod medbay;
-pub mod mask;
+pub mod gear;
 pub mod hazards;
-pub mod item_table;
+pub mod hull;
+pub mod lab;
+pub mod layout;
+pub mod medbay;
 pub mod reactor;
 pub mod reactor_screen;
-pub mod startup_screen;
-pub mod rods;
-pub mod science;
-pub mod status_monitor;
 pub mod storage;
-pub mod test_console;
 
 pub const PLACE: &str = "dev_area";
 /// Half the rectangle's size, east and north (m). The place's flatten edit reaches a little further.
@@ -143,32 +135,17 @@ const SINK: f64 = 0.2;
 pub fn plugin(app: &mut App) {
     app.init_resource::<DevAreaDevices>().init_resource::<DevArea>();
     app.add_systems(Update, spawn_devices.in_set(crate::phases::Frame::World));
-    // ROLES: one line per role module.
-    app.add_plugins(test_console::plugin);
-    app.add_plugins(look_samples::plugin);
-    app.add_plugins(item_table::plugin);
-    app.add_plugins(hazards::plugin);
-    app.add_plugins(engine_room::plugin);
-    app.add_plugins(coolant::plugin);
-    app.add_plugins(rods::plugin);
-    app.add_plugins(reactor::plugin);
-    app.add_plugins(reactor_screen::plugin);
-    app.add_plugins(fire::plugin);
-    app.add_plugins(extinguisher::plugin);
-    app.add_plugins(mask::plugin);
-    app.add_plugins(captain::plugin);
-    app.add_plugins(storage::plugin);
-    app.add_plugins(science::plugin);
-    app.add_plugins(medbay::plugin);
+    // One plugin per owner; the layout spawns the inner ship's walls and screens.
+    app.add_plugins((layout::plugin, hull::plugin, engineering::plugin, reactor::plugin, reactor_screen::plugin, bridge::plugin));
+    app.add_plugins((gear::plugin, fire::plugin, lab::plugin, medbay::plugin, storage::plugin, hazards::plugin, dev::plugin));
 }
 
 pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, (dress_boxes, mark_zones).after(spawn_devices).in_set(crate::phases::Frame::World));
-    engine_room::window_plugin(app);
-    bots::window_plugin(app);
+    hull::window_plugin(app);
+    crew::window_plugin(app);
     fire::window_plugin(app);
-    captain::window_plugin(app);
-    // ROLES (window): one line per role module with a window part.
+    bridge::window_plugin(app);
 }
 
 pub fn box_pose(frame: &Frame, planet: &PlanetRes, b: &PlaceholderBox) -> ((DVec3, DQuat), Option<DisplayPanel>) {

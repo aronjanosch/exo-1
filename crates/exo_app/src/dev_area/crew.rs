@@ -17,7 +17,7 @@
 //! `origin/round/dev-area`). It is not the player figure (#32) and has no status label yet
 //! (`public_status.rs` labels the net figures only; TODO(initiator)). It walks in a straight line through
 //! walls (TODO(initiator): pathing).
-use super::engine_room::{GUNNERY_AT, HELM_AT, JUNCTION_AT, REACTOR_SCREEN_AT};
+use crate::dev_area::{layout::{GUNNERY_AT, HELM_AT, JUNCTION_AT, REACTOR_SCREEN_AT}};
 use super::reactor::{wire_pump, ReactorSim};
 use super::{DevArea, PADS};
 use crate::displays::{ActiveDisplay, DisplayPanel};

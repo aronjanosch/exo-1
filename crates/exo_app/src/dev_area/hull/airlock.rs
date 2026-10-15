@@ -1,6 +1,6 @@
 //! The airlock (r40, #267): the room between the corridor and the outside, its two doors and their
 //! panels. The state machine is `reactor_core::Airlock` (the interlock and the cycle); the air is
-//! `EngineAir` (the rooms, the gaps, the pump's moves). Here: the doors' slabs, the air step, the
+//! `ShipAir` (the rooms, the gaps, the pump's moves). Here: the doors' slabs, the air step, the
 //! panels' presses.
 //!
 //! Sources (Barotrauma, `/home/agent/exo-research/barotrauma/`): the airlock is a hull flagged as a
@@ -11,8 +11,8 @@
 //!
 //! Host and clients: the host runs the cycle and the air; a client shows the host's doors (the news).
 //! The suit rack is the extinguisher racks' kind (`extinguisher.rs`, `extinguisher.json`).
-use super::engine_room::{EngineAir, DOOR_SIZE, DOOR_TIME, INNER_DOOR_AT, OUTER_DOOR_AT};
-use super::*;
+use crate::dev_area::{hull::ShipAir, layout::{DOOR_SIZE, DOOR_TIME, INNER_DOOR_AT, OUTER_DOOR_AT}};
+use crate::dev_area::*;
 use crate::items::{Items, Role};
 use item_core::wire::{AirlockAsk, ReactorAsk};
 use reactor_core::{Door, Goal};
@@ -34,7 +34,7 @@ pub(super) fn spawn_doors(commands: &mut Commands, frame: &Frame, planet: &Plane
         let d = DOOR_SIZE;
         let (ground, up) = frame.ground(planet, at[0], at[1], 0.0);
         let rot = frame.rotation(up, 0.0);
-        let (bottom, top) = super::engine_room::span(0.0, d[1]);
+        let (bottom, top) = crate::dev_area::layout::span(0.0, d[1]);
         let shut = ground + up * ((bottom + top) * 0.5);
         let size = DVec3::new(d[0], top - bottom, d[2]);
         let e = commands
@@ -52,10 +52,10 @@ pub(super) fn spawn_doors(commands: &mut Commands, frame: &Frame, planet: &Plane
     }
 }
 
-/// Every step: the cycle's air and timer (`EngineAir::airlock_step`), then the slabs follow the
+/// Every step: the cycle's air and timer (`ShipAir::airlock_step`), then the slabs follow the
 /// doors and the air's gaps follow the slabs. A client's doors are the host's (the news); its air
 /// is the same model run on its own.
-pub(super) fn airlock_step(time: Res<Time>, items: Res<Items>, mut air: ResMut<EngineAir>, mut slabs: Query<(&mut AirlockSlab, &mut Position)>) {
+pub(super) fn airlock_step(time: Res<Time>, items: Res<Items>, mut air: ResMut<ShipAir>, mut slabs: Query<(&mut AirlockSlab, &mut Position)>) {
     let dt = time.delta_secs_f64();
     air.airlock_step(dt);
     let news = items.reactor.map(|r| r.airlock);

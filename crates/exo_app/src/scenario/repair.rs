@@ -3,7 +3,7 @@ use super::items::{collect, items, outside};
 use walker_core::Frame as WalkFrame;
 use super::*;
 use crate::controls::Controls;
-use crate::dev_area::engine_room::{COOLANT_PUMP_AT, JUNCTION_BOX_AT};
+use crate::dev_area::{layout::{COOLANT_PUMP_AT, JUNCTION_BOX_AT}};
 use crate::dev_area::{DevArea, ENGINEERING};
 use crate::items::Items;
 use crate::dev_area::reactor::ReactorSim;

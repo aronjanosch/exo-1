@@ -1,9 +1,11 @@
-//! The rates are in `content/gameplay/health/health.json`. TODO(initiator): the booth's shape (a
-//! flat pad for now, not yet a walled booth).
-//! `SPICY_RAD_PER_S` radiation per second. Inside the reactor it is shielded. The values are
-//! consts, the item format has no custom fields: TODO(initiator).
-use super::*;
-use crate::dev_area::engine_room::{REACTOR_AT, REACTOR_SIZE};
+//! Hazards to try the health rules on: three pads (a hot plate, a glowing barrel, a pad without
+//! air), the spicy fuel rod that irradiates whoever stands near it unless it sits in the reactor,
+//! and a walled vacuum room for the suit. The rates are in `content/gameplay/health/health.json`;
+//! the rod's reach and dose are consts here (the item format has no custom fields).
+//! TODO(initiator): the booth's shape (a flat pad for now, not yet a walled booth).
+use crate::dev_area::*;
+use crate::dev_area::layout::{spawn_part, Part, ROOM_HEIGHT, WALL, WALL_COLOUR};
+use crate::dev_area::{layout::{REACTOR_AT, REACTOR_SIZE}};
 use crate::env::PlanetRes;
 use crate::items::Items;
 use bevy::math::DVec3;
@@ -15,8 +17,33 @@ pub const GLOW_BARREL: Zone = Zone { name: "glowing barrel", centre: [0.0, 16.0]
 pub const NO_AIR: Zone = Zone { name: "no air", centre: [12.0, 16.0], half: [1.5, 1.5] };
 
 /// A greybox room with no air at all: vacuum without leaving the planet, to try the suit and the
-/// decompression. Its walls are `VACUUM_WALLS` in the engine room's part list; the west side has a doorway.
+/// decompression. Its walls are `VACUUM_WALLS`; the west side has a doorway.
 pub const VACUUM_ROOM: Zone = Zone { name: "vacuum room", centre: [16.0, -14.0], half: [3.0, 3.0] };
+
+/// The walls of the vacuum room (`hazards::VACUUM_ROOM`, x 13..19, y -17..-11): a doorway 2 m wide
+/// in the west wall, a flat roof.
+pub const VACUUM_WALLS: &[Part] = &[
+    Part { id: "vacuum_wall_south", at: [16.0, -17.15], size: [6.6, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "vacuum_wall_north", at: [16.0, -10.85], size: [6.6, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "vacuum_wall_east", at: [19.15, -14.0], size: [WALL, ROOM_HEIGHT, 6.3], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "vacuum_wall_west_south", at: [12.85, -16.0], size: [WALL, ROOM_HEIGHT, 2.0], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "vacuum_wall_west_north", at: [12.85, -12.0], size: [WALL, ROOM_HEIGHT, 2.0], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "vacuum_roof", at: [16.0, -14.0], size: [6.6, WALL, 6.6], lift: ROOM_HEIGHT, colour: WALL_COLOUR },
+];
+
+
+/// Once per planet: the vacuum room's walls.
+fn spawn_vacuum_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<DevArea>, mut done: Local<Option<warp_core::PlanetId>>) {
+    if *done == Some(planet.id) {
+        return;
+    }
+    let Some(frame) = area.frame else { return };
+    *done = Some(planet.id);
+    for p in VACUUM_WALLS {
+        let e = spawn_part(&mut commands, &frame, &planet, p);
+        area.entities.push(e);
+    }
+}
 
 pub const SPICY_ITEM: &str = "fuel_rod_spicy";
 /// The spicy rod's reach (m) and its radiation (per second) on each body in reach. TODO(initiator).
@@ -47,6 +74,7 @@ pub fn spicy_irradiated(rods: &[RodSpot], bodies: &[(PlayerId, DVec3)], radius: 
 }
 
 pub fn plugin(app: &mut App) {
+    app.add_systems(Update, spawn_vacuum_room.after(super::spawn_devices).in_set(crate::phases::Frame::World));
     let pads = [(&HOT_PLATE, "hazard_hot_plate", [0.95, 0.45, 0.1]), (&GLOW_BARREL, "hazard_glow_barrel", [0.3, 0.9, 0.3]), (&NO_AIR, "hazard_no_air", [0.2, 0.4, 0.95])];
     for (z, id, colour) in pads {
         app.world_mut().resource_mut::<DevAreaDevices>().add(PlaceholderBox {

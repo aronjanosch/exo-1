@@ -2,12 +2,12 @@
 //! TODO(initiator): the glow of the critical text and the scanlines' look are not drawn yet.
 use super::*;
 use crate::displays::{ActiveDisplay, DisplayAction, DisplayPanel, DisplayPointer, Panels};
-use crate::dev_area::captain_screen;
-use crate::dev_area::engine_room::{GUNNERY_AT, VENT_LIFT};
-use crate::dev_area::bots::bot_tagged;
+use crate::dev_area::bridge::captain_screen;
+use crate::dev_area::{layout::{GUNNERY_AT, VENT_LIFT}};
+use crate::dev_area::crew::bot_tagged;
 use crate::dev_area::reactor::{lamp_blink_on, ReactorConfig};
-use crate::dev_area::startup_screen;
-use crate::dev_area::status_monitor;
+use crate::dev_area::engineering::startup_screen;
+use crate::dev_area::hull::status_monitor;
 use crate::items::Items;
 use display_core::{button, canvas, column, ctl, font, label, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Rect, Shape, Tier, TextFace, Tone, Widget};
 use item_core::wire::{AirlockCycle, BotStation, BreakerGroup, EnemyOutcome, FuelKind, FuelTube, JumpStage, Lamp, PumpMode, ReactorAsk, RoomAsk, RoomNews, ReactorFault, ReactorNews, FUEL_TUBES};
@@ -1422,7 +1422,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 _ => None,
             }
         } else if c.panel == AIRLOCK_INNER_ID || c.panel == AIRLOCK_OUTER_ID {
-            super::airlock::panel_ask(&c.action)
+            crate::dev_area::hull::airlock::panel_ask(&c.action)
         } else if c.panel == captain_screen::ID {
             // CP-01 (r41): the engine door is the room's (`RoomAsk::SetDoor`), the rest the reactor's.
             match c.action.as_str() {

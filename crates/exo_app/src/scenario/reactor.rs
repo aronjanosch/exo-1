@@ -1,8 +1,8 @@
 //! Reactor scenario on the engine room's screens.
 use super::*;
-use crate::dev_area::engine_room::ShipAlarm;
+use crate::dev_area::hull::alarms::ShipAlarm;
 use crate::dev_area::reactor::{ReactorCounts, ReactorSim};
-use crate::dev_area::engine_room::{COOLANT_PUMP_AT, JUNCTION_BOX_AT};
+use crate::dev_area::{layout::{COOLANT_PUMP_AT, JUNCTION_BOX_AT}};
 use crate::dev_area::reactor_screen::{FAULTS_ID, JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID};
 use crate::dev_area::DevArea;
 use super::{ship_frame_of, with_player};
@@ -186,7 +186,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
             begin(w, c, "reactor: the fire at the core is sprayed out");
             return false;
         }
-        let mut air = w.resource_mut::<crate::dev_area::engine_room::EngineAir>();
+        let mut air = w.resource_mut::<crate::dev_area::hull::ShipAir>();
         let at: Vec<DVec3> = air.deck.fires().iter().map(|f| f.pos).collect();
         for p in at {
             air.deck.spray(p, 0.5);

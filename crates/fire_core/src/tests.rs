@@ -280,3 +280,40 @@ fn breathing_never_takes_more_than_the_room_has_and_a_negative_amount_takes_noth
     d.breathe(r, -5.0);
     assert_eq!(d.room(r).oxygen, 5.0, "a negative amount takes nothing");
 }
+
+#[test]
+fn the_flow_splits_by_volume_among_the_open_vents() {
+    // Barotrauma OxygenGenerator.UpdateVents: each vent gets the flow times its hull's volume share.
+    let s = split_by_volume(4.0, &[(30.0, true), (10.0, true)]);
+    assert_eq!(s.len(), 2);
+    assert!((s[0] - 3.0).abs() < 1e-12 && (s[1] - 1.0).abs() < 1e-12, "{s:?}");
+}
+
+#[test]
+fn a_closed_vent_sends_all_the_flow_to_the_other() {
+    assert_eq!(split_by_volume(4.0, &[(30.0, false), (10.0, true)]), vec![0.0, 4.0]);
+    assert_eq!(split_by_volume(4.0, &[(30.0, true), (10.0, false)]), vec![4.0, 0.0]);
+}
+
+#[test]
+fn all_vents_closed_means_no_flow_goes_anywhere() {
+    assert_eq!(split_by_volume(4.0, &[(30.0, false), (10.0, false)]), vec![0.0, 0.0]);
+    // No vents at all: the generator does nothing (Barotrauma: `!ventList.Any()` returns).
+    assert!(split_by_volume(4.0, &[]).is_empty());
+}
+
+#[test]
+fn the_split_sums_to_the_flow_whenever_a_vent_is_open() {
+    for flow in [0.0, 0.7, 4.0, 123.5] {
+        for vents in [
+            vec![(30.0, true), (10.0, false), (5.0, true)],
+            vec![(1.0, true)],
+            vec![(12.0, true), (12.0, true), (0.0, true)],
+        ] {
+            let s = split_by_volume(flow, &vents);
+            let sum: f64 = s.iter().sum();
+            assert!((sum - flow).abs() < 1e-9, "flow {flow}, {vents:?} gave {s:?}");
+            assert!(s.iter().all(|x| *x >= 0.0));
+        }
+    }
+}

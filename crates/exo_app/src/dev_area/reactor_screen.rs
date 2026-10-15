@@ -25,6 +25,11 @@ pub const DOOR_ID: PanelId = PanelId::new("engine_door_screen");
 pub const DOOR_NAME: &str = "REACTOR ROOM";
 pub const FAULTS_ID: PanelId = PanelId::new("reactor_faults");
 pub const FAULTS_NAME: &str = "Dev faults";
+/// The vents' panels (r38): index 0 the engine room's, 1 the corridor's (`ReactorAsk::SetVent`).
+pub const VENT_ENGINE_ID: PanelId = PanelId::new("vent_engine");
+pub const VENT_ENGINE_NAME: &str = "VENT ENGINE";
+pub const VENT_CORRIDOR_ID: PanelId = PanelId::new("vent_corridor");
+pub const VENT_CORRIDOR_NAME: &str = "VENT CORRIDOR";
 pub const STATUS_ID: PanelId = PanelId::new("reactor_status");
 pub const STATUS_NAME: &str = "RX STATUS";
 /// The dev faults screen's mount point (area metres, the engine room's north wall, the room side).
@@ -710,6 +715,16 @@ pub fn aux_panel(r: Option<&ReactorNews>) -> Panel {
     tall(Panel::screen(Tier::S, AUX_NAME, "AX-01", body)).with_padding(6.0)
 }
 
+/// A vent's grille panel (r38): one OPEN/SHUT toggle. A shut vent takes no air; the generator's
+/// flow goes to the other one. Press asks the host (`ReactorAsk::SetVent`); the host keeps the state.
+pub fn vent_panel(r: Option<&ReactorNews>, i: usize) -> Panel {
+    let open = r.map_or(false, |r| r.vents[i]);
+    let (name, code) = if i == 0 { (VENT_ENGINE_NAME, "VT-01") } else { (VENT_CORRIDOR_NAME, "VT-02") };
+    let word = if open { "OPEN" } else { "SHUT" };
+    let body = column(6.0, vec![micro("VENT").fixed(14.0), toggle(open, "", "vent").labels("SHUT", "OPEN").fixed(48.0), readout(word).text_size(font::SMALL).tone(if open { Tone::Good } else { Tone::Warn })]);
+    Panel::screen(Tier::S, name, code, body).with_padding(8.0)
+}
+
 pub fn oxygen_tone(o: f64) -> Tone {
     let p = o * 100.0;
     if p <= 40.0 {
@@ -988,6 +1003,9 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "aux_lights" => snap.map(|r| ReactorAsk::SetAuxSwitch(BreakerGroup::Lights, new_state(r.aux_lights))),
                 _ => None,
             }
+        } else if c.panel == VENT_ENGINE_ID || c.panel == VENT_CORRIDOR_ID {
+            let i = if c.panel == VENT_ENGINE_ID { 0 } else { 1 };
+            snap.map(|r| ReactorAsk::SetVent(i, new_state(r.vents[i as usize])))
         } else if c.panel == STATUS_ID {
             match c.action.as_str() {
                 "boost_up" => Some(ReactorAsk::Boost(true)),
@@ -1037,6 +1055,8 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     panels.set(JUNCTION_ID, junction_panel(items.reactor.as_ref(), max_kw));
     panels.set(AUX_ID, aux_panel(items.reactor.as_ref()));
     panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));
+    panels.set(VENT_ENGINE_ID, vent_panel(items.reactor.as_ref(), 0));
+    panels.set(VENT_CORRIDOR_ID, vent_panel(items.reactor.as_ref(), 1));
     panels.set(FAULTS_ID, faults_panel(items.reactor.as_ref()));
     panels.set(STATUS_ID, status_panel(items.reactor.as_ref(), cfg.0.reactor.max_output_kw, lamp_blink_on(time.elapsed_secs_f64())));
 }

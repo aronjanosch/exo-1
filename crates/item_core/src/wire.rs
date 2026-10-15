@@ -148,6 +148,10 @@ pub enum ReactorAsk {
     /// A consumer group's limit on the junction box (PULSAR's conduit limit): 0..1, the
     /// host clamps it. The group asks for its demand times the limit.
     SetLimit(BreakerGroup, f64),
+    /// A vent's valve (r38): index 0 is the engine room's vent, 1 the corridor's, `true` open. The
+    /// host ignores any other index. Shut, the vent takes no air: the generator's flow goes to the
+    /// open one (`fire_core::split_by_volume`).
+    SetVent(u8, bool),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -386,6 +390,9 @@ pub struct ReactorNews {
     /// The emergency coolings the host has applied so far (`ReactorCounts::ecools`). A process that
     /// sees it go up shows the EMERGENCY COOLING notice and the steam once, as the ejects do.
     pub ecools: u32,
+    /// The two vents' valves, open (true): index 0 the engine room's, 1 the corridor's (r38). Set
+    /// by the host; a client's panels follow it. All shut is a state too: the generator's air goes nowhere.
+    pub vents: [bool; 2],
 }
 
 /// The most points the reactor graph carries (the shipped `graph_points`, 25). A fixed size keeps
@@ -559,6 +566,7 @@ mod tests {
             ecool_ready_in_s: 42.5,
             ecool_ok: false,
             ecools: 3,
+            vents: [false, true],
             ejected: true,
             eject_armed: true,
             ejects: 3,
@@ -583,6 +591,8 @@ mod tests {
             ReactorAsk::SetBreaker(BreakerGroup::Lights, false),
             ReactorAsk::SetBreaker(BreakerGroup::Engines, true),
             ReactorAsk::SetLimit(BreakerGroup::Lights, 0.6),
+            ReactorAsk::SetVent(0, false),
+            ReactorAsk::SetVent(1, true),
             ReactorAsk::SetPumpMode(PumpMode::Low),
             ReactorAsk::ArmEject,
             ReactorAsk::Eject,

@@ -8,7 +8,7 @@ use crate::origin::WorldPose;
 use crate::walker::Player;
 use crate::origin::WorldPos;
 use crate::Layer;
-use fire_core::{Deck, FireTuning, GapId, LeakId, RoomId};
+use fire_core::{split_by_volume, Deck, FireTuning, GapId, LeakId, RoomId};
 use reactor_core::Source;
 use display_core::PanelId;
 use item_core::wire::{Alarm, RoomAsk, RoomNews};
@@ -68,14 +68,22 @@ pub struct Mount {
     pub turn: f64,
 }
 
-pub const SCREENS: [Mount; 6] = [
+pub const SCREENS: [Mount; 8] = [
     Mount { id: reactor_screen::PUMP_ID, name: reactor_screen::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::JUNCTION_ID, name: reactor_screen::JUNCTION_NAME, at: JUNCTION_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::AUX_ID, name: reactor_screen::AUX_NAME, at: AUX_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::DOOR_ID, name: reactor_screen::DOOR_NAME, at: [-13.04, -10.0], lift: 1.3, size: SMALL_SCREEN_SIZE, turn: -90.0 },
     Mount { id: reactor_screen::FAULTS_ID, name: reactor_screen::FAULTS_NAME, at: reactor_screen::FAULTS_AT, lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 0.0 },
     Mount { id: reactor_screen::STATUS_ID, name: reactor_screen::STATUS_NAME, at: STATUS_AT, lift: STATUS_LIFT, size: STATUS_SIZE, turn: 180.0 },
+    // The two vents (r38): each is a small grille panel with a valve on its wall, facing its room.
+    // The engine room's on the west wall (turn 90 faces +x), the corridor's on the east wall beside
+    // the door's panel (turn -90 faces -x).
+    Mount { id: reactor_screen::VENT_ENGINE_ID, name: reactor_screen::VENT_ENGINE_NAME, at: VENT_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
+    Mount { id: reactor_screen::VENT_CORRIDOR_ID, name: reactor_screen::VENT_CORRIDOR_NAME, at: VENT_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
 ];
+/// The vents' wall points (area metres): the engine room's west wall and the corridor's east wall.
+pub const VENT_AT: [[f64; 2]; 2] = [[-18.9, -14.0], [-13.04, -7.0]];
+pub const VENT_LIFT: f64 = 1.3;
 
 pub const DOOR: &str = "engine_door";
 pub const REACTOR: &str = "engine_reactor";
@@ -166,6 +174,15 @@ impl EngineAir {
             Place::Corridor => self.corridor,
             Place::Outside => self.outside,
         }
+    }
+
+    /// The generator's air (m³) through the two vents (r38): `open[0]` the engine room's, `open[1]`
+    /// the corridor's. Each open vent gets its room's volume share (`fire_core::split_by_volume`,
+    /// Barotrauma `OxygenGenerator.UpdateVents`); with both shut the air goes nowhere.
+    pub fn add_oxygen_through_vents(&mut self, m3: f64, open: [bool; 2]) {
+        let shares = split_by_volume(m3, &[(self.deck.room(self.engine).volume, open[0]), (self.deck.room(self.corridor).volume, open[1])]);
+        self.deck.add_oxygen(self.engine, shares[0]);
+        self.deck.add_oxygen(self.corridor, shares[1]);
     }
 
     /// The air fraction (0..1) of the room at an area point: what a body breathes there.
@@ -516,6 +533,22 @@ mod tests {
             a.deck.exchange_air(1.0 / 30.0);
         }
         assert_eq!(a.deck.room(a.engine).oxygen, leaking, "a mended breach stops the loss");
+    }
+
+    /// r38: the generator's air goes through the vents by volume; a shut vent sends it all to the other room.
+    #[test]
+    fn a_shut_engine_vent_sends_the_generators_air_to_the_corridor() {
+        let mut a = EngineAir::new();
+        a.deck.breathe(a.engine, 5.0);
+        a.deck.breathe(a.corridor, 5.0);
+        let (e0, c0) = (a.deck.room(a.engine).oxygen, a.deck.room(a.corridor).oxygen);
+        a.add_oxygen_through_vents(0.5, [false, true]);
+        assert_eq!(a.deck.room(a.engine).oxygen, e0, "the shut engine vent takes nothing");
+        assert!((a.deck.room(a.corridor).oxygen - c0 - 0.5).abs() < 1e-9, "the corridor gets all of it");
+        a.add_oxygen_through_vents(0.5, [true, true]);
+        let shared = a.deck.room(a.engine).oxygen - e0;
+        let expected = 0.5 * ROOM_VOLUME / (ROOM_VOLUME + CORRIDOR_VOLUME);
+        assert!((shared - expected).abs() < 1e-9, "both open: the engine room takes its volume share ({shared})");
     }
 
     #[test]

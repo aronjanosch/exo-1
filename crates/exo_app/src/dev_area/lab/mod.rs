@@ -1,12 +1,13 @@
 //! The scientist's lab in the dev area (#287): the mixer (the kettle), a heater, a centrifuge, a
-//! syringe filler and a test dummy, each a box with a panel in the LAB zone (the medbay is
-//! `dev_area/medbay.rs`). A batch goes from device to device through the player's `Hands` ("take"
-//! and "put" on each panel). Skill is the local player's medical skill (`health_core::skills`, kept
+//! syringe filler and a test dummy, each a box with a panel in the ship's lab room
+//! (`layout::LAB_ROOM`), mirrored in the LAB zone outside (the medbay is `dev_area/medbay.rs`). A
+//! batch goes from device to device through the player's `Hands` ("take" and "put" on each panel). Skill is the local player's medical skill (`health_core::skills`, kept
 //! in `HealthState`): it sets the device times and the bonus quality, and grows with each finished
 //! step. The rules are `production_core` (lab, devices, skill); this is the glue.
 //!
-//! Systems as in `test_console`: `read_clicks` for the panels' actions, `tick` for time, and
+//! Systems as in the dev area's other consoles: `read_clicks` for the panels' actions, `tick` for time, and
 //! `write_panels`; the panels are pure functions of the state (`science/panels.rs`).
+use crate::dev_area::layout::LAB_ROOM;
 use crate::dev_area::*;
 use crate::displays::{DisplayAction, Panels};
 use crate::gameplay::Gameplay;
@@ -171,34 +172,41 @@ impl Target for Dummy {
     }
 }
 
-/// A device box: (id, panel, name, x in the lab zone, colour, panel height in panel pixels).
-const DEVICES: [(&str, PanelId, &str, f64, [f32; 3], f64); 5] = [
-    ("lab_mixer", MIXER, "Mixer", -6.0, [0.30, 0.62, 0.52], 560.0),
-    ("lab_heater", HEATER, "Heater", -3.0, [0.78, 0.38, 0.22], 520.0),
-    ("lab_centrifuge", CENTRIFUGE, "Centrifuge", 0.0, [0.42, 0.45, 0.70], 560.0),
-    ("lab_filler", FILLER, "Syringe filler", 3.0, [0.80, 0.80, 0.85], 420.0),
-    ("lab_dummy", DUMMY, "Test dummy", 6.0, [0.85, 0.70, 0.45], 360.0),
+/// A device box: (id, panel, name, position in the lab room (m from its centre), turn, colour, panel
+/// height in panel pixels). The room is 8 x 6 m (x -4..4, y -3..3 from its centre) with its doorway
+/// in the south wall at x -0.8..0.8. The mixer stands on the west wall, the heater, the centrifuge
+/// and the filler on the north wall and the dummy on the east wall, all facing into the room, so
+/// the middle stays free for a walkway from the doorway to every panel.
+const DEVICES: [(&str, PanelId, &str, [f64; 2], f64, [f32; 3], f64); 5] = [
+    ("lab_mixer", MIXER, "Mixer", [-3.5, 0.0], 90.0, [0.30, 0.62, 0.52], 560.0),
+    ("lab_heater", HEATER, "Heater", [-2.4, 2.4], 0.0, [0.78, 0.38, 0.22], 520.0),
+    ("lab_centrifuge", CENTRIFUGE, "Centrifuge", [0.0, 2.4], 0.0, [0.42, 0.45, 0.70], 560.0),
+    ("lab_filler", FILLER, "Syringe filler", [2.4, 2.4], 0.0, [0.80, 0.80, 0.85], 420.0),
+    ("lab_dummy", DUMMY, "Test dummy", [3.6, 0.0], -90.0, [0.85, 0.70, 0.45], 360.0),
 ];
-/// The row of devices in the lab zone: metres north of its centre, 3 m apart, between the test
-/// console (y -4.5) and the medbay (y 3). The LAB zone is 14 m wide: x -7..7.
-pub const ROW_Y: f64 = -1.0;
+/// Where each device's mirror stands in the LAB zone (11 x 8 m): a row 2.2 m apart in the order of
+/// the batch's way, all facing south.
+const MIRROR_Y: f64 = 0.0;
+const MIRROR_X: [f64; 5] = [-4.4, -2.2, 0.0, 2.2, 4.4];
 /// Panel width in panel pixels; every panel is 1 m wide.
 pub const PANEL_W: f64 = 560.0;
 
 pub fn plugin(app: &mut App) {
     {
         let mut devices = app.world_mut().resource_mut::<DevAreaDevices>();
-        for (id, panel, name, x, colour, h) in DEVICES {
+        for (i, (id, panel, name, pos, turn_deg, colour, h)) in DEVICES.into_iter().enumerate() {
             let dummy = panel == DUMMY;
-            devices.add(PlaceholderBox {
+            let inside = PlaceholderBox {
                 id: id.into(),
-                zone: LAB,
-                local_pos: [x, ROW_Y],
+                zone: LAB_ROOM,
+                local_pos: pos,
                 size: if dummy { [0.6, 1.0, 0.5] } else { [1.4, 1.0, 0.8] },
-                turn_deg: 0.0,
+                turn_deg,
                 colour,
                 panel: Some(PanelSpec { id: panel, name: name.into(), size_m: [1.0, h / PANEL_W], at: [0.0, 1.0 + 0.5 * h / PANEL_W, 0.2], tilt_deg: 15.0 }),
-            });
+            };
+            devices.add(inside.clone());
+            devices.add_mirror(&PlaceholderBox { turn_deg: 0.0, ..inside }, LAB, [MIRROR_X[i], MIRROR_Y]);
         }
     }
     let gp = app.world().resource::<Gameplay>();

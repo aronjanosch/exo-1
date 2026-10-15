@@ -12,8 +12,15 @@ pub const RECIPES: &[(&str, &str)] = &[
     ("cinder", include_str!("../../../content/planet/cinder.json")),
 ];
 
+/// Draft archetypes (#282): not in `planet_set.json`, reachable only with `--planet-recipe=<id>` for look checks.
+pub const DRAFTS: &[(&str, &str)] = &[
+    ("frost", include_str!("../../../content/planet/draft/frost.json")),
+    ("dune", include_str!("../../../content/planet/draft/dune.json")),
+    ("magma", include_str!("../../../content/planet/draft/magma.json")),
+];
+
 pub fn recipe_for(def: &PlanetDef) -> Result<Recipe, String> {
-    let text = RECIPES.iter().find(|(id, _)| *id == def.recipe).map(|(_, t)| *t).ok_or_else(|| format!("planet {}: no recipe '{}' in content/planet", def.name, def.recipe))?;
+    let text = RECIPES.iter().chain(DRAFTS).find(|(id, _)| *id == def.recipe).map(|(_, t)| *t).ok_or_else(|| format!("planet {}: no recipe '{}' in content/planet", def.name, def.recipe))?;
     Recipe::for_planet(text, def.seed, def.radius).map_err(|e| format!("content/planet/{}.json: {e}", def.recipe))
 }
 

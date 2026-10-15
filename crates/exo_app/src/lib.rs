@@ -106,6 +106,8 @@ pub struct Options {
     pub all_planets: bool,
     /// Every planet gets this seed instead of the file's (look checks of the seed-rolled tweaks, #281).
     pub planet_seed: Option<i32>,
+    /// Every planet gets this recipe (a shipped one or a draft in `content/planet/draft/`), for look checks.
+    pub planet_recipe: Option<String>,
     /// `--spike-ms=`: frames slower than this print a `spike:` line.
     pub spike_ms: f64,
     pub mute: bool,
@@ -143,6 +145,7 @@ impl Default for Options {
             realtime: false,
             all_planets: false,
             planet_seed: None,
+            planet_recipe: None,
             spike_ms: frame_cost::DEFAULT_THRESHOLD_MS,
             mute: false,
             net: None,
@@ -175,7 +178,9 @@ impl Options {
                 "--hidden" => o.hidden = true,
                 "--no-vsync" => o.no_vsync = true,
                 "--mute" => o.mute = true,
+                "--dev-area" => o.dev_area = true,
                 "--all-planets" => o.all_planets = true,
+                "--planet-recipe" => o.planet_recipe = Some(v.to_string()),
                 "--planet-seed" => o.planet_seed = Some(v.parse().expect("planet-seed")),
                 "--radius" => o.radius = Some(v.parse().expect("radius")),
                 "--start" => o.start = Some(v.to_string()),
@@ -304,6 +309,9 @@ pub fn build_app(o: &Options) -> App {
     }
     if let Some(seed) = o.planet_seed {
         sys.planets.iter_mut().for_each(|p| p.seed = seed);
+    }
+    if let Some(recipe) = &o.planet_recipe {
+        sys.planets.iter_mut().for_each(|p| p.recipe = recipe.clone());
     }
     // (obstruction and arrival radius) with it, or the warp checks refuse the planet.
     let n_planets = if o.all_planets { sys.planets.len() } else { 1 };

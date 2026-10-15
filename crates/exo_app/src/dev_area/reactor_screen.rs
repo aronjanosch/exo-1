@@ -23,6 +23,8 @@ pub const JUNCTION_NAME: &str = "JUNCTION BOX";
 pub const AUX_ID: PanelId = PanelId::new("aux_panel");
 pub const BATTERY_ID: PanelId = PanelId::new("battery_panel");
 pub const BATTERY_NAME: &str = "BATTERY";
+pub const HELM_ID: PanelId = PanelId::new("helm_panel");
+pub const HELM_NAME: &str = "HELM";
 pub const AUX_NAME: &str = "AUX";
 pub const DOOR_ID: PanelId = PanelId::new("engine_door_screen");
 pub const DOOR_NAME: &str = "REACTOR ROOM";
@@ -717,6 +719,18 @@ pub fn battery_panel(r: Option<&ReactorNews>) -> Panel {
     tall(Panel::screen(Tier::S, BATTERY_NAME, "BT-01", body)).with_padding(6.0)
 }
 
+/// HM-01 (r38, the helm): the throttle slider (-100..100 %, the engines' target) and what the engines
+/// make of it: the thrust (%) and the kW they draw of their demand. A short grid shows here as a
+/// thrust below the throttle and a draw below the demand.
+pub fn helm_panel(r: Option<&ReactorNews>) -> Panel {
+    let r = r.copied().unwrap_or_default();
+    let throttle = column(4.0, vec![micro("THROTTLE").fixed(14.0), slider((r.throttle + 100.0) / 200.0, "", "throttle").fixed(40.0)]);
+    let thrust = readout(format!("THRUST {:.0} %", r.engine_thrust)).text_size(font::SMALL).tone(Tone::Normal);
+    let draw = readout(format!("ENGINE {:.0} / {:.0} kW", r.delivered_kw[0], r.demand_kw[0])).text_size(font::SMALL).tone(Tone::Normal);
+    let body = column(0.0, vec![space().flex(1.0), column(10.0, vec![throttle, thrust.fixed(20.0), draw.fixed(20.0)]).fixed(120.0), space().flex(1.0)]);
+    tall(Panel::screen(Tier::S, HELM_NAME, "HM-01", body)).with_padding(6.0)
+}
+
 /// power: the aux reactor has its own supply. TODO(initiator): confirm.
 pub fn aux_panel(r: Option<&ReactorNews>) -> Panel {
     let r = r.copied().unwrap_or_default();
@@ -1029,6 +1043,12 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "bat_rate" => c.value.map(|v| ReactorAsk::SetBatteryRecharge(v as f64)),
                 _ => None,
             }
+        } else if c.panel == HELM_ID {
+            match c.action.as_str() {
+                // The slider's 0..1 is -100..100 %.
+                "throttle" => c.value.map(|v| ReactorAsk::SetThrottle(v as f64 * 200.0 - 100.0)),
+                _ => None,
+            }
         } else if c.panel == VENT_ENGINE_ID || c.panel == VENT_CORRIDOR_ID {
             let i = if c.panel == VENT_ENGINE_ID { 0 } else { 1 };
             snap.map(|r| ReactorAsk::SetVent(i, new_state(r.vents[i as usize])))
@@ -1081,6 +1101,7 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     panels.set(JUNCTION_ID, junction_panel(items.reactor.as_ref(), max_kw));
     panels.set(AUX_ID, aux_panel(items.reactor.as_ref()));
     panels.set(BATTERY_ID, battery_panel(items.reactor.as_ref()));
+    panels.set(HELM_ID, helm_panel(items.reactor.as_ref()));
     panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));
     panels.set(VENT_ENGINE_ID, vent_panel(items.reactor.as_ref(), 0));
     panels.set(VENT_CORRIDOR_ID, vent_panel(items.reactor.as_ref(), 1));

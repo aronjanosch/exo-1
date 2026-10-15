@@ -157,6 +157,9 @@ pub enum ReactorAsk {
     /// host ignores any other index. Shut, the vent takes no air: the generator's flow goes to the
     /// open one (`fire_core::split_by_volume`).
     SetVent(u8, bool),
+    /// The engines' throttle, -100..100 % (r38, the HELM's slider; the host clamps it). The engine's
+    /// force follows it (`reactor_core::Engine`).
+    SetThrottle(f64),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -406,6 +409,11 @@ pub struct ReactorNews {
     /// The two vents' valves, open (true): index 0 the engine room's, 1 the corridor's (r38). Set
     /// by the host; a client's panels follow it. All shut is a state too: the generator's air goes nowhere.
     pub vents: [bool; 2],
+    /// The engines' throttle (the crew's target), -100..100 % (r38).
+    pub throttle: f64,
+    /// The thrust the engines give, 0..100 % (r38): the force times the voltage and the condition
+    /// (`reactor_core::Engine::thrust`); 0 below the minimum voltage.
+    pub engine_thrust: f64,
 }
 
 /// A room's air and fire for the status monitor (r38): the air as a fraction 0..1 (whole percent),
@@ -588,6 +596,8 @@ mod tests {
             ecool_ok: false,
             ecools: 3,
             vents: [false, true],
+            throttle: -35.5,
+            engine_thrust: 62.5,
             ejected: true,
             eject_armed: true,
             ejects: 3,
@@ -619,6 +629,7 @@ mod tests {
             ReactorAsk::SetBatteryRecharge(0.4),
             ReactorAsk::SetVent(0, false),
             ReactorAsk::SetVent(1, true),
+            ReactorAsk::SetThrottle(-100.0),
             ReactorAsk::SetPumpMode(PumpMode::Low),
             ReactorAsk::ArmEject,
             ReactorAsk::Eject,

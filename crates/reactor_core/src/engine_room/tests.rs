@@ -112,8 +112,10 @@ fn alarm_level_follows_the_room() {
 fn the_flow_runs_on_after_power_off_on_the_backup() {
     // The pump has a backup supply: with the reactor delivering nothing (power off, cold start,
     // broken) it runs at full factor, so the flow stays while the core cools on the decay heat.
+    // A warm start: from cold the engines stall under the minimum voltage until the grid comes up,
+    // which swings the grid for a while (the engines' gate, Barotrauma's `Voltage < MinVoltage`).
     let mut r = room();
-    run(&mut r, 120.0, Input::auto());
+    r.warm_start();
     assert!((r.flow() - 1.0).abs() < 1e-9, "the pump is on and running: {}", r.flow());
     r.set_power(false);
     run(&mut r, 1.0, Input::auto());
@@ -313,15 +315,20 @@ fn a_room_with_demand_and_no_power_is_undervolted_and_one_with_no_demand_is_not(
 }
 
 #[test]
-fn the_engine_throttle_scales_the_engines_demand() {
+fn the_engine_throttle_sets_the_engines_demand_as_the_force_follows() {
+    // A warm start: a cold room has no voltage, and the engines stall under the minimum voltage.
     let mut r = room();
+    r.warm_start();
     let full = r.grid().group(Group::Engines).demand_kw;
-    r.set_engine_throttle(0.5);
-    r.step(DT, Input::auto());
-    assert_eq!(r.grid().group(Group::Engines).demand_kw, full * 0.5);
-    assert_eq!(r.engine_throttle(), 0.5);
-    r.set_engine_throttle(1.7);
-    assert_eq!(r.engine_throttle(), 1.0, "clamped to 0..1");
+    r.set_engine_throttle(50.0);
+    assert_eq!(r.engine_throttle(), 50.0, "the target at once");
+    run(&mut r, 5.0, Input::auto());
+    let want = full * 0.5_f64.powf(1.5);
+    assert!((r.grid().group(Group::Engines).demand_kw - want).abs() < 1e-3, "about 283 kW at half throttle");
+    r.set_engine_throttle(150.0);
+    assert_eq!(r.engine_throttle(), 100.0, "clamped to -100..100");
+    r.set_engine_throttle(-150.0);
+    assert_eq!(r.engine_throttle(), -100.0);
 }
 
 #[test]
@@ -334,12 +341,12 @@ fn wander_keeps_the_throttle_in_range_and_moves_the_engines_demand() {
     for _ in 0..(300.0 / DT) as usize {
         r.step(DT, Input::auto());
         let th = r.engine_throttle();
-        assert!((0.3..=1.0).contains(&th), "throttle {th}");
+        assert!((30.0..=100.0).contains(&th), "throttle {th}");
         lo = lo.min(th);
         hi = hi.max(th);
         demands.push(r.grid().group(Group::Engines).demand_kw);
     }
-    println!("wander 300 s: throttle {lo:.2}..{hi:.2}");
+    println!("wander 300 s: throttle {lo:.1}..{hi:.1}");
     let first = demands[0];
     assert!(demands.iter().any(|d| *d != first));
     r.set_engine_wander(false);

@@ -2,6 +2,7 @@
 //! starting points for the playtest (`TODO(initiator)`).
 pub mod battery;
 pub mod breach;
+pub mod engine;
 pub mod engine_room;
 pub mod grid;
 pub mod history;
@@ -11,6 +12,7 @@ pub mod sim;
 pub mod tuning;
 
 pub use battery::{Battery, BatteryTuning};
+pub use engine::Engine;
 pub use breach::Breach;
 pub use engine_room::{AlarmLevel, EngineRoom, Fault, Input, JunctionBox, Pump, RoomEvent, RoomTuning, Source};
 pub use history::History;

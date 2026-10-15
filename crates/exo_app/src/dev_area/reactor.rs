@@ -155,6 +155,8 @@ impl ReactorSim {
                 None => info!("reactor: no vent {i}"),
             },
             ReactorAsk::SetPumpMode(m) => self.room.set_pump_mode(pump_of(m)),
+            // The HELM's slider (r38): the engines' target, the room's clamp (-100..100) and the host's.
+            ReactorAsk::SetThrottle(pct) => self.room.set_engine_throttle(pct.clamp(-100.0, 100.0)),
             ReactorAsk::Boost(up) => {
                 if !self.room.reactor_mut().boost(up) {
                     info!("reactor: boost refused (off, broken, or not allowed now)");
@@ -229,6 +231,8 @@ impl ReactorSim {
             // The host sets the rooms in `reactor_step` (they come from the air and the fire).
             rooms: Default::default(),
             vents: self.vents,
+            throttle: self.room.engine_throttle(),
+            engine_thrust: self.room.engine_thrust(),
             graph_points: self.room.history().size().min(GRAPH_POINTS) as u8,
             graph_output: graph_row(&self.room.history().output),
             graph_load: graph_row(&self.room.history().load),
@@ -787,6 +791,18 @@ mod tests {
         assert!(!counter_fresh(&mut seen, 1));
         assert!(counter_fresh(&mut seen, 2));
         assert!(!counter_fresh(&mut seen, 2));
+    }
+
+    /// r38: the HELM's throttle sets the engines' target, clamped to -100..100; the news carries it.
+    #[test]
+    fn the_throttle_ask_sets_the_engine_target_clamped() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        assert_eq!(s.news(1.0).throttle, 100.0, "full throttle at the start");
+        s.apply(ReactorAsk::SetThrottle(-35.0), &cfg(), &mut k);
+        assert_eq!(s.news(1.0).throttle, -35.0);
+        s.apply(ReactorAsk::SetThrottle(400.0), &cfg(), &mut k);
+        assert_eq!(s.news(1.0).throttle, 100.0, "clamped");
     }
 
     /// r38: each vent is a valve the host keeps; a bad index is ignored and the news carries both.

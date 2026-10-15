@@ -71,7 +71,7 @@ pub struct Mount {
     pub turn: f64,
 }
 
-pub const SCREENS: [Mount; 10] = [
+pub const SCREENS: [Mount; 11] = [
     Mount { id: reactor_screen::PUMP_ID, name: reactor_screen::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::JUNCTION_ID, name: reactor_screen::JUNCTION_NAME, at: JUNCTION_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::AUX_ID, name: reactor_screen::AUX_NAME, at: AUX_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
@@ -85,7 +85,11 @@ pub const SCREENS: [Mount; 10] = [
     // the door's panel (turn -90 faces -x).
     Mount { id: reactor_screen::VENT_ENGINE_ID, name: reactor_screen::VENT_ENGINE_NAME, at: VENT_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
     Mount { id: reactor_screen::VENT_CORRIDOR_ID, name: reactor_screen::VENT_CORRIDOR_NAME, at: VENT_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
+    // The helm (r38, HM-01): in the corridor on its east wall, north of the vent. TODO(initiator): the spot on the wall.
+    Mount { id: reactor_screen::HELM_ID, name: reactor_screen::HELM_NAME, at: HELM_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
 ];
+/// The helm's wall point (area metres): the corridor's east wall, beyond the vent.
+pub const HELM_AT: [f64; 2] = [-13.04, -5.0];
 /// The vents' wall points (area metres): the engine room's west wall and the corridor's east wall.
 pub const VENT_AT: [[f64; 2]; 2] = [[-18.9, -14.0], [-13.04, -7.0]];
 pub const VENT_LIFT: f64 = 1.3;

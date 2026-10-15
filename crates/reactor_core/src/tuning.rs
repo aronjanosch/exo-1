@@ -88,7 +88,7 @@ impl Tuning {
         need(self.room.overvolt_ratio > 0.0, "room.overvolt_ratio", "must be > 0");
         need((0.0..=1.0).contains(&self.room.break_fire_chance), "room.break_fire_chance", "must be 0..1");
         need(self.room.overvolt_hits_per_s >= 0.0, "room.overvolt_hits_per_s", "must be >= 0");
-        need(self.room.wander_every_s > 0.0 && self.room.wander_rate > 0.0, "room.wander_*", "wander_every_s and wander_rate must be > 0");
+        need(self.room.wander_every_s > 0.0, "room.wander_every_s", "must be > 0");
         need((0.0..=1.0).contains(&self.room.wander_min), "room.wander_min", "must be 0..1");
         for g in crate::grid::Group::ALL {
             let s = self.grid.group(g);

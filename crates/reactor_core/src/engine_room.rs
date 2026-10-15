@@ -1,5 +1,9 @@
 //! The engine room: reactor, coolant pump, junction box and the grid of consumers, stepped together.
 //!
+//! Engines (r38): the crew's throttle is the engine's target (`engine::Engine`, after Barotrauma's
+//! `Engine.cs`); the engine's power draw is the Engines demand, and its thrust is shown on the HELM.
+//! `engine_wander` is a dev driver that sets the target.
+//!
 //! Pump leak (r36): below 50 % condition the pump leaks coolant out of the tank, running or not,
 //! at `pump_leak_max * (1 - c / 0.5)^2` tank fraction per second (c = condition, 0..1). The curve is
 //! ours (Barotrauma's condition-squared curve, `OxygenGenerator.cs:55-59`, is the shape's source).
@@ -12,6 +16,7 @@ use device_core::{Condition, DeviceEvent, DeviceTuning};
 use gameplay_core::rng::Rng;
 
 use crate::battery::Battery;
+use crate::engine::Engine;
 use crate::breach::Breach;
 use crate::grid::{Grid, Group};
 use crate::history::History;
@@ -77,14 +82,12 @@ pub struct RoomTuning {
     pub ecool_strength: f64,
     /// Seconds from the press until it can be pressed again (PULSAR's EmergencyCooldownTime). TODO(initiator): value.
     pub ecool_cooldown_s: f64,
-    /// Dev stand-in for a helm: the engines' throttle random-walks while on. Off in code, on in
-    /// `reactor.json`.
+    /// Dev stand-in for a helm: the engines' target random-walks while on (the force follows it). Off
+    /// in code and in `reactor.json`. TODO(initiator): on or off by default.
     pub engine_wander: bool,
     pub wander_every_s: f64,
-    /// The lowest wander target, 0..1.
+    /// The lowest wander target, 0..1 of full throttle.
     pub wander_min: f64,
-    /// How fast the throttle moves to its target, per second.
-    pub wander_rate: f64,
     /// The aux reactor (PULSAR manual: auxiliary systems are not connected to the main reactor).
     /// On: the main grid carries the Engines group only; Life Support and Lights are fed by the aux
     /// reactor, and what they leave of its output boosts the main reactor. TODO(initiator): default.
@@ -139,7 +142,6 @@ impl Default for RoomTuning {
             engine_wander: false,
             wander_every_s: 6.0,
             wander_min: 0.3,
-            wander_rate: 0.15,
             aux_enabled: false,
             aux_output_kw: 500.0,
             oxygen_generator_rate: 2.13,
@@ -487,7 +489,7 @@ pub struct EngineRoom {
     grid: Grid,
     level: AlarmLevel,
     engines_full_kw: f64,
-    throttle: f64,
+    engine: Engine,
     wander: bool,
     wander_rng: Rng,
     wander_target: f64,
@@ -535,7 +537,7 @@ impl EngineRoom {
             grid: Grid::from_tuning(&t.grid),
             level: AlarmLevel::None,
             engines_full_kw: t.grid.engines.demand_kw,
-            throttle: 1.0,
+            engine: Engine::new(),
             wander: t.room.engine_wander,
             wander_rng: Rng::new(seed ^ 0x7a1d_e51a),
             wander_target: 1.0,
@@ -683,22 +685,31 @@ impl EngineRoom {
         self.junction.voltage()
     }
 
+    /// The crew's throttle (the engine's target), -100..100.
     pub fn engine_throttle(&self) -> f64 {
-        self.throttle
+        self.engine.target()
     }
 
-    /// Sets the engines' throttle, 0..1, and the Engines demand with it. While wander is on, the
-    /// next step moves it on.
-    pub fn set_engine_throttle(&mut self, f: f64) {
-        self.throttle = f.clamp(0.0, 1.0);
-        self.grid.set_demand(Group::Engines, self.engines_full_kw * self.throttle);
+    /// Sets the engines' throttle, -100..100 (clamped). The force follows it over the next steps,
+    /// and the Engines demand with the force. While wander is on, the next step moves the target on.
+    pub fn set_engine_throttle(&mut self, pct: f64) {
+        self.engine.set_target(pct);
+    }
+
+    pub fn engine(&self) -> &Engine {
+        &self.engine
+    }
+
+    /// The thrust the engines give now, % (`Engine::thrust` at the junction box's voltage).
+    pub fn engine_thrust(&self) -> f64 {
+        self.engine.thrust(self.voltage())
     }
 
     pub fn engine_wander(&self) -> bool {
         self.wander
     }
 
-    /// The dev stand-in for a helm: while on, `step` moves the throttle with a random walk.
+    /// The dev stand-in for a helm: while on, `step` moves the engines' target with a random walk.
     pub fn set_engine_wander(&mut self, on: bool) {
         self.wander = on;
     }
@@ -874,7 +885,9 @@ impl EngineRoom {
         if self.wander {
             self.wander_step(dt, &t);
         }
-        self.grid.set_demand(Group::Engines, self.engines_full_kw * self.throttle);
+        // The voltage is the junction box's as the last step left it (Barotrauma's `prevVoltage`).
+        self.engine.step(dt, self.voltage());
+        self.grid.set_demand(Group::Engines, self.engine.demand_kw(self.engines_full_kw));
         let load = self.main_load_kw();
         self.sync_aux();
         let reactor_ev = self.reactor.step(dt, load);
@@ -992,17 +1005,16 @@ impl EngineRoom {
         }
     }
 
-    /// One step of the wander: a new target every `wander_every_s` in [wander_min, 1], the throttle
-    /// moves to it at `wander_rate` per second.
+    /// One step of the wander: a new target every `wander_every_s`, in [wander_min, 1] of full
+    /// throttle. The engine's force follows the target on its own.
     fn wander_step(&mut self, dt: f64, t: &RoomTuning) {
         let lo = t.wander_min.clamp(0.0, 1.0);
         self.wander_left -= dt;
         if self.wander_left <= 0.0 {
             self.wander_target = lo + self.wander_rng.unit() * (1.0 - lo);
             self.wander_left = t.wander_every_s;
+            self.engine.set_target(100.0 * self.wander_target);
         }
-        let step = t.wander_rate * dt;
-        self.throttle = (self.throttle + (self.wander_target - self.throttle).clamp(-step, step)).clamp(lo, 1.0);
     }
 
     fn compute_level(&self) -> AlarmLevel {

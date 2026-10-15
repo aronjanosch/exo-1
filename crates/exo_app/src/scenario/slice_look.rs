@@ -3,7 +3,7 @@
 //! headless it runs the same states and the same checks without shots). Run with
 //! `--start=dev_area --dev-area`. The steps set the states the pictures need, and check them:
 //! the reactor warm-starts (the dev faults button), the corridor and the room are viewed, each screen is viewed from
-//! 1.2 m, the pump breaks and the readout goes HOT, the critical lamp lights, SCRAM (the walker
+//! 1.2 m, the pump breaks and the readout goes HOT, the readout's ? help view is shot and closed, the critical lamp lights, SCRAM (the walker
 //! uses the readout, the click is retried until the reactor is off), 2 s of dark, then POWER on; a
 //! fire at the reactor is sprayed from 2.5 m; the pump breaks again (smoke), the wrench starts the
 //! hold repair (the minigame is off: the pump rises while held); the reactor on manual at 100 % with
@@ -17,7 +17,7 @@ use crate::crew_hud::Vitals;
 use crate::dev_area::engine_room::{CORRIDOR, COOLANT_PUMP_AT, DOOR_AT, JUNCTION_BOX_AT, REACTOR_AT};
 use crate::dev_area::hazards::{GLOW_BARREL, HOT_PLATE, NO_AIR};
 use crate::dev_area::reactor::ReactorSim;
-use crate::dev_area::reactor_screen::{DOOR_ID, FAULTS_ID, JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID};
+use crate::dev_area::reactor_screen::{ReactorHelp, DOOR_ID, FAULTS_ID, HELP_ACTION, JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID};
 use crate::dev_area::{DevArea, ENGINEERING};
 use crate::displays::{ActiveDisplay, DisplayPanel, Panels};
 use crate::effects::{self, Smoke};
@@ -98,6 +98,11 @@ fn snap_once(c: &mut Ctx, w: &mut World, dir: &Path, windowed: bool, tag: &'stat
         c.v.insert(tag, 1.0);
         snap(w, dir, windowed, tag);
     }
+}
+
+/// Whether the readout's ? help view is open for this player.
+fn help_open(w: &World) -> bool {
+    w.resource::<ReactorHelp>().0
 }
 
 fn sim(w: &World) -> &ReactorSim {
@@ -351,6 +356,33 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
 
     // c. Close-ups at about 1.2 m, each screen in front of its machine or wall. The normal states first.
     s.push(shot_view("slice c: reactor readout, normal", [-11.8, -17.76], Look::Screen(READOUT_ID), "slice_c_readout_normal"));
+
+    // The readout's ? help view: the walker uses the readout, the ? is pressed (retried until the
+    // help is open), the help is shot, then CLOSE (its picture) brings the normal readout back.
+    use_display(s, "REACTOR", READOUT_ID, [-11.8, -17.7]);
+    s.push(click_until(READOUT_ID, HELP_ACTION, None, "slice c: the ? opens the readout's help view", help_open));
+    let help_dir = out_dir.to_path_buf();
+    s.push(Box::new(move |w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "slice c: the readout's help view");
+            return false;
+        }
+        let rt = screen_centre(w, &READOUT_ID);
+        aim(w, rt);
+        if c.t < 0.5 {
+            return false;
+        }
+        if first(c, "help_checked") {
+            check(c, help_open(w), "slice c: the help view is open for its shot".into());
+        }
+        snap_once(c, w, &help_dir, windowed, "slice_c_readout_help");
+        if c.t < 0.9 {
+            return false;
+        }
+        end(w, c, "help view".into());
+        true
+    }));
+    s.push(click_until(READOUT_ID, HELP_ACTION, None, "slice c: CLOSE closes the help view", |w| !help_open(w)));
     s.push(shot_view("slice c: coolant pump screen", [COOLANT_PUMP_AT[0], -15.75], Look::Screen(PUMP_ID), "slice_c_pump_screen"));
     s.push(shot_view("slice c: junction box screen", [JUNCTION_BOX_AT[0], -17.78], Look::Screen(JUNCTION_ID), "slice_c_junction_screen"));
     s.push(shot_view("slice c: door screen", [DOOR_AT[0] - 0.24, -10.0], Look::Screen(DOOR_ID), "slice_c_door_screen"));

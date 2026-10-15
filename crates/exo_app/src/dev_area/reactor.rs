@@ -46,6 +46,8 @@ pub struct ReactorCounts {
     pub blasts: u32,
     /// The core ejects (PULSAR's core eject, #300 r22).
     pub ejects: u32,
+    /// The emergency coolings pressed (PULSAR's manual button, #300 r24).
+    pub ecools: u32,
 }
 
 /// The host's reactor: the room, the manual targets, and what was last sent.
@@ -154,6 +156,11 @@ impl ReactorSim {
                     info!("reactor: eject refused (the cover is shut)");
                 }
             }
+            ReactorAsk::EmergencyCool => {
+                if !self.room.emergency_cool() {
+                    info!("reactor: emergency cooling refused (cooldown, tank or pump)");
+                }
+            }
             ReactorAsk::Scram => {
                 self.room.reactor_mut().scram();
                 info!("reactor: SCRAM");
@@ -214,6 +221,10 @@ impl ReactorSim {
             eject_armed: self.eject_left.is_some(),
             // The host's count is set by `reactor_step`, as the blasts are.
             ejects: 0,
+            ecool_active: self.room.ecool_active(),
+            ecool_ready_in_s: self.room.ecool_ready_in_s(),
+            ecool_ok: self.room.ecool_allowed(),
+            ecools: 0,
             graph_points: self.room.history().size().min(GRAPH_POINTS) as u8,
             graph_output: graph_row(&self.room.history().output),
             graph_load: graph_row(&self.room.history().load),
@@ -253,10 +264,10 @@ pub fn meltdown_eta(timer: f64, delay_s: f64, melted: bool) -> Option<f64> {
     (timer > 0.0 && !melted).then(|| (1.0 - timer.clamp(0.0, 1.0)) * delay_s)
 }
 
-/// Every process: the news' eject counter against the last one this process saw. True when it went
-/// up (the notice shows); the first news only sets the baseline, so a late joiner does not replay
-/// old ejections.
-pub fn eject_fresh(seen: &mut Option<u32>, ejects: u32) -> bool {
+/// Every process: a news counter (`ejects`, `ecools`) against the last one this process saw. True when
+/// it went up (the notice shows); the first news only sets the baseline, so a late joiner does not
+/// replay old events.
+pub fn counter_fresh(seen: &mut Option<u32>, ejects: u32) -> bool {
     let fresh = matches!(*seen, Some(s) if ejects > s);
     *seen = Some(ejects);
     fresh
@@ -265,7 +276,7 @@ pub fn eject_fresh(seen: &mut Option<u32>, ejects: u32) -> bool {
 /// The CORE EJECTED notice, once per ejection, on every process (the host's news is its own).
 pub fn eject_notice(items: Res<Items>, mut seen: Local<Option<u32>>, mut gp: ResMut<Gameplay>) {
     let Some(news) = items.reactor else { return };
-    if eject_fresh(&mut seen, news.ejects) {
+    if counter_fresh(&mut seen, news.ejects) {
         gp.notify(Notice::new(NoticeKind::Warning, "notice.reactor.eject"));
     }
 }
@@ -350,8 +361,20 @@ pub fn route(e: RoomEvent, counts: &mut ReactorCounts) {
             counts.ejects += 1;
             info!("reactor: CORE EJECTED");
         }
+        RoomEvent::EmergencyCool => {
+            counts.ecools += 1;
+            info!("reactor: EMERGENCY COOLING");
+        }
         RoomEvent::Device { source, event } => info!("engine room: {source:?} {event:?} (the machine's condition crossed a line)"),
         _ => {}
+    }
+}
+
+/// The EMERGENCY COOLING notice, once per press, on every process (the host's news is its own).
+pub fn ecool_notice(items: Res<Items>, mut seen: Local<Option<u32>>, mut gp: ResMut<Gameplay>) {
+    let Some(news) = items.reactor else { return };
+    if counter_fresh(&mut seen, news.ecools) {
+        gp.notify(Notice::new(NoticeKind::Warning, "notice.reactor.ecool"));
     }
 }
 
@@ -361,7 +384,7 @@ pub fn plugin(app: &mut App) {
     let warm = app.world().contains_resource::<WarmAtCreation>();
     app.insert_resource(ReactorSim::created(&tuning, warm)).insert_resource(ReactorConfig(tuning)).init_resource::<ReactorCounts>();
     app.init_resource::<super::blast::PendingBlasts>().init_resource::<super::blast::BlastFlash>();
-    app.add_systems(FixedUpdate, (reactor_step, super::blast::reactor_blast, super::blast::client_blast_news, eject_notice).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
+    app.add_systems(FixedUpdate, (reactor_step, super::blast::reactor_blast, super::blast::client_blast_news, eject_notice, ecool_notice).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
 }
 
 /// Host and one process: the requests, one step, the events (fires start in the air), the ship's
@@ -467,6 +490,7 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     let mut now = sim.news(oxygen);
     now.blasts = counts.blasts;
     now.ejects = counts.ejects;
+    now.ecools = counts.ecools;
     items.reactor = Some(now);
     sim.since_send += dt;
     if items.role == Role::Host && sim.sent != Some(now) && sim.since_send >= SEND_EVERY_S {
@@ -681,6 +705,27 @@ mod tests {
     }
 
     #[test]
+    fn the_emergency_cooling_press_takes_the_tank_once_and_counts_once() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        let full = s.room.pump().tank();
+        s.apply(ReactorAsk::EmergencyCool, &cfg(), &mut k);
+        let news = s.news(1.0);
+        assert!(news.ecool_active && news.ecool_ready_in_s > 0.0 && !news.ecool_ok, "{news:?}");
+        assert!(s.room.pump().tank() < full, "the press takes the tank cost");
+        let tank = s.room.pump().tank();
+        s.apply(ReactorAsk::EmergencyCool, &cfg(), &mut k);
+        assert_eq!(s.room.pump().tank(), tank, "a second press in the cooldown takes nothing");
+        // The step reports the press once, and the route counts it: the notice and the steam follow the count.
+        for e in s.room.step(1.0 / 30.0, Input::auto()) {
+            route(e, &mut k);
+        }
+        assert_eq!(k.ecools, 1);
+        s.room.step(1.0 / 30.0, Input::auto());
+        assert_eq!(k.ecools, 1, "the event comes once");
+    }
+
+    #[test]
     fn reset_is_a_fresh_room_and_keeps_the_alarm_it_had() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
@@ -732,10 +777,10 @@ mod tests {
     #[test]
     fn the_eject_notice_shows_once_per_new_count_and_the_first_news_is_the_baseline() {
         let mut seen = None;
-        assert!(!eject_fresh(&mut seen, 1), "a late joiner's first news is the baseline");
-        assert!(!eject_fresh(&mut seen, 1));
-        assert!(eject_fresh(&mut seen, 2));
-        assert!(!eject_fresh(&mut seen, 2));
+        assert!(!counter_fresh(&mut seen, 1), "a late joiner's first news is the baseline");
+        assert!(!counter_fresh(&mut seen, 1));
+        assert!(counter_fresh(&mut seen, 2));
+        assert!(!counter_fresh(&mut seen, 2));
     }
 
     #[test]
@@ -745,7 +790,7 @@ mod tests {
         route(RoomEvent::Reactor(ReactorEvent::Fire { size: 0.1 }), &mut k);
         route(RoomEvent::Fire { size: 0.05, source: reactor_core::Source::Junction }, &mut k);
         route(RoomEvent::Reactor(ReactorEvent::Meltdown), &mut k);
-        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, meltdowns: 1, blasts: 0, ejects: 0 });
+        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, meltdowns: 1, blasts: 0, ejects: 0, ecools: 0 });
         route(RoomEvent::Reactor(ReactorEvent::Blast(reactor_core::Blast::default())), &mut k);
         assert_eq!(k.blasts, 1, "the blast is counted");
     }

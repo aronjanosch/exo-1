@@ -538,15 +538,21 @@ impl EngineRoom {
     /// `ecool_cooldown_s` starts at the press. Refused (false, nothing taken) during the cooldown, with
     /// the tank below the cost, or with the pump broken.
     pub fn emergency_cool(&mut self) -> bool {
-        let t = self.tuning;
-        if self.ecool_cd > 0.0 || !self.pump.condition.functioning() || self.pump.tank < t.ecool_tank_cost {
+        if !self.ecool_allowed() {
             return false;
         }
+        let t = self.tuning;
         self.pump.tank -= t.ecool_tank_cost;
         self.ecool_left = t.ecool_duration_s;
         self.ecool_cd = t.ecool_cooldown_s;
         self.ecool_pressed = true;
         true
+    }
+
+    /// A press would be taken now (`emergency_cool` returns true): off the cooldown, the tank holds the
+    /// cost, the pump works.
+    pub fn ecool_allowed(&self) -> bool {
+        self.ecool_cd <= 0.0 && self.pump.condition.functioning() && self.pump.tank >= self.tuning.ecool_tank_cost
     }
 
     /// The emergency cooling is running now.

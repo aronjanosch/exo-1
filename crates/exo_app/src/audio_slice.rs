@@ -477,6 +477,15 @@ fn reactor_hum(players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes
     }
 }
 
+/// The emergency cooling's steam (#300 r24): a hiss at the reactor on every process when a press lands
+/// (the news' `ecools`, the notice's counter).
+fn ecool_hiss(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mut seen: Local<Option<u32>>) {
+    let Some(r) = items.reactor else { return };
+    if crate::dev_area::reactor::counter_fresh(&mut seen, r.ecools) {
+        one_shot(&mut commands, &s.steam, HISS_VOL);
+    }
+}
+
 /// The repair hurt (a miss this process made): the junction box's zap, the reactor's hiss (the
 /// steam), the pump's clank. A new hurt is a new `at`.
 fn repair_hurt_sounds(mut commands: Commands, s: Res<SliceSounds>, hurt: Res<RepairHurt>, mut prev: Local<Option<f64>>) {
@@ -543,7 +552,7 @@ fn health_sounds(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, o
 /// Windowed runs: the slice's sounds, from the plugin of `audio`.
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, setup);
-    app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, repair_hurt_sounds, electric_sounds, pump_loop, door_sound, health_sounds, reactor_hum, reactor_alarms).in_set(crate::phases::Frame::Input));
+    app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, repair_hurt_sounds, electric_sounds, pump_loop, door_sound, health_sounds, reactor_hum, reactor_alarms, ecool_hiss).in_set(crate::phases::Frame::Input));
 }
 
 #[cfg(test)]

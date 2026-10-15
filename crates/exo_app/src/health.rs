@@ -1,5 +1,5 @@
 //! Health: players have health, hazards hurt them, items heal them, death respawns them.
-use crate::dev_area::hazards::{shielded_at, spicy_irradiated, RodSpot, GLOW_BARREL, HOT_PLATE, NO_AIR, SPICY_ITEM, SPICY_RADIUS_M, SPICY_RAD_PER_S};
+use crate::dev_area::hazards::{shielded_at, spicy_irradiated, RodSpot, GLOW_BARREL, HOT_PLATE, NO_AIR, SPICY_ITEM, VACUUM_ROOM, SPICY_RADIUS_M, SPICY_RAD_PER_S};
 use crate::dev_area::engine_room::EngineAir;
 use crate::dev_area::fire::FireHeat;
 use crate::dev_area::{area_of, DevArea, Zone, PAD_MAIN};
@@ -24,6 +24,11 @@ pub const TREAT_SKILL: f64 = 50.0;
 /// A player's capsule: feet to head (m) and its radius.
 const CAPSULE_HEIGHT: f64 = 1.8;
 const CAPSULE_RADIUS: f64 = 0.4;
+
+/// Present while the dev menu's god mode is on (F10, 0): `health_step` keeps every body at full
+/// health. Host only, as the health step is: a client's switch does nothing.
+#[derive(Resource)]
+pub struct GodMode;
 
 pub fn plugin(app: &mut App) {
     let files = crate::content_files("gameplay");
@@ -169,10 +174,19 @@ pub fn noticeably(a: &Vitals, b: &Vitals) -> bool {
         || (a.headache_cost - b.headache_cost).abs() > 0.5
 }
 
+/// How far past the area's edge a point still counts as in the area (m).
+const AREA_MARGIN_M: f64 = 10.0;
+
 /// A player's place in the area (metres), if on foot on the planet and the dev area is there.
 pub(crate) fn area_pos(area: Option<&DevArea>, planet: &PlanetRes, p: Option<DVec3>) -> Option<[f64; 2]> {
     let (f, p) = (area?.frame?, p?);
-    Some(area_of(&f, planet, p))
+    // The area is flat ground: its coordinates mean nothing on the far side or beyond its edge.
+    if (p - planet.centre).normalize_or_zero().dot(f.dir) <= 0.0 {
+        return None;
+    }
+    let q = area_of(&f, planet, p);
+    let [hx, hy] = crate::dev_area::HALF_EXTENT;
+    (q[0].abs() <= hx + AREA_MARGIN_M && q[1].abs() <= hy + AREA_MARGIN_M).then_some(q)
 }
 
 pub(crate) fn walker_points(players: &Query<&Player>, remotes: &Query<(&RemoteWalker, &WorldPose)>) -> BTreeMap<PlayerId, DVec3> {
@@ -190,7 +204,8 @@ pub(crate) fn walker_points(players: &Query<&Player>, remotes: &Query<(&RemoteWa
 
 /// burn on a body (`FireHeat`, set by the fire step before this one) is its rate per second.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, air: Option<Res<EngineAir>>, items: Res<Items>, mut st: ResMut<HealthState>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, net: Option<Res<Net>>, heat: Option<Res<FireHeat>>, masks: Option<Res<crate::dev_area::mask::MaskAir>>, vacuum: Option<Res<crate::dev_area::engine_room::BodyVacuum>>, suits: Option<Res<crate::dev_area::mask::SuitWorn>>) {
+pub(crate) fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, air: Option<Res<EngineAir>>, items: Res<Items>, mut st: ResMut<HealthState>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, net: Option<Res<Net>>, heat: Option<Res<FireHeat>>, masks: Option<Res<crate::dev_area::mask::MaskAir>>, suits: Option<Res<crate::dev_area::mask::SuitWorn>>, god: Option<Res<GodMode>>) {
+    let god = god.is_some();
     if items.role == Role::Client {
         return;
     }
@@ -206,6 +221,11 @@ pub(crate) fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<
     let st = &mut *st;
     let t = &st.tuning;
     for (id, b) in st.bodies.iter_mut() {
+        if god {
+            b.health.respawn(t);
+            b.respawn_in = None;
+            continue;
+        }
         if b.health.state() == Life::Dead {
             if let Some(left) = b.respawn_in.as_mut() {
                 *left -= dt;
@@ -218,21 +238,22 @@ pub(crate) fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<
         }
         let here = area_pos(area.as_deref(), &planet, at.get(id).copied());
         let inside = |z: &Zone| here.is_some_and(|p| z.contains(p));
-        // Without the dev area's engine room there is no deck: the air is full.
-        let room_air = match (here, air.as_deref()) {
-            (Some(p), Some(a)) => a.oxygen_at(p),
-            _ => 1.0,
+        // Outside the area's rooms the air is the world's: none above the atmosphere.
+        let ambient = at.get(id).map_or(1.0, |p| planet.ambient_air(*p));
+        let room_air = match air.as_deref() {
+            Some(a) => a.air_at(here, ambient),
+            None => ambient,
         };
+        // Vacuum is the world's or the room's pressure, not the mask's air (`health_core::vacuum`); a suit protects.
+        let vacuum_here = health_core::vacuum::in_vacuum(room_air) || inside(&VACUUM_ROOM);
         // A body in a mask breathes the mask's air (r38), whatever the room holds.
         let room_air = match masks.as_ref().and_then(|m| m.0.get(id)) {
             Some(&o) => o,
-            None if inside(&NO_AIR) => 0.0,
+            None if inside(&NO_AIR) || inside(&VACUUM_ROOM) => 0.0,
             None => room_air,
         };
         let fire = heat.as_ref().and_then(|h| h.0.get(id)).copied().unwrap_or(0.0);
         let rod_per_s = if irradiated.contains(id) { SPICY_RAD_PER_S } else { 0.0 };
-        // Vacuum is the room's (r41), not the mask's air; a suit protects from it (`health_core::vacuum`).
-        let vacuum_here = vacuum.as_ref().is_some_and(|v| v.0.contains(id));
         let suited = suits.as_ref().is_some_and(|s| s.0.contains(id));
         let env = Env { oxygen: room_air, hot: inside(&HOT_PLATE), glow: inside(&GLOW_BARREL), fire, rod_per_s, vacuum: vacuum_here, suited };
         st.air.insert(*id, env.oxygen);

@@ -216,7 +216,7 @@ pub struct Hit {
     pub fire_chance: f64,
 }
 
-/// A hit preset of reactor.json `hits`: the same numbers without a place.
+/// A hit preset of hull/hull.json `hits`: the same numbers without a place.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HitTuning {
@@ -232,7 +232,7 @@ impl HitTuning {
     }
 }
 
-/// The presets of reactor.json `hits`: the dev faults HIT LIGHT and HIT HEAVY.
+/// The presets of `hull/hull.json` `hits`: the dev faults HIT LIGHT and HIT HEAVY.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HitsTuning {
@@ -242,13 +242,34 @@ pub struct HitsTuning {
 
 impl Default for HitsTuning {
     fn default() -> HitsTuning {
-        // TODO(initiator): all values. Derivation: the blast's wall damage is 0.6 (reactor.json blast's
+        // TODO(initiator): all values. Derivation: the blast's wall damage is 0.6 (engineering/engineering.json blast's
         // range 7.5 m, device 500, Barotrauma's numbers). A junction box overvoltage hit is 10..500 / 60
         // at up to 5x sensitivity (`JunctionBox::overload`), about 15 to 40 a hit: light 15, heavy 40.
         // Light radius 2.5 m: the farthest wall point from its nearest section centre is 2.5 m (sections
         // are 4 to 5 m long), so a light hit always reaches a section. Fire chance: Barotrauma's
         // FireProbability 0.15 for a box break, halved for light (0.05) and raised for heavy (0.25).
         HitsTuning { light: HitTuning { structure: 0.4, radius: 2.5, device_damage: 15.0, fire_chance: 0.05 }, heavy: HitTuning { structure: 0.9, radius: 4.0, device_damage: 40.0, fire_chance: 0.25 } }
+    }
+}
+
+/// The walls' numbers (`hull/hull.json`, block `hull`).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HullTuning {
+    /// The hull breach's hole, m² when fully open (`fire_core` leak). TODO(initiator): value; 0.5
+    /// empties the 256 m³ room from full to the bad-air line (0.3) in about 2.6 min, shut door.
+    pub breach_area_m2: f64,
+    /// The wall damage the meltdown blast and the HULL BREACH dev fault set (0..1). The blast
+    /// damages the sections near the reactor (`Hull::hit`); the dev fault sets the one nearest
+    /// the reactor. TODO(initiator): value.
+    pub blast_breach_damage: f64,
+    /// The size of a fire a hit starts at its impact, m (`RoomEvent::HitFire`). TODO(initiator): value.
+    pub hit_fire_size: f64,
+}
+
+impl Default for HullTuning {
+    fn default() -> HullTuning {
+        HullTuning { breach_area_m2: 0.5, blast_breach_damage: 0.6, hit_fire_size: 0.1 }
     }
 }
 

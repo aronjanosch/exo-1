@@ -1,0 +1,25 @@
+{
+  "_comment": "The bridge's tuning: the shield, the jump drive and the helm's dev stand-in. Every number is a starting value, TODO(initiator).",
+  "shield": {
+    "_comment": "shield (r40, PULSAR PLShieldGenerator, sources in reactor_core shield.rs): max is the capacity (points), charge_rate_max the regen at full Shields power (points a second: 50 fills it from 0 in 20 s), recovery_delay_s the wait after a hit before regen restarts, deflection the share of each hit ignored (0..1), quantum_min the quantum shield line (0..1 of max; the manual commonly 75 %), quantum_offline_s how long the quantum shield stays down after it drops (the manual says only 'a specific period'), upkeep the Shields demand at full shield as a share of its demand. PULSAR gives no numbers: all TODO(initiator).",
+    "max": 1000.0,
+    "charge_rate_max": 50.0,
+    "recovery_delay_s": 3.0,
+    "deflection": 0.0,
+    "quantum_min": 0.75,
+    "quantum_offline_s": 30.0,
+    "upkeep": 0.1
+  },
+  "jump": {
+    "_comment": "Jump drive (r40, #252; PULSAR's warp charge stages, sources in reactor_core jump.rs): prep_s is the full power PREPPING takes before the charge starts, charge_s the time to a full charge at full power (slower when underpowered, paused at 0), active_s how long the drive stays ACTIVE after a jump before it is cold again. The drive's demand is the JUMP group's demand_kw while it charges. TODO(initiator): all three values.",
+    "prep_s": 5.0,
+    "charge_s": 60.0,
+    "active_s": 3.0
+  },
+  "helm": {
+    "_comment": "Dev stand-in for a helm (off here and in code, TODO(initiator)): the engines' target random-walks between wander_min and 1 of full throttle, a new target every wander_every_s; the engine's force follows it (Barotrauma's rate, engine.rs). It lives with the bridge: the engine room only feels the demand.",
+    "engine_wander": false,
+    "wander_every_s": 6.0,
+    "wander_min": 0.3
+  }
+}

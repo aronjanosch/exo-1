@@ -1,4 +1,6 @@
 use super::*;
+use crate::helm::HelmTuning;
+use crate::hull::HullTuning;
 use gameplay_core::save::Envelope;
 use crate::reactor::Blast;
 
@@ -178,7 +180,7 @@ fn refuel(r: &mut EngineRoom) {
 #[test]
 fn normal_running_wears_the_machines_to_the_floor_and_never_breaks_them() {
     // The shipped values: 30 minutes of normal running at about 500 kW.
-    let shipped: Tuning = Tuning::load(&[content_core::File { path: crate::tuning::REACTOR_PATH.into(), text: include_str!("../../../../content/gameplay/reactor/reactor.json").into() }]).unwrap_or_else(|e| panic!("{e:?}"));
+    let shipped = Tuning::shipped();
     let mut r = EngineRoom::new(shipped.room, shipped.reactor, 11);
     // Steady load: a wandering one swings the core above its optimal band now and then, and that
     // heat wears the pump as overload below its floor (see the sim's `wandering_load`).
@@ -334,8 +336,8 @@ fn the_engine_throttle_sets_the_engines_demand_as_the_force_follows() {
 
 #[test]
 fn wander_keeps_the_throttle_in_range_and_moves_the_engines_demand() {
-    let t = RoomTuning { engine_wander: true, ..RoomTuning::default() };
-    let mut r = EngineRoom::new(t, ReactorTuning::default(), 5);
+    let t = Tuning { helm: HelmTuning { engine_wander: true, ..HelmTuning::default() }, ..Tuning::default() };
+    let mut r = EngineRoom::from_tuning(&t, 5);
     assert!(r.set_power(true));
     let (mut lo, mut hi) = (f64::MAX, f64::MIN);
     let mut demands = Vec::new();
@@ -360,9 +362,9 @@ fn wander_keeps_the_throttle_in_range_and_moves_the_engines_demand() {
 
 #[test]
 fn wander_is_the_same_for_the_same_seed() {
-    let t = RoomTuning { engine_wander: true, ..RoomTuning::default() };
+    let t = Tuning { helm: HelmTuning { engine_wander: true, ..HelmTuning::default() }, ..Tuning::default() };
     let run_one = |seed: u64| {
-        let mut r = EngineRoom::new(t, ReactorTuning::default(), seed);
+        let mut r = EngineRoom::from_tuning(&t, seed);
         let mut v = Vec::new();
         for _ in 0..600 {
             r.step(DT, Input::auto());
@@ -730,7 +732,7 @@ fn a_blast_damages_the_walls_near_the_reactor_and_a_melt_without_fuel_does_not()
 /// wrench's hold takes it down at the pump's fix speed (25 s for a whole section): it closes the leak.
 #[test]
 fn the_dev_breach_is_mended_by_the_hold_at_the_pump_speed() {
-    let t = RoomTuning::default();
+    let t = HullTuning::default();
     let mut r = room();
     assert!(r.trigger(Fault::HullBreach).is_empty());
     let i = r.hull().nearest(crate::hull::REACTOR_AT);
@@ -919,7 +921,7 @@ fn the_room_powers_the_jump_drive_only_while_it_charges() {
 
 /// The default tuning with no engine wander: the room's state is then what the save holds.
 fn quiet_tuning() -> Tuning {
-    Tuning { room: RoomTuning { engine_wander: false, ..RoomTuning::default() }, ..Tuning::default() }
+    Tuning::default()
 }
 
 /// The save through the envelope's JSON, as the file holds it.

@@ -18,7 +18,7 @@ pub fn parse_strict<T: DeserializeOwned>(what: &str, s: &str) -> Result<T, Strin
 }
 
 /// Like `parse_strict`, but an optional `_comment` string is dropped at every depth, not only at
-/// the top: reactor.json keeps one comment per block (`reactor`, `room`, `grid`, ...). A non-string
+/// the top: the ship tuning files keep one comment per block (`reactor`, `room`, `grid`, ...). A non-string
 /// comment is an error wherever it sits.
 pub fn parse_strict_commented<T: DeserializeOwned>(what: &str, s: &str) -> Result<T, String> {
     fn strip(v: &mut serde_json::Value) -> Result<(), String> {
@@ -36,6 +36,51 @@ pub fn parse_strict_commented<T: DeserializeOwned>(what: &str, s: &str) -> Resul
     let mut v: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("{what}: {e}"))?;
     strip(&mut v).map_err(|m| format!("{what}: {m}"))?;
     serde_json::from_value(v).map_err(|e| format!("{what}: {e}"))
+}
+
+/// Parses one value whose top-level blocks sit in several files, each file holding only the blocks it
+/// owns (`owned` lists them by file path). A block in a file that does not own it is an error that
+/// names the owner; a file that is not there is one too. The files' top-level `_comment` is dropped,
+/// the rest is parsed like `parse_strict_commented`.
+pub fn parse_fragments<T: DeserializeOwned>(what: &str, files: &[File], owned: &[(&str, &[&str])]) -> Result<T, Vec<String>> {
+    let mut errors = Vec::new();
+    let mut merged = serde_json::Map::new();
+    for (path, blocks) in owned {
+        let Some(f) = files.iter().find(|f| f.path == *path) else {
+            errors.push(format!("{path}: missing"));
+            continue;
+        };
+        let o = match serde_json::from_str::<serde_json::Value>(&f.text) {
+            Ok(serde_json::Value::Object(o)) => o,
+            Ok(_) => {
+                errors.push(format!("{path}: must be one object"));
+                continue;
+            }
+            Err(e) => {
+                errors.push(format!("{path}: {e}"));
+                continue;
+            }
+        };
+        for (k, v) in o {
+            if k == "_comment" {
+                continue;
+            }
+            if !blocks.contains(&k.as_str()) {
+                let owner = owned.iter().find(|(_, b)| b.contains(&k.as_str())).map(|(p, _)| *p);
+                errors.push(match owner {
+                    Some(p) => format!("{path}: {k}: belongs in {p}"),
+                    None => format!("{path}: {k}: unknown block"),
+                });
+                continue;
+            }
+            merged.insert(k, v);
+        }
+    }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+    let text = serde_json::Value::Object(merged).to_string();
+    parse_strict_commented::<T>(what, &text).map_err(|m| vec![m])
 }
 
 /// One content file: its path relative to the content root of its system (`commodity/mud.json`)

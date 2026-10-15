@@ -1501,7 +1501,7 @@ mod tests {
     use super::*;
 
     fn shipped_panel(r: Option<&ReactorNews>) -> Panel {
-        let shipped = reactor_core::Tuning::parse(include_str!("../../../../content/gameplay/reactor/reactor.json")).expect("the shipped reactor.json");
+        let shipped = reactor_core::Tuning::shipped();
         readout_panel(r, shipped.reactor.max_output_kw)
     }
 

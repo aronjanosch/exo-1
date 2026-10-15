@@ -1,0 +1,12 @@
+{
+  "_comment": "The incident director: random faults on their own. Every number is a starting value, TODO(initiator).",
+  "director": {
+    "_comment": "Director (r38, Barotrauma EventManager and MalfunctionEvent, simplified; sources in reactor_core director.rs): enabled (off here; the dev DIRECTOR toggle), min_interval_s and max_interval_s (the random wait between faults: Barotrauma EventCooldown 60 s, the max 3 cooldowns, TODO(initiator)), threshold (intensity at or below which a fault may fire; Barotrauma DefaultEventThreshold 0.2), rise_per_s and fall_per_s (intensity climb and fall; Barotrauma 0.04 and 0.0025), all TODO(initiator).",
+    "enabled": false,
+    "min_interval_s": 60.0,
+    "max_interval_s": 180.0,
+    "threshold": 0.2,
+    "rise_per_s": 0.04,
+    "fall_per_s": 0.0025
+  }
+}

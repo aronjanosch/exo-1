@@ -220,7 +220,7 @@ fn adding_air_tops_the_room_up_and_clamps_at_full() {
 
 #[test]
 fn full_power_refills_the_engine_room_from_half_in_about_a_minute() {
-    // 2.13 m³/s is the shipped `room.oxygen_generator_rate` (reactor.json).
+    // 2.13 m³/s is the shipped `life_support.oxygen_generator_rate` (hull/hull.json).
     let mut d = Deck::new(FireTuning::default(), 1);
     let r = d.add_room(ROOM_M3);
     d.room_mut(r).oxygen = ROOM_M3 * 0.5;
@@ -232,7 +232,7 @@ fn full_power_refills_the_engine_room_from_half_in_about_a_minute() {
 }
 
 /// Barotrauma `Hull.OxygenConsumptionSpeed` (700 px²/s per character) over our engine room's
-/// 1000 × 320 px hull: 0.56 m³/s per breather (`room.breath_m3_per_s`, reactor.json).
+/// 1000 × 320 px hull: 0.56 m³/s per breather (`life_support.breath_m3_per_s`, hull/hull.json).
 const BREATH: f64 = 0.56;
 
 /// The sealed room of `ROOM_M3`, full, no gap and no leak.

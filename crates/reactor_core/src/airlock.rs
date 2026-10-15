@@ -16,14 +16,12 @@
 //!   5 % that stay in the room leave with the outer door (into space, when the outside is vacuum).
 use serde::{Deserialize, Serialize};
 
-/// `airlock` in reactor.json (r40). Every value is a start value, `TODO(initiator)`.
+/// `airlock` in hull/hull.json (r40). Every value is a start value, `TODO(initiator)`.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AirlockTuning {
     #[serde(default, rename = "_comment")]
     pub comment: Option<String>,
-    /// The outside has no air: the outer door opens onto vacuum (true), or onto the breathable outside (false).
-    pub outside_vacuum: bool,
     /// Seconds of one cycle (`TODO(initiator)`: 6 s).
     pub cycle_s: f64,
     /// The share of the room's air the cycle moves over (0..1, `TODO(initiator)`: 95 %).
@@ -32,7 +30,7 @@ pub struct AirlockTuning {
 
 impl Default for AirlockTuning {
     fn default() -> AirlockTuning {
-        AirlockTuning { comment: None, outside_vacuum: true, cycle_s: 6.0, pump_share: 0.95 }
+        AirlockTuning { comment: None, cycle_s: 6.0, pump_share: 0.95 }
     }
 }
 

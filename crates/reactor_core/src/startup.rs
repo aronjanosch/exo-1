@@ -46,7 +46,7 @@ pub struct Checks {
     pub breakers_on: bool,
 }
 
-/// `startup` in reactor.json: how long the OS takes to boot (step 2). TODO(initiator): the value.
+/// `startup` in engineering/engineering.json: how long the OS takes to boot (step 2). TODO(initiator): the value.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct StartupTuning {
     pub boot_s: f64,

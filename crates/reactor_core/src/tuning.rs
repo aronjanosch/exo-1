@@ -1,4 +1,4 @@
-use content_core::{parse_strict_commented, File};
+use content_core::{parse_fragments, File};
 use serde::{Deserialize, Serialize};
 
 use crate::airlock::AirlockTuning;
@@ -10,13 +10,38 @@ use crate::weapons::WeaponsTuning;
 use crate::director::DirectorTuning;
 use crate::engine_room::RoomTuning;
 use crate::grid::GridTuning;
-use crate::hull::HitsTuning;
+use crate::helm::HelmTuning;
+use crate::hull::{HitsTuning, HullTuning};
+use crate::life_support::LifeSupportTuning;
 use crate::jump::JumpTuning;
 use crate::startup::StartupTuning;
 use crate::reactor::{ReactorTuning, RodKinds};
 use crate::shield::ShieldTuning;
 
-pub const REACTOR_PATH: &str = "reactor/reactor.json";
+/// The files of the ship's tuning and the blocks each owner holds: engineering (the reactor room's
+/// machines and the grid), the bridge (shield, jump drive, helm), the gunnery (weapons), the hull
+/// (walls, hits, alarms, airlock, life support), the crew bots, and the incidents (director, enemy).
+/// A block in another owner's file is an error (`content_core::parse_fragments`).
+pub const FILES: [(&str, &[&str]); 7] = [
+    ("engineering/engineering.json", &["start_rods", "graph_points", "graph_interval_s", "rods", "reactor", "battery", "grid", "startup", "room"]),
+    ("bridge/bridge.json", &["shield", "jump", "helm"]),
+    ("gunnery/gunnery.json", &["weapons"]),
+    ("hull/hull.json", &["hull", "hits", "alarm", "airlock", "life_support"]),
+    ("crew/bots.json", &["bots"]),
+    ("incidents/director.json", &["director"]),
+    ("incidents/enemy.json", &["enemy"]),
+];
+
+/// What the errors call the tuning (the files' own paths name the file errors).
+const WHAT: &str = "ship tuning";
+
+/// The shipped files, embedded: the tests and the scenarios load them as the game does.
+pub fn shipped_files() -> Vec<File> {
+    macro_rules! shipped {
+        ($($p:literal),*) => { vec![$(File::new($p, include_str!(concat!("../../../content/gameplay/", $p)))),*] };
+    }
+    shipped!("engineering/engineering.json", "bridge/bridge.json", "gunnery/gunnery.json", "hull/hull.json", "crew/bots.json", "incidents/director.json", "incidents/enemy.json")
+}
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -27,59 +52,64 @@ pub struct Tuning {
     pub reactor: ReactorTuning,
     pub room: RoomTuning,
     pub grid: GridTuning,
-    /// The battery behind the reactor (`battery` in reactor.json).
+    /// The battery behind the reactor (`battery` in engineering/engineering.json).
     pub battery: BatteryTuning,
-    /// The weapons' capacitor and the WEAPONS group's recharge (`weapons` in reactor.json, r40).
+    /// The weapons' capacitor and the WEAPONS group's recharge (`weapons` in gunnery/gunnery.json, r40).
     pub weapons: WeaponsTuning,
     /// The status board's graph: points per curve (Barotrauma 25).
     pub graph_points: usize,
     /// Seconds between two graph samples (Barotrauma 0.5).
     pub graph_interval_s: f64,
-    /// The incident director (`director` in reactor.json, r38).
+    /// The incident director (`director` in incidents/director.json, r38).
     pub director: DirectorTuning,
-    /// The shield (`shield` in reactor.json, r40).
+    /// The shield (`shield` in bridge/bridge.json, r40).
     pub shield: ShieldTuning,
-    /// The room alarms (`alarm` in reactor.json, r40, #165).
+    /// The room alarms (`alarm` in hull/hull.json, r40, #165).
     pub alarm: AlarmTuning,
-    /// The hit presets of the HIT LIGHT and HIT HEAVY dev faults (`hits` in reactor.json, r40).
+    /// The hit presets of the HIT LIGHT and HIT HEAVY dev faults (`hits` in hull/hull.json, r40).
     pub hits: HitsTuning,
-    /// The jump drive's charge (`jump` in reactor.json, r40, #252).
+    /// The jump drive's charge (`jump` in bridge/bridge.json, r40, #252).
     pub jump: JumpTuning,
-    /// The ship's cold start (`startup` in reactor.json, r42, #268).
+    /// The ship's cold start (`startup` in engineering/engineering.json, r42, #268).
     pub startup: StartupTuning,
-    /// The airlock and the outside (`airlock` in reactor.json, r40).
+    /// The airlock and the outside (`airlock` in hull/hull.json, r40).
     pub airlock: AirlockTuning,
-    /// The enemy ship of the ambush (`enemy` in reactor.json, r41).
+    /// The enemy ship of the ambush (`enemy` in incidents/enemy.json, r41).
     pub enemy: EnemyTuning,
-    /// The bots that man the empty stations (`bots` in reactor.json, r42, #253).
+    /// The bots that man the empty stations (`bots` in crew/bots.json, r42, #253).
     pub bots: BotTuning,
+    /// The walls (`hull` in `hull/hull.json`).
+    pub hull: HullTuning,
+    /// The air (`life_support` in `hull/hull.json`).
+    pub life_support: LifeSupportTuning,
+    /// The helm's dev wander (`helm` in `bridge/bridge.json`).
+    pub helm: HelmTuning,
 }
 
 impl Default for Tuning {
     fn default() -> Tuning {
-        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), shield: ShieldTuning::default(), alarm: AlarmTuning::default(), weapons: WeaponsTuning::default(), hits: HitsTuning::default(), jump: JumpTuning::default(), startup: StartupTuning::default(), airlock: AirlockTuning::default(), enemy: EnemyTuning::default(), bots: BotTuning::default() }
+        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), shield: ShieldTuning::default(), alarm: AlarmTuning::default(), weapons: WeaponsTuning::default(), hits: HitsTuning::default(), jump: JumpTuning::default(), startup: StartupTuning::default(), airlock: AirlockTuning::default(), enemy: EnemyTuning::default(), bots: BotTuning::default(), hull: HullTuning::default(), life_support: LifeSupportTuning::default(), helm: HelmTuning::default() }
     }
 }
 
 impl Tuning {
-    /// Parses and checks `reactor/reactor.json` from `files`. Every error names the field.
+    /// Parses and checks the ship's tuning from its `FILES` in `files`. Every error names the field.
     pub fn load(files: &[File]) -> Result<Tuning, Vec<String>> {
-        let Some(f) = files.iter().find(|f| f.path == REACTOR_PATH) else { return Err(vec![format!("{REACTOR_PATH}: missing")]) };
-        Tuning::parse(&f.text)
-    }
-
-    /// Parses and checks the file's text.
-    pub fn parse(text: &str) -> Result<Tuning, Vec<String>> {
-        let t = parse_strict_commented::<Tuning>(REACTOR_PATH, text).map_err(|m| vec![m])?;
+        let t = parse_fragments::<Tuning>(WHAT, files, &FILES)?;
         let mut e = Vec::new();
         t.check(&mut e);
         if e.is_empty() { Ok(t) } else { Err(e) }
     }
 
+    /// The shipped values (`shipped_files`).
+    pub fn shipped() -> Tuning {
+        Tuning::load(&shipped_files()).unwrap_or_else(|e| panic!("the shipped ship tuning: {e:?}"))
+    }
+
     fn check(&self, e: &mut Vec<String>) {
         let mut need = |ok: bool, field: &str, rule: &str| {
             if !ok {
-                e.push(format!("{REACTOR_PATH}: {field}: {rule}"));
+                e.push(format!("{WHAT}: {field}: {rule}"));
             }
         };
         let r = &self.reactor;
@@ -111,15 +141,15 @@ impl Tuning {
         need(self.startup.boot_s >= 0.0, "startup", "boot_s >= 0");
         need(self.jump.prep_s >= 0.0 && self.jump.charge_s > 0.0 && self.jump.active_s > 0.0, "jump", "prep_s >= 0, charge_s > 0, active_s > 0");
         need(self.room.aux_output_kw >= 0.0, "room.aux_output_kw", "must be >= 0");
-        need(self.room.oxygen_generator_rate >= 0.0, "room.oxygen_generator_rate", "must be >= 0");
-        need(self.room.breath_m3_per_s >= 0.0, "room.breath_m3_per_s", "must be >= 0");
-        need(self.room.breach_area_m2 >= 0.0, "room.breach_area_m2", "must be >= 0");
-        need(self.room.hit_fire_size >= 0.0, "room.hit_fire_size", "must be >= 0");
+        need(self.life_support.oxygen_generator_rate >= 0.0, "life_support.oxygen_generator_rate", "must be >= 0");
+        need(self.life_support.breath_m3_per_s >= 0.0, "life_support.breath_m3_per_s", "must be >= 0");
+        need(self.hull.breach_area_m2 >= 0.0, "hull.breach_area_m2", "must be >= 0");
+        need(self.hull.hit_fire_size >= 0.0, "hull.hit_fire_size", "must be >= 0");
         for (name, h) in [("hits.light", &self.hits.light), ("hits.heavy", &self.hits.heavy)] {
             need(h.structure >= 0.0 && h.device_damage >= 0.0 && h.radius > 0.0, name, "structure and device_damage >= 0, radius > 0");
             need((0.0..=1.0).contains(&h.fire_chance), &format!("{name}.fire_chance"), "must be 0..1");
         }
-        need((0.0..=1.0).contains(&self.room.blast_breach_damage), "room.blast_breach_damage", "must be 0..1");
+        need((0.0..=1.0).contains(&self.hull.blast_breach_damage), "hull.blast_breach_damage", "must be 0..1");
         let en = &self.enemy;
         need(en.shield.max > 0.0 && en.hull > 0.0 && en.shot_damage >= 0.0, "enemy", "shield.max and hull > 0, shot_damage >= 0");
         need(en.fire_every_s > 0.0 && en.first_shot_s >= 0.0, "enemy.fire_every_s", "must be > 0, first_shot_s >= 0");
@@ -144,8 +174,8 @@ impl Tuning {
         need(self.room.overvolt_ratio > 0.0, "room.overvolt_ratio", "must be > 0");
         need((0.0..=1.0).contains(&self.room.break_fire_chance), "room.break_fire_chance", "must be 0..1");
         need(self.room.overvolt_hits_per_s >= 0.0, "room.overvolt_hits_per_s", "must be >= 0");
-        need(self.room.wander_every_s > 0.0, "room.wander_every_s", "must be > 0");
-        need((0.0..=1.0).contains(&self.room.wander_min), "room.wander_min", "must be 0..1");
+        need(self.helm.wander_every_s > 0.0, "helm.wander_every_s", "must be > 0");
+        need((0.0..=1.0).contains(&self.helm.wander_min), "helm.wander_min", "must be 0..1");
         for g in crate::grid::Group::ALL {
             let s = self.grid.group(g);
             let name = format!("grid.{g:?}");
@@ -160,29 +190,42 @@ impl Tuning {
 mod tests {
     use super::*;
 
+    /// The shipped files with `from` replaced by `to` in the file at `path`.
+    fn edited(path: &str, from: &str, to: &str) -> Vec<File> {
+        let mut files = shipped_files();
+        let f = files.iter_mut().find(|f| f.path == path).unwrap();
+        assert!(f.text.contains(from), "{path} has no {from}");
+        f.text = f.text.replacen(from, to, 1);
+        files
+    }
+
     #[test]
     fn unknown_fields_and_bad_values_are_named() {
-        let good = include_str!("../../../content/gameplay/reactor/reactor.json");
-        let typo = good.replacen("\"start_rods\"", "\"start_rod\"", 1);
-        let e = Tuning::parse(&typo).unwrap_err();
-        assert!(e[0].contains(REACTOR_PATH) && e[0].contains("start_rod"), "{e:?}");
-        let bad = good.replacen("\"max_output_kw\": 2000.0", "\"max_output_kw\": 0.0", 1);
-        let e = Tuning::parse(&bad).unwrap_err();
+        let e = Tuning::load(&edited("engineering/engineering.json", "\"start_rods\"", "\"start_rod\"")).unwrap_err();
+        assert!(e[0].contains("start_rod"), "{e:?}");
+        let e = Tuning::load(&edited("engineering/engineering.json", "\"max_output_kw\": 2000.0", "\"max_output_kw\": 0.0")).unwrap_err();
         assert!(e.iter().any(|m| m.contains("reactor.max_output_kw")), "{e:?}");
         let missing = Tuning::load(&[]).unwrap_err();
         assert!(missing[0].contains("missing"));
     }
 
+    /// A block sits in its owner's file only: the airlock is the hull's, not the bridge's.
+    #[test]
+    fn a_block_in_the_wrong_owners_file_is_refused() {
+        let mut files = shipped_files();
+        let hull = files.iter_mut().find(|f| f.path == "hull/hull.json").unwrap();
+        hull.text = hull.text.replacen("\"airlock\"", "\"jump\"", 1);
+        let e = Tuning::load(&files).unwrap_err();
+        assert!(e.iter().any(|m| m.contains("hull/hull.json: jump: belongs in bridge/bridge.json")), "{e:?}");
+    }
+
     /// r40: the airlock block is its own, with its values checked.
     #[test]
     fn the_airlock_block_is_parsed_and_checked() {
-        let good = include_str!("../../../content/gameplay/reactor/reactor.json");
-        let t = Tuning::parse(good).expect("the shipped file parses");
-        assert!(t.airlock.outside_vacuum && t.airlock.cycle_s == 6.0 && t.airlock.pump_share == 0.95);
-        let bad = good.replacen("\"cycle_s\": 6.0", "\"cycle_s\": 0.0", 1);
-        let e = Tuning::parse(&bad).unwrap_err();
+        let t = Tuning::shipped();
+        assert!(t.airlock.cycle_s == 6.0 && t.airlock.pump_share == 0.95);
+        let e = Tuning::load(&edited("hull/hull.json", "\"cycle_s\": 6.0", "\"cycle_s\": 0.0")).unwrap_err();
         assert!(e.iter().any(|m| m.contains("airlock.cycle_s")), "{e:?}");
-        let bad = good.replacen("\"pump_share\": 0.95", "\"pump_share\": 1.5", 1);
-        assert!(Tuning::parse(&bad).unwrap_err().iter().any(|m| m.contains("airlock.pump_share")));
+        assert!(Tuning::load(&edited("hull/hull.json", "\"pump_share\": 0.95", "\"pump_share\": 1.5")).unwrap_err().iter().any(|m| m.contains("airlock.pump_share")));
     }
 }

@@ -6,8 +6,7 @@ use crate::reactor::{FuelRod, Reactor, ReactorTuning};
 const DT: f64 = 0.1;
 
 fn shipped() -> Tuning {
-    let text = include_str!("../../../../content/gameplay/reactor/reactor.json");
-    Tuning::parse(text).unwrap_or_else(|e| panic!("{e:#?}"))
+    Tuning::shipped()
 }
 
 fn comparable_reactor_with(inertia: bool) -> Reactor {

@@ -1,0 +1,41 @@
+{
+  "_comment": "The ship's hull and life support: the walls and their breaches, hits, the room alarms, the airlock and the air. Whether the outside has air is not here: that is the world's (planet atmosphere and height). Every number is a starting value, TODO(initiator).",
+  "hull": {
+    "_comment": "Hull breach (r37, Barotrauma Structure.cs:53 LeakThreshold 0.1 and the gap openness at :1350): breach_area_m2 is the hole when fully open (m², fire_core's leak to space: a full hole empties the 256 m³ room from full to the 0.3 bad-air line in about 2.6 min with the door shut and no generator); blast_breach_damage is the wall's damage the meltdown blast and the HULL BREACH dev fault set (0..1; the hole opens from 0.1 damage up to fully open at 1). The wrench mends it by hold at the pump's fix speed (room.pump.fix_slow_s). r40: the walls are eight sections (reactor_core hull.rs, Barotrauma's gap openness per section, one leak each); the blast damages the sections near the reactor by falloff, the HULL BREACH dev fault sets the nearest one, and the hold mends the damaged section nearest the patch the wrench is aimed at. The HIT LIGHT and HIT HEAVY presets are in the hits block.",
+    "breach_area_m2": 0.5,
+    "blast_breach_damage": 0.6,
+    "hit_fire_size": 0.1
+  },
+  "hits": {
+    "_comment": "Hits (r40, Barotrauma's damage as data, reactor_core hull.rs): the dev faults HIT LIGHT and HIT HEAVY land on a seeded random point of the engine room's inner wall and apply one of these presets. structure is the wall damage at the impact (0..1, falls off to 0 at radius, Barotrauma RangedStructureDamage), device_damage the condition the machines in range lose at the impact (the same falloff), fire_chance the chance of a fire at the impact when the hit reaches the room. The derivation is in hull.rs, all values TODO(initiator).",
+    "light": {
+      "structure": 0.4,
+      "radius": 2.5,
+      "device_damage": 15.0,
+      "fire_chance": 0.05
+    },
+    "heavy": {
+      "structure": 0.9,
+      "radius": 4.0,
+      "device_damage": 40.0,
+      "fire_chance": 0.25
+    }
+  },
+  "alarm": {
+    "_comment": "Room alarms (r40, #165; reactor_core room_alarm.rs): low_o2 (the air, 0..1, at or below which the room has thin air: Barotrauma's oxygen detector, 35 %, OxygenDetector.cs:7) and low_o2_clear (the air above which it clears: the band's top, TODO(initiator)), clear_s (seconds a fire or breach stays on after its input goes off: the smoke detector's one-second check as a hold, TODO(initiator)), silence_s (seconds a SILENCE holds the klaxon when the kind does not change, 60 by the ticket, TODO(initiator)).",
+    "low_o2": 0.35,
+    "low_o2_clear": 0.4,
+    "clear_s": 1.0,
+    "silence_s": 60.0
+  },
+  "airlock": {
+    "_comment": "Airlock (r40, #267; the state machine is reactor_core airlock.rs, the room is exo_app dev_area airlock). cycle_s: seconds of one pressure cycle (6 s, a few seconds as #267 says). pump_share: the share of the airlock's air the cycle pumps back into the corridor before the outer door opens, or fills from the corridor on the way in; the rest (5 %) leaves with the outer door. Barotrauma has no such cycle (its airlock is a wet room and its pump moves water). TODO(initiator): cycle_s and pump_share, both start values.",
+    "cycle_s": 6.0,
+    "pump_share": 0.95
+  },
+  "life_support": {
+    "_comment": "oxygen_generator_rate (ours, Barotrauma OxygenGenerator, fire_core::oxygen): the engine room's oxygen generator makes that many m³ of air per second at full life support power, nothing below 0.5 power; 2.13 refills the 256 m³ room from half in about 60 s. TODO(initiator): the rate. breath_m3_per_s (ours, Barotrauma Character.cs:3835-3848 with Hull.OxygenConsumptionSpeed 700 px²/s, Hull.cs:124): the air each living player takes from the room it stands in, m³ per second; 0.56 is 700 px²/s over the engine room's 1000 × 320 px hull, so 4 players in a sealed room use 2.24 and the full generator (2.13) outruns about 3.8. TODO(initiator): the value.",
+    "oxygen_generator_rate": 2.13,
+    "breath_m3_per_s": 0.56
+  }
+}

@@ -12,7 +12,7 @@ use gameplay_core::{TrackId, WorldEvent};
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<DevMenu>();
-    app.add_systems(FixedUpdate, (update_dev, jump_to_settlement, toggle_noclip).chain().in_set(crate::phases::Fx::Effects));
+    app.add_systems(FixedUpdate, (update_dev, jump_to_settlement, toggle_noclip, toggle_god).chain().in_set(crate::phases::Fx::Effects));
 }
 
 pub fn window_plugin(app: &mut App) {
@@ -20,9 +20,9 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, draw_dev.in_set(crate::phases::Frame::Hud));
 }
 
-pub const COMMANDS: [&str; 9] = ["Grant every licence", "+1000 credits", "Refill the boost", "Always day", "Always night", "Jump to day (cycle runs)", "Jump to night (cycle runs)", "Ship to the next settlement", "Noclip on/off"];
+pub const COMMANDS: [&str; 10] = ["Grant every licence", "+1000 credits", "Refill the boost", "Always day", "Always night", "Jump to day (cycle runs)", "Jump to night (cycle runs)", "Ship to the next settlement", "Noclip on/off", "God mode on/off"];
 
-const KEYS: [Tap; 9] = [Tap::Dev1, Tap::Dev2, Tap::Dev3, Tap::Dev4, Tap::Dev5, Tap::Dev6, Tap::Dev7, Tap::Dev8, Tap::Dev9];
+const KEYS: [Tap; 10] = [Tap::Dev1, Tap::Dev2, Tap::Dev3, Tap::Dev4, Tap::Dev5, Tap::Dev6, Tap::Dev7, Tap::Dev8, Tap::Dev9, Tap::Dev0];
 
 /// Money one press of the money command adds. TODO(initiator): the amount.
 pub const MONEY: i64 = 1000;
@@ -41,6 +41,7 @@ pub struct DevMenu {
     pub last: Option<String>,
     pub jump: bool,
     pub noclip: bool,
+    pub god: bool,
 }
 
 /// Every licence the data has, earned by the host's client (the ones it has stay as they are).
@@ -122,6 +123,10 @@ pub fn update_dev(
                 menu.noclip = true;
                 continue;
             }
+            if i == 9 {
+                menu.god = true;
+                continue;
+            }
             let now = clock.t;
             let at_hour = |h: f64| ps.as_ref().zip(up).and_then(|(ps, up)| ps.time_for_hour(up, to_star, h, now));
             menu.last = Some(run(i, &mut gp, &mut ships, &mut clock, at_hour));
@@ -137,6 +142,20 @@ pub fn toggle_noclip(mut menu: ResMut<DevMenu>, mut players: Query<&mut crate::w
         pl.noclip = !pl.noclip;
         pl.w.halt();
         menu.last = Some(if pl.noclip { "noclip on".into() } else { "noclip off".into() });
+    }
+}
+
+/// Flips `GodMode` (`health_step` keeps every body at full health while it is there).
+pub fn toggle_god(mut menu: ResMut<DevMenu>, god: Option<Res<crate::health::GodMode>>, mut commands: Commands) {
+    if !std::mem::take(&mut menu.god) {
+        return;
+    }
+    if god.is_some() {
+        commands.remove_resource::<crate::health::GodMode>();
+        menu.last = Some("god mode off".into());
+    } else {
+        commands.insert_resource(crate::health::GodMode);
+        menu.last = Some("god mode on".into());
     }
 }
 

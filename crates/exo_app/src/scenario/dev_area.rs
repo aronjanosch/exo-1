@@ -272,7 +272,7 @@ pub(super) fn look_sample_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static s
     s.push(click_panel(REACTOR_ID, "setpoint", Some(0.6)));
     s.push(wait(0.2));
     s.push(Box::new(|w, _| {
-        aim_panel(w, &REACTOR_ID, "power", None);
+        aim_panel(w, &REACTOR_ID, "mode", None);
         true
     }));
     s.push(wait(0.1));

@@ -1,0 +1,17 @@
+{
+  "_comment": "The turrets' tuning: the weapons' capacitor, heat and jams. Every number is a starting value, TODO(initiator).",
+  "weapons": {
+    "_comment": "weapons (r40, Barotrauma coilgun.xml:16 and Turret.cs, scaled by 0.4 as the battery): one capacitor the WEAPONS grid group recharges; a shot takes shot_kw × reload_s kW·s (coilgun 1000 kW × 0.25 s: 400 × 0.25 = 100 kW·s) and starts the reload. capacity_shots: the shots it holds (6). recharge_kw: the group's demand while not full (the coilgun's continuous draw is 400 kW). The capacitor starts empty. TODO(initiator): all four values, and whether the draw is an instant check or the energy per shot as read here. r41 (the gun's heat and jam, reactor_core weapons.rs): heat_per_shot (1 is the overheat line), cool_per_s, overheat_at (the lock), unlock_at (the lower line the lock lets go at), jam_chance (the chance at skill 0, falling to 0 at jam_required_skill, device_core's shape), clear_jam_s (the hold at GN-01 that clears a jam). Barotrauma and PULSAR give no turret heat numbers; all TODO(initiator).",
+    "capacity_shots": 6,
+    "shot_kw": 400.0,
+    "reload_s": 0.25,
+    "recharge_kw": 400.0,
+    "heat_per_shot": 0.18,
+    "cool_per_s": 0.08,
+    "overheat_at": 1.0,
+    "unlock_at": 0.5,
+    "jam_chance": 0.03,
+    "jam_required_skill": 50.0,
+    "clear_jam_s": 3.0
+  }
+}

@@ -74,7 +74,10 @@ pub fn contents(rack: RackId, defs: &ItemDefs) -> Container {
         _ => presets::supply_crate(),
     };
     match rack {
-        MASKS => put(&mut c, defs, "o2_mask", 3),
+        MASKS => {
+            put(&mut c, defs, "o2_mask", 3);
+            put(&mut c, defs, "suit", 2);
+        }
         EXTINGUISHERS => put(&mut c, defs, "extinguisher", 2),
         _ => {
             put(&mut c, defs, "fuel_rod", 1);

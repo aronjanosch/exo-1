@@ -39,7 +39,7 @@ pub enum Action {
     OnAlarm(AlarmKind, Box<Action>),
     /// Pulls the rod in this slot (the emergency brake); the run logs the handling heat.
     PullRod(usize),
-    /// Puts a new rod of this `reactor.json` kind into a free slot (unknown kinds do nothing).
+    /// Puts a new rod of this `engineering/engineering.json` rods kind into a free slot (unknown kinds do nothing).
     InsertRodKind(String),
     /// The temperature boost: plus (true) or minus the amount. A refused one logs "Boost refused".
     Boost(bool),

@@ -14,6 +14,10 @@ pub const HOT_PLATE: Zone = Zone { name: "hot plate", centre: [-12.0, 16.0], hal
 pub const GLOW_BARREL: Zone = Zone { name: "glowing barrel", centre: [0.0, 16.0], half: [1.5, 1.5] };
 pub const NO_AIR: Zone = Zone { name: "no air", centre: [12.0, 16.0], half: [1.5, 1.5] };
 
+/// A greybox room with no air at all: vacuum without leaving the planet, to try the suit and the
+/// decompression. Its walls are `VACUUM_WALLS` in the engine room's part list; the west side has a doorway.
+pub const VACUUM_ROOM: Zone = Zone { name: "vacuum room", centre: [16.0, -14.0], half: [3.0, 3.0] };
+
 pub const SPICY_ITEM: &str = "fuel_rod_spicy";
 /// The spicy rod's reach (m) and its radiation (per second) on each body in reach. TODO(initiator).
 pub const SPICY_RADIUS_M: f64 = 1.25;

@@ -4,7 +4,7 @@
 //! what the grid lacks, and takes what the grid leaves at the player's recharge setting.
 //! Units: charge in kW·min (a minute at 1 kW), power in kW, time in s.
 //! Scaled from Barotrauma's 5000 kW reactor to our 2000 kW (× 0.4); the values are in
-//! `content/gameplay/reactor/reactor.json` under "battery", TODO(initiator).
+//! `content/gameplay/engineering/engineering.json` under "battery", TODO(initiator).
 #[cfg(test)]
 mod tests;
 

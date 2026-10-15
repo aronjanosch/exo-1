@@ -1,4 +1,4 @@
-//! - Values: `content/gameplay/reactor/reactor.json` (`reactor_core::Tuning`, strict loader).
+//! - Values: `content/gameplay/{engineering,bridge,gunnery,hull,crew,incidents}/` (`reactor_core::Tuning`, strict loader, one file per owner).
 use super::*;
 use crate::dev_area::engine_room::{EngineAir, ShipAlarm};
 use crate::dev_area::fire::{self, FireAlarm, FireConfig, FireGrid, FireModel};
@@ -14,7 +14,7 @@ use reactor_core::RoomAlarm;
 use reactor_core::bots::{Bots, Row};
 use reactor_core::director::Situation;
 use reactor_core::engine_room::EngineSave;
-use reactor_core::{AirlockTuning, AlarmLevel, Director, EngineRoom, Fault, Group, Input, Outcome, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
+use reactor_core::{AlarmLevel, Director, EngineRoom, Fault, Group, Input, Outcome, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
 
 /// The dev fault SHIELD HIT's hit, points (`EngineRoom::absorb_hit`). TODO(initiator): a dev value.
 const DEV_SHIELD_HIT: f64 = 300.0;
@@ -628,8 +628,9 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
             if a == ReactorAsk::Reset {
                 // The fires are the air's: a fresh room starts with a fresh air (no fire survives).
                 // The dev VACUUM switch is the operator's, as the director's is: a reset keeps it.
-                let vacuum = air.vacuum;
-                *air = EngineAir::with_tuning(&AirlockTuning { outside_vacuum: vacuum, ..cfg.0.airlock.clone() });
+                let vacuum = air.forced;
+                *air = EngineAir::with_tuning(&cfg.0.airlock);
+                air.set_vacuum(vacuum);
             }
             sim.apply(a, &cfg.0, &mut counts);
         }
@@ -698,12 +699,12 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     // Life support's air: the oxygen generator feeds the air through its vents (r38; the engine room's
     // and the corridor's, `EngineAir::add_oxygen_through_vents`). `EngineRoom::oxygen_flow` is the flow:
     // the life support's power and the generator's condition squared (`fire_core::oxygen`).
-    let o2 = sim.room.oxygen_flow(cfg.0.room.oxygen_generator_rate);
+    let o2 = sim.room.oxygen_flow(cfg.0.life_support.oxygen_generator_rate);
     air.add_oxygen_through_vents(o2 * dt, sim.vents);
     // The hull (r37, by section in r40): each section's hole leaks the room's air to space at its openness.
     let holes = air.breaches;
     for (i, hole) in holes.into_iter().enumerate() {
-        air.deck.set_leak(hole, cfg.0.room.breach_area_m2, sim.room.hull().open(i));
+        air.deck.set_leak(hole, cfg.0.hull.breach_area_m2, sim.room.hull().open(i));
     }
     for e in events {
         if let Some((source, size)) = fire::start_of(&e) {
@@ -1210,7 +1211,7 @@ mod tests {
         let mut k = ReactorCounts::default();
         s.apply(ReactorAsk::Ambush(true), &cfg(), &mut k);
         let before = s.news(1.0);
-        // The first shot comes 10 s into the encounter (reactor.json enemy.first_shot_s).
+        // The first shot comes 10 s into the encounter (incidents/enemy.json enemy.first_shot_s).
         for _ in 0..20 {
             s.room.step(0.5, Input::auto());
         }

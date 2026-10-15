@@ -120,7 +120,7 @@ pub const MAX_LEVEL: u8 = 4;
 /// The most bots the dev setting offers (BOTS 0/1/2/3).
 pub const MAX_BOTS: u8 = 3;
 
-/// The bots' numbers (`bots` in reactor.json). TODO(initiator): every value.
+/// The bots' numbers (`bots` in crew/bots.json). TODO(initiator): every value.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BotTuning {

@@ -90,6 +90,14 @@ impl PlanetRes {
     pub fn up(&self, world: DVec3) -> DVec3 {
         (world - self.centre).normalize()
     }
+    /// The air outside any hull at a world point, 0..1: full on the ground, none above the
+    /// atmosphere, and none anywhere on a planet without one (`atmosphere_height` 0).
+    pub fn ambient_air(&self, world: DVec3) -> f64 {
+        if self.field.atmosphere_height <= 0.0 {
+            return 0.0;
+        }
+        self.density_at(world).clamp(0.0, 1.0)
+    }
     pub fn above_ground(&self, world: DVec3) -> f64 {
         let p = world - self.centre;
         p.length() - self.surface(p)

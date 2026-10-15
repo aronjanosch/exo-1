@@ -453,7 +453,7 @@ pub struct PartNews {
 
 pub const FUEL_TUBES: usize = 4;
 
-/// The kind of a fuel rod (`reactor.json` `rods`: standard, hot, spicy), as the readout colours it.
+/// The kind of a fuel rod (`engineering/engineering.json` `rods`: standard, hot, spicy), as the readout colours it.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FuelKind {
     Standard,

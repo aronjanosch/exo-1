@@ -9,7 +9,7 @@
 //!
 //! Ours: the voltage is the grid's life support factor (`reactor_core::grid`,
 //! `Grid::factor(Group::LifeSupport)`), capped at 1 because our grid never over-volts the group.
-//! The rate is m³ per second at full power (`room.oxygen_generator_rate` in `reactor.json`), so
+//! The rate is m³ per second at full power (`life_support.oxygen_generator_rate` in `hull/hull.json`), so
 //! the Barotrauma scale of 100 is folded into it. The condition is 1 for now: the generator does
 //! not wear yet. TODO(initiator): should it wear like the pump?
 //! TODO(initiator): the minimum voltage 0.5 is Barotrauma's default, kept as it is.

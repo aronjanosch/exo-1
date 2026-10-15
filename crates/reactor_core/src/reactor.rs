@@ -158,7 +158,7 @@ const AUTO_FULL_SPEED_AT: f64 = 20.0;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FuelRod {
-    /// The kind's id in `reactor.json` (`rods`): "standard", "hot" or "spicy".
+    /// The kind's id in `engineering/engineering.json` (`rods`): "standard", "hot" or "spicy".
     pub kind: String,
     /// How much fission it allows (the sum over all rods caps fission and scales heat).
     pub heat: f64,
@@ -166,7 +166,7 @@ pub struct FuelRod {
 }
 
 impl FuelRod {
-    /// The common rod, as `reactor.json` has it under "standard". TODO(initiator): values.
+    /// The common rod, as `engineering/engineering.json` has it under "standard". TODO(initiator): values.
     pub fn standard() -> FuelRod {
         FuelRod { kind: "standard".into(), heat: 80.0, life: 100.0 }
     }

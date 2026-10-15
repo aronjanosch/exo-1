@@ -12,8 +12,6 @@ use crate::walker::Player;
 use crate::origin::WorldPos;
 use crate::Layer;
 use fire_core::{split_by_volume, Deck, FireTuning, GapId, LeakId, RoomId};
-use item_core::PlayerId;
-use std::collections::BTreeSet;
 use reactor_core::hull::{openness, SECTION_CENTRES, WALLS_MAX, WALLS_MIN};
 use reactor_core::engine_room::AirSave;
 use reactor_core::{Airlock, AirlockTuning, Dir, Door, Goal, Source, Tuning};
@@ -229,8 +227,12 @@ pub struct EngineAir {
     pub outer_leak: LeakId,
     /// The airlock's cycle and doors (`reactor_core::Airlock`).
     pub lock: Airlock,
-    /// The outside is vacuum (r40): from the config at start, the dev VACUUM switch after that.
+    /// The outside is vacuum: the world's (`set_ambient`) or the dev VACUUM switch's (`forced`).
     pub vacuum: bool,
+    /// The dev VACUUM switch (r40): it empties the outside whatever the world has.
+    pub forced: bool,
+    /// The air outside the hull at the area (0..1), from the planet's atmosphere and the height.
+    ambient: f64,
     /// m³ the running cycle moves at its full share: the air at its start (see `request`).
     cycle_air: f64,
     /// Each airlock door's openness, 0..1 (the slab's progress), as the deck has it.
@@ -250,8 +252,9 @@ impl EngineAir {
         EngineAir::with_tuning(&AirlockTuning::default())
     }
 
-    /// The air at the start: the rooms full, the doors shut. The outside is empty when it is vacuum
-    /// (`airlock.outside_vacuum`), and nothing flows to it then but through the outer door's leak.
+    /// The air at the start: the rooms full, the doors shut, the outside breathable (the planet has an
+    /// atmosphere). The dev VACUUM switch (`set_vacuum`) empties the outside; nothing flows to it then
+    /// but through the outer door's leak.
     pub fn with_tuning(t: &AirlockTuning) -> EngineAir {
         let mut deck = Deck::new(FireTuning::default(), 0x296);
         let engine = deck.add_room(ROOM_VOLUME);
@@ -259,9 +262,6 @@ impl EngineAir {
         let airlock = deck.add_room(AIRLOCK_VOLUME);
         let outside = deck.add_room(OUTSIDE_VOLUME);
         let bridge = deck.add_room(BRIDGE_VOLUME);
-        if t.outside_vacuum {
-            deck.room_mut(outside).oxygen = 0.0;
-        }
         let door = deck.add_gap(engine, corridor, DVec3::new(DOOR_AT[0], DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
         let bridge_door = deck.add_gap(corridor, bridge, DVec3::new(BRIDGE_DOOR_AT[0], BRIDGE_DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
         let inner = deck.add_gap(corridor, airlock, DVec3::new(INNER_DOOR_AT[0], INNER_DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
@@ -269,7 +269,7 @@ impl EngineAir {
         let outer_leak = deck.add_leak(airlock, DVec3::new(OUTER_DOOR_AT[0], OUTER_DOOR_AT[1], 0.0), 0.0, 0.0);
         // Shut at the start: the area and the openness come from the reactor each step.
         let breaches = SECTION_CENTRES.map(|c| deck.add_leak(engine, DVec3::new(c[0], c[1], 0.0), 0.0, 0.0));
-        EngineAir { deck, engine, corridor, airlock, outside, bridge, door, bridge_door, breaches, inner, outer, outer_leak, lock: Airlock::new(t), vacuum: t.outside_vacuum, cycle_air: 0.0, door_open: [0.0; 2] }
+        EngineAir { deck, engine, corridor, airlock, outside, bridge, door, bridge_door, breaches, inner, outer, outer_leak, lock: Airlock::new(t), vacuum: false, forced: false, ambient: 1.0, cycle_air: 0.0, door_open: [0.0; 2] }
     }
 
     pub fn room_of(&self, place: Place) -> RoomId {
@@ -355,10 +355,19 @@ impl EngineAir {
     /// The dev VACUUM switch (r40): the outside becomes empty (vacuum) or full of breathable air. The
     /// doors' openings follow at once.
     pub fn set_vacuum(&mut self, on: bool) {
-        self.vacuum = on;
+        self.forced = on;
+        self.set_ambient(self.ambient);
+    }
+
+    /// The world's air outside the hull (0..1): the outside room is a source of it, not a finite
+    /// volume, so every step sets it again. The doors follow at once.
+    pub fn set_ambient(&mut self, density: f64) {
+        self.ambient = density;
+        let d = if self.forced { 0.0 } else { density };
+        self.vacuum = health_core::vacuum::in_vacuum(d);
         let outside = self.outside;
         let volume = self.deck.room(outside).volume;
-        self.deck.room_mut(outside).oxygen = if on { 0.0 } else { volume };
+        self.deck.room_mut(outside).oxygen = volume * d;
         self.apply_outer();
     }
 
@@ -404,7 +413,6 @@ impl EngineAir {
         for (r, ox) in [a.engine, a.corridor, a.airlock, a.outside, a.bridge].into_iter().zip(s.oxygen) {
             a.deck.room_mut(r).oxygen = ox;
         }
-        a.vacuum = s.vacuum;
         a.lock = Airlock::from_save(t, &s.lock);
         a.cycle_air = s.cycle_air;
         a.door_open = s.door_open;
@@ -416,6 +424,16 @@ impl EngineAir {
     /// The air fraction (0..1) of the room at an area point: what a body breathes there.
     pub fn oxygen_at(&self, p: [f64; 2]) -> f64 {
         self.deck.room(self.room_of(place_of(p))).oxygen_fraction()
+    }
+
+    /// What a body breathes: its room's air when it stands in one of the area's rooms, else the
+    /// world's `ambient` (0..1), or nothing while the dev VACUUM switch is on.
+    pub fn air_at(&self, area_point: Option<[f64; 2]>, ambient: f64) -> f64 {
+        match area_point.map(place_of) {
+            Some(place) if place != Place::Outside => self.deck.room(self.room_of(place)).oxygen_fraction(),
+            _ if self.forced => 0.0,
+            _ => ambient,
+        }
     }
 }
 
@@ -488,6 +506,17 @@ const PARTS: &[Part] = &[
     Part { id: "engine_ceiling", at: [-14.0, -15.0], size: [10.6, WALL, 8.6], lift: ROOM_HEIGHT, colour: WALL_COLOUR },
 ];
 
+/// The walls of the vacuum room (`hazards::VACUUM_ROOM`, x 13..19, y -17..-11): a doorway 2 m wide
+/// in the west wall, a flat roof.
+const VACUUM_WALLS: &[Part] = &[
+    Part { id: "vacuum_wall_south", at: [16.0, -17.15], size: [6.6, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "vacuum_wall_north", at: [16.0, -10.85], size: [6.6, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "vacuum_wall_east", at: [19.15, -14.0], size: [WALL, ROOM_HEIGHT, 6.3], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "vacuum_wall_west_south", at: [12.85, -16.0], size: [WALL, ROOM_HEIGHT, 2.0], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "vacuum_wall_west_north", at: [12.85, -12.0], size: [WALL, ROOM_HEIGHT, 2.0], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "vacuum_roof", at: [16.0, -14.0], size: [6.6, WALL, 6.6], lift: ROOM_HEIGHT, colour: WALL_COLOUR },
+];
+
 /// The machines and the screen, standing in the room (not in `PARTS` only because they are
 /// named constants above).
 const MACHINES: &[Part] = &[
@@ -542,8 +571,7 @@ pub fn plugin(app: &mut App) {
     let tuning = Tuning::load(&crate::content_files("gameplay")).unwrap_or_else(|e| panic!("engine room: {e:?}"));
     app.init_resource::<ShipAlarm>().init_resource::<EngineDoor>().init_resource::<BridgeDoor>().insert_resource(EngineAir::with_tuning(&tuning.airlock));
     app.add_systems(Update, spawn_room.after(super::spawn_devices).in_set(crate::phases::Frame::World));
-    app.init_resource::<BodyVacuum>();
-    app.add_systems(FixedUpdate, (room_state.after(crate::items_net::items_net_in), room_step, bridge_step, super::airlock::airlock_step, breath_step).chain().in_set(crate::phases::Fx::Input));
+    app.add_systems(FixedUpdate, (room_state.after(crate::items_net::items_net_in), room_step, bridge_step, ambient_step, super::airlock::airlock_step, breath_step).chain().in_set(crate::phases::Fx::Input));
 }
 
 /// Window only: the lights of the room and the corridor follow the grid's lights factor
@@ -696,6 +724,13 @@ pub(super) fn bridge_step(time: Res<Time>, bridge: Res<BridgeDoor>, mut air: Res
     }
 }
 
+/// Every step: the air outside the hull follows the planet's atmosphere at the area's height.
+pub(super) fn ambient_step(planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut air: ResMut<EngineAir>) {
+    let Some(frame) = area.as_deref().and_then(|a| a.frame) else { return };
+    let (at, _) = frame.ground(&planet, 0.0, 0.0, 0.0);
+    air.set_ambient(planet.ambient_air(at));
+}
+
 /// Host only: every living player breathes the air of the room they stand in, `breath_m3_per_s`
 /// a second (`reactor_core` `RoomTuning`). Barotrauma `Character.cs:3835-3848` takes
 /// `Hull.OxygenConsumptionSpeed` (`Hull.cs:124`, 700 px²/s) times dt from the hull the character is
@@ -704,26 +739,16 @@ pub(super) fn bridge_step(time: Res<Time>, bridge: Res<BridgeDoor>, mut air: Res
 /// (the body has no oxygen store here). The outside has no end, so nobody drains it. Unconscious
 /// players breathe too: every body that is not dead counts. A body in its mask (r38) breathes
 /// the mask while its tank has air (`dev_area/mask.rs`, Barotrauma `Character.cs:3851` with `UseHullOxygen` false).
-/// Host: the bodies standing in vacuum this step (r41): the room they stand in has a pressure below
-/// `health_core::vacuum::VACUUM_BELOW`. `breath_step` sets it, the health step reads it. The mask's
-/// air is not the room's, so a masked body in vacuum is in it still.
-#[derive(Resource, Default, Debug)]
-pub struct BodyVacuum(pub BTreeSet<PlayerId>);
-
-pub(super) fn breath_step(time: Res<Time>, items: Res<Items>, cfg: Res<super::reactor::ReactorConfig>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, health: Option<Res<crate::health::HealthState>>, masked: Option<Res<super::mask::MaskAir>>, mut vacuum: ResMut<BodyVacuum>, mut air: ResMut<EngineAir>) {
+pub(super) fn breath_step(time: Res<Time>, items: Res<Items>, cfg: Res<super::reactor::ReactorConfig>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, health: Option<Res<crate::health::HealthState>>, masked: Option<Res<super::mask::MaskAir>>, mut air: ResMut<EngineAir>) {
     if items.role == Role::Client {
         return;
     }
-    vacuum.0.clear();
-    let Some(area) = area.as_deref() else { return };
+    let area = area.as_deref();
     let dt = time.delta_secs_f64();
-    let rate = cfg.0.room.breath_m3_per_s * dt;
+    let rate = cfg.0.life_support.breath_m3_per_s * dt;
     for (id, p) in crate::health::walker_points(&players, &remotes) {
-        let Some(q) = crate::health::area_pos(Some(area), &planet, Some(p)) else { continue };
-        let room = air.room_of(place_of(q));
-        if health_core::vacuum::in_vacuum(air.deck.room(room).pressure()) {
-            vacuum.0.insert(id);
-        }
+        let q = crate::health::area_pos(area, &planet, Some(p));
+        let room = air.room_of(q.map_or(Place::Outside, place_of));
         if health.as_ref().and_then(|h| h.bodies.get(&id)).is_some_and(|b| b.health.state() == health_core::Life::Dead) {
             continue;
         }
@@ -754,7 +779,7 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
     let Some(frame) = area.frame else { return };
     *done = Some(planet.id);
     let outside: Vec<Part> = (0..HULL_SECTIONS).map(outside_part).collect();
-    for p in PARTS.iter().chain(AIRLOCK_WALLS.iter()).chain(MACHINES.iter()).chain(outside.iter()) {
+    for p in PARTS.iter().chain(VACUUM_WALLS.iter()).chain(AIRLOCK_WALLS.iter()).chain(MACHINES.iter()).chain(outside.iter()) {
         let (ground, up) = frame.ground(&planet, p.at[0], p.at[1], 0.0);
         let rot = frame.rotation(up, 0.0);
         let (bottom, top) = span(p.lift, p.size[1]);
@@ -1030,8 +1055,9 @@ mod tests {
     #[test]
     fn the_outer_door_opens_onto_vacuum() {
         let mut a = EngineAir::new();
+        a.set_ambient(0.0);
         assert!(a.vacuum);
-        assert_eq!(a.deck.room(a.outside).oxygen, 0.0, "the outside starts empty");
+        assert_eq!(a.deck.room(a.outside).oxygen, 0.0, "the outside is empty");
         a.deck.breathe(a.corridor, 19.2);
         assert!(a.request(Goal::Door(Door::Outer)));
         cycle(&mut a, 6.0);
@@ -1047,11 +1073,11 @@ mod tests {
         assert_eq!(a.oxygen_at(AIRLOCK.centre), a.deck.room(a.airlock).oxygen_fraction());
     }
 
-    /// r40: with the outside breathable (the config's false, the dev VACUUM off), the outer door is a
+    /// r40: with the outside breathable (the dev VACUUM off), the outer door is a
     /// gap to a full outside: the airlock takes air from it.
     #[test]
     fn a_breathable_outside_gives_air_through_the_outer_door() {
-        let mut a = EngineAir::with_tuning(&AirlockTuning { outside_vacuum: false, ..AirlockTuning::default() });
+        let mut a = EngineAir::with_tuning(&AirlockTuning::default());
         a.deck.breathe(a.airlock, 12.0);
         assert!((a.deck.room(a.outside).oxygen_fraction() - 1.0).abs() < 1e-12);
         a.set_door(Door::Outer, 1.0);
@@ -1078,7 +1104,9 @@ mod tests {
     fn the_deck_has_the_room_full_of_air_and_the_door_shut() {
         let mut a = EngineAir::new();
         assert!((a.oxygen_at(ROOM.centre) - 1.0).abs() < 1e-9);
-        assert!((a.oxygen_at([0.0, -12.0]) - 0.0).abs() < 1e-9, "the outside is vacuum (r40)");
+        assert_eq!(a.air_at(Some([0.0, -12.0]), 1.0), 1.0, "outside the rooms the air is the world's");
+        assert_eq!(a.air_at(None, 0.0), 0.0, "no air above the atmosphere");
+        assert_eq!(a.air_at(Some(ROOM.centre), 0.0), 1.0, "a room keeps its own air in space");
         a.deck.room_mut(a.engine).oxygen *= 0.25;
         assert!((a.oxygen_at(ROOM.centre) - 0.25).abs() < 1e-9, "the room's air is what the walker breathes");
         assert!((a.oxygen_at(CORRIDOR.centre) - 1.0).abs() < 1e-9, "the corridor has its own air");

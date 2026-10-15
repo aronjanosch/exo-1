@@ -66,6 +66,15 @@ pub fn dev_menu_steps(s: &mut Vec<Step>) {
             true
         }));
     }
+    for (on, what) in [(true, "0: god mode on"), (false, "0 again: god mode off")] {
+        s.push(press(KeyCode::Digit0));
+        s.push(wait(0.1));
+        s.push(Box::new(move |w, c| {
+            let god = w.contains_resource::<crate::health::GodMode>();
+            check(c, god == on, format!("{what} (god {god})"));
+            true
+        }));
+    }
     s.push(press(KeyCode::F10));
     s.push(Box::new(|w, c| {
         check(c, !w.resource::<DevMenu>().open, "F10 closes it".into());

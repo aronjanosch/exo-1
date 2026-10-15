@@ -244,7 +244,7 @@ fn mask_refill(time: Res<Time>, mut items: ResMut<Items>, sim: Res<ReactorSim>, 
     if items.role == Role::Client {
         return;
     }
-    if sim.room.oxygen_flow(cfg.0.room.oxygen_generator_rate) <= 0.0 {
+    if sim.room.oxygen_flow(cfg.0.life_support.oxygen_generator_rate) <= 0.0 {
         return;
     }
     let dt = time.delta_secs_f64();

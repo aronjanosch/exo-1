@@ -26,7 +26,8 @@ use gameplay_core::save::{Envelope, SaveError};
 use crate::enemy::{EnemyTuning, Encounter, Outcome};
 use crate::weapons::{Weapons, WeaponsSave};
 use crate::engine::Engine;
-use crate::hull::{Hit, HitsTuning, Hull, Side, DEVICES, REACTOR_AT};
+use crate::helm::HelmTuning;
+use crate::hull::{Hit, HitsTuning, Hull, HullTuning, Side, DEVICES, REACTOR_AT};
 use crate::grid::{Grid, Group};
 use crate::history::History;
 use crate::jump::{JumpDrive, JumpSave};
@@ -95,35 +96,12 @@ pub struct RoomTuning {
     pub ecool_strength: f64,
     /// Seconds from the press until it can be pressed again (PULSAR's EmergencyCooldownTime). TODO(initiator): value.
     pub ecool_cooldown_s: f64,
-    /// Dev stand-in for a helm: the engines' target random-walks while on (the force follows it). Off
-    /// in code and in `reactor.json`. TODO(initiator): on or off by default.
-    pub engine_wander: bool,
-    pub wander_every_s: f64,
-    /// The lowest wander target, 0..1 of full throttle.
-    pub wander_min: f64,
     /// The aux reactor (PULSAR manual: auxiliary systems are not connected to the main reactor).
     /// On: the main grid carries the Engines group only; Life Support and Lights are fed by the aux
     /// reactor, and what they leave of its output boosts the main reactor. TODO(initiator): default.
     pub aux_enabled: bool,
     /// The aux reactor's output, kW. TODO(initiator): value.
     pub aux_output_kw: f64,
-    /// The oxygen generator's air, m³ per second at full life support power (`fire_core::oxygen`).
-    /// TODO(initiator): value; 2.13 refills the 256 m³ engine room from half in about 60 s.
-    pub oxygen_generator_rate: f64,
-    /// The air one breathing player takes out of the engine room, m³ per second. Barotrauma
-    /// `Hull.OxygenConsumptionSpeed` 700 px²/s over a 1000 × 320 px hull is 0.0022 of the room a
-    /// second, which is 0.56 m³/s in our 256 m³ room. TODO(initiator): value; at 0.56 the full
-    /// generator (2.13) outruns about 3.8 players.
-    pub breath_m3_per_s: f64,
-    /// The hull breach's hole, m² when fully open (`fire_core` leak). TODO(initiator): value; 0.5
-    /// empties the 256 m³ room from full to the bad-air line (0.3) in about 2.6 min, shut door.
-    pub breach_area_m2: f64,
-    /// The wall damage the meltdown blast and the HULL BREACH dev fault set (0..1). The blast
-    /// damages the sections near the reactor (`hull::Hull::hit`); the dev fault sets the one nearest
-    /// the reactor. TODO(initiator): value.
-    pub blast_breach_damage: f64,
-    /// The size of a fire a hit starts at its impact, m (`RoomEvent::HitFire`). TODO(initiator): value.
-    pub hit_fire_size: f64,
 }
 
 impl Default for RoomTuning {
@@ -155,16 +133,8 @@ impl Default for RoomTuning {
             pump_run_down_s: 12.0,
             pump_use_low: 0.6,
             pump_use_high: 1.5,
-            engine_wander: false,
-            wander_every_s: 6.0,
-            wander_min: 0.3,
             aux_enabled: false,
             aux_output_kw: 500.0,
-            oxygen_generator_rate: 2.13,
-            breath_m3_per_s: 0.56,
-            breach_area_m2: 0.5,
-            blast_breach_damage: 0.6,
-            hit_fire_size: 0.1,
         }
     }
 }
@@ -237,9 +207,9 @@ pub enum Fault {
     /// The engine room's hull breach at the blast's damage (`blast_breach_damage`): the section
     /// nearest the reactor.
     HullBreach,
-    /// A light hit on a random point of the wall (`reactor.json` hits.light, r40).
+    /// A light hit on a random point of the wall (`hull/hull.json` hits.light, r40).
     HitLight,
-    /// A heavy hit on a random point of the wall (`reactor.json` hits.heavy, r40).
+    /// A heavy hit on a random point of the wall (`hull/hull.json` hits.heavy, r40).
     HitHeavy,
 }
 
@@ -608,6 +578,9 @@ impl EngineSave {
 #[derive(Clone, Debug)]
 pub struct EngineRoom {
     tuning: RoomTuning,
+    /// The walls' numbers (`hull`) and the helm's wander (`helm`): other owners' values the room acts on.
+    hull_t: HullTuning,
+    helm_t: HelmTuning,
     reactor: Reactor,
     pump: Pump,
     junction: JunctionBox,
@@ -633,7 +606,7 @@ pub struct EngineRoom {
     aux_switch: [bool; Group::ALL.len()],
     /// The engine room's walls (`hull`): each section's damage is one leak in the glue.
     hull: Hull,
-    /// The hit presets (`reactor.json` hits) and the rng of the random hits' points.
+    /// The hit presets (`hull/hull.json` hits) and the rng of the random hits' points.
     hits: HitsTuning,
     hit_rng: Rng,
     /// The battery behind the reactor (`battery`): gives the grid's shortfall, takes its surplus.
@@ -647,7 +620,7 @@ pub struct EngineRoom {
     jump: JumpDrive,
     /// The JUMP group's full demand, kW (the tuned value; the grid's own starts at 0).
     jump_full_kw: f64,
-    /// The enemy ship's values (`enemy` in reactor.json, r41) and the encounter that runs, if any.
+    /// The enemy ship's values (`enemy` in incidents/enemy.json, r41) and the encounter that runs, if any.
     enemy: EnemyTuning,
     encounter: Option<Encounter>,
     /// The rng of the enemy's shots (the hits' points and kinds): seeded with the room.
@@ -676,6 +649,8 @@ impl EngineRoom {
             junction: JunctionBox::new(&t.room, seed.wrapping_add(1)),
             oxygen: OxygenGenerator::new(&t.room, seed.wrapping_add(3)),
             tuning: t.room,
+            hull_t: t.hull,
+            helm_t: t.helm,
             rods,
             history: History::new(t.graph_points, t.graph_interval_s),
             reactor,
@@ -683,10 +658,10 @@ impl EngineRoom {
             level: AlarmLevel::None,
             engines_full_kw: t.grid.engines.demand_kw,
             engine: Engine::new(),
-            wander: t.room.engine_wander,
+            wander: t.helm.engine_wander,
             wander_rng: Rng::new(seed ^ 0x7a1d_e51a),
             wander_target: 1.0,
-            wander_left: t.room.wander_every_s,
+            wander_left: t.helm.wander_every_s,
             ecool_left: 0.0,
             ecool_cd: 0.0,
             ecool_pressed: false,
@@ -789,7 +764,7 @@ impl EngineRoom {
         &self.tuning
     }
 
-    /// A new rod of the loaded kind `id` (a `reactor.json` `rods` key), or None for an unknown id.
+    /// A new rod of the loaded kind `id` (a `engineering/engineering.json` `rods` key), or None for an unknown id.
     pub fn rod_of(&self, id: &str) -> Option<FuelRod> {
         self.rods.rod(id)
     }
@@ -842,7 +817,7 @@ impl EngineRoom {
             }
         }
         if reached && rng.unit() < hit.fire_chance {
-            ev.push(RoomEvent::HitFire { size: self.tuning.hit_fire_size, at: hit.at });
+            ev.push(RoomEvent::HitFire { size: self.hull_t.hit_fire_size, at: hit.at });
         }
         ev
     }
@@ -1191,7 +1166,7 @@ impl EngineRoom {
         self.reactor.set_coolant(flow);
 
         if self.wander {
-            self.wander_step(dt, &t);
+            self.wander_step(dt);
         }
         // The voltage is the junction box's as the last step left it (Barotrauma's `prevVoltage`).
         if live {
@@ -1363,7 +1338,7 @@ impl EngineRoom {
         };
         // The blast tears the walls near the reactor open (Barotrauma's explosions damage the walls):
         // the same falloff as a hit, over the blast's range.
-        self.hull.hit(REACTOR_AT, self.tuning.blast_breach_damage, blast.range_m);
+        self.hull.hit(REACTOR_AT, self.hull_t.blast_breach_damage, blast.range_m);
         let mut ev = Vec::new();
         if let Some(e) = self.pump.condition.damage(blast.device_damage) {
             ev.push(RoomEvent::Device { source: Source::Pump, event: e });
@@ -1400,7 +1375,7 @@ impl EngineRoom {
             }
             Fault::HullBreach => {
                 let i = self.hull.nearest(REACTOR_AT);
-                self.hull.set(i, self.tuning.blast_breach_damage);
+                self.hull.set(i, self.hull_t.blast_breach_damage);
                 Vec::new()
             }
             Fault::HitLight | Fault::HitHeavy => {
@@ -1417,7 +1392,8 @@ impl EngineRoom {
 
     /// One step of the wander: a new target every `wander_every_s`, in [wander_min, 1] of full
     /// throttle. The engine's force follows the target on its own.
-    fn wander_step(&mut self, dt: f64, t: &RoomTuning) {
+    fn wander_step(&mut self, dt: f64) {
+        let t = self.helm_t;
         let lo = t.wander_min.clamp(0.0, 1.0);
         self.wander_left -= dt;
         if self.wander_left <= 0.0 {

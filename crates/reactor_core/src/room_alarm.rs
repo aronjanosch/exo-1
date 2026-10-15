@@ -15,7 +15,7 @@
 //! (`low_o2` in, `low_o2_clear` out) so it does not flap; fire and breach stay on for `clear_s`
 //! after their input goes off (the detector's one-second sampling, as a hold). SILENCE mutes the
 //! sound until the kind changes or `silence_s` pass; the lamp keeps blinking. All numbers are
-//! `reactor.json` `alarm`, TODO(initiator).
+//! `hull/hull.json` `alarm`, TODO(initiator).
 use serde::{Deserialize, Serialize};
 
 /// The kind of a room's alarm, by priority: a fire over a breach over thin air.
@@ -36,7 +36,7 @@ pub struct AlarmState {
     pub silenced: bool,
 }
 
-/// The alarm's numbers (`reactor.json` `alarm`).
+/// The alarm's numbers (`hull/hull.json` `alarm`).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AlarmTuning {

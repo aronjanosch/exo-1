@@ -1,7 +1,7 @@
 //! The enemy ship of the ambush (r41, #255 basics, the loop of #256). An abstract ship: no model and
 //! no flight, because the dev area has no space flight. It has a shield and a hull, and a turret that
 //! fires on a charge timer. Each shot is a hit from outside on the engine room's wall
-//! (`EngineRoom::outside_hit`), the light or the heavy preset of `reactor.json` hits, at a seeded
+//! (`EngineRoom::outside_hit`), the light or the heavy preset of `hull/hull.json` hits, at a seeded
 //! random point of the wall. Our GN-01 shot (`EngineRoom::fire_weapon`) takes the enemy's shield
 //! first, then its hull. The encounter ends Destroyed at hull 0, or Escaped when our jump goes ACTIVE.
 //!
@@ -15,7 +15,7 @@
 //! - The shot's kind: the light or the heavy hit by `light_share` (our number, the turret's two kinds of
 //!   shot in the hits block).
 //! - Our shot's damage (`shot_damage`) is our number: the GN-01's coilgun, 120 points.
-//! Units: points, s. TODO(initiator): every value in reactor.json `enemy`.
+//! Units: points, s. TODO(initiator): every value in incidents/enemy.json `enemy`.
 #[cfg(test)]
 mod tests;
 
@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use crate::hull::{Hit, HitTuning, HitsTuning, Hull, SECTION_CENTRES};
 use crate::shield::{Shield, ShieldTuning};
 
-/// `enemy` in reactor.json. Start values, all TODO(initiator): see the module doc for their sources.
+/// `enemy` in incidents/enemy.json. Start values, all TODO(initiator): see the module doc for their sources.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnemyTuning {

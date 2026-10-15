@@ -39,7 +39,7 @@ const BAD_AIR: f64 = 0.3;
 /// The machines the broken term counts: reactor, pump, junction box, oxygen generator.
 const MACHINES: f64 = 4.0;
 
-/// `director` in reactor.json. Start values, TODO(initiator): see the module doc for their sources.
+/// `director` in incidents/director.json. Start values, TODO(initiator): see the module doc for their sources.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DirectorTuning {

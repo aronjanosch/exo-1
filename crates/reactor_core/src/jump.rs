@@ -11,7 +11,7 @@
 //! A full charge is READY. A jump empties the charge and runs ACTIVE for `active_s`, then the
 //! drive is COLD_START again with the charge empty (the emergency jump, #252).
 //!
-//! The values are in `content/gameplay/reactor/reactor.json` under "jump"; TODO(initiator): all
+//! The values are in `content/gameplay/bridge/bridge.json` under "jump"; TODO(initiator): all
 //! three, and whether the prep counts power too (here it does).
 use serde::{Deserialize, Serialize};
 

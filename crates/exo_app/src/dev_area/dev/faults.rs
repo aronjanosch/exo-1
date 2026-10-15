@@ -33,8 +33,9 @@ pub const FAULTS_ID: PanelId = PanelId::new("reactor_faults");
 
 pub const FAULTS_NAME: &str = "Dev faults";
 
-/// Its console in the dev zone (m from the zone's centre), facing south.
-pub const FAULTS_AT: [f64; 2] = [-3.0, -2.5];
+/// Its console in the dev zone (m from the zone's centre), facing south; the dev tools stand in a
+/// row along y -1, the item table behind them, a walkway between.
+pub const FAULTS_AT: [f64; 2] = [-1.0, -1.0];
 
 pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
     let aux = if r.is_some_and(|r| r.aux_on) { "AUX ON" } else { "AUX OFF" };

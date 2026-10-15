@@ -1,7 +1,7 @@
 //! Items at the dev area's item table, through the item request path.
 use super::*;
 use crate::cargo::Crate;
-use crate::dev_area::{dev::item_table, DevArea, ENGINEERING};
+use crate::dev_area::{dev::item_table, DevArea, DEV};
 use crate::interact::Interaction;
 use crate::items::{slot_at, slot_rect, HudWindow, InventoryUi, Items, LooseItem};
 use item_core::{Action, Reject, Request};
@@ -99,7 +99,7 @@ pub(super) fn at_the_table(s: &mut Vec<Step>) {
     s.push(wait(1.0));
     s.push(Box::new(|w, c| {
         let pl = planet(w);
-        let p = ENGINEERING.point([item_table::AT[0], item_table::AT[1] - 1.3]);
+        let p = DEV.point([item_table::AT[0], item_table::AT[1] - 1.3]);
         let (at, _) = w.resource::<DevArea>().ground(&pl, p, 0.5).expect("dev area");
         place_walker(w, at);
         begin(w, c, "items: collect at the table");
@@ -108,7 +108,7 @@ pub(super) fn at_the_table(s: &mut Vec<Step>) {
     s.push(stand_still_short());
     s.push(Box::new(|w, _| {
         let pl = planet(w);
-        let p = ENGINEERING.point(item_table::AT);
+        let p = DEV.point(item_table::AT);
         let (top, _) = w.resource::<DevArea>().ground(&pl, p, item_table::SIZE[1]).expect("dev area");
         look_at(w, top);
         true

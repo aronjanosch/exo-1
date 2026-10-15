@@ -5,6 +5,10 @@ use display_core::{bar, button, column, ctl, dial, label, level, micro, readout,
 pub const LAB_ID: PanelId = PanelId::new("sample_lab");
 pub const REACTOR_ID: PanelId = PanelId::new("sample_reactor");
 
+/// Where the samples stand in the dev zone (m from the zone's centre): in the tools' row, facing south.
+pub const LAB_AT: [f64; 2] = [1.0, -1.0];
+pub const REACTOR_AT: [f64; 2] = [3.5, -1.0];
+
 #[derive(Resource, Debug, Clone, PartialEq)]
 pub struct Warmer {
     pub temp: i32,
@@ -35,8 +39,8 @@ pub fn plugin(app: &mut App) {
     let mut devices = app.world_mut().resource_mut::<DevAreaDevices>();
     devices.add(PlaceholderBox {
         id: "sample_lab".into(),
-        zone: LAB,
-        local_pos: [-3.5, -4.5],
+        zone: DEV,
+        local_pos: LAB_AT,
         size: [0.7, 1.1, 0.5],
         turn_deg: 0.0,
         colour: [0.3, 0.42, 0.4],
@@ -44,8 +48,8 @@ pub fn plugin(app: &mut App) {
     });
     devices.add(PlaceholderBox {
         id: "sample_reactor".into(),
-        zone: ENGINEERING,
-        local_pos: [-4.0, -4.5],
+        zone: DEV,
+        local_pos: REACTOR_AT,
         size: [1.4, 1.0, 0.8],
         turn_deg: 0.0,
         colour: [0.45, 0.36, 0.3],

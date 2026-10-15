@@ -335,9 +335,25 @@ pub fn pump_status(mode: PumpMode, coolant: f64) -> (&'static str, Tone) {
 }
 
 /// The pump's three mode buttons: the active one in the good tone, the others normal.
-fn pump_modes(mode: PumpMode) -> Item {
+fn pump_modes(mode: PumpMode, r: &ReactorNews) -> Item {
     let mode_button = |label: &str, action: &str, m: PumpMode| button(label, action).tone(if mode == m { Tone::Good } else { Tone::Normal });
-    row(6.0, vec![mode_button("OFF", "pump_off", PumpMode::Off).flex(1.0), mode_button("LOW", "pump_low", PumpMode::Low).flex(1.0), mode_button("HIGH", "pump_high", PumpMode::High).flex(1.0)]).fixed(ctl::MD)
+    // E-COOL is the fourth cell: the panel has no room for a row of its own (see `ecool_button`).
+    row(6.0, vec![mode_button("OFF", "pump_off", PumpMode::Off).flex(1.0), mode_button("LOW", "pump_low", PumpMode::Low).flex(1.0), mode_button("HIGH", "pump_high", PumpMode::High).flex(1.0), ecool_button(r).flex(1.4)]).fixed(ctl::MD)
+}
+
+/// PULSAR's emergency cooling (#300 r24), the fourth cell of the pump's mode row. The panel body is
+/// 192 px and the picture takes 109, so the button cannot have a row of its own; its label is E-COOL
+/// when a press would be taken, the cooldown as m:ss greyed while it runs (TODO(initiator): the
+/// label "E-COOL 0:42" does not fit a cell of this row), COOL greyed while the extra cooling runs.
+pub fn ecool_button(r: &ReactorNews) -> Item {
+    if r.ecool_active {
+        return button("COOL", "ecool").tone(Tone::Good).enabled(false);
+    }
+    if r.ecool_ready_in_s > 0.0 {
+        let s = r.ecool_ready_in_s.ceil() as u32;
+        return button(format!("{}:{:02}", s / 60, s % 60), "ecool").enabled(false);
+    }
+    button("E-COOL", "ecool").enabled(r.ecool_ok)
 }
 
 /// The pump's picture (152 x 109): the inlet and the outlet pipes with the fluid, the housing and the
@@ -387,7 +403,7 @@ pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64) -> Panel {
                 ],
             )
             .fixed(109.0),
-            pump_modes(r.pump_mode),
+            pump_modes(r.pump_mode, &r),
             space(),
         ],
     );
@@ -683,6 +699,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "pump_off" => Some(ReactorAsk::SetPumpMode(PumpMode::Off)),
                 "pump_low" => Some(ReactorAsk::SetPumpMode(PumpMode::Low)),
                 "pump_high" => Some(ReactorAsk::SetPumpMode(PumpMode::High)),
+                "ecool" => Some(ReactorAsk::EmergencyCool),
                 _ => None,
             }
         } else if c.panel == JUNCTION_ID || c.panel == DOOR_ID {
@@ -927,6 +944,19 @@ mod tests {
                     let size = display_core::font::LABEL.min(w.rect.size.y * 0.55);
                     let width = label.to_uppercase().chars().count() as f64 * size * 0.72;
                     assert!(width <= w.rect.size.x, "panel {i}: {label:?} is {width:.0} px, its button {:.0} px", w.rect.size.x);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_emergency_cooling_labels_fit_in_every_state() {
+        for n in [ReactorNews { ecool_ok: true, ..news() }, ReactorNews { ecool_ready_in_s: 90.0, ..news() }, ReactorNews { ecool_active: true, ..news() }] {
+            for w in pump_panel(Some(&n)).layout() {
+                if let display_core::Widget::Button { label, .. } = w.widget {
+                    let size = display_core::font::LABEL.min(w.rect.size.y * 0.55);
+                    let width = label.to_uppercase().chars().count() as f64 * size * 0.72;
+                    assert!(width <= w.rect.size.x, "{label:?} is {width:.0} px, its button {:.0} px", w.rect.size.x);
                 }
             }
         }

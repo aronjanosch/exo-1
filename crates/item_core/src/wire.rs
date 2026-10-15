@@ -166,6 +166,9 @@ pub enum ReactorAsk {
     ArmEject,
     /// Second press, inside the arm window: the core is thrown out (PULSAR's core eject, #300 r22).
     Eject,
+    /// The emergency cooling (PULSAR's manual button, #300 r24): the tank pays, the extra cooling runs
+    /// for its duration, then the cooldown. Refused when the host has no press to give.
+    EmergencyCool,
 }
 
 /// The coolant pump's mode (#300): off, a low or a high stream.
@@ -372,6 +375,15 @@ pub struct ReactorNews {
     /// The core ejects the host has applied so far (`ReactorCounts::ejects`). A process that sees
     /// it go up shows the CORE EJECTED notice once, as the blasts do.
     pub ejects: u32,
+    /// The emergency cooling runs now (#300 r24).
+    pub ecool_active: bool,
+    /// Seconds until the emergency cooling can be pressed again (0 when it can).
+    pub ecool_ready_in_s: f64,
+    /// A press would be taken now: the pump's E-COOL button is on.
+    pub ecool_ok: bool,
+    /// The emergency coolings the host has applied so far (`ReactorCounts::ecools`). A process that
+    /// sees it go up shows the EMERGENCY COOLING notice and the steam once, as the ejects do.
+    pub ecools: u32,
 }
 
 /// The most points the reactor graph carries (the shipped `graph_points`, 25). A fixed size keeps
@@ -535,6 +547,10 @@ mod tests {
             graph_points: 3,
             graph_output: [7; GRAPH_POINTS],
             graph_load: [5; GRAPH_POINTS],
+            ecool_active: true,
+            ecool_ready_in_s: 42.5,
+            ecool_ok: false,
+            ecools: 3,
             ejected: true,
             eject_armed: true,
             ejects: 3,

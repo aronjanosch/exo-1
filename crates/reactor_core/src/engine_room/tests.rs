@@ -981,3 +981,135 @@ fn a_warm_start_leaves_no_fire_and_no_alarm_events() {
     assert!(!ev.iter().any(is_fire), "fire during warm start: {ev:?}");
     assert!(!ev.iter().any(|e| matches!(e, RoomEvent::Reactor(ReactorEvent::Alarm { .. }))), "alarm during warm start: {ev:?}");
 }
+
+// ---------- Emergency cooling (PULSAR's manual button; #300 r24) ----------
+
+/// A settled room on Auto with a full tank (the settle in `settle`).
+fn settled_room() -> EngineRoom {
+    let mut r = safe_room();
+    settle(&mut r);
+    r
+}
+
+#[test]
+fn emergency_cooling_takes_its_tank_cost_at_once() {
+    let mut r = settled_room();
+    let cost = r.tuning().ecool_tank_cost;
+    assert_eq!(r.pump().tank(), 100.0);
+    assert!(r.emergency_cool());
+    assert!((r.pump().tank() - (100.0 - cost)).abs() < 1e-12, "tank {}", r.pump().tank());
+    assert!(r.ecool_active());
+}
+
+#[test]
+fn emergency_cooling_cools_clearly_faster_than_the_normal_flow_while_it_lasts() {
+    let base = settled_room();
+    let mut cooled = base.clone();
+    let mut plain = base.clone();
+    assert!(cooled.emergency_cool());
+    let (_, tc) = run(&mut cooled, 10.0, Input::auto());
+    let (_, tp) = run(&mut plain, 10.0, Input::auto());
+    let (c, p) = (*tc.last().unwrap(), *tp.last().unwrap());
+    println!("ecool after 10 s: {c:.1} degrees, without: {p:.1}");
+    assert!(p - c > 10.0, "cooled {c:.1}, plain {p:.1}");
+}
+
+#[test]
+fn emergency_cooling_lasts_its_duration_and_then_the_normal_flow_is_all() {
+    let mut r = settled_room();
+    assert!(r.emergency_cool());
+    let dur = r.tuning().ecool_duration_s;
+    let _ = run(&mut r, dur - 1.0, Input::auto());
+    assert!(r.ecool_active(), "still on 1 s before the end");
+    let _ = run(&mut r, 2.0, Input::auto());
+    assert!(!r.ecool_active(), "off after the duration");
+}
+
+#[test]
+fn emergency_cooling_has_a_cooldown_that_counts_down_and_then_it_is_ready_again() {
+    let mut r = settled_room();
+    let cd = r.tuning().ecool_cooldown_s;
+    assert_eq!(r.ecool_ready_in_s(), 0.0);
+    assert!(r.emergency_cool());
+    assert!((r.ecool_ready_in_s() - cd).abs() < 1e-9, "ready in {}", r.ecool_ready_in_s());
+    let _ = run(&mut r, 30.0, Input::auto());
+    assert!((r.ecool_ready_in_s() - (cd - 30.0)).abs() < 0.1, "ready in {}", r.ecool_ready_in_s());
+    assert!(!r.emergency_cool(), "refused during the cooldown");
+    let _ = run(&mut r, cd - 30.0 + 1.0, Input::auto());
+    assert_eq!(r.ecool_ready_in_s(), 0.0);
+    assert!(r.emergency_cool(), "ready after the cooldown");
+}
+
+#[test]
+fn emergency_cooling_is_refused_with_a_tank_below_its_cost() {
+    let mut r = settled_room();
+    let cost = r.tuning().ecool_tank_cost;
+    r.pump_mut().set_tank(cost - 0.1);
+    assert!(!r.emergency_cool());
+    assert!((r.pump().tank() - (cost - 0.1)).abs() < 1e-12, "a refused press takes nothing");
+    assert!(!r.ecool_active());
+    r.pump_mut().set_tank(cost);
+    assert!(r.emergency_cool(), "exactly the cost is enough");
+    assert_eq!(r.pump().tank(), 0.0);
+}
+
+#[test]
+fn emergency_cooling_is_refused_with_a_broken_pump() {
+    let mut r = settled_room();
+    r.pump_mut().condition_mut().set_value(0.0);
+    assert!(!r.pump().condition().functioning());
+    assert!(!r.emergency_cool());
+    assert_eq!(r.pump().tank(), 100.0);
+    assert_eq!(r.ecool_ready_in_s(), 0.0);
+    assert!(!r.ecool_active());
+}
+
+#[test]
+fn the_emergency_press_is_an_event_of_the_step() {
+    let mut r = settled_room();
+    assert!(r.emergency_cool());
+    let ev = r.step(DT, Input::auto());
+    assert_eq!(ev.iter().filter(|e| **e == RoomEvent::EmergencyCool).count(), 1, "{ev:?}");
+    let ev = r.step(DT, Input::auto());
+    assert!(!ev.contains(&RoomEvent::EmergencyCool), "the event comes once");
+}
+
+/// The harness `ecool_save`: full load, Manual 100 fission and 100 turbine, pump High. The press
+/// comes at TempCritical (the reactor's critical alarm). Reports the time to the melt with and
+/// without the press. Asserts only what holds: the press costs its tank amount, and it never
+/// brings the melt forward.
+#[test]
+fn ecool_save() {
+    let mut r = room();
+    assert!(r.set_power(true));
+    assert_eq!(r.pump().mode(), PumpMode::High);
+    let manual = Input::manual(100.0, 100.0);
+    let mut t = 0.0;
+    while !r.reactor().alarm(AlarmKind::TempCritical) {
+        assert!(t < 400.0, "no critical alarm in 400 s, temp {}", r.reactor().temperature());
+        let _ = r.step(DT, manual);
+        t += DT;
+    }
+    let t_press = t;
+    let temp_press = r.reactor().temperature();
+    let tank_before = r.pump().tank();
+    let mut saved = r.clone();
+    assert!(saved.emergency_cool());
+    assert!((tank_before - saved.pump().tank() - saved.tuning().ecool_tank_cost).abs() < 1e-9);
+    let melt_at = |room: &mut EngineRoom| {
+        let mut s = 0.0;
+        while s < 400.0 {
+            if room.step(DT, manual).contains(&RoomEvent::Reactor(ReactorEvent::Meltdown)) {
+                return s;
+            }
+            s += DT;
+        }
+        f64::INFINITY
+    };
+    let with = melt_at(&mut saved);
+    let without = melt_at(&mut r);
+    println!(
+        "ecool_save: critical at {t_press:.1} s ({temp_press:.1} degrees); melt {without:.1} s after the press without, {with:.1} s with"
+    );
+    assert!(with >= without - DT, "the press must not bring the melt forward: with {with}, without {without}");
+}

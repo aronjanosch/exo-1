@@ -509,6 +509,10 @@
     "{title} is a loss. A total, complete loss.",
     "Failed: {title}. The customer had other ideas."
   ],
+  "notice.reactor.ecool": [
+    "EMERGENCY COOLING. The pump dumps its coolant on the core. A hiss, a cloud of steam, and it runs cooler for a while.",
+    "EMERGENCY COOLING. Everything the tank had, all at once. The cooldown starts now."
+  ],
   "notice.reactor.eject": [
     "CORE EJECTED. It went out through the bottom, rods and all. The reactor is dead until somebody fits a new core.",
     "CORE EJECTED. Somebody pulled the lever. The core is somewhere under the ship now."

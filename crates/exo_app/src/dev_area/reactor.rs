@@ -148,6 +148,8 @@ impl ReactorSim {
             coolant: self.room.pump().tank(),
             coolant_low: self.room.pump().tank() < self.room.tuning().coolant_low,
             overvolt: self.room.junction().overvolted(),
+            // The host's blast count is set by `reactor_step` (the sim does not count).
+            blasts: 0,
             oxygen,
             fuel: std::array::from_fn(|i| r.rods().get(i).map_or_else(FuelTube::default, |x| FuelTube { rod: Some(rods::fuel_kind(&x.kind)), life: x.life })),
             reactor: part(r.condition().fraction(), r.condition().functioning()),
@@ -274,7 +276,7 @@ pub fn plugin(app: &mut App) {
     let tuning = Tuning::load(&files).unwrap_or_else(|e| panic!("reactor: {e:?}"));
     app.insert_resource(ReactorSim::new(&tuning)).insert_resource(ReactorConfig(tuning)).init_resource::<ReactorCounts>();
     app.init_resource::<super::blast::PendingBlasts>().init_resource::<super::blast::BlastFlash>();
-    app.add_systems(FixedUpdate, (reactor_step, super::blast::reactor_blast).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
+    app.add_systems(FixedUpdate, (reactor_step, super::blast::reactor_blast, super::blast::client_blast_news).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
 }
 
 /// Host and one process: the requests, one step, the events (fires start in the air), the ship's
@@ -376,7 +378,8 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     sim.alarmed = level != Alarm::None;
 
     let oxygen = (air.oxygen_at(ROOM.centre) * 100.0).round() / 100.0;
-    let now = sim.news(oxygen);
+    let mut now = sim.news(oxygen);
+    now.blasts = counts.blasts;
     items.reactor = Some(now);
     sim.since_send += dt;
     if items.role == Role::Host && sim.sent != Some(now) && sim.since_send >= SEND_EVERY_S {

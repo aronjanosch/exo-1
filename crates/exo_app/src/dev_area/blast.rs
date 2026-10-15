@@ -3,8 +3,8 @@
 //! it (`reactor_blast`, after the reactor step): the burn and the radiation fall off with the
 //! distance from the reactor (`falloff`), three fires start round the core, the local screen flashes
 //! white when the local walker is in the radiation's range, and the news says REACTOR BLAST.
-//! Open: the stun (no health affliction carries it yet, `TODO(initiator)`), the device damage, and
-//! the blast on the other processes (they get no event; the wire has no blast yet, `TODO(initiator)`).
+//! The other processes see it on the news (`ReactorNews::blasts`, `client_blast_news`): the same flash and notice.
+//! Open: the stun (no health affliction carries it yet, `TODO(initiator)`), the device damage.
 use super::*;
 use crate::dev_area::engine_room::{ignition_at, IGNITION_OUT, REACTOR_AT, REACTOR_SIZE};
 use crate::dev_area::fire::{self, FireGrid, FireModel};
@@ -101,6 +101,35 @@ pub fn reactor_blast(time: Res<Time>, mut pending: ResMut<PendingBlasts>, items:
     }
 }
 
+/// Client (and every process but the host): a news snapshot's blast counter against the last one this
+/// process saw. True when it went up (the notice shows); the first news only sets the baseline, so a
+/// late joiner does not replay old blasts. The flash is the radiation's range (as `reactor_blast`):
+/// full at the blast when `dist` (this process's own walker, metres from the reactor) is inside it.
+pub fn client_blast(seen: &mut Option<u32>, blasts: u32, dist: Option<f64>, radiation_range_m: f64, now: f64, flash: &mut BlastFlash) -> bool {
+    let fresh = matches!(*seen, Some(s) if blasts > s);
+    *seen = Some(blasts);
+    if fresh && dist.is_some_and(|d| d < radiation_range_m) {
+        flash.0 = Some(now);
+    }
+    fresh
+}
+
+/// Every process but the host: the blast the host applied shows here (the flash, the REACTOR BLAST
+/// notice). The health effects stay on the host (`reactor_blast`), so nothing is applied twice.
+#[allow(clippy::too_many_arguments)]
+pub fn client_blast_news(time: Res<Time>, items: Res<Items>, cfg: Res<ReactorConfig>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, mut seen: Local<Option<u32>>, mut flash: ResMut<BlastFlash>, mut gp: ResMut<Gameplay>) {
+    if items.role != Role::Client {
+        return;
+    }
+    let Some(news) = items.reactor else { return };
+    let dist = walker_points(&players, &remotes).get(&crate::items::LOCAL).and_then(|p| area_pos(area.as_deref(), &planet, Some(*p))).map(distance_to_reactor);
+    let now = time.elapsed_secs_f64();
+    if client_blast(&mut seen, news.blasts, dist, cfg.0.reactor.blast.radiation_range_m, now, &mut flash) {
+        info!("reactor: BLAST seen on the news ({})", news.blasts);
+        gp.notify(Notice::new(NoticeKind::Warning, "notice.reactor.blast"));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,5 +169,29 @@ mod tests {
             assert!((p[0] - ROOM.centre[0]).abs() < ROOM.half[0] && (p[1] - ROOM.centre[1]).abs() < ROOM.half[1], "fire at {p:?} is outside the room");
         }
         assert_eq!(fire_points()[0], ignition_at(Source::Reactor), "the front is the reactor's own fire point");
+    }
+
+    #[test]
+    fn a_higher_blast_counter_flashes_once_and_the_same_counter_again_does_not() {
+        let mut seen = None;
+        let mut flash = BlastFlash::default();
+        assert!(!client_blast(&mut seen, 0, Some(2.0), 20.0, 1.0, &mut flash), "the first news is the baseline");
+        assert_eq!(flash.0, None, "no flash on the baseline");
+        assert!(client_blast(&mut seen, 1, Some(2.0), 20.0, 5.0, &mut flash), "the counter went up");
+        assert_eq!(flash.0, Some(5.0), "the flash starts at the blast");
+        flash.0 = None;
+        assert!(!client_blast(&mut seen, 1, Some(2.0), 20.0, 6.0, &mut flash), "the same counter is not a new blast");
+        assert_eq!(flash.0, None, "and no second flash");
+        assert!(client_blast(&mut seen, 2, Some(2.0), 20.0, 7.0, &mut flash), "the next blast counts");
+    }
+
+    #[test]
+    fn the_flash_needs_the_walker_in_the_radiation_range_but_the_notice_does_not() {
+        let mut seen = Some(0);
+        let mut flash = BlastFlash::default();
+        assert!(client_blast(&mut seen, 1, Some(25.0), 20.0, 3.0, &mut flash), "the notice shows anywhere");
+        assert_eq!(flash.0, None, "25 m is out of the radiation's range");
+        assert!(client_blast(&mut seen, 2, None, 20.0, 4.0, &mut flash), "no walker of its own, still the notice");
+        assert_eq!(flash.0, None);
     }
 }

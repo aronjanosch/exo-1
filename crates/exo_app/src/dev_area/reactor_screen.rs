@@ -5,6 +5,7 @@ use crate::displays::{ActiveDisplay, DisplayAction, DisplayPanel, DisplayPointer
 use crate::dev_area::captain_screen;
 use crate::dev_area::engine_room::{GUNNERY_AT, VENT_LIFT};
 use crate::dev_area::reactor::{lamp_blink_on, ReactorConfig};
+use crate::dev_area::startup_screen;
 use crate::dev_area::status_monitor;
 use crate::items::Items;
 use display_core::{button, canvas, column, ctl, font, label, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Rect, Shape, Tier, TextFace, Tone, Widget};
@@ -738,7 +739,7 @@ fn lever_in(w: f64, geo: Lever, lines: &[&str], on: bool, action: &str, name_ink
 
 pub const TALL_CANVAS: f64 = 320.0;
 
-fn tall(mut p: Panel) -> Panel {
+pub fn tall(mut p: Panel) -> Panel {
     p.size.y = TALL_CANVAS;
     p
 }
@@ -1076,6 +1077,15 @@ pub fn airlock_panel(r: Option<&ReactorNews>, name: &'static str, code: &'static
     Panel::screen(Tier::S, name, code, body).with_padding(8.0)
 }
 
+/// The master is off (r42, #268): the screen goes dark under its plate, its status says OFF. Every
+/// screen but SP-01 goes through this in `write_panels`.
+pub fn off(p: Panel) -> Panel {
+    let (w, h) = (p.size.x - 40.0, p.size.y - 80.0);
+    let shapes = vec![Shape::Rect { x: 0.0, y: 0.0, w, h, fill: Some(Ink::Bg0), outline: None }, text(0.0, h * 0.5 - 10.0, w, 20.0, "OFF", 22.0, TextFace::DisplayBold, Ink::Fg3, true)];
+    let plate = p.plate.map(|pl| display_core::Plate { status: Some(("OFF".to_string(), Tone::Dim)), ..pl });
+    Panel { plate, root: canvas(w, h, shapes, None).flex(1.0), ..p }
+}
+
 pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
     let aux = if r.is_some_and(|r| r.aux_on) { "AUX ON" } else { "AUX OFF" };
     let director = if r.is_some_and(|r| r.director) { "DIRECTOR ON" } else { "DIRECTOR OFF" };
@@ -1109,7 +1119,7 @@ pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
                     button("Shield hit", "shield_hit").fixed(24.0),
                     button("Jump full", "jump_full").fixed(24.0),
                 ]),
-                col(vec![button(ambush, "ambush").fixed(24.0), button(vacuum, "vacuum").fixed(28.0)]),
+                col(vec![button(ambush, "ambush").fixed(24.0), button(vacuum, "vacuum").fixed(28.0), button("COLD SHIP", "cold_ship").fixed(24.0)]),
             ],
         ),
     )
@@ -1277,7 +1287,9 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
     for c in clicks.read() {
         let snap = items.reactor;
         let new_state = |current: bool| c.value.map(|v| v >= 0.5).unwrap_or(!current);
-        let ask = if c.panel == READOUT_ID {
+        let ask = if c.panel == startup_screen::ID {
+            startup_screen::ask(c, snap.as_ref())
+        } else if c.panel == READOUT_ID {
             match c.action.as_str() {
                 HELP_ACTION => {
                     help.toggle();
@@ -1368,6 +1380,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "reset" => Some(ReactorAsk::Reset),
                 "drain_coolant" => Some(ReactorAsk::Trigger(ReactorFault::DrainCoolant)),
                 "warm_start" => Some(ReactorAsk::Trigger(ReactorFault::WarmStart)),
+                "cold_ship" => Some(ReactorAsk::Trigger(ReactorFault::ColdShip)),
                 "aux" => Some(ReactorAsk::Trigger(ReactorFault::Aux)),
                 "director" => snap.map(|r| ReactorAsk::SetDirector(!r.director)),
                 "jump_full" => Some(ReactorAsk::Trigger(ReactorFault::JumpFull)),
@@ -1410,25 +1423,29 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     *spin = crate::effects::impeller_angle(*spin, speed, time.delta_secs_f64());
     let angle = (*spin / IMPELLER_STEP).round() * IMPELLER_STEP;
     let max_kw = cfg.0.reactor.max_output_kw;
+    // SP-01 is on whatever the master; every other screen goes through `set`, which shows OFF while the master is off.
+    panels.set(startup_screen::ID, startup_screen::panel(items.reactor.as_ref()));
+    let live = items.reactor.map_or(true, |r| r.startup.live());
+    let mut set = |id: PanelId, p: Panel| panels.set(id, if live { p } else { off(p) });
     let readout = if help.0 { readout_help_panel(items.reactor.as_ref(), max_kw) } else { readout_panel_at(items.reactor.as_ref(), max_kw, time.elapsed_secs_f64()) };
-    panels.set(READOUT_ID, readout);
-    panels.set(PUMP_ID, pump_panel_at(items.reactor.as_ref(), angle, lamp_blink_on(time.elapsed_secs_f64())));
-    panels.set(JUNCTION_ID, junction_panel(items.reactor.as_ref(), max_kw));
-    panels.set(AUX_ID, aux_panel(items.reactor.as_ref()));
-    panels.set(BATTERY_ID, battery_panel(items.reactor.as_ref()));
-    panels.set(SHIELD_ID, shield_panel(items.reactor.as_ref()));
-    panels.set(HELM_ID, helm_panel(items.reactor.as_ref()));
-    panels.set(GUNNERY_ID, gunnery_panel(items.reactor.as_ref(), cfg.0.weapons.capacity_shots));
-    panels.set(JUMP_ID, jump_panel(items.reactor.as_ref()));
-    panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));
-    panels.set(VENT_ENGINE_ID, vent_panel(items.reactor.as_ref(), 0));
-    panels.set(VENT_CORRIDOR_ID, vent_panel(items.reactor.as_ref(), 1));
-    panels.set(AIRLOCK_INNER_ID, airlock_panel(items.reactor.as_ref(), AIRLOCK_INNER_NAME, "AL-01"));
-    panels.set(AIRLOCK_OUTER_ID, airlock_panel(items.reactor.as_ref(), AIRLOCK_OUTER_NAME, "AL-02"));
-    panels.set(captain_screen::ID, captain_screen::captain_panel(items.reactor.as_ref(), items.room.door_open));
-    panels.set(FAULTS_ID, faults_panel(items.reactor.as_ref()));
-    panels.set(STATUS_ID, status_panel(items.reactor.as_ref(), cfg.0.reactor.max_output_kw, lamp_blink_on(time.elapsed_secs_f64())));
-    panels.set(status_monitor::ID, status_monitor::monitor_panel(items.reactor.as_ref()));
+    set(READOUT_ID, readout);
+    set(PUMP_ID, pump_panel_at(items.reactor.as_ref(), angle, lamp_blink_on(time.elapsed_secs_f64())));
+    set(JUNCTION_ID, junction_panel(items.reactor.as_ref(), max_kw));
+    set(AUX_ID, aux_panel(items.reactor.as_ref()));
+    set(BATTERY_ID, battery_panel(items.reactor.as_ref()));
+    set(SHIELD_ID, shield_panel(items.reactor.as_ref()));
+    set(HELM_ID, helm_panel(items.reactor.as_ref()));
+    set(GUNNERY_ID, gunnery_panel(items.reactor.as_ref(), cfg.0.weapons.capacity_shots));
+    set(JUMP_ID, jump_panel(items.reactor.as_ref()));
+    set(DOOR_ID, door_panel(items.reactor.as_ref()));
+    set(VENT_ENGINE_ID, vent_panel(items.reactor.as_ref(), 0));
+    set(VENT_CORRIDOR_ID, vent_panel(items.reactor.as_ref(), 1));
+    set(AIRLOCK_INNER_ID, airlock_panel(items.reactor.as_ref(), AIRLOCK_INNER_NAME, "AL-01"));
+    set(AIRLOCK_OUTER_ID, airlock_panel(items.reactor.as_ref(), AIRLOCK_OUTER_NAME, "AL-02"));
+    set(captain_screen::ID, captain_screen::captain_panel(items.reactor.as_ref(), items.room.door_open));
+    set(FAULTS_ID, faults_panel(items.reactor.as_ref()));
+    set(STATUS_ID, status_panel(items.reactor.as_ref(), cfg.0.reactor.max_output_kw, lamp_blink_on(time.elapsed_secs_f64())));
+    set(status_monitor::ID, status_monitor::monitor_panel(items.reactor.as_ref()));
 }
 
 #[cfg(test)]

@@ -54,6 +54,9 @@
     "capacity_shots": 6, "shot_kw": 400.0, "reload_s": 0.25, "recharge_kw": 400.0,
     "heat_per_shot": 0.18, "cool_per_s": 0.08, "overheat_at": 1.0, "unlock_at": 0.5,
     "jam_chance": 0.03, "jam_required_skill": 50.0, "clear_jam_s": 3.0 },
+  "startup": {
+    "_comment": "The ship's cold start (r42, #268; sources in reactor_core startup.rs): boot_s is the OS boot at SP-01 (step 2, the screens say BOOTING), the manual gives no time. TODO(initiator): the value.",
+    "boot_s": 3.0 },
   "jump": {
     "_comment": "Jump drive (r40, #252; PULSAR's warp charge stages, sources in reactor_core jump.rs): prep_s is the full power PREPPING takes before the charge starts, charge_s the time to a full charge at full power (slower when underpowered, paused at 0), active_s how long the drive stays ACTIVE after a jump before it is cold again. The drive's demand is the JUMP group's demand_kw while it charges. TODO(initiator): all three values.",
     "prep_s": 5.0, "charge_s": 60.0, "active_s": 3.0 },

@@ -23,6 +23,7 @@ use crate::hull::{Hit, HitsTuning, Hull, DEVICES, REACTOR_AT};
 use crate::grid::{Grid, Group};
 use crate::history::History;
 use crate::jump::JumpDrive;
+use crate::startup::{Checks, Startup};
 use crate::reactor::{AlarmKind, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning, RodKinds};
 use crate::shield::Shield;
 use crate::tuning::Tuning;
@@ -548,6 +549,8 @@ pub struct EngineRoom {
     encounter: Option<Encounter>,
     /// The rng of the enemy's shots (the hits' points and kinds): seeded with the room.
     enemy_rng: Rng,
+    /// The ship's cold start (`startup`, r42, #268): the master is live from its Reactor stage on.
+    startup: Startup,
 }
 
 impl EngineRoom {
@@ -598,6 +601,7 @@ impl EngineRoom {
             enemy: t.enemy.clone(),
             encounter: None,
             enemy_rng: Rng::new(seed ^ 0x3e11_0a5b),
+            startup: Startup::ready(t.startup),
         }
     }
 
@@ -1027,6 +1031,11 @@ impl EngineRoom {
     pub fn step(&mut self, dt: f64, input: Input) -> Vec<RoomEvent> {
         let t = self.tuning;
         let mut ev = Vec::new();
+        // The startup's checks read the room as the last step left it; they only move the stage on.
+        let checks = self.startup_checks();
+        self.startup.step(dt, checks);
+        // The master off: the systems do not step their consumers and the grid gets nothing.
+        let live = self.master_on();
         if std::mem::take(&mut self.ecool_pressed) {
             ev.push(RoomEvent::EmergencyCool);
         }
@@ -1049,18 +1058,24 @@ impl EngineRoom {
             self.wander_step(dt, &t);
         }
         // The voltage is the junction box's as the last step left it (Barotrauma's `prevVoltage`).
-        self.engine.step(dt, self.voltage());
+        if live {
+            self.engine.step(dt, self.voltage());
+        }
         self.grid.set_demand(Group::Engines, self.engine.demand_kw(self.engines_full_kw));
         // The shield asks its full demand while it is below max, the upkeep at max. Its regen runs on
         // the Shields factor of the last step (the same one-step lag as the engines' voltage).
         self.grid.set_demand(Group::Shields, self.shield_full_kw * self.shield.demand_share());
-        self.shield.step(dt, self.grid.factor(Group::Shields));
+        if live {
+            self.shield.step(dt, self.grid.factor(Group::Shields));
+        }
         // The WEAPONS group asks for its recharge while the capacitor is not full: a full one asks for
         // nothing, so the grid's power goes to the other groups.
         self.grid.set_demand(Group::Weapons, self.weapons.tuning().recharge_kw * self.weapons.demand_share());
         // The jump drive steps at last step's power (the grid's factor, as the voltage above): a
         // drive armed this step has no power yet, so it is PAUSED for one step at most.
-        self.jump.step(dt, self.grid.factor(Group::JumpDrive));
+        if live {
+            self.jump.step(dt, self.grid.factor(Group::JumpDrive));
+        }
         self.grid.set_demand(Group::JumpDrive, self.jump.demand_kw(self.jump_full_kw));
         let load = self.main_load_kw();
         self.sync_aux();
@@ -1087,7 +1102,8 @@ impl EngineRoom {
         // The battery sits behind the reactor: it gives what the main grid lacks, and takes the
         // surplus only when nothing was short (`load` is the main grid's request in both modes).
         let shortfall = (load - through).max(0.0);
-        let supply = through + self.battery.supply(shortfall, dt);
+        // With the master off the battery is cut off too: it neither gives nor takes.
+        let supply = if live { through + self.battery.supply(shortfall, dt) } else { 0.0 };
         if self.aux {
             // The main grid: the Engines group only. The aux reactor: the aux groups that are switched on.
             // Only Life Support and Lights can go to the aux side; every other group stays on the main grid.
@@ -1105,7 +1121,8 @@ impl EngineRoom {
                 }
             }
             let aux_write: [bool; Group::ALL.len()] = std::array::from_fn(|i| aux_side(Group::ALL[i]));
-            self.grid.distribute_with(self.tuning.aux_output_kw, aux, aux_write);
+            let aux_supply = if live { self.tuning.aux_output_kw } else { 0.0 };
+            self.grid.distribute_with(aux_supply, aux, aux_write);
         } else {
             let left = self.grid.distribute(supply);
             if shortfall <= 0.0 {
@@ -1114,7 +1131,9 @@ impl EngineRoom {
         }
 
         // The capacitor takes the share of its demand the grid delivered this step (`factor`).
-        self.weapons.step(dt, self.grid.factor(Group::Weapons));
+        if live {
+            self.weapons.step(dt, self.grid.factor(Group::Weapons));
+        }
 
         let excess = self.reactor.temperature() - self.reactor.bands().temp_optimal.hi;
         if let Some(e) = self.pump.wear(dt, self.pump.on() && self.reactor.power_on(), excess, &t) {
@@ -1128,6 +1147,58 @@ impl EngineRoom {
         self.level = self.compute_level();
         self.history.push_sample(dt, self.reactor.output_kw(), load, self.reactor.temperature());
         ev
+    }
+
+    /// The ship's master: live from the booted OS on (`startup::Stage::Reactor`). Off, the grid
+    /// delivers nothing and the battery is cut off; the screens other than SP-01 show OFF.
+    pub fn master_on(&self) -> bool {
+        self.startup.live()
+    }
+
+    pub fn startup(&self) -> &Startup {
+        &self.startup
+    }
+
+    /// The room's state the startup's checks read (steps 3 to 5).
+    pub fn startup_checks(&self) -> Checks {
+        Checks {
+            reactor_on: self.reactor.power_on(),
+            jump_armed: self.jump.stage != crate::jump::JumpStage::ColdStart,
+            breakers_on: self.grid.breaker(Group::LifeSupport) && self.grid.breaker(Group::Lights),
+        }
+    }
+
+    /// Step 1 (MAIN BREAKER at SP-01): on starts the startup, off is the cold ship (`cold_ship`).
+    /// Returns false when the breaker is already on.
+    pub fn master_breaker(&mut self, on: bool) -> bool {
+        if on {
+            self.startup.master(true)
+        } else {
+            self.cold_ship();
+            true
+        }
+    }
+
+    /// Step 2 (BOOT at SP-01). Refused unless the breaker is on.
+    pub fn startup_boot(&mut self) -> bool {
+        self.startup.boot()
+    }
+
+    /// Step 6 (OVERRIDE at SP-01): READY, when the steps before it hold.
+    pub fn startup_override(&mut self) -> bool {
+        let checks = self.startup_checks();
+        self.startup.override_startup(checks)
+    }
+
+    /// COLD SHIP (the dev button, and the master off): the startup back to Cold, the reactor off,
+    /// every breaker off, the jump drive cold. The rods and the core's heat stay as they are.
+    pub fn cold_ship(&mut self) {
+        self.startup.reset();
+        self.reactor.set_power(false);
+        for g in Group::ALL {
+            self.grid.set_breaker(g, false);
+        }
+        self.jump.cold();
     }
 
     /// Melts the core now (`Reactor::force_meltdown`), with the room's blast damage. The harness's

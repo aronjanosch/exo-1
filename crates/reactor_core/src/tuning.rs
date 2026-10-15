@@ -11,6 +11,7 @@ use crate::engine_room::RoomTuning;
 use crate::grid::GridTuning;
 use crate::hull::HitsTuning;
 use crate::jump::JumpTuning;
+use crate::startup::StartupTuning;
 use crate::reactor::{ReactorTuning, RodKinds};
 use crate::shield::ShieldTuning;
 
@@ -43,6 +44,8 @@ pub struct Tuning {
     pub hits: HitsTuning,
     /// The jump drive's charge (`jump` in reactor.json, r40, #252).
     pub jump: JumpTuning,
+    /// The ship's cold start (`startup` in reactor.json, r42, #268).
+    pub startup: StartupTuning,
     /// The airlock and the outside (`airlock` in reactor.json, r40).
     pub airlock: AirlockTuning,
     /// The enemy ship of the ambush (`enemy` in reactor.json, r41).
@@ -51,7 +54,7 @@ pub struct Tuning {
 
 impl Default for Tuning {
     fn default() -> Tuning {
-        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), shield: ShieldTuning::default(), alarm: AlarmTuning::default(), weapons: WeaponsTuning::default(), hits: HitsTuning::default(), jump: JumpTuning::default(), airlock: AirlockTuning::default(), enemy: EnemyTuning::default() }
+        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), shield: ShieldTuning::default(), alarm: AlarmTuning::default(), weapons: WeaponsTuning::default(), hits: HitsTuning::default(), jump: JumpTuning::default(), startup: StartupTuning::default(), airlock: AirlockTuning::default(), enemy: EnemyTuning::default() }
     }
 }
 
@@ -102,6 +105,7 @@ impl Tuning {
         need(self.weapons.overheat_at > 0.0 && (0.0..self.weapons.overheat_at).contains(&self.weapons.unlock_at), "weapons.unlock_at", "unlock_at must be below overheat_at (> 0)");
         need((0.0..=1.0).contains(&self.weapons.jam_chance) && self.weapons.jam_required_skill > 0.0, "weapons.jam_chance", "jam_chance must be 0..1, jam_required_skill > 0");
         need(self.weapons.clear_jam_s > 0.0, "weapons.clear_jam_s", "must be > 0");
+        need(self.startup.boot_s >= 0.0, "startup", "boot_s >= 0");
         need(self.jump.prep_s >= 0.0 && self.jump.charge_s > 0.0 && self.jump.active_s > 0.0, "jump", "prep_s >= 0, charge_s > 0, active_s > 0");
         need(self.room.aux_output_kw >= 0.0, "room.aux_output_kw", "must be >= 0");
         need(self.room.oxygen_generator_rate >= 0.0, "room.oxygen_generator_rate", "must be >= 0");

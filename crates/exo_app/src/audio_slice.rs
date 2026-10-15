@@ -53,6 +53,12 @@ pub const REACTOR_PITCH: (f32, f32) = (1.0, 1.15);
 pub const REACTOR_PITCH_T: (f64, f64) = (50.0, 100.0);
 pub const REACTOR_BEEP_VOL: f32 = 0.08;
 pub const BOOST_WHOOP_VOL: f32 = 0.07;
+/// The room alarm's klaxon (r40, #165): the alarm beep repeats every `KLAXON_EVERY_S` while the
+/// room's alarm sounds, at `KLAXON_VOL` next to the room and falling to 0 at `KLAXON_RANGE_M` (the
+/// falloff is the only direction we have: the slice plays no positional sound). TODO(initiator): all three.
+pub const KLAXON_VOL: f32 = 0.10;
+pub const KLAXON_RANGE_M: f64 = 30.0;
+pub const KLAXON_EVERY_S: f64 = 1.2;
 /// A boost press moves the boost by the whole amount (25 degrees at the shipped tuning); the fade
 /// moves it a degree a second. A move of this many degrees between two snapshots is a press.
 pub const BOOST_JUMP_DEG: f64 = 10.0;
@@ -394,6 +400,33 @@ fn pump_loop(players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes>,
     }
 }
 
+/// The room alarms' klaxons (r40, #165): one repeating beep per room whose alarm sounds, louder the
+/// nearer the walker is to the room. A silenced alarm sounds nothing (`ReactorNews::alarms`).
+fn room_klaxons(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut next: Local<[f64; 2]>) {
+    let Some(r) = items.reactor else {
+        *next = [0.0; 2];
+        return;
+    };
+    let Some(me) = walker_pos(&players) else { return };
+    let now = time.elapsed_secs_f64();
+    let rooms = [crate::dev_area::engine_room::ROOM.centre, crate::dev_area::engine_room::CORRIDOR.centre];
+    for (i, centre) in rooms.into_iter().enumerate() {
+        if !r.alarms[i].sounding {
+            next[i] = 0.0;
+            continue;
+        }
+        if now < next[i] {
+            continue;
+        }
+        next[i] = now + KLAXON_EVERY_S;
+        let Some(at) = fire_world(area.as_deref(), &planet, centre) else { continue };
+        let f = falloff((at - me).length(), KLAXON_RANGE_M);
+        if f > 0.0 {
+            one_shot(&mut commands, &s.alarm, KLAXON_VOL * f);
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn reactor_alarms(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut prev_blink: Local<bool>, mut prev_boost: Local<Option<f64>>) {
     let Some(r) = items.reactor else {
@@ -528,7 +561,7 @@ fn health_sounds(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, o
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, setup);
-    app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, repair_hurt_sounds, electric_sounds, pump_loop, door_sound, health_sounds, reactor_hum, reactor_alarms, ecool_hiss, extinguisher_dry).in_set(crate::phases::Frame::Input));
+    app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, repair_hurt_sounds, electric_sounds, pump_loop, door_sound, health_sounds, reactor_hum, reactor_alarms, room_klaxons, ecool_hiss, extinguisher_dry).in_set(crate::phases::Frame::Input));
 }
 
 #[cfg(test)]

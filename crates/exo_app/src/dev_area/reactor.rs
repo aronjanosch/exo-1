@@ -7,7 +7,9 @@ use crate::dev_area::engine_room::ROOM;
 use crate::dev_area::rods;
 use crate::gameplay::Gameplay;
 use gameplay_core::notice::{Notice, NoticeKind};
-use item_core::wire::{Alarm, BreakerGroup, FuelTube, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, RoomAir, GRAPH_POINTS};
+use item_core::wire::{Alarm, AlarmNews, BreakerGroup, FuelTube, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, RoomAir, RoomAlarmKind, GRAPH_POINTS};
+use reactor_core::room_alarm::{AlarmState, Kind};
+use reactor_core::RoomAlarm;
 use reactor_core::director::Situation;
 use reactor_core::{AlarmLevel, Director, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
 
@@ -47,6 +49,9 @@ pub struct ReactorSim {
     pub vents: [bool; 2],
     /// The incident director (r38): the host steps it in `reactor_step`; the toggle sets it.
     pub director: Director,
+    /// The rooms' alarms (r40, #165), by the index of `ReactorNews::rooms`: the engine room, the corridor.
+    /// The host steps them in `reactor_step`; SILENCE mutes them.
+    pub alarms: [RoomAlarm; 2],
 }
 
 /// `--warm-reactor`: the room is warm-started when it is created (`ReactorSim::created`), not run 150 s
@@ -72,7 +77,7 @@ impl ReactorSim {
         // The warm-up runs the tank down; a fresh room starts with a full one (TODO(initiator): later
         // the tank may start where the ship's last run left it).
         room.pump_mut().refill(100.0);
-        ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX, vents: [true; 2], director: Director::new(&cfg.director, SEED) }
+        ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX, vents: [true; 2], director: Director::new(&cfg.director, SEED), alarms: [RoomAlarm::new(cfg.alarm); 2] }
     }
 
     pub fn tick_eject(&mut self, dt: f64) {
@@ -179,6 +184,7 @@ impl ReactorSim {
                     info!("reactor: boost refused (off, broken, or not allowed now)");
                 }
             }
+            ReactorAsk::SilenceAlarms => self.alarms.iter_mut().for_each(RoomAlarm::silence),
         }
     }
 
@@ -247,6 +253,8 @@ impl ReactorSim {
             ecools: 0,
             // The host sets the rooms in `reactor_step` (they come from the air and the fire).
             rooms: Default::default(),
+            // The host sets the alarms in `reactor_step` too (r40).
+            alarms: Default::default(),
             vents: self.vents,
             throttle: self.room.engine_throttle(),
             engine_thrust: self.room.engine_thrust(),
@@ -535,6 +543,10 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
             FireModel::Grid => grid.0.burning().any(|c| c.room == room),
         },
     });
+    // The room alarms (r40, #165): the fire and the air from the rooms just set, the breach on the
+    // engine room only (the leak's openness is the breach's; the corridor has no hull breach).
+    let breaching = breach > 0.0;
+    now.alarms = std::array::from_fn(|i| alarm_news(sim.alarms[i].step(now.rooms[i].fire, i == 0 && breaching, now.rooms[i].o2, dt)));
     items.reactor = Some(now);
     sim.since_send += dt;
     if items.role == Role::Host && sim.sent != Some(now) && sim.since_send >= SEND_EVERY_S {
@@ -544,12 +556,36 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     }
 }
 
+/// The wire's alarm of a room (r40): the core's kind and flags as they travel.
+pub fn alarm_news(a: AlarmState) -> AlarmNews {
+    let kind = match a.kind {
+        Kind::Clear => RoomAlarmKind::Clear,
+        Kind::Fire => RoomAlarmKind::Fire,
+        Kind::Breach => RoomAlarmKind::Breach,
+        Kind::LowO2 => RoomAlarmKind::LowO2,
+    };
+    AlarmNews { kind, sounding: a.sounding, silenced: a.silenced }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn cfg() -> Tuning {
         Tuning::default()
+    }
+
+    /// r40, #165: SILENCE mutes both room alarms on the host, and the news carries the kind as it is.
+    #[test]
+    fn silence_mutes_the_room_alarms_and_the_news_carries_them() {
+        let c = cfg();
+        let mut s = ReactorSim::new(&c);
+        let mut counts = ReactorCounts::default();
+        s.alarms[0].step(true, false, 0.9, 0.1);
+        assert!(s.alarms[0].state().sounding, "a fire sounds");
+        s.apply(ReactorAsk::SilenceAlarms, &c, &mut counts);
+        assert_eq!(alarm_news(s.alarms[0].state()), AlarmNews { kind: RoomAlarmKind::Fire, sounding: false, silenced: true });
+        assert_eq!(alarm_news(s.alarms[1].state()), AlarmNews::default(), "the corridor is clear");
     }
 
     #[test]

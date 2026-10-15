@@ -10,6 +10,7 @@ pub mod history;
 pub mod lights;
 pub mod reactor;
 pub mod shield;
+pub mod room_alarm;
 pub mod sim;
 pub mod tuning;
 
@@ -22,5 +23,6 @@ pub use history::History;
 pub use lights::LightState;
 pub use grid::{Grid, Group, GroupState, Supply};
 pub use shield::{Shield, ShieldTuning};
+pub use room_alarm::{AlarmState, AlarmTuning, RoomAlarm};
 pub use reactor::{AlarmKind, Band, Bands, Blast, FuelNeed, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning, RodKind, RodKinds, Warnings};
 pub use tuning::{Tuning, REACTOR_PATH};

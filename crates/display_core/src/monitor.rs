@@ -23,13 +23,15 @@ impl Cell {
     }
 }
 
-/// A room's line: its air in percent, its fire, and its breach (the engine room only).
+/// A room's line: its air in percent, its fire, its breach (the engine room only), and its alarm
+/// word (r40, #165; `alarm_cell`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct RoomLine {
     pub name: &'static str,
     pub o2: Cell,
     pub fire: Cell,
     pub breach: Option<Cell>,
+    pub alarm: Cell,
 }
 
 /// The air's tone, 0..100 %: bad below 30, warn below 60.
@@ -63,7 +65,16 @@ pub fn room_line(name: &'static str, o2_pct: Option<f64>, fire: bool, breach: Op
     };
     let fire = if fire { Cell::new("YES", Tone::Bad) } else { Cell::new("NO", Tone::Good) };
     let breach = breach.map(|open| if open { Cell::new("YES", Tone::Bad) } else { Cell::new("NO", Tone::Good) });
-    RoomLine { name, o2, fire, breach }
+    RoomLine { name, o2, fire, breach, alarm: alarm_cell(None, false) }
+}
+
+/// A room's alarm cell (r40, #165): OK with no alarm; the alarm's word in bad while it sounds, and
+/// in warn once SILENCE holds it quiet (the lamp still blinks).
+pub fn alarm_cell(word: Option<&str>, silenced: bool) -> Cell {
+    match word {
+        None => Cell::new("OK", Tone::Good),
+        Some(w) => Cell::new(w, if silenced { Tone::Warn } else { Tone::Bad }),
+    }
 }
 
 /// A device's condition cell. A device that is down reads DOWN in bad whatever its condition.
@@ -119,6 +130,14 @@ mod tests {
         assert_eq!(corridor.breach, None);
         let none = room_line("CORRIDOR", None, false, None);
         assert_eq!(none.o2, Cell { text: "--".into(), tone: Tone::Dim });
+    }
+
+    #[test]
+    fn the_alarm_cell_reads_the_word_and_warns_when_silenced() {
+        assert_eq!(alarm_cell(None, false), Cell { text: "OK".into(), tone: Tone::Good });
+        assert_eq!(alarm_cell(Some("FIRE"), false), Cell { text: "FIRE".into(), tone: Tone::Bad });
+        assert_eq!(alarm_cell(Some("FIRE"), true), Cell { text: "FIRE".into(), tone: Tone::Warn });
+        assert_eq!(room_line("CORRIDOR", None, false, None).alarm, alarm_cell(None, false), "a fresh line reads OK");
     }
 
     #[test]

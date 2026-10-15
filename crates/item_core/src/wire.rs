@@ -162,6 +162,8 @@ pub enum ReactorAsk {
     SetThrottle(f64),
     /// The incident director's switch (r38, the dev faults screen's DIRECTOR toggle).
     SetDirector(bool),
+    /// The SILENCE button on ST-01 (r40, #165): the sounding room alarms go quiet (`reactor_core::RoomAlarm::silence`).
+    SilenceAlarms,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -433,6 +435,8 @@ pub struct ReactorNews {
     pub quantum_shield: bool,
     /// The shield's regen, % of its max a second (0 inside the recovery delay), r40.
     pub shield_regen: f64,
+    /// The rooms' alarms (r40, #165), by the index of `rooms`: 0 the engine room, 1 the corridor.
+    pub alarms: [AlarmNews; 2],
 }
 
 /// A room's air and fire for the status monitor (r38): the air as a fraction 0..1 (whole percent),
@@ -441,6 +445,25 @@ pub struct ReactorNews {
 pub struct RoomAir {
     pub o2: f64,
     pub fire: bool,
+}
+
+/// The kind of a room's alarm (r40, #165): `reactor_core::room_alarm::Kind`, by priority fire, breach, thin air.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RoomAlarmKind {
+    #[default]
+    Clear,
+    Fire,
+    Breach,
+    LowO2,
+}
+
+/// A room's alarm as the status monitor and the klaxon read it (r40, #165): its kind, whether the
+/// klaxon sounds now, and whether SILENCE holds it quiet.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AlarmNews {
+    pub kind: RoomAlarmKind,
+    pub sounding: bool,
+    pub silenced: bool,
 }
 
 /// The most points the reactor graph carries (the shipped `graph_points`, 25). A fixed size keeps
@@ -628,6 +651,7 @@ mod tests {
             shield: 0.7,
             quantum_shield: false,
             shield_regen: 5.0,
+            alarms: [AlarmNews { kind: RoomAlarmKind::Fire, sounding: false, silenced: true }, AlarmNews { kind: RoomAlarmKind::LowO2, sounding: true, silenced: false }],
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {
             ToClient::Reactor(r) => r,
@@ -659,6 +683,7 @@ mod tests {
             ReactorAsk::Eject,
             ReactorAsk::SetDirector(true),
             ReactorAsk::SetDirector(false),
+            ReactorAsk::SilenceAlarms,
         ];
         for ask in asks {
             let back = match decode::<ToHost>(&encode(&ToHost::Reactor(ask))).expect("decodes") {

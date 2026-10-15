@@ -12,7 +12,7 @@ use crate::Layer;
 use fire_core::{split_by_volume, Deck, FireTuning, GapId, LeakId, RoomId};
 use reactor_core::Source;
 use display_core::PanelId;
-use item_core::wire::{Alarm, RoomAsk, RoomNews};
+use item_core::wire::{Alarm, RoomAlarmKind, RoomAsk, RoomNews};
 
 pub const ROOM: Zone = Zone { name: "engine room", centre: [-14.0, -15.0], half: [5.0, 4.0] };
 pub const CORRIDOR: Zone = Zone { name: "corridor", centre: [-14.0, -7.7], half: [1.0, 3.0] };
@@ -277,6 +277,72 @@ pub fn plugin(app: &mut App) {
 pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, (spawn_lights, (room_lights, alarm_lights, emergency_lamps).after(spawn_lights)).after(super::spawn_devices).in_set(crate::phases::Frame::World));
     app.add_systems(Update, breach_decal.after(super::spawn_devices).in_set(crate::phases::Frame::World));
+    app.add_systems(Update, (spawn_alarm_lamps, alarm_lamps).chain().after(super::spawn_devices).in_set(crate::phases::Frame::World));
+}
+
+/// The room alarm's red lamp (r40, #165): one in the engine room and one in the corridor, at
+/// `ALARM_LAMP_HEIGHT`. Copies the reactor's critical lamp (`effects::critical_lamp_sync`): a light
+/// and a lens that show while the room's alarm is on. The corridor is open to the sky, so its lamp
+/// hangs on a mast at the same height (TODO(initiator)).
+#[derive(Component)]
+struct RoomAlarmLamp {
+    room: usize,
+}
+
+#[derive(Component)]
+struct RoomAlarmLens {
+    room: usize,
+}
+
+/// The lamp's height (m) over the floor: the ceiling less a lamp's drop.
+const ALARM_LAMP_HEIGHT: f64 = ROOM_HEIGHT - 0.3;
+/// The lamp's peak intensity (cd-like, as the room's other lamps) and its blink. Fire and breach
+/// blink at Barotrauma's alarm buzzer rate (`signalitems.xml` alarmbuzzer, blinkfrequency 2.6 Hz);
+/// thin air blinks slower. TODO(initiator): the intensity and the slow rate.
+const ALARM_LAMP_INTENSITY: f32 = 30_000.0;
+const THIN_AIR_BLINK_S: f64 = 1.0;
+
+/// Whether the room's alarm lamp is lit now: never at Clear, blinking while the alarm is on (SILENCE
+/// does not stop it).
+pub fn alarm_lamp_lit(kind: RoomAlarmKind, t: f64) -> bool {
+    let period = match kind {
+        RoomAlarmKind::Clear => return false,
+        RoomAlarmKind::Fire | RoomAlarmKind::Breach => 1.0 / 2.6,
+        RoomAlarmKind::LowO2 => THIN_AIR_BLINK_S,
+    };
+    t.rem_euclid(period) < period / 2.0
+}
+
+fn spawn_alarm_lamps(mut commands: Commands, planet: Res<PlanetRes>, area: Res<DevArea>, mut done: Local<Option<warp_core::PlanetId>>, mut made: Local<Vec<Entity>>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>) {
+    if *done == Some(planet.id) {
+        return;
+    }
+    let Some(_) = area.frame else { return };
+    *done = Some(planet.id);
+    for e in made.drain(..) {
+        commands.entity(e).despawn();
+    }
+    let mesh = meshes.add(Sphere::new(0.08));
+    let mat = mats.add(StandardMaterial { base_color: Color::srgb(1.0, 0.1, 0.05), emissive: LinearRgba::rgb(8.0, 0.3, 0.1), unlit: true, ..default() });
+    for (room, centre) in [ROOM.centre, CORRIDOR.centre].into_iter().enumerate() {
+        let Some((at, _)) = area.ground(&planet, centre, ALARM_LAMP_HEIGHT) else { continue };
+        made.push(commands.spawn((WorldPos(at), Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::default(), Visibility::Hidden, RoomAlarmLens { room })).id());
+        made.push(commands.spawn((WorldPos(at), PointLight { color: Color::srgb(1.0, 0.1, 0.05), intensity: 0.0, range: 10.0, shadow_maps_enabled: false, ..default() }, Transform::default(), RoomAlarmLamp { room })).id());
+    }
+}
+
+fn alarm_lamps(time: Res<Time>, items: Res<Items>, mut lights: Query<(&RoomAlarmLamp, &mut PointLight)>, mut lens: Query<(&RoomAlarmLens, &mut Visibility)>) {
+    let t = time.elapsed_secs_f64();
+    let kind_of = |room: usize| items.reactor.map_or(RoomAlarmKind::Clear, |r| r.alarms[room].kind);
+    for (l, mut light) in &mut lights {
+        light.intensity = if alarm_lamp_lit(kind_of(l.room), t) { ALARM_LAMP_INTENSITY } else { 0.0 };
+    }
+    for (l, mut v) in &mut lens {
+        let want = if alarm_lamp_lit(kind_of(l.room), t) { Visibility::Inherited } else { Visibility::Hidden };
+        if *v != want {
+            *v = want;
+        }
+    }
 }
 
 /// The breach's dark patch on the wall (r37): shown while the wall leaks, hidden while it holds.

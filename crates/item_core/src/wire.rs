@@ -319,6 +319,8 @@ pub struct ReactorNews {
     pub manual: bool,
     /// The core melted: the readout shows MELTDOWN.
     pub melted: bool,
+    /// Core stability in whole percent, 100 when cold and off, 0 when melted or ejected (#300 r29).
+    pub stability: u8,
     pub temp: f64,
     /// The targets as set (Manual) or as Auto has them.
     pub set_fission: f64,
@@ -525,6 +527,7 @@ mod tests {
             power_on: true,
             manual: true,
             melted: false,
+            stability: 73,
             temp: 61.25,
             set_fission: 40.0,
             set_turbine: 48.0,

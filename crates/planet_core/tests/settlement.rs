@@ -22,6 +22,7 @@ fn plain_rule(p: &Planet) -> (f64, f64) {
 }
 
 #[test]
+#[ignore = "100 km planet, slow: runs with --run-ignored all before main"]
 fn a_100_km_planet_has_its_settlements_on_plains() {
     let p = baked(100_000.0);
     let ids = settlements(&p);
@@ -34,6 +35,7 @@ fn a_100_km_planet_has_its_settlements_on_plains() {
 }
 
 #[test]
+#[ignore = "100 km planet, slow: runs with --run-ignored all before main"]
 fn a_landing_pad_is_level_within_10_m() {
     let p = baked(100_000.0);
     for &i in &settlements(&p) {
@@ -55,6 +57,7 @@ fn a_landing_pad_is_level_within_10_m() {
 }
 
 #[test]
+#[ignore = "100 km planet, slow: runs with --run-ignored all before main"]
 fn a_settlement_kit_stands_on_the_level_ground() {
     let p = baked(100_000.0);
     for &i in &settlements(&p) {

@@ -45,6 +45,7 @@ fn check(radius: f64, depth: u32) -> (usize, usize, f64, f64) {
 }
 
 #[test]
+#[ignore = "100 km planet, slow: runs with --run-ignored all before main"]
 fn skirts_cover_the_gap_between_levels() {
     for (radius, depth) in [(5000.0, 4), (30_000.0, 6), (100_000.0, 8)] {
         let (gaps, open, worst, biggest) = check(radius, depth);

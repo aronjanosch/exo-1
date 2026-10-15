@@ -151,6 +151,7 @@ fn same_seed_same_water() {
 }
 
 #[test]
+#[ignore = "100 km planet, slow: runs with --run-ignored all before main"]
 fn nothing_grows_or_builds_in_the_water() {
     let (p, _) = hearth();
     for s in &p.sites {

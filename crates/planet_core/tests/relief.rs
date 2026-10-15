@@ -26,6 +26,7 @@ fn shared(name: &str) -> &'static (Planet, BakeStats) {
 }
 
 #[test]
+#[ignore = "100 km planet, slow: runs with --run-ignored all before main"]
 fn relief_is_repeatable_at_100_km() {
     let (a, _) = shared("Hearth");
     let (b, _) = baked(HEARTH, 1337);

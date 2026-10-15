@@ -142,6 +142,7 @@ fn seam_check(p: &Planet, depth: u32) -> (usize, f64, usize) {
 }
 
 #[test]
+#[ignore = "100 km planet, slow: runs with --run-ignored all before main"]
 fn t2_no_seams() {
     let (p, _) = planet();
     for depth in [1u32, 3, 5] {

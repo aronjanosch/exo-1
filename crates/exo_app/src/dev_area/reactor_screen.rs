@@ -13,11 +13,13 @@
 //!   control, a CLOSE box (`readout_help_panel`, `ReactorHelp`). Leaving the display closes it.
 //! - The coolant pump (S, on the pump block): a picture of the pump, the flow, the status word, the
 //!   three mode buttons OFF / LOW / HIGH. The impeller turns with the pump's speed (`effects::impeller_angle`).
-//! - The junction box (S, on the wall above it): three breaker levers, nothing else. Overvolt shows
-//!   in the world (sparks), not here.
+//! - The junction box (taller than S, on the wall above it, #300 r34): three breaker levers; under each
+//!   a bar (the fill is delivered over demand, the triangle is the limit) and its limit slider; under the
+//!   three the TOTAL bar (delivered over the output range's top). Overvolt shows in the world (sparks).
 //! - The AUX screen (S, AX-01, beside the junction box's screen on the south wall): AUX OFFLINE with the
 //!   aux reactor off; on, the LIFE SUPPORT and LIGHTS switches (levers, like the breakers) and the
-//!   boost the aux output gives the main reactor (`aux_panel`).
+//!   boost the aux output gives the main reactor (`aux_panel`). The junction and AUX screens are the same
+//!   size, one tier taller than S (`TALL_CANVAS`).
 //! - The reactor room's door screen (S, in the corridor by the door): the reactor temperature, its
 //!   zone band, the room's oxygen, the lights breaker. TODO(captain): the emergency view with the
 //!   captain role.
@@ -709,21 +711,83 @@ fn lever_in(w: f64, lines: &[&str], on: bool, action: &str, name_ink: Ink) -> It
     canvas(w, 168.0, s, Some(action)).flex(1.0)
 }
 
-/// The junction box's screen (S): three breaker levers.
-pub fn junction_panel(r: Option<&ReactorNews>) -> Panel {
-    if !powered(r) {
-        return no_power(JUNCTION_NAME, "JB-01", Tier::S);
+/// The junction box's and the AUX screen's canvas (px): the S width and one tier taller (#300 r34),
+/// so the junction box's bars and the TOTAL bar fit under its levers.
+pub const TALL_CANVAS: f64 = 320.0;
+
+/// An S-width screen made one tier taller (`TALL_CANVAS`); the mount's size (`engine_room::SCREENS`) is
+/// the same aspect.
+fn tall(mut p: Panel) -> Panel {
+    p.size.y = TALL_CANVAS;
+    p
+}
+
+/// A group's bar under its lever (94 wide, 18 high): the fill is `delivered / demand` (0 with no demand)
+/// and the triangle sits on the limit (0..1 along the bar, its centre kept 5 px in from the ends).
+fn group_bar(delivered: f64, demand: f64, limit: f64) -> Item {
+    let (w, top, h) = (94.0, 6.0, 12.0);
+    let frac = if demand > 0.0 { (delivered / demand).clamp(0.0, 1.0) } else { 0.0 };
+    let mut s = vec![Shape::Rect { x: 0.0, y: top, w, h, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) }];
+    if frac > 0.0 {
+        s.push(Shape::Rect { x: 2.0, y: top + 2.0, w: (w - 4.0) * frac, h: h - 4.0, fill: Some(Ink::Hud), outline: None });
     }
-    let b = r.map_or([false; 3], |r| r.breakers);
-    let body = row(
-        0.0,
+    // The limit marker: a triangle pointing down onto the bar.
+    let cx = (limit.clamp(0.0, 1.0) * w).clamp(5.0, w - 5.0);
+    // The sides start 1 px down: a 2 px stroke at the canvas's top edge would stick out of it.
+    s.push(Shape::Line { a: [cx - 4.0, 1.0], b: [cx, top], width: 2.0, ink: Ink::FgTitle, dash: None });
+    s.push(Shape::Line { a: [cx + 4.0, 1.0], b: [cx, top], width: 2.0, ink: Ink::FgTitle, dash: None });
+    canvas(w, 18.0, s, None).fixed(18.0)
+}
+
+/// The TOTAL bar (292 wide, 18 high) under the levers: the label, the bar and the kW. The fill is the
+/// total delivered over the output range's top (`max_kw`).
+fn total_bar(total: f64, max_kw: f64) -> Item {
+    let (w, bar_x, bar_w) = (292.0, 60.0, 140.0);
+    let frac = if max_kw > 0.0 { (total / max_kw).clamp(0.0, 1.0) } else { 0.0 };
+    let mut s = vec![
+        text(0.0, 0.0, 56.0, 18.0, "TOTAL", 16.0, TextFace::Display, Ink::HudDim, false),
+        Shape::Rect { x: bar_x, y: 3.0, w: bar_w, h: 12.0, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) },
+    ];
+    if frac > 0.0 {
+        s.push(Shape::Rect { x: bar_x + 2.0, y: 5.0, w: (bar_w - 4.0) * frac, h: 8.0, fill: Some(Ink::Hud), outline: None });
+    }
+    s.push(text(210.0, 0.0, 82.0, 18.0, &format!("{total:.0} kW"), 16.0, TextFace::Mono, Ink::Fg2, false));
+    canvas(w, 18.0, s, None).fixed(18.0)
+}
+
+/// One lever with its bar and its limit slider (action `limit`), 94 wide: 234 high in all.
+fn junction_lever(r: &ReactorNews, g: BreakerGroup, names: &[&str], action: &str, limit: &str) -> Item {
+    let i = g.index();
+    column(
+        4.0,
         vec![
-            lever(&["ENGINES"], b[BreakerGroup::Engines.index()], "br_engines"),
-            lever(&["LIFE", "SUPPORT"], b[BreakerGroup::LifeSupport.index()], "br_life"),
-            lever(&["LIGHTS"], b[BreakerGroup::Lights.index()], "br_lights"),
+            lever(names, r.breakers[i], action).fixed(168.0),
+            group_bar(r.delivered_kw[i], r.demand_kw[i], r.limits[i]),
+            slider(r.limits[i], "", limit).fixed(40.0),
         ],
-    );
-    Panel::screen(Tier::S, JUNCTION_NAME, "JB-01", body).with_padding(6.0)
+    )
+    .fixed(94.0)
+}
+
+/// The junction box's screen (one tier taller than S, #300 r34): three breaker levers, each with its
+/// bar and its limit slider, and the TOTAL bar under them. `max_kw` is the reactor's output range top.
+pub fn junction_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
+    if !powered(r) {
+        return tall(no_power(JUNCTION_NAME, "JB-01", Tier::S));
+    }
+    let r = r.copied().unwrap_or_default();
+    let levers = row(
+        5.0,
+        vec![
+            junction_lever(&r, BreakerGroup::Engines, &["ENGINES"], "br_engines", "lim_engines"),
+            junction_lever(&r, BreakerGroup::LifeSupport, &["LIFE", "SUPPORT"], "br_life", "lim_life"),
+            junction_lever(&r, BreakerGroup::Lights, &["LIGHTS"], "br_lights", "lim_lights"),
+        ],
+    )
+    .fixed(234.0);
+    let total = r.delivered_kw.iter().sum::<f64>();
+    let body = column(8.0, vec![levers, total_bar(total, max_kw)]);
+    tall(Panel::screen(Tier::S, JUNCTION_NAME, "JB-01", body).with_padding(6.0))
 }
 
 /// The AUX screen (S, #300 r32): the aux reactor's two switches and the boost it gives the main
@@ -731,10 +795,11 @@ pub fn junction_panel(r: Option<&ReactorNews>) -> Panel {
 /// power: the aux reactor has its own supply. TODO(initiator): confirm.
 pub fn aux_panel(r: Option<&ReactorNews>) -> Panel {
     let r = r.copied().unwrap_or_default();
+    // The content is 292 x 264 on the tall screen (`TALL_CANVAS` less the plate and the padding).
     if !r.aux_on {
-        let (w, h) = (300.0, 170.0);
+        let (w, h) = (292.0, 264.0);
         let shapes = vec![text(0.0, h * 0.5 - 10.0, w, 20.0, "AUX OFFLINE", 22.0, TextFace::DisplayBold, Ink::Fg3, true)];
-        return Panel::screen(Tier::S, AUX_NAME, "AX-01", canvas(w, h, shapes, None).flex(1.0));
+        return tall(Panel::screen(Tier::S, AUX_NAME, "AX-01", canvas(w, h, shapes, None).flex(1.0)));
     }
     // Two levers of 76 px side by side (152 px, the names in one tone whatever the switch), the boost
     // beside them in what is left: "BOOST +320 kW" in the mono font needs about 125 px.
@@ -745,7 +810,9 @@ pub fn aux_panel(r: Option<&ReactorNews>) -> Panel {
     )
     .fixed(152.0);
     let boost = column(4.0, vec![micro("AUX OUTPUT").fixed(14.0), readout(format!("BOOST +{:.0} kW", r.aux_boost_kw)).text_size(font::SMALL).tone(Tone::Normal)]);
-    Panel::screen(Tier::S, AUX_NAME, "AX-01", row(10.0, vec![switches, boost.flex(1.0)])).with_padding(6.0)
+    // Centred down the tall screen: the switches' 168 px in the middle.
+    let body = column(0.0, vec![space().flex(1.0), row(10.0, vec![switches, boost.flex(1.0)]).fixed(168.0), space().flex(1.0)]);
+    tall(Panel::screen(Tier::S, AUX_NAME, "AX-01", body)).with_padding(6.0)
 }
 
 /// The oxygen's tone: bad at 40 % or less, warn at 70 % or less, else good.
@@ -1001,6 +1068,16 @@ pub fn cover_word(r: &ReactorNews) -> Item {
     readout(word).text_size(font::SMALL).tone(tone)
 }
 
+/// The group of a junction box limit slider's action (`lim_engines`, `lim_life`, `lim_lights`).
+pub fn limit_group(action: &str) -> Option<BreakerGroup> {
+    match action {
+        "lim_engines" => Some(BreakerGroup::Engines),
+        "lim_life" => Some(BreakerGroup::LifeSupport),
+        "lim_lights" => Some(BreakerGroup::Lights),
+        _ => None,
+    }
+}
+
 /// The clicks: the readout asks for the reactor (the toggles give the new state as the value, the
 /// sliders the value 0..1), the machines' screens for their switches, the fault screen for the
 /// faults and the reset.
@@ -1029,6 +1106,8 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "ecool" => Some(ReactorAsk::EmergencyCool),
                 _ => None,
             }
+        } else if c.panel == JUNCTION_ID && let Some(g) = limit_group(&c.action) {
+            c.value.map(|v| ReactorAsk::SetLimit(g, v as f64))
         } else if c.panel == JUNCTION_ID || c.panel == DOOR_ID {
             let group = match c.action.as_str() {
                 "br_engines" => Some(BreakerGroup::Engines),
@@ -1088,7 +1167,7 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     let readout = if help.0 { readout_help_panel(items.reactor.as_ref(), max_kw) } else { readout_panel_at(items.reactor.as_ref(), max_kw, time.elapsed_secs_f64()) };
     panels.set(READOUT_ID, readout);
     panels.set(PUMP_ID, pump_panel_at(items.reactor.as_ref(), angle));
-    panels.set(JUNCTION_ID, junction_panel(items.reactor.as_ref()));
+    panels.set(JUNCTION_ID, junction_panel(items.reactor.as_ref(), max_kw));
     panels.set(AUX_ID, aux_panel(items.reactor.as_ref()));
     panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));
     panels.set(FAULTS_ID, faults_panel(items.reactor.as_ref()));
@@ -1126,7 +1205,7 @@ mod tests {
         for r in [None, Some(ReactorNews::default()), Some(ReactorNews { manual: true, ..news() }), Some(ReactorNews { melted: true, ..news() }), Some(ReactorNews { temp: 85.0, ..news() })] {
             v.push(shipped_panel(r.as_ref()));
             v.push(pump_panel(r.as_ref()));
-            v.push(junction_panel(r.as_ref()));
+            v.push(junction_panel(r.as_ref(), 2000.0));
             v.push(aux_panel(r.as_ref()));
             v.push(door_panel(r.as_ref()));
             v.push(readout_help_panel(r.as_ref(), 2000.0));
@@ -1141,7 +1220,7 @@ mod tests {
         for temp in [10.0, 40.0, 60.0, 72.0, 95.0] {
             v.push(door_panel(Some(&ReactorNews { temp, ..news() })));
         }
-        v.push(junction_panel(Some(&ReactorNews { overvolt: true, ..news() })));
+        v.push(junction_panel(Some(&ReactorNews { overvolt: true, ..news() }), 2000.0));
         for blink in [false, true] {
             for r in [None, Some(status_news()), Some(ReactorNews { lamps: [true; Lamp::COUNT], meltdown_eta_s: Some(42.0), ..status_news() }), Some(ReactorNews { powered: false, ..status_news() })] {
                 v.push(status_panel(r.as_ref(), 2000.0, blink));
@@ -1348,6 +1427,20 @@ mod tests {
     }
 
     /// The text lines of a panel's canvas (its shapes), in order.
+    /// The texts of every canvas on the panel (the root's or any placed one's).
+    fn all_canvas_texts(p: &Panel) -> Vec<String> {
+        let mut out = Vec::new();
+        for w in p.layout() {
+            if let display_core::Widget::Canvas { shapes, .. } = w.widget {
+                out.extend(shapes.iter().filter_map(|s| match s {
+                    Shape::Text { text, .. } => Some(text.clone()),
+                    _ => None,
+                }));
+            }
+        }
+        out
+    }
+
     fn canvas_texts(p: &Panel) -> Vec<String> {
         match &p.root.widget {
             display_core::Widget::Canvas { shapes, .. } => shapes.iter().filter_map(|s| match s {
@@ -1701,12 +1794,74 @@ mod tests {
     }
 
     #[test]
-    fn the_junction_box_has_three_levers_and_nothing_else() {
-        let p = junction_panel(Some(&news()));
+    fn the_junction_box_has_three_levers_three_limit_sliders_and_the_bars() {
+        let p = junction_panel(Some(&news()), 2000.0);
         for a in ["br_engines", "br_life", "br_lights"] {
             assert!(p.find(a).is_some(), "{a}");
         }
         assert!(matches!(p.find("br_lights").unwrap().widget, display_core::Widget::Canvas { action: Some(_), .. }));
+        for a in ["lim_engines", "lim_life", "lim_lights"] {
+            assert!(matches!(p.find(a).expect(a).widget, display_core::Widget::Slider { enabled: true, .. }), "{a} is a slider");
+        }
+        assert_eq!(limit_group("lim_life"), Some(BreakerGroup::LifeSupport));
+        assert_eq!(limit_group("br_life"), None, "the breakers are not limits");
+        let texts = all_canvas_texts(&p);
+        assert!(texts.iter().any(|t| t == "TOTAL"), "the TOTAL bar is labelled: {texts:?}");
+    }
+
+    #[test]
+    fn the_limit_sliders_show_the_limits() {
+        let r = ReactorNews { limits: [0.6, 0.25, 1.0], ..news() };
+        let p = junction_panel(Some(&r), 2000.0);
+        for (a, v) in [("lim_engines", 0.6), ("lim_life", 0.25), ("lim_lights", 1.0)] {
+            match p.find(a).expect(a).widget {
+                display_core::Widget::Slider { value, .. } => assert!((value - v).abs() < 1e-9, "{a}: {value}"),
+                _ => panic!("{a} is a slider"),
+            }
+        }
+    }
+
+    fn bar_shapes(w: Item) -> Vec<Shape> {
+        match w.widget {
+            display_core::Widget::Canvas { shapes, .. } => shapes,
+            _ => panic!("a canvas"),
+        }
+    }
+
+    #[test]
+    fn a_group_bar_fills_with_delivered_over_demand_and_marks_the_limit() {
+        // 400 of 800 kW (half) with the limit at 0.6: the fill is half of the 90 px inside, the triangle
+        // sits at 0.6 of the 94 px bar.
+        let s = bar_shapes(group_bar(400.0, 800.0, 0.6));
+        let fill = s.iter().find_map(|x| match x {
+            Shape::Rect { x, w, fill: Some(Ink::Hud), .. } => Some((*x, *w)),
+            _ => None,
+        });
+        let (fx, fw) = fill.expect("a fill");
+        assert!((fx - 2.0).abs() < 1e-9 && (fw - 45.0).abs() < 1e-9, "the fill is half the inside: {fx} {fw}");
+        let apexes: Vec<f64> = s
+            .iter()
+            .filter_map(|x| match x {
+                Shape::Line { b, ink: Ink::FgTitle, .. } => Some(b[0]),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(apexes.len(), 2, "the triangle's two sides");
+        assert!(apexes.iter().all(|x| (x - 0.6 * 94.0).abs() < 1e-9), "the marker is on the limit: {apexes:?}");
+        // No demand: no fill. A limit at the end is kept 5 px in (the triangle's side and its stroke).
+        assert!(!bar_shapes(group_bar(0.0, 0.0, 1.0)).iter().any(|x| matches!(x, Shape::Rect { fill: Some(Ink::Hud), .. })));
+        let end = bar_shapes(group_bar(800.0, 800.0, 1.0));
+        assert!(end.iter().any(|x| matches!(x, Shape::Line { b, .. } if (b[0] - 89.0).abs() < 1e-9)), "the marker at the end is 5 px in");
+    }
+
+    #[test]
+    fn the_total_bar_fills_with_the_total_over_the_output_top() {
+        let s = bar_shapes(total_bar(1000.0, 2000.0));
+        assert!(s.iter().any(|x| matches!(x, Shape::Rect { w, fill: Some(Ink::Hud), .. } if (w - 68.0).abs() < 1e-9)), "half of the 136 px inside: {s:?}");
+        assert!(s.iter().any(|x| matches!(x, Shape::Text { text, .. } if text == "1000 kW")), "the kW");
+        // The panel's total is the sum of the groups' delivered kW.
+        let r = ReactorNews { delivered_kw: [400.0, 300.0, 80.0], ..news() };
+        assert!(all_canvas_texts(&junction_panel(Some(&r), 2000.0)).iter().any(|t| t == "780 kW"));
     }
 
     #[test]
@@ -1718,7 +1873,7 @@ mod tests {
         let (cap, sw) = (label(&door, "LIGHT").expect("LIGHT caption"), door.find("br_lights").expect("the switch").rect);
         assert!(cap.max().y <= sw.min.y, "the caption is above the switch: {cap:?} {sw:?}");
         // The junction's lever names: above the slot, apart from each other, and inside their lever.
-        let junction = junction_panel(Some(&news()));
+        let junction = junction_panel(Some(&news()), 2000.0);
         for a in ["br_engines", "br_life", "br_lights"] {
             let display_core::Widget::Canvas { shapes, .. } = &junction.find(a).unwrap().widget else { panic!("{a} is a canvas") };
             let names: Vec<(f64, f64, f64, f64, &str, f64)> = shapes
@@ -1749,7 +1904,7 @@ mod tests {
     #[test]
     fn unpowered_machines_show_no_power_and_nothing_to_press() {
         let off = Some(ReactorNews { powered: false, ..news() });
-        for p in [pump_panel(off.as_ref()), junction_panel(off.as_ref()), door_panel(off.as_ref()), pump_panel(None)] {
+        for p in [pump_panel(off.as_ref()), junction_panel(off.as_ref(), 2000.0), door_panel(off.as_ref()), pump_panel(None)] {
             assert!(p.find("pump").is_none() && p.find("br_lights").is_none() && p.find("br_engines").is_none());
             assert!(p.overflowing().is_empty());
         }

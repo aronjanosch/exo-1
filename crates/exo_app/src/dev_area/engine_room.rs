@@ -59,7 +59,7 @@ pub const JUNCTION_BOX_SIZE: [f64; 3] = [0.6, 0.9, 0.3];
 pub const JUNCTION_AT: [f64; 2] = [JUNCTION_BOX_AT[0], -18.98];
 pub const JUNCTION_LIFT: f64 = 1.2;
 pub const AUX_GAP: f64 = 0.05;
-pub const AUX_AT: [f64; 2] = [JUNCTION_AT[0] + SMALL_SCREEN_SIZE[0] + AUX_GAP, JUNCTION_AT[1]];
+pub const AUX_AT: [f64; 2] = [JUNCTION_AT[0] + TALL_SCREEN_SIZE[0] + AUX_GAP, JUNCTION_AT[1]];
 /// The M-tier screen's spot: on the south wall's inner face next to the reactor (east of it),
 /// its height from the floor.
 pub const REACTOR_SCREEN_AT: [f64; 2] = [-11.8, -18.96];
@@ -68,6 +68,8 @@ pub const REACTOR_SCREEN_LIFT: f64 = 0.9;
 pub const READOUT_SIZE: [f64; 2] = [1.6, 1.0];
 /// The S screens' size (m): the 4 : 3 canvas.
 pub const SMALL_SCREEN_SIZE: [f64; 2] = [0.48, 0.36];
+/// The junction box's and AUX screens' size (m): the S width, one tier taller (320 x 320 px, #300 r34).
+pub const TALL_SCREEN_SIZE: [f64; 2] = [0.48, 0.48];
 /// The RX STATUS screen (M tier, as big as the readout, #300 r20): its size (m), and the gap to the
 /// readout's east edge. It sits east of the readout on the same wall, between the readout and the
 /// room's east corner (the room's east wall at x = -9; the reactor fills the wall west of the readout).
@@ -94,8 +96,8 @@ pub struct Mount {
 /// eye height; the dev faults screen inside the room on the north wall, west of the door.
 pub const SCREENS: [Mount; 6] = [
     Mount { id: reactor_screen::PUMP_ID, name: reactor_screen::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: reactor_screen::JUNCTION_ID, name: reactor_screen::JUNCTION_NAME, at: JUNCTION_AT, lift: JUNCTION_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: reactor_screen::AUX_ID, name: reactor_screen::AUX_NAME, at: AUX_AT, lift: JUNCTION_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: reactor_screen::JUNCTION_ID, name: reactor_screen::JUNCTION_NAME, at: JUNCTION_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: reactor_screen::AUX_ID, name: reactor_screen::AUX_NAME, at: AUX_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::DOOR_ID, name: reactor_screen::DOOR_NAME, at: [-13.04, -10.0], lift: 1.3, size: SMALL_SCREEN_SIZE, turn: -90.0 },
     Mount { id: reactor_screen::FAULTS_ID, name: reactor_screen::FAULTS_NAME, at: reactor_screen::FAULTS_AT, lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 0.0 },
     Mount { id: reactor_screen::STATUS_ID, name: reactor_screen::STATUS_NAME, at: STATUS_AT, lift: STATUS_LIFT, size: STATUS_SIZE, turn: 180.0 },

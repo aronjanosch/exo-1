@@ -512,12 +512,14 @@ pub fn pump_status(mode: PumpMode, coolant: f64) -> (&'static str, Tone) {
 
 fn pump_modes(mode: PumpMode, r: &ReactorNews) -> Item {
     let mode_button = |label: &str, action: &str, m: PumpMode| button(label, action).tone(if mode == m { Tone::Good } else { Tone::Normal });
-    // E-COOL is the fourth cell: the panel has no room for a row of its own (see `ecool_button`).
-    row(6.0, vec![mode_button("OFF", "pump_off", PumpMode::Off).flex(1.0), mode_button("LOW", "pump_low", PumpMode::Low).flex(1.0), mode_button("HIGH", "pump_high", PumpMode::High).flex(1.0), ecool_button(r).flex(1.4)]).fixed(ctl::MD)
+    // Parked (#306 Parkplatz): the E-COOL button (`ecool_button`) was a fourth cell here, flex 1.4.
+    let _ = r;
+    row(6.0, vec![mode_button("OFF", "pump_off", PumpMode::Off).flex(1.0), mode_button("LOW", "pump_low", PumpMode::Low).flex(1.0), mode_button("HIGH", "pump_high", PumpMode::High).flex(1.0)]).fixed(ctl::MD)
 }
 
 /// when a press would be taken, the cooldown as m:ss greyed while it runs (TODO(initiator): the
 /// label "E-COOL 0:42" does not fit a cell of this row), COOL greyed while the extra cooling runs.
+#[allow(dead_code)] // parked (#306 Parkplatz)
 pub fn ecool_button(r: &ReactorNews) -> Item {
     if r.ecool_active {
         return button("COOL", "ecool").tone(Tone::Good).enabled(false);

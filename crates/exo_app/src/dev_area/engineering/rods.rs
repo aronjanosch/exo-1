@@ -29,7 +29,8 @@ pub const LOAD: &str = "load_rod";
 /// Beside the coolant rack, against the north wall, relative to the engine room's centre (m).
 pub const RACK_AT: [f64; 2] = [-3.6, 3.7];
 pub const RACK_SIZE: [f64; 3] = [0.5, 0.9, 0.5];
-pub const ON_RACK: [(&str, u32); 2] = [("fuel_rod", 2), ("fuel_rod_hot", 1)];
+/// Parked (#306 Parkplatz): only the plain rod lies on the rack; the hot one was ("fuel_rod_hot", 1).
+pub const ON_RACK: [(&str, u32); 1] = [("fuel_rod", 2)];
 
 pub const KINDS: [(&str, &str); 3] = [("standard", "fuel_rod"), ("hot", "fuel_rod_hot"), ("spicy", "fuel_rod_spicy")];
 

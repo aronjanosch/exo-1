@@ -56,7 +56,7 @@ impl Default for OverviewUi {
 }
 
 pub fn plugin(app: &mut App) {
-    add_console(app, 0, ID, NAME, [0.25, 0.32, 0.55]);
+    // Parked (#306 Parkplatz): the overview console is not placed; add `add_console(app, 0, ID, NAME, [0.25, 0.32, 0.55]);` back.
     app.init_resource::<OverviewUi>();
     app.add_systems(FixedUpdate, (read_clicks, write_panel).chain().in_set(crate::phases::Fx::Effects));
 }

@@ -51,6 +51,7 @@ pub(super) fn collect(def: &'static str, name: &'static str) -> Vec<Step> {
             };
             look_at(w, at);
             c.v.insert("n0", items(w).client.view.count(def) as f64);
+            c.v.insert("out0", loose_of(w, def).iter().filter(|x| !x.3).count() as f64);
             true
         }),
         wait(0.1),
@@ -74,7 +75,8 @@ pub(super) fn collect(def: &'static str, name: &'static str) -> Vec<Step> {
         Box::new(move |w, c| {
             let confirmed = items(w).client.confirmed.count(def);
             let pending = items(w).client.pending.len();
-            let left = outside(w, def).is_some();
+            // The picked one is gone from the floor; a second one of the kind may still lie there (two plain rods on the rack).
+            let left = loose_of(w, def).iter().filter(|x| !x.3).count() as f64 >= c.v["out0"];
             check(c, confirmed > c.v["n0"] as u32 && pending == 0 && !left, format!("items: the host confirmed the {def} (confirmed {confirmed}, in flight {pending}, still lying there {left})"));
             true
         }),

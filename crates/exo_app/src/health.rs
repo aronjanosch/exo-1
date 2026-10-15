@@ -1,5 +1,5 @@
 //! Health: players have health, hazards hurt them, items heal them, death respawns them.
-use crate::dev_area::hazards::{shielded_at, spicy_irradiated, RodSpot, GLOW_BARREL, HOT_PLATE, NO_AIR, SPICY_ITEM, VACUUM_ROOM, SPICY_RADIUS_M, SPICY_RAD_PER_S};
+use crate::dev_area::hazards::{shielded_at, spicy_irradiated, RodSpot, GLOW_BARREL, GLOW_BARREL_ON, HOT_PLATE, NO_AIR, SPICY_ITEM, VACUUM_ROOM, SPICY_RADIUS_M, SPICY_RAD_PER_S};
 use crate::dev_area::hull::ShipAir;
 use crate::dev_area::fire::FireHeat;
 use crate::dev_area::{area_of, DevArea, Zone, PAD_MAIN};
@@ -255,7 +255,7 @@ pub(crate) fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<
         let fire = heat.as_ref().and_then(|h| h.0.get(id)).copied().unwrap_or(0.0);
         let rod_per_s = if irradiated.contains(id) { SPICY_RAD_PER_S } else { 0.0 };
         let suited = suits.as_ref().is_some_and(|s| s.0.contains(id));
-        let env = Env { oxygen: room_air, hot: inside(&HOT_PLATE), glow: inside(&GLOW_BARREL), fire, rod_per_s, vacuum: vacuum_here, suited };
+        let env = Env { oxygen: room_air, hot: inside(&HOT_PLATE), glow: GLOW_BARREL_ON && inside(&GLOW_BARREL), fire, rod_per_s, vacuum: vacuum_here, suited };
         st.air.insert(*id, env.oxygen);
         for ev in b.health.step(t, dt, env) {
             if matches!(ev, HealthEvent::Died { .. }) {

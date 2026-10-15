@@ -14,6 +14,8 @@ use std::collections::BTreeSet;
 
 /// The three pads in a row along the hazards zone's west side, south to north.
 pub const HOT_PLATE: Zone = Zone { name: "hot plate", centre: [2.3, 13.0], half: [1.2, 1.2] };
+/// Parked (#306 Parkplatz): the barrel is not placed and its glow is off while this is false.
+pub const GLOW_BARREL_ON: bool = false;
 pub const GLOW_BARREL: Zone = Zone { name: "glowing barrel", centre: [2.3, 15.5], half: [1.2, 1.2] };
 pub const NO_AIR: Zone = Zone { name: "no air", centre: [2.3, 18.0], half: [1.2, 1.2] };
 
@@ -76,8 +78,11 @@ pub fn spicy_irradiated(rods: &[RodSpot], bodies: &[(PlayerId, DVec3)], radius: 
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Update, spawn_vacuum_room.after(super::spawn_devices).in_set(crate::phases::Frame::World));
-    let pads = [(&HOT_PLATE, "hazard_hot_plate", [0.95, 0.45, 0.1]), (&GLOW_BARREL, "hazard_glow_barrel", [0.3, 0.9, 0.3]), (&NO_AIR, "hazard_no_air", [0.2, 0.4, 0.95])];
-    for (z, id, colour) in pads {
+    let pads = [(&HOT_PLATE, "hazard_hot_plate", [0.95, 0.45, 0.1], true), (&GLOW_BARREL, "hazard_glow_barrel", [0.3, 0.9, 0.3], GLOW_BARREL_ON), (&NO_AIR, "hazard_no_air", [0.2, 0.4, 0.95], true)];
+    for (z, id, colour, placed) in pads {
+        if !placed {
+            continue;
+        }
         app.world_mut().resource_mut::<DevAreaDevices>().add(PlaceholderBox {
             id: id.into(),
             zone: HAZARDS,
@@ -88,9 +93,11 @@ pub fn plugin(app: &mut App) {
             panel: None,
         });
     }
-    app.add_systems(FixedUpdate, put_spicy_rod.in_set(crate::phases::Fx::Effects));
+    // Parked (#306 Parkplatz): the spicy rod is not put by the barrel; re-add this system to bring it back.
+    // app.add_systems(FixedUpdate, put_spicy_rod.in_set(crate::phases::Fx::Effects));
 }
 
+#[allow(dead_code)] // parked (#306 Parkplatz)
 fn put_spicy_rod(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, mut items: ResMut<Items>, ships: Query<(), With<crate::ship::Ship>>, mut done: Local<bool>) {
     if *done || ships.is_empty() {
         return;

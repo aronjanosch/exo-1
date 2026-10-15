@@ -1,9 +1,9 @@
 {
   "_comment": "The ship's hull and life support: the walls and their breaches, hits, the room alarms, the airlock and the air. Whether the outside has air is not here: that is the world's (planet atmosphere and height). Every number is a starting value, TODO(initiator).",
   "hull": {
-    "_comment": "Hull breach (r37, Barotrauma Structure.cs:53 LeakThreshold 0.1 and the gap openness at :1350): breach_area_m2 is the hole when fully open (m², fire_core's leak to space: a full hole empties the 256 m³ room from full to the 0.3 bad-air line in about 2.6 min with the door shut and no generator); blast_breach_damage is the wall's damage the meltdown blast and the HULL BREACH dev fault set (0..1; the hole opens from 0.1 damage up to fully open at 1). The wrench mends it by hold at the pump's fix speed (room.pump.fix_slow_s). r40: the walls are eight sections (reactor_core hull.rs, Barotrauma's gap openness per section, one leak each); the blast damages the sections near the reactor by falloff, the HULL BREACH dev fault sets the nearest one, and the hold mends the damaged section nearest the patch the wrench is aimed at. The HIT LIGHT and HIT HEAVY presets are in the hits block.",
-    "breach_area_m2": 0.5,
-    "blast_breach_damage": 0.6,
+    "_comment": "Hull breach (r37, Barotrauma Structure.cs:53 LeakThreshold 0.1 and the gap openness at :1350): breach_area_m2 is the hole when fully open (m², fire_core's leak to space: a full hole empties the 256 m³ room from full to the 0.3 bad-air line in about 2.6 min with the door shut and no generator); blast_breach_damage is the wall's damage the meltdown blast and the HULL BREACH dev fault set (0..1; the hole opens from 0.1 damage up to fully open at 1). The wrench mends it by hold at the pump's fix speed (room.pump.fix_slow_s). r40: the walls are eight sections (reactor_core hull.rs, Barotrauma's gap openness per section, one leak each); the blast damages the sections near the reactor by falloff, the HULL BREACH dev fault sets the nearest one, and the hold mends the damaged section nearest the patch the wrench is aimed at. The HIT LIGHT and HIT HEAVY presets are in the hits block. Parked (#306 Parkplatz): breach_area_m2 was 0.5 and blast_breach_damage was 0.6 (now 0).",
+    "breach_area_m2": 0.0,
+    "blast_breach_damage": 0.0,
     "hit_fire_size": 0.1
   },
   "hits": {

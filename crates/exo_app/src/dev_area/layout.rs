@@ -8,9 +8,6 @@
 //! zone outside (`ROLE_ZONES`): the same screens (same panel, same ship) and dummy housings, to look
 //! at a role's machines quickly. TODO(initiator): sizes and order are greybox values (#306).
 use super::*;
-use crate::dev_area::bridge::captain_screen;
-use crate::dev_area::engineering::startup_screen;
-use crate::dev_area::hull::status_monitor;
 use crate::displays::DisplayPanel;
 use reactor_core::Source;
 
@@ -118,24 +115,17 @@ pub struct Mount {
     pub turn: f64,
 }
 
-use crate::dev_area::bridge::panels as bridge_panels;
 use crate::dev_area::engineering::panels as engineering_panels;
 use crate::dev_area::hull::panels as hull_panels;
-use crate::dev_area::turrets::panels as turret_panels;
 
 /// The wall screens. A screen's turn is the way it faces: 0 south, 90 east, 180 north, -90 west.
 pub const SCREENS: &[Mount] = &[
-    // The engine room: the reactor's readout and RX-02 by the reactor, the pump's on the pump, the
-    // junction box, AUX and the battery on the south wall, ST-01 on the east wall, SP-01 and the
-    // engine room's vent on the west wall.
+    // The engine room: the reactor's readout by the reactor, the pump's on the pump, the junction
+    // box on the south wall, the engine room's vent on the west wall. Parked (#306 Parkplatz): RX-02,
+    // AUX, the battery, ST-01 and SP-01 (their `Mount` lines are in git history, commit of #306).
     Mount { id: engineering_panels::READOUT_ID, name: engineering_panels::READOUT_NAME, at: REACTOR_SCREEN_AT, lift: REACTOR_SCREEN_LIFT, size: READOUT_SIZE, turn: 180.0 },
-    Mount { id: engineering_panels::STATUS_ID, name: engineering_panels::STATUS_NAME, at: STATUS_AT, lift: STATUS_LIFT, size: STATUS_SIZE, turn: 180.0 },
     Mount { id: engineering_panels::PUMP_ID, name: engineering_panels::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: engineering_panels::JUNCTION_ID, name: engineering_panels::JUNCTION_NAME, at: JUNCTION_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: engineering_panels::AUX_ID, name: engineering_panels::AUX_NAME, at: AUX_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: engineering_panels::BATTERY_ID, name: engineering_panels::BATTERY_NAME, at: BATTERY_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: status_monitor::ID, name: status_monitor::NAME, at: MONITOR_AT, lift: status_monitor::LIFT, size: status_monitor::SIZE, turn: -90.0 },
-    Mount { id: startup_screen::ID, name: startup_screen::NAME, at: STARTUP_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 90.0 },
     Mount { id: hull_panels::VENT_ENGINE_ID, name: hull_panels::VENT_ENGINE_NAME, at: VENT_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
     // The corridor: ER-01 and the corridor's vent on the south wall, BD-01 and the airlock's inner
     // panel on the north wall; the outer panel inside the airlock.
@@ -144,14 +134,9 @@ pub const SCREENS: &[Mount] = &[
     Mount { id: hull_panels::BRIDGE_DOOR_ID, name: hull_panels::BRIDGE_DOOR_NAME, at: BRIDGE_DOOR_PANEL_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
     Mount { id: hull_panels::AIRLOCK_INNER_ID, name: hull_panels::AIRLOCK_INNER_NAME, at: AIRLOCK_PANEL_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
     Mount { id: hull_panels::AIRLOCK_OUTER_ID, name: hull_panels::AIRLOCK_OUTER_NAME, at: AIRLOCK_PANEL_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
-    // The bridge: the captain and the pilot share it.
-    Mount { id: bridge_panels::HELM_ID, name: bridge_panels::HELM_NAME, at: HELM_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
-    Mount { id: bridge_panels::JUMP_ID, name: bridge_panels::JUMP_NAME, at: JUMP_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
-    Mount { id: bridge_panels::SHIELD_ID, name: bridge_panels::SHIELD_NAME, at: SHIELD_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 90.0 },
-    Mount { id: captain_screen::ID, name: captain_screen::NAME, at: CAPTAIN_AT, lift: VENT_LIFT, size: captain_screen::SIZE, turn: -90.0 },
+    // The bridge: only its vent. Parked (#306 Parkplatz): the helm, JD-01, the shield and CP-01.
     Mount { id: hull_panels::VENT_BRIDGE_ID, name: hull_panels::VENT_BRIDGE_NAME, at: BRIDGE_VENT_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
-    // The turret room.
-    Mount { id: turret_panels::GUNNERY_ID, name: turret_panels::GUNNERY_NAME, at: GUNNERY_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
+    // The turret room: empty. Parked (#306 Parkplatz): GN-01 and the gun's housing (`TURRET_GUN`).
 ];
 
 pub const DOOR: &str = "engine_door";
@@ -246,7 +231,6 @@ const PARTS: &[Part] = &[
 /// The machines' housings: the engine room's, and the gun's breech in the turret room (west of GN-01,
 /// off the walk from the doorway to the screen). TODO(initiator): the gun's place and size.
 const MACHINES: &[Part] = &[
-    Part { id: TURRET_GUN, at: [-9.7, -4.2], size: [1.2, 1.6, 1.4], lift: 0.0, colour: [0.35, 0.3, 0.32] },
     Part { id: REACTOR, at: REACTOR_AT, size: REACTOR_SIZE, lift: 0.0, colour: [0.55, 0.3, 0.2] },
     Part { id: COOLANT_PUMP, at: COOLANT_PUMP_AT, size: COOLANT_PUMP_SIZE, lift: 0.0, colour: DEVICE_COLOUR },
     Part { id: JUNCTION_BOX, at: JUNCTION_BOX_AT, size: JUNCTION_BOX_SIZE, lift: 0.0, colour: [0.85, 0.7, 0.2] },

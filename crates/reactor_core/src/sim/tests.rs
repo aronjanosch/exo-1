@@ -122,7 +122,17 @@ fn assert_manual_matches(mut ours: Reactor) {
 }
 
 fn trace_of(name: &str, sample_every_s: f64) -> (Trace, EngineRoom) {
-    let t = shipped();
+    trace_of_with(name, sample_every_s, shipped())
+}
+
+/// The overvolt tests switch the hits back on: the shipped value is 0 (parked, #306 Parkplatz; it was 0.6).
+fn trace_of_hits(name: &str, sample_every_s: f64) -> (Trace, EngineRoom) {
+    let mut t = shipped();
+    t.room.overvolt_hits_per_s = 0.6;
+    trace_of_with(name, sample_every_s, t)
+}
+
+fn trace_of_with(name: &str, sample_every_s: f64, t: Tuning) -> (Trace, EngineRoom) {
     let script = scripts()
         .into_iter()
         .find(|s| s.name == name)
@@ -143,7 +153,7 @@ fn row_at(trace: &Trace, t: f64) -> &Row {
 /// optimal band for a while. No meltdown.
 #[test]
 fn load_drop_overvolts_the_junction_box_and_auto_overshoots() {
-    let (trace, room) = trace_of("load_drop", 5.0);
+    let (trace, room) = trace_of_hits("load_drop", 5.0);
     assert!(room.junction().condition().value() < 100.0);
     assert!(!trace.melted);
 }
@@ -269,7 +279,7 @@ fn pulling_both_rods_at_temp_critical_brakes_the_core() {
 /// The overvolt: full turbine and fission with the engines and lights off (400 kW asked, 2000 made):
 #[test]
 fn overvolt_turbine_max_damages_the_junction_box() {
-    let (trace, room) = trace_of("overvolt_turbine_max", 5.0);
+    let (trace, room) = trace_of_hits("overvolt_turbine_max", 5.0);
     let vmax = trace.rows.iter().map(|r| r.volt).fold(0.0, f64::max);
     println!("overvolt_turbine_max: max volt {vmax:.2}, junction at end {:.1}", room.junction().condition().value());
     assert!(room.junction().condition().value() < 100.0, "the box is not damaged");

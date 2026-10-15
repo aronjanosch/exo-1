@@ -1,9 +1,8 @@
-//! Fuel rods by hand: load, brake pull, and the spicy rod's radiation.
+//! Fuel rods by hand: load and brake pull (the plain rod; the hot and spicy rods are parked, #306 Parkplatz).
 use super::*;
 use crate::controls::Controls;
 use crate::dev_area::engineering::coolant::HOLD_S;
 use crate::dev_area::{layout::{REACTOR_AT, ROOM}};
-use crate::dev_area::hazards::{GLOW_BARREL, SPICY_AT};
 use crate::dev_area::ship::ReactorSim;
 use crate::dev_area::engineering::rods::RACK_AT;
 use crate::dev_area::DevArea;
@@ -38,6 +37,7 @@ fn hot_above(w: &World) -> f64 {
     w.resource::<ReactorSim>().room.reactor().bands().temp_optimal.hi
 }
 
+#[allow(dead_code)] // parked (#306 Parkplatz): the spicy rod steps
 fn radiation(w: &World) -> f64 {
     w.resource::<HealthState>().bodies.get(&LOCAL).map_or(0.0, |b| b.health.strength("radiation"))
 }
@@ -90,7 +90,7 @@ pub(super) fn rods_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         begin(w, c, "rods: the rack and the host's body for the walker");
         w.resource_mut::<Items>().delay = super::items::DELAY;
-        let ready = w.resource::<DevArea>().frame.is_some() && outside(w, "fuel_rod_hot").is_some() && w.resource::<HealthState>().bodies.contains_key(&LOCAL);
+        let ready = w.resource::<DevArea>().frame.is_some() && outside(w, "fuel_rod").is_some() && w.resource::<HealthState>().bodies.contains_key(&LOCAL);
         if !ready && c.t < 5.0 {
             return false;
         }
@@ -100,13 +100,13 @@ pub(super) fn rods_steps(s: &mut Vec<Step>) {
         end(w, c, "at the rack".into());
         true
     }));
-    s.extend(collect("fuel_rod_hot", "Hot fuel rod"));
+    s.extend(collect("fuel_rod", "Fuel rod"));
     s.push(run("rods: the rod is in the bar", 2.0, |w, c| {
-        let n = items(w).client.view.count("fuel_rod_hot");
+        let n = items(w).client.view.count("fuel_rod");
         check(c, n == 1, format!("rods: one rod in the bar ({n})"));
         Some(format!("{n} in the bar"))
     }));
-    s.push(select("rods: the rod is selected", Some("fuel_rod_hot")));
+    s.push(select("rods: the rod is selected", Some("fuel_rod")));
 
     s.push(run("rods: the walker stands at the reactor", 3.0, |w, c| {
         if c.t == 0.0 {
@@ -137,7 +137,7 @@ pub(super) fn rods_steps(s: &mut Vec<Step>) {
             w.resource_mut::<Controls>().primary_held = false;
             let n = rods_in_reactor(w);
             check(c, n == c.v["n0"] as usize + 1, format!("rods: the reactor has one rod more ({} -> {n})", c.v["n0"]));
-            check(c, items(w).client.view.count("fuel_rod_hot") == 0, "rods: the rod is gone from the bar".into());
+            check(c, items(w).client.view.count("fuel_rod") == 0, "rods: the rod is gone from the bar".into());
             Some(format!("{n} rods"))
         }
     }));
@@ -191,14 +191,14 @@ pub(super) fn rods_steps(s: &mut Vec<Step>) {
         w.resource_mut::<Controls>().primary_held = false;
         let n = rods_in_reactor(w);
         check(c, n + 1 == c.v["p0"] as usize, format!("rods: one rod less in the reactor ({} -> {n})", c.v["p0"]));
-        check(c, items(w).client.view.count("fuel_rod_hot") == 1, "rods: the pulled rod is in the hand".into());
+        check(c, items(w).client.view.count("fuel_rod") == 1, "rods: the pulled rod is in the hand".into());
         Some(format!("{n} rods"))
     }));
     s.push(run("rods: the pulled rod keeps its life and the hand burns", 3.0, |w, c| {
         if c.t < 0.5 {
             return None;
         }
-        let slot = (0..8).find(|&i| items(w).client.view.slot(i).is_some_and(|s| s.item.kind.as_str() == "fuel_rod_hot")).unwrap_or(0);
+        let slot = (0..8).find(|&i| items(w).client.view.slot(i).is_some_and(|s| s.item.kind.as_str() == "fuel_rod")).unwrap_or(0);
         let life = items(w).client.view.slot(slot).and_then(|s| s.item.condition).unwrap_or(-1.0);
         // The most life there was when the hold began (the rods burn a little meanwhile).
         check(c, (life - c.v["life0"]).abs() < 2.0, format!("rods: the pulled rod keeps its life ({life:.1}, the most there was {:.1})", c.v["life0"]));
@@ -206,7 +206,7 @@ pub(super) fn rods_steps(s: &mut Vec<Step>) {
         check(c, available(w) < c.v["fuel0"], format!("rods: the available fuel falls ({:.0} -> {:.0})", c.v["fuel0"], available(w)));
         Some(format!("life {life:.0}"))
     }));
-    s.push(select("rods: the pulled rod is selected", Some("fuel_rod_hot")));
+    s.push(select("rods: the pulled rod is selected", Some("fuel_rod")));
     s.push(run("rods: G drops the rod", 3.0, |w, c| {
         if c.t == 0.0 {
             tap(w, KeyCode::KeyG);
@@ -215,48 +215,10 @@ pub(super) fn rods_steps(s: &mut Vec<Step>) {
         if c.t < 0.5 {
             return None;
         }
-        check(c, items(w).client.view.count("fuel_rod_hot") == 0, "rods: the hand is empty after G".into());
-        check(c, outside(w, "fuel_rod_hot").is_some(), "rods: the rod lies on the floor".into());
+        check(c, items(w).client.view.count("fuel_rod") == 0, "rods: the hand is empty after G".into());
+        check(c, outside(w, "fuel_rod").is_some(), "rods: the rod lies on the floor".into());
         Some("dropped".into())
     }));
 
-    s.push(run("rods: the spicy rod lies by the barrel", 8.0, |w, c| {
-        if outside(w, "fuel_rod_spicy").is_none() {
-            return None;
-        }
-        check(c, true, "rods: the spicy rod lies on the floor".into());
-        Some("there".into())
-    }));
-    s.push(run("rods: the walker stands east of the spicy rod, out of the glow", 3.0, |w, c| {
-        if c.t == 0.0 {
-            let feet = ground(w, GLOW_BARREL.point([SPICY_AT[0] + 0.95, SPICY_AT[1]]), 0.0);
-            place_walker(w, feet);
-        }
-        let rod = ground(w, GLOW_BARREL.point(SPICY_AT), 0.3);
-        look_at(w, rod);
-        if c.t < 0.5 {
-            return None;
-        }
-        Some("beside the rod".into())
-    }));
-    s.extend(collect("fuel_rod_spicy", "Spicy fuel rod"));
-    s.push(run("rods: the spicy rod is in the bar and the walker holds it", 3.0, |w, c| {
-        if c.t < 0.5 {
-            return None;
-        }
-        let n = items(w).client.view.count("fuel_rod_spicy");
-        check(c, n == 1, format!("rods: one spicy rod in the bar ({n})"));
-        Some("held".into())
-    }));
-    s.push(run("rods: holding the spicy rod 3 s raises the radiation by about 3", 6.0, |w, c| {
-        if c.t == 0.0 {
-            c.v.insert("rad0", radiation(w));
-            return None;
-        }
-        if c.t < 3.0 {
-            return None;
-        }
-        let rose = radiation(w) - c.v["rad0"];
-        Some(format!("+{rose:.2}"))
-    }));
+    // Parked (#306 Parkplatz): the spicy rod by the glow barrel is not placed, so its steps (collect, 3 s radiation) are off.
 }

@@ -83,7 +83,7 @@
     "efficiency": 0.95
   },
   "grid": {
-    "_comment": "Engines (r38, Barotrauma Engine.cs, engine.rs): the force follows the throttle at 10 per second, the demand is the grid's engines demand at full force times (|force| / 100)^1.5, the thrust (%) is |force| times the voltage (at most 1) times a condition factor from 0.5 to 1, and it is 0 below voltage 0.5. TODO(initiator): the condition factor's floor. grid: demand kW at full work (demands: Barotrauma's engine 2000 and oxygen generator 1000 of a 5000 kW reactor, scaled to our 2000 kW: engines 800, life support 400, lights 80, so a full sub draws about 64 %), priority (higher is served first) and min_ratio (0..1, the share below which the group switches off). A group's breaker is on or off in play, not in this file. limit (0..1, default 1, #300, PULSAR's conduit limit) is the start value of a group's limit: the request is demand times limit, so 0.6 caps the group at 60 % and scales its efficiency; 0 is off. The limit is set in play, the file gives the start (TODO(initiator): start values, all 1 for now). Shields, weapons and jump drive (the shield, the gun and the jump drive draw power now; the file gives what they ask at full work): PULSAR's four conduits and Barotrauma's turret power (design: concept repo docs/design/ship.md, row \"Power routing\"). TODO(initiator): all demands, priorities and minimum ratios.",
+    "_comment": "Engines (r38, Barotrauma Engine.cs, engine.rs): the force follows the throttle at 10 per second, the demand is the grid's engines demand at full force times (|force| / 100)^1.5, the thrust (%) is |force| times the voltage (at most 1) times a condition factor from 0.5 to 1, and it is 0 below voltage 0.5. TODO(initiator): the condition factor's floor. grid: demand kW at full work (demands: Barotrauma's engine 2000 and oxygen generator 1000 of a 5000 kW reactor, scaled to our 2000 kW: engines 800, life support 400, lights 80, so a full sub draws about 64 %), priority (higher is served first) and min_ratio (0..1, the share below which the group switches off). A group's breaker is on or off in play, not in this file. limit (0..1, default 1, #300, PULSAR's conduit limit) is the start value of a group's limit: the request is demand times limit, so 0.6 caps the group at 60 % and scales its efficiency; 0 is off. The limit is set in play, the file gives the start (TODO(initiator): start values, all 1 for now). Shields, weapons and jump drive (the shield, the gun and the jump drive draw power now; the file gives what they ask at full work): PULSAR's four conduits and Barotrauma's turret power (design: concept repo docs/design/ship.md, row \"Power routing\"). TODO(initiator): all demands, priorities and minimum ratios. Parked (#306 Parkplatz): demand_kw of shields was 300.0, weapons 400.0, jump_drive 400.0 (now 0).",
     "engines": {
       "demand_kw": 800.0,
       "priority": 2,
@@ -103,19 +103,19 @@
       "limit": 1.0
     },
     "shields": {
-      "demand_kw": 300.0,
+      "demand_kw": 0.0,
       "priority": 2,
       "min_ratio": 0.3,
       "limit": 1.0
     },
     "weapons": {
-      "demand_kw": 400.0,
+      "demand_kw": 0.0,
       "priority": 2,
       "min_ratio": 0.5,
       "limit": 1.0
     },
     "jump_drive": {
-      "demand_kw": 400.0,
+      "demand_kw": 0.0,
       "priority": 1,
       "min_ratio": 0.5,
       "limit": 1.0
@@ -126,7 +126,7 @@
     "boot_s": 3.0
   },
   "room": {
-    "_comment": "Pump leak (r36, our curve on Barotrauma's condition-squared shape): below 50 % pump condition the pump leaks coolant out of the tank, running or not, at pump_leak_max * (1 - c / 0.5)^2 of the tank per second (c = condition 0..1); 0.01 drains a full tank in about 100 s at condition 0; TODO(initiator): pump_leak_max value and whether 50 % is the line. room: the coolant pump and the junction box use the device values (device_core: max, repair_threshold, broken_below, factor_at_broken, fix times in s, required_skill, fail_chance, fail_cost, fail_lockout_s, wear_rate, wear_floor, wear_delay_s as a [from, to] range, idle_wear, overload_wear). Overvoltage (Barotrauma PowerTransfer.cs:245-292): supply above overvolt_ratio times the load overloads the junction box; while overloaded, overvolt_hits_per_s random hits take condition (each rand 10..500 / 60, more at low condition, Barotrauma style), and the hit that breaks the box gives sparks and, with break_fire_chance, a fire. sparks_per_s are small sparks while overloaded, our touch. coolant_* are the pump's tank: use in percent per second (base, and per unit of reactor heat at full flow), the LOW line, and what one canister adds. pump_* are the pump's modes (#300, PULSAR's Off, Low, High): pump_low is the speed Low settles at (High settles at 1, Off at 0); pump_spin_up_s and pump_run_down_s are the time constants of the speed (63 % of the gap closed in that time); pump_use_low and pump_use_high scale the coolant use of the mode (use per heat times this times the pump's stream; High drains pump_use_high / pump_use_low times as fast as Low). The pump has a backup supply (our touch): with the reactor delivering nothing it runs at full factor; while the reactor delivers, its flow falls with the junction box's voltage (a short grid). Aux reactor (#300, PULSAR manual 325-337: auxiliary systems are not connected to the main reactor or its temperature): aux_enabled (false here) puts Life Support and Lights on the aux reactor, whose output is aux_output_kw; the main grid then carries the Engines group only, and what the aux groups leave of the aux output boosts the main reactor's maximum output. TODO(initiator): both values and the default. r37: the generator has a condition (room.oxygen_generator, the pump's device values, TODO(initiator)); it wears only while life support has at least 0.5 power, its flow is rate * power * condition^2 (Barotrauma OxygenGenerator.cs:55-59), and a blast breaks it.",
+    "_comment": "Pump leak (r36, our curve on Barotrauma's condition-squared shape): below 50 % pump condition the pump leaks coolant out of the tank, running or not, at pump_leak_max * (1 - c / 0.5)^2 of the tank per second (c = condition 0..1); 0.01 drains a full tank in about 100 s at condition 0; TODO(initiator): pump_leak_max value and whether 50 % is the line. room: the coolant pump and the junction box use the device values (device_core: max, repair_threshold, broken_below, factor_at_broken, fix times in s, required_skill, fail_chance, fail_cost, fail_lockout_s, wear_rate, wear_floor, wear_delay_s as a [from, to] range, idle_wear, overload_wear). Overvoltage (Barotrauma PowerTransfer.cs:245-292): supply above overvolt_ratio times the load overloads the junction box; while overloaded, overvolt_hits_per_s random hits take condition (each rand 10..500 / 60, more at low condition, Barotrauma style), and the hit that breaks the box gives sparks and, with break_fire_chance, a fire. sparks_per_s are small sparks while overloaded, our touch. coolant_* are the pump's tank: use in percent per second (base, and per unit of reactor heat at full flow), the LOW line, and what one canister adds. pump_* are the pump's modes (#300, PULSAR's Off, Low, High): pump_low is the speed Low settles at (High settles at 1, Off at 0); pump_spin_up_s and pump_run_down_s are the time constants of the speed (63 % of the gap closed in that time); pump_use_low and pump_use_high scale the coolant use of the mode (use per heat times this times the pump's stream; High drains pump_use_high / pump_use_low times as fast as Low). The pump has a backup supply (our touch): with the reactor delivering nothing it runs at full factor; while the reactor delivers, its flow falls with the junction box's voltage (a short grid). Aux reactor (#300, PULSAR manual 325-337: auxiliary systems are not connected to the main reactor or its temperature): aux_enabled (false here) puts Life Support and Lights on the aux reactor, whose output is aux_output_kw; the main grid then carries the Engines group only, and what the aux groups leave of the aux output boosts the main reactor's maximum output. TODO(initiator): both values and the default. r37: the generator has a condition (room.oxygen_generator, the pump's device values, TODO(initiator)); it wears only while life support has at least 0.5 power, its flow is rate * power * condition^2 (Barotrauma OxygenGenerator.cs:55-59), and a blast breaks it. Parked (#306 Parkplatz): overvolt_hits_per_s was 0.6 and pump_leak_max was 0.01 (now 0).",
     "heat_wear_degrees": 10.0,
     "pump": {
       "max": 100.0,
@@ -189,7 +189,7 @@
       "overload_wear": 4.0
     },
     "overvolt_ratio": 2.0,
-    "overvolt_hits_per_s": 0.6,
+    "overvolt_hits_per_s": 0.0,
     "break_fire_chance": 0.15,
     "sparks_per_s": 0.1,
     "spark_fire_size": 0.05,
@@ -198,7 +198,7 @@
     "coolant_use_per_heat": 0.0013,
     "coolant_low": 25.0,
     "coolant_canister": 50.0,
-    "pump_leak_max": 0.01,
+    "pump_leak_max": 0.0,
     "ecool_tank_cost": 25.0,
     "ecool_duration_s": 10.0,
     "ecool_strength": 60.0,

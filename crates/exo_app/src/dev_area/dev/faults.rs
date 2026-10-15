@@ -40,7 +40,6 @@ pub const FAULTS_AT: [f64; 2] = [-1.0, -1.0];
 pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
     let aux = if r.is_some_and(|r| r.aux_on) { "AUX ON" } else { "AUX OFF" };
     let director = if r.is_some_and(|r| r.director) { "DIRECTOR ON" } else { "DIRECTOR OFF" };
-    let ambush = if r.is_some_and(ambush_running) { "AMBUSH ON" } else { "AMBUSH OFF" };
     let bots = r.map_or(0, |r| r.bot_count);
     let col = |items: Vec<_>| column(4.0, items);
     Panel::screen(
@@ -70,7 +69,8 @@ pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
                     button("Shield hit", "shield_hit").fixed(24.0),
                     button("Jump full", "jump_full").fixed(24.0),
                 ]),
-                col(vec![button(ambush, "ambush").fixed(24.0), button("COLD SHIP", "cold_ship").fixed(24.0), button(format!("BOTS {bots}"), "bots").fixed(24.0)]),
+                // Parked (#306 Parkplatz): the AMBUSH button (`button(ambush, "ambush")`, "AMBUSH ON"/"AMBUSH OFF"); its ask below still works.
+                col(vec![button("COLD SHIP", "cold_ship").fixed(24.0), button(format!("BOTS {bots}"), "bots").fixed(24.0)]),
             ],
         ),
     )

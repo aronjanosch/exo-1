@@ -19,7 +19,6 @@ pub enum Action {
         turbine: f64,
     },
     Power(bool),
-    Scram,
     /// The coolant pump's switch: on is High, off is Off.
     Pump(bool),
     PumpMode(PumpMode),
@@ -32,8 +31,8 @@ pub enum Action {
     RepairPump,
     /// Puts a standard rod into a free slot (a full slot list refuses it silently).
     InsertRod,
-    /// Waits, then SCRAMs once the meltdown timer (0..1) is above this.
-    ScramWhenMeltdownAbove(f64),
+    /// Waits, then powers the reactor off once the meltdown timer (0..1) is above this.
+    PowerOffWhenMeltdownAbove(f64),
     /// Waits for the core to melt, then runs the inner action `delay` seconds later (once).
     AfterMeltdown(f64, Box<Action>),
     /// Waits for the alarm to be on, then runs the inner action (once per armed action).
@@ -203,10 +202,10 @@ pub fn scripts() -> Vec<Script> {
             steps: vec![(10.0, Action::SetTank(0.0))],
         },
         Script {
-            name: "scram_last_second",
+            name: "off_last_second",
             duration_s: 300.0,
             steps: vec![
-                (0.0, Action::ScramWhenMeltdownAbove(0.9)),
+                (0.0, Action::PowerOffWhenMeltdownAbove(0.9)),
                 (10.0, Action::Fault(Fault::PumpBreak)),
             ],
         },
@@ -290,7 +289,7 @@ pub fn scripts() -> Vec<Script> {
                 (61.0, Action::MeltNow),
             ],
         },
-        // The brake (no SCRAM): the operator holds fission and turbine at 100 (Manual), the pump breaks
+        // The brake (rods): the operator holds fission and turbine at 100 (Manual), the pump breaks
         // at 10 s, and at TempCritical both rods come out.
         Script {
             name: "pull_rods_brake",
@@ -320,12 +319,12 @@ pub fn scripts() -> Vec<Script> {
             ],
         },
         Script {
-            name: "scram_at_temp_high",
+            name: "off_at_temp_high",
             duration_s: 300.0,
             steps: vec![
                 (10.0, Action::Manual { fission: 100.0, turbine: 100.0 }),
                 (10.0, Action::Fault(Fault::PumpBreak)),
-                (0.0, Action::OnAlarm(AlarmKind::TempHigh, Box::new(Action::Scram))),
+                (0.0, Action::OnAlarm(AlarmKind::TempHigh, Box::new(Action::Power(false)))),
             ],
         },
         Script {
@@ -347,7 +346,7 @@ pub fn run(room: &mut EngineRoom, script: &Script, dt: f64, sample_every_s: f64)
     let mut runner = Runner {
         input: Input::auto(),
         armed_alarm: Vec::new(),
-        armed_scram: Vec::new(),
+        armed_off: Vec::new(),
         armed_melt: Vec::new(),
         melt_seen: false,
         due: Vec::new(),
@@ -393,10 +392,10 @@ pub fn run(room: &mut EngineRoom, script: &Script, dt: f64, sample_every_s: f64)
             }
         }
         let mut i = 0;
-        while i < runner.armed_scram.len() {
-            if room.reactor().timers().1 > runner.armed_scram[i] {
-                runner.armed_scram.remove(i);
-                runner.apply(room, &Action::Scram);
+        while i < runner.armed_off.len() {
+            if room.reactor().timers().1 > runner.armed_off[i] {
+                runner.armed_off.remove(i);
+                runner.apply(room, &Action::Power(false));
             } else {
                 i += 1;
             }
@@ -416,7 +415,7 @@ pub fn run(room: &mut EngineRoom, script: &Script, dt: f64, sample_every_s: f64)
 struct Runner {
     input: Input,
     armed_alarm: Vec<(AlarmKind, Action)>,
-    armed_scram: Vec<f64>,
+    armed_off: Vec<f64>,
     armed_melt: Vec<(f64, Action)>,
     melt_seen: bool,
     due: Vec<(f64, Action)>,
@@ -426,8 +425,8 @@ struct Runner {
 impl Runner {
     fn apply(&mut self, room: &mut EngineRoom, action: &Action) {
         match action {
-            Action::ScramWhenMeltdownAbove(x) => {
-                self.armed_scram.push(*x);
+            Action::PowerOffWhenMeltdownAbove(x) => {
+                self.armed_off.push(*x);
                 return;
             }
             Action::AfterMeltdown(delay, inner) => {
@@ -447,7 +446,6 @@ impl Runner {
             Action::Power(on) => {
                 room.set_power(*on);
             }
-            Action::Scram => room.reactor_mut().scram(),
             Action::Pump(on) => room.set_pump(*on),
             Action::PumpMode(mode) => room.set_pump_mode(*mode),
             Action::Breaker(g, on) => room.set_breaker(*g, *on),
@@ -494,7 +492,7 @@ impl Runner {
                     self.pending.push(label(&e));
                 }
             }
-            Action::ScramWhenMeltdownAbove(_) | Action::AfterMeltdown(..) | Action::OnAlarm(..) => {}
+            Action::PowerOffWhenMeltdownAbove(_) | Action::AfterMeltdown(..) | Action::OnAlarm(..) => {}
         }
     }
 }

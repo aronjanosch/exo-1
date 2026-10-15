@@ -585,7 +585,7 @@ impl EngineRoom {
     }
 
     /// The pump's power factor, 0..1 (Barotrauma `Pump.cs:152`, `powerFactor`). With the reactor
-    /// delivering nothing (off, cold start, SCRAM, broken) the pump runs on its backup supply at 1.
+    /// delivering nothing (off, cold start, broken) the pump runs on its backup supply at 1.
     /// Otherwise it is the junction box's voltage of the last step, clamped to 0..1: a short grid
     /// slows the pump, and a broken box (which passes nothing) stops it.
     pub fn power_factor(&self) -> f64 {

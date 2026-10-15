@@ -264,17 +264,18 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    s.push(click_until(READOUT_ID, "scram", None, "reactor: SCRAM from the readout cuts the output and the power", |w| !sim(w).room.reactor().power_on()));
+    s.push(click_until(READOUT_ID, "power", None, "reactor: POWER off at the readout cuts the output and the power", |w| !sim(w).room.reactor().power_on()));
     s.push(Box::new(|w, c| {
-        if c.t < 3.0 {
+        // Fission follows its target with the lag (4 s): it is near 0 after about 15 s, not at once.
+        if c.t < 15.0 {
             return false;
         }
         let r = sim(w).room.reactor();
         let (power, output, fission) = (r.power_on(), r.output_kw(), r.fission());
         let powered = w.resource::<Items>().reactor.is_some_and(|n| n.powered);
-        check(c, !power && output == 0.0 && fission == 0.0, format!("reactor: SCRAM: power {power}, output {output:.1}, fission {fission:.1}"));
-        check(c, !powered, "reactor: the machines have no power after SCRAM".into());
-        end(w, c, "scrammed".into());
+        check(c, !power && output == 0.0 && fission < 1.0, format!("reactor: POWER off: power {power}, output {output:.1}, fission {fission:.1}"));
+        check(c, !powered, "reactor: the machines have no power after POWER off".into());
+        end(w, c, "powered off".into());
         true
     }));
 

@@ -101,7 +101,7 @@ pub enum Widget {
     /// Text; `size` is the font size in panel pixels; `mono` draws it in the readout font.
     Label { text: String, tone: Tone, size: f64, mono: bool },
     /// A press and release over it gives a click with `action` (no value). Disabled: no hover, no
-    /// click. `tone` Warn or Bad colours it (a SCRAM button); Good is the selected look (the active
+    /// click. `tone` Warn or Bad colours it (a red button); Good is the selected look (the active
     /// mode of a row of buttons, drawn like a toggle's accent segment).
     Button { label: String, enabled: bool, action: String, tone: Tone },
     /// A gauge 0..1 with optional thresholds (`level`); `label` is a small caption (may be empty).

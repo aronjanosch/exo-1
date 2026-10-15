@@ -46,33 +46,34 @@ fn overheating_starts_a_fire_and_nothing_shuts_the_reactor_down() {
 }
 
 #[test]
-fn scram_drops_fission_and_power_at_once_and_the_temperature_falls() {
+fn power_off_drops_fission_over_seconds_and_the_temperature_falls() {
     let mut r = reactor(50.0);
     run(&mut r, 120.0, 500.0);
     assert!(r.output_kw() > 400.0);
-    r.scram();
+    r.set_power(false);
     assert!(!r.power_on());
-    assert_eq!(r.fission(), 0.0);
     r.step(DT, 500.0);
     assert_eq!(r.output_kw(), 0.0, "output at once");
     let hot = r.temperature();
     // The glue sends its manual setting every step: with the power off it does not bring fission back.
     r.set_targets(80.0, 50.0);
-    run(&mut r, 5.0, 500.0);
-    assert!(r.fission() < 1e-6, "fission {}", r.fission());
+    // Fission follows its target with the lag (fission_lag_s, 4 s): it is not 0 at once.
+    run(&mut r, 20.0, 500.0);
+    assert!(r.fission() < 1.0, "fission {}", r.fission());
     run(&mut r, 60.0, 500.0);
-    println!("scram at {hot:.1}: 60 s later {:.2}", r.temperature());
+    println!("power off at {hot:.1}: 80 s later {:.2}", r.temperature());
     assert_eq!(r.output_kw(), 0.0);
+    assert!(r.temperature() < hot, "the temperature falls: {hot:.1} -> {:.1}", r.temperature());
     assert!(!r.melted());
 }
 
 #[test]
-fn after_a_scram_the_power_switch_starts_it_again() {
+fn after_power_off_the_power_switch_starts_it_again() {
     let mut r = reactor(50.0);
     run(&mut r, 60.0, 300.0);
-    r.scram();
+    r.set_power(false);
     run(&mut r, 5.0, 300.0);
-    assert!(r.set_power(true), "no lockout after a scram");
+    assert!(r.set_power(true), "no lockout after power off");
     let ev = run(&mut r, 120.0, 300.0);
     assert!(!ev.iter().any(|(_, e)| matches!(e, ReactorEvent::Fire { .. } | ReactorEvent::Meltdown)));
 }
@@ -158,7 +159,7 @@ fn slots_are_limited() {
     assert!(r.insert_rod(FuelRod::standard()).is_err());
 }
 
-/// The emergency brake (Barotrauma has no SCRAM; pulling a rod is it). The pull returns the rod
+/// The emergency brake (Barotrauma's: pulling a rod). The pull returns the rod
 /// and the core's temperature at that moment, and the fuel it allowed is gone in the same step:
 /// fission is capped to what is left, and the next step's heat already uses the new fuel.
 #[test]
@@ -240,7 +241,7 @@ fn a_melted_reactor_is_restarted_by_a_full_repair() {
 }
 
 #[test]
-fn scram_without_coolant_lets_the_core_cool_below_the_allowed_band() {
+fn power_off_without_coolant_lets_the_core_cool_below_the_allowed_band() {
     let mut r = reactor(50.0);
     r.set_coolant(0.0);
     r.coolant = 0.0;
@@ -251,11 +252,20 @@ fn scram_without_coolant_lets_the_core_cool_below_the_allowed_band() {
         assert!(r.temperature() < 200.0 && !r.melted(), "no critical line reached");
     }
     run(&mut r, 20.0, 500.0);
-    let (_, timer_at_scram) = r.timers();
-    r.scram();
+    r.set_power(false);
+    // Fission falls with its lag, so the core stays above the critical line for a while (the timer
+    // counts up); it cools below it on the decay heat. Wait for that, then the timer counts down.
+    let mut secs = 0.0;
+    while r.alarm(AlarmKind::TempCritical) && secs < 300.0 {
+        ev.extend(run(&mut r, 1.0, 500.0));
+        assert!(!r.melted(), "the core melted while it cooled");
+        secs += 1.0;
+    }
+    assert!(!r.alarm(AlarmKind::TempCritical), "below the allowed band within 300 s, at {:.1}", r.temperature());
+    let (_, timer_below) = r.timers();
     let ev = run(&mut r, 15.0, 500.0);
     let (_, timer_now) = r.timers();
-    assert!(timer_now < timer_at_scram, "the meltdown timer counts down: {timer_at_scram:.3} -> {timer_now:.3}");
+    assert!(timer_now < timer_below, "the meltdown timer counts down: {timer_below:.3} -> {timer_now:.3}");
     assert!(!ev.iter().any(|(_, e)| *e == ReactorEvent::Meltdown) && !r.melted());
 }
 

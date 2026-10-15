@@ -121,8 +121,6 @@ pub fn reactor_panel(s: &ReactorSample) -> Panel {
                         toggle(s.auto, "", "mode").labels("MAN", "AUTO").fixed(ctl::MD),
                         row(0.0, vec![micro("Setpoint"), label(format!("{}%", s.setpoint)).mono().tone(if s.auto { Tone::Dim } else { Tone::Normal }).fixed(60.0)]).fixed(22.0),
                         slider(s.setpoint as f64 / 100.0, "", "setpoint").enabled(!s.auto).fixed(ctl::MD),
-                        space(),
-                        button("SCRAM", "scram").tone(Tone::Bad).fixed(ctl::LG),
                     ],
                 )
                 .fixed(190.0),
@@ -141,10 +139,6 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut lab: ResMut<War
             ("sample_lab", "run", _) => lab.run = !lab.run,
             ("sample_reactor", "mode", Some(v)) => rx.auto = v > 0.5,
             ("sample_reactor", "setpoint", Some(v)) => rx.setpoint = (v as f64 * 100.0).round() as i32,
-            ("sample_reactor", "scram", _) => {
-                rx.auto = false;
-                rx.setpoint = 0;
-            }
             _ => {}
         }
     }

@@ -320,8 +320,7 @@ pub fn readout_panel_at(r: Option<&ReactorNews>, max_kw: f64, t: f64) -> Panel {
         vec![
             toggle(manual, "", "mode").labels("AUTO", "MAN").fixed(ctl::MD),
             toggle(on, "", "power").labels("OFF", "ON").fixed(ctl::MD),
-            // The help button sits beside SCRAM: the header plate has no room for buttons.
-            row(8.0, vec![button("SCRAM", "scram").tone(Tone::Bad).flex(1.0), button("?", HELP_ACTION).fixed(ctl::SM)]).fixed(ctl::LG),
+            button("?", HELP_ACTION).fixed(ctl::LG),
         ],
     );
     let (optimal, allowed) = bands(r);
@@ -346,7 +345,7 @@ enum Target {
     Action(&'static str),
 }
 
-const CALLOUTS: [(f64, f64, [&str; 2], Target); 8] = [
+const CALLOUTS: [(f64, f64, [&str; 2], Target); 7] = [
     (LEFT, 4.0, ["keep the needle in the green", "red too long: core goes bang"], Target::Leaf(0)),
     (RIGHT, 4.0, ["what you make", "vs. what the ship wants"], Target::Leaf(1)),
     (RIGHT, 104.0, ["rods; pull one in a pinch", ""], Target::Leaf(2)),
@@ -354,7 +353,6 @@ const CALLOUTS: [(f64, f64, [&str; 2], Target); 8] = [
     (LEFT, 252.0, ["how much steam makes power", "and how much makes cooling"], Target::Action("tur_set")),
     (RIGHT, 152.0, ["AUTO: the ship has the dial", "MAN: your hand, your fault"], Target::Action("mode")),
     (RIGHT, 200.0, ["the big on switch", "nothing turns without it"], Target::Action("power")),
-    (RIGHT, 292.0, ["the big red no", ""], Target::Action("scram")),
 ];
 const CLOSE_AT: (f64, f64) = (LEFT, 104.0);
 
@@ -957,7 +955,6 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 }
                 "mode" => snap.map(|r| ReactorAsk::SetManual(new_state(r.manual))),
                 "power" => snap.map(|r| ReactorAsk::SetPower(new_state(r.power_on))),
-                "scram" => Some(ReactorAsk::Scram),
                 "fis_set" => c.value.map(|v| ReactorAsk::SetFission(v as f64 * 100.0)),
                 "tur_set" => c.value.map(|v| ReactorAsk::SetTurbine(v as f64 * 100.0)),
                 _ => None,
@@ -1092,7 +1089,7 @@ mod tests {
         let hot = ReactorNews { temp: 85.0, ..news() };
         assert!(crate::effects::is_critical(Some(&hot)));
         let crit = shipped_panel(Some(&hot));
-        for a in ["scram", "power", "mode", "fis_set", "tur_set"] {
+        for a in ["power", "mode", "fis_set", "tur_set"] {
             assert!(crit.find(a).is_some(), "{a} while critical");
         }
         assert_eq!(header(&crit), Some(("CRITICAL".to_string(), Tone::Bad)));
@@ -1100,7 +1097,7 @@ mod tests {
         let off = ReactorNews { power_on: false, ..hot };
         assert!(!crate::effects::is_critical(Some(&off)));
         let normal = shipped_panel(Some(&off));
-        assert!(normal.find("fis_set").is_some(), "scrammed: the normal view");
+        assert!(normal.find("fis_set").is_some(), "powered off: the normal view");
         assert_eq!(reactor_status(Some(&off)), ("OFF", Tone::Dim));
         assert_eq!(header(&normal), Some(("OFF".to_string(), Tone::Dim)));
     }
@@ -1113,14 +1110,14 @@ mod tests {
             let critical = crate::effects::is_critical(Some(&r));
             assert_eq!(header(&p).is_some_and(|h| h.0 == "CRITICAL"), critical, "allowed {allowed:?}, temp {temp}");
             assert_eq!(reactor_status(Some(&r)).0 == "CRITICAL", critical, "word at {temp} with {allowed:?}");
-            assert!(p.find("fis_set").is_some() && p.find("scram").is_some(), "the controls stay at {temp}");
+            assert!(p.find("fis_set").is_some() && p.find("power").is_some(), "the controls stay at {temp}");
         }
     }
 
     #[test]
     fn a_melted_core_says_meltdown_without_a_button() {
         let p = shipped_panel(Some(&ReactorNews { melted: true, ..news() }));
-        assert!(p.find("scram").is_none() && p.find("power").is_none() && p.find("fis_set").is_none());
+        assert!(p.find("power").is_none() && p.find("fis_set").is_none());
         assert_eq!(header(&p), Some(("MELTDOWN".to_string(), Tone::Bad)));
         assert!(p.overflowing().is_empty());
     }

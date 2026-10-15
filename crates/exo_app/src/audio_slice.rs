@@ -39,7 +39,7 @@ pub const ZAP_VOL: f32 = 0.09;
 pub const ZAP_EVERY_S: f64 = 2.0;
 pub const CLUNK_VOL: f32 = 0.09;
 pub const SWEEP_VOL: f32 = 0.08;
-pub const SCRAM_VOL: f32 = 0.12;
+pub const OFF_VOL: f32 = 0.12;
 pub const PUMP_VOL: f32 = 0.06;
 /// The reactor's drone at fission 100 (Barotrauma's reactor loop: base 0.02, here on our synth's
 /// scale), audible within `REACTOR_RANGE_M` of the reactor. Its pitch rises from `REACTOR_PITCH.0`
@@ -365,7 +365,7 @@ fn electric_sounds(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>,
             one_shot(&mut commands, &s.sweep_up, SWEEP_VOL);
         }
         if before.power_on && !now_r.power_on && now_r.set_fission == 0.0 && now_r.set_turbine == 0.0 {
-            one_shot(&mut commands, &s.thud, SCRAM_VOL);
+            one_shot(&mut commands, &s.thud, OFF_VOL);
         }
     }
     if zap_due(now_r.overvolt, now, *zap_at) {
@@ -552,7 +552,7 @@ mod tests {
         r.lamps[Lamp::Hot.index()] = true;
         r.lamps[Lamp::Scram.index()] = true;
         r.lamps[Lamp::LowOut.index()] = true;
-        assert!(!alarm_lamp_on(&r), "warn lamps and SCRAM are not the alarm");
+        assert!(!alarm_lamp_on(&r), "warn lamps and the SCRAM lamp are not the alarm");
         for bad in [Lamp::CritHeat, Lamp::CritOut, Lamp::NoFuel, Lamp::Meltdown] {
             let mut one = ReactorNews::default();
             one.lamps[bad.index()] = true;

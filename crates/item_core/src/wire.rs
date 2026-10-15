@@ -126,8 +126,7 @@ pub enum ReactorAsk {
     SetTurbine(f64),
     Trigger(ReactorFault),
     Reset,
-    Scram,
-    /// The power switch: on starts the reactor again after a SCRAM.
+    /// The power switch: off is the brake (fission and the targets fall with the lag), on starts the reactor again.
     SetPower(bool),
     SetBreaker(BreakerGroup, bool),
     SetPumpMode(PumpMode),
@@ -552,7 +551,6 @@ mod tests {
             ReactorAsk::SetTurbine(0.0),
             ReactorAsk::Trigger(ReactorFault::LoadDrop),
             ReactorAsk::Reset,
-            ReactorAsk::Scram,
             ReactorAsk::SetPower(false),
             ReactorAsk::SetBreaker(BreakerGroup::Lights, false),
             ReactorAsk::SetBreaker(BreakerGroup::Engines, true),

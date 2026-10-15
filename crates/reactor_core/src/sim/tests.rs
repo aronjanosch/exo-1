@@ -250,7 +250,7 @@ fn pulled_rods_stop_the_fission_at_once_and_the_core_cools() {
 }
 
 /// The brake, on the alarm: the operator holds fission and turbine at 100, the pump breaks, and at
-/// TempCritical both rods are pulled (no SCRAM). The core must not melt within 300 s. The alarm
+/// TempCritical both rods are pulled. The core must not melt within 300 s. The alarm
 /// must be reached, or the test would pass without the brake acting.
 #[test]
 fn pulling_both_rods_at_temp_critical_brakes_the_core() {
@@ -276,14 +276,14 @@ fn overvolt_turbine_max_damages_the_junction_box() {
     assert!(room.junction().condition().value() < 100.0, "the box is not damaged");
 }
 
-/// A SCRAM at TempHigh with the pump broken (the operator at 100/100): no melt, and the core is back
-/// under the allowed top within seconds. Not reproduced: a climb after the SCRAM (the peak is the
-/// SCRAM's own temperature, 67.4, and the core falls from it); the decay heat's hump is 4.8 at 125 s.
+/// Power off at TempHigh with the pump broken (the operator at 100/100): no melt. Power off is the
+/// brake; fission falls with its lag, so it is slower than an instant cut would be. Numbers are in
+/// the test's println.
 #[test]
-fn a_scram_at_temp_high_with_a_broken_pump_does_not_melt() {
-    let (trace, _) = trace_of("scram_at_temp_high", 5.0);
-    println!("scram_at_temp_high: peak {:.1}, at 60 s {:.1}, melted {}", trace.peak_temp(), row_at(&trace, 60.0).temp, trace.melted);
-    assert!(trace.count("do Scram") == 1 && trace.first("Alarm TempHigh on").is_some());
+fn power_off_at_temp_high_with_a_broken_pump_does_not_melt() {
+    let (trace, _) = trace_of("off_at_temp_high", 5.0);
+    println!("off_at_temp_high: peak {:.1}, at 60 s {:.1}, melted {}", trace.peak_temp(), row_at(&trace, 60.0).temp, trace.melted);
+    assert!(trace.count("do Power(false)") == 1 && trace.first("Alarm TempHigh on").is_some());
     assert!(!trace.melted, "{}", trace.table());
 }
 

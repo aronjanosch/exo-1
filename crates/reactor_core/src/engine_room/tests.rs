@@ -109,13 +109,14 @@ fn alarm_level_follows_the_room() {
 }
 
 #[test]
-fn the_flow_runs_on_after_a_scram_on_the_backup() {
-    // The pump has a backup supply: with the reactor delivering nothing (SCRAM, off, cold start,
+fn the_flow_runs_on_after_power_off_on_the_backup() {
+    // The pump has a backup supply: with the reactor delivering nothing (power off, cold start,
     // broken) it runs at full factor, so the flow stays while the core cools on the decay heat.
     let mut r = room();
     run(&mut r, 120.0, Input::auto());
     assert!((r.flow() - 1.0).abs() < 1e-9, "the pump is on and running: {}", r.flow());
-    r.reactor_mut().scram();
+    r.set_power(false);
+    run(&mut r, 1.0, Input::auto());
     assert_eq!(r.flow(), 1.0, "no output, the backup runs the pump");
     run(&mut r, 5.0, Input::auto());
     assert_eq!(r.flow(), 1.0, "still on the backup");
@@ -130,9 +131,9 @@ fn the_machines_have_power_only_through_a_working_box_and_a_running_reactor() {
     assert!(!r.powered(), "cold, output 0");
     run(&mut r, 120.0, Input::auto());
     assert!(r.powered());
-    r.reactor_mut().scram();
+    r.set_power(false);
     run(&mut r, 1.0, Input::auto());
-    assert!(!r.powered(), "scrammed: no output, no power");
+    assert!(!r.powered(), "powered off: no output, no power");
     assert!(r.set_power(true));
     run(&mut r, 120.0, Input::auto());
     assert!(r.powered());
@@ -395,7 +396,8 @@ fn a_short_grid_slows_the_pump_and_no_output_does_not() {
     let v = r.voltage();
     assert!((r.flow() - v).abs() < 0.02, "flow {} follows the voltage {v}", r.flow());
     // With no output at all the backup carries the pump, whatever the grid asks.
-    r.reactor_mut().scram();
+    r.set_power(false);
+    run(&mut r, 1.0, Input::auto());
     assert_eq!(r.flow(), 1.0, "no output: the backup, not the voltage");
 }
 

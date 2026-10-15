@@ -68,7 +68,7 @@ pub struct ReactorTuning {
     pub cooling_max: f64,
     /// Residual (decay) heat in degrees of temperature target: it is there only without coolant
     /// (`(1 - flow) * decay * decay_heat`, see `decay_lag_s`). The turbine does not take it.
-    /// TODO(initiator): value. Without coolant it keeps the core hot after a SCRAM and above the
+    /// TODO(initiator): value. Without coolant it keeps the core hot after power off and above the
     /// allowed band when fission is cut to nothing.
     pub decay_heat: f64,
     /// Seconds for the coolant flow to run down after the pump stops (and to come back): the
@@ -86,7 +86,7 @@ pub struct ReactorTuning {
     /// Seconds for fission to follow its target (a time constant). Barotrauma: 1. TODO(initiator): value.
     pub fission_lag_s: f64,
     /// Seconds for the decay heat to follow fission (a time constant): the core's decay state
-    /// rises with fission and fades after a SCRAM over minutes. Ours, not Barotrauma's (it has no
+    /// rises with fission and fades after power off over minutes. Ours, not Barotrauma's (it has no
     /// decay heat). TODO(initiator): value.
     pub decay_lag_s: f64,
     /// Auto looks this many seconds ahead: it compares the temperature it predicts (temp + speed *
@@ -347,7 +347,7 @@ pub struct Reactor {
     /// Speed of the temperature, degrees per second.
     temp_vel: f64,
     /// Decay state, 0..1: follows fission / 100 with `decay_lag_s`; it drives the residual heat.
-    /// Kept through a SCRAM, reset by a meltdown.
+    /// Kept through power off, reset by a meltdown.
     decay: f64,
     /// Temperature boost (degrees of heat, -amount..amount), fades to 0 at `boost_decay`.
     boost: f64,
@@ -377,7 +377,7 @@ pub struct Warnings {
     pub fuel_out: bool,
     pub low_fuel: bool,
     pub meltdown: bool,
-    /// Warm (above 0.1) with the power off: SCRAM was pressed or the reactor is off (client 632).
+    /// Warm (above 0.1) with the power off (client 632).
     pub scram: bool,
 }
 
@@ -443,16 +443,6 @@ impl Reactor {
         }
         self.power_on = on;
         true
-    }
-
-    /// SCRAM: fission to 0 and the power off at once. The turbine and the targets run down with
-    /// it; the temperature falls. Back on is `set_power(true)`, the normal switch.
-    pub fn scram(&mut self) {
-        self.power_on = false;
-        self.output = 0.0;
-        self.fission = 0.0;
-        self.target_fission = 0.0;
-        self.target_turbine = 0.0;
     }
 
     /// Melts the core now, as if its meltdown timer had run out (the harness's forced melt, for a
@@ -544,7 +534,7 @@ impl Reactor {
         Some(rod)
     }
 
-    /// The emergency brake (Barotrauma has no SCRAM; pulling the rods is it). Takes the rod in
+    /// The emergency brake (Barotrauma's: pulling a rod). Takes the rod in
     /// `slot` out and returns it with the handling heat: the core's temperature at that moment
     /// (what the glue burns the hand with; TODO(initiator): the burn rule). The fuel goes at once:
     /// see `sync_fuel`. None for an empty slot.
@@ -814,7 +804,7 @@ impl Reactor {
         let heat = self.heat_at(self.fission) + self.boost;
         self.heat_in = heat;
         let cool = t.cooling_max * self.coolant + self.extra_cool;
-        // Decay heat follows fission with a slow lag (`decay`): a SCRAM stops fission at once and the
+        // Decay heat follows fission with a slow lag (`decay`): power off stops fission at once (the targets are 0) and the
         // decay heat fades over minutes. Inertia off: the old path, the heat with fission at once.
         let decay_level = if t.inertia {
             let lag = t.decay_lag_s.max(1e-9);

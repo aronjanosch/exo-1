@@ -135,10 +135,6 @@ impl ReactorSim {
                     info!("reactor: emergency cooling refused (cooldown, tank or pump)");
                 }
             }
-            ReactorAsk::Scram => {
-                self.room.reactor_mut().scram();
-                info!("reactor: SCRAM");
-            }
             ReactorAsk::SetPower(on) => {
                 if !self.room.set_power(on) {
                     info!("reactor: power on refused (broken)");
@@ -508,7 +504,7 @@ mod tests {
     fn the_news_carries_the_lamps_the_boost_and_the_countdown() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::Scram, &cfg(), &mut k);
+        s.apply(ReactorAsk::SetPower(false), &cfg(), &mut k);
         let n = s.news(1.0);
         assert!(n.lamps[Lamp::Scram.index()], "warm with the power off");
         assert!(!n.lamps[Lamp::Hot.index()] && !n.lamps[Lamp::Meltdown.index()]);
@@ -528,7 +524,7 @@ mod tests {
     fn the_boost_ask_is_refused_when_the_core_refuses_it() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::Scram, &cfg(), &mut k);
+        s.apply(ReactorAsk::SetPower(false), &cfg(), &mut k);
         s.apply(ReactorAsk::Boost(true), &cfg(), &mut k);
         assert_eq!(s.room.reactor().temperature_boost(), 0.0, "the power is needed");
         assert_eq!(s.news(1.0).boost, 0.0);
@@ -549,13 +545,17 @@ mod tests {
     }
 
     #[test]
-    fn scram_and_the_power_switch_ask_the_room() {
+    fn power_off_and_the_power_switch_ask_the_room() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::Scram, &cfg(), &mut k);
+        s.apply(ReactorAsk::SetPower(false), &cfg(), &mut k);
+        // The output stops with the next step; fission follows with its lag (seconds).
+        for _ in 0..10 {
+            s.room.step(0.1, Input::auto());
+        }
         let n = s.news(1.0);
         assert!(!n.power_on && !n.powered && n.output_kw == 0.0, "{n:?}");
-        for _ in 0..60 {
+        for _ in 0..200 {
             s.room.step(0.1, Input::auto());
         }
         assert!(s.news(1.0).temp < 40.0, "the temperature falls");

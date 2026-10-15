@@ -327,7 +327,7 @@ fn the_engine_throttle_sets_the_engines_demand_as_the_force_follows() {
     assert_eq!(r.engine_throttle(), 50.0, "the target at once");
     run(&mut r, 5.0, Input::auto());
     let want = full * 0.5_f64.powf(1.5);
-    assert!((r.grid().group(Group::Engines).demand_kw - want).abs() < 1e-3, "about 283 kW at half throttle");
+    assert!((r.grid().group(Group::Engines).demand_kw - want).abs() < 1e-3, "half throttle asks the full demand to the power 1.5 share");
     r.set_engine_throttle(150.0);
     assert_eq!(r.engine_throttle(), 100.0, "clamped to -100..100");
     r.set_engine_throttle(-150.0);
@@ -847,13 +847,15 @@ fn a_healed_hull_is_intact() {
 #[test]
 fn the_shield_asks_the_grid_its_demand_and_regens_from_its_power() {
     let mut r = safe_room();
-    // A full shield asks the upkeep share of its demand: 300 kW × 0.1.
+    let shields_full = crate::grid::GridTuning::default().shields.demand_kw;
+    let upkeep = crate::shield::ShieldTuning::default().upkeep;
+    // A full shield asks the upkeep share of its demand.
     let _ = r.step(DT, Input::auto());
-    assert!((r.grid().group(Group::Shields).demand_kw - 30.0).abs() < 1e-9);
+    assert!((r.grid().group(Group::Shields).demand_kw - upkeep * shields_full).abs() < 1e-9);
     // A hit takes the shield below max: the full demand next step.
     assert_eq!(r.absorb_hit(300.0), 0.0);
     let _ = r.step(DT, Input::auto());
-    assert!((r.grid().group(Group::Shields).demand_kw - 300.0).abs() < 1e-9);
+    assert!((r.grid().group(Group::Shields).demand_kw - shields_full).abs() < 1e-9);
     // Warm and powered, the shield regens from the Shields group's factor.
     r.warm_start();
     assert_eq!(r.absorb_hit(300.0), 0.0);
@@ -912,7 +914,7 @@ fn the_room_powers_the_jump_drive_only_while_it_charges() {
     assert_eq!(r.grid().request_of(Group::JumpDrive), 0.0, "cold drive asks nothing");
     assert!(r.jump_mut().arm());
     run(&mut r, 10.0, Input::auto());
-    assert_eq!(r.grid().group(Group::JumpDrive).demand_kw, 400.0, "charging draws the JUMP demand");
+    assert_eq!(r.grid().group(Group::JumpDrive).demand_kw, crate::grid::GridTuning::default().jump_drive.demand_kw, "charging draws the JUMP demand");
     assert!(r.jump().charge > 0.0, "the grid's power charges it");
     r.jump_mut().fill();
     run(&mut r, DT * 3.0, Input::auto());

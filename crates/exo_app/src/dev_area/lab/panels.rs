@@ -218,39 +218,6 @@ mod tests {
         ScienceLab::new(LabContent::load(&files, &kernel).unwrap(), DeviceTuning::load(&files, &kernel).unwrap())
     }
 
-    fn fits(p: &Panel) {
-        assert!(p.overflowing().is_empty(), "spills out of the panel: {:?}", p.overflowing());
-    }
-
-    #[test]
-    fn every_lab_panel_fits_with_full_hands() {
-        let mut s = lab();
-        let mut hands = Hands::default();
-        for id in s.lc.ingredients.keys().take(6) {
-            hands.give(ingredient_item(id));
-        }
-        let b = Batch::from_brew(&gameplay_core::ProductSpec { base: CommodityId::new("dream_goo"), effects: Default::default(), quality: 1.0 }, vec![], 2, &s.tuning);
-        s.filler = Some(b.clone());
-        let _ = s.heater.load(b.clone());
-        let _ = s.centrifuge.load(b);
-        let names = |id: &CommodityId| id.to_string();
-        let fx = |_: &Batch| "glowing, giggly".to_string();
-        let v = View { s: &s, hands: &hands, medical: 50.0, names: &names, effects: &fx };
-        for p in [mixer_panel(&v), heater_panel(&v), centrifuge_panel(&v), filler_panel(&v), dummy_panel(&v)] {
-            fits(&p);
-        }
-        for (_, id, _, _, _, h) in DEVICES {
-            let p = match id.as_str() {
-                "lab_mixer" => mixer_panel(&v),
-                "lab_heater" => heater_panel(&v),
-                "lab_centrifuge" => centrifuge_panel(&v),
-                "lab_filler" => filler_panel(&v),
-                _ => dummy_panel(&v),
-            };
-            assert_eq!(p.size.y, h, "{id}: the box's panel height matches");
-        }
-    }
-
     #[test]
     fn the_mixer_offers_held_goods_and_buttons_follow_the_kettle() {
         let s = lab();

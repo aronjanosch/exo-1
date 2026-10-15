@@ -3,19 +3,21 @@ use super::*;
 
 #[test]
 fn a_breaker_off_asks_for_nothing_and_its_group_is_dark() {
+    let t = GridTuning::default();
     let mut g = Grid::default();
     g.set_breaker(Group::Lights, false);
     assert!(!g.breaker(Group::Lights));
-    assert_eq!(g.group(Group::Lights).demand_kw, 80.0, "the demand is the device's, the breaker is the switch");
-    assert!((g.request_kw() - 1200.0).abs() < 1e-9);
+    assert_eq!(g.group(Group::Lights).demand_kw, t.lights.demand_kw, "the demand is the device's, the breaker is the switch");
+    let without_lights = t.engines.demand_kw + t.life_support.demand_kw;
+    assert!((g.request_kw() - without_lights).abs() < 1e-9);
     let left = g.distribute(1500.0);
-    assert!((left - 300.0).abs() < 1e-9, "left {left}");
+    assert!((left - (1500.0 - without_lights)).abs() < 1e-9, "left {left}");
     assert_eq!(g.factor(Group::Lights), 0.0);
     assert!(!g.supply(Group::Lights).on);
     assert_eq!(g.factor(Group::Engines), 1.0);
     assert_eq!(g.factor(Group::LifeSupport), 1.0);
     g.set_breaker(Group::Lights, true);
-    assert_eq!(g.request_kw(), 1280.0);
+    assert_eq!(g.request_kw(), without_lights + t.lights.demand_kw);
 }
 
 #[test]
@@ -61,16 +63,19 @@ fn equal_priority_shares_in_proportion() {
 
 #[test]
 fn a_limit_caps_the_request_and_the_factor_is_delivered_over_demand() {
+    let t = GridTuning::default();
     let mut g = Grid::default();
     g.set_limit(Group::Engines, 0.5);
     assert_eq!(g.limit(Group::Engines), 0.5);
-    assert_eq!(g.request_of(Group::Engines), 400.0, "800 demand times 0.5");
-    assert_eq!(g.group(Group::Engines).demand_kw, 800.0, "the demand is the device's");
-    assert_eq!(g.request_kw(), 880.0);
+    let limited = t.engines.demand_kw * 0.5;
+    assert_eq!(g.request_of(Group::Engines), limited, "the demand times the limit");
+    assert_eq!(g.group(Group::Engines).demand_kw, t.engines.demand_kw, "the demand is the device's");
+    let requested = limited + t.life_support.demand_kw + t.lights.demand_kw;
+    assert_eq!(g.request_kw(), requested);
     let left = g.distribute(1000.0);
-    assert!((left - 120.0).abs() < 1e-9, "left {left}");
-    assert_eq!(g.supply(Group::Engines).request_kw, 400.0);
-    assert_eq!(g.supply(Group::Engines).delivered_kw, 400.0);
+    assert!((left - (1000.0 - requested)).abs() < 1e-9, "left {left}");
+    assert_eq!(g.supply(Group::Engines).request_kw, limited);
+    assert_eq!(g.supply(Group::Engines).delivered_kw, limited);
     assert_eq!(g.supply(Group::Engines).ratio, 1.0, "full delivery of the limited request");
     assert!((g.factor(Group::Engines) - 0.5).abs() < 1e-9, "scales the efficiency");
 }
@@ -109,10 +114,12 @@ fn lowering_the_lights_limit_does_not_save_the_lights() {
 
 #[test]
 fn the_r40_groups_start_idle_and_draw_nothing() {
-    let mut g = Grid::default();
+    let t = GridTuning::default();
+    let g = Grid::default();
     for x in [Group::Shields, Group::Weapons, Group::JumpDrive] {
         assert_eq!(g.group(x).demand_kw, 0.0, "{x:?} starts at 0 kW");
         assert!(g.breaker(x));
     }
-    assert_eq!(g.request_kw(), 1280.0, "the load is the three room groups' only");
+    let room_groups = t.engines.demand_kw + t.life_support.demand_kw + t.lights.demand_kw;
+    assert_eq!(g.request_kw(), room_groups, "the load is the three room groups' only");
 }

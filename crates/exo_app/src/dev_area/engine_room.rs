@@ -14,6 +14,7 @@ use fire_core::{split_by_volume, Deck, FireTuning, GapId, LeakId, RoomId};
 use item_core::PlayerId;
 use std::collections::BTreeSet;
 use reactor_core::hull::{openness, SECTION_CENTRES};
+use reactor_core::engine_room::AirSave;
 use reactor_core::{Airlock, AirlockTuning, Dir, Door, Goal, Source, Tuning};
 use display_core::PanelId;
 use item_core::wire::{Alarm, RoomAlarmKind, RoomAsk, RoomNews, HULL_SECTIONS};
@@ -348,6 +349,34 @@ impl EngineAir {
         let shares = split_by_volume(m3, &[(self.deck.room(self.engine).volume, open[0]), (self.deck.room(self.corridor).volume, open[1])]);
         self.deck.add_oxygen(self.engine, shares[0]);
         self.deck.add_oxygen(self.corridor, shares[1]);
+    }
+
+    /// The air as a save holds it (r42): each room's oxygen in m³ and the airlock.
+    pub fn to_save(&self) -> AirSave {
+        let rooms = [self.engine, self.corridor, self.airlock, self.outside];
+        AirSave {
+            oxygen: rooms.map(|r| self.deck.room(r).oxygen),
+            vacuum: self.vacuum,
+            lock: self.lock.to_save(),
+            cycle_air: self.cycle_air,
+            door_open: self.door_open,
+        }
+    }
+
+    /// The air of a save, the rooms and doors as they were. Breaches and the outer leak follow the
+    /// hull and the vacuum at the next step, as they do in a new room.
+    pub fn from_save(t: &AirlockTuning, s: &AirSave) -> EngineAir {
+        let mut a = EngineAir::with_tuning(t);
+        for (r, ox) in [a.engine, a.corridor, a.airlock, a.outside].into_iter().zip(s.oxygen) {
+            a.deck.room_mut(r).oxygen = ox;
+        }
+        a.vacuum = s.vacuum;
+        a.lock = Airlock::from_save(t, &s.lock);
+        a.cycle_air = s.cycle_air;
+        a.door_open = s.door_open;
+        a.deck.set_open(a.inner, s.door_open[0]);
+        a.apply_outer();
+        a
     }
 
     /// The air fraction (0..1) of the room at an area point: what a body breathes there.

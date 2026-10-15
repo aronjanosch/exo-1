@@ -7,7 +7,7 @@
 //! Values: TODO(initiator), Barotrauma's.
 use std::collections::BTreeMap;
 
-use device_core::{Condition, DeviceEvent, DeviceTuning};
+use device_core::{Condition, ConditionSave, DeviceEvent, DeviceTuning};
 use gameplay_core::notice::{Notice, NoticeKind};
 use serde::{Deserialize, Serialize};
 
@@ -156,7 +156,7 @@ const AUTO_DEAD_BAND: f64 = 1.0;
 /// about 10 degrees); 20 settles.
 const AUTO_FULL_SPEED_AT: f64 = 20.0;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FuelRod {
     /// The kind's id in `reactor.json` (`rods`): "standard", "hot" or "spicy".
     pub kind: String,
@@ -217,7 +217,7 @@ pub enum FuelNeed {
     Less,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Mode {
     Auto,
     Manual,
@@ -314,6 +314,39 @@ pub enum ReactorEvent {
     Device(DeviceEvent),
 }
 
+/// The reactor's state as a save holds it: the plain values, not the tuning (the loader gives it back).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ReactorSave {
+    pub mode: Mode,
+    pub power_on: bool,
+    pub melted: bool,
+    pub ejected: bool,
+    pub target_fission: f64,
+    pub target_turbine: f64,
+    pub fission: f64,
+    pub turbine: f64,
+    pub temp: f64,
+    pub temp_vel: f64,
+    pub turbine_for_load: f64,
+    pub skill: f64,
+    pub rods: Vec<FuelRod>,
+    pub fuel: f64,
+    pub load: f64,
+    pub fire_timer: f64,
+    pub overheat_timer: f64,
+    pub output: f64,
+    pub alarms: [bool; 3],
+    pub condition: ConditionSave,
+    pub coolant_target: f64,
+    pub coolant: f64,
+    pub heat_in: f64,
+    pub decay: f64,
+    pub boost: f64,
+    pub output_boost_kw: f64,
+    pub auto_boost: f64,
+    pub extra_cool: f64,
+}
+
 #[derive(Clone, Debug)]
 pub struct Reactor {
     tuning: ReactorTuning,
@@ -359,6 +392,75 @@ pub struct Reactor {
     /// Extra cooling in degrees of target, on top of the pump's (`cooling_max`). The engine room sets
     /// it while an emergency cooling runs (`EngineRoom::emergency_cool`), 0 otherwise.
     extra_cool: f64,
+}
+
+impl Reactor {
+    pub fn to_save(&self) -> ReactorSave {
+        ReactorSave {
+            mode: self.mode,
+            power_on: self.power_on,
+            melted: self.melted,
+            ejected: self.ejected,
+            target_fission: self.target_fission,
+            target_turbine: self.target_turbine,
+            fission: self.fission,
+            turbine: self.turbine,
+            temp: self.temp,
+            temp_vel: self.temp_vel,
+            turbine_for_load: self.turbine_for_load,
+            skill: self.skill,
+            rods: self.rods.clone(),
+            fuel: self.fuel,
+            load: self.load,
+            fire_timer: self.fire_timer,
+            overheat_timer: self.overheat_timer,
+            output: self.output,
+            alarms: self.alarms,
+            condition: self.condition.to_save(),
+            coolant_target: self.coolant_target,
+            coolant: self.coolant,
+            heat_in: self.heat_in,
+            decay: self.decay,
+            boost: self.boost,
+            output_boost_kw: self.output_boost_kw,
+            auto_boost: self.auto_boost,
+            extra_cool: self.extra_cool,
+        }
+    }
+
+    pub fn from_save(tuning: ReactorTuning, s: &ReactorSave) -> Reactor {
+        Reactor {
+            tuning,
+            mode: s.mode,
+            power_on: s.power_on,
+            melted: s.melted,
+            ejected: s.ejected,
+            target_fission: s.target_fission,
+            target_turbine: s.target_turbine,
+            fission: s.fission,
+            turbine: s.turbine,
+            temp: s.temp,
+            temp_vel: s.temp_vel,
+            turbine_for_load: s.turbine_for_load,
+            skill: s.skill,
+            rods: s.rods.clone(),
+            fuel: s.fuel,
+            load: s.load,
+            fire_timer: s.fire_timer,
+            overheat_timer: s.overheat_timer,
+            output: s.output,
+            alarms: s.alarms,
+            condition: Condition::from_save(tuning.condition, &s.condition),
+            coolant_target: s.coolant_target,
+            coolant: s.coolant,
+            heat_in: s.heat_in,
+            decay: s.decay,
+            boost: s.boost,
+            output_boost_kw: s.output_boost_kw,
+            auto_boost: s.auto_boost,
+            extra_cool: s.extra_cool,
+        }
+    }
 }
 
 /// The lamps of the panel (Barotrauma's warning lights, client Reactor.cs 621-632). Each is on

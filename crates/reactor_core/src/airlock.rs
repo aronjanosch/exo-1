@@ -36,14 +36,14 @@ impl Default for AirlockTuning {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Door {
     Inner,
     Outer,
 }
 
 /// What a cycle is for: the door it opens at its end, or nothing (`Hold`, the pump alone).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Goal {
     Door(Door),
     Hold,
@@ -55,6 +55,15 @@ pub enum Goal {
 pub enum Dir {
     Out,
     In,
+}
+
+/// The airlock's state as a save holds it: doors, the cycle and its time (the tuning comes back).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AirlockSave {
+    pub inner_open: bool,
+    pub outer_open: bool,
+    pub cycling: Option<Goal>,
+    pub t: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -72,6 +81,14 @@ pub struct Airlock {
 impl Airlock {
     pub fn new(t: &AirlockTuning) -> Airlock {
         Airlock { cycle_s: t.cycle_s, pump_share: t.pump_share, inner_open: false, outer_open: false, cycling: None, t: 0.0 }
+    }
+
+    pub fn to_save(&self) -> AirlockSave {
+        AirlockSave { inner_open: self.inner_open, outer_open: self.outer_open, cycling: self.cycling, t: self.t }
+    }
+
+    pub fn from_save(t: &AirlockTuning, s: &AirlockSave) -> Airlock {
+        Airlock { cycle_s: t.cycle_s, pump_share: t.pump_share, inner_open: s.inner_open, outer_open: s.outer_open, cycling: s.cycling, t: s.t }
     }
 
     pub fn is_open(&self, d: Door) -> bool {

@@ -29,6 +29,14 @@ impl Default for BatteryTuning {
     }
 }
 
+/// The battery's state as a save holds it (the tuning comes back from the values).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BatterySave {
+    pub charge_kwmin: f64,
+    pub recharge: f64,
+    pub output_kw: f64,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Battery {
     tuning: BatteryTuning,
@@ -43,6 +51,14 @@ impl Battery {
     /// An empty battery at recharge 0 (Barotrauma starts empty).
     pub fn new(tuning: BatteryTuning) -> Battery {
         Battery { tuning, charge_kwmin: 0.0, recharge: 0.0, output_kw: 0.0 }
+    }
+
+    pub fn to_save(&self) -> BatterySave {
+        BatterySave { charge_kwmin: self.charge_kwmin, recharge: self.recharge, output_kw: self.output_kw }
+    }
+
+    pub fn from_save(tuning: BatteryTuning, s: &BatterySave) -> Battery {
+        Battery { tuning, charge_kwmin: s.charge_kwmin, recharge: s.recharge, output_kw: s.output_kw }
     }
 
     pub fn tuning(&self) -> &BatteryTuning {

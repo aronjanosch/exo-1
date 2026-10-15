@@ -43,6 +43,15 @@ impl Default for ShieldTuning {
     }
 }
 
+/// The shield's state as a save holds it (the tuning comes back from the values).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ShieldSave {
+    pub current: f64,
+    pub since_hit_s: f64,
+    pub regen: f64,
+    pub offline_left_s: f64,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Shield {
     tuning: ShieldTuning,
@@ -59,6 +68,14 @@ impl Shield {
     /// A full shield with the quantum shield up.
     pub fn new(tuning: ShieldTuning) -> Shield {
         Shield { tuning, current: tuning.max, since_hit_s: tuning.recovery_delay_s, regen: 0.0, offline_left_s: 0.0 }
+    }
+
+    pub fn to_save(&self) -> ShieldSave {
+        ShieldSave { current: self.current, since_hit_s: self.since_hit_s, regen: self.regen, offline_left_s: self.offline_left_s }
+    }
+
+    pub fn from_save(tuning: ShieldTuning, s: &ShieldSave) -> Shield {
+        Shield { tuning, current: s.current, since_hit_s: s.since_hit_s, regen: s.regen, offline_left_s: s.offline_left_s }
     }
 
     pub fn tuning(&self) -> &ShieldTuning {

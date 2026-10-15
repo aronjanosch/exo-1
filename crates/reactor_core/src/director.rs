@@ -91,6 +91,16 @@ impl Situation {
     }
 }
 
+/// The director's state as a save holds it: the switch, the timer, the intensity, the rng (the
+/// tuning comes back from the values).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DirectorSave {
+    pub enabled: bool,
+    pub timer: f64,
+    pub intensity: f64,
+    pub rng: Rng,
+}
+
 #[derive(Debug)]
 pub struct Director {
     cfg: DirectorTuning,
@@ -106,6 +116,14 @@ impl Director {
         let mut d = Director { cfg: cfg.clone(), rng: Rng::new(seed), enabled: cfg.enabled, timer: 0.0, intensity: 0.0 };
         d.timer = d.next_interval();
         d
+    }
+
+    pub fn to_save(&self) -> DirectorSave {
+        DirectorSave { enabled: self.enabled, timer: self.timer, intensity: self.intensity, rng: self.rng.clone() }
+    }
+
+    pub fn from_save(cfg: &DirectorTuning, s: &DirectorSave) -> Director {
+        Director { cfg: cfg.clone(), rng: s.rng.clone(), enabled: s.enabled, timer: s.timer, intensity: s.intensity }
     }
 
     pub fn enabled(&self) -> bool {

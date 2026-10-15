@@ -4,10 +4,13 @@
 use bevy::math::{DQuat, DVec3};
 use bevy::prelude::*;
 use gameplay_core::save::{CratePlace, CrateSave, Envelope, SaveError, WorldSave};
+use reactor_core::engine_room::EngineSave;
 use gameplay_core::{ClientId, CrateId};
 use std::path::{Path, PathBuf};
 
 use crate::cargo::{crate_bundle, Crate, Crates};
+use crate::dev_area::engine_room::EngineAir;
+use crate::dev_area::reactor::{apply_engine_section, engine_section, ReactorConfig, ReactorSim};
 use crate::env::PlanetRes;
 use crate::gameplay::{Gameplay, Goods};
 
@@ -132,7 +135,10 @@ pub fn snapshot<'a>(gp: &Gameplay, planet: &PlanetRes, crates: impl Iterator<Ite
 /// Saves now; the error is kept and printed, the game goes on.
 pub fn save_now(world: &mut World) -> Result<(), String> {
     let mut q = world.query::<(&Crate, &Goods)>();
-    let env = snapshot(world.resource::<Gameplay>(), world.resource::<PlanetRes>(), q.iter(world));
+    let mut env = snapshot(world.resource::<Gameplay>(), world.resource::<PlanetRes>(), q.iter(world));
+    if let (Some(sim), Some(air)) = (world.get_resource::<ReactorSim>(), world.get_resource::<EngineAir>()) {
+        engine_section(sim, air).save(&mut env);
+    }
     let dir = world.resource::<SaveDir>().0.clone();
     write_slot(&dir, SLOT, &env.to_json()).map_err(|e| format!("save: {}: {e}", dir.display()))?;
     world.resource_mut::<Gameplay>().save_wanted = false;
@@ -166,8 +172,17 @@ fn apply_pending_load(world: &mut World) {
 }
 
 pub fn load(world: &mut World, env: &Envelope) -> Result<(), SaveError> {
+    // Read first: a refused section changes nothing. No section (an older save) keeps the start state.
+    let engine = EngineSave::load(env)?;
     let saved = WorldSave::load(env)?.unwrap_or_default();
     world.resource_mut::<Gameplay>().restore(env, saved.next_crate)?;
+    if let (Some(sec), Some(cfg)) = (engine, world.get_resource::<ReactorConfig>().map(|c| c.0.clone())) {
+        if world.contains_resource::<ReactorSim>() && world.contains_resource::<EngineAir>() {
+            world.resource_scope(|world, mut sim: bevy::ecs::change_detection::Mut<ReactorSim>| {
+                world.resource_scope(|_, mut air: bevy::ecs::change_detection::Mut<EngineAir>| apply_engine_section(&sec, &cfg, &mut sim, &mut air));
+            });
+        }
+    }
     let old: Vec<Entity> = world.query_filtered::<Entity, With<Goods>>().iter(world).collect();
     for e in old {
         world.despawn(e);
@@ -217,6 +232,37 @@ mod tests {
         let b = client_id(&d).unwrap();
         assert_eq!(a, b);
         assert!(a.0 >= 2, "never 0 nor the host's stand-in");
+    }
+
+    #[test]
+    fn an_engine_room_section_of_another_version_is_refused() {
+        let mut env = Envelope::new();
+        env.put(EngineSave::SECTION, 2, &0u32);
+        let e = EngineSave::load(&env).unwrap_err();
+        assert_eq!(e.to_string(), "save: section 'engine_room' has version 2, this build reads version 1");
+    }
+
+    #[test]
+    fn a_save_without_the_engine_room_section_has_none() {
+        assert_eq!(EngineSave::load(&Envelope::new()).unwrap(), None);
+    }
+
+    #[test]
+    fn the_engine_room_section_round_trips_through_the_envelope() {
+        let cfg = reactor_core::Tuning::default();
+        let mut sim = ReactorSim::created(&cfg, true);
+        let air = EngineAir::with_tuning(&cfg.airlock);
+        sim.room.battery_mut().set_charge_kwmin(2000.0);
+        sim.vents = [false, true];
+        let sec = engine_section(&sim, &air);
+        let mut env = Envelope::new();
+        sec.save(&mut env);
+        let back = EngineSave::load(&Envelope::from_json(&env.to_json()).unwrap()).unwrap().unwrap();
+        assert_eq!(back, sec);
+        let mut sim2 = ReactorSim::created(&cfg, true);
+        let mut air2 = EngineAir::new();
+        apply_engine_section(&back, &cfg, &mut sim2, &mut air2);
+        assert_eq!(engine_section(&sim2, &air2), sec);
     }
 
     #[test]

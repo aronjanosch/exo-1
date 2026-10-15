@@ -50,6 +50,19 @@ pub struct Supply {
 
 const N: usize = Group::ALL.len();
 
+/// One group's switch and limit as a save holds them. The demands are the room's own each step.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GroupSave {
+    pub breaker: bool,
+    pub limit: f64,
+}
+
+/// The grid's switches, in `Group::ALL` order.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GridSave {
+    pub groups: [GroupSave; Group::ALL.len()],
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Grid {
     groups: [GroupState; N],
@@ -130,6 +143,18 @@ impl Grid {
 }
 
 impl Grid {
+    pub fn to_save(&self) -> GridSave {
+        GridSave { groups: Group::ALL.map(|g| GroupSave { breaker: self.breaker(g), limit: self.limit(g) }) }
+    }
+
+    /// The switches of a save onto a grid made from the tuning (the demands stay the tuned ones).
+    pub fn apply_save(&mut self, s: &GridSave) {
+        for (g, gs) in Group::ALL.into_iter().zip(s.groups.iter()) {
+            self.set_breaker(g, gs.breaker);
+            self.set_limit(g, gs.limit);
+        }
+    }
+
     pub fn group(&self, g: Group) -> &GroupState {
         &self.groups[g.index()]
     }

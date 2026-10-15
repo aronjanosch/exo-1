@@ -22,6 +22,7 @@ use net_core::replay::DT;
 use net_core::snapshot::Snapshot;
 use crate::ship::RemoteShip;
 
+mod blast;
 mod boost;
 mod camera_g;
 mod cargo;
@@ -715,6 +716,8 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "coolant" => coolant::coolant_steps(&mut s),
         // #300: fuel rods: a rod from the rack is loaded into the reactor, the brake pulls one, G drops it.
         "rods" => rods::rods_steps(&mut s),
+        // #300: the meltdown blast: the drain melts the core, the walker two metres off is burned and irradiated.
+        "blast" => blast::blast_steps(&mut s),
         // #298: fire: a fire at the reactor grows, burns, is sprayed out; the alarm follows.
         "fire" => fire::fire_steps(&mut s),
         // #300: the same fire on the cell grid: the switch, the spread, the corridor, the spray.

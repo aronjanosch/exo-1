@@ -333,6 +333,11 @@ pub struct ReactorNews {
     pub load_kw: f64,
     pub optimal: [f64; 2],
     pub allowed: [f64; 2],
+    /// The fission and turbine bands (optimal, allowed; lo and hi) of the readout's sliders (#300 r30).
+    pub fission_optimal: [f64; 2],
+    pub fission_allowed: [f64; 2],
+    pub turbine_optimal: [f64; 2],
+    pub turbine_allowed: [f64; 2],
     /// The machines have power: the junction box works and the reactor delivers.
     pub powered: bool,
     /// The breakers, by `BreakerGroup::index`: engines, life support, lights.
@@ -537,6 +542,10 @@ mod tests {
             load_kw: 500.0,
             optimal: [35.0, 65.0],
             allowed: [20.0, 80.0],
+            fission_optimal: [20.0, 60.0],
+            fission_allowed: [10.0, 80.0],
+            turbine_optimal: [40.0, 56.0],
+            turbine_allowed: [30.0, 66.0],
             powered: true,
             breakers: [true, false, true],
             pump_on: true,

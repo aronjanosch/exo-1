@@ -165,7 +165,7 @@ pub enum ReactorAsk {
     /// The SILENCE button on ST-01 (r40, #165): the sounding room alarms go quiet (`reactor_core::RoomAlarm::silence`).
     SilenceAlarms,
     /// The GN-01 screen's FIRE (r40): one shot from the capacitor, refused while reloading or empty. The
-    /// FIRE stands in for the tactical officer until there are enemies to aim at.
+    /// FIRE stands in for the tactical officer: during an encounter (r41) the shot takes the enemy's shield, then its hull.
     Fire,
     /// The engineer's start of the jump drive (r40, #252): COLD_START to PREPPING. The host refuses it otherwise.
     JumpArm,
@@ -176,6 +176,8 @@ pub enum ReactorAsk {
     Airlock(AirlockAsk),
     /// The dev faults screen's VACUUM switch (r40): true makes the outside vacuum, false breathable air.
     SetVacuum(bool),
+    /// The dev faults screen's AMBUSH switch (r41): true starts an enemy encounter, false ends it.
+    Ambush(bool),
 }
 
 /// The jump drive's stage as the host has it: PULSAR's warp charge stages (`reactor_core::JumpStage`).
@@ -516,6 +518,28 @@ pub struct ReactorNews {
     pub airlock: AirlockNews,
     /// The outside is vacuum (r40; the dev faults screen's VACUUM switch shows it).
     pub vacuum: bool,
+    /// The enemy ship of the ambush (r41), None when no encounter has started.
+    pub enemy: Option<EnemyNews>,
+}
+
+/// The enemy ship's state for the GN-01 (r41): its shield and hull as 0..1 of their max, how the
+/// encounter ended, and its shots so far (a process that sees `shots` go up plays the boom).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EnemyNews {
+    pub shield: f64,
+    pub hull: f64,
+    pub outcome: EnemyOutcome,
+    pub shots: u32,
+    /// The wall section of the last shot (`SECTION_CENTRES` index).
+    pub section: u8,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EnemyOutcome {
+    #[default]
+    None,
+    Destroyed,
+    Escaped,
 }
 
 /// A room's air and fire for the status monitor (r38): the air as a fraction 0..1 (whole percent),
@@ -676,6 +700,7 @@ mod tests {
             jumps: 1,
             airlock: AirlockNews { inner_open: false, outer_open: true, cycling: AirlockCycle::Hold, progress: 0.4 },
             vacuum: true,
+            enemy: Some(EnemyNews { shield: 0.25, hull: 0.5, outcome: EnemyOutcome::Escaped, shots: 3, section: 5 }),
             aux_on: true,
             aux_life_support: false,
             aux_lights: true,
@@ -778,6 +803,8 @@ mod tests {
             ReactorAsk::JumpGo,
             ReactorAsk::Trigger(ReactorFault::JumpFull),
             ReactorAsk::Airlock(AirlockAsk::Inner),
+            ReactorAsk::Ambush(true),
+            ReactorAsk::Ambush(false),
             ReactorAsk::Airlock(AirlockAsk::Outer),
             ReactorAsk::Airlock(AirlockAsk::Cycle),
             ReactorAsk::SetVacuum(false),

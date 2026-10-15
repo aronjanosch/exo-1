@@ -16,6 +16,7 @@ use device_core::{Condition, DeviceEvent, DeviceTuning};
 use gameplay_core::rng::Rng;
 
 use crate::battery::Battery;
+use crate::enemy::{EnemyTuning, Encounter, Outcome};
 use crate::weapons::Weapons;
 use crate::engine::Engine;
 use crate::hull::{Hit, HitsTuning, Hull, DEVICES, REACTOR_AT};
@@ -211,6 +212,8 @@ pub enum RoomEvent {
     Fire { size: f64, source: Source },
     /// A fire at a hit's impact (`EngineRoom::apply_hit`, r40): the same fire, placed where it hit.
     HitFire { size: f64, at: [f64; 2] },
+    /// The enemy's turret fired (r41, `enemy.rs`): its shot hit the wall at `section` (`SECTION_CENTRES`).
+    EnemyShot { section: usize },
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -540,6 +543,11 @@ pub struct EngineRoom {
     jump: JumpDrive,
     /// The JUMP group's full demand, kW (the tuned value; the grid's own starts at 0).
     jump_full_kw: f64,
+    /// The enemy ship's values (`enemy` in reactor.json, r41) and the encounter that runs, if any.
+    enemy: EnemyTuning,
+    encounter: Option<Encounter>,
+    /// The rng of the enemy's shots (the hits' points and kinds): seeded with the room.
+    enemy_rng: Rng,
 }
 
 impl EngineRoom {
@@ -587,6 +595,9 @@ impl EngineRoom {
             weapons: Weapons::new(t.weapons),
             jump: JumpDrive::new(t.jump),
             jump_full_kw: t.grid.jump_drive.demand_kw,
+            enemy: t.enemy.clone(),
+            encounter: None,
+            enemy_rng: Rng::new(seed ^ 0x3e11_0a5b),
         }
     }
 
@@ -777,7 +788,14 @@ impl EngineRoom {
     /// A shot from the GN-01 screen (the FIRE button): true when the gun fired, false when refused
     /// (reloading, or not one shot's energy in the capacitor).
     pub fn fire_weapon(&mut self) -> bool {
-        self.weapons.fire()
+        let fired = self.weapons.fire();
+        if fired {
+            if let Some(e) = self.encounter.as_mut() {
+                let dmg = e.shot_damage();
+                e.take_shot(dmg);
+            }
+        }
+        fired
     }
 
     pub fn jump(&self) -> &JumpDrive {
@@ -786,6 +804,37 @@ impl EngineRoom {
 
     pub fn jump_mut(&mut self) -> &mut JumpDrive {
         &mut self.jump
+    }
+
+    /// The pilot's jump (`JumpDrive::jump`, r41): when it goes ACTIVE the running encounter ends
+    /// Escaped. True when it jumped.
+    pub fn jump_go(&mut self) -> bool {
+        let jumped = self.jump.jump();
+        if jumped {
+            if let Some(e) = self.encounter.as_mut() {
+                e.escape();
+            }
+        }
+        jumped
+    }
+
+    /// The dev AMBUSH on (r41): a new encounter, unless one runs. True when it started.
+    pub fn start_ambush(&mut self) -> bool {
+        if self.encounter.as_ref().is_some_and(|e| e.outcome() == Outcome::None) {
+            return false;
+        }
+        self.encounter = Some(Encounter::new(&self.enemy, &self.hits));
+        true
+    }
+
+    /// The dev AMBUSH off (r41): the encounter is gone, whatever its state.
+    pub fn stop_ambush(&mut self) {
+        self.encounter = None;
+    }
+
+    /// The encounter, running or ended (None when there is none).
+    pub fn encounter(&self) -> Option<&Encounter> {
+        self.encounter.as_ref()
     }
 
     /// The junction box's voltage: what the grid got over what it asked for, 0..1 (1 with no
@@ -1016,6 +1065,18 @@ impl EngineRoom {
         self.pump.use_coolant(dt, stream, self.reactor.heat_input(), &t);
         self.pump.leak(dt, &t);
 
+        // The enemy's turret (r41): each shot is an outside hit on the wall, the shield takes it first.
+        let shot = match self.encounter.as_mut() {
+            Some(e) => e.step(dt, &mut self.enemy_rng),
+            None => None,
+        };
+        if let Some(hit) = shot {
+            let section = self.encounter.as_ref().map_or(0, |e| e.last_section());
+            ev.push(RoomEvent::EnemyShot { section });
+            let mut rng = self.hit_rng.clone();
+            ev.extend(self.outside_hit(hit, &mut rng));
+            self.hit_rng = rng;
+        }
         let (through, junction_ev) = self.junction.pass(dt, self.reactor.output_kw(), load, &t);
         ev.extend(junction_ev);
         // The battery sits behind the reactor: it gives what the main grid lacks, and takes the

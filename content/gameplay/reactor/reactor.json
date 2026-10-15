@@ -55,6 +55,15 @@
   "jump": {
     "_comment": "Jump drive (r40, #252; PULSAR's warp charge stages, sources in reactor_core jump.rs): prep_s is the full power PREPPING takes before the charge starts, charge_s the time to a full charge at full power (slower when underpowered, paused at 0), active_s how long the drive stays ACTIVE after a jump before it is cold again. The drive's demand is the JUMP group's demand_kw while it charges. TODO(initiator): all three values.",
     "prep_s": 5.0, "charge_s": 60.0, "active_s": 3.0 },
+  "enemy": {
+    "_comment": "Enemy ship (r41, #255 basics; reactor_core enemy.rs, sources there): an abstract ship with no model and no flight (the dev area has no space flight). shield is the same shield model as ours with its own numbers (upkeep is unused here: the enemy runs at full power). hull is its hull (points, a shot past the shield takes it down). shot_damage is our GN-01 shot. The turret fires every fire_every_s (Barotrauma Turret.cs reload as a timer), the first shot first_shot_s after the ambush starts; light_share of its shots are the light hit, the rest heavy (the hits block). TODO(initiator): every value.",
+    "shield": { "max": 600.0, "charge_rate_max": 20.0, "recovery_delay_s": 3.0, "deflection": 0.0, "quantum_min": 0.75, "quantum_offline_s": 30.0, "upkeep": 0.1 },
+    "hull": 1000.0,
+    "shot_damage": 120.0,
+    "fire_every_s": 8.0,
+    "light_share": 0.7,
+    "first_shot_s": 10.0
+  },
   "director": {
     "_comment": "Director (r38, Barotrauma EventManager and MalfunctionEvent, simplified; sources in reactor_core director.rs): enabled (off here; the dev DIRECTOR toggle), min_interval_s and max_interval_s (the random wait between faults: Barotrauma EventCooldown 60 s, the max 3 cooldowns, TODO(initiator)), threshold (intensity at or below which a fault may fire; Barotrauma DefaultEventThreshold 0.2), rise_per_s and fall_per_s (intensity climb and fall; Barotrauma 0.04 and 0.0025), all TODO(initiator).",
     "enabled": false, "min_interval_s": 60.0, "max_interval_s": 180.0, "threshold": 0.2, "rise_per_s": 0.04, "fall_per_s": 0.0025 },

@@ -2,6 +2,7 @@ use content_core::{parse_strict_commented, File};
 use serde::{Deserialize, Serialize};
 
 use crate::airlock::AirlockTuning;
+use crate::enemy::EnemyTuning;
 use crate::battery::BatteryTuning;
 use crate::room_alarm::AlarmTuning;
 use crate::weapons::WeaponsTuning;
@@ -44,11 +45,13 @@ pub struct Tuning {
     pub jump: JumpTuning,
     /// The airlock and the outside (`airlock` in reactor.json, r40).
     pub airlock: AirlockTuning,
+    /// The enemy ship of the ambush (`enemy` in reactor.json, r41).
+    pub enemy: EnemyTuning,
 }
 
 impl Default for Tuning {
     fn default() -> Tuning {
-        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), shield: ShieldTuning::default(), alarm: AlarmTuning::default(), weapons: WeaponsTuning::default(), hits: HitsTuning::default(), jump: JumpTuning::default(), airlock: AirlockTuning::default() }
+        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), shield: ShieldTuning::default(), alarm: AlarmTuning::default(), weapons: WeaponsTuning::default(), hits: HitsTuning::default(), jump: JumpTuning::default(), airlock: AirlockTuning::default(), enemy: EnemyTuning::default() }
     }
 }
 
@@ -106,6 +109,10 @@ impl Tuning {
             need((0.0..=1.0).contains(&h.fire_chance), &format!("{name}.fire_chance"), "must be 0..1");
         }
         need((0.0..=1.0).contains(&self.room.blast_breach_damage), "room.blast_breach_damage", "must be 0..1");
+        let en = &self.enemy;
+        need(en.shield.max > 0.0 && en.hull > 0.0 && en.shot_damage >= 0.0, "enemy", "shield.max and hull > 0, shot_damage >= 0");
+        need(en.fire_every_s > 0.0 && en.first_shot_s >= 0.0, "enemy.fire_every_s", "must be > 0, first_shot_s >= 0");
+        need((0.0..=1.0).contains(&en.light_share), "enemy.light_share", "must be 0..1");
         need(r.fuel_burn >= 0.0 && r.temp_rate > 0.0, "reactor.temp_rate", "must be > 0, fuel_burn >= 0");
         need(r.temp_stiffness > 0.0 && r.temp_damping >= 0.0, "reactor.temp_stiffness", "must be > 0, temp_damping >= 0");
         need(r.fission_lag_s > 0.0 && r.heat_output_factor >= 0.0, "reactor.fission_lag_s", "must be > 0, heat_output_factor >= 0");

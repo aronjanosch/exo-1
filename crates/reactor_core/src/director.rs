@@ -4,7 +4,8 @@
 //! Sources (`/home/agent/exo-research/barotrauma/source/Barotrauma/BarotraumaShared/SharedSource/Events/`):
 //! - Which items, how picked: `MalfunctionEvent.cs:44-50` takes items that still work (Condition > 0)
 //!   and picks at random; `:65-67` breaks them at once when the duration is 0 (ours: all faults are
-//!   at once). Here the candidates are the room's four `Fault`s (`CANDIDATES`).
+//!   at once). Here the candidates are the room's six `Fault`s (`CANDIDATES`); the two outside hits
+//!   (r41) are always open.
 //! - Intensity, the terms: `EventManager.cs:1119-1124` (a fire of any size is 20 %, the hull's holes)
 //!   and `:1139-1143`: the three terms averaged, plus fire at half weight, clamped to 0..1. Ours: the
 //!   broken machines, the bad air and the critical temperature band for the three, `FIRE_SHARE` per fire.
@@ -24,8 +25,9 @@ use serde::{Deserialize, Serialize};
 use crate::engine_room::{EngineRoom, Fault};
 
 /// The faults the director picks from (the room's existing faults; Barotrauma's coolant leak is the
-/// pump's damage, so it is PumpBreak here, not a fifth entry). TODO(initiator): weights are equal.
-pub const CANDIDATES: [Fault; 4] = [Fault::PumpBreak, Fault::Surge, Fault::OxygenGeneratorBreak, Fault::HullBreach];
+/// pump's damage, so it is PumpBreak here, not a fifth entry). The two outside hits (r41) are picks too:
+/// a light and a heavy hit on the wall, as the dev faults. TODO(initiator): weights are equal.
+pub const CANDIDATES: [Fault; 6] = [Fault::PumpBreak, Fault::Surge, Fault::OxygenGeneratorBreak, Fault::HullBreach, Fault::HitLight, Fault::HitHeavy];
 
 /// Barotrauma's fire share: any fire is 20 % (`EventManager.cs:1124`), and the fire term counts at half
 /// weight (`:1141`).
@@ -71,7 +73,7 @@ pub struct Situation {
     pub temp_critical: bool,
     /// Per `CANDIDATES` entry: the fault can happen now (a broken device, or a breach already open,
     /// is not a candidate: Barotrauma picks among items with Condition > 0, `MalfunctionEvent.cs:44`).
-    pub can_break: [bool; 4],
+    pub can_break: [bool; 6],
 }
 
 impl Situation {
@@ -84,7 +86,7 @@ impl Situation {
             broken: working.iter().filter(|ok| !**ok).count() as u32,
             oxygen,
             temp_critical: w.critical_heat || w.cold,
-            can_break: [room.pump().condition().functioning(), room.junction().condition().functioning(), room.oxygen_generator().condition().functioning(), room.hull().intact()],
+            can_break: [room.pump().condition().functioning(), room.junction().condition().functioning(), room.oxygen_generator().condition().functioning(), room.hull().intact(), true, true],
         }
     }
 }
@@ -166,11 +168,11 @@ mod tests {
     }
 
     fn calm() -> Situation {
-        Situation { fires: 0, broken: 0, oxygen: 1.0, temp_critical: false, can_break: [true; 4] }
+        Situation { fires: 0, broken: 0, oxygen: 1.0, temp_critical: false, can_break: [true; 6] }
     }
 
     fn bad() -> Situation {
-        Situation { fires: 5, broken: 4, oxygen: 0.0, temp_critical: true, can_break: [true; 4] }
+        Situation { fires: 5, broken: 4, oxygen: 0.0, temp_critical: true, can_break: [true; 6] }
     }
 
     /// Steps `secs` in 0.1 s steps; the faults with the time they fired at.
@@ -209,7 +211,7 @@ mod tests {
 
     #[test]
     fn only_open_candidates_fire() {
-        let only_hull = Situation { can_break: [false, false, false, true], ..calm() };
+        let only_hull = Situation { can_break: [false, false, false, true, false, false], ..calm() };
         let got = run(&mut Director::new(&cfg(true), 3), &only_hull, 1000.0);
         assert!(!got.is_empty() && got.iter().all(|(_, f)| *f == Fault::HullBreach), "{got:?}");
     }

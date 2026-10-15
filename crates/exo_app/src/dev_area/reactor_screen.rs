@@ -7,7 +7,7 @@ use crate::dev_area::reactor::{lamp_blink_on, ReactorConfig};
 use crate::dev_area::status_monitor;
 use crate::items::Items;
 use display_core::{button, canvas, column, ctl, font, label, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Rect, Shape, Tier, TextFace, Tone, Widget};
-use item_core::wire::{AirlockCycle, BreakerGroup, FuelKind, FuelTube, JumpStage, Lamp, PumpMode, ReactorAsk, ReactorFault, ReactorNews, FUEL_TUBES};
+use item_core::wire::{AirlockCycle, BreakerGroup, EnemyOutcome, FuelKind, FuelTube, JumpStage, Lamp, PumpMode, ReactorAsk, ReactorFault, ReactorNews, FUEL_TUBES};
 
 const LAMPS: [Lamp; Lamp::COUNT] = [Lamp::Hot, Lamp::CritHeat, Lamp::Cold, Lamp::LowTemp, Lamp::HighOut, Lamp::CritOut, Lamp::LowOut, Lamp::FuelLow, Lamp::NoFuel, Lamp::Meltdown, Lamp::Scram];
 /// A lamp's cell (px) and the gap between the cells.
@@ -68,7 +68,7 @@ impl ReactorHelp {
 pub fn plugin(app: &mut App) {
     app.init_resource::<ReactorHelp>();
     app.add_systems(FixedUpdate, (read_clicks, write_panels).chain().in_set(crate::phases::Fx::Effects));
-    app.add_systems(Update, gun_flash);
+    app.add_systems(Update, (gun_flash, enemy_hit_flash));
 }
 
 /// A shot the GN-01 saw (r40): the shot count went down and the reload started. A reset (the count
@@ -109,6 +109,34 @@ fn gun_flash(mut commands: Commands, time: Res<Time>, items: Res<Items>, planet:
     let Some(area) = area else { return };
     if let Some((at, _)) = area.ground(&planet, GUNNERY_AT, VENT_LIFT) {
         commands.spawn((PointLight { color: Color::srgb(1.0, 0.85, 0.5), intensity: GUN_FLASH_PEAK, range: 3.0, shadow_maps_enabled: false, ..default() }, Transform::default(), WorldPos(at), GunFlash { age: 0.0 }));
+    }
+}
+
+/// An enemy shot the GN-01's news shows (r41): the shot count went up in an encounter that runs. A new
+/// encounter starts its count at 0 and so is no shot. The audio (`audio_slice`) and the flash use it.
+pub fn enemy_shot(prev: Option<u32>, r: &ReactorNews) -> bool {
+    match (prev, r.enemy) {
+        (Some(p), Some(e)) => e.shots > p,
+        _ => false,
+    }
+}
+
+/// An enemy shot's hit (r41): a light flash at the wall section it hit (`reactor_core::hull::SECTION_CENTRES`),
+/// the muzzle flash's light and fade (`GunFlash`), no camera.
+fn enemy_hit_flash(mut commands: Commands, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut prev: Local<Option<u32>>) {
+    let Some(news) = items.reactor else {
+        *prev = None;
+        return;
+    };
+    let shot = enemy_shot(*prev, &news);
+    *prev = news.enemy.map(|e| e.shots);
+    if !shot {
+        return;
+    }
+    let (Some(area), Some(e)) = (area, news.enemy) else { return };
+    let centre = reactor_core::hull::SECTION_CENTRES[usize::from(e.section).min(reactor_core::hull::SECTIONS - 1)];
+    if let Some((at, _)) = area.ground(&planet, centre, VENT_LIFT) {
+        commands.spawn((PointLight { color: Color::srgb(0.6, 0.8, 1.0), intensity: GUN_FLASH_PEAK, range: 3.0, shadow_maps_enabled: false, ..default() }, Transform::default(), WorldPos(at), GunFlash { age: 0.0 }));
     }
 }
 
@@ -841,6 +869,11 @@ pub fn gun_word(r: &ReactorNews) -> (&'static str, Tone) {
     }
 }
 
+/// An encounter runs (r41): the enemy's outcome is still None.
+pub fn ambush_running(r: &ReactorNews) -> bool {
+    r.enemy.is_some_and(|e| e.outcome == EnemyOutcome::None)
+}
+
 /// GN-01 (r40, the gunnery): the capacitor's shots as pips, its charge, the word and FIRE. FIRE
 /// stands in for the tactical officer until there are enemies and aiming. `capacity` is the pips
 /// the capacitor holds (`WeaponsTuning::capacity_shots`).
@@ -854,14 +887,34 @@ pub fn gunnery_panel(r: Option<&ReactorNews>, capacity: u8) -> Panel {
     let pip_row = canvas(f64::from(capacity) * (pip_w + pip_gap) - pip_gap, 20.0, pips, None).fixed(20.0);
     let bar_w = 200.0;
     let charge = r.weapon_charge.clamp(0.0, 1.0);
-    let mut s = vec![Shape::Rect { x: 0.0, y: 3.0, w: bar_w, h: 12.0, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) }];
-    if charge > 0.0 {
-        s.push(Shape::Rect { x: 2.0, y: 5.0, w: (bar_w - 4.0) * charge, h: 8.0, fill: Some(Ink::Hud), outline: None });
-    }
-    let bar = row(8.0, vec![canvas(bar_w, 18.0, s, None).fixed(bar_w), readout(format!("{:.0} %", charge * 100.0)).text_size(font::SMALL).tone(Tone::Normal).flex(1.0)]).fixed(18.0);
+    // A 0..1 bar with its percent, as the charge and the enemy's shield and hull read.
+    let bar_row = |frac: f64| {
+        let f = frac.clamp(0.0, 1.0);
+        let mut s = vec![Shape::Rect { x: 0.0, y: 3.0, w: bar_w, h: 12.0, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) }];
+        if f > 0.0 {
+            s.push(Shape::Rect { x: 2.0, y: 5.0, w: (bar_w - 4.0) * f, h: 8.0, fill: Some(Ink::Hud), outline: None });
+        }
+        row(8.0, vec![canvas(bar_w, 18.0, s, None).fixed(bar_w), readout(format!("{:.0} %", f * 100.0)).text_size(font::SMALL).tone(Tone::Normal).flex(1.0)]).fixed(18.0)
+    };
+    let bar = bar_row(charge);
     let word = readout(word).text_size(font::SMALL).tone(tone).fixed(20.0);
     let fire = button("FIRE", "fire").enabled(r.weapon_shots > 0 && r.weapon_reload_s <= 0.0).fixed(40.0);
-    let body = column(6.0, vec![micro("SHOTS").fixed(14.0), pip_row, micro("CHARGE").fixed(14.0), bar, word, fire, space()]);
+    let mut rows = vec![micro("SHOTS").fixed(14.0), pip_row, micro("CHARGE").fixed(14.0), bar, word, fire];
+    // The enemy ship of the ambush (r41): its shield and hull while the encounter runs, its end at the last.
+    if let Some(e) = r.enemy {
+        let (end, end_tone) = match e.outcome {
+            EnemyOutcome::None => ("ENGAGED", Tone::Bad),
+            EnemyOutcome::Destroyed => ("DESTROYED", Tone::Good),
+            EnemyOutcome::Escaped => ("ESCAPED", Tone::Warn),
+        };
+        rows.push(micro("ENEMY SHIELD").fixed(14.0));
+        rows.push(bar_row(e.shield));
+        rows.push(micro("ENEMY HULL").fixed(14.0));
+        rows.push(bar_row(e.hull));
+        rows.push(readout(end).text_size(font::SMALL).tone(end_tone).fixed(20.0));
+    }
+    rows.push(space());
+    let body = column(6.0, rows);
     Panel::screen(Tier::S, GUNNERY_NAME, "GN-01", body).with_padding(8.0)
 }
 
@@ -995,6 +1048,7 @@ pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
     let aux = if r.is_some_and(|r| r.aux_on) { "AUX ON" } else { "AUX OFF" };
     let director = if r.is_some_and(|r| r.director) { "DIRECTOR ON" } else { "DIRECTOR OFF" };
     let vacuum = if r.is_some_and(|r| r.vacuum) { "VACUUM ON" } else { "VACUUM OFF" };
+    let ambush = if r.is_some_and(ambush_running) { "AMBUSH ON" } else { "AMBUSH OFF" };
     let col = |items: Vec<_>| column(4.0, items);
     Panel::screen(
         Tier::S,
@@ -1023,7 +1077,7 @@ pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
                     button("Shield hit", "shield_hit").fixed(24.0),
                     button("Jump full", "jump_full").fixed(24.0),
                 ]),
-                col(vec![button(vacuum, "vacuum").fixed(28.0)]),
+                col(vec![button(ambush, "ambush").fixed(24.0), button(vacuum, "vacuum").fixed(28.0)]),
             ],
         ),
     )
@@ -1286,6 +1340,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "director" => snap.map(|r| ReactorAsk::SetDirector(!r.director)),
                 "jump_full" => Some(ReactorAsk::Trigger(ReactorFault::JumpFull)),
                 "vacuum" => snap.map(|r| ReactorAsk::SetVacuum(!r.vacuum)),
+                "ambush" => snap.map(|r| ReactorAsk::Ambush(!ambush_running(&r))),
                 _ => None,
             }
         } else if c.panel == AIRLOCK_INNER_ID || c.panel == AIRLOCK_OUTER_ID {

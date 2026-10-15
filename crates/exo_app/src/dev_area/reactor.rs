@@ -8,11 +8,11 @@ use crate::dev_area::engine_room::ROOM;
 use crate::dev_area::rods;
 use crate::gameplay::Gameplay;
 use gameplay_core::notice::{Notice, NoticeKind};
-use item_core::wire::{Alarm, AlarmNews, BreakerGroup, FuelTube, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, RoomAir, RoomAlarmKind, GRAPH_POINTS};
+use item_core::wire::{Alarm, AlarmNews, BreakerGroup, EnemyNews, EnemyOutcome, FuelTube, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, RoomAir, RoomAlarmKind, GRAPH_POINTS};
 use reactor_core::room_alarm::{AlarmState, Kind};
 use reactor_core::RoomAlarm;
 use reactor_core::director::Situation;
-use reactor_core::{AirlockTuning, AlarmLevel, Director, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
+use reactor_core::{AirlockTuning, AlarmLevel, Director, EngineRoom, Fault, Group, Input, Outcome, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
 
 /// The dev fault SHIELD HIT's hit, points (`EngineRoom::absorb_hit`). TODO(initiator): a dev value.
 const DEV_SHIELD_HIT: f64 = 300.0;
@@ -125,7 +125,7 @@ impl ReactorSim {
                 }
             }
             ReactorAsk::JumpGo => {
-                if self.room.jump_mut().jump() {
+                if self.room.jump_go() {
                     counts.jumps += 1;
                     info!("reactor: JUMP");
                 } else {
@@ -211,6 +211,13 @@ impl ReactorSim {
                     info!("reactor: gun refused (reloading or no shot's energy)");
                 }
             }
+            // The dev AMBUSH (r41): a new encounter, refused while one runs; off ends it.
+            ReactorAsk::Ambush(true) => {
+                if !self.room.start_ambush() {
+                    info!("reactor: ambush refused (an encounter runs)");
+                }
+            }
+            ReactorAsk::Ambush(false) => self.room.stop_ambush(),
             // The airlock and the VACUUM switch need the air: `reactor_step` takes them.
             ReactorAsk::Airlock(_) | ReactorAsk::SetVacuum(_) => {}
         }
@@ -306,7 +313,17 @@ impl ReactorSim {
             // The host sets the airlock and the vacuum in `reactor_step` (they come from the air).
             airlock: Default::default(),
             vacuum: false,
+            enemy: self.room.encounter().map(|e| EnemyNews { shield: e.shield_fraction(), hull: e.hull_fraction(), outcome: enemy_outcome(e.outcome()), shots: e.shots(), section: e.last_section() as u8 }),
         }
+    }
+}
+
+/// The encounter's end as the wire carries it.
+pub fn enemy_outcome(o: Outcome) -> EnemyOutcome {
+    match o {
+        Outcome::None => EnemyOutcome::None,
+        Outcome::Destroyed => EnemyOutcome::Destroyed,
+        Outcome::Escaped => EnemyOutcome::Escaped,
     }
 }
 
@@ -439,6 +456,7 @@ pub fn route(e: RoomEvent, counts: &mut ReactorCounts) {
             counts.fires += 1;
             info!("engine room: fire of {size} m at the hit on {at:?}");
         }
+        RoomEvent::EnemyShot { section } => info!("enemy: shot at the wall, section {section}"),
         RoomEvent::Sparks => {
             counts.sparks += 1;
             info!("engine room: sparks at the junction box");
@@ -999,6 +1017,36 @@ mod tests {
         assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, meltdowns: 1, blasts: 0, ejects: 0, ecools: 0, jumps: 0 });
         route(RoomEvent::Reactor(ReactorEvent::Blast(reactor_core::Blast::default())), &mut k);
         assert_eq!(k.blasts, 1, "the blast is counted");
+    }
+
+    #[test]
+    fn the_ambush_ask_starts_an_encounter_and_a_jump_escapes_it() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        assert!(s.news(1.0).enemy.is_none(), "no encounter until the ask");
+        s.apply(ReactorAsk::Ambush(true), &cfg(), &mut k);
+        let e = s.news(1.0).enemy.expect("the ambush is on");
+        assert_eq!((e.outcome, e.hull), (EnemyOutcome::None, 1.0));
+        s.apply(ReactorAsk::Trigger(ReactorFault::JumpFull), &cfg(), &mut k);
+        s.apply(ReactorAsk::JumpGo, &cfg(), &mut k);
+        assert_eq!(s.news(1.0).enemy.map(|e| e.outcome), Some(EnemyOutcome::Escaped));
+        s.apply(ReactorAsk::Ambush(false), &cfg(), &mut k);
+        assert!(s.news(1.0).enemy.is_none());
+    }
+
+    #[test]
+    fn an_enemy_shot_is_the_count_going_up_in_an_encounter() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.apply(ReactorAsk::Ambush(true), &cfg(), &mut k);
+        let before = s.news(1.0);
+        // The first shot comes 10 s into the encounter (reactor.json enemy.first_shot_s).
+        for _ in 0..20 {
+            s.room.step(0.5, Input::auto());
+        }
+        let after = s.news(1.0);
+        assert!(crate::dev_area::reactor_screen::enemy_shot(before.enemy.map(|e| e.shots), &after));
+        assert!(!crate::dev_area::reactor_screen::enemy_shot(None, &after), "the first news is the baseline");
     }
 
     #[test]

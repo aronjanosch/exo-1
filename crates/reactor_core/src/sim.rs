@@ -542,5 +542,6 @@ fn label(e: &RoomEvent) -> String {
             s => format!("Fire {s:?}"),
         },
         RoomEvent::HitFire { .. } => "Fire Hit".into(),
+        RoomEvent::EnemyShot { .. } => "Enemy Shot".into(),
     }
 }

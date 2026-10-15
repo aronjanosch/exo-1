@@ -41,6 +41,8 @@ pub const ZAP_EVERY_S: f64 = 2.0;
 pub const CLUNK_VOL: f32 = 0.09;
 /// The GN-01's shot (r40): the thud, louder than the clunk.
 pub const GUN_VOL: f32 = 0.14;
+/// The enemy's shot (r41), heard from far off: the thud at a low volume (TODO(initiator)).
+pub const ENEMY_BOOM_VOL: f32 = 0.04;
 /// The dry click of an extinguisher that ran empty: the clunk, quieter.
 pub const DRY_VOL: f32 = 0.05;
 pub const SWEEP_VOL: f32 = 0.08;
@@ -260,6 +262,18 @@ fn gun_shot(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mut 
         one_shot(&mut commands, &s.thud, GUN_VOL);
     }
     *prev = Some(news.weapon_shots);
+}
+
+/// The enemy's shot (r41): a distant boom, the thud at `ENEMY_BOOM_VOL`, on every machine that gets the news.
+fn enemy_boom(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mut prev: Local<Option<u32>>) {
+    let Some(news) = items.reactor else {
+        *prev = None;
+        return;
+    };
+    if crate::dev_area::reactor_screen::enemy_shot(*prev, &news) {
+        one_shot(&mut commands, &s.thud, ENEMY_BOOM_VOL);
+    }
+    *prev = news.enemy.map(|e| e.shots);
 }
 
 fn walker_pos(players: &Query<&Player>) -> Option<DVec3> {
@@ -576,7 +590,7 @@ fn health_sounds(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, o
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, setup);
-    app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, repair_hurt_sounds, electric_sounds, pump_loop, door_sound, health_sounds, reactor_hum, reactor_alarms, room_klaxons, ecool_hiss, extinguisher_dry, gun_shot).in_set(crate::phases::Frame::Input));
+    app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, repair_hurt_sounds, electric_sounds, pump_loop, door_sound, health_sounds, reactor_hum, reactor_alarms, room_klaxons, ecool_hiss, extinguisher_dry, gun_shot, enemy_boom).in_set(crate::phases::Frame::Input));
 }
 
 #[cfg(test)]

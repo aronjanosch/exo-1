@@ -27,10 +27,11 @@ A co-op crew game in Rust with Bevy: friends run one walkable ship together, eac
 
 ## Agent loop
 
-- Tests run in three sizes; the initiator wants the long run only when a lot comes together:
-  - **A feature** is done when its own tests pass: `cargo test -p <crate>` for every crate it touches, and its scenario as `cargo ts scenario_<name>` (dynamic; `cargo test -p exo_app` builds static Bevy, 900 MB per binary).
-  - **Merging a few features** (into a round branch or `main`) reruns the tests of those features on the merged branch, no full run.
-  - **A big round** (a whole milestone or most of it) runs the full gate before it reaches `main`: `scripts/gate` (Linux and macOS; on Windows `cargo t` directly) runs `cargo t` (cargo-nextest, `mise install`, every workspace test and every headless scenario, about 50 s on a quiet machine, the whole CPU), one at a time on the machine. With it go the timing test `cargo t -P perf` on a quiet machine and `cargo check --workspace --all-targets` for the static build (GitHub CI is off, runner budget).
+- **Test budget**: testing, building and screenshots take at most a fifth of a session's time; the rest is code. Code a batch (several changes or features), then test it once:
+  - **A batch** is done when its own tests pass, run once for the whole batch: `cargo test -p <crate>` for every crate it touches, and its scenarios as `cargo ts scenario_<name>` (dynamic; `cargo test -p exo_app` builds static Bevy, 900 MB per binary).
+  - **A merge** of a batch with green tests (into a round branch or `main`) is pushed as it is when it merged cleanly; only files the merge had to resolve get their tests run again.
+  - **A big round** (a whole milestone or most of it) runs the full gate once, at its end, before it reaches `main`: `scripts/gate` (Linux and macOS; on Windows `cargo t` directly) runs `cargo t` (cargo-nextest, `mise install`, every workspace test and every headless scenario, about 50 s on a quiet machine, the whole CPU), one at a time on the machine. With it go the timing test `cargo t -P perf` on a quiet machine and `cargo check --workspace --all-targets` for the static build (GitHub CI is off, runner budget).
+  - **Window screenshots**: one run per batch, only the shots of what changed; none when the initiator checks the look himself.
   Commands and scenario names: `README.md`, section "Run".
 - The app's integration tests are one binary (`crates/exo_app/tests/app/`): a new scenario test is a module there. Each extra file in `tests/` links Bevy again.
 - Several sessions at once (a lane each) or a playtest round across them: skill `exo-orchestrate`.

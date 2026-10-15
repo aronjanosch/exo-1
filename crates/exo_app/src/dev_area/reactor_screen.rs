@@ -565,6 +565,43 @@ fn lamp_cell(l: Lamp, lit: bool) -> Item {
     canvas(LAMP_W, LAMP_H, shapes, None).flex(1.0)
 }
 
+/// The graph's cell (px) on the M panel (640 x 400): the width less the well and padding, and the
+/// height the lamps, boost, presses and countdown leave (TODO(initiator): the status board's budget).
+const GRAPH_W: f64 = 600.0;
+const GRAPH_H: f64 = 150.0;
+
+/// The graph's shapes (Barotrauma's `DrawGraph`, `Reactor.cs:543-575`): output in the good tone,
+/// load in the neutral one, both on one scale, the larger of half the room's maximum and the
+/// highest load shown (Barotrauma uses 10000 kW with a 5000 kW reactor). Newest at the right.
+/// No curves (`graph_points` 0) draws the frame only.
+pub fn graph_shapes(r: Option<&ReactorNews>, max_kw: f64, w: f64, h: f64) -> Vec<Shape> {
+    let mut s = vec![Shape::Rect { x: 0.0, y: 0.0, w, h, fill: Some(Ink::Bg0), outline: Some((Ink::HudDim, 1.0)) }];
+    let Some(r) = r else { return s };
+    let n = (r.graph_points as usize).min(item_core::wire::GRAPH_POINTS);
+    if n < 2 {
+        return s;
+    }
+    let top = r.graph_load[..n].iter().copied().max().unwrap_or(0) as f64;
+    let scale = (max_kw * 0.5).max(top).max(1.0);
+    // Index 0 is the newest sample, at the right edge; the oldest is at the left.
+    let point = |curve: &[u16; item_core::wire::GRAPH_POINTS], i: usize| -> [f64; 2] {
+        let x = w * (1.0 - i as f64 / (n - 1) as f64);
+        let y = h - (curve[i] as f64 / scale).clamp(0.0, 1.0) * (h - 2.0) - 1.0;
+        [x, y]
+    };
+    for (curve, ink) in [(&r.graph_output, Ink::Good), (&r.graph_load, Ink::Fg2)] {
+        for i in 0..n - 1 {
+            s.push(Shape::Line { a: point(curve, i + 1), b: point(curve, i), width: 2.0, ink, dash: None });
+        }
+    }
+    s
+}
+
+/// The graph as an item: a fixed strip under the status board's controls.
+fn graph_item(r: Option<&ReactorNews>, max_kw: f64) -> Item {
+    canvas(GRAPH_W, GRAPH_H, graph_shapes(r, max_kw, GRAPH_W, GRAPH_H), None).fixed(GRAPH_H)
+}
+
 /// A countdown's clock: minutes and seconds, the seconds rounded up.
 pub fn clock(s: f64) -> String {
     let s = s.max(0.0).ceil() as u64;
@@ -575,9 +612,9 @@ pub fn clock(s: f64) -> String {
 /// lit, the warn or bad ink; the 2 Hz blink is `blink_on`, SCRAM stays lit), the temperature boost
 /// with its two buttons (disabled while a press would not pass), and the implosion's countdown
 /// along the bottom while the meltdown timer runs.
-pub fn status_panel(r: Option<&ReactorNews>, blink_on: bool) -> Panel {
+pub fn status_panel(r: Option<&ReactorNews>, max_kw: f64, blink_on: bool) -> Panel {
     if !powered(r) {
-        return no_power(STATUS_NAME, "RX-02", Tier::S);
+        return no_power(STATUS_NAME, "RX-02", Tier::M);
     }
     let r = r.copied().unwrap_or_default();
     let lit = |l: Lamp| r.lamps[l.index()] && (l == Lamp::Scram || blink_on);
@@ -591,12 +628,13 @@ pub fn status_panel(r: Option<&ReactorNews>, blink_on: bool) -> Panel {
     }
     let lamps = column(LAMP_GAP, grid).fixed(4.0 * LAMP_H + 3.0 * LAMP_GAP);
     let boost = row(8.0, vec![micro("BOOST").flex(1.0), readout(format!("{:+.0}", r.boost)).text_size(font::SMALL).tone(Tone::Normal)]).fixed(16.0);
-    let presses = row(6.0, vec![button("UP", "boost_up").enabled(r.boost_ok).flex(1.0), button("DOWN", "boost_down").enabled(r.boost_ok).flex(1.0)]).fixed(ctl::SM);
     let countdown = match r.meltdown_eta_s {
         Some(s) => readout(format!("IMPLOSION {}", clock(s))).text_size(font::LABEL).tone(Tone::Bad).fixed(22.0),
         None => space().fixed(22.0),
     };
-    Panel::screen(Tier::S, STATUS_NAME, "RX-02", column(5.0, vec![lamps, boost, presses, countdown])).with_padding(6.0)
+    let presses = row(6.0, vec![button("UP", "boost_up").enabled(r.boost_ok).flex(1.0), button("DOWN", "boost_down").enabled(r.boost_ok).flex(1.0)]).fixed(ctl::SM);
+    let graph = graph_item(Some(&r), max_kw);
+    Panel::screen(Tier::M, STATUS_NAME, "RX-02", column(5.0, vec![lamps, boost, presses, countdown, graph])).with_padding(6.0)
 }
 
 /// The clicks: the readout asks for the reactor (the toggles give the new state as the value, the
@@ -669,7 +707,7 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     panels.set(JUNCTION_ID, junction_panel(items.reactor.as_ref()));
     panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));
     panels.set(FAULTS_ID, faults_panel());
-    panels.set(STATUS_ID, status_panel(items.reactor.as_ref(), lamp_blink_on(time.elapsed_secs_f64())));
+    panels.set(STATUS_ID, status_panel(items.reactor.as_ref(), cfg.0.reactor.max_output_kw, lamp_blink_on(time.elapsed_secs_f64())));
 }
 
 #[cfg(test)]
@@ -719,7 +757,7 @@ mod tests {
         v.push(junction_panel(Some(&ReactorNews { overvolt: true, ..news() })));
         for blink in [false, true] {
             for r in [None, Some(status_news()), Some(ReactorNews { lamps: [true; Lamp::COUNT], meltdown_eta_s: Some(42.0), ..status_news() }), Some(ReactorNews { powered: false, ..status_news() })] {
-                v.push(status_panel(r.as_ref(), blink));
+                v.push(status_panel(r.as_ref(), 2000.0, blink));
             }
         }
         v.push(faults_panel());
@@ -751,6 +789,29 @@ mod tests {
         out
     }
 
+    /// The graph's lines: two polylines of `graph_points` points (24 segments each at 25), none
+    /// without curves or without news.
+    #[test]
+    fn the_graph_draws_two_curves_of_graph_points_or_none() {
+        let lines = |r: Option<&ReactorNews>| graph_shapes(r, 2000.0, GRAPH_W, GRAPH_H).iter().filter(|s| matches!(s, Shape::Line { .. })).count();
+        let curves = ReactorNews { graph_points: 25, graph_output: [400; 25], graph_load: [300; 25], ..status_news() };
+        assert_eq!(lines(Some(&curves)), 2 * 24);
+        assert_eq!(lines(Some(&ReactorNews { graph_points: 0, ..curves })), 0, "no curves: the frame only");
+        assert_eq!(lines(None), 0, "no news: the frame only");
+        // Both curves share one scale: the load at 1000 kW is half the height of the top, and the
+        // output at 500 kW (half the room's maximum) reaches the top edge.
+        let top = ReactorNews { graph_points: 2, graph_output: [500; 25], graph_load: [1000; 25], ..status_news() };
+        let ys: Vec<f64> = graph_shapes(Some(&top), 2000.0, GRAPH_W, GRAPH_H)
+            .iter()
+            .filter_map(|s| match s {
+                Shape::Line { a, ink: Ink::Fg2, .. } => Some(a[1]),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ys.len(), 1);
+        assert!(ys[0] < 2.0, "the load at the scale's top: {}", ys[0]);
+    }
+
     fn status_news() -> ReactorNews {
         ReactorNews { lamps: [false; Lamp::COUNT], boost_ok: true, ..news() }
     }
@@ -761,7 +822,7 @@ mod tests {
         r.lamps[Lamp::Hot.index()] = true;
         r.lamps[Lamp::NoFuel.index()] = true;
         r.lamps[Lamp::Scram.index()] = true;
-        let lit = lit_lamps(&status_panel(Some(&r), true));
+        let lit = lit_lamps(&status_panel(Some(&r), 2000.0, true));
         assert!(lit.contains(&"HOT".to_string()) && lit.contains(&"NO FUEL".to_string()) && lit.contains(&"SCRAM".to_string()), "{lit:?}");
         assert_eq!(lit.len(), 3, "only the three lamps on: {lit:?}");
     }
@@ -771,16 +832,16 @@ mod tests {
         let mut r = status_news();
         r.lamps[Lamp::Cold.index()] = true;
         r.lamps[Lamp::Scram.index()] = true;
-        let dark = lit_lamps(&status_panel(Some(&r), false));
+        let dark = lit_lamps(&status_panel(Some(&r), 2000.0, false));
         assert_eq!(dark, vec!["SCRAM".to_string()], "the blink's off phase: only SCRAM is lit");
-        assert_eq!(lit_lamps(&status_panel(Some(&r), true)).len(), 2, "the blink's on phase: both lit");
+        assert_eq!(lit_lamps(&status_panel(Some(&r), 2000.0, true)).len(), 2, "the blink's on phase: both lit");
     }
 
     #[test]
     fn the_boost_buttons_are_disabled_when_a_press_would_not_pass() {
-        let p = status_panel(Some(&status_news()), true);
+        let p = status_panel(Some(&status_news()), 2000.0, true);
         assert!(p.find("boost_up").is_some_and(|b| matches!(b.widget, display_core::Widget::Button { enabled: true, .. })));
-        let off = status_panel(Some(&ReactorNews { boost_ok: false, ..status_news() }), true);
+        let off = status_panel(Some(&ReactorNews { boost_ok: false, ..status_news() }), 2000.0, true);
         for a in ["boost_up", "boost_down"] {
             assert!(matches!(off.find(a).unwrap().widget, display_core::Widget::Button { enabled: false, .. }), "{a}");
         }
@@ -789,19 +850,19 @@ mod tests {
     #[test]
     fn the_implosion_countdown_shows_only_with_an_eta() {
         let label = |p: &Panel, t: &str| p.layout().into_iter().any(|w| matches!(&w.widget, display_core::Widget::Label { text, .. } if text == t));
-        let counting = status_panel(Some(&ReactorNews { meltdown_eta_s: Some(42.0), ..status_news() }), true);
+        let counting = status_panel(Some(&ReactorNews { meltdown_eta_s: Some(42.0), ..status_news() }), 2000.0, true);
         assert!(label(&counting, "IMPLOSION 0:42"));
-        assert!(!label(&status_panel(Some(&status_news()), true), "IMPLOSION 0:42"), "no countdown without an eta");
+        assert!(!label(&status_panel(Some(&status_news()), 2000.0, true), "IMPLOSION 0:42"), "no countdown without an eta");
         assert_eq!(clock(125.0), "2:05");
         assert_eq!(clock(-1.0), "0:00");
     }
 
     #[test]
     fn the_status_board_says_no_power_and_has_nothing_to_press_without_power() {
-        let off = status_panel(Some(&ReactorNews { powered: false, ..status_news() }), true);
+        let off = status_panel(Some(&ReactorNews { powered: false, ..status_news() }), 2000.0, true);
         assert!(off.find("boost_up").is_none() && off.find("boost_down").is_none());
         assert!(off.overflowing().is_empty());
-        assert!(status_panel(None, true).find("boost_up").is_none());
+        assert!(status_panel(None, 2000.0, true).find("boost_up").is_none());
     }
 
     #[test]

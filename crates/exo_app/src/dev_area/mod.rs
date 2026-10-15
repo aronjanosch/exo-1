@@ -27,6 +27,7 @@ pub mod item_table;
 pub mod reactor;
 pub mod reactor_screen;
 pub mod rods;
+pub mod status_monitor;
 pub mod test_console;
 
 pub const PLACE: &str = "dev_area";

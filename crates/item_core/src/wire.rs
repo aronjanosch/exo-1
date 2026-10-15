@@ -395,6 +395,16 @@ pub struct ReactorNews {
     pub battery_recharge: f64,
     /// kW the battery gave in the last step (0 when the grid did not need it).
     pub battery_kw: f64,
+    /// The rooms the status monitor shows, by index: 0 the engine room, 1 the corridor (r38).
+    pub rooms: [RoomAir; 2],
+}
+
+/// A room's air and fire for the status monitor (r38): the air as a fraction 0..1 (whole percent),
+/// and whether a fire burns in the room.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct RoomAir {
+    pub o2: f64,
+    pub fire: bool,
 }
 
 /// The most points the reactor graph carries (the shipped `graph_points`, 25). A fixed size keeps
@@ -574,6 +584,7 @@ mod tests {
             battery_charge: 0.75,
             battery_recharge: 0.4,
             battery_kw: 120.0,
+            rooms: [RoomAir { o2: 0.84, fire: false }, RoomAir { o2: 0.31, fire: true }],
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {
             ToClient::Reactor(r) => r,

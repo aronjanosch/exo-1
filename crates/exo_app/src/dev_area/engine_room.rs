@@ -1,5 +1,6 @@
 use super::*;
 use crate::dev_area::reactor_screen;
+use crate::dev_area::status_monitor;
 use crate::displays::DisplayPanel;
 use crate::env::PlanetRes;
 use crate::items::{Items, NetOut, Role};
@@ -78,6 +79,7 @@ pub const SCREENS: [Mount; 7] = [
     Mount { id: reactor_screen::DOOR_ID, name: reactor_screen::DOOR_NAME, at: [-13.04, -10.0], lift: 1.3, size: SMALL_SCREEN_SIZE, turn: -90.0 },
     Mount { id: reactor_screen::FAULTS_ID, name: reactor_screen::FAULTS_NAME, at: reactor_screen::FAULTS_AT, lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 0.0 },
     Mount { id: reactor_screen::STATUS_ID, name: reactor_screen::STATUS_NAME, at: STATUS_AT, lift: STATUS_LIFT, size: STATUS_SIZE, turn: 180.0 },
+    Mount { id: status_monitor::ID, name: status_monitor::NAME, at: status_monitor::AT, lift: status_monitor::LIFT, size: status_monitor::SIZE, turn: status_monitor::TURN },
 ];
 
 pub const DOOR: &str = "engine_door";

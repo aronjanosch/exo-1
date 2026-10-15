@@ -184,6 +184,7 @@ impl ReactorSim {
             limits: Group::ALL.map(|g| grid.limit(g)),
             delivered_kw: Group::ALL.map(|g| grid.supply(g).delivered_kw),
             demand_kw: Group::ALL.map(|g| grid.group(g).demand_kw),
+            lights_factor: grid.factor(Group::Lights),
             aux_on: self.room.aux_enabled(),
             aux_life_support: self.room.aux_switch(Group::LifeSupport),
             aux_lights: self.room.aux_switch(Group::Lights),

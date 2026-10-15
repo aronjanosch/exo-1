@@ -311,6 +311,9 @@ pub struct ReactorNews {
     pub limits: [f64; 3],
     pub delivered_kw: [f64; 3],
     pub demand_kw: [f64; 3],
+    /// The lights group's factor, 0..1 (delivered over demand, capped by its limit): the room
+    /// lights' voltage (`reactor_core::LightState`). Below 0.1 the emergency lamps are on.
+    pub lights_factor: f64,
     pub aux_on: bool,
     pub aux_life_support: bool,
     pub aux_lights: bool,
@@ -494,6 +497,7 @@ mod tests {
             aux_on: true,
             aux_life_support: false,
             aux_lights: true,
+            lights_factor: 0.6,
             aux_boost_kw: 250.0,
             power_on: true,
             manual: true,

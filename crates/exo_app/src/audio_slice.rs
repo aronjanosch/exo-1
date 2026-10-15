@@ -158,7 +158,7 @@ pub fn part_share(r: &ReactorNews, d: RepairDevice) -> f64 {
 // ---- Resources and components ----
 
 #[derive(Resource)]
-struct SliceSounds {
+pub(crate) struct SliceSounds {
     thud: Handle<SynthAudio>,
     crackle: [Handle<SynthAudio>; 3],
     spray: Handle<SynthAudio>,
@@ -167,7 +167,7 @@ struct SliceSounds {
     blip: Handle<SynthAudio>,
     miss: Handle<SynthAudio>,
     chime: Handle<SynthAudio>,
-    zap: Handle<SynthAudio>,
+    pub(crate) zap: Handle<SynthAudio>,
     clunk: Handle<SynthAudio>,
     sweep_down: Handle<SynthAudio>,
     sweep_up: Handle<SynthAudio>,
@@ -232,7 +232,7 @@ fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
     commands.insert_resource(s);
 }
 
-fn one_shot(commands: &mut Commands, h: &Handle<SynthAudio>, volume: f32) {
+pub(crate) fn one_shot(commands: &mut Commands, h: &Handle<SynthAudio>, volume: f32) {
     commands.spawn((AudioPlayer(h.clone()), PlaybackSettings { mode: PlaybackMode::Despawn, volume: Volume::Linear(volume), ..default() }));
 }
 

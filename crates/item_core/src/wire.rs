@@ -326,6 +326,9 @@ pub struct ReactorNews {
     pub coolant: f64,
     /// The tank is below its LOW line (`RoomTuning::coolant_low`).
     pub coolant_low: bool,
+    /// The pump's leak out of the tank, tank fraction per second (`EngineRoom::pump_leak_rate`); 0
+    /// with a sound pump. The screen blinks LEAK and the steam puffs at the pump while it is above 0.
+    pub coolant_leak: f64,
     pub overvolt: bool,
     /// The engine room's air, 0..1 (the host rounds it to whole percent).
     pub oxygen: f64,
@@ -517,6 +520,7 @@ mod tests {
             flow: 0.4,
             coolant: 60.0,
             coolant_low: false,
+            coolant_leak: 0.0025,
             overvolt: true,
             oxygen: 0.21,
             blasts: 2,

@@ -194,6 +194,7 @@ impl ReactorSim {
             flow: self.room.flow(),
             coolant: self.room.pump().tank(),
             coolant_low: self.room.pump().tank() < self.room.tuning().coolant_low,
+            coolant_leak: self.room.pump_leak_rate(),
             overvolt: self.room.junction().overvolted(),
             // The host's blast count is set by `reactor_step` (the sim does not count).
             blasts: 0,

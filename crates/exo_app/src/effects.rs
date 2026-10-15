@@ -213,11 +213,13 @@ struct Emitters {
     smoke: [f64; 3],
     spark: f64,
     steam: f64,
+    /// Time since the pump's last leak puff (r36).
+    leak: f64,
 }
 
 impl Default for Emitters {
     fn default() -> Emitters {
-        Emitters { smoke: [0.0; 3], spark: f64::INFINITY, steam: 0.0 }
+        Emitters { smoke: [0.0; 3], spark: f64::INFINITY, steam: 0.0, leak: 0.0 }
     }
 }
 
@@ -344,6 +346,20 @@ fn device_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: O
         }
     } else {
         em.spark = f64::INFINITY;
+    }
+    // The pump's leak (r36): a puff at its base, more of them the faster it leaks (0.4 s at the
+    // full 0.01 per s, 1.6 s at a quarter of it).
+    if r.coolant_leak > 0.0 {
+        em.leak += dt;
+        if em.leak >= 0.4 / (r.coolant_leak * 100.0) {
+            em.leak = 0.0;
+            if let Some((p, up)) = area.ground(&planet, COOLANT_PUMP_AT, 0.1) {
+                let seed = (t * 1000.0) as u64 ^ 0x5eed;
+                spawn_particle(&mut commands, &assets, &mut mats, Kind::Steam, p, jet(up, seed, 0.3, 0.1), 0.0, 0.2, 1.2);
+            }
+        }
+    } else {
+        em.leak = 0.0;
     }
 }
 

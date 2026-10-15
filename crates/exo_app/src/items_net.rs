@@ -179,6 +179,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                     Some(ToClient::Fire(f)) => items.fire = Some(f),
                     Some(ToClient::RepairDone) | Some(ToClient::RepairRefused) => items.repair_done = true,
                     Some(ToClient::Status(s)) => items.public = s,
+                    Some(ToClient::GameOver) => items.game_over_seen = true,
                     None => net.st.invalid += 1,
                 }
             }
@@ -317,6 +318,9 @@ pub fn items_net_out(
             }
             NetOut::Status { to, s } => {
                 net.send_reliable(to, &wire::encode(&ToClient::Status(s)));
+            }
+            NetOut::GameOver => {
+                net.send_reliable(None, &wire::encode(&ToClient::GameOver));
             }
             NetOut::Pull => {
                 net.send_reliable(None, &wire::encode(&ToHost::Pull));

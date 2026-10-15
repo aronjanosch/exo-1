@@ -41,6 +41,8 @@ pub enum ToClient {
     /// Every player's public status, as the host has it: sent when one changes, and to a
     /// client that joins.
     Status(Vec<(PlayerId, PublicStatus)>),
+    /// The whole crew is dead: the host shows GAME OVER and reloads the last save (#254).
+    GameOver,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -994,6 +996,11 @@ mod tests {
         assert!(decode::<ToHost>(&encode(&ToHost::Treat(None))).is_some_and(|m| matches!(m, ToHost::Treat(None))));
         assert!(decode::<ToHost>(&encode(&ToHost::Refill(true))).is_some_and(|m| matches!(m, ToHost::Refill(true))));
         assert!(decode::<ToHost>(&encode(&ToHost::Refill(false))).is_some_and(|m| matches!(m, ToHost::Refill(false))));
+    }
+
+    #[test]
+    fn game_over_travels() {
+        assert!(decode::<ToClient>(&encode(&ToClient::GameOver)).is_some_and(|m| matches!(m, ToClient::GameOver)));
     }
 
     #[test]

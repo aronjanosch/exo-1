@@ -5,6 +5,7 @@ use content_core::{parse_strict, File};
 use serde::{Deserialize, Serialize};
 
 pub mod mask;
+pub mod skills;
 pub mod vacuum;
 
 pub const HEALTH_PATH: &str = "health/health.json";
@@ -719,4 +720,17 @@ pub fn capsule_hit(origin: [f64; 3], dir: [f64; 3], reach: f64, feet: [f64; 3], 
         }
     }
     None
+}
+
+/// A crew is wiped when every member is dead at once: one member or more, all `Dead` (#254).
+/// Nobody in the crew is not a wipe.
+pub fn crew_wiped(states: impl IntoIterator<Item = Life>) -> bool {
+    let mut any = false;
+    for s in states {
+        any = true;
+        if s != Life::Dead {
+            return false;
+        }
+    }
+    any
 }

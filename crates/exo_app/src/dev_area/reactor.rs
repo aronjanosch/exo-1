@@ -18,7 +18,7 @@ use crate::dev_area::fire::{self, FireAlarm, FireConfig, FireGrid, FireModel};
 use crate::items::{Items, NetOut, Role};
 use crate::dev_area::engine_room::ROOM;
 use crate::dev_area::rods;
-use item_core::wire::{Alarm, BreakerGroup, FuelTube, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews};
+use item_core::wire::{Alarm, BreakerGroup, FuelTube, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, GRAPH_POINTS};
 use reactor_core::{AlarmLevel, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
 
 /// Seconds between two sends of a changed snapshot (4 Hz).
@@ -159,8 +159,16 @@ impl ReactorSim {
             boost: r.temperature_boost(),
             boost_ok: r.power_on() && r.condition().functioning() && r.boost_allowed(),
             meltdown_eta_s: meltdown_eta(r.timers().1, r.tuning().meltdown_delay_s, r.melted()),
+            graph_points: self.room.history().size().min(GRAPH_POINTS) as u8,
+            graph_output: graph_row(&self.room.history().output),
+            graph_load: graph_row(&self.room.history().load),
         }
     }
+}
+
+/// The first `GRAPH_POINTS` of a graph row (newest first), in whole kW.
+fn graph_row(row: &[f64]) -> [u16; GRAPH_POINTS] {
+    std::array::from_fn(|i| row.get(i).map_or(0, |v| v.round().clamp(0.0, f64::from(u16::MAX)) as u16))
 }
 
 /// The lamps of the core's warnings, by `Lamp::index`.
@@ -395,6 +403,20 @@ mod tests {
 
     fn cfg() -> Tuning {
         Tuning::default()
+    }
+
+    #[test]
+    fn news_carries_the_graph_of_the_room() {
+        let mut s = ReactorSim::new(&cfg());
+        assert_eq!(s.news(1.0).graph_points, cfg().graph_points as u8);
+        for _ in 0..40 {
+            s.room.step(0.25, reactor_core::Input::auto());
+        }
+        let n = s.news(1.0);
+        assert_eq!(n.graph_points, 25);
+        assert!(n.graph_load[0] > 0, "the grid asks for power");
+        assert_eq!(n.graph_load[0] as f64, s.room.history().load[0].round());
+        assert!(n.graph_output[..10].iter().any(|&v| v > 0));
     }
 
     /// Steps the room until the snapshot says so (the pump's speed moves with inertia), at most 300 s.

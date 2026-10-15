@@ -354,7 +354,16 @@ pub struct ReactorNews {
     pub boost_ok: bool,
     /// Seconds to the implosion at the current rate, while the meltdown timer runs; None otherwise.
     pub meltdown_eta_s: Option<f64>,
+    /// The status board's graph (#300, Barotrauma's reactor graph): `graph_points` valid points
+    /// of output and load in kW, newest first; 0 means no curves (the panel draws none).
+    pub graph_points: u8,
+    pub graph_output: [u16; GRAPH_POINTS],
+    pub graph_load: [u16; GRAPH_POINTS],
 }
+
+/// The most points the reactor graph carries (the shipped `graph_points`, 25). A fixed size keeps
+/// `ReactorNews` `Copy`.
+pub const GRAPH_POINTS: usize = 25;
 
 /// A warning lamp of the reactor's status board (#300), in the order the panel shows them. The
 /// conditions are the core's `Warnings`.
@@ -510,6 +519,9 @@ mod tests {
             boost: -12.5,
             boost_ok: true,
             meltdown_eta_s: Some(42.0),
+            graph_points: 3,
+            graph_output: [7; GRAPH_POINTS],
+            graph_load: [5; GRAPH_POINTS],
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {
             ToClient::Reactor(r) => r,

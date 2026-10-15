@@ -1,4 +1,9 @@
 //! The engine room: reactor, coolant pump, junction box and the grid of consumers, stepped together.
+//!
+//! Pump leak (r36): below 50 % condition the pump leaks coolant out of the tank, running or not,
+//! at `pump_leak_max * (1 - c / 0.5)^2` tank fraction per second (c = condition, 0..1). The curve is
+//! ours (Barotrauma's condition-squared curve, `OxygenGenerator.cs:55-59`, is the shape's source).
+//! The hold repair of the pump raises its condition and so stops the leak.
 //!   (`pump_low`, the time constants, `pump_use_low` and `pump_use_high`), TODO(initiator).
 //!   the grid here: TODO(initiator), pump as a grid consumer.
 //!   TODO(initiator): pump run-down and the reactor's coolant coast now stack after a switch-off.
@@ -54,6 +59,10 @@ pub struct RoomTuning {
     pub pump_use_high: f64,
     /// What one coolant canister adds to the tank, %.
     pub coolant_canister: f64,
+    /// The coolant pump's leak at condition 0, tank fraction per second (`Pump::leak_rate`). Below
+    /// half condition the leak runs at this times (1 - c / 0.5)^2. TODO(initiator): value (0.01: a
+    /// broken pump drains a full tank in about 100 s).
+    pub pump_leak_max: f64,
     /// Emergency cooling (PULSAR's manual button, `EngineRoom::emergency_cool`): the tank it takes
     /// at once, %. TODO(initiator): value.
     pub ecool_tank_cost: f64,
@@ -101,6 +110,7 @@ impl Default for RoomTuning {
             coolant_use_per_heat: 0.0013,
             coolant_low: 25.0,
             coolant_canister: 50.0,
+            pump_leak_max: 0.01,
             ecool_tank_cost: 25.0,
             ecool_duration_s: 10.0,
             ecool_strength: 60.0,
@@ -120,6 +130,9 @@ impl Default for RoomTuning {
         }
     }
 }
+
+/// The pump's condition fraction below which it leaks (r36). TODO(initiator): value.
+const PUMP_LEAK_BELOW: f64 = 0.5;
 
 /// Barotrauma's `OverloadCooldown` (`PowerTransfer.cs:22`): no hits for this long after a break.
 const OVERLOAD_COOLDOWN_S: f64 = 5.0;
@@ -269,6 +282,25 @@ impl Pump {
         if stream > 0.0 {
             let rate = (t.coolant_use_base + t.coolant_use_per_heat * heat.max(0.0)) * self.use_factor(t) * stream;
             self.tank = (self.tank - rate * dt).max(0.0);
+        }
+    }
+
+    /// The leak out of the tank, tank fraction per second: none at half condition or better, then
+    /// `pump_leak_max * (1 - c / 0.5)^2` (c = condition fraction). Running or not: the seals are worn.
+    pub fn leak_rate(&self, t: &RoomTuning) -> f64 {
+        let c = self.condition.fraction().clamp(0.0, 1.0);
+        if c >= PUMP_LEAK_BELOW {
+            0.0
+        } else {
+            t.pump_leak_max * (1.0 - c / PUMP_LEAK_BELOW).powi(2)
+        }
+    }
+
+    /// Drains the tank by the leak over `dt` (the tank is in %, the rate in fractions).
+    fn leak(&mut self, dt: f64, t: &RoomTuning) {
+        let rate = self.leak_rate(t);
+        if rate > 0.0 {
+            self.tank = (self.tank - rate * 100.0 * dt).max(0.0);
         }
     }
 
@@ -521,6 +553,12 @@ impl EngineRoom {
         &mut self.reactor
     }
 
+    /// The coolant pump's leak, tank fraction per second (`Pump::leak_rate`): the screen's LEAK and
+    /// the steam at the pump both read it. 0 with a sound pump.
+    pub fn pump_leak_rate(&self) -> f64 {
+        self.pump.leak_rate(&self.tuning)
+    }
+
     pub fn pump(&self) -> &Pump {
         &self.pump
     }
@@ -749,6 +787,7 @@ impl EngineRoom {
         ev.extend(reactor_ev.iter().map(|e| RoomEvent::Reactor(*e)));
         ev.extend(self.blast_damage(&reactor_ev));
         self.pump.use_coolant(dt, stream, self.reactor.heat_input(), &t);
+        self.pump.leak(dt, &t);
 
         let (through, junction_ev) = self.junction.pass(dt, self.reactor.output_kw(), load, &t);
         ev.extend(junction_ev);

@@ -548,10 +548,11 @@ fn pump_picture(flow_on: bool, angle: f64) -> Item {
 }
 
 pub fn pump_panel(r: Option<&ReactorNews>) -> Panel {
-    pump_panel_at(r, 0.0)
+    pump_panel_at(r, 0.0, true)
 }
 
-pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64) -> Panel {
+/// `blink_on` is the lamps' blink (`lamp_blink_on`): the LEAK word shows on its lit half.
+pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64, blink_on: bool) -> Panel {
     if !powered(r) {
         return no_power(PUMP_NAME, "CP-01", Tier::S);
     }
@@ -565,7 +566,7 @@ pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64) -> Panel {
                 vec![
                     pump_picture(r.pump_on && r.flow > 0.0, angle),
                     column(4.0, vec![micro("FLOW").fixed(14.0), readout(format!("{:.0}", r.flow * 100.0)).text_size(font::LABEL).tone(tone).fixed(46.0), readout(word).text_size(font::LABEL).tone(tone)]).flex(1.0),
-                    coolant_tube(&r).fixed(60.0),
+                    coolant_tube(&r, blink_on).fixed(60.0),
                 ],
             )
             .fixed(109.0),
@@ -577,7 +578,8 @@ pub fn pump_panel_at(r: Option<&ReactorNews>, angle: f64) -> Panel {
 }
 
 /// fill) and EMPTY at none (the word in bad). The sim's level and line (`ReactorNews::coolant`).
-fn coolant_tube(r: &ReactorNews) -> Item {
+/// A leak blinks LEAK in the word's place (not over EMPTY).
+fn coolant_tube(r: &ReactorNews, blink_on: bool) -> Item {
     let (x, top, w, h) = (14.0, 16.0, 32.0, 70.0);
     let mut s = vec![text(0.0, 0.0, 60.0, 14.0, "COOL", 14.0, TextFace::Display, Ink::HudDim, true), Shape::Rect { x, y: top, w, h, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) }];
     let fill_h = h * (r.coolant / 100.0).clamp(0.0, 1.0);
@@ -591,6 +593,8 @@ fn coolant_tube(r: &ReactorNews) -> Item {
     }
     let (word, ink) = if r.coolant <= 0.0 {
         ("EMPTY", Ink::Bad)
+    } else if r.coolant_leak > 0.0 && blink_on {
+        ("LEAK", Ink::Warn)
     } else if r.coolant_low {
         ("LOW", Ink::Warn)
     } else {
@@ -1026,7 +1030,7 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     let max_kw = cfg.0.reactor.max_output_kw;
     let readout = if help.0 { readout_help_panel(items.reactor.as_ref(), max_kw) } else { readout_panel_at(items.reactor.as_ref(), max_kw, time.elapsed_secs_f64()) };
     panels.set(READOUT_ID, readout);
-    panels.set(PUMP_ID, pump_panel_at(items.reactor.as_ref(), angle));
+    panels.set(PUMP_ID, pump_panel_at(items.reactor.as_ref(), angle, lamp_blink_on(time.elapsed_secs_f64())));
     panels.set(JUNCTION_ID, junction_panel(items.reactor.as_ref(), max_kw));
     panels.set(AUX_ID, aux_panel(items.reactor.as_ref()));
     panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));

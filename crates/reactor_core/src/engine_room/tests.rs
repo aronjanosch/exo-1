@@ -605,3 +605,41 @@ fn a_melted_main_reactor_with_aux_leaves_life_support_powered() {
     let _ = c.step(DT, Input::auto());
     assert_eq!(c.grid().factor(Group::LifeSupport), 0.0);
 }
+
+/// A room with the pump off (no coolant use), its condition set to `pct` (0..100).
+fn pump_off_at(pct: f64) -> EngineRoom {
+    let mut r = room();
+    r.pump_mut().set_on(false);
+    r.pump_mut().condition_mut().set_value(pct);
+    r
+}
+
+#[test]
+fn a_pump_at_or_above_half_condition_does_not_leak() {
+    let mut r = pump_off_at(100.0);
+    assert_eq!(r.pump_leak_rate(), 0.0);
+    run(&mut r, 60.0, Input::auto());
+    assert_eq!(r.pump().tank(), 100.0, "a sound pump keeps its coolant, whether it runs or not");
+}
+
+#[test]
+fn a_worn_pump_leaks_by_the_condition_squared_curve_whether_running_or_not() {
+    // (1 - c / 0.5)^2 of pump_leak_max (0.01 per s): 0.25 condition leaks a quarter of it.
+    let mut r = pump_off_at(25.0);
+    assert!((r.pump_leak_rate() - 0.0025).abs() < 1e-12);
+    run(&mut r, 10.0, Input::auto());
+    assert!((r.pump().tank() - 97.5).abs() < 1e-6, "10 s at 0.0025 per s is 2.5 % of the tank, got {}", r.pump().tank());
+}
+
+#[test]
+fn a_broken_pump_empties_the_tank_in_about_a_hundred_seconds_and_never_below_zero() {
+    let mut r = pump_off_at(0.0);
+    assert!((r.pump_leak_rate() - 0.01).abs() < 1e-12);
+    run(&mut r, 99.0, Input::auto());
+    assert!(r.pump().tank() > 0.0, "not yet empty at 99 s");
+    run(&mut r, 2.0, Input::auto());
+    assert_eq!(r.pump().tank(), 0.0, "empty by 101 s");
+    run(&mut r, 200.0, Input::auto());
+    assert!(r.pump().tank() >= 0.0, "the tank never goes below zero");
+    assert_eq!(r.pump().tank(), 0.0);
+}

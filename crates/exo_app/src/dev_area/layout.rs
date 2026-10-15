@@ -160,7 +160,6 @@ pub const REACTOR: &str = "engine_reactor";
 pub const COOLANT_PUMP: &str = "engine_coolant_pump";
 pub const JUNCTION_BOX: &str = "engine_junction_box";
 pub const OXYGEN_GENERATOR: &str = "engine_oxygen_generator";
-pub const REACTOR_SCREEN: &str = "engine_reactor_screen";
 
 /// Where a point is, for the air: each room of the ship, or outside. The turret room, the lab and
 /// the medbay open onto the corridor without a door, so they breathe the corridor's air.

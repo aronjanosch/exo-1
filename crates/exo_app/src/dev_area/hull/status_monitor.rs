@@ -119,7 +119,7 @@ fn group_row(name: &str, r: Option<&ReactorNews>, g: BreakerGroup) -> Item {
     row(6.0, vec![label(name).flex(2.0), cell(&monitor::group_cell(factor))]).fixed(ROW_H)
 }
 
-/// The breach shows while a wall section leaks: the same rule as the breach decals (`engine_room::breach_decal`).
+/// The breach shows while a wall section leaks: the same rule as the breach decals (`hull::breach::breach_decal`).
 fn breach_open(breaches: &[f64]) -> bool {
     breaches.iter().any(|&d| openness(d) > 0.0)
 }

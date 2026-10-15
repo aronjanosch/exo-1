@@ -5,10 +5,9 @@ pub mod extinguisher;
 use crate::controls::Controls;
 use crate::dev_area::{layout::{footprint_of, ignition_at, place_of, source_at}, hull::ShipAir};
 use crate::dev_area::ship::ReactorSim;
-use crate::dev_area::reactor_screen::FAULTS_ID;
 use crate::dev_area::{layout::{CORRIDOR, ROOM}};
 use crate::dev_area::{area_of, DevArea};
-use crate::displays::{ActiveDisplay, DisplayAction};
+use crate::displays::ActiveDisplay;
 use crate::env::PlanetRes;
 use crate::health::{area_pos, walker_points};
 use crate::items::{Items, NetOut, Role};
@@ -185,17 +184,9 @@ pub fn plugin(app: &mut App) {
         .init_resource::<FireSend>()
         .init_resource::<SprayClient>();
     app.add_systems(FixedUpdate, spray_input.after(crate::scenario::run_script).in_set(crate::phases::Fx::Input));
-    app.add_systems(FixedUpdate, model_click.in_set(crate::phases::Fx::Effects));
     app.add_systems(FixedUpdate, (spray_step, fire_step).chain().after(crate::dev_area::hull::doors::room_step).after(spray_input).after(crate::items_net::items_net_in).in_set(crate::phases::Fx::Input));
 }
 
-fn model_click(mut clicks: MessageReader<DisplayAction>, mut model: ResMut<FireModel>) {
-    for c in clicks.read() {
-        if c.panel == FAULTS_ID && c.action == "fire_model" {
-            *model = model.toggled();
-        }
-    }
-}
 
 fn spray_aim(controls: &Controls, active: &ActiveDisplay, players: &Query<&Player>, items: &Items) -> Option<SprayAsk> {
     if controls.free_cursor || !controls.primary_held || active.using().is_some() {

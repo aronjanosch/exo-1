@@ -1,8 +1,8 @@
 //! SP-01, the ship's power panel (r42, #268): the cold start as a checklist of six steps, with the
 //! MAIN BREAKER, BOOT and OVERRIDE. The steps, their order and their sources (PULSAR's six-step
 //! startup, the manual's "Ship Startup Sequence") are in `reactor_core/src/startup.rs`. SP-01 is
-//! the one screen that stays on while the master is off: the others show OFF (`reactor_screen::off`).
-use crate::dev_area::reactor_screen::tall;
+//! the one screen that stays on while the master is off: the others show OFF (`crate::dev_area::screens::off`).
+use crate::dev_area::screens::tall;
 use crate::displays::DisplayAction;
 use display_core::{button, column, font, micro, readout, row, space, toggle, Panel, PanelId, Tier, Tone};
 use item_core::wire::{BreakerGroup, ReactorAsk, ReactorNews, StartupStage};

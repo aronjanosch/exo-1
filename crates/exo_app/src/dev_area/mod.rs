@@ -27,7 +27,7 @@ pub mod hull;
 pub mod lab;
 pub mod layout;
 pub mod medbay;
-pub mod reactor_screen;
+pub mod screens;
 pub mod ship;
 pub mod storage;
 pub mod turrets;
@@ -137,7 +137,7 @@ pub fn plugin(app: &mut App) {
     app.init_resource::<DevAreaDevices>().init_resource::<DevArea>();
     app.add_systems(Update, spawn_devices.in_set(crate::phases::Frame::World));
     // One plugin per owner; the layout spawns the inner ship's walls and screens.
-    app.add_plugins((ship::plugin, layout::plugin, hull::plugin, engineering::plugin, reactor_screen::plugin, bridge::plugin, turrets::plugin));
+    app.add_plugins((ship::plugin, layout::plugin, hull::plugin, engineering::plugin, bridge::plugin, turrets::plugin));
     app.add_plugins((crew::plugin, gear::plugin, fire::plugin, lab::plugin, medbay::plugin, storage::plugin, hazards::plugin, dev::plugin));
 }
 

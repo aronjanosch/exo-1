@@ -24,7 +24,7 @@ pub const NAME: &str = "CP-01";
 pub const AT: [f64; 2] = [-6.5, -10.66];
 pub const SIZE: [f64; 2] = [0.8, 0.5];
 pub const TURN: f64 = 180.0;
-/// The presses' actions (`reactor_screen::read_clicks`).
+/// The presses' actions (`crate::dev_area::engineering::panels::read_clicks`).
 pub const DOOR_ACTION: &str = "door";
 pub const BRIDGE_DOOR_ACTION: &str = "bridge_door";
 pub const SEAL_ACTION: &str = "seal";

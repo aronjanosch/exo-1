@@ -6,7 +6,6 @@ use super::*;
 use crate::dev_area::bridge::captain_screen;
 use crate::dev_area::engineering::startup_screen;
 use crate::dev_area::hull::status_monitor;
-use crate::dev_area::reactor_screen;
 use crate::displays::DisplayPanel;
 use reactor_core::Source;
 
@@ -83,32 +82,32 @@ pub struct Mount {
 }
 
 pub const SCREENS: &[Mount] = &[
-    Mount { id: reactor_screen::PUMP_ID, name: reactor_screen::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: reactor_screen::JUNCTION_ID, name: reactor_screen::JUNCTION_NAME, at: JUNCTION_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: reactor_screen::AUX_ID, name: reactor_screen::AUX_NAME, at: AUX_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: reactor_screen::BATTERY_ID, name: reactor_screen::BATTERY_NAME, at: BATTERY_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: reactor_screen::SHIELD_ID, name: reactor_screen::SHIELD_NAME, at: SHIELD_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: reactor_screen::DOOR_ID, name: reactor_screen::DOOR_NAME, at: [-13.04, -10.0], lift: 1.3, size: SMALL_SCREEN_SIZE, turn: -90.0 },
-    Mount { id: reactor_screen::FAULTS_ID, name: reactor_screen::FAULTS_NAME, at: reactor_screen::FAULTS_AT, lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 0.0 },
-    Mount { id: reactor_screen::STATUS_ID, name: reactor_screen::STATUS_NAME, at: STATUS_AT, lift: STATUS_LIFT, size: STATUS_SIZE, turn: 180.0 },
+    Mount { id: crate::dev_area::engineering::panels::PUMP_ID, name: crate::dev_area::engineering::panels::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: crate::dev_area::engineering::panels::JUNCTION_ID, name: crate::dev_area::engineering::panels::JUNCTION_NAME, at: JUNCTION_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: crate::dev_area::engineering::panels::AUX_ID, name: crate::dev_area::engineering::panels::AUX_NAME, at: AUX_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: crate::dev_area::engineering::panels::BATTERY_ID, name: crate::dev_area::engineering::panels::BATTERY_NAME, at: BATTERY_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: crate::dev_area::bridge::panels::SHIELD_ID, name: crate::dev_area::bridge::panels::SHIELD_NAME, at: SHIELD_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: crate::dev_area::hull::panels::DOOR_ID, name: crate::dev_area::hull::panels::DOOR_NAME, at: [-13.04, -10.0], lift: 1.3, size: SMALL_SCREEN_SIZE, turn: -90.0 },
+    Mount { id: crate::dev_area::dev::faults::FAULTS_ID, name: crate::dev_area::dev::faults::FAULTS_NAME, at: crate::dev_area::dev::faults::FAULTS_AT, lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 0.0 },
+    Mount { id: crate::dev_area::engineering::panels::STATUS_ID, name: crate::dev_area::engineering::panels::STATUS_NAME, at: STATUS_AT, lift: STATUS_LIFT, size: STATUS_SIZE, turn: 180.0 },
     Mount { id: status_monitor::ID, name: status_monitor::NAME, at: status_monitor::AT, lift: status_monitor::LIFT, size: status_monitor::SIZE, turn: status_monitor::TURN },
     // The vents (r38, r44): each is a small grille panel with a valve on its wall, facing its room.
     // The engine room's on the west wall (turn 90 faces +x), the corridor's on the east wall beside
     // the bridge door's panel (turn -90 faces -x), the bridge's on its north wall (turn 0 faces -y).
-    Mount { id: reactor_screen::VENT_ENGINE_ID, name: reactor_screen::VENT_ENGINE_NAME, at: VENT_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
-    Mount { id: reactor_screen::VENT_CORRIDOR_ID, name: reactor_screen::VENT_CORRIDOR_NAME, at: VENT_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
+    Mount { id: crate::dev_area::hull::panels::VENT_ENGINE_ID, name: crate::dev_area::hull::panels::VENT_ENGINE_NAME, at: VENT_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
+    Mount { id: crate::dev_area::hull::panels::VENT_CORRIDOR_ID, name: crate::dev_area::hull::panels::VENT_CORRIDOR_NAME, at: VENT_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
     // The bridge (r44): the helm on the east wall, the gunnery and the captain's console on the south
     // wall, the jump drive and the bridge's vent on the north wall. TODO(initiator): the layout.
-    Mount { id: reactor_screen::HELM_ID, name: reactor_screen::HELM_NAME, at: HELM_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
-    Mount { id: reactor_screen::GUNNERY_ID, name: reactor_screen::GUNNERY_NAME, at: GUNNERY_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: reactor_screen::JUMP_ID, name: reactor_screen::JUMP_NAME, at: JUMP_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
-    Mount { id: reactor_screen::VENT_BRIDGE_ID, name: reactor_screen::VENT_BRIDGE_NAME, at: BRIDGE_VENT_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
+    Mount { id: crate::dev_area::bridge::panels::HELM_ID, name: crate::dev_area::bridge::panels::HELM_NAME, at: HELM_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
+    Mount { id: crate::dev_area::turrets::panels::GUNNERY_ID, name: crate::dev_area::turrets::panels::GUNNERY_NAME, at: GUNNERY_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: crate::dev_area::bridge::panels::JUMP_ID, name: crate::dev_area::bridge::panels::JUMP_NAME, at: JUMP_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
+    Mount { id: crate::dev_area::hull::panels::VENT_BRIDGE_ID, name: crate::dev_area::hull::panels::VENT_BRIDGE_NAME, at: BRIDGE_VENT_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
     // The bridge door's panel (r44, BD-01): on the corridor's east wall beside the door, north of the corridor's vent.
-    Mount { id: reactor_screen::BRIDGE_DOOR_ID, name: reactor_screen::BRIDGE_DOOR_NAME, at: BRIDGE_DOOR_PANEL_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
+    Mount { id: crate::dev_area::hull::panels::BRIDGE_DOOR_ID, name: crate::dev_area::hull::panels::BRIDGE_DOOR_NAME, at: BRIDGE_DOOR_PANEL_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
     // The airlock's two panels (r40): the inner one on the corridor's west wall (faces east, into the
     // corridor), the outer one on the airlock's west wall (inside, by the outer door). Both show IN, OUT, CYCLE.
-    Mount { id: reactor_screen::AIRLOCK_INNER_ID, name: reactor_screen::AIRLOCK_INNER_NAME, at: AIRLOCK_PANEL_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
-    Mount { id: reactor_screen::AIRLOCK_OUTER_ID, name: reactor_screen::AIRLOCK_OUTER_NAME, at: AIRLOCK_PANEL_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
+    Mount { id: crate::dev_area::hull::panels::AIRLOCK_INNER_ID, name: crate::dev_area::hull::panels::AIRLOCK_INNER_NAME, at: AIRLOCK_PANEL_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
+    Mount { id: crate::dev_area::hull::panels::AIRLOCK_OUTER_ID, name: crate::dev_area::hull::panels::AIRLOCK_OUTER_NAME, at: AIRLOCK_PANEL_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
     // The ship's power panel (r42, SP-01): the cold start's checklist, on the corridor's east wall between the gunnery and the reactor room's panel.
     Mount { id: startup_screen::ID, name: startup_screen::NAME, at: startup_screen::AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: startup_screen::TURN },
     // The captain's console (r41, CP-01): on the bridge's south wall, beside the gunnery (r44).
@@ -260,7 +259,7 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
     let (ground, up) = frame.ground(&planet, REACTOR_SCREEN_AT[0], REACTOR_SCREEN_AT[1], 0.0);
     let rot = frame.rotation(up, 180.0);
     let centre = ground + up * (REACTOR_SCREEN_LIFT + READOUT_SIZE[1] * 0.5);
-    let e = commands.spawn(DisplayPanel { id: reactor_screen::READOUT_ID, name: reactor_screen::READOUT_NAME.into(), size_m: DVec2::from(READOUT_SIZE), centre, rot }).id();
+    let e = commands.spawn(DisplayPanel { id: crate::dev_area::engineering::panels::READOUT_ID, name: crate::dev_area::engineering::panels::READOUT_NAME.into(), size_m: DVec2::from(READOUT_SIZE), centre, rot }).id();
     area.entities.push(e);
     for m in SCREENS.iter() {
         let (ground, up) = frame.ground(&planet, m.at[0], m.at[1], 0.0);

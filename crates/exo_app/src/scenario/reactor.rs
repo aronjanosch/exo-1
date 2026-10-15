@@ -3,7 +3,7 @@ use super::*;
 use crate::dev_area::hull::alarms::ShipAlarm;
 use crate::dev_area::ship::{ReactorCounts, ReactorSim};
 use crate::dev_area::{layout::{COOLANT_PUMP_AT, JUNCTION_BOX_AT}};
-use crate::dev_area::reactor_screen::{FAULTS_ID, JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID};
+use crate::dev_area::{dev::faults::FAULTS_ID, engineering::panels::{JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID}};
 use crate::dev_area::DevArea;
 use super::{ship_frame_of, with_player};
 use super::dev_area::tap_until;

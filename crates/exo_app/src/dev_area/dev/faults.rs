@@ -4,7 +4,12 @@ use crate::dev_area::*;
 use crate::dev_area::fire::FireConfig;
 use crate::dev_area::hull::ShipAir;
 use crate::dev_area::ship::{fault, host_asks, route, ReactorConfig, ReactorCounts, ReactorSim, ShipEvents, ShipSet};
+use crate::dev_area::screens::show;
+use crate::dev_area::turrets::panels::ambush_running;
+use crate::displays::{DisplayAction, Panels};
 use crate::items::Items;
+use display_core::{button, column, row, PanelId, Panel, Tier};
+use item_core::wire::ReactorNews;
 use item_core::wire::{ReactorAsk, ReactorFault};
 use reactor_core::{RoomEvent, Source, Tuning};
 
@@ -13,7 +18,54 @@ const DEV_SHIELD_HIT: f64 = 300.0;
 
 pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, asks.in_set(ShipSet::Asks));
+    app.add_systems(FixedUpdate, (read_clicks, write_panel).chain().in_set(crate::phases::Fx::Effects));
 }
+pub const FAULTS_ID: PanelId = PanelId::new("reactor_faults");
+
+pub const FAULTS_NAME: &str = "Dev faults";
+
+/// The dev faults screen's mount point (area metres, the engine room's north wall, the room side).
+pub const FAULTS_AT: [f64; 2] = [-17.5, -11.04];
+
+pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
+    let aux = if r.is_some_and(|r| r.aux_on) { "AUX ON" } else { "AUX OFF" };
+    let director = if r.is_some_and(|r| r.director) { "DIRECTOR ON" } else { "DIRECTOR OFF" };
+    let ambush = if r.is_some_and(ambush_running) { "AMBUSH ON" } else { "AMBUSH OFF" };
+    let bots = r.map_or(0, |r| r.bot_count);
+    let col = |items: Vec<_>| column(4.0, items);
+    Panel::screen(
+        Tier::S,
+        FAULTS_NAME,
+        "DEV-02",
+        row(
+            6.0,
+            vec![
+                col(vec![
+                    button("Pump break", "pump_break").fixed(24.0),
+                    button("Load drop", "load_drop").fixed(24.0),
+                    button("Surge", "surge").fixed(24.0),
+                    button("Hull breach", "hull_breach").fixed(24.0),
+                    button("Hit light", "hit_light").fixed(24.0),
+                    button("Hit heavy", "hit_heavy").fixed(24.0),
+                    button("Drain tank", "drain_coolant").fixed(24.0),
+                    button("O2 gen break", "oxygen_break").fixed(24.0),
+                ]),
+                col(vec![
+                    button("Start fire", "fire").fixed(24.0),
+                    button("Fire mode", "fire_model").fixed(24.0),
+                    button("Warm start", "warm_start").fixed(24.0),
+                    button(aux, "aux").fixed(24.0),
+                    button("Reset RX", "reset").fixed(24.0),
+                    button(director, "director").fixed(24.0),
+                    button("Shield hit", "shield_hit").fixed(24.0),
+                    button("Jump full", "jump_full").fixed(24.0),
+                ]),
+                col(vec![button(ambush, "ambush").fixed(24.0), button("COLD SHIP", "cold_ship").fixed(24.0), button(format!("BOTS {bots}"), "bots").fixed(24.0)]),
+            ],
+        ),
+    )
+}
+
 
 fn is_mine(a: &ReactorAsk) -> bool {
     matches!(a, ReactorAsk::Trigger(_) | ReactorAsk::Reset | ReactorAsk::SetDirector(_) | ReactorAsk::SetBots(_) | ReactorAsk::Ambush(_))
@@ -96,4 +148,62 @@ pub fn apply_sim(s: &mut ReactorSim, a: ReactorAsk, cfg: &Tuning, counts: &mut R
         _ => return false,
     }
     true
+}
+
+/// The presses on DEV-02 become dev asks; "Fire mode" flips the fire's model here (it is the fire's
+/// state, no ask: the host and each process keep it).
+fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<Items>, mut model: ResMut<crate::dev_area::fire::FireModel>) {
+    for c in clicks.read() {
+        if c.panel != FAULTS_ID {
+            continue;
+        }
+        let snap = items.reactor;
+        let ask = match c.action.as_str() {
+            "pump_break" => Some(ReactorAsk::Trigger(ReactorFault::PumpBreak)),
+            "oxygen_break" => Some(ReactorAsk::Trigger(ReactorFault::OxygenGeneratorBreak)),
+            "load_drop" => Some(ReactorAsk::Trigger(ReactorFault::LoadDrop)),
+            "surge" => Some(ReactorAsk::Trigger(ReactorFault::Surge)),
+            "hull_breach" => Some(ReactorAsk::Trigger(ReactorFault::HullBreach)),
+            "shield_hit" => Some(ReactorAsk::Trigger(ReactorFault::ShieldHit)),
+            "hit_light" => Some(ReactorAsk::Trigger(ReactorFault::HitLight)),
+            "hit_heavy" => Some(ReactorAsk::Trigger(ReactorFault::HitHeavy)),
+            "fire" => Some(ReactorAsk::Trigger(ReactorFault::Fire)),
+            "reset" => Some(ReactorAsk::Reset),
+            "drain_coolant" => Some(ReactorAsk::Trigger(ReactorFault::DrainCoolant)),
+            "warm_start" => Some(ReactorAsk::Trigger(ReactorFault::WarmStart)),
+            "cold_ship" => Some(ReactorAsk::Trigger(ReactorFault::ColdShip)),
+            "aux" => Some(ReactorAsk::Trigger(ReactorFault::Aux)),
+            "director" => snap.map(|r| ReactorAsk::SetDirector(!r.director)),
+            "jump_full" => Some(ReactorAsk::Trigger(ReactorFault::JumpFull)),
+            "ambush" => snap.map(|r| ReactorAsk::Ambush(!ambush_running(&r))),
+            // The dev BOTS count, 0..3 in turn (r42, #253).
+            "bots" => snap.map(|r| ReactorAsk::SetBots((r.bot_count + 1) % (reactor_core::bots::MAX_BOTS + 1))),
+            "fire_model" => {
+                *model = model.toggled();
+                None
+            }
+            _ => None,
+        };
+        if let Some(a) = ask {
+            items.ask_reactor(a);
+        }
+    }
+}
+
+fn write_panel(items: Res<Items>, mut panels: ResMut<Panels>) {
+    let r = items.reactor.as_ref();
+    show(&mut panels, r, FAULTS_ID, faults_panel(r));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_faults_screen_has_its_buttons() {
+        let p = faults_panel(None);
+        for a in ["reset", "pump_break", "oxygen_break", "director", "fire_model"] {
+            assert!(p.find(a).is_some(), "{a}");
+        }
+    }
 }

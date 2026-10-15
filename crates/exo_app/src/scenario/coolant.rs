@@ -4,7 +4,7 @@ use crate::controls::Controls;
 use crate::dev_area::engineering::coolant::{HOLD_S, RACK_AT};
 use crate::dev_area::{layout::{COOLANT_PUMP_AT, CORRIDOR}};
 use crate::dev_area::ship::ReactorSim;
-use crate::dev_area::reactor_screen::PUMP_ID;
+use crate::dev_area::engineering::panels::PUMP_ID;
 use crate::displays::Panels;
 use crate::dev_area::DevArea;
 use super::items::{collect, items, look_at, outside};

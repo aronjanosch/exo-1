@@ -251,7 +251,7 @@ pub(crate) fn one_shot(commands: &mut Commands, h: &Handle<SynthAudio>, volume: 
     commands.spawn((AudioPlayer(h.clone()), PlaybackSettings { mode: PlaybackMode::Despawn, volume: Volume::Linear(volume), ..default() }));
 }
 
-/// The gun's shot (r40): the thud when the GN-01 fires (`reactor_screen::shot_fired`), on every machine
+/// The gun's shot (r40): the thud when the GN-01 fires (`crate::dev_area::turrets::panels::shot_fired`), on every machine
 /// that gets the news, the host's and the clients'.
 fn gun_shot(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mut prev: Local<Option<u8>>, mut jammed: Local<bool>) {
     let Some(news) = items.reactor else {
@@ -259,7 +259,7 @@ fn gun_shot(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mut 
         *jammed = false;
         return;
     };
-    if crate::dev_area::reactor_screen::shot_fired(*prev, &news) {
+    if crate::dev_area::turrets::panels::shot_fired(*prev, &news) {
         one_shot(&mut commands, &s.thud, GUN_VOL);
     }
     // The jam (r41): a clunk when the gun jams, once per jam (the news says it until it is cleared).
@@ -276,7 +276,7 @@ fn enemy_boom(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mu
         *prev = None;
         return;
     };
-    if crate::dev_area::reactor_screen::enemy_shot(*prev, &news) {
+    if crate::dev_area::turrets::panels::enemy_shot(*prev, &news) {
         one_shot(&mut commands, &s.thud, ENEMY_BOOM_VOL);
     }
     *prev = news.enemy.map(|e| e.shots);

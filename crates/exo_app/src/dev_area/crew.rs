@@ -48,7 +48,7 @@ pub fn station_of(s: BotStation) -> Option<Station> {
 
 /// The station whose screen a panel is. The reactor's station is its readout and its pump.
 pub fn station_of_panel(id: &display_core::PanelId) -> Option<Station> {
-    use super::reactor_screen::{GUNNERY_ID, HELM_ID, JUNCTION_ID, PUMP_ID, READOUT_ID};
+    use crate::dev_area::{turrets::panels::GUNNERY_ID, bridge::panels::HELM_ID, engineering::panels::{JUNCTION_ID, PUMP_ID, READOUT_ID}};
     if *id == GUNNERY_ID {
         Some(Station::Gunnery)
     } else if *id == READOUT_ID || *id == PUMP_ID {
@@ -193,6 +193,11 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, add_body_mesh.in_set(crate::phases::Frame::World));
 }
 
+/// Whether a bot runs a station now (the host's snapshot).
+pub fn manned(items: &Items, s: BotStation) -> bool {
+    items.reactor.is_some_and(|r| r.bots[s.index()].manned)
+}
+
 /// The BOT tag (r42, #253): the station's plate tag reads "<code> BOT" while a bot runs it.
 pub fn bot_tagged(mut p: Panel, manned: bool) -> Panel {
     if manned {
@@ -218,8 +223,8 @@ mod tests {
 
     #[test]
     fn the_reactor_station_is_its_readout_and_its_pump() {
-        assert_eq!(station_of_panel(&super::super::reactor_screen::READOUT_ID), Some(Station::Reactor));
-        assert_eq!(station_of_panel(&super::super::reactor_screen::PUMP_ID), Some(Station::Reactor));
+        assert_eq!(station_of_panel(&crate::dev_area::engineering::panels::READOUT_ID), Some(Station::Reactor));
+        assert_eq!(station_of_panel(&crate::dev_area::engineering::panels::PUMP_ID), Some(Station::Reactor));
         assert_eq!(station_of_panel(&display_core::PanelId::new("captain_console")), None);
     }
 

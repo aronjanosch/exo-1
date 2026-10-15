@@ -5,7 +5,10 @@ use crate::dev_area::ship::{host_asks, ReactorSim, ShipSet};
 use crate::items::{Items, Role};
 use item_core::wire::ReactorAsk;
 
+pub mod panels;
+
 pub fn plugin(app: &mut App) {
+    app.add_plugins(panels::plugin);
     app.add_systems(FixedUpdate, asks.in_set(ShipSet::Asks));
 }
 

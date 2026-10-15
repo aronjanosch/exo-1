@@ -8,7 +8,7 @@
 //! `display_core::monitor` for the lines). Not ported: the water (no water here), the item finder,
 //! the blips and the search. The room rows carry each room's alarm word (r40, #165: FIRE, BREACH, O2 LOW,
 //! from `ReactorNews::alarms`) and a SILENCE button mutes the sounding alarms (`ReactorAsk::SilenceAlarms`,
-//! read in `reactor_screen::read_clicks`). The screen reads the reactor snapshot, which carries the rooms'
+//! read in `crate::dev_area::engineering::panels::read_clicks`). The screen reads the reactor snapshot, which carries the rooms'
 //! air, fire and alarms for clients too.
 //! Placement: the east wall's inner face (x -9.0) at the reactor readout's end of the room, clear
 //! of the coolant pump's screen and the oxygen generator (`engine_room.rs`).
@@ -26,7 +26,7 @@ pub const AT: [f64; 2] = [-9.04, -16.9];
 pub const LIFT: f64 = 0.9;
 pub const SIZE: [f64; 2] = [1.6, 1.0];
 pub const TURN: f64 = -90.0;
-/// The SILENCE button's action (`reactor_screen::read_clicks`).
+/// The SILENCE button's action (`crate::dev_area::engineering::panels::read_clicks`).
 pub const SILENCE_ACTION: &str = "silence";
 
 /// A row's height (px) and the gap between the rows.

@@ -5,7 +5,7 @@ use super::*;
 use crate::controls::Controls;
 use crate::dev_area::{layout::ignition_at, hull::ShipAir, hull::doors::EngineDoor};
 use crate::dev_area::fire::{FireGrid, FireModel};
-use crate::dev_area::reactor_screen::FAULTS_ID;
+use crate::dev_area::dev::faults::FAULTS_ID;
 use crate::dev_area::DevArea;
 use crate::displays::DisplayAction;
 use crate::items::Items;

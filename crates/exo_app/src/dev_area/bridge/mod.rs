@@ -8,9 +8,10 @@ use item_core::wire::ReactorAsk;
 
 pub mod captain;
 pub mod captain_screen;
+pub mod panels;
 
 pub fn plugin(app: &mut App) {
-    app.add_plugins(captain::plugin);
+    app.add_plugins((captain::plugin, panels::plugin));
     app.add_systems(FixedUpdate, asks.in_set(ShipSet::Asks));
     app.add_systems(FixedUpdate, jump_notice.in_set(ShipSet::Effects));
 }

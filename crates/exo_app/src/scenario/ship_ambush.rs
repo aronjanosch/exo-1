@@ -14,7 +14,7 @@ use super::*;
 use super::reactor::{click_until, use_display};
 use crate::dev_area::{hull::ShipAir, layout::{GUNNERY_AT, JUMP_AT}};
 use crate::dev_area::ship::ReactorSim;
-use crate::dev_area::reactor_screen::{ambush_running, FAULTS_ID, FAULTS_NAME, GUNNERY_ID, GUNNERY_NAME, JUMP_ID, JUMP_NAME};
+use crate::dev_area::{turrets::panels::{ambush_running, GUNNERY_ID, GUNNERY_NAME}, dev::faults::{FAULTS_ID, FAULTS_NAME}, bridge::panels::{JUMP_ID, JUMP_NAME}};
 use crate::displays::{aim_at, world_point_of, DisplayPanel};
 use crate::items::Items;
 use bevy::math::DVec3;

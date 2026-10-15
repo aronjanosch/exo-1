@@ -982,8 +982,8 @@ mod tests {
             s.room.step(0.5, Input::auto());
         }
         let after = s.news(1.0);
-        assert!(crate::dev_area::reactor_screen::enemy_shot(before.enemy.map(|e| e.shots), &after));
-        assert!(!crate::dev_area::reactor_screen::enemy_shot(None, &after), "the first news is the baseline");
+        assert!(crate::dev_area::turrets::panels::enemy_shot(before.enemy.map(|e| e.shots), &after));
+        assert!(!crate::dev_area::turrets::panels::enemy_shot(None, &after), "the first news is the baseline");
     }
 
     #[test]

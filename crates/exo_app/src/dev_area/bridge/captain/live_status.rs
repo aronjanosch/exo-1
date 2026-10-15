@@ -29,7 +29,7 @@ pub const REACTOR: &str = "reactor";
 pub const PUMP: &str = "pump";
 pub const JUNCTION: &str = "junction";
 pub const OXYGEN_GENERATOR: &str = "oxygen_generator";
-/// Station id of the reactor readout (`reactor_screen::READOUT_ID`), the one an operate order points at.
+/// Station id of the reactor readout (`crate::dev_area::engineering::panels::READOUT_ID`), the one an operate order points at.
 pub const REACTOR_STATION: &str = "reactor_readout";
 /// Smoothing of the oxygen change per second (s).
 const O2_SMOOTH_S: f64 = 1.0;

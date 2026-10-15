@@ -176,6 +176,8 @@ pub enum RepairDevice {
     Reactor,
     CoolantPump,
     JunctionBox,
+    /// The engine room's hull breach (r37): the wrench, held on it.
+    HullBreach,
 }
 
 /// The tool in hand for a repair: the wrench for the reactor and the pump, the screwdriver
@@ -197,6 +199,8 @@ pub enum RepairAsk {
     Miss,
     /// The session ends (done, looked away, walked off, switched slot, F or ESC).
     Stop,
+    /// The hold of a breach repair goes on or off (sent on each change, not each frame).
+    Hold(bool),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -206,6 +210,8 @@ pub enum ReactorFault {
     Surge,
     Fire,
     DrainCoolant,
+    /// The dev fault HULL BREACH: the engine room's wall takes the blast's damage (r37).
+    HullBreach,
     /// The reactor's warm start (`EngineRoom::warm_start`): settled at once, no supplies used.
     WarmStart,
     Aux,
@@ -345,6 +351,9 @@ pub struct ReactorNews {
     pub reactor: PartNews,
     pub pump: PartNews,
     pub junction: PartNews,
+    /// The hull breach's damage, 0..1 (r37; the leak opens above 0.1). Repaired by the wrench's
+    /// hold: a part's share is 1 minus this.
+    pub breach: f64,
     /// The warning lamps that are on, by `Lamp::index` (the status board). Steady here: the
     /// blink is the screen's.
     pub lamps: [bool; Lamp::COUNT],
@@ -497,6 +506,7 @@ mod tests {
             reactor: PartNews { share: 0.9, working: true },
             pump: PartNews { share: 0.4, working: true },
             junction: PartNews { share: 1.0, working: true },
+            breach: 0.55,
             aux_on: true,
             aux_life_support: false,
             aux_lights: true,
@@ -561,6 +571,7 @@ mod tests {
             ReactorAsk::SetFission(12.5),
             ReactorAsk::SetTurbine(0.0),
             ReactorAsk::Trigger(ReactorFault::LoadDrop),
+            ReactorAsk::Trigger(ReactorFault::HullBreach),
             ReactorAsk::Reset,
             ReactorAsk::SetPower(false),
             ReactorAsk::SetBreaker(BreakerGroup::Lights, false),
@@ -657,7 +668,7 @@ mod tests {
 
     #[test]
     fn repair_asks_travel_as_they_are() {
-        for ask in [RepairAsk::Start { device: RepairDevice::JunctionBox, tool: RepairTool::Screwdriver }, RepairAsk::Start { device: RepairDevice::CoolantPump, tool: RepairTool::Wrench }, RepairAsk::Hit, RepairAsk::Miss, RepairAsk::Stop] {
+        for ask in [RepairAsk::Start { device: RepairDevice::JunctionBox, tool: RepairTool::Screwdriver }, RepairAsk::Start { device: RepairDevice::CoolantPump, tool: RepairTool::Wrench }, RepairAsk::Start { device: RepairDevice::HullBreach, tool: RepairTool::Wrench }, RepairAsk::Hit, RepairAsk::Miss, RepairAsk::Stop, RepairAsk::Hold(true), RepairAsk::Hold(false)] {
             let back = match decode::<ToHost>(&encode(&ToHost::Repair(ask))).expect("decodes") {
                 ToHost::Repair(a) => a,
                 _ => panic!("the repair request"),

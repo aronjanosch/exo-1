@@ -155,6 +155,7 @@ pub fn part_share(r: &ReactorNews, d: RepairDevice) -> f64 {
         RepairDevice::Reactor => r.reactor.share,
         RepairDevice::CoolantPump => r.pump.share,
         RepairDevice::JunctionBox => r.junction.share,
+        RepairDevice::HullBreach => 1.0 - r.breach,
     }
 }
 

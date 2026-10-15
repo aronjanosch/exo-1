@@ -643,3 +643,37 @@ fn a_broken_pump_empties_the_tank_in_about_a_hundred_seconds_and_never_below_zer
     assert!(r.pump().tank() >= 0.0, "the tank never goes below zero");
     assert_eq!(r.pump().tank(), 0.0);
 }
+
+/// The meltdown blast opens the hull at the room's blast damage (r37; Barotrauma's explosions
+/// damage the walls). A melt without fuel does not.
+#[test]
+fn a_blast_breaches_the_hull_and_a_melt_without_fuel_does_not() {
+    let mut r = room();
+    assert_eq!(r.breach().damage(), 0.0);
+    let _ = r.melt_now();
+    assert_eq!(r.breach().damage(), RoomTuning::default().blast_breach_damage);
+    assert!(r.breach().open() > 0.0, "0.6 is past the leak threshold");
+
+    let mut r = room();
+    assert!(r.reactor_mut().pull_rod(0).is_some() && r.reactor_mut().pull_rod(0).is_some());
+    let _ = r.melt_now();
+    assert_eq!(r.breach().damage(), 0.0);
+}
+
+/// The dev fault HULL BREACH sets the same damage as the blast, and the wrench's hold takes it
+/// down at the pump's fix speed (25 s for the whole wall): it closes the leak when it is mended.
+#[test]
+fn the_dev_breach_is_mended_by_the_hold_at_the_pump_speed() {
+    let t = RoomTuning::default();
+    let mut r = room();
+    assert!(r.trigger(Fault::HullBreach).is_empty());
+    assert_eq!(r.breach().damage(), t.blast_breach_damage);
+    // The hold of 0.6 damage at 1 / 25 per second takes 15 s.
+    for _ in 0..(15.0 * 30.0) as usize {
+        r.mend_breach(DT);
+    }
+    assert!(r.breach().damage() < 1e-9, "{}", r.breach().damage());
+    assert_eq!(r.breach().open(), 0.0, "a repaired breach closes the leak");
+    r.mend_breach(10.0);
+    assert_eq!(r.breach().damage(), 0.0, "mending a sound wall does nothing");
+}

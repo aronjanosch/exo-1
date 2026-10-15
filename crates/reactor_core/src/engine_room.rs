@@ -11,6 +11,7 @@
 use device_core::{Condition, DeviceEvent, DeviceTuning};
 use gameplay_core::rng::Rng;
 
+use crate::breach::Breach;
 use crate::grid::{Grid, Group};
 use crate::history::History;
 use crate::reactor::{AlarmKind, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning, RodKinds};
@@ -90,6 +91,12 @@ pub struct RoomTuning {
     /// The oxygen generator's air, m³ per second at full life support power (`fire_core::oxygen`).
     /// TODO(initiator): value; 2.13 refills the 256 m³ engine room from half in about 60 s.
     pub oxygen_generator_rate: f64,
+    /// The hull breach's hole, m² when fully open (`fire_core` leak). TODO(initiator): value; 0.5
+    /// empties the 256 m³ room from full to the bad-air line (0.3) in about 2.6 min, shut door.
+    pub breach_area_m2: f64,
+    /// The breach's damage after the meltdown blast and the dev fault (0..1; Barotrauma's
+    /// explosion damages walls). TODO(initiator): value.
+    pub blast_breach_damage: f64,
 }
 
 impl Default for RoomTuning {
@@ -127,6 +134,8 @@ impl Default for RoomTuning {
             aux_enabled: false,
             aux_output_kw: 500.0,
             oxygen_generator_rate: 2.13,
+            breach_area_m2: 0.5,
+            blast_breach_damage: 0.6,
         }
     }
 }
@@ -189,6 +198,8 @@ pub enum Fault {
     /// Engines and lights go off at once: overvoltage at the junction box, and Auto overshoots.
     LoadDrop,
     Surge,
+    /// The engine room's hull breach at the blast's damage (`blast_breach_damage`).
+    HullBreach,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -451,6 +462,8 @@ pub struct EngineRoom {
     aux: bool,
     /// The aux switches of Life Support and Lights (indexed by `Group`; Engines is never aux-fed).
     aux_switch: [bool; Group::ALL.len()],
+    /// The hull breach of the room (`breach`): the glue's leak follows it.
+    breach: Breach,
 }
 
 impl EngineRoom {
@@ -488,6 +501,7 @@ impl EngineRoom {
             ecool_pressed: false,
             aux: t.room.aux_enabled,
             aux_switch: [true; Group::ALL.len()],
+            breach: Breach::default(),
         }
     }
 
@@ -555,6 +569,18 @@ impl EngineRoom {
 
     /// The coolant pump's leak, tank fraction per second (`Pump::leak_rate`): the screen's LEAK and
     /// the steam at the pump both read it. 0 with a sound pump.
+    /// The hull breach of the room (the glue's leak and visuals read it).
+    pub fn breach(&self) -> &Breach {
+        &self.breach
+    }
+
+    /// The wrench's hold on the breach: `dt` seconds take the damage down at the pump's fix speed
+    /// (`pump.fix_slow_s` for the whole wall, 25 s), so a 0.6 breach is mended in 15 s of hold.
+    pub fn mend_breach(&mut self, dt: f64) {
+        let whole = self.tuning.pump.fix_slow_s.max(1e-6);
+        self.breach.mend(dt.max(0.0) / whole);
+    }
+
     pub fn pump_leak_rate(&self) -> f64 {
         self.pump.leak_rate(&self.tuning)
     }
@@ -841,6 +867,8 @@ impl EngineRoom {
         }) else {
             return Vec::new();
         };
+        // The blast tears the hull open in the room (Barotrauma's explosions damage the walls).
+        self.breach.set(self.tuning.blast_breach_damage);
         let mut ev = Vec::new();
         if let Some(e) = self.pump.condition.damage(blast.device_damage) {
             ev.push(RoomEvent::Device { source: Source::Pump, event: e });
@@ -866,6 +894,10 @@ impl EngineRoom {
             Fault::Surge => {
                 let amount = self.tuning.surge_damage;
                 self.junction.condition.damage(amount).map(|e| RoomEvent::Device { source: Source::Junction, event: e }).into_iter().collect()
+            }
+            Fault::HullBreach => {
+                self.breach.set(self.tuning.blast_breach_damage);
+                Vec::new()
             }
         }
     }

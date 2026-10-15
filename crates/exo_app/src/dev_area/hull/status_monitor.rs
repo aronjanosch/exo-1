@@ -10,12 +10,9 @@ use reactor_core::hull::openness;
 
 pub const ID: PanelId = PanelId::new("status_monitor");
 pub const NAME: &str = "ST-01";
-/// The screen's spot (area metres) and lift (m): the readout's size, on the east wall beside the
-/// reactor screens, turned to face west into the room.
-pub const AT: [f64; 2] = [-9.04, -16.9];
+/// The screen's lift (m) and size: the readout's, for the spot `layout::MONITOR_AT`.
 pub const LIFT: f64 = 0.9;
 pub const SIZE: [f64; 2] = [1.6, 1.0];
-pub const TURN: f64 = -90.0;
 /// The SILENCE button's action (`crate::dev_area::engineering::panels::read_clicks`).
 pub const SILENCE_ACTION: &str = "silence";
 

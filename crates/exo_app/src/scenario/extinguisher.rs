@@ -88,9 +88,9 @@ pub(super) fn extinguisher_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "extinguisher: the rack in the corridor");
-            let at = ground(w, [CORRIDOR.centre[0] - 0.75, CORRIDOR.centre[1] - 2.2], 0.0);
+            let at = ground(w, [CORRIDOR.centre[0] - 9.9, CORRIDOR.centre[1]], 0.0);
             place_walker(w, at);
-            let rack = ground(w, [CORRIDOR.centre[0] - 0.75, CORRIDOR.centre[1] - 1.0], 0.6);
+            let rack = ground(w, [CORRIDOR.centre[0] - 11.05, CORRIDOR.centre[1]], 0.6);
             look_at(w, rack);
             return false;
         }

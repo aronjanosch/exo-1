@@ -16,11 +16,11 @@ pub const TAG: &str = "extinguisher";
 #[derive(Resource, Clone, Debug)]
 pub struct Supply(pub SupplyConfig);
 
-/// The two wall boxes: the corridor's west wall (faces east) and the engine room's east wall.
+/// The two wall boxes: the corridor's west end wall (faces east, off the doors and the walk) and the engine room's north wall east of the door (faces south).
 pub fn boxes() -> [PlaceholderBox; 2] {
     [
-        PlaceholderBox { id: "extinguisher_rack_corridor".into(), zone: CORRIDOR, local_pos: [-0.75, -1.0], size: [0.35, 1.2, 0.5], turn_deg: 90.0, colour: [0.85, 0.12, 0.08], panel: None },
-        PlaceholderBox { id: "extinguisher_rack_engine_room".into(), zone: ROOM, local_pos: [4.6, 2.6], size: [0.35, 1.2, 0.5], turn_deg: 270.0, colour: [0.85, 0.12, 0.08], panel: None },
+        PlaceholderBox { id: "extinguisher_rack_corridor".into(), zone: CORRIDOR, local_pos: [-11.05, 0.0], size: [0.35, 1.2, 0.5], turn_deg: 90.0, colour: [0.85, 0.12, 0.08], panel: None },
+        PlaceholderBox { id: "extinguisher_rack_engine_room".into(), zone: ROOM, local_pos: [3.8, 3.75], size: [0.35, 1.2, 0.5], turn_deg: 0.0, colour: [0.85, 0.12, 0.08], panel: None },
     ]
 }
 

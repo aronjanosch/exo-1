@@ -2,7 +2,7 @@
 use super::*;
 use crate::controls::Controls;
 use crate::dev_area::engineering::coolant::{HOLD_S, RACK_AT};
-use crate::dev_area::{layout::{COOLANT_PUMP_AT, CORRIDOR}};
+use crate::dev_area::{layout::{COOLANT_PUMP_AT, ROOM}};
 use crate::dev_area::ship::ReactorSim;
 use crate::dev_area::engineering::panels::PUMP_ID;
 use crate::displays::Panels;
@@ -74,7 +74,7 @@ pub(super) fn coolant_steps(s: &mut Vec<Step>) {
             return false;
         }
         check(c, ready, "coolant: the rack and the walker's body are there".into());
-        let p = ground(w, CORRIDOR.point([RACK_AT[0] - 0.8, RACK_AT[1]]), 0.0);
+        let p = ground(w, ROOM.point([RACK_AT[0], RACK_AT[1] - 0.8]), 0.0);
         place_walker(w, p);
         end(w, c, "at the rack".into());
         true

@@ -23,6 +23,12 @@ pub struct RackSpec {
     pub box_id: String,
     pub slots: usize,
     pub stock: usize,
+    /// The item the rack holds (r40, the suit rack's O2 mask); the extinguisher when left out.
+    #[serde(default)]
+    pub item: Option<String>,
+    /// The tag a slot takes (r40, "mask" for the suit rack); the extinguisher's tag when left out.
+    #[serde(default)]
+    pub tag: Option<String>,
 }
 
 impl SupplyConfig {

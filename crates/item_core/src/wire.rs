@@ -171,6 +171,11 @@ pub enum ReactorAsk {
     JumpArm,
     /// The emergency jump (r40, #252): only at READY, empties the charge. The host refuses it otherwise.
     JumpGo,
+    /// The airlock's panels (r40): a door's press (closes it when open, else starts its cycle), or the
+    /// CYCLE press (the pump alone; a press while it runs stops it). The host refuses what the interlock refuses.
+    Airlock(AirlockAsk),
+    /// The dev faults screen's VACUUM switch (r40): true makes the outside vacuum, false breathable air.
+    SetVacuum(bool),
 }
 
 /// The jump drive's stage as the host has it: PULSAR's warp charge stages (`reactor_core::JumpStage`).
@@ -182,6 +187,33 @@ pub enum JumpStage {
     Paused,
     Ready,
     Active,
+}
+
+/// A press at the airlock's panels (r40). See `ReactorAsk::Airlock`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AirlockAsk {
+    Inner,
+    Outer,
+    Cycle,
+}
+
+/// What the running cycle is for (r40): the door it opens at its end, or the pump alone.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AirlockCycle {
+    #[default]
+    Idle,
+    Inner,
+    Outer,
+    Hold,
+}
+
+/// The airlock as the host has it (r40): the doors, and the running cycle with its progress 0..1.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct AirlockNews {
+    pub inner_open: bool,
+    pub outer_open: bool,
+    pub cycling: AirlockCycle,
+    pub progress: f64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -480,6 +512,10 @@ pub struct ReactorNews {
     /// The jumps the host has applied so far (`ReactorCounts::jumps`). A process that sees it go up
     /// shows the white flash and the log line once, as the ejects do.
     pub jumps: u32,
+    /// The airlock's doors and cycle (r40).
+    pub airlock: AirlockNews,
+    /// The outside is vacuum (r40; the dev faults screen's VACUUM switch shows it).
+    pub vacuum: bool,
 }
 
 /// A room's air and fire for the status monitor (r38): the air as a fraction 0..1 (whole percent),
@@ -638,6 +674,8 @@ mod tests {
             jump_stage: JumpStage::Paused,
             jump_charge: 0.4,
             jumps: 1,
+            airlock: AirlockNews { inner_open: false, outer_open: true, cycling: AirlockCycle::Hold, progress: 0.4 },
+            vacuum: true,
             aux_on: true,
             aux_life_support: false,
             aux_lights: true,
@@ -739,6 +777,10 @@ mod tests {
             ReactorAsk::JumpArm,
             ReactorAsk::JumpGo,
             ReactorAsk::Trigger(ReactorFault::JumpFull),
+            ReactorAsk::Airlock(AirlockAsk::Inner),
+            ReactorAsk::Airlock(AirlockAsk::Outer),
+            ReactorAsk::Airlock(AirlockAsk::Cycle),
+            ReactorAsk::SetVacuum(false),
         ];
         for ask in asks {
             let back = match decode::<ToHost>(&encode(&ToHost::Reactor(ask))).expect("decodes") {

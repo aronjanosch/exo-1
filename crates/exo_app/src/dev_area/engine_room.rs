@@ -11,16 +11,22 @@ use crate::origin::WorldPos;
 use crate::Layer;
 use fire_core::{split_by_volume, Deck, FireTuning, GapId, LeakId, RoomId};
 use reactor_core::hull::{openness, SECTION_CENTRES};
-use reactor_core::Source;
+use reactor_core::{Airlock, AirlockTuning, Dir, Door, Goal, Source, Tuning};
 use display_core::PanelId;
 use item_core::wire::{Alarm, RoomAlarmKind, RoomAsk, RoomNews, HULL_SECTIONS};
 
 pub const ROOM: Zone = Zone { name: "engine room", centre: [-14.0, -15.0], half: [5.0, 4.0] };
 pub const CORRIDOR: Zone = Zone { name: "corridor", centre: [-14.0, -7.7], half: [1.0, 3.0] };
+/// The airlock (r40, #267): a 2 x 2 m room at the corridor's far end, where the corridor met the
+/// outside. Its inner door is the corridor's north edge (y -4.7), its outer door 2 m further north.
+pub const AIRLOCK: Zone = Zone { name: "airlock", centre: [-14.0, -3.7], half: [1.0, 1.0] };
+pub const INNER_DOOR_AT: [f64; 2] = [-14.0, -4.7];
+pub const OUTER_DOOR_AT: [f64; 2] = [-14.0, -2.7];
 /// The room's height (m); the room has a ceiling, the corridor is open to the sky.
 pub const ROOM_HEIGHT: f64 = 3.2;
 /// Thickness of the walls and the door (m).
 const WALL: f64 = 0.3;
+/// The airlock's doors: their slabs sink into the floor when open (`airlock.rs`).
 /// The door: its slab's centre when shut (area metres), its size, and how far it slides east
 /// when open (m), and how long that takes (s).
 pub const DOOR_AT: [f64; 2] = [-14.0, -11.15];
@@ -91,20 +97,25 @@ pub const SCREENS: &[Mount] = &[
     Mount { id: reactor_screen::VENT_CORRIDOR_ID, name: reactor_screen::VENT_CORRIDOR_NAME, at: VENT_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
     // The helm (r38, HM-01): in the corridor on its east wall, north of the vent. TODO(initiator): the spot on the wall.
     Mount { id: reactor_screen::HELM_ID, name: reactor_screen::HELM_NAME, at: HELM_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
-    // The gunnery (r40, GN-01): on the same wall, 1.5 m north of the helm (edge to edge).
+    // The gunnery (r40, GN-01): on the same wall, between the vent and the door's panel.
     Mount { id: reactor_screen::GUNNERY_ID, name: reactor_screen::GUNNERY_NAME, at: GUNNERY_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
-    // The jump drive (r40, JD-01): on the corridor's west wall, opposite the helm. TODO(initiator): the spot on the wall.
+    // The jump drive (r40, JD-01): on the corridor's west wall, south of the airlock's panel. TODO(initiator): the spot on the wall.
     Mount { id: reactor_screen::JUMP_ID, name: reactor_screen::JUMP_NAME, at: JUMP_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
+    // The airlock's two panels (r40): the inner one on the corridor's west wall (faces east, into the
+    // corridor), the outer one on the airlock's west wall (inside, by the outer door). Both show IN, OUT, CYCLE.
+    Mount { id: reactor_screen::AIRLOCK_INNER_ID, name: reactor_screen::AIRLOCK_INNER_NAME, at: AIRLOCK_PANEL_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
+    Mount { id: reactor_screen::AIRLOCK_OUTER_ID, name: reactor_screen::AIRLOCK_OUTER_NAME, at: AIRLOCK_PANEL_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
 ];
+/// The airlock panels' wall points (area metres): inner (corridor's west wall), outer (airlock's west wall).
+pub const AIRLOCK_PANEL_AT: [[f64; 2]; 2] = [[-15.04, -5.0], [-15.04, -3.0]];
 /// The helm's wall point (area metres): the corridor's east wall, beyond the vent.
 pub const HELM_AT: [f64; 2] = [-13.04, -5.0];
-/// The gunnery's wall point (r40): north of the helm, 1.5 m between the two screens' edges (the helm's
-/// width along the wall is SMALL_SCREEN_SIZE[0]). TODO(initiator): this is 1.7 m past the corridor zone's
-/// north end (y -4.7); the spot on the wall is open.
-pub const GUNNERY_GAP: f64 = 1.5;
-pub const GUNNERY_AT: [f64; 2] = [HELM_AT[0], HELM_AT[1] + SMALL_SCREEN_SIZE[0] + GUNNERY_GAP];
-/// The jump drive's wall point (area metres): the corridor's west wall (x = -14 - 1), level with the helm.
-pub const JUMP_AT: [f64; 2] = [-14.96, HELM_AT[1]];
+/// The gunnery's wall point (r40): the corridor's east wall between the vent (y -7) and the door's
+/// panel (y -10); north of the helm lies the airlock now. TODO(initiator): the spot on the wall.
+pub const GUNNERY_AT: [f64; 2] = [HELM_AT[0], -8.5];
+/// The jump drive's wall point (area metres): the corridor's west wall (x = -14 - 1), 2 m south of
+/// the airlock's inner panel (y -5).
+pub const JUMP_AT: [f64; 2] = [-14.96, -7.0];
 /// The vents' wall points (area metres): the engine room's west wall and the corridor's east wall.
 pub const VENT_AT: [[f64; 2]; 2] = [[-18.9, -14.0], [-13.04, -7.0]];
 pub const VENT_LIFT: f64 = 1.3;
@@ -120,6 +131,7 @@ pub const REACTOR_SCREEN: &str = "engine_reactor_screen";
 pub enum Place {
     Engine,
     Corridor,
+    Airlock,
     Outside,
 }
 
@@ -128,6 +140,8 @@ pub fn place_of(p: [f64; 2]) -> Place {
         Place::Engine
     } else if CORRIDOR.contains(p) {
         Place::Corridor
+    } else if AIRLOCK.contains(p) {
+        Place::Airlock
     } else {
         Place::Outside
     }
@@ -168,37 +182,153 @@ pub struct EngineAir {
     pub deck: Deck,
     pub engine: RoomId,
     pub corridor: RoomId,
+    pub airlock: RoomId,
     pub outside: RoomId,
     pub door: GapId,
     /// One hole per wall section (r37's breach, by section in r40): opened and closed each step
     /// from the hull's openness.
     pub breaches: [LeakId; HULL_SECTIONS],
+    /// The airlock's inner door: corridor to airlock.
+    pub inner: GapId,
+    /// The outer door onto the breathable outside (airlock to outside). Open only while the outside is not vacuum.
+    pub outer: GapId,
+    /// The outer door onto vacuum (airlock to space, a leak). Open only while the outside is vacuum.
+    pub outer_leak: LeakId,
+    /// The airlock's cycle and doors (`reactor_core::Airlock`).
+    pub lock: Airlock,
+    /// The outside is vacuum (r40): from the config at start, the dev VACUUM switch after that.
+    pub vacuum: bool,
+    /// m³ the running cycle moves at its full share: the air at its start (see `request`).
+    cycle_air: f64,
+    /// Each airlock door's openness, 0..1 (the slab's progress), as the deck has it.
+    door_open: [f64; 2],
 }
 
-/// m³: the room 10 x 8 x 3.2 m, the corridor 2 x 6 x 3.2 m; the outside has no end.
+/// m³: the room 10 x 8 x 3.2 m, the corridor 2 x 6 x 3.2 m, the airlock 2 x 2 x 3.2 m; the outside has no end.
 const ROOM_VOLUME: f64 = 10.0 * 8.0 * ROOM_HEIGHT;
 const CORRIDOR_VOLUME: f64 = 2.0 * 6.0 * ROOM_HEIGHT;
+const AIRLOCK_VOLUME: f64 = 2.0 * 2.0 * ROOM_HEIGHT;
 const OUTSIDE_VOLUME: f64 = 1.0e6;
 
 impl EngineAir {
     pub fn new() -> EngineAir {
+        EngineAir::with_tuning(&AirlockTuning::default())
+    }
+
+    /// The air at the start: the rooms full, the doors shut. The outside is empty when it is vacuum
+    /// (`airlock.outside_vacuum`), and nothing flows to it then but through the outer door's leak.
+    pub fn with_tuning(t: &AirlockTuning) -> EngineAir {
         let mut deck = Deck::new(FireTuning::default(), 0x296);
         let engine = deck.add_room(ROOM_VOLUME);
         let corridor = deck.add_room(CORRIDOR_VOLUME);
+        let airlock = deck.add_room(AIRLOCK_VOLUME);
         let outside = deck.add_room(OUTSIDE_VOLUME);
+        if t.outside_vacuum {
+            deck.room_mut(outside).oxygen = 0.0;
+        }
         let door = deck.add_gap(engine, corridor, DVec3::new(DOOR_AT[0], DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
-        deck.add_gap(corridor, outside, DVec3::new(DOOR_AT[0], CORRIDOR.centre[1] + CORRIDOR.half[1], 0.0), DOOR_AREA, 1.0);
+        let inner = deck.add_gap(corridor, airlock, DVec3::new(INNER_DOOR_AT[0], INNER_DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
+        let outer = deck.add_gap(airlock, outside, DVec3::new(OUTER_DOOR_AT[0], OUTER_DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
+        let outer_leak = deck.add_leak(airlock, DVec3::new(OUTER_DOOR_AT[0], OUTER_DOOR_AT[1], 0.0), 0.0, 0.0);
         // Shut at the start: the area and the openness come from the reactor each step.
         let breaches = SECTION_CENTRES.map(|c| deck.add_leak(engine, DVec3::new(c[0], c[1], 0.0), 0.0, 0.0));
-        EngineAir { deck, engine, corridor, outside, door, breaches }
+        EngineAir { deck, engine, corridor, airlock, outside, door, breaches, inner, outer, outer_leak, lock: Airlock::new(t), vacuum: t.outside_vacuum, cycle_air: 0.0, door_open: [0.0; 2] }
     }
 
     pub fn room_of(&self, place: Place) -> RoomId {
         match place {
             Place::Engine => self.engine,
             Place::Corridor => self.corridor,
+            Place::Airlock => self.airlock,
             Place::Outside => self.outside,
         }
+    }
+
+    /// A panel's press (r40): the goal goes to `Airlock::press`. A cycle that starts takes its air
+    /// reference now: an outward cycle pumps the airlock's air, an inward one fills the airlock to the
+    /// corridor's fraction (the air it takes from the corridor).
+    pub fn request(&mut self, goal: Goal) -> bool {
+        let idle = self.lock.cycling().is_none();
+        if !self.lock.press(goal) {
+            return false;
+        }
+        if idle && self.lock.cycling().is_some() {
+            self.cycle_air = match self.lock.direction() {
+                Some(Dir::Out) => self.deck.room(self.airlock).oxygen,
+                Some(Dir::In) => self.deck.room(self.airlock).volume * self.deck.room(self.corridor).oxygen_fraction(),
+                None => 0.0,
+            };
+        }
+        true
+    }
+
+    /// One step of the airlock's cycle: the pump moves its share of the reference air (what fits;
+    /// the rest stays where it was), then the cycle's timer runs.
+    pub fn airlock_step(&mut self, dt: f64) {
+        let share = self.lock.pump_share(dt);
+        if share > 0.0 {
+            let want = share * self.cycle_air;
+            match self.lock.direction() {
+                Some(Dir::Out) => self.move_air(self.airlock, self.corridor, want),
+                Some(Dir::In) => self.move_air(self.corridor, self.airlock, want),
+                None => {}
+            }
+        }
+        self.lock.step(dt);
+    }
+
+    /// Moves up to `want` m³ from one room to another: what the source has and the target has room for.
+    /// Takes and adds through the deck's `breathe` and `add_oxygen`, so no air is made or lost.
+    fn move_air(&mut self, from: RoomId, to: RoomId, want: f64) {
+        let (f, t) = (*self.deck.room(from), *self.deck.room(to));
+        let free = (t.volume - t.oxygen).max(0.0);
+        let m = want.min(f.oxygen).min(free).max(0.0);
+        self.deck.breathe(from, m);
+        self.deck.add_oxygen(to, m);
+    }
+
+    /// An airlock door's openness, 0..1 (the slab's progress). The outer door opens onto the
+    /// outside's air, or onto vacuum (a leak) while the outside is vacuum.
+    pub fn set_door(&mut self, d: Door, open: f64) {
+        match d {
+            Door::Inner => {
+                self.door_open[0] = open;
+                self.deck.set_open(self.inner, open);
+            }
+            Door::Outer => {
+                self.door_open[1] = open;
+                self.apply_outer();
+            }
+        }
+    }
+
+    fn apply_outer(&mut self) {
+        let open = self.door_open[1];
+        let (gap, leak) = if self.vacuum { (0.0, open) } else { (open, 0.0) };
+        self.deck.set_open(self.outer, gap);
+        self.deck.set_leak(self.outer_leak, DOOR_AREA, leak);
+    }
+
+    /// The dev VACUUM switch (r40): the outside becomes empty (vacuum) or full of breathable air. The
+    /// doors' openings follow at once.
+    pub fn set_vacuum(&mut self, on: bool) {
+        self.vacuum = on;
+        let outside = self.outside;
+        let volume = self.deck.room(outside).volume;
+        self.deck.room_mut(outside).oxygen = if on { 0.0 } else { volume };
+        self.apply_outer();
+    }
+
+    /// The airlock as the panels show it (r40).
+    pub fn airlock_news(&self) -> item_core::wire::AirlockNews {
+        use item_core::wire::AirlockCycle;
+        let cycling = match self.lock.cycling() {
+            None => AirlockCycle::Idle,
+            Some(Goal::Door(Door::Inner)) => AirlockCycle::Inner,
+            Some(Goal::Door(Door::Outer)) => AirlockCycle::Outer,
+            Some(Goal::Hold) => AirlockCycle::Hold,
+        };
+        item_core::wire::AirlockNews { inner_open: self.lock.is_open(Door::Inner), outer_open: self.lock.is_open(Door::Outer), cycling, progress: self.lock.progress() }
     }
 
     /// The generator's air (m³) through the two vents (r38): `open[0]` the engine room's, `open[1]`
@@ -270,7 +400,14 @@ const MACHINES: &[Part] = &[
     Part { id: BREACH_IDS[7], at: SECTION_CENTRES[7], size: BREACH_SIZE_Z, lift: 0.0, colour: BREACH_COLOUR },
 ];
 
-fn span(lift: f64, height: f64) -> (f64, f64) {
+/// The airlock's walls (r40): the room's west and east walls, from the inner door's line to the outer
+/// door's. The doors close the ends (`airlock.rs`).
+const AIRLOCK_WALLS: &[Part] = &[
+    Part { id: "engine_airlock_west", at: [-15.15, -3.7], size: [WALL, ROOM_HEIGHT, 2.0], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "engine_airlock_east", at: [-12.85, -3.7], size: [WALL, ROOM_HEIGHT, 2.0], lift: 0.0, colour: WALL_COLOUR },
+];
+
+pub(super) fn span(lift: f64, height: f64) -> (f64, f64) {
     if lift > 0.0 { (lift, lift + height) } else { (-SINK, height) }
 }
 
@@ -288,9 +425,10 @@ pub fn walker_place(area: &DevArea, planet: &PlanetRes, p: DVec3) -> Option<Plac
 }
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<ShipAlarm>().init_resource::<EngineDoor>().insert_resource(EngineAir::new());
+    let tuning = Tuning::load(&crate::content_files("gameplay")).unwrap_or_else(|e| panic!("engine room: {e:?}"));
+    app.init_resource::<ShipAlarm>().init_resource::<EngineDoor>().insert_resource(EngineAir::with_tuning(&tuning.airlock));
     app.add_systems(Update, spawn_room.after(super::spawn_devices).in_set(crate::phases::Frame::World));
-    app.add_systems(FixedUpdate, (room_state.after(crate::items_net::items_net_in), room_step, breath_step).chain().in_set(crate::phases::Fx::Input));
+    app.add_systems(FixedUpdate, (room_state.after(crate::items_net::items_net_in), room_step, super::airlock::airlock_step, breath_step).chain().in_set(crate::phases::Fx::Input));
 }
 
 /// Window only: the lights of the room and the corridor follow the grid's lights factor
@@ -470,7 +608,7 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
     }
     let Some(frame) = area.frame else { return };
     *done = Some(planet.id);
-    for p in PARTS.iter().chain(MACHINES.iter()) {
+    for p in PARTS.iter().chain(AIRLOCK_WALLS.iter()).chain(MACHINES.iter()) {
         let (ground, up) = frame.ground(&planet, p.at[0], p.at[1], 0.0);
         let rot = frame.rotation(up, 0.0);
         let (bottom, top) = span(p.lift, p.size[1]);
@@ -520,6 +658,7 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
         ))
         .id();
     area.entities.push(e);
+    super::airlock::spawn_doors(&mut commands, &frame, &planet, &mut area);
 }
 
 #[derive(Component)]
@@ -542,7 +681,7 @@ fn spawn_lights(mut commands: Commands, planet: Res<PlanetRes>, area: Res<DevAre
     }
     let at = |p: [f64; 2], h: f64| area.ground(&planet, p, h).map(|(w, _)| w).unwrap_or(DVec3::ZERO);
     let warm = Color::srgb(1.0, 0.9, 0.75);
-    let lamps = [([-16.5, -15.5], 2.9, false), ([-11.5, -15.5], 2.9, false), ([-14.0, -7.7], 2.9, false), ([-14.0, -15.0], 2.6, true), ([-14.0, -8.6], 2.6, true)];
+    let lamps = [([-16.5, -15.5], 2.9, false), ([-11.5, -15.5], 2.9, false), ([-14.0, -7.7], 2.9, false), ([-14.0, -15.0], 2.6, true), ([-14.0, -8.6], 2.6, true), (AIRLOCK.centre, 2.9, false)];
     for (p, h, alarm) in lamps {
         let colour = if alarm { Color::srgb(1.0, 0.1, 0.05) } else { warm };
         let intensity = if alarm { 0.0 } else { 60_000.0 };
@@ -617,6 +756,7 @@ fn alarm_lights(time: Res<Time>, alarm: Res<ShipAlarm>, mut lights: Query<(&Room
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reactor_core::{AirlockTuning, Door, Goal};
 
     /// r37: the breach's hole loses air only while it is open; a mended wall keeps what it has.
     #[test]
@@ -657,11 +797,98 @@ mod tests {
         assert!((shared - expected).abs() < 1e-9, "both open: the engine room takes its volume share ({shared})");
     }
 
+    /// Runs the cycle and the air for `secs` at 30 steps a second, with the door's openness fixed.
+    fn cycle(a: &mut EngineAir, secs: f64) {
+        for _ in 0..(secs * 30.0).round() as usize {
+            a.airlock_step(1.0 / 30.0);
+            a.deck.exchange_air(1.0 / 30.0);
+        }
+    }
+
+    /// r40: an outward cycle pumps 95 % of the airlock's air back into the corridor; the rest stays.
+    #[test]
+    fn the_airlock_pumps_its_air_back_into_the_corridor() {
+        let mut a = EngineAir::new();
+        a.deck.breathe(a.corridor, 19.2);
+        let total = a.deck.total_oxygen();
+        let (lock, corridor) = (a.deck.room(a.airlock).oxygen, a.deck.room(a.corridor).oxygen);
+        assert!(a.request(Goal::Door(Door::Outer)), "the outer door's cycle starts");
+        cycle(&mut a, 6.0);
+        assert!(a.lock.is_open(Door::Outer), "the outer door opens at the cycle's end");
+        let moved = a.deck.room(a.corridor).oxygen - corridor;
+        assert!((moved - 0.95 * lock).abs() < 1e-6, "the corridor gets 95 % of the airlock's air ({moved})");
+        assert!((a.deck.room(a.airlock).oxygen - 0.05 * lock).abs() < 1e-6, "5 % stays in the airlock");
+        assert!((a.deck.total_oxygen() - total).abs() < 1e-9, "the air is conserved through the cycle");
+    }
+
+    /// r40: the inward cycle fills the airlock from the corridor, and the air still adds up.
+    #[test]
+    fn the_inward_cycle_fills_the_airlock_from_the_corridor() {
+        let mut a = EngineAir::new();
+        a.deck.breathe(a.airlock, 12.0);
+        let total = a.deck.total_oxygen();
+        let before = a.deck.room(a.airlock).oxygen;
+        assert!(a.request(Goal::Door(Door::Inner)));
+        cycle(&mut a, 6.0);
+        assert!(a.lock.is_open(Door::Inner));
+        assert!(a.deck.room(a.airlock).oxygen > before + 10.0, "the airlock is filled to the corridor's pressure");
+        assert!((a.deck.total_oxygen() - total).abs() < 1e-9, "the air came out of the corridor");
+    }
+
+    /// r40: with the outside vacuum, the outer door opens onto space: the outside stays empty, the air
+    /// that leaves the airlock is lost to space, and the total adds up.
+    #[test]
+    fn the_outer_door_opens_onto_vacuum() {
+        let mut a = EngineAir::new();
+        assert!(a.vacuum);
+        assert_eq!(a.deck.room(a.outside).oxygen, 0.0, "the outside starts empty");
+        a.deck.breathe(a.corridor, 19.2);
+        assert!(a.request(Goal::Door(Door::Outer)));
+        cycle(&mut a, 6.0);
+        let total = a.deck.total_oxygen() + a.deck.lost_to_space();
+        for _ in 0..90 {
+            a.set_door(Door::Outer, 1.0);
+            a.airlock_step(1.0 / 30.0);
+            a.deck.exchange_air(1.0 / 30.0);
+            assert_eq!(a.deck.room(a.outside).oxygen, 0.0, "the outside stays vacuum");
+        }
+        assert!(a.deck.room(a.airlock).oxygen < 0.01 * a.deck.room(a.airlock).volume, "the airlock empties into space");
+        assert!((a.deck.total_oxygen() + a.deck.lost_to_space() - total).abs() < 1e-9, "what left went to space");
+        assert_eq!(a.oxygen_at(AIRLOCK.centre), a.deck.room(a.airlock).oxygen_fraction());
+    }
+
+    /// r40: with the outside breathable (the config's false, the dev VACUUM off), the outer door is a
+    /// gap to a full outside: the airlock takes air from it.
+    #[test]
+    fn a_breathable_outside_gives_air_through_the_outer_door() {
+        let mut a = EngineAir::with_tuning(&AirlockTuning { outside_vacuum: false, ..AirlockTuning::default() });
+        a.deck.breathe(a.airlock, 12.0);
+        assert!((a.deck.room(a.outside).oxygen_fraction() - 1.0).abs() < 1e-12);
+        a.set_door(Door::Outer, 1.0);
+        for _ in 0..300 {
+            a.deck.exchange_air(1.0 / 30.0);
+        }
+        assert!(a.deck.room(a.airlock).oxygen_fraction() > 0.9, "the airlock takes the outside's air");
+        a.set_vacuum(true);
+        assert_eq!(a.deck.room(a.outside).oxygen, 0.0, "the dev VACUUM empties the outside");
+    }
+
+    /// r40: a press while the cycle runs is refused, and a press stops it.
+    #[test]
+    fn a_press_during_a_cycle_is_refused_and_stops_it() {
+        let mut a = EngineAir::new();
+        assert!(a.request(Goal::Door(Door::Inner)));
+        assert!(!a.request(Goal::Door(Door::Outer)), "another door's press during a cycle is refused");
+        assert!(a.request(Goal::Door(Door::Inner)), "the same press stops the cycle");
+        assert_eq!(a.lock.cycling(), None);
+        assert!(!a.lock.is_open(Door::Inner) && !a.lock.is_open(Door::Outer));
+    }
+
     #[test]
     fn the_deck_has_the_room_full_of_air_and_the_door_shut() {
         let mut a = EngineAir::new();
         assert!((a.oxygen_at(ROOM.centre) - 1.0).abs() < 1e-9);
-        assert!((a.oxygen_at([0.0, -12.0]) - 1.0).abs() < 1e-9);
+        assert!((a.oxygen_at([0.0, -12.0]) - 0.0).abs() < 1e-9, "the outside is vacuum (r40)");
         a.deck.room_mut(a.engine).oxygen *= 0.25;
         assert!((a.oxygen_at(ROOM.centre) - 0.25).abs() < 1e-9, "the room's air is what the walker breathes");
         assert!((a.oxygen_at(CORRIDOR.centre) - 1.0).abs() < 1e-9, "the corridor has its own air");

@@ -3,6 +3,7 @@ use super::*;
 use crate::dev_area::engine_room::{EngineAir, ShipAlarm};
 use crate::dev_area::fire::{self, FireAlarm, FireConfig, FireGrid, FireModel};
 use crate::items::{Items, NetOut, Role};
+use crate::dev_area::airlock;
 use crate::dev_area::engine_room::ROOM;
 use crate::dev_area::rods;
 use crate::gameplay::Gameplay;
@@ -11,7 +12,7 @@ use item_core::wire::{Alarm, AlarmNews, BreakerGroup, FuelTube, JumpStage, Lamp,
 use reactor_core::room_alarm::{AlarmState, Kind};
 use reactor_core::RoomAlarm;
 use reactor_core::director::Situation;
-use reactor_core::{AlarmLevel, Director, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
+use reactor_core::{AirlockTuning, AlarmLevel, Director, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
 
 /// The dev fault SHIELD HIT's hit, points (`EngineRoom::absorb_hit`). TODO(initiator): a dev value.
 const DEV_SHIELD_HIT: f64 = 300.0;
@@ -210,6 +211,8 @@ impl ReactorSim {
                     info!("reactor: gun refused (reloading or no shot's energy)");
                 }
             }
+            // The airlock and the VACUUM switch need the air: `reactor_step` takes them.
+            ReactorAsk::Airlock(_) | ReactorAsk::SetVacuum(_) => {}
         }
     }
 
@@ -300,6 +303,9 @@ impl ReactorSim {
             jump_charge: self.room.jump().charge,
             // The host's count is set by `reactor_step`, as the ejects are.
             jumps: 0,
+            // The host sets the airlock and the vacuum in `reactor_step` (they come from the air).
+            airlock: Default::default(),
+            vacuum: false,
         }
     }
 }
@@ -497,10 +503,20 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
         if a == ReactorAsk::Trigger(ReactorFault::Fire) {
             info!("reactor: dev fire");
             events.push(RoomEvent::Fire { size: fires.0.start_size, source: Source::Reactor });
+        } else if let ReactorAsk::Airlock(ask) = a {
+            // The airlock's panels (r40): the interlock refuses what it must (`EngineAir::request`).
+            if !air.request(airlock::ask_of(ask)) {
+                info!("reactor: airlock {ask:?} refused (a door is open, or a cycle runs)");
+            }
+        } else if let ReactorAsk::SetVacuum(on) = a {
+            air.set_vacuum(on);
+            info!("reactor: dev vacuum {}", if on { "on" } else { "off" });
         } else {
             if a == ReactorAsk::Reset {
                 // The fires are the air's: a fresh room starts with a fresh air (no fire survives).
-                *air = EngineAir::new();
+                // The dev VACUUM switch is the operator's, as the director's is: a reset keeps it.
+                let vacuum = air.vacuum;
+                *air = EngineAir::with_tuning(&AirlockTuning { outside_vacuum: vacuum, ..cfg.0.airlock.clone() });
             }
             sim.apply(a, &cfg.0, &mut counts);
         }
@@ -596,6 +612,8 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
 
     let oxygen = (air.oxygen_at(ROOM.centre) * 100.0).round() / 100.0;
     let mut now = sim.news(oxygen);
+    now.airlock = air.airlock_news();
+    now.vacuum = air.vacuum;
     now.blasts = counts.blasts;
     now.ejects = counts.ejects;
     now.ecools = counts.ecools;

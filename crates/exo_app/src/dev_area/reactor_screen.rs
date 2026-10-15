@@ -7,7 +7,7 @@ use crate::dev_area::reactor::{lamp_blink_on, ReactorConfig};
 use crate::dev_area::status_monitor;
 use crate::items::Items;
 use display_core::{button, canvas, column, ctl, font, label, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Rect, Shape, Tier, TextFace, Tone, Widget};
-use item_core::wire::{BreakerGroup, FuelKind, FuelTube, JumpStage, Lamp, PumpMode, ReactorAsk, ReactorFault, ReactorNews, FUEL_TUBES};
+use item_core::wire::{AirlockCycle, BreakerGroup, FuelKind, FuelTube, JumpStage, Lamp, PumpMode, ReactorAsk, ReactorFault, ReactorNews, FUEL_TUBES};
 
 const LAMPS: [Lamp; Lamp::COUNT] = [Lamp::Hot, Lamp::CritHeat, Lamp::Cold, Lamp::LowTemp, Lamp::HighOut, Lamp::CritOut, Lamp::LowOut, Lamp::FuelLow, Lamp::NoFuel, Lamp::Meltdown, Lamp::Scram];
 /// A lamp's cell (px) and the gap between the cells.
@@ -35,6 +35,11 @@ pub const JUMP_NAME: &str = "JUMP DRIVE";
 pub const AUX_NAME: &str = "AUX";
 pub const DOOR_ID: PanelId = PanelId::new("engine_door_screen");
 pub const DOOR_NAME: &str = "REACTOR ROOM";
+/// The airlock's two panels (r40): the inner door's (corridor side) and the outer door's (inside the airlock).
+pub const AIRLOCK_INNER_ID: PanelId = PanelId::new("airlock_inner");
+pub const AIRLOCK_INNER_NAME: &str = "INNER DOOR";
+pub const AIRLOCK_OUTER_ID: PanelId = PanelId::new("airlock_outer");
+pub const AIRLOCK_OUTER_NAME: &str = "OUTER DOOR";
 pub const FAULTS_ID: PanelId = PanelId::new("reactor_faults");
 pub const FAULTS_NAME: &str = "Dev faults";
 /// The vents' panels (r38): index 0 the engine room's, 1 the corridor's (`ReactorAsk::SetVent`).
@@ -971,9 +976,25 @@ pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
     Panel::screen(Tier::S, DOOR_NAME, "ER-01", body).with_padding(8.0)
 }
 
+/// An airlock panel (r40): the doors' state or the cycle's progress, and IN (the inner door), OUT (the
+/// outer door), CYCLE (the pump alone). Both panels show the same; the press goes to the host.
+pub fn airlock_panel(r: Option<&ReactorNews>, name: &'static str, code: &'static str) -> Panel {
+    let a = r.map(|r| r.airlock).unwrap_or_default();
+    let word = match a.cycling {
+        AirlockCycle::Idle if a.inner_open => "INNER OPEN".to_string(),
+        AirlockCycle::Idle if a.outer_open => "OUTER OPEN".to_string(),
+        AirlockCycle::Idle => "DOORS SHUT".to_string(),
+        _ => format!("CYCLING {:.0} %", a.progress * 100.0),
+    };
+    let presses = row(4.0, vec![button("IN", "in").flex(1.0), button("OUT", "out").flex(1.0), button("CYCLE", "cycle").flex(1.0)]).fixed(36.0);
+    let body = column(6.0, vec![micro("AIRLOCK").fixed(14.0), readout(word).text_size(font::SMALL).tone(Tone::Normal).fixed(20.0), presses]);
+    Panel::screen(Tier::S, name, code, body).with_padding(8.0)
+}
+
 pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
     let aux = if r.is_some_and(|r| r.aux_on) { "AUX ON" } else { "AUX OFF" };
     let director = if r.is_some_and(|r| r.director) { "DIRECTOR ON" } else { "DIRECTOR OFF" };
+    let vacuum = if r.is_some_and(|r| r.vacuum) { "VACUUM ON" } else { "VACUUM OFF" };
     let col = |items: Vec<_>| column(4.0, items);
     Panel::screen(
         Tier::S,
@@ -1002,6 +1023,7 @@ pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
                     button("Shield hit", "shield_hit").fixed(24.0),
                     button("Jump full", "jump_full").fixed(24.0),
                 ]),
+                col(vec![button(vacuum, "vacuum").fixed(28.0)]),
             ],
         ),
     )
@@ -1263,8 +1285,11 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "aux" => Some(ReactorAsk::Trigger(ReactorFault::Aux)),
                 "director" => snap.map(|r| ReactorAsk::SetDirector(!r.director)),
                 "jump_full" => Some(ReactorAsk::Trigger(ReactorFault::JumpFull)),
+                "vacuum" => snap.map(|r| ReactorAsk::SetVacuum(!r.vacuum)),
                 _ => None,
             }
+        } else if c.panel == AIRLOCK_INNER_ID || c.panel == AIRLOCK_OUTER_ID {
+            super::airlock::panel_ask(&c.action)
         } else {
             None
         };
@@ -1299,6 +1324,8 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));
     panels.set(VENT_ENGINE_ID, vent_panel(items.reactor.as_ref(), 0));
     panels.set(VENT_CORRIDOR_ID, vent_panel(items.reactor.as_ref(), 1));
+    panels.set(AIRLOCK_INNER_ID, airlock_panel(items.reactor.as_ref(), AIRLOCK_INNER_NAME, "AL-01"));
+    panels.set(AIRLOCK_OUTER_ID, airlock_panel(items.reactor.as_ref(), AIRLOCK_OUTER_NAME, "AL-02"));
     panels.set(FAULTS_ID, faults_panel(items.reactor.as_ref()));
     panels.set(STATUS_ID, status_panel(items.reactor.as_ref(), cfg.0.reactor.max_output_kw, lamp_blink_on(time.elapsed_secs_f64())));
     panels.set(status_monitor::ID, status_monitor::monitor_panel(items.reactor.as_ref()));
@@ -1352,6 +1379,8 @@ mod tests {
         assert!(matches!(man.find("fis_set").unwrap().widget, display_core::Widget::Slider { enabled: true, .. }));
         assert!(man.find("mode").is_some() && man.find("reset").is_none());
         assert!(faults_panel(None).find("reset").is_some() && faults_panel(None).find("pump_break").is_some() && faults_panel(None).find("oxygen_break").is_some() && faults_panel(None).find("director").is_some());
+        assert!(faults_panel(None).find("vacuum").is_some(), "the dev VACUUM switch is on the faults screen");
+        assert!(airlock_panel(None, AIRLOCK_INNER_NAME, "AL-01").find("cycle").is_some(), "the airlock panels have IN, OUT and CYCLE");
     }
 
     #[test]

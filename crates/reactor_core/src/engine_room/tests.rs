@@ -882,3 +882,17 @@ fn an_outside_hit_drains_the_shield_before_the_walls() {
     let _ = r.outside_hit(light, &mut rng);
     assert!(walls(&r) > 0.0, "an empty shield lets the hit through");
 }
+
+#[test]
+fn the_room_powers_the_jump_drive_only_while_it_charges() {
+    let mut r = safe_room();
+    settle(&mut r);
+    assert_eq!(r.grid().request_of(Group::JumpDrive), 0.0, "cold drive asks nothing");
+    assert!(r.jump_mut().arm());
+    run(&mut r, 10.0, Input::auto());
+    assert_eq!(r.grid().group(Group::JumpDrive).demand_kw, 400.0, "charging draws the JUMP demand");
+    assert!(r.jump().charge > 0.0, "the grid's power charges it");
+    r.jump_mut().fill();
+    run(&mut r, DT * 3.0, Input::auto());
+    assert_eq!(r.grid().group(Group::JumpDrive).demand_kw, 0.0, "a full drive asks nothing");
+}

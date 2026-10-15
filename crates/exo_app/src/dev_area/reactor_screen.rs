@@ -7,7 +7,7 @@ use crate::dev_area::reactor::{lamp_blink_on, ReactorConfig};
 use crate::dev_area::status_monitor;
 use crate::items::Items;
 use display_core::{button, canvas, column, ctl, font, label, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Rect, Shape, Tier, TextFace, Tone, Widget};
-use item_core::wire::{BreakerGroup, FuelKind, FuelTube, Lamp, PumpMode, ReactorAsk, ReactorFault, ReactorNews, FUEL_TUBES};
+use item_core::wire::{BreakerGroup, FuelKind, FuelTube, JumpStage, Lamp, PumpMode, ReactorAsk, ReactorFault, ReactorNews, FUEL_TUBES};
 
 const LAMPS: [Lamp; Lamp::COUNT] = [Lamp::Hot, Lamp::CritHeat, Lamp::Cold, Lamp::LowTemp, Lamp::HighOut, Lamp::CritOut, Lamp::LowOut, Lamp::FuelLow, Lamp::NoFuel, Lamp::Meltdown, Lamp::Scram];
 /// A lamp's cell (px) and the gap between the cells.
@@ -30,6 +30,8 @@ pub const HELM_ID: PanelId = PanelId::new("helm_panel");
 pub const HELM_NAME: &str = "HELM";
 pub const GUNNERY_ID: PanelId = PanelId::new("gunnery_panel");
 pub const GUNNERY_NAME: &str = "GUNNERY";
+pub const JUMP_ID: PanelId = PanelId::new("jump_drive");
+pub const JUMP_NAME: &str = "JUMP DRIVE";
 pub const AUX_NAME: &str = "AUX";
 pub const DOOR_ID: PanelId = PanelId::new("engine_door_screen");
 pub const DOOR_NAME: &str = "REACTOR ROOM";
@@ -858,6 +860,35 @@ pub fn gunnery_panel(r: Option<&ReactorNews>, capacity: u8) -> Panel {
     Panel::screen(Tier::S, GUNNERY_NAME, "GN-01", body).with_padding(8.0)
 }
 
+/// JD-01 (r40, #252, PULSAR's warp drive screen): the stage, the charge, the EM SPIKE warning while
+/// it charges, ARM (starts the charge, from cold only) and JUMP (live at READY only). After a jump the
+/// stage reads JUMPED while the drive runs down to cold.
+pub fn jump_panel(r: Option<&ReactorNews>) -> Panel {
+    let r = r.copied().unwrap_or_default();
+    let (word, tone) = match r.jump_stage {
+        JumpStage::ColdStart => ("COLD START", Tone::Dim),
+        JumpStage::Prepping => ("PREPPING", Tone::Normal),
+        JumpStage::Paused => ("PAUSED", Tone::Warn),
+        JumpStage::Ready => ("READY", Tone::Normal),
+        JumpStage::Active => ("JUMPED", Tone::Bad),
+    };
+    let stage = readout(word).text_size(font::SMALL).tone(tone);
+    let bar_w = 200.0;
+    let pct = format!("{:.0} %", r.jump_charge.clamp(0.0, 1.0) * 100.0);
+    let mut s = vec![Shape::Rect { x: 0.0, y: 3.0, w: bar_w, h: 12.0, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) }];
+    if r.jump_charge > 0.0 {
+        s.push(Shape::Rect { x: 2.0, y: 5.0, w: (bar_w - 4.0) * r.jump_charge.clamp(0.0, 1.0), h: 8.0, fill: Some(Ink::Hud), outline: None });
+    }
+    s.push(text(210.0, 0.0, 82.0, 18.0, &pct, 16.0, TextFace::Mono, Ink::Fg2, false));
+    let charge = column(4.0, vec![micro("CHARGE").fixed(14.0), canvas(292.0, 18.0, s, None).fixed(18.0)]);
+    let spike = if r.jump_stage == JumpStage::Prepping { readout("EM SPIKE").text_size(font::SMALL).tone(Tone::Bad) } else { readout("").text_size(font::SMALL).tone(Tone::Dim) };
+    let arm = button("ARM", "jump_arm").enabled(r.jump_stage == JumpStage::ColdStart);
+    let go = button("JUMP", "jump_go").tone(Tone::Bad).enabled(r.jump_stage == JumpStage::Ready);
+    let presses = row(8.0, vec![arm.flex(1.0), go.flex(1.0)]).fixed(28.0);
+    let body = column(0.0, vec![space().flex(1.0), column(10.0, vec![stage.fixed(20.0), charge, spike.fixed(20.0), presses]).fixed(160.0), space().flex(1.0)]);
+    tall(Panel::screen(Tier::S, JUMP_NAME, "JD-01", body)).with_padding(6.0)
+}
+
 /// power: the aux reactor has its own supply. TODO(initiator): confirm.
 pub fn aux_panel(r: Option<&ReactorNews>) -> Panel {
     let r = r.copied().unwrap_or_default();
@@ -969,6 +1000,7 @@ pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
                     button("Reset RX", "reset").fixed(24.0),
                     button(director, "director").fixed(24.0),
                     button("Shield hit", "shield_hit").fixed(24.0),
+                    button("Jump full", "jump_full").fixed(24.0),
                 ]),
             ],
         ),
@@ -1192,6 +1224,12 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "fire" => Some(ReactorAsk::Fire),
                 _ => None,
             }
+        } else if c.panel == JUMP_ID {
+            match c.action.as_str() {
+                "jump_arm" => Some(ReactorAsk::JumpArm),
+                "jump_go" => Some(ReactorAsk::JumpGo),
+                _ => None,
+            }
         } else if c.panel == VENT_ENGINE_ID || c.panel == VENT_CORRIDOR_ID {
             let i = if c.panel == VENT_ENGINE_ID { 0 } else { 1 };
             snap.map(|r| ReactorAsk::SetVent(i, new_state(r.vents[i as usize])))
@@ -1224,6 +1262,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "warm_start" => Some(ReactorAsk::Trigger(ReactorFault::WarmStart)),
                 "aux" => Some(ReactorAsk::Trigger(ReactorFault::Aux)),
                 "director" => snap.map(|r| ReactorAsk::SetDirector(!r.director)),
+                "jump_full" => Some(ReactorAsk::Trigger(ReactorFault::JumpFull)),
                 _ => None,
             }
         } else {
@@ -1256,6 +1295,7 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     panels.set(SHIELD_ID, shield_panel(items.reactor.as_ref()));
     panels.set(HELM_ID, helm_panel(items.reactor.as_ref()));
     panels.set(GUNNERY_ID, gunnery_panel(items.reactor.as_ref(), cfg.0.weapons.capacity_shots));
+    panels.set(JUMP_ID, jump_panel(items.reactor.as_ref()));
     panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));
     panels.set(VENT_ENGINE_ID, vent_panel(items.reactor.as_ref(), 0));
     panels.set(VENT_CORRIDOR_ID, vent_panel(items.reactor.as_ref(), 1));

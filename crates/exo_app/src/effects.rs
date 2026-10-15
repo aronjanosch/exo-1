@@ -442,7 +442,7 @@ fn screen_sync(mut commands: Commands, time: Res<Time>, vitals: Res<Vitals>, hol
     st.hold = hold.0;
     let fx = screen_fx(vitals.burning, vitals.oxygen, vitals.radiation, now);
     let flash = st.flash_at.map_or(0.0, |at| flash_alpha(now - at));
-    let white = blast.0.map_or(0.0, |at| crate::dev_area::blast::flash_alpha(now - at));
+    let white = blast.0.map_or(0.0, |at| crate::dev_area::blast::flash_alpha(now - at) * blast.1);
     for (part, mut bg, mut gradient, mut node) in &mut parts {
         match *part {
             ScreenPart::Dark => *bg = BackgroundColor(Color::srgba(0.0, 0.0, 0.0, fx.dark)),

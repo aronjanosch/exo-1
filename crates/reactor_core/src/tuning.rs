@@ -8,6 +8,7 @@ use crate::director::DirectorTuning;
 use crate::engine_room::RoomTuning;
 use crate::grid::GridTuning;
 use crate::hull::HitsTuning;
+use crate::jump::JumpTuning;
 use crate::reactor::{ReactorTuning, RodKinds};
 use crate::shield::ShieldTuning;
 
@@ -38,11 +39,13 @@ pub struct Tuning {
     pub alarm: AlarmTuning,
     /// The hit presets of the HIT LIGHT and HIT HEAVY dev faults (`hits` in reactor.json, r40).
     pub hits: HitsTuning,
+    /// The jump drive's charge (`jump` in reactor.json, r40, #252).
+    pub jump: JumpTuning,
 }
 
 impl Default for Tuning {
     fn default() -> Tuning {
-        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), shield: ShieldTuning::default(), alarm: AlarmTuning::default(), weapons: WeaponsTuning::default(), hits: HitsTuning::default() }
+        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), shield: ShieldTuning::default(), alarm: AlarmTuning::default(), weapons: WeaponsTuning::default(), hits: HitsTuning::default(), jump: JumpTuning::default() }
     }
 }
 
@@ -87,6 +90,7 @@ impl Tuning {
         need(self.battery.efficiency > 0.0 && self.battery.efficiency <= 1.0, "battery.efficiency", "must be > 0 and <= 1");
         need(self.weapons.capacity_shots >= 1 && self.weapons.shot_kw > 0.0 && self.weapons.reload_s > 0.0, "weapons", "capacity_shots >= 1, shot_kw and reload_s > 0");
         need(self.weapons.recharge_kw >= 0.0, "weapons.recharge_kw", "must be >= 0");
+        need(self.jump.prep_s >= 0.0 && self.jump.charge_s > 0.0 && self.jump.active_s > 0.0, "jump", "prep_s >= 0, charge_s > 0, active_s > 0");
         need(self.room.aux_output_kw >= 0.0, "room.aux_output_kw", "must be >= 0");
         need(self.room.oxygen_generator_rate >= 0.0, "room.oxygen_generator_rate", "must be >= 0");
         need(self.room.breath_m3_per_s >= 0.0, "room.breath_m3_per_s", "must be >= 0");

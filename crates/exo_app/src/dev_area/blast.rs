@@ -20,8 +20,25 @@ pub const BLAST_FLASH_S: f64 = 1.0;
 #[derive(Resource, Default, Debug)]
 pub struct PendingBlasts(pub Vec<Blast>);
 
+/// The white flash: the start time (`.0`, None when none runs) and its peak strength (`.1`, 0..1).
+/// A blast flashes at full strength; a jump at `JUMP_FLASH`, weaker.
 #[derive(Resource, Default, Debug)]
-pub struct BlastFlash(pub Option<f64>);
+pub struct BlastFlash(pub Option<f64>, pub f32);
+
+/// The jump's flash peak (r40, #252): the blast's flash at half strength. TODO(initiator): the value.
+pub const JUMP_FLASH: f32 = 0.5;
+
+impl BlastFlash {
+    pub fn blast(&mut self, now: f64) {
+        self.0 = Some(now);
+        self.1 = 1.0;
+    }
+
+    pub fn jump(&mut self, now: f64) {
+        self.0 = Some(now);
+        self.1 = JUMP_FLASH;
+    }
+}
 
 /// The share of a blast's strength at `d` metres from the reactor: 1 at the reactor, 0 at `range_m`
 /// and beyond (linear, as the rules say: Barotrauma's explosions fall off with distance).
@@ -78,7 +95,7 @@ pub fn reactor_blast(time: Res<Time>, mut pending: ResMut<PendingBlasts>, items:
                 body.health.add(&st.tuning, "radiation", radiation);
             }
             if *id == crate::items::LOCAL && d < b.radiation_range_m {
-                flash.0 = Some(now);
+                flash.blast(now);
             }
         }
         for p in fire_points() {
@@ -95,7 +112,7 @@ pub fn client_blast(seen: &mut Option<u32>, blasts: u32, dist: Option<f64>, radi
     let fresh = matches!(*seen, Some(s) if blasts > s);
     *seen = Some(blasts);
     if fresh && dist.is_some_and(|d| d < radiation_range_m) {
-        flash.0 = Some(now);
+        flash.blast(now);
     }
     fresh
 }

@@ -21,6 +21,7 @@ use crate::engine::Engine;
 use crate::hull::{Hit, HitsTuning, Hull, DEVICES, REACTOR_AT};
 use crate::grid::{Grid, Group};
 use crate::history::History;
+use crate::jump::JumpDrive;
 use crate::reactor::{AlarmKind, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning, RodKinds};
 use crate::shield::Shield;
 use crate::tuning::Tuning;
@@ -535,6 +536,10 @@ pub struct EngineRoom {
     shield_full_kw: f64,
     /// The weapons' capacitor (`weapons`): the WEAPONS group charges it, a shot takes its energy.
     weapons: Weapons,
+    /// The jump drive's charge (`jump`, r40 #252): it draws the JUMP group's demand while charging.
+    jump: JumpDrive,
+    /// The JUMP group's full demand, kW (the tuned value; the grid's own starts at 0).
+    jump_full_kw: f64,
 }
 
 impl EngineRoom {
@@ -580,6 +585,8 @@ impl EngineRoom {
             shield: Shield::new(t.shield),
             shield_full_kw: t.grid.shields.demand_kw,
             weapons: Weapons::new(t.weapons),
+            jump: JumpDrive::new(t.jump),
+            jump_full_kw: t.grid.jump_drive.demand_kw,
         }
     }
 
@@ -771,6 +778,14 @@ impl EngineRoom {
     /// (reloading, or not one shot's energy in the capacitor).
     pub fn fire_weapon(&mut self) -> bool {
         self.weapons.fire()
+    }
+
+    pub fn jump(&self) -> &JumpDrive {
+        &self.jump
+    }
+
+    pub fn jump_mut(&mut self) -> &mut JumpDrive {
+        &mut self.jump
     }
 
     /// The junction box's voltage: what the grid got over what it asked for, 0..1 (1 with no
@@ -989,6 +1004,10 @@ impl EngineRoom {
         // The WEAPONS group asks for its recharge while the capacitor is not full: a full one asks for
         // nothing, so the grid's power goes to the other groups.
         self.grid.set_demand(Group::Weapons, self.weapons.tuning().recharge_kw * self.weapons.demand_share());
+        // The jump drive steps at last step's power (the grid's factor, as the voltage above): a
+        // drive armed this step has no power yet, so it is PAUSED for one step at most.
+        self.jump.step(dt, self.grid.factor(Group::JumpDrive));
+        self.grid.set_demand(Group::JumpDrive, self.jump.demand_kw(self.jump_full_kw));
         let load = self.main_load_kw();
         self.sync_aux();
         let reactor_ev = self.reactor.step(dt, load);

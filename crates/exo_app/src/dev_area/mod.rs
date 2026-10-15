@@ -16,6 +16,7 @@ use bevy::math::{DQuat, DVec2, DVec3};
 use bevy::prelude::*;
 use display_core::PanelId;
 
+pub mod airlock;
 pub mod blast;
 pub mod coolant;
 pub mod engine_room;

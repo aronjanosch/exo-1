@@ -130,6 +130,12 @@
     "breach_area_m2": 0.5,
     "blast_breach_damage": 0.6
   },
+  "airlock": {
+    "_comment": "Airlock (r40, #267; the state machine is reactor_core airlock.rs, the room is exo_app dev_area airlock). outside_vacuum: the outside has no air, so the outer door opens onto vacuum and the air that leaves the airlock through it is gone (the dev VACUUM toggle compares the two); TODO(initiator): default true. cycle_s: seconds of one pressure cycle (6 s, a few seconds as #267 says). pump_share: the share of the airlock's air the cycle pumps back into the corridor before the outer door opens, or fills from the corridor on the way in; the rest (5 %) leaves with the outer door. Barotrauma has no such cycle (its airlock is a wet room and its pump moves water). TODO(initiator): cycle_s and pump_share, both start values.",
+    "outside_vacuum": true,
+    "cycle_s": 6.0,
+    "pump_share": 0.95
+  },
   "grid": {
     "_comment": "Engines (r38, Barotrauma Engine.cs, engine.rs): the force follows the throttle at 10 per second, the demand is the grid's engines demand at full force times (|force| / 100)^1.5, the thrust (%) is |force| times the voltage (at most 1) times a condition factor from 0.5 to 1, and it is 0 below voltage 0.5. TODO(initiator): the condition factor's floor. grid: demand kW at full work (demands: Barotrauma's engine 2000 and oxygen generator 1000 of a 5000 kW reactor, scaled to our 2000 kW: engines 800, life support 400, lights 80, so a full sub draws about 64 %), priority (higher is served first) and min_ratio (0..1, the share below which the group switches off). A group's breaker is on or off in play, not in this file. limit (0..1, default 1, #300, PULSAR's conduit limit) is the start value of a group's limit: the request is demand times limit, so 0.6 caps the group at 60 % and scales its efficiency; 0 is off. The limit is set in play, the file gives the start (TODO(initiator): start values, all 1 for now). Shields, weapons and jump drive (r40 groups, idle: they draw nothing until r40 drives them; the file gives what they ask at full work): PULSAR's four conduits and Barotrauma's turret power (design: concept repo docs/design/ship.md, row \"Power routing\"). TODO(initiator): all demands, priorities and minimum ratios.",
     "engines": { "demand_kw": 800.0, "priority": 2, "min_ratio": 0.5, "limit": 1.0 },

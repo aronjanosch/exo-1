@@ -1,6 +1,6 @@
 //! So: wear while spraying, empty at 0, swap at a rack. Values in `content/gameplay/fire/extinguisher.json`
 //! (`item_core::supply`).
-use super::engine_room::{CORRIDOR, ROOM};
+use super::engine_room::{AIRLOCK, CORRIDOR, ROOM};
 use super::*;
 use crate::items::Items;
 use crate::ship::Ship;
@@ -13,10 +13,14 @@ pub const TAG: &str = "extinguisher";
 #[derive(Resource, Clone, Debug)]
 pub struct Supply(pub SupplyConfig);
 
-pub fn boxes() -> [PlaceholderBox; 2] {
+/// The wall boxes, and the airlock's suit rack (r40, the O2 masks as the suits for now; its rack is
+/// in `extinguisher.json` with its own item and tag).
+pub fn boxes() -> [PlaceholderBox; 3] {
     [
         PlaceholderBox { id: "extinguisher_rack_corridor".into(), zone: CORRIDOR, local_pos: [-0.75, -1.0], size: [0.35, 1.2, 0.5], turn_deg: 90.0, colour: [0.85, 0.12, 0.08], panel: None },
         PlaceholderBox { id: "extinguisher_rack_engine_room".into(), zone: ROOM, local_pos: [4.6, 2.6], size: [0.35, 1.2, 0.5], turn_deg: 270.0, colour: [0.85, 0.12, 0.08], panel: None },
+        // The airlock's east wall (inner face x -13.0), facing west into the room.
+        PlaceholderBox { id: "airlock_suit_rack".into(), zone: AIRLOCK, local_pos: [0.8, 0.0], size: [0.35, 1.2, 0.5], turn_deg: 270.0, colour: [0.25, 0.3, 0.36], panel: None },
     ]
 }
 
@@ -43,8 +47,8 @@ fn put_racks(time: Res<Time>, area: Res<DevArea>, cfg: Res<Supply>, mut items: R
     *done = true;
     let now = time.elapsed_secs_f64();
     for r in &cfg.0.racks {
-        let Some(d) = items.defs.get(ITEM).cloned() else { return };
+        let Some(d) = items.defs.get(r.item.as_deref().unwrap_or(ITEM)).cloned() else { continue };
         let stock = (0..r.stock).map(|_| d.stack_of(1)).collect();
-        items.add_rack(now, r.id, TAG, r.slots, stock);
+        items.add_rack(now, r.id, r.tag.as_deref().unwrap_or(TAG), r.slots, stock);
     }
 }

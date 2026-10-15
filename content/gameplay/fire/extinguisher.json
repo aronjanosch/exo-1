@@ -1,8 +1,9 @@
 {
-  "_comment": "The extinguisher (#300). Barotrauma: the extinguisher's condition runs down 2 per second while it sprays (StatusEffect Condition, times the frame time), so a full one lasts 50 s; it is replaced, not refilled, at a bracket (containers.xml, extinguisherbracket). PULSAR: supply points you walk to for ammo. Every number is a starting value, TODO(initiator). drain_per_s: percent of condition per second while spraying. racks: the wall brackets, by id; box: the dev box (a greybox) the rack stands in; slots: how many fit; stock: full extinguishers it starts with.",
+  "_comment": "The extinguisher (#300). Barotrauma: the extinguisher's condition runs down 2 per second while it sprays (StatusEffect Condition, times the frame time), so a full one lasts 50 s; it is replaced, not refilled, at a bracket (containers.xml, extinguisherbracket). PULSAR: supply points you walk to for ammo. Every number is a starting value, TODO(initiator). drain_per_s: percent of condition per second while spraying. racks: the wall brackets, by id; box: the dev box (a greybox) the rack stands in; slots: how many fit; stock: full extinguishers it starts with. item and tag (r40) are optional: the item the rack holds and the tag its slots take. The airlock's suit rack (r40) holds two O2 masks (item o2_mask, tag mask): the suits for now, TODO(initiator): the suits proper (#50, #254).",
   "drain_per_s": 2.0,
   "racks": [
     { "id": 1, "box": "extinguisher_rack_corridor", "slots": 3, "stock": 2 },
-    { "id": 2, "box": "extinguisher_rack_engine_room", "slots": 2, "stock": 1 }
+    { "id": 2, "box": "extinguisher_rack_engine_room", "slots": 2, "stock": 1 },
+    { "id": 3, "box": "airlock_suit_rack", "slots": 2, "stock": 2, "item": "o2_mask", "tag": "mask" }
   ]
 }

@@ -1,5 +1,6 @@
 //! reactor_core: the engine room of the ship, without engine types,
 //! starting points for the playtest (`TODO(initiator)`).
+pub mod airlock;
 pub mod battery;
 pub mod breach;
 pub mod engine;
@@ -12,6 +13,7 @@ pub mod reactor;
 pub mod sim;
 pub mod tuning;
 
+pub use airlock::{Airlock, AirlockTuning, Dir, Door, Goal};
 pub use battery::{Battery, BatteryTuning};
 pub use engine::Engine;
 pub use breach::Breach;

@@ -1,6 +1,7 @@
 use content_core::{parse_strict_commented, File};
 use serde::{Deserialize, Serialize};
 
+use crate::airlock::AirlockTuning;
 use crate::battery::BatteryTuning;
 use crate::director::DirectorTuning;
 use crate::engine_room::RoomTuning;
@@ -26,11 +27,13 @@ pub struct Tuning {
     pub graph_interval_s: f64,
     /// The incident director (`director` in reactor.json, r38).
     pub director: DirectorTuning,
+    /// The airlock and the outside (`airlock` in reactor.json, r40).
+    pub airlock: AirlockTuning,
 }
 
 impl Default for Tuning {
     fn default() -> Tuning {
-        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default() }
+        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), airlock: AirlockTuning::default() }
     }
 }
 
@@ -62,6 +65,8 @@ impl Tuning {
         let d = &self.director;
         need(d.min_interval_s > 0.0 && d.max_interval_s >= d.min_interval_s, "director.*_interval_s", "min > 0, max >= min");
         need((0.0..=1.0).contains(&d.threshold) && d.rise_per_s > 0.0 && d.fall_per_s > 0.0, "director", "threshold 0..=1, rise_per_s and fall_per_s > 0");
+        need(self.airlock.cycle_s > 0.0, "airlock.cycle_s", "must be > 0");
+        need((0.0..=1.0).contains(&self.airlock.pump_share), "airlock.pump_share", "must be 0..1");
         need(self.rods.0.contains_key("standard"), "rods.standard", "the rod start_rods uses must be listed");
         for (id, k) in &self.rods.0 {
             need(k.heat > 0.0 && k.life > 0.0 && k.life <= 100.0, &format!("rods.{id}"), "heat > 0, life in 0..=100");
@@ -121,5 +126,18 @@ mod tests {
         assert!(e.iter().any(|m| m.contains("reactor.max_output_kw")), "{e:?}");
         let missing = Tuning::load(&[]).unwrap_err();
         assert!(missing[0].contains("missing"));
+    }
+
+    /// r40: the airlock block is its own, with its values checked.
+    #[test]
+    fn the_airlock_block_is_parsed_and_checked() {
+        let good = include_str!("../../../content/gameplay/reactor/reactor.json");
+        let t = Tuning::parse(good).expect("the shipped file parses");
+        assert!(t.airlock.outside_vacuum && t.airlock.cycle_s == 6.0 && t.airlock.pump_share == 0.95);
+        let bad = good.replacen("\"cycle_s\": 6.0", "\"cycle_s\": 0.0", 1);
+        let e = Tuning::parse(&bad).unwrap_err();
+        assert!(e.iter().any(|m| m.contains("airlock.cycle_s")), "{e:?}");
+        let bad = good.replacen("\"pump_share\": 0.95", "\"pump_share\": 1.5", 1);
+        assert!(Tuning::parse(&bad).unwrap_err().iter().any(|m| m.contains("airlock.pump_share")));
     }
 }

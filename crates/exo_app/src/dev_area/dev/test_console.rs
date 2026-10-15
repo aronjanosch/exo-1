@@ -8,9 +8,8 @@ use item_core::wire::{Alarm, RoomAsk};
 pub const ID: PanelId = PanelId::new("test_console");
 pub const NAME: &str = "Test console";
 pub const MAX: u32 = 10;
-/// Where it stands in the lab zone (m from the zone's centre): at its south edge, facing the walkway
-/// and the pads.
-pub const AT: [f64; 2] = [0.0, -4.5];
+/// Where it stands in the dev zone (m from the zone's centre): in the tools' row, facing south.
+pub const AT: [f64; 2] = [-3.5, -1.0];
 
 #[derive(Resource, Debug, Clone, PartialEq)]
 pub struct TestConsole {
@@ -28,7 +27,7 @@ impl Default for TestConsole {
 pub fn plugin(app: &mut App) {
     app.world_mut().resource_mut::<DevAreaDevices>().add(PlaceholderBox {
         id: "test_console".into(),
-        zone: LAB,
+        zone: DEV,
         local_pos: AT,
         size: [1.6, 1.0, 0.8],
         turn_deg: 0.0,

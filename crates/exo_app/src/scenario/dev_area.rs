@@ -1,6 +1,6 @@
 //! The dev area and its test console.
 use super::*;
-use crate::dev_area::{dev::look_samples, dev::test_console, DevArea, Zone, ENGINEERING, HALF_EXTENT, LAB};
+use crate::dev_area::{dev::look_samples, dev::test_console, DevArea, Zone, DEV, HALF_EXTENT};
 use crate::displays::{aim_at, world_point_of, ActiveDisplay, DisplayPanel, DisplayPointer};
 use crate::interact::Interaction;
 
@@ -50,7 +50,7 @@ pub(crate) fn approach(name: &'static str, back: f64) -> Vec<Step> {
             begin(w, c, name);
             let pl = planet(w);
             let area = w.resource::<DevArea>();
-            let (at, _) = area.ground(&pl, LAB.point([test_console::AT[0], test_console::AT[1] - back]), 1.0).expect("dev area");
+            let (at, _) = area.ground(&pl, DEV.point([test_console::AT[0], test_console::AT[1] - back]), 1.0).expect("dev area");
             place_walker(w, at);
             let e = console(w).expect("the test console is spawned");
             let target = w.get::<DisplayPanel>(e).unwrap().centre;
@@ -181,12 +181,12 @@ pub(super) fn dev_area_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str)
         let (grounded, agl) = (with_player(w, |p| p.w.grounded), pl.above_ground(p));
         check(c, xy[0].abs() < HALF_EXTENT[0] && xy[1].abs() < HALF_EXTENT[1] && grounded && agl.abs() < 0.1,
             format!("dev area: the walker starts on it (at {:.0} m east, {:.0} m north, {agl:.3} m above the ground, grounded {grounded})", xy[0], xy[1]));
-        check(c, console(w).is_some(), "dev area: the test console stands in the lab zone".into());
+        check(c, console(w).is_some(), "dev area: the test console stands in the dev zone".into());
         end(w, c, format!("level within {:.3} m", hi - lo));
         true
     }));
     s.push(shot_step("start"));
-    s.extend(approach("dev area: walk to the console", 5.0));
+    s.extend(approach("dev area: walk to the console", 3.0));
     s.push(shot_step("console"));
     s.push(use_console("dev area: F uses the console"));
     s.push(walk_check("dev area: at the console", KeyCode::KeyW, false));
@@ -207,7 +207,7 @@ pub(super) fn dev_area_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str)
     s.push(shot_step("console-world"));
     s.push(tap_until(KeyCode::KeyF, "dev area: F leaves the console", 1.0, |w| active(w) == ActiveDisplay::Idle && !w.resource::<Controls>().free_cursor));
     s.push(walk_check("dev area: after F", KeyCode::KeyS, true));
-    s.extend(approach("dev area: back to the console", 3.0));
+    s.extend(approach("dev area: back to the console", 2.0));
     s.push(use_console("dev area: F uses the console again"));
     s.push(tap_until(KeyCode::Escape, "dev area: Escape leaves the console", 1.0, |w| active(w) == ActiveDisplay::Idle && w.resource::<DisplayPointer>().0 == Default::default()));
     s.push(walk_check("dev area: after Escape", KeyCode::KeyS, true));
@@ -256,7 +256,7 @@ fn click_panel(id: display_core::PanelId, action: &'static str, t: Option<f64>) 
 
 pub(super) fn look_sample_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
     use look_samples::{LAB_ID, REACTOR_ID};
-    s.extend(visit("dev area: F uses the warmer (S screen)", LAB_ID, LAB, [-3.5, -4.5], "Warmer"));
+    s.extend(visit("dev area: F uses the warmer (S screen)", LAB_ID, DEV, look_samples::LAB_AT, "Warmer"));
     s.push(click_panel(LAB_ID, "temp_up", None));
     s.push(wait(0.2));
     s.push(Box::new(|w, _| {
@@ -266,7 +266,7 @@ pub(super) fn look_sample_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static s
     s.push(wait(0.1));
     s.push(shot_step("lab-world"));
     s.push(tap_until(KeyCode::Escape, "dev area: Escape leaves the warmer", 1.0, |w| active(w) == ActiveDisplay::Idle));
-    s.extend(visit("dev area: F uses the reactor panel (M screen)", REACTOR_ID, ENGINEERING, [-4.0, -4.5], "Reactor 2"));
+    s.extend(visit("dev area: F uses the reactor panel (M screen)", REACTOR_ID, DEV, look_samples::REACTOR_AT, "Reactor 2"));
     s.push(click_panel(REACTOR_ID, "mode", None));
     s.push(wait(0.2));
     s.push(click_panel(REACTOR_ID, "setpoint", Some(0.6)));

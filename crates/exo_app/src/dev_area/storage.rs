@@ -26,9 +26,9 @@ pub const PANEL_W: f64 = 560.0;
 pub const PANEL_H: f64 = 660.0;
 /// Rows of stacks shown per side.
 pub const ROWS: usize = 5;
-/// The row of cabinets, metres north of the storage zone's centre (they face south). TODO(initiator):
-/// the places.
-pub const ROW_Y: f64 = -3.0;
+/// The row of cabinets, metres north of the storage zone's centre: against the north edge, facing
+/// south onto a walkway. TODO(initiator): the places.
+pub const ROW_Y: f64 = 3.0;
 
 /// A cabinet: its rack, its place and look, its panel's name and the page and last line of its panel.
 #[derive(Debug, Clone)]
@@ -59,9 +59,9 @@ impl Storage {
 pub fn cabinets() -> Vec<Cabinet> {
     let cab = |id: PanelId, rack, name, x, colour, size| Cabinet { id, rack, name, x, colour, size, line: Default::default(), page: 0 };
     vec![
-        cab(MASKS_ID, MASKS, "Mask cabinet", -9.0, [0.45, 0.50, 0.55], [1.0, 2.0, 0.5]),
-        cab(EXTINGUISHERS_ID, EXTINGUISHERS, "Extinguisher cabinet", -5.0, [0.85, 0.12, 0.08], [1.0, 2.0, 0.5]),
-        cab(CRATE_ID, CRATE, "Supply crate", -1.0, [0.55, 0.60, 0.35], [1.2, 0.8, 0.8]),
+        cab(MASKS_ID, MASKS, "Mask cabinet", -3.5, [0.45, 0.50, 0.55], [1.0, 2.0, 0.5]),
+        cab(EXTINGUISHERS_ID, EXTINGUISHERS, "Extinguisher cabinet", 0.0, [0.85, 0.12, 0.08], [1.0, 2.0, 0.5]),
+        cab(CRATE_ID, CRATE, "Supply crate", 3.5, [0.55, 0.60, 0.35], [1.2, 0.8, 0.8]),
     ]
 }
 

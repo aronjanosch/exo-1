@@ -7,7 +7,7 @@ use crate::dev_area::engine_room::ROOM;
 use crate::dev_area::rods;
 use crate::gameplay::Gameplay;
 use gameplay_core::notice::{Notice, NoticeKind};
-use item_core::wire::{Alarm, BreakerGroup, FuelTube, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, RoomAir, GRAPH_POINTS};
+use item_core::wire::{Alarm, BreakerGroup, FuelTube, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, RoomAir, GRAPH_POINTS};
 use reactor_core::director::Situation;
 use reactor_core::{AlarmLevel, Director, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
 
@@ -26,6 +26,8 @@ pub struct ReactorCounts {
     pub blasts: u32,
     pub ejects: u32,
     pub ecools: u32,
+    /// The jumps the drive has made (r40, #252): the news counter the flash and the notice follow.
+    pub jumps: u32,
 }
 
 #[derive(Resource, Debug)]
@@ -99,6 +101,23 @@ impl ReactorSim {
             ReactorAsk::Trigger(ReactorFault::WarmStart) => {
                 let secs = self.room.warm_start();
                 info!("reactor: warm start, settled after {secs:.1} s of sim time");
+            }
+            ReactorAsk::Trigger(ReactorFault::JumpFull) => {
+                self.room.jump_mut().fill();
+                info!("reactor: dev jump drive full");
+            }
+            ReactorAsk::JumpArm => {
+                if !self.room.jump_mut().arm() {
+                    info!("reactor: jump arm refused (the drive is not cold)");
+                }
+            }
+            ReactorAsk::JumpGo => {
+                if self.room.jump_mut().jump() {
+                    counts.jumps += 1;
+                    info!("reactor: JUMP");
+                } else {
+                    info!("reactor: jump refused (the charge is not full)");
+                }
             }
             ReactorAsk::Trigger(ReactorFault::Aux) => {
                 let on = !self.room.aux_enabled();
@@ -250,7 +269,23 @@ impl ReactorSim {
             battery_recharge: self.room.battery().recharge(),
             battery_kw: self.room.battery().output_kw(),
             director: self.director.enabled(),
+            jump_stage: wire_jump(self.room.jump().stage),
+            jump_charge: self.room.jump().charge,
+            // The host's count is set by `reactor_step`, as the ejects are.
+            jumps: 0,
         }
+    }
+}
+
+/// The jump drive's stage as the wire carries it.
+pub fn wire_jump(s: reactor_core::JumpStage) -> JumpStage {
+    use reactor_core::JumpStage as Core;
+    match s {
+        Core::ColdStart => JumpStage::ColdStart,
+        Core::Prepping => JumpStage::Prepping,
+        Core::Paused => JumpStage::Paused,
+        Core::Ready => JumpStage::Ready,
+        Core::Active => JumpStage::Active,
     }
 }
 
@@ -343,7 +378,7 @@ fn fault(f: ReactorFault) -> Option<Fault> {
         ReactorFault::LoadDrop => Some(Fault::LoadDrop),
         ReactorFault::Surge => Some(Fault::Surge),
         ReactorFault::HullBreach => Some(Fault::HullBreach),
-        ReactorFault::Fire | ReactorFault::DrainCoolant | ReactorFault::WarmStart | ReactorFault::Aux => None,
+        ReactorFault::Fire | ReactorFault::DrainCoolant | ReactorFault::WarmStart | ReactorFault::Aux | ReactorFault::JumpFull => None,
     }
 }
 
@@ -396,13 +431,23 @@ pub fn ecool_notice(items: Res<Items>, mut seen: Local<Option<u32>>, mut gp: Res
     }
 }
 
+/// The jump's notice and flash, on every process (the news counter `jumps`, as the ejects): the
+/// white flash at half the blast's strength (`JUMP_FLASH`) and the JUMP line.
+pub fn jump_notice(time: Res<Time>, items: Res<Items>, mut seen: Local<Option<u32>>, mut gp: ResMut<Gameplay>, mut flash: ResMut<super::blast::BlastFlash>) {
+    let Some(news) = items.reactor else { return };
+    if counter_fresh(&mut seen, news.jumps) {
+        flash.jump(time.elapsed_secs_f64());
+        gp.notify(Notice::new(NoticeKind::Warning, "notice.reactor.jump"));
+    }
+}
+
 pub fn plugin(app: &mut App) {
     let files = crate::content_files("gameplay");
     let tuning = Tuning::load(&files).unwrap_or_else(|e| panic!("reactor: {e:?}"));
     let warm = app.world().contains_resource::<WarmAtCreation>();
     app.insert_resource(ReactorSim::created(&tuning, warm)).insert_resource(ReactorConfig(tuning)).init_resource::<ReactorCounts>();
     app.init_resource::<super::blast::PendingBlasts>().init_resource::<super::blast::BlastFlash>();
-    app.add_systems(FixedUpdate, (reactor_step, super::blast::reactor_blast, super::blast::client_blast_news, eject_notice, ecool_notice).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
+    app.add_systems(FixedUpdate, (reactor_step, super::blast::reactor_blast, super::blast::client_blast_news, eject_notice, ecool_notice, jump_notice).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -517,6 +562,7 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     now.blasts = counts.blasts;
     now.ejects = counts.ejects;
     now.ecools = counts.ecools;
+    now.jumps = counts.jumps;
     // The status monitor's rooms (r38): the engine room first, then the corridor.
     now.rooms = [air.engine, air.corridor].map(|room| RoomAir {
         o2: (air.deck.room(room).oxygen_fraction() * 100.0).round() / 100.0,
@@ -853,9 +899,23 @@ mod tests {
         route(RoomEvent::Reactor(ReactorEvent::Fire { size: 0.1 }), &mut k);
         route(RoomEvent::Fire { size: 0.05, source: reactor_core::Source::Junction }, &mut k);
         route(RoomEvent::Reactor(ReactorEvent::Meltdown), &mut k);
-        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, meltdowns: 1, blasts: 0, ejects: 0, ecools: 0 });
+        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, meltdowns: 1, blasts: 0, ejects: 0, ecools: 0, jumps: 0 });
         route(RoomEvent::Reactor(ReactorEvent::Blast(reactor_core::Blast::default())), &mut k);
         assert_eq!(k.blasts, 1, "the blast is counted");
+    }
+
+    #[test]
+    fn a_jump_needs_the_full_charge_and_counts_once() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.apply(ReactorAsk::JumpGo, &cfg(), &mut k);
+        assert_eq!(k.jumps, 0, "a cold drive does not jump");
+        s.apply(ReactorAsk::Trigger(ReactorFault::JumpFull), &cfg(), &mut k);
+        assert_eq!(s.news(1.0).jump_stage, JumpStage::Ready);
+        s.apply(ReactorAsk::JumpGo, &cfg(), &mut k);
+        assert_eq!(k.jumps, 1);
+        let n = s.news(1.0);
+        assert_eq!((n.jump_stage, n.jump_charge), (JumpStage::Active, 0.0), "the jump empties the charge");
     }
 }
 

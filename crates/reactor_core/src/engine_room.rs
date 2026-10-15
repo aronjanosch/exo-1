@@ -20,6 +20,7 @@ use crate::engine::Engine;
 use crate::breach::Breach;
 use crate::grid::{Grid, Group};
 use crate::history::History;
+use crate::jump::JumpDrive;
 use crate::reactor::{AlarmKind, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning, RodKinds};
 use crate::tuning::Tuning;
 use serde::{Deserialize, Serialize};
@@ -509,6 +510,10 @@ pub struct EngineRoom {
     breach: Breach,
     /// The battery behind the reactor (`battery`): gives the grid's shortfall, takes its surplus.
     battery: Battery,
+    /// The jump drive's charge (`jump`, r40 #252): it draws the JUMP group's demand while charging.
+    jump: JumpDrive,
+    /// The JUMP group's full demand, kW (the tuned value; the grid's own starts at 0).
+    jump_full_kw: f64,
 }
 
 impl EngineRoom {
@@ -549,6 +554,8 @@ impl EngineRoom {
             aux_switch: [true; Group::ALL.len()],
             breach: Breach::default(),
             battery: Battery::new(t.battery),
+            jump: JumpDrive::new(t.jump),
+            jump_full_kw: t.grid.jump_drive.demand_kw,
         }
     }
 
@@ -677,6 +684,14 @@ impl EngineRoom {
 
     pub fn battery_mut(&mut self) -> &mut Battery {
         &mut self.battery
+    }
+
+    pub fn jump(&self) -> &JumpDrive {
+        &self.jump
+    }
+
+    pub fn jump_mut(&mut self) -> &mut JumpDrive {
+        &mut self.jump
     }
 
     /// The junction box's voltage: what the grid got over what it asked for, 0..1 (1 with no
@@ -888,6 +903,10 @@ impl EngineRoom {
         // The voltage is the junction box's as the last step left it (Barotrauma's `prevVoltage`).
         self.engine.step(dt, self.voltage());
         self.grid.set_demand(Group::Engines, self.engine.demand_kw(self.engines_full_kw));
+        // The jump drive steps at last step's power (the grid's factor, as the voltage above): a
+        // drive armed this step has no power yet, so it is PAUSED for one step at most.
+        self.jump.step(dt, self.grid.factor(Group::JumpDrive));
+        self.grid.set_demand(Group::JumpDrive, self.jump.demand_kw(self.jump_full_kw));
         let load = self.main_load_kw();
         self.sync_aux();
         let reactor_ev = self.reactor.step(dt, load);

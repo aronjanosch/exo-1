@@ -517,6 +517,10 @@
     "CORE EJECTED. It went out through the bottom, rods and all. The reactor is dead until somebody fits a new core.",
     "CORE EJECTED. Somebody pulled the lever. The core is somewhere under the ship now."
   ],
+  "notice.reactor.jump": [
+    "JUMP. One white flash, the stars smear, and the ship drops out somewhere else. The drive is empty and the systems are cold.",
+    "JUMPED. The charge is gone and so is the system you were in. Start the ship up again."
+  ],
   "notice.reactor.blast": [
     "REACTOR BLAST. The core has left the building, in pieces.",
     "REACTOR BLAST. Whoever was standing near the core is now standing somewhere else."

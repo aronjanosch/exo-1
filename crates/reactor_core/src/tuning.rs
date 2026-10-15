@@ -5,6 +5,7 @@ use crate::battery::BatteryTuning;
 use crate::director::DirectorTuning;
 use crate::engine_room::RoomTuning;
 use crate::grid::GridTuning;
+use crate::jump::JumpTuning;
 use crate::reactor::{ReactorTuning, RodKinds};
 
 pub const REACTOR_PATH: &str = "reactor/reactor.json";
@@ -26,11 +27,13 @@ pub struct Tuning {
     pub graph_interval_s: f64,
     /// The incident director (`director` in reactor.json, r38).
     pub director: DirectorTuning,
+    /// The jump drive's charge (`jump` in reactor.json, r40, #252).
+    pub jump: JumpTuning,
 }
 
 impl Default for Tuning {
     fn default() -> Tuning {
-        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default() }
+        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), jump: JumpTuning::default() }
     }
 }
 
@@ -69,6 +72,7 @@ impl Tuning {
         need(r.max_output_kw > 0.0, "reactor.max_output_kw", "must be > 0");
         need(self.battery.capacity_kwmin > 0.0 && self.battery.max_output_kw >= 0.0 && self.battery.max_recharge_kw >= 0.0, "battery", "capacity_kwmin > 0, the powers >= 0");
         need(self.battery.efficiency > 0.0 && self.battery.efficiency <= 1.0, "battery.efficiency", "must be > 0 and <= 1");
+        need(self.jump.prep_s >= 0.0 && self.jump.charge_s > 0.0 && self.jump.active_s > 0.0, "jump", "prep_s >= 0, charge_s > 0, active_s > 0");
         need(self.room.aux_output_kw >= 0.0, "room.aux_output_kw", "must be >= 0");
         need(self.room.oxygen_generator_rate >= 0.0, "room.oxygen_generator_rate", "must be >= 0");
         need(self.room.breath_m3_per_s >= 0.0, "room.breath_m3_per_s", "must be >= 0");

@@ -741,3 +741,17 @@ fn the_dev_breach_is_mended_by_the_hold_at_the_pump_speed() {
     r.mend_breach(10.0);
     assert_eq!(r.breach().damage(), 0.0, "mending a sound wall does nothing");
 }
+
+#[test]
+fn the_room_powers_the_jump_drive_only_while_it_charges() {
+    let mut r = safe_room();
+    settle(&mut r);
+    assert_eq!(r.grid().request_of(Group::JumpDrive), 0.0, "cold drive asks nothing");
+    assert!(r.jump_mut().arm());
+    run(&mut r, 10.0, Input::auto());
+    assert_eq!(r.grid().group(Group::JumpDrive).demand_kw, 400.0, "charging draws the JUMP demand");
+    assert!(r.jump().charge > 0.0, "the grid's power charges it");
+    r.jump_mut().fill();
+    run(&mut r, DT * 3.0, Input::auto());
+    assert_eq!(r.grid().group(Group::JumpDrive).demand_kw, 0.0, "a full drive asks nothing");
+}

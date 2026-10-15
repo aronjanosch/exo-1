@@ -162,6 +162,21 @@ pub enum ReactorAsk {
     SetThrottle(f64),
     /// The incident director's switch (r38, the dev faults screen's DIRECTOR toggle).
     SetDirector(bool),
+    /// The engineer's start of the jump drive (r40, #252): COLD_START to PREPPING. The host refuses it otherwise.
+    JumpArm,
+    /// The emergency jump (r40, #252): only at READY, empties the charge. The host refuses it otherwise.
+    JumpGo,
+}
+
+/// The jump drive's stage as the host has it: PULSAR's warp charge stages (`reactor_core::JumpStage`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum JumpStage {
+    #[default]
+    ColdStart,
+    Prepping,
+    Paused,
+    Ready,
+    Active,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -239,6 +254,8 @@ pub enum ReactorFault {
     /// The reactor's warm start (`EngineRoom::warm_start`): settled at once, no supplies used.
     WarmStart,
     Aux,
+    /// The dev fault JUMP FULL (r40, #252): the jump drive's charge is full and it is READY.
+    JumpFull,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -425,6 +442,12 @@ pub struct ReactorNews {
     pub engine_thrust: f64,
     /// The incident director is on (r38; the dev faults screen's DIRECTOR toggle shows it).
     pub director: bool,
+    /// The jump drive's stage and charge, 0..1 of a full charge (r40, #252).
+    pub jump_stage: JumpStage,
+    pub jump_charge: f64,
+    /// The jumps the host has applied so far (`ReactorCounts::jumps`). A process that sees it go up
+    /// shows the white flash and the log line once, as the ejects do.
+    pub jumps: u32,
 }
 
 /// A room's air and fire for the status monitor (r38): the air as a fraction 0..1 (whole percent),
@@ -561,6 +584,9 @@ mod tests {
             oxygen_generator: PartNews { share: 0.6, working: true },
             breach: 0.55,
             director: true,
+            jump_stage: JumpStage::Paused,
+            jump_charge: 0.4,
+            jumps: 1,
             aux_on: true,
             aux_life_support: false,
             aux_lights: true,
@@ -647,6 +673,9 @@ mod tests {
             ReactorAsk::Eject,
             ReactorAsk::SetDirector(true),
             ReactorAsk::SetDirector(false),
+            ReactorAsk::JumpArm,
+            ReactorAsk::JumpGo,
+            ReactorAsk::Trigger(ReactorFault::JumpFull),
         ];
         for ask in asks {
             let back = match decode::<ToHost>(&encode(&ToHost::Reactor(ask))).expect("decodes") {

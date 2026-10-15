@@ -134,6 +134,16 @@ impl Airlock {
         }
     }
 
+    /// The captain's remote close (r41, CP-01's SEAL): shuts an open door while no cycle runs. It never
+    /// opens a door, so the doors stay apart. True when it shut one.
+    pub fn close(&mut self, d: Door) -> bool {
+        if self.cycling.is_some() || !self.is_open(d) {
+            return false;
+        }
+        self.set_open(d, false);
+        true
+    }
+
     /// Stops a running cycle. Its door stays shut and the air it moved stays where it went.
     pub fn cancel(&mut self) {
         self.cycling = None;
@@ -247,6 +257,21 @@ mod tests {
         assert!(l.press(Goal::Door(Door::Inner)), "a press closes the open door");
         assert!(!l.is_open(Door::Inner));
         assert!(l.press(Goal::Door(Door::Outer)));
+        assert_eq!(l.cycling(), Some(Goal::Door(Door::Outer)));
+    }
+
+    #[test]
+    fn the_captains_close_shuts_an_open_door_and_opens_nothing() {
+        let mut l = lock();
+        assert!(!l.close(Door::Inner), "shut already: nothing to close");
+        assert!(l.press(Goal::Door(Door::Inner)));
+        run(&mut l, 6.0, 0.5);
+        assert!(l.is_open(Door::Inner));
+        assert!(!l.press(Goal::Door(Door::Outer)), "the inner door is open: the outer one waits");
+        assert!(l.close(Door::Inner), "the remote close shuts the open inner door");
+        assert!(!l.is_open(Door::Inner) && !l.is_open(Door::Outer), "a close opens no door");
+        assert!(l.press(Goal::Door(Door::Outer)), "with both shut the outer cycle starts again");
+        assert!(!l.close(Door::Outer), "a cycle runs: the close is refused, the cycle keeps going");
         assert_eq!(l.cycling(), Some(Goal::Door(Door::Outer)));
     }
 

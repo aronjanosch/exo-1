@@ -3,6 +3,7 @@ use glam::{DQuat, DVec2, DVec3};
 use std::borrow::Cow;
 
 pub mod canvas;
+pub mod captain;
 pub mod hud;
 pub mod monitor;
 pub mod target;

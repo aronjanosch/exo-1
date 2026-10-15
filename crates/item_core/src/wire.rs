@@ -118,6 +118,8 @@ impl Alarm {
 pub enum RoomAsk {
     ToggleDoor,
     CycleAlarm,
+    /// The captain's CP-01 door control (r41): true opens the engine room's door, false shuts it.
+    SetDoor(bool),
 }
 
 /// A request to the host about the reactor. Set fission and set turbine only count on
@@ -178,6 +180,9 @@ pub enum ReactorAsk {
     SetVacuum(bool),
     /// The dev faults screen's AMBUSH switch (r41): true starts an enemy encounter, false ends it.
     Ambush(bool),
+    /// The captain's SEAL on CP-01 (r41): shuts the airlock's inner door when it is open and no cycle
+    /// runs. It never opens a door; the host refuses the rest.
+    SealAirlock,
 }
 
 /// The jump drive's stage as the host has it: PULSAR's warp charge stages (`reactor_core::JumpStage`).
@@ -671,6 +676,11 @@ mod tests {
             _ => panic!("the room request"),
         };
         assert_eq!(ask, RoomAsk::CycleAlarm);
+        let door: RoomAsk = match decode::<ToHost>(&encode(&ToHost::Room(RoomAsk::SetDoor(false)))).expect("decodes") {
+            ToHost::Room(a) => a,
+            _ => panic!("the room request"),
+        };
+        assert_eq!(door, RoomAsk::SetDoor(false));
     }
 
     #[test]
@@ -808,6 +818,7 @@ mod tests {
             ReactorAsk::Airlock(AirlockAsk::Outer),
             ReactorAsk::Airlock(AirlockAsk::Cycle),
             ReactorAsk::SetVacuum(false),
+            ReactorAsk::SealAirlock,
         ];
         for ask in asks {
             let back = match decode::<ToHost>(&encode(&ToHost::Reactor(ask))).expect("decodes") {

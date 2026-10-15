@@ -2,12 +2,13 @@
 //! TODO(initiator): the glow of the critical text and the scanlines' look are not drawn yet.
 use super::*;
 use crate::displays::{ActiveDisplay, DisplayAction, Panels};
+use crate::dev_area::captain_screen;
 use crate::dev_area::engine_room::{GUNNERY_AT, VENT_LIFT};
 use crate::dev_area::reactor::{lamp_blink_on, ReactorConfig};
 use crate::dev_area::status_monitor;
 use crate::items::Items;
 use display_core::{button, canvas, column, ctl, font, label, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Rect, Shape, Tier, TextFace, Tone, Widget};
-use item_core::wire::{AirlockCycle, BreakerGroup, EnemyOutcome, FuelKind, FuelTube, JumpStage, Lamp, PumpMode, ReactorAsk, ReactorFault, ReactorNews, FUEL_TUBES};
+use item_core::wire::{AirlockCycle, BreakerGroup, EnemyOutcome, FuelKind, FuelTube, JumpStage, Lamp, PumpMode, ReactorAsk, RoomAsk, ReactorFault, ReactorNews, FUEL_TUBES};
 
 const LAMPS: [Lamp; Lamp::COUNT] = [Lamp::Hot, Lamp::CritHeat, Lamp::Cold, Lamp::LowTemp, Lamp::HighOut, Lamp::CritOut, Lamp::LowOut, Lamp::FuelLow, Lamp::NoFuel, Lamp::Meltdown, Lamp::Scram];
 /// A lamp's cell (px) and the gap between the cells.
@@ -1015,6 +1016,8 @@ pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
     let (optimal, allowed) = bands(Some(&r));
     let z = zone_tone(zone(r.temp, optimal, allowed));
     let (word, word_tone) = reactor_status(Some(&r));
+    // The captain's threat (#301): a red EMERGENCY line while the ship is under threat.
+    let emergency = captain_screen::emergency(display_core::captain::captain_view(&r).threat).map(|w| readout(format!("EMERGENCY {w}")).text_size(font::SMALL).tone(Tone::Bad).fixed(18.0));
     let temp = row(6.0, vec![readout(format!("{:.0}", r.temp)).text_size(72.0).tone(z), readout("°C").text_size(28.0).tone(z)]).fixed(70.0);
     let bandrow = row(8.0, vec![band(r.temp, optimal, allowed), readout(word).text_size(font::SMALL).tone(word_tone).flex(1.0)]).fixed(18.0);
     let air = row(
@@ -1025,8 +1028,10 @@ pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
         ],
     )
     .fixed(62.0);
-    let body = column(4.0, vec![micro("REACTOR").fixed(14.0), temp, bandrow, air, space()]);
-    Panel::screen(Tier::S, DOOR_NAME, "ER-01", body).with_padding(8.0)
+    let mut body = vec![micro("REACTOR").fixed(14.0), temp, bandrow, air];
+    body.extend(emergency);
+    body.push(space());
+    Panel::screen(Tier::S, DOOR_NAME, "ER-01", column(4.0, body)).with_padding(8.0)
 }
 
 /// An airlock panel (r40): the doors' state or the cycle's progress, and IN (the inner door), OUT (the
@@ -1345,6 +1350,18 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
             }
         } else if c.panel == AIRLOCK_INNER_ID || c.panel == AIRLOCK_OUTER_ID {
             super::airlock::panel_ask(&c.action)
+        } else if c.panel == captain_screen::ID {
+            // CP-01 (r41): the engine door is the room's (`RoomAsk::SetDoor`), the rest the reactor's.
+            match c.action.as_str() {
+                captain_screen::DOOR_ACTION => {
+                    let open = !items.room.door_open;
+                    items.ask_room(RoomAsk::SetDoor(open));
+                    None
+                }
+                captain_screen::SEAL_ACTION => Some(ReactorAsk::SealAirlock),
+                captain_screen::SILENCE_ACTION => Some(ReactorAsk::SilenceAlarms),
+                _ => None,
+            }
         } else {
             None
         };
@@ -1381,6 +1398,7 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     panels.set(VENT_CORRIDOR_ID, vent_panel(items.reactor.as_ref(), 1));
     panels.set(AIRLOCK_INNER_ID, airlock_panel(items.reactor.as_ref(), AIRLOCK_INNER_NAME, "AL-01"));
     panels.set(AIRLOCK_OUTER_ID, airlock_panel(items.reactor.as_ref(), AIRLOCK_OUTER_NAME, "AL-02"));
+    panels.set(captain_screen::ID, captain_screen::captain_panel(items.reactor.as_ref(), items.room.door_open));
     panels.set(FAULTS_ID, faults_panel(items.reactor.as_ref()));
     panels.set(STATUS_ID, status_panel(items.reactor.as_ref(), cfg.0.reactor.max_output_kw, lamp_blink_on(time.elapsed_secs_f64())));
     panels.set(status_monitor::ID, status_monitor::monitor_panel(items.reactor.as_ref()));

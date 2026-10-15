@@ -1,4 +1,5 @@
 use super::*;
+use crate::dev_area::captain_screen;
 use crate::dev_area::reactor_screen;
 use crate::dev_area::status_monitor;
 use crate::displays::DisplayPanel;
@@ -105,6 +106,8 @@ pub const SCREENS: &[Mount] = &[
     // corridor), the outer one on the airlock's west wall (inside, by the outer door). Both show IN, OUT, CYCLE.
     Mount { id: reactor_screen::AIRLOCK_INNER_ID, name: reactor_screen::AIRLOCK_INNER_NAME, at: AIRLOCK_PANEL_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
     Mount { id: reactor_screen::AIRLOCK_OUTER_ID, name: reactor_screen::AIRLOCK_OUTER_NAME, at: AIRLOCK_PANEL_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
+    // The captain's console (r41, CP-01): on the corridor's west wall, between JD-01 and the corridor's south end.
+    Mount { id: captain_screen::ID, name: captain_screen::NAME, at: captain_screen::AT, lift: VENT_LIFT, size: captain_screen::SIZE, turn: captain_screen::TURN },
 ];
 /// The airlock panels' wall points (area metres): inner (corridor's west wall), outer (airlock's west wall).
 pub const AIRLOCK_PANEL_AT: [[f64; 2]; 2] = [[-15.04, -5.0], [-15.04, -3.0]];
@@ -247,6 +250,11 @@ impl EngineAir {
     /// A panel's press (r40): the goal goes to `Airlock::press`. A cycle that starts takes its air
     /// reference now: an outward cycle pumps the airlock's air, an inward one fills the airlock to the
     /// corridor's fraction (the air it takes from the corridor).
+    /// The captain's SEAL (r41): shuts the inner door when it is open and no cycle runs (`Airlock::close`).
+    pub fn seal_inner(&mut self) -> bool {
+        self.lock.close(Door::Inner)
+    }
+
     pub fn request(&mut self, goal: Goal) -> bool {
         let idle = self.lock.cycling().is_none();
         if !self.lock.press(goal) {
@@ -535,6 +543,8 @@ pub(super) fn room_state(mut items: ResMut<Items>, mut alarm: ResMut<ShipAlarm>,
             for a in asks {
                 match a {
                     RoomAsk::ToggleDoor => door.open = !door.open,
+                    // The captain's CP-01 (r41): the press sets the door, as a signal sets Barotrauma's door.
+                    RoomAsk::SetDoor(open) => door.open = open,
                     RoomAsk::CycleAlarm => alarm.level = alarm.level.next(),
                 }
             }

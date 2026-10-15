@@ -1,17 +1,7 @@
-//! The status monitor ST-01 (r38): one screen on the engine room's east wall that shows, at a
-//! glance, where the trouble is while the others work. Its rows are the engine room and the
-//! corridor (air, fire, and the engine room's breach), the four devices (condition), and the three
-//! grid groups (the share of their demand they get).
-//!
-//! The bridge (r44) is a third room row. Ported from Barotrauma's MiniMap, the status monitor's hull status and electrical view
-//! (`BarotraumaClient/ClientSource/Items/Components/Machines/MiniMap.cs`, see the row model in
-//! `display_core::monitor` for the lines). Not ported: the water (no water here), the item finder,
-//! the blips and the search. The room rows carry each room's alarm word (r40, #165: FIRE, BREACH, O2 LOW,
-//! from `ReactorNews::alarms`) and a SILENCE button mutes the sounding alarms (`ReactorAsk::SilenceAlarms`,
-//! read in `crate::dev_area::engineering::panels::read_clicks`). The screen reads the reactor snapshot, which carries the rooms'
-//! air, fire and alarms for clients too.
-//! Placement: the east wall's inner face (x -9.0) at the reactor readout's end of the room, clear
-//! of the coolant pump's screen and the oxygen generator (`engine_room.rs`).
+//! The status monitor ST-01 on the engine room's east wall: where the trouble is, at a glance. Rows: the three rooms (engine room, corridor, bridge: air, fire, the engine room's breach, the alarm word from `ReactorNews::alarms`), a SILENCE button that mutes the sounding alarms, the four devices (condition) and the six grid groups (supply).
+//! Ported from Barotrauma's MiniMap, the hull status and electrical view (`BarotraumaClient/ClientSource/Items/Components/Machines/MiniMap.cs`, the row model in `display_core::monitor`). Not ported: the water, the item finder, the blips and the search.
+//! SILENCE is read in `hull::panels::read_clicks` (`ReactorAsk::SilenceAlarms`). The screen reads the reactor snapshot, which carries the rooms' air, fire and alarms for clients too.
+//! Placement: the east wall's inner face (x -9.0) at the reactor readout's end of the room, clear of the coolant pump's screen and the oxygen generator.
 //! TODO(initiator): the screen's name, its tier and the row order are start values.
 use display_core::monitor::{self, Cell, RoomLine};
 use display_core::{button, column, label, micro, readout, row, space, Item, Panel, PanelId, Tier, Tone};

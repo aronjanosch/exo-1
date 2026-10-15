@@ -1,5 +1,19 @@
-//! The hold shows on the reticle (the ring, as the repair hold) and the others see REFILLING. Not
-//! yet: the pump states Low and High (later, with the pump's second setting).
+//! Coolant by hand: the coolant pump's tank runs down while the pump runs, in proportion to the heat
+//! it carries away, and a dry tank is no flow. A canister from the corridor's rack refills it: a hand
+//! holds LMB on the pump with a canister in the selected slot (`refill_coolant`, `Request::Use`), the
+//! hold shows on the reticle as the repair hold does, and the host adds `RoomTuning::coolant_canister`
+//! per canister it takes (`host_refills`).
+//!
+//! Research (where the rules come from; the tank from PULSAR, the hand refill from Barotrauma, no files copied):
+//! - PULSAR: a coolant level in % and a pump state Off, Low, High; coolant is bought in 5 % steps and
+//!   used up. `~/Work/exo-research/pulsar/assets/textassets/manual_plain.txt` ("The Coolant
+//!   Screen"); `~/Work/exo-research/pulsar/cpp2il/metadata-dump/Assembly-CSharp.txt`
+//!   (`ReactorCoolantLevelPercent`, `ReactorCoolingPumpState`, `PLContainmentScreen_Coolant`);
+//!   report `~/Work/exo-research/reports/pulsar.md` section 3.2.
+//! - Barotrauma: no coolant; the reactor burns fuel rods put into its slots by hand, a consumable.
+//!   `~/Work/exo-research/barotrauma/content/Items/Reactor/reactor.xml` (`ItemContainer`, fuel slots);
+//!   `~/Work/exo-research/barotrauma/source/Barotrauma/BarotraumaShared/SharedSource/Items/Components/Machines/Reactor.cs`
+//!   (`FuelConsumptionRate`, the rods' condition goes down).
 use crate::dev_area::*;
 use crate::controls::Controls;
 use crate::dev_area::layout::CORRIDOR;

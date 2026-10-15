@@ -2,7 +2,7 @@
 //! walker's start, each room of the mini ship, the area from above, each role zone and the pad. It
 //! checks only that the walker starts inside the ship; the pictures are for the eye.
 use super::*;
-use crate::dev_area::layout::{self, Place, AIRLOCK, BRIDGE, CORRIDOR, GUNNERY_AT, HELM_AT, LAB_ROOM, MEDBAY_ROOM, REACTOR_AT, ROOM, TURRET_ROOM};
+use crate::dev_area::layout::{self, Place, AIRLOCK, BRIDGE, CAPTAIN_AT, CORRIDOR, GUNNERY_AT, HELM_AT, LAB_ROOM, MEDBAY_ROOM, REACTOR_AT, ROOM, TURRET_ROOM};
 use crate::dev_area::{area_of, DevArea, PADS, ROLE_ZONES};
 use bevy::math::DVec3;
 
@@ -50,8 +50,9 @@ fn hover(over: [f64; 2], height: f64, look: [f64; 2]) -> Step {
     })
 }
 
-/// `zones_only`: the role zones and the pad alone (`dev_tour_zones`), for a second window run; a
-/// software-rendered run of the whole tour can run out of memory on a small machine.
+/// `zones_only` false: the start, the rooms and the area from above (`dev_tour`); true: the role
+/// zones and the pad (`dev_tour_zones`). Two runs, because a software-rendered run of both can run
+/// out of memory on a small machine.
 pub(super) fn dev_tour_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step, zones_only: bool) {
     s.push(Box::new(|w, c| {
         begin(w, c, "dev tour: the walker starts in the mini ship");
@@ -86,6 +87,16 @@ pub(super) fn dev_tour_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str)
             s.push(shot_step(tag));
             s.push(wait(3.0));
         }
+        // The bridge from its south-west corner: the captain's consoles, CP-01 on the east wall and the
+        // pilot's helm on the north wall; then from the door, towards CP-01.
+        s.push(stand([BRIDGE.centre[0] - 3.3, BRIDGE.centre[1] - 1.8], [BRIDGE.centre[0] + 3.0, BRIDGE.centre[1] + 1.5]));
+        s.push(wait(3.0));
+        s.push(shot_step("tour-03b-bridge-captain-and-pilot"));
+        s.push(wait(3.0));
+        s.push(stand([BRIDGE.centre[0] - 0.5, BRIDGE.centre[1] - 0.5], [CAPTAIN_AT[0], CAPTAIN_AT[1]]));
+        s.push(wait(3.0));
+        s.push(shot_step("tour-03c-bridge-cp01"));
+        s.push(wait(3.0));
         s.push(hover([0.0, -30.0], 24.0, [0.0, 0.0]));
         s.push(wait(3.0));
         s.push(shot_step("tour-08-overview"));
@@ -98,6 +109,9 @@ pub(super) fn dev_tour_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str)
         s.push(wait(3.0));
         s.push(shot_step("tour-10-zones-from-above"));
         s.push(wait(3.0));
+    }
+    if !zones_only {
+        return;
     }
     const ZONE_TAGS: [&str; 8] = ["tour-11-zone-engineering", "tour-12-zone-bridge", "tour-13-zone-turrets", "tour-14-zone-lab", "tour-15-zone-medbay", "tour-16-zone-storage", "tour-17-zone-hazards", "tour-18-zone-dev"];
     for (z, tag) in ROLE_ZONES.iter().zip(ZONE_TAGS) {

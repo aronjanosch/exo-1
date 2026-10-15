@@ -1,5 +1,5 @@
 use crate::dev_area::hazards::{spicy_light, SPICY_ITEM};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use crate::cargo::{item_body_bundle, Crate};
 use crate::crew_hud::{Dash, DashFrame};
 use crate::controls::{Actions, Controls, Tap};
@@ -12,7 +12,7 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 use grab_core::CrateSize;
 use item_core::container::Stack;
-use item_core::wire::{FireNews, PublicStatus, ReactorAsk, ReactorNews, RepairAsk, RoomAsk, RoomNews, SprayAsk, Vitals};
+use item_core::wire::{BotStation, FireNews, PublicStatus, ReactorAsk, ReactorNews, RepairAsk, RoomAsk, RoomNews, SprayAsk, Vitals};
 use item_core::{Action, Client, Event, FrameRef, Host, ItemDefs, LooseId, Placement, PlayerId, Reject, Request};
 use walker_core::Frame;
 
@@ -83,6 +83,8 @@ pub enum NetOut {
     /// Client to host: the brake on the reactor; the host knows the sender.
     Pull,
     RepairRefused { to: PlayerId },
+    /// Client to host: the station the active display shows, or none (r43, the bots' occupancy).
+    Using(Option<BotStation>),
 }
 
 #[derive(Resource)]
@@ -124,6 +126,9 @@ pub struct Items {
     pub refill_asks: Vec<(PlayerId, bool)>,
     /// The players whose refill hold runs (coolant or the O2 shelf), here, whatever the role.
     pub refilling: BTreeSet<PlayerId>,
+    /// The station each player's active display shows (r43): a station with a player on it is not a
+    /// bot's. Host and local keep it; a client does not need it.
+    pub using: BTreeMap<PlayerId, BotStation>,
     /// Host: the masks put on or taken off (the player, the slot the mask is in), from the uses.
     pub mask_uses: Vec<(PlayerId, usize)>,
 }
@@ -140,7 +145,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, rod_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new(), refill_asks: Vec::new(), refilling: BTreeSet::new(), mask_uses: Vec::new() }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, rod_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new(), refill_asks: Vec::new(), refilling: BTreeSet::new(), using: BTreeMap::new(), mask_uses: Vec::new() }
     }
 
     pub fn me(&self) -> PlayerId {
@@ -232,6 +237,27 @@ impl Items {
             self.refilling.insert(who);
         } else {
             self.refilling.remove(&who);
+        }
+    }
+
+    /// The station this player's active display shows (r43), or none. Every role keeps its own entry; a
+    /// client also tells the host.
+    pub fn ask_using(&mut self, s: Option<BotStation>) {
+        match self.role {
+            Role::Client => self.net_out.push(NetOut::Using(s)),
+            Role::Host | Role::Local => self.note_using(self.me(), s),
+        }
+    }
+
+    /// Host: a player's station (`None` for no station). Read by the bots' occupancy.
+    pub fn note_using(&mut self, who: PlayerId, s: Option<BotStation>) {
+        match s {
+            Some(s) => {
+                self.using.insert(who, s);
+            }
+            None => {
+                self.using.remove(&who);
+            }
         }
     }
 

@@ -88,11 +88,14 @@ pub struct BotTuning {
     pub throttle: f64,
     /// The HELM's throttle in an encounter while the reactor is hot, %. TODO(initiator): 30.
     pub hot_fight_throttle: f64,
+    /// Seconds after a player leaves a station before a bot may take it (the player keeps their
+    /// setting, e.g. Manual, while they walk off). TODO(initiator): 20.
+    pub grace_s: f64,
 }
 
 impl Default for BotTuning {
     fn default() -> BotTuning {
-        BotTuning { count: 2, skill: 20.0, levels: [3, 2, 2, 1], tick_s: 0.5, clear_speed: 0.5, fight_engines_limit: 0.6, throttle: 100.0, hot_fight_throttle: 30.0 }
+        BotTuning { count: 2, skill: 20.0, levels: [3, 2, 2, 1], tick_s: 0.5, clear_speed: 0.5, fight_engines_limit: 0.6, throttle: 100.0, hot_fight_throttle: 30.0, grace_s: 20.0 }
     }
 }
 
@@ -113,12 +116,16 @@ pub enum Action {
     SetThrottle(f64),
 }
 
-/// The assignment: which stations get a bot. `bots` bots, `stations_free` by `Station::index` (false
-/// where a player is), `list` the captain's rows. Ignore (level 0) is never taken, a station with no
-/// row is not taken, the highest level goes first, ties go by `Station::ALL`'s order, one bot per
-/// station. Returns the stations in the order they were taken.
-pub fn assign(bots: u8, stations_free: [bool; STATIONS], list: &[Priority]) -> Vec<Station> {
-    let mut rows: Vec<Priority> = list.iter().copied().filter(|p| p.level > 0 && stations_free[p.station.index()]).collect();
+/// The assignment: which stations get a bot. `bots` bots, `since_used` by `Station::index` (the seconds
+/// since a player last used the station; `f64::INFINITY` for never; 0 while a player is at it), `grace_s`
+/// the seconds a station stays a player's after they leave it, `list` the captain's rows. A station is
+/// taken by a player while its age is under the grace (a player at it is age 0, which holds at any
+/// grace). Ignore (level 0) is never taken, a station with no row is not taken, the highest level goes
+/// first, ties go by `Station::ALL`'s order, one bot per station. Returns the stations in the order
+/// they were taken.
+pub fn assign(bots: u8, since_used: [f64; STATIONS], grace_s: f64, list: &[Priority]) -> Vec<Station> {
+    let free = since_used.map(|age| !(age <= 0.0 || age < grace_s));
+    let mut rows: Vec<Priority> = list.iter().copied().filter(|p| p.level > 0 && free[p.station.index()]).collect();
     rows.sort_by(|a, b| b.level.cmp(&a.level).then(a.station.cmp(&b.station)));
     let mut taken: Vec<Station> = Vec::new();
     for p in rows {
@@ -190,11 +197,13 @@ pub struct Bots {
     /// Seconds since the last action round.
     timer: f64,
     manned: [bool; STATIONS],
+    /// Seconds since a player last used each station (`f64::INFINITY` before any use).
+    since_used: [f64; STATIONS],
 }
 
 impl Bots {
     pub fn new(t: &BotTuning) -> Bots {
-        Bots { tuning: *t, count: t.count.min(MAX_BOTS), levels: t.levels.map(|l| l.min(MAX_LEVEL)), timer: 0.0, manned: [false; STATIONS] }
+        Bots { tuning: *t, count: t.count.min(MAX_BOTS), levels: t.levels.map(|l| l.min(MAX_LEVEL)), timer: 0.0, manned: [false; STATIONS], since_used: [f64::INFINITY; STATIONS] }
     }
 
     /// The same settings (count and levels) with no state: a new room starts with no bot at a station.
@@ -236,14 +245,18 @@ impl Bots {
         if self.manned(Station::Gunnery) { self.tuning.clear_speed } else { 1.0 }
     }
 
-    /// One frame of `dt` seconds. `occupied` by `Station::index` (a player is at the station). The
-    /// manning follows the occupancy at once, and a bot that leaves the gun releases its hold at once.
-    /// The bots act once per `tick_s`. Returns the (station, action) pairs to apply, in order.
+    /// One frame of `dt` seconds. `occupied` by `Station::index` (a player is at the station). A station
+    /// stays a player's for `grace_s` after they leave it. The manning follows that at once, and a bot
+    /// that leaves the gun releases its hold at once. The bots act once per `tick_s`. Returns the
+    /// (station, action) pairs to apply, in order.
     pub fn tick(&mut self, dt: f64, occupied: [bool; STATIONS], room: &EngineRoom) -> Vec<(Station, Action)> {
         let before = self.manned;
-        let free = occupied.map(|o| !o);
+        for s in Station::ALL {
+            let i = s.index();
+            self.since_used[i] = if occupied[i] { 0.0 } else { self.since_used[i] + dt };
+        }
         self.manned = [false; STATIONS];
-        for s in assign(self.count, free, &self.list()) {
+        for s in assign(self.count, self.since_used, self.tuning.grace_s, &self.list()) {
             self.manned[s.index()] = true;
         }
         let mut out = Vec::new();
@@ -270,7 +283,9 @@ mod tests {
     use crate::engine_room::{Input, RoomTuning};
     use crate::reactor::ReactorTuning;
 
-    const ALL_FREE: [bool; STATIONS] = [true; STATIONS];
+    /// Every station unused for ever: no player has been at any of them.
+    const ALL_FREE: [f64; STATIONS] = [f64::INFINITY; STATIONS];
+    const GRACE: f64 = 20.0;
 
     fn room() -> EngineRoom {
         let mut r = EngineRoom::new(RoomTuning::default(), ReactorTuning::default(), 1);
@@ -325,37 +340,47 @@ mod tests {
 
     #[test]
     fn the_highest_level_takes_the_first_bot() {
-        assert_eq!(assign(1, ALL_FREE, &list([1, 4, 2, 3])), vec![Station::Reactor]);
+        assert_eq!(assign(1, ALL_FREE, GRACE, &list([1, 4, 2, 3])), vec![Station::Reactor]);
     }
 
     #[test]
     fn bots_go_down_the_list_and_stop_at_their_count() {
-        assert_eq!(assign(2, ALL_FREE, &list([1, 4, 2, 3])), vec![Station::Reactor, Station::Helm]);
-        assert_eq!(assign(3, ALL_FREE, &list([1, 4, 2, 3])), vec![Station::Reactor, Station::Helm, Station::Power]);
+        assert_eq!(assign(2, ALL_FREE, GRACE, &list([1, 4, 2, 3])), vec![Station::Reactor, Station::Helm]);
+        assert_eq!(assign(3, ALL_FREE, GRACE, &list([1, 4, 2, 3])), vec![Station::Reactor, Station::Helm, Station::Power]);
     }
 
     #[test]
     fn ignore_is_never_taken_however_many_bots() {
-        assert_eq!(assign(3, ALL_FREE, &list([0, 0, 0, 1])), vec![Station::Helm]);
-        assert_eq!(assign(3, ALL_FREE, &list([0, 0, 0, 0])), Vec::<Station>::new());
+        assert_eq!(assign(3, ALL_FREE, GRACE, &list([0, 0, 0, 1])), vec![Station::Helm]);
+        assert_eq!(assign(3, ALL_FREE, GRACE, &list([0, 0, 0, 0])), Vec::<Station>::new());
     }
 
     #[test]
     fn ties_go_by_the_station_order() {
-        assert_eq!(assign(2, ALL_FREE, &list([2, 2, 2, 2])), vec![Station::Gunnery, Station::Reactor]);
-        assert_eq!(assign(4, ALL_FREE, &list([2, 2, 2, 2])), Station::ALL.to_vec());
+        assert_eq!(assign(2, ALL_FREE, GRACE, &list([2, 2, 2, 2])), vec![Station::Gunnery, Station::Reactor]);
+        assert_eq!(assign(4, ALL_FREE, GRACE, &list([2, 2, 2, 2])), Station::ALL.to_vec());
     }
 
     #[test]
     fn a_player_occupied_station_is_skipped() {
-        let free = [false, true, true, true];
-        assert_eq!(assign(1, free, &list([4, 1, 1, 1])), vec![Station::Reactor]);
+        let used_now = [0.0, f64::INFINITY, f64::INFINITY, f64::INFINITY];
+        assert_eq!(assign(1, used_now, GRACE, &list([4, 1, 1, 1])), vec![Station::Reactor]);
+    }
+
+    #[test]
+    fn a_station_a_player_left_stays_theirs_for_the_grace_time() {
+        // Gunnery was used 5 s ago (under the 20 s grace): the bot takes the reactor, the next row.
+        let left = [5.0, f64::INFINITY, f64::INFINITY, f64::INFINITY];
+        assert_eq!(assign(1, left, GRACE, &list([4, 1, 1, 1])), vec![Station::Reactor]);
+        // 25 s after: the grace is over and the gunnery's bot may take it back.
+        let gone = [25.0, f64::INFINITY, f64::INFINITY, f64::INFINITY];
+        assert_eq!(assign(1, gone, GRACE, &list([4, 1, 1, 1])), vec![Station::Gunnery]);
     }
 
     #[test]
     fn no_bots_takes_nothing_and_a_station_without_a_row_is_not_taken() {
-        assert_eq!(assign(0, ALL_FREE, &list([4, 4, 4, 4])), Vec::<Station>::new());
-        assert_eq!(assign(3, ALL_FREE, &[Priority::new(Station::Helm, 2)]), vec![Station::Helm]);
+        assert_eq!(assign(0, ALL_FREE, GRACE, &list([4, 4, 4, 4])), Vec::<Station>::new());
+        assert_eq!(assign(3, ALL_FREE, GRACE, &[Priority::new(Station::Helm, 2)]), vec![Station::Helm]);
     }
 
     #[test]

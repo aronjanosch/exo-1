@@ -23,6 +23,9 @@ pub enum ToHost {
     Refill(bool),
     /// The brake: pull the rod with the most life into the sender's hands.
     Pull,
+    /// The station whose screen the sender's active display shows (r43, the bots' occupancy), or `None`
+    /// when it shows no station's. Sent when the display changes.
+    Using(Option<BotStation>),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -994,6 +997,9 @@ mod tests {
         assert!(decode::<ToHost>(&encode(&ToHost::Treat(None))).is_some_and(|m| matches!(m, ToHost::Treat(None))));
         assert!(decode::<ToHost>(&encode(&ToHost::Refill(true))).is_some_and(|m| matches!(m, ToHost::Refill(true))));
         assert!(decode::<ToHost>(&encode(&ToHost::Refill(false))).is_some_and(|m| matches!(m, ToHost::Refill(false))));
+        for u in [Some(BotStation::Reactor), None] {
+            assert!(decode::<ToHost>(&encode(&ToHost::Using(u))).is_some_and(|m| matches!(m, ToHost::Using(x) if x == u)));
+        }
     }
 
     #[test]

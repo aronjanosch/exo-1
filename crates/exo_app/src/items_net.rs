@@ -100,6 +100,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
     match items.role {
         Role::Host => {
             for slot in net.take_left_peers() {
+                items.note_using(slot, None);
                 if let Some(r) = repairs.as_mut() {
                     r.forget(slot);
                 }
@@ -157,6 +158,10 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                     Some(ToHost::Refill(on)) => {
                         items.refill_asks.push((slot, on));
                         items.note_refill(slot, on);
+                        true
+                    }
+                    Some(ToHost::Using(s)) => {
+                        items.note_using(slot, s);
                         true
                     }
                     None => false,
@@ -332,6 +337,9 @@ pub fn items_net_out(
             }
             NetOut::RepairRefused { to } => {
                 net.send_reliable(Some(to), &wire::encode(&ToClient::RepairRefused));
+            }
+            NetOut::Using(s) => {
+                net.send_reliable(None, &wire::encode(&ToHost::Using(s)));
             }
         }
     }

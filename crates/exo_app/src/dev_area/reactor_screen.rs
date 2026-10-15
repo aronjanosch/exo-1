@@ -284,6 +284,44 @@ fn meltdown_view() -> Panel {
     Panel::screen(Tier::M, READOUT_NAME, "RX-01", column(8.0, vec![hazard(624.0), word, hazard(624.0)])).status("MELTDOWN", Tone::Bad).with_padding(8.0)
 }
 
+/// The slider track's width under the readout (the bottom-left column: 608 - 16 - 200), and the band
+/// strip's height. The strip sits right under its slider, as wide as the track, so the 0..100 scale matches.
+pub const STRIP_W: f64 = 392.0;
+pub const STRIP_H: f64 = 6.0;
+
+/// The wobble of the fission needle (Barotrauma's jitter, with a sine sum for its Perlin noise): within
+/// 5 of the allowed top, the needle moves by up to half of the set point's distance over the top (at
+/// most 10 / 2). Deterministic in `t` (the display time, seconds).
+pub fn fission_wobble(r: &ReactorNews, t: f64) -> f64 {
+    let top = r.fission_allowed[1];
+    if r.fission <= top - 5.0 {
+        return 0.0;
+    }
+    let amount = (r.set_fission - top).clamp(0.0, 10.0);
+    amount * 0.5 * ((t * 9.0).sin() + (t * 13.7).sin()) * 0.5
+}
+
+/// A band strip under a slider: the allowed band in yellow, the optimal band in green on top, and
+/// the actual value as a marker. A band with `hi <= lo` (no news) is not drawn.
+fn band_strip(optimal: [f64; 2], allowed: [f64; 2], actual: Option<f64>) -> Item {
+    let at = |v: f64| v.clamp(0.0, 100.0) / 100.0 * STRIP_W;
+    let span = |b: [f64; 2]| (at(b[0]), at(b[1]) - at(b[0]));
+    let mut shapes = Vec::new();
+    if allowed[1] > allowed[0] {
+        let (x, w) = span(allowed);
+        shapes.push(Shape::Rect { x, y: 0.0, w, h: 4.0, fill: Some(Ink::Warn), outline: None });
+    }
+    if optimal[1] > optimal[0] {
+        let (x, w) = span(optimal);
+        shapes.push(Shape::Rect { x, y: 0.0, w, h: 4.0, fill: Some(Ink::Good), outline: None });
+    }
+    if let Some(v) = actual {
+        // Kept inside the strip's box at the two ends (a marker at 0 or 100 would hang over by a pixel).
+        shapes.push(Shape::Rect { x: (at(v) - 1.0).clamp(0.0, STRIP_W - 2.0), y: 0.0, w: 2.0, h: STRIP_H, fill: Some(Ink::FgTitle), outline: None });
+    }
+    canvas(STRIP_W, STRIP_H, shapes, None).fixed(STRIP_H)
+}
+
 /// A set point (the readout, as before) and the actual value beside it, small and dim: "41 %  -> 38".
 /// The arrow is ASCII: the mono font has no U+2192.
 fn set_and_actual(set: f64, actual: f64, manual: bool) -> Item {
@@ -302,6 +340,11 @@ fn set_and_actual(set: f64, actual: f64, manual: bool) -> Item {
 /// meltdown the MELTDOWN view.
 /// The readout panel; `max_kw` is the scale of the power gauge (the reactor's `max_output_kw`).
 pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
+    readout_panel_at(r, max_kw, 0.0)
+}
+
+/// The readout at display time `t` (seconds): the fission needle wobbles near the allowed top (`fission_wobble`).
+pub fn readout_panel_at(r: Option<&ReactorNews>, max_kw: f64, t: f64) -> Panel {
     if r.is_some_and(|r| r.melted) {
         return meltdown_view();
     }
@@ -310,17 +353,22 @@ pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     let (fis, tur) = r.map_or((0.0, 0.0), |r| (r.set_fission, r.set_turbine));
     let (fis_act, tur_act) = r.map_or((0.0, 0.0), |r| (r.fission, r.turbine));
     let (word, tone) = reactor_status(r);
+    let zero = [0.0; 2];
+    let (fis_opt, fis_all, tur_opt, tur_all) = r.map_or((zero, zero, zero, zero), |r| (r.fission_optimal, r.fission_allowed, r.turbine_optimal, r.turbine_allowed));
+    let fis_needle = r.map(|r| (r.fission + fission_wobble(r, t)).clamp(0.0, 100.0));
     // Critical: the stripe is as wide as the bottom-left column (624 content - 16 gap - 200 switches)
     // and the spacing tightens by 18 px so the stripe fits (TODO(initiator): the readout's height budget).
     let critical = crate::effects::is_critical(r);
-    let (filler, gap) = if critical { (hazard(408.0), 6.0) } else { (space(), 10.0) };
+    // The two strips take 12 px of the column's 184: the gaps give it back (10 -> 7, and 6 -> 3 when critical).
+    let (filler, gap) = if critical { (hazard(408.0), 3.0) } else { (space(), 7.0) };
+    let track = |s: Item, strip: Item| column(0.0, vec![s, strip]).fixed(ctl::MD + STRIP_H);
     let bottom_left = column(
         gap,
         vec![
             row(8.0, vec![micro("FISSION RATE").flex(1.0), set_and_actual(fis, fis_act, manual)]).fixed(24.0),
-            slider(fis / 100.0, "", "fis_set").enabled(manual).fixed(ctl::MD),
+            track(slider(fis / 100.0, "", "fis_set").enabled(manual), band_strip(fis_opt, fis_all, fis_needle)),
             row(8.0, vec![micro("TURBINE OUTPUT").flex(1.0), set_and_actual(tur, tur_act, manual)]).fixed(24.0),
-            slider(tur / 100.0, "", "tur_set").enabled(manual).fixed(ctl::MD),
+            track(slider(tur / 100.0, "", "tur_set").enabled(manual), band_strip(tur_opt, tur_all, r.map(|r| r.turbine))),
             filler,
         ],
     );
@@ -994,7 +1042,7 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     *spin = crate::effects::impeller_angle(*spin, speed, time.delta_secs_f64());
     let angle = (*spin / IMPELLER_STEP).round() * IMPELLER_STEP;
     let max_kw = cfg.0.reactor.max_output_kw;
-    let readout = if help.0 { readout_help_panel(items.reactor.as_ref(), max_kw) } else { readout_panel(items.reactor.as_ref(), max_kw) };
+    let readout = if help.0 { readout_help_panel(items.reactor.as_ref(), max_kw) } else { readout_panel_at(items.reactor.as_ref(), max_kw, time.elapsed_secs_f64()) };
     panels.set(READOUT_ID, readout);
     panels.set(PUMP_ID, pump_panel_at(items.reactor.as_ref(), angle));
     panels.set(JUNCTION_ID, junction_panel(items.reactor.as_ref()));
@@ -1336,6 +1384,80 @@ mod tests {
         }).collect();
         assert!(texts.iter().any(|t| t == "41 %") && texts.iter().any(|t| t == "-> 38"), "{texts:?}");
         assert!(texts.iter().any(|t| t == "50 %") && texts.iter().any(|t| t == "-> 47"), "{texts:?}");
+    }
+
+    /// The band strips of a readout: every canvas of the strip size, in layout order (fission, turbine).
+    fn strips(p: &Panel) -> Vec<Vec<Shape>> {
+        p.layout().into_iter().filter_map(|w| match w.widget {
+            display_core::Widget::Canvas { w: cw, h: ch, shapes, .. } if *cw == STRIP_W && *ch == STRIP_H => Some(shapes.clone()),
+            _ => None,
+        }).collect()
+    }
+
+    /// The (x, w) of the box filled with `ink`, if the strip has one.
+    fn box_of(shapes: &[Shape], ink: Ink) -> Option<(f64, f64)> {
+        shapes.iter().find_map(|s| match s {
+            Shape::Rect { x, w, fill: Some(i), .. } if *i == ink => Some((*x, *w)),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn the_band_strips_sit_at_the_band_positions() {
+        let r = ReactorNews { fission: 38.0, set_fission: 41.0, turbine: 47.0, set_turbine: 50.0, fission_optimal: [20.0, 60.0], fission_allowed: [10.0, 80.0], turbine_optimal: [40.0, 56.0], turbine_allowed: [30.0, 66.0], ..news() };
+        let s = strips(&shipped_panel(Some(&r)));
+        assert_eq!(s.len(), 2, "one strip under each slider");
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        let (x, w) = box_of(&s[0], Ink::Good).expect("the fission optimal strip");
+        assert!(close(x, 0.2 * STRIP_W) && close(w, 0.4 * STRIP_W), "20..60 is 20 % to 60 % of the track: {x} {w}");
+        let (x, w) = box_of(&s[0], Ink::Warn).expect("the fission allowed strip");
+        assert!(close(x, 0.1 * STRIP_W) && close(w, 0.7 * STRIP_W), "10..80 is 10 % to 80 %: {x} {w}");
+        let (x, w) = box_of(&s[0], Ink::FgTitle).expect("the actual marker");
+        assert!(close(x + w * 0.5, 0.38 * STRIP_W), "the marker at the actual 38 %: {x} {w}");
+        let (x, w) = box_of(&s[1], Ink::Good).expect("the turbine optimal strip");
+        assert!(close(x, 0.4 * STRIP_W) && close(w, 0.16 * STRIP_W), "40..56: {x} {w}");
+        let (x, w) = box_of(&s[1], Ink::Warn).expect("the turbine allowed strip");
+        assert!(close(x, 0.3 * STRIP_W) && close(w, 0.36 * STRIP_W), "30..66: {x} {w}");
+    }
+
+    #[test]
+    fn the_band_strips_clamp_to_the_track() {
+        let r = ReactorNews { fission_optimal: [-5.0, 120.0], fission_allowed: [-5.0, 120.0], ..news() };
+        let s = strips(&shipped_panel(Some(&r)));
+        assert_eq!(box_of(&s[0], Ink::Good), Some((0.0, STRIP_W)), "a band past both ends fills the track");
+    }
+
+    #[test]
+    fn no_band_strip_is_drawn_without_news_or_without_bands() {
+        let no_bands = |p: &Panel| strips(p).iter().all(|s| [Ink::Good, Ink::Warn].iter().all(|i| box_of(s, *i).is_none()));
+        assert!(no_bands(&shipped_panel(None)), "no news, no strips");
+        assert!(no_bands(&shipped_panel(Some(&news()))), "news without fission and turbine bands: no strips");
+        assert!(box_of(&strips(&shipped_panel(Some(&news())))[0], Ink::FgTitle).is_some(), "the needle still shows with the news");
+        assert!(box_of(&strips(&shipped_panel(None))[0], Ink::FgTitle).is_none(), "no needle without news");
+        assert_eq!(strips(&shipped_panel(None)).len(), 2, "the strips keep their place with no news");
+    }
+
+    #[test]
+    fn the_band_strips_are_as_wide_as_the_sliders() {
+        let p = shipped_panel(Some(&news()));
+        let sliders: Vec<f64> = p.layout().into_iter().filter_map(|w| match w.widget {
+            display_core::Widget::Slider { .. } => Some(w.rect.size.x),
+            _ => None,
+        }).collect();
+        assert_eq!(sliders.len(), 2);
+        assert!(sliders.iter().all(|x| (x - STRIP_W).abs() < 1e-9), "the track is {sliders:?}, the strips {STRIP_W}");
+    }
+
+    #[test]
+    fn the_needle_wobbles_only_near_the_allowed_top() {
+        let base = ReactorNews { set_fission: 90.0, fission: 50.0, fission_allowed: [10.0, 80.0], ..news() };
+        let ts: Vec<f64> = (0..50).map(|i| f64::from(i) * 0.1).collect();
+        assert!(ts.iter().all(|t| fission_wobble(&base, *t) == 0.0), "far below the top: no wobble");
+        let near = ReactorNews { fission: 76.0, ..base };
+        assert!(ts.iter().any(|t| fission_wobble(&near, *t).abs() > 1.0), "within 5 of the top it wobbles");
+        assert!(ts.iter().all(|t| fission_wobble(&near, *t).abs() <= 5.0), "at most half the 10 over the top");
+        let set_below = ReactorNews { set_fission: 70.0, ..near };
+        assert!(ts.iter().all(|t| fission_wobble(&set_below, *t) == 0.0), "a set point under the top: no wobble");
     }
 
     #[test]

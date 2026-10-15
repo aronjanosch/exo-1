@@ -2,7 +2,7 @@
 //! `content/items/fuel_rod*.json`); its item condition is the rod's life (100 new, 0 spent), kept when
 //! it is carried, loaded or pulled. The reactor is an item container with fuel slots (Barotrauma style):
 //! a rod in a slot is its available fuel.
-//! A rack in the corridor holds loose rods. Load: a rod in hand, LMB held `HOLD_S` on the reactor, and
+//! A rack in the engine room holds loose rods. Load: a rod in hand, LMB held `HOLD_S` on the reactor, and
 //! `Request::Use` puts it into a free slot (`insert_rod`); a full reactor refuses it with a notice.
 //! Pull (the emergency brake, `pull_rod`): empty hands, LMB held `HOLD_S` on the reactor; the rod with
 //! the most life comes back as an item. A core above its optimal band burns the hand once (`device_core::minigame::hurt_of`).
@@ -10,7 +10,7 @@
 use crate::dev_area::*;
 use crate::controls::Controls;
 use crate::dev_area::engineering::coolant::HOLD_S;
-use crate::dev_area::{layout::{CORRIDOR, REACTOR_AT}};
+use crate::dev_area::{layout::{REACTOR_AT, ROOM}};
 use crate::displays::ActiveDisplay;
 use crate::gameplay::Gameplay;
 use crate::items::{Items, LOCAL};
@@ -26,7 +26,8 @@ use reactor_core::FuelRod;
 use walker_core::Frame;
 
 pub const LOAD: &str = "load_rod";
-pub const RACK_AT: [f64; 2] = [-0.6, 1.5];
+/// Beside the coolant rack, against the north wall, relative to the engine room's centre (m).
+pub const RACK_AT: [f64; 2] = [-3.6, 3.7];
 pub const RACK_SIZE: [f64; 3] = [0.5, 0.9, 0.5];
 pub const ON_RACK: [(&str, u32); 2] = [("fuel_rod", 2), ("fuel_rod_hot", 1)];
 
@@ -84,7 +85,7 @@ pub fn plugin(app: &mut App) {
     );
     app.world_mut().resource_mut::<DevAreaDevices>().add(PlaceholderBox {
         id: "rod_rack".into(),
-        zone: CORRIDOR,
+        zone: ROOM,
         local_pos: RACK_AT,
         size: RACK_SIZE,
         turn_deg: 0.0,
@@ -105,7 +106,7 @@ fn put_rods(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, mut ite
         let Some(d) = items.defs.get(id).cloned() else { continue };
         for _ in 0..count {
             let dx = (n as f64 - 1.0) * 0.15;
-            let p = CORRIDOR.point([RACK_AT[0] + dx, RACK_AT[1]]);
+            let p = ROOM.point([RACK_AT[0] + dx, RACK_AT[1]]);
             let (pos, up) = frame.ground(&planet, p[0], p[1], RACK_SIZE[1] + d.shape.extents[1] * 0.5 + 0.02);
             let fwd = frame.rotation(up, 0.0) * DVec3::NEG_Z;
             let at = Placement { frame: FrameRef::Planet(planet.id.0 as u32), pos: pos.to_array(), vel: [0.0; 3], forward: fwd.to_array() };

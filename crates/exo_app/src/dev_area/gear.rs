@@ -47,7 +47,8 @@ pub const SUIT_USE: &str = "wear_suit";
 pub const SHELF_ID: &str = "o2_shelf";
 pub const SHELF_AT: [f64; 2] = [4.6, 0.2];
 pub const SHELF_SIZE: [f64; 3] = [0.8, 1.2, 0.8];
-/// Where the suits hang: the airlock's east wall (inner face x -13.0), facing west into the room.
+/// Where the suits hang: the airlock's south wall (inner face y -10.7), facing north, off the
+/// panel on the north wall.
 /// Its stock is in `content/gameplay/gear/gear.json`, in the extinguisher racks' supply format.
 pub const SUIT_RACK_ID: &str = "airlock_suit_rack";
 const GEAR_FILE: &str = "gear/gear.json";
@@ -101,7 +102,7 @@ pub fn plugin(app: &mut App) {
     app.insert_resource(GearRacks(racks));
     {
         let mut devices = app.world_mut().resource_mut::<DevAreaDevices>();
-        devices.add(PlaceholderBox { id: SUIT_RACK_ID.into(), zone: AIRLOCK, local_pos: [0.8, 0.0], size: [0.35, 1.2, 0.5], turn_deg: 270.0, colour: [0.25, 0.3, 0.36], panel: None });
+        devices.add(PlaceholderBox { id: SUIT_RACK_ID.into(), zone: AIRLOCK, local_pos: [0.0, -0.75], size: [0.35, 1.2, 0.5], turn_deg: 180.0, colour: [0.25, 0.3, 0.36], panel: None });
         devices.add(PlaceholderBox {
             id: SHELF_ID.into(),
             zone: ROOM,

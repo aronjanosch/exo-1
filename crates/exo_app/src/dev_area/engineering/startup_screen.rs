@@ -10,10 +10,6 @@ use item_core::wire::{BreakerGroup, ReactorAsk, ReactorNews, StartupStage};
 pub const ID: PanelId = PanelId::new("ship_power");
 pub const NAME: &str = "SHIP POWER";
 pub const TAG: &str = "SP-01";
-/// The corridor's east wall (area metres), between the gunnery (y -8.5) and the reactor room's panel
-/// (y -10): the tall screen's 0.48 m leaves 0.2 m clear of each. TODO(initiator): the spot on the wall.
-pub const AT: [f64; 2] = [-13.04, -9.2];
-pub const TURN: f64 = -90.0;
 pub const MASTER: &str = "sp_master";
 pub const BOOT: &str = "sp_boot";
 pub const OVERRIDE: &str = "sp_override";

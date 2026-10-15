@@ -34,6 +34,7 @@ pub mod reactor_screen;
 pub mod startup_screen;
 pub mod rods;
 pub mod status_monitor;
+pub mod storage;
 pub mod test_console;
 
 pub const PLACE: &str = "dev_area";
@@ -154,6 +155,7 @@ pub fn plugin(app: &mut App) {
     app.add_plugins(extinguisher::plugin);
     app.add_plugins(mask::plugin);
     app.add_plugins(captain::plugin);
+    app.add_plugins(storage::plugin);
 }
 
 pub fn window_plugin(app: &mut App) {

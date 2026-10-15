@@ -2,6 +2,7 @@
 //! below; the reactor's drone, beep and whoop are untested by ear: TODO(initiator), levels to tune).
 use crate::audio::{loop_volume, Sound, SynthAudio};
 use crate::dev_area::engine_room::source_at;
+use crate::dev_area::fire::EXTINGUISH;
 use crate::dev_area::DevArea;
 use crate::env::PlanetRes;
 use crate::dev_area::reactor::lamp_blink_on;
@@ -38,6 +39,8 @@ pub const HISS_VOL: f32 = 0.07;
 pub const ZAP_VOL: f32 = 0.09;
 pub const ZAP_EVERY_S: f64 = 2.0;
 pub const CLUNK_VOL: f32 = 0.09;
+/// The dry click of an extinguisher that ran empty: the clunk, quieter.
+pub const DRY_VOL: f32 = 0.05;
 pub const SWEEP_VOL: f32 = 0.08;
 pub const OFF_VOL: f32 = 0.12;
 pub const PUMP_VOL: f32 = 0.06;
@@ -457,6 +460,24 @@ fn repair_hurt_sounds(mut commands: Commands, s: Res<SliceSounds>, hurt: Res<Rep
     *prev = hurt.at;
 }
 
+/// The held extinguisher's condition went from above 0 to 0 in the same slot (only spraying wears
+/// it): one dry click. A slot change or a swap is no click.
+fn extinguisher_dry(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mut prev: Local<Option<(usize, f64)>>) {
+    let view = &items.client.view;
+    let slot = view.selected;
+    let held = view
+        .slot(slot)
+        .filter(|st| items.defs.of(st).and_then(|d| d.use_effect.as_deref()) == Some(EXTINGUISH))
+        .and_then(|st| st.item.condition)
+        .map(|c| (slot, c));
+    if let (Some((ps, pc)), Some((now_slot, c))) = (*prev, held) {
+        if ps == now_slot && pc > 0.0 && c <= 0.0 {
+            one_shot(&mut commands, &s.clunk, DRY_VOL);
+        }
+    }
+    *prev = held;
+}
+
 /// TODO(initiator): the slide is not positional yet: it is the same in the whole ship.
 fn door_sound(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mut prev: Local<Option<bool>>) {
     let open = items.room.door_open;
@@ -505,7 +526,7 @@ fn health_sounds(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, o
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, setup);
-    app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, repair_hurt_sounds, electric_sounds, pump_loop, door_sound, health_sounds, reactor_hum, reactor_alarms, ecool_hiss).in_set(crate::phases::Frame::Input));
+    app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, repair_hurt_sounds, electric_sounds, pump_loop, door_sound, health_sounds, reactor_hum, reactor_alarms, ecool_hiss, extinguisher_dry).in_set(crate::phases::Frame::Input));
 }
 
 #[cfg(test)]

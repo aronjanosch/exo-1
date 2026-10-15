@@ -13,7 +13,7 @@ use crate::repair::RepairSessions;
 use bevy::prelude::*;
 use item_core::wire::{Doing, Injuries, PublicStatus};
 use item_core::PlayerId;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub fn plugin(app: &mut App) {
     use crate::phases::Fx;
@@ -27,6 +27,8 @@ pub fn plugin(app: &mut App) {
 struct TreatState {
     by_player: BTreeMap<PlayerId, Option<PlayerId>>,
     sent: Option<PlayerId>,
+    /// The players whose coolant refill hold runs (host side).
+    refilling: BTreeSet<PlayerId>,
 }
 
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
@@ -52,6 +54,13 @@ fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>
     for (who, target) in std::mem::take(&mut items.treat_asks) {
         treat.by_player.insert(who, target);
     }
+    for (who, on) in std::mem::take(&mut items.refill_asks) {
+        if on {
+            treat.refilling.insert(who);
+        } else {
+            treat.refilling.remove(&who);
+        }
+    }
     let me = items.me();
     treat.by_player.insert(me, hold.0.map(|h| h.target));
     let now: Vec<(PlayerId, PublicStatus)> = st
@@ -70,6 +79,8 @@ fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>
                 Doing::Reviving(*patient)
             } else if let Some(Some(target)) = treat.by_player.get(id) {
                 Doing::Treating(*target)
+            } else if treat.refilling.contains(id) {
+                Doing::Refilling
             } else {
                 Doing::Nothing
             };
@@ -201,6 +212,7 @@ fn label_of(s: &PublicStatus) -> Option<(&'static str, Color)> {
         Doing::Repairing(_) => Some(("REPAIRING", Color::srgb(1.0, 0.85, 0.4))),
         Doing::Spraying => Some(("SPRAYING", Color::srgb(0.6, 0.85, 1.0))),
         Doing::Reviving(_) => Some(("REVIVING", Color::srgb(0.95, 0.5, 0.9))),
+        Doing::Refilling => Some(("REFILLING", Color::srgb(0.5, 0.9, 1.0))),
         Doing::Nothing if s.burning => Some(("BURNING", Color::srgb(1.0, 0.5, 0.2))),
         Doing::Nothing => None,
     }

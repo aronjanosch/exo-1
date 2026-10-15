@@ -77,6 +77,8 @@ pub enum NetOut {
     Treat(Option<PlayerId>),
     /// Client to host: the CPR hold on this player, or none.
     Rescue(Option<PlayerId>),
+    /// Client to host: the coolant refill hold is running (true) or has stopped (false).
+    Refill(bool),
     /// Client to host: the brake on the reactor; the host knows the sender.
     Pull,
     RepairRefused { to: PlayerId },
@@ -117,6 +119,8 @@ pub struct Items {
     /// Brakes by player, to apply here; a client sends its own. The rod goes to that player.
     pub pull_asks: Vec<PlayerId>,
     pub rescue_asks: Vec<(PlayerId, Option<PlayerId>)>,
+    /// Host: the coolant refill holds (the player, running or not), for the public status.
+    pub refill_asks: Vec<(PlayerId, bool)>,
 }
 
 /// Whether the host can simulate an action's placement: a cabin is the host's ship. (Other
@@ -131,7 +135,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, rod_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new() }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, rod_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new(), refill_asks: Vec::new() }
     }
 
     pub fn me(&self) -> PlayerId {
@@ -202,6 +206,15 @@ impl Items {
             self.net_out.push(NetOut::Pull);
         } else {
             self.pull_asks.push(self.me());
+        }
+    }
+
+    /// The coolant refill hold, running or stopped: only a networked role tells the others.
+    pub fn ask_refill(&mut self, running: bool) {
+        match self.role {
+            Role::Client => self.net_out.push(NetOut::Refill(running)),
+            Role::Host => self.refill_asks.push((self.me(), running)),
+            Role::Local => {}
         }
     }
 
@@ -635,6 +648,17 @@ fn held_item(
 }
 
 /// How big a held item is drawn, against its own size: one hand at full size; two hands at 0.6,
+/// The item condition's tone on its slot bar (percent): warn below half, bad below a fifth.
+fn condition_tone(c: f64) -> display_core::Tone {
+    if c < 20.0 {
+        display_core::Tone::Bad
+    } else if c < 50.0 {
+        display_core::Tone::Warn
+    } else {
+        display_core::Tone::Normal
+    }
+}
+
 fn held_scale(hands: u8) -> f64 {
     if hands >= 2 { 0.6 } else { 1.0 }
 }
@@ -905,7 +929,14 @@ fn draw_bar(
         }
     }
     for (part, mut bg) in &mut fills {
-        if let BarPart::Slot(i) = *part {
+        if let BarPart::Condition(i) = *part {
+            let tone = stack_of(i).and_then(|st| st.item.condition).map_or(display_core::Tone::Normal, condition_tone);
+            set_bg(&mut bg, match tone {
+                display_core::Tone::Warn => col(k.warn),
+                display_core::Tone::Bad => col(k.bad),
+                _ => col(k.accent),
+            });
+        } else if let BarPart::Slot(i) = *part {
             let c = contrast_of(i == selected);
             let want = if drag == Some(i) {
                 ink(b.empty_bg)

@@ -197,7 +197,7 @@ impl ReactorSim {
             fission: r.fission(),
             turbine: r.turbine(),
             output_kw: r.output_kw(),
-            load_kw: grid.request_kw(),
+            load_kw: self.room.main_load_kw(),
             optimal: [b.temp_optimal.lo, b.temp_optimal.hi],
             allowed: [b.temp_allowed.lo, b.temp_allowed.hi],
             fission_optimal: [b.fission_optimal.lo, b.fission_optimal.hi],

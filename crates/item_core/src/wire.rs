@@ -337,6 +337,9 @@ pub struct ReactorNews {
     pub overvolt: bool,
     /// The engine room's air, 0..1 (the host rounds it to whole percent).
     pub oxygen: f64,
+    /// The meltdown blasts the host has applied so far (`ReactorCounts::blasts`). A process that
+    /// sees it go up shows the blast (the flash, the notice) once; the host applies the effects (#300).
+    pub blasts: u32,
     /// The fuel tubes, one per slot (the first `FUEL_TUBES`): the rod in it, None when empty (#300).
     pub fuel: [FuelTube; FUEL_TUBES],
     pub reactor: PartNews,
@@ -501,6 +504,7 @@ mod tests {
             coolant_low: false,
             overvolt: true,
             oxygen: 0.21,
+            blasts: 2,
             fuel: [FuelTube { rod: Some(FuelKind::Hot), life: 80.0 }, FuelTube { rod: None, life: 0.0 }, FuelTube::default(), FuelTube { rod: Some(FuelKind::Spicy), life: 12.5 }],
             lamps: [true, false, false, false, false, false, false, true, false, false, true],
             boost: -12.5,

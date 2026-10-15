@@ -137,7 +137,11 @@ pub fn start_of(e: &RoomEvent) -> Option<(Source, f64)> {
 /// Starts a fire at a source's front face in the engine room (or joins one it touches): a point
 /// fire of `size` in the point model, a burning cell at the grid's start intensity in the grid.
 pub fn ignite(air: &mut EngineAir, grid: &mut FireGrid, model: FireModel, source: Source, size: f64) {
-    let p = ignition_at(source);
+    ignite_at(air, grid, model, ignition_at(source), size);
+}
+
+/// The same at a point of the deck (`p`, metres); the blast starts its three fires with it.
+pub fn ignite_at(air: &mut EngineAir, grid: &mut FireGrid, model: FireModel, p: [f64; 2], size: f64) {
     let at = DVec3::new(p[0], p[1], 0.0);
     match model {
         FireModel::Point => {

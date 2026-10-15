@@ -36,6 +36,8 @@ pub struct ReactorCounts {
     pub fires: u32,
     pub sparks: u32,
     pub meltdowns: u32,
+    /// The meltdown blasts (`dev_area::blast`).
+    pub blasts: u32,
 }
 
 /// The host's reactor: the room, the manual targets, and what was last sent.
@@ -146,6 +148,8 @@ impl ReactorSim {
             coolant: self.room.pump().tank(),
             coolant_low: self.room.pump().tank() < self.room.tuning().coolant_low,
             overvolt: self.room.junction().overvolted(),
+            // The host's blast count is set by `reactor_step` (the sim does not count).
+            blasts: 0,
             oxygen,
             fuel: std::array::from_fn(|i| r.rods().get(i).map_or_else(FuelTube::default, |x| FuelTube { rod: Some(rods::fuel_kind(&x.kind)), life: x.life })),
             reactor: part(r.condition().fraction(), r.condition().functioning()),
@@ -259,6 +263,9 @@ pub fn route(e: RoomEvent, counts: &mut ReactorCounts) {
             counts.meltdowns += 1;
             warn!("reactor: MELTDOWN");
         }
+        RoomEvent::Reactor(ReactorEvent::Blast(_)) => {
+            counts.blasts += 1;
+        }
         RoomEvent::Device { source, event } => info!("engine room: {source:?} {event:?} (the machine's condition crossed a line)"),
         _ => {}
     }
@@ -268,14 +275,15 @@ pub fn plugin(app: &mut App) {
     let files = crate::content_files("gameplay");
     let tuning = Tuning::load(&files).unwrap_or_else(|e| panic!("reactor: {e:?}"));
     app.insert_resource(ReactorSim::new(&tuning)).insert_resource(ReactorConfig(tuning)).init_resource::<ReactorCounts>();
-    app.add_systems(FixedUpdate, reactor_step.before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
+    app.init_resource::<super::blast::PendingBlasts>().init_resource::<super::blast::BlastFlash>();
+    app.add_systems(FixedUpdate, (reactor_step, super::blast::reactor_blast, super::blast::client_blast_news).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
 }
 
 /// Host and one process: the requests, one step, the events (fires start in the air), the ship's
 /// alarm (the room's or the fire's, the higher), the snapshot out. A client only forwards its
 /// requests.
 #[allow(clippy::too_many_arguments)]
-fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut alarm: ResMut<ShipAlarm>, mut air: ResMut<EngineAir>, fires: Res<FireConfig>, fire_alarm: Res<FireAlarm>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, area: Res<DevArea>, planet: Res<PlanetRes>, repair: Res<crate::repair::RepairConfig>, mut health: Option<ResMut<crate::health::HealthState>>) {
+fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>, mut alarm: ResMut<ShipAlarm>, mut air: ResMut<EngineAir>, fires: Res<FireConfig>, fire_alarm: Res<FireAlarm>, mut grid: ResMut<FireGrid>, model: Res<FireModel>, area: Res<DevArea>, planet: Res<PlanetRes>, repair: Res<crate::repair::RepairConfig>, mut health: Option<ResMut<crate::health::HealthState>>, mut blasts: ResMut<super::blast::PendingBlasts>) {
     let asks = std::mem::take(&mut items.reactor_asks);
     if items.role == Role::Client {
         for a in asks {
@@ -354,6 +362,10 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
         if let Some((source, size)) = fire::start_of(&e) {
             fire::ignite(&mut air, &mut grid, *model, source, size);
         }
+        // The blast's rules run in `blast::reactor_blast` (the bodies, the fires, the news).
+        if let RoomEvent::Reactor(ReactorEvent::Blast(b)) = e {
+            blasts.0.push(b);
+        }
         route(e, &mut counts);
     }
     // Not calm: the room's alarm (or the fire's, the higher) is the ship's. Calm after an alarm:
@@ -366,7 +378,8 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     sim.alarmed = level != Alarm::None;
 
     let oxygen = (air.oxygen_at(ROOM.centre) * 100.0).round() / 100.0;
-    let now = sim.news(oxygen);
+    let mut now = sim.news(oxygen);
+    now.blasts = counts.blasts;
     items.reactor = Some(now);
     sim.since_send += dt;
     if items.role == Role::Host && sim.sent != Some(now) && sim.since_send >= SEND_EVERY_S {
@@ -569,7 +582,9 @@ mod tests {
         route(RoomEvent::Reactor(ReactorEvent::Fire { size: 0.1 }), &mut k);
         route(RoomEvent::Fire { size: 0.05, source: reactor_core::Source::Junction }, &mut k);
         route(RoomEvent::Reactor(ReactorEvent::Meltdown), &mut k);
-        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, meltdowns: 1 });
+        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, meltdowns: 1, blasts: 0 });
+        route(RoomEvent::Reactor(ReactorEvent::Blast(reactor_core::Blast::default())), &mut k);
+        assert_eq!(k.blasts, 1, "the blast is counted");
     }
 }
 

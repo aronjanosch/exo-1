@@ -165,6 +165,7 @@ pub fn plugin(app: &mut App) {
 pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, (dress_boxes, mark_zones).after(spawn_devices).in_set(crate::phases::Frame::World));
     engine_room::window_plugin(app);
+    bots::window_plugin(app);
     fire::window_plugin(app);
     captain::window_plugin(app);
     // ROLES (window): one line per role module with a window part.

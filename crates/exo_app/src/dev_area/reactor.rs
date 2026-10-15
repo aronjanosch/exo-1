@@ -11,7 +11,7 @@ use gameplay_core::notice::{Notice, NoticeKind};
 use item_core::wire::{Alarm, AlarmNews, BotNews, BotStation, BreakerGroup, EnemyNews, EnemyOutcome, FuelTube, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, RoomAir, RoomAlarmKind, StartupStage, GRAPH_POINTS, ROOMS};
 use reactor_core::room_alarm::{AlarmState, Kind};
 use reactor_core::RoomAlarm;
-use reactor_core::bots::{Bots, Station};
+use reactor_core::bots::{Bots, Row};
 use reactor_core::director::Situation;
 use reactor_core::engine_room::EngineSave;
 use reactor_core::{AirlockTuning, AlarmLevel, Director, EngineRoom, Fault, Group, Input, Outcome, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
@@ -281,7 +281,7 @@ impl ReactorSim {
                 }
             }
             // The captain's priority list (r42, CP-01) and the dev BOTS count.
-            ReactorAsk::SetBotPriority(s, level) => self.bots.set_level(super::bots::station_of(s), level),
+            ReactorAsk::SetBotPriority(s, level) => self.bots.set_level(super::bots::row_of(s), level),
             ReactorAsk::SetBots(n) => self.bots.set_count(n),
             // The airlock, its SEAL and the VACUUM switch need the air: `reactor_step` takes them.
             ReactorAsk::Airlock(_) | ReactorAsk::SetVacuum(_) | ReactorAsk::SealAirlock => {}
@@ -386,8 +386,8 @@ impl ReactorSim {
             enemy: self.room.encounter().map(|e| EnemyNews { shield: e.shield_fraction(), hull: e.hull_fraction(), outcome: enemy_outcome(e.outcome()), shots: e.shots(), section: e.last_section() as u8 }),
             // The bots (r42): a station a bot runs shows its BOT tag; the captain's levels are on CP-01.
             bots: std::array::from_fn(|i| {
-                let s: Station = super::bots::station_of(BotStation::ALL[i]);
-                BotNews { manned: self.bots.manned(s), level: self.bots.level(s) }
+                let row = Row::ALL[i];
+                BotNews { manned: self.bots.manned_row(row), level: self.bots.level(row) }
             }),
             bot_count: self.bots.count(),
         }
@@ -594,7 +594,7 @@ pub fn plugin(app: &mut App) {
     let warm = app.world().contains_resource::<WarmAtCreation>();
     app.insert_resource(ReactorSim::created(&tuning, warm)).insert_resource(ReactorConfig(tuning)).init_resource::<ReactorCounts>();
     app.init_resource::<super::blast::PendingBlasts>().init_resource::<super::blast::BlastFlash>();
-    app.add_systems(FixedUpdate, (super::bots::bots_step, reactor_step, super::blast::reactor_blast, super::blast::client_blast_news, eject_notice, ecool_notice, jump_notice).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
+    app.add_systems(FixedUpdate, (super::bots::bots_step, super::bots::body_step, reactor_step, super::blast::reactor_blast, super::blast::client_blast_news, eject_notice, ecool_notice, jump_notice).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -767,6 +767,8 @@ pub fn alarm_news(a: AlarmState) -> AlarmNews {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use item_core::wire::BotStation;
+    use reactor_core::bots::Station;
 
     fn cfg() -> Tuning {
         Tuning::default()
@@ -865,17 +867,28 @@ mod tests {
         assert_eq!(cfg().bots.levels[3], 1, "the start list is the shipped one");
     }
 
+    /// Ticks the bots (0.5 s rounds) until one stands at GN-01: the bots walk from the pads first.
+    fn walk_to_gun(s: &mut ReactorSim) {
+        for _ in 0..200 {
+            if s.bots.manned(Station::Gunnery) {
+                return;
+            }
+            s.bots.tick(0.5, [false; 4], &s.room.clone(), &super::bots::layout(), &[]);
+        }
+        panic!("no bot reached GN-01");
+    }
+
     #[test]
     fn a_bot_at_the_gun_has_its_skill_and_the_news_say_it_mans_the_station() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        s.bots.tick(0.5, [false; 4], &s.room.clone());
+        walk_to_gun(&mut s);
         s.tick_jam(0.0);
         let n = s.news(1.0);
-        assert!(n.bots[BotStation::Gunnery.index()].manned, "the bots man GN-01 at the start (two bots, GUNNERY first)");
+        assert!(n.bots[BotStation::Gunnery.index()].manned, "the bots man GN-01 at the start (two bots, GUNNERY first), once they have walked there");
         assert_eq!(s.room.weapons().jam_chance(), 0.03 * (1.0 - 20.0 / 50.0), "the bot's skill sets the jam chance");
         s.apply(ReactorAsk::SetBots(0), &cfg(), &mut k);
-        s.bots.tick(0.5, [false; 4], &s.room.clone());
+        s.bots.tick(0.5, [false; 4], &s.room.clone(), &super::bots::layout(), &[]);
         s.tick_jam(0.0);
         assert_eq!(s.room.weapons().jam_chance(), 0.03, "no bot, no skill: a player's gun");
     }
@@ -886,7 +899,7 @@ mod tests {
         let mut k = ReactorCounts::default();
         s.apply(ReactorAsk::SetBotPriority(BotStation::Power, 0), &cfg(), &mut k);
         s.apply(ReactorAsk::SetBots(1), &cfg(), &mut k);
-        s.bots.tick(0.5, [false; 4], &s.room.clone());
+        s.bots.tick(0.5, [false; 4], &s.room.clone(), &super::bots::layout(), &[]);
         s.apply(ReactorAsk::Reset, &cfg(), &mut k);
         let n = s.news(1.0);
         assert_eq!((n.bot_count, n.bots[BotStation::Power.index()].level), (1, 0));

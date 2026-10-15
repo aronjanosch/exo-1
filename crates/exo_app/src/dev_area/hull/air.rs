@@ -75,6 +75,12 @@ impl ShipAir {
         ShipAir { deck, engine, corridor, airlock, outside, bridge, door, bridge_door, breaches, inner, outer, outer_leak, lock: Airlock::new(t), vacuum: false, ambient: 1.0, cycle_air: 0.0, door_open: [0.0; 2] }
     }
 
+    /// The ship as the game starts it: as `with_tuning`, but the outer airlock door open, so a crew
+    /// outside walks straight in (the initiator, 2026-10-15).
+    pub fn at_start(t: &AirlockTuning) -> ShipAir {
+        ShipAir { lock: Airlock::outer_open(t), ..ShipAir::with_tuning(t) }
+    }
+
     pub fn room_of(&self, place: Place) -> RoomId {
         match place {
             Place::Engine => self.engine,

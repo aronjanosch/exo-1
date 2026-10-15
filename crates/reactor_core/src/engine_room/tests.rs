@@ -958,3 +958,17 @@ fn a_stepped_damaged_charged_room_round_trips_through_json() {
     let loaded = EngineRoom::from_save(&t, &back);
     assert_eq!(loaded.to_save(), save);
 }
+
+/// Wear off (the dev area's start): a long run on Auto leaves the reactor, the pump and the
+/// generator at full condition.
+#[test]
+fn wear_off_keeps_the_machines_full() {
+    let mut r = EngineRoom::from_tuning(&Tuning::shipped(), 7);
+    r.set_wear(false);
+    r.set_power(true);
+    for _ in 0..6000 {
+        let _ = r.step(0.1, Input::auto());
+    }
+    assert_eq!(r.reactor().condition().value(), 100.0, "the reactor did not wear");
+    assert_eq!(r.oxygen_generator().condition().value(), 100.0, "the generator did not wear");
+}

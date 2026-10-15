@@ -627,6 +627,9 @@ pub struct EngineRoom {
     enemy_rng: Rng,
     /// The ship's cold start (`startup`, r42, #268): the master is live from its Reactor stage on.
     startup: Startup,
+    /// Normal wear on (`set_wear`): off, running wears nothing (the dev area's start, the initiator
+    /// 2026-10-15); heat, blasts, hits and overvoltage take condition either way.
+    wears: bool,
 }
 
 impl EngineRoom {
@@ -656,6 +659,7 @@ impl EngineRoom {
             reactor,
             grid: Grid::from_tuning(&t.grid),
             level: AlarmLevel::None,
+            wears: true,
             engines_full_kw: t.grid.engines.demand_kw,
             engine: Engine::new(),
             wander: t.helm.engine_wander,
@@ -744,6 +748,12 @@ impl EngineRoom {
     /// Seconds until the emergency cooling can be pressed again (0 when it can).
     pub fn ecool_ready_in_s(&self) -> f64 {
         self.ecool_cd
+    }
+
+    /// Normal wear of the reactor, the pump and the oxygen generator on or off.
+    pub fn set_wear(&mut self, on: bool) {
+        self.wears = on;
+        self.reactor.set_wear(on);
     }
 
     /// Starts or stops the reactor. Refused while it is broken.
@@ -1247,11 +1257,11 @@ impl EngineRoom {
         }
 
         let excess = self.reactor.temperature() - self.reactor.bands().temp_optimal.hi;
-        if let Some(e) = self.pump.wear(dt, self.pump.on() && self.reactor.power_on(), excess, &t) {
+        if self.wears && let Some(e) = self.pump.wear(dt, self.pump.on() && self.reactor.power_on(), excess, &t) {
             ev.push(RoomEvent::Device { source: Source::Pump, event: e });
         }
         let running = self.grid.factor(Group::LifeSupport) >= fire_core::oxygen::MIN_VOLTAGE;
-        if let Some(e) = self.oxygen.wear(dt, running) {
+        if self.wears && let Some(e) = self.oxygen.wear(dt, running) {
             ev.push(RoomEvent::Device { source: Source::OxygenGenerator, event: e });
         }
 

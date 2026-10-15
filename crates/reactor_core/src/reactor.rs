@@ -370,6 +370,8 @@ pub struct Reactor {
     output: f64,
     alarms: [bool; 3],
     condition: Condition,
+    /// Normal wear on (`EngineRoom::set_wear`); damage from heat and blasts takes condition either way.
+    wears: bool,
     /// Output factor of the coolant pump, 0..1 (set by the engine room each step).
     coolant_target: f64,
     /// The coolant flow that takes heat away now, 0..1: follows `coolant_target` with a coast.
@@ -451,6 +453,7 @@ impl Reactor {
             output: s.output,
             alarms: s.alarms,
             condition: Condition::from_save(tuning.condition, &s.condition),
+            wears: true,
             coolant_target: s.coolant_target,
             coolant: s.coolant,
             heat_in: s.heat_in,
@@ -504,6 +507,10 @@ impl Warnings {
 }
 
 impl Reactor {
+    pub fn set_wear(&mut self, on: bool) {
+        self.wears = on;
+    }
+
     pub fn new(tuning: ReactorTuning, seed: u64) -> Reactor {
         Reactor {
             tuning,
@@ -525,6 +532,7 @@ impl Reactor {
             output: 0.0,
             alarms: [false; 3],
             condition: Condition::new(tuning.condition, seed),
+            wears: true,
             coolant_target: 1.0,
             coolant: 1.0,
             heat_in: 0.0,
@@ -937,7 +945,7 @@ impl Reactor {
         self.overheat(dt, &bands, &mut ev);
         self.output = self.output_for(load_kw, &bands);
 
-        let use_ = if self.temp > 0.1 { (self.fission + self.turbine) / 200.0 } else { 0.0 };
+        let use_ = if self.wears && self.temp > 0.1 { (self.fission + self.turbine) / 200.0 } else { 0.0 };
         if let Some(e) = self.condition.deteriorate(dt, use_) {
             ev.push(ReactorEvent::Device(e));
         }

@@ -90,6 +90,8 @@ impl ReactorSim {
 
     pub fn created(cfg: &Tuning, warm: bool) -> ReactorSim {
         let mut room = EngineRoom::from_tuning(cfg, SEED);
+        // The ship starts ready: the warm-up wears nothing (`dev::Wear` turns wear on later).
+        room.set_wear(false);
         room.set_power(true);
         if warm {
             room.warm_start();
@@ -458,7 +460,7 @@ pub fn plugin(app: &mut App) {
 /// reactor's controls, the director may break a device, and the events go to `ShipEvents`. A client
 /// sends its asks to the host.
 #[allow(clippy::too_many_arguments)]
-fn ship_step(time: Res<Time>, mut items: ResMut<Items>, mut sim: ResMut<ReactorSim>, mut events: ResMut<ShipEvents>, air: Res<ShipAir>, grid: Res<FireGrid>, model: Res<FireModel>) {
+fn ship_step(time: Res<Time>, mut items: ResMut<Items>, mut sim: ResMut<ReactorSim>, mut events: ResMut<ShipEvents>, air: Res<ShipAir>, grid: Res<FireGrid>, model: Res<FireModel>, wear: Res<crate::dev::Wear>) {
     let asks = std::mem::take(&mut items.reactor_asks);
     if items.role == Role::Client {
         for a in asks {
@@ -471,6 +473,7 @@ fn ship_step(time: Res<Time>, mut items: ResMut<Items>, mut sim: ResMut<ReactorS
     }
     let dt = time.delta_secs_f64();
     let input = if sim.manual { Input::manual(sim.fission, sim.turbine) } else { Input::auto() };
+    sim.room.set_wear(wear.0);
     let stepped = sim.room.step(dt, input);
     events.0.extend(stepped);
     // The incident director (r38): its report is the room's devices and temperature, the fires in

@@ -11,8 +11,8 @@ use planet_core::recipe::SiteCategory;
 use gameplay_core::{TrackId, WorldEvent};
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<DevMenu>();
-    app.add_systems(FixedUpdate, (update_dev, jump_to_settlement, toggle_noclip, toggle_god).chain().in_set(crate::phases::Fx::Effects));
+    app.init_resource::<DevMenu>().init_resource::<Wear>();
+    app.add_systems(FixedUpdate, (update_dev, jump_to_settlement, toggle_noclip, toggle_god, toggle_wear).chain().in_set(crate::phases::Fx::Effects));
 }
 
 pub fn window_plugin(app: &mut App) {
@@ -20,9 +20,16 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, draw_dev.in_set(crate::phases::Frame::Hud));
 }
 
-pub const COMMANDS: [&str; 10] = ["Grant every licence", "+1000 credits", "Refill the boost", "Always day", "Always night", "Jump to day (cycle runs)", "Jump to night (cycle runs)", "Ship to the next settlement", "Noclip on/off", "God mode on/off"];
+pub const COMMANDS: [&str; 11] = ["Grant every licence", "+1000 credits", "Refill the boost", "Always day", "Always night", "Jump to day (cycle runs)", "Jump to night (cycle runs)", "Ship to the next settlement", "Noclip on/off", "God mode on/off", "Wear on/off"];
 
-const KEYS: [Tap; 10] = [Tap::Dev1, Tap::Dev2, Tap::Dev3, Tap::Dev4, Tap::Dev5, Tap::Dev6, Tap::Dev7, Tap::Dev8, Tap::Dev9, Tap::Dev0];
+const KEYS: [Tap; 11] = [Tap::Dev1, Tap::Dev2, Tap::Dev3, Tap::Dev4, Tap::Dev5, Tap::Dev6, Tap::Dev7, Tap::Dev8, Tap::Dev9, Tap::Dev0, Tap::DevMinus];
+/// The keys' names in the menu, in the order of `KEYS`.
+const KEY_NAMES: [&str; 11] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-"];
+
+/// Normal wear of the ship's machines (`reactor_core::EngineRoom::set_wear`): off by default, so the
+/// ship stands ready while nobody plays with it; the dev menu turns it on to test the repairs.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+pub struct Wear(pub bool);
 
 /// Money one press of the money command adds. TODO(initiator): the amount.
 pub const MONEY: i64 = 1000;
@@ -42,6 +49,7 @@ pub struct DevMenu {
     pub jump: bool,
     pub noclip: bool,
     pub god: bool,
+    pub wear: bool,
 }
 
 /// Every licence the data has, earned by the host's client (the ones it has stay as they are).
@@ -127,6 +135,10 @@ pub fn update_dev(
                 menu.god = true;
                 continue;
             }
+            if i == 10 {
+                menu.wear = true;
+                continue;
+            }
             let now = clock.t;
             let at_hour = |h: f64| ps.as_ref().zip(up).and_then(|(ps, up)| ps.time_for_hour(up, to_star, h, now));
             menu.last = Some(run(i, &mut gp, &mut ships, &mut clock, at_hour));
@@ -203,6 +215,15 @@ fn spawn_dev(mut commands: Commands) {
         });
 }
 
+/// Flips `Wear`.
+pub fn toggle_wear(mut menu: ResMut<DevMenu>, mut wear: ResMut<Wear>) {
+    if !std::mem::take(&mut menu.wear) {
+        return;
+    }
+    wear.0 = !wear.0;
+    menu.last = Some(if wear.0 { "wear on".into() } else { "wear off".into() });
+}
+
 fn draw_dev(menu: Res<DevMenu>, mut root: Query<&mut Node, With<DevRoot>>, mut text: Query<&mut Text, With<DevText>>) {
     if !menu.is_changed() {
         return;
@@ -212,8 +233,8 @@ fn draw_dev(menu: Res<DevMenu>, mut root: Query<&mut Node, With<DevRoot>>, mut t
     }
     if let Ok(mut t) = text.single_mut() {
         let mut s = String::from("DEV   (F10 closes)\n");
-        for (i, c) in COMMANDS.iter().enumerate() {
-            s.push_str(&format!("\n{}   {c}", i + 1));
+        for (k, c) in KEY_NAMES.iter().zip(COMMANDS) {
+            s.push_str(&format!("\n{k}   {c}"));
         }
         if let Some(l) = &menu.last {
             s.push_str(&format!("\n\n{l}"));

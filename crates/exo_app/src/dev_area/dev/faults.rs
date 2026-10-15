@@ -91,7 +91,7 @@ fn asks(mut items: ResMut<Items>, cfg: Res<ReactorConfig>, fires: Res<FireConfig
             }
             // The fires are the air's: a fresh room starts with a fresh air (no fire survives).
             ReactorAsk::Reset => {
-                *air = ShipAir::with_tuning(&cfg.0.airlock);
+                *air = ShipAir::at_start(&cfg.0.airlock);
                 apply_sim(&mut sim, a, &cfg.0, &mut counts);
             }
             a => {

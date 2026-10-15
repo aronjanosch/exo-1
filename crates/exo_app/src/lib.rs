@@ -393,7 +393,10 @@ pub fn build_app(o: &Options) -> App {
     }
     // The save belongs to players: scripted and headless runs keep theirs in the output
     let player_run = o.scenario.is_none() && !o.headless;
-    savefile::plugin(&mut app, if player_run { savefile::SaveDir::default_dir() } else { o.out_dir.join("saves") }, player_run);
+    // The dev area starts a fresh ship every run: an autosave would bring back the last run's state
+    // (an empty coolant tank, a broken pump), not the ready ship the playtest starts from.
+    let load_save = player_run && o.start.as_deref() != Some(dev_area::PLACE);
+    savefile::plugin(&mut app, if player_run { savefile::SaveDir::default_dir() } else { o.out_dir.join("saves") }, load_save);
     app.add_plugins((flight_events::plugin, map::plugin, help::plugin, dev::plugin));
     // Scenarios start with the licences earned (their pilots are not the examinees), except the
     // one about the licence itself and the dev menu's, which grants them.

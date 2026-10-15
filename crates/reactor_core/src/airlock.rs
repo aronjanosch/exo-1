@@ -81,6 +81,12 @@ impl Airlock {
         Airlock { cycle_s: t.cycle_s, pump_share: t.pump_share, inner_open: false, outer_open: false, cycling: None, t: 0.0 }
     }
 
+    /// The ship as it stands on the ground at the start: the outer door open, so a crew outside walks
+    /// straight in (the initiator, 2026-10-15); the inner door shut, so the doors are never open together.
+    pub fn outer_open(t: &AirlockTuning) -> Airlock {
+        Airlock { outer_open: true, ..Airlock::new(t) }
+    }
+
     pub fn to_save(&self) -> AirlockSave {
         AirlockSave { inner_open: self.inner_open, outer_open: self.outer_open, cycling: self.cycling, t: self.t }
     }

@@ -72,6 +72,9 @@ pub enum Sound {
     SweepUp,
     /// Loop: a low pump hum, pitch and level by the flow (played at speed, #300).
     PumpHum,
+    /// Loop: the reactor's drone, 55 Hz with a little 110 Hz and a slow wobble, the level by the
+    /// fission and the pitch by the temperature (played at speed, #300 r23). Quiet on purpose.
+    ReactorHum,
     /// 0.3 s: filtered noise sweeping, a door slides (#300).
     Slide,
     /// 0.5 s: a soft low whoomp, the body catches fire (#300).
@@ -101,7 +104,7 @@ impl Sound {
     /// Length in seconds; loops have none.
     pub fn length(self) -> Option<f32> {
         match self {
-            Sound::Hum | Sound::Wind | Sound::Hiss | Sound::Roar | Sound::Crackle(_) | Sound::Spray | Sound::RepairLoop | Sound::PumpHum => None,
+            Sound::Hum | Sound::Wind | Sound::Hiss | Sound::Roar | Sound::Crackle(_) | Sound::Spray | Sound::RepairLoop | Sound::PumpHum | Sound::ReactorHum => None,
             Sound::Steam => Some(0.35),
             Sound::Blip => Some(0.07),
             Sound::Chime => Some(0.35),
@@ -323,6 +326,10 @@ impl Iterator for Synth {
                 0.5 * env * phase.sin()
             }
             Sound::PumpHum => 0.5 * (tau * 60.0 * t).sin() + 0.25 * (tau * 120.0 * t).sin() + 0.05 * self.white(),
+            Sound::ReactorHum => {
+                let wobble = 0.8 + 0.2 * (tau * 0.4 * t).sin();
+                wobble * (0.6 * (tau * 55.0 * t).sin() + 0.2 * (tau * 110.0 * t).sin())
+            }
             Sound::Slide => {
                 let x = t / 0.3;
                 let env = (x * std::f32::consts::PI).sin().powi(2);
@@ -608,7 +615,7 @@ mod tests {
 
     #[test]
     fn loops_keep_going_and_stay_in_range() {
-        for s in [Sound::Hum, Sound::Wind, Sound::Hiss, Sound::Roar, Sound::Crackle(0), Sound::Crackle(2), Sound::Spray, Sound::RepairLoop, Sound::PumpHum] {
+        for s in [Sound::Hum, Sound::Wind, Sound::Hiss, Sound::Roar, Sound::Crackle(0), Sound::Crackle(2), Sound::Spray, Sound::RepairLoop, Sound::PumpHum, Sound::ReactorHum] {
             let samples: Vec<f32> = Synth::new(s).take(RATE as usize * 3).collect();
             assert_eq!(samples.len(), RATE as usize * 3);
             assert!(samples.iter().all(|x| x.is_finite() && x.abs() <= 1.0));

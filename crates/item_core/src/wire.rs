@@ -157,6 +157,8 @@ pub enum ReactorAsk {
     /// host ignores any other index. Shut, the vent takes no air: the generator's flow goes to the
     /// open one (`fire_core::split_by_volume`).
     SetVent(u8, bool),
+    /// The incident director's switch (r38, the dev faults screen's DIRECTOR toggle).
+    SetDirector(bool),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -406,6 +408,8 @@ pub struct ReactorNews {
     /// The two vents' valves, open (true): index 0 the engine room's, 1 the corridor's (r38). Set
     /// by the host; a client's panels follow it. All shut is a state too: the generator's air goes nowhere.
     pub vents: [bool; 2],
+    /// The incident director is on (r38; the dev faults screen's DIRECTOR toggle shows it).
+    pub director: bool,
 }
 
 /// A room's air and fire for the status monitor (r38): the air as a fraction 0..1 (whole percent),
@@ -541,6 +545,7 @@ mod tests {
             junction: PartNews { share: 1.0, working: true },
             oxygen_generator: PartNews { share: 0.6, working: true },
             breach: 0.55,
+            director: true,
             aux_on: true,
             aux_life_support: false,
             aux_lights: true,
@@ -622,6 +627,8 @@ mod tests {
             ReactorAsk::SetPumpMode(PumpMode::Low),
             ReactorAsk::ArmEject,
             ReactorAsk::Eject,
+            ReactorAsk::SetDirector(true),
+            ReactorAsk::SetDirector(false),
         ];
         for ask in asks {
             let back = match decode::<ToHost>(&encode(&ToHost::Reactor(ask))).expect("decodes") {

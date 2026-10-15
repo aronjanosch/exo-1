@@ -801,6 +801,7 @@ pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
 
 pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
     let aux = if r.is_some_and(|r| r.aux_on) { "AUX ON" } else { "AUX OFF" };
+    let director = if r.is_some_and(|r| r.director) { "DIRECTOR ON" } else { "DIRECTOR OFF" };
     let col = |items: Vec<_>| column(4.0, items);
     Panel::screen(
         Tier::S,
@@ -823,6 +824,7 @@ pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
                     button("Warm start", "warm_start").fixed(28.0),
                     button(aux, "aux").fixed(28.0),
                     button("Reset RX", "reset").fixed(28.0),
+                    button(director, "director").fixed(28.0),
                 ]),
             ],
         ),
@@ -1052,6 +1054,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "drain_coolant" => Some(ReactorAsk::Trigger(ReactorFault::DrainCoolant)),
                 "warm_start" => Some(ReactorAsk::Trigger(ReactorFault::WarmStart)),
                 "aux" => Some(ReactorAsk::Trigger(ReactorFault::Aux)),
+                "director" => snap.map(|r| ReactorAsk::SetDirector(!r.director)),
                 _ => None,
             }
         } else {
@@ -1136,7 +1139,7 @@ mod tests {
         let man = shipped_panel(Some(&ReactorNews { manual: true, ..news() }));
         assert!(matches!(man.find("fis_set").unwrap().widget, display_core::Widget::Slider { enabled: true, .. }));
         assert!(man.find("mode").is_some() && man.find("reset").is_none());
-        assert!(faults_panel(None).find("reset").is_some() && faults_panel(None).find("pump_break").is_some() && faults_panel(None).find("oxygen_break").is_some());
+        assert!(faults_panel(None).find("reset").is_some() && faults_panel(None).find("pump_break").is_some() && faults_panel(None).find("oxygen_break").is_some() && faults_panel(None).find("director").is_some());
     }
 
     #[test]

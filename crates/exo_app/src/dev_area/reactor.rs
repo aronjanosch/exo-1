@@ -8,7 +8,8 @@ use crate::dev_area::rods;
 use crate::gameplay::Gameplay;
 use gameplay_core::notice::{Notice, NoticeKind};
 use item_core::wire::{Alarm, BreakerGroup, FuelTube, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, RoomAir, GRAPH_POINTS};
-use reactor_core::{AlarmLevel, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
+use reactor_core::director::Situation;
+use reactor_core::{AlarmLevel, Director, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
 
 pub const SEND_EVERY_S: f64 = 0.25;
 /// The room's seed: the same room every start (its rolls are seeded).
@@ -41,6 +42,8 @@ pub struct ReactorSim {
     /// The two vents' valves (r38; index 0 the engine room's, 1 the corridor's). The host keeps them;
     /// a new room starts with both open.
     pub vents: [bool; 2],
+    /// The incident director (r38): the host steps it in `reactor_step`; the toggle sets it.
+    pub director: Director,
 }
 
 /// `--warm-reactor`: the room is warm-started when it is created (`ReactorSim::created`), not run 150 s
@@ -66,7 +69,7 @@ impl ReactorSim {
         // The warm-up runs the tank down; a fresh room starts with a full one (TODO(initiator): later
         // the tank may start where the ship's last run left it).
         room.pump_mut().refill(100.0);
-        ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX, vents: [true; 2] }
+        ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX, vents: [true; 2], director: Director::new(&cfg.director, SEED) }
     }
 
     pub fn tick_eject(&mut self, dt: f64) {
@@ -115,7 +118,10 @@ impl ReactorSim {
             ReactorAsk::Reset => {
                 // The alarm the old room set stays until the new room says otherwise.
                 let alarmed = self.alarmed;
+                let director = self.director.enabled();
                 *self = ReactorSim { sent: None, since_send: f64::MAX, alarmed, ..ReactorSim::new(cfg) };
+                // The dev toggle is the operator's: a reset keeps it.
+                self.director.set_enabled(director);
                 info!("reactor: reset");
             }
             ReactorAsk::ArmEject => {
@@ -155,6 +161,10 @@ impl ReactorSim {
                 None => info!("reactor: no vent {i}"),
             },
             ReactorAsk::SetPumpMode(m) => self.room.set_pump_mode(pump_of(m)),
+            ReactorAsk::SetDirector(on) => {
+                self.director.set_enabled(on);
+                info!("reactor: dev director {}", if on { "on" } else { "off" });
+            }
             ReactorAsk::Boost(up) => {
                 if !self.room.reactor_mut().boost(up) {
                     info!("reactor: boost refused (off, broken, or not allowed now)");
@@ -235,6 +245,7 @@ impl ReactorSim {
             battery_charge: self.room.battery().fraction(),
             battery_recharge: self.room.battery().recharge(),
             battery_kw: self.room.battery().output_kw(),
+            director: self.director.enabled(),
         }
     }
 }
@@ -458,6 +469,17 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     sim.tick_eject(dt);
     let input = if sim.manual { Input::manual(sim.fission, sim.turbine) } else { Input::auto() };
     events.extend(sim.room.step(dt, input));
+    // The incident director (r38): the host's only. Its report is the room's devices and temperature,
+    // the fires in the two rooms and the engine room's oxygen; it breaks at most one device here.
+    let fires = match *model {
+        FireModel::Point => [air.engine, air.corridor].into_iter().map(|room| air.deck.fires_in(room).count()).sum::<usize>(),
+        FireModel::Grid => grid.0.burning().count(),
+    } as u32;
+    let situation = Situation::of_room(&sim.room, fires, air.deck.room(air.engine).oxygen_fraction());
+    if let Some(f) = sim.director.step(dt, &situation) {
+        info!("reactor: director {f:?}");
+        events.extend(sim.room.trigger(f));
+    }
     // Life support's air: the oxygen generator feeds the air through its vents (r38; the engine room's
     // and the corridor's, `EngineAir::add_oxygen_through_vents`). `EngineRoom::oxygen_flow` is the flow:
     // the life support's power and the generator's condition squared (`fire_core::oxygen`).

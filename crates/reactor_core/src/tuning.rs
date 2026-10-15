@@ -2,6 +2,7 @@ use content_core::{parse_strict, File};
 use serde::{Deserialize, Serialize};
 
 use crate::battery::BatteryTuning;
+use crate::director::DirectorTuning;
 use crate::engine_room::RoomTuning;
 use crate::grid::GridTuning;
 use crate::reactor::{ReactorTuning, RodKinds};
@@ -23,11 +24,13 @@ pub struct Tuning {
     pub graph_points: usize,
     /// Seconds between two graph samples (Barotrauma 0.5).
     pub graph_interval_s: f64,
+    /// The incident director (`director` in reactor.json, r38).
+    pub director: DirectorTuning,
 }
 
 impl Default for Tuning {
     fn default() -> Tuning {
-        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5 }
+        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default() }
     }
 }
 
@@ -56,6 +59,9 @@ impl Tuning {
         need(r.slots >= 1, "reactor.slots", "must be at least 1");
         need(self.start_rods <= r.slots, "start_rods", "must fit in reactor.slots");
         need(self.graph_points >= 1 && self.graph_interval_s > 0.0, "graph_points", "must be >= 1, graph_interval_s > 0");
+        let d = &self.director;
+        need(d.min_interval_s > 0.0 && d.max_interval_s >= d.min_interval_s, "director.*_interval_s", "min > 0, max >= min");
+        need((0.0..=1.0).contains(&d.threshold) && d.rise_per_s > 0.0 && d.fall_per_s > 0.0, "director", "threshold 0..=1, rise_per_s and fall_per_s > 0");
         need(self.rods.0.contains_key("standard"), "rods.standard", "the rod start_rods uses must be listed");
         for (id, k) in &self.rods.0 {
             need(k.heat > 0.0 && k.life > 0.0 && k.life <= 100.0, &format!("rods.{id}"), "heat > 0, life in 0..=100");

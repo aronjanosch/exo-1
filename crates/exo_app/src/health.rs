@@ -178,7 +178,7 @@ pub(crate) fn walker_points(players: &Query<&Player>, remotes: &Query<(&RemoteWa
 
 /// burn on a body (`FireHeat`, set by the fire step before this one) is its rate per second.
 #[allow(clippy::too_many_arguments)]
-fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, air: Option<Res<EngineAir>>, items: Res<Items>, mut st: ResMut<HealthState>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, net: Option<Res<Net>>, heat: Option<Res<FireHeat>>) {
+pub(crate) fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, air: Option<Res<EngineAir>>, items: Res<Items>, mut st: ResMut<HealthState>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, net: Option<Res<Net>>, heat: Option<Res<FireHeat>>, masks: Option<Res<crate::dev_area::mask::MaskAir>>) {
     if items.role == Role::Client {
         return;
     }
@@ -211,9 +211,15 @@ fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea
             (Some(p), Some(a)) => a.oxygen_at(p),
             _ => 1.0,
         };
+        // A body in a mask breathes the mask's air (r38), whatever the room holds.
+        let room_air = match masks.as_ref().and_then(|m| m.0.get(id)) {
+            Some(&o) => o,
+            None if inside(&NO_AIR) => 0.0,
+            None => room_air,
+        };
         let fire = heat.as_ref().and_then(|h| h.0.get(id)).copied().unwrap_or(0.0);
         let rod_per_s = if irradiated.contains(id) { SPICY_RAD_PER_S } else { 0.0 };
-        let env = Env { oxygen: if inside(&NO_AIR) { 0.0 } else { room_air }, hot: inside(&HOT_PLATE), glow: inside(&GLOW_BARREL), fire, rod_per_s };
+        let env = Env { oxygen: room_air, hot: inside(&HOT_PLATE), glow: inside(&GLOW_BARREL), fire, rod_per_s };
         st.air.insert(*id, env.oxygen);
         for ev in b.health.step(t, dt, env) {
             if matches!(ev, HealthEvent::Died { .. }) {

@@ -156,6 +156,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                     }
                     Some(ToHost::Refill(on)) => {
                         items.refill_asks.push((slot, on));
+                        items.note_refill(slot, on);
                         true
                     }
                     None => false,

@@ -22,6 +22,7 @@ pub mod engine_room;
 pub mod extinguisher;
 pub mod fire;
 pub mod look_samples;
+pub mod mask;
 pub mod hazards;
 pub mod item_table;
 pub mod reactor;
@@ -145,6 +146,7 @@ pub fn plugin(app: &mut App) {
     app.add_plugins(reactor_screen::plugin);
     app.add_plugins(fire::plugin);
     app.add_plugins(extinguisher::plugin);
+    app.add_plugins(mask::plugin);
 }
 
 pub fn window_plugin(app: &mut App) {

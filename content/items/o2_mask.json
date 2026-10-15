@@ -1,0 +1,14 @@
+{
+  "_comment": "The breathing mask (r38), after Barotrauma's diving mask and oxygen tank (divinggear.xml). Use toggles it on the face (keeps_on_use: the use takes nothing). Its condition is the tank: it drains while worn and the O2 shelf refills it. Rates: crates/health_core/src/mask.rs. TODO(initiator): shape, mass, colour, the face's look.",
+  "id": "o2_mask",
+  "name": "O2 Mask",
+  "code": "MSK",
+  "take": "collect",
+  "hands": 1,
+  "stack": 1,
+  "use": "wear_mask",
+  "keeps_on_use": true,
+  "tags": ["mask", "tool"],
+  "condition": true,
+  "shape": { "extents": [0.22, 0.2, 0.18], "mass": 1.2, "colour": [0.2, 0.35, 0.85] }
+}

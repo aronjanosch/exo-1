@@ -52,6 +52,8 @@ pub enum Doing {
     Spraying,
     Reviving(PlayerId),
     Refilling,
+    /// The mask is on the face.
+    Masked,
 }
 
 /// A player's status for the others: burning, down (waiting for the respawn), unconscious

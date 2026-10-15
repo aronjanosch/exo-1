@@ -45,6 +45,9 @@ pub struct ItemDef {
     /// Seconds the use takes while LMB is held; None: the use is instant.
     #[serde(default)]
     pub use_s: Option<f64>,
+    /// The use keeps the item in its slot (the mask toggles on and off); otherwise one is used up.
+    #[serde(default)]
+    pub keeps_on_use: bool,
     #[serde(default)]
     pub tags: Vec<String>,
     /// Wears: its condition (0..100 %) starts at 100 and what it does can run it down.

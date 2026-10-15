@@ -2,7 +2,8 @@
 //! the pump screen says EMPTY, the flow stops and the temperature climbs. The walker takes a
 //! canister from the corridor rack (a stack of three), holds LMB on the pump for 3 s with it in the
 //! selected slot: the tank gains a canister's worth, one canister is gone, the flow comes back.
-//! Without a window; the walker is set down at each place (test setup).
+//! Without a window; the walker is set down at each place (test setup). #300 r24: then E-COOL on
+//! the pump takes its tank cost and starts the cooldown.
 use super::*;
 use crate::controls::Controls;
 use crate::dev_area::coolant::{CoolantHold, HOLD_S, RACK_AT};
@@ -152,5 +153,26 @@ pub(super) fn coolant_steps(s: &mut Vec<Step>) {
         let n = items(w).client.view.count("coolant_canister");
         check(c, n == 2, format!("coolant: two canisters are left ({n})"));
         Some(format!("{n} left"))
+    }));
+    // E-COOL (#300 r24): the press takes the tank cost at once and starts the cooldown, which the
+    // pump's mode row shows. Asked as the button sends it (the host's ask).
+    s.push(run("coolant: E-COOL takes its tank cost and starts the cooldown", 3.0, |w, c| {
+        if c.t == 0.0 {
+            c.v.insert("tank", tank(w));
+            w.resource_mut::<Items>().ask_reactor(ReactorAsk::EmergencyCool);
+            return None;
+        }
+        if c.t < 0.5 {
+            return None;
+        }
+        let (before, now) = (c.v["tank"], tank(w));
+        let (cost, ready) = {
+            let room = &w.resource::<ReactorSim>().room;
+            (room.tuning().ecool_tank_cost, room.ecool_ready_in_s())
+        };
+        // The coolant use of the half second is taken off too: a tolerance of a point.
+        check(c, (before - now - cost).abs() < 1.0, format!("coolant: E-COOL takes {cost} % of the tank ({before:.1} -> {now:.1})"));
+        check(c, ready > 80.0, format!("coolant: the cooldown runs ({ready:.1} s left)"));
+        Some(format!("tank {now:.0} %, ready in {ready:.0} s"))
     }));
 }

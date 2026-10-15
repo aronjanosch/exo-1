@@ -26,6 +26,7 @@ pub mod engine_room;
 pub mod extinguisher;
 pub mod fire;
 pub mod look_samples;
+pub mod medbay;
 pub mod mask;
 pub mod hazards;
 pub mod item_table;
@@ -33,6 +34,7 @@ pub mod reactor;
 pub mod reactor_screen;
 pub mod startup_screen;
 pub mod rods;
+pub mod science;
 pub mod status_monitor;
 pub mod storage;
 pub mod test_console;
@@ -156,6 +158,8 @@ pub fn plugin(app: &mut App) {
     app.add_plugins(mask::plugin);
     app.add_plugins(captain::plugin);
     app.add_plugins(storage::plugin);
+    app.add_plugins(science::plugin);
+    app.add_plugins(medbay::plugin);
 }
 
 pub fn window_plugin(app: &mut App) {

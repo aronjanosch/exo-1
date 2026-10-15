@@ -901,5 +901,19 @@
   "refusal.unknown_job": "no such mission",
   "refusal.not_offered": "that mission is not on offer",
   "refusal.not_active": "that mission is not active",
-  "refusal.too_many_active": "two missions are active already"
+  "refusal.too_many_active": "two missions are active already",
+  "effect.cooling.name": "Cooling",
+  "effect.breathy.name": "Breathy",
+  "commodity.frost_moss.name": "frost moss",
+  "commodity.bubble_kelp.name": "bubble kelp",
+  "lab.injected": [
+    "The dummy twitches: {effects} at {strength} %.",
+    "Straight in. The dummy now has {effects} ({strength} %).",
+    "Dose delivered: {effects}, {strength} % strong."
+  ],
+  "lab.injected_weak": [
+    "Shaky hand. Only {effects} at {strength} %.",
+    "Half of it went on the floor: {effects} at {strength} %.",
+    "Missed the good spot. {effects}, {strength} %."
+  ]
 }

@@ -29,6 +29,7 @@ production_core = { path = "crates/production_core" }
 display_core = { path = "crates/display_core" }
 item_core = { path = "crates/item_core" }
 health_core = { path = "crates/health_core" }
+container_core = { path = "crates/container_core" }
 fire_core = { path = "crates/fire_core" }
 device_core = { path = "crates/device_core" }
 reactor_core = { path = "crates/reactor_core" }

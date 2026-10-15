@@ -1,0 +1,311 @@
+//! container_core: cabinets, lockers and crates (#287). A container is a row of slots; each slot
+//! has a rule (stack cap, allowed and denied tags) and holds at most one stack of equal items.
+//! Access is open, locked, or needs a key tag that the user carries.
+//!
+//! Taken from Barotrauma: a stack is capped by the smaller of the slot's and the item's cap, slots
+//! filter items by tag lists, a container can be locked or need a carried key item, and the preset
+//! slot counts follow its cabinets and crates.
+//!
+//! Items are plain data with an optional payload `P` (a product, a syringe), chosen by the glue.
+//! Every operation either succeeds or hands everything back: nothing is lost or duplicated.
+use std::collections::BTreeSet;
+use std::fmt;
+
+use serde::{Deserialize, Serialize};
+
+pub mod presets;
+
+macro_rules! text_id {
+    ($($(#[$m:meta])* $name:ident;)*) => {$(
+        $(#[$m])*
+        #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+        #[serde(transparent)]
+        pub struct $name(pub String);
+
+        impl $name {
+            pub fn new(s: impl Into<String>) -> $name {
+                $name(s.into())
+            }
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(&self.0)
+            }
+        }
+    )*};
+}
+
+text_id! {
+    /// What an item is (`space_gauze`).
+    ItemKind;
+    /// A label on an item or a slot rule (`small`, `medical`, `id_card`).
+    Tag;
+}
+
+/// One item. Two items stack when they are equal in every field, payload included.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Item<P = ()> {
+    pub kind: ItemKind,
+    pub tags: BTreeSet<Tag>,
+    /// How many of it fit in one slot (at least 1).
+    pub max_stack: u32,
+    pub payload: Option<P>,
+}
+
+impl<P> Item<P> {
+    /// An item without payload. A `max_stack` of 0 counts as 1.
+    pub fn new(kind: &str, tags: &[&str], max_stack: u32) -> Item<P> {
+        Item { kind: ItemKind::new(kind), tags: tags.iter().map(|t| Tag::new(*t)).collect(), max_stack: max_stack.max(1), payload: None }
+    }
+
+    pub fn with_payload(mut self, p: P) -> Item<P> {
+        self.payload = Some(p);
+        self
+    }
+
+    pub fn has_tag(&self, t: &Tag) -> bool {
+        self.tags.contains(t)
+    }
+}
+
+/// A number of equal items. Outside a container a stack may be larger than one slot holds.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Stack<P = ()> {
+    pub item: Item<P>,
+    pub count: u32,
+}
+
+impl<P: Clone> Stack<P> {
+    pub fn new(item: Item<P>, count: u32) -> Stack<P> {
+        Stack { item, count }
+    }
+
+    /// Splits off `n` (at most all): the part and the rest, if any is left.
+    pub fn split(self, n: u32) -> (Stack<P>, Option<Stack<P>>) {
+        let n = n.min(self.count);
+        let rest = (n < self.count).then(|| Stack { item: self.item.clone(), count: self.count - n });
+        (Stack { item: self.item, count: n }, rest)
+    }
+}
+
+/// What a slot takes: an item with any `allow` tag (empty: anything) and no `deny` tag.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlotRule {
+    pub max_stack: u32,
+    pub allow: BTreeSet<Tag>,
+    pub deny: BTreeSet<Tag>,
+}
+
+impl SlotRule {
+    /// A slot that takes anything, up to `max_stack` per stack.
+    pub fn any(max_stack: u32) -> SlotRule {
+        SlotRule { max_stack, allow: BTreeSet::new(), deny: BTreeSet::new() }
+    }
+
+    /// A slot that takes items with one of `allow` and none of `deny`.
+    pub fn tagged(max_stack: u32, allow: &[&str], deny: &[&str]) -> SlotRule {
+        SlotRule { max_stack, allow: allow.iter().map(|t| Tag::new(*t)).collect(), deny: deny.iter().map(|t| Tag::new(*t)).collect() }
+    }
+
+    pub fn accepts<P>(&self, item: &Item<P>) -> bool {
+        (self.allow.is_empty() || self.allow.iter().any(|t| item.has_tag(t))) && !self.deny.iter().any(|t| item.has_tag(t))
+    }
+
+    /// How many of `item` one stack in this slot holds.
+    pub fn cap<P>(&self, item: &Item<P>) -> u32 {
+        self.max_stack.min(item.max_stack)
+    }
+}
+
+/// Who may open the container.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Access {
+    Open,
+    /// Nobody, until unlocked.
+    Locked,
+    /// Whoever carries an item with this tag (an id card).
+    NeedsKey(Tag),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Refusal {
+    Locked,
+    NeedsKey(Tag),
+    /// No slot of the container takes this item.
+    NotAllowed,
+    /// The slots that take it are full.
+    Full,
+    NoSuchSlot,
+    EmptySlot,
+    /// A count of 0.
+    NothingToMove,
+}
+
+/// A refused insert: why, and the stack given back unchanged.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Refused<P = ()> {
+    pub why: Refusal,
+    pub stack: Stack<P>,
+}
+
+/// The fill state for a panel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Capacity {
+    pub slots: usize,
+    pub used_slots: usize,
+    /// Items in all stacks.
+    pub items: u32,
+}
+
+impl Capacity {
+    pub fn free_slots(&self) -> usize {
+        self.slots - self.used_slots
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Container<P = ()> {
+    rules: Vec<SlotRule>,
+    slots: Vec<Option<Stack<P>>>,
+    access: Access,
+}
+
+impl<P: Clone + PartialEq> Container<P> {
+    /// An empty container with one slot per rule.
+    pub fn new(rules: Vec<SlotRule>, access: Access) -> Container<P> {
+        let slots = vec![None; rules.len()];
+        Container { rules, slots, access }
+    }
+
+    /// Number of slots.
+    pub fn len(&self) -> usize {
+        self.slots.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.slots.iter().all(Option::is_none)
+    }
+
+    pub fn rule(&self, slot: usize) -> &SlotRule {
+        &self.rules[slot]
+    }
+
+    pub fn slot(&self, slot: usize) -> Option<&Stack<P>> {
+        self.slots.get(slot)?.as_ref()
+    }
+
+    pub fn access(&self) -> &Access {
+        &self.access
+    }
+
+    pub fn set_access(&mut self, a: Access) {
+        self.access = a;
+    }
+
+    /// Whether a user carrying items with the tags `carried` may open it.
+    pub fn check_access(&self, carried: &[Tag]) -> Result<(), Refusal> {
+        match &self.access {
+            Access::Open => Ok(()),
+            Access::Locked => Err(Refusal::Locked),
+            Access::NeedsKey(k) if carried.contains(k) => Ok(()),
+            Access::NeedsKey(k) => Err(Refusal::NeedsKey(k.clone())),
+        }
+    }
+
+    /// How many items of `kind` it holds.
+    pub fn count(&self, kind: &ItemKind) -> u32 {
+        self.slots.iter().flatten().filter(|s| &s.item.kind == kind).map(|s| s.count).sum()
+    }
+
+    pub fn capacity(&self) -> Capacity {
+        let used: Vec<&Stack<P>> = self.slots.iter().flatten().collect();
+        Capacity { slots: self.slots.len(), used_slots: used.len(), items: used.iter().map(|s| s.count).sum() }
+    }
+
+    /// Puts as much of `stack` in as fits: equal stacks are topped up first, then empty slots
+    /// take the rest, in slot order. Returns the part that did not fit (None: all went in). A
+    /// refusal means nothing went in and gives the stack back.
+    pub fn try_insert(&mut self, carried: &[Tag], stack: Stack<P>) -> Result<Option<Stack<P>>, Refused<P>> {
+        if let Err(why) = self.check_access(carried) {
+            return Err(Refused { why, stack });
+        }
+        if stack.count == 0 {
+            return Err(Refused { why: Refusal::NothingToMove, stack });
+        }
+        if !self.rules.iter().any(|r| r.accepts(&stack.item)) {
+            return Err(Refused { why: Refusal::NotAllowed, stack });
+        }
+        let mut left = stack.count;
+        for (rule, slot) in self.rules.iter().zip(self.slots.iter_mut()) {
+            if let Some(s) = slot
+                && s.item == stack.item
+                && rule.accepts(&s.item)
+            {
+                let n = left.min(rule.cap(&s.item).saturating_sub(s.count));
+                s.count += n;
+                left -= n;
+            }
+        }
+        for (rule, slot) in self.rules.iter().zip(self.slots.iter_mut()) {
+            if left == 0 {
+                break;
+            }
+            if slot.is_none() && rule.accepts(&stack.item) {
+                let n = left.min(rule.cap(&stack.item));
+                *slot = Some(Stack { item: stack.item.clone(), count: n });
+                left -= n;
+            }
+        }
+        match left {
+            0 => Ok(None),
+            n if n == stack.count => Err(Refused { why: Refusal::Full, stack }),
+            n => Ok(Some(Stack { item: stack.item, count: n })),
+        }
+    }
+
+    /// Takes up to `count` items out of one slot.
+    pub fn take(&mut self, carried: &[Tag], slot: usize, count: u32) -> Result<Stack<P>, Refusal> {
+        self.check_access(carried)?;
+        let cell = self.slots.get_mut(slot).ok_or(Refusal::NoSuchSlot)?;
+        let s = cell.take().ok_or(Refusal::EmptySlot)?;
+        if count == 0 {
+            *cell = Some(s);
+            return Err(Refusal::NothingToMove);
+        }
+        let (part, rest) = s.split(count);
+        *cell = rest;
+        Ok(part)
+    }
+
+    /// Puts a stack back into the slot it was just taken from (it fits there by construction).
+    fn put_back(&mut self, slot: usize, stack: Stack<P>) {
+        match &mut self.slots[slot] {
+            Some(s) => s.count += stack.count,
+            cell @ None => *cell = Some(stack),
+        }
+    }
+}
+
+/// Moves up to `count` items from one slot of `from` into `to`; what does not fit stays in its
+/// slot. Returns how many moved. The user needs access to both.
+pub fn move_between<P: Clone + PartialEq>(from: &mut Container<P>, to: &mut Container<P>, carried: &[Tag], slot: usize, count: u32) -> Result<u32, Refusal> {
+    to.check_access(carried)?;
+    let part = from.take(carried, slot, count)?;
+    let n = part.count;
+    match to.try_insert(carried, part) {
+        Ok(None) => Ok(n),
+        Ok(Some(left)) => {
+            let moved = n - left.count;
+            from.put_back(slot, left);
+            Ok(moved)
+        }
+        Err(r) => {
+            from.put_back(slot, r.stack);
+            Err(r.why)
+        }
+    }
+}

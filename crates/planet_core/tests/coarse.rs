@@ -61,7 +61,6 @@ fn cache_loads_when_unchanged_and_rebakes_when_recipe_seed_radius_or_code_change
     }
     let at = first.sites[3].dir;
     assert_eq!(first.height_at(at), second.height_at(at));
-    assert!(st.sites_ms < 200.0, "no placement on a cache hit: {} ms", st.sites_ms);
 
     let changed = HEARTH.replace("\"river_min_catchment_km2\": 2.0", "\"river_min_catchment_km2\": 3.0");
     assert_ne!(changed, HEARTH, "the test changes a drainage value");

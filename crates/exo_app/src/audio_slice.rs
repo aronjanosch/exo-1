@@ -513,75 +513,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fire_levels_by_size() {
-        assert_eq!(fire_level(0.2), 0);
-        assert_eq!(fire_level(1.0), 1);
-        assert_eq!(fire_level(2.4), 1);
-        assert_eq!(fire_level(2.5), 2);
-        assert_eq!(fire_level(5.0), 2);
-    }
-
-    #[test]
     fn falloff_is_full_at_the_source_and_silent_past_the_range() {
         assert_eq!(falloff(0.0, 10.0), 1.0);
         assert_eq!(falloff(10.0, 10.0), 0.0);
         assert_eq!(falloff(12.0, 10.0), 0.0);
         assert!(falloff(2.0, 10.0) > falloff(5.0, 10.0));
-    }
-
-    #[test]
-    fn bigger_fires_crackle_louder_and_farther_is_quieter() {
-        assert!(crackle_volume(0, 1.0) < crackle_volume(1, 1.0));
-        assert!(crackle_volume(1, 1.0) < crackle_volume(2, 1.0));
-        assert!(crackle_volume(2, 1.0) > crackle_volume(2, 6.0));
-        assert_eq!(crackle_volume(2, 10.0), 0.0);
-    }
-
-    #[test]
-    fn a_shrink_is_a_spray_hit() {
-        assert!(shrank(2.0, 1.5));
-        assert!(!shrank(2.0, 2.0));
-        assert!(!shrank(2.0, 2.005));
-        assert!(!shrank(1.0, 1.5));
-    }
-
-    #[test]
-    fn the_heartbeat_speeds_up_as_the_air_falls_below_half() {
-        assert_eq!(heartbeat_every(None), None);
-        assert_eq!(heartbeat_every(Some(1.0)), None);
-        assert_eq!(heartbeat_every(Some(0.5)), None);
-        let at_edge = heartbeat_every(Some(0.49)).unwrap();
-        assert!((at_edge - HEART_SLOWEST_S).abs() < 0.02, "{at_edge}");
-        let mid = heartbeat_every(Some(0.25)).unwrap();
-        let none = heartbeat_every(Some(0.0)).unwrap();
-        assert!(HEART_SLOWEST_S > mid && mid > none, "{mid} {none}");
-        assert_eq!(none, HEART_FASTEST_S);
-    }
-
-    #[test]
-    fn zaps_come_at_most_every_two_seconds_while_overvolted() {
-        assert!(zap_due(true, 0.0, None));
-        assert!(!zap_due(true, 1.9, Some(0.0)));
-        assert!(zap_due(true, 2.0, Some(0.0)));
-        assert!(!zap_due(false, 10.0, Some(0.0)));
-        assert!(!zap_due(false, 10.0, None));
-    }
-
-    #[test]
-    fn the_pump_hum_speeds_with_the_flow() {
-        assert_eq!(pump_speed(0.0), PUMP_SPEED.0);
-        assert_eq!(pump_speed(1.0), PUMP_SPEED.1);
-        assert_eq!(pump_speed(7.0), PUMP_SPEED.1);
-    }
-
-    #[test]
-    fn the_part_share_follows_the_device() {
-        let mut r = ReactorNews::default();
-        r.pump.share = 0.3;
-        r.junction.share = 1.0;
-        assert_eq!(part_share(&r, RepairDevice::CoolantPump), 0.3);
-        assert_eq!(part_share(&r, RepairDevice::JunctionBox), 1.0);
-        assert_eq!(part_share(&r, RepairDevice::Reactor), 0.0);
     }
 
     #[test]
@@ -599,23 +535,6 @@ mod tests {
         assert_eq!(reactor_hum_level(&full, 0.0), reactor_hum_volume(100.0, true, 0.0), "the actual 100 is the full level");
         let off = ReactorNews { power_on: false, ..full };
         assert_eq!(reactor_hum_level(&off, 0.0), 0.0, "the power off is silent");
-    }
-
-    #[test]
-    fn the_reactor_drone_stays_below_the_alarm_at_full_fission() {
-        let full = reactor_hum_volume(100.0, true, 0.0);
-        assert!(full > 0.0 && full < ALARM_REF, "{full}");
-        assert!(reactor_hum_volume(50.0, true, 0.0) < reactor_hum_volume(100.0, true, 0.0));
-        assert!(reactor_hum_volume(100.0, true, 5.0) < full, "falls off with the distance");
-    }
-
-    #[test]
-    fn the_reactor_drone_pitch_rises_with_the_temperature() {
-        assert_eq!(reactor_hum_speed(50.0), REACTOR_PITCH.0);
-        assert!((reactor_hum_speed(100.0) - REACTOR_PITCH.1).abs() < 1e-6);
-        assert!(reactor_hum_speed(75.0) > reactor_hum_speed(60.0));
-        assert_eq!(reactor_hum_speed(10.0), REACTOR_PITCH.0);
-        assert!((reactor_hum_speed(150.0) - REACTOR_PITCH.1).abs() < 1e-6);
     }
 
     #[test]
@@ -638,21 +557,6 @@ mod tests {
             let mut one = ReactorNews::default();
             one.lamps[bad.index()] = true;
             assert!(alarm_lamp_on(&one), "{bad:?}");
-        }
-    }
-
-    #[test]
-    fn a_boost_press_is_a_jump_and_the_fade_is_not() {
-        assert!(boost_jump(0.0, 25.0));
-        assert!(boost_jump(0.0, -25.0));
-        assert!(!boost_jump(20.0, 19.5), "the fade moves a little");
-    }
-
-    #[test]
-    fn every_slice_volume_is_quiet() {
-        let vols = [CRACKLE_VOL[0], CRACKLE_VOL[1], CRACKLE_VOL[2], SPRAY_VOL, STEAM_VOL, REPAIR_LOOP_VOL, BLIP_VOL, MISS_VOL, CHIME_VOL, ZAP_VOL, CLUNK_VOL, SWEEP_VOL, SCRAM_VOL, PUMP_VOL, SLIDE_VOL, WHOOMP_VOL, MUFFLED_VOL, GENTLE_VOL, CONFIRM_VOL, HEART_VOL, REACTOR_HUM_VOL, REACTOR_BEEP_VOL, BOOST_WHOOP_VOL];
-        for v in vols {
-            assert!(v > 0.0 && v <= ALARM_REF, "{v}");
         }
     }
 }

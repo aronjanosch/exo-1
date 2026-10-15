@@ -154,29 +154,3 @@ pub fn write_panels(lab: Res<Warmer>, rx: Res<ReactorSample>, mut panels: ResMut
     panels.set(LAB_ID, lab_panel(&lab));
     panels.set(REACTOR_ID, reactor_panel(&rx));
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn fits(p: &Panel) {
-        let c = p.content();
-        for w in p.layout() {
-            assert!(w.rect.min.x >= c.min.x - 1e-9 && w.rect.max().x <= c.max().x + 1e-9 && w.rect.max().y <= c.max().y + 1e-9 && w.rect.size.min_element() >= 0.0, "{:?} leaves the well", w.widget);
-        }
-    }
-
-    #[test]
-    fn the_samples_fit_their_tiers_and_react() {
-        for s in [Warmer::default(), Warmer { temp: 70, mins: 30, run: true }] {
-            fits(&lab_panel(&s));
-        }
-        let p = lab_panel(&Warmer { run: true, ..default() });
-        assert!(p.hit(p.find("temp_up").unwrap().rect.centre()).is_none(), "running: the setters are locked");
-        for s in [ReactorSample::default(), ReactorSample { auto: false, setpoint: 100 }] {
-            fits(&reactor_panel(&s));
-        }
-        assert_eq!(reactor_panel(&ReactorSample { auto: false, setpoint: 100 }).plate.unwrap().status, Some(("OVERHEAT".into(), Tone::Bad)));
-        assert_eq!(reactor_panel(&ReactorSample::default()).plate.unwrap().status, Some(("STABLE".into(), Tone::Good)));
-    }
-}

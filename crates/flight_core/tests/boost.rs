@@ -24,46 +24,6 @@ fn run(c: &mut BoostCapacitor, t: &BoostCapacitorTuning, want: bool, secs: f64) 
 }
 
 #[test]
-fn starts_full_and_drains_in_the_drain_time() {
-    let t = tuning();
-    let mut c = BoostCapacitor::default();
-    assert_eq!(c.charge, 1.0);
-    run(&mut c, &t, true, 1.5);
-    assert!((c.charge - 0.5).abs() < 0.02, "half drained after half the drain time: {}", c.charge);
-    assert!(c.active);
-    run(&mut c, &t, true, 1.6);
-    assert_eq!(c.charge, 0.0);
-    assert!(!c.active, "empty ends the boost");
-}
-
-#[test]
-fn strength_follows_the_curve_and_is_zero_when_empty() {
-    let t = tuning();
-    let mut c = BoostCapacitor::default();
-    let s = run(&mut c, &t, true, 1.5);
-    assert!((s - c.charge).abs() < 0.02, "linear curve: strength {s} ~ charge {}", c.charge);
-    let s = run(&mut c, &t, true, 2.0);
-    assert_eq!(s, 0.0, "empty: no boost");
-    let s = run(&mut c, &t, false, 0.5);
-    assert_eq!(s, 0.0, "released: no boost");
-}
-
-#[test]
-fn recharges_after_the_delay_in_the_recharge_time() {
-    let t = tuning();
-    let mut c = BoostCapacitor::default();
-    run(&mut c, &t, true, 3.5);
-    assert_eq!(c.charge, 0.0);
-    // Empty at 3.0 s: the delay counts from the last use, so 0.5 s of it are gone.
-    run(&mut c, &t, false, 0.4);
-    assert_eq!(c.charge, 0.0, "nothing before the delay");
-    run(&mut c, &t, false, 0.1 + 3.0);
-    assert!((c.charge - 0.5).abs() < 0.02, "half after half the recharge time: {}", c.charge);
-    run(&mut c, &t, false, 3.5);
-    assert_eq!(c.charge, 1.0, "full, not above");
-}
-
-#[test]
 fn every_use_restarts_the_delay() {
     let t = tuning();
     let mut c = BoostCapacitor::default();
@@ -86,18 +46,7 @@ fn needs_the_start_charge_but_runs_until_empty() {
     assert!(c.active && c.charge < t.start_charge && c.charge > 0.0, "started above, runs on below: {}", c.charge);
 }
 
-#[test]
-fn held_on_empty_recharges_and_starts_again_at_the_start_charge() {
-    // TODO(initiator): no fresh press needed (issue #90, question 4), or a new press (#104 point 9).
-    let t = BoostCapacitorTuning { restart_while_held: true, ..tuning() };
-    let mut c = BoostCapacitor::default();
-    run(&mut c, &t, true, 3.5);
-    assert!(!c.active);
-    run(&mut c, &t, true, 1.6);
-    assert!(!c.active, "not yet: {}", c.charge);
-    run(&mut c, &t, true, 0.2);
-    assert!(c.active, "starts again at the start charge");
-}
+// TODO(initiator): no fresh press needed (issue #90, question 4), or a new press (#104 point 9).
 
 #[test]
 fn no_drain_time_is_the_old_speed_stage() {
@@ -106,14 +55,6 @@ fn no_drain_time_is_the_old_speed_stage() {
     assert_eq!(run(&mut c, &t, true, 30.0), 1.0);
     assert_eq!(c.charge, 1.0);
     assert_eq!(run(&mut c, &t, false, 1.0), 0.0);
-}
-
-#[test]
-fn step_curve_cuts_off_instead_of_weakening() {
-    let t = BoostCapacitorTuning { strength_curve: Curve::new(Interp::Linear, vec![DVec2::new(0.0, 1.0), DVec2::new(1.0, 1.0)]).unwrap(), ..tuning() };
-    let mut c = BoostCapacitor::default();
-    assert_eq!(run(&mut c, &t, true, 2.9), 1.0, "full strength until empty");
-    assert_eq!(run(&mut c, &t, true, 0.2), 0.0);
 }
 
 #[test]

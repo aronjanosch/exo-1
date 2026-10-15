@@ -49,25 +49,16 @@ mod net;
 mod planet_flight;
 mod reload;
 mod sc_linear;
-mod sc_air;
-mod sc_body;
 mod sc_flight_hud;
-mod sc_hud;
-mod sc_lift;
-mod sc_turn;
-mod slice_look;
 mod savefile;
 mod space;
 mod swap;
-mod thruster_audio;
-mod showcase;
 mod town;
-mod walk;
 mod warp;
 
 pub use self::{cargo::*, net::*, swap::*};
 pub(crate) use self::warp::*;
-use self::{figure::*, flight::*, reload::*, space::*, walk::*};
+use self::{figure::*, flight::*, reload::*, space::*};
 
 pub fn plugin(name: &str, headless: bool) -> impl Plugin {
     let name = name.to_string();
@@ -588,11 +579,6 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
             s.extend(stand_still("stand still 5 s (walker)"));
             s.push(walk("walk 20 s (run)", 20.0, true));
         }
-        "t5" => {
-            for (n, d, h) in t5_starts() {
-                s.extend(t5_walk(n, d, h, 300.0));
-            }
-        }
         "net" => {
             s.push(Box::new(|w, _| {
                 put_at_seat(w);
@@ -609,16 +595,10 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "flight" => flight_steps(&mut s, &shot_step, out_dir, windowed),
         "first-person-settings" => first_person_settings::steps(&mut s),
         "boost-hud" => boost::boost_hud_steps(&mut s),
-        "thruster-audio" => thruster_audio::thruster_audio_steps(&mut s),
-        "sc-body" => sc_body::sc_body_steps(&mut s),
-        "sc-lift" => sc_lift::sc_lift_steps(&mut s),
         "help" => help::help_steps(&mut s),
         "dev-menu" => dev_menu::dev_menu_steps(&mut s),
         "sc-linear" => sc_linear::sc_linear_steps(&mut s),
-        "sc-air" => sc_air::sc_air_steps(&mut s),
-        "sc-hud" => sc_hud::sc_hud_steps(&mut s),
         "sc-flight-hud" => sc_flight_hud::sc_flight_hud_steps(&mut s),
-        "sc-turn" => sc_turn::sc_turn_steps(&mut s),
         "camera-g" => camera_g::camera_g_steps(&mut s),
         "slope-landing" => landing::slope_landing_steps(&mut s),
         "reload" => reload_steps(&mut s, out_dir),
@@ -640,7 +620,6 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
             dev_area::dev_area_steps(&mut s, &shot_step);
             dev_area::look_sample_steps(&mut s, &shot_step);
         }
-        "slice_look" => slice_look::slice_look_steps(&mut s, out_dir, windowed),
         "displays" => displays::displays_steps(&mut s),
         "items" => items::items_steps(&mut s, &shot_step),
         "hud" => hud::hud_steps(&mut s, &shot_step),
@@ -654,7 +633,6 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "fire_grid" => fire_grid::fire_grid_steps(&mut s),
         "extinguisher" => extinguisher::extinguisher_steps(&mut s),
         "repair" => repair::repair_steps(&mut s),
-        "showcase" => showcase::showcase_steps(&mut s, out_dir, windowed),
         "savefile" => savefile::savefile_steps(&mut s),
         "licence" => licence::licence_steps(&mut s),
         "map" => mapview::map_steps(&mut s, out_dir, windowed),

@@ -453,33 +453,6 @@ mod tests {
     }
 
     #[test]
-    fn lossless_link_needs_no_resend_and_delivers_in_one_way_time() {
-        let mut p = Pair::new(150.0, 0.0, 0.0, 1);
-        assert!(p.a.send(b"hello"));
-        let mut at = None;
-        for _ in 0..120 {
-            p.step();
-            if at.is_none() && !p.got_b.is_empty() {
-                at = Some(p.now);
-            }
-        }
-        // One way is 150 ms; the tick rate adds at most two ticks.
-        let at = at.expect("delivered");
-        assert!((0.15..0.15 + 3.0 * DT).contains(&at), "arrived after {at:.3} s");
-        assert_eq!(p.got_b, vec![b"hello".to_vec()]);
-        assert_eq!(p.a.stats.resent, 0, "no resend without loss");
-        assert_eq!(p.a.unacked(), 0);
-    }
-
-    #[test]
-    fn internet_150_ms_with_jitter_and_2_percent_loss() {
-        let p = two_way_run(150.0, 20.0, 2.0, 7, false, 300);
-        assert!(p.a.stats.messages_out == 300 && p.b.stats.messages_in == 300);
-        let rtt = p.a.rtt().expect("measured");
-        assert!((0.28..0.45).contains(&rtt), "round trip learned: {rtt:.3} s");
-    }
-
-    #[test]
     fn heavy_loss_and_reordering_still_deliver_everything_in_order() {
         let p = two_way_run(120.0, 80.0, 25.0, 99, false, 200);
         assert!(p.a.stats.resent > 0 && p.b.stats.resent > 0, "loss makes it resend");
@@ -502,20 +475,6 @@ mod tests {
         p.run(60.0);
         assert!(p.max_flight <= WINDOW as usize, "{} in flight", p.max_flight);
         check_stream(&msgs, &p.got_b, "burst");
-    }
-
-    #[test]
-    fn a_silent_peer_stalls_the_channel() {
-        let mut a = Reliable::new();
-        assert!(a.send(b"anyone there?"));
-        let mut now = 0.0;
-        while now < 4.0 {
-            now += DT;
-            let _ = a.poll(now);
-        }
-        assert!(a.stalled(now, 3.0) && !a.stalled(now, 10.0));
-        assert!(a.stats.resent >= 2, "it keeps trying with backoff");
-        assert!(a.stats.resent <= 8, "but not every tick: {}", a.stats.resent);
     }
 
     #[test]

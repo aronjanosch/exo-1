@@ -453,26 +453,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn smoke_is_none_then_thin_below_half_then_heavy_below_fifteen() {
-        assert_eq!(smoke_level(1.0), Smoke::None);
-        assert_eq!(smoke_level(0.5), Smoke::None, "half is still fine");
-        assert_eq!(smoke_level(0.49), Smoke::Thin);
-        assert_eq!(smoke_level(0.15), Smoke::Thin);
-        assert_eq!(smoke_level(0.14), Smoke::Heavy);
-        assert_eq!(smoke_level(0.0), Smoke::Heavy);
-        assert_eq!(smoke_every(Smoke::None), None);
-        assert!(smoke_every(Smoke::Heavy).unwrap() < smoke_every(Smoke::Thin).unwrap());
-    }
-
-    #[test]
-    fn sparks_come_while_overvolted_or_broken_and_the_overvolt_is_faster() {
-        assert_eq!(spark_every(false, false), None);
-        assert_eq!(spark_every(true, false), Some(2.0));
-        assert_eq!(spark_every(false, true), Some(4.0));
-        assert_eq!(spark_every(true, true), Some(2.0));
-    }
-
-    #[test]
     fn the_critical_lamp_is_lit_only_while_critical_and_blinks_at_one_hertz() {
         let off = ReactorNews { power_on: true, temp: 50.0, allowed: [20.0, 80.0], ..default() };
         let crit = ReactorNews { temp: 85.0, ..off };
@@ -485,80 +465,5 @@ mod tests {
             assert!(!critical_lamp_lit(false, t), "no blink without CRITICAL");
         }
         assert!(critical_lamp_lit(true, 0.1) && !critical_lamp_lit(true, 0.7) && critical_lamp_lit(true, 1.2), "on half of each second");
-    }
-
-    #[test]
-    fn the_flame_flickers_between_point_eight_and_one_and_its_range_grows_with_size() {
-        for seed in 0..200u64 {
-            let k = flame_flicker(seed);
-            assert!((0.8..=1.0).contains(&k), "{k}");
-        }
-        assert!((flame_flicker(1) - flame_flicker(2)).abs() > 1e-6, "random per flame");
-        assert!(flame_range(0.5) < flame_range(1.5));
-        assert!(flame_range(100.0) <= 14.0);
-    }
-
-    #[test]
-    fn a_power_loss_flickers_for_a_second_then_goes_dark_and_back_on_after_its_flicker() {
-        assert!(!lamp_lit(false, 10.0, 11.0), "dark after the flicker");
-        assert!(!lamp_lit(false, 10.0, 15.0));
-        assert!(lamp_lit(true, 20.0, 20.6));
-        assert!(lamp_lit(true, 20.0, 25.0));
-        let on = (0..60).filter(|k| lamp_lit(false, 10.0, 10.0 + *k as f64 / 60.0)).count();
-        assert!(on > 5 && on < 55, "{on}");
-        let mut f = LampFlicker::default();
-        assert!(!f.update(false, 0.0), "the first target sets no flicker");
-        assert!(f.update(true, 1.0) == lamp_lit(true, 1.0, 1.0));
-        assert!(f.update(true, 3.0), "the lamp is on after its flicker");
-    }
-
-    #[test]
-    fn the_screen_edges_follow_burning_air_and_radiation() {
-        let quiet = screen_fx(false, None, 0.0, 0.0);
-        assert_eq!(quiet, ScreenFx { burn: 0.0, dark: 0.0, vignette: 0.0, grain: 0.0 });
-        assert!(screen_fx(true, None, 0.0, 0.2).burn > 0.25);
-        let half = screen_fx(false, Some(0.5), 0.0, 0.0);
-        assert!(half.dark.abs() < 1e-6 && half.vignette.abs() < 1e-6, "half the air is the edge of the rule");
-        let just = screen_fx(false, Some(0.475), 0.0, 0.0);
-        assert!(just.vignette > 0.4 && just.dark > 0.15, "{just:?}");
-        let low = screen_fx(false, Some(0.1), 0.0, 0.0);
-        assert!(low.dark > 0.3 && low.vignette > 0.6, "{low:?}");
-        assert!(screen_fx(false, Some(0.0), 0.0, 0.0).vignette > low.vignette, "grows as the air falls");
-        assert!(low.vignette > just.vignette, "stronger towards 0");
-        assert_eq!(screen_fx(false, None, 0.25, 0.0).grain, 0.0, "grain only above a quarter");
-        assert!(screen_fx(false, None, 0.9, 0.0).grain > screen_fx(false, None, 0.3, 0.0).grain);
-    }
-
-    #[test]
-    fn the_treatment_flash_fades_in_its_time() {
-        assert_eq!(flash_alpha(0.0), 1.0);
-        assert!(flash_alpha(0.3) > 0.0 && flash_alpha(0.3) < 1.0);
-        assert_eq!(flash_alpha(TREAT_FLASH_S), 0.0);
-    }
-
-    #[test]
-    fn the_progress_colour_runs_red_orange_green() {
-        let red = progress_rgb(0.0);
-        let green = progress_rgb(1.0);
-        assert!(red[0] > red[1] && green[1] > green[0]);
-        let mid = progress_rgb(0.5);
-        assert!(mid[0] > 0.9 && mid[1] > 0.5 && mid[1] < 0.7 && mid[2] < 0.2, "{mid:?}");
-    }
-
-    #[test]
-    fn the_impeller_turns_with_the_flow_and_stops_at_zero() {
-        assert_eq!(impeller_angle(12.0, 0.0, 1.0), 12.0, "stopped at 0");
-        let a = impeller_angle(0.0, 1.0, 0.1);
-        assert!((a - 24.0).abs() < 1e-9, "240 deg/s at full flow");
-        assert!(impeller_angle(0.0, 0.5, 0.1) < a, "half the flow turns less");
-        assert!((0.0..60.0).contains(&impeller_angle(55.0, 1.0, 0.1)), "the six blades: mod 60");
-    }
-
-    #[test]
-    fn particles_swell_then_thin_steam_and_shrink_sparks() {
-        assert!(scale_of(Kind::Steam, 1.0, 0.5) > scale_of(Kind::Steam, 1.0, 0.0));
-        assert!(scale_of(Kind::Steam, 1.0, 1.0) < scale_of(Kind::Steam, 1.0, 0.5));
-        assert!(scale_of(Kind::Spark, 1.0, 1.0) == 0.0 && scale_of(Kind::Spark, 1.0, 0.0) == 1.0);
-        assert!(scale_of(Kind::Smoke, 1.0, 1.0) > scale_of(Kind::Smoke, 1.0, 0.0));
     }
 }

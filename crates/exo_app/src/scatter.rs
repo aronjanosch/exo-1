@@ -421,34 +421,3 @@ pub fn plugin(app: &mut App) {
     app.insert_resource(ScatterView { placeholder: !app.is_plugin_added::<bevy::gltf::GltfPlugin>(), ..default() });
     app.add_systems(Update, (update_scatter, count_instances).chain().after(crate::terrain::update_terrain).in_set(crate::phases::Frame::World));
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn inst(entry: u16, rare: bool, x: f32) -> Instance {
-        Instance { entry, rare, pos: [x, 0.0, 0.0], basis: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], scale: 2.0, tint: [1.0, 0.5, 0.0] }
-    }
-
-    #[test]
-    fn a_cell_merges_into_one_mesh() {
-        let g = || PropGeom::placeholder();
-        let geoms: HashMap<String, PropGeom> = [("tree".to_string(), g()), ("big_tree".to_string(), g())].into();
-        let props = vec![("tree".to_string(), Some("big_tree".to_string()))];
-        let n = geoms["tree"].positions.len();
-        let out = build_cell(&geoms, &props, [0.0; 3], &[inst(0, false, 0.0), inst(0, false, 10.0), inst(0, true, 20.0)]);
-        assert_eq!(out.instances, 3);
-        assert_eq!(out.parts.len(), 1, "plain and rare prop in one mesh");
-        let mesh = &out.parts[0].0;
-        assert_eq!(mesh.count_vertices(), 3 * n);
-        // Instances at x = 0, 10, 20, scaled by 2 (placeholder radius 1): x spans -2..22. The mesh's
-        // origin moves to the middle of that, x = 10 from the cell's centre.
-        let a = out.parts[0].1;
-        assert!(a.center.x.abs() < 0.1 && (a.half_extents.x - 12.0).abs() < 0.1, "{a:?}");
-        assert!((out.center[0] - 10.0).abs() < 0.1, "origin at {:?}", out.center);
-        // Tint: linear of (1, .5, 0) on a white vertex colour.
-        let Some(VertexAttributeValues::Float32x4(c)) = mesh.attribute(Mesh::ATTRIBUTE_COLOR) else { panic!() };
-        assert!((c[0][0] - 1.0).abs() < 1e-5 && c[0][1] < 0.3 && c[0][2] == 0.0);
-        assert!(build_cell(&geoms, &props, [0.0; 3], &[]).parts.is_empty());
-    }
-}

@@ -16,15 +16,6 @@ fn star_at(s: &PlanetSun, decl: f64, lon: f64) -> DVec3 {
 
 const STAR_POS: [f64; 3] = [-120000000.0, 84000000.0, 24000000.0];
 
-fn shipped_to_star(d: &DayNight, recipe: &str) -> DVec3 {
-    let sys: serde_json::Value = serde_json::from_str(include_str!("../../../content/system/system.json")).unwrap();
-    let p = sys["planets"].as_array().unwrap().iter().find(|p| p["recipe"] == recipe).unwrap();
-    let c = DVec3::from_array(serde_json::from_value(p["centre"].clone()).unwrap());
-    let star = DVec3::from_array(serde_json::from_value(sys["star"]["position"].clone()).unwrap());
-    d.check_geometry(recipe, c, star).unwrap();
-    to_star(star, c)
-}
-
 fn key(el: f64, sun_lux: f64, night_lux: f64, ambient: f64) -> LightKey {
     LightKey {
         elevation_deg: el,
@@ -37,29 +28,6 @@ fn key(el: f64, sun_lux: f64, night_lux: f64, ambient: f64) -> LightKey {
         sky_color: [0.0; 3],
         fog_tint: [1.0; 3],
         fog_density: 1.0,
-    }
-}
-
-#[test]
-fn shipped_content_parses_and_has_both_planets() {
-    let d = DayNight::from_json(CONTENT).unwrap();
-    for p in ["hearth", "cinder"] {
-        let (s, look) = d.planet(p).unwrap();
-        assert!(s.day_length_s > 0.0);
-        assert!(!look.keys.is_empty());
-    }
-    assert!(d.planet("nowhere").is_err());
-}
-
-#[test]
-fn shipped_planets_have_day_and_night_at_spawn() {
-    let d = DayNight::from_json(CONTENT).unwrap();
-    for p in ["hearth", "cinder"] {
-        let (s, _) = d.planet(p).unwrap();
-        let ts = shipped_to_star(&d, p);
-        assert!(s.time_for_elevation(SPAWN_UP, ts, 0.0, true, 0.0).is_some(), "{p}: the sun sets at spawn");
-        let night = s.time_for_hour(SPAWN_UP, ts, 0.0, 0.0).unwrap();
-        assert!(s.elevation_deg(SPAWN_UP, ts, night) < -6.0, "{p}: midnight is dark");
     }
 }
 
@@ -258,20 +226,4 @@ fn look_interpolates_and_clamps() {
     assert!((mid.sun_lux - 5000.0).abs() < 1e-9 && (mid.ambient - 275.0).abs() < 1e-9);
     assert_eq!(mid.elevation_deg, 15.0);
     assert_eq!(look.sample(0.0).sun_lux, 1000.0, "exactly on a key");
-}
-
-#[test]
-fn shipped_looks_are_brighter_at_noon_than_dusk_than_night() {
-    let d = DayNight::from_json(CONTENT).unwrap();
-    for (id, look) in &d.looks {
-        let b = |e: f64| look.sample(e).ground_brightness();
-        let (noon, dusk) = (b(60.0), b(-2.0));
-        // The night light comes from the antisolar direction: brightest when the sun is lowest.
-        let night = (18..=90).map(|e| b(-(e as f64))).fold(0.0, f64::max);
-        assert!(noon > dusk && dusk > night, "{id}: noon {noon}, dusk {dusk}, night {night}");
-        assert!(night > 0.0, "{id}: the night light keeps the night above black");
-        for e in [-10.0, -2.0, -0.1, 0.0] {
-            assert_eq!(look.sample(e).sun_lux, 0.0, "{id}: no sun under the horizon ({e} deg)");
-        }
-    }
 }

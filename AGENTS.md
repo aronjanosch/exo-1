@@ -11,7 +11,7 @@ A co-op crew game in Rust with Bevy: friends run one walkable ship together, eac
 - Sparring partner first, implementer second.
 - The initiator decides design, balancing and system design. When a design gap appears, ask, or list the assumption and get a yes.
 - Build in small slices, one branch per feature.
-- Other games are inspiration and test material. Read their code and data; take over single mechanics, talents and values that make sense and reimplement them in our code so they fit, then tune by playtest. No whole files go into the game. Foreign models for side-by-side comparison live in `content/local/` (gitignored, never pushed). Add a short line for everything taken over to `docs/BORROWED.md` in the concept repo.
+- Other games are source material. Read their code and data, port or reimplement their mechanics, talents and values, mix them with our own ideas, then tune by playtest. The result is a new work. Add a short line for everything taken over to `docs/BORROWED.md` in the concept repo.
 
 **Spikes**: throwaway code on a `spike/<name>` branch, driven by a spike brief, never merged into `main`. Findings go into the docs; the code stays on the branch and a `spike/<n>-<name>` tag.
 
@@ -28,13 +28,13 @@ A co-op crew game in Rust with Bevy: friends run one walkable ship together, eac
 ## Agent loop
 
 - Tests run in three sizes; the initiator wants the long run only when a lot comes together:
-  - **A feature** is done when its own tests pass: `cargo test -p <crate>` for every crate it touches, and its scenario as `cargo ts scenario_<name>` (dynamic; `cargo test -p exo_app` builds static Bevy, 900 MB per binary).
+  - **A feature** is done when its own tests pass: `cargo test -p <crate>` for every crate it touches, and its scenario, where it has one, as `cargo ts scenario_<name>` (dynamic; `cargo test -p exo_app` builds static Bevy, 900 MB per binary).
   - **Merging a few features** (into a round branch or `main`) reruns the tests of those features on the merged branch, no full run.
   - **A big round** (a whole milestone or most of it) runs the full gate before it reaches `main`: `scripts/gate` (Linux and macOS; on Windows `cargo t` directly) runs `cargo t` (cargo-nextest, `mise install`, every workspace test and every headless scenario, about 50 s on a quiet machine, the whole CPU), one at a time on the machine. With it go the timing test `cargo t -P perf` on a quiet machine and `cargo check --workspace --all-targets` for the static build (GitHub CI is off, runner budget).
   Commands and scenario names: `README.md`, section "Run".
 - The app's integration tests are one binary (`crates/exo_app/tests/app/`): a new scenario test is a module there. Each extra file in `tests/` links Bevy again.
 - Several sessions at once (a lane each) or a playtest round across them: skill `exo-orchestrate`.
-- Every feature gets a scripted scenario that drives it through the `Controls` resource, so it can be tested without a window.
+- Test what breaks the game: a crash, a desync, a NaN, lost data (save, items), a broken rule (authority, reach, state machine), physics that blows up. A scripted scenario that drives the game through the `Controls` resource covers what crosses crates, without a window. Feel, tuning values, layout and config get no test: the initiator judges them in play, and a test that goes red on a change that plays better is deleted.
 - Bevy and Avian change their API in every release. Look up names and signatures in `~/.cargo/registry/src/*/` (`bevy*-<version>/`, `avian3d-<version>/`) and the Bevy examples there before you write code; trust the source over memory of older versions.
 
 ## Ask first
@@ -44,6 +44,7 @@ New dependencies, CI, `.cargo/`, `build.rs`, `unsafe`, networking, spawning proc
 ## Style
 
 - Simple look, best runtime performance. Assets we ship are original or CC0 (fonts may also be SIL OFL, with their `OFL.txt` beside them); foreign test material is listed in the concept repo's `docs/BORROWED.md`.
+- Comments give the reason a reader cannot see in the code (why, units, source). History lives in git and issues.
 - Invented names in content, tests and issues; no personal data.
 - This repo is public: issues, PRs and commits describe mechanics in our own words and point to the private concept repo for material from other games (configs, number tables, screenshots).
 - Goofy tone is a feature. The setting is a strange galaxy.

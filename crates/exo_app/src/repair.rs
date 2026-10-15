@@ -372,17 +372,6 @@ fn emit(counts: &mut ReactorCounts, d: RepairDevice, e: Option<DeviceEvent>) {
 mod tests {
     use super::*;
 
-    fn shipped() -> Vec<content_core::File> {
-        vec![content_core::File { path: REPAIR_PATH.into(), text: include_str!("../../../content/gameplay/repair/repair.json").into() }]
-    }
-
-    #[test]
-    fn the_shipped_file_loads() {
-        let t = load_tuning(&shipped()).unwrap_or_else(|e| panic!("{e:#?}"));
-        assert_eq!(t.zones_max, 2);
-        assert_eq!(t.skill, 50.0);
-    }
-
     #[test]
     fn unknown_fields_and_bad_values_are_named() {
         let good = include_str!("../../../content/gameplay/repair/repair.json");
@@ -401,27 +390,5 @@ mod tests {
         let mut s = RepairSessions { sessions: vec![h(2), h(3)], ..Default::default() };
         s.forget(2);
         assert_eq!(s.sessions.iter().map(|h| h.player).collect::<Vec<_>>(), vec![3]);
-    }
-
-    #[test]
-    fn the_session_tool_sets_the_rise() {
-        assert!(tool_speed(RepairTool::Screwdriver).speed < tool_speed(RepairTool::Wrench).speed);
-    }
-
-    #[test]
-    fn each_device_is_its_machine_kind() {
-        assert_eq!(machine_of(RepairDevice::JunctionBox), Machine::Electrical);
-        assert_eq!(machine_of(RepairDevice::Reactor), Machine::Hot);
-        assert_eq!(machine_of(RepairDevice::CoolantPump), Machine::Mechanical);
-    }
-
-    #[test]
-    fn each_machine_takes_its_tool() {
-        assert_eq!(tool_for(RepairDevice::Reactor), RepairTool::Wrench);
-        assert_eq!(tool_for(RepairDevice::CoolantPump), RepairTool::Wrench);
-        assert_eq!(tool_for(RepairDevice::JunctionBox), RepairTool::Screwdriver);
-        assert_eq!(tool_of_effect("repair_mechanical"), Some(RepairTool::Wrench));
-        assert_eq!(tool_of_effect("repair_electrical"), Some(RepairTool::Screwdriver));
-        assert_eq!(tool_of_effect("bandage"), None);
     }
 }

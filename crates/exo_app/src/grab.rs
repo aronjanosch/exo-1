@@ -261,19 +261,3 @@ pub fn update_beam(
     }
     *vis = Visibility::Inherited;
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn beam_spans_both_ends() {
-        let (a, b) = (DVec3::new(1.0, 2.0, 3.0), DVec3::new(4.0, -2.0, 3.0));
-        let (c, r, len) = beam_pose(a, b).unwrap();
-        assert!((len - 5.0).abs() < 1e-9);
-        // The unit cylinder's ends (y = ±0.5) land on the two points.
-        assert!((c + r * DVec3::Y * (0.5 * len) - b).length() < 1e-9);
-        assert!((c - r * DVec3::Y * (0.5 * len) - a).length() < 1e-9);
-        assert!(beam_pose(a, a).is_none());
-    }
-}

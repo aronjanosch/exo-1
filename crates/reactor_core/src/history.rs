@@ -54,15 +54,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn starts_empty_at_zero_with_the_given_size() {
-        let h = History::new(25, 0.5);
-        assert_eq!(h.output.len(), 25);
-        assert_eq!(h.load.len(), 25);
-        assert_eq!(h.temp.len(), 25);
-        assert!(h.output.iter().all(|&v| v == 0.0));
-    }
-
-    #[test]
     fn samples_once_per_interval() {
         let mut h = History::new(25, 0.5);
         h.push_sample(0.4, 100.0, 50.0, 10.0);

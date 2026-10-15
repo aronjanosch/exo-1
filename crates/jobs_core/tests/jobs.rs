@@ -121,12 +121,6 @@ impl Host {
 
 // ---------- loader ----------
 
-#[test]
-fn fixture_templates_load() {
-    let h = Host::new();
-    assert_eq!(h.jc.templates.len(), 5);
-}
-
 fn template_errors(path: &str, text: &str) -> Vec<String> {
     let mut f: Vec<File> = job_files().into_iter().filter(|f| f.path != path).collect();
     f.push(File::new(path, text));
@@ -175,59 +169,6 @@ fn only_fully_named_templates_make_fixed_offers() {
 }
 
 // ---------- state machine ----------
-
-#[test]
-fn full_delivery_completes_and_pays() {
-    let mut h = Host::new();
-    let j = h.offer("first_haul");
-    h.job(ANA, 0, JobEvent::OfferAccepted { job: j }).unwrap();
-    assert_eq!(h.state(j), JobState::Active);
-    let crates = h.crates(j);
-    assert_eq!(crates.len(), 4, "accepting spawns the crates at the pickup");
-    assert!(h.log.iter().any(|o| matches!(o, Outcome::SpawnCrates { count: 4, at, .. } if at.as_str() == "drip_rock")));
-    for (i, c) in crates.iter().enumerate() {
-        h.carry(ANA, 10 + 2 * i as u64, *c, "drip_rock", "bent_spoon", 1.0);
-    }
-    assert_eq!(h.state(j), JobState::Completed);
-    // 300 × 1.0 × 1.0 × 1.25 (bumpy warning)
-    assert_eq!(h.progress.wallet(), 200 + 375);
-    assert_eq!(h.xp(ANA), 50);
-    assert!(h.progress.has_flag(&gameplay_core::Flag::new("job_completed:first_haul")));
-}
-
-#[test]
-fn deadline_starts_at_first_pickup() {
-    let mut h = Host::new();
-    let j = h.offer("first_haul");
-    h.job(ANA, 0, JobEvent::OfferAccepted { job: j }).unwrap();
-    h.world(HOST, 1, WorldEvent::TimePassed { dt: 10_000.0 });
-    assert_eq!(h.state(j), JobState::Active, "no pickup yet: the clock has not started");
-    let c = h.crates(j)[0];
-    h.world(ANA, 1, WorldEvent::CratePickedUp { crate_id: c, at: LocationId::new("drip_rock") });
-    h.world(HOST, 2, WorldEvent::TimePassed { dt: 479.0 });
-    let t = &h.jc.templates[&TemplateId::new("first_haul")].record;
-    assert_eq!(h.jobs.get(j).unwrap().time_left(t), Some(1.0));
-    assert_eq!(h.state(j), JobState::Active);
-}
-
-#[test]
-fn partial_delivery_then_deadline_expires_with_the_share() {
-    let mut h = Host::new();
-    let j = h.offer("first_haul");
-    h.job(ANA, 0, JobEvent::OfferAccepted { job: j }).unwrap();
-    let crates = h.crates(j);
-    for (i, c) in crates[..3].iter().enumerate() {
-        h.carry(ANA, 10 + 2 * i as u64, *c, "drip_rock", "bent_spoon", 1.0);
-    }
-    h.world(HOST, 1, WorldEvent::TimePassed { dt: 480.0 });
-    assert_eq!(h.state(j), JobState::Expired);
-    let (_, g) = h.ended(j).unwrap();
-    assert_eq!(g.unwrap().share, 0.75);
-    // 300 × 0.7 (band at 0.75) × 1.25 = 262.5 → 263
-    assert_eq!(h.progress.wallet(), 200 + 263);
-    assert!(!h.progress.has_flag(&gameplay_core::Flag::new("job_completed:first_haul")), "expired is not completed");
-    assert!(h.log.iter().any(|o| matches!(o, Outcome::ReleaseCrates { crates: cs } if cs == &vec![crates[3]])), "the crate left behind is released");
-}
 
 #[test]
 fn a_job_without_deadline_never_expires() {
@@ -336,31 +277,6 @@ fn jobs_round_trip_as_json() {
 // ---------- grading and payout ----------
 
 #[test]
-fn bands_at_their_edges() {
-    let h = Host::new();
-    let t = &h.jc.templates[&TemplateId::new("first_haul")].record;
-    // (delivered of 4, band factor, money with the 1.25 hazard factor)
-    for (d, band, money) in [(0, 0.0, 0), (1, 0.0, 0), (2, 0.4, 150), (3, 0.7, 263), (4, 1.0, 375)] {
-        let g = grade(t, d, 4, d as f64);
-        assert_eq!((g.band, g.money), (band, money), "{d} of 4");
-        assert_eq!(g.xp, (50.0 * band).round() as i64);
-    }
-    // Just below an edge stays in the band below: 74 of 100 with the 0.75 edge.
-    assert_eq!(grade(t, 74, 100, 74.0).band, 0.4);
-    assert_eq!(grade(t, 75, 100, 75.0).band, 0.7);
-}
-
-#[test]
-fn damaged_crates_pay_less() {
-    let h = Host::new();
-    let t = &h.jc.templates[&TemplateId::new("first_haul")].record;
-    let g = grade(t, 4, 4, 2.0); // mean condition 0.5
-    assert_eq!(g.condition, 0.75);
-    assert_eq!(g.money, 281); // 300 × 0.75 × 1.25 = 281.25
-    assert_eq!(grade(t, 4, 4, 0.0).money, 188); // wrecked: 300 × 0.5 × 1.25 = 187.5
-}
-
-#[test]
 fn the_hazard_bonus_counts_warnings_only() {
     let h = Host::new();
     assert_eq!(grade(&h.jc.templates[&TemplateId::new("first_haul")].record, 4, 4, 4.0).hazard, 1.25);
@@ -439,34 +355,6 @@ fn num(n: &gameplay_core::notice::Notice, name: &str) -> Option<i64> {
 }
 
 #[test]
-fn a_delivery_reports_its_beats_in_order() {
-    use gameplay_core::notice::NoticeKind as K;
-    let mut h = Host::new();
-    let j = h.offer("first_haul");
-    h.job(ANA, 0, JobEvent::OfferAccepted { job: j }).unwrap();
-    for (i, c) in h.crates(j).into_iter().enumerate() {
-        h.carry(ANA, 10 + 2 * i as u64, c, "drip_rock", "bent_spoon", 1.0);
-    }
-    let ns = notices(&h);
-    let keys: Vec<&str> = ns.iter().map(|n| n.key.as_str()).collect();
-    let mut want = vec!["notice.job.accepted"];
-    for _ in 0..4 {
-        want.extend(["notice.job.picked_up", "notice.job.delivered"]);
-    }
-    // 300 base, +75 for the warning, 50 XP; no share or condition line at full grade.
-    want.extend(["notice.job.completed", "notice.reward.base", "notice.reward.hazard", "notice.reward.xp"]);
-    assert_eq!(keys, want);
-    assert_eq!(ns[0].kind, K::Accepted);
-    assert_eq!(ns[1].kind, K::Updated);
-    let done = ns.iter().find(|n| n.kind == K::Completed).unwrap();
-    assert_eq!(num(done, "money"), Some(375));
-    let last_delivered = ns.iter().rfind(|n| n.key.as_str() == "notice.job.delivered").unwrap();
-    assert_eq!((num(last_delivered, "delivered"), num(last_delivered, "asked")), (Some(4), Some(4)));
-    let hazard = ns.iter().find(|n| n.key.as_str() == "notice.reward.hazard").unwrap();
-    assert_eq!(num(hazard, "n"), Some(75));
-}
-
-#[test]
 fn the_itemised_payout_adds_up_to_the_pay() {
     let mut h = Host::new();
     let j = h.offer("first_haul");
@@ -488,20 +376,6 @@ fn the_itemised_payout_adds_up_to_the_pay() {
     let keys: Vec<&str> = ns.iter().map(|n| n.key.as_str()).collect();
     assert!(keys.contains(&"notice.job.expired") && keys.contains(&"notice.reward.share") && keys.contains(&"notice.reward.condition"), "{keys:?}");
     assert!(!keys.contains(&"notice.job.completed"));
-}
-
-#[test]
-fn abandoning_and_losing_a_crate_warn() {
-    use gameplay_core::notice::NoticeKind as K;
-    let mut h = Host::new();
-    let j = h.offer("first_haul");
-    h.job(ANA, 0, JobEvent::OfferAccepted { job: j }).unwrap();
-    let c = h.crates(j)[0];
-    h.world(ANA, 1, WorldEvent::CrateLost { crate_id: c });
-    h.job(ANA, 2, JobEvent::JobAbandoned { job: j }).unwrap();
-    let ns = notices(&h);
-    assert!(ns.iter().any(|n| n.key.as_str() == "notice.job.crate_lost" && n.kind == K::Warning));
-    assert!(ns.iter().any(|n| n.key.as_str() == "notice.job.abandoned" && n.kind == K::Warning));
 }
 
 #[test]

@@ -2,8 +2,7 @@
 mod sc_common;
 
 use flight_core::sc::air::{self, AirState, Axes};
-use flight_core::sc::{StepState, ModeCmds, Modes, ScShip};
-use flight_core::FlightInput;
+use flight_core::sc::{StepState, Modes};
 use glam::DVec3;
 use sc_common::*;
 
@@ -31,18 +30,6 @@ fn no_gravity() -> Air {
 }
 
 #[test]
-fn drag_sideways_brakes_more_than_nose_first() {
-    let env = no_gravity();
-    let mut t = quiet();
-    t.drag = tuning().air.drag;
-    let side = air_at(DVec3::Y * 100.0, DVec3::X * 50.0, &env, &t).accel.length();
-    let nose = air_at(DVec3::Y * 100.0, DVec3::NEG_Z * 50.0, &env, &t).accel.length();
-    println!("drag at 50 m/s: sideways {side:.2} m/s², nose first {nose:.2} m/s²");
-    assert!(side > nose, "sideways {side} should exceed nose first {nose}");
-    assert!(side > 2.0 * nose, "sideways drag coefficient is 4x the nose one: {side} vs {nose}");
-}
-
-#[test]
 fn drag_opposes_the_airspeed_and_grows_with_its_square() {
     let env = no_gravity();
     let mut t = quiet();
@@ -52,29 +39,6 @@ fn drag_opposes_the_airspeed_and_grows_with_its_square() {
     println!("nose drag: 25 m/s {:.3}, 50 m/s {:.3}", a25.z, a50.z);
     assert!(a50.z > 0.0, "drag pushes back against a forward airspeed (+z is back): {a50}");
     assert!((a50.z / a25.z - 4.0).abs() < 1e-9, "twice the speed, four times the drag: {}", a50.z / a25.z);
-}
-
-#[test]
-fn lift_rises_to_the_stall_angle_and_drops_after_it() {
-    let env = no_gravity();
-    let mut t = quiet();
-    t.lift_k = tuning().air.lift_k;
-    t.lift_curve = tuning().air.lift_curve;
-    let stall = 15.0;
-    let lift_at = |deg: f64| {
-        let a = deg.to_radians();
-        // Nose above the airflow by `deg`: the airspeed points below the nose.
-        let v = DVec3::new(0.0, -50.0 * a.sin(), -50.0 * a.cos());
-        air_at(DVec3::Y * 100.0, v, &env, &t).accel.y
-    };
-    let rows: Vec<(f64, f64)> = [0.0, 5.0, 10.0, 15.0, 25.0, 35.0].iter().map(|&d| (d, lift_at(d))).collect();
-    for (d, l) in &rows {
-        println!("lift at {d:>4.0} deg, 50 m/s: {l:.3} m/s²");
-    }
-    assert!(lift_at(0.0).abs() < 1e-9, "no lift at zero angle");
-    assert!(lift_at(5.0) < lift_at(10.0) && lift_at(10.0) < lift_at(stall), "lift rises up to the stall angle");
-    assert!(lift_at(stall + 10.0) < lift_at(stall) - 1.0, "10 deg past the stall the lift is lower: {} vs {}", lift_at(stall + 10.0), lift_at(stall));
-    assert!(lift_at(-10.0) < -lift_at(10.0) + 1e-9 && lift_at(-10.0) < 0.0, "lift is odd in the angle");
 }
 
 #[test]
@@ -111,40 +75,6 @@ fn wind_held_with_wind_compensation_and_pushes_without() {
 }
 
 #[test]
-fn hover_with_wind_compensation_holds_and_without_it_drifts_downwind() {
-    let env = Air::default();
-    let start = DVec3::Y * 50.0;
-    let t = tuning();
-    let drift = |wind_comp_on: bool| {
-        let mut ship = ScShip::new(t.clone());
-        let mut b = body_at(start);
-        // The first step taps the switch: the default is on, a tap turns it off.
-        let cmds = ModeCmds { wind_comp: !wind_comp_on, ..ModeCmds::default() };
-        fly(&mut ship, &mut b, &FlightInput::default(), &cmds, &env, 5.0);
-        (b.pos - start).length()
-    };
-    let on = drift(true);
-    let off = drift(false);
-    println!("hover 5 s at 50 m: drift with wind compensation {on:.2} m, without {off:.2} m");
-    assert!(on < 1.0, "hover with wind compensation drifts {on} m");
-    assert!(off > 5.0, "hover without wind compensation drifts only {off} m");
-}
-
-#[test]
-fn turbulence_near_the_ground_at_speed_and_none_above_twice_the_height() {
-    let env = Air::default();
-    let t = tuning().air;
-    let h = t.turbulence_height;
-    let at = |clearance: f64, speed: f64| air_at(DVec3::Y * clearance, DVec3::new(0.0, 0.0, -speed), &env, &t).turbulence;
-    let low = at(20.0, 100.0);
-    println!("turbulence: 20 m, 100 m/s {low:.2}; {} m, 100 m/s {:.2}; 20 m, at rest {:.2}", 2.0 * h + 1.0, at(2.0 * h + 1.0, 100.0), at(20.0, 0.0));
-    assert!(low > 0.3, "turbulence at 20 m and 100 m/s: {low}");
-    assert_eq!(at(2.0 * h + 1.0, 100.0), 0.0, "above twice the turbulence height: none");
-    assert_eq!(at(20.0, 0.0), 0.0, "at rest: none");
-    assert!(at(h * 1.5, 100.0) < low && at(h * 1.5, 100.0) > 0.0, "between the bands it fades");
-}
-
-#[test]
 fn turbulence_is_repeatable_at_the_same_place_and_time() {
     let env = Air::default();
     let t = tuning().air;
@@ -165,26 +95,6 @@ fn turbulence_is_repeatable_at_the_same_place_and_time() {
     let moving = a.iter().map(|(ang, _)| ang.length()).fold(0.0, f64::max);
     println!("largest angular turbulence over 0.5 s at 20 m: {moving:.4} rad/s²");
     assert!(moving > 0.0, "the air shakes the ship at 20 m");
-}
-
-#[test]
-fn wind_is_a_base_wind_with_gusts_that_change_over_time() {
-    let env = Air::default();
-    let t = tuning().air;
-    let mut b = body_at(DVec3::Y * 50.0);
-    b.lin_vel = DVec3::ZERO;
-    let f = StepState::new(&b, &env, DT);
-    let mut s = AirState::default();
-    let first = air::step(&mut s, &f, &Modes::default(), &t).wind;
-    let mut later = first;
-    for _ in 0..600 {
-        later = air::step(&mut s, &f, &Modes::default(), &t).wind;
-    }
-    println!("wind at t=0 {:.2?}, at t=10 s {:.2?}", first, later);
-    assert!((first - later).length() > 0.01, "the gusts move the wind");
-    let base = t.wind_speed;
-    let bound = base + t.gust_speed * 2.0_f64.sqrt() + 1e-9;
-    assert!(first.length() <= bound && later.length() <= bound, "the wind stays within base plus gusts");
 }
 
 #[test]

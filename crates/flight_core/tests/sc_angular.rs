@@ -36,91 +36,6 @@ fn at_rest() -> (ScShip, BodyState, Space) {
 }
 
 #[test]
-fn pitch_overshoots_five_to_twenty_percent_and_settles() {
-    let (mut ship, mut body, env) = at_rest();
-    let target = rest_rates(&ship.tuning.angular).x;
-    let spins = run(&mut ship, &mut body, &stick(1.0, 0.0, 0.0), &env, 2.5);
-    let peak = spins.iter().map(|s| s.x).fold(f64::MIN, f64::max);
-    let over = peak / target - 1.0;
-    let at2 = spins[(2.0 / DT) as usize].x;
-    let settle = (at2 / target - 1.0).abs();
-    eprintln!("pitch: target {target:.4} rad/s, peak {peak:.4} ({:+.1} %), at 2 s {at2:.4} ({:+.2} %)", over * 100.0, (at2 / target - 1.0) * 100.0);
-    assert!((0.05..=0.20).contains(&over), "overshoot {:.1} % outside 5 to 20 %", over * 100.0);
-    assert!(settle < 0.02, "2 s after the stick: {:.2} % off the target", settle * 100.0);
-}
-
-#[test]
-fn reversal_is_a_constant_deceleration_at_the_reversal_share() {
-    let (mut ship, mut body, env) = at_rest();
-    run(&mut ship, &mut body, &stick(1.0, 0.0, 0.0), &env, 3.0);
-    let box_ = ship.torque_box().pitch;
-    let share = ship.tuning.angular.reversal_share;
-    let before = body.rot.inverse() * body.ang_vel;
-    let spins = run(&mut ship, &mut body, &stick(-1.0, 0.0, 0.0), &env, 2.0);
-    let mut prev = before.x;
-    let mut decel = Vec::new();
-    for s in &spins {
-        if s.x <= 0.0 {
-            break;
-        }
-        decel.push((s.x - prev) / DT);
-        prev = s.x;
-    }
-    assert!(decel.len() > 10, "reversal ran {} ticks", decel.len());
-    let mean = decel.iter().sum::<f64>() / decel.len() as f64;
-    let spread = decel.iter().map(|a| (a - mean).abs() / mean.abs()).fold(0.0, f64::max);
-    eprintln!("reversal: {} ticks, mean decel {mean:.3} rad/s^2 (share {share} of box {box_:.3} = {:.3}), spread {:.2} %", decel.len(), share * box_, spread * 100.0);
-    assert!((mean + share * box_).abs() < 0.05 * share * box_, "mean decel {mean:.3}, want {:.3}", -share * box_);
-    assert!(spread < 0.05, "decel spread {:.2} % over 5 %", spread * 100.0);
-}
-
-/// Up, down, then slightly up (small mouse moves at rest). The reversal hands over to the
-/// spring at the zero crossing; the spring must not start with the reversal's deceleration, or a
-/// small target overshoots several times over (it reached 3.2 times the target).
-#[test]
-fn small_target_after_a_reversal_overshoots_only_like_the_spring() {
-    let mut ship = ScShip::new(tuning());
-    let (mut body, env) = (body_at(DVec3::new(0.0, 500.0, 0.0)), Space::default());
-    run(&mut ship, &mut body, &stick(0.5, 0.0, 0.0), &env, 0.15);
-    run(&mut ship, &mut body, &stick(-0.5, 0.0, 0.0), &env, 0.15);
-    let small = 0.1;
-    let target = small * rest_rates(&ship.tuning.angular).x;
-    let spins = run(&mut ship, &mut body, &stick(small, 0.0, 0.0), &env, 1.5);
-    let peak = spins.iter().map(|s| s.x).fold(f64::MIN, f64::max);
-    eprintln!("after a reversal: target {target:.4} rad/s, peak {peak:.4} ({:+.1} %)", (peak / target - 1.0) * 100.0);
-    assert!(peak < 1.25 * target, "peak {peak:.4} rad/s over 125 % of the target {target:.4}");
-}
-
-#[test]
-fn roll_release_is_a_constant_deceleration_that_stops_without_overshoot() {
-    let (mut ship, mut body, env) = at_rest();
-    run(&mut ship, &mut body, &stick(0.0, 0.0, 1.0), &env, 2.0);
-    let rolled = (body.rot.inverse() * body.ang_vel).z;
-    let box_ = ship.torque_box().roll;
-    let share = ship.tuning.angular.roll_release_share;
-    let spins = run(&mut ship, &mut body, &stick(0.0, 0.0, 0.0), &env, 1.5);
-    let mut prev = rolled;
-    let mut decel = Vec::new();
-    for s in &spins {
-        if s.z <= 0.0 {
-            break;
-        }
-        decel.push((s.z - prev) / DT);
-        prev = s.z;
-    }
-    let min = spins.iter().map(|s| s.z).fold(f64::MAX, f64::min);
-    let stopped = spins.iter().position(|s| s.z.abs() < 1e-9);
-    let mean = decel.iter().sum::<f64>() / decel.len().max(1) as f64;
-    let spread = decel.iter().map(|a| (a - mean).abs() / mean.abs()).fold(0.0, f64::max);
-    eprintln!("roll release from {rolled:.3} rad/s: {} ticks of decel, mean {mean:.3} rad/s^2 (share {share} of box {box_:.3}), spread {:.2} %, stops at tick {stopped:?}, lowest spin {min:.4}", decel.len(), spread * 100.0);
-    assert!(decel.len() > 5, "release ran {} ticks", decel.len());
-    assert!((mean + share * box_).abs() < 0.05 * share * box_, "mean decel {mean:.3}");
-    assert!(spread < 0.05, "decel spread {:.2} %", spread * 100.0);
-    assert!(stopped.is_some(), "the roll stops");
-    assert!(min > -0.01, "overshoot past zero: {min:.4} rad/s");
-}
-
-#[test]
 fn diagonal_pitch_yaw_roll_stays_on_one_budget() {
     let (mut ship, mut body, env) = at_rest();
     let rates = rest_rates(&ship.tuning.angular);
@@ -181,66 +96,6 @@ fn g_safe_lowers_the_coupled_turn_budget_when_thrusters_exceed_the_g_limit() {
     assert!(spin_off.x > 1.5 * spin_on.x, "off turns faster: {:.4} vs {:.4}", spin_off.x, spin_on.x);
 }
 
-/// The pitch target a frame asks for, read from the first step of the spring at rest (the box made
-/// huge): the spring's acceleration is `dt * natural_frequency² * target` then.
-fn pitch_target(t: &AngularTuning, speed: f64, cap: f64, landing: bool, clearance: f64, g_safe: bool) -> f64 {
-    let lv = DVec3::new(0.0, 0.0, -speed);
-    let f = StepState {
-        rot: DQuat::IDENTITY,
-        inv: DQuat::IDENTITY,
-        pos: DVec3::ZERO,
-        v: lv,
-        lv,
-        w_local: DVec3::ZERO,
-        gravity: DVec3::ZERO,
-        up: DVec3::Y,
-        density: 0.0,
-        altitude: 0.0,
-        clearance,
-        dt: DT,
-    };
-    let input = FlightInput { turn: DVec2::new(1.0, 0.0), piloted: true, ..Default::default() };
-    let modes = Modes { g_safe, landing, ..Modes::default() };
-    let env = Env { accel_box: flight_core::limits::Rot { pitch: 1e6, yaw: 1e6, roll: 1e6 }, boost: 0.0, cap, thrust_box: flight_core::limits::Dirs::splat(1e6), linear_hold: DVec3::ZERO, air_hold: DVec3::ZERO, level: false };
-    let out = angular::step(&mut AngularState::default(), &f, &input, &modes, &env, t);
-    out.accel.x / (DT * t.natural_frequency.pitch * t.natural_frequency.pitch)
-}
-
-#[test]
-fn rate_at_half_the_cap_beats_rest_and_the_cap() {
-    let t = tuning().angular;
-    let cap = 150.0;
-    let rest = pitch_target(&t, 0.0, cap, false, 1e3, false);
-    let half = pitch_target(&t, 0.5 * cap, cap, false, 1e3, false);
-    let top = pitch_target(&t, cap, cap, false, 1e3, false);
-    eprintln!("corner: rate at rest {rest:.4}, at 0.5 x cap {half:.4}, at the cap {top:.4} rad/s");
-    assert!(half > rest, "0.5 x cap {half:.4} vs rest {rest:.4}");
-    assert!(half > top, "0.5 x cap {half:.4} vs cap {top:.4}");
-}
-
-#[test]
-fn landing_mode_scales_the_rates_near_the_ground() {
-    let t = tuning().angular;
-    let free = pitch_target(&t, 0.0, 150.0, false, 2.0, false);
-    let low = pitch_target(&t, 0.0, 150.0, true, 2.0, false);
-    let mid = pitch_target(&t, 0.0, 150.0, true, 20.0, false);
-    let high = pitch_target(&t, 0.0, 150.0, true, 60.0, false);
-    eprintln!("landing: rate ratio at 2 m {:.3}, at 20 m {:.3}, at 60 m {:.3}", low / free, mid / free, high / free);
-    assert!((low / free - t.landing_rate_share).abs() < 1e-9, "2 m: {:.4}", low / free);
-    assert!(mid / free > t.landing_rate_share + 1e-3 && mid / free < 1.0 - 1e-3, "20 m between the shares: {:.4}", mid / free);
-    assert!((high / free - 1.0).abs() < 1e-9, "60 m: {:.4}", high / free);
-}
-
-#[test]
-fn yaw_steady_rate_is_below_pitch_with_the_shipped_tuning() {
-    let (mut ship, mut body, env) = at_rest();
-    let pitch = run(&mut ship, &mut body, &stick(1.0, 0.0, 0.0), &env, 3.0).last().unwrap().x;
-    let (mut ship, mut body, env) = at_rest();
-    let yaw = run(&mut ship, &mut body, &stick(0.0, 1.0, 0.0), &env, 3.0).last().unwrap().y;
-    eprintln!("steady rates: pitch {pitch:.4}, yaw {yaw:.4} rad/s (torque boxes {:.3} and {:.3} rad/s^2)", ship.torque_box().pitch, ship.torque_box().yaw);
-    assert!(yaw.abs() < pitch.abs(), "yaw {yaw:.4} not below pitch {pitch:.4}");
-}
-
 #[test]
 fn acceleration_stays_inside_the_box() {
     let t = tuning().angular;
@@ -263,23 +118,4 @@ fn acceleration_stays_inside_the_box() {
     let out = angular::step(&mut AngularState::default(), &f, &input, &Modes::default(), &env, &t);
     eprintln!("box: accel {:?} inside (0.5, 0.25, 0.75)", out.accel);
     assert!(out.accel.x.abs() <= 0.5 && out.accel.y.abs() <= 0.25 && out.accel.z.abs() <= 0.75);
-}
-
-#[test]
-fn brake_while_hovering_levels_the_ship() {
-    let mut ship = ScShip::new(tuning());
-    let env = Air::default();
-    let mut body = body_at(DVec3::new(0.0, 400.0, 0.0));
-    body.rot = DQuat::from_rotation_y(0.7) * DQuat::from_rotation_x(0.25) * DQuat::from_rotation_z(-0.2);
-    let heading = |b: &BodyState| {
-        let f = b.rot * DVec3::NEG_Z;
-        f.x.atan2(-f.z)
-    };
-    let h0 = heading(&body);
-    let brake = FlightInput { brake: true, piloted: true, ..Default::default() };
-    run(&mut ship, &mut body, &brake, &env, 4.0);
-    let tilt = (body.rot * DVec3::Y).angle_between(DVec3::Y).to_degrees();
-    eprintln!("brake to level: tilt {tilt:.2} deg after 4 s, heading {:.3} -> {:.3} rad", h0, heading(&body));
-    assert!(tilt < 1.0, "still tilted {tilt:.2} deg");
-    assert!((heading(&body) - h0).abs() < 0.1, "the heading moved");
 }

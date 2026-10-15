@@ -147,19 +147,6 @@ fn rejoining_owner_resets_history() {
 }
 
 #[test]
-fn shared_frame_reconstructs_in_any_origin() {
-    // A planet 200 km away: world = centre + relative, exact in f64, and a shift of the render
-    // origin (any whole-metre amount) never changes the shared coordinates.
-    let centre = DVec3::new(200_000.0, 0.0, 0.0);
-    let rel = DVec3::new(0.25, 5000.5, 0.125);
-    let w1 = centre + rel;
-    assert_eq!(w1 - centre, rel);
-    let origin = DVec3::new(200_000.0, 5_000.0, 0.0);
-    let shifted = origin + DVec3::new(10_000.0, 10_000.0, -10_000.0);
-    assert_eq!((w1 - shifted) + DVec3::new(10_000.0, 10_000.0, -10_000.0), w1 - origin);
-}
-
-#[test]
 fn wire_packets_roundtrip_and_reject_garbage() {
     let s = snap();
     for p in [

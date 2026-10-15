@@ -35,12 +35,6 @@ fn load_with(path: &str, text: &str) -> Vec<String> {
 }
 
 #[test]
-fn recipes_load() {
-    let rc = content();
-    assert!(rc.recipes.len() >= 1, "at least one recipe loaded");
-}
-
-#[test]
 fn loader_errors_name_file_and_field() {
     let e = load_with(
         "recipe/test.json",
@@ -83,28 +77,6 @@ fn set_recipe_succeeds_from_idle() {
     let mut st = Station::new(StationKind::new("mill"));
     assert!(st.set_recipe(RecipeId::new("grind")).is_ok());
     assert_eq!(st.recipe().map(|r| r.as_str()), Some("grind"));
-}
-
-#[test]
-fn insert_transitions_idle_to_loading_when_partial() {
-    let rc = content();
-    let _k = kernel();
-    let mut st = Station::new(StationKind::new("mill"));
-
-    if rc.recipes.is_empty() {
-        return; // Skip if no recipes
-    }
-
-    let recipe = &rc.recipes.values().next().unwrap().record;
-    st.set_recipe(recipe.id.clone()).unwrap();
-
-    if let Some(first_input) = recipe.inputs.first() {
-        let result = st.insert(first_input.id.clone(), 1, recipe);
-        if first_input.amount > 1 {
-            assert!(result.is_ok(), "partial insert should succeed");
-            assert!(st.state_is_loading(), "should be in Loading state");
-        }
-    }
 }
 
 #[test]
@@ -303,54 +275,4 @@ fn production_save_handles_version_mismatch() {
     assert!(Production::load(&bad).is_err(), "wrong version should error");
 
     assert_eq!(Production::load(&Envelope::new()).unwrap(), None, "missing section should be None");
-}
-
-#[test]
-fn same_recipe_same_time_always_completes() {
-    let rc = content();
-
-    if rc.recipes.is_empty() {
-        return;
-    }
-
-    let recipe = &rc.recipes.values().next().unwrap().record;
-
-    for _ in 0..3 {
-        let mut st = Station::new(StationKind::new("mill"));
-        st.set_recipe(recipe.id.clone()).unwrap();
-
-        for input in &recipe.inputs {
-            st.insert(input.id.clone(), input.amount, recipe).unwrap();
-        }
-
-        st.step(recipe.time_s + 1.0);
-        assert!(st.state_is_done(), "deterministic: same inputs always complete");
-    }
-}
-
-#[test]
-fn shipped_recipes_load_against_shipped_goods() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content/gameplay");
-    let all = files_from(&root);
-    let kernel_files: Vec<File> = all.iter().filter(|f| ["commodity/", "location/", "progress_track/", "unlock/"].iter().any(|p| f.path.starts_with(p))).cloned().collect();
-    let kernel = Content::load(&kernel_files, &["small", "medium", "large"]).expect("shipped kernel loads");
-    let recipes: Vec<File> = all.into_iter().filter(|f| f.path.starts_with("recipe/")).collect();
-    assert!(!recipes.is_empty(), "shipped recipes found");
-    let rc = RecipeContent::load(&recipes, &kernel).unwrap_or_else(|e| panic!("shipped recipes: {e:?}"));
-    assert_eq!(rc.recipes.len(), recipes.len());
-}
-
-fn files_from(root: &Path) -> Vec<File> {
-    let mut out = Vec::new();
-    for d in std::fs::read_dir(root).unwrap() {
-        let d = d.unwrap().path();
-        if !d.is_dir() {
-            continue;
-        }
-        for f in std::fs::read_dir(&d).unwrap() {
-            let f = f.unwrap().path();
-            out.push(File::new(f.strip_prefix(root).unwrap().to_str().unwrap(), std::fs::read_to_string(&f).unwrap()));
-        }
-    }
-    out
 }

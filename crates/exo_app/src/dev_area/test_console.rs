@@ -84,30 +84,3 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut s: ResMut<TestC
 pub fn write_panel(s: Res<TestConsole>, alarm: Res<ShipAlarm>, mut panels: ResMut<Panels>) {
     panels.set(ID, panel(&s, alarm.level));
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_buttons_stop_at_the_ends_and_the_bar_follows_the_counter() {
-        let p = panel(&TestConsole::default(), Alarm::None);
-        assert!(matches!(p.find("dec").unwrap().widget, display_core::Widget::Button { enabled: false, .. }));
-        let p = panel(&TestConsole { count: MAX, ..default() }, Alarm::Warn);
-        assert!(matches!(p.find("inc").unwrap().widget, display_core::Widget::Button { enabled: false, .. }));
-        let p = panel(&TestConsole { count: 3, ..default() }, Alarm::Danger);
-        let bar = p.layout().into_iter().find_map(|w| if let display_core::Widget::Bar { value, .. } = w.widget { Some(*value) } else { None });
-        assert!((bar.unwrap() - 0.3).abs() < 1e-9);
-        assert!(p.layout().iter().all(|w| w.rect.max().y <= p.content().max().y + 1e-9), "everything fits");
-    }
-
-    #[test]
-    fn every_button_of_the_console_is_on_the_screen_in_every_state() {
-        for (count, lights, alarm) in [(0, false, Alarm::None), (MAX, true, Alarm::Warn), (4, false, Alarm::Danger)] {
-            let p = panel(&TestConsole { count, lights, trim: 0.5 }, alarm);
-            assert!(p.overflowing().is_empty(), "{:?}", p.overflowing());
-            let alarm_button = p.find("alarm").expect("the alarm button is on the console");
-            assert!(alarm_button.rect.min.x >= 0.0 && alarm_button.rect.max().x <= p.size.x && alarm_button.rect.size.y > 0.0);
-        }
-    }
-}

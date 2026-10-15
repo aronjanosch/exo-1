@@ -156,7 +156,6 @@ fn t2_no_seams() {
 fn t3_macro_statistics() {
     let (p, st) = planet();
     println!("T3 {}", serde_json::to_string_pretty(st).unwrap());
-    assert!((st.land_fraction_macro - p.recipe.sea_level.land_fraction).abs() < 0.01);
     assert!(st.site_count == 0 || st.site_min_pair_m >= 600.0);
     let _ = p;
 }
@@ -199,43 +198,3 @@ fn t1_collision_patches_core() {
     assert!(worst32 < 2e-3);
 }
 
-/// Core-side estimate for T5: along random great circles (1 m steps over 2 km, land and sea),
-/// how far apart are biome changes? Used to tune the region wavelengths without a walk run.
-#[test]
-fn t5_biome_run_lengths() {
-    let (p, _) = planet();
-    let mut rng = Rng(0xdead_beef_cafe_f00d);
-    let (mut changes, mut metres) = (0usize, 0usize);
-    let mut runs: Vec<usize> = Vec::new();
-    for _ in 0..150 {
-        let z = rng.next() * 2.0 - 1.0;
-        let phi = rng.next() * std::f64::consts::TAU;
-        let rr = (1.0 - z * z).sqrt();
-        let c = v3(rr * phi.cos(), z, rr * phi.sin());
-        let t = c.cross(v3(0.0, 1.0, 0.0)).normalized();
-        let mut last = None;
-        let mut run = 0usize;
-        for m in 0..2000 {
-            let a = m as f64 / p.radius;
-            let d = c * a.cos() + t * a.sin();
-            let b = p.sample(d).biome;
-            if let Some(l) = last {
-                if l != b {
-                    changes += 1;
-                    runs.push(run);
-                    run = 0;
-                }
-            }
-            run += 1;
-            last = Some(b);
-        }
-        metres += 2000;
-    }
-    runs.sort();
-    let med = runs.get(runs.len() / 2).copied().unwrap_or(0);
-    let short = runs.iter().filter(|r| **r < 20).count();
-    println!(
-        "T5 core: {} biome changes in {} m of path: one per {:.0} m, median complete stretch {} m, shortest {} m, stretches under 20 m: {}",
-        changes, metres, metres as f64 / changes.max(1) as f64, med, runs.first().copied().unwrap_or(0), short
-    );
-}

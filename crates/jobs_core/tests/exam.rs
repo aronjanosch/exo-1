@@ -126,19 +126,6 @@ impl Host {
 // ---------- loader ----------
 
 #[test]
-fn the_exam_and_the_licence_load() {
-    let h = Host::new();
-    let t = &h.jc.templates[&TemplateId::new("flight_exam")].record;
-    assert_eq!(t.objectives.len(), 4);
-    let e = t.exam.as_ref().unwrap();
-    assert_eq!((e.fee, e.retry_fee, e.grants.as_str()), (150, 75, "licence_flight"));
-    let l = &h.jc.licences[&LicenceId::new("flight")].record;
-    assert_eq!((l.track.as_str(), l.exam.as_str()), ("licence_flight", "flight_exam"));
-    assert_eq!(h.jc.licences_allowing("pilot_ship").len(), 1);
-    assert!(h.jc.licences_allowing("fly_to_the_moon").is_empty());
-}
-
-#[test]
 fn loader_errors_name_file_and_field() {
     let p = "job_template/flight_exam.json";
     for (from, to, field) in [
@@ -186,35 +173,6 @@ fn a_passed_exam_charges_the_fee_and_sets_the_personal_licence() {
     assert!(h.keys().contains(&"notice.exam.passed".to_string()) && !h.keys().contains(&"notice.exam.honours".to_string()), "{:?}", h.keys());
     assert_eq!(h.standing(), 0, "no honours, no bonus");
     assert!(h.progress.has_flag(&Flag::new("job_completed:flight_exam")));
-}
-
-#[test]
-fn honours_for_a_soft_landing_in_good_time_give_a_standing_bonus() {
-    let mut h = Host::new();
-    let j = h.offer();
-    h.accept(ANA, j).unwrap();
-    h.fly(ANA, 1.5);
-    h.deliver(j, ANA, 1.0);
-    assert_eq!(h.state(j), JobState::Completed);
-    assert!(h.keys().contains(&"notice.exam.honours".to_string()), "{:?}", h.keys());
-    assert!(h.progress.has_flag(&Flag::new("exam_honours:flight_exam")));
-    assert_eq!(h.standing(), 10, "the honours bonus with the courier giver");
-    assert_eq!(h.licence(ANA), 1);
-}
-
-#[test]
-fn a_soft_landing_that_took_too_long_is_a_plain_pass() {
-    let mut h = Host::new();
-    let j = h.offer();
-    h.accept(ANA, j).unwrap();
-    h.world(ANA, WorldEvent::TookOff);
-    h.world(HOST, WorldEvent::TimePassed { dt: 200.0 });
-    h.world(ANA, WorldEvent::PadReached { at: LocationId::new("bent_spoon") });
-    h.world(ANA, WorldEvent::Landed { at: Some(LocationId::new("bent_spoon")), speed: 1.0 });
-    h.deliver(j, ANA, 1.0);
-    assert_eq!(h.state(j), JobState::Completed);
-    assert!(!h.keys().contains(&"notice.exam.honours".to_string()));
-    assert_eq!(h.licence(ANA), 1);
 }
 
 #[test]

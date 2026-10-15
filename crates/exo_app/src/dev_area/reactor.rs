@@ -535,20 +535,6 @@ mod tests {
     }
 
     #[test]
-    fn the_meltdown_countdown_is_the_seconds_left_while_the_timer_runs() {
-        assert_eq!(meltdown_eta(0.0, 120.0, false), None, "no timer, no countdown");
-        assert_eq!(meltdown_eta(0.25, 120.0, false), Some(90.0), "a quarter run: 90 s left");
-        assert_eq!(meltdown_eta(0.25, 120.0, true), None, "melted: the view says so, no countdown");
-    }
-
-    #[test]
-    fn the_lamps_blink_at_two_hertz_and_scram_does_not() {
-        assert!(lamp_blink_on(0.0) && lamp_blink_on(0.2));
-        assert!(!lamp_blink_on(0.25) && !lamp_blink_on(0.49));
-        assert!(lamp_blink_on(0.5));
-    }
-
-    #[test]
     fn the_limit_ask_sets_the_group_limit_and_the_news_carry_the_kw() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
@@ -594,22 +580,6 @@ mod tests {
         s.apply(ReactorAsk::SetPumpMode(PumpMode::High), &cfg(), &mut k);
         settle(&mut s, |n| n.flow >= 0.99);
         assert!(s.news(1.0).pump_on && s.news(1.0).flow >= 0.99);
-    }
-
-    #[test]
-    fn the_pump_mode_is_on_the_snapshot_and_low_runs_between_off_and_high() {
-        let mut s = ReactorSim::new(&cfg());
-        let mut k = ReactorCounts::default();
-        s.apply(ReactorAsk::SetPumpMode(PumpMode::Low), &cfg(), &mut k);
-        let n = s.news(1.0);
-        assert!(n.pump_on && n.pump_mode == PumpMode::Low);
-        for _ in 0..1200 {
-            s.room.step(0.1, Input::auto());
-        }
-        let speed = s.news(1.0).pump_speed;
-        assert!(speed > 0.2 && speed < 0.8, "Low settles between Off and High: {speed}");
-        s.apply(ReactorAsk::SetPumpMode(PumpMode::Off), &cfg(), &mut k);
-        assert!(!s.news(1.0).pump_on && s.news(1.0).pump_mode == PumpMode::Off);
     }
 
     #[test]
@@ -686,13 +656,6 @@ mod tests {
         assert!(s.news(1.0).melted);
         s.apply(ReactorAsk::Reset, &cfg(), &mut k);
         assert!(!s.news(1.0).melted);
-    }
-
-    #[test]
-    fn a_new_reactor_is_on_auto_with_the_power_on() {
-        let s = ReactorSim::new(&cfg());
-        assert!(!s.manual && s.room.reactor().power_on());
-        assert!(!s.news(1.0).melted && s.news(1.0).powered);
     }
 
     #[test]

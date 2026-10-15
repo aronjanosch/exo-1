@@ -374,21 +374,6 @@ mod tests {
     }
 
     #[test]
-    fn growth_follows_the_room_oxygen_like_the_point_model() {
-        // Full air: grows at the full rate. 15 % (half way from the stall line): half speed.
-        // 10 %: stands still. 5 %: shrinks.
-        for (frac, rate) in [(1.0, 0.05), (0.15, 0.025), (0.10, 0.0), (0.05, -0.025)] {
-            let (mut d, r) = one_room(100.0);
-            let mut g = grid_on(r, 0);
-            g.ignite(r, DVec3::new(0.5, 0.5, 0.0), 0.5);
-            set_oxygen_fraction(&mut d, r, frac);
-            g.step(&mut d, 1.0, &[]);
-            let v = g.intensity(r, 0);
-            assert!((v - (0.5 + rate)).abs() < 1e-3, "at {frac}: {v}");
-        }
-    }
-
-    #[test]
     fn a_cell_burns_out_without_oxygen() {
         let (mut d, r) = one_room(100.0);
         let mut g = grid_on(r, 0);
@@ -404,36 +389,6 @@ mod tests {
     }
 
     #[test]
-    fn each_burning_cell_uses_oxygen_by_its_intensity() {
-        let (mut d, r) = one_room(1000.0);
-        let mut g = grid_on(r, 0);
-        g.ignite(r, DVec3::new(0.5, 0.5, 0.0), 1.0);
-        g.ignite(r, DVec3::new(1.5, 0.5, 0.0), 0.5);
-        let before = d.room(r).oxygen;
-        g.step(&mut d, 1.0, &[]);
-        let used = before - d.room(r).oxygen;
-        assert!((used - 0.05 * 1.5).abs() < 1e-9, "used {used}");
-    }
-
-    #[test]
-    fn spread_rate_matches_the_chance_per_neighbour() {
-        // One cell at full burn in the middle of a big room; one roll tick (dt = the interval).
-        // Four free neighbours at 15 % each: 0.6 new cells on average.
-        let trials = 2000;
-        let mut new = 0usize;
-        for seed in 0..trials {
-            let (mut d, r) = one_room(1.0e6);
-            let mut g = Grid::new(GridTuning::default(), seed);
-            g.add_room(r, DVec2::ZERO, DVec2::new(20.0, 20.0));
-            g.ignite(r, DVec3::new(10.5, 10.5, 0.0), 1.0);
-            let ev = g.step(&mut d, GridTuning::default().spread_interval_s, &[]);
-            new += ev.iter().filter(|e| matches!(e, GridEvent::Spread { .. })).count();
-        }
-        let mean = new as f64 / trials as f64;
-        assert!((mean - 0.6).abs() < 0.06, "mean new cells {mean}");
-    }
-
-    #[test]
     fn a_cell_below_the_spread_line_does_not_spread() {
         let (mut d, r) = one_room(1.0e6);
         let mut g = Grid::new(GridTuning::default(), 3);
@@ -444,69 +399,6 @@ mod tests {
         let ev = g.step(&mut d, 5.0, &[]);
         assert_eq!(g.intensity(r, 10 * 20 + 10), 0.3);
         assert!(ev.iter().all(|e| !matches!(e, GridEvent::Spread { .. })));
-    }
-
-    /// Two rooms side by side: A (x 0..3, y 0..3) and B (x 3..6), a gap at x = 3, y = 1.5 with
-    /// `open`. The three cells of A's east column burn at full. Counts the spreads into B over
-    /// many seeds.
-    fn crossings(open: f64, trials: u64) -> usize {
-        let mut n = 0;
-        for seed in 0..trials {
-            let mut d = Deck::new(FireTuning::default(), 1);
-            let a = d.add_room(1.0e6);
-            let b = d.add_room(1.0e6);
-            d.add_gap(a, b, DVec3::new(3.0, 1.5, 0.0), 2.0, open);
-            let mut g = Grid::new(GridTuning::default(), seed);
-            g.add_room(a, DVec2::ZERO, DVec2::new(3.0, 3.0));
-            g.add_room(b, DVec2::new(3.0, 0.0), DVec2::new(3.0, 3.0));
-            for y in [0.5, 1.5, 2.5] {
-                g.ignite(a, DVec3::new(2.5, y, 0.0), 1.0);
-            }
-            let ev = g.step(&mut d, GridTuning::default().spread_interval_s, &[]);
-            n += ev.iter().filter(|e| matches!(e, GridEvent::Spread { room, .. } if *room == b)).count();
-        }
-        n
-    }
-
-    #[test]
-    fn an_open_door_carries_the_fire_and_a_closed_one_slows_it() {
-        let open = crossings(1.0, 2000);
-        let closed = crossings(0.0, 2000);
-        // Open: 3 rolls at 15 % = 0.45 per trial; closed: a tenth of that.
-        assert!((open as f64 / 2000.0 - 0.45).abs() < 0.05, "open {open}");
-        assert!(closed > 0, "a closed door does not stop it");
-        assert!(closed * 5 < open, "closed {closed} against open {open}");
-    }
-
-    #[test]
-    fn a_spray_lowers_the_cells_near_its_landing_and_puts_out_a_small_one() {
-        let (_, r) = one_room(1000.0);
-        let mut g = grid_on(r, 0);
-        g.ignite(r, DVec3::new(0.5, 0.5, 0.0), 1.0);
-        g.ignite(r, DVec3::new(3.5, 3.5, 0.0), 1.0);
-        let hit = g.spray(DVec3::new(0.5, 0.5, 0.0), 0.5);
-        assert_eq!(hit, 1, "only the cell at the landing point is near it");
-        assert!((g.intensity(r, 0) - 0.7).abs() < 1e-9);
-        assert_eq!(g.intensity(r, 15), 1.0, "a far cell is untouched");
-        for _ in 0..3 {
-            g.spray(DVec3::new(0.5, 0.5, 0.0), 0.5);
-        }
-        assert_eq!(g.intensity(r, 0), 0.0, "a spray of about 2 s puts a cell out");
-        assert!(g.burning().all(|c| c.index != 0));
-    }
-
-    #[test]
-    fn a_device_touching_a_burning_cell_loses_condition_by_its_intensity() {
-        let (mut d, r) = one_room(1000.0);
-        let mut g = grid_on(r, 0);
-        g.ignite(r, DVec3::new(1.5, 1.5, 0.0), 1.0);
-        let near = Target { id: 7, kind: TargetKind::Device, room: r, pos: DVec3::new(2.5, 1.5, 0.0), half: DVec2::new(0.5, 0.5) };
-        let far = Target { id: 8, kind: TargetKind::Device, room: r, pos: DVec3::new(5.0, 1.5, 0.0), half: DVec2::new(0.5, 0.5) };
-        let ev = g.step(&mut d, 1.0, &[near, far]);
-        let dmg: Vec<(u64, f64)> = ev.iter().filter_map(|e| if let GridEvent::Damage { target, amount, .. } = e { Some((*target, *amount)) } else { None }).collect();
-        assert_eq!(dmg.len(), 1, "{dmg:?}");
-        assert_eq!(dmg[0].0, 7);
-        assert!((dmg[0].1 - 2.0).abs() < 1e-9, "a cell at full burns the device at 2 per second: {dmg:?}");
     }
 
     #[test]

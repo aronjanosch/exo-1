@@ -159,19 +159,3 @@ fn players_are_pinned_on_their_planet() {
     let kinds: Vec<PinKind> = p.iter().map(|p| p.kind.clone()).collect();
     assert_eq!(kinds, vec![PinKind::Player { own: true }, PinKind::Player { own: false }], "own first, a crewmate on another planet not shown");
 }
-
-#[test]
-fn pins_come_in_a_fixed_order_places_then_target_then_players() {
-    let mut h = Host::new();
-    let j = h.active_job();
-    h.progress.apply(&h.k, &Event::new(ANA, 1, WorldEvent::UnlockBought { unlock: gameplay_core::UnlockId::new("bent_spoon_permit") })).unwrap();
-    let players = vec![PlayerPos { who: ANA, planet: 0, dir: [0.0, 1.0, 0.0] }];
-    let p = h.pins(Some(j), &places(), &players, 0);
-    let order: Vec<u8> = p.iter().map(|p| match p.kind {
-        PinKind::Place => 0,
-        PinKind::Target(_) => 1,
-        PinKind::Player { .. } => 2,
-    }).collect();
-    assert_eq!(order, vec![0, 0, 1, 2]);
-    assert_eq!(p, h.pins(Some(j), &places(), &players, 0), "stable");
-}

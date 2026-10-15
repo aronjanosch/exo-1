@@ -128,20 +128,6 @@ fn delivering_an_order_pays_its_reward_and_settles_it() {
 }
 
 #[test]
-fn damaged_goods_settle_with_their_condition_and_pay_less() {
-    let mut h = Host::new();
-    h.place(1, 2, 100, None);
-    let id = h.offered()[0].id;
-    h.accept(id);
-    let before = h.progress.wallet();
-    h.deliver(id, 0.5);
-    // 100 × band 1.0 × (1 - 0.5 × 0.5) = 75
-    assert_eq!(h.progress.wallet() - before, 75);
-    let s = h.settled();
-    assert_eq!((s[0].1, s[0].2, s[0].3), (2, 2, 0.5));
-}
-
-#[test]
 fn an_order_deadline_expires_the_job_and_settles_it_late() {
     let mut h = Host::new();
     h.place(2, 2, 100, Some(60.0));

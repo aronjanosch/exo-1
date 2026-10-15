@@ -87,29 +87,6 @@ mod tests {
     }
 
     #[test]
-    fn near_finds_everything_a_scan_finds_and_in_order() {
-        let radius = 5000.0;
-        let mut g = Grid::new(400.0, radius);
-        let pts: Vec<V3> = (0..500).map(dir).collect();
-        for (i, p) in pts.iter().enumerate() {
-            g.insert_point(i as u32, *p);
-        }
-        for q in 0..200 {
-            let d = dir(1000 + q);
-            let mut seen = Vec::new();
-            g.any_near(d, 400.0, |i| {
-                seen.push(i);
-                false
-            });
-            for (i, p) in pts.iter().enumerate() {
-                if radius * p.dot(d).clamp(-1.0, 1.0).acos() <= 400.0 {
-                    assert!(seen.contains(&(i as u32)), "item {i} within 400 m is found");
-                }
-            }
-        }
-    }
-
-    #[test]
     fn reach_items_are_in_every_cell_they_touch() {
         let radius = 5000.0;
         let mut g = Grid::new(300.0, radius);

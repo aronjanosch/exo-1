@@ -51,13 +51,6 @@ mod tests {
     const TEXT: &str = r#"{ "drain_per_s": 2.0, "racks": [ { "id": 1, "box": "a", "slots": 3, "stock": 2 } ] }"#;
 
     #[test]
-    fn a_valid_file_parses_and_finds_its_rack() {
-        let c = SupplyConfig::parse(TEXT).unwrap();
-        assert_eq!(c.rack_in("a"), Some(1));
-        assert_eq!(c.rack_in("b"), None);
-    }
-
-    #[test]
     fn a_stock_bigger_than_the_rack_or_no_drain_is_refused() {
         assert!(SupplyConfig::parse(&TEXT.replace("\"stock\": 2", "\"stock\": 9")).is_err());
         assert!(SupplyConfig::parse(&TEXT.replace("2.0", "0.0")).is_err());

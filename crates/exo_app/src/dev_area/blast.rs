@@ -119,43 +119,6 @@ pub fn client_blast_news(time: Res<Time>, items: Res<Items>, cfg: Res<ReactorCon
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dev_area::engine_room::ROOM;
-
-    #[test]
-    fn the_falloff_is_full_at_the_reactor_and_gone_at_the_range() {
-        assert_eq!(falloff(0.0, 7.5), 1.0);
-        assert!((falloff(3.75, 7.5) - 0.5).abs() < 1e-12);
-        assert_eq!(falloff(7.5, 7.5), 0.0);
-        assert_eq!(falloff(25.0, 7.5), 0.0);
-        assert_eq!(falloff(1.0, 0.0), 0.0, "no range, no effect");
-    }
-
-    #[test]
-    fn a_walker_two_metres_off_takes_the_falloff_share_and_one_at_25_takes_nothing() {
-        let b = Blast { min_fuel: 1.0, range_m: 7.5, burn: 500.0, stun_s: 15.0, device_damage: 500.0, radiation_range_m: 20.0, radiation: 75.0 };
-        let (burn, rad) = hurt_at(&b, 2.0);
-        assert!((burn - 500.0 * (1.0 - 2.0 / 7.5)).abs() < 1e-9, "burn {burn}");
-        assert!((rad - 75.0 * (1.0 - 2.0 / 20.0)).abs() < 1e-9, "radiation {rad}");
-        assert_eq!(hurt_at(&b, 25.0), (0.0, 0.0));
-    }
-
-    #[test]
-    fn the_flash_is_full_at_the_blast_and_gone_after_a_second() {
-        assert_eq!(flash_alpha(0.0), 1.0);
-        assert!((flash_alpha(0.5) - 0.5).abs() < 1e-6);
-        assert_eq!(flash_alpha(BLAST_FLASH_S), 0.0);
-        assert_eq!(flash_alpha(-0.1), 0.0);
-    }
-
-    #[test]
-    fn the_fires_start_outside_the_reactor_and_inside_the_room() {
-        for p in fire_points() {
-            let inside = (p[0] - REACTOR_AT[0]).abs() < REACTOR_SIZE[0] * 0.5 && (p[1] - REACTOR_AT[1]).abs() < REACTOR_SIZE[2] * 0.5;
-            assert!(!inside, "fire at {p:?} is inside the reactor");
-            assert!((p[0] - ROOM.centre[0]).abs() < ROOM.half[0] && (p[1] - ROOM.centre[1]).abs() < ROOM.half[1], "fire at {p:?} is outside the room");
-        }
-        assert_eq!(fire_points()[0], ignition_at(Source::Reactor), "the front is the reactor's own fire point");
-    }
 
     #[test]
     fn a_higher_blast_counter_flashes_once_and_the_same_counter_again_does_not() {

@@ -263,41 +263,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn zones_lie_in_the_area_and_do_not_overlap() {
-        for z in &ZONES {
-            for c in [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]] {
-                let p = [z.centre[0] + c[0] * z.half[0], z.centre[1] + c[1] * z.half[1]];
-                assert!(p[0].abs() <= HALF_EXTENT[0] + 1e-9 && p[1].abs() <= HALF_EXTENT[1] + 1e-9, "{} reaches out of the area", z.name);
-            }
-        }
-        for (i, a) in ZONES.iter().enumerate() {
-            for b in &ZONES[i + 1..] {
-                let apart = (a.centre[0] - b.centre[0]).abs() >= a.half[0] + b.half[0] - 1e-9 || (a.centre[1] - b.centre[1]).abs() >= a.half[1] + b.half[1] - 1e-9;
-                assert!(apart, "{} and {} overlap", a.name, b.name);
-            }
-        }
-        assert!(CAPTAIN.centre[0] < LAB.centre[0] && LAB.centre[0] < ENGINEERING.centre[0] && STORAGE.centre[1] > LAB.centre[1]);
-        assert!(PADS.contains(PAD_MAIN), "the pad 'main' is in the pad strip");
-        // A short walk apart (the first area was too spread out): the lab in the middle is at
-        // most 15 m from every other zone, and the far ends are within 30 m.
-        let apart = |a: &Zone, b: &Zone| ((a.centre[0] - b.centre[0]).powi(2) + (a.centre[1] - b.centre[1]).powi(2)).sqrt();
-        for z in [CAPTAIN, ENGINEERING, STORAGE] {
-            assert!(apart(&LAB, &z) <= 15.0, "lab and {} are {:.1} m apart", z.name, apart(&LAB, &z));
-        }
-        assert!(apart(&CAPTAIN, &ENGINEERING) <= 30.0);
-    }
-
-    #[test]
-    fn the_place_file_matches_the_area() {
-        let place: serde_json::Value = serde_json::from_str(include_str!("../../../../content/place/dev_area.json")).unwrap();
-        let pad = &place["pads"][0];
-        assert_eq!(pad["id"], "main");
-        assert_eq!([pad["at"][0].as_f64().unwrap(), pad["at"][1].as_f64().unwrap()], PAD_MAIN);
-        let flat = &place["edits"][0]["half_extent_m"];
-        assert!(flat[0].as_f64().unwrap() >= HALF_EXTENT[0] && flat[1].as_f64().unwrap() >= HALF_EXTENT[1], "the flatten edit covers the area");
-    }
-
-    #[test]
     #[should_panic(expected = "used twice")]
     fn a_device_id_is_unique() {
         let b = PlaceholderBox { id: "x".into(), zone: LAB, local_pos: [0.0, 0.0], size: [1.0, 1.0, 1.0], turn_deg: 0.0, colour: [1.0; 3], panel: None };

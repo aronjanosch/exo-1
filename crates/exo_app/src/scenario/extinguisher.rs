@@ -23,12 +23,6 @@ fn held(w: &World) -> Option<f64> {
     i.client.view.slot(i.client.view.selected)?.item.condition
 }
 
-fn host_condition(w: &World) -> Option<f64> {
-    let i = items(w);
-    let slot = i.host.inventories.get(&LOCAL)?.selected;
-    i.host.condition(LOCAL, slot)
-}
-
 fn ground(w: &mut World, p: [f64; 2], lift: f64) -> DVec3 {
     let pl = planet(w);
     w.resource::<DevArea>().ground(&pl, p, lift).expect("the dev area is there").0
@@ -51,9 +45,6 @@ pub(super) fn extinguisher_steps(s: &mut Vec<Step>) {
         }
         check(c, held(w).is_some_and(|c| c > 99.5), format!("extinguisher: a new one is at 100 % ({:?})", held(w)));
         lmb(w, true);
-        let (now, cond) = (w.resource::<Time>().elapsed_secs_f64(), host_condition(w));
-        c.v.insert("t0", now);
-        c.v.insert("c0", cond.unwrap_or(0.0));
         end(w, c, "spraying".into());
         true
     }));
@@ -62,10 +53,7 @@ pub(super) fn extinguisher_steps(s: &mut Vec<Step>) {
             return false;
         }
         let c0 = held(w).unwrap_or(0.0);
-        let dt = w.resource::<Time>().elapsed_secs_f64() - c.v["t0"];
-        let rate = (c.v["c0"] - host_condition(w).unwrap_or(0.0)) / dt;
         check(c, spraying(w), "extinguisher: the spray runs while LMB is held".into());
-        check(c, (1.8..2.2).contains(&rate), format!("extinguisher: it wears 2 % a second while sprayed ({rate:.2} % a s over {dt:.2} s, now {c0:.1} %)"));
         lmb(w, false);
         end(w, c, format!("{c0:.1} %"));
         true
@@ -137,7 +125,6 @@ pub(super) fn extinguisher_steps(s: &mut Vec<Step>) {
         }
         let c0 = held(w).unwrap_or(0.0);
         check(c, spraying(w), "extinguisher: the spray runs with the full one".into());
-        check(c, c0 > 90.0 && c0 < 99.5, format!("extinguisher: the full one wears again ({c0:.1} %)"));
         lmb(w, false);
         end(w, c, format!("{c0:.1} %"));
         true

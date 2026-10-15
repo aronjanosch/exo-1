@@ -421,7 +421,7 @@ pub fn build_app(o: &Options) -> App {
         if o.menu() {
             app.add_plugins(menu::plugin);
         }
-        if o.showcase || o.scenario.as_deref() == Some("showcase") {
+        if o.showcase {
             app.insert_resource(ship_showcase::ShowcaseStart(start_up));
             app.add_plugins(ship_showcase::plugin);
         }

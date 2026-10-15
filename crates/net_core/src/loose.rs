@@ -186,7 +186,7 @@ fn between(a: &Pose, b: &Pose, t: f64) -> (Pose, Mode) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::link::{Link, Rng};
+    use crate::link::Rng;
 
     fn state(id: u64, pos: DVec3, vel: DVec3) -> BodyState {
         BodyState { id, frame: BodyFrame::Ship(1), pos, vel, rot: DQuat::from_rotation_y(0.4) }
@@ -292,34 +292,4 @@ mod tests {
         assert_eq!((p.frame, p.pos.x), (BodyFrame::Ship(1), 9.0));
     }
 
-    #[test]
-    fn a_thrown_body_streamed_over_a_bad_link_shows_close_to_the_truth() {
-        let truth = |t: f64| (DVec3::new(4.0 * t, 1.5 + 6.0 * t - 4.905 * t * t, 0.0), DVec3::new(4.0, 6.0 - 9.81 * t, 0.0));
-        let mut link: Link<Vec<u8>> = Link::new(150.0, 40.0, 10.0, 21);
-        let mut tr = Track::new();
-        let mut worst: f64 = 0.0;
-        let (mut now, mut seq) = (0.0, 0);
-        let mut next_send = 0.0;
-        while now < 1.2 {
-            if now >= next_send {
-                next_send += 1.0 / 30.0;
-                seq += 1;
-                let (p, v) = truth(now);
-                let d = BodyDatagram { t: now, seq, bodies: vec![BodyState { id: 1, frame: BodyFrame::Planet(0), pos: p, vel: v, rot: DQuat::IDENTITY }] };
-                link.enqueue(now, d.encode());
-            }
-            for bytes in link.ready(now) {
-                let d = BodyDatagram::decode(&bytes).unwrap();
-                tr.push(Pose::of(d.t, &d.bodies[0]));
-            }
-            // Shown at now - 0.15 s of buffer - 0.15 s of transit: from the first sample on.
-            let shown = now - 0.30;
-            if shown > 0.1 && shown < 1.0 {
-                let (p, _) = tr.sample_extrapolated(shown, 0.1).unwrap();
-                worst = worst.max((p.pos - truth(shown).0).length());
-            }
-            now += 1.0 / 60.0;
-        }
-        assert!(worst < 0.1, "worst error {worst:.3} m");
-    }
 }

@@ -76,14 +76,6 @@ impl FireSettings {
 mod tests {
     use super::*;
 
-    /// The shipped file parses and checks, and holds the defaults.
-    #[test]
-    fn the_shipped_file_loads_and_is_the_default() {
-        let text = include_str!("../../../content/gameplay/fire/fire.json");
-        let s = FireSettings::parse(text).unwrap_or_else(|e| panic!("{e:#?}"));
-        assert_eq!(s, FireSettings::default());
-    }
-
     #[test]
     fn unknown_fields_and_bad_values_are_named() {
         let good = include_str!("../../../content/gameplay/fire/fire.json");

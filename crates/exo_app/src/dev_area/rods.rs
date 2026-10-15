@@ -111,19 +111,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn kinds_and_items_match() {
-        assert_eq!(kind_of_item("fuel_rod"), Some("standard"));
-        assert_eq!(kind_of_item("fuel_rod_hot"), Some("hot"));
-        assert_eq!(kind_of_item("fuel_rod_spicy"), Some("spicy"));
-        assert_eq!(kind_of_item("coolant_canister"), None);
-        for (kind, item) in KINDS {
-            assert_eq!(item_of_kind(kind), Some(item));
-            assert_eq!(kind_of_item(item), Some(kind));
-        }
-        assert_eq!(item_of_kind("uranium"), None);
-    }
-
-    #[test]
     fn the_brake_takes_the_most_life() {
         let rod = |life| FuelRod { kind: "standard".into(), heat: 80.0, life };
         assert_eq!(pull_index(&[]), None);

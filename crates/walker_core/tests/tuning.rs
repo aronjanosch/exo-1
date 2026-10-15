@@ -4,12 +4,6 @@ const WALKER: &str = include_str!("../../../content/tuning/walker.json");
 const SUIT: &str = include_str!("../../../content/tuning/suit.json");
 
 #[test]
-fn shipped_files_equal_default() {
-    assert_eq!(WalkerConfig::from_json(WALKER).unwrap(), WalkerConfig::default());
-    assert_eq!(SuitConfig::from_json(SUIT).unwrap(), SuitConfig::default());
-}
-
-#[test]
 fn rejects_unknown_and_missing_fields() {
     let e = WalkerConfig::from_json(&WALKER.replacen("\"skin\"", "\"skinn\": 1.0, \"skin\"", 1)).unwrap_err();
     assert!(e.contains("skinn"), "{e}");

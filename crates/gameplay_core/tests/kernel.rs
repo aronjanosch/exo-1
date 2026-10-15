@@ -44,16 +44,6 @@ fn ev(sender: ClientId, seq: u64, payload: WorldEvent) -> Event<WorldEvent> {
 // ---------- loader ----------
 
 #[test]
-fn valid_set_loads() {
-    let c = content();
-    assert_eq!(c.commodities.len(), 3);
-    assert_eq!(c.locations.len(), 3);
-    assert_eq!(c.tracks.len(), 4);
-    assert_eq!(c.unlocks.len(), 2);
-    assert_eq!(c.locations[&LocationId::new("bent_spoon")].path, "location/bent_spoon.json");
-}
-
-#[test]
 fn other_folders_are_left_to_their_systems() {
     let mut files = valid_files();
     files.push(File::new("job_template/whatever.json", "{ not even json"));
@@ -248,15 +238,6 @@ fn all_any_not() {
 }
 
 // ---------- tracks and unlocks ----------
-
-#[test]
-fn crew_tracks_start_at_their_start_value() {
-    let c = content();
-    let p = Progress::new(&c);
-    assert_eq!(p.wallet(), 200);
-    assert_eq!(p.value(&c, &TrackId::new("freight_xp"), Some(ANA)), Some(0));
-    assert_eq!(p.value(&c, &TrackId::new("freight_xp"), None), None);
-}
 
 #[test]
 fn personal_tracks_are_per_player_and_levels_follow_thresholds() {

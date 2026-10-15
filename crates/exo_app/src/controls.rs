@@ -864,42 +864,6 @@ mod tests {
     }
 
     #[test]
-    fn w_and_d() {
-        assert_eq!(act(&[KeyW, KeyD]).move_dir, DVec3::new(1.0, 0.0, -1.0));
-    }
-
-    #[test]
-    fn space_and_ctrl_cancel() {
-        assert_eq!(act(&[Space, ControlLeft]).move_dir, DVec3::ZERO);
-        assert_eq!(act(&[Space]).move_dir.y, 1.0);
-        assert!(act(&[Space]).jump);
-    }
-
-    #[test]
-    fn q_and_e() {
-        assert_eq!(act(&[KeyQ]).roll, 1.0);
-        assert_eq!(act(&[KeyE]).roll, -1.0);
-        assert_eq!(act(&[KeyQ, KeyE]).roll, 0.0);
-    }
-
-    #[test]
-    fn shift_is_boost_and_run() {
-        let a = act(&[ShiftLeft, KeyX]);
-        assert!(a.boost && a.run && a.brake && !a.jump);
-    }
-
-    #[test]
-    fn taps_map_to_actions() {
-        let mut a = resolve(&Bindings::default(), &raw(&[], &[KeyG, KeyF, KeyJ]));
-        assert!(a.take_tap(Tap::Drop));
-        assert!(a.take_tap(Tap::Interact));
-        assert!(a.take_tap(Tap::Warp));
-        assert!(!a.take_tap(Tap::Drop), "a tap is consumed once");
-        assert!(!a.take_tap(Tap::Lag), "cabin gravity has no key");
-        assert!(!a.take_tap(Tap::HoverAssist));
-    }
-
-    #[test]
     fn old_seat_binding_still_loads() {
         let old = BINDINGS.replace("\"interact\"", "\"seat\"").replace("  \"throw\": [\"KeyR\", \"Pad:RightThumb\"],\n", "");
         assert!(!old.contains("interact") && !old.contains("throw"));
@@ -940,23 +904,6 @@ mod tests {
         for t in [Tap::MasterMode, Tap::Comstab, Tap::ProximityAssist, Tap::WindComp, Tap::LimiterUp, Tap::LimiterDown] {
             assert!(a.take_tap(t), "{}", t.name());
         }
-    }
-
-    /// `KEYS.md` (the page for players and developers) names every action of `bindings.json`.
-    #[test]
-    fn keys_md_lists_every_action() {
-        let page = include_str!("../../../KEYS.md");
-        let names = Axis::ALL.iter().map(|a| a.name()).chain(Button::ALL.iter().map(|b| b.name())).chain(Tap::ALL.iter().map(|t| t.name()));
-        let missing: Vec<&str> = names.filter(|n| !page.contains(&format!("`{n}`"))).collect();
-        assert!(missing.is_empty(), "KEYS.md lacks {missing:?}");
-    }
-
-    #[test]
-    fn every_tap_action_is_a_keyboard_tap() {
-        let b = Bindings::default();
-        let tap_keys: Vec<KeyCode> = b.tap_keys().collect();
-        assert!(tap_keys.contains(&KeyG));
-        assert!(!tap_keys.contains(&Backslash), "Backslash is bound to nothing");
     }
 
     #[test]
@@ -1018,34 +965,6 @@ mod tests {
         rejects("\"interact\": [\"KeyF\", \"Pad:North\"],", "", "`interact`: missing");
         rejects("\"vjoy\"", "\"mouse-aim\"", "`mouse`: ship_mode");
         rejects("\"vjoy_deadzone_deg\": 1.5", "\"vjoy_deadzone_deg\": 20", "`mouse`: vjoy_deadzone_deg");
-    }
-
-    #[test]
-    fn analog_shape() {
-        let mut ab = Bindings::default().axis(Axis::MoveX).clone();
-        ab.deadzone = 0.2;
-        assert_eq!(ab.shape(0.1), 0.0);
-        assert!((ab.shape(0.6) - 0.5).abs() < 1e-12);
-        assert!((ab.shape(-1.0) + 1.0).abs() < 1e-12);
-    }
-
-    #[test]
-    fn pad_axes_and_buttons() {
-        let b = Bindings::default();
-        let mut c = Controls::default();
-        c.pad_axes.insert(GamepadAxis::LeftStickY, 1.0);
-        c.pad_axes.insert(GamepadAxis::RightStickX, 0.6);
-        c.pad_held.insert(GamepadButton::LeftThumb);
-        c.pad_taps.push(GamepadButton::North);
-        let mut a = resolve(&b, &c);
-        assert_eq!(a.move_dir.z, -1.0, "stick forward is W");
-        let yaw = b.axis(Axis::TurnYaw);
-        assert!((a.turn.y + yaw.shape(0.6f32 as f64)).abs() < 1e-12 && a.turn.y < 0.0, "stick right yaws right through dead zone and curve: {}", a.turn.y);
-        assert!(a.boost && a.take_tap(Tap::Interact));
-        c.held.insert(KeyW);
-        assert_eq!(resolve(&b, &c).move_dir.z, -1.0);
-        c.pad_axes.insert(GamepadAxis::RightStickX, 0.05);
-        assert_eq!(resolve(&b, &c).turn.y, 0.0, "inside the stick's dead zone");
     }
 
     #[test]

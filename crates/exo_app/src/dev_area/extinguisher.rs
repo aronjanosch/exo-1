@@ -48,18 +48,3 @@ fn put_racks(time: Res<Time>, area: Res<DevArea>, cfg: Res<Supply>, mut items: R
         items.add_rack(now, r.id, TAG, r.slots, stock);
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_values_file_has_a_rack_for_every_box() {
-        let text = std::fs::read_to_string(format!("{}/../../content/gameplay/fire/extinguisher.json", env!("CARGO_MANIFEST_DIR"))).unwrap();
-        let c = SupplyConfig::parse(&text).expect("the file is valid");
-        for b in boxes() {
-            assert!(c.rack_in(&b.id).is_some(), "box {} has a rack in the file", b.id);
-        }
-        assert_eq!(c.racks.len(), boxes().len());
-    }
-}

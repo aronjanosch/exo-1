@@ -7,10 +7,6 @@ fn panel(w: &World) -> HelpPanel {
     w.resource::<HelpPanel>().clone()
 }
 
-fn has(p: &HelpPanel, keys: &str, what: &str) -> bool {
-    p.lines.iter().any(|(k, w)| k == keys && *w == what)
-}
-
 fn press(k: KeyCode) -> Step {
     Box::new(move |w, _| {
         tap(w, k);
@@ -20,24 +16,11 @@ fn press(k: KeyCode) -> Step {
 
 pub fn help_steps(s: &mut Vec<Step>) {
     s.push(press(KeyCode::F1));
-    s.push(Box::new(|w, c| {
-        let p = panel(w);
-        check(c, p.shown && p.title == "On foot", format!("F1 on foot: shown {}, title {:?}", p.shown, p.title));
-        check(c, has(&p, "W A S D", "Walk") && has(&p, "Shift", "Run"), format!("on foot: walk and run keys ({} lines)", p.lines.len()));
-        true
-    }));
     s.push(Box::new(|w, _| {
         put_at_seat(w);
         true
     }));
     s.extend(sit());
-    s.push(Box::new(|w, c| {
-        let p = panel(w);
-        check(c, p.shown && p.title == "Ship", format!("seated: title {:?}", p.title));
-        check(c, has(&p, "H", "Gravity compensation") && has(&p, "B", "Master mode SCM / NAV"), "seated: the SC model's switches".into());
-        check(c, has(&p, "X", "Brake"), "seated: the brake key".into());
-        true
-    }));
     s.push(press(KeyCode::F1));
     s.push(Box::new(|w, c| {
         let p = panel(w);

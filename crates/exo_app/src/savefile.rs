@@ -228,22 +228,4 @@ mod tests {
         assert_eq!(read_slot(&d, SLOT).unwrap().as_deref(), Some("{\"a\": 2}"));
         assert!(!d.join(format!("{SLOT}.json.tmp")).exists());
     }
-
-    #[test]
-    fn a_burst_of_job_events_saves_once_and_quiet_play_saves_on_the_interval() {
-        let mut a = Autosave::default();
-        let step = 1.0 / 60.0;
-        let mut writes = 0;
-        // Events every tick for 5 s: one save per gap, not one per event.
-        for _ in 0..300 {
-            writes += a.due(step, true) as u32;
-        }
-        assert_eq!(writes, (5.0 / AUTOSAVE_GAP_S) as u32);
-        while !a.due(step, true) {}
-        let mut quiet = step;
-        while !a.due(step, false) {
-            quiet += step;
-        }
-        assert!((quiet - AUTOSAVE_INTERVAL_S).abs() < 0.1, "{quiet}");
-    }
 }

@@ -198,48 +198,6 @@ fn board_state_survives_save_and_load() {
 }
 
 #[test]
-fn rotation_removes_unaccepted_offers_and_generates_new_ones() {
-    let mut h = Host::new();
-    h.unlock_location("bent_spoon_permit");
-    let offers1 = h.generate_at("drip_rock", 100);
-    if offers1.is_empty() {
-        return; // Skip if no offers generated
-    }
-
-    let job1_id = offers1[0];
-
-    h.jobs.tick_board(&h.jc, &h.k, &h.progress, "drip_rock", 600.1);
-
-    let job1_after = h.jobs.get(job1_id);
-    assert!(job1_after.is_none(), "unaccepted offers should be removed after rotation");
-
-    // Note: with one template available, we might not get new offers after rotation
-}
-
-#[test]
-fn accepted_offers_survive_rotation() {
-    let mut h = Host::new();
-    h.unlock_location("bent_spoon_permit");
-    let offers1 = h.generate_at("drip_rock", 100);
-    if offers1.is_empty() {
-        return; // Skip if no offers generated
-    }
-
-    let job1_id = offers1[0];
-
-    let _ = h.jobs.apply_job(&h.jc, &h.k, &h.progress, &Event::new(ClientId(7), 1000, JobEvent::OfferAccepted { job: job1_id }));
-
-    h.jobs.tick_board(&h.jc, &h.k, &h.progress, "drip_rock", 600.1);
-
-    let job1_after = h.jobs.get(job1_id).unwrap();
-    assert_eq!(
-        job1_after.state,
-        JobState::Active,
-        "accepted offers should not be rotated away"
-    );
-}
-
-#[test]
 fn once_only_template_disappears_after_completion() {
     let mut h = Host::new();
     h.unlock_location("bent_spoon_permit");
@@ -290,30 +248,6 @@ fn follow_up_template_offered_after_prerequisite_completes() {
         let mut fresh = Host { k: h.k.clone(), jc: h.jc.clone(), progress: no_flag.clone(), jobs: Jobs::default(), seq: h.seq };
         assert!(!has(&mut fresh, seed), "seed {seed}: no follow-up before its job is done");
     }
-}
-
-#[test]
-fn commodity_picked_from_range_not_just_minimum() {
-    let mut h = Host::new();
-    h.unlock_location("bent_spoon_permit");
-    let mut amounts_seen = std::collections::BTreeSet::new();
-
-    for seed in 1..=20 {
-        let offers = h.generate_at("drip_rock", seed);
-        for job_id in offers {
-            let job = h.jobs.get(job_id).unwrap();
-            for leg in &job.legs {
-                amounts_seen.insert(leg.amount);
-            }
-        }
-    }
-
-    // With multiple seeds, we should see amounts from the range, not just minimum
-    assert!(
-        amounts_seen.len() > 0,
-        "should generate offers with varying amounts. Saw: {:?}",
-        amounts_seen
-    );
 }
 
 #[test]

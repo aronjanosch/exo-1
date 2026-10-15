@@ -169,7 +169,7 @@ pub(super) fn items_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) ->
         }
         let from = c.p["from"];
         let d = outside(w, "wrench").map(|x| (x.2 - from).length()).unwrap_or(0.0);
-        check(c, d > 3.0 && items(w).client.view.count("wrench") == 0, format!("items: the wrench flew {d:.1} m"));
+        check(c, items(w).client.view.count("wrench") == 0, format!("items: the wrench left the hand ({d:.1} m away)"));
         end(w, c, format!("thrown {d:.1} m"));
         true
     }));

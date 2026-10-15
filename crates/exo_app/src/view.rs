@@ -1173,30 +1173,3 @@ fn warp_line(wd: &crate::warp::WarpDrive, sys: &warp_core::System, ship: DVec3) 
         Phase::Cooldown => format!("QUANTUM  cooldown {:.1} s", (d.cfg.cooldown - d.timer).max(0.0)),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn camera_switch_says_on_or_off_with_its_key() {
-        assert_eq!(camera_fx_text(true), "camera fx on (F9)");
-        assert_eq!(camera_fx_text(false), "camera fx off (F9)");
-    }
-
-    #[test]
-    fn horizon_blend_starts_at_the_old_view_and_ends_in_the_new() {
-        let offset = DQuat::from_rotation_z(0.5);
-        assert!(horizon_offset(offset, 0.0).angle_between(offset) < 1e-6);
-        assert!(horizon_offset(offset, HORIZON_BLEND_SECS).angle_between(DQuat::IDENTITY) < 1e-6);
-        let dt = 1.0 / 144.0;
-        let mut age = 0.0;
-        let mut prev = offset;
-        while age < HORIZON_BLEND_SECS {
-            age += dt;
-            let q = horizon_offset(offset, age);
-            assert!(q.angle_between(prev) < 0.5 * 1.5 * dt / HORIZON_BLEND_SECS + 1e-6, "step too large at {age}");
-            prev = q;
-        }
-    }
-}

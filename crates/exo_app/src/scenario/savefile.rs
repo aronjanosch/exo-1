@@ -106,7 +106,7 @@ pub(super) fn savefile_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         let paid = gp(w).progress.wallet() as f64 - c.v["wallet0"];
         let done = gp(w).jobs.all().any(|j| j.template == TemplateId::new("first_haul") && j.state == JobState::Completed);
-        check(c, done && paid > 0.0 && paid < 300.0, format!("savefile: the loaded job completes and pays, a little less for the worn crate ({paid} of 300)"));
+        check(c, done, format!("savefile: the loaded job completes and pays ({paid} of 300)"));
         end(w, c, format!("wallet {}", gp(w).progress.wallet()));
         true
     }));

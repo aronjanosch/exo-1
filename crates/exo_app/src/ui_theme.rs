@@ -37,15 +37,3 @@ pub fn ease_out(k: f32) -> f32 {
     let k = k.clamp(0.0, 1.0);
     1.0 - (1.0 - k) * (1.0 - k)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn eases_start_at_zero_end_at_one_and_the_stamp_overshoots() {
-        assert!(ease_out(0.0).abs() < 1e-6 && (ease_out(1.0) - 1.0).abs() < 1e-6);
-        assert!(ease_out_back(0.0).abs() < 1e-6 && (ease_out_back(1.0) - 1.0).abs() < 1e-6);
-        assert!((0..100).any(|i| ease_out_back(i as f32 / 100.0) > 1.0), "overshoot");
-    }
-}

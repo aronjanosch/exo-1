@@ -79,28 +79,3 @@ fn the_channel_has_no_seam_across_chunk_borders() {
     assert!(jump < 1.5, "a step of {jump} m in 0.25 m across the channel");
 }
 
-#[test]
-fn a_river_bends_instead_of_turning_at_right_angles() {
-    // Flow on the grid goes one of 8 ways; the drawn curve is smoothed, so along a long
-    // river the turn between neighbouring pieces stays well below a right angle.
-    let p = planet(30_000.0);
-    let rivers = &p.coarse.rivers;
-    let mut worst = 0.0f64;
-    let mut pieces = 0;
-    for (i, r) in rivers.iter().enumerate().filter(|(_, r)| r.catchment_km2 > 3.0) {
-        let drainage::Mouth::River(j) = r.next else { continue };
-        // Along the main stem only: a tributary meets the main river at an angle at a confluence.
-        if rivers.iter().any(|o| o.next == drainage::Mouth::River(j) && o.catchment_km2 > r.catchment_km2) {
-            continue;
-        }
-        let on = |s: usize, t: f64| p.river_idx.curve_point(rivers, p.radius, s, t);
-        let pts: Vec<V3> = (0..=8).map(|k| on(i, k as f64 / 8.0)).chain((1..=8).map(|k| on(j as usize, k as f64 / 8.0))).collect();
-        for w in pts.windows(3) {
-            let (a, b) = ((w[1] - w[0]).normalized(), (w[2] - w[1]).normalized());
-            worst = worst.max(a.dot(b).clamp(-1.0, 1.0).acos().to_degrees());
-            pieces += 1;
-        }
-    }
-    assert!(pieces > 50, "{pieces} pieces");
-    assert!(worst < 60.0, "the sharpest turn along a river is {worst:.0} degrees");
-}

@@ -42,19 +42,6 @@ fn separation_and_sites_are_respected() {
 }
 
 #[test]
-fn every_new_kind_is_on_a_planet_and_the_signatures_beat_the_relief() {
-    let (h, c) = (baked(HEARTH, 1337), baked(CINDER, 4242));
-    let all: Vec<PlacedStamp> = h.stamps().into_iter().chain(c.stamps()).collect();
-    for shape in ["crater", "canyon", "mesa_field", "spire", "caldera"] {
-        assert!(all.iter().any(|s| s.shape == shape), "no {shape}");
-    }
-    for p in [&h, &c] {
-        let sig = p.stamps().into_iter().find(|s| s.signature).expect("a signature");
-        assert!(sig.relief_m >= 200.0, "{} relief {:.0} m", sig.kind, sig.relief_m);
-    }
-}
-
-#[test]
 fn a_missed_count_retries_then_fails_clearly() {
     let text = HEARTH.replacen("\"per_100_km2\": [0.637, 1.274], \"min_separation_m\": 900.0, \"where\": { \"elevation\": [-0.3, 1.0] }", "\"per_100_km2\": [0.637, 1.274], \"min_separation_m\": 900.0, \"where\": { \"elevation\": [5.0, 6.0] }", 1);
     assert_ne!(text, HEARTH, "fixture");

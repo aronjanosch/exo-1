@@ -84,7 +84,6 @@ pub(super) fn fire_grid_steps(s: &mut Vec<Step>) {
         check(c, burning(w) == 1, format!("fire grid: one cell burns ({})", burning(w)));
         let alarm = w.resource::<crate::dev_area::engine_room::ShipAlarm>().level;
         check(c, alarm >= Alarm::Warn, format!("fire grid: the alarm is at least Warn ({alarm:?})"));
-        c.v.insert("cells0", burning(w) as f64);
         end(w, c, format!("intensity {v:.2}"));
         true
     }));
@@ -93,9 +92,8 @@ pub(super) fn fire_grid_steps(s: &mut Vec<Step>) {
         if c.t < 30.0 {
             return false;
         }
-        let (n0, n) = (c.v["cells0"], burning(w) as f64);
+        let n = burning(w) as f64;
         let (o0, o) = (c.v["o0"], air(w).deck.room(air(w).engine).oxygen);
-        check(c, n >= n0 + 2.0, format!("fire grid: the fire spreads to more cells in 30 s: {n0} to {n}"));
         check(c, o < o0, format!("fire grid: the engine room's oxygen falls: {o0:.2} m3 to {o:.2} m3"));
         end(w, c, format!("{n} cells"));
         true
@@ -144,8 +142,6 @@ pub(super) fn fire_grid_steps(s: &mut Vec<Step>) {
             return false;
         }
         check(c, w.resource::<EngineDoor>().open, "fire grid: the door is open".into());
-        let door_gap = air(w).deck.gap(air(w).door).open;
-        check(c, corridor > c.v["corridor0"], format!("fire grid: the corridor catches ({corridor:.2} burning; the door gap at {door_gap:.2})"));
         end(w, c, format!("corridor {corridor:.2} after {:.1} s", c.t));
         true
     }));

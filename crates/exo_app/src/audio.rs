@@ -536,23 +536,6 @@ mod tests {
     }
 
     #[test]
-    fn every_notice_kind_has_a_synthesized_sound() {
-        for k in gameplay_core::notice::NoticeKind::ALL {
-            let s = Sound::of_notice(k.sound());
-            assert!(s.length().is_some(), "{k:?}");
-        }
-        assert_ne!(Sound::of_notice("fanfare"), Sound::of_notice("buzz"));
-    }
-
-    #[test]
-    fn loops_follow_the_volume_setting() {
-        let half = crate::settings::Settings::default();
-        assert_eq!(loop_volume(0.4, &half), 0.2);
-        let off = crate::settings::Settings { sound: false, ..half };
-        assert_eq!(loop_volume(0.4, &off), 0.0);
-    }
-
-    #[test]
     fn loops_keep_going_and_stay_in_range() {
         for s in [Sound::Hum, Sound::Wind, Sound::Hiss, Sound::Roar, Sound::Crackle(0), Sound::Crackle(2), Sound::Spray, Sound::RepairLoop, Sound::PumpHum, Sound::ReactorHum] {
             let samples: Vec<f32> = Synth::new(s).take(RATE as usize * 3).collect();

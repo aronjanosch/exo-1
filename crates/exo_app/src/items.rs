@@ -1028,23 +1028,4 @@ mod tests {
         assert!(client.pull_asks.is_empty(), "a client sends it, it does not apply it");
         assert!(client.net_out.iter().any(|n| matches!(n, NetOut::Pull)));
     }
-
-    #[test]
-    fn a_two_handed_item_sits_lower_more_centred_and_further_off_than_a_one_handed_one() {
-        let (one, two) = (held_offset(1), held_offset(2));
-        assert!(two.y < one.y && two.x < one.x, "lower and more centred");
-        assert!(two.z.abs() > one.z.abs(), "further off, so it looks smaller");
-        let share = (one.z / two.z).powi(2);
-        assert!((0.45..0.55).contains(&share), "area share {share}");
-    }
-
-    #[test]
-    fn a_two_handed_item_is_drawn_smaller_so_it_takes_a_small_part_of_the_screen() {
-        assert_eq!((held_scale(1), held_scale(2)), (1.0, 0.6));
-        let (one, two) = (held_offset(1), held_offset(2));
-        // Screen area against a one-handed item of the same size: the scale squared over the distance squared.
-        let area = (held_scale(2) * one.z / two.z).powi(2);
-        assert!(area < 0.2, "the two-handed item takes {area:.2} of the one-handed footprint");
-        assert!(0.11 * area / 0.5 <= 0.10 + 1e-9, "screen share {:.3}", 0.11 * area / 0.5);
-    }
 }

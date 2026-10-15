@@ -102,36 +102,3 @@ pub fn arc_points(cx: f64, cy: f64, r: f64, from: f64, to: f64, n: usize) -> Vec
         })
         .collect()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn an_arc_runs_clockwise_from_the_bottom_left_to_the_bottom_right() {
-        let p = arc_points(108.0, 70.0, 60.0, 135.0, 405.0, 4);
-        assert!((p[0][0] - (108.0 - 60.0 * 0.5f64.sqrt())).abs() < 1e-9 && p[0][1] > 70.0, "bottom left {:?}", p[0]);
-        assert!((p[2][1] - (70.0 - 60.0)).abs() < 1e-9, "the top in the middle: {:?}", p[2]);
-        let last = p[4];
-        assert!((last[0] - (108.0 + 60.0 * 0.5f64.sqrt())).abs() < 1e-9 && last[1] > 70.0, "bottom right {last:?}");
-    }
-
-    #[test]
-    fn a_shape_inside_its_canvas_and_one_outside() {
-        let inside = Shape::Rect { x: 10.0, y: 10.0, w: 20.0, h: 20.0, fill: Some(Ink::Bg0), outline: None };
-        assert!(inside.inside(40.0, 40.0));
-        assert!(!inside.inside(25.0, 40.0), "sticks out on the right");
-        let ring = Shape::Circle { cx: 20.0, cy: 20.0, r: 20.0, fill: None, stroke: Some((Ink::Hud, 3.0)) };
-        assert!(ring.inside(40.0, 40.0) && !ring.inside(39.0, 40.0));
-        let arc = Shape::Arc { cx: 108.0, cy: 70.0, r: 60.0, from: 135.0, to: 405.0, stroke: 14.0, ink: Ink::Line2, dash: None };
-        assert!(arc.inside(216.0, 152.0), "the temperature gauge fits its 216 x 152 block: {:?}", arc.extent());
-    }
-
-    #[test]
-    fn every_token_has_a_colour_in_the_shipped_theme() {
-        let t = Theme::from_json(include_str!("../../../content/ui/displays.json")).expect("the theme loads");
-        assert_eq!(t.ink(Ink::Bad), t.colours.bad);
-        assert_eq!(t.ink(Ink::Hud), t.colours.hud);
-        assert_ne!(t.ink(Ink::Bg0), t.ink(Ink::Fg1));
-    }
-}

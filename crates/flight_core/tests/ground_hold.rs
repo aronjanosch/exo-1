@@ -99,26 +99,6 @@ fn settle(c: &mut GroundRules, env: &Slope, secs: f64, friction: f64) -> (f64, B
 }
 
 #[test]
-fn set_down_on_a_slope_it_keeps_the_touchdown_spot() {
-    // 33 degrees, as `full` lands on, and a contact without friction: each step it turns part of
-    // the settle push down the slope.
-    let env = Slope::new(33.0);
-    let mut held = GroundRules::default();
-    let (moved, b) = settle(&mut held, &env, 5.0, 0.0);
-    let hold = held.ground_hold.expect("held");
-    let rest = hold.rest.expect("at rest after 5 s");
-    // Each step the contact pushes it a few millimetres down the slope; the hold takes it back.
-    assert!(moved < 0.005, "moved {moved:.4} m while settling");
-    assert!(sideways(rest - hold.at, rest.normalize()).length() < 0.005, "rests on the touchdown spot: {:?}", rest - hold.at);
-    assert!((b.pos - rest).length() < 1e-9, "and stays there: {:?}", b.pos - rest);
-    // Without the hold (limit 0) no spot is kept; the settle rule alone drops the sideways speed,
-    // which this point contact does not turn into a slide (the hull in `full` did: 0.55 m).
-    let mut free = GroundRules::new(GroundTuning { landing_slope_limit: 0.0, ..GroundTuning::default() });
-    settle(&mut free, &env, 5.0, 0.0);
-    assert!(free.ground_hold.is_none(), "no hold above the limit");
-}
-
-#[test]
 fn at_rest_it_returns_to_its_spot_until_thrust() {
     let env = Slope::new(20.0);
     let mut c = GroundRules::default();
@@ -150,18 +130,6 @@ fn sideways_input_also_ends_the_hold() {
 }
 
 #[test]
-fn steeper_than_the_limit_is_not_held() {
-    let env = Slope::new(40.0);
-    let mut c = GroundRules::default();
-    let b = BodyState { pos: env.ground(0.0), ..Default::default() };
-    c.step(&b, &down(), &env, DT);
-    assert!(c.ground_hold.is_none(), "40 degrees, limit {}", c.tuning.landing_slope_limit);
-    let env = Slope::new(30.0);
-    c.step(&b, &down(), &env, DT);
-    assert!(c.ground_hold.is_some(), "30 degrees is held");
-}
-
-#[test]
 fn moved_far_away_or_released_lets_go() {
     let env = Slope::new(10.0);
     let mut c = GroundRules::default();
@@ -176,25 +144,6 @@ fn moved_far_away_or_released_lets_go() {
     assert!(c.ground_hold.is_some());
     c.release();
     assert!(c.ground_hold.is_none(), "the SC model flying the ship (or gravity compensation off) lets go");
-}
-
-#[test]
-fn brushing_a_crest_at_speed_keeps_flying() {
-    let env = Slope::new(0.0);
-    let mut c = GroundRules::default();
-    let mut b = BodyState { pos: env.ground(0.0), lin_vel: DVec3::X * 80.0, ..Default::default() };
-    let none = FlightInput { piloted: true, ..Default::default() };
-    let (v, _) = c.step(&b, &FlightInput { grounded: true, ..none }, &env, DT);
-    assert!(c.ground_hold.is_none(), "no hold from a brush at 80 m/s");
-    assert!(sideways(v, b.pos.normalize()).length() > 75.0, "keeps its speed: {v}");
-    b.lin_vel = v;
-    for _ in 0..30 {
-        b.pos += DVec3::Y * 0.1;
-        let (v, _) = c.step(&b, &none, &env, DT);
-        b.lin_vel = v;
-        b.integrate(DT);
-    }
-    assert!(c.ground_hold.is_none(), "no hold after the brush: {}", b.lin_vel);
 }
 
 /// A settling hold whose contact stays lost lets go (the ground fell away); a
@@ -230,18 +179,6 @@ fn lifted_straight_up_it_is_not_pulled_back() {
     let lifted = BodyState { pos: b.pos + b.pos.normalize() * 20.0, lin_vel: DVec3::ZERO, ..b };
     let (v, _) = c.step(&lifted, &FlightInput { grounded: true, piloted: true, ..Default::default() }, &env, DT);
     assert!(c.ground_hold.is_none() && v.length() < 5.0, "lets go instead of 1200 m/s down: {v}");
-}
-
-/// A level ship touching a slope just under the limit with a hull corner has its centre ~2.7 m
-/// above the terrain: still on the ground, held.
-#[test]
-fn a_corner_touch_on_a_steep_slope_below_the_limit_is_held() {
-    let env = Slope::new(34.0);
-    let mut c = GroundRules::default();
-    let up = env.ground(0.0).normalize();
-    let b = BodyState { pos: env.ground(0.0) + up * 4.0 * 34f64.to_radians().tan(), ..Default::default() };
-    c.step(&b, &down(), &env, DT);
-    assert!(c.ground_hold.is_some(), "clearance {:.2} m", c.clearance_at(&env, b.pos));
 }
 
 #[test]

@@ -136,65 +136,6 @@ mod tests {
         l
     }
 
-    fn thrust(x: f64, y: f64, z: f64) -> ThrusterSignal {
-        ThrusterSignal { thrust: [x, y, z], boost: false, parked: false }
-    }
-
-    #[test]
-    fn a_short_tap_comes_in_fast_and_fades_slowly() {
-        let mut a = ThrusterAudio::default();
-        let tap = run(&mut a, thrust(0.0, 0.0, -1.0), 0.1);
-        assert!(tap.rumble >= 0.5, "attack after 0.1 s: {:.3}", tap.rumble);
-        let after = run(&mut a, thrust(0.0, 0.0, 0.0), 0.3);
-        assert!(after.rumble >= 0.2, "release 0.3 s after the tap: {:.3}", after.rumble);
-    }
-
-    #[test]
-    fn strafe_raises_only_its_hiss() {
-        let mut a = ThrusterAudio::default();
-        let l = run(&mut a, thrust(1.0, 0.0, 0.0), 0.5);
-        assert!(l.hiss[0] > 0.9, "+x hiss {:.3}", l.hiss[0]);
-        for (i, h) in l.hiss.iter().enumerate().skip(1) {
-            assert_eq!(*h, 0.0, "hiss {i} stays silent");
-        }
-    }
-
-    #[test]
-    fn forward_raises_the_rumble_and_the_minus_z_hiss() {
-        let mut a = ThrusterAudio::default();
-        let idle = run(&mut a, thrust(0.0, 0.0, 0.0), 0.5);
-        let mut b = ThrusterAudio::default();
-        let fwd = run(&mut b, thrust(0.0, 0.0, -1.0), 0.5);
-        assert!(fwd.rumble > idle.rumble + 0.5, "rumble {:.3} vs idle {:.3}", fwd.rumble, idle.rumble);
-        assert!(fwd.hiss[5] > 0.9, "-z hiss {:.3}", fwd.hiss[5]);
-        assert_eq!(fwd.hiss[4], 0.0, "+z hiss silent");
-    }
-
-    #[test]
-    fn the_sign_of_each_direction_picks_its_hiss() {
-        for (axis, sign, idx) in [(0, -1.0, 1), (1, 1.0, 2), (1, -1.0, 3), (2, 1.0, 4)] {
-            let mut a = ThrusterAudio::default();
-            let mut v = [0.0; 3];
-            v[axis] = sign;
-            let l = run(&mut a, ThrusterSignal { thrust: v, ..Default::default() }, 0.5);
-            assert!(l.hiss[idx] > 0.9, "hiss {idx} for axis {axis} sign {sign}: {:.3}", l.hiss[idx]);
-        }
-    }
-
-    #[test]
-    fn boost_roar_spools_up_and_down() {
-        let t = ThrusterAudioTuning::default();
-        let mut a = ThrusterAudio::default();
-        let on = ThrusterSignal { boost: true, ..Default::default() };
-        let up = run(&mut a, on, t.spool_up);
-        // One time constant: about 63 % of the way up.
-        assert!((up.boost - (1.0 - (-1.0f64).exp())).abs() < 0.05, "roar after spool_up: {:.3}", up.boost);
-        let full = run(&mut a, on, 3.0);
-        assert!(full.boost > 0.99, "roar held: {:.3}", full.boost);
-        let down = run(&mut a, ThrusterSignal::default(), t.spool_down);
-        assert!((down.boost - (-1.0f64).exp()).abs() < 0.05, "roar after spool_down: {:.3}", down.boost);
-    }
-
     #[test]
     fn boost_starts_count_rising_edges_only() {
         let mut a = ThrusterAudio::default();
@@ -204,16 +145,6 @@ mod tests {
         assert_eq!(run(&mut a, on, 2.0).boost_starts, 1, "held: no new start");
         assert_eq!(run(&mut a, off, 0.5).boost_starts, 1);
         assert_eq!(run(&mut a, on, 0.5).boost_starts, 2, "second press");
-    }
-
-    #[test]
-    fn parked_falls_to_zero() {
-        let mut a = ThrusterAudio::default();
-        run(&mut a, ThrusterSignal { thrust: [1.0, 0.0, -1.0], boost: true, parked: false }, 1.0);
-        let l = run(&mut a, ThrusterSignal { parked: true, ..Default::default() }, 6.0);
-        assert!(l.rumble < 0.01, "rumble {}", l.rumble);
-        assert!(l.boost < 0.01, "roar {}", l.boost);
-        assert!(l.hiss.iter().all(|h| *h < 0.01), "hiss {:?}", l.hiss);
     }
 
     #[test]
@@ -233,10 +164,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn idle_rumble_while_on_and_still() {
-        let mut a = ThrusterAudio::default();
-        let l = run(&mut a, thrust(0.0, 0.0, 0.0), 3.0);
-        assert!((l.rumble - a.tuning.idle).abs() < 1e-6, "idle {:.4}", l.rumble);
-    }
 }

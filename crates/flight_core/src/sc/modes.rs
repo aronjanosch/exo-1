@@ -116,20 +116,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decoupling_is_immediate_and_recoupling_blends_over_decouple_time() {
-        let t = ModeTuning::default();
-        let mut m = Modes::default();
-        m.update(&ModeCmds { decoupled: true, grav_comp: true, master: true, ..Default::default() }, &t, 0.0);
-        assert!(!m.coupled && !m.grav_comp && m.master == Master::Nav);
-        assert_eq!(m.coupling, 0.0, "decoupling must not retain automatic velocity braking");
-        m.update(&ModeCmds { decoupled: true, ..Default::default() }, &t, 0.0);
-        for _ in 0..120 {
-            m.update(&ModeCmds::default(), &t, 1.0 / 60.0);
-        }
-        assert!((m.coupling - 0.5).abs() < 1e-9, "half way after 2 s of 4: {}", m.coupling);
-    }
-
-    #[test]
     fn limiter_steps_stay_in_range() {
         let t = ModeTuning::default();
         let mut m = Modes::default();

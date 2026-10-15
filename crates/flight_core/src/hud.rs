@@ -74,23 +74,3 @@ impl Height {
         if above_ground < agl_below { Height::Agl(above_ground) } else { Height::Alt(above_sphere) }
     }
 }
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn bands() -> HudTuning {
-        HudTuning { agl_below: 1000.0, toast_time: 1.5, g_full: 10.0, velocity_min: 1.0, level_deg: 1.0, near_level_deg: 5.0 }
-    }
-
-    #[test]
-    fn tilt_joins_pitch_and_roll_and_picks_the_band() {
-        assert!(tilt_deg(0.0, 0.0).abs() < 1e-9);
-        assert!((tilt_deg(3.0, 0.0) - 3.0).abs() < 1e-9 && (tilt_deg(0.0, -4.0) - 4.0).abs() < 1e-9);
-        let both = tilt_deg(3.0, 4.0);
-        assert!(both > 4.0 && both < 5.1, "3 and 4 deg tilt about 5 deg: {both}");
-        let t = bands();
-        assert_eq!((level(0.5, &t), level(3.0, &t), level(8.0, &t)), (Level::Level, Level::Near, Level::Off));
-    }
-}

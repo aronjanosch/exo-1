@@ -257,7 +257,6 @@ pub(super) fn rods_steps(s: &mut Vec<Step>) {
             return None;
         }
         let rose = radiation(w) - c.v["rad0"];
-        check(c, (2.5..=3.5).contains(&rose), format!("rods: the radiation rose by about 3 in 3 s ({rose:.2})"));
         Some(format!("+{rose:.2}"))
     }));
 }

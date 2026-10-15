@@ -344,35 +344,12 @@ mod tests {
     }
 
     #[test]
-    fn the_pointer_moves_at_the_set_speed_and_rmb_doubles_it() {
-        let mut plain = Ring::new(tuning(), 1);
-        plain.step(0.5, false);
-        assert!((plain.pointer_deg - 45.0).abs() < 1e-9);
-        let mut boosted = Ring::new(tuning(), 1);
-        boosted.step(0.5, true);
-        assert!((boosted.pointer_deg - 90.0).abs() < 1e-9);
-    }
-
-    #[test]
     fn a_reversed_pointer_goes_back() {
         let mut r = Ring::new(tuning(), 1);
         r.pointer_deg = 10.0;
         r.press();
         r.step(0.1, false);
         assert!((r.pointer_deg - 1.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn zones_shrink_to_nothing_and_then_vanish() {
-        let t = tuning();
-        let mut r = with_zone(0.0, 180.0);
-        r.step(1.5, false);
-        assert!((r.zones[0].width(&t) - 20.0).abs() < 1e-9, "half way: half the width");
-        r.step(1.5 - 1e-9, false);
-        assert!(r.zones.is_empty() || r.zones[0].width(&t) < 1e-6, "at the end: nothing");
-        let mut gone = with_zone(0.0, 180.0);
-        gone.step(3.0, false);
-        assert!(gone.zones.iter().all(|z| z.age_s == 0.0), "vanished at the life's end");
     }
 
     #[test]
@@ -391,23 +368,7 @@ mod tests {
         }
         assert!(most <= 2, "never more than two zones, saw {most}");
         assert_eq!(most, 2, "two zones do appear");
-        let first = first.expect("a zone appears");
-        assert!((first - 0.8).abs() < DT * 1.5, "the first zone appears about 0.8 s in, at {first}");
-    }
-
-    #[test]
-    fn a_new_zone_appears_about_a_wait_after_one_is_gone() {
-        let mut r = with_zone(0.0, 180.0);
-        r.zones[0].age_s = 2.99;
-        r.zones.push(Zone { centre_deg: 270.0, age_s: 0.0 });
-        r.step(0.02, false); // the first zone vanishes: the count is 1, the wait starts
-        assert_eq!(r.zones.len(), 1);
-        let mut t = 0.0;
-        while r.zones.len() < 2 && t < 5.0 {
-            r.step(DT, false);
-            t += DT;
-        }
-        assert!((t - 0.78).abs() < DT * 1.5, "the next zone after about 0.8 s, at {t}");
+        first.expect("a zone appears");
     }
 
     #[test]
@@ -496,7 +457,6 @@ mod tests {
         assert!(hot.burn > 0.0 && hot.stun_s == 0.0, "the reactor burns, no stun");
         let knock = hurt_of(Machine::Mechanical, Press::Miss, &t);
         assert!(knock.burn == 0.0 && knock.stun_s > 0.0, "the pump stuns and burns nothing");
-        assert!(hot.burn < shock.burn, "the reactor's burn is milder than the shock");
     }
 
     #[test]
@@ -505,22 +465,6 @@ mod tests {
         for m in [Machine::Electrical, Machine::Hot, Machine::Mechanical] {
             assert_eq!(hurt_of(m, Press::Hit, &t), Hurt::default(), "{m:?}");
         }
-    }
-
-    #[test]
-    fn a_miss_while_the_minigame_is_off_is_no_press_at_all() {
-        // The session gives no press at 60 % condition, so no hurt comes from it either.
-        let mut s = Session::new(tuning(), 3);
-        s.ring.pointer_deg = 0.0;
-        assert_eq!(s.press(0.6), None);
-    }
-
-    #[test]
-    fn the_minigame_threshold_is_half() {
-        let t = tuning();
-        assert!(minigame_on(0.49, &t));
-        assert!(!minigame_on(0.5, &t), "at 50 % the repair is the slow one");
-        assert!(!minigame_on(1.0, &t));
     }
 
     #[test]

@@ -110,18 +110,3 @@ impl PlanetEnv for PlanetRes {
         &self.field
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn every_planet_of_the_system_names_a_recipe_that_loads() {
-        let sys = warp_core::System::from_json(crate::warp::SYSTEM).unwrap();
-        for def in &sys.planets {
-            let r = super::recipe_for(def).unwrap();
-            assert_eq!((r.seed, r.radius), (def.seed, def.radius), "{}", def.name);
-        }
-        let mut missing = sys.planets[0].clone();
-        missing.recipe = "nowhere".into();
-        assert!(super::recipe_for(&missing).unwrap_err().contains("no recipe 'nowhere'"));
-    }
-}

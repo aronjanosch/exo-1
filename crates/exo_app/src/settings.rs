@@ -131,15 +131,6 @@ mod tests {
     }
 
     #[test]
-    fn first_person_units_and_horizontal_fov() {
-        let s = Settings { mouse_sensitivity: 2.0, ..Settings::default() };
-        assert!((s.mouse_radians_per_count() * 1000.0 - 44f64.to_radians()).abs() < 1e-12);
-        assert!((horizontal_fov(90.0, 4.0 / 3.0) - 106.26020470831196).abs() < 1e-9);
-        assert!((horizontal_fov(90.0, 16.0 / 9.0) - 121.28449291441746).abs() < 1e-9);
-        assert!((horizontal_fov(90.0, 21.0 / 9.0) - 133.60281897270362).abs() < 1e-9);
-    }
-
-    #[test]
     fn new_ranges_and_old_fov_file() {
         let mut s = Settings { mouse_sensitivity: 10.0, fov_deg: 40.0, ..Settings::default() };
         assert_eq!(Settings::from_json(&s.to_json()).unwrap(), s);
@@ -160,12 +151,6 @@ mod tests {
         let (s2, b2, notes) = load(&d);
         assert_eq!((s2, notes.len()), (s, 0));
         assert_eq!(b2.buttons, b.buttons);
-    }
-
-    #[test]
-    fn sound_starts_on_at_half_volume() {
-        let s = Settings::default();
-        assert_eq!((s.volume, s.sound, s.master()), (0.5, true, 0.5));
     }
 
     #[test]

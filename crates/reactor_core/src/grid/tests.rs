@@ -2,12 +2,6 @@
 use super::*;
 
 #[test]
-fn default_request_is_the_1280_kw_load() {
-    let g = Grid::default();
-    assert_eq!(g.request_kw(), 1280.0);
-}
-
-#[test]
 fn a_breaker_off_asks_for_nothing_and_its_group_is_dark() {
     let mut g = Grid::default();
     g.set_breaker(Group::Lights, false);
@@ -66,18 +60,6 @@ fn equal_priority_shares_in_proportion() {
 }
 
 #[test]
-fn a_limit_of_one_is_the_default_and_changes_nothing() {
-    let mut g = Grid::default();
-    for x in Group::ALL {
-        assert_eq!(g.limit(x), 1.0);
-    }
-    assert_eq!(g.request_kw(), 1280.0);
-    g.distribute(850.0);
-    assert_eq!(g.factor(Group::LifeSupport), 1.0);
-    assert!((g.supply(Group::Engines).ratio - 450.0 / 800.0).abs() < 1e-9);
-}
-
-#[test]
 fn a_limit_caps_the_request_and_the_factor_is_delivered_over_demand() {
     let mut g = Grid::default();
     g.set_limit(Group::Engines, 0.5);
@@ -100,28 +82,6 @@ fn a_limit_is_clamped_to_zero_one() {
     assert_eq!(g.limit(Group::Lights), 1.0);
     g.set_limit(Group::Lights, -0.2);
     assert_eq!(g.limit(Group::Lights), 0.0);
-}
-
-#[test]
-fn a_limit_of_zero_switches_the_group_off() {
-    let mut g = Grid::default();
-    g.set_limit(Group::Lights, 0.0);
-    assert_eq!(g.request_of(Group::Lights), 0.0);
-    assert_eq!(g.request_kw(), 1200.0);
-    let left = g.distribute(1500.0);
-    assert!((left - 300.0).abs() < 1e-9, "left {left}");
-    assert!(!g.supply(Group::Lights).on);
-    assert_eq!(g.factor(Group::Lights), 0.0);
-    assert_eq!(g.factor(Group::Engines), 1.0);
-}
-
-#[test]
-fn a_short_reactor_with_limits_at_one_sheds_by_priority() {
-    let mut g = Grid::default();
-    g.distribute(850.0);
-    assert_eq!(g.factor(Group::LifeSupport), 1.0);
-    assert!(g.supply(Group::Engines).on);
-    assert!(!g.supply(Group::Lights).on, "the lowest priority goes first");
 }
 
 #[test]

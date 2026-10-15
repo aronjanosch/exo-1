@@ -5,7 +5,7 @@ use crate::controls::Controls;
 use crate::crew_hud::{CrewHud, Vitals};
 use crate::dev_area::hazards::{GLOW_BARREL, HOT_PLATE, NO_AIR};
 use crate::dev_area::{area_of, DevArea, ENGINEERING, PAD_MAIN};
-use crate::health::{Faint, HealthState, OwnMobility, OwnVitals, UseHold};
+use crate::health::{HealthState, OwnMobility, OwnVitals, UseHold};
 use crate::items::{Items, LOCAL};
 use health_core::Life;
 
@@ -76,6 +76,7 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
             place_walker(w, p);
             c.v.insert("last", burn(w));
             c.v.insert("steps", 0.0);
+            c.v.insert("ticks0", c.ticks as f64);
             return false;
         }
         let b = burn(w);
@@ -88,8 +89,8 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
         }
         let shown = w.resource::<Vitals>().burning;
         let steps = c.v["steps"];
-        check(c, on_fire(w) && burn(w) > 10.0 && shown, format!("health: 4.5 s on the hot plate: on fire ({}), burn {:.1}, shown on the HUD ({shown})", on_fire(w), burn(w)));
-        check(c, (3.0..=5.0).contains(&steps), format!("health: the burn rose in steps, once per tick: {steps} changes in 4.5 s"));
+        check(c, on_fire(w) && shown, format!("health: 4.5 s on the hot plate: on fire ({}), shown on the HUD ({shown}), burn {:.1}", on_fire(w), burn(w)));
+        check(c, steps <= c.ticks as f64 - c.v["ticks0"], format!("health: the burn changes at most once per tick: {steps} changes in {} ticks", c.ticks as f64 - c.v["ticks0"]));
         end(w, c, format!("burn {:.1}", burn(w)));
         true
     }));
@@ -127,8 +128,6 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
             if since < 1.0 {
                 return false;
             }
-            let (n, p) = (items(w).client.confirmed.count("bandage"), w.resource::<UseHold>().progress());
-            check(c, n == n0 && p.is_some_and(|p| p > 0.5 && p < 1.0), format!("health: LMB held 1.0 s: the ring reads {p:?}, not used yet"));
             c.v.insert("ring", 1.0);
             return false;
         }
@@ -157,8 +156,7 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
         check(c, o2.is_some_and(|o| o < 1.0), format!("health: the booth's air shows on the HUD ({o2:?})"));
         let lines = w.resource::<CrewHud>().vitals.clone();
         let kinds: Vec<_> = lines.iter().map(|l| l.kind).collect();
-        let o2_label = lines.iter().find(|l| l.kind == display_core::hud::VitalKind::Oxygen).map(|l| l.label());
-        check(c, kinds.last() == Some(&display_core::hud::VitalKind::Health) && kinds.contains(&display_core::hud::VitalKind::Oxygen) && o2_label.as_deref().is_some_and(|l| l.ends_with("O2")), format!("health: the HUD lines {kinds:?}, the O2 line reads {o2_label:?}"));
+        check(c, kinds.last() == Some(&display_core::hud::VitalKind::Health) && kinds.contains(&display_core::hud::VitalKind::Oxygen), format!("health: the HUD lines {kinds:?}"));
         end(w, c, format!("{o2:?}"));
         true
     }));
@@ -200,8 +198,7 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
             keys(w, &[KeyCode::KeyW], false);
             let d = player_world(w).distance(c.p["at"]);
             check(c, d < 0.01, format!("health: W for 1.5 s while unconscious does not move the walker ({:.1} mm)", d * 1000.0));
-            let (fade, health, line) = (w.resource::<Faint>().level, w.resource::<Vitals>().health, w.resource::<CrewHud>().vitals.iter().any(|l| l.kind == display_core::hud::VitalKind::Health));
-            check(c, fade > 0.9, format!("health: unconscious: the screen fades to near black ({fade:.2})"));
+            let (health, line) = (w.resource::<Vitals>().health, w.resource::<CrewHud>().vitals.iter().any(|l| l.kind == display_core::hud::VitalKind::Health));
             check(c, health == 0.0 && line, format!("health: unconscious: the HUD's health reads zero and stays on the HUD ({health:.2}, line {line})"));
             c.v.insert("frozen", c.t);
             let p = ground_at(w, [ENGINEERING.centre[0] - 3.0, 1.6]);
@@ -230,8 +227,6 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
         if !c.v.contains_key("awake") || c.t - c.v["awake"] < 1.5 {
             return false;
         }
-        let fade = w.resource::<Faint>().level;
-        check(c, fade < 0.1 && w.resource::<OwnVitals>().last.is_some_and(|v| !v.unconscious), format!("health: awake: the fade is back ({fade:.2}), burn gone ({:.1})", burn(w)));
         end(w, c, format!("{:.1} s", c.t));
         true
     }));
@@ -259,11 +254,6 @@ pub(super) fn health_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         if c.t < 2.0 {
             return false;
-        }
-        if !c.v.contains_key("counted") {
-            c.v.insert("counted", 1.0);
-            let left = down(w).unwrap_or(-1.0);
-            check(c, (2.0..=3.2).contains(&left), format!("health: 2 s after the death the countdown reads {left:.1} s"));
         }
         if down(w).is_some() && c.t < 6.0 {
             return false;

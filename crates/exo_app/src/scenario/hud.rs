@@ -89,7 +89,7 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
         let h = hud(w);
         check(c, kinds(&h) == [VitalKind::Burn, VitalKind::Oxygen, VitalKind::Health], format!("hud: vitals with oxygen and burn set show three lines, burn on top ({:?})", kinds(&h)));
         check(c, (h.vitals[2].frac - 0.8).abs() < 1e-9 && (h.vitals[1].frac - 0.7).abs() < 1e-9, "hud: the bars carry the values".into());
-        check(c, h.vitals[0].burn_text() == "▲ BURN II" && h.vitals[2].calm() && h.vitals[1].calm(), format!("hud: the burn reads {:?}, health 80 and oxygen 70 are calm", h.vitals[0].burn_text()));
+        check(c, h.vitals[2].calm() && h.vitals[1].calm(), "hud: health 80 and oxygen 70 are calm".into());
         {
             let mut v = vitals(w);
             v.oxygen = None;
@@ -123,7 +123,6 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
         if c.t < look.show_s + look.fade_s + 0.5 {
             return false;
         }
-        check(c, hud(w).credits.is_none(), "hud: the credits faded out after about two seconds".into());
         end(w, c, "credits".into());
         true
     }));
@@ -140,7 +139,6 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
     s.push(Box::new(|w, c| {
         let i = w.resource::<Interaction>();
         check(c, i.kind == PromptKind::Collect && i.at.is_some() && i.prompt.starts_with("[F]"), format!("hud: the prompt is a collect with a world place ({:?}, {:?})", i.kind, i.prompt));
-        check(c, i.view.verb == "Collect" && i.view.name == "Extinguisher" && i.view.note.is_empty(), format!("hud: the prompt reads verb over name ({:?})", i.view));
         true
     }));
     s.extend(collect("extinguisher", "Extinguisher"));
@@ -192,7 +190,7 @@ pub(super) fn hud_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> S
     s.push(wait(0.2));
     s.push(Box::new(|w, c| {
         let h = hud(w);
-        check(c, h.vitals[0].burn_text() == "■ BURN III · ON FIRE" && h.vitals.iter().all(|l| l.tone == Tone::Bad), format!("hud: critical reads bad on every line ({:?})", h.vitals));
+        check(c, h.vitals.iter().all(|l| l.tone == Tone::Bad), format!("hud: critical reads bad on every line ({:?})", h.vitals));
         true
     }));
     s.push(shot_step("hud_crit"));

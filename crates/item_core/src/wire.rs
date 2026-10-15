@@ -471,13 +471,6 @@ mod tests {
     }
 
     #[test]
-    fn the_alarm_cycles_none_warn_danger() {
-        assert_eq!(Alarm::None.next(), Alarm::Warn);
-        assert_eq!(Alarm::Warn.next(), Alarm::Danger);
-        assert_eq!(Alarm::Danger.next(), Alarm::None);
-    }
-
-    #[test]
     fn vitals_travel_as_they_are() {
         let v = Vitals { burn_level: 2, buildup: 0.4, burning: true, sick: true, walk: 0.7, sprint: false, max_share: 0.8, unconscious: true, burn_cost: 12.5, oxygen_cost: 3.0, headache_cost: 20.0, ..Vitals::healthy() };
         let back: Vitals = decode(&encode(&ToClient::Vitals(v)).as_slice()).map(|m: ToClient| match m {

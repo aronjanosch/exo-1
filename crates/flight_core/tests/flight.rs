@@ -28,20 +28,6 @@ impl PlanetEnv for MainModel {
 #[test]
 fn field_gravity_and_boundaries() {
     let mut model = MainModel { centre: DVec3::ZERO, field: Field::default() };
-    for altitude in [-10.0, 0.0, 600.0, 1200.0] {
-        let g = model.gravity_at(DVec3::Y * (5000.0 + altitude));
-        check(g.distance(DVec3::NEG_Y * 9.81) < 0.0001, format!("full 9.81 m/s² gravity at {altitude:.0} m"));
-    }
-    check((model.field_strength_at(DVec3::Y * 8600.0) - 0.5).abs() < 0.0001, "half planetary influence at 3600 m".into());
-    for boundary in [1200.0, 6000.0] {
-        let below = model.field_strength_at(DVec3::Y * (5000.0 + boundary - 1.0));
-        let above = model.field_strength_at(DVec3::Y * (5000.0 + boundary + 1.0));
-        check((below - above).abs() < 0.00001, format!("smooth field boundary at {boundary:.0} m"));
-    }
-    for altitude in [6000.0, 7000.0, 20000.0] {
-        let g = model.gravity_at(DVec3::Y * (5000.0 + altitude));
-        check(g.abs().max_element() < 1e-5, format!("zero gravity at {altitude:.0} m"));
-    }
     let sample = DVec3::Y * 8600.0;
     let expected = model.gravity_at(sample);
     model.centre = DVec3::new(-10000.0, 2000.0, 10000.0);

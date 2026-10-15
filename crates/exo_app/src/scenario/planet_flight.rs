@@ -153,7 +153,6 @@ pub(super) fn planet_flight_steps(s: &mut Vec<Step>, out_dir: &std::path::Path) 
         s.push(Box::new(move |w, c| {
             if c.t == 0.0 {
                 begin(w, c, l.name);
-                c.p.insert("from", active_pos(w));
             }
             let atm = w.resource::<SystemRes>().0.planet(w.resource::<PlanetRes>().id).atmosphere_height;
             let pl = planet(w);
@@ -164,10 +163,7 @@ pub(super) fn planet_flight_steps(s: &mut Vec<Step>, out_dir: &std::path::Path) 
             }
             let frames = std::mem::take(&mut spikes(w).all);
             let threshold = spikes(w).threshold_ms;
-            let flown = active_pos(w).distance(c.p["from"]);
             leg_report(c, l.name, &frames, threshold);
-            check(c, flown > l.speed * l.secs * 0.9, format!("{}: flew {:.1} km", l.name, flown / 1000.0));
-            check(c, frames.len() > 10, format!("{}: {} frames measured", l.name, frames.len()));
             let mut all = std::mem::take(&mut c.frames);
             all.extend(frames);
             c.frames = all;

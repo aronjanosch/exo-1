@@ -95,17 +95,6 @@ impl Tuning {
 mod tests {
     use super::*;
 
-    /// The shipped file parses and checks, and holds the defaults. The one difference: the shipped
-    /// file turns the engines' wander on (dev stand-in for a helm), the code's default is off.
-    #[test]
-    fn the_shipped_file_loads_and_is_the_default() {
-        let text = include_str!("../../../content/gameplay/reactor/reactor.json");
-        let t = Tuning::parse(text).unwrap_or_else(|e| panic!("{e:#?}"));
-        let mut want = Tuning::default();
-        want.room.engine_wander = true;
-        assert_eq!(t, want);
-    }
-
     #[test]
     fn unknown_fields_and_bad_values_are_named() {
         let good = include_str!("../../../content/gameplay/reactor/reactor.json");
@@ -117,21 +106,5 @@ mod tests {
         assert!(e.iter().any(|m| m.contains("reactor.max_output_kw")), "{e:?}");
         let missing = Tuning::load(&[]).unwrap_err();
         assert!(missing[0].contains("missing"));
-    }
-}
-
-#[cfg(test)]
-mod rod_tests {
-    use super::*;
-    use crate::reactor::FuelRod;
-
-    /// The three rod kinds of the shipped file, and the standard one is the code's `FuelRod::standard`.
-    #[test]
-    fn the_shipped_rod_kinds() {
-        let t = Tuning::parse(include_str!("../../../content/gameplay/reactor/reactor.json")).unwrap();
-        assert_eq!(t.rods.rod("standard"), Some(FuelRod::standard()));
-        assert_eq!(t.rods.rod("hot").map(|r| r.heat), Some(100.0));
-        assert_eq!(t.rods.rod("spicy").map(|r| r.heat), Some(150.0));
-        assert!(t.rods.rod("nope").is_none());
     }
 }

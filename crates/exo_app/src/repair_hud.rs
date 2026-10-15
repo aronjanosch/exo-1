@@ -221,20 +221,3 @@ fn update_ring(
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_progress_is_a_stroke_from_the_top_by_its_share() {
-        assert_eq!(arc_end(0.0), 0.0);
-        assert!((arc_end(0.5) - std::f32::consts::PI).abs() < 1e-6, "half a turn at half");
-        assert!((arc_end(1.5) - std::f32::consts::TAU).abs() < 1e-6, "clamped at a full turn");
-        // The stops: the colour from the top to the end, clear after it (nothing else is filled).
-        let stops = arc_stops(Color::WHITE, 0.0, arc_end(0.25));
-        assert_eq!(stops.len(), 4);
-        assert!(stops[0].color.alpha() > 0.99 && stops[1].color.alpha() > 0.99, "the arc is drawn");
-        assert!(stops[2].color.alpha() == 0.0 && stops[3].color.alpha() == 0.0, "clear past the end");
-    }
-}

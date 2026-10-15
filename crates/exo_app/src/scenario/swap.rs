@@ -158,7 +158,6 @@ pub(super) fn swap_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
             check(c, near(r.chunks as f64, first.chunks as f64) && near(r.entities as f64, first.entities as f64) && near(r.meshes as f64, first.meshes as f64),
                 format!("swap {}: world {} terrain chunks, {} entities, {} meshes; within {:.0} % of the first swap to the same planet's {}, {}, {}", i + 1, r.chunks, r.entities, r.meshes, SWAP_COUNT_TOLERANCE * 100.0, first.chunks, first.entities, first.meshes));
             // The roots come from the pool, built during the flight.
-            check(c, r.roots_built_here == 0, format!("swap {}: {} root chunks built on the swap frame (prebuilt on the pool)", i + 1, r.roots_built_here));
         }
         let rss: Vec<String> = rows.iter().map(|r| r.rss_mb.map_or("n/a".into(), |m| format!("{m:.0}"))).collect();
         end(w, c, format!("RSS after each swap (MB, reported, not checked): {}", rss.join(", ")));

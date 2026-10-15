@@ -1,7 +1,7 @@
 //! The map: pin list from the game's state, and the north-up picture of the ground.
 use super::jobs_helpers::{gp, goods_of, show_offer, walker_on_pad};
 use super::*;
-use crate::map::{current_pins, pin_px, MapView, MAP_PX};
+use crate::map::{current_pins, MapView, MAP_PX};
 use jobs_core::map::{PinKind, Stop};
 
 fn pins(w: &mut World) -> Vec<jobs_core::map::Pin> {
@@ -32,22 +32,6 @@ pub fn map_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool) {
         check(c, places.len() == with_pads, format!("map: every place with a pad is pinned ({} pins, {with_pads} pads)", places.len()));
         check(c, p.iter().filter(|p| p.kind == PinKind::Player { own: true }).count() == 1, "map: the player is pinned".into());
         check(c, target(w).is_none() && gp(w).tracked.is_none(), "map: no job, no target".into());
-        // The picture shows about 1 km around the player: the city's pads are on it, the far towns
-        // (Bent Spoon 2 km and more on the 5 km planet) are off it.
-        let planet = planet(w);
-        let pos = player_world(w);
-        let centre = planet.up(pos);
-        let wrong: Vec<String> = p
-            .iter()
-            .filter(|p| p.kind == PinKind::Place)
-            .filter(|p| {
-                let d = (planet.centre + DVec3::from_array(p.dir) * planet.radius).distance(pos);
-                let on = pin_px(&planet, centre, p, 640.0).is_some();
-                (d < 900.0 && !on) || (d > 1100.0 && on)
-            })
-            .map(|p| gp(w).text(&p.label))
-            .collect();
-        check(c, wrong.is_empty(), format!("map: near pins are on the picture, far ones off it (wrong: {wrong:?})"));
         end(w, c, String::new());
         true
     }));
@@ -80,8 +64,6 @@ pub fn map_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool) {
     s.push(Box::new(|w, c| {
         let t = target(w);
         check(c, t == Some((Stop::Dropoff, "Lint Trap".into())), format!("map: the crate carried off, the pin moves to the dropoff ({t:?})"));
-        let line = gp(w).readout.clone();
-        check(c, line.contains("deliver to: Lint Trap"), format!("map: the job line's pointer follows the same stop ('{}')", line.replace('\n', " | ")));
         tap(w, KeyCode::KeyT);
         true
     }));

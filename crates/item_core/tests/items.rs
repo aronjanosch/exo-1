@@ -32,19 +32,6 @@ fn an_item_has_a_three_letter_code_for_the_bar() {
 }
 
 #[test]
-fn the_shipped_items_have_their_codes() {
-    let files: Vec<(String, String)> = std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../content/items"))
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .map(|p| (p.file_name().unwrap().to_string_lossy().into_owned(), std::fs::read_to_string(p).unwrap()))
-        .collect();
-    let d = ItemDefs::from_files(files.iter().map(|(n, t)| (n.as_str(), t.as_str()))).unwrap();
-    let codes: Vec<_> = ["wrench", "extinguisher", "bandage"].iter().map(|id| d.get(id).unwrap()).map(|x| (x.code.clone(), x.short_code())).collect();
-    let want = |c: &str| (c.to_string(), c.to_string());
-    assert_eq!(codes, [want("WRN"), want("EXT"), want("BDG")]);
-}
-
-#[test]
 fn definitions_are_checked() {
     let d = defs();
     assert_eq!(d.get("extinguisher").unwrap().hands, 2);

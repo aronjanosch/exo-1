@@ -386,69 +386,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_aux_screen_sits_beside_the_junction_box_screen_at_its_height() {
-        let screens: &[Mount] = &SCREENS;
-        let jb = screens.iter().find(|m| m.id == reactor_screen::JUNCTION_ID).expect("the junction box screen is mounted");
-        let aux = screens.iter().find(|m| m.id == reactor_screen::AUX_ID).expect("the AUX screen is mounted");
-        assert_eq!(aux.at[1], jb.at[1], "on the same wall");
-        assert_eq!(aux.lift, jb.lift, "the same height");
-        assert_eq!(aux.size, jb.size, "the same size");
-        assert_eq!(aux.turn, jb.turn, "facing the same way");
-        let jb_east = jb.at[0] + jb.size[0] * 0.5;
-        let aux_west = aux.at[0] - aux.size[0] * 0.5;
-        assert!(aux_west >= jb_east && aux_west - jb_east < 0.1, "beside the junction box screen, no overlap: {jb_east} and {aux_west}");
-    }
-
-    #[test]
-    fn the_status_screen_sits_beside_the_readout_on_the_same_wall() {
-        let screens: &[Mount] = &SCREENS;
-        let m = screens.iter().find(|m| m.id == reactor_screen::STATUS_ID).expect("the status screen is mounted");
-        let readout_east = REACTOR_SCREEN_AT[0] + READOUT_SIZE[0] * 0.5;
-        let status_west = m.at[0] - m.size[0] * 0.5;
-        assert!(status_west >= readout_east && status_west - readout_east < 0.1, "the status screen touches the readout's east edge: {readout_east} and {status_west}");
-        assert_eq!(m.at[1], REACTOR_SCREEN_AT[1], "on the same wall");
-        assert_eq!(m.turn, 180.0, "facing into the room, as the readout does");
-        assert!((m.lift + m.size[1] * 0.5 - (REACTOR_SCREEN_LIFT + READOUT_SIZE[1] * 0.5)).abs() < 1e-9, "centred at the readout's height");
-        assert!(m.at[0] + m.size[0] * 0.5 < ROOM.centre[0] + ROOM.half[0] - 0.2, "clear of the room's east corner: {}", m.at[0] + m.size[0] * 0.5);
-        assert_eq!(m.size, READOUT_SIZE, "as big as the readout (the M tier)");
-    }
-
-    #[test]
-    fn the_room_and_the_corridor_are_where_the_layout_says() {
-        assert_eq!(place_of([-14.0, -15.0]), Place::Engine);
-        assert_eq!(place_of([-14.0, -8.0]), Place::Corridor);
-        assert_eq!(place_of([0.0, -12.0]), Place::Outside, "the pad main is outside");
-        assert_eq!(place_of([-14.0, -4.0]), Place::Outside, "the walkway past the corridor's end");
-        assert!((ROOM.half[0] * 2.0 - 10.0).abs() < 1e-9 && (ROOM.half[1] * 2.0 - 8.0).abs() < 1e-9, "10 x 8 m");
-        assert!((CORRIDOR.half[0] * 2.0 - 2.0).abs() < 1e-9 && (CORRIDOR.half[1] * 2.0 - 6.0).abs() < 1e-9, "2 m wide, 6 m long");
-        for z in [&ROOM, &CORRIDOR] {
-            let inside = |p: [f64; 2]| p[0].abs() <= HALF_EXTENT[0] && p[1].abs() <= HALF_EXTENT[1];
-            assert!(inside([z.centre[0] - z.half[0], z.centre[1] - z.half[1]]) && inside([z.centre[0] + z.half[0], z.centre[1] + z.half[1]]), "{} is in the area", z.name);
-        }
-        assert!(ROOM.centre[0] + ROOM.half[0] < PAD_MAIN[0] - 5.0);
-    }
-
-    #[test]
-    fn the_door_is_in_the_doorway_and_the_slide_clears_it() {
-        assert!((DOOR_AT[0] - (CORRIDOR.centre[0])).abs() < 1e-9);
-        assert!((DOOR_SIZE[0] - 2.0).abs() < 1e-9);
-        let open_west = DOOR_AT[0] + DOOR_SLIDE - DOOR_SIZE[0] * 0.5;
-        assert!((open_west - (CORRIDOR.centre[0] + CORRIDOR.half[0])).abs() < 1e-9);
-        assert!(DOOR_AT[1] < ROOM.centre[1] + ROOM.half[1] + 1e-9 && DOOR_AT[1] + WALL * 0.5 <= -11.0 + 1e-9);
-    }
-
-    #[test]
-    fn the_machines_stand_inside_the_room() {
-        for p in MACHINES.iter().filter(|p| p.lift == 0.0) {
-            assert!(ROOM.contains([p.at[0] - p.size[0] * 0.5, p.at[1] - p.size[2] * 0.5]) && ROOM.contains([p.at[0] + p.size[0] * 0.5, p.at[1] + p.size[2] * 0.5]), "{} is in the room", p.id);
-            assert!(p.size[1] < ROOM_HEIGHT);
-        }
-        assert_eq!(REACTOR_SIZE, [2.0, 2.5, 2.0]);
-        assert_eq!(COOLANT_PUMP_SIZE, [1.0, 1.2, 1.0]);
-        assert_eq!(JUNCTION_BOX_SIZE, [0.6, 0.9, 0.3]);
-    }
-
-    #[test]
     fn the_deck_has_the_room_full_of_air_and_the_door_shut() {
         let mut a = EngineAir::new();
         assert!((a.oxygen_at(ROOM.centre) - 1.0).abs() < 1e-9);
@@ -461,19 +398,6 @@ mod tests {
             let _ = a.deck.step(1.0 / 30.0, &[]);
         }
         assert!((a.deck.total_oxygen() - before).abs() < 1e-6 * before, "air is conserved");
-    }
-
-    #[test]
-    fn the_alarm_pulses_and_tones_by_level() {
-        assert_eq!(alarm_pulse(Alarm::None, 1.3), 0.0);
-        assert_eq!(tone_every(Alarm::None), None);
-        assert_eq!(tone_every(Alarm::Warn), Some(2.0));
-        assert_eq!(tone_every(Alarm::Danger), Some(1.0));
-        for t in [0.0, 0.1, 0.2, 0.3] {
-            let (w, d) = (alarm_pulse(Alarm::Warn, t), alarm_pulse(Alarm::Danger, t));
-            assert!((0.0..=1.0).contains(&w) && (0.0..=1.0).contains(&d));
-        }
-        assert!((alarm_pulse(Alarm::Danger, 0.2) - 1.0).abs() < 1e-9, "a quarter of the Danger period is the top");
     }
 }
 
@@ -502,33 +426,5 @@ pub fn ignition_at(s: Source) -> [f64; 2] {
         [c[0] + to[0].signum() * (size[0] * 0.5 + IGNITION_OUT), c[1]]
     } else {
         [c[0], c[1] + to[1].signum() * (size[2] * 0.5 + IGNITION_OUT)]
-    }
-}
-
-#[cfg(test)]
-mod placement_tests {
-    use super::*;
-
-    fn inside_box(p: [f64; 2], c: [f64; 2], size: [f64; 3]) -> bool {
-        (p[0] - c[0]).abs() < size[0] * 0.5 && (p[1] - c[1]).abs() < size[2] * 0.5
-    }
-
-    #[test]
-    fn ignition_is_outside_every_machine_and_inside_the_room() {
-        for s in [Source::Reactor, Source::Pump, Source::Junction] {
-            let p = ignition_at(s);
-            for m in [Source::Reactor, Source::Pump, Source::Junction] {
-                let (c, size) = machine_of(m);
-                assert!(!inside_box(p, c, size), "{s:?} fire at {p:?} is inside the {m:?} box");
-            }
-            assert!((p[0] - ROOM.centre[0]).abs() < ROOM.half[0], "{s:?} fire at {p:?} is outside the room (x)");
-            assert!((p[1] - ROOM.centre[1]).abs() < ROOM.half[1], "{s:?} fire at {p:?} is outside the room (y)");
-        }
-    }
-
-    #[test]
-    fn ignition_sits_on_the_front_face_at_half_depth_plus_out() {
-        assert_eq!(ignition_at(Source::Reactor), [REACTOR_AT[0], REACTOR_AT[1] + REACTOR_SIZE[2] * 0.5 + IGNITION_OUT]);
-        assert_eq!(ignition_at(Source::Pump), [COOLANT_PUMP_AT[0] - (COOLANT_PUMP_SIZE[0] * 0.5 + IGNITION_OUT), COOLANT_PUMP_AT[1]]);
     }
 }

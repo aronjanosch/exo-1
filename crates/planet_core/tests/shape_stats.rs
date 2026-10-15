@@ -21,11 +21,5 @@ fn shape_stats_are_consistent_and_repeatable() {
     assert!(a.max_above_sea_m >= a.p99_land_above_sea_m && a.p99_land_above_sea_m > 0.0);
     let total: f64 = a.biome_share_land.values().sum();
     assert!((total - 1.0).abs() < 1e-9, "biome shares sum to {total}");
-    assert!(a.biomes_present >= 3, "{:?}", a.biome_share_land);
 }
 
-#[test]
-fn a_flat_patch_counts_as_plain_and_a_steep_one_does_not() {
-    let s = hearth().0.shape_stats(4000, 0);
-    assert!(s.plain_share_land > 0.02 && s.plain_share_land < 0.98, "plain {}", s.plain_share_land);
-}

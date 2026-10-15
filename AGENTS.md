@@ -27,11 +27,10 @@ A co-op crew game in Rust with Bevy: friends run one walkable ship together, eac
 
 ## Agent loop
 
-- **Test budget**: testing, building and screenshots take at most a fifth of a session's time; the rest is code. Code a batch (several changes or features), then test it once:
-  - **A batch** is done when its own tests pass, run once for the whole batch: `cargo test -p <crate>` for every crate it touches, and its scenarios as `cargo ts scenario_<name>` (dynamic; `cargo test -p exo_app` builds static Bevy, 900 MB per binary).
-  - **A merge** of a batch with green tests (into a round branch or `main`) is pushed as it is when it merged cleanly; only files the merge had to resolve get their tests run again.
-  - **A big round** (a whole milestone or most of it) runs the full gate once, at its end, before it reaches `main`: `scripts/gate` (Linux and macOS; on Windows `cargo t` directly) runs `cargo t` (cargo-nextest, `mise install`, every workspace test and every headless scenario, about 50 s on a quiet machine, the whole CPU), one at a time on the machine. With it go the timing test `cargo t -P perf` on a quiet machine and `cargo check --workspace --all-targets` for the static build (GitHub CI is off, runner budget).
-  - **Window screenshots**: one run per batch, only the shots of what changed; none when the initiator checks the look himself.
+- **Focused tests**: agents test only what changed, once per batch (several changes or features coded together), and leave the broad run to people. Testing and building take at most a fifth of a session's time.
+  - **A batch** is done when the tests that cover its changes pass: the touched crates' tests, narrowed with a name filter where the crate is large (`cargo test -p <crate> <filter>`), and the scenario of the feature it changed (`cargo ts scenario_<name>`; dynamic, `cargo test -p exo_app` builds static Bevy, 900 MB per binary). A test whose code did not change since its last green run stays unrun.
+  - **A merge** of a green batch is pushed as it is when it merged cleanly; a resolved conflict reruns only the tests of the resolved files.
+  - **The full gate and the look are the initiator's**: people run `scripts/gate` (Linux and macOS; on Windows `cargo t`: every workspace test and every headless scenario, one at a time on the machine), `cargo t -P perf` and `cargo check --workspace --all-targets` before a round reaches `main`, and they judge screens and feel by playing. Agents run them only when asked.
   Commands and scenario names: `README.md`, section "Run".
 - The app's integration tests are one binary (`crates/exo_app/tests/app/`): a new scenario test is a module there. Each extra file in `tests/` links Bevy again.
 - Several sessions at once (a lane each) or a playtest round across them: skill `exo-orchestrate`.

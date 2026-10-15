@@ -5,7 +5,11 @@
 //!
 //! Quiet on purpose: the alarm tone (0.12) is the reference loudness, and no volume here is above
 //! it. Distances are the walker's to the source, in metres; a source beyond its range is silent.
-//! The sounds can not be heard in a test: the window part is untested by ear (`TODO`s below).
+//! Reactor (#300 r23): a drone at the reactor, level by the set fission and pitch by the heat; a
+//! beep on each 2 Hz blink on-phase while a bad lamp (critical heat or output, no fuel, meltdown) is
+//! on; a rising whoop on a boost press. Barotrauma's sounds, our synth.
+//! The sounds can not be heard in a test: the window part is untested by ear (`TODO(initiator)`s
+//! below; the reactor's drone, beep and whoop are untested by ear: TODO(initiator), levels to tune).
 use crate::audio::{loop_volume, Sound, SynthAudio};
 use crate::dev_area::engine_room::source_at;
 use crate::dev_area::DevArea;

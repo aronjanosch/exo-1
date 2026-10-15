@@ -106,3 +106,13 @@ fn lowering_the_lights_limit_does_not_save_the_lights() {
     assert!(!g.supply(Group::Lights).on);
     assert_eq!(g.factor(Group::Engines), 450.0 / 800.0);
 }
+
+#[test]
+fn the_r40_groups_start_idle_and_draw_nothing() {
+    let mut g = Grid::default();
+    for x in [Group::Shields, Group::Weapons, Group::JumpDrive] {
+        assert_eq!(g.group(x).demand_kw, 0.0, "{x:?} starts at 0 kW");
+        assert!(g.breaker(x));
+    }
+    assert_eq!(g.request_kw(), 1280.0, "the load is the three room groups' only");
+}

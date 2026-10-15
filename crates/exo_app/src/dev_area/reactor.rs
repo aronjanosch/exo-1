@@ -312,6 +312,9 @@ pub fn group_of(g: BreakerGroup) -> Group {
         BreakerGroup::Engines => Group::Engines,
         BreakerGroup::LifeSupport => Group::LifeSupport,
         BreakerGroup::Lights => Group::Lights,
+        BreakerGroup::Shields => Group::Shields,
+        BreakerGroup::Weapons => Group::Weapons,
+        BreakerGroup::JumpDrive => Group::JumpDrive,
     }
 }
 
@@ -599,7 +602,7 @@ mod tests {
         let mut k = ReactorCounts::default();
         s.apply(ReactorAsk::SetLimit(BreakerGroup::Engines, 0.5), &cfg(), &mut k);
         let n = s.news(1.0);
-        assert_eq!(n.limits, [0.5, 1.0, 1.0]);
+        assert_eq!(n.limits, [0.5, 1.0, 1.0, 1.0, 1.0, 1.0]);
         let demand = s.room.grid().group(Group::Engines).demand_kw;
         assert_eq!(n.demand_kw[0], demand, "the demand is the full demand, not the limited request");
         assert!((n.delivered_kw[0] - s.room.grid().supply(Group::Engines).delivered_kw).abs() < 1e-9);
@@ -633,7 +636,7 @@ mod tests {
         let before = s.news(1.0).load_kw;
         s.apply(ReactorAsk::SetBreaker(BreakerGroup::Lights, false), &cfg(), &mut k);
         let n = s.news(1.0);
-        assert_eq!(n.breakers, [true, true, false]);
+        assert_eq!(n.breakers, [true, true, false, true, true, true]);
         let lights = s.room.grid().group(Group::Lights).demand_kw;
         assert!((before - n.load_kw - lights).abs() < 1e-9, "the load drops by the lights' demand");
         s.apply(ReactorAsk::SetPumpMode(PumpMode::Off), &cfg(), &mut k);

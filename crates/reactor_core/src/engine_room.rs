@@ -904,9 +904,11 @@ impl EngineRoom {
         let supply = through + self.battery.supply(shortfall, dt);
         if self.aux {
             // The main grid: the Engines group only. The aux reactor: the aux groups that are switched on.
-            let mut main = [0.0; Group::ALL.len()];
-            main[Group::Engines.index()] = self.grid.request_of(Group::Engines);
-            let left = self.grid.distribute_with(supply, main, [true, false, false]);
+            // Only Life Support and Lights can go to the aux side; every other group stays on the main grid.
+            let aux_side = |g: Group| matches!(g, Group::LifeSupport | Group::Lights);
+            let main: [f64; Group::ALL.len()] = std::array::from_fn(|i| if aux_side(Group::ALL[i]) { 0.0 } else { self.grid.request_of(Group::ALL[i]) });
+            let main_write: [bool; Group::ALL.len()] = std::array::from_fn(|i| !aux_side(Group::ALL[i]));
+            let left = self.grid.distribute_with(supply, main, main_write);
             if shortfall <= 0.0 {
                 self.battery.absorb(left, dt);
             }
@@ -916,7 +918,8 @@ impl EngineRoom {
                     aux[g.index()] = self.grid.group(g).demand_kw;
                 }
             }
-            self.grid.distribute_with(self.tuning.aux_output_kw, aux, [false, true, true]);
+            let aux_write: [bool; Group::ALL.len()] = std::array::from_fn(|i| aux_side(Group::ALL[i]));
+            self.grid.distribute_with(self.tuning.aux_output_kw, aux, aux_write);
         } else {
             let left = self.grid.distribute(supply);
             if shortfall <= 0.0 {

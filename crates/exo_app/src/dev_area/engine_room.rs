@@ -71,7 +71,7 @@ pub struct Mount {
     pub turn: f64,
 }
 
-pub const SCREENS: [Mount; 11] = [
+pub const SCREENS: &[Mount] = &[
     Mount { id: reactor_screen::PUMP_ID, name: reactor_screen::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::JUNCTION_ID, name: reactor_screen::JUNCTION_NAME, at: JUNCTION_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::AUX_ID, name: reactor_screen::AUX_NAME, at: AUX_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
@@ -223,7 +223,7 @@ const BREACH_SIZE: [f64; 3] = [1.0, 1.2, 0.1];
 const WALL_COLOUR: [f32; 3] = [0.42, 0.44, 0.47];
 const DEVICE_COLOUR: [f32; 3] = [0.3, 0.33, 0.38];
 
-const PARTS: [Part; 8] = [
+const PARTS: &[Part] = &[
     Part { id: "engine_wall_west", at: [-19.15, -15.15], size: [WALL, ROOM_HEIGHT, 8.3], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "engine_wall_east", at: [-8.85, -15.15], size: [WALL, ROOM_HEIGHT, 8.3], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "engine_wall_south", at: [-14.0, -19.15], size: [10.6, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
@@ -236,7 +236,7 @@ const PARTS: [Part; 8] = [
 
 /// The machines and the screen, standing in the room (not in `PARTS` only because they are
 /// named constants above).
-const MACHINES: [Part; 5] = [
+const MACHINES: &[Part] = &[
     Part { id: REACTOR, at: REACTOR_AT, size: REACTOR_SIZE, lift: 0.0, colour: [0.55, 0.3, 0.2] },
     Part { id: COOLANT_PUMP, at: COOLANT_PUMP_AT, size: COOLANT_PUMP_SIZE, lift: 0.0, colour: DEVICE_COLOUR },
     Part { id: JUNCTION_BOX, at: JUNCTION_BOX_AT, size: JUNCTION_BOX_SIZE, lift: 0.0, colour: [0.85, 0.7, 0.2] },
@@ -402,7 +402,7 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
     let centre = ground + up * (REACTOR_SCREEN_LIFT + READOUT_SIZE[1] * 0.5);
     let e = commands.spawn(DisplayPanel { id: reactor_screen::READOUT_ID, name: reactor_screen::READOUT_NAME.into(), size_m: DVec2::from(READOUT_SIZE), centre, rot }).id();
     area.entities.push(e);
-    for m in &SCREENS {
+    for m in SCREENS.iter() {
         let (ground, up) = frame.ground(&planet, m.at[0], m.at[1], 0.0);
         let rot = frame.rotation(up, m.turn);
         let centre = ground + up * (m.lift + m.size[1] * 0.5);

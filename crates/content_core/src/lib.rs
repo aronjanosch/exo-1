@@ -17,6 +17,27 @@ pub fn parse_strict<T: DeserializeOwned>(what: &str, s: &str) -> Result<T, Strin
     serde_json::from_value(v).map_err(|e| format!("{what}: {e}"))
 }
 
+/// Like `parse_strict`, but an optional `_comment` string is dropped at every depth, not only at
+/// the top: reactor.json keeps one comment per block (`reactor`, `room`, `grid`, ...). A non-string
+/// comment is an error wherever it sits.
+pub fn parse_strict_commented<T: DeserializeOwned>(what: &str, s: &str) -> Result<T, String> {
+    fn strip(v: &mut serde_json::Value) -> Result<(), String> {
+        match v {
+            serde_json::Value::Object(o) => {
+                if let Some(c) = o.remove("_comment") && !c.is_string() {
+                    return Err("_comment must be a string".to_string());
+                }
+                o.values_mut().try_for_each(strip)
+            }
+            serde_json::Value::Array(a) => a.iter_mut().try_for_each(strip),
+            _ => Ok(()),
+        }
+    }
+    let mut v: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("{what}: {e}"))?;
+    strip(&mut v).map_err(|m| format!("{what}: {m}"))?;
+    serde_json::from_value(v).map_err(|e| format!("{what}: {e}"))
+}
+
 /// One content file: its path relative to the content root of its system (`commodity/mud.json`)
 /// and its text.
 #[derive(Clone, Debug)]

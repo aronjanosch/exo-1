@@ -355,7 +355,7 @@ enum Target {
     Action(&'static str),
 }
 
-const CALLOUTS: [(f64, f64, [&str; 2], Target); 7] = [
+const CALLOUTS: &[(f64, f64, [&str; 2], Target)] = &[
     (LEFT, 4.0, ["keep the needle in the green", "red too long: core goes bang"], Target::Leaf(0)),
     (RIGHT, 4.0, ["what you make", "vs. what the ship wants"], Target::Leaf(1)),
     (RIGHT, 104.0, ["rods; pull one in a pinch", ""], Target::Leaf(2)),
@@ -479,7 +479,7 @@ pub fn readout_help_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     for w in &leaves {
         dimmed_leaf(w.widget, w.rect, o, c.size.x, &mut shapes);
     }
-    for (x, y, lines, target) in CALLOUTS {
+    for &(x, y, lines, target) in CALLOUTS {
         let rect = match target {
             Target::Leaf(i) => leaves[i].rect,
             Target::Action(a) => base.find(a).map(|p| p.rect).unwrap_or(c),
@@ -616,21 +616,30 @@ fn coolant_tube(r: &ReactorNews, blink_on: bool) -> Item {
     canvas(60.0, 109.0, s, None)
 }
 
-fn lever(lines: &[&str], on: bool, action: &str) -> Item {
-    lever_in(94.0, lines, on, action, if on { Ink::Fg1 } else { Ink::Fg3 })
+/// A lever's track and handle, px. The room's levers use `LEVER`; the junction box packs six of
+/// them on one screen (r39: two rows of three in the same 260 px), so its track is `LEVER_PACKED`.
+/// TODO(initiator): the packed look, not seen in play yet.
+#[derive(Clone, Copy)]
+struct Lever {
+    track: f64,
+    handle: f64,
 }
 
-fn lever_in(w: f64, lines: &[&str], on: bool, action: &str, name_ink: Ink) -> Item {
+const LEVER: Lever = Lever { track: 124.0, handle: 34.0 };
+const LEVER_PACKED: Lever = Lever { track: 24.0, handle: 20.0 };
+
+fn lever_in(w: f64, geo: Lever, lines: &[&str], on: bool, action: &str, name_ink: Ink) -> Item {
     // The names are set in lines of 17 px, bottom-aligned on the slot's top (y 36): a name too wide
     // for the lever is split over two lines rather than cut.
     let cx = w / 2.0;
     let mut s: Vec<Shape> = lines.iter().enumerate().map(|(i, l)| text(0.0, 36.0 - 17.0 * (lines.len() - i) as f64, w, 17.0, l, 16.0, TextFace::Display, name_ink, true)).collect();
-    s.push(Shape::Rect { x: cx - 11.0, y: 36.0, w: 22.0, h: 124.0, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) });
-    let hy = if on { 36.0 } else { 126.0 };
+    s.push(Shape::Rect { x: cx - 11.0, y: 36.0, w: 22.0, h: geo.track, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) });
+    // The handle sits at the track's top when on, its bottom when off.
+    let hy = if on { 36.0 } else { 36.0 + geo.track - geo.handle };
     let ink = if on { Ink::Hud } else { Ink::Warn };
-    s.push(Shape::Rect { x: cx - 24.0, y: hy, w: 48.0, h: 34.0, fill: Some(ink), outline: Some((Ink::FgTitle, 2.0)) });
-    s.push(text(cx - 24.0, hy, 48.0, 34.0, if on { "ON" } else { "OFF" }, 16.0, TextFace::DisplayBold, Ink::Bg0, true));
-    canvas(w, 168.0, s, Some(action)).flex(1.0)
+    s.push(Shape::Rect { x: cx - 24.0, y: hy, w: 48.0, h: geo.handle, fill: Some(ink), outline: Some((Ink::FgTitle, 2.0)) });
+    s.push(text(cx - 24.0, hy, 48.0, geo.handle, if on { "ON" } else { "OFF" }, 16.0, TextFace::DisplayBold, Ink::Bg0, true));
+    canvas(w, 44.0 + geo.track, s, Some(action)).flex(1.0)
 }
 
 pub const TALL_CANVAS: f64 = 320.0;
@@ -671,12 +680,14 @@ fn total_bar(total: f64, max_kw: f64) -> Item {
 
 fn junction_lever(r: &ReactorNews, g: BreakerGroup, names: &[&str], action: &str, limit: &str) -> Item {
     let i = g.index();
+    let on = r.breakers[i];
+    let name_ink = if on { Ink::Fg1 } else { Ink::Fg3 };
     column(
-        4.0,
+        3.0,
         vec![
-            lever(names, r.breakers[i], action).fixed(168.0),
+            lever_in(94.0, LEVER_PACKED, names, on, action, name_ink).fixed(44.0 + LEVER_PACKED.track),
             group_bar(r.delivered_kw[i], r.demand_kw[i], r.limits[i]),
-            slider(r.limits[i], "", limit).fixed(40.0),
+            slider(r.limits[i], "", limit).fixed(20.0),
         ],
     )
     .fixed(94.0)
@@ -687,7 +698,8 @@ pub fn junction_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
         return tall(no_power(JUNCTION_NAME, "JB-01", Tier::S));
     }
     let r = r.copied().unwrap_or_default();
-    let levers = row(
+    // Two rows of three (r39): the room's three groups, then the r40 groups. Each row is 112 px.
+    let row_a = row(
         5.0,
         vec![
             junction_lever(&r, BreakerGroup::Engines, &["ENGINES"], "br_engines", "lim_engines"),
@@ -695,9 +707,19 @@ pub fn junction_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
             junction_lever(&r, BreakerGroup::Lights, &["LIGHTS"], "br_lights", "lim_lights"),
         ],
     )
-    .fixed(234.0);
+    .fixed(112.0);
+    let row_b = row(
+        5.0,
+        vec![
+            junction_lever(&r, BreakerGroup::Shields, &["SHIELDS"], "br_shields", "lim_shields"),
+            junction_lever(&r, BreakerGroup::Weapons, &["WEAPONS"], "br_weapons", "lim_weapons"),
+            junction_lever(&r, BreakerGroup::JumpDrive, &["JUMP", "DRIVE"], "br_jump", "lim_jump"),
+        ],
+    )
+    .fixed(112.0);
+    let levers = column(4.0, vec![row_a, row_b]).fixed(228.0);
     let total = r.delivered_kw.iter().sum::<f64>();
-    let body = column(8.0, vec![levers, total_bar(total, max_kw)]);
+    let body = column(6.0, vec![levers, total_bar(total, max_kw)]);
     tall(Panel::screen(Tier::S, JUNCTION_NAME, "JB-01", body).with_padding(6.0))
 }
 
@@ -742,7 +764,7 @@ pub fn aux_panel(r: Option<&ReactorNews>) -> Panel {
     let name = Ink::Fg1;
     let switches = row(
         0.0,
-        vec![lever_in(76.0, &["LIFE", "SUPPORT"], r.aux_life_support, "aux_life", name), lever_in(76.0, &["LIGHTS"], r.aux_lights, "aux_lights", name)],
+        vec![lever_in(76.0, LEVER, &["LIFE", "SUPPORT"], r.aux_life_support, "aux_life", name), lever_in(76.0, LEVER, &["LIGHTS"], r.aux_lights, "aux_lights", name)],
     )
     .fixed(152.0);
     let boost = column(4.0, vec![micro("AUX OUTPUT").fixed(14.0), readout(format!("BOOST +{:.0} kW", r.aux_boost_kw)).text_size(font::SMALL).tone(Tone::Normal)]);
@@ -996,6 +1018,9 @@ pub fn limit_group(action: &str) -> Option<BreakerGroup> {
         "lim_engines" => Some(BreakerGroup::Engines),
         "lim_life" => Some(BreakerGroup::LifeSupport),
         "lim_lights" => Some(BreakerGroup::Lights),
+        "lim_shields" => Some(BreakerGroup::Shields),
+        "lim_weapons" => Some(BreakerGroup::Weapons),
+        "lim_jump" => Some(BreakerGroup::JumpDrive),
         _ => None,
     }
 }
@@ -1031,6 +1056,9 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "br_engines" => Some(BreakerGroup::Engines),
                 "br_life" => Some(BreakerGroup::LifeSupport),
                 "br_lights" => Some(BreakerGroup::Lights),
+                "br_shields" => Some(BreakerGroup::Shields),
+                "br_weapons" => Some(BreakerGroup::Weapons),
+                "br_jump" => Some(BreakerGroup::JumpDrive),
                 _ => None,
             };
             group.and_then(|g| snap.map(|r| ReactorAsk::SetBreaker(g, new_state(r.breakers[g.index()]))))
@@ -1133,7 +1161,7 @@ mod tests {
     }
 
     fn news() -> ReactorNews {
-        ReactorNews { powered: true, power_on: true, pump_on: true, pump_mode: PumpMode::High, pump_speed: 1.0, flow: 1.0, breakers: [true; 3], optimal: [35.0, 65.0], allowed: [20.0, 80.0], temp: 54.0, output_kw: 500.0, load_kw: 500.0, fuel: [tube(80.0), tube(12.0), Default::default(), Default::default()], ..Default::default() }
+        ReactorNews { powered: true, power_on: true, pump_on: true, pump_mode: PumpMode::High, pump_speed: 1.0, flow: 1.0, breakers: [true; 6], optimal: [35.0, 65.0], allowed: [20.0, 80.0], temp: 54.0, output_kw: 500.0, load_kw: 500.0, fuel: [tube(80.0), tube(12.0), Default::default(), Default::default()], ..Default::default() }
     }
 
     fn status_news() -> ReactorNews {

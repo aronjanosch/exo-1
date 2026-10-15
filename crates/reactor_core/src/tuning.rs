@@ -1,4 +1,4 @@
-use content_core::{parse_strict, File};
+use content_core::{parse_strict_commented, File};
 use serde::{Deserialize, Serialize};
 
 use crate::battery::BatteryTuning;
@@ -43,7 +43,7 @@ impl Tuning {
 
     /// Parses and checks the file's text.
     pub fn parse(text: &str) -> Result<Tuning, Vec<String>> {
-        let t = parse_strict::<Tuning>(REACTOR_PATH, text).map_err(|m| vec![m])?;
+        let t = parse_strict_commented::<Tuning>(REACTOR_PATH, text).map_err(|m| vec![m])?;
         let mut e = Vec::new();
         t.check(&mut e);
         if e.is_empty() { Ok(t) } else { Err(e) }

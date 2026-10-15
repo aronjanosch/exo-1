@@ -26,8 +26,8 @@ pub const SIZE: [f64; 2] = [1.6, 1.0];
 pub const TURN: f64 = -90.0;
 
 /// A row's height (px) and the gap between the rows.
-const ROW_H: f64 = 20.0;
-const GAP: f64 = 4.0;
+const ROW_H: f64 = 18.0;
+const GAP: f64 = 3.0;
 
 /// The monitor as the reactor snapshot has it. Without a snapshot every reading is a dash.
 pub fn monitor_panel(r: Option<&ReactorNews>) -> Panel {
@@ -41,7 +41,14 @@ pub fn monitor_panel(r: Option<&ReactorNews>) -> Panel {
         ("JUNCTION", r.map(|r| r.junction)),
         ("O2 GEN", r.map(|r| r.oxygen_generator)),
     ];
-    let groups = [("ENGINES", BreakerGroup::Engines), ("LIFE SUPP", BreakerGroup::LifeSupport), ("LIGHTS", BreakerGroup::Lights)];
+    let groups = [
+        ("ENGINES", BreakerGroup::Engines),
+        ("LIFE SUPP", BreakerGroup::LifeSupport),
+        ("LIGHTS", BreakerGroup::Lights),
+        ("SHIELDS", BreakerGroup::Shields),
+        ("WEAPONS", BreakerGroup::Weapons),
+        ("JUMP", BreakerGroup::JumpDrive),
+    ];
 
     let mut lines = vec![head(&["ROOM", "AIR", "FIRE", "BREACH"])];
     lines.extend(room_rows(&room_lines));

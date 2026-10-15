@@ -177,7 +177,14 @@ pub enum BreakerGroup {
     Engines,
     LifeSupport,
     Lights,
+    /// The r40 groups (idle until driven): shields, weapons, the jump drive.
+    Shields,
+    Weapons,
+    JumpDrive,
 }
+
+/// How many breaker groups there are: the size of the per-group arrays in `ReactorNews`.
+pub const BREAKER_GROUPS: usize = 6;
 
 impl BreakerGroup {
     pub fn index(self) -> usize {
@@ -331,12 +338,12 @@ pub struct ReactorNews {
     pub turbine_allowed: [f64; 2],
     /// The machines have power: the junction box works and the reactor delivers.
     pub powered: bool,
-    /// The breakers, by `BreakerGroup::index`: engines, life support, lights.
-    pub breakers: [bool; 3],
+    /// The breakers, by `BreakerGroup::index`: engines, life support, lights, shields, weapons, jump drive.
+    pub breakers: [bool; BREAKER_GROUPS],
     /// The limits (0..1), the kW each group gets and its demand kW, by `BreakerGroup::index`.
-    pub limits: [f64; 3],
-    pub delivered_kw: [f64; 3],
-    pub demand_kw: [f64; 3],
+    pub limits: [f64; BREAKER_GROUPS],
+    pub delivered_kw: [f64; BREAKER_GROUPS],
+    pub demand_kw: [f64; BREAKER_GROUPS],
     /// The lights group's factor, 0..1 (delivered over demand, capped by its limit): the room
     /// lights' voltage (`reactor_core::LightState`). Below 0.1 the emergency lamps are on.
     pub lights_factor: f64,
@@ -545,9 +552,9 @@ mod tests {
     #[test]
     fn reactor_news_travels_as_it_is() {
         let news = ReactorNews {
-            limits: [0.5, 1.0, 0.25],
-            delivered_kw: [400.0, 0.0, 80.0],
-            demand_kw: [800.0, 400.0, 80.0],
+            limits: [0.5, 1.0, 0.25, 1.0, 1.0, 1.0],
+            delivered_kw: [400.0, 0.0, 80.0, 0.0, 0.0, 0.0],
+            demand_kw: [800.0, 400.0, 80.0, 0.0, 0.0, 0.0],
             reactor: PartNews { share: 0.9, working: true },
             pump: PartNews { share: 0.4, working: true },
             junction: PartNews { share: 1.0, working: true },
@@ -577,7 +584,7 @@ mod tests {
             turbine_optimal: [40.0, 56.0],
             turbine_allowed: [30.0, 66.0],
             powered: true,
-            breakers: [true, false, true],
+            breakers: [true, false, true, true, true, true],
             pump_on: true,
             pump_mode: PumpMode::High,
             pump_speed: 0.5,

@@ -9,10 +9,14 @@ pub enum Group {
     Engines,
     LifeSupport,
     Lights,
+    /// Idle until the r40 lanes drive them: they draw nothing (`from_tuning` starts their demand at 0).
+    Shields,
+    Weapons,
+    JumpDrive,
 }
 
 impl Group {
-    pub const ALL: [Group; 3] = [Group::Engines, Group::LifeSupport, Group::Lights];
+    pub const ALL: [Group; 6] = [Group::Engines, Group::LifeSupport, Group::Lights, Group::Shields, Group::Weapons, Group::JumpDrive];
 
     pub(crate) fn index(self) -> usize {
         self as usize
@@ -75,6 +79,9 @@ pub struct GridTuning {
     pub engines: GroupTuning,
     pub life_support: GroupTuning,
     pub lights: GroupTuning,
+    pub shields: GroupTuning,
+    pub weapons: GroupTuning,
+    pub jump_drive: GroupTuning,
 }
 
 impl Default for GridTuning {
@@ -83,6 +90,9 @@ impl Default for GridTuning {
             engines: GroupTuning { demand_kw: 800.0, priority: 2, min_ratio: 0.5, limit: 1.0 },
             life_support: GroupTuning { demand_kw: 400.0, priority: 3, min_ratio: 0.3, limit: 1.0 },
             lights: GroupTuning { demand_kw: 80.0, priority: 1, min_ratio: 0.3, limit: 1.0 },
+            shields: GroupTuning { demand_kw: 300.0, priority: 2, min_ratio: 0.3, limit: 1.0 },
+            weapons: GroupTuning { demand_kw: 400.0, priority: 2, min_ratio: 0.5, limit: 1.0 },
+            jump_drive: GroupTuning { demand_kw: 400.0, priority: 1, min_ratio: 0.5, limit: 1.0 },
         }
     }
 }
@@ -93,6 +103,9 @@ impl GridTuning {
             Group::Engines => self.engines,
             Group::LifeSupport => self.life_support,
             Group::Lights => self.lights,
+            Group::Shields => self.shields,
+            Group::Weapons => self.weapons,
+            Group::JumpDrive => self.jump_drive,
         }
     }
 }
@@ -106,8 +119,11 @@ impl Default for Grid {
 impl Grid {
     pub fn from_tuning(t: &GridTuning) -> Grid {
         let g = |s: GroupTuning| GroupState { demand_kw: s.demand_kw, breaker: true, priority: s.priority, min_ratio: s.min_ratio, limit: s.limit };
+        // The idle groups start at 0 kW: their tuned demand is what they ask for once r40 drives them,
+        // and the existing loads (and their tests) stay as they were.
+        let idle = |s: GroupTuning| GroupState { demand_kw: 0.0, ..g(s) };
         Grid {
-            groups: [g(t.engines), g(t.life_support), g(t.lights)],
+            groups: [g(t.engines), g(t.life_support), g(t.lights), idle(t.shields), idle(t.weapons), idle(t.jump_drive)],
             supply: [Supply::default(); N],
         }
     }

@@ -322,6 +322,16 @@ impl Items {
         self.publish(now, ev, None);
     }
 
+    /// Host: a cabinet (a container of the storage) stands with its stock. A client does not: the
+    /// host's events bring it.
+    pub fn add_container(&mut self, now: f64, id: item_core::RackId, contents: item_core::container::Container) {
+        if self.role == Role::Client {
+            return;
+        }
+        let ev = self.host.add_container(id, contents);
+        self.publish(now, ev, None);
+    }
+
     /// Host: the item in a player's slot wears by `amount` percent (the spray); the change
     /// goes out when a whole percent changes or the item runs out.
     pub fn wear(&mut self, now: f64, player: PlayerId, slot: usize, amount: f64) {

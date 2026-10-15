@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::container::{Access, Container, Refusal, SlotRule, Stack};
+use crate::container::{Access, Container, Refusal, SlotRule, Stack, Tag};
 use crate::defs::ItemDefs;
 use crate::inventory::{Inventory, BAR_SLOTS};
 
@@ -62,6 +62,11 @@ pub enum Request {
     /// Hang the item of a slot on a rack and take a spare from it (Barotrauma's extinguisher
     /// bracket): the spare with the best condition of the same kind. An empty slot takes one.
     Swap { slot: usize, rack: RackId },
+    /// Put the whole stack of an inventory slot into a cabinet (a container of the dev area's
+    /// storage): an empty slot or equal items with room. Refused as a whole.
+    Store { slot: usize, rack: RackId },
+    /// Take the whole stack of a cabinet slot into the inventory (the collect rules apply).
+    Fetch { rack: RackId, rack_slot: usize },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -83,6 +88,10 @@ pub enum Reject {
     NotUsable,
     NoRack,
     NoSpare,
+    /// The container is locked and the carried items do not open it.
+    Locked,
+    /// The container's slots do not take this item.
+    NotAllowed,
 }
 
 impl From<Refusal> for Reject {
@@ -137,6 +146,13 @@ impl Host {
         let loose = Loose { stack, at };
         self.loose.insert(item, loose.clone());
         Event::Spawned { item, loose, by }
+    }
+
+    /// Puts a container with its stock on the map under `id` (a cabinet of the storage); the
+    /// event tells the clients its contents.
+    pub fn add_container(&mut self, id: RackId, contents: Container) -> Event {
+        self.racks.insert(id, contents.clone());
+        Event::Rack { rack: id, contents }
     }
 
     /// Puts a rack on the wall: `slots` slots taking items of the kind tagged `tag`, and the
@@ -241,6 +257,20 @@ impl Host {
             Request::Swap { slot, rack } => match self.racks.get(rack).cloned() {
                 None => Err(Reject::NoRack),
                 Some(mut contents) => swap(&mut inv, &mut contents, *slot).map(|()| {
+                    self.racks.insert(*rack, contents.clone());
+                    out.push(Event::Rack { rack: *rack, contents });
+                }),
+            },
+            Request::Store { slot, rack } => match self.racks.get(rack).cloned() {
+                None => Err(Reject::NoRack),
+                Some(mut contents) => store(&mut inv, &mut contents, *slot).map(|()| {
+                    self.racks.insert(*rack, contents.clone());
+                    out.push(Event::Rack { rack: *rack, contents });
+                }),
+            },
+            Request::Fetch { rack, rack_slot } => match self.racks.get(rack).cloned() {
+                None => Err(Reject::NoRack),
+                Some(mut contents) => fetch(&self.defs, &mut inv, &mut contents, *rack_slot).map(|()| {
                     self.racks.insert(*rack, contents.clone());
                     out.push(Event::Rack { rack: *rack, contents });
                 }),
@@ -368,7 +398,56 @@ fn predict(defs: &ItemDefs, loose: &BTreeMap<LooseId, Loose>, racks: &BTreeMap<R
             let mut contents = racks.get(rack).cloned().ok_or(Reject::NoRack)?;
             swap(view, &mut contents, *slot)?;
         }
+        Request::Store { slot, rack } => {
+            let mut contents = racks.get(rack).cloned().ok_or(Reject::NoRack)?;
+            store(view, &mut contents, *slot)?;
+        }
+        Request::Fetch { rack, rack_slot } => {
+            let mut contents = racks.get(rack).cloned().ok_or(Reject::NoRack)?;
+            fetch(defs, view, &mut contents, *rack_slot)?;
+        }
     }
+    Ok(())
+}
+
+/// The tags the inventory carries: what a locked container may open for (an ID card, say).
+fn carried(inv: &Inventory) -> Vec<Tag> {
+    (0..BAR_SLOTS).filter_map(|i| inv.slot(i)).flat_map(|s| s.item.tags.iter().cloned()).collect()
+}
+
+fn refusal(r: Refusal) -> Reject {
+    match r {
+        Refusal::Locked | Refusal::NeedsKey(_) => Reject::Locked,
+        Refusal::NotAllowed => Reject::NotAllowed,
+        other => other.into(),
+    }
+}
+
+/// Moves the whole stack of an inventory slot into a container, or nothing.
+fn store(inv: &mut Inventory, c: &mut Container, slot: usize) -> Result<(), Reject> {
+    let stack = inv.slot(slot).cloned().ok_or(if slot < BAR_SLOTS { Reject::EmptySlot } else { Reject::NoSuchSlot })?;
+    let mut trial_c = c.clone();
+    match trial_c.try_insert(&carried(inv), stack) {
+        Ok(None) => {}
+        Ok(Some(_)) => return Err(Reject::Full),
+        Err(r) => return Err(refusal(r.why)),
+    }
+    let mut trial_inv = inv.clone();
+    trial_inv.take_slot(slot).map_err(Reject::from)?;
+    *inv = trial_inv;
+    *c = trial_c;
+    Ok(())
+}
+
+/// Moves the whole stack of a container slot into the inventory, or nothing.
+fn fetch(defs: &ItemDefs, inv: &mut Inventory, c: &mut Container, rack_slot: usize) -> Result<(), Reject> {
+    let n = c.slot(rack_slot).ok_or(if rack_slot < c.len() { Reject::EmptySlot } else { Reject::NoSuchSlot })?.count;
+    let mut trial_c = c.clone();
+    let stack = trial_c.take(&carried(inv), rack_slot, n).map_err(refusal)?;
+    let mut trial_inv = inv.clone();
+    trial_inv.collect(defs, stack).map_err(refusal)?;
+    *inv = trial_inv;
+    *c = trial_c;
     Ok(())
 }
 

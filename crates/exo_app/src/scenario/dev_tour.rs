@@ -50,7 +50,9 @@ fn hover(over: [f64; 2], height: f64, look: [f64; 2]) -> Step {
     })
 }
 
-pub(super) fn dev_tour_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
+/// `zones_only`: the role zones and the pad alone (`dev_tour_zones`), for a second window run; a
+/// software-rendered run of the whole tour can run out of memory on a small machine.
+pub(super) fn dev_tour_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step, zones_only: bool) {
     s.push(Box::new(|w, c| {
         begin(w, c, "dev tour: the walker starts in the mini ship");
         let pl = planet(w);
@@ -61,43 +63,46 @@ pub(super) fn dev_tour_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str)
         end(w, c, "start".into());
         true
     }));
-    s.push(Box::new(|w, _| {
-        let target = at(w, [CORRIDOR.centre[0] + CORRIDOR.half[0], CORRIDOR.centre[1]], 1.2);
-        face_towards(w, target);
-        true
-    }));
-    s.push(wait(3.0));
-    s.push(shot_step("tour-01-start"));
-    s.push(wait(3.0));
-    let rooms: [(&'static str, [f64; 2], [f64; 2]); 6] = [
-        ("tour-02-engine-room", [ROOM.centre[0] + 2.0, ROOM.centre[1] + 3.0], REACTOR_AT),
-        ("tour-03-bridge", [BRIDGE.centre[0] + 2.5, BRIDGE.centre[1] - 2.0], HELM_AT),
-        ("tour-04-turret-room", [TURRET_ROOM.centre[0], TURRET_ROOM.centre[1] - 2.2], GUNNERY_AT),
-        ("tour-05-lab", [LAB_ROOM.centre[0], LAB_ROOM.centre[1] - 2.2], [LAB_ROOM.centre[0], LAB_ROOM.centre[1] + 3.0]),
-        ("tour-06-medbay", [MEDBAY_ROOM.centre[0], MEDBAY_ROOM.centre[1] + 2.4], [MEDBAY_ROOM.centre[0], MEDBAY_ROOM.centre[1] - 3.0]),
-        ("tour-07-airlock", [1.5, CORRIDOR.centre[1]], [AIRLOCK.centre[0] + 3.0, AIRLOCK.centre[1]]),
-    ];
-    for (tag, from, look) in rooms {
-        s.push(stand(from, look));
+    if !zones_only {
+        s.push(Box::new(|w, _| {
+            let target = at(w, [CORRIDOR.centre[0] + CORRIDOR.half[0], CORRIDOR.centre[1]], 1.2);
+            face_towards(w, target);
+            true
+        }));
         s.push(wait(3.0));
-        s.push(shot_step(tag));
+        s.push(shot_step("tour-01-start"));
+        s.push(wait(3.0));
+        let rooms: [(&'static str, [f64; 2], [f64; 2]); 6] = [
+            ("tour-02-engine-room", [ROOM.centre[0] + 2.0, ROOM.centre[1] + 3.0], REACTOR_AT),
+            ("tour-03-bridge", [BRIDGE.centre[0] + 2.5, BRIDGE.centre[1] - 2.0], HELM_AT),
+            ("tour-04-turret-room", [TURRET_ROOM.centre[0], TURRET_ROOM.centre[1] - 2.2], GUNNERY_AT),
+            ("tour-05-lab", [LAB_ROOM.centre[0], LAB_ROOM.centre[1] - 2.2], [LAB_ROOM.centre[0], LAB_ROOM.centre[1] + 3.0]),
+            ("tour-06-medbay", [MEDBAY_ROOM.centre[0], MEDBAY_ROOM.centre[1] + 2.4], [MEDBAY_ROOM.centre[0], MEDBAY_ROOM.centre[1] - 3.0]),
+            ("tour-07-airlock", [1.5, CORRIDOR.centre[1]], [AIRLOCK.centre[0] + 3.0, AIRLOCK.centre[1]]),
+        ];
+        for (tag, from, look) in rooms {
+            s.push(stand(from, look));
+            s.push(wait(3.0));
+            s.push(shot_step(tag));
+            s.push(wait(3.0));
+        }
+        s.push(hover([0.0, -30.0], 24.0, [0.0, 0.0]));
+        s.push(wait(3.0));
+        s.push(shot_step("tour-08-overview"));
+        s.push(wait(3.0));
+        s.push(hover([-7.0, -2.0], 22.0, [-7.0, -12.0]));
+        s.push(wait(3.0));
+        s.push(shot_step("tour-09-ship-from-above"));
+        s.push(wait(3.0));
+        s.push(hover([0.0, -4.0], 16.0, [0.0, 11.0]));
+        s.push(wait(3.0));
+        s.push(shot_step("tour-10-zones-from-above"));
         s.push(wait(3.0));
     }
-    s.push(hover([0.0, -30.0], 24.0, [0.0, 0.0]));
-    s.push(wait(3.0));
-    s.push(shot_step("tour-08-overview"));
-    s.push(wait(3.0));
-    s.push(hover([-7.0, -2.0], 22.0, [-7.0, -12.0]));
-    s.push(wait(3.0));
-    s.push(shot_step("tour-09-ship-from-above"));
-    s.push(wait(3.0));
-    s.push(hover([0.0, -4.0], 16.0, [0.0, 11.0]));
-    s.push(wait(3.0));
-    s.push(shot_step("tour-10-zones-from-above"));
-    s.push(wait(3.0));
     const ZONE_TAGS: [&str; 8] = ["tour-11-zone-engineering", "tour-12-zone-bridge", "tour-13-zone-turrets", "tour-14-zone-lab", "tour-15-zone-medbay", "tour-16-zone-storage", "tour-17-zone-hazards", "tour-18-zone-dev"];
     for (z, tag) in ROLE_ZONES.iter().zip(ZONE_TAGS) {
-        s.push(stand([z.centre[0], z.centre[1] - z.half[1] - 1.5], z.centre));
+        // From the zone's south-west corner, so the tall boxes at its south edge do not fill the view.
+        s.push(stand([z.centre[0] - z.half[0] - 0.5, z.centre[1] - z.half[1] - 1.0], [z.centre[0] + 1.0, z.centre[1]]));
         s.push(wait(3.0));
         s.push(shot_step(tag));
         s.push(wait(3.0));

@@ -198,7 +198,7 @@ impl Options {
             }
         }
         o.net = net_live::NetConfig::parse(&net_args);
-        if matches!(o.scenario.as_deref(), Some("dev_area" | "dev_tour" | "displays" | "items" | "health")) && o.start.is_none() {
+        if matches!(o.scenario.as_deref(), Some("dev_area" | "dev_tour" | "dev_tour_zones" | "displays" | "items" | "health")) && o.start.is_none() {
             o.start = Some(dev_area::PLACE.into());
         }
         if let Some(p) = &mut o.perf {

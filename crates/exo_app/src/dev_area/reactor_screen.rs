@@ -9,6 +9,8 @@
 //!   controls stay. After a meltdown it is the MELTDOWN view, with no button. The readout
 //!   has its own start-up supply, so POWER can come back after a SCRAM even with the machines dark
 //!   (TODO(initiator): confirm).
+//!   The "?" beside SCRAM opens the help view for this player: the readout dimmed, a callout over each
+//!   control, a CLOSE box (`readout_help_panel`, `ReactorHelp`). Leaving the display closes it.
 //! - The coolant pump (S, on the pump block): a picture of the pump, the flow, the status word, the
 //!   three mode buttons OFF / LOW / HIGH. The impeller turns with the pump's speed (`effects::impeller_angle`).
 //! - The junction box (S, on the wall above it): three breaker levers, nothing else. Overvolt shows

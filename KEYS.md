@@ -94,5 +94,6 @@ The switches of Star Citizen's flight control (the flight model is the SC model,
 | 4 / 5 | `dev_4`, `dev_5` | In the open dev menu: always day / always night (the clock stands) |
 | 6 / 7 | `dev_6`, `dev_7` | In the open dev menu: jump to day / to night, the cycle runs on |
 | 8 | `dev_8` | In the open dev menu: put the ship 150 m above the next settlement, stopped and level |
+| 9 | `dev_9` | In the open dev menu: noclip on/off (through walls along the view; walk keys, jump up, crouch down, run faster) |
 
 One key may serve several actions when they apply in different situations: Space jumps on foot and lifts the ship, Shift runs and boosts.

@@ -418,7 +418,7 @@ pub fn update_readout(
         (mode, sv.0, sp.0, boost)
     } else if pl.ship.is_some() {
         (Mode::Cabin, sv.0 + sr.0 * pl.w.vel, sp.0, Boost::None)
-    } else if pl.fly {
+    } else if pl.fly || pl.noclip {
         (Mode::Fly, pl.w.vel, pl.w.pos, Boost::None)
     } else if pl.body.is_some() {
         (Mode::Suit, pl.w.vel, pl.w.pos, Boost::Held(actions.boost))

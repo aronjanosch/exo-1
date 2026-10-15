@@ -50,6 +50,7 @@ pub mod sky;
 pub mod ship;
 pub mod terrain;
 pub mod terrain_material;
+pub mod ship_showcase;
 pub mod town;
 pub mod tuning;
 pub mod ui_theme;
@@ -135,6 +136,8 @@ pub struct Options {
     pub dev_area: bool,
     /// `--warm-reactor`: the engine room is warm-started once when it is created (`warm_start`).
     pub warm_reactor: bool,
+    /// `--showcase`: ship models with colliders next to the spawn, for a walk test (window only).
+    pub showcase: bool,
 }
 
 impl Default for Options {
@@ -166,6 +169,7 @@ impl Default for Options {
             swap_rounds: 3,
             dev_area: false,
             warm_reactor: false,
+            showcase: false,
         }
     }
 }
@@ -200,6 +204,7 @@ impl Options {
                 "--menu" => o.force_menu = true,
                 "--dev-area" => o.dev_area = true,
                 "--warm-reactor" => o.warm_reactor = true,
+                "--showcase" => o.showcase = true,
                 "--swap-rounds" => o.swap_rounds = v.parse().expect("swap-rounds"),
                 "--perf" => o.perf = Some(o.perf.take().unwrap_or_default()),
                 "--perf-baseline" => o.perf.get_or_insert_default().baseline = PathBuf::from(v),
@@ -440,6 +445,10 @@ pub fn build_app(o: &Options) -> App {
         }
         if o.menu() {
             app.add_plugins(menu::plugin);
+        }
+        if o.showcase || o.scenario.as_deref() == Some("showcase") {
+            app.insert_resource(ship_showcase::ShowcaseStart(start_up));
+            app.add_plugins(ship_showcase::plugin);
         }
     } else if o.scenario.as_deref() == Some("swap") {
         // #14: the terrain too, headless, to count what a swap leaves behind.

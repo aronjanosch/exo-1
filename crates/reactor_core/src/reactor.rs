@@ -411,6 +411,9 @@ pub struct Reactor {
     decay: f64,
     /// Temperature boost (degrees of heat, -amount..amount), fades to 0 at `boost_decay`.
     boost: f64,
+    /// Factor on Auto's two speeds, 1 in play. The engine room's warm start raises it (Barotrauma's
+    /// `UpdateAutoTemp(100, …)`) and sets it back to 1 after.
+    auto_boost: f64,
 }
 
 /// The lamps of the panel (Barotrauma's warning lights, client Reactor.cs 621-632). Each is on
@@ -490,6 +493,7 @@ impl Reactor {
             temp_vel: 0.0,
             decay: 0.0,
             boost: 0.0,
+            auto_boost: 1.0,
         }
     }
 
@@ -554,6 +558,26 @@ impl Reactor {
     /// Skill (0..100) of whoever runs the reactor; it widens the bands. 0 when nobody does.
     pub fn set_operator_skill(&mut self, skill: f64) {
         self.skill = skill.clamp(0.0, 100.0);
+    }
+
+    /// Multiplies Auto's turbine and fission speeds by `factor` (1 is the tuning's own). For the
+    /// engine room's warm start only.
+    pub fn set_auto_boost(&mut self, factor: f64) {
+        self.auto_boost = factor.max(0.0);
+    }
+
+    /// The life of every rod, in slot order (for a warm start to put back).
+    pub fn rod_lives(&self) -> Vec<f64> {
+        self.rods.iter().map(|r| r.life).collect()
+    }
+
+    /// Puts the rods' life back, slot by slot (`lives` as `rod_lives` gave it, same rods). Caps
+    /// fission to the fuel left, as `sync_fuel` does.
+    pub fn set_rod_lives(&mut self, lives: &[f64]) {
+        for (rod, life) in self.rods.iter_mut().zip(lives) {
+            rod.life = life.clamp(0.0, 100.0);
+        }
+        self.sync_fuel();
     }
 
     /// Puts a rod into a free slot; gives it back when all slots are full.
@@ -912,8 +936,8 @@ impl Reactor {
     /// the optimal band for some seconds (`auto_overshoots_after_a_load_drop`); a manual operator
     /// who sets both at once does not.
     fn auto(&mut self, dt: f64, b: &Bands, load_kw: f64) {
-        let st = self.tuning.auto_turbine_speed;
-        let s = self.tuning.auto_fission_speed;
+        let st = self.tuning.auto_turbine_speed * self.auto_boost;
+        let s = self.tuning.auto_fission_speed * self.auto_boost;
         self.target_turbine += (b.turbine_optimal.mid() - self.target_turbine).clamp(-st, st) * dt;
         self.target_turbine = self.target_turbine.clamp(0.0, 100.0);
         let mid = b.temp_optimal.mid();

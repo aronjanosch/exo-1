@@ -154,6 +154,15 @@ impl Default for RoomTuning {
 /// Barotrauma's `OverloadCooldown` (`PowerTransfer.cs:22`): no hits for this long after a break.
 const OVERLOAD_COOLDOWN_S: f64 = 5.0;
 
+/// The warm start's step (1/60 s, a frame), Auto's speed factor during it (Barotrauma's speed 100),
+/// the hold the reactor must keep settled (5 s), the cap (600 s) and the output tolerance (2 %).
+/// TODO(initiator): values are ours, from the source's numbers.
+const WARM_START_DT: f64 = 1.0 / 60.0;
+const WARM_START_AUTO_BOOST: f64 = 100.0;
+const WARM_START_HOLD_S: f64 = 5.0;
+const WARM_START_CAP_S: f64 = 600.0;
+const WARM_START_TOLERANCE: f64 = 0.02;
+
 /// What the engineer sets each step.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Input {
@@ -626,6 +635,59 @@ impl EngineRoom {
     /// The room's alarm, as of the last step.
     pub fn level(&self) -> AlarmLevel {
         self.level
+    }
+
+    /// Barotrauma's warm start (`Reactor.cs:613-624`, `PowerUpImmediately`): the power on, Auto on,
+    /// then steps with Auto's speeds boosted by 100 (Barotrauma's `UpdateAutoTemp(100, …)`) until
+    /// the reactor is settled: the temperature inside its optimal band and the output within 2 %
+    /// of the load, held for 5 s of sim time. Capped at 600 s. Barotrauma's first 5 s of a round
+    /// (`Reactor.cs:253-258`) are the same rapid auto-temp, here made a start option.
+    ///
+    /// The coolant tank and the rods' life are put back as they were: a warm start costs no
+    /// supplies. The events of the warm-up are dropped (no fire or alarm reaches the game from it).
+    /// The pump keeps its mode; a pump that is off does not settle. Returns the sim seconds taken;
+    /// 0 with the reactor broken (it cannot be started, nothing runs).
+    pub fn warm_start(&mut self) -> f64 {
+        self.warm_start_events().0
+    }
+
+    /// `warm_start`, with the warm-up's events (for the tests).
+    fn warm_start_events(&mut self) -> (f64, Vec<RoomEvent>) {
+        let mut ev = Vec::new();
+        if !self.set_power(true) {
+            return (0.0, ev);
+        }
+        let tank = self.pump.tank;
+        let lives = self.reactor.rod_lives();
+        self.reactor.set_auto_boost(WARM_START_AUTO_BOOST);
+        let hold_steps = (WARM_START_HOLD_S / WARM_START_DT).round() as usize;
+        let cap_steps = (WARM_START_CAP_S / WARM_START_DT).round() as usize;
+        let mut steps = 0;
+        let mut held = 0;
+        while steps < cap_steps {
+            ev.extend(self.step(WARM_START_DT, Input::auto()));
+            steps += 1;
+            if self.is_settled() {
+                held += 1;
+                if held >= hold_steps {
+                    break;
+                }
+            } else {
+                held = 0;
+            }
+        }
+        self.reactor.set_auto_boost(1.0);
+        self.pump.tank = tank;
+        self.reactor.set_rod_lives(&lives);
+        (steps as f64 * WARM_START_DT, ev)
+    }
+
+    /// The temperature inside its optimal band and the output within `WARM_START_TOLERANCE` of the
+    /// load the grid asks for.
+    fn is_settled(&self) -> bool {
+        let load = self.grid.request_kw();
+        self.reactor.bands().temp_optimal.contains(self.reactor.temperature())
+            && (self.reactor.output_kw() - load).abs() <= WARM_START_TOLERANCE * load
     }
 
     /// Advances `dt` seconds. Returns the events of this step.

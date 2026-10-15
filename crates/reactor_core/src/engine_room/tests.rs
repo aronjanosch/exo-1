@@ -944,3 +944,40 @@ fn the_graph_samples_the_room_while_it_runs() {
     assert!(h.load[..n].iter().all(|&v| v > 0.0));
     assert!(h.load[n..].iter().all(|&v| v == 0.0));
 }
+
+// ---------- warm start (Barotrauma `Reactor.cs:613-624`, `PowerUpImmediately`) ----------
+
+/// Output and load agree within 2 % and the temperature is in the optimal band.
+fn is_settled(r: &EngineRoom) -> bool {
+    let load = r.grid().request_kw();
+    r.reactor().bands().temp_optimal.contains(r.reactor().temperature())
+        && (r.reactor().output_kw() - load).abs() <= 0.02 * load
+}
+
+#[test]
+fn a_warm_start_from_cold_ends_settled_in_the_band_with_output_at_the_load() {
+    let mut r = room();
+    let secs = r.warm_start();
+    assert!(secs > 0.0 && secs < 600.0, "sim seconds {secs}");
+    assert!(r.reactor().power_on());
+    assert!(is_settled(&r), "temp {} output {} load {}", r.reactor().temperature(), r.reactor().output_kw(), r.grid().request_kw());
+}
+
+#[test]
+fn a_warm_start_costs_no_coolant_and_no_rod_life() {
+    let mut r = room();
+    let tank = r.pump().tank();
+    let lives: Vec<f64> = r.reactor().rods().iter().map(|rod| rod.life).collect();
+    let _ = r.warm_start();
+    assert_eq!(r.pump().tank(), tank);
+    let after: Vec<f64> = r.reactor().rods().iter().map(|rod| rod.life).collect();
+    assert_eq!(after, lives);
+}
+
+#[test]
+fn a_warm_start_leaves_no_fire_and_no_alarm_events() {
+    let mut r = room();
+    let (_, ev) = r.warm_start_events();
+    assert!(!ev.iter().any(is_fire), "fire during warm start: {ev:?}");
+    assert!(!ev.iter().any(|e| matches!(e, RoomEvent::Reactor(ReactorEvent::Alarm { .. }))), "alarm during warm start: {ev:?}");
+}

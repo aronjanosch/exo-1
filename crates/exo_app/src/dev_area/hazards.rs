@@ -10,8 +10,10 @@
 //! consts, the item format has no custom fields: TODO(initiator).
 use super::*;
 use crate::dev_area::engine_room::{REACTOR_AT, REACTOR_SIZE};
+use crate::env::PlanetRes;
+use crate::items::Items;
 use bevy::math::DVec3;
-use item_core::PlayerId;
+use item_core::{FrameRef, Placement, PlayerId};
 use std::collections::BTreeSet;
 
 pub const HOT_PLATE: Zone = Zone { name: "hot plate", centre: [-12.0, 16.0], half: [1.5, 1.5] };
@@ -23,9 +25,9 @@ pub const SPICY_ITEM: &str = "fuel_rod_spicy";
 /// The spicy rod's reach (m) and its radiation (per second) on each body in reach. TODO(initiator).
 pub const SPICY_RADIUS_M: f64 = 1.25;
 pub const SPICY_RAD_PER_S: f64 = 1.0;
-/// The spicy rod on the dev area's pad by the barrel: the spot (area coordinates) it lies at, on
-/// the pad's east edge, so a walker one step east of it stands outside the barrel's glow.
-pub const SPICY_AT: [f64; 2] = [1.45, 16.0];
+/// The spicy rod on the dev area's pad by the barrel: the spot, relative to the barrel's centre,
+/// on the pad's east edge, so a walker one step further east stands outside the barrel's glow.
+pub const SPICY_AT: [f64; 2] = [1.45, 0.0];
 
 /// Where a spicy rod is: its point in the planet frame, and whether the reactor shields it.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -64,6 +66,22 @@ pub fn plugin(app: &mut App) {
             panel: None,
         });
     }
+    app.add_systems(FixedUpdate, put_spicy_rod.in_set(crate::phases::Fx::Effects));
+}
+
+/// Once: one spicy rod lies on the pad by the glowing barrel (planet frame), for testers to try.
+fn put_spicy_rod(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, mut items: ResMut<Items>, ships: Query<(), With<crate::ship::Ship>>, mut done: Local<bool>) {
+    if *done || ships.is_empty() {
+        return;
+    }
+    let Some(frame) = area.frame else { return };
+    let Some(d) = items.defs.get(SPICY_ITEM).cloned() else { return };
+    *done = true;
+    let p = GLOW_BARREL.point(SPICY_AT);
+    let (pos, up) = frame.ground(&planet, p[0], p[1], 0.05 + d.shape.extents[1] * 0.5 + 0.02);
+    let fwd = frame.rotation(up, 0.0) * DVec3::NEG_Z;
+    let at = Placement { frame: FrameRef::Planet(planet.id.0 as u32), pos: pos.to_array(), vel: [0.0; 3], forward: fwd.to_array() };
+    items.spawn(time.elapsed_secs_f64(), d.stack_of(1), at);
 }
 
 #[cfg(test)]

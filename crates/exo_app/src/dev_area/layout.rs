@@ -160,6 +160,7 @@ pub const REACTOR: &str = "engine_reactor";
 pub const COOLANT_PUMP: &str = "engine_coolant_pump";
 pub const JUNCTION_BOX: &str = "engine_junction_box";
 pub const OXYGEN_GENERATOR: &str = "engine_oxygen_generator";
+pub const TURRET_GUN: &str = "turret_gun";
 
 /// Where a point is, for the air: each room of the ship, or outside. The turret room, the lab and
 /// the medbay open onto the corridor without a door, so they breathe the corridor's air.
@@ -242,8 +243,10 @@ const PARTS: &[Part] = &[
     Part { id: "airlock_roof", at: [4.9, -9.7], size: [2.6, WALL, 2.6], lift: H, colour: WALL_COLOUR },
 ];
 
-/// The engine room's machines.
+/// The machines' housings: the engine room's, and the gun's breech in the turret room (west of GN-01,
+/// off the walk from the doorway to the screen). TODO(initiator): the gun's place and size.
 const MACHINES: &[Part] = &[
+    Part { id: TURRET_GUN, at: [-9.7, -4.2], size: [1.2, 1.6, 1.4], lift: 0.0, colour: [0.35, 0.3, 0.32] },
     Part { id: REACTOR, at: REACTOR_AT, size: REACTOR_SIZE, lift: 0.0, colour: [0.55, 0.3, 0.2] },
     Part { id: COOLANT_PUMP, at: COOLANT_PUMP_AT, size: COOLANT_PUMP_SIZE, lift: 0.0, colour: DEVICE_COLOUR },
     Part { id: JUNCTION_BOX, at: JUNCTION_BOX_AT, size: JUNCTION_BOX_SIZE, lift: 0.0, colour: [0.85, 0.7, 0.2] },

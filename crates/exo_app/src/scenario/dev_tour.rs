@@ -107,7 +107,7 @@ pub(super) fn dev_tour_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str)
         s.push(shot_step(tag));
         s.push(wait(3.0));
     }
-    s.push(stand([PADS.centre[0] - 9.0, PADS.centre[1] + 2.0], PADS.centre));
+    s.push(stand([PADS.centre[0] - 6.0, PADS.centre[1] - 6.0], PADS.centre));
     s.push(wait(3.0));
     s.push(shot_step("tour-19-pad"));
     s.push(wait(3.0));

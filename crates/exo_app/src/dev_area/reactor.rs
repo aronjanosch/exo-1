@@ -190,6 +190,7 @@ impl ReactorSim {
             power_on: r.power_on(),
             manual: self.manual,
             melted: r.melted(),
+            stability: (r.stability() * 100.0).round() as u8,
             temp: r.temperature(),
             set_fission,
             set_turbine,

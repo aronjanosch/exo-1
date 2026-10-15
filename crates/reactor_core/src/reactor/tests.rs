@@ -754,3 +754,42 @@ fn a_melted_core_that_is_ejected_is_no_longer_melted() {
     assert!(!r.melted(), "the core is out: the MELTDOWN lamp goes with it");
     assert!(r.ejected());
 }
+
+#[test]
+fn stability_is_full_when_the_core_is_cold_and_off() {
+    let r = Reactor::new(ReactorTuning::default(), 3);
+    assert!(!r.power_on());
+    assert_eq!(r.stability(), 1.0);
+}
+
+#[test]
+fn stability_is_one_minus_the_meltdown_timer_while_it_runs() {
+    let mut r = reactor(50.0);
+    r.set_targets(100.0, 30.0);
+    let mut steps = 0;
+    while r.timers().1 < 0.5 {
+        r.step(DT, 500.0);
+        steps += 1;
+        assert!(steps < 30 * 400, "the meltdown timer runs");
+    }
+    assert!(!r.melted());
+    let (_, timer) = r.timers();
+    assert!((r.stability() - (1.0 - timer)).abs() < 1e-12, "stability {} timer {timer}", r.stability());
+    assert!(r.stability() > 0.0 && r.stability() < 1.0);
+}
+
+#[test]
+fn stability_is_zero_once_the_core_has_melted() {
+    let mut r = reactor(50.0);
+    r.force_meltdown();
+    assert!(r.melted());
+    assert_eq!(r.stability(), 0.0);
+}
+
+#[test]
+fn stability_is_zero_when_the_core_is_ejected() {
+    let mut r = reactor(50.0);
+    r.eject();
+    assert!(r.ejected());
+    assert_eq!(r.stability(), 0.0);
+}

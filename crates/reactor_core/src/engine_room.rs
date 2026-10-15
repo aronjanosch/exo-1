@@ -17,7 +17,7 @@ use gameplay_core::rng::Rng;
 
 use crate::battery::Battery;
 use crate::engine::Engine;
-use crate::breach::Breach;
+use crate::hull::{Hit, HitsTuning, Hull, DEVICES, REACTOR_AT};
 use crate::grid::{Grid, Group};
 use crate::history::History;
 use crate::reactor::{AlarmKind, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning, RodKinds};
@@ -105,9 +105,12 @@ pub struct RoomTuning {
     /// The hull breach's hole, m² when fully open (`fire_core` leak). TODO(initiator): value; 0.5
     /// empties the 256 m³ room from full to the bad-air line (0.3) in about 2.6 min, shut door.
     pub breach_area_m2: f64,
-    /// The breach's damage after the meltdown blast and the dev fault (0..1; Barotrauma's
-    /// explosion damages walls). TODO(initiator): value.
+    /// The wall damage the meltdown blast and the HULL BREACH dev fault set (0..1). The blast
+    /// damages the sections near the reactor (`hull::Hull::hit`); the dev fault sets the one nearest
+    /// the reactor. TODO(initiator): value.
     pub blast_breach_damage: f64,
+    /// The size of a fire a hit starts at its impact, m (`RoomEvent::HitFire`). TODO(initiator): value.
+    pub hit_fire_size: f64,
 }
 
 impl Default for RoomTuning {
@@ -148,6 +151,7 @@ impl Default for RoomTuning {
             breath_m3_per_s: 0.56,
             breach_area_m2: 0.5,
             blast_breach_damage: 0.6,
+            hit_fire_size: 0.1,
         }
     }
 }
@@ -202,6 +206,8 @@ pub enum RoomEvent {
     Sparks,
     /// A fire started outside the reactor (from sparks). Reactor fires come as `Reactor(Fire)`.
     Fire { size: f64, source: Source },
+    /// A fire at a hit's impact (`EngineRoom::apply_hit`, r40): the same fire, placed where it hit.
+    HitFire { size: f64, at: [f64; 2] },
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -213,8 +219,13 @@ pub enum Fault {
     /// Engines and lights go off at once: overvoltage at the junction box, and Auto overshoots.
     LoadDrop,
     Surge,
-    /// The engine room's hull breach at the blast's damage (`blast_breach_damage`).
+    /// The engine room's hull breach at the blast's damage (`blast_breach_damage`): the section
+    /// nearest the reactor.
     HullBreach,
+    /// A light hit on a random point of the wall (`reactor.json` hits.light, r40).
+    HitLight,
+    /// A heavy hit on a random point of the wall (`reactor.json` hits.heavy, r40).
+    HitHeavy,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -505,8 +516,11 @@ pub struct EngineRoom {
     aux: bool,
     /// The aux switches of Life Support and Lights (indexed by `Group`; Engines is never aux-fed).
     aux_switch: [bool; Group::ALL.len()],
-    /// The hull breach of the room (`breach`): the glue's leak follows it.
-    breach: Breach,
+    /// The engine room's walls (`hull`): each section's damage is one leak in the glue.
+    hull: Hull,
+    /// The hit presets (`reactor.json` hits) and the rng of the random hits' points.
+    hits: HitsTuning,
+    hit_rng: Rng,
     /// The battery behind the reactor (`battery`): gives the grid's shortfall, takes its surplus.
     battery: Battery,
 }
@@ -547,7 +561,9 @@ impl EngineRoom {
             ecool_pressed: false,
             aux: t.room.aux_enabled,
             aux_switch: [true; Group::ALL.len()],
-            breach: Breach::default(),
+            hull: Hull::default(),
+            hits: t.hits,
+            hit_rng: Rng::new(seed ^ 0x6a1f_0b17),
             battery: Battery::new(t.battery),
         }
     }
@@ -616,16 +632,47 @@ impl EngineRoom {
 
     /// The coolant pump's leak, tank fraction per second (`Pump::leak_rate`): the screen's LEAK and
     /// the steam at the pump both read it. 0 with a sound pump.
-    /// The hull breach of the room (the glue's leak and visuals read it).
-    pub fn breach(&self) -> &Breach {
-        &self.breach
+    /// The engine room's walls (the glue's leaks and visuals read the sections).
+    pub fn hull(&self) -> &Hull {
+        &self.hull
     }
 
-    /// The wrench's hold on the breach: `dt` seconds take the damage down at the pump's fix speed
-    /// (`pump.fix_slow_s` for the whole wall, 25 s), so a 0.6 breach is mended in 15 s of hold.
-    pub fn mend_breach(&mut self, dt: f64) {
+    /// The wrench's hold on section `i`: `dt` seconds take its damage down at the pump's fix speed
+    /// (`pump.fix_slow_s` for a whole section, 25 s), so a 0.6 section is mended in 15 s of hold.
+    pub fn mend_section(&mut self, i: usize, dt: f64) {
         let whole = self.tuning.pump.fix_slow_s.max(1e-6);
-        self.breach.mend(dt.max(0.0) / whole);
+        self.hull.mend(i, dt.max(0.0) / whole);
+    }
+
+    /// A hit (r40, Barotrauma's damage as data): the walls take `structure` by the falloff, the
+    /// machines in range lose `device_damage` by the same falloff, and the impact starts a fire with
+    /// `fire_chance` when the hit reaches the room (a section or a machine in range; the roll is
+    /// `rng`'s, so a seed gives the same fires). A hit out of range does nothing and draws nothing.
+    pub fn apply_hit(&mut self, hit: Hit, rng: &mut Rng) -> Vec<RoomEvent> {
+        let mut ev = Vec::new();
+        // r40: the shield absorbs first (joined at merge)
+        let structure = hit.structure;
+        let mut reached = self.hull.hit(hit.at, structure, hit.radius);
+        for (source, at) in DEVICES {
+            let d = ((at[0] - hit.at[0]).powi(2) + (at[1] - hit.at[1]).powi(2)).sqrt();
+            if d >= hit.radius {
+                continue;
+            }
+            reached = true;
+            let amount = hit.device_damage * (1.0 - d / hit.radius);
+            let condition = match source {
+                Source::Pump => &mut self.pump.condition,
+                Source::Junction => &mut self.junction.condition,
+                _ => &mut self.oxygen.condition,
+            };
+            if let Some(e) = condition.damage(amount) {
+                ev.push(RoomEvent::Device { source, event: e });
+            }
+        }
+        if reached && rng.unit() < hit.fire_chance {
+            ev.push(RoomEvent::HitFire { size: self.tuning.hit_fire_size, at: hit.at });
+        }
+        ev
     }
 
     pub fn pump_leak_rate(&self) -> f64 {
@@ -965,8 +1012,9 @@ impl EngineRoom {
         }) else {
             return Vec::new();
         };
-        // The blast tears the hull open in the room (Barotrauma's explosions damage the walls).
-        self.breach.set(self.tuning.blast_breach_damage);
+        // The blast tears the walls near the reactor open (Barotrauma's explosions damage the walls):
+        // the same falloff as a hit, over the blast's range.
+        self.hull.hit(REACTOR_AT, self.tuning.blast_breach_damage, blast.range_m);
         let mut ev = Vec::new();
         if let Some(e) = self.pump.condition.damage(blast.device_damage) {
             ev.push(RoomEvent::Device { source: Source::Pump, event: e });
@@ -1002,8 +1050,18 @@ impl EngineRoom {
                 self.junction.condition.damage(amount).map(|e| RoomEvent::Device { source: Source::Junction, event: e }).into_iter().collect()
             }
             Fault::HullBreach => {
-                self.breach.set(self.tuning.blast_breach_damage);
+                let i = self.hull.nearest(REACTOR_AT);
+                self.hull.set(i, self.tuning.blast_breach_damage);
                 Vec::new()
+            }
+            Fault::HitLight | Fault::HitHeavy => {
+                let preset = if fault == Fault::HitLight { self.hits.light } else { self.hits.heavy };
+                // The point comes from a clone of the rng, so the room's own rng is kept as it is.
+                let mut rng = self.hit_rng.clone();
+                let at = Hull::wall_point(rng.unit());
+                let ev = self.apply_hit(preset.at(at), &mut rng);
+                self.hit_rng = rng;
+                ev
             }
         }
     }
@@ -1028,6 +1086,7 @@ impl EngineRoom {
             || self.pump.condition.needs_repair()
             || self.junction.condition.needs_repair()
             || self.oxygen.condition.needs_repair()
+            || !self.hull.intact()
         {
             AlarmLevel::Warn
         } else {

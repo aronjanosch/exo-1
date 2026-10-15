@@ -224,6 +224,9 @@ pub enum RepairAsk {
     Stop,
     /// The hold of a breach repair goes on or off (sent on each change, not each frame).
     Hold(bool),
+    /// The wrench is aimed at the engine room's wall section `i` (r40): sent when the aim moves
+    /// onto another section while the hold is on, and the hold mends the damaged section nearest it.
+    Aim(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -239,6 +242,10 @@ pub enum ReactorFault {
     /// The reactor's warm start (`EngineRoom::warm_start`): settled at once, no supplies used.
     WarmStart,
     Aux,
+    /// The dev fault HIT LIGHT: a light hit on a random point of the engine room's wall (r40).
+    HitLight,
+    /// The dev fault HIT HEAVY: a heavy hit on a random point of the engine room's wall (r40).
+    HitHeavy,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -312,6 +319,9 @@ pub struct FuelTube {
 /// The reactor's snapshot: what the screens show, as the host has it. Temperature,
 /// fission and turbine are 0..100; power is kW; the bands are (low, high) on the temperature
 /// gauge. The screens show little: no condition values, the pump gives its flow only.
+/// The engine room's wall sections (r40; `reactor_core::hull::SECTIONS`).
+pub const HULL_SECTIONS: usize = 8;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ReactorNews {
     pub power_on: bool,
@@ -377,9 +387,10 @@ pub struct ReactorNews {
     pub junction: PartNews,
     /// The oxygen generator's condition (r37), as the pump's.
     pub oxygen_generator: PartNews,
-    /// The hull breach's damage, 0..1 (r37; the leak opens above 0.1). Repaired by the wrench's
-    /// hold: a part's share is 1 minus this.
-    pub breach: f64,
+    /// Each wall section's damage, 0..1 (r37's breach, by section in r40; a section leaks above 0.1).
+    /// Repaired by the wrench's hold on the section it is aimed at; the breach's share is 1 minus the
+    /// most damaged one.
+    pub breaches: [f64; HULL_SECTIONS],
     /// The warning lamps that are on, by `Lamp::index` (the status board). Steady here: the
     /// blink is the screen's.
     pub lamps: [bool; Lamp::COUNT],
@@ -559,7 +570,7 @@ mod tests {
             pump: PartNews { share: 0.4, working: true },
             junction: PartNews { share: 1.0, working: true },
             oxygen_generator: PartNews { share: 0.6, working: true },
-            breach: 0.55,
+            breaches: [0.55, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0],
             director: true,
             aux_on: true,
             aux_life_support: false,
@@ -633,6 +644,8 @@ mod tests {
             ReactorAsk::SetTurbine(0.0),
             ReactorAsk::Trigger(ReactorFault::LoadDrop),
             ReactorAsk::Trigger(ReactorFault::HullBreach),
+            ReactorAsk::Trigger(ReactorFault::HitLight),
+            ReactorAsk::Trigger(ReactorFault::HitHeavy),
             ReactorAsk::Reset,
             ReactorAsk::SetPower(false),
             ReactorAsk::SetBreaker(BreakerGroup::Lights, false),
@@ -735,7 +748,7 @@ mod tests {
 
     #[test]
     fn repair_asks_travel_as_they_are() {
-        for ask in [RepairAsk::Start { device: RepairDevice::JunctionBox, tool: RepairTool::Screwdriver }, RepairAsk::Start { device: RepairDevice::CoolantPump, tool: RepairTool::Wrench }, RepairAsk::Start { device: RepairDevice::OxygenGenerator, tool: RepairTool::Wrench }, RepairAsk::Start { device: RepairDevice::HullBreach, tool: RepairTool::Wrench }, RepairAsk::Hit, RepairAsk::Miss, RepairAsk::Stop, RepairAsk::Hold(true), RepairAsk::Hold(false)] {
+        for ask in [RepairAsk::Start { device: RepairDevice::JunctionBox, tool: RepairTool::Screwdriver }, RepairAsk::Start { device: RepairDevice::CoolantPump, tool: RepairTool::Wrench }, RepairAsk::Start { device: RepairDevice::OxygenGenerator, tool: RepairTool::Wrench }, RepairAsk::Start { device: RepairDevice::HullBreach, tool: RepairTool::Wrench }, RepairAsk::Hit, RepairAsk::Miss, RepairAsk::Stop, RepairAsk::Hold(true), RepairAsk::Hold(false), RepairAsk::Aim(5)] {
             let back = match decode::<ToHost>(&encode(&ToHost::Repair(ask))).expect("decodes") {
                 ToHost::Repair(a) => a,
                 _ => panic!("the repair request"),

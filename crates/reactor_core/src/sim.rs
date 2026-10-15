@@ -541,5 +541,6 @@ fn label(e: &RoomEvent) -> String {
             Source::Reactor => "Fire Reactor".into(),
             s => format!("Fire {s:?}"),
         },
+        RoomEvent::HitFire { .. } => "Fire Hit".into(),
     }
 }

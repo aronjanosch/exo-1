@@ -1,7 +1,7 @@
 //! The systems only draw the effects: they read the snapshots (`Items::reactor`,
 //! `Items::fire`) and the local vitals (`crew_hud::Vitals`), so a client shows the same as the host.
 use crate::crew_hud::Vitals;
-use crate::dev_area::engine_room::{ignition_at, BREACH_AT, COOLANT_PUMP_AT, JUNCTION_BOX_AT, JUNCTION_BOX_SIZE, OXYGEN_GENERATOR_AT, OXYGEN_GENERATOR_SIZE, REACTOR_AT, REACTOR_SIZE};
+use crate::dev_area::engine_room::{ignition_at, COOLANT_PUMP_AT, JUNCTION_BOX_AT, JUNCTION_BOX_SIZE, OXYGEN_GENERATOR_AT, OXYGEN_GENERATOR_SIZE, REACTOR_AT, REACTOR_SIZE};
 use crate::dev_area::DevArea;
 use crate::env::PlanetRes;
 use crate::health::UseHold;
@@ -12,7 +12,8 @@ use bevy::prelude::*;
 use bevy::math::DVec3;
 use bevy::ui::{ColorStop, RadialGradient, RadialGradientShape, UiPosition, BackgroundGradient};
 use item_core::wire::ReactorNews;
-use reactor_core::{Breach, Source};
+use reactor_core::hull::{openness, SECTION_CENTRES};
+use reactor_core::Source;
 use std::f64::consts::TAU;
 
 // ---------- the rules (pure) ----------
@@ -191,15 +192,15 @@ struct Emitters {
     smoke: [f64; 4],
     spark: f64,
     steam: f64,
-    /// Time since the breach's last hiss puff (r37).
-    breach: f64,
+    /// Time since each section's last hiss puff (r37, by section in r40).
+    breach: [f64; SECTION_CENTRES.len()],
     /// Time since the pump's last leak puff (r36).
     leak: f64,
 }
 
 impl Default for Emitters {
     fn default() -> Emitters {
-        Emitters { smoke: [0.0; 4], spark: f64::INFINITY, steam: 0.0, leak: 0.0, breach: 0.0 }
+        Emitters { smoke: [0.0; 4], spark: f64::INFINITY, steam: 0.0, leak: 0.0, breach: [0.0; SECTION_CENTRES.len()] }
     }
 }
 
@@ -341,20 +342,22 @@ fn device_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: O
     } else {
         em.leak = 0.0;
     }
-    // The hull breach (r37): a hiss of steam-like air at the wall while it leaks, more of it the
-    // more open the hole (0.5 s at fully open, 1.5 s at a third of it).
-    let open = Breach::new(r.breach).open();
-    if open > 0.0 {
-        em.breach += dt;
-        if em.breach >= 0.5 / open {
-            em.breach = 0.0;
-            if let Some((p, up)) = area.ground(&planet, BREACH_AT, 0.9) {
-                let seed = (t * 1000.0) as u64 ^ 0xb2ea;
-                spawn_particle(&mut commands, &assets, &mut mats, Kind::Steam, p, jet(up, seed, 0.4, 0.2), 0.0, 0.25, 1.2);
+    // The hull breach (r37, by section in r40): a hiss of steam-like air at each leaking section's
+    // wall, more of it the more open the hole (0.5 s at fully open, 1.5 s at a third of it).
+    for (i, centre) in SECTION_CENTRES.iter().enumerate() {
+        let open = openness(r.breaches[i]);
+        if open > 0.0 {
+            em.breach[i] += dt;
+            if em.breach[i] >= 0.5 / open {
+                em.breach[i] = 0.0;
+                if let Some((p, up)) = area.ground(&planet, *centre, 0.9) {
+                    let seed = (t * 1000.0) as u64 ^ 0xb2ea ^ ((i as u64) << 8);
+                    spawn_particle(&mut commands, &assets, &mut mats, Kind::Steam, p, jet(up, seed, 0.4, 0.2), 0.0, 0.25, 1.2);
+                }
             }
+        } else {
+            em.breach[i] = 0.0;
         }
-    } else {
-        em.breach = 0.0;
     }
 }
 

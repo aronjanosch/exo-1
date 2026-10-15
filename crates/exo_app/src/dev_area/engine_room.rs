@@ -10,9 +10,10 @@ use crate::walker::Player;
 use crate::origin::WorldPos;
 use crate::Layer;
 use fire_core::{split_by_volume, Deck, FireTuning, GapId, LeakId, RoomId};
+use reactor_core::hull::{openness, SECTION_CENTRES};
 use reactor_core::Source;
 use display_core::PanelId;
-use item_core::wire::{Alarm, RoomAsk, RoomNews};
+use item_core::wire::{Alarm, RoomAsk, RoomNews, HULL_SECTIONS};
 
 pub const ROOM: Zone = Zone { name: "engine room", centre: [-14.0, -15.0], half: [5.0, 4.0] };
 pub const CORRIDOR: Zone = Zone { name: "corridor", centre: [-14.0, -7.7], half: [1.0, 3.0] };
@@ -155,8 +156,9 @@ pub struct EngineAir {
     pub corridor: RoomId,
     pub outside: RoomId,
     pub door: GapId,
-    /// The hull breach's hole (r37): opened and closed each step from the reactor's breach.
-    pub breach: LeakId,
+    /// One hole per wall section (r37's breach, by section in r40): opened and closed each step
+    /// from the hull's openness.
+    pub breaches: [LeakId; HULL_SECTIONS],
 }
 
 /// m³: the room 10 x 8 x 3.2 m, the corridor 2 x 6 x 3.2 m; the outside has no end.
@@ -173,8 +175,8 @@ impl EngineAir {
         let door = deck.add_gap(engine, corridor, DVec3::new(DOOR_AT[0], DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
         deck.add_gap(corridor, outside, DVec3::new(DOOR_AT[0], CORRIDOR.centre[1] + CORRIDOR.half[1], 0.0), DOOR_AREA, 1.0);
         // Shut at the start: the area and the openness come from the reactor each step.
-        let breach = deck.add_leak(engine, DVec3::new(BREACH_AT[0], BREACH_AT[1], 0.0), 0.0, 0.0);
-        EngineAir { deck, engine, corridor, outside, door, breach }
+        let breaches = SECTION_CENTRES.map(|c| deck.add_leak(engine, DVec3::new(c[0], c[1], 0.0), 0.0, 0.0));
+        EngineAir { deck, engine, corridor, outside, door, breaches }
     }
 
     pub fn room_of(&self, place: Place) -> RoomId {
@@ -214,11 +216,14 @@ struct Part {
     colour: [f32; 3],
 }
 
-/// The hull breach (r37): a dark patch on the south wall by the reactor, where the meltdown
-/// blast opens the wall. Its part is a dev box so the wrench can aim at it.
-pub const BREACH: &str = "engine_breach";
-pub const BREACH_AT: [f64; 2] = [-16.5, -18.95];
-const BREACH_SIZE: [f64; 3] = [1.0, 1.2, 0.1];
+/// The hull breach (r37, by wall section in r40): a dark patch on each section, where the meltdown
+/// blast or a hit opens the wall. Each patch is a dev box so the wrench can aim at it. Section 0 is
+/// the south-west half of the south wall, where r37's breach was.
+pub const BREACH_IDS: [&str; HULL_SECTIONS] = ["engine_breach_0", "engine_breach_1", "engine_breach_2", "engine_breach_3", "engine_breach_4", "engine_breach_5", "engine_breach_6", "engine_breach_7"];
+/// A patch's size (m): along the south and north walls, and along the east and west walls.
+const BREACH_SIZE_X: [f64; 3] = [1.0, 1.2, 0.1];
+const BREACH_SIZE_Z: [f64; 3] = [0.1, 1.2, 1.0];
+const BREACH_COLOUR: [f32; 3] = [0.05, 0.05, 0.06];
 
 const WALL_COLOUR: [f32; 3] = [0.42, 0.44, 0.47];
 const DEVICE_COLOUR: [f32; 3] = [0.3, 0.33, 0.38];
@@ -241,7 +246,14 @@ const MACHINES: &[Part] = &[
     Part { id: COOLANT_PUMP, at: COOLANT_PUMP_AT, size: COOLANT_PUMP_SIZE, lift: 0.0, colour: DEVICE_COLOUR },
     Part { id: JUNCTION_BOX, at: JUNCTION_BOX_AT, size: JUNCTION_BOX_SIZE, lift: 0.0, colour: [0.85, 0.7, 0.2] },
     Part { id: OXYGEN_GENERATOR, at: OXYGEN_GENERATOR_AT, size: OXYGEN_GENERATOR_SIZE, lift: 0.0, colour: [0.3, 0.5, 0.45] },
-    Part { id: BREACH, at: BREACH_AT, size: BREACH_SIZE, lift: 0.0, colour: [0.05, 0.05, 0.06] },
+    Part { id: BREACH_IDS[0], at: SECTION_CENTRES[0], size: BREACH_SIZE_X, lift: 0.0, colour: BREACH_COLOUR },
+    Part { id: BREACH_IDS[1], at: SECTION_CENTRES[1], size: BREACH_SIZE_X, lift: 0.0, colour: BREACH_COLOUR },
+    Part { id: BREACH_IDS[2], at: SECTION_CENTRES[2], size: BREACH_SIZE_Z, lift: 0.0, colour: BREACH_COLOUR },
+    Part { id: BREACH_IDS[3], at: SECTION_CENTRES[3], size: BREACH_SIZE_Z, lift: 0.0, colour: BREACH_COLOUR },
+    Part { id: BREACH_IDS[4], at: SECTION_CENTRES[4], size: BREACH_SIZE_X, lift: 0.0, colour: BREACH_COLOUR },
+    Part { id: BREACH_IDS[5], at: SECTION_CENTRES[5], size: BREACH_SIZE_X, lift: 0.0, colour: BREACH_COLOUR },
+    Part { id: BREACH_IDS[6], at: SECTION_CENTRES[6], size: BREACH_SIZE_Z, lift: 0.0, colour: BREACH_COLOUR },
+    Part { id: BREACH_IDS[7], at: SECTION_CENTRES[7], size: BREACH_SIZE_Z, lift: 0.0, colour: BREACH_COLOUR },
 ];
 
 fn span(lift: f64, height: f64) -> (f64, f64) {
@@ -276,15 +288,15 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, breach_decal.after(super::spawn_devices).in_set(crate::phases::Frame::World));
 }
 
-/// The breach's dark patch on the wall (r37): shown while the wall leaks, hidden while it holds.
-/// The wrench aims at it either way (its collider is there).
+/// A section's dark patch on the wall (r37, by section in r40): shown while that section leaks,
+/// hidden while it holds. The wrench aims at it either way (its collider is there).
 #[derive(Component)]
-struct BreachDecal;
+struct BreachDecal(usize);
 
-fn breach_decal(items: Res<Items>, mut decals: Query<&mut Visibility, With<BreachDecal>>) {
-    let leaking = items.reactor.is_some_and(|r| reactor_core::Breach::new(r.breach).open() > 0.0);
-    let want = if leaking { Visibility::Inherited } else { Visibility::Hidden };
-    for mut v in &mut decals {
+fn breach_decal(items: Res<Items>, mut decals: Query<(&BreachDecal, &mut Visibility)>) {
+    for (decal, mut v) in &mut decals {
+        let leaking = items.reactor.is_some_and(|r| openness(r.breaches[decal.0]) > 0.0);
+        let want = if leaking { Visibility::Inherited } else { Visibility::Hidden };
         if *v != want {
             *v = want;
         }
@@ -392,8 +404,8 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
             CollisionLayers::new(Layer::World, LayerMask::ALL),
             DevBox { id: p.id.into(), colour: p.colour, size },
         ));
-        if p.id == BREACH {
-            e.insert(BreachDecal);
+        if let Some(i) = BREACH_IDS.iter().position(|&id| id == p.id) {
+            e.insert(BreachDecal(i));
         }
         area.entities.push(e.id());
     }
@@ -535,14 +547,14 @@ mod tests {
             a.deck.exchange_air(1.0 / 30.0);
         }
         assert_eq!(a.deck.room(a.engine).oxygen, full, "a shut breach keeps the air");
-        a.deck.set_leak(a.breach, 0.5, 1.0);
+        a.deck.set_leak(a.breaches[0], 0.5, 1.0);
         for _ in 0..300 {
             a.deck.exchange_air(1.0 / 30.0);
         }
         let leaking = a.deck.room(a.engine).oxygen;
         assert!(leaking < full * 0.99, "an open breach lets the air out");
         assert!((a.deck.lost_to_space() - (full - leaking)).abs() < 1e-9, "the lost air is the air that left");
-        a.deck.set_leak(a.breach, 0.5, 0.0);
+        a.deck.set_leak(a.breaches[0], 0.5, 0.0);
         for _ in 0..300 {
             a.deck.exchange_air(1.0 / 30.0);
         }

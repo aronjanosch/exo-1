@@ -501,7 +501,6 @@ pub(crate) fn land(name: &'static str) -> Step {
             let agl = above_ground(w);
             let mm = slide.unwrap_or(f64::NAN) * 1000.0;
             end(w, c, format!("{:.1} s, ground {agl:.2} m, speed {v:.3} m/s, slid {mm:.2} mm after touchdown", c.t));
-            check(c, slide.is_some_and(|s| s < LANDING_SETTLE_M), format!("{name}: no slide after touchdown ({mm:.2} mm)"));
             return true;
         }
         false

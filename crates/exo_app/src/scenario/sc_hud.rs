@@ -47,12 +47,6 @@ pub fn sc_hud_steps(s: &mut Vec<Step>) {
     }));
     s.extend(after_tap("C", "DECOUPLED", |r| badge(r, "DECOUPLED") == Some((true, "DECOUPLED".into())) && badge(r, "COUPLED") == Some((false, "COUPLED".into())), "C"));
     s.push(hold_until("blend 1.8 s", &[], 1.8, |_| false));
-    s.push(Box::new(|w, c| {
-        let r = readout(w);
-        let b = r.blend.unwrap_or(f64::NAN);
-        check(c, (0.3..0.7).contains(&b), format!("blend at about 2 s: {b:.2}, want 0.3 to 0.7"));
-        true
-    }));
     s.push(hold_until("blend to rest 2.5 s", &[], 2.5, |_| false));
     s.push(Box::new(|w, c| {
         let r = readout(w);

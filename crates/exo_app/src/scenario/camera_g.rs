@@ -105,8 +105,7 @@ pub fn camera_g_steps(s: &mut Vec<Step>) {
     s.push(Box::new(|w, c| {
         let (f, v, agl) = (fx(w), ship_vel(w).length(), above_ground(w));
         let grounded = with_ship(w, |s| s.grounded);
-        // The `full` scenario's landed criterion (speed and height); the contact flag is shown as is.
-        check(c, v < 0.05 && agl < 1.0, format!("landed: {v:.3} m/s, {agl:.2} m above ground (contact flag {grounded})"));
+        check(c, v < 0.05 && grounded, format!("landed: {v:.3} m/s, {agl:.2} m above ground (contact flag {grounded})"));
         check(c, f.trauma < 0.05 && f.lag.length() < 0.01, format!("rest on the ground: trauma {:.3} (< 0.05), lag {:.4} m (< 0.01)", f.trauma, f.lag.length()));
         true
     }));

@@ -2,6 +2,7 @@ use content_core::{parse_strict_commented, File};
 use serde::{Deserialize, Serialize};
 
 use crate::airlock::AirlockTuning;
+use crate::bots::BotTuning;
 use crate::enemy::EnemyTuning;
 use crate::battery::BatteryTuning;
 use crate::room_alarm::AlarmTuning;
@@ -47,11 +48,13 @@ pub struct Tuning {
     pub airlock: AirlockTuning,
     /// The enemy ship of the ambush (`enemy` in reactor.json, r41).
     pub enemy: EnemyTuning,
+    /// The bots that man the empty stations (`bots` in reactor.json, r42, #253).
+    pub bots: BotTuning,
 }
 
 impl Default for Tuning {
     fn default() -> Tuning {
-        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), shield: ShieldTuning::default(), alarm: AlarmTuning::default(), weapons: WeaponsTuning::default(), hits: HitsTuning::default(), jump: JumpTuning::default(), airlock: AirlockTuning::default(), enemy: EnemyTuning::default() }
+        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), shield: ShieldTuning::default(), alarm: AlarmTuning::default(), weapons: WeaponsTuning::default(), hits: HitsTuning::default(), jump: JumpTuning::default(), airlock: AirlockTuning::default(), enemy: EnemyTuning::default(), bots: BotTuning::default() }
     }
 }
 

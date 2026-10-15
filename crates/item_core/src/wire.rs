@@ -188,6 +188,41 @@ pub enum ReactorAsk {
     /// GN-01's CLEAR JAM hold (r41): `true` while the player holds at the gun, `false` when they let go.
     /// The host counts the hold (`Weapons::clear_jam`) and clears the jam after its time.
     ClearJam(bool),
+    /// The captain's priority list on CP-01 (r42, #253): the station's bot level, 0 Ignore .. 4 Max.
+    /// The host clamps it.
+    SetBotPriority(BotStation, u8),
+    /// The dev BOTS setting (r42): how many bots man the empty stations, 0..3; the host clamps it.
+    SetBots(u8),
+}
+
+/// A station a bot can man (r42, #253; `reactor_core::bots::Station`), as the captain's list and the
+/// news name them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum BotStation {
+    #[default]
+    Gunnery,
+    Reactor,
+    Power,
+    Helm,
+}
+
+/// How many bot stations there are: the size of `ReactorNews::bots`.
+pub const BOT_STATIONS: usize = 4;
+
+impl BotStation {
+    pub const ALL: [BotStation; BOT_STATIONS] = [BotStation::Gunnery, BotStation::Reactor, BotStation::Power, BotStation::Helm];
+
+    pub fn index(self) -> usize {
+        self as usize
+    }
+}
+
+/// One station's bot as the news carry it (r42): whether a bot runs the station now, and the captain's
+/// level for it (0 Ignore .. 4 Max).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct BotNews {
+    pub manned: bool,
+    pub level: u8,
 }
 
 /// The jump drive's stage as the host has it: PULSAR's warp charge stages (`reactor_core::JumpStage`).
@@ -536,6 +571,10 @@ pub struct ReactorNews {
     pub weapon_jammed: bool,
     /// The gun is locked by heat until it cools below `unlock_at` (r41, the OVERHEAT word).
     pub weapon_overheated: bool,
+    /// The bots' stations, by `BotStation::index` (r42, #253): a station a bot runs shows its BOT tag.
+    pub bots: [BotNews; BOT_STATIONS],
+    /// The dev BOTS setting: how many bots there are, 0..3 (r42).
+    pub bot_count: u8,
 }
 
 /// The enemy ship's state for the GN-01 (r41): its shield and hull as 0..1 of their max, how the
@@ -788,6 +827,8 @@ mod tests {
             weapon_heat: 0.42,
             weapon_jammed: true,
             weapon_overheated: false,
+            bots: [BotNews { manned: true, level: 3 }, BotNews::default(), BotNews { manned: false, level: 1 }, BotNews::default()],
+            bot_count: 2,
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {
             ToClient::Reactor(r) => r,
@@ -824,6 +865,8 @@ mod tests {
             ReactorAsk::SilenceAlarms,
             ReactorAsk::ClearJam(true),
             ReactorAsk::ClearJam(false),
+            ReactorAsk::SetBotPriority(BotStation::Power, 3),
+            ReactorAsk::SetBots(0),
             ReactorAsk::Fire,
             ReactorAsk::JumpArm,
             ReactorAsk::JumpGo,

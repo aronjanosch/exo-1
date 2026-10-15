@@ -18,6 +18,7 @@ use display_core::PanelId;
 
 pub mod airlock;
 pub mod blast;
+pub mod bots;
 pub mod captain_screen;
 pub mod coolant;
 pub mod engine_room;

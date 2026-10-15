@@ -123,6 +123,11 @@ impl Weapons {
         self
     }
 
+    /// Sets the gunner's skill (0..100): the bot's while a bot mans the gun (`bots.rs`), else 0.
+    pub fn set_skill(&mut self, skill: f64) {
+        self.skill = skill.clamp(0.0, 100.0);
+    }
+
     pub fn tuning(&self) -> &WeaponsTuning {
         &self.tuning
     }

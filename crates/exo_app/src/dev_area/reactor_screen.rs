@@ -4,11 +4,12 @@ use super::*;
 use crate::displays::{ActiveDisplay, DisplayAction, DisplayPanel, DisplayPointer, Panels};
 use crate::dev_area::captain_screen;
 use crate::dev_area::engine_room::{GUNNERY_AT, VENT_LIFT};
+use crate::dev_area::bots::bot_tagged;
 use crate::dev_area::reactor::{lamp_blink_on, ReactorConfig};
 use crate::dev_area::status_monitor;
 use crate::items::Items;
 use display_core::{button, canvas, column, ctl, font, label, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Rect, Shape, Tier, TextFace, Tone, Widget};
-use item_core::wire::{AirlockCycle, BreakerGroup, EnemyOutcome, FuelKind, FuelTube, JumpStage, Lamp, PumpMode, ReactorAsk, RoomAsk, ReactorFault, ReactorNews, FUEL_TUBES};
+use item_core::wire::{AirlockCycle, BotStation, BreakerGroup, EnemyOutcome, FuelKind, FuelTube, JumpStage, Lamp, PumpMode, ReactorAsk, RoomAsk, ReactorFault, ReactorNews, FUEL_TUBES};
 
 const LAMPS: [Lamp; Lamp::COUNT] = [Lamp::Hot, Lamp::CritHeat, Lamp::Cold, Lamp::LowTemp, Lamp::HighOut, Lamp::CritOut, Lamp::LowOut, Lamp::FuelLow, Lamp::NoFuel, Lamp::Meltdown, Lamp::Scram];
 /// A lamp's cell (px) and the gap between the cells.
@@ -1081,6 +1082,7 @@ pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
     let director = if r.is_some_and(|r| r.director) { "DIRECTOR ON" } else { "DIRECTOR OFF" };
     let vacuum = if r.is_some_and(|r| r.vacuum) { "VACUUM ON" } else { "VACUUM OFF" };
     let ambush = if r.is_some_and(ambush_running) { "AMBUSH ON" } else { "AMBUSH OFF" };
+    let bots = r.map_or(0, |r| r.bot_count);
     let col = |items: Vec<_>| column(4.0, items);
     Panel::screen(
         Tier::S,
@@ -1109,7 +1111,7 @@ pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
                     button("Shield hit", "shield_hit").fixed(24.0),
                     button("Jump full", "jump_full").fixed(24.0),
                 ]),
-                col(vec![button(ambush, "ambush").fixed(24.0), button(vacuum, "vacuum").fixed(28.0)]),
+                col(vec![button(ambush, "ambush").fixed(24.0), button(vacuum, "vacuum").fixed(28.0), button(format!("BOTS {bots}"), "bots").fixed(24.0)]),
             ],
         ),
     )
@@ -1373,6 +1375,8 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "jump_full" => Some(ReactorAsk::Trigger(ReactorFault::JumpFull)),
                 "vacuum" => snap.map(|r| ReactorAsk::SetVacuum(!r.vacuum)),
                 "ambush" => snap.map(|r| ReactorAsk::Ambush(!ambush_running(&r))),
+                // The dev BOTS count, 0..3 in turn (r42, #253).
+                "bots" => snap.map(|r| ReactorAsk::SetBots((r.bot_count + 1) % (reactor_core::bots::MAX_BOTS + 1))),
                 _ => None,
             }
         } else if c.panel == AIRLOCK_INNER_ID || c.panel == AIRLOCK_OUTER_ID {
@@ -1387,7 +1391,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 }
                 captain_screen::SEAL_ACTION => Some(ReactorAsk::SealAirlock),
                 captain_screen::SILENCE_ACTION => Some(ReactorAsk::SilenceAlarms),
-                _ => None,
+                other => captain_screen::parse_bot_action(other).map(|(s, level)| ReactorAsk::SetBotPriority(s, level)),
             }
         } else {
             None
@@ -1411,14 +1415,15 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     let angle = (*spin / IMPELLER_STEP).round() * IMPELLER_STEP;
     let max_kw = cfg.0.reactor.max_output_kw;
     let readout = if help.0 { readout_help_panel(items.reactor.as_ref(), max_kw) } else { readout_panel_at(items.reactor.as_ref(), max_kw, time.elapsed_secs_f64()) };
-    panels.set(READOUT_ID, readout);
-    panels.set(PUMP_ID, pump_panel_at(items.reactor.as_ref(), angle, lamp_blink_on(time.elapsed_secs_f64())));
-    panels.set(JUNCTION_ID, junction_panel(items.reactor.as_ref(), max_kw));
+    let manned = |s: BotStation| items.reactor.is_some_and(|r| r.bots[s.index()].manned);
+    panels.set(READOUT_ID, bot_tagged(readout, manned(BotStation::Reactor)));
+    panels.set(PUMP_ID, bot_tagged(pump_panel_at(items.reactor.as_ref(), angle, lamp_blink_on(time.elapsed_secs_f64())), manned(BotStation::Reactor)));
+    panels.set(JUNCTION_ID, bot_tagged(junction_panel(items.reactor.as_ref(), max_kw), manned(BotStation::Power)));
     panels.set(AUX_ID, aux_panel(items.reactor.as_ref()));
     panels.set(BATTERY_ID, battery_panel(items.reactor.as_ref()));
     panels.set(SHIELD_ID, shield_panel(items.reactor.as_ref()));
-    panels.set(HELM_ID, helm_panel(items.reactor.as_ref()));
-    panels.set(GUNNERY_ID, gunnery_panel(items.reactor.as_ref(), cfg.0.weapons.capacity_shots));
+    panels.set(HELM_ID, bot_tagged(helm_panel(items.reactor.as_ref()), manned(BotStation::Helm)));
+    panels.set(GUNNERY_ID, bot_tagged(gunnery_panel(items.reactor.as_ref(), cfg.0.weapons.capacity_shots), manned(BotStation::Gunnery)));
     panels.set(JUMP_ID, jump_panel(items.reactor.as_ref()));
     panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));
     panels.set(VENT_ENGINE_ID, vent_panel(items.reactor.as_ref(), 0));

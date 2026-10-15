@@ -8,9 +8,10 @@ use crate::dev_area::engine_room::ROOM;
 use crate::dev_area::rods;
 use crate::gameplay::Gameplay;
 use gameplay_core::notice::{Notice, NoticeKind};
-use item_core::wire::{Alarm, AlarmNews, BreakerGroup, EnemyNews, EnemyOutcome, FuelTube, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, RoomAir, RoomAlarmKind, GRAPH_POINTS};
+use item_core::wire::{Alarm, AlarmNews, BotNews, BotStation, BreakerGroup, EnemyNews, EnemyOutcome, FuelTube, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, RoomAir, RoomAlarmKind, GRAPH_POINTS};
 use reactor_core::room_alarm::{AlarmState, Kind};
 use reactor_core::RoomAlarm;
+use reactor_core::bots::{Bots, Station};
 use reactor_core::director::Situation;
 use reactor_core::{AirlockTuning, AlarmLevel, Director, EngineRoom, Fault, Group, Input, Outcome, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
 
@@ -57,6 +58,8 @@ pub struct ReactorSim {
     pub alarms: [RoomAlarm; 2],
     /// GN-01's CLEAR JAM hold is on (r41): the host counts it in `tick_jam` while the gun is jammed.
     clearing: bool,
+    /// The bots (r42, #253): the count and the captain's list survive a reset; the host steps them in `bots::bots_step`.
+    pub bots: Bots,
 }
 
 /// `--warm-reactor`: the room is warm-started when it is created (`ReactorSim::created`), not run 150 s
@@ -82,7 +85,7 @@ impl ReactorSim {
         // The warm-up runs the tank down; a fresh room starts with a full one (TODO(initiator): later
         // the tank may start where the ship's last run left it).
         room.pump_mut().refill(100.0);
-        ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX, vents: [true; 2], director: Director::new(&cfg.director, SEED), alarms: [RoomAlarm::new(cfg.alarm); 2], clearing: false }
+        ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX, vents: [true; 2], director: Director::new(&cfg.director, SEED), alarms: [RoomAlarm::new(cfg.alarm); 2], clearing: false, bots: Bots::new(&cfg.bots) }
     }
 
     pub fn tick_eject(&mut self, dt: f64) {
@@ -92,9 +95,13 @@ impl ReactorSim {
     }
 
     /// The CLEAR JAM hold's time (r41): while it is on, the gun's jam clears after its hold.
+    /// The gun's skill and clearing speed follow the bots (r42): a bot at GN-01 has its skill and clears at
+    /// its own speed; a player's gun has skill 0 and clears at full speed.
     pub fn tick_jam(&mut self, dt: f64) {
+        let w = self.room.weapons_mut();
+        w.set_skill(self.bots.gun_skill());
         if self.clearing {
-            self.room.weapons_mut().clear_jam(dt);
+            w.clear_jam(dt * self.bots.clear_scale());
         }
     }
 
@@ -160,7 +167,8 @@ impl ReactorSim {
                 // The alarm the old room set stays until the new room says otherwise.
                 let alarmed = self.alarmed;
                 let director = self.director.enabled();
-                *self = ReactorSim { sent: None, since_send: f64::MAX, alarmed, ..ReactorSim::new(cfg) };
+                // The bots' count and list are the operator's too (r42): a fresh room keeps them, with no bot at a station.
+                *self = ReactorSim { sent: None, since_send: f64::MAX, alarmed, bots: self.bots.fresh(), ..ReactorSim::new(cfg) };
                 // The dev toggle is the operator's: a reset keeps it.
                 self.director.set_enabled(director);
                 info!("reactor: reset");
@@ -234,6 +242,9 @@ impl ReactorSim {
                     self.room.weapons_mut().stop_clearing();
                 }
             }
+            // The captain's priority list (r42, CP-01) and the dev BOTS count.
+            ReactorAsk::SetBotPriority(s, level) => self.bots.set_level(super::bots::station_of(s), level),
+            ReactorAsk::SetBots(n) => self.bots.set_count(n),
             // The airlock, its SEAL and the VACUUM switch need the air: `reactor_step` takes them.
             ReactorAsk::Airlock(_) | ReactorAsk::SetVacuum(_) | ReactorAsk::SealAirlock => {}
         }
@@ -333,6 +344,12 @@ impl ReactorSim {
             airlock: Default::default(),
             vacuum: false,
             enemy: self.room.encounter().map(|e| EnemyNews { shield: e.shield_fraction(), hull: e.hull_fraction(), outcome: enemy_outcome(e.outcome()), shots: e.shots(), section: e.last_section() as u8 }),
+            // The bots (r42): a station a bot runs shows its BOT tag; the captain's levels are on CP-01.
+            bots: std::array::from_fn(|i| {
+                let s: Station = super::bots::station_of(BotStation::ALL[i]);
+                BotNews { manned: self.bots.manned(s), level: self.bots.level(s) }
+            }),
+            bot_count: self.bots.count(),
         }
     }
 }
@@ -523,7 +540,7 @@ pub fn plugin(app: &mut App) {
     let warm = app.world().contains_resource::<WarmAtCreation>();
     app.insert_resource(ReactorSim::created(&tuning, warm)).insert_resource(ReactorConfig(tuning)).init_resource::<ReactorCounts>();
     app.init_resource::<super::blast::PendingBlasts>().init_resource::<super::blast::BlastFlash>();
-    app.add_systems(FixedUpdate, (reactor_step, super::blast::reactor_blast, super::blast::client_blast_news, eject_notice, ecool_notice, jump_notice).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
+    app.add_systems(FixedUpdate, (super::bots::bots_step, reactor_step, super::blast::reactor_blast, super::blast::client_blast_news, eject_notice, ecool_notice, jump_notice).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -780,6 +797,46 @@ mod tests {
         assert!(n.weapon_reload_s > 0.0, "the reload shows on GN-01");
         s.apply(ReactorAsk::Fire, &cfg(), &mut k);
         assert_eq!(s.news(1.0).weapon_shots, 5, "refused while reloading");
+    }
+
+    #[test]
+    fn the_captains_priority_ask_sets_the_level_and_the_dev_count_clamps() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.apply(ReactorAsk::SetBotPriority(BotStation::Helm, 4), &cfg(), &mut k);
+        s.apply(ReactorAsk::SetBots(7), &cfg(), &mut k);
+        let n = s.news(1.0);
+        assert_eq!(n.bots[BotStation::Helm.index()].level, 4);
+        assert_eq!(n.bot_count, 3, "the count is clamped to 3");
+        assert_eq!(cfg().bots.levels[3], 1, "the start list is the shipped one");
+    }
+
+    #[test]
+    fn a_bot_at_the_gun_has_its_skill_and_the_news_say_it_mans_the_station() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.bots.tick(0.5, [false; 4], &s.room.clone());
+        s.tick_jam(0.0);
+        let n = s.news(1.0);
+        assert!(n.bots[BotStation::Gunnery.index()].manned, "the bots man GN-01 at the start (two bots, GUNNERY first)");
+        assert_eq!(s.room.weapons().jam_chance(), 0.03 * (1.0 - 20.0 / 50.0), "the bot's skill sets the jam chance");
+        s.apply(ReactorAsk::SetBots(0), &cfg(), &mut k);
+        s.bots.tick(0.5, [false; 4], &s.room.clone());
+        s.tick_jam(0.0);
+        assert_eq!(s.room.weapons().jam_chance(), 0.03, "no bot, no skill: a player's gun");
+    }
+
+    #[test]
+    fn a_reset_keeps_the_bot_settings_and_no_bot_is_at_a_station() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.apply(ReactorAsk::SetBotPriority(BotStation::Power, 0), &cfg(), &mut k);
+        s.apply(ReactorAsk::SetBots(1), &cfg(), &mut k);
+        s.bots.tick(0.5, [false; 4], &s.room.clone());
+        s.apply(ReactorAsk::Reset, &cfg(), &mut k);
+        let n = s.news(1.0);
+        assert_eq!((n.bot_count, n.bots[BotStation::Power.index()].level), (1, 0));
+        assert!(n.bots.iter().all(|b| !b.manned));
     }
 
     #[test]

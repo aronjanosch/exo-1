@@ -52,11 +52,15 @@ fn thrust_run(name: &'static str, ks: &'static [KeyCode], limit: f64, boost: boo
             check(c, peak_g > 0.0, format!("boost: peak forward {peak_g:.2} g, 50 % at {}, 95 % at {}", fmt(t50), fmt(t95)));
             format!("peak forward {peak_g:.2} g")
         } else {
-            let (t50, t100) = (first(&rec, 0, 0.5), first(&rec, 0, 0.999 * peak_share));
+            // The 4 g safety ceiling is below half the hardware's forward thrust.
+            // Measure spool/ramp against the attainable peak, not full hardware power.
+            let (t50, t100) = (first(&rec, 0, 0.5 * peak_share), first(&rec, 0, 0.999 * peak_share));
             let ok = t50.is_some_and(|t| t > spool) && peak_share > 0.3;
             check(c, ok, format!("forward W: spool {spool:.2} s, 50 % at {}, peak share {peak_share:.3} at {}", fmt(t50), fmt(t100)));
             format!("peak share {peak_share:.3}")
         };
+        let load = rec.iter().map(|(_, v)| (v[1] * v[1] + 1.0).sqrt()).fold(0.0, f64::max);
+        check(c, load <= 4.0 + 1e-6, format!("G-safe: maximum combined engine load {load:.2} g"));
         end(w, c, note);
         true
     })

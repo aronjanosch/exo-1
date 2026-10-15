@@ -447,6 +447,9 @@ pub fn update_readout(
         }
     };
     let mut new = readout(&HudIn { mode, panel: panel.clone(), speed: v.length(), altitude, boost, landing });
+    if pl.seated {
+        new.texts[0].push_str(&format!("  {}", ship.model.name));
+    }
     new.toast = toaster.step(&new.badges, time.delta_secs_f64(), tuning.hud.toast_time);
     if pl.seated || pl.ship.is_some() {
         let lin = &ship.sc.tuning.linear;

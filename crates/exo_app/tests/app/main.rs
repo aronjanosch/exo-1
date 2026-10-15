@@ -58,6 +58,7 @@ mod scenario_sc_hud;
 mod scenario_sc_linear;
 mod scenario_sc_lift;
 mod scenario_sc_turn;
+mod scenario_ship_type;
 mod scenario_site;
 mod scenario_slope_landing;
 mod scenario_space;

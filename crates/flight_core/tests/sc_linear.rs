@@ -124,6 +124,7 @@ fn anti_drift_kills_the_velocity_across_the_goal_first() {
 fn release_from_the_boost_cap_bleeds_without_a_plateau() {
     let space = Space::default();
     let mut ship = ScShip::new(tuning());
+    ship.modes.g_safe = false; // Measure the release law, not the 4 g acceleration ceiling.
     let mut body = body_at(DVec3::ZERO);
     // The boost drains in 3 s; 2.5 s of it builds speed past the cruise cap.
     fly(&mut ship, &mut body, &input(DVec3::NEG_Z, true, false), &ModeCmds::default(), &space, 2.5);
@@ -148,6 +149,7 @@ fn strafe_tapers_with_forward_speed_under_boost_only() {
     // The sideways acceleration of one step with D and the given velocity.
     let side = |v: DVec3, boost: bool| {
         let mut ship = ScShip::new(instant());
+        ship.modes.g_safe = false; // Isolate strafe taper from the shared G budget.
         let mut body = BodyState { lin_vel: v, ..body_at(DVec3::ZERO) };
         step(&mut ship, &mut body, &input(DVec3::X, boost, false), &ModeCmds::default(), &space).x
     };
@@ -155,7 +157,7 @@ fn strafe_tapers_with_forward_speed_under_boost_only() {
     let boosted_cap = side(DVec3::new(0.0, 0.0, -150.0), true);
     let unboosted_cap = side(DVec3::new(0.0, 0.0, -150.0), false);
     // Full: the thrusters' side, or G-safe's 4 g if that is lower.
-    let full = (tuning().ship.thrust.right / tuning().ship.mass).min(tuning().linear.g_limit.right * G0);
+    let full = tuning().ship.thrust.right / tuning().ship.mass;
     println!("strafe: boosted at rest {at_rest:.2}, boosted at the cruise cap {boosted_cap:.2}, unboosted at the cap {unboosted_cap:.2}, full right {full:.2}");
     assert!(boosted_cap < at_rest * 0.9, "boosted strafe at the cap {boosted_cap:.2} vs at rest {at_rest:.2}");
     assert!((unboosted_cap - full).abs() < 1e-3, "unboosted strafe at the cap {unboosted_cap:.3}, full {full:.3}");

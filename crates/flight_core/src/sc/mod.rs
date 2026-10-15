@@ -15,7 +15,7 @@
 //! 6. `drive::shape`: what the thrusters really give (spool, jerk, boost).
 //! 7. Integration: force over mass and torque over inertia, plus gravity and air.
 //!
-//! All values are TODO(initiator) (`content/tuning/sc_*.json`).
+//! Per-type values live in `content/ship/<type>/sc_*.json` (tuned by playtest).
 pub mod air;
 pub mod angular;
 pub mod drive;
@@ -26,7 +26,7 @@ pub mod tuning;
 pub use modes::{Master, ModeCmds, Modes};
 pub use tuning::ScTuning;
 
-use crate::limits::{Dirs, Rot, G0};
+use crate::limits::{Dirs, Rot, G0, G_SAFE_MAX_G};
 use crate::{limit_length, BodyState, FlightInput, PlanetEnv};
 use glam::{DQuat, DVec3};
 
@@ -82,7 +82,7 @@ impl StepState {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ScStatus {
     pub coupled: bool,
-    /// 1 = fully coupled, 0 = fully decoupled; between: the blend runs (`modes::ModeTuning::decouple_time`).
+    /// 1 = fully coupled, 0 = decoupled; between: coupled control blends back in.
     pub coupling: f64,
     pub grav_comp: bool,
     pub g_safe: bool,
@@ -110,7 +110,7 @@ pub struct ScStatus {
     pub wind: DVec3,
     /// 0..1: how hard the air shakes the ship (camera trauma source).
     pub turbulence: f64,
-    /// G-safe or comstab lowered the turn rate.
+    /// Coupled turn coordination lowered the rate (thrust or G-safe budget).
     pub rate_capped: bool,
 }
 
@@ -252,13 +252,23 @@ impl ScShip {
         let boost = drive::begin(&mut self.drive, input.boost, braking, &self.tuning.drive, dt);
         let air = air::step(&mut self.air, &f, &self.modes, &self.tuning.air);
         let thrust_box = self.thrust_box(air.thrust_scale, if braking { 1.0 } else { boost });
-        let lin = linear::step(&mut self.linear, &f, input, &self.modes, &linear::Env { thrust_box, boost, braking, air_accel: air.accel, cap_scale: air.cap_scale, drift: if self.modes.wind_comp { DVec3::ZERO } else { air.wind } }, &self.tuning.linear);
+        let linear_env = linear::Env { thrust_box, boost, braking, air_accel: air.accel, passive_drag: air.passive_drag, cap_scale: air.cap_scale, drift: if self.modes.wind_comp { DVec3::ZERO } else { air.wind } };
+        let lin = linear::step(&mut self.linear, &f, input, &self.modes, &linear_env, &self.tuning.linear);
+        let turn_box = linear::motion_box(&f, &self.modes, &linear_env, &self.tuning.linear);
         let torque_box = self.torque_box();
         // X while hovering in a planet's field also levels the ship (initiator, 2026-10-11).
         let level = braking && f.v.length() < self.tuning.angular.brake_level_below && f.gravity.length_squared() > 1e-6;
-        let ang = angular::step(&mut self.angular, &f, input, &self.modes, &angular::Env { accel_box: torque_box, boost, cap: lin.cap, thrust_box, air_hold: air.angular_hold, level }, &self.tuning.angular);
+        let mut angular_modes = self.modes;
+        if self.tuning.linear.boost_disables_g_safe && boost > 0.0 {
+            angular_modes.g_safe = false;
+        }
+        let ang = angular::step(&mut self.angular, &f, input, &angular_modes, &angular::Env { accel_box: torque_box, boost, cap: lin.cap, thrust_box: turn_box, linear_hold: lin.turn_reserve, air_hold: air.angular_hold, level }, &self.tuning.angular);
         let stick = if braking { DVec3::ZERO } else { limit_length(input.thrust, 1.0) };
-        let shaped = drive::shape(&mut self.drive, &drive::Asked { linear: lin.accel, angular: ang.accel, boost, thrust_box, velocity: f.lv, stick }, &self.tuning.drive, dt);
+        let mut shaped = drive::shape(&mut self.drive, &drive::Asked { linear: lin.accel, angular: ang.accel, boost, thrust_box, velocity: f.lv, stick }, &self.tuning.drive, dt);
+        if self.modes.g_safe && !(self.tuning.linear.boost_disables_g_safe && boost > 0.0 && !braking) {
+            // A safety toggle must also constrain residual spool/jerk output immediately.
+            shaped.linear = limit_length(shaped.linear, G_SAFE_MAX_G * G0);
+        }
 
         let (mass, inertia) = (self.mass(), self.inertia());
         let linear_world = f.rot * shaped.linear;

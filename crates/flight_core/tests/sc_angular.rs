@@ -145,10 +145,14 @@ fn diagonal_pitch_yaw_roll_stays_on_one_budget() {
 }
 
 #[test]
-fn g_safe_caps_a_full_pitch_at_cruise_and_off_it_does_not() {
+fn g_safe_lowers_the_coupled_turn_budget_when_thrusters_exceed_the_g_limit() {
     let env = Space::default();
     let cruise_thrust = FlightInput { thrust: DVec3::new(0.0, 0.0, -1.0), piloted: true, ..Default::default() };
-    let mut on = ScShip::new(tuning());
+    // Isolate the G limit: the shipped vertical thrusters are already below it.
+    let mut strong = tuning();
+    strong.ship.thrust.up *= 4.0;
+    strong.ship.thrust.down *= 4.0;
+    let mut on = ScShip::new(strong.clone());
     let mut body = body_at(DVec3::ZERO);
     run(&mut on, &mut body, &cruise_thrust, &env, 8.0);
     let speed = body.lin_vel.length();
@@ -167,7 +171,7 @@ fn g_safe_caps_a_full_pitch_at_cruise_and_off_it_does_not() {
     assert!(capped, "G-safe cut the rate");
     assert!(worst <= 1.02, "the turn's push {worst:.3} of the limit");
 
-    let mut off = ScShip::new(tuning());
+    let mut off = ScShip::new(strong);
     let mut body = body_at(DVec3::ZERO);
     run(&mut off, &mut body, &cruise_thrust, &env, 8.0);
     let mut cmd = ModeCmds { g_safe: true, ..Default::default() };
@@ -178,7 +182,6 @@ fn g_safe_caps_a_full_pitch_at_cruise_and_off_it_does_not() {
     run(&mut off, &mut body, &turning, &env, 3.0);
     let spin_off = body.rot.inverse() * body.ang_vel;
     eprintln!("G-safe off at {:.1} m/s: capped {}, pitch {:.4} rad/s", body.lin_vel.length(), off.status.rate_capped, spin_off.x);
-    assert!(!off.status.rate_capped, "G-safe off does not cap");
     assert!(spin_off.x > 1.5 * spin_on.x, "off turns faster: {:.4} vs {:.4}", spin_off.x, spin_on.x);
 }
 
@@ -202,7 +205,7 @@ fn pitch_target(t: &AngularTuning, speed: f64, cap: f64, landing: bool, clearanc
     };
     let input = FlightInput { turn: DVec2::new(1.0, 0.0), piloted: true, ..Default::default() };
     let modes = Modes { g_safe, landing, ..Modes::default() };
-    let env = Env { accel_box: flight_core::limits::Rot { pitch: 1e6, yaw: 1e6, roll: 1e6 }, boost: 0.0, cap, thrust_box: flight_core::limits::Dirs::splat(1e6), air_hold: DVec3::ZERO, level: false };
+    let env = Env { accel_box: flight_core::limits::Rot { pitch: 1e6, yaw: 1e6, roll: 1e6 }, boost: 0.0, cap, thrust_box: flight_core::limits::Dirs::splat(1e6), linear_hold: DVec3::ZERO, air_hold: DVec3::ZERO, level: false };
     let out = angular::step(&mut AngularState::default(), &f, &input, &modes, &env, t);
     out.accel.x / (DT * t.natural_frequency.pitch * t.natural_frequency.pitch)
 }
@@ -260,7 +263,7 @@ fn acceleration_stays_inside_the_box() {
         dt: DT,
     };
     let input = FlightInput { turn: DVec2::new(-1.0, 1.0), roll: -1.0, piloted: true, ..Default::default() };
-    let env = Env { accel_box: flight_core::limits::Rot { pitch: 0.5, yaw: 0.25, roll: 0.75 }, boost: 0.0, cap: 150.0, thrust_box: flight_core::limits::Dirs::splat(1e6), air_hold: DVec3::ZERO, level: false };
+    let env = Env { accel_box: flight_core::limits::Rot { pitch: 0.5, yaw: 0.25, roll: 0.75 }, boost: 0.0, cap: 150.0, thrust_box: flight_core::limits::Dirs::splat(1e6), linear_hold: DVec3::ZERO, air_hold: DVec3::ZERO, level: false };
     let out = angular::step(&mut AngularState::default(), &f, &input, &Modes::default(), &env, &t);
     eprintln!("box: accel {:?} inside (0.5, 0.25, 0.75)", out.accel);
     assert!(out.accel.x.abs() <= 0.5 && out.accel.y.abs() <= 0.25 && out.accel.z.abs() <= 0.75);

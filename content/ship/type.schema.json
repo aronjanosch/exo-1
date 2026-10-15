@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Ship model identity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "hull"],
+  "properties": {
+    "_comment": { "type": "string" },
+    "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+    "name": { "type": "string", "pattern": "\\S" },
+    "hull": { "enum": ["kackfass_1"] }
+  }
+}

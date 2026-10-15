@@ -22,6 +22,8 @@ struct Sample {
     spin: DVec3,
     speed: f64,
     rate_capped: bool,
+    nose_path_angle: f64,
+    nose_down: bool,
 }
 
 type Log = Arc<Mutex<Vec<Sample>>>;
@@ -42,7 +44,11 @@ fn sample(w: &mut World) -> Sample {
     let e = ship_e(w);
     let (rot, ang) = (w.get::<Rotation>(e).unwrap().0, w.get::<AngularVelocity>(e).unwrap().0);
     let capped = with_ship(w, |s| s.sc.status.rate_capped);
-    Sample { spin: rot.inverse() * ang, speed: ship_vel(w).length(), rate_capped: capped }
+    let velocity = ship_vel(w);
+    let nose_path_angle = if velocity.length_squared() > 1.0 { (rot * DVec3::NEG_Z).angle_between(velocity).to_degrees() } else { 0.0 };
+    let p = w.get::<Position>(e).unwrap().0;
+    let nose_down = (rot * DVec3::NEG_Z).dot(planet(w).up(p)) < -0.7;
+    Sample { spin: rot.inverse() * ang, speed: velocity.length(), rate_capped: capped, nose_path_angle, nose_down }
 }
 
 /// Runs `secs` with `ks` held, the pad stick at `pitch` and `roll` (Q or nothing), logging every
@@ -212,6 +218,23 @@ pub fn sc_turn_steps(s: &mut Vec<Step>) {
         let capped = samples.iter().any(|s| s.rate_capped);
         let peak = samples.iter().map(|s| s.spin.x.abs()).fold(0.0, f64::max);
         let speed = samples.last().map_or(0.0, |s| s.speed);
-        check(c, !capped, format!("G-safe off at {speed:.0} m/s: rate capped {capped}, peak pitch {peak:.3} rad/s"));
+        check(c, capped, format!("G-safe off at {speed:.0} m/s: thrust still caps the coupled turn, capped {capped}, peak pitch {peak:.3} rad/s"));
+        let angle = samples.iter().map(|s| s.nose_path_angle).fold(0.0, f64::max);
+        check(c, angle < 15.0, format!("coupled nose follows the flight path: maximum angle {angle:.2} degrees"));
+    }));
+
+    // Sustained loopings: descending through gravity must not make anti-drift
+    // cut curve thrust and stall body rotation. All flight input goes through Controls.
+    s.push(Box::new(|w, _| {
+        place_at_height(w, START_HEIGHT);
+        true
+    }));
+    s.push(hold_until("speed up for loopings", &[KeyCode::KeyW], 15.0, |w| ship_vel(w).length() > 75.0));
+    let loops = new_log();
+    s.push(fly_for("sustained loopings with G-safe", 30.0, &[KeyCode::KeyW], 1.0, loops.clone()));
+    s.push(analyse("descending part of loopings", loops, |c, samples| {
+        let descending: Vec<_> = samples.iter().filter(|s| s.nose_down && s.speed > 20.0).collect();
+        let min_pitch = descending.iter().map(|s| s.spin.x).fold(f64::INFINITY, f64::min);
+        check(c, !descending.is_empty() && min_pitch > 0.1, format!("descending loop: {} ticks, minimum pitch rate {min_pitch:.3} rad/s (no pause)", descending.len()));
     }));
 }

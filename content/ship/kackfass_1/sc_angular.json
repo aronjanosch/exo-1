@@ -17,7 +17,7 @@
   "landing_rate_share": 0.5,
   "landing_full_below": 5.0,
   "landing_off_above": 60.0,
-  "g_limit": { "forward": 8.0, "backward": 6.0, "left": 4.0, "right": 4.0, "up": 6.0, "down": 3.0 },
+  "g_limit": { "forward": 4.0, "backward": 4.0, "left": 4.0, "right": 4.0, "up": 4.0, "down": 4.0 },
   "brake_level_below": 3.0,
   "brake_level_gain": 2.0
 }

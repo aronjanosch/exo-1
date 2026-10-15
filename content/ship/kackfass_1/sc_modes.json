@@ -1,0 +1,6 @@
+{
+  "_comment": "Flight mode settings. Decoupling releases velocity control immediately; decouple_time is the legacy field name for the seconds over which coupled control blends back in. limiter_step: share of the cap one speed limiter step moves; limiter_min: the lowest share.",
+  "decouple_time": 4.0,
+  "limiter_step": 0.1,
+  "limiter_min": 0.1
+}

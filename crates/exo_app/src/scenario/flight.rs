@@ -20,7 +20,7 @@ fn yaw_rate(w: &mut World) -> f64 {
 /// Full-stick yaw rate of a ship hovering at rest (rad/s): the SC model's rate at its share for
 /// speed 0 (the spring settles to it within the check's 1.5 s).
 fn rest_yaw_rate(w: &World) -> f64 {
-    let t = &w.resource::<crate::tuning::Tuning>().sc.angular;
+    let t = &w.resource::<crate::tuning::Tuning>().ship_type.flight.angular;
     t.rate.yaw * t.rate_over_speed.eval(0.0)
 }
 
@@ -121,7 +121,7 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
             c.v.insert("v0", v);
             keys(w, &[KeyCode::KeyW, KeyCode::ShiftLeft], true);
         }
-        if c.t >= 0.5 * w.resource::<crate::tuning::Tuning>().sc.drive.boost_capacitor.drain_time {
+        if c.t >= 0.5 * w.resource::<crate::tuning::Tuning>().ship_type.flight.drive.boost_capacitor.drain_time {
             // Screenshot while boost is still held, so the HUD shows it.
             shot(w, c, &dir, windowed, "boost");
             keys(w, &[KeyCode::ShiftLeft], false);
@@ -155,25 +155,24 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
         false
     }));
     s.push(hold_until("firm brake", &[KeyCode::KeyX], 15.0, |w| ship_vel(w).length() < 0.5));
-    // #26: decoupled blends the damping out over decouple_time; the ship keeps gliding.
+    // Decoupling immediately releases velocity control, including when W is released together.
     s.push(hold_until("cruise", &[KeyCode::KeyW], 4.0, |_| false));
     s.push(Box::new(|w, c| {
-        let time = w.resource::<crate::tuning::Tuning>().sc.modes.decouple_time;
         if c.t == 0.0 {
             begin(w, c, "decouple (C) while cruising");
-            keys(w, &[KeyCode::KeyW], true);
+            c.v.insert("v_decouple", ship_vel(w).length());
+            keys(w, &[KeyCode::KeyW], false);
             tap(w, KeyCode::KeyC);
             return false;
         }
         let level = with_ship(w, |s| s.sc.modes.coupling);
-        if (c.t - time * 0.5).abs() < c.dt * 0.5 {
-            check(c, (level - 0.5).abs() < 0.02, format!("decouple: coupling {level:.3} halfway through the blend"));
-        }
-        if c.t >= time + 0.2 {
+        if c.t >= 0.2 {
             keys(w, &[KeyCode::KeyW], false);
             c.v.insert("v_release", ship_vel(w).length());
             end(w, c, format!("coupling {level:.3} after {:.1} s", c.t));
-            check(c, level == 0.0, format!("decouple: coupling {level:.3} after {:.1} s (blend {time} s)", c.t));
+            check(c, level == 0.0, format!("decouple immediately releases velocity control: coupling {level:.3}"));
+            let speed = ship_vel(w).length();
+            check(c, speed >= c.v["v_decouple"] * 0.97, format!("decoupling without thrust preserves speed: {:.1} -> {speed:.1} m/s", c.v["v_decouple"]));
             return true;
         }
         false

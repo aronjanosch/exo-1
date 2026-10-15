@@ -643,3 +643,60 @@ fn a_broken_pump_empties_the_tank_in_about_a_hundred_seconds_and_never_below_zer
     assert!(r.pump().tank() >= 0.0, "the tank never goes below zero");
     assert_eq!(r.pump().tank(), 0.0);
 }
+
+/// A room whose oxygen generator wears from the first second (no delay before its normal wear).
+fn oxygen_room(powered: bool) -> EngineRoom {
+    let tuning = RoomTuning {
+        oxygen_generator: DeviceTuning { wear_delay_s: (0.0, 0.0), ..DeviceTuning::default() },
+        ..RoomTuning::default()
+    };
+    let mut r = EngineRoom::new(tuning, ReactorTuning::default(), 11);
+    if powered {
+        assert!(r.set_power(true));
+    }
+    r
+}
+
+#[test]
+fn the_oxygen_generator_wears_while_its_life_support_has_power() {
+    let mut r = oxygen_room(true);
+    let mut powered_steps = 0;
+    for _ in 0..(120.0 / DT).round() as usize {
+        r.step(DT, Input::auto());
+        if r.grid().factor(Group::LifeSupport) >= 0.5 {
+            powered_steps += 1;
+        }
+    }
+    assert!(powered_steps > 0, "the room must get power for this test to mean anything");
+    assert!(r.oxygen_generator().condition().value() < 100.0, "a running generator wears");
+}
+
+#[test]
+fn the_oxygen_generator_does_not_wear_unpowered() {
+    // Never powered: the reactor makes nothing, so life support's factor stays under 0.5.
+    let mut r = oxygen_room(false);
+    run(&mut r, 120.0, Input::auto());
+    assert!(r.grid().factor(Group::LifeSupport) < 0.5, "no power, no air");
+    assert_eq!(r.oxygen_generator().condition().value(), 100.0);
+}
+
+#[test]
+fn the_oxygen_flow_halves_at_condition_0_707() {
+    // Barotrauma's condition squared: at 1 / sqrt(2) condition the flow is half of the full flow.
+    let mut r = room();
+    r.warm_start();
+    assert!(r.grid().factor(Group::LifeSupport) >= 0.5, "the room is powered");
+    let full = r.oxygen_flow(2.0);
+    assert!(full > 0.0);
+    r.oxygen_generator_mut().condition_mut().set_value(100.0 / 2f64.sqrt());
+    let half = r.oxygen_flow(2.0);
+    assert!((half / full - 0.5).abs() < 1e-6, "full {full}, half {half}");
+}
+
+#[test]
+fn a_blast_breaks_the_oxygen_generator() {
+    let mut r = room();
+    let ev = r.melt_now();
+    assert!(ev.contains(&RoomEvent::Device { source: Source::OxygenGenerator, event: DeviceEvent::Broke }), "{ev:?}");
+    assert!(!r.oxygen_generator().condition().functioning());
+}

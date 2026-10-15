@@ -3,7 +3,7 @@
 //! - Values: `content/gameplay/repair/repair.json` (`device_core::minigame::Tuning`, strict loader).
 //!   TODO(initiator): starting values.
 use crate::controls::{Actions, Controls, Tap};
-use crate::dev_area::engine_room::{COOLANT_PUMP, JUNCTION_BOX, REACTOR};
+use crate::dev_area::engine_room::{COOLANT_PUMP, JUNCTION_BOX, OXYGEN_GENERATOR, REACTOR};
 use crate::dev_area::reactor::{route, ReactorCounts, ReactorSim};
 use crate::dev_area::DevBox;
 use crate::displays::ActiveDisplay;
@@ -51,7 +51,7 @@ pub fn load_tuning(files: &[content_core::File]) -> Result<Tuning, Vec<String>> 
 
 pub fn tool_for(device: RepairDevice) -> RepairTool {
     match device {
-        RepairDevice::Reactor | RepairDevice::CoolantPump => RepairTool::Wrench,
+        RepairDevice::Reactor | RepairDevice::CoolantPump | RepairDevice::OxygenGenerator => RepairTool::Wrench,
         RepairDevice::JunctionBox => RepairTool::Screwdriver,
     }
 }
@@ -60,7 +60,7 @@ pub fn machine_of(device: RepairDevice) -> Machine {
     match device {
         RepairDevice::JunctionBox => Machine::Electrical,
         RepairDevice::Reactor => Machine::Hot,
-        RepairDevice::CoolantPump => Machine::Mechanical,
+        RepairDevice::CoolantPump | RepairDevice::OxygenGenerator => Machine::Mechanical,
     }
 }
 
@@ -77,6 +77,7 @@ fn device_of(id: &str) -> Option<RepairDevice> {
         REACTOR => Some(RepairDevice::Reactor),
         COOLANT_PUMP => Some(RepairDevice::CoolantPump),
         JUNCTION_BOX => Some(RepairDevice::JunctionBox),
+        OXYGEN_GENERATOR => Some(RepairDevice::OxygenGenerator),
         _ => None,
     }
 }
@@ -86,6 +87,7 @@ fn condition(room: &EngineRoom, d: RepairDevice) -> &Condition {
         RepairDevice::Reactor => room.reactor().condition(),
         RepairDevice::CoolantPump => room.pump().condition(),
         RepairDevice::JunctionBox => room.junction().condition(),
+        RepairDevice::OxygenGenerator => room.oxygen_generator().condition(),
     }
 }
 
@@ -94,6 +96,7 @@ fn condition_mut(room: &mut EngineRoom, d: RepairDevice) -> &mut Condition {
         RepairDevice::Reactor => room.reactor_mut().condition_mut(),
         RepairDevice::CoolantPump => room.pump_mut().condition_mut(),
         RepairDevice::JunctionBox => room.junction_mut().condition_mut(),
+        RepairDevice::OxygenGenerator => room.oxygen_generator_mut().condition_mut(),
     }
 }
 
@@ -102,6 +105,7 @@ fn source_of(d: RepairDevice) -> Source {
         RepairDevice::Reactor => Source::Reactor,
         RepairDevice::CoolantPump => Source::Pump,
         RepairDevice::JunctionBox => Source::Junction,
+        RepairDevice::OxygenGenerator => Source::OxygenGenerator,
     }
 }
 
@@ -117,6 +121,7 @@ fn part_of(r: &ReactorNews, d: RepairDevice) -> PartNews {
         RepairDevice::Reactor => r.reactor,
         RepairDevice::CoolantPump => r.pump,
         RepairDevice::JunctionBox => r.junction,
+        RepairDevice::OxygenGenerator => r.oxygen_generator,
     }
 }
 

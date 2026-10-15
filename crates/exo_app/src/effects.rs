@@ -1,7 +1,7 @@
 //! The systems only draw the effects: they read the snapshots (`Items::reactor`,
 //! `Items::fire`) and the local vitals (`crew_hud::Vitals`), so a client shows the same as the host.
 use crate::crew_hud::Vitals;
-use crate::dev_area::engine_room::{ignition_at, COOLANT_PUMP_AT, JUNCTION_BOX_AT, JUNCTION_BOX_SIZE, REACTOR_AT, REACTOR_SIZE};
+use crate::dev_area::engine_room::{ignition_at, COOLANT_PUMP_AT, JUNCTION_BOX_AT, JUNCTION_BOX_SIZE, OXYGEN_GENERATOR_AT, OXYGEN_GENERATOR_SIZE, REACTOR_AT, REACTOR_SIZE};
 use crate::dev_area::DevArea;
 use crate::env::PlanetRes;
 use crate::health::UseHold;
@@ -188,7 +188,7 @@ struct FxAssets {
 
 #[derive(Resource)]
 struct Emitters {
-    smoke: [f64; 3],
+    smoke: [f64; 4],
     spark: f64,
     steam: f64,
     /// Time since the pump's last leak puff (r36).
@@ -197,7 +197,7 @@ struct Emitters {
 
 impl Default for Emitters {
     fn default() -> Emitters {
-        Emitters { smoke: [0.0; 3], spark: f64::INFINITY, steam: 0.0, leak: 0.0 }
+        Emitters { smoke: [0.0; 4], spark: f64::INFINITY, steam: 0.0, leak: 0.0 }
     }
 }
 
@@ -291,7 +291,7 @@ fn device_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: O
     let (Some(r), Some(area), Some(assets)) = (items.reactor, area.as_deref(), assets) else { return };
     let dt = time.delta_secs_f64();
     let t = time.elapsed_secs_f64();
-    let spots = [(REACTOR_AT, REACTOR_SIZE[1], r.reactor.share), (COOLANT_PUMP_AT, 1.2, r.pump.share), (JUNCTION_BOX_AT, JUNCTION_BOX_SIZE[1], r.junction.share)];
+    let spots = [(REACTOR_AT, REACTOR_SIZE[1], r.reactor.share), (COOLANT_PUMP_AT, 1.2, r.pump.share), (JUNCTION_BOX_AT, JUNCTION_BOX_SIZE[1], r.junction.share), (OXYGEN_GENERATOR_AT, OXYGEN_GENERATOR_SIZE[1], r.oxygen_generator.share)];
     for (i, (at, lift, share)) in spots.into_iter().enumerate() {
         let Some(every) = smoke_every(smoke_level(share)) else {
             em.smoke[i] = 0.0;

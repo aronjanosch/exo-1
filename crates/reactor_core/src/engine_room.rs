@@ -29,6 +29,8 @@ pub struct RoomTuning {
     /// Degrees above the optimal band's top that add one unit of load (overload wear) to the pump.
     pub heat_wear_degrees: f64,
     pub junction: DeviceTuning,
+    /// The oxygen generator's device values (r37, same numbers as the pump; TODO(initiator)).
+    pub oxygen_generator: DeviceTuning,
     /// Supply above this multiple of the demand is overvoltage.
     pub overvolt_ratio: f64,
     /// Hits per second while overvolted (Barotrauma rolls 1 % per 60 Hz frame: 0.6). TODO(initiator).
@@ -100,6 +102,7 @@ impl Default for RoomTuning {
             pump: DeviceTuning { repair_threshold: 80.0, ..DeviceTuning::default() },
             heat_wear_degrees: 10.0,
             junction: DeviceTuning { repair_threshold: 80.0, ..DeviceTuning::default() },
+            oxygen_generator: DeviceTuning { repair_threshold: 80.0, ..DeviceTuning::default() },
             overvolt_ratio: 2.0,
             overvolt_hits_per_s: 0.6,
             break_fire_chance: 0.15,
@@ -169,6 +172,7 @@ pub enum Source {
     Reactor,
     Pump,
     Junction,
+    OxygenGenerator,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -186,6 +190,8 @@ pub enum RoomEvent {
 pub enum Fault {
     /// The coolant pump goes to just below its broken limit.
     PumpBreak,
+    /// The oxygen generator goes to just below its broken limit (the dev faults screen's O2 gen break).
+    OxygenGeneratorBreak,
     /// Engines and lights go off at once: overvoltage at the junction box, and Auto overshoots.
     LoadDrop,
     Surge,
@@ -426,12 +432,40 @@ impl JunctionBox {
     }
 }
 
+/// The oxygen generator (r37): makes the engine room's air from the life support's power
+/// (`EngineRoom::oxygen_flow`, `fire_core::oxygen`). It wears only while it runs, i.e. while life
+/// support gets at least `fire_core::oxygen::MIN_VOLTAGE`, as the pump wears only while it runs.
+#[derive(Clone, Debug)]
+pub struct OxygenGenerator {
+    condition: Condition,
+}
+
+impl OxygenGenerator {
+    pub fn new(tuning: &RoomTuning, seed: u64) -> OxygenGenerator {
+        OxygenGenerator { condition: Condition::new(tuning.oxygen_generator, seed) }
+    }
+
+    pub fn condition(&self) -> &Condition {
+        &self.condition
+    }
+
+    pub fn condition_mut(&mut self) -> &mut Condition {
+        &mut self.condition
+    }
+
+    /// Normal wear while running; none while it has no power.
+    fn wear(&mut self, dt: f64, running: bool) -> Option<DeviceEvent> {
+        self.condition.deteriorate(dt, if running { 1.0 } else { 0.0 })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct EngineRoom {
     tuning: RoomTuning,
     reactor: Reactor,
     pump: Pump,
     junction: JunctionBox,
+    oxygen: OxygenGenerator,
     grid: Grid,
     level: AlarmLevel,
     engines_full_kw: f64,
@@ -471,6 +505,7 @@ impl EngineRoom {
         EngineRoom {
             pump: Pump::new(&t.room, seed),
             junction: JunctionBox::new(&t.room, seed.wrapping_add(1)),
+            oxygen: OxygenGenerator::new(&t.room, seed.wrapping_add(3)),
             tuning: t.room,
             rods,
             history: History::new(t.graph_points, t.graph_interval_s),
@@ -573,6 +608,21 @@ impl EngineRoom {
 
     pub fn junction_mut(&mut self) -> &mut JunctionBox {
         &mut self.junction
+    }
+
+    pub fn oxygen_generator(&self) -> &OxygenGenerator {
+        &self.oxygen
+    }
+
+    pub fn oxygen_generator_mut(&mut self) -> &mut OxygenGenerator {
+        &mut self.oxygen
+    }
+
+    /// The generator's air, m³ per second: `rate` at full life support power and condition, with
+    /// the condition squared (`fire_core::generator_flow`). The power is the life support group's
+    /// factor of the last step; nothing below `MIN_VOLTAGE`.
+    pub fn oxygen_flow(&self, rate: f64) -> f64 {
+        fire_core::oxygen::generator_flow(self.grid.factor(Group::LifeSupport), rate, self.oxygen.condition.fraction())
     }
 
     pub fn grid(&self) -> &Grid {
@@ -811,6 +861,10 @@ impl EngineRoom {
         if let Some(e) = self.pump.wear(dt, self.pump.on() && self.reactor.power_on(), excess, &t) {
             ev.push(RoomEvent::Device { source: Source::Pump, event: e });
         }
+        let running = self.grid.factor(Group::LifeSupport) >= fire_core::oxygen::MIN_VOLTAGE;
+        if let Some(e) = self.oxygen.wear(dt, running) {
+            ev.push(RoomEvent::Device { source: Source::OxygenGenerator, event: e });
+        }
 
         self.level = self.compute_level();
         self.history.push_sample(dt, self.reactor.output_kw(), load, self.reactor.temperature());
@@ -848,6 +902,9 @@ impl EngineRoom {
         if let Some(e) = self.junction.condition.damage(blast.device_damage) {
             ev.push(RoomEvent::Device { source: Source::Junction, event: e });
         }
+        if let Some(e) = self.oxygen.condition.damage(blast.device_damage) {
+            ev.push(RoomEvent::Device { source: Source::OxygenGenerator, event: e });
+        }
         ev
     }
 
@@ -857,6 +914,11 @@ impl EngineRoom {
                 let to = (self.pump.condition.tuning().broken_below - 1.0).max(0.0);
                 let amount = (self.pump.condition.value() - to).max(0.0);
                 self.pump.condition.damage(amount).map(|e| RoomEvent::Device { source: Source::Pump, event: e }).into_iter().collect()
+            }
+            Fault::OxygenGeneratorBreak => {
+                let to = (self.oxygen.condition.tuning().broken_below - 1.0).max(0.0);
+                let amount = (self.oxygen.condition.value() - to).max(0.0);
+                self.oxygen.condition.damage(amount).map(|e| RoomEvent::Device { source: Source::OxygenGenerator, event: e }).into_iter().collect()
             }
             Fault::LoadDrop => {
                 self.grid.set_breaker(Group::Engines, false);
@@ -890,6 +952,7 @@ impl EngineRoom {
             || self.reactor.condition().needs_repair()
             || self.pump.condition.needs_repair()
             || self.junction.condition.needs_repair()
+            || self.oxygen.condition.needs_repair()
         {
             AlarmLevel::Warn
         } else {

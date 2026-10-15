@@ -54,6 +54,12 @@ pub const COOLANT_PUMP_AT: [f64; 2] = [-10.5, -17.5];
 pub const COOLANT_PUMP_SIZE: [f64; 3] = [1.0, 1.2, 1.0];
 pub const JUNCTION_BOX_AT: [f64; 2] = [-17.0, -18.85];
 pub const JUNCTION_BOX_SIZE: [f64; 3] = [0.6, 0.9, 0.3];
+/// The junction box's screen (S, on the wall above the box) and the AUX screen (S, AX-01) beside it,
+/// east, the same height and the same wall, with a gap of `AUX_GAP` between the two.
+pub const JUNCTION_AT: [f64; 2] = [JUNCTION_BOX_AT[0], -18.98];
+pub const JUNCTION_LIFT: f64 = 1.2;
+pub const AUX_GAP: f64 = 0.05;
+pub const AUX_AT: [f64; 2] = [JUNCTION_AT[0] + SMALL_SCREEN_SIZE[0] + AUX_GAP, JUNCTION_AT[1]];
 /// The M-tier screen's spot: on the south wall's inner face next to the reactor (east of it),
 /// its height from the floor.
 pub const REACTOR_SCREEN_AT: [f64; 2] = [-11.8, -18.96];
@@ -86,9 +92,10 @@ pub struct Mount {
 /// The coolant pump's screen on its north face (the walker's side), the junction box's on the
 /// south wall above the box, and the door's in the corridor on the east wall by the doorway, at
 /// eye height; the dev faults screen inside the room on the north wall, west of the door.
-pub const SCREENS: [Mount; 5] = [
+pub const SCREENS: [Mount; 6] = [
     Mount { id: reactor_screen::PUMP_ID, name: reactor_screen::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: reactor_screen::JUNCTION_ID, name: reactor_screen::JUNCTION_NAME, at: [JUNCTION_BOX_AT[0], -18.98], lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: reactor_screen::JUNCTION_ID, name: reactor_screen::JUNCTION_NAME, at: JUNCTION_AT, lift: JUNCTION_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: reactor_screen::AUX_ID, name: reactor_screen::AUX_NAME, at: AUX_AT, lift: JUNCTION_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: reactor_screen::DOOR_ID, name: reactor_screen::DOOR_NAME, at: [-13.04, -10.0], lift: 1.3, size: SMALL_SCREEN_SIZE, turn: -90.0 },
     Mount { id: reactor_screen::FAULTS_ID, name: reactor_screen::FAULTS_NAME, at: reactor_screen::FAULTS_AT, lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 0.0 },
     Mount { id: reactor_screen::STATUS_ID, name: reactor_screen::STATUS_NAME, at: STATUS_AT, lift: STATUS_LIFT, size: STATUS_SIZE, turn: 180.0 },
@@ -437,6 +444,20 @@ fn alarm_lights(time: Res<Time>, alarm: Res<ShipAlarm>, mut lights: Query<(&Room
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_aux_screen_sits_beside_the_junction_box_screen_at_its_height() {
+        let screens: &[Mount] = &SCREENS;
+        let jb = screens.iter().find(|m| m.id == reactor_screen::JUNCTION_ID).expect("the junction box screen is mounted");
+        let aux = screens.iter().find(|m| m.id == reactor_screen::AUX_ID).expect("the AUX screen is mounted");
+        assert_eq!(aux.at[1], jb.at[1], "on the same wall");
+        assert_eq!(aux.lift, jb.lift, "the same height");
+        assert_eq!(aux.size, jb.size, "the same size");
+        assert_eq!(aux.turn, jb.turn, "facing the same way");
+        let jb_east = jb.at[0] + jb.size[0] * 0.5;
+        let aux_west = aux.at[0] - aux.size[0] * 0.5;
+        assert!(aux_west >= jb_east && aux_west - jb_east < 0.1, "beside the junction box screen, no overlap: {jb_east} and {aux_west}");
+    }
 
     #[test]
     fn the_status_screen_sits_beside_the_readout_on_the_same_wall() {

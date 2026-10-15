@@ -58,6 +58,7 @@ use device_core::{Condition, DeviceEvent, DeviceTuning};
 use gameplay_core::rng::Rng;
 
 use crate::grid::{Grid, Group};
+use crate::history::History;
 use crate::reactor::{AlarmKind, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning, RodKinds};
 use crate::tuning::Tuning;
 use serde::{Deserialize, Serialize};
@@ -456,6 +457,8 @@ pub struct EngineRoom {
     wander_left: f64,
     /// The rod kinds of the loaded values, for `rod_of`.
     rods: RodKinds,
+    /// Output, load and temperature over the last points (the status board's graph).
+    history: History,
 }
 
 impl EngineRoom {
@@ -478,6 +481,7 @@ impl EngineRoom {
             junction: JunctionBox::new(&t.room, seed.wrapping_add(1)),
             tuning: t.room,
             rods,
+            history: History::new(t.graph_points, t.graph_interval_s),
             reactor,
             grid: Grid::from_tuning(&t.grid),
             level: AlarmLevel::None,
@@ -493,6 +497,11 @@ impl EngineRoom {
     /// Starts or stops the reactor. Refused while it is broken.
     pub fn set_power(&mut self, on: bool) -> bool {
         self.reactor.set_power(on)
+    }
+
+    /// The graph's history (newest first), fed by `step`.
+    pub fn history(&self) -> &History {
+        &self.history
     }
 
     pub fn set_operator_skill(&mut self, skill: f64) {
@@ -653,6 +662,7 @@ impl EngineRoom {
         }
 
         self.level = self.compute_level();
+        self.history.push_sample(dt, self.reactor.output_kw(), load, self.reactor.temperature());
         ev
     }
 

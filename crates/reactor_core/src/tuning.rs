@@ -20,11 +20,15 @@ pub struct Tuning {
     pub reactor: ReactorTuning,
     pub room: RoomTuning,
     pub grid: GridTuning,
+    /// The status board's graph: points per curve (Barotrauma 25).
+    pub graph_points: usize,
+    /// Seconds between two graph samples (Barotrauma 0.5).
+    pub graph_interval_s: f64,
 }
 
 impl Default for Tuning {
     fn default() -> Tuning {
-        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default() }
+        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), graph_points: 25, graph_interval_s: 0.5 }
     }
 }
 
@@ -52,6 +56,7 @@ impl Tuning {
         let r = &self.reactor;
         need(r.slots >= 1, "reactor.slots", "must be at least 1");
         need(self.start_rods <= r.slots, "start_rods", "must fit in reactor.slots");
+        need(self.graph_points >= 1 && self.graph_interval_s > 0.0, "graph_points", "must be >= 1, graph_interval_s > 0");
         need(self.rods.0.contains_key("standard"), "rods.standard", "the rod start_rods uses must be listed");
         for (id, k) in &self.rods.0 {
             need(k.heat > 0.0 && k.life > 0.0 && k.life <= 100.0, &format!("rods.{id}"), "heat > 0, life in 0..=100");

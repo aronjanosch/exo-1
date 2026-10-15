@@ -508,7 +508,7 @@ pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
     Panel::screen(Tier::S, DOOR_NAME, "ER-01", body).with_padding(8.0)
 }
 
-/// The dev fault screen: the three faults, a fire at the reactor and the reset, one button a row.
+/// The dev fault screen: the faults, the drain and the warm start, a fire at the reactor and the resets.
 pub fn faults_panel() -> Panel {
     // Two columns: the faults on the left, the fire and the resets on the right.
     let col = |items: Vec<_>| column(4.0, items);
@@ -529,6 +529,7 @@ pub fn faults_panel() -> Panel {
                 col(vec![
                     button("Start fire", "fire").fixed(32.0),
                     button("Fire mode", "fire_model").fixed(32.0),
+                    button("Warm start", "warm_start").fixed(32.0),
                     button("Reset RX", "reset").fixed(32.0),
                     space(),
                 ]),
@@ -682,6 +683,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "fire" => Some(ReactorAsk::Trigger(ReactorFault::Fire)),
                 "reset" => Some(ReactorAsk::Reset),
                 "drain_coolant" => Some(ReactorAsk::Trigger(ReactorFault::DrainCoolant)),
+                "warm_start" => Some(ReactorAsk::Trigger(ReactorFault::WarmStart)),
                 _ => None,
             }
         } else {
@@ -995,6 +997,11 @@ mod tests {
         assert_ne!(format!("{low:?}"), format!("{full:?}"), "a low tank is drawn");
         assert_ne!(format!("{empty:?}"), format!("{low:?}"), "an empty tank says EMPTY");
         assert!(faults_panel().find("drain_coolant").is_some());
+    }
+
+    #[test]
+    fn the_warm_start_is_a_fault_button() {
+        assert!(faults_panel().find("warm_start").is_some());
     }
 
     #[test]

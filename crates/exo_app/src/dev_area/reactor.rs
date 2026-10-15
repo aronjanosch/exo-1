@@ -54,13 +54,27 @@ pub struct ReactorSim {
     since_send: f64,
 }
 
+/// `--warm-reactor`: the room is warm-started when it is created (`ReactorSim::created`), not run 150 s
+/// on Auto.
+#[derive(Resource)]
+pub struct WarmAtCreation;
+
 impl ReactorSim {
     /// A room on Auto with the power on, already warmed up (a cold start takes 60 to 90 s).
     pub fn new(cfg: &Tuning) -> ReactorSim {
+        ReactorSim::created(cfg, false)
+    }
+
+    /// A new room, warmed up by `EngineRoom::warm_start` when `warm`, else by 150 s on Auto.
+    pub fn created(cfg: &Tuning, warm: bool) -> ReactorSim {
         let mut room = EngineRoom::from_tuning(cfg, SEED);
         room.set_power(true);
-        for _ in 0..1500 {
-            let _ = room.step(0.1, Input::auto());
+        if warm {
+            room.warm_start();
+        } else {
+            for _ in 0..1500 {
+                let _ = room.step(0.1, Input::auto());
+            }
         }
         // The warm-up runs the tank down; a fresh room starts with a full one (TODO(initiator): later
         // the tank may start where the ship's last run left it).
@@ -86,6 +100,10 @@ impl ReactorSim {
             ReactorAsk::Trigger(ReactorFault::DrainCoolant) => {
                 self.room.pump_mut().set_tank(0.0);
                 info!("reactor: dev drain of the coolant tank");
+            }
+            ReactorAsk::Trigger(ReactorFault::WarmStart) => {
+                let secs = self.room.warm_start();
+                info!("reactor: warm start, settled after {secs:.1} s of sim time");
             }
             ReactorAsk::Trigger(f) => {
                 // The fire is started by `reactor_step`, which owns the air (`fault` is None for it).
@@ -239,7 +257,7 @@ fn fault(f: ReactorFault) -> Option<Fault> {
         ReactorFault::PumpBreak => Some(Fault::PumpBreak),
         ReactorFault::LoadDrop => Some(Fault::LoadDrop),
         ReactorFault::Surge => Some(Fault::Surge),
-        ReactorFault::Fire | ReactorFault::DrainCoolant => None,
+        ReactorFault::Fire | ReactorFault::DrainCoolant | ReactorFault::WarmStart => None,
     }
 }
 
@@ -282,7 +300,8 @@ pub fn route(e: RoomEvent, counts: &mut ReactorCounts) {
 pub fn plugin(app: &mut App) {
     let files = crate::content_files("gameplay");
     let tuning = Tuning::load(&files).unwrap_or_else(|e| panic!("reactor: {e:?}"));
-    app.insert_resource(ReactorSim::new(&tuning)).insert_resource(ReactorConfig(tuning)).init_resource::<ReactorCounts>();
+    let warm = app.world().contains_resource::<WarmAtCreation>();
+    app.insert_resource(ReactorSim::created(&tuning, warm)).insert_resource(ReactorConfig(tuning)).init_resource::<ReactorCounts>();
     app.init_resource::<super::blast::PendingBlasts>().init_resource::<super::blast::BlastFlash>();
     app.add_systems(FixedUpdate, (reactor_step, super::blast::reactor_blast, super::blast::client_blast_news).chain().before(super::engine_room::room_state).in_set(crate::phases::Fx::Input));
 }
@@ -536,6 +555,21 @@ mod tests {
         let n = s.news(0.0);
         assert_eq!(n.coolant, 0.0);
         assert!(n.coolant_low && n.flow == 0.0, "an empty tank is no flow");
+    }
+
+    #[test]
+    fn the_warm_start_fault_settles_the_room_and_costs_no_coolant_or_rod_life() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.apply(ReactorAsk::Trigger(ReactorFault::DrainCoolant), &cfg(), &mut k);
+        s.room.pump_mut().refill(100.0);
+        let tank = s.room.pump().tank();
+        let lives = s.room.reactor().rod_lives();
+        s.apply(ReactorAsk::Trigger(ReactorFault::WarmStart), &cfg(), &mut k);
+        assert!(s.room.settled(), "the room is settled after the warm start");
+        assert_eq!(s.room.pump().tank(), tank);
+        assert_eq!(s.room.reactor().rod_lives(), lives);
+        assert_eq!(k.fires, 0);
     }
 
     #[test]

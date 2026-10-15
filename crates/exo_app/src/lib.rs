@@ -133,6 +133,8 @@ pub struct Options {
     /// `--dev-area`: spawn the dev area's devices wherever the run starts; `--start=dev_area` does
     /// it too.
     pub dev_area: bool,
+    /// `--warm-reactor`: the engine room is warm-started once when it is created (`warm_start`).
+    pub warm_reactor: bool,
 }
 
 impl Default for Options {
@@ -163,6 +165,7 @@ impl Default for Options {
             force_menu: false,
             swap_rounds: 3,
             dev_area: false,
+            warm_reactor: false,
         }
     }
 }
@@ -196,6 +199,7 @@ impl Options {
                 "--settings-dir" => o.settings_dir = Some(PathBuf::from(v)),
                 "--menu" => o.force_menu = true,
                 "--dev-area" => o.dev_area = true,
+                "--warm-reactor" => o.warm_reactor = true,
                 "--swap-rounds" => o.swap_rounds = v.parse().expect("swap-rounds"),
                 "--perf" => o.perf = Some(o.perf.take().unwrap_or_default()),
                 "--perf-baseline" => o.perf.get_or_insert_default().baseline = PathBuf::from(v),
@@ -398,6 +402,9 @@ pub fn build_app(o: &Options) -> App {
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
     app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, avian_crates::plugin, cargo::plugin, hud::plugin, net_live::plugin));
     app.add_plugins((gameplay::plugin, town::plugin, displays::plugin, items::plugin, crew_hud::plugin, items_net::plugin, health::plugin, repair::plugin, public_status::plugin, health_view::plugin));
+    if o.warm_reactor {
+        app.insert_resource(dev_area::reactor::WarmAtCreation);
+    }
     if o.dev_area() {
         app.add_plugins(dev_area::plugin);
     }

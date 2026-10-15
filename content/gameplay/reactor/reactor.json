@@ -43,6 +43,9 @@
   "battery": {
     "_comment": "battery (r38, Barotrauma PowerContainer.cs:63-127 and the plain battery item, scaled by 2000/5000 = 0.4 from the reactor's 5000 kW): capacity_kwmin (kW·min), max_output_kw, max_recharge_kw (the charge speed at the player's recharge 1), efficiency (the share of the taken power stored, 0.95). It starts empty; it gives the grid's shortfall after the reactor and takes the surplus at the set recharge. TODO(initiator): all four values.",
     "capacity_kwmin": 800.0, "max_output_kw": 400.0, "max_recharge_kw": 200.0, "efficiency": 0.95 },
+  "weapons": {
+    "_comment": "weapons (r40, Barotrauma coilgun.xml:16 and Turret.cs, scaled by 0.4 as the battery): one capacitor the WEAPONS grid group recharges; a shot takes shot_kw × reload_s kW·s (coilgun 1000 kW × 0.25 s: 400 × 0.25 = 100 kW·s) and starts the reload. capacity_shots: the shots it holds (6). recharge_kw: the group's demand while not full (the coilgun's continuous draw is 400 kW). The capacitor starts empty. TODO(initiator): all four values, and whether the draw is an instant check or the energy per shot as read here.",
+    "capacity_shots": 6, "shot_kw": 400.0, "reload_s": 0.25, "recharge_kw": 400.0 },
   "director": {
     "_comment": "Director (r38, Barotrauma EventManager and MalfunctionEvent, simplified; sources in reactor_core director.rs): enabled (off here; the dev DIRECTOR toggle), min_interval_s and max_interval_s (the random wait between faults: Barotrauma EventCooldown 60 s, the max 3 cooldowns, TODO(initiator)), threshold (intensity at or below which a fault may fire; Barotrauma DefaultEventThreshold 0.2), rise_per_s and fall_per_s (intensity climb and fall; Barotrauma 0.04 and 0.0025), all TODO(initiator).",
     "enabled": false, "min_interval_s": 60.0, "max_interval_s": 180.0, "threshold": 0.2, "rise_per_s": 0.04, "fall_per_s": 0.0025 },

@@ -172,6 +172,12 @@ impl ReactorSim {
                     info!("reactor: boost refused (off, broken, or not allowed now)");
                 }
             }
+            // The GN-01's FIRE (r40): one shot, refused while reloading or without a shot's energy.
+            ReactorAsk::Fire => {
+                if !self.room.fire_weapon() {
+                    info!("reactor: gun refused (reloading or no shot's energy)");
+                }
+            }
         }
     }
 
@@ -250,6 +256,9 @@ impl ReactorSim {
             battery_recharge: self.room.battery().recharge(),
             battery_kw: self.room.battery().output_kw(),
             director: self.director.enabled(),
+            weapon_shots: self.room.weapons().shots(),
+            weapon_charge: self.room.weapons().charge(),
+            weapon_reload_s: self.room.weapons().reload_left(),
         }
     }
 }
@@ -594,6 +603,20 @@ mod tests {
         s.apply(ReactorAsk::Boost(true), &cfg(), &mut k);
         assert_eq!(s.room.reactor().temperature_boost(), 0.0, "the power is needed");
         assert_eq!(s.news(1.0).boost, 0.0);
+    }
+
+    #[test]
+    fn the_fire_ask_takes_a_shot_and_the_news_carry_the_capacitor() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        // The app's room is created powered and warmed up (`created`), so the capacitor starts full.
+        assert_eq!(s.news(1.0).weapon_shots, 6, "a powered room starts with a full capacitor");
+        s.apply(ReactorAsk::Fire, &cfg(), &mut k);
+        let n = s.news(1.0);
+        assert_eq!(n.weapon_shots, 5);
+        assert!(n.weapon_reload_s > 0.0, "the reload shows on GN-01");
+        s.apply(ReactorAsk::Fire, &cfg(), &mut k);
+        assert_eq!(s.news(1.0).weapon_shots, 5, "refused while reloading");
     }
 
     #[test]

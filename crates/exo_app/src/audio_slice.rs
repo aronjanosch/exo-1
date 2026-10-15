@@ -39,6 +39,8 @@ pub const HISS_VOL: f32 = 0.07;
 pub const ZAP_VOL: f32 = 0.09;
 pub const ZAP_EVERY_S: f64 = 2.0;
 pub const CLUNK_VOL: f32 = 0.09;
+/// The GN-01's shot (r40): the thud, louder than the clunk.
+pub const GUN_VOL: f32 = 0.14;
 /// The dry click of an extinguisher that ran empty: the clunk, quieter.
 pub const DRY_VOL: f32 = 0.05;
 pub const SWEEP_VOL: f32 = 0.08;
@@ -239,6 +241,19 @@ fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
 
 pub(crate) fn one_shot(commands: &mut Commands, h: &Handle<SynthAudio>, volume: f32) {
     commands.spawn((AudioPlayer(h.clone()), PlaybackSettings { mode: PlaybackMode::Despawn, volume: Volume::Linear(volume), ..default() }));
+}
+
+/// The gun's shot (r40): the thud when the GN-01 fires (`reactor_screen::shot_fired`), on every machine
+/// that gets the news, the host's and the clients'.
+fn gun_shot(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mut prev: Local<Option<u8>>) {
+    let Some(news) = items.reactor else {
+        *prev = None;
+        return;
+    };
+    if crate::dev_area::reactor_screen::shot_fired(*prev, &news) {
+        one_shot(&mut commands, &s.thud, GUN_VOL);
+    }
+    *prev = Some(news.weapon_shots);
 }
 
 fn walker_pos(players: &Query<&Player>) -> Option<DVec3> {
@@ -528,7 +543,7 @@ fn health_sounds(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, o
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, setup);
-    app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, repair_hurt_sounds, electric_sounds, pump_loop, door_sound, health_sounds, reactor_hum, reactor_alarms, ecool_hiss, extinguisher_dry).in_set(crate::phases::Frame::Input));
+    app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, repair_hurt_sounds, electric_sounds, pump_loop, door_sound, health_sounds, reactor_hum, reactor_alarms, ecool_hiss, extinguisher_dry, gun_shot).in_set(crate::phases::Frame::Input));
 }
 
 #[cfg(test)]

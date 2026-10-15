@@ -87,9 +87,16 @@ pub const SCREENS: &[Mount] = &[
     Mount { id: reactor_screen::VENT_CORRIDOR_ID, name: reactor_screen::VENT_CORRIDOR_NAME, at: VENT_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
     // The helm (r38, HM-01): in the corridor on its east wall, north of the vent. TODO(initiator): the spot on the wall.
     Mount { id: reactor_screen::HELM_ID, name: reactor_screen::HELM_NAME, at: HELM_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
+    // The gunnery (r40, GN-01): on the same wall, 1.5 m north of the helm (edge to edge).
+    Mount { id: reactor_screen::GUNNERY_ID, name: reactor_screen::GUNNERY_NAME, at: GUNNERY_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
 ];
 /// The helm's wall point (area metres): the corridor's east wall, beyond the vent.
 pub const HELM_AT: [f64; 2] = [-13.04, -5.0];
+/// The gunnery's wall point (r40): north of the helm, 1.5 m between the two screens' edges (the helm's
+/// width along the wall is SMALL_SCREEN_SIZE[0]). TODO(initiator): this is 1.7 m past the corridor zone's
+/// north end (y -4.7); the spot on the wall is open.
+pub const GUNNERY_GAP: f64 = 1.5;
+pub const GUNNERY_AT: [f64; 2] = [HELM_AT[0], HELM_AT[1] + SMALL_SCREEN_SIZE[0] + GUNNERY_GAP];
 /// The vents' wall points (area metres): the engine room's west wall and the corridor's east wall.
 pub const VENT_AT: [[f64; 2]; 2] = [[-18.9, -14.0], [-13.04, -7.0]];
 pub const VENT_LIFT: f64 = 1.3;

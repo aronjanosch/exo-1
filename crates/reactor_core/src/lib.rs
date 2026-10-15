@@ -13,6 +13,7 @@ pub mod shield;
 pub mod room_alarm;
 pub mod sim;
 pub mod tuning;
+pub mod weapons;
 
 pub use battery::{Battery, BatteryTuning};
 pub use engine::Engine;
@@ -26,3 +27,4 @@ pub use shield::{Shield, ShieldTuning};
 pub use room_alarm::{AlarmState, AlarmTuning, RoomAlarm};
 pub use reactor::{AlarmKind, Band, Bands, Blast, FuelNeed, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning, RodKind, RodKinds, Warnings};
 pub use tuning::{Tuning, REACTOR_PATH};
+pub use weapons::{Weapons, WeaponsTuning};

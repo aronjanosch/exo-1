@@ -49,6 +49,9 @@
   "alarm": {
     "_comment": "Room alarms (r40, #165; reactor_core room_alarm.rs): low_o2 (the air, 0..1, at or below which the room has thin air: Barotrauma's oxygen detector, 35 %, OxygenDetector.cs:7) and low_o2_clear (the air above which it clears: the band's top, TODO(initiator)), clear_s (seconds a fire or breach stays on after its input goes off: the smoke detector's one-second check as a hold, TODO(initiator)), silence_s (seconds a SILENCE holds the klaxon when the kind does not change, 60 by the ticket, TODO(initiator)).",
     "low_o2": 0.35, "low_o2_clear": 0.40, "clear_s": 1.0, "silence_s": 60.0 },
+  "weapons": {
+    "_comment": "weapons (r40, Barotrauma coilgun.xml:16 and Turret.cs, scaled by 0.4 as the battery): one capacitor the WEAPONS grid group recharges; a shot takes shot_kw × reload_s kW·s (coilgun 1000 kW × 0.25 s: 400 × 0.25 = 100 kW·s) and starts the reload. capacity_shots: the shots it holds (6). recharge_kw: the group's demand while not full (the coilgun's continuous draw is 400 kW). The capacitor starts empty. TODO(initiator): all four values, and whether the draw is an instant check or the energy per shot as read here.",
+    "capacity_shots": 6, "shot_kw": 400.0, "reload_s": 0.25, "recharge_kw": 400.0 },
   "director": {
     "_comment": "Director (r38, Barotrauma EventManager and MalfunctionEvent, simplified; sources in reactor_core director.rs): enabled (off here; the dev DIRECTOR toggle), min_interval_s and max_interval_s (the random wait between faults: Barotrauma EventCooldown 60 s, the max 3 cooldowns, TODO(initiator)), threshold (intensity at or below which a fault may fire; Barotrauma DefaultEventThreshold 0.2), rise_per_s and fall_per_s (intensity climb and fall; Barotrauma 0.04 and 0.0025), all TODO(initiator).",
     "enabled": false, "min_interval_s": 60.0, "max_interval_s": 180.0, "threshold": 0.2, "rise_per_s": 0.04, "fall_per_s": 0.0025 },

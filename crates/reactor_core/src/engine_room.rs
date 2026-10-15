@@ -16,6 +16,7 @@ use device_core::{Condition, DeviceEvent, DeviceTuning};
 use gameplay_core::rng::Rng;
 
 use crate::battery::Battery;
+use crate::weapons::Weapons;
 use crate::engine::Engine;
 use crate::breach::Breach;
 use crate::grid::{Grid, Group};
@@ -513,6 +514,8 @@ pub struct EngineRoom {
     /// The shield (`shield`, r40): fed by the Shields group, its demand is `shield_full_kw` times its share.
     shield: Shield,
     shield_full_kw: f64,
+    /// The weapons' capacitor (`weapons`): the WEAPONS group charges it, a shot takes its energy.
+    weapons: Weapons,
 }
 
 impl EngineRoom {
@@ -555,6 +558,7 @@ impl EngineRoom {
             battery: Battery::new(t.battery),
             shield: Shield::new(t.shield),
             shield_full_kw: t.grid.shields.demand_kw,
+            weapons: Weapons::new(t.weapons),
         }
     }
 
@@ -692,6 +696,16 @@ impl EngineRoom {
     /// A hit on the ship's shield (`Shield::absorb`): returns what passes to the hull.
     pub fn absorb_hit(&mut self, damage: f64) -> f64 {
         self.shield.absorb(damage)
+    }
+
+    pub fn weapons(&self) -> &Weapons {
+        &self.weapons
+    }
+
+    /// A shot from the GN-01 screen (the FIRE button): true when the gun fired, false when refused
+    /// (reloading, or not one shot's energy in the capacitor).
+    pub fn fire_weapon(&mut self) -> bool {
+        self.weapons.fire()
     }
 
     /// The junction box's voltage: what the grid got over what it asked for, 0..1 (1 with no
@@ -907,6 +921,9 @@ impl EngineRoom {
         // the Shields factor of the last step (the same one-step lag as the engines' voltage).
         self.grid.set_demand(Group::Shields, self.shield_full_kw * self.shield.demand_share());
         self.shield.step(dt, self.grid.factor(Group::Shields));
+        // The WEAPONS group asks for its recharge while the capacitor is not full: a full one asks for
+        // nothing, so the grid's power goes to the other groups.
+        self.grid.set_demand(Group::Weapons, self.weapons.tuning().recharge_kw * self.weapons.demand_share());
         let load = self.main_load_kw();
         self.sync_aux();
         let reactor_ev = self.reactor.step(dt, load);
@@ -945,6 +962,9 @@ impl EngineRoom {
                 self.battery.absorb(left, dt);
             }
         }
+
+        // The capacitor takes the share of its demand the grid delivered this step (`factor`).
+        self.weapons.step(dt, self.grid.factor(Group::Weapons));
 
         let excess = self.reactor.temperature() - self.reactor.bands().temp_optimal.hi;
         if let Some(e) = self.pump.wear(dt, self.pump.on() && self.reactor.power_on(), excess, &t) {

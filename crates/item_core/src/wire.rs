@@ -164,6 +164,9 @@ pub enum ReactorAsk {
     SetDirector(bool),
     /// The SILENCE button on ST-01 (r40, #165): the sounding room alarms go quiet (`reactor_core::RoomAlarm::silence`).
     SilenceAlarms,
+    /// The GN-01 screen's FIRE (r40): one shot from the capacitor, refused while reloading or empty. The
+    /// FIRE stands in for the tactical officer until there are enemies to aim at.
+    Fire,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -437,6 +440,12 @@ pub struct ReactorNews {
     pub shield_regen: f64,
     /// The rooms' alarms (r40, #165), by the index of `rooms`: 0 the engine room, 1 the corridor.
     pub alarms: [AlarmNews; 2],
+    /// The weapons' capacitor: whole shots in it (r40, GN-01's pips).
+    pub weapon_shots: u8,
+    /// The capacitor's charge, 0..1 (GN-01's bar).
+    pub weapon_charge: f64,
+    /// Seconds of reload left after the last shot, 0 when ready (GN-01's RELOADING word).
+    pub weapon_reload_s: f64,
 }
 
 /// A room's air and fire for the status monitor (r38): the air as a fraction 0..1 (whole percent),
@@ -652,6 +661,9 @@ mod tests {
             quantum_shield: false,
             shield_regen: 5.0,
             alarms: [AlarmNews { kind: RoomAlarmKind::Fire, sounding: false, silenced: true }, AlarmNews { kind: RoomAlarmKind::LowO2, sounding: true, silenced: false }],
+            weapon_shots: 4,
+            weapon_charge: 0.66,
+            weapon_reload_s: 0.125,
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {
             ToClient::Reactor(r) => r,
@@ -684,6 +696,7 @@ mod tests {
             ReactorAsk::SetDirector(true),
             ReactorAsk::SetDirector(false),
             ReactorAsk::SilenceAlarms,
+            ReactorAsk::Fire,
         ];
         for ask in asks {
             let back = match decode::<ToHost>(&encode(&ToHost::Reactor(ask))).expect("decodes") {

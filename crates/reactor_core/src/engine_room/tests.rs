@@ -761,3 +761,24 @@ fn the_shield_asks_the_grid_its_demand_and_regens_from_its_power() {
     }
     assert!(r.shield().fraction() > before, "the shield regens with power");
 }
+
+#[test]
+fn the_guns_stay_empty_with_the_power_off_and_refuse_a_shot() {
+    let mut r = safe_room();
+    assert!(r.set_power(false));
+    run(&mut r, 30.0, Input::auto());
+    assert_eq!(r.weapons().shots(), 0, "no power, no recharge");
+    assert!(!r.fire_weapon(), "an empty gun refuses the shot");
+}
+
+#[test]
+fn the_grid_fills_the_guns_and_a_full_capacitor_asks_for_nothing() {
+    let mut r = safe_room();
+    settle(&mut r);
+    assert_eq!(r.weapons().shots(), 6, "settled on Auto: the WEAPONS group filled the capacitor");
+    assert_eq!(r.grid().request_of(Group::Weapons), 0.0, "a full capacitor takes no power from the grid");
+    assert!(r.fire_weapon());
+    assert_eq!(r.weapons().shots(), 5);
+    run(&mut r, 2.0, Input::auto());
+    assert_eq!(r.weapons().shots(), 6, "the group refills the shot in well under a second at its full rate");
+}

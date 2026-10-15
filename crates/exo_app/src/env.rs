@@ -17,11 +17,13 @@ pub fn recipe_for(def: &PlanetDef) -> Result<Recipe, String> {
     Recipe::for_planet(text, def.seed, def.radius).map_err(|e| format!("content/planet/{}.json: {e}", def.recipe))
 }
 
-pub fn places_for(recipe: &str) -> Vec<planet_core::Place> {
+/// The places of one planet instance: by recipe name and seed (`Place::binds_to`).
+pub fn places_for(recipe: &str, seed: i32) -> Vec<planet_core::Place> {
+    let authored = RECIPES.iter().find(|(id, _)| *id == recipe).and_then(|(_, t)| Recipe::from_json(t).ok()).and_then(|r| r.variation).and_then(|v| v.authored_seed);
     crate::content_files("place")
         .iter()
         .map(|f| content_core::parse_strict::<planet_core::Place>(&format!("content/place/{}", f.path), &f.text).unwrap_or_else(|e| panic!("{e}")))
-        .filter(|p| p.planet == recipe)
+        .filter(|p| p.binds_to(recipe, seed, authored))
         .collect()
 }
 
@@ -59,7 +61,7 @@ impl PlanetRes {
         let recipe = recipe_for(def).unwrap_or_else(|e| panic!("{e}"));
         let mut p = Planet::new(recipe);
         p.ceiling_m = def.terrain_ceiling_m.unwrap_or(f64::INFINITY);
-        p.set_places(places_for(&def.recipe)).unwrap_or_else(|e| panic!("content/place: {e}"));
+        p.set_places(places_for(&def.recipe, def.seed)).unwrap_or_else(|e| panic!("content/place: {e}"));
         let st = p.bake_with(0, Some(&cache_dir()), false);
         if let Some(e) = p.placement_error() {
             panic!("content/planet/{}.json: bake: {e}", def.recipe);

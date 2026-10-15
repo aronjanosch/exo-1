@@ -73,6 +73,9 @@ pub struct MacroSpec {
     pub elevation: Elevation,
     pub moisture: Moisture,
     pub temperature: Temperature,
+    /// Added to the moisture field; set from the planet's tweaks, not from the recipe file.
+    #[serde(skip)]
+    pub moisture_bias: f64,
     pub landform: Landform,
     /// Variants: odd places where this field is high.
     pub weirdness: Weirdness,
@@ -850,6 +853,12 @@ pub struct Recipe {
     pub biomes: Vec<BiomeRow>,
     pub scatter: ScatterSpec,
     pub sites: SiteRule,
+    /// Ranges the planet's seed rolls its `tweaks` in; missing = every planet looks as written.
+    #[serde(default)]
+    pub variation: Option<crate::tweaks::VariationSpec>,
+    /// What the seed rolled (set by `for_planet`, already applied to the fields below).
+    #[serde(skip)]
+    pub tweaks: Option<crate::tweaks::Tweaks>,
 }
 
 impl Recipe {
@@ -857,8 +866,33 @@ impl Recipe {
         let mut r = Recipe::from_json(s)?;
         r.seed = seed;
         r.radius = radius;
+        r.apply_variation();
         r.resolve_wavelengths(radius);
         Ok(r)
+    }
+
+    /// Roll the tweaks from the seed and write them into the recipe. The authored seed keeps the
+    /// recipe as written.
+    fn apply_variation(&mut self) {
+        let Some(spec) = self.variation.clone() else { return };
+        let t = if spec.authored_seed == Some(self.seed) { crate::tweaks::Tweaks::identity(1.0 - self.sea_level.land_fraction) } else { crate::tweaks::Tweaks::roll(&spec, self.seed) };
+        self.macro_.temperature.base += t.climate_base;
+        self.macro_.moisture_bias += t.moisture_bias;
+        self.sea_level.land_fraction = 1.0 - t.sea_share;
+        let deg = t.palette_shift_deg;
+        for b in &mut self.biomes {
+            b.color = crate::tweaks::shift_hue(b.color, deg);
+            b.palette.ground = crate::tweaks::shift_hue(b.palette.ground, deg);
+            b.palette.rock = crate::tweaks::shift_hue(b.palette.rock, deg);
+            for c in b.tints.values_mut() {
+                *c = crate::tweaks::shift_hue(*c, deg);
+            }
+        }
+        for c in &mut self.material.strata_colors {
+            *c = crate::tweaks::shift_hue(*c, deg);
+        }
+        self.material.cap_color = crate::tweaks::shift_hue(self.material.cap_color, deg);
+        self.tweaks = Some(t);
     }
 
     /// Relative wavelengths become frequencies at this radius. The relief is self-similar:
@@ -948,6 +982,9 @@ impl Recipe {
                     return Err(format!("site kind {}: flatten needs radius_m or half_extent_m", k.id));
                 }
             }
+        }
+        if let Some(v) = &r.variation {
+            v.validate()?;
         }
         if r.landforms.kinds.iter().filter(|k| k.signature).count() > 1 {
             return Err("landforms: at most one signature landform".into());

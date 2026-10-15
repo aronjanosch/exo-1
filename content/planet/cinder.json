@@ -1,5 +1,6 @@
 {
   "_comment": "Cinder's surface recipe (#64, #71): dry and hot, little sea, dark rock with bright strata, a caldera, sparse odd plants. Starting direction only: TODO(initiator) the look. Data only: no code, no expressions. Seed and radius live in content/system/system.json. Every number is a test value. Site kinds and landmarks are ids too (TODO(initiator): kinds, names, looks). Biome rows have ids only, no names (TODO(initiator): names); roles: 5 sea floor, 4 shore, 3 cold high ground, 2 broken rim, 7 odd grove (weirdness), 0 wet lowland forest, 1 dry flats, 6 meadow. Nearest row wins; ties go to the row listed first.",
+  "variation": { "authored_seed": 4242, "climate_base": [-0.4, 0.3], "sea_share": [0.01, 0.12], "moisture_bias": [-0.12, 0.2], "palette_shift_deg": [-20.0, 20.0] },
   "macro": {
     "resolution": 512,
     "elevation": { "noise": { "seed_offset": 10, "wavelength_radii": 3.0, "fractal": "fbm", "octaves": 5 } },

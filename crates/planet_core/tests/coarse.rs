@@ -72,7 +72,7 @@ fn cache_loads_when_unchanged_and_rebakes_when_recipe_seed_radius_or_code_change
 
     // Another code version: the key changes with it, and a file of an older version does not load.
     let places_hash = coarse::fnv(format!("{:?}", Vec::<Place>::new()).as_bytes(), coarse::FNV_START);
-    let key = coarse::cache_key(recipe(HEARTH, 1337, 5000.0).source_hash, 1337, 5000.0, 128, places_hash);
+    let key = coarse::cache_key(recipe(HEARTH, 1337, 5000.0).source_hash, 1337, 5000.0, 128, places_hash, 0);
     let mut bytes = first.coarse.encode(key);
     bytes[4] ^= 1;
     let sum = coarse::fnv(&bytes[..bytes.len() - 8], coarse::FNV_START);

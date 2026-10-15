@@ -17,6 +17,11 @@ pub struct Place {
     pub id: String,
     /// The planet recipe's name (`hearth`).
     pub planet: String,
+    /// The planet instance (its seed) the place belongs to. Missing = the recipe's authored
+    /// instance (`variation.authored_seed`), or every planet of the recipe if it names none.
+    /// Generated planets of one recipe therefore get no places unless a place names their seed.
+    #[serde(default)]
+    pub seed: Option<i32>,
     /// Latitude: 90 is the planet's +y pole (where the game starts). Either `lat_deg` and
     /// `lon_deg`, or `near`.
     #[serde(default)]
@@ -64,6 +69,15 @@ pub struct PadAt {
 }
 
 impl Place {
+    /// Does this place belong to the planet with this recipe name, seed and authored seed?
+    pub fn binds_to(&self, recipe: &str, seed: i32, authored_seed: Option<i32>) -> bool {
+        self.planet == recipe && match (self.seed, authored_seed) {
+            (Some(s), _) => s == seed,
+            (None, Some(a)) => a == seed,
+            (None, None) => true,
+        }
+    }
+
     /// Unit direction of the place's centre from the planet centre.
     ///
     /// Panics for a place given by `near` before `Planet::set_places` has resolved it.

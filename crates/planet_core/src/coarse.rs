@@ -63,9 +63,9 @@ pub fn fnv(bytes: &[u8], mut h: u64) -> u64 {
 }
 pub const FNV_START: u64 = 0xcbf2_9ce4_8422_2325;
 
-pub fn cache_key(recipe_hash: u64, seed: i32, radius: f64, n: usize, places_hash: u64) -> u64 {
+pub fn cache_key(recipe_hash: u64, seed: i32, radius: f64, n: usize, places_hash: u64, tweaks_hash: u64) -> u64 {
     let mut h = recipe_hash;
-    for part in [&seed.to_le_bytes()[..], &radius.to_bits().to_le_bytes(), &(n as u64).to_le_bytes(), &CODE_VERSION.to_le_bytes(), &places_hash.to_le_bytes()] {
+    for part in [&seed.to_le_bytes()[..], &radius.to_bits().to_le_bytes(), &(n as u64).to_le_bytes(), &CODE_VERSION.to_le_bytes(), &places_hash.to_le_bytes(), &tweaks_hash.to_le_bytes()] {
         h = fnv(part, h);
     }
     h

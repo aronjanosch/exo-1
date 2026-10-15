@@ -1,5 +1,6 @@
 {
   "_comment": "Hearth's surface recipe (#64, #71): wet, green, forested lowlands, a sea, a rim. Starting direction only: TODO(initiator) the look. Data only: no code, no expressions. Seed and radius live in content/system/system.json. Every number is a test value. Site kinds and landmarks are ids too (TODO(initiator): kinds, names, looks). Biome rows have ids only, no names (TODO(initiator): names); roles: 5 sea floor, 4 shore, 3 cold high ground (above ~580 m at 100 km), 2 broken rim, 7 odd grove (weirdness), 0 wet lowland forest, 1 dry flats, 6 meadow (low erosion), 8 steppe (flat ground, high erosion, #222). The climate's metres and lapse scale with the relief (#222). Foliage: the group 'dressing' (#222) holds the new props, one row each. Nearest row wins; ties go to the row listed first.",
+  "variation": { "authored_seed": 1337, "climate_base": [-0.35, 0.35], "sea_share": [0.26, 0.44], "moisture_bias": [-0.15, 0.15], "palette_shift_deg": [-25.0, 25.0] },
   "macro": {
     "resolution": 512,
     "elevation": { "noise": { "seed_offset": 10, "wavelength_radii": 3.0, "fractal": "fbm", "octaves": 5 } },

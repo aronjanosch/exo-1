@@ -357,7 +357,7 @@ impl Planet {
         Fields {
             elev: nz(&self.n_elev, p) as f64,
             temp: tm.base - tm.latitude_gain * dir.y.abs() + tm.noise_gain * nz(&self.n_temp, p) as f64,
-            moist: nz(&self.n_moist, p) as f64,
+            moist: nz(&self.n_moist, p) as f64 + self.recipe.macro_.moisture_bias,
             land: nz(&self.n_land, p) as f64,
             weird: nz(&self.n_weird, p) as f64,
             erosion: self.n_erosion.as_ref().map_or(0.0, |n| nz(n, p) as f64),
@@ -800,7 +800,7 @@ impl Planet {
 
         let t0 = Instant::now();
         let places_hash = coarse::fnv(format!("{:?}", self.places).as_bytes(), coarse::FNV_START);
-        let key = coarse::cache_key(self.recipe.source_hash, self.recipe.seed, self.radius, n, places_hash);
+        let key = coarse::cache_key(self.recipe.source_hash, self.recipe.seed, self.radius, n, places_hash, self.recipe.tweaks.map_or(0, |t| t.hash()));
         let cached = cache.and_then(|d| Coarse::load(d, key)).filter(|c| c.n == n && c.carve.len() == 6 * w * w && c.water.len() == 6 * w * w);
         if let Some(c) = cached {
             self.sea = c.sea;

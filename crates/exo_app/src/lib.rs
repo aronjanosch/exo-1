@@ -102,7 +102,10 @@ pub struct Options {
     pub distance: Option<f64>,
     /// Headless run paced at 60 physics ticks per wall second (network runs).
     pub realtime: bool,
+    /// `--radius` / `--atmosphere` apply to every planet, not only the first.
     pub all_planets: bool,
+    /// Every planet gets this seed instead of the file's (look checks of the seed-rolled tweaks, #281).
+    pub planet_seed: Option<i32>,
     /// `--spike-ms=`: frames slower than this print a `spike:` line.
     pub spike_ms: f64,
     pub mute: bool,
@@ -139,6 +142,7 @@ impl Default for Options {
             distance: None,
             realtime: false,
             all_planets: false,
+            planet_seed: None,
             spike_ms: frame_cost::DEFAULT_THRESHOLD_MS,
             mute: false,
             net: None,
@@ -171,6 +175,8 @@ impl Options {
                 "--hidden" => o.hidden = true,
                 "--no-vsync" => o.no_vsync = true,
                 "--mute" => o.mute = true,
+                "--all-planets" => o.all_planets = true,
+                "--planet-seed" => o.planet_seed = Some(v.parse().expect("planet-seed")),
                 "--radius" => o.radius = Some(v.parse().expect("radius")),
                 "--start" => o.start = Some(v.to_string()),
                 "--atmosphere" => o.atmosphere = Some(v.parse().expect("atmosphere")),
@@ -295,6 +301,9 @@ pub fn build_app(o: &Options) -> App {
             Ok(notes) => notes.iter().for_each(|n| println!("--distance: {n}")),
             Err(e) => panic!("--distance refused: {e}"),
         }
+    }
+    if let Some(seed) = o.planet_seed {
+        sys.planets.iter_mut().for_each(|p| p.seed = seed);
     }
     // (obstruction and arrival radius) with it, or the warp checks refuse the planet.
     let n_planets = if o.all_planets { sys.planets.len() } else { 1 };

@@ -47,7 +47,7 @@ fn treat_out(mut items: ResMut<Items>, hold: Res<UseHold>, mut st: ResMut<TreatS
 
 /// exist with the dev area only.
 #[allow(clippy::too_many_arguments)]
-fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>, sprays: Option<Res<Sprays>>, repairs: Res<RepairSessions>, rescue: Res<Rescuers>, mut treat: ResMut<TreatState>, masks: Option<Res<crate::dev_area::mask::MaskWorn>>) {
+fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>, sprays: Option<Res<Sprays>>, repairs: Res<RepairSessions>, rescue: Res<Rescuers>, mut treat: ResMut<TreatState>, masks: Option<Res<crate::dev_area::mask::MaskWorn>>, suits: Option<Res<crate::dev_area::mask::SuitWorn>>) {
     if items.role != Role::Host {
         return;
     }
@@ -81,6 +81,8 @@ fn public_out(mut items: ResMut<Items>, st: Res<HealthState>, hold: Res<UseHold>
                 Doing::Treating(*target)
             } else if treat.refilling.contains(id) {
                 Doing::Refilling
+            } else if suits.as_ref().is_some_and(|s| s.0.contains(id)) {
+                Doing::Suited
             } else if masks.as_ref().is_some_and(|m| m.0.contains_key(id)) {
                 Doing::Masked
             } else {
@@ -216,6 +218,7 @@ fn label_of(s: &PublicStatus) -> Option<(&'static str, Color)> {
         Doing::Reviving(_) => Some(("REVIVING", Color::srgb(0.95, 0.5, 0.9))),
         Doing::Refilling => Some(("REFILLING", Color::srgb(0.5, 0.9, 1.0))),
         Doing::Masked => Some(("MASK", Color::srgb(0.55, 0.7, 1.0))),
+        Doing::Suited => Some(("SUIT", Color::srgb(0.95, 0.8, 0.35))),
         Doing::Nothing if s.burning => Some(("BURNING", Color::srgb(1.0, 0.5, 0.2))),
         Doing::Nothing => None,
     }

@@ -51,6 +51,8 @@
     { "id": "radiation", "max": 200.0, "bands": [
       { "to": 25.0, "vitality": [0.0, 0.0], "change_per_tick": -0.07 },
       { "to": 200.0, "vitality": [0.0, 0.0], "change_per_tick": -0.2 } ] },
+    { "id": "decompression", "max": 100.0, "bands": [
+      { "to": 100.0, "vitality": [0.0, 2.0], "change_per_tick": 0.0 } ] },
     { "id": "headache", "max": 100.0, "bands": [
       { "to": 100.0, "vitality": [0.0, 0.0], "change_per_tick": -0.5 } ] }
   ],

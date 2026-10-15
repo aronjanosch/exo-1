@@ -341,7 +341,11 @@ pub fn interaction(
                     note = (format!("{throw_key} throw"), Tone::Normal);
                 }
                 Target::Door { open } => set(if *open { "Close" } else { "Open" }, "Engine room door".into()),
-                Target::Rack(_) => set("Swap", "Extinguisher rack".into()),
+                Target::Rack(r) => {
+                    // The rack's own name (r41, "Suit rack" for the airlock's), else the extinguishers'.
+                    let name = supply.as_ref().and_then(|sup| sup.0.racks.iter().find(|x| x.id == *r)).and_then(|x| x.name.clone());
+                    set("Swap", name.unwrap_or_else(|| "Extinguisher rack".into()))
+                }
                 Target::Counter(g) => set("Talk to", gp.jobs_content.givers.get(g).map(|g| gp.text(&g.record.name)).unwrap_or_default()),
                 Target::Accept(j) => {
                     set("Take job", gp.offer_label(*j));

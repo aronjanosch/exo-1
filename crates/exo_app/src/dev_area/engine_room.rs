@@ -11,6 +11,8 @@ use crate::walker::Player;
 use crate::origin::WorldPos;
 use crate::Layer;
 use fire_core::{split_by_volume, Deck, FireTuning, GapId, LeakId, RoomId};
+use item_core::PlayerId;
+use std::collections::BTreeSet;
 use reactor_core::hull::{openness, SECTION_CENTRES};
 use reactor_core::{Airlock, AirlockTuning, Dir, Door, Goal, Source, Tuning};
 use display_core::PanelId;
@@ -436,6 +438,7 @@ pub fn plugin(app: &mut App) {
     let tuning = Tuning::load(&crate::content_files("gameplay")).unwrap_or_else(|e| panic!("engine room: {e:?}"));
     app.init_resource::<ShipAlarm>().init_resource::<EngineDoor>().insert_resource(EngineAir::with_tuning(&tuning.airlock));
     app.add_systems(Update, spawn_room.after(super::spawn_devices).in_set(crate::phases::Frame::World));
+    app.init_resource::<BodyVacuum>();
     app.add_systems(FixedUpdate, (room_state.after(crate::items_net::items_net_in), room_step, super::airlock::airlock_step, breath_step).chain().in_set(crate::phases::Fx::Input));
 }
 
@@ -579,14 +582,26 @@ pub(super) fn room_step(time: Res<Time>, door: Res<EngineDoor>, mut air: ResMut<
 /// (the body has no oxygen store here). The outside has no end, so nobody drains it. Unconscious
 /// players breathe too: every body that is not dead counts. A body in its mask (r38) breathes
 /// the mask while its tank has air (`dev_area/mask.rs`, Barotrauma `Character.cs:3851` with `UseHullOxygen` false).
-pub(super) fn breath_step(time: Res<Time>, items: Res<Items>, cfg: Res<super::reactor::ReactorConfig>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, health: Option<Res<crate::health::HealthState>>, masked: Option<Res<super::mask::MaskAir>>, mut air: ResMut<EngineAir>) {
+/// Host: the bodies standing in vacuum this step (r41): the room they stand in has a pressure below
+/// `health_core::vacuum::VACUUM_BELOW`. `breath_step` sets it, the health step reads it. The mask's
+/// air is not the room's, so a masked body in vacuum is in it still.
+#[derive(Resource, Default, Debug)]
+pub struct BodyVacuum(pub BTreeSet<PlayerId>);
+
+pub(super) fn breath_step(time: Res<Time>, items: Res<Items>, cfg: Res<super::reactor::ReactorConfig>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, health: Option<Res<crate::health::HealthState>>, masked: Option<Res<super::mask::MaskAir>>, mut vacuum: ResMut<BodyVacuum>, mut air: ResMut<EngineAir>) {
     if items.role == Role::Client {
         return;
     }
+    vacuum.0.clear();
     let Some(area) = area.as_deref() else { return };
     let dt = time.delta_secs_f64();
     let rate = cfg.0.room.breath_m3_per_s * dt;
     for (id, p) in crate::health::walker_points(&players, &remotes) {
+        let Some(q) = crate::health::area_pos(Some(area), &planet, Some(p)) else { continue };
+        let room = air.room_of(place_of(q));
+        if health_core::vacuum::in_vacuum(air.deck.room(room).pressure()) {
+            vacuum.0.insert(id);
+        }
         if health.as_ref().and_then(|h| h.bodies.get(&id)).is_some_and(|b| b.health.state() == health_core::Life::Dead) {
             continue;
         }
@@ -594,8 +609,6 @@ pub(super) fn breath_step(time: Res<Time>, items: Res<Items>, cfg: Res<super::re
         if masked.as_ref().is_some_and(|m| m.0.contains_key(&id)) {
             continue;
         }
-        let Some(q) = crate::health::area_pos(Some(area), &planet, Some(p)) else { continue };
-        let room = air.room_of(place_of(q));
         if room != air.outside {
             air.deck.breathe(room, rate);
         }

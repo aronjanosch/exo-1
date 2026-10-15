@@ -9,6 +9,11 @@
 //! send the use, as the coolant hold does (`coolant.rs`). The shelf's hold is not checked against
 //! the position on the host (as with the coolant canister), so a client can claim a refill it is
 //! not standing at. TODO(initiator): accept that, or check the position here too.
+//!
+//! The space suit (r41, #50) is the same gear: "SUIT" (`content/items/suit.json`) is put on by its
+//! own use and breathes from its own tank the same way (`health_core::mask::Mask`, the same rates,
+//! the shelf refills it too). Worn, it also counts as suited (`SuitWorn`): no vacuum damage
+//! (`health_core::vacuum`). One gear is worn at a time, in the one slot the mask uses.
 use super::*;
 use crate::controls::Controls;
 use crate::displays::ActiveDisplay;
@@ -23,7 +28,7 @@ use device_core::minigame::ray_hits_box;
 use health_core::mask::Mask;
 use health_core::Life;
 use item_core::{FrameRef, Placement, PlayerId, Request};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use walker_core::Frame;
 
 use super::engine_room::ROOM;
@@ -32,6 +37,9 @@ use super::reactor::{ReactorConfig, ReactorSim};
 pub const ITEM: &str = "o2_mask";
 /// The use that puts the mask on or takes it off (`use` in the item's file).
 pub const USE: &str = "wear_mask";
+/// The space suit (r41): its item and its use, the same gear as the mask (see the module doc).
+pub const SUIT_ITEM: &str = "suit";
+pub const SUIT_USE: &str = "wear_suit";
 /// The shelf beside the oxygen generator, relative to the engine room's centre (m). Clear of the
 /// reactor (x -15..-13), the pump (z -18..-17) and the generator (z -13.4..-12.6, x -9.8..-9.0).
 pub const SHELF_ID: &str = "o2_shelf";
@@ -41,6 +49,20 @@ pub const SHELF_SIZE: [f64; 3] = [0.8, 1.2, 0.8];
 /// Host: who wears a mask, and in which slot it is.
 #[derive(Resource, Default, Debug)]
 pub struct MaskWorn(pub BTreeMap<PlayerId, usize>);
+
+/// Host: the bodies whose worn gear is a suit (r41). The health step takes them as suited.
+#[derive(Resource, Default, Debug)]
+pub struct SuitWorn(pub BTreeSet<PlayerId>);
+
+/// Whether an item kind is breathing gear (the mask or the suit).
+pub fn is_gear_item(kind: &str) -> bool {
+    kind == ITEM || kind == SUIT_ITEM
+}
+
+/// Whether an item's use puts breathing gear on or takes it off (the mask's or the suit's).
+pub fn is_gear_use(effect: &str) -> bool {
+    effect == USE || effect == SUIT_USE
+}
 
 /// Host: the oxygen fraction (0..1) each masked body breathed this step. The health step takes
 /// it for that body instead of the room's air.
@@ -75,7 +97,7 @@ pub fn plugin(app: &mut App) {
             panel: None,
         });
     }
-    app.init_resource::<MaskWorn>().init_resource::<MaskAir>().init_resource::<MaskHold>();
+    app.init_resource::<MaskWorn>().init_resource::<MaskAir>().init_resource::<MaskHold>().init_resource::<SuitWorn>();
     app.add_systems(FixedUpdate, put_mask.in_set(crate::phases::Fx::Effects));
     app.add_systems(
         FixedUpdate,
@@ -108,7 +130,12 @@ fn put_mask(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, mut ite
 }
 
 fn holds_mask(items: &Items, who: PlayerId, slot: usize) -> bool {
-    items.host.inventory(who).slot(slot).is_some_and(|s| s.item.kind.as_str() == ITEM)
+    items.host.inventory(who).slot(slot).is_some_and(|s| is_gear_item(s.item.kind.as_str()))
+}
+
+/// Whether the slot holds a suit (host).
+fn holds_suit(items: &Items, who: PlayerId, slot: usize) -> bool {
+    items.host.inventory(who).slot(slot).is_some_and(|s| s.item.kind.as_str() == SUIT_ITEM)
 }
 
 /// Whether the ray from the eye hits the shelf's box within reach.
@@ -129,7 +156,7 @@ fn shelf_aimed(eye: DVec3, look: DVec3, machines: &Query<(&DevBox, &Position, &R
 fn mask_input(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMut<Items>, cfg: Res<RepairConfig>, active: Res<ActiveDisplay>, players: Query<&Player>, machines: Query<(&DevBox, &Position, &Rotation)>) {
     let Ok(pl) = players.single() else { return };
     let slot = items.client.view.selected;
-    let mask = items.client.view.slot(slot).and_then(|s| items.defs.of(s)).and_then(|d| d.use_effect.as_deref()) == Some(USE);
+    let mask = items.client.view.slot(slot).and_then(|s| items.defs.of(s)).and_then(|d| d.use_effect.as_deref()).is_some_and(is_gear_use);
     let eye = pl.w.pos + pl.up * EYE_HEIGHT;
     let at_shelf = shelf_aimed(eye, pl.world_look(Frame::IDENTITY), &machines, cfg.0.reach_m);
     let usable = !controls.free_cursor && active.using().is_none() && !pl.seated && !pl.fly;
@@ -144,7 +171,7 @@ fn mask_input(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMut
 fn mask_hold(mut controls: ResMut<Controls>, mut items: ResMut<Items>, mut hold: ResMut<MaskHold>, cfg: Res<RepairConfig>, active: Res<ActiveDisplay>, players: Query<&Player>, machines: Query<(&DevBox, &Position, &Rotation)>) {
     let on_shelf = players.single().ok().filter(|pl| pl.ship.is_none() && !pl.seated && !pl.fly).filter(|_| !controls.free_cursor && active.using().is_none()).is_some_and(|pl| shelf_aimed(pl.w.pos + pl.up * EYE_HEIGHT, pl.world_look(Frame::IDENTITY), &machines, cfg.0.reach_m));
     let slot = items.client.view.selected;
-    let held = items.client.view.slot(slot).and_then(|s| items.defs.of(s).map(|d| (d.use_effect.as_deref() == Some(USE), s.item.condition)));
+    let held = items.client.view.slot(slot).and_then(|s| items.defs.of(s).map(|d| (d.use_effect.as_deref().is_some_and(is_gear_use), s.item.condition)));
     let running = on_shelf && controls.primary_held && matches!(held, Some((true, Some(_))));
     hold.tank = if running { held.and_then(|(_, c)| c).map(|c| c / 100.0) } else { None };
     if hold.sent != running {
@@ -177,18 +204,23 @@ fn mask_toggle(mut items: ResMut<Items>, mut worn: ResMut<MaskWorn>) {
 /// Host: a worn mask breathes from its tank (`Mask::breathe`), the tank drains, and the body's air
 /// for the health step is the mask's. A mask that left its slot is taken off. The dead breathe
 /// nothing, so their tank stays.
-fn mask_breath(time: Res<Time>, mut items: ResMut<Items>, mut worn: ResMut<MaskWorn>, mut air: ResMut<MaskAir>, st: Res<HealthState>) {
+fn mask_breath(time: Res<Time>, mut items: ResMut<Items>, mut worn: ResMut<MaskWorn>, mut air: ResMut<MaskAir>, mut suits: ResMut<SuitWorn>, st: Res<HealthState>) {
     if items.role == Role::Client {
         return;
     }
     let dt = time.delta_secs_f64();
     let now = time.elapsed_secs_f64();
     air.0.clear();
+    suits.0.clear();
     let held: Vec<(PlayerId, usize)> = worn.0.iter().map(|(p, s)| (*p, *s)).collect();
     for (who, slot) in held {
         if !holds_mask(&items, who, slot) {
             worn.0.remove(&who);
             continue;
+        }
+        // A suit protects whatever its tank holds (`vacuum.rs`): the tank only gives the air.
+        if holds_suit(&items, who, slot) {
+            suits.0.insert(who);
         }
         if st.bodies.get(&who).is_some_and(|b| b.health.state() == Life::Dead) {
             continue;
@@ -229,5 +261,18 @@ fn mask_refill(time: Res<Time>, mut items: ResMut<Items>, sim: Res<ReactorSim>, 
         if gain > 0.0 {
             items.wear(now, who, slot, -gain);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_mask_and_the_suit_are_the_breathing_gear_and_nothing_else_is() {
+        assert!(is_gear_item("o2_mask") && is_gear_item("suit"));
+        assert!(!is_gear_item("extinguisher"));
+        assert!(is_gear_use("wear_mask") && is_gear_use("wear_suit"));
+        assert!(!is_gear_use("extinguish"));
     }
 }

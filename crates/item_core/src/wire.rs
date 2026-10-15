@@ -54,6 +54,8 @@ pub enum Doing {
     Refilling,
     /// The mask is on the face.
     Masked,
+    /// The suit is on (r41): the others see SUIT.
+    Suited,
 }
 
 /// A player's status for the others: burning, down (waiting for the respawn), unconscious
@@ -893,6 +895,7 @@ mod tests {
             (4, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Spraying, hurt: Injuries::default() }),
             (5, PublicStatus { burning: false, down: false, unconscious: true, doing: Doing::Nothing, hurt: Injuries::from_shares(0.0, 0, 0.0, 0.5) }),
             (6, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Refilling, hurt: Injuries::default() }),
+            (7, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Suited, hurt: Injuries::default() }),
         ];
         let back = match decode::<ToClient>(&encode(&ToClient::Status(status.clone()))).expect("decodes") {
             ToClient::Status(s) => s,

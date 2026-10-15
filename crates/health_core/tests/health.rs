@@ -14,7 +14,7 @@ fn close(a: f64, b: f64) -> bool {
 }
 
 fn air(oxygen: f64) -> Env {
-    Env { oxygen, hot: false, glow: false, fire: 0.0, rod_per_s: 0.0 }
+    Env { oxygen, hot: false, glow: false, fire: 0.0, rod_per_s: 0.0, vacuum: false, suited: false }
 }
 
 fn run(h: &mut Health, t: &HealthTuning, secs: f64, env: Env) -> Vec<HealthEvent> {
@@ -38,7 +38,7 @@ fn radiation_below_25_does_not_burn_and_decays_slowly() {
 fn a_radioactive_item_near_the_body_builds_radiation_per_second() {
     let t = shipped();
     let mut h = Health::new(&t, 1);
-    let near = Env { oxygen: 1.0, hot: false, glow: false, fire: 0.0, rod_per_s: 1.0 };
+    let near = Env { oxygen: 1.0, hot: false, glow: false, fire: 0.0, rod_per_s: 1.0, vacuum: false, suited: false };
     run(&mut h, &t, 3.0, near);
     let mut far = Health::new(&t, 2);
     run(&mut far, &t, 3.0, Env { rod_per_s: 0.0, ..near });
@@ -66,7 +66,7 @@ fn respawn_clears_the_body() {
     let mut h = Health::new(&t, 1);
     h.add(&t, "burn", 90.0);
     h.add(&t, "radiation", 150.0);
-    run(&mut h, &t, 1.0, Env { oxygen: 0.0, hot: true, glow: false, fire: 0.0, rod_per_s: 0.0 });
+    run(&mut h, &t, 1.0, Env { oxygen: 0.0, hot: true, glow: false, fire: 0.0, rod_per_s: 0.0, vacuum: false, suited: false });
     h.respawn(&t);
     assert_eq!(h.state(), Life::Conscious);
     assert_eq!(h.vitality(), t.max_vitality);
@@ -90,7 +90,7 @@ fn the_dead_take_nothing_and_respawn_time_is_shipped() {
     h.add(&t, "burn", 50.0);
     assert_eq!(h.strength("burn"), burn, "the dead take nothing");
     assert_eq!(h.treat(&t, "deglow", 50.0).unwrap().reduced, 0.0);
-    let ev = run(&mut h, &t, 2.0, Env { oxygen: 1.0, hot: true, glow: true, fire: 0.0, rod_per_s: 0.0 });
+    let ev = run(&mut h, &t, 2.0, Env { oxygen: 1.0, hot: true, glow: true, fire: 0.0, rod_per_s: 0.0, vacuum: false, suited: false });
     assert!(ev.is_empty() && h.buildup() == 0.0, "the dead do not burn or glow");
 }
 
@@ -197,4 +197,72 @@ fn a_revive_roll_wakes_the_body_after_two_seconds_and_lowers_the_oxygen_low() {
     assert_eq!(h.state(), Life::Conscious);
     assert!(h.strength("oxygen_low") <= t.cpr.revive_low_max + 1e-9, "the revive leaves at most {}: {}", t.cpr.revive_low_max, h.strength("oxygen_low"));
     assert!(h.vitality() > 0.0, "awake with vitality {}", h.vitality());
+}
+
+// Vacuum (r41, the suit): in vacuum the body takes decompression at Barotrauma's pressure rate,
+// unsuited; a suit protects; the air in the room means nothing there.
+
+fn in_vacuum(suited: bool) -> Env {
+    Env { oxygen: 0.0, hot: false, glow: false, fire: 0.0, rod_per_s: 0.0, vacuum: true, suited }
+}
+
+/// Seconds (in 0.1 s steps) until the body is dead in this environment, or 100 s.
+fn seconds_to_death(t: &HealthTuning, env: Env) -> f64 {
+    let mut h = Health::new(t, 1);
+    let mut steps = 0;
+    while h.state() != Life::Dead && steps < 1000 {
+        h.step(t, 0.1, env);
+        steps += 1;
+    }
+    steps as f64 * 0.1
+}
+
+#[test]
+fn unsuited_in_vacuum_dies_in_about_ten_seconds() {
+    let t = shipped();
+    let s = seconds_to_death(&t, in_vacuum(false));
+    assert!((9.5..=10.5).contains(&s), "dead after {s} s, about 10 s wanted");
+    let mut h = Health::new(&t, 1);
+    let seen = run(&mut h, &t, 6.0, in_vacuum(false));
+    assert!(seen.contains(&HealthEvent::Unconscious), "unconscious at about 5 s: {seen:?}");
+    assert_eq!(h.state(), Life::Unconscious, "not dead yet at 6 s");
+    let seen = run(&mut h, &t, 5.0, in_vacuum(false));
+    assert_eq!(seen, vec![HealthEvent::Died { cause: "decompression".into() }], "the cause is the vacuum");
+}
+
+#[test]
+fn suited_in_vacuum_takes_nothing() {
+    let t = shipped();
+    let mut h = Health::new(&t, 1);
+    // The suit's tank gives air, so the oxygen is full; the vacuum is the only thing around.
+    run(&mut h, &t, 60.0, Env { oxygen: 1.0, ..in_vacuum(true) });
+    assert_eq!(h.strength("decompression"), 0.0);
+    assert_eq!(h.state(), Life::Conscious);
+    assert!(close(h.vitality(), t.max_vitality), "vitality {}", h.vitality());
+}
+
+#[test]
+fn air_means_nothing_in_vacuum_and_bad_air_is_not_vacuum() {
+    let t = shipped();
+    let mut empty = Health::new(&t, 1);
+    run(&mut empty, &t, 3.0, in_vacuum(false));
+    let mut full = Health::new(&t, 1);
+    run(&mut full, &t, 3.0, Env { oxygen: 1.0, ..in_vacuum(false) });
+    assert!(close(empty.strength("decompression"), full.strength("decompression")), "the room's air does not change the damage");
+    assert!(close(empty.strength("decompression"), 30.0), "10 a second for 3 s: {}", empty.strength("decompression"));
+    // Bad air without vacuum is the slow suffocation: no decompression, the oxygen low builds.
+    let mut stuffy = Health::new(&t, 1);
+    run(&mut stuffy, &t, 3.0, air(0.0));
+    assert_eq!(stuffy.strength("decompression"), 0.0);
+    assert!(stuffy.strength("oxygen_low") > 0.0);
+}
+
+#[test]
+fn decompression_heals_back_in_air() {
+    let t = shipped();
+    let mut h = Health::new(&t, 1);
+    run(&mut h, &t, 3.0, in_vacuum(false));
+    let hurt = h.strength("decompression");
+    run(&mut h, &t, 10.0, air(1.0));
+    assert!(h.strength("decompression") < hurt, "it heals in air");
 }

@@ -14,7 +14,7 @@
 use display_core::captain::{self, CaptainView, Threat};
 use display_core::monitor::{self, Cell};
 use display_core::{button, column, label, micro, readout, row, Item, Panel, PanelId, Tier, Tone};
-use item_core::wire::{JumpStage, ReactorNews};
+use item_core::wire::{BotStation, JumpStage, ReactorNews};
 
 pub const ID: PanelId = PanelId::new("captain_console");
 pub const NAME: &str = "CP-01";
@@ -27,6 +27,10 @@ pub const TURN: f64 = 90.0;
 pub const DOOR_ACTION: &str = "door";
 pub const SEAL_ACTION: &str = "seal";
 pub const SILENCE_ACTION: &str = "silence";
+/// The bot priority buttons' prefix: "bot:<station index>:<level>" (r42, #253).
+const BOT_PREFIX: &str = "bot:";
+/// The priority levels' labels, Ignore .. Max (PULSAR's five nodes).
+pub const LEVEL_WORDS: [&str; 5] = ["IGN", "LOW", "MED", "HIGH", "MAX"];
 
 /// A row's height (px) and the gap between the rows; the buttons are 24 px tall (the faults screen's rule).
 const ROW_H: f64 = 18.0;
@@ -42,7 +46,7 @@ pub fn captain_panel(r: Option<&ReactorNews>, door_open: bool) -> Panel {
     let v = captain::captain_view(news);
     let sounding = v.rooms.iter().any(|room| room.alarm.sounding);
 
-    let left = vec![
+    let mut left = vec![
         row(6.0, vec![label("HULL").flex(2.0), cell(&hull_cell(&v))]).fixed(ROW_H),
         row(6.0, vec![label("SHIELD").flex(2.0), cell(&shield_cell(&v)), cell(&quantum_cell(&v))]).fixed(ROW_H),
         row(6.0, vec![micro("ROOM").flex(2.0), micro("AIR").flex(1.0), micro("FIRE").flex(1.0), micro("ALARM").flex(1.0)]).fixed(ROW_H),
@@ -52,6 +56,17 @@ pub fn captain_panel(r: Option<&ReactorNews>, door_open: bool) -> Panel {
         row(6.0, vec![label("JUMP").flex(2.0), cell(&jump_cell(&v))]).fixed(ROW_H),
         row(6.0, vec![label("GUNS").flex(2.0), cell(&guns_cell(&v))]).fixed(ROW_H),
     ];
+    // The bots' priority list (r42, #253): one row per station, five level buttons, the set one lit.
+    left.push(micro("BOT PRIORITY").fixed(14.0));
+    for s in BotStation::ALL {
+        let level = news.bots[s.index()].level;
+        let mut cells = vec![label(station_word(s)).flex(2.0)];
+        cells.extend(LEVEL_WORDS.iter().enumerate().map(|(l, word)| {
+            let set = usize::from(level) == l;
+            button(*word, bot_action(s, l as u8)).tone(if set { Tone::Good } else { Tone::Normal }).flex(1.0)
+        }));
+        left.push(row(4.0, cells).fixed(BUTTON_H));
+    }
 
     let down = if v.systems_down.is_empty() { "NONE".to_string() } else { v.systems_down.join(", ") };
     let right = vec![
@@ -75,6 +90,27 @@ pub fn door_label(door_open: bool) -> &'static str {
     } else {
         "OPEN ENGINE DOOR"
     }
+}
+
+pub fn station_word(s: BotStation) -> &'static str {
+    match s {
+        BotStation::Gunnery => "GUNNERY",
+        BotStation::Reactor => "REACTOR",
+        BotStation::Power => "POWER",
+        BotStation::Helm => "HELM",
+    }
+}
+
+/// The action of a priority button: "bot:<station index>:<level>".
+pub fn bot_action(s: BotStation, level: u8) -> String {
+    format!("{BOT_PREFIX}{}:{level}", s.index())
+}
+
+/// The station and level a priority button's action names, None for any other action.
+pub fn parse_bot_action(action: &str) -> Option<(BotStation, u8)> {
+    let (i, level) = action.strip_prefix(BOT_PREFIX)?.split_once(':')?;
+    let s = *BotStation::ALL.get(i.parse::<usize>().ok()?)?;
+    Some((s, level.parse::<u8>().ok()?))
 }
 
 fn cell(c: &Cell) -> Item {
@@ -141,6 +177,17 @@ pub fn emergency(threat: Threat) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_priority_button_names_its_station_and_level_and_back() {
+        for s in BotStation::ALL {
+            for l in 0..5u8 {
+                assert_eq!(parse_bot_action(&bot_action(s, l)), Some((s, l)));
+            }
+        }
+        assert_eq!(parse_bot_action(SEAL_ACTION), None);
+        assert_eq!(parse_bot_action("bot:9:1"), None);
+    }
 
     #[test]
     fn the_door_press_says_what_it_does() {

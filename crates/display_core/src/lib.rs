@@ -4,6 +4,7 @@ use std::borrow::Cow;
 
 pub mod canvas;
 pub mod hud;
+pub mod monitor;
 pub mod target;
 pub mod theme;
 pub use canvas::{arc_points, Ink, Shape, TextFace};

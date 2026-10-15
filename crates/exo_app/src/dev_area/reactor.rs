@@ -7,7 +7,7 @@ use crate::dev_area::engine_room::ROOM;
 use crate::dev_area::rods;
 use crate::gameplay::Gameplay;
 use gameplay_core::notice::{Notice, NoticeKind};
-use item_core::wire::{Alarm, BreakerGroup, FuelTube, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, GRAPH_POINTS};
+use item_core::wire::{Alarm, BreakerGroup, FuelTube, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, RoomAir, GRAPH_POINTS};
 use reactor_core::{AlarmLevel, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
 
 pub const SEND_EVERY_S: f64 = 0.25;
@@ -218,6 +218,8 @@ impl ReactorSim {
             ecool_ready_in_s: self.room.ecool_ready_in_s(),
             ecool_ok: self.room.ecool_allowed(),
             ecools: 0,
+            // The host sets the rooms in `reactor_step` (they come from the air and the fire).
+            rooms: Default::default(),
             graph_points: self.room.history().size().min(GRAPH_POINTS) as u8,
             graph_output: graph_row(&self.room.history().output),
             graph_load: graph_row(&self.room.history().load),
@@ -474,6 +476,14 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     now.blasts = counts.blasts;
     now.ejects = counts.ejects;
     now.ecools = counts.ecools;
+    // The status monitor's rooms (r38): the engine room first, then the corridor.
+    now.rooms = [air.engine, air.corridor].map(|room| RoomAir {
+        o2: (air.deck.room(room).oxygen_fraction() * 100.0).round() / 100.0,
+        fire: match *model {
+            FireModel::Point => air.deck.fires_in(room).next().is_some(),
+            FireModel::Grid => grid.0.burning().any(|c| c.room == room),
+        },
+    });
     items.reactor = Some(now);
     sim.since_send += dt;
     if items.role == Role::Host && sim.sent != Some(now) && sim.since_send >= SEND_EVERY_S {

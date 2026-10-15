@@ -386,6 +386,16 @@ pub struct ReactorNews {
     /// The emergency coolings the host has applied so far (`ReactorCounts::ecools`). A process that
     /// sees it go up shows the EMERGENCY COOLING notice and the steam once, as the ejects do.
     pub ecools: u32,
+    /// The rooms the status monitor shows, by index: 0 the engine room, 1 the corridor (r38).
+    pub rooms: [RoomAir; 2],
+}
+
+/// A room's air and fire for the status monitor (r38): the air as a fraction 0..1 (whole percent),
+/// and whether a fire burns in the room.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct RoomAir {
+    pub o2: f64,
+    pub fire: bool,
 }
 
 /// The most points the reactor graph carries (the shipped `graph_points`, 25). A fixed size keeps
@@ -562,6 +572,7 @@ mod tests {
             ejected: true,
             eject_armed: true,
             ejects: 3,
+            rooms: [RoomAir { o2: 0.84, fire: false }, RoomAir { o2: 0.31, fire: true }],
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {
             ToClient::Reactor(r) => r,

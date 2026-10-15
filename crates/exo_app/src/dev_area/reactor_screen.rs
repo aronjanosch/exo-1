@@ -3,6 +3,7 @@
 use super::*;
 use crate::displays::{ActiveDisplay, DisplayAction, Panels};
 use crate::dev_area::reactor::{lamp_blink_on, ReactorConfig};
+use crate::dev_area::status_monitor;
 use crate::items::Items;
 use display_core::{button, canvas, column, ctl, font, label, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Rect, Shape, Tier, TextFace, Tone, Widget};
 use item_core::wire::{BreakerGroup, FuelKind, FuelTube, Lamp, PumpMode, ReactorAsk, ReactorFault, ReactorNews, FUEL_TUBES};
@@ -1039,6 +1040,7 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));
     panels.set(FAULTS_ID, faults_panel(items.reactor.as_ref()));
     panels.set(STATUS_ID, status_panel(items.reactor.as_ref(), cfg.0.reactor.max_output_kw, lamp_blink_on(time.elapsed_secs_f64())));
+    panels.set(status_monitor::ID, status_monitor::monitor_panel(items.reactor.as_ref()));
 }
 
 #[cfg(test)]

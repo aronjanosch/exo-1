@@ -16,11 +16,11 @@ fn close(a: f64, b: f64) -> bool {
 }
 
 fn air(oxygen: f64) -> Env {
-    Env { oxygen, hot: false, glow: false, fire: 0.0 }
+    Env { oxygen, hot: false, glow: false, fire: 0.0, rod_per_s: 0.0 }
 }
 
 fn hot() -> Env {
-    Env { oxygen: 1.0, hot: true, glow: false, fire: 0.0 }
+    Env { oxygen: 1.0, hot: true, glow: false, fire: 0.0, rod_per_s: 0.0 }
 }
 
 /// Steps `secs` in 0.1 s steps with the given surroundings.
@@ -145,11 +145,23 @@ fn radiation_below_25_does_not_burn_and_decays_slowly() {
 fn the_glow_builds_radiation_per_tick() {
     let t = shipped();
     let mut h = Health::new(&t, 1);
-    let glow = Env { oxygen: 1.0, hot: false, glow: true, fire: 0.0 };
+    let glow = Env { oxygen: 1.0, hot: false, glow: true, fire: 0.0, rod_per_s: 0.0 };
     run(&mut h, &t, 0.9, glow);
     assert_eq!(h.strength("radiation"), 0.0, "no tick yet");
     run(&mut h, &t, 0.1, glow);
     assert!(close(h.strength("radiation"), 8.0 - 0.07), "one tick of glow adds 8 (and decays a little): {}", h.strength("radiation"));
+}
+
+#[test]
+fn a_radioactive_item_near_the_body_builds_radiation_per_second() {
+    let t = shipped();
+    let mut h = Health::new(&t, 1);
+    let near = Env { oxygen: 1.0, hot: false, glow: false, fire: 0.0, rod_per_s: 1.0 };
+    run(&mut h, &t, 3.0, near);
+    assert!(close(h.strength("radiation"), 3.0 - 3.0 * 0.07), "three seconds at 1 per second, less the decay: {}", h.strength("radiation"));
+    let mut far = Health::new(&t, 2);
+    run(&mut far, &t, 3.0, Env { rod_per_s: 0.0, ..near });
+    assert_eq!(far.strength("radiation"), 0.0, "out of reach, nothing builds");
 }
 
 #[test]
@@ -253,7 +265,7 @@ fn respawn_clears_the_body() {
     let mut h = Health::new(&t, 1);
     h.add(&t, "burn", 90.0);
     h.add(&t, "radiation", 150.0);
-    run(&mut h, &t, 1.0, Env { oxygen: 0.0, hot: true, glow: false, fire: 0.0 });
+    run(&mut h, &t, 1.0, Env { oxygen: 0.0, hot: true, glow: false, fire: 0.0, rod_per_s: 0.0 });
     h.respawn(&t);
     assert_eq!(h.state(), Life::Conscious);
     assert_eq!(h.vitality(), t.max_vitality);
@@ -278,7 +290,7 @@ fn the_dead_take_nothing_and_respawn_time_is_shipped() {
     h.add(&t, "burn", 50.0);
     assert_eq!(h.strength("burn"), burn, "the dead take nothing");
     assert_eq!(h.treat(&t, "deglow", 50.0).unwrap().reduced, 0.0);
-    let ev = run(&mut h, &t, 2.0, Env { oxygen: 1.0, hot: true, glow: true, fire: 0.0 });
+    let ev = run(&mut h, &t, 2.0, Env { oxygen: 1.0, hot: true, glow: true, fire: 0.0, rod_per_s: 0.0 });
     assert!(ev.is_empty() && h.buildup() == 0.0, "the dead do not burn or glow");
 }
 
@@ -344,15 +356,15 @@ fn burn_after(t: &HealthTuning, env: Env) -> f64 {
 #[test]
 fn a_fire_burns_by_its_amount_against_the_hot_plate() {
     let t = HealthTuning::load(&[File { path: "health/health.json".into(), text: include_str!("../../../content/gameplay/health/health.json").into() }]).unwrap_or_else(|e| panic!("{e:?}"));
-    let plate = burn_after(&t, Env { oxygen: 1.0, hot: true, glow: false, fire: 0.0 });
+    let plate = burn_after(&t, Env { oxygen: 1.0, hot: true, glow: false, fire: 0.0, rod_per_s: 0.0 });
     // A size 0.5 m fire (the dev button's): 10 x sqrt(0.5) per second on the body.
-    let small = burn_after(&t, Env { oxygen: 1.0, hot: false, glow: false, fire: 10.0 * 0.5f64.sqrt() });
+    let small = burn_after(&t, Env { oxygen: 1.0, hot: false, glow: false, fire: 10.0 * 0.5f64.sqrt(), rod_per_s: 0.0 });
     // A size 2 m fire: 10 x sqrt(2) per second.
-    let big = burn_after(&t, Env { oxygen: 1.0, hot: false, glow: false, fire: 10.0 * 2f64.sqrt() });
+    let big = burn_after(&t, Env { oxygen: 1.0, hot: false, glow: false, fire: 10.0 * 2f64.sqrt(), rod_per_s: 0.0 });
     println!("burn after 2 s: plate {plate:.1}, small fire {small:.1}, big fire {big:.1}");
     assert!(small < plate, "{small} vs {plate}");
     assert!(big > plate, "{big} vs {plate}");
-    assert!(burn_after(&t, Env { oxygen: 1.0, hot: false, glow: false, fire: 0.0 }) == 0.0);
+    assert!(burn_after(&t, Env { oxygen: 1.0, hot: false, glow: false, fire: 0.0, rod_per_s: 0.0 }) == 0.0);
 }
 
 #[test]

@@ -27,6 +27,7 @@ mod coolant;
 mod rods;
 mod dev_area;
 mod dev_menu;
+mod dev_tour;
 mod displays;
 mod figure;
 mod flight;
@@ -625,6 +626,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
             dev_area::dev_area_steps(&mut s, &shot_step);
             dev_area::look_sample_steps(&mut s, &shot_step);
         }
+        "dev_tour" => dev_tour::dev_tour_steps(&mut s, &shot_step),
         "displays" => displays::displays_steps(&mut s),
         "items" => items::items_steps(&mut s, &shot_step),
         "hud" => hud::hud_steps(&mut s, &shot_step),

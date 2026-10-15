@@ -193,6 +193,8 @@ impl ReactorSim {
             temp: r.temperature(),
             set_fission,
             set_turbine,
+            fission: r.fission(),
+            turbine: r.turbine(),
             output_kw: r.output_kw(),
             load_kw: grid.request_kw(),
             optimal: [b.temp_optimal.lo, b.temp_optimal.hi],

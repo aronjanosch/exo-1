@@ -127,6 +127,10 @@ pub enum RoomAsk {
     CycleAlarm,
     /// The captain's CP-01 door control (r41): true opens the engine room's door, false shuts it.
     SetDoor(bool),
+    /// The bridge door's panel and CP-01 (r44): the press toggles the bridge door.
+    ToggleBridgeDoor,
+    /// CP-01's bridge door control (r44): true opens the bridge door, false shuts it.
+    SetBridgeDoor(bool),
 }
 
 /// A request to the host about the reactor. Set fission and set turbine only count on
@@ -237,6 +241,10 @@ pub enum BotStation {
     Power,
     Helm,
 }
+
+/// How many rooms the status monitor, the vents and the alarms count: the engine room, the corridor and
+/// the bridge (r44). The size of `ReactorNews::rooms`, `vents` and `alarms`.
+pub const ROOMS: usize = 3;
 
 /// How many bot stations there are: the size of `ReactorNews::bots`.
 pub const BOT_STATIONS: usize = 4;
@@ -564,11 +572,11 @@ pub struct ReactorNews {
     pub battery_recharge: f64,
     /// kW the battery gave in the last step (0 when the grid did not need it).
     pub battery_kw: f64,
-    /// The rooms the status monitor shows, by index: 0 the engine room, 1 the corridor (r38).
-    pub rooms: [RoomAir; 2],
-    /// The two vents' valves, open (true): index 0 the engine room's, 1 the corridor's (r38). Set
-    /// by the host; a client's panels follow it. All shut is a state too: the generator's air goes nowhere.
-    pub vents: [bool; 2],
+    /// The rooms the status monitor shows, by index: 0 the engine room, 1 the corridor (r38), 2 the bridge (r44).
+    pub rooms: [RoomAir; ROOMS],
+    /// The three vents' valves, open (true): index 0 the engine room's, 1 the corridor's (r38), 2 the
+    /// bridge's (r44). Set by the host; a client's panels follow it. All shut is a state too: the generator's air goes nowhere.
+    pub vents: [bool; ROOMS],
     /// The engines' throttle (the crew's target), -100..100 % (r38).
     pub throttle: f64,
     /// The thrust the engines give, 0..100 % (r38): the force times the voltage and the condition
@@ -582,8 +590,8 @@ pub struct ReactorNews {
     pub quantum_shield: bool,
     /// The shield's regen, % of its max a second (0 inside the recovery delay), r40.
     pub shield_regen: f64,
-    /// The rooms' alarms (r40, #165), by the index of `rooms`: 0 the engine room, 1 the corridor.
-    pub alarms: [AlarmNews; 2],
+    /// The rooms' alarms (r40, #165), by the index of `rooms`: 0 the engine room, 1 the corridor, 2 the bridge (r44).
+    pub alarms: [AlarmNews; ROOMS],
     /// The weapons' capacitor: whole shots in it (r40, GN-01's pips).
     pub weapon_shots: u8,
     /// The capacitor's charge, 0..1 (GN-01's bar).
@@ -699,6 +707,8 @@ impl Lamp {
 pub struct RoomNews {
     pub door_open: bool,
     pub alarm: Alarm,
+    /// The bridge door is open (r44).
+    pub bridge_door: bool,
 }
 
 /// A player's vitals for their own display. Shares are 0..1 of the maximum before any
@@ -757,7 +767,7 @@ mod tests {
 
     #[test]
     fn room_news_and_asks_travel_as_they_are() {
-        let news = RoomNews { door_open: true, alarm: Alarm::Danger };
+        let news = RoomNews { door_open: true, alarm: Alarm::Danger, bridge_door: true };
         let back: RoomNews = match decode::<ToClient>(&encode(&ToClient::Room(news))).expect("decodes") {
             ToClient::Room(r) => r,
             _ => panic!("the room message"),
@@ -773,6 +783,12 @@ mod tests {
             _ => panic!("the room request"),
         };
         assert_eq!(door, RoomAsk::SetDoor(false));
+        let bridge: RoomAsk = match decode::<ToHost>(&encode(&ToHost::Room(RoomAsk::SetBridgeDoor(true)))).expect("decodes") {
+            ToHost::Room(a) => a,
+            _ => panic!("the room request"),
+        };
+        assert_eq!(bridge, RoomAsk::SetBridgeDoor(true));
+        assert!(decode::<ToHost>(&encode(&ToHost::Room(RoomAsk::ToggleBridgeDoor))).is_some_and(|m| matches!(m, ToHost::Room(RoomAsk::ToggleBridgeDoor))));
     }
 
     #[test]
@@ -851,7 +867,7 @@ mod tests {
             ecool_ready_in_s: 42.5,
             ecool_ok: false,
             ecools: 3,
-            vents: [false, true],
+            vents: [false, true, true],
             throttle: -35.5,
             engine_thrust: 62.5,
             ejected: true,
@@ -860,11 +876,11 @@ mod tests {
             battery_charge: 0.75,
             battery_recharge: 0.4,
             battery_kw: 120.0,
-            rooms: [RoomAir { o2: 0.84, fire: false }, RoomAir { o2: 0.31, fire: true }],
+            rooms: [RoomAir { o2: 0.84, fire: false }, RoomAir { o2: 0.31, fire: true }, RoomAir { o2: 0.5, fire: false }],
             shield: 0.7,
             quantum_shield: false,
             shield_regen: 5.0,
-            alarms: [AlarmNews { kind: RoomAlarmKind::Fire, sounding: false, silenced: true }, AlarmNews { kind: RoomAlarmKind::LowO2, sounding: true, silenced: false }],
+            alarms: [AlarmNews { kind: RoomAlarmKind::Fire, sounding: false, silenced: true }, AlarmNews { kind: RoomAlarmKind::LowO2, sounding: true, silenced: false }, AlarmNews { kind: RoomAlarmKind::Breach, sounding: true, silenced: false }],
             weapon_shots: 4,
             weapon_charge: 0.66,
             weapon_reload_s: 0.125,

@@ -241,9 +241,9 @@ mod tests {
     #[test]
     fn an_engine_room_section_of_another_version_is_refused() {
         let mut env = Envelope::new();
-        env.put(EngineSave::SECTION, 2, &0u32);
+        env.put(EngineSave::SECTION, 1, &0u32);
         let e = EngineSave::load(&env).unwrap_err();
-        assert_eq!(e.to_string(), "save: section 'engine_room' has version 2, this build reads version 1");
+        assert_eq!(e.to_string(), "save: section 'engine_room' has version 1, this build reads version 2");
     }
 
     #[test]
@@ -257,7 +257,7 @@ mod tests {
         let mut sim = ReactorSim::created(&cfg, true);
         let air = EngineAir::with_tuning(&cfg.airlock);
         sim.room.battery_mut().set_charge_kwmin(2000.0);
-        sim.vents = [false, true];
+        sim.vents = [false, true, true];
         let sec = engine_section(&sim, &air);
         let mut env = Envelope::new();
         sec.save(&mut env);

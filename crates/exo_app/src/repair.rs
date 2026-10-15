@@ -324,7 +324,7 @@ fn repair_client(time: Res<Time>, mut controls: ResMut<Controls>, mut actions: R
                 let side = area.as_deref().and_then(|a| walker_place(a, &planet, pl.w.pos)).and_then(|place| match place {
                     Place::Engine => Some(false),
                     Place::Outside => Some(true),
-                    Place::Corridor | Place::Airlock => None,
+                    Place::Corridor | Place::Airlock | Place::Bridge => None,
                 });
                 let on = controls.primary_held && side.is_some();
                 let section = aimed_section(eye, pl.world_look(Frame::IDENTITY), &machines, t.reach_m).map(|i| i as u8);

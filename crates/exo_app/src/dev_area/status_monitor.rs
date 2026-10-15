@@ -3,7 +3,7 @@
 //! corridor (air, fire, and the engine room's breach), the four devices (condition), and the three
 //! grid groups (the share of their demand they get).
 //!
-//! Ported from Barotrauma's MiniMap, the status monitor's hull status and electrical view
+//! The bridge (r44) is a third room row. Ported from Barotrauma's MiniMap, the status monitor's hull status and electrical view
 //! (`BarotraumaClient/ClientSource/Items/Components/Machines/MiniMap.cs`, see the row model in
 //! `display_core::monitor` for the lines). Not ported: the water (no water here), the item finder,
 //! the blips and the search. The room rows carry each room's alarm word (r40, #165: FIRE, BREACH, O2 LOW,
@@ -15,7 +15,7 @@
 //! TODO(initiator): the screen's name, its tier and the row order are start values.
 use display_core::monitor::{self, Cell, RoomLine};
 use display_core::{button, column, label, micro, readout, row, space, Item, Panel, PanelId, Tier, Tone};
-use item_core::wire::{AlarmNews, BreakerGroup, PartNews, ReactorNews, RoomAlarmKind};
+use item_core::wire::{AlarmNews, BreakerGroup, PartNews, ReactorNews, RoomAlarmKind, ROOMS};
 use reactor_core::hull::openness;
 
 pub const ID: PanelId = PanelId::new("status_monitor");
@@ -35,10 +35,11 @@ const GAP: f64 = 3.0;
 
 /// The monitor as the reactor snapshot has it. Without a snapshot every reading is a dash.
 pub fn monitor_panel(r: Option<&ReactorNews>) -> Panel {
-    let alarms = r.map_or([AlarmNews::default(); 2], |r| r.alarms);
+    let alarms = r.map_or([AlarmNews::default(); ROOMS], |r| r.alarms);
     let room_lines = [
         RoomLine { alarm: alarm_cell(alarms[0]), ..monitor::room_line(ROOM_NAME, r.map(|r| r.rooms[0].o2 * 100.0), r.is_some_and(|r| r.rooms[0].fire), Some(r.is_some_and(|r| breach_open(&r.breaches)))) },
         RoomLine { alarm: alarm_cell(alarms[1]), ..monitor::room_line(CORRIDOR_NAME, r.map(|r| r.rooms[1].o2 * 100.0), r.is_some_and(|r| r.rooms[1].fire), None) },
+        RoomLine { alarm: alarm_cell(alarms[2]), ..monitor::room_line(BRIDGE_NAME, r.map(|r| r.rooms[2].o2 * 100.0), r.is_some_and(|r| r.rooms[2].fire), None) },
     ];
     let devices = [
         ("REACTOR", r.map(|r| r.reactor)),
@@ -69,6 +70,7 @@ pub fn monitor_panel(r: Option<&ReactorNews>) -> Panel {
 
 const ROOM_NAME: &str = "ENGINE ROOM";
 const CORRIDOR_NAME: &str = "CORRIDOR";
+const BRIDGE_NAME: &str = "BRIDGE";
 
 /// The column heads: the first takes the name's width, the rest share the cells'.
 fn head(words: &[&str]) -> Item {
@@ -109,7 +111,7 @@ fn alarm_cell(a: AlarmNews) -> Cell {
 }
 
 /// The SILENCE button: lit while a room's klaxon sounds; it is the only control on the screen.
-fn silence_row(alarms: &[AlarmNews; 2]) -> Item {
+fn silence_row(alarms: &[AlarmNews; ROOMS]) -> Item {
     let sounding = alarms.iter().any(|a| a.sounding);
     let tone = if sounding { Tone::Bad } else { Tone::Normal };
     row(6.0, vec![button("SILENCE", SILENCE_ACTION).tone(tone).enabled(sounding).flex(1.0)]).fixed(ROW_H)

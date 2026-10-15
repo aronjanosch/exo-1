@@ -84,7 +84,7 @@ impl Situation {
             broken: working.iter().filter(|ok| !**ok).count() as u32,
             oxygen,
             temp_critical: w.critical_heat || w.cold,
-            can_break: [room.pump().condition().functioning(), room.junction().condition().functioning(), room.oxygen_generator().condition().functioning(), room.breach().damage() == 0.0],
+            can_break: [room.pump().condition().functioning(), room.junction().condition().functioning(), room.oxygen_generator().condition().functioning(), room.hull().intact()],
         }
     }
 }

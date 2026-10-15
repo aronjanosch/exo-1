@@ -244,7 +244,7 @@ impl ReactorSim {
             pump: part(self.room.pump().condition().fraction(), self.room.pump().condition().functioning()),
             junction: part(self.room.junction().condition().fraction(), self.room.junction().condition().functioning()),
             oxygen_generator: part(self.room.oxygen_generator().condition().fraction(), self.room.oxygen_generator().condition().functioning()),
-            breach: self.room.breach().damage(),
+            breaches: std::array::from_fn(|i| self.room.hull().damage(i)),
             lamps: lamps_of(&self.room.warnings()),
             boost: r.temperature_boost(),
             boost_ok: r.power_on() && r.condition().functioning() && r.boost_allowed(),
@@ -370,6 +370,8 @@ fn fault(f: ReactorFault) -> Option<Fault> {
         ReactorFault::LoadDrop => Some(Fault::LoadDrop),
         ReactorFault::Surge => Some(Fault::Surge),
         ReactorFault::HullBreach => Some(Fault::HullBreach),
+        ReactorFault::HitLight => Some(Fault::HitLight),
+        ReactorFault::HitHeavy => Some(Fault::HitHeavy),
         ReactorFault::Fire | ReactorFault::DrainCoolant | ReactorFault::WarmStart | ReactorFault::Aux | ReactorFault::ShieldHit => None,
     }
 }
@@ -391,6 +393,10 @@ pub fn route(e: RoomEvent, counts: &mut ReactorCounts) {
         RoomEvent::Fire { size, source } => {
             counts.fires += 1;
             info!("engine room: fire of {size} m from {source:?}");
+        }
+        RoomEvent::HitFire { size, at } => {
+            counts.fires += 1;
+            info!("engine room: fire of {size} m at the hit on {at:?}");
         }
         RoomEvent::Sparks => {
             counts.sparks += 1;
@@ -519,13 +525,17 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     // the life support's power and the generator's condition squared (`fire_core::oxygen`).
     let o2 = sim.room.oxygen_flow(cfg.0.room.oxygen_generator_rate);
     air.add_oxygen_through_vents(o2 * dt, sim.vents);
-    // The hull breach (r37): its hole leaks the room's air to space at the breach's openness.
-    let breach = sim.room.breach().open();
-    let hole = air.breach;
-    air.deck.set_leak(hole, cfg.0.room.breach_area_m2, breach);
+    // The hull (r37, by section in r40): each section's hole leaks the room's air to space at its openness.
+    let holes = air.breaches;
+    for (i, hole) in holes.into_iter().enumerate() {
+        air.deck.set_leak(hole, cfg.0.room.breach_area_m2, sim.room.hull().open(i));
+    }
     for e in events {
         if let Some((source, size)) = fire::start_of(&e) {
             fire::ignite(&mut air, &mut grid, *model, source, size);
+        }
+        if let RoomEvent::HitFire { size, at } = e {
+            fire::ignite_at(&mut air, &mut grid, *model, at, size);
         }
         if let RoomEvent::Reactor(ReactorEvent::Blast(b)) = e {
             blasts.0.push(b);

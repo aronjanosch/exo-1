@@ -112,7 +112,7 @@ fn part_of(r: &item_core::wire::ReactorNews, d: item_core::wire::RepairDevice) -
         CoolantPump => r.pump,
         JunctionBox => r.junction,
         OxygenGenerator => r.oxygen_generator,
-        HullBreach => item_core::wire::PartNews { share: 1.0 - r.breach, working: true },
+        HullBreach => item_core::wire::PartNews { share: crate::repair::breach_share(&r.breaches), working: true },
     }
 }
 

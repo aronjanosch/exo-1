@@ -7,6 +7,7 @@ use crate::weapons::WeaponsTuning;
 use crate::director::DirectorTuning;
 use crate::engine_room::RoomTuning;
 use crate::grid::GridTuning;
+use crate::hull::HitsTuning;
 use crate::reactor::{ReactorTuning, RodKinds};
 use crate::shield::ShieldTuning;
 
@@ -35,11 +36,13 @@ pub struct Tuning {
     pub shield: ShieldTuning,
     /// The room alarms (`alarm` in reactor.json, r40, #165).
     pub alarm: AlarmTuning,
+    /// The hit presets of the HIT LIGHT and HIT HEAVY dev faults (`hits` in reactor.json, r40).
+    pub hits: HitsTuning,
 }
 
 impl Default for Tuning {
     fn default() -> Tuning {
-        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), shield: ShieldTuning::default(), alarm: AlarmTuning::default(), weapons: WeaponsTuning::default() }
+        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), shield: ShieldTuning::default(), alarm: AlarmTuning::default(), weapons: WeaponsTuning::default(), hits: HitsTuning::default() }
     }
 }
 
@@ -88,6 +91,11 @@ impl Tuning {
         need(self.room.oxygen_generator_rate >= 0.0, "room.oxygen_generator_rate", "must be >= 0");
         need(self.room.breath_m3_per_s >= 0.0, "room.breath_m3_per_s", "must be >= 0");
         need(self.room.breach_area_m2 >= 0.0, "room.breach_area_m2", "must be >= 0");
+        need(self.room.hit_fire_size >= 0.0, "room.hit_fire_size", "must be >= 0");
+        for (name, h) in [("hits.light", &self.hits.light), ("hits.heavy", &self.hits.heavy)] {
+            need(h.structure >= 0.0 && h.device_damage >= 0.0 && h.radius > 0.0, name, "structure and device_damage >= 0, radius > 0");
+            need((0.0..=1.0).contains(&h.fire_chance), &format!("{name}.fire_chance"), "must be 0..1");
+        }
         need((0.0..=1.0).contains(&self.room.blast_breach_damage), "room.blast_breach_damage", "must be 0..1");
         need(r.fuel_burn >= 0.0 && r.temp_rate > 0.0, "reactor.temp_rate", "must be > 0, fuel_burn >= 0");
         need(r.temp_stiffness > 0.0 && r.temp_damping >= 0.0, "reactor.temp_stiffness", "must be > 0, temp_damping >= 0");

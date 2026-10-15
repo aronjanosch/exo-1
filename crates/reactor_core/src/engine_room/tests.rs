@@ -708,38 +708,114 @@ fn a_blast_breaks_the_oxygen_generator() {
     assert!(!r.oxygen_generator().condition().functioning());
 }
 
-/// The meltdown blast opens the hull at the room's blast damage (r37; Barotrauma's explosions
-/// damage the walls). A melt without fuel does not.
+/// The meltdown blast damages the walls near the reactor (r37's breach, now by section, r40): the
+/// nearest sections take the blast's wall damage by the falloff and leak. A melt without fuel does not.
 #[test]
-fn a_blast_breaches_the_hull_and_a_melt_without_fuel_does_not() {
+fn a_blast_damages_the_walls_near_the_reactor_and_a_melt_without_fuel_does_not() {
     let mut r = room();
-    assert_eq!(r.breach().damage(), 0.0);
+    assert!(r.hull().intact());
     let _ = r.melt_now();
-    assert_eq!(r.breach().damage(), RoomTuning::default().blast_breach_damage);
-    assert!(r.breach().open() > 0.0, "0.6 is past the leak threshold");
+    let near = r.hull().nearest(crate::hull::REACTOR_AT);
+    assert!(r.hull().damage(near) > 0.0 && r.hull().open(near) > 0.0, "the nearest section leaks");
+    assert_eq!(r.hull().damage(near), r.hull().sections.iter().map(|s| s.damage()).fold(0.0, f64::max), "the nearest section is the most damaged");
 
     let mut r = room();
     assert!(r.reactor_mut().pull_rod(0).is_some() && r.reactor_mut().pull_rod(0).is_some());
     let _ = r.melt_now();
-    assert_eq!(r.breach().damage(), 0.0);
+    assert!(r.hull().intact(), "a melt without fuel does not blast the walls");
 }
 
-/// The dev fault HULL BREACH sets the same damage as the blast, and the wrench's hold takes it
-/// down at the pump's fix speed (25 s for the whole wall): it closes the leak when it is mended.
+/// The dev fault HULL BREACH damages the section nearest the reactor at the blast's damage, and the
+/// wrench's hold takes it down at the pump's fix speed (25 s for a whole section): it closes the leak.
 #[test]
 fn the_dev_breach_is_mended_by_the_hold_at_the_pump_speed() {
     let t = RoomTuning::default();
     let mut r = room();
     assert!(r.trigger(Fault::HullBreach).is_empty());
-    assert_eq!(r.breach().damage(), t.blast_breach_damage);
+    let i = r.hull().nearest(crate::hull::REACTOR_AT);
+    assert_eq!(r.hull().damage(i), t.blast_breach_damage);
+    assert_eq!((0..SECTIONS_N).filter(|&k| r.hull().damage(k) > 0.0).count(), 1, "one section only");
     // The hold of 0.6 damage at 1 / 25 per second takes 15 s.
     for _ in 0..(15.0 * 30.0) as usize {
-        r.mend_breach(DT);
+        r.mend_section(i, DT);
     }
-    assert!(r.breach().damage() < 1e-9, "{}", r.breach().damage());
-    assert_eq!(r.breach().open(), 0.0, "a repaired breach closes the leak");
-    r.mend_breach(10.0);
-    assert_eq!(r.breach().damage(), 0.0, "mending a sound wall does nothing");
+    assert!(r.hull().damage(i) < 1e-9, "{}", r.hull().damage(i));
+    assert_eq!(r.hull().open(i), 0.0, "a repaired section closes its leak");
+    r.mend_section(i, 10.0);
+    assert_eq!(r.hull().damage(i), 0.0, "mending a sound section does nothing");
+}
+
+const SECTIONS_N: usize = crate::hull::SECTIONS;
+
+/// A hit (r40) damages the walls and the machines in range by the falloff: a hit on the pump lowers
+/// its condition by the full device damage at its centre, and the wall sections near it take the
+/// structure by distance.
+#[test]
+fn a_hit_damages_the_walls_and_the_machines_in_range_by_the_falloff() {
+    let mut r = safe_room();
+    let pump = crate::hull::DEVICES[0].1;
+    let before = r.pump().condition().value();
+    let mut rng = Rng::new(1);
+    let hit = Hit { at: pump, structure: 0.4, radius: 2.5, device_damage: 20.0, fire_chance: 0.0 };
+    let _ = r.apply_hit(hit, &mut rng);
+    assert!((before - r.pump().condition().value() - 20.0).abs() < 1e-9, "the full device damage at the centre");
+    let near = r.hull().nearest(pump);
+    assert!(r.hull().damage(near) > 0.0, "a section within the radius takes damage");
+    assert!(r.hull().damage(near) < hit.structure, "and less than at the impact, by the falloff");
+}
+
+/// A hit far from the room does nothing, and draws nothing from the rng.
+#[test]
+fn a_hit_far_away_does_nothing() {
+    let mut r = room();
+    let hit = Hit { at: [0.0, 0.0], structure: 0.9, radius: 2.5, device_damage: 40.0, fire_chance: 1.0 };
+    let mut rng = Rng::new(9);
+    let mut same = rng.clone();
+    let ev = r.apply_hit(hit, &mut rng);
+    assert!(ev.is_empty(), "{ev:?}");
+    assert!(r.hull().intact());
+    assert_eq!(rng, same, "no roll for a hit that does not reach the room");
+    assert_eq!(rng.unit(), same.unit());
+}
+
+/// The fire of a hit is seeded: the same seed gives the same fires, a chance of 1 always starts one
+/// at the impact, and a chance of 0 never does.
+#[test]
+fn a_hit_fire_is_seeded_and_deterministic() {
+    let hit = |chance| Hit { at: [-16.5, -19.0], structure: 0.4, radius: 2.5, device_damage: 0.0, fire_chance: chance };
+    let run = |seed, chance| {
+        let mut r = room();
+        let mut rng = Rng::new(seed);
+        (0..50).flat_map(|_| r.apply_hit(hit(chance), &mut rng)).collect::<Vec<_>>()
+    };
+    assert_eq!(run(5, 0.3), run(5, 0.3), "the same seed, the same fires");
+    let all = run(5, 1.0);
+    assert_eq!(all.len(), 50, "a chance of 1 starts a fire every hit");
+    assert!(all.iter().all(|e| matches!(e, RoomEvent::HitFire { at, .. } if *at == [-16.5, -19.0])), "at the impact");
+    assert!(run(5, 0.0).is_empty(), "a chance of 0 starts none");
+}
+
+/// The random hits of the dev faults land on the same point for the same seed (the room's own rng).
+#[test]
+fn a_random_hit_is_the_same_for_the_same_seed() {
+    let mut a = room();
+    let mut b = room();
+    let _ = a.trigger(Fault::HitHeavy);
+    let _ = b.trigger(Fault::HitHeavy);
+    assert_eq!(a.hull(), b.hull());
+    assert!(!a.hull().intact(), "a heavy hit damages the walls");
+}
+
+/// A repaired section closes its leak, and the walls are intact again when every section is.
+#[test]
+fn a_healed_hull_is_intact() {
+    let mut r = room();
+    let _ = r.trigger(Fault::HullBreach);
+    assert!(r.hull().leaking());
+    for i in 0..SECTIONS_N {
+        r.mend_section(i, 100.0);
+    }
+    assert!(r.hull().intact() && !r.hull().leaking());
 }
 
 #[test]
@@ -781,4 +857,24 @@ fn the_grid_fills_the_guns_and_a_full_capacitor_asks_for_nothing() {
     assert_eq!(r.weapons().shots(), 5);
     run(&mut r, 2.0, Input::auto());
     assert_eq!(r.weapons().shots(), 6, "the group refills the shot in well under a second at its full rate");
+}
+
+/// An outside hit meets the shield first (r40): a full shield takes a light hit whole, an empty
+/// one lets all of it through to the walls.
+#[test]
+fn an_outside_hit_drains_the_shield_before_the_walls() {
+    let at = crate::hull::DEVICES[0].1;
+    let light = Hit { at, structure: 0.4, radius: 2.5, device_damage: 0.0, fire_chance: 0.0 };
+    let walls = |r: &EngineRoom| (0..8).map(|i| r.hull().damage(i)).sum::<f64>();
+    let mut r = safe_room();
+    let mut rng = Rng::new(7);
+    let full = r.shield().fraction();
+    let _ = r.outside_hit(light, &mut rng);
+    assert!(r.shield().fraction() < full, "the shield took the hit");
+    assert_eq!(walls(&r), 0.0, "nothing reached the walls");
+    while r.shield().fraction() > 0.0 {
+        let _ = r.absorb_hit(1000.0);
+    }
+    let _ = r.outside_hit(light, &mut rng);
+    assert!(walls(&r) > 0.0, "an empty shield lets the hit through");
 }

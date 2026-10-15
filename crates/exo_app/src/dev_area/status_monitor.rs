@@ -16,7 +16,7 @@
 use display_core::monitor::{self, Cell, RoomLine};
 use display_core::{button, column, label, micro, readout, row, space, Item, Panel, PanelId, Tier, Tone};
 use item_core::wire::{AlarmNews, BreakerGroup, PartNews, ReactorNews, RoomAlarmKind};
-use reactor_core::Breach;
+use reactor_core::hull::openness;
 
 pub const ID: PanelId = PanelId::new("status_monitor");
 pub const NAME: &str = "ST-01";
@@ -37,7 +37,7 @@ const GAP: f64 = 3.0;
 pub fn monitor_panel(r: Option<&ReactorNews>) -> Panel {
     let alarms = r.map_or([AlarmNews::default(); 2], |r| r.alarms);
     let room_lines = [
-        RoomLine { alarm: alarm_cell(alarms[0]), ..monitor::room_line(ROOM_NAME, r.map(|r| r.rooms[0].o2 * 100.0), r.is_some_and(|r| r.rooms[0].fire), Some(r.is_some_and(|r| breach_open(r.breach)))) },
+        RoomLine { alarm: alarm_cell(alarms[0]), ..monitor::room_line(ROOM_NAME, r.map(|r| r.rooms[0].o2 * 100.0), r.is_some_and(|r| r.rooms[0].fire), Some(r.is_some_and(|r| breach_open(&r.breaches)))) },
         RoomLine { alarm: alarm_cell(alarms[1]), ..monitor::room_line(CORRIDOR_NAME, r.map(|r| r.rooms[1].o2 * 100.0), r.is_some_and(|r| r.rooms[1].fire), None) },
     ];
     let devices = [
@@ -130,7 +130,7 @@ fn group_row(name: &str, r: Option<&ReactorNews>, g: BreakerGroup) -> Item {
     row(6.0, vec![label(name).flex(2.0), cell(&monitor::group_cell(factor))]).fixed(ROW_H)
 }
 
-/// The breach shows while the wall leaks: the same rule as the breach decal (`engine_room::breach_decal`).
-fn breach_open(breach: f64) -> bool {
-    Breach::new(breach).open() > 0.0
+/// The breach shows while a wall section leaks: the same rule as the breach decals (`engine_room::breach_decal`).
+fn breach_open(breaches: &[f64]) -> bool {
+    breaches.iter().any(|&d| openness(d) > 0.0)
 }

@@ -183,6 +183,9 @@ pub enum ReactorAsk {
     /// The captain's SEAL on CP-01 (r41): shuts the airlock's inner door when it is open and no cycle
     /// runs. It never opens a door; the host refuses the rest.
     SealAirlock,
+    /// GN-01's CLEAR JAM hold (r41): `true` while the player holds at the gun, `false` when they let go.
+    /// The host counts the hold (`Weapons::clear_jam`) and clears the jam after its time.
+    ClearJam(bool),
 }
 
 /// The jump drive's stage as the host has it: PULSAR's warp charge stages (`reactor_core::JumpStage`).
@@ -525,6 +528,12 @@ pub struct ReactorNews {
     pub vacuum: bool,
     /// The enemy ship of the ambush (r41), None when no encounter has started.
     pub enemy: Option<EnemyNews>,
+    /// The gun's heat, 0..1 of the overheat line (r41, GN-01's heat bar).
+    pub weapon_heat: f64,
+    /// The gun is jammed until cleared by hold at GN-01 (r41, the JAMMED word).
+    pub weapon_jammed: bool,
+    /// The gun is locked by heat until it cools below `unlock_at` (r41, the OVERHEAT word).
+    pub weapon_overheated: bool,
 }
 
 /// The enemy ship's state for the GN-01 (r41): its shield and hull as 0..1 of their max, how the
@@ -774,6 +783,9 @@ mod tests {
             weapon_shots: 4,
             weapon_charge: 0.66,
             weapon_reload_s: 0.125,
+            weapon_heat: 0.42,
+            weapon_jammed: true,
+            weapon_overheated: false,
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {
             ToClient::Reactor(r) => r,
@@ -808,6 +820,8 @@ mod tests {
             ReactorAsk::SetDirector(true),
             ReactorAsk::SetDirector(false),
             ReactorAsk::SilenceAlarms,
+            ReactorAsk::ClearJam(true),
+            ReactorAsk::ClearJam(false),
             ReactorAsk::Fire,
             ReactorAsk::JumpArm,
             ReactorAsk::JumpGo,

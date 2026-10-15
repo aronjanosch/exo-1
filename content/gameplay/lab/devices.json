@@ -1,0 +1,45 @@
+{
+  "_comment": "Lab device chain (#287). Every number is a starting value, TODO(initiator). Quality shares: mixer_share + heater bonus + centrifuge bonus + 2 skill tiers = 1. Times are at skill = skill.required.",
+  "ambient_c": 20.0,
+  "doses_per_crate": 4,
+  "mixer_share": 0.6,
+  "skill": {
+    "required": 30.0,
+    "slowest": 0.1,
+    "fastest": 2.0,
+    "plus_one_from": 50.0,
+    "plus_two_from": 75.0,
+    "quality_per_tier": 0.05
+  },
+  "heater": {
+    "max_setpoint_c": 120.0,
+    "element_lag_s": 2.0,
+    "batch_lag_s": 3.0,
+    "band_low_c": 70.0,
+    "band_high_c": 80.0,
+    "burn_c": 95.0,
+    "hold_s": 6.0,
+    "quality_bonus": 0.15,
+    "burn_quality_factor": 0.5,
+    "transforms": [{ "from": "tingly", "to": "glowing" }]
+  },
+  "centrifuge": {
+    "max_rpm": 6000.0,
+    "sweet_low_rpm": 2500.0,
+    "sweet_high_rpm": 3500.0,
+    "separate_s": 5.0,
+    "quality_bonus": 0.15,
+    "fast_loss_per_s": 0.05,
+    "overspin_loss_per_s": 0.03,
+    "wobble_rpm": 4000.0,
+    "wobble_per_s_per_krpm": 0.5,
+    "wobble_decay_per_s": 0.5,
+    "trip_loss": 0.25
+  },
+  "syringe": {
+    "capacity": 3,
+    "required_skill": 20.0,
+    "min_strength": 0.3,
+    "fail_strength": 0.75
+  }
+}

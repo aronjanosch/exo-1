@@ -82,6 +82,15 @@ pub struct TreatTuning {
     /// Reduction factor at skill 0 and at skill 100.
     pub skill_low: f64,
     pub skill_high: f64,
+    /// A syringe dose that treats little may overdose: the chance is this x the share of its
+    /// treatment that found nothing to treat (`Health::dose`). Our rule; Barotrauma adds an
+    /// `opiateoverdose` affliction per medicine instead (content/Items/Medical/medical.xml:209).
+    /// TODO(initiator): the chance and the poison share.
+    pub overdose_chance: f64,
+    /// An overdose adds this share of the unused treatment as poison.
+    pub overdose_poison: f64,
+    /// A status effect (giggly, glowing, sleepy) from a full-strength dose; a dose scales it.
+    pub status_dose: f64,
 }
 
 /// Standing on the hot plate: burn per tick from the first tick. A fire's burn (the rate per
@@ -228,6 +237,8 @@ impl HealthTuning {
         need(self.tick_s > 0.0, "tick_s".into(), "must be > 0");
         need((0.0..=1.0).contains(&self.oxygen.low_below), "oxygen.low_below".into(), "must be in 0..1");
         need(self.treat.skill_low > 0.0 && self.treat.skill_high >= self.treat.skill_low, "treat.skill_high".into(), "must be at least skill_low > 0");
+        need((0.0..=1.0).contains(&self.treat.overdose_chance), "treat.overdose_chance".into(), "must be in 0..1");
+        need(self.treat.overdose_poison >= 0.0 && self.treat.status_dose >= 0.0, "treat".into(), "overdose_poison and status_dose must be >= 0");
         need(self.heat.burn_per_tick >= 0.0, "heat.burn_per_tick".into(), "must be >= 0");
         need(self.heat.fire_per_unit >= 0.0, "heat.fire_per_unit".into(), "must be >= 0");
         need(self.use_reach > 0.0, "use_reach".into(), "must be > 0");
@@ -274,7 +285,7 @@ impl HealthTuning {
                 need(*v > 0.0, format!("treatments[{i}].reduce.{k}"), "must be > 0");
             }
         }
-        for id in ["burn", "oxygen_low", "radiation", "headache"] {
+        for id in ["burn", "oxygen_low", "radiation", "headache", "poison"] {
             need(self.affliction(id).is_some(), "afflictions".into(), &format!("needs '{id}'"));
         }
     }
@@ -380,6 +391,15 @@ pub struct Mobility {
 pub struct TreatResult {
     pub success: bool,
     pub reduced: f64,
+    /// Poison an overdose added (a dose only; `treat` never overdoses).
+    pub overdose: Option<f64>,
+}
+
+/// What one syringe dose did: each treatment it gave, and each status it added by name.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DoseResult {
+    pub treated: Vec<TreatResult>,
+    pub statuses: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -431,6 +451,11 @@ impl Health {
 
     pub fn strength(&self, id: &str) -> f64 {
         self.afflictions.get(id).copied().unwrap_or(0.0)
+    }
+
+    /// Every affliction above zero, by id (for the readouts).
+    pub fn afflictions(&self) -> &BTreeMap<String, f64> {
+        &self.afflictions
     }
 
     pub fn buildup(&self) -> f64 {
@@ -627,7 +652,7 @@ impl Health {
     pub fn treat(&mut self, t: &HealthTuning, id: &str, skill: f64) -> Option<TreatResult> {
         let tr = t.treatment(id)?.clone();
         if self.life == Life::Dead {
-            return Some(TreatResult { success: false, reduced: 0.0 });
+            return Some(TreatResult { success: false, reduced: 0.0, overdose: None });
         }
         let p = (1.0 + (skill - tr.required_skill) / 100.0).clamp(0.0, 1.0);
         let success = self.rng.chance(p);
@@ -642,7 +667,53 @@ impl Health {
         }
         self.recalc(t);
         self.update_life(t);
-        Some(TreatResult { success, reduced })
+        Some(TreatResult { success, reduced, overdose: None })
+    }
+
+    /// A syringe's dose on this body. Each effect that is a treatment treats, at the dose's
+    /// `strength` as potency and with the injector's `success` (the roll is the filler's, not ours);
+    /// each effect that is an affliction adds `status_dose x strength` of itself.
+    pub fn dose(&mut self, t: &HealthTuning, effects: &[&str], strength: f64, success: bool, skill: f64) -> DoseResult {
+        let mut out = DoseResult::default();
+        for id in effects {
+            if t.treatment(id).is_some() {
+                out.treated.extend(self.treat_dose(t, id, skill, strength, success));
+            } else if t.affliction(id).is_some() {
+                self.add(t, id, t.treat.status_dose * strength);
+                out.statuses.push(id.to_string());
+            }
+        }
+        out
+    }
+
+    /// One treatment of a dose: like `treat`, with the potency and the roll given. What the
+    /// treatment could not reduce may overdose (poison, see `TreatTuning::overdose_chance`).
+    fn treat_dose(&mut self, t: &HealthTuning, id: &str, skill: f64, potency: f64, success: bool) -> Option<TreatResult> {
+        let tr = t.treatment(id)?.clone();
+        if self.life == Life::Dead {
+            return Some(TreatResult { success: false, reduced: 0.0, overdose: None });
+        }
+        let factor = t.skill_factor(skill) * potency.clamp(0.0, 1.0) * if success { 1.0 } else { tr.fail_factor };
+        let (mut total, mut reduced) = (0.0, 0.0);
+        for (aff, amount) in &tr.reduce {
+            let left = amount * factor;
+            total += left;
+            if let Some(s) = self.afflictions.get_mut(aff) {
+                let r = left.min(*s);
+                *s -= r;
+                reduced += r;
+            }
+        }
+        let excess = total - reduced;
+        let mut overdose = None;
+        if excess > 1e-9 && total > 0.0 && self.rng.chance(t.treat.overdose_chance * excess / total) {
+            let p = excess * t.treat.overdose_poison;
+            self.add(t, "poison", p);
+            overdose = Some(p);
+        }
+        self.recalc(t);
+        self.update_life(t);
+        Some(TreatResult { success, reduced, overdose })
     }
 
     pub fn cpr_seconds(&self) -> f64 {

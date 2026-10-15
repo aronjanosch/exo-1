@@ -2256,6 +2256,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "container_core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "content_core"
 version = "0.1.0"
 dependencies = [
@@ -2739,6 +2747,7 @@ dependencies = [
  "avian3d",
  "bevy",
  "campaign_core",
+ "container_core",
  "content_core",
  "daynight_core",
  "device_core",

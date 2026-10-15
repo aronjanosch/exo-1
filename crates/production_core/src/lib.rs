@@ -1,10 +1,13 @@
+pub mod devices;
 pub mod ingredient;
 pub mod lab;
 pub mod mixing;
 pub mod recipe;
+pub mod skill;
 pub mod station;
 pub mod state;
 
+pub use devices::{Batch, Centrifuge, DeviceRefusal, DeviceTuning, Dose, Heater, Spin, Syringe, Target, fill_syringe};
 pub use ingredient::{Ingredient, LabContent, ProductBase, Transform, Tuning};
 pub use lab::{Kettle, Lab, Outcome as LabOutcome, Refusal as LabRefusal};
 pub use mixing::{mix, needle, price, quality};

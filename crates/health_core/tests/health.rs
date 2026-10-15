@@ -266,3 +266,56 @@ fn decompression_heals_back_in_air() {
     run(&mut h, &t, 10.0, air(1.0));
     assert!(h.strength("decompression") < hurt, "it heals in air");
 }
+
+#[test]
+fn a_dose_that_treats_enough_does_not_overdose() {
+    let t = shipped();
+    let mut h = Health::new(&t, 1);
+    h.add(&t, "burn", 80.0);
+    let r = h.dose(&t, &["cooling"], 1.0, true, 50.0);
+    assert_eq!(r.treated[0].overdose, None, "60 treats 60 of the 80 burn: nothing to poison");
+    assert!(close(h.strength("burn"), 20.0));
+}
+
+#[test]
+fn a_dose_with_nothing_to_treat_may_overdose_by_its_share() {
+    let t = shipped();
+    let mut poisoned = 0;
+    for seed in 1..=50u64 {
+        // A small seed gives a small first xorshift draw; spread the seeds over the range.
+        let mut h = Health::new(&t, seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        let r = h.dose(&t, &["cooling"], 1.0, true, 50.0);
+        match r.treated[0].overdose {
+            Some(p) => {
+                assert!(close(p, 30.0), "60 unused x overdose_poison 0.5: {p}");
+                assert!(close(h.strength("poison"), 30.0));
+                poisoned += 1;
+            }
+            None => assert_eq!(h.strength("poison"), 0.0),
+        }
+    }
+    assert!(poisoned > 0 && poisoned < 50, "a chance of 1 in 2 per dose: {poisoned} of 50");
+}
+
+#[test]
+fn a_failed_dose_treats_less_and_the_potency_scales_it() {
+    let t = shipped();
+    let mut h = Health::new(&t, 1);
+    h.add(&t, "burn", 100.0);
+    let r = h.dose(&t, &["cooling"], 1.0, false, 50.0);
+    assert!(close(r.treated[0].reduced, 45.0), "60 x 0.75 fail factor: {}", r.treated[0].reduced);
+    let mut weak = Health::new(&t, 1);
+    weak.add(&t, "burn", 100.0);
+    weak.dose(&t, &["cooling"], 0.5, true, 50.0);
+    assert!(close(weak.strength("burn"), 70.0), "half potency: 30 treated");
+}
+
+#[test]
+fn a_status_dose_adds_its_affliction_by_strength() {
+    let t = shipped();
+    let mut h = Health::new(&t, 1);
+    let r = h.dose(&t, &["giggly", "tingly"], 0.5, true, 50.0);
+    assert_eq!(r.statuses, vec!["giggly".to_string()], "an effect that is no affliction or treatment does nothing");
+    assert!(close(h.strength("giggly"), 20.0), "status_dose 40 x strength 0.5");
+    assert!(r.treated.is_empty());
+}

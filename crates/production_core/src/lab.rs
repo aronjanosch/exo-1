@@ -6,6 +6,7 @@ use gameplay_core::save::{Envelope, SaveError};
 use gameplay_core::{CommodityId, EffectId, Event, ProductSpec, WorldEvent};
 use serde::{Deserialize, Serialize};
 
+use crate::devices::{Batch, DeviceTuning};
 use crate::ingredient::{Ingredient, LabContent};
 use crate::mixing::{mix, needle, quality};
 
@@ -35,7 +36,13 @@ pub enum Kettle {
     Brewing { base: CommodityId, ingredients: Vec<CommodityId>, remaining_s: f64 },
     /// Brewed; waits for the release. The needle is read then.
     Done { base: CommodityId, ingredients: Vec<CommodityId> },
-    Ready { product: ProductSpec, crates: u32 },
+    /// Released; waits for the take. The ingredients go along into a device batch.
+    Ready {
+        product: ProductSpec,
+        crates: u32,
+        #[serde(default)]
+        ingredients: Vec<CommodityId>,
+    },
 }
 
 impl Kettle {
@@ -105,9 +112,16 @@ impl Lab {
     }
 
     pub fn start(&mut self, lc: &LabContent, station: &str) -> Result<(), Refusal> {
+        self.start_at_speed(lc, station, 1.0)
+    }
+
+    /// Starts the brew with the worker's speed factor (`skill::speed`): the brew takes
+    /// `brew_s / speed`.
+    pub fn start_at_speed(&mut self, lc: &LabContent, station: &str, speed: f64) -> Result<(), Refusal> {
         match self.current(station) {
             Kettle::Loaded { base, ingredients } => {
-                self.kettles.insert(station.to_string(), Kettle::Brewing { base, ingredients, remaining_s: lc.tuning.brew_s });
+                let remaining_s = lc.tuning.brew_s / speed.max(1e-6);
+                self.kettles.insert(station.to_string(), Kettle::Brewing { base, ingredients, remaining_s });
                 Ok(())
             }
             Kettle::Empty => Err(Refusal::NoBase),
@@ -137,7 +151,7 @@ impl Lab {
         };
         let crates = b.crates_out;
         let discovered = self.book.insert((base, effects));
-        self.kettles.insert(station.to_string(), Kettle::Ready { product: product.clone(), crates });
+        self.kettles.insert(station.to_string(), Kettle::Ready { product: product.clone(), crates, ingredients });
         let notice = if discovered {
             Notice::new(NoticeKind::Unlock, DISCOVERED_KEY)
         } else {
@@ -151,9 +165,20 @@ impl Lab {
 
     pub fn take(&mut self, station: &str) -> Option<(ProductSpec, u32)> {
         match self.current(station) {
-            Kettle::Ready { product, crates } => {
+            Kettle::Ready { product, crates, .. } => {
                 self.kettles.insert(station.to_string(), Kettle::Empty);
                 Some((product, crates))
+            }
+            _ => None,
+        }
+    }
+
+    /// Takes a ready brew out as a device batch (`devices`); the kettle is empty after it.
+    pub fn take_batch(&mut self, station: &str, t: &DeviceTuning) -> Option<Batch> {
+        match self.current(station) {
+            Kettle::Ready { product, crates, ingredients } => {
+                self.kettles.insert(station.to_string(), Kettle::Empty);
+                Some(Batch::from_brew(&product, ingredients, crates, t))
             }
             _ => None,
         }

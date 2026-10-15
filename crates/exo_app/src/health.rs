@@ -80,7 +80,8 @@ impl HealthState {
         self.sent.clear();
     }
 
-    fn body(&mut self, id: PlayerId) -> &mut Body {
+    /// The body of a player, made at full health when it is first asked for.
+    pub fn body(&mut self, id: PlayerId) -> &mut Body {
         let t = &self.tuning;
         self.bodies.entry(id).or_insert_with(|| Body { health: Health::new(t, 0x51 + id as u64), respawn_in: None })
     }

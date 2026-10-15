@@ -872,5 +872,19 @@
   "lab.why.busy": "the vat is busy",
   "stamp.halt": "HALT!",
   "stamp.airspace": "{town} AIRSPACE",
-  "stamp.airspace_free": "{town} - FREE PORT"
+  "stamp.airspace_free": "{town} - FREE PORT",
+  "effect.cooling.name": "Cooling",
+  "effect.breathy.name": "Breathy",
+  "commodity.frost_moss.name": "frost moss",
+  "commodity.bubble_kelp.name": "bubble kelp",
+  "lab.injected": [
+    "The dummy twitches: {effects} at {strength} %.",
+    "Straight in. The dummy now has {effects} ({strength} %).",
+    "Dose delivered: {effects}, {strength} % strong."
+  ],
+  "lab.injected_weak": [
+    "Shaky hand. Only {effects} at {strength} %.",
+    "Half of it went on the floor: {effects} at {strength} %.",
+    "Missed the good spot. {effects}, {strength} %."
+  ]
 }

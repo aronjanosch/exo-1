@@ -1,0 +1,1 @@
+{ "_comment": "Medicine effect (#287): treats burns (health/health.json). TODO(initiator) name and value.", "id": "cooling", "name": "effect.cooling.name", "value": 0.3 }

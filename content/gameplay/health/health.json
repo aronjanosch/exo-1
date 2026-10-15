@@ -1,12 +1,12 @@
 {
-  "_comment": "Health (#295). Every number is a starting value, TODO(initiator). Damage over time comes in ticks of tick_s. Bands: each runs from the previous 'to' (0 for the first); 'vitality' is the vitality lost at the band's start and end, as a share of max_vitality; 'change_per_tick' is the strength's own change per tick (negative heals). Treatments reduce one affliction per use, an id is an item kind (bandage, deglow, oxy). Radiation burn bands are [from, to): a strength takes the band it is below.",
+  "_comment": "Health (#295; #287: poison and the lab statuses giggly, glowing, sleepy, the medicines cooling and breathy from the syringe, overdose in treat). Sleepy does not slow the walk yet (TODO(initiator)). Every number is a starting value, TODO(initiator). Damage over time comes in ticks of tick_s. Bands: each runs from the previous 'to' (0 for the first); 'vitality' is the vitality lost at the band's start and end, as a share of max_vitality; 'change_per_tick' is the strength's own change per tick (negative heals). Treatments reduce one affliction per use, an id is an item kind (bandage, deglow, oxy). Radiation burn bands are [from, to): a strength takes the band it is below.",
   "max_vitality": 100.0,
   "dead_at": -1.0,
   "respawn_s": 5.0,
   "tick_s": 1.0,
   "use_reach": 2.0,
   "oxygen": { "low_below": 0.3, "fall_per_tick": 5.0, "rise_per_tick": 10.0, "unconscious_per_tick": 1.0 },
-  "treat": { "skill_low": 0.75, "skill_high": 1.25 },
+  "treat": { "skill_low": 0.75, "skill_high": 1.25, "overdose_chance": 0.5, "overdose_poison": 0.5, "status_dose": 40.0 },
   "heat": { "burn_per_tick": 1.5, "fire_per_unit": 0.2 },
   "burning": { "fill_s": 3.0, "cool_s": 2.0, "drain_s": 4.0, "burn_per_tick": 6.0 },
   "radiation": {
@@ -54,11 +54,22 @@
     { "id": "decompression", "max": 100.0, "bands": [
       { "to": 100.0, "vitality": [0.0, 2.0], "change_per_tick": 0.0 } ] },
     { "id": "headache", "max": 100.0, "bands": [
-      { "to": 100.0, "vitality": [0.0, 0.0], "change_per_tick": -0.5 } ] }
+      { "to": 100.0, "vitality": [0.0, 0.0], "change_per_tick": -0.5 } ] },
+    { "id": "poison", "max": 100.0, "bands": [
+      { "to": 10.0, "vitality": [0.0, 0.05], "change_per_tick": -0.25 },
+      { "to": 100.0, "vitality": [0.05, 0.8], "change_per_tick": -0.1 } ] },
+    { "id": "giggly", "max": 100.0, "bands": [
+      { "to": 100.0, "vitality": [0.0, 0.0], "change_per_tick": -1.0 } ] },
+    { "id": "glowing", "max": 100.0, "bands": [
+      { "to": 100.0, "vitality": [0.0, 0.0], "change_per_tick": -1.0 } ] },
+    { "id": "sleepy", "max": 100.0, "bands": [
+      { "to": 100.0, "vitality": [0.0, 0.0], "change_per_tick": -1.0 } ] }
   ],
   "treatments": [
     { "id": "bandage", "required_skill": 40.0, "fail_factor": 0.75, "reduce": { "burn": 15.0 } },
     { "id": "deglow", "required_skill": 20.0, "fail_factor": 0.75, "reduce": { "radiation": 100.0 } },
-    { "id": "oxy", "required_skill": 40.0, "fail_factor": 0.75, "reduce": { "oxygen_low": 40.0 } }
+    { "id": "oxy", "required_skill": 40.0, "fail_factor": 0.75, "reduce": { "oxygen_low": 40.0 } },
+    { "id": "cooling", "required_skill": 0.0, "fail_factor": 0.75, "reduce": { "burn": 60.0 } },
+    { "id": "breathy", "required_skill": 0.0, "fail_factor": 0.75, "reduce": { "oxygen_low": 80.0 } }
   ]
 }

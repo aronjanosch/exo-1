@@ -214,7 +214,7 @@ pub(super) fn dev_area_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str)
 }
 
 fn display_of(w: &mut World, id: &display_core::PanelId) -> Option<Entity> {
-    w.query::<(Entity, &DisplayPanel)>().iter(w).find(|(_, d)| &d.id == id).map(|(e, _)| e)
+    w.query_filtered::<(Entity, &DisplayPanel), Without<crate::dev_area::layout::Mirror>>().iter(w).find(|(_, d)| &d.id == id).map(|(e, _)| e)
 }
 
 fn visit(name: &'static str, id: display_core::PanelId, zone: Zone, at: [f64; 2], label: &'static str) -> Vec<Step> {

@@ -12,23 +12,24 @@ use bevy::math::DVec3;
 use item_core::{FrameRef, Placement, PlayerId};
 use std::collections::BTreeSet;
 
-pub const HOT_PLATE: Zone = Zone { name: "hot plate", centre: [-12.0, 16.0], half: [1.5, 1.5] };
-pub const GLOW_BARREL: Zone = Zone { name: "glowing barrel", centre: [0.0, 16.0], half: [1.5, 1.5] };
-pub const NO_AIR: Zone = Zone { name: "no air", centre: [12.0, 16.0], half: [1.5, 1.5] };
+/// The three pads in a row along the hazards zone's west side, south to north.
+pub const HOT_PLATE: Zone = Zone { name: "hot plate", centre: [2.3, 13.0], half: [1.2, 1.2] };
+pub const GLOW_BARREL: Zone = Zone { name: "glowing barrel", centre: [2.3, 15.5], half: [1.2, 1.2] };
+pub const NO_AIR: Zone = Zone { name: "no air", centre: [2.3, 18.0], half: [1.2, 1.2] };
 
 /// A greybox room with no air at all: vacuum without leaving the planet, to try the suit and the
 /// decompression. Its walls are `VACUUM_WALLS`; the west side has a doorway.
-pub const VACUUM_ROOM: Zone = Zone { name: "vacuum room", centre: [16.0, -14.0], half: [3.0, 3.0] };
+pub const VACUUM_ROOM: Zone = Zone { name: "vacuum room", centre: [8.0, 15.5], half: [3.0, 3.0] };
 
-/// The walls of the vacuum room (`hazards::VACUUM_ROOM`, x 13..19, y -17..-11): a doorway 2 m wide
+/// The walls of the vacuum room (`VACUUM_ROOM`, x 5..11, y 12.5..18.5): a doorway 2 m wide
 /// in the west wall, a flat roof.
 pub const VACUUM_WALLS: &[Part] = &[
-    Part { id: "vacuum_wall_south", at: [16.0, -17.15], size: [6.6, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "vacuum_wall_north", at: [16.0, -10.85], size: [6.6, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "vacuum_wall_east", at: [19.15, -14.0], size: [WALL, ROOM_HEIGHT, 6.3], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "vacuum_wall_west_south", at: [12.85, -16.0], size: [WALL, ROOM_HEIGHT, 2.0], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "vacuum_wall_west_north", at: [12.85, -12.0], size: [WALL, ROOM_HEIGHT, 2.0], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "vacuum_roof", at: [16.0, -14.0], size: [6.6, WALL, 6.6], lift: ROOM_HEIGHT, colour: WALL_COLOUR },
+    Part { id: "vacuum_wall_south", at: [8.0, 12.35], size: [6.6, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "vacuum_wall_north", at: [8.0, 18.65], size: [6.6, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "vacuum_wall_east", at: [11.15, 15.5], size: [WALL, ROOM_HEIGHT, 6.3], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "vacuum_wall_west_south", at: [4.85, 13.35], size: [WALL, ROOM_HEIGHT, 2.3], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "vacuum_wall_west_north", at: [4.85, 17.65], size: [WALL, ROOM_HEIGHT, 2.3], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "vacuum_roof", at: [8.0, 15.5], size: [6.6, WALL, 6.6], lift: ROOM_HEIGHT, colour: WALL_COLOUR },
 ];
 
 
@@ -51,7 +52,7 @@ pub const SPICY_RADIUS_M: f64 = 1.25;
 pub const SPICY_RAD_PER_S: f64 = 1.0;
 /// The spicy rod on the dev area's pad by the barrel: the spot, relative to the barrel's centre,
 /// on the pad's east edge, so a walker one step further east stands outside the barrel's glow.
-pub const SPICY_AT: [f64; 2] = [1.45, 0.0];
+pub const SPICY_AT: [f64; 2] = [1.15, 0.0];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RodSpot {
@@ -79,8 +80,8 @@ pub fn plugin(app: &mut App) {
     for (z, id, colour) in pads {
         app.world_mut().resource_mut::<DevAreaDevices>().add(PlaceholderBox {
             id: id.into(),
-            zone: STORAGE,
-            local_pos: [z.centre[0] - STORAGE.centre[0], z.centre[1] - STORAGE.centre[1]],
+            zone: HAZARDS,
+            local_pos: [z.centre[0] - HAZARDS.centre[0], z.centre[1] - HAZARDS.centre[1]],
             size: [z.half[0] * 2.0, 0.05, z.half[1] * 2.0],
             turn_deg: 0.0,
             colour,

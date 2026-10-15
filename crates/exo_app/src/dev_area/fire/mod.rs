@@ -5,7 +5,7 @@ pub mod extinguisher;
 use crate::controls::Controls;
 use crate::dev_area::{layout::{footprint_of, ignition_at, place_of, source_at}, hull::ShipAir};
 use crate::dev_area::ship::ReactorSim;
-use crate::dev_area::{layout::{CORRIDOR, ROOM}};
+use crate::dev_area::layout::{BRIDGE, CORRIDOR, ROOM};
 use crate::dev_area::{area_of, DevArea};
 use crate::displays::ActiveDisplay;
 use crate::env::PlanetRes;
@@ -172,7 +172,8 @@ pub fn plugin(app: &mut App) {
     let settings = FireSettings::load(&files).unwrap_or_else(|e| panic!("fire: {e:?}"));
     let mut grid = Grid::new(settings.grid, 0x300);
     let ids = ShipAir::new();
-    for (room, zone) in [(ids.engine, ROOM), (ids.corridor, CORRIDOR)] {
+    // One grid per air room with its own rectangle; the side rooms that share the corridor's air have none.
+    for (room, zone) in [(ids.engine, ROOM), (ids.corridor, CORRIDOR), (ids.bridge, BRIDGE)] {
         grid.add_room(room, DVec2::new(zone.centre[0] - zone.half[0], zone.centre[1] - zone.half[1]), DVec2::new(zone.half[0] * 2.0, zone.half[1] * 2.0));
     }
     app.insert_resource(FireConfig(settings))

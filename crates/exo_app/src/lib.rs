@@ -404,8 +404,11 @@ pub fn build_app(o: &Options) -> App {
         app.add_plugins(scenario::plugin(name, o.headless));
     }
     let test_crates = o.scenario.is_none() || o.scenario.as_deref() == Some("full");
+    let dev_area_start = o.start.as_deref() == Some(dev_area::PLACE);
     app.add_systems(Startup, move |mut commands: Commands, planet: Res<env::PlanetRes>, tuning: Res<tuning::Tuning>, off: Res<SpawnOffset>, crates: Res<cargo::Crates>| {
-        walker::spawn_player_at(&mut commands, &planet, &tuning.walker, start_up, off.0);
+        // In the dev area the walker starts inside the mini ship; the flight ship parks on the pad.
+        let walker_up = if dev_area_start { dev_area::spawn_up(&planet).unwrap_or(start_up) } else { start_up };
+        walker::spawn_player_at(&mut commands, &planet, &tuning.walker, walker_up, off.0);
         let ship = ship::spawn_ship(&mut commands, &planet, &tuning, start_up, off.0);
         if test_crates {
             let t = &crates.0;

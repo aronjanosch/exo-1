@@ -16,7 +16,7 @@ use item_core::wire::{Alarm, ReactorAsk};
 use reactor_core::Group;
 
 fn display(w: &mut World, id: PanelId) -> DisplayPanel {
-    w.query::<&DisplayPanel>().iter(w).find(|d| d.id == id).cloned().unwrap_or_else(|| panic!("no display {id:?}"))
+    w.query_filtered::<&DisplayPanel, Without<crate::dev_area::layout::Mirror>>().iter(w).find(|d| d.id == id).cloned().unwrap_or_else(|| panic!("no display {id:?}"))
 }
 
 fn ground_at(w: &mut World, p: [f64; 2]) -> DVec3 {

@@ -11,7 +11,7 @@
 //!
 //! Host and clients: the host runs the cycle and the air; a client shows the host's doors (the news).
 //! The suit rack is the extinguisher racks' kind (`extinguisher.rs`, `extinguisher.json`).
-use crate::dev_area::{hull::ShipAir, layout::{DOOR_SIZE, DOOR_TIME, INNER_DOOR_AT, OUTER_DOOR_AT}};
+use crate::dev_area::{hull::ShipAir, layout::{AIRLOCK_DOOR_SIZE, DOOR_TIME, INNER_DOOR_AT, OUTER_DOOR_AT}};
 use crate::dev_area::*;
 use crate::items::{Items, Role};
 use item_core::wire::{AirlockAsk, ReactorAsk};
@@ -31,7 +31,7 @@ pub struct AirlockSlab {
 /// door, the collider is the wall's; the slab is a dev box.
 pub(super) fn spawn_doors(commands: &mut Commands, frame: &Frame, planet: &PlanetRes, area: &mut DevArea) {
     for (door, at, name) in [(Door::Inner, INNER_DOOR_AT, "engine_airlock_inner_door"), (Door::Outer, OUTER_DOOR_AT, "engine_airlock_outer_door")] {
-        let d = DOOR_SIZE;
+        let d = AIRLOCK_DOOR_SIZE;
         let (ground, up) = frame.ground(planet, at[0], at[1], 0.0);
         let rot = frame.rotation(up, 0.0);
         let (bottom, top) = crate::dev_area::layout::span(0.0, d[1]);

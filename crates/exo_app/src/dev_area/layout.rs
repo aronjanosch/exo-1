@@ -1,7 +1,12 @@
-//! The inner ship's layout: its rooms, walls, machine housings and the spots of the wall screens,
-//! in area metres (x east, y north). The single source of where things stand inside; each owner
-//! module (`hull`, `engineering`, `bridge`, ...) keeps what its parts do.
-//! TODO(initiator): the layout is a greybox and is rebuilt with the mini ship (#306, step 2).
+//! The inner ship's layout: the mini ship's rooms (rectangles with roofs), its walls and doors, the
+//! machines' housings and the spots of the wall screens, in area metres (x east, y north). The
+//! single source of where things stand inside; each owner module keeps what its parts do.
+//!
+//! The ship lies in the area's south half: a corridor runs east–west; north of it the bridge, the
+//! turret room and the lab; south of it the engine room and the medbay; the airlock closes the
+//! corridor's east end and is the only way out. Each role's room is shown a second time in its open
+//! zone outside (`ROLE_ZONES`): the same screens (same panel, same ship) and dummy housings, to look
+//! at a role's machines quickly. TODO(initiator): sizes and order are greybox values (#306).
 use super::*;
 use crate::dev_area::bridge::captain_screen;
 use crate::dev_area::engineering::startup_screen;
@@ -9,27 +14,37 @@ use crate::dev_area::hull::status_monitor;
 use crate::displays::DisplayPanel;
 use reactor_core::Source;
 
+/// The engine room. Its walls carry the hull's eight sections (`reactor_core::hull`), so it keeps
+/// its place and size.
 pub const ROOM: Zone = Zone { name: "engine room", centre: [-14.0, -15.0], half: [5.0, 4.0] };
-pub const CORRIDOR: Zone = Zone { name: "corridor", centre: [-14.0, -7.7], half: [1.0, 3.0] };
-/// The airlock (r40, #267): a 2 x 2 m room at the corridor's far end, where the corridor met the
-/// outside. Its inner door is the corridor's north edge (y -4.7), its outer door 2 m further north.
-pub const AIRLOCK: Zone = Zone { name: "airlock", centre: [-14.0, -3.7], half: [1.0, 1.0] };
-/// The bridge (r44): the room east of the corridor, where HM-01, GN-01, JD-01 and CP-01 stand. Its
-/// walls are outside the zone (the corridor's east wall is its west side). TODO(initiator): the layout.
-pub const BRIDGE: Zone = Zone { name: "bridge", centre: [-9.0, -7.7], half: [4.0, 3.0] };
-/// The bridge door (r44): its slab's centre when shut, in the corridor's east wall, 2 m wide. The slab
+pub const CORRIDOR: Zone = Zone { name: "corridor", centre: [-7.7, -9.7], half: [11.3, 1.0] };
+pub const BRIDGE: Zone = Zone { name: "bridge", centre: [-15.0, -5.4], half: [4.0, 3.0] };
+pub const TURRET_ROOM: Zone = Zone { name: "turret room", centre: [-7.7, -5.4], half: [3.0, 3.0] };
+pub const LAB_ROOM: Zone = Zone { name: "lab room", centre: [-0.4, -5.4], half: [4.0, 3.0] };
+pub const MEDBAY_ROOM: Zone = Zone { name: "medbay room", centre: [-5.7, -13.85], half: [3.0, 2.85] };
+/// The airlock: a 2 x 2 m room at the corridor's east end; its outer door is the ship's way out.
+pub const AIRLOCK: Zone = Zone { name: "airlock", centre: [4.9, -9.7], half: [1.0, 1.0] };
+/// Where a walker starts in the dev area: the corridor's west end, by the bridge door.
+pub const SPAWN: [f64; 2] = [-17.5, -9.7];
+
+/// The rooms that have a role's zone outside, and that zone (`ROLE_ZONES` in `dev_area`).
+pub const ROOM_ZONES: [(Zone, Zone); 5] = [(ROOM, ENGINEERING), (BRIDGE, BRIDGE_ZONE), (TURRET_ROOM, TURRETS), (LAB_ROOM, LAB), (MEDBAY_ROOM, MEDBAY)];
+
+/// The bridge door: its slab's centre when shut, in the corridor's north wall, 2 m wide. The slab
 /// sinks into the floor when open, as the airlock's doors do.
-pub const BRIDGE_DOOR_AT: [f64; 2] = [-12.85, -7.7];
-pub const BRIDGE_DOOR_SIZE: [f64; 3] = [WALL, ROOM_HEIGHT, 2.0];
-pub const INNER_DOOR_AT: [f64; 2] = [-14.0, -4.7];
-pub const OUTER_DOOR_AT: [f64; 2] = [-14.0, -2.7];
-/// The room's height (m); the room has a ceiling, the corridor is open to the sky.
+pub const BRIDGE_DOOR_AT: [f64; 2] = [-15.0, -8.55];
+pub const BRIDGE_DOOR_SIZE: [f64; 3] = [2.0, ROOM_HEIGHT, WALL];
+/// The airlock's doors: the inner one closes the corridor's east end, the outer one opens east onto
+/// the outside. Their slabs sink into the floor when open (`hull::airlock`).
+pub const INNER_DOOR_AT: [f64; 2] = [3.75, -9.7];
+pub const OUTER_DOOR_AT: [f64; 2] = [6.05, -9.7];
+pub const AIRLOCK_DOOR_SIZE: [f64; 3] = [WALL, ROOM_HEIGHT, 2.0];
+/// The rooms' height (m); every room has a roof.
 pub const ROOM_HEIGHT: f64 = 3.2;
-/// Thickness of the walls and the door (m).
+/// Thickness of the walls and the doors (m).
 pub const WALL: f64 = 0.3;
-/// The airlock's doors: their slabs sink into the floor when open (`airlock.rs`).
-/// The door: its slab's centre when shut (area metres), its size, and how far it slides east
-/// when open (m), and how long that takes (s).
+/// The engine room's door: its slab's centre when shut (area metres), its size, and how far it
+/// slides east when open (m), and how long that takes (s).
 pub const DOOR_AT: [f64; 2] = [-14.0, -11.15];
 pub const DOOR_SIZE: [f64; 3] = [2.0, 3.2, WALL];
 pub const DOOR_SLIDE: f64 = 2.0;
@@ -45,18 +60,16 @@ pub const COOLANT_PUMP_AT: [f64; 2] = [-10.5, -17.5];
 pub const COOLANT_PUMP_SIZE: [f64; 3] = [1.0, 1.2, 1.0];
 pub const JUNCTION_BOX_AT: [f64; 2] = [-17.0, -18.85];
 pub const JUNCTION_BOX_SIZE: [f64; 3] = [0.6, 0.9, 0.3];
-/// The oxygen generator (r37): a box on the east wall (inner face x -9.0), off the walk from the
-/// door (x -14) to the machines and clear of the reactor, pump and junction box screens.
+/// The oxygen generator: a box on the engine room's east wall (inner face x -9.0), off the walk from
+/// the door (x -14) to the machines and clear of the reactor, pump and junction box screens.
 pub const OXYGEN_GENERATOR_AT: [f64; 2] = [-9.4, -13.0];
 pub const OXYGEN_GENERATOR_SIZE: [f64; 3] = [0.8, 1.2, 0.8];
 pub const JUNCTION_AT: [f64; 2] = [JUNCTION_BOX_AT[0], -18.98];
 pub const JUNCTION_LIFT: f64 = 1.2;
 pub const AUX_GAP: f64 = 0.05;
 pub const AUX_AT: [f64; 2] = [JUNCTION_AT[0] + TALL_SCREEN_SIZE[0] + AUX_GAP, JUNCTION_AT[1]];
-/// The battery's screen (r38): beside the AUX screen, on the same line. TODO(initiator): the spot on the wall.
+/// The battery's screen: beside the AUX screen, on the same line. TODO(initiator): the spot on the wall.
 pub const BATTERY_AT: [f64; 2] = [AUX_AT[0] + TALL_SCREEN_SIZE[0] + AUX_GAP, JUNCTION_AT[1]];
-/// The shield's screen (r40, SH-01): beside the battery's, on the same line. TODO(initiator): the spot on the wall.
-pub const SHIELD_AT: [f64; 2] = [BATTERY_AT[0] + TALL_SCREEN_SIZE[0] + AUX_GAP, JUNCTION_AT[1]];
 /// The M-tier screen's spot: on the south wall's inner face next to the reactor (east of it),
 /// its height from the floor.
 pub const REACTOR_SCREEN_AT: [f64; 2] = [-11.8, -18.96];
@@ -71,6 +84,30 @@ pub const STATUS_SIZE: [f64; 2] = READOUT_SIZE;
 pub const STATUS_GAP: f64 = 0.05;
 pub const STATUS_AT: [f64; 2] = [REACTOR_SCREEN_AT[0] + READOUT_SIZE[0] * 0.5 + STATUS_GAP + STATUS_SIZE[0] * 0.5, REACTOR_SCREEN_AT[1]];
 pub const STATUS_LIFT: f64 = REACTOR_SCREEN_LIFT + (READOUT_SIZE[1] - STATUS_SIZE[1]) * 0.5;
+/// The status monitor ST-01 on the engine room's east wall, south of the oxygen generator.
+pub const MONITOR_AT: [f64; 2] = [-9.04, -16.9];
+/// The ship's power panel SP-01 on the engine room's west wall, south of the vent.
+pub const STARTUP_AT: [f64; 2] = [-18.96, -16.5];
+
+/// The bridge's wall points (panels sit 0.04 m inside their wall's face): the helm on the north wall
+/// (the ship's front), the jump drive and the shield on the west wall, the captain's console CP-01
+/// on the east wall, the bridge's vent on the north wall.
+pub const HELM_AT: [f64; 2] = [BRIDGE.centre[0], BRIDGE.centre[1] + BRIDGE.half[1] - 0.04];
+pub const JUMP_AT: [f64; 2] = [BRIDGE.centre[0] - BRIDGE.half[0] + 0.04, -4.4];
+pub const SHIELD_AT: [f64; 2] = [BRIDGE.centre[0] - BRIDGE.half[0] + 0.04, -6.4];
+pub const CAPTAIN_AT: [f64; 2] = [BRIDGE.centre[0] + BRIDGE.half[0] - 0.04, BRIDGE.centre[1]];
+pub const BRIDGE_VENT_AT: [f64; 2] = [-17.5, BRIDGE.centre[1] + BRIDGE.half[1] - 0.04];
+/// The gun's screen GN-01 on the turret room's north wall.
+pub const GUNNERY_AT: [f64; 2] = [TURRET_ROOM.centre[0], TURRET_ROOM.centre[1] + TURRET_ROOM.half[1] - 0.04];
+/// The corridor's wall points: the faces are y -10.66 (south wall, facing north) and y -8.74
+/// (north wall, facing south). ER-01 sits east of the engine door, BD-01 east of the bridge door,
+/// the inner airlock panel by the corridor's east end; the outer one inside the airlock.
+pub const ENGINE_DOOR_PANEL_AT: [f64; 2] = [-12.2, -10.66];
+pub const BRIDGE_DOOR_PANEL_AT: [f64; 2] = [-13.4, -8.74];
+pub const AIRLOCK_PANEL_AT: [[f64; 2]; 2] = [[2.8, -8.74], [5.4, -8.74]];
+/// The vents' wall points: the engine room's west wall and the corridor's south wall.
+pub const VENT_AT: [[f64; 2]; 2] = [[-18.9, -14.0], [1.5, -10.66]];
+pub const VENT_LIFT: f64 = 1.3;
 
 pub struct Mount {
     pub id: PanelId,
@@ -81,54 +118,41 @@ pub struct Mount {
     pub turn: f64,
 }
 
+use crate::dev_area::bridge::panels as bridge_panels;
+use crate::dev_area::engineering::panels as engineering_panels;
+use crate::dev_area::hull::panels as hull_panels;
+use crate::dev_area::turrets::panels as turret_panels;
+
+/// The wall screens. A screen's turn is the way it faces: 0 south, 90 east, 180 north, -90 west.
 pub const SCREENS: &[Mount] = &[
-    Mount { id: crate::dev_area::engineering::panels::PUMP_ID, name: crate::dev_area::engineering::panels::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: crate::dev_area::engineering::panels::JUNCTION_ID, name: crate::dev_area::engineering::panels::JUNCTION_NAME, at: JUNCTION_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: crate::dev_area::engineering::panels::AUX_ID, name: crate::dev_area::engineering::panels::AUX_NAME, at: AUX_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: crate::dev_area::engineering::panels::BATTERY_ID, name: crate::dev_area::engineering::panels::BATTERY_NAME, at: BATTERY_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: crate::dev_area::bridge::panels::SHIELD_ID, name: crate::dev_area::bridge::panels::SHIELD_NAME, at: SHIELD_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: crate::dev_area::hull::panels::DOOR_ID, name: crate::dev_area::hull::panels::DOOR_NAME, at: [-13.04, -10.0], lift: 1.3, size: SMALL_SCREEN_SIZE, turn: -90.0 },
-    Mount { id: crate::dev_area::dev::faults::FAULTS_ID, name: crate::dev_area::dev::faults::FAULTS_NAME, at: crate::dev_area::dev::faults::FAULTS_AT, lift: 1.2, size: SMALL_SCREEN_SIZE, turn: 0.0 },
-    Mount { id: crate::dev_area::engineering::panels::STATUS_ID, name: crate::dev_area::engineering::panels::STATUS_NAME, at: STATUS_AT, lift: STATUS_LIFT, size: STATUS_SIZE, turn: 180.0 },
-    Mount { id: status_monitor::ID, name: status_monitor::NAME, at: status_monitor::AT, lift: status_monitor::LIFT, size: status_monitor::SIZE, turn: status_monitor::TURN },
-    // The vents (r38, r44): each is a small grille panel with a valve on its wall, facing its room.
-    // The engine room's on the west wall (turn 90 faces +x), the corridor's on the east wall beside
-    // the bridge door's panel (turn -90 faces -x), the bridge's on its north wall (turn 0 faces -y).
-    Mount { id: crate::dev_area::hull::panels::VENT_ENGINE_ID, name: crate::dev_area::hull::panels::VENT_ENGINE_NAME, at: VENT_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
-    Mount { id: crate::dev_area::hull::panels::VENT_CORRIDOR_ID, name: crate::dev_area::hull::panels::VENT_CORRIDOR_NAME, at: VENT_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
-    // The bridge (r44): the helm on the east wall, the gunnery and the captain's console on the south
-    // wall, the jump drive and the bridge's vent on the north wall. TODO(initiator): the layout.
-    Mount { id: crate::dev_area::bridge::panels::HELM_ID, name: crate::dev_area::bridge::panels::HELM_NAME, at: HELM_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
-    Mount { id: crate::dev_area::turrets::panels::GUNNERY_ID, name: crate::dev_area::turrets::panels::GUNNERY_NAME, at: GUNNERY_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: crate::dev_area::bridge::panels::JUMP_ID, name: crate::dev_area::bridge::panels::JUMP_NAME, at: JUMP_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
-    Mount { id: crate::dev_area::hull::panels::VENT_BRIDGE_ID, name: crate::dev_area::hull::panels::VENT_BRIDGE_NAME, at: BRIDGE_VENT_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
-    // The bridge door's panel (r44, BD-01): on the corridor's east wall beside the door, north of the corridor's vent.
-    Mount { id: crate::dev_area::hull::panels::BRIDGE_DOOR_ID, name: crate::dev_area::hull::panels::BRIDGE_DOOR_NAME, at: BRIDGE_DOOR_PANEL_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: -90.0 },
-    // The airlock's two panels (r40): the inner one on the corridor's west wall (faces east, into the
-    // corridor), the outer one on the airlock's west wall (inside, by the outer door). Both show IN, OUT, CYCLE.
-    Mount { id: crate::dev_area::hull::panels::AIRLOCK_INNER_ID, name: crate::dev_area::hull::panels::AIRLOCK_INNER_NAME, at: AIRLOCK_PANEL_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
-    Mount { id: crate::dev_area::hull::panels::AIRLOCK_OUTER_ID, name: crate::dev_area::hull::panels::AIRLOCK_OUTER_NAME, at: AIRLOCK_PANEL_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
-    // The ship's power panel (r42, SP-01): the cold start's checklist, on the corridor's east wall between the gunnery and the reactor room's panel.
-    Mount { id: startup_screen::ID, name: startup_screen::NAME, at: startup_screen::AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: startup_screen::TURN },
-    // The captain's console (r41, CP-01): on the bridge's south wall, beside the gunnery (r44).
-    Mount { id: captain_screen::ID, name: captain_screen::NAME, at: captain_screen::AT, lift: VENT_LIFT, size: captain_screen::SIZE, turn: captain_screen::TURN },
+    // The engine room: the reactor's readout and RX-02 by the reactor, the pump's on the pump, the
+    // junction box, AUX and the battery on the south wall, ST-01 on the east wall, SP-01 and the
+    // engine room's vent on the west wall.
+    Mount { id: engineering_panels::READOUT_ID, name: engineering_panels::READOUT_NAME, at: REACTOR_SCREEN_AT, lift: REACTOR_SCREEN_LIFT, size: READOUT_SIZE, turn: 180.0 },
+    Mount { id: engineering_panels::STATUS_ID, name: engineering_panels::STATUS_NAME, at: STATUS_AT, lift: STATUS_LIFT, size: STATUS_SIZE, turn: 180.0 },
+    Mount { id: engineering_panels::PUMP_ID, name: engineering_panels::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: engineering_panels::JUNCTION_ID, name: engineering_panels::JUNCTION_NAME, at: JUNCTION_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: engineering_panels::AUX_ID, name: engineering_panels::AUX_NAME, at: AUX_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: engineering_panels::BATTERY_ID, name: engineering_panels::BATTERY_NAME, at: BATTERY_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: status_monitor::ID, name: status_monitor::NAME, at: MONITOR_AT, lift: status_monitor::LIFT, size: status_monitor::SIZE, turn: -90.0 },
+    Mount { id: startup_screen::ID, name: startup_screen::NAME, at: STARTUP_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 90.0 },
+    Mount { id: hull_panels::VENT_ENGINE_ID, name: hull_panels::VENT_ENGINE_NAME, at: VENT_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
+    // The corridor: ER-01 and the corridor's vent on the south wall, BD-01 and the airlock's inner
+    // panel on the north wall; the outer panel inside the airlock.
+    Mount { id: hull_panels::DOOR_ID, name: hull_panels::DOOR_NAME, at: ENGINE_DOOR_PANEL_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: hull_panels::VENT_CORRIDOR_ID, name: hull_panels::VENT_CORRIDOR_NAME, at: VENT_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: hull_panels::BRIDGE_DOOR_ID, name: hull_panels::BRIDGE_DOOR_NAME, at: BRIDGE_DOOR_PANEL_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
+    Mount { id: hull_panels::AIRLOCK_INNER_ID, name: hull_panels::AIRLOCK_INNER_NAME, at: AIRLOCK_PANEL_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
+    Mount { id: hull_panels::AIRLOCK_OUTER_ID, name: hull_panels::AIRLOCK_OUTER_NAME, at: AIRLOCK_PANEL_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
+    // The bridge: the captain and the pilot share it.
+    Mount { id: bridge_panels::HELM_ID, name: bridge_panels::HELM_NAME, at: HELM_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
+    Mount { id: bridge_panels::JUMP_ID, name: bridge_panels::JUMP_NAME, at: JUMP_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
+    Mount { id: bridge_panels::SHIELD_ID, name: bridge_panels::SHIELD_NAME, at: SHIELD_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 90.0 },
+    Mount { id: captain_screen::ID, name: captain_screen::NAME, at: CAPTAIN_AT, lift: VENT_LIFT, size: captain_screen::SIZE, turn: -90.0 },
+    Mount { id: hull_panels::VENT_BRIDGE_ID, name: hull_panels::VENT_BRIDGE_NAME, at: BRIDGE_VENT_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
+    // The turret room.
+    Mount { id: turret_panels::GUNNERY_ID, name: turret_panels::GUNNERY_NAME, at: GUNNERY_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
 ];
-/// The airlock panels' wall points (area metres): inner (corridor's west wall), outer (airlock's west wall).
-pub const AIRLOCK_PANEL_AT: [[f64; 2]; 2] = [[-15.04, -5.0], [-15.04, -3.0]];
-/// The bridge's wall points (area metres, r44). The helm stands on the east (front) wall, the gunnery
-/// and the captain's console on the south wall (facing north), the jump drive and the bridge's vent
-/// on the north wall (facing south). The panels sit 0.04 m inside their wall's face.
-pub const HELM_AT: [f64; 2] = [BRIDGE.centre[0] + BRIDGE.half[0] - 0.04, BRIDGE.centre[1]];
-pub const GUNNERY_AT: [f64; 2] = [-9.5, BRIDGE.centre[1] - BRIDGE.half[1] + 0.04];
-pub const JUMP_AT: [f64; 2] = [-9.5, BRIDGE.centre[1] + BRIDGE.half[1] - 0.04];
-pub const BRIDGE_VENT_AT: [f64; 2] = [-12.0, BRIDGE.centre[1] + BRIDGE.half[1] - 0.04];
-/// The bridge door's panel (area metres): the corridor's east wall, in the stretch north of the door's
-/// opening (y -6.7) and clear of the corridor's vent.
-pub const BRIDGE_DOOR_PANEL_AT: [f64; 2] = [-13.04, -6.1];
-/// The vents' wall points (area metres): the engine room's west wall and the corridor's east wall,
-/// north of the bridge door's opening.
-pub const VENT_AT: [[f64; 2]; 2] = [[-18.9, -14.0], [-13.04, -5.0]];
-pub const VENT_LIFT: f64 = 1.3;
 
 pub const DOOR: &str = "engine_door";
 pub const BRIDGE_DOOR: &str = "bridge_door";
@@ -138,6 +162,9 @@ pub const JUNCTION_BOX: &str = "engine_junction_box";
 pub const OXYGEN_GENERATOR: &str = "engine_oxygen_generator";
 pub const REACTOR_SCREEN: &str = "engine_reactor_screen";
 
+/// Where a point is, for the air: each room of the ship, or outside. The turret room, the lab and
+/// the medbay open onto the corridor without a door, so they breathe the corridor's air.
+/// TODO(initiator): each gets its own air once the wire's room count grows (`ROOMS`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Place {
     Engine,
@@ -150,7 +177,7 @@ pub enum Place {
 pub fn place_of(p: [f64; 2]) -> Place {
     if ROOM.contains(p) {
         Place::Engine
-    } else if CORRIDOR.contains(p) {
+    } else if CORRIDOR.contains(p) || TURRET_ROOM.contains(p) || LAB_ROOM.contains(p) || MEDBAY_ROOM.contains(p) {
         Place::Corridor
     } else if AIRLOCK.contains(p) {
         Place::Airlock
@@ -160,6 +187,9 @@ pub fn place_of(p: [f64; 2]) -> Place {
         Place::Outside
     }
 }
+
+/// The floor area of the rooms that share the corridor's air (m²).
+pub const CORRIDOR_AREA: f64 = 4.0 * (CORRIDOR.half[0] * CORRIDOR.half[1] + TURRET_ROOM.half[0] * TURRET_ROOM.half[1] + LAB_ROOM.half[0] * LAB_ROOM.half[1] + MEDBAY_ROOM.half[0] * MEDBAY_ROOM.half[1]);
 
 /// A static greybox part: a wall, a roof or a machine's housing (area metres, size x, height, z).
 pub struct Part {
@@ -172,39 +202,53 @@ pub struct Part {
 
 pub const WALL_COLOUR: [f32; 3] = [0.42, 0.44, 0.47];
 const DEVICE_COLOUR: [f32; 3] = [0.3, 0.33, 0.38];
+const H: f64 = ROOM_HEIGHT;
 
+/// The mini ship's walls and roofs. Wall centre lines are 0.15 m outside the rooms' edges; the
+/// doorways of the turret room, the lab and the medbay are 1.6 m gaps, the doors' openings 2 m.
 const PARTS: &[Part] = &[
-    Part { id: "engine_wall_west", at: [-19.15, -15.15], size: [WALL, ROOM_HEIGHT, 8.3], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "engine_wall_east", at: [-8.85, -15.15], size: [WALL, ROOM_HEIGHT, 8.3], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "engine_wall_south", at: [-14.0, -19.15], size: [10.6, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "engine_wall_north_west", at: [-17.15, -10.85], size: [4.3, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "engine_wall_north_east", at: [-10.85, -10.85], size: [4.3, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "engine_corridor_west", at: [-15.15, -7.7], size: [WALL, ROOM_HEIGHT, 6.0], lift: 0.0, colour: WALL_COLOUR },
-    // The corridor's east wall, cut for the bridge door (r44): the opening is -8.7..-6.7.
-    Part { id: "engine_corridor_east_south", at: [-12.85, -9.7], size: [WALL, ROOM_HEIGHT, 2.0], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "engine_corridor_east_north", at: [-12.85, -5.7], size: [WALL, ROOM_HEIGHT, 2.0], lift: 0.0, colour: WALL_COLOUR },
-    // The bridge's walls (r44), outside its zone: the south wall from the engine room's east wall to
-    // the bridge's east wall, the east wall (the front), the north wall to the corridor's east wall.
-    Part { id: "engine_bridge_south", at: [-6.85, -10.85], size: [3.7, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "engine_bridge_east", at: [-4.85, -7.7], size: [WALL, ROOM_HEIGHT, 6.3], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "engine_bridge_north", at: [-8.85, -4.55], size: [7.7, ROOM_HEIGHT, WALL], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "engine_ceiling", at: [-14.0, -15.0], size: [10.6, WALL, 8.6], lift: ROOM_HEIGHT, colour: WALL_COLOUR },
+    // The engine room (x -19..-9, y -19..-11), its door in the north wall at x -15..-13.
+    Part { id: "engine_wall_west", at: [-19.15, -15.15], size: [WALL, H, 8.3], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "engine_wall_east", at: [-8.85, -15.15], size: [WALL, H, 8.3], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "engine_wall_south", at: [-14.0, -19.15], size: [10.6, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "engine_wall_north_west", at: [-17.15, -10.85], size: [4.3, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "engine_wall_north_east", at: [-10.85, -10.85], size: [4.3, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "engine_ceiling", at: [-14.0, -15.0], size: [10.6, WALL, 8.6], lift: H, colour: WALL_COLOUR },
+    // The medbay (x -8.7..-2.7, y -16.7..-11), its doorway in the corridor's south wall at x -6.5..-4.9.
+    Part { id: "medbay_wall_north_west", at: [-7.6, -10.85], size: [2.2, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "medbay_wall_north_east", at: [-3.65, -10.85], size: [2.5, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "medbay_wall_south", at: [-5.55, -16.85], size: [6.3, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "medbay_wall_east", at: [-2.55, -13.85], size: [WALL, H, 6.3], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "medbay_roof", at: [-5.55, -13.85], size: [6.3, WALL, 6.3], lift: H, colour: WALL_COLOUR },
+    // The corridor (x -19..3.6, y -10.7..-8.7): its south wall east of the medbay, its west end, its
+    // north wall with the bridge door (x -16..-14) and the doorways of the turret room and the lab.
+    Part { id: "corridor_wall_south_east", at: [0.675, -10.85], size: [6.15, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "corridor_wall_west", at: [-19.15, -9.7], size: [WALL, H, 2.6], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "corridor_wall_north_1", at: [-17.65, -8.55], size: [3.3, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "corridor_wall_north_2", at: [-11.25, -8.55], size: [5.5, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "corridor_wall_north_3", at: [-4.05, -8.55], size: [5.7, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "corridor_wall_north_4", at: [2.15, -8.55], size: [3.5, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "corridor_roof", at: [-7.7, -9.7], size: [23.2, WALL, 2.6], lift: H, colour: WALL_COLOUR },
+    // The north row (y -8.4..-2.4): the bridge (x -19..-11), the turret room (x -10.7..-4.7) and the
+    // lab (x -4.4..3.6), one roof over all three.
+    Part { id: "north_wall", at: [-7.7, -2.25], size: [23.2, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "bridge_wall_west", at: [-19.15, -5.4], size: [WALL, H, 6.6], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "bridge_wall_east", at: [-10.85, -5.4], size: [WALL, H, 6.0], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "turret_wall_east", at: [-4.55, -5.4], size: [WALL, H, 6.0], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "lab_wall_east", at: [3.75, -5.25], size: [WALL, H, 6.3], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "north_roof", at: [-7.7, -5.4], size: [23.2, WALL, 6.6], lift: H, colour: WALL_COLOUR },
+    // The airlock (x 3.9..5.9): its north and south walls and roof; its doors close the ends.
+    Part { id: "airlock_wall_north", at: [4.9, -8.55], size: [2.6, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "airlock_wall_south", at: [4.9, -10.85], size: [2.6, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "airlock_roof", at: [4.9, -9.7], size: [2.6, WALL, 2.6], lift: H, colour: WALL_COLOUR },
 ];
 
-/// The machines and the screen, standing in the room (not in `PARTS` only because they are
-/// named constants above).
+/// The engine room's machines.
 const MACHINES: &[Part] = &[
     Part { id: REACTOR, at: REACTOR_AT, size: REACTOR_SIZE, lift: 0.0, colour: [0.55, 0.3, 0.2] },
     Part { id: COOLANT_PUMP, at: COOLANT_PUMP_AT, size: COOLANT_PUMP_SIZE, lift: 0.0, colour: DEVICE_COLOUR },
     Part { id: JUNCTION_BOX, at: JUNCTION_BOX_AT, size: JUNCTION_BOX_SIZE, lift: 0.0, colour: [0.85, 0.7, 0.2] },
     Part { id: OXYGEN_GENERATOR, at: OXYGEN_GENERATOR_AT, size: OXYGEN_GENERATOR_SIZE, lift: 0.0, colour: [0.3, 0.5, 0.45] },
-];
-
-/// The airlock's walls (r40): the room's west and east walls, from the inner door's line to the outer
-/// door's. The doors close the ends (`airlock.rs`).
-const AIRLOCK_WALLS: &[Part] = &[
-    Part { id: "engine_airlock_west", at: [-15.15, -3.7], size: [WALL, ROOM_HEIGHT, 2.0], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "engine_airlock_east", at: [-12.85, -3.7], size: [WALL, ROOM_HEIGHT, 2.0], lift: 0.0, colour: WALL_COLOUR },
 ];
 
 pub fn span(lift: f64, height: f64) -> (f64, f64) {
@@ -225,14 +269,34 @@ pub fn source_at(s: Source) -> [f64; 2] {
     }
 }
 
+/// The outside copy of a point in one of the role rooms: the same spot in the role's zone. None for a
+/// point in the corridor, the airlock or outside.
+pub fn outside_copy(p: [f64; 2]) -> Option<[f64; 2]> {
+    ROOM_ZONES.iter().find(|(room, _)| room.contains(p)).map(|(room, zone)| [p[0] - room.centre[0] + zone.centre[0], p[1] - room.centre[1] + zone.centre[1]])
+}
+
+/// Marks a role zone's copy of a room's screen or housing: the screen is the same panel as the
+/// one inside (the same ship), the housing a dummy (repairs and rods work inside only).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Mirror;
+
+/// The thin board an outside screen hangs on, so it does not float (m).
+const BOARD_DEPTH: f64 = 0.06;
+const BOARD_COLOUR: [f32; 3] = [0.18, 0.19, 0.21];
+
 /// Spawns one part as a static box on the ground (`Layer::World`), with the part sunk below a
 /// floor-standing part's foot (`span`).
 pub fn spawn_part(commands: &mut Commands, frame: &Frame, planet: &PlanetRes, p: &Part) -> Entity {
-    let (ground, up) = frame.ground(planet, p.at[0], p.at[1], 0.0);
-    let rot = frame.rotation(up, 0.0);
-    let (bottom, top) = span(p.lift, p.size[1]);
+    spawn_box(commands, frame, planet, p.id.to_string(), p.at, p.size, p.lift, 0.0, p.colour)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_box(commands: &mut Commands, frame: &Frame, planet: &PlanetRes, id: String, at: [f64; 2], size: [f64; 3], lift: f64, turn: f64, colour: [f32; 3]) -> Entity {
+    let (ground, up) = frame.ground(planet, at[0], at[1], 0.0);
+    let rot = frame.rotation(up, turn);
+    let (bottom, top) = span(lift, size[1]);
     let centre = ground + up * ((bottom + top) * 0.5);
-    let size = DVec3::new(p.size[0], top - bottom, p.size[2]);
+    let size = DVec3::new(size[0], top - bottom, size[2]);
     commands
         .spawn((
             RigidBody::Static,
@@ -240,32 +304,49 @@ pub fn spawn_part(commands: &mut Commands, frame: &Frame, planet: &PlanetRes, p:
             Position(centre),
             Rotation(rot),
             CollisionLayers::new(Layer::World, LayerMask::ALL),
-            DevBox { id: p.id.into(), colour: p.colour, size },
+            DevBox { id, colour, size },
         ))
         .id()
 }
 
-/// Once per planet: the inner ship's walls, the machines' housings and the wall screens.
+fn spawn_screen(commands: &mut Commands, frame: &Frame, planet: &PlanetRes, m: &Mount, at: [f64; 2]) -> Entity {
+    let (ground, up) = frame.ground(planet, at[0], at[1], 0.0);
+    let rot = frame.rotation(up, m.turn);
+    let centre = ground + up * (m.lift + m.size[1] * 0.5);
+    commands.spawn(DisplayPanel { id: m.id.clone(), name: m.name.into(), size_m: DVec2::from(m.size), centre, rot }).id()
+}
+
+/// Once per planet: the mini ship's walls, the machines' housings and the wall screens, and each role
+/// room's copy in its zone outside: the screens on boards, the housings as dummies.
 fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<DevArea>, mut done: Local<Option<warp_core::PlanetId>>) {
     if *done == Some(planet.id) {
         return;
     }
     let Some(frame) = area.frame else { return };
     *done = Some(planet.id);
-    for p in PARTS.iter().chain(AIRLOCK_WALLS.iter()).chain(MACHINES.iter()) {
+    for p in PARTS.iter().chain(MACHINES.iter()) {
         let e = spawn_part(&mut commands, &frame, &planet, p);
         area.entities.push(e);
     }
-    let (ground, up) = frame.ground(&planet, REACTOR_SCREEN_AT[0], REACTOR_SCREEN_AT[1], 0.0);
-    let rot = frame.rotation(up, 180.0);
-    let centre = ground + up * (REACTOR_SCREEN_LIFT + READOUT_SIZE[1] * 0.5);
-    let e = commands.spawn(DisplayPanel { id: crate::dev_area::engineering::panels::READOUT_ID, name: crate::dev_area::engineering::panels::READOUT_NAME.into(), size_m: DVec2::from(READOUT_SIZE), centre, rot }).id();
-    area.entities.push(e);
-    for m in SCREENS.iter() {
-        let (ground, up) = frame.ground(&planet, m.at[0], m.at[1], 0.0);
-        let rot = frame.rotation(up, m.turn);
-        let centre = ground + up * (m.lift + m.size[1] * 0.5);
-        let e = commands.spawn(DisplayPanel { id: m.id.clone(), name: m.name.into(), size_m: DVec2::from(m.size), centre, rot }).id();
+    for p in MACHINES {
+        let Some(at) = outside_copy(p.at) else { continue };
+        let e = spawn_box(&mut commands, &frame, &planet, format!("{}_outside", p.id), at, p.size, p.lift, 0.0, p.colour);
+        commands.entity(e).insert(Mirror);
+        area.entities.push(e);
+    }
+    for m in SCREENS {
+        let e = spawn_screen(&mut commands, &frame, &planet, m, m.at);
+        area.entities.push(e);
+        let Some(at) = outside_copy(m.at) else { continue };
+        let e = spawn_screen(&mut commands, &frame, &planet, m, at);
+        commands.entity(e).insert(Mirror);
+        area.entities.push(e);
+        // The board behind the screen: the screen faces along its turn, the board sits just behind it.
+        let back = (m.turn.to_radians().sin() * -(BOARD_DEPTH * 0.5 + 0.01), m.turn.to_radians().cos() * (BOARD_DEPTH * 0.5 + 0.01));
+        let board = [at[0] + back.0, at[1] + back.1];
+        let size = [m.size[0] + 0.1, m.size[1] + 0.1, BOARD_DEPTH];
+        let e = spawn_box(&mut commands, &frame, &planet, format!("{}_board", m.name), board, size, m.lift - 0.05, m.turn, BOARD_COLOUR);
+        commands.entity(e).insert(Mirror);
         area.entities.push(e);
     }
 }
@@ -301,4 +382,21 @@ pub fn ignition_at(s: Source) -> [f64; 2] {
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Update, spawn_room.after(super::spawn_devices).in_set(crate::phases::Frame::World));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every screen stands in a room of the ship, and a role room's screen has its copy in its zone.
+    #[test]
+    fn every_screen_is_in_a_room_and_role_rooms_have_their_copy() {
+        for m in SCREENS {
+            assert_ne!(place_of(m.at), Place::Outside, "{} stands in a room", m.name);
+            if let Some(at) = outside_copy(m.at) {
+                assert!(ROLE_ZONES.iter().any(|z| z.contains(at)), "{}'s copy stands in a role zone", m.name);
+            }
+        }
+        assert_eq!(place_of(SPAWN), Place::Corridor, "the walker starts inside the ship");
+    }
 }

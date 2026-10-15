@@ -1,10 +1,10 @@
-//! The dev area: a small level rectangle on Hearth (`content/place/dev_area.json`) where
-//! each role's placeholder devices and displays stand, to try mechanics without the finished ship
-//! Area frame: metres, x east, y north, from the place's centre (`town::Frame`). Named zones split
-//! it: `CAPTAIN`, `LAB` and `ENGINEERING` side by side from west to east, `STORAGE` behind them
-//! beyond one line: each has its own module `dev_area/<role>.rs` whose plugin adds its
-//! `PlaceholderBox`es to `DevAreaDevices` (a box with an optional display panel) and its own
-//! systems; the line below `ROLES` adds that plugin. Boxes are static Avian cuboids on
+//! The dev area: a small level rectangle on Hearth (`content/place/dev_area.json`) to try the
+//! mechanics without the finished ship. Area frame: metres, x east, y north, from the place's
+//! centre (`town::Frame`). Two parts: in the south half the mini ship (`layout`), in the north half
+//! the open role zones (`ROLE_ZONES`); the landing pad lies east of the ship. Each owner module
+//! (`hull`, `engineering`, `bridge`, `turrets`, `lab`, `medbay`, `crew`, `gear`, `storage`,
+//! `hazards`, `fire`, `dev`, with `ship` the shared step) has its own plugin; a zone's boxes go into
+//! `DevAreaDevices` (a box with an optional display panel). Boxes are static Avian cuboids on
 //! `Layer::World` (headless too); their look is window-only.
 use crate::displays::DisplayPanel;
 use crate::env::PlanetRes;
@@ -35,7 +35,7 @@ pub mod turrets;
 pub const PLACE: &str = "dev_area";
 /// Half the rectangle's size, east and north (m). The place's flatten edit reaches a little further.
 pub const HALF_EXTENT: [f64; 2] = [24.0, 20.0];
-pub const PAD_MAIN: [f64; 2] = [0.0, -12.0];
+pub const PAD_MAIN: [f64; 2] = [15.0, -12.0];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Zone {
@@ -53,14 +53,26 @@ impl Zone {
     }
 }
 
-/// TODO(initiator): the zones' sizes and order. Each role zone is 14 x 12 m; the centres of
-/// neighbouring zones are 14 m apart.
-pub const CAPTAIN: Zone = Zone { name: "captain", centre: [-14.0, 6.0], half: [7.0, 6.0] };
-pub const LAB: Zone = Zone { name: "lab", centre: [0.0, 6.0], half: [7.0, 6.0] };
-pub const ENGINEERING: Zone = Zone { name: "engineering", centre: [14.0, 6.0], half: [7.0, 6.0] };
-pub const STORAGE: Zone = Zone { name: "storage", centre: [0.0, 16.0], half: [21.0, 4.0] };
-pub const PADS: Zone = Zone { name: "pads", centre: [0.0, -12.0], half: [24.0, 8.0] };
-pub const ZONES: [Zone; 5] = [CAPTAIN, LAB, ENGINEERING, STORAGE, PADS];
+/// The open role zones in the area's north half, two rows of four: each shows its role's machines
+/// to look at quickly (the role rooms' screens and dummy housings, `layout::ROOM_ZONES`), plus what
+/// stands only outside (the captain's consoles, the lab's devices, the storage, the hazards, the dev
+/// tools). TODO(initiator): sizes and order are greybox values (#306).
+const ZONE_HALF: [f64; 2] = [5.5, 4.0];
+pub const ENGINEERING: Zone = Zone { name: "engineering", centre: [-18.0, 6.0], half: ZONE_HALF };
+pub const BRIDGE_ZONE: Zone = Zone { name: "bridge", centre: [-6.0, 6.0], half: ZONE_HALF };
+pub const TURRETS: Zone = Zone { name: "turrets", centre: [6.0, 6.0], half: ZONE_HALF };
+pub const LAB: Zone = Zone { name: "lab", centre: [18.0, 6.0], half: ZONE_HALF };
+pub const MEDBAY: Zone = Zone { name: "medbay", centre: [-18.0, 15.5], half: ZONE_HALF };
+pub const STORAGE: Zone = Zone { name: "storage", centre: [-6.0, 15.5], half: ZONE_HALF };
+pub const HAZARDS: Zone = Zone { name: "hazards", centre: [6.0, 15.5], half: ZONE_HALF };
+pub const DEV: Zone = Zone { name: "dev", centre: [18.0, 15.5], half: ZONE_HALF };
+/// The captain's consoles stand in the bridge's zone. TODO(initiator): and on the bridge inside (#306).
+pub const CAPTAIN: Zone = BRIDGE_ZONE;
+/// The landing pad east of the ship, by the airlock's outer door: the flight ship parks here
+/// (`content/place/dev_area.json`, pad "main").
+pub const PADS: Zone = Zone { name: "pads", centre: [15.0, -12.0], half: [7.0, 7.0] };
+pub const ROLE_ZONES: [Zone; 8] = [ENGINEERING, BRIDGE_ZONE, TURRETS, LAB, MEDBAY, STORAGE, HAZARDS, DEV];
+pub const ZONES: [Zone; 9] = [ENGINEERING, BRIDGE_ZONE, TURRETS, LAB, MEDBAY, STORAGE, HAZARDS, DEV, PADS];
 
 /// A display mounted on a box: its id and name, its size, its centre in the box's frame (x right,
 /// y up from the ground, z towards the box's front) and how far it leans back.
@@ -128,6 +140,13 @@ impl DevArea {
     pub fn ground(&self, planet: &PlanetRes, p: [f64; 2], lift: f64) -> Option<(DVec3, DVec3)> {
         self.frame.map(|f| f.ground(planet, p[0], p[1], lift))
     }
+}
+
+/// The direction from the planet's centre to the walker's start in the mini ship (`layout::SPAWN`).
+pub fn spawn_up(planet: &PlanetRes) -> Option<DVec3> {
+    let frame = Frame::of_place(planet, PLACE)?;
+    let (at, _) = frame.ground(planet, layout::SPAWN[0], layout::SPAWN[1], 0.0);
+    Some((at - planet.centre).normalize())
 }
 
 /// Boxes reach this far into the ground, so a sloped edge does not show a gap (m).
@@ -209,10 +228,14 @@ fn dress_boxes(mut commands: Commands, new: Query<(Entity, &DevBox), Added<DevBo
 /// Zone colours on the ground. TODO(initiator): the look.
 fn zone_colour(z: &Zone) -> Color {
     match z.name {
-        "captain" => Color::srgb(0.25, 0.4, 0.85),
+        "bridge" => Color::srgb(0.25, 0.4, 0.85),
+        "turrets" => Color::srgb(0.8, 0.25, 0.25),
         "lab" => Color::srgb(0.2, 0.75, 0.6),
+        "medbay" => Color::srgb(0.9, 0.9, 0.95),
         "engineering" => Color::srgb(0.95, 0.55, 0.15),
         "storage" => Color::srgb(0.7, 0.7, 0.62),
+        "hazards" => Color::srgb(0.9, 0.2, 0.7),
+        "dev" => Color::srgb(0.5, 0.5, 0.5),
         _ => Color::srgb(0.85, 0.85, 0.2),
     }
 }

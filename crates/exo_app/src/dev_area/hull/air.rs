@@ -42,12 +42,13 @@ pub struct ShipAir {
     door_open: [f64; 2],
 }
 
-/// m³: the room 10 x 8 x 3.2 m, the corridor 2 x 6 x 3.2 m, the airlock 2 x 2 x 3.2 m; the outside has no end.
+/// m³: the engine room 10 x 8 x 3.2 m, the airlock 2 x 2 x 3.2 m; the outside has no end.
 const ROOM_VOLUME: f64 = 10.0 * 8.0 * ROOM_HEIGHT;
-const CORRIDOR_VOLUME: f64 = 2.0 * 6.0 * ROOM_HEIGHT;
+/// The corridor's air fills the rooms that open onto it without a door (`layout::Place`).
+const CORRIDOR_VOLUME: f64 = CORRIDOR_AREA * ROOM_HEIGHT;
 const AIRLOCK_VOLUME: f64 = 2.0 * 2.0 * ROOM_HEIGHT;
 const OUTSIDE_VOLUME: f64 = 1.0e6;
-/// m³: the bridge 8 x 6 x 3.2 m (r44).
+/// m³: the bridge 8 x 6 x 3.2 m.
 const BRIDGE_VOLUME: f64 = 8.0 * 6.0 * ROOM_HEIGHT;
 
 impl ShipAir {
@@ -288,7 +289,8 @@ mod tests {
         let mut a = ShipAir::new();
         assert!((a.deck.room(a.bridge).volume - BRIDGE_VOLUME).abs() < 1e-12, "the bridge's volume is its size");
         assert_eq!(a.room_of(place_of(BRIDGE.centre)), a.bridge, "the bridge's zone is the bridge's room");
-        a.deck.breathe(a.corridor, 5.0);
+        let thin = a.deck.room(a.corridor).volume * 0.3;
+        a.deck.breathe(a.corridor, thin);
         let total = a.deck.total_oxygen();
         let full = a.deck.room(a.bridge).oxygen;
         a.deck.set_open(a.bridge_door, 0.0);

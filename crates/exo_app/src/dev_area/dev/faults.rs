@@ -17,6 +17,15 @@ use reactor_core::{RoomEvent, Source, Tuning};
 const DEV_SHIELD_HIT: f64 = 300.0;
 
 pub fn plugin(app: &mut App) {
+    app.world_mut().resource_mut::<DevAreaDevices>().add(PlaceholderBox {
+        id: "dev_faults_console".into(),
+        zone: DEV,
+        local_pos: FAULTS_AT,
+        size: [1.2, 1.0, 0.6],
+        turn_deg: 0.0,
+        colour: [0.32, 0.36, 0.42],
+        panel: Some(PanelSpec { id: FAULTS_ID, name: FAULTS_NAME.into(), size_m: [0.48, 0.36], at: [0.0, 1.3, 0.1], tilt_deg: 15.0 }),
+    });
     app.add_systems(FixedUpdate, asks.in_set(ShipSet::Asks));
     app.add_systems(FixedUpdate, (read_clicks, write_panel).chain().in_set(crate::phases::Fx::Effects));
 }
@@ -24,8 +33,8 @@ pub const FAULTS_ID: PanelId = PanelId::new("reactor_faults");
 
 pub const FAULTS_NAME: &str = "Dev faults";
 
-/// The dev faults screen's mount point (area metres, the engine room's north wall, the room side).
-pub const FAULTS_AT: [f64; 2] = [-17.5, -11.04];
+/// Its console in the dev zone (m from the zone's centre), facing south.
+pub const FAULTS_AT: [f64; 2] = [-3.0, -2.5];
 
 pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
     let aux = if r.is_some_and(|r| r.aux_on) { "AUX ON" } else { "AUX OFF" };

@@ -14,7 +14,7 @@ use super::*;
 use super::reactor::{click_until, use_display};
 use crate::dev_area::{hull::ShipAir, layout::{GUNNERY_AT, JUMP_AT}};
 use crate::dev_area::ship::ReactorSim;
-use crate::dev_area::{turrets::panels::{ambush_running, GUNNERY_ID, GUNNERY_NAME}, dev::faults::{FAULTS_ID, FAULTS_NAME}, bridge::panels::{JUMP_ID, JUMP_NAME}};
+use crate::dev_area::{turrets::panels::{ambush_running, GUNNERY_ID, GUNNERY_NAME}, dev::faults::{FAULTS_AT, FAULTS_ID, FAULTS_NAME}, bridge::panels::{JUMP_ID, JUMP_NAME}};
 use crate::displays::{aim_at, world_point_of, DisplayPanel};
 use crate::items::Items;
 use bevy::math::DVec3;
@@ -84,7 +84,7 @@ pub fn ambush_audit(air: Option<Res<ShipAir>>, sim: Option<Res<ReactorSim>>, ite
 
 /// The widget's point on a display, if the display is there.
 fn widget_at(w: &mut World, id: &PanelId, action: &str) -> Option<DVec3> {
-    let d = w.query::<&DisplayPanel>().iter(w).find(|d| &d.id == id).cloned()?;
+    let d = w.query_filtered::<&DisplayPanel, Without<crate::dev_area::layout::Mirror>>().iter(w).find(|d| &d.id == id).cloned()?;
     world_point_of(w, &d, action, None)
 }
 
@@ -195,7 +195,8 @@ pub(super) fn ship_ambush_steps(s: &mut Vec<Step>) {
     }));
 
     // AMBUSH on, at the dev faults screen: a new encounter.
-    use_display(s, FAULTS_NAME, FAULTS_ID, [-17.5, -12.2]);
+    // DEV-02 stands on its console in the dev zone, facing south: the walker stands 1.4 m south of it.
+    use_display(s, FAULTS_NAME, FAULTS_ID, [crate::dev_area::DEV.centre[0] + FAULTS_AT[0], crate::dev_area::DEV.centre[1] + FAULTS_AT[1] - 1.4]);
     s.push(click_until(FAULTS_ID, "ambush", None, "ship ambush: AMBUSH on starts an encounter", |w| news(w).is_some_and(|r| ambush_running(&r))));
 
     // The enemy fires: at least two shots within 60 s. Then no NaN, and the shield or a section took damage.
@@ -222,14 +223,14 @@ pub(super) fn ship_ambush_steps(s: &mut Vec<Step>) {
     }));
 
     // GN-01: FIRE until DESTROYED (240 s); CLEAR JAM is held when the gun jams.
-    // GN-01 is on the bridge's south wall facing north (r44): the walker stands 1 m north of it.
-    use_display(s, GUNNERY_NAME, GUNNERY_ID, [GUNNERY_AT[0], GUNNERY_AT[1] + 1.0]);
+    // GN-01 is on the turret room's north wall facing south: the walker stands 1 m south of it.
+    use_display(s, GUNNERY_NAME, GUNNERY_ID, [GUNNERY_AT[0], GUNNERY_AT[1] - 1.0]);
     s.push(fire_until_end());
 
     // The fallback, only when the enemy is not destroyed: JD-01, ARM, the charge, JUMP.
     let mut jd = Vec::new();
-    // JD-01 is on the bridge's north wall facing south (r44): the walker stands 1.4 m south of it.
-    use_display(&mut jd, JUMP_NAME, JUMP_ID, [JUMP_AT[0], JUMP_AT[1] - 1.4]);
+    // JD-01 is on the bridge's west wall facing east: the walker stands 1.4 m east of it.
+    use_display(&mut jd, JUMP_NAME, JUMP_ID, [JUMP_AT[0] + 1.4, JUMP_AT[1]]);
     s.extend(jd.into_iter().map(unless_destroyed));
     s.push(unless_destroyed(click_until(JUMP_ID, "jump_arm", None, "ship ambush: ARM the jump drive", |w| news(w).is_some_and(|r| r.jump_stage != JumpStage::ColdStart))));
     s.push(unless_destroyed(poll("ship ambush: the jump charge is READY (240 s)", 240.0, |w| news(w).is_some_and(|r| r.jump_stage == JumpStage::Ready))));

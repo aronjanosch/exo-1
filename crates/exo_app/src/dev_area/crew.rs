@@ -17,9 +17,9 @@
 //! `origin/round/dev-area`). It is not the player figure (#32) and has no status label yet
 //! (`public_status.rs` labels the net figures only; TODO(initiator)). It walks in a straight line through
 //! walls (TODO(initiator): pathing).
-use crate::dev_area::{layout::{GUNNERY_AT, HELM_AT, JUNCTION_AT, REACTOR_SCREEN_AT}};
+use crate::dev_area::layout::{CORRIDOR, GUNNERY_AT, HELM_AT, JUNCTION_AT, REACTOR_SCREEN_AT};
 use crate::dev_area::ship::{wire_pump, ReactorSim};
-use super::{DevArea, PADS};
+use super::DevArea;
 use crate::displays::{ActiveDisplay, DisplayPanel};
 use crate::env::PlanetRes;
 use crate::items::{Items, Role};
@@ -98,10 +98,10 @@ pub fn occupied(using: &BTreeMap<PlayerId, BotStation>) -> [bool; STATIONS] {
 
 /// Where the stations and the pads stand on the ground (dev area metres). The station rows are the
 /// screens: GN-01 at its screen, the reactor at its readout, POWER at the junction box, the HELM at its
-/// panel. The bots start at the pads, two metres apart. TODO(initiator): a stand point in front of a
+/// panel. The bots start in the corridor, two metres apart. TODO(initiator): a stand point in front of a
 /// screen, and the pads' spots.
 pub fn layout() -> Layout {
-    let pads = [PADS.point([-2.0, 0.0]), PADS.point([0.0, 0.0]), PADS.point([2.0, 0.0])];
+    let pads = [CORRIDOR.point([-6.0, 0.0]), CORRIDOR.point([-4.0, 0.0]), CORRIDOR.point([-2.0, 0.0])];
     Layout { stations: [GUNNERY_AT, REACTOR_SCREEN_AT, JUNCTION_AT, HELM_AT], pads }
 }
 
@@ -249,12 +249,12 @@ mod tests {
     }
 
     #[test]
-    fn the_stations_are_laid_out_in_the_station_order_and_the_pads_are_in_the_dev_area() {
+    fn the_stations_are_laid_out_in_the_station_order_and_the_bots_start_in_the_corridor() {
         let l = layout();
         assert_eq!(l.stations[Station::Gunnery.index()], GUNNERY_AT);
         assert_eq!(l.stations[Station::Helm.index()], HELM_AT);
         for p in l.pads {
-            assert!(PADS.contains(p), "a pad is in the pads zone");
+            assert!(CORRIDOR.contains(p), "a bot starts in the corridor");
         }
     }
 }

@@ -27,7 +27,7 @@ pub(super) fn spawn_lights(mut commands: Commands, planet: Res<PlanetRes>, area:
     }
     let at = |p: [f64; 2], h: f64| area.ground(&planet, p, h).map(|(w, _)| w).unwrap_or(DVec3::ZERO);
     let warm = Color::srgb(1.0, 0.9, 0.75);
-    let lamps = [([-16.5, -15.5], 2.9, false), ([-11.5, -15.5], 2.9, false), ([-14.0, -7.7], 2.9, false), ([-14.0, -15.0], 2.6, true), ([-14.0, -8.6], 2.6, true), (AIRLOCK.centre, 2.9, false), (BRIDGE.centre, 2.9, false)];
+    let lamps = [([-16.5, -15.5], 2.9, false), ([-11.5, -15.5], 2.9, false), ([-15.0, -9.7], 2.9, false), ([-5.0, -9.7], 2.9, false), ([2.0, -9.7], 2.9, false), ([-14.0, -15.0], 2.6, true), ([-7.7, -9.7], 2.6, true), (AIRLOCK.centre, 2.9, false), (BRIDGE.centre, 2.9, false), (TURRET_ROOM.centre, 2.9, false), (LAB_ROOM.centre, 2.9, false), (MEDBAY_ROOM.centre, 2.9, false)];
     for (p, h, alarm) in lamps {
         let colour = if alarm { Color::srgb(1.0, 0.1, 0.05) } else { warm };
         let intensity = if alarm { 0.0 } else { 60_000.0 };

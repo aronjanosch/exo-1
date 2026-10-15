@@ -785,9 +785,10 @@ fn lamp_cell(l: Lamp, lit: bool) -> Item {
 }
 
 /// The graph's cell (px) on the M panel (640 x 400): the width less the well and padding, and the
-/// height the lamps, boost, presses and countdown leave (TODO(initiator): the status board's budget).
+/// height the lamps, boost, presses, countdown and the stability bar leave (TODO(initiator): the status
+/// board's budget: the bar took 25 px of it, #300 r29).
 const GRAPH_W: f64 = 600.0;
-const GRAPH_H: f64 = 150.0;
+const GRAPH_H: f64 = 125.0;
 
 /// The graph's shapes (Barotrauma's `DrawGraph`, `Reactor.cs:543-575`): output in the good tone,
 /// load in the neutral one, both on one scale, the larger of half the room's maximum and the
@@ -821,6 +822,45 @@ fn graph_item(r: Option<&ReactorNews>, max_kw: f64) -> Item {
     canvas(GRAPH_W, GRAPH_H, graph_shapes(r, max_kw, GRAPH_W, GRAPH_H), None).fixed(GRAPH_H)
 }
 
+/// The stability bar's height (px) under its label (#300 r29).
+const BAR_H: f64 = 8.0;
+
+/// The stability bar's fill (0..1, the percent) and tone: good above 75 %, warn from 40 to 75 %, bad
+/// below 40 % (PULSAR's core stability, #300 r29). Pure, for the tests.
+pub fn stability_bar(pct: u8) -> (f64, Tone) {
+    let tone = if pct > 75 {
+        Tone::Good
+    } else if pct >= 40 {
+        Tone::Warn
+    } else {
+        Tone::Bad
+    };
+    (f64::from(pct.min(100)) / 100.0, tone)
+}
+
+/// The STABILITY bar: a label row with the percent, and the bar under it, full width of the
+/// status board's strip. No news yet: the percent is a dash and the bar is empty.
+fn stability_item(r: Option<&ReactorNews>) -> Item {
+    let (fill, tone, word) = match r {
+        Some(r) => {
+            let (fill, tone) = stability_bar(r.stability);
+            (fill, tone, format!("{}%", r.stability.min(100)))
+        }
+        None => (0.0, Tone::Dim, "--".to_string()),
+    };
+    let ink = match tone {
+        Tone::Good => Ink::Good,
+        Tone::Warn => Ink::Warn,
+        _ => Ink::Bad,
+    };
+    let head = row(8.0, vec![micro("STABILITY").flex(1.0), readout(word).text_size(font::SMALL).tone(tone)]).fixed(16.0);
+    let bar = vec![
+        Shape::Rect { x: 0.0, y: 0.0, w: GRAPH_W, h: BAR_H, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 1.0)) },
+        Shape::Rect { x: 0.0, y: 0.0, w: GRAPH_W * fill, h: BAR_H, fill: Some(ink), outline: None },
+    ];
+    column(3.0, vec![head, canvas(GRAPH_W, BAR_H, bar, None).fixed(BAR_H)]).fixed(16.0 + 3.0 + BAR_H)
+}
+
 /// A countdown's clock: minutes and seconds, the seconds rounded up.
 pub fn clock(s: f64) -> String {
     let s = s.max(0.0).ceil() as u64;
@@ -851,8 +891,9 @@ pub fn status_panel(r: Option<&ReactorNews>, max_kw: f64, blink_on: bool) -> Pan
         None => space().fixed(22.0),
     };
     let presses = row(6.0, vec![button("UP", "boost_up").enabled(r.boost_ok).flex(1.0), button("DOWN", "boost_down").enabled(r.boost_ok).flex(1.0), eject_button(&r).flex(1.0)]).fixed(ctl::SM);
+    let stability = stability_item(Some(&r));
     let graph = graph_item(Some(&r), max_kw);
-    Panel::screen(Tier::M, STATUS_NAME, "RX-02", column(5.0, vec![lamps, boost, presses, countdown, graph])).with_padding(6.0)
+    Panel::screen(Tier::M, STATUS_NAME, "RX-02", column(5.0, vec![lamps, boost, presses, countdown, stability, graph])).with_padding(6.0)
 }
 
 /// The core eject (PULSAR's lever, #300 r22): a guarded two-press. ARM EJECT opens the safety cover;
@@ -1108,6 +1149,33 @@ mod tests {
         assert!(!label(&status_panel(Some(&status_news()), 2000.0, true), "IMPLOSION 0:42"), "no countdown without an eta");
         assert_eq!(clock(125.0), "2:05");
         assert_eq!(clock(-1.0), "0:00");
+    }
+
+    #[test]
+    fn the_stability_bar_fills_and_tones_by_the_percent() {
+        let (fill, tone) = stability_bar(100);
+        assert!((fill - 1.0).abs() < 1e-9 && tone == Tone::Good, "100: {fill} {tone:?}");
+        let (fill, tone) = stability_bar(60);
+        assert!((fill - 0.6).abs() < 1e-9 && tone == Tone::Warn, "60: {fill} {tone:?}");
+        let (fill, tone) = stability_bar(20);
+        assert!((fill - 0.2).abs() < 1e-9 && tone == Tone::Bad, "20: {fill} {tone:?}");
+        // The edges: good above 75, warn from 40 to 75, bad below 40.
+        assert_eq!(stability_bar(75).1, Tone::Warn);
+        assert_eq!(stability_bar(76).1, Tone::Good);
+        assert_eq!(stability_bar(40).1, Tone::Warn);
+        assert_eq!(stability_bar(39).1, Tone::Bad);
+    }
+
+    #[test]
+    fn the_status_board_shows_the_stability_percent() {
+        let texts = |p: &Panel| -> Vec<String> {
+            p.layout().iter().filter_map(|w| match w.widget {
+                display_core::Widget::Label { text, .. } => Some(text.clone()),
+                _ => None,
+            }).collect()
+        };
+        let t = texts(&status_panel(Some(&ReactorNews { stability: 60, ..status_news() }), 2000.0, true));
+        assert!(t.iter().any(|x| x == "STABILITY") && t.iter().any(|x| x == "60%"), "{t:?}");
     }
 
     #[test]

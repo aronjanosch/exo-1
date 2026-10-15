@@ -87,18 +87,9 @@ fn oracle_for(r: &Reactor) -> Baro {
 }
 
 /// Manual targets, power on, constant load: our `Reactor` and the Barotrauma port agree in
-/// temperature, fission, turbine and output at every step.
-///
-/// Ignored since the inertia (#300): the temperature is a second-order system with the output's
-/// heat, which the Barotrauma port does not have, so the two no longer agree by design.
-#[test]
-#[ignore = "#300: the temperature has inertia and output heat by design; the oracle is first-order"]
-fn manual_matches_barotrauma() {
-    assert_manual_matches(comparable_reactor());
-}
-
-/// The same comparison on the oracle's own path (`inertia: false`): our reactor agrees with it to
-/// 1e-6 at every step, as it did before #300.
+/// temperature, fission, turbine and output at every step, on the oracle's own path
+/// (`inertia: false`). The default path with inertia (#300) is not compared with the first-order
+/// oracle: the test for it was deleted as superseded by this one.
 #[test]
 fn manual_matches_barotrauma_without_inertia() {
     assert_manual_matches(comparable_reactor_with(false));
@@ -262,15 +253,13 @@ fn load_drop_overvolts_the_junction_box_and_auto_overshoots() {
     assert!(!trace.melted);
 }
 
-/// With no operator action a broken pump takes the flow away, fires come first, and the core melts.
+/// With no operator action a broken pump takes the flow away and a fire comes, but Auto cuts
+/// fission and the core does not melt (pump_fail_full_load: peak 99.1, one fire, no meltdown).
 #[test]
-#[ignore = "meaning broke with r8: a pump failure under Auto (pump_fail_full_load, 1280 kW) does not melt the core; peak 62.7, no fires"]
-fn a_broken_pump_with_no_operator_melts_the_core_after_fires() {
+fn a_broken_pump_with_no_operator_fires_and_does_not_melt() {
     let (trace, room) = trace_of("pump_fail_full_load", 5.0);
-    assert!(trace.melted && room.reactor().melted());
-    let fire = trace.first("Fire").expect("a fire");
-    let melt = trace.first("Meltdown").expect("a meltdown");
-    assert!(fire < melt, "fire at {fire}, meltdown at {melt}");
+    assert!(!trace.melted && !room.reactor().melted());
+    assert!(trace.first("Fire").is_some(), "a fire");
     assert!(trace
         .rows
         .iter()
@@ -301,10 +290,10 @@ fn a_low_pump_at_full_load_runs_at_its_low_speed_and_drains_slowly() {
     assert_eq!(room.pump().mode(), PumpMode::Low);
 }
 
-/// An empty tank is no flow for the rest of the run, and the core melts.
+/// An empty tank is no flow for the rest of the run, and at full load the core reaches TempCritical
+/// (coolant_empty: peak 99.1, one fire, no meltdown under Auto).
 #[test]
-#[ignore = "meaning broke with r8: an empty tank does not melt the core (coolant_empty peak 62.1)"]
-fn an_empty_tank_stops_the_flow_and_the_core_melts() {
+fn an_empty_tank_stops_the_flow_and_the_core_reaches_temp_critical() {
     let (trace, room) = trace_of("coolant_empty", 5.0);
     assert_eq!(room.pump().tank(), 0.0);
     assert!(trace
@@ -312,7 +301,8 @@ fn an_empty_tank_stops_the_flow_and_the_core_melts() {
         .iter()
         .filter(|r| r.t >= 15.0)
         .all(|r| r.flow == 0.0));
-    assert!(trace.melted);
+    assert!(trace.first("Alarm TempCritical on").is_some(), "TempCritical");
+    assert!(!trace.melted, "Auto cuts fission and the core does not melt");
 }
 
 /// The scram_last_second scenario under Auto: the broken pump never brings the meltdown timer near
@@ -337,15 +327,6 @@ fn a_repaired_and_restarted_core_runs_again() {
     let at = row_at(&trace, 180.0);
     assert!(at.power && at.output_kw > 0.0, "{at:?}");
     assert!(!room.reactor().melted(), "a repaired core is a reactor again");
-}
-
-/// A meltdown spends every rod.
-#[test]
-#[ignore = "meaning broke with r8: a melt keeps the rods' life (reactor.rs meltdown, 'the rods keep their life'); the test says it spends them"]
-fn a_meltdown_spends_every_rod() {
-    let (trace, room) = trace_of("turbine_max_fission_max", 5.0);
-    assert!(trace.melted);
-    assert!(!room.reactor().rods().is_empty() && room.reactor().rods().iter().all(|r| r.spent()));
 }
 
 /// Auto on the shipped tuning with the load wandering for 300 s: no TempCritical, no meltdown. Also

@@ -491,8 +491,13 @@ fn update(
 /// Every process with a window: the ship's alarm tone, quiet, while the walker is in the
 /// engine room or its corridor: every 2 s at Warn, every second at Danger.
 #[allow(clippy::too_many_arguments)]
-fn alarm_tone(mut commands: Commands, sounds: Res<Sounds>, alarm: Res<crate::dev_area::engine_room::ShipAlarm>, time: Res<Time>, area: Option<Res<crate::dev_area::DevArea>>, planet: Res<crate::env::PlanetRes>, players: Query<&Player>, mut next: Local<f64>) {
+fn alarm_tone(mut commands: Commands, sounds: Res<Sounds>, alarm: Res<crate::dev_area::engine_room::ShipAlarm>, items: Option<Res<crate::items::Items>>, time: Res<Time>, area: Option<Res<crate::dev_area::DevArea>>, planet: Res<crate::env::PlanetRes>, players: Query<&Player>, mut next: Local<f64>) {
     let Some(every) = crate::dev_area::engine_room::tone_every(alarm.level) else { return };
+    // SILENCE (r40, #165) mutes the ship's tone too while a room alarm is silenced: the fire and the
+    // breach it used to beep for are room alarms now. TODO(initiator): retire this tone for them.
+    if items.is_some_and(|i| i.reactor.is_some_and(|r| r.alarms.iter().any(|a| a.silenced))) {
+        return;
+    }
     let near = match (players.single(), area.as_deref()) {
         (Ok(pl), Some(area)) if pl.ship.is_none() => crate::dev_area::engine_room::walker_place(area, &planet, pl.w.pos).is_some_and(|p| p != crate::dev_area::engine_room::Place::Outside),
         _ => false,

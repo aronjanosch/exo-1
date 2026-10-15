@@ -2,6 +2,7 @@ use content_core::{parse_strict_commented, File};
 use serde::{Deserialize, Serialize};
 
 use crate::battery::BatteryTuning;
+use crate::room_alarm::AlarmTuning;
 use crate::director::DirectorTuning;
 use crate::engine_room::RoomTuning;
 use crate::grid::GridTuning;
@@ -26,11 +27,13 @@ pub struct Tuning {
     pub graph_interval_s: f64,
     /// The incident director (`director` in reactor.json, r38).
     pub director: DirectorTuning,
+    /// The room alarms (`alarm` in reactor.json, r40, #165).
+    pub alarm: AlarmTuning,
 }
 
 impl Default for Tuning {
     fn default() -> Tuning {
-        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default() }
+        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), alarm: AlarmTuning::default() }
     }
 }
 
@@ -57,6 +60,7 @@ impl Tuning {
         };
         let r = &self.reactor;
         need(r.slots >= 1, "reactor.slots", "must be at least 1");
+        need(self.alarm.low_o2 < self.alarm.low_o2_clear, "alarm.low_o2_clear", "must be above alarm.low_o2 (the band)");
         need(self.start_rods <= r.slots, "start_rods", "must fit in reactor.slots");
         need(self.graph_points >= 1 && self.graph_interval_s > 0.0, "graph_points", "must be >= 1, graph_interval_s > 0");
         let d = &self.director;

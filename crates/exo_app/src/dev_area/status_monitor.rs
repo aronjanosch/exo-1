@@ -6,14 +6,16 @@
 //! Ported from Barotrauma's MiniMap, the status monitor's hull status and electrical view
 //! (`BarotraumaClient/ClientSource/Items/Components/Machines/MiniMap.cs`, see the row model in
 //! `display_core::monitor` for the lines). Not ported: the water (no water here), the item finder,
-//! the blips and the search. The screen has no buttons: it only reads the reactor snapshot, which
-//! carries the rooms' air and fire for clients too (`ReactorNews::rooms`).
+//! the blips and the search. The room rows carry each room's alarm word (r40, #165: FIRE, BREACH, O2 LOW,
+//! from `ReactorNews::alarms`) and a SILENCE button mutes the sounding alarms (`ReactorAsk::SilenceAlarms`,
+//! read in `reactor_screen::read_clicks`). The screen reads the reactor snapshot, which carries the rooms'
+//! air, fire and alarms for clients too.
 //! Placement: the east wall's inner face (x -9.0) at the reactor readout's end of the room, clear
 //! of the coolant pump's screen and the oxygen generator (`engine_room.rs`).
 //! TODO(initiator): the screen's name, its tier and the row order are start values.
 use display_core::monitor::{self, Cell, RoomLine};
-use display_core::{column, label, micro, readout, row, space, Item, Panel, PanelId, Tier};
-use item_core::wire::{BreakerGroup, PartNews, ReactorNews};
+use display_core::{button, column, label, micro, readout, row, space, Item, Panel, PanelId, Tier, Tone};
+use item_core::wire::{AlarmNews, BreakerGroup, PartNews, ReactorNews, RoomAlarmKind};
 use reactor_core::Breach;
 
 pub const ID: PanelId = PanelId::new("status_monitor");
@@ -24,6 +26,8 @@ pub const AT: [f64; 2] = [-9.04, -16.9];
 pub const LIFT: f64 = 0.9;
 pub const SIZE: [f64; 2] = [1.6, 1.0];
 pub const TURN: f64 = -90.0;
+/// The SILENCE button's action (`reactor_screen::read_clicks`).
+pub const SILENCE_ACTION: &str = "silence";
 
 /// A row's height (px) and the gap between the rows.
 const ROW_H: f64 = 18.0;
@@ -31,9 +35,10 @@ const GAP: f64 = 3.0;
 
 /// The monitor as the reactor snapshot has it. Without a snapshot every reading is a dash.
 pub fn monitor_panel(r: Option<&ReactorNews>) -> Panel {
+    let alarms = r.map_or([AlarmNews::default(); 2], |r| r.alarms);
     let room_lines = [
-        monitor::room_line(ROOM_NAME, r.map(|r| r.rooms[0].o2 * 100.0), r.is_some_and(|r| r.rooms[0].fire), Some(r.is_some_and(|r| breach_open(r.breach)))),
-        monitor::room_line(CORRIDOR_NAME, r.map(|r| r.rooms[1].o2 * 100.0), r.is_some_and(|r| r.rooms[1].fire), None),
+        RoomLine { alarm: alarm_cell(alarms[0]), ..monitor::room_line(ROOM_NAME, r.map(|r| r.rooms[0].o2 * 100.0), r.is_some_and(|r| r.rooms[0].fire), Some(r.is_some_and(|r| breach_open(r.breach)))) },
+        RoomLine { alarm: alarm_cell(alarms[1]), ..monitor::room_line(CORRIDOR_NAME, r.map(|r| r.rooms[1].o2 * 100.0), r.is_some_and(|r| r.rooms[1].fire), None) },
     ];
     let devices = [
         ("REACTOR", r.map(|r| r.reactor)),
@@ -50,8 +55,9 @@ pub fn monitor_panel(r: Option<&ReactorNews>) -> Panel {
         ("JUMP", BreakerGroup::JumpDrive),
     ];
 
-    let mut lines = vec![head(&["ROOM", "AIR", "FIRE", "BREACH"])];
+    let mut lines = vec![head(&["ROOM", "AIR", "FIRE", "BREACH", "ALARM"])];
     lines.extend(room_rows(&room_lines));
+    lines.push(silence_row(&alarms));
     lines.push(space().fixed(GAP));
     lines.push(head(&["DEVICE", "CONDITION"]));
     lines.extend(devices.iter().map(|(name, part)| device_row(name, part.as_ref())));
@@ -82,9 +88,31 @@ fn room_rows(lines: &[RoomLine]) -> Vec<Item> {
                 Some(b) => cell(b),
                 None => space().flex(1.0),
             });
+            cells.push(cell(&l.alarm));
             row(6.0, cells).fixed(ROW_H)
         })
         .collect()
+}
+
+/// The alarm's word for a room's row (r40, #165): the kind it shows, None with no alarm.
+pub fn alarm_word(a: AlarmNews) -> Option<&'static str> {
+    match a.kind {
+        RoomAlarmKind::Clear => None,
+        RoomAlarmKind::Fire => Some("FIRE"),
+        RoomAlarmKind::Breach => Some("BREACH"),
+        RoomAlarmKind::LowO2 => Some("O2 LOW"),
+    }
+}
+
+fn alarm_cell(a: AlarmNews) -> Cell {
+    monitor::alarm_cell(alarm_word(a), a.silenced)
+}
+
+/// The SILENCE button: lit while a room's klaxon sounds; it is the only control on the screen.
+fn silence_row(alarms: &[AlarmNews; 2]) -> Item {
+    let sounding = alarms.iter().any(|a| a.sounding);
+    let tone = if sounding { Tone::Bad } else { Tone::Normal };
+    row(6.0, vec![button("SILENCE", SILENCE_ACTION).tone(tone).enabled(sounding).flex(1.0)]).fixed(ROW_H)
 }
 
 fn device_row(name: &str, part: Option<&PartNews>) -> Item {

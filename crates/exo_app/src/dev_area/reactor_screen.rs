@@ -1090,6 +1090,11 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "eject" => Some(ReactorAsk::Eject),
                 _ => None,
             }
+        } else if c.panel == status_monitor::ID {
+            match c.action.as_str() {
+                status_monitor::SILENCE_ACTION => Some(ReactorAsk::SilenceAlarms),
+                _ => None,
+            }
         } else if c.panel == FAULTS_ID {
             match c.action.as_str() {
                 "pump_break" => Some(ReactorAsk::Trigger(ReactorFault::PumpBreak)),

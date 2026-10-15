@@ -25,7 +25,7 @@ pub enum Group {
 impl Group {
     pub const ALL: [Group; 3] = [Group::Engines, Group::LifeSupport, Group::Lights];
 
-    fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         self as usize
     }
 }
@@ -149,7 +149,17 @@ impl Grid {
 
     /// kW all groups ask for together (the breakers' demands): the load on the reactor.
     pub fn request_kw(&self) -> f64 {
-        self.groups.iter().map(request).sum()
+        self.requests().iter().sum()
+    }
+
+    /// kW one group asks for: its demand with the breaker on, 0 when off.
+    pub fn request_of(&self, g: Group) -> f64 {
+        request(&self.groups[g.index()])
+    }
+
+    /// Every group's request, in `Group::ALL` order.
+    pub fn requests(&self) -> [f64; N] {
+        std::array::from_fn(|i| request(&self.groups[i]))
     }
 
     /// Result of the last `distribute` for one group.
@@ -162,8 +172,16 @@ impl Grid {
         self.supply[g.index()].factor
     }
 
-    /// Shares `supply_kw` between the groups; returns what is left over.
+    /// Shares `supply_kw` between the groups by their breakers; returns what is left over.
     pub fn distribute(&mut self, supply_kw: f64) -> f64 {
+        let req = self.requests();
+        self.distribute_with(supply_kw, req, [true; N])
+    }
+
+    /// Shares `supply_kw` between the groups asking `req` (kW each, in `Group::ALL` order), and
+    /// writes the result only for the groups in `write`. The priorities and minimum ratios are the
+    /// groups'. Returns what is left over. The engine room uses it for the aux reactor's groups.
+    pub fn distribute_with(&mut self, supply_kw: f64, req: [f64; N], write: [bool; N]) -> f64 {
         let mut left = supply_kw.max(0.0);
         let mut delivered = [0.0; N];
         let mut on = [false; N];
@@ -171,12 +189,12 @@ impl Grid {
         prios.sort_unstable_by(|a, b| b.cmp(a));
         prios.dedup();
         for p in prios {
-            let mut tier: Vec<usize> = (0..N).filter(|&i| self.groups[i].priority == p && request(&self.groups[i]) > 0.0).collect();
+            let mut tier: Vec<usize> = (0..N).filter(|&i| self.groups[i].priority == p && req[i] > 0.0).collect();
             loop {
-                let asked: f64 = tier.iter().map(|&i| request(&self.groups[i])).sum();
+                let asked: f64 = tier.iter().map(|&i| req[i]).sum();
                 if asked <= left {
                     for &i in &tier {
-                        delivered[i] = request(&self.groups[i]);
+                        delivered[i] = req[i];
                         on[i] = true;
                     }
                     left -= asked;
@@ -188,15 +206,12 @@ impl Grid {
                     .iter()
                     .copied()
                     .filter(|&i| self.groups[i].min_ratio > share)
-                    .max_by(|&a, &b| {
-                        let (ga, gb) = (&self.groups[a], &self.groups[b]);
-                        ga.min_ratio.total_cmp(&gb.min_ratio).then(request(ga).total_cmp(&request(gb)))
-                    });
+                    .max_by(|&a, &b| self.groups[a].min_ratio.total_cmp(&self.groups[b].min_ratio).then(req[a].total_cmp(&req[b])));
                 match drop {
                     Some(d) => tier.retain(|&i| i != d),
                     None => {
                         for &i in &tier {
-                            delivered[i] = request(&self.groups[i]) * share;
+                            delivered[i] = req[i] * share;
                             on[i] = true;
                         }
                         left = 0.0;
@@ -206,12 +221,14 @@ impl Grid {
             }
         }
         for i in 0..N {
+            if !write[i] {
+                continue;
+            }
             let g = &self.groups[i];
-            let req = request(g);
             self.supply[i] = Supply {
-                request_kw: req,
+                request_kw: req[i],
                 delivered_kw: delivered[i],
-                ratio: if req > 0.0 { delivered[i] / req } else { 1.0 },
+                ratio: if req[i] > 0.0 { delivered[i] / req[i] } else { 1.0 },
                 factor: if g.demand_kw > 0.0 { delivered[i] / g.demand_kw } else { 0.0 },
                 on: on[i],
             };

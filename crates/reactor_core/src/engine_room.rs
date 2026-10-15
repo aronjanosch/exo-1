@@ -133,6 +133,12 @@ pub struct RoomTuning {
     pub wander_min: f64,
     /// How fast the throttle moves to its target, per second.
     pub wander_rate: f64,
+    /// The aux reactor (PULSAR manual: auxiliary systems are not connected to the main reactor).
+    /// On: the main grid carries the Engines group only; Life Support and Lights are fed by the aux
+    /// reactor, and what they leave of its output boosts the main reactor. TODO(initiator): default.
+    pub aux_enabled: bool,
+    /// The aux reactor's output, kW. TODO(initiator): value.
+    pub aux_output_kw: f64,
 }
 
 impl Default for RoomTuning {
@@ -166,6 +172,8 @@ impl Default for RoomTuning {
             wander_every_s: 6.0,
             wander_min: 0.3,
             wander_rate: 0.15,
+            aux_enabled: false,
+            aux_output_kw: 500.0,
         }
     }
 }
@@ -495,6 +503,10 @@ pub struct EngineRoom {
     ecool_cd: f64,
     /// A press since the last step: the next step reports `RoomEvent::EmergencyCool`.
     ecool_pressed: bool,
+    /// The aux reactor is on (`set_aux`).
+    aux: bool,
+    /// The aux switches of Life Support and Lights (indexed by `Group`; Engines is never aux-fed).
+    aux_switch: [bool; Group::ALL.len()],
 }
 
 impl EngineRoom {
@@ -530,6 +542,8 @@ impl EngineRoom {
             ecool_left: 0.0,
             ecool_cd: 0.0,
             ecool_pressed: false,
+            aux: t.room.aux_enabled,
+            aux_switch: [true; Group::ALL.len()],
         }
     }
 
@@ -674,6 +688,55 @@ impl EngineRoom {
         if self.reactor.output_kw() <= 0.0 { 1.0 } else { self.junction.voltage().clamp(0.0, 1.0) }
     }
 
+    /// Turns the aux reactor on or off. Off: the main grid carries every group and the boost is 0.
+    pub fn set_aux(&mut self, on: bool) {
+        self.aux = on;
+        self.sync_aux();
+    }
+
+    pub fn aux_enabled(&self) -> bool {
+        self.aux
+    }
+
+    /// Switches a group's aux switch. Life Support and Lights only; the Engines switch is ignored
+    /// (Engines is always on the main reactor). Default on.
+    pub fn set_aux_switch(&mut self, g: Group, on: bool) {
+        if g != Group::Engines {
+            self.aux_switch[g.index()] = on;
+            self.sync_aux();
+        }
+    }
+
+    /// The aux switch of a group (Life Support and Lights; Engines always reads on).
+    pub fn aux_switch(&self, g: Group) -> bool {
+        g == Group::Engines || self.aux_switch[g.index()]
+    }
+
+    /// Whether the aux reactor feeds this group now: aux on, not Engines, and its switch on.
+    fn aux_fed(&self, g: Group) -> bool {
+        self.aux && g != Group::Engines && self.aux_switch[g.index()]
+    }
+
+    /// kW the main reactor gets from what the aux groups leave of the aux output (0 with aux off):
+    /// `aux_output_kw` minus the demand of the aux groups that are switched on, at least 0.
+    pub fn aux_boost_kw(&self) -> f64 {
+        if !self.aux {
+            return 0.0;
+        }
+        let used: f64 = Group::ALL.iter().filter(|&&g| self.aux_fed(g)).map(|&g| self.grid.group(g).demand_kw).sum();
+        (self.tuning.aux_output_kw - used).max(0.0)
+    }
+
+    /// The load the main grid asks for, kW: with aux on, the Engines group only.
+    pub fn main_load_kw(&self) -> f64 {
+        if self.aux { self.grid.request_of(Group::Engines) } else { self.grid.request_kw() }
+    }
+
+    /// Hands the aux boost to the reactor (its output range's top).
+    fn sync_aux(&mut self) {
+        self.reactor.set_output_boost_kw(self.aux_boost_kw());
+    }
+
     /// Switches a consumer group's breaker on the junction box.
     pub fn set_breaker(&mut self, g: Group, on: bool) {
         self.grid.set_breaker(g, on);
@@ -691,7 +754,7 @@ impl EngineRoom {
 
     /// The reactor's lamps for the load the grid asks for now (`Reactor::warnings`).
     pub fn warnings(&self) -> crate::reactor::Warnings {
-        self.reactor.warnings(self.grid.request_kw())
+        self.reactor.warnings(self.main_load_kw())
     }
 
     /// The room's alarm, as of the last step.
@@ -747,7 +810,7 @@ impl EngineRoom {
     /// The temperature inside its optimal band and the output within `WARM_START_TOLERANCE` of the
     /// load the grid asks for.
     pub fn settled(&self) -> bool {
-        let load = self.grid.request_kw();
+        let load = self.main_load_kw();
         self.reactor.bands().temp_optimal.contains(self.reactor.temperature())
             && (self.reactor.output_kw() - load).abs() <= WARM_START_TOLERANCE * load
     }
@@ -778,7 +841,8 @@ impl EngineRoom {
             self.wander_step(dt, &t);
         }
         self.grid.set_demand(Group::Engines, self.engines_full_kw * self.throttle);
-        let load = self.grid.request_kw();
+        let load = self.main_load_kw();
+        self.sync_aux();
         let reactor_ev = self.reactor.step(dt, load);
         ev.extend(reactor_ev.iter().map(|e| RoomEvent::Reactor(*e)));
         ev.extend(self.blast_damage(&reactor_ev));
@@ -786,7 +850,21 @@ impl EngineRoom {
 
         let (through, junction_ev) = self.junction.pass(dt, self.reactor.output_kw(), load, &t);
         ev.extend(junction_ev);
-        self.grid.distribute(through);
+        if self.aux {
+            // The main grid: the Engines group only. The aux reactor: the aux groups that are switched on.
+            let mut main = [0.0; Group::ALL.len()];
+            main[Group::Engines.index()] = self.grid.request_of(Group::Engines);
+            self.grid.distribute_with(through, main, [true, false, false]);
+            let mut aux = [0.0; Group::ALL.len()];
+            for g in [Group::LifeSupport, Group::Lights] {
+                if self.aux_fed(g) {
+                    aux[g.index()] = self.grid.group(g).demand_kw;
+                }
+            }
+            self.grid.distribute_with(self.tuning.aux_output_kw, aux, [false, true, true]);
+        } else {
+            self.grid.distribute(through);
+        }
 
         let excess = self.reactor.temperature() - self.reactor.bands().temp_optimal.hi;
         if let Some(e) = self.pump.wear(dt, self.pump.on() && self.reactor.power_on(), excess, &t) {

@@ -929,3 +929,18 @@ fn a_natural_meltdown_blasts_in_its_step() {
     }
     assert!(melt_step.is_some(), "the core melts within 900 s");
 }
+
+#[test]
+fn the_graph_samples_the_room_while_it_runs() {
+    let mut r = room();
+    let _ = run(&mut r, 5.0, Input::auto());
+    let h = r.history();
+    assert_eq!(h.size(), 25);
+    assert_eq!(h.interval_s(), 0.5);
+    // Five seconds at 0.5 s: ten samples, one fewer if the float steps land a hair short. The
+    // filled samples are the newest ones, in front.
+    let n = h.load.iter().filter(|&&v| v > 0.0).count();
+    assert!((9..=10).contains(&n), "samples: {n}");
+    assert!(h.load[..n].iter().all(|&v| v > 0.0));
+    assert!(h.load[n..].iter().all(|&v| v == 0.0));
+}

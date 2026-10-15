@@ -184,9 +184,6 @@ impl Options {
                 "--tuning-dir" => o.tuning_dir = Some(PathBuf::from(v)),
                 "--settings-dir" => o.settings_dir = Some(PathBuf::from(v)),
                 "--menu" => o.force_menu = true,
-                "--dev-area" => o.dev_area = true,
-                "--warm-reactor" => o.warm_reactor = true,
-                "--showcase" => o.showcase = true,
                 "--swap-rounds" => o.swap_rounds = v.parse().expect("swap-rounds"),
                 "--perf" => o.perf = Some(o.perf.take().unwrap_or_default()),
                 "--system-seed" => o.system_seed = Some(v.parse().expect("system-seed")),
@@ -223,6 +220,12 @@ impl Options {
             if n.bot {
                 o.scenario = Some("net".into());
             }
+        }
+        // A run without a scenario starts on the dev area, with its reactor warm and the ship models beside it.
+        if o.scenario.is_none() && o.start.is_none() {
+            o.start = Some(dev_area::PLACE.into());
+            o.warm_reactor = true;
+            o.showcase = true;
         }
         o
     }
@@ -445,6 +448,19 @@ mod option_tests {
 
     fn parse(list: &[&str]) -> Options {
         Options::from_args(list.iter().map(|s| s.to_string()))
+    }
+
+    #[test]
+    fn a_run_without_a_scenario_starts_on_the_dev_area() {
+        let o = parse(&[]);
+        assert_eq!(o.start.as_deref(), Some("dev_area"));
+        assert!(o.dev_area() && o.warm_reactor && o.showcase);
+    }
+
+    #[test]
+    fn a_scenario_or_an_explicit_start_keeps_its_own_place() {
+        assert_eq!(parse(&["--scenario=full"]).start, None);
+        assert_eq!(parse(&["--start=drip_rock"]).start.as_deref(), Some("drip_rock"));
     }
 
     #[test]

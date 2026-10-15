@@ -176,6 +176,9 @@ pub enum ReactorAsk {
     Airlock(AirlockAsk),
     /// The dev faults screen's VACUUM switch (r40): true makes the outside vacuum, false breathable air.
     SetVacuum(bool),
+    /// GN-01's CLEAR JAM hold (r41): `true` while the player holds at the gun, `false` when they let go.
+    /// The host counts the hold (`Weapons::clear_jam`) and clears the jam after its time.
+    ClearJam(bool),
 }
 
 /// The jump drive's stage as the host has it: PULSAR's warp charge stages (`reactor_core::JumpStage`).
@@ -516,6 +519,12 @@ pub struct ReactorNews {
     pub airlock: AirlockNews,
     /// The outside is vacuum (r40; the dev faults screen's VACUUM switch shows it).
     pub vacuum: bool,
+    /// The gun's heat, 0..1 of the overheat line (r41, GN-01's heat bar).
+    pub weapon_heat: f64,
+    /// The gun is jammed until cleared by hold at GN-01 (r41, the JAMMED word).
+    pub weapon_jammed: bool,
+    /// The gun is locked by heat until it cools below `unlock_at` (r41, the OVERHEAT word).
+    pub weapon_overheated: bool,
 }
 
 /// A room's air and fire for the status monitor (r38): the air as a fraction 0..1 (whole percent),
@@ -739,6 +748,9 @@ mod tests {
             weapon_shots: 4,
             weapon_charge: 0.66,
             weapon_reload_s: 0.125,
+            weapon_heat: 0.42,
+            weapon_jammed: true,
+            weapon_overheated: false,
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {
             ToClient::Reactor(r) => r,
@@ -773,6 +785,8 @@ mod tests {
             ReactorAsk::SetDirector(true),
             ReactorAsk::SetDirector(false),
             ReactorAsk::SilenceAlarms,
+            ReactorAsk::ClearJam(true),
+            ReactorAsk::ClearJam(false),
             ReactorAsk::Fire,
             ReactorAsk::JumpArm,
             ReactorAsk::JumpGo,

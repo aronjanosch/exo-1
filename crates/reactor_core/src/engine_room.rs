@@ -584,7 +584,7 @@ impl EngineRoom {
             battery: Battery::new(t.battery),
             shield: Shield::new(t.shield),
             shield_full_kw: t.grid.shields.demand_kw,
-            weapons: Weapons::new(t.weapons),
+            weapons: Weapons::new(t.weapons, seed ^ 0x9e3a_5c71),
             jump: JumpDrive::new(t.jump),
             jump_full_kw: t.grid.jump_drive.demand_kw,
         }
@@ -772,6 +772,11 @@ impl EngineRoom {
 
     pub fn weapons(&self) -> &Weapons {
         &self.weapons
+    }
+
+    /// The gun for the clearing hold (`Weapons::clear_jam`, `stop_clearing`).
+    pub fn weapons_mut(&mut self) -> &mut Weapons {
+        &mut self.weapons
     }
 
     /// A shot from the GN-01 screen (the FIRE button): true when the gun fired, false when refused

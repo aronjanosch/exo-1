@@ -1,7 +1,7 @@
 //!   (TODO(initiator): confirm).
 //! TODO(initiator): the glow of the critical text and the scanlines' look are not drawn yet.
 use super::*;
-use crate::displays::{ActiveDisplay, DisplayAction, Panels};
+use crate::displays::{ActiveDisplay, DisplayAction, DisplayPanel, DisplayPointer, Panels};
 use crate::dev_area::engine_room::{GUNNERY_AT, VENT_LIFT};
 use crate::dev_area::reactor::{lamp_blink_on, ReactorConfig};
 use crate::dev_area::status_monitor;
@@ -67,8 +67,19 @@ impl ReactorHelp {
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<ReactorHelp>();
-    app.add_systems(FixedUpdate, (read_clicks, write_panels).chain().in_set(crate::phases::Fx::Effects));
+    app.add_systems(FixedUpdate, (clear_jam_hold, read_clicks, write_panels).chain().in_set(crate::phases::Fx::Effects));
     app.add_systems(Update, gun_flash);
+}
+
+/// GN-01's CLEAR JAM hold (r41): the pointer held on the button (`Pointer::pressed`, set on the press,
+/// cleared on the release) sends `ClearJam(true)`, and the release `ClearJam(false)`. Sent on each
+/// change only. A hold on another panel, or with no display in use, is a release.
+pub fn clear_jam_hold(active: Res<ActiveDisplay>, pointer: Res<DisplayPointer>, displays: Query<&DisplayPanel>, mut items: ResMut<Items>, mut holding: Local<bool>) {
+    let on = active.using().and_then(|e| displays.get(e).ok()).is_some_and(|d| d.id == GUNNERY_ID) && pointer.0.pressed.as_deref() == Some("clear_jam");
+    if on != *holding {
+        *holding = on;
+        items.ask_reactor(ReactorAsk::ClearJam(on));
+    }
 }
 
 /// A shot the GN-01 saw (r40): the shot count went down and the reload started. A reset (the count
@@ -830,7 +841,11 @@ pub fn helm_panel(r: Option<&ReactorNews>) -> Panel {
 /// The GN-01 word: RELOADING while the gun reloads, READY with a shot in the capacitor, CHARGING
 /// while it is empty and the WEAPONS group gets some power, NO POWER when it gets none.
 pub fn gun_word(r: &ReactorNews) -> (&'static str, Tone) {
-    if r.weapon_reload_s > 0.0 {
+    if r.weapon_jammed {
+        ("JAMMED", Tone::Bad)
+    } else if r.weapon_overheated {
+        ("OVERHEAT", Tone::Bad)
+    } else if r.weapon_reload_s > 0.0 {
         ("RELOADING", Tone::Warn)
     } else if r.weapon_shots > 0 {
         ("READY", Tone::Good)
@@ -841,9 +856,10 @@ pub fn gun_word(r: &ReactorNews) -> (&'static str, Tone) {
     }
 }
 
-/// GN-01 (r40, the gunnery): the capacitor's shots as pips, its charge, the word and FIRE. FIRE
-/// stands in for the tactical officer until there are enemies and aiming. `capacity` is the pips
-/// the capacitor holds (`WeaponsTuning::capacity_shots`).
+/// GN-01 (r40, the gunnery): the capacitor's shots as pips, its charge, the gun's heat (r41), the
+/// word and FIRE. FIRE stands in for the tactical officer until there are enemies and aiming. A
+/// jammed gun shows CLEAR JAM in FIRE's place: held, it clears the jam (`clear_jam_hold`). `capacity`
+/// is the pips the capacitor holds (`WeaponsTuning::capacity_shots`).
 pub fn gunnery_panel(r: Option<&ReactorNews>, capacity: u8) -> Panel {
     let r = r.copied().unwrap_or_default();
     let (word, tone) = gun_word(&r);
@@ -859,9 +875,20 @@ pub fn gunnery_panel(r: Option<&ReactorNews>, capacity: u8) -> Panel {
         s.push(Shape::Rect { x: 2.0, y: 5.0, w: (bar_w - 4.0) * charge, h: 8.0, fill: Some(Ink::Hud), outline: None });
     }
     let bar = row(8.0, vec![canvas(bar_w, 18.0, s, None).fixed(bar_w), readout(format!("{:.0} %", charge * 100.0)).text_size(font::SMALL).tone(Tone::Normal).flex(1.0)]).fixed(18.0);
+    // The heat bar fills to the overheat line (1); the lock lets go below `unlock_at`, which the word shows.
+    let heat = r.weapon_heat.clamp(0.0, 1.0);
+    let mut hs = vec![Shape::Rect { x: 0.0, y: 3.0, w: bar_w, h: 12.0, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) }];
+    if heat > 0.0 {
+        hs.push(Shape::Rect { x: 2.0, y: 5.0, w: (bar_w - 4.0) * heat, h: 8.0, fill: Some(if heat >= 1.0 { Ink::Bad } else { Ink::Warn }), outline: None });
+    }
+    let heat_bar = row(8.0, vec![canvas(bar_w, 18.0, hs, None).fixed(bar_w), readout(format!("{:.0} %", heat * 100.0)).text_size(font::SMALL).tone(Tone::Normal).flex(1.0)]).fixed(18.0);
     let word = readout(word).text_size(font::SMALL).tone(tone).fixed(20.0);
-    let fire = button("FIRE", "fire").enabled(r.weapon_shots > 0 && r.weapon_reload_s <= 0.0).fixed(40.0);
-    let body = column(6.0, vec![micro("SHOTS").fixed(14.0), pip_row, micro("CHARGE").fixed(14.0), bar, word, fire, space()]);
+    let action = if r.weapon_jammed {
+        button("CLEAR JAM", "clear_jam").fixed(40.0)
+    } else {
+        button("FIRE", "fire").enabled(r.weapon_shots > 0 && r.weapon_reload_s <= 0.0 && !r.weapon_overheated).fixed(40.0)
+    };
+    let body = column(6.0, vec![micro("SHOTS").fixed(14.0), pip_row, micro("CHARGE").fixed(14.0), bar, micro("HEAT").fixed(14.0), heat_bar, word, action, space()]);
     Panel::screen(Tier::S, GUNNERY_NAME, "GN-01", body).with_padding(8.0)
 }
 

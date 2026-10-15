@@ -95,6 +95,10 @@ impl Tuning {
         need(self.battery.efficiency > 0.0 && self.battery.efficiency <= 1.0, "battery.efficiency", "must be > 0 and <= 1");
         need(self.weapons.capacity_shots >= 1 && self.weapons.shot_kw > 0.0 && self.weapons.reload_s > 0.0, "weapons", "capacity_shots >= 1, shot_kw and reload_s > 0");
         need(self.weapons.recharge_kw >= 0.0, "weapons.recharge_kw", "must be >= 0");
+        need(self.weapons.heat_per_shot >= 0.0 && self.weapons.cool_per_s >= 0.0, "weapons.heat_per_shot", "heat_per_shot and cool_per_s must be >= 0");
+        need(self.weapons.overheat_at > 0.0 && (0.0..self.weapons.overheat_at).contains(&self.weapons.unlock_at), "weapons.unlock_at", "unlock_at must be below overheat_at (> 0)");
+        need((0.0..=1.0).contains(&self.weapons.jam_chance) && self.weapons.jam_required_skill > 0.0, "weapons.jam_chance", "jam_chance must be 0..1, jam_required_skill > 0");
+        need(self.weapons.clear_jam_s > 0.0, "weapons.clear_jam_s", "must be > 0");
         need(self.jump.prep_s >= 0.0 && self.jump.charge_s > 0.0 && self.jump.active_s > 0.0, "jump", "prep_s >= 0, charge_s > 0, active_s > 0");
         need(self.room.aux_output_kw >= 0.0, "room.aux_output_kw", "must be >= 0");
         need(self.room.oxygen_generator_rate >= 0.0, "room.oxygen_generator_rate", "must be >= 0");

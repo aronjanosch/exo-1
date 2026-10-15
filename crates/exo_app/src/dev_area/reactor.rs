@@ -55,6 +55,8 @@ pub struct ReactorSim {
     /// The rooms' alarms (r40, #165), by the index of `ReactorNews::rooms`: the engine room, the corridor.
     /// The host steps them in `reactor_step`; SILENCE mutes them.
     pub alarms: [RoomAlarm; 2],
+    /// GN-01's CLEAR JAM hold is on (r41): the host counts it in `tick_jam` while the gun is jammed.
+    clearing: bool,
 }
 
 /// `--warm-reactor`: the room is warm-started when it is created (`ReactorSim::created`), not run 150 s
@@ -80,12 +82,19 @@ impl ReactorSim {
         // The warm-up runs the tank down; a fresh room starts with a full one (TODO(initiator): later
         // the tank may start where the ship's last run left it).
         room.pump_mut().refill(100.0);
-        ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX, vents: [true; 2], director: Director::new(&cfg.director, SEED), alarms: [RoomAlarm::new(cfg.alarm); 2] }
+        ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX, vents: [true; 2], director: Director::new(&cfg.director, SEED), alarms: [RoomAlarm::new(cfg.alarm); 2], clearing: false }
     }
 
     pub fn tick_eject(&mut self, dt: f64) {
         if let Some(left) = self.eject_left {
             self.eject_left = (left - dt > 0.0).then_some(left - dt);
+        }
+    }
+
+    /// The CLEAR JAM hold's time (r41): while it is on, the gun's jam clears after its hold.
+    pub fn tick_jam(&mut self, dt: f64) {
+        if self.clearing {
+            self.room.weapons_mut().clear_jam(dt);
         }
     }
 
@@ -211,6 +220,13 @@ impl ReactorSim {
                     info!("reactor: gun refused (reloading or no shot's energy)");
                 }
             }
+            // GN-01's CLEAR JAM hold (r41): letting go restarts the count.
+            ReactorAsk::ClearJam(on) => {
+                self.clearing = on;
+                if !on {
+                    self.room.weapons_mut().stop_clearing();
+                }
+            }
             // The airlock and the VACUUM switch need the air: `reactor_step` takes them.
             ReactorAsk::Airlock(_) | ReactorAsk::SetVacuum(_) => {}
         }
@@ -299,6 +315,9 @@ impl ReactorSim {
             weapon_shots: self.room.weapons().shots(),
             weapon_charge: self.room.weapons().charge(),
             weapon_reload_s: self.room.weapons().reload_left(),
+            weapon_heat: self.room.weapons().heat(),
+            weapon_jammed: self.room.weapons().jammed(),
+            weapon_overheated: self.room.weapons().overheated(),
             jump_stage: wire_jump(self.room.jump().stage),
             jump_charge: self.room.jump().charge,
             // The host's count is set by `reactor_step`, as the ejects are.
@@ -568,6 +587,7 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     }
     let dt = time.delta_secs_f64();
     sim.tick_eject(dt);
+    sim.tick_jam(dt);
     let input = if sim.manual { Input::manual(sim.fission, sim.turbine) } else { Input::auto() };
     events.extend(sim.room.step(dt, input));
     // The incident director (r38): the host's only. Its report is the room's devices and temperature,
@@ -737,6 +757,24 @@ mod tests {
         assert!(n.weapon_reload_s > 0.0, "the reload shows on GN-01");
         s.apply(ReactorAsk::Fire, &cfg(), &mut k);
         assert_eq!(s.news(1.0).weapon_shots, 5, "refused while reloading");
+    }
+
+    #[test]
+    fn the_clear_jam_hold_clears_the_jam_after_its_time_and_a_release_starts_over() {
+        let mut c = cfg();
+        c.weapons.jam_chance = 1.0;
+        let mut s = ReactorSim::new(&c);
+        let mut k = ReactorCounts::default();
+        s.apply(ReactorAsk::Fire, &c, &mut k);
+        assert!(s.news(1.0).weapon_jammed, "the shot jams (the chance is 1 here)");
+        s.apply(ReactorAsk::ClearJam(true), &c, &mut k);
+        s.tick_jam(2.0);
+        s.apply(ReactorAsk::ClearJam(false), &c, &mut k);
+        s.apply(ReactorAsk::ClearJam(true), &c, &mut k);
+        s.tick_jam(2.0);
+        assert!(s.news(1.0).weapon_jammed, "the release started the count over: 2 s is not enough");
+        s.tick_jam(1.0);
+        assert!(!s.news(1.0).weapon_jammed, "3 s of hold clears it");
     }
 
     #[test]

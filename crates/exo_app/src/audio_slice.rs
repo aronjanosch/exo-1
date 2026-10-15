@@ -251,14 +251,20 @@ pub(crate) fn one_shot(commands: &mut Commands, h: &Handle<SynthAudio>, volume: 
 
 /// The gun's shot (r40): the thud when the GN-01 fires (`reactor_screen::shot_fired`), on every machine
 /// that gets the news, the host's and the clients'.
-fn gun_shot(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mut prev: Local<Option<u8>>) {
+fn gun_shot(mut commands: Commands, s: Res<SliceSounds>, items: Res<Items>, mut prev: Local<Option<u8>>, mut jammed: Local<bool>) {
     let Some(news) = items.reactor else {
         *prev = None;
+        *jammed = false;
         return;
     };
     if crate::dev_area::reactor_screen::shot_fired(*prev, &news) {
         one_shot(&mut commands, &s.thud, GUN_VOL);
     }
+    // The jam (r41): a clunk when the gun jams, once per jam (the news says it until it is cleared).
+    if news.weapon_jammed && !*jammed {
+        one_shot(&mut commands, &s.clunk, CLUNK_VOL);
+    }
+    *jammed = news.weapon_jammed;
     *prev = Some(news.weapon_shots);
 }
 

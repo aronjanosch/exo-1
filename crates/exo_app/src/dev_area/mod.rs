@@ -102,6 +102,8 @@ pub struct PlaceholderBox {
 #[derive(Resource, Default, Debug)]
 pub struct DevAreaDevices {
     pub boxes: Vec<PlaceholderBox>,
+    /// The ids of the boxes that are a role zone's mirror of a box in a ship room (`add_mirror`).
+    mirrors: std::collections::BTreeSet<String>,
 }
 
 impl DevAreaDevices {
@@ -109,6 +111,19 @@ impl DevAreaDevices {
     pub fn add(&mut self, b: PlaceholderBox) {
         assert!(self.boxes.iter().all(|x| x.id != b.id), "dev area: device id '{}' used twice", b.id);
         self.boxes.push(b);
+    }
+
+    /// Adds the mirror of a device that stands in a ship room: the same box and panel (the same
+    /// panel id, so the same machine) in a role zone outside, at `local_pos` there, its id with
+    /// `_outside`. The mirror carries `layout::Mirror`, so a lookup by panel id finds the one inside.
+    pub fn add_mirror(&mut self, inside: &PlaceholderBox, zone: Zone, local_pos: [f64; 2]) {
+        let b = PlaceholderBox { id: format!("{}_outside", inside.id), zone, local_pos, ..inside.clone() };
+        self.mirrors.insert(b.id.clone());
+        self.add(b);
+    }
+
+    pub fn is_mirror(&self, id: &str) -> bool {
+        self.mirrors.contains(id)
     }
 }
 
@@ -209,8 +224,16 @@ fn spawn_devices(mut commands: Commands, planet: Res<PlanetRes>, devices: Res<De
             ))
             .id();
         area.entities.push(e);
+        let mirror = devices.is_mirror(&b.id);
+        if mirror {
+            commands.entity(e).insert(layout::Mirror);
+        }
         if let Some(d) = panel {
-            area.entities.push(commands.spawn(d).id());
+            let p = commands.spawn(d).id();
+            if mirror {
+                commands.entity(p).insert(layout::Mirror);
+            }
+            area.entities.push(p);
         }
     }
 }

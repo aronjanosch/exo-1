@@ -98,6 +98,9 @@ pub fn station_word(s: BotStation) -> &'static str {
         BotStation::Reactor => "REACTOR",
         BotStation::Power => "POWER",
         BotStation::Helm => "HELM",
+        BotStation::Fire => "FIRE",
+        BotStation::Repair => "REPAIR",
+        BotStation::Breach => "BREACH",
     }
 }
 

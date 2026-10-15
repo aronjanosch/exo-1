@@ -20,7 +20,7 @@ pub mod sim;
 pub mod tuning;
 pub mod weapons;
 
-pub use bots::{Action, BotTuning, Bots, Priority, Station};
+pub use bots::{choose, Action, BotTuning, Bots, Job, Layout, Row, Station, Walker};
 pub use airlock::{Airlock, AirlockTuning, Dir, Door, Goal};
 pub use battery::{Battery, BatteryTuning};
 pub use engine::Engine;

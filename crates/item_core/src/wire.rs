@@ -227,8 +227,9 @@ impl StartupStage {
     }
 }
 
-/// A station a bot can man (r42, #253; `reactor_core::bots::Station`), as the captain's list and the
-/// news name them.
+/// A row of the captain's bot list (r42, #253; `reactor_core::bots::Row`), as the captain's list and the
+/// news name them: the four stations (r42), then the three work rows (r44: FIRE, REPAIR, BREACH). The
+/// order is the row order, `Row::ALL`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum BotStation {
     #[default]
@@ -236,13 +237,16 @@ pub enum BotStation {
     Reactor,
     Power,
     Helm,
+    Fire,
+    Repair,
+    Breach,
 }
 
-/// How many bot stations there are: the size of `ReactorNews::bots`.
-pub const BOT_STATIONS: usize = 4;
+/// How many bot rows there are: the size of `ReactorNews::bots`.
+pub const BOT_ROWS: usize = 7;
 
 impl BotStation {
-    pub const ALL: [BotStation; BOT_STATIONS] = [BotStation::Gunnery, BotStation::Reactor, BotStation::Power, BotStation::Helm];
+    pub const ALL: [BotStation; BOT_ROWS] = [BotStation::Gunnery, BotStation::Reactor, BotStation::Power, BotStation::Helm, BotStation::Fire, BotStation::Repair, BotStation::Breach];
 
     pub fn index(self) -> usize {
         self as usize
@@ -613,8 +617,8 @@ pub struct ReactorNews {
     pub startup: StartupStage,
     /// The checklist's six ticks, steps 1 to 6 (`reactor_core::startup::Startup::ticks`).
     pub startup_ticks: [bool; 6],
-    /// The bots' stations, by `BotStation::index` (r42, #253): a station a bot runs shows its BOT tag.
-    pub bots: [BotNews; BOT_STATIONS],
+    /// The bots' rows, by `BotStation::index` (r42, #253): a station a bot runs shows its BOT tag; a work row a bot is at shows it too (r44).
+    pub bots: [BotNews; BOT_ROWS],
     /// The dev BOTS setting: how many bots there are, 0..3 (r42).
     pub bot_count: u8,
 }
@@ -871,7 +875,7 @@ mod tests {
             weapon_heat: 0.42,
             weapon_jammed: true,
             weapon_overheated: false,
-            bots: [BotNews { manned: true, level: 3 }, BotNews::default(), BotNews { manned: false, level: 1 }, BotNews::default()],
+            bots: [BotNews { manned: true, level: 3 }, BotNews::default(), BotNews { manned: false, level: 1 }, BotNews::default(), BotNews { manned: false, level: 3 }, BotNews::default(), BotNews { manned: false, level: 0 }],
             bot_count: 2,
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {

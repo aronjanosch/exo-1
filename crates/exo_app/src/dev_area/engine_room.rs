@@ -210,7 +210,7 @@ const PARTS: [Part; 8] = [
 
 /// The machines and the screen, standing in the room (not in `PARTS` only because they are
 /// named constants above).
-const MACHINES: [Part; 4] = [
+const MACHINES: [Part; 5] = [
     Part { id: REACTOR, at: REACTOR_AT, size: REACTOR_SIZE, lift: 0.0, colour: [0.55, 0.3, 0.2] },
     Part { id: COOLANT_PUMP, at: COOLANT_PUMP_AT, size: COOLANT_PUMP_SIZE, lift: 0.0, colour: DEVICE_COLOUR },
     Part { id: JUNCTION_BOX, at: JUNCTION_BOX_AT, size: JUNCTION_BOX_SIZE, lift: 0.0, colour: [0.85, 0.7, 0.2] },

@@ -783,6 +783,14 @@ impl Reactor {
         let b = self.bands();
         self.heat_at(b.fission_optimal.lo) > (self.turbine_for_load * 1.5).min(90.0)
     }
+    /// Core stability, 0..1: 1 minus the meltdown timer's fraction (`timers().1`). 0 when the core
+    /// has melted or was ejected; 1 when it is off and cold. No dynamics of its own.
+    pub fn stability(&self) -> f64 {
+        if self.melted || self.ejected {
+            return 0.0;
+        }
+        (1.0 - self.timers().1).clamp(0.0, 1.0)
+    }
     /// 0..1 of the fire timer and the meltdown timer (for the tests and the logs).
     pub fn timers(&self) -> (f64, f64) {
         (self.fire_timer / self.tuning.fire_delay_s, self.overheat_timer / self.tuning.meltdown_delay_s)

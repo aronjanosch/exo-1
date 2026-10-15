@@ -35,7 +35,7 @@ use super::*;
 use crate::displays::{ActiveDisplay, DisplayAction, Panels};
 use crate::dev_area::reactor::{lamp_blink_on, ReactorConfig};
 use crate::items::Items;
-use display_core::{button, canvas, column, ctl, font, label, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Shape, Tier, TextFace, Tone};
+use display_core::{button, canvas, column, ctl, font, label, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Rect, Shape, Tier, TextFace, Tone, Widget};
 use item_core::wire::{BreakerGroup, FuelKind, FuelTube, Lamp, PumpMode, ReactorAsk, ReactorFault, ReactorNews, FUEL_TUBES};
 
 /// The status board's lamps, in the panel's order (three to a row).
@@ -67,6 +67,12 @@ pub const HELP_ACTION: &str = "help";
 /// process draws its own panels. Closed when the player leaves the display (`write_panels`).
 #[derive(Resource, Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ReactorHelp(pub bool);
+
+impl ReactorHelp {
+    pub fn toggle(&mut self) {
+        self.0 = !self.0;
+    }
+}
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<ReactorHelp>();
@@ -329,6 +335,173 @@ pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     let gauges = row(8.0, vec![temp_gauge(r.map_or(0.0, |r| r.temp), optimal, allowed), power_gauge(r, max_kw), fuel(r)]).fixed(152.0);
     let body = column(if critical { 4.0 } else { 8.0 }, vec![gauges, row(16.0, vec![bottom_left.flex(1.0), switches.fixed(200.0)]).flex(1.0)]);
     Panel::screen(Tier::M, READOUT_NAME, "RX-01", body).status(word, tone).with_padding(8.0)
+}
+
+// ---------- the help view ----------
+
+/// A callout box (panel pixels in the content area): 256 by 44, two lines of 14 px.
+const CALLOUT_W: f64 = 256.0;
+const CALLOUT_H: f64 = 44.0;
+const CALLOUT_SIZE: f64 = 14.0;
+/// The left and the right column of the callout boxes (the readout's content is 608 wide).
+const LEFT: f64 = 0.0;
+const RIGHT: f64 = 352.0;
+
+/// What a callout points at: a leaf of the readout by its place in the layout (the three gauges come
+/// first), or a control by its action.
+#[derive(Clone, Copy)]
+enum Target {
+    Leaf(usize),
+    Action(&'static str),
+}
+
+/// The help view's callouts: where the box goes (column, top), the two lines and the target. The
+/// boxes sit over the dimmed readout; the pointer line runs from the box to the target.
+const CALLOUTS: [(f64, f64, [&str; 2], Target); 8] = [
+    (LEFT, 4.0, ["keep the needle in the green", "red too long: core goes bang"], Target::Leaf(0)),
+    (RIGHT, 4.0, ["what you make", "vs. what the ship wants"], Target::Leaf(1)),
+    (RIGHT, 104.0, ["rods; pull one in a pinch", ""], Target::Leaf(2)),
+    (LEFT, 152.0, ["how hard the atoms argue", ""], Target::Action("fis_set")),
+    (LEFT, 252.0, ["how much steam makes power", "and how much makes cooling"], Target::Action("tur_set")),
+    (RIGHT, 152.0, ["AUTO: the ship has the dial", "MAN: your hand, your fault"], Target::Action("mode")),
+    (RIGHT, 200.0, ["the big on switch", "nothing turns without it"], Target::Action("power")),
+    (RIGHT, 292.0, ["the big red no", ""], Target::Action("scram")),
+];
+/// The CLOSE box's place (left column, under the fuel's callout's row).
+const CLOSE_AT: (f64, f64) = (LEFT, 104.0);
+
+/// The ink of a readout drawn dimmed in the help view: the same picture in the dim tokens.
+fn dim_ink(i: Ink) -> Ink {
+    match i {
+        Ink::Hud | Ink::HudDim => Ink::HudDim,
+        Ink::Good | Ink::GoodDim => Ink::GoodDim,
+        Ink::Warn | Ink::WarnDim => Ink::WarnDim,
+        Ink::Bad | Ink::BadDim => Ink::BadDim,
+        Ink::FgTitle | Ink::Fg1 | Ink::Fg2 | Ink::Fg3 => Ink::Fg3,
+        Ink::Line1 | Ink::Line2 => Ink::Line2,
+        Ink::Bg0 | Ink::Bg1 | Ink::Bg3 => i,
+    }
+}
+
+/// A shape moved by (dx, dy) and dimmed. A text box is cut at `right` (the content's width): the fuel's
+/// captions are drawn past its 160 px box, and the help view must keep them inside its picture.
+fn shifted_dim(s: &Shape, dx: f64, dy: f64, right: f64) -> Shape {
+    let mut t = s.clone();
+    match &mut t {
+        Shape::Arc { cx, cy, ink, .. } => {
+            *cx += dx;
+            *cy += dy;
+            *ink = dim_ink(*ink);
+        }
+        Shape::Line { a, b, ink, .. } => {
+            a[0] += dx;
+            a[1] += dy;
+            b[0] += dx;
+            b[1] += dy;
+            *ink = dim_ink(*ink);
+        }
+        Shape::Rect { x, y, fill, outline, .. } => {
+            *x += dx;
+            *y += dy;
+            *fill = fill.map(dim_ink);
+            *outline = outline.map(|(i, w)| (dim_ink(i), w));
+        }
+        Shape::Hatch { x, y, ink, .. } => {
+            *x += dx;
+            *y += dy;
+            *ink = dim_ink(*ink);
+        }
+        Shape::Text { x, y, w, ink, .. } => {
+            *x += dx;
+            *y += dy;
+            *w = w.min(right - *x).max(0.0);
+            *ink = dim_ink(*ink);
+        }
+        Shape::Circle { cx, cy, fill, stroke, .. } => {
+            *cx += dx;
+            *cy += dy;
+            *fill = fill.map(dim_ink);
+            *stroke = stroke.map(|(i, w)| (dim_ink(i), w));
+        }
+    }
+    t
+}
+
+/// The dimmed picture of one readout leaf, at its place in the content area (`o`, the content's top left;
+/// `right` its width).
+fn dimmed_leaf(w: &Widget, r: Rect, o: DVec2, right: f64, out: &mut Vec<Shape>) {
+    let (x, y, bw, bh) = (r.min.x - o.x, r.min.y - o.y, r.size.x, r.size.y);
+    let frame = Shape::Rect { x, y, w: bw, h: bh, fill: None, outline: Some((Ink::Line2, 2.0)) };
+    match w {
+        Widget::Canvas { shapes, .. } => out.extend(shapes.iter().map(|s| shifted_dim(s, x, y, right))),
+        Widget::Label { text, size, mono, .. } => out.push(text_shape(x, y, bw, bh, text, *size, *mono, false)),
+        Widget::Button { label, .. } => {
+            out.push(frame);
+            out.push(text_shape(x, y, bw, bh, label, font::LABEL.min(bh * 0.55), false, true));
+        }
+        Widget::Toggle { labels, .. } => {
+            out.push(frame);
+            out.push(text_shape(x, y, bw / 2.0, bh, &labels[0], font::SMALL, false, true));
+            out.push(text_shape(x + bw / 2.0, y, bw / 2.0, bh, &labels[1], font::SMALL, false, true));
+        }
+        Widget::Slider { value, .. } => {
+            out.push(frame);
+            // The marker's stroke is 3 px wide: at the ends it stays 2 px inside the box.
+            let at = x + (bw * value.clamp(0.0, 1.0)).clamp(2.0, bw - 2.0);
+            out.push(Shape::Line { a: [at, y], b: [at, y + bh], width: 3.0, ink: Ink::Fg3, dash: None });
+        }
+        _ => {}
+    }
+}
+
+/// A text in a box, dimmed (the help view's labels and button captions).
+fn text_shape(x: f64, y: f64, w: f64, h: f64, s: &str, size: f64, mono: bool, centred: bool) -> Shape {
+    let face = if mono { TextFace::Mono } else { TextFace::Display };
+    Shape::Text { x, y, w, h, text: s.to_string(), size, face, ink: Ink::Fg3, centred }
+}
+
+/// One callout: the pointer line from the box's centre to the target's centre (drawn first, so the box
+/// covers its start), then the box with its two lines.
+fn callout_shapes(x: f64, y: f64, lines: &[&str; 2], target: Rect, o: DVec2, out: &mut Vec<Shape>) {
+    let from = DVec2::new(x + CALLOUT_W / 2.0, y + CALLOUT_H / 2.0);
+    let to = target.centre() - o;
+    out.push(Shape::Line { a: [from.x, from.y], b: [to.x, to.y], width: 2.0, ink: Ink::Hud, dash: None });
+    out.push(Shape::Circle { cx: to.x, cy: to.y, r: 4.0, fill: Some(Ink::Hud), stroke: None });
+    out.push(Shape::Rect { x, y, w: CALLOUT_W, h: CALLOUT_H, fill: Some(Ink::Bg0), outline: Some((Ink::Hud, 2.0)) });
+    for (i, line) in lines.iter().enumerate() {
+        let ly = y + 5.0 + i as f64 * 18.0;
+        out.push(Shape::Text { x: x + 8.0, y: ly, w: CALLOUT_W - 16.0, h: 18.0, text: line.to_string(), size: CALLOUT_SIZE, face: TextFace::Display, ink: Ink::FgTitle, centred: false });
+    }
+}
+
+/// The readout's help view (the "?" button): the readout drawn dimmed, a callout over each control and
+/// a CLOSE box. The whole picture is the close button (`HELP_ACTION`), so a click anywhere closes it.
+/// The same header and status as the readout. A melted core has no help.
+pub fn readout_help_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
+    let base = readout_panel(r, max_kw);
+    if r.is_some_and(|r| r.melted) {
+        return base;
+    }
+    let c = base.content();
+    let o = c.min;
+    let leaves = base.layout();
+    let mut shapes = Vec::new();
+    for w in &leaves {
+        dimmed_leaf(w.widget, w.rect, o, c.size.x, &mut shapes);
+    }
+    for (x, y, lines, target) in CALLOUTS {
+        let rect = match target {
+            Target::Leaf(i) => leaves[i].rect,
+            Target::Action(a) => base.find(a).map(|p| p.rect).unwrap_or(c),
+        };
+        callout_shapes(x, y, &lines, rect, o, &mut shapes);
+    }
+    let (cx, cy) = CLOSE_AT;
+    shapes.push(Shape::Rect { x: cx, y: cy, w: CALLOUT_W, h: CALLOUT_H, fill: Some(Ink::Bg0), outline: Some((Ink::Warn, 2.0)) });
+    shapes.push(Shape::Text { x: cx, y: cy, w: CALLOUT_W, h: CALLOUT_H, text: "CLOSE".into(), size: font::LABEL, face: TextFace::DisplayBold, ink: Ink::Warn, centred: true });
+    let mut panel = base;
+    panel.root = canvas(c.size.x, c.size.y, shapes, Some(HELP_ACTION)).flex(1.0);
+    panel
 }
 
 /// The NO POWER panel: a dark screen with the word centred.
@@ -711,7 +884,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
         let ask = if c.panel == READOUT_ID {
             match c.action.as_str() {
                 HELP_ACTION => {
-                    help.0 = !help.0;
+                    help.toggle();
                     None
                 }
                 "mode" => snap.map(|r| ReactorAsk::SetManual(new_state(r.manual))),
@@ -777,7 +950,9 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     let speed = items.reactor.map_or(0.0, |r| r.pump_speed);
     *spin = crate::effects::impeller_angle(*spin, speed, time.delta_secs_f64());
     let angle = (*spin / IMPELLER_STEP).round() * IMPELLER_STEP;
-    panels.set(READOUT_ID, readout_panel(items.reactor.as_ref(), cfg.0.reactor.max_output_kw));
+    let max_kw = cfg.0.reactor.max_output_kw;
+    let readout = if help.0 { readout_help_panel(items.reactor.as_ref(), max_kw) } else { readout_panel(items.reactor.as_ref(), max_kw) };
+    panels.set(READOUT_ID, readout);
     panels.set(PUMP_ID, pump_panel_at(items.reactor.as_ref(), angle));
     panels.set(JUNCTION_ID, junction_panel(items.reactor.as_ref()));
     panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));
@@ -818,6 +993,7 @@ mod tests {
             v.push(pump_panel(r.as_ref()));
             v.push(junction_panel(r.as_ref()));
             v.push(door_panel(r.as_ref()));
+            v.push(readout_help_panel(r.as_ref(), 2000.0));
         }
         for flow in [0.0, 0.5, 1.0] {
             v.push(pump_panel(Some(&ReactorNews { flow, ..news() })));
@@ -1006,6 +1182,69 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The text lines of a panel's canvas (its shapes), in order.
+    fn canvas_texts(p: &Panel) -> Vec<String> {
+        match &p.root.widget {
+            display_core::Widget::Canvas { shapes, .. } => shapes.iter().filter_map(|s| match s {
+                Shape::Text { text, .. } => Some(text.clone()),
+                _ => None,
+            }).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_help_view_has_a_callout_for_each_control_and_a_close() {
+        let p = readout_help_panel(Some(&news()), 2000.0);
+        let texts = canvas_texts(&p);
+        for line in ["keep the needle in the green", "what you make", "rods; pull one in a pinch", "how hard the atoms argue", "how much steam makes power", "AUTO: the ship has the dial", "the big on switch", "the big red no"] {
+            assert!(texts.iter().any(|t| t == line), "callout {line:?} is missing");
+        }
+        assert!(texts.iter().any(|t| t == "CLOSE"), "a CLOSE box");
+        assert!(matches!(&p.root.widget, display_core::Widget::Canvas { action: Some(a), .. } if a == HELP_ACTION), "the picture closes the help");
+        assert!(p.overflowing().is_empty(), "{:?}", p.overflowing());
+        assert_eq!(p.plate, readout_panel(Some(&news()), 2000.0).plate, "the same header and status");
+    }
+
+    #[test]
+    fn the_callouts_point_at_real_controls_and_do_not_overlap() {
+        let base = shipped_panel(Some(&news()));
+        let c = base.content();
+        let boxes: Vec<Rect> = CALLOUTS.iter().map(|(x, y, _, _)| Rect::new(*x, *y, CALLOUT_W, CALLOUT_H)).collect();
+        for (i, b) in boxes.iter().enumerate() {
+            assert!(b.min.x >= 0.0 && b.max().x <= c.size.x && b.min.y >= 0.0 && b.max().y <= c.size.y, "callout {i} is inside the picture");
+            for (j, o) in boxes.iter().enumerate().skip(i + 1) {
+                let apart = b.max().x <= o.min.x || o.max().x <= b.min.x || b.max().y <= o.min.y || o.max().y <= b.min.y;
+                assert!(apart, "callouts {i} and {j} overlap");
+            }
+        }
+        for (_, _, lines, _) in CALLOUTS {
+            for line in lines.iter().filter(|l| !l.is_empty()) {
+                assert!(line.chars().count() as f64 * CALLOUT_SIZE * 0.6 <= CALLOUT_W - 16.0, "{line:?} is too wide for its box");
+            }
+        }
+        let close = Rect::new(CLOSE_AT.0, CLOSE_AT.1, CALLOUT_W, CALLOUT_H);
+        assert!(boxes.iter().all(|b| b.max().y <= close.min.y || close.max().y <= b.min.y || b.max().x <= close.min.x || close.max().x <= b.min.x), "CLOSE does not sit on a callout");
+        for (i, (_, _, _, target)) in CALLOUTS.iter().enumerate() {
+            let r = match target {
+                Target::Leaf(l) => base.layout()[*l].rect,
+                Target::Action(a) => base.find(a).unwrap_or_else(|| panic!("callout {i}: no control {a:?}")).rect,
+            };
+            assert!(r.size.x > 0.0 && r.size.y > 0.0, "callout {i} points at an empty control");
+        }
+    }
+
+    #[test]
+    fn the_help_toggles_on_the_button_and_off_again() {
+        let mut help = ReactorHelp::default();
+        assert!(!help.0, "the readout starts without help");
+        help.toggle();
+        assert!(help.0, "the ? opens the help");
+        help.toggle();
+        assert_eq!(help, ReactorHelp(false), "the second press is back to the readout");
+        assert!(readout_help_panel(Some(&ReactorNews { melted: true, ..news() }), 2000.0) == readout_panel(Some(&ReactorNews { melted: true, ..news() }), 2000.0), "a melted core has no help view");
     }
 
     #[test]

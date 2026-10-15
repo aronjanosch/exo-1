@@ -172,6 +172,9 @@ pub enum ReactorAsk {
     /// The AUX screen's switch for Life Support or Lights (`EngineRoom::set_aux_switch`, #300 r32).
     /// Engines is not aux-fed: the host ignores it.
     SetAuxSwitch(BreakerGroup, bool),
+    /// A consumer group's limit on the junction box (PULSAR's conduit limit, #300 r34): 0..1, the
+    /// host clamps it. The group asks for its demand times the limit.
+    SetLimit(BreakerGroup, f64),
 }
 
 /// The coolant pump's mode (#300): off, a low or a high stream.
@@ -347,6 +350,10 @@ pub struct ReactorNews {
     pub powered: bool,
     /// The breakers, by `BreakerGroup::index`: engines, life support, lights.
     pub breakers: [bool; 3],
+    /// The limits (0..1), the kW each group gets and its demand kW, by `BreakerGroup::index` (#300 r34).
+    pub limits: [f64; 3],
+    pub delivered_kw: [f64; 3],
+    pub demand_kw: [f64; 3],
     /// The aux reactor is on (`EngineRoom::aux_enabled`, #300 r32).
     pub aux_on: bool,
     /// The aux switches of Life Support and Lights (on when the aux reactor feeds them).
@@ -538,6 +545,9 @@ mod tests {
     #[test]
     fn reactor_news_travels_as_it_is() {
         let news = ReactorNews {
+            limits: [0.5, 1.0, 0.25],
+            delivered_kw: [400.0, 0.0, 80.0],
+            demand_kw: [800.0, 400.0, 80.0],
             reactor: PartNews { share: 0.9, working: true },
             pump: PartNews { share: 0.4, working: true },
             junction: PartNews { share: 1.0, working: true },
@@ -608,6 +618,7 @@ mod tests {
             ReactorAsk::SetPower(false),
             ReactorAsk::SetBreaker(BreakerGroup::Lights, false),
             ReactorAsk::SetBreaker(BreakerGroup::Engines, true),
+            ReactorAsk::SetLimit(BreakerGroup::Lights, 0.6),
             ReactorAsk::SetPumpMode(PumpMode::Low),
             ReactorAsk::ArmEject,
             ReactorAsk::Eject,

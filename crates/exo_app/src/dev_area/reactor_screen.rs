@@ -688,18 +688,25 @@ fn coolant_tube(r: &ReactorNews) -> Item {
     canvas(60.0, 109.0, s, None)
 }
 
-/// One breaker lever (94 wide): its name, the slot, the handle at the top when on, at the bottom
-/// when off. The whole lever is the button.
+/// One breaker lever (94 wide, the junction box's): its name, the slot, the handle at the top when on,
+/// at the bottom when off. The whole lever is the button.
 fn lever(lines: &[&str], on: bool, action: &str) -> Item {
+    lever_in(94.0, lines, on, action, if on { Ink::Fg1 } else { Ink::Fg3 })
+}
+
+/// A breaker lever `w` wide with its name in `name_ink`: the slot and the handle sit on the middle of
+/// the lever, so a name centred over it lines up with them.
+fn lever_in(w: f64, lines: &[&str], on: bool, action: &str, name_ink: Ink) -> Item {
     // The names are set in lines of 17 px, bottom-aligned on the slot's top (y 36): a name too wide
-    // for the lever (94 px) is split over two lines rather than cut.
-    let ink = if on { Ink::Fg1 } else { Ink::Fg3 };
-    let mut s: Vec<Shape> = lines.iter().enumerate().map(|(i, l)| text(0.0, 36.0 - 17.0 * (lines.len() - i) as f64, 94.0, 17.0, l, 16.0, TextFace::Display, ink, true)).collect();
-    s.push(Shape::Rect { x: 36.0, y: 36.0, w: 22.0, h: 124.0, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) });
+    // for the lever is split over two lines rather than cut.
+    let cx = w / 2.0;
+    let mut s: Vec<Shape> = lines.iter().enumerate().map(|(i, l)| text(0.0, 36.0 - 17.0 * (lines.len() - i) as f64, w, 17.0, l, 16.0, TextFace::Display, name_ink, true)).collect();
+    s.push(Shape::Rect { x: cx - 11.0, y: 36.0, w: 22.0, h: 124.0, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) });
     let hy = if on { 36.0 } else { 126.0 };
-    s.push(Shape::Rect { x: 23.0, y: hy, w: 48.0, h: 34.0, fill: Some(if on { Ink::Hud } else { Ink::Warn }), outline: Some((Ink::FgTitle, 2.0)) });
-    s.push(text(23.0, hy, 48.0, 34.0, if on { "ON" } else { "OFF" }, 16.0, TextFace::DisplayBold, Ink::Bg0, true));
-    canvas(94.0, 168.0, s, Some(action)).flex(1.0)
+    let ink = if on { Ink::Hud } else { Ink::Warn };
+    s.push(Shape::Rect { x: cx - 24.0, y: hy, w: 48.0, h: 34.0, fill: Some(ink), outline: Some((Ink::FgTitle, 2.0)) });
+    s.push(text(cx - 24.0, hy, 48.0, 34.0, if on { "ON" } else { "OFF" }, 16.0, TextFace::DisplayBold, Ink::Bg0, true));
+    canvas(w, 168.0, s, Some(action)).flex(1.0)
 }
 
 /// The junction box's screen (S): three breaker levers.
@@ -729,10 +736,14 @@ pub fn aux_panel(r: Option<&ReactorNews>) -> Panel {
         let shapes = vec![text(0.0, h * 0.5 - 10.0, w, 20.0, "AUX OFFLINE", 22.0, TextFace::DisplayBold, Ink::Fg3, true)];
         return Panel::screen(Tier::S, AUX_NAME, "AX-01", canvas(w, h, shapes, None).flex(1.0));
     }
+    // Two levers of 76 px side by side (152 px, the names in one tone whatever the switch), the boost
+    // beside them in what is left: "BOOST +320 kW" in the mono font needs about 125 px.
+    let name = Ink::Fg1;
     let switches = row(
         0.0,
-        vec![lever(&["LIFE", "SUPPORT"], r.aux_life_support, "aux_life"), lever(&["LIGHTS"], r.aux_lights, "aux_lights")],
-    );
+        vec![lever_in(76.0, &["LIFE", "SUPPORT"], r.aux_life_support, "aux_life", name), lever_in(76.0, &["LIGHTS"], r.aux_lights, "aux_lights", name)],
+    )
+    .fixed(152.0);
     let boost = column(4.0, vec![micro("AUX OUTPUT").fixed(14.0), readout(format!("BOOST +{:.0} kW", r.aux_boost_kw)).text_size(font::SMALL).tone(Tone::Normal)]);
     Panel::screen(Tier::S, AUX_NAME, "AX-01", row(10.0, vec![switches, boost.flex(1.0)])).with_padding(6.0)
 }
@@ -1618,6 +1629,40 @@ mod tests {
         assert!(format!("{p:?}").contains("BOOST +320 kW"), "the boost in kW");
         assert!(p.overflowing().is_empty(), "{:?}", p.overflowing());
         assert!(aux_panel(Some(&ReactorNews { aux_on: true, aux_boost_kw: 0.0, ..news() })).overflowing().is_empty());
+    }
+
+    /// The boxes of a panel's lever names (every canvas text but the ON / OFF on the handles), in the
+    /// panel's own coordinates.
+    fn name_boxes(p: &Panel) -> Vec<(String, Ink, Rect)> {
+        let mut out = Vec::new();
+        for w in p.layout() {
+            if let display_core::Widget::Canvas { shapes, .. } = w.widget {
+                for s in shapes {
+                    if let Shape::Text { x, y, w: bw, h, text, ink, .. } = s {
+                        if text != "ON" && text != "OFF" {
+                            out.push((text.clone(), *ink, Rect::new(w.rect.min.x + x, w.rect.min.y + y, *bw, *h)));
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn the_aux_lever_names_do_not_overlap_and_share_a_tone() {
+        for (life, lights) in [(true, false), (false, true), (true, true)] {
+            let on = ReactorNews { aux_on: true, aux_life_support: life, aux_lights: lights, aux_boost_kw: 320.0, ..news() };
+            let names = name_boxes(&aux_panel(Some(&on)));
+            assert_eq!(names.iter().map(|n| n.0.as_str()).collect::<Vec<_>>(), ["LIFE", "SUPPORT", "LIGHTS"]);
+            for (i, (a, _, ra)) in names.iter().enumerate() {
+                for (b, _, rb) in names.iter().skip(i + 1) {
+                    let apart = ra.max().x <= rb.min.x || rb.max().x <= ra.min.x || ra.max().y <= rb.min.y || rb.max().y <= ra.min.y;
+                    assert!(apart, "{a} and {b} overlap ({life}, {lights})");
+                }
+            }
+            assert!(names.iter().all(|n| n.1 == names[0].1), "one tone for both levers' names, whatever their state");
+        }
     }
 
     #[test]

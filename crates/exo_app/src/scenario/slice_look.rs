@@ -14,10 +14,10 @@ use super::reactor::{click_until, use_display};
 use super::*;
 use crate::controls::Controls;
 use crate::crew_hud::Vitals;
-use crate::dev_area::engine_room::{CORRIDOR, COOLANT_PUMP_AT, DOOR_AT, JUNCTION_BOX_AT, REACTOR_AT};
+use crate::dev_area::engine_room::{AUX_AT, CORRIDOR, COOLANT_PUMP_AT, DOOR_AT, JUNCTION_BOX_AT, REACTOR_AT};
 use crate::dev_area::hazards::{GLOW_BARREL, HOT_PLATE, NO_AIR};
 use crate::dev_area::reactor::ReactorSim;
-use crate::dev_area::reactor_screen::{ReactorHelp, DOOR_ID, FAULTS_ID, HELP_ACTION, JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID};
+use crate::dev_area::reactor_screen::{ReactorHelp, AUX_ID, DOOR_ID, FAULTS_ID, HELP_ACTION, JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID};
 use crate::dev_area::{DevArea, ENGINEERING};
 use crate::displays::{ActiveDisplay, DisplayPanel, Panels};
 use crate::effects::{self, Smoke};
@@ -159,6 +159,39 @@ fn ring(w: &World) -> Option<&crate::repair::Play> {
 
 fn sessions(w: &World) -> usize {
     w.resource::<RepairSessions>().sessions.len()
+}
+
+/// The aux reactor's state on the news: on, its LIGHTS switch, and the boost it gives (kW).
+fn aux_on(w: &World) -> bool {
+    items(w).reactor.as_ref().is_some_and(|r| r.aux_on)
+}
+
+fn aux_lights(w: &World) -> bool {
+    items(w).reactor.as_ref().is_some_and(|r| r.aux_lights)
+}
+
+fn aux_boost(w: &World) -> f64 {
+    items(w).reactor.as_ref().map_or(0.0, |r| r.aux_boost_kw)
+}
+
+/// Checks a state now (one tick): the news after a click poll, as a PASS or FAIL line.
+fn check_now(name: &'static str, what: &'static str, ok: fn(&World) -> bool) -> Step {
+    Box::new(move |w, c| {
+        begin(w, c, name);
+        check(c, ok(w), what.to_string());
+        end(w, c, what.to_string());
+        true
+    })
+}
+
+/// Asks the host to flip the aux reactor (the dev fault, as the other faults are asked) and ends.
+fn ask_aux(name: &'static str) -> Step {
+    Box::new(move |w, c| {
+        begin(w, c, name);
+        w.resource_mut::<Items>().ask_reactor(ReactorAsk::Trigger(ReactorFault::Aux));
+        end(w, c, "asked".into());
+        true
+    })
 }
 
 /// The screen's edges now (the HUD's burn, bad air and radiation alphas).
@@ -385,6 +418,41 @@ pub(super) fn slice_look_steps(s: &mut Vec<Step>, out_dir: &Path, windowed: bool
     s.push(click_until(READOUT_ID, HELP_ACTION, None, "slice c: CLOSE closes the help view", |w| !help_open(w)));
     s.push(shot_view("slice c: coolant pump screen", [COOLANT_PUMP_AT[0], -15.75], Look::Screen(PUMP_ID), "slice_c_pump_screen"));
     s.push(shot_view("slice c: junction box screen", [JUNCTION_BOX_AT[0], -17.78], Look::Screen(JUNCTION_ID), "slice_c_junction_screen"));
+
+    // The aux reactor (AX-01): switched on at the dev faults (the ask, as the other faults), the
+    // AUX screen shot, LIGHTS off on it (the aux output boosts the main reactor), then LIGHTS on and
+    // AUX off again so the later steps see today's grid.
+    s.push(ask_aux("slice c: the dev faults switch the aux reactor on"));
+    s.push(until("slice c: the news says aux is enabled", 30.0, "slice c: aux is enabled", aux_on));
+    s.push(shot_view("slice c: AUX screen, aux on", [AUX_AT[0], -17.78], Look::Screen(AUX_ID), "slice_c_aux_screen"));
+    use_display(s, "AUX", AUX_ID, [AUX_AT[0], -17.78]);
+    s.push(click_until(AUX_ID, "aux_lights", None, "slice c: LIGHTS off on the AUX screen", |w| !aux_lights(w)));
+    s.push(check_now("slice c: LIGHTS off is on the news", "slice c: the aux LIGHTS switch is off", |w| !aux_lights(w)));
+    s.push(until("slice c: the aux boost rises with LIGHTS off", 30.0, "slice c: the aux boost is above 0 kW", |w| aux_boost(w) > 0.0));
+    let aux_dir = out_dir.to_path_buf();
+    s.push(Box::new(move |w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "slice c: the AUX screen with the boost");
+        }
+        let target = screen_centre(w, &AUX_ID);
+        aim(w, target);
+        if c.t < 0.5 {
+            return false;
+        }
+        snap_once(c, w, &aux_dir, windowed, "slice_c_aux_boost");
+        if c.t < 0.9 {
+            return false;
+        }
+        end(w, c, format!("boost {:.0} kW", aux_boost(w)));
+        true
+    }));
+    s.push(click_until(AUX_ID, "aux_lights", None, "slice c: LIGHTS back on at the AUX screen", aux_lights));
+    s.push(check_now("slice c: LIGHTS back on is on the news", "slice c: the aux LIGHTS switch is back on", aux_lights));
+    s.push(leave_display("slice c: leave the AUX screen"));
+    use_display(s, "Dev faults", FAULTS_ID, [-17.5, -12.24]);
+    s.push(click_until(FAULTS_ID, "aux", None, "slice c: AUX off at the dev faults", |w| !aux_on(w)));
+    s.push(check_now("slice c: AUX off is on the news", "slice c: the aux reactor is off again", |w| !aux_on(w)));
+    s.push(leave_display("slice c: leave the dev faults after AUX off"));
     s.push(shot_view("slice c: door screen", [DOOR_AT[0] - 0.24, -10.0], Look::Screen(DOOR_ID), "slice_c_door_screen"));
     s.push(shot_view("slice c: dev faults screen", [-17.5, -12.24], Look::Screen(FAULTS_ID), "slice_c_faults_screen"));
     s.push(shot_view("slice c: RX status screen, normal", [-9.6, -17.6], Look::Screen(STATUS_ID), "slice_c_status_screen"));

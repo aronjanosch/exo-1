@@ -563,8 +563,8 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
         },
     });
     // The room alarms (r40, #165): the fire and the air from the rooms just set, the breach on the
-    // engine room only (the leak's openness is the breach's; the corridor has no hull breach).
-    let breaching = breach > 0.0;
+    // engine room only (any hull section whose leak is open; the corridor has no hull sections).
+    let breaching = now.breaches.iter().any(|&d| reactor_core::hull::openness(d) > 0.0);
     now.alarms = std::array::from_fn(|i| alarm_news(sim.alarms[i].step(now.rooms[i].fire, i == 0 && breaching, now.rooms[i].o2, dt)));
     items.reactor = Some(now);
     sim.since_send += dt;

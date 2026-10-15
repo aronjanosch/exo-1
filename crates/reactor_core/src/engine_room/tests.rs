@@ -800,6 +800,10 @@ fn a_hit_fire_is_seeded_and_deterministic() {
 fn a_random_hit_is_the_same_for_the_same_seed() {
     let mut a = room();
     let mut b = room();
+    // The shield would take the hit (r40): empty both, so the hit reaches the walls.
+    for r in [&mut a, &mut b] {
+        let _ = r.absorb_hit(1.0e6);
+    }
     let _ = a.trigger(Fault::HitHeavy);
     let _ = b.trigger(Fault::HitHeavy);
     assert_eq!(a.hull(), b.hull());

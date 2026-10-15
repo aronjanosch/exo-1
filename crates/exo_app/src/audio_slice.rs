@@ -10,6 +10,7 @@ use crate::audio::{loop_volume, Sound, SynthAudio};
 use crate::dev_area::engine_room::source_at;
 use crate::dev_area::DevArea;
 use crate::env::PlanetRes;
+use crate::dev_area::reactor::lamp_blink_on;
 use crate::health::{OwnVitals, UseHold};
 use crate::items::Items;
 use crate::repair::{RepairHurt, RepairPlay};
@@ -19,7 +20,7 @@ use bevy::audio::{AudioSinkPlayback, PlaybackMode, Volume};
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use device_core::minigame::{Machine, Press};
-use item_core::wire::{ReactorNews, RepairDevice};
+use item_core::wire::{Lamp, ReactorNews, RepairDevice};
 use reactor_core::Source;
 use std::collections::BTreeMap;
 
@@ -65,6 +66,13 @@ pub const REACTOR_HUM_VOL: f32 = 0.05;
 pub const REACTOR_RANGE_M: f64 = 20.0;
 pub const REACTOR_PITCH: (f32, f32) = (1.0, 1.15);
 pub const REACTOR_PITCH_T: (f64, f64) = (50.0, 100.0);
+/// The alarm beep at the reactor: one per 2 Hz blink on-phase while a bad lamp is on. Below the
+/// alarm's reference, as the rest. The boost's whoop (the reused `Grab` chirp) on a press.
+pub const REACTOR_BEEP_VOL: f32 = 0.08;
+pub const BOOST_WHOOP_VOL: f32 = 0.07;
+/// A boost press moves the boost by the whole amount (25 degrees at the shipped tuning); the fade
+/// moves it a degree a second. A move of this many degrees between two snapshots is a press.
+pub const BOOST_JUMP_DEG: f64 = 10.0;
 /// The pump's playback speed at no flow and at full flow.
 pub const PUMP_SPEED: (f32, f32) = (0.8, 1.2);
 /// The door's slide.
@@ -147,6 +155,22 @@ pub fn reactor_hum_speed(temp: f64) -> f32 {
     lo + (hi - lo) * k
 }
 
+/// Whether a bad lamp of the status board is on: the core's critical heat or output, no fuel, or
+/// the meltdown. Those blink at 2 Hz (`lamp_blink_on`); the rest of the lamps are steady.
+pub fn alarm_lamp_on(r: &ReactorNews) -> bool {
+    [Lamp::CritHeat, Lamp::CritOut, Lamp::NoFuel, Lamp::Meltdown].iter().any(|l| r.lamps[l.index()])
+}
+
+/// An alarm beep now: a bad lamp is on and the blink has just come on (the on-phase's start).
+pub fn alarm_beep_due(bad_lamp: bool, blink_on: bool, prev_blink_on: bool) -> bool {
+    bad_lamp && blink_on && !prev_blink_on
+}
+
+/// A boost press since the last snapshot: the boost moved by at least `BOOST_JUMP_DEG`.
+pub fn boost_jump(prev: f64, now: f64) -> bool {
+    (now - prev).abs() >= BOOST_JUMP_DEG
+}
+
 /// A device's share of full condition on the reactor snapshot (what the client sees).
 pub fn part_share(r: &ReactorNews, d: RepairDevice) -> f64 {
     match d {
@@ -174,6 +198,8 @@ struct SliceSounds {
     sweep_up: Handle<SynthAudio>,
     pump: Handle<SynthAudio>,
     reactor_hum: Handle<SynthAudio>,
+    alarm: Handle<SynthAudio>,
+    whoop: Handle<SynthAudio>,
     slide: Handle<SynthAudio>,
     whoomp: Handle<SynthAudio>,
     heart: Handle<SynthAudio>,
@@ -211,6 +237,8 @@ fn setup(mut commands: Commands, mut assets: ResMut<Assets<SynthAudio>>) {
         sweep_up: add(Sound::SweepUp),
         pump: add(Sound::PumpHum),
         reactor_hum: add(Sound::ReactorHum),
+        alarm: add(Sound::AlarmBeep),
+        whoop: add(Sound::Grab),
         slide: add(Sound::Slide),
         whoomp: add(Sound::Whoomp),
         heart: add(Sound::Heart),
@@ -395,6 +423,33 @@ fn pump_loop(players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes>,
     }
 }
 
+/// The reactor's alarm: a beep on each blink on-phase while a bad lamp is on, and a rising whoop
+/// when a boost is pressed. Both at the reactor, by the walker's distance (`REACTOR_RANGE_M`).
+#[allow(clippy::too_many_arguments)]
+fn reactor_alarms(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, mut prev_blink: Local<bool>, mut prev_boost: Local<Option<f64>>) {
+    let Some(r) = items.reactor else {
+        *prev_blink = false;
+        *prev_boost = None;
+        return;
+    };
+    let blink = lamp_blink_on(time.elapsed_secs_f64());
+    let beep = alarm_beep_due(alarm_lamp_on(&r), blink, *prev_blink);
+    *prev_blink = blink;
+    let boost_pressed = prev_boost.is_some_and(|p| boost_jump(p, r.boost));
+    *prev_boost = Some(r.boost);
+    let dist = match (walker_pos(&players), fire_world(area.as_deref(), &planet, source_at(Source::Reactor))) {
+        (Some(me), Some(at)) => (at - me).length(),
+        _ => return,
+    };
+    let f = falloff(dist, REACTOR_RANGE_M);
+    if beep && f > 0.0 {
+        one_shot(&mut commands, &s.alarm, REACTOR_BEEP_VOL * f);
+    }
+    if boost_pressed && f > 0.0 {
+        one_shot(&mut commands, &s.whoop, BOOST_WHOOP_VOL * f);
+    }
+}
+
 /// The reactor's drone: its level by the set fission and the power, its pitch by the temperature,
 /// positional at the reactor. Every process has the snapshot (`Items::reactor`).
 /// TODO(initiator): the drone uses the set fission (the wire has no actual fission rate yet).
@@ -484,7 +539,7 @@ fn health_sounds(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, o
 /// Windowed runs: the slice's sounds, from the plugin of `audio`.
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, setup);
-    app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, repair_hurt_sounds, electric_sounds, pump_loop, door_sound, health_sounds, reactor_hum).in_set(crate::phases::Frame::Input));
+    app.add_systems(Update, (fire_loop, spray_loop, steam_puffs, repair_sounds, repair_hurt_sounds, electric_sounds, pump_loop, door_sound, health_sounds, reactor_hum, reactor_alarms).in_set(crate::phases::Frame::Input));
 }
 
 #[cfg(test)]
@@ -588,8 +643,38 @@ mod tests {
     }
 
     #[test]
+    fn the_alarm_beeps_only_on_the_blink_with_a_bad_lamp() {
+        assert!(alarm_beep_due(true, true, false), "the on-phase starts");
+        assert!(!alarm_beep_due(true, true, true), "mid on-phase: no second beep");
+        assert!(!alarm_beep_due(true, false, true), "the off-phase");
+        assert!(!alarm_beep_due(false, true, false), "no bad lamp on");
+    }
+
+    #[test]
+    fn only_the_bad_lamps_sound_the_alarm() {
+        let mut r = ReactorNews::default();
+        assert!(!alarm_lamp_on(&r));
+        r.lamps[Lamp::Hot.index()] = true;
+        r.lamps[Lamp::Scram.index()] = true;
+        r.lamps[Lamp::LowOut.index()] = true;
+        assert!(!alarm_lamp_on(&r), "warn lamps and SCRAM are not the alarm");
+        for bad in [Lamp::CritHeat, Lamp::CritOut, Lamp::NoFuel, Lamp::Meltdown] {
+            let mut one = ReactorNews::default();
+            one.lamps[bad.index()] = true;
+            assert!(alarm_lamp_on(&one), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_boost_press_is_a_jump_and_the_fade_is_not() {
+        assert!(boost_jump(0.0, 25.0));
+        assert!(boost_jump(0.0, -25.0));
+        assert!(!boost_jump(20.0, 19.5), "the fade moves a little");
+    }
+
+    #[test]
     fn every_slice_volume_is_quiet() {
-        let vols = [CRACKLE_VOL[0], CRACKLE_VOL[1], CRACKLE_VOL[2], SPRAY_VOL, STEAM_VOL, REPAIR_LOOP_VOL, BLIP_VOL, MISS_VOL, CHIME_VOL, ZAP_VOL, CLUNK_VOL, SWEEP_VOL, SCRAM_VOL, PUMP_VOL, SLIDE_VOL, WHOOMP_VOL, MUFFLED_VOL, GENTLE_VOL, CONFIRM_VOL, HEART_VOL, REACTOR_HUM_VOL];
+        let vols = [CRACKLE_VOL[0], CRACKLE_VOL[1], CRACKLE_VOL[2], SPRAY_VOL, STEAM_VOL, REPAIR_LOOP_VOL, BLIP_VOL, MISS_VOL, CHIME_VOL, ZAP_VOL, CLUNK_VOL, SWEEP_VOL, SCRAM_VOL, PUMP_VOL, SLIDE_VOL, WHOOMP_VOL, MUFFLED_VOL, GENTLE_VOL, CONFIRM_VOL, HEART_VOL, REACTOR_HUM_VOL, REACTOR_BEEP_VOL, BOOST_WHOOP_VOL];
         for v in vols {
             assert!(v > 0.0 && v <= ALARM_REF, "{v}");
         }

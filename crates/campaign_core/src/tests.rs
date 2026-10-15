@@ -572,3 +572,535 @@ fn normal_seed_42_orbit_is_pinned() {
     let tilt = (n.dot(DVec3::Y).abs().acos().to_degrees() * 100.0).round() / 100.0;
     assert_eq!(tilt, 26.81);
 }
+
+// Campaign map (#275)
+
+const MAP_RULES: &str = include_str!("../../../content/campaign/map.json");
+const MAP_SEEDS: u64 = 500;
+
+fn map_rules() -> MapRules {
+    MapRules::from_json(MAP_RULES).expect("map.json")
+}
+
+fn map_names() -> Names {
+    Names::from_json(NAMES).expect("names.json")
+}
+
+fn gen_map(seed: u64, rules: &MapRules, names: &Names) -> Map {
+    Map::generate(seed, rules, names).unwrap_or_else(|e| panic!("seed {seed}: {e}"))
+}
+
+fn maps(count: u64) -> Vec<Map> {
+    let (rules, names) = (map_rules(), map_names());
+    (0..count)
+        .map(|seed| gen_map(seed, &rules, &names))
+        .collect()
+}
+
+fn rules_from(edit: impl FnOnce(&mut Value)) -> Result<MapRules, String> {
+    let mut v: Value = serde_json::from_str(MAP_RULES).unwrap();
+    edit(&mut v);
+    MapRules::from_json(&v.to_string())
+}
+
+#[test]
+fn map_same_seed_same_map() {
+    let (rules, names) = (map_rules(), map_names());
+    for seed in [0, 1, 42, u64::MAX] {
+        assert_eq!(
+            gen_map(seed, &rules, &names),
+            gen_map(seed, &rules, &names),
+            "seed {seed}"
+        );
+    }
+}
+
+#[test]
+fn map_different_seeds_give_different_maps() {
+    let all = maps(50);
+    let distinct = all
+        .iter()
+        .enumerate()
+        .filter(|(i, m)| !all[..*i].contains(*m))
+        .count();
+    assert!(distinct >= 45, "{distinct} distinct maps of 50");
+}
+
+#[test]
+fn map_generates_and_checks_for_every_seed() {
+    let (rules, names) = (map_rules(), map_names());
+    for seed in 0..MAP_SEEDS {
+        let m = gen_map(seed, &rules, &names);
+        m.check(&rules)
+            .unwrap_or_else(|e| panic!("seed {seed}: {e}"));
+    }
+}
+
+#[test]
+fn map_every_system_is_reachable_from_the_start() {
+    for m in maps(MAP_SEEDS) {
+        let mut seen = vec![Map::START];
+        let mut todo = vec![Map::START];
+        while let Some(id) = todo.pop() {
+            for &next in m.forward(id) {
+                if !seen.contains(&next) {
+                    seen.push(next);
+                    todo.push(next);
+                }
+            }
+        }
+        assert_eq!(seen.len(), m.nodes.len(), "seed {}", m.seed);
+    }
+}
+
+#[test]
+fn map_fans_out_two_or_three_into_the_next_column() {
+    for m in maps(MAP_SEEDS) {
+        let last = m.column_count() - 1;
+        for n in &m.nodes {
+            if n.column == last {
+                assert!(n.forward.is_empty(), "seed {}: {:?}", m.seed, n);
+                continue;
+            }
+            assert!(
+                (2..=3).contains(&n.forward.len()),
+                "seed {}: {:?}",
+                m.seed,
+                n
+            );
+            for t in &n.forward {
+                assert_eq!(m.node(*t).unwrap().column, n.column + 1, "seed {}", m.seed);
+            }
+        }
+    }
+}
+
+#[test]
+fn map_type_mix_follows_the_rules() {
+    let rules = map_rules();
+    for m in maps(MAP_SEEDS) {
+        assert_eq!(m.nodes[0].kind, SystemKind::Harbour, "seed {}", m.seed);
+        for n in m.nodes.iter().filter(|n| n.column == 1) {
+            assert_eq!(n.kind, SystemKind::Normal, "seed {}", m.seed);
+        }
+        for n in m.nodes.iter().filter(|n| !m.is_last(n.id)) {
+            let way_out = m
+                .forward(n.id)
+                .iter()
+                .any(|t| m.node(*t).unwrap().kind != SystemKind::Hostile);
+            assert!(way_out, "seed {}: {:?} has no safe way on", m.seed, n.id);
+        }
+        let harbours = m
+            .nodes
+            .iter()
+            .filter(|n| n.kind == SystemKind::Harbour)
+            .count() as u32;
+        assert!(
+            (2..=rules.max_harbours).contains(&harbours),
+            "seed {}: {harbours} harbours",
+            m.seed
+        );
+        assert!(
+            m.nodes.iter().any(|n| n.kind == SystemKind::Hostile),
+            "seed {}",
+            m.seed
+        );
+    }
+}
+
+#[test]
+fn map_sizes_for_the_shipped_rules() {
+    for m in maps(MAP_SEEDS) {
+        assert!(
+            (7..=8).contains(&m.nodes.len()),
+            "seed {}: {} nodes",
+            m.seed,
+            m.nodes.len()
+        );
+        assert_eq!(m.column_count(), 4, "seed {}", m.seed);
+        assert_eq!(
+            m.nodes.iter().filter(|n| n.column == 3).count(),
+            2,
+            "seed {}",
+            m.seed
+        );
+    }
+}
+
+#[test]
+fn map_back_agrees_with_the_forward_edges() {
+    for m in maps(MAP_SEEDS) {
+        assert!(m.back(Map::START).is_empty());
+        let mut reverse: Vec<Vec<NodeId>> = vec![Vec::new(); m.nodes.len()];
+        for n in &m.nodes {
+            for t in &n.forward {
+                reverse[t.0 as usize].push(n.id);
+            }
+        }
+        for n in &m.nodes {
+            let mut expected = reverse[n.id.0 as usize].clone();
+            expected.sort();
+            assert_eq!(m.back(n.id), expected, "seed {} node {:?}", m.seed, n.id);
+        }
+    }
+}
+
+#[test]
+fn map_danger_stays_in_the_kind_range_and_grows_with_the_column() {
+    let (mut first, mut first_n, mut last, mut last_n) = (0u32, 0u32, 0u32, 0u32);
+    for m in maps(MAP_SEEDS) {
+        for n in &m.nodes {
+            let (lo, hi) = match n.kind {
+                SystemKind::Harbour => (0, 0),
+                SystemKind::Normal => (1, 3),
+                SystemKind::Hostile => (3, 5),
+            };
+            assert!(
+                (lo..=hi).contains(&n.danger),
+                "seed {}: {:?} danger {}",
+                m.seed,
+                n.kind,
+                n.danger
+            );
+            if n.column == 1 {
+                first += u32::from(n.danger);
+                first_n += 1;
+            }
+            if m.is_last(n.id) {
+                last += u32::from(n.danger);
+                last_n += 1;
+            }
+        }
+    }
+    let (mean_first, mean_last) = (
+        f64::from(first) / f64::from(first_n),
+        f64::from(last) / f64::from(last_n),
+    );
+    assert!(
+        mean_last > mean_first,
+        "column 1 mean {mean_first}, last column mean {mean_last}"
+    );
+}
+
+#[test]
+fn map_names_and_system_seeds_are_unique() {
+    for m in maps(MAP_SEEDS) {
+        let names: HashSet<&str> = m.nodes.iter().map(|n| n.name.as_str()).collect();
+        assert_eq!(names.len(), m.nodes.len(), "seed {}: names repeat", m.seed);
+        let seeds: HashSet<u64> = m.nodes.iter().map(|n| n.seed).collect();
+        assert_eq!(
+            seeds.len(),
+            m.nodes.len(),
+            "seed {}: system seeds repeat",
+            m.seed
+        );
+    }
+}
+
+#[test]
+fn map_all_kinds_occur_in_the_middle_columns() {
+    let mut seen = HashSet::new();
+    for m in maps(MAP_SEEDS) {
+        seen.extend(
+            m.nodes
+                .iter()
+                .filter(|n| (1..=3).contains(&n.column))
+                .map(|n| n.kind),
+        );
+    }
+    for kind in SystemKind::ALL {
+        assert!(seen.contains(&kind), "{kind:?} never occurs");
+    }
+}
+
+#[test]
+fn map_check_rejects_broken_maps() {
+    let (rules, names) = (map_rules(), map_names());
+    let base = gen_map(42, &rules, &names);
+    assert!(base.check(&rules).is_ok());
+
+    let mut m = base.clone();
+    let n = m.nodes.iter_mut().find(|n| n.column == 1).unwrap();
+    n.kind = SystemKind::Hostile;
+    n.danger = 4;
+    assert!(m.check(&rules).is_err(), "hostile in column 1");
+
+    let mut m = base.clone();
+    m.nodes[0].forward.truncate(1);
+    assert!(m.check(&rules).is_err(), "one forward target");
+
+    let mut m = base.clone();
+    let n = m.nodes.iter_mut().find(|n| n.column == 1).unwrap();
+    n.kind = SystemKind::Harbour;
+    n.danger = 0;
+    assert!(m.check(&rules).is_err(), "second harbour in column 1");
+
+    let mut m = base.clone();
+    let from = m
+        .nodes
+        .iter()
+        .find(|n| n.column == 1)
+        .unwrap()
+        .forward
+        .clone();
+    for t in from {
+        let target = &mut m.nodes[t.0 as usize];
+        target.kind = SystemKind::Hostile;
+        target.danger = 4;
+    }
+    assert!(m.check(&rules).is_err(), "all forward targets hostile");
+
+    let mut m = base.clone();
+    m.nodes[1].name = m.nodes[2].name.clone();
+    assert!(m.check(&rules).is_err(), "duplicate name");
+
+    let found = (0..MAP_SEEDS).find_map(|seed| {
+        let m = gen_map(seed, &rules, &names);
+        let (p, x) = m
+            .nodes
+            .iter()
+            .filter(|n| n.forward.len() == 3)
+            .find_map(|p| {
+                p.forward
+                    .iter()
+                    .copied()
+                    .find(|x| m.back(*x).len() == 1)
+                    .map(|x| (p.id, x))
+            })?;
+        Some((m, p, x))
+    });
+    let (mut m, p, x) = found.expect("a seed with a lonely edge");
+    m.nodes[p.0 as usize].forward.retain(|t| *t != x);
+    let err = m.check(&rules).expect_err("unreachable node");
+    assert!(err.contains("reachable"), "{err}");
+}
+
+#[test]
+fn map_rules_reject_bad_values() {
+    assert!(rules_from(|_| {}).is_ok());
+    assert!(
+        rules_from(|v| v["columns"][1] = serde_json::json!([1, 3])).is_err(),
+        "column below forward[0]"
+    );
+    assert!(
+        rules_from(|v| v["columns"][0] = serde_json::json!([1, 2])).is_err(),
+        "column 0 not [1, 1]"
+    );
+    assert!(
+        rules_from(|v| v["max_nodes"] = serde_json::json!(6)).is_err(),
+        "max_nodes below the minimums"
+    );
+    assert!(
+        rules_from(|v| v["max_harbours"] = serde_json::json!(1)).is_err(),
+        "max_harbours below 2"
+    );
+    assert!(
+        rules_from(|v| v["weights"] = serde_json::json!({"harbour": 0, "normal": 0, "hostile": 0}))
+            .is_err(),
+        "all weights zero"
+    );
+    assert!(
+        rules_from(|v| v["danger"]["normal"] = serde_json::json!([1, 6])).is_err(),
+        "danger above 5"
+    );
+    assert!(
+        rules_from(|v| v["bogus"] = serde_json::json!(1)).is_err(),
+        "unknown field"
+    );
+}
+
+#[test]
+fn map_seed_42_is_pinned() {
+    // Pinned: a change here changes every saved campaign.
+    use SystemKind::{Harbour, Hostile, Normal};
+    let m = gen_map(42, &map_rules(), &map_names());
+    let columns: Vec<u8> = m.nodes.iter().map(|n| n.column).collect();
+    assert_eq!(columns, [0, 1, 1, 1, 2, 2, 3, 3]);
+    let kinds: Vec<SystemKind> = m.nodes.iter().map(|n| n.kind).collect();
+    assert_eq!(
+        kinds,
+        [Harbour, Normal, Normal, Normal, Harbour, Normal, Hostile, Normal]
+    );
+    let forward: Vec<Vec<u8>> = m
+        .nodes
+        .iter()
+        .map(|n| n.forward.iter().map(|t| t.0).collect())
+        .collect();
+    assert_eq!(
+        forward,
+        [
+            vec![1, 2, 3],
+            vec![4, 5],
+            vec![4, 5],
+            vec![4, 5],
+            vec![6, 7],
+            vec![6, 7],
+            vec![],
+            vec![]
+        ]
+    );
+}
+
+// Progress (#275)
+
+fn progress_walk(map: &Map, mut pick: impl FnMut(&[NodeId], usize) -> NodeId) -> Progress {
+    let mut p = Progress::start(map);
+    let mut jumps = 0;
+    while !map.is_last(p.current) {
+        let ts = p.targets(map, false);
+        let to = pick(&ts, jumps);
+        let before = p.visited.clone();
+        p.jump(map, to, false).unwrap_or_else(|e| panic!("jump to {}: {e}", to.0));
+        assert!(p.visited.len() == before.len() + 1, "one more visited");
+        jumps += 1;
+    }
+    assert_eq!(jumps, map.column_count() as usize - 1);
+    p
+}
+
+fn assert_visited_sane(p: &Progress) {
+    assert!(p.visited.windows(2).all(|w| w[0] < w[1]), "{:?}", p.visited);
+    assert!(p.visited.contains(&p.current), "{:?}", p.visited);
+}
+
+#[test]
+fn progress_start_is_the_start_node_and_checks() {
+    let (rules, names) = (map_rules(), map_names());
+    for seed in [0, 1, 42] {
+        let map = gen_map(seed, &rules, &names);
+        let p = Progress::start(&map);
+        assert_eq!(p.current, Map::START);
+        assert_eq!(p.visited, vec![Map::START]);
+        assert!(p.has_visited(Map::START));
+        p.check(&map).unwrap_or_else(|e| panic!("seed {seed}: {e}"));
+    }
+}
+
+#[test]
+fn progress_walks_to_the_last_column_for_every_seed() {
+    let (rules, names) = (map_rules(), map_names());
+    for seed in 0..200 {
+        let map = gen_map(seed, &rules, &names);
+        let mut rng = Rng::new(seed ^ 0x57A1);
+        let walks = [
+            progress_walk(&map, |ts, _| ts[0]),
+            progress_walk(&map, |ts, _| *ts.last().unwrap()),
+            progress_walk(&map, |ts, _| *rng.pick(ts).unwrap()),
+        ];
+        for p in &walks {
+            assert_visited_sane(p);
+            p.check(&map).unwrap_or_else(|e| panic!("seed {seed}: {e}"));
+            assert!(map.is_last(p.current), "seed {seed}");
+            assert!(p.targets(&map, false).is_empty(), "seed {seed}");
+            for id in 0..map.nodes.len() {
+                let mut q = p.clone();
+                assert!(q.jump(&map, NodeId(id as u8), false).is_err(), "seed {seed}: jump from the end");
+                assert_eq!(&q, p);
+            }
+        }
+    }
+}
+
+#[test]
+fn progress_illegal_jumps_are_errors_and_change_nothing() {
+    let (rules, names) = (map_rules(), map_names());
+    let map = gen_map(1, &rules, &names);
+    let mut p = Progress::start(&map);
+    let two_ahead = map.nodes.iter().find(|n| n.column == 2).unwrap().id;
+    let unknown = NodeId(255);
+    assert!(map.node(unknown).is_none());
+    for to in [two_ahead, Map::START, unknown] {
+        let before = p.clone();
+        assert!(p.jump(&map, to, false).is_err(), "jump to {}", to.0);
+        assert_eq!(p, before);
+    }
+    let first = p.targets(&map, false)[0];
+    p.jump(&map, first, false).unwrap();
+    let before = p.clone();
+    assert!(p.jump(&map, Map::START, false).is_err(), "backward without allow_back");
+    assert_eq!(p, before);
+}
+
+#[test]
+fn progress_allow_back_reaches_the_node_you_came_from() {
+    let (rules, names) = (map_rules(), map_names());
+    let map = gen_map(1, &rules, &names);
+    let mut p = Progress::start(&map);
+    let first = p.targets(&map, false)[0];
+    p.jump(&map, first, true).unwrap();
+    let ts = p.targets(&map, true);
+    assert!(ts.contains(&Map::START), "{ts:?}");
+    let mut want: Vec<NodeId> = map.forward(first).iter().copied().chain(map.back(first)).collect();
+    want.sort();
+    want.dedup();
+    assert_eq!(ts, want);
+    assert!(ts.windows(2).all(|w| w[0] < w[1]));
+    p.jump(&map, Map::START, true).unwrap();
+    assert_eq!(p.current, Map::START);
+    assert_eq!(p.visited, vec![Map::START, first]);
+    assert_visited_sane(&p);
+}
+
+#[test]
+fn progress_of_another_map_is_refused() {
+    let (rules, names) = (map_rules(), map_names());
+    let (a, b) = (gen_map(1, &rules, &names), gen_map(2, &rules, &names));
+    let mut p = Progress::start(&a);
+    let before = p.clone();
+    let to = p.targets(&a, false)[0];
+    assert!(p.jump(&b, to, false).is_err());
+    assert_eq!(p, before);
+    assert!(p.check(&b).is_err());
+    assert!(p.check(&a).is_ok());
+}
+
+#[test]
+fn progress_json_round_trip_and_keys() {
+    let (rules, names) = (map_rules(), map_names());
+    let map = gen_map(1, &rules, &names);
+    let p = Progress::start(&map);
+    let json = serde_json::to_string(&p).unwrap();
+    assert_eq!(json, r#"{"seed":1,"current":0,"visited":[0]}"#);
+    let back: Progress = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, p);
+}
+
+#[test]
+fn progress_check_rejects_hand_edited_states() {
+    let (rules, names) = (map_rules(), map_names());
+    let map = gen_map(1, &rules, &names);
+    let seed = map.seed;
+    let s = Map::START;
+    let other = NodeId(1);
+    let bad = [
+        Progress { seed, current: s, visited: vec![NodeId(3), s] },
+        Progress { seed, current: s, visited: vec![s, s] },
+        Progress { seed, current: other, visited: vec![s] },
+        Progress { seed, current: s, visited: vec![s, NodeId(255)] },
+        Progress { seed, current: other, visited: vec![other] },
+    ];
+    for p in &bad {
+        assert!(p.check(&map).is_err(), "{p:?}");
+    }
+    assert!(Progress::start(&map).check(&map).is_ok());
+}
+
+#[test]
+fn progress_loaded_after_two_jumps_keeps_going() {
+    let (rules, names) = (map_rules(), map_names());
+    let map = gen_map(7, &rules, &names);
+    let mut p = Progress::start(&map);
+    for _ in 0..2 {
+        let to = p.targets(&map, false)[0];
+        p.jump(&map, to, false).unwrap();
+    }
+    let json = serde_json::to_string(&p).unwrap();
+    let mut loaded: Progress = serde_json::from_str(&json).unwrap();
+    loaded.check(&map).unwrap();
+    while !map.is_last(loaded.current) {
+        let to = *loaded.targets(&map, false).last().unwrap();
+        loaded.jump(&map, to, false).unwrap();
+    }
+    assert_eq!(loaded.visited.len(), map.column_count() as usize);
+    assert_visited_sane(&loaded);
+}

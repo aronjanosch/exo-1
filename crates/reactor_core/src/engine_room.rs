@@ -21,6 +21,7 @@ use crate::breach::Breach;
 use crate::grid::{Grid, Group};
 use crate::history::History;
 use crate::reactor::{AlarmKind, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning, RodKinds};
+use crate::shield::Shield;
 use crate::tuning::Tuning;
 use serde::{Deserialize, Serialize};
 
@@ -509,6 +510,9 @@ pub struct EngineRoom {
     breach: Breach,
     /// The battery behind the reactor (`battery`): gives the grid's shortfall, takes its surplus.
     battery: Battery,
+    /// The shield (`shield`, r40): fed by the Shields group, its demand is `shield_full_kw` times its share.
+    shield: Shield,
+    shield_full_kw: f64,
 }
 
 impl EngineRoom {
@@ -549,6 +553,8 @@ impl EngineRoom {
             aux_switch: [true; Group::ALL.len()],
             breach: Breach::default(),
             battery: Battery::new(t.battery),
+            shield: Shield::new(t.shield),
+            shield_full_kw: t.grid.shields.demand_kw,
         }
     }
 
@@ -677,6 +683,15 @@ impl EngineRoom {
 
     pub fn battery_mut(&mut self) -> &mut Battery {
         &mut self.battery
+    }
+
+    pub fn shield(&self) -> &Shield {
+        &self.shield
+    }
+
+    /// A hit on the ship's shield (`Shield::absorb`): returns what passes to the hull.
+    pub fn absorb_hit(&mut self, damage: f64) -> f64 {
+        self.shield.absorb(damage)
     }
 
     /// The junction box's voltage: what the grid got over what it asked for, 0..1 (1 with no
@@ -888,6 +903,10 @@ impl EngineRoom {
         // The voltage is the junction box's as the last step left it (Barotrauma's `prevVoltage`).
         self.engine.step(dt, self.voltage());
         self.grid.set_demand(Group::Engines, self.engine.demand_kw(self.engines_full_kw));
+        // The shield asks its full demand while it is below max, the upkeep at max. Its regen runs on
+        // the Shields factor of the last step (the same one-step lag as the engines' voltage).
+        self.grid.set_demand(Group::Shields, self.shield_full_kw * self.shield.demand_share());
+        self.shield.step(dt, self.grid.factor(Group::Shields));
         let load = self.main_load_kw();
         self.sync_aux();
         let reactor_ev = self.reactor.step(dt, load);

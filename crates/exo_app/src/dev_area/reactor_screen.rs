@@ -23,6 +23,8 @@ pub const JUNCTION_NAME: &str = "JUNCTION BOX";
 pub const AUX_ID: PanelId = PanelId::new("aux_panel");
 pub const BATTERY_ID: PanelId = PanelId::new("battery_panel");
 pub const BATTERY_NAME: &str = "BATTERY";
+pub const SHIELD_ID: PanelId = PanelId::new("shield_panel");
+pub const SHIELD_NAME: &str = "SHIELD";
 pub const HELM_ID: PanelId = PanelId::new("helm_panel");
 pub const HELM_NAME: &str = "HELM";
 pub const AUX_NAME: &str = "AUX";
@@ -741,6 +743,26 @@ pub fn battery_panel(r: Option<&ReactorNews>) -> Panel {
     tall(Panel::screen(Tier::S, BATTERY_NAME, "BT-01", body)).with_padding(6.0)
 }
 
+/// SH-01 (r40, PULSAR's shield generator): the shield's charge, the quantum shield's word (UP while it
+/// blocks boarding; DOWN after a drop below its line, for the offline time) and the regen in % a second
+/// (0 inside the recovery delay).
+pub fn shield_panel(r: Option<&ReactorNews>) -> Panel {
+    let r = r.copied().unwrap_or_default();
+    let bar_w = 200.0;
+    let charge_frac = r.shield.clamp(0.0, 1.0);
+    let mut s = vec![Shape::Rect { x: 0.0, y: 3.0, w: bar_w, h: 12.0, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) }];
+    if charge_frac > 0.0 {
+        s.push(Shape::Rect { x: 2.0, y: 5.0, w: (bar_w - 4.0) * charge_frac, h: 8.0, fill: Some(Ink::Hud), outline: None });
+    }
+    s.push(text(210.0, 0.0, 82.0, 18.0, &format!("{:.0} %", charge_frac * 100.0), 16.0, TextFace::Mono, Ink::Fg2, false));
+    let charge = column(4.0, vec![micro("SHIELD").fixed(14.0), canvas(292.0, 18.0, s, None).fixed(18.0)]);
+    let (word, tone) = if r.quantum_shield { ("QT SHLD UP", Tone::Good) } else { ("QT SHLD DOWN", Tone::Bad) };
+    let quantum = readout(word.to_string()).text_size(font::SMALL).tone(tone);
+    let regen = readout(format!("REGEN {:.1} %/s", r.shield_regen)).text_size(font::SMALL).tone(Tone::Normal);
+    let body = column(0.0, vec![space().flex(1.0), column(10.0, vec![charge, quantum.fixed(20.0), regen.fixed(20.0)]).fixed(120.0), space().flex(1.0)]);
+    tall(Panel::screen(Tier::S, SHIELD_NAME, "SH-01", body)).with_padding(6.0)
+}
+
 /// HM-01 (r38, the helm): the throttle slider (-100..100 %, the engines' target) and what the engines
 /// make of it: the thrust (%) and the kW they draw of their demand. A short grid shows here as a
 /// thrust below the throttle and a draw below the demand.
@@ -847,20 +869,21 @@ pub fn faults_panel(r: Option<&ReactorNews>) -> Panel {
             6.0,
             vec![
                 col(vec![
-                    button("Pump break", "pump_break").fixed(28.0),
-                    button("Load drop", "load_drop").fixed(28.0),
-                    button("Surge", "surge").fixed(28.0),
-                    button("Hull breach", "hull_breach").fixed(28.0),
-                    button("Drain tank", "drain_coolant").fixed(28.0),
-                    button("O2 gen break", "oxygen_break").fixed(28.0),
+                    button("Pump break", "pump_break").fixed(24.0),
+                    button("Load drop", "load_drop").fixed(24.0),
+                    button("Surge", "surge").fixed(24.0),
+                    button("Hull breach", "hull_breach").fixed(24.0),
+                    button("Drain tank", "drain_coolant").fixed(24.0),
+                    button("O2 gen break", "oxygen_break").fixed(24.0),
                 ]),
                 col(vec![
-                    button("Start fire", "fire").fixed(28.0),
-                    button("Fire mode", "fire_model").fixed(28.0),
-                    button("Warm start", "warm_start").fixed(28.0),
-                    button(aux, "aux").fixed(28.0),
-                    button("Reset RX", "reset").fixed(28.0),
-                    button(director, "director").fixed(28.0),
+                    button("Start fire", "fire").fixed(24.0),
+                    button("Fire mode", "fire_model").fixed(24.0),
+                    button("Warm start", "warm_start").fixed(24.0),
+                    button(aux, "aux").fixed(24.0),
+                    button("Reset RX", "reset").fixed(24.0),
+                    button(director, "director").fixed(24.0),
+                    button("Shield hit", "shield_hit").fixed(24.0),
                 ]),
             ],
         ),
@@ -1097,6 +1120,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "load_drop" => Some(ReactorAsk::Trigger(ReactorFault::LoadDrop)),
                 "surge" => Some(ReactorAsk::Trigger(ReactorFault::Surge)),
                 "hull_breach" => Some(ReactorAsk::Trigger(ReactorFault::HullBreach)),
+                "shield_hit" => Some(ReactorAsk::Trigger(ReactorFault::ShieldHit)),
                 "fire" => Some(ReactorAsk::Trigger(ReactorFault::Fire)),
                 "reset" => Some(ReactorAsk::Reset),
                 "drain_coolant" => Some(ReactorAsk::Trigger(ReactorFault::DrainCoolant)),
@@ -1132,6 +1156,7 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     panels.set(JUNCTION_ID, junction_panel(items.reactor.as_ref(), max_kw));
     panels.set(AUX_ID, aux_panel(items.reactor.as_ref()));
     panels.set(BATTERY_ID, battery_panel(items.reactor.as_ref()));
+    panels.set(SHIELD_ID, shield_panel(items.reactor.as_ref()));
     panels.set(HELM_ID, helm_panel(items.reactor.as_ref()));
     panels.set(DOOR_ID, door_panel(items.reactor.as_ref()));
     panels.set(VENT_ENGINE_ID, vent_panel(items.reactor.as_ref(), 0));

@@ -741,3 +741,23 @@ fn the_dev_breach_is_mended_by_the_hold_at_the_pump_speed() {
     r.mend_breach(10.0);
     assert_eq!(r.breach().damage(), 0.0, "mending a sound wall does nothing");
 }
+
+#[test]
+fn the_shield_asks_the_grid_its_demand_and_regens_from_its_power() {
+    let mut r = safe_room();
+    // A full shield asks the upkeep share of its demand: 300 kW × 0.1.
+    let _ = r.step(DT, Input::auto());
+    assert!((r.grid().group(Group::Shields).demand_kw - 30.0).abs() < 1e-9);
+    // A hit takes the shield below max: the full demand next step.
+    assert_eq!(r.absorb_hit(300.0), 0.0);
+    let _ = r.step(DT, Input::auto());
+    assert!((r.grid().group(Group::Shields).demand_kw - 300.0).abs() < 1e-9);
+    // Warm and powered, the shield regens from the Shields group's factor.
+    r.warm_start();
+    assert_eq!(r.absorb_hit(300.0), 0.0);
+    let before = r.shield().fraction();
+    for _ in 0..(20.0 / DT) as usize {
+        let _ = r.step(DT, Input::auto());
+    }
+    assert!(r.shield().fraction() > before, "the shield regens with power");
+}

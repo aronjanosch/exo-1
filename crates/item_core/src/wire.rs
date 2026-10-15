@@ -239,6 +239,8 @@ pub enum ReactorFault {
     /// The reactor's warm start (`EngineRoom::warm_start`): settled at once, no supplies used.
     WarmStart,
     Aux,
+    /// The dev fault SHIELD HIT: a 300-point hit on the ship's shield (`EngineRoom::absorb_hit`, r40).
+    ShieldHit,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -425,6 +427,12 @@ pub struct ReactorNews {
     pub engine_thrust: f64,
     /// The incident director is on (r38; the dev faults screen's DIRECTOR toggle shows it).
     pub director: bool,
+    /// The shield's charge, 0..1 of its max (`reactor_core::Shield::fraction`), r40.
+    pub shield: f64,
+    /// The quantum shield is up: boarding is blocked (`reactor_core::Shield::quantum_up`), r40.
+    pub quantum_shield: bool,
+    /// The shield's regen, % of its max a second (0 inside the recovery delay), r40.
+    pub shield_regen: f64,
 }
 
 /// A room's air and fire for the status monitor (r38): the air as a fraction 0..1 (whole percent),
@@ -617,6 +625,9 @@ mod tests {
             battery_recharge: 0.4,
             battery_kw: 120.0,
             rooms: [RoomAir { o2: 0.84, fire: false }, RoomAir { o2: 0.31, fire: true }],
+            shield: 0.7,
+            quantum_shield: false,
+            shield_regen: 5.0,
         };
         let back = match decode::<ToClient>(&encode(&ToClient::Reactor(news))).expect("decodes") {
             ToClient::Reactor(r) => r,
@@ -633,6 +644,7 @@ mod tests {
             ReactorAsk::SetTurbine(0.0),
             ReactorAsk::Trigger(ReactorFault::LoadDrop),
             ReactorAsk::Trigger(ReactorFault::HullBreach),
+            ReactorAsk::Trigger(ReactorFault::ShieldHit),
             ReactorAsk::Reset,
             ReactorAsk::SetPower(false),
             ReactorAsk::SetBreaker(BreakerGroup::Lights, false),

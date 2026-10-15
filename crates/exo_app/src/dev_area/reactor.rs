@@ -11,6 +11,9 @@ use item_core::wire::{Alarm, BreakerGroup, FuelTube, Lamp, PartNews, PumpMode, R
 use reactor_core::director::Situation;
 use reactor_core::{AlarmLevel, Director, EngineRoom, Fault, Group, Input, ReactorEvent, RoomEvent, Source, Tuning, Warnings};
 
+/// The dev fault SHIELD HIT's hit, points (`EngineRoom::absorb_hit`). TODO(initiator): a dev value.
+const DEV_SHIELD_HIT: f64 = 300.0;
+
 pub const SEND_EVERY_S: f64 = 0.25;
 /// The room's seed: the same room every start (its rolls are seeded).
 pub const SEED: u64 = 0x297;
@@ -99,6 +102,10 @@ impl ReactorSim {
             ReactorAsk::Trigger(ReactorFault::WarmStart) => {
                 let secs = self.room.warm_start();
                 info!("reactor: warm start, settled after {secs:.1} s of sim time");
+            }
+            ReactorAsk::Trigger(ReactorFault::ShieldHit) => {
+                let hull = self.room.absorb_hit(DEV_SHIELD_HIT);
+                info!("reactor: dev shield hit of {DEV_SHIELD_HIT} points, {hull:.1} past the shield");
             }
             ReactorAsk::Trigger(ReactorFault::Aux) => {
                 let on = !self.room.aux_enabled();
@@ -250,6 +257,9 @@ impl ReactorSim {
             battery_recharge: self.room.battery().recharge(),
             battery_kw: self.room.battery().output_kw(),
             director: self.director.enabled(),
+            shield: self.room.shield().fraction(),
+            quantum_shield: self.room.shield().quantum_up(),
+            shield_regen: self.room.shield().regen_per_s() / self.room.shield().tuning().max.max(1e-9) * 100.0,
         }
     }
 }
@@ -343,7 +353,7 @@ fn fault(f: ReactorFault) -> Option<Fault> {
         ReactorFault::LoadDrop => Some(Fault::LoadDrop),
         ReactorFault::Surge => Some(Fault::Surge),
         ReactorFault::HullBreach => Some(Fault::HullBreach),
-        ReactorFault::Fire | ReactorFault::DrainCoolant | ReactorFault::WarmStart | ReactorFault::Aux => None,
+        ReactorFault::Fire | ReactorFault::DrainCoolant | ReactorFault::WarmStart | ReactorFault::Aux | ReactorFault::ShieldHit => None,
     }
 }
 

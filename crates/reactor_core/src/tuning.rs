@@ -6,6 +6,7 @@ use crate::director::DirectorTuning;
 use crate::engine_room::RoomTuning;
 use crate::grid::GridTuning;
 use crate::reactor::{ReactorTuning, RodKinds};
+use crate::shield::ShieldTuning;
 
 pub const REACTOR_PATH: &str = "reactor/reactor.json";
 
@@ -26,11 +27,13 @@ pub struct Tuning {
     pub graph_interval_s: f64,
     /// The incident director (`director` in reactor.json, r38).
     pub director: DirectorTuning,
+    /// The shield (`shield` in reactor.json, r40).
+    pub shield: ShieldTuning,
 }
 
 impl Default for Tuning {
     fn default() -> Tuning {
-        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default() }
+        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), shield: ShieldTuning::default() }
     }
 }
 
@@ -62,6 +65,9 @@ impl Tuning {
         let d = &self.director;
         need(d.min_interval_s > 0.0 && d.max_interval_s >= d.min_interval_s, "director.*_interval_s", "min > 0, max >= min");
         need((0.0..=1.0).contains(&d.threshold) && d.rise_per_s > 0.0 && d.fall_per_s > 0.0, "director", "threshold 0..=1, rise_per_s and fall_per_s > 0");
+        let sh = &self.shield;
+        need(sh.max > 0.0 && sh.charge_rate_max >= 0.0 && sh.recovery_delay_s >= 0.0 && sh.quantum_offline_s >= 0.0, "shield", "max > 0, charge_rate_max, recovery_delay_s, quantum_offline_s >= 0");
+        need((0.0..=1.0).contains(&sh.deflection) && (0.0..=1.0).contains(&sh.quantum_min) && (0.0..=1.0).contains(&sh.upkeep), "shield", "deflection, quantum_min and upkeep 0..=1");
         need(self.rods.0.contains_key("standard"), "rods.standard", "the rod start_rods uses must be listed");
         for (id, k) in &self.rods.0 {
             need(k.heat > 0.0 && k.life > 0.0 && k.life <= 100.0, &format!("rods.{id}"), "heat > 0, life in 0..=100");

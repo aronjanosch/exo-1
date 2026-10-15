@@ -33,7 +33,7 @@ cargo run -p exo_app                                  # play (window)
 cargo dev                                             # same with Bevy dynamic linking, about 1 s rebuilds
 scripts/gate                                          # the gate: cargo t at low priority, one at a time on the machine
 cargo t                                               # the same without the lock: all checks in parallel with cargo-nextest, every scenario headless (dynamic linking)
-cargo ts scenario_warp                                # one app test by name, dynamic like the gate
+cargo ts scenario_swap                                # one app test by name, dynamic like the gate
 cargo t -P perf                                       # the timing test perf.rs alone, once per round on a quiet machine
 cargo scenario                                        # full scenario without a window, exits non-zero on a failed check (dynamic linking)
 cargo check --workspace --all-targets                 # the static build compiles (no linking, no test binaries)
@@ -42,7 +42,7 @@ cargo run -p exo_app -- --scenario=full               # same in a window, with s
 cargo run -p exo_app -- --hidden --scenario=full      # invisible window, screenshots still work
 ```
 
-A feature is done when its own tests pass (`cargo test -p <crate>`, `cargo ts scenario_<name>`); the full gate runs at the end of a big round (`AGENTS.md`, three test sizes). It needs cargo-nextest: `mise install` in the repo root (pinned in `mise.toml`); `.config/nextest.toml` leaves `perf.rs` out of the default run. Other scenarios with dynamic linking: `cargo dev --headless --scenario=<name>`.
+A feature is done when its own tests pass (`cargo test -p <crate>`, and its scenario if it has one: `cargo ts scenario_<name>`); the full gate runs at the end of a big round (`AGENTS.md`, three test sizes). It needs cargo-nextest: `mise install` in the repo root (pinned in `mise.toml`); `.config/nextest.toml` leaves `perf.rs` out of the default run. Other scenarios with dynamic linking: `cargo dev --headless --scenario=<name>`.
 
 Use `cargo dev` and `cargo t` for daily work to share Bevy between executables. Dev and
 test builds keep only debug line tables, including our own crates; backtraces retain
@@ -52,52 +52,61 @@ compiled and written again. After large profile or toolchain changes, a one-time
 `cargo clean` in the intended `CARGO_TARGET_DIR` removes obsolete variants; do it only
 when no build is using that directory. Release builds strip symbols for distribution.
 
-Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (default `target/scenario`):
+Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (default `target/scenario`). Only the names the dispatch in `crates/exo_app/src/scenario/mod.rs` knows:
 
-- `full`: stand, run 20 s, walk up the ramp into the parked ship, take off, fly to space (7000 m), stand and walk in the cabin at 400 m/s rolling, brake, dive back, land, walk out and back in, cabin in atmosphere.
-- `walk`: stand still, run 20 s.
-- `space`: fly to space, stop, walk out of the ship and drift (stopped ship, one drifting at 3 m/s, a careful step out with taps of W), then the suit: brake, roll, back into the field (righting), fly back into the cabin, drift with a ship coasting at 20 m/s close behind its ramp.
-- `foreign`: a remote ship flies through the real snapshot path at 350 m/s; the walker stands and walks in its cabin, then beside it parked. Then #16 without a network: the walker walks beside the landed ship while it carries 1e6 m/s, and stands and walks in its cabin while it ramps up like the quantum drive to 1e6 m/s.
-- `t5`: four 300 s walks at 1.8 m/s (basin, escarpment, plateau); slow, for terrain work.
-- `warp`: quantum drive between the two planets: refused starts (below 1.5 atmosphere heights, ship on the path), a snapshot with an unknown planet id, calibration lost, cancel, Hearth to Cinder with a walker in the cabin (walking at top speed), landing on Cinder, back seated, an emergency exit at mid-flight and a jump on from the drop point. Checks the end point, the nose at the target's centre and the terrain after the exit. Prints flight times and speeds; with a window it also takes screenshots of the cruise (cabin and outside), the exit and 2 s after it, and checks the new planet's terrain.
-- `swap`: three planet swaps by warp (Hearth, Cinder, Hearth, Cinder) and an emergency drop; 30 ticks after each swap it counts what the departed planet left (terrain chunks, entities, meshes, its generator) and the whole world, and how many root chunks the swap frame built (#14, #34). Runs the terrain also headless. Prints the resident memory, not checked.
-- `flight`: the flight feel: thrust and rotation ramp to full deflection in the tuned time, the virtual-joystick mouse (full, half, centred, dead zone), the pad's right stick through its dead zone and curve (no device needed), boost raises the speed limit while the capacitor lasts and drops back on release, decoupled (C) blends over 4 s and glides, coupled again damps; camera look-ahead in the turn, wider field of view at speed, a bump on touchdown. With a window it takes screenshots (stick, boost, decoupled, landed, F3). The only scenario on the virtual joystick; the others keep the direct mouse their aiming is written for.
-- `boost-hud`: the boost capacitor (#90) and the minimal HUD (#91): seated, climb and cruise, hold boost until the meter is empty (it lasts the drain time, the speed limit drops back although Shift is held), release, the meter refills after the delay in the recharge time, the brake uses no charge; at each step the HUD readout shows the ship's speed and altitude (AGL below `agl_below` of `content/tuning/hud.json`, ALT above, both checked), the gauge, and no debug words.
-- `thruster-audio` (#150): the thruster sound layers (`flight_core::audio`) from the controls: a strafe right for 1 s makes the +x hiss the largest; a boost for 2 s raises the roar above 0.5 and counts one boost start; after release and 3 s of rest the hiss and roar are below 0.05 and the rumble is the idle level.
-- `slope-landing`: a ship set down on a slope (#92): finds ground about 5 degrees below `landing_slope_limit` of `ground.json` near the start, lands on it with Ctrl held, rests 10 s and checks that it stays on its touchdown spot (under 1 mm, it used to slide 0.55 m on 33 degrees) and lies on the slope, then thrust up lets go.
-- `sc-lift` (round 5, renamed in #206 from `sc-switch`): the ship lifts off more than 5 m in 2 s of Space, drifts less than 1 m in a 3 s hover, the HUD mode starts with `SHIP SC`, 3 s of W give more than 20 m/s forward.
-- `sc-turn` (#196): the SC model's rotation: a full pitch overshoots its target rate and settles, a reversal decelerates at a constant rate, a roll release stops without overshoot, F8 (G-safe) caps a turn at speed.
-- `sc-hud` (#197): the flight panel: C toasts `DECOUPLED` and shows the 4 s blend, H `GRAV COMP OFF`, B `NAV`, Page Down `LIMIT 90 %`, X the `BRAKE` badge (no toast).
-- `sc-flight-hud` (#200): the flight HUD: sit, lift; D strafes right (velocity +x, right thrust bar longest), W fills the speed tape, Page Down x5 puts the limiter mark at 50 %, the horizon is level after release.
-- `sc-linear` (#195): the SC model's linear law at 400 m: a strafe, the boost cap refusing thrust, W+D then X (the heading holds), gravity compensation off (falls) and on (holds), NAV above the SCM cap, the speed limiter.
-- `sc-air` (#199): the SC model's air: a hover drifts with the wind with wind compensation (I) off and holds with it on, turbulence low and fast, none high up.
-- `sc-body` (#198): the SC model's thrusters: W from a hover reaches half thrust after the spool and jerk (about 0.55 s), a boost reaches full strength after its pre-delay and ramp.
-- `help` (round 5): F1 shows the walking keys on foot, the ship's switches seated, F1 again hides the panel.
-- `camera-g` (#148, #149): boost for 2 s from 300 m: trauma above 0.3, the chase camera trails behind the ship within `lag_max`, forward G widens the view; braking to a stop and F9 (through the bindings) off: no shake, lag or G field of view, and a boost stays shake-free; F9 on, landing: trauma and lag back to rest values (below 0.05 and 1 cm).
-- `reload`: edits a copy of the tuning files while running (dev builds): a changed turn rate takes effect, a broken file is refused, the restored file loads again.
-- `foreign_warp`: a remote ship at warp speed (1e6 m/s) held next to the walking walker; the walk must be the same as without it (#16).
-- `figure`: another player's figure in front of the walker and in the cabin; with `--menu` and a window also screenshots of the menus.
-- `planet-look`: the planet look harness (#63): for every planet an atlas (equirectangular height, biome, landform, scatter and water maps) and the bake statistics (land fraction, biome area shares, site gaps, rivers, lakes, drainage time) in `<out>/look/<planet>/`; in a window also a screenshot from each fixed viewpoint of `content/look/viewpoints.json` (orbit, a hill at 200 m, the ground at 1.7 m; at the basin, rim, plateau, a site, a forest edge, the coast, the biggest river, the largest lake), same spots and sun every run. Then the time-of-day shots (`times` in the same file, #48): `noon.png`, `dusk.png` and `night.png` from one viewpoint, with the clock stopped at that time. With `--perf` the frame time per viewpoint. `EXO_LOOK=<planet>[:<viewpoint>,...]` shoots only those (quick iterations).
-- `daynight`: on every planet the walker stands at the spawn point while one day runs in 12 s; checks the sun against `daynight_core` every tick, the sun back after a day, the highest and lowest sun, brightness noon > dusk > night > 0 and the night light (#48); then that every planet's lit side agrees with the star direction, near the planet and in space (#104).
-- `site-walk`: the walker walks from 40 m outside into a ruin and must stand on its flattened pad (#70).
-- `crate-ride`: a test crate on the cabin floor through take-off, flight, a warp to Cinder and the landing (it must stay in the cabin and barely drift); a second crate pushed out over the ramp of the flying ship keeps the ship velocity at the hand-over (#80).
-- `interact`: one tap (F) picks up a crate and sits at the seat; the HUD prompt names the target each time (#82).
-- `crate-carry`: carries the small crate (sprint allowed) and the medium one (slower, no sprint, no jump) and checks the walking speed, fails to lift the large crate alone, throws the small crate and checks its flight, pulls a medium crate with the grab tool from 8 m (#83); outside the crates are Avian bodies (#210), so it also checks the hold error and the condition lost in a 3 m drop.
-- `crate-lock`: one crate locked on the cabin's floor plates, one loose off them, one half on them (red); hard acceleration, a strafe and a warp: the locked one does not move, the loose one slides and stays in the cabin; grabbing unlocks, setting down on the plates locks again (#84).
-- `crate-unload`: carries a crate off the plates, down the ramp and out, sets it down, and carries it back up to lock again; checks the handover to an Avian body at the ramp's end does not jump (#210).
-- `crate-ramp`: a crate on the parked ship's ramp stays a sweep crate (the ramp counts as ship) and stays on the ground when the ship takes off (#210).
-- `crate-hull`: a crate thrown at the parked ship's side wall stops outside the hull, never in the cabin (#210).
-- `crate-wake-stream`: crates 500 m away are frozen; the walker comes, the patch is built and they wake as Avian bodies with no drop below the ground (#210).
-- `crate-budget`: the object budget (#85): 30 crates spawned against a cap of 24 (the longest untouched go), all at rest sleep and cost no steps, a warp to Cinder leaves the persistence cap (4) frozen on Hearth, crates resting untouched on Cinder go after a (shortened) timeout, a crate falling far above everyone goes.
-- `licence`: the seat refuses without the flight licence, the exam at the flight school's counter (fee, ship lent, the exam's events set by test hooks), pass with honours, the seat works (#169).
-- `map`: the pins (places, the tracked job's next stop, the player), M opens and closes the map; with a window a screenshot of it (#166).
-- `first-person-settings`: mouse look at two sensitivities outside and in the cabin, sit/stand through F, and vehicle mouse/camera isolation. Headless includes the real camera projection system.
-- `town`: the first city stands on its plot, its buildings stop the walker, the characters stand at their spots (round 6).
-- `dev_area` (#284, starts on the dev area): the rectangle is level and dry, the walker starts on it, walks to the test console (the prompt names it), F uses it (the cursor is free and points at the screen in the world through the camera's ray, W held for 1 s does not move the walker), three clicks on + count to 3 and fill the bar to 0.3, the toggle switches; F leaves and the walker walks; again with Escape. Then the design system's two sample screens: the warmer (S) counts up, the reactor panel (M) goes to manual at 60 % and reads hot. With a window: screenshots of the start, the console, the cursor on the console, warmer and reactor screens in the world, and the reactor's screen showing its panel live to others.
-- `displays` (#284, on the dev area): the pointer on the test console through `Controls`: hover names the widget, a press released over another widget is no click, a disabled button neither hovers nor clicks, a click off the screen does nothing, the slider takes its value at the press and while dragged, Escape leaves.
-- `items` (C1, on the dev area): at the item table collect the wrench, the extinguisher and the bandages (each in the action bar at once, confirmed by the host one round trip later at 75 ms each way), 2 takes the extinguisher into both hands, G drops it (it lies there at once, the host numbers it), R throws the wrench 7 m, a second player's request for the extinguisher reaches the host first (the local bar rolls back), Tab opens the inventory and a drag moves the bandages, and a wrench on the cabin floor stays put through a take-off at full thrust.
-- `hud` (Crew HUD v3, on the dev area): the compass reads the true heading on the ground (east 90, north-west 315) and the heading from the bow in a flying ship's cabin (nose 0, starboard 90, astern 180) and true again in the landed ship; the vitals block shows health only until oxygen and burn are set (burn on top, then oxygen, then health) and drops them when they end; credits show for 1.5 s after a change and fade out by 2 s; the prompt for the extinguisher is a collect (verb over name) with a place in the world; the key hints and the held name follow the hands; the action bar dims to 55 % after three idle seconds and wakes on a slot key. With a window it takes pictures: calm, credits, extinguisher held with oxygen dropping and a burn, the same critical, Tab open, and a drag in the open bar.
-- `net`: the network bot (take off, cruise, turn, brake, land, repeat); see below.
+| Name | Purpose in one sentence |
+| --- | --- |
+| `walk` | Walker stands still 5 s, then runs 20 s. |
+| `net` | Network bot: take off, cruise, turn, brake, land, repeat (see below). |
+| `foreign` | A remote ship flies through the snapshot path; the walker stands and walks beside and in it, also at 1e6 m/s. |
+| `foreign_warp` | A remote ship at warp speed next to the walker; the walk must match the run without it (#16). |
+| `figure` | Another player's figure in front of the walker and in the cabin; with `--menu` and a window also menu screenshots. |
+| `flight` | The flight feel: thrust and rotation ramps, virtual-joystick mouse and pad stick, boost, decoupled glide, camera and touchdown. |
+| `first-person-settings` | Mouse look at two sensitivities outside and in the cabin, sit/stand, vehicle mouse and camera isolation. |
+| `boost-hud` | The boost capacitor drains, refills after the delay, and the minimal HUD readout stays correct. |
+| `help` | F1 shows the walking keys on foot and the ship's switches seated; F1 again hides the panel. |
+| `dev-menu` | The F10 dev menu's keys, from a new player's start. |
+| `sc-linear` | The SC model's linear law at 400 m: strafe, boost cap, gravity compensation, NAV, speed limiter. |
+| `sc-flight-hud` | The flight HUD: lift, strafe, speed tape, limiter mark, level horizon after release. |
+| `camera-g` | Boost shake and lag of the chase camera, the forward G field of view, and their rest values after landing. |
+| `slope-landing` | A ship set down on a slope stays where it touched down and lies on the slope. |
+| `reload` | Edited tuning copies while running (dev builds): a changed value takes effect, a broken file is refused. |
+| `warp` | Quantum drive between the two planets: refused starts, unknown planet id, cancel, flight, landing, emergency exit. |
+| `planet-flight` | A repeatable flight on a big planet for frame spikes; reports p99 and worst frame and LOD debt. |
+| `lod-morph` | A slow descent on a big planet with geomorphing, to check the LOD morph and its frame goal. |
+| `swap` | Three planet swaps by warp and an emergency drop; the departed planet leaves nothing behind and the swap frame builds its root chunks. |
+| `crate-ride` | A crate on the cabin floor through take-off, flight, warp and landing stays put; a pushed crate keeps the ship velocity. |
+| `interact` | One tap (F) picks up a crate and sits at the seat; the HUD prompt names the target. |
+| `crate-carry` | Carrying by crate size (walking speed, no lift for the large one, grab tool, drop, throw). |
+| `crate-lock` | Crates on the cabin plates lock and stay put in flight; grabbing unlocks, setting down locks again. |
+| `crate-budget` | The object budget: spawn past the cap, sleeping crates cost nothing, persistence cap and timeouts hold. |
+| `crate-unload` | A crate carried off the plates, down the ramp and out hands over to an Avian body without a jump. |
+| `crate-ramp` | A crate on the parked ship's ramp stays a sweep crate and on the ground when the ship takes off. |
+| `crate-hull` | A crate thrown at the hull stops outside it, never in the cabin. |
+| `crate-wake-stream` | Crates 500 m away stay frozen; when the walker comes they wake as Avian bodies with no drop below ground. |
+| `town` | The first city stands on its plot, its buildings stop the walker, the characters stand at their spots. |
+| `dev_area` | The dev area: level ground, walker and test console, the cursor on the console, the design system's sample screens. |
+| `displays` | The pointer on the test console: hover, press and release, disabled buttons, slider, Escape. |
+| `items` | Items on the dev area: collect, hold, drop, throw, a second player's request, inventory drag, a wrench through take-off. |
+| `hud` | The crew HUD: compass, vitals, credits fade, prompts, action bar dimming; with a window, pictures of its states. |
+| `health` | The walker's health: burn, radiation, on fire and down, on the host at the dev area. |
+| `engine_room` | The engine room: corridor, door, air, and the alarm. |
+| `reactor` | The reactor on the engine room's screens: temperature band, manual mode, load from the grid. |
+| `coolant` | The pump's coolant tank: the drain, the refill by hand and E-COOL. |
+| `rods` | Fuel rods by hand: loading, brake pull, and the spicy rod's radiation. |
+| `blast` | The meltdown blast reaches a walker two metres off and not one at 25 m. |
+| `fire` | Fires in the engine room, sprayed out with the extinguisher. |
+| `fire_grid` | The cell model of the engine-room fire, switched on at the faults screen, catches the corridor. |
+| `extinguisher` | The extinguisher's supply: wear, empty, refill at the corridor rack. |
+| `repair` | Repair at a machine by holding, with the ring off. |
+| `savefile` | Save, restart, load: the state that must survive comes back. |
+| `licence` | The seat refuses without the flight licence; the exam at the flight school passes and the seat works. |
+| `map` | The map's pins and M to open and close it; with a window a screenshot. |
+| `planet-look` | The planet look harness: atlases, bake statistics and fixed viewpoint screenshots per planet (`EXO_LOOK=<planet>[:<viewpoint>,...]` for a subset). |
+| `site-walk` | The walker walks from outside a ruin into it and stands on its flattened pad. |
+| `daynight` | One day runs in 12 s on every planet: sun against `daynight_core`, brightness order, night light, lit side agrees with the star. |
+| `space` | Fly to space, stop, walk out of the ship and drift, the suit, and back into the cabin. |
+| `full` | The whole run: walk, board, take off, fly to space and back, land, walk out and in. |
 
 Other options: `--radius=<m>` (first planet, overrides the file), `--start=<place>` (start beside a place's pad instead of the dev area, e.g. `drip_rock`; a run without a scenario starts on the dev area: a small level test ground with the devices, displays, a warm reactor and the ship models beside it), `--system-seed=<u64>` (debug: fly a generated star system instead of the file; `--system-kind=<harbour|normal|hostile>`, default normal, picks its template), `--record=<file>` (write the run's ship and walker path for the replay matrix), `--no-vsync` (frame-time measurements; with vsync every frame reads the display's period).
 

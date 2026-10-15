@@ -1,8 +1,8 @@
 # Keys
 
-Every key of the game, sorted into **game** and **debug**. The keys come from `content/tuning/bindings.json`; the settings menu's Keybinds tab changes them in the game. The action name is the key in `bindings.json`. A test (`controls::tests::keys_md_lists_every_action`) fails when an action is missing here.
+Every key of the game, sorted into **game** and **debug**. The keys come from `content/tuning/bindings.json`; the settings menu's Keybinds tab changes them in the game. The action name is the key in `bindings.json`.
 
-Marks: **new** since round 5 · **provisional**: the key is not decided yet · **cut?**: may go after the playtest.
+Marks: **provisional**: the key is not decided yet · **cut?**: may go after the playtest.
 
 ## Game
 
@@ -14,11 +14,11 @@ Marks: **new** since round 5 · **provisional**: the key is not decided yet · *
 | Mouse | – | Look | right stick |
 | Shift | `run` | Run | left stick click |
 | Space | `jump` | Jump | South |
-| F | `interact` | The one verb: sit or stand up, pick up or set down a crate, collect an item, a counter, use a display and leave it (new) | North |
-| R | `throw` | Throw the held crate, else the item in the hand (new) | right stick click |
-| G | `drop` | Drop the item in the hand; a held crate is set down (new) | – |
-| 1 to 8 | `slot_1`, `slot_2`, `slot_3`, `slot_4`, `slot_5`, `slot_6`, `slot_7`, `slot_8` | Take a slot of the action bar into the hand (new; while the dev menu is open the digits run its commands) | – |
-| Tab | `inventory` | Open or close the own inventory with a mouse cursor: a click takes a slot into the hand, a drag moves, stacks or swaps (new) | – |
+| F | `interact` | The one verb: sit or stand up, pick up or set down a crate, collect an item, a counter, use a display and leave it | North |
+| R | `throw` | Throw the held crate, else the item in the hand | right stick click |
+| G | `drop` | Drop the item in the hand; a held crate is set down | – |
+| 1 to 8 | `slot_1`, `slot_2`, `slot_3`, `slot_4`, `slot_5`, `slot_6`, `slot_7`, `slot_8` | Take a slot of the action bar into the hand (while the dev menu is open the digits run its commands) | – |
+| Tab | `inventory` | Open or close the own inventory with a mouse cursor: a click takes a slot into the hand, a drag moves, stacks or swaps | – |
 | – | `lag` | Cabin gravity by hand, only in a landed ship. No key: later the captain sets it at a terminal; scripts fire it | – |
 
 ### At a display
@@ -29,7 +29,7 @@ F on a display (a machine's or console's screen, looked at from up to 2.5 m) fre
 |---|---|---|---|
 | Mouse, left button | – | Click on the screen under the cursor (a cursor off the screen hits nothing) | – |
 | F | `interact` | Leave the display | North |
-| Escape | `display_leave` | Leave the display (new; does not open the menu then) | – |
+| Escape | `display_leave` | Leave the display (does not open the menu then) | – |
 
 ### Ship
 
@@ -54,18 +54,18 @@ The switches of Star Citizen's flight control (the flight model is the SC model,
 |---|---|---|---|
 | H | `hover_assist` | Gravity compensation on/off: off, the ship falls with full gravity | D-pad up |
 | F8 | `turn_cap` | G-safe on/off: thrust and turns stay inside the G tolerance | – |
-| B | `master_mode` | Master mode SCM ↔ NAV (new, provisional) | – |
-| U | `comstab` | Comstab on/off: off, the ship slides wide in turns (new, provisional) | – |
-| P | `proximity_assist` | Proximity assist on/off: catches a dive towards the ground (new, provisional) | – |
-| I | `wind_comp` | Wind compensation on/off: off, the ship drifts with the wind (new, provisional) | – |
-| Page Up / Page Down | `limiter_up`, `limiter_down` | Speed limiter in 10 % steps; the mouse wheel later (new, provisional) | – |
+| B | `master_mode` | Master mode SCM ↔ NAV (provisional) | – |
+| U | `comstab` | Comstab on/off: off, the ship slides wide in turns (provisional) | – |
+| P | `proximity_assist` | Proximity assist on/off: catches a dive towards the ground (provisional) | – |
+| I | `wind_comp` | Wind compensation on/off: off, the ship drifts with the wind (provisional) | – |
+| Page Up / Page Down | `limiter_up`, `limiter_down` | Speed limiter in 10 % steps; the mouse wheel later (provisional) | – |
 
 ### Quantum drive
 
 | Key | Action | What it does | Pad |
 |---|---|---|---|
 | N | `warp_target` | Select the jump target | Select |
-| J | `warp` | Jump; J again cancels while spooling | West |
+| J | `warp` | Warp; J again cancels while spooling | West |
 | J (hold 1 s) | `warp_exit` | Emergency exit during the jump | West |
 
 ### Jobs, map, notices

@@ -66,8 +66,9 @@ pub(super) fn dev_tour_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str)
         face_towards(w, target);
         true
     }));
-    s.push(wait(1.0));
+    s.push(wait(3.0));
     s.push(shot_step("tour-01-start"));
+    s.push(wait(3.0));
     let rooms: [(&'static str, [f64; 2], [f64; 2]); 6] = [
         ("tour-02-engine-room", [ROOM.centre[0] + 2.0, ROOM.centre[1] + 3.0], REACTOR_AT),
         ("tour-03-bridge", [BRIDGE.centre[0] + 2.5, BRIDGE.centre[1] - 2.0], HELM_AT),
@@ -78,25 +79,31 @@ pub(super) fn dev_tour_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str)
     ];
     for (tag, from, look) in rooms {
         s.push(stand(from, look));
-        s.push(wait(0.6));
+        s.push(wait(3.0));
         s.push(shot_step(tag));
+        s.push(wait(3.0));
     }
-    s.push(hover([0.0, -34.0], 32.0, [0.0, 0.0]));
-    s.push(wait(1.0));
+    s.push(hover([0.0, -30.0], 24.0, [0.0, 0.0]));
+    s.push(wait(3.0));
     s.push(shot_step("tour-08-overview"));
+    s.push(wait(3.0));
     s.push(hover([-7.0, -2.0], 22.0, [-7.0, -12.0]));
-    s.push(wait(1.0));
+    s.push(wait(3.0));
     s.push(shot_step("tour-09-ship-from-above"));
+    s.push(wait(3.0));
     s.push(hover([0.0, -4.0], 16.0, [0.0, 11.0]));
-    s.push(wait(1.0));
+    s.push(wait(3.0));
     s.push(shot_step("tour-10-zones-from-above"));
+    s.push(wait(3.0));
     const ZONE_TAGS: [&str; 8] = ["tour-11-zone-engineering", "tour-12-zone-bridge", "tour-13-zone-turrets", "tour-14-zone-lab", "tour-15-zone-medbay", "tour-16-zone-storage", "tour-17-zone-hazards", "tour-18-zone-dev"];
     for (z, tag) in ROLE_ZONES.iter().zip(ZONE_TAGS) {
         s.push(stand([z.centre[0], z.centre[1] - z.half[1] - 1.5], z.centre));
-        s.push(wait(0.6));
+        s.push(wait(3.0));
         s.push(shot_step(tag));
+        s.push(wait(3.0));
     }
     s.push(stand([PADS.centre[0] - 9.0, PADS.centre[1] + 2.0], PADS.centre));
-    s.push(wait(0.6));
+    s.push(wait(3.0));
     s.push(shot_step("tour-19-pad"));
+    s.push(wait(3.0));
 }

@@ -142,13 +142,19 @@ pub fn pump_speed(flow: f64) -> f32 {
     lo + (hi - lo) * flow.clamp(0.0, 1.0) as f32
 }
 
-/// The reactor's drone volume: the set fission (0..100) of a powered reactor, falling off to
+/// The reactor's drone volume: the actual fission (0..100) of a powered reactor, falling off to
 /// silence at `REACTOR_RANGE_M`. Silent with the power off.
 pub fn reactor_hum_volume(fission: f64, power_on: bool, dist: f64) -> f32 {
     if !power_on {
         return 0.0;
     }
     REACTOR_HUM_VOL * (fission / 100.0).clamp(0.0, 1.0) as f32 * falloff(dist, REACTOR_RANGE_M)
+}
+
+/// The drone's level from the news: the actual fission (`ReactorNews::fission`), not the set
+/// point, so a set point the reactor has not reached yet is not heard.
+pub fn reactor_hum_level(r: &ReactorNews, dist: f64) -> f32 {
+    reactor_hum_volume(r.fission, r.power_on, dist)
 }
 
 /// The reactor's drone speed for a core temperature in degrees: the pitch rises with the heat.
@@ -456,7 +462,8 @@ fn reactor_alarms(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, 
 
 /// The reactor's drone: its level by the set fission and the power, its pitch by the temperature,
 /// positional at the reactor. Every process has the snapshot (`Items::reactor`).
-/// TODO(initiator): the drone uses the set fission (the wire has no actual fission rate yet).
+/// The drone follows the actual fission (Barotrauma's `volumeproperty="FissionRate"`). TODO(initiator):
+/// the level curve and the pitch are start values, to be tuned by ear.
 #[allow(clippy::too_many_arguments)]
 fn reactor_hum(players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, settings: Res<Settings>, time: Res<Time>, mut loops: Query<&mut AudioSink, With<ReactorLoop>>, mut now: Local<f32>) {
     let mut target = 0.0f32;
@@ -467,7 +474,7 @@ fn reactor_hum(players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes
             (Some(me), Some(at)) => (at - me).length(),
             _ => f64::MAX,
         };
-        target = reactor_hum_volume(r.set_fission, r.power_on, dist);
+        target = reactor_hum_level(&r, dist);
     }
     let k = 1.0 - (-time.delta_secs() / 0.3).exp();
     *now += (target - *now) * k;
@@ -636,6 +643,16 @@ mod tests {
         assert_eq!(reactor_hum_volume(0.0, true, 1.0), 0.0);
         assert_eq!(reactor_hum_volume(100.0, false, 1.0), 0.0);
         assert_eq!(reactor_hum_volume(100.0, true, 20.0), 0.0);
+    }
+
+    #[test]
+    fn the_drone_follows_the_actual_fission_not_the_set_point() {
+        let idle = ReactorNews { power_on: true, set_fission: 100.0, fission: 0.0, ..ReactorNews::default() };
+        assert_eq!(reactor_hum_level(&idle, 0.0), 0.0, "the set point alone is silent");
+        let full = ReactorNews { power_on: true, set_fission: 0.0, fission: 100.0, ..ReactorNews::default() };
+        assert_eq!(reactor_hum_level(&full, 0.0), reactor_hum_volume(100.0, true, 0.0), "the actual 100 is the full level");
+        let off = ReactorNews { power_on: false, ..full };
+        assert_eq!(reactor_hum_level(&off, 0.0), 0.0, "the power off is silent");
     }
 
     #[test]

@@ -35,7 +35,7 @@ use super::*;
 use crate::displays::{DisplayAction, Panels};
 use crate::dev_area::reactor::{lamp_blink_on, ReactorConfig};
 use crate::items::Items;
-use display_core::{button, canvas, column, ctl, font, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Shape, Tier, TextFace, Tone};
+use display_core::{button, canvas, column, ctl, font, label, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Shape, Tier, TextFace, Tone};
 use item_core::wire::{BreakerGroup, FuelKind, FuelTube, Lamp, PumpMode, ReactorAsk, ReactorFault, ReactorNews, FUEL_TUBES};
 
 /// The status board's lamps, in the panel's order (three to a row).
@@ -267,6 +267,18 @@ fn meltdown_view() -> Panel {
     Panel::screen(Tier::M, READOUT_NAME, "RX-01", column(8.0, vec![hazard(624.0), word, hazard(624.0)])).status("MELTDOWN", Tone::Bad).with_padding(8.0)
 }
 
+/// A set point (the readout, as before) and the actual value beside it, small and dim: "41 %  -> 38".
+/// The arrow is ASCII: the mono font has no U+2192.
+fn set_and_actual(set: f64, actual: f64, manual: bool) -> Item {
+    row(
+        6.0,
+        vec![
+            readout(format!("{set:.0} %")).text_size(font::LABEL).tone(if manual { Tone::Normal } else { Tone::Dim }).flex(1.0),
+            label(format!("-> {actual:.0}")).mono().text_size(font::SMALL).tone(Tone::Dim).flex(1.0),
+        ],
+    )
+}
+
 /// The reactor readout (M): the top row of gauges and fuel, the sliders and the switches below.
 /// Above the allowed band with the power on, one hazard stripe under the sliders, inside the bottom-left
 /// column (in place of its filler, so the body gets no new row), and the header word CRITICAL. After a
@@ -279,6 +291,7 @@ pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     let on = r.is_some_and(|r| r.power_on);
     let manual = r.is_some_and(|r| r.manual);
     let (fis, tur) = r.map_or((0.0, 0.0), |r| (r.set_fission, r.set_turbine));
+    let (fis_act, tur_act) = r.map_or((0.0, 0.0), |r| (r.fission, r.turbine));
     let (word, tone) = reactor_status(r);
     // Critical: the stripe is as wide as the bottom-left column (624 content - 16 gap - 200 switches)
     // and the spacing tightens by 18 px so the stripe fits (TODO(initiator): the readout's height budget).
@@ -287,9 +300,9 @@ pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     let bottom_left = column(
         gap,
         vec![
-            row(8.0, vec![micro("FISSION RATE").flex(1.0), readout(format!("{fis:.0} %")).text_size(font::LABEL).tone(if manual { Tone::Normal } else { Tone::Dim })]).fixed(24.0),
+            row(8.0, vec![micro("FISSION RATE").flex(1.0), set_and_actual(fis, fis_act, manual)]).fixed(24.0),
             slider(fis / 100.0, "", "fis_set").enabled(manual).fixed(ctl::MD),
-            row(8.0, vec![micro("TURBINE OUTPUT").flex(1.0), readout(format!("{tur:.0} %")).text_size(font::LABEL).tone(if manual { Tone::Normal } else { Tone::Dim })]).fixed(24.0),
+            row(8.0, vec![micro("TURBINE OUTPUT").flex(1.0), set_and_actual(tur, tur_act, manual)]).fixed(24.0),
             slider(tur / 100.0, "", "tur_set").enabled(manual).fixed(ctl::MD),
             filler,
         ],
@@ -976,6 +989,17 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn the_readout_shows_the_actual_beside_the_set_point() {
+        let p = shipped_panel(Some(&ReactorNews { set_fission: 41.0, fission: 38.0, set_turbine: 50.0, turbine: 47.0, ..news() }));
+        let texts: Vec<String> = p.layout().into_iter().filter_map(|w| match w.widget {
+            display_core::Widget::Label { text, .. } => Some(text.clone()),
+            _ => None,
+        }).collect();
+        assert!(texts.iter().any(|t| t == "41 %") && texts.iter().any(|t| t == "-> 38"), "{texts:?}");
+        assert!(texts.iter().any(|t| t == "50 %") && texts.iter().any(|t| t == "-> 47"), "{texts:?}");
     }
 
     #[test]

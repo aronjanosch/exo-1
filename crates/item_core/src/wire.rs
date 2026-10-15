@@ -323,6 +323,10 @@ pub struct ReactorNews {
     /// The targets as set (Manual) or as Auto has them.
     pub set_fission: f64,
     pub set_turbine: f64,
+    /// The actual fission rate and turbine output, 0..100: they follow the set points with inertia
+    /// (the reactor hum follows the actual fission, #300 r25).
+    pub fission: f64,
+    pub turbine: f64,
     pub output_kw: f64,
     pub load_kw: f64,
     pub optimal: [f64; 2],
@@ -524,6 +528,8 @@ mod tests {
             temp: 61.25,
             set_fission: 40.0,
             set_turbine: 48.0,
+            fission: 38.0,
+            turbine: 50.0,
             output_kw: 500.0,
             load_kw: 500.0,
             optimal: [35.0, 65.0],

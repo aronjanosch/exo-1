@@ -1,0 +1,7 @@
+{
+  "_comment": "The planet set (#264): the recipes a generated star system may use, with what one recipe fixes for every planet made from it. TODO(initiator): which recipes make up the 0.1 set; today only the two that exist. `terrain_m` is the highest ground above the radius (obstruction radius = radius + terrain_m); `color` is the distant sphere's base colour, jittered a little per planet.",
+  "recipes": [
+    { "id": "hearth", "color": [0.25, 0.55, 0.35], "terrain_m": 500.0 },
+    { "id": "cinder", "color": [0.75, 0.40, 0.25], "terrain_m": 400.0 }
+  ]
+}

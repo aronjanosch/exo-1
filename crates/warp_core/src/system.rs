@@ -170,6 +170,13 @@ pub struct System {
 }
 
 impl System {
+    /// Builds a system from its parts (#274, for generators) and checks it like a file.
+    pub fn new(star: StarDef, planets: Vec<PlanetDef>, drive: DriveConfig) -> Result<System, String> {
+        let sys = System { _comment: String::new(), star, planets, drive };
+        sys.validate()?;
+        Ok(sys)
+    }
+
     /// Reads and checks the system file (#106): unknown fields and values the drive or the
     /// registry cannot work with are errors, never panics or hangs later.
     pub fn from_json(s: &str) -> Result<System, String> {

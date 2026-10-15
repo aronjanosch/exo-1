@@ -2052,6 +2052,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "campaign_core"
+version = "0.1.0"
+dependencies = [
+ "glam 0.32.1",
+ "serde",
+ "serde_json",
+ "warp_core",
+]
+
+[[package]]
 name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2727,6 +2737,7 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "campaign_core",
  "content_core",
  "daynight_core",
  "device_core",

@@ -756,3 +756,33 @@ fn after_a_drop_the_wait_ends_with_the_post_ramp() {
     d.phase = Phase::Cooldown;
     assert_eq!(l.step(&s, HEARTH, open, &d, false, Pending::Running(THIRD)), Load::Swap(THIRD));
 }
+
+// ---- Building a System from parts (#274) ----
+
+#[test]
+fn a_system_rebuilt_from_its_parts_is_valid() {
+    let s = sys();
+    let rebuilt = System::new(s.star.clone(), s.planets.clone(), s.drive.clone()).unwrap();
+    assert_eq!(rebuilt.planets.len(), s.planets.len());
+}
+
+#[test]
+fn a_system_built_from_parts_needs_at_least_one_planet() {
+    let s = sys();
+    assert!(System::new(s.star.clone(), Vec::new(), s.drive.clone()).is_err());
+}
+
+#[test]
+fn a_planet_with_zero_radius_is_an_error_when_building_from_parts() {
+    let s = sys();
+    let mut planets = s.planets.clone();
+    planets[0].radius = 0.0;
+    assert!(System::new(s.star.clone(), planets, s.drive.clone()).is_err());
+}
+
+#[test]
+fn building_from_parts_with_256_planets_is_an_error_not_a_panic() {
+    let s = sys();
+    let planets = vec![s.planets[0].clone(); 256];
+    assert!(System::new(s.star.clone(), planets, s.drive.clone()).is_err());
+}

@@ -138,6 +138,12 @@ pub struct Options {
     pub warm_reactor: bool,
     /// `--showcase`: ship models with colliders next to the spawn, for a walk test (window only).
     pub showcase: bool,
+    /// `--system-seed=<u64>`: the run's star system is generated from this seed instead of
+    /// `content/system/system.json` (debug switch, #274). Default: the file.
+    pub system_seed: Option<u64>,
+    /// `--system-kind=<harbour|normal|hostile>`: the template of a generated system, used only
+    /// with `--system-seed` (default normal).
+    pub system_kind: campaign_core::SystemKind,
 }
 
 impl Default for Options {
@@ -170,6 +176,8 @@ impl Default for Options {
             dev_area: false,
             warm_reactor: false,
             showcase: false,
+            system_seed: None,
+            system_kind: campaign_core::SystemKind::Normal,
         }
     }
 }
@@ -207,6 +215,15 @@ impl Options {
                 "--showcase" => o.showcase = true,
                 "--swap-rounds" => o.swap_rounds = v.parse().expect("swap-rounds"),
                 "--perf" => o.perf = Some(o.perf.take().unwrap_or_default()),
+                "--system-seed" => o.system_seed = Some(v.parse().expect("system-seed")),
+                "--system-kind" => {
+                    o.system_kind = match v {
+                        "harbour" => campaign_core::SystemKind::Harbour,
+                        "normal" => campaign_core::SystemKind::Normal,
+                        "hostile" => campaign_core::SystemKind::Hostile,
+                        _ => panic!("--system-kind: harbour, normal or hostile, not '{v}'"),
+                    }
+                }
                 "--perf-baseline" => o.perf.get_or_insert_default().baseline = PathBuf::from(v),
                 "--perf-save-baseline" => o.perf.get_or_insert_default().save_baseline = true,
                 "--perf-tolerance" => o.perf.get_or_insert_default().tolerance = v.parse().expect("perf-tolerance"),
@@ -307,7 +324,7 @@ pub fn build_app(o: &Options) -> App {
         .insert_resource(ColliderTreeOptimization { use_async_tasks: false, ..default() })
         .insert_resource(PhysicsTransformConfig { transform_to_position: false, position_to_transform: false, ..default() });
 
-    let mut sys = warp_core::System::from_json(warp::SYSTEM).expect("system.json");
+    let mut sys = warp::build_system(o);
     if let Some(d) = o.distance {
         match sys.set_distance(d) {
             Ok(notes) => notes.iter().for_each(|n| println!("--distance: {n}")),
@@ -462,4 +479,33 @@ pub fn build_app(o: &Options) -> App {
         app.add_plugins((terrain::plugin, scatter::plugin, sites::plugin));
     }
     app
+}
+
+#[cfg(test)]
+mod option_tests {
+    use super::Options;
+
+    fn parse(list: &[&str]) -> Options {
+        Options::from_args(list.iter().map(|s| s.to_string()))
+    }
+
+    #[test]
+    fn system_seed_and_kind_parse() {
+        let o = parse(&["--system-seed=7", "--system-kind=hostile"]);
+        assert_eq!(o.system_seed, Some(7));
+        assert_eq!(o.system_kind, campaign_core::SystemKind::Hostile);
+    }
+
+    #[test]
+    fn system_defaults_are_the_file_and_normal() {
+        let o = parse(&[]);
+        assert_eq!(o.system_seed, None);
+        assert_eq!(o.system_kind, campaign_core::SystemKind::Normal);
+    }
+
+    #[test]
+    #[should_panic(expected = "harbour, normal or hostile")]
+    fn a_bad_system_kind_panics() {
+        parse(&["--system-kind=tiny"]);
+    }
 }

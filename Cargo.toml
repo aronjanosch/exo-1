@@ -32,6 +32,7 @@ health_core = { path = "crates/health_core" }
 fire_core = { path = "crates/fire_core" }
 device_core = { path = "crates/device_core" }
 reactor_core = { path = "crates/reactor_core" }
+campaign_core = { path = "crates/campaign_core" }
 
 # Bevy recommendation: little optimisation for our code, full for dependencies.
 [profile.dev]

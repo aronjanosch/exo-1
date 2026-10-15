@@ -4,8 +4,8 @@
 //! (`BarotraumaShared/SharedSource/Items/Components/Machines/OxygenGenerator.cs:40-61`):
 //! `CurrFlow = min(Voltage, MaxOverVoltageFactor) * generatedAmount * 100 * condition²`, and
 //! nothing while the device has no power. The minimum voltage is `Powered.cs:122-128` (0.5 by
-//! default; `MinVoltage`). The breathing side, `Hull.cs:124` (`OxygenConsumptionSpeed` 700 per
-//! character per second), is not in the core: no characters breathe here yet.
+//! default; `MinVoltage`). The breathing side (`Hull.cs:124`, `Deck::breathe`) is the other end of
+//! the same room: the glue drains it per living player (`dev_area/engine_room.rs`, `breath_step`).
 //!
 //! Ours: the voltage is the grid's life support factor (`reactor_core::grid`,
 //! `Grid::factor(Group::LifeSupport)`), capped at 1 because our grid never over-volts the group.

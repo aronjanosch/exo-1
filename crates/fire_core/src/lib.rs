@@ -303,6 +303,13 @@ impl Deck {
         room.oxygen = (room.oxygen + amount.max(0.0)).min(room.volume);
     }
 
+    /// Takes `amount` m³ of air out of room `r` for the breathers (each one's rate times dt), never
+    /// below empty. Barotrauma `Character.cs:3835-3848` drains the hull the same way.
+    pub fn breathe(&mut self, r: RoomId, amount: f64) {
+        let room = &mut self.rooms[r.0];
+        room.oxygen = (room.oxygen - amount.max(0.0)).max(0.0);
+    }
+
     pub fn total_oxygen(&self) -> f64 {
         self.rooms.iter().map(|r| r.oxygen).sum()
     }

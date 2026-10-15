@@ -230,3 +230,53 @@ fn full_power_refills_the_engine_room_from_half_in_about_a_minute() {
     }
     assert!(d.room(r).oxygen_fraction() > 0.99, "after 60 s: {}", d.room(r).oxygen_fraction());
 }
+
+/// Barotrauma `Hull.OxygenConsumptionSpeed` (700 px²/s per character) over our engine room's
+/// 1000 × 320 px hull: 0.56 m³/s per breather (`room.breath_m3_per_s`, reactor.json).
+const BREATH: f64 = 0.56;
+
+/// The sealed room of `ROOM_M3`, full, no gap and no leak.
+fn sealed_room() -> (Deck, RoomId) {
+    let mut d = Deck::new(FireTuning::default(), 3);
+    let r = d.add_room(ROOM_M3);
+    (d, r)
+}
+
+/// `breathers` breathers at `rate` m³/s each, and a generator at `generator` m³/s, for `secs`.
+/// The glue does the same per step: the generator's air in, then the breathing out.
+fn breathe_for(d: &mut Deck, r: RoomId, breathers: usize, rate: f64, generator: f64, secs: f64) {
+    for _ in 0..(secs / DT).round() as usize {
+        d.add_oxygen(r, generator * DT);
+        d.breathe(r, breathers as f64 * rate * DT);
+    }
+}
+
+#[test]
+fn four_breathers_in_a_sealed_room_lose_about_two_and_a_quarter_m3_a_second() {
+    let (mut d, r) = sealed_room();
+    let before = d.room(r).oxygen;
+    breathe_for(&mut d, r, 4, BREATH, 0.0, 10.0);
+    let lost = before - d.room(r).oxygen;
+    assert!((lost - 2.24 * 10.0).abs() < 1e-6, "lost {lost} m³ in 10 s");
+}
+
+#[test]
+fn a_full_generator_holds_three_breathers_in_a_sealed_room() {
+    // 3 × 0.56 = 1.68 m³/s is under the generator's 2.13: the air does not fall.
+    let (mut d, r) = sealed_room();
+    d.room_mut(r).oxygen = ROOM_M3 * 0.5;
+    let start = d.room(r).oxygen;
+    breathe_for(&mut d, r, 3, BREATH, 2.13, 60.0);
+    assert!(d.room(r).oxygen >= start, "after 60 s: {}", d.room(r).oxygen);
+}
+
+#[test]
+fn breathing_never_takes_more_than_the_room_has_and_a_negative_amount_takes_nothing() {
+    let (mut d, r) = sealed_room();
+    d.room_mut(r).oxygen = 0.1;
+    d.breathe(r, 1.0);
+    assert_eq!(d.room(r).oxygen, 0.0, "clamped at empty");
+    d.add_oxygen(r, 5.0);
+    d.breathe(r, -5.0);
+    assert_eq!(d.room(r).oxygen, 5.0, "a negative amount takes nothing");
+}

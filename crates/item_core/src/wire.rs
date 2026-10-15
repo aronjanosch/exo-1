@@ -19,6 +19,8 @@ pub enum ToHost {
     Treat(Option<PlayerId>),
     /// The CPR hold: the player is pumping this player (`Some`), or has stopped (`None`).
     Rescue(Option<PlayerId>),
+    /// The coolant refill hold: the player is refilling at the pump (`true`), or has stopped (`false`).
+    Refill(bool),
     /// The brake: pull the rod with the most life into the sender's hands.
     Pull,
 }
@@ -49,6 +51,7 @@ pub enum Doing {
     Repairing(RepairDevice),
     Spraying,
     Reviving(PlayerId),
+    Refilling,
 }
 
 /// A player's status for the others: burning, down (waiting for the respawn), unconscious
@@ -625,6 +628,7 @@ mod tests {
             (3, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Repairing(RepairDevice::CoolantPump), hurt: Injuries::default() }),
             (4, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Spraying, hurt: Injuries::default() }),
             (5, PublicStatus { burning: false, down: false, unconscious: true, doing: Doing::Nothing, hurt: Injuries::from_shares(0.0, 0, 0.0, 0.5) }),
+            (6, PublicStatus { burning: false, down: false, unconscious: false, doing: Doing::Refilling, hurt: Injuries::default() }),
         ];
         let back = match decode::<ToClient>(&encode(&ToClient::Status(status.clone()))).expect("decodes") {
             ToClient::Status(s) => s,
@@ -637,6 +641,8 @@ mod tests {
         };
         assert_eq!(treat, Some(3));
         assert!(decode::<ToHost>(&encode(&ToHost::Treat(None))).is_some_and(|m| matches!(m, ToHost::Treat(None))));
+        assert!(decode::<ToHost>(&encode(&ToHost::Refill(true))).is_some_and(|m| matches!(m, ToHost::Refill(true))));
+        assert!(decode::<ToHost>(&encode(&ToHost::Refill(false))).is_some_and(|m| matches!(m, ToHost::Refill(false))));
     }
 
     #[test]

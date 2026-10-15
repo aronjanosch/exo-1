@@ -1,5 +1,5 @@
-//! Not yet: the hold has no ring on the reticle (TODO(initiator)), other players see no refill, the
-//! pump states Low and High (later, with the pump's second setting).
+//! The hold shows on the reticle (the ring, as the repair hold) and the others see REFILLING. Not
+//! yet: the pump states Low and High (later, with the pump's second setting).
 use super::*;
 use crate::controls::Controls;
 use crate::dev_area::engine_room::CORRIDOR;
@@ -23,6 +23,22 @@ pub const ON_RACK: u32 = 3;
 #[derive(Resource, Default, Debug)]
 pub struct CoolantHold {
     pub held: f64,
+    /// What the others were last told (`Items::ask_refill`), so a change is sent once.
+    pub sent: bool,
+}
+
+impl CoolantHold {
+    /// The hold's progress (0..1) for the reticle's ring.
+    pub fn progress(&self) -> Option<f64> {
+        (self.held > 0.0).then(|| (self.held / HOLD_S).clamp(0.0, 1.0))
+    }
+
+    fn sync(&mut self, items: &mut Items, running: bool) {
+        if self.sent != running {
+            self.sent = running;
+            items.ask_refill(running);
+        }
+    }
 }
 
 pub fn plugin(app: &mut App) {
@@ -69,6 +85,7 @@ fn coolant_use(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMu
     let dt = time.delta_secs_f64();
     let Ok(pl) = players.single() else {
         hold.held = 0.0;
+        hold.sync(&mut items, false);
         return;
     };
     let slot = items.client.view.selected;
@@ -78,6 +95,7 @@ fn coolant_use(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMu
     let on_foot = pl.ship.is_none() && !pl.seated && !pl.fly && active.using().is_none() && !controls.free_cursor;
     if !(canister && at_pump && on_foot) || !controls.primary_held {
         hold.held = 0.0;
+        hold.sync(&mut items, false);
         return;
     }
     hold.held += dt;
@@ -86,4 +104,6 @@ fn coolant_use(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMu
         controls.click = false;
         let _ = items.request(time.elapsed_secs_f64(), Request::Use { slot, target: LOCAL });
     }
+    // Still running after a refill: the others keep seeing REFILLING, no flicker at the end.
+    hold.sync(&mut items, true);
 }

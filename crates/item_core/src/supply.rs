@@ -34,6 +34,25 @@ pub struct RackSpec {
     pub name: Option<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RackFile {
+    #[serde(default, rename = "_comment")]
+    _comment: Option<String>,
+    racks: Vec<RackSpec>,
+}
+
+/// The racks of a file that holds only racks (no drain), as another owner's gear keeps them.
+pub fn parse_racks(file: &str, text: &str) -> Result<Vec<RackSpec>, String> {
+    let f: RackFile = crate::defs::parse_content(file, text)?;
+    for r in &f.racks {
+        if r.slots == 0 || r.stock > r.slots {
+            return Err(format!("{file}: rack {} needs slots for its stock", r.id));
+        }
+    }
+    Ok(f.racks)
+}
+
 impl SupplyConfig {
     pub fn parse(text: &str) -> Result<SupplyConfig, String> {
         let c: SupplyConfig = crate::defs::parse_content(FILE, text)?;
@@ -64,6 +83,13 @@ mod tests {
         let c = SupplyConfig::parse(&TEXT.replace("\"stock\": 2", "\"stock\": 2, \"name\": \"Suit rack\"")).expect("parses");
         assert_eq!(c.racks[0].name.as_deref(), Some("Suit rack"));
         assert_eq!(SupplyConfig::parse(TEXT).expect("parses").racks[0].name, None);
+    }
+
+    #[test]
+    fn a_racks_only_file_parses_and_checks_its_stock() {
+        let ok = r#"{ "_comment": "x", "racks": [ { "id": 3, "box": "b", "slots": 2, "stock": 2, "item": "suit" } ] }"#;
+        assert_eq!(parse_racks("g.json", ok).expect("parses")[0].item.as_deref(), Some("suit"));
+        assert!(parse_racks("g.json", &ok.replace("\"stock\": 2", "\"stock\": 3")).is_err());
     }
 
     #[test]

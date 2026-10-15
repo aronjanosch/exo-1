@@ -27,11 +27,12 @@ use bevy::math::DVec3;
 use device_core::minigame::ray_hits_box;
 use health_core::mask::Mask;
 use health_core::Life;
+use item_core::supply::RackSpec;
 use item_core::{FrameRef, Placement, PlayerId, Request};
 use std::collections::{BTreeMap, BTreeSet};
 use walker_core::Frame;
 
-use crate::dev_area::layout::ROOM;
+use crate::dev_area::layout::{AIRLOCK, ROOM};
 use crate::dev_area::ship::{ReactorConfig, ReactorSim};
 
 pub const ITEM: &str = "o2_mask";
@@ -40,11 +41,20 @@ pub const USE: &str = "wear_mask";
 /// The space suit (r41): its item and its use, the same gear as the mask (see the module doc).
 pub const SUIT_ITEM: &str = "suit";
 pub const SUIT_USE: &str = "wear_suit";
-/// The shelf beside the oxygen generator, relative to the engine room's centre (m). Clear of the
-/// reactor (x -15..-13), the pump (z -18..-17) and the generator (z -13.4..-12.6, x -9.8..-9.0).
+/// The shelf beside the oxygen generator, relative to the engine room's centre (m); in area
+/// metres x -9.8..-9.0, z -15.2..-14.4, on the east wall, clear of the generator (z -13.4..-12.6),
+/// the pump (x -11..-10, z -18..-17) and the reactor (x -15..-13).
 pub const SHELF_ID: &str = "o2_shelf";
 pub const SHELF_AT: [f64; 2] = [4.6, 0.2];
 pub const SHELF_SIZE: [f64; 3] = [0.8, 1.2, 0.8];
+/// Where the suits hang: the airlock's east wall (inner face x -13.0), facing west into the room.
+/// Its stock is in `content/gameplay/gear/gear.json`, in the extinguisher racks' supply format.
+pub const SUIT_RACK_ID: &str = "airlock_suit_rack";
+const GEAR_FILE: &str = "gear/gear.json";
+
+/// The racks gear owns, as `gear.json` lists them.
+#[derive(Resource, Clone, Debug)]
+pub struct GearRacks(pub Vec<RackSpec>);
 
 /// Host: who wears a mask, and in which slot it is.
 #[derive(Resource, Default, Debug)]
@@ -85,8 +95,13 @@ impl MaskHold {
 }
 
 pub fn plugin(app: &mut App) {
+    let files = crate::content_files("gameplay");
+    let text = files.iter().find(|f| f.path == GEAR_FILE).map(|f| f.text.clone()).unwrap_or_default();
+    let racks = item_core::supply::parse_racks(GEAR_FILE, &text).unwrap_or_else(|e| panic!("gear: {e}"));
+    app.insert_resource(GearRacks(racks));
     {
         let mut devices = app.world_mut().resource_mut::<DevAreaDevices>();
+        devices.add(PlaceholderBox { id: SUIT_RACK_ID.into(), zone: AIRLOCK, local_pos: [0.8, 0.0], size: [0.35, 1.2, 0.5], turn_deg: 270.0, colour: [0.25, 0.3, 0.36], panel: None });
         devices.add(PlaceholderBox {
             id: SHELF_ID.into(),
             zone: ROOM,
@@ -98,7 +113,8 @@ pub fn plugin(app: &mut App) {
         });
     }
     app.init_resource::<MaskWorn>().init_resource::<MaskAir>().init_resource::<MaskHold>().init_resource::<SuitWorn>();
-    app.add_systems(FixedUpdate, put_mask.in_set(crate::phases::Fx::Effects));
+    app.add_systems(Startup, register_racks);
+    app.add_systems(FixedUpdate, (put_mask, put_suits).in_set(crate::phases::Fx::Effects));
     app.add_systems(
         FixedUpdate,
         mask_input
@@ -113,7 +129,28 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, (mask_toggle, mask_breath).chain().after(crate::items::deliver).before(health_step).in_set(crate::phases::Fx::Walker));
 }
 
-/// Once, on the corridor's extinguisher rack (the mask lies on top of it).
+/// The prompt and the swap find a rack by its box in the extinguisher's `Supply`; gear's racks go in
+/// there too (their stock is gear's, see `put_suits`).
+fn register_racks(gear: Res<GearRacks>, mut supply: ResMut<crate::dev_area::fire::extinguisher::Supply>) {
+    supply.0.racks.extend(gear.0.iter().cloned());
+}
+
+/// Once, when the area and the ship are there: the suit rack gets its suits (host only; the clients
+/// hear it from the host).
+fn put_suits(time: Res<Time>, area: Res<DevArea>, gear: Res<GearRacks>, mut items: ResMut<Items>, ships: Query<(), With<Ship>>, mut done: Local<bool>) {
+    if *done || ships.is_empty() || area.frame.is_none() {
+        return;
+    }
+    *done = true;
+    let now = time.elapsed_secs_f64();
+    for r in &gear.0 {
+        let Some(d) = items.defs.get(r.item.as_deref().unwrap_or(SUIT_ITEM)).cloned() else { continue };
+        let stock = (0..r.stock).map(|_| d.stack_of(1)).collect();
+        items.add_rack(now, r.id, r.tag.as_deref().unwrap_or(SUIT_ITEM), r.slots, stock);
+    }
+}
+
+/// Once, on the O2 shelf (the mask lies on top of it).
 fn put_mask(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, mut items: ResMut<Items>, ships: Query<(), With<Ship>>, mut done: Local<bool>) {
     if *done || ships.is_empty() {
         return;
@@ -121,9 +158,8 @@ fn put_mask(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, mut ite
     let Some(frame) = area.frame else { return };
     *done = true;
     let Some(d) = items.defs.get(ITEM).cloned() else { return };
-    let rack = crate::dev_area::fire::extinguisher::boxes()[0].clone();
-    let p = rack.zone.point(rack.local_pos);
-    let (pos, up) = frame.ground(&planet, p[0], p[1], rack.size[1] + d.shape.extents[1] * 0.5 + 0.02);
+    let p = ROOM.point(SHELF_AT);
+    let (pos, up) = frame.ground(&planet, p[0], p[1], SHELF_SIZE[1] + d.shape.extents[1] * 0.5 + 0.02);
     let fwd = frame.rotation(up, 0.0) * DVec3::NEG_Z;
     let at = Placement { frame: FrameRef::Planet(planet.id.0 as u32), pos: pos.to_array(), vel: [0.0; 3], forward: fwd.to_array() };
     items.spawn(time.elapsed_secs_f64(), d.stack_of(1), at);

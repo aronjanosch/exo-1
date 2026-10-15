@@ -38,6 +38,9 @@ pub struct ReactorSim {
     eject_left: Option<f64>,
     sent: Option<ReactorNews>,
     since_send: f64,
+    /// The two vents' valves (r38; index 0 the engine room's, 1 the corridor's). The host keeps them;
+    /// a new room starts with both open.
+    pub vents: [bool; 2],
 }
 
 /// `--warm-reactor`: the room is warm-started when it is created (`ReactorSim::created`), not run 150 s
@@ -63,7 +66,7 @@ impl ReactorSim {
         // The warm-up runs the tank down; a fresh room starts with a full one (TODO(initiator): later
         // the tank may start where the ship's last run left it).
         room.pump_mut().refill(100.0);
-        ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX }
+        ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX, vents: [true; 2] }
     }
 
     pub fn tick_eject(&mut self, dt: f64) {
@@ -147,6 +150,10 @@ impl ReactorSim {
             }
             ReactorAsk::SetLimit(g, v) => self.room.grid_mut().set_limit(group_of(g), v),
             ReactorAsk::SetBatteryRecharge(v) => self.room.battery_mut().set_recharge(v),
+            ReactorAsk::SetVent(i, open) => match self.vents.get_mut(i as usize) {
+                Some(v) => *v = open,
+                None => info!("reactor: no vent {i}"),
+            },
             ReactorAsk::SetPumpMode(m) => self.room.set_pump_mode(pump_of(m)),
             ReactorAsk::Boost(up) => {
                 if !self.room.reactor_mut().boost(up) {
@@ -221,6 +228,7 @@ impl ReactorSim {
             ecools: 0,
             // The host sets the rooms in `reactor_step` (they come from the air and the fire).
             rooms: Default::default(),
+            vents: self.vents,
             graph_points: self.room.history().size().min(GRAPH_POINTS) as u8,
             graph_output: graph_row(&self.room.history().output),
             graph_load: graph_row(&self.room.history().load),
@@ -450,11 +458,11 @@ fn reactor_step(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfi
     sim.tick_eject(dt);
     let input = if sim.manual { Input::manual(sim.fission, sim.turbine) } else { Input::auto() };
     events.extend(sim.room.step(dt, input));
-    // Life support's air: the oxygen generator refills the engine room (`EngineRoom::oxygen_flow`,
-    // `fire_core::oxygen`: the life support's power and the generator's condition squared).
+    // Life support's air: the oxygen generator feeds the air through its vents (r38; the engine room's
+    // and the corridor's, `EngineAir::add_oxygen_through_vents`). `EngineRoom::oxygen_flow` is the flow:
+    // the life support's power and the generator's condition squared (`fire_core::oxygen`).
     let o2 = sim.room.oxygen_flow(cfg.0.room.oxygen_generator_rate);
-    let engine = air.engine;
-    air.deck.add_oxygen(engine, o2 * dt);
+    air.add_oxygen_through_vents(o2 * dt, sim.vents);
     // The hull breach (r37): its hole leaks the room's air to space at the breach's openness.
     let breach = sim.room.breach().open();
     let hole = air.breach;
@@ -779,6 +787,22 @@ mod tests {
         assert!(!counter_fresh(&mut seen, 1));
         assert!(counter_fresh(&mut seen, 2));
         assert!(!counter_fresh(&mut seen, 2));
+    }
+
+    /// r38: each vent is a valve the host keeps; a bad index is ignored and the news carries both.
+    #[test]
+    fn the_vent_asks_set_the_valves_and_the_news_carry_them() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        assert_eq!(s.news(1.0).vents, [true, true], "both open at the start");
+        s.apply(ReactorAsk::SetVent(0, false), &cfg(), &mut k);
+        assert_eq!(s.news(1.0).vents, [false, true]);
+        s.apply(ReactorAsk::SetVent(1, false), &cfg(), &mut k);
+        assert_eq!(s.news(1.0).vents, [false, false], "all shut is a state too");
+        s.apply(ReactorAsk::SetVent(2, true), &cfg(), &mut k);
+        assert_eq!(s.news(1.0).vents, [false, false], "no third vent");
+        s.apply(ReactorAsk::SetVent(1, true), &cfg(), &mut k);
+        assert_eq!(s.news(1.0).vents, [false, true]);
     }
 
     #[test]

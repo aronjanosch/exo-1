@@ -8,7 +8,7 @@ pub mod grid;
 pub mod oxygen;
 pub mod tuning;
 
-pub use oxygen::generator_flow;
+pub use oxygen::{generator_flow, split_by_volume};
 
 #[cfg(test)]
 mod tests;

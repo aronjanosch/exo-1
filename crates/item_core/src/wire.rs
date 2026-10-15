@@ -151,6 +151,10 @@ pub enum ReactorAsk {
     /// The battery's recharge setting, 0..1 (the host clamps it): the share of its max charge
     /// speed it takes from the surplus.
     SetBatteryRecharge(f64),
+    /// A vent's valve (r38): index 0 is the engine room's vent, 1 the corridor's, `true` open. The
+    /// host ignores any other index. Shut, the vent takes no air: the generator's flow goes to the
+    /// open one (`fire_core::split_by_volume`).
+    SetVent(u8, bool),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -397,6 +401,9 @@ pub struct ReactorNews {
     pub battery_kw: f64,
     /// The rooms the status monitor shows, by index: 0 the engine room, 1 the corridor (r38).
     pub rooms: [RoomAir; 2],
+    /// The two vents' valves, open (true): index 0 the engine room's, 1 the corridor's (r38). Set
+    /// by the host; a client's panels follow it. All shut is a state too: the generator's air goes nowhere.
+    pub vents: [bool; 2],
 }
 
 /// A room's air and fire for the status monitor (r38): the air as a fraction 0..1 (whole percent),
@@ -578,6 +585,7 @@ mod tests {
             ecool_ready_in_s: 42.5,
             ecool_ok: false,
             ecools: 3,
+            vents: [false, true],
             ejected: true,
             eject_armed: true,
             ejects: 3,
@@ -607,6 +615,8 @@ mod tests {
             ReactorAsk::SetBreaker(BreakerGroup::Engines, true),
             ReactorAsk::SetLimit(BreakerGroup::Lights, 0.6),
             ReactorAsk::SetBatteryRecharge(0.4),
+            ReactorAsk::SetVent(0, false),
+            ReactorAsk::SetVent(1, true),
             ReactorAsk::SetPumpMode(PumpMode::Low),
             ReactorAsk::ArmEject,
             ReactorAsk::Eject,

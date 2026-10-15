@@ -169,13 +169,13 @@ impl Host {
     }
 
     /// Wears the item in a slot by `amount` percent (not below 0), as the spray does while it
-    /// runs. The event (the inventory as now) comes only when the whole percent changes or the
+    /// runs. A negative amount refills it, at most to full (the shelf fills a mask's tank). The event (the inventory as now) comes only when the whole percent changes or the
     /// item runs out, so the clients hear it a few times a second at most.
     pub fn wear(&mut self, player: PlayerId, slot: usize, amount: f64) -> Option<Event> {
         let inv = self.inventories.get_mut(&player)?;
         let item = &mut inv.bar.slot_mut(slot)?.item;
         let before = item.condition?;
-        let after = (before - amount).max(0.0);
+        let after = (before - amount).clamp(0.0, 100.0);
         item.condition = Some(after);
         let changed = before.floor() != after.floor() || (before > 0.0 && after == 0.0);
         changed.then(|| Event::Inventory { player, inv: inv.clone() })
@@ -402,7 +402,10 @@ fn swap(inv: &mut Inventory, rack: &mut Container, slot: usize) -> Result<(), Re
 
 fn use_one(defs: &ItemDefs, inv: &mut Inventory, slot: usize) -> Result<String, Reject> {
     let stack = inv.slot(slot).ok_or(if slot < BAR_SLOTS { Reject::EmptySlot } else { Reject::NoSuchSlot })?;
-    let effect = defs.of(stack).and_then(|d| d.use_effect.clone()).ok_or(Reject::NotUsable)?;
-    inv.bar.take(&[], slot, 1)?;
+    let def = defs.of(stack).ok_or(Reject::NotUsable)?;
+    let effect = def.use_effect.clone().ok_or(Reject::NotUsable)?;
+    if !def.keeps_on_use {
+        inv.bar.take(&[], slot, 1)?;
+    }
     Ok(effect)
 }

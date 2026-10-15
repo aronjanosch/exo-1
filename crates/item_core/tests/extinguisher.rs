@@ -15,6 +15,7 @@ fn defs() -> ItemDefs {
         slots: 0,
         use_effect: Some("extinguish".into()),
         use_s: None,
+        keeps_on_use: false,
         tags: vec!["extinguisher".into()],
         condition: true,
         shape: Shape { extents: [0.2, 0.5, 0.2], mass: 6.0, colour: [1.0, 0.0, 0.0] },

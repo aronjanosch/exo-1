@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 use content_core::{parse_strict, File};
 use serde::{Deserialize, Serialize};
 
+pub mod mask;
+
 pub const HEALTH_PATH: &str = "health/health.json";
 
 /// One strength band of an affliction: from the previous band's `to` (0 for the first) to `to`.

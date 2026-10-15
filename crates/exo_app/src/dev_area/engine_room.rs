@@ -333,8 +333,9 @@ pub(super) fn room_step(time: Res<Time>, door: Res<EngineDoor>, mut air: ResMut<
 /// in; the hull's area is in px (`Hull.cs:378-381`, 100 px = 1 m, `Physics.cs:22`), which is how the
 /// rate in m³ comes out. Not ported: Barotrauma's "only while the body's own oxygen is lower"
 /// (the body has no oxygen store here). The outside has no end, so nobody drains it. Unconscious
-/// players breathe too: every body that is not dead counts.
-pub(super) fn breath_step(time: Res<Time>, items: Res<Items>, cfg: Res<super::reactor::ReactorConfig>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, health: Option<Res<crate::health::HealthState>>, mut air: ResMut<EngineAir>) {
+/// players breathe too: every body that is not dead counts. A body in its mask (r38) breathes
+/// the mask (`dev_area/mask.rs`, Barotrauma `Character.cs:3851` with `UseHullOxygen` false).
+pub(super) fn breath_step(time: Res<Time>, items: Res<Items>, cfg: Res<super::reactor::ReactorConfig>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, players: Query<&Player>, remotes: Query<(&RemoteWalker, &WorldPose)>, health: Option<Res<crate::health::HealthState>>, worn: Option<Res<super::mask::MaskWorn>>, mut air: ResMut<EngineAir>) {
     if items.role == Role::Client {
         return;
     }
@@ -343,6 +344,10 @@ pub(super) fn breath_step(time: Res<Time>, items: Res<Items>, cfg: Res<super::re
     let rate = cfg.0.room.breath_m3_per_s * dt;
     for (id, p) in crate::health::walker_points(&players, &remotes) {
         if health.as_ref().and_then(|h| h.bodies.get(&id)).is_some_and(|b| b.health.state() == health_core::Life::Dead) {
+            continue;
+        }
+        // A body wearing its mask (r38) breathes the mask, not the room, even with an empty tank.
+        if worn.as_ref().is_some_and(|w| w.0.contains_key(&id)) {
             continue;
         }
         let Some(q) = crate::health::area_pos(Some(area), &planet, Some(p)) else { continue };

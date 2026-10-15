@@ -1,4 +1,5 @@
 use crate::dev_area::hazards::{spicy_light, SPICY_ITEM};
+use std::collections::BTreeSet;
 use crate::cargo::{item_body_bundle, Crate};
 use crate::crew_hud::{Dash, DashFrame};
 use crate::controls::{Actions, Controls, Tap};
@@ -121,6 +122,10 @@ pub struct Items {
     pub rescue_asks: Vec<(PlayerId, Option<PlayerId>)>,
     /// Host: the coolant refill holds (the player, running or not), for the public status.
     pub refill_asks: Vec<(PlayerId, bool)>,
+    /// The players whose refill hold runs (coolant or the O2 shelf), here, whatever the role.
+    pub refilling: BTreeSet<PlayerId>,
+    /// Host: the masks put on or taken off (the player, the slot the mask is in), from the uses.
+    pub mask_uses: Vec<(PlayerId, usize)>,
 }
 
 /// Whether the host can simulate an action's placement: a cabin is the host's ship. (Other
@@ -135,7 +140,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, rod_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new(), refill_asks: Vec::new() }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, rod_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new(), refill_asks: Vec::new(), refilling: BTreeSet::new(), mask_uses: Vec::new() }
     }
 
     pub fn me(&self) -> PlayerId {
@@ -213,8 +218,20 @@ impl Items {
     pub fn ask_refill(&mut self, running: bool) {
         match self.role {
             Role::Client => self.net_out.push(NetOut::Refill(running)),
-            Role::Host => self.refill_asks.push((self.me(), running)),
-            Role::Local => {}
+            Role::Host => {
+                self.refill_asks.push((self.me(), running));
+                self.note_refill(self.me(), running);
+            }
+            Role::Local => self.note_refill(self.me(), running),
+        }
+    }
+
+    /// Host: a player's refill hold runs or stopped (`refilling`, read by the mask's shelf).
+    pub fn note_refill(&mut self, who: PlayerId, running: bool) {
+        if running {
+            self.refilling.insert(who);
+        } else {
+            self.refilling.remove(&who);
         }
     }
 
@@ -325,12 +342,21 @@ impl Items {
                 Request::Use { slot, .. } => self.host.inventory(a.player).slot(*slot).map(|s| (s.item.kind.as_str().to_string(), s.item.condition.unwrap_or(0.0))),
                 _ => None,
             };
+            let used_slot = match &a.req {
+                Request::Use { slot, .. } => Some(*slot),
+                _ => None,
+            };
             let evs = if placement_ok(&a) { self.host.handle(&a) } else { vec![Event::Rejected { player: a.player, seq: a.seq, why: Reject::Invalid }] };
             for ev in evs {
                 if let Event::Used { player, target, effect } = &ev {
                     self.used.push((*player, *target, effect.clone()));
                     if effect == crate::dev_area::coolant::REFILL {
                         self.refills += 1;
+                    }
+                    if effect == crate::dev_area::mask::USE
+                        && let Some(slot) = used_slot
+                    {
+                        self.mask_uses.push((*player, slot));
                     }
                     if effect == crate::dev_area::rods::LOAD
                         && let Some((item, life)) = held.clone()

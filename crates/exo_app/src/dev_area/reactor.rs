@@ -180,6 +180,7 @@ impl ReactorSim {
                 // Engines is never aux-fed: the room ignores its switch.
                 self.room.set_aux_switch(group_of(g), on);
             }
+            ReactorAsk::SetLimit(g, v) => self.room.grid_mut().set_limit(group_of(g), v),
             ReactorAsk::SetPumpMode(m) => self.room.set_pump_mode(pump_of(m)),
             ReactorAsk::Boost(up) => {
                 if !self.room.reactor_mut().boost(up) {
@@ -215,6 +216,9 @@ impl ReactorSim {
             turbine_allowed: [b.turbine_allowed.lo, b.turbine_allowed.hi],
             powered: self.room.powered(),
             breakers: Group::ALL.map(|g| grid.breaker(g)),
+            limits: Group::ALL.map(|g| grid.limit(g)),
+            delivered_kw: Group::ALL.map(|g| grid.supply(g).delivered_kw),
+            demand_kw: Group::ALL.map(|g| grid.group(g).demand_kw),
             aux_on: self.room.aux_enabled(),
             aux_life_support: self.room.aux_switch(Group::LifeSupport),
             aux_lights: self.room.aux_switch(Group::Lights),
@@ -598,6 +602,20 @@ mod tests {
         assert!(lamp_blink_on(0.0) && lamp_blink_on(0.2));
         assert!(!lamp_blink_on(0.25) && !lamp_blink_on(0.49));
         assert!(lamp_blink_on(0.5));
+    }
+
+    #[test]
+    fn the_limit_ask_sets_the_group_limit_and_the_news_carry_the_kw() {
+        let mut s = ReactorSim::new(&cfg());
+        let mut k = ReactorCounts::default();
+        s.apply(ReactorAsk::SetLimit(BreakerGroup::Engines, 0.5), &cfg(), &mut k);
+        let n = s.news(1.0);
+        assert_eq!(n.limits, [0.5, 1.0, 1.0]);
+        let demand = s.room.grid().group(Group::Engines).demand_kw;
+        assert_eq!(n.demand_kw[0], demand, "the demand is the full demand, not the limited request");
+        assert!((n.delivered_kw[0] - s.room.grid().supply(Group::Engines).delivered_kw).abs() < 1e-9);
+        s.apply(ReactorAsk::SetLimit(BreakerGroup::Lights, 7.0), &cfg(), &mut k);
+        assert_eq!(s.news(1.0).limits[2], 1.0, "the host clamps it to 0..1");
     }
 
     #[test]

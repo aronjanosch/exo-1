@@ -90,6 +90,7 @@ impl Tuning {
             let name = format!("grid.{g:?}");
             need(s.demand_kw >= 0.0, &format!("{name}.demand_kw"), "must be >= 0");
             need((0.0..=1.0).contains(&s.min_ratio), &format!("{name}.min_ratio"), "must be 0..1");
+            need((0.0..=1.0).contains(&s.limit), &format!("{name}.limit"), "must be 0..1");
         }
     }
 }

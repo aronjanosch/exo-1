@@ -6,7 +6,9 @@
 //! priority share a shortfall in proportion. A group whose share falls below its minimum ratio
 //! switches off and leaves its power to the rest, so under a brownout low priorities go first.
 //! A group works at `factor = delivered / demand`: less power makes it slower, not off, down to
-//! its minimum ratio.
+//! its minimum ratio. Each group also has a limit, 0..1 (default 1): it caps the group's request at
+//! `demand × limit`, so the limit scales the group's efficiency (PULSAR's conduit limit, #300).
+//! A limit of 0 is off. Lowering a limit frees power for the groups below it.
 //!
 //! Trimmed from the dev-area grid (five groups) to the three the engine room slice needs.
 #[cfg(test)]
@@ -41,17 +43,20 @@ pub struct GroupState {
     pub priority: u8,
     /// Below this share of its request the group switches off.
     pub min_ratio: f64,
+    /// 0..1: the request is `demand × limit` (the breaker on); 0 is off.
+    pub limit: f64,
 }
 
 /// What one group got in the last distribution.
 #[derive(Copy, Clone, Debug, PartialEq, Default)]
 pub struct Supply {
-    /// kW asked for: `demand` when the breaker is on, 0 when off.
+    /// kW asked for: `demand × limit` when the breaker is on, 0 when off.
     pub request_kw: f64,
     pub delivered_kw: f64,
     /// `delivered / request` (1 when nothing was asked for).
     pub ratio: f64,
-    /// How hard the group works, 0..1: `delivered / demand`.
+    /// How hard the group works, 0..1: `delivered / demand` (with a limit of 1 and full delivery
+    /// 1; a limit of 0.6 caps it at 0.6).
     pub factor: f64,
     /// Asked for power and got at least its minimum ratio.
     pub on: bool,
@@ -72,6 +77,13 @@ pub struct GroupTuning {
     pub demand_kw: f64,
     pub priority: u8,
     pub min_ratio: f64,
+    /// Start value of the limit, 0..1 (optional in the file, 1 when left out).
+    #[serde(default = "full_limit")]
+    pub limit: f64,
+}
+
+fn full_limit() -> f64 {
+    1.0
 }
 
 /// The grid's demands, priorities and minimum ratios. TODO(initiator): placeholder values; the
@@ -87,9 +99,9 @@ pub struct GridTuning {
 impl Default for GridTuning {
     fn default() -> GridTuning {
         GridTuning {
-            engines: GroupTuning { demand_kw: 800.0, priority: 2, min_ratio: 0.5 },
-            life_support: GroupTuning { demand_kw: 400.0, priority: 3, min_ratio: 0.3 },
-            lights: GroupTuning { demand_kw: 80.0, priority: 1, min_ratio: 0.3 },
+            engines: GroupTuning { demand_kw: 800.0, priority: 2, min_ratio: 0.5, limit: 1.0 },
+            life_support: GroupTuning { demand_kw: 400.0, priority: 3, min_ratio: 0.3, limit: 1.0 },
+            lights: GroupTuning { demand_kw: 80.0, priority: 1, min_ratio: 0.3, limit: 1.0 },
         }
     }
 }
@@ -113,7 +125,7 @@ impl Default for Grid {
 impl Grid {
     /// The grid with every breaker on and the tuning's demands.
     pub fn from_tuning(t: &GridTuning) -> Grid {
-        let g = |s: GroupTuning| GroupState { demand_kw: s.demand_kw, breaker: true, priority: s.priority, min_ratio: s.min_ratio };
+        let g = |s: GroupTuning| GroupState { demand_kw: s.demand_kw, breaker: true, priority: s.priority, min_ratio: s.min_ratio, limit: s.limit };
         Grid {
             groups: [g(t.engines), g(t.life_support), g(t.lights)],
             supply: [Supply::default(); N],
@@ -147,12 +159,21 @@ impl Grid {
         self.groups[g.index()].priority = priority;
     }
 
-    /// kW all groups ask for together (the breakers' demands): the load on the reactor.
+    /// Sets a group's limit, clamped to 0..1: its request becomes `demand × limit`.
+    pub fn set_limit(&mut self, g: Group, limit: f64) {
+        self.groups[g.index()].limit = limit.clamp(0.0, 1.0);
+    }
+
+    pub fn limit(&self, g: Group) -> f64 {
+        self.groups[g.index()].limit
+    }
+
+    /// kW all groups ask for together (the breakers' limited demands): the load on the reactor.
     pub fn request_kw(&self) -> f64 {
         self.requests().iter().sum()
     }
 
-    /// kW one group asks for: its demand with the breaker on, 0 when off.
+    /// kW one group asks for: its demand times its limit with the breaker on, 0 when off.
     pub fn request_of(&self, g: Group) -> f64 {
         request(&self.groups[g.index()])
     }
@@ -167,7 +188,7 @@ impl Grid {
         self.supply[g.index()]
     }
 
-    /// How hard a group works, 0..1 (its `Supply::factor`).
+    /// How hard a group works, 0..1 (its `Supply::factor`): `delivered / demand`.
     pub fn factor(&self, g: Group) -> f64 {
         self.supply[g.index()].factor
     }
@@ -238,5 +259,5 @@ impl Grid {
 }
 
 fn request(g: &GroupState) -> f64 {
-    if g.breaker { g.demand_kw } else { 0.0 }
+    if g.breaker { g.demand_kw * g.limit } else { 0.0 }
 }

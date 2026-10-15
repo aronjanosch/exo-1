@@ -588,3 +588,20 @@ fn a_melt_with_fuel_blasts_and_a_dry_melt_does_not() {
     assert_eq!(dry.count("Blast"), 0, "{}", dry.table());
     assert!(room.reactor().rods().iter().all(|r| r.life > 0.0), "the dry melt keeps the rods' life");
 }
+
+/// #300 r22, PULSAR's core eject: the pump breaks with Manual 100/100, the operator ejects at
+/// TempCritical, and no meltdown follows in the 300 s (the core is out, the rods with it).
+#[test]
+fn eject_in_time() {
+    let (trace, room) = trace_of("eject_in_time", 5.0);
+    assert_eq!(trace.count("CoreEjected"), 1, "{}", trace.table());
+    assert_eq!(trace.count("Meltdown"), 0, "{}", trace.table());
+    assert_eq!(trace.count("Blast"), 0, "{}", trace.table());
+    assert!(!trace.melted);
+    let crit = trace.first("Alarm TempCritical on").expect("the core reaches TempCritical");
+    let ejected = trace.first("CoreEjected").expect("the eject");
+    assert!(ejected >= crit, "the eject follows TempCritical: {crit} {ejected}");
+    let r = room.reactor();
+    assert!(r.ejected() && r.rods().is_empty() && !r.power_on());
+    assert_eq!(trace.last().unwrap().temp, 0.0);
+}

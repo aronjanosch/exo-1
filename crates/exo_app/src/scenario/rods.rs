@@ -8,6 +8,7 @@ use super::*;
 use crate::controls::Controls;
 use crate::dev_area::coolant::HOLD_S;
 use crate::dev_area::engine_room::{CORRIDOR, REACTOR_AT};
+use crate::dev_area::hazards::{GLOW_BARREL, SPICY_AT};
 use crate::dev_area::reactor::ReactorSim;
 use crate::dev_area::rods::RACK_AT;
 use crate::dev_area::DevArea;
@@ -40,6 +41,10 @@ fn temp(w: &World) -> f64 {
 
 fn hot_above(w: &World) -> f64 {
     w.resource::<ReactorSim>().room.reactor().bands().temp_optimal.hi
+}
+
+fn radiation(w: &World) -> f64 {
+    w.resource::<HealthState>().bodies.get(&LOCAL).map_or(0.0, |b| b.health.strength("radiation"))
 }
 
 fn burn(w: &World) -> f64 {
@@ -222,5 +227,48 @@ pub(super) fn rods_steps(s: &mut Vec<Step>) {
         check(c, items(w).client.view.count("fuel_rod_hot") == 0, "rods: the hand is empty after G".into());
         check(c, outside(w, "fuel_rod_hot").is_some(), "rods: the rod lies on the floor".into());
         Some("dropped".into())
+    }));
+
+    // The spicy rod (#300): it lies on the pad by the glowing barrel. The walker stands east of it,
+    // outside the barrel's glow, takes it (F), and holds it 3 s: the radiation rises by about 3.
+    s.push(run("rods: the spicy rod lies by the barrel", 8.0, |w, c| {
+        if outside(w, "fuel_rod_spicy").is_none() {
+            return None;
+        }
+        check(c, true, "rods: the spicy rod lies on the floor".into());
+        Some("there".into())
+    }));
+    s.push(run("rods: the walker stands east of the spicy rod, out of the glow", 3.0, |w, c| {
+        if c.t == 0.0 {
+            let feet = ground(w, GLOW_BARREL.point([SPICY_AT[0] + 0.95, SPICY_AT[1]]), 0.0);
+            place_walker(w, feet);
+        }
+        let rod = ground(w, GLOW_BARREL.point(SPICY_AT), 0.3);
+        look_at(w, rod);
+        if c.t < 0.5 {
+            return None;
+        }
+        Some("beside the rod".into())
+    }));
+    s.extend(collect("fuel_rod_spicy", "Spicy fuel rod"));
+    s.push(run("rods: the spicy rod is in the bar and the walker holds it", 3.0, |w, c| {
+        if c.t < 0.5 {
+            return None;
+        }
+        let n = items(w).client.view.count("fuel_rod_spicy");
+        check(c, n == 1, format!("rods: one spicy rod in the bar ({n})"));
+        Some("held".into())
+    }));
+    s.push(run("rods: holding the spicy rod 3 s raises the radiation by about 3", 6.0, |w, c| {
+        if c.t == 0.0 {
+            c.v.insert("rad0", radiation(w));
+            return None;
+        }
+        if c.t < 3.0 {
+            return None;
+        }
+        let rose = radiation(w) - c.v["rad0"];
+        check(c, (2.5..=3.5).contains(&rose), format!("rods: the radiation rose by about 3 in 3 s ({rose:.2})"));
+        Some(format!("+{rose:.2}"))
     }));
 }

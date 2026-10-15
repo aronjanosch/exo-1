@@ -4,7 +4,7 @@ use walker_core::Frame as WalkFrame;
 use super::*;
 use crate::controls::Controls;
 use crate::dev_area::{layout::{COOLANT_PUMP_AT, JUNCTION_BOX_AT}};
-use crate::dev_area::{DevArea, ENGINEERING};
+use crate::dev_area::{dev::item_table, DevArea, DEV};
 use crate::items::Items;
 use crate::dev_area::ship::ReactorSim;
 use crate::repair::{RepairHurt, RepairPlay, RepairSessions};
@@ -129,7 +129,7 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
             return false;
         }
         check(c, ready, "repair: the table and the host's body for the walker are there".into());
-        let p = ground(w, [ENGINEERING.centre[0] - 3.0, 1.6], 0.0);
+        let p = ground(w, DEV.point([item_table::AT[0], item_table::AT[1] - 1.3]), 0.0);
         place_walker(w, p);
         end(w, c, "in front of the table".into());
         true

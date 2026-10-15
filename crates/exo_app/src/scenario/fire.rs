@@ -5,7 +5,7 @@ use crate::controls::Controls;
 use crate::dev_area::{layout::ignition_at, hull::ShipAir, hull::alarms::ShipAlarm};
 use crate::dev_area::fire::{ignite, FireGrid, FireModel, Sprays};
 use crate::dev_area::ship::{ReactorCounts, ReactorSim};
-use crate::dev_area::{DevArea, ENGINEERING};
+use crate::dev_area::{dev::item_table, DevArea, DEV};
 use crate::health::HealthState;
 use crate::items::{Items, LOCAL};
 use health_core::Life;
@@ -101,7 +101,7 @@ pub(super) fn take_extinguisher(s: &mut Vec<Step>) {
             return false;
         }
         check(c, ready, "fire: the table and the host's body for the walker are there".into());
-        let p = ground(w, [ENGINEERING.centre[0] - 3.0, 1.6], 0.0);
+        let p = ground(w, DEV.point([item_table::AT[0], item_table::AT[1] - 1.3]), 0.0);
         place_walker(w, p);
         end(w, c, "in front of the table".into());
         true

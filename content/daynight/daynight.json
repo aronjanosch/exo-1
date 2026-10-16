@@ -9,6 +9,18 @@
     "cinder": {
       "_todo": "TODO(initiator): day length and axis (the axis against the star sets the sun height and the hour at spawn, both derived now). Placeholder: a 40 min day, a low sun.",
       "day_length_s": 2400.0, "axis": [0.4, 0.1, 1.0], "look": "ember"
+    },
+    "frost": {
+      "_todo": "DRAFT archetype (#282), content/planet/draft/frost.json: placeholder day length, axis and look, only so the look harness can run it. TODO(initiator).",
+      "day_length_s": 1800.0, "axis": [0.2, 0.2, 1.0], "look": "temperate"
+    },
+    "dune": {
+      "_todo": "DRAFT archetype (#282), content/planet/draft/dune.json: placeholder day length, axis and look, only so the look harness can run it. TODO(initiator).",
+      "day_length_s": 2400.0, "axis": [0.4, 0.1, 1.0], "look": "ember"
+    },
+    "magma": {
+      "_todo": "DRAFT archetype (#282), content/planet/draft/magma.json: placeholder day length, axis and look, only so the look harness can run it. TODO(initiator).",
+      "day_length_s": 3000.0, "axis": [0.3, 0.1, 1.0], "look": "ember"
     }
   },
   "looks": {

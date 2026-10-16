@@ -42,9 +42,10 @@ fn every_draft_bakes_with_a_few_seeds() {
 }
 
 #[test]
-#[ignore = "30 km bake at full resolution, slow: prints the time per draft"]
+#[ignore = "30 km bake at full resolution, slow: prints the time per recipe"]
 fn drafts_bake_at_30_km_full_resolution() {
-    for (id, text) in drafts() {
+    let shipped = [("hearth", include_str!("../../../content/planet/hearth.json").to_string()), ("cinder", include_str!("../../../content/planet/cinder.json").to_string())];
+    for (id, text) in shipped.into_iter().map(|(i, t)| (i.to_string(), t)).chain(drafts()) {
         let mut p = Planet::new(Recipe::for_planet(&text, 11, 30_000.0).unwrap());
         let t = std::time::Instant::now();
         let st = p.bake(0);

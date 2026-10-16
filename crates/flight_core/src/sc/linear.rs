@@ -50,7 +50,7 @@ pub struct LinearTuning {
     pub nav: Caps,
     /// 1/s: coupled asks for this times the velocity error.
     pub decay: f64,
-    /// A3: the cap refuses the thrust along the velocity above it.
+    /// Refuse outward thrust at the speed cap (coupled: total speed; decoupled: local axes).
     pub refuse_thrust: bool,
     /// Anti-drift: with an axis saturated, the velocity across the goal dies first.
     pub anti_drift: bool,
@@ -222,15 +222,38 @@ fn anti_drift(b: &Dirs, lv: DVec3, g: DVec3, goal: DVec3, hold: DVec3, decay: f6
     Some(u * brake_ceiling(b, hold, u).max(0.0).min(l * decay))
 }
 
-pub(super) fn motion_box(f: &StepState, m: &Modes, e: &Env, t: &LinearTuning) -> Dirs {
+fn safe_thrust_box(m: &Modes, e: &Env, t: &LinearTuning) -> Dirs {
     let mut b = e.thrust_box;
     if m.g_safe && !(t.boost_disables_g_safe && e.boost > 0.0) {
         b = b.min(&t.g_limit.scaled(G0));
     }
+    b
+}
+
+pub(super) fn motion_box(f: &StepState, m: &Modes, e: &Env, t: &LinearTuning) -> Dirs {
+    let b = safe_thrust_box(m, e, t);
     let cruise = t.caps(m.master).cruise * e.cap_scale * m.limiter;
     let x = (-f.lv.z).max(0.0) / cruise;
     let tap = lerp(t.strafe_taper.eval(x), t.strafe_taper_boost.eval(x), e.boost);
     Dirs { left: b.left * tap, right: b.right * tap, up: b.up * tap, down: b.down * tap, ..b }
+}
+
+/// Only refuse the pilot's outward push; rotating or lowering the limiter must never
+/// brake existing drift. Holds against gravity and air are not manual thrust.
+fn decoupled_push(b: &Dirs, stick: DVec3, f: &StepState, m: &Modes, t: &LinearTuning, caps: Dirs) -> DVec3 {
+    let mut push = (b.along(stick) * m.limiter).to_array();
+    if t.refuse_thrust {
+        let velocity = f.lv.to_array();
+        let caps = [caps.right, caps.up, if push[2] < 0.0 { caps.forward } else { caps.backward }];
+        for i in 0..3 {
+            if push[i] != 0.0 {
+                let direction = push[i].signum();
+                let allowed = ((caps[i] - velocity[i] * direction) / f.dt).max(0.0);
+                push[i] = direction * push[i].abs().min(allowed);
+            }
+        }
+    }
+    DVec3::from_array(push)
 }
 
 /// Limit the combined thrust without sacrificing a feasible gravity/air hold.
@@ -258,6 +281,7 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
     let cruise = c.cruise * scale;
     let forward = lerp(c.cruise, c.boost_forward, e.boost) * scale;
     let backward = lerp(c.cruise, c.boost_backward, e.boost) * scale;
+    let axis_caps = Dirs { forward, backward, ..Dirs::splat(cruise) };
 
     // Comstab: only a moving ship remembers its old heading. Update every resting step so a
     // turn on the spot, including the first thrust afterwards, uses the current nose.
@@ -278,7 +302,9 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
         s.fall += f.gravity * f.dt;
     }
 
-    let b = motion_box(f, m, e, t);
+    // Decoupled manual thrust and its brake do not use the coupled strafe taper:
+    // changing the limiter must not change the emergency brake's available thrust.
+    let b = if m.coupled { motion_box(f, m, e, t) } else { safe_thrust_box(m, e, t) };
 
     let sink = (-f.v.dot(f.up)).max(0.0);
     let brake_up = (b.support(f.inv * f.up) - f.gravity.length()).max(1.0);
@@ -297,6 +323,14 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
         let accel = b.clamp(thrust);
         let accel = if m.g_safe { limit_g_load(accel, hold_l) } else { accel };
         return LinearOut { accel, cap: forward, saturated: (thrust - accel).length() > 1e-6, turn_reserve: hold_l };
+    }
+
+    if !m.coupled {
+        let hold_l = f.inv * hold;
+        let asked = decoupled_push(&b, stick, f, m, t, axis_caps) + hold_l;
+        let accel = b.clamp(asked);
+        let accel = if m.g_safe && !(t.boost_disables_g_safe && e.boost > 0.0) { limit_g_load(accel, b.clamp(hold_l)) } else { accel };
+        return LinearOut { accel, cap: forward, saturated: (asked - accel).length() > 1e-6, turn_reserve: hold_l };
     }
 
     let mut goal = goal_stick + fall + e.drift;
@@ -346,9 +380,7 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
             coupled = biased + hold_l;
         }
     }
-    let decoupled = b.along(stick) + hold_l;
-    let k = m.coupling;
-    let mut asked = coupled * k + decoupled * (1.0 - k);
+    let mut asked = coupled;
 
     // A3: above the cap only the thrust along the velocity is refused (steering across it works).
     // The limit is the larger of the cap in that direction and the speed before the step, so a
@@ -373,7 +405,13 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
         }
     }
 
-    let accel = b.clamp(asked);
+    // Limit each mode before blending back to coupled, so its total-speed refusal
+    // cannot brake the decoupled share of a sideways push during the transition.
+    let full_box = safe_thrust_box(m, e, t);
+    let decoupled = full_box.clamp(decoupled_push(&full_box, stick, f, m, t, axis_caps) + hold_l);
+    let requested = asked;
+    let asked = b.clamp(asked) * m.coupling + decoupled * (1.0 - m.coupling);
+    let accel = full_box.clamp(asked);
     let accel = if m.g_safe && !(t.boost_disables_g_safe && e.boost > 0.0) { limit_g_load(accel, b.clamp(hold_l)) } else { accel };
     // Translation already supplies the ongoing curve's push. Only a correction
     // that exceeds its delivered budget needs extra reserve; counting all of it
@@ -381,5 +419,5 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
     let delivered = (f.rot * (accel - hold_l)).dot(correction_dir);
     let extra = (correction.length() - delivered).max(0.0);
     let turn_reserve = hold_l + f.inv * correction_dir * extra;
-    LinearOut { accel, cap: forward_cap, saturated: (asked - accel).length() > 1e-6, turn_reserve }
+    LinearOut { accel, cap: forward_cap, saturated: (requested - b.clamp(requested)).length() > 1e-6 || (asked - accel).length() > 1e-6, turn_reserve }
 }

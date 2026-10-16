@@ -76,7 +76,7 @@ pub struct ScStatus {
     pub landing: bool,
     pub wind_comp: bool,
     pub master: Master,
-    /// Speed limiter as a share of the cap, 1 = off.
+    /// Share of the speed cap; also scales manual translation thrust while decoupled.
     pub limiter: f64,
     /// m/s: the speed cap that holds right now (master mode, boost, limiter, air, landing).
     pub cap: f64,

@@ -69,7 +69,7 @@ pub struct Modes {
     pub landing: bool,
     pub wind_comp: bool,
     pub master: Master,
-    /// Speed limiter, share of the cap; 1 = off.
+    /// Share of the speed cap; also scales manual translation thrust while decoupled.
     pub limiter: f64,
 }
 

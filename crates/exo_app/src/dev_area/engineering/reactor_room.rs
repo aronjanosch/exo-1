@@ -390,7 +390,7 @@ struct Glow {
     spin: f32,
     flicker: f32,
     seated: usize,
-    base: std::collections::HashMap<&'static str, LinearRgba>,
+    base: std::collections::HashMap<&'static str, (LinearRgba, LinearRgba)>,
     /// The first news has been seen: a canister already seated then does not flicker, an ejected core is already out.
     first: bool,
 }
@@ -444,8 +444,10 @@ fn drive_visuals(
         for (name, scale) in [("core_glow", g.level * flick), ("ring_glow", g.level)] {
             let Some(h) = named.0.get(name) else { continue };
             let Some(mut m) = mats.get_mut(h) else { continue };
-            let base = *g.base.entry(name).or_insert(m.emissive);
-            m.emissive = base * scale;
+            let (emissive, colour) = *g.base.entry(name).or_insert((m.emissive, m.base_color.to_linear()));
+            m.emissive = emissive * scale;
+            // The lit colour reads as a glow by itself: it goes dark with the emission.
+            m.base_color = (colour * (0.06 + 0.94 * scale.min(1.0))).into();
         }
         for (i, name) in ["lamp_slot_1", "lamp_slot_2"].into_iter().enumerate() {
             let Some(mut m) = named.0.get(name).and_then(|h| mats.get_mut(h)) else { continue };

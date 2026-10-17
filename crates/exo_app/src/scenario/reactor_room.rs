@@ -81,7 +81,24 @@ fn press(name: &'static str, part: &'static str, after: f64, mut done: impl FnMu
     })
 }
 
-pub(super) fn reactor_room_steps(s: &mut Vec<Step>) {
+/// A picture (window runs only) of the model from where the walker stands, aimed at a point of the model.
+fn view(tag: &'static str, model: [f64; 3], shot_step: &dyn Fn(&'static str) -> Step) -> Vec<Step> {
+    let mut left = 1.0;
+    vec![
+        Box::new(move |w, c| {
+            let at = {
+                let mut q = w.query::<&ReactorRoom>();
+                q.single(w).expect("the reactor room is there").world(model)
+            };
+            look_at(w, at);
+            left -= c.dt;
+            left <= 0.0
+        }),
+        shot_step(tag),
+    ]
+}
+
+pub(super) fn reactor_room_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
     s.push(run("reactor room: the room and the walker in front of it", 6.0, |w, c| {
         let ready = w.resource::<DevArea>().frame.is_some() && w.query::<&ReactorRoom>().iter(w).count() == 1;
         if !ready {
@@ -98,6 +115,7 @@ pub(super) fn reactor_room_steps(s: &mut Vec<Step>) {
         (c.t >= 0.5).then(|| "settled".into())
     }));
 
+    s.extend(view("reactor-01-front", [0.0, 1.8, 0.0], shot_step));
     // A canister in a slot feeds the sim. The feed bay is on the model's +X flank, out of reach from the front.
     s.push(run("reactor room: the walker goes to the feed bay", 2.0, |w, c| {
         if c.t == 0.0 {
@@ -135,6 +153,7 @@ pub(super) fn reactor_room_steps(s: &mut Vec<Step>) {
         check(c, seated(w, "slot_1") && seated(w, "slot_2"), "reactor room: both slots show a canister".into());
         "loaded".into()
     }));
+    s.extend(view("reactor-02-bay-loaded", [1.4, 1.1, 0.0], shot_step));
 
     s.push(run("reactor room: the walker goes back to the front", 2.0, |w, c| {
         if c.t == 0.0 {
@@ -173,6 +192,7 @@ pub(super) fn reactor_room_steps(s: &mut Vec<Step>) {
         check(c, items(w).reactor.is_some_and(|r| r.scram_cover), "reactor room: the news show the cover open".into());
         "open".into()
     }));
+    s.extend(view("reactor-03-scram-cover-open", [0.5, 1.0, 1.7], shot_step));
     s.push(press("reactor room: F on the button SCRAMs", "button_scram", 0.6, |w, c| {
         let r = sim(w).room.reactor();
         check(c, w.resource::<ReactorCounts>().scrams == 1, "reactor room: one SCRAM".into());
@@ -183,6 +203,7 @@ pub(super) fn reactor_room_steps(s: &mut Vec<Step>) {
         check(c, !cover_open(w, "cover_scram"), "reactor room: the machine closed the SCRAM cover".into());
         "scrammed".into()
     }));
+    s.extend(view("reactor-04-scrammed", [0.0, 1.8, 0.0], shot_step));
     s.push(run("reactor room: it stays off", 2.0, |w, c| {
         if c.t < 1.0 {
             return None;
@@ -212,4 +233,6 @@ pub(super) fn reactor_room_steps(s: &mut Vec<Step>) {
         check(c, items(w).reactor.is_some_and(|r| r.ejected && r.eject_cover), "reactor room: the news show it".into());
         "ejected".into()
     }));
+    s.extend(view("reactor-05-ejected", [0.0, 1.2, 0.0], shot_step));
+    s.push(wait(1.0));
 }

@@ -6,8 +6,8 @@
 //! their conditions, each with a limit in simulated seconds.
 use super::*;
 use super::reactor::{click_until, use_display};
-use crate::dev_area::hull::{panels::{AIRLOCK_IN_ID, AIRLOCK_IN_NAME}, ShipAir};
-use crate::dev_area::layout::AIRLOCK;
+use crate::dev_area::hull::{panels::{AIRLOCK_IN_ID, AIRLOCK_IN_NAME, AIRLOCK_SHIP_ID, AIRLOCK_SHIP_NAME}, ShipAir};
+use crate::dev_area::layout::{AIRLOCK, EQUIPMENT};
 use crate::items::Items;
 use item_core::wire::{AirlockCycle, AirlockNews};
 
@@ -100,9 +100,28 @@ pub(super) fn airlock_steps(s: &mut Vec<Step>) {
     s.push(click_until(AIRLOCK_IN_ID, "push", None, "airlock: PUSH starts the cycle out", |w| lock(w).is_some_and(|n| n.cycling == AirlockCycle::Outer)));
     s.push(wait_for("airlock: the cycle out ends with the outer door open (10 s)", 10.0, |w| lock(w).is_some_and(|n| n.cycling == AirlockCycle::Idle && n.outer_open)));
     s.push(Box::new(|w, c| {
-        begin(w, c, "airlock: the rules over the run");
+        begin(w, c, "airlock: at rest outside again");
         let n = lock(w).unwrap_or_default();
         check(c, !n.inside && !n.inner_open && n.outer_open, format!("airlock: outside, outer open, inner shut ({n:?})"));
+        end(w, c, String::new());
+        true
+    }));
+
+    // From the ship: the airlock rests outside, a walker in the equipment room calls it in.
+    use_display(s, AIRLOCK_SHIP_NAME, AIRLOCK_SHIP_ID, [EQUIPMENT.centre[0] + 1.25, EQUIPMENT.centre[1] - 1.1]);
+    s.push(click_until(AIRLOCK_SHIP_ID, "push", None, "airlock: PUSH in the equipment room calls the airlock in", |w| lock(w).is_some_and(|n| n.cycling == AirlockCycle::Inner)));
+    s.push(wait_for("airlock: the call from the ship ends with the inner door open (10 s)", 10.0, |w| lock(w).is_some_and(|n| n.cycling == AirlockCycle::Idle && n.inner_open)));
+    s.push(Box::new(|w, c| {
+        begin(w, c, "airlock: called in from the ship, inside, inner open, outer locked");
+        let n = lock(w).unwrap_or_default();
+        check(c, n.inside && n.inner_open && !n.outer_open, format!("airlock: inside, inner open, outer shut ({n:?})"));
+        end(w, c, String::new());
+        true
+    }));
+    s.push(Box::new(|w, c| {
+        begin(w, c, "airlock: the rules over the run");
+        let n = lock(w).unwrap_or_default();
+        check(c, n.inside && n.inner_open && !n.outer_open, format!("airlock: inside, inner open, outer shut ({n:?})"));
         let a = *w.resource::<AirlockAudit>();
         check(c, a.samples > 0, format!("airlock: the rules were sampled ({} ticks)", a.samples));
         check(c, a.doors_together == 0, format!("airlock: the doors were never open together ({} ticks with both)", a.doors_together));

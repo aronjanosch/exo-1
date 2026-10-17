@@ -30,6 +30,12 @@ pub const AIRLOCK_OUT_ID: PanelId = PanelId::new("airlock_panel_out");
 
 pub const AIRLOCK_OUT_NAME: &str = "AIRLOCK OUTER";
 
+/// The third panel, in the equipment room beside the inner door (tag AL-SHIP): from the ship it calls
+/// the airlock in when it rests outside. TODO(initiator): the name and tag.
+pub const AIRLOCK_SHIP_ID: PanelId = PanelId::new("airlock_panel_ship");
+
+pub const AIRLOCK_SHIP_NAME: &str = "AIRLOCK SHIP";
+
 /// The vents' panels (r38, r44): index 0 the engine room's, 1 the corridor's, 2 the bridge's (`ReactorAsk::SetVent`).
 pub const VENT_ENGINE_ID: PanelId = PanelId::new("vent_engine");
 
@@ -129,7 +135,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 status_monitor::SILENCE_ACTION => Some(ReactorAsk::SilenceAlarms),
                 _ => None,
             }
-        } else if c.panel == AIRLOCK_IN_ID || c.panel == AIRLOCK_OUT_ID {
+        } else if c.panel == AIRLOCK_IN_ID || c.panel == AIRLOCK_OUT_ID || c.panel == AIRLOCK_SHIP_ID {
             airlock::panel_ask(&c.action)
         } else {
             None
@@ -151,6 +157,7 @@ pub fn write_panels(items: Res<Items>, mut panels: ResMut<Panels>) {
     // Not through `show`: the airlock panel's dead glass is its own face.
     panels.set(AIRLOCK_IN_ID, airlock_panel(r));
     panels.set(AIRLOCK_OUT_ID, airlock_panel(r));
+    panels.set(AIRLOCK_SHIP_ID, airlock_panel(r));
     show(&mut panels, r, status_monitor::ID, status_monitor::monitor_panel(r));
 }
 

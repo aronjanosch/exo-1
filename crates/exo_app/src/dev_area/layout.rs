@@ -106,10 +106,12 @@ pub const GUNNERY_AT: [f64; 2] = [TURRET_ROOM.centre[0], TURRET_ROOM.centre[1] +
 /// The corridor's wall points: the faces are y -10.66 (south wall, facing north) and y -8.74
 /// (north wall, facing south). ER-01 sits east of the engine door, BD-01 east of the bridge door.
 /// The airlock's panels (#309): the first on the airlock's north wall inside (the right-hand wall seen
-/// from the outer door; face y -8.7), the second on that wall's outer face (y -8.4) beside the outer door.
+/// from the outer door; face y -8.7), the second on that wall's outer face (y -8.4) beside the outer door,
+/// the third in the equipment room on the inner door's wall (face x 7.4), right of the door seen from the
+/// room (south of it), facing east.
 pub const ENGINE_DOOR_PANEL_AT: [f64; 2] = [-12.2, -10.66];
 pub const BRIDGE_DOOR_PANEL_AT: [f64; 2] = [-13.4, -8.74];
-pub const AIRLOCK_PANEL_AT: [[f64; 2]; 2] = [[8.7, -8.7], [9.5, -8.4]];
+pub const AIRLOCK_PANEL_AT: [[f64; 2]; 3] = [[8.7, -8.7], [9.5, -8.4], [7.4, -10.95]];
 /// The airlock wall panel (#308): 0.20 x 0.32 m screen, its centre 1.4 m up (eye and hand height; start value).
 pub const AIRLOCK_SCREEN_SIZE: [f64; 2] = [0.20, 0.32];
 pub const AIRLOCK_PANEL_CENTRE: f64 = 1.4;
@@ -146,6 +148,7 @@ pub const SCREENS: &[Mount] = &[
     Mount { id: hull_panels::BRIDGE_DOOR_ID, name: hull_panels::BRIDGE_DOOR_NAME, at: BRIDGE_DOOR_PANEL_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
     Mount { id: hull_panels::AIRLOCK_IN_ID, name: hull_panels::AIRLOCK_IN_NAME, at: AIRLOCK_PANEL_AT[0], lift: AIRLOCK_PANEL_CENTRE - AIRLOCK_SCREEN_SIZE[1] * 0.5, size: AIRLOCK_SCREEN_SIZE, turn: 0.0 },
     Mount { id: hull_panels::AIRLOCK_OUT_ID, name: hull_panels::AIRLOCK_OUT_NAME, at: AIRLOCK_PANEL_AT[1], lift: AIRLOCK_PANEL_CENTRE - AIRLOCK_SCREEN_SIZE[1] * 0.5, size: AIRLOCK_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: hull_panels::AIRLOCK_SHIP_ID, name: hull_panels::AIRLOCK_SHIP_NAME, at: AIRLOCK_PANEL_AT[2], lift: AIRLOCK_PANEL_CENTRE - AIRLOCK_SCREEN_SIZE[1] * 0.5, size: AIRLOCK_SCREEN_SIZE, turn: 270.0 },
     // The bridge: only its vent. Parked (#306 Parkplatz): the helm, JD-01, the shield and CP-01.
     Mount { id: hull_panels::VENT_BRIDGE_ID, name: hull_panels::VENT_BRIDGE_NAME, at: BRIDGE_VENT_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
     // The turret room: empty. Parked (#306 Parkplatz): GN-01 and the gun's housing (`TURRET_GUN`).
@@ -325,7 +328,7 @@ fn spawn_box(commands: &mut Commands, frame: &Frame, planet: &PlanetRes, id: Str
 }
 
 fn is_airlock_panel(id: &PanelId) -> bool {
-    *id == hull_panels::AIRLOCK_IN_ID || *id == hull_panels::AIRLOCK_OUT_ID
+    *id == hull_panels::AIRLOCK_IN_ID || *id == hull_panels::AIRLOCK_OUT_ID || *id == hull_panels::AIRLOCK_SHIP_ID
 }
 
 fn spawn_screen(commands: &mut Commands, frame: &Frame, planet: &PlanetRes, m: &Mount, at: [f64; 2]) -> Entity {

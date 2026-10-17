@@ -29,8 +29,9 @@
     "silence_s": 60.0
   },
   "airlock": {
-    "_comment": "Airlock (r40, #267; the state machine is reactor_core airlock.rs, the room is exo_app dev_area airlock). cycle_s: seconds of one pressure cycle (6 s, a few seconds as #267 says). pump_share: the share of the airlock's air the cycle pumps back into the corridor before the outer door opens, or fills from the corridor on the way in; the rest (5 %) leaves with the outer door. Barotrauma has no such cycle (its airlock is a wet room and its pump moves water). TODO(initiator): cycle_s and pump_share, both start values.",
-    "cycle_s": 6.0,
+    "_comment": "Airlock (r40, #267; one-button cycle #309; the state machine is reactor_core airlock.rs, the room is exo_app dev_area airlock). One push on a panel runs the whole cycle: warning light on, the open door shuts and locks (close_s, the door slab's slide), the pressure changes for cycle_s, the light goes out and the other door opens. cycle_s: seconds of that pressure change (3 s, was 6). close_s: seconds the open door takes to shut before the air moves. pump_share: the share of the airlock's air the cycle pumps back into the ship before the outer door opens, or fills from the ship on the way in; the rest (5 %) leaves with the outer door. Barotrauma has no such cycle (its airlock is a wet room and its pump moves water). TODO(initiator): cycle_s, close_s and pump_share, all start values.",
+    "cycle_s": 3.0,
+    "close_s": 1.0,
     "pump_share": 0.95
   },
   "life_support": {

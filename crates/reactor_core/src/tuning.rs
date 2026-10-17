@@ -124,6 +124,7 @@ impl Tuning {
         need(sh.max > 0.0 && sh.charge_rate_max >= 0.0 && sh.recovery_delay_s >= 0.0 && sh.quantum_offline_s >= 0.0, "shield", "max > 0, charge_rate_max, recovery_delay_s, quantum_offline_s >= 0");
         need((0.0..=1.0).contains(&sh.deflection) && (0.0..=1.0).contains(&sh.quantum_min) && (0.0..=1.0).contains(&sh.upkeep), "shield", "deflection, quantum_min and upkeep 0..=1");
         need(self.airlock.cycle_s > 0.0, "airlock.cycle_s", "must be > 0");
+        need(self.airlock.close_s >= 0.0, "airlock.close_s", "must be >= 0");
         need((0.0..=1.0).contains(&self.airlock.pump_share), "airlock.pump_share", "must be 0..1");
         need(self.rods.0.contains_key("standard"), "rods.standard", "the rod start_rods uses must be listed");
         for (id, k) in &self.rods.0 {
@@ -223,7 +224,7 @@ mod tests {
     #[test]
     fn the_airlock_block_is_parsed_and_checked() {
         Tuning::shipped();
-        let e = Tuning::load(&edited("hull/hull.json", "\"cycle_s\": 6.0", "\"cycle_s\": 0.0")).unwrap_err();
+        let e = Tuning::load(&edited("hull/hull.json", "\"cycle_s\": 3.0", "\"cycle_s\": 0.0")).unwrap_err();
         assert!(e.iter().any(|m| m.contains("airlock.cycle_s")), "{e:?}");
         assert!(Tuning::load(&edited("hull/hull.json", "\"pump_share\": 0.95", "\"pump_share\": 1.5")).unwrap_err().iter().any(|m| m.contains("airlock.pump_share")));
     }

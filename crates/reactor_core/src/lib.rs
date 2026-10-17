@@ -23,7 +23,7 @@ pub mod tuning;
 pub mod weapons;
 
 pub use bots::{choose, Action, BotTuning, Bots, Job, Layout, Row, Station, Walker};
-pub use airlock::{Airlock, AirlockTuning, Dir, Door, Goal};
+pub use airlock::{Airlock, AirlockTuning, Dir, Door, Side};
 pub use battery::{Battery, BatteryTuning};
 pub use engine::Engine;
 pub use helm::HelmTuning;

@@ -184,8 +184,8 @@ pub enum ReactorAsk {
     JumpArm,
     /// The emergency jump (r40, #252): only at READY, empties the charge. The host refuses it otherwise.
     JumpGo,
-    /// The airlock's panels (r40): a door's press (closes it when open, else starts its cycle), or the
-    /// CYCLE press (the pump alone; a press while it runs stops it). The host refuses what the interlock refuses.
+    /// The airlock's panels (r40, #309): PUSH runs the whole cycle to the other side, F on the inner door
+    /// opens or shuts it while the airlock rests inside. The host ignores what the interlock refuses.
     Airlock(AirlockAsk),
     /// The dev faults screen's AMBUSH switch (r41): true starts an enemy encounter, false ends it.
     Ambush(bool),
@@ -278,29 +278,32 @@ pub enum JumpStage {
     Active,
 }
 
-/// A press at the airlock's panels (r40). See `ReactorAsk::Airlock`.
+/// A press at the airlock's panels (r40, one PUSH in #309) or at its inner door. See `ReactorAsk::Airlock`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AirlockAsk {
-    Inner,
-    Outer,
-    Cycle,
+    /// The panels' one PUSH: runs the whole cycle to the other side; ignored while a cycle runs.
+    Push,
+    /// F on the inner door from the ship: opens or shuts it while the airlock rests inside.
+    ToggleInner,
 }
 
-/// What the running cycle is for (r40): the door it opens at its end, or the pump alone.
+/// What the running cycle is for (r40): the door it opens at its end.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AirlockCycle {
     #[default]
     Idle,
     Inner,
     Outer,
-    Hold,
 }
 
-/// The airlock as the host has it (r40): the doors, and the running cycle with its progress 0..1.
+/// The airlock as the host has it (r40): the doors, the side it rests on (`inside`: air in, the inner
+/// door the ship's; else the outer door open), and the running cycle with its progress 0..1. The
+/// warning light is on while `cycling` is not `Idle`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct AirlockNews {
     pub inner_open: bool,
     pub outer_open: bool,
+    pub inside: bool,
     pub cycling: AirlockCycle,
     pub progress: f64,
 }
@@ -820,7 +823,7 @@ mod tests {
             startup: StartupStage::Breakers,
             startup_ticks: [true, true, true, true, false, false],
             jumps: 1,
-            airlock: AirlockNews { inner_open: false, outer_open: true, cycling: AirlockCycle::Hold, progress: 0.4 },
+            airlock: AirlockNews { inner_open: false, outer_open: false, inside: false, cycling: AirlockCycle::Inner, progress: 0.4 },
             vacuum: true,
             enemy: Some(EnemyNews { shield: 0.25, hull: 0.5, outcome: EnemyOutcome::Escaped, shots: 3, section: 5 }),
             aux_on: true,
@@ -933,11 +936,10 @@ mod tests {
             ReactorAsk::JumpArm,
             ReactorAsk::JumpGo,
             ReactorAsk::Trigger(ReactorFault::JumpFull),
-            ReactorAsk::Airlock(AirlockAsk::Inner),
+            ReactorAsk::Airlock(AirlockAsk::Push),
             ReactorAsk::Ambush(true),
             ReactorAsk::Ambush(false),
-            ReactorAsk::Airlock(AirlockAsk::Outer),
-            ReactorAsk::Airlock(AirlockAsk::Cycle),
+            ReactorAsk::Airlock(AirlockAsk::ToggleInner),
             ReactorAsk::SealAirlock,
             ReactorAsk::MasterBreaker(true),
             ReactorAsk::MasterBreaker(false),

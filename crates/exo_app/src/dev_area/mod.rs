@@ -35,7 +35,7 @@ pub mod turrets;
 pub const PLACE: &str = "dev_area";
 /// Half the rectangle's size, east and north (m). The place's flatten edit reaches a little further.
 pub const HALF_EXTENT: [f64; 2] = [24.0, 20.0];
-pub const PAD_MAIN: [f64; 2] = [15.0, -12.0];
+pub const PAD_MAIN: [f64; 2] = [17.0, -12.0];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Zone {
@@ -68,7 +68,7 @@ pub const HAZARDS: Zone = Zone { name: "hazards", centre: [6.0, 15.5], half: ZON
 pub const DEV: Zone = Zone { name: "dev", centre: [18.0, 15.5], half: ZONE_HALF };
 /// The landing pad east of the ship, by the airlock's outer door: the flight ship parks here
 /// (`content/place/dev_area.json`, pad "main").
-pub const PADS: Zone = Zone { name: "pads", centre: [15.0, -12.0], half: [7.0, 7.0] };
+pub const PADS: Zone = Zone { name: "pads", centre: [17.0, -12.0], half: [7.0, 7.0] };
 pub const ROLE_ZONES: [Zone; 8] = [ENGINEERING, BRIDGE_ZONE, TURRETS, LAB, MEDBAY, STORAGE, HAZARDS, DEV];
 pub const ZONES: [Zone; 9] = [ENGINEERING, BRIDGE_ZONE, TURRETS, LAB, MEDBAY, STORAGE, HAZARDS, DEV, PADS];
 

@@ -1,11 +1,11 @@
 //! The hull's screens: ER-01 by the engine room's door (the reactor's temperature, the room's air,
-//! the emergency), BD-01 (the bridge door), the three vents' valves, the airlock's AL-01 and AL-02,
+//! the emergency), BD-01 (the bridge door), the three vents' valves, the airlock's two PUSH panels (#309),
 //! and the status monitor ST-01 (`status_monitor`). A press asks the host.
 use crate::dev_area::*;
 use crate::displays::{DisplayAction, Panels};
 use crate::dev_area::screens::*;
 use crate::items::Items;
-use display_core::{button, column, font, micro, readout, row, space, toggle, Panel, Tier, Tone};
+use display_core::{bar, button, column, font, micro, readout, row, space, toggle, Panel, Tier, Tone};
 use item_core::wire::{AirlockCycle, ReactorAsk, RoomAsk, RoomNews, ReactorNews};
 
 use crate::dev_area::bridge::captain_screen;
@@ -20,14 +20,15 @@ pub const DOOR_ID: PanelId = PanelId::new("engine_door_screen");
 
 pub const DOOR_NAME: &str = "REACTOR ROOM";
 
-/// The airlock's two panels (r40): the inner door's (corridor side) and the outer door's (inside the airlock).
-pub const AIRLOCK_INNER_ID: PanelId = PanelId::new("airlock_inner");
+/// The airlock's two panels (#309): one inside the chamber (right-hand wall seen from the outer door)
+/// and one outside beside the outer door, to call the airlock from outside. Both show and press the same.
+pub const AIRLOCK_IN_ID: PanelId = PanelId::new("airlock_panel_in");
 
-pub const AIRLOCK_INNER_NAME: &str = "INNER DOOR";
+pub const AIRLOCK_IN_NAME: &str = "AIRLOCK";
 
-pub const AIRLOCK_OUTER_ID: PanelId = PanelId::new("airlock_outer");
+pub const AIRLOCK_OUT_ID: PanelId = PanelId::new("airlock_panel_out");
 
-pub const AIRLOCK_OUTER_NAME: &str = "OUTER DOOR";
+pub const AIRLOCK_OUT_NAME: &str = "AIRLOCK OUTER";
 
 /// The vents' panels (r38, r44): index 0 the engine room's, 1 the corridor's, 2 the bridge's (`ReactorAsk::SetVent`).
 pub const VENT_ENGINE_ID: PanelId = PanelId::new("vent_engine");
@@ -89,18 +90,23 @@ pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
     Panel::screen(Tier::S, DOOR_NAME, "ER-01", column(4.0, body)).with_padding(8.0)
 }
 
-/// An airlock panel (r40): the doors' state or the cycle's progress, and IN (the inner door), OUT (the
-/// outer door), CYCLE (the pump alone). Both panels show the same; the press goes to the host.
+/// An airlock panel (#309): which side the airlock rests on, a status line (IDLE or CYCLING with a
+/// progress bar) and the one PUSH field. The press goes to the host, which ignores it during a cycle.
+/// TODO(initiator): the real wall panel design (#308) replaces this.
 pub fn airlock_panel(r: Option<&ReactorNews>, name: &'static str, code: &'static str) -> Panel {
     let a = r.map(|r| r.airlock).unwrap_or_default();
-    let word = match a.cycling {
-        AirlockCycle::Idle if a.inner_open => "INNER OPEN".to_string(),
-        AirlockCycle::Idle if a.outer_open => "OUTER OPEN".to_string(),
-        AirlockCycle::Idle => "DOORS SHUT".to_string(),
-        _ => format!("CYCLING {:.0} %", a.progress * 100.0),
-    };
-    let presses = row(4.0, vec![button("IN", "in").flex(1.0), button("OUT", "out").flex(1.0), button("CYCLE", "cycle").flex(1.0)]).fixed(36.0);
-    let body = column(6.0, vec![micro("AIRLOCK").fixed(14.0), readout(word).text_size(font::SMALL).tone(Tone::Normal).fixed(20.0), presses]);
+    let idle = a.cycling == AirlockCycle::Idle;
+    let side = if a.inside { "AIRLOCK INSIDE" } else { "AIRLOCK OUTSIDE" };
+    let (word, tone) = if idle { ("IDLE", Tone::Good) } else { ("CYCLING", Tone::Warn) };
+    let body = column(
+        6.0,
+        vec![
+            micro(side).fixed(14.0),
+            readout(word).text_size(font::SMALL).tone(tone).fixed(20.0),
+            bar(a.progress, "").fixed(14.0),
+            button("PUSH", "push").enabled(idle).flex(1.0),
+        ],
+    );
     Panel::screen(Tier::S, name, code, body).with_padding(8.0)
 }
 
@@ -128,7 +134,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 status_monitor::SILENCE_ACTION => Some(ReactorAsk::SilenceAlarms),
                 _ => None,
             }
-        } else if c.panel == AIRLOCK_INNER_ID || c.panel == AIRLOCK_OUTER_ID {
+        } else if c.panel == AIRLOCK_IN_ID || c.panel == AIRLOCK_OUT_ID {
             airlock::panel_ask(&c.action)
         } else {
             None
@@ -147,8 +153,8 @@ pub fn write_panels(items: Res<Items>, mut panels: ResMut<Panels>) {
     show(&mut panels, r, VENT_CORRIDOR_ID, vent_panel(r, 1));
     show(&mut panels, r, VENT_BRIDGE_ID, vent_panel(r, 2));
     show(&mut panels, r, BRIDGE_DOOR_ID, bridge_door_panel(Some(&items.room)));
-    show(&mut panels, r, AIRLOCK_INNER_ID, airlock_panel(r, AIRLOCK_INNER_NAME, "AL-01"));
-    show(&mut panels, r, AIRLOCK_OUTER_ID, airlock_panel(r, AIRLOCK_OUTER_NAME, "AL-02"));
+    show(&mut panels, r, AIRLOCK_IN_ID, airlock_panel(r, AIRLOCK_IN_NAME, "AL-IN"));
+    show(&mut panels, r, AIRLOCK_OUT_ID, airlock_panel(r, AIRLOCK_OUT_NAME, "AL-OUT"));
     show(&mut panels, r, status_monitor::ID, status_monitor::monitor_panel(r));
 }
 
@@ -157,7 +163,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_airlock_panels_have_the_three_presses() {
-        assert!(airlock_panel(None, AIRLOCK_INNER_NAME, "AL-01").find("cycle").is_some(), "the airlock panels have IN, OUT and CYCLE");
+    fn the_airlock_panels_have_one_push_and_fit() {
+        use item_core::wire::AirlockNews;
+        let mut r = ReactorNews::default();
+        for cycling in [AirlockCycle::Idle, AirlockCycle::Outer] {
+            r.airlock = AirlockNews { cycling, progress: 0.5, ..Default::default() };
+            let p = airlock_panel(Some(&r), AIRLOCK_IN_NAME, "AL-IN");
+            assert!(p.find("push").is_some(), "the airlock panels have the PUSH field");
+            assert!(p.find("cycle").is_none() && p.find("in").is_none() && p.find("out").is_none(), "and no other button");
+            assert!(p.overflowing().is_empty(), "{:?}", p.overflowing());
+        }
     }
 }

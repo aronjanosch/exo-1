@@ -8,7 +8,7 @@ use fire_core::{split_by_volume, Deck, FireTuning, GapId, LeakId, RoomId};
 use item_core::wire::HULL_SECTIONS;
 use reactor_core::engine_room::AirSave;
 use reactor_core::hull::SECTION_CENTRES;
-use reactor_core::{Airlock, AirlockTuning, Dir, Door, Goal};
+use reactor_core::{Airlock, AirlockTuning, Dir, Door, Side};
 
 #[derive(Resource)]
 pub struct ShipAir {
@@ -91,26 +91,28 @@ impl ShipAir {
         }
     }
 
-    /// A panel's press (r40): the goal goes to `Airlock::press`. A cycle that starts takes its air
-    /// reference now: an outward cycle pumps the airlock's air, an inward one fills the airlock to the
-    /// corridor's fraction (the air it takes from the corridor).
     /// The captain's SEAL (r41): shuts the inner door when it is open and no cycle runs (`Airlock::close`).
     pub fn seal_inner(&mut self) -> bool {
         self.lock.close(Door::Inner)
     }
 
-    pub fn request(&mut self, goal: Goal) -> bool {
-        let idle = self.lock.cycling().is_none();
-        if !self.lock.press(goal) {
+    /// F on the inner door from the ship (#309): opens or shuts it while the airlock rests inside.
+    pub fn toggle_inner(&mut self) -> bool {
+        self.lock.toggle_inner()
+    }
+
+    /// A panel's PUSH (#309): `Airlock::press` starts the cycle to the other side. A cycle that starts
+    /// takes its air reference now: an outward cycle pumps the airlock's air, an inward one fills the
+    /// airlock to the corridor's fraction (the air it takes from the ship). False while a cycle runs.
+    pub fn push(&mut self) -> bool {
+        if !self.lock.press() {
             return false;
         }
-        if idle && self.lock.cycling().is_some() {
-            self.cycle_air = match self.lock.direction() {
-                Some(Dir::Out) => self.deck.room(self.airlock).oxygen,
-                Some(Dir::In) => self.deck.room(self.airlock).volume * self.deck.room(self.corridor).oxygen_fraction(),
-                None => 0.0,
-            };
-        }
+        self.cycle_air = match self.lock.direction() {
+            Some(Dir::Out) => self.deck.room(self.airlock).oxygen,
+            Some(Dir::In) => self.deck.room(self.airlock).volume * self.deck.room(self.corridor).oxygen_fraction(),
+            None => 0.0,
+        };
         true
     }
 
@@ -178,11 +180,10 @@ impl ShipAir {
         use item_core::wire::AirlockCycle;
         let cycling = match self.lock.cycling() {
             None => AirlockCycle::Idle,
-            Some(Goal::Door(Door::Inner)) => AirlockCycle::Inner,
-            Some(Goal::Door(Door::Outer)) => AirlockCycle::Outer,
-            Some(Goal::Hold) => AirlockCycle::Hold,
+            Some(Door::Inner) => AirlockCycle::Inner,
+            Some(Door::Outer) => AirlockCycle::Outer,
         };
-        item_core::wire::AirlockNews { inner_open: self.lock.is_open(Door::Inner), outer_open: self.lock.is_open(Door::Outer), cycling, progress: self.lock.progress() }
+        item_core::wire::AirlockNews { inner_open: self.lock.is_open(Door::Inner), outer_open: self.lock.is_open(Door::Outer), inside: self.lock.side() == Side::Inside, cycling, progress: self.lock.progress() }
     }
 
     /// The generator's air (m³) through the three vents (r38, r44): `open[0]` the engine room's, `open[1]`
@@ -247,7 +248,7 @@ impl Default for ShipAir {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reactor_core::{AirlockTuning, Door, Goal};
+    use reactor_core::{AirlockTuning, Door};
 
     /// r37: the breach's hole loses air only while it is open; a mended wall keeps what it has.
     #[test]
@@ -327,8 +328,8 @@ mod tests {
         a.deck.breathe(a.corridor, 19.2);
         let total = a.deck.total_oxygen();
         let (lock, corridor) = (a.deck.room(a.airlock).oxygen, a.deck.room(a.corridor).oxygen);
-        assert!(a.request(Goal::Door(Door::Outer)), "the outer door's cycle starts");
-        cycle(&mut a, 6.0);
+        assert!(a.push(), "from inside the push starts the cycle out");
+        cycle(&mut a, 4.5);
         assert!(a.lock.is_open(Door::Outer), "the outer door opens at the cycle's end");
         let moved = a.deck.room(a.corridor).oxygen - corridor;
         assert!((moved - 0.95 * lock).abs() < 1e-6, "the corridor gets 95 % of the airlock's air ({moved})");
@@ -339,12 +340,12 @@ mod tests {
     /// r40: the inward cycle fills the airlock from the corridor, and the air still adds up.
     #[test]
     fn the_inward_cycle_fills_the_airlock_from_the_corridor() {
-        let mut a = ShipAir::new();
+        let mut a = ShipAir::at_start(&AirlockTuning::default());
         a.deck.breathe(a.airlock, 12.0);
         let total = a.deck.total_oxygen();
         let before = a.deck.room(a.airlock).oxygen;
-        assert!(a.request(Goal::Door(Door::Inner)));
-        cycle(&mut a, 6.0);
+        assert!(a.push(), "from outside the push starts the cycle in");
+        cycle(&mut a, 4.5);
         assert!(a.lock.is_open(Door::Inner));
         assert!(a.deck.room(a.airlock).oxygen > before + 10.0, "the airlock is filled to the corridor's pressure");
         assert!((a.deck.total_oxygen() - total).abs() < 1e-9, "the air came out of the corridor");
@@ -359,8 +360,8 @@ mod tests {
         assert!(a.vacuum);
         assert_eq!(a.deck.room(a.outside).oxygen, 0.0, "the outside is empty");
         a.deck.breathe(a.corridor, 19.2);
-        assert!(a.request(Goal::Door(Door::Outer)));
-        cycle(&mut a, 6.0);
+        assert!(a.push());
+        cycle(&mut a, 4.5);
         let total = a.deck.total_oxygen() + a.deck.lost_to_space();
         for _ in 0..90 {
             a.set_door(Door::Outer, 1.0);
@@ -387,15 +388,50 @@ mod tests {
         assert!(a.deck.room(a.airlock).oxygen_fraction() > 0.9, "the airlock takes the outside's air");
     }
 
-    /// r40: a press while the cycle runs is refused, and a press stops it.
+    /// #309: a press while the cycle runs is ignored; the cycle goes on and finishes.
     #[test]
-    fn a_press_during_a_cycle_is_refused_and_stops_it() {
+    fn a_press_during_a_cycle_is_ignored() {
         let mut a = ShipAir::new();
-        assert!(a.request(Goal::Door(Door::Inner)));
-        assert!(!a.request(Goal::Door(Door::Outer)), "another door's press during a cycle is refused");
-        assert!(a.request(Goal::Door(Door::Inner)), "the same press stops the cycle");
-        assert_eq!(a.lock.cycling(), None);
-        assert!(!a.lock.is_open(Door::Inner) && !a.lock.is_open(Door::Outer));
+        assert!(a.push());
+        assert!(!a.push(), "no second press during the cycle");
+        assert!(!a.toggle_inner(), "the inner door is locked during the cycle");
+        assert!(a.lock.cycling().is_some());
+        cycle(&mut a, 4.5);
+        assert_eq!(a.lock.cycling(), None, "the cycle finished");
+        assert!(a.lock.is_open(Door::Outer) && !a.lock.is_open(Door::Inner));
+    }
+
+    /// #309: the air is kept across a cycle in and out of the ship: nothing leaves while the doors are
+    /// shut (the 5 % that stay in the chamber leave with the outer door once it is open, see the vacuum test).
+    #[test]
+    fn the_air_is_kept_across_the_cycles() {
+        let mut a = ShipAir::at_start(&AirlockTuning::default());
+        a.deck.breathe(a.airlock, 12.0);
+        let total = a.deck.total_oxygen();
+        assert!(a.push());
+        cycle(&mut a, 4.5);
+        assert_eq!(a.lock.side(), Side::Inside);
+        assert!((a.deck.total_oxygen() - total).abs() < 1e-9, "a cycle in keeps the ship's air");
+        let before_out = a.deck.total_oxygen();
+        assert!(a.push());
+        cycle(&mut a, 4.5);
+        assert_eq!(a.lock.side(), Side::Outside);
+        assert!((a.deck.total_oxygen() - before_out).abs() < 1e-9, "a cycle out keeps it too: the pump moves the air into the ship");
+    }
+
+    /// #309: the host's news carries the side and the cycle for the panels and the light.
+    #[test]
+    fn the_news_carries_the_side_and_the_cycle() {
+        use item_core::wire::AirlockCycle;
+        let mut a = ShipAir::at_start(&AirlockTuning::default());
+        let n = a.airlock_news();
+        assert!(!n.inside && n.outer_open && n.cycling == AirlockCycle::Idle);
+        assert!(a.push());
+        let n = a.airlock_news();
+        assert!(!n.outer_open && n.cycling == AirlockCycle::Inner, "the cycle in: the outer door has shut");
+        cycle(&mut a, 4.5);
+        let n = a.airlock_news();
+        assert!(n.inside && n.inner_open && n.cycling == AirlockCycle::Idle);
     }
 
     #[test]

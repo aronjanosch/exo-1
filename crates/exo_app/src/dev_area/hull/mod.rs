@@ -30,5 +30,6 @@ pub fn plugin(app: &mut App) {
 pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, (lights::spawn_lights, (lights::room_lights, lights::alarm_lights, lights::emergency_lamps).after(lights::spawn_lights)).after(super::spawn_devices).in_set(crate::phases::Frame::World));
     app.add_systems(Update, breach::breach_decal.after(super::spawn_devices).in_set(crate::phases::Frame::World));
+    app.add_systems(Update, (airlock::spawn_warning_light, airlock::warning_light).chain().after(super::spawn_devices).in_set(crate::phases::Frame::World));
     app.add_systems(Update, (alarms::spawn_alarm_lamps, alarms::alarm_lamps).chain().after(super::spawn_devices).in_set(crate::phases::Frame::World));
 }

@@ -5,5 +5,5 @@
   "lat_deg": 7.0,
   "lon_deg": 220.0,
   "edits": [ { "type": "flatten", "order": 0, "half_extent_m": [29.0, 25.0], "rolloff_m": 30.0 } ],
-  "pads": [ { "id": "main", "at": [15.0, -12.0], "radius_m": 7.0 } ]
+  "pads": [ { "id": "main", "at": [17.0, -12.0], "radius_m": 7.0 } ]
 }

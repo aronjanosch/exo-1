@@ -32,10 +32,10 @@ fn asks(mut items: ResMut<Items>, mut sim: ResMut<ReactorSim>, mut air: ResMut<S
                     info!("hull: seal refused (the inner door is shut, or a cycle runs)");
                 }
             }
-            // The airlock's panels (r40): the interlock refuses what it must (`ShipAir::request`).
+            // The airlock's panels (r40, #309): the interlock ignores what it must (a push during a cycle).
             ReactorAsk::Airlock(ask) => {
-                if !air.request(airlock::ask_of(ask)) {
-                    info!("hull: airlock {ask:?} refused (a door is open, or a cycle runs)");
+                if !airlock::apply(&mut air, ask) {
+                    info!("hull: airlock {ask:?} ignored (a cycle runs, or the inner door is locked)");
                 }
             }
             a => {

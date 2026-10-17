@@ -78,6 +78,24 @@ _Avoid_: outpost, town, place
 The flat landing area at a location.
 _Avoid_: landing zone, helipad
 
+### Dev area
+
+**Dev area**:
+The flat test ground on Hearth where mechanics are built and tried before they go into the ship. It holds the mini-ship, the zones and the pad zone.
+_Avoid_: test level, sandbox
+
+**Mini-ship**:
+The greybox ship of rooms with walls and doors in the dev area, rebuilt station by station along the walkthrough (airlock, equipment room, storage, engine room ...).
+_Avoid_: greybox area, inside world
+
+**Zone**:
+An open area without walls in the dev area, outlined on the ground, where a role's machines stand to be looked at quickly (engineering, lab, storage, dev ...).
+_Avoid_: area, region, sector
+
+**Pad zone**:
+The zone around the dev area's pad where the flight ship parks, with what a crew needs at the ship (suit lockers).
+_Avoid_: landing zone, hangar
+
 ### Goods
 
 **Commodity**:

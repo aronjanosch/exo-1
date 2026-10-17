@@ -1334,6 +1334,12 @@ impl EngineRoom {
         ev
     }
 
+    /// The physical SCRAM (#316): `Reactor::scram` (the chamber is vented, a share of the fill is lost). Returns the fill
+    /// lost, None when the core is out already.
+    pub fn scram(&mut self) -> Option<f64> {
+        self.reactor.scram()
+    }
+
     /// Throws the core out (`Reactor::eject`, PULSAR's core eject). The events are the reactor's:
     /// `CoreEjected` alone, or none when the core is out already. No blast: an ejected core cannot implode.
     pub fn eject_core(&mut self) -> Vec<RoomEvent> {

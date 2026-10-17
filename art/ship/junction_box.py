@@ -2,7 +2,7 @@
 
 Source: decision "Junction boxes: repair objects, routing central" (2026-10-18) in the concept
 repo. The box is mainly a repair object: no screen, one toggle with a lamp per consumer group of
-its area, a load needle, a fault lamp, and a door over the bus bars that opens for the repair.
+its area, a fault lamp, and a door over the bus bars that opens for the repair.
 The limits per group live on the central power screen in the engine room, not here. The ship
 has three boxes with two groups each (JB-1 engines + jump drive, JB-2 life support + lights,
 JB-3 shields + weapons), so one model with two toggles serves all three; the labels say which.
@@ -42,10 +42,9 @@ DOOR = (0.48, 0.40)                 # width, height
 DOOR_Z = 1.32                       # bottom edge
 DOOR_T = 0.022
 
-# Control strip under the door: the load gauge and the fault lamp, then the toggles row.
-GAUGE_Z = 1.225
-GAUGE_X = 0.0
-GAUGE_R = 0.055
+# Control strip under the door: the fault lamp in the middle, then the toggles row. No load gauge:
+# the load per group is on the central power screen (initiator, 2026-10-18: "ja raus damit").
+FAULT_Z = 1.225
 TOGGLE_Z = 1.06
 TOGGLE_DX = 0.13                    # each toggle's x from the centre line
 
@@ -53,7 +52,6 @@ reactor.MATERIALS.update({
     "jb_hull": ("6f7a80", 0.55, 0.35, 0.0, 1.0),
     "jb_door": ("8a949a", 0.5, 0.4, 0.0, 1.0),
     "jb_bus": ("b87333", 0.35, 0.9, 0.0, 1.0),
-    "jb_dial": ("e6e2d6", 0.7, 0.0, 0.0, 1.0),
     "preview_wall": ("39424a", 0.8, 0.0, 0.0, 1.0),
 })
 
@@ -97,12 +95,11 @@ def build_body(coll):
     for x in (-0.11, 0.11):
         b.box("reactor_dark", (0.12, 0.07, 0.14), (x, -0.05, DOOR_Z + dh - 0.11))
         b.box("hazard_yellow", (0.10, 0.004, 0.03), (x, -0.087, DOOR_Z + dh - 0.06))
-    # Toggle bezels on the lower front and the gauge housing.
+    # Toggle bezels on the lower front and the fault lamp's bezel.
     for i in range(GROUPS):
         x = (i - (GROUPS - 1) / 2) * 2 * TOGGLE_DX
         b.box("reactor_dark", (0.08, 0.012, 0.11), (x, -d - 0.006, TOGGLE_Z))
-    b.cyl("reactor_dark", GAUGE_R + 0.015, 0.025, (GAUGE_X, -d - 0.0125, GAUGE_Z), axis="Y", seg=20)
-    b.cyl("jb_dial", GAUGE_R, 0.004, (GAUGE_X, -d - 0.027, GAUGE_Z), axis="Y", seg=20)
+    b.cyl("reactor_dark", 0.045, 0.02, (0, -d - 0.01, FAULT_Z), axis="Y", seg=16)
     # Hazard band along the bottom edge of the front.
     b.box("hazard_yellow", (w - 0.04, 0.004, 0.025), (0, -d - 0.002, BODY_Z + 0.03))
     b.finish("junction_box_body", coll)
@@ -138,15 +135,10 @@ def build_controls(coll):
         lamp.cyl(f"lamp_group_{n}", 0.018, 0.02, (0, -0.01, 0), axis="Y", seg=12)
         lamp.finish(f"lamp_group_{n}", coll, front(TOGGLE_Z + 0.08, x))
         quad_obj(f"label_group_{n}", coll, 0.12, 0.035, front(TOGGLE_Z - 0.085, x, 0.001))
-    # Load needle: pivot at the dial centre, points straight up at rest (half load).
-    nd = Mesh()
-    nd.box("scram_red", (0.004, 0.003, GAUGE_R * 0.85), (0, 0, GAUGE_R * 0.4))
-    nd.cyl("reactor_dark", 0.007, 0.006, (0, 0, 0), axis="Y", seg=8)
-    nd.finish("needle_load", coll, front(GAUGE_Z, GAUGE_X, 0.031))
     material("lamp_fault", "lamp_off")
     f = Mesh()
-    f.cyl("lamp_fault", 0.022, 0.03, (0, -0.015, 0), axis="Y", seg=12)
-    f.finish("lamp_fault", coll, front(GAUGE_Z, 0.18))
+    f.cyl("lamp_fault", 0.032, 0.03, (0, -0.015, 0), axis="Y", seg=16)
+    f.finish("lamp_fault", coll, front(FAULT_Z, 0.0, 0.02))
     quad_obj("label_box", coll, 0.30, 0.05, front(BODY_Z + BODY[1] - 0.045, 0.0, 0.001))
     # Where the game spawns sparks and fire: the door's centre, just in front of it.
     spark = bpy.data.objects.new("spark_point", None)
@@ -166,7 +158,7 @@ def build():
     return coll
 
 
-REQUIRED = ["junction_box_body", "door", "needle_load", "lamp_fault", "label_box", "spark_point"] + [
+REQUIRED = ["junction_box_body", "door", "lamp_fault", "label_box", "spark_point"] + [
     f"{p}_{i + 1}" for p in ("toggle", "lamp_group", "label_group") for i in range(GROUPS)]
 
 

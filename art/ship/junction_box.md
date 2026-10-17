@@ -1,13 +1,13 @@
 # Junction box
 
-Built by `junction_box.py` (run line in its docstring) into `content/ship/junction_box.glb`. Design source: decision "Junction boxes: repair objects, routing central" (2026-10-18) in the concept repo, epic #322. The box is a repair object with no screen: two group toggles with lamps, a load needle, a fault lamp, and a door over the bus bars. One model serves all three boxes (JB-1 engines + jump drive, JB-2 life support + lights, JB-3 shields + weapons); the labels say which.
+Built by `junction_box.py` (run line in its docstring) into `content/ship/junction_box.glb`. Design source: decision "Junction boxes: repair objects, routing central" (2026-10-18) in the concept repo, epic #322. The box is a repair object with no screen: two group toggles with lamps, a fault lamp, and a door over the bus bars. One model serves all three boxes (JB-1 engines + jump drive, JB-2 life support + lights, JB-3 shields + weapons); the labels say which.
 
 ## Frame and size
 
 - Units are metres. The origin is on the wall surface, at floor height, under the box's centre line.
 - In the game (glTF, Y up) the front faces **+Z**. Blender (x, y, z) is glTF (x, z, −y).
 - The cabinet is 0.56 wide, 0.84 high and 0.17 deep, from 0.92 to 1.76 m. Three conduits run up 0.5 m from the top, one feed runs down to the floor.
-- Triangles: 1,086 (guide 2,500).
+- Triangles: 970 (guide 2,500).
 
 Travel is given relative to the node's rest pose, about the node's own local axis, in glTF terms. Positive angles follow the right-hand rule.
 
@@ -17,7 +17,8 @@ Travel is given relative to the node's rest pose, about the node's own local axi
 |---|---|---|---|
 | `door` | hinge on the door's left edge, (−0.24, 1.32, 0.17) | Y | Rest pose is closed. Open is −105° (the door swings out to the player's left). |
 | `toggle_1`, `toggle_2` | bat foot on the lower front, (∓0.13, 1.06, 0.182) | X | Rest pose is OFF, bat tipped 25° down. ON is −50° from rest, bat up. `toggle_1` is on the player's left. |
-| `needle_load` | dial centre, (0, 1.225, 0.201) | Z | Rest points straight up, half load. Full scale is about ±60°; the game maps the box's load to the angle. |
+
+No load gauge: the load per group is on the central power screen (initiator, 2026-10-18).
 
 ## Lights (emissive by the game)
 
@@ -26,7 +27,7 @@ Each has its own material named like the node. Unlit, they are dark (`lamp_off`)
 | Node / material | Where | Meaning |
 |---|---|---|
 | `lamp_group_1`, `lamp_group_2` | above each toggle | The group gets power. |
-| `lamp_fault` | right of the dial | The box is damaged or broken; may blink. |
+| `lamp_fault` | in the middle between door and toggles | The box is damaged or broken; may blink. |
 
 ## Texture quads
 

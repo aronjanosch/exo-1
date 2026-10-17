@@ -90,6 +90,12 @@ pub enum Request {
     StoreCanister { rack: RackId, rack_slot: usize },
     /// Fits the canister of a container place into the worn suit; the canister it held takes that place.
     FitFrom { rack: RackId, rack_slot: usize },
+    /// Fits the air canister of a bar slot into the suit lying in a container place (a suit locker);
+    /// the canister it held (if any) takes the bar slot (a swap).
+    FitStoredCanister { slot: usize, rack: RackId, rack_slot: usize },
+    /// Takes the canister out of the suit lying in a container place into the bar slot `slot`, or
+    /// the first free one (None).
+    PullStoredCanister { rack: RackId, rack_slot: usize, slot: Option<usize> },
     /// Opens the container window: the player holds the container until `Close` (one player per
     /// container). Refused while another holds it.
     Open { rack: RackId },
@@ -369,6 +375,20 @@ impl Host {
                     out.push(Event::Rack { rack: *rack, contents });
                 }),
             },
+            Request::FitStoredCanister { slot, rack, rack_slot } => match self.racks.get(rack).cloned() {
+                None => Err(Reject::NoRack),
+                Some(mut contents) => fit_stored(&mut inv, &mut contents, *slot, *rack_slot).map(|()| {
+                    self.racks.insert(*rack, contents.clone());
+                    out.push(Event::Rack { rack: *rack, contents });
+                }),
+            },
+            Request::PullStoredCanister { rack, rack_slot, slot } => match self.racks.get(rack).cloned() {
+                None => Err(Reject::NoRack),
+                Some(mut contents) => pull_stored(&self.defs, &mut inv, &mut contents, *rack_slot, *slot).map(|()| {
+                    self.racks.insert(*rack, contents.clone());
+                    out.push(Event::Rack { rack: *rack, contents });
+                }),
+            },
             Request::Swap { slot, rack } => match self.racks.get(rack).cloned() {
                 None => Err(Reject::NoRack),
                 Some(mut contents) => swap(&mut inv, &mut contents, *slot).map(|()| {
@@ -596,6 +616,14 @@ fn predict(defs: &ItemDefs, loose: &BTreeMap<LooseId, Loose>, racks: &BTreeMap<R
             let mut contents = racks.get(rack).cloned().ok_or(Reject::NoRack)?;
             fit_from(defs, view, &mut contents, *rack_slot)?;
         }
+        Request::FitStoredCanister { slot, rack, rack_slot } => {
+            let mut contents = racks.get(rack).cloned().ok_or(Reject::NoRack)?;
+            fit_stored(view, &mut contents, *slot, *rack_slot)?;
+        }
+        Request::PullStoredCanister { rack, rack_slot, slot } => {
+            let mut contents = racks.get(rack).cloned().ok_or(Reject::NoRack)?;
+            pull_stored(defs, view, &mut contents, *rack_slot, *slot)?;
+        }
         Request::Swap { slot, rack } => {
             let mut contents = racks.get(rack).cloned().ok_or(Reject::NoRack)?;
             swap(view, &mut contents, *slot)?;
@@ -640,6 +668,8 @@ fn rack_of(req: &Request) -> Option<RackId> {
         | Request::WearFrom { rack, .. }
         | Request::StoreCanister { rack, .. }
         | Request::FitFrom { rack, .. }
+        | Request::FitStoredCanister { rack, .. }
+        | Request::PullStoredCanister { rack, .. }
         | Request::Open { rack } => Some(*rack),
         _ => None,
     }
@@ -900,6 +930,55 @@ fn fit_from(defs: &ItemDefs, inv: &mut Inventory, c: &mut Container, rack_slot: 
     if let Some(fill) = suit.item.condition.replace(can.item.condition.unwrap_or(100.0)) {
         trial_c.insert_at(&[], rack_slot, canister_of(defs, fill)?).map_err(|r| refusal(r.why))?;
     }
+    *inv = trial_inv;
+    *c = trial_c;
+    Ok(())
+}
+
+/// The suit lying in a container place, taken out for a change of its canister (the container's own
+/// access rules apply: `take` and `insert_at`). Put back with `put_back_suit`.
+fn take_stored_suit(inv: &Inventory, c: &mut Container, rack_slot: usize) -> Result<Stack, Reject> {
+    let stack = c.slot(rack_slot).cloned().ok_or(if rack_slot < c.len() { Reject::EmptySlot } else { Reject::NoSuchSlot })?;
+    if !is_suit(&stack) {
+        return Err(Reject::Invalid);
+    }
+    c.take(&carried(inv), rack_slot, 1).map_err(refusal)
+}
+
+fn put_back_suit(inv: &Inventory, c: &mut Container, rack_slot: usize, suit: Stack) -> Result<(), Reject> {
+    c.insert_at(&carried(inv), rack_slot, suit).map_err(|r| refusal(r.why))
+}
+
+/// The canister of a bar slot goes into the suit of a container place; the canister the suit held takes the slot.
+fn fit_stored(inv: &mut Inventory, c: &mut Container, slot: usize, rack_slot: usize) -> Result<(), Reject> {
+    let can = bar_stack(inv, slot)?;
+    if !is_canister(&can) {
+        return Err(Reject::NotAllowed);
+    }
+    let mut trial_c = c.clone();
+    let mut suit = take_stored_suit(inv, &mut trial_c, rack_slot)?;
+    let held = suit.item.condition.replace(can.item.condition.unwrap_or(100.0));
+    put_back_suit(inv, &mut trial_c, rack_slot, suit)?;
+    let mut trial_inv = inv.clone();
+    trial_inv.take_slot(slot).map_err(Reject::from)?;
+    if let Some(fill) = held {
+        let mut old = can.clone();
+        old.item.condition = Some(fill);
+        put_in_bar(&mut trial_inv, Some(slot), old)?;
+    }
+    *inv = trial_inv;
+    *c = trial_c;
+    Ok(())
+}
+
+/// The canister of the suit in a container place comes out into a bar slot (None: the first free one).
+fn pull_stored(defs: &ItemDefs, inv: &mut Inventory, c: &mut Container, rack_slot: usize, slot: Option<usize>) -> Result<(), Reject> {
+    let mut trial_c = c.clone();
+    let mut suit = take_stored_suit(inv, &mut trial_c, rack_slot)?;
+    let fill = suit.item.condition.take().ok_or(Reject::EmptySlot)?;
+    put_back_suit(inv, &mut trial_c, rack_slot, suit)?;
+    let mut trial_inv = inv.clone();
+    put_in_bar(&mut trial_inv, slot, canister_of(defs, fill)?)?;
     *inv = trial_inv;
     *c = trial_c;
     Ok(())

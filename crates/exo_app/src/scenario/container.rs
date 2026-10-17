@@ -43,7 +43,7 @@ fn in_crate(w: &World, kind: &str) -> u32 {
 fn centre(w: &World, p: Place) -> Vec2 {
     let n = items(w).client.racks.get(&CRATE).map_or(0, |c| c.len());
     let cols = w.resource::<ContainerSpecs>().get(CRATE).map_or(4, |s| s.cols);
-    place_centre(w.resource::<HudWindow>().0, n, cols, &w.resource::<crate::displays::DisplayLook>().0.hud.bar, p)
+    place_centre(w.resource::<HudWindow>().0, n, cols, false, &w.resource::<crate::displays::DisplayLook>().0.hud.bar, p)
 }
 
 /// The first place of the crate holding a kind.
@@ -329,7 +329,7 @@ pub(super) fn container_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
     s.push(Box::new(|w, _| {
         let win = w.resource::<HudWindow>().0;
         let bar = w.resource::<crate::displays::DisplayLook>().0.hud.bar.clone();
-        pointer_at(w, Some(place_centre(win, 0, 4, &bar, Place::Suit)), true);
+        pointer_at(w, Some(place_centre(win, 0, 4, false, &bar, Place::Suit)), true);
         true
     }));
     s.push(wait(0.15));

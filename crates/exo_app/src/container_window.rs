@@ -46,8 +46,11 @@ const DASHES: u32 = 200;
 /// line and 24 px before the bar's slots.
 const WORN_W: f32 = 2.0 * PLACE + 22.0;
 const WORN_EXTRA: f32 = WORN_W + 24.0 + 2.0 + 24.0;
-/// Parts per place: the bar's slots, the container's places, the worn suit and its canister.
-const N_PARTS: usize = BAR_SLOTS + MAX_PLACES + 2;
+/// Parts per place: the bar's slots, the container's places, the worn suit and its canister, the
+/// canister place beside each stored suit.
+const N_PARTS: usize = BAR_SLOTS + 2 * MAX_PLACES + 2;
+/// The gap between a suit's place and its canister place, in the worn group and beside a stored suit (px).
+const PAIR_GAP: f32 = 22.0;
 /// Below this share of air the canister's gauge and caption turn amber.
 const LOW_AIR: f64 = 0.2;
 
@@ -108,6 +111,8 @@ pub enum Place {
     Suit,
     /// The worn suit's air canister place.
     Air,
+    /// The canister place beside the suit in place `i` of the container (a suit locker).
+    BoxAir(usize),
 }
 
 impl Place {
@@ -116,8 +121,14 @@ impl Place {
             i if i < BAR_SLOTS => Place::Bar(i),
             i if i < BAR_SLOTS + MAX_PLACES => Place::Box(i - BAR_SLOTS),
             i if i == BAR_SLOTS + MAX_PLACES => Place::Suit,
-            _ => Place::Air,
+            i if i == BAR_SLOTS + MAX_PLACES + 1 => Place::Air,
+            i => Place::BoxAir(i - BAR_SLOTS - MAX_PLACES - 2),
         }
+    }
+
+    /// The canister places: the worn suit's and a stored suit's.
+    fn is_air(self) -> bool {
+        matches!(self, Place::Air | Place::BoxAir(_))
     }
 }
 
@@ -125,7 +136,7 @@ impl Place {
 fn worn_places(window: Vec2, bar: &display_core::hud::BarLook) -> [Vec2; 2] {
     let (first, _) = slot_rect(0, true, window, bar);
     let x0 = first.x - WORN_EXTRA;
-    [Vec2::new(x0, first.y), Vec2::new(x0 + PLACE + 22.0, first.y)]
+    [Vec2::new(x0, first.y), Vec2::new(x0 + PLACE + PAIR_GAP, first.y)]
 }
 
 #[derive(Resource, Default, Debug)]
@@ -188,13 +199,18 @@ pub fn window_plugin(app: &mut App) {
 
 // ---- geometry ----
 
+/// Whether a container's places are suit places, each with a canister place beside it (a suit locker).
+pub fn is_paired(c: &Container) -> bool {
+    c.len() > 0 && (0..c.len()).all(|i| c.rule(i).allow.iter().any(|t| t.as_str() == item_core::SUIT_TAG))
+}
+
 struct Geo {
     panel: (Vec2, Vec2),
     places: Vec<Vec2>,
     bar_panel: (Vec2, Vec2),
 }
 
-fn geometry(window: Vec2, n: usize, cols: usize, bar: &display_core::hud::BarLook) -> Geo {
+fn geometry(window: Vec2, n: usize, cols: usize, paired: bool, bar: &display_core::hud::BarLook) -> Geo {
     let cols = cols.clamp(1, MAX_PLACES);
     let (first, size) = slot_rect(0, true, window, bar);
     let (last, _) = slot_rect(BAR_SLOTS - 1, true, window, bar);
@@ -202,7 +218,9 @@ fn geometry(window: Vec2, n: usize, cols: usize, bar: &display_core::hud::BarLoo
     let bar_top = first.y - PAD - BAR_HEAD_H - BAR_HEAD_GAP;
     let bar_h = PAD + BAR_HEAD_H + BAR_HEAD_GAP + size + BAR_PAD_BOTTOM;
     let rows = n.div_ceil(cols).max(1);
-    let grid_w = cols as f32 * PLACE + (cols as f32 - 1.0) * GAP;
+    // A suit place and its canister place are one cell.
+    let cell = if paired { 2.0 * PLACE + PAIR_GAP } else { PLACE };
+    let grid_w = cols as f32 * cell + (cols as f32 - 1.0) * GAP;
     let grid_h = rows as f32 * PLACE + (rows as f32 - 1.0) * GAP;
     let panel_h = 2.0 * BORDER + 2.0 * PAD + HEAD_H + SECTION_GAP + RULE_H + SECTION_GAP + grid_h;
     let panel_top = bar_top - STACK_GAP - panel_h;
@@ -210,7 +228,7 @@ fn geometry(window: Vec2, n: usize, cols: usize, bar: &display_core::hud::BarLoo
     let inner_w = PANEL_W - 2.0 * (BORDER + PAD);
     let x0 = panel_left + BORDER + PAD + (inner_w - grid_w) * 0.5;
     let y0 = panel_top + BORDER + PAD + HEAD_H + SECTION_GAP + RULE_H + SECTION_GAP;
-    let places = (0..n).map(|i| Vec2::new(x0 + (i % cols) as f32 * (PLACE + GAP), y0 + (i / cols) as f32 * (PLACE + GAP))).collect();
+    let places = (0..n).map(|i| Vec2::new(x0 + (i % cols) as f32 * (cell + GAP), y0 + (i / cols) as f32 * (PLACE + GAP))).collect();
     Geo { panel: (Vec2::new(panel_left, panel_top), Vec2::new(PANEL_W, panel_h)), places, bar_panel: (Vec2::new(first.x - PAD - WORN_EXTRA, bar_top), Vec2::new(bar_w + WORN_EXTRA, bar_h)) }
 }
 
@@ -219,19 +237,20 @@ fn inside(p: Vec2, at: Vec2, size: f32) -> bool {
 }
 
 /// The middle of a place on screen, for scripts that drive the pointer.
-pub fn place_centre(window: Vec2, n: usize, cols: usize, bar: &display_core::hud::BarLook, p: Place) -> Vec2 {
+pub fn place_centre(window: Vec2, n: usize, cols: usize, paired: bool, bar: &display_core::hud::BarLook, p: Place) -> Vec2 {
     match p {
         Place::Bar(i) => {
             let (at, size) = slot_rect(i, true, window, bar);
             at + Vec2::splat(size * 0.5)
         }
-        Place::Box(i) => geometry(window, n, cols, bar).places.get(i).copied().unwrap_or(Vec2::ZERO) + Vec2::splat(PLACE * 0.5),
+        Place::Box(i) => geometry(window, n, cols, paired, bar).places.get(i).copied().unwrap_or(Vec2::ZERO) + Vec2::splat(PLACE * 0.5),
+        Place::BoxAir(i) => geometry(window, n, cols, paired, bar).places.get(i).copied().unwrap_or(Vec2::ZERO) + Vec2::new(PLACE + PAIR_GAP, 0.0) + Vec2::splat(PLACE * 0.5),
         Place::Suit => worn_places(window, bar)[0] + Vec2::splat(PLACE * 0.5),
         Place::Air => worn_places(window, bar)[1] + Vec2::splat(PLACE * 0.5),
     }
 }
 
-fn place_at(p: Vec2, geo: &Geo, window: Vec2, bar: &display_core::hud::BarLook) -> Option<Place> {
+fn place_at(p: Vec2, geo: &Geo, paired: bool, window: Vec2, bar: &display_core::hud::BarLook) -> Option<Place> {
     if let Some(i) = slot_at(p, true, window, bar) {
         return Some(Place::Bar(i));
     }
@@ -241,6 +260,9 @@ fn place_at(p: Vec2, geo: &Geo, window: Vec2, bar: &display_core::hud::BarLook) 
     }
     if inside(p, w[1], PLACE) {
         return Some(Place::Air);
+    }
+    if paired && let Some(i) = geo.places.iter().position(|at| inside(p, *at + Vec2::new(PLACE + PAIR_GAP, 0.0), PLACE)) {
+        return Some(Place::BoxAir(i));
     }
     geo.places.iter().position(|at| inside(p, *at, PLACE)).map(Place::Box)
 }
@@ -283,7 +305,7 @@ fn reason_text(why: &Reject, c: Option<&Container>, place: Option<usize>, at: Pl
         (Reject::NotAllowed, Place::Bar(_)) => return "NO SUIT IN BAR".into(),
         (_, Place::Suit) => return "SUIT ONLY".into(),
         (Reject::Invalid, Place::Air) => return "NO SUIT".into(),
-        (_, Place::Air) => return "AIR CANISTERS ONLY".into(),
+        (_, Place::Air | Place::BoxAir(_)) => return "AIR CANISTERS ONLY".into(),
         _ => {}
     }
     match why {
@@ -331,7 +353,7 @@ fn holds_suit(items: &Items, rack: Option<RackId>, at: Place) -> bool {
         Place::Suit => items.client.view.worn.is_some(),
         Place::Box(i) => rack.and_then(|r| items.client.racks.get(&r)).and_then(|c| c.slot(i)).is_some_and(is),
         Place::Bar(i) => items.client.view.slot(i).is_some_and(is),
-        Place::Air => false,
+        Place::Air | Place::BoxAir(_) => false,
     }
 }
 
@@ -350,6 +372,7 @@ fn click_request(items: &Items, rack: Option<RackId>, at: Place) -> Option<Reque
             Some(Request::StoreWorn { rack, rack_slot: fits.unwrap_or(0) })
         }
         (Place::Air, _) => Some(Request::PullCanister { slot: None }),
+        (Place::BoxAir(rack_slot), Some(rack)) => Some(Request::PullStoredCanister { rack, rack_slot, slot: None }),
         _ => None,
     }
 }
@@ -369,6 +392,9 @@ fn drop_request(rack: Option<RackId>, from: Place, to: Place) -> Option<Request>
         (Place::Air, Place::Bar(slot), _) => Some(Request::PullCanister { slot: Some(slot) }),
         (Place::Box(rack_slot), Place::Air, Some(rack)) => Some(Request::FitFrom { rack, rack_slot }),
         (Place::Air, Place::Box(rack_slot), Some(rack)) => Some(Request::StoreCanister { rack, rack_slot }),
+        // The canister of a suit lying in the locker: the same moves, to and from the bar.
+        (Place::Bar(slot), Place::BoxAir(rack_slot), Some(rack)) => Some(Request::FitStoredCanister { slot, rack, rack_slot }),
+        (Place::BoxAir(rack_slot), Place::Bar(slot), Some(rack)) => Some(Request::PullStoredCanister { rack, rack_slot, slot: Some(slot) }),
         _ => None,
     }
 }
@@ -389,6 +415,7 @@ fn occupied(items: &Items, rack: Option<RackId>, at: Place) -> bool {
         Place::Box(i) => rack.and_then(|r| items.client.racks.get(&r)).is_some_and(|c| c.slot(i).is_some()),
         Place::Suit => items.client.view.worn.is_some(),
         Place::Air => items.client.view.worn_air().is_some(),
+        Place::BoxAir(i) => rack.and_then(|r| items.client.racks.get(&r)).and_then(|c| c.slot(i)).is_some_and(|s| s.item.condition.is_some()) && holds_suit(items, rack, Place::Box(i)),
     }
 }
 
@@ -437,8 +464,14 @@ fn container_input(
     let n = rack.and_then(|r| items.client.racks.get(&r)).map_or(0, |c| c.len()).min(MAX_PLACES);
     let cols = rack.and_then(|r| specs.get(r)).map_or(4, |s| s.cols);
     let bar = &look.0.hud.bar;
-    let geo = geometry(window.0, n, cols, bar);
-    let under = controls.pointer.and_then(|p| place_at(p, &geo, window.0, bar)).filter(|p| rack.is_some() || matches!(p, Place::Suit | Place::Air | Place::Bar(_)));
+    let paired = rack.and_then(|r| items.client.racks.get(&r)).is_some_and(is_paired);
+    let geo = geometry(window.0, n, cols, paired, bar);
+    // A canister place beside a stored suit is there only while a suit lies in that place.
+    let under = controls
+        .pointer
+        .and_then(|p| place_at(p, &geo, paired, window.0, bar))
+        .filter(|p| rack.is_some() || matches!(p, Place::Suit | Place::Air | Place::Bar(_)))
+        .filter(|p| !matches!(p, Place::BoxAir(i) if !holds_suit(&items, rack, Place::Box(*i))));
     cw.hover = under;
     let down = controls.pointer_down || controls.click;
     // Without a container the bar's own gestures stay with the Tab inventory; ours are the worn suit's
@@ -507,6 +540,8 @@ enum CwPart {
     WornHeader,
     Sep,
     Link,
+    /// The line from the stored suit in place `i` to its canister place.
+    BoxLink(usize),
     /// Part `i` (`Place::part`): the container's places, the worn places, and a layer over the bar's slots.
     Place(usize),
     Code(usize),
@@ -566,6 +601,9 @@ fn build_window(mut commands: Commands, fonts: Option<Res<HudFonts>>, look: Res<
                 r.spawn(hud_text(&fonts.mono, "KEYS 1–8", 14.0, dim(), h));
             });
         });
+    for i in 0..MAX_PLACES {
+        commands.spawn((HudPart, CwPart::BoxLink(i), Node { width: Val::Px(PAIR_GAP), height: Val::Px(2.0), display: none, ..abs() }, BackgroundColor(edge()), GlobalZIndex(3)));
+    }
     for i in 0..N_PARTS {
         commands
             .spawn((HudPart, CwPart::Place(i), Node { width: Val::Px(PLACE), height: Val::Px(PLACE), border: UiRect::all(Val::Px(BORDER)), display: none, ..abs() }, BackgroundColor(Color::NONE), BorderColor::all(Color::NONE), GlobalZIndex(3)))
@@ -647,7 +685,8 @@ fn draw_window(
     let show = ui.open;
     let (n, cols) = container.map_or((0, 4), |(r, c)| (c.len().min(MAX_PLACES), specs.get(r).map_or(4, |s| s.cols)));
     let bar = &look.0.hud.bar;
-    let geo = geometry(window.0, n, cols, bar);
+    let paired = container.is_some_and(|(_, c)| is_paired(c));
+    let geo = geometry(window.0, n, cols, paired, bar);
     let wp = worn_places(window.0, bar);
     let dragging = cw.dragging();
     let suit_stack = items.client.view.worn.as_ref();
@@ -660,8 +699,10 @@ fn draw_window(
         Place::Bar(i) => items.client.view.slot(i),
         Place::Box(i) => container.and_then(|(_, c)| c.slot(i)),
         Place::Suit => suit_stack,
-        Place::Air => None,
+        Place::Air | Place::BoxAir(_) => None,
     };
+    // Whether a suit lies in place `i` of the open container: its canister place shows.
+    let stored_suit = |i: usize| paired && i < n && container.is_some_and(|(_, c)| c.slot(i).is_some_and(|s| s.item.has_tag(&item_core::container::Tag::new(item_core::SUIT_TAG))));
     let reason = |why: &Reject, p: Place| reason_text(why, container.map(|(_, c)| c), if let Place::Box(i) = p { Some(i) } else { None }, p);
     let look_of = |p: Place| -> Look {
         if dragging && cw.drag == Some(p) {
@@ -683,25 +724,34 @@ fn draw_window(
         if p == Place::Air && !is_suit {
             return Look::Dim;
         }
-        if !dragging && cw.hover == Some(p) && p != Place::Air { Look::Hover } else { Look::Idle }
+        if !dragging && cw.hover == Some(p) && !p.is_air() { Look::Hover } else { Look::Idle }
     };
     let live = |p: Place| match p {
         Place::Bar(_) | Place::Suit | Place::Air => show,
         Place::Box(i) => show_box && i < n,
+        Place::BoxAir(i) => show_box && stored_suit(i),
     };
     // The air in the suit's canister (0..1), and the fill of a canister in a box.
     let air = items.client.view.worn_air().map(|c| (c / 100.0).clamp(0.0, 1.0));
-    let fill_of = |p: Place| -> Option<f64> {
+    // The air in the canister of a suit: the worn one's, or the one lying in a locker place.
+    let air_of = |p: Place| -> Option<f64> {
         match p {
             Place::Air => air,
+            Place::BoxAir(i) => container.and_then(|(_, c)| c.slot(i)).filter(|_| stored_suit(i)).and_then(|s| s.item.condition).map(|c| (c / 100.0).clamp(0.0, 1.0)),
+            _ => None,
+        }
+    };
+    let fill_of = |p: Place| -> Option<f64> {
+        match p {
+            Place::Air | Place::BoxAir(_) => air_of(p),
             Place::Box(i) if is_box => container.and_then(|(_, c)| c.slot(i)).filter(|s| s.item.kind.as_str() == "air_canister").and_then(|s| s.item.condition).map(|c| (c / 100.0).clamp(0.0, 1.0)),
             _ => None,
         }
     };
     // A box's gauge is amber while it waits for power; a canister in the suit goes amber when low, red when empty.
     let gauge_colour = |p: Place| match (p, fill_of(p)) {
-        (Place::Air, Some(a)) if a <= 0.0 => red(),
-        (Place::Air, Some(a)) if a < LOW_AIR => amber(),
+        (Place::Air | Place::BoxAir(_), Some(a)) if a <= 0.0 => red(),
+        (Place::Air | Place::BoxAir(_), Some(a)) if a < LOW_AIR => amber(),
         (Place::Box(_), Some(a)) if !powered && a < 1.0 => amber(),
         _ => accent(),
     };
@@ -728,6 +778,14 @@ fn draw_window(
             }
             CwPart::BarHeader => edit(&mut node, |nd| nd.width = Val::Px(geo.bar_panel.1.x - 2.0 * PAD - WORN_EXTRA)),
             CwPart::Sep => edit(&mut node, |nd| nd.height = Val::Px(geo.bar_panel.1.y - 2.0 * PAD - BAR_PAD_BOTTOM)),
+            CwPart::BoxLink(i) => {
+                let at = geo.places.get(i).copied().unwrap_or(Vec2::ZERO);
+                edit(&mut node, |nd| {
+                    nd.display = if show_box && stored_suit(i) { Display::Flex } else { Display::None };
+                    nd.left = Val::Px(at.x + PLACE);
+                    nd.top = Val::Px(at.y + PLACE * 0.5 - 1.0);
+                });
+            }
             CwPart::Place(idx) => {
                 let p = Place::of_part(idx);
                 let at = match p {
@@ -735,6 +793,7 @@ fn draw_window(
                     Place::Box(i) => geo.places.get(i).copied().unwrap_or(Vec2::ZERO),
                     Place::Suit => wp[0],
                     Place::Air => wp[1],
+                    Place::BoxAir(i) => geo.places.get(i).copied().unwrap_or(Vec2::ZERO) + Vec2::new(PLACE + PAIR_GAP, 0.0),
                 };
                 let l = look_of(p);
                 let visible = live(p) && (!matches!(p, Place::Bar(_)) || matches!(l, Look::Refuse(_) | Look::Accept));
@@ -778,7 +837,7 @@ fn draw_window(
                     Look::Dim => rgb(0x2c, 0x3a, 0x44),
                     _ if bar_layer => Color::NONE,
                     Look::Lifted => line(),
-                    Look::Idle if stack_at(p).is_some() || (p == Place::Air && air.is_some()) => edge(),
+                    Look::Idle if stack_at(p).is_some() || (p.is_air() && air_of(p).is_some()) => edge(),
                     _ => line(),
                 };
                 set_border(&mut border, want);
@@ -799,7 +858,7 @@ fn draw_window(
                     Look::Lifted => rgb(0x0b, 0x13, 0x18),
                     Look::Dim => rgb(0x0b, 0x13, 0x18),
                     Look::Idle if bar_layer => Color::NONE,
-                    Look::Idle if stack_at(p).is_some() || (p == Place::Air && air.is_some()) => rgb(0x1a, 0x2a, 0x33),
+                    Look::Idle if stack_at(p).is_some() || (p.is_air() && air_of(p).is_some()) => rgb(0x1a, 0x2a, 0x33),
                     Look::Idle => rgb(0x0b, 0x13, 0x18),
                 };
                 set_bg(&mut bg, want);
@@ -818,7 +877,7 @@ fn draw_window(
         None => (String::new(), String::new(), (String::new(), fg())),
     };
     let ghost = cw.drag.filter(|_| dragging).and_then(stack_at);
-    let ghost_air = cw.drag == Some(Place::Air) && dragging;
+    let ghost_air = cw.drag.is_some_and(Place::is_air) && dragging;
     let shown = |p: Place| live(p) && !matches!(look_of(p), Look::Lifted | Look::Refuse(_));
     for (part, mut text, mut colour) in &mut texts {
         match *part {
@@ -832,7 +891,7 @@ fn draw_window(
                 let p = Place::of_part(idx);
                 let t = match p {
                     Place::Bar(_) => String::new(),
-                    Place::Air => if shown(p) && air.is_some() { "AIR".to_string() } else { String::new() },
+                    Place::Air | Place::BoxAir(_) => if shown(p) && air_of(p).is_some() { "AIR".to_string() } else { String::new() },
                     _ => if shown(p) { stack_at(p).map(code_of).unwrap_or_default() } else { String::new() },
                 };
                 set_text(&mut text, &t);
@@ -856,11 +915,11 @@ fn draw_window(
                 let (t, c) = match p {
                     Place::Suit if suit_stack.is_some() => ("SUIT".to_string(), dim()),
                     Place::Suit => ("NO SUIT".to_string(), dim()),
-                    Place::Air => match air {
+                    Place::Air | Place::BoxAir(_) => match air_of(p) {
                         Some(a) if a <= 0.0 => ("× EMPTY".to_string(), red()),
                         Some(a) if a < LOW_AIR => (format!("! LOW {:.0}%", a * 100.0), amber()),
                         Some(a) => (format!("AIR {:.0}%", a * 100.0), dim()),
-                        None if is_suit => ("NO CANISTER".to_string(), dim()),
+                        None if is_suit || p != Place::Air => ("NO CANISTER".to_string(), dim()),
                         None => (String::new(), dim()),
                     },
                     // A canister in a box: full, filling with power, or waiting for it.

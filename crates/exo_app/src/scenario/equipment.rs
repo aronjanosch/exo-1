@@ -75,7 +75,8 @@ fn box_fill(w: &World, rack: RackId, slot: usize) -> Option<f64> {
 fn centre(w: &World, rack: Option<RackId>, p: Place) -> Vec2 {
     let n = rack.and_then(|r| items(w).client.racks.get(&r)).map_or(0, |c| c.len());
     let cols = rack.and_then(|r| w.resource::<ContainerSpecs>().get(r)).map_or(4, |s| s.cols);
-    place_centre(w.resource::<HudWindow>().0, n, cols, &w.resource::<crate::displays::DisplayLook>().0.hud.bar, p)
+    let paired = rack.and_then(|r| items(w).client.racks.get(&r)).is_some_and(crate::container_window::is_paired);
+    place_centre(w.resource::<HudWindow>().0, n, cols, paired, &w.resource::<crate::displays::DisplayLook>().0.hud.bar, p)
 }
 
 fn pointer_at(w: &mut World, p: Option<Vec2>, down: bool) {
@@ -364,6 +365,45 @@ pub(super) fn equipment_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
         true
     }));
     s.push(conserved("suit stored"));
+    s.push(shot_step("equipment-stored-suit"));
+    s.push(tap_then("equipment: F closes the locker", KeyCode::KeyF, |w| cw(w).rack.is_none()));
+
+    // 7. The stored suit's canister place: a canister from the box goes in by a drag (the old one comes
+    // out into the bar), a click takes it out again.
+    s.extend(open("equipment: F opens canister box 1 again", BOX1, "equip_box_1", front(0, 1.2)));
+    s.extend(click("equipment: click a canister in the box", Some(BOX1), |w| (0..4).find(|i| items(w).client.racks[&BOX1].slot(*i).is_some()).map(Place::Box)));
+    s.push(Box::new(|w, c| {
+        let slot = bar_slot_of(w, "air_canister");
+        let fill = slot.and_then(|i| items(w).host.inventory(me(w)).slot(i).and_then(|s| s.item.condition));
+        check(c, fill.is_some(), "equipment: the box's canister is in the bar".into());
+        c.v.insert("spare", fill.unwrap_or(0.0));
+        true
+    }));
+    s.push(tap_then("equipment: F closes the box", KeyCode::KeyF, |w| cw(w).rack.is_none()));
+    s.extend(open("equipment: F opens suit locker 1 for the canister", SUIT1, "equip_suit_1", front(0, 1.2)));
+    s.push(Box::new(|w, c| {
+        let stored = items(w).client.racks[&SUIT1].slot(0).and_then(|s| s.item.condition);
+        check(c, stored.is_some_and(|a| a > 1.0), format!("equipment: the stored suit shows a canister ({stored:?})"));
+        c.v.insert("stored", stored.unwrap_or(0.0));
+        true
+    }));
+    s.push(shot_step("equipment-stored-canister"));
+    s.extend(drag("equipment: drag the bar's canister onto the stored suit's canister place", Some(SUIT1), |w| bar_slot_of(w, "air_canister").map(Place::Bar), |_| Some(Place::BoxAir(0))));
+    s.push(Box::new(|w, c| {
+        let stored = items(w).host.racks[&SUIT1].slot(0).and_then(|s| s.item.condition).unwrap_or(-1.0);
+        let old = bar_slot_of(w, "air_canister").and_then(|i| items(w).host.inventory(me(w)).slot(i).and_then(|s| s.item.condition));
+        check(c, (stored - c.v["spare"]).abs() < 1e-6, format!("equipment: the stored suit holds the dragged canister ({stored:.1} %)"));
+        check(c, old.is_some_and(|o| (o - c.v["stored"]).abs() < 1e-6), format!("equipment: the suit's old canister took the dragged one's slot ({old:?})"));
+        true
+    }));
+    s.push(conserved("canister fitted to the stored suit"));
+    s.extend(click("equipment: click the stored suit's canister", Some(SUIT1), |_| Some(Place::BoxAir(0))));
+    s.push(Box::new(|w, c| {
+        check(c, items(w).host.racks[&SUIT1].slot(0).is_some_and(|s| s.item.condition.is_none()), "equipment: the stored suit has no canister now".into());
+        check(c, items(w).host.inventory(me(w)).count("air_canister") == 2, "equipment: both canisters are in the bar".into());
+        true
+    }));
+    s.push(conserved("canister pulled from the stored suit"));
     s.push(tap_then("equipment: F closes the locker", KeyCode::KeyF, |w| cw(w).rack.is_none()));
     s.push(Box::new(|w, c| {
         pointer_at(w, None, false);

@@ -320,3 +320,92 @@ fn the_suits_canister_goes_into_a_canister_box_and_back_but_not_into_a_suit_lock
     do_(&mut host, Request::StoreWorn { rack: 7, rack_slot: 0 }).unwrap();
     assert_eq!(do_(&mut host, Request::FitFrom { rack: 9, rack_slot: 1 }), Err(Reject::Invalid), "no suit worn");
 }
+
+#[test]
+fn a_canister_swaps_into_a_stored_suit_and_comes_out_again() {
+    let mut host = Host::new(defs());
+    host.add_container(7, locker("suit", 2));
+    host.racks.get_mut(&7).unwrap().insert_at(&[], 0, suit(Some(30.0))).unwrap();
+    host.racks.get_mut(&7).unwrap().insert_at(&[], 1, suit(None)).unwrap();
+    put(&mut host, 2, canister(100.0));
+    put(&mut host, 5, canister(55.0));
+    let before = census(&host);
+    do_(&mut host, Request::FitStoredCanister { slot: 2, rack: 7, rack_slot: 0 }).unwrap();
+    assert_eq!(host.racks[&7].slot(0).and_then(|s| s.item.condition), Some(100.0), "the full canister is in the stored suit");
+    assert_eq!(host.inventory(1).slot(2).and_then(|s| s.item.condition), Some(30.0), "the old one took the dragged canister's slot");
+    assert_eq!(census(&host), before);
+    // Into a suit without one: the slot is free afterwards.
+    do_(&mut host, Request::FitStoredCanister { slot: 5, rack: 7, rack_slot: 1 }).unwrap();
+    assert_eq!(host.racks[&7].slot(1).and_then(|s| s.item.condition), Some(55.0));
+    assert!(host.inventory(1).slot(5).is_none());
+    assert_eq!(census(&host), before);
+    // Out: to the asked slot, then to the first free one.
+    do_(&mut host, Request::PullStoredCanister { rack: 7, rack_slot: 1, slot: Some(6) }).unwrap();
+    assert_eq!(host.inventory(1).slot(6).and_then(|s| s.item.condition), Some(55.0));
+    assert_eq!(host.racks[&7].slot(1).and_then(|s| s.item.condition), None, "no canister in the stored suit now");
+    do_(&mut host, Request::PullStoredCanister { rack: 7, rack_slot: 0, slot: None }).unwrap();
+    assert!(host.racks[&7].slot(0).is_some_and(|s| s.item.condition.is_none()));
+    assert_eq!(census(&host), before);
+    assert!(host.inventory(1).worn.is_none(), "the worn suit was never touched");
+}
+
+#[test]
+fn refused_stored_canister_moves_change_nothing() {
+    let mut host = Host::new(defs());
+    host.add_container(7, locker("suit", 2));
+    host.add_container(8, Container::new(vec![SlotRule::any(1); 2], Access::Open));
+    host.racks.get_mut(&7).unwrap().insert_at(&[], 0, suit(Some(30.0))).unwrap();
+    host.racks.get_mut(&7).unwrap().insert_at(&[], 1, suit(None)).unwrap();
+    host.racks.get_mut(&8).unwrap().insert_at(&[], 0, defs().get("welder").unwrap().stack_of(1)).unwrap();
+    put(&mut host, 0, defs().get("welder").unwrap().stack_of(1));
+    put(&mut host, 1, canister(80.0));
+    let before = (census(&host), host.inventory(1), host.racks.clone());
+    let fit = |slot, rack, rack_slot| Request::FitStoredCanister { slot, rack, rack_slot };
+    assert_eq!(do_(&mut host, fit(0, 7, 0)), Err(Reject::NotAllowed), "AIR CANISTERS ONLY");
+    assert_eq!(do_(&mut host, fit(4, 7, 0)), Err(Reject::EmptySlot), "nothing in that bar slot");
+    assert_eq!(do_(&mut host, fit(1, 8, 0)), Err(Reject::Invalid), "a welder is no suit");
+    assert_eq!(do_(&mut host, fit(1, 8, 1)), Err(Reject::EmptySlot), "no suit in that place");
+    assert_eq!(do_(&mut host, fit(1, 7, 9)), Err(Reject::NoSuchSlot));
+    assert_eq!(do_(&mut host, fit(1, 99, 0)), Err(Reject::NoRack));
+    let pull = |rack, rack_slot, slot| Request::PullStoredCanister { rack, rack_slot, slot };
+    assert_eq!(do_(&mut host, pull(7, 1, None)), Err(Reject::EmptySlot), "no canister to pull");
+    assert_eq!(do_(&mut host, pull(8, 0, None)), Err(Reject::Invalid));
+    assert_eq!(do_(&mut host, pull(7, 0, Some(0))), Err(Reject::Full), "the bar slot is taken");
+    for i in 0..BAR_SLOTS {
+        if host.inventory(1).slot(i).is_none() {
+            put(&mut host, i, defs().get("welder").unwrap().stack_of(1));
+        }
+    }
+    let full = (census(&host), host.inventory(1), host.racks.clone());
+    assert_eq!(do_(&mut host, pull(7, 0, None)), Err(Reject::Full));
+    assert_eq!((census(&host), host.inventory(1), host.racks.clone()), full);
+    assert_ne!(before.0, full.0, "(the welders were added)");
+    // Another player's window: refused as in use.
+    host.locks.insert(7, 2);
+    assert_eq!(do_(&mut host, pull(7, 0, Some(1))), Err(Reject::InUse));
+    assert_eq!(do_(&mut host, fit(1, 7, 0)), Err(Reject::InUse));
+}
+
+#[test]
+fn a_client_predicts_a_stored_suits_canister_as_the_host_answers() {
+    let mut host = Host::new(defs());
+    host.add_container(7, locker("suit", 1));
+    host.racks.get_mut(&7).unwrap().insert_at(&[], 0, suit(Some(30.0))).unwrap();
+    put(&mut host, 3, canister(100.0));
+    let mut client = Client::new(1, defs());
+    for ev in host.state() {
+        client.apply(&ev);
+    }
+    let a = client.request(Request::FitStoredCanister { slot: 3, rack: 7, rack_slot: 0 }).unwrap();
+    assert_eq!(client.racks[&7].slot(0).and_then(|s| s.item.condition), Some(30.0), "the host's rack is unchanged until it answers");
+    let evs = host.handle(&a);
+    for ev in evs {
+        let bytes = wire::encode(&ToClient::Event(ev));
+        let Some(ToClient::Event(ev)) = wire::decode::<ToClient>(&bytes) else { panic!("the event survives the wire") };
+        client.apply(&ev);
+    }
+    assert_eq!(client.racks[&7], host.racks[&7]);
+    assert_eq!(client.confirmed, host.inventory(1));
+    assert_eq!(client.view, host.inventory(1));
+    assert_eq!(client.request(Request::PullStoredCanister { rack: 7, rack_slot: 5, slot: None }), Err(Reject::NoSuchSlot), "refused without sending");
+}

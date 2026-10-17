@@ -6,7 +6,6 @@
 //! concept repo's container-window spec (reference screen 1920x1080, sizes in logical pixels).
 use crate::controls::Controls;
 use crate::crew_hud::{abs, edit, hud_caps, hud_text, set_bg, set_border, set_dashes, set_display, set_text, set_text_colour, spawn_dashes, HudFonts, HudPart};
-use crate::dev_area::gear::{is_gear_use, MaskWorn};
 use crate::dev_area::DevBox;
 use crate::items::{slot_at, slot_rect, HudWindow, InventoryUi, Items};
 use crate::walker::Player;
@@ -105,9 +104,9 @@ impl ContainerSpecs {
 pub enum Place {
     Bar(usize),
     Box(usize),
-    /// The worn suit (or mask): the bar slot that holds it, shown here too.
+    /// The worn suit (`Inventory::worn`).
     Suit,
-    /// The suit's air canister place: today the suit's own tank as a gauge (the canister item is #311).
+    /// The worn suit's air canister place.
     Air,
 }
 
@@ -120,11 +119,6 @@ impl Place {
             _ => Place::Air,
         }
     }
-}
-
-/// The bar slot of the worn gear (the host's word; a client does not hear it yet).
-fn worn_slot(worn: &Option<Res<MaskWorn>>, me: item_core::PlayerId) -> Option<usize> {
-    worn.as_ref().and_then(|w| w.0.get(&me).copied())
 }
 
 /// The corners of the suit and canister places, left of the bar's first slot.
@@ -287,6 +281,7 @@ fn rule_text(c: &Container) -> String {
 fn reason_text(why: &Reject, c: Option<&Container>, place: Option<usize>, at: Place) -> String {
     match (why, at) {
         (_, Place::Suit) => return "SUIT ONLY".into(),
+        (Reject::Invalid, Place::Air) => return "NO SUIT".into(),
         (_, Place::Air) => return "AIR CANISTERS ONLY".into(),
         _ => {}
     }
@@ -328,50 +323,48 @@ fn status_text(c: &Container) -> (String, Color) {
 // ---- input ----
 
 /// What a click on a place asks: the stack goes to the other side; a click on the worn suit takes
-/// it off (its use toggles it). None: nothing to ask.
-fn click_request(rack: Option<RackId>, worn: Option<usize>, at: Place) -> Option<Request> {
+/// it off into a free bar slot, one on its canister takes that out. None: nothing to ask.
+fn click_request(rack: Option<RackId>, at: Place) -> Option<Request> {
     match (at, rack) {
         (Place::Bar(slot), Some(rack)) => Some(Request::Store { slot, rack }),
         (Place::Box(rack_slot), Some(rack)) => Some(Request::Fetch { rack, rack_slot }),
-        (Place::Suit, _) => worn.map(|slot| Request::Use { slot, target: crate::items::LOCAL }),
+        (Place::Suit, _) => Some(Request::Unwear { slot: None }),
+        (Place::Air, _) => Some(Request::PullCanister { slot: None }),
         _ => None,
     }
 }
 
 /// What a drop of the stack on `from` onto `to` asks (None: that place does not take it).
-fn drop_request(rack: Option<RackId>, worn: Option<usize>, from: Place, to: Place) -> Option<Request> {
+fn drop_request(rack: Option<RackId>, from: Place, to: Place) -> Option<Request> {
     match (from, to, rack) {
         (Place::Bar(from), Place::Bar(to), _) => Some(Request::Move { from, to }),
         (Place::Bar(slot), Place::Box(rack_slot), Some(rack)) => Some(Request::StoreAt { slot, rack, rack_slot }),
         (Place::Box(rack_slot), Place::Bar(slot), Some(rack)) => Some(Request::FetchTo { rack, rack_slot, slot }),
         (Place::Box(from), Place::Box(to), Some(rack)) => Some(Request::MoveIn { rack, from, to }),
-        // The worn suit comes off by leaving its slot (the host takes gear off that left it).
-        (Place::Suit, Place::Bar(to), _) => worn.map(|from| Request::Move { from, to }),
-        (Place::Suit, Place::Box(rack_slot), Some(rack)) => worn.map(|slot| Request::StoreAt { slot, rack, rack_slot }),
-        // Gear from the bar goes on by its use.
-        (Place::Bar(slot), Place::Suit, _) => Some(Request::Use { slot, target: crate::items::LOCAL }),
+        // The worn suit comes off by a drop on a bar slot or a locker's place; it goes on from either.
+        (Place::Suit, Place::Bar(slot), _) => Some(Request::Unwear { slot: Some(slot) }),
+        (Place::Suit, Place::Box(rack_slot), Some(rack)) => Some(Request::StoreWorn { rack, rack_slot }),
+        (Place::Bar(slot), Place::Suit, _) => Some(Request::Wear { slot }),
+        (Place::Box(rack_slot), Place::Suit, Some(rack)) => Some(Request::WearFrom { rack, rack_slot }),
+        // The suit's canister: a canister of the bar swaps with it, it comes out into a bar slot.
+        (Place::Bar(slot), Place::Air, _) => Some(Request::FitCanister { slot }),
+        (Place::Air, Place::Bar(slot), _) => Some(Request::PullCanister { slot: Some(slot) }),
         _ => None,
     }
 }
 
 /// Whether a drop would work, and why not (the request is the host's to decide in the end).
-fn verdict(items: &Items, rack: Option<RackId>, worn: Option<usize>, from: Place, to: Place) -> Option<Reject> {
-    let Some(req) = drop_request(rack, worn, from, to) else { return Some(Reject::NotAllowed) };
-    if let (Place::Bar(slot), Place::Suit) = (from, to) {
-        let gear = items.client.view.slot(slot).and_then(|s| items.defs.of(s)).and_then(|d| d.use_effect.as_deref()).is_some_and(is_gear_use);
-        if !gear || worn == Some(slot) {
-            return Some(Reject::NotAllowed);
-        }
-    }
+fn verdict(items: &Items, rack: Option<RackId>, from: Place, to: Place) -> Option<Reject> {
+    let Some(req) = drop_request(rack, from, to) else { return Some(Reject::NotAllowed) };
     items.client.would(&req).err()
 }
 
-fn occupied(items: &Items, rack: Option<RackId>, worn: Option<usize>, at: Place) -> bool {
+fn occupied(items: &Items, rack: Option<RackId>, at: Place) -> bool {
     match at {
         Place::Bar(i) => items.client.view.slot(i).is_some(),
         Place::Box(i) => rack.and_then(|r| items.client.racks.get(&r)).is_some_and(|c| c.slot(i).is_some()),
-        Place::Suit => worn.is_some_and(|i| items.client.view.slot(i).is_some()),
-        Place::Air => false,
+        Place::Suit => items.client.view.worn.is_some(),
+        Place::Air => items.client.view.worn_air().is_some(),
     }
 }
 
@@ -384,7 +377,6 @@ fn container_input(
     mut controls: ResMut<Controls>,
     (window, look): (Res<HudWindow>, Res<crate::displays::DisplayLook>),
     specs: Res<ContainerSpecs>,
-    worn: Option<Res<MaskWorn>>,
     players: Query<&Player>,
     boxes: Query<(&DevBox, &Position)>,
 ) {
@@ -418,18 +410,19 @@ fn container_input(
     if cw.flash.as_ref().is_some_and(|(_, _, left)| *left <= 0.0) {
         cw.flash = None;
     }
-    let me_worn = worn_slot(&worn, items.me());
     let n = rack.and_then(|r| items.client.racks.get(&r)).map_or(0, |c| c.len()).min(MAX_PLACES);
     let cols = rack.and_then(|r| specs.get(r)).map_or(4, |s| s.cols);
     let bar = &look.0.hud.bar;
     let geo = geometry(window.0, n, cols, bar);
-    let under = controls.pointer.and_then(|p| place_at(p, &geo, window.0, bar)).filter(|p| rack.is_some() || matches!(p, Place::Suit | Place::Bar(_)));
+    let under = controls.pointer.and_then(|p| place_at(p, &geo, window.0, bar)).filter(|p| rack.is_some() || matches!(p, Place::Suit | Place::Air | Place::Bar(_)));
     cw.hover = under;
     let down = controls.pointer_down || controls.click;
-    // Without a container the bar's own gestures stay with the Tab inventory; only the worn suit's are ours.
-    let mine = |p: Place| rack.is_some() || p == Place::Suit;
+    // Without a container the bar's own gestures stay with the Tab inventory; ours are the worn suit's
+    // and canister's, and a bar item dropped onto them (a bar-to-bar move stays the inventory's).
+    let mine = |p: Place| rack.is_some() || matches!(p, Place::Suit | Place::Air | Place::Bar(_));
+    let ours = |from: Place, to: Place| rack.is_some() || matches!(from, Place::Suit | Place::Air) || matches!(to, Place::Suit | Place::Air);
     if down && !cw.was_down {
-        cw.drag = under.filter(|p| mine(*p) && occupied(&items, rack, me_worn, *p));
+        cw.drag = under.filter(|p| mine(*p) && occupied(&items, rack, *p));
         cw.moved = false;
         ui.drag_from = match (cw.drag, rack) {
             (Some(Place::Bar(i)), Some(_)) => Some(i),
@@ -440,7 +433,7 @@ fn container_input(
         cw.moved |= under != Some(from);
     }
     cw.over = match (cw.drag, cw.moved, under) {
-        (Some(from), true, Some(to)) if to != from => Some((to, verdict(&items, rack, me_worn, from, to))),
+        (Some(from), true, Some(to)) if to != from && ours(from, to) => Some((to, verdict(&items, rack, from, to))),
         _ => None,
     };
     if !down && cw.was_down {
@@ -452,9 +445,10 @@ fn container_input(
         }
         if let Some(from) = from {
             let (req, at) = match under {
-                Some(to) if to == from => (click_request(rack, me_worn, from), from),
-                Some(to) => match verdict(&items, rack, me_worn, from, to) {
-                    None => (drop_request(rack, me_worn, from, to), to),
+                Some(to) if to == from => (click_request(rack, from), from),
+                Some(to) if !ours(from, to) => (None, to),
+                Some(to) => match verdict(&items, rack, from, to) {
+                    None => (drop_request(rack, from, to), to),
                     Some(why) => {
                         cw.flash = Some((to, why, FLASH_S));
                         (None, to)
@@ -562,9 +556,10 @@ fn build_window(mut commands: Commands, fonts: Option<Res<HudFonts>>, look: Res<
                         b.spawn((CwPart::TagText(i), hud_caps(&fonts.bold, "", 14.0, rgb(0xff, 0xb4, 0xa8), h, 0.11)));
                     });
                 });
-                if i >= BAR_SLOTS + MAX_PLACES {
-                    // The worn places: a caption under the place, the gauge in it.
-                    p.spawn((Node { left: Val::Px(-20.0), top: Val::Px(PLACE + 4.0), width: Val::Px(PLACE + 36.0), justify_content: JustifyContent::Center, ..abs() },)).with_children(|c| {
+                if i >= BAR_SLOTS {
+                    // The worn places and a canister box's places: a caption under the place, the gauge in it.
+                    let below = if i >= BAR_SLOTS + MAX_PLACES { PLACE + 4.0 } else { PLACE };
+                    p.spawn((Node { left: Val::Px(-20.0), top: Val::Px(below), width: Val::Px(PLACE + 36.0), justify_content: JustifyContent::Center, ..abs() },)).with_children(|c| {
                         c.spawn((CwPart::Caption(i), hud_text(&fonts.mono, "", 13.0, dim(), h)));
                     });
                     p.spawn((CwPart::GaugeTrack(i), Node { left: Val::Px(4.0), bottom: Val::Px(4.0), width: Val::Px(PLACE - 4.0 * 2.0 - 2.0 * BORDER), height: Val::Px(8.0), border: UiRect::all(Val::Px(1.5)), display: none, ..abs() }, BackgroundColor(rgb(0x0b, 0x13, 0x18)), BorderColor::all(accent()))).with_children(|g| {
@@ -614,7 +609,6 @@ fn draw_window(
     controls: Res<Controls>,
     look: Res<crate::displays::DisplayLook>,
     specs: Res<ContainerSpecs>,
-    worn: Option<Res<MaskWorn>>,
     fonts: Option<Res<HudFonts>>,
     mut nodes: Query<(&CwPart, &mut Node)>,
     mut borders: Query<(&CwPart, &mut BorderColor)>,
@@ -632,9 +626,11 @@ fn draw_window(
     let geo = geometry(window.0, n, cols, bar);
     let wp = worn_places(window.0, bar);
     let dragging = cw.dragging();
-    let me_worn = worn_slot(&worn, items.me());
-    let suit_stack = me_worn.and_then(|i| items.client.view.slot(i));
-    let is_suit = suit_stack.is_some_and(|s| s.item.kind.as_str() == crate::dev_area::gear::SUIT_ITEM);
+    let suit_stack = items.client.view.worn.as_ref();
+    let is_suit = suit_stack.is_some();
+    // The canister boxes work with the ship's power (the same notion as the airlock's panel).
+    let powered = items.reactor.is_none_or(|r| r.startup.live());
+    let is_box = container.is_some_and(|(r, _)| crate::dev_area::equipment::is_box(r));
     let code_of = |s: &item_core::container::Stack| items.defs.of(s).map(|d| d.short_code()).unwrap_or_default();
     let stack_at = |p: Place| match p {
         Place::Bar(i) => items.client.view.slot(i),
@@ -669,9 +665,22 @@ fn draw_window(
         Place::Bar(_) | Place::Suit | Place::Air => show,
         Place::Box(i) => show_box && i < n,
     };
-    // The suit's tank: today's condition of the worn gear (0..1).
-    let air = suit_stack.filter(|_| is_suit).and_then(|s| s.item.condition).map(|c| (c / 100.0).clamp(0.0, 1.0));
-    let air_colour = |a: f64| if a <= 0.0 { red() } else if a < LOW_AIR { amber() } else { accent() };
+    // The air in the suit's canister (0..1), and the fill of a canister in a box.
+    let air = items.client.view.worn_air().map(|c| (c / 100.0).clamp(0.0, 1.0));
+    let fill_of = |p: Place| -> Option<f64> {
+        match p {
+            Place::Air => air,
+            Place::Box(i) if is_box => container.and_then(|(_, c)| c.slot(i)).filter(|s| s.item.kind.as_str() == "air_canister").and_then(|s| s.item.condition).map(|c| (c / 100.0).clamp(0.0, 1.0)),
+            _ => None,
+        }
+    };
+    // A box's gauge is amber while it waits for power; a canister in the suit goes amber when low, red when empty.
+    let gauge_colour = |p: Place| match (p, fill_of(p)) {
+        (Place::Air, Some(a)) if a <= 0.0 => red(),
+        (Place::Air, Some(a)) if a < LOW_AIR => amber(),
+        (Place::Box(_), Some(a)) if !powered && a < 1.0 => amber(),
+        _ => accent(),
+    };
 
     for (part, mut node) in &mut nodes {
         match *part {
@@ -717,10 +726,10 @@ fn draw_window(
                 set_display(&mut node, if refused { Display::Flex } else { Display::None });
             }
             CwPart::GaugeTrack(idx) => {
-                let on = live(Place::of_part(idx)) && Place::of_part(idx) == Place::Air && air.is_some();
-                set_display(&mut node, if on { Display::Flex } else { Display::None });
+                let p = Place::of_part(idx);
+                set_display(&mut node, if live(p) && fill_of(p).is_some() { Display::Flex } else { Display::None });
             }
-            CwPart::GaugeFill(_) => edit(&mut node, |nd| nd.width = percent(air.unwrap_or(0.0) as f32 * 100.0)),
+            CwPart::GaugeFill(idx) => edit(&mut node, |nd| nd.width = percent(fill_of(Place::of_part(idx)).unwrap_or(0.0) as f32 * 100.0)),
             CwPart::Ghost => {
                 let from = cw.drag.filter(|_| dragging).filter(|p| !matches!(p, Place::Bar(_)));
                 let at = controls.pointer.unwrap_or_default() - Vec2::splat(PLACE * 0.5);
@@ -750,7 +759,7 @@ fn draw_window(
                 };
                 set_border(&mut border, want);
             }
-            CwPart::GaugeTrack(_) => set_border(&mut border, air_colour(air.unwrap_or(1.0))),
+            CwPart::GaugeTrack(idx) => set_border(&mut border, gauge_colour(Place::of_part(idx))),
             _ => {}
         }
     }
@@ -771,7 +780,7 @@ fn draw_window(
                 };
                 set_bg(&mut bg, want);
             }
-            CwPart::GaugeFill(_) => set_bg(&mut bg, air_colour(air.unwrap_or(1.0))),
+            CwPart::GaugeFill(idx) => set_bg(&mut bg, gauge_colour(Place::of_part(idx))),
             _ => {}
         }
     }
@@ -781,10 +790,11 @@ fn draw_window(
         set_dashes(DASHES + i as u32, accepting, accent(), &mut frames, &mut dashes);
     }
     let (title, rule, status) = match container {
-        Some((r, c)) => (specs.get(r).map_or("CONTAINER".to_string(), |s| s.name.to_uppercase()), rule_text(c), status_text(c)),
+        Some((r, c)) => (specs.get(r).map_or("CONTAINER".to_string(), |s| s.name.to_uppercase()), rule_text(c), if is_box && !powered { ("NO POWER".to_string(), amber()) } else { status_text(c) }),
         None => (String::new(), String::new(), (String::new(), fg())),
     };
     let ghost = cw.drag.filter(|_| dragging).and_then(stack_at);
+    let ghost_air = cw.drag == Some(Place::Air) && dragging;
     let shown = |p: Place| live(p) && !matches!(look_of(p), Look::Lifted | Look::Refuse(_));
     for (part, mut text, mut colour) in &mut texts {
         match *part {
@@ -818,24 +828,30 @@ fn draw_window(
                 }
             }
             CwPart::Caption(idx) => {
-                let (t, c) = match Place::of_part(idx) {
-                    Place::Suit => match suit_stack {
-                        Some(_) if is_suit => ("SUIT".to_string(), dim()),
-                        Some(_) => ("MASK".to_string(), dim()),
-                        None => ("NO SUIT".to_string(), dim()),
-                    },
-                    _ => match air {
-                        Some(a) if a <= 0.0 => ("× EMPTY".to_string(), red()),
+                let p = Place::of_part(idx);
+                let (t, c) = match p {
+                    Place::Suit if suit_stack.is_some() => ("SUIT".to_string(), dim()),
+                    Place::Suit => ("NO SUIT".to_string(), dim()),
+                    Place::Air => match air {
+                        Some(a) if a <= 0.0 => ("✕ EMPTY".to_string(), red()),
                         Some(a) if a < LOW_AIR => (format!("! LOW {:.0}%", a * 100.0), amber()),
                         Some(a) => (format!("AIR {:.0}%", a * 100.0), dim()),
                         None if is_suit => ("NO CANISTER".to_string(), dim()),
                         None => (String::new(), dim()),
                     },
+                    // A canister in a box: full, filling with power, or waiting for it.
+                    Place::Box(_) if live(p) => match fill_of(p) {
+                        Some(a) if a >= 1.0 => ("FULL".to_string(), dim()),
+                        Some(a) if powered => (format!("▲ FILLING {:.0}%", a * 100.0), dim()),
+                        Some(a) => (format!("! NO POWER {:.0}%", a * 100.0), amber()),
+                        None => (String::new(), dim()),
+                    },
+                    _ => (String::new(), dim()),
                 };
                 set_text(&mut text, &t);
                 set_text_colour(&mut colour, c);
             }
-            CwPart::GhostCode => set_text(&mut text, &ghost.map(code_of).unwrap_or_default()),
+            CwPart::GhostCode => set_text(&mut text, &if ghost_air { "AIR".to_string() } else { ghost.map(code_of).unwrap_or_default() }),
             CwPart::GhostCount => set_text(&mut text, &ghost.filter(|s| s.count > 1).map(|s| format!("×{}", s.count)).unwrap_or_default()),
             _ => {}
         }

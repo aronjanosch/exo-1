@@ -353,6 +353,26 @@ impl Items {
         }
     }
 
+    /// Host: the worn suit's canister drains by `amount` percent (the body breathes from it).
+    pub fn drain_worn(&mut self, now: f64, player: PlayerId, amount: f64) {
+        if self.role == Role::Client {
+            return;
+        }
+        if let Some(ev) = self.host.drain_worn(player, amount) {
+            self.publish(now, ev, None);
+        }
+    }
+
+    /// Host: the air canister in a container place fills by `amount` percent (a canister box).
+    pub fn fill_in_rack(&mut self, now: f64, rack: item_core::RackId, slot: usize, amount: f64) {
+        if self.role == Role::Client {
+            return;
+        }
+        if let Some(ev) = self.host.fill_in_rack(rack, slot, amount) {
+            self.publish(now, ev, None);
+        }
+    }
+
     pub fn rest(&mut self, now: f64, item: LooseId, at: Placement, rot: [f64; 4], t: f64) {
         if let Some(ev) = self.host.rest(item, at, rot, t) {
             self.publish(now, ev, None);

@@ -307,8 +307,8 @@ pub(super) fn container_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
     }));
     s.push(wait(0.4));
     s.push(Box::new(|w, c| {
-        let on = w.resource::<crate::dev_area::gear::MaskWorn>().0.contains_key(&MINE);
-        check(c, on && w.resource::<InventoryUi>().open, "container: the suit is worn and the inventory is open".into());
+        let on = items(w).host.inventory(MINE).worn.is_some();
+        check(c, on && in_bar(w, "suit") == 0 && w.resource::<InventoryUi>().open, "container: the suit is worn (in the worn place, not the bar) and the inventory is open".into());
         true
     }));
     s.push(shot_step("tab-worn"));
@@ -325,7 +325,7 @@ pub(super) fn container_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
     }));
     s.push(wait(0.4));
     s.push(Box::new(|w, c| {
-        let on = w.resource::<crate::dev_area::gear::MaskWorn>().0.contains_key(&MINE);
+        let on = items(w).host.inventory(MINE).worn.is_some();
         check(c, !on && in_bar(w, "suit") == 1, "container: a click on the worn suit took it off".into());
         end(w, c, "worn group".into());
         true

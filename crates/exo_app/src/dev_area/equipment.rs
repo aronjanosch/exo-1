@@ -7,9 +7,10 @@
 use super::layout::EQUIPMENT;
 use super::*;
 use crate::container_window::{ContainerSpec, ContainerSpecs};
-use crate::items::Items;
+use crate::dev_area::ship::ReactorSim;
+use crate::items::{Items, Role};
 use crate::ship::Ship;
-use item_core::container::{Access, Container, SlotRule};
+use item_core::container::{Access, Container, SlotRule, Stack};
 use item_core::{ItemDefs, RackId};
 
 pub const SUIT_LOCKERS: usize = 5;
@@ -92,7 +93,10 @@ pub fn contents(rack: RackId, defs: &ItemDefs) -> Container {
         assert!(matches!(left, Ok(None)), "equipment: the stock of {id} fits");
     };
     if rack == suit_rack(0) || rack == suit_rack(1) {
-        put(&mut c, "suit");
+        // Each suit starts with a full canister (its condition is the canister's fill).
+        let d = defs.get("suit").expect("equipment: the suit item");
+        let left = c.try_insert(&[], Stack::new(d.item().with_condition(100.0), 1));
+        assert!(matches!(left, Ok(None)), "equipment: the suit fits");
     }
     if rack == box_rack(0) || rack == box_rack(1) {
         put(&mut c, "air_canister");
@@ -118,7 +122,37 @@ pub fn plugin(app: &mut App) {
             devices.add(PlaceholderBox { id: i.id.clone(), zone: EQUIPMENT, local_pos: i.local_pos, size: i.size, turn_deg: i.turn_deg, colour: i.colour, panel: None });
         }
     }
-    app.add_systems(FixedUpdate, put_stock.in_set(crate::phases::Fx::Effects));
+    app.add_systems(FixedUpdate, (put_stock, fill_canisters).in_set(crate::phases::Fx::Effects));
+}
+
+/// Whether the ship gives the canister boxes power: the master is live, the notion the airlock's
+/// panel uses (`ReactorNews::startup`). TODO(initiator): a small consumer of its own on the grid;
+/// `reactor_core` has no per-consumer power yet, so a box draws nothing from it.
+pub fn box_power(sim: &ReactorSim) -> bool {
+    sim.room.master_on()
+}
+
+/// How much a canister in a box fills in `dt` seconds (percent): the shelf's rate with power, nothing without.
+pub fn fill_percent(powered: bool, dt: f64) -> f64 {
+    if powered && dt.is_finite() && dt > 0.0 { health_core::mask::REFILL_PER_S * 100.0 * dt } else { 0.0 }
+}
+
+/// Host: a canister in a box fills at the shelf's rate (`health_core::mask::REFILL_PER_S`, about
+/// 100 s from empty) while the ship gives power, and not at all without.
+fn fill_canisters(time: Res<Time>, mut items: ResMut<Items>, sim: Res<ReactorSim>) {
+    if items.role == Role::Client {
+        return;
+    }
+    let (dt, now) = (time.delta_secs_f64(), time.elapsed_secs_f64());
+    let percent = fill_percent(box_power(&sim), dt);
+    if percent <= 0.0 {
+        return;
+    }
+    for i in 0..SUIT_LOCKERS {
+        for slot in 0..BOX_PLACES {
+            items.fill_in_rack(now, box_rack(i), slot, percent);
+        }
+    }
 }
 
 /// Once, when the ship is there: each locker and box gets its stock (host only; the clients hear it
@@ -158,6 +192,13 @@ mod tests {
         assert!(empty(box_rack(0)).rule(3).accepts(&canister) && !empty(box_rack(0)).rule(3).accepts(&suit), "a canister box takes air canisters only");
         assert_eq!(empty(locker_rack(0)).len(), 4);
         assert!(empty(locker_rack(1)).rule(0).accepts(&welder) && empty(locker_rack(1)).rule(0).accepts(&wrench) && !empty(locker_rack(1)).rule(0).accepts(&suit) && !empty(locker_rack(1)).rule(0).accepts(&canister), "an equipment locker takes tools");
+    }
+
+    #[test]
+    fn a_box_fills_only_with_power_at_the_shelfs_rate() {
+        assert_eq!(fill_percent(false, 1.0), 0.0, "no power, no air");
+        assert_eq!(fill_percent(true, f64::NAN), 0.0);
+        assert!((fill_percent(true, 100.0) - 100.0).abs() < 1e-9, "empty to full in about 100 s");
     }
 
     #[test]

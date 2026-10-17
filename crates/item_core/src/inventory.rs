@@ -4,6 +4,12 @@ use crate::container::{Access, Container, Refusal, SlotRule, Stack};
 use crate::defs::{ItemDefs, Take};
 
 pub const BAR_SLOTS: usize = 8;
+/// The tag of the suit, the one thing the worn place takes (#311).
+pub const SUIT_TAG: &str = "suit";
+/// The tag of an air canister, the one thing a suit's canister place takes.
+pub const CANISTER_TAG: &str = "air_canister";
+/// The use of the suit item: it moves to the worn place (and a second use takes it off).
+pub const WEAR_SUIT: &str = "wear_suit";
 pub const HANDS: u8 = 2;
 /// Most items one bar slot holds (the item's own stack size usually caps it lower).
 const SLOT_CAP: u32 = 64;
@@ -13,11 +19,16 @@ pub struct Inventory {
     pub bar: Container,
     /// The slot in the hand (0..BAR_SLOTS).
     pub selected: usize,
+    /// The suit the player wears (#311): it sits here, not in a bar slot. Its condition is the fill
+    /// (percent) of the air canister it holds; None: no canister. It travels with the inventory, so
+    /// every client hears it.
+    #[serde(default)]
+    pub worn: Option<Stack>,
 }
 
 impl Default for Inventory {
     fn default() -> Self {
-        Inventory { bar: Container::new(vec![SlotRule::any(SLOT_CAP); BAR_SLOTS], Access::Open), selected: 0 }
+        Inventory { bar: Container::new(vec![SlotRule::any(SLOT_CAP); BAR_SLOTS], Access::Open), selected: 0, worn: None }
     }
 }
 
@@ -86,5 +97,10 @@ impl Inventory {
 
     pub fn count(&self, id: &str) -> u32 {
         (0..BAR_SLOTS).filter_map(|i| self.slot(i)).filter(|s| s.item.kind.as_str() == id).map(|s| s.count).sum()
+    }
+
+    /// The worn suit's air (percent), if it holds a canister.
+    pub fn worn_air(&self) -> Option<f64> {
+        self.worn.as_ref()?.item.condition
     }
 }

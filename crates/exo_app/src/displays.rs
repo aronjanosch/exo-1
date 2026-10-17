@@ -38,6 +38,10 @@ pub struct DisplayPanel {
 #[derive(Component, Clone, Copy, Debug)]
 pub struct FramedBy(pub &'static str);
 
+/// A screen that needs no bezel box behind it: its model already has the recess (the reactor's `screen_main`).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Bare;
+
 /// How far in front of the model's origin the screen quad stands (m).
 pub const FRAMED_SCREEN_OFFSET: f64 = 0.003;
 

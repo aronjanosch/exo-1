@@ -48,10 +48,10 @@ pub fn station_of(s: BotStation) -> Option<Station> {
 
 /// The station whose screen a panel is. The reactor's station is its readout and its pump.
 pub fn station_of_panel(id: &display_core::PanelId) -> Option<Station> {
-    use crate::dev_area::{turrets::panels::GUNNERY_ID, bridge::panels::HELM_ID, engineering::panels::{JUNCTION_ID, PUMP_ID, READOUT_ID}};
+    use crate::dev_area::{turrets::panels::GUNNERY_ID, bridge::panels::HELM_ID, engineering::{panels::{JUNCTION_ID, PUMP_ID, READOUT_ID}, reactor_room::MAIN_ID}};
     if *id == GUNNERY_ID {
         Some(Station::Gunnery)
-    } else if *id == READOUT_ID || *id == PUMP_ID {
+    } else if *id == READOUT_ID || *id == PUMP_ID || *id == MAIN_ID {
         Some(Station::Reactor)
     } else if *id == JUNCTION_ID {
         Some(Station::Power)

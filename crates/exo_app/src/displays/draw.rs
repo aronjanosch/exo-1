@@ -70,7 +70,7 @@ pub struct ScreenLook {
 
 pub fn add_quads(
     mut commands: Commands,
-    new: Query<(Entity, &DisplayPanel, Option<&FramedBy>), Added<DisplayPanel>>,
+    new: Query<(Entity, &DisplayPanel, Option<&FramedBy>, Has<Bare>), Added<DisplayPanel>>,
     assets: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -92,12 +92,13 @@ pub fn add_quads(
             l
         }
     };
-    for (e, d, framed) in &new {
+    for (e, d, framed, bare) in &new {
         let (w, h) = (d.size_m.x as f32, d.size_m.y as f32);
         commands.entity(e).insert((Mesh3d(meshes.add(Rectangle::new(w, h))), MeshMaterial3d(look.idle.clone()), Transform::from_rotation(d.rot.as_quat()), WorldPos(d.centre))).with_children(|c| match framed {
             Some(f) => {
                 c.spawn((WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset(f.0))), Transform::from_xyz(0.0, 0.0, -FRAMED_SCREEN_OFFSET as f32)));
             }
+            None if bare => {}
             None => {
                 c.spawn((Mesh3d(meshes.add(Cuboid::new(w + 0.06, h + 0.06, 0.04))), MeshMaterial3d(look.bezel.clone()), Transform::from_xyz(0.0, 0.0, -0.025)));
             }

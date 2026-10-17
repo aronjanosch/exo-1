@@ -11,9 +11,11 @@ pub mod blast;
 pub mod coolant;
 pub mod panels;
 pub mod canisters;
+pub mod junction_boxes;
 pub mod startup_screen;
 
 pub fn plugin(app: &mut App) {
+    app.add_plugins(junction_boxes::plugin);
     app.add_plugins((asks::plugin, panels::plugin, coolant::plugin, canisters::plugin));
     app.init_resource::<blast::PendingBlasts>().init_resource::<blast::BlastFlash>();
     app.add_systems(FixedUpdate, blast::collect_blasts.in_set(ShipSet::React));

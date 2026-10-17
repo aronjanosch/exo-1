@@ -137,7 +137,8 @@ fn device_id(s: Source) -> u64 {
     DEVICE_ID
         + match s {
             Source::Pump => 1,
-            Source::Junction => 2,
+            Source::Junction(0) => 2,
+            Source::Junction(i) => 4 + i as u64,
             Source::Reactor => 3,
             Source::OxygenGenerator => 4,
         }
@@ -298,7 +299,8 @@ fn spray_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>
 fn burn_device(sim: &mut ReactorSim, id: u64, amount: f64) {
     let event = match id - DEVICE_ID {
         1 => sim.room.pump_mut().condition_mut().damage(amount),
-        2 => sim.room.junction_mut().condition_mut().damage(amount),
+        2 => sim.room.junction_mut(0).condition_mut().damage(amount),
+        5 | 6 => sim.room.junction_mut((id - DEVICE_ID - 4) as usize).condition_mut().damage(amount),
         3 => sim.room.reactor_mut().condition_mut().damage(amount),
         _ => None,
     };
@@ -360,7 +362,7 @@ fn fire_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>
             }
         }
     }
-    for s in [Source::Pump, Source::Junction, Source::Reactor, Source::OxygenGenerator] {
+    for s in [Source::Pump, Source::Junction(0), Source::Junction(1), Source::Junction(2), Source::Reactor, Source::OxygenGenerator] {
         let p = source_at(s);
         let h = footprint_of(s);
         targets.push(Target { id: device_id(s), kind: TargetKind::Device, room: air.engine, pos: DVec3::new(p[0], p[1], 0.0), half: DVec2::new(h[0], h[1]) });

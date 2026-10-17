@@ -663,6 +663,8 @@ fn junction_lever(r: &ReactorNews, g: BreakerGroup, names: &[&str], action: &str
     .fixed(94.0)
 }
 
+/// Parked (#307): the old JB-01 screen. The junction boxes have no screen since #322 (the toggles sit on the boxes) and this is
+/// not placed; the central power screen is built from it.
 pub fn junction_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     if !powered(r) {
         return tall(no_power(JUNCTION_NAME, "JB-01", Tier::S));
@@ -998,7 +1000,6 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     let readout = if help.0 { readout_help_panel(r, max_kw) } else { readout_panel_at(r, max_kw, time.elapsed_secs_f64()) };
     show(&mut panels, r, READOUT_ID, bot_tagged(readout, manned(&items, BotStation::Reactor)));
     show(&mut panels, r, PUMP_ID, bot_tagged(pump_panel_at(r, angle, blink), manned(&items, BotStation::Reactor)));
-    show(&mut panels, r, JUNCTION_ID, bot_tagged(junction_panel(r, max_kw), manned(&items, BotStation::Power)));
     show(&mut panels, r, AUX_ID, aux_panel(r));
     show(&mut panels, r, BATTERY_ID, battery_panel(r));
     show(&mut panels, r, STATUS_ID, status_panel(r, max_kw, blink));

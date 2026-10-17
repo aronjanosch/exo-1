@@ -175,14 +175,15 @@ impl ReactorSim {
             coolant: self.room.pump().tank(),
             coolant_low: self.room.pump().tank() < self.room.tuning().coolant_low,
             coolant_leak: self.room.pump_leak_rate(),
-            overvolt: self.room.junction().overvolted(),
+            overvolt: self.room.junctions().iter().any(|j| j.overvolted()),
             // The host's blast count is set by `reactor_step` (the sim does not count).
             blasts: 0,
             oxygen,
             canisters: std::array::from_fn(|i| r.canisters().get(i).map_or_else(CanisterSlot::default, |x| CanisterSlot { canister: Some(canisters::canister_kind(&x.kind)), life: x.life })),
             reactor: part(r.condition().fraction(), r.condition().functioning()),
             pump: part(self.room.pump().condition().fraction(), self.room.pump().condition().functioning()),
-            junction: part(self.room.junction().condition().fraction(), self.room.junction().condition().functioning()),
+            junctions: std::array::from_fn(|i| part(self.room.junction(i).condition().fraction(), self.room.junction(i).condition().functioning())),
+            junction_fault: std::array::from_fn(|i| self.room.junction(i).condition().needs_repair() || !self.room.junction(i).condition().functioning()),
             oxygen_generator: part(self.room.oxygen_generator().condition().fraction(), self.room.oxygen_generator().condition().functioning()),
             breaches: std::array::from_fn(|i| self.room.hull().damage(i)),
             lamps: lamps_of(&self.room.warnings()),
@@ -386,9 +387,9 @@ pub fn route(e: RoomEvent, counts: &mut ReactorCounts) {
             info!("engine room: fire of {size} m at the hit on {at:?}");
         }
         RoomEvent::EnemyShot { section } => info!("enemy: shot at the wall, section {section}"),
-        RoomEvent::Sparks => {
+        RoomEvent::Sparks(i) => {
             counts.sparks += 1;
-            info!("engine room: sparks at the junction box");
+            info!("sparks at junction box {}", i + 1);
         }
         RoomEvent::Reactor(ReactorEvent::Implosion) => {
             counts.implosions += 1;
@@ -950,9 +951,9 @@ mod tests {
     #[test]
     fn the_events_are_counted() {
         let mut k = ReactorCounts::default();
-        route(RoomEvent::Sparks, &mut k);
+        route(RoomEvent::Sparks(0), &mut k);
         route(RoomEvent::Reactor(ReactorEvent::Fire { size: 0.1 }), &mut k);
-        route(RoomEvent::Fire { size: 0.05, source: reactor_core::Source::Junction }, &mut k);
+        route(RoomEvent::Fire { size: 0.05, source: reactor_core::Source::Junction(0) }, &mut k);
         route(RoomEvent::Reactor(ReactorEvent::Implosion), &mut k);
         assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, implosions: 1, blasts: 0, ejects: 0, ecools: 0, jumps: 0 });
         route(RoomEvent::Reactor(ReactorEvent::Blast(reactor_core::Blast::default())), &mut k);

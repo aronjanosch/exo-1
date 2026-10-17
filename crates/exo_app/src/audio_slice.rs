@@ -164,7 +164,7 @@ pub fn part_share(r: &ReactorNews, d: RepairDevice) -> f64 {
     match d {
         RepairDevice::Reactor => r.reactor.share,
         RepairDevice::CoolantPump => r.pump.share,
-        RepairDevice::JunctionBox => r.junction.share,
+        RepairDevice::JunctionBox(i) => r.junctions[i].share,
         RepairDevice::OxygenGenerator => r.oxygen_generator.share,
         RepairDevice::HullBreach => crate::repair::breach_share(&r.breaches),
     }

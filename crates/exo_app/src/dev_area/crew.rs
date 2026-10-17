@@ -17,7 +17,7 @@
 //! `origin/round/dev-area`). It is not the player figure (#32) and has no status label yet
 //! (`public_status.rs` labels the net figures only; TODO(initiator)). It walks in a straight line through
 //! walls (TODO(initiator): pathing).
-use crate::dev_area::layout::{CORRIDOR, GUNNERY_AT, HELM_AT, JUNCTION_AT, REACTOR_SCREEN_AT};
+use crate::dev_area::layout::{CORRIDOR, GUNNERY_AT, HELM_AT, REACTOR_SCREEN_AT};
 use crate::dev_area::ship::{wire_pump, ReactorSim};
 use super::DevArea;
 use crate::displays::{ActiveDisplay, DisplayPanel};
@@ -102,7 +102,8 @@ pub fn occupied(using: &BTreeMap<PlayerId, BotStation>) -> [bool; STATIONS] {
 /// screen, and the pads' spots.
 pub fn layout() -> Layout {
     let pads = [CORRIDOR.point([-6.0, 0.0]), CORRIDOR.point([-4.0, 0.0]), CORRIDOR.point([-2.0, 0.0])];
-    Layout { stations: [GUNNERY_AT, REACTOR_SCREEN_AT, JUNCTION_AT, HELM_AT], pads }
+    // POWER stands at JB-1 (the old JB-01 screen is gone, #322).
+    Layout { stations: [GUNNERY_AT, REACTOR_SCREEN_AT, crate::dev_area::layout::junction_front(0, 0.3), HELM_AT], pads }
 }
 
 /// The host's bot round: this player's station is reported when it changes (every role; a client sends

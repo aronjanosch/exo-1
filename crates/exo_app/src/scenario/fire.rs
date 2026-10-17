@@ -177,7 +177,7 @@ pub(super) fn fire_steps(s: &mut Vec<Step>) {
             w.resource_scope(|w, mut grid: Mut<FireGrid>| {
                 let mut a = w.resource_mut::<ShipAir>();
                 ignite(&mut a, &mut grid, model, Source::Pump, START);
-                ignite(&mut a, &mut grid, model, Source::Junction, START);
+                ignite(&mut a, &mut grid, model, Source::Junction(0), START);
             });
             return false;
         }
@@ -185,7 +185,7 @@ pub(super) fn fire_steps(s: &mut Vec<Step>) {
             return false;
         }
         let s = sim(w);
-        let (p, j, r) = (s.room.pump().condition().value(), s.room.junction().condition().value(), s.room.reactor().condition().value());
+        let (p, j, r) = (s.room.pump().condition().value(), s.room.junction(0).condition().value(), s.room.reactor().condition().value());
         end(w, c, format!("pump {p:.1}, junction {j:.1}, reactor {r:.1}"));
         true
     }));
@@ -193,7 +193,7 @@ pub(super) fn fire_steps(s: &mut Vec<Step>) {
     let spray_names = [
         (Source::Reactor, "fire: the spray puts out the reactor's fire"),
         (Source::Pump, "fire: the spray puts out the pump's fire"),
-        (Source::Junction, "fire: the spray puts out the junction box's fire"),
+        (Source::Junction(0), "fire: the spray puts out the junction box's fire"),
     ];
     for (src, name) in spray_names {
         let at = ignition_at(src);

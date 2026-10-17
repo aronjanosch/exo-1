@@ -342,7 +342,8 @@ impl BreakerGroup {
 pub enum RepairDevice {
     Reactor,
     CoolantPump,
-    JunctionBox,
+    /// Junction box 0..`JUNCTION_BOXES` (#322: JB-1 engine room, JB-2 corridor, JB-3 turret room).
+    JunctionBox(usize),
     /// The oxygen generator (r37): the wrench, as the pump.
     OxygenGenerator,
     /// The engine room's hull breach (r37): the wrench, held on it.
@@ -456,6 +457,9 @@ pub struct PartNews {
 
 pub const CANISTER_SLOTS: usize = 2;
 
+/// The ship's junction boxes (`reactor_core::JUNCTIONS`).
+pub const JUNCTION_BOXES: usize = 3;
+
 /// The kind of an antimatter canister (`engineering/engineering.json` `canisters`: standard, hot, spicy), as the readout colours it.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CanisterKind {
@@ -550,7 +554,10 @@ pub struct ReactorNews {
     pub canisters: [CanisterSlot; CANISTER_SLOTS],
     pub reactor: PartNews,
     pub pump: PartNews,
-    pub junction: PartNews,
+    /// The three junction boxes' condition (#322), JB-1 first.
+    pub junctions: [PartNews; JUNCTION_BOXES],
+    /// Each box's fault lamp: damaged below its repair threshold or broken.
+    pub junction_fault: [bool; JUNCTION_BOXES],
     /// The oxygen generator's condition (r37), as the pump's.
     pub oxygen_generator: PartNews,
     /// Each wall section's damage, 0..1 (r37's breach, by section in r40; a section leaks above 0.1).
@@ -842,7 +849,8 @@ mod tests {
             demand_kw: [800.0, 400.0, 80.0, 0.0, 0.0, 0.0],
             reactor: PartNews { share: 0.9, working: true },
             pump: PartNews { share: 0.4, working: true },
-            junction: PartNews { share: 1.0, working: true },
+            junctions: [PartNews { share: 1.0, working: true }, PartNews { share: 0.7, working: true }, PartNews { share: 0.0, working: false }],
+            junction_fault: [false, true, true],
             oxygen_generator: PartNews { share: 0.6, working: true },
             breaches: [0.55, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0],
             director: true,
@@ -1071,7 +1079,7 @@ mod tests {
 
     #[test]
     fn repair_asks_travel_as_they_are() {
-        for ask in [RepairAsk::Start { device: RepairDevice::JunctionBox, tool: RepairTool::Screwdriver }, RepairAsk::Start { device: RepairDevice::CoolantPump, tool: RepairTool::Wrench }, RepairAsk::Start { device: RepairDevice::OxygenGenerator, tool: RepairTool::Wrench }, RepairAsk::Start { device: RepairDevice::HullBreach, tool: RepairTool::Wrench }, RepairAsk::Hit, RepairAsk::Miss, RepairAsk::Stop, RepairAsk::Hold(true), RepairAsk::Hold(false), RepairAsk::Aim(5), RepairAsk::Outside(true), RepairAsk::Outside(false)] {
+        for ask in [RepairAsk::Start { device: RepairDevice::JunctionBox(1), tool: RepairTool::Screwdriver }, RepairAsk::Start { device: RepairDevice::CoolantPump, tool: RepairTool::Wrench }, RepairAsk::Start { device: RepairDevice::OxygenGenerator, tool: RepairTool::Wrench }, RepairAsk::Start { device: RepairDevice::HullBreach, tool: RepairTool::Wrench }, RepairAsk::Hit, RepairAsk::Miss, RepairAsk::Stop, RepairAsk::Hold(true), RepairAsk::Hold(false), RepairAsk::Aim(5), RepairAsk::Outside(true), RepairAsk::Outside(false)] {
             let back = match decode::<ToHost>(&encode(&ToHost::Repair(ask))).expect("decodes") {
                 ToHost::Repair(a) => a,
                 _ => panic!("the repair request"),

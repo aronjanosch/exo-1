@@ -47,6 +47,8 @@ pub enum Target {
     /// The same door while it is locked (the airlock rests outside, or a cycle runs): F shows LOCKED and does nothing.
     AirlockLocked,
     Rack(item_core::RackId),
+    /// A toggle of a junction box (#322): the box and the toggle on it.
+    JunctionToggle(usize, usize),
     /// A locker, box or crate: F opens its window (or closes it while open). `by` is the player
     /// who has it open, if it is not the walker itself: the prompt greys out and F does nothing.
     Container { rack: item_core::RackId, by: Option<item_core::PlayerId> },
@@ -117,6 +119,7 @@ fn verb(t: &Target, size: &str) -> String {
         Target::LeavePanel(_) => "leave ".into(),
         Target::Item(_) => "pick up ".into(),
         Target::Rack(_) => "swap at the rack".into(),
+        Target::JunctionToggle(..) => "switch ".into(),
         Target::Container { .. } => "open ".into(),
         Target::AirlockLocked => "locked".into(),
         Target::Door { open } | Target::BridgeDoor { open } | Target::EquipDoor { open } | Target::AirlockDoor { open } => if *open { "close ".into() } else { "open ".into() },
@@ -140,7 +143,7 @@ pub fn interaction(
     mut gp: ResMut<crate::gameplay::Gameplay>,
     (mut active, displays): (ResMut<ActiveDisplay>, Query<(Entity, &DisplayPanel)>),
     (time, mut items, loose, door, doors, bridge_door, bridge_doors): (Res<Time>, ResMut<Items>, Query<(Entity, &Crate, &LooseItem)>, Option<Res<EngineDoor>>, Query<&Position, With<Slab>>, Option<Res<BridgeDoor>>, Query<&Position, With<BridgeSlab>>),
-    (boxes, supply, airlock_doors, equip_door, equip_doors, mut cw, mut ui, specs): (Query<(&DevBox, &Position)>, Option<Res<crate::dev_area::fire::extinguisher::Supply>>, Query<(&crate::dev_area::hull::airlock::AirlockSlab, &Position)>, Option<Res<EquipDoor>>, Query<&Position, With<EquipSlab>>, ResMut<crate::container_window::ContainerWindow>, ResMut<crate::items::InventoryUi>, Res<crate::container_window::ContainerSpecs>),
+    (boxes, supply, airlock_doors, equip_door, equip_doors, mut cw, mut ui, specs, junction_rooms): (Query<(&DevBox, &Position)>, Option<Res<crate::dev_area::fire::extinguisher::Supply>>, Query<(&crate::dev_area::hull::airlock::AirlockSlab, &Position)>, Option<Res<EquipDoor>>, Query<&Position, With<EquipSlab>>, ResMut<crate::container_window::ContainerWindow>, ResMut<crate::items::InventoryUi>, Res<crate::container_window::ContainerSpecs>, Query<&crate::dev_area::engineering::junction_boxes::JunctionRoom>),
 ) {
     let Ok(mut pl) = players.single_mut() else { return };
     let Some((ship_e, sp, sr)) = ships.iter().next().map(|(e, _, p, r)| (e, *p, *r)) else { return };
@@ -262,6 +265,8 @@ pub fn interaction(
             let usable = r.airlock.inside && r.airlock.cycling == item_core::wire::AirlockCycle::Idle;
             (pl.ship.is_none() && near).then_some(if usable { Target::AirlockDoor { open: r.airlock.inner_open } } else { Target::AirlockLocked })
         });
+        // A toggle of a junction box the view points at (#322): its own ray test, nearer than a display's cone.
+        let junction_pick = (pl.ship.is_none() && own_frame).then(|| junction_rooms.iter().find_map(|r| r.pick(eye, look, USE_RANGE).map(|k| Target::JunctionToggle(r.index, k)))).flatten();
         match best {
             // A crate in reach of the hands wins over the seat; the tool's reach does not.
             Some((_, e, Reach::Hands)) => Some(Target::Crate(e, Reach::Hands)),
@@ -271,7 +276,7 @@ pub fn interaction(
                 let rack_pick = pl.ship.is_none().then(|| supply.as_ref().and_then(|sup| boxes.iter().find_map(|(b, p)| sup.0.rack_in(&b.id).filter(|_| in_cone(eye, look, p.0, half, USE_RANGE).is_some()).map(Target::Rack)))).flatten();
                 // Lockers stand side by side (#311): of the containers in the cone the one nearest the view's centre wins.
                 let container_pick = pl.ship.is_none().then(|| specs.0.iter().filter_map(|s| boxes.iter().find(|(b, p)| b.id == s.box_id && in_cone(eye, look, p.0, half, USE_RANGE).is_some()).map(|(_, p)| ((p.0 - eye).angle_between(look), s))).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, s)| Target::Container { rack: s.rack, by: items.client.holder(s.rack).filter(|p| *p != items.me()) })).flatten();
-                item_target.map(Target::Item).or(panel_pick.map(Target::Panel)).or(door_pick).or(bridge_pick).or(equip_pick).or(airlock_pick).or(rack_pick).or(container_pick)
+                junction_pick.or(item_target.map(Target::Item)).or(panel_pick.map(Target::Panel)).or(door_pick).or(bridge_pick).or(equip_pick).or(airlock_pick).or(rack_pick).or(container_pick)
             }
         }
     };
@@ -305,6 +310,7 @@ pub fn interaction(
         Some(Target::BridgeDoor { .. }) => bridge_doors.iter().next().map(|p| p.0),
         Some(Target::EquipDoor { .. }) => equip_doors.iter().next().map(|p| p.0),
         Some(Target::AirlockDoor { .. } | Target::AirlockLocked) => airlock_doors.iter().find(|(s, _)| s.door == reactor_core::Door::Inner).map(|(_, p)| p.0),
+        Some(Target::JunctionToggle(i, k)) => junction_rooms.iter().find(|r| r.index == *i).map(|r| r.toggle_at(*k)),
         Some(Target::Rack(r)) => supply.as_ref().and_then(|sup| boxes.iter().find(|(b, _)| sup.0.rack_in(&b.id) == Some(*r)).map(|(_, p)| p.0)),
         Some(Target::Container { rack, .. }) => container_pos(*rack),
         _ => None,
@@ -321,6 +327,7 @@ pub fn interaction(
                 Target::SeatLocked => p.push_str(&format!(" ({})", gp.licence_hint())),
                 Target::Counter(g) => p.push_str(&gp.jobs_content.givers.get(g).map(|g| gp.text(&g.record.name)).unwrap_or_default()),
                 Target::Panel(e) => p.push_str(&displays.get(*e).map(|(_, d)| d.name.clone()).unwrap_or_default()),
+                Target::JunctionToggle(i, k) => p.push_str(&crate::dev_area::engineering::junction_boxes::describe(*i, *k, &items).name),
                 Target::Item(e) => {
                     if let Ok((_, _, li)) = loose.get(*e) {
                         p.push_str(&items.defs.get(&li.def).map_or(li.def.clone(), |d| d.name.clone()));
@@ -390,6 +397,10 @@ pub fn interaction(
                 Target::Drop(_) => {
                     set("Set down", format!("{size} crate"));
                     note = (format!("{throw_key} throw"), Tone::Normal);
+                }
+                Target::JunctionToggle(i, k) => {
+                    let d = crate::dev_area::engineering::junction_boxes::describe(*i, *k, &items);
+                    set(d.verb, d.name);
                 }
                 Target::Door { open } => set(if *open { "Close" } else { "Open" }, "Engine room door".into()),
                 Target::BridgeDoor { open } => set(if *open { "Close" } else { "Open" }, "Bridge door".into()),
@@ -509,6 +520,7 @@ pub fn interaction(
             }
         }
         Target::Container { by: Some(_), .. } => {}
+        Target::JunctionToggle(i, k) => crate::dev_area::engineering::junction_boxes::press(i, k, &mut items),
         Target::Rack(rack) => {
             let slot = items.client.view.selected;
             let _ = items.request(time.elapsed_secs_f64(), item_core::Request::Swap { slot, rack });

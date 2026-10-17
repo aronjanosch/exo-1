@@ -56,13 +56,13 @@ pub fn load_tuning(files: &[content_core::File]) -> Result<Tuning, Vec<String>> 
 pub fn tool_for(device: RepairDevice) -> RepairTool {
     match device {
         RepairDevice::Reactor | RepairDevice::CoolantPump | RepairDevice::OxygenGenerator | RepairDevice::HullBreach => RepairTool::Wrench,
-        RepairDevice::JunctionBox => RepairTool::Screwdriver,
+        RepairDevice::JunctionBox(_) => RepairTool::Screwdriver,
     }
 }
 
 pub fn machine_of(device: RepairDevice) -> Machine {
     match device {
-        RepairDevice::JunctionBox => Machine::Electrical,
+        RepairDevice::JunctionBox(_) => Machine::Electrical,
         RepairDevice::Reactor => Machine::Hot,
         RepairDevice::CoolantPump | RepairDevice::OxygenGenerator | RepairDevice::HullBreach => Machine::Mechanical,
     }
@@ -80,8 +80,8 @@ fn device_of(id: &str) -> Option<RepairDevice> {
     match id {
         REACTOR => Some(RepairDevice::Reactor),
         COOLANT_PUMP => Some(RepairDevice::CoolantPump),
-        JUNCTION_BOX => Some(RepairDevice::JunctionBox),
         OXYGEN_GENERATOR => Some(RepairDevice::OxygenGenerator),
+        id if JUNCTION_BOX.contains(&id) => JUNCTION_BOX.iter().position(|b| *b == id).map(RepairDevice::JunctionBox),
         id if BREACH_IDS.contains(&id) || BREACH_OUT_IDS.contains(&id) => Some(RepairDevice::HullBreach),
         _ => None,
     }
@@ -93,7 +93,7 @@ fn condition(room: &EngineRoom, d: RepairDevice) -> Option<&Condition> {
     match d {
         RepairDevice::Reactor => Some(room.reactor().condition()),
         RepairDevice::CoolantPump => Some(room.pump().condition()),
-        RepairDevice::JunctionBox => Some(room.junction().condition()),
+        RepairDevice::JunctionBox(i) => Some(room.junction(i).condition()),
         RepairDevice::OxygenGenerator => Some(room.oxygen_generator().condition()),
         RepairDevice::HullBreach => None,
     }
@@ -103,7 +103,7 @@ fn condition_mut(room: &mut EngineRoom, d: RepairDevice) -> Option<&mut Conditio
     match d {
         RepairDevice::Reactor => Some(room.reactor_mut().condition_mut()),
         RepairDevice::CoolantPump => Some(room.pump_mut().condition_mut()),
-        RepairDevice::JunctionBox => Some(room.junction_mut().condition_mut()),
+        RepairDevice::JunctionBox(i) => Some(room.junction_mut(i).condition_mut()),
         RepairDevice::OxygenGenerator => Some(room.oxygen_generator_mut().condition_mut()),
         RepairDevice::HullBreach => None,
     }
@@ -130,7 +130,7 @@ fn source_of(d: RepairDevice) -> Option<Source> {
     match d {
         RepairDevice::Reactor => Some(Source::Reactor),
         RepairDevice::CoolantPump => Some(Source::Pump),
-        RepairDevice::JunctionBox => Some(Source::Junction),
+        RepairDevice::JunctionBox(i) => Some(Source::Junction(i)),
         RepairDevice::OxygenGenerator => Some(Source::OxygenGenerator),
         RepairDevice::HullBreach => None,
     }
@@ -147,7 +147,7 @@ fn part_of(r: &ReactorNews, d: RepairDevice) -> PartNews {
     match d {
         RepairDevice::Reactor => r.reactor,
         RepairDevice::CoolantPump => r.pump,
-        RepairDevice::JunctionBox => r.junction,
+        RepairDevice::JunctionBox(i) => r.junctions[i],
         RepairDevice::OxygenGenerator => r.oxygen_generator,
         RepairDevice::HullBreach => PartNews { share: breach_share(&r.breaches), working: true },
     }

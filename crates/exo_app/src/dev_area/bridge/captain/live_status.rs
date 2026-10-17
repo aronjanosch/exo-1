@@ -23,10 +23,11 @@ use item_core::wire::{BreakerGroup, Lamp, PartNews, ReactorNews, RoomAlarmKind};
 pub const ENGINE_ROOM: &str = "engine_room";
 pub const CORRIDOR: &str = "corridor";
 pub const BRIDGE: &str = "bridge";
-/// Device ids of the four devices `ReactorNews` has (the parts, `display_core::captain::SYSTEM_NAMES`).
+/// Device ids of the devices `ReactorNews` has (the parts, `display_core::captain::SYSTEM_NAMES`).
 pub const REACTOR: &str = "reactor";
 pub const PUMP: &str = "pump";
-pub const JUNCTION: &str = "junction";
+/// The three junction boxes (#322): JB-1 engine room, JB-2 corridor, JB-3 turret room.
+pub const JUNCTIONS: [&str; 3] = ["junction_1", "junction_2", "junction_3"];
 pub const OXYGEN_GENERATOR: &str = "oxygen_generator";
 /// Station id of the reactor readout (`crate::dev_area::engineering::panels::READOUT_ID`), the one an operate order points at.
 pub const REACTOR_STATION: &str = "reactor_readout";
@@ -179,10 +180,18 @@ pub fn alarms(r: &ReactorNews) -> Vec<AlarmRow> {
     if r.lamps[Lamp::FillLow.index()] {
         out.push(AlarmRow { text: "FILL LOW".into(), room: ENGINE_ROOM, order: console() });
     }
-    for (p, id, name) in [(r.reactor, REACTOR, "REACTOR"), (r.pump, PUMP, "PUMP"), (r.oxygen_generator, OXYGEN_GENERATOR, "O2 GEN")] {
+    let devices = [
+        (r.reactor, REACTOR, "REACTOR", ENGINE_ROOM),
+        (r.pump, PUMP, "PUMP", ENGINE_ROOM),
+        (r.junctions[0], JUNCTIONS[0], "JB-1", ENGINE_ROOM),
+        (r.junctions[1], JUNCTIONS[1], "JB-2", CORRIDOR),
+        (r.junctions[2], JUNCTIONS[2], "JB-3", CORRIDOR),
+        (r.oxygen_generator, OXYGEN_GENERATOR, "O2 GEN", ENGINE_ROOM),
+    ];
+    for (p, id, name, room) in devices {
         if !p.working || p.share < WORN_BELOW {
             let state = if p.working { "WORN" } else { "BROKEN" };
-            out.push(AlarmRow { text: format!("{name} {state} {:.0} %", p.share * 100.0), room: ENGINE_ROOM, order: Some((OrderKind::Repair, Target::Device(DeviceId::new(id)))) });
+            out.push(AlarmRow { text: format!("{name} {state} {:.0} %", p.share * 100.0), room, order: Some((OrderKind::Repair, Target::Device(DeviceId::new(id)))) });
         }
     }
     out
@@ -211,7 +220,7 @@ mod tests {
     /// A ship with nothing wrong: whole, full shield, breakers on and asking nothing, air full.
     fn healthy() -> ReactorNews {
         let part = PartNews { share: 1.0, working: true };
-        let mut r = ReactorNews { reactor: part, pump: part, junction: part, oxygen_generator: part, shield: 1.0, power_on: true, ..ReactorNews::default() };
+        let mut r = ReactorNews { reactor: part, pump: part, junctions: [part; 3], oxygen_generator: part, shield: 1.0, power_on: true, ..ReactorNews::default() };
         r.breakers = [true; item_core::wire::BREAKER_GROUPS];
         r.canisters = [CanisterSlot { canister: None, life: 80.0 }; item_core::wire::CANISTER_SLOTS];
         r.optimal = [20.0, 60.0];

@@ -1,4 +1,4 @@
-//! The status monitor ST-01 on the engine room's east wall: where the trouble is, at a glance. Rows: the three rooms (engine room, corridor, bridge: air, fire, the engine room's breach, the alarm word from `ReactorNews::alarms`), a SILENCE button that mutes the sounding alarms, the four devices (condition) and the six grid groups (supply).
+//! The status monitor ST-01 on the engine room's east wall: where the trouble is, at a glance. Rows: the three rooms (engine room, corridor, bridge: air, fire, the engine room's breach, the alarm word from `ReactorNews::alarms`), a SILENCE button that mutes the sounding alarms, the devices (condition; the three junction boxes each) and the six grid groups (supply).
 //! Ported from Barotrauma's MiniMap, the hull status and electrical view (`BarotraumaClient/ClientSource/Items/Components/Machines/MiniMap.cs`, the row model in `display_core::monitor`). Not ported: the water, the item finder, the blips and the search.
 //! SILENCE is read in `hull::panels::read_clicks` (`ReactorAsk::SilenceAlarms`). The screen reads the reactor snapshot, which carries the rooms' air, fire and alarms for clients too.
 //! Placement: the east wall's inner face (x -9.0) at the reactor readout's end of the room, clear of the coolant pump's screen and the oxygen generator.
@@ -31,7 +31,9 @@ pub fn monitor_panel(r: Option<&ReactorNews>) -> Panel {
     let devices = [
         ("REACTOR", r.map(|r| r.reactor)),
         ("PUMP", r.map(|r| r.pump)),
-        ("JUNCTION", r.map(|r| r.junction)),
+        ("JB-1", r.map(|r| r.junctions[0])),
+        ("JB-2", r.map(|r| r.junctions[1])),
+        ("JB-3", r.map(|r| r.junctions[2])),
         ("O2 GEN", r.map(|r| r.oxygen_generator)),
     ];
     let groups = [

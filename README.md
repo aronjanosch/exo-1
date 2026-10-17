@@ -85,8 +85,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 | `crate-hull` | A crate thrown at the hull stops outside it, never in the cabin. |
 | `crate-wake-stream` | Crates 500 m away stay frozen; when the walker comes they wake as Avian bodies with no drop below ground. |
 | `town` | The first city stands on its plot, its buildings stop the walker, the characters stand at their spots. |
-| `dev_area` | The dev area: level ground, walker and test console, the cursor on the console, the design system's sample screens. |
-| `displays` | The pointer on the test console: hover, press and release, disabled buttons, slider, Escape. |
+| `dev_area` | The dev area: level ground, the walker starts on it. |
 | `items` | Items on the dev area: collect, hold, drop, throw, a second player's request, inventory drag, a wrench through take-off. |
 | `hud` | The crew HUD: compass, vitals, credits fade, prompts, action bar dimming; with a window, pictures of its states. |
 | `health` | The walker's health: burn, radiation, on fire and down, on the host at the dev area. |
@@ -99,7 +98,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 | `rods` | Fuel rods by hand: loading, brake pull, and the spicy rod's radiation. |
 | `blast` | The meltdown blast reaches a walker two metres off and not one at 25 m. |
 | `fire` | Fires in the engine room, sprayed out with the extinguisher. |
-| `fire_grid` | The cell model of the engine-room fire, switched on at the faults screen, catches the corridor. |
+| `fire_grid` | The cell model of the engine-room fire, switched on (fire model Grid), catches the corridor. |
 | `extinguisher` | The extinguisher's supply: wear, empty, refill at the corridor rack. |
 | `repair` | Repair at a machine by holding, with the ring off. |
 | `savefile` | Save, restart, load: the state that must survive comes back. |

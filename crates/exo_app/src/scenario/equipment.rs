@@ -9,7 +9,7 @@ use super::items::{items, look_at, tap_then, DELAY};
 use super::reactor::{click_until, use_display};
 use super::*;
 use crate::container_window::{place_centre, ContainerSpecs, ContainerWindow, Place};
-use crate::dev_area::equipment::{box_rack, suit_rack};
+use crate::dev_area::equipment::{box_rack, suit_rack, ALL_SUIT_LOCKERS, SUIT_LOCKERS};
 use crate::dev_area::gear::{MaskAir, SuitWorn};
 use crate::dev_area::hull::panels::{AIRLOCK_IN_ID, AIRLOCK_IN_NAME, AIRLOCK_OUT_ID, AIRLOCK_OUT_NAME, AIRLOCK_SHIP_ID, AIRLOCK_SHIP_NAME};
 use crate::dev_area::layout::{AIRLOCK, AIRLOCK_PANEL_AT, EQUIPMENT};
@@ -32,7 +32,8 @@ fn me(w: &World) -> u32 {
     items(w).me()
 }
 
-/// (suits, canisters) in the whole world: bars, worn places, racks; a suit's own canister counts.
+/// (suits, canisters) in the world without the pad zone's lockers (they hold their own stock):
+/// bars, worn places, racks; a suit's own canister counts.
 fn census(w: &World) -> (u32, u32) {
     let it = items(w);
     let (mut suits, mut cans) = (0, 0);
@@ -48,7 +49,8 @@ fn census(w: &World) -> (u32, u32) {
         (0..BAR_SLOTS).filter_map(|i| inv.slot(i)).for_each(&mut count);
         inv.worn.iter().for_each(&mut count);
     }
-    for c in it.host.racks.values() {
+    let pad: Vec<_> = (SUIT_LOCKERS..ALL_SUIT_LOCKERS).flat_map(|i| [suit_rack(i), box_rack(i)]).collect();
+    for c in it.host.racks.iter().filter(|(r, _)| !pad.contains(r)).map(|(_, c)| c) {
         (0..c.len()).filter_map(|i| c.slot(i)).for_each(&mut count);
     }
     (suits, cans)

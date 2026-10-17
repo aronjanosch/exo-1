@@ -1,7 +1,7 @@
 //! The dev area: a small level rectangle on Hearth (`content/place/dev_area.json`) to try the
 //! mechanics without the finished ship. Area frame: metres, x east, y north, from the place's
 //! centre (`town::Frame`). Two parts: in the south half the mini ship (`layout`), in the north half
-//! the open role zones (`ROLE_ZONES`); the landing pad lies east of the ship. Each owner module
+//! the open role zones (`ROLE_ZONES`); the pad zone lies south-east of the ship. Each owner module
 //! (`hull`, `engineering`, `bridge`, `turrets`, `lab`, `medbay`, `crew`, `gear`, `storage`,
 //! `hazards`, `fire`, `dev`, with `ship` the shared step) has its own plugin; a zone's boxes go into
 //! `DevAreaDevices` (a box with an optional display panel). Boxes are static Avian cuboids on
@@ -18,6 +18,7 @@ use display_core::PanelId;
 
 pub mod bridge;
 pub mod crew;
+pub mod dev_asks;
 pub mod dev;
 pub mod equipment;
 pub mod engineering;
@@ -36,7 +37,6 @@ pub mod turrets;
 pub const PLACE: &str = "dev_area";
 /// Half the rectangle's size, east and north (m). The place's flatten edit reaches a little further.
 pub const HALF_EXTENT: [f64; 2] = [24.0, 20.0];
-pub const PAD_MAIN: [f64; 2] = [17.0, -12.0];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Zone {
@@ -67,11 +67,15 @@ pub const MEDBAY: Zone = Zone { name: "medbay", centre: [-18.0, 15.5], half: ZON
 pub const STORAGE: Zone = Zone { name: "storage", centre: [-6.0, 15.5], half: ZONE_HALF };
 pub const HAZARDS: Zone = Zone { name: "hazards", centre: [6.0, 15.5], half: ZONE_HALF };
 pub const DEV: Zone = Zone { name: "dev", centre: [18.0, 15.5], half: ZONE_HALF };
-/// The landing pad east of the ship, by the airlock's outer door: the flight ship parks here
-/// (`content/place/dev_area.json`, pad "main").
-pub const PADS: Zone = Zone { name: "pads", centre: [17.0, -12.0], half: [7.0, 7.0] };
+/// The pad zone in the south-east, clear of the mini ship's airlock (its outer door at x 12.35) and of
+/// the lab zone to the north: the flight ship parks on the pad at its centre (`content/place/dev_area.json`,
+/// pad "main", radius 7 m). The ship faces west there (its nose along world -z) and its ramp points
+/// east; the suit lockers stand beside the ramp (`equipment`). TODO(initiator): the spot and the size.
+pub const PAD_ZONE: Zone = Zone { name: "pad", centre: [21.5, -14.5], half: [8.0, 9.0] };
+/// The pad where the flight ship parks (and where a downed walker respawns): the pad zone's centre.
+pub const PAD_MAIN: [f64; 2] = PAD_ZONE.centre;
 pub const ROLE_ZONES: [Zone; 8] = [ENGINEERING, BRIDGE_ZONE, TURRETS, LAB, MEDBAY, STORAGE, HAZARDS, DEV];
-pub const ZONES: [Zone; 9] = [ENGINEERING, BRIDGE_ZONE, TURRETS, LAB, MEDBAY, STORAGE, HAZARDS, DEV, PADS];
+pub const ZONES: [Zone; 9] = [ENGINEERING, BRIDGE_ZONE, TURRETS, LAB, MEDBAY, STORAGE, HAZARDS, DEV, PAD_ZONE];
 
 /// A display mounted on a box: its id and name, its size, its centre in the box's frame (x right,
 /// y up from the ground, z towards the box's front) and how far it leans back.
@@ -92,7 +96,7 @@ pub struct PlaceholderBox {
     pub local_pos: [f64; 2],
     /// Width, height and depth (m): x right, y up, z towards the front.
     pub size: [f64; 3],
-    /// Counter-clockwise from above; 0 faces south (the pads), 180 north.
+    /// Counter-clockwise from above; 0 faces south (the pad zone), 180 north.
     pub turn_deg: f64,
     pub colour: [f32; 3],
     pub panel: Option<PanelSpec>,
@@ -171,7 +175,7 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Update, spawn_devices.in_set(crate::phases::Frame::World));
     // One plugin per owner; the layout spawns the inner ship's walls and screens.
     app.add_plugins((ship::plugin, layout::plugin, hull::plugin, engineering::plugin, bridge::plugin, turrets::plugin));
-    app.add_plugins((crew::plugin, gear::plugin, equipment::plugin, fire::plugin, lab::plugin, medbay::plugin, storage::plugin, hazards::plugin, dev::plugin));
+    app.add_plugins((crew::plugin, dev_asks::plugin, gear::plugin, equipment::plugin, fire::plugin, lab::plugin, medbay::plugin, storage::plugin, hazards::plugin, dev::plugin));
 }
 
 pub fn window_plugin(app: &mut App) {
@@ -258,6 +262,7 @@ fn zone_colour(z: &Zone) -> Color {
         "storage" => Color::srgb(0.7, 0.7, 0.62),
         "hazards" => Color::srgb(0.9, 0.2, 0.7),
         "dev" => Color::srgb(0.5, 0.5, 0.5),
+        "pad" => Color::srgb(0.85, 0.85, 0.2),
         _ => Color::srgb(0.85, 0.85, 0.2),
     }
 }

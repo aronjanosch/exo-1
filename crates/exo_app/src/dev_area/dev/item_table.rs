@@ -3,8 +3,8 @@ use crate::items::{Items, LOCAL};
 use crate::ship::Ship;
 use item_core::{FrameRef, Placement};
 
-/// Where the table stands in the dev zone (m from the zone's centre): north of the tools' row, with
-/// a walkway between.
+/// Where the table stands in the dev zone (m from the zone's centre): near the middle, with
+/// room to walk around it.
 pub const AT: [f64; 2] = [0.0, 2.5];
 /// Table size (m): width, height, depth.
 pub const SIZE: [f64; 3] = [1.8, 0.9, 0.8];

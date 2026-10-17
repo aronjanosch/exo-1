@@ -3,7 +3,7 @@ use super::*;
 use crate::dev_area::hull::alarms::ShipAlarm;
 use crate::dev_area::ship::{ReactorCounts, ReactorSim};
 use crate::dev_area::{layout::{COOLANT_PUMP_AT, JUNCTION_BOX_AT}};
-use crate::dev_area::{dev::faults::FAULTS_ID, engineering::panels::{JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID}};
+use crate::dev_area::{engineering::panels::{JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID}};
 use crate::dev_area::DevArea;
 use super::{ship_frame_of, with_player};
 use super::dev_area::tap_until;
@@ -12,7 +12,7 @@ use crate::interact::Interaction;
 use crate::items::Items;
 use bevy::math::DVec3;
 use display_core::PanelId;
-use item_core::wire::{Alarm, ReactorAsk};
+use item_core::wire::{Alarm, ReactorAsk, ReactorFault};
 use reactor_core::Group;
 
 fn display(w: &mut World, id: PanelId) -> DisplayPanel {
@@ -42,17 +42,11 @@ fn temp_now(w: &World) -> (f64, [f64; 2]) {
     (r.temperature(), [r.bands().temp_optimal.lo, r.bands().temp_optimal.hi])
 }
 
-fn click_now(w: &mut World, id: PanelId, action: &str) {
-    let d = display(w, id);
-    let at = world_point_of(w, &d, action, None).unwrap_or_else(|| panic!("no widget '{action}'"));
-    aim_at(w, at);
-    w.resource_mut::<Controls>().click = true;
-}
-
-fn click_step(id: PanelId, action: &'static str, wait: f64) -> Step {
+/// A dev ask on the reactor (the dev faults screen's old buttons, #307), then `wait` seconds.
+fn dev_ask(a: ReactorAsk, wait: f64) -> Step {
     Box::new(move |w, c| {
         if c.t == 0.0 {
-            click_now(w, id.clone(), action);
+            w.resource_mut::<Items>().ask_reactor(a);
             return false;
         }
         c.t >= wait
@@ -149,9 +143,8 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // The dev faults screen: Pump break, Warn, then Danger.
-    use_display(s, "Dev faults", FAULTS_ID, [-17.5, -12.2]);
-    s.push(click_step(FAULTS_ID, "pump_break", 0.2));
+    // The dev ask Pump break: Warn, then Danger.
+    s.push(dev_ask(ReactorAsk::Trigger(ReactorFault::PumpBreak), 0.2));
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "reactor: Pump break goes Warn, then Danger");
@@ -199,10 +192,10 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         }
         false
     }));
-    s.push(click_step(FAULTS_ID, "reset", 0.2));
+    s.push(dev_ask(ReactorAsk::Reset, 0.2));
     s.push(settle(120.0, "reactor: Reset reactor brings it back calm"));
 
-    s.push(click_step(FAULTS_ID, "load_drop", 0.2));
+    s.push(dev_ask(ReactorAsk::Trigger(ReactorFault::LoadDrop), 0.2));
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "reactor: Load drop on Auto overshoots above the optimal band");
@@ -222,9 +215,9 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    s.push(click_step(FAULTS_ID, "reset", 0.2));
+    s.push(dev_ask(ReactorAsk::Reset, 0.2));
     s.push(settle(120.0, "reactor: a second reset is calm"));
-    s.push(click_step(FAULTS_ID, "load_drop", 0.2));
+    s.push(dev_ask(ReactorAsk::Trigger(ReactorFault::LoadDrop), 0.2));
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "reactor: wait for the overshoot");

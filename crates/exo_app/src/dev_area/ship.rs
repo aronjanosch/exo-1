@@ -529,12 +529,12 @@ fn ship_send(time: Res<Time>, mut items: ResMut<Items>, mut sim: ResMut<ReactorS
 mod tests {
     use super::*;
     use crate::dev_area::hull::asks::alarm_news;
-    use crate::dev_area::{bridge, crew, dev, engineering, hull, turrets};
+    use crate::dev_area::{bridge, crew, engineering, hull, turrets};
     use item_core::wire::{AlarmNews, RoomAlarmKind};
 
     /// The asks as the owners take them on the host, in one place for these tests.
     fn apply_any(s: &mut ReactorSim, a: ReactorAsk, cfg: &Tuning, counts: &mut ReactorCounts) {
-        let taken = engineering::asks::apply(s, a, cfg, counts) || bridge::apply(s, a, counts) || turrets::apply(s, a) || hull::asks::apply_sim(s, a) || crew::apply(s, a) || dev::faults::apply_sim(s, a, cfg, counts);
+        let taken = engineering::asks::apply(s, a, cfg, counts) || bridge::apply(s, a, counts) || turrets::apply(s, a) || hull::asks::apply_sim(s, a) || crew::apply(s, a) || dev_asks::apply_sim(s, a, cfg, counts);
         assert!(taken, "no owner takes {a:?}");
     }
     use item_core::wire::BotStation;

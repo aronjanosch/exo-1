@@ -2,7 +2,7 @@
 //! and the hull; the crew's walker fires GN-01 until it is DESTROYED, or ARMs and JUMPs out on JD-01
 //! when the shots run out of time. Driven through `Controls` and the displays, as a crew would.
 //! The enemy and its outcome: `dev_area/reactor.rs` (`enemy_outcome`, `ReactorAsk::Ambush`).
-//! AMBUSH on the faults screen: `dev_area/reactor_screen.rs` (`ambush`). GN-01 FIRE and CLEAR JAM
+//! AMBUSH on, by the dev ask (`dev_area/dev_asks.rs`; the faults screen it came from is gone, #307). GN-01 FIRE and CLEAR JAM
 //! hold: `gunnery_panel`, `clear_jam_hold` (the hold is `Controls::pointer_down` on the widget, the
 //! same press path as a click). JD-01 ARM and JUMP: `jump_panel`.
 //!
@@ -14,12 +14,12 @@ use super::*;
 use super::reactor::{click_until, use_display};
 use crate::dev_area::{hull::ShipAir, layout::{GUNNERY_AT, JUMP_AT}};
 use crate::dev_area::ship::ReactorSim;
-use crate::dev_area::{turrets::panels::{ambush_running, GUNNERY_ID, GUNNERY_NAME}, dev::faults::{FAULTS_AT, FAULTS_ID, FAULTS_NAME}, bridge::panels::{JUMP_ID, JUMP_NAME}};
+use crate::dev_area::{turrets::panels::{ambush_running, GUNNERY_ID, GUNNERY_NAME}, bridge::panels::{JUMP_ID, JUMP_NAME}};
 use crate::displays::{aim_at, world_point_of, DisplayPanel};
 use crate::items::Items;
 use bevy::math::DVec3;
 use display_core::PanelId;
-use item_core::wire::{EnemyOutcome, JumpStage, ReactorNews};
+use item_core::wire::{EnemyOutcome, JumpStage, ReactorAsk, ReactorNews};
 
 /// The rules, counted over the whole run: each tick with a violation adds one.
 #[derive(Resource, Default, Clone, Copy, Debug)]
@@ -194,10 +194,23 @@ pub(super) fn ship_ambush_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    // AMBUSH on, at the dev faults screen: a new encounter.
-    // DEV-02 stands on its console in the dev zone, facing south: the walker stands 1.4 m south of it.
-    use_display(s, FAULTS_NAME, FAULTS_ID, [crate::dev_area::DEV.centre[0] + FAULTS_AT[0], crate::dev_area::DEV.centre[1] + FAULTS_AT[1] - 1.4]);
-    s.push(click_until(FAULTS_ID, "ambush", None, "ship ambush: AMBUSH on starts an encounter", |w| news(w).is_some_and(|r| ambush_running(&r))));
+    // AMBUSH on, by the dev ask (the faults screen's old button, #307): a new encounter.
+    s.push(Box::new(|w, c| {
+        if c.t == 0.0 {
+            begin(w, c, "ship ambush: AMBUSH on starts an encounter");
+            w.resource_mut::<Items>().ask_reactor(ReactorAsk::Ambush(true));
+            return false;
+        }
+        if news(w).is_some_and(|r| ambush_running(&r)) {
+            end(w, c, format!("{:.1} s", c.t));
+            return true;
+        }
+        if c.t >= 5.0 {
+            check(c, false, "ship ambush: AMBUSH on starts an encounter within 5 s".into());
+            return true;
+        }
+        false
+    }));
 
     // The enemy fires: at least two shots within 60 s. Then no NaN, and the shield or a section took damage.
     s.push(Box::new(|w, c| {

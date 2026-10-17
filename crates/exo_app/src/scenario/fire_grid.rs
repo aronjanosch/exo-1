@@ -5,9 +5,7 @@ use super::*;
 use crate::controls::Controls;
 use crate::dev_area::{layout::ignition_at, hull::ShipAir, hull::doors::EngineDoor};
 use crate::dev_area::fire::{FireGrid, FireModel};
-use crate::dev_area::dev::faults::FAULTS_ID;
 use crate::dev_area::DevArea;
-use crate::displays::DisplayAction;
 use crate::items::Items;
 use item_core::wire::{Alarm, ReactorAsk, ReactorFault};
 use reactor_core::Source;
@@ -50,19 +48,21 @@ pub(super) fn fire_grid_steps(s: &mut Vec<Step>) {
     take_extinguisher(s);
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
-            begin(w, c, "fire grid: the faults screen's button switches the fire to the cells");
+            begin(w, c, "fire grid: the fire model switches to the cells");
             let ready = w.resource::<DevArea>().frame.is_some() && w.contains_resource::<FireGrid>();
             if !ready && c.t < 5.0 {
                 return false;
             }
-            w.write_message(DisplayAction { panel: FAULTS_ID, action: "fire_model".into(), value: None });
+            // The old faults screen's "Fire mode" button (#307) flipped this resource.
+            let m = w.resource::<FireModel>().toggled();
+            *w.resource_mut::<FireModel>() = m;
             return false;
         }
         if c.t < 0.5 {
             return false;
         }
         let m = *w.resource::<FireModel>();
-        check(c, m == FireModel::Grid, format!("fire grid: the model is Grid after the click ({m:?})"));
+        check(c, m == FireModel::Grid, format!("fire grid: the model is Grid after the switch ({m:?})"));
         end(w, c, format!("{m:?}"));
         true
     }));

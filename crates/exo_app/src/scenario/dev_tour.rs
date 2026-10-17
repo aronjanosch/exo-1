@@ -3,7 +3,7 @@
 //! checks only that the walker starts inside the ship; the pictures are for the eye.
 use super::*;
 use crate::dev_area::layout::{self, Place, AIRLOCK, BRIDGE, CAPTAIN_AT, CORRIDOR, GUNNERY_AT, HELM_AT, LAB_ROOM, MEDBAY_ROOM, REACTOR_AT, ROOM, TURRET_ROOM};
-use crate::dev_area::{area_of, DevArea, PADS, ROLE_ZONES};
+use crate::dev_area::{area_of, DevArea, PAD_ZONE, ROLE_ZONES};
 use bevy::math::DVec3;
 
 /// A point at area metres, `height` above the ground.
@@ -130,7 +130,7 @@ pub(super) fn dev_tour_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str)
         s.push(shot_step(tag));
         s.push(wait(3.0));
     }
-    s.push(stand([PADS.centre[0] - 6.0, PADS.centre[1] - 6.0], PADS.centre));
+    s.push(stand([PAD_ZONE.centre[0] - 6.0, PAD_ZONE.centre[1] - 6.0], PAD_ZONE.centre));
     s.push(wait(3.0));
     s.push(shot_step("tour-19-pad"));
     s.push(wait(3.0));

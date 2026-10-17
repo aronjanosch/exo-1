@@ -1,9 +1,9 @@
 {
-  "_comment": "The dev area: a small level rectangle to try mechanics without the finished ship. Area frame: x east, y north; the mini ship in the south half (crates/exo_app/src/dev_area/layout.rs), the open role zones in the north half (dev_area/mod.rs), the pad 'main' east of the ship, where the flight ship parks; `--start=dev_area` puts the walker in the mini ship. On open dry land on Hearth near the equator (the noise ground there varies by under a metre over the rectangle). Position and sizes are starting values (TODO(initiator)).",
+  "_comment": "The dev area: a small level rectangle to try mechanics without the finished ship. Area frame: x east, y north; the mini ship in the south half (crates/exo_app/src/dev_area/layout.rs), the open role zones in the north half (dev_area/mod.rs), the pad zone (pad 'main') south-east of the ship, where the flight ship parks; `--start=dev_area` puts the walker in the mini ship. On open dry land on Hearth near the equator (the noise ground there varies by under a metre over the rectangle). Position and sizes are starting values (TODO(initiator)).",
   "id": "dev_area",
   "planet": "hearth",
   "lat_deg": 7.0,
   "lon_deg": 220.0,
-  "edits": [ { "type": "flatten", "order": 0, "half_extent_m": [29.0, 25.0], "rolloff_m": 30.0 } ],
-  "pads": [ { "id": "main", "at": [17.0, -12.0], "radius_m": 7.0 } ]
+  "edits": [ { "type": "flatten", "order": 0, "half_extent_m": [32.0, 25.0], "rolloff_m": 30.0 } ],
+  "pads": [ { "id": "main", "at": [21.5, -14.5], "radius_m": 7.0 } ]
 }

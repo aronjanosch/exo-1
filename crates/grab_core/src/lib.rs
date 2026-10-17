@@ -1,6 +1,6 @@
 //! grab_core: crates and how hands and the grab tool move them, without engine types, in f64
 //! Learned from the hold-point regulators of other games
-//! (`research/grab-and-cargo.md` in the concept repo); our own implementation and numbers.
+//! (`docs/research/crew-ship/grab-and-cargo.md` in the concept repo); our own implementation and numbers.
 //! All values are starting points for the playtest (`TODO(initiator)` in the data).
 pub mod budget;
 

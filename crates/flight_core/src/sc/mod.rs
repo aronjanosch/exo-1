@@ -1,5 +1,5 @@
 //! The SC flight model. Built after the structure of Star Citizen's flight control as far as our research reaches
-//! (concept repo `docs/research/flight-feel.md`, `docs/research/flight-controller-notes.md`, the
+//! (concept repo `docs/research/flight/flight-feel.md`, `docs/research/flight/flight-controller-notes.md`, the
 //! IFCS switches of the local records); own names, code and values. Thrust is a force on the
 //! ship's mass, torque turns it against its inertia.
 //!

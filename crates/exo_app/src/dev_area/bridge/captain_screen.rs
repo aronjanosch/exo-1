@@ -3,7 +3,7 @@
 //! power, the jump drive, the guns) and the threat word, and has four presses: the engine room's door and
 //! the bridge door (CLOSE / OPEN), the airlock's SEAL, and SILENCE. The captain decides; the crew acts. The rows are `display_core::captain`.
 //!
-//! Sources: PULSAR's captain screen (`docs/research/pulsar-reference.md`, section "Captain": the status, the
+//! Sources: PULSAR's captain screen (`docs/research/pulsar/pulsar-reference.md`, section "Captain": the status, the
 //! alert level, the orders). Barotrauma's status monitor reads the same rows (`display_core::monitor`, ported
 //! from MiniMap.cs; the monitor here is `status_monitor.rs`). The door is Barotrauma's Door.cs: the door's
 //! `set_state` takes a signal and sets the door's state directly (Door.cs:846-850, `IsOpen` at 176-185), so

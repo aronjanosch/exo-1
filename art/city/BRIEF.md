@@ -101,7 +101,7 @@ Initiator: "denk dran dass man in einige der gebäude auch rein will. am besten 
 - Child meshes of the building with `kind = "leaf"`, `door` (the door anchor's name) and `slide` [x, y, z]: the door leaf; the game moves it by `slide` (building frame, metres) to open the door.
 - Placements in `city_plan.py` with a sixth element `{"fit": kind, "role": role}`.
 - Colours come as `COLOR_0`; Bevy multiplies it into the material. Blender's own glTF import ignores it (`street_preview.py` puts the kit materials back).
-- Where a building sits in the city and where the city sits on the planet: a separate placement file, not in the model (`exo-1-concept/docs/research/place-authoring.md`).
+- Where a building sits in the city and where the city sits on the planet: a separate placement file, not in the model (`exo-1-concept/docs/research/planets/place-authoring.md`).
 
 ## Face orientation checks
 

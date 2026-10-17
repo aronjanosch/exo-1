@@ -3,7 +3,7 @@
 //! (`exo_app/src/dev_area/captain_screen.rs`) draws it and reads the buttons; the engine room's door
 //! screen shows the threat word as its EMERGENCY line (#301).
 //!
-//! What the captain sees follows PULSAR's captain screen (`docs/research/pulsar-reference.md`, section
+//! What the captain sees follows PULSAR's captain screen (`docs/research/pulsar/pulsar-reference.md`, section
 //! "Captain"): the ship's status, the shield, the systems, and the alert level (green, yellow, red),
 //! which is the threat word here (NONE, DAMAGE, CRITICAL). The rows reuse Barotrauma's status monitor
 //! (`monitor`, ported from MiniMap.cs 1165-1171 and 1228-1229): a room's air and alarm, a device's

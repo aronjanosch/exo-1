@@ -2,7 +2,7 @@
 //! startup. Sources: the manual's "Ship Startup Sequence" (`pulsar/assets/textassets/manual_plain.txt`
 //! lines 370-381: six steps, the order is enforced, pulling the first lever cuts all power at once);
 //! the concept repo's `docs/design/ship.md` row "Cooperative startup" (the crew starts the ship
-//! together) and `docs/research/pulsar-reference.md` section 1 ("ship startup (six steps, teamwork)").
+//! together) and `docs/research/pulsar/pulsar-reference.md` section 1 ("ship startup (six steps, teamwork)").
 //! Barotrauma has no ship startup.
 //!
 //! Our mapping of the six steps (the manual's wording in brackets):

@@ -13,7 +13,7 @@
 //! Heat (r41): Barotrauma has no turret heat (grep of Turret.cs and the coilgun XML finds none), so
 //! the numbers are ours. PULSAR's manual has none either: it says only that turrets "fire a single
 //! shot, others are beam weapons" (manual_plain.txt, "Ship Turrets"). Its talent names WPNS_COOLING
-//! and E_TURRET_COOLING_CREW_ENGINEER (concept repo `docs/research/pulsar-catalog.md`, Talents) show
+//! and E_TURRET_COOLING_CREW_ENGINEER (concept repo `docs/research/pulsar/pulsar-catalog.md`, Talents) show
 //! that turret cooling exists there, but the dump has no values. The shape is ours: a shot adds
 //! `heat_per_shot`, the gun cools `cool_per_s` at all times, reaching `overheat_at` locks it until the
 //! heat falls below `unlock_at` (the gap is the hysteresis, so the gun does not flicker at the line).
@@ -21,7 +21,7 @@
 //!
 //! Jam (r41): Barotrauma's skill check. `ItemComponent.DegreeOfSuccess` turns skills into a 0..1
 //! degree (Items/Components/ItemComponent.cs:713-727), and the repair roll uses that degree (concept
-//! repo `docs/research/barotrauma-mech-damage-repair.md` §3.1). The repo's own port of the roll is
+//! repo `docs/research/barotrauma/barotrauma-mech-damage-repair.md` §3.1). The repo's own port of the roll is
 //! device_core's `Condition::fail_chance` (device_core/src/lib.rs:254-259): the base chance times
 //! (1 - skill / required_skill), clamped. We use that linear shape, so skill 0 gives the base chance
 //! and the required skill gives none. The §3.1 degree formula ((average + 100) / 200) would give 0.25
@@ -32,7 +32,7 @@
 //! The skill: no player has a weapons skill yet. `Weapons::new` takes 0 and `with_skill` sets one.
 //! The only skill value in the code is the repair config's `skill` (exo_app/src/repair.rs, the
 //! `RepairConfig` read at repair.rs:442): a real weapons skill would come from the gunner's skills
-//! once the skill system reaches the crew (concept repo `docs/research/skills-mapping.md`, the proposal).
+//! once the skill system reaches the crew (concept repo `docs/research/crew-ship/skills-mapping.md`, the proposal).
 //!
 //! Units: energy kW·s, power kW, time s, heat in units of the overheat line (1 is the line).
 #[cfg(test)]

@@ -25,7 +25,7 @@
 //! nobody is at the turret (`AutoOperate && ActiveUser == null`, Turret.cs:607-609), so it fires when a
 //! shot is ready, not on a schedule of its own.
 //!
-//! The priority list (PULSAR, docs/research/pulsar-mech-bot-priorities.md): five levels per row,
+//! The priority list (PULSAR, docs/research/pulsar/pulsar-mech-bot-priorities.md): five levels per row,
 //! Ignore, Low, Medium, High, Max (section 1, from the manual). The station rows we port are the names
 //! the dump gives (section 3.1): MAN_TURRET ("man turret") for GUNNERY, ENG_REACTOR_SAFETY ("engineering
 //! reactor safety") for REACTOR, the four ENG_*_FACTOR rows ("power distribution per conduit") for

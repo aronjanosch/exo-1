@@ -19,7 +19,7 @@
 //! - The door's open state is `Door.cs:176-186` (`IsOpen` sets `OpenState` to 1 or 0; the slide follows
 //!   it). The stuck and weld fields (`Door.cs:116-128`) are not here yet: no weld in 0.1.
 //! - Barotrauma's pump moves water (`Pump.cs`), so the cycle is ours. PULSAR has a slot type AIRLOCK
-//!   (`docs/research/pulsar-reference.md:77`, slot types), which is the same job for the ship.
+//!   (`docs/research/pulsar/pulsar-reference.md:77`, slot types), which is the same job for the ship.
 //! - Values: the cycle length and the pumped share are ours, `TODO(initiator)`: 3 s and 95 %. The
 //!   5 % that stay in the room leave with the outer door (into space, when the outside is vacuum).
 use serde::{Deserialize, Serialize};

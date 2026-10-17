@@ -38,10 +38,6 @@ _Avoid_: warp (that stays inside a star system), hyperspace
 A star with its planets, stations and sites; the unit of play of the campaign.
 _Avoid_: system (that word means a gameplay system), sector, level
 
-**System clock**:
-The time a crew has in one star system before it turns lethal.
-_Avoid_: chaos clock, timer, doom clock
-
 ### People
 
 **Player**:
@@ -149,6 +145,46 @@ _Avoid_: skill, perk, ability, upgrade
 **Ship system**:
 One working part of the ship, such as reactor, shields, life support, engines or turrets, with its own condition and power draw.
 _Avoid_: system (that word means a gameplay system), component, subsystem
+
+**Antimatter reactor**:
+The ship's power source. Set it and walk away (AUTO), or step in by hand (MANUAL) for more power or in an emergency. Not a fission reactor.
+_Avoid_: fission reactor, core (except in core eject), generator
+
+**Injection**:
+The reactor's left wheel: how much antimatter goes into the chamber, so how much power comes out.
+_Avoid_: fission rate
+
+**Field converter**:
+The reactor's right wheel: how much energy is taken off and fed into the grid.
+_Avoid_: turbine
+
+**Chamber heat**:
+The reactor's temperature, read on its gauge and on the room panel.
+_Avoid_: temperature, core temperature
+
+**Antimatter canister**:
+The reactor's fuel: a heavy canister with its own small magnetic trap, slotted into the side of the reactor, one fill gauge per slot.
+_Avoid_: fuel rod
+
+**SCRAM**:
+The red button under a cover on the reactor: stops injection and vents the chamber; heat falls fast, the reactor must be started again. The batteries carry the ship meanwhile.
+_Avoid_: emergency stop, shutdown
+
+**Core eject**:
+The last measure before the reactor fails: a lever under its own cover throws the core out; the ship runs on emergency power until a new reactor is fitted.
+_Avoid_: jettison, purge
+
+**Meltdown**:
+The reactor's bad end: the core turns unstable, the MELTDOWN screen counts down to the implosion. Name not final (the decision's proposal says containment breach).
+_Avoid_: explosion, overload
+
+**Emergency power**:
+The ship's batteries, which take over by themselves when the reactor gives no power.
+_Avoid_: aux power, backup reactor
+
+**Junction box**:
+A box in each area of the ship with one breaker per consumer group; a weak point under overload and a repair target.
+_Avoid_: fuse box, power node, relay
 
 **Bot**:
 An AI crew member that fills an empty station and works through a priority list.

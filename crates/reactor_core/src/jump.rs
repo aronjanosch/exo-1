@@ -1,9 +1,9 @@
 //! The jump drive's charge (#252): PULSAR's warp charge stages, ported as a state machine.
 //! Sources: the PULSAR manual's warp section (`manual_plain.txt`, "The Warp Drive Screen": the
 //! engineer starts the charge and can pause it at any time; charging causes "a noticeable spike"
-//! in the EM signature) and the concept repo's `docs/research/pulsar-reference.md` section 3 (the
+//! in the EM signature) and the concept repo's `docs/research/pulsar/pulsar-reference.md` section 3 (the
 //! stages COLD_START, PREPPING, PAUSED, READY, ACTIVE). The concept repo's
-//! `docs/research/pulsar-mech-conduits.md` gives the Engineering limit: less power, a longer charge.
+//! `docs/research/pulsar/pulsar-mech-conduits.md` gives the Engineering limit: less power, a longer charge.
 //!
 //! Our rule for the charge: the drive draws the JUMP group's demand while it is armed, so the
 //! grid's factor (0..1) is its power. Prepping counts `prep_s` of power, then the charge grows

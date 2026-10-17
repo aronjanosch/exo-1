@@ -8,7 +8,7 @@ use crate::dev_area::screens::*;
 use crate::dev_area::ship::{lamp_blink_on, ReactorConfig};
 use crate::items::Items;
 use display_core::{button, canvas, column, ctl, font, label, micro, readout, row, slider, space, toggle, Ink, Item, Panel, Rect, Shape, Tier, TextFace, Tone, Widget};
-use item_core::wire::{BotStation, BreakerGroup, FuelKind, FuelTube, Lamp, PumpMode, ReactorAsk, ReactorNews, FUEL_TUBES};
+use item_core::wire::{BotStation, BreakerGroup, CanisterKind, CanisterSlot, Lamp, PumpMode, ReactorAsk, ReactorNews, CANISTER_SLOTS};
 
 use crate::dev_area::crew::{bot_tagged, manned};
 use crate::dev_area::engineering::startup_screen;
@@ -18,7 +18,7 @@ pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, (read_clicks, write_panels).chain().in_set(crate::phases::Fx::Effects));
 }
 
-const LAMPS: [Lamp; Lamp::COUNT] = [Lamp::Hot, Lamp::CritHeat, Lamp::Cold, Lamp::LowTemp, Lamp::HighOut, Lamp::CritOut, Lamp::LowOut, Lamp::FuelLow, Lamp::NoFuel, Lamp::Meltdown, Lamp::Scram];
+const LAMPS: [Lamp; Lamp::COUNT] = [Lamp::Hot, Lamp::CritHeat, Lamp::Cold, Lamp::LowHeat, Lamp::HighOut, Lamp::CritOut, Lamp::LowOut, Lamp::FillLow, Lamp::NoFill, Lamp::Implosion, Lamp::Scram];
 
 /// A lamp's cell (px) and the gap between the cells.
 const LAMP_W: f64 = 96.0;
@@ -74,7 +74,7 @@ fn angle(v: f64) -> f64 {
     ARC_START + ARC_SWEEP * v.clamp(0.0, 100.0) / 100.0
 }
 
-/// The temperature zones of the sim's bands: `Good` is the optimal band, `Low` and `High` the
+/// The heat zones of the sim's bands: `Good` is the optimal band, `Low` and `High` the
 /// rest of the allowed band, `Crit` above it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Zone {
@@ -126,10 +126,10 @@ fn arc(cx: f64, cy: f64, r: f64, from: f64, to: f64, stroke: f64, ink: Ink, dash
     Shape::Arc { cx, cy, r, from, to, stroke, ink, dash }
 }
 
-fn temp_gauge(temp: f64, optimal: [f64; 2], allowed: [f64; 2]) -> Item {
+fn heat_gauge(heat: f64, optimal: [f64; 2], allowed: [f64; 2]) -> Item {
     let (cx, cy, r, sw) = (108.0, 70.0, 60.0, 14.0);
-    let z = zone(temp, optimal, allowed);
-    let t = temp.clamp(0.0, 100.0);
+    let z = zone(heat, optimal, allowed);
+    let t = heat.clamp(0.0, 100.0);
     let mut s = vec![
         arc(cx, cy, r, angle(0.0), angle(allowed[0]), sw, Ink::Line2, None),
         arc(cx, cy, r, angle(allowed[0]), angle(optimal[0]), sw, Ink::Warn, Some((9.0, 4.0))),
@@ -140,8 +140,8 @@ fn temp_gauge(temp: f64, optimal: [f64; 2], allowed: [f64; 2]) -> Item {
     let a = angle(t).to_radians();
     s.push(Shape::Line { a: [cx, cy], b: [cx + 46.0 * a.cos(), cy + 46.0 * a.sin()], width: 5.0, ink: Ink::FgTitle, dash: None });
     s.push(Shape::Circle { cx, cy, r: 8.0, fill: Some(Ink::Bg0), stroke: Some((Ink::FgTitle, 3.0)) });
-    s.push(text(0.0, 74.0, 216.0, 28.0, &format!("{temp:.0} °C"), 28.0, TextFace::Mono, zone_ink(z), true));
-    s.push(text(0.0, 124.0, 216.0, 20.0, "CORE TEMP", 16.0, TextFace::Display, Ink::HudDim, true));
+    s.push(text(0.0, 74.0, 216.0, 28.0, &format!("{heat:.0} °C"), 28.0, TextFace::Mono, zone_ink(z), true));
+    s.push(text(0.0, 124.0, 216.0, 20.0, "CORE HEAT", 16.0, TextFace::Display, Ink::HudDim, true));
     canvas(216.0, 152.0, s, None).fixed(216.0)
 }
 
@@ -189,17 +189,17 @@ pub fn power_ink(out: f64, load: f64) -> Ink {
     }
 }
 
-fn fuel(r: Option<&ReactorNews>) -> Item {
-    let tubes = r.map_or([FuelTube::default(); FUEL_TUBES], |r| r.fuel);
+fn fill(r: Option<&ReactorNews>) -> Item {
+    let tubes = r.map_or([CanisterSlot::default(); CANISTER_SLOTS], |r| r.canisters);
     let mut s = Vec::new();
     for (i, t) in tubes.iter().enumerate() {
         let x = 12.0 + 40.0 * i as f64;
         let (top, h) = (10.0, 100.0);
-        let fill = t.rod.is_some().then_some(Ink::Bg3);
+        let fill = t.canister.is_some().then_some(Ink::Bg3);
         s.push(Shape::Rect { x, y: top, w: 26.0, h, fill, outline: Some((Ink::HudDim, 2.0)) });
         let fill_h = h * (t.life / 100.0).clamp(0.0, 1.0);
         let fy = top + h - fill_h;
-        if let Some(kind) = t.rod.filter(|_| fill_h > 0.0) {
+        if let Some(kind) = t.canister.filter(|_| fill_h > 0.0) {
             if t.life <= 10.0 {
                 s.push(Shape::Hatch { x: x + 2.0, y: fy, w: 22.0, h: fill_h, ink: Ink::Bad });
             } else if t.life <= 25.0 {
@@ -210,24 +210,24 @@ fn fuel(r: Option<&ReactorNews>) -> Item {
         }
         s.push(text(x - 7.0, 116.0, 40.0, 16.0, &format!("R{}", i + 1), 16.0, TextFace::Mono, Ink::Fg2, true));
     }
-    s.push(text(0.0, 136.0, 176.0, 16.0, "FUEL", 16.0, TextFace::Display, Ink::HudDim, true));
+    s.push(text(0.0, 136.0, 176.0, 16.0, "FILL", 16.0, TextFace::Display, Ink::HudDim, true));
     canvas(176.0, 152.0, s, None).flex(1.0)
 }
 
-/// A rod kind's colour on the tube (the palette has no magenta: spicy takes the danger red,
+/// A canister kind's colour on the tube (the palette has no magenta: spicy takes the danger red,
 /// TODO(initiator): a colour of its own in `display_core`).
-fn tube_ink(kind: FuelKind) -> Ink {
+fn tube_ink(kind: CanisterKind) -> Ink {
     match kind {
-        FuelKind::Standard => Ink::Good,
-        FuelKind::Hot => Ink::Warn,
-        FuelKind::Spicy => Ink::Bad,
+        CanisterKind::Standard => Ink::Good,
+        CanisterKind::Hot => Ink::Warn,
+        CanisterKind::Spicy => Ink::Bad,
     }
 }
 
 pub fn reactor_status(r: Option<&ReactorNews>) -> (&'static str, Tone) {
     match r {
         Some(r) if r.ejected => ("NO CORE", Tone::Dim),
-        Some(r) if r.power_on => match zone(r.temp, r.optimal, r.allowed) {
+        Some(r) if r.power_on => match zone(r.heat, r.optimal, r.allowed) {
             Zone::Crit => ("CRITICAL", Tone::Bad),
             Zone::High => ("HOT", Tone::Warn),
             _ => ("STABLE", Tone::Good),
@@ -240,10 +240,10 @@ fn hazard(w: f64) -> Item {
     canvas(w, 14.0, vec![Shape::Rect { x: 0.0, y: 0.0, w, h: 14.0, fill: Some(Ink::Bg0), outline: None }, Shape::Hatch { x: 0.0, y: 0.0, w, h: 14.0, ink: Ink::Bad }], None).fixed(14.0)
 }
 
-/// until a repair brings it back (`Reactor::melted`).
-fn meltdown_view() -> Panel {
-    let word = canvas(624.0, 200.0, vec![text(0.0, 60.0, 624.0, 72.0, "MELTDOWN", 56.0, TextFace::DisplayBold, Ink::Bad, true)], None).fixed(200.0);
-    Panel::screen(Tier::M, READOUT_NAME, "RX-01", column(8.0, vec![hazard(624.0), word, hazard(624.0)])).status("MELTDOWN", Tone::Bad).with_padding(8.0)
+/// until a repair brings it back (`Reactor::imploded`).
+fn implosion_view() -> Panel {
+    let word = canvas(624.0, 200.0, vec![text(0.0, 60.0, 624.0, 72.0, "IMPLOSION", 56.0, TextFace::DisplayBold, Ink::Bad, true)], None).fixed(200.0);
+    Panel::screen(Tier::M, READOUT_NAME, "RX-01", column(8.0, vec![hazard(624.0), word, hazard(624.0)])).status("IMPLOSION", Tone::Bad).with_padding(8.0)
 }
 
 /// The slider track's width under the readout (the bottom-left column: 608 - 16 - 200), and the band
@@ -252,15 +252,15 @@ pub const STRIP_W: f64 = 392.0;
 
 pub const STRIP_H: f64 = 6.0;
 
-/// The wobble of the fission needle (Barotrauma's jitter, with a sine sum for its Perlin noise): within
+/// The wobble of the injection needle (Barotrauma's jitter, with a sine sum for its Perlin noise): within
 /// 5 of the allowed top, the needle moves by up to half of the set point's distance over the top (at
 /// most 10 / 2). Deterministic in `t` (the display time, seconds).
-pub fn fission_wobble(r: &ReactorNews, t: f64) -> f64 {
-    let top = r.fission_allowed[1];
-    if r.fission <= top - 5.0 {
+pub fn injection_wobble(r: &ReactorNews, t: f64) -> f64 {
+    let top = r.injection_allowed[1];
+    if r.injection <= top - 5.0 {
         return 0.0;
     }
-    let amount = (r.set_fission - top).clamp(0.0, 10.0);
+    let amount = (r.set_injection - top).clamp(0.0, 10.0);
     amount * 0.5 * ((t * 9.0).sin() + (t * 13.7).sin()) * 0.5
 }
 
@@ -301,17 +301,17 @@ pub fn readout_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
 }
 
 pub fn readout_panel_at(r: Option<&ReactorNews>, max_kw: f64, t: f64) -> Panel {
-    if r.is_some_and(|r| r.melted) {
-        return meltdown_view();
+    if r.is_some_and(|r| r.imploded) {
+        return implosion_view();
     }
     let on = r.is_some_and(|r| r.power_on);
     let manual = r.is_some_and(|r| r.manual);
-    let (fis, tur) = r.map_or((0.0, 0.0), |r| (r.set_fission, r.set_turbine));
-    let (fis_act, tur_act) = r.map_or((0.0, 0.0), |r| (r.fission, r.turbine));
+    let (inj, conv) = r.map_or((0.0, 0.0), |r| (r.set_injection, r.set_converter));
+    let (inj_act, conv_act) = r.map_or((0.0, 0.0), |r| (r.injection, r.converter));
     let (word, tone) = reactor_status(r);
     let zero = [0.0; 2];
-    let (fis_opt, fis_all, tur_opt, tur_all) = r.map_or((zero, zero, zero, zero), |r| (r.fission_optimal, r.fission_allowed, r.turbine_optimal, r.turbine_allowed));
-    let fis_needle = r.map(|r| (r.fission + fission_wobble(r, t)).clamp(0.0, 100.0));
+    let (inj_opt, inj_all, conv_opt, conv_all) = r.map_or((zero, zero, zero, zero), |r| (r.injection_optimal, r.injection_allowed, r.converter_optimal, r.converter_allowed));
+    let inj_needle = r.map(|r| (r.injection + injection_wobble(r, t)).clamp(0.0, 100.0));
     // Critical: the stripe is as wide as the bottom-left column (624 content - 16 gap - 200 switches)
     // and the spacing tightens by 18 px so the stripe fits (TODO(initiator): the readout's height budget).
     let critical = crate::effects::is_critical(r);
@@ -321,10 +321,10 @@ pub fn readout_panel_at(r: Option<&ReactorNews>, max_kw: f64, t: f64) -> Panel {
     let bottom_left = column(
         gap,
         vec![
-            row(8.0, vec![micro("FISSION RATE").flex(1.0), set_and_actual(fis, fis_act, manual)]).fixed(24.0),
-            track(slider(fis / 100.0, "", "fis_set").enabled(manual), band_strip(fis_opt, fis_all, fis_needle)),
-            row(8.0, vec![micro("TURBINE OUTPUT").flex(1.0), set_and_actual(tur, tur_act, manual)]).fixed(24.0),
-            track(slider(tur / 100.0, "", "tur_set").enabled(manual), band_strip(tur_opt, tur_all, r.map(|r| r.turbine))),
+            row(8.0, vec![micro("INJECTION RATE").flex(1.0), set_and_actual(inj, inj_act, manual)]).fixed(24.0),
+            track(slider(inj / 100.0, "", "inj_set").enabled(manual), band_strip(inj_opt, inj_all, inj_needle)),
+            row(8.0, vec![micro("CONVERTER OUTPUT").flex(1.0), set_and_actual(conv, conv_act, manual)]).fixed(24.0),
+            track(slider(conv / 100.0, "", "conv_set").enabled(manual), band_strip(conv_opt, conv_all, r.map(|r| r.converter))),
             filler,
         ],
     );
@@ -337,7 +337,7 @@ pub fn readout_panel_at(r: Option<&ReactorNews>, max_kw: f64, t: f64) -> Panel {
         ],
     );
     let (optimal, allowed) = bands(r);
-    let gauges = row(8.0, vec![temp_gauge(r.map_or(0.0, |r| r.temp), optimal, allowed), power_gauge(r, max_kw), fuel(r)]).fixed(152.0);
+    let gauges = row(8.0, vec![heat_gauge(r.map_or(0.0, |r| r.heat), optimal, allowed), power_gauge(r, max_kw), fill(r)]).fixed(152.0);
     let body = column(if critical { 4.0 } else { 8.0 }, vec![gauges, row(16.0, vec![bottom_left.flex(1.0), switches.fixed(200.0)]).flex(1.0)]);
     Panel::screen(Tier::M, READOUT_NAME, "RX-01", body).status(word, tone).with_padding(8.0)
 }
@@ -363,9 +363,9 @@ enum Target {
 const CALLOUTS: &[(f64, f64, [&str; 2], Target)] = &[
     (LEFT, 4.0, ["keep the needle in the green", "red too long: core goes bang"], Target::Leaf(0)),
     (RIGHT, 4.0, ["what you make", "vs. what the ship wants"], Target::Leaf(1)),
-    (RIGHT, 104.0, ["rods; pull one in a pinch", ""], Target::Leaf(2)),
-    (LEFT, 152.0, ["how hard the atoms argue", ""], Target::Action("fis_set")),
-    (LEFT, 252.0, ["how much steam makes power", "and how much makes cooling"], Target::Action("tur_set")),
+    (RIGHT, 104.0, ["canisters; pull one in a pinch", ""], Target::Leaf(2)),
+    (LEFT, 152.0, ["how hard the atoms argue", ""], Target::Action("inj_set")),
+    (LEFT, 252.0, ["how much steam makes power", "and how much makes cooling"], Target::Action("conv_set")),
     (RIGHT, 152.0, ["AUTO: the ship has the dial", "MAN: your hand, your fault"], Target::Action("mode")),
     (RIGHT, 200.0, ["the big on switch", "nothing turns without it"], Target::Action("power")),
 ];
@@ -383,7 +383,7 @@ fn dim_ink(i: Ink) -> Ink {
     }
 }
 
-/// A shape moved by (dx, dy) and dimmed. A text box is cut at `right` (the content's width): the fuel's
+/// A shape moved by (dx, dy) and dimmed. A text box is cut at `right` (the content's width): the fill's
 /// captions are drawn past its 160 px box, and the help view must keep them inside its picture.
 fn shifted_dim(s: &Shape, dx: f64, dy: f64, right: f64) -> Shape {
     let mut t = s.clone();
@@ -483,7 +483,7 @@ fn callout_shapes(x: f64, y: f64, lines: &[&str; 2], target: Rect, o: DVec2, out
 /// a CLOSE box. The whole picture is the close button (`HELP_ACTION`), so a click anywhere closes it.
 pub fn readout_help_panel(r: Option<&ReactorNews>, max_kw: f64) -> Panel {
     let base = readout_panel(r, max_kw);
-    if r.is_some_and(|r| r.melted) {
+    if r.is_some_and(|r| r.imploded) {
         return base;
     }
     let c = base.content();
@@ -730,7 +730,7 @@ pub fn aux_panel(r: Option<&ReactorNews>) -> Panel {
     tall(Panel::screen(Tier::S, AUX_NAME, "AX-01", body)).with_padding(6.0)
 }
 
-pub fn band(temp: f64, optimal: [f64; 2], allowed: [f64; 2]) -> Item {
+pub fn band(heat: f64, optimal: [f64; 2], allowed: [f64; 2]) -> Item {
     let x = |v: f64| v * 2.0;
     let seg = |a: f64, b: f64, ink: Option<Ink>, fill: Ink| {
         let mut v = vec![Shape::Rect { x: x(a), y: 7.0, w: x(b) - x(a), h: 8.0, fill: Some(fill), outline: None }];
@@ -745,7 +745,7 @@ pub fn band(temp: f64, optimal: [f64; 2], allowed: [f64; 2]) -> Item {
     s.extend(seg(optimal[0], optimal[1], None, Ink::GoodDim));
     s.extend(seg(optimal[1], allowed[1], Some(Ink::Warn), Ink::Bg3));
     s.extend(seg(allowed[1], 100.0, Some(Ink::Bad), Ink::Bg3));
-    let m = temp.clamp(0.0, 100.0);
+    let m = heat.clamp(0.0, 100.0);
     s.push(Shape::Rect { x: x(m) - 2.0, y: 0.0, w: 4.0, h: 22.0, fill: Some(Ink::FgTitle), outline: None });
     canvas(200.0, 22.0, s, None).fixed(200.0)
 }
@@ -755,13 +755,13 @@ fn lamp_word(l: Lamp) -> (&'static str, Ink) {
         Lamp::Hot => ("HOT", Ink::Warn),
         Lamp::CritHeat => ("CRIT HEAT", Ink::Bad),
         Lamp::Cold => ("COLD", Ink::Warn),
-        Lamp::LowTemp => ("LOW TEMP", Ink::Warn),
+        Lamp::LowHeat => ("LOW HEAT", Ink::Warn),
         Lamp::HighOut => ("HIGH OUT", Ink::Warn),
         Lamp::CritOut => ("CRIT OUT", Ink::Bad),
         Lamp::LowOut => ("LOW OUT", Ink::Warn),
-        Lamp::FuelLow => ("FUEL LOW", Ink::Warn),
-        Lamp::NoFuel => ("NO FUEL", Ink::Bad),
-        Lamp::Meltdown => ("MELTDOWN", Ink::Bad),
+        Lamp::FillLow => ("FILL LOW", Ink::Warn),
+        Lamp::NoFill => ("NO FILL", Ink::Bad),
+        Lamp::Implosion => ("IMPLOSION", Ink::Bad),
         Lamp::Scram => ("SCRAM", Ink::Warn),
     }
 }
@@ -871,7 +871,7 @@ pub fn status_panel(r: Option<&ReactorNews>, max_kw: f64, blink_on: bool) -> Pan
     }
     let lamps = column(LAMP_GAP, grid).fixed(4.0 * LAMP_H + 3.0 * LAMP_GAP);
     let boost = row(8.0, vec![micro("BOOST").flex(1.0), readout(format!("{:+.0}", r.boost)).text_size(font::SMALL).tone(Tone::Normal), cover_word(&r)]).fixed(16.0);
-    let countdown = match r.meltdown_eta_s {
+    let countdown = match r.implosion_eta_s {
         Some(s) => readout(format!("IMPLOSION {}", clock(s))).text_size(font::LABEL).tone(Tone::Bad).fixed(22.0),
         None => space().fixed(22.0),
     };
@@ -927,8 +927,8 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 }
                 "mode" => snap.map(|r| ReactorAsk::SetManual(new_state(r.manual))),
                 "power" => snap.map(|r| ReactorAsk::SetPower(new_state(r.power_on))),
-                "fis_set" => c.value.map(|v| ReactorAsk::SetFission(v as f64 * 100.0)),
-                "tur_set" => c.value.map(|v| ReactorAsk::SetTurbine(v as f64 * 100.0)),
+                "inj_set" => c.value.map(|v| ReactorAsk::SetInjection(v as f64 * 100.0)),
+                "conv_set" => c.value.map(|v| ReactorAsk::SetConverter(v as f64 * 100.0)),
                 _ => None,
             }
         } else if c.panel == PUMP_ID {
@@ -1006,10 +1006,10 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
 
 #[cfg(test)]
 mod tests {
-    use item_core::wire::{FuelKind, FuelTube};
+    use item_core::wire::{CanisterKind, CanisterSlot};
 
-    fn tube(life: f64) -> FuelTube {
-        FuelTube { rod: Some(FuelKind::Standard), life }
+    fn tube(life: f64) -> CanisterSlot {
+        CanisterSlot { canister: Some(CanisterKind::Standard), life }
     }
 
     use super::*;
@@ -1024,7 +1024,7 @@ mod tests {
     }
 
     fn news() -> ReactorNews {
-        ReactorNews { powered: true, power_on: true, pump_on: true, pump_mode: PumpMode::High, pump_speed: 1.0, flow: 1.0, breakers: [true; 6], optimal: [35.0, 65.0], allowed: [20.0, 80.0], temp: 54.0, output_kw: 500.0, load_kw: 500.0, fuel: [tube(80.0), tube(12.0), Default::default(), Default::default()], ..Default::default() }
+        ReactorNews { powered: true, power_on: true, pump_on: true, pump_mode: PumpMode::High, pump_speed: 1.0, flow: 1.0, breakers: [true; 6], optimal: [35.0, 65.0], allowed: [20.0, 80.0], heat: 54.0, output_kw: 500.0, load_kw: 500.0, canisters: [tube(80.0), tube(12.0)], ..Default::default() }
     }
 
     fn status_news() -> ReactorNews {
@@ -1047,18 +1047,18 @@ mod tests {
     #[test]
     fn the_manual_sliders_are_only_on_when_manual() {
         let auto = shipped_panel(Some(&news()));
-        assert!(matches!(auto.find("fis_set").unwrap().widget, display_core::Widget::Slider { enabled: false, .. }));
+        assert!(matches!(auto.find("inj_set").unwrap().widget, display_core::Widget::Slider { enabled: false, .. }));
         let man = shipped_panel(Some(&ReactorNews { manual: true, ..news() }));
-        assert!(matches!(man.find("fis_set").unwrap().widget, display_core::Widget::Slider { enabled: true, .. }));
+        assert!(matches!(man.find("inj_set").unwrap().widget, display_core::Widget::Slider { enabled: true, .. }));
         assert!(man.find("mode").is_some() && man.find("reset").is_none());
     }
 
     #[test]
     fn the_critical_readout_keeps_its_controls_and_says_critical() {
-        let hot = ReactorNews { temp: 85.0, ..news() };
+        let hot = ReactorNews { heat: 85.0, ..news() };
         assert!(crate::effects::is_critical(Some(&hot)));
         let crit = shipped_panel(Some(&hot));
-        for a in ["power", "mode", "fis_set", "tur_set"] {
+        for a in ["power", "mode", "inj_set", "conv_set"] {
             assert!(crit.find(a).is_some(), "{a} while critical");
         }
         assert_eq!(header(&crit), Some(("CRITICAL".to_string(), Tone::Bad)));
@@ -1066,28 +1066,28 @@ mod tests {
         let off = ReactorNews { power_on: false, ..hot };
         assert!(!crate::effects::is_critical(Some(&off)));
         let normal = shipped_panel(Some(&off));
-        assert!(normal.find("fis_set").is_some(), "powered off: the normal view");
+        assert!(normal.find("inj_set").is_some(), "powered off: the normal view");
         assert_eq!(reactor_status(Some(&off)), ("OFF", Tone::Dim));
         assert_eq!(header(&normal), Some(("OFF".to_string(), Tone::Dim)));
     }
 
     #[test]
-    fn critical_is_the_same_at_every_temperature_on_the_readout_and_the_lamp() {
-        for (allowed, temp) in [([20.0, 80.0], 85.0), ([10.0, 90.0], 85.0), ([10.0, 90.0], 95.0)] {
-            let r = ReactorNews { allowed, temp, ..news() };
+    fn critical_is_the_same_at_every_heat_on_the_readout_and_the_lamp() {
+        for (allowed, heat) in [([20.0, 80.0], 85.0), ([10.0, 90.0], 85.0), ([10.0, 90.0], 95.0)] {
+            let r = ReactorNews { allowed, heat, ..news() };
             let p = shipped_panel(Some(&r));
             let critical = crate::effects::is_critical(Some(&r));
-            assert_eq!(header(&p).is_some_and(|h| h.0 == "CRITICAL"), critical, "allowed {allowed:?}, temp {temp}");
-            assert_eq!(reactor_status(Some(&r)).0 == "CRITICAL", critical, "word at {temp} with {allowed:?}");
-            assert!(p.find("fis_set").is_some() && p.find("power").is_some(), "the controls stay at {temp}");
+            assert_eq!(header(&p).is_some_and(|h| h.0 == "CRITICAL"), critical, "allowed {allowed:?}, heat {heat}");
+            assert_eq!(reactor_status(Some(&r)).0 == "CRITICAL", critical, "word at {heat} with {allowed:?}");
+            assert!(p.find("inj_set").is_some() && p.find("power").is_some(), "the controls stay at {heat}");
         }
     }
 
     #[test]
-    fn a_melted_core_says_meltdown_without_a_button() {
-        let p = shipped_panel(Some(&ReactorNews { melted: true, ..news() }));
-        assert!(p.find("power").is_none() && p.find("fis_set").is_none());
-        assert_eq!(header(&p), Some(("MELTDOWN".to_string(), Tone::Bad)));
+    fn a_imploded_core_says_implosion_without_a_button() {
+        let p = shipped_panel(Some(&ReactorNews { imploded: true, ..news() }));
+        assert!(p.find("power").is_none() && p.find("inj_set").is_none());
+        assert_eq!(header(&p), Some(("IMPLOSION".to_string(), Tone::Bad)));
         assert!(p.overflowing().is_empty());
     }
 }

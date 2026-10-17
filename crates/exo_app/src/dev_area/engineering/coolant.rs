@@ -10,10 +10,10 @@
 //!   Screen"); `~/Work/exo-research/pulsar/cpp2il/metadata-dump/Assembly-CSharp.txt`
 //!   (`ReactorCoolantLevelPercent`, `ReactorCoolingPumpState`, `PLContainmentScreen_Coolant`);
 //!   report `~/Work/exo-research/reports/pulsar.md` section 3.2.
-//! - Barotrauma: no coolant; the reactor burns fuel rods put into its slots by hand, a consumable.
-//!   `~/Work/exo-research/barotrauma/content/Items/Reactor/reactor.xml` (`ItemContainer`, fuel slots);
+//! - Barotrauma: no coolant; the reactor burns antimatter canisters put into its slots by hand, a consumable.
+//!   `~/Work/exo-research/barotrauma/content/Items/Reactor/reactor.xml` (`ItemContainer`, canister slot);
 //!   `~/Work/exo-research/barotrauma/source/Barotrauma/BarotraumaShared/SharedSource/Items/Components/Machines/Reactor.cs`
-//!   (`FuelConsumptionRate`, the rods' condition goes down).
+//!   (`FillConsumptionRate`, the canisters' condition goes down).
 use crate::dev_area::*;
 use crate::controls::Controls;
 use crate::dev_area::layout::ROOM;

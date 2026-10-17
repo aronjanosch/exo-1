@@ -1,10 +1,10 @@
 {
-  "_comment": "The reactor room's tuning (reactor_core): the reactor, rods, battery, grid, the cold start and the room's machines (coolant pump, junction box, oxygen generator machine, aux reactor). One _comment per block. Every number is a starting value, TODO(initiator).",
-  "start_rods": 2,
+  "_comment": "The reactor room's tuning (reactor_core): the reactor, canisters, battery, grid, the cold start and the room's machines (coolant pump, junction box, oxygen generator machine, aux reactor). One _comment per block. Every number is a starting value, TODO(initiator).",
+  "start_canisters": 2,
   "graph_points": 25,
   "graph_interval_s": 0.5,
-  "rods": {
-    "_comment": "rods (#300, Barotrauma reactor.xml:113-135: its uranium, thorium and fulgurium rods give 80, 100 and 150 available fuel; ours are standard, hot and spicy): one entry per kind, heat is the fuel the rod allows (it caps fission and scales the heat, fission * fuel / 100 * 2), life its life when new (0..100). Every live rod burns at fission / 100 * fuel_burn per second. Pulling a rod is the emergency brake: the fuel goes at once and the core's temperature is the handling heat. start_rods puts in standard rods. Every number is TODO(initiator), the hot and spicy ones most of all.",
+  "canisters": {
+    "_comment": "canisters (#300, Barotrauma reactor.xml:113-135: its uranium, thorium and fulgurium canisters give 80, 100 and 150 available fill; ours are standard, hot and spicy): one entry per kind, heat is the fill the canister allows (it caps injection and scales the heat, injection * fill / 100 * 2), life its life when new (0..100). Every live canister burns at injection / 100 * fill_burn per second. Pulling a canister is the emergency brake: the fill goes at once and the core's heat is the handling heat. start_canisters puts in standard canisters. Every number is TODO(initiator), the hot and spicy ones most of all.",
     "standard": {
       "heat": 80.0,
       "life": 100.0
@@ -19,33 +19,33 @@
     }
   },
   "reactor": {
-    "_comment": "There is no automatic shutdown: the reactor melts when left hot, and power off is the operator's. reactor: the reactor (fission and turbine 0..100, output kW). auto_turbine_speed and auto_fission_speed are the Auto controller's target change per second: the turbine follows the load faster than fission is cut, so a load drop overshoots. decay_heat is the residual heat (degrees) that only the coolant takes away: without flow the core climbs whatever Auto does. coolant_coast_s is how long the reactor's coolant flow takes to follow the pump's flow (10 s, #300: the pump's own run-down, pump_run_down_s, now carries the coast, so the flow falls with the pump). condition is the reactor's own device values (its repair line 50, wear floor 10, the floor is clamped to the broken limit); the pump and the junction box wear to 50 with repair at 80 (Barotrauma style: wear asks for repair, it never breaks a device). temp_stiffness and temp_damping make the temperature a damped spring towards its target (#300: a correction takes seconds, a step overshoots by about a quarter); heat_output_factor is the heat the delivered output makes at full output (degrees), auto_lookahead_s how far ahead (s) the Auto controller predicts the temperature from its speed, and fission_lag_s the time constant with which fission follows its target (Barotrauma 1 s), decay_lag_s the one with which the decay heat (ours) follows fission: 90 s, so power off leaves the core warm for minutes. boost_amount and boost_decay (#300, Barotrauma TemperatureBoostAmount 25 and its 1 per second fade): the operator's plus and minus add boost_amount degrees of heat, a second one is refused while the boost is 90 % of it or more, and it fades to 0 at boost_decay per second; a boost does nothing with the power off or the reactor broken. TODO(initiator): both values. eject_arm_s (#300 r22, PULSAR's core eject): the safety cover stays open this long after ARM EJECT; a second press inside it ejects the core (the core leaves through the bottom: the rods with it, the reactor dead until a repair installs a new empty core), after it the cover closes again. TODO(initiator): value.",
+    "_comment": "There is no automatic shutdown: the reactor implodes when left hot, and power off is the operator's. reactor: the reactor (injection and converter 0..100, output kW). auto_converter_speed and auto_injection_speed are the Auto controller's target change per second: the converter follows the load faster than injection is cut, so a load drop overshoots. decay_heat is the residual heat (degrees) that only the coolant takes away: without flow the core climbs whatever Auto does. coolant_coast_s is how long the reactor's coolant flow takes to follow the pump's flow (10 s, #300: the pump's own run-down, pump_run_down_s, now carries the coast, so the flow falls with the pump). condition is the reactor's own device values (its repair line 50, wear floor 10, the floor is clamped to the broken limit); the pump and the junction box wear to 50 with repair at 80 (Barotrauma style: wear asks for repair, it never breaks a device). heat_stiffness and heat_damping make the heat a damped spring towards its target (#300: a correction takes seconds, a step overshoots by about a quarter); heat_output_factor is the heat the delivered output makes at full output (degrees), auto_lookahead_s how far ahead (s) the Auto controller predicts the heat from its speed, and injection_lag_s the time constant with which injection follows its target (Barotrauma 1 s), decay_lag_s the one with which the decay heat (ours) follows injection: 90 s, so power off leaves the core warm for minutes. boost_amount and boost_decay (#300, Barotrauma TemperatureBoostAmount 25 and its 1 per second fade): the operator's plus and minus add boost_amount degrees of heat, a second one is refused while the boost is 90 % of it or more, and it fades to 0 at boost_decay per second; a boost does nothing with the power off or the reactor broken. TODO(initiator): both values. eject_arm_s (#300 r22, PULSAR's core eject): the safety cover stays open this long after ARM EJECT; a second press inside it ejects the core (the core leaves through the bottom: the canisters with it, the reactor dead until a repair installs a new empty core), after it the cover closes again. TODO(initiator): value.",
     "max_output_kw": 2000.0,
-    "slots": 4,
-    "fuel_burn": 0.2,
-    "temp_rate": 10.0,
+    "slots": 2,
+    "fill_burn": 0.2,
+    "heat_rate": 10.0,
     "fire_delay_s": 30.0,
-    "meltdown_delay_s": 120.0,
-    "auto_turbine_speed": 4.0,
-    "auto_fission_speed": 0.5,
+    "implosion_delay_s": 120.0,
+    "auto_converter_speed": 4.0,
+    "auto_injection_speed": 0.5,
     "fire_size": 0.1,
     "alarm_hysteresis": 3.0,
-    "fuel_low": 20.0,
+    "fill_low": 20.0,
     "cooling_max": 40.0,
     "decay_heat": 150.0,
     "coolant_coast_s": 10.0,
-    "temp_stiffness": 0.06,
-    "temp_damping": 0.2,
+    "heat_stiffness": 0.06,
+    "heat_damping": 0.2,
     "heat_output_factor": 10.0,
-    "fission_lag_s": 4.0,
+    "injection_lag_s": 4.0,
     "decay_lag_s": 90.0,
     "auto_lookahead_s": 8.0,
     "boost_amount": 25.0,
     "boost_decay": 1.0,
     "eject_arm_s": 5.0,
     "blast": {
-      "_comment": "Meltdown blast (#300, Barotrauma reactor.xml:45-58): a meltdown with more than blast.min_fuel available fuel blasts; range_m, burn and stun_s are for the players in range, device_damage breaks the pump and the junction box (every device in the room is in range), radiation_range_m and radiation for the radiation (the glue's); all Barotrauma's values, TODO(initiator).",
-      "min_fuel": 1.0,
+      "_comment": "Implosion blast (#300, Barotrauma reactor.xml:45-58): an implosion with more than blast.min_fill available fill blasts; range_m, burn and stun_s are for the players in range, device_damage breaks the pump and the junction box (every device in the room is in range), radiation_range_m and radiation for the radiation (the glue's); all Barotrauma's values, TODO(initiator).",
+      "min_fill": 1.0,
       "range_m": 7.5,
       "burn": 500.0,
       "stun_s": 15.0,
@@ -126,7 +126,7 @@
     "boot_s": 3.0
   },
   "room": {
-    "_comment": "Pump leak (r36, our curve on Barotrauma's condition-squared shape): below 50 % pump condition the pump leaks coolant out of the tank, running or not, at pump_leak_max * (1 - c / 0.5)^2 of the tank per second (c = condition 0..1); 0.01 drains a full tank in about 100 s at condition 0; TODO(initiator): pump_leak_max value and whether 50 % is the line. room: the coolant pump and the junction box use the device values (device_core: max, repair_threshold, broken_below, factor_at_broken, fix times in s, required_skill, fail_chance, fail_cost, fail_lockout_s, wear_rate, wear_floor, wear_delay_s as a [from, to] range, idle_wear, overload_wear). Overvoltage (Barotrauma PowerTransfer.cs:245-292): supply above overvolt_ratio times the load overloads the junction box; while overloaded, overvolt_hits_per_s random hits take condition (each rand 10..500 / 60, more at low condition, Barotrauma style), and the hit that breaks the box gives sparks and, with break_fire_chance, a fire. sparks_per_s are small sparks while overloaded, our touch. coolant_* are the pump's tank: use in percent per second (base, and per unit of reactor heat at full flow), the LOW line, and what one canister adds. pump_* are the pump's modes (#300, PULSAR's Off, Low, High): pump_low is the speed Low settles at (High settles at 1, Off at 0); pump_spin_up_s and pump_run_down_s are the time constants of the speed (63 % of the gap closed in that time); pump_use_low and pump_use_high scale the coolant use of the mode (use per heat times this times the pump's stream; High drains pump_use_high / pump_use_low times as fast as Low). The pump has a backup supply (our touch): with the reactor delivering nothing it runs at full factor; while the reactor delivers, its flow falls with the junction box's voltage (a short grid). Aux reactor (#300, PULSAR manual 325-337: auxiliary systems are not connected to the main reactor or its temperature): aux_enabled (false here) puts Life Support and Lights on the aux reactor, whose output is aux_output_kw; the main grid then carries the Engines group only, and what the aux groups leave of the aux output boosts the main reactor's maximum output. TODO(initiator): both values and the default. r37: the generator has a condition (room.oxygen_generator, the pump's device values, TODO(initiator)); it wears only while life support has at least 0.5 power, its flow is rate * power * condition^2 (Barotrauma OxygenGenerator.cs:55-59), and a blast breaks it. Parked (#306 Parkplatz): overvolt_hits_per_s was 0.6 and pump_leak_max was 0.01 (now 0).",
+    "_comment": "Pump leak (r36, our curve on Barotrauma's condition-squared shape): below 50 % pump condition the pump leaks coolant out of the tank, running or not, at pump_leak_max * (1 - c / 0.5)^2 of the tank per second (c = condition 0..1); 0.01 drains a full tank in about 100 s at condition 0; TODO(initiator): pump_leak_max value and whether 50 % is the line. room: the coolant pump and the junction box use the device values (device_core: max, repair_threshold, broken_below, factor_at_broken, fix times in s, required_skill, fail_chance, fail_cost, fail_lockout_s, wear_rate, wear_floor, wear_delay_s as a [from, to] range, idle_wear, overload_wear). Overvoltage (Barotrauma PowerTransfer.cs:245-292): supply above overvolt_ratio times the load overloads the junction box; while overloaded, overvolt_hits_per_s random hits take condition (each rand 10..500 / 60, more at low condition, Barotrauma style), and the hit that breaks the box gives sparks and, with break_fire_chance, a fire. sparks_per_s are small sparks while overloaded, our touch. coolant_* are the pump's tank: use in percent per second (base, and per unit of reactor heat at full flow), the LOW line, and what one canister adds. pump_* are the pump's modes (#300, PULSAR's Off, Low, High): pump_low is the speed Low settles at (High settles at 1, Off at 0); pump_spin_up_s and pump_run_down_s are the time constants of the speed (63 % of the gap closed in that time); pump_use_low and pump_use_high scale the coolant use of the mode (use per heat times this times the pump's stream; High drains pump_use_high / pump_use_low times as fast as Low). The pump has a backup supply (our touch): with the reactor delivering nothing it runs at full factor; while the reactor delivers, its flow falls with the junction box's voltage (a short grid). Aux reactor (#300, PULSAR manual 325-337: auxiliary systems are not connected to the main reactor or its heat): aux_enabled (false here) puts Life Support and Lights on the aux reactor, whose output is aux_output_kw; the main grid then carries the Engines group only, and what the aux groups leave of the aux output boosts the main reactor's maximum output. TODO(initiator): both values and the default. r37: the generator has a condition (room.oxygen_generator, the pump's device values, TODO(initiator)); it wears only while life support has at least 0.5 power, its flow is rate * power * condition^2 (Barotrauma OxygenGenerator.cs:55-59), and a blast breaks it. Parked (#306 Parkplatz): overvolt_hits_per_s was 0.6 and pump_leak_max was 0.01 (now 0).",
     "heat_wear_degrees": 10.0,
     "pump": {
       "max": 100.0,

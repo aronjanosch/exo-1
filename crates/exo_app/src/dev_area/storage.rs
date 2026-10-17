@@ -57,7 +57,7 @@ pub fn contents(rack: RackId, defs: &ItemDefs) -> Container {
         }
         EXTINGUISHERS => put(&mut c, defs, "extinguisher", 2),
         _ => {
-            put(&mut c, defs, "fuel_rod", 1);
+            put(&mut c, defs, "antimatter_canister", 1);
             put(&mut c, defs, "bandage", 4);
             put(&mut c, defs, "oxy", 2);
         }
@@ -126,7 +126,7 @@ mod tests {
         let d = defs();
         assert_eq!(contents(MASKS, &d).count(&item_core::container::ItemKind::new("o2_mask")), 3);
         assert_eq!(contents(EXTINGUISHERS, &d).count(&item_core::container::ItemKind::new("extinguisher")), 2);
-        assert_eq!(contents(CRATE, &d).count(&item_core::container::ItemKind::new("fuel_rod")), 1);
+        assert_eq!(contents(CRATE, &d).count(&item_core::container::ItemKind::new("antimatter_canister")), 1);
         assert!(!contents(MASKS, &d).rule(0).accepts(&d.get("wrench").unwrap().item()), "a mask cabinet takes no wrench");
     }
 }

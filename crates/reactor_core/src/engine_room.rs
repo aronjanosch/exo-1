@@ -32,7 +32,7 @@ use crate::grid::{Grid, Group};
 use crate::history::History;
 use crate::jump::{JumpDrive, JumpSave};
 use crate::startup::{Checks, Startup};
-use crate::reactor::{AlarmKind, FuelRod, Mode, Reactor, ReactorEvent, ReactorSave, ReactorTuning, RodKinds};
+use crate::reactor::{AlarmKind, Canister, Mode, Reactor, ReactorEvent, ReactorSave, ReactorTuning, CanisterKinds};
 use crate::shield::{Shield, ShieldSave};
 use crate::grid::GridSave;
 use crate::tuning::Tuning;
@@ -91,7 +91,7 @@ pub struct RoomTuning {
     pub ecool_tank_cost: f64,
     /// Seconds the emergency cooling runs. TODO(initiator): value (PULSAR's is not in the manual).
     pub ecool_duration_s: f64,
-    /// Extra cooling while it runs, degrees of the reactor's temperature target, on top of the
+    /// Extra cooling while it runs, degrees of the reactor's heat target, on top of the
     /// normal cooling. TODO(initiator): value.
     pub ecool_strength: f64,
     /// Seconds from the press until it can be pressed again (PULSAR's EmergencyCooldownTime). TODO(initiator): value.
@@ -156,19 +156,19 @@ const WARM_START_TOLERANCE: f64 = 0.02;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Input {
-    /// Auto sets the targets; Manual uses `fission` and `turbine`.
+    /// Auto sets the targets; Manual uses `injection` and `converter`.
     pub mode: Mode,
-    pub fission: f64,
-    pub turbine: f64,
+    pub injection: f64,
+    pub converter: f64,
 }
 
 impl Input {
     pub fn auto() -> Input {
-        Input { mode: Mode::Auto, fission: 0.0, turbine: 0.0 }
+        Input { mode: Mode::Auto, injection: 0.0, converter: 0.0 }
     }
 
-    pub fn manual(fission: f64, turbine: f64) -> Input {
-        Input { mode: Mode::Manual, fission, turbine }
+    pub fn manual(injection: f64, converter: f64) -> Input {
+        Input { mode: Mode::Manual, injection, converter }
     }
 }
 
@@ -515,7 +515,7 @@ impl OxygenGenerator {
 /// damage. TODO(initiator).
 const SHIELD_POINTS_PER_STRUCTURE: f64 = 500.0;
 
-/// The engine room's state as a save holds it (r42, #128): the reactor and its rods, the pump, the
+/// The engine room's state as a save holds it (r42, #128): the reactor and its canisters, the pump, the
 /// junction box, the oxygen generator, the battery, the shield, the guns, the jump drive, the hull
 /// and the grid's switches. Not in it yet: the engines' throttle and wear, the aux switches, the
 /// emergency cooling's timers, the encounter, the graph history. TODO(initiator): the rest.
@@ -559,8 +559,8 @@ pub struct EngineSave {
     /// The three vents' valves: engine room, corridor, bridge (r44).
     pub vents: [bool; 3],
     pub manual: bool,
-    pub fission: f64,
-    pub turbine: f64,
+    pub injection: f64,
+    pub converter: f64,
     pub director: DirectorSave,
 }
 
@@ -596,7 +596,7 @@ pub struct EngineRoom {
     wander_rng: Rng,
     wander_target: f64,
     wander_left: f64,
-    rods: RodKinds,
+    canisters: CanisterKinds,
     history: History,
     /// Seconds of emergency cooling left (0 when none runs).
     ecool_left: f64,
@@ -636,19 +636,19 @@ pub struct EngineRoom {
 }
 
 impl EngineRoom {
-    /// A cold room with the default values (two standard rods). See `from_tuning`.
+    /// A cold room with the default values (two standard canisters). See `from_tuning`.
     pub fn new(tuning: RoomTuning, reactor_tuning: ReactorTuning, seed: u64) -> EngineRoom {
         EngineRoom::from_tuning(&Tuning { room: tuning, reactor: reactor_tuning, ..Tuning::default() }, seed)
     }
 
-    /// A cold room from the loaded values: `start_rods` standard rods, the operator at skill 50,
+    /// A cold room from the loaded values: `start_canisters` standard canisters, the operator at skill 50,
     /// the grid's demands. Power is off: `set_power(true)` starts the reactor.
     pub fn from_tuning(t: &Tuning, seed: u64) -> EngineRoom {
         let mut reactor = Reactor::new(t.reactor, seed.wrapping_add(2));
-        for _ in 0..t.start_rods {
-            let _ = reactor.insert_rod(FuelRod::standard());
+        for _ in 0..t.start_canisters {
+            let _ = reactor.insert_canister(Canister::standard());
         }
-        let rods = t.rods.clone();
+        let canisters = t.canisters.clone();
         reactor.set_operator_skill(50.0);
         EngineRoom {
             pump: Pump::new(&t.room, seed),
@@ -657,7 +657,7 @@ impl EngineRoom {
             tuning: t.room,
             hull_t: t.hull,
             helm_t: t.helm,
-            rods,
+            canisters,
             history: History::new(t.graph_points, t.graph_interval_s),
             reactor,
             grid: Grid::from_tuning(&t.grid),
@@ -777,9 +777,9 @@ impl EngineRoom {
         &self.tuning
     }
 
-    /// A new rod of the loaded kind `id` (a `engineering/engineering.json` `rods` key), or None for an unknown id.
-    pub fn rod_of(&self, id: &str) -> Option<FuelRod> {
-        self.rods.rod(id)
+    /// A new canister of the loaded kind `id` (a `engineering/engineering.json` `canisters` key), or None for an unknown id.
+    pub fn canister_of(&self, id: &str) -> Option<Canister> {
+        self.canisters.canister(id)
     }
 
     pub fn reactor(&self) -> &Reactor {
@@ -838,7 +838,7 @@ impl EngineRoom {
     /// A hit from outside the ship (r40): the shield takes it first (`Shield::absorb`, PULSAR's
     /// shield before the hull), and what passes reaches the room as a weaker hit
     /// (`apply_hit`, the same share of its structure and device damage). A fully absorbed hit
-    /// does nothing to the room. A meltdown blast is inside the ship and does not come here.
+    /// does nothing to the room. A implosion blast is inside the ship and does not come here.
     pub fn outside_hit(&mut self, hit: Hit, rng: &mut Rng) -> Vec<RoomEvent> {
         let points = hit.structure * SHIELD_POINTS_PER_STRUCTURE;
         let passed = self.shield.absorb(points);
@@ -1100,11 +1100,11 @@ impl EngineRoom {
 
     /// Barotrauma's warm start (`Reactor.cs:613-624`, `PowerUpImmediately`): the power on, Auto on,
     /// then steps with Auto's speeds boosted by 100 (Barotrauma's `UpdateAutoTemp(100, …)`) until
-    /// the reactor is settled: the temperature inside its optimal band and the output within 2 %
+    /// the reactor is settled: the heat inside its optimal band and the output within 2 %
     /// of the load, held for 5 s of sim time. Capped at 600 s. Barotrauma's first 5 s of a round
-    /// (`Reactor.cs:253-258`) are the same rapid auto-temp, here made a start option.
+    /// (`Reactor.cs:253-258`) are the same rapid auto-heat, here made a start option.
     ///
-    /// The coolant tank and the rods' life are put back as they were: a warm start costs no
+    /// The coolant tank and the canisters' life are put back as they were: a warm start costs no
     /// supplies. The events of the warm-up are dropped (no fire or alarm reaches the game from it).
     /// The pump keeps its mode; a pump that is off does not settle. Returns the sim seconds taken;
     /// 0 with the reactor broken (it cannot be started, nothing runs).
@@ -1119,7 +1119,7 @@ impl EngineRoom {
             return (0.0, ev);
         }
         let tank = self.pump.tank;
-        let lives = self.reactor.rod_lives();
+        let lives = self.reactor.canister_lives();
         self.reactor.set_auto_boost(WARM_START_AUTO_BOOST);
         let hold_steps = (WARM_START_HOLD_S / WARM_START_DT).round() as usize;
         let cap_steps = (WARM_START_CAP_S / WARM_START_DT).round() as usize;
@@ -1139,15 +1139,15 @@ impl EngineRoom {
         }
         self.reactor.set_auto_boost(1.0);
         self.pump.tank = tank;
-        self.reactor.set_rod_lives(&lives);
+        self.reactor.set_canister_lives(&lives);
         (steps as f64 * WARM_START_DT, ev)
     }
 
-    /// The temperature inside its optimal band and the output within `WARM_START_TOLERANCE` of the
+    /// The heat inside its optimal band and the output within `WARM_START_TOLERANCE` of the
     /// load the grid asks for.
     pub fn settled(&self) -> bool {
         let load = self.main_load_kw();
-        self.reactor.bands().temp_optimal.contains(self.reactor.temperature())
+        self.reactor.bands().heat_optimal.contains(self.reactor.heat())
             && (self.reactor.output_kw() - load).abs() <= WARM_START_TOLERANCE * load
     }
 
@@ -1171,7 +1171,7 @@ impl EngineRoom {
 
         self.reactor.set_mode(input.mode);
         if input.mode == Mode::Manual {
-            self.reactor.set_targets(input.fission, input.turbine);
+            self.reactor.set_targets(input.injection, input.converter);
         }
         self.pump.spin(dt, &t);
         let flow = self.flow();
@@ -1259,7 +1259,7 @@ impl EngineRoom {
             self.weapons.step(dt, self.grid.factor(Group::Weapons));
         }
 
-        let excess = self.reactor.temperature() - self.reactor.bands().temp_optimal.hi;
+        let excess = self.reactor.heat() - self.reactor.bands().heat_optimal.hi;
         if self.wears && let Some(e) = self.pump.wear(dt, self.pump.on() && self.reactor.power_on(), excess, &t) {
             ev.push(RoomEvent::Device { source: Source::Pump, event: e });
         }
@@ -1269,7 +1269,7 @@ impl EngineRoom {
         }
 
         self.level = self.compute_level();
-        self.history.push_sample(dt, self.reactor.output_kw(), load, self.reactor.temperature());
+        self.history.push_sample(dt, self.reactor.output_kw(), load, self.reactor.heat());
         ev
     }
 
@@ -1315,7 +1315,7 @@ impl EngineRoom {
     }
 
     /// COLD SHIP (the dev button, and the master off): the startup back to Cold, the reactor off,
-    /// every breaker off, the jump drive cold. The rods and the core's heat stay as they are.
+    /// every breaker off, the jump drive cold. The canisters and the core's heat stay as they are.
     pub fn cold_ship(&mut self) {
         self.startup.reset();
         self.reactor.set_power(false);
@@ -1325,17 +1325,17 @@ impl EngineRoom {
         self.jump.cold();
     }
 
-    /// Melts the core now (`Reactor::force_meltdown`), with the room's blast damage. The harness's
-    /// forced melt; the events are those of a melt in `step`.
-    pub fn melt_now(&mut self) -> Vec<RoomEvent> {
-        let reactor_ev = self.reactor.force_meltdown();
+    /// Implodes the core now (`Reactor::force_implosion`), with the room's blast damage. The harness's
+    /// forced implosion; the events are those of an implosion in `step`.
+    pub fn implode_now(&mut self) -> Vec<RoomEvent> {
+        let reactor_ev = self.reactor.force_implosion();
         let mut ev: Vec<RoomEvent> = reactor_ev.iter().map(|e| RoomEvent::Reactor(*e)).collect();
         ev.extend(self.blast_damage(&reactor_ev));
         ev
     }
 
     /// Throws the core out (`Reactor::eject`, PULSAR's core eject). The events are the reactor's:
-    /// `CoreEjected` alone, or none when the core is out already. No blast: an ejected core cannot melt.
+    /// `CoreEjected` alone, or none when the core is out already. No blast: an ejected core cannot implode.
     pub fn eject_core(&mut self) -> Vec<RoomEvent> {
         self.reactor.eject().into_iter().map(RoomEvent::Reactor).collect()
     }
@@ -1417,9 +1417,9 @@ impl EngineRoom {
     }
 
     fn compute_level(&self) -> AlarmLevel {
-        if self.reactor.alarm(AlarmKind::TempCritical) {
+        if self.reactor.alarm(AlarmKind::HeatCritical) {
             AlarmLevel::Danger
-        } else if self.reactor.alarm(AlarmKind::TempHigh)
+        } else if self.reactor.alarm(AlarmKind::HeatHigh)
             || self.reactor.condition().needs_repair()
             || self.pump.condition.needs_repair()
             || self.junction.condition.needs_repair()

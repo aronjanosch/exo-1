@@ -21,7 +21,7 @@ pub enum ToHost {
     Rescue(Option<PlayerId>),
     /// The coolant refill hold: the player is refilling at the pump (`true`), or has stopped (`false`).
     Refill(bool),
-    /// The brake: pull the rod with the most life into the sender's hands.
+    /// The brake: pull the canister with the most life into the sender's hands.
     Pull,
     /// The station whose screen the sender's active display shows (r43, the bots' occupancy), or `None`
     /// when it shows no station's. Sent when the display changes.
@@ -135,22 +135,22 @@ pub enum RoomAsk {
     ToggleEquipDoor,
 }
 
-/// A request to the host about the reactor. Set fission and set turbine only count on
+/// A request to the host about the reactor. Set injection and set converter only count on
 /// Manual; a fault and a reset are the dev console's.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ReactorAsk {
     SetManual(bool),
-    /// Fission target, 0..100.
-    SetFission(f64),
-    /// Turbine target, 0..100.
-    SetTurbine(f64),
+    /// Injection target, 0..100.
+    SetInjection(f64),
+    /// Converter target, 0..100.
+    SetConverter(f64),
     Trigger(ReactorFault),
     Reset,
-    /// The power switch: off is the brake (fission and the targets fall with the lag), on starts the reactor again.
+    /// The power switch: off is the brake (injection and the targets fall with the lag), on starts the reactor again.
     SetPower(bool),
     SetBreaker(BreakerGroup, bool),
     SetPumpMode(PumpMode),
-    /// The temperature boost: up (true) or down (false), as the core takes it.
+    /// The heat boost: up (true) or down (false), as the core takes it.
     Boost(bool),
     /// First press of the core eject: the safety cover opens for `eject_arm_s` (the host's timer).
     ArmEject,
@@ -454,53 +454,64 @@ pub struct PartNews {
     pub working: bool,
 }
 
-pub const FUEL_TUBES: usize = 4;
+pub const CANISTER_SLOTS: usize = 2;
 
-/// The kind of a fuel rod (`engineering/engineering.json` `rods`: standard, hot, spicy), as the readout colours it.
+/// The kind of an antimatter canister (`engineering/engineering.json` `canisters`: standard, hot, spicy), as the readout colours it.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum FuelKind {
+pub enum CanisterKind {
     Standard,
     Hot,
     Spicy,
 }
 
-/// One fuel tube: the rod in a slot (its kind and life, 0..100), None for an empty slot.
+/// One canister slot: the canister in a slot (its kind and life, 0..100), None for an empty slot.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct FuelTube {
-    pub rod: Option<FuelKind>,
+pub struct CanisterSlot {
+    pub canister: Option<CanisterKind>,
     pub life: f64,
 }
 
-/// The reactor's snapshot: what the screens show, as the host has it. Temperature,
-/// fission and turbine are 0..100; power is kW; the bands are (low, high) on the temperature
-/// gauge. The screens show little: no condition values, the pump gives its flow only.
+/// One control as the screen draws it: the setting, the actual value (it lags the setting) and the
+/// optimal and allowed band the simulation (`reactor_core::Bands`) gives, all 0..100. The screen
+/// draws these and no target mark of its own.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ControlGauge {
+    pub setting: f64,
+    pub actual: f64,
+    pub optimal: [f64; 2],
+    pub allowed: [f64; 2],
+}
+
 /// The engine room's wall sections (r40; `reactor_core::hull::SECTIONS`).
 pub const HULL_SECTIONS: usize = 8;
 
+/// The reactor's snapshot: what the screens show, as the host has it. Heat,
+/// injection and converter are 0..100; power is kW; the bands are (low, high) on the heat
+/// gauge. The screens show little: no condition values, the pump gives its flow only.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ReactorNews {
     pub power_on: bool,
     pub manual: bool,
-    pub melted: bool,
-    /// Core stability in whole percent, 100 when cold and off, 0 when melted or ejected.
+    pub imploded: bool,
+    /// Core stability in whole percent, 100 when cold and off, 0 when imploded or ejected.
     pub stability: u8,
-    pub temp: f64,
+    pub heat: f64,
     /// The targets as set (Manual) or as Auto has them.
-    pub set_fission: f64,
-    pub set_turbine: f64,
-    /// The actual fission rate and turbine output, 0..100: they follow the set points with inertia
-    /// (the reactor hum follows the actual fission).
-    pub fission: f64,
-    pub turbine: f64,
+    pub set_injection: f64,
+    pub set_converter: f64,
+    /// The actual injection rate and converter output, 0..100: they follow the set points with inertia
+    /// (the reactor hum follows the actual injection).
+    pub injection: f64,
+    pub converter: f64,
     pub output_kw: f64,
     pub load_kw: f64,
     pub optimal: [f64; 2],
     pub allowed: [f64; 2],
-    /// The fission and turbine bands (optimal, allowed; lo and hi) of the readout's sliders.
-    pub fission_optimal: [f64; 2],
-    pub fission_allowed: [f64; 2],
-    pub turbine_optimal: [f64; 2],
-    pub turbine_allowed: [f64; 2],
+    /// The injection and converter bands (optimal, allowed; lo and hi) of the readout's sliders.
+    pub injection_optimal: [f64; 2],
+    pub injection_allowed: [f64; 2],
+    pub converter_optimal: [f64; 2],
+    pub converter_allowed: [f64; 2],
     /// The machines have power: the junction box works and the reactor delivers.
     pub powered: bool,
     /// The breakers, by `BreakerGroup::index`: engines, life support, lights, shields, weapons, jump drive.
@@ -533,10 +544,10 @@ pub struct ReactorNews {
     pub overvolt: bool,
     /// The engine room's air, 0..1 (the host rounds it to whole percent).
     pub oxygen: f64,
-    /// The meltdown blasts the host has applied so far (`ReactorCounts::blasts`). A process that
+    /// The implosion blasts the host has applied so far (`ReactorCounts::blasts`). A process that
     /// sees it go up shows the blast (the flash, the notice) once; the host applies the effects.
     pub blasts: u32,
-    pub fuel: [FuelTube; FUEL_TUBES],
+    pub canisters: [CanisterSlot; CANISTER_SLOTS],
     pub reactor: PartNews,
     pub pump: PartNews,
     pub junction: PartNews,
@@ -549,12 +560,12 @@ pub struct ReactorNews {
     /// The warning lamps that are on, by `Lamp::index` (the status board). Steady here: the
     /// blink is the screen's.
     pub lamps: [bool; Lamp::COUNT],
-    /// The temperature boost, degrees (-25..25 at the shipped tuning; 0 when none).
+    /// The heat boost, degrees (-25..25 at the shipped tuning; 0 when none).
     pub boost: f64,
     /// A boost press would pass now: the core's rule with the power on and the reactor working.
     pub boost_ok: bool,
-    /// Seconds to the implosion at the current rate, while the meltdown timer runs; None otherwise.
-    pub meltdown_eta_s: Option<f64>,
+    /// Seconds to the implosion at the current rate, while the implosion timer runs; None otherwise.
+    pub implosion_eta_s: Option<f64>,
     /// The status board's graph (Barotrauma's reactor graph): `graph_points` valid points
     /// of output and load in kW, newest first; 0 means no curves (the panel draws none).
     pub graph_points: u8,
@@ -634,6 +645,18 @@ pub struct ReactorNews {
     pub bot_count: u8,
 }
 
+impl ReactorNews {
+    /// The injection control: setting, actual value and the bands that follow the fill.
+    pub fn injection_gauge(&self) -> ControlGauge {
+        ControlGauge { setting: self.set_injection, actual: self.injection, optimal: self.injection_optimal, allowed: self.injection_allowed }
+    }
+
+    /// The field converter control: setting, actual value and the bands that follow the demand.
+    pub fn converter_gauge(&self) -> ControlGauge {
+        ControlGauge { setting: self.set_converter, actual: self.converter, optimal: self.converter_optimal, allowed: self.converter_allowed }
+    }
+}
+
 /// The enemy ship's state for the GN-01 (r41): its shield and hull as 0..1 of their max, how the
 /// encounter ended, and its shots so far (a process that sees `shots` go up plays the boom).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -692,13 +715,13 @@ pub enum Lamp {
     Hot,
     CritHeat,
     Cold,
-    LowTemp,
+    LowHeat,
     HighOut,
     CritOut,
     LowOut,
-    FuelLow,
-    NoFuel,
-    Meltdown,
+    FillLow,
+    NoFill,
+    Implosion,
     Scram,
 }
 
@@ -838,21 +861,21 @@ mod tests {
             aux_boost_kw: 250.0,
             power_on: true,
             manual: true,
-            melted: false,
+            imploded: false,
             stability: 73,
-            temp: 61.25,
-            set_fission: 40.0,
-            set_turbine: 48.0,
-            fission: 38.0,
-            turbine: 50.0,
+            heat: 61.25,
+            set_injection: 40.0,
+            set_converter: 48.0,
+            injection: 38.0,
+            converter: 50.0,
             output_kw: 500.0,
             load_kw: 500.0,
             optimal: [35.0, 65.0],
             allowed: [20.0, 80.0],
-            fission_optimal: [20.0, 60.0],
-            fission_allowed: [10.0, 80.0],
-            turbine_optimal: [40.0, 56.0],
-            turbine_allowed: [30.0, 66.0],
+            injection_optimal: [20.0, 60.0],
+            injection_allowed: [10.0, 80.0],
+            converter_optimal: [40.0, 56.0],
+            converter_allowed: [30.0, 66.0],
             powered: true,
             breakers: [true, false, true, true, true, true],
             pump_on: true,
@@ -865,11 +888,11 @@ mod tests {
             overvolt: true,
             oxygen: 0.21,
             blasts: 2,
-            fuel: [FuelTube { rod: Some(FuelKind::Hot), life: 80.0 }, FuelTube { rod: None, life: 0.0 }, FuelTube::default(), FuelTube { rod: Some(FuelKind::Spicy), life: 12.5 }],
+            canisters: [CanisterSlot { canister: Some(CanisterKind::Hot), life: 80.0 }, CanisterSlot { canister: Some(CanisterKind::Spicy), life: 12.5 }],
             lamps: [true, false, false, false, false, false, false, true, false, false, true],
             boost: -12.5,
             boost_ok: true,
-            meltdown_eta_s: Some(42.0),
+            implosion_eta_s: Some(42.0),
             graph_points: 3,
             graph_output: [7; GRAPH_POINTS],
             graph_load: [5; GRAPH_POINTS],
@@ -911,8 +934,8 @@ mod tests {
     fn reactor_asks_travel_as_they_are() {
         let asks = [
             ReactorAsk::SetManual(true),
-            ReactorAsk::SetFission(12.5),
-            ReactorAsk::SetTurbine(0.0),
+            ReactorAsk::SetInjection(12.5),
+            ReactorAsk::SetConverter(0.0),
             ReactorAsk::Trigger(ReactorFault::LoadDrop),
             ReactorAsk::Trigger(ReactorFault::HullBreach),
             ReactorAsk::Trigger(ReactorFault::ShieldHit),

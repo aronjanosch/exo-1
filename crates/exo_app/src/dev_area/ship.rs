@@ -5,11 +5,11 @@
 //! - Values: `content/gameplay/{engineering,bridge,gunnery,hull,crew,incidents}/` (`reactor_core::Tuning`, strict loader, one file per owner).
 //! - TODO(initiator): the incident director stays in the ship's step until it has an owner of its own (#306, Annahmen).
 use crate::dev_area::*;
-use crate::dev_area::engineering::rods;
+use crate::dev_area::engineering::canisters;
 use crate::dev_area::fire::{FireGrid, FireModel};
 use crate::dev_area::hull::ShipAir;
 use crate::items::{Items, NetOut, Role};
-use item_core::wire::{Alarm, BotNews, BreakerGroup, EnemyNews, EnemyOutcome, FuelTube, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, StartupStage, GRAPH_POINTS, ROOMS};
+use item_core::wire::{Alarm, BotNews, BreakerGroup, EnemyNews, EnemyOutcome, CanisterSlot, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, StartupStage, GRAPH_POINTS, ROOMS};
 use reactor_core::bots::{Bots, Row};
 use reactor_core::director::Situation;
 use reactor_core::engine_room::EngineSave;
@@ -27,7 +27,7 @@ pub struct ReactorConfig(pub Tuning);
 pub struct ReactorCounts {
     pub fires: u32,
     pub sparks: u32,
-    pub meltdowns: u32,
+    pub implosions: u32,
     pub blasts: u32,
     pub ejects: u32,
     pub ecools: u32,
@@ -39,8 +39,8 @@ pub struct ReactorCounts {
 pub struct ReactorSim {
     pub room: EngineRoom,
     pub manual: bool,
-    pub fission: f64,
-    pub turbine: f64,
+    pub injection: f64,
+    pub converter: f64,
     pub alarmed: bool,
     /// The host keeps it: a second Eject inside the window ejects.
     pub eject_left: Option<f64>,
@@ -63,7 +63,7 @@ pub struct ReactorSim {
 /// The engine room's save section (r42, #128) from the host's state: the room, its air, and the
 /// switches the host keeps beside the room.
 pub fn engine_section(sim: &ReactorSim, air: &ShipAir) -> EngineSave {
-    EngineSave { room: sim.room.to_save(), air: air.to_save(), vents: sim.vents, manual: sim.manual, fission: sim.fission, turbine: sim.turbine, director: sim.director.to_save() }
+    EngineSave { room: sim.room.to_save(), air: air.to_save(), vents: sim.vents, manual: sim.manual, injection: sim.injection, converter: sim.converter, director: sim.director.to_save() }
 }
 
 /// Puts a loaded section into the room, the air and the switches. The alarms and the timers are not
@@ -72,8 +72,8 @@ pub fn apply_engine_section(sec: &EngineSave, cfg: &Tuning, sim: &mut ReactorSim
     sim.room = EngineRoom::from_save(cfg, &sec.room);
     sim.vents = sec.vents;
     sim.manual = sec.manual;
-    sim.fission = sec.fission;
-    sim.turbine = sec.turbine;
+    sim.injection = sec.injection;
+    sim.converter = sec.converter;
     sim.director = Director::from_save(&cfg.director, &sec.director);
     *air = ShipAir::from_save(&cfg.airlock, &sec.air);
 }
@@ -103,7 +103,7 @@ impl ReactorSim {
         // The warm-up runs the tank down; a fresh room starts with a full one (TODO(initiator): later
         // the tank may start where the ship's last run left it).
         room.pump_mut().refill(100.0);
-        ReactorSim { room, manual: false, fission: 0.0, turbine: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX, vents: [true; ROOMS], director: Director::new(&cfg.director, SEED), alarms: [RoomAlarm::new(cfg.alarm); ROOMS], clearing: false, bots: Bots::new(&cfg.bots) }
+        ReactorSim { room, manual: false, injection: 0.0, converter: 0.0, alarmed: false, eject_left: None, sent: None, since_send: f64::MAX, vents: [true; ROOMS], director: Director::new(&cfg.director, SEED), alarms: [RoomAlarm::new(cfg.alarm); ROOMS], clearing: false, bots: Bots::new(&cfg.bots) }
     }
 
     pub fn tick_eject(&mut self, dt: f64) {
@@ -138,26 +138,26 @@ impl ReactorSim {
     pub fn news(&self, oxygen: f64) -> ReactorNews {
         let r = self.room.reactor();
         let b = r.bands();
-        let (set_fission, set_turbine) = r.targets();
+        let (set_injection, set_converter) = r.targets();
         let grid = self.room.grid();
         ReactorNews {
             power_on: r.power_on(),
             manual: self.manual,
-            melted: r.melted(),
+            imploded: r.imploded(),
             stability: (r.stability() * 100.0).round() as u8,
-            temp: r.temperature(),
-            set_fission,
-            set_turbine,
-            fission: r.fission(),
-            turbine: r.turbine(),
+            heat: r.heat(),
+            set_injection,
+            set_converter,
+            injection: r.injection(),
+            converter: r.converter(),
             output_kw: r.output_kw(),
             load_kw: self.room.main_load_kw(),
-            optimal: [b.temp_optimal.lo, b.temp_optimal.hi],
-            allowed: [b.temp_allowed.lo, b.temp_allowed.hi],
-            fission_optimal: [b.fission_optimal.lo, b.fission_optimal.hi],
-            fission_allowed: [b.fission_allowed.lo, b.fission_allowed.hi],
-            turbine_optimal: [b.turbine_optimal.lo, b.turbine_optimal.hi],
-            turbine_allowed: [b.turbine_allowed.lo, b.turbine_allowed.hi],
+            optimal: [b.heat_optimal.lo, b.heat_optimal.hi],
+            allowed: [b.heat_allowed.lo, b.heat_allowed.hi],
+            injection_optimal: [b.injection_optimal.lo, b.injection_optimal.hi],
+            injection_allowed: [b.injection_allowed.lo, b.injection_allowed.hi],
+            converter_optimal: [b.converter_optimal.lo, b.converter_optimal.hi],
+            converter_allowed: [b.converter_allowed.lo, b.converter_allowed.hi],
             powered: self.room.powered(),
             breakers: Group::ALL.map(|g| grid.breaker(g)),
             limits: Group::ALL.map(|g| grid.limit(g)),
@@ -179,16 +179,16 @@ impl ReactorSim {
             // The host's blast count is set by `reactor_step` (the sim does not count).
             blasts: 0,
             oxygen,
-            fuel: std::array::from_fn(|i| r.rods().get(i).map_or_else(FuelTube::default, |x| FuelTube { rod: Some(rods::fuel_kind(&x.kind)), life: x.life })),
+            canisters: std::array::from_fn(|i| r.canisters().get(i).map_or_else(CanisterSlot::default, |x| CanisterSlot { canister: Some(canisters::canister_kind(&x.kind)), life: x.life })),
             reactor: part(r.condition().fraction(), r.condition().functioning()),
             pump: part(self.room.pump().condition().fraction(), self.room.pump().condition().functioning()),
             junction: part(self.room.junction().condition().fraction(), self.room.junction().condition().functioning()),
             oxygen_generator: part(self.room.oxygen_generator().condition().fraction(), self.room.oxygen_generator().condition().functioning()),
             breaches: std::array::from_fn(|i| self.room.hull().damage(i)),
             lamps: lamps_of(&self.room.warnings()),
-            boost: r.temperature_boost(),
+            boost: r.heat_boost(),
             boost_ok: r.power_on() && r.condition().functioning() && r.boost_allowed(),
-            meltdown_eta_s: meltdown_eta(r.timers().1, r.tuning().meltdown_delay_s, r.melted()),
+            implosion_eta_s: implosion_eta(r.timers().1, r.tuning().implosion_delay_s, r.imploded()),
             ejected: r.ejected(),
             eject_armed: self.eject_left.is_some(),
             // The host's count is set by `reactor_step`, as the blasts are.
@@ -286,13 +286,13 @@ pub fn lamps_of(w: &Warnings) -> [bool; Lamp::COUNT] {
         (Lamp::Hot, w.overheat),
         (Lamp::CritHeat, w.critical_heat),
         (Lamp::Cold, w.cold),
-        (Lamp::LowTemp, w.low_temp),
+        (Lamp::LowHeat, w.low_heat),
         (Lamp::HighOut, w.high_output),
         (Lamp::CritOut, w.critical_output),
         (Lamp::LowOut, w.low_output),
-        (Lamp::FuelLow, w.low_fuel),
-        (Lamp::NoFuel, w.fuel_out),
-        (Lamp::Meltdown, w.meltdown),
+        (Lamp::FillLow, w.low_fill),
+        (Lamp::NoFill, w.fill_out),
+        (Lamp::Implosion, w.implosion),
         (Lamp::Scram, w.scram),
     ] {
         lamps[lamp.index()] = on;
@@ -300,10 +300,10 @@ pub fn lamps_of(w: &Warnings) -> [bool; Lamp::COUNT] {
     lamps
 }
 
-/// Seconds to the implosion at the current rate: the meltdown timer (0..1 of its delay) has
-/// `(1 - timer) * delay` left. None while the timer is at 0 and once the core has melted.
-pub fn meltdown_eta(timer: f64, delay_s: f64, melted: bool) -> Option<f64> {
-    (timer > 0.0 && !melted).then(|| (1.0 - timer.clamp(0.0, 1.0)) * delay_s)
+/// Seconds to the implosion at the current rate: the implosion timer (0..1 of its delay) has
+/// `(1 - timer) * delay` left. None while the timer is at 0 and once the core has imploded.
+pub fn implosion_eta(timer: f64, delay_s: f64, imploded: bool) -> Option<f64> {
+    (timer > 0.0 && !imploded).then(|| (1.0 - timer.clamp(0.0, 1.0)) * delay_s)
 }
 
 /// Every process: a news counter (`ejects`, `ecools`) against the last one this process saw. True when
@@ -390,9 +390,9 @@ pub fn route(e: RoomEvent, counts: &mut ReactorCounts) {
             counts.sparks += 1;
             info!("engine room: sparks at the junction box");
         }
-        RoomEvent::Reactor(ReactorEvent::Meltdown) => {
-            counts.meltdowns += 1;
-            warn!("reactor: MELTDOWN");
+        RoomEvent::Reactor(ReactorEvent::Implosion) => {
+            counts.implosions += 1;
+            warn!("reactor: IMPLOSION");
         }
         RoomEvent::Reactor(ReactorEvent::Blast(_)) => {
             counts.blasts += 1;
@@ -472,11 +472,11 @@ fn ship_step(time: Res<Time>, mut items: ResMut<Items>, mut sim: ResMut<ReactorS
         warn!("ship: no owner takes {a:?}");
     }
     let dt = time.delta_secs_f64();
-    let input = if sim.manual { Input::manual(sim.fission, sim.turbine) } else { Input::auto() };
+    let input = if sim.manual { Input::manual(sim.injection, sim.converter) } else { Input::auto() };
     sim.room.set_wear(wear.0);
     let stepped = sim.room.step(dt, input);
     events.0.extend(stepped);
-    // The incident director (r38): its report is the room's devices and temperature, the fires in
+    // The incident director (r38): its report is the room's devices and heat, the fires in
     // the rooms and the engine room's oxygen; it breaks at most one device here.
     let fires = match *model {
         FireModel::Point => [air.engine, air.corridor, air.bridge].into_iter().map(|room| air.deck.fires_in(room).count()).sum::<usize>(),
@@ -588,9 +588,9 @@ mod tests {
         apply_any(&mut s, ReactorAsk::SetPower(false), &cfg(), &mut k);
         let n = s.news(1.0);
         assert!(n.lamps[Lamp::Scram.index()], "warm with the power off");
-        assert!(!n.lamps[Lamp::Hot.index()] && !n.lamps[Lamp::Meltdown.index()]);
+        assert!(!n.lamps[Lamp::Hot.index()] && !n.lamps[Lamp::Implosion.index()]);
         assert!(!n.boost_ok, "no boost with the power off");
-        assert_eq!(n.meltdown_eta_s, None);
+        assert_eq!(n.implosion_eta_s, None);
         apply_any(&mut s, ReactorAsk::SetPower(true), &cfg(), &mut k);
         apply_any(&mut s, ReactorAsk::Boost(true), &cfg(), &mut k);
         let amount = s.room.reactor().tuning().boost_amount;
@@ -607,7 +607,7 @@ mod tests {
         let mut k = ReactorCounts::default();
         apply_any(&mut s, ReactorAsk::SetPower(false), &cfg(), &mut k);
         apply_any(&mut s, ReactorAsk::Boost(true), &cfg(), &mut k);
-        assert_eq!(s.room.reactor().temperature_boost(), 0.0, "the power is needed");
+        assert_eq!(s.room.reactor().heat_boost(), 0.0, "the power is needed");
         assert_eq!(s.news(1.0).boost, 0.0);
     }
 
@@ -713,7 +713,7 @@ mod tests {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
         apply_any(&mut s, ReactorAsk::SetPower(false), &cfg(), &mut k);
-        // The output stops with the next step; fission follows with its lag (seconds).
+        // The output stops with the next step; injection follows with its lag (seconds).
         for _ in 0..10 {
             s.room.step(0.1, Input::auto());
         }
@@ -722,7 +722,7 @@ mod tests {
         for _ in 0..200 {
             s.room.step(0.1, Input::auto());
         }
-        assert!(s.news(1.0).temp < 40.0, "the temperature falls");
+        assert!(s.news(1.0).heat < 40.0, "the heat falls");
         apply_any(&mut s, ReactorAsk::SetPower(true), &cfg(), &mut k);
         assert!(s.news(1.0).power_on);
     }
@@ -783,17 +783,17 @@ mod tests {
     }
 
     #[test]
-    fn the_warm_start_fault_settles_the_room_and_costs_no_coolant_or_rod_life() {
+    fn the_warm_start_fault_settles_the_room_and_costs_no_coolant_or_canister_life() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
         apply_any(&mut s, ReactorAsk::Trigger(ReactorFault::DrainCoolant), &cfg(), &mut k);
         s.room.pump_mut().refill(100.0);
         let tank = s.room.pump().tank();
-        let lives = s.room.reactor().rod_lives();
+        let lives = s.room.reactor().canister_lives();
         apply_any(&mut s, ReactorAsk::Trigger(ReactorFault::WarmStart), &cfg(), &mut k);
         assert!(s.room.settled(), "the room is settled after the warm start");
         assert_eq!(s.room.pump().tank(), tank);
-        assert_eq!(s.room.reactor().rod_lives(), lives);
+        assert_eq!(s.room.reactor().canister_lives(), lives);
         assert_eq!(k.fires, 0);
     }
 
@@ -807,35 +807,35 @@ mod tests {
     }
 
     #[test]
-    fn a_melted_core_is_on_the_snapshot_and_a_reset_clears_it() {
+    fn a_imploded_core_is_on_the_snapshot_and_a_reset_clears_it() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
         s.room.reactor_mut().set_targets(100.0, 30.0);
         for _ in 0..(200.0 / 0.1) as usize {
             s.room.step(0.1, Input::manual(100.0, 30.0));
-            if s.room.reactor().melted() {
+            if s.room.reactor().imploded() {
                 break;
             }
         }
-        assert!(s.news(1.0).melted);
+        assert!(s.news(1.0).imploded);
         apply_any(&mut s, ReactorAsk::Reset, &cfg(), &mut k);
-        assert!(!s.news(1.0).melted);
+        assert!(!s.news(1.0).imploded);
     }
 
     #[test]
     fn targets_count_only_on_manual_and_manual_starts_from_where_the_reactor_is() {
         let mut s = ReactorSim::new(&cfg());
         let mut k = ReactorCounts::default();
-        apply_any(&mut s, ReactorAsk::SetFission(70.0), &cfg(), &mut k);
-        assert!(!s.manual && s.fission == 0.0, "ignored on Auto");
+        apply_any(&mut s, ReactorAsk::SetInjection(70.0), &cfg(), &mut k);
+        assert!(!s.manual && s.injection == 0.0, "ignored on Auto");
         for _ in 0..30 * 60 {
             s.room.step(1.0 / 30.0, Input::auto());
         }
         let (f, t) = s.room.reactor().targets();
         apply_any(&mut s, ReactorAsk::SetManual(true), &cfg(), &mut k);
-        assert!(s.manual && (s.fission - f).abs() < 1e-9 && (s.turbine - t).abs() < 1e-9);
-        apply_any(&mut s, ReactorAsk::SetFission(150.0), &cfg(), &mut k);
-        assert_eq!(s.fission, 100.0, "clamped");
+        assert!(s.manual && (s.injection - f).abs() < 1e-9 && (s.converter - t).abs() < 1e-9);
+        apply_any(&mut s, ReactorAsk::SetInjection(150.0), &cfg(), &mut k);
+        assert_eq!(s.injection, 100.0, "clamped");
     }
 
     #[test]
@@ -882,7 +882,7 @@ mod tests {
         apply_any(&mut s, ReactorAsk::Eject, &cfg(), &mut k);
         assert!(s.room.reactor().ejected() && s.news(1.0).ejected && !s.news(1.0).eject_armed);
         assert_eq!(k.ejects, 1);
-        assert!(s.room.reactor().rods().is_empty());
+        assert!(s.room.reactor().canisters().is_empty());
     }
 
     #[test]
@@ -953,8 +953,8 @@ mod tests {
         route(RoomEvent::Sparks, &mut k);
         route(RoomEvent::Reactor(ReactorEvent::Fire { size: 0.1 }), &mut k);
         route(RoomEvent::Fire { size: 0.05, source: reactor_core::Source::Junction }, &mut k);
-        route(RoomEvent::Reactor(ReactorEvent::Meltdown), &mut k);
-        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, meltdowns: 1, blasts: 0, ejects: 0, ecools: 0, jumps: 0 });
+        route(RoomEvent::Reactor(ReactorEvent::Implosion), &mut k);
+        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, implosions: 1, blasts: 0, ejects: 0, ecools: 0, jumps: 0 });
         route(RoomEvent::Reactor(ReactorEvent::Blast(reactor_core::Blast::default())), &mut k);
         assert_eq!(k.blasts, 1, "the blast is counted");
     }

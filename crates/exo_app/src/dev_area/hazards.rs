@@ -1,7 +1,7 @@
 //! Hazards to try the health rules on: three pads (a hot plate, a glowing barrel, a pad without
-//! air), the spicy fuel rod that irradiates whoever stands near it unless it sits in the reactor,
+//! air), the spicy antimatter canister that irradiates whoever stands near it unless it sits in the reactor,
 //! and a walled vacuum room for the suit. The rates are in `content/gameplay/health/health.json`;
-//! the rod's reach and dose are consts here (the item format has no custom fields).
+//! the canister's reach and dose are consts here (the item format has no custom fields).
 //! TODO(initiator): the booth's shape (a flat pad for now, not yet a walled booth).
 use crate::dev_area::*;
 use crate::dev_area::layout::{spawn_part, Part, ROOM_HEIGHT, WALL, WALL_COLOUR};
@@ -48,16 +48,16 @@ fn spawn_vacuum_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: R
     }
 }
 
-pub const SPICY_ITEM: &str = "fuel_rod_spicy";
-/// The spicy rod's reach (m) and its radiation (per second) on each body in reach. TODO(initiator).
+pub const SPICY_ITEM: &str = "antimatter_canister_spicy";
+/// The spicy canister's reach (m) and its radiation (per second) on each body in reach. TODO(initiator).
 pub const SPICY_RADIUS_M: f64 = 1.25;
 pub const SPICY_RAD_PER_S: f64 = 1.0;
-/// The spicy rod on the dev area's pad by the barrel: the spot, relative to the barrel's centre,
+/// The spicy canister on the dev area's pad by the barrel: the spot, relative to the barrel's centre,
 /// on the pad's east edge, so a walker one step further east stands outside the barrel's glow.
 pub const SPICY_AT: [f64; 2] = [1.15, 0.0];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct RodSpot {
+pub struct CanisterSpot {
     pub at: DVec3,
     pub shielded: bool,
 }
@@ -66,14 +66,14 @@ pub fn shielded_at(p: [f64; 2]) -> bool {
     Zone { name: "reactor", centre: REACTOR_AT, half: [REACTOR_SIZE[0] * 0.5, REACTOR_SIZE[2] * 0.5] }.contains(p)
 }
 
-/// The spicy rod's light, when it lies in the world or is in hand: green-cyan, dim, 3 m. The
+/// The spicy canister's light, when it lies in the world or is in hand: green-cyan, dim, 3 m. The
 /// colour is the fulgurium's (60, 200, 150). TODO(initiator): the intensity and the look.
 pub fn spicy_light() -> PointLight {
     PointLight { color: Color::srgb(0.235, 0.784, 0.588), intensity: 6_000.0, range: 3.0, shadow_maps_enabled: false, ..default() }
 }
 
-pub fn spicy_irradiated(rods: &[RodSpot], bodies: &[(PlayerId, DVec3)], radius: f64) -> BTreeSet<PlayerId> {
-    bodies.iter().filter(|(_, b)| rods.iter().any(|r| !r.shielded && r.at.distance(*b) <= radius)).map(|(id, _)| *id).collect()
+pub fn spicy_irradiated(canisters: &[CanisterSpot], bodies: &[(PlayerId, DVec3)], radius: f64) -> BTreeSet<PlayerId> {
+    bodies.iter().filter(|(_, b)| canisters.iter().any(|r| !r.shielded && r.at.distance(*b) <= radius)).map(|(id, _)| *id).collect()
 }
 
 pub fn plugin(app: &mut App) {
@@ -93,12 +93,12 @@ pub fn plugin(app: &mut App) {
             panel: None,
         });
     }
-    // Parked (#306 Parkplatz): the spicy rod is not put by the barrel; re-add this system to bring it back.
-    // app.add_systems(FixedUpdate, put_spicy_rod.in_set(crate::phases::Fx::Effects));
+    // Parked (#306 Parkplatz): the spicy canister is not put by the barrel; re-add this system to bring it back.
+    // app.add_systems(FixedUpdate, put_spicy_canister.in_set(crate::phases::Fx::Effects));
 }
 
 #[allow(dead_code)] // parked (#306 Parkplatz)
-fn put_spicy_rod(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, mut items: ResMut<Items>, ships: Query<(), With<crate::ship::Ship>>, mut done: Local<bool>) {
+fn put_spicy_canister(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, mut items: ResMut<Items>, ships: Query<(), With<crate::ship::Ship>>, mut done: Local<bool>) {
     if *done || ships.is_empty() {
         return;
     }
@@ -116,8 +116,8 @@ fn put_spicy_rod(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, mu
 mod tests {
     use super::*;
 
-    fn spot(x: f64, shielded: bool) -> RodSpot {
-        RodSpot { at: DVec3::new(x, 0.0, 0.0), shielded }
+    fn spot(x: f64, shielded: bool) -> CanisterSpot {
+        CanisterSpot { at: DVec3::new(x, 0.0, 0.0), shielded }
     }
 
     #[test]
@@ -134,16 +134,16 @@ mod tests {
     }
 
     #[test]
-    fn a_rod_in_the_reactor_shields_everyone() {
+    fn a_canister_in_the_reactor_shields_everyone() {
         let bodies = [(1, DVec3::new(0.5, 0.0, 0.0))];
         assert!(spicy_irradiated(&[spot(0.0, true)], &bodies, SPICY_RADIUS_M).is_empty());
     }
 
     #[test]
-    fn two_rods_irradiate_each_body_once_and_the_shielded_one_does_not_count() {
+    fn two_canisters_irradiate_each_body_once_and_the_shielded_one_does_not_count() {
         let bodies = [(1, DVec3::ZERO), (2, DVec3::new(10.0, 0.0, 0.0)), (3, DVec3::new(-0.5, 0.0, 0.0))];
-        let rods = [spot(0.0, false), spot(10.0, true), spot(-0.2, false)];
-        assert_eq!(spicy_irradiated(&rods, &bodies, SPICY_RADIUS_M), BTreeSet::from([1, 3]), "the shielded rod at 10 m does not reach body 2");
-        assert!(spicy_irradiated(&[], &bodies, SPICY_RADIUS_M).is_empty(), "no rods, no radiation");
+        let canisters = [spot(0.0, false), spot(10.0, true), spot(-0.2, false)];
+        assert_eq!(spicy_irradiated(&canisters, &bodies, SPICY_RADIUS_M), BTreeSet::from([1, 3]), "the shielded canister at 10 m does not reach body 2");
+        assert!(spicy_irradiated(&[], &bodies, SPICY_RADIUS_M).is_empty(), "no canisters, no radiation");
     }
 }

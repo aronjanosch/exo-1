@@ -1,4 +1,4 @@
-//! The meltdown blast: what `ReactorEvent::Blast` does to the people in the engine room; the rules and values are `reactor_core::Blast`.
+//! The implosion blast: what `ReactorEvent::Blast` does to the people in the engine room; the rules and values are `reactor_core::Blast`.
 //! The host applies it (`reactor_blast`): the burn and the radiation fall off with distance (`falloff`), three fires start round the core, the local screen flashes white in the radiation's range, and the news says REACTOR BLAST.
 //! Other processes get it from the news (`ReactorNews::blasts`, `client_blast_news`).
 //! Open: the stun (no health affliction carries it yet, `TODO(initiator)`), the device damage.

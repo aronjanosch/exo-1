@@ -48,7 +48,7 @@ pub const DRY_VOL: f32 = 0.05;
 pub const SWEEP_VOL: f32 = 0.08;
 pub const OFF_VOL: f32 = 0.12;
 pub const PUMP_VOL: f32 = 0.06;
-/// The reactor's drone at fission 100 (Barotrauma's reactor loop: base 0.02, here on our synth's
+/// The reactor's drone at injection 100 (Barotrauma's reactor loop: base 0.02, here on our synth's
 /// scale), audible within `REACTOR_RANGE_M` of the reactor. Its pitch rises from `REACTOR_PITCH.0`
 /// at `REACTOR_PITCH_T.0` degrees to `REACTOR_PITCH.1` at `REACTOR_PITCH_T.1`.
 pub const REACTOR_HUM_VOL: f32 = 0.05;
@@ -122,33 +122,33 @@ pub fn pump_speed(flow: f64) -> f32 {
     lo + (hi - lo) * flow.clamp(0.0, 1.0) as f32
 }
 
-/// The reactor's drone volume: the actual fission (0..100) of a powered reactor, falling off to
+/// The reactor's drone volume: the actual injection (0..100) of a powered reactor, falling off to
 /// silence at `REACTOR_RANGE_M`. Silent with the power off.
-pub fn reactor_hum_volume(fission: f64, power_on: bool, dist: f64) -> f32 {
+pub fn reactor_hum_volume(injection: f64, power_on: bool, dist: f64) -> f32 {
     if !power_on {
         return 0.0;
     }
-    REACTOR_HUM_VOL * (fission / 100.0).clamp(0.0, 1.0) as f32 * falloff(dist, REACTOR_RANGE_M)
+    REACTOR_HUM_VOL * (injection / 100.0).clamp(0.0, 1.0) as f32 * falloff(dist, REACTOR_RANGE_M)
 }
 
-/// The drone's level from the news: the actual fission (`ReactorNews::fission`), not the set
+/// The drone's level from the news: the actual injection (`ReactorNews::injection`), not the set
 /// point, so a set point the reactor has not reached yet is not heard.
 pub fn reactor_hum_level(r: &ReactorNews, dist: f64) -> f32 {
-    reactor_hum_volume(r.fission, r.power_on, dist)
+    reactor_hum_volume(r.injection, r.power_on, dist)
 }
 
-/// The reactor's drone speed for a core temperature in degrees: the pitch rises with the heat.
-pub fn reactor_hum_speed(temp: f64) -> f32 {
+/// The reactor's drone speed for a core heat in degrees: the pitch rises with the heat.
+pub fn reactor_hum_speed(heat: f64) -> f32 {
     let (t0, t1) = REACTOR_PITCH_T;
     let (lo, hi) = REACTOR_PITCH;
-    let k = ((temp - t0) / (t1 - t0)).clamp(0.0, 1.0) as f32;
+    let k = ((heat - t0) / (t1 - t0)).clamp(0.0, 1.0) as f32;
     lo + (hi - lo) * k
 }
 
-/// Whether a bad lamp of the status board is on: the core's critical heat or output, no fuel, or
-/// the meltdown. Those blink at 2 Hz (`lamp_blink_on`); the rest of the lamps are steady.
+/// Whether a bad lamp of the status board is on: the core's critical heat or output, no fill, or
+/// the implosion. Those blink at 2 Hz (`lamp_blink_on`); the rest of the lamps are steady.
 pub fn alarm_lamp_on(r: &ReactorNews) -> bool {
-    [Lamp::CritHeat, Lamp::CritOut, Lamp::NoFuel, Lamp::Meltdown].iter().any(|l| r.lamps[l.index()])
+    [Lamp::CritHeat, Lamp::CritOut, Lamp::NoFill, Lamp::Implosion].iter().any(|l| r.lamps[l.index()])
 }
 
 pub fn alarm_beep_due(bad_lamp: bool, blink_on: bool, prev_blink_on: bool) -> bool {
@@ -410,7 +410,7 @@ fn electric_sounds(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>,
         } else if !before.powered && now_r.powered {
             one_shot(&mut commands, &s.sweep_up, SWEEP_VOL);
         }
-        if before.power_on && !now_r.power_on && now_r.set_fission == 0.0 && now_r.set_turbine == 0.0 {
+        if before.power_on && !now_r.power_on && now_r.set_injection == 0.0 && now_r.set_converter == 0.0 {
             one_shot(&mut commands, &s.thud, OFF_VOL);
         }
     }
@@ -487,14 +487,14 @@ fn reactor_alarms(mut commands: Commands, s: Res<SliceSounds>, time: Res<Time>, 
     }
 }
 
-/// The drone follows the actual fission (Barotrauma's `volumeproperty="FissionRate"`). TODO(initiator):
+/// The drone follows the actual injection (Barotrauma's `volumeproperty="InjectionRate"`). TODO(initiator):
 /// the level curve and the pitch are start values, to be tuned by ear.
 #[allow(clippy::too_many_arguments)]
 fn reactor_hum(players: Query<&Player>, items: Res<Items>, planet: Res<PlanetRes>, area: Option<Res<DevArea>>, settings: Res<Settings>, time: Res<Time>, mut loops: Query<&mut AudioSink, With<ReactorLoop>>, mut now: Local<f32>) {
     let mut target = 0.0f32;
     let mut speed = 1.0f32;
     if let Some(r) = items.reactor {
-        speed = reactor_hum_speed(r.temp);
+        speed = reactor_hum_speed(r.heat);
         let dist = match (walker_pos(&players), fire_world(area.as_deref(), &planet, source_at(Source::Reactor))) {
             (Some(me), Some(at)) => (at - me).length(),
             _ => f64::MAX,
@@ -612,17 +612,17 @@ mod tests {
     }
 
     #[test]
-    fn the_reactor_drone_is_silent_at_no_fission_or_no_power() {
+    fn the_reactor_drone_is_silent_at_no_injection_or_no_power() {
         assert_eq!(reactor_hum_volume(0.0, true, 1.0), 0.0);
         assert_eq!(reactor_hum_volume(100.0, false, 1.0), 0.0);
         assert_eq!(reactor_hum_volume(100.0, true, 20.0), 0.0);
     }
 
     #[test]
-    fn the_drone_follows_the_actual_fission_not_the_set_point() {
-        let idle = ReactorNews { power_on: true, set_fission: 100.0, fission: 0.0, ..ReactorNews::default() };
+    fn the_drone_follows_the_actual_injection_not_the_set_point() {
+        let idle = ReactorNews { power_on: true, set_injection: 100.0, injection: 0.0, ..ReactorNews::default() };
         assert_eq!(reactor_hum_level(&idle, 0.0), 0.0, "the set point alone is silent");
-        let full = ReactorNews { power_on: true, set_fission: 0.0, fission: 100.0, ..ReactorNews::default() };
+        let full = ReactorNews { power_on: true, set_injection: 0.0, injection: 100.0, ..ReactorNews::default() };
         assert_eq!(reactor_hum_level(&full, 0.0), reactor_hum_volume(100.0, true, 0.0), "the actual 100 is the full level");
         let off = ReactorNews { power_on: false, ..full };
         assert_eq!(reactor_hum_level(&off, 0.0), 0.0, "the power off is silent");
@@ -644,7 +644,7 @@ mod tests {
         r.lamps[Lamp::Scram.index()] = true;
         r.lamps[Lamp::LowOut.index()] = true;
         assert!(!alarm_lamp_on(&r), "warn lamps and the SCRAM lamp are not the alarm");
-        for bad in [Lamp::CritHeat, Lamp::CritOut, Lamp::NoFuel, Lamp::Meltdown] {
+        for bad in [Lamp::CritHeat, Lamp::CritOut, Lamp::NoFill, Lamp::Implosion] {
             let mut one = ReactorNews::default();
             one.lamps[bad.index()] = true;
             assert!(alarm_lamp_on(&one), "{bad:?}");

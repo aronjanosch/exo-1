@@ -25,8 +25,8 @@ fn flow(w: &World) -> f64 {
     w.resource::<ReactorSim>().room.flow()
 }
 
-fn temp(w: &World) -> f64 {
-    w.resource::<ReactorSim>().room.reactor().temperature()
+fn heat(w: &World) -> f64 {
+    w.resource::<ReactorSim>().room.reactor().heat()
 }
 
 const DIGITS: [KeyCode; 8] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8];
@@ -94,13 +94,13 @@ pub(super) fn coolant_steps(s: &mut Vec<Step>) {
         check(c, tank(w) == 0.0 && flow(w) == 0.0, format!("coolant: the tank is empty and no flow ({} %, {:.2})", tank(w), flow(w)));
         let panel = w.resource::<Panels>().get(&PUMP_ID).map(|p| format!("{p:?}")).unwrap_or_default();
         check(c, panel.contains("EMPTY"), "coolant: the pump screen says EMPTY".into());
-        c.v.insert("t0", temp(w));
+        c.v.insert("t0", heat(w));
         Some(format!("tank {:.0} %", tank(w)))
     }));
 // Short on purpose: 20 s above the optimal band starts a fire at the reactor.
     s.push(wait(6.0));
     s.push(run("coolant: the core climbs without coolant", 2.0, |w, c| {
-        let (t0, t1) = (c.v["t0"], temp(w));
+        let (t0, t1) = (c.v["t0"], heat(w));
         Some(format!("{t0:.1} -> {t1:.1}"))
     }));
 

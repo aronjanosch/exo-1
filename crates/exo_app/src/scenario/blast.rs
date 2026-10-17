@@ -1,4 +1,4 @@
-//! The meltdown blast reaches a walker two metres off, not one at 25 m (a unit test covers the falloff).
+//! The implosion blast reaches a walker two metres off, not one at 25 m (a unit test covers the falloff).
 use super::*;
 use crate::dev_area::engineering::blast::{fire_points, BlastFlash, PendingBlasts};
 use crate::dev_area::ship::{route, ReactorSim};
@@ -56,11 +56,11 @@ pub(super) fn blast_steps(s: &mut Vec<Step>) {
         true
     }));
 
-    s.push(run("blast: the core melts with fuel in it", 5.0, |w, c| {
+    s.push(run("blast: the core implodes with fill in it", 5.0, |w, c| {
         if c.t == 0.0 {
             c.v.insert("burn0", strength(w, "burn"));
             c.v.insert("rad0", strength(w, "radiation"));
-            let events = w.resource_mut::<ReactorSim>().room.reactor_mut().force_meltdown();
+            let events = w.resource_mut::<ReactorSim>().room.reactor_mut().force_implosion();
             let mut k = counts(w);
             for e in events {
                 if let ReactorEvent::Blast(b) = e {
@@ -75,8 +75,8 @@ pub(super) fn blast_steps(s: &mut Vec<Step>) {
             return None;
         }
         let k = counts(w);
-        check(c, k.meltdowns == 1 && k.blasts == 1, format!("blast: one melt and one blast ({} / {})", k.meltdowns, k.blasts));
-        Some("melted".into())
+        check(c, k.implosions == 1 && k.blasts == 1, format!("blast: one implode and one blast ({} / {})", k.implosions, k.blasts));
+        Some("imploded".into())
     }));
     s.push(run("blast: the walker two metres off takes burn and radiation", 1.0, |w, c| {
         let (burn, rad) = (strength(w, "burn"), strength(w, "radiation"));

@@ -22,7 +22,7 @@ fn cw(w: &World) -> &ContainerWindow {
 }
 
 /// The player's three items anywhere: in the bar and in the crate (nothing may be lost or
-/// duplicated). The crate's own stock (fuel rod, bandages, canisters) is not counted.
+/// duplicated). The crate's own stock (antimatter canister, bandages, canisters) is not counted.
 fn mine(w: &World) -> u32 {
     let it = items(w);
     ["wrench", "extinguisher", "o2_mask"].iter().map(|k| it.host.inventory(MINE).count(k) + in_crate(w, k)).sum()

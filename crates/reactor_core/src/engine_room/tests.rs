@@ -35,14 +35,14 @@ fn settle(r: &mut EngineRoom) {
 
 fn run(r: &mut EngineRoom, secs: f64, input: Input) -> (Vec<(f64, RoomEvent)>, Vec<f64>) {
     let mut ev = Vec::new();
-    let mut temps = Vec::new();
+    let mut heats = Vec::new();
     let mut t = 0.0;
     for _ in 0..(secs / DT).round() as usize {
         t += DT;
         ev.extend(r.step(DT, input).into_iter().map(|e| (t, e)));
-        temps.push(r.reactor().temperature());
+        heats.push(r.reactor().heat());
     }
-    (ev, temps)
+    (ev, heats)
 }
 
 fn is_fire(e: &RoomEvent) -> bool {
@@ -95,9 +95,9 @@ fn alarm_level_follows_the_room() {
         run(&mut r, DT, input);
         secs += DT;
     }
-    assert!(r.reactor().temperature() > r.reactor().bands().temp_allowed.hi);
+    assert!(r.reactor().heat() > r.reactor().bands().heat_allowed.hi);
     assert_eq!(r.level(), AlarmLevel::Danger, "after {secs:.1} s");
-    // Repaired pump, the flow coasts back up and the temperature falls below the optimal band: None again.
+    // Repaired pump, the flow coasts back up and the heat falls below the optimal band: None again.
     // Repair until the pump is full (not just running: a pump at the broken limit runs at half).
     let input = Input::manual(10.0, 50.0);
     let mut full = false;
@@ -107,8 +107,8 @@ fn alarm_level_follows_the_room() {
         r.step(DT, input);
     }
     run(&mut r, 90.0, input);
-    assert!(!r.reactor().melted(), "the core melted");
-    assert_eq!(r.level(), AlarmLevel::None, "temp {}", r.reactor().temperature());
+    assert!(!r.reactor().imploded(), "the core imploded");
+    assert_eq!(r.level(), AlarmLevel::None, "heat {}", r.reactor().heat());
 }
 
 #[test]
@@ -171,10 +171,10 @@ fn overvolt_is_seen_by_the_box() {
 }
 
 fn refuel(r: &mut EngineRoom) {
-    while let Some(i) = r.reactor().rods().iter().position(|x| x.spent()) {
-        r.reactor_mut().remove_rod(i);
+    while let Some(i) = r.reactor().canisters().iter().position(|x| x.spent()) {
+        r.reactor_mut().remove_canister(i);
     }
-    while r.reactor_mut().insert_rod(FuelRod::standard()).is_ok() {}
+    while r.reactor_mut().insert_canister(Canister::standard()).is_ok() {}
 }
 
 #[test]
@@ -208,8 +208,8 @@ fn normal_running_wears_the_machines_to_the_floor_and_never_breaks_them() {
 
 #[test]
 fn a_running_reactor_without_steam_gives_no_power_and_says_so() {
-    // The pump is broken (no coolant) and the turbine draws more heat than the low fission makes:
-    // the temperature falls to 0. The reactor is still on (power_on), but its output is 0 at 0 °C,
+    // The pump is broken (no coolant) and the converter draws more heat than the low injection makes:
+    // the heat falls to 0. The reactor is still on (power_on), but its output is 0 at 0 °C,
     // so the machines are dark. The screens read `powered`, so they show NO POWER.
     let mut r = room();
     r.trigger(Fault::PumpBreak);
@@ -217,12 +217,12 @@ fn a_running_reactor_without_steam_gives_no_power_and_says_so() {
     let mut cold_on = false;
     for _ in 0..(120.0 / DT) as usize {
         r.step(DT, input);
-        if r.reactor().temperature() == 0.0 && r.reactor().power_on() {
+        if r.reactor().heat() == 0.0 && r.reactor().power_on() {
             cold_on = true;
             break;
         }
     }
-    assert!(cold_on, "the temperature falls to 0 with the reactor on");
+    assert!(cold_on, "the heat falls to 0 with the reactor on");
     assert!(r.reactor().power_on(), "still on");
     assert_eq!(r.reactor().output_kw(), 0.0, "no steam, no output");
     assert!(!r.powered(), "the machines are dark while the reactor reads on");
@@ -266,7 +266,7 @@ fn an_empty_tank_is_no_flow_and_the_core_stays_alive() {
     assert!(full.flow() > 0.0);
     run(&mut full, 120.0, Input::auto());
     run(&mut dry, 120.0, Input::auto());
-    assert!(!dry.reactor().melted() && !full.reactor().melted(), "both stay alive for the comparison");
+    assert!(!dry.reactor().imploded() && !full.reactor().imploded(), "both stay alive for the comparison");
     // Under Auto the dry room ends colder (dry 45.3 vs full 53.0 measured). Not asserted; the empty
     // tank's heat is the sim's coolant_empty at full load.
 }
@@ -423,53 +423,53 @@ fn the_power_factor_on_the_backup_is_one_with_no_output() {
 #[test]
 fn a_blast_breaks_the_pump_and_the_junction_box() {
     let mut r = room();
-    let ev = r.melt_now();
+    let ev = r.implode_now();
     assert!(ev.contains(&RoomEvent::Reactor(ReactorEvent::Blast(Blast::default()))), "{ev:?}");
     assert!(ev.contains(&RoomEvent::Device { source: Source::Pump, event: DeviceEvent::Broke }), "{ev:?}");
     assert!(ev.contains(&RoomEvent::Device { source: Source::Junction, event: DeviceEvent::Broke }), "{ev:?}");
     assert!(!r.pump().condition().functioning() && !r.junction().condition().functioning());
 }
 
-/// Without fuel the melt is only the melt: the pump and the junction box keep working.
+/// Without fill the implode is only the implode: the pump and the junction box keep working.
 #[test]
-fn a_melt_without_fuel_leaves_the_pump_and_the_junction_box_alone() {
+fn a_implode_without_fill_leaves_the_pump_and_the_junction_box_alone() {
     let mut r = room();
-    assert!(r.reactor_mut().pull_rod(0).is_some() && r.reactor_mut().pull_rod(0).is_some());
-    let ev = r.melt_now();
-    assert!(ev.contains(&RoomEvent::Reactor(ReactorEvent::Meltdown)), "{ev:?}");
+    assert!(r.reactor_mut().pull_canister(0).is_some() && r.reactor_mut().pull_canister(0).is_some());
+    let ev = r.implode_now();
+    assert!(ev.contains(&RoomEvent::Reactor(ReactorEvent::Implosion)), "{ev:?}");
     assert!(!ev.iter().any(|e| matches!(e, RoomEvent::Reactor(ReactorEvent::Blast(_)) | RoomEvent::Device { .. })), "{ev:?}");
     assert!(r.pump().condition().functioning() && r.junction().condition().functioning());
 }
 
-/// The natural meltdown through `step` (pump broken, both rods at 100 on the brake) blasts in the
-/// same step as the melt, and the devices break in that step too.
+/// The natural implosion through `step` (pump broken, both canisters at 100 on the brake) blasts in the
+/// same step as the implode, and the devices break in that step too.
 #[test]
-fn a_natural_meltdown_blasts_in_its_step() {
+fn a_natural_implosion_blasts_in_its_step() {
     let mut r = room();
     r.trigger(Fault::PumpBreak);
-    let mut melt_step = None;
+    let mut implode_step = None;
     for i in 0..(900.0 / DT) as usize {
         let ev = r.step(DT, Input::manual(100.0, 100.0));
-        if ev.contains(&RoomEvent::Reactor(ReactorEvent::Meltdown)) {
+        if ev.contains(&RoomEvent::Reactor(ReactorEvent::Implosion)) {
             assert!(ev.contains(&RoomEvent::Reactor(ReactorEvent::Blast(Blast::default()))), "{ev:?}");
             assert!(ev.contains(&RoomEvent::Device { source: Source::Junction, event: DeviceEvent::Broke }), "{ev:?}");
-            melt_step = Some(i);
+            implode_step = Some(i);
             break;
         }
     }
-    assert!(melt_step.is_some(), "the core melts within 900 s");
+    assert!(implode_step.is_some(), "the core implodes within 900 s");
 }
 
 // ---------- warm start (Barotrauma `Reactor.cs:613-624`, `PowerUpImmediately`) ----------
 
 #[test]
-fn a_warm_start_costs_no_coolant_and_no_rod_life() {
+fn a_warm_start_costs_no_coolant_and_no_canister_life() {
     let mut r = room();
     let tank = r.pump().tank();
-    let lives: Vec<f64> = r.reactor().rods().iter().map(|rod| rod.life).collect();
+    let lives: Vec<f64> = r.reactor().canisters().iter().map(|canister| canister.life).collect();
     let _ = r.warm_start();
     assert_eq!(r.pump().tank(), tank);
-    let after: Vec<f64> = r.reactor().rods().iter().map(|rod| rod.life).collect();
+    let after: Vec<f64> = r.reactor().canisters().iter().map(|canister| canister.life).collect();
     assert_eq!(after, lives);
 }
 
@@ -592,26 +592,26 @@ fn aux_lights_off_raises_the_boost_and_the_output_range_top_by_the_lights_demand
     let (_, top_before) = r.reactor().output_range();
     r.set_aux_switch(Group::Lights, false);
     let (_, top_after) = r.reactor().output_range();
-    // The top rises by the boost times the turbine's share of the max (the band's top, capped at 1).
+    // The top rises by the boost times the converter's share of the max (the band's top, capped at 1).
     let share = (top_after - top_before) / 80.0;
     assert!(share > 0.0 && share <= 1.0 + 1e-9, "range top rose {} kW, share {share}", top_after - top_before);
 }
 
 #[test]
-fn a_melted_main_reactor_with_aux_leaves_life_support_powered() {
+fn a_imploded_main_reactor_with_aux_leaves_life_support_powered() {
     let mut r = aux_room();
     let _ = r.step(DT, Input::auto());
-    let _ = r.melt_now();
+    let _ = r.implode_now();
     let _ = r.step(DT, Input::auto());
-    assert!(r.reactor().melted(), "the reactor melted");
+    assert!(r.reactor().imploded(), "the reactor imploded");
     assert!(r.grid().supply(Group::LifeSupport).on, "life support stays on the aux reactor");
     assert!((r.grid().factor(Group::LifeSupport) - 1.0).abs() < 1e-9);
     assert_eq!(r.grid().factor(Group::Engines), 0.0, "engines are on the main reactor and get nothing");
 
-    // Control: the same melt with aux off leaves life support without power.
+    // Control: the same implode with aux off leaves life support without power.
     let mut c = room();
     let _ = c.step(DT, Input::auto());
-    let _ = c.melt_now();
+    let _ = c.implode_now();
     let _ = c.step(DT, Input::auto());
     assert_eq!(c.grid().factor(Group::LifeSupport), 0.0);
 }
@@ -706,26 +706,26 @@ fn the_oxygen_flow_halves_at_condition_0_707() {
 #[test]
 fn a_blast_breaks_the_oxygen_generator() {
     let mut r = room();
-    let ev = r.melt_now();
+    let ev = r.implode_now();
     assert!(ev.contains(&RoomEvent::Device { source: Source::OxygenGenerator, event: DeviceEvent::Broke }), "{ev:?}");
     assert!(!r.oxygen_generator().condition().functioning());
 }
 
-/// The meltdown blast damages the walls near the reactor (r37's breach, now by section, r40): the
-/// nearest sections take the blast's wall damage by the falloff and leak. A melt without fuel does not.
+/// The implosion blast damages the walls near the reactor (r37's breach, now by section, r40): the
+/// nearest sections take the blast's wall damage by the falloff and leak. An implosion without fill does not.
 #[test]
-fn a_blast_damages_the_walls_near_the_reactor_and_a_melt_without_fuel_does_not() {
+fn a_blast_damages_the_walls_near_the_reactor_and_a_implode_without_fill_does_not() {
     let mut r = room();
     assert!(r.hull().intact());
-    let _ = r.melt_now();
+    let _ = r.implode_now();
     let near = r.hull().nearest(crate::hull::REACTOR_AT);
     assert!(r.hull().damage(near) > 0.0 && r.hull().open(near) > 0.0, "the nearest section leaks");
     assert_eq!(r.hull().damage(near), r.hull().sections.iter().map(|s| s.damage()).fold(0.0, f64::max), "the nearest section is the most damaged");
 
     let mut r = room();
-    assert!(r.reactor_mut().pull_rod(0).is_some() && r.reactor_mut().pull_rod(0).is_some());
-    let _ = r.melt_now();
-    assert!(r.hull().intact(), "a melt without fuel does not blast the walls");
+    assert!(r.reactor_mut().pull_canister(0).is_some() && r.reactor_mut().pull_canister(0).is_some());
+    let _ = r.implode_now();
+    assert!(r.hull().intact(), "an implosion without fill does not blast the walls");
 }
 
 /// The dev fault HULL BREACH damages the section nearest the reactor at the blast's damage, and the
@@ -943,7 +943,7 @@ fn a_stepped_damaged_charged_room_round_trips_through_json() {
     let _ = r.apply_hit(hit, &mut Rng::new(5));
     let _ = r.junction_mut().condition_mut().damage(40.0);
     let _ = r.reactor_mut().condition_mut().damage(30.0);
-    r.reactor_mut().set_rod_lives(&[40.0, 70.0]);
+    r.reactor_mut().set_canister_lives(&[40.0, 70.0]);
     r.pump_mut().set_mode(PumpMode::Low);
     r.pump_mut().set_tank(35.0);
     r.battery_mut().set_charge_kwmin(3000.0);

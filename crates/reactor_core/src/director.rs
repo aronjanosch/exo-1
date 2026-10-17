@@ -8,7 +8,7 @@
 //!   (r41) are always open.
 //! - Intensity, the terms: `EventManager.cs:1119-1124` (a fire of any size is 20 %, the hull's holes)
 //!   and `:1139-1143`: the three terms averaged, plus fire at half weight, clamped to 0..1. Ours: the
-//!   broken machines, the bad air and the critical temperature band for the three, `FIRE_SHARE` per fire.
+//!   broken machines, the bad air and the critical heat band for the three, `FIRE_SHARE` per fire.
 //! - Rise and fall: `EventManager.cs:38` (update every 5 s) and `:1145-1157` (0.04 per second up,
 //!   0.0025 per second down; `rise_per_s`, `fall_per_s`).
 //! - Waiting: `EventManager.cs:919-920`, an event starts only when the cooldown is over and the
@@ -69,8 +69,8 @@ pub struct Situation {
     pub broken: u32,
     /// The engine room's oxygen share, 0..1.
     pub oxygen: f64,
-    /// The reactor's temperature is outside its allowed band (power on): the critical lamps.
-    pub temp_critical: bool,
+    /// The reactor's heat is outside its allowed band (power on): the critical lamps.
+    pub heat_critical: bool,
     /// Per `CANDIDATES` entry: the fault can happen now (a broken device, or a breach already open,
     /// is not a candidate: Barotrauma picks among items with Condition > 0, `MalfunctionEvent.cs:44`).
     pub can_break: [bool; 6],
@@ -85,7 +85,7 @@ impl Situation {
             fires,
             broken: working.iter().filter(|ok| !**ok).count() as u32,
             oxygen,
-            temp_critical: w.critical_heat || w.cold,
+            heat_critical: w.critical_heat || w.cold,
             can_break: [room.pump().condition().functioning(), room.junction().condition().functioning(), room.oxygen_generator().condition().functioning(), room.hull().intact(), true, true],
         }
     }
@@ -143,9 +143,9 @@ impl Director {
     pub fn target(s: &Situation) -> f64 {
         let broken = f64::from(s.broken) / MACHINES;
         let bad_air = ((BAD_AIR - s.oxygen) / BAD_AIR).clamp(0.0, 1.0);
-        let temp = if s.temp_critical { 1.0 } else { 0.0 };
+        let heat = if s.heat_critical { 1.0 } else { 0.0 };
         let fire = if s.fires > 0 { (FIRE_SHARE * f64::from(s.fires)).min(1.0) } else { 0.0 };
-        ((broken + bad_air + temp) / 3.0 + fire * FIRE_WEIGHT).clamp(0.0, 1.0)
+        ((broken + bad_air + heat) / 3.0 + fire * FIRE_WEIGHT).clamp(0.0, 1.0)
     }
 
     /// Steps `dt` seconds on the report. Off: nothing moves. Returns the fault that fires now, if any.
@@ -186,11 +186,11 @@ mod tests {
     }
 
     fn calm() -> Situation {
-        Situation { fires: 0, broken: 0, oxygen: 1.0, temp_critical: false, can_break: [true; 6] }
+        Situation { fires: 0, broken: 0, oxygen: 1.0, heat_critical: false, can_break: [true; 6] }
     }
 
     fn bad() -> Situation {
-        Situation { fires: 5, broken: 4, oxygen: 0.0, temp_critical: true, can_break: [true; 6] }
+        Situation { fires: 5, broken: 4, oxygen: 0.0, heat_critical: true, can_break: [true; 6] }
     }
 
     /// Steps `secs` in 0.1 s steps; the faults with the time they fired at.

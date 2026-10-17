@@ -1,10 +1,10 @@
-//! Fuel rods by hand. A rod is an item you carry (`fuel_rod`, `fuel_rod_hot`, `fuel_rod_spicy`,
-//! `content/items/fuel_rod*.json`); its item condition is the rod's life (100 new, 0 spent), kept when
-//! it is carried, loaded or pulled. The reactor is an item container with fuel slots (Barotrauma style):
-//! a rod in a slot is its available fuel.
-//! A rack in the engine room holds loose rods. Load: a rod in hand, LMB held `HOLD_S` on the reactor, and
-//! `Request::Use` puts it into a free slot (`insert_rod`); a full reactor refuses it with a notice.
-//! Pull (the emergency brake, `pull_rod`): empty hands, LMB held `HOLD_S` on the reactor; the rod with
+//! Antimatter canisters by hand. A canister is an item you carry (`antimatter_canister`, `antimatter_canister_hot`, `antimatter_canister_spicy`,
+//! `content/items/antimatter_canister*.json`); its item condition is the canister's life (100 new, 0 spent), kept when
+//! it is carried, loaded or pulled. The reactor is an item container with canister slot (Barotrauma style):
+//! a canister in a slot is its available fill.
+//! A rack in the engine room holds loose canisters. Load: a canister in hand, LMB held `HOLD_S` on the reactor, and
+//! `Request::Use` puts it into a free slot (`insert_canister`); a full reactor refuses it with a notice.
+//! Pull (the emergency brake, `pull_canister`): empty hands, LMB held `HOLD_S` on the reactor; the canister with
 //! the most life comes back as an item. A core above its optimal band burns the hand once (`device_core::minigame::hurt_of`).
 //! Values: TODO(initiator) (the rack's stock, the burn rule, hold times).
 use crate::dev_area::*;
@@ -20,19 +20,19 @@ use avian3d::prelude::{Position, Rotation};
 use bevy::math::DVec3;
 use gameplay_core::notice::{Notice, NoticeKind};
 use item_core::container::Stack;
-use item_core::wire::{FuelKind, RepairDevice};
+use item_core::wire::{CanisterKind, RepairDevice};
 use item_core::{FrameRef, ItemDef, Placement, Request};
-use reactor_core::FuelRod;
+use reactor_core::Canister;
 use walker_core::Frame;
 
-pub const LOAD: &str = "load_rod";
+pub const LOAD: &str = "load_canister";
 /// Beside the coolant rack, against the north wall, relative to the engine room's centre (m).
 pub const RACK_AT: [f64; 2] = [-3.6, 3.7];
 pub const RACK_SIZE: [f64; 3] = [0.5, 0.9, 0.5];
-/// Parked (#306 Parkplatz): only the plain rod lies on the rack; the hot one was ("fuel_rod_hot", 1).
-pub const ON_RACK: [(&str, u32); 1] = [("fuel_rod", 2)];
+/// Parked (#306 Parkplatz): only the plain canister lies on the rack; the hot one was ("antimatter_canister_hot", 1).
+pub const ON_RACK: [(&str, u32); 1] = [("antimatter_canister", 2)];
 
-pub const KINDS: [(&str, &str); 3] = [("standard", "fuel_rod"), ("hot", "fuel_rod_hot"), ("spicy", "fuel_rod_spicy")];
+pub const KINDS: [(&str, &str); 3] = [("standard", "antimatter_canister"), ("hot", "antimatter_canister_hot"), ("spicy", "antimatter_canister_spicy")];
 
 pub fn kind_of_item(item: &str) -> Option<&'static str> {
     KINDS.iter().find(|(_, i)| *i == item).map(|(k, _)| *k)
@@ -42,21 +42,21 @@ pub fn item_of_kind(kind: &str) -> Option<&'static str> {
     KINDS.iter().find(|(k, _)| *k == kind).map(|(_, i)| *i)
 }
 
-/// The rod the brake pulls: the one with the most life (the first of equals), None when there
-/// is no rod.
-pub fn pull_index(rods: &[FuelRod]) -> Option<usize> {
-    rods.iter().enumerate().reduce(|best, r| if r.1.life > best.1.life { r } else { best }).map(|(i, _)| i)
+/// The canister the brake pulls: the one with the most life (the first of equals), None when there
+/// is no canister.
+pub fn pull_index(canisters: &[Canister]) -> Option<usize> {
+    canisters.iter().enumerate().reduce(|best, r| if r.1.life > best.1.life { r } else { best }).map(|(i, _)| i)
 }
 
-pub fn fuel_kind(kind: &str) -> FuelKind {
+pub fn canister_kind(kind: &str) -> CanisterKind {
     match kind {
-        "hot" => FuelKind::Hot,
-        "spicy" => FuelKind::Spicy,
-        _ => FuelKind::Standard,
+        "hot" => CanisterKind::Hot,
+        "spicy" => CanisterKind::Spicy,
+        _ => CanisterKind::Standard,
     }
 }
 
-pub fn rod_stack(def: &ItemDef, life: f64) -> Stack {
+pub fn canister_stack(def: &ItemDef, life: f64) -> Stack {
     Stack::new(def.item().with_condition(life), 1)
 }
 
@@ -68,16 +68,16 @@ pub fn reactor_front(area: &DevArea, planet: &PlanetRes) -> Option<Placement> {
 }
 
 #[derive(Resource, Default, Debug)]
-pub struct RodHold {
+pub struct CanisterHold {
     pub held: f64,
 }
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(FixedUpdate, host_rods.in_set(crate::dev_area::ship::ShipSet::Asks));
-    app.init_resource::<RodHold>();
+    app.add_systems(FixedUpdate, host_canisters.in_set(crate::dev_area::ship::ShipSet::Asks));
+    app.init_resource::<CanisterHold>();
     app.add_systems(
         FixedUpdate,
-        rod_hands
+        canister_hands
             .after(crate::scenario::run_script)
             .after(crate::items_net::items_net_in)
             .before(crate::health::use_input)
@@ -85,7 +85,7 @@ pub fn plugin(app: &mut App) {
             .in_set(crate::phases::Fx::Input),
     );
     app.world_mut().resource_mut::<DevAreaDevices>().add(PlaceholderBox {
-        id: "rod_rack".into(),
+        id: "canister_rack".into(),
         zone: ROOM,
         local_pos: RACK_AT,
         size: RACK_SIZE,
@@ -93,10 +93,10 @@ pub fn plugin(app: &mut App) {
         colour: [0.4, 0.42, 0.46],
         panel: None,
     });
-    app.add_systems(FixedUpdate, put_rods.in_set(crate::phases::Fx::Effects));
+    app.add_systems(FixedUpdate, put_canisters.in_set(crate::phases::Fx::Effects));
 }
 
-fn put_rods(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, mut items: ResMut<Items>, ships: Query<(), With<crate::ship::Ship>>, mut done: Local<bool>) {
+fn put_canisters(time: Res<Time>, planet: Res<PlanetRes>, area: Res<DevArea>, mut items: ResMut<Items>, ships: Query<(), With<crate::ship::Ship>>, mut done: Local<bool>) {
     if *done || ships.is_empty() {
         return;
     }
@@ -123,16 +123,16 @@ mod tests {
 
     #[test]
     fn the_brake_takes_the_most_life() {
-        let rod = |life| FuelRod { kind: "standard".into(), heat: 80.0, life };
+        let canister = |life| Canister { kind: "standard".into(), heat: 80.0, life };
         assert_eq!(pull_index(&[]), None);
-        assert_eq!(pull_index(&[rod(30.0), rod(90.0), rod(10.0)]), Some(1));
-        assert_eq!(pull_index(&[rod(50.0), rod(50.0)]), Some(0), "the first of equals");
-        assert_eq!(pull_index(&[rod(0.0)]), Some(0), "a spent rod is still a rod");
+        assert_eq!(pull_index(&[canister(30.0), canister(90.0), canister(10.0)]), Some(1));
+        assert_eq!(pull_index(&[canister(50.0), canister(50.0)]), Some(0), "the first of equals");
+        assert_eq!(pull_index(&[canister(0.0)]), Some(0), "a spent canister is still a canister");
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn rod_hands(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMut<Items>, cfg: Res<RepairConfig>, reactor: Res<crate::dev_area::ship::ReactorConfig>, active: Res<ActiveDisplay>, mut hold: ResMut<RodHold>, mut gp: ResMut<Gameplay>, players: Query<&Player>, machines: Query<(&DevBox, &Position, &Rotation)>) {
+fn canister_hands(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMut<Items>, cfg: Res<RepairConfig>, reactor: Res<crate::dev_area::ship::ReactorConfig>, active: Res<ActiveDisplay>, mut hold: ResMut<CanisterHold>, mut gp: ResMut<Gameplay>, players: Query<&Player>, machines: Query<(&DevBox, &Position, &Rotation)>) {
     let dt = time.delta_secs_f64();
     let Ok(pl) = players.single() else {
         hold.held = 0.0;
@@ -160,29 +160,29 @@ fn rod_hands(time: Res<Time>, mut controls: ResMut<Controls>, mut items: ResMut<
         return;
     }
     let slots = reactor.0.reactor.slots;
-    let used = items.reactor.map_or(0, |r| r.fuel.iter().filter(|t| t.rod.is_some()).count());
+    let used = items.reactor.map_or(0, |r| r.canisters.iter().filter(|t| t.canister.is_some()).count());
     if used >= slots {
-        gp.notify(Notice::new(NoticeKind::Warning, "notice.rods.full"));
+        gp.notify(Notice::new(NoticeKind::Warning, "notice.canisters.full"));
         return;
     }
     let _ = items.request(time.elapsed_secs_f64(), Request::Use { slot, target: LOCAL });
 }
 
-/// Host: the brake's pulls (a rod out of the reactor into the hand, a burn when the core is hot)
-/// and the rods a hand loaded (each into a free slot, or back to the hand when none is free).
+/// Host: the brake's pulls (a canister out of the reactor into the hand, a burn when the core is hot)
+/// and the canisters a hand loaded (each into a free slot, or back to the hand when none is free).
 #[allow(clippy::too_many_arguments)]
-fn host_rods(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<crate::dev_area::ship::ReactorConfig>, mut sim: ResMut<crate::dev_area::ship::ReactorSim>, area: Res<DevArea>, planet: Res<PlanetRes>, repair: Res<RepairConfig>, mut health: Option<ResMut<crate::health::HealthState>>) {
+fn host_canisters(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<crate::dev_area::ship::ReactorConfig>, mut sim: ResMut<crate::dev_area::ship::ReactorSim>, area: Res<DevArea>, planet: Res<PlanetRes>, repair: Res<RepairConfig>, mut health: Option<ResMut<crate::health::HealthState>>) {
     if items.role == crate::items::Role::Client {
         return;
     }
     for player in std::mem::take(&mut items.pull_asks) {
-        let Some(i) = pull_index(sim.room.reactor().rods()) else {
-            info!("reactor: the brake, no rod in a slot");
+        let Some(i) = pull_index(sim.room.reactor().canisters()) else {
+            info!("reactor: the brake, no canister in a slot");
             continue;
         };
-        let Some((rod, temp)) = sim.room.reactor_mut().pull_rod(i) else { continue };
-        let band = sim.room.reactor().bands().temp_optimal;
-        if temp > band.hi {
+        let Some((canister, heat)) = sim.room.reactor_mut().pull_canister(i) else { continue };
+        let band = sim.room.reactor().bands().heat_optimal;
+        if heat > band.hi {
             let burn = device_core::minigame::hurt_of(device_core::minigame::Machine::Hot, device_core::minigame::Press::Miss, &repair.0).burn;
             if let Some(st) = health.as_deref_mut()
                 && let Some(b) = st.bodies.get_mut(&player)
@@ -190,30 +190,30 @@ fn host_rods(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<crate::dev_area
                 b.health.add(&st.tuning, "burn", burn);
             }
         }
-        info!("reactor: the brake pulled the {} rod ({:.0} life) at {temp:.0} degrees", rod.kind, rod.life);
-        let Some(def) = item_of_kind(&rod.kind).and_then(|id| items.defs.get(id)).cloned() else { continue };
+        info!("reactor: the brake pulled the {} canister ({:.0} life) at {heat:.0} degrees", canister.kind, canister.life);
+        let Some(def) = item_of_kind(&canister.kind).and_then(|id| items.defs.get(id)).cloned() else { continue };
         let now = time.elapsed_secs_f64();
-        if let Err(stack) = items.give(now, player, rod_stack(&def, rod.life))
+        if let Err(stack) = items.give(now, player, canister_stack(&def, canister.life))
             && let Some(at) = reactor_front(&area, &planet)
         {
             items.spawn(now, stack, at);
         }
     }
-    // Fuel rods the host took out of a hand (`dev_area::engineering::rods`): each goes into a free slot. A reactor
-    for load in items.take_rod_loads() {
-        let Some(mut rod) = kind_of_item(&load.item).and_then(|k| cfg.0.rods.rod(k)) else { continue };
-        rod.life = load.life;
-        let kind = rod.kind.clone();
-        if let Err(rod) = sim.room.reactor_mut().insert_rod(rod) {
-            info!("reactor: no free slot for the {} rod, it goes back", rod.kind);
+    // Antimatter canisters the host took out of a hand (`dev_area::engineering::canisters`): each goes into a free slot. A reactor
+    for load in items.take_canister_loads() {
+        let Some(mut canister) = kind_of_item(&load.item).and_then(|k| cfg.0.canisters.canister(k)) else { continue };
+        canister.life = load.life;
+        let kind = canister.kind.clone();
+        if let Err(canister) = sim.room.reactor_mut().insert_canister(canister) {
+            info!("reactor: no free slot for the {} canister, it goes back", canister.kind);
             let Some(def) = items.defs.get(&load.item).cloned() else { continue };
-            if let Err(stack) = items.give(time.elapsed_secs_f64(), load.player, rod_stack(&def, rod.life)) {
+            if let Err(stack) = items.give(time.elapsed_secs_f64(), load.player, canister_stack(&def, canister.life)) {
                 if let Some(at) = reactor_front(&area, &planet) {
                     items.spawn(time.elapsed_secs_f64(), stack, at);
                 }
             }
         } else {
-            info!("reactor: the {kind} rod is in a slot ({:.0} life)", load.life);
+            info!("reactor: the {kind} canister is in a slot ({:.0} life)", load.life);
         }
     }
 }

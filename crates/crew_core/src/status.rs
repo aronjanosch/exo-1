@@ -67,7 +67,7 @@ pub struct Oxygen {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum TempBand {
+pub enum HeatBand {
     Cold,
     Normal,
     Hot,
@@ -87,10 +87,10 @@ pub enum ReactorMode {
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ReactorStatus {
     /// 0..1.
-    pub temp: f64,
-    pub band: TempBand,
+    pub heat: f64,
+    pub band: HeatBand,
     /// 0..1.
-    pub fuel: f64,
+    pub fill: f64,
     pub mode: ReactorMode,
     /// What the reactor gives and what the grid asks, kW; none where no real reactor feeds it.
     pub output_kw: Option<f64>,

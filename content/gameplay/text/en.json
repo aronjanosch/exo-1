@@ -514,7 +514,7 @@
     "EMERGENCY COOLING. Everything the tank had, all at once. The cooldown starts now."
   ],
   "notice.reactor.eject": [
-    "CORE EJECTED. It went out through the bottom, rods and all. The reactor is dead until somebody fits a new core.",
+    "CORE EJECTED. It went out through the bottom, canisters and all. The reactor is dead until somebody fits a new core.",
     "CORE EJECTED. Somebody pulled the lever. The core is somewhere under the ship now."
   ],
   "notice.reactor.jump": [
@@ -525,10 +525,10 @@
     "REACTOR BLAST. The core has left the building, in pieces.",
     "REACTOR BLAST. Whoever was standing near the core is now standing somewhere else."
   ],
-  "notice.rods.full": [
+  "notice.canisters.full": [
     "Every slot is full. The reactor is not hungry any more.",
-    "No room in the reactor. Pull a rod first, if you dare.",
-    "The reactor has all the rods it can hold. Greedy thing."
+    "No room in the reactor. Pull a canister first, if you dare.",
+    "The reactor has all the canisters it can hold. Greedy thing."
   ],
   "notice.job.abandon_ask": [
     "Drop {title}? Press again.",

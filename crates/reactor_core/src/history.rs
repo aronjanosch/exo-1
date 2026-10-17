@@ -9,7 +9,7 @@ pub struct History {
     elapsed: f64,
     pub output: Vec<f64>,
     pub load: Vec<f64>,
-    pub temp: Vec<f64>,
+    pub heat: Vec<f64>,
 }
 
 impl History {
@@ -18,7 +18,7 @@ impl History {
     pub fn new(size: usize, interval_s: f64) -> History {
         let size = size.max(1);
         let interval_s = if interval_s > 0.0 { interval_s } else { f64::MIN_POSITIVE };
-        History { size, interval_s, elapsed: 0.0, output: vec![0.0; size], load: vec![0.0; size], temp: vec![0.0; size] }
+        History { size, interval_s, elapsed: 0.0, output: vec![0.0; size], load: vec![0.0; size], heat: vec![0.0; size] }
     }
 
     pub fn size(&self) -> usize {
@@ -31,7 +31,7 @@ impl History {
 
     /// Advances `dt` seconds with the current values. Every full `interval_s` takes one sample of
     /// the values given here; a long step takes at most `size` samples (the rest would be dropped).
-    pub fn push_sample(&mut self, dt: f64, output_kw: f64, load_kw: f64, temp: f64) {
+    pub fn push_sample(&mut self, dt: f64, output_kw: f64, load_kw: f64, heat: f64) {
         self.elapsed += dt.max(0.0);
         let mut n = (self.elapsed / self.interval_s).floor() as usize;
         self.elapsed -= n as f64 * self.interval_s;
@@ -39,7 +39,7 @@ impl History {
         for _ in 0..n {
             Self::shift(&mut self.output, output_kw);
             Self::shift(&mut self.load, load_kw);
-            Self::shift(&mut self.temp, temp);
+            Self::shift(&mut self.heat, heat);
         }
     }
 
@@ -61,7 +61,7 @@ mod tests {
         h.push_sample(0.2, 100.0, 50.0, 10.0);
         assert_eq!(h.output[0], 100.0);
         assert_eq!(h.load[0], 50.0);
-        assert_eq!(h.temp[0], 10.0);
+        assert_eq!(h.heat[0], 10.0);
         // Ten seconds in 0.25 s steps (exact in binary) give 20 samples; the rest stay untouched.
         let mut h = History::new(25, 0.5);
         for _ in 0..40 {
@@ -87,7 +87,7 @@ mod tests {
         h.push_sample(1.0, 2.0, 20.0, 200.0);
         assert_eq!(h.output, vec![2.0, 1.0, 0.0]);
         assert_eq!(h.load, vec![20.0, 10.0, 0.0]);
-        assert_eq!(h.temp, vec![200.0, 100.0, 0.0]);
+        assert_eq!(h.heat, vec![200.0, 100.0, 0.0]);
     }
 
     #[test]

@@ -2,8 +2,8 @@
 //! builds it from the engine room's reactor news. Read only: the captain sees the ship, the crew
 //! acts on it (the faults screen forces states, the reactor screens press the buttons).
 //!
-//! The rod pack purchase is not here: our rods are items with no crate to fill. TODO(initiator): a
-//! supply line for rods once the rack has a purchase rule.
+//! The canister pack purchase is not here: our canisters are items with no crate to fill. TODO(initiator): a
+//! supply line for canisters once the rack has a purchase rule.
 use super::*;
 use crate::displays::Panels;
 use crew_core::status::{ShipStatus, ShipSystem, SYSTEM_MAX};
@@ -44,11 +44,11 @@ pub fn panel(s: &ShipStatus, mission: Option<String>) -> Panel {
     left.push(bar(s.oxygen.level, format!("O2  {:.0} %   {:+.2} %/s", s.oxygen.level * 100.0, s.oxygen.delta_per_s * 100.0)).thresholds(Some(0.8), Some(0.6)).fixed(34.0));
     let r = &s.reactor;
     let tone = match r.band {
-        crew_core::status::TempBand::Hot => Tone::Warn,
-        crew_core::status::TempBand::Critical => Tone::Bad,
+        crew_core::status::HeatBand::Hot => Tone::Warn,
+        crew_core::status::HeatBand::Critical => Tone::Bad,
         _ => Tone::Normal,
     };
-    left.push(label(format!("REACTOR  {:?}  {:.0} %  {:?}   fuel {:.0} %", r.mode, r.temp * 100.0, r.band, r.fuel * 100.0)).tone(tone).fixed(26.0));
+    left.push(label(format!("REACTOR  {:?}  {:.0} %  {:?}   fill {:.0} %", r.mode, r.heat * 100.0, r.band, r.fill * 100.0)).tone(tone).fixed(26.0));
     if let (Some(out), Some(load)) = (r.output_kw, r.load_kw) {
         left.push(label(format!("OUTPUT  {out:.0} kW of {load:.0} kW asked")).tone(if out + 1.0 < load { Tone::Warn } else { Tone::Normal }).fixed(26.0));
     }

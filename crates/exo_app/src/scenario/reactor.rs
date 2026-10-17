@@ -36,10 +36,10 @@ fn alarm(w: &World) -> Alarm {
     w.resource::<ShipAlarm>().level
 }
 
-/// The temperature and the optimal band (low, high).
-fn temp_now(w: &World) -> (f64, [f64; 2]) {
+/// The heat and the optimal band (low, high).
+fn heat_now(w: &World) -> (f64, [f64; 2]) {
     let r = sim(w).room.reactor();
-    (r.temperature(), [r.bands().temp_optimal.lo, r.bands().temp_optimal.hi])
+    (r.heat(), [r.bands().heat_optimal.lo, r.bands().heat_optimal.hi])
 }
 
 /// A dev ask on the reactor (the dev faults screen's old buttons, #307), then `wait` seconds.
@@ -116,10 +116,10 @@ fn settle(secs: f64, what: &'static str) -> Step {
         if c.t < secs {
             return false;
         }
-        let (t, _) = temp_now(w);
+        let (t, _) = heat_now(w);
         let k = counts(w);
         check(c, alarm(w) == Alarm::None, format!("{what}: calm, alarm {:?}", alarm(w)));
-        check(c, k.meltdowns == 0, format!("{what}: no meltdown ({k:?})"));
+        check(c, k.implosions == 0, format!("{what}: no implosion ({k:?})"));
         end(w, c, format!("{t:.1}"));
         true
     })
@@ -134,10 +134,10 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         if c.t < 120.0 {
             return false;
         }
-        let (t, _) = temp_now(w);
+        let (t, _) = heat_now(w);
         let k = counts(w);
         check(c, !sim(w).manual && sim(w).room.reactor().power_on(), "reactor: on Auto with the power on".into());
-        check(c, alarm(w) == Alarm::None && k.fires == 0 && k.meltdowns == 0, format!("reactor: calm ({k:?}, alarm {:?})", alarm(w)));
+        check(c, alarm(w) == Alarm::None && k.fires == 0 && k.implosions == 0, format!("reactor: calm ({k:?}, alarm {:?})", alarm(w)));
         check(c, w.resource::<Items>().reactor.is_some(), "reactor: the snapshot is there".into());
         end(w, c, format!("{t:.1}"));
         true
@@ -155,10 +155,10 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
                 c.v.entry("warn").or_insert(c.t);
             }
             Alarm::Danger => {
-                let (t, _) = temp_now(w);
-                let allowed = sim(w).room.reactor().bands().temp_allowed.hi;
+                let (t, _) = heat_now(w);
+                let allowed = sim(w).room.reactor().bands().heat_allowed.hi;
                 check(c, c.v.contains_key("warn"), "reactor: Warn came before Danger".into());
-                check(c, t > allowed, format!("reactor: Danger at {:.1} s with the temperature {t:.1} past the allowed band {allowed:.0}", c.t));
+                check(c, t > allowed, format!("reactor: Danger at {:.1} s with the heat {t:.1} past the allowed band {allowed:.0}", c.t));
                 end(w, c, format!("Danger at {:.1} s", c.t));
                 return true;
             }
@@ -202,7 +202,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
             c.v.insert("above", 0.0);
             return false;
         }
-        let (t, band) = temp_now(w);
+        let (t, band) = heat_now(w);
         if t > band[1] {
             *c.v.entry("above").or_insert(0.0) += c.dt;
         }
@@ -210,7 +210,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         if above < 5.0 && c.t < 60.0 {
             return false;
         }
-        check(c, counts(w).meltdowns == 0, "reactor: the Load drop does not melt the reactor".into());
+        check(c, counts(w).implosions == 0, "reactor: the Load drop does not implode the reactor".into());
         end(w, c, format!("{above:.1} s above"));
         true
     }));
@@ -223,7 +223,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
             begin(w, c, "reactor: wait for the overshoot");
             return false;
         }
-        let (t, band) = temp_now(w);
+        let (t, band) = heat_now(w);
         if t > band[1] {
             end(w, c, format!("{t:.1} above {:.0}", band[1]));
             return true;
@@ -246,27 +246,27 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
 
     use_display(s, "REACTOR", READOUT_ID, [-11.8, -17.7]);
     s.push(click_until(READOUT_ID, "mode", None, "reactor: the operator switches to MAN from the readout", |w| sim(w).manual));
-    s.push(click_until(READOUT_ID, "fis_set", Some(0.3), "reactor: fission set to 30 % on the slider brings the temperature back", |w| (sim(w).fission - 30.0).abs() < 1.0));
+    s.push(click_until(READOUT_ID, "inj_set", Some(0.3), "reactor: injection set to 30 % on the slider brings the heat back", |w| (sim(w).injection - 30.0).abs() < 1.0));
     s.push(Box::new(|w, c| {
         if c.t < 15.0 {
             return false;
         }
-        let (t, _) = temp_now(w);
-        check(c, sim(w).manual && counts(w).meltdowns == 0, "reactor: on MAN, no meltdown".into());
+        let (t, _) = heat_now(w);
+        check(c, sim(w).manual && counts(w).implosions == 0, "reactor: on MAN, no implosion".into());
         end(w, c, format!("{t:.1}"));
         true
     }));
 
     s.push(click_until(READOUT_ID, "power", None, "reactor: POWER off at the readout cuts the output and the power", |w| !sim(w).room.reactor().power_on()));
     s.push(Box::new(|w, c| {
-        // Fission follows its target with the lag (4 s): it is near 0 after about 15 s, not at once.
+        // Injection follows its target with the lag (4 s): it is near 0 after about 15 s, not at once.
         if c.t < 15.0 {
             return false;
         }
         let r = sim(w).room.reactor();
-        let (power, output, fission) = (r.power_on(), r.output_kw(), r.fission());
+        let (power, output, injection) = (r.power_on(), r.output_kw(), r.injection());
         let powered = w.resource::<Items>().reactor.is_some_and(|n| n.powered);
-        check(c, !power && output == 0.0 && fission < 1.0, format!("reactor: POWER off: power {power}, output {output:.1}, fission {fission:.1}"));
+        check(c, !power && output == 0.0 && injection < 1.0, format!("reactor: POWER off: power {power}, output {output:.1}, injection {injection:.1}"));
         check(c, !powered, "reactor: the machines have no power after POWER off".into());
         end(w, c, "powered off".into());
         true
@@ -286,17 +286,17 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
     }));
 
     use_display(s, "COOLANT PUMP", PUMP_ID, [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 2.0]);
-    s.push(click_until(PUMP_ID, "pump_off", None, "reactor: the pump switched off climbs the temperature", |w| !sim(w).room.pump().on()));
+    s.push(click_until(PUMP_ID, "pump_off", None, "reactor: the pump switched off climbs the heat", |w| !sim(w).room.pump().on()));
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
-            c.v.insert("t0", temp_now(w).0);
+            c.v.insert("t0", heat_now(w).0);
             return false;
         }
         let flow = w.resource::<Items>().reactor.map_or(1.0, |n| n.flow);
         if flow >= 0.05 && c.t < 90.0 {
             return false;
         }
-        let (t, _) = temp_now(w);
+        let (t, _) = heat_now(w);
         let t0 = c.v.get("t0").copied().unwrap_or(t);
         end(w, c, format!("{t0:.1} -> {t:.1}"));
         true
@@ -304,7 +304,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
     s.push(click_until(PUMP_ID, "pump_high", None, "reactor: the pump back on", |w| sim(w).room.pump().on()));
 
     use_display(s, "RX STATUS", STATUS_ID, [-9.6, -17.6]);
-    s.push(click_until(STATUS_ID, "boost_up", None, "reactor: BOOST UP on the status screen raises the boost", |w| sim(w).room.reactor().temperature_boost() > 20.0));
+    s.push(click_until(STATUS_ID, "boost_up", None, "reactor: BOOST UP on the status screen raises the boost", |w| sim(w).room.reactor().heat_boost() > 20.0));
 
 // The overheat above broke the old core, so a fresh room comes first.
     s.push(Box::new(|w, c| {
@@ -312,7 +312,7 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
             begin(w, c, "reactor: a fresh core for the eject");
             let k = counts(w);
             c.v.insert("ejects0", k.ejects as f64);
-            c.v.insert("melts0", k.meltdowns as f64);
+            c.v.insert("implodes0", k.implosions as f64);
             c.v.insert("blasts0", k.blasts as f64);
             w.resource_mut::<Items>().ask_reactor(ReactorAsk::Reset);
             return false;
@@ -368,9 +368,9 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
             return false;
         }
         let k = *w.resource::<ReactorCounts>();
-        let (e0, m0, b0) = (c.v["ejects0"] as u32, c.v["melts0"] as u32, c.v["blasts0"] as u32);
-        check(c, k.ejects == e0 + 1 && k.meltdowns == m0 && k.blasts == b0, format!("reactor: one eject, no melt, no blast ({} / {} / {})", k.ejects - e0, k.meltdowns - m0, k.blasts - b0));
-        check(c, sim(w).room.reactor().rods().is_empty() && !sim(w).room.reactor().melted(), "reactor: the rods went with the core, and nothing melted".into());
+        let (e0, m0, b0) = (c.v["ejects0"] as u32, c.v["implodes0"] as u32, c.v["blasts0"] as u32);
+        check(c, k.ejects == e0 + 1 && k.implosions == m0 && k.blasts == b0, format!("reactor: one eject, no implode, no blast ({} / {} / {})", k.ejects - e0, k.implosions - m0, k.blasts - b0));
+        check(c, sim(w).room.reactor().canisters().is_empty() && !sim(w).room.reactor().imploded(), "reactor: the canisters went with the core, and nothing imploded".into());
         end(w, c, format!("{} eject", k.ejects - e0));
         true
     }));

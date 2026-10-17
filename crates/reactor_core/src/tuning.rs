@@ -15,7 +15,7 @@ use crate::hull::{HitsTuning, HullTuning};
 use crate::life_support::LifeSupportTuning;
 use crate::jump::JumpTuning;
 use crate::startup::StartupTuning;
-use crate::reactor::{ReactorTuning, RodKinds};
+use crate::reactor::{ReactorTuning, CanisterKinds};
 use crate::shield::ShieldTuning;
 
 /// The files of the ship's tuning and the blocks each owner holds: engineering (the reactor room's
@@ -23,7 +23,7 @@ use crate::shield::ShieldTuning;
 /// (walls, hits, alarms, airlock, life support), the crew bots, and the incidents (director, enemy).
 /// A block in another owner's file is an error (`content_core::parse_fragments`).
 pub const FILES: [(&str, &[&str]); 7] = [
-    ("engineering/engineering.json", &["start_rods", "graph_points", "graph_interval_s", "rods", "reactor", "battery", "grid", "startup", "room"]),
+    ("engineering/engineering.json", &["start_canisters", "graph_points", "graph_interval_s", "canisters", "reactor", "battery", "grid", "startup", "room"]),
     ("bridge/bridge.json", &["shield", "jump", "helm"]),
     ("gunnery/gunnery.json", &["weapons"]),
     ("hull/hull.json", &["hull", "hits", "alarm", "airlock", "life_support"]),
@@ -46,9 +46,9 @@ pub fn shipped_files() -> Vec<File> {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Tuning {
-    pub start_rods: usize,
-    /// The fuel rod kinds by id (`standard` is the one `start_rods` puts in).
-    pub rods: RodKinds,
+    pub start_canisters: usize,
+    /// The antimatter canister kinds by id (`standard` is the one `start_canisters` puts in).
+    pub canisters: CanisterKinds,
     pub reactor: ReactorTuning,
     pub room: RoomTuning,
     pub grid: GridTuning,
@@ -88,7 +88,7 @@ pub struct Tuning {
 
 impl Default for Tuning {
     fn default() -> Tuning {
-        Tuning { start_rods: 2, rods: RodKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), shield: ShieldTuning::default(), alarm: AlarmTuning::default(), weapons: WeaponsTuning::default(), hits: HitsTuning::default(), jump: JumpTuning::default(), startup: StartupTuning::default(), airlock: AirlockTuning::default(), enemy: EnemyTuning::default(), bots: BotTuning::default(), hull: HullTuning::default(), life_support: LifeSupportTuning::default(), helm: HelmTuning::default() }
+        Tuning { start_canisters: 2, canisters: CanisterKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), shield: ShieldTuning::default(), alarm: AlarmTuning::default(), weapons: WeaponsTuning::default(), hits: HitsTuning::default(), jump: JumpTuning::default(), startup: StartupTuning::default(), airlock: AirlockTuning::default(), enemy: EnemyTuning::default(), bots: BotTuning::default(), hull: HullTuning::default(), life_support: LifeSupportTuning::default(), helm: HelmTuning::default() }
     }
 }
 
@@ -115,7 +115,7 @@ impl Tuning {
         let r = &self.reactor;
         need(r.slots >= 1, "reactor.slots", "must be at least 1");
         need(self.alarm.low_o2 < self.alarm.low_o2_clear, "alarm.low_o2_clear", "must be above alarm.low_o2 (the band)");
-        need(self.start_rods <= r.slots, "start_rods", "must fit in reactor.slots");
+        need(self.start_canisters <= r.slots, "start_canisters", "must fit in reactor.slots");
         need(self.graph_points >= 1 && self.graph_interval_s > 0.0, "graph_points", "must be >= 1, graph_interval_s > 0");
         let d = &self.director;
         need(d.min_interval_s > 0.0 && d.max_interval_s >= d.min_interval_s, "director.*_interval_s", "min > 0, max >= min");
@@ -126,9 +126,9 @@ impl Tuning {
         need(self.airlock.cycle_s > 0.0, "airlock.cycle_s", "must be > 0");
         need(self.airlock.close_s >= 0.0, "airlock.close_s", "must be >= 0");
         need((0.0..=1.0).contains(&self.airlock.pump_share), "airlock.pump_share", "must be 0..1");
-        need(self.rods.0.contains_key("standard"), "rods.standard", "the rod start_rods uses must be listed");
-        for (id, k) in &self.rods.0 {
-            need(k.heat > 0.0 && k.life > 0.0 && k.life <= 100.0, &format!("rods.{id}"), "heat > 0, life in 0..=100");
+        need(self.canisters.0.contains_key("standard"), "canisters.standard", "the canister start_canisters uses must be listed");
+        for (id, k) in &self.canisters.0 {
+            need(k.heat > 0.0 && k.life > 0.0 && k.life <= 100.0, &format!("canisters.{id}"), "heat > 0, life in 0..=100");
         }
         need(r.max_output_kw > 0.0, "reactor.max_output_kw", "must be > 0");
         need(self.battery.capacity_kwmin > 0.0 && self.battery.max_output_kw >= 0.0 && self.battery.max_recharge_kw >= 0.0, "battery", "capacity_kwmin > 0, the powers >= 0");
@@ -155,17 +155,17 @@ impl Tuning {
         need(en.shield.max > 0.0 && en.hull > 0.0 && en.shot_damage >= 0.0, "enemy", "shield.max and hull > 0, shot_damage >= 0");
         need(en.fire_every_s > 0.0 && en.first_shot_s >= 0.0, "enemy.fire_every_s", "must be > 0, first_shot_s >= 0");
         need((0.0..=1.0).contains(&en.light_share), "enemy.light_share", "must be 0..1");
-        need(r.fuel_burn >= 0.0 && r.temp_rate > 0.0, "reactor.temp_rate", "must be > 0, fuel_burn >= 0");
-        need(r.temp_stiffness > 0.0 && r.temp_damping >= 0.0, "reactor.temp_stiffness", "must be > 0, temp_damping >= 0");
-        need(r.fission_lag_s > 0.0 && r.heat_output_factor >= 0.0, "reactor.fission_lag_s", "must be > 0, heat_output_factor >= 0");
+        need(r.fill_burn >= 0.0 && r.heat_rate > 0.0, "reactor.heat_rate", "must be > 0, fill_burn >= 0");
+        need(r.heat_stiffness > 0.0 && r.heat_damping >= 0.0, "reactor.heat_stiffness", "must be > 0, heat_damping >= 0");
+        need(r.injection_lag_s > 0.0 && r.heat_output_factor >= 0.0, "reactor.injection_lag_s", "must be > 0, heat_output_factor >= 0");
         need(r.decay_lag_s > 0.0, "reactor.decay_lag_s", "must be > 0");
         need(r.boost_amount >= 0.0 && r.boost_decay > 0.0, "reactor.boost_*", "boost_amount >= 0, boost_decay > 0");
         let b = &r.blast;
-        need(b.min_fuel >= 0.0 && b.device_damage >= 0.0 && b.burn >= 0.0 && b.stun_s >= 0.0, "reactor.blast", "min_fuel, device_damage, burn, stun_s >= 0");
+        need(b.min_fill >= 0.0 && b.device_damage >= 0.0 && b.burn >= 0.0 && b.stun_s >= 0.0, "reactor.blast", "min_fill, device_damage, burn, stun_s >= 0");
         need(b.range_m >= 0.0 && b.radiation_range_m >= 0.0 && b.radiation >= 0.0, "reactor.blast", "range_m, radiation_range_m, radiation >= 0");
-        need(r.fire_delay_s > 0.0 && r.meltdown_delay_s > 0.0, "reactor.*_delay_s", "must be > 0");
-                need(r.auto_turbine_speed > 0.0 && r.auto_fission_speed > 0.0, "reactor.auto_*_speed", "must be > 0");
-        need(r.alarm_hysteresis >= 0.0 && (0.0..=100.0).contains(&r.fuel_low), "reactor.fuel_low", "must be 0..100");
+        need(r.fire_delay_s > 0.0 && r.implosion_delay_s > 0.0, "reactor.*_delay_s", "must be > 0");
+                need(r.auto_converter_speed > 0.0 && r.auto_injection_speed > 0.0, "reactor.auto_*_speed", "must be > 0");
+        need(r.alarm_hysteresis >= 0.0 && (0.0..=100.0).contains(&r.fill_low), "reactor.fill_low", "must be 0..100");
         for (name, d) in [("reactor.condition", &r.condition), ("room.pump", &self.room.pump), ("room.junction", &self.room.junction), ("room.oxygen_generator", &self.room.oxygen_generator)] {
             need(d.max > 0.0 && d.broken_below >= 0.0 && d.broken_below < d.repair_threshold && d.repair_threshold <= d.max, name, "must be 0 <= broken_below < repair_threshold <= max");
             need((0.0..=1.0).contains(&d.fail_chance), &format!("{name}.fail_chance"), "must be 0..1");
@@ -202,8 +202,8 @@ mod tests {
 
     #[test]
     fn unknown_fields_and_bad_values_are_named() {
-        let e = Tuning::load(&edited("engineering/engineering.json", "\"start_rods\"", "\"start_rod\"")).unwrap_err();
-        assert!(e[0].contains("start_rod"), "{e:?}");
+        let e = Tuning::load(&edited("engineering/engineering.json", "\"start_canisters\"", "\"start_canister\"")).unwrap_err();
+        assert!(e[0].contains("start_canister"), "{e:?}");
         let e = Tuning::load(&edited("engineering/engineering.json", "\"max_output_kw\": 2000.0", "\"max_output_kw\": 0.0")).unwrap_err();
         assert!(e.iter().any(|m| m.contains("reactor.max_output_kw")), "{e:?}");
         let missing = Tuning::load(&[]).unwrap_err();

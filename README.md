@@ -95,8 +95,8 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 | `ship_ambush` | The ambush: AMBUSH on, the enemy's shots on shield and hull, GN-01 fires to DESTROYED (or JD-01 jumps out); every tick the airlock doors, shield and hull ranges and NaN. |
 | `reactor` | The reactor on the engine room's screens: temperature band, manual mode, load from the grid. |
 | `coolant` | The pump's coolant tank: the drain, the refill by hand and E-COOL. |
-| `rods` | Fuel rods by hand: loading, brake pull, and the spicy rod's radiation. |
-| `blast` | The meltdown blast reaches a walker two metres off and not one at 25 m. |
+| `canisters` | Antimatter canisters by hand: loading, brake pull, and the spicy canister's radiation. |
+| `blast` | The implosion blast reaches a walker two metres off and not one at 25 m. |
 | `fire` | Fires in the engine room, sprayed out with the extinguisher. |
 | `fire_grid` | The cell model of the engine-room fire, switched on (fire model Grid), catches the corridor. |
 | `extinguisher` | The extinguisher's supply: wear, empty, refill at the corridor rack. |

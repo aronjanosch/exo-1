@@ -7,7 +7,7 @@ use crate::items::Items;
 use item_core::wire::HULL_SECTIONS;
 use reactor_core::hull::{openness, SECTION_CENTRES, WALLS_MAX, WALLS_MIN};
 
-/// The hull breach (r37, by wall section in r40): a dark patch on each section, where the meltdown
+/// The hull breach (r37, by wall section in r40): a dark patch on each section, where the implosion
 /// blast or a hit opens the wall. Each patch is a dev box so the wrench can aim at it. Section 0 is
 /// the south-west half of the south wall, where r37's breach was.
 pub const BREACH_IDS: [&str; HULL_SECTIONS] = ["engine_breach_0", "engine_breach_1", "engine_breach_2", "engine_breach_3", "engine_breach_4", "engine_breach_5", "engine_breach_6", "engine_breach_7"];

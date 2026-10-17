@@ -232,7 +232,7 @@ impl Host {
         Event::Rack { rack: id, contents }
     }
 
-    /// Puts a stack into a player's inventory, as a pulled or refused fuel rod comes back.
+    /// Puts a stack into a player's inventory, as a pulled or refused antimatter canister comes back.
     /// The stack comes back when it does not fit.
     pub fn give(&mut self, player: PlayerId, stack: Stack) -> Result<Event, Stack> {
         let mut inv = self.inventory(player);

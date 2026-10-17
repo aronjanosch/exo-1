@@ -39,7 +39,7 @@
 //! or the crew average, we take fixed). It goes to the gun's jam chance (`Weapons::set_skill`, the r41
 //! shape). A bot clears a jam at `clear_speed` (half) of a player's hold speed.
 //!
-//! Units: time s, power as the grid's, temperature in degrees, throttle -100..100 %, distance m in the
+//! Units: time s, power as the grid's, heat in degrees, throttle -100..100 %, distance m in the
 //! dev area's ground (x east, y north).
 use crate::engine_room::{EngineRoom, PumpMode};
 use crate::enemy::Outcome;
@@ -290,9 +290,9 @@ fn fighting(room: &EngineRoom) -> bool {
     room.encounter().is_some_and(|e| e.outcome() == Outcome::None)
 }
 
-/// The reactor is above its optimal temperature band.
+/// The reactor is above its optimal heat band.
 fn hot(room: &EngineRoom) -> bool {
-    room.reactor().temperature() > room.reactor().bands().temp_optimal.hi
+    room.reactor().heat() > room.reactor().bands().heat_optimal.hi
 }
 
 /// What a bot does at `station` now. Pure: the room is read, nothing is changed.
@@ -503,11 +503,11 @@ mod tests {
         panic!("the gun never overheated");
     }
 
-    /// Runs the reactor on manual full fission until it is above its optimal band.
+    /// Runs the reactor on manual full injection until it is above its optimal band.
     fn heat_up(r: &mut EngineRoom) {
         for _ in 0..20000 {
             let _ = r.step(0.5, Input::manual(100.0, 0.0));
-            if r.reactor().temperature() > r.reactor().bands().temp_optimal.hi {
+            if r.reactor().heat() > r.reactor().bands().heat_optimal.hi {
                 return;
             }
         }

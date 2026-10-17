@@ -297,7 +297,7 @@ pub fn outside_copy(p: [f64; 2]) -> Option<[f64; 2]> {
 }
 
 /// Marks a role zone's copy of a room's screen or housing: the screen is the same panel as the
-/// one inside (the same ship), the housing a dummy (repairs and rods work inside only).
+/// one inside (the same ship), the housing a dummy (repairs and canisters work inside only).
 #[derive(Component, Clone, Copy, Debug)]
 pub struct Mirror;
 

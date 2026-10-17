@@ -1,4 +1,4 @@
-//! The hull's screens: ER-01 by the engine room's door (the reactor's temperature, the room's air,
+//! The hull's screens: ER-01 by the engine room's door (the reactor's heat, the room's air,
 //! the emergency), BD-01 (the bridge door), the three vents' valves, the airlock's two PUSH panels (#309),
 //! and the status monitor ST-01 (`status_monitor`). A press asks the host.
 use crate::dev_area::*;
@@ -83,14 +83,14 @@ pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
     }
     let r = r.copied().unwrap_or_default();
     let (optimal, allowed) = bands(Some(&r));
-    let z = zone_tone(zone(r.temp, optimal, allowed));
+    let z = zone_tone(zone(r.heat, optimal, allowed));
     let (word, word_tone) = reactor_status(Some(&r));
     // The captain's threat (#301): a red EMERGENCY line while the ship is under threat.
     let emergency = captain_screen::emergency(display_core::captain::captain_view(&r).threat).map(|w| readout(format!("EMERGENCY {w}")).text_size(font::SMALL).tone(Tone::Bad).fixed(18.0));
-    let temp = row(6.0, vec![readout(format!("{:.0}", r.temp)).text_size(72.0).tone(z), readout("°C").text_size(28.0).tone(z)]).fixed(70.0);
-    let bandrow = row(8.0, vec![band(r.temp, optimal, allowed), readout(word).text_size(font::SMALL).tone(word_tone).flex(1.0)]).fixed(18.0);
+    let heat = row(6.0, vec![readout(format!("{:.0}", r.heat)).text_size(72.0).tone(z), readout("°C").text_size(28.0).tone(z)]).fixed(70.0);
+    let bandrow = row(8.0, vec![band(r.heat, optimal, allowed), readout(word).text_size(font::SMALL).tone(word_tone).flex(1.0)]).fixed(18.0);
     let air = column(0.0, vec![micro("O₂").fixed(14.0), readout(format!("{:.0}%", r.oxygen * 100.0)).text_size(font::VALUE).tone(oxygen_tone(r.oxygen))]).fixed(62.0);
-    let mut body = vec![micro("REACTOR").fixed(14.0), temp, bandrow, air];
+    let mut body = vec![micro("REACTOR").fixed(14.0), heat, bandrow, air];
     body.extend(emergency);
     body.push(space());
     Panel::screen(Tier::S, DOOR_NAME, "ER-01", column(4.0, body)).with_padding(8.0)

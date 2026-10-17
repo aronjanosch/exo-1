@@ -1,5 +1,5 @@
 //! Health: players have health, hazards hurt them, items heal them, death respawns them.
-use crate::dev_area::hazards::{shielded_at, spicy_irradiated, RodSpot, GLOW_BARREL, GLOW_BARREL_ON, HOT_PLATE, NO_AIR, SPICY_ITEM, VACUUM_ROOM, SPICY_RADIUS_M, SPICY_RAD_PER_S};
+use crate::dev_area::hazards::{shielded_at, spicy_irradiated, CanisterSpot, GLOW_BARREL, GLOW_BARREL_ON, HOT_PLATE, NO_AIR, SPICY_ITEM, VACUUM_ROOM, SPICY_RADIUS_M, SPICY_RAD_PER_S};
 use crate::dev_area::hull::ShipAir;
 use crate::dev_area::fire::FireHeat;
 use crate::dev_area::{area_of, DevArea, Zone, PAD_MAIN};
@@ -266,10 +266,10 @@ pub(crate) fn health_step(time: Res<Time>, planet: Res<PlanetRes>, area: Option<
     }
 }
 
-fn spicy_spots(items: &Items, planet: &PlanetRes, at: &BTreeMap<PlayerId, DVec3>, area: Option<&DevArea>) -> Vec<RodSpot> {
+fn spicy_spots(items: &Items, planet: &PlanetRes, at: &BTreeMap<PlayerId, DVec3>, area: Option<&DevArea>) -> Vec<CanisterSpot> {
     let frame = FrameRef::Planet(planet.id.0 as u32);
-    let spot = |p: DVec3| RodSpot { at: p, shielded: area_pos(area, planet, Some(p)).is_some_and(shielded_at) };
-    let mut out: Vec<RodSpot> = items.host.loose.values().filter(|l| l.stack.item.kind.as_str() == SPICY_ITEM && l.at.frame == frame).map(|l| spot(DVec3::from_array(l.at.pos))).collect();
+    let spot = |p: DVec3| CanisterSpot { at: p, shielded: area_pos(area, planet, Some(p)).is_some_and(shielded_at) };
+    let mut out: Vec<CanisterSpot> = items.host.loose.values().filter(|l| l.stack.item.kind.as_str() == SPICY_ITEM && l.at.frame == frame).map(|l| spot(DVec3::from_array(l.at.pos))).collect();
     for (player, inv) in &items.host.inventories {
         let Some(&p) = at.get(player) else { continue };
         if (0..BAR_SLOTS).any(|i| inv.slot(i).is_some_and(|s| s.item.kind.as_str() == SPICY_ITEM)) {

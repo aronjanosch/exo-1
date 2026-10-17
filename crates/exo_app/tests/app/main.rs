@@ -8,7 +8,7 @@ mod mouse_look;
 mod out_dirs;
 mod scenario_camera_g;
 mod scenario_coolant;
-mod scenario_rods;
+mod scenario_canisters;
 mod scenario_blast;
 mod scenario_container;
 mod scenario_equipment;

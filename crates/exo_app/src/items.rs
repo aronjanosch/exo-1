@@ -104,7 +104,7 @@ pub struct Items {
     /// system applies the effect.
     pub used: Vec<(PlayerId, PlayerId, String)>,
     pub refills: u32,
-    pub rod_loads: Vec<RodLoad>,
+    pub canister_loads: Vec<CanisterLoad>,
     pub vitals_in: Option<Vitals>,
     /// The engine room as the host has it: the host sets it, a client takes it from the wire.
     pub room: RoomNews,
@@ -123,7 +123,7 @@ pub struct Items {
     pub public: Vec<(PlayerId, PublicStatus)>,
     /// Treatment holds by player, to apply here (host and one process); a client sends its own.
     pub treat_asks: Vec<(PlayerId, Option<PlayerId>)>,
-    /// Brakes by player, to apply here; a client sends its own. The rod goes to that player.
+    /// Brakes by player, to apply here; a client sends its own. The canister goes to that player.
     pub pull_asks: Vec<PlayerId>,
     pub rescue_asks: Vec<(PlayerId, Option<PlayerId>)>,
     /// Host: the coolant refill holds (the player, running or not), for the public status.
@@ -149,7 +149,7 @@ fn placement_ok(a: &Action) -> bool {
 impl Items {
     pub fn load() -> Items {
         let defs = load_defs();
-        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, rod_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new(), refill_asks: Vec::new(), refilling: BTreeSet::new(), using: BTreeMap::new(), mask_uses: Vec::new(), game_over_seen: false }
+        Items { host: Host::new(defs.clone()), client: Client::new(LOCAL, defs.clone()), defs, delay: 0.0, role: Role::Local, outbox: Vec::new(), inbox: Vec::new(), net_out: Vec::new(), received: Vec::new(), used: Vec::new(), refills: 0, canister_loads: Vec::new(), vitals_in: None, room: RoomNews::default(), room_asks: Vec::new(), reactor: None, reactor_asks: Vec::new(), fire: None, spray_asks: Vec::new(), repair_asks: Vec::new(), repair_done: false, public: Vec::new(), treat_asks: Vec::new(), pull_asks: Vec::new(), rescue_asks: Vec::new(), refill_asks: Vec::new(), refilling: BTreeSet::new(), using: BTreeMap::new(), mask_uses: Vec::new(), game_over_seen: false }
     }
 
     pub fn me(&self) -> PlayerId {
@@ -294,11 +294,11 @@ impl Items {
         std::mem::take(&mut self.refills)
     }
 
-    pub fn take_rod_loads(&mut self) -> Vec<RodLoad> {
-        std::mem::take(&mut self.rod_loads)
+    pub fn take_canister_loads(&mut self) -> Vec<CanisterLoad> {
+        std::mem::take(&mut self.canister_loads)
     }
 
-    /// Host: a stack goes into a player's inventory (a fuel rod the brake pulled, or one the
+    /// Host: a stack goes into a player's inventory (an antimatter canister the brake pulled, or one the
     /// reactor had no room for). Gives it back when the inventory has no room.
     pub fn give(&mut self, now: f64, player: PlayerId, stack: Stack) -> Result<(), Stack> {
         if self.role == Role::Client {
@@ -411,7 +411,7 @@ impl Items {
                 self.net_out.push(NetOut::Action(a));
                 continue;
             }
-            // What the slot held before the use: a fuel rod's kind and life go with it.
+            // What the slot held before the use: an antimatter canister's kind and life go with it.
             let held = match &a.req {
                 Request::Use { slot, .. } => self.host.inventory(a.player).slot(*slot).map(|s| (s.item.kind.as_str().to_string(), s.item.condition.unwrap_or(0.0))),
                 _ => None,
@@ -432,10 +432,10 @@ impl Items {
                     {
                         self.mask_uses.push((*player, slot));
                     }
-                    if effect == crate::dev_area::engineering::rods::LOAD
+                    if effect == crate::dev_area::engineering::canisters::LOAD
                         && let Some((item, life)) = held.clone()
                     {
-                        self.rod_loads.push(RodLoad { player: *player, item, life });
+                        self.canister_loads.push(CanisterLoad { player: *player, item, life });
                     }
                 }
                 self.publish(now, ev, Some(a.player));
@@ -462,9 +462,9 @@ impl Items {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct RodLoad {
+pub struct CanisterLoad {
     pub player: PlayerId,
-    /// The rod's item id (`fuel_rod`, `fuel_rod_hot`, `fuel_rod_spicy`).
+    /// The canister's item id (`antimatter_canister`, `antimatter_canister_hot`, `antimatter_canister_spicy`).
     pub item: String,
     /// Its life when it was loaded (0..100).
     pub life: f64,
@@ -1198,7 +1198,7 @@ mod tests {
     #[test]
     fn the_brake_is_asked_by_its_sender_not_by_the_message() {
         // A pull names no player; the host takes the sender (the local player's id here, a
-        // remote one's slot from its connection, `items_net`), so the rod goes to the one who asked.
+        // remote one's slot from its connection, `items_net`), so the canister goes to the one who asked.
         let mut host = Items::load();
         host.role = Role::Host;
         host.ask_pull();

@@ -24,7 +24,7 @@ mod boost;
 mod camera_g;
 mod cargo;
 mod coolant;
-mod rods;
+mod canisters;
 mod dev_area;
 mod dev_menu;
 mod dev_tour;
@@ -642,7 +642,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "airlock" => airlock::airlock_steps(&mut s),
         "reactor" => reactor::reactor_steps(&mut s),
         "coolant" => coolant::coolant_steps(&mut s),
-        "rods" => rods::rods_steps(&mut s),
+        "canisters" => canisters::canisters_steps(&mut s),
         "blast" => blast::blast_steps(&mut s),
         "fire" => fire::fire_steps(&mut s),
         "fire_grid" => fire_grid::fire_grid_steps(&mut s),

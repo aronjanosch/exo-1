@@ -2,7 +2,7 @@
 //! reactor snapshot the host sends (`Items::reactor`) laid into `crew_core::ShipStatus`, so the ship
 //! state display, the overview's alarms and the alert follow the engine room.
 //!
-//! - Reactor: temperature and its band from the reactor's own bands, fuel, mode, output and load.
+//! - Reactor: heat and its band from the reactor's own bands, fill, mode, output and load.
 //! - System bars: engineering from the pump's and the reactor's condition, with the engine room's
 //!   fire; weapons and life support from their breaker group's share of its demand (`factor`).
 //!   Science has no source in the engine room yet: its bar shows "(-)".
@@ -14,7 +14,7 @@
 //! `crew_core` knows nothing of `item_core`; the mapping lives here.
 use super::*;
 use crew_core::orders::OrderKind;
-use crew_core::status::{ReactorMode, ReactorStatus, RoomStatus, ShipSystem, ShipStatus, SystemBar, TempBand, Gauge, Oxygen, SYSTEM_MAX};
+use crew_core::status::{ReactorMode, ReactorStatus, RoomStatus, ShipSystem, ShipStatus, SystemBar, HeatBand, Gauge, Oxygen, SYSTEM_MAX};
 use crew_core::{DeviceId, RoomId, StationId, Target};
 use display_core::captain::{self, Threat};
 use item_core::wire::{BreakerGroup, Lamp, PartNews, ReactorNews, RoomAlarmKind};
@@ -74,16 +74,16 @@ fn mean_oxygen(r: &ReactorNews) -> f64 {
     r.rooms.iter().map(|room| room.o2).sum::<f64>() / r.rooms.len() as f64
 }
 
-/// The temperature band from the reactor's own bands (`ReactorNews::optimal`, `allowed`).
-pub fn temp_band(r: &ReactorNews) -> TempBand {
-    if r.temp >= r.allowed[1] {
-        TempBand::Critical
-    } else if r.temp >= r.optimal[1] {
-        TempBand::Hot
-    } else if r.temp < r.optimal[0] {
-        TempBand::Cold
+/// The heat band from the reactor's own bands (`ReactorNews::optimal`, `allowed`).
+pub fn heat_band(r: &ReactorNews) -> HeatBand {
+    if r.heat >= r.allowed[1] {
+        HeatBand::Critical
+    } else if r.heat >= r.optimal[1] {
+        HeatBand::Hot
+    } else if r.heat < r.optimal[0] {
+        HeatBand::Cold
     } else {
-        TempBand::Normal
+        HeatBand::Normal
     }
 }
 
@@ -91,15 +91,15 @@ pub fn temp_band(r: &ReactorNews) -> TempBand {
 /// the caller (`update`).
 pub fn status(r: &ReactorNews, o2_delta: f64) -> ShipStatus {
     let view = captain::captain_view(r);
-    let band = temp_band(r);
+    let band = heat_band(r);
     let condition = |p: &PartNews| if p.working { p.share } else { 0.0 };
     let engineering = condition(&r.pump).min(condition(&r.reactor));
-    let fuel: f64 = r.fuel.iter().map(|t| t.life / 100.0).sum::<f64>() / r.fuel.len() as f64;
-    let mode = if r.melted || r.ejected || r.lamps[Lamp::Scram.index()] {
+    let fill: f64 = r.canisters.iter().map(|t| t.life / 100.0).sum::<f64>() / r.canisters.len() as f64;
+    let mode = if r.imploded || r.ejected || r.lamps[Lamp::Scram.index()] {
         ReactorMode::Shutdown
     } else if !r.power_on {
         ReactorMode::Off
-    } else if matches!(band, TempBand::Hot | TempBand::Critical) {
+    } else if matches!(band, HeatBand::Hot | HeatBand::Critical) {
         ReactorMode::Overheating
     } else {
         ReactorMode::Running
@@ -125,7 +125,7 @@ pub fn status(r: &ReactorNews, o2_delta: f64) -> ShipStatus {
         shields: Gauge { value: r.shield * 100.0, max: 100.0 },
         hull: Gauge { value: view.hull * 100.0, max: 100.0 },
         oxygen: Oxygen { level: mean_oxygen(r), delta_per_s: o2_delta },
-        reactor: ReactorStatus { temp: r.temp / 100.0, band, fuel, mode, output_kw: Some(r.output_kw), load_kw: Some(r.load_kw) },
+        reactor: ReactorStatus { heat: r.heat / 100.0, band, fill, mode, output_kw: Some(r.output_kw), load_kw: Some(r.load_kw) },
         // TODO(initiator): the hull share stands in for the room condition; the news has none yet.
         rooms: vec![
             room(ENGINE_ROOM, ENGINE_ROOM, 0, Some(ShipSystem::Engineering), engineering),
@@ -169,15 +169,15 @@ pub fn alarms(r: &ReactorNews) -> Vec<AlarmRow> {
     }
     let console = || Some((OrderKind::Operate, Target::Station(StationId::new(REACTOR_STATION))));
     if r.lamps[Lamp::CritHeat.index()] {
-        out.push(AlarmRow { text: format!("REACTOR CRIT {:.0}", r.temp), room: ENGINE_ROOM, order: console() });
+        out.push(AlarmRow { text: format!("REACTOR CRIT {:.0}", r.heat), room: ENGINE_ROOM, order: console() });
     } else if r.lamps[Lamp::Hot.index()] {
-        out.push(AlarmRow { text: format!("REACTOR HOT {:.0}", r.temp), room: ENGINE_ROOM, order: console() });
+        out.push(AlarmRow { text: format!("REACTOR HOT {:.0}", r.heat), room: ENGINE_ROOM, order: console() });
     }
     if r.lamps[Lamp::Scram.index()] {
         out.push(AlarmRow { text: "SCRAM".into(), room: ENGINE_ROOM, order: console() });
     }
-    if r.lamps[Lamp::FuelLow.index()] {
-        out.push(AlarmRow { text: "FUEL LOW".into(), room: ENGINE_ROOM, order: console() });
+    if r.lamps[Lamp::FillLow.index()] {
+        out.push(AlarmRow { text: "FILL LOW".into(), room: ENGINE_ROOM, order: console() });
     }
     for (p, id, name) in [(r.reactor, REACTOR, "REACTOR"), (r.pump, PUMP, "PUMP"), (r.oxygen_generator, OXYGEN_GENERATOR, "O2 GEN")] {
         if !p.working || p.share < WORN_BELOW {
@@ -206,14 +206,14 @@ pub fn update(time: Res<Time>, items: Res<crate::items::Items>, mut live: ResMut
 #[cfg(test)]
 mod tests {
     use super::*;
-    use item_core::wire::{AlarmNews, FuelTube};
+    use item_core::wire::{AlarmNews, CanisterSlot};
 
     /// A ship with nothing wrong: whole, full shield, breakers on and asking nothing, air full.
     fn healthy() -> ReactorNews {
         let part = PartNews { share: 1.0, working: true };
         let mut r = ReactorNews { reactor: part, pump: part, junction: part, oxygen_generator: part, shield: 1.0, power_on: true, ..ReactorNews::default() };
         r.breakers = [true; item_core::wire::BREAKER_GROUPS];
-        r.fuel = [FuelTube { rod: None, life: 80.0 }; item_core::wire::FUEL_TUBES];
+        r.canisters = [CanisterSlot { canister: None, life: 80.0 }; item_core::wire::CANISTER_SLOTS];
         r.optimal = [20.0, 60.0];
         r.allowed = [10.0, 80.0];
         for room in r.rooms.iter_mut() {

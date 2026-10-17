@@ -325,13 +325,13 @@ fn an_empty_slot_or_an_item_without_a_use_is_refused() {
 }
 
 #[test]
-fn a_given_rod_keeps_its_life_and_a_full_bar_hands_it_back() {
-    // The brake gives a pulled rod back to its player with its life (the item condition).
-    const ROD: &str = r#"{ "id": "fuel_rod", "name": "Fuel rod", "take": "collect", "hands": 1, "stack": 1, "use": "load_rod", "condition": true, "shape": { "extents": [0.06, 0.6, 0.06], "mass": 3.0, "colour": [0.2, 0.75, 0.3] } }"#;
-    let d = ItemDefs::from_files([("fuel_rod.json", ROD), ("wrench.json", WRENCH)]).unwrap();
+fn a_given_canister_keeps_its_life_and_a_full_bar_hands_it_back() {
+    // The brake gives a pulled canister back to its player with its life (the item condition).
+    const CANISTER: &str = r#"{ "id": "antimatter_canister", "name": "Antimatter canister", "take": "collect", "hands": 1, "stack": 1, "use": "load_canister", "condition": true, "shape": { "extents": [0.06, 0.6, 0.06], "mass": 3.0, "colour": [0.2, 0.75, 0.3] } }"#;
+    let d = ItemDefs::from_files([("antimatter_canister.json", CANISTER), ("wrench.json", WRENCH)]).unwrap();
     let mut host = Host::new(d.clone());
-    let rod = item_core::container::Stack::new(d.get("fuel_rod").unwrap().item().with_condition(42.0), 1);
-    let ev = host.give(2, rod.clone()).expect("an empty bar takes it");
+    let canister = item_core::container::Stack::new(d.get("antimatter_canister").unwrap().item().with_condition(42.0), 1);
+    let ev = host.give(2, canister.clone()).expect("an empty bar takes it");
     match ev {
         Event::Inventory { player, inv } => {
             assert_eq!(player, 2);
@@ -342,5 +342,5 @@ fn a_given_rod_keeps_its_life_and_a_full_bar_hands_it_back() {
     for _ in 1..BAR_SLOTS {
         host.give(2, stack("wrench", 1)).expect("room left");
     }
-    assert_eq!(host.give(2, rod.clone()), Err(rod), "a full bar gives the rod back");
+    assert_eq!(host.give(2, canister.clone()), Err(canister), "a full bar gives the canister back");
 }

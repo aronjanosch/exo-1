@@ -259,7 +259,7 @@ pub struct HullTuning {
     /// The hull breach's hole, m² when fully open (`fire_core` leak). TODO(initiator): value; 0.5
     /// empties the 256 m³ room from full to the bad-air line (0.3) in about 2.6 min, shut door.
     pub breach_area_m2: f64,
-    /// The wall damage the meltdown blast and the HULL BREACH dev fault set (0..1). The blast
+    /// The wall damage the implosion blast and the HULL BREACH dev fault set (0..1). The blast
     /// damages the sections near the reactor (`Hull::hit`); the dev fault sets the one nearest
     /// the reactor. TODO(initiator): value.
     pub blast_breach_damage: f64,

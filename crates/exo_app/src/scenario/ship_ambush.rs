@@ -38,8 +38,8 @@ fn news(w: &World) -> Option<ReactorNews> {
 /// The reactor news' numbers that are not finite, by name (the enemy's too).
 fn nan_fields(r: &ReactorNews) -> Vec<&'static str> {
     let mut bad = Vec::new();
-    if !r.temp.is_finite() {
-        bad.push("temperature");
+    if !r.heat.is_finite() {
+        bad.push("heat");
     }
     if !r.output_kw.is_finite() {
         bad.push("output");
@@ -179,7 +179,7 @@ fn fire_until_end() -> Step {
 }
 
 pub(super) fn ship_ambush_steps(s: &mut Vec<Step>) {
-    // The warm reactor on the dev area: its snapshot is there and the reactor is on, not melted.
+    // The warm reactor on the dev area: its snapshot is there and the reactor is on, not imploded.
     s.push(Box::new(|w, c| {
         if c.t == 0.0 {
             begin(w, c, "ship ambush: the warm reactor is on");
@@ -188,8 +188,8 @@ pub(super) fn ship_ambush_steps(s: &mut Vec<Step>) {
         if news(w).is_none() && c.t < 10.0 {
             return false;
         }
-        let ok = news(w).is_some_and(|r| r.power_on && !r.melted);
-        check(c, ok, format!("ship ambush: the warm reactor is on and not melted ({:?})", news(w).map(|r| (r.power_on, r.melted))));
+        let ok = news(w).is_some_and(|r| r.power_on && !r.imploded);
+        check(c, ok, format!("ship ambush: the warm reactor is on and not imploded ({:?})", news(w).map(|r| (r.power_on, r.imploded))));
         end(w, c, format!("{:.1} s", c.t));
         true
     }));

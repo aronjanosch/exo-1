@@ -3,7 +3,7 @@ use std::fmt::Write;
 
 use crate::engine_room::{EngineRoom, Fault, Input, PumpMode, RoomEvent, Source};
 use crate::grid::Group;
-use crate::reactor::{AlarmKind, FuelRod, ReactorEvent};
+use crate::reactor::{AlarmKind, Canister, ReactorEvent};
 use crate::tuning::Tuning;
 
 #[cfg(test)]
@@ -15,8 +15,8 @@ mod tests;
 pub enum Action {
     Auto,
     Manual {
-        fission: f64,
-        turbine: f64,
+        injection: f64,
+        converter: f64,
     },
     Power(bool),
     /// The coolant pump's switch: on is High, off is Off.
@@ -29,22 +29,22 @@ pub enum Action {
     Wander(bool),
     RepairReactor,
     RepairPump,
-    /// Puts a standard rod into a free slot (a full slot list refuses it silently).
-    InsertRod,
-    /// Waits, then powers the reactor off once the meltdown timer (0..1) is above this.
-    PowerOffWhenMeltdownAbove(f64),
-    /// Waits for the core to melt, then runs the inner action `delay` seconds later (once).
-    AfterMeltdown(f64, Box<Action>),
+    /// Puts a standard canister into a free slot (a full slot list refuses it silently).
+    InsertCanister,
+    /// Waits, then powers the reactor off once the implosion timer (0..1) is above this.
+    PowerOffWhenImplosionAbove(f64),
+    /// Waits for the core to implode, then runs the inner action `delay` seconds later (once).
+    AfterImplosion(f64, Box<Action>),
     /// Waits for the alarm to be on, then runs the inner action (once per armed action).
     OnAlarm(AlarmKind, Box<Action>),
-    /// Pulls the rod in this slot (the emergency brake); the run logs the handling heat.
-    PullRod(usize),
-    /// Puts a new rod of this `engineering/engineering.json` rods kind into a free slot (unknown kinds do nothing).
-    InsertRodKind(String),
-    /// The temperature boost: plus (true) or minus the amount. A refused one logs "Boost refused".
+    /// Pulls the canister in this slot (the emergency brake); the run logs the handling heat.
+    PullCanister(usize),
+    /// Puts a new canister of this `engineering/engineering.json` canisters kind into a free slot (unknown kinds do nothing).
+    InsertCanisterKind(String),
+    /// The heat boost: plus (true) or minus the amount. A refused one logs "Boost refused".
     Boost(bool),
-    /// Melts the core now, as if the meltdown timer had run out (`EngineRoom::melt_now`).
-    MeltNow,
+    /// Implodes the core now, as if the implosion timer had run out (`EngineRoom::implode_now`).
+    ImplodeNow,
     /// Throws the core out (`EngineRoom::eject_core`, PULSAR's core eject). The events are logged.
     Eject,
 }
@@ -59,9 +59,9 @@ pub struct Script {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
     pub t: f64,
-    pub fission: f64,
-    pub turbine: f64,
-    pub temp: f64,
+    pub injection: f64,
+    pub converter: f64,
+    pub heat: f64,
     pub output_kw: f64,
     pub load_kw: f64,
     /// Coolant flow, 0..1.
@@ -73,8 +73,8 @@ pub struct Row {
     pub pump_speed: f64,
     /// Fire timer, 0..1 of its delay.
     pub fire: f64,
-    /// Meltdown timer, 0..1 of its delay.
-    pub melt: f64,
+    /// Implosion timer, 0..1 of its delay.
+    pub implode: f64,
     /// Junction box voltage: delivered over requested, 1 with no request.
     pub volt: f64,
     /// The reactor's lamps that are on, short letters (`Warnings::short`), "" when none.
@@ -91,7 +91,7 @@ pub struct Row {
 pub struct Trace {
     pub name: &'static str,
     pub rows: Vec<Row>,
-    pub melted: bool,
+    pub imploded: bool,
 }
 
 impl Trace {
@@ -100,16 +100,16 @@ impl Trace {
         let _ = writeln!(
             s,
             "{:>6} {:>6} {:>6} {:>6} {:>8} {:>7} {:>5} {:>6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>6} {:>6} {:>6} {:>5}  {:<14}  {}",
-            "t", "fis", "turb", "temp", "output", "load", "flow", "tank", "pmode", "pspd", "fire", "melt", "volt", "junc", "react", "pump", "on", "warn", "events"
+            "t", "inj", "conv", "heat", "output", "load", "flow", "tank", "pmode", "pspd", "fire", "implode", "volt", "junc", "react", "pump", "on", "warn", "events"
         );
         for r in &self.rows {
             let _ = writeln!(
                 s,
                 "{:>6.1} {:>6.1} {:>6.1} {:>6.1} {:>8.1} {:>7.1} {:>5.2} {:>6.1} {:>5} {:>5.2} {:>5.2} {:>5.2} {:>5.2} {:>6.1} {:>6.1} {:>6.1} {:>5}  {:<14}  {}",
                 r.t,
-                r.fission,
-                r.turbine,
-                r.temp,
+                r.injection,
+                r.converter,
+                r.heat,
                 r.output_kw,
                 r.load_kw,
                 r.flow,
@@ -117,7 +117,7 @@ impl Trace {
                 format!("{:?}", r.pump_mode),
                 r.pump_speed,
                 r.fire,
-                r.melt,
+                r.implode,
                 r.volt,
                 r.junction,
                 r.reactor,
@@ -130,11 +130,11 @@ impl Trace {
         s
     }
 
-    pub fn peak_temp(&self) -> f64 {
-        self.rows.iter().map(|r| r.temp).fold(f64::MIN, f64::max)
+    pub fn peak_heat(&self) -> f64 {
+        self.rows.iter().map(|r| r.heat).fold(f64::MIN, f64::max)
     }
 
-    /// How many events of exactly this label happened in the run (`Fire`, `Meltdown`, ...).
+    /// How many events of exactly this label happened in the run (`Fire`, `Implosion`, ...).
     pub fn count(&self, label: &str) -> usize {
         self.rows
             .iter()
@@ -155,7 +155,7 @@ impl Trace {
     }
 }
 
-/// A reactor warmed up for 120 s on Auto with two standard rods, power on, at the grid's full
+/// A reactor warmed up for 120 s on Auto with two standard canisters, power on, at the grid's full
 /// load (the wander is off for the warm-up, so every script starts from the same 500 kW).
 pub fn warm_room(tuning: &Tuning, seed: u64) -> EngineRoom {
     let mut room = EngineRoom::from_tuning(tuning, seed);
@@ -168,9 +168,9 @@ pub fn warm_room(tuning: &Tuning, seed: u64) -> EngineRoom {
 }
 
 /// The warm room's settled targets for `boost_kick` (Auto's values after `warm_room`, on the grid's
-/// 1280 kW; the temperature sits at about 37): fission 44.2, turbine 64. Held by hand from 0 s.
-const BOOST_KICK_FISSION: f64 = 44.2;
-const BOOST_KICK_TURBINE: f64 = 64.0;
+/// 1280 kW; the heat sits at about 37): injection 44.2, converter 64. Held by hand from 0 s.
+const BOOST_KICK_INJECTION: f64 = 44.2;
+const BOOST_KICK_CONVERTER: f64 = 64.0;
 
 pub fn scripts() -> Vec<Script> {
     vec![
@@ -186,13 +186,13 @@ pub fn scripts() -> Vec<Script> {
             steps: vec![(10.0, Action::Fault(Fault::PumpBreak))],
         },
         Script {
-            name: "turbine_max_fission_max",
+            name: "converter_max_injection_max",
             duration_s: 300.0,
             steps: vec![(
                 10.0,
                 Action::Manual {
-                    fission: 100.0,
-                    turbine: 100.0,
+                    injection: 100.0,
+                    converter: 100.0,
                 },
             )],
         },
@@ -205,49 +205,49 @@ pub fn scripts() -> Vec<Script> {
             name: "off_last_second",
             duration_s: 300.0,
             steps: vec![
-                (0.0, Action::PowerOffWhenMeltdownAbove(0.9)),
+                (0.0, Action::PowerOffWhenImplosionAbove(0.9)),
                 (10.0, Action::Fault(Fault::PumpBreak)),
             ],
         },
-        // The core eject: the operator holds fission and turbine at 100 (Manual), the pump
-        // breaks at 10 s, and at TempCritical the core is thrown out. No meltdown follows.
+        // The core eject: the operator holds injection and converter at 100 (Manual), the pump
+        // breaks at 10 s, and at HeatCritical the core is thrown out. No implosion follows.
         Script {
             name: "eject_in_time",
             duration_s: 300.0,
             steps: vec![
-                (0.0, Action::Manual { fission: 100.0, turbine: 100.0 }),
+                (0.0, Action::Manual { injection: 100.0, converter: 100.0 }),
                 (10.0, Action::Fault(Fault::PumpBreak)),
-                (0.0, Action::OnAlarm(AlarmKind::TempCritical, Box::new(Action::Eject))),
+                (0.0, Action::OnAlarm(AlarmKind::HeatCritical, Box::new(Action::Eject))),
             ],
         },
         Script {
-            name: "meltdown_repair_restart",
+            name: "implosion_repair_restart",
             duration_s: 600.0,
             steps: vec![
                 (10.0, Action::Fault(Fault::PumpBreak)),
                 (
                     10.0,
                     Action::Manual {
-                        fission: 100.0,
-                        turbine: 100.0,
+                        injection: 100.0,
+                        converter: 100.0,
                     },
                 ),
-                // Armed, they run at melt + 5 s, in this order.
+                // Armed, they run at implode + 5 s, in this order.
                 (
                     0.0,
-                    Action::AfterMeltdown(5.0, Box::new(Action::RepairReactor)),
+                    Action::AfterImplosion(5.0, Box::new(Action::RepairReactor)),
                 ),
                 (
                     0.0,
-                    Action::AfterMeltdown(5.0, Box::new(Action::RepairPump)),
+                    Action::AfterImplosion(5.0, Box::new(Action::RepairPump)),
                 ),
-                (0.0, Action::AfterMeltdown(5.0, Box::new(Action::InsertRod))),
-                (0.0, Action::AfterMeltdown(5.0, Box::new(Action::InsertRod))),
+                (0.0, Action::AfterImplosion(5.0, Box::new(Action::InsertCanister))),
+                (0.0, Action::AfterImplosion(5.0, Box::new(Action::InsertCanister))),
                 (
                     0.0,
-                    Action::AfterMeltdown(5.0, Box::new(Action::Power(true))),
+                    Action::AfterImplosion(5.0, Box::new(Action::Power(true))),
                 ),
-                (0.0, Action::AfterMeltdown(5.0, Box::new(Action::Auto))),
+                (0.0, Action::AfterImplosion(5.0, Box::new(Action::Auto))),
             ],
         },
         Script {
@@ -271,68 +271,68 @@ pub fn scripts() -> Vec<Script> {
             name: "boost_kick",
             duration_s: 120.0,
             steps: vec![
-                (0.0, Action::Manual { fission: BOOST_KICK_FISSION, turbine: BOOST_KICK_TURBINE }),
+                (0.0, Action::Manual { injection: BOOST_KICK_INJECTION, converter: BOOST_KICK_CONVERTER }),
                 (10.0, Action::Boost(true)),
                 (13.0, Action::Boost(true)),
             ],
         },
-        // A melt with no fuel left: both rods come out at 60 s (the fuel is 0 at once, fission with it),
-        // and the core melts at 61 s. No Blast: Barotrauma's blast needs more than one unit of fuel.
-        // PullRod shifts the slots, so the second rod is slot 0 again.
+        // An implosion with no fill left: both canisters come out at 60 s (the fill is 0 at once, injection with it),
+        // and the core implodes at 61 s. No Blast: Barotrauma's blast needs more than one unit of fill.
+        // PullCanister shifts the slots, so the second canister is slot 0 again.
         Script {
-            name: "meltdown_dry",
+            name: "implosion_dry",
             duration_s: 200.0,
             steps: vec![
-                (10.0, Action::Manual { fission: 100.0, turbine: 100.0 }),
-                (60.0, Action::PullRod(0)),
-                (60.0, Action::PullRod(0)),
-                (61.0, Action::MeltNow),
+                (10.0, Action::Manual { injection: 100.0, converter: 100.0 }),
+                (60.0, Action::PullCanister(0)),
+                (60.0, Action::PullCanister(0)),
+                (61.0, Action::ImplodeNow),
             ],
         },
-        // The brake (rods): the operator holds fission and turbine at 100 (Manual), the pump breaks
-        // at 10 s, and at TempCritical both rods come out.
+        // The brake (canisters): the operator holds injection and converter at 100 (Manual), the pump breaks
+        // at 10 s, and at HeatCritical both canisters come out.
         Script {
-            name: "pull_rods_brake",
+            name: "pull_canisters_brake",
             duration_s: 300.0,
             steps: vec![
-                (10.0, Action::Manual { fission: 100.0, turbine: 100.0 }),
+                (10.0, Action::Manual { injection: 100.0, converter: 100.0 }),
                 (10.0, Action::Fault(Fault::PumpBreak)),
                 (
                     0.0,
-                    Action::OnAlarm(AlarmKind::TempCritical, Box::new(Action::PullRod(0))),
+                    Action::OnAlarm(AlarmKind::HeatCritical, Box::new(Action::PullCanister(0))),
                 ),
                 (
                     0.0,
-                    Action::OnAlarm(AlarmKind::TempCritical, Box::new(Action::PullRod(0))),
+                    Action::OnAlarm(AlarmKind::HeatCritical, Box::new(Action::PullCanister(0))),
                 ),
             ],
         },
-        // Full turbine and fission with only life support on: the grid asks for 400 kW of 2000 and the
+        // Full converter and injection with only life support on: the grid asks for 400 kW of 2000 and the
         // junction box sees the surplus (more than twice the load).
         Script {
-            name: "overvolt_turbine_max",
+            name: "overvolt_converter_max",
             duration_s: 120.0,
             steps: vec![
                 (0.0, Action::Breaker(Group::Engines, false)),
                 (0.0, Action::Breaker(Group::Lights, false)),
-                (10.0, Action::Manual { fission: 100.0, turbine: 100.0 }),
+                (10.0, Action::Manual { injection: 100.0, converter: 100.0 }),
             ],
         },
         Script {
-            name: "off_at_temp_high",
+            name: "off_at_heat_high",
             duration_s: 300.0,
             steps: vec![
-                (10.0, Action::Manual { fission: 100.0, turbine: 100.0 }),
+                (10.0, Action::Manual { injection: 100.0, converter: 100.0 }),
                 (10.0, Action::Fault(Fault::PumpBreak)),
-                (0.0, Action::OnAlarm(AlarmKind::TempHigh, Box::new(Action::Power(false)))),
+                (0.0, Action::OnAlarm(AlarmKind::HeatHigh, Box::new(Action::Power(false)))),
             ],
         },
         Script {
-            name: "spicy_rod",
+            name: "spicy_canister",
             duration_s: 300.0,
             steps: vec![
-                (10.0, Action::PullRod(0)),
-                (10.0, Action::InsertRodKind("spicy".into())),
+                (10.0, Action::PullCanister(0)),
+                (10.0, Action::InsertCanisterKind("spicy".into())),
             ],
         },
     ]
@@ -347,8 +347,8 @@ pub fn run(room: &mut EngineRoom, script: &Script, dt: f64, sample_every_s: f64)
         input: Input::auto(),
         armed_alarm: Vec::new(),
         armed_off: Vec::new(),
-        armed_melt: Vec::new(),
-        melt_seen: false,
+        armed_implode: Vec::new(),
+        implode_seen: false,
         due: Vec::new(),
         pending: Vec::new(),
     };
@@ -376,9 +376,9 @@ pub fn run(room: &mut EngineRoom, script: &Script, dt: f64, sample_every_s: f64)
             runner.pending.push(label(&e));
         }
         let t_end = (k + 1) as f64 * dt;
-        if room.reactor().melted() && !runner.melt_seen {
-            runner.melt_seen = true;
-            for (delay, action) in runner.armed_melt.drain(..) {
+        if room.reactor().imploded() && !runner.implode_seen {
+            runner.implode_seen = true;
+            for (delay, action) in runner.armed_implode.drain(..) {
                 runner.due.push((t_end + delay, action));
             }
         }
@@ -408,7 +408,7 @@ pub fn run(room: &mut EngineRoom, script: &Script, dt: f64, sample_every_s: f64)
     Trace {
         name: script.name,
         rows,
-        melted: room.reactor().melted(),
+        imploded: room.reactor().imploded(),
     }
 }
 
@@ -416,8 +416,8 @@ struct Runner {
     input: Input,
     armed_alarm: Vec<(AlarmKind, Action)>,
     armed_off: Vec<f64>,
-    armed_melt: Vec<(f64, Action)>,
-    melt_seen: bool,
+    armed_implode: Vec<(f64, Action)>,
+    implode_seen: bool,
     due: Vec<(f64, Action)>,
     pending: Vec<String>,
 }
@@ -425,12 +425,12 @@ struct Runner {
 impl Runner {
     fn apply(&mut self, room: &mut EngineRoom, action: &Action) {
         match action {
-            Action::PowerOffWhenMeltdownAbove(x) => {
+            Action::PowerOffWhenImplosionAbove(x) => {
                 self.armed_off.push(*x);
                 return;
             }
-            Action::AfterMeltdown(delay, inner) => {
-                self.armed_melt.push((*delay, (**inner).clone()));
+            Action::AfterImplosion(delay, inner) => {
+                self.armed_implode.push((*delay, (**inner).clone()));
                 return;
             }
             Action::OnAlarm(kind, inner) => {
@@ -442,7 +442,7 @@ impl Runner {
         self.pending.push(format!("do {action:?}"));
         match action {
             Action::Auto => self.input = Input::auto(),
-            Action::Manual { fission, turbine } => self.input = Input::manual(*fission, *turbine),
+            Action::Manual { injection, converter } => self.input = Input::manual(*injection, *converter),
             Action::Power(on) => {
                 room.set_power(*on);
             }
@@ -464,17 +464,17 @@ impl Runner {
                 let max = room.pump().condition().tuning().max;
                 room.pump_mut().condition_mut().set_value(max);
             }
-            Action::InsertRod => {
-                let _ = room.reactor_mut().insert_rod(FuelRod::standard());
+            Action::InsertCanister => {
+                let _ = room.reactor_mut().insert_canister(Canister::standard());
             }
-            Action::PullRod(slot) => {
-                if let Some((rod, heat)) = room.reactor_mut().pull_rod(*slot) {
-                    self.pending.push(format!("Pulled {} at {heat:.1}", rod.kind));
+            Action::PullCanister(slot) => {
+                if let Some((canister, heat)) = room.reactor_mut().pull_canister(*slot) {
+                    self.pending.push(format!("Pulled {} at {heat:.1}", canister.kind));
                 }
             }
-            Action::InsertRodKind(id) => {
-                if let Some(rod) = room.rod_of(id) {
-                    let _ = room.reactor_mut().insert_rod(rod);
+            Action::InsertCanisterKind(id) => {
+                if let Some(canister) = room.canister_of(id) {
+                    let _ = room.reactor_mut().insert_canister(canister);
                 }
             }
             Action::Boost(up) => {
@@ -482,8 +482,8 @@ impl Runner {
                     self.pending.push("Boost refused".into());
                 }
             }
-            Action::MeltNow => {
-                for e in room.melt_now() {
+            Action::ImplodeNow => {
+                for e in room.implode_now() {
                     self.pending.push(label(&e));
                 }
             }
@@ -492,19 +492,19 @@ impl Runner {
                     self.pending.push(label(&e));
                 }
             }
-            Action::PowerOffWhenMeltdownAbove(_) | Action::AfterMeltdown(..) | Action::OnAlarm(..) => {}
+            Action::PowerOffWhenImplosionAbove(_) | Action::AfterImplosion(..) | Action::OnAlarm(..) => {}
         }
     }
 }
 
 fn sample(room: &EngineRoom, t: f64, events: Vec<String>) -> Row {
     let r = room.reactor();
-    let (fire, melt) = r.timers();
+    let (fire, implode) = r.timers();
     Row {
         t,
-        fission: r.fission(),
-        turbine: r.turbine(),
-        temp: r.temperature(),
+        injection: r.injection(),
+        converter: r.converter(),
+        heat: r.heat(),
         output_kw: r.output_kw(),
         load_kw: room.grid().request_kw(),
         flow: room.flow(),
@@ -512,7 +512,7 @@ fn sample(room: &EngineRoom, t: f64, events: Vec<String>) -> Row {
         pump_mode: room.pump().mode(),
         pump_speed: room.pump().speed(),
         fire,
-        melt,
+        implode,
         volt: room.voltage(),
         warn: room.warnings().short(),
         junction: room.junction().condition().value(),
@@ -527,7 +527,7 @@ fn sample(room: &EngineRoom, t: f64, events: Vec<String>) -> Row {
 fn label(e: &RoomEvent) -> String {
     match e {
         RoomEvent::Reactor(ReactorEvent::Fire { .. }) => "Fire".into(),
-        RoomEvent::Reactor(ReactorEvent::Meltdown) => "Meltdown".into(),
+        RoomEvent::Reactor(ReactorEvent::Implosion) => "Implosion".into(),
         RoomEvent::Reactor(ReactorEvent::Blast(_)) => "Blast".into(),
         RoomEvent::Reactor(ReactorEvent::CoreEjected) => "CoreEjected".into(),
         RoomEvent::Reactor(ReactorEvent::Alarm { kind, on }) => {

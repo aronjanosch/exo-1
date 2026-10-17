@@ -1,4 +1,4 @@
-//! Engineering's asks on the host: the reactor's controls (Auto or manual, fission, turbine, power,
+//! Engineering's asks on the host: the reactor's controls (Auto or manual, injection, converter, power,
 //! boost, the eject's cover and button), the cold start (the master breaker, BOOT, OVERRIDE), the
 //! grid (breakers, limits, the AUX switches, the battery's recharge) and the coolant pump.
 use crate::dev_area::*;
@@ -13,7 +13,7 @@ pub fn plugin(app: &mut App) {
 
 fn is_mine(a: &ReactorAsk) -> bool {
     use ReactorAsk::*;
-    matches!(a, SetManual(_) | SetFission(_) | SetTurbine(_) | MasterBreaker(_) | Boot | Override | ArmEject | Eject | EmergencyCool | SetPower(_) | SetBreaker(..) | SetAuxSwitch(..) | SetLimit(..) | SetBatteryRecharge(_) | SetPumpMode(_) | Boost(_))
+    matches!(a, SetManual(_) | SetInjection(_) | SetConverter(_) | MasterBreaker(_) | Boot | Override | ArmEject | Eject | EmergencyCool | SetPower(_) | SetBreaker(..) | SetAuxSwitch(..) | SetLimit(..) | SetBatteryRecharge(_) | SetPumpMode(_) | Boost(_))
 }
 
 fn asks(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>) {
@@ -32,14 +32,14 @@ pub fn apply(s: &mut ReactorSim, a: ReactorAsk, cfg: &Tuning, counts: &mut React
             if on && !s.manual {
                 // Start from where the reactor is, not from zero.
                 let (f, t) = s.room.reactor().targets();
-                s.fission = f;
-                s.turbine = t;
+                s.injection = f;
+                s.converter = t;
             }
             s.manual = on;
         }
-        ReactorAsk::SetFission(v) if s.manual => s.fission = v.clamp(0.0, 100.0),
-        ReactorAsk::SetTurbine(v) if s.manual => s.turbine = v.clamp(0.0, 100.0),
-        ReactorAsk::SetFission(_) | ReactorAsk::SetTurbine(_) => {}
+        ReactorAsk::SetInjection(v) if s.manual => s.injection = v.clamp(0.0, 100.0),
+        ReactorAsk::SetConverter(v) if s.manual => s.converter = v.clamp(0.0, 100.0),
+        ReactorAsk::SetInjection(_) | ReactorAsk::SetConverter(_) => {}
         ReactorAsk::MasterBreaker(on) => {
             if !s.room.master_breaker(on) {
                 info!("reactor: master breaker refused (already on)");

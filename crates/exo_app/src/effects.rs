@@ -65,7 +65,7 @@ pub const SPARK_LIFE: f32 = 0.6;
 pub const SPARK_HEIGHT: f64 = 1.0;
 
 pub fn is_critical(r: Option<&ReactorNews>) -> bool {
-    r.is_some_and(|r| r.power_on && r.temp > r.allowed[1])
+    r.is_some_and(|r| r.power_on && r.heat > r.allowed[1])
 }
 
 pub fn critical_lamp_lit(critical: bool, t: f64) -> bool {
@@ -216,7 +216,7 @@ enum ScreenPart {
     Bad,
     Dark,
     Flash,
-    /// The meltdown blast's white flash (`dev_area::engineering::blast`).
+    /// The implosion blast's white flash (`dev_area::engineering::blast`).
     White,
     Grain(usize),
 }
@@ -468,8 +468,8 @@ mod tests {
 
     #[test]
     fn the_critical_lamp_is_lit_only_while_critical_and_blinks_at_one_hertz() {
-        let off = ReactorNews { power_on: true, temp: 50.0, allowed: [20.0, 80.0], ..default() };
-        let crit = ReactorNews { temp: 85.0, ..off };
+        let off = ReactorNews { power_on: true, heat: 50.0, allowed: [20.0, 80.0], ..default() };
+        let crit = ReactorNews { heat: 85.0, ..off };
         assert!(!is_critical(None));
         assert!(!is_critical(Some(&off)), "inside the allowed band");
         assert!(is_critical(Some(&crit)));

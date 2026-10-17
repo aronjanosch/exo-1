@@ -39,6 +39,6 @@ pub use grid::{Grid, Group, GroupState, Supply};
 pub use startup::{Checks, Stage, Startup, StartupTuning};
 pub use shield::{Shield, ShieldTuning};
 pub use room_alarm::{AlarmState, AlarmTuning, RoomAlarm};
-pub use reactor::{AlarmKind, Band, Bands, Blast, FuelNeed, FuelRod, Mode, Reactor, ReactorEvent, ReactorTuning, RodKind, RodKinds, Warnings};
+pub use reactor::{AlarmKind, Band, Bands, Blast, FillNeed, Canister, Mode, Reactor, ReactorEvent, ReactorTuning, CanisterKind, CanisterKinds, Warnings};
 pub use tuning::{shipped_files, Tuning, FILES};
 pub use weapons::{Weapons, WeaponsTuning};

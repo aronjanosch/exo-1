@@ -833,7 +833,7 @@ fn draw_window(
                     Place::Suit if suit_stack.is_some() => ("SUIT".to_string(), dim()),
                     Place::Suit => ("NO SUIT".to_string(), dim()),
                     Place::Air => match air {
-                        Some(a) if a <= 0.0 => ("✕ EMPTY".to_string(), red()),
+                        Some(a) if a <= 0.0 => ("× EMPTY".to_string(), red()),
                         Some(a) if a < LOW_AIR => (format!("! LOW {:.0}%", a * 100.0), amber()),
                         Some(a) => (format!("AIR {:.0}%", a * 100.0), dim()),
                         None if is_suit => ("NO CANISTER".to_string(), dim()),
@@ -842,7 +842,7 @@ fn draw_window(
                     // A canister in a box: full, filling with power, or waiting for it.
                     Place::Box(_) if live(p) => match fill_of(p) {
                         Some(a) if a >= 1.0 => ("FULL".to_string(), dim()),
-                        Some(a) if powered => (format!("▲ FILLING {:.0}%", a * 100.0), dim()),
+                        Some(a) if powered => (format!("+ FILLING {:.0}%", a * 100.0), dim()),
                         Some(a) => (format!("! NO POWER {:.0}%", a * 100.0), amber()),
                         None => (String::new(), dim()),
                     },

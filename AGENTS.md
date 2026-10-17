@@ -10,6 +10,8 @@ A co-op crew game in Rust with Bevy: friends run one walkable ship together, eac
 
 - Sparring partner first, implementer second.
 - The initiator decides design, balancing and system design. When a design gap appears, ask, or list the assumption and get a yes.
+- Work the initiator has approved or handed to you, you carry out to the end without asking again; questions are for design and the "Ask first" list.
+- Put decisions as numbered questions, each with your recommendation, so the initiator can answer "1. passt 2. B".
 - Build in small slices, one branch per feature.
 - Other games are source material. Read their code and data, port or reimplement their mechanics, talents and values, mix them with our own ideas, then tune by playtest. The result is a new work. Add a short line for everything taken over to `docs/BORROWED.md` in the concept repo.
 
@@ -34,6 +36,8 @@ A co-op crew game in Rust with Bevy: friends run one walkable ship together, eac
   Commands and scenario names: `README.md`, section "Run".
 - The app's integration tests are one binary (`crates/exo_app/tests/app/`): a new scenario test is a module there. Each extra file in `tests/` links Bevy again.
 - Several sessions at once (a lane each) or a playtest round across them: skill `exo-orchestrate`.
+- A room of the ship, from idea or dictation to a player journal and a walkthrough station: skill `exo-room-journey`.
+- Finishing any piece of work (push, run check, cleanup, report): skill `exo-handover`.
 - Test what breaks the game: a crash, a desync, a NaN, lost data (save, items), a broken rule (authority, reach, state machine), physics that blows up. A scripted scenario that drives the game through the `Controls` resource covers what crosses crates, without a window. Feel, tuning values, layout and config get no test: the initiator judges them in play, and a test that goes red on a change that plays better is deleted.
 - Bevy and Avian change their API in every release. Look up names and signatures in `~/.cargo/registry/src/*/` (`bevy*-<version>/`, `avian3d-<version>/`) and the Bevy examples there before you write code; trust the source over memory of older versions.
 

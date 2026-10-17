@@ -35,6 +35,7 @@ device_core = { path = "crates/device_core" }
 reactor_core = { path = "crates/reactor_core" }
 campaign_core = { path = "crates/campaign_core" }
 crew_core = { path = "crates/crew_core" }
+controls_core = { path = "crates/controls_core" }
 
 # Bevy recommendation: little optimisation for our code, full for dependencies.
 [profile.dev]

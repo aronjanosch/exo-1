@@ -4,6 +4,7 @@ pub mod audio_slice;
 pub mod avian_crates;
 pub mod cargo;
 pub mod controls;
+pub mod controls_kit;
 pub mod crew_hud;
 pub mod daynight;
 pub mod dev;
@@ -383,6 +384,7 @@ pub fn build_app(o: &Options) -> App {
 
     app.insert_resource(frame_cost::FrameSpikes::with_threshold(o.spike_ms));
     app.add_plugins(frame_cost::plugin);
+    app.add_plugins(controls_kit::plugin);
     app.add_plugins((phases::plugin, hot_reload::plugin(o.tuning_dir.clone().unwrap_or_else(hot_reload::HotReload::source_dir)), origin::plugin, daynight::plugin, ring::plugin));
     app.add_plugins((controls::plugin, warp::plugin, ship::plugin, interact::plugin, walker::plugin, grab::plugin, avian_crates::plugin, cargo::plugin, hud::plugin, net_live::plugin));
     app.add_plugins((gameplay::plugin, town::plugin, displays::plugin, items::plugin, container_window::plugin, crew_hud::plugin, items_net::plugin, health::plugin, repair::plugin, public_status::plugin, health_view::plugin, gameover::plugin));

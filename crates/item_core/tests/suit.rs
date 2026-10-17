@@ -50,7 +50,7 @@ fn do_(host: &mut Host, req: Request) -> Result<(), Reject> {
 }
 
 /// Every suit and every bit of canister fill in the world, wherever it sits (bar, worn place, a
-/// suit's canister, a locker, a box): what must stay the same under any move.
+/// suit's canister, a locker, a box, lying loose in the world): what must stay the same under any move.
 fn census(host: &Host) -> Vec<(String, Option<i64>)> {
     let mut all: Vec<(String, Option<i64>)> = Vec::new();
     let mut add = |s: &Stack| {
@@ -74,6 +74,7 @@ fn census(host: &Host) -> Vec<(String, Option<i64>)> {
     for c in host.racks.values() {
         (0..c.len()).filter_map(|i| c.slot(i)).for_each(&mut add);
     }
+    host.loose.values().for_each(|l| add(&l.stack));
     all.sort();
     all
 }
@@ -87,7 +88,6 @@ fn a_loose_suit_goes_on_into_the_worn_place_and_only_one_at_a_time() {
     let mut host = Host::new(defs());
     let Event::Spawned { item, .. } = host.spawn(suit(Some(100.0)), at(), None) else { unreachable!() };
     let Event::Spawned { item: second, .. } = host.spawn(suit(Some(40.0)), at(), None) else { unreachable!() };
-    assert!(census(&host).is_empty(), "loose items are not in the census");
     do_(&mut host, Request::CollectWear { item }).unwrap();
     let inv = host.inventory(1);
     assert!(inv.worn.is_some() && (0..BAR_SLOTS).all(|i| inv.slot(i).is_none()), "worn, not in the bar");
@@ -97,8 +97,6 @@ fn a_loose_suit_goes_on_into_the_worn_place_and_only_one_at_a_time() {
     assert_eq!(do_(&mut host, Request::CollectWear { item: second }), Err(Reject::Wearing));
     assert_eq!((host.loose.clone(), host.inventory(1)), (loose_before, inv_before));
     assert_eq!(do_(&mut host, Request::CollectWear { item }), Err(Reject::Gone));
-    // The suit and its air are in the world once, wherever they sit (the loose ones are not in the census).
-    assert_eq!(census(&host).len(), 2, "one suit and its air are on the body");
 }
 
 #[test]
@@ -408,4 +406,134 @@ fn a_client_predicts_a_stored_suits_canister_as_the_host_answers() {
     assert_eq!(client.confirmed, host.inventory(1));
     assert_eq!(client.view, host.inventory(1));
     assert_eq!(client.request(Request::PullStoredCanister { rack: 7, rack_slot: 5, slot: None }), Err(Reject::NoSuchSlot), "refused without sending");
+}
+
+fn loose_stacks(host: &Host) -> Vec<(String, Option<i64>)> {
+    let mut v: Vec<_> = host.loose.values().map(|l| (l.stack.item.kind.to_string(), l.stack.item.condition.map(|c| (c * 100.0).round() as i64))).collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn dragging_anything_out_drops_it_and_nothing_is_lost() {
+    let mut host = Host::new(defs());
+    host.add_container(7, locker("suit", 2));
+    host.add_container(8, Container::new(vec![SlotRule::any(4); 3], Access::Open));
+    host.racks.get_mut(&7).unwrap().insert_at(&[], 0, suit(Some(30.0))).unwrap();
+    host.racks.get_mut(&8).unwrap().insert_at(&[], 1, defs().get("welder").unwrap().stack_of(1)).unwrap();
+    wear(&mut host, suit(Some(80.0)));
+    put(&mut host, 3, canister(55.0));
+    let before = census(&host);
+    // The worn suit's canister, then a stored suit's canister, a container place, a bar slot, the worn suit.
+    do_(&mut host, Request::DropCanister { at: at() }).unwrap();
+    assert_eq!(host.inventory(1).worn_air(), None, "the suit is still worn, without a canister");
+    assert!(loose_stacks(&host).contains(&("air_canister".into(), Some(8000))));
+    assert_eq!(census(&host), before);
+    do_(&mut host, Request::DropStoredCanister { rack: 7, rack_slot: 0, at: at() }).unwrap();
+    assert!(host.racks[&7].slot(0).is_some_and(|s| s.item.condition.is_none()), "the stored suit stays, empty of air");
+    assert_eq!(census(&host), before);
+    do_(&mut host, Request::DropFrom { rack: 8, rack_slot: 1, at: at() }).unwrap();
+    assert!(host.racks[&8].is_empty());
+    assert_eq!(census(&host), before);
+    do_(&mut host, Request::Drop { slot: 3, at: at() }).unwrap();
+    assert!(host.inventory(1).slot(3).is_none());
+    assert_eq!(census(&host), before);
+    do_(&mut host, Request::DropWorn { at: at() }).unwrap();
+    assert!(host.inventory(1).worn.is_none(), "the suit came off");
+    assert_eq!(census(&host), before);
+    assert_eq!(host.loose.len(), 5, "everything lies in the world now, one loose item each");
+    // A stored suit with its air comes out of a locker whole (the canister goes with the suit).
+    do_(&mut host, Request::DropFrom { rack: 7, rack_slot: 0, at: at() }).unwrap();
+    assert_eq!(census(&host), before);
+}
+
+#[test]
+fn a_suit_can_come_off_in_a_full_bar_and_in_vacuum_by_dropping() {
+    let mut host = Host::new(defs());
+    wear(&mut host, suit(Some(10.0)));
+    for i in 0..BAR_SLOTS {
+        put(&mut host, i, defs().get("welder").unwrap().stack_of(1));
+    }
+    let before = census(&host);
+    do_(&mut host, Request::DropWorn { at: at() }).unwrap();
+    assert!(host.inventory(1).worn.is_none());
+    assert_eq!(census(&host), before);
+    // The suit lies where it was dropped and goes back on by F.
+    let item = *host.loose.keys().next().unwrap();
+    do_(&mut host, Request::CollectWear { item }).unwrap();
+    assert_eq!(host.inventory(1).worn_air(), Some(10.0));
+    assert_eq!(census(&host), before);
+}
+
+#[test]
+fn refused_drops_change_nothing() {
+    let mut host = Host::new(defs());
+    host.add_container(7, locker("suit", 2));
+    host.racks.get_mut(&7).unwrap().insert_at(&[], 0, suit(None)).unwrap();
+    host.add_container(8, Container::new(vec![SlotRule::any(1); 2], Access::Open));
+    host.racks.get_mut(&8).unwrap().insert_at(&[], 0, defs().get("welder").unwrap().stack_of(1)).unwrap();
+    let state = |h: &Host| (census(h), h.inventory(1), h.racks.clone(), h.loose.clone());
+    let before = state(&host);
+    assert_eq!(do_(&mut host, Request::DropWorn { at: at() }), Err(Reject::EmptySlot), "no suit worn");
+    assert_eq!(do_(&mut host, Request::DropCanister { at: at() }), Err(Reject::Invalid), "no suit worn");
+    assert_eq!(do_(&mut host, Request::DropFrom { rack: 8, rack_slot: 1, at: at() }), Err(Reject::EmptySlot));
+    assert_eq!(do_(&mut host, Request::DropFrom { rack: 8, rack_slot: 9, at: at() }), Err(Reject::NoSuchSlot));
+    assert_eq!(do_(&mut host, Request::DropFrom { rack: 99, rack_slot: 0, at: at() }), Err(Reject::NoRack));
+    assert_eq!(do_(&mut host, Request::DropStoredCanister { rack: 7, rack_slot: 0, at: at() }), Err(Reject::EmptySlot), "no canister in the stored suit");
+    assert_eq!(do_(&mut host, Request::DropStoredCanister { rack: 8, rack_slot: 0, at: at() }), Err(Reject::Invalid), "a welder is no suit");
+    assert_eq!(do_(&mut host, Request::DropStoredCanister { rack: 7, rack_slot: 1, at: at() }), Err(Reject::EmptySlot));
+    assert_eq!(state(&host), before);
+    // A forged placement (NaN, too fast) is refused for every kind of drop, with the item where it was.
+    wear(&mut host, suit(Some(50.0)));
+    let held = state(&host);
+    for bad in [Placement { pos: [f64::NAN, 0.0, 0.0], ..at() }, Placement { vel: [1.0e6, 0.0, 0.0], ..at() }, Placement { forward: [0.0; 3], ..at() }] {
+        for req in [Request::DropWorn { at: bad }, Request::DropCanister { at: bad }, Request::DropFrom { rack: 8, rack_slot: 0, at: bad }, Request::DropStoredCanister { rack: 7, rack_slot: 0, at: bad }] {
+            assert_eq!(do_(&mut host, req), Err(Reject::Invalid));
+        }
+    }
+    assert_eq!(state(&host), held);
+    // Another player has the container open.
+    host.locks.insert(8, 2);
+    host.locks.insert(7, 2);
+    assert_eq!(do_(&mut host, Request::DropFrom { rack: 8, rack_slot: 0, at: at() }), Err(Reject::InUse));
+    assert_eq!(do_(&mut host, Request::DropStoredCanister { rack: 7, rack_slot: 0, at: at() }), Err(Reject::InUse));
+    assert_eq!(state(&host), held);
+}
+
+#[test]
+fn a_client_predicts_every_drop_as_the_host_answers() {
+    let mut host = Host::new(defs());
+    host.add_container(7, locker("suit", 1));
+    host.add_container(8, Container::new(vec![SlotRule::any(4); 2], Access::Open));
+    host.racks.get_mut(&7).unwrap().insert_at(&[], 0, suit(Some(30.0))).unwrap();
+    host.racks.get_mut(&8).unwrap().insert_at(&[], 0, defs().get("welder").unwrap().stack_of(1)).unwrap();
+    wear(&mut host, suit(Some(70.0)));
+    let mut client = Client::new(1, defs());
+    let tell = |client: &mut Client, evs: Vec<Event>| {
+        for ev in evs {
+            let bytes = wire::encode(&ToClient::Event(ev));
+            let Some(ToClient::Event(ev)) = wire::decode::<ToClient>(&bytes) else { panic!("the event survives the wire") };
+            client.apply(&ev);
+        }
+    };
+    tell(&mut client, host.state());
+    let before = census(&host);
+    for req in [
+        Request::DropCanister { at: at() },
+        Request::DropStoredCanister { rack: 7, rack_slot: 0, at: at() },
+        Request::DropFrom { rack: 8, rack_slot: 0, at: at() },
+        Request::DropWorn { at: at() },
+    ] {
+        let a = client.request(req).unwrap();
+        assert!(client.pending_drop(a.seq), "the glue shows the dropped item at once");
+        let evs = host.handle(&a);
+        assert!(evs.iter().any(|e| matches!(e, Event::Spawned { by: Some((1, s)), .. } if *s == a.seq)), "the spawn names the action that dropped it");
+        tell(&mut client, evs);
+        assert_eq!(client.view, host.inventory(1));
+        assert_eq!(client.racks, host.racks);
+        assert_eq!(client.loose, host.loose);
+        assert_eq!(census(&host), before);
+    }
+    // Refused here: nothing to drop, nothing sent.
+    assert_eq!(client.request(Request::DropWorn { at: at() }), Err(Reject::EmptySlot));
 }

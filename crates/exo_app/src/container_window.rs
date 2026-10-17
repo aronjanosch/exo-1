@@ -154,6 +154,9 @@ pub struct ContainerWindow {
     pub over: Option<(Place, Option<Reject>)>,
     /// A refused click or drop: the place, why, seconds left.
     pub flash: Option<(Place, Reject, f32)>,
+    /// Drags that ended outside every panel: the place and the container it was in. `items::item_input`
+    /// turns each into a drop in front of the walker.
+    pub drops: Vec<(Place, Option<RackId>)>,
     was_down: bool,
 }
 
@@ -409,7 +412,39 @@ fn verdict(items: &Items, rack: Option<RackId>, from: Place, to: Place) -> Optio
     items.client.would(&req).err()
 }
 
-fn occupied(items: &Items, rack: Option<RackId>, at: Place) -> bool {
+/// What dropping a place's stack into the world asks: the request, the item kind lying there and
+/// how many. None: nothing there to drop.
+pub fn drop_of(items: &Items, rack: Option<RackId>, at: Place, placement: item_core::Placement) -> Option<(Request, String, u32)> {
+    let view = &items.client.view;
+    let kind = |s: &item_core::container::Stack| s.item.kind.to_string();
+    let canister = || ("air_canister".to_string(), 1);
+    match at {
+        Place::Bar(slot) => view.slot(slot).map(|s| (Request::Drop { slot, at: placement }, kind(s), s.count)),
+        Place::Suit => view.worn.as_ref().map(|s| (Request::DropWorn { at: placement }, kind(s), 1)),
+        Place::Air => view.worn_air().map(|_| (Request::DropCanister { at: placement }, canister().0, canister().1)),
+        Place::Box(rack_slot) => {
+            let rack = rack?;
+            items.client.racks.get(&rack)?.slot(rack_slot).map(|s| (Request::DropFrom { rack, rack_slot, at: placement }, kind(s), s.count))
+        }
+        Place::BoxAir(rack_slot) => {
+            let rack = rack?;
+            let stored = holds_suit(items, Some(rack), Place::Box(rack_slot)) && items.client.racks.get(&rack)?.slot(rack_slot)?.item.condition.is_some();
+            stored.then(|| (Request::DropStoredCanister { rack, rack_slot, at: placement }, canister().0, canister().1))
+        }
+    }
+}
+
+fn inside_rect(p: Vec2, (at, size): (Vec2, Vec2)) -> bool {
+    p.x >= at.x && p.x <= at.x + size.x && p.y >= at.y && p.y <= at.y + size.y
+}
+
+/// Whether a pointer is outside the bar panel (with the worn group), the one a drag from the bar
+/// leaves to drop its item into the world.
+pub fn outside_bar_panel(p: Vec2, window: Vec2, bar: &display_core::hud::BarLook) -> bool {
+    !inside_rect(p, geometry(window, 0, 4, false, bar).bar_panel)
+}
+
+pub fn occupied(items: &Items, rack: Option<RackId>, at: Place) -> bool {
     match at {
         Place::Bar(i) => items.client.view.slot(i).is_some(),
         Place::Box(i) => rack.and_then(|r| items.client.racks.get(&r)).is_some_and(|c| c.slot(i).is_some()),
@@ -489,6 +524,7 @@ fn container_input(
     if down && let Some(from) = cw.drag {
         cw.moved |= under != Some(from);
     }
+    let was_drag = cw.moved;
     cw.over = match (cw.drag, cw.moved, under) {
         (Some(from), true, Some(to)) if to != from && ours(from, to) => Some((to, verdict(&items, rack, from, to))),
         _ => None,
@@ -511,7 +547,14 @@ fn container_input(
                         (None, to)
                     }
                 },
-                None => (None, from),
+                // Released outside every panel: the stack goes into the world (a click on nothing does not).
+                None => {
+                    let outside = controls.pointer.is_some_and(|p| !inside_rect(p, geo.bar_panel) && (rack.is_none() || !inside_rect(p, geo.panel)));
+                    if was_drag && outside {
+                        cw.drops.push((from, rack));
+                    }
+                    (None, from)
+                }
             };
             if let Some(req) = req
                 && let Err(why) = items.request(now, req)

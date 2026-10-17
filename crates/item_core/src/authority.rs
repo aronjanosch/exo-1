@@ -96,11 +96,35 @@ pub enum Request {
     /// Takes the canister out of the suit lying in a container place into the bar slot `slot`, or
     /// the first free one (None).
     PullStoredCanister { rack: RackId, rack_slot: usize, slot: Option<usize> },
+    /// Drops the worn suit into the world (dragged out of the window, or hovered and G). Always
+    /// allowed, also in vacuum.
+    DropWorn { at: Placement },
+    /// Drops the canister of the worn suit into the world as a canister of its own.
+    DropCanister { at: Placement },
+    /// Drops the whole stack of a container place into the world.
+    DropFrom { rack: RackId, rack_slot: usize, at: Placement },
+    /// Drops the canister of the suit lying in a container place into the world.
+    DropStoredCanister { rack: RackId, rack_slot: usize, at: Placement },
     /// Opens the container window: the player holds the container until `Close` (one player per
     /// container). Refused while another holds it.
     Open { rack: RackId },
     /// Gives the container back. Whoever does not hold it asks for nothing.
     Close { rack: RackId },
+}
+
+impl Request {
+    /// Where the request puts an item into the world, if it drops or throws one.
+    pub fn drop_at(&self) -> Option<&Placement> {
+        match self {
+            Request::Drop { at, .. }
+            | Request::Throw { at, .. }
+            | Request::DropWorn { at }
+            | Request::DropCanister { at }
+            | Request::DropFrom { at, .. }
+            | Request::DropStoredCanister { at, .. } => Some(at),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -323,13 +347,31 @@ impl Host {
                     Err(r) => Err(r.into()),
                 },
             },
-            Request::Drop { at, .. } | Request::Throw { at, .. } if !at.sane() => Err(Reject::Invalid),
+            req if req.drop_at().is_some_and(|at| !at.sane()) => Err(Reject::Invalid),
             Request::Drop { slot, at } | Request::Throw { slot, at } => match inv.take_slot(*slot) {
                 Ok(stack) => {
                     out.push(self.spawn(stack, *at, Some((a.player, a.seq))));
                     Ok(())
                 }
                 Err(r) => Err(r.into()),
+            },
+            Request::DropWorn { at } => drop_worn(&mut inv).map(|stack| out.push(self.spawn(stack, *at, Some((a.player, a.seq))))),
+            Request::DropCanister { at } => drop_canister(&self.defs, &mut inv).map(|stack| out.push(self.spawn(stack, *at, Some((a.player, a.seq))))),
+            Request::DropFrom { rack, rack_slot, at } => match self.racks.get(rack).cloned() {
+                None => Err(Reject::NoRack),
+                Some(mut contents) => drop_from(&inv, &mut contents, *rack_slot).map(|stack| {
+                    self.racks.insert(*rack, contents.clone());
+                    out.push(Event::Rack { rack: *rack, contents });
+                    out.push(self.spawn(stack, *at, Some((a.player, a.seq))));
+                }),
+            },
+            Request::DropStoredCanister { rack, rack_slot, at } => match self.racks.get(rack).cloned() {
+                None => Err(Reject::NoRack),
+                Some(mut contents) => drop_stored_canister(&self.defs, &inv, &mut contents, *rack_slot).map(|stack| {
+                    self.racks.insert(*rack, contents.clone());
+                    out.push(Event::Rack { rack: *rack, contents });
+                    out.push(self.spawn(stack, *at, Some((a.player, a.seq))));
+                }),
             },
             Request::Select { slot } => inv.select(*slot).map_err(Reject::from),
             Request::Move { from, to } => inv.move_slot(*from, *to).map_err(Reject::from),
@@ -574,7 +616,7 @@ impl Client {
     }
 
     pub fn pending_drop(&self, seq: u32) -> bool {
-        self.pending.iter().any(|a| a.seq == seq && matches!(a.req, Request::Drop { .. } | Request::Throw { .. }))
+        self.pending.iter().any(|a| a.seq == seq && a.req.drop_at().is_some())
     }
 }
 
@@ -587,6 +629,20 @@ fn predict(defs: &ItemDefs, loose: &BTreeMap<LooseId, Loose>, racks: &BTreeMap<R
         }
         Request::Drop { slot, .. } | Request::Throw { slot, .. } => {
             view.take_slot(*slot)?;
+        }
+        Request::DropWorn { .. } => {
+            drop_worn(view)?;
+        }
+        Request::DropCanister { .. } => {
+            drop_canister(defs, view)?;
+        }
+        Request::DropFrom { rack, rack_slot, .. } => {
+            let mut contents = racks.get(rack).cloned().ok_or(Reject::NoRack)?;
+            drop_from(view, &mut contents, *rack_slot)?;
+        }
+        Request::DropStoredCanister { rack, rack_slot, .. } => {
+            let mut contents = racks.get(rack).cloned().ok_or(Reject::NoRack)?;
+            drop_stored_canister(defs, view, &mut contents, *rack_slot)?;
         }
         Request::Select { slot } => view.select(*slot)?,
         Request::Move { from, to } => view.move_slot(*from, *to)?,
@@ -670,6 +726,8 @@ fn rack_of(req: &Request) -> Option<RackId> {
         | Request::FitFrom { rack, .. }
         | Request::FitStoredCanister { rack, .. }
         | Request::PullStoredCanister { rack, .. }
+        | Request::DropFrom { rack, .. }
+        | Request::DropStoredCanister { rack, .. }
         | Request::Open { rack } => Some(*rack),
         _ => None,
     }
@@ -982,4 +1040,36 @@ fn pull_stored(defs: &ItemDefs, inv: &mut Inventory, c: &mut Container, rack_slo
     *inv = trial_inv;
     *c = trial_c;
     Ok(())
+}
+
+/// The worn suit leaves the body (to the world); always allowed.
+fn drop_worn(inv: &mut Inventory) -> Result<Stack, Reject> {
+    inv.worn.take().ok_or(Reject::EmptySlot)
+}
+
+/// The canister of the worn suit leaves it (to the world) as a canister item.
+fn drop_canister(defs: &ItemDefs, inv: &mut Inventory) -> Result<Stack, Reject> {
+    let suit = inv.worn.as_mut().ok_or(Reject::Invalid)?;
+    let fill = suit.item.condition.take().ok_or(Reject::EmptySlot)?;
+    canister_of(defs, fill)
+}
+
+/// The whole stack of a container place leaves it (to the world).
+fn drop_from(inv: &Inventory, c: &mut Container, rack_slot: usize) -> Result<Stack, Reject> {
+    let n = c.slot(rack_slot).ok_or(if rack_slot < c.len() { Reject::EmptySlot } else { Reject::NoSuchSlot })?.count;
+    let mut trial = c.clone();
+    let stack = trial.take(&carried(inv), rack_slot, n).map_err(refusal)?;
+    *c = trial;
+    Ok(stack)
+}
+
+/// The canister of the suit in a container place leaves it (to the world).
+fn drop_stored_canister(defs: &ItemDefs, inv: &Inventory, c: &mut Container, rack_slot: usize) -> Result<Stack, Reject> {
+    let mut trial = c.clone();
+    let mut suit = take_stored_suit(inv, &mut trial, rack_slot)?;
+    let fill = suit.item.condition.take().ok_or(Reject::EmptySlot)?;
+    put_back_suit(inv, &mut trial, rack_slot, suit)?;
+    let can = canister_of(defs, fill)?;
+    *c = trial;
+    Ok(can)
 }

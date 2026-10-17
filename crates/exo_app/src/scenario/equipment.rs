@@ -33,7 +33,7 @@ fn me(w: &World) -> u32 {
 }
 
 /// (suits, canisters) in the world without the pad zone's lockers (they hold their own stock):
-/// bars, worn places, racks; a suit's own canister counts.
+/// bars, worn places, racks and loose in the world; a suit's own canister counts.
 fn census(w: &World) -> (u32, u32) {
     let it = items(w);
     let (mut suits, mut cans) = (0, 0);
@@ -49,6 +49,7 @@ fn census(w: &World) -> (u32, u32) {
         (0..BAR_SLOTS).filter_map(|i| inv.slot(i)).for_each(&mut count);
         inv.worn.iter().for_each(&mut count);
     }
+    it.host.loose.values().for_each(|l| count(&l.stack));
     let pad: Vec<_> = (SUIT_LOCKERS..ALL_SUIT_LOCKERS).flat_map(|i| [suit_rack(i), box_rack(i)]).collect();
     for c in it.host.racks.iter().filter(|(r, _)| !pad.contains(r)).map(|(_, c)| c) {
         (0..c.len()).filter_map(|i| c.slot(i)).for_each(&mut count);
@@ -166,6 +167,39 @@ fn drag(what: &'static str, rack: Option<RackId>, from: fn(&World) -> Option<Pla
         }),
         wait(3.0 * DELAY + 0.1),
     ]
+}
+
+/// A drag from a place to a point outside every panel (the top-left corner of the screen): press, move, release.
+fn drag_out(what: &'static str, rack: Option<RackId>, from: fn(&World) -> Option<Place>) -> Vec<Step> {
+    vec![
+        Box::new(move |w, c| {
+            let Some(p) = from(w) else {
+                check(c, false, format!("equipment: {what}: the place to drag from exists"));
+                return true;
+            };
+            let pos = centre(w, rack, p);
+            pointer_at(w, Some(pos), true);
+            true
+        }),
+        wait(0.1),
+        Box::new(|w, c| {
+            pointer_at(w, Some(Vec2::new(30.0, 30.0)), true);
+            if c.t < 0.1 {
+                return false;
+            }
+            check(c, cw(w).dragging(), "equipment: a drag is under way".into());
+            true
+        }),
+        Box::new(|w, _| {
+            w.resource_mut::<Controls>().pointer_down = false;
+            true
+        }),
+        wait(3.0 * DELAY + 0.1),
+    ]
+}
+
+fn loose_count(w: &World, kind: &str) -> usize {
+    items(w).host.loose.values().filter(|l| l.stack.item.kind.as_str() == kind).count()
 }
 
 fn wait_for(what: &'static str, limit: f64, done: fn(&World) -> bool) -> Step {
@@ -404,6 +438,40 @@ pub(super) fn equipment_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
         true
     }));
     s.push(conserved("canister pulled from the stored suit"));
+    // 8. Drop by dragging out: a canister dragged from the bar and let go outside every panel lies in front
+    // of the walker; the other one goes by the pointer on its slot and G.
+    s.push(Box::new(|w, c| {
+        c.v.insert("loose0", loose_count(w, "air_canister") as f64);
+        true
+    }));
+    s.extend(drag_out("drag a canister out of the window", Some(SUIT1), |w| bar_slot_of(w, "air_canister").map(Place::Bar)));
+    s.push(Box::new(|w, c| {
+        check(c, items(w).host.inventory(me(w)).count("air_canister") == 1, "equipment: the dragged canister left the bar".into());
+        check(c, loose_count(w, "air_canister") as f64 == c.v["loose0"] + 1.0, "equipment: and lies in the world".into());
+        true
+    }));
+    s.push(conserved("canister dropped by drag-out"));
+    s.push(Box::new(|w, c| {
+        begin(w, c, "equipment: pointer on a slot and G drops its stack");
+        let Some(slot) = bar_slot_of(w, "air_canister") else {
+            check(c, false, "equipment: a canister is left in the bar".into());
+            return true;
+        };
+        let pos = centre(w, Some(SUIT1), Place::Bar(slot));
+        pointer_at(w, Some(pos), false);
+        true
+    }));
+    s.push(wait(0.2));
+    s.push(Box::new(|w, _| {
+        tap(w, KeyCode::KeyG);
+        true
+    }));
+    s.push(wait(3.0 * DELAY + 0.2));
+    s.push(Box::new(|w, c| {
+        check(c, items(w).host.inventory(me(w)).count("air_canister") == 0 && loose_count(w, "air_canister") as f64 == c.v["loose0"] + 2.0, "equipment: G dropped the hovered canister".into());
+        true
+    }));
+    s.push(conserved("canister dropped by G"));
     s.push(tap_then("equipment: F closes the locker", KeyCode::KeyF, |w| cw(w).rack.is_none()));
     s.push(Box::new(|w, c| {
         pointer_at(w, None, false);

@@ -140,9 +140,9 @@ pub struct Items {
 /// Whether the host can simulate an action's placement: a cabin is the host's ship. (Other
 /// players' ships are proxies here, with no body to rest an item on.)
 fn placement_ok(a: &Action) -> bool {
-    match &a.req {
-        Request::Drop { at, .. } | Request::Throw { at, .. } => !matches!(at.frame, FrameRef::Ship(n) if n != LOCAL),
-        _ => true,
+    match a.req.drop_at() {
+        Some(at) => !matches!(at.frame, FrameRef::Ship(n) if n != LOCAL),
+        None => true,
     }
 }
 
@@ -549,7 +549,7 @@ pub fn item_input(
     mut items: ResMut<Items>,
     mut ui: ResMut<InventoryUi>,
     mut grab: ResMut<Grab>,
-    (window, look, container): (Res<HudWindow>, Res<crate::displays::DisplayLook>, Res<crate::container_window::ContainerWindow>),
+    (window, look, mut container): (Res<HudWindow>, Res<crate::displays::DisplayLook>, ResMut<crate::container_window::ContainerWindow>),
     dev: Option<Res<crate::dev::DevMenu>>,
     active: Res<crate::displays::ActiveDisplay>,
     players: Query<&Player>,
@@ -588,7 +588,30 @@ pub fn item_input(
         }
     }
     let carrying = grab.held.map_or(0, |h| h.hands);
-    let drop = actions.take_tap(Tap::Drop);
+    let mut drop = actions.take_tap(Tap::Drop);
+    // Drags that ended outside every panel, and G on the place under the pointer in the open window:
+    // that place's stack drops into the world in front of the walker.
+    let mut asks = std::mem::take(&mut container.drops);
+    if drop
+        && ui.open
+        && let Some(p) = container.hover
+        && crate::container_window::occupied(&items, container.rack, p)
+    {
+        asks.push((p, container.rack));
+        drop = false;
+    }
+    if !busy {
+        let at = hand_placement(pl, &frame, &planet, owner, None);
+        for (place, rack) in asks {
+            if let Some((req, def, count)) = crate::container_window::drop_of(&items, rack, place, at)
+                && let Ok(seq) = items.request(now, req)
+            {
+                ui.touched = true;
+                let li = LooseItem { id: None, def, count, pending: Some(seq) };
+                spawn_loose(&mut commands, &items.defs, li, &at, ship_e, items.role == Role::Client);
+            }
+        }
+    }
     // R throws the held crate first (`grab_step` takes it then).
     let throw = grab.held.is_none() && actions.take_tap(Tap::Throw);
     ui.touched |= drop || throw;
@@ -620,7 +643,13 @@ pub fn item_input(
             let _ = match under {
                 Some(to) if to != from => items.request(now, Request::Move { from, to }),
                 Some(_) => items.request(now, Request::Select { slot: from }),
-                None => Ok(0),
+                // Let go outside the panel: the stack drops into the world.
+                None => {
+                    if controls.pointer.is_some_and(|p| crate::container_window::outside_bar_panel(p, window.0, &look.0.hud.bar)) {
+                        container.drops.push((crate::container_window::Place::Bar(from), None));
+                    }
+                    Ok(0)
+                }
             };
         }
         controls.click = false;
@@ -1138,6 +1167,7 @@ fn draw_bar(
                         TabKey::Close => crate::interact::key_cap(&bindings, crate::controls::Tap::Inventory),
                         TabKey::CloseAll => format!("{} / ESC / {}", crate::interact::key_cap(&bindings, crate::controls::Tap::Interact), crate::interact::key_cap(&bindings, crate::controls::Tap::Inventory)),
                         TabKey::Cancel => "ESC".to_string(),
+                        TabKey::Release => "RELEASE OUTSIDE".to_string(),
                     });
                 }
             }

@@ -725,12 +725,14 @@ pub enum TabKey {
     /// F, Esc and Tab together: any of them closes the container window.
     CloseAll,
     Cancel,
+    /// Letting go of a drag outside every panel (the stack drops into the world).
+    Release,
 }
 
 pub fn tab_hints(mode: TabMode) -> Vec<(TabKey, &'static str)> {
     match mode {
         TabMode::Browse => vec![(TabKey::Click, "HOLD"), (TabKey::Drag, "MOVE"), (TabKey::Drop, "DROP"), (TabKey::Throw, "THROW"), (TabKey::Close, "CLOSE")],
-        TabMode::Drag => vec![(TabKey::Drag, "MOVE"), (TabKey::Cancel, "CLOSE")],
+        TabMode::Drag => vec![(TabKey::Drag, "MOVE"), (TabKey::Release, "DROP"), (TabKey::Cancel, "CLOSE")],
         TabMode::Carrying => vec![(TabKey::Drop, "DROP"), (TabKey::Throw, "THROW"), (TabKey::Close, "CLOSE")],
         TabMode::Container => vec![(TabKey::Click, "MOVE STACK"), (TabKey::Drag, "MOVE"), (TabKey::CloseAll, "CLOSE")],
     }

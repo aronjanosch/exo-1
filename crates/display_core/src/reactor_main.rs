@@ -63,7 +63,7 @@ const GRID_SLACK_KW: f64 = 10.0;
 /// argument of `panel`, false until then).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Face {
-    /// The machines have no power: a dark screen.
+    /// The ship's master is off (the cold start, `StartupStage::live`): a dark screen.
     NoPower,
     /// The power is off with the chamber still warm: after a SCRAM.
     Scrammed,
@@ -79,7 +79,8 @@ pub enum Face {
 /// Which face the news make. `None` news is a dead screen.
 pub fn face(r: Option<&ReactorNews>) -> Face {
     let Some(r) = r else { return Face::NoPower };
-    if !r.powered || !r.startup.live() {
+    // `powered` (output above 0) is not the screen's supply: with the converter at 0 or after a SCRAM the engineer still needs it.
+    if !r.startup.live() {
         Face::NoPower
     } else if r.imploded {
         Face::Implosion(None)
@@ -497,8 +498,8 @@ mod tests {
     fn the_panel_builds_for_every_state_and_fits() {
         let base = running();
         let mut cases = vec![("none", None), ("running", Some(base))];
-        cases.push(("no power", Some(ReactorNews { powered: false, ..base })));
         cases.push(("cold start", Some(ReactorNews { startup: StartupStage::Cold, ..base })));
+        cases.push(("no output", Some(ReactorNews { powered: false, output_kw: 0.0, converter: 0.0, set_converter: 0.0, ..base })));
         cases.push(("off", Some(ReactorNews { power_on: false, ..base })));
         let mut scram = ReactorNews { power_on: false, ..base };
         scram.lamps[Lamp::Scram.index()] = true;
@@ -528,7 +529,8 @@ mod tests {
         let r = running();
         assert_eq!(face(Some(&r)), Face::Running);
         assert_eq!(face(None), Face::NoPower);
-        assert_eq!(face(Some(&ReactorNews { powered: false, ..r })), Face::NoPower);
+        assert_eq!(face(Some(&ReactorNews { startup: StartupStage::Cold, ..r })), Face::NoPower);
+        assert_eq!(face(Some(&ReactorNews { powered: false, output_kw: 0.0, ..r })), Face::Running, "no output is no reason to go dark");
         assert_eq!(face(Some(&ReactorNews { power_on: false, ..r })), Face::Off);
         assert_eq!(face(Some(&ReactorNews { imploded: true, ..r })), Face::Implosion(None));
         assert_eq!(face(Some(&ReactorNews { ejected: true, ..r })), Face::CoreEjected(None));

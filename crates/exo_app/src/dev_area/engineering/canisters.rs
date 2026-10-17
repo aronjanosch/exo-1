@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn the_brake_takes_the_most_life() {
-        let canister = |life| Canister { kind: "standard".into(), heat: 80.0, life };
+        let canister = |life| Canister { kind: "standard".into(), heat: 80.0, life, slot: 0 };
         assert_eq!(pull_index(&[]), None);
         assert_eq!(pull_index(&[canister(30.0), canister(90.0), canister(10.0)]), Some(1));
         assert_eq!(pull_index(&[canister(50.0), canister(50.0)]), Some(0), "the first of equals");
@@ -181,12 +181,16 @@ fn host_canisters(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<crate::dev
     if items.role == crate::items::Role::Client {
         return;
     }
-    for player in std::mem::take(&mut items.pull_asks) {
-        let Some(i) = pull_index(sim.room.reactor().canisters()) else {
-            info!("reactor: the brake, no canister in a slot");
+    for (player, from) in std::mem::take(&mut items.pull_asks) {
+        // F at a slot names it (an empty one gives nothing); the LMB hold takes the most life.
+        let pulled = match from {
+            Some(slot) => sim.room.reactor_mut().pull_canister_from_slot(slot as usize),
+            None => pull_index(sim.room.reactor().canisters()).and_then(|i| sim.room.reactor_mut().pull_canister(i)),
+        };
+        let Some((canister, heat)) = pulled else {
+            info!("reactor: the brake, no canister to pull");
             continue;
         };
-        let Some((canister, heat)) = sim.room.reactor_mut().pull_canister(i) else { continue };
         let band = sim.room.reactor().bands().heat_optimal;
         if heat > band.hi {
             let burn = device_core::minigame::hurt_of(device_core::minigame::Machine::Hot, device_core::minigame::Press::Miss, &repair.0).burn;
@@ -210,7 +214,11 @@ fn host_canisters(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<crate::dev
         let Some(mut canister) = kind_of_item(&load.item).and_then(|k| cfg.0.canisters.canister(k)) else { continue };
         canister.life = load.life;
         let kind = canister.kind.clone();
-        if let Err(canister) = sim.room.reactor_mut().insert_canister(canister) {
+        let put = match load.into {
+            Some(slot) => sim.room.reactor_mut().insert_canister_at(slot as usize, canister),
+            None => sim.room.reactor_mut().insert_canister(canister),
+        };
+        if let Err(canister) = put {
             info!("reactor: no free slot for the {} canister, it goes back", canister.kind);
             let Some(def) = items.defs.get(&load.item).cloned() else { continue };
             if let Err(stack) = items.give(time.elapsed_secs_f64(), load.player, canister_stack(&def, canister.life)) {

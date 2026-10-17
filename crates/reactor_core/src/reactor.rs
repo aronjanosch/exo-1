@@ -172,12 +172,16 @@ pub struct Canister {
     /// How much injection it allows (the sum over all canisters caps injection and scales heat).
     pub heat: f64,
     pub life: f64,
+    /// The slot it sits in (0-based, below `Tuning::slots`). Set by the reactor when it goes in; the order of the
+    /// list does not matter for it (slot 1 can be empty while slot 0 holds one).
+    #[serde(default)]
+    pub slot: usize,
 }
 
 impl Canister {
     /// The common canister, as `engineering/engineering.json` has it under "standard". TODO(initiator): values.
     pub fn standard() -> Canister {
-        Canister { kind: "standard".into(), heat: 80.0, life: 100.0 }
+        Canister { kind: "standard".into(), heat: 80.0, life: 100.0, slot: 0 }
     }
 
     pub fn spent(&self) -> bool {
@@ -212,7 +216,7 @@ impl Default for CanisterKinds {
 impl CanisterKinds {
     /// A new canister of kind `id` (life when new), or None for an unknown id.
     pub fn canister(&self, id: &str) -> Option<Canister> {
-        self.0.get(id).map(|k| Canister { kind: id.to_string(), heat: k.heat, life: k.life })
+        self.0.get(id).map(|k| Canister { kind: id.to_string(), heat: k.heat, life: k.life, slot: 0 })
     }
 }
 
@@ -637,14 +641,35 @@ impl Reactor {
         self.sync_fill();
     }
 
-    /// Puts a canister into a free slot; gives it back when all slots are full.
+    /// Puts a canister into the first free slot; gives it back when all slots are full.
     pub fn insert_canister(&mut self, canister: Canister) -> Result<(), Canister> {
-        if self.ejected || self.canisters.len() >= self.tuning.slots {
+        match (0..self.tuning.slots).find(|s| !self.slot_taken(*s)) {
+            Some(slot) => self.insert_canister_at(slot, canister),
+            None => Err(canister),
+        }
+    }
+
+    /// Puts a canister into slot `slot` (the one the player looks at); gives it back when that slot is taken, does
+    /// not exist, or the core is out.
+    pub fn insert_canister_at(&mut self, slot: usize, mut canister: Canister) -> Result<(), Canister> {
+        if self.ejected || slot >= self.tuning.slots || self.slot_taken(slot) {
             return Err(canister);
         }
+        canister.slot = slot;
         self.canisters.push(canister);
+        self.canisters.sort_by_key(|c| c.slot);
         self.sync_fill();
         Ok(())
+    }
+
+    pub fn slot_taken(&self, slot: usize) -> bool {
+        self.canisters.iter().any(|c| c.slot == slot)
+    }
+
+    /// Takes the canister out of slot `slot` (not the list index: see `pull_canister`). None for an empty slot.
+    pub fn pull_canister_from_slot(&mut self, slot: usize) -> Option<(Canister, f64)> {
+        let i = self.canisters.iter().position(|c| c.slot == slot)?;
+        self.pull_canister(i)
     }
 
     pub fn remove_canister(&mut self, slot: usize) -> Option<Canister> {

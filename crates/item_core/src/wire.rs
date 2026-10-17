@@ -21,8 +21,9 @@ pub enum ToHost {
     Rescue(Option<PlayerId>),
     /// The coolant refill hold: the player is refilling at the pump (`true`), or has stopped (`false`).
     Refill(bool),
-    /// The brake: pull the canister with the most life into the sender's hands.
-    Pull,
+    /// The brake: pull a canister into the sender's hands. `None`: the one with the most life (the LMB hold);
+    /// `Some(i)`: the canister of reactor slot `i` (F at a slot, #316), refused when that slot is empty.
+    Pull(Option<u8>),
     /// The station whose screen the sender's active display shows (r43, the bots' occupancy), or `None`
     /// when it shows no station's. Sent when the display changes.
     Using(Option<BotStation>),
@@ -988,6 +989,11 @@ mod tests {
             ReactorAsk::Override,
             ReactorAsk::Trigger(ReactorFault::ColdShip),
         ];
+        for pull in [None, Some(0u8), Some(1)] {
+            assert_eq!(decode::<ToHost>(&encode(&ToHost::Pull(pull))), Some(ToHost::Pull(pull)));
+        }
+        let load = crate::Request::Load { slot: 2, into: 1 };
+        assert_eq!(decode::<ToHost>(&encode(&ToHost::Action(crate::Action { player: 3, seq: 9, req: load.clone() }))), Some(ToHost::Action(crate::Action { player: 3, seq: 9, req: load })));
         for ask in asks {
             let back = match decode::<ToHost>(&encode(&ToHost::Reactor(ask))).expect("decodes") {
                 ToHost::Reactor(a) => a,

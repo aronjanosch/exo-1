@@ -46,6 +46,28 @@ fn sim(w: &World) -> &ReactorSim {
     w.resource::<ReactorSim>()
 }
 
+/// Slot `slot` (0 is slot_1) of the sim's reactor holds a canister.
+fn seated_in_sim(w: &World, slot: usize) -> bool {
+    sim(w).room.reactor().slot_taken(slot)
+}
+
+/// An antimatter canister with `life` goes into the bar.
+fn give_canister(w: &mut World, life: f64) {
+    let def = items(w).defs.get("antimatter_canister").cloned().expect("the canister item");
+    let ok = w.resource_mut::<Items>().give(0.0, LOCAL, canister_stack(&def, life)).is_ok();
+    assert!(ok, "the canister fits the bar");
+}
+
+/// Selects the bar slot of a canister (one key tap per tick); true once it is selected.
+fn select_canister(w: &mut World) -> bool {
+    let slot = (0..8).find(|&i| items(w).client.view.slot(i).is_some_and(|s| s.item.kind.as_str() == "antimatter_canister")).unwrap_or(0);
+    if items(w).client.view.selected != slot {
+        tap(w, DIGITS[slot]);
+        return false;
+    }
+    true
+}
+
 fn lives(w: &World) -> f64 {
     sim(w).room.reactor().canister_lives().iter().sum()
 }
@@ -125,34 +147,61 @@ pub(super) fn reactor_room_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static 
         aim(w, "slot_2");
         (c.t >= 0.5).then(|| "at the bay".into())
     }));
-    // A canister in a slot feeds the sim. The reactor starts with two; one leaves, one comes back from the hands through slot 2.
-    s.push(run("reactor room: one canister out, one in the hands", 3.0, |w, c| {
+    // F loads the slot LOOKED AT, F with empty hands pulls the slot looked at (#316). Both canisters leave the reactor; one
+    // (life 90) goes to the hands and is loaded at slot 2 while slot 1 is free.
+    s.push(run("reactor room: both canisters out, one in the hands", 3.0, |w, c| {
         if c.t == 0.0 {
-            let canister = w.resource_mut::<ReactorSim>().room.reactor_mut().remove_canister(0).expect("two canisters at the start");
+            let mut r = w.resource_mut::<ReactorSim>();
+            let canister = r.room.reactor_mut().remove_canister(0).expect("two canisters at the start");
+            r.room.reactor_mut().remove_canister(0).expect("two canisters at the start");
             c.v.insert("fill0", sim(w).room.reactor().available_fill());
-            let def = items(w).defs.get("antimatter_canister").cloned().expect("the canister item");
-            let now = 0.0;
-            let ok = w.resource_mut::<Items>().give(now, LOCAL, canister_stack(&def, canister.life)).is_ok();
-            check(c, ok, "reactor room: the canister is in the bar".into());
+            check(c, !seated_in_sim(w, 0) && !seated_in_sim(w, 1), "reactor room: the reactor is empty".into());
+            let _ = canister;
+            give_canister(w, 90.0);
             return None;
         }
         if c.t < 0.5 {
             return None;
         }
-        let slot = (0..8).find(|&i| items(w).client.view.slot(i).is_some_and(|s| s.item.kind.as_str() == "antimatter_canister")).unwrap_or(0);
-        if items(w).client.view.selected != slot {
-            tap(w, DIGITS[slot]);
-            return None;
-        }
-        check(c, seated(w, "slot_1") && !seated(w, "slot_2"), "reactor room: slot 1 shows the canister left, slot 2 is free".into());
-        Some("canister selected".into())
+        select_canister(w).then(|| "canister selected".into())
     }));
-    s.push(press("reactor room: F on slot 2 loads the canister", "slot_2", 0.8, |w, c| {
-        check(c, sim(w).room.reactor().canisters().len() == 2, format!("reactor room: the reactor holds two canisters ({})", sim(w).room.reactor().canisters().len()));
+    s.push(press("reactor room: F on slot 2 loads slot 2, slot 1 stays empty", "slot_2", 0.8, |w, c| {
+        check(c, seated_in_sim(w, 1) && !seated_in_sim(w, 0), "reactor room: the canister sits in slot 2 of the sim, slot 1 is empty".into());
         check(c, sim(w).room.reactor().available_fill() > c.v["fill0"], "reactor room: the fill rose, the sim uses the canister".into());
         check(c, items(w).client.view.count("antimatter_canister") == 0, "reactor room: the canister left the bar".into());
-        check(c, seated(w, "slot_1") && seated(w, "slot_2"), "reactor room: both slots show a canister".into());
+        check(c, seated(w, "slot_2") && !seated(w, "slot_1"), "reactor room: only slot 2 shows a canister".into());
         "loaded".into()
+    }));
+    s.push(run("reactor room: a second canister (life 60) in the hands", 3.0, |w, c| {
+        if c.t == 0.0 {
+            give_canister(w, 60.0);
+            return None;
+        }
+        (c.t >= 0.3 && select_canister(w)).then(|| "selected".into())
+    }));
+    s.push(press("reactor room: F on the taken slot 2 is refused, the canister stays in hand", "slot_2", 0.8, |w, c| {
+        check(c, items(w).client.view.count("antimatter_canister") == 1, "reactor room: the canister is still in the bar".into());
+        check(c, sim(w).room.reactor().canisters().len() == 1 && seated_in_sim(w, 1), "reactor room: slot 2 still holds its own canister, nothing else went in".into());
+        check(c, (sim(w).room.reactor().canisters()[0].life - 90.0).abs() < 1.0, "reactor room: slot 2's canister is the one that was there".into());
+        "refused".into()
+    }));
+    s.push(press("reactor room: F on slot 1 loads the second canister there", "slot_1", 0.8, |w, c| {
+        check(c, seated_in_sim(w, 0) && seated_in_sim(w, 1), "reactor room: both slots of the sim hold one".into());
+        check(c, items(w).client.view.count("antimatter_canister") == 0, "reactor room: the bar is empty".into());
+        check(c, seated(w, "slot_1") && seated(w, "slot_2"), "reactor room: both slots show a canister".into());
+        "both loaded".into()
+    }));
+    // Slot 2 holds more life (90) than slot 1 (60): F with empty hands at slot 1 takes slot 1's, not the most life.
+    s.push(press("reactor room: F with empty hands on slot 1 pulls slot 1's canister, not the one with most life", "slot_1", 0.8, |w, c| {
+        check(c, !seated_in_sim(w, 0) && seated_in_sim(w, 1), "reactor room: slot 1 is empty, slot 2 still holds its canister".into());
+        let held = (0..8).filter_map(|i| items(w).client.view.slot(i)).find(|s| s.item.kind.as_str() == "antimatter_canister").and_then(|s| s.item.condition);
+        check(c, held.is_some_and(|l| (l - 60.0).abs() < 1.0), format!("reactor room: the hands hold the 60 life canister ({held:?})"));
+        "pulled slot 1".into()
+    }));
+    s.push(run("reactor room: the pulled canister is selected", 3.0, |w, c| (c.t >= 0.3 && select_canister(w)).then(|| "selected".into())));
+    s.push(press("reactor room: F loads it back into slot 1", "slot_1", 0.8, |w, c| {
+        check(c, seated_in_sim(w, 0) && seated_in_sim(w, 1), "reactor room: both slots hold a canister again".into());
+        "loaded back".into()
     }));
     s.extend(view("reactor-02-bay-loaded", [1.4, 1.1, 0.0], shot_step));
 

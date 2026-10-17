@@ -181,7 +181,7 @@ impl ReactorSim {
             // The host's blast count is set by `reactor_step` (the sim does not count).
             blasts: 0,
             oxygen,
-            canisters: std::array::from_fn(|i| r.canisters().get(i).map_or_else(CanisterSlot::default, |x| CanisterSlot { canister: Some(canisters::canister_kind(&x.kind)), life: x.life })),
+            canisters: std::array::from_fn(|i| r.canisters().iter().find(|c| c.slot == i).map_or_else(CanisterSlot::default, |x| CanisterSlot { canister: Some(canisters::canister_kind(&x.kind)), life: x.life })),
             reactor: part(r.condition().fraction(), r.condition().functioning()),
             pump: part(self.room.pump().condition().fraction(), self.room.pump().condition().functioning()),
             junction: part(self.room.junction().condition().fraction(), self.room.junction().condition().functioning()),

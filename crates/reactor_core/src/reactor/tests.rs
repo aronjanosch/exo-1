@@ -103,7 +103,7 @@ fn fill_burns_down_and_runs_out() {
     println!("canister life after 100 s at injection 43.75: {life:.2}");
     r.remove_canister(0);
     r.remove_canister(0);
-    r.insert_canister(Canister { kind: "standard".into(), heat: 80.0, life: 1.0 }).unwrap();
+    r.insert_canister(Canister { kind: "standard".into(), heat: 80.0, life: 1.0, slot: 0 }).unwrap();
     let ev = run(&mut r, 60.0, 300.0);
     assert!(ev.iter().any(|(_, e)| *e == ReactorEvent::Alarm { kind: AlarmKind::FillLow, on: true }));
     assert!(r.canisters()[0].spent());
@@ -210,7 +210,7 @@ fn burn_rate_doubles_when_injection_doubles() {
 #[test]
 fn a_spent_canister_makes_no_heat() {
     let mut r = Reactor::new(ReactorTuning::default(), 3);
-    r.insert_canister(Canister { kind: "standard".into(), heat: 80.0, life: 0.0 }).unwrap();
+    r.insert_canister(Canister { kind: "standard".into(), heat: 80.0, life: 0.0, slot: 0 }).unwrap();
     assert!(r.set_power(true));
     r.set_targets(100.0, 50.0);
     run(&mut r, 10.0, 500.0);
@@ -398,7 +398,7 @@ fn a_implode_without_fill_makes_no_blast() {
     assert_eq!(ev, vec![ReactorEvent::Implosion, ReactorEvent::Device(DeviceEvent::Broke)], "{ev:?}");
 
     let mut r = Reactor::new(ReactorTuning::default(), 3);
-    r.insert_canister(Canister { kind: "thin".into(), heat: 1.0, life: 100.0 }).unwrap();
+    r.insert_canister(Canister { kind: "thin".into(), heat: 1.0, life: 100.0, slot: 0 }).unwrap();
     let ev = r.force_implosion();
     assert!(!ev.iter().any(|e| matches!(e, ReactorEvent::Blast(_))), "exactly min_fill is no blast: {ev:?}");
 }
@@ -591,4 +591,21 @@ fn an_orderly_shutdown_costs_no_fill() {
     r.set_power(false);
     run(&mut r, 5.0, 0.0);
     assert_eq!(r.canister_lives(), before);
+}
+
+#[test]
+fn canisters_keep_their_slot() {
+    let mut r = Reactor::new(ReactorTuning::default(), 3);
+    let full = |life| Canister { kind: "standard".into(), heat: 80.0, life, slot: 0 };
+    // Slot 1 loaded while slot 0 is free: slot 0 stays empty.
+    r.insert_canister_at(1, full(40.0)).unwrap();
+    assert!(!r.slot_taken(0) && r.slot_taken(1));
+    assert!(r.insert_canister_at(1, full(90.0)).is_err(), "a taken slot refuses");
+    assert!(r.insert_canister_at(7, full(90.0)).is_err(), "no such slot");
+    r.insert_canister_at(0, full(90.0)).unwrap();
+    // The pull takes the slot's canister, not the one with most life.
+    let (c, _) = r.pull_canister_from_slot(1).expect("slot 1 holds one");
+    assert_eq!(c.life, 40.0);
+    assert!(r.pull_canister_from_slot(1).is_none(), "an empty slot gives nothing");
+    assert!(r.slot_taken(0));
 }

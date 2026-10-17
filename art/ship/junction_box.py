@@ -227,8 +227,7 @@ def main():
     if bpy.app.background:
         os.makedirs(args.out, exist_ok=True)
         reactor.export(coll, os.path.join(args.out, "junction_box.glb"))
-        # The .blend is a working file to open by hand, saved headless only: saving from the
-        # live session has crashed Blender 5.2.1.
+        # The .blend is a working file to open by hand (the live session saves its own over it).
         os.makedirs(os.path.dirname(os.path.abspath(args.blend)), exist_ok=True)
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(args.blend))
         if args.renders:

@@ -56,6 +56,7 @@ mod ship_ambush;
 mod airlock;
 mod space;
 mod swap;
+mod container;
 mod town;
 mod warp;
 
@@ -636,6 +637,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "dev_tour_zones" => dev_tour::dev_tour_steps(&mut s, &shot_step, dev_tour::Part::Zones),
         "displays" => displays::displays_steps(&mut s),
         "items" => items::items_steps(&mut s, &shot_step),
+        "container" => container::container_steps(&mut s),
         "hud" => hud::hud_steps(&mut s, &shot_step),
         "health" => health::health_steps(&mut s),
         "engine_room" => engine_room::engine_room_steps(&mut s),

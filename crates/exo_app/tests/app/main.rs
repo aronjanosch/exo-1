@@ -10,6 +10,7 @@ mod scenario_camera_g;
 mod scenario_coolant;
 mod scenario_rods;
 mod scenario_blast;
+mod scenario_container;
 mod scenario_crate_budget;
 mod scenario_crate_carry;
 mod scenario_crate_hull;

@@ -5,7 +5,7 @@ use item_core::container::{Access, Container, SlotRule, Stack};
 use item_core::wire::{self, ToClient};
 use item_core::*;
 
-const SUIT: &str = r#"{ "id": "suit", "name": "Suit", "take": "collect", "hands": 1, "stack": 1, "use": "wear_suit", "keeps_on_use": true, "tags": ["suit"], "shape": { "extents": [0.4, 0.5, 0.3], "mass": 6.0, "colour": [0.9, 0.7, 0.2] } }"#;
+const SUIT: &str = r#"{ "id": "suit", "name": "Suit", "take": "collect", "hands": 1, "stack": 1, "tags": ["suit"], "shape": { "extents": [0.4, 0.5, 0.3], "mass": 6.0, "colour": [0.9, 0.7, 0.2] } }"#;
 const CANISTER: &str = r#"{ "id": "air_canister", "name": "Air canister", "code": "AIR", "take": "collect", "hands": 1, "stack": 1, "condition": true, "tags": ["small", "air_canister"], "shape": { "extents": [0.1, 0.3, 0.1], "mass": 1.0, "colour": [0.4, 0.7, 0.9] } }"#;
 const WELDER: &str = r#"{ "id": "welder", "name": "Welder", "take": "collect", "hands": 1, "stack": 1, "tags": ["small", "tool"], "shape": { "extents": [0.1, 0.2, 0.3], "mass": 1.5, "colour": [0.9, 0.5, 0.1] } }"#;
 
@@ -29,6 +29,16 @@ fn put(host: &mut Host, slot: usize, s: Stack) {
     let mut inv = host.inventory(1);
     inv.bar.insert_at(&[], slot, s).unwrap();
     host.inventories.insert(1, inv);
+}
+
+fn at() -> Placement {
+    Placement { frame: FrameRef::Ship(1), pos: [0.0, 1.0, 0.0], vel: [0.0; 3], forward: [0.0, 0.0, -1.0] }
+}
+
+/// Puts a suit on the way the game does: it lies in the world and F picks it up.
+fn wear(host: &mut Host, s: Stack) {
+    let Event::Spawned { item, .. } = host.spawn(s, at(), None) else { unreachable!() };
+    do_(host, Request::CollectWear { item }).unwrap();
 }
 
 fn do_(host: &mut Host, req: Request) -> Result<(), Reject> {
@@ -73,59 +83,68 @@ fn locker(tag: &str, n: usize) -> Container {
 }
 
 #[test]
-fn the_suit_goes_on_into_the_worn_place_and_comes_off() {
+fn a_loose_suit_goes_on_into_the_worn_place_and_only_one_at_a_time() {
     let mut host = Host::new(defs());
-    put(&mut host, 2, suit(Some(100.0)));
-    let before = census(&host);
-    do_(&mut host, Request::Wear { slot: 2 }).unwrap();
+    let Event::Spawned { item, .. } = host.spawn(suit(Some(100.0)), at(), None) else { unreachable!() };
+    let Event::Spawned { item: second, .. } = host.spawn(suit(Some(40.0)), at(), None) else { unreachable!() };
+    assert!(census(&host).is_empty(), "loose items are not in the census");
+    do_(&mut host, Request::CollectWear { item }).unwrap();
     let inv = host.inventory(1);
-    assert!(inv.slot(2).is_none() && inv.worn.is_some(), "the suit left the bar for the worn place");
-    assert_eq!(census(&host), before);
-    do_(&mut host, Request::Unwear { slot: Some(5) }).unwrap();
-    assert!(host.inventory(1).worn.is_none() && host.inventory(1).slot(5).is_some());
-    assert_eq!(census(&host), before);
-    // The suit's use does the same as Wear.
-    do_(&mut host, Request::Use { slot: 5, target: 1 }).unwrap();
-    assert!(host.inventory(1).worn.is_some() && host.inventory(1).slot(5).is_none());
-    assert_eq!(census(&host), before);
+    assert!(inv.worn.is_some() && (0..BAR_SLOTS).all(|i| inv.slot(i).is_none()), "worn, not in the bar");
+    assert!(!host.loose.contains_key(&item));
+    // A second suit is not put on over it: nothing changes, it stays on the floor.
+    let (loose_before, inv_before) = (host.loose.clone(), host.inventory(1));
+    assert_eq!(do_(&mut host, Request::CollectWear { item: second }), Err(Reject::Wearing));
+    assert_eq!((host.loose.clone(), host.inventory(1)), (loose_before, inv_before));
+    assert_eq!(do_(&mut host, Request::CollectWear { item }), Err(Reject::Gone));
+    // The suit and its air are in the world once, wherever they sit (the loose ones are not in the census).
+    assert_eq!(census(&host).len(), 2, "one suit and its air are on the body");
 }
 
 #[test]
-fn only_a_suit_goes_in_the_worn_place_and_a_second_suit_swaps() {
+fn a_suit_never_ends_up_in_a_bar_slot_and_a_welder_is_no_suit() {
     let mut host = Host::new(defs());
-    put(&mut host, 0, defs().get("welder").unwrap().stack_of(1));
-    put(&mut host, 1, suit(Some(30.0)));
-    put(&mut host, 2, suit(Some(90.0)));
-    let before = census(&host);
-    assert_eq!(do_(&mut host, Request::Wear { slot: 0 }), Err(Reject::NotAllowed), "a welder is no suit");
-    assert_eq!(do_(&mut host, Request::Wear { slot: 7 }), Err(Reject::EmptySlot));
-    do_(&mut host, Request::Wear { slot: 1 }).unwrap();
-    do_(&mut host, Request::Wear { slot: 2 }).unwrap();
-    let inv = host.inventory(1);
-    assert_eq!(inv.worn_air(), Some(90.0), "the second suit is worn");
-    assert_eq!(inv.slot(2).and_then(|s| s.item.condition), Some(30.0), "the first took its slot (and its canister)");
-    assert_eq!(census(&host), before);
-}
-
-#[test]
-fn taking_the_suit_off_with_a_full_bar_changes_nothing() {
-    let mut host = Host::new(defs());
-    put(&mut host, 0, suit(Some(50.0)));
-    do_(&mut host, Request::Wear { slot: 0 }).unwrap();
-    for i in 0..BAR_SLOTS {
-        put(&mut host, i, defs().get("welder").unwrap().stack_of(1));
+    host.add_container(7, locker("suit", 1));
+    host.add_container(8, Container::new(vec![SlotRule::any(1); 3], Access::Open));
+    let Event::Spawned { item: loose_suit, .. } = host.spawn(suit(Some(10.0)), at(), None) else { unreachable!() };
+    let Event::Spawned { item: welder, .. } = host.spawn(defs().get("welder").unwrap().stack_of(1), at(), None) else { unreachable!() };
+    host.racks.get_mut(&7).unwrap().insert_at(&[], 0, suit(Some(20.0))).unwrap();
+    host.racks.get_mut(&8).unwrap().insert_at(&[], 1, suit(Some(30.0))).unwrap();
+    let before = (census(&host), host.inventory(1), host.racks.clone(), host.loose.clone());
+    assert_eq!(do_(&mut host, Request::CollectWear { item: welder }), Err(Reject::NotAllowed), "a welder is no suit");
+    assert_eq!(do_(&mut host, Request::Collect { item: loose_suit }), Err(Reject::NotCollectable), "F collects no suit into the bar");
+    assert_eq!(do_(&mut host, Request::Fetch { rack: 7, rack_slot: 0 }), Err(Reject::NotAllowed));
+    assert_eq!(do_(&mut host, Request::Fetch { rack: 8, rack_slot: 1 }), Err(Reject::NotAllowed));
+    for slot in [0, 3, 7] {
+        assert_eq!(do_(&mut host, Request::FetchTo { rack: 7, rack_slot: 0, slot }), Err(Reject::NotCollectable));
+        assert_eq!(do_(&mut host, Request::FetchTo { rack: 8, rack_slot: 1, slot }), Err(Reject::NotCollectable));
     }
-    let before = (census(&host), host.inventory(1));
-    assert_eq!(do_(&mut host, Request::Unwear { slot: None }), Err(Reject::Full));
-    assert_eq!(do_(&mut host, Request::Unwear { slot: Some(3) }), Err(Reject::Full));
-    assert_eq!((census(&host), host.inventory(1)), before);
+    assert_eq!((census(&host), host.inventory(1), host.racks.clone(), host.loose.clone()), before, "every refused move changed nothing");
+    // A suit on a rack (the extinguisher bracket's request) does not reach the bar either.
+    host.add_rack(9, "suit", 1, vec![suit(Some(50.0))]);
+    assert!(do_(&mut host, Request::Swap { slot: 0, rack: 9 }).is_err());
+    assert!((0..BAR_SLOTS).all(|i| host.inventory(1).slot(i).is_none()));
+}
+
+#[test]
+fn a_clicked_locker_suit_goes_on_and_a_second_swaps_with_the_first() {
+    let mut host = Host::new(defs());
+    host.add_container(7, locker("suit", 2));
+    host.racks.get_mut(&7).unwrap().insert_at(&[], 0, suit(Some(30.0))).unwrap();
+    host.racks.get_mut(&7).unwrap().insert_at(&[], 1, suit(Some(90.0))).unwrap();
+    let before = census(&host);
+    do_(&mut host, Request::WearFrom { rack: 7, rack_slot: 0 }).unwrap();
+    do_(&mut host, Request::WearFrom { rack: 7, rack_slot: 1 }).unwrap();
+    assert_eq!(host.inventory(1).worn_air(), Some(90.0), "the second suit is worn");
+    assert_eq!(host.racks[&7].slot(1).and_then(|s| s.item.condition), Some(30.0), "the first took its place (and its canister)");
+    assert_eq!(census(&host), before);
+    assert_eq!(do_(&mut host, Request::WearFrom { rack: 7, rack_slot: 5 }), Err(Reject::NoSuchSlot));
 }
 
 #[test]
 fn a_canister_swaps_with_the_one_in_the_suit_and_nothing_is_lost() {
     let mut host = Host::new(defs());
-    put(&mut host, 0, suit(Some(20.0)));
-    do_(&mut host, Request::Wear { slot: 0 }).unwrap();
+    wear(&mut host, suit(Some(20.0)));
     put(&mut host, 4, canister(100.0));
     let before = census(&host);
     do_(&mut host, Request::FitCanister { slot: 4 }).unwrap();
@@ -143,8 +162,7 @@ fn a_canister_swaps_with_the_one_in_the_suit_and_nothing_is_lost() {
 #[test]
 fn a_canister_fits_a_suit_without_one_and_comes_out_again() {
     let mut host = Host::new(defs());
-    put(&mut host, 0, suit(None));
-    do_(&mut host, Request::Wear { slot: 0 }).unwrap();
+    wear(&mut host, suit(None));
     put(&mut host, 3, canister(75.0));
     let before = census(&host);
     do_(&mut host, Request::FitCanister { slot: 3 }).unwrap();
@@ -160,12 +178,11 @@ fn a_canister_fits_a_suit_without_one_and_comes_out_again() {
 #[test]
 fn refused_canister_moves_change_nothing() {
     let mut host = Host::new(defs());
-    put(&mut host, 0, suit(Some(60.0)));
     put(&mut host, 1, defs().get("welder").unwrap().stack_of(1));
     put(&mut host, 2, canister(10.0));
     // No suit worn yet.
     assert_eq!(do_(&mut host, Request::FitCanister { slot: 2 }), Err(Reject::Invalid));
-    do_(&mut host, Request::Wear { slot: 0 }).unwrap();
+    wear(&mut host, suit(Some(60.0)));
     let before = (census(&host), host.inventory(1));
     assert_eq!(do_(&mut host, Request::FitCanister { slot: 1 }), Err(Reject::NotAllowed), "AIR CANISTERS ONLY");
     assert_eq!(do_(&mut host, Request::FitCanister { slot: 5 }), Err(Reject::EmptySlot));
@@ -186,8 +203,7 @@ fn the_worn_suit_goes_into_a_suit_locker_and_out_again_but_not_into_a_tool_locke
     host.add_container(7, locker("suit", 1));
     host.add_container(8, locker("tool", 4));
     host.add_container(9, locker("air_canister", 4));
-    put(&mut host, 0, suit(Some(88.0)));
-    do_(&mut host, Request::Wear { slot: 0 }).unwrap();
+    wear(&mut host, suit(Some(88.0)));
     let before = census(&host);
     assert_eq!(do_(&mut host, Request::StoreWorn { rack: 8, rack_slot: 0 }), Err(Reject::NotAllowed), "TOOLS ONLY");
     assert_eq!(do_(&mut host, Request::StoreWorn { rack: 9, rack_slot: 0 }), Err(Reject::NotAllowed));
@@ -225,8 +241,7 @@ fn a_canister_box_fills_to_full_and_never_over() {
 #[test]
 fn the_worn_suit_drains_to_empty_and_stays_in_range() {
     let mut host = Host::new(defs());
-    put(&mut host, 0, suit(Some(1.0)));
-    do_(&mut host, Request::Wear { slot: 0 }).unwrap();
+    wear(&mut host, suit(Some(1.0)));
     assert!(host.drain_worn(1, 0.5).is_none() || host.inventory(1).worn_air() == Some(0.5));
     assert!(host.drain_worn(1, 10.0).is_some(), "the canister running out is told");
     assert_eq!(host.inventory(1).worn_air(), Some(0.0));
@@ -240,7 +255,6 @@ fn the_worn_suit_drains_to_empty_and_stays_in_range() {
 fn a_client_sees_the_worn_suit_and_its_canister_over_the_wire() {
     let mut host = Host::new(defs());
     host.add_container(7, locker("suit", 1));
-    put(&mut host, 0, suit(Some(70.0)));
     put(&mut host, 1, canister(100.0));
     let mut client = Client::new(1, defs());
     let tell = |client: &mut Client, evs: Vec<Event>| {
@@ -253,8 +267,12 @@ fn a_client_sees_the_worn_suit_and_its_canister_over_the_wire() {
     let state = host.state();
     tell(&mut client, state);
     assert!(client.view.worn.is_none());
-    let a = client.request(Request::Wear { slot: 0 }).unwrap();
+    let Event::Spawned { item, .. } = host.spawn(suit(Some(70.0)), at(), None) else { unreachable!() };
+    tell(&mut client, vec![Event::Spawned { item, loose: host.loose[&item].clone(), by: None }]);
+    let a = client.request(Request::CollectWear { item }).unwrap();
     assert!(client.view.worn.is_some(), "shown at once");
+    assert!(client.hidden.contains(&item));
+    assert_eq!(client.request(Request::CollectWear { item }), Err(Reject::Gone), "the pending collect hides it");
     let evs = host.handle(&a);
     tell(&mut client, evs);
     assert_eq!(client.confirmed.worn_air(), Some(70.0), "the host's word: worn, with its canister");
@@ -282,8 +300,7 @@ fn the_suits_canister_goes_into_a_canister_box_and_back_but_not_into_a_suit_lock
     host.add_container(7, locker("suit", 1));
     host.add_container(9, locker("air_canister", 4));
     host.racks.get_mut(&9).unwrap().insert_at(&[], 1, canister(100.0)).unwrap();
-    put(&mut host, 0, suit(Some(30.0)));
-    do_(&mut host, Request::Wear { slot: 0 }).unwrap();
+    wear(&mut host, suit(Some(30.0)));
     let before = census(&host);
     assert_eq!(do_(&mut host, Request::StoreCanister { rack: 7, rack_slot: 0 }), Err(Reject::NotAllowed), "SUIT ONLY");
     assert_eq!(do_(&mut host, Request::StoreCanister { rack: 9, rack_slot: 1 }), Err(Reject::Full), "the place is taken");
@@ -300,6 +317,6 @@ fn the_suits_canister_goes_into_a_canister_box_and_back_but_not_into_a_suit_lock
     assert_eq!(host.inventory(1).worn_air(), Some(100.0));
     assert!(host.racks[&9].slot(3).is_none(), "a suit without a canister leaves the place empty");
     assert_eq!(census(&host), before);
-    do_(&mut host, Request::Unwear { slot: Some(2) }).unwrap();
+    do_(&mut host, Request::StoreWorn { rack: 7, rack_slot: 0 }).unwrap();
     assert_eq!(do_(&mut host, Request::FitFrom { rack: 9, rack_slot: 1 }), Err(Reject::Invalid), "no suit worn");
 }

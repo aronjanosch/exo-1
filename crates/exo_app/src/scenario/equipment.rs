@@ -219,7 +219,7 @@ pub(super) fn equipment_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
     }));
     s.push(wait(0.3));
 
-    // 1. The suit locker: F opens it, one click takes the suit into the bar.
+    // 1. The suit locker: F opens it, one click puts the suit on.
     s.extend(open("equipment: F opens suit locker 1", SUIT1, "equip_suit_1", front(0, 1.2)));
     s.push(Box::new(|w, c| {
         check(c, w.resource::<crate::interact::Interaction>().prompt.contains("Suit locker 1") || cw(w).rack == Some(SUIT1), "equipment: the window is suit locker 1".into());
@@ -228,27 +228,19 @@ pub(super) fn equipment_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
     s.push(shot_step("equipment-locker"));
     s.extend(click("equipment: click the suit in the locker", Some(SUIT1), |w| (!items(w).client.racks[&SUIT1].is_empty()).then_some(Place::Box(0))));
     s.push(Box::new(|w, c| {
-        let slot = bar_slot_of(w, "suit");
-        check(c, slot.is_some() && in_rack(w, SUIT1, "suit") == 0, "equipment: a click moved the suit into the bar".into());
-        check(c, items(w).host.inventory(me(w)).slot(slot.unwrap_or(0)).is_some_and(|s| s.item.condition == Some(100.0)), "equipment: with its full canister".into());
-        true
-    }));
-    s.push(conserved("suit in the bar"));
-    s.push(tap_then("equipment: F closes the locker", KeyCode::KeyF, |w| cw(w).rack.is_none()));
-    s.push(wait(0.3));
-
-    // 2. Tab: drag the suit onto the WORN place.
-    s.push(tap_then("equipment: Tab opens the inventory", KeyCode::Tab, |w| w.resource::<InventoryUi>().open));
-    s.extend(drag("equipment: drag the suit onto the worn place", None, |w| bar_slot_of(w, "suit").map(Place::Bar), |_| Some(Place::Suit)));
-    s.push(Box::new(|w, c| {
         let inv = items(w).host.inventory(me(w));
-        check(c, inv.worn.is_some() && inv.count("suit") == 0, "equipment: the suit is in the worn place, not in a bar slot".into());
+        check(c, inv.worn.is_some() && in_rack(w, SUIT1, "suit") == 0, "equipment: a click on the locker's suit put it on".into());
+        check(c, inv.count("suit") == 0, "equipment: the suit is in the worn place, not in a bar slot".into());
+        check(c, inv.worn_air().is_some_and(|a| a > 99.0), "equipment: with its full canister (it already breathes a little)".into());
         check(c, w.resource::<SuitWorn>().0.contains(&me(w)), "equipment: the health step counts the body as suited".into());
         check(c, items(w).client.view.worn.is_some(), "equipment: the client's view shows the worn suit".into());
         true
     }));
+    s.push(conserved("suit worn"));
     s.push(shot_step("equipment-worn"));
-    s.push(tap_then("equipment: Tab closes it", KeyCode::Tab, |w| !w.resource::<InventoryUi>().open));
+    s.push(tap_then("equipment: F closes the locker", KeyCode::KeyF, |w| cw(w).rack.is_none()));
+    s.push(wait(0.3));
+
     // The hook: the suit's canister is at 40 %.
     s.push(Box::new(|w, _c| {
         let now = w.resource::<Time>().elapsed_secs_f64();
@@ -362,18 +354,13 @@ pub(super) fn equipment_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
     s.push(wait_for("equipment: the inner door opens again (10 s)", 10.0, |w| lock(w).is_some_and(|n| n.cycling == AirlockCycle::Idle && n.inner_open)));
     s.push(conserved("after the airlock"));
 
-    // 6. The suit comes off with a click on the worn place and goes into suit locker 1 by a drag.
+    // 6. A click on the worn suit with the locker open stores it in the locker's free place.
     s.extend(open("equipment: F opens suit locker 1 again", SUIT1, "equip_suit_1", front(0, 1.2)));
     s.extend(click("equipment: click the worn suit", Some(SUIT1), |_| Some(Place::Suit)));
     s.push(Box::new(|w, c| {
         let inv = items(w).host.inventory(me(w));
-        check(c, inv.worn.is_none() && inv.count("suit") == 1, "equipment: a click on the worn suit took it off into the bar".into());
+        check(c, inv.worn.is_none() && in_rack(w, SUIT1, "suit") == 1 && inv.count("suit") == 0, "equipment: a click on the worn suit stored it in the locker".into());
         check(c, !w.resource::<SuitWorn>().0.contains(&me(w)), "equipment: the body is no longer suited".into());
-        true
-    }));
-    s.extend(drag("equipment: drag the suit into the locker", Some(SUIT1), |w| bar_slot_of(w, "suit").map(Place::Bar), |_| Some(Place::Box(0))));
-    s.push(Box::new(|w, c| {
-        check(c, in_rack(w, SUIT1, "suit") == 1 && items(w).host.inventory(me(w)).count("suit") == 0, "equipment: the suit lies in the locker".into());
         true
     }));
     s.push(conserved("suit stored"));

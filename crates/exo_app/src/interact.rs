@@ -94,6 +94,11 @@ pub fn key_hint(bindings: &Bindings, t: Tap, verb: &str) -> String {
     }
 }
 
+/// Whether a loose item's kind is the suit (worn in its own place, never collected into the bar).
+fn is_suit_def(items: &Items, def: &str) -> bool {
+    items.defs.get(def).is_some_and(|d| d.tags.iter().any(|t| t == item_core::SUIT_TAG))
+}
+
 fn hands_free(items: &Items, crates: &Query<(Entity, &Crate), Without<LooseItem>>, table: &Crates, e: Entity) -> bool {
     crates.get(e).is_ok_and(|(_, c)| items.client.view.may_carry(&items.defs, table.0.sizes[c.size].hands))
 }
@@ -276,6 +281,8 @@ pub fn interaction(
     });
     inter.target = target.clone();
     inter.kind = match &target {
+        // A suit lying about is put on; while one is worn the prompt greys out (F does nothing).
+        Some(Target::Item(e)) if loose.get(*e).is_ok_and(|(_, _, li)| is_suit_def(&items, &li.def)) && items.client.view.worn.is_some() => PromptKind::Blocked,
         Some(Target::Item(_)) => PromptKind::Collect,
         Some(Target::StandUp | Target::LeavePanel(_)) => PromptKind::Leave,
         Some(Target::SeatLocked | Target::AirlockLocked | Target::Container { by: Some(_), .. }) => PromptKind::Blocked,
@@ -319,6 +326,9 @@ pub fn interaction(
                         p.push_str(&items.defs.get(&li.def).map_or(li.def.clone(), |d| d.name.clone()));
                         if li.count > 1 {
                             p.push_str(&format!(" ({})", li.count));
+                        }
+                        if is_suit_def(&items, &li.def) && items.client.view.worn.is_some() {
+                            p.push_str("  (wearing a suit)");
                         }
                     }
                 }
@@ -418,7 +428,14 @@ pub fn interaction(
                 Target::Item(e) => {
                     if let Ok((_, _, li)) = loose.get(*e) {
                         let name = items.defs.get(&li.def).map_or(li.def.clone(), |d| d.name.clone());
-                        set("Collect", if li.count > 1 { format!("{name} ×{}", li.count) } else { name });
+                        if is_suit_def(&items, &li.def) {
+                            set("Put on", name);
+                            if items.client.view.worn.is_some() {
+                                note = ("WEARING A SUIT".into(), Tone::Warn);
+                            }
+                        } else {
+                            set("Collect", if li.count > 1 { format!("{name} ×{}", li.count) } else { name });
+                        }
                     }
                 }
             }
@@ -473,7 +490,9 @@ pub fn interaction(
             if let Ok((_, _, li)) = loose.get(e)
                 && let Some(item) = li.id
             {
-                let _ = items.request(time.elapsed_secs_f64(), item_core::Request::Collect { item });
+                // A suit goes on (not into the bar); while one is worn F does nothing.
+                let req = if is_suit_def(&items, &li.def) { item_core::Request::CollectWear { item } } else { item_core::Request::Collect { item } };
+                let _ = items.request(time.elapsed_secs_f64(), req);
             }
         }
         Target::LeavePanel(_) => *active = ActiveDisplay::Idle,

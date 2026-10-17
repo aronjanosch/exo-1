@@ -280,6 +280,7 @@ fn rule_text(c: &Container) -> String {
 /// that looks for any).
 fn reason_text(why: &Reject, c: Option<&Container>, place: Option<usize>, at: Place) -> String {
     match (why, at) {
+        (Reject::NotAllowed, Place::Bar(_)) => return "NO SUIT IN BAR".into(),
         (_, Place::Suit) => return "SUIT ONLY".into(),
         (Reject::Invalid, Place::Air) => return "NO SUIT".into(),
         (_, Place::Air) => return "AIR CANISTERS ONLY".into(),
@@ -302,6 +303,7 @@ fn reason_text(why: &Reject, c: Option<&Container>, place: Option<usize>, at: Pl
         },
         Reject::NotCollectable => "CANNOT CARRY".into(),
         Reject::Locked => "LOCKED".into(),
+        Reject::Wearing => "WEARING A SUIT".into(),
         Reject::InUse => "IN USE".into(),
         Reject::EmptySlot | Reject::NoSuchSlot => "NOTHING THERE".into(),
         _ => "REFUSED".into(),
@@ -322,13 +324,31 @@ fn status_text(c: &Container) -> (String, Color) {
 
 // ---- input ----
 
-/// What a click on a place asks: the stack goes to the other side; a click on the worn suit takes
-/// it off into a free bar slot, one on its canister takes that out. None: nothing to ask.
-fn click_request(rack: Option<RackId>, at: Place) -> Option<Request> {
+/// Whether a place holds a suit (a locker's, or the worn one).
+fn holds_suit(items: &Items, rack: Option<RackId>, at: Place) -> bool {
+    let is = |s: &item_core::container::Stack| s.item.has_tag(&item_core::container::Tag::new(item_core::SUIT_TAG));
+    match at {
+        Place::Suit => items.client.view.worn.is_some(),
+        Place::Box(i) => rack.and_then(|r| items.client.racks.get(&r)).and_then(|c| c.slot(i)).is_some_and(is),
+        Place::Bar(i) => items.client.view.slot(i).is_some_and(is),
+        Place::Air => false,
+    }
+}
+
+/// What a click on a place asks: the stack goes to the other side. A suit in a locker goes on; the
+/// worn suit goes into the open locker's first place that takes it (none open: nothing); a click on
+/// its canister takes that out. None: nothing to ask.
+fn click_request(items: &Items, rack: Option<RackId>, at: Place) -> Option<Request> {
     match (at, rack) {
         (Place::Bar(slot), Some(rack)) => Some(Request::Store { slot, rack }),
+        (Place::Box(rack_slot), Some(rack)) if holds_suit(items, Some(rack), at) => Some(Request::WearFrom { rack, rack_slot }),
         (Place::Box(rack_slot), Some(rack)) => Some(Request::Fetch { rack, rack_slot }),
-        (Place::Suit, _) => Some(Request::Unwear { slot: None }),
+        (Place::Suit, Some(rack)) => {
+            // The first place that takes the suit; none does: ask the first so the refusal shows its reason.
+            let n = items.client.racks.get(&rack).map_or(0, |c| c.len());
+            let fits = (0..n).find(|i| items.client.would(&Request::StoreWorn { rack, rack_slot: *i }).is_ok());
+            Some(Request::StoreWorn { rack, rack_slot: fits.unwrap_or(0) })
+        }
         (Place::Air, _) => Some(Request::PullCanister { slot: None }),
         _ => None,
     }
@@ -341,10 +361,8 @@ fn drop_request(rack: Option<RackId>, from: Place, to: Place) -> Option<Request>
         (Place::Bar(slot), Place::Box(rack_slot), Some(rack)) => Some(Request::StoreAt { slot, rack, rack_slot }),
         (Place::Box(rack_slot), Place::Bar(slot), Some(rack)) => Some(Request::FetchTo { rack, rack_slot, slot }),
         (Place::Box(from), Place::Box(to), Some(rack)) => Some(Request::MoveIn { rack, from, to }),
-        // The worn suit comes off by a drop on a bar slot or a locker's place; it goes on from either.
-        (Place::Suit, Place::Bar(slot), _) => Some(Request::Unwear { slot: Some(slot) }),
+        // The worn suit comes off into a locker's place and goes on from one; never to or from a bar slot.
         (Place::Suit, Place::Box(rack_slot), Some(rack)) => Some(Request::StoreWorn { rack, rack_slot }),
-        (Place::Bar(slot), Place::Suit, _) => Some(Request::Wear { slot }),
         (Place::Box(rack_slot), Place::Suit, Some(rack)) => Some(Request::WearFrom { rack, rack_slot }),
         // The suit's canister: a canister of the bar or a box swaps with it, it comes out into either.
         (Place::Bar(slot), Place::Air, _) => Some(Request::FitCanister { slot }),
@@ -357,6 +375,10 @@ fn drop_request(rack: Option<RackId>, from: Place, to: Place) -> Option<Request>
 
 /// Whether a drop would work, and why not (the request is the host's to decide in the end).
 fn verdict(items: &Items, rack: Option<RackId>, from: Place, to: Place) -> Option<Reject> {
+    // A suit never goes to a bar slot, whatever the old request would say about it.
+    if matches!(to, Place::Bar(_)) && holds_suit(items, rack, from) {
+        return Some(Reject::NotAllowed);
+    }
     let Some(req) = drop_request(rack, from, to) else { return Some(Reject::NotAllowed) };
     items.client.would(&req).err()
 }
@@ -447,7 +469,7 @@ fn container_input(
         }
         if let Some(from) = from {
             let (req, at) = match under {
-                Some(to) if to == from => (click_request(rack, from), from),
+                Some(to) if to == from => (click_request(&items, rack, from), from),
                 Some(to) if !ours(from, to) => (None, to),
                 Some(to) => match verdict(&items, rack, from, to) {
                     None => (drop_request(rack, from, to), to),

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::container::{Access, Container, Refusal, SlotRule, Stack, Tag};
 use crate::defs::ItemDefs;
-use crate::inventory::{Inventory, BAR_SLOTS, CANISTER_TAG, SUIT_TAG, WEAR_SUIT};
+use crate::inventory::{Inventory, BAR_SLOTS, CANISTER_TAG, SUIT_TAG};
 
 pub type PlayerId = u32;
 pub type LooseId = u64;
@@ -74,11 +74,9 @@ pub enum Request {
     FetchTo { rack: RackId, rack_slot: usize, slot: usize },
     /// Moves a stack between two places of the same container (a drag inside the window).
     MoveIn { rack: RackId, from: usize, to: usize },
-    /// Puts the suit of a bar slot on: it moves to the worn place (a suit already worn goes to that
-    /// slot instead). Also what the suit's use does.
-    Wear { slot: usize },
-    /// Takes the worn suit off, into the bar slot `slot`, or the first free one (None).
-    Unwear { slot: Option<usize> },
+    /// Puts on the suit lying in the world (F on it). Refused while a suit is worn. A suit never
+    /// goes into a bar slot, so this is the only way a loose suit is picked up.
+    CollectWear { item: LooseId },
     /// Takes the worn suit off into a place of a container (a suit locker).
     StoreWorn { rack: RackId, rack_slot: usize },
     /// Puts on the suit of a container place (a suit locker); a suit already worn goes to that place.
@@ -112,6 +110,8 @@ pub enum Reject {
     Full,
     /// Not something that goes into an inventory (cargo is carried).
     NotCollectable,
+    /// A suit is already worn (a loose suit is not put on over it).
+    Wearing,
     EmptySlot,
     NoSuchSlot,
     Invalid,
@@ -332,8 +332,13 @@ impl Host {
                     out.push(Event::Used { player: a.player, target: *target, effect });
                 }
             }),
-            Request::Wear { slot } => wear_suit(&mut inv, *slot),
-            Request::Unwear { slot } => unwear_suit(&mut inv, *slot),
+            Request::CollectWear { item } => match self.loose.get(item) {
+                None => Err(Reject::Gone),
+                Some(l) => collect_wear(&mut inv, l.stack.clone()).map(|()| {
+                    self.loose.remove(item);
+                    out.push(Event::Removed { item: *item });
+                }),
+            },
             Request::FitCanister { slot } => fit_canister(&mut inv, *slot),
             Request::PullCanister { slot } => pull_canister(&self.defs, &mut inv, *slot),
             Request::StoreWorn { rack, rack_slot } => match self.racks.get(rack).cloned() {
@@ -568,8 +573,11 @@ fn predict(defs: &ItemDefs, loose: &BTreeMap<LooseId, Loose>, racks: &BTreeMap<R
         Request::Use { slot, .. } => {
             use_one(defs, view, *slot)?;
         }
-        Request::Wear { slot } => wear_suit(view, *slot)?,
-        Request::Unwear { slot } => unwear_suit(view, *slot)?,
+        Request::CollectWear { item } => {
+            let l = loose.get(item).filter(|_| !hidden.contains(item)).ok_or(Reject::Gone)?;
+            collect_wear(view, l.stack.clone())?;
+            hidden.insert(*item);
+        }
         Request::FitCanister { slot } => fit_canister(view, *slot)?,
         Request::PullCanister { slot } => pull_canister(defs, view, *slot)?,
         Request::StoreWorn { rack, rack_slot } => {
@@ -683,7 +691,7 @@ fn fetch_to(defs: &ItemDefs, inv: &mut Inventory, c: &mut Container, rack_slot: 
     let n = c.slot(rack_slot).ok_or(if rack_slot < c.len() { Reject::EmptySlot } else { Reject::NoSuchSlot })?.count;
     let mut trial_c = c.clone();
     let stack = trial_c.take(&carried(inv), rack_slot, n).map_err(refusal)?;
-    if !defs.of(&stack).is_some_and(|d| d.take == crate::defs::Take::Collect) {
+    if !defs.of(&stack).is_some_and(|d| d.take == crate::defs::Take::Collect) || is_suit(&stack) {
         return Err(Reject::NotCollectable);
     }
     let mut trial_inv = inv.clone();
@@ -737,6 +745,9 @@ fn swap(inv: &mut Inventory, rack: &mut Container, slot: usize) -> Result<(), Re
     let mut trial_inv = inv.clone();
     let mut trial_rack = rack.clone();
     let taken = trial_rack.take(&[], spare, 1).map_err(Reject::from)?;
+    if is_suit(&taken) {
+        return Err(Reject::NotCollectable);
+    }
     if own.is_some() {
         let mine = trial_inv.take_slot(slot)?;
         trial_rack.insert_at(&[], spare, mine).map_err(|r| Reject::from(r.why))?;
@@ -747,16 +758,11 @@ fn swap(inv: &mut Inventory, rack: &mut Container, slot: usize) -> Result<(), Re
     Ok(())
 }
 
-/// Uses one item of a slot: the effect the host applies (None: the inventory did it, as the suit's
-/// use moves it to the worn place).
+/// Uses one item of a slot: the effect the host applies.
 fn use_one(defs: &ItemDefs, inv: &mut Inventory, slot: usize) -> Result<Option<String>, Reject> {
     let stack = inv.slot(slot).ok_or(if slot < BAR_SLOTS { Reject::EmptySlot } else { Reject::NoSuchSlot })?;
     let def = defs.of(stack).ok_or(Reject::NotUsable)?;
     let effect = def.use_effect.clone().ok_or(Reject::NotUsable)?;
-    if effect == WEAR_SUIT {
-        wear_suit(inv, slot)?;
-        return Ok(None);
-    }
     if !def.keeps_on_use {
         inv.bar.take(&[], slot, 1)?;
     }
@@ -789,28 +795,15 @@ fn put_in_bar(inv: &mut Inventory, slot: Option<usize>, stack: Stack) -> Result<
     }
 }
 
-/// The suit of a bar slot goes on; a suit already worn takes its slot. Nothing changes unless it all works.
-fn wear_suit(inv: &mut Inventory, slot: usize) -> Result<(), Reject> {
-    let stack = bar_stack(inv, slot)?;
+/// A loose suit goes on, whole (a suit never takes a bar slot). Refused while a suit is worn.
+fn collect_wear(inv: &mut Inventory, stack: Stack) -> Result<(), Reject> {
     if !is_suit(&stack) {
         return Err(Reject::NotAllowed);
     }
-    let mut trial = inv.clone();
-    trial.take_slot(slot).map_err(Reject::from)?;
-    if let Some(old) = trial.worn.take() {
-        put_in_bar(&mut trial, Some(slot), old)?;
+    if inv.worn.is_some() {
+        return Err(Reject::Wearing);
     }
-    trial.worn = Some(stack);
-    *inv = trial;
-    Ok(())
-}
-
-/// The worn suit comes off into a bar slot (None: the first free one).
-fn unwear_suit(inv: &mut Inventory, slot: Option<usize>) -> Result<(), Reject> {
-    let mut trial = inv.clone();
-    let suit = trial.worn.take().ok_or(Reject::EmptySlot)?;
-    put_in_bar(&mut trial, slot, suit)?;
-    *inv = trial;
+    inv.worn = Some(stack);
     Ok(())
 }
 

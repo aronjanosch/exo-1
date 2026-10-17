@@ -25,7 +25,7 @@ fn cw(w: &World) -> &ContainerWindow {
 /// duplicated). The crate's own stock (fuel rod, bandages, canisters) is not counted.
 fn mine(w: &World) -> u32 {
     let it = items(w);
-    ["wrench", "extinguisher", "suit"].iter().map(|k| it.host.inventory(MINE).count(k) + in_crate(w, k)).sum()
+    ["wrench", "extinguisher", "o2_mask"].iter().map(|k| it.host.inventory(MINE).count(k) + in_crate(w, k)).sum()
 }
 
 fn in_bar(w: &World, kind: &str) -> u32 {
@@ -91,7 +91,7 @@ pub(super) fn container_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
         }
         let now = w.resource::<Time>().elapsed_secs_f64();
         let defs = items(w).defs.clone();
-        for (id, n) in [("wrench", 1), ("extinguisher", 1), ("suit", 1)] {
+        for (id, n) in [("wrench", 1), ("extinguisher", 1), ("o2_mask", 1)] {
             let _ = w.resource_mut::<Items>().give(now, MINE, defs.get(id).unwrap().stack_of(n));
         }
         let pl = planet(w);
@@ -166,10 +166,10 @@ pub(super) fn container_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
 
     s.push(shot_step("container-open"));
 
-    // A refused drop changes nothing: the suit does not go into a crate for small and medium items.
+    // A refused drop changes nothing: the mask does not go into a crate for small and medium items.
     s.push(Box::new(|w, c| {
         begin(w, c, "container: a refused drop returns the item");
-        let slot = bar_slot_of(w, "suit").expect("the suit");
+        let slot = bar_slot_of(w, "o2_mask").expect("the mask");
         pointer_at(w, Some(centre(w, Place::Bar(slot))), true);
         true
     }));
@@ -190,7 +190,7 @@ pub(super) fn container_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
     }));
     s.push(wait(3.0 * DELAY + 0.1));
     s.push(Box::new(|w, c| {
-        check(c, in_bar(w, "suit") == 1 && mine(w) == 3, "container: the suit is still in the bar".into());
+        check(c, in_bar(w, "o2_mask") == 1 && mine(w) == 3, "container: the mask is still in the bar".into());
         check(c, cw(w).flash.is_some(), "container: the refusal shows its reason".into());
         true
     }));
@@ -296,12 +296,26 @@ pub(super) fn container_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
         true
     }));
 
-    // The WORN group in the Tab inventory: put the suit on, click it to take it off.
+    // The WORN group in the Tab inventory: a suit lying on the floor goes on with F's request
+    // (never into the bar); a click on it with no locker open does nothing, a drag onto a bar slot is refused.
     s.push(Box::new(|w, c| {
         begin(w, c, "container: the worn suit in the Tab inventory");
-        let slot = bar_slot_of(w, "suit").expect("the suit");
         let now = w.resource::<Time>().elapsed_secs_f64();
-        let _ = w.resource_mut::<Items>().request(now, Request::Use { slot, target: MINE });
+        let suit = items(w).defs.get("suit").unwrap().stack_of(1);
+        let here = with_player(w, |p| p.world_pos(walker_core::Frame::IDENTITY));
+        let at = item_core::Placement { frame: item_core::FrameRef::Planet(0), pos: here.to_array(), vel: [0.0; 3], forward: [0.0, 0.0, -1.0] };
+        w.resource_mut::<Items>().spawn(now, suit, at);
+        true
+    }));
+    s.push(wait(0.4));
+    s.push(Box::new(|w, c| {
+        let now = w.resource::<Time>().elapsed_secs_f64();
+        let item = items(w).client.loose.iter().find(|(_, l)| l.stack.item.kind.as_str() == "suit").map(|(id, _)| *id);
+        check(c, item.is_some(), "container: the loose suit is known to the client".into());
+        if let Some(item) = item {
+            let r = w.resource_mut::<Items>().request(now, Request::CollectWear { item });
+            check(c, r.is_ok(), format!("container: putting on the loose suit is accepted ({r:?})"));
+        }
         tap(w, KeyCode::Tab);
         true
     }));
@@ -326,7 +340,7 @@ pub(super) fn container_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
     s.push(wait(0.4));
     s.push(Box::new(|w, c| {
         let on = items(w).host.inventory(MINE).worn.is_some();
-        check(c, !on && in_bar(w, "suit") == 1, "container: a click on the worn suit took it off".into());
+        check(c, on && in_bar(w, "suit") == 0, "container: a click on the worn suit with no locker open does nothing".into());
         end(w, c, "worn group".into());
         true
     }));

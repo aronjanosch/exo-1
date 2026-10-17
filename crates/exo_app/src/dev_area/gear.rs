@@ -43,7 +43,6 @@ pub const ITEM: &str = "o2_mask";
 pub const USE: &str = "wear_mask";
 /// The space suit (r41): its item and its use, the same gear as the mask (see the module doc).
 pub const SUIT_ITEM: &str = "suit";
-pub const SUIT_USE: &str = "wear_suit";
 /// The shelf beside the oxygen generator, relative to the engine room's centre (m); in area
 /// metres x -9.8..-9.0, z -15.2..-14.4, on the east wall, clear of the generator (z -13.4..-12.6),
 /// the pump (x -11..-10, z -18..-17) and the reactor (x -15..-13).
@@ -71,9 +70,9 @@ pub fn is_gear_item(kind: &str) -> bool {
     kind == ITEM
 }
 
-/// Whether an item's use puts breathing gear on or takes it off (the mask's or the suit's).
+/// Whether an item's use puts breathing gear on or takes it off (the mask's; the suit has no use).
 pub fn is_gear_use(effect: &str) -> bool {
-    effect == USE || effect == SUIT_USE
+    effect == USE
 }
 
 /// Host: the oxygen fraction (0..1) each masked body breathed this step. The health step takes
@@ -319,7 +318,7 @@ mod tests {
     fn the_mask_and_the_suit_are_the_breathing_gear_and_nothing_else_is() {
         assert!(is_gear_item("o2_mask"));
         assert!(!is_gear_item("extinguisher"));
-        assert!(is_gear_use("wear_mask") && is_gear_use("wear_suit"));
+        assert!(is_gear_use("wear_mask") && !is_gear_use("wear_suit"));
         assert!(!is_gear_item("suit"), "the suit is worn in its own place, not in a bar slot");
         assert!(!is_gear_use("extinguish"));
     }

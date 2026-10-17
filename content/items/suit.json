@@ -1,13 +1,11 @@
 {
-  "_comment": "The space suit (r41, #50, #311), after Barotrauma's diving suit (divinggear.xml:135, PressureProtection 4000). Use puts it on: it moves to the worn place (not a bar slot), a second use takes it off. Worn: no vacuum damage (crates/health_core/src/vacuum.rs). It holds ONE air canister: this item's condition is that canister's fill (0..100 %, no condition: no canister), so the canister travels with the suit into a locker. The body breathes from it at the mask's rates (crates/health_core/src/mask.rs). TODO(initiator): shape, mass, colour, the helmet's look, the suit's protection against the abyss suit's 6650.",
+  "_comment": "The space suit (r41, #50, #311), after Barotrauma's diving suit (divinggear.xml:135, PressureProtection 4000). It is worn in its own place, never in a bar slot (F on it in the world puts it on, a click in a locker too). Worn: no vacuum damage (crates/health_core/src/vacuum.rs). It holds ONE air canister: this item's condition is that canister's fill (0..100 %, no condition: no canister), so the canister travels with the suit into a locker. The body breathes from it at the mask's rates (crates/health_core/src/mask.rs). TODO(initiator): shape, mass, colour, the helmet's look, the suit's protection against the abyss suit's 6650.",
   "id": "suit",
   "name": "Space Suit",
   "code": "SUT",
   "take": "collect",
   "hands": 1,
   "stack": 1,
-  "use": "wear_suit",
-  "keeps_on_use": true,
   "tags": ["suit"],
   "shape": { "extents": [0.4, 0.5, 0.3], "mass": 6.0, "colour": [0.9, 0.7, 0.2] }
 }

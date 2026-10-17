@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::container::{Access, Container, Refusal, SlotRule, Stack};
+use crate::container::{Access, Container, Refusal, SlotRule, Stack, Tag};
 use crate::defs::{ItemDefs, Take};
 
 pub const BAR_SLOTS: usize = 8;
@@ -8,8 +8,6 @@ pub const BAR_SLOTS: usize = 8;
 pub const SUIT_TAG: &str = "suit";
 /// The tag of an air canister, the one thing a suit's canister place takes.
 pub const CANISTER_TAG: &str = "air_canister";
-/// The use of the suit item: it moves to the worn place (and a second use takes it off).
-pub const WEAR_SUIT: &str = "wear_suit";
 pub const HANDS: u8 = 2;
 /// Most items one bar slot holds (the item's own stack size usually caps it lower).
 const SLOT_CAP: u32 = 64;
@@ -47,6 +45,10 @@ impl Inventory {
         match defs.of(&stack) {
             Some(d) if d.take == Take::Collect => {}
             _ => return Err(Refusal::NotAllowed),
+        }
+        // A suit never sits in a bar slot: it is put on (`Request::CollectWear`) or stays where it is.
+        if stack.item.has_tag(&Tag::new(SUIT_TAG)) {
+            return Err(Refusal::NotAllowed);
         }
         let mut trial = self.bar.clone();
         let equal_room = (0..BAR_SLOTS).any(|i| trial.slot(i).is_some_and(|s| s.item == stack.item && s.count < trial.rule(i).cap(&s.item)));

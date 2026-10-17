@@ -9,5 +9,5 @@ pub mod wire;
 
 pub use authority::{Action, Client, Event, FrameRef, Host, Loose, LooseId, Placement, PlayerId, Reject, Request};
 pub use defs::{ItemDef, ItemDefs, Take};
-pub use inventory::{Inventory, BAR_SLOTS};
+pub use inventory::{Inventory, BAR_SLOTS, CANISTER_TAG, SUIT_TAG};
 pub use authority::RackId;

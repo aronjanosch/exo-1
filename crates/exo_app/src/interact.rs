@@ -42,6 +42,8 @@ pub enum Target {
     BridgeDoor { open: bool },
     /// The airlock's inner door (#309): an ordinary door from the ship while the airlock rests inside.
     AirlockDoor { open: bool },
+    /// The same door while it is locked (the airlock rests outside, or a cycle runs): F shows LOCKED and does nothing.
+    AirlockLocked,
     Rack(item_core::RackId),
 }
 
@@ -105,6 +107,7 @@ fn verb(t: &Target, size: &str) -> String {
         Target::LeavePanel(_) => "leave ".into(),
         Target::Item(_) => "pick up ".into(),
         Target::Rack(_) => "swap at the rack".into(),
+        Target::AirlockLocked => "locked".into(),
         Target::Door { open } | Target::BridgeDoor { open } | Target::AirlockDoor { open } => if *open { "close ".into() } else { "open ".into() },
     }
 }
@@ -234,9 +237,10 @@ pub fn interaction(
         let door_pick = (pl.ship.is_none() && doors.iter().any(|p| in_cone(eye, look, p.0, half, DOOR_REACH).is_some())).then_some(Target::Door { open: door.is_some_and(|d| d.open) });
         let bridge_pick = (pl.ship.is_none() && bridge_doors.iter().any(|p| in_cone(eye, look, p.0, half, DOOR_REACH).is_some())).then_some(Target::BridgeDoor { open: bridge_door.is_some_and(|d| d.open) });
         // The airlock's inner door is the ship's door while the airlock rests inside and no cycle runs; else it is locked.
-        let airlock_pick = items.reactor.filter(|r| r.airlock.inside && r.airlock.cycling == item_core::wire::AirlockCycle::Idle).and_then(|r| {
+        let airlock_pick = items.reactor.and_then(|r| {
             let near = airlock_doors.iter().any(|(s, p)| s.door == reactor_core::Door::Inner && in_cone(eye, look, p.0, half, DOOR_REACH).is_some());
-            (pl.ship.is_none() && near).then_some(Target::AirlockDoor { open: r.airlock.inner_open })
+            let usable = r.airlock.inside && r.airlock.cycling == item_core::wire::AirlockCycle::Idle;
+            (pl.ship.is_none() && near).then_some(if usable { Target::AirlockDoor { open: r.airlock.inner_open } } else { Target::AirlockLocked })
         });
         match best {
             // A crate in reach of the hands wins over the seat; the tool's reach does not.
@@ -257,7 +261,7 @@ pub fn interaction(
     inter.kind = match &target {
         Some(Target::Item(_)) => PromptKind::Collect,
         Some(Target::StandUp | Target::LeavePanel(_)) => PromptKind::Leave,
-        Some(Target::SeatLocked) => PromptKind::Blocked,
+        Some(Target::SeatLocked | Target::AirlockLocked) => PromptKind::Blocked,
         Some(Target::Crate(e, Reach::Hands)) if !hands_free(&items, &crates, &table, *e) => PromptKind::Blocked,
         _ => PromptKind::Use,
     };
@@ -275,7 +279,7 @@ pub fn interaction(
         Some(Target::Seat | Target::SeatLocked) => Some(frame.to_world(SEAT_POS)),
         Some(Target::Door { .. }) => doors.iter().next().map(|p| p.0),
         Some(Target::BridgeDoor { .. }) => bridge_doors.iter().next().map(|p| p.0),
-        Some(Target::AirlockDoor { .. }) => airlock_doors.iter().find(|(s, _)| s.door == reactor_core::Door::Inner).map(|(_, p)| p.0),
+        Some(Target::AirlockDoor { .. } | Target::AirlockLocked) => airlock_doors.iter().find(|(s, _)| s.door == reactor_core::Door::Inner).map(|(_, p)| p.0),
         Some(Target::Rack(r)) => supply.as_ref().and_then(|sup| boxes.iter().find(|(b, _)| sup.0.rack_in(&b.id) == Some(*r)).map(|(_, p)| p.0)),
         _ => None,
     };
@@ -355,6 +359,10 @@ pub fn interaction(
                 Target::Door { open } => set(if *open { "Close" } else { "Open" }, "Engine room door".into()),
                 Target::BridgeDoor { open } => set(if *open { "Close" } else { "Open" }, "Bridge door".into()),
                 Target::AirlockDoor { open } => set(if *open { "Close" } else { "Open" }, "Airlock door".into()),
+                Target::AirlockLocked => {
+                    set("Locked", "Airlock door".into());
+                    note = ("▲ LOCKED".into(), Tone::Warn);
+                }
                 Target::Rack(r) => {
                     // The rack's own name (r41, "Suit rack" for the airlock's), else the extinguishers'.
                     let name = supply.as_ref().and_then(|sup| sup.0.racks.iter().find(|x| x.id == *r)).and_then(|x| x.name.clone());
@@ -421,6 +429,7 @@ pub fn interaction(
             }
         }
         Target::Drop(_) => grab.release(),
+        Target::AirlockLocked => {}
         Target::SeatLocked => gp.notify(gameplay_core::notice::Notice::new(gameplay_core::notice::NoticeKind::Warning, "notice.licence.needed")),
         Target::Counter(g) => gp.open_counter(g),
         Target::Accept(j) => {

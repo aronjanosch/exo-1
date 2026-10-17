@@ -275,3 +275,31 @@ fn a_client_sees_the_worn_suit_and_its_canister_over_the_wire() {
     assert_eq!(client.view, host.inventory(1));
     assert_eq!(client.racks[&7], host.racks[&7]);
 }
+
+#[test]
+fn the_suits_canister_goes_into_a_canister_box_and_back_but_not_into_a_suit_locker() {
+    let mut host = Host::new(defs());
+    host.add_container(7, locker("suit", 1));
+    host.add_container(9, locker("air_canister", 4));
+    host.racks.get_mut(&9).unwrap().insert_at(&[], 1, canister(100.0)).unwrap();
+    put(&mut host, 0, suit(Some(30.0)));
+    do_(&mut host, Request::Wear { slot: 0 }).unwrap();
+    let before = census(&host);
+    assert_eq!(do_(&mut host, Request::StoreCanister { rack: 7, rack_slot: 0 }), Err(Reject::NotAllowed), "SUIT ONLY");
+    assert_eq!(do_(&mut host, Request::StoreCanister { rack: 9, rack_slot: 1 }), Err(Reject::Full), "the place is taken");
+    assert_eq!(census(&host), before, "a refused store changes nothing");
+    // A drop on the box's full canister swaps: the full one goes in, the 30 % one takes its place.
+    do_(&mut host, Request::FitFrom { rack: 9, rack_slot: 1 }).unwrap();
+    assert_eq!(host.inventory(1).worn_air(), Some(100.0));
+    assert_eq!(host.racks[&9].slot(1).unwrap().item.condition, Some(30.0));
+    assert_eq!(census(&host), before);
+    do_(&mut host, Request::StoreCanister { rack: 9, rack_slot: 3 }).unwrap();
+    assert_eq!(host.inventory(1).worn_air(), None);
+    assert_eq!(census(&host), before);
+    do_(&mut host, Request::FitFrom { rack: 9, rack_slot: 3 }).unwrap();
+    assert_eq!(host.inventory(1).worn_air(), Some(100.0));
+    assert!(host.racks[&9].slot(3).is_none(), "a suit without a canister leaves the place empty");
+    assert_eq!(census(&host), before);
+    do_(&mut host, Request::Unwear { slot: Some(2) }).unwrap();
+    assert_eq!(do_(&mut host, Request::FitFrom { rack: 9, rack_slot: 1 }), Err(Reject::Invalid), "no suit worn");
+}

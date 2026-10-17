@@ -250,7 +250,7 @@ pub(super) fn equipment_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
     s.push(shot_step("equipment-worn"));
     s.push(tap_then("equipment: Tab closes it", KeyCode::Tab, |w| !w.resource::<InventoryUi>().open));
     // The hook: the suit's canister is at 40 %.
-    s.push(Box::new(|w, c| {
+    s.push(Box::new(|w, _c| {
         let now = w.resource::<Time>().elapsed_secs_f64();
         let who = me(w);
         let air = air_worn(w).unwrap_or(0.0);
@@ -341,7 +341,7 @@ pub(super) fn equipment_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
         true
     }));
     // A spare canister back in (the hook fills the suit), then out of the chamber into the open.
-    s.push(Box::new(|w, c| {
+    s.push(Box::new(|w, _c| {
         let now = w.resource::<Time>().elapsed_secs_f64();
         let who = me(w);
         w.resource_mut::<Items>().drain_worn(now, who, -100.0);

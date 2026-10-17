@@ -346,9 +346,11 @@ fn drop_request(rack: Option<RackId>, from: Place, to: Place) -> Option<Request>
         (Place::Suit, Place::Box(rack_slot), Some(rack)) => Some(Request::StoreWorn { rack, rack_slot }),
         (Place::Bar(slot), Place::Suit, _) => Some(Request::Wear { slot }),
         (Place::Box(rack_slot), Place::Suit, Some(rack)) => Some(Request::WearFrom { rack, rack_slot }),
-        // The suit's canister: a canister of the bar swaps with it, it comes out into a bar slot.
+        // The suit's canister: a canister of the bar or a box swaps with it, it comes out into either.
         (Place::Bar(slot), Place::Air, _) => Some(Request::FitCanister { slot }),
         (Place::Air, Place::Bar(slot), _) => Some(Request::PullCanister { slot: Some(slot) }),
+        (Place::Box(rack_slot), Place::Air, Some(rack)) => Some(Request::FitFrom { rack, rack_slot }),
+        (Place::Air, Place::Box(rack_slot), Some(rack)) => Some(Request::StoreCanister { rack, rack_slot }),
         _ => None,
     }
 }

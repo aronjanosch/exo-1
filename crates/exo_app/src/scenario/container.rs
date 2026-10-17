@@ -77,7 +77,7 @@ fn pointer_at(w: &mut World, p: Option<Vec2>, down: bool) {
     ctl.pointer_down = down;
 }
 
-pub(super) fn container_steps(s: &mut Vec<Step>) {
+pub(super) fn container_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
     s.push(Box::new(|w, c| {
         begin(w, c, "container: the crate and a bar with bandages");
         w.resource_mut::<Items>().delay = DELAY;
@@ -164,6 +164,8 @@ pub(super) fn container_steps(s: &mut Vec<Step>) {
         true
     }));
 
+    s.push(shot_step("container-open"));
+
     // A refused drop changes nothing: the suit does not go into a crate for small and medium items.
     s.push(Box::new(|w, c| {
         begin(w, c, "container: a refused drop returns the item");
@@ -179,6 +181,10 @@ pub(super) fn container_steps(s: &mut Vec<Step>) {
         }
         let refused = cw(w).over.as_ref().is_some_and(|(p, why)| *p == Place::Box(8) && *why == Some(item_core::Reject::NotAllowed));
         check(c, refused, format!("container: the place refuses ({:?})", cw(w).over));
+        true
+    }));
+    s.push(shot_step("container-refuse"));
+    s.push(Box::new(|w, _| {
         pointer_at(w, Some(centre(w, Place::Box(8))), false);
         true
     }));
@@ -284,6 +290,42 @@ pub(super) fn container_steps(s: &mut Vec<Step>) {
         end(w, c, "closed mid-drag".into());
         true
     }));
+
+    // The WORN group in the Tab inventory: put the suit on, click it to take it off.
+    s.push(Box::new(|w, c| {
+        begin(w, c, "container: the worn suit in the Tab inventory");
+        let slot = bar_slot_of(w, "suit").expect("the suit");
+        let now = w.resource::<Time>().elapsed_secs_f64();
+        let _ = w.resource_mut::<Items>().request(now, Request::Use { slot, target: MINE });
+        tap(w, KeyCode::Tab);
+        true
+    }));
+    s.push(wait(0.4));
+    s.push(Box::new(|w, c| {
+        let on = w.resource::<crate::dev_area::gear::MaskWorn>().0.contains_key(&MINE);
+        check(c, on && w.resource::<InventoryUi>().open, "container: the suit is worn and the inventory is open".into());
+        true
+    }));
+    s.push(shot_step("tab-worn"));
+    s.push(Box::new(|w, _| {
+        let win = w.resource::<HudWindow>().0;
+        let bar = w.resource::<crate::displays::DisplayLook>().0.hud.bar.clone();
+        pointer_at(w, Some(place_centre(win, 0, 4, &bar, Place::Suit)), true);
+        true
+    }));
+    s.push(wait(0.15));
+    s.push(Box::new(|w, _| {
+        w.resource_mut::<Controls>().pointer_down = false;
+        true
+    }));
+    s.push(wait(0.4));
+    s.push(Box::new(|w, c| {
+        let on = w.resource::<crate::dev_area::gear::MaskWorn>().0.contains_key(&MINE);
+        check(c, !on && in_bar(w, "suit") == 1, "container: a click on the worn suit took it off".into());
+        end(w, c, "worn group".into());
+        true
+    }));
+    s.push(super::items::tap_then("container: Tab closes it", KeyCode::Tab, |w| !w.resource::<InventoryUi>().open));
 
     // Walking away closes the window and frees the lock.
     s.push(super::items::tap_then("container: F opens it a third time", KeyCode::KeyF, |w| cw(w).rack == Some(CRATE)));

@@ -8,7 +8,7 @@ use super::*;
 use crate::container_window::{ContainerSpec, ContainerSpecs};
 use crate::items::Items;
 use crate::ship::Ship;
-use item_core::container::{presets, Access, Container, SlotRule};
+use item_core::container::{Access, Container, SlotRule};
 use item_core::{ItemDefs, RackId};
 
 pub const MASKS: RackId = 101;
@@ -48,7 +48,8 @@ pub fn contents(rack: RackId, defs: &ItemDefs) -> Container {
     let mut c: Container = match rack {
         MASKS => Container::new(vec![SlotRule::tagged(1, &["mask", "suit"], &[]); 6], Access::Open),
         EXTINGUISHERS => Container::new(vec![SlotRule::tagged(1, &["extinguisher"], &[]); 4], Access::Open),
-        _ => presets::supply_crate(),
+        // 12 places (4x3) as the window's design has it; the preset's 20 is the ship's own crate.
+        _ => Container::new(vec![SlotRule::tagged(32, &["small", "medium"], &["carrier"]); 12], Access::Open),
     };
     match rack {
         MASKS => {

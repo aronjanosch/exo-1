@@ -12,7 +12,8 @@ Z up. The box faces -Y here, which the exporter turns into +Z in the game (glTF)
 (x, y, z) is glTF (x, z, -y). Moving parts have their origin at their pivot; lamps and texture
 quads (label_*) carry their own material. Nodes, pivots and travel: `junction_box.md`.
 
-Run headless (writes content/ship/junction_box.glb, renders optional):
+Run headless (writes content/ship/junction_box.glb and the working file
+build/ship/junction_box.blend, renders optional):
     blender -b --python-exit-code 1 -P art/ship/junction_box.py -- --out content/ship [--renders DIR]
 Live (open Blender over the MCP; builds into the collections `junction_box`, `reference`):
     import runpy, sys; sys.modules.pop("reactor", None); runpy.run_path("<repo>/art/ship/junction_box.py", run_name="__main__")
@@ -219,12 +220,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="content/ship")
     ap.add_argument("--renders")
+    ap.add_argument("--blend", default="build/ship/junction_box.blend")
     args = ap.parse_args(argv if bpy.app.background else [])
     coll = build()
     report(coll)
     if bpy.app.background:
         os.makedirs(args.out, exist_ok=True)
         reactor.export(coll, os.path.join(args.out, "junction_box.glb"))
+        # The .blend is a working file to open by hand, saved headless only: saving from the
+        # live session has crashed Blender 5.2.1.
+        os.makedirs(os.path.dirname(os.path.abspath(args.blend)), exist_ok=True)
+        bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(args.blend))
         if args.renders:
             dress(bpy.context.scene.collection)
             render(args.renders)

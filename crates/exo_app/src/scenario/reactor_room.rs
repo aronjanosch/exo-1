@@ -10,6 +10,7 @@ use crate::dev_area::ship::{ReactorCounts, ReactorSim};
 use crate::dev_area::DevArea;
 use crate::items::{Items, LOCAL};
 use item_core::wire::ReactorAsk;
+use super::reactor::{click_until, use_display};
 
 const DIGITS: [KeyCode; 8] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4, KeyCode::Digit5, KeyCode::Digit6, KeyCode::Digit7, KeyCode::Digit8];
 
@@ -163,6 +164,8 @@ pub(super) fn reactor_room_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static 
         (c.t >= 0.5).then(|| "at the console".into())
     }));
 
+    main_screen_steps(s, shot_step);
+
     // SCRAM: the button answers only with its cover open, and it vents the chamber.
     s.push(run("reactor room: injection runs (manual 60)", 25.0, |w, c| {
         if c.t == 0.0 {
@@ -235,4 +238,41 @@ pub(super) fn reactor_room_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static 
     }));
     s.extend(view("reactor-05-ejected", [0.0, 1.2, 0.0], shot_step));
     s.push(wait(1.0));
+}
+
+/// The main screen (#317): F on it, MANUAL and the injection slider move the sim's set point, AUTO makes the converter slider a
+/// no-op, F leaves. The shot (window runs) is the screen as the engineer sees it.
+fn main_screen_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step) {
+    use crate::dev_area::engineering::reactor_room::{MAIN_ID, MAIN_NAME};
+    use display_core::reactor_main::{AUTO, CONVERTER, INJECTION, MANUAL};
+    use crate::displays::ActiveDisplay;
+    use crate::controls::Controls;
+    use_display(s, MAIN_NAME, MAIN_ID, REACTOR_FRONT_AT);
+    s.push(click_until(MAIN_ID, MANUAL, None, "reactor room: MANUAL on the main screen", |w| sim(w).manual));
+    s.push(click_until(MAIN_ID, INJECTION, Some(0.7), "reactor room: the injection slider sets 70 on the main screen", |w| (sim(w).injection - 70.0).abs() < 1.5));
+    s.push(wait(2.0));
+    s.push(shot_step("reactor-06-main-manual"));
+    s.push(click_until(MAIN_ID, AUTO, None, "reactor room: AUTO on the main screen", |w| !sim(w).manual));
+    s.push(run("reactor room: in AUTO the converter slider does nothing", 4.0, |w, c| {
+        let d = w.query::<&crate::displays::DisplayPanel>().iter(w).find(|d| d.id == MAIN_ID).cloned().expect("the main screen");
+        if c.t == 0.0 {
+            c.v.insert("conv0", sim(w).converter);
+            let at = crate::displays::world_point_of(w, &d, CONVERTER, Some(0.1)).expect("the converter slider");
+            crate::displays::aim_at(w, at);
+            w.resource_mut::<Controls>().click = true;
+            return None;
+        }
+        (c.t >= 1.5).then(|| {
+            check(c, (sim(w).converter - c.v["conv0"]).abs() < 1e-9 && !sim(w).manual, format!("reactor room: the AUTO converter stays {:.1}", sim(w).converter));
+            "ignored".into()
+        })
+    }));
+    s.push(shot_step("reactor-07-main-auto"));
+    s.push(run("reactor room: F leaves the main screen", 3.0, |w, c| {
+        if c.t == 0.0 {
+            tap(w, KeyCode::KeyF);
+            return None;
+        }
+        (*w.resource::<ActiveDisplay>() == ActiveDisplay::Idle).then(|| "left".into())
+    }));
 }

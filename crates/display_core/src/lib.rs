@@ -7,6 +7,7 @@ pub mod canvas;
 pub mod captain;
 pub mod hud;
 pub mod monitor;
+pub mod reactor_main;
 pub mod raster;
 pub mod target;
 pub mod theme;

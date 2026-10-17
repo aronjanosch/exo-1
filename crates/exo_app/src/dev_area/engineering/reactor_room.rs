@@ -28,6 +28,16 @@ use controls_core::{Controls, Outcome};
 use gameplay_core::notice::{Notice, NoticeKind};
 use item_core::wire::{ReactorAsk, ReactorNews, CANISTER_SLOTS};
 
+/// The main screen `screen_main` (#317): the quad of `reactor.glb` (1.10 x 0.62 m, tier L, 1280 x 720 panel px). Its centre in
+/// model metres (glTF axes, `art/ship/reactor.py`: the face point at 1.40 m plus the 3.5 cm of the recess) and its tilt back
+/// about the model's X axis. The panel's quad stands 3 mm in front of the model's quad.
+pub const MAIN_ID: display_core::PanelId = display_core::PanelId::new("reactor_main");
+pub const MAIN_NAME: &str = "REACTOR MAIN";
+pub const MAIN_SIZE: [f64; 2] = [1.10, 0.62];
+pub const MAIN_AT: [f64; 3] = [0.0, 1.39366, 1.44558];
+pub const MAIN_TILT_DEG: f64 = -10.437;
+const MAIN_OUT: f64 = 0.003;
+
 pub const MODEL: &str = "ship/reactor.glb";
 pub const CANISTER_MODEL: &str = "ship/canister_antimatter.glb";
 /// The model's +Z (the console's front) points to the door side: north in the area.
@@ -187,7 +197,10 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
         .collect();
     let hull = commands.spawn((RigidBody::Static, Collider::compound(shapes), Position(ground), Rotation(rot), CollisionLayers::new(Layer::World, LayerMask::ALL))).id();
     let room = commands.spawn((ReactorRoom { origin: ground, rot }, machine())).id();
-    area.entities.extend([hull, room]);
+    let screen_rot = rot * DQuat::from_rotation_x(MAIN_TILT_DEG.to_radians());
+    let centre = ground + rot * DVec3::from(MAIN_AT) + screen_rot * DVec3::Z * MAIN_OUT;
+    let screen = commands.spawn((crate::displays::DisplayPanel { id: MAIN_ID, name: MAIN_NAME.into(), size_m: DVec2::from(MAIN_SIZE), centre, rot: screen_rot }, crate::displays::Bare)).id();
+    area.entities.extend([hull, room, screen]);
 }
 
 /// Host: a client's (or the host's own) F on a part becomes a press on the kit's machine. The refused set says what the machine will not

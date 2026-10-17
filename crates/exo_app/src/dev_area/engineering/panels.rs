@@ -11,6 +11,7 @@ use display_core::{button, canvas, column, ctl, font, label, micro, readout, row
 use item_core::wire::{BotStation, BreakerGroup, CanisterKind, CanisterSlot, Lamp, PumpMode, ReactorAsk, ReactorNews, CANISTER_SLOTS};
 
 use crate::dev_area::crew::{bot_tagged, manned};
+use crate::dev_area::engineering::reactor_room::MAIN_ID;
 use crate::dev_area::engineering::startup_screen;
 
 pub fn plugin(app: &mut App) {
@@ -912,6 +913,19 @@ pub fn limit_group(action: &str) -> Option<BreakerGroup> {
 /// The impeller's angle is kept in steps of 6 degrees, so the panel is only redrawn when it shows.
 const IMPELLER_STEP: f64 = 6.0;
 
+/// The ask of a press on the reactor's main screen. The sliders send the setting; the host takes it in MANUAL only
+/// (`asks::apply`), and the panel has them disabled in AUTO, so no press arrives.
+pub fn main_ask(action: &str, value: Option<f32>) -> Option<ReactorAsk> {
+    use display_core::reactor_main as m;
+    match action {
+        m::AUTO => Some(ReactorAsk::SetManual(false)),
+        m::MANUAL => Some(ReactorAsk::SetManual(true)),
+        m::INJECTION => value.map(|v| ReactorAsk::SetInjection(v as f64 * 100.0)),
+        m::CONVERTER => value.map(|v| ReactorAsk::SetConverter(v as f64 * 100.0)),
+        _ => None,
+    }
+}
+
 /// The presses on engineering's screens become the host's asks.
 pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<Items>, mut help: ResMut<ReactorHelp>) {
     for c in clicks.read() {
@@ -931,6 +945,8 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
                 "conv_set" => c.value.map(|v| ReactorAsk::SetConverter(v as f64 * 100.0)),
                 _ => None,
             }
+        } else if c.panel == MAIN_ID {
+            main_ask(&c.action, c.value)
         } else if c.panel == PUMP_ID {
             match c.action.as_str() {
                 "pump_off" => Some(ReactorAsk::SetPumpMode(PumpMode::Off)),
@@ -996,6 +1012,8 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     // SP-01 is on whatever the master; the others show OFF while the master is off (`show`).
     panels.set(startup_screen::ID, startup_screen::panel(r));
     let readout = if help.0 { readout_help_panel(r, max_kw) } else { readout_panel_at(r, max_kw, time.elapsed_secs_f64()) };
+    // The main screen draws its own dark and word faces (NO POWER, ...), so it does not go through `show`. TODO(#319): the run-up flag.
+    panels.set(MAIN_ID, display_core::reactor_main::panel(r, max_kw, false));
     show(&mut panels, r, READOUT_ID, bot_tagged(readout, manned(&items, BotStation::Reactor)));
     show(&mut panels, r, PUMP_ID, bot_tagged(pump_panel_at(r, angle, blink), manned(&items, BotStation::Reactor)));
     show(&mut panels, r, JUNCTION_ID, bot_tagged(junction_panel(r, max_kw), manned(&items, BotStation::Power)));
@@ -1042,6 +1060,30 @@ mod tests {
         let dark = status_panel(Some(&ReactorNews { powered: false, eject_armed: true, ..status_news() }), 2000.0, true);
         assert!(dark.find("eject").is_some(), "EJECT with the cover open and no power");
         assert!(status_panel(None, 2000.0, true).find("arm_eject").is_some(), "no snapshot yet: the button still works");
+    }
+
+    /// The main screen's sliders move the sim's set points in MANUAL; AUTO ignores them (#317).
+    #[test]
+    fn the_main_screens_sliders_move_the_set_points_in_manual_and_auto_ignores_them() {
+        use crate::dev_area::ship::{ReactorCounts, ReactorSim};
+        let cfg = reactor_core::Tuning::default();
+        let mut s = ReactorSim::new(&cfg);
+        let mut counts = ReactorCounts::default();
+        let mut press = |s: &mut ReactorSim, action: &str, v: Option<f32>| {
+            if let Some(a) = main_ask(action, v) {
+                crate::dev_area::engineering::asks::apply(s, a, &cfg, &mut counts);
+            }
+        };
+        press(&mut s, display_core::reactor_main::MANUAL, None);
+        assert!(s.manual);
+        press(&mut s, display_core::reactor_main::INJECTION, Some(0.7));
+        press(&mut s, display_core::reactor_main::CONVERTER, Some(0.25));
+        assert!((s.injection - 70.0).abs() < 1e-4 && (s.converter - 25.0).abs() < 1e-4, "{} {}", s.injection, s.converter);
+        press(&mut s, display_core::reactor_main::AUTO, None);
+        assert!(!s.manual);
+        press(&mut s, display_core::reactor_main::INJECTION, Some(0.1));
+        press(&mut s, display_core::reactor_main::CONVERTER, Some(0.9));
+        assert!((s.injection - 70.0).abs() < 1e-4 && (s.converter - 25.0).abs() < 1e-4, "AUTO ignores the sliders");
     }
 
     #[test]

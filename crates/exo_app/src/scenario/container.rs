@@ -1,5 +1,5 @@
 //! The container window (#310) at the storage crate: open with F, click and drag stacks through the
-//! host's authority (nothing lost or duplicated), refusals, Esc, the lock against a second player,
+//! host's authority (nothing lost or duplicated), refusals, one Esc closes (also mid-drag), the lock against a second player,
 //! walking away.
 use super::*;
 use crate::container_window::{place_centre, ContainerSpecs, ContainerWindow, Place};
@@ -195,9 +195,9 @@ pub(super) fn container_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
         true
     }));
 
-    // Esc cancels a drag, a second Esc closes; closing mid-drag loses nothing.
+    // One Esc closes the window, also mid-drag: nothing moves, the crate is free, the pause menu stays shut.
     s.push(Box::new(|w, c| {
-        begin(w, c, "container: Esc cancels a drag");
+        begin(w, c, "container: Esc closes the window mid-drag");
         let slot = bar_slot_of(w, "wrench").expect("the wrench");
         pointer_at(w, Some(centre(w, Place::Bar(slot))), true);
         true
@@ -212,12 +212,17 @@ pub(super) fn container_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str
         tap(w, KeyCode::Escape);
         true
     }));
-    s.push(wait(0.2));
+    s.push(wait(0.3));
     s.push(Box::new(|w, c| {
-        pointer_at(w, Some(centre(w, Place::Box(7))), false);
-        check(c, cw(w).rack == Some(CRATE) && !cw(w).dragging() && mine(w) == 3 && in_bar(w, "wrench") == 1, "container: Esc cancelled the drag, the window stays, nothing moved".into());
+        pointer_at(w, None, false);
+        check(c, cw(w).rack.is_none() && !cw(w).dragging() && !w.resource::<InventoryUi>().open, "container: one Esc closed the window and the drag".into());
+        check(c, mine(w) == 3 && in_bar(w, "wrench") == 1, "container: nothing moved or got lost".into());
+        check(c, items(w).host.locks.is_empty(), "container: the crate is free".into());
+        check(c, w.get_resource::<crate::menu::Menu>().is_none_or(|m| m.screen == crate::menu::Screen::None), "container: the pause menu stayed shut on that Esc".into());
+        end(w, c, "Esc mid-drag".into());
         true
     }));
+    s.push(super::items::tap_then("container: F opens it again", KeyCode::KeyF, |w| cw(w).rack == Some(CRATE)));
     s.push(wait(0.2));
 
     // The lock: a second player cannot open nor move while the window is open.

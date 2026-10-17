@@ -470,6 +470,7 @@ fn keys(
     controls: Option<Res<crate::controls::Controls>>,
     display: Option<Res<crate::displays::ActiveDisplay>>,
     container: Option<Res<crate::container_window::ContainerWindow>>,
+    inventory: Option<Res<crate::items::InventoryUi>>,
 ) {
     let text: Vec<KeyboardInput> = typed.read().cloned().collect();
     if let Some(edit) = &mut input.editing {
@@ -502,8 +503,8 @@ fn keys(
         return;
     }
     // Escape at a display leaves the display (`displays`), it does not pause.
-    // The container window takes Escape too (it closes, or cancels a drag).
-    let at_display = display.is_some_and(|d| d.using().is_some()) || container.is_some_and(|c| c.rack.is_some());
+    // The Tab inventory and the container window take Escape too: one press closes them, even mid-drag.
+    let at_display = display.is_some_and(|d| d.using().is_some()) || container.is_some_and(|c| c.rack.is_some()) || inventory.is_some_and(|u| u.open);
     if keys.just_pressed(KeyCode::Escape) && !(at_display && menu.screen == Screen::None) {
         menu.screen = match menu.screen {
             Screen::None => Screen::Paused,

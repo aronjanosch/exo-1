@@ -1,11 +1,10 @@
 //! The container window (#310): F on a locker, box or crate opens an inventory window over the
 //! view, the container's places on top and the Tab bar below. A click moves a whole stack to the
-//! other side, a drag puts it on a chosen place (accepted or refused with the reason), Esc cancels
-//! a drag, F, Esc or Tab closes. Every move is a request through the host's authority
+//! other side, a drag puts it on a chosen place (accepted or refused with the reason), F, Esc or Tab closes (Esc also mid-drag). Every move is a request through the host's authority
 //! (`item_core`), so it works for clients; one player has a container open at a time (the host's
 //! lock), a second one's prompt says IN USE. Layout and colours follow the design in the
 //! concept repo's container-window spec (reference screen 1920x1080, sizes in logical pixels).
-use crate::controls::{Actions, Controls, Tap};
+use crate::controls::Controls;
 use crate::crew_hud::{abs, edit, hud_caps, hud_text, set_bg, set_border, set_dashes, set_display, set_text, set_text_colour, spawn_dashes, HudFonts, HudPart};
 use crate::dev_area::gear::{is_gear_use, MaskWorn};
 use crate::dev_area::DevBox;
@@ -372,7 +371,6 @@ fn container_input(
     mut cw: ResMut<ContainerWindow>,
     mut ui: ResMut<InventoryUi>,
     mut items: ResMut<Items>,
-    mut actions: ResMut<Actions>,
     mut controls: ResMut<Controls>,
     (window, look): (Res<HudWindow>, Res<crate::displays::DisplayLook>),
     specs: Res<ContainerSpecs>,
@@ -409,16 +407,6 @@ fn container_input(
     }
     if cw.flash.as_ref().is_some_and(|(_, _, left)| *left <= 0.0) {
         cw.flash = None;
-    }
-    if rack.is_some() && actions.take_tap(Tap::DisplayLeave) {
-        if cw.drag.take().is_some() {
-            cw.moved = false;
-            cw.over = None;
-            ui.drag_from = None;
-        } else {
-            cw.close(now, &mut items, &mut ui);
-            return;
-        }
     }
     let me_worn = worn_slot(&worn, items.me());
     let n = rack.and_then(|r| items.client.racks.get(&r)).map_or(0, |c| c.len()).min(MAX_PLACES);

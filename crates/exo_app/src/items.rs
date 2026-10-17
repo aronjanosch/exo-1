@@ -553,6 +553,12 @@ pub fn item_input(
     if busy {
         ui.open = false;
     }
+    // One Esc closes the Tab inventory and, with it, the container window (it closes on `!ui.open`),
+    // also mid-drag: a drag only moves on release, so the stack stays where it was.
+    if ui.open && actions.take_tap(Tap::DisplayLeave) {
+        ui.open = false;
+        ui.drag_from = None;
+    }
     if !dev.is_some_and(|d| d.open) {
         for (i, t) in Tap::SLOTS.iter().enumerate() {
             if actions.take_tap(*t) && !busy {

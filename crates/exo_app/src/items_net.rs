@@ -144,8 +144,8 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
                         items.repair_asks.push((slot, a));
                         true
                     }
-                    Some(ToHost::Pull) => {
-                        items.pull_asks.push(slot);
+                    Some(ToHost::Pull(from)) => {
+                        items.pull_asks.push((slot, from));
                         true
                     }
                     Some(ToHost::Treat(t)) => {
@@ -328,8 +328,8 @@ pub fn items_net_out(
             NetOut::GameOver => {
                 net.send_reliable(None, &wire::encode(&ToClient::GameOver));
             }
-            NetOut::Pull => {
-                net.send_reliable(None, &wire::encode(&ToHost::Pull));
+            NetOut::Pull(from) => {
+                net.send_reliable(None, &wire::encode(&ToHost::Pull(from)));
             }
             NetOut::Treat(t) => {
                 net.send_reliable(None, &wire::encode(&ToHost::Treat(t)));

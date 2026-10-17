@@ -7,7 +7,8 @@
 //! - Core eject: `cover_eject` guards `lever_eject`. The lever with the cover open throws the core out
 //!   (this replaces the old screen's ARM step: the cover is the arm). The old screen's ARM and EJECT still work (#321 removes them).
 //! - `slot_1`, `slot_2`: the two canister slots. They show the canisters the reactor holds (`ReactorNews::canisters`);
-//!   F with a canister in hand loads it (`Request::Use`, the item system's load), F with empty hands takes one out (the brake).
+//!   F with a canister in hand loads it into the slot looked at (`Request::Load`), F with empty hands takes that slot's one out
+//!   (the brake, `ToHost::Pull(Some(slot))`). A taken slot refuses a load, an empty one a pull.
 //! - Not wired here (#319): `lever_start`, `toggle_boot_1..3`, the prime lamps. `EmergencyStop` is the hook: a SCRAM and an eject send it,
 //!   and #319 drops the start lever and the three boot toggles to off with `Controls::drop_to_off` when it reads it.
 //!
@@ -306,13 +307,29 @@ pub fn describe(i: usize, m: &Machine, hand_has_canister: bool) -> Describe {
         LEVER_EJECT => Describe { verb: "Pull", name: "Core eject lever", blocked: shut(COVER_EJECT).then_some("Cover shut") },
         _ => {
             let (name, seated) = if p.name == SLOTS[0] { ("Canister slot 1", m.controls.seated(SLOTS[0])) } else { ("Canister slot 2", m.controls.seated(SLOTS[1])) };
-            match (seated.is_some(), hand_has_canister) {
-                (false, true) => Describe { verb: "Insert", name, blocked: None },
-                (false, false) => Describe { verb: "Insert", name, blocked: Some("Needs a canister") },
-                (true, false) => Describe { verb: "Take out", name, blocked: None },
-                (true, true) => Describe { verb: "Insert", name, blocked: Some("Slot taken") },
+            match slot_action(seated.is_some(), hand_has_canister) {
+                SlotAction::Load => Describe { verb: "Insert", name, blocked: None },
+                SlotAction::Pull => Describe { verb: "Take out", name, blocked: None },
+                SlotAction::Refuse(why) => Describe { verb: if hand_has_canister { "Insert" } else { "Take out" }, name, blocked: Some(why) },
             }
         }
+    }
+}
+
+/// What F does at a canister slot: the slot looked at decides, never the first free one or the one with most life.
+#[derive(Debug, PartialEq)]
+pub enum SlotAction {
+    Load,
+    Pull,
+    Refuse(&'static str),
+}
+
+pub fn slot_action(seated: bool, hand_has_canister: bool) -> SlotAction {
+    match (seated, hand_has_canister) {
+        (false, true) => SlotAction::Load,
+        (true, false) => SlotAction::Pull,
+        (true, true) => SlotAction::Refuse("Slot taken"),
+        (false, false) => SlotAction::Refuse("Slot empty"),
     }
 }
 
@@ -322,15 +339,15 @@ pub fn press(i: usize, items: &mut Items, now: f64) {
         items.ask_reactor(ReactorAsk::Press(i as u8));
         return;
     }
-    let hand = holds_canister(items);
-    let seated = items.reactor.is_some_and(|r| r.canisters[i - PRESS.len()].canister.is_some());
-    match (seated, hand) {
-        (false, true) => {
-            let slot = items.client.view.selected;
-            let _ = items.request(now, item_core::Request::Use { slot, target: crate::items::LOCAL });
+    let slot = i - PRESS.len();
+    let seated = items.reactor.is_some_and(|r| r.canisters[slot].canister.is_some());
+    match slot_action(seated, holds_canister(items)) {
+        SlotAction::Load => {
+            let bar = items.client.view.selected;
+            let _ = items.request(now, item_core::Request::Load { slot: bar, into: slot as u8 });
         }
-        (true, false) => items.ask_pull(),
-        _ => {}
+        SlotAction::Pull => items.ask_pull_from(Some(slot as u8)),
+        SlotAction::Refuse(_) => {}
     }
 }
 
@@ -520,5 +537,18 @@ mod tests {
         assert_eq!(glow_target(&ReactorNews { ejected: true, ..on }, 2000.0), 0.0);
         assert!(glow_target(&on, 2000.0) > GLOW_IDLE);
         assert_eq!(glow_target(&on, 0.0), GLOW_IDLE, "no NaN with no max output");
+    }
+}
+
+#[cfg(test)]
+mod slot_tests {
+    use super::*;
+
+    #[test]
+    fn f_at_a_slot_follows_the_slot_and_the_hand() {
+        assert_eq!(slot_action(false, true), SlotAction::Load);
+        assert_eq!(slot_action(true, false), SlotAction::Pull);
+        assert_eq!(slot_action(true, true), SlotAction::Refuse("Slot taken"));
+        assert_eq!(slot_action(false, false), SlotAction::Refuse("Slot empty"));
     }
 }

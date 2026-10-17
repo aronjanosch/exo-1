@@ -59,6 +59,9 @@ pub enum Request {
     /// Use one item of a slot on `target` (a player's slot; the user's own for itself). What the
     /// item does is the host's to apply (`Event::Used`).
     Use { slot: usize, target: PlayerId },
+    /// Load the antimatter canister of a bar slot into reactor canister slot `into` (the one the player looks at, #316):
+    /// a `Use` on the player themself whose canister goes to that slot, not the first free one.
+    Load { slot: usize, into: u8 },
     /// Hang the item of a slot on a rack and take a spare from it (Barotrauma's extinguisher
     /// bracket): the spare with the best condition of the same kind. An empty slot takes one.
     Swap { slot: usize, rack: RackId },
@@ -380,6 +383,11 @@ impl Host {
                     out.push(Event::Used { player: a.player, target: *target, effect });
                 }
             }),
+            Request::Load { slot, .. } => use_one(&self.defs, &mut inv, *slot).map(|effect| {
+                if let Some(effect) = effect {
+                    out.push(Event::Used { player: a.player, target: a.player, effect });
+                }
+            }),
             Request::CollectWear { item } => match self.loose.get(item) {
                 None => Err(Reject::Gone),
                 Some(l) => collect_wear(&mut inv, l.stack.clone()).map(|()| {
@@ -646,7 +654,7 @@ fn predict(defs: &ItemDefs, loose: &BTreeMap<LooseId, Loose>, racks: &BTreeMap<R
         }
         Request::Select { slot } => view.select(*slot)?,
         Request::Move { from, to } => view.move_slot(*from, *to)?,
-        Request::Use { slot, .. } => {
+        Request::Use { slot, .. } | Request::Load { slot, .. } => {
             use_one(defs, view, *slot)?;
         }
         Request::CollectWear { item } => {

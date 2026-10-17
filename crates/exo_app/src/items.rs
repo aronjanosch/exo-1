@@ -80,8 +80,8 @@ pub enum NetOut {
     Rescue(Option<PlayerId>),
     /// Client to host: the coolant refill hold is running (true) or has stopped (false).
     Refill(bool),
-    /// Client to host: the brake on the reactor; the host knows the sender.
-    Pull,
+    /// Client to host: the brake on the reactor (the slot to pull from, None: the most life); the host knows the sender.
+    Pull(Option<u8>),
     RepairRefused { to: PlayerId },
     /// Client to host: the station the active display shows, or none (r43, the bots' occupancy).
     Using(Option<BotStation>),
@@ -124,7 +124,7 @@ pub struct Items {
     /// Treatment holds by player, to apply here (host and one process); a client sends its own.
     pub treat_asks: Vec<(PlayerId, Option<PlayerId>)>,
     /// Brakes by player, to apply here; a client sends its own. The canister goes to that player.
-    pub pull_asks: Vec<PlayerId>,
+    pub pull_asks: Vec<(PlayerId, Option<u8>)>,
     pub rescue_asks: Vec<(PlayerId, Option<PlayerId>)>,
     /// Host: the coolant refill holds (the player, running or not), for the public status.
     pub refill_asks: Vec<(PlayerId, bool)>,
@@ -216,10 +216,15 @@ impl Items {
     }
 
     pub fn ask_pull(&mut self) {
+        self.ask_pull_from(None);
+    }
+
+    /// The brake on reactor slot `slot` (F at the slot, #316), or on the canister with the most life (None).
+    pub fn ask_pull_from(&mut self, slot: Option<u8>) {
         if self.role == Role::Client {
-            self.net_out.push(NetOut::Pull);
+            self.net_out.push(NetOut::Pull(slot));
         } else {
-            self.pull_asks.push(self.me());
+            self.pull_asks.push((self.me(), slot));
         }
     }
 
@@ -413,11 +418,16 @@ impl Items {
             }
             // What the slot held before the use: an antimatter canister's kind and life go with it.
             let held = match &a.req {
-                Request::Use { slot, .. } => self.host.inventory(a.player).slot(*slot).map(|s| (s.item.kind.as_str().to_string(), s.item.condition.unwrap_or(0.0))),
+                Request::Use { slot, .. } | Request::Load { slot, .. } => self.host.inventory(a.player).slot(*slot).map(|s| (s.item.kind.as_str().to_string(), s.item.condition.unwrap_or(0.0))),
                 _ => None,
             };
             let used_slot = match &a.req {
-                Request::Use { slot, .. } => Some(*slot),
+                Request::Use { slot, .. } | Request::Load { slot, .. } => Some(*slot),
+                _ => None,
+            };
+            // The reactor slot a load names (F at a slot); a plain use puts the canister into the first free one.
+            let load_into = match &a.req {
+                Request::Load { into, .. } => Some(*into),
                 _ => None,
             };
             let evs = if placement_ok(&a) { self.host.handle(&a) } else { vec![Event::Rejected { player: a.player, seq: a.seq, why: Reject::Invalid }] };
@@ -435,7 +445,7 @@ impl Items {
                     if effect == crate::dev_area::engineering::canisters::LOAD
                         && let Some((item, life)) = held.clone()
                     {
-                        self.canister_loads.push(CanisterLoad { player: *player, item, life });
+                        self.canister_loads.push(CanisterLoad { player: *player, item, life, into: load_into });
                     }
                 }
                 self.publish(now, ev, Some(a.player));
@@ -468,6 +478,8 @@ pub struct CanisterLoad {
     pub item: String,
     /// Its life when it was loaded (0..100).
     pub life: f64,
+    /// The reactor slot it was loaded into (F at a slot, #316); None: the first free one.
+    pub into: Option<u8>,
 }
 
 /// A loose item entity: the host's id once known; a drop shown before the host confirmed it
@@ -1202,11 +1214,11 @@ mod tests {
         let mut host = Items::load();
         host.role = Role::Host;
         host.ask_pull();
-        assert_eq!(host.pull_asks, vec![host.me()]);
+        assert_eq!(host.pull_asks, vec![(host.me(), None)]);
         let mut client = Items::load();
         client.role = Role::Client;
         client.ask_pull();
         assert!(client.pull_asks.is_empty(), "a client sends it, it does not apply it");
-        assert!(client.net_out.iter().any(|n| matches!(n, NetOut::Pull)));
+        assert!(client.net_out.iter().any(|n| matches!(n, NetOut::Pull(None))));
     }
 }

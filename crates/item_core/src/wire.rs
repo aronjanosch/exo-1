@@ -131,6 +131,8 @@ pub enum RoomAsk {
     ToggleBridgeDoor,
     /// CP-01's bridge door control (r44): true opens the bridge door, false shuts it.
     SetBridgeDoor(bool),
+    /// F on the equipment room's door (#309): toggles it.
+    ToggleEquipDoor,
 }
 
 /// A request to the host about the reactor. Set fission and set turbine only count on
@@ -714,6 +716,8 @@ pub struct RoomNews {
     pub alarm: Alarm,
     /// The bridge door is open (r44).
     pub bridge_door: bool,
+    /// The equipment room's door to the corridor is open (#309).
+    pub equip_door: bool,
 }
 
 /// A player's vitals for their own display. Shares are 0..1 of the maximum before any
@@ -772,7 +776,7 @@ mod tests {
 
     #[test]
     fn room_news_and_asks_travel_as_they_are() {
-        let news = RoomNews { door_open: true, alarm: Alarm::Danger, bridge_door: true };
+        let news = RoomNews { door_open: true, alarm: Alarm::Danger, bridge_door: true, equip_door: true };
         let back: RoomNews = match decode::<ToClient>(&encode(&ToClient::Room(news))).expect("decodes") {
             ToClient::Room(r) => r,
             _ => panic!("the room message"),
@@ -793,6 +797,7 @@ mod tests {
             _ => panic!("the room request"),
         };
         assert_eq!(bridge, RoomAsk::SetBridgeDoor(true));
+        assert!(decode::<ToHost>(&encode(&ToHost::Room(RoomAsk::ToggleEquipDoor))).is_some_and(|m| matches!(m, ToHost::Room(RoomAsk::ToggleEquipDoor))));
         assert!(decode::<ToHost>(&encode(&ToHost::Room(RoomAsk::ToggleBridgeDoor))).is_some_and(|m| matches!(m, ToHost::Room(RoomAsk::ToggleBridgeDoor))));
     }
 

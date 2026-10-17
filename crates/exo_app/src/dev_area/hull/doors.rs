@@ -14,6 +14,12 @@ pub struct BridgeDoor {
 }
 
 
+/// The equipment room's door to the corridor (#309): open, as `BridgeDoor`.
+#[derive(Resource, Default, Debug, Clone, Copy, PartialEq)]
+pub struct EquipDoor {
+    pub open: bool,
+}
+
 #[derive(Resource, Default, Debug, Clone, Copy, PartialEq)]
 pub struct EngineDoor {
     pub open: bool,
@@ -36,7 +42,15 @@ pub struct BridgeSlab {
     pub progress: f64,
 }
 
-pub fn room_state(mut items: ResMut<Items>, mut alarm: ResMut<ShipAlarm>, mut door: ResMut<EngineDoor>, mut bridge: ResMut<BridgeDoor>) {
+/// The equipment door's slab: sinks into the floor when open (0 shut, 1 open).
+#[derive(Component, Clone, Debug)]
+pub struct EquipSlab {
+    pub shut: DVec3,
+    pub sink: DVec3,
+    pub progress: f64,
+}
+
+pub fn room_state(mut items: ResMut<Items>, mut alarm: ResMut<ShipAlarm>, mut door: ResMut<EngineDoor>, mut bridge: ResMut<BridgeDoor>, mut equip: ResMut<EquipDoor>) {
     let asks = std::mem::take(&mut items.room_asks);
     match items.role {
         Role::Client => {
@@ -45,6 +59,7 @@ pub fn room_state(mut items: ResMut<Items>, mut alarm: ResMut<ShipAlarm>, mut do
             }
             door.open = items.room.door_open;
             bridge.open = items.room.bridge_door;
+            equip.open = items.room.equip_door;
             alarm.level = items.room.alarm;
         }
         Role::Host | Role::Local => {
@@ -57,9 +72,10 @@ pub fn room_state(mut items: ResMut<Items>, mut alarm: ResMut<ShipAlarm>, mut do
                     // The bridge door (r44): its panel toggles it, CP-01 sets it.
                     RoomAsk::ToggleBridgeDoor => bridge.open = !bridge.open,
                     RoomAsk::SetBridgeDoor(open) => bridge.open = open,
+                    RoomAsk::ToggleEquipDoor => equip.open = !equip.open,
                 }
             }
-            let now = RoomNews { door_open: door.open, alarm: alarm.level, bridge_door: bridge.open };
+            let now = RoomNews { door_open: door.open, alarm: alarm.level, bridge_door: bridge.open, equip_door: equip.open };
             if now != items.room {
                 items.room = now;
                 if items.role == Role::Host {
@@ -96,8 +112,21 @@ pub fn bridge_step(time: Res<Time>, bridge: Res<BridgeDoor>, mut air: ResMut<Shi
     }
 }
 
+/// The equipment door's slab follows the door's state and its gap opens by the slab's progress.
+pub fn equip_step(time: Res<Time>, equip: Res<EquipDoor>, mut air: ResMut<ShipAir>, mut slabs: Query<(&mut EquipSlab, &mut Position)>) {
+    let dt = time.delta_secs_f64();
+    let goal = if equip.open { 1.0 } else { 0.0 };
+    let step = dt / DOOR_TIME;
+    for (mut slab, mut pos) in &mut slabs {
+        slab.progress = if slab.progress < goal { (slab.progress + step).min(goal) } else { (slab.progress - step).max(goal) };
+        pos.0 = slab.shut + slab.sink * slab.progress;
+        let gap = air.equip_door;
+        air.deck.set_open(gap, slab.progress);
+    }
+}
+
 /// Once per planet: the engine door's and the bridge door's slabs, and the airlock's doors.
-pub(super) fn spawn_doors(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<DevArea>, door: Res<EngineDoor>, bridge: Res<BridgeDoor>, mut done: Local<Option<warp_core::PlanetId>>) {
+pub(super) fn spawn_doors(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<DevArea>, door: Res<EngineDoor>, bridge: Res<BridgeDoor>, equip: Res<EquipDoor>, mut done: Local<Option<warp_core::PlanetId>>) {
     if *done == Some(planet.id) {
         return;
     }
@@ -140,6 +169,27 @@ pub(super) fn spawn_doors(mut commands: Commands, planet: Res<PlanetRes>, mut ar
             CollisionLayers::new(Layer::World, LayerMask::ALL),
             DevBox { id: BRIDGE_DOOR.into(), colour: [0.55, 0.42, 0.2], size },
             BridgeSlab { shut, sink, progress },
+        ))
+        .id();
+    area.entities.push(e);
+    // The equipment room's door (#309): a slab in its west wall's opening, sinking into the floor.
+    let d = EQUIP_DOOR_SIZE;
+    let (ground, up) = frame.ground(&planet, EQUIP_DOOR_AT[0], EQUIP_DOOR_AT[1], 0.0);
+    let rot = frame.rotation(up, 0.0);
+    let (bottom, top) = span(0.0, d[1]);
+    let shut = ground + up * ((bottom + top) * 0.5);
+    let size = DVec3::new(d[0], top - bottom, d[2]);
+    let progress = if equip.open { 1.0 } else { 0.0 };
+    let sink = -up * d[1];
+    let e = commands
+        .spawn((
+            RigidBody::Kinematic,
+            Collider::cuboid(size.x, size.y, size.z),
+            Position(shut + sink * progress),
+            Rotation(rot),
+            CollisionLayers::new(Layer::World, LayerMask::ALL),
+            DevBox { id: EQUIP_DOOR.into(), colour: [0.55, 0.42, 0.2], size },
+            EquipSlab { shut, sink, progress },
         ))
         .id();
     area.entities.push(e);

@@ -38,7 +38,7 @@ pub fn airlock_audit(air: Option<Res<ShipAir>>, mut audit: ResMut<AirlockAudit>)
         audit.open_while_cycling += 1;
     }
     // The ship's rooms only: the outside is a source of air, not part of the count.
-    let total: f64 = [air.engine, air.corridor, air.airlock, air.bridge].iter().map(|&r| air.deck.room(r).oxygen).sum();
+    let total: f64 = [air.engine, air.corridor, air.equipment, air.airlock, air.bridge].iter().map(|&r| air.deck.room(r).oxygen).sum();
     if !total.is_finite() {
         audit.air_bad += 1;
     }

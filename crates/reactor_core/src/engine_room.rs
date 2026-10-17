@@ -544,6 +544,9 @@ pub struct AirSave {
     pub lock: AirlockSave,
     pub cycle_air: f64,
     pub door_open: [f64; 2],
+    /// The equipment room's oxygen in m³ (#309). Absent in older saves: it starts at the corridor's fraction.
+    #[serde(default)]
+    pub equipment: Option<f64>,
 }
 
 /// The engine room's save section (r42, #128): the room, its air, and the switches the host keeps

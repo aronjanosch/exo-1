@@ -20,7 +20,7 @@ pub const TURRET_ROOM: Zone = Zone { name: "turret room", centre: [-7.7, -5.4], 
 pub const LAB_ROOM: Zone = Zone { name: "lab room", centre: [-0.4, -5.4], half: [4.0, 3.0] };
 pub const MEDBAY_ROOM: Zone = Zone { name: "medbay room", centre: [-5.7, -13.85], half: [3.0, 2.85] };
 /// The equipment room (#309): an empty 3.5 x 3 m room at the corridor's east end, between the corridor
-/// (a plain opening, no door) and the airlock's inner door. TODO(initiator): size and what goes in.
+/// (a sliding door, #309) and the airlock's inner door. TODO(initiator): size and what goes in.
 pub const EQUIPMENT: Zone = Zone { name: "equipment room", centre: [5.65, -9.7], half: [1.75, 1.5] };
 /// The airlock: a 2 x 2 m room east of the equipment room; its outer door is the ship's way out.
 pub const AIRLOCK: Zone = Zone { name: "airlock", centre: [8.7, -9.7], half: [1.0, 1.0] };
@@ -39,6 +39,10 @@ pub const BRIDGE_DOOR_SIZE: [f64; 3] = [2.0, ROOM_HEIGHT, WALL];
 pub const INNER_DOOR_AT: [f64; 2] = [7.55, -9.7];
 pub const OUTER_DOOR_AT: [f64; 2] = [9.85, -9.7];
 pub const AIRLOCK_DOOR_SIZE: [f64; 3] = [WALL, ROOM_HEIGHT, 2.0];
+/// The equipment room's door to the corridor (#309): its slab's centre when shut, in the west wall's
+/// 2 m opening. It sinks into the floor when open, as the airlock's doors do.
+pub const EQUIP_DOOR_AT: [f64; 2] = [3.75, -9.7];
+pub const EQUIP_DOOR_SIZE: [f64; 3] = [WALL, ROOM_HEIGHT, 2.0];
 /// The rooms' height (m); every room has a roof.
 pub const ROOM_HEIGHT: f64 = 3.2;
 /// Thickness of the walls and the doors (m).
@@ -149,6 +153,7 @@ pub const SCREENS: &[Mount] = &[
 
 pub const DOOR: &str = "engine_door";
 pub const BRIDGE_DOOR: &str = "bridge_door";
+pub const EQUIP_DOOR: &str = "equipment_door";
 pub const REACTOR: &str = "engine_reactor";
 pub const COOLANT_PUMP: &str = "engine_coolant_pump";
 pub const JUNCTION_BOX: &str = "engine_junction_box";
@@ -156,12 +161,14 @@ pub const OXYGEN_GENERATOR: &str = "engine_oxygen_generator";
 pub const TURRET_GUN: &str = "turret_gun";
 
 /// Where a point is, for the air: each room of the ship, or outside. The turret room, the lab, the
-/// medbay and the equipment room open onto the corridor without a door, so they breathe the corridor's air.
+/// medbay open onto the corridor without a door, so they breathe the corridor's air.
 /// TODO(initiator): each gets its own air once the wire's room count grows (`ROOMS`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Place {
     Engine,
     Corridor,
+    /// The equipment room: its own air behind its door (#309).
+    Equipment,
     Airlock,
     Bridge,
     Outside,
@@ -170,8 +177,10 @@ pub enum Place {
 pub fn place_of(p: [f64; 2]) -> Place {
     if ROOM.contains(p) {
         Place::Engine
-    } else if CORRIDOR.contains(p) || TURRET_ROOM.contains(p) || LAB_ROOM.contains(p) || MEDBAY_ROOM.contains(p) || EQUIPMENT.contains(p) {
+    } else if CORRIDOR.contains(p) || TURRET_ROOM.contains(p) || LAB_ROOM.contains(p) || MEDBAY_ROOM.contains(p) {
         Place::Corridor
+    } else if EQUIPMENT.contains(p) {
+        Place::Equipment
     } else if AIRLOCK.contains(p) {
         Place::Airlock
     } else if BRIDGE.contains(p) {
@@ -181,8 +190,10 @@ pub fn place_of(p: [f64; 2]) -> Place {
     }
 }
 
-/// The floor area of the rooms that share the corridor's air (m²).
-pub const CORRIDOR_AREA: f64 = 4.0 * (CORRIDOR.half[0] * CORRIDOR.half[1] + TURRET_ROOM.half[0] * TURRET_ROOM.half[1] + LAB_ROOM.half[0] * LAB_ROOM.half[1] + MEDBAY_ROOM.half[0] * MEDBAY_ROOM.half[1] + EQUIPMENT.half[0] * EQUIPMENT.half[1]);
+/// The floor area of the rooms that share the corridor's air (m²): the equipment room has its own.
+pub const CORRIDOR_AREA: f64 = 4.0 * (CORRIDOR.half[0] * CORRIDOR.half[1] + TURRET_ROOM.half[0] * TURRET_ROOM.half[1] + LAB_ROOM.half[0] * LAB_ROOM.half[1] + MEDBAY_ROOM.half[0] * MEDBAY_ROOM.half[1]);
+/// The equipment room's floor area (m²).
+pub const EQUIPMENT_AREA: f64 = 4.0 * EQUIPMENT.half[0] * EQUIPMENT.half[1];
 
 /// A static greybox part: a wall, a roof or a machine's housing (area metres, size x, height, z).
 pub struct Part {
@@ -230,10 +241,11 @@ const PARTS: &[Part] = &[
     Part { id: "turret_wall_east", at: [-4.55, -5.4], size: [WALL, H, 6.0], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "lab_wall_east", at: [3.75, -5.25], size: [WALL, H, 6.3], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "north_roof", at: [-7.7, -5.4], size: [23.2, WALL, 6.6], lift: H, colour: WALL_COLOUR },
-    // The equipment room (x 3.9..7.4, y -11.2..-8.2): open to the corridor at its west end (a 2 m
+    // The equipment room (x 3.9..7.4, y -11.2..-8.2): closed to the corridor at its west end by a door (a 2 m
     // opening, wall stubs either side), closed by the airlock's inner door at its east end.
     Part { id: "equipment_wall_north", at: [5.65, -8.05], size: [4.1, H, WALL], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "equipment_wall_south", at: [5.65, -11.35], size: [4.1, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    // (the west wall's 2 m opening is closed by the equipment door's slab)
     Part { id: "equipment_wall_west_north", at: [3.75, -8.3], size: [WALL, H, 0.8], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "equipment_wall_west_south", at: [3.75, -11.1], size: [WALL, H, 0.8], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "equipment_wall_east_north", at: [7.55, -8.3], size: [WALL, H, 0.8], lift: 0.0, colour: WALL_COLOUR },

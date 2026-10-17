@@ -1,5 +1,5 @@
 use crate::cargo::{crate_world, Crate, Crates};
-use crate::dev_area::{hull::doors::{BridgeDoor, BridgeSlab, EngineDoor, Slab}, layout::DOOR_REACH};
+use crate::dev_area::{hull::doors::{BridgeDoor, BridgeSlab, EngineDoor, EquipDoor, EquipSlab, Slab}, layout::DOOR_REACH};
 use crate::dev_area::DevBox;
 use crate::controls::{Actions, Bindings, Input, Tap};
 use crate::displays::{ActiveDisplay, DisplayPanel, USE_RANGE};
@@ -40,6 +40,8 @@ pub enum Target {
     Door { open: bool },
     /// The bridge door (r44): the same request for the bridge's door, a request to the room's bridge door.
     BridgeDoor { open: bool },
+    /// The equipment room's door to the corridor (#309): the same request.
+    EquipDoor { open: bool },
     /// The airlock's inner door (#309): an ordinary door from the ship while the airlock rests inside.
     AirlockDoor { open: bool },
     /// The same door while it is locked (the airlock rests outside, or a cycle runs): F shows LOCKED and does nothing.
@@ -108,7 +110,7 @@ fn verb(t: &Target, size: &str) -> String {
         Target::Item(_) => "pick up ".into(),
         Target::Rack(_) => "swap at the rack".into(),
         Target::AirlockLocked => "locked".into(),
-        Target::Door { open } | Target::BridgeDoor { open } | Target::AirlockDoor { open } => if *open { "close ".into() } else { "open ".into() },
+        Target::Door { open } | Target::BridgeDoor { open } | Target::EquipDoor { open } | Target::AirlockDoor { open } => if *open { "close ".into() } else { "open ".into() },
     }
 }
 
@@ -129,7 +131,7 @@ pub fn interaction(
     mut gp: ResMut<crate::gameplay::Gameplay>,
     (mut active, displays): (ResMut<ActiveDisplay>, Query<(Entity, &DisplayPanel)>),
     (time, mut items, loose, door, doors, bridge_door, bridge_doors): (Res<Time>, ResMut<Items>, Query<(Entity, &Crate, &LooseItem)>, Option<Res<EngineDoor>>, Query<&Position, With<Slab>>, Option<Res<BridgeDoor>>, Query<&Position, With<BridgeSlab>>),
-    (boxes, supply, airlock_doors): (Query<(&DevBox, &Position)>, Option<Res<crate::dev_area::fire::extinguisher::Supply>>, Query<(&crate::dev_area::hull::airlock::AirlockSlab, &Position)>),
+    (boxes, supply, airlock_doors, equip_door, equip_doors): (Query<(&DevBox, &Position)>, Option<Res<crate::dev_area::fire::extinguisher::Supply>>, Query<(&crate::dev_area::hull::airlock::AirlockSlab, &Position)>, Option<Res<EquipDoor>>, Query<&Position, With<EquipSlab>>),
 ) {
     let Ok(mut pl) = players.single_mut() else { return };
     let Some((ship_e, sp, sr)) = ships.iter().next().map(|(e, _, p, r)| (e, *p, *r)) else { return };
@@ -236,6 +238,7 @@ pub fn interaction(
         }
         let door_pick = (pl.ship.is_none() && doors.iter().any(|p| in_cone(eye, look, p.0, half, DOOR_REACH).is_some())).then_some(Target::Door { open: door.is_some_and(|d| d.open) });
         let bridge_pick = (pl.ship.is_none() && bridge_doors.iter().any(|p| in_cone(eye, look, p.0, half, DOOR_REACH).is_some())).then_some(Target::BridgeDoor { open: bridge_door.is_some_and(|d| d.open) });
+        let equip_pick = (pl.ship.is_none() && equip_doors.iter().any(|p| in_cone(eye, look, p.0, half, DOOR_REACH).is_some())).then_some(Target::EquipDoor { open: equip_door.is_some_and(|d| d.open) });
         // The airlock's inner door is the ship's door while the airlock rests inside and no cycle runs; else it is locked.
         let airlock_pick = items.reactor.and_then(|r| {
             let near = airlock_doors.iter().any(|(s, p)| s.door == reactor_core::Door::Inner && in_cone(eye, look, p.0, half, DOOR_REACH).is_some());
@@ -249,7 +252,7 @@ pub fn interaction(
             Some((_, e, r)) => Some(Target::Crate(e, r)),
             None => {
                 let rack_pick = pl.ship.is_none().then(|| supply.as_ref().and_then(|sup| boxes.iter().find_map(|(b, p)| sup.0.rack_in(&b.id).filter(|_| in_cone(eye, look, p.0, half, USE_RANGE).is_some()).map(Target::Rack)))).flatten();
-                item_target.map(Target::Item).or(panel_pick.map(Target::Panel)).or(door_pick).or(bridge_pick).or(airlock_pick).or(rack_pick)
+                item_target.map(Target::Item).or(panel_pick.map(Target::Panel)).or(door_pick).or(bridge_pick).or(equip_pick).or(airlock_pick).or(rack_pick)
             }
         }
     };
@@ -279,6 +282,7 @@ pub fn interaction(
         Some(Target::Seat | Target::SeatLocked) => Some(frame.to_world(SEAT_POS)),
         Some(Target::Door { .. }) => doors.iter().next().map(|p| p.0),
         Some(Target::BridgeDoor { .. }) => bridge_doors.iter().next().map(|p| p.0),
+        Some(Target::EquipDoor { .. }) => equip_doors.iter().next().map(|p| p.0),
         Some(Target::AirlockDoor { .. } | Target::AirlockLocked) => airlock_doors.iter().find(|(s, _)| s.door == reactor_core::Door::Inner).map(|(_, p)| p.0),
         Some(Target::Rack(r)) => supply.as_ref().and_then(|sup| boxes.iter().find(|(b, _)| sup.0.rack_in(&b.id) == Some(*r)).map(|(_, p)| p.0)),
         _ => None,
@@ -358,6 +362,7 @@ pub fn interaction(
                 }
                 Target::Door { open } => set(if *open { "Close" } else { "Open" }, "Engine room door".into()),
                 Target::BridgeDoor { open } => set(if *open { "Close" } else { "Open" }, "Bridge door".into()),
+                Target::EquipDoor { open } => set(if *open { "Close" } else { "Open" }, "Equipment room door".into()),
                 Target::AirlockDoor { open } => set(if *open { "Close" } else { "Open" }, "Airlock door".into()),
                 Target::AirlockLocked => {
                     set("Locked", "Airlock door".into());
@@ -447,6 +452,7 @@ pub fn interaction(
         Target::LeavePanel(_) => *active = ActiveDisplay::Idle,
         Target::Door { .. } => items.ask_room(item_core::wire::RoomAsk::ToggleDoor),
         Target::BridgeDoor { .. } => items.ask_room(item_core::wire::RoomAsk::ToggleBridgeDoor),
+        Target::EquipDoor { .. } => items.ask_room(item_core::wire::RoomAsk::ToggleEquipDoor),
         Target::AirlockDoor { .. } => items.ask_reactor(item_core::wire::ReactorAsk::Airlock(item_core::wire::AirlockAsk::ToggleInner)),
         Target::Rack(rack) => {
             let slot = items.client.view.selected;

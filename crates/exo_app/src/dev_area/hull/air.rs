@@ -15,16 +15,20 @@ pub struct ShipAir {
     pub deck: Deck,
     pub engine: RoomId,
     pub corridor: RoomId,
+    /// The equipment room (#309): its own air behind its door to the corridor; the airlock's inner door opens into it.
+    pub equipment: RoomId,
     pub airlock: RoomId,
     pub outside: RoomId,
     /// The bridge (r44): its volume is its size, and its door is a gap from the corridor.
     pub bridge: RoomId,
     pub door: GapId,
     pub bridge_door: GapId,
+    /// The equipment room's door: corridor to equipment room.
+    pub equip_door: GapId,
     /// One hole per wall section (r37's breach, by section in r40): opened and closed each step
     /// from the hull's openness.
     pub breaches: [LeakId; HULL_SECTIONS],
-    /// The airlock's inner door: corridor to airlock.
+    /// The airlock's inner door: equipment room to airlock.
     pub inner: GapId,
     /// The outer door onto the breathable outside (airlock to outside). Open only while the outside is not vacuum.
     pub outer: GapId,
@@ -44,6 +48,8 @@ pub struct ShipAir {
 
 /// m³: the engine room 10 x 8 x 3.2 m, the airlock 2 x 2 x 3.2 m; the outside has no end.
 const ROOM_VOLUME: f64 = 10.0 * 8.0 * ROOM_HEIGHT;
+/// m³: the equipment room 3.5 x 3 x 3.2 m.
+const EQUIPMENT_VOLUME: f64 = EQUIPMENT_AREA * ROOM_HEIGHT;
 /// The corridor's air fills the rooms that open onto it without a door (`layout::Place`).
 const CORRIDOR_VOLUME: f64 = CORRIDOR_AREA * ROOM_HEIGHT;
 const AIRLOCK_VOLUME: f64 = 2.0 * 2.0 * ROOM_HEIGHT;
@@ -65,14 +71,16 @@ impl ShipAir {
         let airlock = deck.add_room(AIRLOCK_VOLUME);
         let outside = deck.add_room(OUTSIDE_VOLUME);
         let bridge = deck.add_room(BRIDGE_VOLUME);
+        let equipment = deck.add_room(EQUIPMENT_VOLUME);
         let door = deck.add_gap(engine, corridor, DVec3::new(DOOR_AT[0], DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
         let bridge_door = deck.add_gap(corridor, bridge, DVec3::new(BRIDGE_DOOR_AT[0], BRIDGE_DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
-        let inner = deck.add_gap(corridor, airlock, DVec3::new(INNER_DOOR_AT[0], INNER_DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
+        let equip_door = deck.add_gap(corridor, equipment, DVec3::new(EQUIP_DOOR_AT[0], EQUIP_DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
+        let inner = deck.add_gap(equipment, airlock, DVec3::new(INNER_DOOR_AT[0], INNER_DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
         let outer = deck.add_gap(airlock, outside, DVec3::new(OUTER_DOOR_AT[0], OUTER_DOOR_AT[1], 0.0), DOOR_AREA, 0.0);
         let outer_leak = deck.add_leak(airlock, DVec3::new(OUTER_DOOR_AT[0], OUTER_DOOR_AT[1], 0.0), 0.0, 0.0);
         // Shut at the start: the area and the openness come from the reactor each step.
         let breaches = SECTION_CENTRES.map(|c| deck.add_leak(engine, DVec3::new(c[0], c[1], 0.0), 0.0, 0.0));
-        ShipAir { deck, engine, corridor, airlock, outside, bridge, door, bridge_door, breaches, inner, outer, outer_leak, lock: Airlock::new(t), vacuum: false, ambient: 1.0, cycle_air: 0.0, door_open: [0.0; 2] }
+        ShipAir { deck, engine, corridor, equipment, airlock, outside, bridge, door, bridge_door, equip_door, breaches, inner, outer, outer_leak, lock: Airlock::new(t), vacuum: false, ambient: 1.0, cycle_air: 0.0, door_open: [0.0; 2] }
     }
 
     /// The ship as the game starts it: as `with_tuning`, but the outer airlock door open, so a crew
@@ -85,6 +93,7 @@ impl ShipAir {
         match place {
             Place::Engine => self.engine,
             Place::Corridor => self.corridor,
+            Place::Equipment => self.equipment,
             Place::Airlock => self.airlock,
             Place::Bridge => self.bridge,
             Place::Outside => self.outside,
@@ -110,7 +119,7 @@ impl ShipAir {
         }
         self.cycle_air = match self.lock.direction() {
             Some(Dir::Out) => self.deck.room(self.airlock).oxygen,
-            Some(Dir::In) => self.deck.room(self.airlock).volume * self.deck.room(self.corridor).oxygen_fraction(),
+            Some(Dir::In) => self.deck.room(self.airlock).volume * self.deck.room(self.equipment).oxygen_fraction(),
             None => 0.0,
         };
         true
@@ -123,8 +132,8 @@ impl ShipAir {
         if share > 0.0 {
             let want = share * self.cycle_air;
             match self.lock.direction() {
-                Some(Dir::Out) => self.move_air(self.airlock, self.corridor, want),
-                Some(Dir::In) => self.move_air(self.corridor, self.airlock, want),
+                Some(Dir::Out) => self.move_air(self.airlock, self.equipment, want),
+                Some(Dir::In) => self.move_air(self.equipment, self.airlock, want),
                 None => {}
             }
         }
@@ -206,6 +215,7 @@ impl ShipAir {
             lock: self.lock.to_save(),
             cycle_air: self.cycle_air,
             door_open: self.door_open,
+            equipment: Some(self.deck.room(self.equipment).oxygen),
         }
     }
 
@@ -216,6 +226,8 @@ impl ShipAir {
         for (r, ox) in [a.engine, a.corridor, a.airlock, a.outside, a.bridge].into_iter().zip(s.oxygen) {
             a.deck.room_mut(r).oxygen = ox;
         }
+        let eq = s.equipment.unwrap_or_else(|| a.deck.room(a.equipment).volume * a.deck.room(a.corridor).oxygen_fraction());
+        a.deck.room_mut(a.equipment).oxygen = eq;
         a.lock = Airlock::from_save(t, &s.lock);
         a.cycle_air = s.cycle_air;
         a.door_open = s.door_open;
@@ -321,25 +333,25 @@ mod tests {
         }
     }
 
-    /// r40: an outward cycle pumps 95 % of the airlock's air back into the corridor; the rest stays.
+    /// r40: an outward cycle pumps 95 % of the airlock's air back into the equipment room; the rest stays.
     #[test]
-    fn the_airlock_pumps_its_air_back_into_the_corridor() {
+    fn the_airlock_pumps_its_air_back_into_the_equipment_room() {
         let mut a = ShipAir::new();
-        a.deck.breathe(a.corridor, 19.2);
+        a.deck.breathe(a.equipment, 19.2);
         let total = a.deck.total_oxygen();
-        let (lock, corridor) = (a.deck.room(a.airlock).oxygen, a.deck.room(a.corridor).oxygen);
+        let (lock, equipment) = (a.deck.room(a.airlock).oxygen, a.deck.room(a.equipment).oxygen);
         assert!(a.push(), "from inside the push starts the cycle out");
         cycle(&mut a, 4.5);
         assert!(a.lock.is_open(Door::Outer), "the outer door opens at the cycle's end");
-        let moved = a.deck.room(a.corridor).oxygen - corridor;
-        assert!((moved - 0.95 * lock).abs() < 1e-6, "the corridor gets 95 % of the airlock's air ({moved})");
+        let moved = a.deck.room(a.equipment).oxygen - equipment;
+        assert!((moved - 0.95 * lock).abs() < 1e-6, "the equipment room gets 95 % of the airlock's air ({moved})");
         assert!((a.deck.room(a.airlock).oxygen - 0.05 * lock).abs() < 1e-6, "5 % stays in the airlock");
         assert!((a.deck.total_oxygen() - total).abs() < 1e-9, "the air is conserved through the cycle");
     }
 
-    /// r40: the inward cycle fills the airlock from the corridor, and the air still adds up.
+    /// r40: the inward cycle fills the airlock from the equipment room, and the air still adds up.
     #[test]
-    fn the_inward_cycle_fills_the_airlock_from_the_corridor() {
+    fn the_inward_cycle_fills_the_airlock_from_the_equipment_room() {
         let mut a = ShipAir::at_start(&AirlockTuning::default());
         a.deck.breathe(a.airlock, 12.0);
         let total = a.deck.total_oxygen();
@@ -347,8 +359,8 @@ mod tests {
         assert!(a.push(), "from outside the push starts the cycle in");
         cycle(&mut a, 4.5);
         assert!(a.lock.is_open(Door::Inner));
-        assert!(a.deck.room(a.airlock).oxygen > before + 10.0, "the airlock is filled to the corridor's pressure");
-        assert!((a.deck.total_oxygen() - total).abs() < 1e-9, "the air came out of the corridor");
+        assert!(a.deck.room(a.airlock).oxygen > before + 10.0, "the airlock is filled to the equipment room's pressure");
+        assert!((a.deck.total_oxygen() - total).abs() < 1e-9, "the air came out of the equipment room");
     }
 
     /// r40: with the outside vacuum, the outer door opens onto space: the outside stays empty, the air
@@ -359,7 +371,7 @@ mod tests {
         a.set_ambient(0.0);
         assert!(a.vacuum);
         assert_eq!(a.deck.room(a.outside).oxygen, 0.0, "the outside is empty");
-        a.deck.breathe(a.corridor, 19.2);
+        a.deck.breathe(a.equipment, 19.2);
         assert!(a.push());
         cycle(&mut a, 4.5);
         let total = a.deck.total_oxygen() + a.deck.lost_to_space();
@@ -432,6 +444,29 @@ mod tests {
         cycle(&mut a, 4.5);
         let n = a.airlock_news();
         assert!(n.inside && n.inner_open && n.cycling == AirlockCycle::Idle);
+    }
+
+    /// #309: the equipment room has its own air behind its door; opening the door shares it with the
+    /// corridor and the air adds up.
+    #[test]
+    fn the_equipment_room_keeps_its_own_air_until_its_door_opens() {
+        let mut a = ShipAir::new();
+        assert_eq!(a.room_of(place_of(EQUIPMENT.centre)), a.equipment);
+        assert_ne!(a.equipment, a.corridor, "not the corridor's cell");
+        let thin = a.deck.room(a.equipment).volume * 0.4;
+        a.deck.breathe(a.equipment, thin);
+        let (total, eq) = (a.deck.total_oxygen(), a.deck.room(a.equipment).oxygen);
+        a.deck.set_open(a.equip_door, 0.0);
+        for _ in 0..60 {
+            a.deck.exchange_air(1.0 / 30.0);
+        }
+        assert_eq!(a.deck.room(a.equipment).oxygen, eq, "a shut door keeps the equipment room's air");
+        a.deck.set_open(a.equip_door, 1.0);
+        for _ in 0..300 {
+            a.deck.exchange_air(1.0 / 30.0);
+        }
+        assert!(a.deck.room(a.equipment).oxygen > eq * 1.05, "an open door lets the corridor's air in");
+        assert!((a.deck.total_oxygen() - total).abs() < 1e-9, "the air is conserved");
     }
 
     #[test]

@@ -4,7 +4,7 @@ Rules for agents working on models. The repo-wide `AGENTS.md` applies too.
 
 ## Source
 
-A model's only source is its Python script here; Blender runs it headless and exports the `.glb` into `content/<topic>/`. What you try live in Blender ends up in the script, and the headless run must rebuild it. Commit scripts and `.glb` files; renders and `.blend` files stay outside the repo.
+A model's only source is its Python script here; Blender runs it headless and exports the `.glb` into `content/<topic>/`. What you try live in Blender ends up in the script, and the headless run must rebuild it. Commit scripts and `.glb` files; keep renders and `.blend` working files under the gitignored `build/<topic>/` directory, outside version control.
 
 Layout: one folder per topic (`walker/`, `props/`, `city/`), a topic's shared helpers in a module next to its scripts (`city/kit.py`), a topic's look and measures in its brief (`city/BRIEF.md`).
 
@@ -27,7 +27,7 @@ Then take a viewport screenshot to look at it. The add-on's asset integrations (
 A model is done when the headless run prints no `PROBLEM` line (or the brief records why one stays) and you have looked at its review renders:
 
 ```sh
-blender -b -P art/city/shops.py -- --out content/city --renders <dir outside the repo>
+blender -b -P art/city/shops.py -- --out content/city --renders build/city-review
 ```
 
 Each render set shows the model three-quarter, from the street at eye height, from the top, and at night. For the city, `art/city/street_preview.py` also lines the exported `.glb` files up along a lane, which shows how they work together and proves they import. Hand the render paths to the initiator; the look is theirs to decide.

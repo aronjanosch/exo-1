@@ -52,6 +52,11 @@ pub fn map_steps(s: &mut Vec<Step>, out_dir: &std::path::Path, windowed: bool) {
         check(c, gp(w).tracked.is_some() && t == Some((Stop::Pickup, "Drip Rock".into())), format!("map: the accepted job is tracked, its pin at the pickup ({t:?})"));
         let e = goods_of(w)[0].0;
         let at = crate::scenario::cargo::crate_world_pos(w, e);
+        // Step up to the crate: the grab tool is parked (#307), F reaches only the hands' range.
+        let me = player_world(w);
+        let up = planet(w).up(at);
+        let away = (me - at) - up * (me - at).dot(up);
+        place_walker(w, at + away.normalize_or(up.any_orthonormal_vector()) * 1.3);
         crate::scenario::cargo::look_at(w, at);
         true
     }));

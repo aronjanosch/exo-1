@@ -47,6 +47,9 @@ pub enum Target {
     /// The same door while it is locked (the airlock rests outside, or a cycle runs): F shows LOCKED and does nothing.
     AirlockLocked,
     Rack(item_core::RackId),
+    /// A locker, box or crate: F opens its window (or closes it while open). `by` is the player
+    /// who has it open, if it is not the walker itself: the prompt greys out and F does nothing.
+    Container { rack: item_core::RackId, by: Option<item_core::PlayerId> },
 }
 
 #[derive(Resource, Default, Debug)]
@@ -109,6 +112,7 @@ fn verb(t: &Target, size: &str) -> String {
         Target::LeavePanel(_) => "leave ".into(),
         Target::Item(_) => "pick up ".into(),
         Target::Rack(_) => "swap at the rack".into(),
+        Target::Container { .. } => "open ".into(),
         Target::AirlockLocked => "locked".into(),
         Target::Door { open } | Target::BridgeDoor { open } | Target::EquipDoor { open } | Target::AirlockDoor { open } => if *open { "close ".into() } else { "open ".into() },
     }
@@ -131,7 +135,7 @@ pub fn interaction(
     mut gp: ResMut<crate::gameplay::Gameplay>,
     (mut active, displays): (ResMut<ActiveDisplay>, Query<(Entity, &DisplayPanel)>),
     (time, mut items, loose, door, doors, bridge_door, bridge_doors): (Res<Time>, ResMut<Items>, Query<(Entity, &Crate, &LooseItem)>, Option<Res<EngineDoor>>, Query<&Position, With<Slab>>, Option<Res<BridgeDoor>>, Query<&Position, With<BridgeSlab>>),
-    (boxes, supply, airlock_doors, equip_door, equip_doors): (Query<(&DevBox, &Position)>, Option<Res<crate::dev_area::fire::extinguisher::Supply>>, Query<(&crate::dev_area::hull::airlock::AirlockSlab, &Position)>, Option<Res<EquipDoor>>, Query<&Position, With<EquipSlab>>),
+    (boxes, supply, airlock_doors, equip_door, equip_doors, mut cw, mut ui, specs): (Query<(&DevBox, &Position)>, Option<Res<crate::dev_area::fire::extinguisher::Supply>>, Query<(&crate::dev_area::hull::airlock::AirlockSlab, &Position)>, Option<Res<EquipDoor>>, Query<&Position, With<EquipSlab>>, ResMut<crate::container_window::ContainerWindow>, ResMut<crate::items::InventoryUi>, Res<crate::container_window::ContainerSpecs>),
 ) {
     let Ok(mut pl) = players.single_mut() else { return };
     let Some((ship_e, sp, sr)) = ships.iter().next().map(|(e, _, p, r)| (e, *p, *r)) else { return };
@@ -170,7 +174,11 @@ pub fn interaction(
         }
     }
     let panel_offer = if on_foot && grab.held.is_none() { gp.panel_offer() } else { None };
-    let target = if let Some(e) = active.using() {
+    let container_pos = |rack: item_core::RackId| specs.get(rack).and_then(|s| boxes.iter().find(|(b, _)| b.id == s.box_id)).map(|(_, p)| p.0);
+    let target = if let Some(rack) = cw.rack {
+        // The window is open: F closes it, wherever the walker looks.
+        Some(Target::Container { rack, by: None })
+    } else if let Some(e) = active.using() {
         Some(Target::LeavePanel(e))
     } else if let Some(job) = panel_offer {
         Some(Target::Accept(job))
@@ -252,7 +260,8 @@ pub fn interaction(
             Some((_, e, r)) => Some(Target::Crate(e, r)),
             None => {
                 let rack_pick = pl.ship.is_none().then(|| supply.as_ref().and_then(|sup| boxes.iter().find_map(|(b, p)| sup.0.rack_in(&b.id).filter(|_| in_cone(eye, look, p.0, half, USE_RANGE).is_some()).map(Target::Rack)))).flatten();
-                item_target.map(Target::Item).or(panel_pick.map(Target::Panel)).or(door_pick).or(bridge_pick).or(equip_pick).or(airlock_pick).or(rack_pick)
+                let container_pick = pl.ship.is_none().then(|| specs.0.iter().find(|s| boxes.iter().any(|(b, p)| b.id == s.box_id && in_cone(eye, look, p.0, half, USE_RANGE).is_some())).map(|s| Target::Container { rack: s.rack, by: items.client.holder(s.rack).filter(|p| *p != items.me()) })).flatten();
+                item_target.map(Target::Item).or(panel_pick.map(Target::Panel)).or(door_pick).or(bridge_pick).or(equip_pick).or(airlock_pick).or(rack_pick).or(container_pick)
             }
         }
     };
@@ -264,7 +273,7 @@ pub fn interaction(
     inter.kind = match &target {
         Some(Target::Item(_)) => PromptKind::Collect,
         Some(Target::StandUp | Target::LeavePanel(_)) => PromptKind::Leave,
-        Some(Target::SeatLocked | Target::AirlockLocked) => PromptKind::Blocked,
+        Some(Target::SeatLocked | Target::AirlockLocked | Target::Container { by: Some(_), .. }) => PromptKind::Blocked,
         Some(Target::Crate(e, Reach::Hands)) if !hands_free(&items, &crates, &table, *e) => PromptKind::Blocked,
         _ => PromptKind::Use,
     };
@@ -285,6 +294,7 @@ pub fn interaction(
         Some(Target::EquipDoor { .. }) => equip_doors.iter().next().map(|p| p.0),
         Some(Target::AirlockDoor { .. } | Target::AirlockLocked) => airlock_doors.iter().find(|(s, _)| s.door == reactor_core::Door::Inner).map(|(_, p)| p.0),
         Some(Target::Rack(r)) => supply.as_ref().and_then(|sup| boxes.iter().find(|(b, _)| sup.0.rack_in(&b.id) == Some(*r)).map(|(_, p)| p.0)),
+        Some(Target::Container { rack, .. }) => container_pos(*rack),
         _ => None,
     };
     inter.prompt = match &target {
@@ -308,6 +318,12 @@ pub fn interaction(
                     }
                 }
                 Target::Crate(e, Reach::Hands) if !hands_free(&items, &crates, &table, *e) => p.push_str(" (hands full: put the item away, 1 to 8)"),
+                Target::Container { rack, by } => {
+                    p.push_str(&specs.get(*rack).map(|s| s.name.clone()).unwrap_or_default());
+                    if let Some(by) = by {
+                        p.push_str(&format!("  (in use: player {by})"));
+                    }
+                }
                 Target::LeavePanel(e) => {
                     p.push_str(&displays.get(*e).map(|(_, d)| d.name.clone()).unwrap_or_default());
                     p.push_str(&format!("  [{}] leave", key_label(&bindings, Tap::DisplayLeave)));
@@ -372,6 +388,12 @@ pub fn interaction(
                     // The rack's own name (r41, "Suit rack" for the airlock's), else the extinguishers'.
                     let name = supply.as_ref().and_then(|sup| sup.0.racks.iter().find(|x| x.id == *r)).and_then(|x| x.name.clone());
                     set("Swap", name.unwrap_or_else(|| "Extinguisher rack".into()))
+                }
+                Target::Container { rack, by } => {
+                    set("Open", specs.get(*rack).map(|s| s.name.clone()).unwrap_or_default());
+                    if let Some(by) = by {
+                        note = (format!("IN USE · PLAYER {by}"), Tone::Warn);
+                    }
                 }
                 Target::Counter(g) => set("Talk to", gp.jobs_content.givers.get(g).map(|g| gp.text(&g.record.name)).unwrap_or_default()),
                 Target::Accept(j) => {
@@ -454,6 +476,15 @@ pub fn interaction(
         Target::BridgeDoor { .. } => items.ask_room(item_core::wire::RoomAsk::ToggleBridgeDoor),
         Target::EquipDoor { .. } => items.ask_room(item_core::wire::RoomAsk::ToggleEquipDoor),
         Target::AirlockDoor { .. } => items.ask_reactor(item_core::wire::ReactorAsk::Airlock(item_core::wire::AirlockAsk::ToggleInner)),
+        Target::Container { rack, by: None } => {
+            let now = time.elapsed_secs_f64();
+            if cw.rack == Some(rack) {
+                cw.close(now, &mut items, &mut ui);
+            } else {
+                cw.open(now, rack, &mut items, &mut ui);
+            }
+        }
+        Target::Container { by: Some(_), .. } => {}
         Target::Rack(rack) => {
             let slot = items.client.view.selected;
             let _ = items.request(time.elapsed_secs_f64(), item_core::Request::Swap { slot, rack });

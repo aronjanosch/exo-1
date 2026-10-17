@@ -469,6 +469,7 @@ fn keys(
     mut settings: ResMut<Settings>,
     controls: Option<Res<crate::controls::Controls>>,
     display: Option<Res<crate::displays::ActiveDisplay>>,
+    container: Option<Res<crate::container_window::ContainerWindow>>,
 ) {
     let text: Vec<KeyboardInput> = typed.read().cloned().collect();
     if let Some(edit) = &mut input.editing {
@@ -501,7 +502,8 @@ fn keys(
         return;
     }
     // Escape at a display leaves the display (`displays`), it does not pause.
-    let at_display = display.is_some_and(|d| d.using().is_some());
+    // The container window takes Escape too (it closes, or cancels a drag).
+    let at_display = display.is_some_and(|d| d.using().is_some()) || container.is_some_and(|c| c.rack.is_some());
     if keys.just_pressed(KeyCode::Escape) && !(at_display && menu.screen == Screen::None) {
         menu.screen = match menu.screen {
             Screen::None => Screen::Paused,

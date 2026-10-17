@@ -101,6 +101,7 @@ pub fn items_net_in(mut commands: Commands, time: Res<Time>, mut net: ResMut<Net
         Role::Host => {
             for slot in net.take_left_peers() {
                 items.note_using(slot, None);
+                items.release_locks(now, slot);
                 if let Some(r) = repairs.as_mut() {
                     r.forget(slot);
                 }

@@ -332,6 +332,16 @@ impl Items {
         self.publish(now, ev, None);
     }
 
+    /// Host: a player left; the containers it had open are free again.
+    pub fn release_locks(&mut self, now: f64, player: PlayerId) {
+        if self.role == Role::Client {
+            return;
+        }
+        for ev in self.host.release_player(player) {
+            self.publish(now, ev, None);
+        }
+    }
+
     /// Host: the item in a player's slot wears by `amount` percent (the spray); the change
     /// goes out when a whole percent changes or the item runs out.
     pub fn wear(&mut self, now: f64, player: PlayerId, slot: usize, amount: f64) {
@@ -519,7 +529,7 @@ pub fn item_input(
     mut items: ResMut<Items>,
     mut ui: ResMut<InventoryUi>,
     mut grab: ResMut<Grab>,
-    (window, look): (Res<HudWindow>, Res<crate::displays::DisplayLook>),
+    (window, look, container): (Res<HudWindow>, Res<crate::displays::DisplayLook>, Res<crate::container_window::ContainerWindow>),
     dev: Option<Res<crate::dev::DevMenu>>,
     active: Res<crate::displays::ActiveDisplay>,
     players: Query<&Player>,
@@ -572,7 +582,8 @@ pub fn item_input(
     }
     controls.free_cursor |= ui.open;
     let down = controls.pointer_down || controls.click;
-    if ui.open {
+    // The container window (container_window) takes the pointer while it is open.
+    if ui.open && container.rack.is_none() {
         let under = controls.pointer.and_then(|p| slot_at(p, true, window.0, &look.0.hud.bar));
         if down && !ui.was_down {
             ui.drag_from = under;
@@ -587,7 +598,7 @@ pub fn item_input(
             };
         }
         controls.click = false;
-    } else {
+    } else if !ui.open {
         ui.drag_from = None;
     }
     ui.was_down = ui.open && down;
@@ -854,6 +865,7 @@ fn draw_bar(
     grab: Res<Grab>,
     controls: Res<Controls>,
     (look, hud, bindings, fonts): (Res<crate::displays::DisplayLook>, Res<crate::crew_hud::CrewHud>, Res<crate::controls::Bindings>, Option<Res<crate::crew_hud::HudFonts>>),
+    container: Res<crate::container_window::ContainerWindow>,
     mut nodes: Query<(&BarPart, &mut Node)>,
     mut borders: Query<(&BarPart, &mut BorderColor)>,
     mut fills: Query<(&BarPart, &mut BackgroundColor)>,
@@ -882,7 +894,8 @@ fn draw_bar(
         *moved = false;
     }
     let drag = ui.drag_from.filter(|f| open && *moved && controls.pointer.is_some() && view.slot(*f).is_some());
-    let drop_on = drag.and(hover).filter(|h| Some(*h) != drag);
+    // With a container open the window draws the places under a drag (accept or refuse).
+    let drop_on = drag.and(hover).filter(|h| Some(*h) != drag).filter(|_| container.rack.is_none());
     let contrast_of = |sel: bool| -> f64 {
         if open {
             1.0
@@ -900,8 +913,10 @@ fn draw_bar(
     let stack_of = |i: usize| view.slot(i);
     let code_of = |i: usize| stack_of(i).and_then(|st| items.defs.of(st)).map(|d| d.short_code()).unwrap_or_default();
     let count_of = |i: usize| stack_of(i).filter(|st| st.count > 1).map(|st| format!("×{}", st.count)).unwrap_or_default();
-    let mode = if drag.is_some() {
+    let mode = if drag.is_some() || container.dragging() {
         TabMode::Drag
+    } else if container.rack.is_some() {
+        TabMode::Container
     } else if carrying > 0 {
         TabMode::Carrying
     } else {
@@ -1043,8 +1058,16 @@ fn draw_bar(
     }
 
     let held_name = &hud.held_name;
+    let box_stack = |p: Option<crate::container_window::Place>| match (p, container.rack) {
+        (Some(crate::container_window::Place::Box(i)), Some(r)) => items.client.racks.get(&r).and_then(|c| c.slot(i)),
+        _ => None,
+    };
     let (shown, shown_accent) = if let Some(f) = drag {
         (stack_of(f).map(|st| items.name(st)).unwrap_or_default(), false)
+    } else if let Some(st) = box_stack(container.drag.filter(|_| container.dragging())) {
+        (items.name(st), false)
+    } else if let Some(st) = box_stack(container.hover) {
+        (items.name(st), true)
     } else if open && let Some(st) = hover.and_then(stack_of) {
         (items.name(st), hover != Some(selected))
     } else {
@@ -1087,6 +1110,7 @@ fn draw_bar(
                         TabKey::Drop => crate::interact::key_cap(&bindings, crate::controls::Tap::Drop),
                         TabKey::Throw => crate::interact::key_cap(&bindings, crate::controls::Tap::Throw),
                         TabKey::Close => crate::interact::key_cap(&bindings, crate::controls::Tap::Inventory),
+                        TabKey::CloseAll => format!("{} / ESC / {}", crate::interact::key_cap(&bindings, crate::controls::Tap::Interact), crate::interact::key_cap(&bindings, crate::controls::Tap::Inventory)),
                         TabKey::Cancel => "ESC".to_string(),
                     });
                 }

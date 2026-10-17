@@ -58,7 +58,7 @@ pub const SECTION_CENTRES: [[f64; 2]; SECTIONS] = [
 
 /// The machines of the room with their centres (mirrors the glue's `*_AT`). A hit in range
 /// damages them, as a blast does.
-pub const DEVICES: [(Source, [f64; 2]); 3] = [(Source::Pump, [-10.5, -17.5]), (Source::Junction, [-17.0, -18.85]), (Source::OxygenGenerator, [-9.4, -13.0])];
+pub const DEVICES: [(Source, [f64; 2]); 3] = [(Source::Pump, [-10.5, -17.5]), (Source::Junction(0), [-17.0, -18.85]), (Source::OxygenGenerator, [-9.4, -13.0])];
 
 /// Barotrauma's gap openness of a section at `damage` (0..1), `Structure.cs:1340-1352`.
 pub fn openness(damage: f64) -> f64 {

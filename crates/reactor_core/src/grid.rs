@@ -21,6 +21,16 @@ impl Group {
     pub(crate) fn index(self) -> usize {
         self as usize
     }
+
+    /// The junction box (0 = JB-1 engine room, 1 = JB-2 corridor, 2 = JB-3 turret room) the group
+    /// hangs on (#322): its toggle sits there and a broken box cuts the group.
+    pub fn junction(self) -> usize {
+        match self {
+            Group::Engines | Group::JumpDrive => 0,
+            Group::LifeSupport | Group::Lights => 1,
+            Group::Shields | Group::Weapons => 2,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]

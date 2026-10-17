@@ -515,7 +515,7 @@ fn sample(room: &EngineRoom, t: f64, events: Vec<String>) -> Row {
         implode,
         volt: room.voltage(),
         warn: room.warnings().short(),
-        junction: room.junction().condition().value(),
+        junction: room.junction(0).condition().value(),
         reactor: r.condition().value(),
         pump: room.pump().condition().value(),
         power: r.power_on(),
@@ -535,7 +535,7 @@ fn label(e: &RoomEvent) -> String {
         }
         RoomEvent::Reactor(ReactorEvent::Device(d)) => format!("Reactor {d:?}"),
         RoomEvent::Device { source, event } => format!("{source:?} {event:?}"),
-        RoomEvent::Sparks => "Sparks".into(),
+        RoomEvent::Sparks(i) => format!("Sparks {}", i + 1),
         RoomEvent::EmergencyCool => "EmergencyCool".into(),
         RoomEvent::Fire { source, .. } => match source {
             Source::Reactor => "Fire Reactor".into(),

@@ -54,22 +54,63 @@ fn no_overvoltage_no_damage() {
     let mut r = room();
     run(&mut r, 120.0, Input::auto());
     run(&mut r, 60.0, Input::auto());
-    assert_eq!(r.junction().condition().value(), 100.0);
+    assert_eq!(r.junction(0).condition().value(), 100.0);
 }
 
+/// #322: a broken box cuts only the groups on it; the others keep their power.
 #[test]
-fn a_broken_junction_box_cuts_its_consumers() {
-    let mut r = room();
-    run(&mut r, 30.0, Input::auto());
-    assert!(r.grid().breaker(Group::Engines));
-    let ev = r.trigger(Fault::Surge);
-    assert!(ev.is_empty() || matches!(ev.as_slice(), [RoomEvent::Device { .. }]));
-    r.junction_mut().condition_mut().set_value(0.0);
-    run(&mut r, 1.0, Input::auto());
-    for g in Group::ALL {
-        assert_eq!(r.grid().factor(g), 0.0, "{g:?}");
-        assert!(!r.grid().supply(g).on);
+fn a_broken_junction_box_cuts_only_its_own_groups() {
+    for broken in 0..JUNCTIONS {
+        let mut r = room();
+        settle(&mut r);
+        r.junction_mut(broken).condition_mut().set_value(0.0);
+        run(&mut r, 1.0, Input::auto());
+        for g in [Group::Engines, Group::LifeSupport, Group::Lights] {
+            let cut = g.junction() == broken;
+            assert_eq!(r.grid().supply(g).on, !cut, "box {broken}, {g:?}");
+            assert_eq!(r.grid().factor(g) == 0.0, cut, "box {broken}, {g:?}");
+        }
     }
+}
+
+/// #322: a toggle (the group's breaker) switches that group alone.
+#[test]
+fn a_toggle_switches_only_its_group() {
+    let mut r = room();
+    settle(&mut r);
+    r.grid_mut().set_breaker(Group::Lights, false);
+    run(&mut r, 1.0, Input::auto());
+    assert!(!r.grid().supply(Group::Lights).on);
+    assert!(r.grid().supply(Group::LifeSupport).on && r.grid().supply(Group::Engines).on);
+}
+
+/// #322: all three boxes survive a save, and a save with the one old box loads it as JB-1.
+#[test]
+fn the_save_carries_three_boxes_and_reads_the_old_one() {
+    let t = Tuning::default();
+    let mut r = EngineRoom::from_tuning(&t, 5);
+    for (i, v) in [90.0, 70.0, 55.0].into_iter().enumerate() {
+        r.junction_mut(i).condition_mut().set_value(v);
+    }
+    let save = r.to_save();
+    assert_eq!(save.junctions.len(), JUNCTIONS);
+    let back = EngineRoom::from_save(&t, &save);
+    for (i, v) in [90.0, 70.0, 55.0].into_iter().enumerate() {
+        assert_eq!(back.junction(i).condition().value(), v);
+    }
+    let old = RoomSave { junctions: Vec::new(), junction: Some(save.junctions[0].clone()), ..save };
+    let back = EngineRoom::from_save(&t, &old);
+    assert_eq!(back.junction(0).condition().value(), 90.0);
+    assert_eq!(back.junction(1).condition().value(), 100.0);
+}
+
+/// #322: the startup's breakers check reads the toggles on JB-2 (Life Support, Lights).
+#[test]
+fn the_startup_breakers_check_reads_the_toggles() {
+    let mut r = room();
+    assert!(r.startup_checks().breakers_on);
+    r.grid_mut().set_breaker(Group::Lights, false);
+    assert!(!r.startup_checks().breakers_on);
 }
 
 #[test]
@@ -77,8 +118,8 @@ fn surge_breaks_a_weak_junction_box_with_an_event() {
     let tuning = RoomTuning { surge_damage: 100.0, ..RoomTuning::default() };
     let mut r = EngineRoom::new(tuning, ReactorTuning::default(), 4);
     let ev = r.trigger(Fault::Surge);
-    assert_eq!(ev, vec![RoomEvent::Device { source: Source::Junction, event: DeviceEvent::Broke }]);
-    assert!(!r.junction().condition().functioning());
+    assert_eq!(ev, vec![RoomEvent::Device { source: Source::Junction(0), event: DeviceEvent::Broke }]);
+    assert!(!r.junction(0).condition().functioning());
 }
 
 #[test]
@@ -142,7 +183,7 @@ fn the_machines_have_power_only_through_a_working_box_and_a_running_reactor() {
     assert!(r.set_power(true));
     run(&mut r, 120.0, Input::auto());
     assert!(r.powered());
-    r.junction_mut().condition_mut().set_value(0.0);
+    r.junction_mut(0).condition_mut().set_value(0.0);
     run(&mut r, 1.0, Input::auto());
     assert!(!r.powered(), "a broken box passes nothing");
 }
@@ -164,10 +205,10 @@ fn breakers_are_the_only_switch_of_the_consumers() {
 fn overvolt_is_seen_by_the_box() {
     let mut r = room();
     run(&mut r, 60.0, Input::manual(47.0, 64.0));
-    assert!(!r.junction().overvolted());
+    assert!(!r.junction(0).overvolted());
     r.trigger(Fault::LoadDrop);
     run(&mut r, 1.0, Input::manual(47.0, 64.0));
-    assert!(r.junction().overvolted(), "100 kW demand, 470 kW supply");
+    assert!(r.junction(0).overvolted(), "100 kW demand, 470 kW supply");
 }
 
 fn refuel(r: &mut EngineRoom) {
@@ -197,7 +238,7 @@ fn normal_running_wears_the_machines_to_the_floor_and_never_breaks_them() {
     // Wear runs down to each device's floor (the reactor's is clamped up to its broken limit), and
     // stops there. Below the repair threshold it asks for repair, but it never breaks anything.
     // The junction box has no normal wear yet (only overvoltage damage): it stays full.
-    assert_eq!(r.junction().condition().value(), 100.0);
+    assert_eq!(r.junction(0).condition().value(), 100.0);
     for (name, c) in [("reactor", r.reactor().condition()), ("pump", r.pump().condition())] {
         let t = c.tuning();
         let floor = t.wear_floor.max(t.broken_below);
@@ -291,15 +332,15 @@ fn a_canister_refills_the_tank_up_to_full_and_brings_the_flow_back() {
 #[test]
 fn undervoltage_is_seen_and_damages_nothing() {
     let t = RoomTuning::default();
-    let mut jb = JunctionBox::new(&t, 3);
-    let (through, ev) = jb.pass(0.1, 50.0, 100.0, &t);
+    let mut jb = JunctionBox::new(&t, 0, 3);
+    let (through, ev) = jb.pass(0.1, 50.0, 100.0, 50.0, 100.0, &t);
     assert_eq!(through, 50.0);
     assert!(jb.undervolted());
     assert!(ev.is_empty());
     assert_eq!(jb.condition().value(), 100.0);
-    jb.pass(0.1, 100.0, 100.0, &t);
+    jb.pass(0.1, 100.0, 100.0, 100.0, 100.0, &t);
     assert!(!jb.undervolted());
-    jb.pass(0.1, 0.0, 0.0, &t);
+    jb.pass(0.1, 0.0, 0.0, 0.0, 0.0, &t);
     assert!(!jb.undervolted(), "no demand is not undervoltage");
 }
 
@@ -308,13 +349,13 @@ fn a_room_with_demand_and_no_power_is_undervolted_and_one_with_no_demand_is_not(
     let mut r = EngineRoom::new(RoomTuning::default(), ReactorTuning::default(), 11);
     r.step(DT, Input::auto());
     assert_eq!(r.voltage(), 0.0);
-    assert!(r.junction().undervolted());
+    assert!(r.junction(0).undervolted());
     for g in Group::ALL {
         r.set_breaker(g, false);
     }
     r.step(DT, Input::auto());
     assert_eq!(r.voltage(), 1.0);
-    assert!(!r.junction().undervolted());
+    assert!(!r.junction(0).undervolted());
 }
 
 #[test]
@@ -426,8 +467,8 @@ fn a_blast_breaks_the_pump_and_the_junction_box() {
     let ev = r.implode_now();
     assert!(ev.contains(&RoomEvent::Reactor(ReactorEvent::Blast(Blast::default()))), "{ev:?}");
     assert!(ev.contains(&RoomEvent::Device { source: Source::Pump, event: DeviceEvent::Broke }), "{ev:?}");
-    assert!(ev.contains(&RoomEvent::Device { source: Source::Junction, event: DeviceEvent::Broke }), "{ev:?}");
-    assert!(!r.pump().condition().functioning() && !r.junction().condition().functioning());
+    assert!(ev.contains(&RoomEvent::Device { source: Source::Junction(0), event: DeviceEvent::Broke }), "{ev:?}");
+    assert!(!r.pump().condition().functioning() && !r.junction(0).condition().functioning());
 }
 
 /// Without fill the implode is only the implode: the pump and the junction box keep working.
@@ -438,7 +479,7 @@ fn a_implode_without_fill_leaves_the_pump_and_the_junction_box_alone() {
     let ev = r.implode_now();
     assert!(ev.contains(&RoomEvent::Reactor(ReactorEvent::Implosion)), "{ev:?}");
     assert!(!ev.iter().any(|e| matches!(e, RoomEvent::Reactor(ReactorEvent::Blast(_)) | RoomEvent::Device { .. })), "{ev:?}");
-    assert!(r.pump().condition().functioning() && r.junction().condition().functioning());
+    assert!(r.pump().condition().functioning() && r.junction(0).condition().functioning());
 }
 
 /// The natural implosion through `step` (pump broken, both canisters at 100 on the brake) blasts in the
@@ -452,7 +493,7 @@ fn a_natural_implosion_blasts_in_its_step() {
         let ev = r.step(DT, Input::manual(100.0, 100.0));
         if ev.contains(&RoomEvent::Reactor(ReactorEvent::Implosion)) {
             assert!(ev.contains(&RoomEvent::Reactor(ReactorEvent::Blast(Blast::default()))), "{ev:?}");
-            assert!(ev.contains(&RoomEvent::Device { source: Source::Junction, event: DeviceEvent::Broke }), "{ev:?}");
+            assert!(ev.contains(&RoomEvent::Device { source: Source::Junction(0), event: DeviceEvent::Broke }), "{ev:?}");
             implode_step = Some(i);
             break;
         }
@@ -941,7 +982,7 @@ fn a_stepped_damaged_charged_room_round_trips_through_json() {
     let _ = run(&mut r, 60.0, Input::manual(0.6, 0.5));
     let hit = Hit { at: r.hull().sections[0].centre, structure: 0.6, radius: 2.0, device_damage: 0.5, fire_chance: 0.0 };
     let _ = r.apply_hit(hit, &mut Rng::new(5));
-    let _ = r.junction_mut().condition_mut().damage(40.0);
+    let _ = r.junction_mut(0).condition_mut().damage(40.0);
     let _ = r.reactor_mut().condition_mut().damage(30.0);
     r.reactor_mut().set_canister_lives(&[40.0, 70.0]);
     r.pump_mut().set_mode(PumpMode::Low);
@@ -972,3 +1013,4 @@ fn wear_off_keeps_the_machines_full() {
     assert_eq!(r.reactor().condition().value(), 100.0, "the reactor did not wear");
     assert_eq!(r.oxygen_generator().condition().value(), 100.0, "the generator did not wear");
 }
+

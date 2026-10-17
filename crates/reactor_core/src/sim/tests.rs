@@ -154,7 +154,7 @@ fn row_at(trace: &Trace, t: f64) -> &Row {
 #[test]
 fn load_drop_overvolts_the_junction_box_and_auto_overshoots() {
     let (trace, room) = trace_of_hits("load_drop", 5.0);
-    assert!(room.junction().condition().value() < 100.0);
+    assert!(room.junction(0).condition().value() < 100.0);
     assert!(!trace.imploded);
 }
 
@@ -220,7 +220,7 @@ fn wandering_load_stays_out_of_heat_critical_over_300_s() {
     let mut overvolt_s = 0.0;
     for _ in 0..3000 {
         probe.step(DT, Input::auto());
-        if probe.junction().overvolted() {
+        if probe.junction(0).overvolted() {
             overvolt_s += DT;
         }
     }
@@ -228,7 +228,7 @@ fn wandering_load_stays_out_of_heat_critical_over_300_s() {
         "wandering_load 300 s: peak heat {:.1}, overvolt {:.1} s, junction at end {:.1}, reactor at end {:.1}, HeatHigh rows {}",
         trace.peak_heat(),
         overvolt_s,
-        room.junction().condition().value(),
+        room.junction(0).condition().value(),
         room.reactor().condition().value(),
         trace.count("Alarm HeatHigh on")
     );
@@ -281,8 +281,8 @@ fn pulling_both_canisters_at_heat_critical_brakes_the_core() {
 fn overvolt_converter_max_damages_the_junction_box() {
     let (trace, room) = trace_of_hits("overvolt_converter_max", 5.0);
     let vmax = trace.rows.iter().map(|r| r.volt).fold(0.0, f64::max);
-    println!("overvolt_converter_max: max volt {vmax:.2}, junction at end {:.1}", room.junction().condition().value());
-    assert!(room.junction().condition().value() < 100.0, "the box is not damaged");
+    println!("overvolt_converter_max: max volt {vmax:.2}, junction at end {:.1}", room.junction(0).condition().value());
+    assert!(room.junction(0).condition().value() < 100.0, "the box is not damaged");
 }
 
 /// Power off at HeatHigh with the pump broken (the operator at 100/100): no implode. Power off is the

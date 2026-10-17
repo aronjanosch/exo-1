@@ -79,14 +79,15 @@ pub struct Situation {
 impl Situation {
     /// The room's report, with the fires and the oxygen the host keeps (its air).
     pub fn of_room(room: &EngineRoom, fires: u32, oxygen: f64) -> Situation {
-        let working = [room.reactor().condition().functioning(), room.pump().condition().functioning(), room.junction().condition().functioning(), room.oxygen_generator().condition().functioning()];
+        let mut working = vec![room.reactor().condition().functioning(), room.pump().condition().functioning(), room.oxygen_generator().condition().functioning()];
+        working.extend(room.junctions().iter().map(|j| j.condition().functioning()));
         let w = room.warnings();
         Situation {
             fires,
             broken: working.iter().filter(|ok| !**ok).count() as u32,
             oxygen,
             heat_critical: w.critical_heat || w.cold,
-            can_break: [room.pump().condition().functioning(), room.junction().condition().functioning(), room.oxygen_generator().condition().functioning(), room.hull().intact(), true, true],
+            can_break: [room.pump().condition().functioning(), room.junction(0).condition().functioning(), room.oxygen_generator().condition().functioning(), room.hull().intact(), true, true],
         }
     }
 }

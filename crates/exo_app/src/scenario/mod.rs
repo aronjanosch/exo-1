@@ -53,6 +53,7 @@ mod sc_linear;
 mod sc_flight_hud;
 mod savefile;
 mod ship_ambush;
+mod airlock;
 mod space;
 mod swap;
 mod town;
@@ -79,6 +80,10 @@ pub fn plugin(name: &str, headless: bool) -> impl Plugin {
             if headless {
                 app.add_systems(Update, swap::headless_view.in_set(crate::phases::Frame::Camera));
             }
+        }
+        if name == "airlock" {
+            app.init_resource::<airlock::AirlockAudit>();
+            app.add_systems(FixedLast, airlock::airlock_audit);
         }
         if name == "ship_ambush" {
             app.init_resource::<ship_ambush::AmbushAudit>();
@@ -635,6 +640,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "health" => health::health_steps(&mut s),
         "engine_room" => engine_room::engine_room_steps(&mut s),
         "ship_ambush" => ship_ambush::ship_ambush_steps(&mut s),
+        "airlock" => airlock::airlock_steps(&mut s),
         "reactor" => reactor::reactor_steps(&mut s),
         "coolant" => coolant::coolant_steps(&mut s),
         "rods" => rods::rods_steps(&mut s),

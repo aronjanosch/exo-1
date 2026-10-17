@@ -91,6 +91,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 | `hud` | The crew HUD: compass, vitals, credits fade, prompts, action bar dimming; with a window, pictures of its states. |
 | `health` | The walker's health: burn, radiation, on fire and down, on the host at the dev area. |
 | `engine_room` | The engine room: corridor, door, air, and the alarm. |
+| `airlock` | The airlock (#309): PUSH on the chamber's panel runs the cycle in (outer door shuts, air fills, inner door opens) and out; every tick the doors are never open together, none is open during a cycle, and the cycles make no air. |
 | `ship_ambush` | The ambush: AMBUSH on, the enemy's shots on shield and hull, GN-01 fires to DESTROYED (or JD-01 jumps out); every tick the airlock doors, shield and hull ranges and NaN. |
 | `reactor` | The reactor on the engine room's screens: temperature band, manual mode, load from the grid. |
 | `coolant` | The pump's coolant tank: the drain, the refill by hand and E-COOL. |

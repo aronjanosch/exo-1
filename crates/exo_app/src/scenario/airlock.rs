@@ -7,7 +7,7 @@
 use super::*;
 use super::reactor::{click_until, use_display};
 use crate::dev_area::hull::{panels::{AIRLOCK_IN_ID, AIRLOCK_IN_NAME, AIRLOCK_SHIP_ID, AIRLOCK_SHIP_NAME}, ShipAir};
-use crate::dev_area::layout::{AIRLOCK, EQUIPMENT};
+use crate::dev_area::layout::{AIRLOCK, AIRLOCK_PANEL_AT};
 use crate::items::Items;
 use item_core::wire::{AirlockCycle, AirlockNews};
 
@@ -108,7 +108,7 @@ pub(super) fn airlock_steps(s: &mut Vec<Step>) {
     }));
 
     // From the ship: the airlock rests outside, a walker in the equipment room calls it in.
-    use_display(s, AIRLOCK_SHIP_NAME, AIRLOCK_SHIP_ID, [EQUIPMENT.centre[0] + 1.25, EQUIPMENT.centre[1] - 1.1]);
+    use_display(s, AIRLOCK_SHIP_NAME, AIRLOCK_SHIP_ID, [AIRLOCK_PANEL_AT[2][0] - 0.5, AIRLOCK_PANEL_AT[2][1] + 0.15]);
     s.push(click_until(AIRLOCK_SHIP_ID, "push", None, "airlock: PUSH in the equipment room calls the airlock in", |w| lock(w).is_some_and(|n| n.cycling == AirlockCycle::Inner)));
     s.push(wait_for("airlock: the call from the ship ends with the inner door open (10 s)", 10.0, |w| lock(w).is_some_and(|n| n.cycling == AirlockCycle::Idle && n.inner_open)));
     s.push(Box::new(|w, c| {

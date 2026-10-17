@@ -14,33 +14,35 @@ use reactor_core::Source;
 /// The engine room. Its walls carry the hull's eight sections (`reactor_core::hull`), so it keeps
 /// its place and size.
 pub const ROOM: Zone = Zone { name: "engine room", centre: [-14.0, -15.0], half: [5.0, 4.0] };
-pub const CORRIDOR: Zone = Zone { name: "corridor", centre: [-7.7, -9.7], half: [11.3, 1.0] };
-pub const BRIDGE: Zone = Zone { name: "bridge", centre: [-15.0, -5.4], half: [4.0, 3.0] };
-pub const TURRET_ROOM: Zone = Zone { name: "turret room", centre: [-7.7, -5.4], half: [3.0, 3.0] };
-pub const LAB_ROOM: Zone = Zone { name: "lab room", centre: [-0.4, -5.4], half: [4.0, 3.0] };
+/// The corridor: 3 m wide (#311), grown to the north so the rooms south of it keep their places.
+pub const CORRIDOR: Zone = Zone { name: "corridor", centre: [-7.7, -9.2], half: [11.3, 1.5] };
+pub const BRIDGE: Zone = Zone { name: "bridge", centre: [-15.0, -4.4], half: [4.0, 3.0] };
+pub const TURRET_ROOM: Zone = Zone { name: "turret room", centre: [-7.7, -4.4], half: [3.0, 3.0] };
+pub const LAB_ROOM: Zone = Zone { name: "lab room", centre: [-0.4, -4.4], half: [4.0, 3.0] };
 pub const MEDBAY_ROOM: Zone = Zone { name: "medbay room", centre: [-5.7, -13.85], half: [3.0, 2.85] };
-/// The equipment room (#309): an empty 3.5 x 3 m room at the corridor's east end, between the corridor
-/// (a sliding door, #309) and the airlock's inner door. TODO(initiator): size and what goes in.
-pub const EQUIPMENT: Zone = Zone { name: "equipment room", centre: [5.65, -9.7], half: [1.75, 1.5] };
+/// The equipment room (#309, #311): 6 x 4 m at the corridor's east end, between the corridor (a
+/// sliding door) and the airlock's inner door; its north wall lines up with the corridor's.
+/// TODO(initiator): size (start value).
+pub const EQUIPMENT: Zone = Zone { name: "equipment room", centre: [6.9, -9.7], half: [3.0, 2.0] };
 /// The airlock: a 2 x 2 m room east of the equipment room; its outer door is the ship's way out.
-pub const AIRLOCK: Zone = Zone { name: "airlock", centre: [8.7, -9.7], half: [1.0, 1.0] };
+pub const AIRLOCK: Zone = Zone { name: "airlock", centre: [11.2, -9.7], half: [1.0, 1.0] };
 /// Where a walker starts in the dev area: the corridor's west end, by the bridge door.
-pub const SPAWN: [f64; 2] = [-17.5, -9.7];
+pub const SPAWN: [f64; 2] = [-17.5, -9.2];
 
 /// The rooms that have a role's zone outside, and that zone (`ROLE_ZONES` in `dev_area`).
 pub const ROOM_ZONES: [(Zone, Zone); 5] = [(ROOM, ENGINEERING), (BRIDGE, BRIDGE_ZONE), (TURRET_ROOM, TURRETS), (LAB_ROOM, LAB), (MEDBAY_ROOM, MEDBAY)];
 
 /// The bridge door: its slab's centre when shut, in the corridor's north wall, 2 m wide. The slab
 /// sinks into the floor when open, as the airlock's doors do.
-pub const BRIDGE_DOOR_AT: [f64; 2] = [-15.0, -8.55];
+pub const BRIDGE_DOOR_AT: [f64; 2] = [-15.0, -7.55];
 pub const BRIDGE_DOOR_SIZE: [f64; 3] = [2.0, ROOM_HEIGHT, WALL];
 /// The airlock's doors: the inner one closes the equipment room's east end, the outer one opens east
 /// onto the outside. Their slabs sink into the floor when open (`hull::airlock`).
-pub const INNER_DOOR_AT: [f64; 2] = [7.55, -9.7];
-pub const OUTER_DOOR_AT: [f64; 2] = [9.85, -9.7];
+pub const INNER_DOOR_AT: [f64; 2] = [10.05, -9.7];
+pub const OUTER_DOOR_AT: [f64; 2] = [12.35, -9.7];
 pub const AIRLOCK_DOOR_SIZE: [f64; 3] = [WALL, ROOM_HEIGHT, 2.0];
 /// The equipment room's door to the corridor (#309): its slab's centre when shut, in the west wall's
-/// 2 m opening. It sinks into the floor when open, as the airlock's doors do.
+/// 2 m opening (y -10.7..-8.7). It sinks into the floor when open, as the airlock's doors do.
 pub const EQUIP_DOOR_AT: [f64; 2] = [3.75, -9.7];
 pub const EQUIP_DOOR_SIZE: [f64; 3] = [WALL, ROOM_HEIGHT, 2.0];
 /// The rooms' height (m); every room has a roof.
@@ -97,21 +99,21 @@ pub const STARTUP_AT: [f64; 2] = [-18.96, -16.5];
 /// (the ship's front), the jump drive and the shield on the west wall, the captain's console CP-01
 /// on the east wall, the bridge's vent on the north wall.
 pub const HELM_AT: [f64; 2] = [BRIDGE.centre[0], BRIDGE.centre[1] + BRIDGE.half[1] - 0.04];
-pub const JUMP_AT: [f64; 2] = [BRIDGE.centre[0] - BRIDGE.half[0] + 0.04, -4.4];
-pub const SHIELD_AT: [f64; 2] = [BRIDGE.centre[0] - BRIDGE.half[0] + 0.04, -6.4];
+pub const JUMP_AT: [f64; 2] = [BRIDGE.centre[0] - BRIDGE.half[0] + 0.04, -3.4];
+pub const SHIELD_AT: [f64; 2] = [BRIDGE.centre[0] - BRIDGE.half[0] + 0.04, -5.4];
 pub const CAPTAIN_AT: [f64; 2] = [BRIDGE.centre[0] + BRIDGE.half[0] - 0.04, BRIDGE.centre[1]];
 pub const BRIDGE_VENT_AT: [f64; 2] = [-17.5, BRIDGE.centre[1] + BRIDGE.half[1] - 0.04];
 /// The gun's screen GN-01 on the turret room's north wall.
 pub const GUNNERY_AT: [f64; 2] = [TURRET_ROOM.centre[0], TURRET_ROOM.centre[1] + TURRET_ROOM.half[1] - 0.04];
 /// The corridor's wall points: the faces are y -10.66 (south wall, facing north) and y -8.74
-/// (north wall, facing south). ER-01 sits east of the engine door, BD-01 east of the bridge door.
+/// (north wall, facing south; the north wall's face moved to -7.7 with the 3 m corridor, #311). ER-01 sits east of the engine door, BD-01 east of the bridge door.
 /// The airlock's panels (#309): the first on the airlock's north wall inside (the right-hand wall seen
 /// from the outer door; face y -8.7), the second on that wall's outer face (y -8.4) beside the outer door,
-/// the third in the equipment room on the inner door's wall (face x 7.4), right of the door seen from the
-/// room (south of it), facing east.
+/// the third in the equipment room on the inner door's wall (face x 9.9), south of the door, 0.5 m from
+/// its frame and from the room's corner, facing west into the room.
 pub const ENGINE_DOOR_PANEL_AT: [f64; 2] = [-12.2, -10.66];
-pub const BRIDGE_DOOR_PANEL_AT: [f64; 2] = [-13.4, -8.74];
-pub const AIRLOCK_PANEL_AT: [[f64; 2]; 3] = [[8.7, -8.7], [9.5, -8.4], [7.4, -10.95]];
+pub const BRIDGE_DOOR_PANEL_AT: [f64; 2] = [-13.4, -7.74];
+pub const AIRLOCK_PANEL_AT: [[f64; 2]; 3] = [[11.2, -8.7], [12.0, -8.4], [9.9, -11.2]];
 /// The airlock wall panel (#308): 0.20 x 0.32 m screen, its centre 1.4 m up (eye and hand height; start value).
 pub const AIRLOCK_SCREEN_SIZE: [f64; 2] = [0.20, 0.32];
 pub const AIRLOCK_PANEL_CENTRE: f64 = 1.4;
@@ -227,37 +229,37 @@ const PARTS: &[Part] = &[
     Part { id: "medbay_wall_south", at: [-5.55, -16.85], size: [6.3, H, WALL], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "medbay_wall_east", at: [-2.55, -13.85], size: [WALL, H, 6.3], lift: 0.0, colour: WALL_COLOUR },
     Part { id: "medbay_roof", at: [-5.55, -13.85], size: [6.3, WALL, 6.3], lift: H, colour: WALL_COLOUR },
-    // The corridor (x -19..3.6, y -10.7..-8.7): its south wall east of the medbay, its west end, its
-    // north wall with the bridge door (x -16..-14) and the doorways of the turret room and the lab.
+    // The corridor (x -19..3.6, y -10.7..-7.7, 3 m wide, #311): its south wall east of the medbay, its
+    // west end, its north wall with the bridge door (x -16..-14) and the doorways of the turret room and the lab.
     Part { id: "corridor_wall_south_east", at: [0.675, -10.85], size: [6.15, H, WALL], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "corridor_wall_west", at: [-19.15, -9.7], size: [WALL, H, 2.6], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "corridor_wall_north_1", at: [-17.65, -8.55], size: [3.3, H, WALL], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "corridor_wall_north_2", at: [-11.25, -8.55], size: [5.5, H, WALL], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "corridor_wall_north_3", at: [-4.05, -8.55], size: [5.7, H, WALL], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "corridor_wall_north_4", at: [2.15, -8.55], size: [3.5, H, WALL], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "corridor_roof", at: [-7.7, -9.7], size: [23.2, WALL, 2.6], lift: H, colour: WALL_COLOUR },
-    // The north row (y -8.4..-2.4): the bridge (x -19..-11), the turret room (x -10.7..-4.7) and the
+    Part { id: "corridor_wall_west", at: [-19.15, -9.2], size: [WALL, H, 3.6], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "corridor_wall_north_1", at: [-17.65, -7.55], size: [3.3, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "corridor_wall_north_2", at: [-11.25, -7.55], size: [5.5, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "corridor_wall_north_3", at: [-4.05, -7.55], size: [5.7, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "corridor_wall_north_4", at: [2.0, -7.55], size: [3.2, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "corridor_roof", at: [-7.7, -9.2], size: [23.2, WALL, 3.6], lift: H, colour: WALL_COLOUR },
+    // The north row (y -7.4..-1.4): the bridge (x -19..-11), the turret room (x -10.7..-4.7) and the
     // lab (x -4.4..3.6), one roof over all three.
-    Part { id: "north_wall", at: [-7.7, -2.25], size: [23.2, H, WALL], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "bridge_wall_west", at: [-19.15, -5.4], size: [WALL, H, 6.6], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "bridge_wall_east", at: [-10.85, -5.4], size: [WALL, H, 6.0], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "turret_wall_east", at: [-4.55, -5.4], size: [WALL, H, 6.0], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "lab_wall_east", at: [3.75, -5.25], size: [WALL, H, 6.3], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "north_roof", at: [-7.7, -5.4], size: [23.2, WALL, 6.6], lift: H, colour: WALL_COLOUR },
-    // The equipment room (x 3.9..7.4, y -11.2..-8.2): closed to the corridor at its west end by a door (a 2 m
+    Part { id: "north_wall", at: [-7.7, -1.25], size: [23.2, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "bridge_wall_west", at: [-19.15, -4.4], size: [WALL, H, 6.6], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "bridge_wall_east", at: [-10.85, -4.4], size: [WALL, H, 6.0], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "turret_wall_east", at: [-4.55, -4.4], size: [WALL, H, 6.0], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "lab_wall_east", at: [3.75, -4.25], size: [WALL, H, 6.3], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "north_roof", at: [-7.7, -4.4], size: [23.2, WALL, 6.6], lift: H, colour: WALL_COLOUR },
+    // The equipment room (x 3.9..9.9, y -11.7..-7.7): closed to the corridor at its west end by a door (a 2 m
     // opening, wall stubs either side), closed by the airlock's inner door at its east end.
-    Part { id: "equipment_wall_north", at: [5.65, -8.05], size: [4.1, H, WALL], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "equipment_wall_south", at: [5.65, -11.35], size: [4.1, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "equipment_wall_north", at: [6.9, -7.55], size: [6.6, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "equipment_wall_south", at: [6.9, -11.85], size: [6.6, H, WALL], lift: 0.0, colour: WALL_COLOUR },
     // (the west wall's 2 m opening is closed by the equipment door's slab)
-    Part { id: "equipment_wall_west_north", at: [3.75, -8.3], size: [WALL, H, 0.8], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "equipment_wall_west_south", at: [3.75, -11.1], size: [WALL, H, 0.8], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "equipment_wall_east_north", at: [7.55, -8.3], size: [WALL, H, 0.8], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "equipment_wall_east_south", at: [7.55, -11.1], size: [WALL, H, 0.8], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "equipment_roof", at: [5.65, -9.7], size: [4.1, WALL, 3.6], lift: H, colour: WALL_COLOUR },
-    // The airlock (x 7.7..9.7): its north and south walls and roof; its doors close the ends.
-    Part { id: "airlock_wall_north", at: [8.7, -8.55], size: [2.6, H, WALL], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "airlock_wall_south", at: [8.7, -10.85], size: [2.6, H, WALL], lift: 0.0, colour: WALL_COLOUR },
-    Part { id: "airlock_roof", at: [8.7, -9.7], size: [2.6, WALL, 2.6], lift: H, colour: WALL_COLOUR },
+    Part { id: "equipment_wall_west_north", at: [3.75, -8.2], size: [WALL, H, 1.0], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "equipment_wall_west_south", at: [3.75, -11.2], size: [WALL, H, 1.0], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "equipment_wall_east_north", at: [10.05, -8.2], size: [WALL, H, 1.0], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "equipment_wall_east_south", at: [10.05, -11.2], size: [WALL, H, 1.0], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "equipment_roof", at: [6.9, -9.7], size: [6.6, WALL, 4.6], lift: H, colour: WALL_COLOUR },
+    // The airlock (x 10.2..12.2): its north and south walls and roof; its doors close the ends.
+    Part { id: "airlock_wall_north", at: [11.2, -8.55], size: [2.6, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "airlock_wall_south", at: [11.2, -10.85], size: [2.6, H, WALL], lift: 0.0, colour: WALL_COLOUR },
+    Part { id: "airlock_roof", at: [11.2, -9.7], size: [2.6, WALL, 2.6], lift: H, colour: WALL_COLOUR },
 ];
 
 /// The machines' housings: the engine room's, and the gun's breech in the turret room (west of GN-01,

@@ -58,6 +58,11 @@ DESK = ((-1.85, 0.90), (-1.55, 1.02))      # front edge, back edge of the sloped
 FACE = ((-1.55, 1.02), (-1.41, 1.78))      # bottom, top of the screen face (tilted back)
 SCREEN = (1.10, 0.62)               # screen_main, the engineer's one screen
 SCREEN_Z = 1.40
+# The supply strip above the visor (canisters, battery, coolant): a slim second screen on the
+# console's top edge, tilted back so it reads from the desk and still clears the core above.
+SUPPLY = (1.10, 0.12)               # screen_supply, at the main screen's pixel density
+SUPPLY_AT = (-1.36, 1.86)           # (y, z) of its centre
+SUPPLY_RX = -30.0
 START_DETENT = 35.0                 # degrees per detent, OFF -> PRIME -> RUN
 BOOT_TOGGLES = 3
 
@@ -375,6 +380,10 @@ def build_body(coll):
         c.box("rubber_black", (SCREEN[0] + 0.06, 0.08, SCREEN[1] + 0.06), (0, 0.0, 0), m=sf)
 
     carve(b, console, recess)
+    # The supply strip's housing on the console's top edge, with a foot down onto it.
+    upf = frame((0, *SUPPLY_AT), rx=SUPPLY_RX)
+    b.box("reactor_dark", (SUPPLY[0] + 0.08, 0.05, SUPPLY[1] + 0.05), (0, 0.025, 0), m=upf)
+    b.box("reactor_dark", (SUPPLY[0] - 0.20, 0.10, 0.07), (0, -1.30, FACE[1][1] + 0.02))
     # A visor over the screen and a dark band under the desk's front edge.
     b.box("reactor_dark", (SCREEN[0] + 0.20, 0.14, 0.035), (0, -0.05, SCREEN[1] / 2 + 0.07), m=sf)
     b.box("reactor_dark", (2 * CONSOLE_X + 0.02, 0.05, 0.05), (0, dy0 + 0.01, dz0 - 0.03))
@@ -489,6 +498,8 @@ def build_controls(coll):
     sf = frame((0, sy, sz), rx=FACE_RX)
     material("screen_main", "screen_off")
     quad_obj("screen_main", coll, *SCREEN, sf @ Matrix.Translation((0, 0.035, 0)), base="screen_off")
+    quad_obj("screen_supply", coll, *SUPPLY, frame((0, *SUPPLY_AT), rx=SUPPLY_RX)
+             @ Matrix.Translation((0, -0.001, 0)), base="screen_off")
     quad_obj("label_reactor", coll, 0.50, 0.07, frame((0, -1.7401, 0.55)))
 
     # Main desk: SCRAM under its cover, right of centre, in reach from the screen.
@@ -641,7 +652,7 @@ def triangles(coll):
     return tris
 
 
-REQUIRED = (["reactor_body", "screen_main", "button_scram", "cover_scram", "lever_start", "lever_eject",
+REQUIRED = (["reactor_body", "screen_main", "screen_supply", "button_scram", "cover_scram", "lever_start", "lever_eject",
              "cover_eject", "slot_1", "slot_2", "lamp_slot_1", "lamp_slot_2", "core", "core_glow",
              "core_glass"]
             + [f"ring_{i + 1}" for i in range(len(RINGS))]

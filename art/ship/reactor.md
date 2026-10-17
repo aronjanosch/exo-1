@@ -18,7 +18,7 @@ The look is a "magnetic bottle":
 - In the game (glTF, Y up), the console faces **+Z**. Blender (x, y, z) is glTF (x, z, −y).
 - Height to the ceiling flanges is 3.60 m; the column alone ends at 2.96 m. The base is Ø 3.0 m.
 - With the console, stand and bay, the footprint is about 3.4 m (x) × 3.8 m (z). All measures are constants at the top of the script, so the reactor can be fitted to the ship.
-- Triangles: reactor 5,086 (guide 12,000), canister 264 (guide 600).
+- Triangles: reactor 5,112 (guide 12,000), canister 264 (guide 600).
 
 Travel is given **relative to the node's rest rotation, about the node's own local axis**, in glTF terms. Positive angles follow the right-hand rule. Positions are the nodes' glTF translations at rest.
 
@@ -64,7 +64,8 @@ All are flat quads with UVs 0..1 upright. They face out of their surface (glTF l
 
 | Node | Size (w × h, m) | Spot |
 |---|---|---|
-| `screen_main` | 1.10 × 0.62 | Console screen in a 4 cm recess, tilted back 10°, centre at 1.40 m. It shows the reactor status and switches to the implosion countdown. |
+| `screen_main` | 1.10 × 0.62 | Console screen in a 4 cm recess, tilted back 10°, centre at 1.40 m. It shows the reactor status and switches to the implosion countdown. Panel 1280 × 720 px (tier L). |
+| `screen_supply` | 1.10 × 0.12 | Slim supply screen (canisters, battery, coolant; read-only) on the console's top edge above the visor, tilted back 30°, centre at 1.86 m. Panel 1280 × 140 px, the same density as `screen_main`. |
 | `label_reactor` | 0.50 × 0.07 | Nameplate on the console front, at 0.55 m. |
 | `label_scram` | 0.20 × 0.05 | Under the SCRAM cover, on the main desk. |
 | `label_startup` | 0.30 × 0.07 | Top of the stand's backboard, above the prime column. |

@@ -6,6 +6,7 @@ use bevy::camera::{ClearColorConfig, RenderTarget};
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages};
 use bevy::window::PrimaryWindow;
+use display_core::raster::Prim;
 use display_core::{level, list_row_at, Glyph, Level, ListRow, Rect, Rgb, Shape, TextFace, Theme, Tone, Widget};
 
 pub fn update_view(mut view: ResMut<DisplayView>, windows: Query<&Window, With<PrimaryWindow>>, controls: Res<Controls>, cam: Query<(&WorldPose, &Projection), With<MainCamera>>) {
@@ -104,14 +105,98 @@ pub fn add_quads(
     }
 }
 
-/// What a drawing shows; a new one redraws. The pointer position counts only over a list (its
-/// row hover), so moving over a button does not redraw; the cursor mark moves on its own.
+/// What a drawing shows apart from its vector pictures; a new one builds the drawing again, new
+/// pictures alone are repainted in place. The pointer position counts only over a list (its row
+/// hover), so moving over a button does not redraw; the cursor mark moves on its own.
 type DrawKey = (Panel, Option<String>, Option<String>, Option<(i64, i64)>, f32);
 
 fn draw_key(panel: &Panel, ptr: Option<&Pointer>, scale: f32) -> DrawKey {
     let over_list = |p: &&Pointer| p.hover.as_ref().is_some_and(|h| panel.find(h).is_some_and(|w| matches!(w.widget, Widget::List { .. })));
     let list_at = ptr.filter(over_list).and_then(|p| p.at).map(|a| (a.x as i64, (a.y / 4.0) as i64));
-    (panel.clone(), ptr.and_then(|p| p.hover.clone()), ptr.and_then(|p| p.pressed.clone()), list_at, scale)
+    (panel.sketch(), ptr.and_then(|p| p.hover.clone()), ptr.and_then(|p| p.pressed.clone()), list_at, scale)
+}
+
+/// A vector picture on a drawn screen: its image, repainted in place while the drawing stays
+/// (Bevy then writes the same texture instead of making a new one). None: too small to draw.
+struct Picture {
+    prims: Vec<Prim>,
+    size: (usize, usize),
+    scale: f64,
+    image: Option<Handle<Image>>,
+}
+
+/// The pictures rasterised this frame: screens that show the same one (the airlock's two panels)
+/// rasterise it once.
+#[derive(Default)]
+pub struct Rasters(Vec<Raster>);
+
+struct Raster {
+    size: (usize, usize),
+    scale: f64,
+    prims: Vec<Prim>,
+    data: Vec<u8>,
+}
+
+impl Rasters {
+    fn get(&mut self, size: (usize, usize), scale: f64, prims: &[Prim]) -> Vec<u8> {
+        if let Some(r) = self.0.iter().find(|r| r.size == size && r.scale == scale && r.prims == prims) {
+            return r.data.clone();
+        }
+        let data = display_core::raster::render(size.0, size.1, scale, prims);
+        self.0.push(Raster { size, scale, prims: prims.to_vec(), data: data.clone() });
+        data
+    }
+}
+
+/// What the pen needs to make pictures: the image store, this frame's rasters, the scanline
+/// images, the pictures it made (in drawing order) and whether anything in the drawing moves.
+struct Paint<'a> {
+    images: &'a mut Assets<Image>,
+    rasters: &'a mut Rasters,
+    scanlines: &'a mut Scanlines,
+    made: Vec<Picture>,
+    moving: bool,
+}
+
+/// One scanline image per area size, shared by every screen of that size: one node instead of a
+/// rect per line.
+#[derive(Default)]
+pub struct Scanlines(HashMap<(u32, u32, u64, u32), Handle<Image>>);
+
+/// A picture that turns about its centre once in `period` seconds (negative: the other way).
+#[derive(Component)]
+pub struct Spin {
+    period: f64,
+}
+
+/// A ring that grows and fades (`Shape::Pulse`), in texture pixels.
+#[derive(Component)]
+pub struct Pulse {
+    centre: Vec2,
+    from_r: f32,
+    to_r: f32,
+    width: f32,
+    rgb: [u8; 3],
+    period: f64,
+    phase: f64,
+}
+
+/// Plays the screens' moving shapes on the clock: a turn of a picture or a ring's size and fade,
+/// no drawing again. Only drawn screens have them (a screen out of range drops its drawing).
+pub fn animate(time: Res<Time>, mut spins: Query<(&Spin, &mut UiTransform)>, mut pulses: Query<(&Pulse, &mut Node, &mut BorderColor)>) {
+    let now = time.elapsed_secs_f64();
+    for (s, mut tf) in &mut spins {
+        tf.rotation = Rot2::radians((std::f64::consts::TAU * (now / s.period).rem_euclid(1.0)) as f32);
+    }
+    for (p, mut n, mut border) in &mut pulses {
+        let u = (now / p.period + p.phase).rem_euclid(1.0) as f32;
+        let outer = p.from_r + (p.to_r - p.from_r) * u + p.width * 0.5;
+        n.left = px(p.centre.x - outer);
+        n.top = px(p.centre.y - outer);
+        n.width = px(2.0 * outer);
+        n.height = px(2.0 * outer);
+        *border = BorderColor::all(Color::srgba_u8(p.rgb[0], p.rgb[1], p.rgb[2], ((1.0 - u) * 255.0).round() as u8));
+    }
 }
 
 #[derive(Component)]
@@ -121,6 +206,9 @@ pub struct ScreenTarget {
     cursor: Entity,
     material: Handle<StandardMaterial>,
     drawn: Option<DrawKey>,
+    pictures: Vec<Picture>,
+    /// Something in the drawing moves: the camera renders every frame.
+    moving: bool,
     /// Where the cursor mark stands (texture pixels), None when hidden.
     cursor_at: Option<(i32, i32)>,
     last: f64,
@@ -160,8 +248,11 @@ pub fn draw_world(
     time: Res<Time>,
     mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut cache: Local<(Rasters, Scanlines)>,
 ) {
     let (Some(quads), Some(fonts)) = (quads, fonts) else { return };
+    let (rasters, scanlines) = &mut *cache;
+    rasters.0.clear();
     let w = look.0.world;
     let forward = view_cam.single().ok().map(|p| p.rot * DVec3::NEG_Z);
     let now = time.elapsed_secs_f64();
@@ -184,7 +275,7 @@ pub fn draw_world(
                 let cursor = spawn_cursor(&mut commands, camera, &look.0, ts);
                 let material = materials.add(StandardMaterial { base_color_texture: Some(image), unlit: true, ..default() });
                 mat.0 = material.clone();
-                commands.entity(e).insert(ScreenTarget { camera, root, cursor, material, drawn: None, cursor_at: None, last: f64::NEG_INFINITY, frames_left: 0 });
+                commands.entity(e).insert(ScreenTarget { camera, root, cursor, material, drawn: None, pictures: Vec::new(), moving: false, cursor_at: None, last: f64::NEG_INFINITY, frames_left: 0 });
             }
             (true, Some(mut t)) => {
                 if mat.0 != t.material {
@@ -197,14 +288,33 @@ pub fn draw_world(
                 let ptr = in_use.then_some(&pointer.0);
                 let ts = w.texture_scale as f32;
                 let key = draw_key(panel, ptr, ts);
-                if t.drawn.as_ref() != Some(&key) && (in_use || now - t.last >= w.redraw_s) {
-                    commands.entity(t.root).despawn_children();
-                    let images_cell = std::cell::RefCell::new(&mut *images);
-                    let pen = Pen { theme: &look.0, fonts: &fonts, scale: ts, images: Some(&images_cell) };
-                    commands.entity(t.root).with_children(|c| pen.panel(c, panel, ptr));
-                    t.drawn = Some(key);
+                let pics = panel.pictures();
+                let rebuild = t.drawn.as_ref() != Some(&key) || pics.len() != t.pictures.len();
+                let repaint = !rebuild && pics.iter().zip(&t.pictures).any(|(p, q)| *p != q.prims.as_slice());
+                if (rebuild || repaint) && (in_use || now - t.last >= w.redraw_s) {
+                    if rebuild {
+                        commands.entity(t.root).despawn_children();
+                        let paint = std::cell::RefCell::new(Paint { images: &mut images, rasters: &mut *rasters, scanlines: &mut *scanlines, made: Vec::new(), moving: false });
+                        let pen = Pen { theme: &look.0, fonts: &fonts, scale: ts, paint: Some(&paint) };
+                        commands.entity(t.root).with_children(|c| pen.panel(c, panel, ptr));
+                        t.pictures = std::mem::take(&mut paint.borrow_mut().made);
+                        t.moving = paint.borrow().moving;
+                        t.drawn = Some(key);
+                        // The new nodes need a frame for layout.
+                        t.frames_left = 3;
+                    } else {
+                        for (p, q) in pics.iter().zip(&mut t.pictures) {
+                            if *p == q.prims.as_slice() {
+                                continue;
+                            }
+                            q.prims = p.to_vec();
+                            if let Some(mut img) = q.image.as_ref().and_then(|h| images.get_mut(h)) {
+                                img.data = Some(rasters.get(q.size, q.scale, p));
+                            }
+                        }
+                        t.frames_left = t.frames_left.max(2);
+                    }
                     t.last = now;
-                    t.frames_left = 3;
                 }
                 let at = ptr.and_then(|p| p.at).map(|a| ((a.x as f32 * ts).round() as i32, (a.y as f32 * ts).round() as i32));
                 if t.cursor_at != at {
@@ -221,6 +331,9 @@ pub fn draw_world(
                     }
                     t.frames_left = t.frames_left.max(3);
                 }
+                if t.moving {
+                    t.frames_left = t.frames_left.max(1);
+                }
                 let on = t.frames_left > 0;
                 t.frames_left = t.frames_left.saturating_sub(1);
                 if let Ok(mut cam) = cameras.get_mut(t.camera)
@@ -235,7 +348,12 @@ pub fn draw_world(
                 {
                     cam.is_active = false;
                 }
-                t.drawn = None;
+                // Dropped, not kept: it is drawn again on return anyway, and its moving shapes stop.
+                if t.drawn.take().is_some() {
+                    commands.entity(t.root).despawn_children();
+                    t.pictures.clear();
+                    t.moving = false;
+                }
                 t.cursor_at = None;
                 if let Ok(mut n) = cursors.get_mut(t.cursor) {
                     n.display = Display::None;
@@ -256,7 +374,7 @@ struct Pen<'a> {
     fonts: &'a DisplayFonts,
     scale: f32,
     /// Where vector pictures put their images (shapes of that kind need it).
-    images: Option<&'a std::cell::RefCell<&'a mut Assets<Image>>>,
+    paint: Option<&'a std::cell::RefCell<Paint<'a>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -364,7 +482,7 @@ impl Pen<'_> {
         }
         let mut clip = self.node(x, y, w, h);
         clip.overflow = Overflow::clip();
-        let sub = Pen { theme: self.theme, fonts: self.fonts, scale: self.scale, images: None };
+        let sub = Pen { theme: self.theme, fonts: self.fonts, scale: self.scale, paint: None };
         c.spawn(clip).with_children(|c| {
             let mut t = -h;
             while t < w {
@@ -405,20 +523,28 @@ impl Pen<'_> {
     }
 
     /// A vector picture: rasterised on the CPU to one image the size of its box in texture pixels.
-    fn vector(&self, c: &mut ChildSpawnerCommands, x: f64, y: f64, w: f64, h: f64, unit: f64, prims: &[display_core::raster::Prim]) {
-        let Some(images) = &self.images else { return };
+    #[allow(clippy::too_many_arguments)]
+    fn vector(&self, c: &mut ChildSpawnerCommands, x: f64, y: f64, w: f64, h: f64, unit: f64, prims: &[Prim], spin: f64) {
+        let Some(paint) = &self.paint else { return };
+        let mut paint = paint.borrow_mut();
         let s = self.scale as f64;
         let (pw, ph) = ((w * s).round() as usize, (h * s).round() as usize);
-        if pw == 0 || ph == 0 {
-            return;
+        let mut picture = Picture { prims: prims.to_vec(), size: (pw, ph), scale: unit * s, image: None };
+        if pw > 0 && ph > 0 {
+            let data = paint.rasters.get(picture.size, picture.scale, prims);
+            let mut image = Image::new(Extent3d { width: pw as u32, height: ph as u32, ..default() }, TextureDimension::D2, data, TextureFormat::Rgba8UnormSrgb, RenderAssetUsages::default());
+            image.sampler = bevy::image::ImageSampler::linear();
+            let handle = paint.images.add(image);
+            let mut n = self.node(x, y, w, h);
+            n.position_type = PositionType::Absolute;
+            let mut node = c.spawn((n, ImageNode::new(handle.clone())));
+            if spin != 0.0 {
+                node.insert(Spin { period: spin });
+                paint.moving = true;
+            }
+            picture.image = Some(handle);
         }
-        let data = display_core::raster::render(pw, ph, unit * s, prims);
-        let mut image = Image::new(Extent3d { width: pw as u32, height: ph as u32, ..default() }, TextureDimension::D2, data, TextureFormat::Rgba8UnormSrgb, RenderAssetUsages::default());
-        image.sampler = bevy::image::ImageSampler::linear();
-        let handle = images.borrow_mut().add(image);
-        let mut n = self.node(x, y, w, h);
-        n.position_type = PositionType::Absolute;
-        c.spawn((n, ImageNode::new(handle)));
+        paint.made.push(picture);
     }
 
     fn glyph(&self, c: &mut ChildSpawnerCommands, g: Glyph, at: DVec2, size: f64, colour: Color) {
@@ -502,14 +628,31 @@ impl Pen<'_> {
             }
         }
         let every = self.theme.strokes.scanline_every;
-        if every >= 2.0 {
+        if every >= 2.0
+            && let Some(paint) = &self.paint
+        {
             let area = panel.well().unwrap_or(Rect::new(0.0, 0.0, w, h));
-            let shade = Color::srgba(0.0, 0.0, 0.0, 0.18);
-            let mut ly = area.min.y + every - 1.0;
-            while ly < area.max().y {
-                self.rect(c, area.min.x, ly, area.size.x, 1.0, shade);
-                ly += every;
-            }
+            let s = self.scale as f64;
+            let (aw, ah) = ((area.size.x * s).round() as u32, (area.size.y * s).round() as u32);
+            let mut paint = paint.borrow_mut();
+            let Paint { images, scanlines, .. } = &mut *paint;
+            let image = scanlines.0.entry((aw, ah, every.to_bits(), self.scale.to_bits())).or_insert_with(|| {
+                // A line of one panel pixel every `every`, black at 0.18.
+                let mut data = vec![0u8; (aw * ah * 4) as usize];
+                let mut ly = every - 1.0;
+                while ly < area.size.y {
+                    for row in (ly * s).round() as u32..(((ly + 1.0) * s).round() as u32).min(ah) {
+                        for x in 0..aw {
+                            data[((row * aw + x) * 4 + 3) as usize] = 46;
+                        }
+                    }
+                    ly += every;
+                }
+                let mut image = Image::new(Extent3d { width: aw.max(1), height: ah.max(1), ..default() }, TextureDimension::D2, data, TextureFormat::Rgba8UnormSrgb, RenderAssetUsages::default());
+                image.sampler = bevy::image::ImageSampler::nearest();
+                images.add(image)
+            });
+            c.spawn((self.node(area.min.x, area.min.y, area.size.x, area.size.y), ImageNode::new(image.clone())));
         }
     }
 
@@ -587,7 +730,17 @@ impl Pen<'_> {
                     let colour = Color::srgb_u8(rgb[0], rgb[1], rgb[2]);
                     self.text_spaced(c, o.x + x, o.y + y, *w, *h, text, *size, face(*f), colour, (*tracking * *size) as f32 * self.scale, *centred);
                 }
-                Shape::Vector { x, y, w, h, unit, prims } => self.vector(c, o.x + x, o.y + y, *w, *h, *unit, prims),
+                Shape::Vector { x, y, w, h, unit, prims, spin } => self.vector(c, o.x + x, o.y + y, *w, *h, *unit, prims, *spin),
+                Shape::Pulse { cx, cy, from_r, to_r, width, rgb, period, phase } => {
+                    let Some(paint) = &self.paint else { continue };
+                    paint.borrow_mut().moving = true;
+                    let s = self.scale;
+                    let mut n = self.node(0.0, 0.0, 0.0, 0.0);
+                    n.border = UiRect::all(px(*width as f32 * s));
+                    n.border_radius = BorderRadius::all(percent(50));
+                    let pulse = Pulse { centre: Vec2::new((o.x + cx) as f32 * s, (o.y + cy) as f32 * s), from_r: *from_r as f32 * s, to_r: *to_r as f32 * s, width: *width as f32 * s, rgb: *rgb, period: *period, phase: *phase };
+                    c.spawn((n, BorderColor::all(Color::NONE), pulse));
+                }
                 Shape::Text { x, y, w, h, text, size, face: f, ink, centred } => {
                     self.text(c, o.x + x, o.y + y, *w, *h, text, *size, face(*f), col(self.theme.ink(*ink)), false, *centred);
                 }

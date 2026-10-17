@@ -191,15 +191,29 @@ pub fn clip_convex(subject: &[Pt], clip: &[Pt]) -> Vec<Pt> {
 
 const SUB: usize = 4;
 
+/// One polygon edge in sub-scanline space: it crosses sub-scanlines `first..last` (samples at
+/// `k + 0.5`), at `x` on the first one and `dx` further on each next one.
+struct Edge {
+    first: usize,
+    last: usize,
+    x: f64,
+    dx: f64,
+    dir: i32,
+}
+
 /// Draws `prims` over a transparent `w` by `h` pixel buffer (RGBA8, straight alpha), the
 /// prims' units scaled by `scale` pixels per unit.
 pub fn render(w: usize, h: usize, scale: f64, prims: &[Prim]) -> Vec<u8> {
     // Premultiplied float accumulation, one pixel = [r, g, b, a].
     let mut buf = vec![0.0f32; w * h * 4];
     let mut cov = vec![0.0f32; w];
+    // Reused across prims and rows: an animated picture is rasterised many times a second.
+    let mut edges: Vec<Edge> = Vec::new();
+    let mut active: Vec<usize> = Vec::new();
+    let mut xs: Vec<(f64, i32)> = Vec::new();
+    let rows = h * SUB;
     for prim in prims {
-        let mut rows: Vec<Vec<(f64, i32)>> = vec![Vec::new(); h * SUB];
-        let (mut y0, mut y1) = (usize::MAX, 0usize);
+        edges.clear();
         for poly in &prim.polys {
             for i in 0..poly.len() {
                 let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
@@ -208,31 +222,43 @@ pub fn render(w: usize, h: usize, scale: f64, prims: &[Prim]) -> Vec<u8> {
                     continue;
                 }
                 let (dir, (x0, ys, x1, ye)) = if ay < by { (1, (ax, ay, bx, by)) } else { (-1, (bx, by, ax, ay)) };
-                // Sub-scanline k samples at y = k + 0.5.
                 let first = (ys - 0.5).ceil().max(0.0) as i64;
-                let last = (ye - 0.5).ceil().min((h * SUB) as f64) as i64;
-                for k in first..last {
-                    let t = (k as f64 + 0.5 - ys) / (ye - ys);
-                    rows[k as usize].push((x0 + (x1 - x0) * t, dir));
-                    y0 = y0.min(k as usize / SUB);
-                    y1 = y1.max(k as usize / SUB);
-                }
-            }
-        }
-        if y0 == usize::MAX {
-            continue;
-        }
-        let a = prim.alpha as f32 / 255.0;
-        let src = [prim.rgb[0] as f32 / 255.0, prim.rgb[1] as f32 / 255.0, prim.rgb[2] as f32 / 255.0];
-        for py in y0..=y1.min(h - 1) {
-            cov.iter_mut().for_each(|c| *c = 0.0);
-            let (mut xmin, mut xmax) = (w, 0usize);
-            for s in 0..SUB {
-                let xs = &mut rows[py * SUB + s];
-                if xs.is_empty() {
+                let last = (ye - 0.5).ceil().min(rows as f64) as i64;
+                if first >= last {
                     continue;
                 }
-                xs.sort_by(|p, q| p.0.total_cmp(&q.0));
+                let dx = (x1 - x0) / (ye - ys);
+                edges.push(Edge { first: first as usize, last: last as usize, x: x0 + (first as f64 + 0.5 - ys) * dx, dx, dir });
+            }
+        }
+        if edges.is_empty() {
+            continue;
+        }
+        edges.sort_unstable_by_key(|e| e.first);
+        let y0 = edges[0].first / SUB;
+        let y1 = (edges.iter().map(|e| e.last).max().unwrap_or(0) - 1) / SUB;
+        let a = prim.alpha as f32 / 255.0;
+        let src = [prim.rgb[0] as f32 / 255.0, prim.rgb[1] as f32 / 255.0, prim.rgb[2] as f32 / 255.0];
+        let mut next = 0;
+        active.clear();
+        for py in y0..=y1.min(h - 1) {
+            let (mut xmin, mut xmax) = (w, 0usize);
+            for s in 0..SUB {
+                let k = py * SUB + s;
+                while next < edges.len() && edges[next].first <= k {
+                    active.push(next);
+                    next += 1;
+                }
+                active.retain(|&i| edges[i].last > k);
+                if active.is_empty() {
+                    continue;
+                }
+                xs.clear();
+                xs.extend(active.iter().map(|&i| {
+                    let e = &edges[i];
+                    (e.x + (k - e.first) as f64 * e.dx, e.dir)
+                }));
+                xs.sort_unstable_by(|p, q| p.0.total_cmp(&q.0));
                 let mut wind = 0;
                 for i in 0..xs.len() {
                     wind += xs[i].1;
@@ -244,16 +270,19 @@ pub fn render(w: usize, h: usize, scale: f64, prims: &[Prim]) -> Vec<u8> {
                         let (ia, ib) = (xa as usize, (xb.ceil() as usize).min(w));
                         xmin = xmin.min(ia);
                         xmax = xmax.max(ib);
-                        for px in ia..ib {
-                            let l = xa.max(px as f64);
-                            let r = xb.min(px as f64 + 1.0);
-                            cov[px] += ((r - l).max(0.0) / SUB as f64) as f32;
+                        // Only the span's end pixels are cut; the ones between are fully covered.
+                        let part = |px: usize| ((xb.min(px as f64 + 1.0) - xa.max(px as f64)).max(0.0) / SUB as f64) as f32;
+                        cov[ia] += part(ia);
+                        if ib > ia + 1 {
+                            cov[ib - 1] += part(ib - 1);
+                            cov[ia + 1..ib - 1].iter_mut().for_each(|c| *c += 1.0 / SUB as f32);
                         }
                     }
                 }
             }
             for px in xmin..xmax.min(w) {
                 let c = cov[px].min(1.0) * a;
+                cov[px] = 0.0;
                 if c <= 0.0 {
                     continue;
                 }

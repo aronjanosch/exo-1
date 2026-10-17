@@ -196,7 +196,7 @@ pub fn aim_off(w: &mut World) {
 
 pub fn window_plugin(app: &mut App) {
     use crate::phases::Frame;
-    app.add_systems(Update, (reload_look, load_fonts, update_view, add_quads, draw_world).chain().in_set(Frame::Hud));
+    app.add_systems(Update, (reload_look, load_fonts, update_view, add_quads, draw_world, animate).chain().in_set(Frame::Hud));
 }
 
 /// Dev builds: `content/ui/displays.json` is read every 250 ms of wall time; a changed file that

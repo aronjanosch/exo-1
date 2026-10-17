@@ -428,6 +428,10 @@ fn shifted_dim(s: &Shape, dx: f64, dy: f64, right: f64) -> Shape {
             *x += dx;
             *y += dy;
         }
+        Shape::Pulse { cx, cy, .. } => {
+            *cx += dx;
+            *cy += dy;
+        }
     }
     t
 }

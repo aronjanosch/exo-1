@@ -47,7 +47,12 @@ pub enum Shape {
     SpacedText { x: f64, y: f64, w: f64, h: f64, text: String, size: f64, face: TextFace, rgb: [u8; 3], tracking: f64, centred: bool },
     /// A vector picture (`raster::Prim`s in its own units, `unit` panel pixels per unit) in the box
     /// `w` by `h` panel pixels: polygons, bezier blades and alpha rings the other shapes cannot draw.
-    Vector { x: f64, y: f64, w: f64, h: f64, unit: f64, prims: Vec<crate::raster::Prim> },
+    /// `spin` turns it about the box's centre once in that many seconds (clockwise, negative the
+    /// other way, 0 still): the screen turns the drawn picture, nothing is drawn again.
+    Vector { x: f64, y: f64, w: f64, h: f64, unit: f64, prims: Vec<crate::raster::Prim>, spin: f64 },
+    /// A ring about `(cx, cy)` that grows from `from_r` to `to_r` (radius to the stroke's middle) and
+    /// fades out, once every `period` seconds, `phase` (0..1) into its loop. The screen moves it.
+    Pulse { cx: f64, cy: f64, from_r: f64, to_r: f64, width: f64, rgb: [u8; 3], period: f64, phase: f64 },
 }
 
 /// The extent of a shape: (min x, min y, max x, max y), in canvas pixels.
@@ -60,6 +65,10 @@ impl Shape {
             Shape::Line { a, b, width, .. } => (a[0].min(b[0]) - width * 0.5, a[1].min(b[1]) - width * 0.5, a[0].max(b[0]) + width * 0.5, a[1].max(b[1]) + width * 0.5),
             // The outline lies inside the radius.
             Shape::Circle { cx, cy, r, .. } => (cx - r, cy - r, cx + r, cy + r),
+            Shape::Pulse { cx, cy, from_r, to_r, width, .. } => {
+                let r = from_r.max(*to_r) + width * 0.5;
+                (cx - r, cy - r, cx + r, cy + r)
+            }
             Shape::Rect { x, y, w, h, .. } | Shape::Hatch { x, y, w, h, .. } | Shape::Text { x, y, w, h, .. } | Shape::SpacedText { x, y, w, h, .. } | Shape::Vector { x, y, w, h, .. } => (*x, *y, x + w, y + h),
         }
     }

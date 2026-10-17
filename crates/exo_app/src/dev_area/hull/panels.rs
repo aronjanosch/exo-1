@@ -90,10 +90,9 @@ pub fn door_panel(r: Option<&ReactorNews>) -> Panel {
     Panel::screen(Tier::S, DOOR_NAME, "ER-01", column(4.0, body)).with_padding(8.0)
 }
 
-/// An airlock wall panel (#308, #309): the design's screen (`display_core::airlock_panel`). `t` is the
-/// time for the cycling animation, in seconds. Dead glass while the ship's master is off (like the other
+/// An airlock wall panel (#308, #309): the design's screen (`display_core::airlock_panel`). Dead glass while the ship's master is off (like the other
 /// screens' OFF); the press goes to the host, which ignores it during a cycle.
-pub fn airlock_panel(r: Option<&ReactorNews>, t: f64) -> Panel {
+pub fn airlock_panel(r: Option<&ReactorNews>) -> Panel {
     use display_core::airlock_panel::{panel, Face};
     let a = r.map(|r| r.airlock).unwrap_or_default();
     let live = r.map_or(true, |r| r.startup.live());
@@ -102,12 +101,9 @@ pub fn airlock_panel(r: Option<&ReactorNews>, t: f64) -> Panel {
     } else if a.cycling == AirlockCycle::Idle {
         Face::Idle { inside: a.inside }
     } else {
-        Face::Cycling { t }
+        Face::Cycling
     })
 }
-
-/// The animation's clock steps: 30 a second, so a new picture is rasterised at most that often.
-const ANIM_STEP_S: f64 = 1.0 / 30.0;
 
 /// The presses on the hull's screens: the vents' valves, the bridge door, the airlock's panels and
 /// ST-01's SILENCE.
@@ -145,8 +141,7 @@ pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<I
 }
 
 /// The hull's panels from the snapshot and the room's news, every tick.
-pub fn write_panels(items: Res<Items>, mut panels: ResMut<Panels>, time: Res<Time>) {
-    let t = (time.elapsed_secs_f64() / ANIM_STEP_S).floor() * ANIM_STEP_S;
+pub fn write_panels(items: Res<Items>, mut panels: ResMut<Panels>) {
     let r = items.reactor.as_ref();
     show(&mut panels, r, DOOR_ID, door_panel(r));
     show(&mut panels, r, VENT_ENGINE_ID, vent_panel(r, 0));
@@ -154,8 +149,8 @@ pub fn write_panels(items: Res<Items>, mut panels: ResMut<Panels>, time: Res<Tim
     show(&mut panels, r, VENT_BRIDGE_ID, vent_panel(r, 2));
     show(&mut panels, r, BRIDGE_DOOR_ID, bridge_door_panel(Some(&items.room)));
     // Not through `show`: the airlock panel's dead glass is its own face.
-    panels.set(AIRLOCK_IN_ID, airlock_panel(r, t));
-    panels.set(AIRLOCK_OUT_ID, airlock_panel(r, t));
+    panels.set(AIRLOCK_IN_ID, airlock_panel(r));
+    panels.set(AIRLOCK_OUT_ID, airlock_panel(r));
     show(&mut panels, r, status_monitor::ID, status_monitor::monitor_panel(r));
 }
 
@@ -170,11 +165,10 @@ mod tests {
         r.startup = item_core::wire::StartupStage::Reactor;
         for (cycling, inside) in [(AirlockCycle::Idle, true), (AirlockCycle::Idle, false), (AirlockCycle::Outer, true)] {
             r.airlock = AirlockNews { cycling, inside, progress: 0.5, ..Default::default() };
-            let p = airlock_panel(Some(&r), 0.4);
+            let p = airlock_panel(Some(&r));
             assert_eq!(p.find("push").is_some(), cycling == AirlockCycle::Idle, "PUSH only at rest");
             assert!(p.find("cycle").is_none() && p.find("in").is_none() && p.find("out").is_none(), "and no other button");
             assert!(p.overflowing().is_empty(), "{:?}", p.overflowing());
         }
-        assert_ne!(airlock_panel(Some(&r), 0.0), airlock_panel(Some(&r), 0.5), "the cycling picture moves");
     }
 }

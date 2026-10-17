@@ -472,6 +472,36 @@ impl Panel {
         out
     }
 
+    /// The panel with every vector picture's prims left out. Two drawings with the same sketch
+    /// differ only in their pictures, so a screen can repaint those in place (an animation)
+    /// instead of building the whole drawing again.
+    pub fn sketch(&self) -> Panel {
+        fn item(i: &Item) -> Item {
+            let widget = match &i.widget {
+                Widget::Row { gap, items } => Widget::Row { gap: *gap, items: items.iter().map(item).collect() },
+                Widget::Column { gap, items } => Widget::Column { gap: *gap, items: items.iter().map(item).collect() },
+                Widget::Canvas { w, h, shapes, action } => {
+                    let shapes = shapes.iter().map(|s| if let Shape::Vector { x, y, w, h, unit, spin, .. } = s { Shape::Vector { x: *x, y: *y, w: *w, h: *h, unit: *unit, prims: Vec::new(), spin: *spin } } else { s.clone() }).collect();
+                    Widget::Canvas { w: *w, h: *h, shapes, action: action.clone() }
+                }
+                w => w.clone(),
+            };
+            Item { widget, size: i.size }
+        }
+        Panel { size: self.size, padding: self.padding, plate: self.plate.clone(), root: item(&self.root) }
+    }
+
+    /// Every vector picture's prims, in the order of `layout` and then of the canvas's shapes.
+    pub fn pictures(&self) -> Vec<&[raster::Prim]> {
+        let mut out = Vec::new();
+        for w in self.layout() {
+            if let Widget::Canvas { shapes, .. } = w.widget {
+                out.extend(shapes.iter().filter_map(|s| if let Shape::Vector { prims, .. } = s { Some(prims.as_slice()) } else { None }));
+            }
+        }
+        out
+    }
+
     pub fn hit(&self, p: DVec2) -> Option<Placed<'_>> {
         self.layout().into_iter().find(|w| w.widget.action().is_some() && w.rect.contains(p))
     }

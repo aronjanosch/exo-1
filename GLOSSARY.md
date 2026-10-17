@@ -171,12 +171,12 @@ The red button under a cover on the reactor: stops injection and vents the chamb
 _Avoid_: emergency stop, shutdown
 
 **Core eject**:
-The last measure before the reactor fails: a lever under its own cover throws the core out; the ship runs on emergency power until a new reactor is fitted.
+The last measure before the implosion: a lever under its own cover throws the core out; the ship runs on emergency power until a new reactor is fitted.
 _Avoid_: jettison, purge
 
-**Meltdown**:
-The reactor's bad end: the core turns unstable, the MELTDOWN screen counts down to the implosion. Name not final (the decision's proposal says containment breach).
-_Avoid_: explosion, overload
+**Implosion**:
+The antimatter reactor's bad end: critical heat for too long makes the core unstable, a screen at the reactor counts down, and the implosion can destroy the ship; the core eject is what saves it.
+_Avoid_: meltdown (there is none, the reactor is antimatter), containment breach, explosion
 
 **Emergency power**:
 The ship's batteries, which take over by themselves when the reactor gives no power.

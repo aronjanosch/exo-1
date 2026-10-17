@@ -67,6 +67,18 @@ pub enum Request {
     Store { slot: usize, rack: RackId },
     /// Take the whole stack of a cabinet slot into the inventory (the collect rules apply).
     Fetch { rack: RackId, rack_slot: usize },
+    /// Like `Store`, into one place of the container (a drag in the container window): an empty
+    /// place or equal items with room for the whole stack.
+    StoreAt { slot: usize, rack: RackId, rack_slot: usize },
+    /// Like `Fetch`, into one bar slot: an empty slot or equal items with room.
+    FetchTo { rack: RackId, rack_slot: usize, slot: usize },
+    /// Moves a stack between two places of the same container (a drag inside the window).
+    MoveIn { rack: RackId, from: usize, to: usize },
+    /// Opens the container window: the player holds the container until `Close` (one player per
+    /// container). Refused while another holds it.
+    Open { rack: RackId },
+    /// Gives the container back. Whoever does not hold it asks for nothing.
+    Close { rack: RackId },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -92,6 +104,8 @@ pub enum Reject {
     Locked,
     /// The container's slots do not take this item.
     NotAllowed,
+    /// Another player has the container open.
+    InUse,
 }
 
 impl From<Refusal> for Reject {
@@ -124,6 +138,8 @@ pub enum Event {
     Confirmed { player: PlayerId, seq: u32 },
     Rejected { player: PlayerId, seq: u32, why: Reject },
     Rack { rack: RackId, contents: Container },
+    /// The container's holder: a player has it open, or nobody (None).
+    Lock { rack: RackId, by: Option<PlayerId> },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -132,6 +148,8 @@ pub struct Host {
     pub loose: BTreeMap<LooseId, Loose>,
     pub inventories: BTreeMap<PlayerId, Inventory>,
     pub racks: BTreeMap<RackId, Container>,
+    /// Who has a container open: one player each, so two never move items in it at once.
+    pub locks: BTreeMap<RackId, PlayerId>,
     next: LooseId,
 }
 
@@ -219,7 +237,19 @@ impl Host {
         let loose = self.loose.iter().map(|(id, l)| Event::Spawned { item: *id, loose: l.clone(), by: None });
         let inventories = self.inventories.iter().map(|(p, inv)| Event::Inventory { player: *p, inv: inv.clone() });
         let racks = self.racks.iter().map(|(id, c)| Event::Rack { rack: *id, contents: c.clone() });
-        loose.chain(inventories).chain(racks).collect()
+        let locks = self.locks.iter().map(|(id, p)| Event::Lock { rack: *id, by: Some(*p) });
+        loose.chain(inventories).chain(racks).chain(locks).collect()
+    }
+
+    /// A player left (or its window did): every container it held is free again.
+    pub fn release_player(&mut self, player: PlayerId) -> Vec<Event> {
+        let held: Vec<RackId> = self.locks.iter().filter(|(_, p)| **p == player).map(|(r, _)| *r).collect();
+        held.into_iter()
+            .map(|rack| {
+                self.locks.remove(&rack);
+                Event::Lock { rack, by: None }
+            })
+            .collect()
     }
 
     pub fn inventory(&self, p: PlayerId) -> Inventory {
@@ -229,7 +259,9 @@ impl Host {
     pub fn handle(&mut self, a: &Action) -> Vec<Event> {
         let mut inv = self.inventory(a.player);
         let mut out = Vec::new();
+        let busy = rack_of(&a.req).is_some_and(|r| self.locks.get(&r).is_some_and(|p| *p != a.player));
         let result: Result<(), Reject> = match &a.req {
+            _ if busy => Err(Reject::InUse),
             Request::Collect { item } => match self.loose.get(item) {
                 None => Err(Reject::Gone),
                 Some(l) => match inv.collect(&self.defs, l.stack.clone()) {
@@ -275,6 +307,44 @@ impl Host {
                     out.push(Event::Rack { rack: *rack, contents });
                 }),
             },
+            Request::StoreAt { slot, rack, rack_slot } => match self.racks.get(rack).cloned() {
+                None => Err(Reject::NoRack),
+                Some(mut contents) => store_at(&mut inv, &mut contents, *slot, *rack_slot).map(|()| {
+                    self.racks.insert(*rack, contents.clone());
+                    out.push(Event::Rack { rack: *rack, contents });
+                }),
+            },
+            Request::FetchTo { rack, rack_slot, slot } => match self.racks.get(rack).cloned() {
+                None => Err(Reject::NoRack),
+                Some(mut contents) => fetch_to(&self.defs, &mut inv, &mut contents, *rack_slot, *slot).map(|()| {
+                    self.racks.insert(*rack, contents.clone());
+                    out.push(Event::Rack { rack: *rack, contents });
+                }),
+            },
+            Request::MoveIn { rack, from, to } => match self.racks.get(rack).cloned() {
+                None => Err(Reject::NoRack),
+                Some(mut contents) => move_in(&inv, &mut contents, *from, *to).map(|()| {
+                    self.racks.insert(*rack, contents.clone());
+                    out.push(Event::Rack { rack: *rack, contents });
+                }),
+            },
+            Request::Open { rack } => {
+                if !self.racks.contains_key(rack) {
+                    Err(Reject::NoRack)
+                } else {
+                    if self.locks.insert(*rack, a.player) != Some(a.player) {
+                        out.push(Event::Lock { rack: *rack, by: Some(a.player) });
+                    }
+                    Ok(())
+                }
+            }
+            Request::Close { rack } => {
+                if self.locks.get(rack) == Some(&a.player) {
+                    self.locks.remove(rack);
+                    out.push(Event::Lock { rack: *rack, by: None });
+                }
+                Ok(())
+            }
         };
         match result {
             Ok(()) => {
@@ -294,6 +364,8 @@ pub struct Client {
     pub defs: ItemDefs,
     pub loose: BTreeMap<LooseId, Loose>,
     pub racks: BTreeMap<RackId, Container>,
+    /// Who has which container open, as the host last said.
+    pub locks: BTreeMap<RackId, PlayerId>,
     pub confirmed: Inventory,
     /// The other players' inventories as the host last sent them (their held items show).
     pub others: BTreeMap<PlayerId, Inventory>,
@@ -315,6 +387,7 @@ impl Client {
     /// The player does something: it shows at once and the action goes to the host. A request
     /// that cannot work even here (an empty slot, a full inventory) is refused without sending.
     pub fn request(&mut self, req: Request) -> Result<Action, Reject> {
+        self.would(&req)?;
         let mut view = self.view.clone();
         let mut hidden = self.hidden.clone();
         predict(&self.defs, &self.loose, &self.racks, &mut view, &mut hidden, &req)?;
@@ -326,8 +399,31 @@ impl Client {
         Ok(a)
     }
 
+    /// Whether a request would work here and now (the host may still refuse): what the container
+    /// window asks to show an accepting or a refusing place. Changes nothing.
+    pub fn would(&self, req: &Request) -> Result<(), Reject> {
+        if rack_of(req).is_some_and(|r| self.locks.get(&r).is_some_and(|p| *p != self.player)) {
+            return Err(Reject::InUse);
+        }
+        let (mut view, mut hidden) = (self.view.clone(), self.hidden.clone());
+        predict(&self.defs, &self.loose, &self.racks, &mut view, &mut hidden, req)
+    }
+
+    /// The player that has a container open, if any.
+    pub fn holder(&self, rack: RackId) -> Option<PlayerId> {
+        self.locks.get(&rack).copied()
+    }
+
     pub fn apply(&mut self, ev: &Event) {
         match ev {
+            Event::Lock { rack, by } => match by {
+                Some(p) => {
+                    self.locks.insert(*rack, *p);
+                }
+                None => {
+                    self.locks.remove(rack);
+                }
+            },
             Event::Spawned { item, loose, .. } => {
                 self.loose.insert(*item, loose.clone());
             }
@@ -406,8 +502,37 @@ fn predict(defs: &ItemDefs, loose: &BTreeMap<LooseId, Loose>, racks: &BTreeMap<R
             let mut contents = racks.get(rack).cloned().ok_or(Reject::NoRack)?;
             fetch(defs, view, &mut contents, *rack_slot)?;
         }
+        Request::StoreAt { slot, rack, rack_slot } => {
+            let mut contents = racks.get(rack).cloned().ok_or(Reject::NoRack)?;
+            store_at(view, &mut contents, *slot, *rack_slot)?;
+        }
+        Request::FetchTo { rack, rack_slot, slot } => {
+            let mut contents = racks.get(rack).cloned().ok_or(Reject::NoRack)?;
+            fetch_to(defs, view, &mut contents, *rack_slot, *slot)?;
+        }
+        Request::MoveIn { rack, from, to } => {
+            let mut contents = racks.get(rack).cloned().ok_or(Reject::NoRack)?;
+            move_in(view, &mut contents, *from, *to)?;
+        }
+        Request::Open { rack } | Request::Close { rack } => {
+            racks.get(rack).ok_or(Reject::NoRack)?;
+        }
     }
     Ok(())
+}
+
+/// The container a request touches, if it does (the lock applies to these).
+fn rack_of(req: &Request) -> Option<RackId> {
+    match req {
+        Request::Swap { rack, .. }
+        | Request::Store { rack, .. }
+        | Request::Fetch { rack, .. }
+        | Request::StoreAt { rack, .. }
+        | Request::FetchTo { rack, .. }
+        | Request::MoveIn { rack, .. }
+        | Request::Open { rack } => Some(*rack),
+        _ => None,
+    }
 }
 
 /// The tags the inventory carries: what a locked container may open for (an ID card, say).
@@ -435,6 +560,47 @@ fn store(inv: &mut Inventory, c: &mut Container, slot: usize) -> Result<(), Reje
     let mut trial_inv = inv.clone();
     trial_inv.take_slot(slot).map_err(Reject::from)?;
     *inv = trial_inv;
+    *c = trial_c;
+    Ok(())
+}
+
+/// Moves the whole stack of an inventory slot into one place of a container, or nothing.
+fn store_at(inv: &mut Inventory, c: &mut Container, slot: usize, rack_slot: usize) -> Result<(), Reject> {
+    let stack = inv.slot(slot).cloned().ok_or(if slot < BAR_SLOTS { Reject::EmptySlot } else { Reject::NoSuchSlot })?;
+    let mut trial_c = c.clone();
+    trial_c.insert_at(&carried(inv), rack_slot, stack).map_err(|r| refusal(r.why))?;
+    let mut trial_inv = inv.clone();
+    trial_inv.take_slot(slot).map_err(Reject::from)?;
+    *inv = trial_inv;
+    *c = trial_c;
+    Ok(())
+}
+
+/// Moves the whole stack of a container place into one bar slot, or nothing.
+fn fetch_to(defs: &ItemDefs, inv: &mut Inventory, c: &mut Container, rack_slot: usize, slot: usize) -> Result<(), Reject> {
+    let n = c.slot(rack_slot).ok_or(if rack_slot < c.len() { Reject::EmptySlot } else { Reject::NoSuchSlot })?.count;
+    let mut trial_c = c.clone();
+    let stack = trial_c.take(&carried(inv), rack_slot, n).map_err(refusal)?;
+    if !defs.of(&stack).is_some_and(|d| d.take == crate::defs::Take::Collect) {
+        return Err(Reject::NotCollectable);
+    }
+    let mut trial_inv = inv.clone();
+    trial_inv.bar.insert_at(&[], slot, stack).map_err(|r| match r.why {
+        Refusal::NoSuchSlot => Reject::NoSuchSlot,
+        _ => Reject::Full,
+    })?;
+    *inv = trial_inv;
+    *c = trial_c;
+    Ok(())
+}
+
+/// Moves a stack between two places of a container (swap, stack or move, as `Container::move_slot`).
+fn move_in(inv: &Inventory, c: &mut Container, from: usize, to: usize) -> Result<(), Reject> {
+    let mut trial_c = c.clone();
+    trial_c.move_slot(&carried(inv), from, to).map_err(|r| match r {
+        Refusal::NothingToMove => Reject::Invalid,
+        r => refusal(r),
+    })?;
     *c = trial_c;
     Ok(())
 }

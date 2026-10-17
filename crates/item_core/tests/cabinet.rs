@@ -134,3 +134,114 @@ fn store_and_fetch_messages_survive_json() {
         assert_eq!(back, x);
     }
 }
+
+// ---- the container window (#310): drags to a chosen place, and one player per container ----
+
+fn mixed_total(host: &Host, players: &[u32], kind: &str) -> u32 {
+    let bars: u32 = players.iter().map(|p| host.inventory(*p).count(kind)).sum();
+    bars + host.racks[&RACK].count(&ItemKind::new(kind))
+}
+
+#[test]
+fn a_drag_to_a_chosen_place_and_back_to_a_chosen_slot_loses_nothing() {
+    let mut host = host_with(Access::Open, &[stack("o2_mask", 1)]);
+    let evs = act(&mut host, 1, 1, Request::StoreAt { slot: 0, rack: RACK, rack_slot: 2 });
+    assert!(matches!(evs.last(), Some(Event::Confirmed { .. })), "{evs:?}");
+    assert!(host.racks[&RACK].slot(2).is_some() && host.racks[&RACK].slot(0).is_none());
+    let evs = act(&mut host, 1, 2, Request::MoveIn { rack: RACK, from: 2, to: 1 });
+    assert!(matches!(evs.last(), Some(Event::Confirmed { .. })), "{evs:?}");
+    assert!(host.racks[&RACK].slot(1).is_some() && host.racks[&RACK].slot(2).is_none());
+    let evs = act(&mut host, 1, 3, Request::FetchTo { rack: RACK, rack_slot: 1, slot: 5 });
+    assert!(matches!(evs.last(), Some(Event::Confirmed { .. })), "{evs:?}");
+    assert!(host.inventory(1).slot(5).is_some());
+    assert_eq!(mixed_total(&host, &[1], "o2_mask"), 1);
+}
+
+#[test]
+fn a_drop_that_is_refused_changes_nothing() {
+    let mut host = host_with(Access::Open, &[stack("wrench", 1), stack("o2_mask", 1), stack("o2_mask", 1)]);
+    act(&mut host, 1, 1, Request::StoreAt { slot: 1, rack: RACK, rack_slot: 0 });
+    let before = host.clone();
+    // A wrench does not go in; a mask onto the occupied place of equal items without room (cap 1);
+    // a fetch onto an occupied bar slot of other items.
+    for (seq, req) in [
+        (2, Request::StoreAt { slot: 0, rack: RACK, rack_slot: 1 }),
+        (3, Request::StoreAt { slot: 2, rack: RACK, rack_slot: 0 }),
+        (4, Request::FetchTo { rack: RACK, rack_slot: 0, slot: 0 }),
+        (5, Request::StoreAt { slot: 2, rack: RACK, rack_slot: 9 }),
+    ] {
+        let evs = act(&mut host, 1, seq, req);
+        assert!(matches!(evs.as_slice(), [Event::Rejected { .. }]), "{evs:?}");
+        assert_eq!(host.racks, before.racks);
+        assert_eq!(host.inventory(1), before.inventory(1));
+    }
+}
+
+#[test]
+fn only_one_player_holds_a_container_and_the_other_cannot_move_items() {
+    let mut host = host_with(Access::Open, &[stack("o2_mask", 1)]);
+    host.give(2, stack("o2_mask", 1)).unwrap();
+    let evs = act(&mut host, 1, 1, Request::Open { rack: RACK });
+    assert!(evs.contains(&Event::Lock { rack: RACK, by: Some(1) }), "{evs:?}");
+    let evs = act(&mut host, 2, 1, Request::Open { rack: RACK });
+    assert_eq!(evs, vec![Event::Rejected { player: 2, seq: 1, why: Reject::InUse }]);
+    for (seq, req) in [
+        (2, Request::Store { slot: 0, rack: RACK }),
+        (3, Request::StoreAt { slot: 0, rack: RACK, rack_slot: 0 }),
+        (4, Request::Fetch { rack: RACK, rack_slot: 0 }),
+        (5, Request::MoveIn { rack: RACK, from: 0, to: 1 }),
+    ] {
+        let evs = act(&mut host, 2, seq, req);
+        assert_eq!(evs, vec![Event::Rejected { player: 2, seq, why: Reject::InUse }]);
+    }
+    // The holder moves; a stranger's Close does not free it.
+    let evs = act(&mut host, 1, 2, Request::Store { slot: 0, rack: RACK });
+    assert!(matches!(evs.last(), Some(Event::Confirmed { .. })));
+    act(&mut host, 2, 6, Request::Close { rack: RACK });
+    assert_eq!(host.locks.get(&RACK), Some(&1));
+    assert_eq!(mixed_total(&host, &[1, 2], "o2_mask"), 2);
+
+    let evs = act(&mut host, 1, 3, Request::Close { rack: RACK });
+    assert!(evs.contains(&Event::Lock { rack: RACK, by: None }));
+    let evs = act(&mut host, 2, 7, Request::Open { rack: RACK });
+    assert!(evs.contains(&Event::Lock { rack: RACK, by: Some(2) }));
+}
+
+#[test]
+fn a_leaving_player_frees_its_containers() {
+    let mut host = host_with(Access::Open, &[]);
+    act(&mut host, 1, 1, Request::Open { rack: RACK });
+    assert!(host.release_player(2).is_empty());
+    assert_eq!(host.release_player(1), vec![Event::Lock { rack: RACK, by: None }]);
+    assert!(host.locks.is_empty());
+}
+
+#[test]
+fn a_client_knows_the_lock_and_a_late_joiner_hears_it() {
+    let mut host = host_with(Access::Open, &[stack("o2_mask", 1)]);
+    act(&mut host, 1, 1, Request::Open { rack: RACK });
+    let mut other = Client::new(2, defs());
+    for ev in host.state() {
+        other.apply(&ev);
+    }
+    assert_eq!(other.holder(RACK), Some(1));
+    assert_eq!(other.request(Request::Open { rack: RACK }).unwrap_err(), Reject::InUse);
+    assert_eq!(other.would(&Request::Fetch { rack: RACK, rack_slot: 0 }), Err(Reject::InUse));
+}
+
+#[test]
+fn the_window_messages_survive_json() {
+    for req in [
+        Request::StoreAt { slot: 1, rack: RACK, rack_slot: 3 },
+        Request::FetchTo { rack: RACK, rack_slot: 3, slot: 1 },
+        Request::MoveIn { rack: RACK, from: 0, to: 1 },
+        Request::Open { rack: RACK },
+        Request::Close { rack: RACK },
+    ] {
+        let a = Action { player: 1, seq: 9, req };
+        let back: Action = serde_json::from_str(&serde_json::to_string(&a).unwrap()).unwrap();
+        assert_eq!(back, a);
+    }
+    let ev = Event::Lock { rack: RACK, by: Some(2) };
+    assert_eq!(serde_json::from_str::<Event>(&serde_json::to_string(&ev).unwrap()).unwrap(), ev);
+}

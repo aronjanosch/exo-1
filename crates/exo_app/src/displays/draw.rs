@@ -156,6 +156,8 @@ struct Paint<'a> {
     scanlines: &'a mut Scanlines,
     made: Vec<Picture>,
     moving: bool,
+    /// The screen's camera: its moving shapes move only in the frames it renders.
+    camera: Entity,
 }
 
 /// One scanline image per area size, shared by every screen of that size: one node instead of a
@@ -167,6 +169,7 @@ pub struct Scanlines(HashMap<(u32, u32, u64, u32), Handle<Image>>);
 #[derive(Component)]
 pub struct Spin {
     period: f64,
+    camera: Entity,
 }
 
 /// A ring that grows and fades (`Shape::Pulse`), in texture pixels.
@@ -179,16 +182,25 @@ pub struct Pulse {
     rgb: [u8; 3],
     period: f64,
     phase: f64,
+    camera: Entity,
 }
 
 /// Plays the screens' moving shapes on the clock: a turn of a picture or a ring's size and fade,
-/// no drawing again. Only drawn screens have them (a screen out of range drops its drawing).
-pub fn animate(time: Res<Time>, mut spins: Query<(&Spin, &mut UiTransform)>, mut pulses: Query<(&Pulse, &mut Node, &mut BorderColor)>) {
+/// no drawing again. Only drawn screens have them (a screen out of range drops its drawing), and
+/// only in the frames their camera renders (a moved node costs a layout).
+pub fn animate(time: Res<Time>, cameras: Query<&Camera>, mut spins: Query<(&Spin, &mut UiTransform)>, mut pulses: Query<(&Pulse, &mut Node, &mut BorderColor)>) {
     let now = time.elapsed_secs_f64();
+    let shown = |e: Entity| cameras.get(e).is_ok_and(|c| c.is_active);
     for (s, mut tf) in &mut spins {
+        if !shown(s.camera) {
+            continue;
+        }
         tf.rotation = Rot2::radians((std::f64::consts::TAU * (now / s.period).rem_euclid(1.0)) as f32);
     }
     for (p, mut n, mut border) in &mut pulses {
+        if !shown(p.camera) {
+            continue;
+        }
         let u = (now / p.period + p.phase).rem_euclid(1.0) as f32;
         let outer = p.from_r + (p.to_r - p.from_r) * u + p.width * 0.5;
         n.left = px(p.centre.x - outer);
@@ -207,8 +219,10 @@ pub struct ScreenTarget {
     material: Handle<StandardMaterial>,
     drawn: Option<DrawKey>,
     pictures: Vec<Picture>,
-    /// Something in the drawing moves: the camera renders every frame.
+    /// Something in the drawing moves: the camera renders at the animation rate.
     moving: bool,
+    /// When the camera renders the moving shapes next (s, `Time` elapsed).
+    next_anim: f64,
     /// Where the cursor mark stands (texture pixels), None when hidden.
     cursor_at: Option<(i32, i32)>,
     last: f64,
@@ -275,7 +289,7 @@ pub fn draw_world(
                 let cursor = spawn_cursor(&mut commands, camera, &look.0, ts);
                 let material = materials.add(StandardMaterial { base_color_texture: Some(image), unlit: true, ..default() });
                 mat.0 = material.clone();
-                commands.entity(e).insert(ScreenTarget { camera, root, cursor, material, drawn: None, pictures: Vec::new(), moving: false, cursor_at: None, last: f64::NEG_INFINITY, frames_left: 0 });
+                commands.entity(e).insert(ScreenTarget { camera, root, cursor, material, drawn: None, pictures: Vec::new(), moving: false, next_anim: 0.0, cursor_at: None, last: f64::NEG_INFINITY, frames_left: 0 });
             }
             (true, Some(mut t)) => {
                 if mat.0 != t.material {
@@ -294,7 +308,7 @@ pub fn draw_world(
                 if (rebuild || repaint) && (in_use || now - t.last >= w.redraw_s) {
                     if rebuild {
                         commands.entity(t.root).despawn_children();
-                        let paint = std::cell::RefCell::new(Paint { images: &mut images, rasters: &mut *rasters, scanlines: &mut *scanlines, made: Vec::new(), moving: false });
+                        let paint = std::cell::RefCell::new(Paint { images: &mut images, rasters: &mut *rasters, scanlines: &mut *scanlines, made: Vec::new(), moving: false, camera: t.camera });
                         let pen = Pen { theme: &look.0, fonts: &fonts, scale: ts, paint: Some(&paint) };
                         commands.entity(t.root).with_children(|c| pen.panel(c, panel, ptr));
                         t.pictures = std::mem::take(&mut paint.borrow_mut().made);
@@ -331,7 +345,10 @@ pub fn draw_world(
                     }
                     t.frames_left = t.frames_left.max(3);
                 }
-                if t.moving {
+                if t.moving && now >= t.next_anim {
+                    let fps = if in_use || to.length() < w.anim_near_m { w.anim_fps } else { w.anim_far_fps };
+                    // On the beat, not from now: frame times do not stretch the rate.
+                    t.next_anim = (t.next_anim + 1.0 / fps).max(now);
                     t.frames_left = t.frames_left.max(1);
                 }
                 let on = t.frames_left > 0;
@@ -539,7 +556,7 @@ impl Pen<'_> {
             n.position_type = PositionType::Absolute;
             let mut node = c.spawn((n, ImageNode::new(handle.clone())));
             if spin != 0.0 {
-                node.insert(Spin { period: spin });
+                node.insert(Spin { period: spin, camera: paint.camera });
                 paint.moving = true;
             }
             picture.image = Some(handle);
@@ -733,12 +750,16 @@ impl Pen<'_> {
                 Shape::Vector { x, y, w, h, unit, prims, spin } => self.vector(c, o.x + x, o.y + y, *w, *h, *unit, prims, *spin),
                 Shape::Pulse { cx, cy, from_r, to_r, width, rgb, period, phase } => {
                     let Some(paint) = &self.paint else { continue };
-                    paint.borrow_mut().moving = true;
+                    let camera = {
+                        let mut paint = paint.borrow_mut();
+                        paint.moving = true;
+                        paint.camera
+                    };
                     let s = self.scale;
                     let mut n = self.node(0.0, 0.0, 0.0, 0.0);
                     n.border = UiRect::all(px(*width as f32 * s));
                     n.border_radius = BorderRadius::all(percent(50));
-                    let pulse = Pulse { centre: Vec2::new((o.x + cx) as f32 * s, (o.y + cy) as f32 * s), from_r: *from_r as f32 * s, to_r: *to_r as f32 * s, width: *width as f32 * s, rgb: *rgb, period: *period, phase: *phase };
+                    let pulse = Pulse { centre: Vec2::new((o.x + cx) as f32 * s, (o.y + cy) as f32 * s), from_r: *from_r as f32 * s, to_r: *to_r as f32 * s, width: *width as f32 * s, rgb: *rgb, period: *period, phase: *phase, camera };
                     c.spawn((n, BorderColor::all(Color::NONE), pulse));
                 }
                 Shape::Text { x, y, w, h, text, size, face: f, ink, centred } => {

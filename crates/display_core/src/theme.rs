@@ -84,6 +84,11 @@ pub struct WorldScreens {
     pub redraw_s: f64,
     /// Texture pixels per panel pixel.
     pub texture_scale: f64,
+    /// A screen with moving shapes renders this many frames a second nearer than `anim_near_m`
+    /// (or in use), `anim_far_fps` further away: the moving shapes are its only cost per frame.
+    pub anim_fps: f64,
+    pub anim_far_fps: f64,
+    pub anim_near_m: f64,
 }
 
 #[derive(Deserialize, Clone, Debug, PartialEq)]
@@ -101,7 +106,7 @@ impl Theme {
     pub fn from_json(s: &str) -> Result<Theme, String> {
         let t: Theme = content_core::parse_strict("displays.json", s)?;
         let w = t.world;
-        if !(w.range_m >= 0.0 && w.redraw_s >= 0.0 && w.texture_scale > 0.0 && w.texture_scale <= 4.0) {
+        if !(w.range_m >= 0.0 && w.redraw_s >= 0.0 && w.texture_scale > 0.0 && w.texture_scale <= 4.0 && w.anim_fps > 0.0 && w.anim_far_fps > 0.0 && w.anim_near_m >= 0.0) {
             return Err("displays.json: world values out of range".into());
         }
         let st = &t.strokes;

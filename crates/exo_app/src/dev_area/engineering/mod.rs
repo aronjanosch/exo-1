@@ -11,10 +11,11 @@ pub mod blast;
 pub mod coolant;
 pub mod panels;
 pub mod canisters;
+pub mod reactor_room;
 pub mod startup_screen;
 
 pub fn plugin(app: &mut App) {
-    app.add_plugins((asks::plugin, panels::plugin, coolant::plugin, canisters::plugin));
+    app.add_plugins((asks::plugin, panels::plugin, coolant::plugin, canisters::plugin, reactor_room::plugin));
     app.init_resource::<blast::PendingBlasts>().init_resource::<blast::BlastFlash>();
     app.add_systems(FixedUpdate, blast::collect_blasts.in_set(ShipSet::React));
     app.add_systems(FixedUpdate, (blast::reactor_blast, blast::client_blast_news, eject_notice, ecool_notice).chain().in_set(ShipSet::Effects));
@@ -35,3 +36,7 @@ pub fn ecool_notice(items: Res<Items>, mut seen: Local<Option<u32>>, mut gp: Res
 }
 
 
+
+pub fn window_plugin(app: &mut App) {
+    reactor_room::window_plugin(app);
+}

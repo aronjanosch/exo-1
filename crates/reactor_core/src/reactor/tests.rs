@@ -551,3 +551,44 @@ fn zero_canisters_make_no_nan() {
         }
     }
 }
+
+/// #316: a SCRAM vents the chamber: power off, injection gone at once, a share of the canisters' fill lost.
+#[test]
+fn scram_stops_injection_at_once_and_costs_a_share_of_the_fill() {
+    let mut r = reactor(50.0);
+    r.set_targets(60.0, 30.0);
+    run(&mut r, 20.0, 500.0);
+    assert!(r.injection() > 1.0, "injecting before the SCRAM");
+    let before: f64 = r.canister_lives().iter().sum();
+    let share = r.tuning().scram_fill_loss;
+    let lost = r.scram().expect("a SCRAM on a live core");
+    let after: f64 = r.canister_lives().iter().sum();
+    assert_eq!((r.injection(), r.power_on(), r.targets().0), (0.0, false, 0.0));
+    assert!((after - before * (1.0 - share)).abs() < 1e-9 && (lost - (before - after)).abs() < 1e-9);
+    run(&mut r, 10.0, 500.0);
+    assert_eq!(r.injection(), 0.0, "stays out");
+}
+
+#[test]
+fn scram_never_goes_below_zero_and_is_nan_free_without_canisters() {
+    let mut r = Reactor::new(ReactorTuning { scram_fill_loss: 7.0, ..ReactorTuning::default() }, 3);
+    assert_eq!(r.scram(), Some(0.0), "no canisters: nothing to lose");
+    r.insert_canister(Canister::standard()).unwrap();
+    r.scram();
+    assert!(r.canister_lives().iter().all(|l| *l == 0.0), "a share over 1 clamps to everything");
+    let mut r = Reactor::new(ReactorTuning { scram_fill_loss: f64::NAN, ..ReactorTuning::default() }, 3);
+    r.insert_canister(Canister::standard()).unwrap();
+    r.scram();
+    assert!(r.canister_lives().iter().all(|l| l.is_finite()));
+    r.eject();
+    assert_eq!(r.scram(), None, "an ejected core has nothing to vent");
+}
+
+#[test]
+fn an_orderly_shutdown_costs_no_fill() {
+    let mut r = reactor(50.0);
+    let before = r.canister_lives();
+    r.set_power(false);
+    run(&mut r, 5.0, 0.0);
+    assert_eq!(r.canister_lives(), before);
+}

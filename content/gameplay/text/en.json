@@ -517,6 +517,10 @@
     "CORE EJECTED. It went out through the bottom, canisters and all. The reactor is dead until somebody fits a new core.",
     "CORE EJECTED. Somebody pulled the lever. The core is somewhere under the ship now."
   ],
+  "notice.reactor.scram": [
+    "SCRAM. The chamber is vented, the lights dip and a good part of the canisters' fill goes out with it. Safe, and very expensive.",
+    "SCRAM. Somebody hit the big red button. The reactor is off and the canisters are a little lighter."
+  ],
   "notice.reactor.jump": [
     "JUMP. One white flash, the stars smear, and the ship drops out somewhere else. The drive is empty and the systems are cold.",
     "JUMPED. The charge is gone and so is the system you were in. Start the ship up again."

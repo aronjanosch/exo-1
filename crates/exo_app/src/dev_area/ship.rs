@@ -30,6 +30,8 @@ pub struct ReactorCounts {
     pub implosions: u32,
     pub blasts: u32,
     pub ejects: u32,
+    /// The SCRAMs of the physical button (#316).
+    pub scrams: u32,
     pub ecools: u32,
     /// The jumps the drive has made (r40, #252): the news counter the flash and the notice follow.
     pub jumps: u32,
@@ -193,6 +195,10 @@ impl ReactorSim {
             eject_armed: self.eject_left.is_some(),
             // The host's count is set by `reactor_step`, as the blasts are.
             ejects: 0,
+            // The physical parts' state is filled in by `reactor_room` (the host's `Machine`).
+            scram_cover: false,
+            eject_cover: false,
+            scrams: 0,
             ecool_active: self.room.ecool_active(),
             ecool_ready_in_s: self.room.ecool_ready_in_s(),
             ecool_ok: self.room.ecool_allowed(),
@@ -954,7 +960,7 @@ mod tests {
         route(RoomEvent::Reactor(ReactorEvent::Fire { size: 0.1 }), &mut k);
         route(RoomEvent::Fire { size: 0.05, source: reactor_core::Source::Junction }, &mut k);
         route(RoomEvent::Reactor(ReactorEvent::Implosion), &mut k);
-        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, implosions: 1, blasts: 0, ejects: 0, ecools: 0, jumps: 0 });
+        assert_eq!(k, ReactorCounts { fires: 2, sparks: 1, implosions: 1, blasts: 0, ejects: 0, scrams: 0, ecools: 0, jumps: 0 });
         route(RoomEvent::Reactor(ReactorEvent::Blast(reactor_core::Blast::default())), &mut k);
         assert_eq!(k.blasts, 1, "the blast is counted");
     }

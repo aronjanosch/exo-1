@@ -10,7 +10,7 @@
 use crate::dev_area::*;
 use crate::controls::Controls;
 use crate::dev_area::engineering::coolant::HOLD_S;
-use crate::dev_area::{layout::{REACTOR_AT, ROOM}};
+use crate::dev_area::{layout::{REACTOR_FRONT_AT, ROOM}};
 use crate::displays::ActiveDisplay;
 use crate::gameplay::Gameplay;
 use crate::items::{Items, LOCAL};
@@ -60,9 +60,15 @@ pub fn canister_stack(def: &ItemDef, life: f64) -> Stack {
     Stack::new(def.item().with_condition(life), 1)
 }
 
+/// The selected bar slot holds a canister (the item whose use is `LOAD`).
+pub fn holds_canister(items: &Items) -> bool {
+    let slot = items.client.view.selected;
+    items.client.view.slot(slot).and_then(|s| items.defs.of(s)).is_some_and(|d| d.use_effect.as_deref() == Some(LOAD))
+}
+
 pub fn reactor_front(area: &DevArea, planet: &PlanetRes) -> Option<Placement> {
     let frame = area.frame?;
-    let (pos, up) = frame.ground(planet, REACTOR_AT[0], REACTOR_AT[1] + 1.4, 0.05);
+    let (pos, up) = frame.ground(planet, REACTOR_FRONT_AT[0], REACTOR_FRONT_AT[1], 0.05);
     let fwd = frame.rotation(up, 0.0) * DVec3::NEG_Z;
     Some(Placement { frame: FrameRef::Planet(planet.id.0 as u32), pos: pos.to_array(), vel: [0.0; 3], forward: fwd.to_array() })
 }

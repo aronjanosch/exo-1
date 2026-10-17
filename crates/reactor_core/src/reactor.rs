@@ -100,6 +100,10 @@ pub struct ReactorTuning {
     /// Seconds the EJECT cover stays open after ARM EJECT (the second press must come inside it).
     /// The host keeps the timer (the glue's). TODO(initiator): value.
     pub eject_arm_s: f64,
+    /// What a SCRAM costs (#316, the physical emergency stop): the share (0..1) of every canister's
+    /// remaining fill the vented chamber loses. An orderly shutdown costs nothing. TODO(initiator): value.
+    #[serde(default = "default_scram_fill_loss")]
+    pub scram_fill_loss: f64,
     /// The implosion blast (`Blast`). TODO(initiator): values.
     pub blast: Blast,
     /// Inertia on (the default): the heat is the damped spring, the output makes heat and
@@ -110,6 +114,10 @@ pub struct ReactorTuning {
     /// The reactor's own condition: repair threshold and wear floor (Barotrauma style, the floor
     /// is the lowest that normal wear reaches; the broken limit is the floor at least).
     pub condition: DeviceTuning,
+}
+
+fn default_scram_fill_loss() -> f64 {
+    0.25
 }
 
 fn inertia_on() -> bool {
@@ -142,6 +150,7 @@ impl Default for ReactorTuning {
             boost_amount: 25.0,
             boost_decay: 1.0,
             eject_arm_s: 5.0,
+            scram_fill_loss: default_scram_fill_loss(),
             blast: Blast::default(),
             inertia: true,
             condition: DeviceTuning { repair_threshold: 50.0, wear_floor: 10.0, ..DeviceTuning::default() },
@@ -651,6 +660,29 @@ impl Reactor {
     pub fn pull_canister(&mut self, slot: usize) -> Option<(Canister, f64)> {
         let canister = self.remove_canister(slot)?;
         Some((canister, self.heat))
+    }
+
+    /// The emergency stop (#316): the chamber is vented. Power goes off, injection and both targets fall to 0 at once
+    /// (no lag), and every canister loses `scram_fill_loss` of its remaining fill (never below 0). The heat is left to
+    /// the coolant. Returns the fill lost, in life points summed over the canisters (0 with none). Refused (None) on
+    /// an ejected core. An orderly shutdown is `set_power(false)` and costs nothing.
+    pub fn scram(&mut self) -> Option<f64> {
+        if self.ejected {
+            return None;
+        }
+        let share = if self.tuning.scram_fill_loss.is_finite() { self.tuning.scram_fill_loss.clamp(0.0, 1.0) } else { 0.0 };
+        let mut lost = 0.0;
+        for c in &mut self.canisters {
+            let before = c.life.max(0.0);
+            c.life = before * (1.0 - share);
+            lost += before - c.life;
+        }
+        self.power_on = false;
+        self.injection = 0.0;
+        self.target_injection = 0.0;
+        self.target_converter = 0.0;
+        self.sync_fill();
+        Some(lost)
     }
 
     /// Throws the core out (PULSAR's core eject). Everything the core did stops at once: injection,

@@ -2,7 +2,7 @@
 use super::*;
 use crate::controls::Controls;
 use crate::dev_area::engineering::coolant::HOLD_S;
-use crate::dev_area::{layout::{REACTOR_AT, ROOM}};
+use crate::dev_area::{layout::{REACTOR_AIM_LIFT, REACTOR_AT, REACTOR_FRONT_AT, ROOM}};
 use crate::dev_area::ship::ReactorSim;
 use crate::dev_area::engineering::canisters::RACK_AT;
 use crate::dev_area::DevArea;
@@ -110,10 +110,10 @@ pub(super) fn canisters_steps(s: &mut Vec<Step>) {
 
     s.push(run("canisters: the walker stands at the reactor", 3.0, |w, c| {
         if c.t == 0.0 {
-            let feet = ground(w, [REACTOR_AT[0], REACTOR_AT[1] + 1.4], 0.0);
+            let feet = ground(w, REACTOR_FRONT_AT, 0.0);
             place_walker(w, feet);
         }
-        let target = ground(w, REACTOR_AT, 1.0);
+        let target = ground(w, REACTOR_AT, REACTOR_AIM_LIFT);
         look_at(w, target);
         if c.t < 0.5 {
             return None;
@@ -126,12 +126,12 @@ pub(super) fn canisters_steps(s: &mut Vec<Step>) {
                 // The two slots start full: take one out so there is room to load.
                 w.resource_mut::<ReactorSim>().room.reactor_mut().remove_canister(0);
                 c.v.insert("n0", canisters_in_reactor(w) as f64);
-                let target = ground(w, REACTOR_AT, 1.0);
+                let target = ground(w, REACTOR_AT, REACTOR_AIM_LIFT);
                 look_at(w, target);
                 w.resource_mut::<Controls>().primary_held = true;
                 return None;
             }
-            let target = ground(w, REACTOR_AT, 1.0);
+            let target = ground(w, REACTOR_AT, REACTOR_AIM_LIFT);
             look_at(w, target);
             if c.t < HOLD_S + 1.0 {
                 return None;
@@ -164,10 +164,10 @@ pub(super) fn canisters_steps(s: &mut Vec<Step>) {
     s.push(select("canisters: the hands are empty", None));
     s.push(run("canisters: the walker stands at the reactor with empty hands", 3.0, |w, c| {
         if c.t == 0.0 {
-            let feet = ground(w, [REACTOR_AT[0], REACTOR_AT[1] + 1.4], 0.0);
+            let feet = ground(w, REACTOR_FRONT_AT, 0.0);
             place_walker(w, feet);
         }
-        let target = ground(w, REACTOR_AT, 1.0);
+        let target = ground(w, REACTOR_AT, REACTOR_AIM_LIFT);
         look_at(w, target);
         if c.t < 0.5 {
             return None;
@@ -180,12 +180,12 @@ pub(super) fn canisters_steps(s: &mut Vec<Step>) {
             c.v.insert("fill0", available(w));
             c.v.insert("life0", longest_life(w));
             c.v.insert("burn0", burn(w));
-            let target = ground(w, REACTOR_AT, 1.0);
+            let target = ground(w, REACTOR_AT, REACTOR_AIM_LIFT);
             look_at(w, target);
             w.resource_mut::<Controls>().primary_held = true;
             return None;
         }
-        let target = ground(w, REACTOR_AT, 1.0);
+        let target = ground(w, REACTOR_AT, REACTOR_AIM_LIFT);
         look_at(w, target);
         if c.t < HOLD_S + 1.0 {
             return None;

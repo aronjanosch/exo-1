@@ -16,11 +16,20 @@ pub type PartId = String;
 /// How long a push button stays down, in seconds (visual; the action fires on the press).
 pub const BUTTON_DOWN_S: f64 = 0.25;
 
+/// What a lever does at its top detent when F is pressed again.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LeverEnd {
+    /// Steps back down one detent at a time, so no press ever skips a detent.
+    #[default]
+    Bounce,
+    /// Goes round to detent 0 (a rotary lever: OFF, PRIME, RUN, OFF; F on RUN is the orderly shutdown).
+    Wrap,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Kind {
-    /// `index` in `0..detents`; F steps up, at the top it steps back down one detent at a time,
-    /// so no press ever skips a detent.
-    Lever { detents: u8, index: u8, rising: bool },
+    /// `index` in `0..detents`; F steps up, at the top it follows `end`.
+    Lever { detents: u8, index: u8, rising: bool, end: LeverEnd },
     Toggle { on: bool },
     /// Springs back; `down_s` counts the visual down time left.
     Button { down_s: f64 },
@@ -76,7 +85,11 @@ impl Controls {
 
     /// `detents` is 2 or 3 in the kit; any count of at least 2 works.
     pub fn lever(&mut self, id: &str, detents: u8, guard: Option<&str>) -> &mut Self {
-        self.add(id, Kind::Lever { detents: detents.max(2), index: 0, rising: true }, guard)
+        self.lever_with(id, detents, LeverEnd::Bounce, guard)
+    }
+    /// A lever with its own end behaviour.
+    pub fn lever_with(&mut self, id: &str, detents: u8, end: LeverEnd, guard: Option<&str>) -> &mut Self {
+        self.add(id, Kind::Lever { detents: detents.max(2), index: 0, rising: true, end }, guard)
     }
     pub fn toggle(&mut self, id: &str, guard: Option<&str>) -> &mut Self {
         self.add(id, Kind::Toggle { on: false }, guard)
@@ -140,13 +153,22 @@ impl Controls {
         }
         let Some(part) = self.parts.get_mut(id) else { return Outcome::Nothing };
         match &mut part.kind {
-            Kind::Lever { detents, index, rising } => {
-                let next = if *rising { *index + 1 } else { index.saturating_sub(1) };
+            Kind::Lever { detents, index, rising, end } => {
+                let wrap = *end == LeverEnd::Wrap && *index + 1 >= *detents;
+                let next = if wrap {
+                    0
+                } else if *rising {
+                    *index + 1
+                } else {
+                    index.saturating_sub(1)
+                };
                 if !allow_detent(next) {
                     return Outcome::Refused;
                 }
                 *index = next;
-                if next + 1 >= *detents {
+                if *end == LeverEnd::Wrap {
+                    *rising = true;
+                } else if next + 1 >= *detents {
                     *rising = false;
                 } else if next == 0 {
                     *rising = true;
@@ -216,6 +238,31 @@ impl Controls {
         }
     }
 
+    /// A client shows what the host's news say: the setters below move a part without a press (no guard, no
+    /// machine rule). Unknown part or wrong kind: nothing.
+    pub fn set_cover(&mut self, id: &str, open: bool) {
+        if let Some(Kind::Cover { open: o }) = self.parts.get_mut(id).map(|p| &mut p.kind) {
+            *o = open;
+        }
+    }
+    pub fn set_lever(&mut self, id: &str, index: u8) {
+        if let Some(Kind::Lever { detents, index: i, rising, .. }) = self.parts.get_mut(id).map(|p| &mut p.kind) {
+            *i = index.min(*detents - 1);
+            *rising = *i == 0;
+        }
+    }
+    pub fn set_slot(&mut self, id: &str, item: Option<ItemId>) {
+        if let Some(Kind::Slot { item: i }) = self.parts.get_mut(id).map(|p| &mut p.kind) {
+            *i = item;
+        }
+    }
+    /// Shows a button down for `BUTTON_DOWN_S` (the host's fire seen from a client).
+    pub fn set_button_down(&mut self, id: &str) {
+        if let Some(Kind::Button { down_s }) = self.parts.get_mut(id).map(|p| &mut p.kind) {
+            *down_s = BUTTON_DOWN_S;
+        }
+    }
+
     /// Closes a cover from the machine side (e.g. after a SCRAM).
     pub fn close_cover(&mut self, id: &str) {
         if let Some(Kind::Cover { open }) = self.parts.get_mut(id).map(|p| &mut p.kind) {
@@ -275,6 +322,24 @@ mod tests {
     }
 
     #[test]
+    fn rotary_lever_wraps_from_the_top_to_off() {
+        let mut c = Controls::new();
+        c.lever_with("l", 3, LeverEnd::Wrap, None);
+        let seen: Vec<u8> = (0..7).filter_map(|_| if let Outcome::Lever { index } = c.press("l", None, yes, any) { Some(index) } else { None }).collect();
+        assert_eq!(seen, [1, 2, 0, 1, 2, 0, 1]);
+        // A refused wrap (the machine will not go off) leaves the lever on top.
+        let mut c = Controls::new();
+        c.lever_with("l", 3, LeverEnd::Wrap, None);
+        c.press("l", None, yes, any);
+        c.press("l", None, yes, any);
+        assert_eq!(c.press("l", None, |i| i != 0, any), Outcome::Refused);
+        assert_eq!(c.lever_index("l"), Some(2));
+        // The machine's drop to off keeps the climb going.
+        assert!(c.drop_to_off("l"));
+        assert_eq!(c.press("l", None, yes, any), Outcome::Lever { index: 1 });
+    }
+
+    #[test]
     fn refused_step_leaves_lever_put_and_direction_intact() {
         let mut c = Controls::new();
         c.lever("l", 3, None);
@@ -309,6 +374,19 @@ mod tests {
         assert_eq!(c.press("toggle_boot_1", None, yes, any), Outcome::Toggle { on: true });
         assert_eq!(c.lever_index("lever_start"), Some(1));
         assert_eq!(c.seated("slot_1"), Some(3));
+    }
+
+    #[test]
+    fn a_client_mirrors_the_hosts_state_without_pressing() {
+        let mut c = Controls::new();
+        c.cover("c").lever("l", 2, Some("c")).slot("s").button("b", None);
+        c.set_cover("c", true);
+        c.set_lever("l", 1);
+        c.set_slot("s", Some(4));
+        c.set_button_down("b");
+        assert_eq!((c.is_open("c"), c.lever_index("l"), c.seated("s"), c.position("b")), (true, Some(1), Some(4), 1.0));
+        c.set_lever("l", 9);
+        assert_eq!(c.lever_index("l"), Some(1), "clamped to the top detent");
     }
 
     #[test]

@@ -26,8 +26,9 @@ pub const MEDBAY_ROOM: Zone = Zone { name: "medbay room", centre: [-5.7, -13.85]
 pub const EQUIPMENT: Zone = Zone { name: "equipment room", centre: [6.9, -9.7], half: [3.0, 2.0] };
 /// The airlock: a 2 x 2 m room east of the equipment room; its outer door is the ship's way out.
 pub const AIRLOCK: Zone = Zone { name: "airlock", centre: [11.2, -9.7], half: [1.0, 1.0] };
-/// Where a walker starts in the dev area: the corridor's west end, by the bridge door.
-pub const SPAWN: [f64; 2] = [-17.5, -9.2];
+/// Where a walker starts in the dev area: outside in the dev zone (centre [18, 15.5]), 1.5 m south
+/// of its middle so the item table (2.5 m north) stands in front.
+pub const SPAWN: [f64; 2] = [18.0, 14.0];
 
 /// The rooms that have a role's zone outside, and that zone (`ROLE_ZONES` in `dev_area`).
 pub const ROOM_ZONES: [(Zone, Zone); 5] = [(ROOM, ENGINEERING), (BRIDGE, BRIDGE_ZONE), (TURRET_ROOM, TURRETS), (LAB_ROOM, LAB), (MEDBAY_ROOM, MEDBAY)];
@@ -431,6 +432,6 @@ mod tests {
                 assert!(ROLE_ZONES.iter().any(|z| z.contains(at)), "{}'s copy stands in a role zone", m.name);
             }
         }
-        assert_eq!(place_of(SPAWN), Place::Corridor, "the walker starts inside the ship");
+        assert!(place_of(SPAWN) == Place::Outside && DEV.contains(SPAWN), "the walker starts in the dev zone");
     }
 }

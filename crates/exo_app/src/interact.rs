@@ -260,7 +260,8 @@ pub fn interaction(
             Some((_, e, r)) => Some(Target::Crate(e, r)),
             None => {
                 let rack_pick = pl.ship.is_none().then(|| supply.as_ref().and_then(|sup| boxes.iter().find_map(|(b, p)| sup.0.rack_in(&b.id).filter(|_| in_cone(eye, look, p.0, half, USE_RANGE).is_some()).map(Target::Rack)))).flatten();
-                let container_pick = pl.ship.is_none().then(|| specs.0.iter().find(|s| boxes.iter().any(|(b, p)| b.id == s.box_id && in_cone(eye, look, p.0, half, USE_RANGE).is_some())).map(|s| Target::Container { rack: s.rack, by: items.client.holder(s.rack).filter(|p| *p != items.me()) })).flatten();
+                // Lockers stand side by side (#311): of the containers in the cone the one nearest the view's centre wins.
+                let container_pick = pl.ship.is_none().then(|| specs.0.iter().filter_map(|s| boxes.iter().find(|(b, p)| b.id == s.box_id && in_cone(eye, look, p.0, half, USE_RANGE).is_some()).map(|(_, p)| ((p.0 - eye).angle_between(look), s))).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, s)| Target::Container { rack: s.rack, by: items.client.holder(s.rack).filter(|p| *p != items.me()) })).flatten();
                 item_target.map(Target::Item).or(panel_pick.map(Target::Panel)).or(door_pick).or(bridge_pick).or(equip_pick).or(airlock_pick).or(rack_pick).or(container_pick)
             }
         }

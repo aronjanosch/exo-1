@@ -1,7 +1,7 @@
 {
-  "_comment": "Treats oxygen low (#300 polish): an O2 canister, one shot per use, on oneself or another player. Barotrauma's oxygen-low medicines (Liquid Oxygenite, Deusizine) are slower doses; this is the instant one. TODO(initiator): stack size, shape, the dose (health.json treatments 'oxy').",
+  "_comment": "Treats oxygen low (#300 polish): an oxy shot (named so it is not mistaken for the air canister, #311; id and code stay), one shot per use, on oneself or another player. Barotrauma's oxygen-low medicines (Liquid Oxygenite, Deusizine) are slower doses; this is the instant one. TODO(initiator): stack size, shape, the dose (health.json treatments 'oxy').",
   "id": "oxy",
-  "name": "O2 canister",
+  "name": "Oxy shot",
   "code": "OXY",
   "take": "collect",
   "hands": 1,

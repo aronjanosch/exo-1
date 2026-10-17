@@ -19,6 +19,7 @@ use display_core::PanelId;
 pub mod bridge;
 pub mod crew;
 pub mod dev;
+pub mod equipment;
 pub mod engineering;
 pub mod fire;
 pub mod gear;
@@ -170,7 +171,7 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Update, spawn_devices.in_set(crate::phases::Frame::World));
     // One plugin per owner; the layout spawns the inner ship's walls and screens.
     app.add_plugins((ship::plugin, layout::plugin, hull::plugin, engineering::plugin, bridge::plugin, turrets::plugin));
-    app.add_plugins((crew::plugin, gear::plugin, fire::plugin, lab::plugin, medbay::plugin, storage::plugin, hazards::plugin, dev::plugin));
+    app.add_plugins((crew::plugin, gear::plugin, equipment::plugin, fire::plugin, lab::plugin, medbay::plugin, storage::plugin, hazards::plugin, dev::plugin));
 }
 
 pub fn window_plugin(app: &mut App) {

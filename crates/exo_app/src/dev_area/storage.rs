@@ -2,7 +2,7 @@
 //! (item_core racks, so every move goes through the authority). F opens the container window
 //! (`container_window`, #310): the places inside, the bar below, click or drag to move stacks. The
 //! rules are `item_core::container` (Barotrauma's containers: stack caps, tag filters, locks); a
-//! cabinet's slot rules are its own (a mask cabinet takes masks and suits, an extinguisher cabinet
+//! cabinet's slot rules are its own (a mask cabinet takes masks, an extinguisher cabinet
 //! takes extinguishers), and the supply crate is the shared preset.
 use super::*;
 use crate::container_window::{ContainerSpec, ContainerSpecs};
@@ -46,7 +46,7 @@ pub fn cabinets() -> Vec<Cabinet> {
 /// stocked.
 pub fn contents(rack: RackId, defs: &ItemDefs) -> Container {
     let mut c: Container = match rack {
-        MASKS => Container::new(vec![SlotRule::tagged(1, &["mask", "suit"], &[]); 6], Access::Open),
+        MASKS => Container::new(vec![SlotRule::tagged(1, &["mask"], &[]); 6], Access::Open),
         EXTINGUISHERS => Container::new(vec![SlotRule::tagged(1, &["extinguisher"], &[]); 4], Access::Open),
         // 12 places (4x3) as the window's design has it; the preset's 20 is the ship's own crate.
         _ => Container::new(vec![SlotRule::tagged(32, &["small", "medium"], &["carrier"]); 12], Access::Open),
@@ -54,7 +54,6 @@ pub fn contents(rack: RackId, defs: &ItemDefs) -> Container {
     match rack {
         MASKS => {
             put(&mut c, defs, "o2_mask", 3);
-            put(&mut c, defs, "suit", 2);
         }
         EXTINGUISHERS => put(&mut c, defs, "extinguisher", 2),
         _ => {

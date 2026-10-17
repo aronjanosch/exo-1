@@ -253,6 +253,16 @@ fn place_at(p: Vec2, geo: &Geo, window: Vec2, bar: &display_core::hud::BarLook) 
 
 // ---- words ----
 
+/// A tag in the rule line's words: the plural the design shows ("TOOLS ONLY", "AIR CANISTERS ONLY"),
+/// else the tag in capitals.
+fn tag_name(t: &str) -> String {
+    match t {
+        "tool" => "TOOLS".into(),
+        "air_canister" => "AIR CANISTERS".into(),
+        t => t.replace('_', " ").to_uppercase(),
+    }
+}
+
 /// What a container takes, for the header: the tags its places allow ("MASK / SUIT ONLY"), or
 /// "ANY ITEM" when a place takes anything.
 fn rule_text(c: &Container) -> String {
@@ -263,7 +273,7 @@ fn rule_text(c: &Container) -> String {
             return "ANY ITEM".into();
         }
         for t in &r.allow {
-            let t = t.as_str().replace('_', " ").to_uppercase();
+            let t = tag_name(t.as_str());
             if !tags.contains(&t) {
                 tags.push(t);
             }
@@ -286,7 +296,7 @@ fn reason_text(why: &Reject, c: Option<&Container>, place: Option<usize>, at: Pl
             Some(c) => {
                 let one = place.filter(|i| *i < c.len()).map(|i| c.rule(i)).filter(|r| !r.allow.is_empty());
                 match one {
-                    Some(r) => format!("{} ONLY", r.allow.iter().map(|t| t.as_str().replace('_', " ").to_uppercase()).collect::<Vec<_>>().join(" / ")),
+                    Some(r) => format!("{} ONLY", r.allow.iter().map(|t| tag_name(t.as_str())).collect::<Vec<_>>().join(" / ")),
                     None => match rule_text(c) {
                         t if t.ends_with("ONLY") => t,
                         _ => "NOT ALLOWED".into(),
@@ -829,5 +839,21 @@ fn draw_window(
             CwPart::GhostCount => set_text(&mut text, &ghost.filter(|s| s.count > 1).map(|s| format!("×{}", s.count)).unwrap_or_default()),
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use item_core::container::{Access, SlotRule};
+
+    /// The rule line names the tags in the design's words, not the raw tag ids.
+    #[test]
+    fn the_rule_line_has_real_names() {
+        let line = |tag: &str| rule_text(&Container::new(vec![SlotRule::tagged(1, &[tag], &[]); 2], Access::Open));
+        assert_eq!(line("suit"), "SUIT ONLY");
+        assert_eq!(line("tool"), "TOOLS ONLY");
+        assert_eq!(line("air_canister"), "AIR CANISTERS ONLY");
+        assert_eq!(rule_text(&Container::new(vec![SlotRule::any(1)], Access::Open)), "ANY ITEM");
     }
 }

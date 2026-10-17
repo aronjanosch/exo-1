@@ -32,7 +32,7 @@ use item_core::{FrameRef, Placement, PlayerId, Request};
 use std::collections::{BTreeMap, BTreeSet};
 use walker_core::Frame;
 
-use crate::dev_area::layout::{AIRLOCK, ROOM};
+use crate::dev_area::layout::ROOM;
 use crate::dev_area::ship::{ReactorConfig, ReactorSim};
 
 pub const ITEM: &str = "o2_mask";
@@ -47,10 +47,8 @@ pub const SUIT_USE: &str = "wear_suit";
 pub const SHELF_ID: &str = "o2_shelf";
 pub const SHELF_AT: [f64; 2] = [4.6, 0.2];
 pub const SHELF_SIZE: [f64; 3] = [0.8, 1.2, 0.8];
-/// Where the suits hang: the airlock's south wall (inner face y -10.7), facing north, off the
-/// panel on the north wall.
-/// Its stock is in `content/gameplay/gear/gear.json`, in the extinguisher racks' supply format.
-pub const SUIT_RACK_ID: &str = "airlock_suit_rack";
+/// Racks gear owns are listed in `content/gameplay/gear/gear.json` (the extinguisher racks' supply
+/// format); none now: the suits moved out of the airlock into containers (#309, #311).
 const GEAR_FILE: &str = "gear/gear.json";
 
 /// The racks gear owns, as `gear.json` lists them.
@@ -102,7 +100,6 @@ pub fn plugin(app: &mut App) {
     app.insert_resource(GearRacks(racks));
     {
         let mut devices = app.world_mut().resource_mut::<DevAreaDevices>();
-        devices.add(PlaceholderBox { id: SUIT_RACK_ID.into(), zone: AIRLOCK, local_pos: [0.0, -0.75], size: [0.35, 1.2, 0.5], turn_deg: 180.0, colour: [0.25, 0.3, 0.36], panel: None });
         devices.add(PlaceholderBox {
             id: SHELF_ID.into(),
             zone: ROOM,

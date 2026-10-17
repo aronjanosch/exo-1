@@ -1,6 +1,4 @@
 {
-  "_comment": "Gear's wall racks, in the supply format of fire/extinguisher.json (item_core::supply::RackSpec). The airlock's suit rack holds two space suits (item suit, tag suit): a suit is worn like the O2 mask and protects in vacuum. TODO(initiator): the suit rack's place and look.",
-  "racks": [
-    { "id": 3, "box": "airlock_suit_rack", "slots": 2, "stock": 2, "item": "suit", "tag": "suit", "name": "Suit rack" }
-  ]
+  "_comment": "Gear's wall racks, in the supply format of fire/extinguisher.json (item_core::supply::RackSpec). Empty: the suits left the airlock (#309) and wait in containers (#311).",
+  "racks": []
 }

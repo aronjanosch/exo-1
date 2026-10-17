@@ -710,6 +710,8 @@ pub enum TabMode {
     Browse,
     Drag,
     Carrying,
+    /// The container window is open (#310): a click moves the stack to the other side.
+    Container,
 }
 
 /// The keys of an open-inventory hint; the glue writes the bound key for the last ones.
@@ -720,6 +722,8 @@ pub enum TabKey {
     Drop,
     Throw,
     Close,
+    /// F, Esc and Tab together: any of them closes the container window.
+    CloseAll,
     Cancel,
 }
 
@@ -728,6 +732,7 @@ pub fn tab_hints(mode: TabMode) -> Vec<(TabKey, &'static str)> {
         TabMode::Browse => vec![(TabKey::Click, "HOLD"), (TabKey::Drag, "MOVE"), (TabKey::Drop, "DROP"), (TabKey::Throw, "THROW"), (TabKey::Close, "CLOSE")],
         TabMode::Drag => vec![(TabKey::Drag, "MOVE"), (TabKey::Cancel, "CANCEL")],
         TabMode::Carrying => vec![(TabKey::Drop, "DROP"), (TabKey::Throw, "THROW"), (TabKey::Close, "CLOSE")],
+        TabMode::Container => vec![(TabKey::Click, "MOVE STACK"), (TabKey::Drag, "MOVE"), (TabKey::CloseAll, "CLOSE")],
     }
 }
 

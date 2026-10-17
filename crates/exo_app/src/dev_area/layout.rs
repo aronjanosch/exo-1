@@ -105,7 +105,11 @@ pub const GUNNERY_AT: [f64; 2] = [TURRET_ROOM.centre[0], TURRET_ROOM.centre[1] +
 /// from the outer door; face y -8.7), the second on that wall's outer face (y -8.4) beside the outer door.
 pub const ENGINE_DOOR_PANEL_AT: [f64; 2] = [-12.2, -10.66];
 pub const BRIDGE_DOOR_PANEL_AT: [f64; 2] = [-13.4, -8.74];
-pub const AIRLOCK_PANEL_AT: [[f64; 2]; 2] = [[8.7, -8.74], [9.5, -8.36]];
+pub const AIRLOCK_PANEL_AT: [[f64; 2]; 2] = [[8.7, -8.7], [9.5, -8.4]];
+/// The airlock wall panel (#308): 0.20 x 0.32 m screen, its centre 1.4 m up (eye and hand height; start value).
+pub const AIRLOCK_SCREEN_SIZE: [f64; 2] = [0.20, 0.32];
+pub const AIRLOCK_PANEL_CENTRE: f64 = 1.4;
+pub const AIRLOCK_PANEL_MODEL: &str = "ship/airlock_wall_panel.glb";
 /// The vents' wall points: the engine room's west wall and the corridor's south wall.
 pub const VENT_AT: [[f64; 2]; 2] = [[-18.9, -14.0], [1.5, -10.66]];
 pub const VENT_LIFT: f64 = 1.3;
@@ -136,8 +140,8 @@ pub const SCREENS: &[Mount] = &[
     Mount { id: hull_panels::DOOR_ID, name: hull_panels::DOOR_NAME, at: ENGINE_DOOR_PANEL_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: hull_panels::VENT_CORRIDOR_ID, name: hull_panels::VENT_CORRIDOR_NAME, at: VENT_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: hull_panels::BRIDGE_DOOR_ID, name: hull_panels::BRIDGE_DOOR_NAME, at: BRIDGE_DOOR_PANEL_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
-    Mount { id: hull_panels::AIRLOCK_IN_ID, name: hull_panels::AIRLOCK_IN_NAME, at: AIRLOCK_PANEL_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
-    Mount { id: hull_panels::AIRLOCK_OUT_ID, name: hull_panels::AIRLOCK_OUT_NAME, at: AIRLOCK_PANEL_AT[1], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 180.0 },
+    Mount { id: hull_panels::AIRLOCK_IN_ID, name: hull_panels::AIRLOCK_IN_NAME, at: AIRLOCK_PANEL_AT[0], lift: AIRLOCK_PANEL_CENTRE - AIRLOCK_SCREEN_SIZE[1] * 0.5, size: AIRLOCK_SCREEN_SIZE, turn: 0.0 },
+    Mount { id: hull_panels::AIRLOCK_OUT_ID, name: hull_panels::AIRLOCK_OUT_NAME, at: AIRLOCK_PANEL_AT[1], lift: AIRLOCK_PANEL_CENTRE - AIRLOCK_SCREEN_SIZE[1] * 0.5, size: AIRLOCK_SCREEN_SIZE, turn: 180.0 },
     // The bridge: only its vent. Parked (#306 Parkplatz): the helm, JD-01, the shield and CP-01.
     Mount { id: hull_panels::VENT_BRIDGE_ID, name: hull_panels::VENT_BRIDGE_NAME, at: BRIDGE_VENT_AT, lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 0.0 },
     // The turret room: empty. Parked (#306 Parkplatz): GN-01 and the gun's housing (`TURRET_GUN`).
@@ -308,11 +312,21 @@ fn spawn_box(commands: &mut Commands, frame: &Frame, planet: &PlanetRes, id: Str
         .id()
 }
 
+fn is_airlock_panel(id: &PanelId) -> bool {
+    *id == hull_panels::AIRLOCK_IN_ID || *id == hull_panels::AIRLOCK_OUT_ID
+}
+
 fn spawn_screen(commands: &mut Commands, frame: &Frame, planet: &PlanetRes, m: &Mount, at: [f64; 2]) -> Entity {
     let (ground, up) = frame.ground(planet, at[0], at[1], 0.0);
     let rot = frame.rotation(up, m.turn);
-    let centre = ground + up * (m.lift + m.size[1] * 0.5);
-    commands.spawn(DisplayPanel { id: m.id.clone(), name: m.name.into(), size_m: DVec2::from(m.size), centre, rot }).id()
+    let mut centre = ground + up * (m.lift + m.size[1] * 0.5);
+    let panel = DisplayPanel { id: m.id.clone(), name: m.name.into(), size_m: DVec2::from(m.size), centre, rot };
+    if is_airlock_panel(&m.id) {
+        // The wall panel's model has its origin at the wall surface; the screen stands in front of the glass.
+        centre += rot * DVec3::Z * crate::displays::FRAMED_SCREEN_OFFSET;
+        return commands.spawn((DisplayPanel { centre, ..panel }, crate::displays::FramedBy(AIRLOCK_PANEL_MODEL))).id();
+    }
+    commands.spawn(panel).id()
 }
 
 /// Once per planet: the mini ship's walls, the machines' housings and the wall screens, and each role
@@ -340,6 +354,9 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
         let e = spawn_screen(&mut commands, &frame, &planet, m, at);
         commands.entity(e).insert(Mirror);
         area.entities.push(e);
+        if is_airlock_panel(&m.id) {
+            continue;
+        }
         // The board behind the screen: the screen faces along its turn, the board sits just behind it.
         let back = (m.turn.to_radians().sin() * -(BOARD_DEPTH * 0.5 + 0.01), m.turn.to_radians().cos() * (BOARD_DEPTH * 0.5 + 0.01));
         let board = [at[0] + back.0, at[1] + back.1];

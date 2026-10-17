@@ -33,6 +33,14 @@ pub struct DisplayPanel {
     pub rot: DQuat,
 }
 
+/// A screen that brings its own frame: no bezel box behind it, the model (a path under the asset
+/// root, origin at the wall surface behind the screen) stands in for it.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct FramedBy(pub &'static str);
+
+/// How far in front of the model's origin the screen quad stands (m).
+pub const FRAMED_SCREEN_OFFSET: f64 = 0.003;
+
 #[derive(Resource, Default, Debug)]
 pub struct Panels(pub HashMap<PanelId, Panel>);
 

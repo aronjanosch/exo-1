@@ -69,7 +69,8 @@ pub struct ScreenLook {
 
 pub fn add_quads(
     mut commands: Commands,
-    new: Query<(Entity, &DisplayPanel), Added<DisplayPanel>>,
+    new: Query<(Entity, &DisplayPanel, Option<&FramedBy>), Added<DisplayPanel>>,
+    assets: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     look: Option<Res<ScreenLook>>,
@@ -90,10 +91,15 @@ pub fn add_quads(
             l
         }
     };
-    for (e, d) in &new {
+    for (e, d, framed) in &new {
         let (w, h) = (d.size_m.x as f32, d.size_m.y as f32);
-        commands.entity(e).insert((Mesh3d(meshes.add(Rectangle::new(w, h))), MeshMaterial3d(look.idle.clone()), Transform::from_rotation(d.rot.as_quat()), WorldPos(d.centre))).with_children(|c| {
-            c.spawn((Mesh3d(meshes.add(Cuboid::new(w + 0.06, h + 0.06, 0.04))), MeshMaterial3d(look.bezel.clone()), Transform::from_xyz(0.0, 0.0, -0.025)));
+        commands.entity(e).insert((Mesh3d(meshes.add(Rectangle::new(w, h))), MeshMaterial3d(look.idle.clone()), Transform::from_rotation(d.rot.as_quat()), WorldPos(d.centre))).with_children(|c| match framed {
+            Some(f) => {
+                c.spawn((WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset(f.0))), Transform::from_xyz(0.0, 0.0, -FRAMED_SCREEN_OFFSET as f32)));
+            }
+            None => {
+                c.spawn((Mesh3d(meshes.add(Cuboid::new(w + 0.06, h + 0.06, 0.04))), MeshMaterial3d(look.bezel.clone()), Transform::from_xyz(0.0, 0.0, -0.025)));
+            }
         });
     }
 }
@@ -193,7 +199,8 @@ pub fn draw_world(
                 let key = draw_key(panel, ptr, ts);
                 if t.drawn.as_ref() != Some(&key) && (in_use || now - t.last >= w.redraw_s) {
                     commands.entity(t.root).despawn_children();
-                    let pen = Pen { theme: &look.0, fonts: &fonts, scale: ts };
+                    let images_cell = std::cell::RefCell::new(&mut *images);
+                    let pen = Pen { theme: &look.0, fonts: &fonts, scale: ts, images: Some(&images_cell) };
                     commands.entity(t.root).with_children(|c| pen.panel(c, panel, ptr));
                     t.drawn = Some(key);
                     t.last = now;
@@ -248,6 +255,8 @@ struct Pen<'a> {
     theme: &'a Theme,
     fonts: &'a DisplayFonts,
     scale: f32,
+    /// Where vector pictures put their images (shapes of that kind need it).
+    images: Option<&'a std::cell::RefCell<&'a mut Assets<Image>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -355,7 +364,7 @@ impl Pen<'_> {
         }
         let mut clip = self.node(x, y, w, h);
         clip.overflow = Overflow::clip();
-        let sub = Pen { theme: self.theme, fonts: self.fonts, scale: self.scale };
+        let sub = Pen { theme: self.theme, fonts: self.fonts, scale: self.scale, images: None };
         c.spawn(clip).with_children(|c| {
             let mut t = -h;
             while t < w {
@@ -367,6 +376,14 @@ impl Pen<'_> {
 
     #[allow(clippy::too_many_arguments)]
     fn text(&self, c: &mut ChildSpawnerCommands, x: f64, y: f64, w: f64, h: f64, s: &str, size: f64, face: Face, colour: Color, caps: bool, centred: bool) {
+        let spacing = if caps { self.theme.strokes.caps_tracking as f32 * size as f32 * self.scale } else { 0.0 };
+        let s = if caps { s.to_uppercase() } else { s.to_string() };
+        self.text_spaced(c, x, y, w, h, &s, size, face, colour, spacing, centred);
+    }
+
+    /// A text with its letter spacing in texture pixels.
+    #[allow(clippy::too_many_arguments)]
+    fn text_spaced(&self, c: &mut ChildSpawnerCommands, x: f64, y: f64, w: f64, h: f64, s: &str, size: f64, face: Face, colour: Color, spacing: f32, centred: bool) {
         if w <= 0.0 || h <= 0.0 {
             return;
         }
@@ -381,11 +398,27 @@ impl Pen<'_> {
             Face::Mono => &self.fonts.mono,
         };
         let px_size = size as f32 * self.scale;
-        let spacing = if caps { self.theme.strokes.caps_tracking as f32 * px_size } else { 0.0 };
-        let s = if caps { s.to_uppercase() } else { s.to_string() };
+        let s = s.to_string();
         c.spawn(n).with_children(|c| {
             c.spawn((Text::new(s), TextFont { font: FontSource::Handle(font.clone()), font_size: FontSize::Px(px_size), ..default() }, TextColor(colour), bevy::text::LetterSpacing::Px(spacing), TextLayout::no_wrap()));
         });
+    }
+
+    /// A vector picture: rasterised on the CPU to one image the size of its box in texture pixels.
+    fn vector(&self, c: &mut ChildSpawnerCommands, x: f64, y: f64, w: f64, h: f64, unit: f64, prims: &[display_core::raster::Prim]) {
+        let Some(images) = &self.images else { return };
+        let s = self.scale as f64;
+        let (pw, ph) = ((w * s).round() as usize, (h * s).round() as usize);
+        if pw == 0 || ph == 0 {
+            return;
+        }
+        let data = display_core::raster::render(pw, ph, unit * s, prims);
+        let mut image = Image::new(Extent3d { width: pw as u32, height: ph as u32, ..default() }, TextureDimension::D2, data, TextureFormat::Rgba8UnormSrgb, RenderAssetUsages::default());
+        image.sampler = bevy::image::ImageSampler::linear();
+        let handle = images.borrow_mut().add(image);
+        let mut n = self.node(x, y, w, h);
+        n.position_type = PositionType::Absolute;
+        c.spawn((n, ImageNode::new(handle)));
     }
 
     fn glyph(&self, c: &mut ChildSpawnerCommands, g: Glyph, at: DVec2, size: f64, colour: Color) {
@@ -550,6 +583,11 @@ impl Pen<'_> {
                     }
                 }
                 Shape::Hatch { x, y, w, h, ink } => self.hatch(c, o.x + x, o.y + y, *w, *h, col(self.theme.ink(*ink))),
+                Shape::SpacedText { x, y, w, h, text, size, face: f, rgb, tracking, centred } => {
+                    let colour = Color::srgb_u8(rgb[0], rgb[1], rgb[2]);
+                    self.text_spaced(c, o.x + x, o.y + y, *w, *h, text, *size, face(*f), colour, (*tracking * *size) as f32 * self.scale, *centred);
+                }
+                Shape::Vector { x, y, w, h, unit, prims } => self.vector(c, o.x + x, o.y + y, *w, *h, *unit, prims),
                 Shape::Text { x, y, w, h, text, size, face: f, ink, centred } => {
                     self.text(c, o.x + x, o.y + y, *w, *h, text, *size, face(*f), col(self.theme.ink(*ink)), false, *centred);
                 }

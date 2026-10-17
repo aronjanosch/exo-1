@@ -423,6 +423,11 @@ fn shifted_dim(s: &Shape, dx: f64, dy: f64, right: f64) -> Shape {
             *fill = fill.map(dim_ink);
             *stroke = stroke.map(|(i, w)| (dim_ink(i), w));
         }
+        // The airlock panel's pictures are not in the help view's canvases: moved only.
+        Shape::SpacedText { x, y, .. } | Shape::Vector { x, y, .. } => {
+            *x += dx;
+            *y += dy;
+        }
     }
     t
 }

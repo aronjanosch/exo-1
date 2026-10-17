@@ -43,6 +43,11 @@ pub enum Shape {
     Hatch { x: f64, y: f64, w: f64, h: f64, ink: Ink },
     /// A text in a box, vertically centred; `centred` centres it across the box, else left.
     Text { x: f64, y: f64, w: f64, h: f64, text: String, size: f64, face: TextFace, ink: Ink, centred: bool },
+    /// A text in an exact colour with its own letter spacing (`tracking` in em), left aligned or centred.
+    SpacedText { x: f64, y: f64, w: f64, h: f64, text: String, size: f64, face: TextFace, rgb: [u8; 3], tracking: f64, centred: bool },
+    /// A vector picture (`raster::Prim`s in its own units, `unit` panel pixels per unit) in the box
+    /// `w` by `h` panel pixels: polygons, bezier blades and alpha rings the other shapes cannot draw.
+    Vector { x: f64, y: f64, w: f64, h: f64, unit: f64, prims: Vec<crate::raster::Prim> },
 }
 
 /// The extent of a shape: (min x, min y, max x, max y), in canvas pixels.
@@ -55,7 +60,7 @@ impl Shape {
             Shape::Line { a, b, width, .. } => (a[0].min(b[0]) - width * 0.5, a[1].min(b[1]) - width * 0.5, a[0].max(b[0]) + width * 0.5, a[1].max(b[1]) + width * 0.5),
             // The outline lies inside the radius.
             Shape::Circle { cx, cy, r, .. } => (cx - r, cy - r, cx + r, cy + r),
-            Shape::Rect { x, y, w, h, .. } | Shape::Hatch { x, y, w, h, .. } | Shape::Text { x, y, w, h, .. } => (*x, *y, x + w, y + h),
+            Shape::Rect { x, y, w, h, .. } | Shape::Hatch { x, y, w, h, .. } | Shape::Text { x, y, w, h, .. } | Shape::SpacedText { x, y, w, h, .. } | Shape::Vector { x, y, w, h, .. } => (*x, *y, x + w, y + h),
         }
     }
 

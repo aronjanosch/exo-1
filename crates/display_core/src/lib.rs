@@ -2,10 +2,12 @@
 use glam::{DQuat, DVec2, DVec3};
 use std::borrow::Cow;
 
+pub mod airlock_panel;
 pub mod canvas;
 pub mod captain;
 pub mod hud;
 pub mod monitor;
+pub mod raster;
 pub mod target;
 pub mod theme;
 pub use canvas::{arc_points, Ink, Shape, TextFace};

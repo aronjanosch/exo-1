@@ -202,6 +202,10 @@ pub fn interaction(
             let Some(dist) = in_cone(eye, look, centre, half, cfg.tool_max_range) else { continue };
             let angle = (centre - eye).angle_between(look);
             let reach = if dist - c.body.half.max_element() <= cfg.hand_range { Reach::Hands } else { Reach::Tool };
+            // The grab tool is parked (#307): beyond the hands a crate is not offered.
+            if reach == Reach::Tool && !cfg.tool_enabled {
+                continue;
+            }
             if best.is_none_or(|(a, ..)| angle < a) {
                 best = Some((angle, e, reach));
             }

@@ -472,7 +472,7 @@ pub fn crate_carry_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
         let at = ahead(w, 8.0);
         let e = ground_crate(w, "medium", at);
         c.v.insert("crate", e.to_bits() as f64);
-        begin(w, c, "crate-carry: pull the medium crate with the grab tool from 8 m");
+        begin(w, c, "crate-carry: the parked grab tool (#307) does not pull the medium crate from 8 m");
         true
     }));
     s.push(wait(0.6));
@@ -491,23 +491,14 @@ pub fn crate_carry_steps(s: &mut Vec<Step>, dir: &std::path::Path, windowed: boo
         tap(w, KeyCode::KeyF);
         true
     }));
-    let dir = dir.join("crate-carry");
+    let _ = (&dir, windowed);
     s.push(Box::new(move |w, c| {
-        if c.t >= 1.5 && !c.v.contains_key("beam_shot") {
-            c.v.insert("beam_shot", 1.0);
-            shot(w, c, &dir, windowed, "grab-beam");
-        }
-        if c.t < 4.0 {
+        if c.t < 1.5 {
             return false;
         }
         let e = crate_e(c, "crate");
-        let f = ship_frame_of(w);
-        let eye = with_player(w, |pl| pl.world_pos(f) + pl.world_up(f) * crate::walker::EYE_HEIGHT);
-        let d = crate_world_pos(w, e).distance(eye);
-        let h = crate_above_ground(w, e);
-        end(w, c, format!("tool: crate from {:.2} m to {d:.2} m from the eye in 4 s, {h:.2} m above ground", c.v["d0"]));
-        check(c, held(w) == Some(e), format!("crate-carry: the tool took hold of the crate (from {:.1} m)", c.v["d0"]));
-        tap(w, KeyCode::KeyF);
+        end(w, c, format!("parked tool: the crate at {:.1} m is not held", c.v["d0"]));
+        check(c, held(w) != Some(e), format!("crate-carry: F does not reach a crate {:.1} m away (grab tool parked)", c.v["d0"]));
         true
     }));
     s.push(wait(0.3));
@@ -803,7 +794,7 @@ pub fn crate_unload_steps(s: &mut Vec<Step>) {
             clear_crates(w);
             let e = cabin_crate(w, size, 0.0, 1.5);
             c.v.insert("crate", e.to_bits() as f64);
-            walker_in_cabin(w, DVec3::new(0.0, 0.32, -0.6));
+            walker_in_cabin(w, DVec3::new(0.0, 0.32, 0.3)); // within the hands' reach: the grab tool is parked (#307)
             begin(w, c, &format!("crate-unload: {size} crate down the ramp and back"));
             true
         }));

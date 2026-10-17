@@ -1,8 +1,9 @@
 {
-  "_comment": "Grab and crates (grab_core::GrabConfig, #81). TODO(initiator): every value is a starting point for the playtest 'does moving cargo feel good?'. Every field required. impact_*: crate condition (#130): impacts up to 4 m/s (a drop from about 0.8 m) are free, then 5 % per m/s more.",
+  "_comment": "Grab and crates (grab_core::GrabConfig, #81). TODO(initiator): every value is a starting point for the playtest 'does moving cargo feel good?'. Every field required. impact_*: crate condition (#130): impacts up to 4 m/s (a drop from about 0.8 m) are free, then 5 % per m/s more. tool_enabled: the grab tool (pulling a crate from beyond the hands) is parked (#307, 2026-10-17); crates are picked up within hand_range like other items.",
   "hand_range": 2.0,
   "tool_full_range": 6.0,
   "tool_max_range": 10.0,
+  "tool_enabled": false,
   "hand_force": 1500.0,
   "ref_mass": 30.0,
   "max_speed": 8.0,

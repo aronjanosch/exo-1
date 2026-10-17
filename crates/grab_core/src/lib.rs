@@ -81,6 +81,10 @@ pub struct GrabConfig {
     /// The grab tool: full force to here (m), then linear down to zero at `tool_max_range`.
     pub tool_full_range: f64,
     pub tool_max_range: f64,
+    /// Whether the grab tool (the tractor pull from beyond the hands) is on. Parked (#307) since
+    /// 2026-10-17: crates are only picked up within `hand_range`, like other items.
+    #[serde(default = "tool_on")]
+    pub tool_enabled: bool,
     /// Force cap of one holder (N), hands and tool alike.
     pub hand_force: f64,
     /// Up to this mass (kg) the hold reaches `max_speed`; above it the speed cap falls as 1/mass.
@@ -124,6 +128,10 @@ pub struct GrabConfig {
     pub impact_safe_speed: f64,
     /// Condition lost per m/s of impact speed above the safe speed (condition runs 1 to 0).
     pub impact_loss_per_speed: f64,
+}
+
+fn tool_on() -> bool {
+    true
 }
 
 impl GrabConfig {

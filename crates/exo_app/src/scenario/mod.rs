@@ -25,6 +25,7 @@ mod camera_g;
 mod cargo;
 mod coolant;
 mod canisters;
+mod reactor_room;
 mod dev_area;
 mod dev_menu;
 mod dev_tour;
@@ -643,6 +644,7 @@ pub fn build(name: &str, out_dir: &std::path::Path, windowed: bool, swap_rounds:
         "reactor" => reactor::reactor_steps(&mut s),
         "coolant" => coolant::coolant_steps(&mut s),
         "canisters" => canisters::canisters_steps(&mut s),
+        "reactor_room" => reactor_room::reactor_room_steps(&mut s),
         "blast" => blast::blast_steps(&mut s),
         "fire" => fire::fire_steps(&mut s),
         "fire_grid" => fire_grid::fire_grid_steps(&mut s),

@@ -61,8 +61,15 @@ pub const DOOR_AREA: f64 = 2.0;
 /// Where the walker looks at the door from (m): its reach from the slab's centre.
 pub const DOOR_REACH: f64 = 2.5;
 
-pub const REACTOR_AT: [f64; 2] = [-14.0, -17.8];
-pub const REACTOR_SIZE: [f64; 3] = [2.0, 2.5, 2.0];
+/// The reactor model's origin (#316): on the floor at the engine room's centre, its console facing the door (north).
+pub const REACTOR_AT: [f64; 2] = ROOM.centre;
+/// The base drum's box (the collision and what a wrench or a canister hold aims at); the rest of the model's collision is
+/// `engineering::reactor_room`.
+pub const REACTOR_SIZE: [f64; 3] = [3.0, 1.0, 3.0];
+/// Where a walker stands in front of the reactor's drum, clear of the console (m, area): the old canister and blast scenarios use it.
+pub const REACTOR_FRONT_AT: [f64; 2] = [REACTOR_AT[0], REACTOR_AT[1] + 2.6];
+/// The height at which a hold on the drum aims (the drum is 1 m high).
+pub const REACTOR_AIM_LIFT: f64 = 0.5;
 pub const COOLANT_PUMP_AT: [f64; 2] = [-10.5, -17.5];
 pub const COOLANT_PUMP_SIZE: [f64; 3] = [1.0, 1.2, 1.0];
 pub const JUNCTION_BOX_AT: [f64; 2] = [-17.0, -18.85];

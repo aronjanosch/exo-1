@@ -2,7 +2,7 @@
 use super::*;
 use crate::dev_area::engineering::blast::{fire_points, BlastFlash, PendingBlasts};
 use crate::dev_area::ship::{route, ReactorSim};
-use crate::dev_area::{hull::ShipAir, layout::REACTOR_AT};
+use crate::dev_area::{hull::ShipAir, layout::REACTOR_FRONT_AT};
 use crate::dev_area::ship::ReactorCounts;
 use crate::dev_area::DevArea;
 use crate::health::HealthState;
@@ -50,7 +50,7 @@ pub(super) fn blast_steps(s: &mut Vec<Step>) {
             return false;
         }
         check(c, ready, "blast: the dev area and the walker's body are there".into());
-        let feet = ground(w, [REACTOR_AT[0], REACTOR_AT[1] + 2.0], 0.0);
+        let feet = ground(w, REACTOR_FRONT_AT, 0.0);
         place_walker(w, feet);
         end(w, c, "two metres from the reactor".into());
         true

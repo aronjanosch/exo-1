@@ -81,7 +81,7 @@ pub struct PartSound {
     pub outcome: Outcome,
 }
 
-fn apply_presses(mut presses: MessageReader<PressPart>, mut machines: Query<&mut Machine>, mut out: MessageWriter<PartSound>) {
+pub fn apply_presses(mut presses: MessageReader<PressPart>, mut machines: Query<&mut Machine>, mut out: MessageWriter<PartSound>) {
     for p in presses.read() {
         let Ok(mut m) = machines.get_mut(p.machine) else { continue };
         let m = &mut *m;

@@ -156,6 +156,9 @@ pub enum ReactorAsk {
     ArmEject,
     /// Second press, inside the arm window: the core is thrown out (PULSAR's core eject).
     Eject,
+    /// F on a part of the reactor that is not an item slot (#316): the index into `reactor_room::PRESS` (the SCRAM cover and
+    /// button, the eject cover and lever). The host runs it on the part's controls; the guard (cover) answers there.
+    Press(u8),
     /// The emergency cooling (PULSAR's manual button): the tank pays, the extra cooling runs
     /// for its duration, then the cooldown. Refused when the host has no press to give.
     EmergencyCool,
@@ -576,6 +579,12 @@ pub struct ReactorNews {
     /// The core ejects the host has applied so far (`ReactorCounts::ejects`). A process that sees
     /// it go up shows the CORE EJECTED notice once, as the blasts do.
     pub ejects: u32,
+    /// The SCRAM cover and the core eject cover stand open (#316): the host's physical parts, shown to every player.
+    pub scram_cover: bool,
+    pub eject_cover: bool,
+    /// The SCRAMs the host has applied so far (`ReactorCounts::scrams`): a process that sees it go up shows the
+    /// button down and the notice once, as the ejects do.
+    pub scrams: u32,
     pub ecool_active: bool,
     /// Seconds until the emergency cooling can be pressed again (0 when it can).
     pub ecool_ready_in_s: f64,
@@ -906,6 +915,9 @@ mod tests {
             ejected: true,
             eject_armed: true,
             ejects: 3,
+            scram_cover: true,
+            eject_cover: true,
+            scrams: 2,
             battery_charge: 0.75,
             battery_recharge: 0.4,
             battery_kw: 120.0,
@@ -953,6 +965,7 @@ mod tests {
             ReactorAsk::SetPumpMode(PumpMode::Low),
             ReactorAsk::ArmEject,
             ReactorAsk::Eject,
+            ReactorAsk::Press(3),
             ReactorAsk::SetDirector(true),
             ReactorAsk::SetDirector(false),
             ReactorAsk::SilenceAlarms,

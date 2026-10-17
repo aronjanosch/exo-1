@@ -238,6 +238,31 @@ impl Controls {
         }
     }
 
+    /// A client shows what the host's news say: the setters below move a part without a press (no guard, no
+    /// machine rule). Unknown part or wrong kind: nothing.
+    pub fn set_cover(&mut self, id: &str, open: bool) {
+        if let Some(Kind::Cover { open: o }) = self.parts.get_mut(id).map(|p| &mut p.kind) {
+            *o = open;
+        }
+    }
+    pub fn set_lever(&mut self, id: &str, index: u8) {
+        if let Some(Kind::Lever { detents, index: i, rising, .. }) = self.parts.get_mut(id).map(|p| &mut p.kind) {
+            *i = index.min(*detents - 1);
+            *rising = *i == 0;
+        }
+    }
+    pub fn set_slot(&mut self, id: &str, item: Option<ItemId>) {
+        if let Some(Kind::Slot { item: i }) = self.parts.get_mut(id).map(|p| &mut p.kind) {
+            *i = item;
+        }
+    }
+    /// Shows a button down for `BUTTON_DOWN_S` (the host's fire seen from a client).
+    pub fn set_button_down(&mut self, id: &str) {
+        if let Some(Kind::Button { down_s }) = self.parts.get_mut(id).map(|p| &mut p.kind) {
+            *down_s = BUTTON_DOWN_S;
+        }
+    }
+
     /// Closes a cover from the machine side (e.g. after a SCRAM).
     pub fn close_cover(&mut self, id: &str) {
         if let Some(Kind::Cover { open }) = self.parts.get_mut(id).map(|p| &mut p.kind) {
@@ -349,6 +374,19 @@ mod tests {
         assert_eq!(c.press("toggle_boot_1", None, yes, any), Outcome::Toggle { on: true });
         assert_eq!(c.lever_index("lever_start"), Some(1));
         assert_eq!(c.seated("slot_1"), Some(3));
+    }
+
+    #[test]
+    fn a_client_mirrors_the_hosts_state_without_pressing() {
+        let mut c = Controls::new();
+        c.cover("c").lever("l", 2, Some("c")).slot("s").button("b", None);
+        c.set_cover("c", true);
+        c.set_lever("l", 1);
+        c.set_slot("s", Some(4));
+        c.set_button_down("b");
+        assert_eq!((c.is_open("c"), c.lever_index("l"), c.seated("s"), c.position("b")), (true, Some(1), Some(4), 1.0));
+        c.set_lever("l", 9);
+        assert_eq!(c.lever_index("l"), Some(1), "clamped to the top detent");
     }
 
     #[test]

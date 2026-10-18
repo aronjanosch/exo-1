@@ -36,7 +36,7 @@ pub use history::History;
 pub use jump::{JumpDrive, JumpStage, JumpTuning};
 pub use lights::LightState;
 pub use grid::{Grid, Group, GroupState, Supply};
-pub use startup::{Checks, Stage, Startup, StartupTuning};
+pub use startup::{ReactorStart, StartChecks, StartOut, StartStage, Stand, Startup, StartupTuning, Supplies, Checks, Stage};
 pub use shield::{Shield, ShieldTuning};
 pub use room_alarm::{AlarmState, AlarmTuning, RoomAlarm};
 pub use reactor::{AlarmKind, Band, Bands, Blast, FillNeed, Canister, Mode, Reactor, ReactorEvent, ReactorTuning, CanisterKind, CanisterKinds, Warnings};

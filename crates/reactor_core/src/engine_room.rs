@@ -31,7 +31,7 @@ use crate::hull::{Hit, HitsTuning, Hull, HullTuning, Side, DEVICES, REACTOR_AT};
 use crate::grid::{Grid, Group};
 use crate::history::History;
 use crate::jump::{JumpDrive, JumpSave};
-use crate::startup::{Checks, Startup};
+use crate::startup::{Checks, ReactorStart, Stand, StartStage, Startup, Supplies};
 use crate::reactor::{AlarmKind, Canister, Mode, Reactor, ReactorEvent, ReactorSave, ReactorTuning, CanisterKinds};
 use crate::shield::{Shield, ShieldSave};
 use crate::grid::GridSave;
@@ -144,6 +144,11 @@ const PUMP_LEAK_BELOW: f64 = 0.5;
 
 /// Barotrauma's `OverloadCooldown` (`PowerTransfer.cs:22`): no hits for this long after a break.
 const OVERLOAD_COOLDOWN_S: f64 = 5.0;
+
+/// The output counts as reached when it is within this many kW of the demand (the main screen's GRID_SLACK_KW).
+const OUTPUT_SLACK_KW: f64 = 10.0;
+/// ... and must stay so this long (the engines' demand climbs with the voltage, so a crossing on the way up is not the run-up's end).
+const RUN_UP_HOLD_S: f64 = 2.0;
 
 /// The warm start's step (1/60 s, a frame), Auto's speed factor during it (Barotrauma's speed 100),
 /// the hold the reactor must keep settled (5 s), the cap (600 s) and the output tolerance (2 %).
@@ -646,6 +651,11 @@ pub struct EngineRoom {
     enemy_rng: Rng,
     /// The ship's cold start (`startup`, r42, #268): the master is live from its Reactor stage on.
     startup: Startup,
+    /// The reactor's start-up stand (#319): the stage and the trap, and what the stand shows (the host sets it each tick).
+    start: ReactorStart,
+    stand: Stand,
+    /// Seconds the output has stayed at the demand during the run-up.
+    reach_held: f64,
     /// Normal wear on (`set_wear`): off, running wears nothing (the dev area's start, the initiator
     /// 2026-10-15); heat, blasts, hits and overvoltage take condition either way.
     wears: bool,
@@ -703,6 +713,9 @@ impl EngineRoom {
             encounter: None,
             enemy_rng: Rng::new(seed ^ 0x3e11_0a5b),
             startup: Startup::ready(t.startup),
+            start: ReactorStart::warm(t.startup),
+            stand: Stand::warm(),
+            reach_held: 0.0,
         }
     }
 
@@ -1198,6 +1211,18 @@ impl EngineRoom {
         // The startup's checks read the room as the last step left it; they only move the stage on.
         let checks = self.startup_checks();
         self.startup.step(dt, checks);
+        let mut input = input;
+        let start_out = self.start_step(dt);
+        match self.start.stage() {
+            // The run-up is Auto's: the sliders are disabled.
+            StartStage::RunUp => input.mode = Mode::Auto,
+            // The orderly OFF: injection stops, the converter runs down, then the reactor is off.
+            StartStage::ShutDown => input = Input::manual(0.0, 0.0),
+            _ => {}
+        }
+        if start_out.power_off {
+            self.reactor.set_power(false);
+        }
         // The master off: the systems do not step their consumers and the grid gets nothing.
         let live = self.master_on();
         if std::mem::take(&mut self.ecool_pressed) {
@@ -1243,7 +1268,12 @@ impl EngineRoom {
         self.grid.set_demand(Group::JumpDrive, self.jump.demand_kw(self.jump_full_kw));
         let load = self.main_load_kw();
         self.sync_aux();
-        let reactor_ev = self.reactor.step(dt, load);
+        let charge_kw = self.charge_request(load);
+        let reactor_ev = self.reactor.step(dt, load + charge_kw);
+        // A broken or imploded core ends the run: the restart is the whole procedure again.
+        if reactor_ev.iter().any(|e| matches!(e, ReactorEvent::Implosion | ReactorEvent::CoreEjected)) {
+            self.start.emergency();
+        }
         ev.extend(reactor_ev.iter().map(|e| RoomEvent::Reactor(*e)));
         ev.extend(self.blast_damage(&reactor_ev));
         self.pump.use_coolant(dt, stream, self.reactor.heat_input(), &t);
@@ -1330,7 +1360,91 @@ impl EngineRoom {
     /// The ship's master: live from the booted OS on (`startup::Stage::Reactor`). Off, the grid
     /// delivers nothing and the battery is cut off; the screens other than SP-01 show OFF.
     pub fn master_on(&self) -> bool {
-        self.startup.live()
+        self.startup.live() && self.start.awake()
+    }
+
+    /// The reactor's start-up stand (#319): the stage and the trap.
+    pub fn start(&self) -> &ReactorStart {
+        &self.start
+    }
+
+    pub fn stand(&self) -> &Stand {
+        &self.stand
+    }
+
+    /// The host shows the stand's toggles and lever each tick.
+    pub fn set_stand(&mut self, stand: Stand) {
+        self.stand = stand;
+    }
+
+    /// What PRIME needs now: the best canister's fill and the battery's charge.
+    pub fn supplies(&self) -> Supplies {
+        let fill = self.reactor.canister_lives().into_iter().filter(|l| l.is_finite()).fold(0.0, f64::max);
+        Supplies { fill, battery_kwmin: self.battery.charge_kwmin() }
+    }
+
+    /// May the START lever go to `detent` now (the kit's refusal is the negation).
+    pub fn lever_allows(&self, detent: u8) -> bool {
+        self.start.allows(detent, &self.stand, &self.supplies())
+    }
+
+    /// Fraction of the battery's capacity PRIME needs (the BOOT screen's BATTERY row).
+    pub fn prime_need_fraction(&self) -> f64 {
+        self.start.prime_need_kwmin() / self.battery.tuning().capacity_kwmin.max(1e-9)
+    }
+
+    /// kW the reactor makes on top of the demand to charge the battery (#319): only while it runs (stage Running, so never in
+    /// PRIME or before the run-up has met the demand), never over its maximum output, never over the battery's capacity.
+    /// The battery's recharge setting and `max_recharge_kw` set it; 0 with the setting at 0.
+    pub fn charge_request(&self, load_kw: f64) -> f64 {
+        if self.start.stage() != StartStage::Running || !self.reactor.power_on() || self.battery.fraction() >= 1.0 {
+            return 0.0;
+        }
+        let want = self.battery.recharge() * self.battery.tuning().max_recharge_kw;
+        let room = (self.reactor.tuning().max_output_kw + self.aux_boost_kw() - load_kw).max(0.0);
+        let kw = want.min(room);
+        if kw.is_finite() { kw.max(0.0) } else { 0.0 }
+    }
+
+    /// The reactor's output has reached what the grid asks, with the chamber heat in its optimal band (else the output falls
+    /// back as soon as the run-up's faster Auto ends) (RUN-UP is over).
+    fn output_reached(&self) -> bool {
+        self.reactor.power_on() && self.reactor.output_kw() >= self.main_load_kw() - OUTPUT_SLACK_KW && self.reactor.bands().heat_optimal.contains(self.reactor.heat())
+    }
+
+    /// One step of the stand's stage machine; ignition, the trap's draw and the shutdown's end act on the reactor and the battery.
+    fn start_step(&mut self, dt: f64) -> crate::startup::StartOut {
+        let before = self.start.stage();
+        let sup = self.supplies();
+        self.reach_held = if self.output_reached() { self.reach_held + dt } else { 0.0 };
+        let reached = self.reach_held >= RUN_UP_HOLD_S;
+        let out = self.start.step(dt, &self.stand, &sup, reached);
+        self.battery.draw_kwmin(out.draw_kwmin);
+        if out.ignite {
+            if self.reactor.set_power(true) {
+                self.reactor.set_auto_boost(self.start.run_up_boost());
+            } else {
+                self.start.fail();
+            }
+        }
+        if before == StartStage::RunUp && self.start.stage() != StartStage::RunUp {
+            self.reactor.set_auto_boost(1.0);
+        }
+        out
+    }
+
+    /// The dev menu's cold start: the reactor off and dark, the stand off, the trap empty. The old SP-01 stage and the
+    /// breakers stay as they are.
+    pub fn cold_reactor(&mut self) {
+        self.start.go_cold();
+        self.stand = Stand::cold();
+        self.reactor.set_power(false);
+    }
+
+    /// The warm start: running, toggles on and the lever at RUN.
+    pub fn warm_reactor(&mut self) {
+        self.start.go_warm();
+        self.stand = Stand::warm();
     }
 
     pub fn startup(&self) -> &Startup {
@@ -1391,13 +1505,21 @@ impl EngineRoom {
     /// The physical SCRAM (#316): `Reactor::scram` (the chamber is vented, a share of the fill is lost). Returns the fill
     /// lost, None when the core is out already.
     pub fn scram(&mut self) -> Option<f64> {
-        self.reactor.scram()
+        let lost = self.reactor.scram();
+        if lost.is_some() {
+            self.start.emergency();
+        }
+        lost
     }
 
     /// Throws the core out (`Reactor::eject`, PULSAR's core eject). The events are the reactor's:
     /// `CoreEjected` alone, or none when the core is out already. No blast: an ejected core cannot implode.
     pub fn eject_core(&mut self) -> Vec<RoomEvent> {
-        self.reactor.eject().into_iter().map(RoomEvent::Reactor).collect()
+        let events: Vec<RoomEvent> = self.reactor.eject().into_iter().map(RoomEvent::Reactor).collect();
+        if !events.is_empty() {
+            self.start.emergency();
+        }
+        events
     }
 
     /// A blast in the reactor's events takes `device_damage` from the pump and the junction box:

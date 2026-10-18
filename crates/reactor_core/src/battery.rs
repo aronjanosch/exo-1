@@ -21,11 +21,13 @@ pub struct BatteryTuning {
     pub max_recharge_kw: f64,
     /// Share of the taken power that is stored (Barotrauma 0.95).
     pub efficiency: f64,
+    /// The charge the dev-area ship starts with, 0..1 of the capacity (#319: PRIME and the SCRAM's restart need it).
+    pub start_charge: f64,
 }
 
 impl Default for BatteryTuning {
     fn default() -> BatteryTuning {
-        BatteryTuning { capacity_kwmin: 800.0, max_output_kw: 400.0, max_recharge_kw: 200.0, efficiency: 0.95 }
+        BatteryTuning { capacity_kwmin: 800.0, max_output_kw: 400.0, max_recharge_kw: 200.0, efficiency: 0.95, start_charge: 0.0 }
     }
 }
 
@@ -107,6 +109,13 @@ impl Battery {
         self.charge_kwmin = (self.charge_kwmin - kw * dt / 60.0).max(0.0);
         self.output_kw = kw;
         kw
+    }
+
+    /// Takes up to `want_kwmin` of charge for a load of its own (the reactor's magnetic trap, #319); returns what it took.
+    pub fn draw_kwmin(&mut self, want_kwmin: f64) -> f64 {
+        let took = want_kwmin.max(0.0).min(self.charge_kwmin);
+        self.charge_kwmin -= took;
+        took
     }
 
     /// Takes up to `recharge × max_recharge_kw` from `surplus_kw` for `dt` seconds; returns the

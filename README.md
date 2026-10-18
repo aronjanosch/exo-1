@@ -62,6 +62,7 @@ Scenarios (`--scenario=<name>`), reports and screenshots go to `--out=<dir>` (de
 | `foreign_warp` | A remote ship at warp speed next to the walker; the walk must match the run without it (#16). |
 | `figure` | Another player's figure in front of the walker and in the cabin; with `--menu` and a window also menu screenshots. |
 | `flight` | The flight feel: thrust and rotation ramps, virtual-joystick mouse and pad stick, boost, decoupled glide, camera and touchdown. |
+| `coupled-loop` | Spin at rest, then hold throttle and pitch through low-altitude loops with both Comstab states; check rotation, clearance, G-safe and continued steering during gas-release braking. |
 | `first-person-settings` | Mouse look at two sensitivities outside and in the cabin, sit/stand, vehicle mouse and camera isolation. |
 | `boost-hud` | The boost capacitor drains, refills after the delay, and the minimal HUD readout stays correct. |
 | `help` | F1 shows the walking keys on foot and the ship's switches seated; F1 again hides the panel. |

@@ -1,6 +1,7 @@
 //! Stage 4 of the SC step: the thrust the flight computer asks for (ship space, m/s²), inside the
 //! thrust box.
 use super::modes::{Master, Modes};
+use super::budget::Budget;
 use super::StepState;
 use crate::limits::{Dirs, G0, G_SAFE_MAX_G};
 use crate::{lerp, limit_length, smoothstep, Curve, FlightInput, Interp};
@@ -52,7 +53,7 @@ pub struct LinearTuning {
     pub decay: f64,
     /// Refuse outward thrust at the speed cap (coupled: total speed; decoupled: local axes).
     pub refuse_thrust: bool,
-    /// Anti-drift: with an axis saturated, the velocity across the goal dies first.
+    /// Anti-drift: serve cross-goal correction before additional along-goal acceleration.
     pub anti_drift: bool,
     /// Share of the lateral and vertical thrust over forward speed / cruise cap, unboosted.
     pub strafe_taper: Curve,
@@ -177,8 +178,12 @@ pub struct LinearOut {
     /// m/s: the forward speed cap in force (master mode, boost, limiter, air, landing band).
     pub cap: f64,
     pub saturated: bool,
-    /// Ship-space acceleration reserved for holds and catching across-goal drift.
-    pub turn_reserve: DVec3,
+    /// Feasible ship-space compensation thrust, not an unmet correction request.
+    pub hold: DVec3,
+    /// Feasible higher-priority thrust, including holds and safety/cross-goal correction.
+    pub priority: DVec3,
+    /// Along-goal speed change, including automatic braking, served after turning.
+    pub secondary: DVec3,
 }
 
 /// The largest k that keeps `hold + u * k` inside the box: the weakest axis in that direction
@@ -197,30 +202,6 @@ fn brake_ceiling(b: &Dirs, hold: DVec3, u: DVec3) -> f64 {
 
 /// m/s: anti-drift acts only on an across speed above this.
 const ANTI_DRIFT_MIN: f64 = 0.5;
-
-/// Anti-drift (notes section 1, "Anti-drift"): with the velocity across the goal direction
-/// `g` (ship space), the thrust takes the direction of the velocity error at the most the box
-/// gives that way, so the path to the goal stays straight. `None` when the velocity has no part
-/// across the goal (the plain law then applies).
-fn anti_drift(b: &Dirs, lv: DVec3, g: DVec3, goal: DVec3, hold: DVec3, decay: f64) -> Option<DVec3> {
-    let across = lv - g * lv.dot(g);
-    let n = across.length();
-    // Below this the across speed is the ship settling, not drift.
-    if n < ANTI_DRIFT_MIN {
-        return None;
-    }
-    // along the goal throttles the across part to its share instead of every axis running full.
-    let err = goal - lv;
-    let l = err.length();
-    if l < 1e-9 {
-        return None;
-    }
-    let u = err / l;
-    // Fit the complete thrust, hold + correction, rather than fitting correction
-    // about zero and adding the hold afterwards. Otherwise entering saturation
-    // abruptly loses thrust when the gravity/air hold opposes the turn.
-    Some(u * brake_ceiling(b, hold, u).max(0.0).min(l * decay))
-}
 
 fn safe_thrust_box(m: &Modes, e: &Env, t: &LinearTuning) -> Dirs {
     let mut b = e.thrust_box;
@@ -322,7 +303,7 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
         };
         let accel = b.clamp(thrust);
         let accel = if m.g_safe { limit_g_load(accel, hold_l) } else { accel };
-        return LinearOut { accel, cap: forward, saturated: (thrust - accel).length() > 1e-6, turn_reserve: hold_l };
+        return LinearOut { accel, cap: forward, saturated: (thrust - accel).length() > 1e-6, hold: hold_l, priority: accel, secondary: DVec3::ZERO };
     }
 
     if !m.coupled {
@@ -330,7 +311,7 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
         let asked = decoupled_push(&b, stick, f, m, t, axis_caps) + hold_l;
         let accel = b.clamp(asked);
         let accel = if m.g_safe && !(t.boost_disables_g_safe && e.boost > 0.0) { limit_g_load(accel, b.clamp(hold_l)) } else { accel };
-        return LinearOut { accel, cap: forward, saturated: (asked - accel).length() > 1e-6, turn_reserve: hold_l };
+        return LinearOut { accel, cap: forward, saturated: (asked - accel).length() > 1e-6, hold: hold_l, priority: accel, secondary: DVec3::ZERO };
     }
 
     let mut goal = goal_stick + fall + e.drift;
@@ -368,19 +349,28 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
 
     let motion_l = f.inv * ((goal - f.v) * t.decay + descent);
     let hold_l = f.inv * hold;
-    let direction = (goal - fall - e.drift).normalize_or_zero();
-    let relative_v = f.v - fall - e.drift;
-    let across = if direction.length_squared() > 0.0 { relative_v - direction * relative_v.dot(direction) } else { DVec3::ZERO };
-    let correction = -across * t.decay;
-    let correction_dir = correction.normalize_or_zero();
-    let mut coupled = motion_l + hold_l;
-    if t.anti_drift && goal_stick.length_squared() > 1e-18 && b.clamp(coupled) != coupled {
-        let g = f.inv * goal_stick.normalize();
-        if let Some(biased) = anti_drift(&b, f.lv, g, f.inv * goal, hold_l, t.decay) {
-            coupled = biased + hold_l;
-        }
-    }
-    let mut asked = coupled;
+    let budget = Budget { axes: b, g_safe: m.g_safe && !(t.boost_disables_g_safe && e.boost > 0.0) };
+    let hold_l = budget.limit(hold_l);
+    let automatic_braking = stick.length_squared() < 1e-18;
+    // Releasing translation requests zero speed, not zero direction authority.
+    // Keep the same heading reference for curve correction while slowing down.
+    let heading = if automatic_braking { s.aim * DVec3::NEG_Z } else { goal_stick.normalize_or_zero() };
+    let direction = f.inv * heading;
+    let across = f.lv - direction * f.lv.dot(direction);
+    let turning = input.turn.length_squared() > 1e-18 || input.mouse.length_squared() > 1e-18 || f.w_local.truncate().length_squared() > 1e-18;
+    let secondary = if t.anti_drift && (across.length() >= ANTI_DRIFT_MIN || turning) {
+        let along = motion_l.dot(direction);
+        direction * if automatic_braking { along } else { along.max(0.0) }
+    } else {
+        DVec3::ZERO
+    };
+    // Feed the ongoing curve into the *delivered* translation request. It is not
+    // enough to reserve this thrust for rotation while spending it on forward speed.
+    let current_turn = DVec3::new(f.w_local.x, f.w_local.y, 0.0).cross(f.lv) * m.coupling;
+    let priority = budget.add(hold_l, motion_l - secondary + current_turn);
+    let mut asked = budget.add(priority, secondary);
+    let before_cap = asked;
+    let saturated = (motion_l + hold_l + current_turn - asked).length() > 1e-6;
 
     // A3: above the cap only the thrust along the velocity is refused (steering across it works).
     // The limit is the larger of the cap in that direction and the speed before the step, so a
@@ -405,6 +395,10 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
         }
     }
 
+    // Speed refusal is a real braking request, not an unbounded drift reservation.
+    let priority = budget.limit(priority + asked - before_cap);
+    let secondary = asked - priority;
+
     // Limit each mode before blending back to coupled, so its total-speed refusal
     // cannot brake the decoupled share of a sideways push during the transition.
     let full_box = safe_thrust_box(m, e, t);
@@ -413,11 +407,6 @@ pub fn step(s: &mut LinearState, f: &StepState, input: &FlightInput, m: &Modes, 
     let asked = b.clamp(asked) * m.coupling + decoupled * (1.0 - m.coupling);
     let accel = full_box.clamp(asked);
     let accel = if m.g_safe && !(t.boost_disables_g_safe && e.boost > 0.0) { limit_g_load(accel, b.clamp(hold_l)) } else { accel };
-    // Translation already supplies the ongoing curve's push. Only a correction
-    // that exceeds its delivered budget needs extra reserve; counting all of it
-    // again halves the usable curve acceleration.
-    let delivered = (f.rot * (accel - hold_l)).dot(correction_dir);
-    let extra = (correction.length() - delivered).max(0.0);
-    let turn_reserve = hold_l + f.inv * correction_dir * extra;
-    LinearOut { accel, cap: forward_cap, saturated: (requested - b.clamp(requested)).length() > 1e-6 || (asked - accel).length() > 1e-6, turn_reserve }
+    LinearOut { accel, cap: forward_cap, saturated: saturated || (requested - b.clamp(requested)).length() > 1e-6 || (asked - accel).length() > 1e-6,
+        hold: hold_l, priority: priority * m.coupling + decoupled * (1.0 - m.coupling), secondary: secondary * m.coupling }
 }

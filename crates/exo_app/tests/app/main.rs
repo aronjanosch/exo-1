@@ -8,6 +8,7 @@ mod mouse_look;
 mod out_dirs;
 mod scenario_camera_g;
 mod scenario_coolant;
+mod scenario_coupled_loop;
 mod scenario_rods;
 mod scenario_blast;
 mod scenario_crate_budget;

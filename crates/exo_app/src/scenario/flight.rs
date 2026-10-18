@@ -202,3 +202,101 @@ pub(super) fn flight_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -
     s.push(shot_step("debug-hud-f3"));
     s.push(wait(1.0));
 }
+
+/// Exercise the real Controls -> flight controller -> Avian path, not just the core integrator.
+pub(super) fn coupled_loop_steps(s: &mut Vec<Step>) {
+    s.push(Box::new(|w, _| {
+        put_at_seat(w);
+        true
+    }));
+    s.extend(sit());
+    // The lagged Comstab-off trajectory needs more room for a whole loop. Keep
+    // its low segment too, but do not confuse a later terrain impact with a controller lock.
+    for (height, share, comstab, duration, release_at) in [
+        (400.0, 1.0, true, 15.0, None), (400.0, 1.0, false, 6.0, None),
+        (800.0, 1.0, false, 15.0, None), (800.0, 0.6, true, 15.0, None), (800.0, 0.6, false, 15.0, None),
+        // Leave thrust headroom here to check deceleration as well as steering.
+        (2000.0, 0.2, true, 8.0, Some(5.0)),
+    ] {
+        s.push(Box::new(move |w, c| {
+            if c.t == 0.0 {
+                begin(w, c, "coupled loop with held throttle");
+                keys(w, &[KeyCode::KeyW], false);
+                let pl = planet(w);
+                let up = DVec3::Y;
+                teleport_ship(w, pl.centre + up * (pl.surface(up) + height), basis_for_up(up));
+                with_ship(w, |s| {
+                    s.sc.reset_state();
+                    s.sc.modes.comstab = comstab;
+                    s.parked = false;
+                    s.ground.release();
+                    s.stick = Default::default();
+                });
+                for key in ["loop_throttle", "loop_pause", "loop_longest", "loop_angle", "loop_samples", "loop_peak_g", "loop_release_speed", "loop_coast_arc"] {
+                    c.v.insert(key, 0.0);
+                }
+                c.p.insert("loop_last_velocity", DVec3::ZERO);
+                let mb = &w.resource::<Bindings>().mouse;
+                let angle = mb.vjoy_deadzone + share * (mb.vjoy_max_angle - mb.vjoy_deadzone);
+                stick_to(w, DVec2::new(0.0, angle));
+                return false;
+            }
+            if c.t >= 1.0 && c.v["loop_throttle"] == 0.0 {
+                keys(w, &[KeyCode::KeyW], true);
+                c.v.insert("loop_throttle", 1.0);
+            }
+            let e = ship_e(w);
+            let rot = w.get::<Rotation>(e).unwrap().0;
+            let av = w.get::<AngularVelocity>(e).unwrap().0;
+            let velocity = w.get::<LinearVelocity>(e).unwrap().0;
+            let pitch = -(rot.inverse() * av).x;
+            let was_released = c.v["loop_throttle"] == 2.0;
+            if release_at.is_some_and(|at| c.t >= at) && c.v["loop_throttle"] == 1.0 {
+                keys(w, &[KeyCode::KeyW], false);
+                c.v.insert("loop_throttle", 2.0);
+                c.v.insert("loop_release_speed", velocity.length());
+            }
+            let last_velocity = c.p["loop_last_velocity"];
+            if was_released && velocity.length() > 1.0 && last_velocity.length() > 1.0 {
+                let arc = last_velocity.normalize().cross(velocity.normalize()).dot(rot * DVec3::NEG_X);
+                c.v.insert("loop_coast_arc", c.v["loop_coast_arc"] + arc);
+            }
+            c.p.insert("loop_last_velocity", velocity);
+            let (g, safeties) = with_ship(w, |s| (s.sc.status.felt_g,
+                s.sc.modes.coupled && s.sc.modes.grav_comp && s.sc.modes.g_safe && s.sc.modes.proximity && s.sc.tuning.linear.anti_drift));
+            c.v.insert("loop_peak_g", c.v["loop_peak_g"].max(g));
+            if c.t > 2.0 {
+                let pause = if pitch < 0.1 * share { c.v["loop_pause"] + c.dt } else { 0.0 };
+                c.v.insert("loop_pause", pause);
+                c.v.insert("loop_longest", c.v["loop_longest"].max(pause));
+                c.v.insert("loop_angle", c.v["loop_angle"] + pitch * c.dt);
+                c.v.insert("loop_samples", c.v["loop_samples"] + 1.0);
+            }
+            let contact = c.t > 1.0 && w.resource::<ContactGraph>().iter_active_touching().any(|p| p.body1 == Some(e) || p.body2 == Some(e));
+            let clearance = above_ground(w);
+            if c.t >= duration || contact || clearance < 2.0 {
+                keys(w, &[KeyCode::KeyW], false);
+                stick_to(w, DVec2::ZERO);
+                let pause = c.v["loop_longest"];
+                let angle = c.v["loop_angle"];
+                let peak_g = c.v["loop_peak_g"];
+                let samples = c.v["loop_samples"];
+                end(w, c, format!("start {height:.0} m, stick {share}, comstab {comstab}: longest pause {pause:.3} s, rotated {:.1} deg, clearance {clearance:.1} m, peak {peak_g:.3} g", angle.to_degrees()));
+                check(c, pause < 0.5 && samples > 0.0, format!("held throttle does not lock pitch: longest pause {pause:.3} s"));
+                check(c, !contact && clearance >= 2.0, "the control check remained collision-free".into());
+                let min_angle = if duration >= 15.0 { std::f64::consts::PI } else { 0.0 };
+                check(c, angle > min_angle, format!("pitch input keeps turning: {:.1} deg", angle.to_degrees()));
+                check(c, safeties && peak_g <= flight_core::limits::G_SAFE_MAX_G + 1e-6, format!("assists remain enabled and G-safe holds: {peak_g:.3} g"));
+                if release_at.is_some() {
+                    let speed_before = c.v["loop_release_speed"];
+                    let arc = c.v["loop_coast_arc"];
+                    check(c, speed_before > 5.0 && velocity.length() < speed_before,
+                        format!("gas release brakes: {speed_before:.2} -> {:.2} m/s", velocity.length()));
+                    check(c, arc > 0.0, format!("velocity direction keeps turning with the nose while braking: {:.1} deg", arc.to_degrees()));
+                }
+                return true;
+            }
+            false
+        }));
+    }
+}

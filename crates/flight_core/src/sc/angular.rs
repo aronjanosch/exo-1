@@ -3,6 +3,7 @@
 //!
 //! All values are TODO(initiator) (`content/ship/<type>/sc_angular.json`).
 use super::modes::Modes;
+use super::budget::Budget;
 use super::StepState;
 use crate::limits::{Dirs, Rot, G0, G_SAFE_MAX_G};
 use crate::{lerp, smoothstep, Curve, FlightInput, Interp};
@@ -117,8 +118,11 @@ pub struct Env {
     pub cap: f64,
     /// m/s² available after translation's G-safe and strafe taper.
     pub thrust_box: Dirs,
-    /// m/s², ship space: thrust reserved for gravity, air and across-goal drift correction.
+    /// m/s², ship space: feasible compensation for gravity and air.
     pub linear_hold: DVec3,
+    /// Already allocated correction thrust. Turning replaces its ongoing curve share,
+    /// rather than reserving the same curve a second time.
+    pub priority: Option<DVec3>,
     /// rad/s², ship space: what the air turns that the flight computer holds against
     /// (`AirOut::angular_hold`).
     pub air_hold: DVec3,
@@ -139,6 +143,8 @@ pub struct AngularOut {
     /// rad/s², ship space.
     pub accel: DVec3,
     pub rate_capped: bool,
+    /// rad/s, ship space: target rate after the shared thrust budget, before torque response.
+    pub rate: DVec3,
 }
 
 /// The product of target and spin (rad²/s²) that counts as a reversal: float noise around zero spin
@@ -220,34 +226,25 @@ pub fn step(s: &mut AngularState, f: &StepState, input: &FlightInput, m: &Modes,
     }
 
     // rate x velocity is the acceleration needed to turn that velocity with the body.
-    // Reserve the holds and drift correction first, then scale pitch and yaw together.
+    // First retain the absolute physical turn limits. Then replace the ongoing
+    // curve's share in the feasible correction budget; do not add it a second time.
     let mut rate_capped = false;
     if m.coupling > 0.0 {
         let g = if m.g_safe { e.thrust_box.min(&t.g_limit.scaled(G0)) } else { e.thrust_box };
-        let hold_up = e.linear_hold;
-        let turn = DVec3::new(req.x, req.y, 0.0).cross(f.lv);
-        let mut k_scale: f64 = 1.0;
-        for (k, base, pos, neg) in [(turn.x, hold_up.x, g.right, g.left), (turn.y, hold_up.y, g.up, g.down), (turn.z, hold_up.z, g.backward, g.forward)] {
-            if k > 1e-12 {
-                k_scale = k_scale.min((pos - base) / k);
-            } else if k < -1e-12 {
-                k_scale = k_scale.min((neg + base) / -k);
-            }
+        let budget = Budget { axes: g, g_safe: m.g_safe };
+        let hold = budget.limit(e.linear_hold);
+        let wanted = DVec3::new(req.x, req.y, 0.0);
+        let mut allowed = wanted * budget.share(hold, wanted.cross(f.lv));
+        if let Some(priority) = e.priority {
+            let current = DVec3::new(w.x, w.y, 0.0);
+            let current = current * budget.share(hold, current.cross(f.lv));
+            let delta = allowed - current;
+            allowed = current + delta * budget.share(budget.limit(priority), delta.cross(f.lv));
         }
-        if m.g_safe && turn.length_squared() > 1e-18 {
-            // Holds and turn forces share one spherical 4 g budget. Gravity itself
-            // is not a load; only the thruster force needed to oppose it is reserved.
-            let a = turn.length_squared();
-            let b = 2.0 * hold_up.dot(turn);
-            let c = hold_up.length_squared() - (G_SAFE_MAX_G * G0).powi(2);
-            let discriminant = b * b - 4.0 * a * c;
-            let upper = if discriminant >= 0.0 { (-b + discriminant.sqrt()) / (2.0 * a) } else { 0.0 };
-            k_scale = k_scale.min(upper);
-        }
-        let scale = lerp(1.0, k_scale.clamp(0.0, 1.0), m.coupling);
-        rate_capped = scale < 1.0 - 1e-9;
-        req.x *= scale;
-        req.y *= scale;
+        let allowed = wanted.lerp(allowed, m.coupling);
+        rate_capped = (allowed - wanted).length_squared() > 1e-18;
+        req.x = allowed.x;
+        req.y = allowed.y;
     }
 
     let b = &e.accel_box;
@@ -271,5 +268,5 @@ pub fn step(s: &mut AngularState, f: &StepState, input: &FlightInput, m: &Modes,
 
     let held = DVec3::new(pitch, yaw, roll) - e.air_hold;
     let held = held.clamp(DVec3::new(-b.pitch, -b.yaw, -b.roll), DVec3::new(b.pitch, b.yaw, b.roll));
-    AngularOut { accel: held, rate_capped }
+    AngularOut { accel: held, rate_capped, rate: req }
 }

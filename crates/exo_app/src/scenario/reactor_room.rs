@@ -409,6 +409,13 @@ fn main_screen_steps(s: &mut Vec<Step>, shot_step: &dyn Fn(&'static str) -> Step
     s.push(click_until(MAIN_ID, INJECTION, Some(0.7), "reactor room: the injection slider sets 70 on the main screen", |w| (sim(w).injection - 70.0).abs() < 1.5));
     s.push(wait(2.0));
     s.push(shot_step("reactor-06-main-manual"));
+    // The tabs are this client's UI state: HISTORY shows the chart, CONTROL brings the sliders back, the sim is untouched.
+    use crate::dev_area::engineering::panels::ReactorTab;
+    use display_core::reactor_main::{Tab, TAB_CONTROL, TAB_HISTORY};
+    s.push(click_until(MAIN_ID, TAB_HISTORY, None, "reactor room: the HISTORY tab on the main screen", |w| w.resource::<ReactorTab>().0 == Tab::History));
+    s.push(wait(1.0));
+    s.push(shot_step("reactor-06b-main-history"));
+    s.push(click_until(MAIN_ID, TAB_CONTROL, None, "reactor room: the CONTROL tab on the main screen", |w| w.resource::<ReactorTab>().0 == Tab::Control && sim(w).manual));
     s.push(click_until(MAIN_ID, AUTO, None, "reactor room: AUTO on the main screen", |w| !sim(w).manual));
     s.push(run("reactor room: in AUTO the converter slider does nothing", 4.0, |w, c| {
         let d = w.query::<&crate::displays::DisplayPanel>().iter(w).find(|d| d.id == MAIN_ID).cloned().expect("the main screen");

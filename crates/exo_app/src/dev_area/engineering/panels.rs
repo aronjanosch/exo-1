@@ -10,7 +10,13 @@ use item_core::wire::{BotStation, ReactorAsk};
 use crate::dev_area::crew::{bot_tagged, manned};
 use crate::dev_area::engineering::reactor_room::{MAIN_ID, SUPPLY_ID};
 
+/// The main screen's tab (CONTROL or HISTORY): UI state of this client, never an ask to the host, so the host-owned
+/// AUTO / MANUAL and the set points stay out of it.
+#[derive(Resource, Default, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReactorTab(pub display_core::reactor_main::Tab);
+
 pub fn plugin(app: &mut App) {
+    app.init_resource::<ReactorTab>();
     app.add_systems(FixedUpdate, (read_clicks, write_panels).chain().in_set(crate::phases::Fx::Effects));
 }
 
@@ -28,23 +34,31 @@ pub fn main_ask(action: &str, value: Option<f32>) -> Option<ReactorAsk> {
 }
 
 /// The presses on the reactor's main screen become the host's asks.
-pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<Items>) {
+pub fn read_clicks(mut clicks: MessageReader<DisplayAction>, mut items: ResMut<Items>, mut tab: ResMut<ReactorTab>) {
+    use display_core::reactor_main::{Tab, TAB_CONTROL, TAB_HISTORY};
     for c in clicks.read() {
-        if c.panel == MAIN_ID
-            && let Some(a) = main_ask(&c.action, c.value)
-        {
-            items.ask_reactor(a);
+        if c.panel != MAIN_ID {
+            continue;
+        }
+        match c.action.as_str() {
+            TAB_CONTROL => tab.0 = Tab::Control,
+            TAB_HISTORY => tab.0 = Tab::History,
+            _ => {
+                if let Some(a) = main_ask(&c.action, c.value) {
+                    items.ask_reactor(a);
+                }
+            }
         }
     }
 }
 
 /// The reactor's panels from the snapshot, every tick (`Panels::set` skips an unchanged one).
-pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, mut panels: ResMut<Panels>) {
+pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, tab: Res<ReactorTab>, mut panels: ResMut<Panels>) {
     let r = items.reactor.as_ref();
     let max_kw = cfg.0.reactor.max_output_kw;
     // The main screen draws its own dark and word faces (NO POWER, ...). The BOT tag of a manned station goes on its plate.
     let run_up = r.is_some_and(|r| r.start == item_core::wire::StartStage::RunUp);
-    panels.set(MAIN_ID, bot_tagged(display_core::reactor_main::panel(r, max_kw, run_up), manned(&items, BotStation::Reactor)));
+    panels.set(MAIN_ID, bot_tagged(display_core::reactor_main::panel(r, max_kw, run_up, tab.0), manned(&items, BotStation::Reactor)));
     // The supply screen goes dark by the main screen's rule (`reactor_main::face`), inside its panel.
     panels.set(SUPPLY_ID, display_core::reactor_supply::panel(r));
 }
@@ -52,6 +66,13 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, mut panels: ResM
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The tab buttons are no ask: the tab is this client's own state.
+    #[test]
+    fn the_tab_buttons_send_no_ask() {
+        use display_core::reactor_main::{TAB_CONTROL, TAB_HISTORY};
+        assert!(main_ask(TAB_CONTROL, None).is_none() && main_ask(TAB_HISTORY, None).is_none());
+    }
 
     /// The main screen's sliders move the sim's set points in MANUAL; AUTO ignores them (#317).
     #[test]

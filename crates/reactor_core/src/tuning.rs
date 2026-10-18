@@ -88,7 +88,7 @@ pub struct Tuning {
 
 impl Default for Tuning {
     fn default() -> Tuning {
-        Tuning { start_canisters: 2, canisters: CanisterKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 0.5, director: DirectorTuning::default(), shield: ShieldTuning::default(), alarm: AlarmTuning::default(), weapons: WeaponsTuning::default(), hits: HitsTuning::default(), jump: JumpTuning::default(), startup: StartupTuning::default(), airlock: AirlockTuning::default(), enemy: EnemyTuning::default(), bots: BotTuning::default(), hull: HullTuning::default(), life_support: LifeSupportTuning::default(), helm: HelmTuning::default() }
+        Tuning { start_canisters: 2, canisters: CanisterKinds::default(), reactor: ReactorTuning::default(), room: RoomTuning::default(), grid: GridTuning::default(), battery: BatteryTuning::default(), graph_points: 25, graph_interval_s: 2.5, director: DirectorTuning::default(), shield: ShieldTuning::default(), alarm: AlarmTuning::default(), weapons: WeaponsTuning::default(), hits: HitsTuning::default(), jump: JumpTuning::default(), startup: StartupTuning::default(), airlock: AirlockTuning::default(), enemy: EnemyTuning::default(), bots: BotTuning::default(), hull: HullTuning::default(), life_support: LifeSupportTuning::default(), helm: HelmTuning::default() }
     }
 }
 

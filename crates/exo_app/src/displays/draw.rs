@@ -514,18 +514,18 @@ impl Pen<'_> {
     fn text(&self, c: &mut ChildSpawnerCommands, x: f64, y: f64, w: f64, h: f64, s: &str, size: f64, face: Face, colour: Color, caps: bool, centred: bool) {
         let spacing = if caps { self.theme.strokes.caps_tracking as f32 * size as f32 * self.scale } else { 0.0 };
         let s = if caps { s.to_uppercase() } else { s.to_string() };
-        self.text_spaced(c, x, y, w, h, &s, size, face, colour, spacing, centred);
+        self.text_spaced(c, x, y, w, h, &s, size, face, colour, spacing, if centred { JustifyContent::Center } else { JustifyContent::Start });
     }
 
     /// A text with its letter spacing in texture pixels.
     #[allow(clippy::too_many_arguments)]
-    fn text_spaced(&self, c: &mut ChildSpawnerCommands, x: f64, y: f64, w: f64, h: f64, s: &str, size: f64, face: Face, colour: Color, spacing: f32, centred: bool) {
+    fn text_spaced(&self, c: &mut ChildSpawnerCommands, x: f64, y: f64, w: f64, h: f64, s: &str, size: f64, face: Face, colour: Color, spacing: f32, justify: JustifyContent) {
         if w <= 0.0 || h <= 0.0 {
             return;
         }
         let mut n = self.node(x, y, w, h);
         n.align_items = AlignItems::Center;
-        n.justify_content = if centred { JustifyContent::Center } else { JustifyContent::Start };
+        n.justify_content = justify;
         n.overflow = Overflow::clip();
         let font = match face {
             Face::Display => &self.fonts.display,
@@ -622,7 +622,7 @@ impl Pen<'_> {
             None => {
                 self.rect(c, 0.0, 0.0, w, h, col(k.line_2));
                 let b = self.theme.strokes.border;
-                self.rect(c, b, b, w - 2.0 * b, h - 2.0 * b, col(k.bg_0));
+                self.rect(c, b, b, w - 2.0 * b, h - 2.0 * b, col(self.theme.ink(panel.ground)));
             }
         }
         let hover = |a: &str| ptr.is_some_and(|p| p.hover.as_deref() == Some(a));
@@ -634,7 +634,8 @@ impl Pen<'_> {
                 Widget::Button { label, enabled, action, tone } => self.button(c, r, label, *enabled, *tone, hover(action), pressed(action)),
                 Widget::Bar { value, label, warn, crit } => self.bar(c, r, *value, label, *warn, *crit),
                 Widget::Toggle { on, label, action, labels, enabled } => self.toggle(c, r, *on, label, labels, *enabled, hover(action), pressed(action)),
-                Widget::Slider { value, label, action, enabled } => self.slider(c, r, *value, label, *enabled, hover(action), pressed(action)),
+                Widget::Slider { value, action, enabled, grip: true, .. } => self.grip_slider(c, r, *value, *enabled, pressed(action)),
+                Widget::Slider { value, label, action, enabled, .. } => self.slider(c, r, *value, label, *enabled, hover(action), pressed(action)),
                 Widget::Dial { value, text, label, warn, crit } => self.dial(c, r, *value, text, label, *warn, *crit),
                 Widget::Trend { values, warn, crit } => self.trend(c, r, values, *warn, *crit),
                 Widget::List { rows, selected, action, row_h } => {
@@ -746,7 +747,7 @@ impl Pen<'_> {
                 Shape::Hatch { x, y, w, h, ink } => self.hatch(c, o.x + x, o.y + y, *w, *h, col(self.theme.ink(*ink))),
                 Shape::SpacedText { x, y, w, h, text, size, face: f, rgb, tracking, centred } => {
                     let colour = Color::srgb_u8(rgb[0], rgb[1], rgb[2]);
-                    self.text_spaced(c, o.x + x, o.y + y, *w, *h, text, *size, face(*f), colour, (*tracking * *size) as f32 * self.scale, *centred);
+                    self.text_spaced(c, o.x + x, o.y + y, *w, *h, text, *size, face(*f), colour, (*tracking * *size) as f32 * self.scale, if *centred { JustifyContent::Center } else { JustifyContent::Start });
                 }
                 Shape::Vector { x, y, w, h, unit, prims, spin } => self.vector(c, o.x + x, o.y + y, *w, *h, *unit, prims, *spin),
                 Shape::Pulse { cx, cy, from_r, to_r, width, rgb, period, phase } => {
@@ -762,6 +763,9 @@ impl Pen<'_> {
                     n.border_radius = BorderRadius::all(percent(50));
                     let pulse = Pulse { centre: Vec2::new((o.x + cx) as f32 * s, (o.y + cy) as f32 * s), from_r: *from_r as f32 * s, to_r: *to_r as f32 * s, width: *width as f32 * s, rgb: *rgb, period: *period, phase: *phase, camera };
                     c.spawn((n, BorderColor::all(Color::NONE), pulse));
+                }
+                Shape::TextRight { x, y, w, h, text, size, face: f, ink } => {
+                    self.text_spaced(c, o.x + x, o.y + y, *w, *h, text, *size, face(*f), col(self.theme.ink(*ink)), 0.0, JustifyContent::End);
                 }
                 Shape::Text { x, y, w, h, text, size, face: f, ink, centred } => {
                     self.text(c, o.x + x, o.y + y, *w, *h, text, *size, face(*f), col(self.theme.ink(*ink)), false, *centred);
@@ -939,6 +943,30 @@ impl Pen<'_> {
         let hx = x + w * f - hw * 0.5;
         self.rect(c, hx, y + 2.0 * u + hw * 0.5, hw, 34.0 * u - hw * 0.5, col(handle));
         self.clipped_diamond(c, hx, y + 2.0 * u, hw, hw * 0.5, hw * 0.5, hw * 0.5, hw * 0.5 * std::f64::consts::SQRT_2, col(handle));
+    }
+
+    /// The wide thumb slider: a bordered track inset 17 px top and bottom, the accent thumb (40 px, full height, bordered, two
+    /// grip bars) centred on the value. Disabled: everything at 0.45 opacity.
+    fn grip_slider(&self, c: &mut ChildSpawnerCommands, r: Rect, value: f64, enabled: bool, pressed: bool) {
+        let k = self.c();
+        let a = if enabled { 1.0 } else { 0.45 };
+        let f = value.clamp(0.0, 1.0);
+        let (ty, th) = (r.min.y + 17.0, (r.size.y - 34.0).max(0.0));
+        // Border strips and the fill inside, so a translucent border does not show through its fill.
+        let boxed = |c: &mut ChildSpawnerCommands, x: f64, y: f64, w: f64, h: f64, edge: Color, fill: Color| {
+            self.rect(c, x, y, w, 2.0, edge);
+            self.rect(c, x, y + h - 2.0, w, 2.0, edge);
+            self.rect(c, x, y + 2.0, 2.0, h - 4.0, edge);
+            self.rect(c, x + w - 2.0, y + 2.0, 2.0, h - 4.0, edge);
+            self.rect(c, x + 2.0, y + 2.0, w - 4.0, h - 4.0, fill);
+        };
+        boxed(c, r.min.x, ty, r.size.x, th, col_a(k.hud_dim, a), col_a(k.bg_3, a));
+        let (tw, tx) = (40.0, r.min.x + r.size.x * f - 20.0);
+        boxed(c, tx, r.min.y, tw, r.size.y, col_a(k.fg_title, a), col_a(if pressed { k.hud } else { k.accent }, a));
+        let by = r.min.y + (r.size.y - 37.0) * 0.5;
+        for dx in [-6.0 * 0.5 - 3.0, 6.0 * 0.5] {
+            self.rect(c, tx + tw * 0.5 + dx, by, 3.0, 37.0, col_a(k.fg_on_accent, a));
+        }
     }
 
     #[allow(clippy::too_many_arguments)]

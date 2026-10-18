@@ -274,8 +274,8 @@ fn arc(from: f64, to: f64, ink: Ink) -> Shape {
     Shape::Arc { cx: G_C, cy: G_C, r: G_R, from: angle(from), to: angle(to), stroke: 18.0, ink, dash: None }
 }
 
-/// The gauge of one control: the track, the sim's allowed band (warn) and optimal band (good) over
-/// it, ticks every 10, the needle at the ACTUAL value, and its percent below. In a box `G_W` x `G_H`.
+/// The gauge of one control: the track in bad, the sim's allowed band (warn) and optimal band (good)
+/// over it, ticks every 10, the needle at the ACTUAL value, and its percent below. In a box `G_W` x `G_H`.
 pub fn gauge_shapes(g: &ControlGauge) -> Vec<Shape> {
     let mut s = Vec::new();
     for i in 0..=10 {
@@ -283,7 +283,8 @@ pub fn gauge_shapes(g: &ControlGauge) -> Vec<Shape> {
         let (p, q) = (point(a, 114.0), point(a, if i % 5 == 0 { 126.0 } else { 121.0 }));
         s.push(Shape::Line { a: p, b: q, width: 2.0, ink: Ink::HudDim, dash: None });
     }
-    s.push(arc(0.0, 100.0, Ink::Bg3));
+    // Barotrauma's zones (client Reactor.cs DrawMeter): everything outside the allowed band is bad.
+    s.push(arc(0.0, 100.0, Ink::Bad));
     if band_ok(g.allowed) {
         s.push(arc(g.allowed[0], g.allowed[1], Ink::Warn));
     }

@@ -116,8 +116,10 @@ pub enum Widget {
     /// value (1 on, 0 off). `label` is a small caption at its left (may be empty).
     Toggle { on: bool, label: String, action: String, labels: [String; 2], enabled: bool },
     /// Pressed and dragged it gives `action` with the value 0..1 under the pointer, at the press
-    /// and at every change while held. `label` is a small caption (may be empty).
-    Slider { value: f64, label: String, action: String, enabled: bool },
+    /// and at every change while held. `label` is a small caption (may be empty). `grip`: the
+    /// wide thumb with grip bars in a bordered track (the reactor's main screen), not the thin
+    /// ticked slider; the thumb is centred on the value and may overhang the box by half its width.
+    Slider { value: f64, label: String, action: String, enabled: bool, grip: bool },
     /// A round gauge 0..1 over 270 degrees with thresholds; `text` is the readout in its middle
     /// (with unit), `label` the caption under it.
     Dial { value: f64, text: String, label: String, warn: Option<f64>, crit: Option<f64> },
@@ -228,6 +230,13 @@ impl Item {
         }
         self
     }
+    /// A slider with the wide grip thumb (other widgets ignore it).
+    pub fn grip(mut self) -> Item {
+        if let Widget::Slider { grip, .. } = &mut self.widget {
+            *grip = true;
+        }
+        self
+    }
     /// A toggle's segment texts, off then on (other widgets ignore them).
     pub fn labels(mut self, off: impl Into<String>, on: impl Into<String>) -> Item {
         if let Widget::Toggle { labels, .. } = &mut self.widget {
@@ -293,7 +302,7 @@ pub fn toggle(on: bool, label: impl Into<String>, action: impl Into<String>) -> 
     item(Widget::Toggle { on, label: label.into(), action: action.into(), labels: ["OFF".into(), "ON".into()], enabled: true })
 }
 pub fn slider(value: f64, label: impl Into<String>, action: impl Into<String>) -> Item {
-    item(Widget::Slider { value, label: label.into(), action: action.into(), enabled: true })
+    item(Widget::Slider { value, label: label.into(), action: action.into(), enabled: true, grip: false })
 }
 pub fn dial(value: f64, text: impl Into<String>, label: impl Into<String>) -> Item {
     item(Widget::Dial { value, text: text.into(), label: label.into(), warn: None, crit: None })
@@ -403,6 +412,8 @@ pub struct Panel {
     pub size: DVec2,
     pub padding: f64,
     pub plate: Option<Plate>,
+    /// The ground colour inside a plateless panel's border (`Ink::Bg0` by default).
+    pub ground: Ink,
     pub root: Item,
 }
 
@@ -419,12 +430,12 @@ impl Panel {
 
     /// A panel of `w` by `h` panel pixels with 16 px padding and no plate.
     pub fn new(w: f64, h: f64, root: Item) -> Panel {
-        Panel { size: DVec2::new(w, h), padding: 16.0, plate: None, root }
+        Panel { size: DVec2::new(w, h), padding: 16.0, plate: None, ground: Ink::Bg0, root }
     }
 
     /// A screen of a tier, on a plate with a title and machine tag, 12 px padding in the well.
     pub fn screen(tier: Tier, title: impl Into<String>, tag: impl Into<String>, root: Item) -> Panel {
-        Panel { size: tier.canvas(), padding: 12.0, plate: Some(Plate { title: title.into(), tag: tag.into(), status: None }), root }
+        Panel { size: tier.canvas(), padding: 12.0, plate: Some(Plate { title: title.into(), tag: tag.into(), status: None }), ground: Ink::Bg0, root }
     }
 
     /// The plate's status word at the right of the header ("STABLE", "RUN"); no plate: ignored.
@@ -432,6 +443,11 @@ impl Panel {
         if let Some(p) = &mut self.plate {
             p.status = Some((text.into(), tone));
         }
+        self
+    }
+
+    pub fn with_ground(mut self, ink: Ink) -> Panel {
+        self.ground = ink;
         self
     }
 
@@ -490,7 +506,7 @@ impl Panel {
             };
             Item { widget, size: i.size }
         }
-        Panel { size: self.size, padding: self.padding, plate: self.plate.clone(), root: item(&self.root) }
+        Panel { size: self.size, padding: self.padding, plate: self.plate.clone(), ground: self.ground, root: item(&self.root) }
     }
 
     /// Every vector picture's prims, in the order of `layout` and then of the canvas's shapes.

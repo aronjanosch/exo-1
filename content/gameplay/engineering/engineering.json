@@ -2,7 +2,7 @@
   "_comment": "The reactor room's tuning (reactor_core): the reactor, canisters, battery, grid, the cold start and the room's machines (coolant pump, junction box, oxygen generator machine, aux reactor). One _comment per block. Every number is a starting value, TODO(initiator).",
   "start_canisters": 2,
   "graph_points": 25,
-  "graph_interval_s": 0.5,
+  "graph_interval_s": 2.5,
   "canisters": {
     "_comment": "canisters (#300, Barotrauma reactor.xml:113-135: its uranium, thorium and fulgurium canisters give 80, 100 and 150 available fill; ours are standard, hot and spicy): one entry per kind, heat is the fill the canister allows (it caps injection and scales the heat, injection * fill / 100 * 2), life its life when new (0..100). Every live canister burns at injection / 100 * fill_burn per second. Pulling a canister is the emergency brake: the fill goes at once and the core's heat is the handling heat. start_canisters puts in standard canisters. Every number is TODO(initiator), the hot and spicy ones most of all.",
     "standard": {

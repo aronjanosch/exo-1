@@ -11,6 +11,7 @@ pub enum Ink {
     Line2,
     Bg0,
     Bg1,
+    Bg2,
     Bg3,
     Fg1,
     Fg2,
@@ -43,6 +44,8 @@ pub enum Shape {
     Hatch { x: f64, y: f64, w: f64, h: f64, ink: Ink },
     /// A text in a box, vertically centred; `centred` centres it across the box, else left.
     Text { x: f64, y: f64, w: f64, h: f64, text: String, size: f64, face: TextFace, ink: Ink, centred: bool },
+    /// A text in a box, vertically centred and aligned to the box's right edge.
+    TextRight { x: f64, y: f64, w: f64, h: f64, text: String, size: f64, face: TextFace, ink: Ink },
     /// A text in an exact colour with its own letter spacing (`tracking` in em), left aligned or centred.
     SpacedText { x: f64, y: f64, w: f64, h: f64, text: String, size: f64, face: TextFace, rgb: [u8; 3], tracking: f64, centred: bool },
     /// A vector picture (`raster::Prim`s in its own units, `unit` panel pixels per unit) in the box
@@ -69,7 +72,7 @@ impl Shape {
                 let r = from_r.max(*to_r) + width * 0.5;
                 (cx - r, cy - r, cx + r, cy + r)
             }
-            Shape::Rect { x, y, w, h, .. } | Shape::Hatch { x, y, w, h, .. } | Shape::Text { x, y, w, h, .. } | Shape::SpacedText { x, y, w, h, .. } | Shape::Vector { x, y, w, h, .. } => (*x, *y, x + w, y + h),
+            Shape::Rect { x, y, w, h, .. } | Shape::Hatch { x, y, w, h, .. } | Shape::Text { x, y, w, h, .. } | Shape::TextRight { x, y, w, h, .. } | Shape::SpacedText { x, y, w, h, .. } | Shape::Vector { x, y, w, h, .. } => (*x, *y, x + w, y + h),
         }
     }
 
@@ -92,6 +95,7 @@ impl Theme {
             Ink::Line2 => c.line_2,
             Ink::Bg0 => c.bg_0,
             Ink::Bg1 => c.bg_1,
+            Ink::Bg2 => c.bg_2,
             Ink::Bg3 => c.bg_3,
             Ink::Fg1 => c.fg_1,
             Ink::Fg2 => c.fg_2,

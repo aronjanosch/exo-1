@@ -1,19 +1,19 @@
-//! The reactor's main screen `screen_main` (#317, from the Claude Design "ReactorMain"): 1280 x 720
-//! panel pixels, tier L, bound to the `screen_main` quad of `reactor.glb`. Left INJECTION (chamber
-//! heat with the sim's bands, the round gauge of the actual injection, the slider of the setting),
-//! right FIELD CONVERTER (output against demand, the history, the gauge of the actual converter, its
-//! slider). Header: REACTOR, the status word that turns into the warnings, AUTO / MANUAL.
+//! The reactor's main screen `screen_main` (#317, from the Claude Design "ReactorMain", second version): 1280 x 720
+//! panel pixels, tier L, bound to the `screen_main` quad of `reactor.glb`. Running: a header (REACTOR, the status word,
+//! the CONTROL / HISTORY tabs and AUTO / MANUAL), then either the CONTROL tab (left INJECTION: chamber heat with the sim's
+//! bands, the gauge of the actual injection, the slider of the setting; right FIELD CONVERTER: output against demand, its
+//! gauge and slider) or the HISTORY tab (the last 60 s of output and demand).
 //!
-//! Every number is the sim's (`ReactorNews`, from `reactor_core`); the design's JS is only a preview.
-//! The screen draws no target mark of its own, no heat history and no heat trend (settled, "less
-//! hand-holding"). The gauges show the ACTUAL value (it lags); the sliders the engineer's SETTING,
-//! active in MANUAL only.
+//! Every number is the sim's (`ReactorNews`, from `reactor_core`); the design's JS is only a preview. The screen draws no
+//! target mark of its own, no heat history and no heat trend (settled, "less hand-holding"). The gauges show the ACTUAL
+//! value (it lags) and carry no number; the SET readout and the sliders show the engineer's SETTING, active in MANUAL only.
 //!
-//! The faces: BOOT (the start-up conditions as rows) and PRIME (the magnetic trap's charge) are drawn here; RUN-UP is the RUNNING
-//! layout dimmed (no grid yet, AUTO, sliders disabled). The other faces (SCRAMMED, REACTOR OFF, IMPLOSION, CORE EJECTED) are a
-//! plain centred word, the cold start (and an empty battery with the reactor off) a dark screen.
+//! The faces: BOOT (the start-up rows) and PRIME (the magnetic trap's charge) have the header without buttons; RUN-UP is the
+//! RUNNING layout with no grid yet (AUTO, sliders disabled, no banners). SCRAMMED, REACTOR OFF, IMPLOSION and CORE EJECTED are
+//! a centred word without a header (and a clock for the last two); the cold start (and an empty battery with the reactor off)
+//! is a dark screen. The tab is UI state of the client at the screen: the glue passes it in.
 use crate::canvas::{Ink, Shape, TextFace};
-use crate::{button, canvas, column, label, row, slider, space, Item, Panel, Tone};
+use crate::{button, canvas, column, row, slider, space, Item, Panel, Tone};
 use item_core::wire::{ControlGauge, Lamp, ReactorNews, StartStage, GRAPH_POINTS};
 
 pub const W: f64 = 1280.0;
@@ -23,41 +23,49 @@ pub const AUTO: &str = "mode_auto";
 pub const MANUAL: &str = "mode_manual";
 pub const INJECTION: &str = "inj_set";
 pub const CONVERTER: &str = "conv_set";
+pub const TAB_CONTROL: &str = "tab_control";
+pub const TAB_HISTORY: &str = "tab_history";
+
+/// Which tab of the running screen is shown. Client-side UI state: it changes nothing in the sim.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Tab {
+    #[default]
+    Control,
+    History,
+}
 
 /// The panel's border (the drawn 2 px frame), so the content is `W - 2 B` by `H - 2 B`.
 const B: f64 = 2.0;
-const HEADER: f64 = 72.0;
+const HEADER: f64 = 70.0;
 const GAP: f64 = 12.0;
-/// One half (a Panel of the design): its width and height, and the width of its frame at each side
-/// (border 2, inset 4, well border 2, padding 12): the content is 580 wide.
-const HALF_W: f64 = (W - 2.0 * B - 3.0 * GAP) / 2.0;
-const HALF_H: f64 = H - 2.0 * B - HEADER - 2.0 * GAP;
-const EDGE: f64 = 20.0;
-const INNER_W: f64 = HALF_W - 2.0 * EDGE;
-/// A half's rows, top to bottom: the plate's header, the top padding, the heat / output block, the
-/// gauge block, the slider, the bottom frame (sum `HALF_H`) and the two gaps between the blocks.
-const ROW_HEAD: f64 = 34.0;
-const ROW_PAD: f64 = 14.0;
-const ROW_TOP: f64 = 232.0;
-const ROW_GAUGE: f64 = 240.0;
-const ROW_SLIDER: f64 = 48.0;
-const ROW_FOOT: f64 = 20.0;
-const ROW_GAP: f64 = (HALF_H - ROW_HEAD - ROW_PAD - ROW_TOP - ROW_GAUGE - ROW_SLIDER - ROW_FOOT) / 2.0;
+const CONTENT_W: f64 = W - 2.0 * B;
+/// The body below the header: padding 12 round the panels.
+const BODY_W: f64 = CONTENT_W - 2.0 * GAP;
+const BODY_H: f64 = H - 2.0 * B - HEADER - 2.0 * GAP;
+/// One of the two control panels: width, the 20 px padding inside the 2 px border, the inner width.
+const HALF_W: f64 = (BODY_W - GAP) / 2.0;
+const PAD: f64 = 20.0;
+const IN_X: f64 = B + PAD;
+const IN_W: f64 = HALF_W - 2.0 * IN_X;
+const ROW_SLIDER: f64 = 88.0;
+const ROW_FOOT: f64 = 14.0;
+const TOP_H: f64 = BODY_H - ROW_SLIDER - ROW_FOOT;
+/// The panel header: its height with its closing line.
+const HEAD: f64 = 36.0;
 
-/// The gauge: 270 degrees from the bottom left, clockwise on screen; a 260 x 236 box, centre (130, 130).
+/// The gauge: 270 degrees from the bottom left, clockwise on screen; the design's 260 x 236 box scaled by 0.95.
 const ARC_START: f64 = 135.0;
 const ARC_SWEEP: f64 = 270.0;
-const G_W: f64 = 260.0;
-const G_H: f64 = 236.0;
-const G_C: f64 = 130.0;
-const G_R: f64 = 100.0;
-
-/// What the history graph draws: its box, as the design has it.
-const GRAPH_W: f64 = 580.0;
-const GRAPH_H: f64 = 108.0;
+const K: f64 = 0.95;
+pub const G_W: f64 = 260.0 * K;
+pub const G_H: f64 = 236.0 * K;
+const G_C: f64 = 130.0 * K;
+const G_R: f64 = 100.0 * K;
 
 /// The output is called short of the demand by more than this (kW).
 const GRID_SLACK_KW: f64 = 10.0;
+/// The history's step: the news carry `GRAPH_POINTS` samples, `graph_interval_s` apart (2.5 s in the shipped tuning, so 60 s).
+const HISTORY_SPAN_S: f64 = 60.0;
 
 /// The face the screen shows. RUN-UP is the `run_up` argument of `panel` (the sim's start stage), a look of `Running`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -111,31 +119,52 @@ pub fn heat_degrees(heat: f64) -> f64 {
     heat * 10.0
 }
 
+/// The heat's warning word and tone from the sim's lamps: critical (bad) before overheat, then cold, then low heat (warn).
+fn heat_warning(r: &ReactorNews) -> Option<(&'static str, Tone)> {
+    let lamp = |l: Lamp| r.lamps[l.index()];
+    if lamp(Lamp::CritHeat) {
+        Some(("CRITICAL HEAT", Tone::Bad))
+    } else if lamp(Lamp::Hot) {
+        Some(("OVERHEAT", Tone::Warn))
+    } else if lamp(Lamp::Cold) {
+        Some(("COLD CHAMBER", Tone::Warn))
+    } else if lamp(Lamp::LowHeat) {
+        Some(("LOW HEAT", Tone::Warn))
+    } else {
+        None
+    }
+}
+
+/// What the engineer does about a heat warning, for its banner.
+fn heat_action(word: &str) -> &'static str {
+    match word {
+        "CRITICAL HEAT" => "CUT INJECTION",
+        "OVERHEAT" => "LOWER INJECTION",
+        _ => "RAISE INJECTION",
+    }
+}
+
+/// The output's warning word and tone from the sim's lamps.
+fn output_warning(r: &ReactorNews) -> Option<(&'static str, Tone)> {
+    let lamp = |l: Lamp| r.lamps[l.index()];
+    if lamp(Lamp::CritOut) {
+        Some(("CRITICAL OUTPUT", Tone::Bad))
+    } else if lamp(Lamp::HighOut) {
+        Some(("HIGH OUTPUT", Tone::Warn))
+    } else {
+        None
+    }
+}
+
 /// The header's status word: the warnings joined with " · " (heat first, then the output), RUNNING in
 /// the good tone when there are none, RUN-UP in the title tone while the output is still below the
 /// demand during the run-up. A critical one makes the word bad, any other warn.
 pub fn status_word(r: &ReactorNews, run_up: bool) -> (String, Tone) {
-    let lamp = |l: Lamp| r.lamps[l.index()];
-    let mut words = Vec::new();
-    let mut critical = false;
-    if lamp(Lamp::CritHeat) {
-        words.push("CRITICAL HEAT");
-        critical = true;
-    } else if lamp(Lamp::Hot) {
-        words.push("OVERHEAT");
-    } else if lamp(Lamp::Cold) {
-        words.push("COLD CHAMBER");
-    } else if lamp(Lamp::LowHeat) {
-        words.push("LOW HEAT");
-    }
-    if lamp(Lamp::CritOut) {
-        words.push("CRITICAL OUTPUT");
-        critical = true;
-    } else if lamp(Lamp::HighOut) {
-        words.push("HIGH OUTPUT");
-    }
+    let words: Vec<(&str, Tone)> = [heat_warning(r), output_warning(r)].into_iter().flatten().collect();
     if !words.is_empty() {
-        return (words.join(" \u{b7} "), if critical { Tone::Bad } else { Tone::Warn });
+        let critical = words.iter().any(|w| w.1 == Tone::Bad);
+        let text: Vec<&str> = words.iter().map(|w| w.0).collect();
+        return (text.join(" \u{b7} "), if critical { Tone::Bad } else { Tone::Warn });
     }
     if run_up && fin(r.output_kw) < fin(r.load_kw) - GRID_SLACK_KW {
         return ("RUN-UP".into(), Tone::Title);
@@ -152,20 +181,6 @@ pub fn grid_word(output: f64, demand: f64, run_up: bool) -> (String, Tone) {
         (format!("GRID OFFLINE - {short:.0} kW"), Tone::Dim)
     } else {
         (format!("GRID SHORT - {short:.0} kW"), Tone::Warn)
-    }
-}
-
-/// The heat's tone: good in the sim's optimal band, warn in the rest of the allowed one, bad above it
-/// and warn below (a cold chamber is a warning, the sim's COLD lamp is no critical one).
-fn heat_tone(heat: f64, optimal: [f64; 2], allowed: [f64; 2]) -> Tone {
-    if band_ok(optimal) && heat >= optimal[0] && heat <= optimal[1] {
-        Tone::Normal
-    } else if band_ok(allowed) && heat > allowed[1] {
-        Tone::Bad
-    } else if band_ok(allowed) {
-        Tone::Warn
-    } else {
-        Tone::Normal
     }
 }
 
@@ -187,88 +202,73 @@ fn clock(s: f64) -> String {
     format!("{}:{:02}", s / 60, s % 60)
 }
 
+fn ink(t: Tone) -> Ink {
+    match t {
+        Tone::Normal => Ink::Fg1,
+        Tone::Dim => Ink::Fg2,
+        Tone::Micro => Ink::Fg3,
+        Tone::Title => Ink::FgTitle,
+        Tone::Good => Ink::Good,
+        Tone::Warn => Ink::Warn,
+        Tone::Bad => Ink::Bad,
+    }
+}
+
 // ---------- the pieces ----------
 
-fn text(x: f64, y: f64, w: f64, h: f64, s: &str, size: f64, face: TextFace, ink: Ink, centred: bool) -> Shape {
-    Shape::Text { x, y, w, h, text: s.to_string(), size, face, ink, centred }
+fn text(x: f64, y: f64, w: f64, h: f64, s: &str, size: f64, face: TextFace, ink: Ink) -> Shape {
+    Shape::Text { x, y, w, h, text: s.to_string(), size, face, ink, centred: false }
+}
+
+fn text_c(x: f64, y: f64, w: f64, h: f64, s: &str, size: f64, face: TextFace, ink: Ink) -> Shape {
+    Shape::Text { x, y, w, h, text: s.to_string(), size, face, ink, centred: true }
+}
+
+fn text_r(x: f64, y: f64, w: f64, h: f64, s: &str, size: f64, face: TextFace, ink: Ink) -> Shape {
+    Shape::TextRight { x, y, w, h, text: s.to_string(), size, face, ink }
 }
 
 fn rect(x: f64, y: f64, w: f64, h: f64, ink: Ink) -> Shape {
     Shape::Rect { x, y, w, h, fill: Some(ink), outline: None }
 }
 
-/// The frame at one side of a half's row of height `h`: border (line 2), inset (bg 1), well border
-/// (line 1), then the well's padding.
-fn edge(h: f64, left: bool) -> Vec<Shape> {
-    let at = |from_outer: f64, w: f64| if left { from_outer } else { EDGE - from_outer - w };
-    vec![rect(at(0.0, 2.0), 0.0, 2.0, h, Ink::Line2), rect(at(2.0, 4.0), 0.0, 4.0, h, Ink::Bg1), rect(at(6.0, 2.0), 0.0, 2.0, h, Ink::Line1)]
+fn boxed(x: f64, y: f64, w: f64, h: f64, fill: Ink, edge: Ink, b: f64) -> Shape {
+    Shape::Rect { x, y, w, h, fill: Some(fill), outline: Some((edge, b)) }
 }
 
-/// A canvas of a half's full width: both side frames, then `shapes` in the content's own pixels
-/// (x from the content's left edge).
-fn framed(h: f64, mut shapes: Vec<Shape>) -> Item {
-    let mut all = edge(h, true);
-    all.extend(edge_right(h));
-    for s in shapes.drain(..) {
-        all.push(shift_x(s, EDGE));
+/// The shapes moved by `(dx, dy)`.
+fn shifted(shapes: Vec<Shape>, dx: f64, dy: f64) -> Vec<Shape> {
+    shapes
+        .into_iter()
+        .map(|s| match s {
+            Shape::Arc { cx, cy, r, from, to, stroke, ink, dash } => Shape::Arc { cx: cx + dx, cy: cy + dy, r, from, to, stroke, ink, dash },
+            Shape::Line { a, b, width, ink, dash } => Shape::Line { a: [a[0] + dx, a[1] + dy], b: [b[0] + dx, b[1] + dy], width, ink, dash },
+            Shape::Circle { cx, cy, r, fill, stroke } => Shape::Circle { cx: cx + dx, cy: cy + dy, r, fill, stroke },
+            Shape::Rect { x, y, w, h, fill, outline } => Shape::Rect { x: x + dx, y: y + dy, w, h, fill, outline },
+            Shape::Hatch { x, y, w, h, ink } => Shape::Hatch { x: x + dx, y: y + dy, w, h, ink },
+            Shape::Text { x, y, w, h, text, size, face, ink, centred } => Shape::Text { x: x + dx, y: y + dy, w, h, text, size, face, ink, centred },
+            Shape::TextRight { x, y, w, h, text, size, face, ink } => Shape::TextRight { x: x + dx, y: y + dy, w, h, text, size, face, ink },
+            other => other,
+        })
+        .collect()
+}
+
+/// The border of a box `w` by `h` as four strips (the ground shows through).
+fn frame(w: f64, h: f64, ink: Ink) -> Vec<Shape> {
+    vec![rect(0.0, 0.0, w, B, ink), rect(0.0, h - B, w, B, ink), rect(0.0, 0.0, B, h, ink), rect(w - B, 0.0, B, h, ink)]
+}
+
+/// A panel's header: its square lamp and title, closed by a line (the box is `w` wide, 2 px border).
+fn panel_head(w: f64, title: &str) -> Vec<Shape> {
+    vec![rect(B, HEAD - B, w - 2.0 * B, B, Ink::Line1), rect(IN_X, 13.0, 10.0, 10.0, Ink::Hud), text(IN_X + 20.0, B, w - 80.0, HEAD - 2.0 * B, title, 20.0, TextFace::DisplayBold, Ink::FgTitle)]
+}
+
+fn border_ink(t: Option<Tone>) -> Ink {
+    match t {
+        Some(Tone::Bad) => Ink::Bad,
+        Some(_) => Ink::Warn,
+        None => Ink::Line2,
     }
-    canvas(HALF_W, h, all, None).fixed(h)
-}
-
-fn edge_right(h: f64) -> Vec<Shape> {
-    edge(h, false).into_iter().map(|s| shift_x(s, HALF_W - EDGE)).collect()
-}
-
-fn shift_x(s: Shape, dx: f64) -> Shape {
-    match s {
-        Shape::Arc { cx, cy, r, from, to, stroke, ink, dash } => Shape::Arc { cx: cx + dx, cy, r, from, to, stroke, ink, dash },
-        Shape::Line { a, b, width, ink, dash } => Shape::Line { a: [a[0] + dx, a[1]], b: [b[0] + dx, b[1]], width, ink, dash },
-        Shape::Circle { cx, cy, r, fill, stroke } => Shape::Circle { cx: cx + dx, cy, r, fill, stroke },
-        Shape::Rect { x, y, w, h, fill, outline } => Shape::Rect { x: x + dx, y, w, h, fill, outline },
-        Shape::Hatch { x, y, w, h, ink } => Shape::Hatch { x: x + dx, y, w, h, ink },
-        Shape::Text { x, y, w, h, text, size, face, ink, centred } => Shape::Text { x: x + dx, y, w, h, text, size, face, ink, centred },
-        other => other,
-    }
-}
-
-/// A row of a half that holds a widget (a label, a slider): the frames at its sides, the widget between.
-fn edged(h: f64, inner: Item) -> Item {
-    row(0.0, vec![canvas(EDGE, h, edge(h, true), None).fixed(EDGE), inner.fixed(INNER_W), canvas(EDGE, h, edge(h, false), None).fixed(EDGE)]).fixed(h)
-}
-
-/// A row of just the frame (padding between blocks).
-fn gap_row(h: f64) -> Item {
-    framed(h, Vec::new())
-}
-
-/// The plate's header of a half: the frame's top and sides, the accent lamp and the title.
-fn head(title: &str) -> Item {
-    let mut s = vec![
-        rect(0.0, 0.0, HALF_W, B, Ink::Line2),
-        rect(0.0, 0.0, B, ROW_HEAD, Ink::Line2),
-        rect(HALF_W - B, 0.0, B, ROW_HEAD, Ink::Line2),
-        rect(B, B, HALF_W - 2.0 * B, ROW_HEAD - B, Ink::Bg1),
-        rect(12.0, 13.0, 10.0, 10.0, Ink::Hud),
-        text(32.0, B, HALF_W - 60.0, 32.0, title, 20.0, TextFace::DisplayBold, Ink::FgTitle, false),
-    ];
-    // The well's top border, closing the header.
-    s.push(rect(B + 4.0, ROW_HEAD - 2.0, HALF_W - 2.0 * (B + 4.0), 2.0, Ink::Line1));
-    canvas(HALF_W, ROW_HEAD, s, None).fixed(ROW_HEAD)
-}
-
-fn foot() -> Item {
-    let s = vec![
-        rect(0.0, 0.0, B, ROW_FOOT, Ink::Line2),
-        rect(HALF_W - B, 0.0, B, ROW_FOOT, Ink::Line2),
-        rect(0.0, ROW_FOOT - B, HALF_W, B, Ink::Line2),
-        rect(B, 0.0, 4.0, ROW_FOOT - B, Ink::Bg1),
-        rect(HALF_W - B - 4.0, 0.0, 4.0, ROW_FOOT - B, Ink::Bg1),
-        rect(B + 4.0, 0.0, 2.0, ROW_FOOT - B - 4.0, Ink::Line1),
-        rect(HALF_W - B - 6.0, 0.0, 2.0, ROW_FOOT - B - 4.0, Ink::Line1),
-        rect(B + 4.0, ROW_FOOT - B - 6.0, HALF_W - 2.0 * (B + 4.0), 2.0, Ink::Line1),
-        rect(B + 4.0, ROW_FOOT - B - 4.0, HALF_W - 2.0 * (B + 4.0), 4.0, Ink::Bg1),
-    ];
-    canvas(HALF_W, ROW_FOOT, s, None).fixed(ROW_FOOT)
 }
 
 fn point(a: f64, r: f64) -> [f64; 2] {
@@ -281,17 +281,17 @@ fn angle(v: f64) -> f64 {
 }
 
 fn arc(from: f64, to: f64, ink: Ink) -> Shape {
-    Shape::Arc { cx: G_C, cy: G_C, r: G_R, from: angle(from), to: angle(to), stroke: 18.0, ink, dash: None }
+    Shape::Arc { cx: G_C, cy: G_C, r: G_R, from: angle(from), to: angle(to), stroke: 18.0 * K, ink, dash: None }
 }
 
 /// The gauge of one control: the track in bad, the sim's allowed band (warn) and optimal band (good)
-/// over it, ticks every 10, the needle at the ACTUAL value, and its percent below. In a box `G_W` x `G_H`.
+/// over it, ticks every 10 (long every 50), the needle at the ACTUAL value. No number. In a box `G_W` x `G_H`.
 pub fn gauge_shapes(g: &ControlGauge) -> Vec<Shape> {
     let mut s = Vec::new();
     for i in 0..=10 {
         let a = angle(i as f64 * 10.0);
-        let (p, q) = (point(a, 114.0), point(a, if i % 5 == 0 { 126.0 } else { 121.0 }));
-        s.push(Shape::Line { a: p, b: q, width: 2.0, ink: Ink::HudDim, dash: None });
+        let (p, q) = (point(a, 114.0 * K), point(a, if i % 5 == 0 { 126.0 * K } else { 121.0 * K }));
+        s.push(Shape::Line { a: p, b: q, width: 2.0 * K, ink: Ink::HudDim, dash: None });
     }
     // Barotrauma's zones (client Reactor.cs DrawMeter): everything outside the allowed band is bad.
     s.push(arc(0.0, 100.0, Ink::Bad));
@@ -301,106 +301,213 @@ pub fn gauge_shapes(g: &ControlGauge) -> Vec<Shape> {
     if band_ok(g.optimal) {
         s.push(arc(g.optimal[0], g.optimal[1], Ink::Good));
     }
-    s.push(Shape::Line { a: [G_C, G_C], b: point(angle(g.actual), G_R - 24.0), width: 4.0, ink: Ink::FgTitle, dash: None });
-    s.push(Shape::Circle { cx: G_C, cy: G_C, r: 8.0, fill: Some(Ink::Bg0), stroke: Some((Ink::Hud, 3.0)) });
-    s.push(text(0.0, G_H - 44.0, G_W, 44.0, &format!("{:.0} %", pct(g.actual)), 40.0, TextFace::Mono, Ink::Fg1, true));
+    s.push(Shape::Line { a: [G_C, G_C], b: point(angle(g.actual), 76.0 * K), width: 5.0 * K, ink: Ink::FgTitle, dash: None });
+    s.push(Shape::Circle { cx: G_C, cy: G_C, r: 9.0 * K, fill: Some(Ink::Bg0), stroke: Some((Ink::Hud, 3.0 * K)) });
     s
 }
 
-fn gauge_row(g: &ControlGauge) -> Item {
-    let x = (INNER_W - G_W) * 0.5;
-    framed(ROW_GAUGE, gauge_shapes(g).into_iter().map(|s| shift_x(s, x)).collect())
+/// The band strip (10 px, bg 2) above a bar: the allowed band (warn) and the optimal band (good), each with a 3 px top edge;
+/// bands as 0..100 of the width `w`.
+fn band_strip(x: f64, y: f64, w: f64, allowed: [f64; 2], optimal: [f64; 2]) -> Vec<Shape> {
+    let at = |v: f64| pct(v) / 100.0 * w;
+    let mut s = vec![rect(x, y, w, 10.0, Ink::Bg2)];
+    for (band, fill, edge) in [(allowed, Ink::WarnDim, Ink::Warn), (optimal, Ink::GoodDim, Ink::Good)] {
+        if band_ok(band) {
+            let (a, b) = (at(band[0]), at(band[1]));
+            s.push(rect(x + a, y, b - a, 10.0, fill));
+            s.push(rect(x + a, y, b - a, 3.0, edge));
+        }
+    }
+    s
 }
 
-/// The chamber heat's band strip above its bar: the sim's allowed band (warn) and optimal band (good),
-/// both its low and its high side, the marker at the heat; the bar below fills to the heat.
-pub fn heat_shapes(heat: f64, optimal: [f64; 2], allowed: [f64; 2], tone: Tone) -> Vec<Shape> {
-    let at = |v: f64| pct(v) / 100.0 * INNER_W;
-    let mut s = vec![rect(0.0, 0.0, INNER_W, 12.0, Ink::Bg3)];
-    if band_ok(allowed) {
-        s.push(rect(at(allowed[0]), 0.0, at(allowed[1]) - at(allowed[0]), 12.0, Ink::Warn));
+/// A bar of 26 px: the track, the fill to `fill` (0..100) in `ink`, and the marker (4 px, 4 px taller each way) at `marker`.
+fn bar(x: f64, y: f64, w: f64, fill: f64, ink: Ink, marker: f64) -> Vec<Shape> {
+    let mx = (x + w * pct(marker) / 100.0 - 2.0).clamp(x, x + w - 4.0);
+    vec![boxed(x, y, w, 26.0, Ink::Bg3, Ink::HudDim, 2.0), rect(x + 2.0, y + 2.0, (w - 4.0) * pct(fill) / 100.0, 22.0, ink), rect(mx, y - 4.0, 4.0, 34.0, Ink::FgTitle)]
+}
+
+/// The warning banner laid over a panel's top label row.
+fn banner(y: f64, h: f64, word: &str, tone: Tone, right: Option<&str>) -> Vec<Shape> {
+    let (fill, edge) = if tone == Tone::Bad { (Ink::BadDim, Ink::Bad) } else { (Ink::WarnDim, Ink::Warn) };
+    let mut s = vec![boxed(IN_X, y, IN_W, h, fill, edge, 2.0), text(IN_X + 14.0, y, IN_W - 28.0, h, word, 18.0, TextFace::Display, ink(tone))];
+    if let Some(d) = right {
+        s.push(text_r(IN_X + 14.0, y, IN_W - 28.0, h, d, 20.0, TextFace::Mono, Ink::Fg2));
     }
-    if band_ok(optimal) {
-        s.push(rect(at(optimal[0]), 0.0, at(optimal[1]) - at(optimal[0]), 12.0, Ink::Good));
+    s
+}
+
+/// The shared lower part of a control panel's top canvas: the gauge and the SET row.
+fn gauge_and_set(g: &ControlGauge, label_text: &str, manual: bool) -> Vec<Shape> {
+    let gy = 209.0;
+    let mut s = shifted(gauge_shapes(g), IN_X + (IN_W - G_W) * 0.5, gy);
+    let set_tone = if manual { Tone::Normal } else { Tone::Dim };
+    s.push(text(IN_X, 480.0, IN_W * 0.6, 40.0, label_text, 20.0, TextFace::Display, Ink::Fg2));
+    s.push(text_r(IN_X + IN_W * 0.4, 476.0, IN_W * 0.6, 44.0, &format!("{:.0} %", pct(g.setting)), 40.0, TextFace::Mono, ink(set_tone)));
+    s
+}
+
+/// One control panel: its top canvas (everything down to the SET row), the slider and the foot, side by side with the border.
+fn control_panel(border: Ink, mut top: Vec<Shape>, title: &str, g: &ControlGauge, action: &str, set_label: &str, manual: bool, up: bool) -> Item {
+    let mut all = frame(HALF_W, TOP_H, border);
+    all.extend(panel_head(HALF_W, title));
+    all.append(&mut top);
+    all.extend(gauge_and_set(g, set_label, manual && !up));
+    // The slider row: the border strips at the sides, the track between (the thumb overhangs it by 20 px into the padding).
+    let edge = |x: f64| canvas(IN_X + PAD, ROW_SLIDER, vec![rect(x, 0.0, B, ROW_SLIDER, border)], None).fixed(IN_X + PAD);
+    let foot = vec![rect(0.0, 0.0, B, ROW_FOOT, border), rect(HALF_W - B, 0.0, B, ROW_FOOT, border), rect(0.0, ROW_FOOT - B, HALF_W, B, border)];
+    column(0.0, vec![
+        canvas(HALF_W, TOP_H, all, None).fixed(TOP_H),
+        row(0.0, vec![edge(0.0), slider(pct(g.setting) / 100.0, "", action).grip().enabled(manual && !up).fixed(IN_W - 2.0 * PAD), edge(IN_X + PAD - B)]).fixed(ROW_SLIDER),
+        canvas(HALF_W, ROW_FOOT, foot, None).fixed(ROW_FOOT),
+    ])
+    .fixed(HALF_W)
+}
+
+fn left_panel(r: &ReactorNews, up: bool) -> Item {
+    let heat = fin(r.heat);
+    let warning = if up { None } else { heat_warning(r) };
+    let tone = warning.map_or(Tone::Normal, |w| w.1);
+    let mut s = Vec::new();
+    s.push(text(IN_X, 58.0, IN_W, 24.0, "CHAMBER HEAT", 20.0, TextFace::Display, Ink::Fg2));
+    if let Some((word, t)) = warning {
+        s.extend(banner(54.0, 30.0, &format!("{word} - {}", heat_action(word)), t, None));
     }
-    // The bar: the track, the fill in the heat's tone, ticks at 0, 50 and 100.
+    s.push(text(IN_X, 82.0, IN_W, 48.0, &format!("{:.0} \u{b0}C", heat_degrees(heat)), 40.0, TextFace::Mono, ink(tone)));
+    s.extend(band_strip(IN_X, 134.0, IN_W, r.allowed, r.optimal));
     let fill = match tone {
         Tone::Bad => Ink::Bad,
         Tone::Warn => Ink::Warn,
         _ => Ink::Good,
     };
-    s.push(Shape::Rect { x: 0.0, y: 18.0, w: INNER_W, h: 34.0, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) });
-    s.push(rect(2.0, 20.0, (INNER_W - 4.0) * pct(heat) / 100.0, 30.0, fill));
-    for v in [0.0, 50.0, 100.0] {
-        let x = (at(v)).clamp(1.0, INNER_W - 1.0);
-        s.push(Shape::Line { a: [x, 52.0], b: [x, 58.0], width: 2.0, ink: Ink::HudDim, dash: None });
-    }
-    // The marker over both: a bright tick across the strip and the bar.
-    s.push(rect((at(heat) - 2.0).clamp(0.0, INNER_W - 4.0), 0.0, 4.0, 54.0, Ink::FgTitle));
-    s
+    s.extend(bar(IN_X, 148.0, IN_W, heat, fill, heat));
+    control_panel(border_ink(warning.map(|w| w.1)), s, "INJECTION", &r.injection_gauge(), INJECTION, "INJECTION SET", r.manual, up)
 }
 
-/// The output (good, or warn when short) and the demand (dashed) over the last samples, the oldest at
-/// the left. Newest first in the news; the scale is the larger of the reactor's maximum and the highest sample.
-pub fn graph_shapes(r: &ReactorNews, max_kw: f64, short: bool, dim: bool) -> Vec<Shape> {
-    let mut s = vec![Shape::Rect { x: 0.0, y: 0.0, w: GRAPH_W, h: GRAPH_H, fill: Some(Ink::Bg0), outline: Some((Ink::Line1, 2.0)) }];
-    for y in [27.0, 54.0, 81.0] {
-        s.push(Shape::Line { a: [0.0, y], b: [GRAPH_W, y], width: 1.0, ink: Ink::Line1, dash: None });
+/// The band `lo..hi` times the demand as percent of the reactor's maximum output (`None`: no maximum).
+fn demand_band(demand: f64, max_kw: f64, lo: f64, hi: f64) -> [f64; 2] {
+    let m = fin(max_kw);
+    if m <= 0.0 {
+        return [0.0, 0.0];
+    }
+    [fin(demand) * lo / m * 100.0, fin(demand) * hi / m * 100.0]
+}
+
+fn right_panel(r: &ReactorNews, max_kw: f64, run_up: bool, up: bool) -> Item {
+    let (out, demand) = (fin(r.output_kw), fin(r.load_kw));
+    let (word, grid_tone) = grid_word(out, demand, run_up);
+    let short = grid_tone == Tone::Warn;
+    let demand_text = format!("DEMAND {demand:.0} kW");
+    let banner_word: Option<(String, Tone)> = if up {
+        None
+    } else if let Some((w, t)) = output_warning(r) {
+        Some((format!("{w} - LOWER CONVERTER"), t))
+    } else if short {
+        let cold = band_ok(r.optimal) && fin(r.heat) < r.optimal[0];
+        Some((if cold { "GRID SHORT - CHAMBER TOO COLD" } else { "GRID SHORT - RAISE CONVERTER" }.to_string(), Tone::Warn))
+    } else {
+        None
+    };
+    let mut s = vec![text(IN_X, 58.0, IN_W * 0.5, 26.0, "OUTPUT", 20.0, TextFace::Display, Ink::Fg2), text_r(IN_X + IN_W * 0.4, 58.0, IN_W * 0.6, 26.0, &demand_text, 24.0, TextFace::Mono, Ink::Fg2)];
+    if let Some((w, t)) = &banner_word {
+        s.extend(banner(54.0, 32.0, w, *t, Some(&demand_text)));
+    }
+    let out_tone = if up { Tone::Dim } else if short { Tone::Warn } else { Tone::Normal };
+    s.push(text(IN_X, 82.0, IN_W * 0.5, 48.0, &format!("{out:.0} kW"), 40.0, TextFace::Mono, ink(out_tone)));
+    s.push(text_r(IN_X + IN_W * 0.4, 82.0, IN_W * 0.6, 48.0, &word, 20.0, TextFace::Display, ink(grid_tone)));
+    s.extend(band_strip(IN_X, 134.0, IN_W, demand_band(demand, max_kw, 0.5, 1.5), demand_band(demand, max_kw, 0.9, 1.1)));
+    let m = fin(max_kw);
+    let (fill, marker) = if m > 0.0 { (out / m * 100.0, demand / m * 100.0) } else { (0.0, 0.0) };
+    let fill_ink = if up { Ink::Fg2 } else if short { Ink::Warn } else { Ink::Good };
+    s.extend(bar(IN_X, 148.0, IN_W, fill, fill_ink, marker));
+    control_panel(border_ink(banner_word.map(|b| b.1)), s, "FIELD CONVERTER", &r.converter_gauge(), CONVERTER, "CONVERTER SET", r.manual, up)
+}
+
+/// The output (solid) and the demand (dashed) over the history, the oldest at the left, in a plot `w` by `h`. The news carry newest
+/// first; the scale is the larger of the reactor's maximum and the highest sample, returned with the shapes.
+pub fn graph_shapes(r: &ReactorNews, max_kw: f64, w: f64, h: f64, ink: Ink) -> (Vec<Shape>, f64) {
+    let mut s = vec![boxed(0.0, 0.0, w, h, Ink::Bg0, Ink::Line1, 2.0)];
+    for i in 1..5 {
+        let y = h * i as f64 / 5.0;
+        s.push(rect(2.0, y - 1.0, w - 4.0, 1.0, Ink::Line1));
     }
     let n = (r.graph_points as usize).min(GRAPH_POINTS);
-    if n < 2 {
-        return s;
-    }
     let top = r.graph_output[..n].iter().chain(&r.graph_load[..n]).copied().max().unwrap_or(0) as f64;
     let scale = fin(max_kw).max(top).max(1.0);
-    let pt = |curve: &[u16; GRAPH_POINTS], i: usize| [2.0 + (GRAPH_W - 4.0) * (1.0 - i as f64 / (n - 1) as f64), 104.0 - curve[i] as f64 / scale * 100.0];
+    if n < 2 {
+        return (s, scale);
+    }
+    let step = (w - 4.0) / (GRAPH_POINTS - 1) as f64;
+    let pt = |curve: &[u16; GRAPH_POINTS], i: usize| [w - 2.0 - step * i as f64, h - 4.0 - curve[i] as f64 / scale * (h - 8.0)];
     for i in 0..n - 1 {
         s.push(Shape::Line { a: pt(&r.graph_load, i + 1), b: pt(&r.graph_load, i), width: 2.0, ink: Ink::FgTitle, dash: Some((10.0, 5.0)) });
     }
-    let ink = if dim { Ink::GoodDim } else if short { Ink::Warn } else { Ink::Good };
     for i in 0..n - 1 {
         s.push(Shape::Line { a: pt(&r.graph_output, i + 1), b: pt(&r.graph_output, i), width: 3.0, ink, dash: None });
     }
-    s
+    (s, scale)
+}
+
+fn history_panel(r: &ReactorNews, max_kw: f64, run_up: bool, up: bool) -> Item {
+    let (out, demand) = (fin(r.output_kw), fin(r.load_kw));
+    let (word, grid_tone) = grid_word(out, demand, run_up);
+    let short = grid_tone == Tone::Warn;
+    let warning = if up { None } else { output_warning(r).map(|w| w.1).or(short.then_some(Tone::Warn)) };
+    let out_tone = if up { Tone::Dim } else if short { Tone::Warn } else { Tone::Normal };
+    let line_ink = if up { Ink::Fg2 } else if short { Ink::Warn } else { Ink::Good };
+    let mut s = frame(BODY_W, BODY_H, border_ink(warning));
+    let w = BODY_W;
+    let inner = w - 2.0 * IN_X;
+    s.extend(panel_head(w, "OUTPUT HISTORY"));
+    s.push(text(IN_X, 46.0, 200.0, 76.0, "OUTPUT", 20.0, TextFace::Display, Ink::Fg2));
+    s.push(text(IN_X + 120.0, 46.0, 360.0, 76.0, &format!("{out:.0} kW"), 56.0, TextFace::Mono, ink(out_tone)));
+    s.push(text_r(IN_X + inner - 700.0, 46.0, 360.0, 76.0, &format!("DEMAND {demand:.0} kW"), 28.0, TextFace::Mono, Ink::Fg2));
+    s.push(text_r(IN_X + inner - 320.0, 46.0, 320.0, 76.0, &word, 24.0, TextFace::Display, ink(grid_tone)));
+    let (ax, plot_x, plot_y, plot_h) = (IN_X, IN_X + 92.0, 130.0, 420.0);
+    let plot_w = inner - 92.0;
+    let (plot, scale) = graph_shapes(r, max_kw, plot_w, plot_h, line_ink);
+    s.extend(shifted(plot, plot_x, plot_y));
+    for i in 0..5 {
+        let frac = 1.0 - i as f64 / 4.0;
+        let y = plot_y + 2.0 + (plot_h - 4.0) * i as f64 / 4.0;
+        s.push(text_r(ax, y - 12.0, 80.0, 24.0, &format!("{:.0}", scale * frac), 16.0, TextFace::Mono, Ink::Fg2));
+    }
+    let ly = plot_y + plot_h + 6.0;
+    s.push(text(plot_x, ly, 200.0, 24.0, &format!("-{HISTORY_SPAN_S:.0} s"), 16.0, TextFace::Display, Ink::Fg2));
+    s.push(text_c(plot_x, ly, plot_w, 24.0, "OUTPUT SOLID - DEMAND DASHED", 16.0, TextFace::Display, Ink::Fg2));
+    s.push(text_r(plot_x + plot_w - 200.0, ly, 200.0, 24.0, "NOW", 16.0, TextFace::Display, Ink::Fg2));
+    canvas(BODY_W, BODY_H, s, None).flex(1.0)
 }
 
 fn mode_buttons(manual: bool) -> Item {
     let tone = |on: bool| if on { Tone::Good } else { Tone::Normal };
-    column(0.0, vec![
-        space().fixed(12.0),
-        row(8.0, vec![button("AUTO", AUTO).tone(tone(!manual)), button("MANUAL", MANUAL).tone(tone(manual))]).fixed(48.0),
-        space().fixed(12.0),
-    ])
+    row(0.0, vec![button("AUTO", AUTO).tone(tone(!manual)), button("MANUAL", MANUAL).tone(tone(manual))]).fixed(320.0)
 }
 
-/// A label's width in px, estimated: the status word sits right-aligned next to the buttons, and the
-/// label widget draws left aligned from its box.
-fn label_w(s: &str, size: f64, mono: bool) -> f64 {
-    s.chars().count() as f64 * size * if mono { 0.5 } else { 0.62 } + size * 1.4
+fn tab_buttons(tab: Tab) -> Item {
+    let tone = |on: bool| if on { Tone::Good } else { Tone::Normal };
+    row(0.0, vec![button("CONTROL", TAB_CONTROL).tone(tone(tab == Tab::Control)), button("HISTORY", TAB_HISTORY).tone(tone(tab == Tab::History))]).fixed(250.0)
 }
 
-fn header(r: &ReactorNews, run_up: bool) -> Item {
-    let (word, tone) = status_word(r, run_up);
-    header_with(word, tone, Some(r.manual && !run_up_active(r, run_up)))
-}
-
-/// The header with its word; `mode` is the AUTO / MANUAL buttons' state, None for the faces without them (BOOT, PRIME).
-fn header_with(word: String, tone: Tone, mode: Option<bool>) -> Item {
-    let t = vec![
-        rect(14.0, 30.0, 12.0, 12.0, Ink::Hud),
-        text(38.0, 0.0, 240.0, HEADER - B, "REACTOR", 28.0, TextFace::DisplayBold, Ink::FgTitle, false),
-    ];
-    let w = label_w(&word, 28.0, false).min(520.0);
-    let inner = row(0.0, vec![
-        canvas(300.0, HEADER - B, t, None).fixed(300.0),
-        space(),
-        label(word).tone(tone).text_size(28.0).fixed(w),
-        space().fixed(24.0),
-        mode.map_or_else(|| space().fixed(320.0), |manual| mode_buttons(manual).fixed(320.0)),
-        space().fixed(28.0),
-    ]);
-    let rule = canvas(W - 2.0 * B, B, vec![rect(0.0, 0.0, W - 2.0 * B, B, Ink::Line1)], None).fixed(B);
-    column(0.0, vec![inner.fixed(HEADER - B), rule]).fixed(HEADER)
+/// The header: REACTOR at the left, the status word at the right, and with `controls` (the running faces) the tab and mode buttons.
+fn header(word: &str, tone: Tone, size: f64, controls: Option<(Tab, bool)>) -> Item {
+    let left = 200.0;
+    let side = 24.0;
+    let gap = 20.0;
+    let fixed = 2.0 * side + left + gap + if controls.is_some() { 250.0 + 320.0 + 2.0 * gap } else { 0.0 };
+    let wide = CONTENT_W - fixed;
+    let l = vec![rect(0.0, 29.0, 10.0, 10.0, Ink::Hud), text(24.0, 0.0, left - 24.0, HEADER - B, "REACTOR", 28.0, TextFace::DisplayBold, Ink::FgTitle)];
+    let status = vec![text_r(0.0, 0.0, wide, HEADER - B, word, size, TextFace::DisplayBold, ink(tone))];
+    let mut items = vec![space().fixed(side), canvas(left, HEADER - B, l, None).fixed(left), space().fixed(gap), canvas(wide, HEADER - B, status, None).fixed(wide)];
+    match controls {
+        Some((tab, manual)) => {
+            let buttons = |b: Item| column(0.0, vec![space().fixed(10.0), b.fixed(48.0), space().fixed(8.0)]);
+            items.extend([space().fixed(gap), buttons(tab_buttons(tab)).fixed(250.0), space().fixed(gap), buttons(mode_buttons(manual)).fixed(320.0), space().fixed(side)]);
+        }
+        None => items.push(space().fixed(side)),
+    }
+    let rule = canvas(CONTENT_W, B, vec![rect(0.0, 0.0, CONTENT_W, B, Ink::Line1)], None).fixed(B);
+    column(0.0, vec![row(0.0, items).fixed(HEADER - B), rule]).fixed(HEADER)
 }
 
 /// The run-up is on and the output is still short of the demand: the screen dims the grid, the graph and the heat's warnings, and
@@ -409,102 +516,54 @@ fn run_up_active(r: &ReactorNews, run_up: bool) -> bool {
     run_up && fin(r.output_kw) < fin(r.load_kw) - GRID_SLACK_KW
 }
 
-fn left_half(r: &ReactorNews, up: bool) -> Item {
-    let heat = fin(r.heat);
-    let tone = if up { Tone::Normal } else { heat_tone(heat, r.optimal, r.allowed) };
-    let readout = label(format!("{:.0} \u{b0}C", heat_degrees(heat))).mono().text_size(72.0).tone(tone);
-    let block = vec![
-        edged(24.0, canvas(INNER_W, 24.0, vec![text(0.0, 0.0, INNER_W, 24.0, "CHAMBER HEAT", 20.0, TextFace::Display, Ink::Fg2, false)], None)),
-        edged(80.0, readout),
-        gap_row(14.0),
-        framed(60.0, heat_shapes(heat, r.optimal, r.allowed, tone)),
-        gap_row(ROW_TOP - 24.0 - 80.0 - 14.0 - 60.0),
-    ];
-    half("INJECTION", block, &r.injection_gauge(), INJECTION, r.manual && !up)
+/// Header, then the body (padding 12 round it).
+fn with_body(head: Item, body: Item) -> Item {
+    column(0.0, vec![head, space().fixed(GAP), row(0.0, vec![space().fixed(GAP), body, space().fixed(GAP)]).fixed(BODY_H), space().fixed(GAP)])
 }
 
-fn right_half(r: &ReactorNews, max_kw: f64, run_up: bool, up: bool) -> Item {
-    let (out, demand) = (fin(r.output_kw), fin(r.load_kw));
-    let (word, tone) = grid_word(out, demand, run_up);
-    let short = tone == Tone::Warn;
-    let word_tone = if up { Tone::Dim } else if short { Tone::Warn } else { Tone::Good };
-    let demand_text = format!("DEMAND {demand:.0} kW");
-    let top = row(0.0, vec![label("OUTPUT").tone(Tone::Dim).text_size(20.0), label(demand_text.clone()).mono().tone(Tone::Dim).text_size(28.0).fixed(label_w(&demand_text, 28.0, true))]);
-    let big = row(0.0, vec![
-        label(format!("{out:.0} kW")).mono().text_size(72.0).tone(if short { Tone::Warn } else { Tone::Normal }),
-        label(word.clone()).text_size(20.0).tone(word_tone).fixed(label_w(&word, 20.0, false).min(330.0)),
-    ]);
-    let graph = framed(GRAPH_H, graph_shapes(r, max_kw, short, up));
-    let block = vec![edged(32.0, top), edged(80.0, big), gap_row(8.0), graph, gap_row(ROW_TOP - 32.0 - 80.0 - 8.0 - GRAPH_H)];
-    half("FIELD CONVERTER", block, &r.converter_gauge(), CONVERTER, r.manual && !up)
-}
-
-/// One half: header, the block on top (heat or output), the gauge of the actual value, the slider of the setting.
-fn half(title: &str, mut top: Vec<Item>, g: &ControlGauge, action: &str, manual: bool) -> Item {
-    let mut rows = vec![head(title), gap_row(ROW_PAD)];
-    rows.append(&mut top);
-    rows.push(gap_row(ROW_GAP));
-    rows.push(gauge_row(g));
-    rows.push(gap_row(ROW_GAP));
-    rows.push(edged(ROW_SLIDER, slider(fin(g.setting).clamp(0.0, 100.0) / 100.0, "", action).enabled(manual)));
-    rows.push(foot());
-    column(0.0, rows).fixed(HALF_W)
-}
-
-/// A plain centred word (and a second line under it) for the faces without a design yet.
-fn word_face(word: &str, ink: Ink, second: Option<&str>) -> Item {
-    let (w, h) = (W - 2.0 * B, H - 2.0 * B);
-    let mut s = vec![text(0.0, h * 0.5 - 60.0, w, 90.0, word, 72.0, TextFace::DisplayBold, ink, true)];
-    if let Some(t) = second {
-        s.push(text(0.0, h * 0.5 + 40.0, w, 110.0, t, 96.0, TextFace::Mono, Ink::FgTitle, true));
+/// A word face: the word (72 px) centred, with a mono clock (96 px) under it, no header.
+fn word_face(word: &str, tone: Ink, clock_text: Option<&str>) -> Item {
+    let (w, h) = (CONTENT_W, H - 2.0 * B);
+    let group = 80.0 + clock_text.map_or(0.0, |_| 28.0 + 110.0);
+    let top = (h - group) * 0.5;
+    let mut s = vec![text_c(0.0, top, w, 80.0, word, 72.0, TextFace::DisplayBold, tone)];
+    if let Some(t) = clock_text {
+        s.push(text_c(0.0, top + 80.0 + 28.0, w, 110.0, t, 96.0, TextFace::Mono, Ink::Fg2));
     }
     canvas(w, h, s, None).flex(1.0)
 }
 
-fn body(r: &ReactorNews, max_kw: f64, run_up: bool, f: Face) -> Item {
+fn body(r: &ReactorNews, max_kw: f64, run_up: bool, tab: Tab, f: Face) -> Item {
     match f {
-        Face::NoPower => canvas(W - 2.0 * B, H - 2.0 * B, Vec::new(), None).flex(1.0),
+        Face::NoPower => canvas(CONTENT_W, H - 2.0 * B, Vec::new(), None).flex(1.0),
         Face::Scrammed => word_face("SCRAMMED", Ink::Bad, None),
         Face::Off => word_face("REACTOR OFF", Ink::Fg2, None),
         Face::Implosion(eta) => word_face("IMPLOSION", Ink::Bad, eta.map(clock).as_deref()),
         Face::CoreEjected(eta) => word_face("CORE EJECTED", Ink::Warn, eta.map(clock).as_deref()),
-        Face::Boot => start_face("BOOT", boot_plate(r)),
-        Face::Prime => start_face("PRIME", prime_plate(r)),
+        Face::Boot => with_body(header("BOOT", Tone::Title, 28.0, None), boot_panel(r)),
+        Face::Prime => with_body(header("PRIME", Tone::Title, 28.0, None), prime_panel(r)),
         Face::Running => {
             let up = run_up_active(r, run_up);
-            let panels = row(GAP, vec![left_half(r, up), right_half(r, max_kw, run_up, up)]).fixed(HALF_H);
-            column(0.0, vec![header(r, run_up), space().fixed(GAP), row(0.0, vec![space().fixed(GAP), panels, space().fixed(GAP)]).fixed(HALF_H), space().fixed(GAP)])
+            let (word, tone) = status_word(r, run_up);
+            let size = if word.contains('\u{b7}') { 22.0 } else { 28.0 };
+            let head = header(&word, tone, size, Some((tab, r.manual && !up)));
+            let content = match tab {
+                Tab::Control => row(GAP, vec![left_panel(r, up), right_panel(r, max_kw, run_up, up)]).fixed(BODY_H),
+                Tab::History => history_panel(r, max_kw, run_up, up),
+            };
+            with_body(head, content)
         }
     }
 }
 
 // ---------- BOOT and PRIME ----------
 
-/// The full-width plate of the start faces: its width and height inside the header and the gaps.
-const PLATE_W: f64 = W - 2.0 * B - 2.0 * GAP;
-
-/// A face of the start-up: the header with `word` in the title tone (no mode buttons), then one full-width plate.
-fn start_face(word: &str, plate: Item) -> Item {
-    column(0.0, vec![header_with(word.into(), Tone::Title, None), space().fixed(GAP), row(0.0, vec![space().fixed(GAP), plate, space().fixed(GAP)]).fixed(HALF_H), space().fixed(GAP)])
-}
-
-/// The plate: frame, the title with its accent lamp, then `shapes` in plate pixels.
-fn plate(title: &str, mut shapes: Vec<Shape>) -> Item {
-    let mut all = vec![
-        rect(0.0, 0.0, PLATE_W, HALF_H, Ink::Line2),
-        rect(B, B, PLATE_W - 2.0 * B, HALF_H - 2.0 * B, Ink::Bg1),
-        rect(12.0, 13.0, 10.0, 10.0, Ink::Hud),
-        text(32.0, B, PLATE_W - 60.0, 32.0, title, 20.0, TextFace::DisplayBold, Ink::FgTitle, false),
-        rect(B + 4.0, ROW_HEAD - 2.0, PLATE_W - 2.0 * (B + 4.0), 2.0, Ink::Line1),
-    ];
+/// A full-width plate of the start faces: border (line 2), the title header, then `shapes`.
+fn start_panel(title: &str, mut shapes: Vec<Shape>) -> Item {
+    let mut all = frame(BODY_W, BODY_H, Ink::Line2);
+    all.extend(panel_head(BODY_W, title));
     all.append(&mut shapes);
-    canvas(PLATE_W, HALF_H, all, None).fixed(HALF_H)
-}
-
-/// A mono text right-aligned to `right` (the canvas aligns left or centred only).
-fn text_right(right: f64, y: f64, h: f64, s: &str, size: f64, ink: Ink) -> Shape {
-    let w = label_w(s, size, true);
-    text(right - w, y, w, h, s, size, TextFace::Mono, ink, false)
+    canvas(BODY_W, BODY_H, all, None).flex(1.0)
 }
 
 /// The best canister's fill, % (0 with none).
@@ -533,20 +592,20 @@ pub fn boot_rows(r: &ReactorNews) -> Vec<(&'static str, String, bool)> {
     ]
 }
 
-fn boot_plate(r: &ReactorNews) -> Item {
+fn boot_panel(r: &ReactorNews) -> Item {
     let rows = boot_rows(r);
     let open = rows.iter().filter(|(_, _, met)| !met).count();
     let (head, tone) = if open == 0 { ("READY - START LEVER TO PRIME".to_string(), Ink::Good) } else { (format!("START NOT READY - {open} OPEN"), Ink::Warn) };
-    let mut s = vec![text(24.0, ROW_HEAD + 8.0, PLATE_W - 48.0, 40.0, &head, 40.0, TextFace::DisplayBold, tone, false)];
-    let (top, row_h, gap) = (ROW_HEAD + 64.0, 80.0, 6.0);
-    for (i, (label, value, met)) in rows.iter().enumerate() {
-        let y = top + i as f64 * (row_h + gap);
-        let ink = if *met { Ink::Good } else { Ink::Bad };
-        s.push(rect(16.0, y, PLATE_W - 32.0, row_h, Ink::Bg3));
-        s.push(text(16.0 + 20.0, y + 24.0, 600.0, 32.0, label, 28.0, TextFace::Display, Ink::Fg1, false));
-        s.push(text_right(PLATE_W - 16.0 - 20.0, y + 20.0, 44.0, value, 40.0, ink));
+    let mut s = vec![text(IN_X, HEAD + 20.0, BODY_W - 2.0 * IN_X, 40.0, &head, 40.0, TextFace::DisplayBold, tone)];
+    let top = HEAD + 20.0 + 40.0 + 14.0;
+    for (i, (name, value, met)) in rows.iter().enumerate() {
+        let y = top + i as f64 * 66.0;
+        let tone = if *met { Ink::Good } else { Ink::Bad };
+        s.push(rect(IN_X, y, BODY_W - 2.0 * IN_X, 60.0, Ink::Bg2));
+        s.push(text(IN_X + 24.0, y, 700.0, 60.0, name, 28.0, TextFace::Display, Ink::Fg1));
+        s.push(text_r(BODY_W - IN_X - 24.0 - 400.0, y, 400.0, 60.0, value, 32.0, TextFace::Mono, tone));
     }
-    plate("START-UP", s)
+    start_panel("START-UP", s)
 }
 
 /// The trap's charge as whole percent.
@@ -554,38 +613,36 @@ fn trap_pct(r: &ReactorNews) -> f64 {
     (fin(r.trap).clamp(0.0, 1.0) * 100.0).round()
 }
 
-fn prime_plate(r: &ReactorNews) -> Item {
+fn prime_panel(r: &ReactorNews) -> Item {
     let charged = fin(r.trap) >= 1.0;
+    let (x, w) = (IN_X + 4.0, BODY_W - 2.0 * IN_X - 8.0);
+    // Head 44, gap 28, row 80, gap 28, bar 52: centred in the body under the header.
+    let group = 44.0 + 28.0 + 80.0 + 28.0 + 52.0;
+    let top = HEAD + (BODY_H - HEAD - ROW_FOOT - group) * 0.5;
     let mut s = Vec::new();
     if charged {
-        s.push(text(24.0, ROW_HEAD + 20.0, PLATE_W - 48.0, 44.0, "TRAP CHARGED", 40.0, TextFace::DisplayBold, Ink::Good, false));
+        s.push(text(x, top, w, 44.0, "TRAP CHARGED", 40.0, TextFace::DisplayBold, Ink::Good));
     } else {
-        s.push(text(24.0, ROW_HEAD + 36.0, PLATE_W - 48.0, 24.0, "TRAP CHARGING", 20.0, TextFace::Display, Ink::Fg2, false));
+        s.push(text(x, top, w, 44.0, "TRAP CHARGING", 20.0, TextFace::Display, Ink::Fg2));
     }
-    let y = ROW_HEAD + 90.0;
-    s.push(text(24.0, y, 520.0, 80.0, &format!("{:.0} %", trap_pct(r)), 72.0, TextFace::Mono, Ink::Fg1, false));
+    let y = top + 44.0 + 28.0;
+    s.push(text(x, y, w * 0.5, 80.0, &format!("{:.0} %", trap_pct(r)), 72.0, TextFace::Mono, if charged { Ink::Good } else { Ink::Fg2 }));
     if !charged {
-        s.push(text_right(PLATE_W - 24.0, y + 24.0, 44.0, &format!("{:.0} s", fin(r.trap_left_s).max(0.0).ceil()), 40.0, Ink::Fg2));
+        s.push(text_r(x + w * 0.5, y, w * 0.5, 80.0, &format!("{:.0} s", fin(r.trap_left_s).max(0.0).ceil()), 40.0, TextFace::Mono, Ink::Fg2));
     }
-    // The bar 0..100 with five ticks (one per lamp of the prime column).
-    let (bx, by, bw, bh) = (24.0, y + 130.0, PLATE_W - 48.0, 60.0);
-    let fill = if charged { Ink::Good } else { Ink::Hud };
-    s.push(Shape::Rect { x: bx, y: by, w: bw, h: bh, fill: Some(Ink::Bg3), outline: Some((Ink::HudDim, 2.0)) });
-    s.push(rect(bx + 2.0, by + 2.0, (bw - 4.0) * trap_pct(r) / 100.0, bh - 4.0, fill));
-    for i in 0..=5 {
-        let x = bx + bw * i as f64 / 5.0;
-        s.push(Shape::Line { a: [x.clamp(bx + 1.0, bx + bw - 1.0), by + bh], b: [x.clamp(bx + 1.0, bx + bw - 1.0), by + bh + 12.0], width: 2.0, ink: Ink::HudDim, dash: None });
-    }
-    plate("MAGNETIC TRAP", s)
+    let by = y + 80.0 + 28.0;
+    s.push(boxed(x, by, w, 52.0, Ink::Bg3, Ink::HudDim, 2.0));
+    s.push(rect(x + 2.0, by + 2.0, (w - 4.0) * trap_pct(r) / 100.0, 48.0, if charged { Ink::Good } else { Ink::Hud }));
+    start_panel("MAGNETIC TRAP", s)
 }
 
 /// The main screen for the news (`None`: a dead screen). `max_kw` is the reactor's maximum output
-/// (the graph's scale); `run_up` is the sim's run-up stage.
-pub fn panel(r: Option<&ReactorNews>, max_kw: f64, run_up: bool) -> Panel {
+/// (the history's scale); `run_up` is the sim's run-up stage; `tab` the client's tab (CONTROL or HISTORY).
+pub fn panel(r: Option<&ReactorNews>, max_kw: f64, run_up: bool, tab: Tab) -> Panel {
     let f = face(r);
     let default = ReactorNews::default();
-    let root = body(r.unwrap_or(&default), max_kw, run_up, f);
-    Panel::new(W, H, root).with_padding(B)
+    let root = body(r.unwrap_or(&default), max_kw, run_up, tab, f);
+    Panel::new(W, H, root).with_padding(B).with_ground(if f == Face::NoPower { Ink::Bg0 } else { Ink::Bg1 })
 }
 
 #[cfg(test)]
@@ -621,7 +678,7 @@ mod tests {
     }
 
     #[test]
-    fn the_panel_builds_for_every_state_and_fits() {
+    fn the_panel_builds_for_every_state_and_both_tabs_with_finite_shapes() {
         let base = running();
         let mut cases = vec![("none", None), ("running", Some(base))];
         cases.push(("cold start", Some(ReactorNews { start: StartStage::Cold, ..base })));
@@ -649,12 +706,28 @@ mod tests {
         cases.push(("zero demand", Some(ReactorNews { load_kw: 0.0, output_kw: 0.0, graph_points: 0, ..base })));
         cases.push(("nan", Some(ReactorNews { heat: f64::NAN, injection: f64::NAN, converter: f64::INFINITY, set_injection: f64::NAN, output_kw: f64::NAN, load_kw: f64::NAN, ..base })));
         cases.push(("all lamps", Some(ReactorNews { lamps: [true; Lamp::COUNT], manual: false, ..base })));
+        cases.push(("zero max kw", Some(base)));
         for run_up in [false, true] {
-            for (name, r) in &cases {
-                let p = panel(r.as_ref(), 2000.0, run_up);
-                assert_eq!(p.size, DVec2::new(W, H), "{name}");
-                assert!(p.overflowing().is_empty(), "{name}: {:?}", p.overflowing());
-                assert!(all_finite(&p), "{name}");
+            for tab in [Tab::Control, Tab::History] {
+                for (name, r) in &cases {
+                    let max_kw = if *name == "zero max kw" { 0.0 } else { 2000.0 };
+                    let p = panel(r.as_ref(), max_kw, run_up, tab);
+                    assert_eq!(p.size, DVec2::new(W, H), "{name}");
+                    assert!(p.overflowing().is_empty(), "{name} {tab:?}: {:?}", p.overflowing());
+                    assert!(all_finite(&p), "{name} {tab:?}");
+                    // Every canvas is laid out at the size it was drawn for.
+                    for w in p.layout() {
+                        if let Widget::Canvas { w: cw, h: ch, .. } = w.widget {
+                            assert!((w.rect.size.x - cw).abs() < 0.5 && (w.rect.size.y - ch).abs() < 0.5, "{name} {tab:?}: canvas {cw}x{ch} laid out {:?}", w.rect.size);
+                        }
+                    }
+                }
+            }
+        }
+        for max_kw in [f64::NAN, f64::INFINITY, -5.0] {
+            for tab in [Tab::Control, Tab::History] {
+                let p = panel(Some(&base), max_kw, false, tab);
+                assert!(p.overflowing().is_empty() && all_finite(&p), "max {max_kw} {tab:?}");
             }
         }
     }
@@ -673,8 +746,8 @@ mod tests {
 
     #[test]
     fn the_sliders_exist_only_in_the_running_face_and_work_in_manual_only() {
-        let manual = panel(Some(&running()), 2000.0, false);
-        let auto = panel(Some(&ReactorNews { manual: false, ..running() }), 2000.0, false);
+        let manual = panel(Some(&running()), 2000.0, false, Tab::Control);
+        let auto = panel(Some(&ReactorNews { manual: false, ..running() }), 2000.0, false, Tab::Control);
         for a in [INJECTION, CONVERTER] {
             assert!(manual.find(a).is_some(), "{a}");
             let mut ptr = Pointer::default();
@@ -688,7 +761,7 @@ mod tests {
         for a in [AUTO, MANUAL] {
             assert!(auto.hit(auto.find(a).unwrap().rect.centre()).is_some(), "{a} always answers");
         }
-        assert!(panel(Some(&ReactorNews { power_on: false, ..running() }), 2000.0, false).find(INJECTION).is_none());
+        assert!(panel(Some(&ReactorNews { power_on: false, ..running() }), 2000.0, false, Tab::Control).find(INJECTION).is_none());
     }
 
     #[test]
@@ -749,16 +822,54 @@ mod tests {
 
     #[test]
     fn the_run_up_disables_the_sliders_and_shows_auto() {
-        let up = panel(Some(&ReactorNews { start: StartStage::RunUp, output_kw: 300.0, ..running() }), 2000.0, true);
+        let up = panel(Some(&ReactorNews { start: StartStage::RunUp, output_kw: 300.0, ..running() }), 2000.0, true, Tab::Control);
         for a in [INJECTION, CONVERTER] {
             let mut ptr = Pointer::default();
             let at = up.find(a).unwrap().rect.centre();
             assert!(ptr.step(&up, Some(at), true).is_empty(), "{a} is disabled in the run-up");
         }
         // Done (output at demand): the sliders work again in MANUAL.
-        let done = panel(Some(&ReactorNews { start: StartStage::RunUp, ..running() }), 2000.0, true);
+        let done = panel(Some(&ReactorNews { start: StartStage::RunUp, ..running() }), 2000.0, true, Tab::Control);
         let mut ptr = Pointer::default();
         let at = done.find(INJECTION).unwrap().rect.centre();
         assert!(!ptr.step(&done, Some(at), true).is_empty());
+    }
+
+    #[test]
+    fn the_tabs_are_buttons_and_the_history_tab_has_no_sliders() {
+        let control = panel(Some(&running()), 2000.0, false, Tab::Control);
+        let history = panel(Some(&running()), 2000.0, false, Tab::History);
+        for p in [&control, &history] {
+            for a in [TAB_CONTROL, TAB_HISTORY, AUTO, MANUAL] {
+                assert!(p.hit(p.find(a).unwrap().rect.centre()).is_some(), "{a} answers");
+            }
+        }
+        assert!(control.find(INJECTION).is_some() && history.find(INJECTION).is_none() && history.find(CONVERTER).is_none());
+        // The selected tab is drawn pressed (tone Good).
+        let tone = |p: &Panel, a: &str| match p.find(a).unwrap().widget {
+            Widget::Button { tone, .. } => *tone,
+            _ => unreachable!(),
+        };
+        assert_eq!((tone(&control, TAB_CONTROL), tone(&control, TAB_HISTORY)), (Tone::Good, Tone::Normal));
+        assert_eq!((tone(&history, TAB_CONTROL), tone(&history, TAB_HISTORY)), (Tone::Normal, Tone::Good));
+    }
+
+    #[test]
+    fn the_slider_value_follows_the_pointer_along_the_track() {
+        let p = panel(Some(&running()), 2000.0, false, Tab::Control);
+        let r = p.find(INJECTION).unwrap().rect;
+        let mut ptr = Pointer::default();
+        let clicks = ptr.step(&p, Some(r.at(DVec2::new(0.25, 0.5))), true);
+        assert!(clicks.iter().any(|c| c.action == INJECTION && (c.value.unwrap() - 0.25).abs() < 1e-9));
+    }
+
+    #[test]
+    fn the_word_faces_have_no_header_and_no_buttons() {
+        let mut scram = ReactorNews { power_on: false, ..running() };
+        scram.lamps[Lamp::Scram.index()] = true;
+        for r in [scram, ReactorNews { power_on: false, ..running() }, ReactorNews { imploded: true, ..running() }, ReactorNews { ejected: true, implosion_eta_s: Some(61.0), ..running() }] {
+            let p = panel(Some(&r), 2000.0, false, Tab::History);
+            assert!(p.find(AUTO).is_none() && p.find(TAB_HISTORY).is_none());
+        }
     }
 }

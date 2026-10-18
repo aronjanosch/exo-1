@@ -728,16 +728,30 @@ pub fn visible(items: &Items, li: &LooseItem) -> bool {
     li.id.is_none_or(|id| !items.client.hidden.contains(&id))
 }
 
-fn dress_items(mut commands: Commands, items: Res<Items>, new: Query<(Entity, &LooseItem), Added<LooseItem>>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
+/// The item's model (`ItemDef::model`) as a child of `e`: its origin is the item's end, so it sits half the box's length
+/// below the box centre (the long axis is +Y), at `k` times its size.
+fn dress_model(commands: &mut Commands, assets: &AssetServer, e: Entity, model: &str, length_m: f32, k: f32) {
+    let scene = assets.load(GltfAssetLabel::Scene(0).from_asset(model.to_string()));
+    let child = commands.spawn((bevy::world_serialization::WorldAssetRoot(scene), Transform::from_xyz(0.0, -0.5 * length_m * k, 0.0).with_scale(Vec3::splat(k)))).id();
+    commands.entity(e).add_child(child);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn dress_items(mut commands: Commands, items: Res<Items>, new: Query<(Entity, &LooseItem), Added<LooseItem>>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, assets: Option<Res<AssetServer>>) {
     for (e, li) in &new {
         let Some(d) = items.defs.get(&li.def) else { continue };
         let [x, y, z] = d.shape.extents.map(|v| v as f32);
         let [r, g, b] = d.shape.colour;
-        commands.entity(e).insert((
-            Mesh3d(meshes.add(Cuboid::new(x, y, z))),
-            MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(r, g, b), perceptual_roughness: 0.6, ..default() })),
-            crate::origin::WorldPose::default(),
-        ));
+        if let (Some(model), Some(assets)) = (&d.model, &assets) {
+            commands.entity(e).insert((Visibility::default(), crate::origin::WorldPose::default()));
+            dress_model(&mut commands, &assets, e, model, y, 1.0);
+        } else {
+            commands.entity(e).insert((
+                Mesh3d(meshes.add(Cuboid::new(x, y, z))),
+                MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(r, g, b), perceptual_roughness: 0.6, ..default() })),
+                crate::origin::WorldPose::default(),
+            ));
+        }
         if li.def == SPICY_ITEM {
             commands.entity(e).insert(spicy_light());
         }
@@ -766,6 +780,7 @@ fn held_item(
     mut held: Query<(Entity, &mut HeldModel, &mut crate::origin::WorldPose, &mut Visibility)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    assets: Option<Res<AssetServer>>,
 ) {
     let carrying = grab.held.map_or(0, |h| h.hands);
     let seated = players.single().map(|p| p.seated).unwrap_or(true);
@@ -786,7 +801,13 @@ fn held_item(
             let k = held_scale(d.hands) as f32;
             let [x, y, z] = d.shape.extents.map(|v| v as f32 * k);
             let [r, g, b] = d.shape.colour;
-            commands.entity(e).insert((Mesh3d(meshes.add(Cuboid::new(x, y, z))), MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(r, g, b), perceptual_roughness: 0.6, ..default() }))));
+            commands.entity(e).despawn_children();
+            if let (Some(model), Some(assets)) = (&d.model, &assets) {
+                commands.entity(e).remove::<(Mesh3d, MeshMaterial3d<StandardMaterial>)>();
+                dress_model(&mut commands, &assets, e, model, d.shape.extents[1] as f32, k);
+            } else {
+                commands.entity(e).insert((Mesh3d(meshes.add(Cuboid::new(x, y, z))), MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(r, g, b), perceptual_roughness: 0.6, ..default() }))));
+            }
         }
     }
     *vis = if m.0.is_some() { Visibility::Inherited } else { Visibility::Hidden };

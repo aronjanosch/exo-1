@@ -19,6 +19,7 @@ fn defs() -> ItemDefs {
         keeps_on_use: true,
         tags: vec!["mask".into()],
         condition: true,
+        model: None,
         shape: Shape { extents: [0.2, 0.2, 0.2], mass: 1.0, colour: [0.2, 0.2, 0.9] },
     };
     ItemDefs([(mask.id.clone(), mask)].into_iter().collect())

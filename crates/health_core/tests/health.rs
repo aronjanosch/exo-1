@@ -14,7 +14,7 @@ fn close(a: f64, b: f64) -> bool {
 }
 
 fn air(oxygen: f64) -> Env {
-    Env { oxygen, hot: false, glow: false, fire: 0.0, rod_per_s: 0.0, vacuum: false, suited: false }
+    Env { oxygen, hot: false, glow: false, fire: 0.0, spicy_per_s: 0.0, vacuum: false, suited: false }
 }
 
 fn run(h: &mut Health, t: &HealthTuning, secs: f64, env: Env) -> Vec<HealthEvent> {
@@ -38,10 +38,10 @@ fn radiation_below_25_does_not_burn_and_decays_slowly() {
 fn a_radioactive_item_near_the_body_builds_radiation_per_second() {
     let t = shipped();
     let mut h = Health::new(&t, 1);
-    let near = Env { oxygen: 1.0, hot: false, glow: false, fire: 0.0, rod_per_s: 1.0, vacuum: false, suited: false };
+    let near = Env { oxygen: 1.0, hot: false, glow: false, fire: 0.0, spicy_per_s: 1.0, vacuum: false, suited: false };
     run(&mut h, &t, 3.0, near);
     let mut far = Health::new(&t, 2);
-    run(&mut far, &t, 3.0, Env { rod_per_s: 0.0, ..near });
+    run(&mut far, &t, 3.0, Env { spicy_per_s: 0.0, ..near });
     assert_eq!(far.strength("radiation"), 0.0, "out of reach, nothing builds");
 }
 
@@ -66,7 +66,7 @@ fn respawn_clears_the_body() {
     let mut h = Health::new(&t, 1);
     h.add(&t, "burn", 90.0);
     h.add(&t, "radiation", 150.0);
-    run(&mut h, &t, 1.0, Env { oxygen: 0.0, hot: true, glow: false, fire: 0.0, rod_per_s: 0.0, vacuum: false, suited: false });
+    run(&mut h, &t, 1.0, Env { oxygen: 0.0, hot: true, glow: false, fire: 0.0, spicy_per_s: 0.0, vacuum: false, suited: false });
     h.respawn(&t);
     assert_eq!(h.state(), Life::Conscious);
     assert_eq!(h.vitality(), t.max_vitality);
@@ -90,7 +90,7 @@ fn the_dead_take_nothing_and_respawn_time_is_shipped() {
     h.add(&t, "burn", 50.0);
     assert_eq!(h.strength("burn"), burn, "the dead take nothing");
     assert_eq!(h.treat(&t, "deglow", 50.0).unwrap().reduced, 0.0);
-    let ev = run(&mut h, &t, 2.0, Env { oxygen: 1.0, hot: true, glow: true, fire: 0.0, rod_per_s: 0.0, vacuum: false, suited: false });
+    let ev = run(&mut h, &t, 2.0, Env { oxygen: 1.0, hot: true, glow: true, fire: 0.0, spicy_per_s: 0.0, vacuum: false, suited: false });
     assert!(ev.is_empty() && h.buildup() == 0.0, "the dead do not burn or glow");
 }
 
@@ -203,7 +203,7 @@ fn a_revive_roll_wakes_the_body_after_two_seconds_and_lowers_the_oxygen_low() {
 // unsuited; a suit protects; the air in the room means nothing there.
 
 fn in_vacuum(suited: bool) -> Env {
-    Env { oxygen: 0.0, hot: false, glow: false, fire: 0.0, rod_per_s: 0.0, vacuum: true, suited }
+    Env { oxygen: 0.0, hot: false, glow: false, fire: 0.0, spicy_per_s: 0.0, vacuum: true, suited }
 }
 
 /// Seconds (in 0.1 s steps) until the body is dead in this environment, or 100 s.

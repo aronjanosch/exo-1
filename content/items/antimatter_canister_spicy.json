@@ -1,13 +1,14 @@
 {
-  "_comment": "Spicy canister — do not lick (#300, lane canisters). The fulgurium canister of Barotrauma: 150 available fill. Handle with the hand, not the tongue. Carried and loaded like the standard canister. TODO(initiator): values, shape.",
+  "_comment": "Spicy canister — do not lick (#300, lane canisters). The fulgurium canister of Barotrauma: 150 available fill. Handle with the hand, not the tongue. Carried (two hands) and loaded like the standard canister. TODO(initiator): values, shape.",
   "id": "antimatter_canister_spicy",
   "name": "Spicy antimatter canister",
   "code": "AMS",
   "take": "collect",
-  "hands": 1,
+  "hands": 2,
   "stack": 1,
   "use": "load_canister",
   "condition": true,
   "tags": ["medium"],
-  "shape": { "extents": [0.06, 0.6, 0.06], "mass": 3.0, "colour": [0.85, 0.2, 0.8] }
+  "model": "ship/canister_antimatter.glb",
+  "shape": { "extents": [0.15, 0.5, 0.15], "mass": 12.0, "colour": [0.85, 0.2, 0.8] }
 }

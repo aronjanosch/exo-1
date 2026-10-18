@@ -395,6 +395,10 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
         area.entities.push(e);
     }
     for p in MACHINES {
+        // The reactor is a model with its own drum now (`engineering::reactor_room`): a dummy box of the old drum outside would be a leftover.
+        if p.id == REACTOR {
+            continue;
+        }
         let Some(at) = outside_copy(p.at) else { continue };
         let e = spawn_box(&mut commands, &frame, &planet, format!("{}_outside", p.id), at, p.size, p.lift, 0.0, p.colour);
         commands.entity(e).insert(Mirror);

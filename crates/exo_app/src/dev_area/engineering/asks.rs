@@ -1,11 +1,10 @@
-//! Engineering's asks on the host: the reactor's controls (Auto or manual, injection, converter, power,
-//! boost, the eject's cover and button), the cold start (the master breaker, BOOT, OVERRIDE), the
-//! grid (breakers, limits, the AUX switches, the battery's recharge) and the coolant pump.
+//! Engineering's asks on the host: the reactor's main screen controls (Auto or manual, injection, converter, power, boost),
+//! the grid (breakers, limits, the AUX switches, the battery's recharge) and the coolant pump. The SCRAM, the eject and the
+//! start stand are the reactor room's parts (`reactor_room`), not asks.
 use crate::dev_area::*;
-use crate::dev_area::ship::{group_of, host_asks, pump_of, route, ReactorConfig, ReactorCounts, ReactorSim, ShipSet};
+use crate::dev_area::ship::{group_of, host_asks, pump_of, ReactorSim, ShipSet};
 use crate::items::Items;
 use item_core::wire::ReactorAsk;
-use reactor_core::Tuning;
 
 pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, asks.in_set(ShipSet::Asks));
@@ -13,20 +12,17 @@ pub fn plugin(app: &mut App) {
 
 fn is_mine(a: &ReactorAsk) -> bool {
     use ReactorAsk::*;
-    matches!(a, SetManual(_) | SetInjection(_) | SetConverter(_) | ArmEject | Eject | EmergencyCool | SetPower(_) | SetBreaker(..) | SetAuxSwitch(..) | SetLimit(..) | SetBatteryRecharge(_) | SetPumpMode(_) | Boost(_))
+    matches!(a, SetManual(_) | SetInjection(_) | SetConverter(_) | EmergencyCool | SetPower(_) | SetBreaker(..) | SetAuxSwitch(..) | SetLimit(..) | SetBatteryRecharge(_) | SetPumpMode(_) | Boost(_))
 }
 
-fn asks(time: Res<Time>, mut items: ResMut<Items>, cfg: Res<ReactorConfig>, mut sim: ResMut<ReactorSim>, mut counts: ResMut<ReactorCounts>) {
+fn asks(mut items: ResMut<Items>, mut sim: ResMut<ReactorSim>) {
     for a in host_asks(&mut items, is_mine) {
-        apply(&mut sim, a, &cfg.0, &mut counts);
-    }
-    if items.role != crate::items::Role::Client {
-        sim.tick_eject(time.delta_secs_f64());
+        apply(&mut sim, a);
     }
 }
 
 /// One of engineering's asks on the room; false for an ask that is not engineering's.
-pub fn apply(s: &mut ReactorSim, a: ReactorAsk, cfg: &Tuning, counts: &mut ReactorCounts) -> bool {
+pub fn apply(s: &mut ReactorSim, a: ReactorAsk) -> bool {
     match a {
         ReactorAsk::SetManual(on) => {
             if on && !s.manual {
@@ -40,21 +36,6 @@ pub fn apply(s: &mut ReactorSim, a: ReactorAsk, cfg: &Tuning, counts: &mut React
         ReactorAsk::SetInjection(v) if s.manual => s.injection = v.clamp(0.0, 100.0),
         ReactorAsk::SetConverter(v) if s.manual => s.converter = v.clamp(0.0, 100.0),
         ReactorAsk::SetInjection(_) | ReactorAsk::SetConverter(_) => {}
-        ReactorAsk::ArmEject => {
-            if !s.room.reactor().ejected() && s.eject_left.is_none() {
-                s.eject_left = Some(cfg.reactor.eject_arm_s);
-                info!("reactor: EJECT cover open for {} s", cfg.reactor.eject_arm_s);
-            }
-        }
-        ReactorAsk::Eject => {
-            if s.eject_left.take().is_some() {
-                for e in s.room.eject_core() {
-                    route(e, counts);
-                }
-            } else {
-                info!("reactor: eject refused (the cover is shut)");
-            }
-        }
         ReactorAsk::EmergencyCool => {
             if !s.room.emergency_cool() {
                 info!("reactor: emergency cooling refused (cooldown, tank or pump)");

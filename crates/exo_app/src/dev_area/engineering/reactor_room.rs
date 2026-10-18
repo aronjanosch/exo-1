@@ -270,7 +270,6 @@ pub(super) fn react(mut sounds: MessageReader<PartSound>, mut machines: Query<&m
                 None => info!("reactor: SCRAM refused (no core)"),
             },
             (LEVER_EJECT, Outcome::Lever { index: 1 }) => {
-                sim.eject_left = None;
                 for e in sim.room.eject_core() {
                     route(e, &mut counts);
                 }

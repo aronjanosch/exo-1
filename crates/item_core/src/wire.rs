@@ -153,10 +153,6 @@ pub enum ReactorAsk {
     SetPumpMode(PumpMode),
     /// The heat boost: up (true) or down (false), as the core takes it.
     Boost(bool),
-    /// First press of the core eject: the safety cover opens for `eject_arm_s` (the host's timer).
-    ArmEject,
-    /// Second press, inside the arm window: the core is thrown out (PULSAR's core eject).
-    Eject,
     /// F on a part of the reactor that is not an item slot (#316): the index into `reactor_room::PRESS` (the SCRAM cover and
     /// button, the eject cover and lever). The host runs it on the part's controls; the guard (cover) answers there.
     Press(u8),
@@ -567,7 +563,6 @@ pub struct ReactorNews {
     pub graph_output: [u16; GRAPH_POINTS],
     pub graph_load: [u16; GRAPH_POINTS],
     pub ejected: bool,
-    pub eject_armed: bool,
     /// The core ejects the host has applied so far (`ReactorCounts::ejects`). A process that sees
     /// it go up shows the CORE EJECTED notice once, as the blasts do.
     pub ejects: u32,
@@ -911,7 +906,6 @@ mod tests {
             throttle: -35.5,
             engine_thrust: 62.5,
             ejected: true,
-            eject_armed: true,
             ejects: 3,
             scram_cover: true,
             eject_cover: true,
@@ -968,8 +962,6 @@ mod tests {
             ReactorAsk::SetVent(1, true),
             ReactorAsk::SetThrottle(-100.0),
             ReactorAsk::SetPumpMode(PumpMode::Low),
-            ReactorAsk::ArmEject,
-            ReactorAsk::Eject,
             ReactorAsk::Press(3),
             ReactorAsk::SetDirector(true),
             ReactorAsk::SetDirector(false),

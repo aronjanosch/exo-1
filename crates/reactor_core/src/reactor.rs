@@ -97,9 +97,6 @@ pub struct ReactorTuning {
     pub boost_amount: f64,
     /// How fast a boost fades back to 0, per second (Barotrauma: 1). TODO(initiator): value.
     pub boost_decay: f64,
-    /// Seconds the EJECT cover stays open after ARM EJECT (the second press must come inside it).
-    /// The host keeps the timer (the glue's). TODO(initiator): value.
-    pub eject_arm_s: f64,
     /// What a SCRAM costs (#316, the physical emergency stop): the share (0..1) of every canister's
     /// remaining fill the vented chamber loses. An orderly shutdown costs nothing. TODO(initiator): value.
     #[serde(default = "default_scram_fill_loss")]
@@ -149,7 +146,6 @@ impl Default for ReactorTuning {
             auto_lookahead_s: 8.0,
             boost_amount: 25.0,
             boost_decay: 1.0,
-            eject_arm_s: 5.0,
             scram_fill_loss: default_scram_fill_loss(),
             blast: Blast::default(),
             inertia: true,

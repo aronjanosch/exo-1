@@ -434,6 +434,7 @@ pub fn write_panels(items: Res<Items>, cfg: Res<ReactorConfig>, time: Res<Time>,
     show(&mut panels, r, AUX_ID, aux_panel(r));
     show(&mut panels, r, BATTERY_ID, battery_panel(r));
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,13 +442,12 @@ mod tests {
     /// The main screen's sliders move the sim's set points in MANUAL; AUTO ignores them (#317).
     #[test]
     fn the_main_screens_sliders_move_the_set_points_in_manual_and_auto_ignores_them() {
-        use crate::dev_area::ship::{ReactorCounts, ReactorSim};
+        use crate::dev_area::ship::ReactorSim;
         let cfg = reactor_core::Tuning::default();
         let mut s = ReactorSim::new(&cfg);
-        let mut counts = ReactorCounts::default();
-        let mut press = |s: &mut ReactorSim, action: &str, v: Option<f32>| {
+        let press = |s: &mut ReactorSim, action: &str, v: Option<f32>| {
             if let Some(a) = main_ask(action, v) {
-                crate::dev_area::engineering::asks::apply(s, a, &cfg, &mut counts);
+                crate::dev_area::engineering::asks::apply(s, a);
             }
         };
         press(&mut s, display_core::reactor_main::MANUAL, None);

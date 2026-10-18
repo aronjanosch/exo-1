@@ -1,12 +1,12 @@
 //! The dev area: a small level rectangle on Hearth (`content/place/dev_area.json`) to try the
 //! mechanics without the finished ship. Area frame: metres, x east, y north, from the place's
 //! centre (`town::Frame`). Two parts: in the south half the mini ship (`layout`), in the north half
-//! the open role zones (`ROLE_ZONES`); the pad zone lies south-east of the ship. Each owner module
-//! (`hull`, `engineering`, `bridge`, `turrets`, `lab`, `medbay`, `crew`, `gear`, `storage`,
+//! the open zones (storage, hazards, dev; the role zones of engineering, bridge, turrets, lab and medbay
+//! are gone); the pad zone lies south-east of the ship. Each owner module
+//! (`hull`, `engineering`, `bridge`, `turrets`, `crew`, `gear`, `storage`,
 //! `hazards`, `fire`, `dev`, with `ship` the shared step) has its own plugin; a zone's boxes go into
-//! `DevAreaDevices` (a box with an optional display panel). Boxes are static Avian cuboids on
+//! `DevAreaDevices` (a plain box). Boxes are static Avian cuboids on
 //! `Layer::World` (headless too); their look is window-only.
-use crate::displays::DisplayPanel;
 use crate::env::PlanetRes;
 use crate::origin::WorldPos;
 use crate::town::Frame;
@@ -51,19 +51,15 @@ impl Zone {
     }
 }
 
-/// The open role zones in the area's north half, two rows of four: each shows its role's machines
-/// to look at quickly (the role rooms' screens and dummy housings, `layout::ROOM_ZONES`), plus what
-/// stands only outside (the captain's consoles, the lab's devices, the storage, the hazards, the dev
-/// tools). TODO(initiator): sizes and order are greybox values (#306).
+/// The open zones in the area's north half: the storage cabinets, the hazards and the dev zone (item table). The role
+/// zones (engineering, bridge, turrets, lab, medbay) that mirrored the ship's rooms are gone. TODO(initiator): sizes and order are
+/// greybox values (#306).
 const ZONE_HALF: [f64; 2] = [5.5, 4.0];
-pub const ENGINEERING: Zone = Zone { name: "engineering", centre: [-18.0, 6.0], half: ZONE_HALF };
-pub const BRIDGE_ZONE: Zone = Zone { name: "bridge", centre: [-6.0, 6.0], half: ZONE_HALF };
-pub const TURRETS: Zone = Zone { name: "turrets", centre: [6.0, 6.0], half: ZONE_HALF };
-pub const LAB: Zone = Zone { name: "lab", centre: [18.0, 6.0], half: ZONE_HALF };
-pub const MEDBAY: Zone = Zone { name: "medbay", centre: [-18.0, 15.5], half: ZONE_HALF };
 pub const STORAGE: Zone = Zone { name: "storage", centre: [-6.0, 15.5], half: ZONE_HALF };
 pub const HAZARDS: Zone = Zone { name: "hazards", centre: [6.0, 15.5], half: ZONE_HALF };
 pub const DEV: Zone = Zone { name: "dev", centre: [18.0, 15.5], half: ZONE_HALF };
+/// Open ground north of the ship (where the engineering zone stood): the scenarios stage tests there.
+pub const OPEN_GROUND: [f64; 2] = [-18.0, 6.0];
 /// The pad zone in the south-east, clear of the mini ship's airlock (its outer door at x 12.35) and of
 /// the lab zone to the north: the flight ship parks on the pad at its centre (`content/place/dev_area.json`,
 /// pad "main", radius 7 m). The ship faces west there (its nose along world -z) and its ramp points
@@ -71,19 +67,7 @@ pub const DEV: Zone = Zone { name: "dev", centre: [18.0, 15.5], half: ZONE_HALF 
 pub const PAD_ZONE: Zone = Zone { name: "pad", centre: [21.5, -14.5], half: [8.0, 9.0] };
 /// The pad where the flight ship parks (and where a downed walker respawns): the pad zone's centre.
 pub const PAD_MAIN: [f64; 2] = PAD_ZONE.centre;
-pub const ROLE_ZONES: [Zone; 8] = [ENGINEERING, BRIDGE_ZONE, TURRETS, LAB, MEDBAY, STORAGE, HAZARDS, DEV];
-pub const ZONES: [Zone; 9] = [ENGINEERING, BRIDGE_ZONE, TURRETS, LAB, MEDBAY, STORAGE, HAZARDS, DEV, PAD_ZONE];
-
-/// A display mounted on a box: its id and name, its size, its centre in the box's frame (x right,
-/// y up from the ground, z towards the box's front) and how far it leans back.
-#[derive(Clone, Debug, PartialEq)]
-pub struct PanelSpec {
-    pub id: PanelId,
-    pub name: String,
-    pub size_m: [f64; 2],
-    pub at: [f64; 3],
-    pub tilt_deg: f64,
-}
+pub const ZONES: [Zone; 4] = [STORAGE, HAZARDS, DEV, PAD_ZONE];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlaceholderBox {
@@ -96,14 +80,11 @@ pub struct PlaceholderBox {
     /// Counter-clockwise from above; 0 faces south (the pad zone), 180 north.
     pub turn_deg: f64,
     pub colour: [f32; 3],
-    pub panel: Option<PanelSpec>,
 }
 
 #[derive(Resource, Default, Debug)]
 pub struct DevAreaDevices {
     pub boxes: Vec<PlaceholderBox>,
-    /// The ids of the boxes that are a role zone's mirror of a box in a ship room (`add_mirror`).
-    mirrors: std::collections::BTreeSet<String>,
 }
 
 impl DevAreaDevices {
@@ -111,19 +92,6 @@ impl DevAreaDevices {
     pub fn add(&mut self, b: PlaceholderBox) {
         assert!(self.boxes.iter().all(|x| x.id != b.id), "dev area: device id '{}' used twice", b.id);
         self.boxes.push(b);
-    }
-
-    /// Adds the mirror of a device that stands in a ship room: the same box and panel (the same
-    /// panel id, so the same machine) in a role zone outside, at `local_pos` there, its id with
-    /// `_outside`. The mirror carries `layout::Mirror`, so a lookup by panel id finds the one inside.
-    pub fn add_mirror(&mut self, inside: &PlaceholderBox, zone: Zone, local_pos: [f64; 2]) {
-        let b = PlaceholderBox { id: format!("{}_outside", inside.id), zone, local_pos, ..inside.clone() };
-        self.mirrors.insert(b.id.clone());
-        self.add(b);
-    }
-
-    pub fn is_mirror(&self, id: &str) -> bool {
-        self.mirrors.contains(id)
     }
 }
 
@@ -184,19 +152,12 @@ pub fn window_plugin(app: &mut App) {
     fire::window_plugin(app);
 }
 
-pub fn box_pose(frame: &Frame, planet: &PlanetRes, b: &PlaceholderBox) -> ((DVec3, DQuat), Option<DisplayPanel>) {
+pub fn box_pose(frame: &Frame, planet: &PlanetRes, b: &PlaceholderBox) -> (DVec3, DQuat) {
     let p = b.zone.point(b.local_pos);
     let (ground, up) = frame.ground(planet, p[0], p[1], 0.0);
     let rot = frame.rotation(up, b.turn_deg);
     let centre = ground + up * (b.size[1] - SINK) * 0.5;
-    let panel = b.panel.as_ref().map(|s| DisplayPanel {
-        id: s.id.clone(),
-        name: s.name.clone(),
-        size_m: DVec2::from(s.size_m),
-        centre: ground + rot * DVec3::from(s.at),
-        rot: rot * DQuat::from_rotation_x(-s.tilt_deg.to_radians()),
-    });
-    ((centre, rot), panel)
+    (centre, rot)
 }
 
 fn spawn_devices(mut commands: Commands, planet: Res<PlanetRes>, devices: Res<DevAreaDevices>, mut area: ResMut<DevArea>) {
@@ -212,7 +173,7 @@ fn spawn_devices(mut commands: Commands, planet: Res<PlanetRes>, devices: Res<De
     while area.spawned < devices.boxes.len() {
         let b = &devices.boxes[area.spawned];
         area.spawned += 1;
-        let ((centre, rot), panel) = box_pose(&frame, &planet, b);
+        let (centre, rot) = box_pose(&frame, &planet, b);
         let size = DVec3::new(b.size[0], b.size[1] + SINK, b.size[2]);
         let e = commands
             .spawn((
@@ -225,17 +186,6 @@ fn spawn_devices(mut commands: Commands, planet: Res<PlanetRes>, devices: Res<De
             ))
             .id();
         area.entities.push(e);
-        let mirror = devices.is_mirror(&b.id);
-        if mirror {
-            commands.entity(e).insert(layout::Mirror);
-        }
-        if let Some(d) = panel {
-            let p = commands.spawn(d).id();
-            if mirror {
-                commands.entity(p).insert(layout::Mirror);
-            }
-            area.entities.push(p);
-        }
     }
 }
 
@@ -257,15 +207,9 @@ fn dress_boxes(mut commands: Commands, new: Query<(Entity, &DevBox), Added<DevBo
 /// Zone colours on the ground. TODO(initiator): the look.
 fn zone_colour(z: &Zone) -> Color {
     match z.name {
-        "bridge" => Color::srgb(0.25, 0.4, 0.85),
-        "turrets" => Color::srgb(0.8, 0.25, 0.25),
-        "lab" => Color::srgb(0.2, 0.75, 0.6),
-        "medbay" => Color::srgb(0.9, 0.9, 0.95),
-        "engineering" => Color::srgb(0.95, 0.55, 0.15),
         "storage" => Color::srgb(0.7, 0.7, 0.62),
         "hazards" => Color::srgb(0.9, 0.2, 0.7),
         "dev" => Color::srgb(0.5, 0.5, 0.5),
-        "pad" => Color::srgb(0.85, 0.85, 0.2),
         _ => Color::srgb(0.85, 0.85, 0.2),
     }
 }
@@ -313,7 +257,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "used twice")]
     fn a_device_id_is_unique() {
-        let b = PlaceholderBox { id: "x".into(), zone: LAB, local_pos: [0.0, 0.0], size: [1.0, 1.0, 1.0], turn_deg: 0.0, colour: [1.0; 3], panel: None };
+        let b = PlaceholderBox { id: "x".into(), zone: DEV, local_pos: [0.0, 0.0], size: [1.0, 1.0, 1.0], turn_deg: 0.0, colour: [1.0; 3] };
         let mut d = DevAreaDevices::default();
         d.add(b.clone());
         d.add(b);

@@ -109,7 +109,6 @@ pub fn plugin(app: &mut App) {
             size: SHELF_SIZE,
             turn_deg: 0.0,
             colour: [0.3, 0.45, 0.6],
-            panel: None,
         });
     }
     app.init_resource::<MaskWorn>().init_resource::<MaskAir>().init_resource::<MaskHold>().init_resource::<SuitWorn>();

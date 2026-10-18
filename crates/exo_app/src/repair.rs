@@ -3,7 +3,7 @@
 //! - Values: `content/gameplay/repair/repair.json` (`device_core::minigame::Tuning`, strict loader).
 //!   TODO(initiator): starting values.
 use crate::controls::{Actions, Controls, Tap};
-use crate::dev_area::{layout::{walker_place, Place, COOLANT_PUMP, JUNCTION_BOX, OXYGEN_GENERATOR, REACTOR}, hull::breach::{BREACH_IDS, BREACH_OUT_IDS}};
+use crate::dev_area::{layout::{walker_place, Place, JUNCTION_BOX, REACTOR}, hull::breach::{BREACH_IDS, BREACH_OUT_IDS}};
 use crate::dev_area::DevArea;
 use crate::env::PlanetRes;
 use crate::dev_area::ship::{route, ReactorCounts, ReactorSim};
@@ -79,8 +79,6 @@ fn tool_of_effect(effect: &str) -> Option<RepairTool> {
 fn device_of(id: &str) -> Option<RepairDevice> {
     match id {
         REACTOR => Some(RepairDevice::Reactor),
-        COOLANT_PUMP => Some(RepairDevice::CoolantPump),
-        OXYGEN_GENERATOR => Some(RepairDevice::OxygenGenerator),
         id if JUNCTION_BOX.contains(&id) => JUNCTION_BOX.iter().position(|b| *b == id).map(RepairDevice::JunctionBox),
         id if BREACH_IDS.contains(&id) || BREACH_OUT_IDS.contains(&id) => Some(RepairDevice::HullBreach),
         _ => None,

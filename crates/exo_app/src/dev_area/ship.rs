@@ -9,7 +9,7 @@ use crate::dev_area::engineering::canisters;
 use crate::dev_area::fire::{FireGrid, FireModel};
 use crate::dev_area::hull::ShipAir;
 use crate::items::{Items, NetOut, Role};
-use item_core::wire::{Alarm, BotNews, BreakerGroup, EnemyNews, EnemyOutcome, CanisterSlot, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, StartStage, StartupStage, GRAPH_POINTS, ROOMS};
+use item_core::wire::{Alarm, BotNews, BreakerGroup, EnemyNews, EnemyOutcome, CanisterSlot, JumpStage, Lamp, PartNews, PumpMode, ReactorAsk, ReactorFault, ReactorNews, StartStage, GRAPH_POINTS, ROOMS};
 use reactor_core::bots::{Bots, Row};
 use reactor_core::director::Situation;
 use reactor_core::engine_room::EngineSave;
@@ -234,8 +234,6 @@ impl ReactorSim {
             weapon_jammed: self.room.weapons().jammed(),
             weapon_overheated: self.room.weapons().overheated(),
             jump_stage: wire_jump(self.room.jump().stage),
-            startup: wire_startup(self.room.startup().stage()),
-            startup_ticks: self.room.startup().ticks(self.room.startup_checks()),
             jump_charge: self.room.jump().charge,
             // The host's count is set by `reactor_step`, as the ejects are.
             jumps: 0,
@@ -266,20 +264,6 @@ pub fn enemy_outcome(o: Outcome) -> EnemyOutcome {
         Outcome::None => EnemyOutcome::None,
         Outcome::Destroyed => EnemyOutcome::Destroyed,
         Outcome::Escaped => EnemyOutcome::Escaped,
-    }
-}
-
-/// The startup stage as the wire carries it (r42, `reactor_core::startup`).
-pub fn wire_startup(s: reactor_core::Stage) -> StartupStage {
-    use reactor_core::Stage as Core;
-    match s {
-        Core::Cold => StartupStage::Cold,
-        Core::Breaker => StartupStage::Breaker,
-        Core::Booting => StartupStage::Booting,
-        Core::Reactor => StartupStage::Reactor,
-        Core::Jump => StartupStage::Jump,
-        Core::Breakers => StartupStage::Breakers,
-        Core::Ready => StartupStage::Ready,
     }
 }
 
@@ -392,7 +376,7 @@ pub fn fault(f: ReactorFault) -> Option<Fault> {
         ReactorFault::HullBreach => Some(Fault::HullBreach),
         ReactorFault::HitLight => Some(Fault::HitLight),
         ReactorFault::HitHeavy => Some(Fault::HitHeavy),
-        ReactorFault::Fire | ReactorFault::DrainCoolant | ReactorFault::WarmStart | ReactorFault::Aux | ReactorFault::ShieldHit | ReactorFault::JumpFull | ReactorFault::ColdShip => None,
+        ReactorFault::Fire | ReactorFault::DrainCoolant | ReactorFault::WarmStart | ReactorFault::Aux | ReactorFault::ShieldHit | ReactorFault::JumpFull => None,
     }
 }
 

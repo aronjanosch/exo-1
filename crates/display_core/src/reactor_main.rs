@@ -62,7 +62,7 @@ const GRID_SLACK_KW: f64 = 10.0;
 /// The face the screen shows. RUN-UP is the `run_up` argument of `panel` (the sim's start stage), a look of `Running`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Face {
-    /// The ship's master is off (the cold start, `StartupStage::live`): a dark screen.
+    /// The ship's master is off (the reactor's cold start, `StartStage::Cold`): a dark screen.
     NoPower,
     /// The power is off with the chamber still warm: after a SCRAM.
     Scrammed,
@@ -86,7 +86,7 @@ pub fn face(r: Option<&ReactorNews>) -> Face {
     // Dark: the cold start before the three toggles, or an empty battery with nothing else to power the screen. The toggles
     // falling (a SCRAM, an eject) do not darken it.
     let battery_dead = matches!(r.start, StartStage::Boot | StartStage::Prime) && !r.power_on && fin(r.battery_charge) <= 0.0;
-    if !r.startup.live() || r.start == StartStage::Cold || battery_dead {
+    if r.start == StartStage::Cold || battery_dead {
         Face::NoPower
     } else if r.imploded {
         Face::Implosion(None)
@@ -593,10 +593,9 @@ mod tests {
     use super::*;
     use crate::{Pointer, Widget};
     use glam::DVec2;
-    use item_core::wire::StartupStage;
 
     fn running() -> ReactorNews {
-        let mut r = ReactorNews { powered: true, power_on: true, startup: StartupStage::Ready, manual: true, heat: 50.0, injection: 46.0, set_injection: 46.0, converter: 64.0, set_converter: 64.0, output_kw: 1280.0, load_kw: 1280.0, ..Default::default() };
+        let mut r = ReactorNews { powered: true, power_on: true, manual: true, heat: 50.0, injection: 46.0, set_injection: 46.0, converter: 64.0, set_converter: 64.0, output_kw: 1280.0, load_kw: 1280.0, ..Default::default() };
         r.optimal = [40.0, 60.0];
         r.allowed = [30.0, 70.0];
         r.injection_optimal = [25.0, 70.0];
@@ -625,7 +624,7 @@ mod tests {
     fn the_panel_builds_for_every_state_and_fits() {
         let base = running();
         let mut cases = vec![("none", None), ("running", Some(base))];
-        cases.push(("cold start", Some(ReactorNews { startup: StartupStage::Cold, ..base })));
+        cases.push(("cold start", Some(ReactorNews { start: StartStage::Cold, ..base })));
         let boot = ReactorNews { start: StartStage::Boot, power_on: false, battery_charge: 0.5, prime_need: 0.08, ..base };
         cases.push(("boot", Some(boot)));
         cases.push(("boot ready", Some(ReactorNews { toggles: [true; 3], ..boot })));
@@ -665,7 +664,7 @@ mod tests {
         let r = running();
         assert_eq!(face(Some(&r)), Face::Running);
         assert_eq!(face(None), Face::NoPower);
-        assert_eq!(face(Some(&ReactorNews { startup: StartupStage::Cold, ..r })), Face::NoPower);
+        assert_eq!(face(Some(&ReactorNews { start: StartStage::Cold, ..r })), Face::NoPower);
         assert_eq!(face(Some(&ReactorNews { powered: false, output_kw: 0.0, ..r })), Face::Running, "no output is no reason to go dark");
         assert_eq!(face(Some(&ReactorNews { power_on: false, ..r })), Face::Off);
         assert_eq!(face(Some(&ReactorNews { imploded: true, ..r })), Face::Implosion(None));

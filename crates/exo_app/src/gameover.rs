@@ -1,6 +1,6 @@
 //! Game over (#254): when every player is dead at once, the host shows GAME OVER on every client
 //! for `SCREEN_S` seconds, then reloads the last save. With no save, the dev area starts cold
-//! again (COLD SHIP, then Reset, as the reactor screen's buttons do).
+//! again (a fresh engine room: Reset, as the dev menu does).
 //! - Barotrauma ends the round when no character is alive: `BarotraumaClient/ClientSource/GameSession/
 //!   GameModes/MultiPlayerCampaign.cs:306` ("crewdead" when every `CrewManager` character `IsDead`),
 //!   and the server's end-of-round timer for a down crew, `BarotraumaServer/ServerSource/Networking/GameServer.cs:520-557`.
@@ -16,7 +16,7 @@ use crate::health::HealthState;
 use crate::items::{Items, Role};
 use crate::repair::RepairSessions;
 use crate::savefile::{read_slot, SaveDir, SLOT};
-use item_core::wire::{ReactorAsk, ReactorFault};
+use item_core::wire::ReactorAsk;
 
 /// How long GAME OVER stays up (s). TODO(initiator): the length.
 pub const SCREEN_S: f64 = 5.0;
@@ -84,9 +84,8 @@ fn finish(world: &mut World) {
     match loaded {
         Ok(()) => info!("game over: the last save is back"),
         Err(e) => {
-            println!("game over: no save loaded ({e}), the dev area starts cold");
+            println!("game over: no save loaded ({e}), the dev area starts fresh");
             let mut items = world.resource_mut::<Items>();
-            items.ask_reactor(ReactorAsk::Trigger(ReactorFault::ColdShip));
             items.ask_reactor(ReactorAsk::Reset);
         }
     }

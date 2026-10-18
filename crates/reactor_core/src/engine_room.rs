@@ -31,7 +31,7 @@ use crate::hull::{Hit, HitsTuning, Hull, HullTuning, Side, DEVICES, REACTOR_AT};
 use crate::grid::{Grid, Group};
 use crate::history::History;
 use crate::jump::{JumpDrive, JumpSave};
-use crate::startup::{Checks, ReactorStart, Stand, StartStage, Startup, Supplies};
+use crate::startup::{ReactorStart, Stand, StartStage, Supplies};
 use crate::reactor::{AlarmKind, Canister, Mode, Reactor, ReactorEvent, ReactorSave, ReactorTuning, CanisterKinds};
 use crate::shield::{Shield, ShieldSave};
 use crate::grid::GridSave;
@@ -649,8 +649,6 @@ pub struct EngineRoom {
     encounter: Option<Encounter>,
     /// The rng of the enemy's shots (the hits' points and kinds): seeded with the room.
     enemy_rng: Rng,
-    /// The ship's cold start (`startup`, r42, #268): the master is live from its Reactor stage on.
-    startup: Startup,
     /// The reactor's start-up stand (#319): the stage and the trap, and what the stand shows (the host sets it each tick).
     start: ReactorStart,
     stand: Stand,
@@ -712,7 +710,6 @@ impl EngineRoom {
             enemy: t.enemy.clone(),
             encounter: None,
             enemy_rng: Rng::new(seed ^ 0x3e11_0a5b),
-            startup: Startup::ready(t.startup),
             start: ReactorStart::warm(t.startup),
             stand: Stand::warm(),
             reach_held: 0.0,
@@ -1208,9 +1205,6 @@ impl EngineRoom {
     pub fn step(&mut self, dt: f64, input: Input) -> Vec<RoomEvent> {
         let t = self.tuning;
         let mut ev = Vec::new();
-        // The startup's checks read the room as the last step left it; they only move the stage on.
-        let checks = self.startup_checks();
-        self.startup.step(dt, checks);
         let mut input = input;
         let start_out = self.start_step(dt);
         match self.start.stage() {
@@ -1358,10 +1352,10 @@ impl EngineRoom {
         ev
     }
 
-    /// The ship's master: live from the booted OS on (`startup::Stage::Reactor`). Off, the grid
-    /// delivers nothing and the battery is cut off; the screens other than SP-01 show OFF.
+    /// The ship's master: live once the reactor's stand is awake (`ReactorStart::awake`, from Boot on). Off, the grid
+    /// delivers nothing and the battery is cut off; the screens show OFF.
     pub fn master_on(&self) -> bool {
-        self.startup.live() && self.start.awake()
+        self.start.awake()
     }
 
     /// The reactor's start-up stand (#319): the stage and the trap.
@@ -1434,8 +1428,7 @@ impl EngineRoom {
         out
     }
 
-    /// The dev menu's cold start: the reactor off and dark, the stand off, the trap empty. The old SP-01 stage and the
-    /// breakers stay as they are.
+    /// The dev menu's cold start: the reactor off and dark, the stand off, the trap empty. The breakers stay as they are.
     pub fn cold_reactor(&mut self) {
         self.start.go_cold();
         self.stand = Stand::cold();
@@ -1446,52 +1439,6 @@ impl EngineRoom {
     pub fn warm_reactor(&mut self) {
         self.start.go_warm();
         self.stand = Stand::warm();
-    }
-
-    pub fn startup(&self) -> &Startup {
-        &self.startup
-    }
-
-    /// The room's state the startup's checks read (steps 3 to 5).
-    pub fn startup_checks(&self) -> Checks {
-        Checks {
-            reactor_on: self.reactor.power_on(),
-            jump_armed: self.jump.stage != crate::jump::JumpStage::ColdStart,
-            breakers_on: self.grid.breaker(Group::LifeSupport) && self.grid.breaker(Group::Lights), // the toggles on JB-2
-        }
-    }
-
-    /// Step 1 (MAIN BREAKER at SP-01): on starts the startup, off is the cold ship (`cold_ship`).
-    /// Returns false when the breaker is already on.
-    pub fn master_breaker(&mut self, on: bool) -> bool {
-        if on {
-            self.startup.master(true)
-        } else {
-            self.cold_ship();
-            true
-        }
-    }
-
-    /// Step 2 (BOOT at SP-01). Refused unless the breaker is on.
-    pub fn startup_boot(&mut self) -> bool {
-        self.startup.boot()
-    }
-
-    /// Step 6 (OVERRIDE at SP-01): READY, when the steps before it hold.
-    pub fn startup_override(&mut self) -> bool {
-        let checks = self.startup_checks();
-        self.startup.override_startup(checks)
-    }
-
-    /// COLD SHIP (the dev button, and the master off): the startup back to Cold, the reactor off,
-    /// every breaker off, the jump drive cold. The canisters and the core's heat stay as they are.
-    pub fn cold_ship(&mut self) {
-        self.startup.reset();
-        self.reactor.set_power(false);
-        for g in Group::ALL {
-            self.grid.set_breaker(g, false);
-        }
-        self.jump.cold();
     }
 
     /// Implodes the core now (`Reactor::force_implosion`), with the room's blast damage. The harness's

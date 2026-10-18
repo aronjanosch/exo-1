@@ -124,8 +124,7 @@
     }
   },
   "startup": {
-    "_comment": "The ship's cold start (r42, #268; sources in reactor_core startup.rs): boot_s is the OS boot at SP-01 (step 2, the screens say BOOTING), the manual gives no time. The reactor's start-up stand (#319): prime_s is how long PRIME charges the magnetic trap from the battery and prime_kw what it draws meanwhile (the battery must hold prime_s * prime_kw / 60 kW min to latch PRIME); shutdown_s is how long an orderly OFF runs the reactor down before it is off; run_up_boost multiplies Auto's speed during the run-up (1 = the reactor's own; the reactor's own speed takes about 85 s from a cold chamber, 8 about 20 s). TODO(initiator): every value.",
-    "boot_s": 3.0,
+    "_comment": "The reactor's start-up stand (#319): prime_s is how long PRIME charges the magnetic trap from the battery and prime_kw what it draws meanwhile (the battery must hold prime_s * prime_kw / 60 kW min to latch PRIME); shutdown_s is how long an orderly OFF runs the reactor down before it is off; run_up_boost multiplies Auto's speed during the run-up (1 = the reactor's own; the reactor's own speed takes about 85 s from a cold chamber, 8 about 20 s). TODO(initiator): every value.",
     "prime_s": 10.0,
     "prime_kw": 400.0,
     "shutdown_s": 5.0,

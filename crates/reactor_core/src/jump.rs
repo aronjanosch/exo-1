@@ -72,14 +72,6 @@ impl JumpDrive {
         JumpDrive { tuning, stage: JumpStage::ColdStart, charge: 0.0, prep_left: tuning.prep_s, active_left: 0.0 }
     }
 
-    /// The whole ship cold (`EngineRoom::cold_ship`): back to COLD_START with the charge empty.
-    pub fn cold(&mut self) {
-        self.stage = JumpStage::ColdStart;
-        self.charge = 0.0;
-        self.prep_left = self.tuning.prep_s;
-        self.active_left = 0.0;
-    }
-
     pub fn to_save(&self) -> JumpSave {
         JumpSave { stage: self.stage, charge: self.charge, prep_left: self.prep_left, active_left: self.active_left }
     }

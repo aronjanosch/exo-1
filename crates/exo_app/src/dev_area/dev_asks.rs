@@ -60,10 +60,6 @@ pub fn apply_sim(s: &mut ReactorSim, a: ReactorAsk, cfg: &Tuning, counts: &mut R
             s.room.jump_mut().fill();
             info!("dev: jump drive full");
         }
-        ReactorAsk::Trigger(ReactorFault::ColdShip) => {
-            s.room.cold_ship();
-            info!("dev: COLD SHIP");
-        }
         ReactorAsk::Trigger(ReactorFault::Aux) => {
             let on = !s.room.aux_enabled();
             s.room.set_aux(on);

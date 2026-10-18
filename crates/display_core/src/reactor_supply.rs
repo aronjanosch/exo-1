@@ -192,10 +192,10 @@ pub fn panel(r: Option<&ReactorNews>) -> Panel {
 mod tests {
     use super::*;
     use crate::Widget;
-    use item_core::wire::{CanisterKind, StartupStage};
+    use item_core::wire::{CanisterKind, StartStage};
 
     fn running() -> ReactorNews {
-        let mut r = ReactorNews { powered: true, power_on: true, startup: StartupStage::Ready, output_kw: 1200.0, flow: 0.8, battery_charge: 0.5, ..Default::default() };
+        let mut r = ReactorNews { powered: true, power_on: true, output_kw: 1200.0, flow: 0.8, battery_charge: 0.5, ..Default::default() };
         r.canisters = [CanisterSlot { canister: Some(CanisterKind::Hot), life: 80.0 }, CanisterSlot { canister: Some(CanisterKind::Spicy), life: 12.0 }];
         r
     }
@@ -218,7 +218,7 @@ mod tests {
         let cases = [
             ("none", None),
             ("running", Some(base)),
-            ("cold start", Some(ReactorNews { startup: StartupStage::Cold, ..base })),
+            ("cold start", Some(ReactorNews { start: StartStage::Cold, ..base })),
             ("no canisters", Some(ReactorNews { canisters: Default::default(), ..base })),
             ("empty battery", Some(ReactorNews { battery_charge: 0.0, ..base })),
             ("stopped pump", Some(ReactorNews { flow: 0.0, pump_on: false, ..base })),
@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn the_screen_is_dark_without_power_and_has_nothing_to_press() {
         let r = running();
-        let dark = panel(Some(&ReactorNews { startup: StartupStage::Cold, ..r }));
+        let dark = panel(Some(&ReactorNews { start: StartStage::Cold, ..r }));
         assert!(dark.layout().iter().all(|w| !matches!(w.widget, Widget::Canvas { shapes, .. } if !shapes.is_empty())));
         let lit = panel(Some(&r));
         assert!(lit.layout().iter().all(|w| matches!(w.widget, Widget::Canvas { action: None, .. } | Widget::Row { .. } | Widget::Column { .. } | Widget::Space)));

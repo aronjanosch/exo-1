@@ -1,7 +1,7 @@
 //! Engine room: the corridor, the door, the room's air and the alarm.
 use super::*;
 use crate::crew_hud::Vitals;
-use crate::dev_area::{hull::ShipAir, hull::doors::{EngineDoor, Slab}, layout::{Place, CORRIDOR, DOOR_AT, ROOM}, hull::alarms::ShipAlarm};
+use crate::dev_area::{hull::ShipAir, hull::doors::{BridgeDoor, BridgeSlab, EngineDoor, Slab}, layout::{Place, BRIDGE_DOOR_AT, CORRIDOR, DOOR_AT, ROOM}, hull::alarms::ShipAlarm};
 use crate::dev_area::{area_of, DevArea};
 use crate::interact::Interaction;
 use crate::items::Items;
@@ -206,6 +206,36 @@ pub(super) fn engine_room_steps(s: &mut Vec<Step>) {
         end(w, c, format!("gap {g:.2}"));
         true
     }));
+
+    // The doors have no screens any more: F alone moves the bridge door too (`Target::BridgeDoor`).
+    for (name, want, verb) in [("opens", true, "[F] open"), ("shuts", false, "[F] close")] {
+        s.push(Box::new(move |w, c| {
+            if c.t == 0.0 {
+                begin(w, c, &format!("engine room: F {name} the bridge door"));
+                let p = ground_at(w, [BRIDGE_DOOR_AT[0], BRIDGE_DOOR_AT[1] - 1.5]);
+                place_walker(w, p);
+                let door = w.query::<(&BridgeSlab, &Position)>().iter(w).next().map(|(_, p)| p.0).expect("the bridge door is there");
+                face_towards(w, door);
+                return false;
+            }
+            if c.t < 0.5 {
+                return false;
+            }
+            if !c.v.contains_key(name) {
+                c.v.insert(name, 1.0);
+                let p = prompt(w);
+                check(c, p.starts_with(verb), format!("engine room: the prompt offers the bridge door ({p:?})"));
+                tap(w, KeyCode::KeyF);
+                return false;
+            }
+            if w.resource::<BridgeDoor>().open != want && c.t < 3.0 {
+                return false;
+            }
+            check(c, w.resource::<BridgeDoor>().open == want, format!("engine room: F {name} the bridge door"));
+            end(w, c, format!("open {want}"));
+            true
+        }));
+    }
 
     for (name, want) in [("Warn", Alarm::Warn), ("Danger", Alarm::Danger), ("None", Alarm::None)] {
         s.push(Box::new(move |w, c| {

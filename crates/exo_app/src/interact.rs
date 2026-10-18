@@ -146,7 +146,7 @@ pub fn interaction(
     crates: Query<(Entity, &Crate), Without<LooseItem>>,
     mut gp: ResMut<crate::gameplay::Gameplay>,
     (mut active, displays): (ResMut<ActiveDisplay>, Query<(Entity, &DisplayPanel), Without<crate::displays::ReadOnly>>),
-    (time, mut items, loose, door, doors, bridge_door, bridge_doors): (Res<Time>, ResMut<Items>, Query<(Entity, &Crate, &LooseItem)>, Option<Res<EngineDoor>>, Query<&Position, With<Slab>>, Option<Res<BridgeDoor>>, Query<&Position, With<BridgeSlab>>),
+    (time, mut items, loose, door, doors, bridge_door, bridge_doors): (Res<Time>, ResMut<Items>, Query<(Entity, &Crate, &LooseItem)>, Option<Res<EngineDoor>>, Query<&Position, With<Slab>>, Option<Res<BridgeDoor>>, Query<&BridgeSlab>),
     (boxes, supply, airlock_doors, equip_door, equip_doors, mut cw, mut ui, specs, reactor_rooms, junction_rooms): (Query<(&DevBox, &Position)>, Option<Res<crate::dev_area::fire::extinguisher::Supply>>, Query<(&crate::dev_area::hull::airlock::AirlockSlab, &Position)>, Option<Res<EquipDoor>>, Query<&Position, With<EquipSlab>>, ResMut<crate::container_window::ContainerWindow>, ResMut<crate::items::InventoryUi>, Res<crate::container_window::ContainerSpecs>, Query<(&crate::dev_area::engineering::reactor_room::ReactorRoom, &crate::controls_kit::Machine)>, Query<&crate::dev_area::engineering::junction_boxes::JunctionRoom>),
 ) {
     let Ok(mut pl) = players.single_mut() else { return };
@@ -261,7 +261,8 @@ pub fn interaction(
             panel_pick = Some(e);
         }
         let door_pick = (pl.ship.is_none() && doors.iter().any(|p| in_cone(eye, look, p.0, half, DOOR_REACH).is_some())).then_some(Target::Door { open: door.is_some_and(|d| d.open) });
-        let bridge_pick = (pl.ship.is_none() && bridge_doors.iter().any(|p| in_cone(eye, look, p.0, half, DOOR_REACH).is_some())).then_some(Target::BridgeDoor { open: bridge_door.is_some_and(|d| d.open) });
+        // The bridge door is picked at its doorway (the slab's shut centre): its slab sinks 3.2 m when open, and with BD-01 gone F is the only way to shut it.
+        let bridge_pick = (pl.ship.is_none() && bridge_doors.iter().any(|s| in_cone(eye, look, s.shut, half, DOOR_REACH).is_some())).then_some(Target::BridgeDoor { open: bridge_door.is_some_and(|d| d.open) });
         let equip_pick = (pl.ship.is_none() && equip_doors.iter().any(|p| in_cone(eye, look, p.0, half, DOOR_REACH).is_some())).then_some(Target::EquipDoor { open: equip_door.is_some_and(|d| d.open) });
         // The airlock's inner door is the ship's door while the airlock rests inside and no cycle runs; else it is locked.
         let airlock_pick = items.reactor.and_then(|r| {
@@ -314,7 +315,7 @@ pub fn interaction(
         Some(Target::Panel(e)) => displays.get(*e).ok().map(|(_, d)| d.centre),
         Some(Target::Seat | Target::SeatLocked) => Some(frame.to_world(SEAT_POS)),
         Some(Target::Door { .. }) => doors.iter().next().map(|p| p.0),
-        Some(Target::BridgeDoor { .. }) => bridge_doors.iter().next().map(|p| p.0),
+        Some(Target::BridgeDoor { .. }) => bridge_doors.iter().next().map(|s| s.shut),
         Some(Target::EquipDoor { .. }) => equip_doors.iter().next().map(|p| p.0),
         Some(Target::AirlockDoor { .. } | Target::AirlockLocked) => airlock_doors.iter().find(|(s, _)| s.door == reactor_core::Door::Inner).map(|(_, p)| p.0),
         Some(Target::ReactorPart(i)) => reactor_rooms.iter().next().map(|(room, m)| room.part_at(*i, m)),

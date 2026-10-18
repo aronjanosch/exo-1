@@ -21,12 +21,12 @@ fn part_at(w: &mut World, name: &str) -> DVec3 {
 }
 
 fn cover_open(w: &mut World, name: &str) -> bool {
-    let mut q = w.query::<&Machine>();
+    let mut q = w.query_filtered::<&Machine, With<ReactorRoom>>();
     q.single(w).expect("the reactor room is there").controls.is_open(name)
 }
 
 fn seated(w: &mut World, name: &str) -> bool {
-    let mut q = w.query::<&Machine>();
+    let mut q = w.query_filtered::<&Machine, With<ReactorRoom>>();
     q.single(w).expect("the reactor room is there").controls.seated(name).is_some()
 }
 

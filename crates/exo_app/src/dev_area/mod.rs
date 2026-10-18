@@ -182,6 +182,7 @@ pub fn window_plugin(app: &mut App) {
     app.add_systems(Update, (dress_boxes, mark_zones).after(spawn_devices).in_set(crate::phases::Frame::World));
     hull::window_plugin(app);
     engineering::window_plugin(app);
+    engineering::junction_boxes::window_plugin(app);
     crew::window_plugin(app);
     fire::window_plugin(app);
     bridge::window_plugin(app);
@@ -245,7 +246,8 @@ fn spawn_devices(mut commands: Commands, planet: Res<PlanetRes>, devices: Res<De
 fn dress_boxes(mut commands: Commands, new: Query<(Entity, &DevBox), Added<DevBox>>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
     for (e, b) in &new {
         // The reactor's drum is the model's (`engineering::reactor_room`); its box is only the collision.
-        if b.id == layout::REACTOR {
+        // The junction boxes' volumes are only collision and the repair's aim; the model is drawn by `engineering::junction_boxes`.
+        if b.id == layout::REACTOR || layout::is_junction_box(&b.id) {
             continue;
         }
         let [r, g, bl] = b.colour;

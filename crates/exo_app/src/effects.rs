@@ -1,7 +1,7 @@
 //! The systems only draw the effects: they read the snapshots (`Items::reactor`,
 //! `Items::fire`) and the local vitals (`crew_hud::Vitals`), so a client shows the same as the host.
 use crate::crew_hud::Vitals;
-use crate::dev_area::{layout::{ignition_at, COOLANT_PUMP_AT, JUNCTION_BOX_AT, JUNCTION_BOX_SIZE, OXYGEN_GENERATOR_AT, OXYGEN_GENERATOR_SIZE, REACTOR_AT, REACTOR_SIZE}};
+use crate::dev_area::{layout::{ignition_at, junction_centre, COOLANT_PUMP_AT, JUNCTION_BOX_SIZE, JUNCTION_SPARK_HEIGHT, OXYGEN_GENERATOR_AT, OXYGEN_GENERATOR_SIZE, REACTOR_AT, REACTOR_SIZE}};
 use crate::dev_area::DevArea;
 use crate::env::PlanetRes;
 use crate::health::UseHold;
@@ -57,12 +57,11 @@ pub fn spark_every(overvolt: bool, broken: bool) -> Option<f64> {
     }
 }
 
-/// Sparks in one burst, their diameter at birth (m, 4 cm), their life (s) and the height of the
-/// burst above the floor (m, the box's front at 1 m).
+/// Sparks in one burst, their diameter at birth (m, 4 cm) and their life (s). The burst leaves the box's
+/// `spark_point` (`layout::JUNCTION_SPARK_HEIGHT`).
 pub const SPARKS_PER_BURST: usize = 6;
 pub const SPARK_SIZE: f32 = 0.045;
 pub const SPARK_LIFE: f32 = 0.6;
-pub const SPARK_HEIGHT: f64 = 1.0;
 
 pub fn is_critical(r: Option<&ReactorNews>) -> bool {
     r.is_some_and(|r| r.power_on && r.heat > r.allowed[1])
@@ -189,8 +188,9 @@ struct FxAssets {
 
 #[derive(Resource)]
 struct Emitters {
-    smoke: [f64; 4],
-    spark: f64,
+    smoke: [f64; 6],
+    /// One clock per junction box (idle at `INFINITY`).
+    spark: [f64; 3],
     steam: f64,
     /// Time since each section's last hiss puff (r37, by section in r40).
     breach: [f64; SECTION_CENTRES.len()],
@@ -200,7 +200,7 @@ struct Emitters {
 
 impl Default for Emitters {
     fn default() -> Emitters {
-        Emitters { smoke: [0.0; 4], spark: f64::INFINITY, steam: 0.0, leak: 0.0, breach: [0.0; SECTION_CENTRES.len()] }
+        Emitters { smoke: [0.0; 6], spark: [f64::INFINITY; 3], steam: 0.0, leak: 0.0, breach: [0.0; SECTION_CENTRES.len()] }
     }
 }
 
@@ -294,7 +294,7 @@ fn device_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: O
     let (Some(r), Some(area), Some(assets)) = (items.reactor, area.as_deref(), assets) else { return };
     let dt = time.delta_secs_f64();
     let t = time.elapsed_secs_f64();
-    let spots = [(REACTOR_AT, REACTOR_SIZE[1], r.reactor.share), (COOLANT_PUMP_AT, 1.2, r.pump.share), (JUNCTION_BOX_AT, JUNCTION_BOX_SIZE[1], r.junction.share), (OXYGEN_GENERATOR_AT, OXYGEN_GENERATOR_SIZE[1], r.oxygen_generator.share)];
+    let spots = [(REACTOR_AT, REACTOR_SIZE[1], r.reactor.share), (COOLANT_PUMP_AT, 1.2, r.pump.share), (OXYGEN_GENERATOR_AT, OXYGEN_GENERATOR_SIZE[1], r.oxygen_generator.share), (junction_centre(0), JUNCTION_BOX_SIZE[1], r.junctions[0].share), (junction_centre(1), JUNCTION_BOX_SIZE[1], r.junctions[1].share), (junction_centre(2), JUNCTION_BOX_SIZE[1], r.junctions[2].share)];
     for (i, (at, lift, share)) in spots.into_iter().enumerate() {
         let Some(every) = smoke_every(smoke_level(share)) else {
             em.smoke[i] = 0.0;
@@ -309,24 +309,26 @@ fn device_fx(time: Res<Time>, items: Res<Items>, planet: Res<PlanetRes>, area: O
             }
         }
     }
-    if let Some(every) = spark_every(r.overvolt, !r.junction.working) {
+    for b in 0..r.junctions.len() {
+        let Some(every) = spark_every(r.overvolt, !r.junctions[b].working) else {
+            em.spark[b] = f64::INFINITY;
+            continue;
+        };
         // The first burst comes at once (the clock is idle, `INFINITY`, while nothing sparks).
-        if !em.spark.is_finite() {
-            em.spark = every;
+        if !em.spark[b].is_finite() {
+            em.spark[b] = every;
         }
-        em.spark += dt;
-        if em.spark >= every {
-            em.spark = 0.0;
-            // The burst leaves the box's front face (the side the room's centre is on), 1 m up.
-            if let Some((p, up)) = area.ground(&planet, ignition_at(Source::Junction), SPARK_HEIGHT) {
+        em.spark[b] += dt;
+        if em.spark[b] >= every {
+            em.spark[b] = 0.0;
+            // The burst leaves the box's `spark_point`, in front of its door.
+            if let Some((p, up)) = area.ground(&planet, ignition_at(Source::Junction(b)), JUNCTION_SPARK_HEIGHT) {
                 for k in 0..SPARKS_PER_BURST {
-                    let seed = ((t * 1000.0) as u64).wrapping_mul(31).wrapping_add(k as u64);
+                    let seed = ((t * 1000.0) as u64).wrapping_mul(31).wrapping_add(k as u64) ^ (b as u64) << 48;
                     spawn_particle(&mut commands, &assets, &mut mats, Kind::Spark, p, jet(up, seed, 1.5, 2.5), 9.8, SPARK_SIZE, SPARK_LIFE);
                 }
             }
         }
-    } else {
-        em.spark = f64::INFINITY;
     }
     // The pump's leak (r36): a puff at its base, more of them the faster it leaks (0.4 s at the
     // full 0.01 per s, 1.6 s at a quarter of it).

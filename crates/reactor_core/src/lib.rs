@@ -31,7 +31,7 @@ pub use hull::{Hit, HitTuning, HitsTuning, Hull, HullTuning, Section};
 pub use life_support::LifeSupportTuning;
 pub use director::{Director, DirectorTuning, Situation};
 pub use enemy::{EnemyTuning, Encounter, Outcome};
-pub use engine_room::{AlarmLevel, EngineRoom, Fault, Input, JunctionBox, Pump, RoomEvent, RoomTuning, Source};
+pub use engine_room::{AlarmLevel, EngineRoom, Fault, Input, JunctionBox, JUNCTIONS, Pump, RoomEvent, RoomTuning, Source};
 pub use history::History;
 pub use jump::{JumpDrive, JumpStage, JumpTuning};
 pub use lights::LightState;

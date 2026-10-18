@@ -20,7 +20,7 @@ pub const CREW: [(&str, Role, &str, u32); 3] = [("Pim Noodle", Role::Pilot, "bot
 /// Stations and devices an order can point at (rooms come from the ship). The reactor readout and the
 /// devices are the engine room's real ones; the other stations are the consoles' panel ids.
 pub const STATIONS: [&str; 4] = [live_status::REACTOR_STATION, "helm_panel", "gunnery_panel", "jump_drive"];
-pub const DEVICES: [&str; 4] = [live_status::REACTOR, live_status::PUMP, live_status::JUNCTION, live_status::OXYGEN_GENERATOR];
+pub const DEVICES: [&str; 6] = [live_status::REACTOR, live_status::PUMP, live_status::JUNCTIONS[0], live_status::JUNCTIONS[1], live_status::JUNCTIONS[2], live_status::OXYGEN_GENERATOR];
 /// Alarm rows shown at most.
 pub const ALARM_ROWS: usize = 3;
 /// Ships the captain can name as the target. Invented.

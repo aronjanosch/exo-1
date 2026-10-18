@@ -176,7 +176,8 @@ impl Input {
 pub enum Source {
     Reactor,
     Pump,
-    Junction,
+    /// One of the three junction boxes (0..`JUNCTIONS`, `Group::junction`).
+    Junction(usize),
     OxygenGenerator,
 }
 
@@ -186,7 +187,8 @@ pub enum RoomEvent {
     /// The operator pressed the emergency cooling (`EngineRoom::emergency_cool`) in the last step.
     EmergencyCool,
     Device { source: Source, event: DeviceEvent },
-    Sparks,
+    /// Sparks at junction box `0..JUNCTIONS`.
+    Sparks(usize),
     /// A fire started outside the reactor (from sparks). Reactor fires come as `Reactor(Fire)`.
     Fire { size: f64, source: Source },
     /// A fire at a hit's impact (`EngineRoom::apply_hit`, r40): the same fire, placed where it hit.
@@ -381,8 +383,13 @@ pub struct JunctionSave {
     pub cooldown: f64,
 }
 
+/// The ship's junction boxes (#322): JB-1 engine room, JB-2 corridor, JB-3 turret room.
+pub const JUNCTIONS: usize = 3;
+
 #[derive(Clone, Debug)]
 pub struct JunctionBox {
+    /// Which box (0..`JUNCTIONS`): the source its events carry.
+    index: usize,
     condition: Condition,
     rng: Rng,
     overvolt: bool,
@@ -393,8 +400,9 @@ pub struct JunctionBox {
 }
 
 impl JunctionBox {
-    pub fn new(tuning: &RoomTuning, seed: u64) -> JunctionBox {
+    pub fn new(tuning: &RoomTuning, index: usize, seed: u64) -> JunctionBox {
         JunctionBox {
+            index,
             condition: Condition::new(tuning.junction, seed),
             rng: Rng::new(seed ^ 0x05ba_43e5),
             overvolt: false,
@@ -407,8 +415,8 @@ impl JunctionBox {
         JunctionSave { condition: self.condition.to_save(), rng: self.rng.clone(), overvolt: self.overvolt, voltage: self.voltage, cooldown: self.cooldown }
     }
 
-    pub fn from_save(tuning: &RoomTuning, s: &JunctionSave) -> JunctionBox {
-        JunctionBox { condition: Condition::from_save(tuning.junction, &s.condition), rng: s.rng.clone(), overvolt: s.overvolt, voltage: s.voltage, cooldown: s.cooldown }
+    pub fn from_save(tuning: &RoomTuning, index: usize, s: &JunctionSave) -> JunctionBox {
+        JunctionBox { index, condition: Condition::from_save(tuning.junction, &s.condition), rng: s.rng.clone(), overvolt: s.overvolt, voltage: s.voltage, cooldown: s.cooldown }
     }
 
     /// Whether the last step had overvoltage (the screen's OVERVOLT word).
@@ -436,21 +444,24 @@ impl JunctionBox {
 
     /// Passes `supply_kw` on to the grid (0 when broken). Overvoltage damages the box and may
     /// throw sparks and start a fire.
-    fn pass(&mut self, dt: f64, supply_kw: f64, demand_kw: f64, t: &RoomTuning) -> (f64, Vec<RoomEvent>) {
+    /// `bus_*` are the reactor's output and the load of all working boxes (overvoltage is the bus's,
+    /// every box feels it); `own_*` are this box's share of the output and its groups' request.
+    fn pass(&mut self, dt: f64, bus_supply_kw: f64, bus_demand_kw: f64, own_supply_kw: f64, own_demand_kw: f64, t: &RoomTuning) -> (f64, Vec<RoomEvent>) {
         let mut ev = Vec::new();
-        let supply = supply_kw.max(0.0);
-        let demand = demand_kw.max(0.0);
-        let through = if self.condition.functioning() { supply } else { 0.0 };
+        let supply = bus_supply_kw.max(0.0);
+        let demand = bus_demand_kw.max(0.0);
+        let through = if self.condition.functioning() { own_supply_kw.max(0.0) } else { 0.0 };
         // Barotrauma `PowerTransfer.cs:250`: Overload = Voltage > max(OverloadVoltage, 1). Voltage is
         // supply / load, so a load of 0 with supply counts as overvoltage.
         self.overvolt = supply > 0.0 && supply > t.overvolt_ratio.max(1.0) * demand;
         if self.overvolt {
             ev.extend(self.overload(dt, t));
             if self.rng.unit() < t.sparks_per_s * dt {
-                ev.push(RoomEvent::Sparks);
+                ev.push(RoomEvent::Sparks(self.index));
             }
         }
-        self.voltage = if demand > 0.0 { through / demand } else { 1.0 };
+        let own_demand = own_demand_kw.max(0.0);
+        self.voltage = if own_demand > 0.0 { through / own_demand } else { 1.0 };
         (through, ev)
     }
 
@@ -468,13 +479,13 @@ impl JunctionBox {
             let amount = (10.0 + self.rng.unit() * 490.0) / 60.0 * sensitivity;
             if let Some(e) = self.condition.damage(amount) {
                 let broke = e == DeviceEvent::Broke;
-                ev.push(RoomEvent::Device { source: Source::Junction, event: e });
+                ev.push(RoomEvent::Device { source: Source::Junction(self.index), event: e });
                 if broke {
                     // Barotrauma `:276-290`: zap and sparks; a fire with `FireProbability`.
                     self.cooldown = OVERLOAD_COOLDOWN_S;
-                    ev.push(RoomEvent::Sparks);
+                    ev.push(RoomEvent::Sparks(self.index));
                     if self.rng.unit() < t.break_fire_chance {
-                        ev.push(RoomEvent::Fire { size: t.spark_fire_size, source: Source::Junction });
+                        ev.push(RoomEvent::Fire { size: t.spark_fire_size, source: Source::Junction(self.index) });
                     }
                 }
             }
@@ -523,7 +534,12 @@ const SHIELD_POINTS_PER_STRUCTURE: f64 = 500.0;
 pub struct RoomSave {
     pub reactor: ReactorSave,
     pub pump: PumpSave,
-    pub junction: JunctionSave,
+    /// The three junction boxes, JB-1 first (#322).
+    #[serde(default)]
+    pub junctions: Vec<JunctionSave>,
+    /// The one box of a save from before #322: it is JB-1, the others start fresh. Never written.
+    #[serde(default, skip_serializing)]
+    pub junction: Option<JunctionSave>,
     pub oxygen_generator: ConditionSave,
     pub battery: BatterySave,
     pub shield: ShieldSave,
@@ -586,7 +602,7 @@ pub struct EngineRoom {
     helm_t: HelmTuning,
     reactor: Reactor,
     pump: Pump,
-    junction: JunctionBox,
+    junctions: [JunctionBox; JUNCTIONS],
     oxygen: OxygenGenerator,
     grid: Grid,
     level: AlarmLevel,
@@ -652,7 +668,7 @@ impl EngineRoom {
         reactor.set_operator_skill(50.0);
         EngineRoom {
             pump: Pump::new(&t.room, seed),
-            junction: JunctionBox::new(&t.room, seed.wrapping_add(1)),
+            junctions: std::array::from_fn(|i| JunctionBox::new(&t.room, i, seed.wrapping_add(if i == 0 { 1 } else { 0x10 + i as u64 }))),
             oxygen: OxygenGenerator::new(&t.room, seed.wrapping_add(3)),
             tuning: t.room,
             hull_t: t.hull,
@@ -694,7 +710,8 @@ impl EngineRoom {
         RoomSave {
             reactor: self.reactor.to_save(),
             pump: self.pump.to_save(),
-            junction: self.junction.to_save(),
+            junctions: self.junctions.iter().map(JunctionBox::to_save).collect(),
+            junction: None,
             oxygen_generator: self.oxygen.condition().to_save(),
             battery: self.battery.to_save(),
             shield: self.shield.to_save(),
@@ -711,7 +728,10 @@ impl EngineRoom {
         let mut r = EngineRoom::from_tuning(t, 0);
         r.reactor = Reactor::from_save(t.reactor, &s.reactor);
         r.pump = Pump::from_save(&t.room, &s.pump);
-        r.junction = JunctionBox::from_save(&t.room, &s.junction);
+        let saved: Vec<&JunctionSave> = if s.junctions.is_empty() { s.junction.iter().collect() } else { s.junctions.iter().collect() };
+        for (i, js) in saved.into_iter().take(JUNCTIONS).enumerate() {
+            r.junctions[i] = JunctionBox::from_save(&t.room, i, js);
+        }
         r.oxygen = OxygenGenerator { condition: Condition::from_save(t.room.oxygen_generator, &s.oxygen_generator) };
         r.battery = Battery::from_save(t.battery, &s.battery);
         r.shield = Shield::from_save(t.shield, &s.shield);
@@ -822,7 +842,7 @@ impl EngineRoom {
             let amount = hit.device_damage * (1.0 - d / hit.radius);
             let condition = match source {
                 Source::Pump => &mut self.pump.condition,
-                Source::Junction => &mut self.junction.condition,
+                Source::Junction(i) => &mut self.junctions[i].condition,
                 _ => &mut self.oxygen.condition,
             };
             if let Some(e) = condition.damage(amount) {
@@ -861,12 +881,32 @@ impl EngineRoom {
         &mut self.pump
     }
 
-    pub fn junction(&self) -> &JunctionBox {
-        &self.junction
+    /// Junction box `i` (0..`JUNCTIONS`): JB-1 engine room, JB-2 corridor, JB-3 turret room.
+    pub fn junction(&self, i: usize) -> &JunctionBox {
+        &self.junctions[i]
     }
 
-    pub fn junction_mut(&mut self) -> &mut JunctionBox {
-        &mut self.junction
+    pub fn junction_mut(&mut self, i: usize) -> &mut JunctionBox {
+        &mut self.junctions[i]
+    }
+
+    pub fn junctions(&self) -> &[JunctionBox; JUNCTIONS] {
+        &self.junctions
+    }
+
+    /// Whether the box `g` hangs on passes power (a broken box cuts only its own groups).
+    pub fn group_connected(&self, g: Group) -> bool {
+        self.junctions[g.junction()].condition.functioning()
+    }
+
+    /// kW a group asks for: its breaker's request, 0 behind a broken box.
+    fn request_of(&self, g: Group) -> f64 {
+        if self.group_connected(g) { self.grid.request_of(g) } else { 0.0 }
+    }
+
+    /// The requests of all groups, a broken box's groups at 0.
+    fn requests(&self) -> [f64; Group::ALL.len()] {
+        std::array::from_fn(|i| self.request_of(Group::ALL[i]))
     }
 
     pub fn oxygen_generator(&self) -> &OxygenGenerator {
@@ -970,10 +1010,10 @@ impl EngineRoom {
         self.encounter.as_ref()
     }
 
-    /// The junction box's voltage: what the grid got over what it asked for, 0..1 (1 with no
-    /// request). Below 1 the grid is short (`junction().undervolted()`).
+    /// JB-1's voltage (the engine room's, where the engines hang): what the grid got over what it
+    /// asked for, 0..1 (1 with no request). Below 1 the grid is short (`junction(0).undervolted()`).
     pub fn voltage(&self) -> f64 {
-        self.junction.voltage()
+        self.junctions[0].voltage()
     }
 
     /// The crew's throttle (the engine's target), -100..100.
@@ -1007,7 +1047,7 @@ impl EngineRoom {
 
     /// The machines have power: the junction box works and the reactor delivers (output above 0).
     pub fn powered(&self) -> bool {
-        self.junction.condition.functioning() && self.reactor.output_kw() > 0.0
+        self.junctions[0].condition.functioning() && self.reactor.output_kw() > 0.0
     }
 
     /// The coolant flow, 0..1: the pump's speed times `stream`. Off, it runs down; an empty tank
@@ -1027,7 +1067,7 @@ impl EngineRoom {
     /// Otherwise it is the junction box's voltage of the last step, clamped to 0..1: a short grid
     /// slows the pump, and a broken box (which passes nothing) stops it.
     pub fn power_factor(&self) -> f64 {
-        if self.reactor.output_kw() <= 0.0 { 1.0 } else { self.junction.voltage().clamp(0.0, 1.0) }
+        if self.reactor.output_kw() <= 0.0 { 1.0 } else { self.voltage().clamp(0.0, 1.0) }
     }
 
     /// Turns the aux reactor on or off. Off: the main grid carries every group and the boost is 0.
@@ -1070,7 +1110,7 @@ impl EngineRoom {
 
     /// The load the main grid asks for, kW: with aux on, the Engines group only.
     pub fn main_load_kw(&self) -> f64 {
-        if self.aux { self.grid.request_of(Group::Engines) } else { self.grid.request_kw() }
+        if self.aux { self.request_of(Group::Engines) } else { self.requests().iter().sum() }
     }
 
     fn sync_aux(&mut self) {
@@ -1221,8 +1261,22 @@ impl EngineRoom {
             ev.extend(self.outside_hit(hit, &mut rng));
             self.hit_rng = rng;
         }
-        let (through, junction_ev) = self.junction.pass(dt, self.reactor.output_kw(), load, &t);
-        ev.extend(junction_ev);
+        // The reactor's output goes through the boxes in proportion to what their groups ask for; a
+        // broken box passes nothing (its groups ask for nothing, `requests`). `through` is what
+        // gets past all of them.
+        let reqs = self.requests();
+        // With aux on the main load is the Engines group alone (`main_load_kw`), so the boxes' shares are too.
+        let box_req: [f64; JUNCTIONS] = std::array::from_fn(|b| Group::ALL.iter().filter(|g| g.junction() == b).map(|g| if self.aux && *g != Group::Engines { 0.0 } else { self.grid.request_of(*g) }).sum());
+        let live_req: f64 = (0..JUNCTIONS).filter(|&b| self.junctions[b].condition.functioning()).map(|b| box_req[b]).sum();
+        let live_boxes = (0..JUNCTIONS).filter(|&b| self.junctions[b].condition.functioning()).count().max(1) as f64;
+        let output = self.reactor.output_kw();
+        let mut through = 0.0;
+        for b in 0..JUNCTIONS {
+            let share = if !self.junctions[b].condition.functioning() { 0.0 } else if live_req > 0.0 { box_req[b] / live_req } else { 1.0 / live_boxes };
+            let (t_b, box_ev) = self.junctions[b].pass(dt, output, live_req, output * share, box_req[b], &t);
+            through += t_b;
+            ev.extend(box_ev);
+        }
         // The battery sits behind the reactor: it gives what the main grid lacks, and takes the
         // surplus only when nothing was short (`load` is the main grid's request in both modes).
         let shortfall = (load - through).max(0.0);
@@ -1232,7 +1286,7 @@ impl EngineRoom {
             // The main grid: the Engines group only. The aux reactor: the aux groups that are switched on.
             // Only Life Support and Lights can go to the aux side; every other group stays on the main grid.
             let aux_side = |g: Group| matches!(g, Group::LifeSupport | Group::Lights);
-            let main: [f64; Group::ALL.len()] = std::array::from_fn(|i| if aux_side(Group::ALL[i]) { 0.0 } else { self.grid.request_of(Group::ALL[i]) });
+            let main: [f64; Group::ALL.len()] = std::array::from_fn(|i| if aux_side(Group::ALL[i]) { 0.0 } else { reqs[i] });
             let main_write: [bool; Group::ALL.len()] = std::array::from_fn(|i| !aux_side(Group::ALL[i]));
             let left = self.grid.distribute_with(supply, main, main_write);
             if shortfall <= 0.0 {
@@ -1240,7 +1294,7 @@ impl EngineRoom {
             }
             let mut aux = [0.0; Group::ALL.len()];
             for g in [Group::LifeSupport, Group::Lights] {
-                if self.aux_fed(g) {
+                if self.aux_fed(g) && self.group_connected(g) {
                     aux[g.index()] = self.grid.group(g).demand_kw;
                 }
             }
@@ -1248,7 +1302,7 @@ impl EngineRoom {
             let aux_supply = if live { self.tuning.aux_output_kw } else { 0.0 };
             self.grid.distribute_with(aux_supply, aux, aux_write);
         } else {
-            let left = self.grid.distribute(supply);
+            let left = self.grid.distribute_with(supply, reqs, [true; Group::ALL.len()]);
             if shortfall <= 0.0 {
                 self.battery.absorb(left, dt);
             }
@@ -1288,7 +1342,7 @@ impl EngineRoom {
         Checks {
             reactor_on: self.reactor.power_on(),
             jump_armed: self.jump.stage != crate::jump::JumpStage::ColdStart,
-            breakers_on: self.grid.breaker(Group::LifeSupport) && self.grid.breaker(Group::Lights),
+            breakers_on: self.grid.breaker(Group::LifeSupport) && self.grid.breaker(Group::Lights), // the toggles on JB-2
         }
     }
 
@@ -1362,8 +1416,9 @@ impl EngineRoom {
         if let Some(e) = self.pump.condition.damage(blast.device_damage) {
             ev.push(RoomEvent::Device { source: Source::Pump, event: e });
         }
-        if let Some(e) = self.junction.condition.damage(blast.device_damage) {
-            ev.push(RoomEvent::Device { source: Source::Junction, event: e });
+        // The blast is in the engine room: it reaches JB-1 only.
+        if let Some(e) = self.junctions[0].condition.damage(blast.device_damage) {
+            ev.push(RoomEvent::Device { source: Source::Junction(0), event: e });
         }
         if let Some(e) = self.oxygen.condition.damage(blast.device_damage) {
             ev.push(RoomEvent::Device { source: Source::OxygenGenerator, event: e });
@@ -1390,7 +1445,7 @@ impl EngineRoom {
             }
             Fault::Surge => {
                 let amount = self.tuning.surge_damage;
-                self.junction.condition.damage(amount).map(|e| RoomEvent::Device { source: Source::Junction, event: e }).into_iter().collect()
+                self.junctions[0].condition.damage(amount).map(|e| RoomEvent::Device { source: Source::Junction(0), event: e }).into_iter().collect()
             }
             Fault::HullBreach => {
                 let i = self.hull.nearest(REACTOR_AT);
@@ -1428,7 +1483,7 @@ impl EngineRoom {
         } else if self.reactor.alarm(AlarmKind::HeatHigh)
             || self.reactor.condition().needs_repair()
             || self.pump.condition.needs_repair()
-            || self.junction.condition.needs_repair()
+            || self.junctions.iter().any(|j| j.condition.needs_repair())
             || self.oxygen.condition.needs_repair()
             || !self.hull.intact()
         {

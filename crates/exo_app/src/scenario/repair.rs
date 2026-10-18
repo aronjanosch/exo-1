@@ -3,7 +3,7 @@ use super::items::{collect, items, outside};
 use walker_core::Frame as WalkFrame;
 use super::*;
 use crate::controls::Controls;
-use crate::dev_area::{layout::{COOLANT_PUMP_AT, JUNCTION_BOX_AT}};
+use crate::dev_area::{layout::{junction_centre, junction_front, COOLANT_PUMP_AT, JUNCTION_BOX_SIZE, JUNCTION_LIFT}};
 use crate::dev_area::{dev::item_table, DevArea, DEV};
 use crate::items::Items;
 use crate::dev_area::ship::ReactorSim;
@@ -22,7 +22,13 @@ fn pump(w: &World) -> f64 {
 }
 
 fn junction(w: &World) -> f64 {
-    items(w).reactor.as_ref().map_or(1.0, |r: &ReactorNews| r.junction.share)
+    items(w).reactor.as_ref().map_or(1.0, |r: &ReactorNews| r.junctions[0].share)
+}
+
+/// Whether JB-1's door stands open (the kit's cover, `engineering::junction_boxes`).
+fn door_open(w: &mut World) -> bool {
+    use crate::dev_area::engineering::junction_boxes::{JunctionRoom, DOOR};
+    w.query::<(&JunctionRoom, &crate::controls_kit::Machine)>().iter(w).find(|(r, _)| r.index == 0).is_some_and(|(_, m)| m.controls.is_open(DOOR))
 }
 
 fn ring(w: &World) -> Option<&crate::repair::Play> {
@@ -41,7 +47,16 @@ fn hits(w: &World) -> u32 {
 /// The walker's eye looks at a machine's middle (area point, 0.6 m up). Aimed in the world frame:
 /// on foot the walker's forward and pitch are world values (the shared `look_at` turns in the ship's).
 fn look(w: &mut World, at: [f64; 2]) {
-    let target = ground(w, at, 0.6);
+    look_up(w, at, 0.6);
+}
+
+/// The same, `lift` m up: junction box JB-1's cabinet hangs from `JUNCTION_LIFT`, so it is looked at in its middle.
+fn look_junction(w: &mut World) {
+    look_up(w, junction_centre(0), JUNCTION_LIFT + JUNCTION_BOX_SIZE[1] * 0.5);
+}
+
+fn look_up(w: &mut World, at: [f64; 2], lift: f64) {
+    let target = ground(w, at, lift);
     with_player(w, |p| {
         let up = p.world_up(WalkFrame::IDENTITY);
         let eye = p.world_pos(WalkFrame::IDENTITY) + up * crate::walker::EYE_HEIGHT;
@@ -71,7 +86,7 @@ fn stun(w: &World) -> f64 {
 /// console has no fault for it): the click test below half needs the machine below half.
 fn knock_junction(w: &mut World, share: f64) {
     let mut sim = w.resource_mut::<ReactorSim>();
-    let cond = sim.room.junction_mut().condition_mut();
+    let cond = sim.room.junction_mut(0).condition_mut();
     let max = cond.tuning().max;
     cond.damage((1.0 - share) * max);
 }
@@ -260,17 +275,17 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
     s.push(select("repair: the screwdriver is selected for the junction box", "screwdriver"));
     s.push(run("repair: the walker walks to the junction box", 3.0, |w, c| {
         if c.t == 0.0 {
-            let feet = ground(w, [JUNCTION_BOX_AT[0], JUNCTION_BOX_AT[1] + 1.2], 0.0);
+            let feet = ground(w, junction_front(0, 1.4), 0.0);
             place_walker(w, feet);
         }
-        look(w, JUNCTION_BOX_AT);
+        look_junction(w);
         if c.t < 0.5 {
             return None;
         }
         Some("at the junction box".into())
     }));
     s.push(run("repair: the screwdriver starts a session on the junction box with no ring", 6.0, |w, c| {
-        look(w, JUNCTION_BOX_AT);
+        look_junction(w);
         if c.t < 0.3 && !c.v.contains_key("sent_junction") {
             return None;
         }
@@ -291,6 +306,7 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         let no_ring = ring(w).is_some_and(|p| p.session.ring.zones.is_empty() && p.session.ring.pointer_deg == 0.0);
         check(c, no_ring, "repair: no zones and no pointer at 70 %".into());
         check(c, hits(w) == 0, "repair: LMB counts for nothing without the minigame".into());
+        check(c, door_open(w), "repair: the door over the bus bars is open during the repair".into());
         Some("no ring, slow repair".into())
     }));
     s.push(run("repair: F ends the session and keeps the progress", 2.0, |w, c| {
@@ -305,11 +321,12 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
         }
         let (ended, host) = (ring(w).is_none(), sessions(w) == 0);
         check(c, ended && host, "repair: F ends the session, host and client".into());
+        check(c, !door_open(w), "repair: the door closes after the repair".into());
         check(c, junction(w) >= c.v["before_f"], "repair: the progress is kept".into());
         Some("ended".into())
     }));
     s.push(run("repair: the slow repair takes the junction box to full", 60.0, |w, c| {
-        look(w, JUNCTION_BOX_AT);
+        look_junction(w);
         if ring(w).is_none() && sessions(w) == 0 && c.t < 1.0 && !c.v.contains_key("again") {
             lmb(w);
             c.v.insert("again", 1.0);
@@ -330,7 +347,7 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
     // client reads it before it asks again).
     s.push(run("repair: a refused start (the wrong tool at a full box) is told to the client", 3.0, |w, c| {
         if c.t == 0.0 {
-            w.resource_mut::<Items>().repair_asks.push((crate::items::LOCAL, RepairAsk::Start { device: RepairDevice::JunctionBox, tool: RepairTool::Wrench }));
+            w.resource_mut::<Items>().repair_asks.push((crate::items::LOCAL, RepairAsk::Start { device: RepairDevice::JunctionBox(0), tool: RepairTool::Wrench }));
             return None;
         }
         let told = w.resource::<Items>().repair_done;
@@ -354,7 +371,7 @@ pub(super) fn repair_steps(s: &mut Vec<Step>) {
     }));
     s.push(select("repair: the screwdriver is selected for the click", "screwdriver"));
     s.push(run("repair: a click at the junction box below half does nothing (no ring, no burn, no stun)", 12.0, |w, c| {
-        look(w, JUNCTION_BOX_AT);
+        look_junction(w);
         if !c.v.contains_key("j_started") {
             if c.t < 0.3 {
                 return None;

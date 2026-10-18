@@ -110,7 +110,7 @@ fn part_of(r: &item_core::wire::ReactorNews, d: item_core::wire::RepairDevice) -
     match d {
         Reactor => r.reactor,
         CoolantPump => r.pump,
-        JunctionBox => r.junction,
+        JunctionBox(i) => r.junctions[i],
         OxygenGenerator => r.oxygen_generator,
         HullBreach => item_core::wire::PartNews { share: crate::repair::breach_share(&r.breaches), working: true },
     }

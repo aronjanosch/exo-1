@@ -72,18 +72,58 @@ pub const REACTOR_FRONT_AT: [f64; 2] = [REACTOR_AT[0], REACTOR_AT[1] + 2.6];
 pub const REACTOR_AIM_LIFT: f64 = 0.5;
 pub const COOLANT_PUMP_AT: [f64; 2] = [-10.5, -17.5];
 pub const COOLANT_PUMP_SIZE: [f64; 3] = [1.0, 1.2, 1.0];
-pub const JUNCTION_BOX_AT: [f64; 2] = [-17.0, -18.85];
-pub const JUNCTION_BOX_SIZE: [f64; 3] = [0.6, 0.9, 0.3];
+/// The three junction boxes (#322): where each stands on its wall (the model's origin, on the wall surface under the
+/// cabinet's centre line) and the way it faces (`Mount::turn`: 0 south, 90 east, 180 north, -90 west).
+/// JB-1 on the engine room's south wall, JB-2 on the corridor's south wall east of ER-01, JB-3 on the turret room's east wall
+/// (it stands in for the shield area). TODO(initiator): the three spots.
+pub struct JunctionSpot {
+    pub at: [f64; 2],
+    pub turn: f64,
+}
+
+pub const JUNCTION_SPOTS: [JunctionSpot; 3] = [
+    JunctionSpot { at: [-17.0, -18.98], turn: 180.0 },
+    JunctionSpot { at: [-10.0, -10.66], turn: 180.0 },
+    JunctionSpot { at: [-4.74, -4.4], turn: -90.0 },
+];
+pub const JUNCTION_MODEL: &str = "ship/junction_box.glb";
+/// The cabinet's size from `art/ship/junction_box.md` (m): width, height, depth; it hangs from `JUNCTION_LIFT` up.
+pub const JUNCTION_BOX_SIZE: [f64; 3] = [0.56, 0.84, 0.17];
+pub const JUNCTION_LIFT: f64 = 0.92;
+/// Where the model's `spark_point` is: 3 cm in front of the door, at this height (m, from the floor).
+pub const JUNCTION_SPARK_HEIGHT: f64 = 1.32;
+pub const JUNCTION_SPARK_OUT: f64 = JUNCTION_BOX_SIZE[2] + 0.03;
+
+/// The way a wall point faces on the floor plan (unit x, y) for a `turn` in degrees.
+pub fn facing(turn: f64) -> [f64; 2] {
+    [turn.to_radians().sin(), -turn.to_radians().cos()]
+}
+
+/// A point `out` metres in front of junction box `i`'s wall point.
+pub fn junction_front(i: usize, out: f64) -> [f64; 2] {
+    let s = &JUNCTION_SPOTS[i];
+    let f = facing(s.turn);
+    [s.at[0] + f[0] * out, s.at[1] + f[1] * out]
+}
+
+/// The cabinet's centre on the floor plan.
+pub fn junction_centre(i: usize) -> [f64; 2] {
+    junction_front(i, JUNCTION_BOX_SIZE[2] * 0.5)
+}
+
+/// Whether `id` is one of the junction boxes' hit volumes (`JUNCTION_BOX`).
+pub fn is_junction_box(id: &str) -> bool {
+    JUNCTION_BOX.contains(&id)
+}
 /// The oxygen generator: a box on the engine room's east wall (inner face x -9.0), off the walk from
 /// the door (x -14) to the machines and clear of the reactor, pump and junction box screens.
 pub const OXYGEN_GENERATOR_AT: [f64; 2] = [-9.4, -13.0];
 pub const OXYGEN_GENERATOR_SIZE: [f64; 3] = [0.8, 1.2, 0.8];
-pub const JUNCTION_AT: [f64; 2] = [JUNCTION_BOX_AT[0], -18.98];
-pub const JUNCTION_LIFT: f64 = 1.2;
 pub const AUX_GAP: f64 = 0.05;
-pub const AUX_AT: [f64; 2] = [JUNCTION_AT[0] + TALL_SCREEN_SIZE[0] + AUX_GAP, JUNCTION_AT[1]];
+/// The parked AUX screen's spot (the junction box's old screen stood west of it, #322).
+pub const AUX_AT: [f64; 2] = [-17.0 + TALL_SCREEN_SIZE[0] + AUX_GAP, -18.98];
 /// The battery's screen: beside the AUX screen, on the same line. TODO(initiator): the spot on the wall.
-pub const BATTERY_AT: [f64; 2] = [AUX_AT[0] + TALL_SCREEN_SIZE[0] + AUX_GAP, JUNCTION_AT[1]];
+pub const BATTERY_AT: [f64; 2] = [AUX_AT[0] + TALL_SCREEN_SIZE[0] + AUX_GAP, AUX_AT[1]];
 /// The M-tier screen's spot: on the south wall's inner face next to the reactor (east of it),
 /// its height from the floor.
 pub const REACTOR_SCREEN_AT: [f64; 2] = [-11.8, -18.96];
@@ -149,7 +189,6 @@ pub const SCREENS: &[Mount] = &[
     // AUX, the battery, ST-01 and SP-01 (their `Mount` lines are in git history, commit of #306).
     Mount { id: engineering_panels::READOUT_ID, name: engineering_panels::READOUT_NAME, at: REACTOR_SCREEN_AT, lift: REACTOR_SCREEN_LIFT, size: READOUT_SIZE, turn: 180.0 },
     Mount { id: engineering_panels::PUMP_ID, name: engineering_panels::PUMP_NAME, at: [COOLANT_PUMP_AT[0], COOLANT_PUMP_AT[1] + 0.55], lift: 0.5, size: SMALL_SCREEN_SIZE, turn: 180.0 },
-    Mount { id: engineering_panels::JUNCTION_ID, name: engineering_panels::JUNCTION_NAME, at: JUNCTION_AT, lift: JUNCTION_LIFT, size: TALL_SCREEN_SIZE, turn: 180.0 },
     Mount { id: hull_panels::VENT_ENGINE_ID, name: hull_panels::VENT_ENGINE_NAME, at: VENT_AT[0], lift: VENT_LIFT, size: SMALL_SCREEN_SIZE, turn: 90.0 },
     // The corridor: ER-01 and the corridor's vent on the south wall, BD-01 on the north wall. The
     // airlock's panels (#309): one inside on the north wall, one outside beside the outer door.
@@ -169,7 +208,8 @@ pub const BRIDGE_DOOR: &str = "bridge_door";
 pub const EQUIP_DOOR: &str = "equipment_door";
 pub const REACTOR: &str = "engine_reactor";
 pub const COOLANT_PUMP: &str = "engine_coolant_pump";
-pub const JUNCTION_BOX: &str = "engine_junction_box";
+/// The junction boxes' hit volumes (repair aims at them): JB-1, JB-2, JB-3.
+pub const JUNCTION_BOX: [&str; 3] = ["junction_box_1", "junction_box_2", "junction_box_3"];
 pub const OXYGEN_GENERATOR: &str = "engine_oxygen_generator";
 pub const TURRET_GUN: &str = "turret_gun";
 
@@ -275,7 +315,6 @@ const PARTS: &[Part] = &[
 const MACHINES: &[Part] = &[
     Part { id: REACTOR, at: REACTOR_AT, size: REACTOR_SIZE, lift: 0.0, colour: [0.55, 0.3, 0.2] },
     Part { id: COOLANT_PUMP, at: COOLANT_PUMP_AT, size: COOLANT_PUMP_SIZE, lift: 0.0, colour: DEVICE_COLOUR },
-    Part { id: JUNCTION_BOX, at: JUNCTION_BOX_AT, size: JUNCTION_BOX_SIZE, lift: 0.0, colour: [0.85, 0.7, 0.2] },
     Part { id: OXYGEN_GENERATOR, at: OXYGEN_GENERATOR_AT, size: OXYGEN_GENERATOR_SIZE, lift: 0.0, colour: [0.3, 0.5, 0.45] },
 ];
 
@@ -292,7 +331,7 @@ pub fn source_at(s: Source) -> [f64; 2] {
     match s {
         Source::Reactor => REACTOR_AT,
         Source::Pump => COOLANT_PUMP_AT,
-        Source::Junction => JUNCTION_BOX_AT,
+        Source::Junction(i) => junction_centre(i),
         Source::OxygenGenerator => OXYGEN_GENERATOR_AT,
     }
 }
@@ -366,6 +405,11 @@ fn spawn_room(mut commands: Commands, planet: Res<PlanetRes>, mut area: ResMut<D
         let e = spawn_part(&mut commands, &frame, &planet, p);
         area.entities.push(e);
     }
+    for (i, spot) in JUNCTION_SPOTS.iter().enumerate() {
+        // The cabinet's volume: the collision and what repair aims at (the model is drawn by `engineering::junction_boxes`).
+        let e = spawn_box(&mut commands, &frame, &planet, JUNCTION_BOX[i].to_string(), junction_centre(i), JUNCTION_BOX_SIZE, JUNCTION_LIFT, spot.turn, WALL_COLOUR);
+        area.entities.push(e);
+    }
     for p in MACHINES {
         let Some(at) = outside_copy(p.at) else { continue };
         let e = spawn_box(&mut commands, &frame, &planet, format!("{}_outside", p.id), at, p.size, p.lift, 0.0, p.colour);
@@ -396,7 +440,7 @@ fn machine_of(s: Source) -> ([f64; 2], [f64; 3]) {
     match s {
         Source::Reactor => (REACTOR_AT, REACTOR_SIZE),
         Source::Pump => (COOLANT_PUMP_AT, COOLANT_PUMP_SIZE),
-        Source::Junction => (JUNCTION_BOX_AT, JUNCTION_BOX_SIZE),
+        Source::Junction(i) => (junction_centre(i), JUNCTION_BOX_SIZE),
         Source::OxygenGenerator => (OXYGEN_GENERATOR_AT, OXYGEN_GENERATOR_SIZE),
     }
 }
@@ -412,6 +456,10 @@ pub const IGNITION_OUT: f64 = 0.3;
 
 /// The machines' centres are inside their housings, so a fire there shows no flame.
 pub fn ignition_at(s: Source) -> [f64; 2] {
+    // A junction box's fire starts at its `spark_point`, in front of the door.
+    if let Source::Junction(i) = s {
+        return junction_front(i, JUNCTION_SPARK_OUT);
+    }
     let (c, size) = machine_of(s);
     let to = [ROOM.centre[0] - c[0], ROOM.centre[1] - c[1]];
     if to[0].abs() > to[1].abs() {

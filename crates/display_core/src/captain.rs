@@ -25,7 +25,7 @@ pub const SHIELD_DAMAGE: f64 = 0.5;
 /// The room rows, in the order `ReactorNews::rooms` and `ReactorNews::alarms` have them.
 pub const ROOM_NAMES: [&str; 3] = ["ENGINE ROOM", "CORRIDOR", "BRIDGE"];
 /// The devices, in the order the captain's list names them; `PartNews.working == false` is DOWN.
-pub const SYSTEM_NAMES: [&str; 4] = ["REACTOR", "PUMP", "JUNCTION", "O2 GEN"];
+pub const SYSTEM_NAMES: [&str; 6] = ["REACTOR", "PUMP", "JB-1", "JB-2", "JB-3", "O2 GEN"];
 
 /// The alert level the captain reads: NONE, DAMAGE, CRITICAL (PULSAR's green, yellow, red).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -125,7 +125,7 @@ pub fn threat(hull: f64, shield: f64, rooms: &[RoomView], any_down: bool) -> Thr
 pub fn captain_view(r: &ReactorNews) -> CaptainView {
     let hull = hull_integrity(&r.breaches);
     let rooms = [0, 1, 2].map(|i| RoomView { name: ROOM_NAMES[i], air: r.rooms[i].o2, fire: r.rooms[i].fire, alarm: r.alarms[i] });
-    let parts: [PartNews; 4] = [r.reactor, r.pump, r.junction, r.oxygen_generator];
+    let parts: [PartNews; 6] = [r.reactor, r.pump, r.junctions[0], r.junctions[1], r.junctions[2], r.oxygen_generator];
     let systems_down: Vec<&'static str> = parts.iter().zip(SYSTEM_NAMES).filter(|(p, _)| !p.working).map(|(_, name)| name).collect();
     let threat = threat(hull, r.shield, &rooms, !systems_down.is_empty());
     CaptainView {
@@ -150,7 +150,7 @@ mod tests {
     /// A ship with nothing wrong: whole hull, full shield, every device working, air full, no alarms.
     fn healthy() -> ReactorNews {
         let part = PartNews { share: 1.0, working: true };
-        let mut r = ReactorNews { reactor: part, pump: part, junction: part, oxygen_generator: part, shield: 1.0, ..ReactorNews::default() };
+        let mut r = ReactorNews { reactor: part, pump: part, junctions: [part; 3], oxygen_generator: part, shield: 1.0, ..ReactorNews::default() };
         for room in r.rooms.iter_mut() {
             room.o2 = 1.0;
         }
@@ -199,6 +199,10 @@ mod tests {
         down.pump.working = false;
         assert_eq!(captain_view(&down).threat, Threat::Damage, "a device down is DAMAGE");
         assert_eq!(captain_view(&down).systems_down, vec!["PUMP"]);
+
+        let mut jb = healthy();
+        jb.junctions[1].working = false;
+        assert_eq!(captain_view(&jb).systems_down, vec!["JB-2"], "each junction box is its own row");
 
         let mut weak = healthy();
         weak.shield = 0.3;

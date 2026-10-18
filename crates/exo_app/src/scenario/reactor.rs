@@ -2,8 +2,8 @@
 use super::*;
 use crate::dev_area::hull::alarms::ShipAlarm;
 use crate::dev_area::ship::{ReactorCounts, ReactorSim};
-use crate::dev_area::{layout::{COOLANT_PUMP_AT, JUNCTION_BOX_AT}};
-use crate::dev_area::{engineering::panels::{JUNCTION_ID, PUMP_ID, READOUT_ID, STATUS_ID}};
+use crate::dev_area::{layout::{junction_front, COOLANT_PUMP_AT}};
+use crate::dev_area::{engineering::{junction_boxes::JunctionRoom, panels::{PUMP_ID, READOUT_ID, STATUS_ID}}};
 use crate::dev_area::DevArea;
 use super::{ship_frame_of, with_player};
 use super::dev_area::tap_until;
@@ -234,14 +234,14 @@ pub(super) fn reactor_steps(s: &mut Vec<Step>) {
         false
     }));
 
-    // The junction box's breakers. The Load drop above switched ENGINES and LIGHTS off, so: LIGHTS on
-    // (+80 kW), LIGHTS off (-80 kW), ENGINES on (its demand, 800 kW at full work). The load is the grid's request.
-    use_display(s, "JUNCTION BOX", JUNCTION_ID, [JUNCTION_BOX_AT[0], JUNCTION_BOX_AT[1] + 2.0]);
-    s.push(click_until(JUNCTION_ID, "br_lights", None, "reactor: the LIGHTS breaker on takes 80 kW onto the load", |w| sim(w).room.grid().breaker(Group::Lights)));
+    // The junction boxes' toggles (#322): LIGHTS is on JB-2, ENGINES on JB-1; the walker looks at the toggle and presses F. The Load drop
+    // above switched ENGINES and LIGHTS off, so: LIGHTS on (+80 kW), LIGHTS off (-80 kW), ENGINES on (its demand, 800 kW at full
+    // work). The load is the grid's request.
+    s.push(toggle_until(1, 1, "reactor: the LIGHTS toggle on takes 80 kW onto the load", |w| sim(w).room.grid().breaker(Group::Lights)));
     s.push(load_step("reactor: LIGHTS on: the load is the grid's demand (lights 80 kW on)"));
-    s.push(click_until(JUNCTION_ID, "br_lights", None, "reactor: the LIGHTS breaker off takes 80 kW off the load", |w| !sim(w).room.grid().breaker(Group::Lights)));
+    s.push(toggle_until(1, 1, "reactor: the LIGHTS toggle off takes 80 kW off the load", |w| !sim(w).room.grid().breaker(Group::Lights)));
     s.push(load_step("reactor: LIGHTS off: the load is the grid's demand (lights 80 kW off)"));
-    s.push(click_until(JUNCTION_ID, "br_engines", None, "reactor: the ENGINES breaker on takes its demand onto the load", |w| sim(w).room.grid().breaker(Group::Engines)));
+    s.push(toggle_until(0, 0, "reactor: the ENGINES toggle on takes its demand onto the load", |w| sim(w).room.grid().breaker(Group::Engines)));
     s.push(load_step("reactor: ENGINES on: the load is the grid's demand (engines 800 kW at full work, wandering)"));
 
     use_display(s, "REACTOR", READOUT_ID, [-11.8, -17.7]);
@@ -431,6 +431,63 @@ pub(super) fn click_until(id: PanelId, action: &'static str, frac: Option<f64>, 
         };
         aim_at(w, at);
         w.resource_mut::<Controls>().click = true;
+        c.v.insert("tries", tries + 1.0);
+        c.v.insert("last", c.t);
+        false
+    })
+}
+
+/// Presses F on toggle `k` of junction box `i` (walker in front, view on the toggle) until `done` holds, a retry each second, five at
+/// most. The view is kept on the toggle every tick and F goes only while the prompt names that toggle, so a press never lands elsewhere.
+pub(super) fn toggle_until(i: usize, k: usize, what: &'static str, done: fn(&World) -> bool) -> Step {
+    Box::new(move |w, c| {
+        if c.t == 0.0 {
+            begin(w, c, what);
+            c.v.insert("tries", 0.0);
+            c.v.remove("placed");
+            c.v.remove("last");
+            // Step out of a screen the walker still uses.
+            if active(w).using().is_some() {
+                tap(w, KeyCode::KeyF);
+                return false;
+            }
+        }
+        if c.t < 0.3 {
+            return false;
+        }
+        if !c.v.contains_key("placed") {
+            let at = ground_at(w, junction_front(i, 1.0));
+            place_walker(w, at);
+            c.v.insert("placed", 1.0);
+            return false;
+        }
+        if done(w) {
+            end(w, c, format!("{} presses", c.v.get("tries").copied().unwrap_or(0.0) as u32));
+            return true;
+        }
+        let Some(at) = w.query::<&JunctionRoom>().iter(w).find(|r| r.index == i).map(|r| r.toggle_at(k)) else {
+            check(c, false, format!("{what}: no junction box {i}"));
+            return true;
+        };
+        face_towards(w, at);
+        pitch_towards(w, at);
+        if w.resource::<Interaction>().target != Some(crate::interact::Target::JunctionToggle(i, k)) {
+            if c.t > 8.0 {
+                check(c, false, format!("{what}: the view never reaches the toggle ({})", w.resource::<Interaction>().prompt));
+                return true;
+            }
+            return false;
+        }
+        let last = c.v.get("last").copied().unwrap_or(-1.0);
+        if last >= 0.0 && c.t < last + 1.0 {
+            return false;
+        }
+        let tries = c.v.get("tries").copied().unwrap_or(0.0);
+        if tries >= 5.0 {
+            check(c, false, format!("{what}: not done after 5 presses"));
+            return true;
+        }
+        tap(w, KeyCode::KeyF);
         c.v.insert("tries", tries + 1.0);
         c.v.insert("last", c.t);
         false

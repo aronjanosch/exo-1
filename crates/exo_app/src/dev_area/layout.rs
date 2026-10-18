@@ -60,7 +60,7 @@ pub const DOOR_REACH: f64 = 2.5;
 
 /// The reactor model's origin (#316): on the floor, its console facing the door (north), set back from the door.
 /// TODO(initiator): the set-back (start value: 1.0 m south of the room's centre).
-pub const REACTOR_SET_BACK: f64 = 0.0;
+pub const REACTOR_SET_BACK: f64 = 1.0;
 pub const REACTOR_AT: [f64; 2] = [ROOM.centre[0], ROOM.centre[1] - REACTOR_SET_BACK];
 /// The base drum's box (the collision and what the wrench aims at: repair of the reactor); the rest of the model's collision is
 /// `engineering::reactor_room`.
